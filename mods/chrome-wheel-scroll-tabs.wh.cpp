@@ -10,6 +10,7 @@
 // @include         chrome.exe
 // @include         msedge.exe
 // @include         opera.exe
+// @include         brave.exe
 // @compilerOptions -lcomctl32
 // ==/WindhawkMod==
 
@@ -19,7 +20,7 @@
 
 Use the mouse wheel while hovering over the tab bar to switch between tabs.
 
-Currently supported browsers: Google Chrome, Microsoft Edge, Opera.
+Currently supported browsers: Google Chrome, Microsoft Edge, Opera, Brave.
 
 ![demonstration](https://i.imgur.com/GWCsO70.gif)
 */
