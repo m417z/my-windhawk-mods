@@ -2,7 +2,7 @@
 // @id              slick-window-arrangement
 // @name            Slick Window Arrangement
 // @description     Make window arrangement more slick and pleasant with a sliding animation and snapping
-// @version         1.0
+// @version         1.0.1
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
