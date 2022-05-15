@@ -256,7 +256,7 @@ void WebContentUpdateThreadInit()
     }
 }
 
-void WebContentUpdateThreadUnnit()
+void WebContentUpdateThreadUninit()
 {
     if (g_webContentUpdateThread) {
         SetEvent(g_webContentUpdateStopEvent);
@@ -877,7 +877,7 @@ void Wh_ModUninit(void)
 {
     Wh_Log(L">");
 
-    WebContentUpdateThreadUnnit();
+    WebContentUpdateThreadUninit();
 
     FreeSettings();
     ApplySettings();
@@ -887,7 +887,7 @@ void Wh_ModSettingsChanged(void)
 {
     Wh_Log(L">");
 
-    WebContentUpdateThreadUnnit();
+    WebContentUpdateThreadUninit();
 
     FreeSettings();
     LoadSettings();
