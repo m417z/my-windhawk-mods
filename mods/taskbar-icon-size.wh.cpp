@@ -138,7 +138,7 @@ void FreeSettings() {
     // Nothing for now.
 }
 
-bool ProtectAndMemset(DWORD protect, void* dst, const void* src, size_t size) {
+bool ProtectAndMemcpy(DWORD protect, void* dst, const void* src, size_t size) {
     DWORD oldProtect;
     if (!VirtualProtect(dst, size, protect, &oldProtect)) {
         return false;
@@ -161,7 +161,7 @@ void ApplySettings() {
     // refresh.
     if (newTaskbarHeight == currentTaskbarHeight && hTaskbarWnd) {
         double tempTaskbarHeight = 0;
-        ProtectAndMemset(PAGE_READWRITE, pOriginal_double_48_value,
+        ProtectAndMemcpy(PAGE_READWRITE, pOriginal_double_48_value,
                          &tempTaskbarHeight, sizeof(double));
 
         // Trigger TrayUI::_HandleSettingChange.
@@ -179,7 +179,7 @@ void ApplySettings() {
         }
     }
 
-    ProtectAndMemset(PAGE_READWRITE, pOriginal_double_48_value,
+    ProtectAndMemcpy(PAGE_READWRITE, pOriginal_double_48_value,
                      &newTaskbarHeight, sizeof(double));
 
     if (hTaskbarWnd) {
