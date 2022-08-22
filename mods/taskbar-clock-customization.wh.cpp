@@ -859,23 +859,27 @@ BOOL Wh_ModInit(void)
     if (GetFileAttributes(szTargetDllPath) != INVALID_FILE_ATTRIBUTES) {
         g_windowsVersion = WindowsVersion::Win11_22H2;
 
-        // Try to load dependency DLLs. At process start, if they're not loaded,
-        // loading the taskbar view DLL fails.
-        WCHAR szRuntimeDllPath[MAX_PATH];
+        module = GetModuleHandle(szTargetDllPath);
+        if (!module) {
+            // Try to load dependency DLLs. At process start, if they're not loaded,
+            // loading the taskbar view DLL fails.
+            WCHAR szRuntimeDllPath[MAX_PATH];
 
-        wcscpy_s(szRuntimeDllPath, szWindowsDirectory);
-        wcscat_s(szRuntimeDllPath, LR"(\SystemApps\MicrosoftWindows.Client.CBS_cw5n1h2txyewy\vcruntime140_app.dll)");
-        LoadLibrary(szRuntimeDllPath);
+            wcscpy_s(szRuntimeDllPath, szWindowsDirectory);
+            wcscat_s(szRuntimeDllPath, LR"(\SystemApps\MicrosoftWindows.Client.CBS_cw5n1h2txyewy\vcruntime140_app.dll)");
+            LoadLibrary(szRuntimeDllPath);
 
-        wcscpy_s(szRuntimeDllPath, szWindowsDirectory);
-        wcscat_s(szRuntimeDllPath, LR"(\SystemApps\MicrosoftWindows.Client.CBS_cw5n1h2txyewy\vcruntime140_1_app.dll)");
-        LoadLibrary(szRuntimeDllPath);
+            wcscpy_s(szRuntimeDllPath, szWindowsDirectory);
+            wcscat_s(szRuntimeDllPath, LR"(\SystemApps\MicrosoftWindows.Client.CBS_cw5n1h2txyewy\vcruntime140_1_app.dll)");
+            LoadLibrary(szRuntimeDllPath);
 
-        wcscpy_s(szRuntimeDllPath, szWindowsDirectory);
-        wcscat_s(szRuntimeDllPath, LR"(\SystemApps\MicrosoftWindows.Client.CBS_cw5n1h2txyewy\msvcp140_app.dll)");
-        LoadLibrary(szRuntimeDllPath);
+            wcscpy_s(szRuntimeDllPath, szWindowsDirectory);
+            wcscat_s(szRuntimeDllPath, LR"(\SystemApps\MicrosoftWindows.Client.CBS_cw5n1h2txyewy\msvcp140_app.dll)");
+            LoadLibrary(szRuntimeDllPath);
 
-        module = LoadLibrary(szTargetDllPath);
+            module = LoadLibrary(szTargetDllPath);
+        }
+
         taskbarHooks = taskbarHooks11_22H2;
         taskbarHooksSize = ARRAYSIZE(taskbarHooks11_22H2);
     }
