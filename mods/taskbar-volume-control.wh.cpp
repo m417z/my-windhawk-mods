@@ -16,6 +16,10 @@
 # Taskbar Volume Control
 Control the system volume by scrolling over the taskbar.
 
+Note: Since Windhawk is running as administrator, volume scrolling might not
+work while it's focused. If scrolling doesn't work for you, try to minimize
+Windhawk and try again.
+
 ![demonstration](https://i.imgur.com/S55wMVn.gif)
 */
 // ==/WindhawkModReadme==
@@ -1577,7 +1581,7 @@ LRESULT CALLBACK TaskbarWindowSubclassProc(
 				while (hBridgeWnd) {
 					RECT rcBridge;
 					GetWindowRect(hBridgeWnd, &rcBridge);
-					if(rcBridge.left != rcTaskbar.left ||
+					if (rcBridge.left != rcTaskbar.left ||
 						rcBridge.top != rcTaskbar.top ||
 						rcBridge.right != rcTaskbar.right ||
 						rcBridge.bottom != rcTaskbar.bottom) {

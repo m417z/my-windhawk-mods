@@ -21,6 +21,9 @@ For example, notice the two separate buttons for Notepad on the screenshot:
 
 ![Demonstration](https://i.imgur.com/uLITliK.png)
 
+Note: After enabling the mod, the relevant windows must be reopened to apply the
+grouping settings.
+
 ## Supported Windows versions
 
 Windows 10 64-bit and Windows 11.

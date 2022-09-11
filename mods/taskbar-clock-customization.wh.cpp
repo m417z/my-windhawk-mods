@@ -867,7 +867,7 @@ BOOL Wh_ModInit(void)
                 WCHAR szRuntimeDllPath[MAX_PATH];
 
                 PWSTR pProgramFilesDirectory;
-			    if (SUCCEEDED(SHGetKnownFolderPath(FOLDERID_ProgramFiles, 0, nullptr, &pProgramFilesDirectory))) {
+                if (SUCCEEDED(SHGetKnownFolderPath(FOLDERID_ProgramFiles, 0, nullptr, &pProgramFilesDirectory))) {
                     wcscpy_s(szRuntimeDllPath, pProgramFilesDirectory);
                     wcscat_s(szRuntimeDllPath, LR"(\WindowsApps\Microsoft.VCLibs.140.00_14.0.29231.0_x64__8wekyb3d8bbwe\vcruntime140_app.dll)");
                     LoadLibrary(szRuntimeDllPath);
