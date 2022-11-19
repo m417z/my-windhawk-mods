@@ -20,6 +20,11 @@ Note: Since Windhawk is running as administrator, volume scrolling might not
 work while it's focused. If scrolling doesn't work for you, try to minimize
 Windhawk and try again.
 
+Note: Some laptop touchpads might not support scrolling over the taskbar. A
+workaround is to use the "pinch to zoom" gesture. For details, check out [a
+relevant
+issue](https://tweaker.userecho.com/topics/826-scroll-on-trackpadtouchpad-doesnt-trigger-mouse-wheel-options).
+
 ![demonstration](https://i.imgur.com/S55wMVn.gif)
 */
 // ==/WindhawkModReadme==
