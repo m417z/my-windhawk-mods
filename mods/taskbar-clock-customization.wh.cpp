@@ -2,7 +2,7 @@
 // @id              taskbar-clock-customization
 // @name            Taskbar Clock Customization
 // @description     Customize the taskbar clock - add seconds, define a custom date/time format, add a news feed, and more
-// @version         1.0.5
+// @version         1.0.6
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
@@ -76,9 +76,12 @@ Only Windows 10 64-bit and Windows 11 are supported.
 - WebContentsMaxLength: 28
   $name: Web content maximum length
   $description: Longer strings will be truncated with ellipsis
-- WebContentsUpdateInterval: 10
+- WebContentsUpdateInterval: "0.5"
   $name: Web content update interval
   $description: The update interval, in minutes, of the web content
+- WebContentsIterate: true
+  $name: Rotate web content blocks
+  $description: If no changes are found during a web content update, instead rotate to the next web content block
 */
 // ==/WindhawkModSettings==
 
@@ -104,7 +107,8 @@ struct {
     PCWSTR webContentsStart;
     PCWSTR webContentsEnd;
     int webContentsMaxLength;
-    int webContentsUpdateInterval;
+    float webContentsUpdateInterval;
+    bool webContentsIterate;
 } g_settings;
 
 #define FORMATTED_BUFFER_SIZE 256
@@ -204,12 +208,24 @@ int StringCopyTruncated(PWSTR dest, size_t destSize, PCWSTR src, bool* truncated
     return i;
 }
 
+LPBYTE webContentsLast;
+int webContentsIndex = 0;
+
 void UpdateWebContent()
 {
     DWORD dwLength;
     LPBYTE pUrlContent = GetUrlContent(g_settings.webContentsUrl, &dwLength);
     if (!pUrlContent) {
         return;
+    }
+    if (g_settings.webContentsIterate) {
+        if (webContentsLast && pUrlContent == webContentsLast) {
+            webContentsIndex += 1;
+        } else {
+            webContentsIndex = 0;
+            webContentsLast = pUrlContent;
+        }
+        Wh_Log(L"Idx: %d", webContentsIndex);
     }
 
     // Assume UTF-8.
@@ -220,6 +236,18 @@ void UpdateWebContent()
     FreeUrlContent(pUrlContent);
 
     PWSTR block = wcsstr(unicodeContent, g_settings.webContentsBlockStart);
+    if (g_settings.webContentsIterate) {
+        int i = 0;
+        while (i < webContentsIndex) {
+            block = wcsstr(block + 1, g_settings.webContentsBlockStart);
+            if (!block) {
+                webContentsIndex = 0;
+                return UpdateWebContent();
+            }
+            i += 1;
+        }
+        Wh_Log(L"I: %d", i);
+    }
     if (block) {
         PWSTR start = wcsstr(block, g_settings.webContentsStart);
         if (start) {
@@ -253,7 +281,7 @@ DWORD WINAPI WebContentUpdateThread(LPVOID lpThreadParameter)
     while (true) {
         UpdateWebContent();
 
-        DWORD dwWaitResult = WaitForSingleObject(g_webContentUpdateStopEvent, g_settings.webContentsUpdateInterval * 60 * 1000);
+        DWORD dwWaitResult = WaitForSingleObject(g_webContentUpdateStopEvent, static_cast<int>(g_settings.webContentsUpdateInterval * 60 * 1000));
         if (dwWaitResult != WAIT_TIMEOUT) {
             break;
         }
@@ -686,7 +714,8 @@ void LoadSettings()
     g_settings.webContentsStart = Wh_GetStringSetting(L"WebContentsStart");
     g_settings.webContentsEnd = Wh_GetStringSetting(L"WebContentsEnd");
     g_settings.webContentsMaxLength = Wh_GetIntSetting(L"WebContentsMaxLength");
-    g_settings.webContentsUpdateInterval = Wh_GetIntSetting(L"WebContentsUpdateInterval");
+    g_settings.webContentsUpdateInterval = std::stof(Wh_GetStringSetting(L"WebContentsUpdateInterval"));
+    g_settings.webContentsIterate = Wh_GetIntSetting(L"WebContentsIterate");
 }
 
 void FreeSettings()
