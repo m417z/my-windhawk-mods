@@ -520,8 +520,7 @@ BOOL Wh_ModInit() {
 
     LoadSettings();
 
-    SYMBOL_HOOK
-    symbolHooks[] = {
+    SYMBOL_HOOK symbolHooks[] = {
         // Win11 only:
         {{
              LR"(public: virtual long __cdecl CTaskListWnd::HandleClick(struct ITaskGroup *,struct ITaskItem *,struct winrt::Windows::System::LauncherOptions const &))",
