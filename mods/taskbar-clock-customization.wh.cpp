@@ -873,7 +873,7 @@ WinVersion GetWindowsVersion() {
         case 10:
             if (build < 22000)
                 return WinVersion::Win10;
-            else if (build < 22621)
+            else if (build <= 22000)
                 return WinVersion::Win11;
             else
                 return WinVersion::Win11_22H2;
