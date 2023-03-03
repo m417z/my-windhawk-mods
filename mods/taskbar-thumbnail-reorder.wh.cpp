@@ -46,10 +46,6 @@ similar tool), enable the relevant option in the mod's settings.
 #include <unordered_set>
 #include <vector>
 
-struct {
-    bool oldTaskbarOnWin11;
-} g_settings;
-
 enum class WinVersion {
     Unsupported,
     Win10,
@@ -860,10 +856,6 @@ bool HookSymbols(PCWSTR cacheId,
     return true;
 }
 
-void LoadSettings() {
-    g_settings.oldTaskbarOnWin11 = Wh_GetIntSetting(L"oldTaskbarOnWin11");
-}
-
 BOOL Wh_ModInit() {
     Wh_Log(L">");
 
@@ -873,7 +865,10 @@ BOOL Wh_ModInit() {
         return FALSE;
     }
 
-    LoadSettings();
+    if (g_winVersion >= WinVersion::Win11 &&
+        Wh_GetIntSetting(L"oldTaskbarOnWin11")) {
+        g_winVersion = WinVersion::Win10;
+    }
 
     SYMBOL_HOOK symbolHooks[] = {
         {{
@@ -899,7 +894,7 @@ BOOL Wh_ModInit() {
 
     HMODULE module;
 
-    if (g_winVersion <= WinVersion::Win10 || g_settings.oldTaskbarOnWin11) {
+    if (g_winVersion <= WinVersion::Win10) {
         module = GetModuleHandle(nullptr);
         if (!HookSymbols(L"explorer.exe", module, symbolHooks,
                          ARRAYSIZE(symbolHooks))) {
@@ -954,10 +949,4 @@ void Wh_ModUninit() {
     for (HWND hWnd : g_thumbnailWindows) {
         UnsubclassThumbnailWindow(hWnd);
     }
-}
-
-void Wh_ModSettingsChanged() {
-    Wh_Log(L">");
-
-    LoadSettings();
 }
