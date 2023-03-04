@@ -60,9 +60,10 @@ After:
 #include <winrt/Windows.UI.Xaml.Markup.h>
 #include <winrt/Windows.UI.Xaml.Media.h>
 
-#include <memory>
-#include <regex>
-#include <type_traits>
+#include <algorithm>
+#include <string>
+#include <string_view>
+#include <vector>
 
 // #define EXTRA_DBG_LOG
 
@@ -577,46 +578,204 @@ void ApplySettings() {
 }
 
 struct SYMBOL_HOOK {
-    std::wregex symbolRegex;
+    std::vector<std::wstring_view> symbols;
     void** pOriginalFunction;
     void* hookFunction = nullptr;
     bool optional = false;
 };
 
 bool HookSymbols(HMODULE module,
-                 SYMBOL_HOOK* symbolHooks,
+                 const SYMBOL_HOOK* symbolHooks,
                  size_t symbolHooksCount) {
-    WH_FIND_SYMBOL symbol;
-    HANDLE findSymbol = Wh_FindFirstSymbol(module, nullptr, &symbol);
-    if (!findSymbol) {
+    const WCHAR cacheVer = L'1';
+    const WCHAR cacheSep = L'#';
+    constexpr size_t cacheMaxSize = 10240;
+
+    WCHAR moduleFilePath[MAX_PATH];
+    if (!GetModuleFileName(module, moduleFilePath, ARRAYSIZE(moduleFilePath))) {
+        Wh_Log(L"GetModuleFileName failed");
+        return false;
+    }
+
+    PCWSTR moduleFileName = wcsrchr(moduleFilePath, L'\\');
+    if (!moduleFileName) {
+        Wh_Log(L"GetModuleFileName returned unsupported path");
+        return false;
+    }
+
+    moduleFileName++;
+
+    WCHAR cacheBuffer[cacheMaxSize + 1];
+    std::wstring cacheStrKey = std::wstring(L"symbol-cache-") + moduleFileName;
+    Wh_GetStringValue(cacheStrKey.c_str(), cacheBuffer, ARRAYSIZE(cacheBuffer));
+
+    std::wstring_view cacheBufferView(cacheBuffer);
+
+    // https://stackoverflow.com/a/46931770
+    auto splitStringView = [](std::wstring_view s, WCHAR delimiter) {
+        size_t pos_start = 0, pos_end;
+        std::wstring_view token;
+        std::vector<std::wstring_view> res;
+
+        while ((pos_end = s.find(delimiter, pos_start)) !=
+               std::wstring_view::npos) {
+            token = s.substr(pos_start, pos_end - pos_start);
+            pos_start = pos_end + 1;
+            res.push_back(token);
+        }
+
+        res.push_back(s.substr(pos_start));
+        return res;
+    };
+
+    auto cacheParts = splitStringView(cacheBufferView, cacheSep);
+
+    std::vector<bool> symbolResolved(symbolHooksCount, false);
+    std::wstring newSystemCacheStr;
+
+    auto onSymbolResolved = [symbolHooks, symbolHooksCount, &symbolResolved,
+                             cacheSep, &newSystemCacheStr,
+                             module](std::wstring_view symbol, void* address) {
+        for (size_t i = 0; i < symbolHooksCount; i++) {
+            if (symbolResolved[i]) {
+                continue;
+            }
+
+            bool match = false;
+            for (auto hookSymbol : symbolHooks[i].symbols) {
+                if (hookSymbol == symbol) {
+                    match = true;
+                    break;
+                }
+            }
+
+            if (!match) {
+                continue;
+            }
+
+            if (symbolHooks[i].hookFunction) {
+                Wh_SetFunctionHook(address, symbolHooks[i].hookFunction,
+                                   symbolHooks[i].pOriginalFunction);
+                Wh_Log(L"Hooked %p: %.*s", address, symbol.length(),
+                       symbol.data());
+            } else {
+                *symbolHooks[i].pOriginalFunction = address;
+                Wh_Log(L"Found %p: %.*s", address, symbol.length(),
+                       symbol.data());
+            }
+
+            symbolResolved[i] = true;
+
+            newSystemCacheStr += cacheSep;
+            newSystemCacheStr += symbol;
+            newSystemCacheStr += cacheSep;
+            newSystemCacheStr +=
+                std::to_wstring((ULONG_PTR)address - (ULONG_PTR)module);
+
+            break;
+        }
+    };
+
+    IMAGE_DOS_HEADER* dosHeader = (IMAGE_DOS_HEADER*)module;
+    IMAGE_NT_HEADERS* header =
+        (IMAGE_NT_HEADERS*)((BYTE*)dosHeader + dosHeader->e_lfanew);
+    auto timeStamp = std::to_wstring(header->FileHeader.TimeDateStamp);
+    auto imageSize = std::to_wstring(header->OptionalHeader.SizeOfImage);
+
+    newSystemCacheStr += cacheVer;
+    newSystemCacheStr += cacheSep;
+    newSystemCacheStr += timeStamp;
+    newSystemCacheStr += cacheSep;
+    newSystemCacheStr += imageSize;
+
+    if (cacheParts.size() >= 3 &&
+        cacheParts[0] == std::wstring_view(&cacheVer, 1) &&
+        cacheParts[1] == timeStamp && cacheParts[2] == imageSize) {
+        for (size_t i = 3; i + 1 < cacheParts.size(); i += 2) {
+            auto symbol = cacheParts[i];
+            auto address = cacheParts[i + 1];
+            if (address.length() == 0) {
+                continue;
+            }
+
+            void* addressPtr =
+                (void*)(std::stoull(std::wstring(address), nullptr, 10) +
+                        (ULONG_PTR)module);
+
+            onSymbolResolved(symbol, addressPtr);
+        }
+
+        for (size_t i = 0; i < symbolHooksCount; i++) {
+            if (symbolResolved[i] || !symbolHooks[i].optional) {
+                continue;
+            }
+
+            int noAddressMatchCount = 0;
+            for (size_t j = 3; j + 1 < cacheParts.size(); j += 2) {
+                auto symbol = cacheParts[j];
+                auto address = cacheParts[j + 1];
+                if (address.length() != 0) {
+                    continue;
+                }
+
+                for (auto hookSymbol : symbolHooks[i].symbols) {
+                    if (hookSymbol == symbol) {
+                        noAddressMatchCount++;
+                        break;
+                    }
+                }
+            }
+
+            if (noAddressMatchCount == symbolHooks[i].symbols.size()) {
+                Wh_Log(L"Optional symbol %d doesn't exist (from cache)", i);
+                symbolResolved[i] = true;
+            }
+        }
+
+        if (std::all_of(symbolResolved.begin(), symbolResolved.end(),
+                        [](bool b) { return b; })) {
+            return true;
+        }
+    }
+
+    Wh_Log(L"Couldn't resolve all symbols from cache");
+
+    WH_FIND_SYMBOL findSymbol;
+    HANDLE findSymbolHandle = Wh_FindFirstSymbol(module, nullptr, &findSymbol);
+    if (!findSymbolHandle) {
+        Wh_Log(L"Wh_FindFirstSymbol failed");
         return false;
     }
 
     do {
-        for (size_t i = 0; i < symbolHooksCount; i++) {
-            if (!*symbolHooks[i].pOriginalFunction &&
-                std::regex_match(symbol.symbol, symbolHooks[i].symbolRegex)) {
-                if (symbolHooks[i].hookFunction) {
-                    Wh_SetFunctionHook(symbol.address,
-                                       symbolHooks[i].hookFunction,
-                                       symbolHooks[i].pOriginalFunction);
-                    Wh_Log(L"Hooked %p (%s)", symbol.address, symbol.symbol);
-                } else {
-                    *symbolHooks[i].pOriginalFunction = symbol.address;
-                    Wh_Log(L"Found %p (%s)", symbol.address, symbol.symbol);
-                }
-                break;
-            }
-        }
-    } while (Wh_FindNextSymbol(findSymbol, &symbol));
+        onSymbolResolved(findSymbol.symbol, findSymbol.address);
+    } while (Wh_FindNextSymbol(findSymbolHandle, &findSymbol));
 
-    Wh_FindCloseSymbol(findSymbol);
+    Wh_FindCloseSymbol(findSymbolHandle);
 
     for (size_t i = 0; i < symbolHooksCount; i++) {
-        if (!symbolHooks[i].optional && !*symbolHooks[i].pOriginalFunction) {
-            Wh_Log(L"Missing symbol: %d", i);
+        if (symbolResolved[i]) {
+            continue;
+        }
+
+        if (!symbolHooks[i].optional) {
+            Wh_Log(L"Unresolved symbol: %d", i);
             return false;
         }
+
+        Wh_Log(L"Optional symbol %d doesn't exist", i);
+
+        for (auto hookSymbol : symbolHooks[i].symbols) {
+            newSystemCacheStr += cacheSep;
+            newSystemCacheStr += hookSymbol;
+            newSystemCacheStr += cacheSep;
+        }
+    }
+
+    if (newSystemCacheStr.length() <= cacheMaxSize) {
+        Wh_SetStringValue(cacheStrKey.c_str(), newSystemCacheStr.c_str());
+    } else {
+        Wh_Log(L"Cache is too large (%zu)", newSystemCacheStr.length());
     }
 
     return true;
@@ -630,36 +789,58 @@ bool HookTaskbarDllSymbols() {
     }
 
     SYMBOL_HOOK symbolHooks[] = {
-        {std::wregex(
-             LR"(protected: struct ITaskBtnGroup \* __ptr64 __cdecl CTaskListWnd::_GetTBGroupFromGroup\(struct ITaskGroup \* __ptr64,int \* __ptr64\) __ptr64)"),
-         (void**)&CTaskListWnd__GetTBGroupFromGroup_Original, nullptr},
-
-        {std::wregex(
-             LR"(public: virtual int __cdecl CTaskBtnGroup::GetNumItems\(void\) __ptr64)"),
-         (void**)&CTaskBtnGroup_GetNumItems_Original, nullptr},
-
-        {std::wregex(
-             LR"(public: virtual struct ITaskItem \* __ptr64 __cdecl CTaskBtnGroup::GetTaskItem\(int\) __ptr64)"),
-         (void**)&CTaskBtnGroup_GetTaskItem_Original, nullptr},
-
-        {std::wregex(
-             LR"(public: virtual long __cdecl CTaskGroup::GetTitleText\(struct ITaskItem \* __ptr64,unsigned short \* __ptr64,int\) __ptr64)"),
-         (void**)&CTaskGroup_GetTitleText_Original, nullptr},
-
-        {std::wregex(
-             LR"(public: virtual bool __cdecl IconContainer::IsStorageRecreationRequired\(class CCoSimpleArray<unsigned int,4294967294,class CSimpleArrayStandardCompareHelper<unsigned int> > const & __ptr64,enum IconContainerFlags\) __ptr64)"),
-         (void**)&IconContainer_IsStorageRecreationRequired_Original,
-         (void*)IconContainer_IsStorageRecreationRequired_Hook},
-
-        {std::wregex(
-             LR"(public: virtual void __cdecl CTaskListWnd::GroupChanged\(struct ITaskGroup \* __ptr64,enum winrt::WindowsUdk::UI::Shell::TaskGroupProperty\) __ptr64)"),
-         (void**)&CTaskListWnd_GroupChanged_Original,
-         (void*)CTaskListWnd_GroupChanged_Hook},
-
-        {std::wregex(
-             LR"(public: virtual long __cdecl CTaskListWnd::TaskDestroyed\(struct ITaskGroup \* __ptr64,struct ITaskItem \* __ptr64,enum TaskDestroyedFlags\) __ptr64)"),
-         (void**)&CTaskListWnd_TaskDestroyed_Original,
-         (void*)CTaskListWnd_TaskDestroyed_Hook},
+        {
+            {
+                LR"(protected: struct ITaskBtnGroup * __cdecl CTaskListWnd::_GetTBGroupFromGroup(struct ITaskGroup *,int *))",
+                LR"(protected: struct ITaskBtnGroup * __ptr64 __cdecl CTaskListWnd::_GetTBGroupFromGroup(struct ITaskGroup * __ptr64,int * __ptr64) __ptr64)",
+            },
+            (void**)&CTaskListWnd__GetTBGroupFromGroup_Original,
+        },
+        {
+            {
+                LR"(public: virtual int __cdecl CTaskBtnGroup::GetNumItems(void))",
+                LR"(public: virtual int __cdecl CTaskBtnGroup::GetNumItems(void) __ptr64)",
+            },
+            (void**)&CTaskBtnGroup_GetNumItems_Original,
+        },
+        {
+            {
+                LR"(public: virtual struct ITaskItem * __cdecl CTaskBtnGroup::GetTaskItem(int))",
+                LR"(public: virtual struct ITaskItem * __ptr64 __cdecl CTaskBtnGroup::GetTaskItem(int) __ptr64)",
+            },
+            (void**)&CTaskBtnGroup_GetTaskItem_Original,
+        },
+        {
+            {
+                LR"(public: virtual long __cdecl CTaskGroup::GetTitleText(struct ITaskItem *,unsigned short *,int))",
+                LR"(public: virtual long __cdecl CTaskGroup::GetTitleText(struct ITaskItem * __ptr64,unsigned short * __ptr64,int) __ptr64)",
+            },
+            (void**)&CTaskGroup_GetTitleText_Original,
+        },
+        {
+            {
+                LR"(public: virtual bool __cdecl IconContainer::IsStorageRecreationRequired(class CCoSimpleArray<unsigned int,4294967294,class CSimpleArrayStandardCompareHelper<unsigned int> > const &,enum IconContainerFlags))",
+                LR"(public: virtual bool __cdecl IconContainer::IsStorageRecreationRequired(class CCoSimpleArray<unsigned int,4294967294,class CSimpleArrayStandardCompareHelper<unsigned int> > const & __ptr64,enum IconContainerFlags) __ptr64)",
+            },
+            (void**)&IconContainer_IsStorageRecreationRequired_Original,
+            (void*)IconContainer_IsStorageRecreationRequired_Hook,
+        },
+        {
+            {
+                LR"(public: virtual void __cdecl CTaskListWnd::GroupChanged(struct ITaskGroup *,enum winrt::WindowsUdk::UI::Shell::TaskGroupProperty))",
+                LR"(public: virtual void __cdecl CTaskListWnd::GroupChanged(struct ITaskGroup * __ptr64,enum winrt::WindowsUdk::UI::Shell::TaskGroupProperty) __ptr64)",
+            },
+            (void**)&CTaskListWnd_GroupChanged_Original,
+            (void*)CTaskListWnd_GroupChanged_Hook,
+        },
+        {
+            {
+                LR"(public: virtual long __cdecl CTaskListWnd::TaskDestroyed(struct ITaskGroup *,struct ITaskItem *,enum TaskDestroyedFlags))",
+                LR"(public: virtual long __cdecl CTaskListWnd::TaskDestroyed(struct ITaskGroup * __ptr64,struct ITaskItem * __ptr64,enum TaskDestroyedFlags) __ptr64)",
+            },
+            (void**)&CTaskListWnd_TaskDestroyed_Original,
+            (void*)CTaskListWnd_TaskDestroyed_Hook,
+        },
     };
 
     return HookSymbols(module, symbolHooks, ARRAYSIZE(symbolHooks));
@@ -764,27 +945,41 @@ bool HookTaskbarViewDllSymbols() {
     }
 
     SYMBOL_HOOK symbolHooks[] = {
-        {std::wregex(LR"(__real@4048000000000000)"),
-         (void**)&double_48_value_Original, nullptr},
-
-        {std::wregex(
-             LR"(public: virtual int __cdecl winrt::impl::produce<struct winrt::Taskbar::implementation::TaskListButton,struct winrt::Taskbar::ITaskListButton>::get_IsRunning\(bool \* __ptr64\) __ptr64)"),
-         (void**)&ITaskListButton_get_IsRunning_Original, nullptr},
-
-        {std::wregex(
-             LR"(private: void __cdecl winrt::Taskbar::implementation::TaskListButton::UpdateVisualStates\(void\) __ptr64)"),
-         (void**)&TaskListButton_UpdateVisualStates_Original,
-         (void*)TaskListButton_UpdateVisualStates_Hook},
-
-        {std::wregex(
-             LR"(private: void __cdecl winrt::Taskbar::implementation::TaskListButton::UpdateButtonPadding\(void\) __ptr64)"),
-         (void**)&TaskListButton_UpdateButtonPadding_Original,
-         (void*)TaskListButton_UpdateButtonPadding_Hook},
-
-        {std::wregex(
-             LR"(public: void __cdecl winrt::Taskbar::implementation::TaskListButton::Icon\(struct winrt::Windows::Storage::Streams::IRandomAccessStream\) __ptr64)"),
-         (void**)&TaskListButton_Icon_Original,
-         (void*)TaskListButton_Icon_Hook},
+        {
+            {LR"(__real@4048000000000000)"},
+            (void**)&double_48_value_Original,
+        },
+        {
+            {
+                LR"(public: virtual int __cdecl winrt::impl::produce<struct winrt::Taskbar::implementation::TaskListButton,struct winrt::Taskbar::ITaskListButton>::get_IsRunning(bool *))",
+                LR"(public: virtual int __cdecl winrt::impl::produce<struct winrt::Taskbar::implementation::TaskListButton,struct winrt::Taskbar::ITaskListButton>::get_IsRunning(bool * __ptr64) __ptr64)",
+            },
+            (void**)&ITaskListButton_get_IsRunning_Original,
+        },
+        {
+            {
+                LR"(private: void __cdecl winrt::Taskbar::implementation::TaskListButton::UpdateVisualStates(void))",
+                LR"(private: void __cdecl winrt::Taskbar::implementation::TaskListButton::UpdateVisualStates(void) __ptr64)",
+            },
+            (void**)&TaskListButton_UpdateVisualStates_Original,
+            (void*)TaskListButton_UpdateVisualStates_Hook,
+        },
+        {
+            {
+                LR"(private: void __cdecl winrt::Taskbar::implementation::TaskListButton::UpdateButtonPadding(void))",
+                LR"(private: void __cdecl winrt::Taskbar::implementation::TaskListButton::UpdateButtonPadding(void) __ptr64)",
+            },
+            (void**)&TaskListButton_UpdateButtonPadding_Original,
+            (void*)TaskListButton_UpdateButtonPadding_Hook,
+        },
+        {
+            {
+                LR"(public: void __cdecl winrt::Taskbar::implementation::TaskListButton::Icon(struct winrt::Windows::Storage::Streams::IRandomAccessStream))",
+                LR"(public: void __cdecl winrt::Taskbar::implementation::TaskListButton::Icon(struct winrt::Windows::Storage::Streams::IRandomAccessStream) __ptr64)",
+            },
+            (void**)&TaskListButton_Icon_Original,
+            (void*)TaskListButton_Icon_Hook,
+        },
     };
 
     return HookSymbols(module, symbolHooks, ARRAYSIZE(symbolHooks));
