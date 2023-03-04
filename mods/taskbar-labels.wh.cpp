@@ -9,7 +9,7 @@
 // @homepage        https://m417z.com/
 // @include         explorer.exe
 // @architecture    x86-64
-// @compilerOptions -lole32 -lruntimeobject
+// @compilerOptions -loleaut32 -lole32 -lruntimeobject
 // ==/WindhawkMod==
 
 // Source code is published under The GNU General Public License v3.0.
@@ -47,16 +47,18 @@ After:
 */
 // ==/WindhawkModSettings==
 
+#undef GetCurrentTime
+
 #include <initguid.h>  // must come before knownfolders.h
 
-#include <hstring.h>
 #include <inspectable.h>
 #include <knownfolders.h>
-#include <roapi.h>
 #include <shlobj.h>
-#include <winstring.h>
-#include <wrl/client.h>
-#include <wrl/wrappers/corewrappers.h>
+
+#include <winrt/Windows.Foundation.Collections.h>
+#include <winrt/Windows.UI.Xaml.Controls.h>
+#include <winrt/Windows.UI.Xaml.Markup.h>
+#include <winrt/Windows.UI.Xaml.Media.h>
 
 #include <memory>
 #include <regex>
@@ -75,885 +77,20 @@ bool g_unloading = false;
 #define SPI_SETLOGICALDPIOVERRIDE 0x009F
 #endif
 
-////////////////////////////////////////////////////////////////////////////////
-
-using Microsoft::WRL::ComPtr;
-using Microsoft::WRL::Wrappers::HStringReference;
-
-using HString = std::unique_ptr<std::remove_pointer_t<HSTRING>,
-                                decltype(&WindowsDeleteString)>;
-
-interface IVector : public IInspectable {
-    // read methods
-    virtual HRESULT STDMETHODCALLTYPE GetAt(_In_opt_ unsigned index,
-                                            _Out_ void** item) = 0;
-    virtual /* propget */ HRESULT STDMETHODCALLTYPE
-    get_Size(_Out_ unsigned* size) = 0;
-    virtual HRESULT STDMETHODCALLTYPE
-    GetView(_Outptr_result_maybenull_ void* view) = 0;
-    virtual HRESULT STDMETHODCALLTYPE IndexOf(_In_opt_ void* value,
-                                              _Out_ unsigned* index,
-                                              _Out_ boolean* found) = 0;
-
-    // write methods
-    virtual HRESULT STDMETHODCALLTYPE SetAt(_In_ unsigned index,
-                                            _In_opt_ void* item) = 0;
-    virtual HRESULT STDMETHODCALLTYPE InsertAt(_In_ unsigned index,
-                                               _In_opt_ void* item) = 0;
-    virtual HRESULT STDMETHODCALLTYPE RemoveAt(_In_ unsigned index) = 0;
-    virtual HRESULT STDMETHODCALLTYPE Append(_In_opt_ void* item) = 0;
-    virtual HRESULT STDMETHODCALLTYPE RemoveAtEnd() = 0;
-    virtual HRESULT STDMETHODCALLTYPE Clear() = 0;
-
-    // bulk transfer methods
-    virtual HRESULT STDMETHODCALLTYPE
-    GetMany(_In_ unsigned startIndex,
-            _In_ unsigned capacity,
-            _Out_writes_to_(capacity, *actual) void** value,
-            _Out_ unsigned* actual) = 0;
-    virtual HRESULT STDMETHODCALLTYPE
-    ReplaceAll(_In_ unsigned count, _In_reads_(count) void** value) = 0;
-};
-
-// Some of the definitions below are based on the source code of Explorer
-// Patcher. Reference:
-// https://github.com/valinet/ExplorerPatcher/blob/db576425272023b1ead811e7627823cb8b5517f2/ExplorerPatcher/lvt.h
-
-typedef struct _Windows_UI_Xaml_Thickness {
-    double Left;
-    double Top;
-    double Right;
-    double Bottom;
-} Windows_UI_Xaml_Thickness;
-
-typedef enum _Windows_UI_Xaml_Visibility {
-    Windows_UI_Xaml_Visibility_Visible = 0,
-    Windows_UI_Xaml_Visibility_Collapsed = 1
-} Windows_UI_Xaml_Visibility;
-
-typedef enum _Windows_UI_Xaml_HorizontalAlignment {
-    Windows_UI_Xaml_HorizontalAlignment_Left = 0,
-    Windows_UI_Xaml_HorizontalAlignment_Center = 1,
-    Windows_UI_Xaml_HorizontalAlignment_Right = 2,
-    Windows_UI_Xaml_HorizontalAlignment_Stretch = 3
-} Windows_UI_Xaml_HorizontalAlignment;
-
-#pragma region "Windows.UI.Xaml.IDependencyObject"
-
-DEFINE_GUID(IID_Windows_UI_Xaml_IDependencyObject,
-            0x5c526665,
-            0xf60e,
-            0x4912,
-            0xaf,
-            0x59,
-            0x5f,
-            0xe0,
-            0x68,
-            0x0f,
-            0x08,
-            0x9d);
-
-interface Windows_UI_Xaml_IDependencyObject : public IInspectable {
-    virtual HRESULT STDMETHODCALLTYPE GetValue(
-        /* [in] */ __RPC__in IInspectable* dp,
-        /* [out] */ __RPC__out IInspectable** result) = 0;
-
-    virtual HRESULT STDMETHODCALLTYPE SetValue(
-        /* [in] */ __RPC__in IInspectable* dp,
-        /* [in] */ __RPC__in IInspectable* value) = 0;
-};
-
-#pragma endregion
-
-#pragma region "Windows.UI.Xaml.Markup.IXamlReaderStatics"
-
-DEFINE_GUID(IID_Windows_UI_Xaml_Markup_IXamlReaderStatics,
-            0x9891c6bd,
-            0x534f,
-            0x4955,
-            0xb8,
-            0x5a,
-            0x8a,
-            0x8d,
-            0xc0,
-            0xdc,
-            0xa6,
-            0x02);
-
-interface Windows_UI_Xaml_Markup_IXamlReaderStatics : public IInspectable {
-    virtual HRESULT STDMETHODCALLTYPE Load(
-        /* [in] */ __RPC__in HSTRING xaml,
-        /* [out][retval] */ __RPC__deref_out_opt IInspectable**
-            returnValue) = 0;
-
-    virtual HRESULT STDMETHODCALLTYPE LoadWithInitialTemplateValidation(
-        /* [in] */ __RPC__in HSTRING xaml,
-        /* [out][retval] */ __RPC__deref_out_opt IInspectable**
-            returnValue) = 0;
-};
-
-#pragma endregion
-
-#pragma region "Windows.UI.Xaml.IVisualTreeHelperStatics"
-
-DEFINE_GUID(IID_Windows_UI_Xaml_IVisualTreeHelperStatics,
-            0xe75758c4,
-            0xd25d,
-            0x4b1d,
-            0x97,
-            0x1f,
-            0x59,
-            0x6f,
-            0x17,
-            0xf1,
-            0x2b,
-            0xaa);
-
-interface Windows_UI_Xaml_IVisualTreeHelperStatics : public IInspectable {
-    virtual HRESULT STDMETHODCALLTYPE FindElementsInHostCoordinatesPoint() = 0;
-
-    virtual HRESULT STDMETHODCALLTYPE FindElementsInHostCoordinatesRect() = 0;
-
-    virtual HRESULT STDMETHODCALLTYPE
-    FindAllElementsInHostCoordinatesPoint() = 0;
-
-    virtual HRESULT STDMETHODCALLTYPE
-    FindAllElementsInHostCoordinatesRect() = 0;
-
-    virtual HRESULT STDMETHODCALLTYPE GetChild(
-        /* [in] */ __RPC__in Windows_UI_Xaml_IDependencyObject* reference,
-        /* [in] */ __RPC__in INT32 childIndex,
-        /* [out] */ __RPC__out Windows_UI_Xaml_IDependencyObject** result) = 0;
-
-    virtual HRESULT STDMETHODCALLTYPE GetChildrenCount(
-        /* [in] */ __RPC__in Windows_UI_Xaml_IDependencyObject* reference,
-        /* [out] */ __RPC__out INT32* result) = 0;
-
-    virtual HRESULT STDMETHODCALLTYPE GetParent(
-        /* [in] */ __RPC__in Windows_UI_Xaml_IDependencyObject* reference,
-        /* [out] */ __RPC__out Windows_UI_Xaml_IDependencyObject** result) = 0;
-
-    virtual HRESULT STDMETHODCALLTYPE DisconnectChildrenRecursive() = 0;
-};
-
-#pragma endregion
-
-#pragma region "Windows.UI.Xaml.IFrameworkElement"
-
-DEFINE_GUID(IID_Windows_UI_Xaml_IFrameworkElement,
-            0xa391d09b,
-            0x4a99,
-            0x4b7c,
-            0x9d,
-            0x8d,
-            0x6f,
-            0xa5,
-            0xd0,
-            0x1f,
-            0x6f,
-            0xbf);
-
-interface Windows_UI_Xaml_IFrameworkElement : public IInspectable {
-    virtual HRESULT STDMETHODCALLTYPE get_Triggers() = 0;
-
-    virtual HRESULT STDMETHODCALLTYPE get_Resources() = 0;
-
-    virtual HRESULT STDMETHODCALLTYPE put_Resources() = 0;
-
-    virtual HRESULT STDMETHODCALLTYPE get_Tag() = 0;
-
-    virtual HRESULT STDMETHODCALLTYPE put_Tag() = 0;
-
-    virtual HRESULT STDMETHODCALLTYPE get_Language() = 0;
-
-    virtual HRESULT STDMETHODCALLTYPE put_Language() = 0;
-
-    virtual HRESULT STDMETHODCALLTYPE get_ActualWidth(
-        /* [out] */ __RPC__out DOUBLE* value) = 0;
-
-    virtual HRESULT STDMETHODCALLTYPE get_ActualHeight(
-        /* [out] */ __RPC__out DOUBLE* value) = 0;
-
-    virtual HRESULT STDMETHODCALLTYPE get_Width(
-        /* [out] */ __RPC__out DOUBLE* value) = 0;
-
-    virtual HRESULT STDMETHODCALLTYPE put_Width(
-        /* [in] */ __RPC__in DOUBLE value) = 0;
-
-    virtual HRESULT STDMETHODCALLTYPE get_Height(
-        /* [out] */ __RPC__out DOUBLE* value) = 0;
-
-    virtual HRESULT STDMETHODCALLTYPE put_Height(
-        /* [in] */ __RPC__in DOUBLE value) = 0;
-
-    virtual HRESULT STDMETHODCALLTYPE get_MinWidth() = 0;
-
-    virtual HRESULT STDMETHODCALLTYPE put_MinWidth() = 0;
-
-    virtual HRESULT STDMETHODCALLTYPE get_MaxWidth() = 0;
-
-    virtual HRESULT STDMETHODCALLTYPE put_MaxWidth() = 0;
-
-    virtual HRESULT STDMETHODCALLTYPE get_MinHeight() = 0;
-
-    virtual HRESULT STDMETHODCALLTYPE put_MinHeight() = 0;
-
-    virtual HRESULT STDMETHODCALLTYPE get_MaxHeight() = 0;
-
-    virtual HRESULT STDMETHODCALLTYPE put_MaxHeight() = 0;
-
-    virtual HRESULT STDMETHODCALLTYPE get_HorizontalAlignment(
-        /* [out] */ __RPC__out int32_t* value) = 0;
-
-    virtual HRESULT STDMETHODCALLTYPE put_HorizontalAlignment(
-        /* [in] */ __RPC__in int32_t value) = 0;
-
-    virtual HRESULT STDMETHODCALLTYPE get_VerticalAlignment(
-        /* [out] */ __RPC__out int32_t* value) = 0;
-
-    virtual HRESULT STDMETHODCALLTYPE put_VerticalAlignment(
-        /* [in] */ __RPC__in int32_t value) = 0;
-
-    virtual HRESULT STDMETHODCALLTYPE get_Margin(
-        /* [out] */ __RPC__out Windows_UI_Xaml_Thickness* value) = 0;
-
-    virtual HRESULT STDMETHODCALLTYPE put_Margin(
-        /* [in] */ __RPC__in Windows_UI_Xaml_Thickness value) = 0;
-
-    virtual HRESULT STDMETHODCALLTYPE get_Name(
-        /* [out] */ __RPC__deref_out_opt HSTRING* value) = 0;
-
-    virtual HRESULT STDMETHODCALLTYPE put_Name() = 0;
-
-    // ...
-};
-
-#pragma endregion
-
-#pragma region "Windows.UI.Xaml.Controls.IPanel"
-
-DEFINE_GUID(IID_Windows_UI_Xaml_Controls_IPanel,
-            0xa50a4bbd,
-            0x8361,
-            0x469c,
-            0x90,
-            0xda,
-            0xe9,
-            0xa4,
-            0x0c,
-            0x74,
-            0x74,
-            0xdf);
-
-interface Windows_UI_Xaml_Controls_IPanel : public IInspectable {
-    virtual HRESULT STDMETHODCALLTYPE get_Children(
-        /* [out] */ __RPC__out IVector** value) = 0;
-
-    // ...
-};
-
-#pragma endregion
-
-#pragma region "Windows.UI.Xaml.Controls.ITextBlock"
-
-DEFINE_GUID(IID_Windows_UI_Xaml_Controls_ITextBlock,
-            0xae2d9271,
-            0x3b4a,
-            0x45fc,
-            0x84,
-            0x68,
-            0xf7,
-            0x94,
-            0x95,
-            0x48,
-            0xf4,
-            0xd5);
-
-interface Windows_UI_Xaml_Controls_ITextBlock : public IInspectable {
-    virtual HRESULT STDMETHODCALLTYPE get_FontSize(/*to-be-filled*/) = 0;
-    virtual HRESULT STDMETHODCALLTYPE put_FontSize(/*to-be-filled*/) = 0;
-    virtual HRESULT STDMETHODCALLTYPE get_FontFamily(/*to-be-filled*/) = 0;
-    virtual HRESULT STDMETHODCALLTYPE put_FontFamily(/*to-be-filled*/) = 0;
-    virtual HRESULT STDMETHODCALLTYPE get_FontWeight(/*to-be-filled*/) = 0;
-    virtual HRESULT STDMETHODCALLTYPE put_FontWeight(/*to-be-filled*/) = 0;
-    virtual HRESULT STDMETHODCALLTYPE get_FontStyle(/*to-be-filled*/) = 0;
-    virtual HRESULT STDMETHODCALLTYPE put_FontStyle(/*to-be-filled*/) = 0;
-    virtual HRESULT STDMETHODCALLTYPE get_FontStretch(/*to-be-filled*/) = 0;
-    virtual HRESULT STDMETHODCALLTYPE put_FontStretch(/*to-be-filled*/) = 0;
-    virtual HRESULT STDMETHODCALLTYPE
-        get_CharacterSpacing(/*to-be-filled*/) = 0;
-    virtual HRESULT STDMETHODCALLTYPE
-        put_CharacterSpacing(/*to-be-filled*/) = 0;
-    virtual HRESULT STDMETHODCALLTYPE get_Foreground(/*to-be-filled*/) = 0;
-    virtual HRESULT STDMETHODCALLTYPE put_Foreground(/*to-be-filled*/) = 0;
-    virtual HRESULT STDMETHODCALLTYPE get_TextWrapping(/*to-be-filled*/) = 0;
-    virtual HRESULT STDMETHODCALLTYPE put_TextWrapping(/*to-be-filled*/) = 0;
-    virtual HRESULT STDMETHODCALLTYPE get_TextTrimming(/*to-be-filled*/) = 0;
-    virtual HRESULT STDMETHODCALLTYPE put_TextTrimming(/*to-be-filled*/) = 0;
-    virtual HRESULT STDMETHODCALLTYPE get_TextAlignment(/*to-be-filled*/) = 0;
-    virtual HRESULT STDMETHODCALLTYPE put_TextAlignment(/*to-be-filled*/) = 0;
-
-    virtual HRESULT STDMETHODCALLTYPE get_Text(
-        /* [out] */ __RPC__deref_out_opt HSTRING* value) = 0;
-
-    virtual HRESULT STDMETHODCALLTYPE put_Text(
-        /* [in] */ __RPC__in HSTRING value) = 0;
-
-    virtual HRESULT STDMETHODCALLTYPE get_Inlines(/*to-be-filled*/) = 0;
-    virtual HRESULT STDMETHODCALLTYPE get_Padding(/*to-be-filled*/) = 0;
-    virtual HRESULT STDMETHODCALLTYPE put_Padding(/*to-be-filled*/) = 0;
-    virtual HRESULT STDMETHODCALLTYPE get_LineHeight(/*to-be-filled*/) = 0;
-    virtual HRESULT STDMETHODCALLTYPE put_LineHeight(/*to-be-filled*/) = 0;
-    virtual HRESULT STDMETHODCALLTYPE
-        get_LineStackingStrategy(/*to-be-filled*/) = 0;
-    virtual HRESULT STDMETHODCALLTYPE
-        put_LineStackingStrategy(/*to-be-filled*/) = 0;
-    virtual HRESULT STDMETHODCALLTYPE
-        get_IsTextSelectionEnabled(/*to-be-filled*/) = 0;
-    virtual HRESULT STDMETHODCALLTYPE
-        put_IsTextSelectionEnabled(/*to-be-filled*/) = 0;
-    virtual HRESULT STDMETHODCALLTYPE get_SelectedText(/*to-be-filled*/) = 0;
-    virtual HRESULT STDMETHODCALLTYPE get_ContentStart(/*to-be-filled*/) = 0;
-    virtual HRESULT STDMETHODCALLTYPE get_ContentEnd(/*to-be-filled*/) = 0;
-    virtual HRESULT STDMETHODCALLTYPE get_SelectionStart(/*to-be-filled*/) = 0;
-    virtual HRESULT STDMETHODCALLTYPE get_SelectionEnd(/*to-be-filled*/) = 0;
-    virtual HRESULT STDMETHODCALLTYPE get_BaselineOffset(/*to-be-filled*/) = 0;
-    virtual HRESULT STDMETHODCALLTYPE
-        add_SelectionChanged(/*to-be-filled*/) = 0;
-    virtual HRESULT STDMETHODCALLTYPE
-        remove_SelectionChanged(/*to-be-filled*/) = 0;
-    virtual HRESULT STDMETHODCALLTYPE
-        add_ContextMenuOpening(/*to-be-filled*/) = 0;
-    virtual HRESULT STDMETHODCALLTYPE
-        remove_ContextMenuOpening(/*to-be-filled*/) = 0;
-    virtual HRESULT STDMETHODCALLTYPE SelectAll(/*to-be-filled*/) = 0;
-    virtual HRESULT STDMETHODCALLTYPE Select(/*to-be-filled*/) = 0;
-    virtual HRESULT STDMETHODCALLTYPE Focus(/*to-be-filled*/) = 0;
-};
-
-#pragma endregion
-
-#pragma region "Windows.UI.Xaml.IUIElement"
-
-DEFINE_GUID(IID_Windows_UI_Xaml_IUIElement,
-            0x676d0be9,
-            0xb65c,
-            0x41c6,
-            0xba,
-            0x40,
-            0x58,
-            0xcf,
-            0x87,
-            0xf2,
-            0x01,
-            0xc1);
-
-interface Windows_UI_Xaml_IUIElement : public IInspectable {
-    virtual HRESULT STDMETHODCALLTYPE get_DesiredSize() = 0;
-
-    virtual HRESULT STDMETHODCALLTYPE get_AllowDrop() = 0;
-
-    virtual HRESULT STDMETHODCALLTYPE put_AllowDrop() = 0;
-
-    virtual HRESULT STDMETHODCALLTYPE get_Opacity() = 0;
-
-    virtual HRESULT STDMETHODCALLTYPE put_Opacity() = 0;
-
-    virtual HRESULT STDMETHODCALLTYPE get_Clip() = 0;
-
-    virtual HRESULT STDMETHODCALLTYPE put_Clip() = 0;
-
-    virtual HRESULT STDMETHODCALLTYPE get_RenderTransform() = 0;
-
-    virtual HRESULT STDMETHODCALLTYPE put_RenderTransform() = 0;
-
-    virtual HRESULT STDMETHODCALLTYPE get_Projection() = 0;
-
-    virtual HRESULT STDMETHODCALLTYPE put_Projection() = 0;
-
-    virtual HRESULT STDMETHODCALLTYPE get_RenderTransformOrigin() = 0;
-
-    virtual HRESULT STDMETHODCALLTYPE put_RenderTransformOrigin() = 0;
-
-    virtual HRESULT STDMETHODCALLTYPE get_IsHitTestVisible() = 0;
-
-    virtual HRESULT STDMETHODCALLTYPE put_IsHitTestVisible() = 0;
-
-    virtual HRESULT STDMETHODCALLTYPE get_Visibility(
-        /* [out] */ __RPC__out Windows_UI_Xaml_Visibility* value) = 0;
-
-    virtual HRESULT STDMETHODCALLTYPE put_Visibility(
-        /* [in] */ __RPC__in Windows_UI_Xaml_Visibility value) = 0;
-
-    virtual /* [propget] */ HRESULT STDMETHODCALLTYPE get_RenderSize(
-        /* [out][retval] */ __RPC__out /*ABI::Windows::Foundation::Size*/ void*
-            value) = 0;
-
-    virtual /* [propget] */ HRESULT STDMETHODCALLTYPE get_UseLayoutRounding(
-        /* [out][retval] */ __RPC__out boolean* value) = 0;
-
-    virtual /* [propput] */ HRESULT STDMETHODCALLTYPE put_UseLayoutRounding(
-        /* [in] */ boolean value) = 0;
-
-    virtual /* [propget] */ HRESULT STDMETHODCALLTYPE get_Transitions(
-        /* [out][retval] */
-        __RPC__deref_out_opt /*__FIVector_1_Windows__CUI__CXaml__CMedia__CAnimation__CTransition*/
-        void** value) = 0;
-
-    virtual /* [propput] */ HRESULT STDMETHODCALLTYPE put_Transitions(
-        /* [in] */
-        __RPC__in_opt /*__FIVector_1_Windows__CUI__CXaml__CMedia__CAnimation__CTransition*/
-        void* value) = 0;
-
-    virtual /* [propget] */ HRESULT STDMETHODCALLTYPE get_CacheMode(
-        /* [out][retval] */
-        __RPC__deref_out_opt /*ABI::Windows::UI::Xaml::Media::ICacheMode*/
-        void** value) = 0;
-
-    virtual /* [propput] */ HRESULT STDMETHODCALLTYPE put_CacheMode(
-        /* [in] */ __RPC__in_opt /*ABI::Windows::UI::Xaml::Media::ICacheMode*/
-        void* value) = 0;
-
-    virtual /* [propget] */ HRESULT STDMETHODCALLTYPE get_IsTapEnabled(
-        /* [out][retval] */ __RPC__out boolean* value) = 0;
-
-    virtual /* [propput] */ HRESULT STDMETHODCALLTYPE put_IsTapEnabled(
-        /* [in] */ boolean value) = 0;
-
-    virtual /* [propget] */ HRESULT STDMETHODCALLTYPE get_IsDoubleTapEnabled(
-        /* [out][retval] */ __RPC__out boolean* value) = 0;
-
-    virtual /* [propput] */ HRESULT STDMETHODCALLTYPE put_IsDoubleTapEnabled(
-        /* [in] */ boolean value) = 0;
-
-    virtual /* [propget] */ HRESULT STDMETHODCALLTYPE get_IsRightTapEnabled(
-        /* [out][retval] */ __RPC__out boolean* value) = 0;
-
-    virtual /* [propput] */ HRESULT STDMETHODCALLTYPE put_IsRightTapEnabled(
-        /* [in] */ boolean value) = 0;
-
-    virtual /* [propget] */ HRESULT STDMETHODCALLTYPE get_IsHoldingEnabled(
-        /* [out][retval] */ __RPC__out boolean* value) = 0;
-
-    virtual /* [propput] */ HRESULT STDMETHODCALLTYPE put_IsHoldingEnabled(
-        /* [in] */ boolean value) = 0;
-
-    virtual /* [propget] */ HRESULT STDMETHODCALLTYPE get_ManipulationMode(
-        /* [out][retval] */
-        __RPC__out /*ABI::Windows::UI::Xaml::Input::ManipulationModes*/ void*
-            value) = 0;
-
-    virtual /* [propput] */ HRESULT STDMETHODCALLTYPE put_ManipulationMode(
-        /* [in] */ /*ABI::Windows::UI::Xaml::Input::ManipulationModes*/ int
-            value) = 0;
-
-    virtual /* [propget] */ HRESULT STDMETHODCALLTYPE get_PointerCaptures(
-        /* [out][retval] */
-        __RPC__deref_out_opt /*__FIVectorView_1_Windows__CUI__CXaml__CInput__CPointer*/
-        void** value) = 0;
-
-    virtual HRESULT STDMETHODCALLTYPE add_KeyUp(
-        /* [in] */
-        __RPC__in_opt /*ABI::Windows::UI::Xaml::Input::IKeyEventHandler*/ void*
-            value,
-        /* [out][retval] */ __RPC__out /*EventRegistrationToken*/ int64_t*
-            token) = 0;
-
-    virtual HRESULT STDMETHODCALLTYPE remove_KeyUp(
-        /* [in] */ /*EventRegistrationToken*/ int64_t token) = 0;
-
-    virtual HRESULT STDMETHODCALLTYPE add_KeyDown(
-        /* [in] */
-        __RPC__in_opt /*ABI::Windows::UI::Xaml::Input::IKeyEventHandler*/ void*
-            value,
-        /* [out][retval] */ __RPC__out /*EventRegistrationToken*/ int64_t*
-            token) = 0;
-
-    virtual HRESULT STDMETHODCALLTYPE remove_KeyDown(
-        /* [in] */ /*EventRegistrationToken*/ int64_t token) = 0;
-
-    virtual HRESULT STDMETHODCALLTYPE add_GotFocus(
-        /* [in] */ __RPC__in_opt /*ABI::Windows::UI::Xaml::IRoutedEventHandler*/
-        void* value,
-        /* [out][retval] */ __RPC__out /*EventRegistrationToken*/ int64_t*
-            token) = 0;
-
-    virtual HRESULT STDMETHODCALLTYPE remove_GotFocus(
-        /* [in] */ /*EventRegistrationToken*/ int64_t token) = 0;
-
-    virtual HRESULT STDMETHODCALLTYPE add_LostFocus(
-        /* [in] */ __RPC__in_opt /*ABI::Windows::UI::Xaml::IRoutedEventHandler*/
-        void* value,
-        /* [out][retval] */ __RPC__out /*EventRegistrationToken*/ int64_t*
-            token) = 0;
-
-    virtual HRESULT STDMETHODCALLTYPE remove_LostFocus(
-        /* [in] */ /*EventRegistrationToken*/ int64_t token) = 0;
-
-    virtual HRESULT STDMETHODCALLTYPE add_DragEnter(
-        /* [in] */ __RPC__in_opt /*ABI::Windows::UI::Xaml::IDragEventHandler*/
-        void* value,
-        /* [out][retval] */ __RPC__out /*EventRegistrationToken*/ int64_t*
-            token) = 0;
-
-    virtual HRESULT STDMETHODCALLTYPE remove_DragEnter(
-        /* [in] */ /*EventRegistrationToken*/ int64_t token) = 0;
-
-    virtual HRESULT STDMETHODCALLTYPE add_DragLeave(
-        /* [in] */ __RPC__in_opt /*ABI::Windows::UI::Xaml::IDragEventHandler*/
-        void* value,
-        /* [out][retval] */ __RPC__out /*EventRegistrationToken*/ int64_t*
-            token) = 0;
-
-    virtual HRESULT STDMETHODCALLTYPE remove_DragLeave(
-        /* [in] */ /*EventRegistrationToken*/ int64_t token) = 0;
-
-    virtual HRESULT STDMETHODCALLTYPE add_DragOver(
-        /* [in] */ __RPC__in_opt /*ABI::Windows::UI::Xaml::IDragEventHandler*/
-        void* value,
-        /* [out][retval] */ __RPC__out /*EventRegistrationToken*/ int64_t*
-            token) = 0;
-
-    virtual HRESULT STDMETHODCALLTYPE remove_DragOver(
-        /* [in] */ /*EventRegistrationToken*/ int64_t token) = 0;
-
-    virtual HRESULT STDMETHODCALLTYPE add_Drop(
-        /* [in] */ __RPC__in_opt /*ABI::Windows::UI::Xaml::IDragEventHandler*/
-        void* value,
-        /* [out][retval] */ __RPC__out /*EventRegistrationToken*/ int64_t*
-            token) = 0;
-
-    virtual HRESULT STDMETHODCALLTYPE remove_Drop(
-        /* [in] */ /*EventRegistrationToken*/ int64_t token) = 0;
-
-    virtual HRESULT STDMETHODCALLTYPE add_PointerPressed(
-        /* [in] */
-        __RPC__in_opt /*ABI::Windows::UI::Xaml::Input::IPointerEventHandler*/
-        void* value,
-        /* [out][retval] */ __RPC__out /*EventRegistrationToken*/ int64_t*
-            token) = 0;
-
-    virtual HRESULT STDMETHODCALLTYPE remove_PointerPressed(
-        /* [in] */ /*EventRegistrationToken*/ int64_t token) = 0;
-
-    virtual HRESULT STDMETHODCALLTYPE add_PointerMoved(
-        /* [in] */
-        __RPC__in_opt /*ABI::Windows::UI::Xaml::Input::IPointerEventHandler*/
-        void* value,
-        /* [out][retval] */ __RPC__out /*EventRegistrationToken*/ int64_t*
-            token) = 0;
-
-    virtual HRESULT STDMETHODCALLTYPE remove_PointerMoved(
-        /* [in] */ /*EventRegistrationToken*/ int64_t token) = 0;
-
-    virtual HRESULT STDMETHODCALLTYPE add_PointerReleased(
-        /* [in] */
-        __RPC__in_opt /*ABI::Windows::UI::Xaml::Input::IPointerEventHandler*/
-        void* value,
-        /* [out][retval] */ __RPC__out /*EventRegistrationToken*/ int64_t*
-            token) = 0;
-
-    virtual HRESULT STDMETHODCALLTYPE remove_PointerReleased(
-        /* [in] */ /*EventRegistrationToken*/ int64_t token) = 0;
-
-    virtual HRESULT STDMETHODCALLTYPE add_PointerEntered(
-        /* [in] */
-        __RPC__in_opt /*ABI::Windows::UI::Xaml::Input::IPointerEventHandler*/
-        void* value,
-        /* [out][retval] */ __RPC__out /*EventRegistrationToken*/ int64_t*
-            token) = 0;
-
-    virtual HRESULT STDMETHODCALLTYPE remove_PointerEntered(
-        /* [in] */ /*EventRegistrationToken*/ int64_t token) = 0;
-
-    virtual HRESULT STDMETHODCALLTYPE add_PointerExited(
-        /* [in] */
-        __RPC__in_opt /*ABI::Windows::UI::Xaml::Input::IPointerEventHandler*/
-        void* value,
-        /* [out][retval] */ __RPC__out /*EventRegistrationToken*/ int64_t*
-            token) = 0;
-
-    virtual HRESULT STDMETHODCALLTYPE remove_PointerExited(
-        /* [in] */ /*EventRegistrationToken*/ int64_t token) = 0;
-
-    virtual HRESULT STDMETHODCALLTYPE add_PointerCaptureLost(
-        /* [in] */
-        __RPC__in_opt /*ABI::Windows::UI::Xaml::Input::IPointerEventHandler*/
-        void* value,
-        /* [out][retval] */ __RPC__out /*EventRegistrationToken*/ int64_t*
-            token) = 0;
-
-    virtual HRESULT STDMETHODCALLTYPE remove_PointerCaptureLost(
-        /* [in] */ /*EventRegistrationToken*/ int64_t token) = 0;
-
-    virtual HRESULT STDMETHODCALLTYPE add_PointerCanceled(
-        /* [in] */
-        __RPC__in_opt /*ABI::Windows::UI::Xaml::Input::IPointerEventHandler*/
-        void* value,
-        /* [out][retval] */ __RPC__out /*EventRegistrationToken*/ int64_t*
-            token) = 0;
-
-    virtual HRESULT STDMETHODCALLTYPE remove_PointerCanceled(
-        /* [in] */ /*EventRegistrationToken*/ int64_t token) = 0;
-
-    virtual HRESULT STDMETHODCALLTYPE add_PointerWheelChanged(
-        /* [in] */
-        __RPC__in_opt /*ABI::Windows::UI::Xaml::Input::IPointerEventHandler*/
-        void* value,
-        /* [out][retval] */ __RPC__out /*EventRegistrationToken*/ int64_t*
-            token) = 0;
-
-    virtual HRESULT STDMETHODCALLTYPE remove_PointerWheelChanged(
-        /* [in] */ /*EventRegistrationToken*/ int64_t token) = 0;
-
-    virtual HRESULT STDMETHODCALLTYPE add_Tapped(
-        /* [in] */
-        __RPC__in_opt /*ABI::Windows::UI::Xaml::Input::ITappedEventHandler*/
-        void* value,
-        /* [out][retval] */ __RPC__out /*EventRegistrationToken*/ int64_t*
-            token) = 0;
-
-    virtual HRESULT STDMETHODCALLTYPE remove_Tapped(
-        /* [in] */ /*EventRegistrationToken*/ int64_t token) = 0;
-
-    virtual HRESULT STDMETHODCALLTYPE add_DoubleTapped(
-        /* [in] */
-        __RPC__in_opt /*ABI::Windows::UI::Xaml::Input::IDoubleTappedEventHandler*/
-        void* value,
-        /* [out][retval] */ __RPC__out /*EventRegistrationToken*/ int64_t*
-            token) = 0;
-
-    virtual HRESULT STDMETHODCALLTYPE remove_DoubleTapped(
-        /* [in] */ /*EventRegistrationToken*/ int64_t token) = 0;
-
-    virtual HRESULT STDMETHODCALLTYPE add_Holding(
-        /* [in] */
-        __RPC__in_opt /*ABI::Windows::UI::Xaml::Input::IHoldingEventHandler*/
-        void* value,
-        /* [out][retval] */ __RPC__out /*EventRegistrationToken*/ int64_t*
-            token) = 0;
-
-    virtual HRESULT STDMETHODCALLTYPE remove_Holding(
-        /* [in] */ /*EventRegistrationToken*/ int64_t token) = 0;
-
-    virtual HRESULT STDMETHODCALLTYPE add_RightTapped(
-        /* [in] */
-        __RPC__in_opt /*ABI::Windows::UI::Xaml::Input::IRightTappedEventHandler*/
-        void* value,
-        /* [out][retval] */ __RPC__out /*EventRegistrationToken*/ int64_t*
-            token) = 0;
-
-    virtual HRESULT STDMETHODCALLTYPE remove_RightTapped(
-        /* [in] */ /*EventRegistrationToken*/ int64_t token) = 0;
-
-    virtual HRESULT STDMETHODCALLTYPE add_ManipulationStarting(
-        /* [in] */
-        __RPC__in_opt /*ABI::Windows::UI::Xaml::Input::IManipulationStartingEventHandler*/
-        void* value,
-        /* [out][retval] */ __RPC__out /*EventRegistrationToken*/ int64_t*
-            token) = 0;
-
-    virtual HRESULT STDMETHODCALLTYPE remove_ManipulationStarting(
-        /* [in] */ /*EventRegistrationToken*/ int64_t token) = 0;
-
-    virtual HRESULT STDMETHODCALLTYPE add_ManipulationInertiaStarting(
-        /* [in] */
-        __RPC__in_opt /*ABI::Windows::UI::Xaml::Input::IManipulationInertiaStartingEventHandler*/
-        void* value,
-        /* [out][retval] */ __RPC__out /*EventRegistrationToken*/ int64_t*
-            token) = 0;
-
-    virtual HRESULT STDMETHODCALLTYPE remove_ManipulationInertiaStarting(
-        /* [in] */ /*EventRegistrationToken*/ int64_t token) = 0;
-
-    virtual HRESULT STDMETHODCALLTYPE add_ManipulationStarted(
-        /* [in] */
-        __RPC__in_opt /*ABI::Windows::UI::Xaml::Input::IManipulationStartedEventHandler*/
-        void* value,
-        /* [out][retval] */ __RPC__out /*EventRegistrationToken*/ int64_t*
-            token) = 0;
-
-    virtual HRESULT STDMETHODCALLTYPE remove_ManipulationStarted(
-        /* [in] */ /*EventRegistrationToken*/ int64_t token) = 0;
-
-    virtual HRESULT STDMETHODCALLTYPE add_ManipulationDelta(
-        /* [in] */
-        __RPC__in_opt /*ABI::Windows::UI::Xaml::Input::IManipulationDeltaEventHandler*/
-        void* value,
-        /* [out][retval] */ __RPC__out /*EventRegistrationToken*/ int64_t*
-            token) = 0;
-
-    virtual HRESULT STDMETHODCALLTYPE remove_ManipulationDelta(
-        /* [in] */ /*EventRegistrationToken*/ int64_t token) = 0;
-
-    virtual HRESULT STDMETHODCALLTYPE add_ManipulationCompleted(
-        /* [in] */
-        __RPC__in_opt /*ABI::Windows::UI::Xaml::Input::IManipulationCompletedEventHandler*/
-        void* value,
-        /* [out][retval] */ __RPC__out /*EventRegistrationToken*/ int64_t*
-            token) = 0;
-
-    virtual HRESULT STDMETHODCALLTYPE remove_ManipulationCompleted(
-        /* [in] */ /*EventRegistrationToken*/ int64_t token) = 0;
-
-    virtual HRESULT STDMETHODCALLTYPE Measure(
-        /* [in] */ /*ABI::Windows::Foundation::Size*/ int availableSize) = 0;
-
-    virtual HRESULT STDMETHODCALLTYPE Arrange(
-        /* [in] */ /*ABI::Windows::Foundation::Rect*/ void* finalRect) = 0;
-
-    virtual HRESULT STDMETHODCALLTYPE CapturePointer(
-        /* [in] */ __RPC__in_opt /*ABI::Windows::UI::Xaml::Input::IPointer*/
-        void* value,
-        /* [out][retval] */ __RPC__out boolean* returnValue) = 0;
-
-    virtual HRESULT STDMETHODCALLTYPE ReleasePointerCapture(
-        /* [in] */ __RPC__in_opt /*ABI::Windows::UI::Xaml::Input::IPointer*/
-        void* value) = 0;
-
-    virtual HRESULT STDMETHODCALLTYPE ReleasePointerCaptures(void) = 0;
-
-    virtual HRESULT STDMETHODCALLTYPE AddHandler(
-        /* [in] */ __RPC__in_opt /*ABI::Windows::UI::Xaml::IRoutedEvent*/ void*
-            routedEvent,
-        /* [in] */ __RPC__in_opt IInspectable* handler,
-        /* [in] */ boolean handledEventsToo) = 0;
-
-    virtual HRESULT STDMETHODCALLTYPE RemoveHandler(
-        /* [in] */ __RPC__in_opt /*ABI::Windows::UI::Xaml::IRoutedEvent*/ void*
-            routedEvent,
-        /* [in] */ __RPC__in_opt IInspectable* handler) = 0;
-
-    virtual HRESULT STDMETHODCALLTYPE TransformToVisual(
-        /* [in] */ __RPC__in_opt /*ABI::Windows::UI::Xaml::IUIElement*/ void*
-            visual,
-        /* [out][retval] */
-        __RPC__deref_out_opt /*ABI::Windows::UI::Xaml::Media::IGeneralTransform*/
-        void** returnValue) = 0;
-
-    virtual HRESULT STDMETHODCALLTYPE InvalidateMeasure(void) = 0;
-
-    virtual HRESULT STDMETHODCALLTYPE InvalidateArrange(void) = 0;
-
-    virtual HRESULT STDMETHODCALLTYPE UpdateLayout(void) = 0;
-};
-
-#pragma endregion
-
-////////////////////////////////////////////////////////////////////////////////
-
-ComPtr<Windows_UI_Xaml_IUIElement> LoadXamlControl(PCWSTR xaml) {
-    HRESULT hr;
-
-    HStringReference hsMarkupXamlReaderStatics(
-        L"Windows.UI.Xaml.Markup.XamlReader");
-    ComPtr<Windows_UI_Xaml_Markup_IXamlReaderStatics> pMarkupXamlReaderStatics;
-    hr = RoGetActivationFactory(hsMarkupXamlReaderStatics.Get(),
-                                IID_Windows_UI_Xaml_Markup_IXamlReaderStatics,
-                                (void**)&pMarkupXamlReaderStatics);
-    if (SUCCEEDED(hr)) {
-        HStringReference xamlRef(xaml);
-        ComPtr<IInspectable> pResult;
-        hr = pMarkupXamlReaderStatics->Load(xamlRef.Get(), &pResult);
-        if (SUCCEEDED(hr)) {
-            ComPtr<Windows_UI_Xaml_IUIElement> pUIElement;
-            hr = pResult->QueryInterface(IID_Windows_UI_Xaml_IUIElement,
-                                         (void**)&pUIElement);
-            if (SUCCEEDED(hr)) {
-                return pUIElement;
-            }
-        }
-    }
-
-    return nullptr;
-}
-
-// Based on code from Explorer Patcher.
-ComPtr<Windows_UI_Xaml_IDependencyObject> FindChildByClassName(
-    Windows_UI_Xaml_IDependencyObject* pRootDependencyObject,
-    Windows_UI_Xaml_IVisualTreeHelperStatics* pVisualTreeHelperStatics,
-    LPCWSTR pwszRefName,
-    INT* prevIndex) {
-    // WCHAR wszDebug[MAX_PATH];
-    HRESULT hr = S_OK;
-    INT32 Count = -1;
-    hr = pVisualTreeHelperStatics->GetChildrenCount(pRootDependencyObject,
-                                                    &Count);
-    if (SUCCEEDED(hr)) {
-        for (INT32 Index = (prevIndex ? *prevIndex : 0); Index < Count;
-             ++Index) {
-            ComPtr<Windows_UI_Xaml_IDependencyObject> pChild;
-            hr = pVisualTreeHelperStatics->GetChild(pRootDependencyObject,
-                                                    Index, &pChild);
-            if (SUCCEEDED(hr)) {
-                HString hsChild(nullptr, &WindowsDeleteString);
-                {
-                    HSTRING hs = nullptr;
-                    hr = pChild->GetRuntimeClassName(&hs);
-                    if (SUCCEEDED(hr))
-                        hsChild.reset(hs);
-                }
-
-                if (hsChild) {
-                    PCWSTR pwszName =
-                        WindowsGetStringRawBuffer(hsChild.get(), 0);
-                    // swprintf_s(wszDebug, MAX_PATH, L"Name: %s\n", pwszName);
-                    // OutputDebugStringW(wszDebug);
-                    if (!_wcsicmp(pwszName, pwszRefName)) {
-                        if (prevIndex)
-                            *prevIndex = Index + 1;
-                        return pChild;
-                    }
-                }
-            }
-        }
-    }
-
-    if (prevIndex)
-        *prevIndex = Count;
-    return nullptr;
-}
-
-// Based on code from Explorer Patcher.
-ComPtr<Windows_UI_Xaml_IDependencyObject> FindChildByName(
-    Windows_UI_Xaml_IDependencyObject* pRootDependencyObject,
-    Windows_UI_Xaml_IVisualTreeHelperStatics* pVisualTreeHelperStatics,
-    LPCWSTR pwszRefName) {
-    // WCHAR wszDebug[MAX_PATH];
-    HRESULT hr = S_OK;
-    INT32 Count = -1;
-    hr = pVisualTreeHelperStatics->GetChildrenCount(pRootDependencyObject,
-                                                    &Count);
-    if (SUCCEEDED(hr)) {
-        for (INT32 Index = 0; Index < Count; ++Index) {
-            ComPtr<Windows_UI_Xaml_IDependencyObject> pChild;
-            hr = pVisualTreeHelperStatics->GetChild(pRootDependencyObject,
-                                                    Index, &pChild);
-            if (SUCCEEDED(hr)) {
-                ComPtr<Windows_UI_Xaml_IFrameworkElement> pFrameworkElement;
-                hr = pChild->QueryInterface(
-                    IID_Windows_UI_Xaml_IFrameworkElement,
-                    (void**)&pFrameworkElement);
-                if (SUCCEEDED(hr)) {
-                    HString hsChild(nullptr, &WindowsDeleteString);
-                    {
-                        HSTRING hs = nullptr;
-                        hr = pFrameworkElement->get_Name(&hs);
-                        if (SUCCEEDED(hr))
-                            hsChild.reset(hs);
-                    }
-
-                    if (hsChild) {
-                        PCWSTR pwszName =
-                            WindowsGetStringRawBuffer(hsChild.get(), 0);
-                        // swprintf_s(wszDebug, MAX_PATH, L"Name: %s\n",
-                        // pwszName); OutputDebugStringW(wszDebug);
-                        if (!_wcsicmp(pwszName, pwszRefName)) {
-                            return pChild;
-                        }
-                    }
-                }
-            }
+winrt::Windows::UI::Xaml::FrameworkElement FindChildByClassName(
+    winrt::Windows::UI::Xaml::FrameworkElement element,
+    PCWSTR className) {
+    int childrenCount =
+        winrt::Windows::UI::Xaml::Media::VisualTreeHelper::GetChildrenCount(
+            element);
+
+    for (int i = 0; i < childrenCount; i++) {
+        auto child =
+            winrt::Windows::UI::Xaml::Media::VisualTreeHelper::GetChild(element,
+                                                                        i)
+                .try_as<winrt::Windows::UI::Xaml::FrameworkElement>();
+        if (child && child.Name() == className) {
+            return child;
         }
     }
 
@@ -1167,69 +304,28 @@ using ITaskListButton_get_IsRunning_t = HRESULT(WINAPI*)(void* pThis,
 ITaskListButton_get_IsRunning_t ITaskListButton_get_IsRunning_Original;
 
 void UpdateTaskListButtonCustomizations(void* pTaskListButtonImpl) {
-    HRESULT hr;
+    winrt::Windows::Foundation::IInspectable taskListButtonIInspectable;
+    winrt::copy_from_abi(taskListButtonIInspectable,
+                         *(IInspectable**)pTaskListButtonImpl);
 
-    IInspectable* pTaskListButton = *(IInspectable**)pTaskListButtonImpl;
+    auto taskListButtonElement =
+        taskListButtonIInspectable
+            .as<winrt::Windows::UI::Xaml::FrameworkElement>();
 
-    ComPtr<Windows_UI_Xaml_IFrameworkElement> pTaskListButtonElement;
-    ComPtr<Windows_UI_Xaml_IFrameworkElement> pIconPanelElement;
-    ComPtr<Windows_UI_Xaml_IFrameworkElement> pIconElement;
-    ComPtr<Windows_UI_Xaml_IFrameworkElement> pWindhawkTextElement;
-
-    hr = pTaskListButton->QueryInterface(IID_Windows_UI_Xaml_IFrameworkElement,
-                                         (void**)&pTaskListButtonElement);
-
-    HStringReference hsVisualTreeHelperStatics(
-        L"Windows.UI.Xaml.Media.VisualTreeHelper");
-    ComPtr<Windows_UI_Xaml_IVisualTreeHelperStatics> pVisualTreeHelperStatics;
-    hr = RoGetActivationFactory(hsVisualTreeHelperStatics.Get(),
-                                IID_Windows_UI_Xaml_IVisualTreeHelperStatics,
-                                (void**)&pVisualTreeHelperStatics);
-    if (SUCCEEDED(hr)) {
-        ComPtr<Windows_UI_Xaml_IDependencyObject> pRootDependencyObject;
-        hr = pTaskListButton->QueryInterface(
-            IID_Windows_UI_Xaml_IDependencyObject,
-            (void**)&pRootDependencyObject);
-        if (SUCCEEDED(hr)) {
-            ComPtr<Windows_UI_Xaml_IDependencyObject> pIconPanel =
-                FindChildByName(pRootDependencyObject.Get(),
-                                pVisualTreeHelperStatics.Get(), L"IconPanel");
-            if (pIconPanel) {
-                hr = pIconPanel->QueryInterface(
-                    IID_Windows_UI_Xaml_IFrameworkElement,
-                    (void**)&pIconPanelElement);
-
-                ComPtr<Windows_UI_Xaml_IDependencyObject> pIcon =
-                    FindChildByName(pIconPanel.Get(),
-                                    pVisualTreeHelperStatics.Get(), L"Icon");
-                if (pIcon) {
-                    hr = pIcon->QueryInterface(
-                        IID_Windows_UI_Xaml_IFrameworkElement,
-                        (void**)&pIconElement);
-                }
-
-                ComPtr<Windows_UI_Xaml_IDependencyObject> pWindhawkText =
-                    FindChildByName(pIconPanel.Get(),
-                                    pVisualTreeHelperStatics.Get(),
-                                    L"WindhawkText");
-                if (pWindhawkText) {
-                    hr = pWindhawkText->QueryInterface(
-                        IID_Windows_UI_Xaml_IFrameworkElement,
-                        (void**)&pWindhawkTextElement);
-                }
-            }
-        }
-    }
-
-    if (!pTaskListButtonElement || !pIconPanelElement || !pIconElement) {
+    auto iconPanelElement =
+        FindChildByClassName(taskListButtonElement, L"IconPanel");
+    if (!iconPanelElement) {
         return;
     }
 
-    double taskListButtonWidth = 0;
-    pTaskListButtonElement->get_ActualWidth(&taskListButtonWidth);
+    auto iconElement = FindChildByClassName(iconPanelElement, L"Icon");
+    if (!iconElement) {
+        return;
+    }
 
-    double iconPanelWidth = 0;
-    pIconPanelElement->get_ActualWidth(&iconPanelWidth);
+    double taskListButtonWidth = taskListButtonElement.ActualWidth();
+
+    double iconPanelWidth = iconPanelElement.ActualWidth();
 
     // Check if non-positive or NaN.
     if (!(taskListButtonWidth > 0) || !(iconPanelWidth > 0)) {
@@ -1241,72 +337,66 @@ void UpdateTaskListButtonCustomizations(void* pTaskListButtonImpl) {
     void* taskListButtonProducer = (BYTE*)pTaskListButtonImpl + 0x10;
 
     bool isRunning = false;
-    hr = ITaskListButton_get_IsRunning_Original(taskListButtonProducer,
-                                                &isRunning);
+    ITaskListButton_get_IsRunning_Original(taskListButtonProducer, &isRunning);
 
     bool showLabels = isRunning && !g_unloading;
 
     double widthToSet = showLabels ? g_settings.taskbarItemWidth : initialWidth;
 
     if (widthToSet != taskListButtonWidth || widthToSet != iconPanelWidth) {
-        pTaskListButtonElement->put_Width(widthToSet);
-        pIconPanelElement->put_Width(widthToSet);
+        taskListButtonElement.Width(widthToSet);
+        iconPanelElement.Width(widthToSet);
 
-        int32_t horizontalAlignment =
-            (int32_t)(showLabels ? Windows_UI_Xaml_HorizontalAlignment_Left
-                                 : Windows_UI_Xaml_HorizontalAlignment_Center);
-        pIconElement->put_HorizontalAlignment(horizontalAlignment);
+        auto horizontalAlignment =
+            showLabels ? winrt::Windows::UI::Xaml::HorizontalAlignment::Left
+                       : winrt::Windows::UI::Xaml::HorizontalAlignment::Center;
+        iconElement.HorizontalAlignment(horizontalAlignment);
 
-        Windows_UI_Xaml_Thickness margin{};
+        winrt::Windows::UI::Xaml::Thickness margin{};
         if (showLabels) {
             margin.Left = 10;
         }
-        pIconElement->put_Margin(margin);
+        iconElement.Margin(margin);
     }
 
-    if (showLabels && !pWindhawkTextElement) {
-        ComPtr<Windows_UI_Xaml_Controls_IPanel> pIconPanel;
-        hr = pIconPanelElement->QueryInterface(
-            IID_Windows_UI_Xaml_Controls_IPanel, (void**)&pIconPanel);
-        if (SUCCEEDED(hr)) {
-            ComPtr<IVector> children;
-            hr = pIconPanel->get_Children(&children);
-            if (SUCCEEDED(hr)) {
-                PCWSTR xaml =
-                    LR"(
-                        <TextBlock
-                            xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-                            xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-                            xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
-                            xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
-                            mc:Ignorable="d"
-                            Name="WindhawkText"
-                            VerticalAlignment="Center"
-                            FontSize="12"
-                            TextTrimming="CharacterEllipsis"
-                        />
-                    )";
+    auto windhawkTextElement =
+        FindChildByClassName(iconPanelElement, L"WindhawkText");
 
-                Microsoft::WRL::ComPtr<Windows_UI_Xaml_IUIElement> pUIElement =
-                    LoadXamlControl(xaml);
-                if (pUIElement) {
-                    children->Append(pUIElement.Get());
+    if (showLabels && !windhawkTextElement) {
+        auto iconPanel =
+            iconPanelElement.as<winrt::Windows::UI::Xaml::Controls::Panel>();
 
-                    ComPtr<Windows_UI_Xaml_IFrameworkElement> pAddedElement;
-                    hr = pUIElement->QueryInterface(
-                        IID_Windows_UI_Xaml_IFrameworkElement,
-                        (void**)&pAddedElement);
-                    if (SUCCEEDED(hr)) {
-                        Windows_UI_Xaml_Thickness margin{};
-                        margin.Left = 10 + 24 + 8;
-                        margin.Right = 10;
-                        margin.Bottom = 2;
-                        pAddedElement->put_Margin(margin);
-                    }
-                }
-            }
+        auto children = iconPanel.Children();
+
+        PCWSTR xaml =
+            LR"(
+                <TextBlock
+                    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+                    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+                    mc:Ignorable="d"
+                    Name="WindhawkText"
+                    VerticalAlignment="Center"
+                    FontSize="12"
+                    TextTrimming="CharacterEllipsis"
+                />
+            )";
+
+        auto pUIElement =
+            winrt::Windows::UI::Xaml::Markup::XamlReader::Load(xaml)
+                .as<winrt::Windows::UI::Xaml::FrameworkElement>();
+        if (pUIElement) {
+            children.Append(pUIElement);
+
+            winrt::Windows::UI::Xaml::Thickness margin{
+                .Left = 10 + 24 + 8,
+                .Right = 10,
+                .Bottom = 2,
+            };
+            pUIElement.Margin(margin);
         }
-    } else if (!showLabels && pWindhawkTextElement) {
+    } else if (!showLabels && windhawkTextElement) {
         // Don't remove, for some reason it causes a bug - the running indicator
         // ends up being behind the semi-transparent rectangle of the active
         // button.
@@ -1330,14 +420,10 @@ void UpdateTaskListButtonCustomizations(void* pTaskListButtonImpl) {
         */
 
         // Set empty text instead.
-        ComPtr<Windows_UI_Xaml_Controls_ITextBlock> pWindhawkTextControl;
-        hr = pWindhawkTextElement->QueryInterface(
-            IID_Windows_UI_Xaml_Controls_ITextBlock,
-            (void**)&pWindhawkTextControl);
-        if (pWindhawkTextControl) {
-            HStringReference hsTitle(L"");
-            pWindhawkTextControl->put_Text(hsTitle.Get());
-        }
+        auto windhawkTextControl =
+            windhawkTextElement
+                .as<winrt::Windows::UI::Xaml::Controls::TextBlock>();
+        windhawkTextControl.Text(L"");
     }
 }
 
@@ -1387,44 +473,25 @@ void WINAPI TaskListButton_Icon_Hook(void* pThis, LONG_PTR randomAccessStream) {
 
     void* pTaskListButtonImpl = (BYTE*)pThis + 0x08;
 
-    HRESULT hr;
+    winrt::Windows::Foundation::IInspectable taskListButtonIInspectable;
+    winrt::copy_from_abi(taskListButtonIInspectable,
+                         *(IInspectable**)pTaskListButtonImpl);
 
-    IInspectable* pTaskListButton = *(IInspectable**)pTaskListButtonImpl;
+    auto taskListButtonElement =
+        taskListButtonIInspectable
+            .as<winrt::Windows::UI::Xaml::FrameworkElement>();
 
-    ComPtr<Windows_UI_Xaml_Controls_ITextBlock> pWindhawkTextControl;
-
-    HStringReference hsVisualTreeHelperStatics(
-        L"Windows.UI.Xaml.Media.VisualTreeHelper");
-    ComPtr<Windows_UI_Xaml_IVisualTreeHelperStatics> pVisualTreeHelperStatics;
-    hr = RoGetActivationFactory(hsVisualTreeHelperStatics.Get(),
-                                IID_Windows_UI_Xaml_IVisualTreeHelperStatics,
-                                (void**)&pVisualTreeHelperStatics);
-    if (SUCCEEDED(hr)) {
-        ComPtr<Windows_UI_Xaml_IDependencyObject> pRootDependencyObject;
-        hr = pTaskListButton->QueryInterface(
-            IID_Windows_UI_Xaml_IDependencyObject,
-            (void**)&pRootDependencyObject);
-        if (SUCCEEDED(hr)) {
-            ComPtr<Windows_UI_Xaml_IDependencyObject> pIconPanel =
-                FindChildByName(pRootDependencyObject.Get(),
-                                pVisualTreeHelperStatics.Get(), L"IconPanel");
-            if (pIconPanel) {
-                ComPtr<Windows_UI_Xaml_IDependencyObject> pWindhawkText =
-                    FindChildByName(pIconPanel.Get(),
-                                    pVisualTreeHelperStatics.Get(),
-                                    L"WindhawkText");
-                if (pWindhawkText) {
-                    hr = pWindhawkText->QueryInterface(
-                        IID_Windows_UI_Xaml_Controls_ITextBlock,
-                        (void**)&pWindhawkTextControl);
-                }
-            }
+    auto iconPanelElement =
+        FindChildByClassName(taskListButtonElement, L"IconPanel");
+    if (iconPanelElement) {
+        auto windhawkTextElement =
+            FindChildByClassName(iconPanelElement, L"WindhawkText");
+        if (windhawkTextElement) {
+            auto windhawkTextControl =
+                windhawkTextElement
+                    .as<winrt::Windows::UI::Xaml::Controls::TextBlock>();
+            windhawkTextControl.Text(g_taskBtnGroupTitleInGroupChanged);
         }
-    }
-
-    if (pWindhawkTextControl) {
-        HStringReference hsTitle(g_taskBtnGroupTitleInGroupChanged);
-        pWindhawkTextControl->put_Text(hsTitle.Get());
     }
 }
 
@@ -1450,7 +517,8 @@ bool ProtectAndMemcpy(DWORD protect, void* dst, const void* src, size_t size) {
 void ApplySettings() {
     HWND hTaskbarWnd = FindWindow(L"Shell_TrayWnd", nullptr);
     DWORD dwTaskbarProcessId = 0;
-    if (hTaskbarWnd && GetWindowThreadProcessId(hTaskbarWnd, &dwTaskbarProcessId) &&
+    if (hTaskbarWnd &&
+        GetWindowThreadProcessId(hTaskbarWnd, &dwTaskbarProcessId) &&
         dwTaskbarProcessId != GetCurrentProcessId()) {
         hTaskbarWnd = nullptr;
     }
@@ -1477,7 +545,8 @@ void ApplySettings() {
     // Wait for the change to apply.
     RECT newTaskbarRect{};
     int counter = 0;
-    while (GetWindowRect(hTaskbarWnd, &newTaskbarRect) && newTaskbarRect.top == taskbarRect.top) {
+    while (GetWindowRect(hTaskbarWnd, &newTaskbarRect) &&
+           newTaskbarRect.top == taskbarRect.top) {
         if (++counter >= 100) {
             break;
         }
