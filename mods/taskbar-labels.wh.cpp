@@ -9,7 +9,7 @@
 // @homepage        https://m417z.com/
 // @include         explorer.exe
 // @architecture    x86-64
-// @compilerOptions -loleaut32 -lole32 -lruntimeobject
+// @compilerOptions -loleaut32 -lole32 -lruntimeobject  -O0
 // ==/WindhawkMod==
 
 // Source code is published under The GNU General Public License v3.0.
@@ -30,11 +30,6 @@ Before:
 After:
 
 ![After screenshot](https://i.imgur.com/qpc4iFh.png)
-
-## Known limitations
-
-* When there are too many items, the rightmost items become unreachable.
-* Switching between virtual desktops might result in missing labels.
 */
 // ==/WindhawkModReadme==
 
@@ -63,7 +58,10 @@ After:
 #include <algorithm>
 #include <string>
 #include <string_view>
+#include <unordered_set>
 #include <vector>
+
+using namespace winrt::Windows::UI::Xaml;
 
 // #define EXTRA_DBG_LOG
 
@@ -74,23 +72,27 @@ struct {
 bool g_applyingSettings = false;
 bool g_unloading = false;
 
+double g_initialTaskbarItemWidth;
+
+UINT_PTR g_invalidateTaskListButtonTimer;
+std::unordered_set<FrameworkElement> g_taskListButtonsWithLabelMissing;
+
 #ifndef SPI_SETLOGICALDPIOVERRIDE
 #define SPI_SETLOGICALDPIOVERRIDE 0x009F
 #endif
 
-winrt::Windows::UI::Xaml::FrameworkElement FindChildByClassName(
-    winrt::Windows::UI::Xaml::FrameworkElement element,
-    PCWSTR className) {
-    int childrenCount =
-        winrt::Windows::UI::Xaml::Media::VisualTreeHelper::GetChildrenCount(
-            element);
+FrameworkElement FindChildByName(FrameworkElement element, PCWSTR name) {
+    int childrenCount = Media::VisualTreeHelper::GetChildrenCount(element);
 
     for (int i = 0; i < childrenCount; i++) {
-        auto child =
-            winrt::Windows::UI::Xaml::Media::VisualTreeHelper::GetChild(element,
-                                                                        i)
-                .try_as<winrt::Windows::UI::Xaml::FrameworkElement>();
-        if (child && child.Name() == className) {
+        auto child = Media::VisualTreeHelper::GetChild(element, i)
+                         .try_as<FrameworkElement>();
+        if (!child) {
+            Wh_Log(L"Failed to get child %d of %d", i + 1, childrenCount);
+            continue;
+        }
+
+        if (child.Name() == name) {
             return child;
         }
     }
@@ -98,103 +100,288 @@ winrt::Windows::UI::Xaml::FrameworkElement FindChildByClassName(
     return nullptr;
 }
 
-#if defined(EXTRA_DBG_LOG)
+FrameworkElement FindChildByClassName(FrameworkElement element,
+                                      PCWSTR className) {
+    int childrenCount = Media::VisualTreeHelper::GetChildrenCount(element);
 
-void LogElement(Windows_UI_Xaml_IDependencyObject* pChild, int depth) {
-    HRESULT hr;
-
-    {
-        HString hsChild(nullptr, &WindowsDeleteString);
-        {
-            HSTRING hs = nullptr;
-            hr = pChild->GetRuntimeClassName(&hs);
-            if (SUCCEEDED(hr))
-                hsChild.reset(hs);
+    for (int i = 0; i < childrenCount; i++) {
+        auto child = Media::VisualTreeHelper::GetChild(element, i)
+                         .try_as<FrameworkElement>();
+        if (!child) {
+            Wh_Log(L"Failed to get child %d of %d", i + 1, childrenCount);
+            continue;
         }
 
-        PCWSTR pwszName =
-            hsChild ? WindowsGetStringRawBuffer(hsChild.get(), 0) : L"-";
-
-        WCHAR padding[MAX_PATH]{};
-        for (int i = 0; i < depth * 4; i++) {
-            padding[i] = L' ';
+        if (winrt::get_class_name(child) == className) {
+            return child;
         }
-        Wh_Log(L"%sClass: %s", padding, pwszName);
     }
 
-    ComPtr<Windows_UI_Xaml_IFrameworkElement> pFrameworkElement;
-    hr = pChild->QueryInterface(IID_Windows_UI_Xaml_IFrameworkElement,
-                                (void**)&pFrameworkElement);
-    if (SUCCEEDED(hr)) {
-        HString hsChild(nullptr, &WindowsDeleteString);
-        {
-            HSTRING hs = nullptr;
-            hr = pFrameworkElement->get_Name(&hs);
-            if (SUCCEEDED(hr))
-                hsChild.reset(hs);
-        }
-
-        PCWSTR pwszName =
-            hsChild ? WindowsGetStringRawBuffer(hsChild.get(), 0) : L"-";
-
-        WCHAR padding[MAX_PATH]{};
-        for (int i = 0; i < depth * 4; i++) {
-            padding[i] = L' ';
-        }
-        Wh_Log(L"%sName: %s", padding, pwszName);
-    }
+    return nullptr;
 }
 
-void LogElementTreeAux(
-    Windows_UI_Xaml_IDependencyObject* pRootDependencyObject,
-    Windows_UI_Xaml_IVisualTreeHelperStatics* pVisualTreeHelperStatics,
-    int depth) {
-    if (!pRootDependencyObject) {
+HWND GetTaskbarWnd() {
+    static HWND hTaskbarWnd;
+
+    if (!hTaskbarWnd) {
+        HWND hWnd = FindWindow(L"Shell_TrayWnd", nullptr);
+
+        DWORD processId = 0;
+        if (hWnd && GetWindowThreadProcessId(hWnd, &processId) &&
+            processId == GetCurrentProcessId()) {
+            hTaskbarWnd = hWnd;
+        }
+    }
+
+    return hTaskbarWnd;
+}
+
+void RecalculateLabels() {
+    HWND hTaskbarWnd = GetTaskbarWnd();
+    if (!hTaskbarWnd) {
         return;
     }
 
-    LogElement(pRootDependencyObject, depth);
+    HWND hReBarWindow32 =
+        FindWindowEx(hTaskbarWnd, nullptr, L"ReBarWindow32", nullptr);
+    if (!hReBarWindow32) {
+        return;
+    }
 
-    HRESULT hr = S_OK;
-    INT32 Count = -1;
-    hr = pVisualTreeHelperStatics->GetChildrenCount(pRootDependencyObject,
-                                                    &Count);
-    if (SUCCEEDED(hr)) {
-        for (INT32 Index = 0; Index < Count; ++Index) {
-            ComPtr<Windows_UI_Xaml_IDependencyObject> pChild;
-            hr = pVisualTreeHelperStatics->GetChild(pRootDependencyObject,
-                                                    Index, &pChild);
-            if (SUCCEEDED(hr)) {
-                LogElementTreeAux(pChild.Get(), pVisualTreeHelperStatics,
-                                  depth + 1);
+    HWND hMSTaskSwWClass =
+        FindWindowEx(hReBarWindow32, nullptr, L"MSTaskSwWClass", nullptr);
+    if (!hMSTaskSwWClass) {
+        return;
+    }
+
+    g_applyingSettings = true;
+
+    // Trigger TrayUI::_HandleSettingChange.
+    // SendMessage(hTaskbarWnd, WM_SETTINGCHANGE, SPI_SETLOGICALDPIOVERRIDE, 0);
+
+    // Trigger CTaskBand::_HandleSyncDisplayChange.
+    SendMessage(hMSTaskSwWClass, 0x452, 3, 0);
+
+    g_applyingSettings = false;
+}
+
+#if defined(EXTRA_DBG_LOG)
+void LogAllElementsAux(FrameworkElement element, int nesting = 0) {
+    std::string padding(nesting * 2, ' ');
+
+    int childrenCount = Media::VisualTreeHelper::GetChildrenCount(element);
+
+    for (int i = 0; i < childrenCount; i++) {
+        auto child = Media::VisualTreeHelper::GetChild(element, i)
+                         .try_as<FrameworkElement>();
+        if (!child) {
+            Wh_Log(L"%SFailed to get child %d of %d", padding.c_str(), i + 1,
+                   childrenCount);
+            continue;
+        }
+
+        auto className = winrt::get_class_name(child);
+        Wh_Log(L"%SClass: %s", padding.c_str(), className.c_str());
+        Wh_Log(L"%SName: %s", padding.c_str(), child.Name().c_str());
+
+        auto offset = child.ActualOffset();
+        Wh_Log(L"%SPosition: %f, %f", padding.c_str(), offset.x, offset.y);
+        Wh_Log(L"%SSize: %f x %f", padding.c_str(), child.ActualWidth(),
+               child.ActualHeight());
+
+        if (child.Name() == L"WindhawkText") {
+            auto windhawkTextControl = child.as<Controls::TextBlock>();
+            Wh_Log(L"%SText: %s", padding.c_str(),
+                   windhawkTextControl.Text().c_str());
+        }
+
+        LogAllElementsAux(child, nesting + 1);
+    }
+}
+
+void LogAllElements(FrameworkElement element) {
+    try {
+        auto rootElement = element;
+        while (true) {
+            auto parent = Media::VisualTreeHelper::GetParent(rootElement)
+                              .as<FrameworkElement>();
+            if (!parent) {
+                break;
+            }
+            rootElement = parent;
+        }
+
+        Wh_Log(L">>> LogAllElements");
+        LogAllElementsAux(rootElement);
+        Wh_Log(L"<<< LogAllElements");
+    } catch (winrt::hresult_error const& ex) {
+        Wh_Log(L"LogAllElements failed: %08X", ex.code());
+    }
+}
+#endif  // defined(EXTRA_DBG_LOG)
+
+// {7C3E0575-EB65-5A36-B1CF-8322C06C53C3}
+constexpr winrt::guid ITaskListButton{
+    0x7C3E0575,
+    0xEB65,
+    0x5A36,
+    {0xB1, 0xCF, 0x83, 0x22, 0xC0, 0x6C, 0x53, 0xC3}};
+
+using TaskListButton_get_IsRunning_t = HRESULT(WINAPI*)(void* pThis,
+                                                        bool* running);
+TaskListButton_get_IsRunning_t TaskListButton_get_IsRunning_Original;
+
+bool TaskListButton_IsRunning(FrameworkElement taskListButtonElement) {
+    winrt::Windows::Foundation::IUnknown pThis = nullptr;
+    taskListButtonElement.as(ITaskListButton, winrt::put_abi(pThis));
+
+    bool isRunning = false;
+    TaskListButton_get_IsRunning_Original(winrt::get_abi(pThis), &isRunning);
+    return isRunning;
+}
+
+// {0BD894F2-EDFC-5DDF-A166-2DB14BBFDF35}
+constexpr winrt::guid IItemsRepeater{
+    0x0BD894F2,
+    0xEDFC,
+    0x5DDF,
+    {0xA1, 0x66, 0x2D, 0xB1, 0x4B, 0xBF, 0xDF, 0x35}};
+
+FrameworkElement ItemsRepeater_TryGetElement(
+    FrameworkElement taskbarFrameRepeaterElement,
+    int index) {
+    winrt::Windows::Foundation::IUnknown pThis = nullptr;
+    taskbarFrameRepeaterElement.as(IItemsRepeater, winrt::put_abi(pThis));
+
+    using TryGetElement_t =
+        void*(WINAPI*)(void* pThis, int index, void** uiElement);
+
+    void** vtable = *(void***)winrt::get_abi(pThis);
+    auto TryGetElement = (TryGetElement_t)(*(vtable + 20));
+
+    void* uiElement = nullptr;
+    TryGetElement(winrt::get_abi(pThis), index, &uiElement);
+
+    return UIElement{uiElement, winrt::take_ownership_from_abi}
+        .try_as<FrameworkElement>();
+}
+
+double CalculateTaskbarItemWidth(FrameworkElement taskbarFrameRepeaterElement,
+                                 double minWidth,
+                                 double maxWidth) {
+#if defined(EXTRA_DBG_LOG)
+    LogAllElements(taskbarFrameRepeaterElement);
+#endif  // defined(EXTRA_DBG_LOG)
+
+    double taskbarFrameRepeaterEndOffset = 0;
+
+    auto rootGridElement =
+        Media::VisualTreeHelper::GetParent(taskbarFrameRepeaterElement)
+            .as<FrameworkElement>();
+    if (rootGridElement && rootGridElement.Name() == L"RootGrid") {
+        auto taskbarFrameElement =
+            Media::VisualTreeHelper::GetParent(rootGridElement)
+                .as<FrameworkElement>();
+        if (taskbarFrameElement &&
+            taskbarFrameElement.Name() == L"TaskbarFrame") {
+            auto containerGridElement =
+                Media::VisualTreeHelper::GetParent(taskbarFrameElement)
+                    .as<FrameworkElement>();
+            if (containerGridElement &&
+                winrt::get_class_name(containerGridElement) ==
+                    L"Windows.UI.Xaml.Controls.Grid") {
+                auto systemTrayFrameElement = FindChildByClassName(
+                    containerGridElement, L"SystemTray.SystemTrayFrame");
+                if (systemTrayFrameElement) {
+                    taskbarFrameRepeaterEndOffset =
+                        systemTrayFrameElement.ActualOffset().x;
+                }
             }
         }
     }
-}
 
-void LogElementTree(IInspectable* pElement) {
-    HRESULT hr;
+    // For older versions (pre-KB5022913). Only works correctly on primary
+    // monitor.
+    if (!taskbarFrameRepeaterEndOffset) {
+        HWND hTaskbarWnd = GetTaskbarWnd();
+        if (!hTaskbarWnd) {
+            return minWidth;
+        }
 
-    HStringReference hsVisualTreeHelperStatics(
-        L"Windows.UI.Xaml.Media.VisualTreeHelper");
-    ComPtr<Windows_UI_Xaml_IVisualTreeHelperStatics> pVisualTreeHelperStatics;
-    hr = RoGetActivationFactory(hsVisualTreeHelperStatics.Get(),
-                                IID_Windows_UI_Xaml_IVisualTreeHelperStatics,
-                                (void**)&pVisualTreeHelperStatics);
-    if (SUCCEEDED(hr)) {
-        ComPtr<Windows_UI_Xaml_IDependencyObject> pRootDependencyObject;
-        hr = pElement->QueryInterface(IID_Windows_UI_Xaml_IDependencyObject,
-                                      (void**)&pRootDependencyObject);
-        if (SUCCEEDED(hr)) {
-            LogElementTreeAux(pRootDependencyObject.Get(),
-                              pVisualTreeHelperStatics.Get(), 0);
+        HWND hTrayNotifyWnd =
+            FindWindowEx(hTaskbarWnd, nullptr, L"TrayNotifyWnd", nullptr);
+        if (!hTrayNotifyWnd) {
+            return minWidth;
+        }
+
+        RECT rcTrayNotify{};
+        if (!GetWindowRect(hTrayNotifyWnd, &rcTrayNotify)) {
+            return minWidth;
+        }
+
+        MapWindowPoints(HWND_DESKTOP, hTaskbarWnd, (LPPOINT)&rcTrayNotify, 2);
+
+        taskbarFrameRepeaterEndOffset = rcTrayNotify.left;
+    }
+
+    bool hasOverflowButton = false;
+    int taskListRunningButtonsCount = 0;
+    double otherElementsWidth = 0;
+
+    for (int i = 0;; i++) {
+        auto child =
+            ItemsRepeater_TryGetElement(taskbarFrameRepeaterElement, i);
+        if (!child) {
+            break;
+        }
+
+        auto childOffset = child.ActualOffset();
+        auto childWidth = child.ActualWidth();
+
+        if (childOffset.x + childWidth < 0) {
+            continue;
+        }
+
+        bool isRunningTaskListButton = false;
+        if (child.Name() == L"TaskListButton") {
+            if (TaskListButton_IsRunning(child)) {
+                isRunningTaskListButton = true;
+            }
+        } else if (child.Name() == L"OverflowButton") {
+            hasOverflowButton = true;
+        }
+
+        if (isRunningTaskListButton) {
+            taskListRunningButtonsCount++;
+        } else {
+            otherElementsWidth += childWidth;
         }
     }
+
+    if (hasOverflowButton) {
+        return minWidth;
+    }
+
+    if (taskListRunningButtonsCount == 0) {
+        return minWidth;
+    }
+
+    double width = (taskbarFrameRepeaterEndOffset - otherElementsWidth) /
+                   taskListRunningButtonsCount;
+
+    // Wh_Log(L"(%f-%f) / %d = %f", taskbarFrameRepeaterEndOffset,
+    //        otherElementsWidth, taskListRunningButtonsCount, width);
+
+    if (width < minWidth) {
+        return minWidth;
+    }
+
+    if (width > maxWidth) {
+        return maxWidth;
+    }
+
+    return width;
 }
-
-#endif  // defined(EXTRA_DBG_LOG)
-
-////////////////////////////////////////////////////////////////////////////////
 
 using CTaskListWnd__GetTBGroupFromGroup_t = void*(WINAPI*)(void* pThis,
                                                            void* taskGroup,
@@ -296,31 +483,63 @@ LONG_PTR WINAPI CTaskListWnd_TaskDestroyed_Hook(void* pThis,
     return ret;
 }
 
-////////////////////////////////////////////////////////////////////////////////
-
-double* double_48_value_Original;
-
-using ITaskListButton_get_IsRunning_t = HRESULT(WINAPI*)(void* pThis,
-                                                         bool* running);
-ITaskListButton_get_IsRunning_t ITaskListButton_get_IsRunning_Original;
-
-void UpdateTaskListButtonCustomizations(void* pTaskListButtonImpl) {
-    winrt::Windows::Foundation::IInspectable taskListButtonIInspectable;
-    winrt::copy_from_abi(taskListButtonIInspectable,
-                         *(IInspectable**)pTaskListButtonImpl);
-
-    auto taskListButtonElement =
-        taskListButtonIInspectable
-            .as<winrt::Windows::UI::Xaml::FrameworkElement>();
-
+void UpdateTaskListButtonWidth(FrameworkElement taskListButtonElement,
+                               double widthToSet,
+                               bool showLabels) {
     auto iconPanelElement =
-        FindChildByClassName(taskListButtonElement, L"IconPanel");
+        FindChildByName(taskListButtonElement, L"IconPanel");
     if (!iconPanelElement) {
         return;
     }
 
-    auto iconElement = FindChildByClassName(iconPanelElement, L"Icon");
+    auto iconElement = FindChildByName(iconPanelElement, L"Icon");
     if (!iconElement) {
+        return;
+    }
+
+    iconPanelElement.Width(widthToSet);
+
+    auto horizontalAlignment =
+        showLabels ? HorizontalAlignment::Left : HorizontalAlignment::Center;
+    iconElement.HorizontalAlignment(horizontalAlignment);
+
+    Thickness margin{};
+    if (showLabels) {
+        margin.Left = 10;
+    }
+    iconElement.Margin(margin);
+
+    // Don't remove, for some reason it causes a bug - the running indicator
+    // ends up being behind the semi-transparent rectangle of the active
+    // button. Hide it instead.
+    auto windhawkTextControl =
+        FindChildByName(iconPanelElement, L"WindhawkText");
+    if (windhawkTextControl) {
+        windhawkTextControl.Visibility(showLabels ? Visibility::Visible
+                                                  : Visibility::Collapsed);
+    }
+}
+
+void UpdateTaskListButtonCustomizations(
+    FrameworkElement taskListButtonElement) {
+    auto iconPanelElement =
+        FindChildByName(taskListButtonElement, L"IconPanel");
+    if (!iconPanelElement) {
+        return;
+    }
+
+    auto iconElement = FindChildByName(iconPanelElement, L"Icon");
+    if (!iconElement) {
+        return;
+    }
+
+    auto taskbarFrameRepeaterElement =
+        Media::VisualTreeHelper::GetParent(taskListButtonElement)
+            .as<FrameworkElement>();
+
+    if (!taskbarFrameRepeaterElement ||
+        taskbarFrameRepeaterElement.Name() != L"TaskbarFrameRepeater") {
+        // Can also be "OverflowFlyoutListRepeater".
         return;
     }
 
@@ -333,42 +552,30 @@ void UpdateTaskListButtonCustomizations(void* pTaskListButtonImpl) {
         return;
     }
 
-    static double initialWidth = iconPanelWidth;
+    if (!g_initialTaskbarItemWidth) {
+        g_initialTaskbarItemWidth = iconPanelWidth;
+    }
 
-    void* taskListButtonProducer = (BYTE*)pTaskListButtonImpl + 0x10;
-
-    bool isRunning = false;
-    ITaskListButton_get_IsRunning_Original(taskListButtonProducer, &isRunning);
-
+    bool isRunning = TaskListButton_IsRunning(taskListButtonElement);
     bool showLabels = isRunning && !g_unloading;
 
-    double widthToSet = showLabels ? g_settings.taskbarItemWidth : initialWidth;
+    double widthToSet;
 
-    if (widthToSet != taskListButtonWidth || widthToSet != iconPanelWidth) {
-        taskListButtonElement.Width(widthToSet);
-        iconPanelElement.Width(widthToSet);
+    if (showLabels) {
+        widthToSet = CalculateTaskbarItemWidth(taskbarFrameRepeaterElement,
+                                               g_initialTaskbarItemWidth,
+                                               g_settings.taskbarItemWidth);
 
-        auto horizontalAlignment =
-            showLabels ? winrt::Windows::UI::Xaml::HorizontalAlignment::Left
-                       : winrt::Windows::UI::Xaml::HorizontalAlignment::Center;
-        iconElement.HorizontalAlignment(horizontalAlignment);
-
-        winrt::Windows::UI::Xaml::Thickness margin{};
-        if (showLabels) {
-            margin.Left = 10;
+        if (widthToSet <= g_initialTaskbarItemWidth + 16) {
+            showLabels = false;
         }
-        iconElement.Margin(margin);
+    } else {
+        widthToSet = g_initialTaskbarItemWidth;
     }
 
     auto windhawkTextElement =
-        FindChildByClassName(iconPanelElement, L"WindhawkText");
-
-    if (showLabels && !windhawkTextElement) {
-        auto iconPanel =
-            iconPanelElement.as<winrt::Windows::UI::Xaml::Controls::Panel>();
-
-        auto children = iconPanel.Children();
-
+        FindChildByName(iconPanelElement, L"WindhawkText");
+    if (!windhawkTextElement) {
         PCWSTR xaml =
             LR"(
                 <TextBlock
@@ -384,47 +591,60 @@ void UpdateTaskListButtonCustomizations(void* pTaskListButtonImpl) {
                 />
             )";
 
-        auto pUIElement =
-            winrt::Windows::UI::Xaml::Markup::XamlReader::Load(xaml)
-                .as<winrt::Windows::UI::Xaml::FrameworkElement>();
-        if (pUIElement) {
-            children.Append(pUIElement);
+        windhawkTextElement =
+            Markup::XamlReader::Load(xaml).as<FrameworkElement>();
 
-            winrt::Windows::UI::Xaml::Thickness margin{
-                .Left = 10 + 24 + 8,
-                .Right = 10,
-                .Bottom = 2,
-            };
-            pUIElement.Margin(margin);
-        }
-    } else if (!showLabels && windhawkTextElement) {
-        // Don't remove, for some reason it causes a bug - the running indicator
-        // ends up being behind the semi-transparent rectangle of the active
-        // button.
-        /*
-        ComPtr<Windows_UI_Xaml_Controls_IPanel> pIconPanel;
-        hr = pIconPanelElement->QueryInterface(
-            IID_Windows_UI_Xaml_Controls_IPanel, (void**)&pIconPanel);
-        if (SUCCEEDED(hr)) {
-            ComPtr<IVector> children;
-            hr = pIconPanel->get_Children(&children);
-            if (SUCCEEDED(hr)) {
-                unsigned int index = -1;
-                boolean found = false;
-                hr = children->IndexOf(pWindhawkTextElement.Get(), &index,
-                                       &found);
-                if (SUCCEEDED(hr) && found) {
-                    hr = children->RemoveAt(index);
-                }
-            }
-        }
-        */
+        Thickness margin{
+            .Left = 10 + iconElement.ActualWidth() + 8,
+            .Right = 10,
+            .Bottom = 2,
+        };
+        windhawkTextElement.Margin(margin);
 
-        // Set empty text instead.
+        iconPanelElement.as<Controls::Panel>().Children().Append(
+            windhawkTextElement);
+    }
+
+    UpdateTaskListButtonWidth(taskListButtonElement, widthToSet, showLabels);
+
+    bool textLabelMissing = false;
+
+    if (!isRunning) {
         auto windhawkTextControl =
-            windhawkTextElement
-                .as<winrt::Windows::UI::Xaml::Controls::TextBlock>();
-        windhawkTextControl.Text(L"");
+            windhawkTextElement.as<Controls::TextBlock>();
+        // The check is important. Without it, there's an infinite rerendering
+        // loop.
+        if (windhawkTextControl.Text() != L"") {
+            windhawkTextControl.Text(L"");
+        }
+    } else if (showLabels) {
+        auto windhawkTextControl =
+            windhawkTextElement.as<Controls::TextBlock>();
+        if (windhawkTextControl.Text() == L"") {
+            textLabelMissing = true;
+        }
+    }
+
+    if (textLabelMissing && !g_unloading) {
+        g_taskListButtonsWithLabelMissing.insert(windhawkTextElement);
+
+        g_invalidateTaskListButtonTimer =
+            SetTimer(nullptr, g_invalidateTaskListButtonTimer, 200,
+                     [](HWND hwnd,  // handle of window for timer messages
+                        UINT uMsg,  // WM_TIMER message
+                        UINT_PTR idEvent,  // timer identifier
+                        DWORD dwTime       // current system time
+                        ) WINAPI {
+                         KillTimer(nullptr, g_invalidateTaskListButtonTimer);
+                         g_invalidateTaskListButtonTimer = 0;
+
+                         if (!g_taskListButtonsWithLabelMissing.empty()) {
+                             g_taskListButtonsWithLabelMissing.clear();
+                             RecalculateLabels();
+                         }
+                     });
+    } else if (!textLabelMissing && g_invalidateTaskListButtonTimer) {
+        g_taskListButtonsWithLabelMissing.erase(windhawkTextElement);
     }
 }
 
@@ -435,16 +655,13 @@ void WINAPI TaskListButton_UpdateVisualStates_Hook(void* pThis) {
 
     TaskListButton_UpdateVisualStates_Original(pThis);
 
-    void* pTaskListButtonImpl = (BYTE*)pThis + 0x08;
+    void* taskListButtonIUnknownPtr = (void**)pThis + 3;
+    winrt::Windows::Foundation::IUnknown taskListButtonIUnknown;
+    winrt::copy_from_abi(taskListButtonIUnknown, taskListButtonIUnknownPtr);
 
-#if defined(EXTRA_DBG_LOG)
-    Wh_Log(L"=====");
-    IInspectable* pTaskListButton = *(IInspectable**)pTaskListButtonImpl;
-    LogElementTree(pTaskListButton);
-    Wh_Log(L"=====");
-#endif  // defined(EXTRA_DBG_LOG)
+    auto taskListButtonElement = taskListButtonIUnknown.as<FrameworkElement>();
 
-    UpdateTaskListButtonCustomizations(pTaskListButtonImpl);
+    UpdateTaskListButtonCustomizations(taskListButtonElement);
 }
 
 using TaskListButton_UpdateButtonPadding_t = void(WINAPI*)(void* pThis);
@@ -455,9 +672,59 @@ void WINAPI TaskListButton_UpdateButtonPadding_Hook(void* pThis) {
 
     TaskListButton_UpdateButtonPadding_Original(pThis);
 
-    void* pTaskListButtonImpl = (BYTE*)pThis + 0x08;
+    void* taskListButtonIUnknownPtr = (void**)pThis + 3;
+    winrt::Windows::Foundation::IUnknown taskListButtonIUnknown;
+    winrt::copy_from_abi(taskListButtonIUnknown, taskListButtonIUnknownPtr);
 
-    UpdateTaskListButtonCustomizations(pTaskListButtonImpl);
+    auto taskListButtonElement = taskListButtonIUnknown.as<FrameworkElement>();
+
+    UpdateTaskListButtonCustomizations(taskListButtonElement);
+}
+
+using TaskbarFrame_OnTaskbarLayoutChildBoundsChanged_t =
+    void(WINAPI*)(void* pThis);
+TaskbarFrame_OnTaskbarLayoutChildBoundsChanged_t
+    TaskbarFrame_OnTaskbarLayoutChildBoundsChanged_Original;
+void WINAPI TaskbarFrame_OnTaskbarLayoutChildBoundsChanged_Hook(void* pThis) {
+    Wh_Log(L">");
+
+    TaskbarFrame_OnTaskbarLayoutChildBoundsChanged_Original(pThis);
+
+    void* taskbarFrameIUnknownPtr = (void**)pThis + 3;
+    winrt::Windows::Foundation::IUnknown taskbarFrameIUnknown;
+    winrt::copy_from_abi(taskbarFrameIUnknown, taskbarFrameIUnknownPtr);
+
+    auto taskbarFrameElement = taskbarFrameIUnknown.as<FrameworkElement>();
+
+    auto taskbarFrameRepeaterContainerElement =
+        FindChildByName(taskbarFrameElement, L"RootGrid");
+    if (!taskbarFrameRepeaterContainerElement) {
+        // For older versions (pre-KB5022913).
+        taskbarFrameRepeaterContainerElement =
+            FindChildByName(taskbarFrameElement, L"TaskbarFrameBorder");
+    }
+
+    if (!taskbarFrameRepeaterContainerElement) {
+        return;
+    }
+
+    auto taskbarFrameRepeaterElement = FindChildByName(
+        taskbarFrameRepeaterContainerElement, L"TaskbarFrameRepeater");
+    if (!taskbarFrameRepeaterElement) {
+        return;
+    }
+
+    for (int i = 0;; i++) {
+        auto child =
+            ItemsRepeater_TryGetElement(taskbarFrameRepeaterElement, i);
+        if (!child) {
+            break;
+        }
+
+        if (child.Name() == L"TaskListButton") {
+            UpdateTaskListButtonCustomizations(child);
+        }
+    }
 }
 
 using TaskListButton_Icon_t = void(WINAPI*)(void* pThis,
@@ -472,26 +739,23 @@ void WINAPI TaskListButton_Icon_Hook(void* pThis, LONG_PTR randomAccessStream) {
         return;
     }
 
-    void* pTaskListButtonImpl = (BYTE*)pThis + 0x08;
+    void* taskListButtonIUnknownPtr = (void**)pThis + 3;
+    winrt::Windows::Foundation::IUnknown taskListButtonIUnknown;
+    winrt::copy_from_abi(taskListButtonIUnknown, taskListButtonIUnknownPtr);
 
-    winrt::Windows::Foundation::IInspectable taskListButtonIInspectable;
-    winrt::copy_from_abi(taskListButtonIInspectable,
-                         *(IInspectable**)pTaskListButtonImpl);
-
-    auto taskListButtonElement =
-        taskListButtonIInspectable
-            .as<winrt::Windows::UI::Xaml::FrameworkElement>();
+    auto taskListButtonElement = taskListButtonIUnknown.as<FrameworkElement>();
 
     auto iconPanelElement =
-        FindChildByClassName(taskListButtonElement, L"IconPanel");
+        FindChildByName(taskListButtonElement, L"IconPanel");
     if (iconPanelElement) {
-        auto windhawkTextElement =
-            FindChildByClassName(iconPanelElement, L"WindhawkText");
-        if (windhawkTextElement) {
-            auto windhawkTextControl =
-                windhawkTextElement
-                    .as<winrt::Windows::UI::Xaml::Controls::TextBlock>();
-            windhawkTextControl.Text(g_taskBtnGroupTitleInGroupChanged);
+        auto windhawkTextControl =
+            FindChildByName(iconPanelElement, L"WindhawkText")
+                .as<Controls::TextBlock>();
+        if (windhawkTextControl) {
+            // Avoid setting empty text as it's used for missing titles.
+            windhawkTextControl.Text(*g_taskBtnGroupTitleInGroupChanged
+                                         ? g_taskBtnGroupTitleInGroupChanged
+                                         : L" ");
         }
     }
 }
@@ -504,77 +768,8 @@ void FreeSettings() {
     // Nothing for now.
 }
 
-bool ProtectAndMemcpy(DWORD protect, void* dst, const void* src, size_t size) {
-    DWORD oldProtect;
-    if (!VirtualProtect(dst, size, protect, &oldProtect)) {
-        return false;
-    }
-
-    memcpy(dst, src, size);
-    VirtualProtect(dst, size, oldProtect, &oldProtect);
-    return true;
-}
-
 void ApplySettings() {
-    HWND hTaskbarWnd = FindWindow(L"Shell_TrayWnd", nullptr);
-    DWORD dwTaskbarProcessId = 0;
-    if (hTaskbarWnd &&
-        GetWindowThreadProcessId(hTaskbarWnd, &dwTaskbarProcessId) &&
-        dwTaskbarProcessId != GetCurrentProcessId()) {
-        hTaskbarWnd = nullptr;
-    }
-
-    if (!hTaskbarWnd) {
-        return;
-    }
-
-    g_applyingSettings = true;
-
-    double prevTaskbarHeight = *double_48_value_Original;
-
-    RECT taskbarRect{};
-    GetWindowRect(hTaskbarWnd, &taskbarRect);
-
-    // Temporarily change the height to force a UI refresh.
-    double tempTaskbarHeight = 1;
-    ProtectAndMemcpy(PAGE_READWRITE, double_48_value_Original,
-                     &tempTaskbarHeight, sizeof(double));
-
-    // Trigger TrayUI::_HandleSettingChange.
-    SendMessage(hTaskbarWnd, WM_SETTINGCHANGE, SPI_SETLOGICALDPIOVERRIDE, 0);
-
-    // Wait for the change to apply.
-    RECT newTaskbarRect{};
-    int counter = 0;
-    while (GetWindowRect(hTaskbarWnd, &newTaskbarRect) &&
-           newTaskbarRect.top == taskbarRect.top) {
-        if (++counter >= 100) {
-            break;
-        }
-        Sleep(100);
-    }
-
-    ProtectAndMemcpy(PAGE_READWRITE, double_48_value_Original,
-                     &prevTaskbarHeight, sizeof(double));
-
-    if (hTaskbarWnd) {
-        // Trigger TrayUI::_HandleSettingChange.
-        SendMessage(hTaskbarWnd, WM_SETTINGCHANGE, SPI_SETLOGICALDPIOVERRIDE,
-                    0);
-
-        HWND hReBarWindow32 =
-            FindWindowEx(hTaskbarWnd, nullptr, L"ReBarWindow32", nullptr);
-        if (hReBarWindow32) {
-            HWND hMSTaskSwWClass = FindWindowEx(hReBarWindow32, nullptr,
-                                                L"MSTaskSwWClass", nullptr);
-            if (hMSTaskSwWClass) {
-                // Trigger CTaskBand::_HandleSyncDisplayChange.
-                SendMessage(hMSTaskSwWClass, 0x452, 3, 0);
-            }
-        }
-    }
-
-    g_applyingSettings = false;
+    RecalculateLabels();
 }
 
 struct SYMBOL_HOOK {
@@ -946,15 +1141,11 @@ bool HookTaskbarViewDllSymbols() {
 
     SYMBOL_HOOK symbolHooks[] = {
         {
-            {LR"(__real@4048000000000000)"},
-            (void**)&double_48_value_Original,
-        },
-        {
             {
                 LR"(public: virtual int __cdecl winrt::impl::produce<struct winrt::Taskbar::implementation::TaskListButton,struct winrt::Taskbar::ITaskListButton>::get_IsRunning(bool *))",
                 LR"(public: virtual int __cdecl winrt::impl::produce<struct winrt::Taskbar::implementation::TaskListButton,struct winrt::Taskbar::ITaskListButton>::get_IsRunning(bool * __ptr64) __ptr64)",
             },
-            (void**)&ITaskListButton_get_IsRunning_Original,
+            (void**)&TaskListButton_get_IsRunning_Original,
         },
         {
             {
@@ -971,6 +1162,14 @@ bool HookTaskbarViewDllSymbols() {
             },
             (void**)&TaskListButton_UpdateButtonPadding_Original,
             (void*)TaskListButton_UpdateButtonPadding_Hook,
+        },
+        {
+            {
+                LR"(private: void __cdecl winrt::Taskbar::implementation::TaskbarFrame::OnTaskbarLayoutChildBoundsChanged(void))",
+                LR"(private: void __cdecl winrt::Taskbar::implementation::TaskbarFrame::OnTaskbarLayoutChildBoundsChanged(void) __ptr64)",
+            },
+            (void**)&TaskbarFrame_OnTaskbarLayoutChildBoundsChanged_Original,
+            (void*)TaskbarFrame_OnTaskbarLayoutChildBoundsChanged_Hook,
         },
         {
             {
@@ -1012,6 +1211,10 @@ void Wh_ModBeforeUninit() {
 
     g_unloading = true;
     ApplySettings();
+
+    // This is required to give time for taskbar buttons of UWP apps to update
+    // the layout.
+    Sleep(400);
 }
 
 void Wh_ModUninit() {
