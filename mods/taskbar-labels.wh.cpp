@@ -2,7 +2,7 @@
 // @id              taskbar-labels
 // @name            Taskbar Labels for Windows 11
 // @description     Show text labels for running programs on the taskbar (Windows 11 only)
-// @version         1.0.3
+// @version         1.1
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
@@ -30,6 +30,11 @@ Before:
 After:
 
 ![After screenshot](https://i.imgur.com/qpc4iFh.png)
+
+Additional customization is available in the settings. For example, you can
+choose one of the following running indicator styles:
+
+![Running indicator styles](https://i.imgur.com/HpytGBO.png)
 */
 // ==/WindhawkModReadme==
 
