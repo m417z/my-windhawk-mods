@@ -251,25 +251,16 @@ void LogAllElements(FrameworkElement element) {
 }
 #endif  // defined(EXTRA_DBG_LOG)
 
-// {7C3E0575-EB65-5A36-B1CF-8322C06C53C3}
-constexpr winrt::guid ITaskListButton{
-    0x7C3E0575,
-    0xEB65,
-    0x5A36,
-    {0xB1, 0xCF, 0x83, 0x22, 0xC0, 0x6C, 0x53, 0xC3}};
+using TaskListButton_get_IsRunning_t = HRESULT(WINAPI*)(void* pThis,
+                                                        bool* running);
+TaskListButton_get_IsRunning_t TaskListButton_get_IsRunning_Original;
 
 bool TaskListButton_IsRunning(FrameworkElement taskListButtonElement) {
-    winrt::Windows::Foundation::IUnknown pThis = nullptr;
-    taskListButtonElement.as(ITaskListButton, winrt::put_abi(pThis));
-
-    using IsRunning_t = HRESULT(WINAPI*)(void* pThis, bool* running);
-
-    void** vtable = *(void***)winrt::get_abi(pThis);
-    auto IsRunning = (IsRunning_t)vtable[20];
-
     bool isRunning = false;
-    IsRunning(winrt::get_abi(pThis), &isRunning);
-
+    TaskListButton_get_IsRunning_Original(
+        winrt::get_abi(
+            taskListButtonElement.as<winrt::Windows::Foundation::IUnknown>()),
+        &isRunning);
     return isRunning;
 }
 
@@ -1334,6 +1325,13 @@ bool HookTaskbarViewDllSymbols() {
     }
 
     SYMBOL_HOOK symbolHooks[] = {
+        {
+            {
+                LR"(public: virtual int __cdecl winrt::impl::produce<struct winrt::Taskbar::implementation::TaskListButton,struct winrt::Taskbar::ITaskListButton>::get_IsRunning(bool *))",
+                LR"(public: virtual int __cdecl winrt::impl::produce<struct winrt::Taskbar::implementation::TaskListButton,struct winrt::Taskbar::ITaskListButton>::get_IsRunning(bool * __ptr64) __ptr64)",
+            },
+            (void**)&TaskListButton_get_IsRunning_Original,
+        },
         {
             {
                 LR"(private: void __cdecl winrt::Taskbar::implementation::TaskListButton::UpdateVisualStates(void))",
