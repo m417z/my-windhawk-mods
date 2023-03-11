@@ -9,7 +9,7 @@
 // @homepage        https://m417z.com/
 // @include         explorer.exe
 // @architecture    x86-64
-// @compilerOptions -loleaut32 -lole32 -lruntimeobject  -O0
+// @compilerOptions -loleaut32 -lole32 -lruntimeobject
 // ==/WindhawkMod==
 
 // Source code is published under The GNU General Public License v3.0.
@@ -56,6 +56,7 @@ After:
 #include <winrt/Windows.UI.Xaml.Media.h>
 
 #include <algorithm>
+#include <limits>
 #include <string>
 #include <string_view>
 #include <unordered_set>
@@ -227,16 +228,18 @@ constexpr winrt::guid ITaskListButton{
     0x5A36,
     {0xB1, 0xCF, 0x83, 0x22, 0xC0, 0x6C, 0x53, 0xC3}};
 
-using TaskListButton_get_IsRunning_t = HRESULT(WINAPI*)(void* pThis,
-                                                        bool* running);
-TaskListButton_get_IsRunning_t TaskListButton_get_IsRunning_Original;
-
 bool TaskListButton_IsRunning(FrameworkElement taskListButtonElement) {
     winrt::Windows::Foundation::IUnknown pThis = nullptr;
     taskListButtonElement.as(ITaskListButton, winrt::put_abi(pThis));
 
+    using IsRunning_t = HRESULT(WINAPI*)(void* pThis, bool* running);
+
+    void** vtable = *(void***)winrt::get_abi(pThis);
+    auto IsRunning = (IsRunning_t)vtable[20];
+
     bool isRunning = false;
-    TaskListButton_get_IsRunning_Original(winrt::get_abi(pThis), &isRunning);
+    IsRunning(winrt::get_abi(pThis), &isRunning);
+
     return isRunning;
 }
 
@@ -257,7 +260,7 @@ FrameworkElement ItemsRepeater_TryGetElement(
         void*(WINAPI*)(void* pThis, int index, void** uiElement);
 
     void** vtable = *(void***)winrt::get_abi(pThis);
-    auto TryGetElement = (TryGetElement_t)(*(vtable + 20));
+    auto TryGetElement = (TryGetElement_t)vtable[20];
 
     void* uiElement = nullptr;
     TryGetElement(winrt::get_abi(pThis), index, &uiElement);
@@ -497,17 +500,25 @@ void UpdateTaskListButtonWidth(FrameworkElement taskListButtonElement,
         return;
     }
 
+    // Reset in case an old version of the mod was installed.
+    taskListButtonElement.Width(std::numeric_limits<double>::quiet_NaN());
+
     iconPanelElement.Width(widthToSet);
 
-    auto horizontalAlignment =
-        showLabels ? HorizontalAlignment::Left : HorizontalAlignment::Center;
-    iconElement.HorizontalAlignment(horizontalAlignment);
+    iconElement.HorizontalAlignment(showLabels ? HorizontalAlignment::Left
+                                               : HorizontalAlignment::Stretch);
 
-    Thickness margin{};
-    if (showLabels) {
-        margin.Left = 10;
+    auto overlayIconElement = FindChildByName(iconPanelElement, L"OverlayIcon");
+    if (overlayIconElement) {
+        overlayIconElement.Margin(Thickness{
+            .Right = showLabels ? (widthToSet - iconElement.ActualWidth() - 14)
+                                : 0.0,
+        });
     }
-    iconElement.Margin(margin);
+
+    iconElement.Margin(Thickness{
+        .Left = showLabels ? 10.0 : 0.0,
+    });
 
     // Don't remove, for some reason it causes a bug - the running indicator
     // ends up being behind the semi-transparent rectangle of the active
@@ -1140,13 +1151,6 @@ bool HookTaskbarViewDllSymbols() {
     }
 
     SYMBOL_HOOK symbolHooks[] = {
-        {
-            {
-                LR"(public: virtual int __cdecl winrt::impl::produce<struct winrt::Taskbar::implementation::TaskListButton,struct winrt::Taskbar::ITaskListButton>::get_IsRunning(bool *))",
-                LR"(public: virtual int __cdecl winrt::impl::produce<struct winrt::Taskbar::implementation::TaskListButton,struct winrt::Taskbar::ITaskListButton>::get_IsRunning(bool * __ptr64) __ptr64)",
-            },
-            (void**)&TaskListButton_get_IsRunning_Original,
-        },
         {
             {
                 LR"(private: void __cdecl winrt::Taskbar::implementation::TaskListButton::UpdateVisualStates(void))",
