@@ -37,8 +37,25 @@ After:
 /*
 - taskbarItemWidth: 160
   $name: Taskbar item width
+- runningIndicatorStyle: centerFixed
+  $name: Running indicator style
+  $options:
+  - centerFixed: Centered, fixed size
+  - centerDynamic: Centered, dynamic size
+  - left: On the left (below the icon)
+  - fullWidth: Full width
+- fontSize: 12
+  $name: Font size
+- leftAndRightPaddingSize: 10
+  $name: Left and right padding size
+- spaceBetweenIconAndLabel: 8
+  $name: Space between icon and label
+- labelForSingleItem: "%name%"
+  $name: Label for a single item
   $description: >-
-    The width of taskbar items for which text labels are added
+    The following variables can be used: %name%, %amount%
+- labelForMultipleItems: "[%amount%] %name%"
+  $name: Label for multiple items
 */
 // ==/WindhawkModSettings==
 
@@ -66,8 +83,21 @@ using namespace winrt::Windows::UI::Xaml;
 
 // #define EXTRA_DBG_LOG
 
+enum class RunningIndicatorStyle {
+    centerFixed,
+    centerDynamic,
+    left,
+    fullWidth,
+};
+
 struct {
     int taskbarItemWidth;
+    RunningIndicatorStyle runningIndicatorStyle;
+    int fontSize;
+    int leftAndRightPaddingSize;
+    int spaceBetweenIconAndLabel;
+    PCWSTR labelForSingleItem;
+    PCWSTR labelForMultipleItems;
 } g_settings;
 
 bool g_applyingSettings = false;
@@ -419,6 +449,80 @@ bool WINAPI IconContainer_IsStorageRecreationRequired_Hook(void* pThis,
                                                               flags);
 }
 
+int StringCopyTruncated(PWSTR dest,
+                        size_t destSize,
+                        PCWSTR src,
+                        bool* truncated) {
+    if (destSize == 0) {
+        *truncated = *src;
+        return 0;
+    }
+
+    size_t i;
+    for (i = 0; i < destSize - 1 && *src; i++) {
+        *dest++ = *src++;
+    }
+
+    *dest = L'\0';
+    *truncated = *src;
+    return i;
+}
+
+int FormatLabel(PCWSTR name,
+                int numItems,
+                PWSTR buffer,
+                size_t bufferSize,
+                PCWSTR format) {
+    if (bufferSize == 0) {
+        return 0;
+    }
+
+    WCHAR tempNumberBuffer[16];
+
+    PWSTR bufferStart = buffer;
+    PWSTR bufferEnd = bufferStart + bufferSize;
+    while (*format && bufferEnd - buffer > 1) {
+        if (*format == L'%') {
+            PCWSTR srcStr = nullptr;
+            size_t formatTokenLen;
+
+            if (wcsncmp(L"%name%", format, sizeof("%name%") - 1) == 0) {
+                srcStr = name;
+                formatTokenLen = sizeof("%name%") - 1;
+            } else if (wcsncmp(L"%amount%", format, sizeof("%amount%") - 1) ==
+                       0) {
+                swprintf_s(tempNumberBuffer, L"%d", numItems);
+                srcStr = tempNumberBuffer;
+                formatTokenLen = sizeof("%amount%") - 1;
+            }
+
+            if (srcStr) {
+                bool truncated;
+                buffer += StringCopyTruncated(buffer, bufferEnd - buffer,
+                                              srcStr, &truncated);
+                if (truncated) {
+                    break;
+                }
+
+                format += formatTokenLen;
+                continue;
+            }
+        }
+
+        *buffer++ = *format++;
+    }
+
+    if (*format && bufferSize >= 4) {
+        buffer[-1] = L'.';
+        buffer[-2] = L'.';
+        buffer[-3] = L'.';
+    }
+
+    *buffer = L'\0';
+
+    return buffer - bufferStart;
+}
+
 bool g_inGroupChanged;
 WCHAR g_taskBtnGroupTitleInGroupChanged[256];
 
@@ -443,17 +547,14 @@ LONG_PTR WINAPI CTaskListWnd_GroupChanged_Hook(void* pThis,
         }
     }
 
-    WCHAR* textBuffer = g_taskBtnGroupTitleInGroupChanged;
-    int textBufferSize = ARRAYSIZE(g_taskBtnGroupTitleInGroupChanged);
-
-    if (numItems > 1) {
-        int written = wsprintf(textBuffer, L"[%d] ", numItems);
-        textBuffer += written;
-        textBufferSize -= written;
-    }
-
+    WCHAR textBuffer[256] = L"";
     CTaskGroup_GetTitleText_Original(taskGroup, taskItem, textBuffer,
-                                     textBufferSize);
+                                     ARRAYSIZE(textBuffer));
+
+    FormatLabel(textBuffer, numItems, g_taskBtnGroupTitleInGroupChanged,
+                ARRAYSIZE(g_taskBtnGroupTitleInGroupChanged),
+                numItems > 1 ? g_settings.labelForMultipleItems
+                             : g_settings.labelForSingleItem);
 
     g_inGroupChanged = true;
     LONG_PTR ret =
@@ -508,26 +609,94 @@ void UpdateTaskListButtonWidth(FrameworkElement taskListButtonElement,
     iconElement.HorizontalAlignment(showLabels ? HorizontalAlignment::Left
                                                : HorizontalAlignment::Stretch);
 
+    iconElement.Margin(Thickness{
+        .Left = showLabels ? g_settings.leftAndRightPaddingSize : 0.0,
+    });
+
     auto overlayIconElement = FindChildByName(iconPanelElement, L"OverlayIcon");
     if (overlayIconElement) {
         overlayIconElement.Margin(Thickness{
-            .Right = showLabels ? (widthToSet - iconElement.ActualWidth() - 14)
+            .Right = showLabels ? (widthToSet - iconElement.ActualWidth() -
+                                   g_settings.leftAndRightPaddingSize - 4)
                                 : 0.0,
         });
     }
 
-    iconElement.Margin(Thickness{
-        .Left = showLabels ? 10.0 : 0.0,
-    });
+    PCWSTR indicatorClassNames[] = {
+        L"RunningIndicator",
+        L"ProgressIndicator",
+    };
+    for (auto indicatorClassName : indicatorClassNames) {
+        auto indicatorElement =
+            FindChildByName(iconPanelElement, indicatorClassName);
+        if (!indicatorElement) {
+            continue;
+        }
+
+        double minWidth = 0;
+
+        if (!g_unloading) {
+            if (g_settings.runningIndicatorStyle ==
+                RunningIndicatorStyle::centerDynamic) {
+                minWidth = indicatorElement.Width() * widthToSet /
+                           g_initialTaskbarItemWidth;
+            } else if (g_settings.runningIndicatorStyle ==
+                       RunningIndicatorStyle::fullWidth) {
+                minWidth = widthToSet - 6;
+            }
+        }
+
+        indicatorElement.MinWidth(minWidth);
+
+        if (wcscmp(indicatorClassName, L"ProgressIndicator") == 0) {
+            auto element = indicatorElement;
+            if ((element = FindChildByName(element, L"LayoutRoot")) &&
+                (element = FindChildByName(element, L"ProgressBarRoot")) &&
+                (element = FindChildByClassName(
+                     element, L"Windows.UI.Xaml.Controls.Border")) &&
+                (element = FindChildByClassName(
+                     element, L"Windows.UI.Xaml.Controls.Grid")) &&
+                (element = FindChildByName(element, L"ProgressBarTrack"))) {
+                element.MinWidth(minWidth);
+            }
+        }
+
+        indicatorElement.Margin(Thickness{
+            .Right = g_settings.runningIndicatorStyle ==
+                                 RunningIndicatorStyle::left &&
+                             showLabels
+                         ? (widthToSet - iconElement.ActualWidth() -
+                            g_settings.leftAndRightPaddingSize * 2 - 4)
+                         : 0.0,
+        });
+    }
 
     // Don't remove, for some reason it causes a bug - the running indicator
     // ends up being behind the semi-transparent rectangle of the active
     // button. Hide it instead.
     auto windhawkTextControl =
-        FindChildByName(iconPanelElement, L"WindhawkText");
+        FindChildByName(iconPanelElement, L"WindhawkText")
+            .as<Controls::TextBlock>();
     if (windhawkTextControl) {
-        windhawkTextControl.Visibility(showLabels ? Visibility::Visible
-                                                  : Visibility::Collapsed);
+        if (!showLabels) {
+            windhawkTextControl.Visibility(Visibility::Collapsed);
+        }
+
+        windhawkTextControl.Margin(Thickness{
+            .Left = g_settings.leftAndRightPaddingSize +
+                    iconElement.ActualWidth() +
+                    g_settings.spaceBetweenIconAndLabel,
+            .Right = static_cast<double>(g_settings.leftAndRightPaddingSize),
+            .Bottom = 2,
+        });
+
+        if (windhawkTextControl.FontSize() != g_settings.fontSize) {
+            windhawkTextControl.FontSize(g_settings.fontSize);
+        }
+
+        if (showLabels) {
+            windhawkTextControl.Visibility(Visibility::Visible);
+        }
     }
 }
 
@@ -584,9 +753,10 @@ void UpdateTaskListButtonCustomizations(
         widthToSet = g_initialTaskbarItemWidth;
     }
 
-    auto windhawkTextElement =
-        FindChildByName(iconPanelElement, L"WindhawkText");
-    if (!windhawkTextElement) {
+    auto windhawkTextControl =
+        FindChildByName(iconPanelElement, L"WindhawkText")
+            .as<Controls::TextBlock>();
+    if (!windhawkTextControl) {
         PCWSTR xaml =
             LR"(
                 <TextBlock
@@ -602,18 +772,13 @@ void UpdateTaskListButtonCustomizations(
                 />
             )";
 
-        windhawkTextElement =
-            Markup::XamlReader::Load(xaml).as<FrameworkElement>();
+        windhawkTextControl =
+            Markup::XamlReader::Load(xaml).as<Controls::TextBlock>();
 
-        Thickness margin{
-            .Left = 10 + iconElement.ActualWidth() + 8,
-            .Right = 10,
-            .Bottom = 2,
-        };
-        windhawkTextElement.Margin(margin);
+        windhawkTextControl.FontSize(g_settings.fontSize);
 
         iconPanelElement.as<Controls::Panel>().Children().Append(
-            windhawkTextElement);
+            windhawkTextControl);
     }
 
     UpdateTaskListButtonWidth(taskListButtonElement, widthToSet, showLabels);
@@ -621,23 +786,19 @@ void UpdateTaskListButtonCustomizations(
     bool textLabelMissing = false;
 
     if (!isRunning) {
-        auto windhawkTextControl =
-            windhawkTextElement.as<Controls::TextBlock>();
         // The check is important. Without it, there's an infinite rerendering
         // loop.
         if (windhawkTextControl.Text() != L"") {
             windhawkTextControl.Text(L"");
         }
     } else if (showLabels) {
-        auto windhawkTextControl =
-            windhawkTextElement.as<Controls::TextBlock>();
         if (windhawkTextControl.Text() == L"") {
             textLabelMissing = true;
         }
     }
 
     if (textLabelMissing && !g_unloading) {
-        g_taskListButtonsWithLabelMissing.insert(windhawkTextElement);
+        g_taskListButtonsWithLabelMissing.insert(windhawkTextControl);
 
         g_invalidateTaskListButtonTimer =
             SetTimer(nullptr, g_invalidateTaskListButtonTimer, 200,
@@ -655,7 +816,7 @@ void UpdateTaskListButtonCustomizations(
                          }
                      });
     } else if (!textLabelMissing && g_invalidateTaskListButtonTimer) {
-        g_taskListButtonsWithLabelMissing.erase(windhawkTextElement);
+        g_taskListButtonsWithLabelMissing.erase(windhawkTextControl);
     }
 }
 
@@ -773,10 +934,32 @@ void WINAPI TaskListButton_Icon_Hook(void* pThis, LONG_PTR randomAccessStream) {
 
 void LoadSettings() {
     g_settings.taskbarItemWidth = Wh_GetIntSetting(L"taskbarItemWidth");
+
+    PCWSTR runningIndicatorStyle =
+        Wh_GetStringSetting(L"runningIndicatorStyle");
+    g_settings.runningIndicatorStyle = RunningIndicatorStyle::centerFixed;
+    if (wcscmp(runningIndicatorStyle, L"centerDynamic") == 0) {
+        g_settings.runningIndicatorStyle = RunningIndicatorStyle::centerDynamic;
+    } else if (wcscmp(runningIndicatorStyle, L"left") == 0) {
+        g_settings.runningIndicatorStyle = RunningIndicatorStyle::left;
+    } else if (wcscmp(runningIndicatorStyle, L"fullWidth") == 0) {
+        g_settings.runningIndicatorStyle = RunningIndicatorStyle::fullWidth;
+    }
+    Wh_FreeStringSetting(runningIndicatorStyle);
+
+    g_settings.fontSize = Wh_GetIntSetting(L"fontSize");
+    g_settings.leftAndRightPaddingSize =
+        Wh_GetIntSetting(L"leftAndRightPaddingSize");
+    g_settings.spaceBetweenIconAndLabel =
+        Wh_GetIntSetting(L"spaceBetweenIconAndLabel");
+    g_settings.labelForSingleItem = Wh_GetStringSetting(L"labelForSingleItem");
+    g_settings.labelForMultipleItems =
+        Wh_GetStringSetting(L"labelForMultipleItems");
 }
 
 void FreeSettings() {
-    // Nothing for now.
+    Wh_FreeStringSetting(g_settings.labelForSingleItem);
+    Wh_FreeStringSetting(g_settings.labelForMultipleItems);
 }
 
 void ApplySettings() {
