@@ -173,6 +173,10 @@ LRESULT CALLBACK BrowserWindowSubclassProc(_In_ HWND hWnd,
                                            _In_ LPARAM lParam,
                                            _In_ UINT_PTR uIdSubclass,
                                            _In_ DWORD_PTR dwRefData) {
+	if (uMsg == WM_NCDESTROY || (uMsg == g_subclassRegisteredMsg && !wParam)) {
+		RemoveWindowSubclass(hWnd, BrowserWindowSubclassProc, 0);
+	}
+
     switch (uMsg) {
         case WM_MOUSEWHEEL:
             switch (SendMessage(hWnd, WM_NCHITTEST, 0, lParam)) {
@@ -187,11 +191,6 @@ LRESULT CALLBACK BrowserWindowSubclassProc(_In_ HWND hWnd,
                     }
                     break;
             }
-            break;
-
-        default:
-            if (uMsg == g_subclassRegisteredMsg && !wParam)
-                RemoveWindowSubclass(hWnd, BrowserWindowSubclassProc, 0);
             break;
     }
 

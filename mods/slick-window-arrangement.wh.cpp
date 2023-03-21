@@ -905,7 +905,7 @@ void OnSysCommand(HWND hWnd, WPARAM command)
     }
 }
 
-void OnDestroy(HWND hWnd)
+void OnNcDestroy(HWND hWnd)
 {
     KillWindowSlideTimer(hWnd);
     UnsubclassWindow(hWnd);
@@ -936,8 +936,8 @@ LRESULT CALLBACK SubclassWndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lPa
         OnSysCommand(hWnd, wParam);
         break;
 
-    case WM_DESTROY:
-        OnDestroy(hWnd);
+    case WM_NCDESTROY:
+        OnNcDestroy(hWnd);
         break;
 
     default:

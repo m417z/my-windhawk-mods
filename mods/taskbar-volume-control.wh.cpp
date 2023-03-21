@@ -1560,6 +1560,10 @@ LRESULT CALLBACK TaskbarWindowSubclassProc(
 	_In_ DWORD_PTR dwRefData
 	)
 {
+	if (uMsg == WM_NCDESTROY || (uMsg == g_subclassRegisteredMsg && !wParam)) {
+		RemoveWindowSubclass(hWnd, TaskbarWindowSubclassProc, 0);
+	}
+
 	switch (uMsg) {
 	case WM_MOUSEWHEEL: {
 		if (GetCapture() != NULL)
@@ -1628,7 +1632,7 @@ LRESULT CALLBACK TaskbarWindowSubclassProc(
 		return 0;
 	}
 
-	case WM_DESTROY:
+	case WM_NCDESTROY:
 		if (hWnd != hTaskbarWnd) {
 			g_secondaryTaskbarWindows.erase(hWnd);
 		}
@@ -1647,9 +1651,6 @@ LRESULT CALLBACK TaskbarWindowSubclassProc(
 				return 1;
 			}
 		}
-
-		if (uMsg == g_subclassRegisteredMsg && !wParam)
-			RemoveWindowSubclass(hWnd, TaskbarWindowSubclassProc, 0);
 		break;
 	}
 

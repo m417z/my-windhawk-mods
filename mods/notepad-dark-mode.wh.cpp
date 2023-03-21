@@ -131,6 +131,10 @@ LRESULT CALLBACK PhpThemeWindowStatusbarWndSubclassProc(
     _In_ DWORD_PTR dwRefData
     )
 {
+	if (uMsg == WM_NCDESTROY || (uMsg == g_subclassRegisteredMsg && !wParam)) {
+		RemoveWindowSubclass(WindowHandle, PhpThemeWindowStatusbarWndSubclassProc, 0);
+	}
+
     PPHP_THEME_WINDOW_STATUSBAR_CONTEXT context;
     WNDPROC oldWndProc;
 
@@ -302,10 +306,6 @@ LRESULT CALLBACK PhpThemeWindowStatusbarWndSubclassProc(
             EndPaint(WindowHandle, &ps);
         }
         goto DefaultWndProc;
-    default:
-        if (uMsg == g_subclassRegisteredMsg && !wParam)
-            RemoveWindowSubclass(WindowHandle, PhpThemeWindowStatusbarWndSubclassProc, 0);
-        break;
     }
 
     //return CallWindowProc(oldWndProc, WindowHandle, uMsg, wParam, lParam);
@@ -866,6 +866,10 @@ LRESULT CALLBACK NotepadWindowSubclassProc(
     _In_ DWORD_PTR dwRefData
     )
 {
+	if (uMsg == WM_NCDESTROY || (uMsg == g_subclassRegisteredMsg && !wParam)) {
+		RemoveWindowSubclass(hWnd, NotepadWindowSubclassProc, 0);
+	}
+
     LRESULT lr = 0;
     if (g_darkModeSupported && UAHDarkModeWndProc(hWnd, uMsg, wParam, lParam, &lr)) {
         return lr;
@@ -884,11 +888,6 @@ LRESULT CALLBACK NotepadWindowSubclassProc(
         SetTextColor((HDC)wParam, RGB(0xff, 0xff, 0xff));
         SetDCBrushColor((HDC)wParam, RGB(60, 60, 60));
         return (INT_PTR)(HBRUSH)GetStockObject(DC_BRUSH);
-
-    default:
-        if (uMsg == g_subclassRegisteredMsg && !wParam)
-            RemoveWindowSubclass(hWnd, NotepadWindowSubclassProc, 0);
-        break;
     }
 
     return DefSubclassProc(hWnd, uMsg, wParam, lParam);

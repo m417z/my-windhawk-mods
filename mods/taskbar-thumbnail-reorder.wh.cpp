@@ -385,6 +385,10 @@ LRESULT CALLBACK ThumbnailWindowSubclassProc(HWND hWnd,
     LRESULT result = 0;
     bool processed = false;
 
+	if (uMsg == WM_NCDESTROY || (uMsg == g_subclassRegisteredMsg && !wParam)) {
+		RemoveWindowSubclass(hWnd, ThumbnailWindowSubclassProc, 0);
+	}
+
     switch (uMsg) {
         case WM_LBUTTONDOWN:
             result = DefSubclassProc(hWnd, uMsg, wParam, lParam);
@@ -441,16 +445,13 @@ LRESULT CALLBACK ThumbnailWindowSubclassProc(HWND hWnd,
                 result = DefSubclassProc(hWnd, uMsg, wParam, lParam);
             break;
 
-        case WM_DESTROY:
+        case WM_NCDESTROY:
             g_thumbnailWindows.erase(hWnd);
 
             result = DefSubclassProc(hWnd, uMsg, wParam, lParam);
             break;
 
         default:
-            if (uMsg == g_subclassRegisteredMsg && !wParam)
-                RemoveWindowSubclass(hWnd, ThumbnailWindowSubclassProc, 0);
-
             result = DefSubclassProc(hWnd, uMsg, wParam, lParam);
             break;
     }
