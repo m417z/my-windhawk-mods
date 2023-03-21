@@ -27,7 +27,7 @@ change the size of icons, and so the original quality icons can be used, as well
 as any other icon size.
 
 ![Before screenshot](https://i.imgur.com/9F4ibhX.png) \
-*Icon size: 24x24, taskbar height: 48 (default)*
+*Icon size: 24x24, taskbar height: 48 (Windows 11 default)*
 
 ![After screenshot, large icons](https://i.imgur.com/DtsNIew.png) \
 *Icon size: 32x32, taskbar height: 52*
