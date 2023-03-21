@@ -2,7 +2,7 @@
 // @id              taskbar-grouping
 // @name            Disable grouping on the taskbar
 // @description     Causes a separate button to be created on the taskbar for each new window
-// @version         1.0
+// @version         1.1
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
@@ -11,6 +11,8 @@
 // @architecture    x86-64
 // @compilerOptions -lole32
 // ==/WindhawkMod==
+
+// Contributors: ZimM-LostPolygon (https://github.com/ZimM-LostPolygon)
 
 // ==WindhawkModReadme==
 /*
@@ -21,9 +23,6 @@ For example, notice the two separate buttons for Notepad on the screenshot:
 
 ![Demonstration](https://i.imgur.com/uLITliK.png)
 
-Note: After enabling the mod, the relevant windows must be reopened to apply the
-grouping settings.
-
 ## Supported Windows versions
 
 Windows 10 64-bit and Windows 11.
@@ -31,7 +30,7 @@ Windows 10 64-bit and Windows 11.
 ## Limitations
 
 This is an early implementation which has several limitations:
-* Pinned items are separated as well.
+* Pinned items might become separated in some cases.
 * The jump list menu might be missing items such as recent files.
 * The mod has no effect on UWP/Store apps.
 
@@ -39,6 +38,11 @@ For a more complete solution for Windows 7, 8 and 10,
 check out [7+ Taskbar Tweaker](https://rammichael.com/7-taskbar-tweaker).
 */
 // ==/WindhawkModReadme==
+
+#include <utility>
+#include <vector>
+#include <string>
+#include <mutex>
 
 typedef HRESULT (WINAPI *GetAppIDForWindow_t)(
     LPVOID pThis,
@@ -63,6 +67,21 @@ GetAppIDForWindow_t pOriginalGetAppIDForWindow;
 GetShortcutForProcess_t pOriginalGetShortcutForProcess;
 GetBestShortcutForAppID_t pOriginalGetBestShortcutForAppID;
 
+// https://stackoverflow.com/questions/20590656/error-for-hash-function-of-pair-of-ints
+struct pair_hash {
+    template<class TFirst, class TSecond>
+    size_t operator()(const std::pair<TFirst, TSecond>& p) const noexcept {
+        uintmax_t hash = std::hash<TFirst>{}(p.first);
+        hash <<= sizeof(uintmax_t) * 4;
+        hash ^= std::hash<TSecond>{}(p.second);
+        return std::hash<uintmax_t>{}(hash);
+    }
+};
+
+std::unordered_map<std::wstring, std::pair<HWND, DWORD>> g_appIdToHwndAndProcess;
+std::unordered_map<std::pair<HWND, DWORD>, std::wstring, pair_hash> g_hwndAndProcessToAppId;
+std::recursive_mutex g_mutex;
+
 HRESULT WINAPI GetAppIDForWindowHook(
     LPVOID pThis,
     _In_ HWND hwnd,
@@ -83,20 +102,80 @@ HRESULT WINAPI GetAppIDForWindowHook(
         pfEmbeddedShortcutValid
     );
 
-    if (SUCCEEDED(ret)) {
+    if (!SUCCEEDED(ret)) {
+        return ret;
+    }
+
+    std::wstring appIdString = *ppszAppID;
+    DWORD thisProcessID = 0;
+    if (!GetWindowThreadProcessId(hwnd, &thisProcessID)) {
+        return E_FAIL;
+    }
+
+    bool originalAppIdHasWindowAttached = false;
+    bool currentWindowIsOriginalAppIdWindow = false;
+    bool windowHasCachedAppId = false;
+    std::unique_lock<std::recursive_mutex> s_lock(g_mutex);
+
+    // Check if there's a live known window for the original AppId
+    if (auto search = g_appIdToHwndAndProcess.find(appIdString); search != g_appIdToHwndAndProcess.end()) {
+        DWORD dwProcessID = 0;
+        if (!GetWindowThreadProcessId(search->second.first, &dwProcessID) || dwProcessID != search->second.second) {
+            g_appIdToHwndAndProcess.erase(appIdString);
+        } else {
+            originalAppIdHasWindowAttached = true;
+        }
+
+        if (originalAppIdHasWindowAttached && search->second.first == hwnd) {
+            currentWindowIsOriginalAppIdWindow = true;
+        }
+    }
+
+    //Wh_Log(L"AppId: %s, originalAppIdHasWindowAttached: %d, currentWindowIsOriginalAppIdWindow: %d", *ppszAppID, originalAppIdHasWindowAttached, currentWindowIsOriginalAppIdWindow);
+
+    // If a window was ever assigned an AppId, return that one
+    auto thisHwndProcessIdPair = std::make_pair(hwnd, thisProcessID);
+    if (auto search = g_hwndAndProcessToAppId.find(thisHwndProcessIdPair); search != g_hwndAndProcessToAppId.end()) {
+        windowHasCachedAppId = true;
         size_t len = wcslen(*ppszAppID);
-        size_t newLen = len + 9;
-        if (newLen < MAX_PATH) {
-            PWSTR realloc = (PWSTR)CoTaskMemRealloc(*ppszAppID, (newLen + 1) * sizeof(WCHAR));
-            if (realloc) {
-                wsprintf(realloc + len, L"_%08X", hwnd);
-                Wh_Log(L"New AppId: %s", realloc);
-                *ppszAppID = realloc;
-            }
-            else {
-                CoTaskMemFree(*ppszAppID);
-                ret = E_FAIL;
-            }
+        PWSTR realloc = (PWSTR)CoTaskMemRealloc(*ppszAppID, (search->second.length() + 1) * sizeof(WCHAR));
+        if (realloc) {         
+            wsprintf(realloc, L"%s", search->second.c_str());
+            Wh_Log(L"Cached AppId: %s", realloc);
+            *ppszAppID = realloc;
+        }
+        else {
+            CoTaskMemFree(*ppszAppID);
+            return E_FAIL;
+        }
+    } 
+
+    if (!windowHasCachedAppId && !originalAppIdHasWindowAttached) {
+        g_appIdToHwndAndProcess.insert(std::make_pair(appIdString, thisHwndProcessIdPair));
+    }
+
+    if (windowHasCachedAppId) {
+        return ret;
+    }
+    
+    if (!originalAppIdHasWindowAttached || currentWindowIsOriginalAppIdWindow) {
+        g_hwndAndProcessToAppId.insert(std::make_pair(thisHwndProcessIdPair, *ppszAppID));
+        return ret;
+    }
+
+    size_t len = wcslen(*ppszAppID);
+    size_t newLen = len + 9;
+    if (newLen < MAX_PATH) {
+        PWSTR realloc = (PWSTR)CoTaskMemRealloc(*ppszAppID, (newLen + 1) * sizeof(WCHAR));
+        if (realloc) {
+            wsprintf(realloc + len, L"_%08X", hwnd);
+            Wh_Log(L"New AppId: %s", realloc);
+            *ppszAppID = realloc;
+            g_hwndAndProcessToAppId.insert(std::make_pair(std::make_pair(hwnd, thisProcessID), *ppszAppID));
+        }
+        else {
+            CoTaskMemFree(*ppszAppID);
+            return E_FAIL;
         }
     }
 
