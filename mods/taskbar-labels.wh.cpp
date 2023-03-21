@@ -2,7 +2,7 @@
 // @id              taskbar-labels
 // @name            Taskbar Labels for Windows 11
 // @description     Show text labels for running programs on the taskbar (Windows 11 only)
-// @version         1.1.1
+// @version         1.1.2
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
@@ -12,6 +12,7 @@
 // @compilerOptions -DWINVER=0x0605 -loleaut32 -lole32 -lruntimeobject
 // ==/WindhawkMod==
 
+// Contributors: ZimM-LostPolygon (https://github.com/ZimM-LostPolygon)
 // Source code is published under The GNU General Public License v3.0.
 
 // ==WindhawkModReadme==
@@ -49,6 +50,11 @@ choose one of the following running indicator styles:
   - centerDynamic: Centered, dynamic size
   - left: On the left (below the icon)
   - fullWidth: Full width
+- runningIndicatorProgressbarAlwaysFullWidth: false
+  $name: Running indicator style is always full width when app has progress
+  $options:
+  - true: Yes
+  - false: No
 - fontSize: 12
   $name: Font size
 - leftAndRightPaddingSize: 10
@@ -101,6 +107,7 @@ struct {
     int fontSize;
     int leftAndRightPaddingSize;
     int spaceBetweenIconAndLabel;
+    bool runningIndicatorProgressbarAlwaysFullWidth;
     PCWSTR labelForSingleItem;
     PCWSTR labelForMultipleItems;
 } g_settings;
@@ -622,9 +629,11 @@ void UpdateTaskListButtonWidth(FrameworkElement taskListButtonElement,
     }
 
     PCWSTR indicatorClassNames[] = {
-        L"RunningIndicator",
         L"ProgressIndicator",
+        L"RunningIndicator",
     };
+
+    bool fullWidth = false;
     for (auto indicatorClassName : indicatorClassNames) {
         auto indicatorElement =
             FindChildByName(iconPanelElement, indicatorClassName);
@@ -641,6 +650,14 @@ void UpdateTaskListButtonWidth(FrameworkElement taskListButtonElement,
                            g_initialTaskbarItemWidth;
             } else if (g_settings.runningIndicatorStyle ==
                        RunningIndicatorStyle::fullWidth) {
+                fullWidth = true;
+            }
+            
+            if (g_settings.runningIndicatorProgressbarAlwaysFullWidth && wcscmp(indicatorClassName, L"ProgressIndicator") == 0) {
+                fullWidth = true;
+            }
+
+            if (fullWidth) {
                 minWidth = widthToSet - 6;
             }
         }
@@ -661,7 +678,7 @@ void UpdateTaskListButtonWidth(FrameworkElement taskListButtonElement,
         }
 
         indicatorElement.Margin(Thickness{
-            .Right = g_settings.runningIndicatorStyle ==
+            .Right = !fullWidth && g_settings.runningIndicatorStyle ==
                                  RunningIndicatorStyle::left &&
                              showLabels
                          ? (widthToSet - iconElement.ActualWidth() -
@@ -945,6 +962,9 @@ void LoadSettings() {
         g_settings.runningIndicatorStyle = RunningIndicatorStyle::fullWidth;
     }
     Wh_FreeStringSetting(runningIndicatorStyle);
+
+    g_settings.runningIndicatorProgressbarAlwaysFullWidth = 
+        Wh_GetIntSetting(L"runningIndicatorProgressbarAlwaysFullWidth") != 0;
 
     g_settings.fontSize = Wh_GetIntSetting(L"fontSize");
     g_settings.leftAndRightPaddingSize =
