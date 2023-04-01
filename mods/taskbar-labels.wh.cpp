@@ -610,10 +610,12 @@ void UpdateTaskListButtonWidth(FrameworkElement taskListButtonElement,
         return;
     }
 
-    // Reset in case an old version of the mod was installed.
-    taskListButtonElement.Width(std::numeric_limits<double>::quiet_NaN());
-
     iconPanelElement.Width(widthToSet);
+
+    // Left margin is used for the overflow button.
+    auto iconPanelElementMargin = iconPanelElement.Margin();
+    taskListButtonElement.Width(iconPanelElementMargin.Left + widthToSet +
+                                iconPanelElementMargin.Right);
 
     iconElement.HorizontalAlignment(showLabels ? HorizontalAlignment::Left
                                                : HorizontalAlignment::Stretch);
