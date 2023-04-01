@@ -49,6 +49,12 @@ choose one of the following running indicator styles:
   - centerDynamic: Centered, dynamic size
   - left: On the left (below the icon)
   - fullWidth: Full width
+- progressIndicatorStyle: sameAsRunningIndicatorStyle
+  $name: Progress indicator style
+  $options:
+  - sameAsRunningIndicatorStyle: Same as running indicator style
+  - centerDynamic: Centered, dynamic size
+  - fullWidth: Full width
 - fontSize: 12
   $name: Font size
 - leftAndRightPaddingSize: 10
@@ -89,7 +95,7 @@ using namespace winrt::Windows::UI::Xaml;
 
 // #define EXTRA_DBG_LOG
 
-enum class RunningIndicatorStyle {
+enum class IndicatorStyle {
     centerFixed,
     centerDynamic,
     left,
@@ -98,7 +104,8 @@ enum class RunningIndicatorStyle {
 
 struct {
     int taskbarItemWidth;
-    RunningIndicatorStyle runningIndicatorStyle;
+    IndicatorStyle runningIndicatorStyle;
+    IndicatorStyle progressIndicatorStyle;
     int fontSize;
     int leftAndRightPaddingSize;
     int spaceBetweenIconAndLabel;
@@ -647,15 +654,20 @@ void UpdateTaskListButtonWidth(FrameworkElement taskListButtonElement,
             continue;
         }
 
+        bool isProgressIndicator =
+            wcscmp(indicatorClassName, L"ProgressIndicator") == 0;
+
+        IndicatorStyle indicatorStyle = isProgressIndicator
+                                            ? g_settings.progressIndicatorStyle
+                                            : g_settings.runningIndicatorStyle;
+
         double minWidth = 0;
 
         if (!g_unloading) {
-            if (g_settings.runningIndicatorStyle ==
-                RunningIndicatorStyle::centerDynamic) {
+            if (indicatorStyle == IndicatorStyle::centerDynamic) {
                 minWidth = indicatorElement.Width() * widthToSet /
                            g_initialTaskbarItemWidth;
-            } else if (g_settings.runningIndicatorStyle ==
-                       RunningIndicatorStyle::fullWidth) {
+            } else if (indicatorStyle == IndicatorStyle::fullWidth) {
                 minWidth = widthToSet - 6;
             }
         }
@@ -676,9 +688,7 @@ void UpdateTaskListButtonWidth(FrameworkElement taskListButtonElement,
         }
 
         indicatorElement.Margin(Thickness{
-            .Right = g_settings.runningIndicatorStyle ==
-                                 RunningIndicatorStyle::left &&
-                             showLabels
+            .Right = indicatorStyle == IndicatorStyle::left && showLabels
                          ? (widthToSet - iconElement.ActualWidth() -
                             g_settings.leftAndRightPaddingSize * 2 - 4)
                          : 0.0,
@@ -967,15 +977,25 @@ void LoadSettings() {
 
     PCWSTR runningIndicatorStyle =
         Wh_GetStringSetting(L"runningIndicatorStyle");
-    g_settings.runningIndicatorStyle = RunningIndicatorStyle::centerFixed;
+    g_settings.runningIndicatorStyle = IndicatorStyle::centerFixed;
     if (wcscmp(runningIndicatorStyle, L"centerDynamic") == 0) {
-        g_settings.runningIndicatorStyle = RunningIndicatorStyle::centerDynamic;
+        g_settings.runningIndicatorStyle = IndicatorStyle::centerDynamic;
     } else if (wcscmp(runningIndicatorStyle, L"left") == 0) {
-        g_settings.runningIndicatorStyle = RunningIndicatorStyle::left;
+        g_settings.runningIndicatorStyle = IndicatorStyle::left;
     } else if (wcscmp(runningIndicatorStyle, L"fullWidth") == 0) {
-        g_settings.runningIndicatorStyle = RunningIndicatorStyle::fullWidth;
+        g_settings.runningIndicatorStyle = IndicatorStyle::fullWidth;
     }
     Wh_FreeStringSetting(runningIndicatorStyle);
+
+    PCWSTR progressIndicatorStyle =
+        Wh_GetStringSetting(L"progressIndicatorStyle");
+    g_settings.progressIndicatorStyle = g_settings.runningIndicatorStyle;
+    if (wcscmp(progressIndicatorStyle, L"centerDynamic") == 0) {
+        g_settings.progressIndicatorStyle = IndicatorStyle::centerDynamic;
+    } else if (wcscmp(progressIndicatorStyle, L"fullWidth") == 0) {
+        g_settings.progressIndicatorStyle = IndicatorStyle::fullWidth;
+    }
+    Wh_FreeStringSetting(progressIndicatorStyle);
 
     g_settings.fontSize = Wh_GetIntSetting(L"fontSize");
     g_settings.leftAndRightPaddingSize =
