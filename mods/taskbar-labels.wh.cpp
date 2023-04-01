@@ -615,9 +615,21 @@ void UpdateTaskListButtonWidth(FrameworkElement taskListButtonElement,
         .Left = showLabels ? g_settings.leftAndRightPaddingSize : 0.0,
     });
 
+    // Badge for non-UWP apps.
     auto overlayIconElement = FindChildByName(iconPanelElement, L"OverlayIcon");
     if (overlayIconElement) {
         overlayIconElement.Margin(Thickness{
+            .Right = showLabels ? (widthToSet - iconElement.ActualWidth() -
+                                   g_settings.leftAndRightPaddingSize - 4)
+                                : 0.0,
+        });
+    }
+
+    // Badge for UWP apps.
+    auto badgeControlElement =
+        FindChildByName(iconPanelElement, L"BadgeControl");
+    if (badgeControlElement) {
+        badgeControlElement.Margin(Thickness{
             .Right = showLabels ? (widthToSet - iconElement.ActualWidth() -
                                    g_settings.leftAndRightPaddingSize - 4)
                                 : 0.0,
@@ -845,6 +857,22 @@ void WINAPI TaskListButton_UpdateButtonPadding_Hook(void* pThis) {
     Wh_Log(L">");
 
     TaskListButton_UpdateButtonPadding_Original(pThis);
+
+    void* taskListButtonIUnknownPtr = (void**)pThis + 3;
+    winrt::Windows::Foundation::IUnknown taskListButtonIUnknown;
+    winrt::copy_from_abi(taskListButtonIUnknown, taskListButtonIUnknownPtr);
+
+    auto taskListButtonElement = taskListButtonIUnknown.as<FrameworkElement>();
+
+    UpdateTaskListButtonCustomizations(taskListButtonElement);
+}
+
+using TaskListButton_UpdateBadgeSize_t = void(WINAPI*)(void* pThis);
+TaskListButton_UpdateBadgeSize_t TaskListButton_UpdateBadgeSize_Original;
+void WINAPI TaskListButton_UpdateBadgeSize_Hook(void* pThis) {
+    Wh_Log(L">");
+
+    TaskListButton_UpdateBadgeSize_Original(pThis);
 
     void* taskListButtonIUnknownPtr = (void**)pThis + 3;
     winrt::Windows::Foundation::IUnknown taskListButtonIUnknown;
@@ -1225,6 +1253,14 @@ bool HookTaskbarViewDllSymbols(HMODULE module) {
             },
             (void**)&TaskListButton_UpdateButtonPadding_Original,
             (void*)TaskListButton_UpdateButtonPadding_Hook,
+        },
+        {
+            {
+                LR"(private: void __cdecl winrt::Taskbar::implementation::TaskListButton::UpdateBadgeSize(void))",
+                LR"(private: void __cdecl winrt::Taskbar::implementation::TaskListButton::UpdateBadgeSize(void) __ptr64)",
+            },
+            (void**)&TaskListButton_UpdateBadgeSize_Original,
+            (void*)TaskListButton_UpdateBadgeSize_Hook,
         },
         {
             {
