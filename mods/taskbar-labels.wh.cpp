@@ -78,6 +78,7 @@ choose one of the following running indicator styles:
 #include <winrt/Windows.UI.Xaml.Media.h>
 
 #include <algorithm>
+#include <atomic>
 #include <limits>
 #include <string>
 #include <string_view>
@@ -105,8 +106,10 @@ struct {
     PCWSTR labelForMultipleItems;
 } g_settings;
 
-bool g_applyingSettings = false;
-bool g_unloading = false;
+WCHAR g_taskbarViewDllPath[MAX_PATH];
+std::atomic<bool> g_taskbarViewDllLoaded = false;
+std::atomic<bool> g_applyingSettings = false;
+std::atomic<bool> g_unloading = false;
 
 double g_initialTaskbarItemWidth;
 
@@ -586,25 +589,6 @@ LONG_PTR WINAPI CTaskListWnd_TaskDestroyed_Hook(void* pThis,
     return ret;
 }
 
-using CTaskListWnd_TaskDestroyed_2_t = LONG_PTR(WINAPI*)(void* pThis,
-                                                         void* taskGroup,
-                                                         void* taskItem);
-CTaskListWnd_TaskDestroyed_2_t CTaskListWnd_TaskDestroyed_2_Original;
-LONG_PTR WINAPI CTaskListWnd_TaskDestroyed_2_Hook(void* pThis,
-                                                  void* taskGroup,
-                                                  void* taskItem) {
-    Wh_Log(L">");
-
-    LONG_PTR ret =
-        CTaskListWnd_TaskDestroyed_2_Original(pThis, taskGroup, taskItem);
-
-    // Trigger CTaskListWnd::GroupChanged to trigger the title change.
-    int taskGroupProperty = 4;  // saw this in the debugger
-    CTaskListWnd_GroupChanged_Hook(pThis, taskGroup, taskGroupProperty);
-
-    return ret;
-}
-
 void UpdateTaskListButtonWidth(FrameworkElement taskListButtonElement,
                                double widthToSet,
                                bool showLabels) {
@@ -1041,7 +1025,7 @@ bool HookSymbols(HMODULE module,
     std::wstring newSystemCacheStr;
 
     auto onSymbolResolved = [symbolHooks, symbolHooksCount, &symbolResolved,
-                             cacheSep, &newSystemCacheStr,
+                             &newSystemCacheStr,
                              module](std::wstring_view symbol, void* address) {
         for (size_t i = 0; i < symbolHooksCount; i++) {
             if (symbolResolved[i]) {
@@ -1117,7 +1101,7 @@ bool HookSymbols(HMODULE module,
                 continue;
             }
 
-            int noAddressMatchCount = 0;
+            size_t noAddressMatchCount = 0;
             for (size_t j = 3; j + 1 < cacheParts.size(); j += 2) {
                 auto symbol = cacheParts[j];
                 auto address = cacheParts[j + 1];
@@ -1188,6 +1172,81 @@ bool HookSymbols(HMODULE module,
     return true;
 }
 
+bool GetTaskbarViewDllPath(WCHAR path[MAX_PATH]) {
+    WCHAR szWindowsDirectory[MAX_PATH];
+    if (!GetWindowsDirectory(szWindowsDirectory,
+                             ARRAYSIZE(szWindowsDirectory))) {
+        Wh_Log(L"GetWindowsDirectory failed");
+        return false;
+    }
+
+    // Windows 11 version 22H2.
+    wcscpy_s(path, MAX_PATH, szWindowsDirectory);
+    wcscat_s(
+        path, MAX_PATH,
+        LR"(\SystemApps\MicrosoftWindows.Client.Core_cw5n1h2txyewy\Taskbar.View.dll)");
+    if (GetFileAttributes(path) != INVALID_FILE_ATTRIBUTES) {
+        return true;
+    }
+
+    // Windows 11 version 21H2.
+    wcscpy_s(path, MAX_PATH, szWindowsDirectory);
+    wcscat_s(
+        path, MAX_PATH,
+        LR"(\SystemApps\MicrosoftWindows.Client.CBS_cw5n1h2txyewy\ExplorerExtensions.dll)");
+    if (GetFileAttributes(path) != INVALID_FILE_ATTRIBUTES) {
+        return true;
+    }
+
+    return false;
+}
+
+bool HookTaskbarViewDllSymbols(HMODULE module) {
+    SYMBOL_HOOK symbolHooks[] = {
+        {
+            {
+                LR"(public: virtual int __cdecl winrt::impl::produce<struct winrt::Taskbar::implementation::TaskListButton,struct winrt::Taskbar::ITaskListButton>::get_IsRunning(bool *))",
+                LR"(public: virtual int __cdecl winrt::impl::produce<struct winrt::Taskbar::implementation::TaskListButton,struct winrt::Taskbar::ITaskListButton>::get_IsRunning(bool * __ptr64) __ptr64)",
+            },
+            (void**)&TaskListButton_get_IsRunning_Original,
+        },
+        {
+            {
+                LR"(private: void __cdecl winrt::Taskbar::implementation::TaskListButton::UpdateVisualStates(void))",
+                LR"(private: void __cdecl winrt::Taskbar::implementation::TaskListButton::UpdateVisualStates(void) __ptr64)",
+            },
+            (void**)&TaskListButton_UpdateVisualStates_Original,
+            (void*)TaskListButton_UpdateVisualStates_Hook,
+        },
+        {
+            {
+                LR"(private: void __cdecl winrt::Taskbar::implementation::TaskListButton::UpdateButtonPadding(void))",
+                LR"(private: void __cdecl winrt::Taskbar::implementation::TaskListButton::UpdateButtonPadding(void) __ptr64)",
+            },
+            (void**)&TaskListButton_UpdateButtonPadding_Original,
+            (void*)TaskListButton_UpdateButtonPadding_Hook,
+        },
+        {
+            {
+                LR"(private: void __cdecl winrt::Taskbar::implementation::TaskbarFrame::OnTaskbarLayoutChildBoundsChanged(void))",
+                LR"(private: void __cdecl winrt::Taskbar::implementation::TaskbarFrame::OnTaskbarLayoutChildBoundsChanged(void) __ptr64)",
+            },
+            (void**)&TaskbarFrame_OnTaskbarLayoutChildBoundsChanged_Original,
+            (void*)TaskbarFrame_OnTaskbarLayoutChildBoundsChanged_Hook,
+        },
+        {
+            {
+                LR"(public: void __cdecl winrt::Taskbar::implementation::TaskListButton::Icon(struct winrt::Windows::Storage::Streams::IRandomAccessStream))",
+                LR"(public: void __cdecl winrt::Taskbar::implementation::TaskListButton::Icon(struct winrt::Windows::Storage::Streams::IRandomAccessStream) __ptr64)",
+            },
+            (void**)&TaskListButton_Icon_Original,
+            (void*)TaskListButton_Icon_Hook,
+        },
+    };
+
+    return HookSymbols(module, symbolHooks, ARRAYSIZE(symbolHooks));
+}
+
 bool HookTaskbarDllSymbols() {
     HMODULE module = LoadLibrary(L"taskbar.dll");
     if (!module) {
@@ -1241,171 +1300,49 @@ bool HookTaskbarDllSymbols() {
             (void*)CTaskListWnd_GroupChanged_Hook,
         },
         {
-            // An older variant, see the newer variant below.
             {
                 LR"(public: virtual long __cdecl CTaskListWnd::TaskDestroyed(struct ITaskGroup *,struct ITaskItem *,enum TaskDestroyedFlags))",
                 LR"(public: virtual long __cdecl CTaskListWnd::TaskDestroyed(struct ITaskGroup * __ptr64,struct ITaskItem * __ptr64,enum TaskDestroyedFlags) __ptr64)",
             },
             (void**)&CTaskListWnd_TaskDestroyed_Original,
             (void*)CTaskListWnd_TaskDestroyed_Hook,
-            true,
-        },
-        {
-            // A newer variant seen in insider builds.
-            {
-                LR"(public: virtual long __cdecl CTaskListWnd::TaskDestroyed(struct ITaskGroup *,struct ITaskItem *))",
-                LR"(public: virtual long __cdecl CTaskListWnd::TaskDestroyed(struct ITaskGroup * __ptr64,struct ITaskItem * __ptr64) __ptr64)",
-            },
-            (void**)&CTaskListWnd_TaskDestroyed_2_Original,
-            (void*)CTaskListWnd_TaskDestroyed_2_Hook,
-            true,
         },
     };
 
     return HookSymbols(module, symbolHooks, ARRAYSIZE(symbolHooks));
 }
 
-bool HookTaskbarViewDllSymbols() {
-    WCHAR szWindowsDirectory[MAX_PATH];
-    if (!GetWindowsDirectory(szWindowsDirectory,
-                             ARRAYSIZE(szWindowsDirectory))) {
-        Wh_Log(L"GetWindowsDirectory failed");
-        return false;
-    }
-
-    bool windowsVersionIdentified = false;
-    HMODULE module;
-
-    WCHAR szTargetDllPath[MAX_PATH];
-    wcscpy_s(szTargetDllPath, szWindowsDirectory);
-    wcscat_s(
-        szTargetDllPath,
-        LR"(\SystemApps\MicrosoftWindows.Client.Core_cw5n1h2txyewy\Taskbar.View.dll)");
-    if (GetFileAttributes(szTargetDllPath) != INVALID_FILE_ATTRIBUTES) {
-        // Windows 11 version 22H2.
-        windowsVersionIdentified = true;
-
-        module = GetModuleHandle(szTargetDllPath);
-        if (!module) {
-            // Try to load dependency DLLs. At process start, if they're not
-            // loaded, loading the taskbar view DLL fails.
-            WCHAR szRuntimeDllPath[MAX_PATH];
-
-            wcscpy_s(szRuntimeDllPath, szWindowsDirectory);
-            wcscat_s(
-                szRuntimeDllPath,
-                LR"(\SystemApps\MicrosoftWindows.Client.CBS_cw5n1h2txyewy\vcruntime140_app.dll)");
-            LoadLibrary(szRuntimeDllPath);
-
-            wcscpy_s(szRuntimeDllPath, szWindowsDirectory);
-            wcscat_s(
-                szRuntimeDllPath,
-                LR"(\SystemApps\MicrosoftWindows.Client.CBS_cw5n1h2txyewy\vcruntime140_1_app.dll)");
-            LoadLibrary(szRuntimeDllPath);
-
-            wcscpy_s(szRuntimeDllPath, szWindowsDirectory);
-            wcscat_s(
-                szRuntimeDllPath,
-                LR"(\SystemApps\MicrosoftWindows.Client.CBS_cw5n1h2txyewy\msvcp140_app.dll)");
-            LoadLibrary(szRuntimeDllPath);
-
-            module = LoadLibrary(szTargetDllPath);
-        }
-    }
-
-    if (!windowsVersionIdentified) {
-        wcscpy_s(szTargetDllPath, szWindowsDirectory);
-        wcscat_s(
-            szTargetDllPath,
-            LR"(\SystemApps\MicrosoftWindows.Client.CBS_cw5n1h2txyewy\ExplorerExtensions.dll)");
-        if (GetFileAttributes(szTargetDllPath) != INVALID_FILE_ATTRIBUTES) {
-            // Windows 11 version 21H2.
-            windowsVersionIdentified = true;
-
-            module = GetModuleHandle(szTargetDllPath);
-            if (!module) {
-                // Try to load dependency DLLs. At process start, if they're not
-                // loaded, loading the ExplorerExtensions DLL fails.
-                WCHAR szRuntimeDllPath[MAX_PATH];
-
-                PWSTR pProgramFilesDirectory;
-                if (SUCCEEDED(SHGetKnownFolderPath(FOLDERID_ProgramFiles, 0,
-                                                   nullptr,
-                                                   &pProgramFilesDirectory))) {
-                    wcscpy_s(szRuntimeDllPath, pProgramFilesDirectory);
-                    wcscat_s(
-                        szRuntimeDllPath,
-                        LR"(\WindowsApps\Microsoft.VCLibs.140.00_14.0.29231.0_x64__8wekyb3d8bbwe\vcruntime140_app.dll)");
-                    LoadLibrary(szRuntimeDllPath);
-
-                    wcscpy_s(szRuntimeDllPath, pProgramFilesDirectory);
-                    wcscat_s(
-                        szRuntimeDllPath,
-                        LR"(\WindowsApps\Microsoft.VCLibs.140.00_14.0.29231.0_x64__8wekyb3d8bbwe\vcruntime140_1_app.dll)");
-                    LoadLibrary(szRuntimeDllPath);
-
-                    wcscpy_s(szRuntimeDllPath, pProgramFilesDirectory);
-                    wcscat_s(
-                        szRuntimeDllPath,
-                        LR"(\WindowsApps\Microsoft.VCLibs.140.00_14.0.29231.0_x64__8wekyb3d8bbwe\msvcp140_app.dll)");
-                    LoadLibrary(szRuntimeDllPath);
-
-                    CoTaskMemFree(pProgramFilesDirectory);
-
-                    module = LoadLibrary(szTargetDllPath);
-                }
-            }
-        }
-    }
-
-    if (!module) {
-        Wh_Log(L"Failed to load module");
+BOOL ModInitWithTaskbarView(HMODULE taskbarViewModule) {
+    if (!HookTaskbarViewDllSymbols(taskbarViewModule)) {
         return FALSE;
     }
 
-    SYMBOL_HOOK symbolHooks[] = {
-        {
-            {
-                LR"(public: virtual int __cdecl winrt::impl::produce<struct winrt::Taskbar::implementation::TaskListButton,struct winrt::Taskbar::ITaskListButton>::get_IsRunning(bool *))",
-                LR"(public: virtual int __cdecl winrt::impl::produce<struct winrt::Taskbar::implementation::TaskListButton,struct winrt::Taskbar::ITaskListButton>::get_IsRunning(bool * __ptr64) __ptr64)",
-            },
-            (void**)&TaskListButton_get_IsRunning_Original,
-        },
-        {
-            {
-                LR"(private: void __cdecl winrt::Taskbar::implementation::TaskListButton::UpdateVisualStates(void))",
-                LR"(private: void __cdecl winrt::Taskbar::implementation::TaskListButton::UpdateVisualStates(void) __ptr64)",
-            },
-            (void**)&TaskListButton_UpdateVisualStates_Original,
-            (void*)TaskListButton_UpdateVisualStates_Hook,
-        },
-        {
-            {
-                LR"(private: void __cdecl winrt::Taskbar::implementation::TaskListButton::UpdateButtonPadding(void))",
-                LR"(private: void __cdecl winrt::Taskbar::implementation::TaskListButton::UpdateButtonPadding(void) __ptr64)",
-            },
-            (void**)&TaskListButton_UpdateButtonPadding_Original,
-            (void*)TaskListButton_UpdateButtonPadding_Hook,
-        },
-        {
-            {
-                LR"(private: void __cdecl winrt::Taskbar::implementation::TaskbarFrame::OnTaskbarLayoutChildBoundsChanged(void))",
-                LR"(private: void __cdecl winrt::Taskbar::implementation::TaskbarFrame::OnTaskbarLayoutChildBoundsChanged(void) __ptr64)",
-            },
-            (void**)&TaskbarFrame_OnTaskbarLayoutChildBoundsChanged_Original,
-            (void*)TaskbarFrame_OnTaskbarLayoutChildBoundsChanged_Hook,
-        },
-        {
-            {
-                LR"(public: void __cdecl winrt::Taskbar::implementation::TaskListButton::Icon(struct winrt::Windows::Storage::Streams::IRandomAccessStream))",
-                LR"(public: void __cdecl winrt::Taskbar::implementation::TaskListButton::Icon(struct winrt::Windows::Storage::Streams::IRandomAccessStream) __ptr64)",
-            },
-            (void**)&TaskListButton_Icon_Original,
-            (void*)TaskListButton_Icon_Hook,
-        },
-    };
+    if (!HookTaskbarDllSymbols()) {
+        return FALSE;
+    }
 
-    return HookSymbols(module, symbolHooks, ARRAYSIZE(symbolHooks));
+    return TRUE;
+}
+
+using LoadLibraryExW_t = decltype(&LoadLibraryExW);
+LoadLibraryExW_t LoadLibraryExW_Original;
+HMODULE WINAPI LoadLibraryExW_Hook(LPCWSTR lpLibFileName,
+                                   HANDLE hFile,
+                                   DWORD dwFlags) {
+    HMODULE module = LoadLibraryExW_Original(lpLibFileName, hFile, dwFlags);
+    if (!module || g_unloading) {
+        return module;
+    }
+
+    if (!g_taskbarViewDllLoaded &&
+        _wcsicmp(g_taskbarViewDllPath, lpLibFileName) == 0 &&
+        !g_taskbarViewDllLoaded.exchange(true) &&
+        ModInitWithTaskbarView(module)) {
+        Wh_ApplyHookOperations();
+        ApplySettings();
+    }
+
+    return module;
 }
 
 BOOL Wh_ModInit() {
@@ -1413,32 +1350,58 @@ BOOL Wh_ModInit() {
 
     LoadSettings();
 
-    if (!HookTaskbarDllSymbols()) {
+    if (!GetTaskbarViewDllPath(g_taskbarViewDllPath)) {
+        Wh_Log(L"Taskbar view module not found");
         return FALSE;
     }
 
-    if (!HookTaskbarViewDllSymbols()) {
-        return FALSE;
+    HMODULE taskbarViewModule = LoadLibraryEx(g_taskbarViewDllPath, nullptr,
+                                              LOAD_WITH_ALTERED_SEARCH_PATH);
+    if (taskbarViewModule) {
+        g_taskbarViewDllLoaded = true;
+        return ModInitWithTaskbarView(taskbarViewModule);
     }
+
+    Wh_Log(L"Taskbar view module not loaded yet");
+
+    HMODULE kernelBaseModule = GetModuleHandle(L"kernelbase.dll");
+    FARPROC pKernelBaseLoadLibraryExW =
+        GetProcAddress(kernelBaseModule, "LoadLibraryExW");
+    Wh_SetFunctionHook((void*)pKernelBaseLoadLibraryExW,
+                       (void*)LoadLibraryExW_Hook,
+                       (void**)&LoadLibraryExW_Original);
 
     return TRUE;
 }
 
-void Wh_ModAfterInit(void) {
+void Wh_ModAfterInit() {
     Wh_Log(L">");
 
-    ApplySettings();
+    if (g_taskbarViewDllLoaded) {
+        ApplySettings();
+    } else {
+        HMODULE taskbarViewModule = LoadLibraryEx(
+            g_taskbarViewDllPath, nullptr, LOAD_WITH_ALTERED_SEARCH_PATH);
+        if (taskbarViewModule && !g_taskbarViewDllLoaded.exchange(true) &&
+            ModInitWithTaskbarView(taskbarViewModule)) {
+            Wh_ApplyHookOperations();
+            ApplySettings();
+        }
+    }
 }
 
 void Wh_ModBeforeUninit() {
     Wh_Log(L">");
 
     g_unloading = true;
-    ApplySettings();
 
-    // This is required to give time for taskbar buttons of UWP apps to update
-    // the layout.
-    Sleep(400);
+    if (g_taskbarViewDllLoaded) {
+        ApplySettings();
+
+        // This is required to give time for taskbar buttons of UWP apps to
+        // update the layout.
+        Sleep(400);
+    }
 }
 
 void Wh_ModUninit() {
@@ -1453,5 +1416,7 @@ void Wh_ModSettingsChanged() {
     FreeSettings();
     LoadSettings();
 
-    ApplySettings();
+    if (g_taskbarViewDllLoaded) {
+        ApplySettings();
+    }
 }
