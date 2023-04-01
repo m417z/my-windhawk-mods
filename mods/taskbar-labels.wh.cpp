@@ -604,6 +604,25 @@ LONG_PTR WINAPI CTaskListWnd_TaskDestroyed_Hook(void* pThis,
     return ret;
 }
 
+using CTaskListWnd_TaskDestroyed_2_t = LONG_PTR(WINAPI*)(void* pThis,
+                                                         void* taskGroup,
+                                                         void* taskItem);
+CTaskListWnd_TaskDestroyed_2_t CTaskListWnd_TaskDestroyed_2_Original;
+LONG_PTR WINAPI CTaskListWnd_TaskDestroyed_2_Hook(void* pThis,
+                                                  void* taskGroup,
+                                                  void* taskItem) {
+    Wh_Log(L">");
+
+    LONG_PTR ret =
+        CTaskListWnd_TaskDestroyed_2_Original(pThis, taskGroup, taskItem);
+
+    // Trigger CTaskListWnd::GroupChanged to trigger the title change.
+    int taskGroupProperty = 4;  // saw this in the debugger
+    CTaskListWnd_GroupChanged_Hook(pThis, taskGroup, taskGroupProperty);
+
+    return ret;
+}
+
 void UpdateTaskListButtonWidth(FrameworkElement taskListButtonElement,
                                double widthToSet,
                                bool showLabels) {
@@ -1373,12 +1392,24 @@ bool HookTaskbarDllSymbols() {
             (void*)CTaskListWnd_GroupChanged_Hook,
         },
         {
+            // An older variant, see the newer variant below.
             {
                 LR"(public: virtual long __cdecl CTaskListWnd::TaskDestroyed(struct ITaskGroup *,struct ITaskItem *,enum TaskDestroyedFlags))",
                 LR"(public: virtual long __cdecl CTaskListWnd::TaskDestroyed(struct ITaskGroup * __ptr64,struct ITaskItem * __ptr64,enum TaskDestroyedFlags) __ptr64)",
             },
             (void**)&CTaskListWnd_TaskDestroyed_Original,
             (void*)CTaskListWnd_TaskDestroyed_Hook,
+            true,
+        },
+        {
+            // A newer variant seen in insider builds.
+            {
+                LR"(public: virtual long __cdecl CTaskListWnd::TaskDestroyed(struct ITaskGroup *,struct ITaskItem *))",
+                LR"(public: virtual long __cdecl CTaskListWnd::TaskDestroyed(struct ITaskGroup * __ptr64,struct ITaskItem * __ptr64) __ptr64)",
+            },
+            (void**)&CTaskListWnd_TaskDestroyed_2_Original,
+            (void*)CTaskListWnd_TaskDestroyed_2_Hook,
+            true,
         },
     };
 
