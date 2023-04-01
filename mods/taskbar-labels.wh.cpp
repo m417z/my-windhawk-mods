@@ -42,6 +42,8 @@ choose one of the following running indicator styles:
 /*
 - taskbarItemWidth: 160
   $name: Taskbar item width
+  $description: >-
+    Windows 11 default: 44
 - runningIndicatorStyle: centerFixed
   $name: Running indicator style
   $options:
@@ -763,20 +765,27 @@ void UpdateTaskListButtonCustomizations(
     }
 
     bool isRunning = TaskListButton_IsRunning(taskListButtonElement);
-    bool showLabels = isRunning && !g_unloading;
+    bool showLabels = isRunning;
+    double minWidth =
+        std::min(g_initialTaskbarItemWidth,
+                 static_cast<double>(g_settings.taskbarItemWidth));
+
+    if (g_unloading) {
+        showLabels = false;
+        minWidth = g_initialTaskbarItemWidth;
+    }
 
     double widthToSet;
 
     if (showLabels) {
-        widthToSet = CalculateTaskbarItemWidth(taskbarFrameRepeaterElement,
-                                               g_initialTaskbarItemWidth,
-                                               g_settings.taskbarItemWidth);
+        widthToSet = CalculateTaskbarItemWidth(
+            taskbarFrameRepeaterElement, minWidth, g_settings.taskbarItemWidth);
 
         if (widthToSet <= g_initialTaskbarItemWidth + 16) {
             showLabels = false;
         }
     } else {
-        widthToSet = g_initialTaskbarItemWidth;
+        widthToSet = minWidth;
     }
 
     auto windhawkTextControl =
