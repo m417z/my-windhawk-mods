@@ -2,7 +2,7 @@
 // @id              taskbar-clock-customization
 // @name            Taskbar Clock Customization
 // @description     Customize the taskbar clock - add seconds, define a custom date/time format, add a news feed, and more
-// @version         1.0.8
+// @version         1.0.9
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
@@ -91,6 +91,8 @@ patterns can be used:
   $name: Clock width (Windows 10 only)
 - Height: 60
   $name: Clock height (Windows 10 only)
+- TextSpacing: 4
+  $name: Text spacing (Windows 10 only)
 - WebContentsUrl: https://feeds.bbci.co.uk/news/world/rss.xml
   $name: Web content URL
   $description: >-
@@ -141,6 +143,7 @@ struct {
     PCWSTR tooltipLine;
     int width;
     int height;
+    int textSpacing;
     PCWSTR webContentsUrl;
     PCWSTR webContentsBlockStart;
     PCWSTR webContentsStart;
@@ -859,6 +862,11 @@ using ClockButton_CalculateMinimumSize_t = LPSIZE(WINAPI*)(LPVOID pThis,
                                                            SIZE);
 ClockButton_CalculateMinimumSize_t ClockButton_CalculateMinimumSize_Original;
 
+using ClockButton_GetTextSpacingForOrientation_t =
+    int(WINAPI*)(LPVOID pThis, bool, DWORD, DWORD, DWORD, DWORD);
+ClockButton_GetTextSpacingForOrientation_t
+    ClockButton_GetTextSpacingForOrientation_Original;
+
 using ClockButton_v_GetTooltipText_t =
     HRESULT(WINAPI*)(LPVOID pThis, LPVOID, LPVOID, LPVOID, LPVOID);
 ClockButton_v_GetTooltipText_t ClockButton_v_GetTooltipText_Original;
@@ -945,6 +953,29 @@ LPSIZE WINAPI ClockButton_CalculateMinimumSize_Hook(LPVOID pThis,
     }
 
     return ret;
+}
+
+int WINAPI ClockButton_GetTextSpacingForOrientation_Hook(LPVOID pThis,
+                                                         bool horizontal,
+                                                         DWORD dwSiteHeight,
+                                                         DWORD dwLine1Height,
+                                                         DWORD dwLine2Height,
+                                                         DWORD dwLine3Height) {
+    Wh_Log(L">");
+
+    // 1 line
+    if (dwLine3Height == 0 && dwLine2Height == 0) {
+        return 0;
+    }
+
+    HWND hWnd = *((HWND*)pThis + 1);
+    UINT windowDpi = pGetDpiForWindow ? pGetDpiForWindow(hWnd) : 0;
+
+    if (windowDpi) {
+        return MulDiv(g_settings.textSpacing, windowDpi, 96);
+    }
+
+    return g_settings.textSpacing;
 }
 
 int WINAPI GetTimeFormatEx_Hook_Win10(LPCWSTR lpLocaleName,
@@ -1263,6 +1294,7 @@ void LoadSettings() {
     g_settings.tooltipLine = Wh_GetStringSetting(L"TooltipLine");
     g_settings.width = Wh_GetIntSetting(L"Width");
     g_settings.height = Wh_GetIntSetting(L"Height");
+    g_settings.textSpacing = Wh_GetIntSetting(L"TextSpacing");
     g_settings.webContentsUrl = Wh_GetStringSetting(L"WebContentsUrl");
     g_settings.webContentsBlockStart =
         Wh_GetStringSetting(L"WebContentsBlockStart");
@@ -1472,6 +1504,14 @@ BOOL Wh_ModInit() {
             },
             (void**)&ClockButton_CalculateMinimumSize_Original,
             (void*)ClockButton_CalculateMinimumSize_Hook,
+        },
+        {
+            {
+                LR"(private: int __cdecl ClockButton::GetTextSpacingForOrientation(bool,int,int,int,int))",
+                LR"(private: int __cdecl ClockButton::GetTextSpacingForOrientation(bool,int,int,int,int) __ptr64)"
+            },
+            (void**)&ClockButton_GetTextSpacingForOrientation_Original,
+            (void*)ClockButton_GetTextSpacingForOrientation_Hook
         },
         {
             {
