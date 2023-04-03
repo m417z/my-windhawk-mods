@@ -91,8 +91,9 @@ patterns can be used:
   $name: Clock width (Windows 10 only)
 - Height: 60
   $name: Clock height (Windows 10 only)
-- TextSpacing: 4
+- TextSpacing: 0
   $name: Text spacing (Windows 10 only)
+  $description: A value of 0 uses the default value.
 - WebContentsUrl: https://feeds.bbci.co.uk/news/world/rss.xml
   $name: Web content URL
   $description: >-
@@ -962,6 +963,12 @@ int WINAPI ClockButton_GetTextSpacingForOrientation_Hook(LPVOID pThis,
                                                          DWORD dwLine2Height,
                                                          DWORD dwLine3Height) {
     Wh_Log(L">");
+   
+    if (g_settings.textSpacing == 0) {
+        return ClockButton_GetTextSpacingForOrientation_Original(
+            pThis, horizontal, dwSiteHeight, dwLine1Height, dwLine2Height,
+            dwLine3Height);
+    }
 
     // 1 line
     if (dwLine3Height == 0 && dwLine2Height == 0) {
