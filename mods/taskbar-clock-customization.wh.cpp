@@ -99,7 +99,9 @@ patterns can be used:
   $name: Clock height (Windows 10 only)
 - TextSpacing: 0
   $name: Text spacing (Windows 10 only)
-  $description: A value of 0 uses the default value.
+  $description: >-
+    Set 0 for the default system value. A negative value can be used for
+    negative spacing.
 - WebContentsUrl: https://feeds.bbci.co.uk/news/world/rss.xml
   $name: Web content URL
   $description: >-
@@ -970,25 +972,32 @@ int WINAPI ClockButton_GetTextSpacingForOrientation_Hook(LPVOID pThis,
                                                          DWORD dwLine3Height) {
     Wh_Log(L">");
 
-    if (g_settings.textSpacing == 0) {
+    int textSpacing = g_settings.textSpacing;
+    if (textSpacing == 0) {
         return ClockButton_GetTextSpacingForOrientation_Original(
             pThis, horizontal, dwSiteHeight, dwLine1Height, dwLine2Height,
             dwLine3Height);
     }
 
-    // 1 line
+    // 1 line.
     if (dwLine3Height == 0 && dwLine2Height == 0) {
         return 0;
+    }
+
+    // Since 0 is reserved, shift negative values so that any spacing value can
+    // be used.
+    if (textSpacing < 0) {
+        textSpacing++;
     }
 
     HWND hWnd = *((HWND*)pThis + 1);
     UINT windowDpi = pGetDpiForWindow ? pGetDpiForWindow(hWnd) : 0;
 
     if (windowDpi) {
-        return MulDiv(g_settings.textSpacing, windowDpi, 96);
+        return MulDiv(textSpacing, windowDpi, 96);
     }
 
-    return g_settings.textSpacing;
+    return textSpacing;
 }
 
 int WINAPI GetTimeFormatEx_Hook_Win10(LPCWSTR lpLocaleName,
