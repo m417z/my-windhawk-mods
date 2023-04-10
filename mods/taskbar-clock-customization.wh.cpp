@@ -293,7 +293,7 @@ bool UpdateWebContent() {
         if (start) {
             start += wcslen(g_settings.webContentsStart);
 
-            PWSTR end = wcsstr(block, g_settings.webContentsEnd);
+            PWSTR end = wcsstr(start, g_settings.webContentsEnd);
             if (end) {
                 *end = L'\0';
 
