@@ -247,10 +247,6 @@ void LoadSettings() {
     g_settings.taskbarHeight = Wh_GetIntSetting(L"TaskbarHeight");
 }
 
-void FreeSettings() {
-    // Nothing for now.
-}
-
 HWND GetTaskbarWnd() {
     static HWND hTaskbarWnd;
 
@@ -791,14 +787,11 @@ void Wh_ModBeforeUninit() {
 
 void Wh_ModUninit() {
     Wh_Log(L">");
-
-    FreeSettings();
 }
 
 void Wh_ModSettingsChanged() {
     Wh_Log(L">");
 
-    FreeSettings();
     LoadSettings();
 
     if (g_taskbarViewDllLoaded) {
