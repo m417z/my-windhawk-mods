@@ -17,7 +17,7 @@
 # Taskbar Thumbnail Reorder
 Reorder taskbar thumbnails with the left mouse button.
 
-Only Windows 10 64-bit and Windows 11 are supported. For other Windows version
+Only Windows 10 64-bit and Windows 11 are supported. For other Windows versions
 check out [7+ Taskbar Tweaker](https://tweaker.ramensoftware.com/).
 
 Note: To customize the old taskbar on Windows 11 (if using Explorer Patcher or a

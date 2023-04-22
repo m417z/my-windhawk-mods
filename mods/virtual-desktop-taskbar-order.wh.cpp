@@ -18,7 +18,7 @@
 The order on the taskbar isn't preserved between virtual desktop switches, this
 mod fixes it.
 
-Only Windows 11 is currently supported. For older Windows version check out [7+
+Only Windows 11 is currently supported. For older Windows versions check out [7+
 Taskbar Tweaker](https://tweaker.ramensoftware.com/).
 
 ![Demonstration](https://i.imgur.com/ie8Q9cl.gif)

@@ -37,7 +37,7 @@ choose to group Paint and Notepad:
 **Note:** After enabling the mod, the relevant windows must be reopened to apply
 the grouping settings.
 
-Only Windows 10 64-bit and Windows 11 are supported. For other Windows version
+Only Windows 10 64-bit and Windows 11 are supported. For other Windows versions
 check out [7+ Taskbar Tweaker](https://tweaker.ramensoftware.com/).
 
 **Note:** To customize the old taskbar on Windows 11 (if using Explorer Patcher
