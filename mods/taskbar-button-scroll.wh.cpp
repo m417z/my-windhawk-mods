@@ -8,6 +8,7 @@
 // @twitter         https://twitter.com/m417z
 // @homepage        https://m417z.com/
 // @include         explorer.exe
+// @architecture    x86-64
 // @compilerOptions -lcomctl32 -loleaut32 -lole32
 // ==/WindhawkMod==
 
