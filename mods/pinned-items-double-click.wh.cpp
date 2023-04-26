@@ -114,7 +114,7 @@ void WINAPI CTaskListWnd__HandleClick_Hook(PVOID pThis,
     static PVOID firstClickTaskBtnGroup;
 
     ULONGLONG tickCount = GetTickCount64();
-    ULONGLONG messagePos = GetMessagePos();
+    DWORD messagePos = GetMessagePos();
 
     if (firstClickTickCount &&
         IsDoubleClickDistance(firstClickMessagePos, messagePos) &&
