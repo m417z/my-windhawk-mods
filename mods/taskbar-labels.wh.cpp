@@ -23,6 +23,7 @@
 // ==WindhawkModReadme==
 /*
 # Taskbar Labels for Windows 11
+
 Show text labels for running programs on the taskbar (Windows 11 only).
 
 By default, the Windows 11 taskbar only shows icons for taskbar items, without

@@ -11,9 +11,18 @@
 // @compilerOptions -DWINVER=0x0602 -lcomctl32 -ldwmapi -lole32 -lversion
 // ==/WindhawkMod==
 
+// Source code is published under The GNU General Public License v3.0.
+//
+// For bug reports and feature requests, please open an issue here:
+// https://github.com/ramensoftware/windhawk-mods/issues
+//
+// For pull requests, development takes place here:
+// https://github.com/m417z/my-windhawk-mods
+
 // ==WindhawkModReadme==
 /*
 # Taskbar Volume Control
+
 Control the system volume by scrolling over the taskbar.
 
 **Note:** Some laptop touchpads might not support scrolling over the taskbar. A

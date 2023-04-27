@@ -11,6 +11,14 @@
 // @architecture    x86-64
 // ==/WindhawkMod==
 
+// Source code is published under The GNU General Public License v3.0.
+//
+// For bug reports and feature requests, please open an issue here:
+// https://github.com/ramensoftware/windhawk-mods/issues
+//
+// For pull requests, development takes place here:
+// https://github.com/m417z/my-windhawk-mods
+
 // ==WindhawkModReadme==
 /*
 # Show all apps by default in start menu
@@ -18,12 +26,12 @@
 When the Windows 11 start menu is opened, show all apps right away without
 having to click on the "All apps" button.
 
-Note: Might not work on Windhawk 0.9 or older due to a bug. If the mod doesn't
-work, please update Windhawk.
+**Note:** Might not work on Windhawk 0.9 or older due to a bug. If the mod
+doesn't work, please update Windhawk.
 
-Note: Might not work with a portable version of Windhawk. The reason is that the
-StartMenuExperienceHost.exe process has limited access to files, and it might
-not be able to load the mod.
+**Note:** Might not work with a portable version of Windhawk. The reason is that
+the StartMenuExperienceHost.exe process has limited access to files, and it
+might not be able to load the mod.
 
 Before:
 

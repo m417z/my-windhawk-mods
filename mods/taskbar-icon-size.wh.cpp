@@ -13,10 +13,17 @@
 // ==/WindhawkMod==
 
 // Source code is published under The GNU General Public License v3.0.
+//
+// For bug reports and feature requests, please open an issue here:
+// https://github.com/ramensoftware/windhawk-mods/issues
+//
+// For pull requests, development takes place here:
+// https://github.com/m417z/my-windhawk-mods
 
 // ==WindhawkModReadme==
 /*
 # Taskbar height and icon size
+
 Control the taskbar height and icon size. Make the taskbar icons large and
 crisp, or small and compact.
 

@@ -11,9 +11,18 @@
 // @compilerOptions -lcomctl32 -ldwmapi
 // ==/WindhawkMod==
 
+// Source code is published under The GNU General Public License v3.0.
+//
+// For bug reports and feature requests, please open an issue here:
+// https://github.com/ramensoftware/windhawk-mods/issues
+//
+// For pull requests, development takes place here:
+// https://github.com/m417z/my-windhawk-mods
+
 // ==WindhawkModReadme==
 /*
 # Slick Window Arrangement
+
 Window arrangement is boring, make it more slick and pleasant with a
 sliding animation and window snapping.
 

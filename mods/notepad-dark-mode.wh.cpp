@@ -11,9 +11,18 @@
 // @compilerOptions -lcomctl32 -lgdi32 -luxtheme
 // ==/WindhawkMod==
 
+// Source code is published under The GNU General Public License v3.0.
+//
+// For bug reports and feature requests, please open an issue here:
+// https://github.com/ramensoftware/windhawk-mods/issues
+//
+// For pull requests, development takes place here:
+// https://github.com/m417z/my-windhawk-mods
+
 // ==WindhawkModReadme==
 /*
 # Dark Mode for Notepad
+
 This mod changes Notepad's theme to be dark, as in the screenshot below.
 
 The code is based on the [win32-darkmode](https://github.com/adzm/win32-darkmode)

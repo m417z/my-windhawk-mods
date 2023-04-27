@@ -30,10 +30,10 @@ buttons.
 In addition, keyboard shortcuts can be used. The default shortcuts are `Alt+[`
 and `Alt+]`, but they can be changed in the mod settings.
 
-![Demonstration](https://i.imgur.com/FtpUjt1.gif)
-
 Only Windows 11 is currently supported. For older Windows versions check out [7+
 Taskbar Tweaker](https://tweaker.ramensoftware.com/).
+
+![Demonstration](https://i.imgur.com/FtpUjt1.gif)
 */
 // ==/WindhawkModReadme==
 

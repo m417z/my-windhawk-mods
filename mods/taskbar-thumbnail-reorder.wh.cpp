@@ -12,16 +12,25 @@
 // @compilerOptions -lcomctl32 -lversion
 // ==/WindhawkMod==
 
+// Source code is published under The GNU General Public License v3.0.
+//
+// For bug reports and feature requests, please open an issue here:
+// https://github.com/ramensoftware/windhawk-mods/issues
+//
+// For pull requests, development takes place here:
+// https://github.com/m417z/my-windhawk-mods
+
 // ==WindhawkModReadme==
 /*
 # Taskbar Thumbnail Reorder
+
 Reorder taskbar thumbnails with the left mouse button.
 
 Only Windows 10 64-bit and Windows 11 are supported. For other Windows versions
 check out [7+ Taskbar Tweaker](https://tweaker.ramensoftware.com/).
 
-Note: To customize the old taskbar on Windows 11 (if using Explorer Patcher or a
-similar tool), enable the relevant option in the mod's settings.
+**Note:** To customize the old taskbar on Windows 11 (if using Explorer Patcher
+or a similar tool), enable the relevant option in the mod's settings.
 
 ![demonstration](https://i.imgur.com/wGGe2RS.gif)
 */

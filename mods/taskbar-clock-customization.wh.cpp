@@ -29,8 +29,8 @@ a news feed, and more.
 
 Only Windows 10 64-bit and Windows 11 are supported.
 
-Note: To customize the old taskbar on Windows 11 (if using Explorer Patcher or a
-similar tool), enable the relevant option in the mod's settings.
+**Note:** To customize the old taskbar on Windows 11 (if using Explorer Patcher
+or a similar tool), enable the relevant option in the mod's settings.
 
 ![Screenshot](https://i.imgur.com/gM9kbH5.png)
 

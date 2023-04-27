@@ -12,9 +12,18 @@
 // @compilerOptions -lcomctl32 -lversion
 // ==/WindhawkMod==
 
+// Source code is published under The GNU General Public License v3.0.
+//
+// For bug reports and feature requests, please open an issue here:
+// https://github.com/ramensoftware/windhawk-mods/issues
+//
+// For pull requests, development takes place here:
+// https://github.com/m417z/my-windhawk-mods
+
 // ==WindhawkModReadme==
 /*
 # Virtual Desktop Preserve Taskbar Order
+
 The order on the taskbar isn't preserved between virtual desktop switches, this
 mod fixes it.
 
