@@ -101,6 +101,17 @@ choose one of the following running indicator styles:
 
 using namespace winrt::Windows::UI::Xaml;
 
+// https://stackoverflow.com/a/51274008
+template <auto fn>
+struct deleter_from_fn {
+    template <typename T>
+    constexpr void operator()(T* arg) const {
+        fn(arg);
+    }
+};
+using string_setting_unique_ptr =
+    std::unique_ptr<const WCHAR[], deleter_from_fn<Wh_FreeStringSetting>>;
+
 // #define EXTRA_DBG_LOG
 
 enum class IndicatorStyle {
@@ -117,8 +128,8 @@ struct {
     int fontSize;
     int leftAndRightPaddingSize;
     int spaceBetweenIconAndLabel;
-    PCWSTR labelForSingleItem;
-    PCWSTR labelForMultipleItems;
+    string_setting_unique_ptr labelForSingleItem;
+    string_setting_unique_ptr labelForMultipleItems;
 } g_settings;
 
 WCHAR g_taskbarViewDllPath[MAX_PATH];
@@ -570,8 +581,8 @@ LONG_PTR WINAPI CTaskListWnd_GroupChanged_Hook(void* pThis,
 
     FormatLabel(textBuffer, numItems, g_taskBtnGroupTitleInGroupChanged,
                 ARRAYSIZE(g_taskBtnGroupTitleInGroupChanged),
-                numItems > 1 ? g_settings.labelForMultipleItems
-                             : g_settings.labelForSingleItem);
+                numItems > 1 ? g_settings.labelForMultipleItems.get()
+                             : g_settings.labelForSingleItem.get());
 
     g_inGroupChanged = true;
     LONG_PTR ret =
@@ -1036,14 +1047,10 @@ void LoadSettings() {
         Wh_GetIntSetting(L"leftAndRightPaddingSize");
     g_settings.spaceBetweenIconAndLabel =
         Wh_GetIntSetting(L"spaceBetweenIconAndLabel");
-    g_settings.labelForSingleItem = Wh_GetStringSetting(L"labelForSingleItem");
-    g_settings.labelForMultipleItems =
-        Wh_GetStringSetting(L"labelForMultipleItems");
-}
-
-void FreeSettings() {
-    Wh_FreeStringSetting(g_settings.labelForSingleItem);
-    Wh_FreeStringSetting(g_settings.labelForMultipleItems);
+    g_settings.labelForSingleItem.reset(
+        Wh_GetStringSetting(L"labelForSingleItem"));
+    g_settings.labelForMultipleItems.reset(
+        Wh_GetStringSetting(L"labelForMultipleItems"));
 }
 
 void ApplySettings() {
@@ -1508,14 +1515,11 @@ void Wh_ModBeforeUninit() {
 
 void Wh_ModUninit() {
     Wh_Log(L">");
-
-    FreeSettings();
 }
 
 void Wh_ModSettingsChanged() {
     Wh_Log(L">");
 
-    FreeSettings();
     LoadSettings();
 
     if (g_taskbarViewDllLoaded) {
