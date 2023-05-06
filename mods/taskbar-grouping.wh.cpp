@@ -808,7 +808,7 @@ void SwapTaskGroupIdsWithUnsuffixedInstance(PVOID taskGroup) {
     }
 
     PCWSTR appId = CTaskGroup_GetAppID_Original(taskGroup);
-    if (FindAppIdSuffix(appId)) {
+    if (!appId || FindAppIdSuffix(appId)) {
         return;
     }
 
