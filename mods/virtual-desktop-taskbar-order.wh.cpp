@@ -62,6 +62,11 @@ size_t OffsetFromAssembly(void* func,
                           size_t defValue,
                           std::string opcode = "mov",
                           int limit = 30) {
+    // Example: mov rax, [rcx+0xE0]
+    std::regex regex(
+        opcode +
+        R"( r(?:[a-z]{2}|\d{1,2}), \[r(?:[a-z]{2}|\d{1,2})\+(0x[0-9A-F]+)\])");
+
     BYTE* p = (BYTE*)func;
     for (int i = 0; i < limit; i++) {
         WH_DISASM_RESULT result;
@@ -76,10 +81,6 @@ size_t OffsetFromAssembly(void* func,
             break;
         }
 
-        // Example: mov rax, [rcx+0xE0]
-        std::regex regex(
-            opcode +
-            R"( r(?:[a-z]{2}|\d{1,2}), \[r(?:[a-z]{2}|\d{1,2})\+(0x[0-9A-F]+)\])");
         std::match_results<std::string_view::const_iterator> match;
         if (std::regex_match(s.begin(), s.end(), match, regex)) {
             // Wh_Log(L"%S", result.text);
