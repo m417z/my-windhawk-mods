@@ -1334,8 +1334,9 @@ bool HookTaskbarViewDllSymbols() {
 
     HMODULE module =
         LoadLibraryEx(dllPath, nullptr, LOAD_WITH_ALTERED_SEARCH_PATH);
-    if (module) {
+    if (!module) {
         Wh_Log(L"Taskbar view module couldn't be loaded");
+        return false;
     }
 
     SYMBOL_HOOK symbolHooks[] = {
