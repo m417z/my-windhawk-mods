@@ -27,8 +27,8 @@
 Minimize/restore by scrolling the mouse wheel over taskbar buttons and thumbnail
 previews.
 
-Only Windows 11 is currently supported. For older Windows versions check out [7+
-Taskbar Tweaker](https://tweaker.ramensoftware.com/).
+Only Windows 11 version 22H2 or newer is currently supported. For older Windows
+versions check out [7+ Taskbar Tweaker](https://tweaker.ramensoftware.com/).
 
 ![Demonstration](https://i.imgur.com/rnnwOss.gif)
 */
