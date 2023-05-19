@@ -1071,6 +1071,8 @@ BOOL Wh_ModInit() {
 }
 
 void Wh_ModAfterInit() {
+    Wh_Log(L">");
+
     DWORD dwProcessId;
     DWORD dwCurrentProcessId = GetCurrentProcessId();
 
