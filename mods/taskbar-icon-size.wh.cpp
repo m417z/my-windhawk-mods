@@ -124,16 +124,15 @@ ResourceDictionary_Lookup_Hook(void* pThis,
         return ret;
     }
 
-    auto valueDouble =
-        ret->try_as<winrt::Windows::Foundation::IReference<double>>();
+    auto valueDouble = ret->try_as<double>();
     if (!valueDouble) {
         return ret;
     }
 
     double newValueDouble = g_settings.taskbarButtonWidth;
-    if (newValueDouble != valueDouble.Value()) {
-        Wh_Log(L"Overriding value %s: %f->%f", keyString->c_str(),
-               valueDouble.Value(), newValueDouble);
+    if (newValueDouble != *valueDouble) {
+        Wh_Log(L"Overriding value %s: %f->%f", keyString->c_str(), *valueDouble,
+               newValueDouble);
         *ret = winrt::box_value(newValueDouble);
     }
 
