@@ -860,7 +860,7 @@ bool HookSymbols(PCWSTR cacheId,
     if (newSystemCacheStr.length() <= cacheMaxSize) {
         Wh_SetStringValue(cacheStrKey.c_str(), newSystemCacheStr.c_str());
     } else {
-        Wh_Log(L"Cache is too large (%zu)", newSystemCacheStr.length());
+        Wh_Log(L"Cache is too large (%Iu)", newSystemCacheStr.length());
     }
 
     return true;
