@@ -2,7 +2,7 @@
 // @id              taskbar-volume-control
 // @name            Taskbar Volume Control
 // @description     Control the system volume by scrolling over the taskbar
-// @version         1.1
+// @version         1.1.1
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
