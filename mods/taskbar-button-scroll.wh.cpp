@@ -900,7 +900,7 @@ bool HookSymbols(HMODULE module,
     if (newSystemCacheStr.length() <= cacheMaxSize) {
         Wh_SetStringValue(cacheStrKey.c_str(), newSystemCacheStr.c_str());
     } else {
-        Wh_Log(L"Cache is too large (%Iu)", newSystemCacheStr.length());
+        Wh_Log(L"Cache is too large (%zu)", newSystemCacheStr.length());
     }
 
     return true;
