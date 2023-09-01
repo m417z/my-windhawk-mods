@@ -140,9 +140,9 @@ LRESULT CALLBACK PhpThemeWindowStatusbarWndSubclassProc(
     _In_ DWORD_PTR dwRefData
     )
 {
-	if (uMsg == WM_NCDESTROY || (uMsg == g_subclassRegisteredMsg && !wParam)) {
-		RemoveWindowSubclass(WindowHandle, PhpThemeWindowStatusbarWndSubclassProc, 0);
-	}
+    if (uMsg == WM_NCDESTROY || (uMsg == g_subclassRegisteredMsg && !wParam)) {
+        RemoveWindowSubclass(WindowHandle, PhpThemeWindowStatusbarWndSubclassProc, 0);
+    }
 
     PPHP_THEME_WINDOW_STATUSBAR_CONTEXT context;
     WNDPROC oldWndProc;
@@ -875,9 +875,9 @@ LRESULT CALLBACK NotepadWindowSubclassProc(
     _In_ DWORD_PTR dwRefData
     )
 {
-	if (uMsg == WM_NCDESTROY || (uMsg == g_subclassRegisteredMsg && !wParam)) {
-		RemoveWindowSubclass(hWnd, NotepadWindowSubclassProc, 0);
-	}
+    if (uMsg == WM_NCDESTROY || (uMsg == g_subclassRegisteredMsg && !wParam)) {
+        RemoveWindowSubclass(hWnd, NotepadWindowSubclassProc, 0);
+    }
 
     LRESULT lr = 0;
     if (g_darkModeSupported && UAHDarkModeWndProc(hWnd, uMsg, wParam, lParam, &lr)) {

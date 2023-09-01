@@ -398,9 +398,9 @@ LRESULT CALLBACK ThumbnailWindowSubclassProc(HWND hWnd,
     LRESULT result = 0;
     bool processed = false;
 
-	if (uMsg == WM_NCDESTROY || (uMsg == g_subclassRegisteredMsg && !wParam)) {
-		RemoveWindowSubclass(hWnd, ThumbnailWindowSubclassProc, 0);
-	}
+    if (uMsg == WM_NCDESTROY || (uMsg == g_subclassRegisteredMsg && !wParam)) {
+        RemoveWindowSubclass(hWnd, ThumbnailWindowSubclassProc, 0);
+    }
 
     switch (uMsg) {
         case WM_LBUTTONDOWN:
