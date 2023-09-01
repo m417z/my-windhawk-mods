@@ -514,7 +514,7 @@ void WINAPI CTaskListWnd_OnContextMenu_Hook(PVOID pThis,
     g_lastScrollDeltaRemainder = delta % WHEEL_DELTA;
 }
 
-using CTaskListWnd_DismissHoverUI_t = HRESULT(WINAPI*)(PVOID pThi);
+using CTaskListWnd_DismissHoverUI_t = HRESULT(WINAPI*)(PVOID pThis);
 CTaskListWnd_DismissHoverUI_t CTaskListWnd_DismissHoverUI_Original;
 HRESULT WINAPI CTaskListWnd_DismissHoverUI_Hook(PVOID pThis) {
     if (GetTickCount64() < g_noDismissHoverUIUntil) {

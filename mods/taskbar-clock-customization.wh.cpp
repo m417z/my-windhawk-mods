@@ -346,7 +346,7 @@ struct {
     TextStyleSettings dateStyle;
     bool oldTaskbarOnWin11;
 
-    // Kept for compatiblity with old settings:
+    // Kept for compatibility with old settings:
     StringSetting webContentsUrl;
     StringSetting webContentsBlockStart;
     StringSetting webContentsStart;
@@ -381,7 +381,7 @@ std::atomic<bool> g_webContentLoaded;
 std::vector<std::optional<std::wstring>> g_webContentStrings;
 std::vector<std::optional<std::wstring>> g_webContentStringsFull;
 
-// Kept for compatiblity with old settings:
+// Kept for compatibility with old settings:
 WCHAR g_webContent[FORMATTED_BUFFER_SIZE];
 WCHAR g_webContentFull[FORMATTED_BUFFER_SIZE];
 
@@ -504,7 +504,7 @@ void UpdateWebContent() {
     std::wstring lastUrl;
     std::optional<std::wstring> urlContent;
 
-    // Kept for compatiblity with old settings:
+    // Kept for compatibility with old settings:
     if (g_settings.webContentsUrl && g_settings.webContentsBlockStart &&
         g_settings.webContentsStart && g_settings.webContentsEnd) {
         lastUrl = g_settings.webContentsUrl;
@@ -847,7 +847,7 @@ size_t ResolveFormatToken(PCWSTR format, PCWSTR* resolved) {
         return sizeof("%timezone%") - 1;
     }
 
-    // Kept for compatiblity with old settings:
+    // Kept for compatibility with old settings:
     if (wcsncmp(L"%web%", format, sizeof("%web%") - 1) == 0) {
         std::lock_guard<std::mutex> guard(g_webContentMutex);
         *resolved = *g_webContent ? g_webContent : L"Loading...";
@@ -1958,7 +1958,7 @@ void LoadSettings() {
 
     g_settings.oldTaskbarOnWin11 = Wh_GetIntSetting(L"oldTaskbarOnWin11");
 
-    // Kept for compatiblity with old settings:
+    // Kept for compatibility with old settings:
     if (wcsstr(g_settings.topLine, L"%web%") ||
         wcsstr(g_settings.bottomLine, L"%web%") ||
         wcsstr(g_settings.middleLine, L"%web%") ||
