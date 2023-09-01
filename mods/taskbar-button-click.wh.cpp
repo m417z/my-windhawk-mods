@@ -50,8 +50,8 @@ or a similar tool), enable the relevant option in the mod's settings.
   $name: Customize the old taskbar on Windows 11
   $description: >-
     Enable this option to customize the old taskbar on Windows 11 (if using
-    Explorer Patcher or a similar tool). Note: Disable and re-enable the mod to
-    apply this option.
+    Explorer Patcher or a similar tool). Note: For Windhawk versions older
+    than 1.3, you have to disable and re-enable the mod to apply this option.
 */
 // ==/WindhawkModSettings==
 
@@ -68,6 +68,7 @@ enum {
 
 struct {
     int multipleItemsBehavior;
+    bool oldTaskbarOnWin11;
 } g_settings;
 
 enum class WinVersion {
@@ -523,10 +524,14 @@ void LoadSettings() {
         g_settings.multipleItemsBehavior = MULTIPLE_ITEMS_BEHAVIOR_NONE;
     }
     Wh_FreeStringSetting(multipleItemsBehavior);
+
+    g_settings.oldTaskbarOnWin11 = Wh_GetIntSetting(L"oldTaskbarOnWin11");
 }
 
 BOOL Wh_ModInit() {
     Wh_Log(L">");
+
+    LoadSettings();
 
     g_winVersion = GetWindowsVersion();
     if (g_winVersion == WinVersion::Unsupported) {
@@ -534,12 +539,9 @@ BOOL Wh_ModInit() {
         return FALSE;
     }
 
-    if (g_winVersion >= WinVersion::Win11 &&
-        Wh_GetIntSetting(L"oldTaskbarOnWin11")) {
+    if (g_winVersion >= WinVersion::Win11 && g_settings.oldTaskbarOnWin11) {
         g_winVersion = WinVersion::Win10;
     }
-
-    LoadSettings();
 
     SYMBOL_HOOK symbolHooks[] = {
         // Win11 only:
@@ -626,8 +628,22 @@ BOOL Wh_ModInit() {
     return TRUE;
 }
 
-void Wh_ModSettingsChanged() {
+BOOL Wh_ModSettingsChanged(BOOL* bReload) {
     Wh_Log(L">");
 
+    bool prevOldTaskbarOnWin11 = g_settings.oldTaskbarOnWin11;
+
     LoadSettings();
+
+    *bReload = g_settings.oldTaskbarOnWin11 != prevOldTaskbarOnWin11;
+
+    return TRUE;
+}
+
+// For pre-1.3 Windhawk compatibility.
+void Wh_ModSettingsChanged() {
+    Wh_Log(L"> pre-1.3");
+
+    BOOL bReload = FALSE;
+    Wh_ModSettingsChanged(&bReload);
 }
