@@ -997,10 +997,11 @@ ClockSystemTrayIconDataModel_GetTimeToolTipString_2_t
 using ICalendar_Second_t = int(WINAPI*)(LPVOID pThis);
 ICalendar_Second_t ICalendar_Second_Original;
 
-using ThreadPoolTimer_CreateTimer_t = LPVOID(WINAPI*)(LPVOID param1,
-                                                      LPVOID param2,
-                                                      ULONGLONG* elapse);
-ThreadPoolTimer_CreateTimer_t ThreadPoolTimer_CreateTimer_Original;
+using ThreadPoolTimer_CreateTimer_lambda_t = LPVOID(WINAPI*)(DWORD_PTR** param1,
+                                                             LPVOID param2,
+                                                             LPVOID param3);
+ThreadPoolTimer_CreateTimer_lambda_t
+    ThreadPoolTimer_CreateTimer_lambda_Original;
 
 void WINAPI ClockSystemTrayIconDataModel_RefreshIcon_Hook(LPVOID pThis,
                                                           LPVOID param1) {
@@ -1390,32 +1391,24 @@ int WINAPI ICalendar_Second_Hook(LPVOID pThis) {
     return ret;
 }
 
-LPVOID WINAPI ThreadPoolTimer_CreateTimer_Hook(LPVOID param1,
-                                               LPVOID param2,
-                                               ULONGLONG* elapse) {
-    Wh_Log(L">");
+LPVOID WINAPI ThreadPoolTimer_CreateTimer_lambda_Hook(DWORD_PTR** param1,
+                                                      LPVOID param2,
+                                                      LPVOID param3) {
+    DWORD_PTR* elapse = param1[1];
 
-    ULONGLONG elapseNew;
+    Wh_Log(L"> %zu", *elapse);
 
     if (g_refreshIconThreadId == GetCurrentThreadId() &&
-        !g_inGetTimeToolTipString && g_refreshIconNeedToAdjustTimer) {
-        // Make the next refresh happen next second. This hook is only relevant
-        // for recent Windows 11 22H2 versions, previous Windows versions used
-        // other timer functions. Without this hook, the timer was always set
-        // one second forward, and so the clock was accumulating a delay,
-        // finally caused one second to be skipped.
-        //
-        // Note that with this solution, the following hooks aren't necessary,
-        // but they're kept for older Windows 11 versions:
-        // - ICalendar_Second_Hook
-        // - GetLocalTime_Hook_Win11
+        !g_inGetTimeToolTipString && *elapse == 10000000) {
+        // Make the next refresh happen next second. Without this hook, the
+        // timer was always set one second forward, and so the clock was
+        // accumulating a delay, finally caused one second to be skipped.
         SYSTEMTIME time;
         GetLocalTime_Original(&time);
-        elapseNew = 10000ULL * (1000 - time.wMilliseconds);
-        elapse = &elapseNew;
+        *elapse = 10000ULL * (1000 - time.wMilliseconds);
     }
 
-    return ThreadPoolTimer_CreateTimer_Original(param1, param2, elapse);
+    return ThreadPoolTimer_CreateTimer_lambda_Original(param1, param2, param3);
 }
 
 VOID WINAPI GetLocalTime_Hook_Win11(LPSYSTEMTIME lpSystemTime) {
@@ -2264,13 +2257,12 @@ BOOL Wh_ModInit() {
             },
             {
                 {
-                    LR"(public: static __cdecl winrt::Windows::System::Threading::ThreadPoolTimer::CreateTimer(struct winrt::Windows::System::Threading::TimerElapsedHandler const &,class std::chrono::duration<__int64,struct std::ratio<1,10000000> > const &))",
-                    LR"(public: static __cdecl winrt::Windows::System::Threading::ThreadPoolTimer::CreateTimer(struct winrt::Windows::System::Threading::TimerElapsedHandler const & __ptr64,class std::chrono::duration<__int64,struct std::ratio<1,10000000> > const & __ptr64) __ptr64)",
+                    LR"(public: __cdecl <lambda_b19cf72fe9674443383aa89d5c22450b>::operator()(struct winrt::Windows::System::Threading::IThreadPoolTimerStatics const &)const )",
+                    LR"(public: __cdecl <lambda_b19cf72fe9674443383aa89d5c22450b>::operator()(struct winrt::Windows::System::Threading::IThreadPoolTimerStatics const & __ptr64)const __ptr64)",
                 },
-                (void**)&ThreadPoolTimer_CreateTimer_Original,
-                (void*)ThreadPoolTimer_CreateTimer_Hook,
-                true,  // For newer Windows 11 22H2 versions with the option to
-                       // show seconds.
+                (void**)&ThreadPoolTimer_CreateTimer_lambda_Original,
+                (void*)ThreadPoolTimer_CreateTimer_lambda_Hook,
+                true,  // Only for more precise clock, see comment in the hook.
             },
         };
 
