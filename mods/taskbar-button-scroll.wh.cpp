@@ -2,7 +2,7 @@
 // @id              taskbar-button-scroll
 // @name            Taskbar minimize/restore on scroll
 // @description     Minimize/restore by scrolling the mouse wheel over taskbar buttons and thumbnail previews (Windows 11 only)
-// @version         1.0.3
+// @version         1.0.4
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
@@ -325,13 +325,6 @@ BOOL WINAPI CApi_PostMessageW_Hook(PVOID pThis,
 using TaskListButton_AutomationInvoke_t = void(WINAPI*)(PVOID pThis);
 TaskListButton_AutomationInvoke_t TaskListButton_AutomationInvoke_Original;
 
-// {7C3E0575-EB65-5A36-B1CF-8322C06C53C3}
-constexpr winrt::guid ITaskListButton{
-    0x7C3E0575,
-    0xEB65,
-    0x5A36,
-    {0xB1, 0xCF, 0x83, 0x22, 0xC0, 0x6C, 0x53, 0xC3}};
-
 using TaskListButton_OnPointerWheelChanged_t = int(WINAPI*)(PVOID pThis,
                                                             PVOID pArgs);
 TaskListButton_OnPointerWheelChanged_t
@@ -347,10 +340,20 @@ int TaskListButton_OnPointerWheelChanged_Hook(PVOID pThis, PVOID pArgs) {
         return original();
     }
 
-    winrt::Windows::Foundation::IUnknown taskListButton = nullptr;
+    winrt::Windows::Foundation::IInspectable taskListButton = nullptr;
     ((IUnknown*)pThis)
-        ->QueryInterface(ITaskListButton, winrt::put_abi(taskListButton));
+        ->QueryInterface(
+            winrt::guid_of<winrt::Windows::Foundation::IInspectable>(),
+            winrt::put_abi(taskListButton));
+
     if (!taskListButton) {
+        return original();
+    }
+
+    auto className = winrt::get_class_name(taskListButton);
+    Wh_Log(L"%s", className.c_str());
+
+    if (className != L"Taskbar.TaskListButton") {
         return original();
     }
 
