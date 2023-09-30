@@ -469,9 +469,11 @@ std::optional<std::wstring> GetUrlContent(PCWSTR lpUrl) {
     InternetCloseHandle(hOpenHandle);
 
     // Assume UTF-8.
-    std::wstring unicodeContent(dwLength, L'\0');
-    DWORD dw = MultiByteToWideChar(CP_UTF8, 0, (PCSTR)pUrlContent, dwLength,
-                                   unicodeContent.data(), dwLength * 2);
+    int charsNeeded = MultiByteToWideChar(CP_UTF8, 0, (PCSTR)pUrlContent,
+                                          dwLength, nullptr, 0);
+    std::wstring unicodeContent(charsNeeded, L'\0');
+    MultiByteToWideChar(CP_UTF8, 0, (PCSTR)pUrlContent, dwLength,
+                        unicodeContent.data(), unicodeContent.size());
 
     HeapFree(GetProcessHeap(), 0, pUrlContent);
 
