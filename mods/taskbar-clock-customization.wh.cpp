@@ -1001,7 +1001,8 @@ ICalendar_Second_t ICalendar_Second_Original;
 
 using ThreadPoolTimer_CreateTimer_t = LPVOID(WINAPI*)(LPVOID param1,
                                                       LPVOID param2,
-                                                      ULONGLONG* elapse);
+                                                      LPVOID param3,
+                                                      LPVOID param4);
 ThreadPoolTimer_CreateTimer_t ThreadPoolTimer_CreateTimer_Original;
 
 using ThreadPoolTimer_CreateTimer_lambda_t = LPVOID(WINAPI*)(DWORD_PTR** param1,
@@ -1402,23 +1403,34 @@ int WINAPI ICalendar_Second_Hook(LPVOID pThis) {
 // called in some Windows versions due to function inlining.
 LPVOID WINAPI ThreadPoolTimer_CreateTimer_Hook(LPVOID param1,
                                                LPVOID param2,
-                                               ULONGLONG* elapse) {
-    Wh_Log(L"> %zu", *elapse);
+                                               LPVOID param3,
+                                               LPVOID param4) {
+    // In newer Windows 11 versions, there are only 3 arguments, but that's OK
+    // because argument 4 is just ignored (register d9).
+    ULONGLONG** elapse =
+        (ULONGLONG**)(g_winVersion >= WinVersion::Win11_22H2 ? &param3
+                                                             : &param4);
+
+    Wh_Log(L"> %zu", **elapse);
 
     ULONGLONG elapseNew;
 
     if (g_refreshIconThreadId == GetCurrentThreadId() &&
-        !g_inGetTimeToolTipString && *elapse == 10000000) {
+        !g_inGetTimeToolTipString && **elapse == 10000000) {
         // Make the next refresh happen next second. Without this hook, the
         // timer was always set one second forward, and so the clock was
         // accumulating a delay, finally caused one second to be skipped.
         SYSTEMTIME time;
-        GetLocalTime_Original(&time);
+        if (GetLocalTime_Original) {
+            GetLocalTime_Original(&time);
+        } else {
+            GetLocalTime(&time);
+        }
         elapseNew = 10000ULL * (1000 - time.wMilliseconds);
-        elapse = &elapseNew;
+        *elapse = &elapseNew;
     }
 
-    return ThreadPoolTimer_CreateTimer_Original(param1, param2, elapse);
+    return ThreadPoolTimer_CreateTimer_Original(param1, param2, param3, param4);
 }
 
 // Similar to ThreadPoolTimer_CreateTimer_Hook. Only one of them is called in
@@ -1436,7 +1448,11 @@ LPVOID WINAPI ThreadPoolTimer_CreateTimer_lambda_Hook(DWORD_PTR** param1,
         // timer was always set one second forward, and so the clock was
         // accumulating a delay, finally caused one second to be skipped.
         SYSTEMTIME time;
-        GetLocalTime_Original(&time);
+        if (GetLocalTime_Original) {
+            GetLocalTime_Original(&time);
+        } else {
+            GetLocalTime(&time);
+        }
         *elapse = 10000ULL * (1000 - time.wMilliseconds);
     }
 
@@ -1522,7 +1538,11 @@ int WINAPI GetDateFormatEx_Hook_Win11(LPCWSTR lpLocaleName,
         sentinelSystemTime.wSecond = 59;
         if (memcmp(lpDate, &sentinelSystemTime, sizeof(sentinelSystemTime)) ==
             0) {
-            GetLocalTime_Original(const_cast<SYSTEMTIME*>(lpDate));
+            if (GetLocalTime_Original) {
+                GetLocalTime_Original(const_cast<SYSTEMTIME*>(lpDate));
+            } else {
+                GetLocalTime(const_cast<SYSTEMTIME*>(lpDate));
+            }
         }
 
         if (dwFlags & DATE_SHORTDATE) {
@@ -2291,6 +2311,8 @@ BOOL Wh_ModInit() {
                 {
                     LR"(public: static __cdecl winrt::Windows::System::Threading::ThreadPoolTimer::CreateTimer(struct winrt::Windows::System::Threading::TimerElapsedHandler const &,class std::chrono::duration<__int64,struct std::ratio<1,10000000> > const &))",
                     LR"(public: static __cdecl winrt::Windows::System::Threading::ThreadPoolTimer::CreateTimer(struct winrt::Windows::System::Threading::TimerElapsedHandler const & __ptr64,class std::chrono::duration<__int64,struct std::ratio<1,10000000> > const & __ptr64) __ptr64)",
+                    // Windows 11 21H2:
+                    LR"(public: struct winrt::Windows::System::Threading::ThreadPoolTimer __cdecl winrt::impl::consume_Windows_System_Threading_IThreadPoolTimerStatics<struct winrt::Windows::System::Threading::IThreadPoolTimerStatics>::CreateTimer(struct winrt::Windows::System::Threading::TimerElapsedHandler const &,class std::chrono::duration<__int64,struct std::ratio<1,10000000> > const &)const )",
                 },
                 (void**)&ThreadPoolTimer_CreateTimer_Original,
                 (void*)ThreadPoolTimer_CreateTimer_Hook,
@@ -2300,6 +2322,8 @@ BOOL Wh_ModInit() {
                 {
                     LR"(public: __cdecl <lambda_b19cf72fe9674443383aa89d5c22450b>::operator()(struct winrt::Windows::System::Threading::IThreadPoolTimerStatics const &)const )",
                     LR"(public: __cdecl <lambda_b19cf72fe9674443383aa89d5c22450b>::operator()(struct winrt::Windows::System::Threading::IThreadPoolTimerStatics const & __ptr64)const __ptr64)",
+                    // Windows 11 21H2:
+                    LR"(public: struct winrt::Windows::System::Threading::ThreadPoolTimer __cdecl <lambda_b19cf72fe9674443383aa89d5c22450b>::operator()(struct winrt::Windows::System::Threading::IThreadPoolTimerStatics const &)const )",
                 },
                 (void**)&ThreadPoolTimer_CreateTimer_lambda_Original,
                 (void*)ThreadPoolTimer_CreateTimer_lambda_Hook,
