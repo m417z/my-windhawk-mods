@@ -114,8 +114,6 @@ struct deleter_from_fn {
 using string_setting_unique_ptr =
     std::unique_ptr<const WCHAR[], deleter_from_fn<Wh_FreeStringSetting>>;
 
-// #define EXTRA_DBG_LOG
-
 enum class IndicatorStyle {
     centerFixed,
     centerDynamic,
@@ -234,61 +232,6 @@ void RecalculateLabels() {
     g_applyingSettings = false;
 }
 
-#if defined(EXTRA_DBG_LOG)
-void LogAllElementsAux(FrameworkElement element, int nesting = 0) {
-    std::string padding(nesting * 2, ' ');
-
-    int childrenCount = Media::VisualTreeHelper::GetChildrenCount(element);
-
-    for (int i = 0; i < childrenCount; i++) {
-        auto child = Media::VisualTreeHelper::GetChild(element, i)
-                         .try_as<FrameworkElement>();
-        if (!child) {
-            Wh_Log(L"%SFailed to get child %d of %d", padding.c_str(), i + 1,
-                   childrenCount);
-            continue;
-        }
-
-        auto className = winrt::get_class_name(child);
-        Wh_Log(L"%SClass: %s", padding.c_str(), className.c_str());
-        Wh_Log(L"%SName: %s", padding.c_str(), child.Name().c_str());
-
-        auto offset = child.ActualOffset();
-        Wh_Log(L"%SPosition: %f, %f", padding.c_str(), offset.x, offset.y);
-        Wh_Log(L"%SSize: %f x %f", padding.c_str(), child.ActualWidth(),
-               child.ActualHeight());
-
-        if (child.Name() == L"WindhawkText") {
-            auto windhawkTextControl = child.as<Controls::TextBlock>();
-            Wh_Log(L"%SText: %s", padding.c_str(),
-                   windhawkTextControl.Text().c_str());
-        }
-
-        LogAllElementsAux(child, nesting + 1);
-    }
-}
-
-void LogAllElements(FrameworkElement element) {
-    try {
-        auto rootElement = element;
-        while (true) {
-            auto parent = Media::VisualTreeHelper::GetParent(rootElement)
-                              .as<FrameworkElement>();
-            if (!parent) {
-                break;
-            }
-            rootElement = parent;
-        }
-
-        Wh_Log(L">>> LogAllElements");
-        LogAllElementsAux(rootElement);
-        Wh_Log(L"<<< LogAllElements");
-    } catch (winrt::hresult_error const& ex) {
-        Wh_Log(L"LogAllElements failed: %08X", ex.code());
-    }
-}
-#endif  // defined(EXTRA_DBG_LOG)
-
 using TaskListButton_get_IsRunning_t = HRESULT(WINAPI*)(void* pThis,
                                                         bool* running);
 TaskListButton_get_IsRunning_t TaskListButton_get_IsRunning_Original;
@@ -348,10 +291,6 @@ FrameworkElement ItemsRepeater_TryGetElement(
 double CalculateTaskbarItemWidth(FrameworkElement taskbarFrameRepeaterElement,
                                  double minWidth,
                                  double maxWidth) {
-#if defined(EXTRA_DBG_LOG)
-    LogAllElements(taskbarFrameRepeaterElement);
-#endif  // defined(EXTRA_DBG_LOG)
-
     double taskbarFrameRepeaterEndOffset = 0;
 
     auto rootGridElement =
