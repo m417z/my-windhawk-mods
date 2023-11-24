@@ -2,7 +2,7 @@
 // @id              taskbar-button-click
 // @name            Middle click to close on the taskbar
 // @description     Close programs with a middle click on the taskbar instead of creating a new instance
-// @version         1.0.4
+// @version         1.0.5
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
@@ -215,7 +215,7 @@ long WINAPI CTaskBand_Launch_Hook(LPVOID pThis,
     }
 
     // Group types:
-    // 1 - Single item (or multiple uncombined items - Win10)
+    // 1 - Single item or multiple uncombined items
     // 2 - Pinned item
     // 3 - Multiple combined items
     int groupType =
@@ -246,7 +246,7 @@ long WINAPI CTaskBand_Launch_Hook(LPVOID pThis,
                 return 0;
             }
         }
-    } else if (g_winVersion <= WinVersion::Win10) {
+    } else {
         taskItemIndex = g_CTaskListWndTaskItemIndex;
     }
 
@@ -366,7 +366,7 @@ bool HookSymbols(PCWSTR cacheId,
     std::wstring newSystemCacheStr;
 
     auto onSymbolResolved = [symbolHooks, symbolHooksCount, &symbolResolved,
-                             cacheSep, &newSystemCacheStr,
+                             &newSystemCacheStr,
                              module](std::wstring_view symbol, void* address) {
         for (size_t i = 0; i < symbolHooksCount; i++) {
             if (symbolResolved[i]) {
@@ -442,7 +442,7 @@ bool HookSymbols(PCWSTR cacheId,
                 continue;
             }
 
-            int noAddressMatchCount = 0;
+            size_t noAddressMatchCount = 0;
             for (size_t j = 3; j + 1 < cacheParts.size(); j += 2) {
                 auto symbol = cacheParts[j];
                 auto address = cacheParts[j + 1];
