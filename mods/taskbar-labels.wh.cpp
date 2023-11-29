@@ -114,7 +114,6 @@ choose one of the following running indicator styles:
 #include <algorithm>
 #include <atomic>
 #include <limits>
-#include <optional>
 #include <string>
 #include <string_view>
 #include <unordered_set>
