@@ -804,6 +804,7 @@ void UpdateTaskListButtonWithLabelStyle(
         labelControlMargin.Left =
             g_unloading ? 0
                         : (iconElement.ActualWidth() - 24 +
+                           g_settings.leftAndRightPaddingSize - 8 +
                            g_settings.spaceBetweenIconAndLabel - 8);
         labelControlMargin.Right =
             g_unloading ? 0 : (g_settings.leftAndRightPaddingSize - 10);
@@ -1204,10 +1205,10 @@ DWORD WINAPI TaskbarSettings_GroupingMode_Hook(void* pThis) {
     DWORD ret = TaskbarSettings_GroupingMode_Original(pThis);
 
     if (g_overrideGroupingMode) {
-        if (ret == 2) {
-            ret = 0;
-        } else {
+        if (ret == 0) {
             ret = 2;
+        } else {
+            ret = 0;
         }
     }
 
