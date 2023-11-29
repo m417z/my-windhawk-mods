@@ -89,10 +89,10 @@ BOOL Wh_ModInit(void)
     if (std::regex_search(search.begin(), search.end(), match, regex)) {
         auto pos = from + match.position(0);
 
-        DWORD dlOldProtect;
-        VirtualProtect(pos, targetPatch.size(), PAGE_EXECUTE_READWRITE, &dlOldProtect);
+        DWORD dwOldProtect;
+        VirtualProtect(pos, targetPatch.size(), PAGE_EXECUTE_READWRITE, &dwOldProtect);
         memcpy(pos, targetPatch.data(), targetPatch.size());
-        VirtualProtect(pos, targetPatch.size(), dlOldProtect, &dlOldProtect);
+        VirtualProtect(pos, targetPatch.size(), dwOldProtect, &dwOldProtect);
     }
     else {
         bool proceed = MessageBox(
