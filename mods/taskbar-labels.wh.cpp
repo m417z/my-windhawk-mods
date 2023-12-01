@@ -57,8 +57,8 @@ choose one of the following running indicator styles:
 - taskbarItemWidth: 160
   $name: Taskbar item width
   $description: >-
-    Set to 0 to use the Windows adaptive width, only for newer Windows versions
-    with the built-in taskbar labels implementation
+    Set to 0 to use the Windows adaptive width, set to -1 to hide labels, only
+    for newer Windows versions with the built-in taskbar labels implementation
 - minimumTaskbarItemWidth: 50
   $name: Minimum taskbar item width
   $description: >-
@@ -1197,8 +1197,11 @@ DWORD WINAPI TaskbarSettings_GroupingMode_Hook(void* pThis) {
     DWORD ret = TaskbarSettings_GroupingMode_Original(pThis);
 
     if (!g_unloading) {
-        // "Always" mode isn't supported, switch to "Never".
-        if (ret == 0) {
+        if (g_settings.taskbarItemWidth == -1) {
+            // Switch to "Always".
+            ret = 0;
+        } else if (ret == 0) {
+            // "Always" mode isn't supported, switch to "Never".
             ret = 2;
         }
     }
