@@ -1274,6 +1274,10 @@ void LoadSettings() {
     Wh_FreeStringSetting(progressIndicatorStyle);
 
     g_settings.fontSize = Wh_GetIntSetting(L"fontSize");
+    if (g_settings.fontSize < 1) {
+        g_settings.fontSize = 1;
+    }
+
     g_settings.leftAndRightPaddingSize =
         Wh_GetIntSetting(L"leftAndRightPaddingSize");
     g_settings.spaceBetweenIconAndLabel =
