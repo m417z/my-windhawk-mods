@@ -760,8 +760,8 @@ void UpdateTaskListButtonWithLabelStyle(
     }
 
     double taskListButtonWidth = taskListButtonElement.ActualWidth();
-
     double iconPanelWidth = iconPanelElement.ActualWidth();
+    double iconWidth = iconElement.ActualWidth();
 
     auto columnDefinitions =
         iconPanelElement.as<Controls::Grid>().ColumnDefinitions();
@@ -812,9 +812,8 @@ void UpdateTaskListButtonWithLabelStyle(
         auto labelControlMargin = labelControlElement.Margin();
         labelControlMargin.Left =
             g_unloading ? 0
-                        : (iconElement.ActualWidth() - 24 +
-                           g_settings.leftAndRightPaddingSize - 8 +
-                           g_settings.spaceBetweenIconAndLabel - 8);
+                        : (iconWidth - 24 + g_settings.leftAndRightPaddingSize -
+                           8 + g_settings.spaceBetweenIconAndLabel - 8);
         labelControlMargin.Right =
             g_unloading ? 0 : (g_settings.leftAndRightPaddingSize - 10);
         labelControlElement.Margin(labelControlMargin);
@@ -882,9 +881,17 @@ void UpdateTaskListButtonWithLabelStyle(
         indicatorElement.MinWidth(minWidth);
 
         auto indicatorMargin = indicatorElement.Margin();
-        indicatorMargin.Left = 0;
-        indicatorMargin.Right =
-            indicatorStyle == IndicatorStyle::left ? 0 : overflowWidth;
+        if (indicatorStyle == IndicatorStyle::left) {
+            indicatorMargin.Left =
+                (g_unloading || !labelControlElement)
+                    ? 0
+                    : (iconWidth - 24 +
+                       (g_settings.leftAndRightPaddingSize - 8) * 2);
+            indicatorMargin.Right = 0;
+        } else {
+            indicatorMargin.Left = 0;
+            indicatorMargin.Right = overflowWidth;
+        }
         indicatorElement.Margin(indicatorMargin);
 
         if (isProgressIndicator) {
