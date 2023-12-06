@@ -803,6 +803,8 @@ void UpdateTaskListButtonWithLabelStyle(
             labelControlElement.HorizontalAlignment(horizontalAlignment);
         }
 
+        labelControlElement.MaxWidth(std::numeric_limits<double>::infinity());
+
         auto textTrimming =
             g_unloading ? TextTrimming::Clip : TextTrimming::CharacterEllipsis;
         if (labelControlElement.TextTrimming() != textTrimming) {
