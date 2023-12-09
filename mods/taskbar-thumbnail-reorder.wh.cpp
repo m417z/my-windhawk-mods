@@ -69,6 +69,9 @@ WinVersion g_explorerVersion;
 
 std::unordered_set<HWND> g_thumbnailWindows;
 
+bool g_taskItemFilterDisallowAll;
+DWORD g_taskInclusionChangeLastTickCount;
+
 // https://www.geoffchappell.com/studies/windows/shell/comctl32/api/da/dpa/dpa.htm
 typedef struct _DPA {
     int cpItems;
@@ -92,6 +95,27 @@ CTaskListWnd__GetTBGroupFromGroup_t CTaskListWnd__GetTBGroupFromGroup;
 void* CTaskListThumbnailWnd_SetSite;
 void* CTaskListThumbnailWnd_GetTaskGroup;
 void* CTaskListThumbnailWnd_GetHoverIndex;
+
+using CTaskListThumbnailWnd_GetHwnd_t = HWND(WINAPI*)(void* pThis);
+CTaskListThumbnailWnd_GetHwnd_t CTaskListThumbnailWnd_GetHwnd;
+
+using CTaskListWnd_TaskInclusionChanged_t = HRESULT(WINAPI*)(void* pThis,
+                                                             void* pTaskGroup,
+                                                             void* pTaskItem);
+CTaskListWnd_TaskInclusionChanged_t CTaskListWnd_TaskInclusionChanged;
+
+using TaskItemFilter_IsTaskAllowed_t = bool(WINAPI*)(void* pThis,
+                                                     void* pTaskItem);
+TaskItemFilter_IsTaskAllowed_t TaskItemFilter_IsTaskAllowed_Original;
+bool WINAPI TaskItemFilter_IsTaskAllowed_Hook(void* pThis, void* pTaskItem) {
+    Wh_Log(L">");
+
+    if (g_taskItemFilterDisallowAll) {
+        return false;
+    }
+
+    return TaskItemFilter_IsTaskAllowed_Original(pThis, pTaskItem);
+}
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -184,7 +208,8 @@ bool MoveThumbnail(LONG_PTR lpMMThumbnailLongPtr, int indexFrom, int indexTo) {
 bool MoveTaskInTaskList(LONG_PTR lpMMTaskListLongPtr,
                         LONG_PTR* taskGroup,
                         LONG_PTR* taskItemFrom,
-                        LONG_PTR* taskItemTo) {
+                        LONG_PTR* taskItemTo,
+                        LONG_PTR lpMMThumbnailLongPtr) {
     LONG_PTR* taskBtnGroup = (LONG_PTR*)CTaskListWnd__GetTBGroupFromGroup(
         (void*)lpMMTaskListLongPtr, taskGroup, nullptr);
     if (!taskBtnGroup) {
@@ -232,8 +257,31 @@ bool MoveTaskInTaskList(LONG_PTR lpMMTaskListLongPtr,
 
     DPA_InsertPtr(buttonsArray, indexTo, button);
 
-    HWND hMMTaskListWnd = *(HWND*)(lpMMTaskListLongPtr + 0x08);
-    InvalidateRect(hMMTaskListWnd, nullptr, FALSE);
+    if (g_explorerVersion <= WinVersion::Win10) {
+        HWND hMMTaskListWnd = *(HWND*)(lpMMTaskListLongPtr + 0x08);
+        InvalidateRect(hMMTaskListWnd, nullptr, FALSE);
+    } else {
+        g_taskInclusionChangeLastTickCount = GetTickCount();
+
+        HWND hThumbnailWnd =
+            CTaskListThumbnailWnd_GetHwnd((void*)lpMMThumbnailLongPtr);
+
+        SendMessage(hThumbnailWnd, WM_SETREDRAW, FALSE, 0);
+
+        g_taskItemFilterDisallowAll = true;
+
+        CTaskListWnd_TaskInclusionChanged((void*)(lpMMTaskListLongPtr + 0x28),
+                                          taskGroup, taskItemFrom);
+
+        g_taskItemFilterDisallowAll = false;
+
+        CTaskListWnd_TaskInclusionChanged((void*)(lpMMTaskListLongPtr + 0x28),
+                                          taskGroup, taskItemFrom);
+
+        SendMessage(hThumbnailWnd, WM_SETREDRAW, TRUE, 0);
+        RedrawWindow(hThumbnailWnd, nullptr, nullptr,
+                     RDW_ERASE | RDW_FRAME | RDW_INVALIDATE | RDW_ALLCHILDREN);
+    }
 
     return true;
 }
@@ -293,7 +341,7 @@ bool MoveTaskInGroup(LONG_PTR* taskGroup,
             ThumbnailTaskListPtr(lpMMThumbnailLongPtr) - 0x30;
 
         MoveTaskInTaskList(lpMMTaskListLongPtr, taskGroup, taskItemFrom,
-                           taskItemTo);
+                           taskItemTo, lpMMThumbnailLongPtr);
     }
 
     return true;
@@ -315,12 +363,16 @@ bool MoveItemsFromThumbnail(LONG_PTR lpMMThumbnailLongPtr,
     LONG_PTR* taskItemFrom = (LONG_PTR*)from[3];
     LONG_PTR* taskItemTo = (LONG_PTR*)to[3];
 
+    if (!MoveThumbnail(lpMMThumbnailLongPtr, indexFrom, indexTo)) {
+        return false;
+    }
+
     if (!MoveTaskInGroup(ThumbnailTaskGroup(lpMMThumbnailLongPtr), taskItemFrom,
                          taskItemTo)) {
         return false;
     }
 
-    return MoveThumbnail(lpMMThumbnailLongPtr, indexFrom, indexTo);
+    return true;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -416,7 +468,8 @@ LRESULT CALLBACK ThumbnailWindowSubclassProc(HWND hWnd,
         case WM_MOUSEMOVE:
             result = DefSubclassProc(hWnd, uMsg, wParam, lParam);
 
-            if (GetCapture() == hWnd) {
+            if (GetCapture() == hWnd &&
+                GetTickCount() - g_taskInclusionChangeLastTickCount > 200) {
                 LONG_PTR lpMMThumbnailLongPtr = GetWindowLongPtr(hWnd, 0);
                 int trackedIndex = *ThumbnailTrackedIndex(lpMMThumbnailLongPtr);
                 if (MoveItemsFromThumbnail(lpMMThumbnailLongPtr, draggedIndex,
@@ -923,31 +976,63 @@ BOOL Wh_ModInit() {
     }
 
     SYMBOL_HOOK symbolHooks[] = {
-        {{
-             LR"(private: void __cdecl CTaskListThumbnailWnd::_RefreshThumbnail(int) __ptr64)",
-             LR"(private: void __cdecl CTaskListThumbnailWnd::_RefreshThumbnail(int))",
-         },
-         (void**)&CTaskListThumbnailWnd__RefreshThumbnail},
-        {{
-             LR"(protected: struct ITaskBtnGroup * __ptr64 __cdecl CTaskListWnd::_GetTBGroupFromGroup(struct ITaskGroup * __ptr64,int * __ptr64) __ptr64)",
-             LR"(protected: struct ITaskBtnGroup * __cdecl CTaskListWnd::_GetTBGroupFromGroup(struct ITaskGroup *,int *))",
-         },
-         (void**)&CTaskListWnd__GetTBGroupFromGroup},
-        {{
-             LR"(public: virtual long __cdecl CTaskListThumbnailWnd::SetSite(struct IUnknown * __ptr64) __ptr64)",
-             LR"(public: virtual long __cdecl CTaskListThumbnailWnd::SetSite(struct IUnknown *))",
-         },
-         (void**)&CTaskListThumbnailWnd_SetSite},
-        {{
-             LR"(public: virtual struct ITaskGroup * __ptr64 __cdecl CTaskListThumbnailWnd::GetTaskGroup(void)const __ptr64)",
-             LR"(public: virtual struct ITaskGroup * __cdecl CTaskListThumbnailWnd::GetTaskGroup(void)const )",
-         },
-         (void**)&CTaskListThumbnailWnd_GetTaskGroup},
-        {{
-             LR"(public: virtual int __cdecl CTaskListThumbnailWnd::GetHoverIndex(void)const __ptr64)",
-             LR"(public: virtual int __cdecl CTaskListThumbnailWnd::GetHoverIndex(void)const )",
-         },
-         (void**)&CTaskListThumbnailWnd_GetHoverIndex},
+        {
+            {
+                LR"(private: void __cdecl CTaskListThumbnailWnd::_RefreshThumbnail(int) __ptr64)",
+                LR"(private: void __cdecl CTaskListThumbnailWnd::_RefreshThumbnail(int))",
+            },
+            (void**)&CTaskListThumbnailWnd__RefreshThumbnail,
+        },
+        {
+            {
+                LR"(protected: struct ITaskBtnGroup * __ptr64 __cdecl CTaskListWnd::_GetTBGroupFromGroup(struct ITaskGroup * __ptr64,int * __ptr64) __ptr64)",
+                LR"(protected: struct ITaskBtnGroup * __cdecl CTaskListWnd::_GetTBGroupFromGroup(struct ITaskGroup *,int *))",
+            },
+            (void**)&CTaskListWnd__GetTBGroupFromGroup,
+        },
+        {
+            {
+                LR"(public: virtual long __cdecl CTaskListThumbnailWnd::SetSite(struct IUnknown * __ptr64) __ptr64)",
+                LR"(public: virtual long __cdecl CTaskListThumbnailWnd::SetSite(struct IUnknown *))",
+            },
+            (void**)&CTaskListThumbnailWnd_SetSite,
+        },
+        {
+            {
+                LR"(public: virtual struct ITaskGroup * __ptr64 __cdecl CTaskListThumbnailWnd::GetTaskGroup(void)const __ptr64)",
+                LR"(public: virtual struct ITaskGroup * __cdecl CTaskListThumbnailWnd::GetTaskGroup(void)const )",
+            },
+            (void**)&CTaskListThumbnailWnd_GetTaskGroup,
+        },
+        {
+            {
+                LR"(public: virtual int __cdecl CTaskListThumbnailWnd::GetHoverIndex(void)const __ptr64)",
+                LR"(public: virtual int __cdecl CTaskListThumbnailWnd::GetHoverIndex(void)const )",
+            },
+            (void**)&CTaskListThumbnailWnd_GetHoverIndex,
+        },
+        {
+            {
+                LR"(public: virtual struct HWND__ * __cdecl CTaskListThumbnailWnd::GetHwnd(void) __ptr64)",
+                LR"(public: virtual struct HWND__ * __cdecl CTaskListThumbnailWnd::GetHwnd(void))",
+            },
+            (void**)&CTaskListThumbnailWnd_GetHwnd,
+        },
+        {
+            {
+                LR"(public: virtual long __cdecl CTaskListWnd::TaskInclusionChanged(struct ITaskGroup * __ptr64,struct ITaskItem * __ptr64) __ptr64)",
+                LR"(public: virtual long __cdecl CTaskListWnd::TaskInclusionChanged(struct ITaskGroup *,struct ITaskItem *))",
+            },
+            (void**)&CTaskListWnd_TaskInclusionChanged,
+        },
+        {
+            {
+                LR"(public: virtual bool __cdecl TaskItemFilter::IsTaskAllowed(struct ITaskItem * __ptr64) __ptr64)",
+                LR"(public: virtual bool __cdecl TaskItemFilter::IsTaskAllowed(struct ITaskItem *))",
+            },
+            (void**)&TaskItemFilter_IsTaskAllowed_Original,
+            (void*)TaskItemFilter_IsTaskAllowed_Hook,
+        },
     };
 
     HMODULE module;
