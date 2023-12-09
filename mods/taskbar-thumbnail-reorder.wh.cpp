@@ -65,17 +65,9 @@ enum class WinVersion {
     Win11,
 };
 
-WinVersion g_winVersion;
+WinVersion g_explorerVersion;
 
 std::unordered_set<HWND> g_thumbnailWindows;
-
-#if defined(__GNUC__) && __GNUC__ > 8
-#define WINAPI_LAMBDA_RETURN(return_t) ->return_t WINAPI
-#elif defined(__GNUC__)
-#define WINAPI_LAMBDA_RETURN(return_t) WINAPI->return_t
-#else
-#define WINAPI_LAMBDA_RETURN(return_t) ->return_t
-#endif
 
 // https://www.geoffchappell.com/studies/windows/shell/comctl32/api/da/dpa/dpa.htm
 typedef struct _DPA {
@@ -93,24 +85,25 @@ using CTaskListThumbnailWnd__RefreshThumbnail_t = void(WINAPI*)(void* pThis,
 CTaskListThumbnailWnd__RefreshThumbnail_t
     CTaskListThumbnailWnd__RefreshThumbnail;
 
-using CTaskListThumbnailWnd_GetTaskGroup_t = void*(WINAPI*)(void* pThis);
-CTaskListThumbnailWnd_GetTaskGroup_t CTaskListThumbnailWnd_GetTaskGroup;
-
-using CTaskListThumbnailWnd_GetHoverIndex_t = int(WINAPI*)(void* pThis);
-CTaskListThumbnailWnd_GetHoverIndex_t CTaskListThumbnailWnd_GetHoverIndex;
-
 using CTaskListWnd__GetTBGroupFromGroup_t =
     void*(WINAPI*)(void* pThis, void* pTaskGroup, int* pTaskBtnGroupIndex);
 CTaskListWnd__GetTBGroupFromGroup_t CTaskListWnd__GetTBGroupFromGroup;
 
+void* CTaskListThumbnailWnd_SetSite;
+void* CTaskListThumbnailWnd_GetTaskGroup;
+void* CTaskListThumbnailWnd_GetHoverIndex;
+
 ////////////////////////////////////////////////////////////////////////////////
 
 struct {
+    // Reference: CTaskListThumbnailWnd::SetSite.
+    size_t taskListPtr;  // 10.0.22621.2792: 0x48
+
     // Reference: CTaskListThumbnailWnd::GetTaskGroup.
-    size_t taskGroup;  // 22000: 0x148
+    size_t taskGroup;  // 10.0.22621.2792: 0x140
 
     // Reference: CTaskListThumbnailWnd::_RegisterThumbBars.
-    size_t thumbnailArray;  // 22000: 0x158
+    size_t thumbnailArray;  // 10.0.22621.2792: 0x150
 
     // Reference: CTaskListThumbnailWnd::SetActiveItem.
     // A base address for thumbnail index values.
@@ -119,8 +112,12 @@ struct {
     // 2: Tracked index
     // 3: Pressed index
     // 4: Live preview index
-    size_t indexValues;  // 22000: 0x288
+    size_t indexValues;  // 10.0.22621.2792: 0x230
 } g_thumbnailOffsets;
+
+LONG_PTR ThumbnailTaskListPtr(LONG_PTR lpMMThumbnailLongPtr) {
+    return *(LONG_PTR*)(lpMMThumbnailLongPtr + g_thumbnailOffsets.taskListPtr);
+}
 
 LONG_PTR* ThumbnailTaskGroup(LONG_PTR lpMMThumbnailLongPtr) {
     return *(LONG_PTR**)(lpMMThumbnailLongPtr + g_thumbnailOffsets.taskGroup);
@@ -293,7 +290,7 @@ bool MoveTaskInGroup(LONG_PTR* taskGroup,
         }
 
         LONG_PTR lpMMTaskListLongPtr =
-            *(LONG_PTR*)(lpMMThumbnailLongPtr + 0x50) - 0x30;
+            ThumbnailTaskListPtr(lpMMThumbnailLongPtr) - 0x30;
 
         MoveTaskInTaskList(lpMMTaskListLongPtr, taskGroup, taskItemFrom,
                            taskItemTo);
@@ -355,8 +352,7 @@ BOOL SetWindowSubclassFromAnyThread(HWND hWnd,
 
     HHOOK hook = SetWindowsHookEx(
         WH_CALLWNDPROC,
-        [](int nCode, WPARAM wParam,
-           LPARAM lParam) WINAPI_LAMBDA_RETURN(LRESULT) {
+        [](int nCode, WPARAM wParam, LPARAM lParam) WINAPI -> LRESULT {
             if (nCode == HC_ACTION) {
                 const CWPSTRUCT* cwp = (const CWPSTRUCT*)lParam;
                 if (cwp->message == g_subclassRegisteredMsg && cwp->wParam) {
@@ -501,12 +497,12 @@ void FindCurrentProcessThumbnailWindows() {
 
     EnumThreadWindows(
         dwThreadId,
-        [](HWND hWnd, LPARAM lParam) WINAPI_LAMBDA_RETURN(BOOL) {
+        [](HWND hWnd, LPARAM lParam) WINAPI -> BOOL {
             WCHAR szClassName[32];
             if (GetClassName(hWnd, szClassName, ARRAYSIZE(szClassName)) == 0)
                 return TRUE;
 
-            if (wcsicmp(szClassName, L"TaskListThumbnailWnd") == 0)
+            if (_wcsicmp(szClassName, L"TaskListThumbnailWnd") == 0)
                 g_thumbnailWindows.insert(hWnd);
 
             return TRUE;
@@ -537,7 +533,7 @@ HWND WINAPI CreateWindowExW_Hook(DWORD dwExStyle,
     BOOL bTextualClassName = ((ULONG_PTR)lpClassName & ~(ULONG_PTR)0xffff) != 0;
 
     if (bTextualClassName &&
-        wcsicmp(lpClassName, L"TaskListThumbnailWnd") == 0) {
+        _wcsicmp(lpClassName, L"TaskListThumbnailWnd") == 0) {
         Wh_Log(L"Thumbnail window created: %08X", (DWORD)(ULONG_PTR)hWnd);
         HandleIdentifiedThumbnailWindow(hWnd);
     }
@@ -581,7 +577,7 @@ HWND WINAPI CreateWindowInBand_Hook(DWORD dwExStyle,
     BOOL bTextualClassName = ((ULONG_PTR)lpClassName & ~(ULONG_PTR)0xffff) != 0;
 
     if (bTextualClassName &&
-        wcsicmp(lpClassName, L"TaskListThumbnailWnd") == 0) {
+        _wcsicmp(lpClassName, L"TaskListThumbnailWnd") == 0) {
         Wh_Log(L"Thumbnail window created: %08X", (DWORD)(ULONG_PTR)hWnd);
         HandleIdentifiedThumbnailWindow(hWnd);
     }
@@ -591,6 +587,42 @@ HWND WINAPI CreateWindowInBand_Hook(DWORD dwExStyle,
 
 bool InitOffsets() {
     const BYTE* p;
+
+    /*
+        Expected implementation:
+        48:895C24 10              | mov qword ptr ss:[rsp+10],rbx
+        48:896C24 18              | mov qword ptr ss:[rsp+18],rbp
+        48:897424 20              | mov qword ptr ss:[rsp+20],rsi
+        57                        | push rdi
+        41:56                     | push r14
+        41:57                     | push r15
+        48:83EC 60                | sub rsp,60
+        4C:8D71 48                | lea r14,qword ptr ds:[rcx+48]
+    */
+    p = (const BYTE*)CTaskListThumbnailWnd_SetSite;
+    while (p[0] == 0x48 && p[1] == 0x89 &&
+           (p[2] == 0x5c || p[2] == 0x6c || p[2] == 0x74) && p[3] == 0x24) {
+        p += 5;
+    }
+
+    while (p[0] == 0x55 || p[0] == 0x56 || p[0] == 0x57 ||
+           (p[0] == 0x41 && (p[1] == 0x56 || p[1] == 0x57))) {
+        p += p[0] == 0x41 ? 2 : 1;
+    }
+
+    if (p[0] == 0x48 && p[1] == 0x83 && p[2] == 0xec) {
+        p += 4;
+    } else if (p[0] == 0x48 && p[1] == 0x81 && p[2] == 0xec) {
+        p += 7;
+    }
+
+    if (p[0] == 0x4c && p[1] == 0x8d && p[2] == 0x71) {
+        g_thumbnailOffsets.taskListPtr = p[3];
+    } else {
+        Wh_Log(L"Unexpected SetSite implementation");
+        // Try last known offset.
+        g_thumbnailOffsets.taskListPtr = 0x48;
+    }
 
     /*
         Expected implementation:
@@ -655,7 +687,7 @@ VS_FIXEDFILEINFO* GetModuleVersionInfo(HMODULE hModule, UINT* puPtrLen) {
     return (VS_FIXEDFILEINFO*)pFixedFileInfo;
 }
 
-WinVersion GetWindowsVersion() {
+WinVersion GetExplorerVersion() {
     VS_FIXEDFILEINFO* fixedFileInfo = GetModuleVersionInfo(nullptr, nullptr);
     if (!fixedFileInfo)
         return WinVersion::Unsupported;
@@ -665,7 +697,7 @@ WinVersion GetWindowsVersion() {
     WORD build = HIWORD(fixedFileInfo->dwFileVersionLS);
     WORD qfe = LOWORD(fixedFileInfo->dwFileVersionLS);
 
-    Wh_Log(L"Version: %u.%u.%u.%u", major, minor, build, qfe);
+    Wh_Log(L"Explorer version: %u.%u.%u.%u", major, minor, build, qfe);
 
     switch (major) {
         case 10:
@@ -723,7 +755,7 @@ bool HookSymbols(PCWSTR cacheId,
     std::wstring newSystemCacheStr;
 
     auto onSymbolResolved = [symbolHooks, symbolHooksCount, &symbolResolved,
-                             cacheSep, &newSystemCacheStr,
+                             &newSystemCacheStr,
                              module](std::wstring_view symbol, void* address) {
         for (size_t i = 0; i < symbolHooksCount; i++) {
             if (symbolResolved[i]) {
@@ -799,7 +831,7 @@ bool HookSymbols(PCWSTR cacheId,
                 continue;
             }
 
-            int noAddressMatchCount = 0;
+            size_t noAddressMatchCount = 0;
             for (size_t j = 3; j + 1 < cacheParts.size(); j += 2) {
                 auto symbol = cacheParts[j];
                 auto address = cacheParts[j + 1];
@@ -879,14 +911,15 @@ BOOL Wh_ModInit() {
 
     LoadSettings();
 
-    g_winVersion = GetWindowsVersion();
-    if (g_winVersion == WinVersion::Unsupported) {
+    g_explorerVersion = GetExplorerVersion();
+    if (g_explorerVersion == WinVersion::Unsupported) {
         Wh_Log(L"Unsupported Windows version");
         return FALSE;
     }
 
-    if (g_winVersion >= WinVersion::Win11 && g_settings.oldTaskbarOnWin11) {
-        g_winVersion = WinVersion::Win10;
+    if (g_explorerVersion >= WinVersion::Win11 &&
+        g_settings.oldTaskbarOnWin11) {
+        g_explorerVersion = WinVersion::Win10;
     }
 
     SYMBOL_HOOK symbolHooks[] = {
@@ -895,6 +928,16 @@ BOOL Wh_ModInit() {
              LR"(private: void __cdecl CTaskListThumbnailWnd::_RefreshThumbnail(int))",
          },
          (void**)&CTaskListThumbnailWnd__RefreshThumbnail},
+        {{
+             LR"(protected: struct ITaskBtnGroup * __ptr64 __cdecl CTaskListWnd::_GetTBGroupFromGroup(struct ITaskGroup * __ptr64,int * __ptr64) __ptr64)",
+             LR"(protected: struct ITaskBtnGroup * __cdecl CTaskListWnd::_GetTBGroupFromGroup(struct ITaskGroup *,int *))",
+         },
+         (void**)&CTaskListWnd__GetTBGroupFromGroup},
+        {{
+             LR"(public: virtual long __cdecl CTaskListThumbnailWnd::SetSite(struct IUnknown * __ptr64) __ptr64)",
+             LR"(public: virtual long __cdecl CTaskListThumbnailWnd::SetSite(struct IUnknown *))",
+         },
+         (void**)&CTaskListThumbnailWnd_SetSite},
         {{
              LR"(public: virtual struct ITaskGroup * __ptr64 __cdecl CTaskListThumbnailWnd::GetTaskGroup(void)const __ptr64)",
              LR"(public: virtual struct ITaskGroup * __cdecl CTaskListThumbnailWnd::GetTaskGroup(void)const )",
@@ -905,15 +948,11 @@ BOOL Wh_ModInit() {
              LR"(public: virtual int __cdecl CTaskListThumbnailWnd::GetHoverIndex(void)const )",
          },
          (void**)&CTaskListThumbnailWnd_GetHoverIndex},
-        {{
-             LR"(protected: struct ITaskBtnGroup * __ptr64 __cdecl CTaskListWnd::_GetTBGroupFromGroup(struct ITaskGroup * __ptr64,int * __ptr64) __ptr64)",
-             LR"(protected: struct ITaskBtnGroup * __cdecl CTaskListWnd::_GetTBGroupFromGroup(struct ITaskGroup *,int *))",
-         },
-         (void**)&CTaskListWnd__GetTBGroupFromGroup}};
+    };
 
     HMODULE module;
 
-    if (g_winVersion <= WinVersion::Win10) {
+    if (g_explorerVersion <= WinVersion::Win10) {
         module = GetModuleHandle(nullptr);
         if (!HookSymbols(L"explorer.exe", module, symbolHooks,
                          ARRAYSIZE(symbolHooks))) {
