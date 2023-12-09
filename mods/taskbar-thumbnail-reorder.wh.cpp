@@ -2,7 +2,7 @@
 // @id              taskbar-thumbnail-reorder
 // @name            Taskbar Thumbnail Reorder
 // @description     Reorder taskbar thumbnails with the left mouse button
-// @version         1.0.3
+// @version         1.0.4
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
@@ -966,7 +966,7 @@ BOOL Wh_ModInit() {
 
     g_explorerVersion = GetExplorerVersion();
     if (g_explorerVersion == WinVersion::Unsupported) {
-        Wh_Log(L"Unsupported Windows version");
+        Wh_Log(L"Unsupported Explorer version");
         return FALSE;
     }
 
