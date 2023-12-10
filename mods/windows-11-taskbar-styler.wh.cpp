@@ -1844,6 +1844,25 @@ std::vector<std::wstring_view> SplitStringView(std::wstring_view s,
     return res;
 }
 
+std::wstring AdjustTypeName(std::wstring_view type) {
+    static const std::vector<std::pair<std::wstring_view, std::wstring_view>>
+        adjustments = {
+            {L"Taskbar.", L"taskbar:"},
+            {L"SystemTray.", L"systemtray:"},
+            {L"Microsoft.UI.Xaml.Control.", L"muxc:"},
+        };
+
+    for (const auto& adjustment : adjustments) {
+        if (type.starts_with(adjustment.first)) {
+            auto result = std::wstring{adjustment.second};
+            result += type.substr(adjustment.first.size());
+            return result;
+        }
+    }
+
+    return std::wstring{type};
+}
+
 void ResolveTypeAndStyles(ElementMatcher* elementMatcher,
                           std::vector<StyleRule> styleRules = {},
                           PropertyOverrides* propertyOverrides = nullptr) {
@@ -1860,7 +1879,7 @@ void ResolveTypeAndStyles(ElementMatcher* elementMatcher,
     <Style)";
 
     xaml += L" TargetType=\"";
-    xaml += EscapeXmlAttribute(elementMatcher->type);
+    xaml += EscapeXmlAttribute(AdjustTypeName(elementMatcher->type));
     xaml += L"\">\n";
 
     for (const auto& [property, value] : elementMatcher->propertyValuesStr) {
