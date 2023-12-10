@@ -1411,6 +1411,7 @@ struct StyleRule {
     std::wstring name;
     std::wstring visualState;
     std::wstring value;
+    bool isXamlValue = false;
 };
 
 // Property -> visual state -> value.
@@ -1873,9 +1874,21 @@ void ResolveTypeAndStyles(ElementMatcher* elementMatcher,
     for (const auto& rule : styleRules) {
         xaml += L"        <Setter Property=\"";
         xaml += EscapeXmlAttribute(rule.name);
-        xaml += L"\" Value=\"";
-        xaml += EscapeXmlAttribute(rule.value);
-        xaml += L"\" />\n";
+        xaml += L"\"";
+        if (!rule.isXamlValue) {
+            xaml += L" Value=\"";
+            xaml += EscapeXmlAttribute(rule.value);
+            xaml += L"\" />\n";
+        } else {
+            xaml +=
+                L">\n"
+                L"            <Setter.Value>\n";
+            xaml += rule.value;
+            xaml +=
+                L"\n"
+                L"            </Setter.Value>\n"
+                L"        </Setter>\n";
+        }
     }
 
     xaml +=
@@ -2016,52 +2029,37 @@ ElementMatcher ElementMatcherFromString(std::wstring_view str) {
 StyleRule StyleRuleFromString(std::wstring_view str) {
     StyleRule result;
 
-    auto i = str.find_first_of(L"@=");
-    result.name = TrimStringView(str.substr(0, i));
-    if (result.name.empty()) {
-        throw std::runtime_error("Bad style syntax, empty name");
+    auto eqPos = str.find(L'=');
+    if (eqPos == str.npos) {
+        throw std::runtime_error("Bad style syntax, '=' is missing");
     }
 
-    while (i != str.npos) {
-        auto iNext = str.find_first_of(L"@=", i + 1);
-        auto nextPart =
-            str.substr(i + 1, iNext == str.npos ? str.npos : iNext - (i + 1));
+    auto name = str.substr(0, eqPos);
+    auto value = str.substr(eqPos + 1);
 
-        switch (str[i]) {
-            case L'@':
-                if (!result.visualState.empty()) {
-                    throw std::runtime_error(
-                        "Bad style syntax, more than one visual state");
-                }
+    result.value = TrimStringView(value);
+    if (result.value.empty()) {
+        throw std::runtime_error("Bad style syntax, empty value");
+    }
 
-                result.visualState = TrimStringView(nextPart);
-                if (result.visualState.empty()) {
-                    throw std::runtime_error(
-                        "Bad style syntax, empty visual state");
-                }
-                break;
+    if (name.size() > 0 && name.back() == L':') {
+        result.isXamlValue = true;
+        name = name.substr(0, name.size() - 1);
+    }
 
-            case L'=':
-                if (!result.value.empty()) {
-                    throw std::runtime_error(
-                        "Bad style syntax, more than one name");
-                }
-
-                result.value = TrimStringView(nextPart);
-                if (result.value.empty()) {
-                    throw std::runtime_error("Bad style syntax, empty name");
-                }
-                break;
-
-            default:
-                throw std::runtime_error("Bad target syntax");
+    auto atPos = name.find(L'@');
+    if (atPos != name.npos) {
+        result.visualState = TrimStringView(name.substr(atPos + 1));
+        if (result.visualState.empty()) {
+            throw std::runtime_error("Bad style syntax, empty visual state");
         }
 
-        i = iNext;
+        name = name.substr(0, atPos);
     }
 
-    if (result.value.empty()) {
-        throw std::runtime_error("Bad style syntax, missing value");
+    result.name = TrimStringView(name);
+    if (result.name.empty()) {
+        throw std::runtime_error("Bad style syntax, empty name");
     }
 
     return result;
