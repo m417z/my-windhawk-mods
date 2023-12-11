@@ -43,15 +43,32 @@ taskbar's control elements in real time, and experiment with various styles.
 
 ## Control styles
 
-Each entry has a target control and list of styles.
+Each entry has a target control and a list of styles.
 
 The target control is written as `Control` or `Control#Name`, i.e. the target
 control tag name, such as `taskbar:TaskListButton` or `Rectangle`, optionally
 followed by `#` and the target control's `x:Name` attribute. The target control
-can also include parent elements, separated by `>`, for example:
-`ParentControl#ParentName > Control#Name`.
+can also include:
+* Child control index, for example: `Control#Name[2]` will only match the
+  relevant control that's also the second child among all of its parent's child
+  controls.
+* Control properties, for example:
+  `Control#Name[Property1=Value1][Property2=Value2]`.
+* Parent controls, separated by `>`, for example: `ParentControl#ParentName >
+  Control#Name`.
+* Visual state group name, for example: `Control#Name@VisualStateGroupName`. It
+  can be specified for the target control or for a parent control, but can be
+  specified only once per target. The visual state group can be used in styles
+  as specified below.
 
-Each style is written as `Style=Value`, for example: `Height=5`.
+**Note**: The target is evaluated only once. If, for example, the index or the
+properties of a control change, the target conditions aren't evaluated again.
+
+Each style is written as `Style=Value`, for example: `Height=5`. The `:=` syntax
+can be used to use XAML syntax, for example: `Fill:=<SolidColorBrush
+Color="Red"/>`. In addition, a visual state can be specified as following:
+`Style@VisualState=Value`, in which case the style will only apply when the
+visual state group specified in the target matches the specified visual state.
 
 A couple of practical examples:
 
@@ -62,43 +79,44 @@ A couple of practical examples:
 * Target: `taskbar:TaskListButton`
 * Style: `CornerRadius=0`
 
-### Task list button background color
-
-![Screenshot](https://i.imgur.com/eP13uBu.png)
-
-* Target: `taskbar:TaskListButtonPanel > Border#BackgroundElement`
-* Style: `Background=Gray`
-
 ### Running indicator size and color
 
-![Screenshot](https://i.imgur.com/enttdYJ.png)
+![Screenshot](https://i.imgur.com/mR5c3F5.png)
 
-* Target: `Rectangle#RunningIndicator`
+* Target: `taskbar:TaskListLabeledButtonPanel@RunningIndicatorStates >
+  Rectangle#RunningIndicator`
 * Styles:
     * `Fill=#FFED7014`
     * `Height=2`
-    * `MinWidth=12`
+    * `Width=12`
+    * `Fill@ActiveRunningIndicator=Red`
+    * `Width@ActiveRunningIndicator=20`
 
-**Note:** Currently, it's not possible to set styles only for a specific visual
-state. In this example, the color and width apply for all states, including
-active and inactive buttons.
+### Task list button background gradient
 
-### Time font and color
+![Screenshot](https://i.imgur.com/LNPcw0G.png)
 
-![Screenshot](https://i.imgur.com/ZRM0drT.png)
+* Targets:
+    * `taskbar:TaskListButtonPanel > Border#BackgroundElement`
+    * `taskbar:TaskListLabeledButtonPanel > Border#BackgroundElement`
+* Style: `Background:=<LinearGradientBrush StartPoint="0.5,0"
+  EndPoint="0.5,1"><GradientStop Offset="0" Color="DodgerBlue"/><GradientStop
+  Offset="1" Color="Yellow"/></LinearGradientBrush>`
 
-* Target: `TextBlock#TimeInnerTextBlock`
-* Styles:
-    * `FontFamily=Comic Sans MS`
-    * `FontSize=14`
-    * `Foreground=Red`
+### Hide the start button
 
-### Hide date
-
-![Screenshot](https://i.imgur.com/9fGyL9W.png)
-
-* Target: `TextBlock#DateInnerTextBlock`
+* Target:
+  `taskbar:ExperienceToggleButton#LaunchListButton[AutomationProperties.AutomationId=StartButton]`
 * Style: `Visibility=Collapsed`
+
+### Hide the network notification icon
+
+* Target: `systemtray:OmniButton#ControlCenterButton > Grid > ContentPresenter >
+  ItemsPresenter > StackPanel > ContentPresenter[1]`
+* Style: `Visibility=Collapsed`
+
+**Note**: To hide the volume notification icon instead, use `[2]` instead of
+`[1]`.
 
 ## Resource variables
 
@@ -138,10 +156,6 @@ relevant `#pragma region` regions in the code editor.
     - value: "0"
       $name: Value
   $name: Resource variables
-- promptForExplorerRestart: true
-  $name: Prompt for Explorer restart
-  $description: >-
-    Show a message prompting to restart Explorer on each style change
 */
 // ==/WindhawkModSettings==
 
@@ -1392,9 +1406,6 @@ struct deleter_from_fn {
 using string_setting_unique_ptr =
     std::unique_ptr<const WCHAR[], deleter_from_fn<Wh_FreeStringSetting>>;
 
-HANDLE g_restartExplorerPromptThread;
-std::atomic<HWND> g_restartExplorerPromptWindow;
-
 using PropertyKeyValue =
     std::pair<DependencyProperty, winrt::Windows::Foundation::IInspectable>;
 
@@ -2304,74 +2315,6 @@ HWND WINAPI CreateWindowExW_Hook(DWORD dwExStyle,
     return hWnd;
 }
 
-void PromptForExplorerRestart() {
-    if (!Wh_GetIntSetting(L"promptForExplorerRestart")) {
-        return;
-    }
-
-    if (g_restartExplorerPromptThread) {
-        if (WaitForSingleObject(g_restartExplorerPromptThread, 0) !=
-            WAIT_OBJECT_0) {
-            return;
-        }
-
-        CloseHandle(g_restartExplorerPromptThread);
-    }
-
-    g_restartExplorerPromptThread = CreateThread(
-        nullptr, 0,
-        [](LPVOID lpParameter) WINAPI -> DWORD {
-            TASKDIALOGCONFIG taskDialogConfig{
-                .cbSize = sizeof(taskDialogConfig),
-                .dwFlags = TDF_ALLOW_DIALOG_CANCELLATION,
-                .dwCommonButtons = TDCBF_YES_BUTTON | TDCBF_NO_BUTTON,
-                .pszWindowTitle = L"Windows 11 Taskbar Styler",
-                .pszMainIcon = TD_INFORMATION_ICON,
-                .pszContent =
-                    L"Explorer might need to be restarted to apply the new "
-                    L"styles. Restart now?",
-                .pfCallback = [](HWND hwnd, UINT msg, WPARAM wParam,
-                                 LPARAM lParam, LONG_PTR lpRefData)
-                                  WINAPI -> HRESULT {
-                    switch (msg) {
-                        case TDN_CREATED:
-                            g_restartExplorerPromptWindow = hwnd;
-                            SetWindowPos(hwnd, HWND_TOPMOST, 0, 0, 0, 0,
-                                         SWP_NOMOVE | SWP_NOSIZE);
-                            break;
-
-                        case TDN_DESTROYED:
-                            g_restartExplorerPromptWindow = nullptr;
-                            break;
-                    }
-
-                    return S_OK;
-                },
-            };
-
-            int button;
-            if (SUCCEEDED(TaskDialogIndirect(&taskDialogConfig, &button,
-                                             nullptr, nullptr)) &&
-                button == IDYES) {
-                WCHAR commandLine[] =
-                    L"cmd.exe /c "
-                    L"\"taskkill /F /IM explorer.exe & start explorer\"";
-                STARTUPINFO si = {
-                    .cb = sizeof(si),
-                };
-                PROCESS_INFORMATION pi{};
-                if (CreateProcess(nullptr, commandLine, nullptr, nullptr, FALSE,
-                                  0, nullptr, nullptr, &si, &pi)) {
-                    CloseHandle(pi.hThread);
-                    CloseHandle(pi.hProcess);
-                }
-            }
-
-            return 0;
-        },
-        nullptr, 0, nullptr);
-}
-
 using RunFromWindowThreadProc_t = void(WINAPI*)(PVOID parameter);
 
 bool RunFromWindowThread(HWND hWnd,
@@ -2475,23 +2418,10 @@ void Wh_ModUninit() {
             hTaskbarUiWnd, [](PVOID) WINAPI { UninitializeSettingsAndTap(); },
             nullptr);
     }
-
-    HWND restartExplorerPromptWindow = g_restartExplorerPromptWindow;
-    if (restartExplorerPromptWindow) {
-        PostMessage(restartExplorerPromptWindow, WM_CLOSE, 0, 0);
-    }
-
-    if (g_restartExplorerPromptThread) {
-        WaitForSingleObject(g_restartExplorerPromptThread, INFINITE);
-        CloseHandle(g_restartExplorerPromptThread);
-        g_restartExplorerPromptThread = nullptr;
-    }
 }
 
 void Wh_ModSettingsChanged() {
     Wh_Log(L">");
-
-    PromptForExplorerRestart();
 
     HWND hTaskbarUiWnd = GetTaskbarUiWnd();
     if (hTaskbarUiWnd) {
