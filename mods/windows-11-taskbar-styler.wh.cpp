@@ -41,6 +41,10 @@ SystemTrayResources.xbf](https://gist.github.com/m417z/ad0ab39351aca905f1d186b1f
 The [UWPSpy](https://ramensoftware.com/uwpspy) tool can be used to inspect the
 taskbar's control elements in real time, and experiment with various styles.
 
+For a collection of commonly requested taskbar styling customizations, check out
+[The Windows 11 taskbar styling
+guide](https://github.com/ramensoftware/windows-11-taskbar-styling-guide/blob/main/README.md).
+
 ## Control styles
 
 Each entry has a target control and a list of styles.
