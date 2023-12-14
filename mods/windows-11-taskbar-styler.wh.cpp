@@ -112,7 +112,8 @@ A couple of practical examples:
 ### Hide the network notification icon
 
 * Target: `systemtray:OmniButton#ControlCenterButton > Grid > ContentPresenter >
-  ItemsPresenter > StackPanel > ContentPresenter[1]`
+  ItemsPresenter > StackPanel > ContentPresenter[1] > systemtray:IconView > Grid
+  > Grid`
 * Style: `Visibility=Collapsed`
 
 **Note**: To hide the volume notification icon instead, use `[2]` instead of
