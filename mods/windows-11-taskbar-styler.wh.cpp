@@ -2241,7 +2241,7 @@ void ProcessResourceVariablesFromSettings() {
 }
 
 void UninitializeSettingsAndTap() {
-    for (auto& [k, v] : g_elementsCustomizationState) {
+    for (const auto& [k, v] : g_elementsCustomizationState) {
         auto oldElement = v.element.get();
         if (oldElement) {
             auto oldElementDo = oldElement.as<DependencyObject>();
@@ -2272,12 +2272,16 @@ void UninitializeSettingsAndTap() {
 
     g_elementsCustomizationRulesLoaded = false;
     g_elementsCustomizationRules.clear();
+
+    g_targetThreadId = 0;
 }
 
 void InitializeSettingsAndTap() {
-    UninitializeSettingsAndTap();
-
-    g_targetThreadId = GetCurrentThreadId();
+    DWORD kNoThreadId = 0;
+    if (!g_targetThreadId.compare_exchange_strong(kNoThreadId,
+                                                  GetCurrentThreadId())) {
+        return;
+    }
 
     HRESULT hr = InjectWindhawkTAP();
     if (FAILED(hr)) {
@@ -2428,11 +2432,20 @@ void Wh_ModUninit() {
 void Wh_ModSettingsChanged() {
     Wh_Log(L">");
 
+    if (g_visualTreeWatcher) {
+        g_visualTreeWatcher->UnadviseVisualTreeChange();
+        g_visualTreeWatcher = nullptr;
+    }
+
     HWND hTaskbarUiWnd = GetTaskbarUiWnd();
     if (hTaskbarUiWnd) {
-        Wh_Log(L"Initializing - Found DesktopWindowContentBridge window");
+        Wh_Log(L"Reinitializing - Found DesktopWindowContentBridge window");
         RunFromWindowThread(
-            hTaskbarUiWnd, [](PVOID) WINAPI { InitializeSettingsAndTap(); },
+            hTaskbarUiWnd,
+            [](PVOID) WINAPI {
+                UninitializeSettingsAndTap();
+                InitializeSettingsAndTap();
+            },
             nullptr);
     }
 }
