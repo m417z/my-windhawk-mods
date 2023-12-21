@@ -45,6 +45,10 @@ convenience:
 The [UWPSpy](https://ramensoftware.com/uwpspy) tool can be used to inspect the
 start menu control elements in real time, and experiment with various styles.
 
+For a collection of commonly requested taskbar styling customizations, check out
+[The Windows 11 start menu styling
+guide](https://github.com/ramensoftware/windows-11-start-menu-styling-guide/blob/main/README.md).
+
 ## Control styles
 
 Each entry has a target control and a list of styles.
@@ -141,8 +145,6 @@ HMODULE GetCurrentModuleHandle() {
 
 // forward declare namespaces we alias
 namespace winrt {
-    namespace Microsoft::UI::Xaml::Controls {}
-    namespace TranslucentTB::Xaml::Models::Primitives {}
     namespace Windows {
         namespace Foundation::Collections {}
         namespace UI::Xaml {
@@ -153,9 +155,6 @@ namespace winrt {
 }
 
 // alias some long namespaces for convenience
-// namespace mux = winrt::Microsoft::UI::Xaml;
-// namespace muxc = winrt::Microsoft::UI::Xaml::Controls;
-// namespace txmp = winrt::TranslucentTB::Xaml::Models::Primitives;
 namespace wf = winrt::Windows::Foundation;
 // namespace wfc = wf::Collections;
 namespace wux = winrt::Windows::UI::Xaml;
