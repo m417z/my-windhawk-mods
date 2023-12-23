@@ -136,6 +136,7 @@ constexpr size_t kCustomGroupPrefixLen = ARRAYSIZE(kCustomGroupPrefix) - 1;
 
 WinVersion g_winVersion;
 
+bool g_processedResolvedWindow = false;
 bool g_inTaskBandLaunch = false;
 bool g_inUpdateItemIcon = false;
 bool g_inTaskBtnGroupGetIcon = false;
@@ -218,20 +219,8 @@ using CTaskBand__MatchWindow_t = HRESULT(WINAPI*)(PVOID pThis,
                                                   PVOID* taskItem);
 CTaskBand__MatchWindow_t CTaskBand__MatchWindow_Original;
 
-using CTaskBand__HandleItemResolved_t =
-    void(WINAPI*)(PVOID pThis,
-                  RESOLVEDWINDOW* resolvedWindow,
-                  PVOID taskListUI,
-                  PVOID taskGroup,
-                  PVOID taskItem);
-CTaskBand__HandleItemResolved_t CTaskBand__HandleItemResolved_Original;
-void WINAPI CTaskBand__HandleItemResolved_Hook(PVOID pThis,
-                                               RESOLVEDWINDOW* resolvedWindow,
-                                               PVOID taskListUI,
-                                               PVOID taskGroup,
-                                               PVOID taskItem) {
+void ProcessResolvedWindow(PVOID pThis, RESOLVEDWINDOW* resolvedWindow) {
     Wh_Log(L"==========");
-    Wh_Log(L"Resolved new item:");
     Wh_Log(L"hButtonWnd=%08X", resolvedWindow->hButtonWnd);
     Wh_Log(L"szPathStr=%s", resolvedWindow->szPathStr);
     Wh_Log(L"szAppIdStr=%s", resolvedWindow->szAppIdStr);
@@ -242,11 +231,6 @@ void WINAPI CTaskBand__HandleItemResolved_Hook(PVOID pThis,
     Wh_Log(L"bSetPinnableAndLaunchable=%d",
            resolvedWindow->bSetPinnableAndLaunchable);
     Wh_Log(L"bSetThumbFlag=%d", resolvedWindow->bSetThumbFlag);
-
-    auto original = [&]() {
-        CTaskBand__HandleItemResolved_Original(pThis, resolvedWindow,
-                                               taskListUI, taskGroup, taskItem);
-    };
 
     DWORD resolvedWindowProcessPathLen = 0;
     WCHAR resolvedWindowProcessPath[MAX_PATH];
@@ -290,13 +274,13 @@ void WINAPI CTaskBand__HandleItemResolved_Hook(PVOID pThis,
         if (g_settings.excludedProgramPaths.contains(
                 resolvedWindowProcessPathUpper)) {
             Wh_Log(L"Excluding %s", resolvedWindowProcessPath);
-            return original();
+            return;
         }
 
         if (programFileNameUpper &&
             g_settings.excludedProgramNames.contains(programFileNameUpper)) {
             Wh_Log(L"Excluding %s", resolvedWindowProcessPath);
-            return original();
+            return;
         }
 
         if (auto it = g_settings.customGroupProgramPaths.find(
@@ -321,7 +305,7 @@ void WINAPI CTaskBand__HandleItemResolved_Hook(PVOID pThis,
             (void**)taskItemMatched.put());
         if (FAILED(hr)) {
             // Nothing to group with, resolve normally.
-            return original();
+            return;
         }
 
         bool isMatchPinned =
@@ -329,7 +313,7 @@ void WINAPI CTaskBand__HandleItemResolved_Hook(PVOID pThis,
 
         if (!g_settings.keepPinnedItemsSeparated && isMatchPinned) {
             // Will group with a pinned item, resolve normally.
-            return original();
+            return;
         }
     }
 
@@ -360,8 +344,44 @@ void WINAPI CTaskBand__HandleItemResolved_Hook(PVOID pThis,
             Wh_Log(L"AppId is too long: %s", resolvedWindow->szAppIdStr);
         }
     }
+}
 
-    original();
+using CTaskBand__HandleWindowResolved_t =
+    void(WINAPI*)(PVOID pThis, RESOLVEDWINDOW* resolvedWindow);
+CTaskBand__HandleWindowResolved_t CTaskBand__HandleWindowResolved_Original;
+void WINAPI
+CTaskBand__HandleWindowResolved_Hook(PVOID pThis,
+                                     RESOLVEDWINDOW* resolvedWindow) {
+    Wh_Log(L">");
+
+    if (!g_processedResolvedWindow) {
+        ProcessResolvedWindow(pThis, resolvedWindow);
+        g_processedResolvedWindow = true;
+        CTaskBand__HandleWindowResolved_Original(pThis, resolvedWindow);
+        g_processedResolvedWindow = false;
+        return;
+    }
+
+    CTaskBand__HandleWindowResolved_Original(pThis, resolvedWindow);
+}
+
+using CTaskBand__AddAppTaskItem_t =
+    void(WINAPI*)(PVOID pThis, PVOID pTaskItem, RESOLVEDWINDOW* resolvedWindow);
+CTaskBand__AddAppTaskItem_t CTaskBand__AddAppTaskItem_Original;
+void WINAPI CTaskBand__AddAppTaskItem_Hook(PVOID pThis,
+                                           PVOID pTaskItem,
+                                           RESOLVEDWINDOW* resolvedWindow) {
+    Wh_Log(L">");
+
+    if (!g_processedResolvedWindow) {
+        ProcessResolvedWindow(pThis, resolvedWindow);
+        g_processedResolvedWindow = true;
+        CTaskBand__AddAppTaskItem_Original(pThis, pTaskItem, resolvedWindow);
+        g_processedResolvedWindow = false;
+        return;
+    }
+
+    CTaskBand__AddAppTaskItem_Original(pThis, pTaskItem, resolvedWindow);
 }
 
 using CTaskBand__Launch_t = HRESULT(WINAPI*)(PVOID pThis);
@@ -1204,11 +1224,19 @@ bool HookTaskbarSymbols() {
             },
             {
                 {
-                    LR"(protected: void __cdecl CTaskBand::_HandleItemResolved(struct RESOLVEDWINDOW *,struct ITaskListUI *,struct ITaskGroup *,struct ITaskItem *))",
-                    LR"(protected: void __cdecl CTaskBand::_HandleItemResolved(struct RESOLVEDWINDOW * __ptr64,struct ITaskListUI * __ptr64,struct ITaskGroup * __ptr64,struct ITaskItem * __ptr64) __ptr64)",
+                    LR"(protected: void __cdecl CTaskBand::_HandleWindowResolved(struct RESOLVEDWINDOW *))",
+                    LR"(protected: void __cdecl CTaskBand::_HandleWindowResolved(struct RESOLVEDWINDOW * __ptr64) __ptr64)",
                 },
-                (void**)&CTaskBand__HandleItemResolved_Original,
-                (void*)CTaskBand__HandleItemResolved_Hook,
+                (void**)&CTaskBand__HandleWindowResolved_Original,
+                (void*)CTaskBand__HandleWindowResolved_Hook,
+            },
+            {
+                {
+                    LR"(protected: void __cdecl CTaskBand::_AddAppTaskItem(struct ITaskItem *,struct RESOLVEDWINDOW *))",
+                    LR"(protected: void __cdecl CTaskBand::_AddAppTaskItem(struct ITaskItem * __ptr64,struct RESOLVEDWINDOW * __ptr64) __ptr64)",
+                },
+                (void**)&CTaskBand__AddAppTaskItem_Original,
+                (void*)CTaskBand__AddAppTaskItem_Hook,
             },
             {
                 {
