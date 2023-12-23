@@ -55,6 +55,8 @@ or a similar tool), enable the relevant option in the mod's settings.
   $name: Place ungrouped items together
   $description: >-
     Place each newly opened item next to existing items it would group with.
+
+    Note: This option only works on Windows 11 version 22H2 and newer.
 - useWindowIcons: false
   $name: Use window icons
   $description: >-
