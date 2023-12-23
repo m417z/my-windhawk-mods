@@ -71,7 +71,15 @@ or a similar tool), enable the relevant option in the mod's settings.
       $description: >-
         Must not be empty. Will be shown on the taskbar if labels are shown.
     - items: [group1-program1.exe, group1-program2.exe]
-      $name: Process names/paths
+      $name: Process names, paths or app identifiers
+      $description: >-
+        For example:
+
+        mspaint.exe
+
+        C:\Windows\System32\notepad.exe
+
+        Microsoft.WindowsCalculator_8wekyb3d8bbwe!App
   $name: Custom groups
   $description: >-
     Each custom group is a list of names/paths of programs that will be grouped
@@ -79,10 +87,11 @@ or a similar tool), enable the relevant option in the mod's settings.
 - excludedPrograms: [excluded1.exe]
   $name: Excluded programs
   $description: >-
-    Each entry is a name or path of a program that the mod will ignore. Excluded
-    programs will keep their own grouping behavior. Usually that means that each
-    program will be grouped separately, but sometimes there are custom grouping
-    rules, e.g. Chrome creates a group for each browser profile.
+    Each entry is a name, path, or app identifier of a program that the mod will
+    ignore. Excluded programs will keep their own grouping behavior. Usually
+    that means that each program will be grouped separately, but sometimes there
+    are custom grouping rules, e.g. Chrome creates a group for each browser
+    profile.
 - oldTaskbarOnWin11: false
   $name: Customize the old taskbar on Windows 11
   $description: >-
@@ -119,11 +128,9 @@ struct {
     bool keepPinnedItemsSeparated;
     bool placeUngroupedItemsTogether;
     bool useWindowIcons;
-    std::unordered_set<std::wstring> excludedProgramPaths;
-    std::unordered_set<std::wstring> excludedProgramNames;
+    std::unordered_set<std::wstring> excludedProgramItems;
     std::vector<std::wstring> customGroupNames;
-    std::unordered_map<std::wstring, int> customGroupProgramPaths;
-    std::unordered_map<std::wstring, int> customGroupProgramNames;
+    std::unordered_map<std::wstring, int> customGroupProgramItems;
     bool oldTaskbarOnWin11;
 } g_settings;
 
@@ -234,6 +241,13 @@ void ProcessResolvedWindow(PVOID pThis, RESOLVEDWINDOW* resolvedWindow) {
            resolvedWindow->bSetPinnableAndLaunchable);
     Wh_Log(L"bSetThumbFlag=%d", resolvedWindow->bSetThumbFlag);
 
+    DWORD resolvedAppIdStrLen = wcslen(resolvedWindow->szAppIdStr);
+    WCHAR resolvedAppIdStrUpper[MAX_PATH];
+    LCMapStringEx(LOCALE_NAME_USER_DEFAULT, LCMAP_UPPERCASE,
+                  resolvedWindow->szAppIdStr, resolvedAppIdStrLen + 1,
+                  resolvedAppIdStrUpper, resolvedAppIdStrLen + 1, nullptr,
+                  nullptr, 0);
+
     DWORD resolvedWindowProcessPathLen = 0;
     WCHAR resolvedWindowProcessPath[MAX_PATH];
     WCHAR resolvedWindowProcessPathUpper[MAX_PATH];
@@ -270,31 +284,45 @@ void ProcessResolvedWindow(PVOID pThis, RESOLVEDWINDOW* resolvedWindow) {
         }
     }
 
+    if (g_settings.excludedProgramItems.contains(resolvedAppIdStrUpper)) {
+        Wh_Log(L"Excluding %s", resolvedWindow->szAppIdStr);
+        return;
+    }
+
+    if (resolvedWindowProcessPathLen > 0 &&
+        g_settings.excludedProgramItems.contains(
+            resolvedWindowProcessPathUpper)) {
+        Wh_Log(L"Excluding %s", resolvedWindowProcessPath);
+        return;
+    }
+
+    if (programFileNameUpper &&
+        g_settings.excludedProgramItems.contains(programFileNameUpper)) {
+        Wh_Log(L"Excluding %s", resolvedWindowProcessPath);
+        return;
+    }
+
     int customGroup = 0;
 
-    if (resolvedWindowProcessPathLen > 0) {
-        if (g_settings.excludedProgramPaths.contains(
-                resolvedWindowProcessPathUpper)) {
-            Wh_Log(L"Excluding %s", resolvedWindowProcessPath);
-            return;
-        }
+    if (auto it =
+            g_settings.customGroupProgramItems.find(resolvedAppIdStrUpper);
+        it != g_settings.customGroupProgramItems.end()) {
+        customGroup = it->second;
+    }
 
-        if (programFileNameUpper &&
-            g_settings.excludedProgramNames.contains(programFileNameUpper)) {
-            Wh_Log(L"Excluding %s", resolvedWindowProcessPath);
-            return;
-        }
-
-        if (auto it = g_settings.customGroupProgramPaths.find(
+    if (!customGroup && resolvedWindowProcessPathLen > 0) {
+        if (auto it = g_settings.customGroupProgramItems.find(
                 resolvedWindowProcessPathUpper);
-            it != g_settings.customGroupProgramPaths.end()) {
+            it != g_settings.customGroupProgramItems.end()) {
             customGroup = it->second;
-        } else if (programFileNameUpper) {
-            if (auto it = g_settings.customGroupProgramNames.find(
-                    programFileNameUpper);
-                it != g_settings.customGroupProgramNames.end()) {
-                customGroup = it->second;
-            }
+        }
+    }
+
+    if (!customGroup && programFileNameUpper) {
+        if (auto it =
+                g_settings.customGroupProgramItems.find(programFileNameUpper);
+            it != g_settings.customGroupProgramItems.end()) {
+            customGroup = it->second;
         }
     }
 
@@ -1450,8 +1478,7 @@ void LoadSettings() {
         Wh_GetIntSetting(L"placeUngroupedItemsTogether");
     g_settings.useWindowIcons = Wh_GetIntSetting(L"useWindowIcons");
 
-    g_settings.excludedProgramPaths.clear();
-    g_settings.excludedProgramNames.clear();
+    g_settings.excludedProgramItems.clear();
 
     for (int i = 0;; i++) {
         PCWSTR program = Wh_GetStringSetting(L"excludedPrograms[%d]", i);
@@ -1464,11 +1491,7 @@ void LoadSettings() {
                 static_cast<int>(programUpper.length()), &programUpper[0],
                 static_cast<int>(programUpper.length()), nullptr, nullptr, 0);
 
-            if (wcschr(program, L'\\')) {
-                g_settings.excludedProgramPaths.insert(std::move(programUpper));
-            } else {
-                g_settings.excludedProgramNames.insert(std::move(programUpper));
-            }
+            g_settings.excludedProgramItems.insert(std::move(programUpper));
         }
 
         Wh_FreeStringSetting(program);
@@ -1479,8 +1502,7 @@ void LoadSettings() {
     }
 
     g_settings.customGroupNames.clear();
-    g_settings.customGroupProgramPaths.clear();
-    g_settings.customGroupProgramNames.clear();
+    g_settings.customGroupProgramItems.clear();
 
     for (int groupIndex = 0;; groupIndex++) {
         PCWSTR name = Wh_GetStringSetting(L"customGroups[%d].name", groupIndex);
@@ -1509,13 +1531,8 @@ void LoadSettings() {
                     static_cast<int>(programUpper.length()), nullptr, nullptr,
                     0);
 
-                if (wcschr(program, L'\\')) {
-                    g_settings.customGroupProgramPaths.insert(
-                        {std::move(programUpper), groupIndex + 1});
-                } else {
-                    g_settings.customGroupProgramNames.insert(
-                        {std::move(programUpper), groupIndex + 1});
-                }
+                g_settings.customGroupProgramItems.insert(
+                    {std::move(programUpper), groupIndex + 1});
             }
 
             Wh_FreeStringSetting(program);
