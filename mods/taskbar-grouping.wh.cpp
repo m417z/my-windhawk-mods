@@ -48,9 +48,11 @@ or a similar tool), enable the relevant option in the mod's settings.
 // ==WindhawkModSettings==
 /*
 - keepPinnedItemsSeparated: false
-  $name: Keep pinned items separated
+  $name: Keep pinned items in place
   $description: >-
-    If enabled, pinned items will be kept separated from running instances.
+    By default, running instances replace pinned items. With this option, pinned
+    items will always remain in place, and running instances will be opened
+    separately.
 - placeUngroupedItemsTogether: false
   $name: Place ungrouped items together
   $description: >-
@@ -87,11 +89,15 @@ or a similar tool), enable the relevant option in the mod's settings.
 - excludedPrograms: [excluded1.exe]
   $name: Excluded programs
   $description: >-
-    Each entry is a name, path, or app identifier of a program that the mod will
-    ignore. Excluded programs will keep their own grouping behavior. Usually
-    that means that each program will be grouped separately, but sometimes there
-    are custom grouping rules, e.g. Chrome creates a group for each browser
-    profile.
+    Each entry is a name, path, or app identifier that the mod will ignore.
+    Excluded programs will keep their own grouping behavior. Usually that means
+    that each program will be grouped separately, but sometimes there are custom
+    grouping rules, e.g. Chrome creates a group for each browser profile.
+- groupingMode: regular
+  $name: Grouping mode
+  $options:
+  - regular: Disable grouping unless excluded
+  - inverse: "Inverse: Only disable grouping if excluded"
 - oldTaskbarOnWin11: false
   $name: Customize the old taskbar on Windows 11
   $description: >-
@@ -124,6 +130,11 @@ struct RESOLVEDWINDOW {
     BOOL bSetThumbFlag;
 };
 
+enum class GroupingMode {
+    regular,
+    inverse,
+};
+
 struct {
     bool keepPinnedItemsSeparated;
     bool placeUngroupedItemsTogether;
@@ -131,6 +142,7 @@ struct {
     std::unordered_set<std::wstring> excludedProgramItems;
     std::vector<std::wstring> customGroupNames;
     std::unordered_map<std::wstring, int> customGroupProgramItems;
+    GroupingMode groupingMode;
     bool oldTaskbarOnWin11;
 } g_settings;
 
@@ -284,21 +296,31 @@ void ProcessResolvedWindow(PVOID pThis, RESOLVEDWINDOW* resolvedWindow) {
         }
     }
 
+    bool excluded = false;
+
     if (g_settings.excludedProgramItems.contains(resolvedAppIdStrUpper)) {
         Wh_Log(L"Excluding %s", resolvedWindow->szAppIdStr);
-        return;
+        excluded = true;
     }
 
-    if (resolvedWindowProcessPathLen > 0 &&
+    if (!excluded && resolvedWindowProcessPathLen > 0 &&
         g_settings.excludedProgramItems.contains(
             resolvedWindowProcessPathUpper)) {
         Wh_Log(L"Excluding %s", resolvedWindowProcessPath);
-        return;
+        excluded = true;
     }
 
-    if (programFileNameUpper &&
+    if (!excluded && programFileNameUpper &&
         g_settings.excludedProgramItems.contains(programFileNameUpper)) {
         Wh_Log(L"Excluding %s", resolvedWindowProcessPath);
+        excluded = true;
+    }
+
+    if (g_settings.groupingMode == GroupingMode::inverse) {
+        excluded = !excluded;
+    }
+
+    if (excluded) {
         return;
     }
 
@@ -1542,6 +1564,13 @@ void LoadSettings() {
             }
         }
     }
+
+    PCWSTR groupingMode = Wh_GetStringSetting(L"groupingMode");
+    g_settings.groupingMode = GroupingMode::regular;
+    if (wcscmp(groupingMode, L"inverse") == 0) {
+        g_settings.groupingMode = GroupingMode::inverse;
+    }
+    Wh_FreeStringSetting(groupingMode);
 
     g_settings.oldTaskbarOnWin11 = Wh_GetIntSetting(L"oldTaskbarOnWin11");
 }
