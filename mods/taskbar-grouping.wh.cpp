@@ -47,12 +47,18 @@ or a similar tool), enable the relevant option in the mod's settings.
 
 // ==WindhawkModSettings==
 /*
-- keepPinnedItemsSeparated: false
-  $name: Keep pinned items in place
+- pinnedItemsMode: replace
+  $name: Pinned items mode
   $description: >-
-    By default, running instances replace pinned items. With this option, pinned
-    items will always remain in place, and running instances will be opened
-    separately.
+    By default, running instances replace pinned items. This option allows to
+    choose that pinned item will always remain in place, and running instances
+    will be opened separately. The third option allows to keep pinned items in
+    place, while still having running instances grouped.
+  $options:
+  - replace: Running items replace pinned items
+  - keepInPlace: Pinned items remain in place
+  - keepInPlaceAndNoUngrouping: >-
+      Pinned items remain in place, group running instances
 - placeUngroupedItemsTogether: false
   $name: Place ungrouped items together
   $description: >-
@@ -130,13 +136,19 @@ struct RESOLVEDWINDOW {
     BOOL bSetThumbFlag;
 };
 
+enum class PinnedItemsMode {
+    replace,
+    keepInPlace,
+    keepInPlaceAndNoUngrouping,
+};
+
 enum class GroupingMode {
     regular,
     inverse,
 };
 
 struct {
-    bool keepPinnedItemsSeparated;
+    PinnedItemsMode pinnedItemsMode;
     bool placeUngroupedItemsTogether;
     bool useWindowIcons;
     std::unordered_set<std::wstring> excludedProgramItems;
@@ -363,7 +375,8 @@ void ProcessResolvedWindow(PVOID pThis, RESOLVEDWINDOW* resolvedWindow) {
         bool isMatchPinned =
             CTaskGroup_GetNumItems_Original(taskGroupMatched.get()) == 0;
 
-        if (!g_settings.keepPinnedItemsSeparated && isMatchPinned) {
+        if (g_settings.pinnedItemsMode == PinnedItemsMode::replace &&
+            isMatchPinned) {
             // Will group with a pinned item, resolve normally.
             return;
         }
@@ -380,7 +393,11 @@ void ProcessResolvedWindow(PVOID pThis, RESOLVEDWINDOW* resolvedWindow) {
         Wh_Log(L"Custom group AppId: %s", resolvedWindow->szAppIdStr);
     } else {
         bool appIdSuffixAdded;
-        if (resolvedWindow->hButtonWnd) {
+        if (g_settings.pinnedItemsMode ==
+            PinnedItemsMode::keepInPlaceAndNoUngrouping) {
+            appIdSuffixAdded =
+                AddAppIdSuffix(resolvedWindow->szAppIdStr, L'p', 0);
+        } else if (resolvedWindow->hButtonWnd) {
             appIdSuffixAdded =
                 AddAppIdSuffix(resolvedWindow->szAppIdStr, L'w',
                                (DWORD)(DWORD_PTR)resolvedWindow->hButtonWnd);
@@ -1494,8 +1511,16 @@ bool HookTaskbarSymbols() {
 }
 
 void LoadSettings() {
-    g_settings.keepPinnedItemsSeparated =
-        Wh_GetIntSetting(L"keepPinnedItemsSeparated");
+    PCWSTR pinnedItemsMode = Wh_GetStringSetting(L"pinnedItemsMode");
+    g_settings.pinnedItemsMode = PinnedItemsMode::replace;
+    if (wcscmp(pinnedItemsMode, L"keepInPlace") == 0) {
+        g_settings.pinnedItemsMode = PinnedItemsMode::keepInPlace;
+    } else if (wcscmp(pinnedItemsMode, L"keepInPlaceAndNoUngrouping") == 0) {
+        g_settings.pinnedItemsMode =
+            PinnedItemsMode::keepInPlaceAndNoUngrouping;
+    }
+    Wh_FreeStringSetting(pinnedItemsMode);
+
     g_settings.placeUngroupedItemsTogether =
         Wh_GetIntSetting(L"placeUngroupedItemsTogether");
     g_settings.useWindowIcons = Wh_GetIntSetting(L"useWindowIcons");
