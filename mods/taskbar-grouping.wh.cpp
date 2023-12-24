@@ -169,15 +169,15 @@ constexpr size_t kCustomGroupPrefixLen = ARRAYSIZE(kCustomGroupPrefix) - 1;
 
 WinVersion g_winVersion;
 
-bool g_processedResolvedWindow = false;
-bool g_inTaskBandLaunch = false;
-bool g_inUpdateItemIcon = false;
-bool g_inTaskBtnGroupGetIcon = false;
-bool g_inGetJumpViewParams = false;
-bool g_disableGetLauncherName = false;
-std::atomic<DWORD> g_compareStringOrdinalHookThreadId = 0;
-bool g_compareStringOrdinalIgnoreSuffix = false;
-bool g_compareStringOrdinalAnySuffixEqual = false;
+bool g_processedResolvedWindow;
+bool g_inTaskBandLaunch;
+bool g_inUpdateItemIcon;
+bool g_inTaskBtnGroupGetIcon;
+bool g_inGetJumpViewParams;
+bool g_disableGetLauncherName;
+std::atomic<DWORD> g_compareStringOrdinalHookThreadId;
+bool g_compareStringOrdinalIgnoreSuffix;
+bool g_compareStringOrdinalAnySuffixEqual;
 
 winrt::com_ptr<IUnknown> GetTaskGroupWithoutSuffix(
     PVOID taskGroup,
