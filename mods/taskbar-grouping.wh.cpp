@@ -2,7 +2,7 @@
 // @id              taskbar-grouping
 // @name            Disable grouping on the taskbar
 // @description     Causes a separate button to be created on the taskbar for each new window
-// @version         1.2.2
+// @version         1.3
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
@@ -79,7 +79,7 @@ or a similar tool), enable the relevant option in the mod's settings.
       $description: >-
         Must not be empty. Will be shown on the taskbar if labels are shown.
     - items: [group1-program1.exe, group1-program2.exe]
-      $name: Process names, paths or app identifiers
+      $name: Process names, paths or application IDs
       $description: >-
         For example:
 
@@ -95,7 +95,7 @@ or a similar tool), enable the relevant option in the mod's settings.
 - excludedPrograms: [excluded1.exe]
   $name: Excluded programs
   $description: >-
-    Each entry is a name, path, or app identifier that the mod will ignore.
+    Each entry is a name, path, or application ID that the mod will ignore.
     Excluded programs will keep their own grouping behavior. Usually that means
     that each program will be grouped separately, but sometimes there are custom
     grouping rules, e.g. Chrome creates a group for each browser profile.
