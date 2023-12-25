@@ -503,7 +503,7 @@ using PropertyKeyValue =
 struct ElementMatcher {
     std::wstring type;
     std::wstring name;
-    std::wstring visualStateGroup;
+    std::optional<std::wstring> visualStateGroupName;
     int oneBasedIndex = 0;
     std::vector<std::pair<std::wstring, std::wstring>> propertyValuesStr;
     std::vector<PropertyKeyValue> propertyValues;
@@ -551,11 +551,11 @@ bool g_elementPropertyModifying;
 
 // https://stackoverflow.com/a/12835139
 VisualStateGroup GetVisualStateGroup(FrameworkElement element,
-                                     std::wstring_view stateGroupName) {
+                                     std::wstring_view visualStateGroupName) {
     auto list = VisualStateManager::GetVisualStateGroups(element);
 
     for (const auto& v : list) {
-        if (v.Name() == stateGroupName) {
+        if (v.Name() == visualStateGroupName) {
             return v;
         }
     }
@@ -633,9 +633,9 @@ bool TestElementMatcher(FrameworkElement element,
         return false;
     }
 
-    if (!matcher.visualStateGroup.empty() && visualStateGroup) {
+    if (matcher.visualStateGroupName && visualStateGroup) {
         *visualStateGroup =
-            GetVisualStateGroup(element, matcher.visualStateGroup);
+            GetVisualStateGroup(element, *matcher.visualStateGroupName);
     }
 
     return true;
@@ -1086,16 +1086,12 @@ ElementMatcher ElementMatcherFromString(std::wstring_view str) {
                 break;
 
             case L'@':
-                if (!result.visualStateGroup.empty()) {
+                if (result.visualStateGroupName) {
                     throw std::runtime_error(
                         "Bad target syntax, more than one visual state group");
                 }
 
-                result.visualStateGroup = TrimStringView(nextPart);
-                if (result.visualStateGroup.empty()) {
-                    throw std::runtime_error(
-                        "Bad target syntax, empty visual state group");
-                }
+                result.visualStateGroupName = TrimStringView(nextPart);
                 break;
 
             case L'[': {
@@ -1196,7 +1192,7 @@ void AddElementCustomizationRules(std::wstring_view target,
 
         auto matcher = ElementMatcherFromString(targetPart);
 
-        if (!matcher.visualStateGroup.empty()) {
+        if (matcher.visualStateGroupName) {
             if (hasVisualStateGroup) {
                 throw std::runtime_error(
                     "Element type can't have more than one visual state group");
