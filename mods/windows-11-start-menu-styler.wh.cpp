@@ -946,24 +946,6 @@ std::vector<std::wstring_view> SplitStringView(std::wstring_view s,
     return res;
 }
 
-std::wstring AdjustTypeName(std::wstring_view type) {
-    static const std::vector<std::pair<std::wstring_view, std::wstring_view>>
-        adjustments = {
-            {L"StartMenu.", L"StartMenu:"},
-            {L"Microsoft.UI.Xaml.Control.", L"muxc:"},
-        };
-
-    for (const auto& adjustment : adjustments) {
-        if (type.starts_with(adjustment.first)) {
-            auto result = std::wstring{adjustment.second};
-            result += type.substr(adjustment.first.size());
-            return result;
-        }
-    }
-
-    return std::wstring{type};
-}
-
 void ResolveTypeAndStyles(ElementMatcher* elementMatcher,
                           std::vector<StyleRule> styleRules = {},
                           PropertyOverrides* propertyOverrides = nullptr) {
@@ -974,12 +956,28 @@ void ResolveTypeAndStyles(ElementMatcher* elementMatcher,
     xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
     xmlns:muxc="using:Microsoft.UI.Xaml.Controls"
-    xmlns:StartMenu="using:StartMenu">
-    <Style)";
+    xmlns:StartMenu="using:StartMenu")";
 
-    xaml += L" TargetType=\"";
-    xaml += EscapeXmlAttribute(AdjustTypeName(elementMatcher->type));
-    xaml += L"\">\n";
+    if (auto pos = elementMatcher->type.rfind('.');
+        pos != elementMatcher->type.npos) {
+        auto typeNamespace =
+            std::wstring_view(elementMatcher->type).substr(0, pos);
+        auto typeName = std::wstring_view(elementMatcher->type).substr(pos + 1);
+
+        xaml += L"\n    xmlns:windhawkstyler=\"using:";
+        xaml += EscapeXmlAttribute(typeNamespace);
+        xaml +=
+            L"\">\n"
+            L"    <Style TargetType=\"windhawkstyler:";
+        xaml += EscapeXmlAttribute(typeName);
+        xaml += L"\">\n";
+    } else {
+        xaml +=
+            L">\n"
+            L"    <Style TargetType=\"";
+        xaml += EscapeXmlAttribute(elementMatcher->type);
+        xaml += L"\">\n";
+    }
 
     for (const auto& [property, value] : elementMatcher->propertyValuesStr) {
         xaml += L"        <Setter Property=\"";
@@ -1010,8 +1008,8 @@ void ResolveTypeAndStyles(ElementMatcher* elementMatcher,
     }
 
     xaml +=
-        LR"(    </Style>
-</ResourceDictionary>)";
+        L"    </Style>\n"
+        L"</ResourceDictionary>";
 
     Wh_Log(L"======================================== XAML:");
     std::wstringstream ss(xaml);
