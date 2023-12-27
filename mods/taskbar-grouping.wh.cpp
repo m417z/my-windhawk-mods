@@ -365,8 +365,8 @@ void ProcessResolvedWindow(PVOID pThis, RESOLVEDWINDOW* resolvedWindow) {
         winrt::com_ptr<IUnknown> taskItemMatched;
         HRESULT hr = CTaskBand__MatchWindow_Original(
             pThis, resolvedWindow->hButtonWnd, resolvedWindow->pAppItemIdList,
-            resolvedWindow->szAppIdStr, 1, (void**)taskGroupMatched.put(),
-            (void**)taskItemMatched.put());
+            resolvedWindow->szAppIdStr, 1, taskGroupMatched.put_void(),
+            taskItemMatched.put_void());
         if (FAILED(hr)) {
             // Nothing to group with, resolve normally.
             return;
@@ -542,7 +542,7 @@ winrt::com_ptr<IUnknown> GetTaskGroupWithoutSuffix(
     winrt::com_ptr<IUnknown> taskItemMatched;
     HRESULT hr = CTaskBand__MatchWindow_Original(
         taskBand, nullptr, nullptr, appIdOriginal, 1,
-        (void**)taskGroupMatched.put(), (void**)taskItemMatched.put());
+        taskGroupMatched.put_void(), taskItemMatched.put_void());
     if (FAILED(hr)) {
         return nullptr;
     }
@@ -815,7 +815,7 @@ HRESULT WINAPI ITaskBtnGroup_InsertPtr_Hook(PVOID pThis,
         winrt::com_ptr<IUnknown> taskItemMatched;
         HRESULT hr = CTaskGroup_DoesWindowMatch_Original(
             taskGroupIter, nullptr, idList, appId, &windowMatchConfidence,
-            (void**)taskItemMatched.put());
+            taskItemMatched.put_void());
         if (SUCCEEDED(hr)) {
             lastMatchIndex = i;
         }
@@ -914,7 +914,7 @@ void SwapTaskGroupIdsWithUnsuffixedInstance(PVOID taskGroup) {
     winrt::com_ptr<IUnknown> taskItemMatched;
     HRESULT hr = CTaskBand__MatchWindow_Original(
         taskBand, nullptr, nullptr, appIdWithSuffix, 1,
-        (void**)taskGroupMatched.put(), (void**)taskItemMatched.put());
+        taskGroupMatched.put_void(), taskItemMatched.put_void());
 
     g_compareStringOrdinalHookThreadId = 0;
     g_compareStringOrdinalAnySuffixEqual = false;
