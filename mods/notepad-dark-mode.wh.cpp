@@ -84,7 +84,7 @@ BOOL SetWindowSubclassFromAnyThread(HWND hWnd, SUBCLASSPROC pfnSubclass, UINT_PT
     param.uIdSubclass = uIdSubclass;
     param.dwRefData = dwRefData;
     param.result = FALSE;
-    SendMessage(hWnd, g_subclassRegisteredMsg, TRUE, (WPARAM)&param);
+    SendMessage(hWnd, g_subclassRegisteredMsg, TRUE, (LPARAM)&param);
 
     UnhookWindowsHookEx(hook);
 

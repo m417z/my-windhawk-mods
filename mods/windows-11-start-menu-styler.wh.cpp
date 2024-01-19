@@ -1457,7 +1457,7 @@ bool RunFromWindowThread(HWND hWnd,
     RUN_FROM_WINDOW_THREAD_PARAM param;
     param.proc = proc;
     param.procParam = procParam;
-    SendMessage(hWnd, runFromWindowThreadRegisteredMsg, 0, (WPARAM)&param);
+    SendMessage(hWnd, runFromWindowThreadRegisteredMsg, 0, (LPARAM)&param);
 
     UnhookWindowsHookEx(hook);
 
