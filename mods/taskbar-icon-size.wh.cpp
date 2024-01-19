@@ -44,6 +44,10 @@ as any other icon size.
 
 Only Windows 11 is supported. For older Windows versions check out [7+ Taskbar
 Tweaker](https://tweaker.ramensoftware.com/).
+
+**Note**: Due to a bug in newer Windows 11 versions, the taskbar height may not
+affect maximized windows right away. As a workaround, lock the desktop and
+unlock it.
 */
 // ==/WindhawkModReadme==
 
