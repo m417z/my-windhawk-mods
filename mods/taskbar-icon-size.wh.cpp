@@ -44,10 +44,6 @@ as any other icon size.
 
 Only Windows 11 is supported. For older Windows versions check out [7+ Taskbar
 Tweaker](https://tweaker.ramensoftware.com/).
-
-**Note**: Due to a bug in newer Windows 11 versions, the taskbar height may not
-affect maximized windows right away. As a workaround, lock the desktop and
-unlock it.
 */
 // ==/WindhawkModReadme==
 
@@ -96,9 +92,11 @@ struct {
 } g_settings;
 
 WCHAR g_taskbarViewDllPath[MAX_PATH];
-std::atomic<bool> g_taskbarViewDllLoaded = false;
-std::atomic<bool> g_applyingSettings = false;
-std::atomic<bool> g_unloading = false;
+std::atomic<bool> g_taskbarViewDllLoaded;
+std::atomic<bool> g_applyingSettings;
+std::atomic<bool> g_pendingFrameSizeChange;
+std::atomic<bool> g_pendingMeasureOverride;
+std::atomic<bool> g_unloading;
 
 int g_originalTaskbarHeight;
 int g_taskbarHeight;
@@ -196,6 +194,27 @@ void WINAPI TrayUI_GetMinSize_Hook(void* pThis, HMONITOR monitor, SIZE* size) {
         GetDpiForMonitor(monitor, MDT_DEFAULT, &dpiX, &dpiY);
 
         size->cy = MulDiv(g_taskbarHeight, dpiY, 96);
+    }
+}
+
+using TrayUI__StuckTrayChange_t = void(WINAPI*)(void* pThis);
+TrayUI__StuckTrayChange_t TrayUI__StuckTrayChange_Original;
+
+using TrayUI__HandleSettingChange_t = void(WINAPI*)(void* pThis,
+                                                    void* param1,
+                                                    void* param2,
+                                                    void* param3,
+                                                    void* param4);
+TrayUI__HandleSettingChange_t TrayUI__HandleSettingChange_Original;
+void WINAPI TrayUI__HandleSettingChange_Hook(void* pThis,
+                                             void* param1,
+                                             void* param2,
+                                             void* param3,
+                                             void* param4) {
+    TrayUI__HandleSettingChange_Original(pThis, param1, param2, param3, param4);
+
+    if (g_applyingSettings) {
+        TrayUI__StuckTrayChange_Original(pThis);
     }
 }
 
@@ -341,6 +360,33 @@ void WINAPI SystemTrayFrame_Height_Hook(void* pThis, double value) {
     SystemTrayFrame_Height_Original(pThis, value);
 }
 
+using TaskbarController_OnFrameSizeChanged_t = void(WINAPI*)(void* pThis);
+TaskbarController_OnFrameSizeChanged_t
+    TaskbarController_OnFrameSizeChanged_Original;
+void WINAPI TaskbarController_OnFrameSizeChanged_Hook(void* pThis) {
+    Wh_Log(L">");
+
+    TaskbarController_OnFrameSizeChanged_Original(pThis);
+
+    g_pendingFrameSizeChange = false;
+}
+
+using TaskbarFrame_MeasureOverride_t = void*(WINAPI*)(void* pThis,
+                                                      void* param1,
+                                                      void* param2);
+TaskbarFrame_MeasureOverride_t TaskbarFrame_MeasureOverride_Original;
+void* WINAPI TaskbarFrame_MeasureOverride_Hook(void* pThis,
+                                               void* param1,
+                                               void* param2) {
+    Wh_Log(L">");
+
+    void* ret = TaskbarFrame_MeasureOverride_Original(pThis, param1, param2);
+
+    g_pendingMeasureOverride = false;
+
+    return ret;
+}
+
 using SHAppBarMessage_t = decltype(&SHAppBarMessage);
 SHAppBarMessage_t SHAppBarMessage_Original;
 auto WINAPI SHAppBarMessage_Hook(DWORD dwMessage, PAPPBARDATA pData) {
@@ -410,8 +456,8 @@ void ApplySettings(int taskbarHeight) {
     g_applyingSettings = true;
 
     if (taskbarHeight == g_taskbarHeight) {
-        RECT taskbarRect{};
-        GetWindowRect(hTaskbarWnd, &taskbarRect);
+        g_pendingFrameSizeChange = true;
+        g_pendingMeasureOverride = true;
 
         // Temporarily change the height to force a UI refresh.
         g_taskbarHeight = taskbarHeight - 1;
@@ -427,16 +473,19 @@ void ApplySettings(int taskbarHeight) {
                     0);
 
         // Wait for the change to apply.
-        RECT newTaskbarRect{};
-        int counter = 0;
-        while (GetWindowRect(hTaskbarWnd, &newTaskbarRect) &&
-               newTaskbarRect.top == taskbarRect.top) {
-            if (++counter >= 100) {
+        for (int i = 0; i < 100; i++) {
+            if (TaskbarFrame_MeasureOverride_Original
+                    ? !g_pendingMeasureOverride
+                    : !g_pendingFrameSizeChange) {
                 break;
             }
+
             Sleep(100);
         }
     }
+
+    g_pendingFrameSizeChange = true;
+    g_pendingMeasureOverride = true;
 
     g_taskbarHeight = taskbarHeight;
     if (!TaskbarConfiguration_GetFrameSize_Original &&
@@ -449,6 +498,16 @@ void ApplySettings(int taskbarHeight) {
     // Trigger TrayUI::_HandleSettingChange.
     SendMessage(hTaskbarWnd, WM_SETTINGCHANGE, SPI_SETLOGICALDPIOVERRIDE, 0);
 
+    // Wait for the change to apply.
+    for (int i = 0; i < 100; i++) {
+        if (TaskbarFrame_MeasureOverride_Original ? !g_pendingMeasureOverride
+                                                  : !g_pendingFrameSizeChange) {
+            break;
+        }
+
+        Sleep(100);
+    }
+
     HWND hReBarWindow32 =
         FindWindowEx(hTaskbarWnd, nullptr, L"ReBarWindow32", nullptr);
     if (hReBarWindow32) {
@@ -459,12 +518,6 @@ void ApplySettings(int taskbarHeight) {
             SendMessage(hMSTaskSwWClass, 0x452, 3, 0);
         }
     }
-
-    // Sometimes, the height doesn't fully apply at this point, and there's
-    // still a transparent line at the bottom of the taskbar. Triggering
-    // TrayUI::_HandleSettingChange again works as a workaround.
-    Sleep(400);
-    SendMessage(hTaskbarWnd, WM_SETTINGCHANGE, SPI_SETLOGICALDPIOVERRIDE, 0);
 
     g_applyingSettings = false;
 }
@@ -811,6 +864,23 @@ bool HookTaskbarViewDllSymbols(HMODULE module) {
                 (void*)SystemTrayFrame_Height_Hook,
                 true,
             },
+            {
+                {
+                    LR"(private: void __cdecl winrt::Taskbar::implementation::TaskbarController::OnFrameSizeChanged(void))",
+                    LR"(private: void __cdecl winrt::Taskbar::implementation::TaskbarController::OnFrameSizeChanged(void) __ptr64)",
+                },
+                (void**)&TaskbarController_OnFrameSizeChanged_Original,
+                (void*)TaskbarController_OnFrameSizeChanged_Hook,
+            },
+            {
+                {
+                    LR"(public: struct winrt::Windows::Foundation::Size __cdecl winrt::Taskbar::implementation::TaskbarFrame::MeasureOverride(struct winrt::Windows::Foundation::Size))",
+                    LR"(public: struct winrt::Windows::Foundation::Size __cdecl winrt::Taskbar::implementation::TaskbarFrame::MeasureOverride(struct winrt::Windows::Foundation::Size) __ptr64)",
+                },
+                (void**)&TaskbarFrame_MeasureOverride_Original,
+                (void*)TaskbarFrame_MeasureOverride_Hook,
+                true,  // From Windows 11 version 22H2.
+            },
         };
 
     return HookSymbols(module, symbolHooks, ARRAYSIZE(symbolHooks));
@@ -848,6 +918,21 @@ bool HookTaskbarDllSymbols() {
             (void**)&TrayUI_GetMinSize_Original,
             (void*)TrayUI_GetMinSize_Hook,
             true,
+        },
+        {
+            {
+                LR"(public: void __cdecl TrayUI::_StuckTrayChange(void))",
+                LR"(public: void __cdecl TrayUI::_StuckTrayChange(void) __ptr64)",
+            },
+            (void**)&TrayUI__StuckTrayChange_Original,
+        },
+        {
+            {
+                LR"(public: void __cdecl TrayUI::_HandleSettingChange(struct HWND__ *,unsigned int,unsigned __int64,__int64))",
+                LR"(public: void __cdecl TrayUI::_HandleSettingChange(struct HWND__ * __ptr64,unsigned int,unsigned __int64,__int64) __ptr64)",
+            },
+            (void**)&TrayUI__HandleSettingChange_Original,
+            (void*)TrayUI__HandleSettingChange_Hook,
         },
     };
 
