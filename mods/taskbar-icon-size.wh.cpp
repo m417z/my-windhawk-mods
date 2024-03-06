@@ -2,7 +2,7 @@
 // @id              taskbar-icon-size
 // @name            Taskbar height and icon size
 // @description     Control the taskbar height and icon size, improve icon quality (Windows 11 only)
-// @version         1.2.2
+// @version         1.2.3
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
@@ -71,7 +71,10 @@ Tweaker](https://tweaker.ramensoftware.com/).
 #include <knownfolders.h>
 #include <shlobj.h>
 
+#undef GetCurrentTime
+
 #include <winrt/Windows.Foundation.h>
+#include <winrt/Windows.UI.Xaml.Media.h>
 
 #include <algorithm>
 #include <atomic>
@@ -80,6 +83,8 @@ Tweaker](https://tweaker.ramensoftware.com/).
 #include <string>
 #include <string_view>
 #include <vector>
+
+using namespace winrt::Windows::UI::Xaml;
 
 #ifndef SPI_SETLOGICALDPIOVERRIDE
 #define SPI_SETLOGICALDPIOVERRIDE 0x009F
@@ -101,6 +106,7 @@ std::atomic<bool> g_unloading;
 int g_originalTaskbarHeight;
 int g_taskbarHeight;
 bool g_inSystemTraySecondaryController_UpdateFrameSize;
+bool g_inAugmentedEntryPointButton_UpdateButtonPadding;
 
 double* double_48_value_Original;
 
@@ -115,6 +121,40 @@ STDAPI GetDpiForMonitor(HMONITOR hmonitor,
                         MONITOR_DPI_TYPE dpiType,
                         UINT* dpiX,
                         UINT* dpiY);
+
+FrameworkElement EnumChildElements(
+    FrameworkElement element,
+    std::function<bool(FrameworkElement)> enumCallback) {
+    int childrenCount = Media::VisualTreeHelper::GetChildrenCount(element);
+
+    for (int i = 0; i < childrenCount; i++) {
+        auto child = Media::VisualTreeHelper::GetChild(element, i)
+                         .try_as<FrameworkElement>();
+        if (!child) {
+            Wh_Log(L"Failed to get child %d of %d", i + 1, childrenCount);
+            continue;
+        }
+
+        if (enumCallback(child)) {
+            return child;
+        }
+    }
+
+    return nullptr;
+}
+
+FrameworkElement FindChildByName(FrameworkElement element, PCWSTR name) {
+    return EnumChildElements(element, [name](FrameworkElement child) {
+        return child.Name() == name;
+    });
+}
+
+FrameworkElement FindChildByClassName(FrameworkElement element,
+                                      PCWSTR className) {
+    return EnumChildElements(element, [className](FrameworkElement child) {
+        return winrt::get_class_name(child) == className;
+    });
+}
 
 using ResourceDictionary_Lookup_t = winrt::Windows::Foundation::IInspectable*(
     WINAPI*)(void* pThis,
@@ -385,6 +425,119 @@ void* WINAPI TaskbarFrame_MeasureOverride_Hook(void* pThis,
     g_pendingMeasureOverride = false;
 
     return ret;
+}
+
+using AugmentedEntryPointButton_UpdateButtonPadding_t =
+    void(WINAPI*)(void* pThis);
+AugmentedEntryPointButton_UpdateButtonPadding_t
+    AugmentedEntryPointButton_UpdateButtonPadding_Original;
+void WINAPI AugmentedEntryPointButton_UpdateButtonPadding_Hook(void* pThis) {
+    Wh_Log(L">");
+
+    g_inAugmentedEntryPointButton_UpdateButtonPadding = true;
+
+    AugmentedEntryPointButton_UpdateButtonPadding_Original(pThis);
+
+    g_inAugmentedEntryPointButton_UpdateButtonPadding = false;
+}
+
+using RepeatButton_Width_t = void(WINAPI*)(void* pThis, double width);
+RepeatButton_Width_t RepeatButton_Width_Original;
+void WINAPI RepeatButton_Width_Hook(void* pThis, double width) {
+    Wh_Log(L">");
+
+    RepeatButton_Width_Original(pThis, width);
+
+    if (!g_inAugmentedEntryPointButton_UpdateButtonPadding) {
+        return;
+    }
+
+    FrameworkElement button = nullptr;
+    (*(IUnknown**)pThis)
+        ->QueryInterface(winrt::guid_of<FrameworkElement>(),
+                         winrt::put_abi(button));
+    if (!button) {
+        return;
+    }
+
+    FrameworkElement augmentedEntryPointContentGrid =
+        FindChildByName(button, L"AugmentedEntryPointContentGrid");
+    if (!augmentedEntryPointContentGrid) {
+        return;
+    }
+
+    EnumChildElements(
+        augmentedEntryPointContentGrid, [](FrameworkElement child) {
+            if (winrt::get_class_name(child) !=
+                L"Windows.UI.Xaml.Controls.Grid") {
+                return false;
+            }
+
+            FrameworkElement panel = child;
+            if ((panel = FindChildByClassName(
+                     panel, L"Windows.UI.Xaml.Controls.Grid")) &&
+                (panel = FindChildByClassName(
+                     panel, L"AdaptiveCards.Rendering.Uwp.WholeItemsPanel"))) {
+                auto margin = Thickness{8, 8, 8, 8};
+
+                if (!g_unloading) {
+                    double marginValue =
+                        static_cast<double>(40 - g_settings.iconSize) / 2;
+                    if (marginValue < 0) {
+                        marginValue = 0;
+                    }
+
+                    margin.Left = marginValue;
+                    margin.Top = marginValue;
+                    margin.Right = marginValue;
+                    margin.Bottom = marginValue;
+
+                    if (g_taskbarHeight < 48) {
+                        margin.Top -=
+                            static_cast<double>(48 - g_taskbarHeight) / 2;
+                        if (margin.Top < 0) {
+                            margin.Top = 0;
+                        }
+
+                        margin.Bottom = marginValue * 2 - margin.Top;
+                    }
+                }
+
+                Wh_Log(L"Setting Margin=%f,%f,%f,%f for panel", margin.Left,
+                       margin.Top, margin.Right, margin.Bottom);
+
+                panel.Margin(margin);
+            } else {
+                return false;
+            }
+
+            FrameworkElement badge = panel;
+            if ((badge = FindChildByClassName(
+                     badge, L"Windows.UI.Xaml.Controls.Border")) &&
+                (badge = FindChildByClassName(
+                     badge, L"AdaptiveCards.Rendering.Uwp.WholeItemsPanel")) &&
+                (badge = FindChildByClassName(
+                     badge, L"Windows.UI.Xaml.Controls.Grid")) &&
+                (badge = FindChildByName(badge, L"SmallTicker1")) &&
+                (badge = FindChildByClassName(
+                     badge, L"AdaptiveCards.Rendering.Uwp.WholeItemsPanel")) &&
+                (badge = FindChildByName(badge, L"BadgeAnchorSmallTicker"))) {
+                double maxValue = 24;
+
+                if (!g_unloading) {
+                    maxValue = std::numeric_limits<double>::infinity();
+                }
+
+                Wh_Log(L"Setting MaxWidth, MaxHeight for badge");
+
+                badge.MaxWidth(maxValue);
+                badge.MaxHeight(maxValue);
+            } else {
+                return false;
+            }
+
+            return false;
+        });
 }
 
 using SHAppBarMessage_t = decltype(&SHAppBarMessage);
@@ -879,6 +1032,23 @@ bool HookTaskbarViewDllSymbols(HMODULE module) {
                 },
                 (void**)&TaskbarFrame_MeasureOverride_Original,
                 (void*)TaskbarFrame_MeasureOverride_Hook,
+                true,  // From Windows 11 version 22H2.
+            },
+            {
+                {
+                    LR"(protected: virtual void __cdecl winrt::Taskbar::implementation::AugmentedEntryPointButton::UpdateButtonPadding(void))",
+                    LR"(protected: virtual void __cdecl winrt::Taskbar::implementation::AugmentedEntryPointButton::UpdateButtonPadding(void) __ptr64)",
+                },
+                (void**)&AugmentedEntryPointButton_UpdateButtonPadding_Original,
+                (void*)AugmentedEntryPointButton_UpdateButtonPadding_Hook,
+            },
+            {
+                {
+                    LR"(public: __cdecl winrt::impl::consume_Windows_UI_Xaml_IFrameworkElement<struct winrt::Windows::UI::Xaml::Controls::Primitives::RepeatButton>::Width(double)const )",
+                    LR"(public: __cdecl winrt::impl::consume_Windows_UI_Xaml_IFrameworkElement<struct winrt::Windows::UI::Xaml::Controls::Primitives::RepeatButton>::Width(double)const __ptr64)",
+                },
+                (void**)&RepeatButton_Width_Original,
+                (void*)RepeatButton_Width_Hook,
                 true,  // From Windows 11 version 22H2.
             },
         };
