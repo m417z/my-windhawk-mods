@@ -51,18 +51,18 @@ guide](https://github.com/ramensoftware/windows-11-taskbar-styling-guide/blob/ma
 
 Each entry has a target control and a list of styles.
 
-The target control is written as `Control` or `Control#Name`, i.e. the target
-control tag name, such as `taskbar:TaskListButton` or `Rectangle`, optionally
-followed by `#` and the target control's `x:Name` attribute. The target control
-can also include:
-* Child control index, for example: `Control#Name[2]` will only match the
-  relevant control that's also the second child among all of its parent's child
-  controls.
+The target control is written as `Class` or `Class#Name`, i.e. the target
+control class name (the tag name in XAML resource files), such as
+`Taskbar.TaskListButton` or `Rectangle`, optionally followed by `#` and the
+target control's name (`x:Name` attribute in XAML resource files). The target
+control can also include:
+* Child control index, for example: `Class#Name[2]` will only match the relevant
+  control that's also the second child among all of its parent's child controls.
 * Control properties, for example:
-  `Control#Name[Property1=Value1][Property2=Value2]`.
-* Parent controls, separated by `>`, for example: `ParentControl#ParentName >
-  Control#Name`.
-* Visual state group name, for example: `Control#Name@VisualStateGroupName`. It
+  `Class#Name[Property1=Value1][Property2=Value2]`.
+* Parent controls, separated by `>`, for example: `ParentClass#ParentName >
+  Class#Name`.
+* Visual state group name, for example: `Class#Name@VisualStateGroupName`. It
   can be specified for the target control or for a parent control, but can be
   specified only once per target. The visual state group can be used in styles
   as specified below.
@@ -82,14 +82,14 @@ A couple of practical examples:
 
 ![Screenshot](https://i.imgur.com/zDATi9K.png)
 
-* Target: `taskbar:TaskListButton`
+* Target: `Taskbar.TaskListButton`
 * Style: `CornerRadius=0`
 
 ### Running indicator size and color
 
 ![Screenshot](https://i.imgur.com/mR5c3F5.png)
 
-* Target: `taskbar:TaskListLabeledButtonPanel@RunningIndicatorStates >
+* Target: `Taskbar.TaskListLabeledButtonPanel@RunningIndicatorStates >
   Rectangle#RunningIndicator`
 * Styles:
     * `Fill=#FFED7014`
@@ -103,8 +103,8 @@ A couple of practical examples:
 ![Screenshot](https://i.imgur.com/LNPcw0G.png)
 
 * Targets:
-    * `taskbar:TaskListButtonPanel > Border#BackgroundElement`
-    * `taskbar:TaskListLabeledButtonPanel > Border#BackgroundElement`
+    * `Taskbar.TaskListButtonPanel > Border#BackgroundElement`
+    * `Taskbar.TaskListLabeledButtonPanel > Border#BackgroundElement`
 * Style: `Background:=<LinearGradientBrush StartPoint="0.5,0"
   EndPoint="0.5,1"><GradientStop Offset="0" Color="DodgerBlue"/><GradientStop
   Offset="1" Color="Yellow"/></LinearGradientBrush>`
@@ -112,14 +112,14 @@ A couple of practical examples:
 ### Hide the start button
 
 * Target:
-  `taskbar:ExperienceToggleButton#LaunchListButton[AutomationProperties.AutomationId=StartButton]`
+  `Taskbar.ExperienceToggleButton#LaunchListButton[AutomationProperties.AutomationId=StartButton]`
 * Style: `Visibility=Collapsed`
 
 ### Hide the network notification icon
 
-* Target: `systemtray:OmniButton#ControlCenterButton > Grid > ContentPresenter >
-  ItemsPresenter > StackPanel > ContentPresenter[1] > systemtray:IconView > Grid
-  > Grid`
+* Target: `SystemTray.OmniButton#ControlCenterButton > Grid > ContentPresenter >
+  ItemsPresenter > StackPanel > ContentPresenter[1] > SystemTray.IconView >
+  Grid > Grid`
 * Style: `Visibility=Collapsed`
 
 **Note**: To hide the volume notification icon instead, use `[2]` instead of
@@ -152,7 +152,7 @@ relevant `#pragma region` regions in the code editor.
 // ==WindhawkModSettings==
 /*
 - controlStyles:
-  - - target: taskbar:TaskListButton
+  - - target: Taskbar.TaskListButton
       $name: Target
     - styles: [CornerRadius=0]
       $name: Styles
