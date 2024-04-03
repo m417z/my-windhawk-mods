@@ -53,18 +53,18 @@ guide](https://github.com/ramensoftware/windows-11-start-menu-styling-guide/blob
 
 Each entry has a target control and a list of styles.
 
-The target control is written as `Control` or `Control#Name`, i.e. the target
-control tag name, such as `StartMenu:StartInnerFrame` or `Rectangle`, optionally
-followed by `#` and the target control's `x:Name` attribute. The target control
-can also include:
-* Child control index, for example: `Control#Name[2]` will only match the
-  relevant control that's also the second child among all of its parent's child
-  controls.
+The target control is written as `Class` or `Class#Name`, i.e. the target
+control class name (the tag name in XAML resource files), such as
+`StartMenu.StartInnerFrame` or `Rectangle`, optionally followed by `#` and the
+target control's name (`x:Name` attribute in XAML resource files). The target
+control can also include:
+* Child control index, for example: `Class#Name[2]` will only match the relevant
+  control that's also the second child among all of its parent's child controls.
 * Control properties, for example:
-  `Control#Name[Property1=Value1][Property2=Value2]`.
-* Parent controls, separated by `>`, for example: `ParentControl#ParentName >
-  Control#Name`.
-* Visual state group name, for example: `Control#Name@VisualStateGroupName`. It
+  `Class#Name[Property1=Value1][Property2=Value2]`.
+* Parent controls, separated by `>`, for example: `ParentClass#ParentName >
+  Class#Name`.
+* Visual state group name, for example: `Class#Name@VisualStateGroupName`. It
   can be specified for the target control or for a parent control, but can be
   specified only once per target. The visual state group can be used in styles
   as specified below.
