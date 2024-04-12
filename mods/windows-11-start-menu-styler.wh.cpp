@@ -120,7 +120,8 @@ code from the **TranslucentTB** project.
 std::atomic<DWORD> g_targetThreadId = 0;
 
 void ApplyCustomizations(InstanceHandle handle,
-                         winrt::Windows::UI::Xaml::FrameworkElement element);
+                         winrt::Windows::UI::Xaml::FrameworkElement element,
+                         PCWSTR fallbackClassName);
 void CleanupCustomizations(InstanceHandle handle);
 
 HMODULE GetCurrentModuleHandle() {
@@ -262,7 +263,7 @@ HRESULT VisualTreeWatcher::OnVisualTreeChange(ParentChildRelation, VisualElement
         if (frameworkElement)
         {
             Wh_Log(L"FrameworkElement name: %s", frameworkElement.Name().c_str());
-            ApplyCustomizations(element.Handle, frameworkElement);
+            ApplyCustomizations(element.Handle, frameworkElement, element.Type);
         }
     }
     else if (mutationType == Remove)
@@ -565,9 +566,11 @@ VisualStateGroup GetVisualStateGroup(FrameworkElement element,
 
 bool TestElementMatcher(FrameworkElement element,
                         const ElementMatcher& matcher,
-                        VisualStateGroup* visualStateGroup) {
+                        VisualStateGroup* visualStateGroup,
+                        PCWSTR fallbackClassName) {
     if (!matcher.type.empty() &&
-        matcher.type != winrt::get_class_name(element)) {
+        matcher.type != winrt::get_class_name(element) &&
+        (!fallbackClassName || matcher.type != fallbackClassName)) {
         return false;
     }
 
@@ -643,10 +646,11 @@ bool TestElementMatcher(FrameworkElement element,
 
 const ElementCustomizationRules* FindElementCustomizationRules(
     FrameworkElement element,
-    VisualStateGroup* visualStateGroup) {
+    VisualStateGroup* visualStateGroup,
+    PCWSTR fallbackClassName) {
     for (const auto& override : g_elementsCustomizationRules) {
         if (!TestElementMatcher(element, override.elementMatcher,
-                                visualStateGroup)) {
+                                visualStateGroup, fallbackClassName)) {
             continue;
         }
 
@@ -664,7 +668,7 @@ const ElementCustomizationRules* FindElementCustomizationRules(
             }
 
             if (!TestElementMatcher(parentElementIter, matcher,
-                                    visualStateGroup)) {
+                                    visualStateGroup, nullptr)) {
                 parentElementMatchFailed = true;
                 break;
             }
@@ -681,7 +685,9 @@ const ElementCustomizationRules* FindElementCustomizationRules(
 void ProcessAllStylesFromSettings();
 void ProcessResourceVariablesFromSettings();
 
-void ApplyCustomizations(InstanceHandle handle, FrameworkElement element) {
+void ApplyCustomizations(InstanceHandle handle,
+                         FrameworkElement element,
+                         PCWSTR fallbackClassName) {
     if (!g_elementsCustomizationRulesLoaded) {
         ProcessAllStylesFromSettings();
         ProcessResourceVariablesFromSettings();
@@ -689,7 +695,8 @@ void ApplyCustomizations(InstanceHandle handle, FrameworkElement element) {
     }
 
     VisualStateGroup visualStateGroup;
-    auto rules = FindElementCustomizationRules(element, &visualStateGroup);
+    auto rules = FindElementCustomizationRules(element, &visualStateGroup,
+                                               fallbackClassName);
     if (!rules) {
         return;
     }
