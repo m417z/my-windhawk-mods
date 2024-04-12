@@ -49,6 +49,23 @@ constexpr int DIALOG_HEIGHT =
 
 constexpr int IDC_MAIN_EDIT = 101;
 
+HINSTANCE g_hInstDLL;
+
+BOOL WINAPI DllMain(HINSTANCE hinstDLL, DWORD fdwReason, LPVOID lpReserved) {
+    switch (fdwReason) {
+        case DLL_PROCESS_ATTACH:
+            g_hInstDLL = hinstDLL;
+            break;
+
+        case DLL_THREAD_ATTACH:
+        case DLL_THREAD_DETACH:
+        case DLL_PROCESS_DETACH:
+            break;
+    }
+
+    return TRUE;
+}
+
 void ClientResize(HWND hWnd, int nWidth, int nHeight) {
     RECT rcClient, rcWind;
     POINT ptDiff;
@@ -165,31 +182,12 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 }
 
 std::optional<std::wstring> PromptForNewTitle(HWND hParentWnd) {
-    WNDCLASSEX wc{
-        .cbSize = sizeof(WNDCLASSEX),
-        .style = 0,
-        .lpfnWndProc = WndProc,
-        .cbClsExtra = 0,
-        .cbWndExtra = 0,
-        .hInstance = GetModuleHandle(nullptr),
-        .hIcon = LoadIcon(nullptr, IDI_APPLICATION),
-        .hCursor = LoadCursor(nullptr, IDC_ARROW),
-        .hbrBackground = (HBRUSH)(COLOR_BTNFACE + 1),
-        .lpszMenuName = nullptr,
-        .lpszClassName = g_szClassName,
-        .hIconSm = LoadIcon(nullptr, IDI_APPLICATION),
-    };
-    if (!RegisterClassEx(&wc)) {
-        return std::nullopt;
-    }
-
     std::optional<std::wstring> result;
     HWND hwnd = CreateWindowEx(WS_EX_TOOLWINDOW, g_szClassName,
                                L"Name this window", WS_POPUPWINDOW | WS_CAPTION,
                                CW_USEDEFAULT, CW_USEDEFAULT, 100, 100,
-                               hParentWnd, nullptr, wc.hInstance, &result);
+                               hParentWnd, nullptr, g_hInstDLL, &result);
     if (!hwnd) {
-        UnregisterClass(wc.lpszClassName, wc.hInstance);
         return std::nullopt;
     }
 
@@ -201,8 +199,6 @@ std::optional<std::wstring> PromptForNewTitle(HWND hParentWnd) {
         TranslateMessage(&msg);
         DispatchMessage(&msg);
     }
-
-    UnregisterClass(wc.lpszClassName, wc.hInstance);
 
     return result;
 }
@@ -381,6 +377,24 @@ void HandleCurrentProcessCabinetWindows() {
 BOOL Wh_ModInit() {
     Wh_Log(L">");
 
+    WNDCLASSEX wc{
+        .cbSize = sizeof(WNDCLASSEX),
+        .style = 0,
+        .lpfnWndProc = WndProc,
+        .cbClsExtra = 0,
+        .cbWndExtra = 0,
+        .hInstance = g_hInstDLL,
+        .hIcon = LoadIcon(nullptr, IDI_APPLICATION),
+        .hCursor = LoadCursor(nullptr, IDC_ARROW),
+        .hbrBackground = (HBRUSH)(COLOR_BTNFACE + 1),
+        .lpszMenuName = nullptr,
+        .lpszClassName = g_szClassName,
+        .hIconSm = LoadIcon(nullptr, IDI_APPLICATION),
+    };
+    if (!RegisterClassEx(&wc)) {
+        Wh_Log(L"RegisterClassEx failed");
+    }
+
     Wh_SetFunctionHook((void*)CreateWindowExW, (void*)CreateWindowExW_Hook,
                        (void**)&CreateWindowExW_Original);
 
@@ -399,6 +413,8 @@ void Wh_ModUninit() {
     for (const auto& [hWnd, _] : g_cabinetWindows) {
         ResetIdentifiedCabinetWindow(hWnd);
     }
+
+    UnregisterClass(g_szClassName, g_hInstDLL);
 }
 
 void Wh_ModSettingsChanged() {
