@@ -812,7 +812,10 @@ void UpdateTaskListButtonWithLabelStyle(
             labelControlElement.HorizontalAlignment(horizontalAlignment);
         }
 
-        if (g_settings.taskbarItemWidth == 0) {
+        if (g_unloading) {
+            labelControlElement.MaxWidth(
+                std::max(0.0, 176 - firstColumnWidthPixels));
+        } else if (g_settings.taskbarItemWidth == 0) {
             labelControlElement.MaxWidth(std::max(
                 0.0,
                 g_settings.maximumTaskbarItemWidth - firstColumnWidthPixels));
