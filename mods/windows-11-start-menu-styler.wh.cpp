@@ -30,10 +30,38 @@ An advanced mod to override style attributes of the start menu control elements.
 
 Also check out the **Windows 11 Taskbar Styler** mod.
 
-The settings have two sections: control styles and resource variables. Control
-styles allow to override styles, such as size and color, for the target
-elements. Resource variables allow to override predefined variables. For a more
-detailed explanation and examples, refer to the sections below.
+## Themes
+
+Themes are collections of styles. The following themes are integrated into the
+mod and can be selected in the settings:
+
+![NoRecommendedSection](https://raw.githubusercontent.com/ramensoftware/windows-11-start-menu-styling-guide/main/Themes/NoRecommendedSection/screenshot-small.png)
+\
+[NoRecommendedSection](https://github.com/ramensoftware/windows-11-start-menu-styling-guide/blob/main/Themes/NoRecommendedSection/README.md)
+
+![SideBySide](https://raw.githubusercontent.com/ramensoftware/windows-11-start-menu-styling-guide/main/Themes/SideBySide/screenshot-small.png)
+\
+[SideBySide](https://github.com/ramensoftware/windows-11-start-menu-styling-guide/blob/main/Themes/SideBySide/README.md)
+
+![SideBySide2](https://raw.githubusercontent.com/ramensoftware/windows-11-start-menu-styling-guide/main/Themes/SideBySide2/screenshot-small.png)
+\
+[SideBySide2](https://github.com/ramensoftware/windows-11-start-menu-styling-guide/blob/main/Themes/SideBySide2/README.md)
+
+![SideBySideMinimal](https://raw.githubusercontent.com/ramensoftware/windows-11-start-menu-styling-guide/main/Themes/SideBySideMinimal/screenshot-small.png)
+\
+[SideBySideMinimal](https://github.com/ramensoftware/windows-11-start-menu-styling-guide/blob/main/Themes/SideBySideMinimal/README.md)
+
+More themes can be found in the **Themes** section of [The Windows 11 start menu
+styling
+guide](https://github.com/ramensoftware/windows-11-start-menu-styling-guide/blob/main/README.md#themes).
+Contributions of new themes are welcome!
+
+## Advanced styling
+
+Aside from themes, the settings have two sections: control styles and resource
+variables. Control styles allow to override styles, such as size and color, for
+the target elements. Resource variables allow to override predefined variables.
+For a more detailed explanation and examples, refer to the sections below.
 
 The start menu's XAML resources can help find out which elements and resource
 variables can be customized. To the best of my knowledge, there are no public
@@ -49,7 +77,7 @@ For a collection of commonly requested taskbar styling customizations, check out
 [The Windows 11 start menu styling
 guide](https://github.com/ramensoftware/windows-11-start-menu-styling-guide/blob/main/README.md).
 
-## Control styles
+### Control styles
 
 Each entry has a target control and a list of styles.
 
@@ -78,7 +106,7 @@ Color="Red"/>`. In addition, a visual state can be specified as following:
 `Style@VisualState=Value`, in which case the style will only apply when the
 visual state group specified in the target matches the specified visual state.
 
-## Resource variables
+### Resource variables
 
 Some variables, such as size and padding for various controls, are defined as
 resource variables.
@@ -93,6 +121,18 @@ code from the **TranslucentTB** project.
 
 // ==WindhawkModSettings==
 /*
+- theme: ""
+  $name: Theme
+  $description: >-
+    Themes are collections of styles. For details about the themes below, or for
+    information about submitting your own theme, refer to the relevant section
+    in the mod details.
+  $options:
+  - "": None
+  - NoRecommendedSection: NoRecommendedSection
+  - SideBySide: SideBySide
+  - SideBySide2: SideBySide2
+  - SideBySideMinimal: SideBySideMinimal
 - controlStyles:
   - - target: Border#AcrylicBorder
       $name: Target
@@ -112,10 +152,201 @@ code from the **TranslucentTB** project.
 #include <xamlom.h>
 
 #include <atomic>
+#include <vector>
 
 #undef GetCurrentTime
 
 #include <winrt/Windows.UI.Xaml.h>
+
+struct ThemeTargetStyles {
+    PCWSTR target;
+    std::vector<PCWSTR> styles;
+};
+
+struct Theme {
+    std::vector<ThemeTargetStyles> targetStyles;
+};
+
+/*
+JSON settings to C++ theme conversion code, quick'n'dirty & AI-generated:
+
+json_str = R"""
+{...}
+"""
+
+def json_to_cpp(json_data):
+    def cmp(x):
+        key_prefix = x[0].removeprefix("controlStyles[")
+        index1 = int(key_prefix.split("]")[0])
+        if ".target" in key_prefix:
+            index2 = -1
+        elif ".styles" in key_prefix:
+            index2 = int(key_prefix.split("[")[1].split("]")[0])
+        else:
+            assert False
+        return index1, index2
+
+    cpp_code = "{{\n"
+    for key, value in sorted(json_data.items(), key=cmp):
+        value_escaped = value.replace('"', '\\"')
+        if ".target" in key:
+            if cpp_code != "{{\n":
+                cpp_code = cpp_code.removesuffix(", ")
+                cpp_code += "}},\n"
+            cpp_code += "    ThemeTargetStyles{\n"
+            cpp_code += f"        L\"{value_escaped}\",\n"
+            cpp_code += "        {"
+        elif ".styles" in key:
+            cpp_code += f"L\"{value_escaped}\", "
+        else:
+            assert False
+    cpp_code = cpp_code.removesuffix(", ")
+    cpp_code += "}},\n"
+    cpp_code += "}};"
+    return cpp_code
+
+json_input = json.loads(json_str)
+
+cpp_output = json_to_cpp(json_input)
+print(cpp_output)
+*/
+
+const Theme g_themeNoRecommendedSection = {{
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Grid#ShowMoreSuggestions",
+                      {L"Visibility=Collapsed"}},
+    ThemeTargetStyles{
+        L"Windows.UI.Xaml.Controls.Grid#SuggestionsParentContainer",
+        {L"Visibility=Collapsed"}},
+    ThemeTargetStyles{
+        L"Windows.UI.Xaml.Controls.Grid#TopLevelSuggestionsListHeader",
+        {L"Visibility=Collapsed"}},
+    ThemeTargetStyles{L"StartMenu.PinnedList", {L"Height=504"}},
+}};
+
+// Author: kaoshipaws (https://k4oshi.top/)
+const Theme g_themeSideBySide = {{
+    ThemeTargetStyles{
+        L"Windows.UI.Xaml.Controls.Grid#UndockedRoot",
+        {L"Visibility=Visible", L"MaxWidth=700", L"Margin=0,0,300,0"}},
+    ThemeTargetStyles{
+        L"Windows.UI.Xaml.Controls.Grid#AllAppsRoot",
+        {L"Visibility=Visible", L"Width=350",
+         L"Transform3D:=<CompositeTransform3D TranslateX=\"-602\" />"}},
+    ThemeTargetStyles{
+        L"StartDocked.AllAppsGridListView > ScrollViewer > Border > Grid > "
+        L"ScrollContentPresenter > ItemsPresenter > TileGrid",
+        {L"Transform3D:=<CompositeTransform3D TranslateX=\"20\" />"}},
+    ThemeTargetStyles{
+        L"Grid#AllAppsPaneHeader",
+        {L"Transform3D:=<CompositeTransform3D TranslateX=\"20\" />"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Button#CloseAllAppsButton",
+                      {L"Visibility=Collapsed"}},
+    ThemeTargetStyles{L"StartDocked.StartSizingFrame",
+                      {L"MinWidth=850", L"MaxWidth=850"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Grid#ShowMoreSuggestions",
+                      {L"Visibility=Collapsed"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Button#ShowAllAppsButton",
+                      {L"Visibility=Collapsed"}},
+    ThemeTargetStyles{
+        L"Windows.UI.Xaml.Controls.ContentControl",
+        {L"Transform3D:=<CompositeTransform3D TranslateX=\"-200\" />"}},
+    ThemeTargetStyles{
+        L"Windows.UI.Xaml.Controls.GridView#RecommendedList > "
+        L"Windows.UI.Xaml.Controls.Border > "
+        L"Windows.UI.Xaml.Controls.ScrollViewer#ScrollViewer > "
+        L"Windows.UI.Xaml.Controls.Border#Root > Windows.UI.Xaml.Controls.Grid "
+        L"> "
+        L"Windows.UI.Xaml.Controls.ScrollContentPresenter#"
+        L"ScrollContentPresenter > Windows.UI.Xaml.Controls.ItemsPresenter > "
+        L"Windows.UI.Xaml.Controls.ItemsWrapGrid > "
+        L"Windows.UI.Xaml.Controls.GridViewItem",
+        {L"MaxWidth=220", L"MinWidth=100"}},
+}};
+
+// Author: Pyxisynth
+const Theme g_themeSideBySide2 = {{
+    ThemeTargetStyles{
+        L"Windows.UI.Xaml.Controls.Grid#UndockedRoot",
+        {L"Visibility=Visible", L"MaxWidth=700", L"Margin=232,0,0,0"}},
+    ThemeTargetStyles{
+        L"Windows.UI.Xaml.Controls.Grid#AllAppsRoot",
+        {L"Visibility=Visible", L"Width=322",
+         L"Transform3D:=<CompositeTransform3D TranslateX=\"-1059\" />"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Button#CloseAllAppsButton",
+                      {L"Visibility=Collapsed"}},
+    ThemeTargetStyles{L"StartDocked.StartSizingFrame",
+                      {L"MinWidth=776", L"MaxWidth=776"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Grid#ShowMoreSuggestions",
+                      {L"Visibility=Collapsed"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Button#ShowAllAppsButton",
+                      {L"Visibility=Collapsed"}},
+    ThemeTargetStyles{
+        L"Windows.UI.Xaml.Controls.GridView#RecommendedList > "
+        L"Windows.UI.Xaml.Controls.Border > "
+        L"Windows.UI.Xaml.Controls.ScrollViewer#ScrollViewer > "
+        L"Windows.UI.Xaml.Controls.Border#Root > Windows.UI.Xaml.Controls.Grid "
+        L"> "
+        L"Windows.UI.Xaml.Controls.ScrollContentPresenter#"
+        L"ScrollContentPresenter > Windows.UI.Xaml.Controls.ItemsPresenter > "
+        L"Windows.UI.Xaml.Controls.ItemsWrapGrid > "
+        L"Windows.UI.Xaml.Controls.GridViewItem",
+        {L"MaxWidth=220", L"MinWidth=220"}},
+    ThemeTargetStyles{L"StartDocked.AllAppsGridListView#AppsList",
+                      {L"Padding=48,3,-36,32"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Grid#AllAppsPaneHeader",
+                      {L"Margin=97,0,0,0"}},
+    ThemeTargetStyles{
+        L"Windows.UI.Xaml.Controls.Grid#SuggestionsParentContainer",
+        {L"Height=168"}},
+    ThemeTargetStyles{L"StartDocked.NavigationPaneView#NavigationPane",
+                      {L"FlowDirection=1", L"Margin=30,0,30,0"}},
+    ThemeTargetStyles{L"StartDocked.PowerOptionsView#PowerButton",
+                      {L"FlowDirection=0"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.ItemsStackPanel",
+                      {L"FlowDirection=1"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.ListViewItem",
+                      {L"FlowDirection=0"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.ItemsStackPanel > "
+                      L"Windows.UI.Xaml.Controls.ListViewItem",
+                      {L"FlowDirection=0"}},
+    ThemeTargetStyles{L"StartDocked.SearchBoxToggleButton#StartMenuSearchBox",
+                      {L"Margin=23,1,23,14"}},
+    ThemeTargetStyles{
+        L"Windows.UI.Xaml.Controls.TextBlock#NoSuggestionsWithoutSettingsLink",
+        {L"Margin=11,0,48,0"}},
+}};
+
+// Author: Windows XP (6.1.7601)
+const Theme g_themeSideBySideMinimal = {{
+    ThemeTargetStyles{
+        L"Windows.UI.Xaml.Controls.Grid#UndockedRoot",
+        {L"Visibility=Visible", L"Width=348",
+         L"Transform3D:=<CompositeTransform3D TranslateX=\"178\" />",
+         L"Margin=-80,-20,0,0", L"Padding=0,0,0,0"}},
+    ThemeTargetStyles{
+        L"Windows.UI.Xaml.Controls.Grid#AllAppsRoot",
+        {L"Visibility=Visible", L"Width=320",
+         L"Transform3D:=<CompositeTransform3D TranslateX=\"-800\" />",
+         L"Margin=-30,-20,0,0"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Grid#ShowMoreSuggestions",
+                      {L"Visibility=Collapsed"}},
+    ThemeTargetStyles{
+        L"Windows.UI.Xaml.Controls.Grid#SuggestionsParentContainer",
+        {L"Visibility=Collapsed"}},
+    ThemeTargetStyles{
+        L"Windows.UI.Xaml.Controls.Grid#TopLevelSuggestionsListHeader",
+        {L"Visibility=Collapsed"}},
+    ThemeTargetStyles{L"StartDocked.SearchBoxToggleButton",
+                      {L"Height=0", L"Width=0"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Grid#TopLevelRoot > "
+                      L"Windows.UI.Xaml.Controls.Border",
+                      {L"Visibility=Collapsed"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Button#CloseAllAppsButton",
+                      {L"Visibility=Collapsed"}},
+    ThemeTargetStyles{L"StartDocked.PowerOptionsView", {L"Margin=-575,0,0,0"}},
+    ThemeTargetStyles{L"StartDocked.UserTileView", {L"Visibility=Collapsed"}},
+    ThemeTargetStyles{L"StartMenu.PinnedList", {L"Height=504"}},
+}};
 
 std::atomic<DWORD> g_targetThreadId = 0;
 
@@ -1345,6 +1576,35 @@ void ProcessAllStylesFromSettings() {
             Wh_Log(L"Error %08X: %s", ex.code(), ex.message().c_str());
         } catch (std::exception const& ex) {
             Wh_Log(L"Error: %S", ex.what());
+        }
+    }
+
+    PCWSTR themeName = Wh_GetStringSetting(L"theme");
+    const Theme* theme = nullptr;
+    if (wcscmp(themeName, L"NoRecommendedSection") == 0) {
+        theme = &g_themeNoRecommendedSection;
+    } else if (wcscmp(themeName, L"SideBySide") == 0) {
+        theme = &g_themeSideBySide;
+    } else if (wcscmp(themeName, L"SideBySide2") == 0) {
+        theme = &g_themeSideBySide2;
+    } else if (wcscmp(themeName, L"SideBySideMinimal") == 0) {
+        theme = &g_themeSideBySideMinimal;
+    }
+    Wh_FreeStringSetting(themeName);
+
+    if (theme) {
+        for (const auto& themeTargetStyle : theme->targetStyles) {
+            try {
+                std::vector<std::wstring> styles{
+                    themeTargetStyle.styles.begin(),
+                    themeTargetStyle.styles.end()};
+                AddElementCustomizationRules(themeTargetStyle.target,
+                                             std::move(styles));
+            } catch (winrt::hresult_error const& ex) {
+                Wh_Log(L"Error %08X", ex.code());
+            } catch (std::exception const& ex) {
+                Wh_Log(L"Error: %S", ex.what());
+            }
         }
     }
 }
