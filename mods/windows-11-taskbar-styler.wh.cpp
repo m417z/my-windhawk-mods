@@ -2,7 +2,7 @@
 // @id              windows-11-taskbar-styler
 // @name            Windows 11 Taskbar Styler
 // @description     An advanced mod to override style attributes of the taskbar control elements
-// @version         1.2.3
+// @version         1.3
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
@@ -39,7 +39,7 @@ mod and can be selected in the settings:
 
 More themes can be found in the **Themes** section of [The Windows 11 taskbar
 styling
-guide](https://github.com/ramensoftware/windows-11-taskbar-styling-guide/blob/main/README.md).
+guide](https://github.com/ramensoftware/windows-11-taskbar-styling-guide/blob/main/README.md#themes).
 Contributions of new themes are welcome!
 
 ## Advanced styling
