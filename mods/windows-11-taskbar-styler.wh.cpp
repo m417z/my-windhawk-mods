@@ -1386,6 +1386,7 @@ HRESULT InjectWindhawkTAP() noexcept
 #include <string>
 #include <string_view>
 #include <unordered_map>
+#include <variant>
 #include <vector>
 
 #include <commctrl.h>
@@ -1414,13 +1415,18 @@ using string_setting_unique_ptr =
 using PropertyKeyValue =
     std::pair<DependencyProperty, winrt::Windows::Foundation::IInspectable>;
 
+using PropertyValuesUnresolved =
+    std::vector<std::pair<std::wstring, std::wstring>>;
+using PropertyValues = std::vector<PropertyKeyValue>;
+using PropertyValuesMaybeUnresolved =
+    std::variant<PropertyValuesUnresolved, PropertyValues>;
+
 struct ElementMatcher {
     std::wstring type;
     std::wstring name;
     std::optional<std::wstring> visualStateGroupName;
     int oneBasedIndex = 0;
-    std::vector<std::pair<std::wstring, std::wstring>> propertyValuesStr;
-    std::vector<PropertyKeyValue> propertyValues;
+    PropertyValuesMaybeUnresolved propertyValues;
 };
 
 struct StyleRule {
@@ -1430,18 +1436,22 @@ struct StyleRule {
     bool isXamlValue = false;
 };
 
+using PropertyOverridesUnresolved = std::vector<StyleRule>;
+
 // Property -> visual state -> value.
 using PropertyOverrides = std::unordered_map<
     DependencyProperty,
     std::unordered_map<std::wstring, winrt::Windows::Foundation::IInspectable>>;
 
+using PropertyOverridesMaybeUnresolved =
+    std::variant<PropertyOverridesUnresolved, PropertyOverrides>;
+
 struct ElementCustomizationRules {
     ElementMatcher elementMatcher;
     std::vector<ElementMatcher> parentElementMatchers;
-    PropertyOverrides propertyOverrides;
+    PropertyOverridesMaybeUnresolved propertyOverrides;
 };
 
-bool g_elementsCustomizationRulesLoaded;
 std::vector<ElementCustomizationRules> g_elementsCustomizationRules;
 
 struct ElementPropertyCustomizationState {
@@ -1465,6 +1475,216 @@ bool g_elementPropertyModifying;
 
 bool g_inTaskbarBackground_OnApplyTemplate;
 
+// https://stackoverflow.com/a/5665377
+std::wstring EscapeXmlAttribute(std::wstring_view data) {
+    std::wstring buffer;
+    buffer.reserve(data.size());
+    for (size_t pos = 0; pos != data.size(); ++pos) {
+        switch (data[pos]) {
+            case '&':
+                buffer.append(L"&amp;");
+                break;
+            case '\"':
+                buffer.append(L"&quot;");
+                break;
+            // case '\'':
+            //     buffer.append(L"&apos;");
+            //     break;
+            case '<':
+                buffer.append(L"&lt;");
+                break;
+            case '>':
+                buffer.append(L"&gt;");
+                break;
+            default:
+                buffer.append(&data[pos], 1);
+                break;
+        }
+    }
+
+    return buffer;
+}
+
+// https://stackoverflow.com/a/54364173
+std::wstring_view TrimStringView(std::wstring_view s) {
+    s.remove_prefix(std::min(s.find_first_not_of(L" \t\r\v\n"), s.size()));
+    s.remove_suffix(
+        std::min(s.size() - s.find_last_not_of(L" \t\r\v\n") - 1, s.size()));
+    return s;
+}
+
+// https://stackoverflow.com/a/46931770
+std::vector<std::wstring_view> SplitStringView(std::wstring_view s,
+                                               std::wstring_view delimiter) {
+    size_t pos_start = 0, pos_end, delim_len = delimiter.length();
+    std::wstring_view token;
+    std::vector<std::wstring_view> res;
+
+    while ((pos_end = s.find(delimiter, pos_start)) !=
+           std::wstring_view::npos) {
+        token = s.substr(pos_start, pos_end - pos_start);
+        pos_start = pos_end + delim_len;
+        res.push_back(token);
+    }
+
+    res.push_back(s.substr(pos_start));
+    return res;
+}
+
+Style GetStyleFromXamlSetters(const std::wstring_view type,
+                              const std::wstring_view xamlStyleSetters) {
+    std::wstring xaml =
+        LR"(<ResourceDictionary
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    xmlns:muxc="using:Microsoft.UI.Xaml.Controls")";
+
+    if (auto pos = type.rfind('.'); pos != type.npos) {
+        auto typeNamespace = std::wstring_view(type).substr(0, pos);
+        auto typeName = std::wstring_view(type).substr(pos + 1);
+
+        xaml += L"\n    xmlns:windhawkstyler=\"using:";
+        xaml += EscapeXmlAttribute(typeNamespace);
+        xaml +=
+            L"\">\n"
+            L"    <Style TargetType=\"windhawkstyler:";
+        xaml += EscapeXmlAttribute(typeName);
+        xaml += L"\">\n";
+    } else {
+        xaml +=
+            L">\n"
+            L"    <Style TargetType=\"";
+        xaml += EscapeXmlAttribute(type);
+        xaml += L"\">\n";
+    }
+
+    xaml += xamlStyleSetters;
+
+    xaml +=
+        L"    </Style>\n"
+        L"</ResourceDictionary>";
+
+    Wh_Log(L"======================================== XAML:");
+    std::wstringstream ss(xaml);
+    std::wstring line;
+    while (std::getline(ss, line, L'\n')) {
+        Wh_Log(L"%s", line.c_str());
+    }
+    Wh_Log(L"========================================");
+
+    auto resourceDictionary =
+        Markup::XamlReader::Load(xaml).as<ResourceDictionary>();
+
+    auto [styleKey, styleInspectable] = resourceDictionary.First().Current();
+    return styleInspectable.as<Style>();
+}
+
+const PropertyOverrides& GetResolvedPropertyOverrides(
+    const std::wstring_view type,
+    PropertyOverridesMaybeUnresolved* propertyOverridesMaybeUnresolved) {
+    if (const auto* resolved =
+            std::get_if<PropertyOverrides>(propertyOverridesMaybeUnresolved)) {
+        return *resolved;
+    }
+
+    PropertyOverrides propertyOverrides;
+
+    try {
+        const auto& styleRules = std::get<PropertyOverridesUnresolved>(
+            *propertyOverridesMaybeUnresolved);
+        if (!styleRules.empty()) {
+            std::wstring xaml;
+
+            for (const auto& rule : styleRules) {
+                xaml += L"        <Setter Property=\"";
+                xaml += EscapeXmlAttribute(rule.name);
+                xaml += L"\"";
+                if (!rule.isXamlValue) {
+                    xaml += L" Value=\"";
+                    xaml += EscapeXmlAttribute(rule.value);
+                    xaml += L"\" />\n";
+                } else {
+                    xaml +=
+                        L">\n"
+                        L"            <Setter.Value>\n";
+                    xaml += rule.value;
+                    xaml +=
+                        L"\n"
+                        L"            </Setter.Value>\n"
+                        L"        </Setter>\n";
+                }
+            }
+
+            auto style = GetStyleFromXamlSetters(type, xaml);
+
+            for (size_t i = 0; i < styleRules.size(); i++) {
+                const auto setter = style.Setters().GetAt(i).as<Setter>();
+                propertyOverrides[setter.Property()]
+                                 [styleRules[i].visualState] = setter.Value();
+            }
+        }
+
+        Wh_Log(L"%.*s: %zu override styles", static_cast<int>(type.length()),
+               type.data(), propertyOverrides.size());
+    } catch (winrt::hresult_error const& ex) {
+        Wh_Log(L"Error %08X: %s", ex.code(), ex.message().c_str());
+    } catch (std::exception const& ex) {
+        Wh_Log(L"Error: %S", ex.what());
+    }
+
+    *propertyOverridesMaybeUnresolved = std::move(propertyOverrides);
+    return std::get<PropertyOverrides>(*propertyOverridesMaybeUnresolved);
+}
+
+const PropertyValues& GetResolvedPropertyValues(
+    const std::wstring_view type,
+    PropertyValuesMaybeUnresolved* propertyValuesMaybeUnresolved) {
+    if (const auto* resolved =
+            std::get_if<PropertyValues>(propertyValuesMaybeUnresolved)) {
+        return *resolved;
+    }
+
+    PropertyValues propertyValues;
+
+    try {
+        const auto& propertyValuesStr =
+            std::get<PropertyValuesUnresolved>(*propertyValuesMaybeUnresolved);
+        if (!propertyValuesStr.empty()) {
+            std::wstring xaml;
+
+            for (const auto& [property, value] : propertyValuesStr) {
+                xaml += L"        <Setter Property=\"";
+                xaml += EscapeXmlAttribute(property);
+                xaml += L"\" Value=\"";
+                xaml += EscapeXmlAttribute(value);
+                xaml += L"\" />\n";
+            }
+
+            auto style = GetStyleFromXamlSetters(type, xaml);
+
+            for (size_t i = 0; i < propertyValuesStr.size(); i++) {
+                const auto setter = style.Setters().GetAt(i).as<Setter>();
+                propertyValues.push_back({
+                    setter.Property(),
+                    setter.Value(),
+                });
+            }
+        }
+
+        Wh_Log(L"%.*s: %zu matcher styles", static_cast<int>(type.length()),
+               type.data(), propertyValues.size());
+    } catch (winrt::hresult_error const& ex) {
+        Wh_Log(L"Error %08X: %s", ex.code(), ex.message().c_str());
+    } catch (std::exception const& ex) {
+        Wh_Log(L"Error: %S", ex.what());
+    }
+
+    *propertyValuesMaybeUnresolved = std::move(propertyValues);
+    return std::get<PropertyValues>(*propertyValuesMaybeUnresolved);
+}
+
 // https://stackoverflow.com/a/12835139
 VisualStateGroup GetVisualStateGroup(FrameworkElement element,
                                      std::wstring_view visualStateGroupName) {
@@ -1480,7 +1700,7 @@ VisualStateGroup GetVisualStateGroup(FrameworkElement element,
 }
 
 bool TestElementMatcher(FrameworkElement element,
-                        const ElementMatcher& matcher,
+                        ElementMatcher& matcher,
                         VisualStateGroup* visualStateGroup,
                         PCWSTR fallbackClassName) {
     if (!matcher.type.empty() &&
@@ -1509,7 +1729,8 @@ bool TestElementMatcher(FrameworkElement element,
 
     auto elementDo = element.as<DependencyObject>();
 
-    for (const auto& propertyValue : matcher.propertyValues) {
+    for (const auto& propertyValue :
+         GetResolvedPropertyValues(matcher.type, &matcher.propertyValues)) {
         const auto value = elementDo.ReadLocalValue(propertyValue.first);
         const auto className = winrt::get_class_name(value);
         const auto expectedClassName =
@@ -1559,11 +1780,11 @@ bool TestElementMatcher(FrameworkElement element,
     return true;
 }
 
-const ElementCustomizationRules* FindElementCustomizationRules(
+ElementCustomizationRules* FindElementCustomizationRules(
     FrameworkElement element,
     VisualStateGroup* visualStateGroup,
     PCWSTR fallbackClassName) {
-    for (const auto& override : g_elementsCustomizationRules) {
+    for (auto& override : g_elementsCustomizationRules) {
         if (!TestElementMatcher(element, override.elementMatcher,
                                 visualStateGroup, fallbackClassName)) {
             continue;
@@ -1572,7 +1793,7 @@ const ElementCustomizationRules* FindElementCustomizationRules(
         auto parentElementIter = element;
         bool parentElementMatchFailed = false;
 
-        for (const auto& matcher : override.parentElementMatchers) {
+        for (auto& matcher : override.parentElementMatchers) {
             // Using parentElementIter.Parent() was sometimes returning null.
             parentElementIter =
                 Media::VisualTreeHelper::GetParent(parentElementIter)
@@ -1597,18 +1818,9 @@ const ElementCustomizationRules* FindElementCustomizationRules(
     return nullptr;
 }
 
-void ProcessAllStylesFromSettings();
-void ProcessResourceVariablesFromSettings();
-
 void ApplyCustomizations(InstanceHandle handle,
                          FrameworkElement element,
                          PCWSTR fallbackClassName) {
-    if (!g_elementsCustomizationRulesLoaded) {
-        ProcessAllStylesFromSettings();
-        ProcessResourceVariablesFromSettings();
-        g_elementsCustomizationRulesLoaded = true;
-    }
-
     VisualStateGroup visualStateGroup;
     auto rules = FindElementCustomizationRules(element, &visualStateGroup,
                                                fallbackClassName);
@@ -1656,7 +1868,8 @@ void ApplyCustomizations(InstanceHandle handle,
     std::wstring currentVisualStateName(
         currentVisualState ? currentVisualState.Name() : L"");
 
-    for (auto& [property, valuesPerVisualState] : rules->propertyOverrides) {
+    for (auto& [property, valuesPerVisualState] : GetResolvedPropertyOverrides(
+             rules->elementMatcher.type, &rules->propertyOverrides)) {
         const auto [propertyCustomizationStatesIt, inserted] =
             elementCustomizationState.propertyCustomizationStates.insert(
                 {property, {}});
@@ -1733,7 +1946,9 @@ void ApplyCustomizations(InstanceHandle handle,
                         elementCustomizationState.propertyCustomizationStates;
 
                     for (auto& [property, valuesPerVisualState] :
-                         rules->propertyOverrides) {
+                         GetResolvedPropertyOverrides(
+                             rules->elementMatcher.type,
+                             &rules->propertyOverrides)) {
                         auto& propertyCustomizationState =
                             propertyCustomizationStates.at(property);
 
@@ -1812,176 +2027,9 @@ void CleanupCustomizations(InstanceHandle handle) {
     g_elementsCustomizationState.erase(it);
 }
 
-// https://stackoverflow.com/a/5665377
-std::wstring EscapeXmlAttribute(std::wstring_view data) {
-    std::wstring buffer;
-    buffer.reserve(data.size());
-    for (size_t pos = 0; pos != data.size(); ++pos) {
-        switch (data[pos]) {
-            case '&':
-                buffer.append(L"&amp;");
-                break;
-            case '\"':
-                buffer.append(L"&quot;");
-                break;
-            // case '\'':
-            //     buffer.append(L"&apos;");
-            //     break;
-            case '<':
-                buffer.append(L"&lt;");
-                break;
-            case '>':
-                buffer.append(L"&gt;");
-                break;
-            default:
-                buffer.append(&data[pos], 1);
-                break;
-        }
-    }
-
-    return buffer;
-}
-
-// https://stackoverflow.com/a/54364173
-std::wstring_view TrimStringView(std::wstring_view s) {
-    s.remove_prefix(std::min(s.find_first_not_of(L" \t\r\v\n"), s.size()));
-    s.remove_suffix(
-        std::min(s.size() - s.find_last_not_of(L" \t\r\v\n") - 1, s.size()));
-    return s;
-}
-
-// https://stackoverflow.com/a/46931770
-std::vector<std::wstring_view> SplitStringView(std::wstring_view s,
-                                               std::wstring_view delimiter) {
-    size_t pos_start = 0, pos_end, delim_len = delimiter.length();
-    std::wstring_view token;
-    std::vector<std::wstring_view> res;
-
-    while ((pos_end = s.find(delimiter, pos_start)) !=
-           std::wstring_view::npos) {
-        token = s.substr(pos_start, pos_end - pos_start);
-        pos_start = pos_end + delim_len;
-        res.push_back(token);
-    }
-
-    res.push_back(s.substr(pos_start));
-    return res;
-}
-
-void ResolveTypeAndStyles(ElementMatcher* elementMatcher,
-                          std::vector<StyleRule> styleRules = {},
-                          PropertyOverrides* propertyOverrides = nullptr) {
-    std::wstring xaml =
-        LR"(<ResourceDictionary
-    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
-    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
-    xmlns:muxc="using:Microsoft.UI.Xaml.Controls"
-    xmlns:taskbar="using:Taskbar"
-    xmlns:udk="using:WindowsUdk.UI.Shell"
-    xmlns:systemtray="using:SystemTray")";
-
-    if (auto pos = elementMatcher->type.rfind('.');
-        pos != elementMatcher->type.npos) {
-        auto typeNamespace =
-            std::wstring_view(elementMatcher->type).substr(0, pos);
-        auto typeName = std::wstring_view(elementMatcher->type).substr(pos + 1);
-
-        xaml += L"\n    xmlns:windhawkstyler=\"using:";
-        xaml += EscapeXmlAttribute(typeNamespace);
-        xaml +=
-            L"\">\n"
-            L"    <Style TargetType=\"windhawkstyler:";
-        xaml += EscapeXmlAttribute(typeName);
-        xaml += L"\">\n";
-    } else {
-        xaml +=
-            L">\n"
-            L"    <Style TargetType=\"";
-        xaml += EscapeXmlAttribute(elementMatcher->type);
-        xaml += L"\">\n";
-    }
-
-    for (const auto& [property, value] : elementMatcher->propertyValuesStr) {
-        xaml += L"        <Setter Property=\"";
-        xaml += EscapeXmlAttribute(property);
-        xaml += L"\" Value=\"";
-        xaml += EscapeXmlAttribute(value);
-        xaml += L"\" />\n";
-    }
-
-    for (const auto& rule : styleRules) {
-        xaml += L"        <Setter Property=\"";
-        xaml += EscapeXmlAttribute(rule.name);
-        xaml += L"\"";
-        if (!rule.isXamlValue) {
-            xaml += L" Value=\"";
-            xaml += EscapeXmlAttribute(rule.value);
-            xaml += L"\" />\n";
-        } else {
-            xaml +=
-                L">\n"
-                L"            <Setter.Value>\n";
-            xaml += rule.value;
-            xaml +=
-                L"\n"
-                L"            </Setter.Value>\n"
-                L"        </Setter>\n";
-        }
-    }
-
-    xaml +=
-        L"    </Style>\n"
-        L"</ResourceDictionary>";
-
-    Wh_Log(L"======================================== XAML:");
-    std::wstringstream ss(xaml);
-    std::wstring line;
-    while (std::getline(ss, line, L'\n')) {
-        Wh_Log(L"%s", line.c_str());
-    }
-    Wh_Log(L"========================================");
-
-    auto resourceDictionary =
-        Markup::XamlReader::Load(xaml).as<ResourceDictionary>();
-
-    auto [styleKey, styleInspectable] = resourceDictionary.First().Current();
-    auto style = styleInspectable.as<Style>();
-    size_t styleIndex = 0;
-
-    elementMatcher->type = style.TargetType().Name;
-    elementMatcher->propertyValues.clear();
-
-    for (size_t i = 0; i < elementMatcher->propertyValuesStr.size(); i++) {
-        const auto setter = style.Setters().GetAt(styleIndex++).as<Setter>();
-        elementMatcher->propertyValues.push_back({
-            setter.Property(),
-            setter.Value(),
-        });
-    }
-
-    Wh_Log(L"%s: %zu matcher styles", elementMatcher->type.c_str(),
-           elementMatcher->propertyValues.size());
-
-    if (propertyOverrides) {
-        propertyOverrides->clear();
-
-        for (size_t i = 0; i < styleRules.size(); i++) {
-            const auto setter =
-                style.Setters().GetAt(styleIndex++).as<Setter>();
-
-            (*propertyOverrides)[setter.Property()][styleRules[i].visualState] =
-                setter.Value();
-        }
-
-        Wh_Log(L"%s: %zu styles", elementMatcher->type.c_str(),
-               styleRules.size());
-    }
-}
-
 ElementMatcher ElementMatcherFromString(std::wstring_view str) {
     ElementMatcher result;
+    PropertyValuesUnresolved propertyValuesUnresolved;
 
     auto i = str.find_first_of(L"#@[");
     result.type = TrimStringView(str.substr(0, i));
@@ -2047,7 +2095,7 @@ ElementMatcher ElementMatcherFromString(std::wstring_view str) {
                         "Bad target syntax, empty property name");
                 }
 
-                result.propertyValuesStr.push_back(
+                propertyValuesUnresolved.push_back(
                     {std::wstring(ruleKey), std::wstring(ruleVal)});
                 break;
             }
@@ -2058,6 +2106,8 @@ ElementMatcher ElementMatcherFromString(std::wstring_view str) {
 
         i = iNext;
     }
+
+    result.propertyValues = std::move(propertyValuesUnresolved);
 
     return result;
 }
@@ -2101,6 +2151,30 @@ StyleRule StyleRuleFromString(std::wstring_view str) {
     return result;
 }
 
+std::wstring AdjustTypeName(std::wstring_view type) {
+    if (type.find_first_of(L".:") == type.npos) {
+        return L"Windows.UI.Xaml.Controls." + std::wstring{type};
+    }
+
+    static const std::vector<std::pair<std::wstring_view, std::wstring_view>>
+        adjustments = {
+            {L"taskbar:", L"Taskbar."},
+            {L"systemtray:", L"SystemTray."},
+            {L"udk:", L"WindowsUdk.UI.Shell."},
+            {L"muxc:", L"Microsoft.UI.Xaml.Controls."},
+        };
+
+    for (const auto& adjustment : adjustments) {
+        if (type.starts_with(adjustment.first)) {
+            auto result = std::wstring{adjustment.second};
+            result += type.substr(adjustment.first.size());
+            return result;
+        }
+    }
+
+    return std::wstring{type};
+}
+
 void AddElementCustomizationRules(std::wstring_view target,
                                   std::vector<std::wstring> styles) {
     ElementCustomizationRules elementCustomizationRules;
@@ -2113,6 +2187,7 @@ void AddElementCustomizationRules(std::wstring_view target,
         const auto& targetPart = *i;
 
         auto matcher = ElementMatcherFromString(targetPart);
+        matcher.type = AdjustTypeName(matcher.type);
 
         if (matcher.visualStateGroupName) {
             if (hasVisualStateGroup) {
@@ -2129,11 +2204,9 @@ void AddElementCustomizationRules(std::wstring_view target,
                 styleRules.push_back(StyleRuleFromString(style));
             }
 
-            ResolveTypeAndStyles(&matcher, std::move(styleRules),
-                                 &elementCustomizationRules.propertyOverrides);
             elementCustomizationRules.elementMatcher = std::move(matcher);
+            elementCustomizationRules.propertyOverrides = std::move(styleRules);
         } else {
-            ResolveTypeAndStyles(&matcher);
             elementCustomizationRules.parentElementMatchers.push_back(
                 std::move(matcher));
         }
@@ -2163,6 +2236,11 @@ bool ProcessSingleTargetStylesFromSettings(int index) {
             break;
         }
 
+        // Skip if commented.
+        if (styleSetting[0] == L'/' && styleSetting[1] == L'/') {
+            continue;
+        }
+
         styles.push_back(styleSetting.get());
     }
 
@@ -2181,7 +2259,7 @@ void ProcessAllStylesFromSettings() {
                 break;
             }
         } catch (winrt::hresult_error const& ex) {
-            Wh_Log(L"Error %08X", ex.code());
+            Wh_Log(L"Error %08X: %s", ex.code(), ex.message().c_str());
         } catch (std::exception const& ex) {
             Wh_Log(L"Error: %S", ex.what());
         }
@@ -2234,7 +2312,7 @@ void ProcessResourceVariablesFromSettings() {
                 break;
             }
         } catch (winrt::hresult_error const& ex) {
-            Wh_Log(L"Error %08X", ex.code());
+            Wh_Log(L"Error %08X: %s", ex.code(), ex.message().c_str());
         } catch (std::exception const& ex) {
             Wh_Log(L"Error: %S", ex.what());
         }
@@ -2252,11 +2330,19 @@ void UninitializeSettingsAndTap() {
                     property, state.propertyChangedToken);
 
                 if (state.originalValue) {
-                    if (*state.originalValue ==
-                        DependencyProperty::UnsetValue()) {
-                        oldElement.ClearValue(property);
-                    } else {
-                        oldElement.SetValue(property, *state.originalValue);
+                    try {
+                        // Sometimes this fails with error 80004002: No such
+                        // interface supported. Can be reproduced by setting
+                        // "CornerRadius=0" for the "Border" target.
+                        if (*state.originalValue ==
+                            DependencyProperty::UnsetValue()) {
+                            oldElement.ClearValue(property);
+                        } else {
+                            oldElement.SetValue(property, *state.originalValue);
+                        }
+                    } catch (winrt::hresult_error const& ex) {
+                        Wh_Log(L"Error %08X: %s", ex.code(),
+                               ex.message().c_str());
                     }
                 }
             }
@@ -2271,7 +2357,6 @@ void UninitializeSettingsAndTap() {
 
     g_elementsCustomizationState.clear();
 
-    g_elementsCustomizationRulesLoaded = false;
     g_elementsCustomizationRules.clear();
 
     g_targetThreadId = 0;
@@ -2283,6 +2368,9 @@ void InitializeSettingsAndTap() {
                                                   GetCurrentThreadId())) {
         return;
     }
+
+    ProcessAllStylesFromSettings();
+    ProcessResourceVariablesFromSettings();
 
     HRESULT hr = InjectWindhawkTAP();
     if (FAILED(hr)) {
@@ -2413,7 +2501,7 @@ bool WINAPI Foundation_operator_eq_Hook(void** p1, void** p2) {
         // The code inside TaskbarBackground::OnApplyTemplate throws an
         // exception if operator== returns true in some cases, and that happens
         // if the background is customized, in which case two null pointers are
-        // compared. It can be trigerred with the following example:
+        // compared. It can be triggered with the following example:
         // * Target: Rectangle#BackgroundFill
         // * Style: Fill=Red
         if (p1 && p2 && !*p1 && !*p2) {
