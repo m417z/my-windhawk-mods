@@ -1469,6 +1469,10 @@ StyleRule StyleRuleFromString(std::wstring_view str) {
 
 std::wstring AdjustTypeName(std::wstring_view type) {
     if (type.find_first_of(L".:") == type.npos) {
+        if (type == L"Rectangle") {
+            return L"Windows.UI.Xaml.Shapes.Rectangle";
+        }
+
         return L"Windows.UI.Xaml.Controls." + std::wstring{type};
     }
 
