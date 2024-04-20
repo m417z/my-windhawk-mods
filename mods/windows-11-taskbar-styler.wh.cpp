@@ -28,10 +28,26 @@ An advanced mod to override style attributes of the taskbar control elements.
 
 Also check out the **Windows 11 Start Menu Styler** mod.
 
-The settings have two sections: control styles and resource variables. Control
-styles allow to override styles, such as size and color, for the target
-elements. Resource variables allow to override predefined variables. For a more
-detailed explanation and examples, refer to the sections below.
+## Themes
+
+Themes are collections of styles. The following themes are integrated into the
+mod and can be selected in the settings:
+
+![WinXP](https://raw.githubusercontent.com/ramensoftware/windows-11-taskbar-styling-guide/main/Themes/WinXP/screenshot-small.png)
+\
+[WinXP](https://github.com/ramensoftware/windows-11-taskbar-styling-guide/blob/main/Themes/WinXP/README.md)
+
+More themes can be found in the **Themes** section of [The Windows 11 taskbar
+styling
+guide](https://github.com/ramensoftware/windows-11-taskbar-styling-guide/blob/main/README.md).
+Contributions of new themes are welcome!
+
+## Advanced styling
+
+Aside from themes, the settings have two sections: control styles and resource
+variables. Control styles allow to override styles, such as size and color, for
+the target elements. Resource variables allow to override predefined variables.
+For a more detailed explanation and examples, refer to the sections below.
 
 The taskbar's XAML resources can help find out which elements and resource
 variables can be customized. To the best of my knowledge, there are no public
@@ -47,7 +63,7 @@ For a collection of commonly requested taskbar styling customizations, check out
 [The Windows 11 taskbar styling
 guide](https://github.com/ramensoftware/windows-11-taskbar-styling-guide/blob/main/README.md).
 
-## Control styles
+### Control styles
 
 Each entry has a target control and a list of styles.
 
@@ -78,14 +94,14 @@ visual state group specified in the target matches the specified visual state.
 
 A couple of practical examples:
 
-### Task list button corner radius
+#### Task list button corner radius
 
 ![Screenshot](https://i.imgur.com/zDATi9K.png)
 
 * Target: `Taskbar.TaskListButton`
 * Style: `CornerRadius=0`
 
-### Running indicator size and color
+#### Running indicator size and color
 
 ![Screenshot](https://i.imgur.com/mR5c3F5.png)
 
@@ -98,7 +114,7 @@ A couple of practical examples:
     * `Fill@ActiveRunningIndicator=Red`
     * `Width@ActiveRunningIndicator=20`
 
-### Task list button background gradient
+#### Task list button background gradient
 
 ![Screenshot](https://i.imgur.com/LNPcw0G.png)
 
@@ -109,13 +125,13 @@ A couple of practical examples:
   EndPoint="0.5,1"><GradientStop Offset="0" Color="DodgerBlue"/><GradientStop
   Offset="1" Color="Yellow"/></LinearGradientBrush>`
 
-### Hide the start button
+#### Hide the start button
 
 * Target:
   `Taskbar.ExperienceToggleButton#LaunchListButton[AutomationProperties.AutomationId=StartButton]`
 * Style: `Visibility=Collapsed`
 
-### Hide the network notification icon
+#### Hide the network notification icon
 
 * Target: `SystemTray.OmniButton#ControlCenterButton > Grid > ContentPresenter >
   ItemsPresenter > StackPanel > ContentPresenter[1] > SystemTray.IconView >
@@ -125,7 +141,7 @@ A couple of practical examples:
 **Note**: To hide the volume notification icon instead, use `[2]` instead of
 `[1]`.
 
-## Resource variables
+### Resource variables
 
 Some variables, such as size and padding for various controls, are defined as
 resource variables. Here are several examples:
@@ -151,6 +167,15 @@ relevant `#pragma region` regions in the code editor.
 
 // ==WindhawkModSettings==
 /*
+- theme: ""
+  $name: Theme
+  $description: >-
+    Themes are collections of styles. For details about the themes below, or for
+    information about submitting your own theme, refer to the relevant section
+    in the mod details.
+  $options:
+  - "": None
+  - WinXP: WinXP
 - controlStyles:
   - - target: Taskbar.TaskListButton
       $name: Target
@@ -1049,10 +1074,126 @@ extern RPC_IF_HANDLE __MIDL_itf_windows2Eui2Examl2Ehosting2Edesktopwindowxamlsou
 ////////////////////////////////////////////////////////////////////////////////
 
 #include <atomic>
+#include <vector>
 
 #undef GetCurrentTime
 
 #include <winrt/Windows.UI.Xaml.h>
+
+struct ThemeTargetStyles {
+    PCWSTR target;
+    std::vector<PCWSTR> styles;
+};
+
+struct Theme {
+    std::vector<ThemeTargetStyles> targetStyles;
+};
+
+/*
+JSON settings to C++ theme conversion code, quick'n'dirty & AI-generated:
+
+json_str = R"""
+{...}
+"""
+
+def json_to_cpp(json_data):
+    def cmp(x):
+        key_prefix = x[0].removeprefix("controlStyles[")
+        index1 = int(key_prefix.split("]")[0])
+        if ".target" in key_prefix:
+            index2 = -1
+        elif ".styles" in key_prefix:
+            index2 = int(key_prefix.split("[")[1].split("]")[0])
+        else:
+            assert False
+        return index1, index2
+
+    cpp_code = "{{\n"
+    for key, value in sorted(json_data.items(), key=cmp):
+        value_escaped = value.replace('"', '\\"')
+        if ".target" in key:
+            if cpp_code != "{{\n":
+                cpp_code = cpp_code.removesuffix(", ")
+                cpp_code += "}},\n"
+            cpp_code += "    ThemeTargetStyles{\n"
+            cpp_code += f"        L\"{value_escaped}\",\n"
+            cpp_code += "        {"
+        elif ".styles" in key:
+            cpp_code += f"L\"{value_escaped}\", "
+        else:
+            assert False
+    cpp_code = cpp_code.removesuffix(", ")
+    cpp_code += "}},\n"
+    cpp_code += "}};"
+    return cpp_code
+
+json_input = json.loads(json_str)
+
+cpp_output = json_to_cpp(json_input)
+print(cpp_output)
+*/
+
+const Theme g_themeWinXP = {{
+    ThemeTargetStyles{
+        L"Rectangle#BackgroundStroke",
+        {L"Fill:=<LinearGradientBrush StartPoint=\"0.5,0\" EndPoint=\"0.5,1\"> "
+         L"<GradientStop Color=\"#3168d5\" Offset=\"0.0\" /> <GradientStop "
+         L"Color=\"#4993E6\" Offset=\"0.1\" /> <GradientStop Color=\"#2157D7\" "
+         L"Offset=\"0.35\" /> <GradientStop Color=\"#2663E0\" Offset=\"0.8\" "
+         L"/> <GradientStop Color=\"#1941A5\" Offset=\"1.0\" "
+         L"/></LinearGradientBrush>",
+         L"VerticalAlignment=Stretch", L"Height=Auto"}},
+    ThemeTargetStyles{L"Taskbar.ExperienceToggleButton#LaunchListButton["
+                      L"AutomationProperties.AutomationId=StartButton]",
+                      {L"CornerRadius=0"}},
+    ThemeTargetStyles{
+        L"Taskbar.ExperienceToggleButton#LaunchListButton[AutomationProperties."
+        L"AutomationId=StartButton] > Taskbar.TaskListButtonPanel",
+        {L"Padding=0",
+         L"Background:=<LinearGradientBrush StartPoint=\"0.5,0\" "
+         L"EndPoint=\"0.5,1\"> <GradientStop Color=\"#388238\" Offset=\"0.0\" "
+         L"/> <GradientStop Color=\"#71B571\" Offset=\"0.1\" /> <GradientStop "
+         L"Color=\"#71B571\" Offset=\"0.35\" /> <GradientStop "
+         L"Color=\"#47AA47\" Offset=\"0.8\" /> <GradientStop Color=\"#307443\" "
+         L"Offset=\"1.0\" /></LinearGradientBrush>"}},
+    ThemeTargetStyles{L"Taskbar.ExperienceToggleButton#LaunchListButton["
+                      L"AutomationProperties.AutomationId=StartButton] > "
+                      L"Taskbar.TaskListButtonPanel > Border#BackgroundElement",
+                      {L"Background:=<ImageBrush Stretch=\"None\" "
+                       L"ImageSource=\"https://i.imgur.com/BvXJlkj.png\" />"}},
+    ThemeTargetStyles{
+        L"Taskbar.ExperienceToggleButton#LaunchListButton[AutomationProperties."
+        L"AutomationId=StartButton] > Taskbar.TaskListButtonPanel > "
+        L"Microsoft.UI.Xaml.Controls.AnimatedVisualPlayer#Icon",
+        {L"Visibility=Collapsed"}},
+    ThemeTargetStyles{L"TextBlock#LabelControl", {L"Foreground=White"}},
+    ThemeTargetStyles{L"Rectangle#RunningIndicator", {L"Visibility=Collapsed"}},
+    ThemeTargetStyles{L"TextBlock#TimeInnerTextBlock", {L"Foreground=White"}},
+    ThemeTargetStyles{L"TextBlock#DateInnerTextBlock", {L"Foreground=White"}},
+    ThemeTargetStyles{L"SystemTray.TextIconContent > Grid > "
+                      L"SystemTray.AdaptiveTextBlock#Base > TextBlock",
+                      {L"Foreground=White"}},
+    ThemeTargetStyles{
+        L"Taskbar.TaskListLabeledButtonPanel@RunningIndicatorStates > "
+        L"Border#BackgroundElement",
+        {L"Background@NoRunningIndicator=Transparent",
+         L"Background@ActiveRunningIndicator:=<LinearGradientBrush "
+         L"StartPoint=\"0.5,0\" EndPoint=\"0.5,1\"> <GradientStop "
+         L"Color=\"#1B67D7\" Offset=\"0.0\" /> <GradientStop Color=\"#1542A8\" "
+         L"Offset=\"0.1\" /> <GradientStop Color=\"#1951BA\" Offset=\"0.15\" "
+         L"/> <GradientStop Color=\"#1951BA\" Offset=\"0.95\" /> <GradientStop "
+         L"Color=\"#1542A8\" Offset=\"1.0\" /></LinearGradientBrush>",
+         L"Background:=<LinearGradientBrush StartPoint=\"0.5,0\" "
+         L"EndPoint=\"0.5,1\"> <GradientStop Color=\"#3358B5\" Offset=\"0.0\" "
+         L"/> <GradientStop Color=\"#8AC4FD\" Offset=\"0.1\" /> <GradientStop "
+         L"Color=\"#56A3FF\" Offset=\"0.2\" /> <GradientStop Color=\"#56A3FF\" "
+         L"Offset=\"0.85\" /> <GradientStop Color=\"#378DF6\" Offset=\"0.9\" "
+         L"/> <GradientStop Color=\"#163E95\" Offset=\"1.0\" "
+         L"/></LinearGradientBrush>",
+         L"BorderThickness=1", L"BorderBrush@NoRunningIndicator=Transparent",
+         L"BorderBrush@ActiveRunningIndicator=#1B67D7",
+         L"BorderBrush=#3358B5"}},
+}};
 
 std::atomic<DWORD> g_targetThreadId = 0;
 
@@ -2153,6 +2294,10 @@ StyleRule StyleRuleFromString(std::wstring_view str) {
 
 std::wstring AdjustTypeName(std::wstring_view type) {
     if (type.find_first_of(L".:") == type.npos) {
+        if (type == L"Rectangle") {
+            return L"Windows.UI.Xaml.Shapes.Rectangle";
+        }
+
         return L"Windows.UI.Xaml.Controls." + std::wstring{type};
     }
 
@@ -2262,6 +2407,29 @@ void ProcessAllStylesFromSettings() {
             Wh_Log(L"Error %08X: %s", ex.code(), ex.message().c_str());
         } catch (std::exception const& ex) {
             Wh_Log(L"Error: %S", ex.what());
+        }
+    }
+
+    PCWSTR themeName = Wh_GetStringSetting(L"theme");
+    const Theme* theme = nullptr;
+    if (wcscmp(themeName, L"WinXP") == 0) {
+        theme = &g_themeWinXP;
+    }
+    Wh_FreeStringSetting(themeName);
+
+    if (theme) {
+        for (const auto& themeTargetStyle : theme->targetStyles) {
+            try {
+                std::vector<std::wstring> styles{
+                    themeTargetStyle.styles.begin(),
+                    themeTargetStyle.styles.end()};
+                AddElementCustomizationRules(themeTargetStyle.target,
+                                             std::move(styles));
+            } catch (winrt::hresult_error const& ex) {
+                Wh_Log(L"Error %08X", ex.code());
+            } catch (std::exception const& ex) {
+                Wh_Log(L"Error: %S", ex.what());
+            }
         }
     }
 }
