@@ -1616,6 +1616,26 @@ bool g_elementPropertyModifying;
 
 bool g_inTaskbarBackground_OnApplyTemplate;
 
+winrt::Windows::Foundation::IInspectable ReadLocalValueWithWorkaround(
+    DependencyObject elementDo,
+    DependencyProperty property) {
+    const auto value = elementDo.ReadLocalValue(property);
+    if (winrt::get_class_name(value) ==
+        L"Windows.UI.Xaml.Data.BindingExpressionBase") {
+        // BindingExpressionBase was observed to be returned for XAML properties
+        // that were declared as following:
+        //
+        // <Border ... CornerRadius="{TemplateBinding CornerRadius}" />
+        //
+        // Calling SetValue with it fails with an error, so we won't be able to
+        // use it to restore the value. As a workaround, we use
+        // GetAnimationBaseValue to get the value.
+        return elementDo.GetAnimationBaseValue(property);
+    }
+
+    return value;
+}
+
 // https://stackoverflow.com/a/5665377
 std::wstring EscapeXmlAttribute(std::wstring_view data) {
     std::wstring buffer;
@@ -1872,7 +1892,8 @@ bool TestElementMatcher(FrameworkElement element,
 
     for (const auto& propertyValue :
          GetResolvedPropertyValues(matcher.type, &matcher.propertyValues)) {
-        const auto value = elementDo.ReadLocalValue(propertyValue.first);
+        const auto value =
+            ReadLocalValueWithWorkaround(elementDo, propertyValue.first);
         const auto className = winrt::get_class_name(value);
         const auto expectedClassName =
             winrt::get_class_name(propertyValue.second);
@@ -2029,7 +2050,7 @@ void ApplyCustomizations(InstanceHandle handle,
 
         if (it != valuesPerVisualState.end()) {
             propertyCustomizationState.originalValue =
-                element.ReadLocalValue(property);
+                ReadLocalValueWithWorkaround(element, property);
             propertyCustomizationState.customValue = it->second;
             element.SetValue(property, it->second);
         }
@@ -2055,7 +2076,8 @@ void ApplyCustomizations(InstanceHandle handle,
                     Wh_Log(L"Re-applying style for %s",
                            winrt::get_class_name(element).c_str());
 
-                    auto localValue = element.ReadLocalValue(property);
+                    auto localValue =
+                        ReadLocalValueWithWorkaround(element, property);
 
                     if (*propertyCustomizationState.customValue != localValue) {
                         propertyCustomizationState.originalValue = localValue;
@@ -2113,7 +2135,8 @@ void ApplyCustomizations(InstanceHandle handle,
                         if (it != valuesPerVisualState.end()) {
                             if (!propertyCustomizationState.originalValue) {
                                 propertyCustomizationState.originalValue =
-                                    element.ReadLocalValue(property);
+                                    ReadLocalValueWithWorkaround(element,
+                                                                 property);
                             }
 
                             propertyCustomizationState.customValue = it->second;
