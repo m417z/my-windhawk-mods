@@ -145,10 +145,6 @@ HANDLE WINAPI LoadImageW_Hook(HINSTANCE hInst,
         return LoadImageW_Original(hInst, name, type, cx, cy, fuLoad);
     };
 
-    if (type != IMAGE_ICON) {
-        return original();
-    }
-
     WCHAR szFileName[MAX_PATH];
     DWORD fileNameLen =
         GetModuleFileName(hInst, szFileName, ARRAYSIZE(szFileName));
