@@ -1522,11 +1522,13 @@ HRESULT InjectWindhawkTAP() noexcept
 
 #include <windhawk_utils.h>
 
+#include <list>
 #include <optional>
 #include <sstream>
 #include <string>
 #include <string_view>
 #include <unordered_map>
+#include <unordered_set>
 #include <variant>
 #include <vector>
 
@@ -1601,12 +1603,20 @@ struct ElementPropertyCustomizationState {
     int64_t propertyChangedToken = 0;
 };
 
-struct ElementCustomizationState {
-    winrt::weak_ref<FrameworkElement> element;
+struct ElementCustomizationStateForVisualStateGroup {
     std::unordered_map<DependencyProperty, ElementPropertyCustomizationState>
         propertyCustomizationStates;
-    winrt::weak_ref<VisualStateGroup> visualStateGroup;
     winrt::event_token visualStateGroupCurrentStateChangedToken;
+};
+
+struct ElementCustomizationState {
+    winrt::weak_ref<FrameworkElement> element;
+
+    // Use list to avoid reallocations on insertion, as pointers to items are
+    // captured in callbacks and stored.
+    std::list<std::pair<std::optional<winrt::weak_ref<VisualStateGroup>>,
+                        ElementCustomizationStateForVisualStateGroup>>
+        perVisualStateGroup;
 };
 
 std::unordered_map<InstanceHandle, ElementCustomizationState>
@@ -1942,13 +1952,17 @@ bool TestElementMatcher(FrameworkElement element,
     return true;
 }
 
-ElementCustomizationRules* FindElementCustomizationRules(
-    FrameworkElement element,
-    VisualStateGroup* visualStateGroup,
-    PCWSTR fallbackClassName) {
+std::unordered_map<VisualStateGroup, PropertyOverrides>
+FindElementPropertyOverrides(FrameworkElement element,
+                             PCWSTR fallbackClassName) {
+    std::unordered_map<VisualStateGroup, PropertyOverrides> overrides;
+    std::unordered_set<DependencyProperty> propertiesAdded;
+
     for (auto& override : g_elementsCustomizationRules) {
+        VisualStateGroup visualStateGroup = nullptr;
+
         if (!TestElementMatcher(element, override.elementMatcher,
-                                visualStateGroup, fallbackClassName)) {
+                                &visualStateGroup, fallbackClassName)) {
             continue;
         }
 
@@ -1966,62 +1980,46 @@ ElementCustomizationRules* FindElementCustomizationRules(
             }
 
             if (!TestElementMatcher(parentElementIter, matcher,
-                                    visualStateGroup, nullptr)) {
+                                    &visualStateGroup, nullptr)) {
                 parentElementMatchFailed = true;
                 break;
             }
         }
 
-        if (!parentElementMatchFailed) {
-            return &override;
+        if (parentElementMatchFailed) {
+            continue;
         }
-    }
 
-    return nullptr;
-}
+        auto& overridesForVisualStateGroup = overrides[visualStateGroup];
+        for (const auto& [property, valuesPerVisualState] :
+             GetResolvedPropertyOverrides(override.elementMatcher.type,
+                                          &override.propertyOverrides)) {
+            bool propertyInserted = propertiesAdded.insert(property).second;
+            if (!propertyInserted) {
+                continue;
+            }
 
-void ApplyCustomizations(InstanceHandle handle,
-                         FrameworkElement element,
-                         PCWSTR fallbackClassName) {
-    VisualStateGroup visualStateGroup;
-    auto rules = FindElementCustomizationRules(element, &visualStateGroup,
-                                               fallbackClassName);
-    if (!rules) {
-        return;
-    }
-
-    Wh_Log(L"Applying styles");
-
-    auto& elementCustomizationState = g_elementsCustomizationState[handle];
-
-    {
-        auto oldElement = elementCustomizationState.element.get();
-        if (oldElement) {
-            auto oldElementDo = oldElement.as<DependencyObject>();
-            for (const auto& [property, state] :
-                 elementCustomizationState.propertyCustomizationStates) {
-                oldElementDo.UnregisterPropertyChangedCallback(
-                    property, state.propertyChangedToken);
-
-                if (state.originalValue) {
-                    oldElement.SetValue(property, *state.originalValue);
-                }
+            auto& propertyOverrides = overridesForVisualStateGroup[property];
+            for (const auto& [visualState, value] : valuesPerVisualState) {
+                propertyOverrides.insert({visualState, value});
             }
         }
-
-        auto oldVisualStateGroup =
-            elementCustomizationState.visualStateGroup.get();
-        if (oldVisualStateGroup) {
-            oldVisualStateGroup.CurrentStateChanged(
-                elementCustomizationState
-                    .visualStateGroupCurrentStateChangedToken);
-        }
     }
 
-    elementCustomizationState = {
-        .element = element,
-    };
+    std::erase_if(overrides, [](const auto& item) {
+        auto const& [key, value] = item;
+        return value.empty();
+    });
 
+    return overrides;
+}
+
+void ApplyCustomizationsForVisualStateGroup(
+    FrameworkElement element,
+    VisualStateGroup visualStateGroup,
+    PropertyOverrides propertyOverrides,
+    ElementCustomizationStateForVisualStateGroup*
+        elementCustomizationStateForVisualStateGroup) {
     auto elementDo = element.as<DependencyObject>();
 
     VisualState currentVisualState(
@@ -2030,11 +2028,10 @@ void ApplyCustomizations(InstanceHandle handle,
     std::wstring currentVisualStateName(
         currentVisualState ? currentVisualState.Name() : L"");
 
-    for (auto& [property, valuesPerVisualState] : GetResolvedPropertyOverrides(
-             rules->elementMatcher.type, &rules->propertyOverrides)) {
+    for (const auto& [property, valuesPerVisualState] : propertyOverrides) {
         const auto [propertyCustomizationStatesIt, inserted] =
-            elementCustomizationState.propertyCustomizationStates.insert(
-                {property, {}});
+            elementCustomizationStateForVisualStateGroup
+                ->propertyCustomizationStates.insert({property, {}});
         if (!inserted) {
             continue;
         }
@@ -2091,14 +2088,18 @@ void ApplyCustomizations(InstanceHandle handle,
     }
 
     if (visualStateGroup) {
-        elementCustomizationState.visualStateGroup = visualStateGroup;
-
-        elementCustomizationState.visualStateGroupCurrentStateChangedToken =
+        winrt::weak_ref<FrameworkElement> elementWeakRef = element;
+        elementCustomizationStateForVisualStateGroup
+            ->visualStateGroupCurrentStateChangedToken =
             visualStateGroup.CurrentStateChanged(
-                [rules, &elementCustomizationState](
+                [elementWeakRef, propertyOverrides,
+                 elementCustomizationStateForVisualStateGroup](
                     winrt::Windows::Foundation::IInspectable const& sender,
                     VisualStateChangedEventArgs const& e) {
-                    auto element = elementCustomizationState.element.get();
+                    auto element = elementWeakRef.get();
+                    if (!element) {
+                        return;
+                    }
 
                     Wh_Log(L"Re-applying all styles for %s",
                            winrt::get_class_name(element).c_str());
@@ -2106,12 +2107,11 @@ void ApplyCustomizations(InstanceHandle handle,
                     g_elementPropertyModifying = true;
 
                     auto& propertyCustomizationStates =
-                        elementCustomizationState.propertyCustomizationStates;
+                        elementCustomizationStateForVisualStateGroup
+                            ->propertyCustomizationStates;
 
-                    for (auto& [property, valuesPerVisualState] :
-                         GetResolvedPropertyOverrides(
-                             rules->elementMatcher.type,
-                             &rules->propertyOverrides)) {
+                    for (const auto& [property, valuesPerVisualState] :
+                         propertyOverrides) {
                         auto& propertyCustomizationState =
                             propertyCustomizationStates.at(property);
 
@@ -2165,27 +2165,101 @@ void ApplyCustomizations(InstanceHandle handle,
     }
 }
 
+void RestoreCustomizationsForVisualStateGroup(
+    FrameworkElement element,
+    std::optional<winrt::weak_ref<VisualStateGroup>>
+        visualStateGroupOptionalWeakPtr,
+    const ElementCustomizationStateForVisualStateGroup&
+        elementCustomizationStateForVisualStateGroup) {
+    if (element) {
+        for (const auto& [property, state] :
+             elementCustomizationStateForVisualStateGroup
+                 .propertyCustomizationStates) {
+            element.UnregisterPropertyChangedCallback(
+                property, state.propertyChangedToken);
+
+            if (state.originalValue) {
+                if (*state.originalValue == DependencyProperty::UnsetValue()) {
+                    element.ClearValue(property);
+                } else {
+                    // This might fail. See `ReadLocalValueWithWorkaround` for
+                    // an example (which we now handle but there might be other
+                    // cases).
+                    try {
+                        element.SetValue(property, *state.originalValue);
+                    } catch (winrt::hresult_error const& ex) {
+                        Wh_Log(L"Error %08X: %s", ex.code(),
+                               ex.message().c_str());
+                    }
+                }
+            }
+        }
+    }
+
+    auto visualStateGroupIter = visualStateGroupOptionalWeakPtr
+                                    ? visualStateGroupOptionalWeakPtr->get()
+                                    : nullptr;
+    if (visualStateGroupIter && elementCustomizationStateForVisualStateGroup
+                                    .visualStateGroupCurrentStateChangedToken) {
+        visualStateGroupIter.CurrentStateChanged(
+            elementCustomizationStateForVisualStateGroup
+                .visualStateGroupCurrentStateChangedToken);
+    }
+}
+
+void ApplyCustomizations(InstanceHandle handle,
+                         FrameworkElement element,
+                         PCWSTR fallbackClassName) {
+    auto overrides = FindElementPropertyOverrides(element, fallbackClassName);
+    if (overrides.empty()) {
+        return;
+    }
+
+    Wh_Log(L"Applying styles");
+
+    auto& elementCustomizationState = g_elementsCustomizationState[handle];
+
+    for (const auto& [visualStateGroupOptionalWeakPtrIter, stateIter] :
+         elementCustomizationState.perVisualStateGroup) {
+        RestoreCustomizationsForVisualStateGroup(
+            element, visualStateGroupOptionalWeakPtrIter, stateIter);
+    }
+
+    elementCustomizationState.element = element;
+    elementCustomizationState.perVisualStateGroup.clear();
+
+    for (auto& [visualStateGroup, overridesForVisualStateGroup] : overrides) {
+        std::optional<winrt::weak_ref<VisualStateGroup>>
+            visualStateGroupOptionalWeakPtr;
+        if (visualStateGroup) {
+            visualStateGroupOptionalWeakPtr = visualStateGroup;
+        }
+
+        elementCustomizationState.perVisualStateGroup.push_back(
+            {visualStateGroupOptionalWeakPtr, {}});
+        auto* elementCustomizationStateForVisualStateGroup =
+            &elementCustomizationState.perVisualStateGroup.back().second;
+
+        ApplyCustomizationsForVisualStateGroup(
+            element, visualStateGroup, std::move(overridesForVisualStateGroup),
+            elementCustomizationStateForVisualStateGroup);
+    }
+}
+
 void CleanupCustomizations(InstanceHandle handle) {
     auto it = g_elementsCustomizationState.find(handle);
     if (it == g_elementsCustomizationState.end()) {
         return;
     }
 
-    auto& [k, v] = *it;
+    auto& elementCustomizationState = it->second;
 
-    auto oldElement = v.element.get();
-    if (oldElement) {
-        auto oldElementDo = oldElement.as<DependencyObject>();
-        for (const auto& [property, state] : v.propertyCustomizationStates) {
-            oldElementDo.UnregisterPropertyChangedCallback(
-                property, state.propertyChangedToken);
-        }
-    }
+    auto element = elementCustomizationState.element.get();
 
-    auto oldVisualStateGroup = v.visualStateGroup.get();
-    if (oldVisualStateGroup) {
-        oldVisualStateGroup.CurrentStateChanged(
-            v.visualStateGroupCurrentStateChangedToken);
+    for (const auto& [visualStateGroupOptionalWeakPtrIter, stateIter] :
+         elementCustomizationState.perVisualStateGroup) {
+        RestoreCustomizationsForVisualStateGroup(
+            element, visualStateGroupOptionalWeakPtrIter, stateIter);
     }
 
     g_elementsCustomizationState.erase(it);
@@ -2511,38 +2585,14 @@ void ProcessResourceVariablesFromSettings() {
 }
 
 void UninitializeSettingsAndTap() {
-    for (const auto& [k, v] : g_elementsCustomizationState) {
-        auto oldElement = v.element.get();
-        if (oldElement) {
-            auto oldElementDo = oldElement.as<DependencyObject>();
-            for (const auto& [property, state] :
-                 v.propertyCustomizationStates) {
-                oldElementDo.UnregisterPropertyChangedCallback(
-                    property, state.propertyChangedToken);
+    for (const auto& [handle, elementCustomizationState] :
+         g_elementsCustomizationState) {
+        auto element = elementCustomizationState.element.get();
 
-                if (state.originalValue) {
-                    try {
-                        // Sometimes this fails with error 80004002: No such
-                        // interface supported. Can be reproduced by setting
-                        // "CornerRadius=0" for the "Border" target.
-                        if (*state.originalValue ==
-                            DependencyProperty::UnsetValue()) {
-                            oldElement.ClearValue(property);
-                        } else {
-                            oldElement.SetValue(property, *state.originalValue);
-                        }
-                    } catch (winrt::hresult_error const& ex) {
-                        Wh_Log(L"Error %08X: %s", ex.code(),
-                               ex.message().c_str());
-                    }
-                }
-            }
-        }
-
-        auto oldVisualStateGroup = v.visualStateGroup.get();
-        if (oldVisualStateGroup) {
-            oldVisualStateGroup.CurrentStateChanged(
-                v.visualStateGroupCurrentStateChangedToken);
+        for (const auto& [visualStateGroupOptionalWeakPtrIter, stateIter] :
+             elementCustomizationState.perVisualStateGroup) {
+            RestoreCustomizationsForVisualStateGroup(
+                element, visualStateGroupOptionalWeakPtrIter, stateIter);
         }
     }
 
