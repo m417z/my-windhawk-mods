@@ -33,9 +33,9 @@ Also check out the **Windows 11 Start Menu Styler** mod.
 Themes are collections of styles. The following themes are integrated into the
 mod and can be selected in the settings:
 
-![WinXP](https://raw.githubusercontent.com/ramensoftware/windows-11-taskbar-styling-guide/main/Themes/WinXP/screenshot-small.png)
+[![WinXP](https://raw.githubusercontent.com/ramensoftware/windows-11-taskbar-styling-guide/main/Themes/WinXP/screenshot-small.png)
 \
-[WinXP](https://github.com/ramensoftware/windows-11-taskbar-styling-guide/blob/main/Themes/WinXP/README.md)
+WinXP](https://github.com/ramensoftware/windows-11-taskbar-styling-guide/blob/main/Themes/WinXP/README.md)
 
 More themes can be found in the **Themes** section of [The Windows 11 taskbar
 styling
