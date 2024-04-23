@@ -37,6 +37,10 @@ mod and can be selected in the settings:
 \
 WinXP](https://github.com/ramensoftware/windows-11-taskbar-styling-guide/blob/main/Themes/WinXP/README.md)
 
+[![Bubbles](https://raw.githubusercontent.com/ramensoftware/windows-11-taskbar-styling-guide/main/Themes/Bubbles/screenshot.png)
+\
+Bubbles](https://github.com/ramensoftware/windows-11-taskbar-styling-guide/blob/main/Themes/Bubbles/README.md)
+
 More themes can be found in the **Themes** section of [The Windows 11 taskbar
 styling
 guide](https://github.com/ramensoftware/windows-11-taskbar-styling-guide/blob/main/README.md#themes).
@@ -176,6 +180,7 @@ relevant `#pragma region` regions in the code editor.
   $options:
   - "": None
   - WinXP: WinXP
+  - Bubbles: Bubbles
 - controlStyles:
   - - target: Taskbar.TaskListButton
       $name: Target
@@ -1193,6 +1198,44 @@ const Theme g_themeWinXP = {{
          L"BorderThickness=1", L"BorderBrush@NoRunningIndicator=Transparent",
          L"BorderBrush@ActiveRunningIndicator=#1B67D7",
          L"BorderBrush=#3358B5"}},
+}};
+
+const Theme g_themeBubbles = {{
+    ThemeTargetStyles{L"Rectangle#BackgroundFill", {L"Fill=#EE080810"}},
+    ThemeTargetStyles{L"Taskbar.TaskListLabeledButtonPanel@"
+                      L"RunningIndicatorStates > Border#BackgroundElement",
+                      {L"Background=#303030", L"CornerRadius=20",
+                       L"Background@NoRunningIndicator=#40303030"}},
+    ThemeTargetStyles{
+        L"Taskbar.TaskListButtonPanel@CommonStates > Border#BackgroundElement",
+        {L"Background=#303030", L"CornerRadius=20",
+         L"Background@ActivePointerOver=#202020",
+         L"Background@InactivePointerOver=#202020",
+         L"Background@ActivePressed=#101010",
+         L"Background@InactivePressed=#101010"}},
+    ThemeTargetStyles{L"Grid#SystemTrayFrameGrid",
+                      {L"Background=#303030", L"CornerRadius=20",
+                       L"Margin=0,5,4,5", L"Padding=10,0,0,0"}},
+    ThemeTargetStyles{
+        L"Taskbar.TaskListLabeledButtonPanel@CommonStates > "
+        L"Rectangle#RunningIndicator",
+        {L"Width=40", L"Height=40", L"Stroke@ActiveNormal=#5F87B9",
+         L"Stroke@ActivePointerOver=#75A8E6", L"Stroke@ActivePressed=#7CB1F2",
+         L"Fill=Transparent", L"RadiusX=20", L"RadiusY=20",
+         L"StrokeThickness=3", L"Margin=0",
+         L"Stroke@InactivePointerOver=#75A8E6",
+         L"Stroke@InactivePressed=#7CB1F2"}},
+    ThemeTargetStyles{L"TextBlock#TimeInnerTextBlock", {L"Foreground=White"}},
+    ThemeTargetStyles{L"TextBlock#DateInnerTextBlock", {L"Foreground=White"}},
+    ThemeTargetStyles{L"SystemTray.TextIconContent > Grid > "
+                      L"SystemTray.AdaptiveTextBlock#Base > TextBlock",
+                      {L"Foreground=White"}},
+    ThemeTargetStyles{
+        L"Taskbar.TaskListLabeledButtonPanel > TextBlock#LabelControl",
+        {L"Margin=4,0,0,0", L"Foreground=White"}},
+    ThemeTargetStyles{L"Taskbar.SearchBoxButton",
+                      {L"Height=56", L"Margin=0,-4,0,0"}},
+    ThemeTargetStyles{L"TextBlock#SearchBoxTextBlock", {L"Foreground=White"}},
 }};
 
 std::atomic<DWORD> g_targetThreadId = 0;
@@ -2511,6 +2554,8 @@ void ProcessAllStylesFromSettings() {
     const Theme* theme = nullptr;
     if (wcscmp(themeName, L"WinXP") == 0) {
         theme = &g_themeWinXP;
+    } else if (wcscmp(themeName, L"Bubbles") == 0) {
+        theme = &g_themeBubbles;
     }
     Wh_FreeStringSetting(themeName);
 
