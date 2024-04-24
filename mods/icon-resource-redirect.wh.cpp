@@ -2,7 +2,7 @@
 // @id              icon-resource-redirect
 // @name            Icon Resource Redirect
 // @description     Define alternative resource files for loading icons (e.g. instead of imageres.dll) for simple theming without having to modify system files
-// @version         1.0.2
+// @version         1.0.3
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
