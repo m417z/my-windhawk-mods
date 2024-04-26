@@ -303,7 +303,7 @@ HANDLE WINAPI LoadImageW_Hook(HINSTANCE hInst,
                 }
 
                 DWORD dwError = GetLastError();
-                Wh_Log(L"LoadLibraryEx failed with error %u", dwError);
+                Wh_Log(L"LoadImageW failed with error %u", dwError);
             }
         }
     }
