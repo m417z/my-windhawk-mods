@@ -182,15 +182,15 @@ relevant `#pragma region` regions in the code editor.
   - WinXP: WinXP
   - Bubbles: Bubbles
 - controlStyles:
-  - - target: Taskbar.TaskListButton
+  - - target: ""
       $name: Target
-    - styles: [CornerRadius=0]
+    - styles: [""]
       $name: Styles
   $name: Control styles
 - resourceVariables:
-  - - variableKey: TaskbarContextMenuMargin
+  - - variableKey: ""
       $name: Variable key
-    - value: "0"
+    - value: ""
       $name: Value
   $name: Resource variables
 */
