@@ -172,10 +172,6 @@ double g_initialTaskbarItemWidth;
 UINT_PTR g_invalidateTaskListButtonTimer;
 std::unordered_set<FrameworkElement> g_taskListButtonsWithLabelMissing;
 
-#ifndef SPI_SETLOGICALDPIOVERRIDE
-#define SPI_SETLOGICALDPIOVERRIDE 0x009F
-#endif
-
 WINUSERAPI UINT WINAPI GetDpiForWindow(HWND hwnd);
 
 FrameworkElement FindChildByName(FrameworkElement element, PCWSTR name) {
