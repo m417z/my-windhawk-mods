@@ -26,8 +26,8 @@ example, the `theme.ini` file may contain the following:
 
 ```
 [redirections]
-%systemroot%\explorer.exe=explorer.exe
-%systemroot%\system32\imageres.dll=imageres.dll
+%SystemRoot%\explorer.exe=explorer.exe
+%SystemRoot%\system32\imageres.dll=imageres.dll
 ```
 
 In this case, the folder must also contain the `explorer.exe`, `imageres.dll`
