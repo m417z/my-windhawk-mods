@@ -1,7 +1,7 @@
 // ==WindhawkMod==
 // @id              icon-resource-redirect
-// @name            Icon Resource Redirect
-// @description     Define alternative resource files for loading icons (e.g. instead of imageres.dll) for simple theming without having to modify system files
+// @name            Resource Redirect
+// @description     Define alternative files for loading various resources (e.g. instead of icons in imageres.dll) for simple theming without having to modify system files
 // @version         1.0.5
 // @author          m417z
 // @github          https://github.com/m417z
@@ -15,7 +15,7 @@
 /*
 # Icon Resource Redirect
 
-Define alternative resource files for loading icons (e.g. instead of
+Define alternative files for loading various resources (e.g. instead of icons in
 imageres.dll) for simple theming without having to modify system files.
 
 ## Theme folder
@@ -35,8 +35,7 @@ files which will be used as the custom resource files.
 
 ## Supported resource types and loading methods
 
-The mod started with icon redirection, but was extended with time, and now it
-supports the following resource types and loading methods:
+The mod supports the following resource types and loading methods:
 
 * Icons extracted with the `PrivateExtractIconsW` function.
 * Icons, cursors and bitmaps loaded with the `LoadImageW` function.
@@ -45,7 +44,8 @@ supports the following resource types and loading methods:
 * Strings loaded with the `LoadStringW` function.
 * GDI+ images (e.g. PNGs) loaded with the `SHCreateStreamOnModuleResourceW`
   function.
-* DirectUI resources loaded with the `SetXMLFromResource` function.
+* DirectUI resources (usually `UIFILE` and `XML`) loaded with the
+  `SetXMLFromResource` function.
 */
 // ==/WindhawkModReadme==
 
@@ -57,7 +57,7 @@ supports the following resource types and loading methods:
 - redirectionResourcePaths:
   - - original: '%SystemRoot%\System32\imageres.dll'
       $name: The original resource file
-      $description: The original file from which icons are loaded
+      $description: The original file from which resources are loaded
     - redirect: 'C:\my-themes\theme-1\imageres.dll'
       $name: The custom resource file
       $description: The custom resource file that will be used instead
