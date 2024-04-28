@@ -40,9 +40,12 @@ supports the following resource types and loading methods:
 
 * Icons extracted with the `PrivateExtractIconsW` function.
 * Icons, cursors and bitmaps loaded with the `LoadImageW` function.
+* Icons loaded with the `LoadIconW` function.
+* Cursors loaded with the `LoadCursorW` function.
 * Strings loaded with the `LoadStringW` function.
 * GDI+ images (e.g. PNGs) loaded with the `SHCreateStreamOnModuleResourceW`
   function.
+* DirectUI resources loaded with the `SetXMLFromResource` function.
 */
 // ==/WindhawkModReadme==
 
@@ -68,17 +71,49 @@ supports the following resource types and loading methods:
 
 #include <functional>
 #include <mutex>
+#include <optional>
 #include <shared_mutex>
 #include <string>
 #include <unordered_map>
 #include <vector>
 
 std::shared_mutex g_redirectionResourcePathsMutex;
+thread_local bool g_redirectionResourcePathsMutexLocked;
 std::unordered_map<std::wstring, std::vector<std::wstring>>
     g_redirectionResourcePaths;
 
 std::shared_mutex g_redirectionResourceModulesMutex;
 std::unordered_map<std::wstring, HMODULE> g_redirectionResourceModules;
+
+// A helper function to skip locking if the thread already holds the lock, since
+// it's UB. Nested locks may happen if one hooked function is implemented with
+// the help of another hooked function. We assume here that the locks are freed
+// in reverse order.
+auto RedirectionResourcePathsMutexSharedLock() {
+    class Result {
+       public:
+        Result() = default;
+
+        Result(std::shared_mutex& mutex) : lock(std::shared_lock{mutex}) {
+            g_redirectionResourcePathsMutexLocked = true;
+        }
+
+        ~Result() {
+            if (lock) {
+                g_redirectionResourcePathsMutexLocked = false;
+            }
+        }
+
+       private:
+        std::optional<std::shared_lock<std::shared_mutex>> lock;
+    };
+
+    if (g_redirectionResourcePathsMutexLocked) {
+        return Result{};
+    }
+
+    return Result{g_redirectionResourcePathsMutex};
+}
 
 bool DevicePathToDosPath(const WCHAR* device_path,
                          WCHAR* dos_path,
@@ -186,7 +221,7 @@ UINT WINAPI PrivateExtractIconsW_Hook(LPCWSTR szFileName,
     bool triedRedirection = false;
 
     {
-        std::shared_lock lock{g_redirectionResourcePathsMutex};
+        auto lock{RedirectionResourcePathsMutexSharedLock()};
 
         if (const auto it = g_redirectionResourcePaths.find(fileNameUpper);
             it != g_redirectionResourcePaths.end()) {
@@ -276,7 +311,7 @@ bool RedirectModule(HINSTANCE hInstance,
     bool triedRedirection = false;
 
     {
-        std::shared_lock lock{g_redirectionResourcePathsMutex};
+        auto lock{RedirectionResourcePathsMutexSharedLock()};
 
         if (const auto it = g_redirectionResourcePaths.find(szFileName);
             it != g_redirectionResourcePaths.end()) {
@@ -368,6 +403,84 @@ HANDLE WINAPI LoadImageW_Hook(HINSTANCE hInst,
     return LoadImageW_Original(hInst, name, type, cx, cy, fuLoad);
 }
 
+using LoadIconW_t = decltype(&LoadIconW);
+LoadIconW_t LoadIconW_Original;
+HICON WINAPI LoadIconW_Hook(HINSTANCE hInstance, LPCWSTR lpIconName) {
+    Wh_Log(L">");
+
+    HICON result;
+
+    bool redirected = RedirectModule(
+        hInstance,
+        [&]() {
+            if (hInstance) {
+                if (IS_INTRESOURCE(lpIconName)) {
+                    Wh_Log(L"Resource number: %u",
+                           (DWORD)(ULONG_PTR)lpIconName);
+                } else {
+                    Wh_Log(L"Resource name: %s", lpIconName);
+                }
+            } else {
+                Wh_Log(L"Resource identifier: %zu", (ULONG_PTR)lpIconName);
+            }
+        },
+        [&](HINSTANCE hInstanceRedirect) {
+            result = LoadIconW_Original(hInstanceRedirect, lpIconName);
+            if (result) {
+                Wh_Log(L"Redirected successfully");
+                return true;
+            }
+
+            DWORD dwError = GetLastError();
+            Wh_Log(L"LoadIconW failed with error %u", dwError);
+            return false;
+        });
+    if (redirected) {
+        return result;
+    }
+
+    return LoadIconW_Original(hInstance, lpIconName);
+}
+
+using LoadCursorW_t = decltype(&LoadCursorW);
+LoadCursorW_t LoadCursorW_Original;
+HCURSOR WINAPI LoadCursorW_Hook(HINSTANCE hInstance, LPCWSTR lpCursorName) {
+    Wh_Log(L">");
+
+    HCURSOR result;
+
+    bool redirected = RedirectModule(
+        hInstance,
+        [&]() {
+            if (hInstance) {
+                if (IS_INTRESOURCE(lpCursorName)) {
+                    Wh_Log(L"Resource number: %u",
+                           (DWORD)(ULONG_PTR)lpCursorName);
+                } else {
+                    Wh_Log(L"Resource name: %s", lpCursorName);
+                }
+            } else {
+                Wh_Log(L"Resource identifier: %zu", (ULONG_PTR)lpCursorName);
+            }
+        },
+        [&](HINSTANCE hInstanceRedirect) {
+            result = LoadCursorW_Original(hInstanceRedirect, lpCursorName);
+            if (result) {
+                Wh_Log(L"Redirected successfully");
+                return true;
+            }
+
+            DWORD dwError = GetLastError();
+            Wh_Log(L"LoadCursorW failed with error %u", dwError);
+            return false;
+        });
+    if (redirected) {
+        return result;
+    }
+
+    return LoadCursorW_Original(hInstance, lpCursorName);
+}
+
 using LoadStringBaseExW_t = int(WINAPI*)(HINSTANCE hInstance,
                                          UINT uID,
                                          LPWSTR lpBuffer,
@@ -455,6 +568,57 @@ HRESULT WINAPI SHCreateStreamOnModuleResourceW_Hook(HMODULE hModule,
 
     return SHCreateStreamOnModuleResourceW_Original(hModule, pwszName, pwszType,
                                                     ppStream);
+}
+
+using SetXMLFromResource_t = HRESULT(__thiscall*)(void* pThis,
+                                                  PCWSTR lpName,
+                                                  PCWSTR lpType,
+                                                  HMODULE hModule,
+                                                  HINSTANCE param4,
+                                                  HINSTANCE param5);
+SetXMLFromResource_t SetXMLFromResource_Original;
+HRESULT __thiscall SetXMLFromResource_Hook(void* pThis,
+                                           PCWSTR lpName,
+                                           PCWSTR lpType,
+                                           HMODULE hModule,
+                                           HINSTANCE param4,
+                                           HINSTANCE param5) {
+    Wh_Log(L">");
+
+    HRESULT result;
+
+    bool redirected = RedirectModule(
+        hModule,
+        [&]() {
+            if (IS_INTRESOURCE(lpType)) {
+                Wh_Log(L"Resource type: %u", (DWORD)(ULONG_PTR)lpType);
+            } else {
+                Wh_Log(L"Resource type: %s", lpType);
+            }
+
+            if (IS_INTRESOURCE(lpName)) {
+                Wh_Log(L"Resource number: %u", (DWORD)(ULONG_PTR)lpName);
+            } else {
+                Wh_Log(L"Resource name: %s", lpName);
+            }
+        },
+        [&](HINSTANCE hInstanceRedirect) {
+            result = SetXMLFromResource_Original(
+                pThis, lpName, lpType, hInstanceRedirect, param4, param5);
+            if (SUCCEEDED(result)) {
+                Wh_Log(L"Redirected successfully");
+                return true;
+            }
+
+            Wh_Log(L"SetXMLFromResource failed with error %08X", result);
+            return false;
+        });
+    if (redirected) {
+        return result;
+    }
+
+    return SetXMLFromResource_Original(pThis, lpName, lpType, hModule, param4,
+                                       param5);
 }
 
 void LoadSettings() {
@@ -549,6 +713,12 @@ BOOL Wh_ModInit() {
     Wh_SetFunctionHook((void*)LoadImageW, (void*)LoadImageW_Hook,
                        (void**)&LoadImageW_Original);
 
+    Wh_SetFunctionHook((void*)LoadIconW, (void*)LoadIconW_Hook,
+                       (void**)&LoadIconW_Original);
+
+    Wh_SetFunctionHook((void*)LoadCursorW, (void*)LoadCursorW_Hook,
+                       (void**)&LoadCursorW_Original);
+
     HMODULE kernelBaseModule = LoadLibrary(L"kernelbase.dll");
     if (kernelBaseModule) {
         FARPROC pLoadStringBaseExW =
@@ -578,6 +748,30 @@ BOOL Wh_ModInit() {
         }
     } else {
         Wh_Log(L"Couldn't load shcore.dll");
+    }
+
+    HMODULE duiModule = LoadLibrary(L"dui70.dll");
+    if (duiModule) {
+        PCSTR procName =
+            R"(?_SetXMLFromResource@DUIXmlParser@DirectUI@@IAEJPBG0PAUHINSTANCE__@@11@Z)";
+        FARPROC pSetXMLFromResource = GetProcAddress(duiModule, procName);
+        if (!pSetXMLFromResource) {
+#ifdef _WIN64
+            PCSTR procName_Win10_x64 =
+                R"(?_SetXMLFromResource@DUIXmlParser@DirectUI@@IEAAJPEBG0PEAUHINSTANCE__@@11@Z)";
+            pSetXMLFromResource = GetProcAddress(duiModule, procName_Win10_x64);
+#endif
+        }
+
+        if (pSetXMLFromResource) {
+            Wh_SetFunctionHook((void*)pSetXMLFromResource,
+                               (void*)SetXMLFromResource_Hook,
+                               (void**)&SetXMLFromResource_Original);
+        } else {
+            Wh_Log(L"Couldn't find SetXMLFromResource");
+        }
+    } else {
+        Wh_Log(L"Couldn't load dui70.dll");
     }
 
     return TRUE;
