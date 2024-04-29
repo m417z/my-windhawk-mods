@@ -2,7 +2,7 @@
 // @id              icon-resource-redirect
 // @name            Resource Redirect
 // @description     Define alternative files for loading various resources (e.g. instead of icons in imageres.dll) for simple theming without having to modify system files
-// @version         1.0.5
+// @version         1.1
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
@@ -639,7 +639,7 @@ void LoadSettings() {
                       originalExpanded, originalExpandedLen - 1, nullptr,
                       nullptr, 0);
 
-        Wh_Log(L"Loaded %s->%s", originalExpanded, redirect);
+        Wh_Log(L"Configuring %s->%s", originalExpanded, redirect);
 
         paths[originalExpanded].push_back(redirect);
     };
