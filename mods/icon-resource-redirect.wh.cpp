@@ -13,7 +13,7 @@
 
 // ==WindhawkModReadme==
 /*
-# Icon Resource Redirect
+# Resource Redirect
 
 Define alternative files for loading various resources (e.g. instead of icons in
 imageres.dll) for simple theming without having to modify system files.
