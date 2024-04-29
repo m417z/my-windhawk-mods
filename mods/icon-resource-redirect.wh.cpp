@@ -41,6 +41,7 @@ The mod supports the following resource types and loading methods:
 * Icons, cursors and bitmaps loaded with the `LoadImageW` function.
 * Icons loaded with the `LoadIconW` function.
 * Cursors loaded with the `LoadCursorW` function.
+* Bitmaps loaded with the `LoadBitmapW` function.
 * Strings loaded with the `LoadStringW` function.
 * GDI+ images (e.g. PNGs) loaded with the `SHCreateStreamOnModuleResourceW`
   function.
@@ -481,6 +482,45 @@ HCURSOR WINAPI LoadCursorW_Hook(HINSTANCE hInstance, LPCWSTR lpCursorName) {
     return LoadCursorW_Original(hInstance, lpCursorName);
 }
 
+using LoadBitmapW_t = decltype(&LoadBitmapW);
+LoadBitmapW_t LoadBitmapW_Original;
+HBITMAP WINAPI LoadBitmapW_Hook(HINSTANCE hInstance, LPCWSTR lpBitmapName) {
+    Wh_Log(L">");
+
+    HBITMAP result;
+
+    bool redirected = RedirectModule(
+        hInstance,
+        [&]() {
+            if (hInstance) {
+                if (IS_INTRESOURCE(lpBitmapName)) {
+                    Wh_Log(L"Resource number: %u",
+                           (DWORD)(ULONG_PTR)lpBitmapName);
+                } else {
+                    Wh_Log(L"Resource name: %s", lpBitmapName);
+                }
+            } else {
+                Wh_Log(L"Resource identifier: %zu", (ULONG_PTR)lpBitmapName);
+            }
+        },
+        [&](HINSTANCE hInstanceRedirect) {
+            result = LoadBitmapW_Original(hInstanceRedirect, lpBitmapName);
+            if (result) {
+                Wh_Log(L"Redirected successfully");
+                return true;
+            }
+
+            DWORD dwError = GetLastError();
+            Wh_Log(L"LoadBitmapW failed with error %u", dwError);
+            return false;
+        });
+    if (redirected) {
+        return result;
+    }
+
+    return LoadBitmapW_Original(hInstance, lpBitmapName);
+}
+
 using LoadStringBaseExW_t = int(WINAPI*)(HINSTANCE hInstance,
                                          UINT uID,
                                          LPWSTR lpBuffer,
@@ -718,6 +758,9 @@ BOOL Wh_ModInit() {
 
     Wh_SetFunctionHook((void*)LoadCursorW, (void*)LoadCursorW_Hook,
                        (void**)&LoadCursorW_Original);
+
+    Wh_SetFunctionHook((void*)LoadBitmapW, (void*)LoadBitmapW_Hook,
+                       (void**)&LoadBitmapW_Original);
 
     HMODULE kernelBaseModule = LoadLibrary(L"kernelbase.dll");
     if (kernelBaseModule) {
