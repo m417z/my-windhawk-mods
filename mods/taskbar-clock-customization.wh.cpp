@@ -2,7 +2,7 @@
 // @id              taskbar-clock-customization
 // @name            Taskbar Clock Customization
 // @description     Customize the taskbar clock - add seconds, define a custom date/time format, add a news feed, and more
-// @version         1.3.2
+// @version         1.3.3
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
@@ -423,46 +423,63 @@ GetDateFormatEx_t GetDateFormatEx_Original;
 using GetDateFormatW_t = decltype(&GetDateFormatW);
 GetDateFormatW_t GetDateFormatW_Original;
 
-std::optional<std::wstring> GetUrlContent(PCWSTR lpUrl) {
-    HINTERNET hOpenHandle, hUrlHandle;
-    LPBYTE pUrlContent;
-    DWORD dwLength, dwNumberOfBytesRead;
-
-    hOpenHandle =
-        InternetOpen(L"TaskbarClockCustomization", INTERNET_OPEN_TYPE_PRECONFIG,
-                     nullptr, nullptr, 0);
-    if (hOpenHandle == nullptr) {
+std::optional<std::wstring> GetUrlContent(PCWSTR lpUrl,
+                                          bool failIfNot200 = true) {
+    HINTERNET hOpenHandle = InternetOpen(
+        L"WindhawkMod", INTERNET_OPEN_TYPE_PRECONFIG, nullptr, nullptr, 0);
+    if (!hOpenHandle) {
         return std::nullopt;
     }
 
-    hUrlHandle =
+    HINTERNET hUrlHandle =
         InternetOpenUrl(hOpenHandle, lpUrl, nullptr, 0,
                         INTERNET_FLAG_NO_AUTH | INTERNET_FLAG_NO_CACHE_WRITE |
                             INTERNET_FLAG_NO_COOKIES | INTERNET_FLAG_NO_UI |
                             INTERNET_FLAG_PRAGMA_NOCACHE | INTERNET_FLAG_RELOAD,
                         0);
-    if (hUrlHandle == nullptr) {
+    if (!hUrlHandle) {
         InternetCloseHandle(hOpenHandle);
         return std::nullopt;
     }
 
-    pUrlContent = (LPBYTE)HeapAlloc(GetProcessHeap(), 0, 0x400);
-    if (pUrlContent) {
-        InternetReadFile(hUrlHandle, pUrlContent, 0x400, &dwNumberOfBytesRead);
-        dwLength = dwNumberOfBytesRead;
-
-        while (dwNumberOfBytesRead) {
-            LPBYTE pNewUrlContent = (LPBYTE)HeapReAlloc(
-                GetProcessHeap(), 0, pUrlContent, dwLength + 0x400);
-            if (!pNewUrlContent) {
-                break;
-            }
-
-            pUrlContent = pNewUrlContent;
-            InternetReadFile(hUrlHandle, pUrlContent + dwLength, 0x400,
-                             &dwNumberOfBytesRead);
-            dwLength += dwNumberOfBytesRead;
+    if (failIfNot200) {
+        DWORD dwStatusCode = 0;
+        DWORD dwStatusCodeSize = sizeof(dwStatusCode);
+        if (!HttpQueryInfo(hUrlHandle,
+                           HTTP_QUERY_STATUS_CODE | HTTP_QUERY_FLAG_NUMBER,
+                           &dwStatusCode, &dwStatusCodeSize, nullptr) ||
+            dwStatusCode != 200) {
+            InternetCloseHandle(hUrlHandle);
+            InternetCloseHandle(hOpenHandle);
+            return std::nullopt;
         }
+    }
+
+    LPBYTE pUrlContent = (LPBYTE)HeapAlloc(GetProcessHeap(), 0, 0x400);
+    if (!pUrlContent) {
+        InternetCloseHandle(hUrlHandle);
+        InternetCloseHandle(hOpenHandle);
+        return std::nullopt;
+    }
+
+    DWORD dwNumberOfBytesRead;
+    InternetReadFile(hUrlHandle, pUrlContent, 0x400, &dwNumberOfBytesRead);
+    DWORD dwLength = dwNumberOfBytesRead;
+
+    while (dwNumberOfBytesRead) {
+        LPBYTE pNewUrlContent = (LPBYTE)HeapReAlloc(
+            GetProcessHeap(), 0, pUrlContent, dwLength + 0x400);
+        if (!pNewUrlContent) {
+            InternetCloseHandle(hUrlHandle);
+            InternetCloseHandle(hOpenHandle);
+            HeapFree(GetProcessHeap(), 0, pUrlContent);
+            return std::nullopt;
+        }
+
+        pUrlContent = pNewUrlContent;
+        InternetReadFile(hUrlHandle, pUrlContent + dwLength, 0x400,
+                         &dwNumberOfBytesRead);
+        dwLength += dwNumberOfBytesRead;
     }
 
     InternetCloseHandle(hUrlHandle);
@@ -533,7 +550,8 @@ void UpdateWebContent() {
     if (g_settings.webContentsUrl && g_settings.webContentsBlockStart &&
         g_settings.webContentsStart && g_settings.webContentsEnd) {
         lastUrl = g_settings.webContentsUrl;
-        urlContent = GetUrlContent(g_settings.webContentsUrl);
+        urlContent =
+            GetUrlContent(g_settings.webContentsUrl, /*failIfNot200=*/false);
 
         std::wstring extracted;
         if (urlContent) {
@@ -576,7 +594,7 @@ void UpdateWebContent() {
 
         if (item.url.get() != lastUrl) {
             lastUrl = item.url;
-            urlContent = GetUrlContent(item.url);
+            urlContent = GetUrlContent(item.url, /*failIfNot200=*/false);
         }
 
         if (!urlContent) {
@@ -886,7 +904,7 @@ size_t ResolveFormatToken(PCWSTR format, PCWSTR* resolved) {
     if (wcsncmp(L"%web", format, sizeof("%web") - 1) == 0) {
         WCHAR indexChar = format[sizeof("%web") - 1];
         if (indexChar >= L'1' && indexChar <= L'9') {
-            int index = indexChar - L'1';
+            size_t index = indexChar - L'1';
             if (index >= 0 && index < g_settings.webContentsItems.size()) {
                 PCWSTR formatAfterIndex = format + sizeof("%web1") - 1;
 
@@ -2036,6 +2054,80 @@ bool HookSymbols(HMODULE module,
     return true;
 }
 
+bool HookSymbolsWithOnlineCacheFallback(HMODULE module,
+                                        const SYMBOL_HOOK* symbolHooks,
+                                        size_t symbolHooksCount) {
+    constexpr WCHAR kModIdForCache[] = L"taskbar-clock-customization";
+
+    if (HookSymbols(module, symbolHooks, symbolHooksCount)) {
+        return true;
+    }
+
+    Wh_Log(L"HookSymbols() failed, trying to get an online cache");
+
+    WCHAR moduleFilePath[MAX_PATH];
+    DWORD moduleFilePathLen =
+        GetModuleFileName(module, moduleFilePath, ARRAYSIZE(moduleFilePath));
+    if (!moduleFilePathLen || moduleFilePathLen == ARRAYSIZE(moduleFilePath)) {
+        Wh_Log(L"GetModuleFileName failed");
+        return false;
+    }
+
+    PWSTR moduleFileName = wcsrchr(moduleFilePath, L'\\');
+    if (!moduleFileName) {
+        Wh_Log(L"GetModuleFileName returned unsupported path");
+        return false;
+    }
+
+    moduleFileName++;
+
+    DWORD moduleFileNameLen =
+        moduleFilePathLen - (moduleFileName - moduleFilePath);
+
+    LCMapStringEx(LOCALE_NAME_USER_DEFAULT, LCMAP_LOWERCASE, moduleFileName,
+                  moduleFileNameLen, moduleFileName, moduleFileNameLen, nullptr,
+                  nullptr, 0);
+
+    IMAGE_DOS_HEADER* dosHeader = (IMAGE_DOS_HEADER*)module;
+    IMAGE_NT_HEADERS* header =
+        (IMAGE_NT_HEADERS*)((BYTE*)dosHeader + dosHeader->e_lfanew);
+    auto timeStamp = std::to_wstring(header->FileHeader.TimeDateStamp);
+    auto imageSize = std::to_wstring(header->OptionalHeader.SizeOfImage);
+
+    std::wstring cacheStrKey =
+#if defined(_M_IX86)
+        L"symbol-x86-cache-";
+#elif defined(_M_X64)
+        L"symbol-cache-";
+#else
+#error "Unsupported architecture"
+#endif
+    cacheStrKey += moduleFileName;
+
+    std::wstring onlineCacheUrl =
+        L"https://ramensoftware.github.io/windhawk-mod-symbol-cache/";
+    onlineCacheUrl += kModIdForCache;
+    onlineCacheUrl += L'/';
+    onlineCacheUrl += cacheStrKey;
+    onlineCacheUrl += L'/';
+    onlineCacheUrl += timeStamp;
+    onlineCacheUrl += L'-';
+    onlineCacheUrl += imageSize;
+    onlineCacheUrl += L".txt";
+
+    Wh_Log(L"Looking for an online cache at %s", onlineCacheUrl.c_str());
+
+    auto onlineCache = GetUrlContent(onlineCacheUrl.c_str());
+    if (!onlineCache) {
+        Wh_Log(L"Failed to get online cache");
+        return false;
+    }
+
+    Wh_SetStringValue(cacheStrKey.c_str(), onlineCache->c_str());
+
+    return HookSymbols(module, symbolHooks, symbolHooksCount);
+}
+
 void LoadSettings() {
     g_settings.showSeconds = Wh_GetIntSetting(L"ShowSeconds");
     g_settings.timeFormat = Wh_GetStringSetting(L"TimeFormat");
@@ -2375,8 +2467,9 @@ BOOL Wh_ModInit() {
     };
 
     if (g_winVersion <= WinVersion::Win10) {
-        if (!HookSymbols(GetModuleHandle(nullptr), taskbarHooks10,
-                         ARRAYSIZE(taskbarHooks10))) {
+        if (!HookSymbolsWithOnlineCacheFallback(GetModuleHandle(nullptr),
+                                                taskbarHooks10,
+                                                ARRAYSIZE(taskbarHooks10))) {
             return FALSE;
         }
     } else {
@@ -2450,7 +2543,8 @@ BOOL Wh_ModInit() {
             return FALSE;
         }
 
-        if (!HookSymbols(module, taskbarHooks11, ARRAYSIZE(taskbarHooks11))) {
+        if (!HookSymbolsWithOnlineCacheFallback(module, taskbarHooks11,
+                                                ARRAYSIZE(taskbarHooks11))) {
             return FALSE;
         }
     }
