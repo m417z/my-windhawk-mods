@@ -805,8 +805,8 @@ winrt::Windows::Foundation::IInspectable ReadLocalValueWithWorkaround(
     DependencyObject elementDo,
     DependencyProperty property) {
     const auto value = elementDo.ReadLocalValue(property);
-    if (winrt::get_class_name(value) ==
-        L"Windows.UI.Xaml.Data.BindingExpressionBase") {
+    if (value && winrt::get_class_name(value) ==
+                     L"Windows.UI.Xaml.Data.BindingExpressionBase") {
         // BindingExpressionBase was observed to be returned for XAML properties
         // that were declared as following:
         //
@@ -1079,6 +1079,11 @@ bool TestElementMatcher(FrameworkElement element,
          GetResolvedPropertyValues(matcher.type, &matcher.propertyValues)) {
         const auto value =
             ReadLocalValueWithWorkaround(elementDo, propertyValue.first);
+        if (!value) {
+            Wh_Log(L"Null property value");
+            return false;
+        }
+
         const auto className = winrt::get_class_name(value);
         const auto expectedClassName =
             winrt::get_class_name(propertyValue.second);
