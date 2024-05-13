@@ -53,7 +53,7 @@ issue](https://tweaker.userecho.com/topics/826-scroll-on-trackpadtouchpad-doesnt
   $description: >-
     With this option enabled, middle clicking the volume tray icon will
     mute/unmute the system volume (Windows 11 version 22H2 or newer).
-- ctrlScrollVolumeChange: true
+- ctrlScrollVolumeChange: false
   $name: Ctrl + Scroll to change volume
   $description: >-
     When enabled, holding the Ctrl key and scrolling the mouse wheel will
