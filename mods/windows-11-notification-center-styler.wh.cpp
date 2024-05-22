@@ -97,9 +97,11 @@ properties of a control change, the target conditions aren't evaluated again.
 
 Each style is written as `Style=Value`, for example: `Height=5`. The `:=` syntax
 can be used to use XAML syntax, for example: `Fill:=<SolidColorBrush
-Color="Red"/>`. In addition, a visual state can be specified as following:
-`Style@VisualState=Value`, in which case the style will only apply when the
-visual state group specified in the target matches the specified visual state.
+Color="Red"/>`. Specifying an empty value with the XAML syntax will clear the
+property value, for example: `Fill:=`. In addition, a visual state can be
+specified as following: `Style@VisualState=Value`, in which case the style will
+only apply when the visual state group specified in the target matches the
+specified visual state.
 
 ### Resource variables
 
@@ -614,6 +616,23 @@ winrt::Windows::Foundation::IInspectable ReadLocalValueWithWorkaround(
     return value;
 }
 
+void SetOrClearValue(DependencyObject elementDo,
+                     DependencyProperty property,
+                     winrt::Windows::Foundation::IInspectable value) {
+    if (value == DependencyProperty::UnsetValue()) {
+        elementDo.ClearValue(property);
+        return;
+    }
+
+    // This might fail. See `ReadLocalValueWithWorkaround` for an example (which
+    // we now handle but there might be other cases).
+    try {
+        elementDo.SetValue(property, value);
+    } catch (winrt::hresult_error const& ex) {
+        Wh_Log(L"Error %08X: %s", ex.code(), ex.message().c_str());
+    }
+}
+
 // https://stackoverflow.com/a/5665377
 std::wstring EscapeXmlAttribute(std::wstring_view data) {
     std::wstring buffer;
@@ -740,7 +759,9 @@ const PropertyOverrides& GetResolvedPropertyOverrides(
                 xaml += L"        <Setter Property=\"";
                 xaml += EscapeXmlAttribute(rule.name);
                 xaml += L"\"";
-                if (!rule.isXamlValue) {
+                if (rule.isXamlValue && rule.value.empty()) {
+                    xaml += L" Value=\"{x:Null}\" />\n";
+                } else if (!rule.isXamlValue) {
                     xaml += L" Value=\"";
                     xaml += EscapeXmlAttribute(rule.value);
                     xaml += L"\" />\n";
@@ -758,10 +779,13 @@ const PropertyOverrides& GetResolvedPropertyOverrides(
 
             auto style = GetStyleFromXamlSetters(type, xaml);
 
-            for (size_t i = 0; i < styleRules.size(); i++) {
-                const auto setter = style.Setters().GetAt(i).as<Setter>();
-                propertyOverrides[setter.Property()]
-                                 [styleRules[i].visualState] = setter.Value();
+            uint32_t i = 0;
+            for (const auto& rule : styleRules) {
+                const auto setter = style.Setters().GetAt(i++).as<Setter>();
+                propertyOverrides[setter.Property()][rule.visualState] =
+                    rule.isXamlValue && rule.value.empty()
+                        ? DependencyProperty::UnsetValue()
+                        : setter.Value();
             }
         }
 
@@ -1022,7 +1046,7 @@ void ApplyCustomizationsForVisualStateGroup(
             propertyCustomizationState.originalValue =
                 ReadLocalValueWithWorkaround(element, property);
             propertyCustomizationState.customValue = it->second;
-            element.SetValue(property, it->second);
+            SetOrClearValue(element, property, it->second);
         }
 
         propertyCustomizationState.propertyChangedToken =
@@ -1054,8 +1078,8 @@ void ApplyCustomizationsForVisualStateGroup(
                     }
 
                     g_elementPropertyModifying = true;
-                    element.SetValue(property,
-                                     *propertyCustomizationState.customValue);
+                    SetOrClearValue(element, property,
+                                    *propertyCustomizationState.customValue);
                     g_elementPropertyModifying = false;
                 });
     }
@@ -1113,18 +1137,12 @@ void ApplyCustomizationsForVisualStateGroup(
                             }
 
                             propertyCustomizationState.customValue = it->second;
-                            element.SetValue(property, it->second);
+                            SetOrClearValue(element, property, it->second);
                         } else {
                             if (propertyCustomizationState.originalValue) {
-                                if (*propertyCustomizationState.originalValue ==
-                                    DependencyProperty::UnsetValue()) {
-                                    element.ClearValue(property);
-                                } else {
-                                    element.SetValue(property,
-                                                     *propertyCustomizationState
-                                                          .originalValue);
-                                }
-
+                                SetOrClearValue(
+                                    element, property,
+                                    *propertyCustomizationState.originalValue);
                                 propertyCustomizationState.originalValue
                                     .reset();
                             }
@@ -1152,19 +1170,7 @@ void RestoreCustomizationsForVisualStateGroup(
                 property, state.propertyChangedToken);
 
             if (state.originalValue) {
-                if (*state.originalValue == DependencyProperty::UnsetValue()) {
-                    element.ClearValue(property);
-                } else {
-                    // This might fail. See `ReadLocalValueWithWorkaround` for
-                    // an example (which we now handle but there might be other
-                    // cases).
-                    try {
-                        element.SetValue(property, *state.originalValue);
-                    } catch (winrt::hresult_error const& ex) {
-                        Wh_Log(L"Error %08X: %s", ex.code(),
-                               ex.message().c_str());
-                    }
-                }
+                SetOrClearValue(element, property, *state.originalValue);
             }
         }
     }
@@ -1335,9 +1341,6 @@ StyleRule StyleRuleFromString(std::wstring_view str) {
     auto value = str.substr(eqPos + 1);
 
     result.value = TrimStringView(value);
-    if (result.value.empty()) {
-        throw std::runtime_error("Bad style syntax, empty value");
-    }
 
     if (name.size() > 0 && name.back() == L':') {
         result.isXamlValue = true;
