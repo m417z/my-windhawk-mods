@@ -2031,7 +2031,10 @@ FindElementPropertyOverrides(FrameworkElement element,
     std::unordered_map<VisualStateGroup, PropertyOverrides> overrides;
     std::unordered_set<DependencyProperty> propertiesAdded;
 
-    for (auto& override : g_elementsCustomizationRules) {
+    for (auto it = g_elementsCustomizationRules.rbegin();
+         it != g_elementsCustomizationRules.rend(); ++it) {
+        auto& override = *it;
+
         VisualStateGroup visualStateGroup = nullptr;
 
         if (!TestElementMatcher(element, override.elementMatcher,
@@ -2547,18 +2550,6 @@ bool ProcessSingleTargetStylesFromSettings(int index) {
 }
 
 void ProcessAllStylesFromSettings() {
-    for (int i = 0;; i++) {
-        try {
-            if (!ProcessSingleTargetStylesFromSettings(i)) {
-                break;
-            }
-        } catch (winrt::hresult_error const& ex) {
-            Wh_Log(L"Error %08X: %s", ex.code(), ex.message().c_str());
-        } catch (std::exception const& ex) {
-            Wh_Log(L"Error: %S", ex.what());
-        }
-    }
-
     PCWSTR themeName = Wh_GetStringSetting(L"theme");
     const Theme* theme = nullptr;
     if (wcscmp(themeName, L"WinXP") == 0) {
@@ -2581,6 +2572,18 @@ void ProcessAllStylesFromSettings() {
             } catch (std::exception const& ex) {
                 Wh_Log(L"Error: %S", ex.what());
             }
+        }
+    }
+
+    for (int i = 0;; i++) {
+        try {
+            if (!ProcessSingleTargetStylesFromSettings(i)) {
+                break;
+            }
+        } catch (winrt::hresult_error const& ex) {
+            Wh_Log(L"Error %08X: %s", ex.code(), ex.message().c_str());
+        } catch (std::exception const& ex) {
+            Wh_Log(L"Error: %S", ex.what());
         }
     }
 }

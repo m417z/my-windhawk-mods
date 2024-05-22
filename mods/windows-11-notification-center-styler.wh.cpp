@@ -955,7 +955,10 @@ FindElementPropertyOverrides(FrameworkElement element,
     std::unordered_map<VisualStateGroup, PropertyOverrides> overrides;
     std::unordered_set<DependencyProperty> propertiesAdded;
 
-    for (auto& override : g_elementsCustomizationRules) {
+    for (auto it = g_elementsCustomizationRules.rbegin();
+         it != g_elementsCustomizationRules.rend(); ++it) {
+        auto& override = *it;
+
         VisualStateGroup visualStateGroup = nullptr;
 
         if (!TestElementMatcher(element, override.elementMatcher,
