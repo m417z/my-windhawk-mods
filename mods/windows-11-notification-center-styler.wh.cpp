@@ -1587,6 +1587,39 @@ void InitializeSettingsAndTap() {
     }
 }
 
+bool IsTargetThreadDescription(PCWSTR threadDescription) {
+    return wcscmp(threadDescription, L"ActionCenter") == 0;
+}
+
+bool IsTargetThread(HANDLE thread) {
+    using GetThreadDescription_t =
+        HRESULT(WINAPI*)(HANDLE hThread, PWSTR * ppszThreadDescription);
+
+    static auto pGetThreadDescription = []() -> GetThreadDescription_t {
+        HMODULE hKernel32Module = LoadLibrary(L"kernel32.dll");
+        if (!hKernel32Module) {
+            return nullptr;
+        }
+
+        return (GetThreadDescription_t)GetProcAddress(hKernel32Module,
+                                                      "GetThreadDescription");
+    }();
+
+    if (!pGetThreadDescription) {
+        return false;
+    }
+
+    PWSTR threadDescription;
+    bool isTargetThread = false;
+    HRESULT hr = pGetThreadDescription(thread, &threadDescription);
+    if (SUCCEEDED(hr)) {
+        isTargetThread = IsTargetThreadDescription(threadDescription);
+        LocalFree(threadDescription);
+    }
+
+    return isTargetThread;
+}
+
 using CreateWindowInBand_t = HWND(WINAPI*)(DWORD dwExStyle,
                                            LPCWSTR lpClassName,
                                            LPCWSTR lpWindowName,
@@ -1617,7 +1650,7 @@ HWND WINAPI CreateWindowInBand_Hook(DWORD dwExStyle,
     HWND hWnd = CreateWindowInBand_Original(
         dwExStyle, lpClassName, lpWindowName, dwStyle, X, Y, nWidth, nHeight,
         hWndParent, hMenu, hInstance, lpParam, dwBand);
-    if (!hWnd) {
+    if (!hWnd || !IsTargetThread(GetCurrentThread())) {
         return hWnd;
     }
 
@@ -1665,7 +1698,7 @@ HWND WINAPI CreateWindowInBandEx_Hook(DWORD dwExStyle,
     HWND hWnd = CreateWindowInBandEx_Original(
         dwExStyle, lpClassName, lpWindowName, dwStyle, X, Y, nWidth, nHeight,
         hWndParent, hMenu, hInstance, lpParam, dwBand, dwTypeFlags);
-    if (!hWnd) {
+    if (!hWnd || !IsTargetThread(GetCurrentThread())) {
         return hWnd;
     }
 
@@ -1745,8 +1778,20 @@ HWND GetCoreWnd() {
             ENUM_WINDOWS_PARAM& param = *(ENUM_WINDOWS_PARAM*)lParam;
 
             DWORD dwProcessId = 0;
-            if (!GetWindowThreadProcessId(hWnd, &dwProcessId) ||
-                dwProcessId != GetCurrentProcessId()) {
+            DWORD dwThreadId = GetWindowThreadProcessId(hWnd, &dwProcessId);
+            if (!dwThreadId || dwProcessId != GetCurrentProcessId()) {
+                return TRUE;
+            }
+
+            bool isTargetThread = false;
+            HANDLE hThread =
+                OpenThread(THREAD_QUERY_LIMITED_INFORMATION, FALSE, dwThreadId);
+            if (hThread) {
+                isTargetThread = IsTargetThread(hThread);
+                CloseHandle(hThread);
+            }
+
+            if (!isTargetThread) {
                 return TRUE;
             }
 
@@ -1765,6 +1810,55 @@ HWND GetCoreWnd() {
         (LPARAM)&param);
 
     return hWnd;
+}
+
+HWND GetCoreWndOfThread(DWORD threadId) {
+    struct ENUM_WINDOWS_PARAM {
+        HWND* hWnd;
+    };
+
+    HWND hWnd = nullptr;
+    ENUM_WINDOWS_PARAM param = {&hWnd};
+    EnumThreadWindows(
+        threadId,
+        [](HWND hWnd, LPARAM lParam) WINAPI -> BOOL {
+            ENUM_WINDOWS_PARAM& param = *(ENUM_WINDOWS_PARAM*)lParam;
+
+            WCHAR szClassName[32];
+            if (GetClassName(hWnd, szClassName, ARRAYSIZE(szClassName)) == 0) {
+                return TRUE;
+            }
+
+            if (_wcsicmp(szClassName, L"Windows.UI.Core.CoreWindow") == 0) {
+                *param.hWnd = hWnd;
+                return FALSE;
+            }
+
+            return TRUE;
+        },
+        (LPARAM)&param);
+
+    return hWnd;
+}
+
+using SetThreadDescription_t = HRESULT(WINAPI*)(HANDLE hThread,
+                                                PCWSTR lpThreadDescription);
+SetThreadDescription_t SetThreadDescription_Original;
+HRESULT WINAPI SetThreadDescription_Hook(HANDLE hThread,
+                                         PCWSTR lpThreadDescription) {
+    Wh_Log(L"> %s", lpThreadDescription ? lpThreadDescription : L"(null)");
+
+    if (lpThreadDescription && IsTargetThreadDescription(lpThreadDescription)) {
+        HWND hCoreWnd = GetCoreWndOfThread(GetThreadId(hThread));
+        if (hCoreWnd) {
+            Wh_Log(L"Initializing - Thread description was set");
+            RunFromWindowThread(
+                hCoreWnd, [](PVOID) WINAPI { InitializeSettingsAndTap(); },
+                nullptr);
+        }
+    }
+
+    return SetThreadDescription_Original(hThread, lpThreadDescription);
 }
 
 BOOL Wh_ModInit() {
@@ -1786,6 +1880,17 @@ BOOL Wh_ModInit() {
             Wh_SetFunctionHook(pCreateWindowInBandEx,
                                (void*)CreateWindowInBandEx_Hook,
                                (void**)&CreateWindowInBandEx_Original);
+        }
+    }
+
+    HMODULE hKernel32Module = LoadLibrary(L"kernel32.dll");
+    if (hKernel32Module) {
+        void* pSetThreadDescription =
+            (void*)GetProcAddress(hKernel32Module, "SetThreadDescription");
+        if (pSetThreadDescription) {
+            Wh_SetFunctionHook(pSetThreadDescription,
+                               (void*)SetThreadDescription_Hook,
+                               (void**)&SetThreadDescription_Original);
         }
     }
 
