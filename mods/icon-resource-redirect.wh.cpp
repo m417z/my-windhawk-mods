@@ -374,6 +374,44 @@ UINT WINAPI PrivateExtractIconsW_Hook(LPCWSTR szFileName,
                                                    cxIcon, cyIcon, phicon,
                                                    piconid, nIcons, flags);
             if (result != 0xFFFFFFFF && result != 0) {
+                // In case multiple icons are requested and the custom resource
+                // only overrides some of them, we'd ideally like to return a
+                // combined result. Unfortunately, that's not trivial to
+                // implement, so return the original icons in this case.
+                //
+                // An example where multiple icons are requested is the Change
+                // Icon dialog in shortcut file properties. If a partial result
+                // is returned, only the returned icons are displayed.
+                bool multipleIcons = nIcons > (HIWORD(cxIcon) ? 2 : 1);
+                bool partialResult = result < nIcons;
+                UINT multipleIconsOriginalCount = 0;
+                if (multipleIcons && partialResult) {
+                    multipleIconsOriginalCount = PrivateExtractIconsW_Original(
+                        szFileName, nIconIndex, cxIcon, cyIcon, nullptr,
+                        nullptr, nIcons, flags);
+                }
+
+                if (result < multipleIconsOriginalCount) {
+                    Wh_Log(
+                        L"[%u] Got less icons than the original file has: %u "
+                        L"vs. %u, replacing redirection with the original "
+                        L"icons",
+                        c, result, multipleIconsOriginalCount);
+
+                    if (phicon) {
+                        for (UINT i = 0; i < nIcons; i++) {
+                            if (phicon[i]) {
+                                DestroyIcon(phicon[i]);
+                                phicon[i] = nullptr;
+                            }
+                        }
+                    }
+
+                    result = PrivateExtractIconsW_Original(
+                        szFileName, nIconIndex, cxIcon, cyIcon, phicon, piconid,
+                        nIcons, flags);
+                }
+
                 Wh_Log(L"[%u] Redirected successfully, result: %u", c, result);
                 return true;
             }
