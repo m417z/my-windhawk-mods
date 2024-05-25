@@ -1584,6 +1584,8 @@ HRESULT InjectWindhawkTAP() noexcept
 
 #include <winrt/Windows.Foundation.Collections.h>
 #include <winrt/Windows.Foundation.h>
+#include <winrt/Windows.UI.Text.h>
+#include <winrt/Windows.UI.Xaml.Controls.h>
 #include <winrt/Windows.UI.Xaml.Markup.h>
 #include <winrt/Windows.UI.Xaml.Media.h>
 #include <winrt/Windows.UI.Xaml.h>
@@ -1703,6 +1705,19 @@ void SetOrClearValue(DependencyObject elementDo,
     // This might fail. See `ReadLocalValueWithWorkaround` for an example (which
     // we now handle but there might be other cases).
     try {
+        // `setter.Value()` returns font weight as an int. Using it with
+        // `SetValue` results in the following error: 0x80004002 (No such
+        // interface supported). Box it as `Windows.UI.Text.FontWeight` as a
+        // workaround.
+        if (property == Controls::TextBlock::FontWeightProperty()) {
+            auto valueInt = value.try_as<int>();
+            if (valueInt && *valueInt >= std::numeric_limits<uint16_t>::min() &&
+                *valueInt <= std::numeric_limits<uint16_t>::max()) {
+                value = winrt::box_value(winrt::Windows::UI::Text::FontWeight{
+                    static_cast<uint16_t>(*valueInt)});
+            }
+        }
+
         elementDo.SetValue(property, value);
     } catch (winrt::hresult_error const& ex) {
         Wh_Log(L"Error %08X: %s", ex.code(), ex.message().c_str());
