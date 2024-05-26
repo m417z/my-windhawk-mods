@@ -56,8 +56,8 @@ issue](https://tweaker.userecho.com/topics/826-scroll-on-trackpadtouchpad-doesnt
 - ctrlScrollVolumeChange: false
   $name: Ctrl + Scroll to change volume
   $description: >-
-    When enabled, holding the Ctrl key and scrolling the mouse wheel will
-    change the system volume.
+    When enabled, holding the Ctrl key and scrolling the mouse wheel will change
+    the system volume.
 - noAutomaticMuteToggle: false
   $name: No automatic mute toggle
   $description: >-
@@ -1540,7 +1540,8 @@ void LoadSettings() {
     Wh_FreeStringSetting(scrollArea);
 
     g_settings.middleClickToMute = Wh_GetIntSetting(L"middleClickToMute");
-    g_settings.ctrlScrollVolumeChange = Wh_GetIntSetting(L"ctrlScrollVolumeChange");
+    g_settings.ctrlScrollVolumeChange =
+        Wh_GetIntSetting(L"ctrlScrollVolumeChange");
     g_settings.noAutomaticMuteToggle =
         Wh_GetIntSetting(L"noAutomaticMuteToggle");
     g_settings.volumeChangeStep = Wh_GetIntSetting(L"volumeChangeStep");
