@@ -2,7 +2,7 @@
 // @id              taskbar-volume-control
 // @name            Taskbar Volume Control
 // @description     Control the system volume by scrolling over the taskbar
-// @version         1.2
+// @version         1.2.1
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
@@ -53,6 +53,11 @@ issue](https://tweaker.userecho.com/topics/826-scroll-on-trackpadtouchpad-doesnt
   $description: >-
     With this option enabled, middle clicking the volume tray icon will
     mute/unmute the system volume (Windows 11 version 22H2 or newer).
+- ctrlScrollVolumeChange: false
+  $name: Ctrl + Scroll to change volume
+  $description: >-
+    When enabled, holding the Ctrl key and scrolling the mouse wheel will
+    change the system volume.
 - noAutomaticMuteToggle: false
   $name: No automatic mute toggle
   $description: >-
@@ -105,6 +110,7 @@ struct {
     int volumeIndicator;
     int scrollArea;
     bool middleClickToMute;
+    bool ctrlScrollVolumeChange;
     bool noAutomaticMuteToggle;
     int volumeChangeStep;
     bool oldTaskbarOnWin11;
@@ -1180,6 +1186,10 @@ bool OnMouseWheel(HWND hWnd, WPARAM wParam, LPARAM lParam) {
         return false;
     }
 
+    if (g_settings.ctrlScrollVolumeChange && GetKeyState(VK_CONTROL) >= 0) {
+        return false;
+    }
+
     POINT pt;
     pt.x = GET_X_LPARAM(lParam);
     pt.y = GET_Y_LPARAM(lParam);
@@ -1530,6 +1540,7 @@ void LoadSettings() {
     Wh_FreeStringSetting(scrollArea);
 
     g_settings.middleClickToMute = Wh_GetIntSetting(L"middleClickToMute");
+    g_settings.ctrlScrollVolumeChange = Wh_GetIntSetting(L"ctrlScrollVolumeChange");
     g_settings.noAutomaticMuteToggle =
         Wh_GetIntSetting(L"noAutomaticMuteToggle");
     g_settings.volumeChangeStep = Wh_GetIntSetting(L"volumeChangeStep");
