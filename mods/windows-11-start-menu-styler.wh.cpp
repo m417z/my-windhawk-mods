@@ -2,7 +2,7 @@
 // @id              windows-11-start-menu-styler
 // @name            Windows 11 Start Menu Styler
 // @description     An advanced mod to override style attributes of the start menu control elements
-// @version         1.1.2
+// @version         1.1.3
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
@@ -50,6 +50,10 @@ SideBySide2](https://github.com/ramensoftware/windows-11-start-menu-styling-guid
 [![SideBySideMinimal](https://raw.githubusercontent.com/ramensoftware/windows-11-start-menu-styling-guide/main/Themes/SideBySideMinimal/screenshot-small.png)
 \
 SideBySideMinimal](https://github.com/ramensoftware/windows-11-start-menu-styling-guide/blob/main/Themes/SideBySideMinimal/README.md)
+
+[![TranslucentStartMenu](https://raw.githubusercontent.com/ramensoftware/windows-11-start-menu-styling-guide/main/Themes/TranslucentStartMenu/screenshot-small.png)
+\
+TranslucentStartMenu](https://github.com/ramensoftware/windows-11-start-menu-styling-guide/blob/main/Themes/TranslucentStartMenu/README.md)
 
 More themes can be found in the **Themes** section of [The Windows 11 start menu
 styling
@@ -135,6 +139,7 @@ code from the **TranslucentTB** project.
   - SideBySide: SideBySide
   - SideBySide2: SideBySide2
   - SideBySideMinimal: SideBySideMinimal
+  - TranslucentStartMenu: TranslucentStartMenu
 - controlStyles:
   - - target: ""
       $name: Target
@@ -348,6 +353,33 @@ const Theme g_themeSideBySideMinimal = {{
     ThemeTargetStyles{L"StartDocked.PowerOptionsView", {L"Margin=-575,0,0,0"}},
     ThemeTargetStyles{L"StartDocked.UserTileView", {L"Visibility=Collapsed"}},
     ThemeTargetStyles{L"StartMenu.PinnedList", {L"Height=504"}},
+}};
+
+// Author: Undisputed00x
+const Theme g_themeTranslucentStartMenu = {{
+    ThemeTargetStyles{
+        L"Border#AcrylicBorder",
+        {L"CornerRadius=15",
+         L"Background:=<AcrylicBrush TintColor=\"Transparent\" "
+         L"TintLuminosityOpacity=\"0\" TintOpacity=\"0\" Opacity=\"1\"/>",
+         L"BorderThickness=0,0,0,0"}},
+    ThemeTargetStyles{L"Border#AcrylicOverlay", {L"Visibility=Collapsed"}},
+    ThemeTargetStyles{
+        L"Border#BorderElement",
+        {L"CornerRadius=10", L"BorderThickness=0,0,0,0",
+         L"Background:=<AcrylicBrush TintLuminosityOpacity=\"0.03\" "
+         L"TintOpacity=\"0\" Opacity=\"1\"/>"}},
+    ThemeTargetStyles{L"Grid#ShowMoreSuggestions", {L"Visibility=Collapsed"}},
+    ThemeTargetStyles{L"Grid#SuggestionsParentContainer",
+                      {L"Visibility=Collapsed"}},
+    ThemeTargetStyles{L"Grid#TopLevelSuggestionsListHeader",
+                      {L"Visibility=Collapsed"}},
+    ThemeTargetStyles{L"StartMenu.PinnedList", {L"Height=504"}},
+    ThemeTargetStyles{
+        L"MenuFlyoutPresenter",
+        {L"Background:=<AcrylicBrush TintColor=\"Transparent\" "
+         L"TintLuminosityOpacity=\"0\" TintOpacity=\"0\" Opacity=\"1\"/>",
+         L"BorderThickness=0,0,0,0"}},
 }};
 
 std::atomic<DWORD> g_targetThreadId = 0;
@@ -1704,6 +1736,8 @@ void ProcessAllStylesFromSettings() {
         theme = &g_themeSideBySide2;
     } else if (wcscmp(themeName, L"SideBySideMinimal") == 0) {
         theme = &g_themeSideBySideMinimal;
+    } else if (wcscmp(themeName, L"TranslucentStartMenu") == 0) {
+        theme = &g_themeTranslucentStartMenu;
     }
     Wh_FreeStringSetting(themeName);
 
