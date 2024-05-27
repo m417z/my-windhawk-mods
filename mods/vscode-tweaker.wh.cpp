@@ -303,15 +303,14 @@ std::string wide_string_to_string(PCWSTR wide_string)
         return "";
     }
 
-    int size_needed = WideCharToMultiByte(CP_UTF8, 0, wide_string, -1, nullptr, 0, nullptr, nullptr);
+    int wide_string_len = static_cast<int>(wcslen(wide_string));
+    int size_needed = WideCharToMultiByte(CP_UTF8, 0, wide_string, wide_string_len, nullptr, 0, nullptr, nullptr);
     if (size_needed <= 0) {
         throw std::runtime_error("WideCharToMultiByte() failed: " + std::to_string(size_needed));
     }
 
-    size_needed--; // no need for the NULL terminator
-
     std::string result(size_needed, 0);
-    WideCharToMultiByte(CP_UTF8, 0, wide_string, size_needed, result.data(), size_needed, nullptr, nullptr);
+    WideCharToMultiByte(CP_UTF8, 0, wide_string, wide_string_len, result.data(), size_needed, nullptr, nullptr);
     return result;
 }
 
