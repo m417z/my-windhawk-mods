@@ -321,6 +321,13 @@ const Theme g_themeSideBySide2 = {{
     ThemeTargetStyles{
         L"Windows.UI.Xaml.Controls.TextBlock#NoSuggestionsWithoutSettingsLink",
         {L"Margin=11,0,48,0"}},
+    ThemeTargetStyles{
+        L"StartDocked.LauncherFrame > Windows.UI.Xaml.Controls.Grid#RootGrid > "
+        L"Windows.UI.Xaml.Controls.Grid#RootContent > "
+        L"Windows.UI.Xaml.Controls.Grid#MainContent > "
+        L"Windows.UI.Xaml.Controls.Grid#InnerContent > "
+        L"Windows.UI.Xaml.Shapes.Rectangle",
+        {L"Margin=67,7,0,21"}},
 }};
 
 // Author: Windows XP (6.1.7601)
