@@ -41,6 +41,10 @@ WinXP](https://github.com/ramensoftware/windows-11-taskbar-styling-guide/blob/ma
 \
 Bubbles](https://github.com/ramensoftware/windows-11-taskbar-styling-guide/blob/main/Themes/Bubbles/README.md)
 
+[![TranslucentTaskbar](https://raw.githubusercontent.com/Undisputed00x/windows-11-taskbar-styling-guide/main/Themes/TranslucentTaskbar/screenshot.png)
+\
+TranslucentTaskbar](https://github.com/Undisputed00x/windows-11-taskbar-styling-guide/blob/main/Themes/TranslucentTaskbar/README.md)
+
 More themes can be found in the **Themes** section of [The Windows 11 taskbar
 styling
 guide](https://github.com/ramensoftware/windows-11-taskbar-styling-guide/blob/main/README.md#themes).
@@ -183,6 +187,7 @@ relevant `#pragma region` regions in the code editor.
   - "": None
   - WinXP: WinXP
   - Bubbles: Bubbles
+  - TranslucentTaskbar: TranslucentTaskbar
 - controlStyles:
   - - target: ""
       $name: Target
@@ -1238,6 +1243,27 @@ const Theme g_themeBubbles = {{
     ThemeTargetStyles{L"Taskbar.SearchBoxButton",
                       {L"Height=56", L"Margin=0,-4,0,0"}},
     ThemeTargetStyles{L"TextBlock#SearchBoxTextBlock", {L"Foreground=White"}},
+}};
+
+const Theme g_themeTranslucentTaskbar = {{
+    ThemeTargetStyles{
+        L"Rectangle#BackgroundFill",
+        {L"Fill:=<AcrylicBrush TintColor=\"Transparent\" TintOpacity=\"0\" TintLuminosityOpacity=\"0\" Opacity=\"1\"/>"}},
+    ThemeTargetStyles{
+        L"Rectangle#BackgroundStroke",
+        {L"Visibility=Collapsed"}},
+    ThemeTargetStyles{
+        L"MenuFlyoutPresenter",
+        {L"Background:=<AcrylicBrush TintColor=\"Transparent\" TintOpacity=\"0\" TintLuminosityOpacity=\"0\" Opacity=\"1\"/>",
+         L"BorderThickness=0,0,0,0",
+         L"CornerRadius=14",
+         L"Padding=,3,4,3,4"}},
+    ThemeTargetStyles{
+        L"Border#OverflowFlyoutBackgroundBorder",
+        {L"Background:=<AcrylicBrush TintColor=\"Transparent\" TintOpacity=\"0\" TintLuminosityOpacity=\"0\" Opacity=\"1\"/>",
+         L"BorderThickness=0,0,0,0",
+         L"CornerRadius=15",
+         L"Margin=-2,-2,-2,-2"}},
 }};
 
 std::atomic<DWORD> g_targetThreadId = 0;
@@ -2571,6 +2597,8 @@ void ProcessAllStylesFromSettings() {
         theme = &g_themeWinXP;
     } else if (wcscmp(themeName, L"Bubbles") == 0) {
         theme = &g_themeBubbles;
+    }else if (wcscmp(themeName, L"TranslucentTaskbar") == 0){
+        theme = &g_themeTranslucentTaskbar;
     }
     Wh_FreeStringSetting(themeName);
 
