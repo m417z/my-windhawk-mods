@@ -1591,8 +1591,6 @@ HRESULT InjectWindhawkTAP() noexcept
 // clang-format on
 ////////////////////////////////////////////////////////////////////////////////
 
-#include <windhawk_utils.h>
-
 #include <list>
 #include <optional>
 #include <sstream>
@@ -1698,7 +1696,14 @@ std::unordered_map<InstanceHandle, ElementCustomizationState>
 
 bool g_elementPropertyModifying;
 
-bool g_inTaskbarBackground_OnApplyTemplate;
+struct BackgroundFillDelayedApplyData {
+    UINT_PTR timer;
+    InstanceHandle handle;
+    winrt::weak_ref<wux::FrameworkElement> element;
+    std::wstring fallbackClassName;
+};
+
+std::optional<BackgroundFillDelayedApplyData> g_backgroundFillDelayedApplyData;
 
 winrt::Windows::Foundation::IInspectable ReadLocalValueWithWorkaround(
     DependencyObject elementDo,
@@ -2306,9 +2311,9 @@ void RestoreCustomizationsForVisualStateGroup(
     }
 }
 
-void ApplyCustomizations(InstanceHandle handle,
-                         FrameworkElement element,
-                         PCWSTR fallbackClassName) {
+void ApplyCustomizationsWithNoDelay(InstanceHandle handle,
+                                    FrameworkElement element,
+                                    PCWSTR fallbackClassName) {
     auto overrides = FindElementPropertyOverrides(element, fallbackClassName);
     if (overrides.empty()) {
         return;
@@ -2345,7 +2350,65 @@ void ApplyCustomizations(InstanceHandle handle,
     }
 }
 
+void ApplyCustomizations(InstanceHandle handle,
+                         FrameworkElement element,
+                         PCWSTR fallbackClassName) {
+    if (winrt::get_class_name(element) == L"Windows.UI.Xaml.Shapes.Rectangle" &&
+        element.Name() == L"BackgroundFill") {
+        // If customized before
+        // `winrt::Taskbar::implementation::TaskbarBackground::OnApplyTemplate`
+        // is executed, it can lead to a crash, or the customization may be
+        // overridden. See:
+        // https://github.com/ramensoftware/windows-11-taskbar-styling-guide/issues/4
+        Wh_Log(L"Delaying customization of BackgroundFill");
+
+        auto previousTimer = g_backgroundFillDelayedApplyData
+                                 ? g_backgroundFillDelayedApplyData->timer
+                                 : 0;
+
+        auto& delayedApplyData = g_backgroundFillDelayedApplyData.emplace();
+
+        delayedApplyData.handle = handle;
+        delayedApplyData.element = element;
+        delayedApplyData.fallbackClassName = fallbackClassName;
+
+        delayedApplyData.timer = SetTimer(
+            nullptr, previousTimer, 0,
+            [](HWND hwnd,         // handle of window for timer messages
+               UINT uMsg,         // WM_TIMER message
+               UINT_PTR idEvent,  // timer identifier
+               DWORD dwTime       // current system time
+               ) WINAPI {
+                Wh_Log(L"Running delayed customization of BackgroundFill");
+
+                auto& delayedApplyData = *g_backgroundFillDelayedApplyData;
+
+                if (auto element = delayedApplyData.element.get()) {
+                    ApplyCustomizationsWithNoDelay(
+                        delayedApplyData.handle, std::move(element),
+                        delayedApplyData.fallbackClassName.c_str());
+                } else {
+                    Wh_Log(L"Element no longer exists");
+                }
+
+                KillTimer(nullptr, delayedApplyData.timer);
+                g_backgroundFillDelayedApplyData.reset();
+            });
+
+        return;
+    }
+
+    ApplyCustomizationsWithNoDelay(handle, std::move(element),
+                                   fallbackClassName);
+}
+
 void CleanupCustomizations(InstanceHandle handle) {
+    if (g_backgroundFillDelayedApplyData &&
+        g_backgroundFillDelayedApplyData->handle == handle) {
+        KillTimer(nullptr, g_backgroundFillDelayedApplyData->timer);
+        g_backgroundFillDelayedApplyData.reset();
+    }
+
     auto it = g_elementsCustomizationState.find(handle);
     if (it == g_elementsCustomizationState.end()) {
         return;
@@ -2685,6 +2748,11 @@ void ProcessResourceVariablesFromSettings() {
 }
 
 void UninitializeSettingsAndTap() {
+    if (g_backgroundFillDelayedApplyData) {
+        KillTimer(nullptr, g_backgroundFillDelayedApplyData->timer);
+        g_backgroundFillDelayedApplyData.reset();
+    }
+
     for (const auto& [handle, elementCustomizationState] :
          g_elementsCustomizationState) {
         auto element = elementCustomizationState.element.get();
@@ -2821,253 +2889,8 @@ HWND GetTaskbarUiWnd() {
                         nullptr);
 }
 
-using TaskbarBackground_OnApplyTemplate_t = void(WINAPI*)(void* pThis);
-TaskbarBackground_OnApplyTemplate_t TaskbarBackground_OnApplyTemplate_Original;
-void WINAPI TaskbarBackground_OnApplyTemplate_Hook(void* pThis) {
-    Wh_Log(L">");
-
-    g_inTaskbarBackground_OnApplyTemplate = true;
-
-    TaskbarBackground_OnApplyTemplate_Original(pThis);
-
-    g_inTaskbarBackground_OnApplyTemplate = false;
-}
-
-using Foundation_operator_eq_t = bool(WINAPI*)(void** p1, void** p2);
-Foundation_operator_eq_t Foundation_operator_eq_Original;
-bool WINAPI Foundation_operator_eq_Hook(void** p1, void** p2) {
-    if (g_inTaskbarBackground_OnApplyTemplate) {
-        Wh_Log(L">");
-
-        // The code inside TaskbarBackground::OnApplyTemplate throws an
-        // exception if operator== returns true in some cases, and that happens
-        // if the background is customized, in which case two null pointers are
-        // compared. It can be triggered with the following example:
-        // * Target: Rectangle#BackgroundFill
-        // * Style: Fill=Red
-        if (p1 && p2 && !*p1 && !*p2) {
-            return false;
-        }
-    }
-
-    return Foundation_operator_eq_Original(p1, p2);
-}
-
-std::optional<std::wstring> GetUrlContent(PCWSTR lpUrl) {
-    HINTERNET hOpenHandle = InternetOpen(
-        L"WindhawkMod", INTERNET_OPEN_TYPE_PRECONFIG, nullptr, nullptr, 0);
-    if (!hOpenHandle) {
-        return std::nullopt;
-    }
-
-    HINTERNET hUrlHandle =
-        InternetOpenUrl(hOpenHandle, lpUrl, nullptr, 0,
-                        INTERNET_FLAG_NO_AUTH | INTERNET_FLAG_NO_CACHE_WRITE |
-                            INTERNET_FLAG_NO_COOKIES | INTERNET_FLAG_NO_UI |
-                            INTERNET_FLAG_PRAGMA_NOCACHE | INTERNET_FLAG_RELOAD,
-                        0);
-    if (!hUrlHandle) {
-        InternetCloseHandle(hOpenHandle);
-        return std::nullopt;
-    }
-
-    DWORD dwStatusCode = 0;
-    DWORD dwStatusCodeSize = sizeof(dwStatusCode);
-    if (!HttpQueryInfo(hUrlHandle,
-                       HTTP_QUERY_STATUS_CODE | HTTP_QUERY_FLAG_NUMBER,
-                       &dwStatusCode, &dwStatusCodeSize, nullptr) ||
-        dwStatusCode != 200) {
-        InternetCloseHandle(hUrlHandle);
-        InternetCloseHandle(hOpenHandle);
-        return std::nullopt;
-    }
-
-    LPBYTE pUrlContent = (LPBYTE)HeapAlloc(GetProcessHeap(), 0, 0x400);
-    if (!pUrlContent) {
-        InternetCloseHandle(hUrlHandle);
-        InternetCloseHandle(hOpenHandle);
-        return std::nullopt;
-    }
-
-    DWORD dwNumberOfBytesRead;
-    InternetReadFile(hUrlHandle, pUrlContent, 0x400, &dwNumberOfBytesRead);
-    DWORD dwLength = dwNumberOfBytesRead;
-
-    while (dwNumberOfBytesRead) {
-        LPBYTE pNewUrlContent = (LPBYTE)HeapReAlloc(
-            GetProcessHeap(), 0, pUrlContent, dwLength + 0x400);
-        if (!pNewUrlContent) {
-            InternetCloseHandle(hUrlHandle);
-            InternetCloseHandle(hOpenHandle);
-            HeapFree(GetProcessHeap(), 0, pUrlContent);
-            return std::nullopt;
-        }
-
-        pUrlContent = pNewUrlContent;
-        InternetReadFile(hUrlHandle, pUrlContent + dwLength, 0x400,
-                         &dwNumberOfBytesRead);
-        dwLength += dwNumberOfBytesRead;
-    }
-
-    InternetCloseHandle(hUrlHandle);
-    InternetCloseHandle(hOpenHandle);
-
-    // Assume UTF-8.
-    int charsNeeded = MultiByteToWideChar(CP_UTF8, 0, (PCSTR)pUrlContent,
-                                          dwLength, nullptr, 0);
-    std::wstring unicodeContent(charsNeeded, L'\0');
-    MultiByteToWideChar(CP_UTF8, 0, (PCSTR)pUrlContent, dwLength,
-                        unicodeContent.data(), unicodeContent.size());
-
-    HeapFree(GetProcessHeap(), 0, pUrlContent);
-
-    return unicodeContent;
-}
-
-bool HookSymbolsWithOnlineCacheFallback(
-    HMODULE module,
-    const WindhawkUtils::SYMBOL_HOOK* symbolHooks,
-    size_t symbolHooksCount) {
-    constexpr WCHAR kModIdForCache[] = L"windows-11-taskbar-styler";
-
-    if (HookSymbols(module, symbolHooks, symbolHooksCount)) {
-        return true;
-    }
-
-    Wh_Log(L"HookSymbols() failed, trying to get an online cache");
-
-    WCHAR moduleFilePath[MAX_PATH];
-    DWORD moduleFilePathLen =
-        GetModuleFileName(module, moduleFilePath, ARRAYSIZE(moduleFilePath));
-    if (!moduleFilePathLen || moduleFilePathLen == ARRAYSIZE(moduleFilePath)) {
-        Wh_Log(L"GetModuleFileName failed");
-        return false;
-    }
-
-    PWSTR moduleFileName = wcsrchr(moduleFilePath, L'\\');
-    if (!moduleFileName) {
-        Wh_Log(L"GetModuleFileName returned unsupported path");
-        return false;
-    }
-
-    moduleFileName++;
-
-    DWORD moduleFileNameLen =
-        moduleFilePathLen - (moduleFileName - moduleFilePath);
-
-    LCMapStringEx(LOCALE_NAME_USER_DEFAULT, LCMAP_LOWERCASE, moduleFileName,
-                  moduleFileNameLen, moduleFileName, moduleFileNameLen, nullptr,
-                  nullptr, 0);
-
-    IMAGE_DOS_HEADER* dosHeader = (IMAGE_DOS_HEADER*)module;
-    IMAGE_NT_HEADERS* header =
-        (IMAGE_NT_HEADERS*)((BYTE*)dosHeader + dosHeader->e_lfanew);
-    auto timeStamp = std::to_wstring(header->FileHeader.TimeDateStamp);
-    auto imageSize = std::to_wstring(header->OptionalHeader.SizeOfImage);
-
-    std::wstring cacheStrKey =
-#if defined(_M_IX86)
-        L"symbol-x86-cache-";
-#elif defined(_M_X64)
-        L"symbol-cache-";
-#else
-#error "Unsupported architecture"
-#endif
-    cacheStrKey += moduleFileName;
-
-    std::wstring onlineCacheUrl =
-        L"https://ramensoftware.github.io/windhawk-mod-symbol-cache/";
-    onlineCacheUrl += kModIdForCache;
-    onlineCacheUrl += L'/';
-    onlineCacheUrl += cacheStrKey;
-    onlineCacheUrl += L'/';
-    onlineCacheUrl += timeStamp;
-    onlineCacheUrl += L'-';
-    onlineCacheUrl += imageSize;
-    onlineCacheUrl += L".txt";
-
-    Wh_Log(L"Looking for an online cache at %s", onlineCacheUrl.c_str());
-
-    auto onlineCache = GetUrlContent(onlineCacheUrl.c_str());
-    if (!onlineCache) {
-        Wh_Log(L"Failed to get online cache");
-        return false;
-    }
-
-    Wh_SetStringValue(cacheStrKey.c_str(), onlineCache->c_str());
-
-    return HookSymbols(module, symbolHooks, symbolHooksCount);
-}
-
-bool GetTaskbarViewDllPath(WCHAR path[MAX_PATH]) {
-    WCHAR szWindowsDirectory[MAX_PATH];
-    if (!GetWindowsDirectory(szWindowsDirectory,
-                             ARRAYSIZE(szWindowsDirectory))) {
-        Wh_Log(L"GetWindowsDirectory failed");
-        return false;
-    }
-
-    // Windows 11 version 22H2.
-    wcscpy_s(path, MAX_PATH, szWindowsDirectory);
-    wcscat_s(
-        path, MAX_PATH,
-        LR"(\SystemApps\MicrosoftWindows.Client.Core_cw5n1h2txyewy\Taskbar.View.dll)");
-    if (GetFileAttributes(path) != INVALID_FILE_ATTRIBUTES) {
-        return true;
-    }
-
-    // Windows 11 version 21H2.
-    wcscpy_s(path, MAX_PATH, szWindowsDirectory);
-    wcscat_s(
-        path, MAX_PATH,
-        LR"(\SystemApps\MicrosoftWindows.Client.CBS_cw5n1h2txyewy\ExplorerExtensions.dll)");
-    if (GetFileAttributes(path) != INVALID_FILE_ATTRIBUTES) {
-        return true;
-    }
-
-    return false;
-}
-
-bool HookTaskbarViewDllSymbols() {
-    WCHAR dllPath[MAX_PATH];
-    if (!GetTaskbarViewDllPath(dllPath)) {
-        Wh_Log(L"Taskbar view module not found");
-        return false;
-    }
-
-    HMODULE module =
-        LoadLibraryEx(dllPath, nullptr, LOAD_WITH_ALTERED_SEARCH_PATH);
-    if (!module) {
-        Wh_Log(L"Taskbar view module couldn't be loaded");
-        return false;
-    }
-
-    WindhawkUtils::SYMBOL_HOOK symbolHooks[] = {
-        {
-            {LR"(public: void __cdecl winrt::Taskbar::implementation::TaskbarBackground::OnApplyTemplate(void))"},
-            (void**)&TaskbarBackground_OnApplyTemplate_Original,
-            (void*)TaskbarBackground_OnApplyTemplate_Hook,
-            true,
-        },
-        {
-            {LR"(bool __cdecl winrt::Windows::Foundation::operator==(struct winrt::Windows::Foundation::IUnknown const &,struct winrt::Windows::Foundation::IUnknown const &))"},
-            (void**)&Foundation_operator_eq_Original,
-            (void*)Foundation_operator_eq_Hook,
-            true,
-        },
-    };
-
-    return HookSymbolsWithOnlineCacheFallback(module, symbolHooks,
-                                              ARRAYSIZE(symbolHooks));
-}
-
 BOOL Wh_ModInit() {
     Wh_Log(L">");
-
-    if (!HookTaskbarViewDllSymbols()) {
-        // Can continue without the hooks.
-        // return FALSE;
-    }
 
     Wh_SetFunctionHook((void*)CreateWindowExW, (void*)CreateWindowExW_Hook,
                        (void**)&CreateWindowExW_Original);
