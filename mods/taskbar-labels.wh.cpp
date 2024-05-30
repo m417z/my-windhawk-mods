@@ -894,6 +894,9 @@ void UpdateTaskListButtonWithLabelStyle(
             }
         } else if (indicatorStyle == IndicatorStyle::fullWidth) {
             minWidth = taskListButtonWidth - 6;
+            if (minWidth < 0) {
+                minWidth = 0;
+            }
         }
 
         indicatorElement.MinWidth(minWidth);
