@@ -2,7 +2,7 @@
 // @id              windows-11-taskbar-styler
 // @name            Windows 11 Taskbar Styler
 // @description     An advanced mod to override style attributes of the taskbar control elements
-// @version         1.3.2
+// @version         1.3.3
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
@@ -41,9 +41,9 @@ WinXP](https://github.com/ramensoftware/windows-11-taskbar-styling-guide/blob/ma
 \
 Bubbles](https://github.com/ramensoftware/windows-11-taskbar-styling-guide/blob/main/Themes/Bubbles/README.md)
 
-[![TranslucentTaskbar](https://raw.githubusercontent.com/Undisputed00x/windows-11-taskbar-styling-guide/main/Themes/TranslucentTaskbar/screenshot.png)
+[![TranslucentTaskbar](https://raw.githubusercontent.com/ramensoftware/windows-11-taskbar-styling-guide/main/Themes/TranslucentTaskbar/screenshot.png)
 \
-TranslucentTaskbar](https://github.com/Undisputed00x/windows-11-taskbar-styling-guide/blob/main/Themes/TranslucentTaskbar/README.md)
+TranslucentTaskbar](https://github.com/ramensoftware/windows-11-taskbar-styling-guide/blob/main/Themes/TranslucentTaskbar/README.md)
 
 More themes can be found in the **Themes** section of [The Windows 11 taskbar
 styling
@@ -1248,21 +1248,19 @@ const Theme g_themeBubbles = {{
 const Theme g_themeTranslucentTaskbar = {{
     ThemeTargetStyles{
         L"Rectangle#BackgroundFill",
-        {L"Fill:=<AcrylicBrush TintColor=\"Transparent\" TintOpacity=\"0\" TintLuminosityOpacity=\"0\" Opacity=\"1\"/>"}},
-    ThemeTargetStyles{
-        L"Rectangle#BackgroundStroke",
-        {L"Visibility=Collapsed"}},
+        {L"Fill:=<AcrylicBrush TintColor=\"Transparent\" TintOpacity=\"0\" "
+         L"TintLuminosityOpacity=\"0\" Opacity=\"1\"/>"}},
+    ThemeTargetStyles{L"Rectangle#BackgroundStroke", {L"Visibility=Collapsed"}},
     ThemeTargetStyles{
         L"MenuFlyoutPresenter",
-        {L"Background:=<AcrylicBrush TintColor=\"Transparent\" TintOpacity=\"0\" TintLuminosityOpacity=\"0\" Opacity=\"1\"/>",
-         L"BorderThickness=0,0,0,0",
-         L"CornerRadius=14",
-         L"Padding=,3,4,3,4"}},
+        {L"Background:=<AcrylicBrush TintColor=\"Transparent\" "
+         L"TintOpacity=\"0\" TintLuminosityOpacity=\"0\" Opacity=\"1\"/>",
+         L"BorderThickness=0,0,0,0", L"CornerRadius=14", L"Padding=,3,4,3,4"}},
     ThemeTargetStyles{
         L"Border#OverflowFlyoutBackgroundBorder",
-        {L"Background:=<AcrylicBrush TintColor=\"Transparent\" TintOpacity=\"0\" TintLuminosityOpacity=\"0\" Opacity=\"1\"/>",
-         L"BorderThickness=0,0,0,0",
-         L"CornerRadius=15",
+        {L"Background:=<AcrylicBrush TintColor=\"Transparent\" "
+         L"TintOpacity=\"0\" TintLuminosityOpacity=\"0\" Opacity=\"1\"/>",
+         L"BorderThickness=0,0,0,0", L"CornerRadius=15",
          L"Margin=-2,-2,-2,-2"}},
 }};
 
@@ -2660,7 +2658,7 @@ void ProcessAllStylesFromSettings() {
         theme = &g_themeWinXP;
     } else if (wcscmp(themeName, L"Bubbles") == 0) {
         theme = &g_themeBubbles;
-    }else if (wcscmp(themeName, L"TranslucentTaskbar") == 0){
+    } else if (wcscmp(themeName, L"TranslucentTaskbar") == 0) {
         theme = &g_themeTranslucentTaskbar;
     }
     Wh_FreeStringSetting(themeName);
