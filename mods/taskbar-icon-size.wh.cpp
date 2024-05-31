@@ -2,7 +2,7 @@
 // @id              taskbar-icon-size
 // @name            Taskbar height and icon size
 // @description     Control the taskbar height and icon size, improve icon quality (Windows 11 only)
-// @version         1.2.7
+// @version         1.2.8
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
@@ -480,72 +480,100 @@ void WINAPI RepeatButton_Width_Hook(void* pThis, double width) {
         marginValue = 0;
     }
 
-    EnumChildElements(
-        augmentedEntryPointContentGrid, [marginValue](FrameworkElement child) {
-            if (winrt::get_class_name(child) !=
-                L"Windows.UI.Xaml.Controls.Grid") {
-                return false;
-            }
-
-            FrameworkElement panel = child;
-            if ((panel = FindChildByClassName(
-                     panel, L"Windows.UI.Xaml.Controls.Grid")) &&
-                (panel = FindChildByClassName(
-                     panel, L"AdaptiveCards.Rendering.Uwp.WholeItemsPanel"))) {
-                auto margin = Thickness{8, 8, 8, 8};
-
-                if (!g_unloading) {
-                    margin.Left = marginValue;
-                    margin.Top = marginValue;
-                    margin.Right = marginValue;
-                    margin.Bottom = marginValue;
-
-                    if (g_taskbarHeight < 48) {
-                        margin.Top -=
-                            static_cast<double>(48 - g_taskbarHeight) / 2;
-                        if (margin.Top < 0) {
-                            margin.Top = 0;
-                        }
-
-                        margin.Bottom = marginValue * 2 - margin.Top;
-                    }
-                }
-
-                Wh_Log(L"Setting Margin=%f,%f,%f,%f for panel", margin.Left,
-                       margin.Top, margin.Right, margin.Bottom);
-
-                panel.Margin(margin);
-            } else {
-                return false;
-            }
-
-            FrameworkElement badge = panel;
-            if ((badge = FindChildByClassName(
-                     badge, L"Windows.UI.Xaml.Controls.Border")) &&
-                (badge = FindChildByClassName(
-                     badge, L"AdaptiveCards.Rendering.Uwp.WholeItemsPanel")) &&
-                (badge = FindChildByClassName(
-                     badge, L"Windows.UI.Xaml.Controls.Grid")) &&
-                (badge = FindChildByName(badge, L"SmallTicker1")) &&
-                (badge = FindChildByClassName(
-                     badge, L"AdaptiveCards.Rendering.Uwp.WholeItemsPanel")) &&
-                (badge = FindChildByName(badge, L"BadgeAnchorSmallTicker"))) {
-                double maxValue = 24;
-
-                if (!g_unloading) {
-                    maxValue = 40 - marginValue * 2;
-                }
-
-                Wh_Log(L"Setting MaxWidth, MaxHeight for badge");
-
-                badge.MaxWidth(maxValue);
-                badge.MaxHeight(maxValue);
-            } else {
-                return false;
-            }
-
+    EnumChildElements(augmentedEntryPointContentGrid, [marginValue](
+                                                          FrameworkElement
+                                                              child) {
+        if (winrt::get_class_name(child) != L"Windows.UI.Xaml.Controls.Grid") {
             return false;
-        });
+        }
+
+        FrameworkElement panelGrid =
+            FindChildByClassName(child, L"Windows.UI.Xaml.Controls.Grid");
+        if (!panelGrid) {
+            return false;
+        }
+
+        FrameworkElement panel = FindChildByClassName(
+            panelGrid, L"AdaptiveCards.Rendering.Uwp.WholeItemsPanel");
+        if (!panel) {
+            return false;
+        }
+
+        Wh_Log(L"Processing %f x %f widget", panelGrid.Width(),
+               panelGrid.Height());
+
+        bool widePanel = panelGrid.Width() > panelGrid.Height();
+        if (widePanel) {
+            panelGrid.VerticalAlignment(g_unloading
+                                            ? VerticalAlignment::Stretch
+                                            : VerticalAlignment::Center);
+        } else {
+            auto margin = Thickness{8, 8, 8, 8};
+
+            if (!g_unloading) {
+                margin.Left = marginValue;
+                margin.Top = marginValue;
+                margin.Right = marginValue;
+                margin.Bottom = marginValue;
+
+                if (g_taskbarHeight < 48) {
+                    margin.Top -= static_cast<double>(48 - g_taskbarHeight) / 2;
+                    if (margin.Top < 0) {
+                        margin.Top = 0;
+                    }
+
+                    margin.Bottom = marginValue * 2 - margin.Top;
+                }
+            }
+
+            Wh_Log(L"Setting Margin=%f,%f,%f,%f for panel", margin.Left,
+                   margin.Top, margin.Right, margin.Bottom);
+
+            panel.Margin(margin);
+        }
+
+        FrameworkElement tickerGrid = panel;
+        if ((tickerGrid = FindChildByClassName(
+                 tickerGrid, L"Windows.UI.Xaml.Controls.Border")) &&
+            (tickerGrid = FindChildByClassName(
+                 tickerGrid, L"AdaptiveCards.Rendering.Uwp.WholeItemsPanel")) &&
+            (tickerGrid = FindChildByClassName(
+                 tickerGrid, L"Windows.UI.Xaml.Controls.Grid"))) {
+            // OK.
+        } else {
+            return false;
+        }
+
+        double badgeMaxValue = g_unloading ? 24 : 40 - marginValue * 2;
+
+        FrameworkElement badgeSmall = tickerGrid;
+        if ((badgeSmall = FindChildByName(badgeSmall, L"SmallTicker1")) &&
+            (badgeSmall = FindChildByClassName(
+                 badgeSmall, L"AdaptiveCards.Rendering.Uwp.WholeItemsPanel")) &&
+            (badgeSmall =
+                 FindChildByName(badgeSmall, L"BadgeAnchorSmallTicker"))) {
+            Wh_Log(L"Setting MaxWidth=%f, MaxHeight=%f for small badge",
+                   badgeMaxValue, badgeMaxValue);
+
+            badgeSmall.MaxWidth(badgeMaxValue);
+            badgeSmall.MaxHeight(badgeMaxValue);
+        }
+
+        FrameworkElement badgeLarge = tickerGrid;
+        if ((badgeLarge = FindChildByName(badgeLarge, L"LargeTicker1")) &&
+            (badgeLarge = FindChildByClassName(
+                 badgeLarge, L"AdaptiveCards.Rendering.Uwp.WholeItemsPanel")) &&
+            (badgeLarge =
+                 FindChildByName(badgeLarge, L"BadgeAnchorLargeTicker"))) {
+            Wh_Log(L"Setting MaxWidth=%f, MaxHeight=%f for large badge",
+                   badgeMaxValue, badgeMaxValue);
+
+            badgeLarge.MaxWidth(badgeMaxValue);
+            badgeLarge.MaxHeight(badgeMaxValue);
+        }
+
+        return false;
+    });
 }
 
 using SHAppBarMessage_t = decltype(&SHAppBarMessage);
