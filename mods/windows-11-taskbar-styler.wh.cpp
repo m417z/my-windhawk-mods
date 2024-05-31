@@ -9,7 +9,7 @@
 // @homepage        https://m417z.com/
 // @include         explorer.exe
 // @architecture    x86-64
-// @compilerOptions -lcomctl32 -lole32 -loleaut32 -lruntimeobject -lwininet -Wl,--export-all-symbols
+// @compilerOptions -lcomctl32 -lole32 -loleaut32 -lruntimeobject -Wl,--export-all-symbols
 // ==/WindhawkMod==
 
 // Source code is published under The GNU General Public License v3.0.
@@ -1601,7 +1601,6 @@ HRESULT InjectWindhawkTAP() noexcept
 
 #include <commctrl.h>
 #include <roapi.h>
-#include <wininet.h>
 #include <winstring.h>
 
 #include <winrt/Windows.Foundation.Collections.h>
