@@ -9,7 +9,7 @@
 // @homepage        https://m417z.com/
 // @include         explorer.exe
 // @architecture    x86-64
-// @compilerOptions -DWINVER=0x0605 -lole32 -loleaut32 -lshcore -lwininet
+// @compilerOptions -DWINVER=0x0605 -lcomctl32 -lole32 -loleaut32 -lshcore -lwininet
 // ==/WindhawkMod==
 
 // Source code is published under The GNU General Public License v3.0.
@@ -110,6 +110,15 @@ bool g_inSystemTraySecondaryController_UpdateFrameSize;
 bool g_inAugmentedEntryPointButton_UpdateButtonPadding;
 
 double* double_48_value_Original;
+
+HANDLE g_restartExplorerPromptThread;
+std::atomic<HWND> g_restartExplorerPromptWindow;
+
+constexpr WCHAR kRestartExplorerPromptTitle[] =
+    L"Taskbar height and icon size - Windhawk";
+constexpr WCHAR kRestartExplorerPromptText[] =
+    L"Explorer needs to be restarted to apply the new taskbar button width. "
+    L"Restart now?";
 
 WINUSERAPI UINT WINAPI GetDpiForWindow(HWND hwnd);
 typedef enum MONITOR_DPI_TYPE {
@@ -672,6 +681,68 @@ void ApplySettings(int taskbarHeight) {
     }
 
     g_applyingSettings = false;
+}
+
+void PromptForExplorerRestart() {
+    if (g_restartExplorerPromptThread) {
+        if (WaitForSingleObject(g_restartExplorerPromptThread, 0) !=
+            WAIT_OBJECT_0) {
+            return;
+        }
+
+        CloseHandle(g_restartExplorerPromptThread);
+    }
+
+    g_restartExplorerPromptThread = CreateThread(
+        nullptr, 0,
+        [](LPVOID lpParameter) WINAPI -> DWORD {
+            TASKDIALOGCONFIG taskDialogConfig{
+                .cbSize = sizeof(taskDialogConfig),
+                .dwFlags = TDF_ALLOW_DIALOG_CANCELLATION,
+                .dwCommonButtons = TDCBF_YES_BUTTON | TDCBF_NO_BUTTON,
+                .pszWindowTitle = kRestartExplorerPromptTitle,
+                .pszMainIcon = TD_INFORMATION_ICON,
+                .pszContent = kRestartExplorerPromptText,
+                .pfCallback = [](HWND hwnd, UINT msg, WPARAM wParam,
+                                 LPARAM lParam, LONG_PTR lpRefData)
+                                  WINAPI -> HRESULT {
+                    switch (msg) {
+                        case TDN_CREATED:
+                            g_restartExplorerPromptWindow = hwnd;
+                            SetWindowPos(hwnd, HWND_TOPMOST, 0, 0, 0, 0,
+                                         SWP_NOMOVE | SWP_NOSIZE);
+                            break;
+
+                        case TDN_DESTROYED:
+                            g_restartExplorerPromptWindow = nullptr;
+                            break;
+                    }
+
+                    return S_OK;
+                },
+            };
+
+            int button;
+            if (SUCCEEDED(TaskDialogIndirect(&taskDialogConfig, &button,
+                                             nullptr, nullptr)) &&
+                button == IDYES) {
+                WCHAR commandLine[] =
+                    L"cmd.exe /c "
+                    L"\"taskkill /F /IM explorer.exe & start explorer\"";
+                STARTUPINFO si = {
+                    .cb = sizeof(si),
+                };
+                PROCESS_INFORMATION pi{};
+                if (CreateProcess(nullptr, commandLine, nullptr, nullptr, FALSE,
+                                  0, nullptr, nullptr, &si, &pi)) {
+                    CloseHandle(pi.hThread);
+                    CloseHandle(pi.hProcess);
+                }
+            }
+
+            return 0;
+        },
+        nullptr, 0, nullptr);
 }
 
 struct SYMBOL_HOOK {
@@ -1348,14 +1419,31 @@ void Wh_ModBeforeUninit() {
 
 void Wh_ModUninit() {
     Wh_Log(L">");
+
+    HWND restartExplorerPromptWindow = g_restartExplorerPromptWindow;
+    if (restartExplorerPromptWindow) {
+        PostMessage(restartExplorerPromptWindow, WM_CLOSE, 0, 0);
+    }
+
+    if (g_restartExplorerPromptThread) {
+        WaitForSingleObject(g_restartExplorerPromptThread, INFINITE);
+        CloseHandle(g_restartExplorerPromptThread);
+        g_restartExplorerPromptThread = nullptr;
+    }
 }
 
 void Wh_ModSettingsChanged() {
     Wh_Log(L">");
 
+    int oldTaskbarButtonWidth = g_settings.taskbarButtonWidth;
+
     LoadSettings();
 
     if (g_taskbarViewDllLoaded) {
         ApplySettings(g_settings.taskbarHeight);
+    }
+
+    if (g_settings.taskbarButtonWidth != oldTaskbarButtonWidth) {
+        PromptForExplorerRestart();
     }
 }
