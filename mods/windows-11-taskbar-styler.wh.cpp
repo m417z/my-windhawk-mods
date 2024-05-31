@@ -1257,7 +1257,7 @@ const Theme g_themeTranslucentTaskbar = {{
         {L"Background:=<AcrylicBrush TintColor=\"Transparent\" TintOpacity=\"0\" TintLuminosityOpacity=\"0\" Opacity=\"1\"/>",
          L"BorderThickness=0,0,0,0",
          L"CornerRadius=14",
-         L"Padding=,3,4,3,4"}},
+         L"Padding=3,4,3,4"}},
     ThemeTargetStyles{
         L"Border#OverflowFlyoutBackgroundBorder",
         {L"Background:=<AcrylicBrush TintColor=\"Transparent\" TintOpacity=\"0\" TintLuminosityOpacity=\"0\" Opacity=\"1\"/>",
