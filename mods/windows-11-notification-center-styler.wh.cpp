@@ -2,7 +2,7 @@
 // @id              windows-11-notification-center-styler
 // @name            Windows 11 Notification Center Styler
 // @description     An advanced mod to override style attributes of the Notification Center
-// @version         1.0.1
+// @version         1.0.2
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
@@ -25,7 +25,9 @@
 # Windows 11 Notification Center Styler
 
 An advanced mod to override style attributes of the notification center and
-calendar.
+calendar. Starting with version 1.0.2, all elements that are part of
+ShellExperienceHost.exe can be customized, including taskbar jump lists and
+notification popups.
 
 **Note**: This mod requires Windhawk v1.4 or later.
 
