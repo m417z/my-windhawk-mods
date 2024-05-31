@@ -582,7 +582,8 @@ struct SYMBOL_HOOK {
 
 bool HookSymbols(HMODULE module,
                  const SYMBOL_HOOK* symbolHooks,
-                 size_t symbolHooksCount) {
+                 size_t symbolHooksCount,
+                 bool cacheOnly = false) {
     const WCHAR cacheVer = L'1';
     const WCHAR cacheSep = L'@';
     constexpr size_t cacheMaxSize = 10240;
@@ -736,6 +737,10 @@ bool HookSymbols(HMODULE module,
 
     Wh_Log(L"Couldn't resolve all symbols from cache");
 
+    if (cacheOnly) {
+        return false;
+    }
+
     WH_FIND_SYMBOL findSymbol;
     HANDLE findSymbolHandle = Wh_FindFirstSymbol(module, nullptr, &findSymbol);
     if (!findSymbolHandle) {
@@ -853,11 +858,12 @@ bool HookSymbolsWithOnlineCacheFallback(HMODULE module,
                                         size_t symbolHooksCount) {
     constexpr WCHAR kModIdForCache[] = L"virtual-desktop-taskbar-order";
 
-    if (HookSymbols(module, symbolHooks, symbolHooksCount)) {
+    if (HookSymbols(module, symbolHooks, symbolHooksCount,
+                    /*cacheOnly=*/true)) {
         return true;
     }
 
-    Wh_Log(L"HookSymbols() failed, trying to get an online cache");
+    Wh_Log(L"HookSymbols() from cache failed, trying to get an online cache");
 
     WCHAR moduleFilePath[MAX_PATH];
     DWORD moduleFilePathLen =
@@ -912,12 +918,11 @@ bool HookSymbolsWithOnlineCacheFallback(HMODULE module,
     Wh_Log(L"Looking for an online cache at %s", onlineCacheUrl.c_str());
 
     auto onlineCache = GetUrlContent(onlineCacheUrl.c_str());
-    if (!onlineCache) {
+    if (onlineCache) {
+        Wh_SetStringValue(cacheStrKey.c_str(), onlineCache->c_str());
+    } else {
         Wh_Log(L"Failed to get online cache");
-        return false;
     }
-
-    Wh_SetStringValue(cacheStrKey.c_str(), onlineCache->c_str());
 
     return HookSymbols(module, symbolHooks, symbolHooksCount);
 }
