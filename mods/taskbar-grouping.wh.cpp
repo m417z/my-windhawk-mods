@@ -234,6 +234,26 @@ bool RemoveAppIdSuffix(WCHAR appIdStripped[MAX_PATH], PCWSTR appIdWithSuffix) {
 using CTaskGroup_GetNumItems_t = int(WINAPI*)(PVOID pThis);
 CTaskGroup_GetNumItems_t CTaskGroup_GetNumItems_Original;
 
+using CTaskGroup_SetAppID_t = HRESULT(WINAPI*)(PVOID pThis, PCWSTR appId);
+CTaskGroup_SetAppID_t CTaskGroup_SetAppID_Original;
+
+using CTaskGroup_GetFlags_t = DWORD(WINAPI*)(PVOID pThis);
+CTaskGroup_GetFlags_t CTaskGroup_GetFlags_Original;
+
+using CTaskGroup_UpdateFlags_t = HRESULT(WINAPI*)(PVOID pThis,
+                                                  DWORD updateMask,
+                                                  DWORD newFlags);
+CTaskGroup_UpdateFlags_t CTaskGroup_UpdateFlags_Original;
+
+using CTaskGroup_GetTitleText_t = HRESULT(WINAPI*)(PVOID pThis,
+                                                   PVOID taskItem,
+                                                   WCHAR* buffer,
+                                                   int bufferSize);
+CTaskGroup_GetTitleText_t CTaskGroup_GetTitleText_Original;
+
+using CTaskGroup_SetTip_t = HRESULT(WINAPI*)(PVOID pThis, PCWSTR tip);
+CTaskGroup_SetTip_t CTaskGroup_SetTip_Original;
+
 using CTaskGroup_DoesWindowMatch_t =
     HRESULT(WINAPI*)(PVOID pThis,
                      HWND hWnd,
@@ -483,26 +503,6 @@ PCWSTR WINAPI CTaskGroup_GetAppID_Hook(PVOID pThis) {
 
     return CTaskGroup_GetAppID_Original(pThis);
 }
-
-using CTaskGroup_SetAppID_t = HRESULT(WINAPI*)(PVOID pThis, PCWSTR appId);
-CTaskGroup_SetAppID_t CTaskGroup_SetAppID_Original;
-
-using CTaskGroup_GetFlags_t = DWORD(WINAPI*)(PVOID pThis);
-CTaskGroup_GetFlags_t CTaskGroup_GetFlags_Original;
-
-using CTaskGroup_UpdateFlags_t = HRESULT(WINAPI*)(PVOID pThis,
-                                                  DWORD updateMask,
-                                                  DWORD newFlags);
-CTaskGroup_UpdateFlags_t CTaskGroup_UpdateFlags_Original;
-
-using CTaskGroup_GetTitleText_t = HRESULT(WINAPI*)(PVOID pThis,
-                                                   PVOID taskItem,
-                                                   WCHAR* buffer,
-                                                   int bufferSize);
-CTaskGroup_GetTitleText_t CTaskGroup_GetTitleText_Original;
-
-using CTaskGroup_SetTip_t = HRESULT(WINAPI*)(PVOID pThis, PCWSTR tip);
-CTaskGroup_SetTip_t CTaskGroup_SetTip_Original;
 
 PVOID GetTaskBand() {
     static PVOID taskBand = nullptr;
@@ -1432,6 +1432,41 @@ bool HookTaskbarSymbols() {
             },
             {
                 {
+                    LR"(public: virtual long __cdecl CTaskGroup::SetAppID(unsigned short const *))",
+                    LR"(public: virtual long __cdecl CTaskGroup::SetAppID(unsigned short const * __ptr64) __ptr64)",
+                },
+                (void**)&CTaskGroup_SetAppID_Original,
+            },
+            {
+                {
+                    LR"(public: virtual unsigned long __cdecl CTaskGroup::GetFlags(void)const )",
+                    LR"(public: virtual unsigned long __cdecl CTaskGroup::GetFlags(void)const __ptr64)",
+                },
+                (void**)&CTaskGroup_GetFlags_Original,
+            },
+            {
+                {
+                    LR"(public: virtual long __cdecl CTaskGroup::UpdateFlags(unsigned long,unsigned long))",
+                    LR"(public: virtual long __cdecl CTaskGroup::UpdateFlags(unsigned long,unsigned long) __ptr64)",
+                },
+                (void**)&CTaskGroup_UpdateFlags_Original,
+            },
+            {
+                {
+                    LR"(public: virtual long __cdecl CTaskGroup::GetTitleText(struct ITaskItem *,unsigned short *,int))",
+                    LR"(public: virtual long __cdecl CTaskGroup::GetTitleText(struct ITaskItem * __ptr64,unsigned short * __ptr64,int) __ptr64)",
+                },
+                (void**)&CTaskGroup_GetTitleText_Original,
+            },
+            {
+                {
+                    LR"(public: virtual long __cdecl CTaskGroup::SetTip(unsigned short const *))",
+                    LR"(public: virtual long __cdecl CTaskGroup::SetTip(unsigned short const * __ptr64) __ptr64)",
+                },
+                (void**)&CTaskGroup_SetTip_Original,
+            },
+            {
+                {
                     LR"(public: virtual long __cdecl CTaskGroup::DoesWindowMatch(struct HWND__ *,struct _ITEMIDLIST_ABSOLUTE const *,unsigned short const *,enum WINDOWMATCHCONFIDENCE *,struct ITaskItem * *))",
                     LR"(public: virtual long __cdecl CTaskGroup::DoesWindowMatch(struct HWND__ * __ptr64,struct _ITEMIDLIST_ABSOLUTE const * __ptr64,unsigned short const * __ptr64,enum WINDOWMATCHCONFIDENCE * __ptr64,struct ITaskItem * __ptr64 * __ptr64) __ptr64)",
                 },
@@ -1475,41 +1510,6 @@ bool HookTaskbarSymbols() {
                 },
                 (void**)&CTaskGroup_GetAppID_Original,
                 (void*)CTaskGroup_GetAppID_Hook,
-            },
-            {
-                {
-                    LR"(public: virtual long __cdecl CTaskGroup::SetAppID(unsigned short const *))",
-                    LR"(public: virtual long __cdecl CTaskGroup::SetAppID(unsigned short const * __ptr64) __ptr64)",
-                },
-                (void**)&CTaskGroup_SetAppID_Original,
-            },
-            {
-                {
-                    LR"(public: virtual unsigned long __cdecl CTaskGroup::GetFlags(void)const )",
-                    LR"(public: virtual unsigned long __cdecl CTaskGroup::GetFlags(void)const __ptr64)",
-                },
-                (void**)&CTaskGroup_GetFlags_Original,
-            },
-            {
-                {
-                    LR"(public: virtual long __cdecl CTaskGroup::UpdateFlags(unsigned long,unsigned long))",
-                    LR"(public: virtual long __cdecl CTaskGroup::UpdateFlags(unsigned long,unsigned long) __ptr64)",
-                },
-                (void**)&CTaskGroup_UpdateFlags_Original,
-            },
-            {
-                {
-                    LR"(public: virtual long __cdecl CTaskGroup::GetTitleText(struct ITaskItem *,unsigned short *,int))",
-                    LR"(public: virtual long __cdecl CTaskGroup::GetTitleText(struct ITaskItem * __ptr64,unsigned short * __ptr64,int) __ptr64)",
-                },
-                (void**)&CTaskGroup_GetTitleText_Original,
-            },
-            {
-                {
-                    LR"(public: virtual long __cdecl CTaskGroup::SetTip(unsigned short const *))",
-                    LR"(public: virtual long __cdecl CTaskGroup::SetTip(unsigned short const * __ptr64) __ptr64)",
-                },
-                (void**)&CTaskGroup_SetTip_Original,
             },
             {
                 {
