@@ -551,65 +551,6 @@ PVOID GetTaskList() {
     return taskList;
 }
 
-HWND FindCurrentProcessTaskbarWindows(
-    std::unordered_set<HWND>* secondaryTaskbarWindows) {
-    struct ENUM_WINDOWS_PARAM {
-        HWND* hWnd;
-        std::unordered_set<HWND>* secondaryTaskbarWindows;
-    };
-
-    HWND hWnd = nullptr;
-    ENUM_WINDOWS_PARAM param = {&hWnd, secondaryTaskbarWindows};
-    EnumWindows(
-        [](HWND hWnd, LPARAM lParam) WINAPI -> BOOL {
-            ENUM_WINDOWS_PARAM& param = *(ENUM_WINDOWS_PARAM*)lParam;
-
-            DWORD dwProcessId = 0;
-            if (!GetWindowThreadProcessId(hWnd, &dwProcessId) ||
-                dwProcessId != GetCurrentProcessId())
-                return TRUE;
-
-            WCHAR szClassName[32];
-            if (GetClassName(hWnd, szClassName, ARRAYSIZE(szClassName)) == 0)
-                return TRUE;
-
-            if (_wcsicmp(szClassName, L"Shell_TrayWnd") == 0) {
-                *param.hWnd = hWnd;
-            } else if (_wcsicmp(szClassName, L"Shell_SecondaryTrayWnd") == 0) {
-                param.secondaryTaskbarWindows->insert(hWnd);
-            }
-
-            return TRUE;
-        },
-        (LPARAM)&param);
-
-    return hWnd;
-}
-
-std::vector<PVOID> GetSecondaryTaskLists() {
-    std::unordered_set<HWND> secondaryTaskbarWindows;
-    FindCurrentProcessTaskbarWindows(&secondaryTaskbarWindows);
-
-    std::vector<PVOID> result;
-    for (HWND secondaryTaskbarWindow : secondaryTaskbarWindows) {
-        HWND hWorkerWWnd =
-            FindWindowEx(secondaryTaskbarWindow, nullptr, L"WorkerW", nullptr);
-        if (!hWorkerWWnd) {
-            continue;
-        }
-
-        HWND hSecondaryTaskListWnd =
-            FindWindowEx(hWorkerWWnd, nullptr, L"MSTaskListWClass", nullptr);
-        if (!hSecondaryTaskListWnd) {
-            continue;
-        }
-
-        result.push_back((PVOID)GetWindowLongPtr(hSecondaryTaskListWnd, 0));
-    }
-
-    return result;
-}
-
 winrt::com_ptr<IUnknown> GetTaskGroupWithoutSuffix(
     PVOID taskGroup,
     IUnknown** taskItem /*= nullptr*/) {
@@ -961,16 +902,6 @@ void WINAPI CTaskBand_HandleTaskGroupSwitchItemAdded_Hook(PVOID pThis,
     // CTaskBand_HandleTaskGroupSwitchItemAdded_Original(pThis, switchItem);
 }
 
-using CTaskListWnd_GroupChanged_t = LONG_PTR(WINAPI*)(void* pThis,
-                                                      void* taskGroup,
-                                                      int taskGroupProperty);
-CTaskListWnd_GroupChanged_t CTaskListWnd_GroupChanged_Original;
-
-using CTaskListWnd_HandleTaskGroupPinned_t = void(WINAPI*)(PVOID pThis,
-                                                           PVOID taskGroup);
-CTaskListWnd_HandleTaskGroupPinned_t
-    CTaskListWnd_HandleTaskGroupPinned_Original;
-
 void SwapTaskGroupIds(PVOID taskGroup1, PVOID taskGroup2) {
     WCHAR appId1Copy[MAX_PATH] = L"";
     if (PCWSTR appId1 = CTaskGroup_GetAppID_Original(taskGroup1)) {
@@ -1010,8 +941,7 @@ void SwapTaskGroupIds(PVOID taskGroup1, PVOID taskGroup2) {
     }
 }
 
-void SwapTaskGroupIdsWithUnsuffixedInstance(PVOID taskList_TaskListUI,
-                                            PVOID taskGroup) {
+void SwapTaskGroupIdsWithUnsuffixedInstance(PVOID taskGroup) {
     if (CTaskGroup_GetNumItems_Original(taskGroup) > 1) {
         return;
     }
@@ -1060,18 +990,6 @@ void SwapTaskGroupIdsWithUnsuffixedInstance(PVOID taskList_TaskListUI,
     };
 
     PVOID taskBtnGroupMatched = FindTaskBtnGroup(taskList);
-    bool taskGroupMatchedSecondaryTaskbar = false;
-
-    if (!taskBtnGroupMatched) {
-        auto secondaryTaskLists = GetSecondaryTaskLists();
-        for (auto secondaryTaskList : secondaryTaskLists) {
-            taskBtnGroupMatched = FindTaskBtnGroup(secondaryTaskList);
-            if (taskBtnGroupMatched) {
-                taskGroupMatchedSecondaryTaskbar = true;
-                break;
-            }
-        }
-    }
 
     g_findTaskBtnGroup_Callback = nullptr;
 
@@ -1085,15 +1003,13 @@ void SwapTaskGroupIdsWithUnsuffixedInstance(PVOID taskList_TaskListUI,
         return;
     }
 
-    bool taskGroupPinned = CTaskGroup_GetFlags_Original(taskGroup) & 1;
-
     SwapTaskGroupIds(taskGroup, taskGroupMatched);
-
-    if (taskGroupMatchedSecondaryTaskbar && taskGroupPinned) {
-        CTaskListWnd_HandleTaskGroupPinned_Original(taskList_TaskListUI,
-                                                    taskGroupMatched);
-    }
 }
+
+using CTaskListWnd_GroupChanged_t = LONG_PTR(WINAPI*)(void* pThis,
+                                                      void* taskGroup,
+                                                      int taskGroupProperty);
+CTaskListWnd_GroupChanged_t CTaskListWnd_GroupChanged_Original;
 
 using CTaskListWnd_TaskDestroyed_t = LONG_PTR(WINAPI*)(PVOID pThis,
                                                        PVOID taskGroup,
@@ -1109,14 +1025,14 @@ LONG_PTR WINAPI CTaskListWnd_TaskDestroyed_Hook(PVOID pThis,
     int numItems = CTaskGroup_GetNumItems_Original(taskGroup);
 
     if (numItems == 1) {
-        SwapTaskGroupIdsWithUnsuffixedInstance(pThis, taskGroup);
+        SwapTaskGroupIdsWithUnsuffixedInstance(taskGroup);
     }
 
     LONG_PTR ret = CTaskListWnd_TaskDestroyed_Original(
         pThis, taskGroup, taskItem, taskDestroyedFlags);
 
     if (numItems == 0) {
-        SwapTaskGroupIdsWithUnsuffixedInstance(pThis, taskGroup);
+        SwapTaskGroupIdsWithUnsuffixedInstance(taskGroup);
     }
 
     if (g_settings.useWindowIcons && numItems == 1) {
@@ -1141,14 +1057,14 @@ LONG_PTR WINAPI CTaskListWnd_TaskDestroyed_2_Hook(PVOID pThis,
     int numItems = CTaskGroup_GetNumItems_Original(taskGroup);
 
     if (numItems == 1) {
-        SwapTaskGroupIdsWithUnsuffixedInstance(pThis, taskGroup);
+        SwapTaskGroupIdsWithUnsuffixedInstance(taskGroup);
     }
 
     LONG_PTR ret =
         CTaskListWnd_TaskDestroyed_2_Original(pThis, taskGroup, taskItem);
 
     if (numItems == 0) {
-        SwapTaskGroupIdsWithUnsuffixedInstance(pThis, taskGroup);
+        SwapTaskGroupIdsWithUnsuffixedInstance(taskGroup);
     }
 
     if (g_settings.useWindowIcons && numItems == 1 &&
@@ -1824,13 +1740,6 @@ bool HookTaskbarSymbols() {
                 (void**)&CTaskListWnd_GroupChanged_Original,
                 nullptr,
                 true,
-            },
-            {
-                {
-                    LR"(public: virtual void __cdecl CTaskListWnd::HandleTaskGroupPinned(struct ITaskGroup *))",
-                    LR"(public: virtual void __cdecl CTaskListWnd::HandleTaskGroupPinned(struct ITaskGroup * __ptr64) __ptr64)",
-                },
-                (void**)&CTaskListWnd_HandleTaskGroupPinned_Original,
             },
             {
                 // An older variant, see the newer variant below.
