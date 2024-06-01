@@ -929,6 +929,11 @@ void SwapTaskGroupIdsWithUnsuffixedInstance(PVOID taskGroup) {
     SwapTaskGroupIds(taskGroup, taskGroupMatched.get());
 }
 
+using CTaskListWnd_GroupChanged_t = LONG_PTR(WINAPI*)(void* pThis,
+                                                      void* taskGroup,
+                                                      int taskGroupProperty);
+CTaskListWnd_GroupChanged_t CTaskListWnd_GroupChanged_Original;
+
 using CTaskListWnd_TaskDestroyed_t = LONG_PTR(WINAPI*)(PVOID pThis,
                                                        PVOID taskGroup,
                                                        PVOID taskItem,
@@ -951,6 +956,13 @@ LONG_PTR WINAPI CTaskListWnd_TaskDestroyed_Hook(PVOID pThis,
 
     if (numItems == 0) {
         SwapTaskGroupIdsWithUnsuffixedInstance(taskGroup);
+    }
+
+    if (g_settings.useWindowIcons && numItems == 1) {
+        // Trigger CTaskListWnd::GroupChanged to trigger an icon change.
+        // https://github.com/ramensoftware/windhawk-mods/issues/644
+        int taskGroupProperty = 4;  // saw this in the debugger
+        CTaskListWnd_GroupChanged_Original(pThis, taskGroup, taskGroupProperty);
     }
 
     return ret;
@@ -976,6 +988,14 @@ LONG_PTR WINAPI CTaskListWnd_TaskDestroyed_2_Hook(PVOID pThis,
 
     if (numItems == 0) {
         SwapTaskGroupIdsWithUnsuffixedInstance(taskGroup);
+    }
+
+    if (g_settings.useWindowIcons && numItems == 1 &&
+        CTaskListWnd_GroupChanged_Original) {
+        // Trigger CTaskListWnd::GroupChanged to trigger an icon change.
+        // https://github.com/ramensoftware/windhawk-mods/issues/644
+        int taskGroupProperty = 4;  // saw this in the debugger
+        CTaskListWnd_GroupChanged_Original(pThis, taskGroup, taskGroupProperty);
     }
 
     return ret;
@@ -1625,6 +1645,16 @@ bool HookTaskbarSymbols() {
                 },
                 (void**)&CTaskBand_HandleTaskGroupSwitchItemAdded_Original,
                 (void*)CTaskBand_HandleTaskGroupSwitchItemAdded_Hook,
+                true,
+            },
+            {
+                // Available from Windows 11.
+                {
+                    LR"(public: virtual void __cdecl CTaskListWnd::GroupChanged(struct ITaskGroup *,enum winrt::WindowsUdk::UI::Shell::TaskGroupProperty))",
+                    LR"(public: virtual void __cdecl CTaskListWnd::GroupChanged(struct ITaskGroup * __ptr64,enum winrt::WindowsUdk::UI::Shell::TaskGroupProperty) __ptr64)",
+                },
+                (void**)&CTaskListWnd_GroupChanged_Original,
+                nullptr,
                 true,
             },
             {
