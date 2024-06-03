@@ -63,8 +63,6 @@ or a similar tool), enable the relevant option in the mod's settings.
   $name: Place ungrouped items together
   $description: >-
     Place each newly opened item next to existing items it would group with.
-
-    Note: This option only works on Windows 11 version 22H2 and newer.
 - useWindowIcons: false
   $name: Use window icons
   $description: >-
@@ -179,6 +177,7 @@ bool g_inFindTaskBtnGroup;
 PVOID g_findTaskBtnGroup_TaskGroupSentinel =
     &g_findTaskBtnGroup_TaskGroupSentinel;
 std::function<bool(PVOID)> g_findTaskBtnGroup_Callback;
+std::atomic<DWORD> g_cTaskListWnd__CreateTBGroup_ThreadId;
 bool g_disableGetLauncherName;
 std::atomic<DWORD> g_compareStringOrdinalHookThreadId;
 bool g_compareStringOrdinalIgnoreSuffix;
@@ -804,33 +803,40 @@ PVOID FindTaskBtnGroup(PVOID taskList,
 using CTaskListWnd_IsOnPrimaryTaskband_t = BOOL(WINAPI*)(PVOID pThis);
 CTaskListWnd_IsOnPrimaryTaskband_t CTaskListWnd_IsOnPrimaryTaskband_Original;
 
-using ITaskBtnGroup_InsertPtr_t = HRESULT(WINAPI*)(PVOID pThis,
-                                                   int index,
-                                                   PVOID taskBtnGroup,
-                                                   int* insertedIndex);
-ITaskBtnGroup_InsertPtr_t ITaskBtnGroup_InsertPtr_Original;
-HRESULT WINAPI ITaskBtnGroup_InsertPtr_Hook(PVOID pThis,
-                                            int index,
-                                            PVOID taskBtnGroup,
-                                            int* insertedIndex) {
+using CTaskListWnd__CreateTBGroup_t = PVOID(WINAPI*)(PVOID pThis,
+                                                     PVOID taskGroup,
+                                                     int index);
+CTaskListWnd__CreateTBGroup_t CTaskListWnd__CreateTBGroup_Original;
+PVOID WINAPI CTaskListWnd__CreateTBGroup_Hook(PVOID pThis,
+                                              PVOID taskGroup,
+                                              int index) {
     Wh_Log(L">");
 
-    auto original = [&]() {
-        return ITaskBtnGroup_InsertPtr_Original(pThis, index, taskBtnGroup,
-                                                insertedIndex);
-    };
+    g_cTaskListWnd__CreateTBGroup_ThreadId = GetCurrentThreadId();
 
-    if (!g_settings.placeUngroupedItemsTogether || index != DA_LAST ||
-        !taskBtnGroup) {
+    PVOID ret = CTaskListWnd__CreateTBGroup_Original(pThis, taskGroup, index);
+
+    g_cTaskListWnd__CreateTBGroup_ThreadId = 0;
+
+    return ret;
+}
+
+using DPA_InsertPtr_t = decltype(&DPA_InsertPtr);
+DPA_InsertPtr_t DPA_InsertPtr_Original;
+int WINAPI DPA_InsertPtr_Hook(HDPA hdpa, int i, void* p) {
+    auto original = [&]() { return DPA_InsertPtr_Original(hdpa, i, p); };
+
+    if (g_cTaskListWnd__CreateTBGroup_ThreadId != GetCurrentThreadId()) {
         return original();
     }
 
-    HDPA dpa = *(HDPA*)pThis;
-    if (!dpa) {
+    Wh_Log(L">");
+
+    if (!g_settings.placeUngroupedItemsTogether || i != DA_LAST || !p) {
         return original();
     }
 
-    PVOID taskGroup = CTaskBtnGroup_GetGroup_Original(taskBtnGroup);
+    PVOID taskGroup = CTaskBtnGroup_GetGroup_Original(p);
     if (!taskGroup) {
         return original();
     }
@@ -840,9 +846,9 @@ HRESULT WINAPI ITaskBtnGroup_InsertPtr_Hook(PVOID pThis,
 
     int lastMatchIndex = DA_LAST;
 
-    int count = DPA_GetPtrCount(dpa);
+    int count = DPA_GetPtrCount(hdpa);
     for (int i = 0; i < count; i++) {
-        PVOID taskBtnGroupIter = DPA_GetPtr(dpa, i);
+        PVOID taskBtnGroupIter = DPA_GetPtr(hdpa, i);
         if (!taskBtnGroupIter) {
             continue;
         }
@@ -869,7 +875,7 @@ HRESULT WINAPI ITaskBtnGroup_InsertPtr_Hook(PVOID pThis,
     }
 
     if (lastMatchIndex != DA_LAST) {
-        index = lastMatchIndex + 1;
+        i = lastMatchIndex + 1;
     }
 
     return original();
@@ -1803,11 +1809,11 @@ bool HookTaskbarSymbols() {
             },
             {
                 {
-                    LR"(public: long __cdecl CDPA_Base<struct ITaskBtnGroup,class CTContainer_PolicyUnOwned<struct ITaskBtnGroup> >::InsertPtr(int,struct ITaskBtnGroup *,int *))",
-                    LR"(public: long __cdecl CDPA_Base<struct ITaskBtnGroup,class CTContainer_PolicyUnOwned<struct ITaskBtnGroup> >::InsertPtr(int,struct ITaskBtnGroup * __ptr64,int * __ptr64) __ptr64)",
+                    LR"(protected: struct ITaskBtnGroup * __cdecl CTaskListWnd::_CreateTBGroup(struct ITaskGroup *,int))",
+                    LR"(protected: struct ITaskBtnGroup * __ptr64 __cdecl CTaskListWnd::_CreateTBGroup(struct ITaskGroup * __ptr64,int) __ptr64)",
                 },
-                (void**)&ITaskBtnGroup_InsertPtr_Original,
-                (void*)ITaskBtnGroup_InsertPtr_Hook,
+                (void**)&CTaskListWnd__CreateTBGroup_Original,
+                (void*)CTaskListWnd__CreateTBGroup_Hook,
             },
             {
                 // Available from Windows 11.
@@ -2003,6 +2009,9 @@ BOOL Wh_ModInit() {
     Wh_SetFunctionHook((void*)kernelBaseCompareStringOrdinal,
                        (void*)CompareStringOrdinal_Hook,
                        (void**)&CompareStringOrdinal_Original);
+
+    Wh_SetFunctionHook((void*)DPA_InsertPtr, (void*)DPA_InsertPtr_Hook,
+                       (void**)&DPA_InsertPtr_Original);
 
     return TRUE;
 }
