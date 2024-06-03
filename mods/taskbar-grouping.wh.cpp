@@ -992,6 +992,39 @@ void HandleUnsuffixedInstanceOnTaskDestroyed(PVOID taskList_TaskListUI,
     }
 }
 
+LONG_PTR OnTaskDestroyed(std::function<LONG_PTR()> original,
+                         PVOID taskList_TaskListUI,
+                         PVOID taskGroup,
+                         PVOID taskItem) {
+    if (!CTaskListWnd_IsOnPrimaryTaskband_Original(taskList_TaskListUI)) {
+        return original();
+    }
+
+    int numItems = CTaskGroup_GetNumItems_Original(taskGroup);
+    bool taskGroupIsPinned = CTaskGroup_GetFlags_Original(taskGroup) & 1;
+
+    if (numItems == 1) {
+        HandleUnsuffixedInstanceOnTaskDestroyed(taskList_TaskListUI, taskGroup);
+    }
+
+    LONG_PTR ret = original();
+
+    if (numItems == 0) {
+        HandleUnsuffixedInstanceOnTaskDestroyed(taskList_TaskListUI, taskGroup);
+    }
+
+    if (taskGroupIsPinned && numItems == 1 && g_settings.useWindowIcons &&
+        CTaskListWnd_GroupChanged_Original) {
+        // Trigger CTaskListWnd::GroupChanged to trigger an icon change.
+        // https://github.com/ramensoftware/windhawk-mods/issues/644
+        int taskGroupProperty = 4;  // saw this in the debugger
+        CTaskListWnd_GroupChanged_Original(taskList_TaskListUI, taskGroup,
+                                           taskGroupProperty);
+    }
+
+    return ret;
+}
+
 using CTaskListWnd_TaskDestroyed_t = LONG_PTR(WINAPI*)(PVOID pThis,
                                                        PVOID taskGroup,
                                                        PVOID taskItem,
@@ -1008,32 +1041,7 @@ LONG_PTR WINAPI CTaskListWnd_TaskDestroyed_Hook(PVOID pThis,
                                                    taskDestroyedFlags);
     };
 
-    if (!CTaskListWnd_IsOnPrimaryTaskband_Original(pThis)) {
-        return original();
-    }
-
-    int numItems = CTaskGroup_GetNumItems_Original(taskGroup);
-    bool taskGroupIsPinned = CTaskGroup_GetFlags_Original(taskGroup) & 1;
-
-    if (numItems == 1) {
-        HandleUnsuffixedInstanceOnTaskDestroyed(pThis, taskGroup);
-    }
-
-    LONG_PTR ret = original();
-
-    if (numItems == 0) {
-        HandleUnsuffixedInstanceOnTaskDestroyed(pThis, taskGroup);
-    }
-
-    if (taskGroupIsPinned && numItems == 1 && g_settings.useWindowIcons &&
-        CTaskListWnd_GroupChanged_Original) {
-        // Trigger CTaskListWnd::GroupChanged to trigger an icon change.
-        // https://github.com/ramensoftware/windhawk-mods/issues/644
-        int taskGroupProperty = 4;  // saw this in the debugger
-        CTaskListWnd_GroupChanged_Original(pThis, taskGroup, taskGroupProperty);
-    }
-
-    return ret;
+    return OnTaskDestroyed(original, pThis, taskGroup, taskItem);
 }
 
 using CTaskListWnd_TaskDestroyed_2_t = LONG_PTR(WINAPI*)(PVOID pThis,
@@ -1050,32 +1058,7 @@ LONG_PTR WINAPI CTaskListWnd_TaskDestroyed_2_Hook(PVOID pThis,
                                                      taskItem);
     };
 
-    if (!CTaskListWnd_IsOnPrimaryTaskband_Original(pThis)) {
-        return original();
-    }
-
-    int numItems = CTaskGroup_GetNumItems_Original(taskGroup);
-    bool taskGroupIsPinned = CTaskGroup_GetFlags_Original(taskGroup) & 1;
-
-    if (numItems == 1) {
-        HandleUnsuffixedInstanceOnTaskDestroyed(pThis, taskGroup);
-    }
-
-    LONG_PTR ret = original();
-
-    if (numItems == 0) {
-        HandleUnsuffixedInstanceOnTaskDestroyed(pThis, taskGroup);
-    }
-
-    if (taskGroupIsPinned && numItems == 1 && g_settings.useWindowIcons &&
-        CTaskListWnd_GroupChanged_Original) {
-        // Trigger CTaskListWnd::GroupChanged to trigger an icon change.
-        // https://github.com/ramensoftware/windhawk-mods/issues/644
-        int taskGroupProperty = 4;  // saw this in the debugger
-        CTaskListWnd_GroupChanged_Original(pThis, taskGroup, taskGroupProperty);
-    }
-
-    return ret;
+    return OnTaskDestroyed(original, pThis, taskGroup, taskItem);
 }
 
 void HandleSuffixedInstanceOnTaskCreated(PVOID taskList_TaskListUI,
