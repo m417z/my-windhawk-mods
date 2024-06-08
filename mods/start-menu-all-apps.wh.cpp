@@ -138,7 +138,7 @@ BOOL Wh_ModInit(void)
         return FALSE;
     }
 
-    WindhawkUtils::SYMBOL_HOOK taskbarHooks[] = {
+    WindhawkUtils::SYMBOL_HOOK startMenuHooks[] = {
         {
             {
                 LR"(public: void __cdecl winrt::impl::consume_WindowsUdk_UI_StartScreen_Implementation_IDockedStartControllerOverrides<struct winrt::WindowsUdk::UI::StartScreen::Implementation::DockedStartController>::ShowAllApps(void)const )",
@@ -163,7 +163,7 @@ BOOL Wh_ModInit(void)
         }
     };
 
-    if (!HookSymbols(module, taskbarHooks, ARRAYSIZE(taskbarHooks))) {
+    if (!HookSymbols(module, startMenuHooks, ARRAYSIZE(startMenuHooks))) {
         return FALSE;
     }
 
