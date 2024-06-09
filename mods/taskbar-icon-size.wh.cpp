@@ -103,6 +103,7 @@ std::atomic<bool> g_applyingSettings;
 std::atomic<bool> g_pendingFrameSizeChange;
 std::atomic<bool> g_pendingMeasureOverride;
 std::atomic<bool> g_unloading;
+std::atomic<int> g_hookCallCounter;
 
 int g_originalTaskbarHeight;
 int g_taskbarHeight;
@@ -234,6 +235,8 @@ using TrayUI_GetMinSize_t = void(WINAPI*)(void* pThis,
                                           SIZE* size);
 TrayUI_GetMinSize_t TrayUI_GetMinSize_Original;
 void WINAPI TrayUI_GetMinSize_Hook(void* pThis, HMONITOR monitor, SIZE* size) {
+    Wh_Log(L">");
+
     TrayUI_GetMinSize_Original(pThis, monitor, size);
 
     // Reassign min height to fix displaced secondary taskbar when auto-hide is
@@ -261,6 +264,8 @@ void WINAPI TrayUI__HandleSettingChange_Hook(void* pThis,
                                              void* param2,
                                              void* param3,
                                              void* param4) {
+    Wh_Log(L">");
+
     TrayUI__HandleSettingChange_Original(pThis, param1, param2, param3, param4);
 
     if (g_applyingSettings) {
@@ -420,18 +425,21 @@ void WINAPI TaskbarController_OnFrameSizeChanged_Hook(void* pThis) {
     g_pendingFrameSizeChange = false;
 }
 
-using TaskbarFrame_MeasureOverride_t = void*(WINAPI*)(void* pThis,
-                                                      void* param1,
-                                                      void* param2);
+using TaskbarFrame_MeasureOverride_t = winrt::Windows::Foundation::Size*(
+    WINAPI*)(void* pThis, void* param1, void* param2);
 TaskbarFrame_MeasureOverride_t TaskbarFrame_MeasureOverride_Original;
-void* WINAPI TaskbarFrame_MeasureOverride_Hook(void* pThis,
-                                               void* param1,
-                                               void* param2) {
+winrt::Windows::Foundation::Size* WINAPI
+TaskbarFrame_MeasureOverride_Hook(void* pThis, void* param1, void* param2) {
+    g_hookCallCounter++;
+
     Wh_Log(L">");
 
-    void* ret = TaskbarFrame_MeasureOverride_Original(pThis, param1, param2);
+    winrt::Windows::Foundation::Size* ret =
+        TaskbarFrame_MeasureOverride_Original(pThis, param1, param2);
 
     g_pendingMeasureOverride = false;
+
+    g_hookCallCounter--;
 
     return ret;
 }
@@ -1462,6 +1470,10 @@ void Wh_ModUninit() {
         WaitForSingleObject(g_restartExplorerPromptThread, INFINITE);
         CloseHandle(g_restartExplorerPromptThread);
         g_restartExplorerPromptThread = nullptr;
+    }
+
+    while (g_hookCallCounter > 0) {
+        Sleep(100);
     }
 }
 
