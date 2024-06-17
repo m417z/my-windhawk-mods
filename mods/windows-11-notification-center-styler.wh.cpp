@@ -1,6 +1,6 @@
 // ==WindhawkMod==
-// @id              windows-11-notification-center-styler-fork
-// @name            Windows 11 Notification Center Styler - Fork
+// @id              windows-11-notification-center-styler
+// @name            Windows 11 Notification Center Styler
 // @description     An advanced mod to override style attributes of the Notification Center
 // @version         1.0.2
 // @author          m417z
