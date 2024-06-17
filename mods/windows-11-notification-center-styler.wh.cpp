@@ -36,7 +36,7 @@ Styler** mods.
 
 ## Themes
 
-[![TranslucentShell](https://raw.githubusercontent.com/Undisputed00x/windows-11-notification-center-styling-guide/main/Themes/TranslucentShell/screenshot-small.png)
+[![TranslucentShell](https://raw.githubusercontent.com/ramensoftware/windows-11-notification-center-styling-guide/main/Themes/TranslucentShell/screenshot-small.png)
 \
 TranslucentShell](https://github.com/Undisputed00x/windows-11-notification-center-styling-guide/blob/main/Themes/TranslucentShell/README.md)
 
