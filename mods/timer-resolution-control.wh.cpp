@@ -262,8 +262,6 @@ void EnforceLimits() {
             }
         }
     }
-
-    //TODO: for background programs set timer resolution to 100ms
 }
 
 void Wh_ModAfterInit(void) {  
