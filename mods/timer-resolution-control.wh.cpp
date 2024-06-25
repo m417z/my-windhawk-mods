@@ -62,6 +62,8 @@ Authors: m417z, levitation
 */
 // ==/WindhawkModSettings==
 
+#include <ntstatus.h>
+
 #ifndef NT_SUCCESS
 #define NT_SUCCESS(Status) ((NTSTATUS)(Status) >= 0)
 #endif
@@ -220,6 +222,7 @@ BOOL Wh_ModInit(void)
     NTSTATUS status = ((NTSTATUS(WINAPI*)(PULONG, PULONG, PULONG))pNtQueryTimerResolution)(
         &MinimumResolution, &MaximumResolution, &CurrentResolution);
     if (!NT_SUCCESS(status)) {
+        Wh_Log(L"NtQueryTimerResolution failed with status: 0x%X", status);
         return FALSE;
     }
 
@@ -242,6 +245,10 @@ void EnforceLimits() {
 
     ULONG CurrentResolution;
     NTSTATUS status = pOriginalNtSetTimerResolution(0, FALSE, &CurrentResolution);
+    if (status == STATUS_TIMER_RESOLUTION_NOT_SET) {
+        status = STATUS_SUCCESS;
+        CurrentResolution = g_lastDesiredResolution;    //Take the value obtained from NtQueryTimerResolution, which does not fail with STATUS_TIMER_RESOLUTION_NOT_SET. Even if the program has not set the resolution, I have observed that the system itself may have set the resolution on program start to 1ms for some reason.
+    }
     if (NT_SUCCESS(status)) {
         Wh_Log(L"NtGetTimerResolution: current=%f", (double)CurrentResolution / 10000.0);
 
@@ -261,6 +268,9 @@ void EnforceLimits() {
                 pOriginalNtSetTimerResolution(lastDesiredResolution, TRUE, &CurrentResolution);
             }
         }
+    }
+    else {
+        Wh_Log(L"NtGetTimerResolution failed with status: 0x%X", status);
     }
 }
 
