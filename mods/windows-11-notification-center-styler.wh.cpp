@@ -36,9 +36,12 @@ Styler** mods.
 
 ## Themes
 
+Themes are collections of styles. The following themes are integrated into the
+mod and can be selected in the settings:
+
 [![TranslucentShell](https://raw.githubusercontent.com/ramensoftware/windows-11-notification-center-styling-guide/main/Themes/TranslucentShell/screenshot-small.png)
 \
-TranslucentShell](https://github.com/Undisputed00x/windows-11-notification-center-styling-guide/blob/main/Themes/TranslucentShell/README.md)
+TranslucentShell](https://github.com/ramensoftware/windows-11-notification-center-styling-guide/blob/main/Themes/TranslucentShell/README.md)
 
 ## Examples
 
@@ -72,13 +75,17 @@ TranslucentShell](https://github.com/Undisputed00x/windows-11-notification-cente
 
 ## Advanced styling
 
-The settings have two sections: control styles and resource
+Aside from themes, the settings have two sections: control styles and resource
 variables. Control styles allow to override styles, such as size and color, for
 the target elements. Resource variables allow to override predefined variables.
 For a more detailed explanation and examples, refer to the sections below.
 
 The [UWPSpy](https://ramensoftware.com/uwpspy) tool can be used to inspect the
 notification center control elements in real time, and experiment with various styles.
+
+For a collection of commonly requested notification center styling
+customizations, check out [The Windows 11 notification center styling
+guide](https://github.com/ramensoftware/windows-11-notification-center-styling-guide/blob/main/README.md).
 
 ### Control styles
 
@@ -154,6 +161,7 @@ code from the **TranslucentTB** project.
 #include <xamlom.h>
 
 #include <atomic>
+#include <vector>
 
 #undef GetCurrentTime
 
@@ -189,7 +197,10 @@ def json_to_cpp(json_data):
 
     cpp_code = "{{\n"
     for key, value in sorted(json_data.items(), key=cmp):
-        value_escaped = value.replace('"', '\\"')
+        value_escaped = re.sub(
+            r'[^ -~]',
+            lambda m: f'\\u{ord(m[0]):04X}',
+            value.replace('"', '\\"'))
         if ".target" in key:
             if cpp_code != "{{\n":
                 cpp_code = cpp_code.removesuffix(", ")
@@ -214,56 +225,49 @@ print(cpp_output)
 
 // Author: Undisputed00x
 const Theme g_themeTranslucentShell = {{
-    ThemeTargetStyles{
-        L"Grid#NotificationCenterGrid",
-        {L"Background:=<AcrylicBrush TintOpacity=\"0\" TintColor=\"Transparent\" "
-        L"TintLuminosityOpacity=\"0\" Opacity=\"1\"/>",
-         L"BorderThickness=0,0,0,0",
-         L"CornerRadius=15"}},
-    ThemeTargetStyles{
-        L"Grid#CalendarCenterGrid",
-        {L"Background:=<AcrylicBrush TintOpacity=\"0\" TintColor=\"Transparent\" "
-        L"TintLuminosityOpacity=\"0\" Opacity=\"1\"/>",
-        L"BorderThickness=0,0,0,0",
-        L"CornerRadius=15"}},
-    ThemeTargetStyles{
-        L"ScrollViewer#CalendarControlScrollViewer",
-        {L"Background:=<AcrylicBrush Opacity=\"0\"/>"}},
-    ThemeTargetStyles{
-        L"Border#CalendarHeaderMinimizedOverlay",
-        {L"Background:=<AcrylicBrush Opacity=\"0\"/>"}},
-    ThemeTargetStyles{
-        L"ActionCenter.FocusSessionControl#FocusSessionControl > Grid#FocusGrid",
-        {L"Background:=<AcrylicBrush Opacity=\"0\"/>"}},
+    ThemeTargetStyles{L"Grid#NotificationCenterGrid",
+                      {L"Background:=<AcrylicBrush TintOpacity=\"0\" "
+                       L"TintColor=\"Transparent\" TintLuminosityOpacity=\"0\" "
+                       L"Opacity=\"1\"/>",
+                       L"BorderThickness=0,0,0,0", L"CornerRadius=15"}},
+    ThemeTargetStyles{L"Grid#CalendarCenterGrid",
+                      {L"Background:=<AcrylicBrush TintOpacity=\"0\" "
+                       L"TintColor=\"Transparent\" TintLuminosityOpacity=\"0\" "
+                       L"Opacity=\"1\"/>",
+                       L"BorderThickness=0,0,0,0", L"CornerRadius=15"}},
+    ThemeTargetStyles{L"ScrollViewer#CalendarControlScrollViewer",
+                      {L"Background:=<AcrylicBrush Opacity=\"0\"/>"}},
+    ThemeTargetStyles{L"Border#CalendarHeaderMinimizedOverlay",
+                      {L"Background:=<AcrylicBrush Opacity=\"0\"/>"}},
+    ThemeTargetStyles{L"ActionCenter.FocusSessionControl#FocusSessionControl > "
+                      L"Grid#FocusGrid",
+                      {L"Background:=<AcrylicBrush Opacity=\"0\"/>"}},
     ThemeTargetStyles{
         L"MenuFlyoutPresenter",
-        {L"Background:=<AcrylicBrush TintOpacity=\"0\" TintColor=\"Transparent\" "
-        L"TintLuminosityOpacity=\"0\" Opacity=\"1\"/>",
-        L"BorderThickness=0,0,0,0",
-        L"CornerRadius=15",
-        L"Padding=2,4,2,4"}},
-    ThemeTargetStyles{
-        L"Border#JumpListRestyledAcrylic",
-        {L"Background:=<AcrylicBrush TintOpacity=\"0\" TintColor=\"Transparent\" "
-        L"TintLuminosityOpacity=\"0\" Opacity=\"1\"/>",
-        L"BorderThickness=0,0,0,0",
-        L"CornerRadius=15",
-        L"Margin=-2,-2,-2,-2"}},
-    ThemeTargetStyles{
-        L"Grid#ControlCenterRegion",
-        {L"Background:=<AcrylicBrush TintOpacity=\"0\" TintColor=\"Transparent\" "
-        L"TintLuminosityOpacity=\"0\" Opacity=\"1\"/>",
-        L"BorderThickness=0,0,0,0",
-        L"CornerRadius=15"}},
+        {L"Background:=<AcrylicBrush TintOpacity=\"0\" "
+         L"TintColor=\"Transparent\" TintLuminosityOpacity=\"0\" "
+         L"Opacity=\"1\"/>",
+         L"BorderThickness=0,0,0,0", L"CornerRadius=15", L"Padding=2,4,2,4"}},
+    ThemeTargetStyles{L"Border#JumpListRestyledAcrylic",
+                      {L"Background:=<AcrylicBrush TintOpacity=\"0\" "
+                       L"TintColor=\"Transparent\" TintLuminosityOpacity=\"0\" "
+                       L"Opacity=\"1\"/>",
+                       L"BorderThickness=0,0,0,0", L"CornerRadius=15",
+                       L"Margin=-2,-2,-2,-2"}},
+    ThemeTargetStyles{L"Grid#ControlCenterRegion",
+                      {L"Background:=<AcrylicBrush TintOpacity=\"0\" "
+                       L"TintColor=\"Transparent\" TintLuminosityOpacity=\"0\" "
+                       L"Opacity=\"1\"/>",
+                       L"BorderThickness=0,0,0,0", L"CornerRadius=15"}},
     ThemeTargetStyles{
         L"Windows.UI.Xaml.Controls.Grid#L1Grid > Border",
         {L"Background:=<SolidColorBrush Color=\"Transparent\"/>"}},
     ThemeTargetStyles{
         L"Windows.UI.Xaml.Controls.Grid#MediaTransportControlsRegion",
-        {L"Background:=<AcrylicBrush TintOpacity=\"0\" TintColor=\"Transparent\" "
-        L"TintLuminosityOpacity=\"0\" Opacity=\"1\"/>",
-        L"BorderThickness=0,0,0,0",
-        L"CornerRadius=15"}},
+        {L"Background:=<AcrylicBrush TintOpacity=\"0\" "
+         L"TintColor=\"Transparent\" TintLuminosityOpacity=\"0\" "
+         L"Opacity=\"1\"/>",
+         L"BorderThickness=0,0,0,0", L"CornerRadius=15"}},
     ThemeTargetStyles{
         L"Grid#MediaTransportControlsRoot",
         {L"Background:=<SolidColorBrush Color=\"Transparent\"/>"}},
@@ -274,10 +278,13 @@ const Theme g_themeTranslucentShell = {{
         L"ContentPresenter#PageContent > Grid > Border",
         {L"Background:=<SolidColorBrush Color=\"Transparent\"/>"}},
     ThemeTargetStyles{
-        L"QuickActions.ControlCenter.AccessibleWindow#PageWindow > ContentPresenter > Grid#FullScreenPageRoot",
+        L"QuickActions.ControlCenter.AccessibleWindow#PageWindow > "
+        L"ContentPresenter > Grid#FullScreenPageRoot",
         {L"Background:=<SolidColorBrush Color=\"Transparent\"/>"}},
     ThemeTargetStyles{
-        L"QuickActions.ControlCenter.AccessibleWindow#PageWindow > ContentPresenter > Grid#FullScreenPageRoot > ContentPresenter#PageHeader",
+        L"QuickActions.ControlCenter.AccessibleWindow#PageWindow > "
+        L"ContentPresenter > Grid#FullScreenPageRoot > "
+        L"ContentPresenter#PageHeader",
         {L"Background:=<SolidColorBrush Color=\"Transparent\"/>"}},
     ThemeTargetStyles{
         L"ScrollViewer#ListContent",
@@ -285,19 +292,18 @@ const Theme g_themeTranslucentShell = {{
     ThemeTargetStyles{
         L"ActionCenter.FlexibleToastView#FlexibleNormalToastView",
         {L"Background:=<SolidColorBrush Color=\"Transparent\"/>"}},
-    ThemeTargetStyles{
-        L"Border#ToastBackgroundBorder2",
-        {L"Background:=<AcrylicBrush TintOpacity=\"0\" TintColor=\"Transparent\" "
-        L"TintLuminosityOpacity=\"0\" Opacity=\"1\"/>",
-        L"BorderThickness=0,0,0,0"}},
-    ThemeTargetStyles{
-        L"JumpViewUI.SystemItemListViewItem > Grid#LayoutRoot > Border#BackgroundBorder",
-        {L"FocusVisualPrimaryThickness=0,0,0,0",
-        L"FocusVisualSecondaryThickness=0,0,0,0"}},
-    ThemeTargetStyles{
-        L"JumpViewUI.JumpListListViewItem > Grid#LayoutRoot > Border#BackgroundBorder",
-        {L"FocusVisualPrimaryThickness=0,0,0,0"}},
-    
+    ThemeTargetStyles{L"Border#ToastBackgroundBorder2",
+                      {L"Background:=<AcrylicBrush TintOpacity=\"0\" "
+                       L"TintColor=\"Transparent\" TintLuminosityOpacity=\"0\" "
+                       L"Opacity=\"1\"/>",
+                       L"BorderThickness=0,0,0,0"}},
+    ThemeTargetStyles{L"JumpViewUI.SystemItemListViewItem > Grid#LayoutRoot > "
+                      L"Border#BackgroundBorder",
+                      {L"FocusVisualPrimaryThickness=0,0,0,0",
+                       L"FocusVisualSecondaryThickness=0,0,0,0"}},
+    ThemeTargetStyles{L"JumpViewUI.JumpListListViewItem > Grid#LayoutRoot > "
+                      L"Border#BackgroundBorder",
+                      {L"FocusVisualPrimaryThickness=0,0,0,0"}},
 }};
 
 std::atomic<bool> g_initialized;
@@ -1643,7 +1649,8 @@ void ProcessAllStylesFromSettings() {
     PCWSTR themeName = Wh_GetStringSetting(L"theme");
     const Theme* theme = nullptr;
     if (wcscmp(themeName, L"TranslucentShell") == 0) {
-        theme = &g_themeTranslucentShell;}
+        theme = &g_themeTranslucentShell;
+    }
     Wh_FreeStringSetting(themeName);
 
     if (theme) {
