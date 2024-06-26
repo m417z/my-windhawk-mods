@@ -299,7 +299,7 @@ const Theme g_themeSideBySide2 = {{
         L"Windows.UI.Xaml.Controls.GridViewItem",
         {L"MaxWidth=220", L"MinWidth=220"}},
     ThemeTargetStyles{L"StartDocked.AllAppsGridListView#AppsList",
-                      {L"Padding=48,3,-36,32"}},
+                      {L"Padding=48,3,-36,16"}},
     ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Grid#AllAppsPaneHeader",
                       {L"Margin=97,0,0,0"}},
     ThemeTargetStyles{
@@ -328,6 +328,21 @@ const Theme g_themeSideBySide2 = {{
         L"Windows.UI.Xaml.Controls.Grid#InnerContent > "
         L"Windows.UI.Xaml.Shapes.Rectangle",
         {L"Margin=67,7,0,21"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.SemanticZoom#ZoomControl",
+                      {L"IsZoomOutButtonEnabled=true"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Button#ZoomOutButton > "
+                      L"Windows.UI.Xaml.Controls.ContentPresenter#"
+                      L"ContentPresenter > Windows.UI.Xaml.Controls.TextBlock",
+                      {L"Text=\uE73F"}},
+    ThemeTargetStyles{
+        L"Windows.UI.Xaml.Controls.Button#ZoomOutButton",
+        {L"Width=28", L"Height=28", L"Margin=0,0,0,0", L"FontSize=14",
+         L"CornerRadius=4", L"VerticalAlignment=0",
+         L"Transform3D:=<CompositeTransform3D TranslateX=\"-1\" "
+         L"TranslateY=\"-36\"/>",
+         L"Background=Transparent", L"BorderBrush=Transparent"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.ListView#ZoomAppsList",
+                      {L"Padding=86,0,27,0"}},
 }};
 
 // Author: Windows XP (6.1.7601)
