@@ -26,7 +26,8 @@
 
 An advanced mod to override style attributes of the taskbar control elements.
 
-Also check out the **Windows 11 Start Menu Styler** mod.
+Also check out the **Windows 11 Start Menu Styler**, **Windows 11 Notification
+Center Styler** mods.
 
 ## Themes
 

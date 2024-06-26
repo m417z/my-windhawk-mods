@@ -28,7 +28,8 @@ An advanced mod to override style attributes of the start menu control elements.
 
 **Note**: This mod requires Windhawk v1.4 or later.
 
-Also check out the **Windows 11 Taskbar Styler** mod.
+Also check out the **Windows 11 Taskbar Styler**, **Windows 11 Notification
+Center Styler** mods.
 
 ## Themes
 
@@ -77,8 +78,8 @@ convenience:
 The [UWPSpy](https://ramensoftware.com/uwpspy) tool can be used to inspect the
 start menu control elements in real time, and experiment with various styles.
 
-For a collection of commonly requested taskbar styling customizations, check out
-[The Windows 11 start menu styling
+For a collection of commonly requested start menu styling customizations, check
+out [The Windows 11 start menu styling
 guide](https://github.com/ramensoftware/windows-11-start-menu-styling-guide/blob/main/README.md).
 
 ### Control styles
