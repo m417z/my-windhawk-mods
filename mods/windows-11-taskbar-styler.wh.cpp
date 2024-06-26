@@ -1122,7 +1122,10 @@ def json_to_cpp(json_data):
 
     cpp_code = "{{\n"
     for key, value in sorted(json_data.items(), key=cmp):
-        value_escaped = value.replace('"', '\\"')
+        value_escaped = re.sub(
+            r'[^ -~]',
+            lambda m: f'\\u{ord(m[0]):04X}',
+            value.replace('"', '\\"'))
         if ".target" in key:
             if cpp_code != "{{\n":
                 cpp_code = cpp_code.removesuffix(", ")
