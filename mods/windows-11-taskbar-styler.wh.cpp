@@ -1974,6 +1974,21 @@ const PropertyValues& GetResolvedPropertyValues(
 // https://stackoverflow.com/a/12835139
 VisualStateGroup GetVisualStateGroup(FrameworkElement element,
                                      std::wstring_view visualStateGroupName) {
+    // The TaskListButtonPanel child element of the search box (with "Icon and
+    // label" configuration) returns a list of size 1, but accessing the first
+    // item leads to a null dereference crash. Skip this element.
+    if (winrt::get_class_name(element) == L"Taskbar.TaskListButtonPanel" &&
+        element.Name() == L"ExperienceToggleButtonRootPanel") {
+        auto parent = Media::VisualTreeHelper::GetParent(element)
+                          .try_as<FrameworkElement>();
+        if (parent &&
+            winrt::get_class_name(parent) ==
+                L"Taskbar.SearchBoxLaunchListButton" &&
+            parent.Name() == L"SearchBoxLaunchListButton") {
+            return nullptr;
+        }
+    }
+
     auto list = VisualStateManager::GetVisualStateGroups(element);
 
     for (const auto& v : list) {
