@@ -2,7 +2,7 @@
 // @id              windows-11-taskbar-styler
 // @name            Windows 11 Taskbar Styler
 // @description     An advanced mod to override style attributes of the taskbar control elements
-// @version         1.3.4
+// @version         1.3.5
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
@@ -45,6 +45,10 @@ Bubbles](https://github.com/ramensoftware/windows-11-taskbar-styling-guide/blob/
 [![TranslucentTaskbar](https://raw.githubusercontent.com/ramensoftware/windows-11-taskbar-styling-guide/main/Themes/TranslucentTaskbar/screenshot.png)
 \
 TranslucentTaskbar](https://github.com/ramensoftware/windows-11-taskbar-styling-guide/blob/main/Themes/TranslucentTaskbar/README.md)
+
+[![Squircle](https://raw.githubusercontent.com/ramensoftware/windows-11-taskbar-styling-guide/main/Themes/Squircle/screenshot.png)
+\
+Squircle](https://github.com/ramensoftware/windows-11-taskbar-styling-guide/blob/main/Themes/Squircle/README.md)
 
 More themes can be found in the **Themes** section of [The Windows 11 taskbar
 styling
@@ -189,6 +193,7 @@ relevant `#pragma region` regions in the code editor.
   - WinXP: WinXP
   - Bubbles: Bubbles
   - TranslucentTaskbar: TranslucentTaskbar
+  - Squircle: Squircle
 - controlStyles:
   - - target: ""
       $name: Target
@@ -1266,6 +1271,85 @@ const Theme g_themeTranslucentTaskbar = {{
          L"TintOpacity=\"0\" TintLuminosityOpacity=\"0\" Opacity=\"1\"/>",
          L"BorderThickness=0,0,0,0", L"CornerRadius=15",
          L"Margin=-2,-2,-2,-2"}},
+}};
+
+const Theme g_themeSquircle = {{
+    ThemeTargetStyles{L"Rectangle#BackgroundFill", {L"Fill=Transparent"}},
+    ThemeTargetStyles{L"Taskbar.TaskListLabeledButtonPanel > "
+                      L"Border#BackgroundElement@RunningIndicatorStates",
+                      {L"Background:=<AcrylicBrush TintColor=\"Black\" "
+                       L"TintOpacity=\"0.6\" />",
+                       L"CornerRadius=5",
+                       L"Background@NoRunningIndicator:=<AcrylicBrush "
+                       L"TintColor=\"Black\" TintOpacity=\"0.15\" />"}},
+    ThemeTargetStyles{
+        L"Taskbar.TaskListButtonPanel > Border#BackgroundElement@CommonStates",
+        {L"CornerRadius=5", L"Background@ActivePointerOver=#B4202020",
+         L"Background@InactivePointerOver=#B4202020",
+         L"Background@ActivePressed=#B4101010",
+         L"Background@InactivePressed=#B4101010",
+         L"Background:=<AcrylicBrush TintColor=\"Black\" TintOpacity=\"0.6\" "
+         L"/>"}},
+    ThemeTargetStyles{
+        L"Grid#SystemTrayFrameGrid[1]",
+        {L"Background:=<AcrylicBrush TintColor=\"Black\" TintOpacity=\"0.6\" "
+         L"/>",
+         L"CornerRadius=5", L"Margin=0,5,14,5", L"Padding=10,0,0,0"}},
+    ThemeTargetStyles{
+        L"Taskbar.TaskListLabeledButtonPanel@CommonStates > "
+        L"Rectangle#RunningIndicator",
+        {L"Width=Auto", L"Height=39", L"Stroke@InactivePointerOver=#75A8E6",
+         L"Stroke@InactivePressed=#7CB1F2", L"Stroke@ActiveNormal=#5F87B9",
+         L"Stroke@ActivePointerOver=#75A8E6", L"Stroke@ActivePressed=#7CB1F2",
+         L"Fill=Transparent", L"RadiusX=5", L"RadiusY=5",
+         L"StrokeThickness=3"}},
+    ThemeTargetStyles{
+        L"Taskbar.TaskListLabeledButtonPanel > TextBlock#LabelControl",
+        {L"Margin=4,0,0,0"}},
+    ThemeTargetStyles{L"Taskbar.SearchBoxButton", {L"Margin=0,-4,0,-4"}},
+    ThemeTargetStyles{L"TextBlock#SearchBoxTextBlock", {L"FontSize=12.5"}},
+    ThemeTargetStyles{L"Rectangle#BackgroundStroke", {L"Visibility=Collapsed"}},
+    ThemeTargetStyles{L"Grid", {L"RequestedTheme=2"}},
+    ThemeTargetStyles{
+        L"Windows.UI.Xaml.Controls.Grid#DynamicSearchBoxGleamContainer",
+        {L"Margin=6"}},
+    ThemeTargetStyles{
+        L"Taskbar.AugmentedEntryPointButton#AugmentedEntryPointButton > "
+        L"Taskbar.TaskListButtonPanel#ExperienceToggleButtonRootPanel > "
+        L"Border#BackgroundElement",
+        {L"Background:=<AcrylicBrush TintColor=\"Black\" TintOpacity=\"0.4\" "
+         L"/>"}},
+    ThemeTargetStyles{
+        L"Taskbar.TaskListButton#TaskListButton[AutomationProperties.Name="
+        L"Copilot] > Taskbar.TaskListLabeledButtonPanel#IconPanel > "
+        L"Border#BackgroundElement",
+        {L"Background:=<AcrylicBrush TintColor=\"Black\" TintOpacity=\"0.6\" "
+         L"/>"}},
+    ThemeTargetStyles{L"Border#BackgroundBorder",
+                      {L"Margin=0,3,0,3", L"CornerRadius=5"}},
+    ThemeTargetStyles{L"Taskbar.TaskListButton#TaskListButton > "
+                      L"Taskbar.TaskListLabeledButtonPanel#IconPanel@"
+                      L"CommonStates > Border#BackgroundElement",
+                      {L"Background:=<AcrylicBrush TintColor=\"Black\" "
+                       L"TintOpacity=\"0.6\" />",
+                       L"Background@InactivePointerOver:=<AcrylicBrush "
+                       L"TintColor=\"Black\" TintOpacity=\"0.7\" />",
+                       L"Background@ActivePointerOver:=<AcrylicBrush "
+                       L"TintColor=\"Black\" TintOpacity=\"0.7\" />"}},
+    ThemeTargetStyles{
+        L"Taskbar.AugmentedEntryPointButton#AugmentedEntryPointButton",
+        {L"Margin=0,0,-6,-0.5"}},
+    ThemeTargetStyles{
+        L"Taskbar.AugmentedEntryPointButton#AugmentedEntryPointButton > "
+        L"Taskbar.TaskListButtonPanel#ExperienceToggleButtonRootPanel > "
+        L"Border#BackgroundElement@CommonStates",
+        {L"Background@InactivePointerOver:=<AcrylicBrush TintColor=\"Black\" "
+         L"TintOpacity=\"0\" />",
+         L"Background:=<AcrylicBrush TintColor=\"Black\" TintOpacity=\"0.4\" "
+         L"/>"}},
+    ThemeTargetStyles{L"Border#MultiWindowElement",
+                      {L"Background:=<AcrylicBrush TintColor=\"Black\" "
+                       L"TintOpacity=\"0.6\" />"}},
 }};
 
 std::atomic<DWORD> g_targetThreadId = 0;
@@ -2684,6 +2768,8 @@ void ProcessAllStylesFromSettings() {
         theme = &g_themeBubbles;
     } else if (wcscmp(themeName, L"TranslucentTaskbar") == 0) {
         theme = &g_themeTranslucentTaskbar;
+    } else if (wcscmp(themeName, L"Squircle") == 0) {
+        theme = &g_themeSquircle;
     }
     Wh_FreeStringSetting(themeName);
 
