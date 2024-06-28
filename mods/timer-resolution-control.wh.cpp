@@ -241,11 +241,12 @@ BOOL Wh_ModInit(void)
     return TRUE;
 }
 
-void EnforceLimits() {
-
+void EnforceLimits() 
+{
     ULONG CurrentResolution;
     NTSTATUS status = pOriginalNtSetTimerResolution(0, FALSE, &CurrentResolution);
     if (status == STATUS_TIMER_RESOLUTION_NOT_SET) {
+        Wh_Log(L"NtSetTimerResolution has not been called by the program");
         status = STATUS_SUCCESS;
         CurrentResolution = g_lastDesiredResolution;    //Take the value obtained from NtQueryTimerResolution, which does not fail with STATUS_TIMER_RESOLUTION_NOT_SET. Even if the program has not set the resolution, I have observed that the system itself may have set the resolution on program start to 1ms for some reason.
     }
@@ -274,15 +275,15 @@ void EnforceLimits() {
     }
 }
 
-void Wh_ModAfterInit(void) {  
-
-    //Force timer resolution if it was already changed. NB! In order to avoid any race conditions, do this only after the hook is activated. Else there might be a situation that the mod overrides the current resolution while hook is not yet set. And then the program changes it again before the hook is finally set.
+void Wh_ModAfterInit(void) 
+{  
+    //Force mod timer resolution settings if the resolution was already changed by the program. NB! In order to avoid any race conditions, do this only after the hook is activated. Else there might be a situation that the mod overrides the current resolution while hook is not yet set, and then the program changes it again before the hook is finally set.
 
     EnforceLimits();
 }
 
-void Wh_ModSettingsChanged(void) {
-
+void Wh_ModSettingsChanged(void) 
+{
     Wh_Log(L"SettingsChanged");
 
     LoadSettings();
@@ -290,8 +291,8 @@ void Wh_ModSettingsChanged(void) {
     EnforceLimits();
 }
 
-void Wh_ModUninit() {
-
+void Wh_ModUninit() 
+{
     Wh_Log(L"Uniniting...");
 
     //Lift all limits and restore original resolution set by the program
