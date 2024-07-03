@@ -274,7 +274,7 @@ const Theme g_themeSideBySide = {{
         {L"MaxWidth=220", L"MinWidth=100"}},
 }};
 
-// Author: Pyxisynth
+// Author: Pyxisynth (https://github.com/dreamsynth)
 const Theme g_themeSideBySide2 = {{
     ThemeTargetStyles{
         L"Windows.UI.Xaml.Controls.Grid#UndockedRoot",
@@ -349,7 +349,7 @@ const Theme g_themeSideBySide2 = {{
                       {L"Padding=86,0,27,0"}},
 }};
 
-// Author: Windows XP (6.1.7601)
+// Author: Olivia (https://github.com/OliviaIsTyping)
 const Theme g_themeSideBySideMinimal = {{
     ThemeTargetStyles{
         L"Windows.UI.Xaml.Controls.Grid#UndockedRoot",
@@ -381,7 +381,7 @@ const Theme g_themeSideBySideMinimal = {{
     ThemeTargetStyles{L"StartMenu.PinnedList", {L"Height=504"}},
 }};
 
-// Author: Undisputed00x
+// Author: Undisputed00x (https://github.com/Undisputed00x)
 const Theme g_themeTranslucentStartMenu = {{
     ThemeTargetStyles{
         L"Border#AcrylicBorder",
