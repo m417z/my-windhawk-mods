@@ -2,14 +2,14 @@
 // @id              taskbar-icon-size
 // @name            Taskbar height and icon size
 // @description     Control the taskbar height and icon size, improve icon quality (Windows 11 only)
-// @version         1.2.8
+// @version         1.2.9
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
 // @homepage        https://m417z.com/
 // @include         explorer.exe
 // @architecture    x86-64
-// @compilerOptions -DWINVER=0x0605 -lcomctl32 -lole32 -loleaut32 -lshcore -lwininet
+// @compilerOptions -DWINVER=0x0605 -lcomctl32 -lole32 -loleaut32 -lruntimeobject -lshcore -lwininet
 // ==/WindhawkMod==
 
 // Source code is published under The GNU General Public License v3.0.
@@ -79,6 +79,7 @@ Tweaker](https://tweaker.ramensoftware.com/).
 
 #include <algorithm>
 #include <atomic>
+#include <functional>
 #include <limits>
 #include <optional>
 #include <string>
@@ -1165,6 +1166,7 @@ bool GetTaskbarViewDllPath(WCHAR path[MAX_PATH]) {
 }
 
 bool HookTaskbarViewDllSymbols(HMODULE module) {
+    // Taskbar.View.dll, ExplorerExtensions.dll
     SYMBOL_HOOK symbolHooks[] =  //
         {
             {
@@ -1193,6 +1195,7 @@ bool HookTaskbarViewDllSymbols(HMODULE module) {
                 },
                 (void**)&TaskListItemViewModel_GetIconHeight_Original,
                 (void*)TaskListItemViewModel_GetIconHeight_Hook,
+                true,  // Gone in KB5040527 (Taskbar.View.dll 2124.16310.10.0).
             },
             {
                 {LR"(public: static double __cdecl winrt::Taskbar::implementation::TaskbarConfiguration::GetIconHeightInViewPixels(enum winrt::WindowsUdk::UI::Shell::TaskbarSize))"},
@@ -1320,7 +1323,7 @@ bool HookTaskbarDllSymbols() {
         return false;
     }
 
-    SYMBOL_HOOK symbolHooks[] = {
+    SYMBOL_HOOK taskbarDllHooks[] = {
         {
             {
                 LR"(void __cdecl IconUtils::GetIconSize(bool,enum IconUtils::IconType,struct tagSIZE *))",
@@ -1363,8 +1366,8 @@ bool HookTaskbarDllSymbols() {
         },
     };
 
-    return HookSymbolsWithOnlineCacheFallback(module, symbolHooks,
-                                              ARRAYSIZE(symbolHooks));
+    return HookSymbolsWithOnlineCacheFallback(module, taskbarDllHooks,
+                                              ARRAYSIZE(taskbarDllHooks));
 }
 
 BOOL ModInitWithTaskbarView(HMODULE taskbarViewModule) {
