@@ -54,6 +54,14 @@ Squircle](https://github.com/ramensoftware/windows-11-taskbar-styling-guide/blob
 \
 RosePine](https://github.com/ramensoftware/windows-11-taskbar-styling-guide/blob/main/Themes/RosePine/README.md)
 
+[![DockLike](https://raw.githubusercontent.com/ramensoftware/windows-11-taskbar-styling-guide/main/Themes/DockLike/screenshot.png)
+\
+DockLike](https://github.com/ramensoftware/windows-11-taskbar-styling-guide/blob/main/Themes/DockLike/README.md)
+
+[![WinVista](https://raw.githubusercontent.com/ramensoftware/windows-11-taskbar-styling-guide/main/Themes/WinVista/screenshot.png)
+\
+WinVista](https://github.com/ramensoftware/windows-11-taskbar-styling-guide/blob/main/Themes/WinVista/README.md)
+
 More themes can be found in the **Themes** section of [The Windows 11 taskbar
 styling
 guide](https://github.com/ramensoftware/windows-11-taskbar-styling-guide/blob/main/README.md#themes).
@@ -199,6 +207,8 @@ relevant `#pragma region` regions in the code editor.
   - TranslucentTaskbar: TranslucentTaskbar
   - Squircle: Squircle
   - RosePine: RosePine
+  - DockLike: DockLike
+  - WinVista: WinVista
 - controlStyles:
   - - target: ""
       $name: Target
@@ -1415,6 +1425,97 @@ const Theme g_themeRosePine = {{
         L"Fill=Transparent"}},
     ThemeTargetStyles{L"Taskbar.TaskListButtonPanel#ExperienceToggleButtonRootPanel > Border#BackgroundElement", {
         L"Background=#302d47"}},
+}};
+
+const Theme g_themeDockLike = {{
+    ThemeTargetStyles{L"Taskbar.TaskbarFrame#TaskbarFrame", {
+        L"Width=Auto",
+        L"HorizontalAlignment=Center",
+        L"Margin=250,0,250,0"}},
+    ThemeTargetStyles{L"Taskbar.TaskbarFrame#TaskbarFrame > Grid#RootGrid", {
+        L"Background:=<AcrylicBrush TintColor=\"{ThemeResource SystemChromeAltHighColor}\" TintOpacity=\"0.8\" FallbackColor=\"{ThemeResource SystemChromeLowColor}\" />",
+        L"Padding=2,0,2,0",
+        L"CornerRadius=8,8,0,0",
+        L"BorderBrush:=<SolidColorBrush Color=\"{ThemeResource SurfaceStrokeColorDefault}\" />"}},
+    ThemeTargetStyles{L"Rectangle#BackgroundFill", {
+        L"Visibility=Collapsed"}},
+    ThemeTargetStyles{L"Rectangle#BackgroundStroke", {
+        L"Visibility=Collapsed"}},
+    ThemeTargetStyles{L"Taskbar.AugmentedEntryPointButton#AugmentedEntryPointButton > Taskbar.TaskListButtonPanel#ExperienceToggleButtonRootPanel", {
+        L"Margin=0"}},
+    ThemeTargetStyles{L"Grid#SystemTrayFrameGrid", {
+        L"Background:=<AcrylicBrush TintColor=\"{ThemeResource SystemChromeAltHighColor}\" TintOpacity=\"0.8\" FallbackColor=\"{ThemeResource SystemChromeLowColor}\" />",
+        L"Margin=-4,-8,-4,-8",
+        L"CornerRadius=10",
+        L"BorderThickness=12,12,12,12",
+        L"BackgroundSizing=InnerBorderEdge"}},
+    ThemeTargetStyles{L"SystemTray.ChevronIconView", {
+        L"Padding=0"}},
+    ThemeTargetStyles{L"SystemTray.NotifyIconView#NotifyItemIcon", {
+        L"Padding=0"}},
+    ThemeTargetStyles{L"SystemTray.OmniButton", {
+        L"Padding=0"}},
+    ThemeTargetStyles{L"SystemTray.CopilotIcon", {
+        L"Padding=0"}},
+    ThemeTargetStyles{L"SystemTray.OmniButton#NotificationCenterButton > Grid > ContentPresenter > ItemsPresenter > StackPanel > ContentPresenter > systemtray:IconView#SystemTrayIcon > Grid", {
+        L"Padding=4,0,4,0"}},
+    ThemeTargetStyles{L"SystemTray.IconView#SystemTrayIcon > Grid#ContainerGrid > ContentPresenter#ContentPresenter > Grid#ContentGrid > SystemTray.TextIconContent > Grid#ContainerGrid", {
+        L"Padding=0"}},
+    ThemeTargetStyles{L"SystemTray.StackListView#IconStack > ItemsPresenter > StackPanel > ContentPresenter > SystemTray.IconView#SystemTrayIcon", {
+        L"Padding=0"}},
+    ThemeTargetStyles{L"SystemTray.Stack#ShowDesktopStack", {
+        L"Margin=0,-4,-12,-4"}},
+}};
+
+const Theme g_themeWinVista = {{
+    ThemeTargetStyles{L"Taskbar.ExperienceToggleButton", {
+        L"CornerRadius=2"}},
+    ThemeTargetStyles{L"Taskbar.SearchBoxButton", {
+        L"CornerRadius=2"}},
+    ThemeTargetStyles{L"Taskbar.TaskListButton", {
+        L"CornerRadius=2"}},
+    ThemeTargetStyles{L"Taskbar.TaskListLabeledButtonPanel@RunningIndicatorStates > Rectangle#RunningIndicator", {
+        L"Height=2",
+        L"Width@ActiveRunningIndicator=30",
+        L"Width@InactiveRunningIndicator=8",
+        L"Fill@ActiveRunningIndicator=#00BEE0",
+        L"Fill@InactiveRunningIndicator=#DDDDDD"}},
+    ThemeTargetStyles{L"Rectangle#BackgroundFill", {
+        L"Fill:=<LinearGradientBrush StartPoint=\"0,0\" EndPoint=\"0,1\" Opacity=\"0.7\"><GradientStop Color=\"#B5B9BC\" Offset=\"0.0\" /><GradientStop Color=\"#B5B9BC\" Offset=\"0.03125\"  /><GradientStop Color=\"#909296\" Offset=\"0.03125\" /><GradientStop Color=\"#464B51\" Offset=\"0.5\" /><GradientStop Color=\"#060F15\" Offset=\"0.5\" /><GradientStop Color=\"#040C11\" Offset=\"0.96875\" /><GradientStop Color=\"#000000\" Offset=\"0.96875\" /><GradientStop Color=\"#000000\" Offset=\"1.0\" /></LinearGradientBrush>"}},
+    ThemeTargetStyles{L"Taskbar.TaskListLabeledButtonPanel@RunningIndicatorStates > Border", {
+        L"Background@ActiveRunningIndicator:=<LinearGradientBrush StartPoint=\"0,0\" EndPoint=\"0,1\" Opacity=\"0.2\">     <GradientStop Color=\"#111111\" Offset=\"0.0\" />     <GradientStop Color=\"#111111\" Offset=\"1.0\" /> </LinearGradientBrush>",
+        L"CornerRadius=2",
+        L"Background@RequestingAttentionRunningIndicator:=<LinearGradientBrush StartPoint=\"0,0\" EndPoint=\"0,1\" Opacity=\"0.2\">     <GradientStop Color=\"#D53300\" Offset=\"0.0\" />     <GradientStop Color=\"#111111\" Offset=\"1.0\" /> </LinearGradientBrush>",
+        L"BorderBrush=#33101010",
+        L"BorderThickness=1",
+        L"Margin=1,1,1,3",
+        L"BorderBrush@NoRunningIndicator=Transparent",
+        L"Background@NoRunningIndicator=Transparent",
+        L"Background@ActiveRunningIndicator=#55BBBBBB",
+        L"BorderBrush@ActiveRunningIndicator=#55212121"}},
+    ThemeTargetStyles{L"Taskbar.TaskListLabeledButtonPanel@CommonStates > Border#BackgroundElement", {
+        L"Margin=0,0,0,2",
+        L"BorderThickness=1",
+        L"Background@ActivePointerOver=#88DDDDDD",
+        L"Background@ActiveNormal=#33BBBBBB",
+        L"Background@InactivePointerOver=#33BBBBBB",
+        L"BorderBrush@ActiveNormal=#44AAAAAA",
+        L"BorderBrush@ActivePointerOver=#FF888888",
+        L"BorderBrush@InactiveNormal=Transparent"}},
+    ThemeTargetStyles{L"Taskbar.TaskListLabeledButtonPanel > TextBlock", {
+        L"FontFamily=Segoe UI"}},
+    ThemeTargetStyles{L"SystemTray.AdaptiveTextBlock#LanguageInnerTextBlock > TextBlock#InnerTextBlock", {
+        L"FontFamily=Segoe UI"}},
+    ThemeTargetStyles{L"TextBlock#TimeInnerTextBlock", {
+        L"FontFamily=Segoe UI"}},
+    ThemeTargetStyles{L"Grid", {
+        L"RequestedTheme=2"}},
+    ThemeTargetStyles{L"Taskbar.TaskbarBackground#BackgroundControl > Grid", {
+        L"Background:=<AcrylicBrush TintColor=\"Transparent\" TintOpacity=\"0\" TintLuminosityOpacity=\"0.1\" Opacity=\"1\" />"}},
+    ThemeTargetStyles{L"Border#MultiWindowElement", {
+        L"Background=#BB212121",
+        L"BorderThickness=0",
+        L"Margin=0,2,1,4"}},
 }};
 
 // clang-format on
@@ -2903,6 +3004,10 @@ void ProcessAllStylesFromSettings() {
                     : &g_themeSquircle;
     } else if (wcscmp(themeName, L"RosePine") == 0) {
         theme = &g_themeRosePine;
+    } else if (wcscmp(themeName, L"DockLike") == 0) {
+        theme = &g_themeDockLike;
+    } else if (wcscmp(themeName, L"WinVista") == 0) {
+        theme = &g_themeWinVista;
     }
     Wh_FreeStringSetting(themeName);
 
