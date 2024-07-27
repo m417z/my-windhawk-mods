@@ -988,7 +988,7 @@ void HandleUnsuffixedInstanceOnTaskDestroyed(PVOID taskList_TaskListUI,
 
     bool taskGroupIsPinned = CTaskGroup_GetFlags_Original(taskGroup) & 1;
 
-    Wh_Log(L"Swapping with matched prefixed item");
+    Wh_Log(L"Swapping with matched suffixed item");
 
     SwapTaskGroupIds(taskGroup, taskGroupMatched.get());
 
@@ -1002,7 +1002,11 @@ LONG_PTR OnTaskDestroyed(std::function<LONG_PTR()> original,
                          PVOID taskList_TaskListUI,
                          PVOID taskGroup,
                          PVOID taskItem) {
-    if (!CTaskListWnd_IsOnPrimaryTaskband_Original(taskList_TaskListUI)) {
+    // taskItem is null when unpinning, for example. Not returning in this case
+    // causes a bug in which the item stays pinned if there are running
+    // instances on other monitors or virtual desktops.
+    if (!CTaskListWnd_IsOnPrimaryTaskband_Original(taskList_TaskListUI) ||
+        !taskItem) {
         return original();
     }
 
