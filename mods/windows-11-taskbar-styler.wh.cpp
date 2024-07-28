@@ -1293,7 +1293,7 @@ const Theme g_themeSquircle = {{
         L"Margin=1"}},
 }};
 
-const Theme g_themeSquircleWeatherOnTheRight = {{
+const Theme g_themeSquircle_variant_WeatherOnTheRight = {{
     ThemeTargetStyles{L"Rectangle#BackgroundFill", {
         L"Fill=Transparent"}},
     ThemeTargetStyles{L"Taskbar.TaskListButtonPanel@CommonStates > Border#BackgroundElement", {
@@ -3000,7 +3000,7 @@ void ProcessAllStylesFromSettings() {
         // https://www.reddit.com/r/Windows11/comments/1dnew8x/my_weather_widget_is_on_the_right_side/
         constexpr UINT32 kExtendedModeAEPForTaskbar = 48660958;
         theme = IsOsFeatureEnabled(kExtendedModeAEPForTaskbar).value_or(false)
-                    ? &g_themeSquircleWeatherOnTheRight
+                    ? &g_themeSquircle_variant_WeatherOnTheRight
                     : &g_themeSquircle;
     } else if (wcscmp(themeName, L"RosePine") == 0) {
         theme = &g_themeRosePine;

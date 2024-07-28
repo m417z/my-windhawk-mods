@@ -733,7 +733,7 @@ const Theme g_themeWindows10 = {{
         L"BorderBrush:=<RevealBorderBrush Color=\"Transparent\" TargetTheme=\"1\" Opacity=\"0.8\"/>"}},
 }};
 
-const Theme g_themeWindows10_24H2 = {{
+const Theme g_themeWindows10_variant_24H2 = {{
     ThemeTargetStyles{L"Grid", {
         L"RequestedTheme=2"}},
     ThemeTargetStyles{L"Grid#RootContent", {
@@ -2386,10 +2386,8 @@ void ProcessAllStylesFromSettings() {
         theme = &g_themeFluent2Inspired;
     } else if (wcscmp(themeName, L"Windows10") == 0) {
         if (IsVersionAtLeast(10, 0, 26100, 0)) {
-            Wh_Log(L"@@@");
-            theme = &g_themeWindows10_24H2;
+            theme = &g_themeWindows10_variant_24H2;
         } else {
-            Wh_Log(L"@@@2");
             theme = &g_themeWindows10;
         }
     } else if (wcscmp(themeName, L"Windows11_Metro10") == 0) {
