@@ -1,7 +1,7 @@
 // ==WindhawkMod==
 // @id              windows-11-taskbar-styler
 // @name            Windows 11 Taskbar Styler
-// @description     An advanced mod to override style attributes of the taskbar control elements
+// @description     Customize the taskbar with themes contributed by others or create your own
 // @version         1.3.6
 // @author          m417z
 // @github          https://github.com/m417z
@@ -24,7 +24,7 @@
 /*
 # Windows 11 Taskbar Styler
 
-An advanced mod to override style attributes of the taskbar control elements.
+Customize the taskbar with themes contributed by others or create your own.
 
 Also check out the **Windows 11 Start Menu Styler**, **Windows 11 Notification
 Center Styler** mods.
