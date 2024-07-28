@@ -1200,8 +1200,8 @@ const Theme g_themeBubbles = {{
         L"Margin=4,0,0,0",
         L"Foreground=White"}},
     ThemeTargetStyles{L"Taskbar.SearchBoxButton", {
-        L"Height=56",
-        L"Margin=0,-4,0,0"}},
+        L"Height=48%",
+        L"Margin=0,-2,0,0"}},
     ThemeTargetStyles{L"TextBlock#SearchBoxTextBlock", {
         L"Foreground=White"}},
 }};
@@ -1405,7 +1405,7 @@ const Theme g_themeRosePine = {{
         L"Stroke@ActivePointerOver=#ebbcba",
         L"Stroke@ActivePressed=#ebbcba",
         L"Fill=Transparent",
-        L"Width=36.5%",
+        L"Width=37%",
         L"VerticalAlignment=1"}},
     ThemeTargetStyles{L"SystemTray.ImageIconContent > Grid#ContainerGrid > Image", {
         L"Width=13"}},

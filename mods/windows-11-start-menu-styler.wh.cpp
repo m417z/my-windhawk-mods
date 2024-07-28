@@ -480,12 +480,15 @@ const Theme g_themeFluent2Inspired = {{
         L"FontWeight=700",
         L"FontFamily=Aptos",
         L"FontSize=24",
-        L"Foreground:=<SolidColorBrush Color=\"{ThemeResource FocusStrokeColorOuter}\" Opacity=\".85\"/>"}},
+        L"Foreground:=<SolidColorBrush Color=\"{ThemeResource FocusStrokeColorOuter}\" Opacity=\".85\"/>",
+        L"Margin=-50,0,0,0"}},
     ThemeTargetStyles{L"StartDocked.SearchBoxToggleButton > Grid > Border", {
         L"Background=transparent",
         L"BorderBrush=transparent"}},
     ThemeTargetStyles{L"StartDocked.SearchBoxToggleButton > Grid > FontIcon", {
-        L"Visibility=1"}},
+        L"Transform3D:=<CompositeTransform3D  TranslateX=\"165\" TranslateY=\"-1\"/>",
+        L"Foreground:=<SolidColorBrush Color=\"{ThemeResource FocusStrokeColorOuter}\" Opacity=\".85\"/>",
+        L"FontSize=24"}},
     ThemeTargetStyles{L"Grid#TopLevelRoot", {
         L"Margin=0,-8,0,0"}},
     ThemeTargetStyles{L"GridViewItem", {
@@ -574,6 +577,10 @@ const Theme g_themeFluent2Inspired = {{
         L"CornerRadius=12"}},
     ThemeTargetStyles{L"Windows.UI.Xaml.Controls.FlyoutPresenter[1]", {
         L"Transform3D:=<CompositeTransform3D   TranslateX=\"-250\" TranslateY=\"50\"/>"}},
+    ThemeTargetStyles{L"Rectangle[4]", {
+        L"Margin=0,0,0,20"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.FlyoutPresenter", {
+        L"Margin=-250,0,0,0"}},
 }};
 
 const Theme g_themeWindows10 = {{
