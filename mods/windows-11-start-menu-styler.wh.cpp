@@ -2,7 +2,7 @@
 // @id              windows-11-start-menu-styler
 // @name            Windows 11 Start Menu Styler
 // @description     Customize the start menu with themes contributed by others or create your own
-// @version         1.1.4
+// @version         1.1.5
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
@@ -336,13 +336,14 @@ const Theme g_themeSideBySide2 = {{
         L"Margin=2,0,0,0"}},
     ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Button#HideMoreSuggestionsButton > Windows.UI.Xaml.Controls.ContentPresenter#ContentPresenter > Windows.UI.Xaml.Controls.StackPanel > Windows.UI.Xaml.Controls.FontIcon ", {
         L"FontSize=12"}},
-    ThemeTargetStyles{L"StartDocked.SearchBoxToggleButton#StartMenuSearchBox > Grid > Border#BorderElement", {
-        L"Background=White"}},
     ThemeTargetStyles{L"Windows.UI.Xaml.Controls.FlyoutPresenter[1]", {
-        L"Transform3D:=<CompositeTransform3D   TranslateX=\"-240\" TranslateY=\"-10\"/>",
-        L"Margin=0,-10,0,0"}},
+        L"Margin=-240,-20,0,0"}},
     ThemeTargetStyles{L"Windows.UI.Xaml.Controls.FlyoutPresenter > Grid", {
         L"Margin=-450,0,450,0"}},
+    ThemeTargetStyles{L"Panel", {
+        L"FlowDirection=1"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.FlyoutPresenter", {
+        L"Margin=-10,-8,0,0"}},
 }};
 
 const Theme g_themeSideBySideMinimal = {{
