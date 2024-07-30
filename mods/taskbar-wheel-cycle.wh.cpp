@@ -2,7 +2,7 @@
 // @id              taskbar-wheel-cycle
 // @name            Cycle taskbar buttons with mouse wheel
 // @description     Use the mouse wheel while hovering over the taskbar to cycle between taskbar buttons (Windows 11 only)
-// @version         1.1.3
+// @version         1.1.4
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
@@ -67,7 +67,6 @@ Taskbar Tweaker](https://tweaker.ramensoftware.com/).
 #include <winrt/Windows.UI.Xaml.Input.h>
 
 #include <algorithm>
-#include <atomic>
 #include <memory>
 #include <regex>
 #include <string>
@@ -125,7 +124,7 @@ CTaskBand_SwitchTo_t CTaskBand_SwitchTo_Original;
 
 #pragma region offsets
 
-void* CTaskListWnd__GetRequiredCols;
+void* CTaskListWnd_GetFocusedBtn;
 void* CTaskListWnd__FixupTaskIndicies;
 
 size_t OffsetFromAssembly(void* func,
@@ -163,8 +162,7 @@ size_t OffsetFromAssembly(void* func,
 }
 
 HDPA* EV_MM_TASKLIST_BUTTON_GROUPS_HDPA(LONG_PTR lp) {
-    static size_t offset =
-        OffsetFromAssembly(CTaskListWnd__GetRequiredCols, 0xE0);
+    static size_t offset = OffsetFromAssembly(CTaskListWnd_GetFocusedBtn, 0xE0);
 
     return (HDPA*)(lp + offset);
 }
@@ -1533,8 +1531,8 @@ BOOL HookTaskbarDllSymbols() {
         },
         // For offsets:
         {
-            {LR"(protected: int __cdecl CTaskListWnd::_GetRequiredCols(int))"},
-            (void**)&CTaskListWnd__GetRequiredCols,
+            {LR"(public: virtual long __cdecl CTaskListWnd::GetFocusedBtn(struct ITaskGroup * *,int *))"},
+            (void**)&CTaskListWnd_GetFocusedBtn,
         },
         {
             {LR"(protected: void __cdecl CTaskListWnd::_FixupTaskIndicies(struct ITaskBtnGroup *,int,int))"},
