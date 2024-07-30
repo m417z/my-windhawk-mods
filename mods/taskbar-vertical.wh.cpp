@@ -1523,6 +1523,7 @@ bool GetTaskbarViewDllPath(WCHAR path[MAX_PATH]) {
 
 bool HookTaskbarViewDllSymbols(HMODULE module) {
     {
+        // Taskbar.View.dll, ExplorerExtensions.dll
         WindhawkUtils::SYMBOL_HOOK symbolHooks[] = {
             {
                 {
@@ -1635,7 +1636,7 @@ bool HookTaskbarDllSymbols() {
         return false;
     }
 
-    WindhawkUtils::SYMBOL_HOOK symbolHooks[] = {
+    WindhawkUtils::SYMBOL_HOOK taskbarDllHooks[] = {
         {
             {
                 LR"(public: virtual bool __cdecl IconContainer::IsStorageRecreationRequired(class CCoSimpleArray<unsigned int,4294967294,class CSimpleArrayStandardCompareHelper<unsigned int> > const &,enum IconContainerFlags))",
@@ -1707,8 +1708,8 @@ bool HookTaskbarDllSymbols() {
         },
     };
 
-    return HookSymbolsWithOnlineCacheFallback(module, symbolHooks,
-                                              ARRAYSIZE(symbolHooks));
+    return HookSymbolsWithOnlineCacheFallback(module, taskbarDllHooks,
+                                              ARRAYSIZE(taskbarDllHooks));
 }
 
 BOOL ModInitWithTaskbarView(HMODULE taskbarViewModule) {

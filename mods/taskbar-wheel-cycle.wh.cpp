@@ -1494,6 +1494,7 @@ bool HookTaskbarViewDllSymbols() {
         return false;
     }
 
+    // Taskbar.View.dll, ExplorerExtensions.dll
     SYMBOL_HOOK symbolHooks[] = {
         {
             {LR"(public: virtual int __cdecl winrt::impl::produce<struct winrt::Taskbar::implementation::TaskbarFrame,struct winrt::Windows::UI::Xaml::Controls::IControlOverrides>::OnPointerWheelChanged(void *))"},
@@ -1513,7 +1514,7 @@ BOOL HookTaskbarDllSymbols() {
         return FALSE;
     }
 
-    SYMBOL_HOOK symbolHooks[] = {
+    SYMBOL_HOOK taskbarDllHooks[] = {
         {
             {LR"(public: virtual struct HWND__ * __cdecl CWindowTaskItem::GetWindow(void))"},
             (void**)&CWindowTaskItem_GetWindow_Original,
@@ -1541,8 +1542,8 @@ BOOL HookTaskbarDllSymbols() {
         },
     };
 
-    return HookSymbolsWithOnlineCacheFallback(module, symbolHooks,
-                                              ARRAYSIZE(symbolHooks));
+    return HookSymbolsWithOnlineCacheFallback(module, taskbarDllHooks,
+                                              ARRAYSIZE(taskbarDllHooks));
 }
 
 BOOL Wh_ModInit() {

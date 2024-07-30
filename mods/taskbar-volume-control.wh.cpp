@@ -2018,6 +2018,7 @@ bool HookTaskbarViewDllSymbols() {
         return false;
     }
 
+    // Taskbar.View.dll, ExplorerExtensions.dll
     SYMBOL_HOOK symbolHooks[] = {
         {
             {LR"(public: void __cdecl winrt::SystemTray::implementation::VolumeSystemTrayIconDataModel::OnIconClicked(struct winrt::SystemTray::IconClickedEventArgs const &))"},

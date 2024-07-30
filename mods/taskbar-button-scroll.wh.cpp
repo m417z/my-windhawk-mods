@@ -1121,6 +1121,7 @@ bool HookTaskbarViewDllSymbols() {
         return false;
     }
 
+    // Taskbar.View.dll, ExplorerExtensions.dll
     SYMBOL_HOOK symbolHooks[] = {
         {
             {LR"(public: void __cdecl winrt::Taskbar::implementation::TaskListButton::AutomationInvoke(void))"},
@@ -1144,7 +1145,7 @@ BOOL HookTaskbarDllSymbols() {
         return FALSE;
     }
 
-    SYMBOL_HOOK symbolHooks[] = {
+    SYMBOL_HOOK taskbarDllHooks[] = {
         {
             {LR"(public: virtual struct ITaskGroup * __cdecl CTaskBtnGroup::GetGroup(void))"},
             (void**)&CTaskBtnGroup_GetGroup_Original,
@@ -1200,8 +1201,8 @@ BOOL HookTaskbarDllSymbols() {
         },
     };
 
-    return HookSymbolsWithOnlineCacheFallback(module, symbolHooks,
-                                              ARRAYSIZE(symbolHooks));
+    return HookSymbolsWithOnlineCacheFallback(module, taskbarDllHooks,
+                                              ARRAYSIZE(taskbarDllHooks));
 }
 
 BOOL Wh_ModInit() {
