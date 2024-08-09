@@ -1609,7 +1609,8 @@ bool HookSymbolsWithOnlineCacheFallback(HMODULE module,
 }
 
 bool HookTaskbarSymbols() {
-    SYMBOL_HOOK symbolHooks[] =  //
+    // Taskbar.dll, explorer.exe
+    SYMBOL_HOOK symbolHooks[] =
         {
             {
                 {

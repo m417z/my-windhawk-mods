@@ -577,6 +577,7 @@ BOOL Wh_ModInit() {
         g_winVersion = WinVersion::Win10;
     }
 
+    // Taskbar.dll, explorer.exe
     SYMBOL_HOOK symbolHooks[] = {
         {
             {

@@ -936,7 +936,7 @@ BOOL Wh_ModInit() {
         return FALSE;
     }
 
-    SYMBOL_HOOK taskbarSymbolHooks[] = {
+    SYMBOL_HOOK taskbarDllHooks[] = {
         {
             {LR"(public: virtual long __cdecl CTaskGroup::DoesWindowMatch(struct HWND__ *,struct _ITEMIDLIST_ABSOLUTE const *,unsigned short const *,enum WINDOWMATCHCONFIDENCE *,struct ITaskItem * *))"},
             (void**)&CTaskGroup_DoesWindowMatch_Original,
@@ -968,11 +968,12 @@ BOOL Wh_ModInit() {
         return FALSE;
     }
 
-    if (!HookSymbolsWithOnlineCacheFallback(taskbarModule, taskbarSymbolHooks,
-                                            ARRAYSIZE(taskbarSymbolHooks))) {
+    if (!HookSymbolsWithOnlineCacheFallback(taskbarModule, taskbarDllHooks,
+                                            ARRAYSIZE(taskbarDllHooks))) {
         return FALSE;
     }
 
+    // twinui.pcshell.dll
     SYMBOL_HOOK twinuiPcshellSymbolHooks[] = {
         // For offsets:
         {
