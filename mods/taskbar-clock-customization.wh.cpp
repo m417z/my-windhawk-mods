@@ -111,7 +111,7 @@ styles, such as the font color and size.
 - Height: 60
   $name: Clock height (Windows 10 only)
 - TextSpacing: 0
-  $name: Text spacing
+  $name: Line spacing
   $description: >-
     Set 0 for the default system value. A negative value can be used for
     negative spacing.
