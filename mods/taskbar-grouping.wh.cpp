@@ -2,7 +2,7 @@
 // @id              taskbar-grouping
 // @name            Disable grouping on the taskbar
 // @description     Causes a separate button to be created on the taskbar for each new window
-// @version         1.3.4
+// @version         1.3.5
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
@@ -907,6 +907,7 @@ using CTaskListWnd_HandleTaskGroupPinned_t = void(WINAPI*)(PVOID pThis,
 CTaskListWnd_HandleTaskGroupPinned_t
     CTaskListWnd_HandleTaskGroupPinned_Original;
 
+// The flags argument is absent in newer Windows versions.
 using CTaskListWnd_HandleTaskGroupUnpinned_t = void(WINAPI*)(PVOID pThis,
                                                              PVOID taskGroup,
                                                              int flags);
@@ -1121,6 +1122,8 @@ void HandleSuffixedInstanceOnTaskCreated(PVOID taskList_TaskListUI,
 
     SwapTaskGroupIds(taskGroup, taskGroupMatched);
 
+    // The flags argument is absent in newer Windows versions. According to the
+    // calling convention, it just gets ignored.
     CTaskListWnd_HandleTaskGroupUnpinned_Original(taskList_TaskListUI,
                                                   taskGroupMatched, 0);
     CTaskListWnd_HandleTaskGroupPinned_Original(taskList_TaskListUI, taskGroup);
@@ -1852,6 +1855,10 @@ bool HookTaskbarSymbols() {
             },
             {
                 {
+                    LR"(public: virtual void __cdecl CTaskListWnd::HandleTaskGroupUnpinned(struct ITaskGroup *))",
+                    LR"(public: virtual void __cdecl CTaskListWnd::HandleTaskGroupUnpinned(struct ITaskGroup * __ptr64) __ptr64)",
+
+                    // Before Windows 11 24H2.
                     LR"(public: virtual void __cdecl CTaskListWnd::HandleTaskGroupUnpinned(struct ITaskGroup *,enum HandleTaskGroupUnpinnedFlags))",
                     LR"(public: virtual void __cdecl CTaskListWnd::HandleTaskGroupUnpinned(struct ITaskGroup * __ptr64,enum HandleTaskGroupUnpinnedFlags) __ptr64)",
                 },
