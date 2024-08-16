@@ -395,27 +395,29 @@ SystemTrayController_UpdateFrameSize_t
 void WINAPI SystemTrayController_UpdateFrameSize_Hook(void* pThis) {
     Wh_Log(L">");
 
-    // Find the last height offset and reset the height value.
-    //
-    // 66 0f 2e b3 b0 00 00 00 UCOMISD    uVar4,qword ptr [RBX + 0xb0]
-    // 7a 4c                   JP         LAB_180075641
-    // 75 4a                   JNZ        LAB_180075641
-
-    DWORD lastHeightOffset = 0;
-    const BYTE* start =
-        (const BYTE*)SystemTrayController_UpdateFrameSize_SymbolAddress;
-    const BYTE* end = start + 0x200;
-    for (const BYTE* p = start; p != end; p++) {
-        if (p[0] == 0x66 && p[1] == 0x0F && p[2] == 0x2E && p[3] == 0xB3 &&
-            p[8] == 0x7A && p[10] == 0x75) {
-            lastHeightOffset = *(DWORD*)(p + 4);
-            break;
+    static LONG lastHeightOffset = []() -> LONG {
+        // Find the last height offset and reset the height value.
+        //
+        // 66 0f 2e b3 b0 00 00 00 UCOMISD    uVar4,qword ptr [RBX + 0xb0]
+        // 7a 4c                   JP         LAB_180075641
+        // 75 4a                   JNZ        LAB_180075641
+        const BYTE* start =
+            (const BYTE*)SystemTrayController_UpdateFrameSize_SymbolAddress;
+        const BYTE* end = start + 0x200;
+        for (const BYTE* p = start; p != end; p++) {
+            if (p[0] == 0x66 && p[1] == 0x0F && p[2] == 0x2E && p[3] == 0xB3 &&
+                p[8] == 0x7A && p[10] == 0x75) {
+                LONG offset = *(LONG*)(p + 4);
+                Wh_Log(L"lastHeightOffset=0x%X", offset);
+                return offset;
+            }
         }
-    }
 
-    Wh_Log(L"lastHeightOffset=0x%X", lastHeightOffset);
+        Wh_Log(L"lastHeightOffset not found");
+        return 0;
+    }();
 
-    if (lastHeightOffset) {
+    if (lastHeightOffset > 0) {
         *(double*)((BYTE*)pThis + lastHeightOffset) = 0;
     }
 
