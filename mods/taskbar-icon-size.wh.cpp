@@ -428,6 +428,23 @@ void WINAPI SystemTrayController_UpdateFrameSize_Hook(void* pThis) {
     g_inSystemTrayController_UpdateFrameSize = false;
 }
 
+using TaskbarFrame_MaxHeight_double_t = void(WINAPI*)(void* pThis,
+                                                      double value);
+TaskbarFrame_MaxHeight_double_t TaskbarFrame_MaxHeight_double_Original;
+
+using TaskbarFrame_Height_double_t = void(WINAPI*)(void* pThis, double value);
+TaskbarFrame_Height_double_t TaskbarFrame_Height_double_Original;
+void WINAPI TaskbarFrame_Height_double_Hook(void* pThis, double value) {
+    Wh_Log(L">");
+
+    if (TaskbarFrame_MaxHeight_double_Original) {
+        TaskbarFrame_MaxHeight_double_Original(
+            pThis, std::numeric_limits<double>::infinity());
+    }
+
+    return TaskbarFrame_Height_double_Original(pThis, value);
+}
+
 using SystemTraySecondaryController_UpdateFrameSize_t =
     void(WINAPI*)(void* pThis);
 SystemTraySecondaryController_UpdateFrameSize_t
@@ -1304,6 +1321,28 @@ bool HookTaskbarViewDllSymbols(HMODULE module) {
                 (void**)&SystemTrayController_UpdateFrameSize_SymbolAddress,
                 nullptr,  // Hooked manually, we need the symbol address.
                 true,     // Missing in older Windows 11 versions.
+            },
+            {
+                {
+                    LR"(public: __cdecl winrt::impl::consume_Windows_UI_Xaml_IFrameworkElement<struct winrt::Taskbar::implementation::TaskbarFrame>::MaxHeight(double)const )",
+                    LR"(public: __cdecl winrt::impl::consume_Windows_UI_Xaml_IFrameworkElement<struct winrt::Taskbar::implementation::TaskbarFrame>::MaxHeight(double)const __ptr64)",
+                },
+                (void**)&TaskbarFrame_MaxHeight_double_Original,
+                nullptr,
+                true,  // From Windows 11 version 22H2.
+            },
+            {
+                {
+                    LR"(public: __cdecl winrt::impl::consume_Windows_UI_Xaml_IFrameworkElement<struct winrt::Taskbar::implementation::TaskbarFrame>::Height(double)const )",
+                    LR"(public: __cdecl winrt::impl::consume_Windows_UI_Xaml_IFrameworkElement<struct winrt::Taskbar::implementation::TaskbarFrame>::Height(double)const __ptr64)",
+
+                    // Windows 11 version 21H2.
+                    LR"(public: void __cdecl winrt::impl::consume_Windows_UI_Xaml_IFrameworkElement<struct winrt::Taskbar::implementation::TaskbarFrame>::Height(double)const )",
+                    LR"(public: void __cdecl winrt::impl::consume_Windows_UI_Xaml_IFrameworkElement<struct winrt::Taskbar::implementation::TaskbarFrame>::Height(double)const __ptr64)",
+                },
+                (void**)&TaskbarFrame_Height_double_Original,
+                (void*)TaskbarFrame_Height_double_Hook,
+                true,  // Gone in Windows 11 version 24H2.
             },
             {
                 {
