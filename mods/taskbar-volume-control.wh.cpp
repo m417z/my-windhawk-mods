@@ -2073,6 +2073,12 @@ BOOL Wh_ModInit() {
         }
     }
 
+    g_initialized = true;
+
+    return TRUE;
+}
+
+void Wh_ModAfterInit() {
     WNDCLASS wndclass;
     if (GetClassInfo(GetModuleHandle(NULL), L"Shell_TrayWnd", &wndclass)) {
         HWND hWnd =
@@ -2081,10 +2087,6 @@ BOOL Wh_ModInit() {
             HandleIdentifiedTaskbarWindow(hWnd);
         }
     }
-
-    g_initialized = true;
-
-    return TRUE;
 }
 
 void Wh_ModUninit() {
