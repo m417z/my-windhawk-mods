@@ -62,11 +62,8 @@ Authors: m417z, levitation
 */
 // ==/WindhawkModSettings==
 
+#include <ntdef.h>
 #include <ntstatus.h>
-
-#ifndef NT_SUCCESS
-#define NT_SUCCESS(Status) ((NTSTATUS)(Status) >= 0)
-#endif
 
 enum class Config {
     allow,
@@ -106,6 +103,12 @@ NTSTATUS WINAPI NtSetTimerResolutionHook(ULONG DesiredResolution, BOOLEAN SetRes
     g_lastDesiredResolution = DesiredResolution;
 
     ULONG limitResolution = g_limitResolution;
+
+    if (limitResolution == ULONG_MAX) {
+        Wh_Log(L"* Blocking resolution change");
+        return STATUS_SUCCESS;
+    }
+
     if (DesiredResolution < limitResolution) {
         Wh_Log(L"* Overriding resolution: %f milliseconds", (double)limitResolution / 10000.0);
         DesiredResolution = limitResolution;
@@ -114,7 +117,7 @@ NTSTATUS WINAPI NtSetTimerResolutionHook(ULONG DesiredResolution, BOOLEAN SetRes
     return pOriginalNtSetTimerResolution(DesiredResolution, SetResolution, CurrentResolution);
 }
 
-void LoadSettings(void)
+void LoadSettings()
 {
     WCHAR programPath[1024];
     DWORD dwSize = ARRAYSIZE(programPath);
@@ -177,7 +180,7 @@ void LoadSettings(void)
 
     if (config == Config::block) {
         Wh_Log(L"Config loaded: Disallowing changes");
-        g_limitResolution = g_minimumResolution;
+        g_limitResolution = ULONG_MAX;
     }
     else if (config == Config::limit) {
         ULONG limitResolution = limit * 10000;
@@ -193,11 +196,11 @@ void LoadSettings(void)
     }
     else {
         Wh_Log(L"Config loaded: Allowing changes");
-        g_limitResolution = g_maximumResolution;
+        g_limitResolution = 0;
     }
 }
 
-BOOL Wh_ModInit(void)
+BOOL Wh_ModInit()
 {
     Wh_Log(L"Init");
 
@@ -275,14 +278,14 @@ void EnforceLimits()
     }
 }
 
-void Wh_ModAfterInit(void) 
+void Wh_ModAfterInit() 
 {  
     //Force mod timer resolution settings if the resolution was already changed by the program. NB! In order to avoid any race conditions, do this only after the hook is activated. Else there might be a situation that the mod overrides the current resolution while hook is not yet set, and then the program changes it again before the hook is finally set.
 
     EnforceLimits();
 }
 
-void Wh_ModSettingsChanged(void) 
+void Wh_ModSettingsChanged() 
 {
     Wh_Log(L"SettingsChanged");
 

@@ -1773,7 +1773,14 @@ bool HookSymbols(HMODULE module,
 
             if (noAddressMatchCount == symbolHooks[i].symbols.size()) {
                 Wh_Log(L"Optional symbol %d doesn't exist (from cache)", i);
+
                 symbolResolved[i] = true;
+
+                for (auto hookSymbol : symbolHooks[i].symbols) {
+                    newSystemCacheStr += cacheSep;
+                    newSystemCacheStr += hookSymbol;
+                    newSystemCacheStr += cacheSep;
+                }
             }
         }
 
@@ -2018,6 +2025,7 @@ bool HookTaskbarViewDllSymbols() {
         return false;
     }
 
+    // Taskbar.View.dll, ExplorerExtensions.dll
     SYMBOL_HOOK symbolHooks[] = {
         {
             {LR"(public: void __cdecl winrt::SystemTray::implementation::VolumeSystemTrayIconDataModel::OnIconClicked(struct winrt::SystemTray::IconClickedEventArgs const &))"},
@@ -2065,6 +2073,12 @@ BOOL Wh_ModInit() {
         }
     }
 
+    g_initialized = true;
+
+    return TRUE;
+}
+
+void Wh_ModAfterInit() {
     WNDCLASS wndclass;
     if (GetClassInfo(GetModuleHandle(NULL), L"Shell_TrayWnd", &wndclass)) {
         HWND hWnd =
@@ -2073,10 +2087,6 @@ BOOL Wh_ModInit() {
             HandleIdentifiedTaskbarWindow(hWnd);
         }
     }
-
-    g_initialized = true;
-
-    return TRUE;
 }
 
 void Wh_ModUninit() {

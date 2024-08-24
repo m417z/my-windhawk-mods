@@ -1,8 +1,8 @@
 // ==WindhawkMod==
 // @id              windows-11-notification-center-styler
 // @name            Windows 11 Notification Center Styler
-// @description     An advanced mod to override style attributes of the Notification Center
-// @version         1.0.2
+// @description     Customize the Notification Center with themes contributed by others or create your own
+// @version         1.1.1
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
@@ -24,15 +24,22 @@
 /*
 # Windows 11 Notification Center Styler
 
-An advanced mod to override style attributes of the notification center and
-calendar. Starting with version 1.0.2, all elements that are part of
-ShellExperienceHost.exe can be customized, including taskbar jump lists and
-notification popups.
+Customize the Notification Center with themes contributed by others or create
+your own.
 
 **Note**: This mod requires Windhawk v1.4 or later.
 
 Also check out the **Windows 11 Taskbar Styler**, **Windows 11 Start Menu
 Styler** mods.
+
+## Themes
+
+Themes are collections of styles. The following themes are integrated into the
+mod and can be selected in the settings:
+
+[![TranslucentShell](https://raw.githubusercontent.com/ramensoftware/windows-11-notification-center-styling-guide/main/Themes/TranslucentShell/screenshot-small.png)
+\
+TranslucentShell](https://github.com/ramensoftware/windows-11-notification-center-styling-guide/blob/main/Themes/TranslucentShell/README.md)
 
 ## Examples
 
@@ -66,13 +73,17 @@ Styler** mods.
 
 ## Advanced styling
 
-The settings have two sections: control styles and resource
+Aside from themes, the settings have two sections: control styles and resource
 variables. Control styles allow to override styles, such as size and color, for
 the target elements. Resource variables allow to override predefined variables.
 For a more detailed explanation and examples, refer to the sections below.
 
 The [UWPSpy](https://ramensoftware.com/uwpspy) tool can be used to inspect the
 notification center control elements in real time, and experiment with various styles.
+
+For a collection of commonly requested notification center styling
+customizations, check out [The Windows 11 notification center styling
+guide](https://github.com/ramensoftware/windows-11-notification-center-styling-guide/blob/main/README.md).
 
 ### Control styles
 
@@ -120,6 +131,15 @@ code from the **TranslucentTB** project.
 
 // ==WindhawkModSettings==
 /*
+- theme: ""
+  $name: Theme
+  $description: >-
+    Themes are collections of styles. For details about the themes below, or for
+    information about submitting your own theme, refer to the relevant section
+    in the mod details.
+  $options:
+  - "": None
+  - TranslucentShell: TranslucentShell
 - controlStyles:
   - - target: ""
       $name: Target
@@ -139,10 +159,86 @@ code from the **TranslucentTB** project.
 #include <xamlom.h>
 
 #include <atomic>
+#include <vector>
 
 #undef GetCurrentTime
 
 #include <winrt/Windows.UI.Xaml.h>
+
+struct ThemeTargetStyles {
+    PCWSTR target;
+    std::vector<PCWSTR> styles;
+};
+
+struct Theme {
+    std::vector<ThemeTargetStyles> targetStyles;
+};
+
+// clang-format off
+
+const Theme g_themeTranslucentShell = {{
+    ThemeTargetStyles{L"Grid#NotificationCenterGrid", {
+        L"Background:=<AcrylicBrush TintOpacity=\"0\" TintColor=\"Transparent\" TintLuminosityOpacity=\"0\" Opacity=\"1\" FallbackColor=\"#70262626\"/>",
+        L"BorderThickness=0,0,0,0",
+        L"CornerRadius=15"}},
+    ThemeTargetStyles{L"Grid#CalendarCenterGrid", {
+        L"Background:=<AcrylicBrush TintOpacity=\"0\" TintColor=\"Transparent\" TintLuminosityOpacity=\"0\" Opacity=\"1\" FallbackColor=\"#70262626\"/>",
+        L"BorderThickness=0,0,0,0",
+        L"CornerRadius=15"}},
+    ThemeTargetStyles{L"ScrollViewer#CalendarControlScrollViewer", {
+        L"Background:=<AcrylicBrush Opacity=\"0\"/>"}},
+    ThemeTargetStyles{L"Border#CalendarHeaderMinimizedOverlay", {
+        L"Background:=<AcrylicBrush Opacity=\"0\"/>"}},
+    ThemeTargetStyles{L"ActionCenter.FocusSessionControl#FocusSessionControl > Grid#FocusGrid", {
+        L"Background:=<AcrylicBrush Opacity=\"0\"/>"}},
+    ThemeTargetStyles{L"MenuFlyoutPresenter", {
+        L"Background:=<AcrylicBrush TintOpacity=\"0\" TintColor=\"Transparent\" TintLuminosityOpacity=\"0\" Opacity=\"1\" FallbackColor=\"#70262626\"/>",
+        L"BorderThickness=0,0,0,0",
+        L"CornerRadius=15",
+        L"Padding=2,4,2,4"}},
+    ThemeTargetStyles{L"Border#JumpListRestyledAcrylic", {
+        L"Background:=<AcrylicBrush TintOpacity=\"0\" TintColor=\"Transparent\" TintLuminosityOpacity=\"0\" Opacity=\"1\" FallbackColor=\"#70262626\"/>",
+        L"BorderThickness=0,0,0,0",
+        L"CornerRadius=15",
+        L"Margin=-2,-2,-2,-2"}},
+    ThemeTargetStyles{L"Grid#ControlCenterRegion", {
+        L"Background:=<AcrylicBrush TintOpacity=\"0\" TintColor=\"Transparent\" TintLuminosityOpacity=\"0\" Opacity=\"1\" FallbackColor=\"#70262626\"/>",
+        L"BorderThickness=0,0,0,0",
+        L"CornerRadius=15"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Grid#L1Grid > Border", {
+        L"Background:=<SolidColorBrush Color=\"Transparent\"/>"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Grid#MediaTransportControlsRegion", {
+        L"Background:=<AcrylicBrush TintOpacity=\"0\" TintColor=\"Transparent\" TintLuminosityOpacity=\"0\" Opacity=\"1\" FallbackColor=\"#70262626\"/>",
+        L"BorderThickness=0,0,0,0",
+        L"CornerRadius=15"}},
+    ThemeTargetStyles{L"Grid#MediaTransportControlsRoot", {
+        L"Background:=<SolidColorBrush Color=\"Transparent\"/>"}},
+    ThemeTargetStyles{L"ContentPresenter#PageContent", {
+        L"Background:=<SolidColorBrush Color=\"Transparent\"/>"}},
+    ThemeTargetStyles{L"ContentPresenter#PageContent > Grid > Border", {
+        L"Background:=<SolidColorBrush Color=\"Transparent\"/>"}},
+    ThemeTargetStyles{L"QuickActions.ControlCenter.AccessibleWindow#PageWindow > ContentPresenter > Grid#FullScreenPageRoot", {
+        L"Background:=<SolidColorBrush Color=\"Transparent\"/>"}},
+    ThemeTargetStyles{L"QuickActions.ControlCenter.AccessibleWindow#PageWindow > ContentPresenter > Grid#FullScreenPageRoot > ContentPresenter#PageHeader", {
+        L"Background:=<SolidColorBrush Color=\"Transparent\"/>"}},
+    ThemeTargetStyles{L"ScrollViewer#ListContent", {
+        L"Background:=<SolidColorBrush Color=\"Transparent\"/>"}},
+    ThemeTargetStyles{L"ActionCenter.FlexibleToastView#FlexibleNormalToastView", {
+        L"Background:=<SolidColorBrush Color=\"Transparent\"/>"}},
+    ThemeTargetStyles{L"Border#ToastBackgroundBorder2", {
+        L"Background:=<AcrylicBrush TintOpacity=\"0\" TintColor=\"Transparent\" TintLuminosityOpacity=\"0\" Opacity=\"1\" FallbackColor=\"#70262626\"/>",
+        L"BorderThickness=0,0,0,0",
+        L"CornerRadius=15"}},
+    ThemeTargetStyles{L"JumpViewUI.SystemItemListViewItem > Grid#LayoutRoot > Border#BackgroundBorder", {
+        L"FocusVisualPrimaryThickness=0,0,0,0",
+        L"FocusVisualSecondaryThickness=0,0,0,0"}},
+    ThemeTargetStyles{L"JumpViewUI.JumpListListViewItem > Grid#LayoutRoot > Border#BackgroundBorder", {
+        L"FocusVisualPrimaryThickness=0,0,0,0"}},
+    ThemeTargetStyles{L"ActionCenter.FlexibleItemView", {
+        L"CornerRadius=15"}},
+}};
+
+// clang-format on
 
 std::atomic<bool> g_initialized;
 thread_local bool g_initializedForThread;
@@ -237,7 +333,25 @@ VisualTreeWatcher::VisualTreeWatcher(winrt::com_ptr<IUnknown> site) :
     m_XamlDiagnostics(site.as<IXamlDiagnostics>())
 {
     Wh_Log(L"Constructing VisualTreeWatcher");
-    winrt::check_hresult(m_XamlDiagnostics.as<IVisualTreeService3>()->AdviseVisualTreeChange(this));
+    // winrt::check_hresult(m_XamlDiagnostics.as<IVisualTreeService3>()->AdviseVisualTreeChange(this));
+
+    // Calling AdviseVisualTreeChange from the current thread causes the app to
+    // hang on Windows 10 in Advising::RunOnUIThread. Creating a new thread and
+    // calling it from there fixes it.
+    HANDLE thread = CreateThread(
+        nullptr, 0,
+        [](LPVOID lpParam) -> DWORD {
+            auto watcher = reinterpret_cast<VisualTreeWatcher*>(lpParam);
+            HRESULT hr = watcher->m_XamlDiagnostics.as<IVisualTreeService3>()->AdviseVisualTreeChange(watcher);
+            if (FAILED(hr)) {
+                Wh_Log(L"Error %08X", hr);
+            }
+            return 0;
+        },
+        this, 0, nullptr);
+    if (thread) {
+        CloseHandle(thread);
+    }
 }
 
 VisualTreeWatcher::~VisualTreeWatcher()
@@ -1484,6 +1598,29 @@ bool ProcessSingleTargetStylesFromSettings(int index) {
 }
 
 void ProcessAllStylesFromSettings() {
+    PCWSTR themeName = Wh_GetStringSetting(L"theme");
+    const Theme* theme = nullptr;
+    if (wcscmp(themeName, L"TranslucentShell") == 0) {
+        theme = &g_themeTranslucentShell;
+    }
+    Wh_FreeStringSetting(themeName);
+
+    if (theme) {
+        for (const auto& themeTargetStyle : theme->targetStyles) {
+            try {
+                std::vector<std::wstring> styles{
+                    themeTargetStyle.styles.begin(),
+                    themeTargetStyle.styles.end()};
+                AddElementCustomizationRules(themeTargetStyle.target,
+                                             std::move(styles));
+            } catch (winrt::hresult_error const& ex) {
+                Wh_Log(L"Error %08X", ex.code());
+            } catch (std::exception const& ex) {
+                Wh_Log(L"Error: %S", ex.what());
+            }
+        }
+    }
+
     for (int i = 0;; i++) {
         try {
             if (!ProcessSingleTargetStylesFromSettings(i)) {

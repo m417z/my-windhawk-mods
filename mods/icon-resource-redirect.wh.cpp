@@ -2,7 +2,7 @@
 // @id              icon-resource-redirect
 // @name            Resource Redirect
 // @description     Define alternative files for loading various resources (e.g. instead of icons in imageres.dll) for simple theming without having to modify system files
-// @version         1.1.4
+// @version         1.1.5
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
@@ -17,6 +17,18 @@
 
 Define alternative files for loading various resources (e.g. instead of icons in
 imageres.dll) for simple theming without having to modify system files.
+
+## Icon themes
+
+A collection of community contributed icon theme packs can be found in the
+[Resource Redirect icon
+themes](https://github.com/ramensoftware/resource-redirect-icon-themes)
+repository. An icon theme can be easily installed by downloading it and
+specifying its path in the mod's settings. For details, refer to the guide in
+the repository.
+
+A short demonstration can be found [here on
+YouTube](https://youtu.be/irzVmKHB83E).
 
 ## Theme folder
 
@@ -1162,6 +1174,37 @@ HRESULT WINAPI SHCreateStreamOnModuleResourceW_Hook(HMODULE hModule,
                                                     ppStream);
 }
 
+void DirectUI_DUIXmlParser_SetDefaultHInstance(void* pThis, HMODULE hModule) {
+    using DirectUI_DUIXmlParser_SetDefaultHInstance_t =
+        void(__thiscall*)(void* pThis, HMODULE hModule);
+    static DirectUI_DUIXmlParser_SetDefaultHInstance_t pSetDefaultHInstance = []() {
+        HMODULE duiModule = LoadLibrary(L"dui70.dll");
+        if (duiModule) {
+            PCSTR procName =
+#ifdef _WIN64
+                R"(?SetDefaultHInstance@DUIXmlParser@DirectUI@@QEAAXPEAUHINSTANCE__@@@Z)";
+#else
+                R"(?SetDefaultHInstance@DUIXmlParser@DirectUI@@QAEXPAUHINSTANCE__@@@Z)";
+#endif
+            FARPROC pSetXMLFromResource = GetProcAddress(duiModule, procName);
+            if (pSetXMLFromResource) {
+                return (DirectUI_DUIXmlParser_SetDefaultHInstance_t)
+                    pSetXMLFromResource;
+            } else {
+                Wh_Log(L"Couldn't find SetDefaultHInstance");
+            }
+        } else {
+            Wh_Log(L"Couldn't load dui70.dll");
+        }
+
+        return (DirectUI_DUIXmlParser_SetDefaultHInstance_t) nullptr;
+    }();
+
+    if (pSetDefaultHInstance) {
+        pSetDefaultHInstance(pThis, hModule);
+    }
+}
+
 using SetXMLFromResource_t = HRESULT(__thiscall*)(void* pThis,
                                                   PCWSTR lpName,
                                                   PCWSTR lpType,
@@ -1210,6 +1253,12 @@ HRESULT __thiscall SetXMLFromResource_Hook(void* pThis,
             return false;
         });
     if (redirected) {
+        // By using a redirected module, its handle will be saved by
+        // DUIXmlParser and will be used for loading additional resources, such
+        // as strings. This might be undesirable, so set the original module. An
+        // example for why setting the original module is sometimes preferable:
+        // https://github.com/ramensoftware/windhawk-mods/issues/639
+        DirectUI_DUIXmlParser_SetDefaultHInstance(pThis, hModule);
         return result;
     }
 

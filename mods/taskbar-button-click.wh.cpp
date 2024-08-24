@@ -476,7 +476,14 @@ bool HookSymbols(HMODULE module,
 
             if (noAddressMatchCount == symbolHooks[i].symbols.size()) {
                 Wh_Log(L"Optional symbol %d doesn't exist (from cache)", i);
+
                 symbolResolved[i] = true;
+
+                for (auto hookSymbol : symbolHooks[i].symbols) {
+                    newSystemCacheStr += cacheSep;
+                    newSystemCacheStr += hookSymbol;
+                    newSystemCacheStr += cacheSep;
+                }
             }
         }
 
@@ -708,6 +715,7 @@ BOOL Wh_ModInit() {
         g_winVersion = WinVersion::Win10;
     }
 
+    // Taskbar.dll, explorer.exe
     SYMBOL_HOOK symbolHooks[] = {
         // Win11 only:
         {{
