@@ -62,6 +62,7 @@ sure the changes apply, you might want to restart the target program(s) or resta
 // ==/WindhawkModSettings==
 
 #include <ntdef.h>
+#include <ntstatus.h>
 
 enum class Config {
     allow,
@@ -98,6 +99,12 @@ NTSTATUS WINAPI NtSetTimerResolutionHook(ULONG DesiredResolution, BOOLEAN SetRes
     Wh_Log(L"> DesiredResolution: %f milliseconds", (double)DesiredResolution / 10000.0);
 
     ULONG limitResolution = g_limitResolution;
+
+    if (limitResolution == ULONG_MAX) {
+        Wh_Log(L"* Blocking resolution change");
+        return STATUS_SUCCESS;
+    }
+
     if (DesiredResolution < limitResolution) {
         Wh_Log(L"* Overriding resolution: %f milliseconds", (double)limitResolution / 10000.0);
         DesiredResolution = limitResolution;
@@ -169,7 +176,7 @@ void LoadSettings()
 
     if (config == Config::block) {
         Wh_Log(L"Config loaded: Disallowing changes");
-        g_limitResolution = g_minimumResolution;
+        g_limitResolution = ULONG_MAX;
     }
     else if (config == Config::limit) {
         ULONG limitResolution = limit * 10000;
@@ -185,7 +192,7 @@ void LoadSettings()
     }
     else {
         Wh_Log(L"Config loaded: Allowing changes");
-        g_limitResolution = g_maximumResolution;
+        g_limitResolution = 0;
     }
 }
 
