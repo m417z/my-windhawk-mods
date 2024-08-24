@@ -61,9 +61,7 @@ sure the changes apply, you might want to restart the target program(s) or resta
 */
 // ==/WindhawkModSettings==
 
-#ifndef NT_SUCCESS
-#define NT_SUCCESS(Status) ((NTSTATUS)(Status) >= 0)
-#endif
+#include <ntdef.h>
 
 enum class Config {
     allow,
@@ -108,7 +106,7 @@ NTSTATUS WINAPI NtSetTimerResolutionHook(ULONG DesiredResolution, BOOLEAN SetRes
     return pOriginalNtSetTimerResolution(DesiredResolution, SetResolution, CurrentResolution);
 }
 
-void LoadSettings(void)
+void LoadSettings()
 {
     WCHAR programPath[1024];
     DWORD dwSize = ARRAYSIZE(programPath);
@@ -191,7 +189,7 @@ void LoadSettings(void)
     }
 }
 
-BOOL Wh_ModInit(void)
+BOOL Wh_ModInit()
 {
     Wh_Log(L"Init");
 
@@ -231,7 +229,7 @@ BOOL Wh_ModInit(void)
     return TRUE;
 }
 
-void Wh_ModSettingsChanged(void)
+void Wh_ModSettingsChanged()
 {
     Wh_Log(L"SettingsChanged");
 
