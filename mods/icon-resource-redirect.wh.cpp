@@ -1174,6 +1174,37 @@ HRESULT WINAPI SHCreateStreamOnModuleResourceW_Hook(HMODULE hModule,
                                                     ppStream);
 }
 
+void DirectUI_DUIXmlParser_SetDefaultHInstance(void* pThis, HMODULE hModule) {
+    using DirectUI_DUIXmlParser_SetDefaultHInstance_t =
+        void(__thiscall*)(void* pThis, HMODULE hModule);
+    static DirectUI_DUIXmlParser_SetDefaultHInstance_t pSetDefaultHInstance = []() {
+        HMODULE duiModule = LoadLibrary(L"dui70.dll");
+        if (duiModule) {
+            PCSTR procName =
+#ifdef _WIN64
+                R"(?SetDefaultHInstance@DUIXmlParser@DirectUI@@QEAAXPEAUHINSTANCE__@@@Z)";
+#else
+                R"(?SetDefaultHInstance@DUIXmlParser@DirectUI@@QAEXPAUHINSTANCE__@@@Z)";
+#endif
+            FARPROC pSetXMLFromResource = GetProcAddress(duiModule, procName);
+            if (pSetXMLFromResource) {
+                return (DirectUI_DUIXmlParser_SetDefaultHInstance_t)
+                    pSetXMLFromResource;
+            } else {
+                Wh_Log(L"Couldn't find SetDefaultHInstance");
+            }
+        } else {
+            Wh_Log(L"Couldn't load dui70.dll");
+        }
+
+        return (DirectUI_DUIXmlParser_SetDefaultHInstance_t) nullptr;
+    }();
+
+    if (pSetDefaultHInstance) {
+        pSetDefaultHInstance(pThis, hModule);
+    }
+}
+
 using SetXMLFromResource_t = HRESULT(__thiscall*)(void* pThis,
                                                   PCWSTR lpName,
                                                   PCWSTR lpType,
@@ -1222,6 +1253,12 @@ HRESULT __thiscall SetXMLFromResource_Hook(void* pThis,
             return false;
         });
     if (redirected) {
+        // By using a redirected module, its handle will be saved by
+        // DUIXmlParser and will be used for loading additional resources, such
+        // as strings. This might be undesirable, so set the original module. An
+        // example for why setting the original module is sometimes preferable:
+        // https://github.com/ramensoftware/windhawk-mods/issues/639
+        DirectUI_DUIXmlParser_SetDefaultHInstance(pThis, hModule);
         return result;
     }
 
