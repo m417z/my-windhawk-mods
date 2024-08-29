@@ -1489,10 +1489,25 @@ BOOL Wh_ModInit() {
     return TRUE;
 }
 
+bool DoesTaskbarBelongToCurrentProcess() {
+    HWND hTaskbarWnd = FindWindow(L"Shell_TrayWnd", nullptr);
+    DWORD dwProcessId;
+    return hTaskbarWnd && GetWindowThreadProcessId(hTaskbarWnd, &dwProcessId) &&
+           dwProcessId == GetCurrentProcessId();
+}
+
 void Wh_ModUninit() {
     Wh_Log(L">");
 
     FreeAndClearRedirectedModules();
+
+    if (DoesTaskbarBelongToCurrentProcess()) {
+        // Let other processes some time to unload the mod.
+        Sleep(400);
+
+        // Invalidate icon cache.
+        SHChangeNotify(SHCNE_ASSOCCHANGED, SHCNF_IDLIST, nullptr, nullptr);
+    }
 }
 
 void Wh_ModSettingsChanged() {
@@ -1502,6 +1517,11 @@ void Wh_ModSettingsChanged() {
 
     FreeAndClearRedirectedModules();
 
-    // Invalidate icon cache.
-    SHChangeNotify(SHCNE_ASSOCCHANGED, SHCNF_IDLIST, nullptr, nullptr);
+    if (DoesTaskbarBelongToCurrentProcess()) {
+        // Let other processes some time to load the new config.
+        Sleep(400);
+
+        // Invalidate icon cache.
+        SHChangeNotify(SHCNE_ASSOCCHANGED, SHCNF_IDLIST, nullptr, nullptr);
+    }
 }
