@@ -25,9 +25,17 @@
 
 Restore the missing Windows option to always show all notification (tray) icons.
 
-Alternatively, just make sure that new icons are shown by default.
+The mod has two modes that can be selected in the mod settings:
+
+1. All icons are shown. That's the default, and like in the animation below, all
+   icons become shown when the mod is enabled.
+2. New icons are shown, existing icons are unaffected. If this mode is selected,
+   the mod only affects icons of new apps, which become visible by default
+   instead of being hidden.
 
 Only Windows 11 is supported.
+
+![demonstration](https://i.imgur.com/q6pgi0Z.gif)
 */
 // ==/WindhawkModReadme==
 
