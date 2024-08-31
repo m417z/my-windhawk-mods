@@ -549,14 +549,12 @@ HRESULT WINAPI CTaskListWnd_ComputeJumpViewPosition_Hook(
     UINT monitorDpiX = 96;
     UINT monitorDpiY = 96;
     GetDpiForMonitor(monitor, MDT_DEFAULT, &monitorDpiX, &monitorDpiY);
-    pt.x = MulDiv(pt.x, 96, monitorDpiX);
-    pt.y = MulDiv(pt.y, 96, monitorDpiY);
 
     point->X = pt.x;
     point->Y = pt.y;
 
     // Move a bit lower to vertically center the cursor on the close item.
-    point->Y += 30;
+    point->Y += MulDiv(30, monitorDpiY, 96);
 
     *verticalAlignment = VerticalAlignment::Center;
 
