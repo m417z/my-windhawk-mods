@@ -975,6 +975,10 @@ void WINAPI TaskListButton_UpdateVisualStates_Hook(void* pThis) {
     float origin = g_unloading ? 0 : 0.5;
     iconElement.RenderTransformOrigin({origin, origin});
 
+    // For some reason, translation is being set to a NaN.
+    iconElement.Translation(
+        winrt::Windows::Foundation::Numerics::float3::zero());
+
     auto xamlRoot = taskListButtonElement.XamlRoot();
     if (xamlRoot) {
         try {
