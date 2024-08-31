@@ -849,20 +849,25 @@ void ApplySystemTrayIconStyle(FrameworkElement systemTrayIconElement) {
         }
     }
 
+    bool isDateTimeIcon = false;
+
     auto iconContent =
         FindChildByClassName(contentGrid, L"SystemTray.TextIconContent");
     if (!iconContent) {
         iconContent = FindChildByClassName(
             contentGrid, L"SystemTray.LanguageTextIconContent");
-    }
 
-    if (!iconContent) {
-        iconContent = FindChildByClassName(contentGrid,
-                                           L"SystemTray.DateTimeIconContent");
-    }
+        if (!iconContent) {
+            iconContent = FindChildByClassName(
+                contentGrid, L"SystemTray.DateTimeIconContent");
+            if (iconContent) {
+                isDateTimeIcon = true;
+            }
+        }
 
-    if (!iconContent) {
-        return;
+        if (!iconContent) {
+            return;
+        }
     }
 
     double angle = g_unloading ? 0 : -90;
@@ -873,8 +878,14 @@ void ApplySystemTrayIconStyle(FrameworkElement systemTrayIconElement) {
     float origin = g_unloading ? 0 : 0.5;
     iconContent.RenderTransformOrigin({origin, origin});
 
-    if (winrt::get_class_name(iconContent) ==
-        L"SystemTray.DateTimeIconContent") {
+    if (g_unloading) {
+        iconContent.as<DependencyObject>().ClearValue(
+            FrameworkElement::MaxHeightProperty());
+    } else {
+        iconContent.MaxHeight(isDateTimeIcon ? 40 : iconContent.ActualWidth());
+    }
+
+    if (isDateTimeIcon) {
         if (g_unloading) {
             iconContent.as<DependencyObject>().ClearValue(
                 FrameworkElement::WidthProperty());
