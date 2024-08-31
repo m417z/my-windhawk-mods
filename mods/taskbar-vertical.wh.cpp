@@ -66,13 +66,16 @@ Thank you for contributing and allowing all Windhawk users to enjoy it!
 #undef GetCurrentTime
 
 #include <winrt/Windows.Foundation.h>
+#include <winrt/Windows.UI.Core.h>
 #include <winrt/Windows.UI.Xaml.Controls.h>
 #include <winrt/Windows.UI.Xaml.Media.h>
 
+#include <algorithm>
 #include <atomic>
 #include <functional>
 #include <limits>
 #include <list>
+#include <vector>
 
 using namespace winrt::Windows::UI::Xaml;
 
@@ -105,7 +108,7 @@ bool g_inAugmentedEntryPointButton_UpdateButtonPadding;
 bool g_inCTaskListThumbnailWnd_DisplayUI;
 bool g_inChevronSystemTrayIconDataModel2_OnIconClicked;
 
-int g_notifyIconsUpdateCount;
+std::vector<winrt::weak_ref<XamlRoot>> g_notifyIconsUpdated;
 
 using FrameworkElementLoadedEventRevoker = winrt::impl::event_revoker<
     IFrameworkElement,
@@ -672,6 +675,8 @@ void WINAPI SystemTrayFrame_Height_Hook(void* pThis, double value) {
     SystemTrayFrame_Height_Original(pThis, value);
 }
 
+bool UpdateNotifyIconsIfNeeded(XamlRoot xamlRoot);
+
 bool ApplyStyle(FrameworkElement taskbarFrame,
                 const winrt::Windows::Foundation::Size& size) {
     auto rootGrid =
@@ -701,6 +706,16 @@ bool ApplyStyle(FrameworkElement taskbarFrame,
         (child = FindChildByClassName(child, L"SystemTray.SystemTrayFrame")) &&
         (child = FindChildByName(child, L"SystemTrayFrameGrid"))) {
         child.Margin(Thickness{0, marginTop, 0, 0});
+    }
+
+    auto xamlRoot = taskbarFrame.XamlRoot();
+    if (xamlRoot) {
+        try {
+            UpdateNotifyIconsIfNeeded(xamlRoot);
+        } catch (...) {
+            HRESULT hr = winrt::to_hresult();
+            Wh_Log(L"Error %08X", hr);
+        }
     }
 
     return true;
@@ -815,8 +830,15 @@ void ApplySystemTrayIconStyle(FrameworkElement systemTrayIconElement) {
         } else {
             iconContent.Width(1000);
 
-            double marginValue = -(1000.0 - 40) / 2;
-            iconContent.Margin(Thickness{marginValue, 0, marginValue, 0});
+            // If the margin is set right away, it results in an invisible clock
+            // on secondary taskbars on load.
+            iconContent.Dispatcher().TryRunAsync(
+                winrt::Windows::UI::Core::CoreDispatcherPriority::Low,
+                [iconContent]() {
+                    double marginValue = -(1000.0 - 40) / 2;
+                    iconContent.Margin(
+                        Thickness{marginValue, 0, marginValue, 0});
+                });
         }
 
         FrameworkElement stackPanel = nullptr;
@@ -892,6 +914,7 @@ void WINAPI IconView_IconView_Hook(PVOID pThis) {
                 if (iconView.Name() == L"SystemTrayIcon" &&
                     (IsChildOfElementByName(iconView, L"MainStack") ||
                      IsChildOfElementByName(iconView, L"NonActivatableStack") ||
+                     IsChildOfElementByName(iconView, L"SecondaryClockStack") ||
                      IsChildOfElementByName(iconView, L"ControlCenterButton") ||
                      IsChildOfElementByName(iconView,
                                             L"NotificationCenterButton"))) {
@@ -920,12 +943,32 @@ bool ApplyStyleIfNeeded(XamlRoot xamlRoot) {
 }
 
 bool UpdateNotifyIconsIfNeeded(XamlRoot xamlRoot) {
+    bool notifyIconsUpdated =
+        std::find_if(g_notifyIconsUpdated.begin(), g_notifyIconsUpdated.end(),
+                     [&xamlRoot](auto x) {
+                         auto element = x.get();
+                         return element && element == xamlRoot;
+                     }) != g_notifyIconsUpdated.end();
+
     if (!g_unloading) {
-        if (g_notifyIconsUpdateCount > 0) {
+        if (notifyIconsUpdated) {
             return true;
         }
-    } else if (g_notifyIconsUpdateCount > 1) {
-        return true;
+
+        g_notifyIconsUpdated.push_back(winrt::make_weak(xamlRoot));
+    } else {
+        if (!notifyIconsUpdated) {
+            return true;
+        }
+
+        g_notifyIconsUpdated.erase(
+            std::remove_if(g_notifyIconsUpdated.begin(),
+                           g_notifyIconsUpdated.end(),
+                           [&xamlRoot](auto x) {
+                               auto element = x.get();
+                               return element && element == xamlRoot;
+                           }),
+            g_notifyIconsUpdated.end());
     }
 
     FrameworkElement rootGrid = xamlRoot.Content().try_as<FrameworkElement>();
@@ -989,8 +1032,8 @@ bool UpdateNotifyIconsIfNeeded(XamlRoot xamlRoot) {
     }
 
     for (PCWSTR containerName :
-         {L"MainStack", L"NonActivatableStack", L"ControlCenterButton",
-          L"NotificationCenterButton"}) {
+         {L"MainStack", L"NonActivatableStack", L"SecondaryClockStack",
+          L"ControlCenterButton", L"NotificationCenterButton"}) {
         FrameworkElement container =
             FindChildByName(systemTrayFrameGrid, containerName);
         if (!container) {
@@ -1047,8 +1090,6 @@ bool UpdateNotifyIconsIfNeeded(XamlRoot xamlRoot) {
             return false;
         });
     }
-
-    g_notifyIconsUpdateCount++;
 
     return true;
 }
