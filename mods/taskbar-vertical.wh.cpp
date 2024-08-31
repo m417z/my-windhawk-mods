@@ -2,7 +2,7 @@
 // @id              taskbar-vertical
 // @name            Vertical Taskbar for Windows 11
 // @description     Finally, the missing vertical taskbar option for Windows 11!
-// @version         1.0
+// @version         1.1
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
@@ -129,6 +129,11 @@ STDAPI GetDpiForMonitor(HMONITOR hmonitor,
                         MONITOR_DPI_TYPE dpiType,
                         UINT* dpiX,
                         UINT* dpiY);
+
+// Available since Windows 10 version 1607, missing in older MinGW headers.
+using GetThreadDescription_t =
+    WINBASEAPI HRESULT(WINAPI*)(HANDLE hThread, PWSTR* ppszThreadDescription);
+GetThreadDescription_t pGetThreadDescription;
 
 bool GetMonitorRect(HMONITOR monitor, RECT* rc) {
     MONITORINFO monitorInfo{
@@ -1759,7 +1764,9 @@ BOOL WINAPI SetWindowPos_Hook(HWND hWnd,
     if (g_target == Target::ShellExperienceHost) {
         PWSTR threadDescription;
         HRESULT hr =
-            GetThreadDescription(GetCurrentThread(), &threadDescription);
+            pGetThreadDescription
+                ? pGetThreadDescription(GetCurrentThread(), &threadDescription)
+                : E_FAIL;
         if (FAILED(hr)) {
             return original();
         }
@@ -1912,7 +1919,6 @@ bool HookTaskbarViewDllSymbols(HMODULE module) {
             {
                 {
                     LR"(public: __cdecl winrt::impl::consume_Windows_Foundation_Collections_IMap<struct winrt::Windows::UI::Xaml::ResourceDictionary,struct winrt::Windows::Foundation::IInspectable,struct winrt::Windows::Foundation::IInspectable>::Lookup(struct winrt::Windows::Foundation::IInspectable const &)const )",
-                    LR"(public: __cdecl winrt::impl::consume_Windows_Foundation_Collections_IMap<struct winrt::Windows::UI::Xaml::ResourceDictionary,struct winrt::Windows::Foundation::IInspectable,struct winrt::Windows::Foundation::IInspectable>::Lookup(struct winrt::Windows::Foundation::IInspectable const & __ptr64)const __ptr64)",
                 },
                 (void**)&ResourceDictionary_Lookup_Original,
                 (void*)ResourceDictionary_Lookup_Hook,
@@ -2134,6 +2140,11 @@ BOOL Wh_ModInit() {
     Wh_Log(L">");
 
     LoadSettings();
+
+    if (HMODULE kernel32Module = LoadLibrary(L"kernel32.dll")) {
+        pGetThreadDescription = (GetThreadDescription_t)GetProcAddress(
+            kernel32Module, "GetThreadDescription");
+    }
 
     g_target = Target::Explorer;
 
