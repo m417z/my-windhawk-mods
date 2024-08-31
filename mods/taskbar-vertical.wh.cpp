@@ -363,6 +363,9 @@ void WINAPI TrayUI_MakeStuckRect_Hook(void* pThis,
     }
 }
 
+using GetWindowRect_t = decltype(&GetWindowRect);
+GetWindowRect_t GetWindowRect_Original;
+
 HWND GetTaskbarWnd();
 
 LRESULT TaskbarWndProcPostProcess(HWND hWnd,
@@ -452,7 +455,7 @@ LRESULT TaskbarWndProcPostProcess(HWND hWnd,
 
         case WM_PAINT: {
             RECT rc;
-            GetWindowRect(hWnd, &rc);
+            GetWindowRect_Original(hWnd, &rc);
 
             updateWindowRgn(
                 hWnd,
@@ -579,6 +582,52 @@ void* WINAPI CTaskListThumbnailWnd_DisplayUI_Hook(void* pThis,
                                                          param3, param4);
 
     g_inCTaskListThumbnailWnd_DisplayUI = false;
+
+    return ret;
+}
+
+using ResourceDictionary_Lookup_t = winrt::Windows::Foundation::IInspectable*(
+    WINAPI*)(void* pThis,
+             void** result,
+             winrt::Windows::Foundation::IInspectable* key);
+ResourceDictionary_Lookup_t ResourceDictionary_Lookup_Original;
+winrt::Windows::Foundation::IInspectable* WINAPI
+ResourceDictionary_Lookup_Hook(void* pThis,
+                               void** result,
+                               winrt::Windows::Foundation::IInspectable* key) {
+    // Wh_Log(L">");
+
+    auto ret = ResourceDictionary_Lookup_Original(pThis, result, key);
+    if (!*ret) {
+        return ret;
+    }
+
+    auto keyString = key->try_as<winrt::hstring>();
+    if (!keyString || keyString != L"TaskbarContextMenuMargin") {
+        return ret;
+    }
+
+    auto valueThickness = ret->try_as<Thickness>();
+    if (!valueThickness) {
+        return ret;
+    }
+
+    HWND hTaskbarWnd = GetTaskbarWnd();
+    if (!hTaskbarWnd) {
+        return ret;
+    }
+
+    RECT rc;
+    if (!GetWindowRect_Original(hTaskbarWnd, &rc)) {
+        return ret;
+    }
+
+    valueThickness->Bottom -=
+        MulDiv(rc.right - rc.left, 96, GetDpiForWindow(hTaskbarWnd));
+    valueThickness->Bottom += g_settings.taskbarWidth;
+
+    Wh_Log(L"Overriding value %s", keyString->c_str());
+    *ret = winrt::box_value(*valueThickness);
 
     return ret;
 }
@@ -1153,20 +1202,7 @@ void WINAPI TaskListButton_UpdateVisualStates_Hook(void* pThis) {
     }
 }
 
-using ExperienceToggleButton_UpdateVisualStates_t = void(WINAPI*)(void* pThis);
-ExperienceToggleButton_UpdateVisualStates_t
-    ExperienceToggleButton_UpdateVisualStates_Original;
-void WINAPI ExperienceToggleButton_UpdateVisualStates_Hook(void* pThis) {
-    Wh_Log(L">");
-
-    ExperienceToggleButton_UpdateVisualStates_Original(pThis);
-
-    void* toggleButtonIUnknownPtr = (void**)pThis + 2;
-    winrt::Windows::Foundation::IUnknown toggleButtonIUnknown;
-    winrt::copy_from_abi(toggleButtonIUnknown, toggleButtonIUnknownPtr);
-
-    auto toggleButtonElement = toggleButtonIUnknown.as<FrameworkElement>();
-
+void ApplyExperienceButtonStyle(FrameworkElement toggleButtonElement) {
     auto panelElement = FindChildByName(toggleButtonElement,
                                         L"ExperienceToggleButtonRootPanel");
     if (!panelElement) {
@@ -1186,6 +1222,9 @@ void WINAPI ExperienceToggleButton_UpdateVisualStates_Hook(void* pThis) {
     float origin = g_unloading ? 0 : 0.5;
     iconElement.RenderTransformOrigin({origin, origin});
 
+    iconElement.MaxHeight(g_unloading ? std::numeric_limits<double>::infinity()
+                                      : 24);
+
     auto xamlRoot = toggleButtonElement.XamlRoot();
     if (xamlRoot) {
         try {
@@ -1202,6 +1241,38 @@ void WINAPI ExperienceToggleButton_UpdateVisualStates_Hook(void* pThis) {
             Wh_Log(L"Error %08X", hr);
         }
     }
+}
+
+using ExperienceToggleButton_UpdateVisualStates_t = void(WINAPI*)(void* pThis);
+ExperienceToggleButton_UpdateVisualStates_t
+    ExperienceToggleButton_UpdateVisualStates_Original;
+void WINAPI ExperienceToggleButton_UpdateVisualStates_Hook(void* pThis) {
+    Wh_Log(L">");
+
+    ExperienceToggleButton_UpdateVisualStates_Original(pThis);
+
+    void* toggleButtonIUnknownPtr = (void**)pThis + 2;
+    winrt::Windows::Foundation::IUnknown toggleButtonIUnknown;
+    winrt::copy_from_abi(toggleButtonIUnknown, toggleButtonIUnknownPtr);
+
+    auto toggleButtonElement = toggleButtonIUnknown.as<FrameworkElement>();
+    ApplyExperienceButtonStyle(toggleButtonElement);
+}
+
+using SearchBoxButton_UpdateVisualStates_t = void(WINAPI*)(void* pThis);
+SearchBoxButton_UpdateVisualStates_t
+    SearchBoxButton_UpdateVisualStates_Original;
+void WINAPI SearchBoxButton_UpdateVisualStates_Hook(void* pThis) {
+    Wh_Log(L">");
+
+    SearchBoxButton_UpdateVisualStates_Original(pThis);
+
+    void* toggleButtonIUnknownPtr = (void**)pThis + 2;
+    winrt::Windows::Foundation::IUnknown toggleButtonIUnknown;
+    winrt::copy_from_abi(toggleButtonIUnknown, toggleButtonIUnknownPtr);
+
+    auto toggleButtonElement = toggleButtonIUnknown.as<FrameworkElement>();
+    ApplyExperienceButtonStyle(toggleButtonElement);
 }
 
 using OverflowFlyoutList_OnApplyTemplate_t = void(WINAPI*)(LPVOID pThis);
@@ -1360,8 +1431,6 @@ auto WINAPI SHAppBarMessage_Hook(DWORD dwMessage, PAPPBARDATA pData) {
     return ret;
 }
 
-using GetWindowRect_t = decltype(&GetWindowRect);
-GetWindowRect_t GetWindowRect_Original;
 BOOL WINAPI GetWindowRect_Hook(HWND hWnd, LPRECT lpRect) {
     BOOL ret = GetWindowRect_Original(hWnd, lpRect);
     if (ret && !g_unloading && hWnd == GetTaskbarWnd()) {
@@ -1816,6 +1885,14 @@ bool HookTaskbarViewDllSymbols(HMODULE module) {
         WindhawkUtils::SYMBOL_HOOK symbolHooks[] = {
             {
                 {
+                    LR"(public: __cdecl winrt::impl::consume_Windows_Foundation_Collections_IMap<struct winrt::Windows::UI::Xaml::ResourceDictionary,struct winrt::Windows::Foundation::IInspectable,struct winrt::Windows::Foundation::IInspectable>::Lookup(struct winrt::Windows::Foundation::IInspectable const &)const )",
+                    LR"(public: __cdecl winrt::impl::consume_Windows_Foundation_Collections_IMap<struct winrt::Windows::UI::Xaml::ResourceDictionary,struct winrt::Windows::Foundation::IInspectable,struct winrt::Windows::Foundation::IInspectable>::Lookup(struct winrt::Windows::Foundation::IInspectable const & __ptr64)const __ptr64)",
+                },
+                (void**)&ResourceDictionary_Lookup_Original,
+                (void*)ResourceDictionary_Lookup_Hook,
+            },
+            {
+                {
                     LR"(private: double __cdecl winrt::SystemTray::implementation::SystemTrayController::GetFrameSize(enum winrt::WindowsUdk::UI::Shell::TaskbarSize))",
                 },
                 (void**)&SystemTrayController_GetFrameSize_Original,
@@ -1889,6 +1966,13 @@ bool HookTaskbarViewDllSymbols(HMODULE module) {
                 },
                 (void**)&ExperienceToggleButton_UpdateVisualStates_Original,
                 (void*)ExperienceToggleButton_UpdateVisualStates_Hook,
+            },
+            {
+                {
+                    LR"(protected: virtual void __cdecl winrt::Taskbar::implementation::SearchBoxButton::UpdateVisualStates(void))",
+                },
+                (void**)&SearchBoxButton_UpdateVisualStates_Original,
+                (void*)SearchBoxButton_UpdateVisualStates_Hook,
             },
             {
                 {
