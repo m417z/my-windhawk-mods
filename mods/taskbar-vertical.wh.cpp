@@ -62,7 +62,6 @@ Thank you for contributing and allowing all Windhawk users to enjoy it!
 
 #include <knownfolders.h>
 #include <shlobj.h>
-#include <windows.h>
 #include <windowsx.h>
 
 #undef GetCurrentTime
@@ -989,6 +988,11 @@ void WINAPI IconView_IconView_Hook(PVOID pThis) {
 }
 
 bool ApplyStyleIfNeeded(XamlRoot xamlRoot) {
+    // Calling this when unloading causes a crash with a secondary taskbar.
+    if (g_unloading) {
+        return true;
+    }
+
     FrameworkElement rootGrid = xamlRoot.Content().try_as<FrameworkElement>();
 
     FrameworkElement taskbarFrame = nullptr;
