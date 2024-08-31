@@ -62,6 +62,7 @@ Thank you for contributing and allowing all Windhawk users to enjoy it!
 
 #include <knownfolders.h>
 #include <shlobj.h>
+#include <windows.h>
 #include <windowsx.h>
 
 #undef GetCurrentTime
@@ -1540,20 +1541,19 @@ std::vector<HWND> GetCoreWindows() {
     return hWnds;
 }
 
-void AdjustCoreWindowSize(int* width, int* height) {
+void AdjustCoreWindowSize(int x, int y, int* width, int* height) {
     if (g_target != Target::StartMenu) {
         return;
     }
 
-    const POINT ptZero = {0, 0};
-    HMONITOR primaryMonitor =
-        MonitorFromPoint(ptZero, MONITOR_DEFAULTTOPRIMARY);
+    const POINT pt = {x, y};
+    HMONITOR monitor = MonitorFromPoint(pt, MONITOR_DEFAULTTONEAREST);
 
     if (g_unloading) {
         MONITORINFO monitorInfo{
             .cbSize = sizeof(MONITORINFO),
         };
-        GetMonitorInfo(primaryMonitor, &monitorInfo);
+        GetMonitorInfo(monitor, &monitorInfo);
 
         *width = monitorInfo.rcWork.right - monitorInfo.rcWork.left;
         *height = monitorInfo.rcWork.bottom - monitorInfo.rcWork.top;
@@ -1562,7 +1562,7 @@ void AdjustCoreWindowSize(int* width, int* height) {
 
     UINT monitorDpiX = 96;
     UINT monitorDpiY = 96;
-    GetDpiForMonitor(primaryMonitor, MDT_DEFAULT, &monitorDpiX, &monitorDpiY);
+    GetDpiForMonitor(monitor, MDT_DEFAULT, &monitorDpiX, &monitorDpiY);
 
     const int w1 = MulDiv(660, monitorDpiX, 96);
     if (*width > w1) {
@@ -1588,16 +1588,15 @@ void AdjustCoreWindowPos(int* x, int* y, int width, int height) {
         return;
     }
 
-    const POINT ptZero = {0, 0};
-    HMONITOR primaryMonitor =
-        MonitorFromPoint(ptZero, MONITOR_DEFAULTTOPRIMARY);
+    const POINT pt = {*x, *y};
+    HMONITOR monitor = MonitorFromPoint(pt, MONITOR_DEFAULTTONEAREST);
 
     UINT monitorDpiX = 96;
     UINT monitorDpiY = 96;
-    GetDpiForMonitor(primaryMonitor, MDT_DEFAULT, &monitorDpiX, &monitorDpiY);
+    GetDpiForMonitor(monitor, MDT_DEFAULT, &monitorDpiX, &monitorDpiY);
 
     RECT rc;
-    if (!GetMonitorRect(primaryMonitor, &rc)) {
+    if (!GetMonitorRect(monitor, &rc)) {
         return;
     }
 
@@ -1621,7 +1620,7 @@ void ApplySettings() {
         int cx = rc.right - rc.left;
         int cy = rc.bottom - rc.top;
 
-        AdjustCoreWindowSize(&cx, &cy);
+        AdjustCoreWindowSize(x, y, &cx, &cy);
         AdjustCoreWindowPos(&x, &y, cx, cy);
 
         SetWindowPos_Original(hCoreWnd, nullptr, x, y, cx, cy,
@@ -1660,7 +1659,7 @@ HWND WINAPI CreateWindowInBand_Hook(DWORD dwExStyle,
     if (bTextualClassName &&
         _wcsicmp(lpClassName, L"Windows.UI.Core.CoreWindow") == 0) {
         Wh_Log(L"Creating core window");
-        AdjustCoreWindowSize(&nWidth, &nHeight);
+        AdjustCoreWindowSize(X, Y, &nWidth, &nHeight);
         AdjustCoreWindowPos(&X, &Y, nWidth, nHeight);
     }
 
@@ -1702,7 +1701,7 @@ HWND WINAPI CreateWindowInBandEx_Hook(DWORD dwExStyle,
     if (bTextualClassName &&
         _wcsicmp(lpClassName, L"Windows.UI.Core.CoreWindow") == 0) {
         Wh_Log(L"Creating core window");
-        AdjustCoreWindowSize(&nWidth, &nHeight);
+        AdjustCoreWindowSize(X, Y, &nWidth, &nHeight);
         AdjustCoreWindowPos(&X, &Y, nWidth, nHeight);
     }
 
@@ -1738,6 +1737,8 @@ BOOL WINAPI SetWindowPos_Hook(HWND hWnd,
         return original();
     }
 
+    Wh_Log(L"%08X %08X", (DWORD)(ULONG_PTR)hWnd, uFlags);
+
     int extraXAdjustment = 0;
 
     if (g_target == Target::ShellExperienceHost) {
@@ -1754,24 +1755,26 @@ BOOL WINAPI SetWindowPos_Hook(HWND hWnd,
     }
 
     if ((uFlags & (SWP_NOSIZE | SWP_NOMOVE)) != (SWP_NOSIZE | SWP_NOMOVE)) {
+        RECT rc;
+        GetWindowRect(hWnd, &rc);
+
         // SearchHost is being moved by explorer.exe, then the size is adjusted
         // by SearchHost itself. Make SearchHost adjust the position too. A
-        // similar workaround is needed for ShellExperienceHost.
-        if (g_target == Target::SearchHost ||
-            g_target == Target::ShellExperienceHost) {
+        // similar workaround is needed for other windows.
+        if (uFlags & SWP_NOMOVE) {
             uFlags &= ~SWP_NOMOVE;
+            X = rc.left;
+            Y = rc.top;
         }
 
         int width;
         int height;
         if (uFlags & SWP_NOSIZE) {
-            RECT rc;
-            GetWindowRect(hWnd, &rc);
             width = rc.right - rc.left;
             height = rc.bottom - rc.top;
-            AdjustCoreWindowSize(&width, &height);
+            AdjustCoreWindowSize(X, Y, &width, &height);
         } else {
-            AdjustCoreWindowSize(&cx, &cy);
+            AdjustCoreWindowSize(X, Y, &cx, &cy);
             width = cx;
             height = cy;
         }
