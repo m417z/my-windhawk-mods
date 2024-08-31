@@ -1285,8 +1285,8 @@ void ApplyDateTimeIconContentStyles(
     auto stackPanel =
         containerGridElement.Children().GetAt(0).as<Controls::StackPanel>();
 
-    Controls::TextBlock dateInnerTextBlock;
-    Controls::TextBlock timeInnerTextBlock;
+    Controls::TextBlock dateInnerTextBlock = nullptr;
+    Controls::TextBlock timeInnerTextBlock = nullptr;
 
     for (const auto& child : stackPanel.Children()) {
         auto childTextBlock = child.try_as<Controls::TextBlock>();
