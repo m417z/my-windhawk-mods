@@ -552,6 +552,9 @@ HRESULT WINAPI CTaskListWnd_ComputeJumpViewPosition_Hook(
     point->X = pt.x;
     point->Y = pt.y;
 
+    // Move a bit lower to vertically center the cursor on the close item.
+    point->Y += 30;
+
     *verticalAlignment = VerticalAlignment::Center;
 
     return ret;
