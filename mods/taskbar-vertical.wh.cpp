@@ -1191,10 +1191,9 @@ auto WINAPI SHAppBarMessage_Hook(DWORD dwMessage, PAPPBARDATA pData) {
     auto ret = SHAppBarMessage_Original(dwMessage, pData);
 
     // This is used to position secondary taskbars.
-    RECT rc;
-    if (dwMessage == ABM_QUERYPOS && ret && !g_unloading && pData->hWnd &&
-        GetWindowRect(pData->hWnd, &rc)) {
-        HMONITOR monitor = MonitorFromRect(&rc, MONITOR_DEFAULTTONEAREST);
+    if (dwMessage == ABM_QUERYPOS && ret && !g_unloading && pData->hWnd) {
+        HMONITOR monitor =
+            MonitorFromWindow(pData->hWnd, MONITOR_DEFAULTTONEAREST);
 
         RECT monitorRect;
         GetMonitorRect(monitor, &monitorRect);
