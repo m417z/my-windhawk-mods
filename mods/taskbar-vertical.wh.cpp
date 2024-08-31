@@ -1757,14 +1757,24 @@ BOOL WINAPI SetWindowPos_Hook(HWND hWnd,
     int extraXAdjustment = 0;
 
     if (g_target == Target::ShellExperienceHost) {
-        WCHAR szWindowText[32];
-        if (!GetWindowText(hWnd, szWindowText, ARRAYSIZE(szWindowText)) ||
-            (_wcsicmp(szWindowText, L"Quick settings") != 0 &&
-             _wcsicmp(szWindowText, L"Notification Center") != 0)) {
+        PWSTR threadDescription;
+        HRESULT hr =
+            GetThreadDescription(GetCurrentThread(), &threadDescription);
+        if (FAILED(hr)) {
             return original();
         }
 
-        if (_wcsicmp(szWindowText, L"Quick settings") == 0) {
+        bool isActionCenter = wcscmp(threadDescription, L"ActionCenter") == 0;
+        bool isQuickActions = wcscmp(threadDescription, L"QuickActions") == 0;
+
+        Wh_Log(L"%s", threadDescription);
+        LocalFree(threadDescription);
+
+        if (!isActionCenter && !isQuickActions) {
+            return original();
+        }
+
+        if (isQuickActions) {
             extraXAdjustment = MulDiv(-29, GetDpiForWindow(hWnd), 96);
         }
     }
