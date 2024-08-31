@@ -48,7 +48,7 @@ Thank you for contributing and allowing all Windhawk users to enjoy it!
 
 // ==WindhawkModSettings==
 /*
-- TaskbarWidth: 48
+- TaskbarWidth: 80
   $name: Taskbar width
   $description: >-
     The width, in pixels, of the taskbar
@@ -66,6 +66,7 @@ Thank you for contributing and allowing all Windhawk users to enjoy it!
 #undef GetCurrentTime
 
 #include <winrt/Windows.Foundation.h>
+#include <winrt/Windows.UI.Xaml.Controls.h>
 #include <winrt/Windows.UI.Xaml.Media.h>
 
 #include <atomic>
@@ -760,17 +761,91 @@ void ApplyNotifyIconViewStyle(FrameworkElement notifyIconViewElement) {
 }
 
 void ApplySystemTrayIconStyle(FrameworkElement systemTrayIconElement) {
-    FrameworkElement child = systemTrayIconElement;
-    if ((child = FindChildByName(child, L"ContainerGrid")) &&
-        (child = FindChildByName(child, L"ContentGrid")) &&
-        (child = FindChildByClassName(child, L"SystemTray.TextIconContent"))) {
-        double angle = g_unloading ? 0 : -90;
-        Media::RotateTransform transform;
-        transform.Angle(angle);
-        child.RenderTransform(transform);
+    auto containerGrid =
+        FindChildByName(systemTrayIconElement, L"ContainerGrid");
+    if (!containerGrid) {
+        return;
+    }
 
-        float origin = g_unloading ? 0 : 0.5;
-        child.RenderTransformOrigin({origin, origin});
+    auto contentGrid = FindChildByName(containerGrid, L"ContentGrid");
+    if (!contentGrid) {
+        auto contentPresenter =
+            FindChildByName(containerGrid, L"ContentPresenter");
+        if (!contentPresenter) {
+            return;
+        }
+
+        contentGrid = FindChildByName(contentPresenter, L"ContentGrid");
+        if (!contentGrid) {
+            return;
+        }
+    }
+
+    auto iconContent =
+        FindChildByClassName(contentGrid, L"SystemTray.TextIconContent");
+    if (!iconContent) {
+        iconContent = FindChildByClassName(
+            contentGrid, L"SystemTray.LanguageTextIconContent");
+    }
+
+    if (!iconContent) {
+        iconContent = FindChildByClassName(contentGrid,
+                                           L"SystemTray.DateTimeIconContent");
+    }
+
+    if (!iconContent) {
+        return;
+    }
+
+    double angle = g_unloading ? 0 : -90;
+    Media::RotateTransform transform;
+    transform.Angle(angle);
+    iconContent.RenderTransform(transform);
+
+    float origin = g_unloading ? 0 : 0.5;
+    iconContent.RenderTransformOrigin({origin, origin});
+
+    if (winrt::get_class_name(iconContent) ==
+        L"SystemTray.DateTimeIconContent") {
+        if (g_unloading) {
+            iconContent.as<DependencyObject>().ClearValue(
+                FrameworkElement::WidthProperty());
+            iconContent.as<DependencyObject>().ClearValue(
+                FrameworkElement::MarginProperty());
+        } else {
+            iconContent.Width(1000);
+
+            double marginValue = -(1000.0 - 40) / 2;
+            iconContent.Margin(Thickness{marginValue, 0, marginValue, 0});
+        }
+
+        FrameworkElement stackPanel = nullptr;
+
+        FrameworkElement child = iconContent;
+        if ((child = FindChildByName(child, L"ContainerGrid")) &&
+            (child = FindChildByClassName(
+                 child, L"Windows.UI.Xaml.Controls.StackPanel"))) {
+            stackPanel = child;
+        }
+
+        Controls::TextBlock dateInnerTextBlock =
+            stackPanel ? FindChildByName(stackPanel, L"DateInnerTextBlock")
+                             .try_as<Controls::TextBlock>()
+                       : nullptr;
+        Controls::TextBlock timeInnerTextBlock =
+            stackPanel ? FindChildByName(stackPanel, L"TimeInnerTextBlock")
+                             .try_as<Controls::TextBlock>()
+                       : nullptr;
+
+        if (dateInnerTextBlock) {
+            dateInnerTextBlock.TextAlignment(
+                g_unloading ? TextAlignment::End : TextAlignment::Center);
+        }
+
+        if (timeInnerTextBlock) {
+            timeInnerTextBlock.TextAlignment(
+                g_unloading ? TextAlignment::End : TextAlignment::Center);
+        }
     }
 }
 
@@ -815,7 +890,11 @@ void WINAPI IconView_IconView_Hook(PVOID pThis) {
                 }
             } else if (className == L"SystemTray.IconView") {
                 if (iconView.Name() == L"SystemTrayIcon" &&
-                    IsChildOfElementByName(iconView, L"ControlCenterButton")) {
+                    (IsChildOfElementByName(iconView, L"MainStack") ||
+                     IsChildOfElementByName(iconView, L"NonActivatableStack") ||
+                     IsChildOfElementByName(iconView, L"ControlCenterButton") ||
+                     IsChildOfElementByName(iconView,
+                                            L"NotificationCenterButton"))) {
                     ApplySystemTrayIconStyle(iconView);
                 }
             }
@@ -909,43 +988,64 @@ bool UpdateNotifyIconsIfNeeded(XamlRoot xamlRoot) {
         }
     }
 
-    FrameworkElement controlCenterButton =
-        FindChildByName(systemTrayFrameGrid, L"ControlCenterButton");
-    if (controlCenterButton) {
+    for (PCWSTR containerName :
+         {L"MainStack", L"NonActivatableStack", L"ControlCenterButton",
+          L"NotificationCenterButton"}) {
+        FrameworkElement container =
+            FindChildByName(systemTrayFrameGrid, containerName);
+        if (!container) {
+            continue;
+        }
+
         FrameworkElement stackPanel = nullptr;
 
-        FrameworkElement child = controlCenterButton;
-        if ((child = FindChildByClassName(child,
-                                          L"Windows.UI.Xaml.Controls.Grid")) &&
-            (child = FindChildByName(child, L"ContentPresenter")) &&
-            (child = FindChildByClassName(
-                 child, L"Windows.UI.Xaml.Controls.ItemsPresenter")) &&
-            (child = FindChildByClassName(
-                 child, L"Windows.UI.Xaml.Controls.StackPanel"))) {
-            stackPanel = child;
+        if (wcscmp(containerName, L"ControlCenterButton") == 0 ||
+            wcscmp(containerName, L"NotificationCenterButton") == 0) {
+            FrameworkElement child = container;
+            if ((child = FindChildByClassName(
+                     child, L"Windows.UI.Xaml.Controls.Grid")) &&
+                (child = FindChildByName(child, L"ContentPresenter")) &&
+                (child = FindChildByClassName(
+                     child, L"Windows.UI.Xaml.Controls.ItemsPresenter")) &&
+                (child = FindChildByClassName(
+                     child, L"Windows.UI.Xaml.Controls.StackPanel"))) {
+                stackPanel = child;
+            }
+        } else {
+            FrameworkElement child = container;
+            if ((child = FindChildByName(child, L"Content")) &&
+                (child = FindChildByName(child, L"IconStack")) &&
+                (child = FindChildByClassName(
+                     child, L"Windows.UI.Xaml.Controls.ItemsPresenter")) &&
+                (child = FindChildByClassName(
+                     child, L"Windows.UI.Xaml.Controls.StackPanel"))) {
+                stackPanel = child;
+            }
         }
 
-        if (stackPanel) {
-            EnumChildElements(stackPanel, [](FrameworkElement child) {
-                auto childClassName = winrt::get_class_name(child);
-                if (childClassName !=
-                    L"Windows.UI.Xaml.Controls.ContentPresenter") {
-                    Wh_Log(L"Unsupported class name %s of child",
-                           childClassName.c_str());
-                    return false;
-                }
+        if (!stackPanel) {
+            continue;
+        }
 
-                FrameworkElement systemTrayIconElement =
-                    FindChildByName(child, L"SystemTrayIcon");
-                if (!systemTrayIconElement) {
-                    Wh_Log(L"Failed to get SystemTrayIcon of child");
-                    return false;
-                }
-
-                ApplySystemTrayIconStyle(systemTrayIconElement);
+        EnumChildElements(stackPanel, [](FrameworkElement child) {
+            auto childClassName = winrt::get_class_name(child);
+            if (childClassName !=
+                L"Windows.UI.Xaml.Controls.ContentPresenter") {
+                Wh_Log(L"Unsupported class name %s of child",
+                       childClassName.c_str());
                 return false;
-            });
-        }
+            }
+
+            FrameworkElement systemTrayIconElement =
+                FindChildByName(child, L"SystemTrayIcon");
+            if (!systemTrayIconElement) {
+                Wh_Log(L"Failed to get SystemTrayIcon of child");
+                return false;
+            }
+
+            ApplySystemTrayIconStyle(systemTrayIconElement);
+            return false;
+        });
     }
 
     g_notifyIconsUpdateCount++;
