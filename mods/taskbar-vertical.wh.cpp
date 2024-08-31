@@ -10,6 +10,7 @@
 // @include         explorer.exe
 // @include         StartMenuExperienceHost.exe
 // @include         SearchHost.exe
+// @include         ShellExperienceHost.exe
 // @architecture    x86-64
 // @compilerOptions -DWINVER=0x0605 -lgdi32 -lole32 -loleaut32 -lruntimeobject -lshcore
 // ==/WindhawkMod==
@@ -91,6 +92,7 @@ enum class Target {
     Explorer,
     StartMenu,
     SearchHost,
+    ShellExperienceHost,
 };
 
 Target g_target;
@@ -1433,15 +1435,15 @@ BOOL WINAPI SetWindowPos_Hook(HWND hWnd,
                                  uFlags);
 }
 
-namespace StartMenu {
+namespace CoreWindowUI {
 
-HWND GetCoreWnd() {
+std::vector<HWND> GetCoreWindows() {
     struct ENUM_WINDOWS_PARAM {
-        HWND* hWnd;
+        std::vector<HWND>* hWnds;
     };
 
-    HWND hWnd = nullptr;
-    ENUM_WINDOWS_PARAM param = {&hWnd};
+    std::vector<HWND> hWnds;
+    ENUM_WINDOWS_PARAM param = {&hWnds};
     EnumWindows(
         [](HWND hWnd, LPARAM lParam) WINAPI -> BOOL {
             ENUM_WINDOWS_PARAM& param = *(ENUM_WINDOWS_PARAM*)lParam;
@@ -1458,27 +1460,26 @@ HWND GetCoreWnd() {
             }
 
             if (_wcsicmp(szClassName, L"Windows.UI.Core.CoreWindow") == 0) {
-                *param.hWnd = hWnd;
-                return FALSE;
+                param.hWnds->push_back(hWnd);
             }
 
             return TRUE;
         },
         (LPARAM)&param);
 
-    return hWnd;
+    return hWnds;
 }
 
-void AdjustStartMenuSize(int* width, int* height) {
+void AdjustCoreWindowSize(int* width, int* height) {
     if (g_target != Target::StartMenu) {
         return;
     }
 
-    if (g_unloading) {
-        const POINT ptZero = {0, 0};
-        HMONITOR primaryMonitor =
-            MonitorFromPoint(ptZero, MONITOR_DEFAULTTOPRIMARY);
+    const POINT ptZero = {0, 0};
+    HMONITOR primaryMonitor =
+        MonitorFromPoint(ptZero, MONITOR_DEFAULTTOPRIMARY);
 
+    if (g_unloading) {
         MONITORINFO monitorInfo{
             .cbSize = sizeof(MONITORINFO),
         };
@@ -1489,18 +1490,25 @@ void AdjustStartMenuSize(int* width, int* height) {
         return;
     }
 
-    if (*width > 660) {
-        *width = 660;
+    UINT monitorDpiX = 96;
+    UINT monitorDpiY = 96;
+    GetDpiForMonitor(primaryMonitor, MDT_DEFAULT, &monitorDpiX, &monitorDpiY);
+
+    const int w1 = MulDiv(660, monitorDpiX, 96);
+    if (*width > w1) {
+        *width = w1;
     }
 
-    if (*height >= 750) {
-        *height = 750;
-    } else if (*height >= 694) {
-        *height = 694;
+    const int h1 = MulDiv(750, monitorDpiY, 96);
+    const int h2 = MulDiv(694, monitorDpiY, 96);
+    if (*height >= h1) {
+        *height = h1;
+    } else if (*height >= h2) {
+        *height = h2;
     }
 }
 
-void AdjustStartMenuPos(int* x, int* y, int width, int height) {
+void AdjustCoreWindowPos(int* x, int* y, int width, int height) {
     if (g_unloading) {
         if (g_target == Target::StartMenu) {
             *x = 0;
@@ -1514,38 +1522,41 @@ void AdjustStartMenuPos(int* x, int* y, int width, int height) {
     HMONITOR primaryMonitor =
         MonitorFromPoint(ptZero, MONITOR_DEFAULTTOPRIMARY);
 
+    UINT monitorDpiX = 96;
+    UINT monitorDpiY = 96;
+    GetDpiForMonitor(primaryMonitor, MDT_DEFAULT, &monitorDpiX, &monitorDpiY);
+
     RECT rc;
     if (!GetMonitorRect(primaryMonitor, &rc)) {
         return;
     }
 
-    *x = rc.left + g_settings.taskbarWidth;
+    int taskbarWidthScaled = MulDiv(g_settings.taskbarWidth, monitorDpiX, 96);
+
+    *x = rc.left + taskbarWidthScaled;
     *y = rc.top;
 }
 
 void ApplySettings() {
-    HWND hCoreWnd = GetCoreWnd();
-    if (!hCoreWnd) {
-        return;
+    for (HWND hCoreWnd : GetCoreWindows()) {
+        Wh_Log(L"Adjusting core window %08X", (DWORD)(ULONG_PTR)hCoreWnd);
+
+        RECT rc;
+        if (!GetWindowRect(hCoreWnd, &rc)) {
+            continue;
+        }
+
+        int x = rc.left;
+        int y = rc.top;
+        int cx = rc.right - rc.left;
+        int cy = rc.bottom - rc.top;
+
+        AdjustCoreWindowSize(&cx, &cy);
+        AdjustCoreWindowPos(&x, &y, cx, cy);
+
+        SetWindowPos_Original(hCoreWnd, nullptr, x, y, cx, cy,
+                              SWP_NOZORDER | SWP_NOACTIVATE);
     }
-
-    Wh_Log(L"Adjusting start menu window %08X", (DWORD)(ULONG_PTR)hCoreWnd);
-
-    RECT rc;
-    if (!GetWindowRect(hCoreWnd, &rc)) {
-        return;
-    }
-
-    int x = rc.left;
-    int y = rc.top;
-    int cx = rc.right - rc.left;
-    int cy = rc.bottom - rc.top;
-
-    AdjustStartMenuSize(&cx, &cy);
-    AdjustStartMenuPos(&x, &y, cx, cy);
-
-    SetWindowPos_Original(hCoreWnd, nullptr, x, y, cx, cy,
-                          SWP_NOZORDER | SWP_NOACTIVATE);
 }
 
 using CreateWindowInBand_t = HWND(WINAPI*)(DWORD dwExStyle,
@@ -1578,9 +1589,9 @@ HWND WINAPI CreateWindowInBand_Hook(DWORD dwExStyle,
     BOOL bTextualClassName = ((ULONG_PTR)lpClassName & ~(ULONG_PTR)0xffff) != 0;
     if (bTextualClassName &&
         _wcsicmp(lpClassName, L"Windows.UI.Core.CoreWindow") == 0) {
-        Wh_Log(L"Creating start menu core window");
-        AdjustStartMenuSize(&nWidth, &nHeight);
-        AdjustStartMenuPos(&X, &Y, nWidth, nHeight);
+        Wh_Log(L"Creating core window");
+        AdjustCoreWindowSize(&nWidth, &nHeight);
+        AdjustCoreWindowPos(&X, &Y, nWidth, nHeight);
     }
 
     return CreateWindowInBand_Original(
@@ -1620,9 +1631,9 @@ HWND WINAPI CreateWindowInBandEx_Hook(DWORD dwExStyle,
     BOOL bTextualClassName = ((ULONG_PTR)lpClassName & ~(ULONG_PTR)0xffff) != 0;
     if (bTextualClassName &&
         _wcsicmp(lpClassName, L"Windows.UI.Core.CoreWindow") == 0) {
-        Wh_Log(L"Creating start menu core window");
-        AdjustStartMenuSize(&nWidth, &nHeight);
-        AdjustStartMenuPos(&X, &Y, nWidth, nHeight);
+        Wh_Log(L"Creating core window");
+        AdjustCoreWindowSize(&nWidth, &nHeight);
+        AdjustCoreWindowPos(&X, &Y, nWidth, nHeight);
     }
 
     return CreateWindowInBandEx_Original(
@@ -1657,10 +1668,27 @@ BOOL WINAPI SetWindowPos_Hook(HWND hWnd,
         return original();
     }
 
+    int extraXAdjustment = 0;
+
+    if (g_target == Target::ShellExperienceHost) {
+        WCHAR szWindowText[32];
+        if (!GetWindowText(hWnd, szWindowText, ARRAYSIZE(szWindowText)) ||
+            (_wcsicmp(szWindowText, L"Quick settings") != 0 &&
+             _wcsicmp(szWindowText, L"Notification Center") != 0)) {
+            return original();
+        }
+
+        if (_wcsicmp(szWindowText, L"Quick settings") == 0) {
+            extraXAdjustment = MulDiv(-29, GetDpiForWindow(hWnd), 96);
+        }
+    }
+
     if ((uFlags & (SWP_NOSIZE | SWP_NOMOVE)) != (SWP_NOSIZE | SWP_NOMOVE)) {
         // SearchHost is being moved by explorer.exe, then the size is adjusted
-        // by SearchHost itself. Make SearchHost adjust the position too.
-        if (g_target == Target::SearchHost) {
+        // by SearchHost itself. Make SearchHost adjust the position too. A
+        // similar workaround is needed for ShellExperienceHost.
+        if (g_target == Target::SearchHost ||
+            g_target == Target::ShellExperienceHost) {
             uFlags &= ~SWP_NOMOVE;
         }
 
@@ -1671,22 +1699,24 @@ BOOL WINAPI SetWindowPos_Hook(HWND hWnd,
             GetWindowRect(hWnd, &rc);
             width = rc.right - rc.left;
             height = rc.bottom - rc.top;
-            AdjustStartMenuSize(&width, &height);
+            AdjustCoreWindowSize(&width, &height);
         } else {
-            AdjustStartMenuSize(&cx, &cy);
+            AdjustCoreWindowSize(&cx, &cy);
             width = cx;
             height = cy;
         }
 
         if (!(uFlags & SWP_NOMOVE)) {
-            AdjustStartMenuPos(&X, &Y, width, height);
+            AdjustCoreWindowPos(&X, &Y, width, height);
         }
     }
+
+    X += extraXAdjustment;
 
     return SetWindowPos_Original(hWnd, hWndInsertAfter, X, Y, cx, cy, uFlags);
 }
 
-}  // namespace StartMenu
+}  // namespace CoreWindowUI
 
 void LoadSettings() {
     g_settings.taskbarWidth = Wh_GetIntSetting(L"TaskbarWidth");
@@ -2010,6 +2040,9 @@ BOOL Wh_ModInit() {
                     g_target = Target::StartMenu;
                 } else if (_wcsicmp(moduleFileName, L"SearchHost.exe") == 0) {
                     g_target = Target::SearchHost;
+                } else if (_wcsicmp(moduleFileName,
+                                    L"ShellExperienceHost.exe") == 0) {
+                    g_target = Target::ShellExperienceHost;
                 }
             } else {
                 Wh_Log(L"GetModuleFileName returned an unsupported path");
@@ -2017,30 +2050,33 @@ BOOL Wh_ModInit() {
             break;
     }
 
-    if (g_target == Target::StartMenu || g_target == Target::SearchHost) {
-        HMODULE user32Module = LoadLibrary(L"user32.dll");
-        if (user32Module) {
-            void* pCreateWindowInBand =
-                (void*)GetProcAddress(user32Module, "CreateWindowInBand");
-            if (pCreateWindowInBand) {
-                Wh_SetFunctionHook(
-                    pCreateWindowInBand,
-                    (void*)StartMenu::CreateWindowInBand_Hook,
-                    (void**)&StartMenu::CreateWindowInBand_Original);
-            }
+    if (g_target == Target::StartMenu || g_target == Target::SearchHost ||
+        g_target == Target::ShellExperienceHost) {
+        if (g_target == Target::StartMenu || g_target == Target::SearchHost) {
+            HMODULE user32Module = LoadLibrary(L"user32.dll");
+            if (user32Module) {
+                void* pCreateWindowInBand =
+                    (void*)GetProcAddress(user32Module, "CreateWindowInBand");
+                if (pCreateWindowInBand) {
+                    Wh_SetFunctionHook(
+                        pCreateWindowInBand,
+                        (void*)CoreWindowUI::CreateWindowInBand_Hook,
+                        (void**)&CoreWindowUI::CreateWindowInBand_Original);
+                }
 
-            void* pCreateWindowInBandEx =
-                (void*)GetProcAddress(user32Module, "CreateWindowInBandEx");
-            if (pCreateWindowInBandEx) {
-                Wh_SetFunctionHook(
-                    pCreateWindowInBandEx,
-                    (void*)StartMenu::CreateWindowInBandEx_Hook,
-                    (void**)&StartMenu::CreateWindowInBandEx_Original);
+                void* pCreateWindowInBandEx =
+                    (void*)GetProcAddress(user32Module, "CreateWindowInBandEx");
+                if (pCreateWindowInBandEx) {
+                    Wh_SetFunctionHook(
+                        pCreateWindowInBandEx,
+                        (void*)CoreWindowUI::CreateWindowInBandEx_Hook,
+                        (void**)&CoreWindowUI::CreateWindowInBandEx_Original);
+                }
             }
         }
 
         Wh_SetFunctionHook((void*)SetWindowPos,
-                           (void*)StartMenu::SetWindowPos_Hook,
+                           (void*)CoreWindowUI::SetWindowPos_Hook,
                            (void**)&SetWindowPos_Original);
         return TRUE;
     }
@@ -2066,8 +2102,9 @@ void Wh_ModAfterInit() {
     if (g_target == Target::Explorer) {
         ApplySettings();
     } else if (g_target == Target::StartMenu ||
-               g_target == Target::SearchHost) {
-        StartMenu::ApplySettings();
+               g_target == Target::SearchHost ||
+               g_target == Target::ShellExperienceHost) {
+        CoreWindowUI::ApplySettings();
     }
 }
 
@@ -2083,8 +2120,9 @@ void Wh_ModBeforeUninit() {
         // update the layout.
         Sleep(400);
     } else if (g_target == Target::StartMenu ||
-               g_target == Target::SearchHost) {
-        StartMenu::ApplySettings();
+               g_target == Target::SearchHost ||
+               g_target == Target::ShellExperienceHost) {
+        CoreWindowUI::ApplySettings();
     }
 }
 
@@ -2104,7 +2142,8 @@ void Wh_ModSettingsChanged() {
     if (g_target == Target::Explorer) {
         ApplySettings(/*waitForApply=*/false);
     } else if (g_target == Target::StartMenu ||
-               g_target == Target::SearchHost) {
-        StartMenu::ApplySettings();
+               g_target == Target::SearchHost ||
+               g_target == Target::ShellExperienceHost) {
+        CoreWindowUI::ApplySettings();
     }
 }
