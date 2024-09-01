@@ -1742,8 +1742,9 @@ BOOL WINAPI SetWindowPos_Hook(HWND hWnd,
                                      uFlags);
     };
 
+    DWORD threadId = 0;
     DWORD processId = 0;
-    if (!hWnd || !GetWindowThreadProcessId(hWnd, &processId) ||
+    if (!hWnd || !(threadId = GetWindowThreadProcessId(hWnd, &processId)) ||
         processId != GetCurrentProcessId()) {
         return original();
     }
@@ -1759,14 +1760,24 @@ BOOL WINAPI SetWindowPos_Hook(HWND hWnd,
 
     Wh_Log(L"%08X %08X", (DWORD)(ULONG_PTR)hWnd, uFlags);
 
+    if ((uFlags & (SWP_NOSIZE | SWP_NOMOVE)) == (SWP_NOSIZE | SWP_NOMOVE)) {
+        return original();
+    }
+
     int extraXAdjustment = 0;
 
     if (g_target == Target::ShellExperienceHost) {
+        HANDLE thread =
+            OpenThread(THREAD_QUERY_LIMITED_INFORMATION, FALSE, threadId);
+        if (!thread) {
+            return original();
+        }
+
         PWSTR threadDescription;
-        HRESULT hr =
-            pGetThreadDescription
-                ? pGetThreadDescription(GetCurrentThread(), &threadDescription)
-                : E_FAIL;
+        HRESULT hr = pGetThreadDescription
+                         ? pGetThreadDescription(thread, &threadDescription)
+                         : E_FAIL;
+        CloseHandle(thread);
         if (FAILED(hr)) {
             return original();
         }
@@ -1786,34 +1797,32 @@ BOOL WINAPI SetWindowPos_Hook(HWND hWnd,
         }
     }
 
-    if ((uFlags & (SWP_NOSIZE | SWP_NOMOVE)) != (SWP_NOSIZE | SWP_NOMOVE)) {
-        RECT rc;
-        GetWindowRect(hWnd, &rc);
+    RECT rc{};
+    GetWindowRect(hWnd, &rc);
 
-        // SearchHost is being moved by explorer.exe, then the size is adjusted
-        // by SearchHost itself. Make SearchHost adjust the position too. A
-        // similar workaround is needed for other windows.
-        if (uFlags & SWP_NOMOVE) {
-            uFlags &= ~SWP_NOMOVE;
-            X = rc.left;
-            Y = rc.top;
-        }
+    // SearchHost is being moved by explorer.exe, then the size is adjusted
+    // by SearchHost itself. Make SearchHost adjust the position too. A
+    // similar workaround is needed for other windows.
+    if (uFlags & SWP_NOMOVE) {
+        uFlags &= ~SWP_NOMOVE;
+        X = rc.left;
+        Y = rc.top;
+    }
 
-        int width;
-        int height;
-        if (uFlags & SWP_NOSIZE) {
-            width = rc.right - rc.left;
-            height = rc.bottom - rc.top;
-            AdjustCoreWindowSize(X, Y, &width, &height);
-        } else {
-            AdjustCoreWindowSize(X, Y, &cx, &cy);
-            width = cx;
-            height = cy;
-        }
+    int width;
+    int height;
+    if (uFlags & SWP_NOSIZE) {
+        width = rc.right - rc.left;
+        height = rc.bottom - rc.top;
+        AdjustCoreWindowSize(X, Y, &width, &height);
+    } else {
+        AdjustCoreWindowSize(X, Y, &cx, &cy);
+        width = cx;
+        height = cy;
+    }
 
-        if (!(uFlags & SWP_NOMOVE)) {
-            AdjustCoreWindowPos(&X, &Y, width, height);
-        }
+    if (!(uFlags & SWP_NOMOVE)) {
+        AdjustCoreWindowPos(&X, &Y, width, height);
     }
 
     X += extraXAdjustment;
