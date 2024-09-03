@@ -994,6 +994,10 @@ void HandleUnsuffixedInstanceOnTaskDestroyed(PVOID taskList_TaskListUI,
     SwapTaskGroupIds(taskGroup, taskGroupMatched.get());
 
     if (taskGroupIsPinned) {
+        // The flags argument is absent in newer Windows versions. According to
+        // the calling convention, it just gets ignored.
+        CTaskListWnd_HandleTaskGroupUnpinned_Original(taskList_TaskListUI,
+                                                      taskGroup, 0);
         CTaskListWnd_HandleTaskGroupPinned_Original(taskList_TaskListUI,
                                                     taskGroupMatched.get());
     }
