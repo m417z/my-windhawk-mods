@@ -41,6 +41,10 @@ mod and can be selected in the settings:
 \
 TranslucentShell](https://github.com/ramensoftware/windows-11-notification-center-styling-guide/blob/main/Themes/TranslucentShell/README.md)
 
+[![Unified](https://raw.githubusercontent.com/ramensoftware/windows-11-notification-center-styling-guide/main/Themes/Unified/screenshot-small.png)
+\
+Unified](https://github.com/ramensoftware/windows-11-notification-center-styling-guide/blob/main/Themes/Unified/README.md)
+
 ## Examples
 
 ### Hide the focus assist section
@@ -140,6 +144,7 @@ code from the **TranslucentTB** project.
   $options:
   - "": None
   - TranslucentShell: TranslucentShell
+  - Unified: Unified
 - controlStyles:
   - - target: ""
       $name: Target
@@ -236,6 +241,31 @@ const Theme g_themeTranslucentShell = {{
         L"FocusVisualPrimaryThickness=0,0,0,0"}},
     ThemeTargetStyles{L"ActionCenter.FlexibleItemView", {
         L"CornerRadius=15"}},
+}};
+
+const Theme g_themeUnified = {{
+    ThemeTargetStyles{L"ActionCenter.FocusSessionControl", {
+        L"Height=0"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Grid#ControlCenterRegion", {
+        L"CornerRadius=0"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Grid#CalendarCenterGrid", {
+        L"CornerRadius=0",
+        L"Margin=0,0,0,12",
+        L"BorderThickness=1,0,1,1"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Grid#NotificationCenterGrid", {
+        L"CornerRadius=0",
+        L"BorderThickness=1,1,1,0"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.CalendarViewDayItem", {
+        L"CornerRadius=0",
+        L"Margin=1,1,1,1"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.CalendarViewDayItem > Windows.UI.Xaml.Controls.Border", {
+        L"CornerRadius=3"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Grid#MediaTransportControlsRegion", {
+        L"CornerRadius=0",
+        L"BorderThickness=1,1,1,0",
+        L"Margin=0,0,0,0"}},
+    ThemeTargetStyles{L"QuickActions.ControlCenter.FrameWithContentChanged#L2Frame", {
+        L"CornerRadius=0"}},
 }};
 
 // clang-format on
@@ -1602,6 +1632,8 @@ void ProcessAllStylesFromSettings() {
     const Theme* theme = nullptr;
     if (wcscmp(themeName, L"TranslucentShell") == 0) {
         theme = &g_themeTranslucentShell;
+    } else if (wcscmp(themeName, L"Unified") == 0) {
+        theme = &g_themeUnified;
     }
     Wh_FreeStringSetting(themeName);
 
