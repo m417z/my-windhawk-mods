@@ -2,7 +2,7 @@
 // @id              windows-11-notification-center-styler
 // @name            Windows 11 Notification Center Styler
 // @description     Customize the Notification Center with themes contributed by others or create your own
-// @version         1.1.1
+// @version         1.1.2
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
@@ -44,36 +44,6 @@ TranslucentShell](https://github.com/ramensoftware/windows-11-notification-cente
 [![Unified](https://raw.githubusercontent.com/ramensoftware/windows-11-notification-center-styling-guide/main/Themes/Unified/screenshot-small.png)
 \
 Unified](https://github.com/ramensoftware/windows-11-notification-center-styling-guide/blob/main/Themes/Unified/README.md)
-
-## Examples
-
-### Hide the focus assist section
-**Target**: `ActionCenter.FocusSessionControl` \
-**Style**: `Height=0`
-
-### Square the corners of the notification center
-**Target**: `Windows.UI.Xaml.Controls.Grid#NotificationCenterGrid` \
-**Style**: `CornerRadius=0`
-
-### Square the corners of the calendar
-**Target**: `Windows.UI.Xaml.Controls.Grid#CalendarCenterGrid` \
-**Style**: `CornerRadius=0`
-
-### Square the corners of the quick action center
-**Target**: `Windows.UI.Xaml.Controls.Grid#ControlCenterRegion` \
-**Style**: `CornerRadius=0`
-
-### Calendar and notification titlebars: titles on the right, buttons on the left
-**Target**: `Windows.UI.Xaml.Controls.Grid#RootContent` \
-**Style**: `FlowDirection=1`
-
-### Add accelerator key (ALT+X) to clear all notifications
-**Target**: `Windows.UI.Xaml.Controls.Button#ClearAll` \
-**Style**: `AccessKey=x`
-
-### Add accelerator key (ALT+E) to expand/collapse the calendar
-**Target**: `Windows.UI.Xaml.Controls.Button#ExpandCollapseButton` \
-**Style**: `AccessKey=e`
 
 ## Advanced styling
 
@@ -119,6 +89,36 @@ property value, for example: `Fill:=`. In addition, a visual state can be
 specified as following: `Style@VisualState=Value`, in which case the style will
 only apply when the visual state group specified in the target matches the
 specified visual state.
+
+A couple of practical examples:
+
+#### Hide the focus assist section
+**Target**: `ActionCenter.FocusSessionControl` \
+**Style**: `Height=0`
+
+#### Square the corners of the notification center
+**Target**: `Windows.UI.Xaml.Controls.Grid#NotificationCenterGrid` \
+**Style**: `CornerRadius=0`
+
+#### Square the corners of the calendar
+**Target**: `Windows.UI.Xaml.Controls.Grid#CalendarCenterGrid` \
+**Style**: `CornerRadius=0`
+
+#### Square the corners of the quick action center
+**Target**: `Windows.UI.Xaml.Controls.Grid#ControlCenterRegion` \
+**Style**: `CornerRadius=0`
+
+#### Calendar and notification titlebars: titles on the right, buttons on the left
+**Target**: `Windows.UI.Xaml.Controls.Grid#RootContent` \
+**Style**: `FlowDirection=1`
+
+#### Add accelerator key (ALT+X) to clear all notifications
+**Target**: `Windows.UI.Xaml.Controls.Button#ClearAll` \
+**Style**: `AccessKey=x`
+
+#### Add accelerator key (ALT+E) to expand/collapse the calendar
+**Target**: `Windows.UI.Xaml.Controls.Button#ExpandCollapseButton` \
+**Style**: `AccessKey=e`
 
 ### Resource variables
 
