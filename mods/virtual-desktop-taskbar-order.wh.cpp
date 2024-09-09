@@ -555,7 +555,7 @@ VS_FIXEDFILEINFO* GetModuleVersionInfo(HMODULE hModule, UINT* puPtrLen) {
     return (VS_FIXEDFILEINFO*)pFixedFileInfo;
 }
 
-WinVersion GetWindowsVersion() {
+WinVersion GetExplorerVersion() {
     VS_FIXEDFILEINFO* fixedFileInfo = GetModuleVersionInfo(nullptr, nullptr);
     if (!fixedFileInfo)
         return WinVersion::Unsupported;
@@ -943,7 +943,7 @@ bool HookSymbolsWithOnlineCacheFallback(HMODULE module,
 BOOL Wh_ModInit() {
     Wh_Log(L">");
 
-    g_winVersion = GetWindowsVersion();
+    g_winVersion = GetExplorerVersion();
     if (g_winVersion < WinVersion::Win11) {
         Wh_Log(L"Unsupported Windows version");
         return FALSE;

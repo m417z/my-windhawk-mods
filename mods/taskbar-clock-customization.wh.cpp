@@ -1824,7 +1824,7 @@ VS_FIXEDFILEINFO* GetModuleVersionInfo(HMODULE hModule, UINT* puPtrLen) {
     return (VS_FIXEDFILEINFO*)pFixedFileInfo;
 }
 
-WinVersion GetWindowsVersion() {
+WinVersion GetExplorerVersion() {
     VS_FIXEDFILEINFO* fixedFileInfo = GetModuleVersionInfo(nullptr, nullptr);
     if (!fixedFileInfo)
         return WinVersion::Unsupported;
@@ -2340,7 +2340,7 @@ BOOL Wh_ModInit() {
 
     LoadSettings();
 
-    g_winVersion = GetWindowsVersion();
+    g_winVersion = GetExplorerVersion();
     if (g_winVersion == WinVersion::Unsupported) {
         Wh_Log(L"Unsupported Windows version");
         return FALSE;
