@@ -250,6 +250,57 @@ void WINAPI TrayUI_GetMinSize_Hook(void* pThis, HMONITOR monitor, SIZE* size) {
     }
 }
 
+using CIconLoadingFunctions_GetClassLongPtrW_t = ULONG_PTR(WINAPI*)(void* pThis,
+                                                                    HWND hWnd,
+                                                                    int nIndex);
+CIconLoadingFunctions_GetClassLongPtrW_t
+    CIconLoadingFunctions_GetClassLongPtrW_Original;
+ULONG_PTR WINAPI CIconLoadingFunctions_GetClassLongPtrW_Hook(void* pThis,
+                                                             HWND hWnd,
+                                                             int nIndex) {
+    Wh_Log(L">");
+
+    if (!g_unloading && nIndex == GCLP_HICON && g_settings.iconSize <= 16) {
+        nIndex = GCLP_HICONSM;
+    }
+
+    ULONG_PTR ret =
+        CIconLoadingFunctions_GetClassLongPtrW_Original(pThis, hWnd, nIndex);
+
+    return ret;
+}
+
+using CIconLoadingFunctions_SendMessageCallbackW_t =
+    BOOL(WINAPI*)(void* pThis,
+                  HWND hWnd,
+                  UINT Msg,
+                  WPARAM wParam,
+                  LPARAM lParam,
+                  SENDASYNCPROC lpResultCallBack,
+                  ULONG_PTR dwData);
+CIconLoadingFunctions_SendMessageCallbackW_t
+    CIconLoadingFunctions_SendMessageCallbackW_Original;
+BOOL WINAPI
+CIconLoadingFunctions_SendMessageCallbackW_Hook(void* pThis,
+                                                HWND hWnd,
+                                                UINT Msg,
+                                                WPARAM wParam,
+                                                LPARAM lParam,
+                                                SENDASYNCPROC lpResultCallBack,
+                                                ULONG_PTR dwData) {
+    Wh_Log(L">");
+
+    if (!g_unloading && Msg == WM_GETICON && wParam == ICON_BIG &&
+        g_settings.iconSize <= 16) {
+        wParam = ICON_SMALL2;
+    }
+
+    BOOL ret = CIconLoadingFunctions_SendMessageCallbackW_Original(
+        pThis, hWnd, Msg, wParam, lParam, lpResultCallBack, dwData);
+
+    return ret;
+}
+
 using TrayUI__StuckTrayChange_t = void(WINAPI*)(void* pThis);
 TrayUI__StuckTrayChange_t TrayUI__StuckTrayChange_Original;
 
@@ -1463,6 +1514,22 @@ bool HookTaskbarDllSymbols() {
             (void**)&TrayUI_GetMinSize_Original,
             (void*)TrayUI_GetMinSize_Hook,
             true,
+        },
+        {
+            {
+                LR"(public: virtual unsigned __int64 __cdecl CIconLoadingFunctions::GetClassLongPtrW(struct HWND__ *,int))",
+                LR"(public: virtual unsigned __int64 __cdecl CIconLoadingFunctions::GetClassLongPtrW(struct HWND__ * __ptr64,int) __ptr64)",
+            },
+            (void**)&CIconLoadingFunctions_GetClassLongPtrW_Original,
+            (void*)CIconLoadingFunctions_GetClassLongPtrW_Hook,
+        },
+        {
+            {
+                LR"(public: virtual int __cdecl CIconLoadingFunctions::SendMessageCallbackW(struct HWND__ *,unsigned int,unsigned __int64,__int64,void (__cdecl*)(struct HWND__ *,unsigned int,unsigned __int64,__int64),unsigned __int64))",
+                LR"(public: virtual int __cdecl CIconLoadingFunctions::SendMessageCallbackW(struct HWND__ * __ptr64,unsigned int,unsigned __int64,__int64,void (__cdecl*)(struct HWND__ * __ptr64,unsigned int,unsigned __int64,__int64),unsigned __int64) __ptr64)",
+            },
+            (void**)&CIconLoadingFunctions_SendMessageCallbackW_Original,
+            (void*)CIconLoadingFunctions_SendMessageCallbackW_Hook,
         },
         {
             {
