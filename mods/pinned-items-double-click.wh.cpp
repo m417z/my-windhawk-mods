@@ -102,7 +102,7 @@ void WINAPI CTaskListWnd__HandleClick_Hook(PVOID pThis,
     }
 
     // Group types:
-    // 1 - Single item (or multiple uncombined items - Win10)
+    // 1 - Single item or multiple uncombined items
     // 2 - Pinned item
     // 3 - Multiple combined items
     int groupType = CTaskBtnGroup_GetGroupType_Original(taskBtnGroup);
