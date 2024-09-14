@@ -110,6 +110,7 @@ bool g_windowRgnChanging;
 bool g_inSystemTrayController_UpdateFrameSize;
 bool g_inAugmentedEntryPointButton_UpdateButtonPadding;
 bool g_inCTaskListThumbnailWnd_DisplayUI;
+bool g_inCTaskListThumbnailWnd_LayoutThumbnails;
 bool g_inChevronSystemTrayIconDataModel2_OnIconClicked;
 
 std::vector<winrt::weak_ref<XamlRoot>> g_notifyIconsUpdated;
@@ -648,6 +649,19 @@ void* WINAPI CTaskListThumbnailWnd_DisplayUI_Hook(void* pThis,
     g_inCTaskListThumbnailWnd_DisplayUI = false;
 
     return ret;
+}
+
+using CTaskListThumbnailWnd_LayoutThumbnails_t = void(WINAPI*)(void* pThis);
+CTaskListThumbnailWnd_LayoutThumbnails_t
+    CTaskListThumbnailWnd_LayoutThumbnails_Original;
+void WINAPI CTaskListThumbnailWnd_LayoutThumbnails_Hook(void* pThis) {
+    Wh_Log(L">");
+
+    g_inCTaskListThumbnailWnd_LayoutThumbnails = true;
+
+    CTaskListThumbnailWnd_LayoutThumbnails_Original(pThis);
+
+    g_inCTaskListThumbnailWnd_LayoutThumbnails = false;
 }
 
 using ResourceDictionary_Lookup_t = winrt::Windows::Foundation::IInspectable*(
@@ -1762,7 +1776,10 @@ BOOL WINAPI GetWindowRect_Hook(HWND hWnd, LPRECT lpRect) {
     BOOL ret = GetWindowRect_Original(hWnd, lpRect);
     if (ret && !g_unloading && hWnd == GetTaskbarWnd()) {
         if (GetCurrentThreadId() == GetWindowThreadProcessId(hWnd, nullptr) &&
-            g_inCTaskListThumbnailWnd_DisplayUI) {
+            (g_inCTaskListThumbnailWnd_DisplayUI ||
+             g_inCTaskListThumbnailWnd_LayoutThumbnails)) {
+            Wh_Log(L"Adjusting taskbar rect for TaskListThumbnailWnd");
+
             // Fix thumbnails always displaying as list.
             HMONITOR monitor =
                 MonitorFromRect(lpRect, MONITOR_DEFAULTTONEAREST);
@@ -1797,6 +1814,12 @@ BOOL WINAPI SetWindowPos_Hook(HWND hWnd,
                                      uFlags);
     };
 
+    if (uFlags & (SWP_NOSIZE | SWP_NOMOVE) ||
+        (!g_inCTaskListThumbnailWnd_DisplayUI &&
+         !g_inCTaskListThumbnailWnd_LayoutThumbnails)) {
+        return original();
+    }
+
     WCHAR szClassName[32];
     if (GetClassName(hWnd, szClassName, ARRAYSIZE(szClassName)) == 0) {
         return original();
@@ -1806,28 +1829,41 @@ BOOL WINAPI SetWindowPos_Hook(HWND hWnd,
         return original();
     }
 
-    DWORD messagePos = GetMessagePos();
-    POINT pt{
-        GET_X_LPARAM(messagePos),
-        GET_Y_LPARAM(messagePos),
-    };
+    RECT rc{};
+    if (g_inCTaskListThumbnailWnd_DisplayUI) {
+        DWORD messagePos = GetMessagePos();
+        POINT pt{
+            GET_X_LPARAM(messagePos),
+            GET_Y_LPARAM(messagePos),
+        };
 
-    const int distance = MulDiv(12, GetDpiForWindow(hWnd), 96);
+        const int distance = MulDiv(12, GetDpiForWindow(hWnd), 96);
 
-    SIZE sz{
-        .cx = cx + distance * 2,
-        .cy = cy + distance * 2,
-    };
+        SIZE sz{
+            .cx = cx + distance * 2,
+            .cy = cy + distance * 2,
+        };
 
-    RECT rc;
-    CalculatePopupWindowPosition(
-        &pt, &sz, TPM_LEFTALIGN | TPM_VCENTERALIGN | TPM_WORKAREA, nullptr,
-        &rc);
+        CalculatePopupWindowPosition(
+            &pt, &sz,
+            (g_inCTaskListThumbnailWnd_DisplayUI ? TPM_LEFTALIGN
+                                                 : TPM_CENTERALIGN) |
+                TPM_VCENTERALIGN | TPM_WORKAREA,
+            nullptr, &rc);
 
-    rc.left += distance;
-    rc.right -= distance;
-    rc.top += distance;
-    rc.bottom -= distance;
+        rc.left += distance;
+        rc.right -= distance;
+        rc.top += distance;
+        rc.bottom -= distance;
+    } else {
+        // Keep current position.
+        GetWindowRect_Original(hWnd, &rc);
+        rc.right = rc.left + cx;
+        rc.bottom = rc.top + cy;
+    }
+
+    Wh_Log(L"Adjusting pos for TaskListThumbnailWnd: %dx%d, %dx%d", rc.left,
+           rc.right, rc.top, rc.bottom);
 
     return SetWindowPos_Original(hWnd, hWndInsertAfter, rc.left, rc.top,
                                  rc.right - rc.left, rc.bottom - rc.top,
@@ -2468,6 +2504,13 @@ bool HookTaskbarDllSymbols() {
             },
             (void**)&CTaskListThumbnailWnd_DisplayUI_Original,
             (void*)CTaskListThumbnailWnd_DisplayUI_Hook,
+        },
+        {
+            {
+                LR"(public: virtual void __cdecl CTaskListThumbnailWnd::LayoutThumbnails(void))",
+            },
+            (void**)&CTaskListThumbnailWnd_LayoutThumbnails_Original,
+            (void*)CTaskListThumbnailWnd_LayoutThumbnails_Hook,
         },
     };
 
