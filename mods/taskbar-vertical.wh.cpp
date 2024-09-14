@@ -953,6 +953,134 @@ int WINAPI TaskbarFrame_MeasureOverride_Hook(
     return ret;
 }
 
+using AugmentedEntryPointButton_UpdateButtonPadding_t =
+    void(WINAPI*)(void* pThis);
+AugmentedEntryPointButton_UpdateButtonPadding_t
+    AugmentedEntryPointButton_UpdateButtonPadding_Original;
+void WINAPI AugmentedEntryPointButton_UpdateButtonPadding_Hook(void* pThis) {
+    Wh_Log(L">");
+
+    g_inAugmentedEntryPointButton_UpdateButtonPadding = true;
+
+    AugmentedEntryPointButton_UpdateButtonPadding_Original(pThis);
+
+    g_inAugmentedEntryPointButton_UpdateButtonPadding = false;
+}
+
+using RepeatButton_Width_t = void(WINAPI*)(void* pThis, double width);
+RepeatButton_Width_t RepeatButton_Width_Original;
+void WINAPI RepeatButton_Width_Hook(void* pThis, double width) {
+    Wh_Log(L">");
+
+    RepeatButton_Width_Original(pThis, width);
+
+    if (!g_inAugmentedEntryPointButton_UpdateButtonPadding) {
+        return;
+    }
+
+    FrameworkElement button = nullptr;
+    (*(IUnknown**)pThis)
+        ->QueryInterface(winrt::guid_of<FrameworkElement>(),
+                         winrt::put_abi(button));
+    if (!button) {
+        return;
+    }
+
+    FrameworkElement augmentedEntryPointContentGrid =
+        FindChildByName(button, L"AugmentedEntryPointContentGrid");
+    if (!augmentedEntryPointContentGrid) {
+        return;
+    }
+
+    EnumChildElements(augmentedEntryPointContentGrid, [](FrameworkElement
+                                                             child) {
+        if (winrt::get_class_name(child) != L"Windows.UI.Xaml.Controls.Grid") {
+            return false;
+        }
+
+        FrameworkElement panelGrid =
+            FindChildByClassName(child, L"Windows.UI.Xaml.Controls.Grid");
+        if (!panelGrid) {
+            return false;
+        }
+
+        FrameworkElement panel = FindChildByClassName(
+            panelGrid, L"AdaptiveCards.Rendering.Uwp.WholeItemsPanel");
+        if (!panel) {
+            return false;
+        }
+
+        Wh_Log(L"Processing %f x %f widget", panelGrid.Width(),
+               panelGrid.Height());
+
+        bool widePanel = panelGrid.Width() > panelGrid.Height();
+        if (!widePanel) {
+            double angle = g_unloading ? 0 : -90;
+
+            Wh_Log(L"Setting angle=%f for child", angle);
+
+            Media::RotateTransform transform;
+            transform.Angle(angle);
+            child.RenderTransform(transform);
+
+            float origin = g_unloading ? 0 : 0.5;
+            child.RenderTransformOrigin({origin, origin});
+
+            return false;
+        }
+
+        FrameworkElement tickerGrid = panel;
+        if ((tickerGrid = FindChildByClassName(
+                 tickerGrid, L"Windows.UI.Xaml.Controls.Border")) &&
+            (tickerGrid = FindChildByClassName(
+                 tickerGrid, L"AdaptiveCards.Rendering.Uwp.WholeItemsPanel")) &&
+            (tickerGrid = FindChildByClassName(
+                 tickerGrid, L"Windows.UI.Xaml.Controls.Grid"))) {
+            // OK.
+        } else {
+            return false;
+        }
+
+        FrameworkElement badgeSmall = tickerGrid;
+        if ((badgeSmall = FindChildByName(badgeSmall, L"SmallTicker1")) &&
+            (badgeSmall = FindChildByClassName(
+                 badgeSmall, L"AdaptiveCards.Rendering.Uwp.WholeItemsPanel")) &&
+            (badgeSmall =
+                 FindChildByName(badgeSmall, L"BadgeAnchorSmallTicker"))) {
+            double angle = g_unloading ? 0 : -90;
+
+            Wh_Log(L"Setting angle=%f for small badge", angle);
+
+            Media::RotateTransform transform;
+            transform.Angle(angle);
+            badgeSmall.RenderTransform(transform);
+
+            float origin = g_unloading ? 0 : 0.5;
+            badgeSmall.RenderTransformOrigin({origin, origin});
+        }
+
+        FrameworkElement badgeLarge = tickerGrid;
+        if ((badgeLarge = FindChildByName(badgeLarge, L"LargeTicker1")) &&
+            (badgeLarge = FindChildByClassName(
+                 badgeLarge, L"AdaptiveCards.Rendering.Uwp.WholeItemsPanel")) &&
+            (badgeLarge =
+                 FindChildByName(badgeLarge, L"BadgeAnchorLargeTicker"))) {
+            double angle = g_unloading ? 0 : -90;
+
+            Wh_Log(L"Setting angle=%f for small badge", angle);
+
+            Media::RotateTransform transform;
+            transform.Angle(angle);
+            badgeLarge.RenderTransform(transform);
+
+            float origin = g_unloading ? 0 : 0.5;
+            badgeLarge.RenderTransformOrigin({origin, origin});
+        }
+
+        return false;
+    });
+}
+
 void ApplyNotifyIconViewStyle(FrameworkElement notifyIconViewElement) {
     FrameworkElement child = notifyIconViewElement;
     if ((child = FindChildByName(child, L"ContainerGrid")) &&
@@ -1582,6 +1710,35 @@ void WINAPI OverflowXamlIslandManager_Show_Hook(void* pThis,
     OverflowXamlIslandManager_Show_Original(pThis, point, param2);
 }
 
+using CopilotIcon_UpdateVisualStates_t = void(WINAPI*)(void* pThis);
+CopilotIcon_UpdateVisualStates_t CopilotIcon_UpdateVisualStates_Original;
+void WINAPI CopilotIcon_UpdateVisualStates_Hook(void* pThis) {
+    Wh_Log(L">");
+
+    CopilotIcon_UpdateVisualStates_Original(pThis);
+
+    FrameworkElement copilotIcon = nullptr;
+    ((IUnknown**)pThis)[1]->QueryInterface(winrt::guid_of<FrameworkElement>(),
+                                           winrt::put_abi(copilotIcon));
+    if (!copilotIcon) {
+        return;
+    }
+
+    FrameworkElement child = copilotIcon;
+    if ((child = FindChildByName(child, L"ContainerGrid")) &&
+        (child = FindChildByName(child, L"ContentPresenter")) &&
+        (child = FindChildByName(child, L"ContentGrid")) &&
+        (child = FindChildByName(child, L"LottieIcon"))) {
+        double angle = g_unloading ? 0 : -90;
+        Media::RotateTransform transform;
+        transform.Angle(angle);
+        child.RenderTransform(transform);
+
+        float origin = g_unloading ? 0 : 0.5;
+        child.RenderTransformOrigin({origin, origin});
+    }
+}
+
 using SHAppBarMessage_t = decltype(&SHAppBarMessage);
 SHAppBarMessage_t SHAppBarMessage_Original;
 auto WINAPI SHAppBarMessage_Hook(DWORD dwMessage, PAPPBARDATA pData) {
@@ -2148,6 +2305,22 @@ bool HookTaskbarViewDllSymbols(HMODULE module) {
             },
             {
                 {
+                    LR"(protected: virtual void __cdecl winrt::Taskbar::implementation::AugmentedEntryPointButton::UpdateButtonPadding(void))",
+                    LR"(protected: virtual void __cdecl winrt::Taskbar::implementation::AugmentedEntryPointButton::UpdateButtonPadding(void) __ptr64)",
+                },
+                (void**)&AugmentedEntryPointButton_UpdateButtonPadding_Original,
+                (void*)AugmentedEntryPointButton_UpdateButtonPadding_Hook,
+            },
+            {
+                {
+                    LR"(public: __cdecl winrt::impl::consume_Windows_UI_Xaml_IFrameworkElement<struct winrt::Windows::UI::Xaml::Controls::Primitives::RepeatButton>::Width(double)const )",
+                    LR"(public: __cdecl winrt::impl::consume_Windows_UI_Xaml_IFrameworkElement<struct winrt::Windows::UI::Xaml::Controls::Primitives::RepeatButton>::Width(double)const __ptr64)",
+                },
+                (void**)&RepeatButton_Width_Original,
+                (void*)RepeatButton_Width_Hook,
+            },
+            {
+                {
                     LR"(public: __cdecl winrt::SystemTray::implementation::IconView::IconView(void))",
                 },
                 (void**)&IconView_IconView_Original,
@@ -2194,6 +2367,13 @@ bool HookTaskbarViewDllSymbols(HMODULE module) {
                 },
                 (void**)&OverflowXamlIslandManager_Show_Original,
                 (void*)OverflowXamlIslandManager_Show_Hook,
+            },
+            {
+                {
+                    LR"(private: void __cdecl winrt::SystemTray::implementation::CopilotIcon::UpdateVisualStates(void))",
+                },
+                (void**)&CopilotIcon_UpdateVisualStates_Original,
+                (void*)CopilotIcon_UpdateVisualStates_Hook,
             },
         };
 
