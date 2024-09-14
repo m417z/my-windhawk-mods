@@ -50,10 +50,20 @@ Thank you for contributing and allowing all Windhawk users to enjoy it!
 
 // ==WindhawkModSettings==
 /*
+- taskbarLocation: left
+  $name: Taskbar location
+  $options:
+  - left: Left
+  - right: Right
 - TaskbarWidth: 80
   $name: Taskbar width
   $description: >-
     The width, in pixels, of the taskbar
+- startMenuWidth: 0
+  $name: Start menu width
+  $description: >-
+    Set to zero to use the system default width, set to a custom value if using
+    a customized start menu, e.g. with the Windows 11 Start Menu Styler mod
 */
 // ==/WindhawkModSettings==
 
@@ -85,8 +95,15 @@ using namespace winrt::Windows::UI::Xaml;
 #define SPI_SETLOGICALDPIOVERRIDE 0x009F
 #endif
 
+enum class TaskbarLocation {
+    left,
+    right,
+};
+
 struct {
+    TaskbarLocation taskbarLocation;
     int taskbarWidth;
+    int startMenuWidth;
 } g_settings;
 
 enum class Target {
@@ -368,17 +385,30 @@ DWORD WINAPI TrayUI_GetDockedRect_Hook(void* pThis, RECT* rect, BOOL param2) {
     RECT monitorRect;
     GetMonitorRect(monitor, &monitorRect);
 
-    UINT monitorDpiX = 96;
-    UINT monitorDpiY = 96;
-    GetDpiForMonitor(monitor, MDT_DEFAULT, &monitorDpiX, &monitorDpiY);
-    int taskbarOriginalHeightScaled =
-        MulDiv(g_originalTaskbarHeight, monitorDpiY, 96);
-
     if (!g_unloading) {
         rect->top = monitorRect.top;
-        rect->right = rect->left + (rect->bottom - rect->top);
+
+        switch (g_settings.taskbarLocation) {
+            case TaskbarLocation::left:
+                rect->left = monitorRect.left;
+                rect->right = rect->left + (rect->bottom - rect->top);
+                break;
+
+            case TaskbarLocation::right:
+                rect->right = monitorRect.right;
+                rect->left = rect->right - (rect->bottom - rect->top);
+                break;
+        }
     } else {
+        UINT monitorDpiX = 96;
+        UINT monitorDpiY = 96;
+        GetDpiForMonitor(monitor, MDT_DEFAULT, &monitorDpiX, &monitorDpiY);
+
+        int taskbarOriginalHeightScaled =
+            MulDiv(g_originalTaskbarHeight, monitorDpiY, 96);
+
         rect->top = rect->bottom - taskbarOriginalHeightScaled;
+        rect->left = monitorRect.left;
         rect->right = monitorRect.right;
     }
 
@@ -417,15 +447,30 @@ void WINAPI TrayUI_MakeStuckRect_Hook(void* pThis,
     UINT monitorDpiX = 96;
     UINT monitorDpiY = 96;
     GetDpiForMonitor(monitor, MDT_DEFAULT, &monitorDpiX, &monitorDpiY);
-    int taskbarWidthScaled = MulDiv(g_settings.taskbarWidth, monitorDpiX, 96);
-    int taskbarOriginalHeightScaled =
-        MulDiv(g_originalTaskbarHeight, monitorDpiY, 96);
 
     if (!g_unloading) {
+        int taskbarWidthScaled =
+            MulDiv(g_settings.taskbarWidth, monitorDpiX, 96);
+
         rect->top = monitorRect.top;
-        rect->right = rect->left + taskbarWidthScaled;
+
+        switch (g_settings.taskbarLocation) {
+            case TaskbarLocation::left:
+                rect->left = monitorRect.left;
+                rect->right = rect->left + taskbarWidthScaled;
+                break;
+
+            case TaskbarLocation::right:
+                rect->right = monitorRect.right;
+                rect->left = rect->right - taskbarWidthScaled;
+                break;
+        }
     } else {
+        int taskbarOriginalHeightScaled =
+            MulDiv(g_originalTaskbarHeight, monitorDpiY, 96);
+
         rect->top = rect->bottom - taskbarOriginalHeightScaled;
+        rect->left = monitorRect.left;
         rect->right = monitorRect.right;
     }
 }
@@ -443,7 +488,8 @@ LRESULT TaskbarWndProcPostProcess(HWND hWnd,
     // Calling CreateRectRgn has two reasons: To actually set the region, and to
     // post window size change events which cause element sizes and positions to
     // be recalculated.
-    auto updateWindowRgn = [](HWND hWnd, int width, int height) {
+    auto updateWindowRgn = [](HWND hWnd, int width, int height,
+                              int windowWidth) {
         // Avoid handling this recursively as SetWindowRgn triggers
         // WM_WINDOWPOSCHANGED again.
         if (g_windowRgnChanging) {
@@ -453,7 +499,18 @@ LRESULT TaskbarWndProcPostProcess(HWND hWnd,
         g_windowRgnChanging = true;
 
         if (!g_unloading) {
-            HRGN windowRegion = CreateRectRgn(0, 0, width, height);
+            HRGN windowRegion;
+            switch (g_settings.taskbarLocation) {
+                case TaskbarLocation::left:
+                    windowRegion = CreateRectRgn(0, 0, width, height);
+                    break;
+
+                case TaskbarLocation::right:
+                    windowRegion = CreateRectRgn(windowWidth - width, 0,
+                                                 windowWidth, height);
+                    break;
+            }
+
             if (windowRegion) {
                 SetWindowRgn(hWnd, windowRegion, TRUE);
             }
@@ -478,44 +535,76 @@ LRESULT TaskbarWndProcPostProcess(HWND hWnd,
                 GetMonitorRect(monitor, &monitorRect);
 
                 rect->top = monitorRect.top;
-                rect->right = rect->left + (rect->bottom - rect->top);
+
+                switch (g_settings.taskbarLocation) {
+                    case TaskbarLocation::left:
+                        rect->left = monitorRect.left;
+                        rect->right = rect->left + (rect->bottom - rect->top);
+                        break;
+
+                    case TaskbarLocation::right:
+                        rect->right = monitorRect.right;
+                        rect->left = rect->right - (rect->bottom - rect->top);
+                        break;
+                }
             }
 
             updateWindowRgn(
                 hWnd,
                 MulDiv(g_settings.taskbarWidth, GetDpiForWindow(hWnd), 96),
-                rect->bottom - rect->top);
+                rect->bottom - rect->top, rect->right - rect->left);
             break;
         }
 
         case WM_WINDOWPOSCHANGING: {
             auto* windowpos = (WINDOWPOS*)lParam;
-            if (!(windowpos->flags & SWP_NOSIZE)) {
-                Wh_Log(L"WM_WINDOWPOSCHANGING (no SWP_NOSIZE): %08X",
+            if ((windowpos->flags & (SWP_NOSIZE | SWP_NOMOVE)) !=
+                (SWP_NOSIZE | SWP_NOMOVE)) {
+                Wh_Log(L"WM_WINDOWPOSCHANGING (size or move): %08X",
                        (DWORD)(ULONG_PTR)hWnd);
 
                 if (!g_unloading) {
-                    windowpos->cx = windowpos->cy;
+                    if (!(windowpos->flags & SWP_NOSIZE)) {
+                        windowpos->cx = windowpos->cy;
+                    }
+
+                    if (!(windowpos->flags & SWP_NOMOVE) &&
+                        g_settings.taskbarLocation == TaskbarLocation::right) {
+                        RECT rect{
+                            .left = windowpos->x,
+                            .top = windowpos->y,
+                            .right = windowpos->x + windowpos->cx,
+                            .bottom = windowpos->y + windowpos->cy,
+                        };
+                        HMONITOR monitor =
+                            MonitorFromRect(&rect, MONITOR_DEFAULTTONEAREST);
+
+                        RECT monitorRect;
+                        GetMonitorRect(monitor, &monitorRect);
+
+                        windowpos->x = monitorRect.right - windowpos->cx;
+                    }
                 }
 
                 updateWindowRgn(
                     hWnd,
                     MulDiv(g_settings.taskbarWidth, GetDpiForWindow(hWnd), 96),
-                    windowpos->cy);
+                    windowpos->cy, windowpos->cx);
             }
             break;
         }
 
         case WM_WINDOWPOSCHANGED: {
             auto* windowpos = (WINDOWPOS*)lParam;
-            if (!(windowpos->flags & SWP_NOSIZE)) {
-                Wh_Log(L"WM_WINDOWPOSCHANGED (no SWP_NOSIZE): %08X",
+            if ((windowpos->flags & (SWP_NOSIZE | SWP_NOMOVE)) !=
+                (SWP_NOSIZE | SWP_NOMOVE)) {
+                Wh_Log(L"WM_WINDOWPOSCHANGED (size or move): %08X",
                        (DWORD)(ULONG_PTR)hWnd);
 
                 updateWindowRgn(
                     hWnd,
                     MulDiv(g_settings.taskbarWidth, GetDpiForWindow(hWnd), 96),
-                    windowpos->cy);
+                    windowpos->cy, windowpos->cx);
             }
             break;
         }
@@ -527,7 +616,7 @@ LRESULT TaskbarWndProcPostProcess(HWND hWnd,
             updateWindowRgn(
                 hWnd,
                 MulDiv(g_settings.taskbarWidth, GetDpiForWindow(hWnd), 96),
-                rc.bottom - rc.top);
+                rc.bottom - rc.top, rc.right - rc.left);
             break;
         }
     }
@@ -617,13 +706,30 @@ HRESULT WINAPI CTaskListWnd_ComputeJumpViewPosition_Hook(
     UINT monitorDpiY = 96;
     GetDpiForMonitor(monitor, MDT_DEFAULT, &monitorDpiX, &monitorDpiY);
 
-    point->X = pt.x;
+    RECT rc;
+    GetMonitorRect(monitor, &rc);
+
+    int taskbarWidthScaled = MulDiv(g_settings.taskbarWidth, monitorDpiX, 96);
+
+    switch (g_settings.taskbarLocation) {
+        case TaskbarLocation::left:
+            point->X = rc.left + taskbarWidthScaled;
+            break;
+
+        case TaskbarLocation::right:
+            point->X = rc.right - taskbarWidthScaled;
+            point->X -= 159;
+            break;
+    }
+
     point->Y = pt.y;
 
     // Move a bit lower to vertically center the cursor on the close item.
     point->Y += MulDiv(30, monitorDpiY, 96);
 
     *verticalAlignment = VerticalAlignment::Center;
+
+    Wh_Log(L"%d", *horizontalAlignment);
 
     return ret;
 }
@@ -700,9 +806,18 @@ ResourceDictionary_Lookup_Hook(void* pThis,
         return ret;
     }
 
-    valueThickness->Bottom -=
-        MulDiv(rc.right - rc.left, 96, GetDpiForWindow(hTaskbarWnd));
-    valueThickness->Bottom += g_settings.taskbarWidth;
+    switch (g_settings.taskbarLocation) {
+        case TaskbarLocation::left:
+            valueThickness->Bottom -=
+                MulDiv(rc.right - rc.left, 96, GetDpiForWindow(hTaskbarWnd));
+            valueThickness->Bottom += g_settings.taskbarWidth;
+            break;
+
+        case TaskbarLocation::right:
+            valueThickness->Bottom -= g_settings.taskbarWidth;
+            valueThickness->Bottom -= 230;
+            break;
+    }
 
     Wh_Log(L"Overriding value %s", keyString->c_str());
     *ret = winrt::box_value(*valueThickness);
@@ -901,22 +1016,35 @@ bool ApplyStyle(FrameworkElement taskbarFrame,
     float origin = g_unloading ? 0 : 0.5;
     rootGrid.RenderTransformOrigin({origin, origin});
 
-    double marginTop = g_unloading ? 0 : size.Height - g_settings.taskbarWidth;
-    if (marginTop < 0) {
-        marginTop = 0;
+    Thickness margin{};
+    if (!g_unloading) {
+        double marginValue = size.Height - g_settings.taskbarWidth;
+        if (marginValue < 0) {
+            marginValue = 0;
+        }
+
+        switch (g_settings.taskbarLocation) {
+            case TaskbarLocation::left:
+                margin.Top = marginValue;
+                break;
+
+            case TaskbarLocation::right:
+                margin.Bottom = marginValue;
+                break;
+        }
     }
 
     FrameworkElement child = rootGrid;
     if (child && (child = FindChildByName(child, L"TaskbarFrame")) &&
         (child = FindChildByName(child, L"RootGrid"))) {
-        child.Margin(Thickness{0, marginTop, 0, 0});
+        child.Margin(margin);
     }
 
     child = rootGrid;
     if (child &&
         (child = FindChildByClassName(child, L"SystemTray.SystemTrayFrame")) &&
         (child = FindChildByName(child, L"SystemTrayFrameGrid"))) {
-        child.Margin(Thickness{0, marginTop, 0, 0});
+        child.Margin(margin);
     }
 
     auto xamlRoot = taskbarFrame.XamlRoot();
@@ -1717,8 +1845,17 @@ void WINAPI OverflowXamlIslandManager_Show_Hook(void* pThis,
             point.x = monitorInfo.rcWork.right;
         }
 
-        point.x += MulDiv(104 + 12, monitorDpiX, 96);
         point.y += MulDiv(28, monitorDpiY, 96);
+
+        switch (g_settings.taskbarLocation) {
+            case TaskbarLocation::left:
+                point.x += MulDiv(104 + 12, monitorDpiX, 96);
+                break;
+
+            case TaskbarLocation::right:
+                point.x -= MulDiv(104 + 12, monitorDpiX, 96);
+                break;
+        }
     }
 
     OverflowXamlIslandManager_Show_Original(pThis, point, param2);
@@ -1844,12 +1981,20 @@ BOOL WINAPI SetWindowPos_Hook(HWND hWnd,
             .cy = cy + distance * 2,
         };
 
+        UINT alginment;
+        switch (g_settings.taskbarLocation) {
+            case TaskbarLocation::left:
+                alginment = TPM_LEFTALIGN;
+                break;
+
+            case TaskbarLocation::right:
+                alginment = TPM_RIGHTALIGN;
+                break;
+        }
+
         CalculatePopupWindowPosition(
-            &pt, &sz,
-            (g_inCTaskListThumbnailWnd_DisplayUI ? TPM_LEFTALIGN
-                                                 : TPM_CENTERALIGN) |
-                TPM_VCENTERALIGN | TPM_WORKAREA,
-            nullptr, &rc);
+            &pt, &sz, alginment | TPM_VCENTERALIGN | TPM_WORKAREA, nullptr,
+            &rc);
 
         rc.left += distance;
         rc.right -= distance;
@@ -1858,8 +2003,17 @@ BOOL WINAPI SetWindowPos_Hook(HWND hWnd,
     } else {
         // Keep current position.
         GetWindowRect_Original(hWnd, &rc);
-        rc.right = rc.left + cx;
         rc.bottom = rc.top + cy;
+
+        switch (g_settings.taskbarLocation) {
+            case TaskbarLocation::left:
+                rc.right = rc.left + cx;
+                break;
+
+            case TaskbarLocation::right:
+                rc.left = rc.right - cx;
+                break;
+        }
     }
 
     Wh_Log(L"Adjusting pos for TaskListThumbnailWnd: %dx%d, %dx%d", rc.left,
@@ -1921,7 +2075,8 @@ bool IsTargetCoreWindow(HWND hWnd, int* extraXAdjustment) {
             return false;
         }
 
-        if (isQuickActions && extraXAdjustment) {
+        if (isQuickActions && extraXAdjustment &&
+            g_settings.taskbarLocation == TaskbarLocation::left) {
             *extraXAdjustment = MulDiv(-29, GetDpiForWindow(hWnd), 96);
         }
     }
@@ -1974,7 +2129,9 @@ void AdjustCoreWindowSize(int x, int y, int* width, int* height) {
     UINT monitorDpiY = 96;
     GetDpiForMonitor(monitor, MDT_DEFAULT, &monitorDpiX, &monitorDpiY);
 
-    const int w1 = MulDiv(660, monitorDpiX, 96);
+    const int w1 =
+        MulDiv(g_settings.startMenuWidth ? g_settings.startMenuWidth : 660,
+               monitorDpiX, 96);
     if (*width > w1) {
         *width = w1;
     }
@@ -2012,7 +2169,16 @@ void AdjustCoreWindowPos(int* x, int* y, int width, int height) {
 
     int taskbarWidthScaled = MulDiv(g_settings.taskbarWidth, monitorDpiX, 96);
 
-    *x = rc.left + taskbarWidthScaled;
+    switch (g_settings.taskbarLocation) {
+        case TaskbarLocation::left:
+            *x = rc.left + taskbarWidthScaled;
+            break;
+
+        case TaskbarLocation::right:
+            *x = rc.right - width - taskbarWidthScaled;
+            break;
+    }
+
     *y = rc.top;
 }
 
@@ -2179,7 +2345,15 @@ BOOL WINAPI SetWindowPos_Hook(HWND hWnd,
 }  // namespace CoreWindowUI
 
 void LoadSettings() {
+    PCWSTR taskbarLocation = Wh_GetStringSetting(L"taskbarLocation");
+    g_settings.taskbarLocation = TaskbarLocation::left;
+    if (wcscmp(taskbarLocation, L"right") == 0) {
+        g_settings.taskbarLocation = TaskbarLocation::right;
+    }
+    Wh_FreeStringSetting(taskbarLocation);
+
     g_settings.taskbarWidth = Wh_GetIntSetting(L"TaskbarWidth");
+    g_settings.startMenuWidth = Wh_GetIntSetting(L"startMenuWidth");
 }
 
 HWND GetTaskbarWnd() {
