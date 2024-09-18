@@ -162,65 +162,6 @@ using GetThreadDescription_t =
     WINBASEAPI HRESULT(WINAPI*)(HANDLE hThread, PWSTR* ppszThreadDescription);
 GetThreadDescription_t pGetThreadDescription;
 
-VS_FIXEDFILEINFO* GetModuleVersionInfo(HMODULE hModule, UINT* puPtrLen) {
-    void* pFixedFileInfo = nullptr;
-    UINT uPtrLen = 0;
-
-    HRSRC hResource =
-        FindResource(hModule, MAKEINTRESOURCE(VS_VERSION_INFO), RT_VERSION);
-    if (hResource) {
-        HGLOBAL hGlobal = LoadResource(hModule, hResource);
-        if (hGlobal) {
-            void* pData = LockResource(hGlobal);
-            if (pData) {
-                if (!VerQueryValue(pData, L"\\", &pFixedFileInfo, &uPtrLen) ||
-                    uPtrLen == 0) {
-                    pFixedFileInfo = nullptr;
-                    uPtrLen = 0;
-                }
-            }
-        }
-    }
-
-    if (puPtrLen) {
-        *puPtrLen = uPtrLen;
-    }
-
-    return (VS_FIXEDFILEINFO*)pFixedFileInfo;
-}
-
-bool IsTaskbarViewVersionAtLeast(WORD major, WORD minor, WORD build, WORD qfe) {
-    HMODULE taskbarViewModule = GetModuleHandle(L"Taskbar.View.dll");
-    if (!taskbarViewModule) {
-        return false;
-    }
-
-    VS_FIXEDFILEINFO* fixedFileInfo =
-        GetModuleVersionInfo(taskbarViewModule, nullptr);
-    if (!fixedFileInfo) {
-        return false;
-    }
-
-    WORD moduleMajor = HIWORD(fixedFileInfo->dwFileVersionMS);
-    WORD moduleMinor = LOWORD(fixedFileInfo->dwFileVersionMS);
-    WORD moduleBuild = HIWORD(fixedFileInfo->dwFileVersionLS);
-    WORD moduleQfe = LOWORD(fixedFileInfo->dwFileVersionLS);
-
-    if (moduleMajor != major) {
-        return moduleMajor > major;
-    }
-
-    if (moduleMinor != minor) {
-        return moduleMinor > minor;
-    }
-
-    if (moduleBuild != build) {
-        return moduleBuild > build;
-    }
-
-    return moduleQfe >= qfe;
-}
-
 bool GetMonitorRect(HMONITOR monitor, RECT* rc) {
     MONITORINFO monitorInfo{
         .cbSize = sizeof(MONITORINFO),
@@ -1806,18 +1747,7 @@ void WINAPI OverflowFlyoutList_OnApplyTemplate_Hook(LPVOID pThis) {
 
     try {
         element.MaxWidth(310);
-
-        if (IsTaskbarViewVersionAtLeast(2124, 20800, 0, 0)) {
-            // A hack for having a fixed height with centered content for Win11
-            // 24H2.
-            element.MinHeight(10000);
-            auto margin = element.Margin();
-            margin.Top = (48.0 - 10000) / 2;
-            margin.Bottom = margin.Top;
-            element.Margin(margin);
-        } else {
-            element.MaxHeight(48);
-        }
+        element.MaxHeight(48);
 
         auto parentElement =
             Media::VisualTreeHelper::GetParent(element).as<FrameworkElement>();
