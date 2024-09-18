@@ -1597,19 +1597,7 @@ bool UpdateNotifyIconsIfNeeded(XamlRoot xamlRoot) {
     return true;
 }
 
-using TaskListButton_UpdateVisualStates_t = void(WINAPI*)(void* pThis);
-TaskListButton_UpdateVisualStates_t TaskListButton_UpdateVisualStates_Original;
-void WINAPI TaskListButton_UpdateVisualStates_Hook(void* pThis) {
-    Wh_Log(L">");
-
-    TaskListButton_UpdateVisualStates_Original(pThis);
-
-    void* taskListButtonIUnknownPtr = (void**)pThis + 3;
-    winrt::Windows::Foundation::IUnknown taskListButtonIUnknown;
-    winrt::copy_from_abi(taskListButtonIUnknown, taskListButtonIUnknownPtr);
-
-    auto taskListButtonElement = taskListButtonIUnknown.as<FrameworkElement>();
-
+void UpdateTaskListButton(FrameworkElement taskListButtonElement) {
     auto iconPanelElement =
         FindChildByName(taskListButtonElement, L"IconPanel");
     if (!iconPanelElement) {
@@ -1632,6 +1620,78 @@ void WINAPI TaskListButton_UpdateVisualStates_Hook(void* pThis) {
     // For some reason, translation is being set to a NaN.
     iconElement.Translation(
         winrt::Windows::Foundation::Numerics::float3::zero());
+
+    auto labelControlElement =
+        FindChildByName(iconPanelElement, L"LabelControl");
+    if (labelControlElement) {
+        double angle = g_unloading ? 0 : -90;
+        Media::RotateTransform transform;
+        transform.Angle(angle);
+        labelControlElement.RenderTransform(transform);
+
+        float origin = g_unloading ? 0 : 0.5;
+        labelControlElement.RenderTransformOrigin({origin, origin});
+
+        Controls::Grid::SetColumn(labelControlElement, g_unloading ? 1 : 0);
+
+        Thickness margin{};
+        if (!g_unloading) {
+            margin.Left = -40 - g_settings.taskbarWidth / 2.0;
+            margin.Top = 0;
+            margin.Right = -g_settings.taskbarWidth / 2.0;
+            margin.Bottom = iconElement.ActualWidth() + 20;
+        }
+        labelControlElement.Margin(margin);
+
+        auto width = g_settings.taskbarWidth - iconElement.ActualWidth() - 20;
+
+        labelControlElement.MinWidth(g_unloading ? 0 : width);
+        labelControlElement.MaxWidth(g_unloading ? 136 : width);
+    }
+
+    Thickness margin{};
+    if (!g_unloading && labelControlElement) {
+        margin.Top = g_settings.taskbarWidth - iconElement.ActualWidth() - 24;
+    }
+    iconElement.Margin(margin);
+
+    auto overlayIconElement = FindChildByName(iconPanelElement, L"OverlayIcon");
+    if (overlayIconElement) {
+        double angle = g_unloading ? 0 : -90;
+        Media::RotateTransform transform;
+        transform.Angle(angle);
+        overlayIconElement.RenderTransform(transform);
+
+        winrt::Windows::Foundation::Point origin{};
+        if (!g_unloading) {
+            origin.Y = labelControlElement ? 1.25 : 0.75;
+        }
+
+        overlayIconElement.RenderTransformOrigin(origin);
+
+        overlayIconElement.Margin(margin);
+    }
+}
+
+using TaskListButton_UpdateVisualStates_t = void(WINAPI*)(void* pThis);
+TaskListButton_UpdateVisualStates_t TaskListButton_UpdateVisualStates_Original;
+void WINAPI TaskListButton_UpdateVisualStates_Hook(void* pThis) {
+    Wh_Log(L">");
+
+    TaskListButton_UpdateVisualStates_Original(pThis);
+
+    void* taskListButtonIUnknownPtr = (void**)pThis + 3;
+    winrt::Windows::Foundation::IUnknown taskListButtonIUnknown;
+    winrt::copy_from_abi(taskListButtonIUnknown, taskListButtonIUnknownPtr);
+
+    auto taskListButtonElement = taskListButtonIUnknown.as<FrameworkElement>();
+
+    try {
+        UpdateTaskListButton(taskListButtonElement);
+    } catch (...) {
+        HRESULT hr = winrt::to_hresult();
+        Wh_Log(L"Error %08X", hr);
+    }
 
     auto xamlRoot = taskListButtonElement.XamlRoot();
     if (xamlRoot) {
