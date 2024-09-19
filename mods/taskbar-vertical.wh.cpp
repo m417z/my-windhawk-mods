@@ -2,7 +2,7 @@
 // @id              taskbar-vertical
 // @name            Vertical Taskbar for Windows 11
 // @description     Finally, the missing vertical taskbar option for Windows 11!
-// @version         1.1
+// @version         1.2
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
@@ -13,7 +13,7 @@
 // @include         ShellExperienceHost.exe
 // @include         ShellHost.exe
 // @architecture    x86-64
-// @compilerOptions -DWINVER=0x0605 -lgdi32 -lole32 -loleaut32 -lruntimeobject -lshcore -lversion
+// @compilerOptions -DWINVER=0x0605 -lgdi32 -lole32 -loleaut32 -lruntimeobject -lshcore
 // ==/WindhawkMod==
 
 // Source code is published under The GNU General Public License v3.0.
@@ -30,6 +30,9 @@
 
 Finally, the missing vertical taskbar option for Windows 11!
 
+The taskbar can be placed on the left or on the right, and a custom width can be
+set in the mod settings.
+
 ## Compatibility
 
 The mod was designed for up-to-date Windows 11 versions 22H2 to 24H2. Other
@@ -44,7 +47,11 @@ mod.
 The development of this mod was funded by [AuthLite LLC](https://authlite.com/).
 Thank you for contributing and allowing all Windhawk users to enjoy it!
 
-![Screenshot](https://i.imgur.com/BxQMy5K.png)
+![Screenshot](https://i.imgur.com/RBK5Mv9.png)
+
+With labels:
+
+![Screenshot with labels](https://i.imgur.com/JloORIB.png)
 */
 // ==/WindhawkModReadme==
 
@@ -1746,8 +1753,8 @@ void WINAPI OverflowFlyoutList_OnApplyTemplate_Hook(LPVOID pThis) {
     }
 
     try {
-        element.MaxWidth(310);
         element.MaxHeight(48);
+        element.MaxWidth(310);
 
         auto parentElement =
             Media::VisualTreeHelper::GetParent(element).as<FrameworkElement>();
@@ -1855,8 +1862,6 @@ void WINAPI OverflowXamlIslandManager_Show_Hook(void* pThis,
             point.x = monitorInfo.rcWork.right;
         }
 
-        point.y += MulDiv(28, monitorDpiY, 96);
-
         switch (GetTaskbarLocationForMonitor(monitor)) {
             case TaskbarLocation::left:
                 point.x += MulDiv(104 + 12, monitorDpiX, 96);
@@ -1866,6 +1871,8 @@ void WINAPI OverflowXamlIslandManager_Show_Hook(void* pThis,
                 point.x -= MulDiv(104 + 12, monitorDpiX, 96);
                 break;
         }
+
+        point.y += MulDiv(28, monitorDpiY, 96);
     }
 
     OverflowXamlIslandManager_Show_Original(pThis, point, param2);
@@ -1961,7 +1968,7 @@ BOOL WINAPI SetWindowPos_Hook(HWND hWnd,
                                      uFlags);
     };
 
-    if (uFlags & (SWP_NOSIZE | SWP_NOMOVE) ||
+    if ((uFlags & (SWP_NOSIZE | SWP_NOMOVE)) ||
         (!g_inCTaskListThumbnailWnd_DisplayUI &&
          !g_inCTaskListThumbnailWnd_LayoutThumbnails)) {
         return original();
@@ -2540,7 +2547,9 @@ bool HookTaskbarViewDllSymbols(HMODULE module) {
                 (void*)TaskbarConfiguration_GetFrameSize_Hook,
             },
             {
-                {LR"(private: void __cdecl winrt::SystemTray::implementation::SystemTrayController::UpdateFrameSize(void))"},
+                {
+                    LR"(private: void __cdecl winrt::SystemTray::implementation::SystemTrayController::UpdateFrameSize(void))",
+                },
                 (void**)&SystemTrayController_UpdateFrameSize_SymbolAddress,
                 nullptr,  // Hooked manually, we need the symbol address.
             },
@@ -2581,7 +2590,6 @@ bool HookTaskbarViewDllSymbols(HMODULE module) {
             {
                 {
                     LR"(protected: virtual void __cdecl winrt::Taskbar::implementation::AugmentedEntryPointButton::UpdateButtonPadding(void))",
-                    LR"(protected: virtual void __cdecl winrt::Taskbar::implementation::AugmentedEntryPointButton::UpdateButtonPadding(void) __ptr64)",
                 },
                 (void**)&AugmentedEntryPointButton_UpdateButtonPadding_Original,
                 (void*)AugmentedEntryPointButton_UpdateButtonPadding_Hook,
@@ -2589,7 +2597,6 @@ bool HookTaskbarViewDllSymbols(HMODULE module) {
             {
                 {
                     LR"(public: __cdecl winrt::impl::consume_Windows_UI_Xaml_IFrameworkElement<struct winrt::Windows::UI::Xaml::Controls::Primitives::RepeatButton>::Width(double)const )",
-                    LR"(public: __cdecl winrt::impl::consume_Windows_UI_Xaml_IFrameworkElement<struct winrt::Windows::UI::Xaml::Controls::Primitives::RepeatButton>::Width(double)const __ptr64)",
                 },
                 (void**)&RepeatButton_Width_Original,
                 (void*)RepeatButton_Width_Hook,
