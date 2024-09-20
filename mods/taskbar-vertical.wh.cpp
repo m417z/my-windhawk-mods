@@ -13,7 +13,7 @@
 // @include         ShellExperienceHost.exe
 // @include         ShellHost.exe
 // @architecture    x86-64
-// @compilerOptions -DWINVER=0x0605 -lgdi32 -lole32 -loleaut32 -lruntimeobject -lshcore
+// @compilerOptions -DWINVER=0x0605 -lole32 -loleaut32 -lruntimeobject -lshcore
 // ==/WindhawkMod==
 
 // Source code is published under The GNU General Public License v3.0.
@@ -1975,25 +1975,6 @@ void WINAPI CopilotIcon_ToggleEdgeCopilot_Hook(void* pThis) {
         });
 }
 
-using SHAppBarMessage_t = decltype(&SHAppBarMessage);
-SHAppBarMessage_t SHAppBarMessage_Original;
-auto WINAPI SHAppBarMessage_Hook(DWORD dwMessage, PAPPBARDATA pData) {
-    auto ret = SHAppBarMessage_Original(dwMessage, pData);
-
-    // This is used to position secondary taskbars.
-    if (dwMessage == ABM_QUERYPOS && ret && !g_unloading && pData->hWnd) {
-        HMONITOR monitor =
-            MonitorFromWindow(pData->hWnd, MONITOR_DEFAULTTONEAREST);
-
-        RECT monitorRect;
-        GetMonitorRect(monitor, &monitorRect);
-
-        pData->rc.top = monitorRect.top;
-    }
-
-    return ret;
-}
-
 BOOL WINAPI GetWindowRect_Hook(HWND hWnd, LPRECT lpRect) {
     BOOL ret = GetWindowRect_Original(hWnd, lpRect);
     if (ret && !g_unloading &&
@@ -2851,9 +2832,6 @@ BOOL ModInitWithTaskbarView(HMODULE taskbarViewModule) {
     if (!HookTaskbarDllSymbols()) {
         return FALSE;
     }
-
-    Wh_SetFunctionHook((void*)SHAppBarMessage, (void*)SHAppBarMessage_Hook,
-                       (void**)&SHAppBarMessage_Original);
 
     Wh_SetFunctionHook((void*)GetWindowRect, (void*)GetWindowRect_Hook,
                        (void**)&GetWindowRect_Original);
