@@ -656,8 +656,6 @@ HRESULT WINAPI CTaskListWnd_ComputeJumpViewPosition_Hook(
 
     *verticalAlignment = VerticalAlignment::Center;
 
-    Wh_Log(L"%d", *horizontalAlignment);
-
     return ret;
 }
 
