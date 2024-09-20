@@ -1010,6 +1010,22 @@ LRESULT CALLBACK TaskbarWindowSubclassProc(HWND hWnd,
             }
             break;
 
+        case WM_POWERBROADCAST:
+            // Keyboard shortcuts stop working sometimes, not sure why. Try to
+            // mitigate it by unregistering and re-registering hotkeys on resume
+            // from wake up.
+            if (wParam == PBT_APMQUERYSUSPEND) {
+                switch (lParam) {
+                    case PBT_APMRESUMECRITICAL:
+                    case PBT_APMRESUMESUSPEND:
+                    case PBT_APMRESUMEAUTOMATIC:
+                        UnregisterHotkeys(hWnd);
+                        RegisterHotkeys(hWnd);
+                        break;
+                }
+            }
+            break;
+
         default:
             if (uMsg == g_subclassRegisteredMsg) {
                 if (wParam) {
