@@ -162,6 +162,32 @@ static DWORD g_dwTaskbarThreadId;
 
 #pragma region functions
 
+UINT GetDpiForWindowWithFallback(HWND hWnd) {
+    using GetDpiForWindow_t = UINT(WINAPI*)(HWND hwnd);
+    static GetDpiForWindow_t pGetDpiForWindow = []() {
+        HMODULE hUser32 = GetModuleHandle(L"user32.dll");
+        if (hUser32) {
+            return (GetDpiForWindow_t)GetProcAddress(hUser32,
+                                                     "GetDpiForWindow");
+        }
+
+        return (GetDpiForWindow_t) nullptr;
+    }();
+
+    int iDpi = 96;
+    if (pGetDpiForWindow) {
+        iDpi = pGetDpiForWindow(hWnd);
+    } else {
+        HDC hdc = GetDC(NULL);
+        if (hdc) {
+            iDpi = GetDeviceCaps(hdc, LOGPIXELSX);
+            ReleaseDC(NULL, hdc);
+        }
+    }
+
+    return iDpi;
+}
+
 bool IsTaskbarWindow(HWND hWnd) {
     WCHAR szClassName[32];
     if (!GetClassName(hWnd, szClassName, ARRAYSIZE(szClassName))) {
@@ -214,12 +240,14 @@ bool GetNotificationAreaRect(HWND hMMTaskbarWnd, RECT* rcResult) {
         // On newer Win11 versions, the clock on secondary taskbars is difficult
         // to detect without either UI Automation or UWP UI APIs. Just consider
         // the last pixels, not accurate, but better than nothing.
+        int lastPixels =
+            MulDiv(50, GetDpiForWindowWithFallback(hMMTaskbarWnd), 96);
         CopyRect(rcResult, &rcTaskbar);
-        if (rcResult->right - rcResult->left > 50) {
+        if (rcResult->right - rcResult->left > lastPixels) {
             if (GetWindowLong(hMMTaskbarWnd, GWL_EXSTYLE) & WS_EX_LAYOUTRTL) {
-                rcResult->right = rcResult->left + 50;
+                rcResult->right = rcResult->left + lastPixels;
             } else {
-                rcResult->left = rcResult->right - 50;
+                rcResult->left = rcResult->right - lastPixels;
             }
         }
 
