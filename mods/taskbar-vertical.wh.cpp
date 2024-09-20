@@ -654,6 +654,13 @@ HRESULT WINAPI CTaskListWnd_ComputeJumpViewPosition_Hook(
     // Move a bit lower to vertically center the cursor on the close item.
     point->Y += MulDiv(30, monitorDpiY, 96);
 
+    // Avoid returning a point too close to the top of the monitor which causes
+    // the menu to be cut off.
+    int minY = rc.top + MulDiv(130, monitorDpiY, 96);
+    if (point->Y < minY) {
+        point->Y = minY;
+    }
+
     *verticalAlignment = VerticalAlignment::Center;
 
     return ret;
