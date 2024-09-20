@@ -367,7 +367,9 @@ TaskbarConfiguration_GetIconHeightInViewPixels_taskbarSizeEnum_t
 double WINAPI
 TaskbarConfiguration_GetIconHeightInViewPixels_taskbarSizeEnum_Hook(
     int enumTaskbarSize) {
-    if (enumTaskbarSize == 1 && !g_unloading) {
+    Wh_Log(L"> %d", enumTaskbarSize);
+
+    if (!g_unloading) {
         return g_settings.iconSize;
     }
 
@@ -394,9 +396,9 @@ using SystemTrayController_GetFrameSize_t =
 SystemTrayController_GetFrameSize_t SystemTrayController_GetFrameSize_Original;
 double WINAPI SystemTrayController_GetFrameSize_Hook(void* pThis,
                                                      int enumTaskbarSize) {
-    Wh_Log(L">");
+    Wh_Log(L"> %d", enumTaskbarSize);
 
-    if (enumTaskbarSize == 1 && g_taskbarHeight) {
+    if (g_taskbarHeight) {
         return g_taskbarHeight;
     }
 
@@ -410,9 +412,9 @@ SystemTraySecondaryController_GetFrameSize_t
 double WINAPI
 SystemTraySecondaryController_GetFrameSize_Hook(void* pThis,
                                                 int enumTaskbarSize) {
-    Wh_Log(L">");
+    Wh_Log(L"> %d", enumTaskbarSize);
 
-    if (enumTaskbarSize == 1 && g_taskbarHeight) {
+    if (g_taskbarHeight) {
         return g_taskbarHeight;
     }
 
@@ -424,14 +426,14 @@ using TaskbarConfiguration_GetFrameSize_t =
     double(WINAPI*)(int enumTaskbarSize);
 TaskbarConfiguration_GetFrameSize_t TaskbarConfiguration_GetFrameSize_Original;
 double WINAPI TaskbarConfiguration_GetFrameSize_Hook(int enumTaskbarSize) {
-    Wh_Log(L">");
+    Wh_Log(L"> %d", enumTaskbarSize);
 
-    if (enumTaskbarSize == 1 && !g_originalTaskbarHeight) {
+    if (!g_originalTaskbarHeight) {
         g_originalTaskbarHeight =
             TaskbarConfiguration_GetFrameSize_Original(enumTaskbarSize);
     }
 
-    if (enumTaskbarSize == 1 && g_taskbarHeight) {
+    if (g_taskbarHeight) {
         return g_taskbarHeight;
     }
 
@@ -496,6 +498,73 @@ void WINAPI TaskbarFrame_Height_double_Hook(void* pThis, double value) {
     return TaskbarFrame_Height_double_Original(pThis, value);
 }
 
+void* TaskbarController_OnGroupingModeChanged;
+
+using TaskbarController_UpdateFrameHeight_t = void(WINAPI*)(void* pThis);
+TaskbarController_UpdateFrameHeight_t
+    TaskbarController_UpdateFrameHeight_Original;
+void WINAPI TaskbarController_UpdateFrameHeight_Hook(void* pThis) {
+    Wh_Log(L">");
+
+    static LONG taskbarFrameOffset = []() -> LONG {
+        // 48:83EC 28               | sub rsp,28
+        // 48:8B81 88020000         | mov rax,qword ptr ds:[rcx+288]
+        // or
+        // 4C:8B81 80020000         | mov r8,qword ptr ds:[rcx+280]
+        const BYTE* p = (const BYTE*)TaskbarController_OnGroupingModeChanged;
+        if (p[0] == 0x48 && p[1] == 0x83 && p[2] == 0xEC &&
+            (p[4] == 0x48 || p[4] == 0x4C) && p[5] == 0x8B &&
+            (p[6] & 0xC0) == 0x80) {
+            LONG offset = *(LONG*)(p + 7);
+            Wh_Log(L"taskbarFrameOffset=0x%X", offset);
+            return offset;
+        }
+
+        Wh_Log(L"taskbarFrameOffset not found");
+        return 0;
+    }();
+
+    if (taskbarFrameOffset <= 0) {
+        Wh_Log(L"taskbarFrameOffset <= 0");
+        TaskbarController_UpdateFrameHeight_Original(pThis);
+        return;
+    }
+
+    void* taskbarFrame = *(void**)((BYTE*)pThis + taskbarFrameOffset);
+    if (!taskbarFrame) {
+        Wh_Log(L"!taskbarFrame");
+        TaskbarController_UpdateFrameHeight_Original(pThis);
+        return;
+    }
+
+    FrameworkElement taskbarFrameElement = nullptr;
+    ((IUnknown**)taskbarFrame)[1]->QueryInterface(
+        winrt::guid_of<FrameworkElement>(),
+        winrt::put_abi(taskbarFrameElement));
+    if (!taskbarFrameElement) {
+        Wh_Log(L"!taskbarFrameElement");
+        TaskbarController_UpdateFrameHeight_Original(pThis);
+        return;
+    }
+
+    taskbarFrameElement.MaxHeight(std::numeric_limits<double>::infinity());
+
+    TaskbarController_UpdateFrameHeight_Original(pThis);
+
+    // Adjust parent grid height if needed.
+    auto contentGrid = Media::VisualTreeHelper::GetParent(taskbarFrameElement)
+                           .try_as<FrameworkElement>();
+    if (contentGrid) {
+        double height = taskbarFrameElement.Height();
+        double contentGridHeight = contentGrid.Height();
+        if (contentGridHeight > 0 && contentGridHeight != height) {
+            Wh_Log(L"Adjusting contentGrid.Height: %f->%f", contentGridHeight,
+                   height);
+            contentGrid.Height(height);
+        }
+    }
+}
+
 using SystemTraySecondaryController_UpdateFrameSize_t =
     void(WINAPI*)(void* pThis);
 SystemTraySecondaryController_UpdateFrameSize_t
@@ -537,14 +606,6 @@ int WINAPI TaskbarFrame_MeasureOverride_Hook(
     g_hookCallCounter++;
 
     Wh_Log(L">");
-
-    FrameworkElement taskbarFrameElement = nullptr;
-    ((IUnknown*)pThis)
-        ->QueryInterface(winrt::guid_of<FrameworkElement>(),
-                         winrt::put_abi(taskbarFrameElement));
-    if (taskbarFrameElement) {
-        taskbarFrameElement.MaxHeight(std::numeric_limits<double>::infinity());
-    }
 
     int ret = TaskbarFrame_MeasureOverride_Original(pThis, param1, resultSize);
 
@@ -1421,6 +1482,24 @@ bool HookTaskbarViewDllSymbols(HMODULE module) {
                 (void**)&TaskbarFrame_Height_double_Original,
                 (void*)TaskbarFrame_Height_double_Hook,
                 true,  // Gone in Windows 11 version 24H2.
+            },
+            {
+                {
+                    LR"(private: void __cdecl winrt::Taskbar::implementation::TaskbarController::OnGroupingModeChanged(void))",
+                    LR"(private: void __cdecl winrt::Taskbar::implementation::TaskbarController::OnGroupingModeChanged(void) __ptr64)",
+                },
+                (void**)&TaskbarController_OnGroupingModeChanged,
+                nullptr,
+                true,  // Missing in older Windows 11 versions.
+            },
+            {
+                {
+                    LR"(private: void __cdecl winrt::Taskbar::implementation::TaskbarController::UpdateFrameHeight(void))",
+                    LR"(private: void __cdecl winrt::Taskbar::implementation::TaskbarController::UpdateFrameHeight(void) __ptr64)",
+                },
+                (void**)&TaskbarController_UpdateFrameHeight_Original,
+                (void*)TaskbarController_UpdateFrameHeight_Hook,
+                true,  // Missing in older Windows 11 versions.
             },
             {
                 {
