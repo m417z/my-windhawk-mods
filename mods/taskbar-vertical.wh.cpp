@@ -898,7 +898,15 @@ void WINAPI TaskbarController_UpdateFrameHeight_Hook(void* pThis) {
     // Set the width/height to NaN (Auto) to always match the parent
     // width/height.
     taskbarFrameElement.Width(std::numeric_limits<double>::quiet_NaN());
-    taskbarFrameElement.Height(std::numeric_limits<double>::quiet_NaN());
+
+    // Setting the height right away can result in ellipsis.
+    // https://github.com/ramensoftware/windhawk-mods/issues/981
+    taskbarFrameElement.Dispatcher().TryRunAsync(
+        winrt::Windows::UI::Core::CoreDispatcherPriority::High,
+        [taskbarFrameElement]() {
+            taskbarFrameElement.Height(
+                std::numeric_limits<double>::quiet_NaN());
+        });
 }
 
 using SystemTraySecondaryController_UpdateFrameSize_t =
