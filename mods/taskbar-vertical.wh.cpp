@@ -66,6 +66,9 @@ With labels:
   $name: Taskbar width
   $description: >-
     The width, in pixels, of the taskbar
+
+    Note: If the clock is too wide for the taskbar width you prefer, you can use
+    the "Taskbar Clock Customization" mod to customize the taskbar clock format.
 - taskbarLocationSecondary: sameAsPrimary
   $name: Taskbar location on secondary monitors
   $options:
