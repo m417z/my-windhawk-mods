@@ -369,7 +369,7 @@ TaskbarConfiguration_GetIconHeightInViewPixels_taskbarSizeEnum_Hook(
     int enumTaskbarSize) {
     Wh_Log(L"> %d", enumTaskbarSize);
 
-    if (!g_unloading) {
+    if (!g_unloading && (enumTaskbarSize == 1 || enumTaskbarSize == 2)) {
         return g_settings.iconSize;
     }
 
@@ -398,7 +398,7 @@ double WINAPI SystemTrayController_GetFrameSize_Hook(void* pThis,
                                                      int enumTaskbarSize) {
     Wh_Log(L"> %d", enumTaskbarSize);
 
-    if (g_taskbarHeight) {
+    if (g_taskbarHeight && (enumTaskbarSize == 1 || enumTaskbarSize == 2)) {
         return g_taskbarHeight;
     }
 
@@ -414,7 +414,7 @@ SystemTraySecondaryController_GetFrameSize_Hook(void* pThis,
                                                 int enumTaskbarSize) {
     Wh_Log(L"> %d", enumTaskbarSize);
 
-    if (g_taskbarHeight) {
+    if (g_taskbarHeight && (enumTaskbarSize == 1 || enumTaskbarSize == 2)) {
         return g_taskbarHeight;
     }
 
@@ -428,7 +428,8 @@ TaskbarConfiguration_GetFrameSize_t TaskbarConfiguration_GetFrameSize_Original;
 double WINAPI TaskbarConfiguration_GetFrameSize_Hook(int enumTaskbarSize) {
     Wh_Log(L"> %d", enumTaskbarSize);
 
-    if (!g_originalTaskbarHeight) {
+    if (!g_originalTaskbarHeight &&
+        (enumTaskbarSize == 1 || enumTaskbarSize == 2)) {
         g_originalTaskbarHeight =
             TaskbarConfiguration_GetFrameSize_Original(enumTaskbarSize);
     }
