@@ -8,7 +8,7 @@
 // @twitter         https://twitter.com/m417z
 // @homepage        https://m417z.com/
 // @include         explorer.exe
-// @compilerOptions -DWINVER=0x0602 -lcomctl32 -ldwmapi -lole32 -lversion -lwininet
+// @compilerOptions -DWINVER=0x0A00 -lcomctl32 -ldwmapi -lole32 -lversion -lwininet
 // ==/WindhawkMod==
 
 // Source code is published under The GNU General Public License v3.0.
