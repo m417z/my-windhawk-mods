@@ -322,18 +322,24 @@ void ProcessResolvedWindow(PVOID pThis, RESOLVEDWINDOW* resolvedWindow) {
             }
         }
 
-        LCMapStringEx(LOCALE_NAME_USER_DEFAULT, LCMAP_UPPERCASE,
-                      resolvedWindowProcessPath,
-                      resolvedWindowProcessPathLen + 1,
-                      resolvedWindowProcessPathUpper,
-                      resolvedWindowProcessPathLen + 1, nullptr, nullptr, 0);
+        if (resolvedWindowProcessPathLen > 0) {
+            LCMapStringEx(
+                LOCALE_NAME_USER_DEFAULT, LCMAP_UPPERCASE,
+                resolvedWindowProcessPath, resolvedWindowProcessPathLen + 1,
+                resolvedWindowProcessPathUpper,
+                resolvedWindowProcessPathLen + 1, nullptr, nullptr, 0);
 
-        programFileNameUpper = wcsrchr(resolvedWindowProcessPathUpper, L'\\');
-        if (programFileNameUpper) {
-            programFileNameUpper++;
-            if (!*programFileNameUpper) {
-                programFileNameUpper = nullptr;
+            programFileNameUpper =
+                wcsrchr(resolvedWindowProcessPathUpper, L'\\');
+            if (programFileNameUpper) {
+                programFileNameUpper++;
+                if (!*programFileNameUpper) {
+                    programFileNameUpper = nullptr;
+                }
             }
+        } else {
+            *resolvedWindowProcessPath = L'\0';
+            *resolvedWindowProcessPathUpper = L'\0';
         }
     }
 
