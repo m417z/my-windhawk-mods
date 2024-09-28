@@ -905,10 +905,27 @@ void UpdateTaskListButtonWithLabelStyle(
 
     auto iconMargin = iconElement.Margin();
     iconMargin.Left = (g_unloading || !labelControlElement)
-                          ? 0
+                          ? 0.0
                           : g_settings.leftAndRightPaddingSize;
     iconMargin.Right = 0;
     iconElement.Margin(iconMargin);
+
+    for (PCWSTR badgeElementName : {
+             // Badge for non-UWP apps.
+             L"OverlayIcon",
+             // Badge for UWP apps.
+             L"BadgeControl",
+         }) {
+        auto badgeElement = FindChildByName(iconPanelElement, badgeElementName);
+        if (badgeElement) {
+            badgeElement.Margin(Thickness{
+                .Right = (g_unloading || !labelControlElement)
+                             ? 0.0
+                             : 16 - g_settings.leftAndRightPaddingSize +
+                                   (24 - iconWidth),
+            });
+        }
+    }
 
     PCWSTR indicatorClassNames[] = {
         L"RunningIndicator",
