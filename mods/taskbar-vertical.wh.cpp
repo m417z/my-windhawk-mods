@@ -1575,21 +1575,28 @@ void UpdateTaskListButton(FrameworkElement taskListButtonElement) {
     }
     iconElement.Margin(margin);
 
-    auto overlayIconElement = FindChildByName(iconPanelElement, L"OverlayIcon");
-    if (overlayIconElement) {
-        double angle = g_unloading ? 0 : -90;
-        Media::RotateTransform transform;
-        transform.Angle(angle);
-        overlayIconElement.RenderTransform(transform);
+    for (PCWSTR badgeElementName : {
+             // Badge for non-UWP apps.
+             L"OverlayIcon",
+             // Badge for UWP apps.
+             L"BadgeControl",
+         }) {
+        auto badgeElement = FindChildByName(iconPanelElement, badgeElementName);
+        if (badgeElement) {
+            double angle = g_unloading ? 0 : -90;
+            Media::RotateTransform transform;
+            transform.Angle(angle);
+            badgeElement.RenderTransform(transform);
 
-        winrt::Windows::Foundation::Point origin{};
-        if (!g_unloading) {
-            origin.Y = labelControlElement ? 1.25 : 0.75;
+            winrt::Windows::Foundation::Point origin{};
+            if (!g_unloading) {
+                origin.Y = labelControlElement ? 1.25 : 0.75;
+            }
+
+            badgeElement.RenderTransformOrigin(origin);
+
+            badgeElement.Margin(margin);
         }
-
-        overlayIconElement.RenderTransformOrigin(origin);
-
-        overlayIconElement.Margin(margin);
     }
 }
 
