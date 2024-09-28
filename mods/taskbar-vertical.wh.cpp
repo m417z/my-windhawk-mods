@@ -969,6 +969,11 @@ bool ApplyStyle(FrameworkElement taskbarFrame,
         if (marginValue > 0) {
             margin.Top = marginValue;
         }
+
+        // Fix the edge of the taskbar being non-clickable by moving the edge
+        // pixel out of the screen.
+        margin.Top += 1;
+        margin.Bottom -= 1;
     }
 
     FrameworkElement child = contentGrid;
