@@ -541,8 +541,9 @@ LRESULT TaskbarWndProcPostProcess(HWND hWnd,
             break;
         }
 
+        case WM_PAINT:
         case WM_ERASEBKGND: {
-            Wh_Log(L"WM_ERASEBKGND: %08X", (DWORD)(ULONG_PTR)hWnd);
+            Wh_Log(L"%04X: %08X", Msg, (DWORD)(ULONG_PTR)hWnd);
 
             // Calling CreateRectRgn posts window size change events which cause
             // element sizes and positions to be recalculated.
