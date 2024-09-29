@@ -2419,7 +2419,9 @@ void AdjustCoreWindowPos(int* x, int* y, int width, int height) {
             break;
     }
 
-    *y = rc.top;
+    if (g_target == Target::StartMenu || g_target == Target::SearchHost) {
+        *y = rc.top;
+    }
 }
 
 void ApplySettings() {
