@@ -2,7 +2,7 @@
 // @id              taskbar-vertical
 // @name            Vertical Taskbar for Windows 11
 // @description     Finally, the missing vertical taskbar option for Windows 11!
-// @version         1.2.3
+// @version         1.2.4
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
@@ -68,7 +68,7 @@ With labels:
     The width, in pixels, of the taskbar
 
     Note: If the clock is too wide for the taskbar width you prefer, you can use
-    the "Taskbar Clock Customization" mod to customize the taskbar clock format.
+    the "Taskbar Clock Customization" mod to customize the taskbar clock format
 - taskbarLocationSecondary: sameAsPrimary
   $name: Taskbar location on secondary monitors
   $options:
@@ -1024,7 +1024,6 @@ bool ApplyStyle(FrameworkElement taskbarFrame,
 
         // Fix the edge of the taskbar being non-clickable by moving the edge
         // pixel out of the screen.
-        margin.Top += 1;
         margin.Bottom -= 1;
     }
 
