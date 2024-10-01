@@ -2,7 +2,7 @@
 // @id              slick-window-arrangement
 // @name            Slick Window Arrangement
 // @description     Make window arrangement more slick and pleasant with a sliding animation and snapping
-// @version         1.0.1
+// @version         1.0.2
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
@@ -99,6 +99,9 @@ GetDpiForSystem_t pGetDpiForSystem;
 
 typedef UINT (WINAPI *GetDpiForWindow_t)(HWND hwnd);
 GetDpiForWindow_t pGetDpiForWindow;
+
+typedef BOOL (WINAPI *IsWindowArranged_t)(HWND hwnd);
+IsWindowArranged_t pIsWindowArranged;
 
 typedef HRESULT (WINAPI *GetDpiForMonitor_t)(HMONITOR hmonitor, MONITOR_DPI_TYPE dpiType, UINT *dpiX, UINT *dpiY);
 GetDpiForMonitor_t pGetDpiForMonitor;
@@ -448,30 +451,38 @@ public:
         windowMagnet(hTargetWnd) {}
 
     void PreProcessPos(HWND hTargetWnd, int* x, int* y, int* cx, int* cy) {
-        DWORD messagePos = GetMessagePos();
+        MovingState state = GetCurrentMovingState(hTargetWnd, *x, *y);
 
-        if (firstMoveDone) {
+        // If window state changes, e.g. the window is snapped, don't adjust its
+        // position, which could interfere with the snapping and doesn't make
+        // sense in general.
+        if (lastState && lastState->isMaximized == state.isMaximized &&
+            lastState->isMinimized == state.isMinimized &&
+            lastState->isArranged == state.isArranged) {
             // Adjust window pos, which can be off in the DPI contexts:
             // DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE
             // DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2
 
-            int lastDeltaX = GET_X_LPARAM(lastMessagePos) - lastX;
-            int lastDeltaY = GET_Y_LPARAM(lastMessagePos) - lastY;
+            int lastDeltaX = GET_X_LPARAM(lastState->messagePos) - lastState->x;
+            int lastDeltaY = GET_Y_LPARAM(lastState->messagePos) - lastState->y;
 
-            int deltaX = GET_X_LPARAM(messagePos) - *x;
-            int deltaY = GET_Y_LPARAM(messagePos) - *y;
+            int deltaX = GET_X_LPARAM(state.messagePos) - state.x;
+            int deltaY = GET_Y_LPARAM(state.messagePos) - state.y;
 
-            *x -= lastDeltaX - deltaX;
-            *y -= lastDeltaY - deltaY;
+            state.x -= lastDeltaX - deltaX;
+            state.y -= lastDeltaY - deltaY;
+
+            *x = state.x;
+            *y = state.y;
         }
 
-        lastMessagePos = messagePos;
-        lastX = *x;
-        lastY = *y;
+        lastState = state;
 
         windowMagnet.MagnetMove(hTargetWnd, x, y, cx, cy);
+    }
 
-        firstMoveDone = true;
+    void ForgetLastPos() {
+        lastState.reset();
     }
 
     WindowMagnet& GetWindowMagnet() {
@@ -479,9 +490,27 @@ public:
     }
 
 private:
-    bool firstMoveDone = false;
-    DWORD lastMessagePos;
-    int lastX, lastY;
+    struct MovingState {
+        bool isMinimized;
+        bool isMaximized;
+        bool isArranged;
+        DWORD messagePos;
+        int x;
+        int y;
+    };
+
+    static MovingState GetCurrentMovingState(HWND hTargetWnd, int x, int y) {
+        return MovingState{
+            .isMinimized = !!IsMaximized(hTargetWnd),
+            .isMaximized = !!IsMinimized(hTargetWnd),
+            .isArranged = pIsWindowArranged && !!pIsWindowArranged(hTargetWnd),
+            .messagePos = GetMessagePos(),
+            .x = x,
+            .y = y,
+        };
+    }
+
+    std::optional<MovingState> lastState;
     WindowMagnet windowMagnet;
 };
 
@@ -490,18 +519,29 @@ public:
     WindowMove() {}
 
     void Reset() {
+        lastState.reset();
         for (auto& snapshotItem : snapshot) {
             snapshotItem = nullptr;
         }
     }
 
-    void UpdateWithNewPos(int x, int y) {
+    void UpdateWithNewPos(HWND hTargetWnd, int x, int y) {
         DWORD tickCount = GetTickCount();
 
         if (snapshot[0] && tickCount - snapshot[0]->tickCount >= 100) {
             // Waited for too long, reset.
             Reset();
         }
+
+        WindowState state = GetWindowState(hTargetWnd);
+        if (lastState && (state.isMinimized != lastState->isMinimized ||
+                          state.isMaximized != lastState->isMaximized ||
+                          state.isArranged != lastState->isArranged)) {
+            // Window state changed, e.g. it was snapped, reset.
+            Reset();
+        }
+
+        lastState = state;
 
         if (!snapshot[0]) {
             snapshot[0] = &snapshotStorage[0];
@@ -555,11 +595,26 @@ public:
     }
 
 private:
+    struct WindowState {
+        bool isMinimized;
+        bool isMaximized;
+        bool isArranged;
+    };
+
     struct MoveSnapshot {
         DWORD tickCount;
         int x, y;
     };
 
+    static WindowState GetWindowState(HWND hTargetWnd) {
+        return WindowState{
+            .isMinimized = !!IsMaximized(hTargetWnd),
+            .isMaximized = !!IsMinimized(hTargetWnd),
+            .isArranged = pIsWindowArranged && !!pIsWindowArranged(hTargetWnd),
+        };
+    }
+
+    std::optional<WindowState> lastState;
     MoveSnapshot snapshotStorage[3];
     MoveSnapshot* snapshot[3]{};
 };
@@ -757,7 +812,6 @@ bool KillWindowSlideTimer(HWND hWnd)
         return false;
     }
 
-    auto& timer = it->second;
     g_winSlideTimers.erase(it);
     return true;
 }
@@ -852,18 +906,40 @@ void OnWindowPosChanging(HWND hWnd, WINDOWPOS* windowPos)
         return;
     }
 
-    bool posChanged = rc.left != windowPos->x || rc.top != windowPos->y;
-    bool sizeChanged = rc.right - rc.left != windowPos->cx || rc.bottom - rc.top != windowPos->cy;
+    int x = (windowPos->flags & SWP_NOMOVE) ? rc.left : windowPos->x;
+    int y = (windowPos->flags & SWP_NOMOVE) ? rc.top : windowPos->y;
+    int cx = (windowPos->flags & SWP_NOSIZE) ? (rc.right - rc.left) : windowPos->cx;
+    int cy = (windowPos->flags & SWP_NOSIZE) ? (rc.bottom - rc.top) : windowPos->cy;
 
+    bool posChanged = rc.left != x || rc.top != y;
+    bool sizeChanged = rc.right - rc.left != cx || rc.bottom - rc.top != cy;
+
+    if (!posChanged && !sizeChanged) {
+        return;
+    }
+
+    auto it = g_winMoving.find(hWnd);
+    if (it == g_winMoving.end()) {
+        return;
+    }
+
+    auto& windowMoving = it->second;
     if (posChanged && !sizeChanged) {
-        auto it = g_winMoving.find(hWnd);
-        if (it != g_winMoving.end()) {
-            auto& windowMoving = it->second;
-            windowMoving.PreProcessPos(hWnd, &windowPos->x, &windowPos->y, &windowPos->cx, &windowPos->cy);
+        windowMoving.PreProcessPos(hWnd, &x, &y, &cx, &cy);
+
+        if (!(windowPos->flags & SWP_NOMOVE)) {
+            windowPos->x = x;
+            windowPos->y = y;
+        }
+
+        if (!(windowPos->flags & SWP_NOSIZE)) {
+            windowPos->cx = cx;
+            windowPos->cy = cy;
         }
     }
-    else if (sizeChanged) {
+    else {
         // Maybe support resize one day...
+        windowMoving.ForgetLastPos();
     }
 }
 
@@ -891,7 +967,7 @@ void OnWindowPosChanged(HWND hWnd, const WINDOWPOS* windowPos)
         return;
     }
 
-    windowMove.UpdateWithNewPos(windowPos->x, windowPos->y);
+    windowMove.UpdateWithNewPos(hWnd, windowPos->x, windowPos->y);
 }
 
 void OnSysCommand(HWND hWnd, WPARAM command)
@@ -1099,7 +1175,7 @@ void LoadSettings()
     g_settings.slidingAnimationSlowdown = Wh_GetIntSetting(L"SlidingAnimationSlowdown");
 }
 
-BOOL Wh_ModInit(void)
+BOOL Wh_ModInit()
 {
     Wh_Log(L"Init");
 
@@ -1112,6 +1188,7 @@ BOOL Wh_ModInit(void)
         pGetAwarenessFromDpiAwarenessContext = (GetAwarenessFromDpiAwarenessContext_t)GetProcAddress(hUser32, "GetAwarenessFromDpiAwarenessContext");
         pGetDpiForSystem = (GetDpiForSystem_t)GetProcAddress(hUser32, "GetDpiForSystem");
         pGetDpiForWindow = (GetDpiForWindow_t)GetProcAddress(hUser32, "GetDpiForWindow");
+        pIsWindowArranged = (IsWindowArranged_t)GetProcAddress(hUser32, "IsWindowArranged");
     }
 
     HMODULE hShcore = LoadLibrary(L"shcore.dll");
@@ -1130,7 +1207,7 @@ BOOL Wh_ModInit(void)
     return TRUE;
 }
 
-void Wh_ModUninit(void)
+void Wh_ModUninit()
 {
     Wh_Log(L"Uninit");
 
@@ -1162,7 +1239,7 @@ void Wh_ModUninit(void)
     }
 }
 
-void Wh_ModSettingsChanged(void)
+void Wh_ModSettingsChanged()
 {
     Wh_Log(L"SettingsChanged");
 
