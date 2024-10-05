@@ -115,6 +115,11 @@ STDAPI GetDpiForMonitor(HMONITOR hmonitor,
                         UINT* dpiX,
                         UINT* dpiY);
 
+// Available since Windows 10 version 1607, missing in older MinGW headers.
+using GetThreadDescription_t =
+    WINBASEAPI HRESULT(WINAPI*)(HANDLE hThread, PWSTR* ppszThreadDescription);
+GetThreadDescription_t pGetThreadDescription;
+
 bool GetMonitorRect(HMONITOR monitor, RECT* rc) {
     MONITORINFO monitorInfo{
         .cbSize = sizeof(MONITORINFO),
@@ -461,11 +466,10 @@ HRESULT WINAPI CTaskListWnd_ComputeJumpViewPosition_Hook(
         .cbSize = sizeof(MONITORINFO),
     };
     GetMonitorInfo(monitor, &monitorInfo);
-    UINT monitorDpiX = 96;
-    UINT monitorDpiY = 96;
-    GetDpiForMonitor(monitor, MDT_DEFAULT, &monitorDpiX, &monitorDpiY);
 
-    point->Y = monitorInfo.rcWork.top + MulDiv(125, monitorDpiY, 96);
+    // Place at the bottom of the monitor, will reposition later in
+    // SetWindowPos.
+    point->Y = monitorInfo.rcWork.bottom;
 
     return ret;
 }
@@ -775,16 +779,16 @@ BOOL WINAPI SetWindowPos_Hook(HWND hWnd,
                                      uFlags);
     };
 
-    if (uFlags & (SWP_NOSIZE | SWP_NOMOVE)) {
-        return original();
-    }
-
     WCHAR szClassName[64];
     if (GetClassName(hWnd, szClassName, ARRAYSIZE(szClassName)) == 0) {
         return original();
     }
 
     if (_wcsicmp(szClassName, L"TaskListThumbnailWnd") == 0) {
+        if (uFlags & SWP_NOMOVE) {
+            return original();
+        }
+
         if (!g_inCTaskListThumbnailWnd_DisplayUI &&
             !g_inCTaskListThumbnailWnd_LayoutThumbnails) {
             return original();
@@ -818,6 +822,10 @@ BOOL WINAPI SetWindowPos_Hook(HWND hWnd,
     } else if (_wcsicmp(szClassName, L"TopLevelWindowForOverflowXamlIsland") ==
                    0 ||
                _wcsicmp(szClassName, L"Xaml_WindowedPopupClass") == 0) {
+        if (uFlags & (SWP_NOMOVE | SWP_NOSIZE)) {
+            return original();
+        }
+
         DWORD messagePos = GetMessagePos();
         POINT pt{
             GET_X_LPARAM(messagePos),
@@ -839,6 +847,56 @@ BOOL WINAPI SetWindowPos_Hook(HWND hWnd,
         } else if (Y > monitorInfo.rcWork.bottom - cy) {
             Y = monitorInfo.rcWork.bottom - cy;
         }
+    } else if (_wcsicmp(szClassName, L"Windows.UI.Core.CoreWindow") == 0) {
+        if (uFlags & SWP_NOMOVE) {
+            return original();
+        }
+
+        DWORD threadId = GetWindowThreadProcessId(hWnd, nullptr);
+        if (!threadId) {
+            return original();
+        }
+
+        HANDLE thread =
+            OpenThread(THREAD_QUERY_LIMITED_INFORMATION, FALSE, threadId);
+        if (!thread) {
+            return original();
+        }
+
+        PWSTR threadDescription;
+        HRESULT hr = pGetThreadDescription
+                         ? pGetThreadDescription(thread, &threadDescription)
+                         : E_FAIL;
+        CloseHandle(thread);
+        if (FAILED(hr)) {
+            return original();
+        }
+
+        bool isJumpViewUI = wcscmp(threadDescription, L"JumpViewUI") == 0;
+
+        LocalFree(threadDescription);
+
+        if (!isJumpViewUI) {
+            return original();
+        }
+
+        DWORD messagePos = GetMessagePos();
+        POINT pt{
+            GET_X_LPARAM(messagePos),
+            GET_Y_LPARAM(messagePos),
+        };
+
+        HMONITOR monitor = MonitorFromPoint(pt, MONITOR_DEFAULTTONEAREST);
+        if (GetTaskbarLocationForMonitor(monitor) == TaskbarLocation::bottom) {
+            return original();
+        }
+
+        MONITORINFO monitorInfo{
+            .cbSize = sizeof(MONITORINFO),
+        };
+        GetMonitorInfo(monitor, &monitorInfo);
+
+        Y = monitorInfo.rcWork.top;
     } else {
         return original();
     }
@@ -1208,6 +1266,11 @@ BOOL Wh_ModInit() {
     Wh_Log(L">");
 
     LoadSettings();
+
+    if (HMODULE kernel32Module = LoadLibrary(L"kernel32.dll")) {
+        pGetThreadDescription = (GetThreadDescription_t)GetProcAddress(
+            kernel32Module, "GetThreadDescription");
+    }
 
     if (!GetTaskbarViewDllPath(g_taskbarViewDllPath)) {
         Wh_Log(L"Taskbar view module not found");
