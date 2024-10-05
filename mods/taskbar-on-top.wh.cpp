@@ -101,7 +101,7 @@ using FrameworkElementLoadedEventRevoker = winrt::impl::event_revoker<
     IFrameworkElement,
     &winrt::impl::abi<IFrameworkElement>::type::remove_Loaded>;
 
-std::list<FrameworkElementLoadedEventRevoker> g_notifyIconAutoRevokerList;
+std::list<FrameworkElementLoadedEventRevoker> g_elementLoadedAutoRevokerList;
 
 WINUSERAPI UINT WINAPI GetDpiForWindow(HWND hwnd);
 typedef enum MONITOR_DPI_TYPE {
@@ -550,6 +550,74 @@ void* WINAPI XamlExplorerHostWindow_XamlExplorerHostWindow_Hook(
                                                                   rect, param3);
 }
 
+void ApplyTaskbarFrameStyle(FrameworkElement taskbarFrame) {
+    if (g_settings.taskbarLocation != TaskbarLocation::top) {
+        return;
+    }
+
+    FrameworkElement backgroundStroke = nullptr;
+
+    FrameworkElement child = taskbarFrame;
+    if ((child = FindChildByName(child, L"RootGrid")) &&
+        (child = FindChildByName(child, L"BackgroundControl")) &&
+        (child =
+             FindChildByClassName(child, L"Windows.UI.Xaml.Controls.Grid")) &&
+        (child = FindChildByName(child, L"BackgroundStroke"))) {
+        backgroundStroke = child;
+    }
+
+    if (!backgroundStroke) {
+        return;
+    }
+
+    backgroundStroke.VerticalAlignment(VerticalAlignment::Bottom);
+}
+
+using TaskbarFrame_TaskbarFrame_t = void*(WINAPI*)(void* pThis);
+TaskbarFrame_TaskbarFrame_t TaskbarFrame_TaskbarFrame_Original;
+void* WINAPI TaskbarFrame_TaskbarFrame_Hook(void* pThis) {
+    Wh_Log(L">");
+
+    pThis = TaskbarFrame_TaskbarFrame_Original(pThis);
+
+    FrameworkElement taskbarFrame = nullptr;
+    ((IUnknown**)pThis)[1]->QueryInterface(winrt::guid_of<FrameworkElement>(),
+                                           winrt::put_abi(taskbarFrame));
+    if (!taskbarFrame) {
+        return pThis;
+    }
+
+    g_elementLoadedAutoRevokerList.emplace_back();
+    auto autoRevokerIt = g_elementLoadedAutoRevokerList.end();
+    --autoRevokerIt;
+
+    *autoRevokerIt = taskbarFrame.Loaded(
+        winrt::auto_revoke_t{},
+        [autoRevokerIt](winrt::Windows::Foundation::IInspectable const& sender,
+                        winrt::Windows::UI::Xaml::RoutedEventArgs const& e) {
+            Wh_Log(L">");
+
+            g_elementLoadedAutoRevokerList.erase(autoRevokerIt);
+
+            auto taskbarFrame = sender.try_as<FrameworkElement>();
+            if (!taskbarFrame) {
+                return;
+            }
+
+            auto className = winrt::get_class_name(taskbarFrame);
+            Wh_Log(L"className: %s", className.c_str());
+
+            try {
+                ApplyTaskbarFrameStyle(taskbarFrame);
+            } catch (...) {
+                HRESULT hr = winrt::to_hresult();
+                Wh_Log(L"Error %08X", hr);
+            }
+        });
+
+    return pThis;
+}
+
 void ApplySystemTrayChevronIconViewStyle(
     FrameworkElement systemTrayChevronIconViewElement) {
     if (g_settings.taskbarLocation != TaskbarLocation::top) {
@@ -581,22 +649,22 @@ void ApplySystemTrayChevronIconViewStyle(
     baseTextBlock.RenderTransformOrigin({origin, origin});
 }
 
-using IconView_IconView_t = void(WINAPI*)(PVOID pThis);
+using IconView_IconView_t = void*(WINAPI*)(void* pThis);
 IconView_IconView_t IconView_IconView_Original;
-void WINAPI IconView_IconView_Hook(PVOID pThis) {
+void* WINAPI IconView_IconView_Hook(void* pThis) {
     Wh_Log(L">");
 
-    IconView_IconView_Original(pThis);
+    pThis = IconView_IconView_Original(pThis);
 
     FrameworkElement iconView = nullptr;
     ((IUnknown**)pThis)[1]->QueryInterface(winrt::guid_of<FrameworkElement>(),
                                            winrt::put_abi(iconView));
     if (!iconView) {
-        return;
+        return pThis;
     }
 
-    g_notifyIconAutoRevokerList.emplace_back();
-    auto autoRevokerIt = g_notifyIconAutoRevokerList.end();
+    g_elementLoadedAutoRevokerList.emplace_back();
+    auto autoRevokerIt = g_elementLoadedAutoRevokerList.end();
     --autoRevokerIt;
 
     *autoRevokerIt = iconView.Loaded(
@@ -605,7 +673,7 @@ void WINAPI IconView_IconView_Hook(PVOID pThis) {
                         winrt::Windows::UI::Xaml::RoutedEventArgs const& e) {
             Wh_Log(L">");
 
-            g_notifyIconAutoRevokerList.erase(autoRevokerIt);
+            g_elementLoadedAutoRevokerList.erase(autoRevokerIt);
 
             auto iconView = sender.try_as<FrameworkElement>();
             if (!iconView) {
@@ -621,6 +689,8 @@ void WINAPI IconView_IconView_Hook(PVOID pThis) {
                 }
             }
         });
+
+    return pThis;
 }
 
 using OverflowFlyoutModel_Show_t = void(WINAPI*)(void* pThis);
@@ -988,6 +1058,13 @@ bool HookTaskbarViewDllSymbols(HMODULE module) {
     {
         // Taskbar.View.dll, ExplorerExtensions.dll
         WindhawkUtils::SYMBOL_HOOK symbolHooks[] = {
+            {
+                {
+                    LR"(public: __cdecl winrt::Taskbar::implementation::TaskbarFrame::TaskbarFrame(void))",
+                },
+                (void**)&TaskbarFrame_TaskbarFrame_Original,
+                (void*)TaskbarFrame_TaskbarFrame_Hook,
+            },
             {
                 {
                     LR"(public: __cdecl winrt::SystemTray::implementation::IconView::IconView(void))",
