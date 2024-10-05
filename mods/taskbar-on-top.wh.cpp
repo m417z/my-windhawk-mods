@@ -880,11 +880,8 @@ BOOL WINAPI SetWindowPos_Hook(HWND hWnd,
             return original();
         }
 
-        DWORD messagePos = GetMessagePos();
-        POINT pt{
-            GET_X_LPARAM(messagePos),
-            GET_Y_LPARAM(messagePos),
-        };
+        POINT pt;
+        GetCursorPos(&pt);
 
         HMONITOR monitor = MonitorFromPoint(pt, MONITOR_DEFAULTTONEAREST);
         if (GetTaskbarLocationForMonitor(monitor) == TaskbarLocation::bottom) {
