@@ -1018,9 +1018,8 @@ bool ApplyStyle(FrameworkElement taskbarFrame,
         margin.Bottom -= 1;
     }
 
-    FrameworkElement child = contentGrid;
-    if (child && (child = FindChildByName(child, L"TaskbarFrame")) &&
-        (child = FindChildByName(child, L"RootGrid"))) {
+    FrameworkElement child = taskbarFrame;
+    if ((child = FindChildByName(child, L"RootGrid"))) {
         child.Margin(margin);
     }
 
@@ -1029,6 +1028,24 @@ bool ApplyStyle(FrameworkElement taskbarFrame,
         (child = FindChildByClassName(child, L"SystemTray.SystemTrayFrame")) &&
         (child = FindChildByName(child, L"SystemTrayFrameGrid"))) {
         child.Margin(margin);
+    }
+
+    child = taskbarFrame;
+    if ((child = FindChildByName(child, L"RootGrid")) &&
+        (child = FindChildByName(child, L"BackgroundControl")) &&
+        (child =
+             FindChildByClassName(child, L"Windows.UI.Xaml.Controls.Grid")) &&
+        (child = FindChildByName(child, L"BackgroundStroke"))) {
+        // TODO: Handle secondary taskbars.
+        if (!g_unloading &&
+            g_settings.taskbarLocation == TaskbarLocation::right) {
+            child.VerticalAlignment(VerticalAlignment::Bottom);
+            // Account for the extra margin above.
+            child.Margin(Thickness{0, 0, 0, 1});
+        } else {
+            child.VerticalAlignment(VerticalAlignment::Top);
+            child.Margin(Thickness{});
+        }
     }
 
     auto xamlRoot = taskbarFrame.XamlRoot();
