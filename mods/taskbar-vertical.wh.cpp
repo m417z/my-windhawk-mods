@@ -2047,20 +2047,33 @@ void WINAPI OverflowFlyoutModel_Show_Hook(void* pThis) {
     g_inOverflowFlyoutModel_Show = false;
 }
 
-using IPointerPoint_RawPosition_t = winrt::Windows::Foundation::Point*(
-    WINAPI*)(void* pThis, winrt::Windows::Foundation::Point* point);
-IPointerPoint_RawPosition_t IPointerPoint_RawPosition_Original;
+using NotificationAreaIconsDataModel_GetInvocationPointRelativeToScreen_t =
+    winrt::Windows::Foundation::Point*(
+        WINAPI*)(void* pThis,
+                 winrt::Windows::Foundation::Point* pointResult,
+                 const winrt::Windows::Foundation::Point* point);
+NotificationAreaIconsDataModel_GetInvocationPointRelativeToScreen_t
+    NotificationAreaIconsDataModel_GetInvocationPointRelativeToScreen_Original;
 winrt::Windows::Foundation::Point* WINAPI
-IPointerPoint_RawPosition_Hook(void* pThis,
-                               winrt::Windows::Foundation::Point* point) {
+NotificationAreaIconsDataModel_GetInvocationPointRelativeToScreen_Hook(
+    void* pThis,
+    winrt::Windows::Foundation::Point* pointResult,
+    const winrt::Windows::Foundation::Point* point) {
     Wh_Log(L">");
 
     auto original = [=]() {
-        return IPointerPoint_RawPosition_Original(pThis, point);
+        return NotificationAreaIconsDataModel_GetInvocationPointRelativeToScreen_Original(
+            pThis, pointResult, point);
+    };
+
+    DWORD messagePos = GetMessagePos();
+    POINT pt{
+        GET_X_LPARAM(messagePos),
+        GET_Y_LPARAM(messagePos),
     };
 
     HWND hTaskbarWnd = GetTaskbarWnd();
-    if (!hTaskbarWnd) {
+    if (!hTaskbarWnd || WindowFromPoint(pt) != hTaskbarWnd) {
         return original();
     }
 
@@ -2074,13 +2087,15 @@ IPointerPoint_RawPosition_Hook(void* pThis,
     int taskbarHeight = MulDiv(taskbarRectNative.bottom - taskbarRectNative.top,
                                96, taskbarDpi);
 
-    auto* ret = IPointerPoint_RawPosition_Original(pThis, point);
-
     // Adjust to account for the taskbar rotation. Used for tray icon events.
-    *ret = winrt::Windows::Foundation::Point{
-        taskbarHeight - ret->Y,
-        ret->X,
+    auto pointNew = winrt::Windows::Foundation::Point{
+        taskbarHeight - point->Y,
+        point->X,
     };
+
+    auto* ret =
+        NotificationAreaIconsDataModel_GetInvocationPointRelativeToScreen_Original(
+            pThis, pointResult, &pointNew);
 
     return ret;
 }
@@ -2935,10 +2950,11 @@ bool HookTaskbarViewDllSymbols(HMODULE module) {
             },
             {
                 {
-                    LR"(public: __cdecl winrt::impl::consume_Windows_UI_Input_IPointerPoint<struct winrt::Windows::UI::Input::IPointerPoint>::RawPosition(void)const )",
+                    LR"(private: struct winrt::Windows::Foundation::Point __cdecl winrt::SystemTray::implementation::NotificationAreaIconsDataModel::GetInvocationPointRelativeToScreen(struct winrt::Windows::Foundation::Point const &))",
                 },
-                (void**)&IPointerPoint_RawPosition_Original,
-                (void*)IPointerPoint_RawPosition_Hook,
+                (void**)&NotificationAreaIconsDataModel_GetInvocationPointRelativeToScreen_Original,
+                (void*)
+                    NotificationAreaIconsDataModel_GetInvocationPointRelativeToScreen_Hook,
             },
         };
 
