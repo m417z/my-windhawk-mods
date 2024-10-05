@@ -89,6 +89,7 @@ With labels:
 
 #include <knownfolders.h>
 #include <shlobj.h>
+#include <uiautomation.h>
 #include <windowsx.h>
 
 #undef GetCurrentTime
@@ -2123,6 +2124,62 @@ BOOL WINAPI GetWindowRect_Hook(HWND hWnd, LPRECT lpRect) {
     return ret;
 }
 
+std::optional<CONTROLTYPEID> GetAutomationControlTypeFromXamlPopupWindow(
+    HWND hWnd) {
+    CO_MTA_USAGE_COOKIE cookie;
+    bool mtaUsageIncreased = SUCCEEDED(CoIncrementMTAUsage(&cookie));
+
+    std::optional<CONTROLTYPEID> result =
+        [hWnd]() -> std::optional<CONTROLTYPEID> {
+        winrt::com_ptr<IUIAutomation> automation =
+            winrt::create_instance<IUIAutomation>(CLSID_CUIAutomation,
+                                                  CLSCTX_INPROC_SERVER);
+        if (!automation) {
+            return std::nullopt;
+        }
+
+        winrt::com_ptr<IUIAutomationElement> element;
+        HRESULT hr = automation->ElementFromHandle(hWnd, element.put());
+        if (FAILED(hr)) {
+            return std::nullopt;
+        }
+
+        winrt::com_ptr<IUIAutomationCondition> trueCondition;
+        hr = automation->CreateTrueCondition(trueCondition.put());
+        if (FAILED(hr)) {
+            return std::nullopt;
+        }
+
+        winrt::com_ptr<IUIAutomationElement> firstChildElement;
+        hr = element->FindFirst(TreeScope_Children, trueCondition.get(),
+                                firstChildElement.put());
+        if (FAILED(hr) || !firstChildElement) {
+            return std::nullopt;
+        }
+
+        winrt::com_ptr<IUIAutomationElement> secondChildElement;
+        hr = firstChildElement->FindFirst(
+            TreeScope_Children, trueCondition.get(), secondChildElement.put());
+        if (FAILED(hr) || !secondChildElement) {
+            return std::nullopt;
+        }
+
+        CONTROLTYPEID controlType;
+        hr = secondChildElement->get_CurrentControlType(&controlType);
+        if (FAILED(hr)) {
+            return std::nullopt;
+        }
+
+        return controlType;
+    }();
+
+    if (mtaUsageIncreased) {
+        CoDecrementMTAUsage(cookie);
+    }
+
+    return result;
+}
+
 using SetWindowPos_t = decltype(&SetWindowPos);
 SetWindowPos_t SetWindowPos_Original;
 BOOL WINAPI SetWindowPos_Hook(HWND hWnd,
@@ -2306,6 +2363,72 @@ BOOL WINAPI SetWindowPos_Hook(HWND hWnd,
         }
 
         Y = pt.y - cy / 2;
+
+        if (Y < monitorInfo.rcWork.top) {
+            Y = monitorInfo.rcWork.top;
+        } else if (Y > monitorInfo.rcWork.bottom - cy) {
+            Y = monitorInfo.rcWork.bottom - cy;
+        }
+    } else if (_wcsicmp(szClassName, L"Xaml_WindowedPopupClass") == 0) {
+        if (uFlags & (SWP_NOMOVE | SWP_NOSIZE)) {
+            return original();
+        }
+
+        // Make sure taskbar tooltips don't overlap with the taskbar.
+        if (!IsTaskbarWindow(GetAncestor(hWnd, GA_ROOTOWNER))) {
+            return original();
+        }
+
+        // Is this a tooltip? Use prop for cache.
+        constexpr WCHAR kIsTooltipPropName[] = L"IsTooltip_Windhawk_" WH_MOD_ID;
+        PCWSTR kIsTooltipPropYes = L"y";
+        PCWSTR kIsTooltipPropNo = L"n";
+        PCWSTR isTooltipPropValue = (PCWSTR)GetProp(hWnd, kIsTooltipPropName);
+        bool isTooltip = false;
+        if (!isTooltipPropValue) {
+            isTooltip = GetAutomationControlTypeFromXamlPopupWindow(hWnd) ==
+                        UIA_ToolTipControlTypeId;
+            isTooltipPropValue =
+                isTooltip ? kIsTooltipPropYes : kIsTooltipPropNo;
+            SetProp(hWnd, kIsTooltipPropName, (HANDLE)isTooltipPropValue);
+        } else if (isTooltipPropValue == kIsTooltipPropYes) {
+            isTooltip = true;
+        }
+
+        if (!isTooltip) {
+            return original();
+        }
+
+        DWORD messagePos = GetMessagePos();
+        POINT pt{
+            GET_X_LPARAM(messagePos),
+            GET_Y_LPARAM(messagePos),
+        };
+
+        // Keep Y coordinate in prop.
+        constexpr WCHAR kPtPropName[] = L"Pt_Windhawk_" WH_MOD_ID;
+        DWORD_PTR originMessagePos = (DWORD_PTR)GetProp(hWnd, kPtPropName);
+        if (!originMessagePos) {
+            originMessagePos = messagePos;
+            SetProp(hWnd, kPtPropName,
+                    (HANDLE)(originMessagePos | 0x100000000));
+        }
+
+        HMONITOR monitor = MonitorFromPoint(pt, MONITOR_DEFAULTTONEAREST);
+
+        MONITORINFO monitorInfo{
+            .cbSize = sizeof(MONITORINFO),
+        };
+        GetMonitorInfo(monitor, &monitorInfo);
+
+        if (X < monitorInfo.rcWork.left) {
+            X = monitorInfo.rcWork.left;
+        } else if (X > monitorInfo.rcWork.right - cx) {
+            X = monitorInfo.rcWork.right - cx;
+        }
+
+        // Also adjust the tooltip vertically.
+        Y = GET_Y_LPARAM(originMessagePos) - cy / 2;
 
         if (Y < monitorInfo.rcWork.top) {
             Y = monitorInfo.rcWork.top;
