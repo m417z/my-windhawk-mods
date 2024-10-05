@@ -5,8 +5,8 @@ from typing import List
 
 url_pattern = r"https://i\.imgur\.com/\w+\.\w+"
 script_dir = Path(__file__).parent
-code_folder_path = script_dir / ".." / "mods"
-images_folder_path = script_dir / ".." / "images"
+code_folder_path = script_dir.parent / "mods"
+images_folder_path = script_dir.parent / "images"
 
 session = requests.Session()
 session.headers.update({'User-Agent': 'Mozilla/5.0'})
@@ -19,16 +19,16 @@ def find_image_urls(file_path: Path) -> List[str]:
 
 
 def download_image(url: str, save_path: Path):
-    try:
-        response = session.get(url)
-        response.raise_for_status()
+    if save_path.exists():
+        return
 
-        with save_path.open('wb') as file:
-            file.write(response.content)
+    response = session.get(url)
+    response.raise_for_status()
 
-        print(f"Downloaded and saved: {save_path.name}")
-    except requests.RequestException as e:
-        print(f"Failed to download {url}: {e}")
+    with save_path.open('wb') as file:
+        file.write(response.content)
+
+    print(f"Downloaded and saved: {save_path.name}")
 
 
 def process_code_files(code_folder: Path, images_folder: Path):
@@ -36,7 +36,6 @@ def process_code_files(code_folder: Path, images_folder: Path):
 
     image_urls: set[str] = set()
     for file_path in code_folder.glob('*.wh.cpp'):
-        print(f"Processing file: {file_path.name}")
         image_urls.update(find_image_urls(file_path))
 
     for url in image_urls:
@@ -50,7 +49,7 @@ def process_code_files(code_folder: Path, images_folder: Path):
 
     if stale_images:
         print("Stale images:")
-        print("\n".join(str(p) for p in stale_images))
+        print("\n".join(p.name for p in stale_images))
 
 
 if __name__ == "__main__":
