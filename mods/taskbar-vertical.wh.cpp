@@ -633,31 +633,16 @@ HRESULT WINAPI CTaskListWnd_ComputeJumpViewPosition_Hook(
         .cbSize = sizeof(MONITORINFO),
     };
     GetMonitorInfo(monitor, &monitorInfo);
-    UINT monitorDpiX = 96;
-    UINT monitorDpiY = 96;
-    GetDpiForMonitor(monitor, MDT_DEFAULT, &monitorDpiX, &monitorDpiY);
 
-    switch (GetTaskbarLocationForMonitor(monitor)) {
-        case TaskbarLocation::left:
-            point->X = monitorInfo.rcWork.left;
-            break;
-
-        case TaskbarLocation::right:
-            point->X = monitorInfo.rcWork.right - MulDiv(159, monitorDpiX, 96);
-            break;
-    }
-
-    point->Y = pt.y;
-
-    // Move a bit lower to vertically center the cursor on the close item.
-    point->Y += MulDiv(30, monitorDpiY, 96);
-
-    // Avoid returning a point too close to the top of the monitor which causes
-    // the menu to be cut off.
-    int minY = monitorInfo.rcWork.top + MulDiv(130, monitorDpiY, 96);
-    if (point->Y < minY) {
-        point->Y = minY;
-    }
+    // Place at the bottom center of the monitor, will reposition later in
+    // SetWindowPos. Use a different x value each time to force position
+    // recalculation.
+    static int counter;
+    counter = (counter + 1) % 2;
+    int x = monitorInfo.rcWork.left +
+            (monitorInfo.rcWork.right - monitorInfo.rcWork.left) / 2 + counter;
+    point->X = x;
+    point->Y = monitorInfo.rcWork.bottom;
 
     return ret;
 }
@@ -2137,16 +2122,16 @@ BOOL WINAPI SetWindowPos_Hook(HWND hWnd,
                                      uFlags);
     };
 
-    if (uFlags & (SWP_NOSIZE | SWP_NOMOVE)) {
-        return original();
-    }
-
     WCHAR szClassName[64];
     if (GetClassName(hWnd, szClassName, ARRAYSIZE(szClassName)) == 0) {
         return original();
     }
 
     if (_wcsicmp(szClassName, L"TaskListThumbnailWnd") == 0) {
+        if (uFlags & (SWP_NOSIZE | SWP_NOMOVE)) {
+            return original();
+        }
+
         if (!g_inCTaskListThumbnailWnd_DisplayUI &&
             !g_inCTaskListThumbnailWnd_LayoutThumbnails) {
             return original();
@@ -2210,6 +2195,10 @@ BOOL WINAPI SetWindowPos_Hook(HWND hWnd,
         cy = rc.bottom - rc.top;
     } else if (_wcsicmp(szClassName, L"TopLevelWindowForOverflowXamlIsland") ==
                0) {
+        if (uFlags & (SWP_NOMOVE | SWP_NOSIZE)) {
+            return original();
+        }
+
         DWORD messagePos = GetMessagePos();
         POINT pt{
             GET_X_LPARAM(messagePos),
@@ -2242,6 +2231,66 @@ BOOL WINAPI SetWindowPos_Hook(HWND hWnd,
             int prevCenterY = rc.top + (rc.bottom - rc.top) / 2;
             Y = prevCenterY - cy / 2;
         }
+
+        if (Y < monitorInfo.rcWork.top) {
+            Y = monitorInfo.rcWork.top;
+        } else if (Y > monitorInfo.rcWork.bottom - cy) {
+            Y = monitorInfo.rcWork.bottom - cy;
+        }
+    } else if (_wcsicmp(szClassName, L"Windows.UI.Core.CoreWindow") == 0) {
+        if (uFlags & SWP_NOMOVE) {
+            return original();
+        }
+
+        DWORD threadId = GetWindowThreadProcessId(hWnd, nullptr);
+        if (!threadId) {
+            return original();
+        }
+
+        HANDLE thread =
+            OpenThread(THREAD_QUERY_LIMITED_INFORMATION, FALSE, threadId);
+        if (!thread) {
+            return original();
+        }
+
+        PWSTR threadDescription;
+        HRESULT hr = pGetThreadDescription
+                         ? pGetThreadDescription(thread, &threadDescription)
+                         : E_FAIL;
+        CloseHandle(thread);
+        if (FAILED(hr)) {
+            return original();
+        }
+
+        bool isJumpViewUI = wcscmp(threadDescription, L"JumpViewUI") == 0;
+
+        LocalFree(threadDescription);
+
+        if (!isJumpViewUI) {
+            return original();
+        }
+
+        POINT pt;
+        GetCursorPos(&pt);
+
+        HMONITOR monitor = MonitorFromPoint(pt, MONITOR_DEFAULTTONEAREST);
+
+        MONITORINFO monitorInfo{
+            .cbSize = sizeof(MONITORINFO),
+        };
+        GetMonitorInfo(monitor, &monitorInfo);
+
+        switch (GetTaskbarLocationForMonitor(monitor)) {
+            case TaskbarLocation::left:
+                X = monitorInfo.rcWork.left;
+                break;
+
+            case TaskbarLocation::right:
+                X = monitorInfo.rcWork.right - cx;
+                break;
+        }
+
+        Y = pt.y - cy / 2;
 
         if (Y < monitorInfo.rcWork.top) {
             Y = monitorInfo.rcWork.top;
