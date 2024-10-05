@@ -31,7 +31,7 @@ Moves the Windows 11 taskbar to the top of the screen.
 The mod was designed for up-to-date Windows 11 versions 22H2 to 24H2. Other
 versions weren't tested and are probably not compatible.
 
-![Screenshot](https://i.imgur.com/dCABsum.png)
+![Screenshot](https://i.imgur.com/LqBwGVn.png)
 */
 // ==/WindhawkModReadme==
 
