@@ -2132,8 +2132,7 @@ std::optional<CONTROLTYPEID> GetAutomationControlTypeFromXamlPopupWindow(
     std::optional<CONTROLTYPEID> result =
         [hWnd]() -> std::optional<CONTROLTYPEID> {
         winrt::com_ptr<IUIAutomation> automation =
-            winrt::create_instance<IUIAutomation>(CLSID_CUIAutomation,
-                                                  CLSCTX_INPROC_SERVER);
+            winrt::create_instance<IUIAutomation>(CLSID_CUIAutomation);
         if (!automation) {
             return std::nullopt;
         }
