@@ -185,11 +185,11 @@ struct Theme {
 
 const Theme g_themeTranslucentShell = {{
     ThemeTargetStyles{L"Grid#NotificationCenterGrid", {
-        L"Background:=<AcrylicBrush TintOpacity=\"0\" TintColor=\"Transparent\" TintLuminosityOpacity=\"0\" Opacity=\"1\" FallbackColor=\"#70262626\"/>",
+        L"Background:=<AcrylicBrush TintOpacity=\"0\" TintColor=\"Black\" TintLuminosityOpacity=\"0.12\" Opacity=\"1\" FallbackColor=\"#70262626\"/>",
         L"BorderThickness=0,0,0,0",
         L"CornerRadius=15"}},
     ThemeTargetStyles{L"Grid#CalendarCenterGrid", {
-        L"Background:=<AcrylicBrush TintOpacity=\"0\" TintColor=\"Transparent\" TintLuminosityOpacity=\"0\" Opacity=\"1\" FallbackColor=\"#70262626\"/>",
+        L"Background:=<AcrylicBrush TintOpacity=\"0\" TintColor=\"Black\" TintLuminosityOpacity=\"0.12\" Opacity=\"1\" FallbackColor=\"#70262626\"/>",
         L"BorderThickness=0,0,0,0",
         L"CornerRadius=15"}},
     ThemeTargetStyles{L"ScrollViewer#CalendarControlScrollViewer", {
@@ -199,23 +199,23 @@ const Theme g_themeTranslucentShell = {{
     ThemeTargetStyles{L"ActionCenter.FocusSessionControl#FocusSessionControl > Grid#FocusGrid", {
         L"Background:=<AcrylicBrush Opacity=\"0\"/>"}},
     ThemeTargetStyles{L"MenuFlyoutPresenter", {
-        L"Background:=<AcrylicBrush TintOpacity=\"0\" TintColor=\"Transparent\" TintLuminosityOpacity=\"0\" Opacity=\"1\" FallbackColor=\"#70262626\"/>",
+        L"Background:=<AcrylicBrush TintOpacity=\"0\" TintColor=\"Black\" TintLuminosityOpacity=\"0.12\" Opacity=\"1\" FallbackColor=\"#70262626\"/>",
         L"BorderThickness=0,0,0,0",
         L"CornerRadius=15",
         L"Padding=2,4,2,4"}},
     ThemeTargetStyles{L"Border#JumpListRestyledAcrylic", {
-        L"Background:=<AcrylicBrush TintOpacity=\"0\" TintColor=\"Transparent\" TintLuminosityOpacity=\"0\" Opacity=\"1\" FallbackColor=\"#70262626\"/>",
+        L"Background:=<AcrylicBrush TintOpacity=\"0\" TintColor=\"Black\" TintLuminosityOpacity=\"0.12\" Opacity=\"1\" FallbackColor=\"#70262626\"/>",
         L"BorderThickness=0,0,0,0",
         L"CornerRadius=15",
         L"Margin=-2,-2,-2,-2"}},
     ThemeTargetStyles{L"Grid#ControlCenterRegion", {
-        L"Background:=<AcrylicBrush TintOpacity=\"0\" TintColor=\"Transparent\" TintLuminosityOpacity=\"0\" Opacity=\"1\" FallbackColor=\"#70262626\"/>",
+        L"Background:=<AcrylicBrush TintOpacity=\"0\" TintColor=\"Black\" TintLuminosityOpacity=\"0.12\" Opacity=\"1\" FallbackColor=\"#70262626\"/>",
         L"BorderThickness=0,0,0,0",
         L"CornerRadius=15"}},
     ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Grid#L1Grid > Border", {
         L"Background:=<SolidColorBrush Color=\"Transparent\"/>"}},
     ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Grid#MediaTransportControlsRegion", {
-        L"Background:=<AcrylicBrush TintOpacity=\"0\" TintColor=\"Transparent\" TintLuminosityOpacity=\"0\" Opacity=\"1\" FallbackColor=\"#70262626\"/>",
+        L"Background:=<AcrylicBrush TintOpacity=\"0\" TintColor=\"Black\" TintLuminosityOpacity=\"0.12\" Opacity=\"1\" FallbackColor=\"#70262626\"/>",
         L"BorderThickness=0,0,0,0",
         L"CornerRadius=15"}},
     ThemeTargetStyles{L"Grid#MediaTransportControlsRoot", {
@@ -233,7 +233,7 @@ const Theme g_themeTranslucentShell = {{
     ThemeTargetStyles{L"ActionCenter.FlexibleToastView#FlexibleNormalToastView", {
         L"Background:=<SolidColorBrush Color=\"Transparent\"/>"}},
     ThemeTargetStyles{L"Border#ToastBackgroundBorder2", {
-        L"Background:=<AcrylicBrush TintOpacity=\"0\" TintColor=\"Transparent\" TintLuminosityOpacity=\"0\" Opacity=\"1\" FallbackColor=\"#70262626\"/>",
+        L"Background:=<AcrylicBrush TintOpacity=\"0\" TintColor=\"Black\" TintLuminosityOpacity=\"0.12\" Opacity=\"1\" FallbackColor=\"#70262626\"/>",
         L"BorderThickness=0,0,0,0",
         L"CornerRadius=15"}},
     ThemeTargetStyles{L"JumpViewUI.SystemItemListViewItem > Grid#LayoutRoot > Border#BackgroundBorder", {
