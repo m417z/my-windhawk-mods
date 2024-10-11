@@ -2174,7 +2174,7 @@ bool HookTaskbarSymbols() {
         module = LoadLibrary(L"taskbar.dll");
         if (!module) {
             Wh_Log(L"Couldn't load taskbar.dll");
-            return FALSE;
+            return false;
         }
     }
 
