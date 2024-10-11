@@ -262,6 +262,16 @@ CTaskGroup_GetTitleText_t CTaskGroup_GetTitleText_Original;
 using CTaskGroup_SetTip_t = HRESULT(WINAPI*)(PVOID pThis, PCWSTR tip);
 CTaskGroup_SetTip_t CTaskGroup_SetTip_Original;
 
+using CTaskGroup_GetIconId_t = HRESULT(WINAPI*)(PVOID pThis,
+                                                PVOID taskItem,
+                                                int* id);
+CTaskGroup_GetIconId_t CTaskGroup_GetIconId_Original;
+
+using CTaskGroup_SetIconId_t = HRESULT(WINAPI*)(PVOID pThis,
+                                                PVOID taskItem,
+                                                int id);
+CTaskGroup_SetIconId_t CTaskGroup_SetIconId_Original;
+
 using CTaskGroup_DoesWindowMatch_t =
     HRESULT(WINAPI*)(PVOID pThis,
                      HWND hWnd,
@@ -943,6 +953,11 @@ void SwapTaskGroupIds(PVOID taskGroup1, PVOID taskGroup2) {
     CTaskGroup_GetTitleText_Original(taskGroup2, nullptr, tip2Copy, MAX_PATH);
     g_disableGetLauncherName = false;
 
+    int iconId1 = 0;
+    int iconId2 = 0;
+    CTaskGroup_GetIconId_Original(taskGroup1, nullptr, &iconId1);
+    CTaskGroup_GetIconId_Original(taskGroup2, nullptr, &iconId2);
+
     CTaskGroup_SetAppID_Original(taskGroup1,
                                  CTaskGroup_GetAppID_Original(taskGroup2));
     CTaskGroup_SetShortcutIDList_Original(
@@ -950,11 +965,13 @@ void SwapTaskGroupIds(PVOID taskGroup1, PVOID taskGroup2) {
     CTaskGroup_UpdateFlags_Original(taskGroup1, ~0,
                                     CTaskGroup_GetFlags_Original(taskGroup2));
     CTaskGroup_SetTip_Original(taskGroup1, tip2Copy);
+    CTaskGroup_SetIconId_Original(taskGroup1, nullptr, iconId2);
 
     CTaskGroup_SetAppID_Original(taskGroup2, appId1Copy);
     CTaskGroup_SetShortcutIDList_Original(taskGroup2, idList1Copy);
     CTaskGroup_UpdateFlags_Original(taskGroup2, ~0, flags1Copy);
     CTaskGroup_SetTip_Original(taskGroup2, tip1Copy);
+    CTaskGroup_SetIconId_Original(taskGroup2, nullptr, iconId1);
 
     if (idList1Copy) {
         ILFree(idList1Copy);
@@ -1650,6 +1667,10 @@ bool HookExplorerPatcherSymbols(HMODULE epModule) {
          (void**)&CTaskGroup_GetTitleText_Original},
         {R"(?SetTip@CTaskGroup@@UEAAJPEBG@Z)",
          (void**)&CTaskGroup_SetTip_Original},
+        {R"(?GetIconId@CTaskGroup@@UEAAJPEAUITaskItem@@PEAH@Z)",
+         (void**)&CTaskGroup_GetIconId_Original},
+        {R"(?SetIconId@CTaskGroup@@UEAAJPEAUITaskItem@@H@Z)",
+         (void**)&CTaskGroup_SetIconId_Original},
         {R"(?DoesWindowMatch@CTaskGroup@@UEAAJPEAUHWND__@@PEBU_ITEMIDLIST_ABSOLUTE@@PEBGPEAW4WINDOWMATCHCONFIDENCE@@PEAPEAUITaskItem@@@Z)",
          (void**)&CTaskGroup_DoesWindowMatch_Original},
         {R"(?_MatchWindow@CTaskBand@@IEAAJPEAUHWND__@@PEBU_ITEMIDLIST_ABSOLUTE@@PEBGW4WINDOWMATCHCONFIDENCE@@PEAPEAUITaskGroup@@PEAPEAUITaskItem@@@Z)",
@@ -1804,7 +1825,7 @@ HMODULE WINAPI LoadLibraryExW_Hook(LPCWSTR lpLibFileName,
 
 bool HookTaskbarSymbols() {
     // Taskbar.dll, explorer.exe
-    SYMBOL_HOOK symbolHooks[] =
+    SYMBOL_HOOK symbolHooks[] =  //
         {
             {
                 {
@@ -1847,6 +1868,20 @@ bool HookTaskbarSymbols() {
                     LR"(public: virtual long __cdecl CTaskGroup::SetTip(unsigned short const * __ptr64) __ptr64)",
                 },
                 (void**)&CTaskGroup_SetTip_Original,
+            },
+            {
+                {
+                    LR"(public: virtual long __cdecl CTaskGroup::GetIconId(struct ITaskItem *,int *))",
+                    LR"(public: virtual long __cdecl CTaskGroup::GetIconId(struct ITaskItem * __ptr64,int * __ptr64) __ptr64)",
+                },
+                (void**)&CTaskGroup_GetIconId_Original,
+            },
+            {
+                {
+                    LR"(public: virtual long __cdecl CTaskGroup::SetIconId(struct ITaskItem *,int))",
+                    LR"(public: virtual long __cdecl CTaskGroup::SetIconId(struct ITaskItem * __ptr64,int) __ptr64)",
+                },
+                (void**)&CTaskGroup_SetIconId_Original,
             },
             {
                 {
