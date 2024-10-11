@@ -184,6 +184,10 @@ bool g_disableGetLauncherName;
 std::atomic<DWORD> g_compareStringOrdinalHookThreadId;
 bool g_compareStringOrdinalIgnoreSuffix;
 bool g_compareStringOrdinalAnySuffixEqual;
+std::atomic<DWORD> g_doingPinnedItemSwapThreadId;
+void* g_doingPinnedItemSwapFromTaskGroup;
+void* g_doingPinnedItemSwapToTaskGroup;
+int g_doingPinnedItemSwapIndex = -1;
 
 constexpr size_t ITaskListUIOffset = 0x28;
 
@@ -842,6 +846,19 @@ PVOID WINAPI CTaskListWnd__CreateTBGroup_Hook(PVOID pThis,
 using DPA_InsertPtr_t = decltype(&DPA_InsertPtr);
 DPA_InsertPtr_t DPA_InsertPtr_Original;
 int WINAPI DPA_InsertPtr_Hook(HDPA hdpa, int i, void* p) {
+    if (g_doingPinnedItemSwapThreadId == GetCurrentThreadId()) {
+        Wh_Log(L">");
+
+        if (g_doingPinnedItemSwapIndex != -1) {
+            PVOID taskGroup = CTaskBtnGroup_GetGroup_Original(p);
+            if (taskGroup && taskGroup == g_doingPinnedItemSwapToTaskGroup) {
+                i = g_doingPinnedItemSwapIndex;
+            }
+        }
+
+        return DPA_InsertPtr_Original(hdpa, i, p);
+    }
+
     auto original = [=]() { return DPA_InsertPtr_Original(hdpa, i, p); };
 
     if (g_cTaskListWnd__CreateTBGroup_ThreadId != GetCurrentThreadId()) {
@@ -897,6 +914,24 @@ int WINAPI DPA_InsertPtr_Hook(HDPA hdpa, int i, void* p) {
     }
 
     return DPA_InsertPtr_Original(hdpa, i, p);
+}
+
+using DPA_DeletePtr_t = decltype(&DPA_DeletePtr);
+DPA_DeletePtr_t DPA_DeletePtr_Original;
+PVOID WINAPI DPA_DeletePtr_Hook(HDPA hdpa, int i) {
+    if (g_doingPinnedItemSwapThreadId == GetCurrentThreadId()) {
+        Wh_Log(L">");
+
+        void* p = DPA_GetPtr(hdpa, i);
+        if (p) {
+            PVOID taskGroup = CTaskBtnGroup_GetGroup_Original(p);
+            if (taskGroup && taskGroup == g_doingPinnedItemSwapFromTaskGroup) {
+                g_doingPinnedItemSwapIndex = i;
+            }
+        }
+    }
+
+    return DPA_DeletePtr_Original(hdpa, i);
 }
 
 using CTaskBand_HandleTaskGroupSwitchItemAdded_t =
@@ -1019,12 +1054,20 @@ void HandleUnsuffixedInstanceOnTaskDestroyed(PVOID taskList_TaskListUI,
     SwapTaskGroupIds(taskGroup, taskGroupMatched.get());
 
     if (taskGroupIsPinned) {
+        g_doingPinnedItemSwapThreadId = GetCurrentThreadId();
+        g_doingPinnedItemSwapFromTaskGroup = taskGroup;
+        g_doingPinnedItemSwapToTaskGroup = taskGroupMatched.get();
+        g_doingPinnedItemSwapIndex = -1;
         // The flags argument is absent in newer Windows versions. According to
         // the calling convention, it just gets ignored.
         CTaskListWnd_HandleTaskGroupUnpinned_Original(taskList_TaskListUI,
                                                       taskGroup, 0);
         CTaskListWnd_HandleTaskGroupPinned_Original(taskList_TaskListUI,
                                                     taskGroupMatched.get());
+        g_doingPinnedItemSwapThreadId = 0;
+        g_doingPinnedItemSwapFromTaskGroup = nullptr;
+        g_doingPinnedItemSwapToTaskGroup = nullptr;
+        g_doingPinnedItemSwapIndex = -1;
     }
 }
 
@@ -2270,6 +2313,9 @@ BOOL Wh_ModInit() {
 
     Wh_SetFunctionHook((void*)DPA_InsertPtr, (void*)DPA_InsertPtr_Hook,
                        (void**)&DPA_InsertPtr_Original);
+
+    Wh_SetFunctionHook((void*)DPA_DeletePtr, (void*)DPA_DeletePtr_Hook,
+                       (void**)&DPA_DeletePtr_Original);
 
     return TRUE;
 }
