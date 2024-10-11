@@ -842,7 +842,7 @@ PVOID WINAPI CTaskListWnd__CreateTBGroup_Hook(PVOID pThis,
 using DPA_InsertPtr_t = decltype(&DPA_InsertPtr);
 DPA_InsertPtr_t DPA_InsertPtr_Original;
 int WINAPI DPA_InsertPtr_Hook(HDPA hdpa, int i, void* p) {
-    auto original = [&]() { return DPA_InsertPtr_Original(hdpa, i, p); };
+    auto original = [=]() { return DPA_InsertPtr_Original(hdpa, i, p); };
 
     if (g_cTaskListWnd__CreateTBGroup_ThreadId != GetCurrentThreadId()) {
         return original();
@@ -896,7 +896,7 @@ int WINAPI DPA_InsertPtr_Hook(HDPA hdpa, int i, void* p) {
         i = lastMatchIndex + 1;
     }
 
-    return original();
+    return DPA_InsertPtr_Original(hdpa, i, p);
 }
 
 using CTaskBand_HandleTaskGroupSwitchItemAdded_t =
@@ -1076,7 +1076,7 @@ LONG_PTR WINAPI CTaskListWnd_TaskDestroyed_Hook(PVOID pThis,
                                                 int taskDestroyedFlags) {
     Wh_Log(L">");
 
-    auto original = [&]() {
+    auto original = [=]() {
         return CTaskListWnd_TaskDestroyed_Original(pThis, taskGroup, taskItem,
                                                    taskDestroyedFlags);
     };
@@ -1093,7 +1093,7 @@ LONG_PTR WINAPI CTaskListWnd_TaskDestroyed_2_Hook(PVOID pThis,
                                                   PVOID taskItem) {
     Wh_Log(L">");
 
-    auto original = [&]() {
+    auto original = [=]() {
         return CTaskListWnd_TaskDestroyed_2_Original(pThis, taskGroup,
                                                      taskItem);
     };
@@ -1169,7 +1169,7 @@ LONG_PTR WINAPI CTaskListWnd__TaskCreated_Hook(PVOID pThis,
                                                int param3) {
     Wh_Log(L">");
 
-    auto original = [&]() {
+    auto original = [=]() {
         return CTaskListWnd__TaskCreated_Original(pThis, taskGroup, taskItem,
                                                   param3);
     };
