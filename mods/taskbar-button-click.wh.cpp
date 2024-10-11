@@ -1014,6 +1014,8 @@ BOOL Wh_ModInit() {
 }
 
 void Wh_ModAfterInit() {
+    Wh_Log(L">");
+
     // Try again in case there's a race between the previous attempt and the
     // LoadLibraryExW hook.
     if (g_settings.oldTaskbarOnWin11 && !g_explorerPatcherInitialized) {
