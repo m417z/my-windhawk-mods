@@ -27,11 +27,16 @@
 Close programs with the middle click on the taskbar instead of creating a new
 instance.
 
+Holding Ctrl while middle clicking will end the running task. The key
+combination can be configured or disabled in the mod settings.
+
 Only Windows 10 64-bit and Windows 11 are supported. For other Windows versions
 check out [7+ Taskbar Tweaker](https://tweaker.ramensoftware.com/).
 
 **Note:** To customize the old taskbar on Windows 11 (if using ExplorerPatcher
 or a similar tool), enable the relevant option in the mod's settings.
+
+![Demonstration](https://i.imgur.com/qeO9tLG.gif)
 */
 // ==/WindhawkModReadme==
 
@@ -46,6 +51,15 @@ or a similar tool), enable the relevant option in the mod's settings.
   - closeAll: Close all windows
   - closeForeground: Close foreground window
   - none: Do nothing
+- keysToEndTask:
+  - Ctrl: true
+  - Alt: false
+  $name: Keys to end task
+  $description: >-
+    A combination of keys that can be pressed while middle clicking to
+    forcefully end the running task
+
+    Note: This option won't have effect on a group of taskbar items
 - oldTaskbarOnWin11: false
   $name: Customize the old taskbar on Windows 11
   $description: >-
@@ -70,6 +84,8 @@ enum {
 
 struct {
     int multipleItemsBehavior;
+    bool keysToEndTaskCtrl;
+    bool keysToEndTaskAlt;
     bool oldTaskbarOnWin11;
 } g_settings;
 
@@ -117,6 +133,11 @@ using CTaskListWnd_ProcessJumpViewCloseWindow_t =
                   HMONITOR);
 CTaskListWnd_ProcessJumpViewCloseWindow_t
     CTaskListWnd_ProcessJumpViewCloseWindow_Original;
+
+using CTaskBand__EndTask_t = void(WINAPI*)(LPVOID pThis,
+                                           HWND hWnd,
+                                           BOOL bForce);
+CTaskBand__EndTask_t CTaskBand__EndTask_Original;
 
 using CTaskBtnGroup_GetGroupType_t = int(WINAPI*)(LPVOID pThis);
 CTaskBtnGroup_GetGroupType_t CTaskBtnGroup_GetGroupType_Original;
@@ -190,7 +211,7 @@ long WINAPI CTaskBand_Launch_Hook(LPVOID pThis,
                                   int param3) {
     Wh_Log(L">");
 
-    auto original = [&]() {
+    auto original = [=]() {
         return CTaskBand_Launch_Original(pThis, taskGroup, param2, param3);
     };
 
@@ -264,13 +285,29 @@ long WINAPI CTaskBand_Launch_Hook(LPVOID pThis,
         }
     }
 
-    Wh_Log(L"Closing HWND %08X", (DWORD)(ULONG_PTR)hWnd);
+    bool ctrlDown = GetKeyState(VK_CONTROL) < 0;
+    bool altDown = GetKeyState(VK_MENU) < 0;
+    bool endTask = (ctrlDown || altDown) &&
+                   g_settings.keysToEndTaskCtrl == ctrlDown &&
+                   g_settings.keysToEndTaskAlt == altDown;
 
-    POINT pt;
-    GetCursorPos(&pt);
-    HMONITOR monitor = MonitorFromPoint(pt, MONITOR_DEFAULTTONEAREST);
-    CTaskListWnd_ProcessJumpViewCloseWindow_Original(
-        g_pCTaskListWndHandlingClick, hWnd, realTaskGroup, monitor);
+    if (endTask) {
+        if (hWnd) {
+            Wh_Log(L"Ending task for HWND %08X", (DWORD)(ULONG_PTR)hWnd);
+            CTaskBand__EndTask_Original(pThis, hWnd, TRUE);
+        } else {
+            Wh_Log(L"No HWND to end task");
+        }
+    } else {
+        Wh_Log(L"Closing HWND %08X", (DWORD)(ULONG_PTR)hWnd);
+
+        POINT pt;
+        GetCursorPos(&pt);
+        HMONITOR monitor = MonitorFromPoint(pt, MONITOR_DEFAULTTONEAREST);
+        CTaskListWnd_ProcessJumpViewCloseWindow_Original(
+            g_pCTaskListWndHandlingClick, hWnd, realTaskGroup, monitor);
+    }
+
     return 0;
 }
 
@@ -697,6 +734,9 @@ void LoadSettings() {
     }
     Wh_FreeStringSetting(multipleItemsBehavior);
 
+    g_settings.keysToEndTaskCtrl = Wh_GetIntSetting(L"keysToEndTask.Ctrl");
+    g_settings.keysToEndTaskAlt = Wh_GetIntSetting(L"keysToEndTask.Alt");
+
     g_settings.oldTaskbarOnWin11 = Wh_GetIntSetting(L"oldTaskbarOnWin11");
 }
 
@@ -747,6 +787,16 @@ BOOL Wh_ModInit() {
              LR"(public: virtual void __cdecl CTaskListWnd::ProcessJumpViewCloseWindow(struct HWND__ * __ptr64,struct ITaskGroup * __ptr64,struct HMONITOR__ * __ptr64) __ptr64)",
          },
          (void**)&CTaskListWnd_ProcessJumpViewCloseWindow_Original},
+        {{
+             // Win11:
+             LR"(protected: void __cdecl CTaskBand::_EndTask(struct HWND__ * const,int))",
+             LR"(protected: void __cdecl CTaskBand::_EndTask(struct HWND__ * __ptr64 const,int) __ptr64)",
+
+             // Win10:
+             LR"(protected: void __thiscall CTaskBand::_EndTask(struct HWND__ * const,int))",
+             LR"(protected: void __thiscall CTaskBand::_EndTask(struct HWND__ * __ptr64 const,int) __ptr64)",
+         },
+         (void**)&CTaskBand__EndTask_Original},
         {{
              LR"(public: virtual enum eTBGROUPTYPE __cdecl CTaskBtnGroup::GetGroupType(void))",
              LR"(public: virtual enum eTBGROUPTYPE __cdecl CTaskBtnGroup::GetGroupType(void) __ptr64)",
