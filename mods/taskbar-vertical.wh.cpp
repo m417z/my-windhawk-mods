@@ -42,6 +42,8 @@ Some of the other taskbar mods, such as [Taskbar height and icon
 size](https://windhawk.net/mods/taskbar-icon-size), aren't compatible with this
 mod.
 
+**Note**: This mod requires Windhawk v1.5 or later.
+
 ## Funding
 
 The development of this mod was funded by [AuthLite LLC](https://authlite.com/).
