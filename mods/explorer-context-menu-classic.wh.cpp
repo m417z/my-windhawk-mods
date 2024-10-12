@@ -9,7 +9,6 @@
 // @homepage        https://m417z.com/
 // @include         explorer.exe
 // @architecture    x86-64
-// @compilerOptions -lshlwapi
 // ==/WindhawkMod==
 
 // ==WindhawkModReadme==
