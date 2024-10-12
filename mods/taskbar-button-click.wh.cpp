@@ -284,19 +284,7 @@ long WINAPI CTaskBand_Launch_Hook(LPVOID pThis,
     if (taskItemIndex >= 0) {
         void* taskItem = CTaskBtnGroup_GetTaskItem_Original(
             g_pCTaskListWndTaskBtnGroup, taskItemIndex);
-
-        bool isImmersive = false;
-        if (CImmersiveTaskItem_vftable) {
-            isImmersive = *(void**)taskItem == CImmersiveTaskItem_vftable;
-        } else {
-            // ExplorerPatcher doesn't export vtables.
-            using IsImmersive_t = bool(WINAPI*)(PVOID pThis);
-            IsImmersive_t pIsImmersive =
-                (IsImmersive_t)(*(void***)taskItem)[57];
-            isImmersive = pIsImmersive(taskItem);
-        }
-
-        if (isImmersive) {
+        if (*(void**)taskItem == CImmersiveTaskItem_vftable) {
             hWnd = CImmersiveTaskItem_GetWindow_Original(taskItem);
         } else {
             hWnd = CWindowTaskItem_GetWindow_Original(taskItem);
@@ -784,7 +772,8 @@ bool HookExplorerPatcherSymbols(HMODULE explorerPatcherModule) {
          (void**)&CWindowTaskItem_GetWindow_Original},
         {R"(?GetWindow@CImmersiveTaskItem@@UEAAPEAUHWND__@@XZ)",
          (void**)&CImmersiveTaskItem_GetWindow_Original},
-        // {R"()", (void**)&CImmersiveTaskItem_vftable},
+        {R"(??_7CImmersiveTaskItem@@6BITaskItem@@@)",
+         (void**)&CImmersiveTaskItem_vftable},
     };
 
     bool succeeded = true;
