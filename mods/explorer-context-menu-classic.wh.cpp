@@ -85,9 +85,19 @@ BOOL Wh_ModInit() {
 
     LoadSettings();
 
-    HMODULE shcoreModule = GetModuleHandle(L"shcore.dll");
+    HMODULE shcoreModule = LoadLibrary(L"shcore.dll");
+    if (!shcoreModule) {
+        Wh_Log(L"Error loading shcore.dll");
+        return FALSE;
+    }
+
     FARPROC pIUnknown_QueryService =
         GetProcAddress(shcoreModule, "IUnknown_QueryService");
+    if (!pIUnknown_QueryService) {
+        Wh_Log(L"Error getting IUnknown_QueryService");
+        return FALSE;
+    }
+
     Wh_SetFunctionHook((void*)pIUnknown_QueryService,
                        (void*)IUnknown_QueryService_Hook,
                        (void**)&IUnknown_QueryService_Original);
