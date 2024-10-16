@@ -1274,6 +1274,70 @@ HRESULT __thiscall SetXMLFromResource_Hook(void* pThis,
                                        param5);
 }
 
+// https://devblogs.microsoft.com/oldnewthing/20040130-00/?p=40813
+LPCWSTR FindStringResourceEx(HINSTANCE hinst, UINT uId, UINT langId) {
+    // Convert the string ID into a bundle number
+    LPCWSTR pwsz = NULL;
+    HRSRC hrsrc =
+        FindResourceEx(hinst, RT_STRING, MAKEINTRESOURCE(uId / 16 + 1), langId);
+    if (hrsrc) {
+        HGLOBAL hglob = LoadResource(hinst, hrsrc);
+        if (hglob) {
+            pwsz = reinterpret_cast<LPCWSTR>(LockResource(hglob));
+            if (pwsz) {
+                // okay now walk the string table
+                for (UINT i = 0; i < (uId & 15); i++) {
+                    pwsz += 1 + (UINT)*pwsz;
+                }
+            }
+        }
+    }
+    return pwsz;
+}
+
+using DirectUI_CreateString_t = void*(WINAPI*)(PCWSTR name,
+                                               HINSTANCE hInstance);
+DirectUI_CreateString_t DirectUI_CreateString_Original;
+void* WINAPI DirectUI_CreateString_Hook(PCWSTR name, HINSTANCE hInstance) {
+    if (!hInstance) {
+        return DirectUI_CreateString_Original(name, hInstance);
+    }
+
+    DWORD c = ++g_operationCounter;
+
+    Wh_Log(L"[%u] > DUI string number: %u", c, (DWORD)(ULONG_PTR)name);
+
+    void* result;
+
+    bool redirected = RedirectModule(
+        c, hInstance, []() {},
+        [&](HINSTANCE hInstanceRedirect) {
+            // For other redirected functions, we check whether the function
+            // succeeded. If it didn't, we try another redirection or fall back
+            // to the original file.
+            //
+            // In this case, there's no reliable way to find out whether
+            // the function failed, since it just uses an empty string if it's
+            // missing. Therefore, only make sure that the string resource
+            // exists.
+            UINT uId = (DWORD)(ULONG_PTR)name;
+            PCWSTR string = FindStringResourceEx(hInstanceRedirect, uId, 0);
+            if (!string || !*string) {
+                Wh_Log(L"[%u] Resource not found", c);
+                return false;
+            }
+
+            result = DirectUI_CreateString_Original(name, hInstanceRedirect);
+            Wh_Log(L"[%u] Redirected successfully", c);
+            return true;
+        });
+    if (redirected) {
+        return result;
+    }
+
+    return DirectUI_CreateString_Original(name, hInstance);
+}
+
 void LoadSettings() {
     std::unordered_map<std::wstring, std::vector<std::wstring>> paths;
     std::unordered_map<std::string, std::vector<std::string>> pathsA;
@@ -1464,14 +1528,16 @@ BOOL Wh_ModInit() {
 
     HMODULE duiModule = LoadLibrary(L"dui70.dll");
     if (duiModule) {
-        PCSTR procName =
+        PCSTR SetXMLFromResource_Name =
             R"(?_SetXMLFromResource@DUIXmlParser@DirectUI@@IAEJPBG0PAUHINSTANCE__@@11@Z)";
-        FARPROC pSetXMLFromResource = GetProcAddress(duiModule, procName);
+        FARPROC pSetXMLFromResource =
+            GetProcAddress(duiModule, SetXMLFromResource_Name);
         if (!pSetXMLFromResource) {
 #ifdef _WIN64
-            PCSTR procName_Win10_x64 =
+            PCSTR SetXMLFromResource_Name_Win10_x64 =
                 R"(?_SetXMLFromResource@DUIXmlParser@DirectUI@@IEAAJPEBG0PEAUHINSTANCE__@@11@Z)";
-            pSetXMLFromResource = GetProcAddress(duiModule, procName_Win10_x64);
+            pSetXMLFromResource =
+                GetProcAddress(duiModule, SetXMLFromResource_Name_Win10_x64);
 #endif
         }
 
@@ -1481,6 +1547,23 @@ BOOL Wh_ModInit() {
                                (void**)&SetXMLFromResource_Original);
         } else {
             Wh_Log(L"Couldn't find SetXMLFromResource");
+        }
+
+        PCSTR DirectUI_CreateString_Name =
+#ifdef _WIN64
+            R"(?CreateString@Value@DirectUI@@SAPEAV12@PEBGPEAUHINSTANCE__@@@Z)";
+#else
+            R"(?CreateString@Value@DirectUI@@SGPAV12@PBGPAUHINSTANCE__@@@Z)";
+#endif
+        FARPROC pDirectUI_CreateString =
+            GetProcAddress(duiModule, DirectUI_CreateString_Name);
+
+        if (pDirectUI_CreateString) {
+            Wh_SetFunctionHook((void*)pDirectUI_CreateString,
+                               (void*)DirectUI_CreateString_Hook,
+                               (void**)&DirectUI_CreateString_Original);
+        } else {
+            Wh_Log(L"Couldn't find DirectUI::Value::CreateString");
         }
     } else {
         Wh_Log(L"Couldn't load dui70.dll");
