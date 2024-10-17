@@ -2,7 +2,7 @@
 // @id              icon-resource-redirect
 // @name            Resource Redirect
 // @description     Define alternative files for loading various resources (e.g. icons in imageres.dll) for simple theming without having to modify system files
-// @version         1.1.6
+// @version         1.1.7
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
@@ -1263,7 +1263,7 @@ DWORD WINAPI SizeofResource_Hook(HMODULE hModule, HRSRC hResInfo) {
     DWORD result;
 
     bool redirected = RedirectModule(
-        c, hModule, [&]() {},
+        c, hModule, []() {},
         [&](HINSTANCE hInstanceRedirect) {
             // Zero can be an error or the actual resource size. Check last
             // error to be sure.
