@@ -577,6 +577,75 @@ void ApplyTaskbarFrameStyle(FrameworkElement taskbarFrame) {
     backgroundStroke.VerticalAlignment(VerticalAlignment::Bottom);
 }
 
+void* TaskbarController_OnGroupingModeChanged;
+
+using TaskbarController_UpdateFrameHeight_t = void(WINAPI*)(void* pThis);
+TaskbarController_UpdateFrameHeight_t
+    TaskbarController_UpdateFrameHeight_Original;
+void WINAPI TaskbarController_UpdateFrameHeight_Hook(void* pThis) {
+    Wh_Log(L">");
+
+    static LONG taskbarFrameOffset = []() -> LONG {
+        // 48:83EC 28               | sub rsp,28
+        // 48:8B81 88020000         | mov rax,qword ptr ds:[rcx+288]
+        // or
+        // 4C:8B81 80020000         | mov r8,qword ptr ds:[rcx+280]
+        const BYTE* p = (const BYTE*)TaskbarController_OnGroupingModeChanged;
+        if (p[0] == 0x48 && p[1] == 0x83 && p[2] == 0xEC &&
+            (p[4] == 0x48 || p[4] == 0x4C) && p[5] == 0x8B &&
+            (p[6] & 0xC0) == 0x80) {
+            LONG offset = *(LONG*)(p + 7);
+            Wh_Log(L"taskbarFrameOffset=0x%X", offset);
+            return offset;
+        }
+
+        Wh_Log(L"taskbarFrameOffset not found");
+        return 0;
+    }();
+
+    if (taskbarFrameOffset <= 0) {
+        Wh_Log(L"taskbarFrameOffset <= 0");
+        TaskbarController_UpdateFrameHeight_Original(pThis);
+        return;
+    }
+
+    void* taskbarFrame = *(void**)((BYTE*)pThis + taskbarFrameOffset);
+    if (!taskbarFrame) {
+        Wh_Log(L"!taskbarFrame");
+        TaskbarController_UpdateFrameHeight_Original(pThis);
+        return;
+    }
+
+    FrameworkElement taskbarFrameElement = nullptr;
+    ((IUnknown**)taskbarFrame)[1]->QueryInterface(
+        winrt::guid_of<FrameworkElement>(),
+        winrt::put_abi(taskbarFrameElement));
+    if (!taskbarFrameElement) {
+        Wh_Log(L"!taskbarFrameElement");
+        TaskbarController_UpdateFrameHeight_Original(pThis);
+        return;
+    }
+
+    // A workaround to issues related to tablet mode.
+    // https://github.com/ramensoftware/windhawk-mods/issues/529#issuecomment-2419371239
+    taskbarFrameElement.MaxHeight(std::numeric_limits<double>::infinity());
+
+    TaskbarController_UpdateFrameHeight_Original(pThis);
+
+    // Adjust parent grid height if needed.
+    auto contentGrid = Media::VisualTreeHelper::GetParent(taskbarFrameElement)
+                           .try_as<FrameworkElement>();
+    if (contentGrid) {
+        double height = taskbarFrameElement.Height();
+        double contentGridHeight = contentGrid.Height();
+        if (contentGridHeight > 0 && contentGridHeight != height) {
+            Wh_Log(L"Adjusting contentGrid.Height: %f->%f", contentGridHeight,
+                   height);
+            contentGrid.Height(height);
+        }
+    }
+}
+
 using TaskbarFrame_TaskbarFrame_t = void*(WINAPI*)(void* pThis);
 TaskbarFrame_TaskbarFrame_t TaskbarFrame_TaskbarFrame_Original;
 void* WINAPI TaskbarFrame_TaskbarFrame_Hook(void* pThis) {
@@ -1113,6 +1182,22 @@ bool HookTaskbarViewDllSymbols(HMODULE module) {
     {
         // Taskbar.View.dll, ExplorerExtensions.dll
         WindhawkUtils::SYMBOL_HOOK symbolHooks[] = {
+            {
+                {
+                    LR"(private: void __cdecl winrt::Taskbar::implementation::TaskbarController::OnGroupingModeChanged(void))",
+                },
+                (void**)&TaskbarController_OnGroupingModeChanged,
+                nullptr,
+                true,  // Missing in older Windows 11 versions.
+            },
+            {
+                {
+                    LR"(private: void __cdecl winrt::Taskbar::implementation::TaskbarController::UpdateFrameHeight(void))",
+                },
+                (void**)&TaskbarController_UpdateFrameHeight_Original,
+                (void*)TaskbarController_UpdateFrameHeight_Hook,
+                true,  // Missing in older Windows 11 versions.
+            },
             {
                 {
                     LR"(public: __cdecl winrt::Taskbar::implementation::TaskbarFrame::TaskbarFrame(void))",
