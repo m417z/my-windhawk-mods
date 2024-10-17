@@ -1120,23 +1120,41 @@ int LoadStringAW_Hook(HINSTANCE hInstance,
 }
 
 using LoadStringA_t = decltype(&LoadStringA);
-LoadStringA_t LoadStringA_Original;
-int WINAPI LoadStringA_Hook(HINSTANCE hInstance,
-                            UINT uID,
-                            LPSTR lpBuffer,
-                            int cchBufferMax) {
-    return LoadStringAW_Hook<&LoadStringA_Original>(hInstance, uID, lpBuffer,
-                                                    cchBufferMax);
+LoadStringA_t LoadStringA_u_Original;
+int WINAPI LoadStringA_u_Hook(HINSTANCE hInstance,
+                              UINT uID,
+                              LPSTR lpBuffer,
+                              int cchBufferMax) {
+    return LoadStringAW_Hook<&LoadStringA_u_Original>(hInstance, uID, lpBuffer,
+                                                      cchBufferMax);
 }
 
 using LoadStringW_t = decltype(&LoadStringW);
-LoadStringW_t LoadStringW_Original;
-int WINAPI LoadStringW_Hook(HINSTANCE hInstance,
-                            UINT uID,
-                            LPWSTR lpBuffer,
-                            int cchBufferMax) {
-    return LoadStringAW_Hook<&LoadStringW_Original>(hInstance, uID, lpBuffer,
-                                                    cchBufferMax);
+LoadStringW_t LoadStringW_u_Original;
+int WINAPI LoadStringW_u_Hook(HINSTANCE hInstance,
+                              UINT uID,
+                              LPWSTR lpBuffer,
+                              int cchBufferMax) {
+    return LoadStringAW_Hook<&LoadStringW_u_Original>(hInstance, uID, lpBuffer,
+                                                      cchBufferMax);
+}
+
+LoadStringA_t LoadStringA_k_Original;
+int WINAPI LoadStringA_k_Hook(HINSTANCE hInstance,
+                              UINT uID,
+                              LPSTR lpBuffer,
+                              int cchBufferMax) {
+    return LoadStringAW_Hook<&LoadStringA_k_Original>(hInstance, uID, lpBuffer,
+                                                      cchBufferMax);
+}
+
+LoadStringW_t LoadStringW_k_Original;
+int WINAPI LoadStringW_k_Hook(HINSTANCE hInstance,
+                              UINT uID,
+                              LPWSTR lpBuffer,
+                              int cchBufferMax) {
+    return LoadStringAW_Hook<&LoadStringW_k_Original>(hInstance, uID, lpBuffer,
+                                                      cchBufferMax);
 }
 
 template <auto* Original, typename T>
@@ -1244,7 +1262,7 @@ DWORD WINAPI SizeofResource_Hook(HMODULE hModule, HRSRC hResInfo) {
     DWORD result;
 
     bool redirected = RedirectModule(
-        c, hModule, []() {},
+        c, hModule, [&]() {},
         [&](HINSTANCE hInstanceRedirect) {
             // Zero can be an error or the actual resource size. Check last
             // error to be sure.
@@ -1593,6 +1611,25 @@ BOOL Wh_ModInit() {
 
     LoadSettings();
 
+    HMODULE kernelBaseModule = GetModuleHandle(L"kernelbase.dll");
+    HMODULE kernel32Module = GetModuleHandle(L"kernel32.dll");
+
+    auto setKernelFunctionHook = [kernelBaseModule, kernel32Module](
+                                     PCSTR targetMame, void* hookFunction,
+                                     void** originalFunction) {
+        void* targetFunction =
+            (void*)GetProcAddress(kernelBaseModule, targetMame);
+        if (!targetFunction) {
+            targetFunction = (void*)GetProcAddress(kernel32Module, targetMame);
+            if (!targetFunction) {
+                return FALSE;
+            }
+        }
+
+        return Wh_SetFunctionHook(targetFunction, hookFunction,
+                                  originalFunction);
+    };
+
     // All of these end up calling FindResourceEx, LoadResource, SizeofResource.
     if (!g_settings.allResourceRedirect) {
         Wh_SetFunctionHook((void*)PrivateExtractIconsW,
@@ -1644,33 +1681,19 @@ BOOL Wh_ModInit() {
                            (void**)&CreateDialogParamW_Original);
     }
 
-    Wh_SetFunctionHook((void*)LoadStringA, (void*)LoadStringA_Hook,
-                       (void**)&LoadStringA_Original);
+    Wh_SetFunctionHook((void*)LoadStringA, (void*)LoadStringA_u_Hook,
+                       (void**)&LoadStringA_u_Original);
 
-    Wh_SetFunctionHook((void*)LoadStringW, (void*)LoadStringW_Hook,
-                       (void**)&LoadStringW_Original);
+    Wh_SetFunctionHook((void*)LoadStringW, (void*)LoadStringW_u_Hook,
+                       (void**)&LoadStringW_u_Original);
+
+    setKernelFunctionHook("LoadStringA", (void*)LoadStringA_k_Hook,
+                          (void**)&LoadStringA_k_Original);
+
+    setKernelFunctionHook("LoadStringW", (void*)LoadStringA_k_Hook,
+                          (void**)&LoadStringA_k_Original);
 
     if (g_settings.allResourceRedirect) {
-        HMODULE kernelBaseModule = GetModuleHandle(L"kernelbase.dll");
-        HMODULE kernel32Module = GetModuleHandle(L"kernel32.dll");
-
-        auto setKernelFunctionHook = [kernelBaseModule, kernel32Module](
-                                         PCSTR targetMame, void* hookFunction,
-                                         void** originalFunction) {
-            void* targetFunction =
-                (void*)GetProcAddress(kernelBaseModule, targetMame);
-            if (!targetFunction) {
-                targetFunction =
-                    (void*)GetProcAddress(kernel32Module, targetMame);
-                if (!targetFunction) {
-                    return FALSE;
-                }
-            }
-
-            return Wh_SetFunctionHook(targetFunction, hookFunction,
-                                      originalFunction);
-        };
-
         setKernelFunctionHook("FindResourceExA", (void*)FindResourceExA_Hook,
                               (void**)&FindResourceExA_Original);
         setKernelFunctionHook("FindResourceExW", (void*)FindResourceExW_Hook,
