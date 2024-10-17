@@ -841,6 +841,57 @@ MenuFlyout_ShowAt_Hook(void* pThis,
     return MenuFlyout_ShowAt_Original(pThis, placementTarget, showOptions);
 }
 
+bool HandleSystemTrayContextMenu(FrameworkElement element) {
+    Wh_Log(L">");
+
+    FrameworkElement childElement = FindChildByName(element, L"ContainerGrid");
+    if (!childElement) {
+        Wh_Log(L"No child element");
+        return false;
+    }
+
+    auto flyout =
+        Controls::Primitives::FlyoutBase::GetAttachedFlyout(childElement);
+    if (!flyout) {
+        Wh_Log(L"No flyout");
+        return false;
+    }
+
+    Controls::Primitives::FlyoutShowOptions options;
+    options.Position(winrt::Windows::Foundation::Point{
+        static_cast<float>(childElement.ActualWidth()),
+        static_cast<float>(childElement.ActualHeight())});
+    flyout.ShowAt(childElement, options);
+    return true;
+}
+
+using TextIconContent_ShowContextMenu_t = void(WINAPI*)(void* pThis);
+TextIconContent_ShowContextMenu_t TextIconContent_ShowContextMenu_Original;
+void WINAPI TextIconContent_ShowContextMenu_Hook(void* pThis) {
+    Wh_Log(L">");
+
+    FrameworkElement element = nullptr;
+    ((IUnknown**)pThis)[1]->QueryInterface(winrt::guid_of<FrameworkElement>(),
+                                           winrt::put_abi(element));
+    if (!element || !HandleSystemTrayContextMenu(element)) {
+        TextIconContent_ShowContextMenu_Original(pThis);
+    }
+}
+
+using DateTimeIconContent_ShowContextMenu_t = void(WINAPI*)(void* pThis);
+DateTimeIconContent_ShowContextMenu_t
+    DateTimeIconContent_ShowContextMenu_Original;
+void WINAPI DateTimeIconContent_ShowContextMenu_Hook(void* pThis) {
+    Wh_Log(L">");
+
+    FrameworkElement element = nullptr;
+    ((IUnknown**)pThis)[1]->QueryInterface(winrt::guid_of<FrameworkElement>(),
+                                           winrt::put_abi(element));
+    if (!element || !HandleSystemTrayContextMenu(element)) {
+        DateTimeIconContent_ShowContextMenu_Original(pThis);
+    }
+}
+
 using SetWindowPos_t = decltype(&SetWindowPos);
 SetWindowPos_t SetWindowPos_Original;
 BOOL WINAPI SetWindowPos_Hook(HWND hWnd,
@@ -1232,6 +1283,20 @@ bool HookTaskbarViewDllSymbols(HMODULE module) {
                 },
                 (void**)&MenuFlyout_ShowAt_Original,
                 (void*)MenuFlyout_ShowAt_Hook,
+            },
+            {
+                {
+                    LR"(public: void __cdecl winrt::SystemTray::implementation::TextIconContent::ShowContextMenu(void))",
+                },
+                (void**)&TextIconContent_ShowContextMenu_Original,
+                (void*)TextIconContent_ShowContextMenu_Hook,
+            },
+            {
+                {
+                    LR"(public: void __cdecl winrt::SystemTray::implementation::DateTimeIconContent::ShowContextMenu(void))",
+                },
+                (void**)&DateTimeIconContent_ShowContextMenu_Original,
+                (void*)DateTimeIconContent_ShowContextMenu_Hook,
             },
         };
 
