@@ -1,7 +1,7 @@
 // ==WindhawkMod==
 // @id              icon-resource-redirect
 // @name            Resource Redirect
-// @description     Define alternative files for loading various resources (e.g. instead of icons in imageres.dll) for simple theming without having to modify system files
+// @description     Define alternative files for loading various resources (e.g. icons in imageres.dll) for simple theming without having to modify system files
 // @version         1.1.6
 // @author          m417z
 // @github          https://github.com/m417z
@@ -23,7 +23,7 @@
 /*
 # Resource Redirect
 
-Define alternative files for loading various resources (e.g. instead of icons in
+Define alternative files for loading various resources (e.g. icons in
 imageres.dll) for simple theming without having to modify system files.
 
 ## Icon themes
@@ -1189,7 +1189,7 @@ HRSRC FindResourceExAW_Hook(HMODULE hModule,
         [&](HINSTANCE hInstanceRedirect) {
             result = (*Original)(hInstanceRedirect, lpType, lpName, wLanguage);
             if (result) {
-                Wh_Log(L"[%u] Redirected successfully", c);
+                Wh_Log(L"[%u] Redirected successfully, result=%p", c, result);
                 return true;
             }
 
@@ -1229,7 +1229,7 @@ LoadResource_t LoadResource_Original;
 HGLOBAL WINAPI LoadResource_Hook(HMODULE hModule, HRSRC hResInfo) {
     DWORD c = ++g_operationCounter;
 
-    Wh_Log(L"[%u] >", c);
+    Wh_Log(L"[%u] > hModule=%p, hResInfo=%p", c, hModule, hResInfo);
 
     HGLOBAL result;
 
@@ -1242,7 +1242,8 @@ HGLOBAL WINAPI LoadResource_Hook(HMODULE hModule, HRSRC hResInfo) {
                 return true;
             }
 
-            Wh_Log(L"[%u] LoadResource failed with error %08X", c, result);
+            DWORD dwError = GetLastError();
+            Wh_Log(L"[%u] LoadResource failed with error %u", c, dwError);
             return false;
         });
     if (redirected) {
@@ -1257,7 +1258,7 @@ SizeofResource_t SizeofResource_Original;
 DWORD WINAPI SizeofResource_Hook(HMODULE hModule, HRSRC hResInfo) {
     DWORD c = ++g_operationCounter;
 
-    Wh_Log(L"[%u] >", c);
+    Wh_Log(L"[%u] > hModule=%p, hResInfo=%p", c, hModule, hResInfo);
 
     DWORD result;
 
@@ -1268,12 +1269,13 @@ DWORD WINAPI SizeofResource_Hook(HMODULE hModule, HRSRC hResInfo) {
             // error to be sure.
             SetLastError(0);
             result = SizeofResource_Original(hInstanceRedirect, hResInfo);
-            if (result || GetLastError() == 0) {
+            DWORD dwError = GetLastError();
+            if (result || dwError == 0) {
                 Wh_Log(L"[%u] Redirected successfully", c);
                 return true;
             }
 
-            Wh_Log(L"[%u] SizeofResource failed with error %08X", c, result);
+            Wh_Log(L"[%u] SizeofResource failed with error %u", c, dwError);
             return false;
         });
     if (redirected) {
