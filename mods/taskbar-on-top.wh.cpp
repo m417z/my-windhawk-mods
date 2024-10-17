@@ -36,6 +36,9 @@ versions weren't tested and are probably not compatible.
 * The Action Center (Win+A) stays on the bottom. For now, you can use [this
   alternative
   solution](https://github.com/ramensoftware/windhawk-mods/issues/1053#issuecomment-2405461863).
+* For some devices, mostly tablets and touchscreen devices, the taskbar may
+  appear in the wrong location after enabling the mod. An explorer restart
+  usually fixes it.
 * The option to automatically hide the taskbar isn't supported.
 
 ![Screenshot](https://i.imgur.com/LqBwGVn.png)
