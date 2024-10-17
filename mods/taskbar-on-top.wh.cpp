@@ -1,6 +1,6 @@
 // ==WindhawkMod==
 // @id              taskbar-on-top
-// @name            Taskbar on top for Windows 11
+// @name            Taskbar on top for Windows 11 (test 1)
 // @description     Moves the Windows 11 taskbar to the top of the screen
 // @version         1.0.1
 // @author          m417z
@@ -649,9 +649,12 @@ void WINAPI TaskbarController_UpdateFrameHeight_Hook(void* pThis) {
         double height = taskbarFrameElement.Height();
         double contentGridHeight = contentGrid.Height();
         if (contentGridHeight > 0 && contentGridHeight != height) {
+            taskbarFrameElement.Height(contentGridHeight);
+
             Wh_Log(L"Adjusting contentGrid.Height: %f->%f", contentGridHeight,
                    height);
             contentGrid.Height(height);
+            taskbarFrameElement.Height(height);
         }
     }
 }
