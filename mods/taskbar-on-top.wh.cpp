@@ -31,6 +31,13 @@ Moves the Windows 11 taskbar to the top of the screen.
 The mod was designed for up-to-date Windows 11 versions 22H2 to 24H2. Other
 versions weren't tested and are probably not compatible.
 
+## Known limitations
+
+* The Action Center (Win+A) stays on the bottom. For now, you can use [this
+  alternative
+  solution](https://github.com/ramensoftware/windhawk-mods/issues/1053#issuecomment-2405461863).
+* The option to automatically hide the taskbar isn't supported.
+
 ![Screenshot](https://i.imgur.com/LqBwGVn.png)
 */
 // ==/WindhawkModReadme==
@@ -667,7 +674,7 @@ void* WINAPI TaskbarFrame_TaskbarFrame_Hook(void* pThis) {
     *autoRevokerIt = taskbarFrame.Loaded(
         winrt::auto_revoke_t{},
         [autoRevokerIt](winrt::Windows::Foundation::IInspectable const& sender,
-                        winrt::Windows::UI::Xaml::RoutedEventArgs const& e) {
+                        RoutedEventArgs const& e) {
             Wh_Log(L">");
 
             g_elementLoadedAutoRevokerList.erase(autoRevokerIt);
@@ -743,7 +750,7 @@ void* WINAPI IconView_IconView_Hook(void* pThis) {
     *autoRevokerIt = iconView.Loaded(
         winrt::auto_revoke_t{},
         [autoRevokerIt](winrt::Windows::Foundation::IInspectable const& sender,
-                        winrt::Windows::UI::Xaml::RoutedEventArgs const& e) {
+                        RoutedEventArgs const& e) {
             Wh_Log(L">");
 
             g_elementLoadedAutoRevokerList.erase(autoRevokerIt);
