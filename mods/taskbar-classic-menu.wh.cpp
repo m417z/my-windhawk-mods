@@ -72,6 +72,25 @@ std::atomic<bool> g_explorerPatcherInitialized;
 std::atomic<DWORD> g_CTaskListWnd__HandleContextMenuThreadId;
 std::atomic<DWORD> g_TaskbarResources_OnTaskListButtonContextRequestedThreadId;
 
+void* CTaskListWnd_vftable_CImpWndProc;
+void* CTaskListWnd_vftable_ITaskListSite;
+
+void* QueryViaVtable(void* object, void* vtable) {
+    void* ptr = object;
+    while (*(void**)ptr != vtable) {
+        ptr = (void**)ptr + 1;
+    }
+    return ptr;
+}
+
+void* QueryViaVtableBackwards(void* object, void* vtable) {
+    void* ptr = object;
+    while (*(void**)ptr != vtable) {
+        ptr = (void**)ptr - 1;
+    }
+    return ptr;
+}
+
 using CTaskListWnd__HandleContextMenu_t = void(WINAPI*)(void* pThis,
                                                         int param1,
                                                         int param2,
@@ -125,23 +144,30 @@ HRESULT WINAPI CTaskListWnd_HandleClick_Hook(void* pThis,
 
     if (g_TaskbarResources_OnTaskListButtonContextRequestedThreadId ==
         GetCurrentThreadId()) {
+        Wh_Log(L"Showing classic context menu");
+
         POINT pt{};
         GetCursorPos(&pt);
 
-        void* pThis2 = (void**)pThis + 1;
-        HWND hTaskListWnd = CTaskListWnd_GetWindow_Original(pThis2);
+        void* pThis_CImpWndProc =
+            QueryViaVtableBackwards(pThis, CTaskListWnd_vftable_CImpWndProc);
+        void* pThis_ITaskListSite = QueryViaVtable(
+            pThis_CImpWndProc, CTaskListWnd_vftable_ITaskListSite);
+
+        HWND hTaskListWnd =
+            CTaskListWnd_GetWindow_Original(pThis_ITaskListSite);
 
         if (!taskItem && taskGroup) {
             void* taskBtnGroup = CTaskListWnd__GetTBGroupFromGroup_Original(
-                (void**)pThis - 5, taskGroup, nullptr);
+                pThis_CImpWndProc, taskGroup, nullptr);
             if (taskBtnGroup &&
                 CTaskBtnGroup_GetGroupType_Original(taskBtnGroup) == 1) {
                 taskItem = CTaskBtnGroup_GetTaskItem_Original(taskBtnGroup, 0);
             }
         }
 
-        CTaskListWnd_OnContextMenu_Original(pThis2, pt, hTaskListWnd, false,
-                                            taskGroup, taskItem);
+        CTaskListWnd_OnContextMenu_Original(
+            pThis_ITaskListSite, pt, hTaskListWnd, false, taskGroup, taskItem);
         return S_OK;
     }
 
@@ -417,6 +443,14 @@ bool HookWin11TaskbarSymbols() {
         {
             {LR"(public: virtual void __cdecl CTaskListWnd::OnContextMenu(struct tagPOINT,struct HWND__ *,bool,struct ITaskGroup *,struct ITaskItem *))"},
             &CTaskListWnd_OnContextMenu_Original,
+        },
+        {
+            {LR"(const CTaskListWnd::`vftable'{for `CImpWndProc'})"},
+            &CTaskListWnd_vftable_CImpWndProc,
+        },
+        {
+            {LR"(const CTaskListWnd::`vftable'{for `ITaskListSite'})"},
+            &CTaskListWnd_vftable_ITaskListSite,
         },
     };
 
