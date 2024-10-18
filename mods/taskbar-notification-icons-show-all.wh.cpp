@@ -1,7 +1,7 @@
 // ==WindhawkMod==
 // @id              taskbar-notification-icons-show-all
 // @name            Always show all taskbar tray icons
-// @description     Restore the missing Windows option to always show all notification (tray) icons (Windows 11 only)
+// @description     Restore the missing Windows option to always show all tray icons (Windows 11 only)
 // @version         1.0
 // @author          m417z
 // @github          https://github.com/m417z
@@ -23,7 +23,7 @@
 /*
 # Always show all taskbar tray icons
 
-Restore the missing Windows option to always show all notification (tray) icons.
+Restore the missing Windows option to always show all tray icons.
 
 The mod has two modes that can be selected in the mod settings:
 

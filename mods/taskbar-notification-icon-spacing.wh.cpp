@@ -1,7 +1,7 @@
 // ==WindhawkMod==
 // @id              taskbar-notification-icon-spacing
 // @name            Taskbar tray icon spacing
-// @description     Reduce or increase the spacing between notification (tray) icons on the taskbar (Windows 11 only)
+// @description     Reduce or increase the spacing between tray icons on the taskbar (Windows 11 only)
 // @version         1.0.2
 // @author          m417z
 // @github          https://github.com/m417z
@@ -22,28 +22,28 @@
 
 // ==WindhawkModReadme==
 /*
-# Taskbar notification icon spacing
+# Taskbar tray icon spacing
 
-Reduce or increase the spacing between notification (tray) icons on the taskbar.
+Reduce or increase the spacing between tray icons on the taskbar.
 
 Only Windows 11 version 22H2 or newer is currently supported. For older Windows
 versions check out [7+ Taskbar Tweaker](https://tweaker.ramensoftware.com/).
 
-![Notification icon width: 32](https://i.imgur.com/78eRcAJ.png) \
-*Notification icon width: 32 (Windows 11 default)*
+![Tray icon width: 32](https://i.imgur.com/78eRcAJ.png) \
+*Tray icon width: 32 (Windows 11 default)*
 
-![Notification icon width: 24](https://i.imgur.com/4hgxHJ0.png) \
-*Notification icon width: 24*
+![Tray icon width: 24](https://i.imgur.com/4hgxHJ0.png) \
+*Tray icon width: 24*
 
-![Notification icon width: 18](https://i.imgur.com/cErw24I.png) \
-*Notification icon width: 18*
+![Tray icon width: 18](https://i.imgur.com/cErw24I.png) \
+*Tray icon width: 18*
 */
 // ==/WindhawkModReadme==
 
 // ==WindhawkModSettings==
 /*
 - notificationIconWidth: 24
-  $name: Notification icon width
+  $name: Tray icon width
   $description: 'Windows 11 default: 32'
 */
 // ==/WindhawkModSettings==
