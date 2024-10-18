@@ -1285,6 +1285,61 @@ DWORD WINAPI SizeofResource_Hook(HMODULE hModule, HRSRC hResInfo) {
     return SizeofResource_Original(hModule, hResInfo);
 }
 
+// https://ntdoc.m417z.com/rtlloadstring
+using RtlLoadString_t = NTSTATUS(NTAPI*)(_In_ PVOID DllHandle,
+                                         _In_ ULONG StringId,
+                                         _In_opt_ PCWSTR StringLanguage,
+                                         _In_ ULONG Flags,
+                                         _Out_ PCWSTR* ReturnString,
+                                         _Out_opt_ PUSHORT ReturnStringLen,
+                                         _Out_writes_(ReturnLanguageLen)
+                                             PWSTR ReturnLanguageName,
+                                         _Inout_opt_ PULONG ReturnLanguageLen);
+RtlLoadString_t RtlLoadString_Original;
+HRESULT NTAPI RtlLoadString_Hook(_In_ PVOID DllHandle,
+                                 _In_ ULONG StringId,
+                                 _In_opt_ PCWSTR StringLanguage,
+                                 _In_ ULONG Flags,
+                                 _Out_ PCWSTR* ReturnString,
+                                 _Out_opt_ PUSHORT ReturnStringLen,
+                                 _Out_writes_(ReturnLanguageLen)
+                                     PWSTR ReturnLanguageName,
+                                 _Inout_opt_ PULONG ReturnLanguageLen) {
+    DWORD c = ++g_operationCounter;
+
+    Wh_Log(L"[%u] > string number: %u", StringId);
+
+    NTSTATUS result;
+
+    bool redirected = RedirectModule(
+        c, (HINSTANCE)DllHandle, []() {},
+        [&](HINSTANCE hInstanceRedirect) {
+            result = RtlLoadString_Original(hInstanceRedirect, StringId,
+                                            StringLanguage, Flags, ReturnString,
+                                            ReturnStringLen, ReturnLanguageName,
+                                            ReturnLanguageLen);
+            if (result != 0) {
+                Wh_Log(L"[%u] RtlLoadString failed with error %08X", c, result);
+                return false;
+            }
+
+            if (!*ReturnString) {
+                Wh_Log(L"[%u] RtlLoadString returned an empty string", c);
+                return false;
+            }
+
+            Wh_Log(L"[%u] Redirected successfully", c);
+            return true;
+        });
+    if (redirected) {
+        return result;
+    }
+
+    return RtlLoadString_Original(DllHandle, StringId, StringLanguage, Flags,
+                                  ReturnString, ReturnStringLen,
+                                  ReturnLanguageName, ReturnLanguageLen);
+}
+
 using SHCreateStreamOnModuleResourceW_t = HRESULT(WINAPI*)(HMODULE hModule,
                                                            LPCWSTR pwszName,
                                                            LPCWSTR pwszType,
@@ -1632,8 +1687,8 @@ BOOL Wh_ModInit() {
                                   originalFunction);
     };
 
-    // All of these end up calling FindResourceEx, LoadResource, SizeofResource.
     if (!g_settings.allResourceRedirect) {
+        // Use FindResourceEx, LoadResource, SizeofResource.
         Wh_SetFunctionHook((void*)PrivateExtractIconsW,
                            (void*)PrivateExtractIconsW_Hook,
                            (void**)&PrivateExtractIconsW_Original);
@@ -1681,19 +1736,20 @@ BOOL Wh_ModInit() {
         Wh_SetFunctionHook((void*)CreateDialogParamW,
                            (void*)CreateDialogParamW_Hook,
                            (void**)&CreateDialogParamW_Original);
+
+        // Use RtlLoadString.
+        Wh_SetFunctionHook((void*)LoadStringA, (void*)LoadStringA_u_Hook,
+                           (void**)&LoadStringA_u_Original);
+
+        Wh_SetFunctionHook((void*)LoadStringW, (void*)LoadStringW_u_Hook,
+                           (void**)&LoadStringW_u_Original);
+
+        setKernelFunctionHook("LoadStringA", (void*)LoadStringA_k_Hook,
+                              (void**)&LoadStringA_k_Original);
+
+        setKernelFunctionHook("LoadStringW", (void*)LoadStringA_k_Hook,
+                              (void**)&LoadStringA_k_Original);
     }
-
-    Wh_SetFunctionHook((void*)LoadStringA, (void*)LoadStringA_u_Hook,
-                       (void**)&LoadStringA_u_Original);
-
-    Wh_SetFunctionHook((void*)LoadStringW, (void*)LoadStringW_u_Hook,
-                       (void**)&LoadStringW_u_Original);
-
-    setKernelFunctionHook("LoadStringA", (void*)LoadStringA_k_Hook,
-                          (void**)&LoadStringA_k_Original);
-
-    setKernelFunctionHook("LoadStringW", (void*)LoadStringA_k_Hook,
-                          (void**)&LoadStringA_k_Original);
 
     if (g_settings.allResourceRedirect) {
         setKernelFunctionHook("FindResourceExA", (void*)FindResourceExA_Hook,
@@ -1704,6 +1760,13 @@ BOOL Wh_ModInit() {
                               (void**)&LoadResource_Original);
         setKernelFunctionHook("SizeofResource", (void*)SizeofResource_Hook,
                               (void**)&SizeofResource_Original);
+
+        void* pRtlLoadString = (void*)GetProcAddress(
+            GetModuleHandle(L"ntdll.dll"), "RtlLoadString");
+        if (pRtlLoadString) {
+            Wh_SetFunctionHook(pRtlLoadString, (void*)RtlLoadString_Hook,
+                               (void**)&RtlLoadString_Original);
+        }
     }
 
     // All of these end up calling FindResourceEx, LoadResource, SizeofResource.
