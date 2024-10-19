@@ -1687,12 +1687,12 @@ BOOL Wh_ModInit() {
                                   originalFunction);
     };
 
-    if (!g_settings.allResourceRedirect) {
-        // Use FindResourceEx, LoadResource, SizeofResource.
-        Wh_SetFunctionHook((void*)PrivateExtractIconsW,
-                           (void*)PrivateExtractIconsW_Hook,
-                           (void**)&PrivateExtractIconsW_Original);
+    Wh_SetFunctionHook((void*)PrivateExtractIconsW,
+                       (void*)PrivateExtractIconsW_Hook,
+                       (void**)&PrivateExtractIconsW_Original);
 
+    if (!g_settings.allResourceRedirect) {
+        // The functions below use FindResourceEx, LoadResource, SizeofResource.
         Wh_SetFunctionHook((void*)LoadImageA, (void*)LoadImageA_Hook,
                            (void**)&LoadImageA_Original);
 
@@ -1737,7 +1737,7 @@ BOOL Wh_ModInit() {
                            (void*)CreateDialogParamW_Hook,
                            (void**)&CreateDialogParamW_Original);
 
-        // Use RtlLoadString.
+        // The functions below use RtlLoadString.
         Wh_SetFunctionHook((void*)LoadStringA, (void*)LoadStringA_u_Hook,
                            (void**)&LoadStringA_u_Original);
 
