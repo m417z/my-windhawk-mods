@@ -321,7 +321,7 @@ void WINAPI IconView_IconView_Hook(PVOID pThis) {
     *autoRevokerIt = iconView.Loaded(
         winrt::auto_revoke_t{},
         [autoRevokerIt](winrt::Windows::Foundation::IInspectable const& sender,
-                        winrt::Windows::UI::Xaml::RoutedEventArgs const& e) {
+                        RoutedEventArgs const& e) {
             Wh_Log(L">");
 
             g_autoRevokerList.erase(autoRevokerIt);
