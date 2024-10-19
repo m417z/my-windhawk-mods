@@ -947,6 +947,14 @@ void WINAPI TaskbarController_UpdateFrameHeight_Hook(void* pThis) {
         [taskbarFrameElement]() {
             taskbarFrameElement.Height(
                 std::numeric_limits<double>::quiet_NaN());
+
+            // Adjust parent grid height.
+            auto contentGrid =
+                Media::VisualTreeHelper::GetParent(taskbarFrameElement)
+                    .try_as<FrameworkElement>();
+            if (contentGrid) {
+                contentGrid.Height(std::numeric_limits<double>::quiet_NaN());
+            }
         });
 }
 
