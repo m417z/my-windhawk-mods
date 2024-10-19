@@ -458,6 +458,33 @@ void WINAPI TrayUI_MakeStuckRect_Hook(void* pThis,
     }
 }
 
+using TrayUI_GetStuckInfo_t = void(WINAPI*)(void* pThis,
+                                            RECT* rect,
+                                            DWORD* taskbarPos);
+TrayUI_GetStuckInfo_t TrayUI_GetStuckInfo_Original;
+void WINAPI TrayUI_GetStuckInfo_Hook(void* pThis,
+                                     RECT* rect,
+                                     DWORD* taskbarPos) {
+    Wh_Log(L">");
+
+    TrayUI_GetStuckInfo_Original(pThis, rect, taskbarPos);
+
+    // taskbarPos:
+    // 0: left
+    // 1: top
+    // 2: right
+    // 3: bottom
+    switch (g_settings.taskbarLocation) {
+        case TaskbarLocation::left:
+            *taskbarPos = 0;
+            break;
+
+        case TaskbarLocation::right:
+            *taskbarPos = 2;
+            break;
+    }
+}
+
 using GetWindowRect_t = decltype(&GetWindowRect);
 GetWindowRect_t GetWindowRect_Original;
 
@@ -3157,6 +3184,13 @@ bool HookTaskbarDllSymbols() {
             },
             (void**)&TrayUI_MakeStuckRect_Original,
             (void*)TrayUI_MakeStuckRect_Hook,
+        },
+        {
+            {
+                LR"(public: virtual void __cdecl TrayUI::GetStuckInfo(struct tagRECT *,unsigned int *))",
+            },
+            (void**)&TrayUI_GetStuckInfo_Original,
+            (void*)TrayUI_GetStuckInfo_Hook,
         },
         {
             {
