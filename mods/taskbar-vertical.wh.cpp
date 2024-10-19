@@ -44,6 +44,10 @@ mod.
 
 **Note**: This mod requires Windhawk v1.5 or later.
 
+## Known limitations
+
+* The option to automatically hide the taskbar isn't supported.
+
 ## Funding
 
 The development of this mod was funded by [AuthLite LLC](https://authlite.com/).
