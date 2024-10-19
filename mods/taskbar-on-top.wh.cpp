@@ -331,7 +331,15 @@ void WINAPI TrayUI_GetStuckInfo_Hook(void* pThis,
 
     TrayUI_GetStuckInfo_Original(pThis, rect, taskbarPos);
 
-    *taskbarPos = ABE_TOP;
+    switch (g_settings.taskbarLocation) {
+        case TaskbarLocation::top:
+            *taskbarPos = ABE_TOP;
+            break;
+
+        case TaskbarLocation::bottom:
+            *taskbarPos = ABE_BOTTOM;
+            break;
+    }
 }
 
 void TaskbarWndProcPreProcess(HWND hWnd,
