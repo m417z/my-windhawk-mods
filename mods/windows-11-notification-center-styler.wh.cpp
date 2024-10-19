@@ -98,20 +98,24 @@ A couple of practical examples:
 **Target**: `ActionCenter.FocusSessionControl` \
 **Style**: `Height=0`
 
+#### Hide the notification center
+**Target**: `Grid#NotificationCenterGrid` \
+**Style**: `Visibility=Collapsed`
+
 #### Square the corners of the notification center
-**Target**: `Windows.UI.Xaml.Controls.Grid#NotificationCenterGrid` \
+**Target**: `Grid#NotificationCenterGrid` \
 **Style**: `CornerRadius=0`
 
 #### Square the corners of the calendar
-**Target**: `Windows.UI.Xaml.Controls.Grid#CalendarCenterGrid` \
+**Target**: `Grid#CalendarCenterGrid` \
 **Style**: `CornerRadius=0`
 
 #### Square the corners of the quick action center
-**Target**: `Windows.UI.Xaml.Controls.Grid#ControlCenterRegion` \
+**Target**: `Grid#ControlCenterRegion` \
 **Style**: `CornerRadius=0`
 
 #### Calendar and notification titlebars: titles on the right, buttons on the left
-**Target**: `Windows.UI.Xaml.Controls.Grid#RootContent` \
+**Target**: `Grid#RootContent` \
 **Style**: `FlowDirection=1`
 
 #### Add accelerator key (ALT+X) to clear all notifications
