@@ -81,6 +81,14 @@ With labels:
   - sameAsPrimary: Same as on primary monitor
   - left: Left
   - right: Right
+- jumpListAlignment: top
+  $name: Jump list vertical alignment
+  $description: >-
+    The vertical alignment of jump lists when right-clicking on taskbar items
+  $options:
+  - top: Top
+  - center: Center
+  - bottom: Bottom
 - startMenuWidth: 0
   $name: Start menu width
   $description: >-
@@ -123,10 +131,17 @@ enum class TaskbarLocation {
     right,
 };
 
+enum class JumpListAlignment {
+    top,
+    center,
+    bottom,
+};
+
 struct {
     TaskbarLocation taskbarLocation;
     TaskbarLocation taskbarLocationSecondary;
     int taskbarWidth;
+    JumpListAlignment jumpListAlignment;
     int startMenuWidth;
 } g_settings;
 
@@ -2420,7 +2435,19 @@ BOOL WINAPI SetWindowPos_Hook(HWND hWnd,
                 break;
         }
 
-        Y = pt.y - cy / 2;
+        switch (g_settings.jumpListAlignment) {
+            case JumpListAlignment::top:
+                Y = pt.y - 32;
+                break;
+
+            case JumpListAlignment::center:
+                Y = pt.y - cy / 2;
+                break;
+
+            case JumpListAlignment::bottom:
+                Y = pt.y - cy + 32;
+                break;
+        }
 
         if (Y < monitorInfo.rcWork.top) {
             Y = monitorInfo.rcWork.top;
@@ -2879,6 +2906,16 @@ void LoadSettings() {
     Wh_FreeStringSetting(taskbarLocationSecondary);
 
     g_settings.taskbarWidth = Wh_GetIntSetting(L"TaskbarWidth");
+
+    PCWSTR jumpListAlignment = Wh_GetStringSetting(L"jumpListAlignment");
+    g_settings.jumpListAlignment = JumpListAlignment::top;
+    if (wcscmp(jumpListAlignment, L"center") == 0) {
+        g_settings.jumpListAlignment = JumpListAlignment::center;
+    } else if (wcscmp(jumpListAlignment, L"bottom") == 0) {
+        g_settings.jumpListAlignment = JumpListAlignment::bottom;
+    }
+    Wh_FreeStringSetting(jumpListAlignment);
+
     g_settings.startMenuWidth = Wh_GetIntSetting(L"startMenuWidth");
 }
 
