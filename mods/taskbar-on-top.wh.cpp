@@ -292,12 +292,7 @@ void WINAPI TrayUI_MakeStuckRect_Hook(void* pThis,
 
     TrayUI_MakeStuckRect_Original(pThis, rect, param2, param3, taskbarPos);
 
-    // taskbarPos:
-    // 0: left
-    // 1: top
-    // 2: right
-    // 3: bottom
-    if (taskbarPos != 3) {
+    if (taskbarPos != ABE_BOTTOM) {
         return;
     }
 
@@ -336,12 +331,26 @@ void WINAPI TrayUI_GetStuckInfo_Hook(void* pThis,
 
     TrayUI_GetStuckInfo_Original(pThis, rect, taskbarPos);
 
-    // taskbarPos:
-    // 0: left
-    // 1: top
-    // 2: right
-    // 3: bottom
-    *taskbarPos = 1;
+    *taskbarPos = ABE_TOP;
+}
+
+void TaskbarWndProcPreProcess(HWND hWnd,
+                              UINT Msg,
+                              WPARAM* wParam,
+                              LPARAM* lParam) {
+    switch (Msg) {
+        case 0x5C3: {
+            // The taskbar location that affects the jump list animations.
+            if (*wParam == ABE_BOTTOM) {
+                HMONITOR monitor = (HMONITOR)lParam;
+                if (GetTaskbarLocationForMonitor(monitor) ==
+                    TaskbarLocation::top) {
+                    *wParam = ABE_TOP;
+                }
+            }
+            break;
+        }
+    }
 }
 
 LRESULT TaskbarWndProcPostProcess(HWND hWnd,
@@ -428,6 +437,8 @@ LRESULT WINAPI TrayUI_WndProc_Hook(void* pThis,
                                    bool* flag) {
     g_hookCallCounter++;
 
+    TaskbarWndProcPreProcess(hWnd, Msg, &wParam, &lParam);
+
     LRESULT ret =
         TrayUI_WndProc_Original(pThis, hWnd, Msg, wParam, lParam, flag);
 
@@ -447,6 +458,8 @@ LRESULT WINAPI CSecondaryTray_v_WndProc_Hook(void* pThis,
                                              WPARAM wParam,
                                              LPARAM lParam) {
     g_hookCallCounter++;
+
+    TaskbarWndProcPreProcess(hWnd, Msg, &wParam, &lParam);
 
     LRESULT ret =
         CSecondaryTray_v_WndProc_Original(pThis, hWnd, Msg, wParam, lParam);
@@ -1227,6 +1240,21 @@ void ApplySettings() {
     SendMessage(hTaskbarWnd, WM_SETTINGCHANGE, SPI_SETLOGICALDPIOVERRIDE, 0);
 
     g_applyingSettings = false;
+
+    // Update the taskbar location that affects the jump list animations.
+    auto monitorEnumProc = [hTaskbarWnd](HMONITOR hMonitor) -> BOOL {
+        PostMessage(hTaskbarWnd, 0x5C3, ABE_BOTTOM, (WPARAM)hMonitor);
+        return TRUE;
+    };
+
+    EnumDisplayMonitors(
+        nullptr, nullptr,
+        [](HMONITOR hMonitor, HDC hdc, LPRECT lprcMonitor,
+           LPARAM dwData) -> BOOL {
+            auto& proc = *reinterpret_cast<decltype(monitorEnumProc)*>(dwData);
+            return proc(hMonitor);
+        },
+        reinterpret_cast<LPARAM>(&monitorEnumProc));
 }
 
 bool GetTaskbarViewDllPath(WCHAR path[MAX_PATH]) {
