@@ -1417,16 +1417,17 @@ DWORD WINAPI TaskbarSettings_GroupingMode_Hook(void* pThis) {
     return ret;
 }
 
-using TaskListButton_MinScalableWidth_t = float(WINAPI*)(void* pThis);
-TaskListButton_MinScalableWidth_t TaskListButton_MinScalableWidth_Original;
-// RDX is expected to be preserved.
-[[clang::preserve_most]]
-float TaskListButton_MinScalableWidth_Hook(void* pThis) {
+using ITaskbarButton_get_MinScalableWidth_t = HRESULT(WINAPI*)(void* pThis,
+                                                               float* minWidth);
+ITaskbarButton_get_MinScalableWidth_t
+    ITaskbarButton_get_MinScalableWidth_Original;
+HRESULT ITaskbarButton_get_MinScalableWidth_Hook(void* pThis, float* minWidth) {
     Wh_Log(L">");
 
-    float ret = TaskListButton_MinScalableWidth_Original(pThis);
+    HRESULT ret = ITaskbarButton_get_MinScalableWidth_Original(pThis, minWidth);
 
-    if (!g_unloading && g_hasNativeLabelsImplementation && ret > 0) {
+    if (SUCCEEDED(ret) && !g_unloading && g_hasNativeLabelsImplementation &&
+        *minWidth > 0) {
         // Allow to create many taskbar items before overflow appears.
         int minimumTaskbarItemWidth = g_settings.minimumTaskbarItemWidth;
         if (minimumTaskbarItemWidth < 44) {
@@ -1435,11 +1436,11 @@ float TaskListButton_MinScalableWidth_Hook(void* pThis) {
                    minimumTaskbarItemWidth);
         }
 
-        if (ret >= minimumTaskbarItemWidth) {
-            ret = minimumTaskbarItemWidth;
+        if (*minWidth >= minimumTaskbarItemWidth) {
+            *minWidth = minimumTaskbarItemWidth;
         } else {
             Wh_Log(L"minimumTaskbarItemWidth too large, using default (%f)",
-                   ret);
+                   *minWidth);
         }
     }
 
@@ -2199,11 +2200,11 @@ bool HookTaskbarViewDllSymbols(HMODULE module) {
             },
             {
                 {
-                    LR"(public: float __cdecl winrt::Taskbar::implementation::TaskListButton::MinScalableWidth(void))",
-                    LR"(public: float __cdecl winrt::Taskbar::implementation::TaskListButton::MinScalableWidth(void) __ptr64)",
+                    LR"(public: virtual int __cdecl winrt::impl::produce<struct winrt::Taskbar::implementation::TaskListButton,struct winrt::Taskbar::ITaskbarButton>::get_MinScalableWidth(float *))",
+                    LR"(public: virtual int __cdecl winrt::impl::produce<struct winrt::Taskbar::implementation::TaskListButton,struct winrt::Taskbar::ITaskbarButton>::get_MinScalableWidth(float * __ptr64) __ptr64)",
                 },
-                (void**)&TaskListButton_MinScalableWidth_Original,
-                (void*)TaskListButton_MinScalableWidth_Hook,
+                (void**)&ITaskbarButton_get_MinScalableWidth_Original,
+                (void*)ITaskbarButton_get_MinScalableWidth_Hook,
                 true,
             },
             {
