@@ -229,10 +229,12 @@ double g_initialTaskbarItemWidth;
 UINT_PTR g_invalidateTaskListButtonTimer;
 std::unordered_set<FrameworkElement> g_taskListButtonsWithLabelMissing;
 
+#if __cplusplus < 202302L
 // Missing in older MinGW headers.
 DECLARE_HANDLE(CO_MTA_USAGE_COOKIE);
 WINOLEAPI CoIncrementMTAUsage(CO_MTA_USAGE_COOKIE* pCookie);
 WINOLEAPI CoDecrementMTAUsage(CO_MTA_USAGE_COOKIE Cookie);
+#endif
 
 WINUSERAPI UINT WINAPI GetDpiForWindow(HWND hwnd);
 
