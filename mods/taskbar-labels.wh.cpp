@@ -1430,8 +1430,8 @@ HRESULT ITaskbarButton_get_MinScalableWidth_Hook(void* pThis, float* minWidth) {
         *minWidth > 0) {
         // Allow to create many taskbar items before overflow appears.
         int minimumTaskbarItemWidth = g_settings.minimumTaskbarItemWidth;
-        if (minimumTaskbarItemWidth < 44) {
-            minimumTaskbarItemWidth = 44;
+        if (minimumTaskbarItemWidth < 1) {
+            minimumTaskbarItemWidth = 1;
             Wh_Log(L"minimumTaskbarItemWidth too small, using %d",
                    minimumTaskbarItemWidth);
         }
