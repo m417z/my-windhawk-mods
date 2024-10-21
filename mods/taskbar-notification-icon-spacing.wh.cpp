@@ -145,14 +145,33 @@ void ApplyNotifyIconViewStyle(FrameworkElement notifyIconViewElement,
     FrameworkElement child = notifyIconViewElement;
     if ((child = FindChildByName(child, L"ContainerGrid")) &&
         (child = FindChildByName(child, L"ContentPresenter")) &&
-        (child = FindChildByName(child, L"ContentGrid")) &&
-        (child = FindChildByClassName(child, L"SystemTray.ImageIconContent")) &&
-        (child = FindChildByName(child, L"ContainerGrid"))) {
-        auto childControl = child.try_as<Controls::Grid>();
-        if (childControl) {
-            Wh_Log(L"Setting Padding=0 for ContainerGrid");
-            childControl.Padding(Thickness{});
-        }
+        (child = FindChildByName(child, L"ContentGrid"))) {
+        EnumChildElements(child, [width](FrameworkElement child) {
+            auto className = winrt::get_class_name(child);
+            if (className == L"SystemTray.TextIconContent" ||
+                className == L"SystemTray.ImageIconContent") {
+                auto containerGrid = FindChildByName(child, L"ContainerGrid")
+                                         .try_as<Controls::Grid>();
+                if (containerGrid) {
+                    Wh_Log(L"Setting Padding=0 for ContainerGrid");
+                    containerGrid.Padding(Thickness{});
+                }
+            } else if (className == L"SystemTray.LanguageTextIconContent") {
+                child.Width(std::numeric_limits<double>::quiet_NaN());
+
+                // Every language has a different width. ENG is 24. Default
+                // width is 44.
+                double minWidth = width + 12;
+                Wh_Log(L"Setting MinWidth=%f for LanguageTextIconContent",
+                       minWidth);
+                child.MinWidth(minWidth);
+            } else {
+                Wh_Log(L"Unsupported class name %s of child",
+                       className.c_str());
+            }
+
+            return false;
+        });
     }
 }
 
@@ -265,6 +284,60 @@ bool ApplyControlCenterButtonStyle(FrameworkElement controlCenterButton,
     return true;
 }
 
+bool ApplyIconStackStyle(PCWSTR containerName,
+                         FrameworkElement container,
+                         int width) {
+    FrameworkElement stackPanel = nullptr;
+
+    FrameworkElement child = container;
+    if ((child = FindChildByName(child, L"Content")) &&
+        (child = FindChildByName(child, L"IconStack")) &&
+        (child = FindChildByClassName(
+             child, L"Windows.UI.Xaml.Controls.ItemsPresenter")) &&
+        (child = FindChildByClassName(
+             child, L"Windows.UI.Xaml.Controls.StackPanel"))) {
+        stackPanel = child;
+    }
+
+    if (!stackPanel) {
+        return false;
+    }
+
+    EnumChildElements(stackPanel, [containerName,
+                                   width](FrameworkElement child) {
+        auto childClassName = winrt::get_class_name(child);
+        if (childClassName != L"Windows.UI.Xaml.Controls.ContentPresenter") {
+            Wh_Log(L"Unsupported class name %s of child",
+                   childClassName.c_str());
+            return false;
+        }
+
+        if (wcscmp(containerName, L"NotifyIconStack") == 0) {
+            FrameworkElement systemTrayChevronIconViewElement =
+                FindChildByClassName(child, L"SystemTray.ChevronIconView");
+            if (!systemTrayChevronIconViewElement) {
+                Wh_Log(L"Failed to get SystemTray.ChevronIconView of child");
+                return false;
+            }
+
+            ApplyNotifyIconViewStyle(systemTrayChevronIconViewElement, width);
+        } else {
+            FrameworkElement systemTrayIconElement =
+                FindChildByName(child, L"SystemTrayIcon");
+            if (!systemTrayIconElement) {
+                Wh_Log(L"Failed to get SystemTrayIcon of child");
+                return false;
+            }
+
+            ApplyNotifyIconViewStyle(systemTrayIconElement, width);
+        }
+
+        return false;
+    });
+
+    return true;
+}
+
 bool ApplyStyle(XamlRoot xamlRoot, int width) {
     FrameworkElement systemTrayFrameGrid = nullptr;
 
@@ -282,17 +355,30 @@ bool ApplyStyle(XamlRoot xamlRoot, int width) {
     bool somethingSucceeded = false;
 
     FrameworkElement notificationAreaIcons =
-        FindChildByName(child, L"NotificationAreaIcons");
+        FindChildByName(systemTrayFrameGrid, L"NotificationAreaIcons");
     if (notificationAreaIcons) {
         somethingSucceeded |=
             ApplyNotifyIconsStyle(notificationAreaIcons, width);
     }
 
     FrameworkElement controlCenterButton =
-        FindChildByName(child, L"ControlCenterButton");
+        FindChildByName(systemTrayFrameGrid, L"ControlCenterButton");
     if (controlCenterButton) {
         somethingSucceeded |=
             ApplyControlCenterButtonStyle(controlCenterButton, width);
+    }
+
+    for (PCWSTR containerName : {
+             L"NotifyIconStack",
+             L"MainStack",
+             L"NonActivatableStack",
+         }) {
+        FrameworkElement container =
+            FindChildByName(systemTrayFrameGrid, containerName);
+        if (container) {
+            somethingSucceeded |=
+                ApplyIconStackStyle(containerName, container, width);
+        }
     }
 
     return somethingSucceeded;
@@ -335,12 +421,26 @@ void WINAPI IconView_IconView_Hook(PVOID pThis) {
             if (className == L"SystemTray.NotifyIconView") {
                 ApplyNotifyIconViewStyle(iconView,
                                          g_settings.notificationIconWidth);
-            } else if (className == L"SystemTray.IconView" &&
-                       iconView.Name() == L"SystemTrayIcon" &&
-                       IsChildOfElementByName(iconView,
-                                              L"ControlCenterButton")) {
-                ApplySystemTrayIconStyle(iconView,
-                                         g_settings.notificationIconWidth);
+            } else if (className == L"SystemTray.IconView") {
+                if (iconView.Name() == L"SystemTrayIcon") {
+                    if (IsChildOfElementByName(iconView,
+                                               L"ControlCenterButton")) {
+                        ApplySystemTrayIconStyle(
+                            iconView, g_settings.notificationIconWidth);
+                    } else if (IsChildOfElementByName(iconView, L"MainStack") ||
+                               IsChildOfElementByName(iconView,
+                                                      L"NonActivatableStack") ||
+                               IsChildOfElementByName(iconView,
+                                                      L"ControlCenterButton")) {
+                        ApplyNotifyIconViewStyle(
+                            iconView, g_settings.notificationIconWidth);
+                    }
+                }
+            } else if (className == L"SystemTray.ChevronIconView") {
+                if (IsChildOfElementByName(iconView, L"NotifyIconStack")) {
+                    ApplyNotifyIconViewStyle(iconView,
+                                             g_settings.notificationIconWidth);
+                }
             }
         });
 }
