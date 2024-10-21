@@ -203,15 +203,17 @@ auto StrToW(PCSTR str) {
         PCWSTR p;
     } result;
 
-    int strLen = static_cast<int>(strlen(str));
-    int sizeNeeded = MultiByteToWideChar(CP_ACP, 0, str, strLen, nullptr, 0);
-    if (sizeNeeded <= 0) {
-        throw std::runtime_error("MultiByteToWideChar() failed: " +
-                                 std::to_string(sizeNeeded));
+    if (*str) {
+        int strLen = static_cast<int>(strlen(str));
+        int sizeNeeded =
+            MultiByteToWideChar(CP_ACP, 0, str, strLen, nullptr, 0);
+        if (sizeNeeded) {
+            result.wstr.resize(sizeNeeded);
+            MultiByteToWideChar(CP_ACP, 0, str, strLen, result.wstr.data(),
+                                sizeNeeded);
+        }
     }
 
-    result.wstr.resize(sizeNeeded);
-    MultiByteToWideChar(CP_ACP, 0, str, strLen, result.wstr.data(), sizeNeeded);
     result.p = result.wstr.c_str();
     return result;
 }
@@ -1167,19 +1169,20 @@ HRSRC FindResourceExAW_Hook(HMODULE hModule,
     WCHAR prefix[64];
     swprintf_s(prefix, L"[%u] > %c", c, chooseAW<T, L'A', L'W'>());
 
-    std::wstring logType;
-    if (IS_INTRESOURCE(lpType)) {
-        logType = std::to_wstring((DWORD)(ULONG_PTR)lpType);
-    } else {
-        logType = StrToW(lpType).p;
-    }
+    auto logType = [lpType]() -> std::wstring {
+        if (IS_INTRESOURCE(lpType)) {
+            return std::to_wstring((DWORD)(ULONG_PTR)lpType);
+        } else {
+            return StrToW(lpType).p;
+        }
+    };
 
     if (IS_INTRESOURCE(lpName)) {
         Wh_Log(L"%s, resource type: %s, number: %u, language: 0x%04X", prefix,
-               logType.c_str(), (DWORD)(ULONG_PTR)lpName, wLanguage);
+               logType().c_str(), (DWORD)(ULONG_PTR)lpName, wLanguage);
     } else {
         Wh_Log(L"%s, resource type: %s, name: %s, language: 0x%04X", prefix,
-               logType.c_str(), StrToW(lpName).p, wLanguage);
+               logType().c_str(), StrToW(lpName).p, wLanguage);
     }
 
     HRSRC result;
