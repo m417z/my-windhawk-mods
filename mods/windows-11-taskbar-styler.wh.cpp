@@ -221,6 +221,15 @@ relevant `#pragma region` regions in the code editor.
     - value: ""
       $name: Value
   $name: Resource variables
+- directManipulationCrashWorkaround: false
+  $name: Enable crash workaround
+  $description: >-
+    The mod uses XAML diagnostics, which is a way of receiving events about UI
+    elements, used mainly for debugging. Due to what I suspect to be a Windows
+    bug, XAML diagnostics may cause explorer to crash
+    (https://github.com/ramensoftware/windows-11-taskbar-styling-guide/issues/104).
+    This option is an attempt to prevent the crash by disabling some of the
+    functionality where the crash occurs.
 */
 // ==/WindhawkModSettings==
 
@@ -1863,6 +1872,8 @@ HRESULT InjectWindhawkTAP() noexcept
 // clang-format on
 ////////////////////////////////////////////////////////////////////////////////
 
+#include <windhawk_utils.h>
+
 #include <list>
 #include <optional>
 #include <sstream>
@@ -1975,6 +1986,8 @@ struct BackgroundFillDelayedApplyData {
 
 std::unordered_map<InstanceHandle, BackgroundFillDelayedApplyData>
     g_backgroundFillDelayedApplyData;
+
+bool g_directManipulationCrashWorkaround;
 
 winrt::Windows::Foundation::IInspectable ReadLocalValueWithWorkaround(
     DependencyObject elementDo,
@@ -3254,8 +3267,61 @@ HWND GetTaskbarUiWnd() {
                         nullptr);
 }
 
+using CDirectManipulationService_ActivateDirectManipulationManager_t =
+    HRESULT(WINAPI*)(void* pThis);
+CDirectManipulationService_ActivateDirectManipulationManager_t
+    CDirectManipulationService_ActivateDirectManipulationManager_Original;
+HRESULT WINAPI
+CDirectManipulationService_ActivateDirectManipulationManager_Hook(void* pThis) {
+    Wh_Log(L">");
+
+    return S_OK;
+}
+
+using ScrollViewer_NotifyManipulatableElementChanged_t =
+    HRESULT(WINAPI*)(void* pThis);
+ScrollViewer_NotifyManipulatableElementChanged_t
+    ScrollViewer_NotifyManipulatableElementChanged_Original;
+HRESULT WINAPI
+ScrollViewer_NotifyManipulatableElementChanged_Hook(void* pThis) {
+    Wh_Log(L">");
+
+    return S_OK;
+}
+
+bool HookWindowsUIXamlSymbols() {
+    HMODULE module = LoadLibrary(L"Windows.UI.Xaml.dll");
+    if (!module) {
+        Wh_Log(L"Failed to load Windows.UI.Xaml.dll");
+        return false;
+    }
+
+    // Windows.UI.Xaml.dll
+    WindhawkUtils::SYMBOL_HOOK hooks[] = {
+        {
+            {LR"(public: virtual long __cdecl CDirectManipulationService::ActivateDirectManipulationManager(void))"},
+            &CDirectManipulationService_ActivateDirectManipulationManager_Original,
+            CDirectManipulationService_ActivateDirectManipulationManager_Hook,
+        },
+        {
+            {LR"(private: long __cdecl DirectUI::ScrollViewer::NotifyManipulatableElementChanged(void))"},
+            &ScrollViewer_NotifyManipulatableElementChanged_Original,
+            ScrollViewer_NotifyManipulatableElementChanged_Hook,
+        },
+    };
+
+    return HookSymbols(module, hooks, ARRAYSIZE(hooks));
+}
+
 BOOL Wh_ModInit() {
     Wh_Log(L">");
+
+    g_directManipulationCrashWorkaround =
+        Wh_GetIntSetting(L"directManipulationCrashWorkaround");
+
+    if (g_directManipulationCrashWorkaround) {
+        HookWindowsUIXamlSymbols();
+    }
 
     Wh_SetFunctionHook((void*)CreateWindowExW, (void*)CreateWindowExW_Hook,
                        (void**)&CreateWindowExW_Original);
@@ -3292,8 +3358,18 @@ void Wh_ModUninit() {
     }
 }
 
-void Wh_ModSettingsChanged() {
+BOOL Wh_ModSettingsChanged(BOOL* bReload) {
     Wh_Log(L">");
+
+    int prevDirectManipulationCrashWorkaround =
+        g_directManipulationCrashWorkaround;
+    g_directManipulationCrashWorkaround =
+        Wh_GetIntSetting(L"directManipulationCrashWorkaround");
+    if (g_directManipulationCrashWorkaround !=
+        prevDirectManipulationCrashWorkaround) {
+        *bReload = TRUE;
+        return TRUE;
+    }
 
     if (g_visualTreeWatcher) {
         g_visualTreeWatcher->UnadviseVisualTreeChange();
@@ -3311,4 +3387,6 @@ void Wh_ModSettingsChanged() {
             },
             nullptr);
     }
+
+    return TRUE;
 }
