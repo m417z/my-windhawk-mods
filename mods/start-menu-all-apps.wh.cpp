@@ -26,12 +26,6 @@
 When the Windows 11 start menu is opened, show all apps right away without
 having to click on the "All apps" button.
 
-**Note:** Requires Windhawk 1.3 or newer.
-
-**Note:** Might not work with a portable version of Windhawk. The reason is that
-the StartMenuExperienceHost.exe process has limited access to files, and it
-might not be able to load the mod.
-
 Before:
 
 ![Before screenshot](https://i.imgur.com/2ipCKJn.png)

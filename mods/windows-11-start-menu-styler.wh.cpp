@@ -26,8 +26,6 @@
 
 Customize the start menu with themes contributed by others or create your own.
 
-**Note**: This mod requires Windhawk v1.4 or later.
-
 Also check out the **Windows 11 Taskbar Styler**, **Windows 11 Notification
 Center Styler** mods.
 
