@@ -86,9 +86,9 @@ void WINAPI CTaskListWnd__HandleClick_Hook(PVOID pThis,
     };
 
     constexpr int kClick = 0;
-    constexpr int kShiftClick = 4;
+    constexpr int kCtrlClick = 4;
 
-    if (clickAction != kClick && clickAction != kShiftClick) {
+    if (clickAction != kClick && clickAction != kCtrlClick) {
         return original();
     }
 
@@ -103,7 +103,7 @@ void WINAPI CTaskListWnd__HandleClick_Hook(PVOID pThis,
 
     CTaskListWnd__HandleClick_Original(
         pThis, taskBtnGroup, taskItemIndex,
-        clickAction == kClick ? kShiftClick : kClick, param4, param5);
+        clickAction == kClick ? kCtrlClick : kClick, param4, param5);
 }
 
 VS_FIXEDFILEINFO* GetModuleVersionInfo(HMODULE hModule, UINT* puPtrLen) {
