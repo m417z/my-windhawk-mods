@@ -9,7 +9,7 @@
 // @homepage        https://m417z.com/
 // @include         explorer.exe
 // @architecture    x86-64
-// @compilerOptions -lversion -ldbghelp -lshlwapi
+// @compilerOptions -lversion
 // ==/WindhawkMod==
 
 // Source code is published under The GNU General Public License v3.0.
@@ -49,13 +49,9 @@ or a similar tool), enable the relevant option in the mod's settings.
 
 #include <windhawk_utils.h>
 
-#include <dbghelp.h>
 #include <psapi.h>
-#include <shlwapi.h>
 
 #include <atomic>
-#include <sstream>
-#include <string>
 
 struct {
     bool oldTaskbarOnWin11;
@@ -134,106 +130,6 @@ using CTaskListWnd_OnContextMenu_t = HRESULT(WINAPI*)(void* pThis,
                                                       void* taskGroup,
                                                       void* taskItem);
 CTaskListWnd_OnContextMenu_t CTaskListWnd_OnContextMenu_Original;
-HRESULT WINAPI CTaskListWnd_OnContextMenu_Hook(void* pThis,
-                                               POINT pt,
-                                               HWND hWnd,
-                                               bool param3,
-                                               void* taskGroup,
-                                               void* taskItem) {
-    WCHAR className[256] = L"";
-    GetClassName(hWnd, className, ARRAYSIZE(className));
-
-    Wh_Log(L"> %p (%d,%d) %08X[%s] %d %p %p", pThis, pt.x, pt.y,
-           (DWORD)(DWORD_PTR)hWnd, className, param3, taskGroup, taskItem);
-
-    return CTaskListWnd_OnContextMenu_Original(pThis, pt, hWnd, false,
-                                               taskGroup, taskItem);
-}
-
-VS_FIXEDFILEINFO* GetModuleVersionInfo(HMODULE hModule, UINT* puPtrLen);
-
-void AppendModuleNameVersion(std::wstring* string, HMODULE hModule) {
-    WCHAR buffer[1025];
-
-    WCHAR szModuleName[MAX_PATH];
-    if (!GetModuleFileName(hModule, szModuleName, _countof(szModuleName))) {
-        szModuleName[0] = L'?';
-        szModuleName[1] = L'\0';
-    }
-
-    *string += PathFindFileName(szModuleName);
-
-    VS_FIXEDFILEINFO* pFixedFileInfo = GetModuleVersionInfo(hModule, NULL);
-    if (pFixedFileInfo) {
-        wsprintf(buffer, L" %hu.%hu.%hu.%hu",
-                 HIWORD(pFixedFileInfo->dwFileVersionMS),  // Major version
-                 LOWORD(pFixedFileInfo->dwFileVersionMS),  // Minor version
-                 HIWORD(pFixedFileInfo->dwFileVersionLS),  // Build number
-                 LOWORD(pFixedFileInfo->dwFileVersionLS)   // QFE
-        );
-        *string += buffer;
-    }
-}
-
-#define PTR64BIT L"%016I64X"
-
-std::wstring GetStackTrace() {
-    std::wstring result;
-
-    unsigned int i;
-    void* stack[100];
-    unsigned short frames;
-    SYMBOL_INFOW* symbol;
-    HANDLE process;
-    HMODULE module_handle;
-    WCHAR buffer[1025];
-
-    process = GetCurrentProcess();
-
-    if (!SymInitialize(process, NULL, TRUE)) {
-        return result;
-    }
-
-    frames = CaptureStackBackTrace(0, 100, stack, NULL);
-    symbol =
-        (SYMBOL_INFOW*)HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY,
-                                 sizeof(SYMBOL_INFOW) + 256 * sizeof(WCHAR));
-    if (symbol) {
-        symbol->MaxNameLen = 255;
-        symbol->SizeOfStruct = sizeof(SYMBOL_INFOW);
-
-        for (i = 0; i < frames; i++) {
-            wsprintf(buffer, L"%i: %p", frames - i - 1, stack[i]);
-            result += buffer;
-
-            if (SymFromAddrW(process, (DWORD64)(stack[i]), 0, symbol)) {
-                wsprintf(buffer, L" (%s - " PTR64BIT L")", symbol->Name,
-                         symbol->Address);
-                result += buffer;
-            }
-
-            if (GetModuleHandleEx(
-                    GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
-                        GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
-                    (LPCWSTR)(stack[i]), &module_handle)) {
-                result += L" [";
-
-                AppendModuleNameVersion(&result, module_handle);
-
-                wsprintf(buffer, L" - %p]", module_handle);
-                result += buffer;
-            }
-
-            result += L"\n";
-        }
-
-        HeapFree(GetProcessHeap(), 0, symbol);
-    }
-
-    SymCleanup(process);
-
-    return result;
-}
 
 using CTaskListWnd_HandleClick_t = HRESULT(WINAPI*)(void* pThis,
                                                     void* taskGroup,
@@ -270,22 +166,9 @@ HRESULT WINAPI CTaskListWnd_HandleClick_Hook(void* pThis,
             }
         }
 
-        CTaskListWnd_OnContextMenu_Hook(pThis_ITaskListSite, pt, hTaskListWnd,
-                                        false, taskGroup, taskItem);
+        CTaskListWnd_OnContextMenu_Original(
+            pThis_ITaskListSite, pt, hTaskListWnd, false, taskGroup, taskItem);
         return S_OK;
-    } else {
-        Wh_Log(
-            L"%u != %u",
-            g_TaskbarResources_OnTaskListButtonContextRequestedThreadId.load(),
-            GetCurrentThreadId());
-
-        Wh_Log(L"======================================== XAML:");
-        std::wstringstream ss(GetStackTrace());
-        std::wstring line;
-        while (std::getline(ss, line, L'\n')) {
-            Wh_Log(L"%s", line.c_str());
-        }
-        Wh_Log(L"========================================");
     }
 
     HRESULT ret = CTaskListWnd_HandleClick_Original(pThis, taskGroup, taskItem,
@@ -332,13 +215,10 @@ TaskbarResources_OnTaskListButtonContextRequested_Hook(void* pThis,
 
     g_TaskbarResources_OnTaskListButtonContextRequestedThreadId =
         GetCurrentThreadId();
-    Wh_Log(L"g_TaskbarResources_OnTaskListButtonContextRequestedThreadId = %u",
-           GetCurrentThreadId());
 
     TaskbarResources_OnTaskListButtonContextRequested_Original(pThis, param1,
                                                                param2);
 
-    Wh_Log(L"g_TaskbarResources_OnTaskListButtonContextRequestedThreadId = 0");
     g_TaskbarResources_OnTaskListButtonContextRequestedThreadId = 0;
 }
 
@@ -567,7 +447,6 @@ bool HookWin11TaskbarSymbols() {
         {
             {LR"(public: virtual void __cdecl CTaskListWnd::OnContextMenu(struct tagPOINT,struct HWND__ *,bool,struct ITaskGroup *,struct ITaskItem *))"},
             &CTaskListWnd_OnContextMenu_Original,
-            &CTaskListWnd_OnContextMenu_Hook,
         },
         {
             {LR"(const CTaskListWnd::`vftable'{for `CImpWndProc'})"},
