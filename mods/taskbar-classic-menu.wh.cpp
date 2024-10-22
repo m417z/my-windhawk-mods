@@ -2,7 +2,7 @@
 // @id              taskbar-classic-menu
 // @name            Taskbar classic context menu
 // @description     Show the classic context menu when right-clicking on taskbar items
-// @version         1.0
+// @version         1.0.1
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
@@ -71,6 +71,7 @@ std::atomic<bool> g_explorerPatcherInitialized;
 
 std::atomic<DWORD> g_CTaskListWnd__HandleContextMenuThreadId;
 std::atomic<DWORD> g_TaskbarResources_OnTaskListButtonContextRequestedThreadId;
+DWORD g_lastContextRequestedTickCount;
 
 void* CTaskListWnd_vftable_CImpWndProc;
 void* CTaskListWnd_vftable_ITaskListSite;
@@ -143,7 +144,9 @@ HRESULT WINAPI CTaskListWnd_HandleClick_Hook(void* pThis,
     Wh_Log(L">");
 
     if (g_TaskbarResources_OnTaskListButtonContextRequestedThreadId ==
-        GetCurrentThreadId()) {
+            GetCurrentThreadId() ||
+        GetTickCount() - g_lastContextRequestedTickCount <= 200) {
+        g_lastContextRequestedTickCount = 0;
         Wh_Log(L"Showing classic context menu");
 
         POINT pt{};
@@ -212,6 +215,12 @@ TaskbarResources_OnTaskListButtonContextRequested_Hook(void* pThis,
                                                        void* param1,
                                                        void* param2) {
     Wh_Log(L">");
+
+    // Normally, CTaskListWnd::HandleClick is called synchronously and this flag
+    // isn't necessary, but if the TaskbarShiftRightClickCrash feature flag is
+    // enabled, then it's dispatched asynchronously. Use this flag to be able to
+    // show the context menu in that case as well.
+    g_lastContextRequestedTickCount = GetTickCount();
 
     g_TaskbarResources_OnTaskListButtonContextRequestedThreadId =
         GetCurrentThreadId();
