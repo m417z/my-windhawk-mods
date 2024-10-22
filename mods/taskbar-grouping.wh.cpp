@@ -1081,21 +1081,22 @@ LONG_PTR OnTaskDestroyed(std::function<LONG_PTR()> original,
     // taskItem is null when unpinning, for example. Not returning in this case
     // causes a bug in which the item stays pinned if there are running
     // instances on other monitors or virtual desktops.
-    if (!CTaskListWnd_IsOnPrimaryTaskband_Original(taskList_TaskListUI) ||
-        !taskItem) {
+    if (!taskItem) {
         return original();
     }
 
+    bool isPrimaryTaskbar =
+        CTaskListWnd_IsOnPrimaryTaskband_Original(taskList_TaskListUI);
     int numItems = CTaskGroup_GetNumItems_Original(taskGroup);
     bool taskGroupIsPinned = CTaskGroup_GetFlags_Original(taskGroup) & 1;
 
-    if (numItems == 1) {
+    if (isPrimaryTaskbar && numItems == 1) {
         HandleUnsuffixedInstanceOnTaskDestroyed(taskList_TaskListUI, taskGroup);
     }
 
     LONG_PTR ret = original();
 
-    if (numItems == 0) {
+    if (isPrimaryTaskbar && numItems == 0) {
         HandleUnsuffixedInstanceOnTaskDestroyed(taskList_TaskListUI, taskGroup);
     }
 
