@@ -28,6 +28,9 @@ Makes clicking on combined taskbar items cycle through windows instead of
 opening thumbnail previews. It's still possible to open thumbnail previews by
 holding the Ctrl key while clicking.
 
+In addition, makes Win+# hotkeys (Win+1, Win+2, etc.) cycle through taskbar
+windows.
+
 Only Windows 10 64-bit and Windows 11 are supported. For other Windows versions
 check out [7+ Taskbar Tweaker](https://tweaker.ramensoftware.com/).
 
@@ -62,6 +65,8 @@ enum class WinVersion {
 
 WinVersion g_winVersion;
 
+bool g_inHandleWinNumHotKey;
+
 using CTaskBtnGroup_GetGroupType_t = int(WINAPI*)(PVOID pThis);
 CTaskBtnGroup_GetGroupType_t CTaskBtnGroup_GetGroupType_Original;
 
@@ -80,17 +85,10 @@ void WINAPI CTaskListWnd__HandleClick_Hook(PVOID pThis,
                                            int param5) {
     Wh_Log(L"> %d", clickAction);
 
-    auto original = [&]() {
+    auto original = [=]() {
         CTaskListWnd__HandleClick_Original(pThis, taskBtnGroup, taskItemIndex,
                                            clickAction, param4, param5);
     };
-
-    constexpr int kClick = 0;
-    constexpr int kCtrlClick = 4;
-
-    if (clickAction != kClick && clickAction != kCtrlClick) {
-        return original();
-    }
 
     // Group types:
     // 1 - Single item or multiple uncombined items
@@ -101,9 +99,51 @@ void WINAPI CTaskListWnd__HandleClick_Hook(PVOID pThis,
         return original();
     }
 
-    CTaskListWnd__HandleClick_Original(
-        pThis, taskBtnGroup, taskItemIndex,
-        clickAction == kClick ? kCtrlClick : kClick, param4, param5);
+    constexpr int kClick = 0;
+    constexpr int kForward = 1;
+    constexpr int kBack = 2;
+    constexpr int kCtrlClick = 4;
+
+    int newClickAction = clickAction;
+    if (g_inHandleWinNumHotKey) {
+        if (clickAction == kForward || clickAction == kBack) {
+            newClickAction = kCtrlClick;
+        } else if (clickAction == kCtrlClick) {
+            newClickAction = kForward;
+        }
+
+        Wh_Log(L"-> %d", newClickAction);
+    } else {
+        if (clickAction == kClick) {
+            newClickAction = kCtrlClick;
+        } else if (clickAction == kCtrlClick) {
+            newClickAction = kClick;
+        }
+
+        Wh_Log(L"-> %d", newClickAction);
+    }
+
+    CTaskListWnd__HandleClick_Original(pThis, taskBtnGroup, taskItemIndex,
+                                       newClickAction, param4, param5);
+}
+
+using CTaskListWnd_HandleWinNumHotKey_t = HRESULT(WINAPI*)(void* pThis,
+                                                           short param1,
+                                                           WORD param2);
+CTaskListWnd_HandleWinNumHotKey_t CTaskListWnd_HandleWinNumHotKey_Original;
+HRESULT WINAPI CTaskListWnd_HandleWinNumHotKey_Hook(void* pThis,
+                                                    short param1,
+                                                    WORD param2) {
+    Wh_Log(L">");
+
+    g_inHandleWinNumHotKey = true;
+
+    HRESULT ret =
+        CTaskListWnd_HandleWinNumHotKey_Original(pThis, param1, param2);
+
+    g_inHandleWinNumHotKey = false;
+
+    return ret;
 }
 
 VS_FIXEDFILEINFO* GetModuleVersionInfo(HMODULE hModule, UINT* puPtrLen) {
@@ -181,19 +221,18 @@ BOOL Wh_ModInit() {
     // Taskbar.dll, explorer.exe
     WindhawkUtils::SYMBOL_HOOK symbolHooks[] = {
         {
-            {
-                LR"(public: virtual enum eTBGROUPTYPE __cdecl CTaskBtnGroup::GetGroupType(void))",
-                LR"(public: virtual enum eTBGROUPTYPE __cdecl CTaskBtnGroup::GetGroupType(void) __ptr64)",
-            },
-            (void**)&CTaskBtnGroup_GetGroupType_Original,
+            {LR"(public: virtual enum eTBGROUPTYPE __cdecl CTaskBtnGroup::GetGroupType(void))"},
+            &CTaskBtnGroup_GetGroupType_Original,
         },
         {
-            {
-                LR"(protected: void __cdecl CTaskListWnd::_HandleClick(struct ITaskBtnGroup *,int,enum CTaskListWnd::eCLICKACTION,int,int))",
-                LR"(protected: void __cdecl CTaskListWnd::_HandleClick(struct ITaskBtnGroup * __ptr64,int,enum CTaskListWnd::eCLICKACTION,int,int) __ptr64)",
-            },
-            (void**)&CTaskListWnd__HandleClick_Original,
-            (void*)CTaskListWnd__HandleClick_Hook,
+            {LR"(protected: void __cdecl CTaskListWnd::_HandleClick(struct ITaskBtnGroup *,int,enum CTaskListWnd::eCLICKACTION,int,int))"},
+            &CTaskListWnd__HandleClick_Original,
+            CTaskListWnd__HandleClick_Hook,
+        },
+        {
+            {LR"(public: virtual long __cdecl CTaskListWnd::HandleWinNumHotKey(short,unsigned short))"},
+            &CTaskListWnd_HandleWinNumHotKey_Original,
+            CTaskListWnd_HandleWinNumHotKey_Hook,
         },
     };
 
