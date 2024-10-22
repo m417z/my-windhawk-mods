@@ -299,6 +299,10 @@ bool HookExplorerPatcherSymbols(HMODULE explorerPatcherModule) {
         return true;
     }
 
+    if (g_winVersion >= WinVersion::Win11) {
+        g_winVersion = WinVersion::Win10;
+    }
+
     struct EXPLORER_PATCHER_HOOK {
         PCSTR symbol;
         void** pOriginalFunction;
@@ -512,15 +516,6 @@ BOOL Wh_ModInit() {
         if (hasWin10Taskbar && !HookWin10TaskbarSymbols()) {
             return FALSE;
         }
-
-        HandleLoadedExplorerPatcher();
-
-        HMODULE kernelBaseModule = GetModuleHandle(L"kernelbase.dll");
-        FARPROC pKernelBaseLoadLibraryExW =
-            GetProcAddress(kernelBaseModule, "LoadLibraryExW");
-        Wh_SetFunctionHook((void*)pKernelBaseLoadLibraryExW,
-                           (void*)LoadLibraryExW_Hook,
-                           (void**)&LoadLibraryExW_Original);
     } else if (g_winVersion >= WinVersion::Win11) {
         if (!HookWin11TaskbarSymbols()) {
             return FALSE;
@@ -535,6 +530,15 @@ BOOL Wh_ModInit() {
         }
     }
 
+    HandleLoadedExplorerPatcher();
+
+    HMODULE kernelBaseModule = GetModuleHandle(L"kernelbase.dll");
+    FARPROC pKernelBaseLoadLibraryExW =
+        GetProcAddress(kernelBaseModule, "LoadLibraryExW");
+    Wh_SetFunctionHook((void*)pKernelBaseLoadLibraryExW,
+                       (void*)LoadLibraryExW_Hook,
+                       (void**)&LoadLibraryExW_Original);
+
     Wh_SetFunctionHook((void*)GetKeyState, (void*)GetKeyState_Hook,
                        (void**)&GetKeyState_Original);
 
@@ -548,7 +552,7 @@ void Wh_ModAfterInit() {
 
     // Try again in case there's a race between the previous attempt and the
     // LoadLibraryExW hook.
-    if (g_settings.oldTaskbarOnWin11 && !g_explorerPatcherInitialized) {
+    if (!g_explorerPatcherInitialized) {
         HandleLoadedExplorerPatcher();
     }
 }
