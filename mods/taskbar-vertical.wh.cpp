@@ -1078,19 +1078,23 @@ bool ApplyStyle(FrameworkElement taskbarFrame,
         margin.Bottom -= 1;
     }
 
+    if (auto rootGrid = FindChildByName(taskbarFrame, L"RootGrid")) {
+        rootGrid.Margin(margin);
+    }
+
+    if (auto systemTrayFrame =
+            FindChildByClassName(contentGrid, L"SystemTray.SystemTrayFrame")) {
+        // It's usually Stretch already, but it might be Bottom in some tablet
+        // or touch-optimized mode.
+        systemTrayFrame.VerticalAlignment(VerticalAlignment::Stretch);
+
+        if (auto systemTrayFrameGrid =
+                FindChildByName(systemTrayFrame, L"SystemTrayFrameGrid")) {
+            systemTrayFrameGrid.Margin(margin);
+        }
+    }
+
     FrameworkElement child = taskbarFrame;
-    if ((child = FindChildByName(child, L"RootGrid"))) {
-        child.Margin(margin);
-    }
-
-    child = contentGrid;
-    if (child &&
-        (child = FindChildByClassName(child, L"SystemTray.SystemTrayFrame")) &&
-        (child = FindChildByName(child, L"SystemTrayFrameGrid"))) {
-        child.Margin(margin);
-    }
-
-    child = taskbarFrame;
     if ((child = FindChildByName(child, L"RootGrid")) &&
         (child = FindChildByName(child, L"BackgroundControl")) &&
         (child =
