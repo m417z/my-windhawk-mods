@@ -82,7 +82,7 @@ The mod supports the following resource types and loading methods:
       $name: The original resource file
       $description: >-
         The original file from which resources are loaded, can be a pattern
-        where '*' matches any number characters and '?' matches any single
+        where '*' matches any number of characters and '?' matches any single
         character
     - redirect: 'C:\my-themes\theme-1\imageres.dll'
       $name: The custom resource file
