@@ -2,7 +2,7 @@
 // @id              taskbar-notification-icon-spacing
 // @name            Taskbar tray icon spacing
 // @description     Reduce or increase the spacing between tray icons on the taskbar (Windows 11 only)
-// @version         1.0.2
+// @version         1.1
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
@@ -45,6 +45,19 @@ versions check out [7+ Taskbar Tweaker](https://tweaker.ramensoftware.com/).
 - notificationIconWidth: 24
   $name: Tray icon width
   $description: 'Windows 11 default: 32'
+- overflowIconWidth: 32
+  $name: Tray overflow icon width
+  $description: >-
+    The width of icons that appear in the overflow popup when clicking on the
+    chevron icon
+
+    Windows 11 default: 40
+- overflowIconsPerRow: 5
+  $name: Tray overflow icons per row
+  $description: >-
+    The maximum amount of icons per row in the overflow popup
+
+    Windows 11 default: 5
 */
 // ==/WindhawkModSettings==
 
@@ -64,6 +77,8 @@ using namespace winrt::Windows::UI::Xaml;
 
 struct {
     int notificationIconWidth;
+    int overflowIconWidth;
+    int overflowIconsPerRow;
 } g_settings;
 
 using FrameworkElementLoadedEventRevoker = winrt::impl::event_revoker<
@@ -71,6 +86,8 @@ using FrameworkElementLoadedEventRevoker = winrt::impl::event_revoker<
     &winrt::impl::abi<IFrameworkElement>::type::remove_Loaded>;
 
 std::list<FrameworkElementLoadedEventRevoker> g_autoRevokerList;
+
+bool g_overflowApplied;
 
 HWND GetTaskbarWnd() {
     static HWND hTaskbarWnd;
@@ -98,6 +115,21 @@ bool IsChildOfElementByName(FrameworkElement element, PCWSTR name) {
         }
 
         if (parent.Name() == name) {
+            return true;
+        }
+    }
+}
+
+bool IsChildOfElementByClassName(FrameworkElement element, PCWSTR className) {
+    auto parent = element;
+    while (true) {
+        parent = Media::VisualTreeHelper::GetParent(parent)
+                     .try_as<FrameworkElement>();
+        if (!parent) {
+            return false;
+        }
+
+        if (winrt::get_class_name(parent) == className) {
             return true;
         }
     }
@@ -135,6 +167,37 @@ FrameworkElement FindChildByClassName(FrameworkElement element,
     return EnumChildElements(element, [className](FrameworkElement child) {
         return winrt::get_class_name(child) == className;
     });
+}
+
+void ApplyNotifyIconViewOverflowStyle(FrameworkElement notifyIconViewElement,
+                                      int width) {
+    Wh_Log(L"Setting MinWidth=%d for NotifyIconView (overflow)", width);
+    notifyIconViewElement.MinWidth(width);
+
+    Wh_Log(L"Setting Height=%d for NotifyIconView (overflow)", width);
+    notifyIconViewElement.Height(width);
+
+    FrameworkElement child = notifyIconViewElement;
+    if ((child = FindChildByName(child, L"ContainerGrid")) &&
+        (child = FindChildByName(child, L"ContentPresenter")) &&
+        (child = FindChildByName(child, L"ContentGrid"))) {
+        EnumChildElements(child, [](FrameworkElement child) {
+            auto className = winrt::get_class_name(child);
+            if (className == L"SystemTray.ImageIconContent") {
+                auto containerGrid = FindChildByName(child, L"ContainerGrid")
+                                         .try_as<Controls::Grid>();
+                if (containerGrid) {
+                    Wh_Log(L"Setting Padding=0 for ContainerGrid");
+                    containerGrid.Padding(Thickness{});
+                }
+            } else {
+                Wh_Log(L"Unsupported class name %s of child",
+                       className.c_str());
+            }
+
+            return false;
+        });
+    }
 }
 
 void ApplyNotifyIconViewStyle(FrameworkElement notifyIconViewElement,
@@ -419,8 +482,14 @@ void WINAPI IconView_IconView_Hook(PVOID pThis) {
             Wh_Log(L"className: %s", className.c_str());
 
             if (className == L"SystemTray.NotifyIconView") {
-                ApplyNotifyIconViewStyle(iconView,
-                                         g_settings.notificationIconWidth);
+                if (IsChildOfElementByClassName(
+                        iconView, L"SystemTray.NotificationAreaOverflow")) {
+                    ApplyNotifyIconViewOverflowStyle(
+                        iconView, g_settings.overflowIconWidth);
+                } else {
+                    ApplyNotifyIconViewStyle(iconView,
+                                             g_settings.notificationIconWidth);
+                }
             } else if (className == L"SystemTray.IconView") {
                 if (iconView.Name() == L"SystemTrayIcon") {
                     if (IsChildOfElementByName(iconView,
@@ -445,6 +514,71 @@ void WINAPI IconView_IconView_Hook(PVOID pThis) {
         });
 }
 
+using OverflowXamlIslandManager_ShowWindow_t =
+    void(WINAPI*)(void* pThis, POINT pt, int inputDeviceKind);
+OverflowXamlIslandManager_ShowWindow_t
+    OverflowXamlIslandManager_ShowWindow_Original;
+void WINAPI OverflowXamlIslandManager_ShowWindow_Hook(void* pThis,
+                                                      POINT pt,
+                                                      int inputDeviceKind) {
+    Wh_Log(L">");
+
+    OverflowXamlIslandManager_ShowWindow_Original(pThis, pt, inputDeviceKind);
+
+    if (g_overflowApplied) {
+        return;
+    }
+
+    g_overflowApplied = true;
+
+    FrameworkElement overflowRootGrid = nullptr;
+    ((IUnknown**)pThis)[5]->QueryInterface(winrt::guid_of<Controls::Grid>(),
+                                           winrt::put_abi(overflowRootGrid));
+    if (!overflowRootGrid) {
+        return;
+    }
+
+    Controls::WrapGrid wrapGrid = nullptr;
+
+    FrameworkElement child = overflowRootGrid;
+    if ((child = FindChildByClassName(
+             child, L"Windows.UI.Xaml.Controls.ItemsControl")) &&
+        (child = FindChildByClassName(
+             child, L"Windows.UI.Xaml.Controls.ItemsPresenter")) &&
+        (child = FindChildByClassName(child,
+                                      L"Windows.UI.Xaml.Controls.WrapGrid"))) {
+        wrapGrid = child.try_as<Controls::WrapGrid>();
+    }
+
+    if (!wrapGrid) {
+        return;
+    }
+
+    int width = g_settings.overflowIconWidth;
+
+    Wh_Log(L"Setting ItemWidth, ItemWidth=%d for WrapGrid", width);
+    wrapGrid.ItemWidth(width);
+    wrapGrid.ItemHeight(width);
+
+    wrapGrid.MaximumRowsOrColumns(g_settings.overflowIconsPerRow);
+
+    EnumChildElements(wrapGrid, [width](FrameworkElement child) {
+        auto className = winrt::get_class_name(child);
+        if (className != L"Windows.UI.Xaml.Controls.ContentPresenter") {
+            Wh_Log(L"Unsupported class name %s of child", className.c_str());
+            return false;
+        }
+
+        auto notifyIconView =
+            FindChildByClassName(child, L"SystemTray.NotifyIconView");
+        if (notifyIconView) {
+            ApplyNotifyIconViewOverflowStyle(notifyIconView, width);
+        }
+
+        return false;
+    });
+}
+
 void* CTaskBand_ITaskListWndSite_vftable;
 
 using CTaskBand_GetTaskbarHost_t = PVOID(WINAPI*)(PVOID pThis, PVOID* result);
@@ -461,8 +595,13 @@ XamlRoot GetTaskbarXamlRoot(HWND hTaskbarWnd) {
 
     PVOID taskBand = (PVOID)GetWindowLongPtr(hTaskSwWnd, 0);
     PVOID taskBandForTaskListWndSite = taskBand;
-    while (*(PVOID*)taskBandForTaskListWndSite !=
-           CTaskBand_ITaskListWndSite_vftable) {
+    for (int i = 0; *(PVOID*)taskBandForTaskListWndSite !=
+                    CTaskBand_ITaskListWndSite_vftable;
+         i++) {
+        if (i == 20) {
+            return nullptr;
+        }
+
         taskBandForTaskListWndSite = (PVOID*)taskBandForTaskListWndSite + 1;
     }
 
@@ -546,6 +685,8 @@ bool RunFromWindowThread(HWND hWnd,
 void LoadSettings() {
     g_settings.notificationIconWidth =
         Wh_GetIntSetting(L"notificationIconWidth");
+    g_settings.overflowIconWidth = Wh_GetIntSetting(L"overflowIconWidth");
+    g_settings.overflowIconsPerRow = Wh_GetIntSetting(L"overflowIconsPerRow");
 }
 
 void ApplySettings(int width) {
@@ -573,6 +714,7 @@ void ApplySettings(int width) {
             ApplySettingsParam& param = *(ApplySettingsParam*)pParam;
 
             g_autoRevokerList.clear();
+            g_overflowApplied = false;
 
             auto xamlRoot = GetTaskbarXamlRoot(param.hTaskbarWnd);
             if (!xamlRoot) {
@@ -611,6 +753,11 @@ bool HookTaskbarViewDllSymbols() {
             {LR"(public: __cdecl winrt::SystemTray::implementation::IconView::IconView(void))"},
             &IconView_IconView_Original,
             IconView_IconView_Hook,
+        },
+        {
+            {LR"(private: void __cdecl winrt::SystemTray::OverflowXamlIslandManager::ShowWindow(struct tagPOINT,enum winrt::WindowsUdk::UI::Shell::InputDeviceKind))"},
+            &OverflowXamlIslandManager_ShowWindow_Original,
+            OverflowXamlIslandManager_ShowWindow_Hook,
         },
     };
 
