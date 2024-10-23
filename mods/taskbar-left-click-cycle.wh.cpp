@@ -2,7 +2,7 @@
 // @id              taskbar-left-click-cycle
 // @name            Cycle through taskbar windows on click
 // @description     Makes clicking on combined taskbar items cycle through windows instead of opening thumbnail previews
-// @version         1.1
+// @version         1.1.1
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
