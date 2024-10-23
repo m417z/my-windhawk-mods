@@ -382,6 +382,8 @@ void RecalculateLabels() {
     g_applyingSettings = false;
 }
 
+void* TaskbarSettings_GroupingMode_Original;
+
 using TaskListButton_get_IsRunning_t = HRESULT(WINAPI*)(void* pThis,
                                                         bool* running);
 TaskListButton_get_IsRunning_t TaskListButton_get_IsRunning_Original;
@@ -1387,36 +1389,6 @@ void WINAPI TaskListButton_Icon_Hook(void* pThis, LONG_PTR randomAccessStream) {
     }
 }
 
-using TaskbarSettings_GroupingMode_t = DWORD(WINAPI*)(void* pThis);
-TaskbarSettings_GroupingMode_t TaskbarSettings_GroupingMode_Original;
-DWORD WINAPI TaskbarSettings_GroupingMode_Hook(void* pThis) {
-    Wh_Log(L">");
-
-    DWORD ret = TaskbarSettings_GroupingMode_Original(pThis);
-
-    if (!g_unloading) {
-        // 0 - Always
-        // 1 - When taskbar is full
-        // 2 - Never
-        if (g_settings.mode == Mode::noLabelsWithCombining ||
-            g_settings.mode == Mode::labelsWithCombining) {
-            ret = 0;
-        } else if (ret == 0) {
-            ret = 2;
-        }
-    }
-
-    if (g_overrideGroupingMode) {
-        if (ret == 0) {
-            ret = 2;
-        } else {
-            ret = 0;
-        }
-    }
-
-    return ret;
-}
-
 using ITaskbarButton_get_MinScalableWidth_t = HRESULT(WINAPI*)(void* pThis,
                                                                float* minWidth);
 ITaskbarButton_get_MinScalableWidth_t
@@ -1617,6 +1589,67 @@ TaskListGroupViewModel_ITaskbarAppItemViewModel_get_HasLabel_Hook(
         *hasLabels = true;
     } else if (g_settings.mode == Mode::noLabelsWithoutCombining) {
         *hasLabels = false;
+    }
+
+    return ret;
+}
+
+using RegGetValueW_t = decltype(&RegGetValueW);
+RegGetValueW_t RegGetValueW_Original;
+LONG WINAPI RegGetValueW_Hook(HKEY hkey,
+                              LPCWSTR lpSubKey,
+                              LPCWSTR lpValue,
+                              DWORD dwFlags,
+                              LPDWORD pdwType,
+                              PVOID pvData,
+                              LPDWORD pcbData) {
+    LONG ret = RegGetValueW_Original(hkey, lpSubKey, lpValue, dwFlags, pdwType,
+                                     pvData, pcbData);
+
+    if (hkey == HKEY_CURRENT_USER && lpSubKey &&
+        _wcsicmp(
+            lpSubKey,
+            LR"(SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\Advanced)") ==
+            0 &&
+        lpValue &&
+        (_wcsicmp(lpValue, L"TaskbarGlomLevel") == 0 ||
+         _wcsicmp(lpValue, L"MMTaskbarGlomLevel") == 0) &&
+        dwFlags == RRF_RT_REG_DWORD && pvData && pcbData &&
+        *pcbData == sizeof(DWORD)) {
+        Wh_Log(L">");
+
+        DWORD taskbarGlomLevel = (ret = ERROR_SUCCESS) ? *(DWORD*)pvData : 0;
+        DWORD taskbarGlomLevelOriginal = taskbarGlomLevel;
+
+        if (!g_unloading) {
+            // 0 - Always
+            // 1 - When taskbar is full
+            // 2 - Never
+            if (g_settings.mode == Mode::noLabelsWithCombining ||
+                g_settings.mode == Mode::labelsWithCombining) {
+                taskbarGlomLevel = 0;
+            } else if (taskbarGlomLevel == 0) {
+                taskbarGlomLevel = 2;
+            }
+        }
+
+        if (g_overrideGroupingMode) {
+            if (taskbarGlomLevel == 0) {
+                taskbarGlomLevel = 2;
+            } else {
+                taskbarGlomLevel = 0;
+            }
+        }
+
+        Wh_Log(L"Overriding TaskbarGlomLevel: %u->%u", taskbarGlomLevelOriginal,
+               taskbarGlomLevel);
+        *(DWORD*)pvData = taskbarGlomLevel;
+
+        if (pdwType) {
+            *pdwType = REG_DWORD;
+        }
+
+        ret = ERROR_SUCCESS;
     }
 
     return ret;
@@ -2144,6 +2177,15 @@ bool HookTaskbarViewDllSymbols(HMODULE module) {
         {
             {
                 {
+                    LR"(public: __cdecl winrt::impl::consume_WindowsUdk_UI_Shell_ITaskbarSettings5<struct winrt::WindowsUdk::UI::Shell::TaskbarSettings>::GroupingMode(void)const )",
+                    LR"(public: __cdecl winrt::impl::consume_WindowsUdk_UI_Shell_ITaskbarSettings5<struct winrt::WindowsUdk::UI::Shell::TaskbarSettings>::GroupingMode(void)const __ptr64)",
+                },
+                (void**)&TaskbarSettings_GroupingMode_Original,
+                nullptr,
+                true,
+            },
+            {
+                {
                     LR"(public: virtual int __cdecl winrt::impl::produce<struct winrt::Taskbar::implementation::TaskListButton,struct winrt::Taskbar::ITaskListButton>::get_IsRunning(bool *))",
                     LR"(public: virtual int __cdecl winrt::impl::produce<struct winrt::Taskbar::implementation::TaskListButton,struct winrt::Taskbar::ITaskListButton>::get_IsRunning(bool * __ptr64) __ptr64)",
                 },
@@ -2188,15 +2230,6 @@ bool HookTaskbarViewDllSymbols(HMODULE module) {
                 },
                 (void**)&TaskListButton_Icon_Original,
                 (void*)TaskListButton_Icon_Hook,
-            },
-            {
-                {
-                    LR"(public: __cdecl winrt::impl::consume_WindowsUdk_UI_Shell_ITaskbarSettings5<struct winrt::WindowsUdk::UI::Shell::TaskbarSettings>::GroupingMode(void)const )",
-                    LR"(public: __cdecl winrt::impl::consume_WindowsUdk_UI_Shell_ITaskbarSettings5<struct winrt::WindowsUdk::UI::Shell::TaskbarSettings>::GroupingMode(void)const __ptr64)",
-                },
-                (void**)&TaskbarSettings_GroupingMode_Original,
-                (void*)TaskbarSettings_GroupingMode_Hook,
-                true,
             },
             {
                 {
@@ -2380,6 +2413,13 @@ BOOL ModInitWithTaskbarView(HMODULE taskbarViewModule) {
         if (!HookTaskbarDllSymbols()) {
             return FALSE;
         }
+    } else {
+        HMODULE kernelBaseModule = GetModuleHandle(L"kernelbase.dll");
+        FARPROC pKernelBaseRegGetValueW =
+            GetProcAddress(kernelBaseModule, "RegGetValueW");
+        Wh_SetFunctionHook((void*)pKernelBaseRegGetValueW,
+                           (void*)RegGetValueW_Hook,
+                           (void**)&RegGetValueW_Original);
     }
 
     return TRUE;
