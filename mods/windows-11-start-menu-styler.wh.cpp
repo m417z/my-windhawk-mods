@@ -751,7 +751,7 @@ const Theme g_themeTranslucentStartMenu = {{
         L"BorderBrush@PointerOver:=<RevealBorderBrush Color=\"Transparent\" TargetTheme=\"1\" Opacity=\"0.6\"/>",
         L"Background@Normal:=<RevealBorderBrush Color=\"Transparent\" TargetTheme=\"0\" Opacity=\"0.2\"/>"}},
     ThemeTargetStyles{L"TextBlock", {
-        L"Foreground=#E1E1E1",
+        L"Foreground=#E1E1E1"}},
 }};
 
 const Theme g_themeWindows11_Metro10 = {{
