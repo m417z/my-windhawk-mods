@@ -679,7 +679,7 @@ const Theme g_themeWindows10_variant_24H2 = {{
 const Theme g_themeTranslucentStartMenu = {{
     ThemeTargetStyles{L"Border#AcrylicBorder", {
         L"CornerRadius=15",
-        L"Background:=<AcrylicBrush TintColor=\"Black\" TintLuminosityOpacity=\"0.12\" TintOpacity=\"0\" Opacity=\"1\" FallbackColor=\"#70262626\"/>",
+        L"Background:=<AcrylicBrush TintColor=\"Transparent\" TintLuminosityOpacity=\"0\" TintOpacity=\"0\" Opacity=\"1\" FallbackColor=\"#70262626\"/>",
         L"BorderThickness=0,0,0,0"}},
     ThemeTargetStyles{L"Border#AcrylicOverlay", {
         L"Visibility=Collapsed"}},
@@ -696,13 +696,13 @@ const Theme g_themeTranslucentStartMenu = {{
     ThemeTargetStyles{L"StartMenu.PinnedList", {
         L"Height=504"}},
     ThemeTargetStyles{L"MenuFlyoutPresenter", {
-        L"Background:=<AcrylicBrush TintColor=\"Black\" TintLuminosityOpacity=\"0.12\" TintOpacity=\"0\" Opacity=\"1\" FallbackColor=\"#70262626\"/>",
+        L"Background:=<AcrylicBrush TintColor=\"Transparent\" TintLuminosityOpacity=\"0\" TintOpacity=\"0\" Opacity=\"1\" FallbackColor=\"#70262626\"/>",
         L"BorderThickness=0,0,0,0"}},
     ThemeTargetStyles{L"Border#AppBorder", {
-        L"Background:=<AcrylicBrush TintColor=\"Black\" TintLuminosityOpacity=\"0.12\" TintOpacity=\"0\" Opacity=\"1\" FallbackColor=\"#70262626\"/>",
+        L"Background:=<AcrylicBrush TintColor=\"Transparent\" TintLuminosityOpacity=\"0\" TintOpacity=\"0\" Opacity=\"1\" FallbackColor=\"#70262626\"/>",
         L"BorderThickness=0,0,0,0"}},
     ThemeTargetStyles{L"Border#AccentAppBorder", {
-        L"Background:=<AcrylicBrush TintColor=\"Black\" TintLuminosityOpacity=\"0.12\" TintOpacity=\"0\" Opacity=\"1\" FallbackColor=\"#70262626\"/>",
+        L"Background:=<AcrylicBrush TintColor=\"Transparent\" TintLuminosityOpacity=\"0\" TintOpacity=\"0\" Opacity=\"1\" FallbackColor=\"#70262626\"/>",
         L"BorderThickness=0,0,0,0"}},
     ThemeTargetStyles{L"Border#LayerBorder", {
         L"Visibility=Collapsed"}},
@@ -713,7 +713,7 @@ const Theme g_themeTranslucentStartMenu = {{
     ThemeTargetStyles{L"Border#ContentBorder@CommonStates > Grid#DroppedFlickerWorkaroundWrapper > Border", {
         L"Background@PointerOver:=<RevealBorderBrush Color=\"Transparent\" TargetTheme=\"1\" Opacity=\"0.3\"/>",
         L"BorderBrush@PointerOver:=<RevealBorderBrush Color=\"Transparent\" TargetTheme=\"1\" Opacity=\"1\"/>",
-        L"Background@Normal:=<RevealBorderBrush Color=\"Transparent\" TargetTheme=\"0\" Opacity=\"0.2\"/>",
+        L"Background@Normal:=<RevealBorderBrush Color=\"Transparent\" TargetTheme=\"0\" Opacity=\"0.15\"/>",
         L"Margin=1"}},
     ThemeTargetStyles{L"Button#ShowAllAppsButton  > ContentPresenter@CommonStates", {
         L"BorderThickness=1",
@@ -723,7 +723,7 @@ const Theme g_themeTranslucentStartMenu = {{
         L"BorderBrush:=<RevealBorderBrush Color=\"Transparent\" TargetTheme=\"1\" Opacity=\"1\"/>",
         L"BorderThickness=1"}},
     ThemeTargetStyles{L"StartDocked.NavigationPaneButton#UserTileButton > Grid@CommonStates > Border", {
-        L"Background@Normal:=<RevealBorderBrush Color=\"Transparent\" TargetTheme=\"0\" Opacity=\"0.2\"/>",
+        L"Background@Normal:=<RevealBorderBrush Color=\"Transparent\" TargetTheme=\"0\" Opacity=\"0.15\"/>",
         L"BorderBrush@PointerOver:=<RevealBorderBrush Color=\"Transparent\" TargetTheme=\"1\" Opacity=\"0.8\"/>",
         L"Background@PointerOver:=<RevealBorderBrush Color=\"Transparent\" TargetTheme=\"1\" Opacity=\"0.5\"/>",
         L"BorderThickness=1"}},
@@ -750,6 +750,8 @@ const Theme g_themeTranslucentStartMenu = {{
         L"Background@PointerOver:=<RevealBorderBrush Color=\"Transparent\" TargetTheme=\"1\" Opacity=\"0.3\"/>",
         L"BorderBrush@PointerOver:=<RevealBorderBrush Color=\"Transparent\" TargetTheme=\"1\" Opacity=\"0.6\"/>",
         L"Background@Normal:=<RevealBorderBrush Color=\"Transparent\" TargetTheme=\"0\" Opacity=\"0.2\"/>"}},
+    ThemeTargetStyles{L"TextBlock", {
+        L"Foreground=#E1E1E1",
 }};
 
 const Theme g_themeWindows11_Metro10 = {{
