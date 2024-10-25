@@ -648,7 +648,7 @@ bool HookExplorerFrameSymbols() {
     HMODULE module = LoadLibrary(L"explorerframe.dll");
     if (!module) {
         Wh_Log(L"Couldn't load explorerframe.dll");
-        return FALSE;
+        return false;
     }
 
     WindhawkUtils::SYMBOL_HOOK explorerFrameDllHooks[] = {
@@ -674,7 +674,7 @@ bool HookWindowsUIFileExplorerSymbols() {
     HMODULE module = LoadLibrary(L"Windows.UI.FileExplorer.dll");
     if (!module) {
         Wh_Log(L"Couldn't load Windows.UI.FileExplorer.dll");
-        return FALSE;
+        return false;
     }
 
     // Windows.UI.FileExplorer.dll

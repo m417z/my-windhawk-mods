@@ -96,7 +96,7 @@ bool HookExplorerFrameSymbols() {
     HMODULE module = LoadLibrary(L"explorerframe.dll");
     if (!module) {
         Wh_Log(L"Couldn't load explorerframe.dll");
-        return FALSE;
+        return false;
     }
 
     WindhawkUtils::SYMBOL_HOOK explorerFrameDllHooks[] = {
