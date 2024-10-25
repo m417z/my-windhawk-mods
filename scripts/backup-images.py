@@ -48,8 +48,10 @@ def process_code_files(code_folder: Path, images_folder: Path):
             stale_images.remove(image_path)
 
     if stale_images:
-        print("Stale images:")
-        print("\n".join(p.name for p in stale_images))
+        print("Deleting stale images:")
+        for image_path in stale_images:
+            print(f"- {image_path.name}")
+            image_path.unlink()
 
 
 if __name__ == "__main__":
