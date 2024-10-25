@@ -326,19 +326,23 @@ const Theme g_themeBubbles = {{
 
 const Theme g_themeTranslucentTaskbar = {{
     ThemeTargetStyles{L"Rectangle#BackgroundFill", {
-        L"Fill:=<AcrylicBrush TintColor=\"Black\" TintOpacity=\"0\" TintLuminosityOpacity=\"0.15\" Opacity=\"1\" FallbackColor=\"#70262626\"/>"}},
+        L"Fill:=<AcrylicBrush TintColor=\"Transparent\" TintOpacity=\"0\" TintLuminosityOpacity=\"0\" Opacity=\"1\" FallbackColor=\"#70262626\"/>"}},
     ThemeTargetStyles{L"Rectangle#BackgroundStroke", {
         L"Visibility=Collapsed"}},
     ThemeTargetStyles{L"MenuFlyoutPresenter", {
-        L"Background:=<AcrylicBrush TintColor=\"Black\" TintOpacity=\"0\" TintLuminosityOpacity=\"0.12\" Opacity=\"1\" FallbackColor=\"#A0262626\"/>",
+        L"Background:=<AcrylicBrush TintColor=\"Transparent\" TintOpacity=\"0\" TintLuminosityOpacity=\"0\" Opacity=\"1\" FallbackColor=\"#A0262626\"/>",
         L"BorderThickness=0,0,0,0",
         L"CornerRadius=14",
         L"Padding=3,4,3,4"}},
     ThemeTargetStyles{L"Border#OverflowFlyoutBackgroundBorder", {
-        L"Background:=<AcrylicBrush TintColor=\"Black\" TintOpacity=\"0\" TintLuminosityOpacity=\"0.12\" Opacity=\"1\" FallbackColor=\"#A0262626\"/>",
+        L"Background:=<AcrylicBrush TintColor=\"Transparent\" TintOpacity=\"0\" TintLuminosityOpacity=\"0\" Opacity=\"1\" FallbackColor=\"#A0262626\"/>",
         L"BorderThickness=0,0,0,0",
         L"CornerRadius=15",
         L"Margin=-2,-2,-2,-2"}},
+    ThemeTargetStyles{L"ToolTip > ContentPresenter#LayoutRoot", {
+        L"Background:=<AcrylicBrush TintColor=\"Transparent\" TintOpacity=\"0\" TintLuminosityOpacity=\"0\" Opacity=\"1\" FallbackColor=\"#A0262626\"/>"}},
+    ThemeTargetStyles{L"TextBlock", {
+        L"Foreground=#E1E1E1"}},
 }};
 
 const Theme g_themeSquircle = {{
