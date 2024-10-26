@@ -498,9 +498,7 @@ void WINAPI IconView_IconView_Hook(PVOID pThis) {
                             iconView, g_settings.notificationIconWidth);
                     } else if (IsChildOfElementByName(iconView, L"MainStack") ||
                                IsChildOfElementByName(iconView,
-                                                      L"NonActivatableStack") ||
-                               IsChildOfElementByName(iconView,
-                                                      L"ControlCenterButton")) {
+                                                      L"NonActivatableStack")) {
                         ApplyNotifyIconViewStyle(
                             iconView, g_settings.notificationIconWidth);
                     }
@@ -811,10 +809,14 @@ void Wh_ModAfterInit() {
     ApplySettings(g_settings.notificationIconWidth);
 }
 
-void Wh_ModUninit() {
+void Wh_ModBeforeUninit() {
     Wh_Log(L">");
 
     ApplySettings(32);
+}
+
+void Wh_ModUninit() {
+    Wh_Log(L">");
 }
 
 void Wh_ModSettingsChanged() {
