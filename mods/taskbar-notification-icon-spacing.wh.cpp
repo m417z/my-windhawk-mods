@@ -762,11 +762,11 @@ bool HookTaskbarViewDllSymbols() {
     return HookSymbols(module, symbolHooks, ARRAYSIZE(symbolHooks));
 }
 
-BOOL HookTaskbarDllSymbols() {
+bool HookTaskbarDllSymbols() {
     HMODULE module = LoadLibrary(L"taskbar.dll");
     if (!module) {
         Wh_Log(L"Failed to load taskbar.dll");
-        return FALSE;
+        return false;
     }
 
     WindhawkUtils::SYMBOL_HOOK taskbarDllHooks[] = {

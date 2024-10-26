@@ -484,11 +484,11 @@ HRESULT WINAPI CPearl_SetBounds_Hook(void* pThis, void* param1) {
     return CPearl_SetBounds_Original(pThis, param1);
 }
 
-BOOL HookTaskbarDllSymbols() {
+bool HookTaskbarDllSymbols() {
     HMODULE module = LoadLibrary(L"taskbar.dll");
     if (!module) {
         Wh_Log(L"Failed to load taskbar.dll");
-        return FALSE;
+        return false;
     }
 
     WindhawkUtils::SYMBOL_HOOK taskbarDllHooks[] = {
