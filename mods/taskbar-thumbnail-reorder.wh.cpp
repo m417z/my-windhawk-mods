@@ -1369,6 +1369,12 @@ BOOL Wh_ModInit() {
         }
     }
 
+    return TRUE;
+}
+
+void Wh_ModAfterInit() {
+    Wh_Log(L">");
+
     WNDCLASS wndclass;
     if (GetClassInfo(module, L"TaskListThumbnailWnd", &wndclass)) {
         FindCurrentProcessThumbnailWindows();
@@ -1377,8 +1383,6 @@ BOOL Wh_ModInit() {
             SubclassThumbnailWindow(hWnd);
         }
     }
-
-    return TRUE;
 }
 
 void Wh_ModUninit() {

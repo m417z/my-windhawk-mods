@@ -1741,6 +1741,8 @@ BOOL Wh_ModInit() {
 }
 
 void Wh_ModAfterInit() {
+    Wh_Log(L">");
+
     WNDCLASS wndclass;
     if (GetClassInfo(GetModuleHandle(NULL), L"Shell_TrayWnd", &wndclass)) {
         HWND hWnd =

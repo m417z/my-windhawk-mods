@@ -1025,10 +1025,14 @@ BOOL Wh_ModInit() {
     Wh_SetFunctionHook((void*)CreateWindowExW, (void*)CreateWindowExW_Hook,
                        (void**)&CreateWindowExW_Original);
 
+    return TRUE;
+}
+
+void Wh_ModAfterInit() {
+    Wh_Log(L">");
+
     HWND hTaskbarWnd = FindWindow(L"Shell_TrayWnd", nullptr);
     if (hTaskbarWnd) {
         InitializeTaskbarVariables(hTaskbarWnd);
     }
-
-    return TRUE;
 }
