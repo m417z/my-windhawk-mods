@@ -47,8 +47,8 @@ issue](https://tweaker.userecho.com/topics/826-scroll-on-trackpadtouchpad-doesnt
   $name: Scroll area
   $options:
   - taskbar: The taskbar
-  - notification_area: The notification area
-  - taskbarWithoutNotificationArea: The taskbar without the notification area
+  - notification_area: The tray area
+  - taskbarWithoutNotificationArea: The taskbar without the tray area
 - middleClickToMute: true
   $name: Middle click to mute
   $description: >-

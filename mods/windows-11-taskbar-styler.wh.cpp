@@ -184,8 +184,8 @@ resource variables. Here are several examples:
 * `TaskbarContextMenuMargin`: The margin between the taskbar and the start
   button context menu.
 
-* `ContextMenuMargin`: The margin between the taskbar and the notification area
-  context menu.
+* `ContextMenuMargin`: The margin between the taskbar and the tray area context
+  menu.
 
 * `MediumTaskbarButtonExtent`: The width of the taskbar buttons.
 

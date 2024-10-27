@@ -54,8 +54,8 @@ issue](https://tweaker.userecho.com/topics/826-scroll-on-trackpadtouchpad-doesnt
   $name: Scroll area
   $options:
   - taskbar: The taskbar
-  - notificationArea: The notification area
-  - taskbarWithoutNotificationArea: The taskbar without the notification area
+  - notificationArea: The tray area
+  - taskbarWithoutNotificationArea: The taskbar without the tray area
 - scrollStep: 1
   $name: Scroll step
   $description: >-
