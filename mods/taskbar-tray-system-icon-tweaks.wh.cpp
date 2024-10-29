@@ -2,7 +2,7 @@
 // @id              taskbar-tray-system-icon-tweaks
 // @name            Taskbar tray system icon tweaks
 // @description     Allows hiding system icons (volume, network, battery), the bell (always or when there are no new notifications), and the "Show desktop" button (Windows 11 only)
-// @version         1.0
+// @version         1.1
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
@@ -43,6 +43,8 @@ there are no new notifications), and the "Show desktop" button.
   $name: Hide microphone icon
 - hideGeolocationIcon: false
   $name: Hide location (e.g. GPS) icon
+- hideLanguageBar: false
+  $name: Hide language bar
 - hideBellIcon: never
   $name: Hide bell icon
   $options:
@@ -81,6 +83,7 @@ struct {
     bool hideBatteryIcon;
     bool hideMicrophoneIcon;
     bool hideGeolocationIcon;
+    bool hideLanguageBar;
     HideBellIcon hideBellIcon;
     int showDesktopButtonWidth;
 } g_settings;
@@ -471,6 +474,30 @@ void ApplyMainStackIconViewStyle(FrameworkElement notifyIconViewElement) {
     }
 }
 
+void ApplyNonActivatableStackIconViewStyle(
+    FrameworkElement notifyIconViewElement) {
+    FrameworkElement systemTrayLanguageTextIconContent = nullptr;
+
+    FrameworkElement child = notifyIconViewElement;
+    if ((child = FindChildByName(child, L"ContainerGrid")) &&
+        (child = FindChildByName(child, L"ContentPresenter")) &&
+        (child = FindChildByName(child, L"ContentGrid")) &&
+        (child = FindChildByClassName(child,
+                                      L"SystemTray.LanguageTextIconContent"))) {
+        systemTrayLanguageTextIconContent = child;
+    } else {
+        Wh_Log(L"Failed to get SystemTray.LanguageTextIconContent");
+        return;
+    }
+
+    bool hide = !g_unloading && g_settings.hideLanguageBar;
+
+    Wh_Log(L"Language bar, hide=%d", hide);
+
+    notifyIconViewElement.Visibility(hide ? Visibility::Collapsed
+                                          : Visibility::Visible);
+}
+
 void ApplyControlCenterButtonIconStyle(FrameworkElement systemTrayIconElement) {
     FrameworkElement systemTrayTextIconContent = nullptr;
 
@@ -674,9 +701,6 @@ void ApplyBellIconStyle(FrameworkElement systemTrayIconElement) {
 }
 
 void ApplyShowDesktopStyle(FrameworkElement systemTrayIconElement) {
-    int width = g_settings.showDesktopButtonWidth;
-    Wh_Log(L"Show desktop button, width=%d", width);
-
     auto showDesktopStack =
         GetParentElementByName(systemTrayIconElement, L"ShowDesktopStack");
     if (!showDesktopStack) {
@@ -685,17 +709,22 @@ void ApplyShowDesktopStyle(FrameworkElement systemTrayIconElement) {
     }
 
     if (g_unloading) {
+        Wh_Log(L"Show desktop button, setting default width");
+
         auto systemTrayIconElementDP =
             systemTrayIconElement.as<DependencyObject>();
         systemTrayIconElementDP.ClearValue(
-            FrameworkElement::MinHeightProperty());
+            FrameworkElement::MinWidthProperty());
         systemTrayIconElementDP.ClearValue(
-            FrameworkElement::MaxHeightProperty());
+            FrameworkElement::MaxWidthProperty());
 
         auto showDesktopStackDP = showDesktopStack.as<DependencyObject>();
-        showDesktopStackDP.ClearValue(FrameworkElement::MinHeightProperty());
-        showDesktopStackDP.ClearValue(FrameworkElement::MaxHeightProperty());
+        showDesktopStackDP.ClearValue(FrameworkElement::MinWidthProperty());
+        showDesktopStackDP.ClearValue(FrameworkElement::MaxWidthProperty());
     } else {
+        int width = g_settings.showDesktopButtonWidth;
+        Wh_Log(L"Show desktop button, width=%d", width);
+
         systemTrayIconElement.MinWidth(width);
         systemTrayIconElement.MaxWidth(width);
         showDesktopStack.MinWidth(width);
@@ -736,6 +765,45 @@ bool ApplyMainStackStyle(FrameworkElement container) {
         }
 
         ApplyMainStackIconViewStyle(systemTrayIconElement);
+        return false;
+    });
+
+    return true;
+}
+
+bool ApplyNonActivatableStackStyle(FrameworkElement container) {
+    FrameworkElement stackPanel = nullptr;
+
+    FrameworkElement child = container;
+    if ((child = FindChildByName(child, L"Content")) &&
+        (child = FindChildByName(child, L"IconStack")) &&
+        (child = FindChildByClassName(
+             child, L"Windows.UI.Xaml.Controls.ItemsPresenter")) &&
+        (child = FindChildByClassName(
+             child, L"Windows.UI.Xaml.Controls.StackPanel"))) {
+        stackPanel = child;
+    }
+
+    if (!stackPanel) {
+        return false;
+    }
+
+    EnumChildElements(stackPanel, [](FrameworkElement child) {
+        auto childClassName = winrt::get_class_name(child);
+        if (childClassName != L"Windows.UI.Xaml.Controls.ContentPresenter") {
+            Wh_Log(L"Unsupported class name %s of child",
+                   childClassName.c_str());
+            return false;
+        }
+
+        FrameworkElement systemTrayIconElement =
+            FindChildByName(child, L"SystemTrayIcon");
+        if (!systemTrayIconElement) {
+            Wh_Log(L"Failed to get SystemTrayIcon of child");
+            return false;
+        }
+
+        ApplyNonActivatableStackIconViewStyle(systemTrayIconElement);
         return false;
     });
 
@@ -883,6 +951,13 @@ bool ApplyStyle(XamlRoot xamlRoot) {
         somethingSucceeded |= ApplyMainStackStyle(mainStack);
     }
 
+    FrameworkElement nonActivatableStack =
+        FindChildByName(systemTrayFrameGrid, L"NonActivatableStack");
+    if (nonActivatableStack) {
+        somethingSucceeded |=
+            ApplyNonActivatableStackStyle(nonActivatableStack);
+    }
+
     FrameworkElement controlCenterButton =
         FindChildByName(systemTrayFrameGrid, L"ControlCenterButton");
     if (controlCenterButton) {
@@ -944,6 +1019,9 @@ void WINAPI IconView_IconView_Hook(PVOID pThis) {
                 if (iconView.Name() == L"SystemTrayIcon") {
                     if (IsChildOfElementByName(iconView, L"MainStack")) {
                         ApplyMainStackIconViewStyle(iconView);
+                    } else if (IsChildOfElementByName(iconView,
+                                                      L"NonActivatableStack")) {
+                        ApplyNonActivatableStackIconViewStyle(iconView);
                     } else if (IsChildOfElementByName(iconView,
                                                       L"ControlCenterButton")) {
                         ApplyControlCenterButtonIconStyle(iconView);
@@ -1068,6 +1146,7 @@ void LoadSettings() {
     g_settings.hideBatteryIcon = Wh_GetIntSetting(L"hideBatteryIcon");
     g_settings.hideMicrophoneIcon = Wh_GetIntSetting(L"hideMicrophoneIcon");
     g_settings.hideGeolocationIcon = Wh_GetIntSetting(L"hideGeolocationIcon");
+    g_settings.hideLanguageBar = Wh_GetIntSetting(L"hideLanguageBar");
 
     PCWSTR hideBellIcon = Wh_GetStringSetting(L"hideBellIcon");
     g_settings.hideBellIcon = HideBellIcon::never;
