@@ -1,0 +1,24 @@
+{
+    "cSpell.words": [
+        "ARRAYSIZE",
+        "DLGPROC",
+        "HBITMAP",
+        "HCURSOR",
+        "HICON",
+        "HINSTANCE",
+        "HMENU",
+        "HRESULT",
+        "HWND",
+        "INTRESOURCE",
+        "LPARAM",
+        "LPCSTR",
+        "LPWSTR",
+        "NTAPI",
+        "NTSTATUS",
+        "PCSTR",
+        "PCWSTR",
+        "PWSTR",
+        "Unsubclass",
+        "WPARAM"
+    ]
+}
