@@ -26,7 +26,7 @@
 Explorer always shows file sizes in KBs in details, make it show MB/GB when
 appropriate.
 
-Also, optionally make use the International Electronic Commission terms (e.g.
+Also, optionally make it use the International Electronic Commission terms (e.g.
 KiB instead of KB). See also: [Why does Explorer use the term KB instead of
 KiB?](https://devblogs.microsoft.com/oldnewthing/20090611-00/?p=17933).
 
