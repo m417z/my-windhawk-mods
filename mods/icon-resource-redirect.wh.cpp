@@ -1675,12 +1675,12 @@ BOOL Wh_ModInit() {
     HMODULE kernel32Module = GetModuleHandle(L"kernel32.dll");
 
     auto setKernelFunctionHook = [kernelBaseModule, kernel32Module](
-                                     PCSTR targetMame, void* hookFunction,
+                                     PCSTR targetName, void* hookFunction,
                                      void** originalFunction) {
         void* targetFunction =
-            (void*)GetProcAddress(kernelBaseModule, targetMame);
+            (void*)GetProcAddress(kernelBaseModule, targetName);
         if (!targetFunction) {
-            targetFunction = (void*)GetProcAddress(kernel32Module, targetMame);
+            targetFunction = (void*)GetProcAddress(kernel32Module, targetName);
             if (!targetFunction) {
                 return FALSE;
             }
@@ -1750,8 +1750,8 @@ BOOL Wh_ModInit() {
         setKernelFunctionHook("LoadStringA", (void*)LoadStringA_k_Hook,
                               (void**)&LoadStringA_k_Original);
 
-        setKernelFunctionHook("LoadStringW", (void*)LoadStringA_k_Hook,
-                              (void**)&LoadStringA_k_Original);
+        setKernelFunctionHook("LoadStringW", (void*)LoadStringW_k_Hook,
+                              (void**)&LoadStringW_k_Original);
     }
 
     if (g_settings.allResourceRedirect) {
