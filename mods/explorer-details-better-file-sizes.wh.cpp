@@ -47,6 +47,12 @@ the Shift key.
     Use the International Electronic Commission terms, e.g. KiB instead of KB
 - calculateFolderSizes: disabled
   $name: Calculate folder sizes (can be slow)
+  $description: >-
+    Since calculating folder sizes can be slow, there's an option to enable it
+    only while holding the Shift key. In this case, folder sizes will only be
+    shown if the Shift key is held when the list is loaded or refreshed. For
+    example, select a folder, hold Shift and press Enter to navigate to it.
+    Another example: hold Shift and click refresh, back or forward.
   $options:
   - disabled: Disabled
   - withShiftKey: Enabled while holding the Shift key
