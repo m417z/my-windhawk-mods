@@ -222,6 +222,7 @@ enum class SystemTrayIconIdent {
     kMicrophoneAndGeolocation,
     kBellEmpty,
     kBellFull,
+    kLanguage,
 };
 
 SystemTrayIconIdent IdentifySystemTrayIconFromText(std::wstring_view text) {
@@ -372,6 +373,13 @@ SystemTrayIconIdent IdentifySystemTrayIconFromText(std::wstring_view text) {
         case L'\uF2A5':  // Full bell
         case L'\uF2A8':  // Full bell, Do Not Disturb
             return SystemTrayIconIdent::kBellFull;
+
+        case L'\uE97E':  // HalfAlpha
+        case L'\uE97F':  // FullAlpha
+        case L'\uE986':  // FullHiragana
+        case L'\uE987':  // FullKatakana
+        case L'\uE988':  // HalfKatakana
+            return SystemTrayIconIdent::kLanguage;
     }
 
     return SystemTrayIconIdent::kUnknown;
@@ -476,17 +484,41 @@ void ApplyMainStackIconViewStyle(FrameworkElement notifyIconViewElement) {
 
 void ApplyNonActivatableStackIconViewStyle(
     FrameworkElement notifyIconViewElement) {
-    FrameworkElement systemTrayLanguageTextIconContent = nullptr;
-
     FrameworkElement child = notifyIconViewElement;
     if ((child = FindChildByName(child, L"ContainerGrid")) &&
         (child = FindChildByName(child, L"ContentPresenter")) &&
-        (child = FindChildByName(child, L"ContentGrid")) &&
-        (child = FindChildByClassName(child,
-                                      L"SystemTray.LanguageTextIconContent"))) {
-        systemTrayLanguageTextIconContent = child;
-    } else {
-        Wh_Log(L"Failed to get SystemTray.LanguageTextIconContent");
+        (child = FindChildByName(child, L"ContentGrid"))) {
+        child = EnumChildElements(child, [](FrameworkElement child) {
+            auto className = winrt::get_class_name(child);
+            if (className == L"SystemTray.TextIconContent") {
+                Controls::TextBlock innerTextBlock = nullptr;
+
+                if ((child = FindChildByName(child, L"ContainerGrid")) &&
+                    (child = FindChildByName(child, L"Base")) &&
+                    (child = FindChildByName(child, L"InnerTextBlock"))) {
+                    innerTextBlock = child.as<Controls::TextBlock>();
+                } else {
+                    Wh_Log(L"Failed to get InnerTextBlock");
+                    return false;
+                }
+
+                auto text = innerTextBlock.Text();
+                auto systemTrayIconIdent = IdentifySystemTrayIconFromText(text);
+
+                Wh_Log(L"Language bar icon %d (%s)", (int)systemTrayIconIdent,
+                       StringToHex(text).c_str());
+
+                return true;
+            } else if (className == L"SystemTray.LanguageTextIconContent") {
+                return true;
+            }
+
+            Wh_Log(L"Unsupported class name %s of child", className.c_str());
+            return false;
+        });
+    }
+
+    if (!child) {
         return;
     }
 
