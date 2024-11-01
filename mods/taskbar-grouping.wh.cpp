@@ -2322,7 +2322,6 @@ BOOL Wh_ModInit() {
                        (void*)LoadLibraryExW_Hook,
                        (void**)&LoadLibraryExW_Original);
 
-    HMODULE kernelBaseModule = GetModuleHandle(L"kernelbase.dll");
     FARPROC kernelBaseCompareStringOrdinal =
         GetProcAddress(kernelBaseModule, "CompareStringOrdinal");
     Wh_SetFunctionHook((void*)kernelBaseCompareStringOrdinal,
