@@ -210,17 +210,17 @@ void* CTaskBand_ITaskListWndSite_vftable;
 
 void* CSecondaryTaskBand_ITaskListWndSite_vftable;
 
-using CTaskBand_GetTaskbarHost_t = PVOID(WINAPI*)(PVOID pThis, PVOID* result);
+using CTaskBand_GetTaskbarHost_t = void*(WINAPI*)(void* pThis, void** result);
 CTaskBand_GetTaskbarHost_t CTaskBand_GetTaskbarHost_Original;
 
-using CSecondaryTaskBand_GetTaskbarHost_t = PVOID(WINAPI*)(PVOID pThis,
-                                                           PVOID* result);
+using CSecondaryTaskBand_GetTaskbarHost_t = void*(WINAPI*)(void* pThis,
+                                                           void** result);
 CSecondaryTaskBand_GetTaskbarHost_t CSecondaryTaskBand_GetTaskbarHost_Original;
 
-using std__Ref_count_base__Decref_t = void(WINAPI*)(PVOID pThis);
+using std__Ref_count_base__Decref_t = void(WINAPI*)(void* pThis);
 std__Ref_count_base__Decref_t std__Ref_count_base__Decref_Original;
 
-XamlRoot XamlRootFromTaskbarHostSharedPtr(PVOID taskbarHostSharedPtr[2]) {
+XamlRoot XamlRootFromTaskbarHostSharedPtr(void* taskbarHostSharedPtr[2]) {
     if (!taskbarHostSharedPtr[0] && !taskbarHostSharedPtr[1]) {
         return nullptr;
     }
@@ -249,14 +249,19 @@ XamlRoot GetTaskbarXamlRoot(HWND hTaskbarWnd) {
         return nullptr;
     }
 
-    PVOID taskBand = (PVOID)GetWindowLongPtr(hTaskSwWnd, 0);
-    PVOID taskBandForTaskListWndSite = taskBand;
-    while (*(PVOID*)taskBandForTaskListWndSite !=
-           CTaskBand_ITaskListWndSite_vftable) {
-        taskBandForTaskListWndSite = (PVOID*)taskBandForTaskListWndSite + 1;
+    void* taskBand = (void*)GetWindowLongPtr(hTaskSwWnd, 0);
+    void* taskBandForTaskListWndSite = taskBand;
+    for (int i = 0; *(void**)taskBandForTaskListWndSite !=
+                    CTaskBand_ITaskListWndSite_vftable;
+         i++) {
+        if (i == 20) {
+            return nullptr;
+        }
+
+        taskBandForTaskListWndSite = (void**)taskBandForTaskListWndSite + 1;
     }
 
-    PVOID taskbarHostSharedPtr[2]{};
+    void* taskbarHostSharedPtr[2]{};
     CTaskBand_GetTaskbarHost_Original(taskBandForTaskListWndSite,
                                       taskbarHostSharedPtr);
 
@@ -270,31 +275,36 @@ XamlRoot GetSecondaryTaskbarXamlRoot(HWND hSecondaryTaskbarWnd) {
         return nullptr;
     }
 
-    PVOID taskBand = (PVOID)GetWindowLongPtr(hTaskSwWnd, 0);
-    PVOID taskBandForTaskListWndSite = taskBand;
-    while (*(PVOID*)taskBandForTaskListWndSite !=
-           CSecondaryTaskBand_ITaskListWndSite_vftable) {
-        taskBandForTaskListWndSite = (PVOID*)taskBandForTaskListWndSite + 1;
+    void* taskBand = (void*)GetWindowLongPtr(hTaskSwWnd, 0);
+    void* taskBandForTaskListWndSite = taskBand;
+    for (int i = 0; *(void**)taskBandForTaskListWndSite !=
+                    CSecondaryTaskBand_ITaskListWndSite_vftable;
+         i++) {
+        if (i == 20) {
+            return nullptr;
+        }
+
+        taskBandForTaskListWndSite = (void**)taskBandForTaskListWndSite + 1;
     }
 
-    PVOID taskbarHostSharedPtr[2]{};
+    void* taskbarHostSharedPtr[2]{};
     CSecondaryTaskBand_GetTaskbarHost_Original(taskBandForTaskListWndSite,
                                                taskbarHostSharedPtr);
 
     return XamlRootFromTaskbarHostSharedPtr(taskbarHostSharedPtr);
 }
 
-using RunFromWindowThreadProc_t = void(WINAPI*)(PVOID parameter);
+using RunFromWindowThreadProc_t = void(WINAPI*)(void* parameter);
 
 bool RunFromWindowThread(HWND hWnd,
                          RunFromWindowThreadProc_t proc,
-                         PVOID procParam) {
+                         void* procParam) {
     static const UINT runFromWindowThreadRegisteredMsg =
         RegisterWindowMessage(L"Windhawk_RunFromWindowThread_" WH_MOD_ID);
 
     struct RUN_FROM_WINDOW_THREAD_PARAM {
         RunFromWindowThreadProc_t proc;
-        PVOID procParam;
+        void* procParam;
     };
 
     DWORD dwThreadId = GetWindowThreadProcessId(hWnd, nullptr);
@@ -374,7 +384,7 @@ void ApplySettingsFromTaskbarThread() {
 void ApplySettings(HWND hTaskbarWnd) {
     RunFromWindowThread(
         hTaskbarWnd,
-        [](PVOID pParam) WINAPI { ApplySettingsFromTaskbarThread(); }, 0);
+        [](void* pParam) WINAPI { ApplySettingsFromTaskbarThread(); }, 0);
 }
 
 using IUIElement_Arrange_t = HRESULT(
