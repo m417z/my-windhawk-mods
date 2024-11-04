@@ -1061,30 +1061,28 @@ void UpdateTaskListButtonWithLabelStyle(
 
         state.lines[state.line++] = __LINE__;
 
-        if (indicatorStyle == IndicatorStyle::centerFixed) {
-            // Without this, the indicator isn't centered.
-            minWidth = indicatorElement.Width();
-        } else if (indicatorStyle == IndicatorStyle::centerDynamic) {
-            state.lines[state.line++] = __LINE__;
-            if (firstColumnWidthPixels > 0) {
+        double indicatorElementWidth = indicatorElement.Width();
+        if (indicatorElementWidth > 0) {
+            if (indicatorStyle == IndicatorStyle::centerFixed) {
+                // Without this, the indicator isn't centered.
+                minWidth = indicatorElementWidth;
+            } else if (indicatorStyle == IndicatorStyle::centerDynamic) {
                 state.lines[state.line++] = __LINE__;
-                minWidth = indicatorElement.Width() * taskListButtonWidth /
-                           firstColumnWidthPixels;
-                state.lines[state.line++] = __LINE__;
-            }
-        } else if (indicatorStyle == IndicatorStyle::fullWidth) {
-            minWidth = taskListButtonWidth - 6;
-            if (minWidth < 0) {
-                minWidth = 0;
+                if (firstColumnWidthPixels > 0) {
+                    state.lines[state.line++] = __LINE__;
+                    minWidth = indicatorElementWidth * taskListButtonWidth /
+                               firstColumnWidthPixels;
+                    state.lines[state.line++] = __LINE__;
+                }
+            } else if (indicatorStyle == IndicatorStyle::fullWidth) {
+                minWidth = taskListButtonWidth - 6;
+                if (minWidth < 0) {
+                    minWidth = 0;
+                }
             }
         }
 
         state.lines[state.line++] = __LINE__;
-
-        // TODO: uncomment
-        // if (!(minWidth >= 0)) {
-        //     minWidth = 0;
-        // }
 
         // High values of maximumTaskbarItemWidth together with a fullWidth
         // indicator can crash the process due to a refresh loop. Use this as a
@@ -1094,11 +1092,13 @@ void UpdateTaskListButtonWithLabelStyle(
             double currentMinWidth = indicatorElement.MinWidth();
             if (minWidth != currentMinWidth) {
                 indicatorElement.MinWidth(0);
-                indicatorElement.Dispatcher().TryRunAsync(
-                    winrt::Windows::UI::Core::CoreDispatcherPriority::High,
-                    [indicatorElement, minWidth]() {
-                        indicatorElement.MinWidth(minWidth);
-                    });
+                if (minWidth > 0) {
+                    indicatorElement.Dispatcher().TryRunAsync(
+                        winrt::Windows::UI::Core::CoreDispatcherPriority::High,
+                        [indicatorElement, minWidth]() {
+                            indicatorElement.MinWidth(minWidth);
+                        });
+                }
             }
         } else {
             state.lines[state.line++] = __LINE__;
