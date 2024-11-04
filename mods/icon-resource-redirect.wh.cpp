@@ -1227,6 +1227,28 @@ HRSRC WINAPI FindResourceExW_Hook(HMODULE hModule,
                                                             lpName, wLanguage);
 }
 
+bool IsResourceHandlePartOfModule(HMODULE hModule, HRSRC hResInfo) {
+    if ((ULONG_PTR)hModule & 3) {
+        MEMORY_BASIC_INFORMATION mbi;
+        if (!VirtualQuery((void*)hModule, &mbi, sizeof(mbi))) {
+            DWORD dwError = GetLastError();
+            Wh_Log(L"VirtualQuery failed with error %u", dwError);
+            return false;
+        }
+
+        return (void*)hResInfo >= mbi.BaseAddress &&
+               (void*)hResInfo <
+                   (void*)((BYTE*)mbi.BaseAddress + mbi.RegionSize);
+    } else {
+        HMODULE module;
+        return GetModuleHandleEx(
+                   GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
+                       GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                   (PCWSTR)hResInfo, &module) &&
+               module == hModule;
+    }
+}
+
 using LoadResource_t = decltype(&LoadResource);
 LoadResource_t LoadResource_Original;
 HGLOBAL WINAPI LoadResource_Hook(HMODULE hModule, HRSRC hResInfo) {
@@ -1239,6 +1261,13 @@ HGLOBAL WINAPI LoadResource_Hook(HMODULE hModule, HRSRC hResInfo) {
     bool redirected = RedirectModule(
         c, hModule, []() {},
         [&](HINSTANCE hInstanceRedirect) {
+            if (!IsResourceHandlePartOfModule(hInstanceRedirect, hResInfo)) {
+                Wh_Log(
+                    L"[%u] Resource handle is not part of the module, skipping",
+                    c);
+                return false;
+            }
+
             result = LoadResource_Original(hInstanceRedirect, hResInfo);
             if (result) {
                 Wh_Log(L"[%u] Redirected successfully", c);
@@ -1268,6 +1297,13 @@ DWORD WINAPI SizeofResource_Hook(HMODULE hModule, HRSRC hResInfo) {
     bool redirected = RedirectModule(
         c, hModule, []() {},
         [&](HINSTANCE hInstanceRedirect) {
+            if (!IsResourceHandlePartOfModule(hInstanceRedirect, hResInfo)) {
+                Wh_Log(
+                    L"[%u] Resource handle is not part of the module, skipping",
+                    c);
+                return false;
+            }
+
             // Zero can be an error or the actual resource size. Check last
             // error to be sure.
             SetLastError(0);
