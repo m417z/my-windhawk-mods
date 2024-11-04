@@ -1041,18 +1041,10 @@ void UpdateTaskListButtonWithLabelStyle(
             // Without this, the indicator isn't centered.
             minWidth = indicatorElement.Width();
         } else if (indicatorStyle == IndicatorStyle::centerDynamic) {
-            Wh_Log(L"$$ firstColumnWidthPixels=%f", firstColumnWidthPixels);
-            Wh_Log(L"$$ indicatorElement.Width()=%f", indicatorElement.Width());
-            Wh_Log(L"$$ taskListButtonWidth=%f", taskListButtonWidth);
-            Wh_Log(L"$$ firstColumnWidthPixels=%f", firstColumnWidthPixels);
-            Wh_Log(L"$$ x*y/z=%f", indicatorElement.Width() *
-                                       taskListButtonWidth /
-                                       firstColumnWidthPixels);
             if (firstColumnWidthPixels > 0) {
                 minWidth = indicatorElement.Width() * taskListButtonWidth /
                            firstColumnWidthPixels;
             }
-            Wh_Log(L"$$ minWidth=%f", minWidth);
         } else if (indicatorStyle == IndicatorStyle::fullWidth) {
             minWidth = taskListButtonWidth - 6;
             if (minWidth < 0) {
