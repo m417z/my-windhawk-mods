@@ -1007,11 +1007,22 @@ void UpdateTaskListButtonWithLabelStyle(
         }
     }
 
-    PCWSTR indicatorClassNames[] = {
-        L"RunningIndicator",
-        L"ProgressIndicator",
+    static volatile struct {
+        PCWSTR indicatorClassName;
+        IndicatorStyle indicatorStyle;
+        double firstColumnWidthPixels;
+        double indicatorElementWidth;
+        double taskListButtonWidth;
+        double minWidth;
+        int lines[32];
+        int line;
+    } indicatorClassNames[] = {
+        {L"RunningIndicator"},
+        {L"ProgressIndicator"},
     };
-    for (auto indicatorClassName : indicatorClassNames) {
+    for (auto& state : indicatorClassNames) {
+        PCWSTR indicatorClassName = state.indicatorClassName;
+
         auto indicatorElement =
             FindChildByName(iconPanelElement, indicatorClassName);
         if (!indicatorElement) {
@@ -1037,13 +1048,29 @@ void UpdateTaskListButtonWithLabelStyle(
 
         double minWidth = 0;
 
+        IsDebuggerPresent();
+
+        state.indicatorStyle = indicatorStyle;
+        state.firstColumnWidthPixels = firstColumnWidthPixels;
+        state.indicatorElementWidth = indicatorElement.Width();
+        state.taskListButtonWidth = taskListButtonWidth;
+        state.minWidth = indicatorElement.Width() * taskListButtonWidth /
+                         firstColumnWidthPixels;
+        memset((void*)state.lines, 0, sizeof(state.lines));
+        state.line = 0;
+
+        state.lines[state.line++] = __LINE__;
+
         if (indicatorStyle == IndicatorStyle::centerFixed) {
             // Without this, the indicator isn't centered.
             minWidth = indicatorElement.Width();
         } else if (indicatorStyle == IndicatorStyle::centerDynamic) {
+            state.lines[state.line++] = __LINE__;
             if (firstColumnWidthPixels > 0) {
+                state.lines[state.line++] = __LINE__;
                 minWidth = indicatorElement.Width() * taskListButtonWidth /
                            firstColumnWidthPixels;
+                state.lines[state.line++] = __LINE__;
             }
         } else if (indicatorStyle == IndicatorStyle::fullWidth) {
             minWidth = taskListButtonWidth - 6;
@@ -1051,6 +1078,13 @@ void UpdateTaskListButtonWithLabelStyle(
                 minWidth = 0;
             }
         }
+
+        state.lines[state.line++] = __LINE__;
+
+        // TODO: uncomment
+        // if (!(minWidth >= 0)) {
+        //     minWidth = 0;
+        // }
 
         // High values of maximumTaskbarItemWidth together with a fullWidth
         // indicator can crash the process due to a refresh loop. Use this as a
@@ -1067,7 +1101,9 @@ void UpdateTaskListButtonWithLabelStyle(
                     });
             }
         } else {
+            state.lines[state.line++] = __LINE__;
             indicatorElement.MinWidth(minWidth);
+            state.lines[state.line++] = __LINE__;
         }
 
         auto indicatorMargin = indicatorElement.Margin();
