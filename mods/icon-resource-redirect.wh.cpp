@@ -1646,8 +1646,21 @@ void LoadSettings() {
 
     if (*themeFolder) {
         WCHAR themeIniFile[MAX_PATH];
+        ULONGLONG fileSize = 0;
         if (PathCombine(themeIniFile, themeFolder, L"theme.ini")) {
-            std::wstring data(32768, L'\0');
+            WIN32_FILE_ATTRIBUTE_DATA fileAttr;
+            if (GetFileAttributesEx(themeIniFile, GetFileExInfoStandard,
+                                    &fileAttr)) {
+                ULARGE_INTEGER uli{
+                    .LowPart = fileAttr.nFileSizeLow,
+                    .HighPart = fileAttr.nFileSizeHigh,
+                };
+                fileSize = uli.QuadPart;
+            }
+        }
+
+        if (fileSize > sizeof("redirections")) {
+            std::wstring data(fileSize, L'\0');
             DWORD result = GetPrivateProfileSection(
                 L"redirections", data.data(), data.size(), themeIniFile);
             if (result != data.size() - 2) {
