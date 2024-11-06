@@ -112,6 +112,7 @@ KiB?](https://devblogs.microsoft.com/oldnewthing/20090611-00/?p=17933).
 #include <windhawk_utils.h>
 
 #include <atomic>
+#include <map>
 #include <memory>
 #include <optional>
 
@@ -1030,7 +1031,37 @@ BOOL EVERYTHINGAPI Everything_GetResultSize(DWORD dwIndex, LARGE_INTEGER* lpSize
 // clang-format on
 #pragma endregion  // everything_sdk
 
-constexpr WCHAR kEverything4Wh_ClassName[] = "EVERYTHING_WINDHAWK_" WH_MOD_ID;
+constexpr WCHAR kEverything4Wh_className[] = "EVERYTHING_WINDHAWK_" WH_MOD_ID;
+
+LPCITEMIDLIST PIDLNext(LPCITEMIDLIST pidl) {
+    return reinterpret_cast<LPCITEMIDLIST>(reinterpret_cast<const BYTE*>(pidl) +
+                                           pidl->mkid.cb);
+}
+
+size_t PIDLSize(LPCITEMIDLIST pidl) {
+    size_t s = 0;
+    while (pidl->mkid.cb > 0) {
+        s += pidl->mkid.cb;
+        pidl = PIDLNext(pidl);
+    }
+    // We add 2 because an LPITEMIDLIST is terminated by two NULL bytes.
+    return 2 + s;
+}
+
+std::vector<BYTE> PIDLToVector(const ITEMIDLIST* pidl) {
+    if (!pidl) {
+        return {};
+    }
+
+    const BYTE* ptr = reinterpret_cast<const BYTE*>(pidl);
+    size_t size = PIDLSize(pidl);
+    return std::vector<BYTE>(ptr, ptr + size);
+}
+
+thread_local winrt::com_ptr<IShellFolder2> g_everything4Wh_cacheShellFolder;
+thread_local std::map<std::vector<BYTE>, std::optional<ULONGLONG>>
+    g_everything4Wh_cache;
+thread_local DWORD g_everything4Wh_cacheUpdatedTickCount;
 
 // custom window proc
 LRESULT WINAPI Everything4Wh_window_proc(HWND hwnd,
@@ -1088,7 +1119,7 @@ LRESULT WINAPI Everything4Wh_window_proc(HWND hwnd,
     return DefWindowProc(hwnd, msg, wParam, lParam);
 }
 
-bool Everything4Wh_LazyInitialize() {
+bool Everything4Wh_InitForQuery() {
     if (_Everything_ReplyWindow) {
         return true;
     }
@@ -1098,12 +1129,12 @@ bool Everything4Wh_LazyInitialize() {
     ZeroMemory(&wcex, sizeof(WNDCLASSEX));
     wcex.cbSize = sizeof(WNDCLASSEX);
 
-    if (!GetClassInfoEx(GetModuleHandle(0), kEverything4Wh_ClassName, &wcex)) {
+    if (!GetClassInfoEx(GetModuleHandle(0), kEverything4Wh_className, &wcex)) {
         ZeroMemory(&wcex, sizeof(WNDCLASSEX));
         wcex.cbSize = sizeof(WNDCLASSEX);
         wcex.hInstance = GetModuleHandle(0);
         wcex.lpfnWndProc = Everything4Wh_window_proc;
-        wcex.lpszClassName = kEverything4Wh_ClassName;
+        wcex.lpszClassName = kEverything4Wh_className;
 
         if (!RegisterClassEx(&wcex)) {
             _Everything_LastError = EVERYTHING_ERROR_REGISTERCLASSEX;
@@ -1111,7 +1142,7 @@ bool Everything4Wh_LazyInitialize() {
         }
     }
 
-    HWND hwnd = CreateWindow(kEverything4Wh_ClassName, L"", 0, 0, 0, 0, 0, 0, 0,
+    HWND hwnd = CreateWindow(kEverything4Wh_className, L"", 0, 0, 0, 0, 0, 0, 0,
                              GetModuleHandle(0), 0);
     if (!hwnd) {
         _Everything_LastError = EVERYTHING_ERROR_CREATEWINDOW;
@@ -1129,6 +1160,7 @@ bool Everything4Wh_QueryAndWait() {
     HWND hwnd = _Everything_ReplyWindow;
     MSG msg;
     int ret;
+    bool succeeded = false;
 
     _Everything_IsUnicodeQuery = TRUE;
 
@@ -1141,12 +1173,13 @@ bool Everything4Wh_QueryAndWait() {
         // update windows
         while (PeekMessage(&msg, hwnd, 0, 0, 0)) {
             ret = (DWORD)GetMessage(&msg, hwnd, 0, 0);
-            if (ret == -1)
-                return false;
-            if (!ret)
-                return false;
-            if (msg.message == WM_APP)
+            if (ret == -1 || !ret) {
                 goto exit;
+            }
+            if (msg.message == WM_APP) {
+                succeeded = true;
+                goto exit;
+            }
 
             // let windows handle it.
             TranslateMessage(&msg);
@@ -1158,32 +1191,15 @@ bool Everything4Wh_QueryAndWait() {
 
 exit:
 
-    return true;
+    // get result from window.
+    DestroyWindow(hwnd);
+    _Everything_ReplyWindow = nullptr;
+
+    return succeeded;
 }
 
-void Everything4Wh_CleanupWindows() {
-    EnumWindows(
-        [](HWND hWnd, LPARAM lParam) WINAPI -> BOOL {
-            DWORD dwProcessId = 0;
-            if (!GetWindowThreadProcessId(hWnd, &dwProcessId) ||
-                dwProcessId != GetCurrentProcessId()) {
-                return TRUE;
-            }
-
-            WCHAR szClassName[ARRAYSIZE(kEverything4Wh_ClassName)];
-            if (GetClassName(hWnd, szClassName, ARRAYSIZE(szClassName)) == 0) {
-                return TRUE;
-            }
-
-            if (_wcsicmp(szClassName, kEverything4Wh_ClassName) == 0) {
-                Wh_Log(L"Closing Everything window: %08X",
-                       (DWORD)(ULONG_PTR)hWnd);
-                SendMessage(hWnd, WM_CLOSE, 0, 0);
-            }
-
-            return TRUE;
-        },
-        0);
+void Everything4Wh_Cleanup() {
+    UnregisterClass(kEverything4Wh_className, GetModuleHandle(0));
 }
 
 thread_local WCHAR
@@ -1191,7 +1207,7 @@ thread_local WCHAR
                                  MAX_PATH];
 
 bool Everything4Wh_GetFileSize(WCHAR path[MAX_PATH], LARGE_INTEGER* size) {
-    if (!Everything4Wh_LazyInitialize()) {
+    if (!Everything4Wh_InitForQuery()) {
         return false;
     }
 
@@ -1379,32 +1395,48 @@ HRESULT WINAPI CFSFolder__GetSize_Hook(void* pCFSFolder,
         return S_OK;
     }
 
-    winrt::com_ptr<IShellFolder2> childFolder;
-    hr = shellFolder2->BindToObject(itemidChild, nullptr,
-                                    IID_PPV_ARGS(childFolder.put()));
-    if (FAILED(hr) || !childFolder) {
-        Wh_Log(L"Failed: %08X", hr);
-        return S_OK;
+    DWORD tickCount = GetTickCount();
+    if (shellFolder2 != g_everything4Wh_cacheShellFolder ||
+        tickCount - g_everything4Wh_cacheUpdatedTickCount > 1000) {
+        g_everything4Wh_cache.clear();
     }
 
-    std::optional<ULONGLONG> folderSize;
+    g_everything4Wh_cacheShellFolder = shellFolder2;
+    g_everything4Wh_cacheUpdatedTickCount = tickCount;
 
-    if (g_settings.calculateFolderSizes == CalculateFolderSizes::everything) {
-        WCHAR path[MAX_PATH];
-        if (GetFolderPathFromIShellFolder(childFolder.get(), path)) {
-            LARGE_INTEGER size;
-            if (Everything4Wh_GetFileSize(path, &size)) {
-                folderSize = size.QuadPart;
+    auto [cacheIt, cacheMissing] = g_everything4Wh_cache.try_emplace(
+        PIDLToVector(itemidChild), std::nullopt);
+
+    if (cacheMissing) {
+        winrt::com_ptr<IShellFolder2> childFolder;
+        hr = shellFolder2->BindToObject(itemidChild, nullptr,
+                                        IID_PPV_ARGS(childFolder.put()));
+        if (FAILED(hr) || !childFolder) {
+            Wh_Log(L"Failed: %08X", hr);
+            return S_OK;
+        }
+
+        if (g_settings.calculateFolderSizes ==
+            CalculateFolderSizes::everything) {
+            WCHAR path[MAX_PATH];
+            if (GetFolderPathFromIShellFolder(childFolder.get(), path)) {
+                LARGE_INTEGER size;
+                if (Everything4Wh_GetFileSize(path, &size)) {
+                    cacheIt->second = size.QuadPart;
+                } else {
+                    Wh_Log(L"Failed to get size of %s", path);
+                }
             } else {
-                Wh_Log(L"Failed to get size of %s", path);
+                Wh_Log(L"Failed to get path");
             }
         } else {
-            Wh_Log(L"Failed to get path");
+            cacheIt->second = CalculateFolderSize(childFolder.get());
         }
     } else {
-        folderSize = CalculateFolderSize(childFolder.get());
+        Wh_Log(L"Using cached size");
     }
 
+    std::optional<ULONGLONG> folderSize = cacheIt->second;
     if (folderSize) {
         propVariant->uhVal.QuadPart = *folderSize;
         propVariant->vt = VT_UI8;
@@ -1583,7 +1615,7 @@ void Wh_ModUninit() {
     Wh_Log(L">");
 
     if (g_settings.calculateFolderSizes == CalculateFolderSizes::everything) {
-        Everything4Wh_CleanupWindows();
+        Everything4Wh_Cleanup();
     }
 
     while (g_hookRefCount > 0) {
