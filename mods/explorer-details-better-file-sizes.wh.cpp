@@ -2,7 +2,7 @@
 // @id              explorer-details-better-file-sizes
 // @name            Better file sizes in Explorer details
 // @description     Optional improvements: show folder sizes, use MB/GB for large files (by default, all sizes are shown in KBs), use IEC terms (such as KiB instead of KB)
-// @version         1.1
+// @version         1.2
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
@@ -54,7 +54,7 @@ To show folder sizes via "Everything" integration:
 * Set **Show folder sizes** in the mod's settings to **Enabled via "Everything"
   integration**.
 
-Note: **"Everything"** must be running for the integration to work.
+Note: "Everything" must be running for the integration to work.
 
 ### Calculated manually
 
