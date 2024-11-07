@@ -76,16 +76,19 @@ struct {
     bool reverseScrollingDirection;
 } g_settings;
 
-double g_invokingTaskListButtonAutomationInvokeMouseWheelDelta = 0;
-WPARAM g_invokingContextMenuWParam = 0;
-void* g_lastScrollTarget = nullptr;
+constexpr UINT_PTR kRefreshTaskbarTimer = 1731020327;
+
+double g_invokingTaskListButtonAutomationInvokeMouseWheelDelta;
+WPARAM g_invokingContextMenuWParam;
+int g_thumbnailContextMenuLastIndex;
+void* g_lastScrollTarget;
 DWORD g_lastScrollTime;
 short g_lastScrollDeltaRemainder;
 int g_lastScrollCommand;
 DWORD g_lastScrollCommandTime;
 std::atomic<DWORD> g_groupMenuCommandThreadId;
 void* g_groupMenuCommandTaskItem;
-ULONGLONG g_noDismissHoverUIUntil = 0;
+ULONGLONG g_noDismissHoverUIUntil;
 
 std::unordered_set<HWND> g_thumbnailWindows;
 
@@ -580,10 +583,27 @@ using CTaskListWnd_DismissHoverUI_t = HRESULT(WINAPI*)(void* pThis);
 CTaskListWnd_DismissHoverUI_t CTaskListWnd_DismissHoverUI_Original;
 HRESULT WINAPI CTaskListWnd_DismissHoverUI_Hook(void* pThis) {
     if (GetTickCount64() < g_noDismissHoverUIUntil) {
+        Wh_Log(L">");
         return 0;
     }
 
     return CTaskListWnd_DismissHoverUI_Original(pThis);
+}
+
+using CTaskListThumbnailWnd_ThumbIndexFromPoint_t =
+    int(WINAPI*)(void* pThis, const POINT* pt);
+CTaskListThumbnailWnd_ThumbIndexFromPoint_t
+    CTaskListThumbnailWnd_ThumbIndexFromPoint_Original;
+int WINAPI CTaskListThumbnailWnd_ThumbIndexFromPoint_Hook(void* pThis,
+                                                          const POINT* pt) {
+    int ret = CTaskListThumbnailWnd_ThumbIndexFromPoint_Original(pThis, pt);
+
+    if (g_invokingContextMenuWParam) {
+        Wh_Log(L">");
+        g_thumbnailContextMenuLastIndex = ret;
+    }
+
+    return ret;
 }
 
 using CTaskListThumbnailWnd__HandleContextMenu_t = void(WINAPI*)(void* pThis,
@@ -591,6 +611,15 @@ using CTaskListThumbnailWnd__HandleContextMenu_t = void(WINAPI*)(void* pThis,
                                                                  int param2);
 CTaskListThumbnailWnd__HandleContextMenu_t
     CTaskListThumbnailWnd__HandleContextMenu_Original;
+
+using CTaskListThumbnailWnd__RefreshThumbnail_t = void(WINAPI*)(void* pThis,
+                                                                int index);
+CTaskListThumbnailWnd__RefreshThumbnail_t
+    CTaskListThumbnailWnd__RefreshThumbnail_Original;
+
+using CTaskListThumbnailWnd_GetHoverIndex_t = int(WINAPI*)(void* pThis);
+CTaskListThumbnailWnd_GetHoverIndex_t
+    CTaskListThumbnailWnd_GetHoverIndex_Original;
 
 bool OnThumbnailWheelScroll(HWND hWnd,
                             UINT uMsg,
@@ -613,8 +642,11 @@ bool OnThumbnailWheelScroll(HWND hWnd,
     POINT pt = {GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam)};
 
     g_invokingContextMenuWParam = wParam;
+    g_thumbnailContextMenuLastIndex = 0;
     CTaskListThumbnailWnd__HandleContextMenu_Original(thumbnail, pt, 0);
     g_invokingContextMenuWParam = 0;
+
+    SetTimer(hWnd, kRefreshTaskbarTimer, 200, 0);
 
     return true;
 }
@@ -635,6 +667,23 @@ LRESULT CALLBACK ThumbnailWindowSubclassProc(HWND hWnd,
         case WM_MOUSEWHEEL:
             if (!OnThumbnailWheelScroll(hWnd, uMsg, wParam, lParam)) {
                 result = DefSubclassProc(hWnd, uMsg, wParam, lParam);
+            }
+            break;
+
+        case WM_TIMER:
+            switch (wParam) {
+                case kRefreshTaskbarTimer: {
+                    void* thumbnail = (void*)GetWindowLongPtr(hWnd, 0);
+                    CTaskListThumbnailWnd__RefreshThumbnail_Original(
+                        thumbnail, g_thumbnailContextMenuLastIndex);
+                    result = 0;
+                    break;
+                }
+
+                default: {
+                    result = DefSubclassProc(hWnd, uMsg, wParam, lParam);
+                    break;
+                }
             }
             break;
 
@@ -880,8 +929,17 @@ bool HookTaskbarDllSymbols() {
             CTaskListWnd_DismissHoverUI_Hook,
         },
         {
+            {LR"(public: virtual int __cdecl CTaskListThumbnailWnd::ThumbIndexFromPoint(struct tagPOINT const &)const )"},
+            &CTaskListThumbnailWnd_ThumbIndexFromPoint_Original,
+            CTaskListThumbnailWnd_ThumbIndexFromPoint_Hook,
+        },
+        {
             {LR"(private: void __cdecl CTaskListThumbnailWnd::_HandleContextMenu(struct tagPOINT,int))"},
             &CTaskListThumbnailWnd__HandleContextMenu_Original,
+        },
+        {
+            {LR"(private: void __cdecl CTaskListThumbnailWnd::_RefreshThumbnail(int))"},
+            &CTaskListThumbnailWnd__RefreshThumbnail_Original,
         },
         // For offsets:
         {
