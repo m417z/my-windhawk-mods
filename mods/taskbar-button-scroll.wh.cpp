@@ -2,7 +2,7 @@
 // @id              taskbar-button-scroll
 // @name            Taskbar minimize/restore on scroll
 // @description     Minimize/restore by scrolling the mouse wheel over taskbar buttons and thumbnail previews (Windows 11 only)
-// @version         1.0.6
+// @version         1.0.7
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
