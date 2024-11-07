@@ -78,12 +78,13 @@ struct {
 
 double g_invokingTaskListButtonAutomationInvokeMouseWheelDelta = 0;
 WPARAM g_invokingContextMenuWParam = 0;
-PVOID g_lastScrollTarget = nullptr;
+void* g_lastScrollTarget = nullptr;
 DWORD g_lastScrollTime;
 short g_lastScrollDeltaRemainder;
 int g_lastScrollCommand;
 DWORD g_lastScrollCommandTime;
 std::atomic<DWORD> g_groupMenuCommandThreadId;
+void* g_groupMenuCommandTaskItem;
 ULONGLONG g_noDismissHoverUIUntil = 0;
 
 std::unordered_set<HWND> g_thumbnailWindows;
@@ -138,6 +139,12 @@ PVOID* EV_MM_TASKLIST_TASK_ITEM_FILTER(PVOID lp) {
 using CTaskBtnGroup_GetGroup_t = void*(WINAPI*)(void* pThis);
 CTaskBtnGroup_GetGroup_t CTaskBtnGroup_GetGroup_Original;
 
+using CTaskBtnGroup_GetGroupType_t = int(WINAPI*)(void* pThis);
+CTaskBtnGroup_GetGroupType_t CTaskBtnGroup_GetGroupType_Original;
+
+using CTaskBtnGroup_GetTaskItem_t = void*(WINAPI*)(void* pThis, int index);
+CTaskBtnGroup_GetTaskItem_t CTaskBtnGroup_GetTaskItem_Original;
+
 using CTaskGroup_GroupMenuCommand_t = HRESULT(WINAPI*)(void* pThis,
                                                        void* filter,
                                                        int command);
@@ -156,7 +163,7 @@ void WINAPI CTaskListWnd__HandleClick_Hook(void* pThis,
                                            int clickAction,
                                            int param4,
                                            int param5) {
-    Wh_Log(L"> %d", clickAction);
+    Wh_Log(L"> clickAction=%d, taskItemIndex=%d", clickAction, taskItemIndex);
 
     if (!g_invokingTaskListButtonAutomationInvokeMouseWheelDelta) {
         return CTaskListWnd__HandleClick_Original(
@@ -189,12 +196,27 @@ void WINAPI CTaskListWnd__HandleClick_Hook(void* pThis,
     if (command &&
         (g_lastScrollTarget != taskBtnGroup || command != g_lastScrollCommand ||
          GetTickCount() - g_lastScrollCommandTime >= 500)) {
-        PVOID taskGroup = CTaskBtnGroup_GetGroup_Original(taskBtnGroup);
+        void* taskGroup = CTaskBtnGroup_GetGroup_Original(taskBtnGroup);
         if (taskGroup) {
-            g_groupMenuCommandThreadId = GetCurrentThreadId();
-            CTaskGroup_GroupMenuCommand_Original(
-                taskGroup, *EV_MM_TASKLIST_TASK_ITEM_FILTER(pThis), command);
-            g_groupMenuCommandThreadId = 0;
+            // Group types:
+            // 1 - Single item or multiple uncombined items
+            // 2 - Pinned item
+            // 3 - Multiple combined items
+            int groupType = CTaskBtnGroup_GetGroupType_Original(taskBtnGroup);
+            if (groupType != 2) {
+                g_groupMenuCommandThreadId = GetCurrentThreadId();
+                g_groupMenuCommandTaskItem =
+                    groupType == 3 ? nullptr
+                                   : CTaskBtnGroup_GetTaskItem_Original(
+                                         taskBtnGroup, taskItemIndex);
+
+                CTaskGroup_GroupMenuCommand_Original(
+                    taskGroup, *EV_MM_TASKLIST_TASK_ITEM_FILTER(pThis),
+                    command);
+
+                g_groupMenuCommandThreadId = 0;
+                g_groupMenuCommandTaskItem = nullptr;
+            }
         }
 
         g_lastScrollCommand = command;
@@ -313,10 +335,10 @@ BOOL WINAPI CApi_PostMessageW_Hook(void* pThis,
                                    UINT Msg,
                                    WPARAM wParam,
                                    LPARAM lParam) {
-    Wh_Log(L">");
-
     if (g_groupMenuCommandThreadId == GetCurrentThreadId() &&
         Msg == WM_SYSCOMMAND) {
+        Wh_Log(L">");
+
         switch (wParam) {
             case SC_MINIMIZE:
                 return MinimizeWithScroll(hWnd);
@@ -327,6 +349,21 @@ BOOL WINAPI CApi_PostMessageW_Hook(void* pThis,
     }
 
     return CApi_PostMessageW_Original(pThis, hWnd, Msg, wParam, lParam);
+}
+
+using CTaskItem_IsVisibleOnCurrentVirtualDesktop_t = bool(WINAPI*)(void* pThis);
+CTaskItem_IsVisibleOnCurrentVirtualDesktop_t
+    CTaskItem_IsVisibleOnCurrentVirtualDesktop_Original;
+bool WINAPI CTaskItem_IsVisibleOnCurrentVirtualDesktop_Hook(void* pThis) {
+    if (g_groupMenuCommandThreadId == GetCurrentThreadId()) {
+        Wh_Log(L">");
+
+        if (g_groupMenuCommandTaskItem) {
+            return g_groupMenuCommandTaskItem == pThis;
+        }
+    }
+
+    return CTaskItem_IsVisibleOnCurrentVirtualDesktop_Original(pThis);
 }
 
 using TaskListButton_AutomationInvoke_t = void(WINAPI*)(void* pThis);
@@ -790,6 +827,14 @@ bool HookTaskbarDllSymbols() {
             &CTaskBtnGroup_GetGroup_Original,
         },
         {
+            {LR"(public: virtual enum eTBGROUPTYPE __cdecl CTaskBtnGroup::GetGroupType(void))"},
+            &CTaskBtnGroup_GetGroupType_Original,
+        },
+        {
+            {LR"(public: virtual struct ITaskItem * __cdecl CTaskBtnGroup::GetTaskItem(int))"},
+            &CTaskBtnGroup_GetTaskItem_Original,
+        },
+        {
             {LR"(public: virtual long __cdecl CTaskGroup::GroupMenuCommand(struct ITaskItemFilter *,int))"},
             &CTaskGroup_GroupMenuCommand_Original,
         },
@@ -797,6 +842,11 @@ bool HookTaskbarDllSymbols() {
             {LR"(protected: void __cdecl CTaskListWnd::_HandleClick(struct ITaskBtnGroup *,int,enum CTaskListWnd::eCLICKACTION,int,int))"},
             &CTaskListWnd__HandleClick_Original,
             CTaskListWnd__HandleClick_Hook,
+        },
+        {
+            {LR"(public: virtual bool __cdecl CTaskItem::IsVisibleOnCurrentVirtualDesktop(void))"},
+            &CTaskItem_IsVisibleOnCurrentVirtualDesktop_Original,
+            CTaskItem_IsVisibleOnCurrentVirtualDesktop_Hook,
         },
         {
             {LR"(public: virtual int __cdecl CApi::PostMessageW(struct HWND__ *,unsigned int,unsigned __int64,__int64))"},
