@@ -157,54 +157,11 @@ auto hookRefCountScope() {
 #pragma region everything_sdk
 // clang-format off
 
-// Version 1.5
-
-#define FT_NOMOREFIELDS		0
-#define FT_NUMERIC_32		1
-#define FT_NUMERIC_64		2
-#define FT_NUMERIC_FLOATING	3
-#define FT_DATE				4
-#define FT_TIME				5
-#define FT_BOOLEAN			6
-#define FT_MULTIPLECHOICE	7
-#define FT_STRING			8
-#define FT_FULLTEXT			9
-#define FT_DATETIME			10
-#define FT_STRINGW			11
-
-#define FT_NOSUCHFIELD		-1 // Error, invalid field number given
-#define FT_FILEERROR		-2 // File i/o error
-#define FT_FIELDEMPTY		-3 // Field valid, but empty
-#define FT_NOTSUPPORTED		-5 // Function not supported
-
-typedef struct {
-	int size;
-	DWORD PluginInterfaceVersionLow;
-	DWORD PluginInterfaceVersionHi;
-	char DefaultIniName[MAX_PATH];
-} ContentDefaultParamStruct;
-
-int __stdcall ContentGetDetectString(LPSTR DetectString, int maxlen);
-int __stdcall ContentGetSupportedField(int FieldIndex, LPSTR FieldName, [[maybe_unused]] LPSTR Units, [[maybe_unused]] int maxlen);
-int __stdcall ContentGetValueW(LPWSTR FileName, int FieldIndex, [[maybe_unused]] int UnitIndex, LPVOID FieldValue, [[maybe_unused]] int maxlen, [[maybe_unused]] int flags);
-
-void __stdcall ContentSetDefaultParams([[maybe_unused]] ContentDefaultParamStruct *dps);
-int __stdcall ContentGetSupportedFieldFlags(int FieldIndex);
-
-// Severely reduced Everything_IPC.h, Copyright (C) 2022 David Carpenter (this file only) https://www.voidtools.com/Everything-SDK.zip
-
-#define EVERYTHING_WM_IPC						(WM_USER)
-
-#define EVERYTHING_IPC_GET_MAJOR_VERSION		0
-#define EVERYTHING_IPC_GET_MINOR_VERSION		1
-#define EVERYTHING_IPC_GET_REVISION				2
-#define EVERYTHING_IPC_GET_BUILD_NUMBER			3
+// Severely reduced Everything_IPC.h, Copyright (C) 2022 David Carpenter
+// https://www.voidtools.com/Everything-SDK.zip
 
 #define EVERYTHING_IPC_WNDCLASSW				L"EVERYTHING_TASKBAR_NOTIFICATION"
 #define EVERYTHING_IPC_WNDCLASSW_15A			L"EVERYTHING_TASKBAR_NOTIFICATION_(1.5a)"
-
-#define EVERYTHING_IPC_IS_FILE_INFO_INDEXED		411
-#define EVERYTHING_IPC_FILE_INFO_FOLDER_SIZE	2
 
 #define EVERYTHING_IPC_MATCHCASE				0x00000001
 #define EVERYTHING_IPC_MATCHDIACRITICS			0x00000010
