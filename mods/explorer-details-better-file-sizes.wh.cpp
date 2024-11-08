@@ -2,7 +2,7 @@
 // @id              explorer-details-better-file-sizes
 // @name            Better file sizes in Explorer details
 // @description     Optional improvements: show folder sizes, use MB/GB for large files (by default, all sizes are shown in KBs), use IEC terms (such as KiB instead of KB)
-// @version         1.3
+// @version         1.4
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
@@ -63,6 +63,13 @@ have them calculated manually. Since calculating folder sizes can be slow, it's
 not enabled by default, and there's an option to enable it only while holding
 the Shift key.
 
+## Mix files and folders when sorting by size
+
+When sorting by size, files end up in one separate chunk, and folders in
+another. That's the default Explorer behavior, which also applies when sorting
+by other columns. This option changes sorting by size to disable this
+separation.
+
 ## Use MB/GB for large files
 
 Explorer always shows file sizes in KBs in details, make it use MB/GB when
@@ -98,6 +105,10 @@ KiB?](https://devblogs.microsoft.com/oldnewthing/20090611-00/?p=17933).
   - everything: Enabled via "Everything" integration
   - always: Enabled, calculated manually (can be slow)
   - withShiftKey: Enabled, calculated manually while holding the Shift key
+- sortSizesMixFolders: true
+  $name: Mix files and folders when sorting by size
+  $description: >-
+    By default, folders are kept separately from files when sorting
 - disableKbOnlySizes: true
   $name: Use MB/GB for large files
   $description: >-
@@ -120,6 +131,7 @@ KiB?](https://devblogs.microsoft.com/oldnewthing/20090611-00/?p=17933).
 
 #include <initguid.h>
 
+#include <comutil.h>
 #include <propsys.h>
 #include <shlobj.h>
 #include <shobjidl.h>
@@ -135,6 +147,7 @@ enum class CalculateFolderSizes {
 
 struct {
     CalculateFolderSizes calculateFolderSizes;
+    bool sortSizesMixFolders;
     bool disableKbOnlySizes;
     bool useIecTerms;
 } g_settings;
@@ -675,6 +688,71 @@ HRESULT WINAPI CFSFolder__GetSize_Hook(void* pCFSFolder,
     return S_OK;
 }
 
+using CFSFolder_MapColumnToSCID_t = HRESULT(WINAPI*)(void* pCFSFolder,
+                                                     int column,
+                                                     PROPERTYKEY* scid);
+CFSFolder_MapColumnToSCID_t CFSFolder_MapColumnToSCID_Original;
+
+using CFSFolder_GetDetailsEx_t = HRESULT(WINAPI*)(void* pCFSFolder,
+                                                  const ITEMID_CHILD* itemid,
+                                                  const PROPERTYKEY* scid,
+                                                  VARIANT* value);
+CFSFolder_GetDetailsEx_t CFSFolder_GetDetailsEx_Original;
+
+using CFSFolder_CompareIDs_t =
+    HRESULT(WINAPI*)(void* pCFSFolder,
+                     int column,
+                     const ITEMIDLIST_RELATIVE* itemid1,
+                     const ITEMIDLIST_RELATIVE* itemid2);
+CFSFolder_CompareIDs_t CFSFolder_CompareIDs_Original;
+HRESULT WINAPI CFSFolder_CompareIDs_Hook(void* pCFSFolder,
+                                         int column,
+                                         const ITEMIDLIST_RELATIVE* itemid1,
+                                         const ITEMIDLIST_RELATIVE* itemid2) {
+    auto hookScope = hookRefCountScope();
+
+    auto original = [=]() {
+        return CFSFolder_CompareIDs_Original(pCFSFolder, column, itemid1,
+                                             itemid2);
+    };
+
+    if (!itemid1 || !itemid2 || !g_settings.sortSizesMixFolders) {
+        return original();
+    }
+
+    PROPERTYKEY columnSCID;
+    if (FAILED(CFSFolder_MapColumnToSCID_Original(pCFSFolder, column,
+                                                  &columnSCID)) ||
+        !IsEqualPropertyKey(columnSCID, kPKEY_Size)) {
+        return original();
+    }
+
+    _variant_t value1;
+    if (FAILED(CFSFolder_GetDetailsEx_Original(pCFSFolder, itemid1, &columnSCID,
+                                               value1.GetAddress())) ||
+        value1.vt != VT_UI8) {
+        return original();
+    }
+
+    _variant_t value2;
+    if (FAILED(CFSFolder_GetDetailsEx_Original(pCFSFolder, itemid2, &columnSCID,
+                                               value2.GetAddress())) ||
+        value2.vt != VT_UI8) {
+        return original();
+    }
+
+    ULONGLONG size1 = value1.ullVal;
+    ULONGLONG size2 = value2.ullVal;
+
+    if (size1 > size2) {
+        return 1;
+    } else if (size1 < size2) {
+        return 0xFFFF;
+    } else {
+        return 0;
+    }
+}
+
 using PSFormatForDisplayAlloc_t = decltype(&PSFormatForDisplayAlloc);
 PSFormatForDisplayAlloc_t PSFormatForDisplayAlloc_Original;
 HRESULT WINAPI PSFormatForDisplayAlloc_Hook(const PROPERTYKEY& key,
@@ -766,6 +844,37 @@ bool HookWindowsStorageSymbols() {
             &CFSFolder__GetSize_Original,
             CFSFolder__GetSize_Hook,
         },
+        {
+            {
+#ifdef _WIN64
+                LR"(public: virtual long __cdecl CFSFolder::MapColumnToSCID(unsigned int,struct _tagpropertykey *))",
+#else
+                LR"(public: virtual long __stdcall CFSFolder::MapColumnToSCID(unsigned int,struct _tagpropertykey *))",
+#endif
+            },
+            &CFSFolder_MapColumnToSCID_Original,
+        },
+        {
+            {
+#ifdef _WIN64
+                LR"(public: virtual long __cdecl CFSFolder::GetDetailsEx(struct _ITEMID_CHILD const __unaligned *,struct _tagpropertykey const *,struct tagVARIANT *))",
+#else
+                LR"(public: virtual long __stdcall CFSFolder::GetDetailsEx(struct _ITEMID_CHILD const *,struct _tagpropertykey const *,struct tagVARIANT *))",
+#endif
+            },
+            &CFSFolder_GetDetailsEx_Original,
+        },
+        {
+            {
+#ifdef _WIN64
+                LR"(public: virtual long __cdecl CFSFolder::CompareIDs(__int64,struct _ITEMIDLIST_RELATIVE const __unaligned *,struct _ITEMIDLIST_RELATIVE const __unaligned *))",
+#else
+                LR"(public: virtual long __stdcall CFSFolder::CompareIDs(long,struct _ITEMIDLIST_RELATIVE const *,struct _ITEMIDLIST_RELATIVE const *))",
+#endif
+            },
+            &CFSFolder_CompareIDs_Original,
+            CFSFolder_CompareIDs_Hook,
+        },
     };
 
     return HookSymbols(windowsStorageModule, windowsStorageHooks,
@@ -784,6 +893,7 @@ void LoadSettings() {
     }
     Wh_FreeStringSetting(calculateFolderSizes);
 
+    g_settings.sortSizesMixFolders = Wh_GetIntSetting(L"sortSizesMixFolders");
     g_settings.disableKbOnlySizes = Wh_GetIntSetting(L"disableKbOnlySizes");
     g_settings.useIecTerms = Wh_GetIntSetting(L"useIecTerms");
 }
