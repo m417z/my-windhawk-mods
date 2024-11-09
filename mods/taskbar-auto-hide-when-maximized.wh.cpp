@@ -273,6 +273,35 @@ void* QueryViaVtableBackwards(void* object, void* vtable) {
     return ptr;
 }
 
+DWORD WINAPI WinEventHookThread(LPVOID lpThreadParameter);
+
+void AdjustTaskbar(HWND hMMTaskbarWnd) {
+    if (g_settings.mode != Mode::never) {
+        if (!g_winEventHookThread) {
+            std::lock_guard<std::mutex> guard(g_winEventHookThreadMutex);
+
+            if (!g_winEventHookThread) {
+                g_winEventHookThread = CreateThread(
+                    nullptr, 0, WinEventHookThread, nullptr, 0, nullptr);
+            }
+        }
+    }
+
+    PostMessage(hMMTaskbarWnd, g_updateTaskbarStateRegisteredMsg, 0, 0);
+}
+
+void AdjustAllTaskbars() {
+    std::unordered_set<HWND> secondaryTaskbarWindows;
+    HWND hWnd = FindTaskbarWindows(&secondaryTaskbarWindows);
+    if (hWnd) {
+        AdjustTaskbar(hWnd);
+    }
+
+    for (HWND hSecondaryWnd : secondaryTaskbarWindows) {
+        AdjustTaskbar(hSecondaryWnd);
+    }
+}
+
 void* TrayUI_vftable_IInspectable;
 void* TrayUI_vftable_ITrayComponentHost;
 void* CSecondaryTray_vftable_ISecondaryTray;
@@ -345,7 +374,10 @@ LRESULT WINAPI TrayUI_WndProc_Hook(void* pThis,
                                    WPARAM wParam,
                                    LPARAM lParam,
                                    bool* flag) {
-    if (Msg == g_getTaskbarRectRegisteredMsg) {
+    if (Msg == WM_NCCREATE) {
+        Wh_Log(L"WM_NCCREATE: %08X", (DWORD)(ULONG_PTR)hWnd);
+        AdjustTaskbar(hWnd);
+    } else if (Msg == g_getTaskbarRectRegisteredMsg) {
         HMONITOR monitor = (HMONITOR)wParam;
         RECT* rect = (RECT*)lParam;
         if (TrayUI_GetStuckRectForMonitor_Original) {
@@ -397,7 +429,10 @@ LRESULT WINAPI CSecondaryTray_v_WndProc_Hook(void* pThis,
                                              UINT Msg,
                                              WPARAM wParam,
                                              LPARAM lParam) {
-    if (Msg == g_updateTaskbarStateRegisteredMsg) {
+    if (Msg == WM_NCCREATE) {
+        Wh_Log(L"WM_NCCREATE: %08X", (DWORD)(ULONG_PTR)hWnd);
+        AdjustTaskbar(hWnd);
+    } else if (Msg == g_updateTaskbarStateRegisteredMsg) {
         void* pCSecondaryTray_ISecondaryTray =
             QueryViaVtable(pThis, CSecondaryTray_vftable_ISecondaryTray);
 
@@ -427,35 +462,6 @@ LRESULT WINAPI CSecondaryTray_v_WndProc_Hook(void* pThis,
         CSecondaryTray_v_WndProc_Original(pThis, hWnd, Msg, wParam, lParam);
 
     return ret;
-}
-
-DWORD WINAPI WinEventHookThread(LPVOID lpThreadParameter);
-
-void AdjustTaskbar(HWND hMMTaskbarWnd) {
-    if (g_settings.mode != Mode::never) {
-        if (!g_winEventHookThread) {
-            std::lock_guard<std::mutex> guard(g_winEventHookThreadMutex);
-
-            if (!g_winEventHookThread) {
-                g_winEventHookThread = CreateThread(
-                    nullptr, 0, WinEventHookThread, nullptr, 0, nullptr);
-            }
-        }
-    }
-
-    PostMessage(hMMTaskbarWnd, g_updateTaskbarStateRegisteredMsg, 0, 0);
-}
-
-void AdjustAllTaskbars() {
-    std::unordered_set<HWND> secondaryTaskbarWindows;
-    HWND hWnd = FindTaskbarWindows(&secondaryTaskbarWindows);
-    if (hWnd) {
-        AdjustTaskbar(hWnd);
-    }
-
-    for (HWND hSecondaryWnd : secondaryTaskbarWindows) {
-        AdjustTaskbar(hSecondaryWnd);
-    }
 }
 
 void CALLBACK WinEventProc(HWINEVENTHOOK hWinEventHook,
