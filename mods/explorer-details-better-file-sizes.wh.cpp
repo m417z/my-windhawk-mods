@@ -155,6 +155,8 @@ struct {
 HMODULE g_propsysModule;
 std::atomic<int> g_hookRefCount;
 
+thread_local bool g_inCDefItem_GetValue;
+
 auto hookRefCountScope() {
     g_hookRefCount++;
     return std::unique_ptr<decltype(g_hookRefCount),
@@ -611,7 +613,7 @@ HRESULT WINAPI CFSFolder__GetSize_Hook(void* pCFSFolder,
 
     HRESULT ret = CFSFolder__GetSize_Original(pCFSFolder, itemidChild, idFolder,
                                               propVariant);
-    if (ret != S_OK || propVariant->vt != VT_EMPTY) {
+    if (!g_inCDefItem_GetValue || ret != S_OK || propVariant->vt != VT_EMPTY) {
         return ret;
     }
 
@@ -689,6 +691,29 @@ HRESULT WINAPI CFSFolder__GetSize_Hook(void* pCFSFolder,
     }
 
     return S_OK;
+}
+
+using CDefItem_GetValue_t = HRESULT(WINAPI*)(void* pCFSFolder,
+                                             void* param1,
+                                             void* param2,
+                                             void* param3,
+                                             void* param4);
+CDefItem_GetValue_t CDefItem_GetValue_Original;
+HRESULT WINAPI CDefItem_GetValue_Hook(void* pCFSFolder,
+                                      void* param1,
+                                      void* param2,
+                                      void* param3,
+                                      void* param4) {
+    auto hookScope = hookRefCountScope();
+
+    g_inCDefItem_GetValue = true;
+
+    HRESULT ret =
+        CDefItem_GetValue_Original(pCFSFolder, param1, param2, param3, param4);
+
+    g_inCDefItem_GetValue = false;
+
+    return ret;
 }
 
 using CFSFolder_MapColumnToSCID_t = HRESULT(WINAPI*)(void* pCFSFolder,
@@ -884,6 +909,17 @@ bool HookWindowsStorageSymbols() {
             },
             &CFSFolder__GetSize_Original,
             CFSFolder__GetSize_Hook,
+        },
+        {
+            {
+#ifdef _WIN64
+                LR"(public: virtual long __cdecl CDefItem::GetValue(enum VALUE_ACCESS_MODE,struct _tagpropertykey const &,struct tagPROPVARIANT *,enum VALUE_STATE *))",
+#else
+                LR"(public: virtual long __stdcall CDefItem::GetValue(enum VALUE_ACCESS_MODE,struct _tagpropertykey const &,struct tagPROPVARIANT *,enum VALUE_STATE *))",
+#endif
+            },
+            &CDefItem_GetValue_Original,
+            CDefItem_GetValue_Hook,
         },
         {
             {
