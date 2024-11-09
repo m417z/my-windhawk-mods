@@ -2,7 +2,7 @@
 // @id              taskbar-auto-hide-when-maximized
 // @name            Taskbar auto-hide when maximized
 // @description     When auto-hide is enabled, makes the taskbar auto-hide only when a window is maximized or intersects the taskbar
-// @version         1.1.1
+// @version         1.1.2
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
@@ -633,23 +633,28 @@ bool HookExplorerPatcherSymbols(HMODULE explorerPatcherModule) {
          (void**)&TrayUI_vftable_IInspectable},
         {R"(??_7TrayUI@@6BITrayComponentHost@@@)",
          (void**)&TrayUI_vftable_ITrayComponentHost},
-        // {R"(TODO)", (void**)&CSecondaryTray_vftable_ISecondaryTray},
+        {R"(??_7CSecondaryTray@@6BISecondaryTray@@@)",
+         (void**)&CSecondaryTray_vftable_ISecondaryTray},
         {R"(?GetStuckMonitor@TrayUI@@UEAAPEAUHMONITOR__@@XZ)",
          (void**)&TrayUI_GetStuckMonitor_Original},
-        // {R"(TODO)", (void**)&CSecondaryTray_GetMonitor_Original},
+        {R"(?GetMonitor@CSecondaryTray@@UEAAPEAUHMONITOR__@@XZ)",
+         (void**)&CSecondaryTray_GetMonitor_Original},
         {R"(?GetStuckRectForMonitor@TrayUI@@UEAA_NPEAUHMONITOR__@@PEAUtagRECT@@@Z)",
          (void**)&TrayUI_GetStuckRectForMonitor_Original},
         {R"(?_Hide@TrayUI@@QEAAXXZ)", (void**)&TrayUI__Hide_Original,
          (void*)TrayUI__Hide_Hook},
-        // {R"(TODO)", (void**)&CSecondaryTray__AutoHide_Original,
-        //  (void*)CSecondaryTray__AutoHide_Hook},
+        {R"(?_AutoHide@CSecondaryTray@@AEAAX_N@Z)",
+         (void**)&CSecondaryTray__AutoHide_Original,
+         (void*)CSecondaryTray__AutoHide_Hook},
         {R"(?Unhide@TrayUI@@UEAAXW4TrayUnhideFlags@TrayCommon@@W4UnhideRequest@3@@Z)",
          (void**)&TrayUI_Unhide_Original},
-        // {R"(TODO)", (void**)&CSecondaryTray__Unhide_Original},
+        {R"(?_Unhide@CSecondaryTray@@AEAAXW4TrayUnhideFlags@TrayCommon@@W4UnhideRequest@3@@Z)",
+         (void**)&CSecondaryTray__Unhide_Original},
         {R"(?WndProc@TrayUI@@UEAA_JPEAUHWND__@@I_K_JPEA_N@Z)",
          (void**)&TrayUI_WndProc_Original, (void*)TrayUI_WndProc_Hook},
-        // {R"(TODO)", (void**)&CSecondaryTray_v_WndProc_Original,
-        //  (void*)CSecondaryTray_v_WndProc_Hook},
+        {R"(?v_WndProc@CSecondaryTray@@EEAA_JPEAUHWND__@@I_K_J@Z)",
+         (void**)&CSecondaryTray_v_WndProc_Original,
+         (void*)CSecondaryTray_v_WndProc_Hook},
     };
 
     bool succeeded = true;
