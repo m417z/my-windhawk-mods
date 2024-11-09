@@ -1090,6 +1090,42 @@ bool InitGlobals() {
     return true;
 }
 
+void Init() {
+    if (InitGlobals()) {
+        DWORD dwOldProtect;
+        VirtualProtect(g_ppSetlocale, sizeof(*g_ppSetlocale),
+                       PAGE_EXECUTE_READWRITE, &dwOldProtect);
+        SetLocale_Original = (SetLocale_t)*g_ppSetlocale;
+        *g_ppSetlocale = (void*)SetLocale_Wrapper;
+        VirtualProtect(g_ppSetlocale, sizeof(*g_ppSetlocale), dwOldProtect,
+                       &dwOldProtect);
+
+        g_msvcrtSetLocalePatched = true;
+    } else {
+        if (g_msvcrtModule) {
+            FreeLibrary(g_msvcrtModule);
+        }
+
+        if (g_libCpp) {
+            FreeLibrary(g_libCpp);
+        }
+    }
+}
+
+void Uninit() {
+    if (g_msvcrtSetLocalePatched) {
+        DWORD dwOldProtect;
+        VirtualProtect(g_ppSetlocale, sizeof(*g_ppSetlocale),
+                       PAGE_EXECUTE_READWRITE, &dwOldProtect);
+        *g_ppSetlocale = (void*)SetLocale_Original;
+        VirtualProtect(g_ppSetlocale, sizeof(*g_ppSetlocale), dwOldProtect,
+                       &dwOldProtect);
+
+        FreeLibrary(g_msvcrtModule);
+        FreeLibrary(g_libCpp);
+    }
+}
+
 }  // namespace ProcessShutdownMessageBoxFix
 
 void LoadSettings() {
@@ -1163,29 +1199,7 @@ BOOL Wh_ModInit() {
                               (void**)&LoadStringW_Original);
     }
 
-    {
-        using namespace ProcessShutdownMessageBoxFix;
-
-        if (InitGlobals()) {
-            DWORD dwOldProtect;
-            VirtualProtect(g_ppSetlocale, sizeof(*g_ppSetlocale),
-                           PAGE_EXECUTE_READWRITE, &dwOldProtect);
-            SetLocale_Original = (SetLocale_t)*g_ppSetlocale;
-            *g_ppSetlocale = (void*)SetLocale_Wrapper;
-            VirtualProtect(g_ppSetlocale, sizeof(*g_ppSetlocale), dwOldProtect,
-                           &dwOldProtect);
-
-            g_msvcrtSetLocalePatched = true;
-        } else {
-            if (g_msvcrtModule) {
-                FreeLibrary(g_msvcrtModule);
-            }
-
-            if (g_libCpp) {
-                FreeLibrary(g_libCpp);
-            }
-        }
-    }
+    ProcessShutdownMessageBoxFix::Init();
 
     return TRUE;
 }
@@ -1211,21 +1225,7 @@ void Wh_ModUninit() {
         Sleep(200);
     }
 
-    {
-        using namespace ProcessShutdownMessageBoxFix;
-
-        if (g_msvcrtSetLocalePatched) {
-            DWORD dwOldProtect;
-            VirtualProtect(g_ppSetlocale, sizeof(*g_ppSetlocale),
-                           PAGE_EXECUTE_READWRITE, &dwOldProtect);
-            *g_ppSetlocale = (void*)SetLocale_Original;
-            VirtualProtect(g_ppSetlocale, sizeof(*g_ppSetlocale), dwOldProtect,
-                           &dwOldProtect);
-
-            FreeLibrary(g_msvcrtModule);
-            FreeLibrary(g_libCpp);
-        }
-    }
+    ProcessShutdownMessageBoxFix::Uninit();
 }
 
 BOOL Wh_ModSettingsChanged(BOOL* bReload) {
