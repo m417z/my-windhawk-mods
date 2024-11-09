@@ -411,6 +411,9 @@ DWORD WINAPI Everything4Wh_Thread(void* parameter) {
         return 1;
     }
 
+    ChangeWindowMessageFilterEx(hReceiverWnd, WM_COPYDATA, MSGFLT_ALLOW,
+                                nullptr);
+
     g_gsReply.hEvent = hEvent;
     g_gsReceiverWnd = hReceiverWnd;
 
