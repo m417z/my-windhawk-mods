@@ -1346,7 +1346,7 @@ HRESULT NTAPI RtlLoadString_Hook(_In_ PVOID DllHandle,
                                  _Inout_opt_ PULONG ReturnLanguageLen) {
     DWORD c = ++g_operationCounter;
 
-    Wh_Log(L"[%u] > string number: %u", StringId);
+    Wh_Log(L"[%u] > string number: %u", c, StringId);
 
     NTSTATUS result;
 
