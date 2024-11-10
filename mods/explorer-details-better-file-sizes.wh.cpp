@@ -449,28 +449,13 @@ DWORD WINAPI Everything4Wh_Thread(void* parameter) {
     return 0;
 }
 
-LPCITEMIDLIST PIDLNext(LPCITEMIDLIST pidl) {
-    return reinterpret_cast<LPCITEMIDLIST>(reinterpret_cast<const BYTE*>(pidl) +
-                                           pidl->mkid.cb);
-}
-
-size_t PIDLSize(LPCITEMIDLIST pidl) {
-    size_t s = 0;
-    while (pidl->mkid.cb > 0) {
-        s += pidl->mkid.cb;
-        pidl = PIDLNext(pidl);
-    }
-    // We add 2 because an LPITEMIDLIST is terminated by two NULL bytes.
-    return 2 + s;
-}
-
 std::vector<BYTE> PIDLToVector(const ITEMIDLIST* pidl) {
     if (!pidl) {
         return {};
     }
 
     const BYTE* ptr = reinterpret_cast<const BYTE*>(pidl);
-    size_t size = PIDLSize(pidl);
+    size_t size = ILGetSize(pidl);
     return std::vector<BYTE>(ptr, ptr + size);
 }
 
