@@ -100,6 +100,11 @@ A couple of practical examples:
 **Target**: `Grid#NotificationCenterGrid` \
 **Style**: `Visibility=Collapsed`
 
+#### Shrink the notification center height
+Makes panel non full-height when there are fewer notifications (fit to size). \
+**Target**: `Grid#NotificationCenterGrid` \
+**Style**: `VerticalAlignment=2`
+
 #### Square the corners of the notification center
 **Target**: `Grid#NotificationCenterGrid` \
 **Style**: `CornerRadius=0`
