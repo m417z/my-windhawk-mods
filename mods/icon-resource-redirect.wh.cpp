@@ -76,7 +76,10 @@ The mod supports the following resource types and loading methods:
 /*
 - themeFolder: ''
   $name: Theme folder
-  $description: A folder with alternative resource files and theme.ini
+  $description: >-
+    A folder with alternative resource files and theme.ini
+
+    Multiple theme folders can be specified, separated by '|'
 - redirectionResourcePaths:
   - - original: '%SystemRoot%\System32\imageres.dll'
       $name: The original resource file
@@ -1862,12 +1865,33 @@ void LoadSettings() {
         }
     };
 
-    PCWSTR themeFolder = Wh_GetStringSetting(L"themeFolder");
+    PCWSTR themeFolders = Wh_GetStringSetting(L"themeFolder");
 
-    if (*themeFolder) {
+    // https://stackoverflow.com/a/46931770
+    auto splitString = [](std::wstring_view s, WCHAR delimiter) {
+        size_t pos_start = 0, pos_end;
+        std::wstring_view token;
+        std::vector<std::wstring> res;
+
+        while ((pos_end = s.find(delimiter, pos_start)) !=
+               std::wstring_view::npos) {
+            token = s.substr(pos_start, pos_end - pos_start);
+            pos_start = pos_end + 1;
+            res.emplace_back(token);
+        }
+
+        res.emplace_back(s.substr(pos_start));
+        return res;
+    };
+
+    for (auto themeFolder : splitString(themeFolders, L'|')) {
+        if (themeFolder.empty()) {
+            continue;
+        }
+
         WCHAR themeIniFile[MAX_PATH];
         ULONGLONG fileSize = 0;
-        if (PathCombine(themeIniFile, themeFolder, L"theme.ini")) {
+        if (PathCombine(themeIniFile, themeFolder.c_str(), L"theme.ini")) {
             WIN32_FILE_ATTRIBUTE_DATA fileAttr;
             if (GetFileAttributesEx(themeIniFile, GetFileExInfoStandard,
                                     &fileAttr)) {
@@ -1891,7 +1915,8 @@ void LoadSettings() {
                         *pEq = L'\0';
 
                         WCHAR redirectFile[MAX_PATH];
-                        if (PathCombine(redirectFile, themeFolder, pEq + 1)) {
+                        if (PathCombine(redirectFile, themeFolder.c_str(),
+                                        pEq + 1)) {
                             addRedirectionPath(p, redirectFile);
                         }
                     } else {
@@ -1906,7 +1931,7 @@ void LoadSettings() {
         }
     }
 
-    Wh_FreeStringSetting(themeFolder);
+    Wh_FreeStringSetting(themeFolders);
 
     for (int i = 0;; i++) {
         PCWSTR original =
