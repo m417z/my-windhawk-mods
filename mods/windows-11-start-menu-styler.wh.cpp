@@ -607,7 +607,7 @@ const Theme g_themeWindows10 = {{
 
 const Theme g_themeTranslucentStartMenu = {{
     ThemeTargetStyles{L"Border#AcrylicBorder", {
-        L"CornerRadius=15",
+        L"CornerRadius=10",
         L"Background:=<AcrylicBrush TintColor=\"Black\" TintLuminosityOpacity=\"0.12\" TintOpacity=\"0\" Opacity=\"1\" FallbackColor=\"#70262626\"/>",
         L"BorderThickness=0,0,0,0"}},
     ThemeTargetStyles{L"Border#AcrylicOverlay", {
