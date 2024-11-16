@@ -2676,12 +2676,8 @@ void AdjustCoreWindowSize(int x, int y, int* width, int* height) {
     UINT monitorDpiY = 96;
     GetDpiForMonitor(monitor, MDT_DEFAULT, &monitorDpiX, &monitorDpiY);
 
-    const int w1 =
-        MulDiv(g_settings.startMenuWidth ? g_settings.startMenuWidth : 660,
-               monitorDpiX, 96);
-    if (*width > w1) {
-        *width = w1;
-    }
+    *width = MulDiv(g_settings.startMenuWidth ? g_settings.startMenuWidth : 660,
+                    monitorDpiX, 96);
 
     const int h1 = MulDiv(750, monitorDpiY, 96);
     const int h2 = MulDiv(694, monitorDpiY, 96);
