@@ -842,7 +842,7 @@ HRESULT WINAPI SHOpenFolderAndSelectItems_Hook(LPCITEMIDLIST pidlFolder,
 
             std::unique_ptr<ThreadParam> threadParam{(ThreadParam*)lpParam};
 
-            CoInitialize(nullptr);
+            CoInitializeEx(nullptr, COINIT_MULTITHREADED);
 
             SHOpenFolderAndSelectItems_Original(
                 threadParam->pidlFolder, threadParam->apidl.size(),
