@@ -907,8 +907,14 @@ bool HookWindowsStorageSymbols() {
             {
 #ifdef _WIN64
                 LR"(public: virtual long __cdecl CDefItem::GetValue(enum VALUE_ACCESS_MODE,struct _tagpropertykey const &,struct tagPROPVARIANT *,enum VALUE_STATE *))",
+
+                // Older Win10 versions.
+                LR"(public: virtual long __cdecl CDefItem::GetValue(enum tagACCESS_MODE,struct _tagpropertykey const &,struct tagPROPVARIANT *,enum tagVALUE_STATE *))",
 #else
                 LR"(public: virtual long __stdcall CDefItem::GetValue(enum VALUE_ACCESS_MODE,struct _tagpropertykey const &,struct tagPROPVARIANT *,enum VALUE_STATE *))",
+
+                // Older Win10 versions.
+                LR"(public: virtual long __stdcall CDefItem::GetValue(enum tagACCESS_MODE,struct _tagpropertykey const &,struct tagPROPVARIANT *,enum tagVALUE_STATE *))",
 #endif
             },
             &CDefItem_GetValue_Original,
