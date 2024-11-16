@@ -38,20 +38,20 @@ the repository.
 A short demonstration can be found [here on
 YouTube](https://youtu.be/irzVmKHB83E).
 
-## Theme folder
+## Theme folders
 
-A theme folder can be selected in the settings. It's a folder with alternative
-resource files, and the `theme.ini` file that contains redirection rules. For
-example, the `theme.ini` file may contain the following:
+Theme folders can be set in the settings. A theme folder is a folder with
+alternative resource files, and the `theme.ini` file that contains redirection
+rules. For example, the `theme.ini` file may contain the following:
 
 ```
 [redirections]
 %SystemRoot%\explorer.exe=explorer.exe
-%SystemRoot%\system32\imageres.dll=imageres.dll
+%SystemRoot%\System32\imageres.dll=imageres.dll
 ```
 
 In this case, the folder must also contain the `explorer.exe`, `imageres.dll`
-files which will be used as the custom resource files.
+files which will be used as the redirection resource files.
 
 ## Supported resource types and loading methods
 
@@ -69,26 +69,53 @@ The mod supports the following resource types and loading methods:
   function.
 * DirectUI resources (usually `UIFILE` and `XML`) loaded with the
   `SetXMLFromResource` function.
+
+## Redirect all loaded resources (experimental)
+
+The option to redirect all resources can be enabled in the settings. In this
+case, redirection won't be limited to the resource types and loading methods
+listed above. This option might become the default in the future.
+
+## Choosing the redirected resource file
+
+For some files, Windows has additional .mui and/or .mun resource files. For
+example, when loading a resource from `%SystemRoot%\System32\imageres.dll`,
+Windows looks for the resource in these files, in order:
+
+* `%SystemRoot%\System32\en-US\imageres.dll.mui` - The language-specific file.
+  `en-US` may be different depending on the Windows language.
+* `%SystemRoot%\System32\imageres.dll` - The target file itself.
+* `%SystemRoot%\SystemResources\imageres.dll.mun` - The language-neutral file.
+
+For overriding resources, `imageres.dll` must be specified as the redirected
+resource file, not `imageres.dll.mui` or `imageres.dll.mun`, regardless of where
+the resources to be redirected are actually located.
+
+The resource lookup order then becomes:
+
+* `imageres_redirection.dll` (the redirection resource file specified in this
+  mod)
+* `imageres.dll.mui`
+* `imageres.dll`
+* `imageres.dll.mun`
 */
 // ==/WindhawkModReadme==
 
 // ==WindhawkModSettings==
 /*
-- themeFolder: ''
-  $name: Theme folder
+- themeFolders: [""]
+  $name: Theme folders
   $description: >-
-    A folder with alternative resource files and theme.ini
-
-    Multiple theme folders can be specified, separated by '|'
+    Folders with alternative resource files and theme.ini
 - redirectionResourcePaths:
   - - original: '%SystemRoot%\System32\imageres.dll'
-      $name: The original resource file
+      $name: The redirected resource file
       $description: >-
         The original file from which resources are loaded, can be a pattern
         where '*' matches any number of characters and '?' matches any single
         character
     - redirect: 'C:\my-themes\theme-1\imageres.dll'
-      $name: The custom resource file
+      $name: The redirection resource file
       $description: The custom resource file that will be used instead
   $name: Redirection resource paths
 - allResourceRedirect: false
@@ -96,6 +123,13 @@ The mod supports the following resource types and loading methods:
   $description: >-
     Try to redirect all loaded resources, not only the supported resources
     that are listed in the description
+- themeFolder: ""
+  $name: Theme folder (old option)
+  $description: >-
+    A folder with alternative resource files and theme.ini
+
+    This option will be removed in the future, please use the new "Theme
+    folders" option above
 */
 // ==/WindhawkModSettings==
 
@@ -1865,73 +1899,78 @@ void LoadSettings() {
         }
     };
 
-    PCWSTR themeFolders = Wh_GetStringSetting(L"themeFolder");
-
-    // https://stackoverflow.com/a/46931770
-    auto splitString = [](std::wstring_view s, WCHAR delimiter) {
-        size_t pos_start = 0, pos_end;
-        std::wstring_view token;
-        std::vector<std::wstring> res;
-
-        while ((pos_end = s.find(delimiter, pos_start)) !=
-               std::wstring_view::npos) {
-            token = s.substr(pos_start, pos_end - pos_start);
-            pos_start = pos_end + 1;
-            res.emplace_back(token);
-        }
-
-        res.emplace_back(s.substr(pos_start));
-        return res;
-    };
-
-    for (auto themeFolder : splitString(themeFolders, L'|')) {
-        if (themeFolder.empty()) {
-            continue;
-        }
-
+    auto addRedirectionThemeFolder = [&addRedirectionPath](PCWSTR themeFolder) {
         WCHAR themeIniFile[MAX_PATH];
-        ULONGLONG fileSize = 0;
-        if (PathCombine(themeIniFile, themeFolder.c_str(), L"theme.ini")) {
-            WIN32_FILE_ATTRIBUTE_DATA fileAttr;
-            if (GetFileAttributesEx(themeIniFile, GetFileExInfoStandard,
-                                    &fileAttr)) {
-                ULARGE_INTEGER uli{
-                    .LowPart = fileAttr.nFileSizeLow,
-                    .HighPart = fileAttr.nFileSizeHigh,
-                };
-                fileSize = uli.QuadPart;
-            }
+        if (!PathCombine(themeIniFile, themeFolder, L"theme.ini")) {
+            DWORD dwError = GetLastError();
+            Wh_Log(L"Error using theme folder %s: %u", themeFolder, dwError);
+            return false;
         }
 
-        if (fileSize > sizeof("redirections")) {
-            std::wstring data(fileSize, L'\0');
-            DWORD result = GetPrivateProfileSection(
-                L"redirections", data.data(), data.size(), themeIniFile);
-            if (result != data.size() - 2) {
-                for (auto* p = data.data(); *p;) {
-                    auto* pNext = p + wcslen(p) + 1;
-                    auto* pEq = wcschr(p, L'=');
-                    if (pEq) {
-                        *pEq = L'\0';
+        WIN32_FILE_ATTRIBUTE_DATA fileAttr;
+        if (!GetFileAttributesEx(themeIniFile, GetFileExInfoStandard,
+                                 &fileAttr)) {
+            DWORD dwError = GetLastError();
+            Wh_Log(L"Error getting attributes for %s: %u", themeIniFile,
+                   dwError);
+            return false;
+        }
 
-                        WCHAR redirectFile[MAX_PATH];
-                        if (PathCombine(redirectFile, themeFolder.c_str(),
-                                        pEq + 1)) {
-                            addRedirectionPath(p, redirectFile);
-                        }
-                    } else {
-                        Wh_Log(L"Skipping %s", p);
-                    }
+        ULARGE_INTEGER uli{
+            .LowPart = fileAttr.nFileSizeLow,
+            .HighPart = fileAttr.nFileSizeHigh,
+        };
+        ULONGLONG fileSize = uli.QuadPart;
 
-                    p = pNext;
+        std::wstring data(fileSize + 2, L'\0');
+        DWORD result = GetPrivateProfileSection(L"redirections", data.data(),
+                                                data.size(), themeIniFile);
+        if (!result || result == data.size() - 2) {
+            DWORD dwError = GetLastError();
+            Wh_Log(L"Error reading data from %s: %u", themeIniFile, dwError);
+            return false;
+        }
+
+        for (auto* p = data.data(); *p;) {
+            auto* pNext = p + wcslen(p) + 1;
+            auto* pEq = wcschr(p, L'=');
+            if (pEq) {
+                *pEq = L'\0';
+
+                WCHAR redirectFile[MAX_PATH];
+                if (PathCombine(redirectFile, themeFolder, pEq + 1)) {
+                    addRedirectionPath(p, redirectFile);
+                } else {
+                    DWORD dwError = GetLastError();
+                    Wh_Log(L"Skipping %s=%s: %u", p, pEq + 1, dwError);
                 }
             } else {
-                Wh_Log(L"Failed to read theme file");
+                Wh_Log(L"Skipping %s", p);
             }
+
+            p = pNext;
+        }
+
+        return true;
+    };
+
+    for (int i = 0;; i++) {
+        PCWSTR themeFolder = Wh_GetStringSetting(L"themeFolders[%d]", i);
+        bool hasThemeFolder = *themeFolder;
+        if (hasThemeFolder) {
+            addRedirectionThemeFolder(themeFolder);
+        }
+        Wh_FreeStringSetting(themeFolder);
+        if (!hasThemeFolder) {
+            break;
         }
     }
 
-    Wh_FreeStringSetting(themeFolders);
+    PCWSTR themeFolder = Wh_GetStringSetting(L"themeFolder");
+    if (*themeFolder) {
+        addRedirectionThemeFolder(themeFolder);
+    }
+    Wh_FreeStringSetting(themeFolder);
 
     for (int i = 0;; i++) {
         PCWSTR original =
