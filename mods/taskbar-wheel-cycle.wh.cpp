@@ -650,64 +650,6 @@ int TaskbarFrame_OnPointerWheelChanged_Hook(PVOID pThis, PVOID pArgs) {
     return 0;
 }
 
-// wParam - TRUE to subclass, FALSE to unsubclass
-// lParam - subclass data
-UINT g_subclassRegisteredMsg = RegisterWindowMessage(
-    L"Windhawk_SetWindowSubclassFromAnyThread_" WH_MOD_ID);
-
-BOOL SetWindowSubclassFromAnyThread(HWND hWnd,
-                                    SUBCLASSPROC pfnSubclass,
-                                    UINT_PTR uIdSubclass,
-                                    DWORD_PTR dwRefData) {
-    struct SET_WINDOW_SUBCLASS_FROM_ANY_THREAD_PARAM {
-        SUBCLASSPROC pfnSubclass;
-        UINT_PTR uIdSubclass;
-        DWORD_PTR dwRefData;
-        BOOL result;
-    };
-
-    DWORD dwThreadId = GetWindowThreadProcessId(hWnd, nullptr);
-    if (dwThreadId == 0) {
-        return FALSE;
-    }
-
-    if (dwThreadId == GetCurrentThreadId()) {
-        return SetWindowSubclass(hWnd, pfnSubclass, uIdSubclass, dwRefData);
-    }
-
-    HHOOK hook = SetWindowsHookEx(
-        WH_CALLWNDPROC,
-        [](int nCode, WPARAM wParam, LPARAM lParam) WINAPI -> LRESULT {
-            if (nCode == HC_ACTION) {
-                const CWPSTRUCT* cwp = (const CWPSTRUCT*)lParam;
-                if (cwp->message == g_subclassRegisteredMsg && cwp->wParam) {
-                    SET_WINDOW_SUBCLASS_FROM_ANY_THREAD_PARAM* param =
-                        (SET_WINDOW_SUBCLASS_FROM_ANY_THREAD_PARAM*)cwp->lParam;
-                    param->result =
-                        SetWindowSubclass(cwp->hwnd, param->pfnSubclass,
-                                          param->uIdSubclass, param->dwRefData);
-                }
-            }
-
-            return CallNextHookEx(nullptr, nCode, wParam, lParam);
-        },
-        nullptr, dwThreadId);
-    if (!hook) {
-        return FALSE;
-    }
-
-    SET_WINDOW_SUBCLASS_FROM_ANY_THREAD_PARAM param;
-    param.pfnSubclass = pfnSubclass;
-    param.uIdSubclass = uIdSubclass;
-    param.dwRefData = dwRefData;
-    param.result = FALSE;
-    SendMessage(hWnd, g_subclassRegisteredMsg, TRUE, (LPARAM)&param);
-
-    UnhookWindowsHookEx(hook);
-
-    return param.result;
-}
-
 bool FromStringHotKey(std::wstring_view hotkeyString,
                       UINT* modifiersOut,
                       UINT* vkOut) {
@@ -1041,19 +983,20 @@ bool OnTaskbarHotkey(HWND hWnd, int hotkeyId) {
     return true;
 }
 
-UINT g_hotkeyUpdatedRegisteredMsg =
-    RegisterWindowMessage(L"Windhawk_hotkeyUpdated_" WH_MOD_ID);
+UINT g_hotkeyRegisteredMsg =
+    RegisterWindowMessage(L"Windhawk_hotkey_" WH_MOD_ID);
+
+enum {
+    HOTKEY_REGISTER,
+    HOTKEY_UNREGISTER,
+    HOTKEY_UPDATE,
+};
 
 LRESULT CALLBACK TaskbarWindowSubclassProc(HWND hWnd,
                                            UINT uMsg,
                                            WPARAM wParam,
                                            LPARAM lParam,
-                                           UINT_PTR uIdSubclass,
                                            DWORD_PTR dwRefData) {
-    if (uMsg == WM_NCDESTROY || (uMsg == g_subclassRegisteredMsg && !wParam)) {
-        RemoveWindowSubclass(hWnd, TaskbarWindowSubclassProc, 0);
-    }
-
     LRESULT result = 0;
 
     switch (uMsg) {
@@ -1070,32 +1013,28 @@ LRESULT CALLBACK TaskbarWindowSubclassProc(HWND hWnd,
             }
             break;
 
-        case WM_POWERBROADCAST:
-            // Keyboard shortcuts stop working sometimes, not sure why. Try to
-            // mitigate it by unregistering and re-registering hotkeys on resume
-            // from wake up.
-            if (wParam == PBT_APMQUERYSUSPEND) {
-                switch (lParam) {
-                    case PBT_APMRESUMECRITICAL:
-                    case PBT_APMRESUMESUSPEND:
-                    case PBT_APMRESUMEAUTOMATIC:
+        case WM_NCDESTROY:
+            UnregisterHotkeys(hWnd);
+            g_hTaskbarWnd = nullptr;
+            result = DefSubclassProc(hWnd, uMsg, wParam, lParam);
+            break;
+
+        default:
+            if (uMsg == g_hotkeyRegisteredMsg) {
+                switch (wParam) {
+                    case HOTKEY_REGISTER:
+                        RegisterHotkeys(hWnd);
+                        break;
+
+                    case HOTKEY_UNREGISTER:
+                        UnregisterHotkeys(hWnd);
+                        break;
+
+                    case HOTKEY_UPDATE:
                         UnregisterHotkeys(hWnd);
                         RegisterHotkeys(hWnd);
                         break;
                 }
-            }
-            break;
-
-        default:
-            if (uMsg == g_subclassRegisteredMsg) {
-                if (wParam) {
-                    RegisterHotkeys(hWnd);
-                } else {
-                    UnregisterHotkeys(hWnd);
-                }
-            } else if (uMsg == g_hotkeyUpdatedRegisteredMsg) {
-                UnregisterHotkeys(hWnd);
-                RegisterHotkeys(hWnd);
             } else {
                 result = DefSubclassProc(hWnd, uMsg, wParam, lParam);
             }
@@ -1106,16 +1045,19 @@ LRESULT CALLBACK TaskbarWindowSubclassProc(HWND hWnd,
 }
 
 void SubclassTaskbarWindow(HWND hWnd) {
-    SetWindowSubclassFromAnyThread(hWnd, TaskbarWindowSubclassProc, 0, 0);
+    WindhawkUtils::SetWindowSubclassFromAnyThread(hWnd,
+                                                  TaskbarWindowSubclassProc, 0);
 }
 
 void UnsubclassTaskbarWindow(HWND hWnd) {
-    SendMessage(hWnd, g_subclassRegisteredMsg, FALSE, 0);
+    WindhawkUtils::RemoveWindowSubclassFromAnyThread(hWnd,
+                                                     TaskbarWindowSubclassProc);
 }
 
 void HandleIdentifiedTaskbarWindow(HWND hWnd) {
     g_hTaskbarWnd = hWnd;
     SubclassTaskbarWindow(hWnd);
+    SendMessage(hWnd, g_hotkeyRegisteredMsg, HOTKEY_REGISTER, 0);
 }
 
 using CreateWindowExW_t = decltype(&CreateWindowExW);
@@ -1299,11 +1241,12 @@ void Wh_ModAfterInit() {
 }
 
 void Wh_ModUninit() {
+    Wh_Log(L">");
+
     if (g_hTaskbarWnd) {
+        SendMessage(g_hTaskbarWnd, g_hotkeyRegisteredMsg, HOTKEY_UNREGISTER, 0);
         UnsubclassTaskbarWindow(g_hTaskbarWnd);
     }
-
-    Wh_Log(L">");
 }
 
 void Wh_ModSettingsChanged() {
@@ -1312,6 +1255,6 @@ void Wh_ModSettingsChanged() {
     LoadSettings();
 
     if (g_hTaskbarWnd) {
-        PostMessage(g_hTaskbarWnd, g_hotkeyUpdatedRegisteredMsg, 0, 0);
+        SendMessage(g_hTaskbarWnd, g_hotkeyRegisteredMsg, HOTKEY_UPDATE, 0);
     }
 }
