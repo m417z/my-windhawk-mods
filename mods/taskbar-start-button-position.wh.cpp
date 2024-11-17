@@ -383,21 +383,24 @@ void ApplySettings(HWND hTaskbarWnd) {
         [](void* pParam) WINAPI { ApplySettingsFromTaskbarThread(); }, 0);
 }
 
-using IUIElement_Arrange_t = HRESULT(
-    WINAPI*)(UIElement pThis, const winrt::Windows::Foundation::Rect* rect);
+using IUIElement_Arrange_t =
+    HRESULT(WINAPI*)(void* pThis, const winrt::Windows::Foundation::Rect* rect);
 IUIElement_Arrange_t IUIElement_Arrange_Original;
 HRESULT WINAPI
-IUIElement_Arrange_Hook(UIElement pThis,
+IUIElement_Arrange_Hook(void* pThis,
                         const winrt::Windows::Foundation::Rect* rect) {
     Wh_Log(L">");
 
-    auto original = [&] { return IUIElement_Arrange_Original(pThis, rect); };
+    auto original = [=] { return IUIElement_Arrange_Original(pThis, rect); };
 
     if (g_unloading) {
         return original();
     }
 
-    FrameworkElement element = pThis.try_as<FrameworkElement>();
+    FrameworkElement element = nullptr;
+    (*(IUnknown**)pThis)
+        ->QueryInterface(winrt::guid_of<FrameworkElement>(),
+                         winrt::put_abi(element));
     if (!element) {
         return original();
     }
