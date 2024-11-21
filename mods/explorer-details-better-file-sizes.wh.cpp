@@ -9,7 +9,8 @@
 // @homepage        https://m417z.com/
 // @include         *
 // @exclude         conhost.exe
-// @exclude         plex.exe
+// @exclude         Plex.exe
+// @exclude         Plex Media Server.exe
 // @compilerOptions -lole32 -loleaut32 -lpropsys
 // ==/WindhawkMod==
 
