@@ -30,7 +30,7 @@ Styler](https://windhawk.net/mods/windows-11-taskbar-styler).
 
 Also, Windows 11 Taskbar Styler has [a known
 limitation](https://github.com/ramensoftware/windhawk-mods/issues/742) which
-makes some styles only work if there's a single monitor. This mod can be used as
+makes some styles only work if there's a single taskbar. This mod can be used as
 a workaround.
 
 ![Demonstration](https://i.imgur.com/lMp8OLp.gif)
