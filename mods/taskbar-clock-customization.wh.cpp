@@ -52,6 +52,7 @@ patterns can be used:
   of week according to the system configuration.
 * `%weeknum_iso%` - the [ISO week
   number](https://en.wikipedia.org/wiki/ISO_week_date).
+* `%dayofyear%` - the day of year starting from 1st Jan.
 * `%timezone%` - the time zone in ISO 8601 format.
 * `%web<n>%` - the web contents as configured in settings, truncated with
   ellipsis, where `<n>` is the web contents number.
@@ -369,6 +370,7 @@ struct {
 } g_settings;
 
 #define FORMATTED_BUFFER_SIZE 256
+#define INTEGER_BUFFER_SIZE sizeof("-2147483648")
 
 enum class WinVersion {
     Unsupported,
@@ -382,9 +384,10 @@ WinVersion g_winVersion;
 WCHAR g_timeFormatted[FORMATTED_BUFFER_SIZE];
 WCHAR g_dateFormatted[FORMATTED_BUFFER_SIZE];
 WCHAR g_weekdayFormatted[FORMATTED_BUFFER_SIZE];
-WCHAR g_weekdayNumFormatted[FORMATTED_BUFFER_SIZE];
-WCHAR g_weeknumFormatted[FORMATTED_BUFFER_SIZE];
-WCHAR g_weeknumIsoFormatted[FORMATTED_BUFFER_SIZE];
+WCHAR g_weekdayNumFormatted[INTEGER_BUFFER_SIZE];
+WCHAR g_weeknumFormatted[INTEGER_BUFFER_SIZE];
+WCHAR g_weeknumIsoFormatted[INTEGER_BUFFER_SIZE];
+WCHAR g_dayOfYearFormatted[INTEGER_BUFFER_SIZE];
 WCHAR g_timezoneFormatted[FORMATTED_BUFFER_SIZE];
 
 HANDLE g_webContentUpdateThread;
@@ -825,6 +828,28 @@ int CalculateWeeknumIso(const SYSTEMTIME* time) {
     return WeekNumber;
 }
 
+// Adopted from VMime:
+// https://github.com/kisli/vmime/blob/fc69321d5304c73be685c890f3b30528aadcfeaf/src/vmime/utility/datetimeUtils.cpp#L239
+int CalculateDayOfYearNumber(const SYSTEMTIME* time) {
+    const int year = time->wYear;
+    const int month = time->wMonth;
+    const int day = time->wDay;
+
+    const bool leapYear =
+        ((year % 4) == 0 && (year % 100) != 0) || (year % 400) == 0;
+
+    static const int DAY_OF_YEAR_NUMBER_MAP[12] = {
+        0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334};
+
+    int DayOfYearNumber = day + DAY_OF_YEAR_NUMBER_MAP[month - 1];
+
+    if (leapYear && month > 2) {
+        DayOfYearNumber += 1;
+    }
+
+    return DayOfYearNumber;
+}
+
 // Adopted from:
 // https://github.com/microsoft/cpp_client_telemetry/blob/25bc0806f21ecb2587154494f073bfa581cd5089/lib/pal/desktop/WindowsEnvironmentInfo.hpp#L39
 void GetTimeZone(WCHAR* buffer, size_t bufferSize) {
@@ -881,6 +906,8 @@ void InitializeFormattedStrings(const SYSTEMTIME* time) {
 
     swprintf_s(g_weeknumIsoFormatted, L"%d", CalculateWeeknumIso(time));
 
+    swprintf_s(g_dayOfYearFormatted, L"%d", CalculateDayOfYearNumber(time));
+
     GetTimeZone(g_timezoneFormatted, ARRAYSIZE(g_timezoneFormatted));
 }
 
@@ -905,6 +932,10 @@ size_t ResolveFormatToken(PCWSTR format, PCWSTR* resolved) {
                0) {
         *resolved = g_weeknumIsoFormatted;
         return sizeof("%weeknum_iso%") - 1;
+    } else if (wcsncmp(L"%dayofyear%", format, sizeof("%dayofyear%") - 1) ==
+               0) {
+        *resolved = g_dayOfYearFormatted;
+        return sizeof("%dayofyear%") - 1;
     } else if (wcsncmp(L"%timezone%", format, sizeof("%timezone%") - 1) == 0) {
         *resolved = g_timezoneFormatted;
         return sizeof("%timezone%") - 1;
