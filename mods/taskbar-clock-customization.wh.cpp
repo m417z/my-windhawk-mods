@@ -607,7 +607,8 @@ void UpdateWebContent() {
 
         std::lock_guard<std::mutex> guard(g_webContentMutex);
 
-        if (item.maxLength <= 0 || extracted.length() <= item.maxLength) {
+        if (item.maxLength <= 0 ||
+            extracted.length() <= (size_t)item.maxLength) {
             g_webContentStrings[i] = extracted;
         } else {
             std::wstring truncated(extracted.begin(),
@@ -1001,6 +1002,11 @@ using ClockSystemTrayIconDataModel_GetTimeToolTipString_t =
 ClockSystemTrayIconDataModel_GetTimeToolTipString_t
     ClockSystemTrayIconDataModel_GetTimeToolTipString_Original;
 
+using ClockSystemTrayIconDataModel_GetTimeToolTipString2_t =
+    LPVOID(WINAPI*)(LPVOID pThis, LPVOID, LPVOID, LPVOID, LPVOID);
+ClockSystemTrayIconDataModel_GetTimeToolTipString2_t
+    ClockSystemTrayIconDataModel_GetTimeToolTipString2_Original;
+
 using DateTimeIconContent_OnApplyTemplate_t = void(WINAPI*)(LPVOID pThis);
 DateTimeIconContent_OnApplyTemplate_t
     DateTimeIconContent_OnApplyTemplate_Original;
@@ -1109,6 +1115,26 @@ ClockSystemTrayIconDataModel_GetTimeToolTipString_Hook(LPVOID pThis,
     g_inGetTimeToolTipString = true;
 
     LPVOID ret = ClockSystemTrayIconDataModel_GetTimeToolTipString_Original(
+        pThis, param1, param2, param3, param4);
+
+    UpdateToolTipString(ret);
+
+    g_inGetTimeToolTipString = false;
+
+    return ret;
+}
+
+LPVOID WINAPI
+ClockSystemTrayIconDataModel_GetTimeToolTipString2_Hook(LPVOID pThis,
+                                                        LPVOID param1,
+                                                        LPVOID param2,
+                                                        LPVOID param3,
+                                                        LPVOID param4) {
+    Wh_Log(L">");
+
+    g_inGetTimeToolTipString = true;
+
+    LPVOID ret = ClockSystemTrayIconDataModel_GetTimeToolTipString2_Original(
         pThis, param1, param2, param3, param4);
 
     UpdateToolTipString(ret);
@@ -1563,7 +1589,7 @@ int WINAPI GetDateFormatEx_Hook_Win11(LPCWSTR lpLocaleName,
             }
         }
 
-        if (dwFlags & DATE_SHORTDATE) {
+        if (!(dwFlags & DATE_LONGDATE)) {
             if (!cchDate || g_winVersion >= WinVersion::Win11_22H2) {
                 // First call, initialize strings.
                 InitializeFormattedStrings(lpDate);
@@ -2248,13 +2274,27 @@ void ApplySettingsWin11() {
     HWND hTaskbarWnd = FindWindow(L"Shell_TrayWnd", nullptr);
     if (hTaskbarWnd && GetWindowThreadProcessId(hTaskbarWnd, &dwProcessId) &&
         dwProcessId == dwCurrentProcessId) {
-        // Trigger a time change notification. Do so only if the current
-        // explorer.exe instance owns the taskbar.
-        WCHAR szTimeFormat[80];
-        if (GetLocaleInfo(LOCALE_USER_DEFAULT, LOCALE_STIMEFORMAT, szTimeFormat,
-                          ARRAYSIZE(szTimeFormat))) {
-            SetLocaleInfo(LOCALE_USER_DEFAULT, LOCALE_STIMEFORMAT,
-                          szTimeFormat);
+        // Touch a registry value to trigger a watcher for a clock update. Do so
+        // only if the current explorer.exe instance owns the taskbar.
+        constexpr WCHAR kTempValueName[] =
+            L"_temp_windhawk_taskbar-taskbar-clock-customization";
+        HKEY hSubKey;
+        LONG result = RegOpenKeyEx(HKEY_CURRENT_USER,
+                                   L"Control Panel\\TimeDate\\AdditionalClocks",
+                                   0, KEY_WRITE, &hSubKey);
+        if (result == ERROR_SUCCESS) {
+            if (RegSetValueEx(hSubKey, kTempValueName, 0, REG_SZ,
+                              (const BYTE*)L"",
+                              sizeof(WCHAR)) != ERROR_SUCCESS) {
+                Wh_Log(L"Failed to create temp value");
+            } else if (RegDeleteValue(hSubKey, kTempValueName) !=
+                       ERROR_SUCCESS) {
+                Wh_Log(L"Failed to remove temp value");
+            }
+
+            RegCloseKey(hSubKey);
+        } else {
+            Wh_Log(L"Failed to open subkey: %d", result);
         }
     }
 }
@@ -2373,6 +2413,15 @@ BOOL Wh_ModInit() {
                 },
                 (void**)&ClockSystemTrayIconDataModel_GetTimeToolTipString_Original,
                 (void*)ClockSystemTrayIconDataModel_GetTimeToolTipString_Hook,
+                true,
+            },
+            {
+                {
+                    LR"(private: struct winrt::hstring __cdecl winrt::SystemTray::implementation::ClockSystemTrayIconDataModel::GetTimeToolTipString2(struct _SYSTEMTIME const &,struct _SYSTEMTIME const &,class SystemTrayTelemetry::ClockUpdate &))",
+                    LR"(private: struct winrt::hstring __cdecl winrt::SystemTray::implementation::ClockSystemTrayIconDataModel::GetTimeToolTipString2(struct _SYSTEMTIME const & __ptr64,struct _SYSTEMTIME const & __ptr64,class SystemTrayTelemetry::ClockUpdate & __ptr64) __ptr64)",
+                },
+                (void**)&ClockSystemTrayIconDataModel_GetTimeToolTipString2_Original,
+                (void*)ClockSystemTrayIconDataModel_GetTimeToolTipString2_Hook,
                 true,
             },
             {
