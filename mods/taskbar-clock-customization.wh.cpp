@@ -388,6 +388,7 @@ WCHAR g_weeknumIsoFormatted[FORMATTED_BUFFER_SIZE];
 WCHAR g_timezoneFormatted[FORMATTED_BUFFER_SIZE];
 
 HANDLE g_webContentUpdateThread;
+HANDLE g_webContentUpdateRefreshEvent;
 HANDLE g_webContentUpdateStopEvent;
 std::mutex g_webContentMutex;
 std::atomic<bool> g_webContentLoaded;
@@ -422,6 +423,9 @@ GetDateFormatEx_t GetDateFormatEx_Original;
 
 using GetDateFormatW_t = decltype(&GetDateFormatW);
 GetDateFormatW_t GetDateFormatW_Original;
+
+using SendMessageW_t = decltype(&SendMessageW);
+SendMessageW_t SendMessageW_Original;
 
 std::optional<std::wstring> GetUrlContent(PCWSTR lpUrl,
                                           bool failIfNot200 = true) {
@@ -633,6 +637,11 @@ void UpdateWebContent() {
 DWORD WINAPI WebContentUpdateThread(LPVOID lpThreadParameter) {
     constexpr DWORD kSecondsForQuickRetry = 30;
 
+    HANDLE handles[] = {
+        g_webContentUpdateStopEvent,
+        g_webContentUpdateRefreshEvent,
+    };
+
     while (true) {
         UpdateWebContent();
 
@@ -641,9 +650,15 @@ DWORD WINAPI WebContentUpdateThread(LPVOID lpThreadParameter) {
             seconds = kSecondsForQuickRetry;
         }
 
-        DWORD dwWaitResult =
-            WaitForSingleObject(g_webContentUpdateStopEvent, seconds * 1000);
-        if (dwWaitResult != WAIT_TIMEOUT) {
+        DWORD dwWaitResult = WaitForMultipleObjects(ARRAYSIZE(handles), handles,
+                                                    FALSE, seconds * 1000);
+
+        if (dwWaitResult == WAIT_FAILED) {
+            Wh_Log(L"WAIT_FAILED");
+            break;
+        }
+
+        if (dwWaitResult == WAIT_OBJECT_0) {
             break;
         }
     }
@@ -666,6 +681,8 @@ void WebContentUpdateThreadInit() {
 
     if ((g_settings.webContentsUrl && *g_settings.webContentsUrl) ||
         g_settings.webContentsItems.size() > 0) {
+        g_webContentUpdateRefreshEvent =
+            CreateEvent(nullptr, FALSE, FALSE, nullptr);
         g_webContentUpdateStopEvent =
             CreateEvent(nullptr, TRUE, FALSE, nullptr);
         g_webContentUpdateThread = CreateThread(
@@ -679,6 +696,8 @@ void WebContentUpdateThreadUninit() {
         WaitForSingleObject(g_webContentUpdateThread, INFINITE);
         CloseHandle(g_webContentUpdateThread);
         g_webContentUpdateThread = nullptr;
+        CloseHandle(g_webContentUpdateRefreshEvent);
+        g_webContentUpdateRefreshEvent = nullptr;
         CloseHandle(g_webContentUpdateStopEvent);
         g_webContentUpdateStopEvent = nullptr;
     }
@@ -1609,6 +1628,48 @@ int WINAPI GetDateFormatEx_Hook_Win11(LPCWSTR lpLocaleName,
 
     int ret = GetDateFormatEx_Original(lpLocaleName, dwFlags, lpDate, lpFormat,
                                        lpDateStr, cchDate, lpCalendar);
+
+    return ret;
+}
+
+LRESULT WINAPI SendMessageW_Hook(HWND hWnd,
+                                 UINT Msg,
+                                 WPARAM wParam,
+                                 LPARAM lParam) {
+    LRESULT ret = SendMessageW_Original(hWnd, Msg, wParam, lParam);
+
+    if (Msg != WM_POWERBROADCAST || wParam != PBT_APMQUERYSUSPEND) {
+        return ret;
+    }
+
+    switch (lParam) {
+        case PBT_APMRESUMECRITICAL:
+        case PBT_APMRESUMESUSPEND:
+        case PBT_APMRESUMEAUTOMATIC:
+            break;
+
+        default:
+            return ret;
+    }
+
+    WCHAR szClassName[64];
+    if (GetClassName(hWnd, szClassName, ARRAYSIZE(szClassName)) == 0) {
+        return ret;
+    }
+
+    if (_wcsicmp(szClassName, L"MSTaskSwWClass") != 0) {
+        return ret;
+    }
+
+    Wh_Log(L"Resumed, refreshing web contents");
+
+    std::lock_guard<std::mutex> guard(g_webContentMutex);
+
+    HANDLE event = g_webContentUpdateRefreshEvent;
+    if (event) {
+        g_webContentLoaded = false;
+        SetEvent(event);
+    }
 
     return ret;
 }
@@ -2659,6 +2720,8 @@ BOOL Wh_ModInit() {
         Wh_SetFunctionHook((void*)pGetDateFormatEx,
                            (void*)GetDateFormatEx_Hook_Win11,
                            (void**)&GetDateFormatEx_Original);
+        Wh_SetFunctionHook((void*)SendMessageW, (void*)SendMessageW_Hook,
+                           (void**)&SendMessageW_Original);
     }
 
     return TRUE;
