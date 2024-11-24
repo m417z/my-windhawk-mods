@@ -1,7 +1,7 @@
 // ==WindhawkMod==
 // @id              taskbar-clock-customization
 // @name            Taskbar Clock Customization
-// @description     Customize the taskbar clock - add seconds, define a custom date/time format, add a news feed, and more
+// @description     Customize the taskbar clock - define a custom date/time format, add a news feed, customize fonts and colors, and more
 // @version         1.3.3
 // @author          m417z
 // @github          https://github.com/m417z
@@ -24,8 +24,8 @@
 /*
 # Taskbar Clock Customization
 
-Customize the taskbar clock - add seconds, define a custom date/time format, add
-a news feed, and more.
+Customize the taskbar clock - define a custom date/time format, add a news feed,
+customize fonts and colors, and more.
 
 Only Windows 10 64-bit and Windows 11 are supported.
 
