@@ -111,6 +111,9 @@ styles, such as the font color and size.
   $name: Clock width (Windows 10 only)
 - Height: 60
   $name: Clock height (Windows 10 only)
+- MaxWidth: 0
+  $name: Clock max width (Windows 11 only)
+  $description: Set to zero to have no max width
 - TextSpacing: 0
   $name: Line spacing
   $description: >-
@@ -354,6 +357,7 @@ struct {
     StringSetting tooltipLine;
     int width;
     int height;
+    int maxWidth;
     int textSpacing;
     std::vector<WebContentsSettings> webContentsItems;
     int webContentsUpdateInterval;
@@ -1214,7 +1218,16 @@ FrameworkElement FindChildByName(FrameworkElement element,
     return nullptr;
 }
 
-void ApplyStackPanelStyles(Controls::StackPanel stackPanel, int textSpacing) {
+void ApplyStackPanelStyles(Controls::StackPanel stackPanel,
+                           int maxWidth,
+                           int textSpacing) {
+    if (maxWidth) {
+        stackPanel.MaxWidth(maxWidth);
+    } else {
+        stackPanel.as<DependencyObject>().ClearValue(
+            FrameworkElement::MaxWidthProperty());
+    }
+
     if (textSpacing) {
         stackPanel.Spacing(textSpacing);
     } else {
@@ -1224,13 +1237,21 @@ void ApplyStackPanelStyles(Controls::StackPanel stackPanel, int textSpacing) {
 }
 
 void ApplyTextBlockStyles(Controls::TextBlock textBlock,
-                          const TextStyleSettings* textStyleSettings) {
+                          const TextStyleSettings* textStyleSettings,
+                          bool noWrap) {
     if (textStyleSettings && !textStyleSettings->visible.value_or(true)) {
         textBlock.Visibility(Visibility::Collapsed);
         return;
     }
 
     textBlock.Visibility(Visibility::Visible);
+
+    if (noWrap) {
+        textBlock.TextWrapping(TextWrapping::NoWrap);
+    } else {
+        textBlock.as<DependencyObject>().ClearValue(
+            Controls::TextBlock::TextWrappingProperty());
+    }
 
     if (textStyleSettings && *textStyleSettings->textColor) {
         auto textColor =
@@ -1392,14 +1413,17 @@ void ApplyDateTimeIconContentStyles(
         clockElementStyleData = &g_clockElementStyleData.back();
     }
 
-    ApplyStackPanelStyles(
-        stackPanel, clockElementStyleEnabled ? g_settings.textSpacing : 0);
-    ApplyTextBlockStyles(dateInnerTextBlock, clockElementStyleEnabled
-                                                 ? &g_settings.dateStyle
-                                                 : nullptr);
-    ApplyTextBlockStyles(timeInnerTextBlock, clockElementStyleEnabled
-                                                 ? &g_settings.timeStyle
-                                                 : nullptr);
+    int maxWidth = clockElementStyleEnabled ? g_settings.maxWidth : 0;
+    int textSpacing = clockElementStyleEnabled ? g_settings.textSpacing : 0;
+    bool noWrap = maxWidth;
+
+    ApplyStackPanelStyles(stackPanel, maxWidth, textSpacing);
+    ApplyTextBlockStyles(
+        dateInnerTextBlock,
+        clockElementStyleEnabled ? &g_settings.dateStyle : nullptr, noWrap);
+    ApplyTextBlockStyles(
+        timeInnerTextBlock,
+        clockElementStyleEnabled ? &g_settings.timeStyle : nullptr, noWrap);
 
     clockElementStyleData->styleIndex = clockElementStyleIndex;
 }
@@ -2269,6 +2293,7 @@ void LoadSettings() {
     g_settings.tooltipLine = Wh_GetStringSetting(L"TooltipLine");
     g_settings.width = Wh_GetIntSetting(L"Width");
     g_settings.height = Wh_GetIntSetting(L"Height");
+    g_settings.maxWidth = Wh_GetIntSetting(L"MaxWidth");
     g_settings.textSpacing = Wh_GetIntSetting(L"TextSpacing");
 
     g_settings.webContentsItems.clear();
@@ -2325,8 +2350,8 @@ void LoadSettings() {
         Wh_GetIntSetting(L"DateStyle.CharacterSpacing");
 
     g_clockElementStyleEnabled =
-        (g_settings.textSpacing || !*g_settings.timeStyle.visible ||
-         *g_settings.timeStyle.textColor ||
+        (g_settings.maxWidth || g_settings.textSpacing ||
+         !*g_settings.timeStyle.visible || *g_settings.timeStyle.textColor ||
          *g_settings.timeStyle.textAlignment || g_settings.timeStyle.fontSize ||
          *g_settings.timeStyle.fontFamily || *g_settings.timeStyle.fontWeight ||
          *g_settings.timeStyle.fontStyle || *g_settings.timeStyle.fontStretch ||
