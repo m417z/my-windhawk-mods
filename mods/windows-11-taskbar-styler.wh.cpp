@@ -1238,10 +1238,7 @@ HRESULT InjectWindhawkTAP() noexcept
         WCHAR connectionName[256];
         wsprintf(connectionName, L"VisualDiagConnection%d", i + 1);
 
-        Wh_Log(L"Trying connection: %s", connectionName);
-
         hr = ixde(connectionName, GetCurrentProcessId(), L"", location, CLSID_WindhawkTAP, nullptr);
-        Wh_Log(L"Result: %08x", hr);
         if (hr != HRESULT_FROM_WIN32(ERROR_NOT_FOUND) && hr != E_UNEXPECTED)
         {
             break;
