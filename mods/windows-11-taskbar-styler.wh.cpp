@@ -966,25 +966,7 @@ VisualTreeWatcher::VisualTreeWatcher(winrt::com_ptr<IUnknown> site) :
     m_XamlDiagnostics(site.as<IXamlDiagnostics>())
 {
     Wh_Log(L"Constructing VisualTreeWatcher");
-    // winrt::check_hresult(m_XamlDiagnostics.as<IVisualTreeService3>()->AdviseVisualTreeChange(this));
-
-    // Calling AdviseVisualTreeChange from the current thread causes the app to
-    // hang on Windows 10 in Advising::RunOnUIThread. Creating a new thread and
-    // calling it from there fixes it.
-    HANDLE thread = CreateThread(
-        nullptr, 0,
-        [](LPVOID lpParam) -> DWORD {
-            auto watcher = reinterpret_cast<VisualTreeWatcher*>(lpParam);
-            HRESULT hr = watcher->m_XamlDiagnostics.as<IVisualTreeService3>()->AdviseVisualTreeChange(watcher);
-            if (FAILED(hr)) {
-                Wh_Log(L"Error %08X", hr);
-            }
-            return 0;
-        },
-        this, 0, nullptr);
-    if (thread) {
-        CloseHandle(thread);
-    }
+    winrt::check_hresult(m_XamlDiagnostics.as<IVisualTreeService3>()->AdviseVisualTreeChange(this));
 }
 
 VisualTreeWatcher::~VisualTreeWatcher()
