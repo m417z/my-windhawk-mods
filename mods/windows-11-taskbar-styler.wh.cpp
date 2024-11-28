@@ -1095,7 +1095,9 @@ HRESULT WindhawkTAP::SetSite(IUnknown *pUnkSite) try
 }
 catch (...)
 {
-    return winrt::to_hresult();
+    HRESULT hr = winrt::to_hresult();
+    Wh_Log(L"Error %08X", hr);
+    return hr;
 }
 
 HRESULT WindhawkTAP::GetSite(REFIID riid, void **ppvSite) noexcept
@@ -1126,7 +1128,9 @@ struct SimpleFactory : winrt::implements<SimpleFactory<T>, IClassFactory, winrt:
     }
     catch (...)
     {
-        return winrt::to_hresult();
+        HRESULT hr = winrt::to_hresult();
+        Wh_Log(L"Error %08X", hr);
+        return hr;
     }
 
     HRESULT STDMETHODCALLTYPE LockServer(BOOL) noexcept override
@@ -1159,7 +1163,9 @@ _Use_decl_annotations_ STDAPI DllGetClassObject(REFCLSID rclsid, REFIID riid, LP
 }
 catch (...)
 {
-    return winrt::to_hresult();
+    HRESULT hr = winrt::to_hresult();
+    Wh_Log(L"Error %08X", hr);
+    return hr;
 }
 
 __declspec(dllexport)
