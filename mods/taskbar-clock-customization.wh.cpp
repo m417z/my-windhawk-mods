@@ -1,7 +1,7 @@
 // ==WindhawkMod==
 // @id              taskbar-clock-customization
 // @name            Taskbar Clock Customization
-// @description     Customize the taskbar clock - define a custom date/time format, add a news feed, customize fonts and colors, and more
+// @description     Customize the taskbar clock: define a custom date/time format, add a news feed, customize fonts and colors, and more
 // @version         1.3.3
 // @author          m417z
 // @github          https://github.com/m417z
@@ -24,7 +24,7 @@
 /*
 # Taskbar Clock Customization
 
-Customize the taskbar clock - define a custom date/time format, add a news feed,
+Customize the taskbar clock: define a custom date/time format, add a news feed,
 customize fonts and colors, and more.
 
 Only Windows 10 64-bit and Windows 11 are supported.
@@ -41,8 +41,17 @@ extra line - can be configured with text that contains patterns. The following
 patterns can be used:
 
 * `%time%` - the time as configured by the time format in settings.
+  * `%time<n>%` - additional time formats which can be specified by separating
+    the time format string with `;`. `<n>` is the additional time format number,
+    starting with 2.
 * `%date%` - the date as configured by the date format in settings.
+  * `%date<n>%` - additional date formats which can be specified by separating
+    the date format string with `;`. `<n>` is the additional date format number,
+    starting with 2.
 * `%weekday%` - the week day as configured by the week day format in settings.
+  * `%weekday<n>%` - additional week day formats which can be specified by
+    separating the week day format string with `;`. `<n>` is the additional week
+    day format number, starting with 2.
 * `%weekday_num%` - the week day number according to the [first day of
    week](https://superuser.com/q/61002) system configuration. For example, if
    first day of week is Sunday, then the week day number is 1 for Sunday, 2 for
@@ -52,12 +61,13 @@ patterns can be used:
   of week according to the system configuration.
 * `%weeknum_iso%` - the [ISO week
   number](https://en.wikipedia.org/wiki/ISO_week_date).
-* `%dayofyear%` - the day of year starting from 1st Jan.
+* `%dayofyear%` - the day of year starting from January 1st.
 * `%timezone%` - the time zone in ISO 8601 format.
 * `%web<n>%` - the web contents as configured in settings, truncated with
   ellipsis, where `<n>` is the web contents number.
 * `%web<n>_full%` - the full web contents as configured in settings, where `<n>`
   is the web contents number.
+* `%newline%` - a newline.
 
 ## Text styles
 
@@ -287,6 +297,8 @@ styles, such as the font color and size.
 #include <string_view>
 #include <vector>
 
+using namespace std::string_view_literals;
+
 #include <initguid.h>  // must come before knownfolders.h
 
 #include <inspectable.h>
@@ -393,6 +405,10 @@ WCHAR g_weeknumFormatted[INTEGER_BUFFER_SIZE];
 WCHAR g_weeknumIsoFormatted[INTEGER_BUFFER_SIZE];
 WCHAR g_dayOfYearFormatted[INTEGER_BUFFER_SIZE];
 WCHAR g_timezoneFormatted[FORMATTED_BUFFER_SIZE];
+
+std::vector<std::wstring> g_timeExtraFormatted;
+std::vector<std::wstring> g_dateExtraFormatted;
+std::vector<std::wstring> g_weekdayExtraFormatted;
 
 HANDLE g_webContentUpdateThread;
 HANDLE g_webContentUpdateRefreshEvent;
@@ -879,19 +895,94 @@ void GetTimeZone(WCHAR* buffer, size_t bufferSize) {
                  static_cast<int>(minutes));
 }
 
+std::vector<std::wstring> SplitTimeFormatString(std::wstring_view s) {
+    size_t posStart = 0;
+    std::wstring token;
+    std::vector<std::wstring> result;
+
+    while (true) {
+        size_t posEnd = s.size();
+        bool inQuote = false;
+        for (size_t i = posStart; i < s.size(); i++) {
+            if (s[i] == L'\'') {
+                inQuote = !inQuote;
+                continue;
+            }
+
+            if (!inQuote && s[i] == L';') {
+                posEnd = i;
+                break;
+            }
+        }
+
+        if (posEnd == s.size()) {
+            break;
+        }
+
+        token = s.substr(posStart, posEnd - posStart);
+        posStart = posEnd + 1;
+        result.push_back(std::move(token));
+    }
+
+    token = s.substr(posStart);
+    result.push_back(std::move(token));
+    return result;
+}
+
 void InitializeFormattedStrings(const SYSTEMTIME* time) {
+    auto timeFormatParts = SplitTimeFormatString(g_settings.timeFormat.get());
+
     GetTimeFormatEx_Original(
         nullptr, g_settings.showSeconds ? 0 : TIME_NOSECONDS, time,
-        *g_settings.timeFormat ? g_settings.timeFormat.get() : nullptr,
+        !timeFormatParts[0].empty() ? timeFormatParts[0].c_str() : nullptr,
         g_timeFormatted, ARRAYSIZE(g_timeFormatted));
+
+    g_timeExtraFormatted.resize(timeFormatParts.size() - 1);
+    for (size_t i = 1; i < timeFormatParts.size(); i++) {
+        WCHAR formatted[FORMATTED_BUFFER_SIZE];
+        GetTimeFormatEx_Original(
+            nullptr, g_settings.showSeconds ? 0 : TIME_NOSECONDS, time,
+            !timeFormatParts[i].empty() ? timeFormatParts[i].c_str() : nullptr,
+            formatted, ARRAYSIZE(formatted));
+        g_timeExtraFormatted[i - 1] = formatted;
+    }
+
+    auto dateFormatParts = SplitTimeFormatString(g_settings.dateFormat.get());
+
     GetDateFormatEx_Original(
         nullptr, DATE_AUTOLAYOUT, time,
-        *g_settings.dateFormat ? g_settings.dateFormat.get() : nullptr,
+        !dateFormatParts[0].empty() ? dateFormatParts[0].c_str() : nullptr,
         g_dateFormatted, ARRAYSIZE(g_dateFormatted), nullptr);
+
+    g_dateExtraFormatted.resize(dateFormatParts.size() - 1);
+    for (size_t i = 1; i < dateFormatParts.size(); i++) {
+        WCHAR formatted[FORMATTED_BUFFER_SIZE];
+        GetDateFormatEx_Original(
+            nullptr, DATE_AUTOLAYOUT, time,
+            !dateFormatParts[i].empty() ? dateFormatParts[i].c_str() : nullptr,
+            formatted, ARRAYSIZE(formatted), nullptr);
+        g_dateExtraFormatted[i - 1] = formatted;
+    }
+
+    auto weekdayFormatParts =
+        SplitTimeFormatString(g_settings.weekdayFormat.get());
+
     GetDateFormatEx_Original(
         nullptr, DATE_AUTOLAYOUT, time,
-        *g_settings.weekdayFormat ? g_settings.weekdayFormat.get() : nullptr,
+        !weekdayFormatParts[0].empty() ? weekdayFormatParts[0].c_str()
+                                       : nullptr,
         g_weekdayFormatted, ARRAYSIZE(g_weekdayFormatted), nullptr);
+
+    g_weekdayExtraFormatted.resize(weekdayFormatParts.size() - 1);
+    for (size_t i = 1; i < weekdayFormatParts.size(); i++) {
+        WCHAR formatted[FORMATTED_BUFFER_SIZE];
+        GetDateFormatEx_Original(nullptr, DATE_AUTOLAYOUT, time,
+                                 !weekdayFormatParts[i].empty()
+                                     ? weekdayFormatParts[i].c_str()
+                                     : nullptr,
+                                 formatted, ARRAYSIZE(formatted), nullptr);
+        g_weekdayExtraFormatted[i - 1] = formatted;
+    }
 
     // https://stackoverflow.com/a/39344961
     DWORD startDayOfWeek;
@@ -915,102 +1006,142 @@ void InitializeFormattedStrings(const SYSTEMTIME* time) {
     GetTimeZone(g_timezoneFormatted, ARRAYSIZE(g_timezoneFormatted));
 }
 
-size_t ResolveFormatToken(PCWSTR format, PCWSTR* resolved) {
-    if (wcsncmp(L"%time%", format, sizeof("%time%") - 1) == 0) {
-        *resolved = g_timeFormatted;
-        return sizeof("%time%") - 1;
-    } else if (wcsncmp(L"%date%", format, sizeof("%date%") - 1) == 0) {
-        *resolved = g_dateFormatted;
-        return sizeof("%date%") - 1;
-    } else if (wcsncmp(L"%weekday%", format, sizeof("%weekday%") - 1) == 0) {
-        *resolved = g_weekdayFormatted;
-        return sizeof("%weekday%") - 1;
-    } else if (wcsncmp(L"%weekday_num%", format, sizeof("%weekday_num%") - 1) ==
-               0) {
-        *resolved = g_weekdayNumFormatted;
-        return sizeof("%weekday_num%") - 1;
-    } else if (wcsncmp(L"%weeknum%", format, sizeof("%weeknum%") - 1) == 0) {
-        *resolved = g_weeknumFormatted;
-        return sizeof("%weeknum%") - 1;
-    } else if (wcsncmp(L"%weeknum_iso%", format, sizeof("%weeknum_iso%") - 1) ==
-               0) {
-        *resolved = g_weeknumIsoFormatted;
-        return sizeof("%weeknum_iso%") - 1;
-    } else if (wcsncmp(L"%dayofyear%", format, sizeof("%dayofyear%") - 1) ==
-               0) {
-        *resolved = g_dayOfYearFormatted;
-        return sizeof("%dayofyear%") - 1;
-    } else if (wcsncmp(L"%timezone%", format, sizeof("%timezone%") - 1) == 0) {
-        *resolved = g_timezoneFormatted;
-        return sizeof("%timezone%") - 1;
+int ResolveFormatTokenWithDigit(std::wstring_view format,
+                                std::wstring_view formatTokenPrefix,
+                                std::wstring_view formatTokenSuffix) {
+    if (format.size() <
+        formatTokenPrefix.size() + 1 + formatTokenSuffix.size()) {
+        return 0;
     }
 
-    // Kept for compatibility with old settings:
-    if (wcsncmp(L"%web%", format, sizeof("%web%") - 1) == 0) {
+    if (!format.starts_with(formatTokenPrefix)) {
+        return 0;
+    }
+
+    char digitChar = format[formatTokenPrefix.size()];
+    if (digitChar < L'1' || digitChar > L'9') {
+        return 0;
+    }
+
+    if (!format.substr(formatTokenPrefix.size() + 1)
+             .starts_with(formatTokenSuffix)) {
+        return 0;
+    }
+
+    return digitChar - L'0';
+}
+
+size_t ResolveFormatToken(std::wstring_view format, PCWSTR* resolved) {
+    struct {
+        std::wstring_view token;
+        PCWSTR value;
+    } formatTokens[] = {
+        {L"%time%"sv, g_timeFormatted},
+        {L"%date%"sv, g_dateFormatted},
+        {L"%weekday%"sv, g_weekdayFormatted},
+        {L"%weekday_num%"sv, g_weekdayNumFormatted},
+        {L"%weeknum%"sv, g_weeknumFormatted},
+        {L"%weeknum_iso%"sv, g_weeknumIsoFormatted},
+        {L"%dayofyear%"sv, g_dayOfYearFormatted},
+        {L"%timezone%"sv, g_timezoneFormatted},
+        {L"%newline%"sv, L"\n"},
+    };
+
+    for (const auto& formatToken : formatTokens) {
+        if (format.starts_with(formatToken.token)) {
+            *resolved = formatToken.value;
+            return formatToken.token.size();
+        }
+    }
+
+    if (auto token = L"%web%"sv; format.starts_with(token)) {
         std::lock_guard<std::mutex> guard(g_webContentMutex);
         *resolved = *g_webContent ? g_webContent : L"Loading...";
-        return sizeof("%web%") - 1;
-    } else if (wcsncmp(L"%web_full%", format, sizeof("%web_full%") - 1) == 0) {
-        std::lock_guard<std::mutex> guard(g_webContentMutex);
-        *resolved = *g_webContentFull ? g_webContentFull : L"Loading...";
-        return sizeof("%web_full%") - 1;
+        return token.size();
     }
 
-    if (wcsncmp(L"%web", format, sizeof("%web") - 1) == 0) {
-        WCHAR indexChar = format[sizeof("%web") - 1];
-        if (indexChar >= L'1' && indexChar <= L'9') {
-            size_t index = indexChar - L'1';
-            if (index >= 0 && index < g_settings.webContentsItems.size()) {
-                PCWSTR formatAfterIndex = format + sizeof("%web1") - 1;
+    if (auto token = L"%web_full%"sv; format.starts_with(token)) {
+        std::lock_guard<std::mutex> guard(g_webContentMutex);
+        *resolved = *g_webContentFull ? g_webContentFull : L"Loading...";
+        return token.size();
+    }
 
-                if (*formatAfterIndex == L'%') {
-                    std::lock_guard<std::mutex> guard(g_webContentMutex);
+    struct {
+        std::wstring_view prefix;
+        const std::vector<std::wstring>& valueVector;
+    } formatExtraTokens[] = {
+        {L"%time"sv, g_timeExtraFormatted},
+        {L"%date"sv, g_dateExtraFormatted},
+        {L"%weekday"sv, g_weekdayExtraFormatted},
+    };
 
-                    if (index >= g_webContentStrings.size() ||
-                        !g_webContentStrings[index]) {
-                        *resolved = L"Loading...";
-                    } else if (g_webContentStrings[index]->empty()) {
-                        *resolved = L"-";
-                    } else {
-                        *resolved = g_webContentStrings[index]->c_str();
-                    }
-
-                    return sizeof("%web1%") - 1;
-                }
-
-                if (wcsncmp(L"_full%", formatAfterIndex,
-                            sizeof("_full%") - 1) == 0) {
-                    std::lock_guard<std::mutex> guard(g_webContentMutex);
-
-                    if (index >= g_webContentStringsFull.size() ||
-                        !g_webContentStringsFull[index]) {
-                        *resolved = L"Loading...";
-                    } else if (g_webContentStringsFull[index]->empty()) {
-                        *resolved = L"-";
-                    } else {
-                        *resolved = g_webContentStringsFull[index]->c_str();
-                    }
-
-                    return sizeof("%web1_full%") - 1;
-                }
-            }
+    for (auto formatExtraToken : formatExtraTokens) {
+        int digit = ResolveFormatTokenWithDigit(format, formatExtraToken.prefix,
+                                                L"%"sv);
+        if (!digit) {
+            continue;
         }
+
+        const auto& valueVector = formatExtraToken.valueVector;
+
+        if (digit < 2 || static_cast<size_t>(digit - 2) >= valueVector.size()) {
+            *resolved = L"-";
+        } else {
+            *resolved = valueVector[digit - 2].c_str();
+        }
+
+        return formatExtraToken.prefix.size() + 2;
+    }
+
+    if (int digit = ResolveFormatTokenWithDigit(format, L"%web"sv, L"%"sv)) {
+        size_t index = digit - 1;
+
+        std::lock_guard<std::mutex> guard(g_webContentMutex);
+
+        if (index >= g_webContentStrings.size()) {
+            *resolved = L"-";
+        } else if (!g_webContentStrings[index]) {
+            *resolved = L"Loading...";
+        } else {
+            *resolved = g_webContentStrings[index]->c_str();
+        }
+
+        return "%web1%"sv.size();
+    }
+
+    if (int digit =
+            ResolveFormatTokenWithDigit(format, L"%web"sv, L"_full%"sv)) {
+        size_t index = digit - 1;
+
+        std::lock_guard<std::mutex> guard(g_webContentMutex);
+
+        if (index >= g_webContentStringsFull.size()) {
+            *resolved = L"-";
+        } else if (!g_webContentStringsFull[index]) {
+            *resolved = L"Loading...";
+        } else {
+            *resolved = g_webContentStringsFull[index]->c_str();
+        }
+
+        return "%web1_full%"sv.size();
     }
 
     return 0;
 }
 
-int FormatLine(PWSTR buffer, size_t bufferSize, PCWSTR format) {
+int FormatLine(PWSTR buffer, size_t bufferSize, std::wstring_view format) {
     if (bufferSize == 0) {
         return 0;
     }
 
+    std::wstring_view formatSuffix = format;
+
     PWSTR bufferStart = buffer;
     PWSTR bufferEnd = bufferStart + bufferSize;
-    while (*format && bufferEnd - buffer > 1) {
-        if (*format == L'%') {
+    while (!formatSuffix.empty() && bufferEnd - buffer > 1) {
+        if (formatSuffix[0] == L'%') {
             PCWSTR srcStr = nullptr;
-            size_t formatTokenLen = ResolveFormatToken(format, &srcStr);
+            size_t formatTokenLen = ResolveFormatToken(formatSuffix, &srcStr);
             if (formatTokenLen > 0) {
                 bool truncated;
                 buffer += StringCopyTruncated(buffer, bufferEnd - buffer,
@@ -1019,15 +1150,16 @@ int FormatLine(PWSTR buffer, size_t bufferSize, PCWSTR format) {
                     break;
                 }
 
-                format += formatTokenLen;
+                formatSuffix = formatSuffix.substr(formatTokenLen);
                 continue;
             }
         }
 
-        *buffer++ = *format++;
+        *buffer++ = formatSuffix[0];
+        formatSuffix = formatSuffix.substr(1);
     }
 
-    if (*format && bufferSize >= 4) {
+    if (!formatSuffix.empty() && bufferSize >= 4) {
         buffer[-1] = L'.';
         buffer[-2] = L'.';
         buffer[-3] = L'.';
@@ -1104,11 +1236,11 @@ void WINAPI ClockSystemTrayIconDataModel_RefreshIcon_Hook(LPVOID pThis,
 }
 
 void UpdateToolTipString(LPVOID tooltipPtrPtr) {
-    std::wstring_view separator = L"\r\n\r\n";
+    auto separator = L"\r\n\r\n"sv;
 
     WCHAR extraLine[256];
-    size_t extraLength =
-        FormatLine(extraLine, ARRAYSIZE(extraLine), g_settings.tooltipLine);
+    size_t extraLength = FormatLine(extraLine, ARRAYSIZE(extraLine),
+                                    g_settings.tooltipLine.get());
     if (extraLength == 0) {
         return;
     }
@@ -1607,7 +1739,7 @@ int WINAPI GetTimeFormatEx_Hook_Win11(LPCWSTR lpLocaleName,
                 return FORMATTED_BUFFER_SIZE;
             }
 
-            return FormatLine(lpTimeStr, cchTime, g_settings.topLine) + 1;
+            return FormatLine(lpTimeStr, cchTime, g_settings.topLine.get()) + 1;
         }
     }
 
@@ -1675,7 +1807,8 @@ int WINAPI GetDateFormatEx_Hook_Win11(LPCWSTR lpLocaleName,
                     return FORMATTED_BUFFER_SIZE;
                 }
 
-                return FormatLine(lpDateStr, cchDate, g_settings.bottomLine) +
+                return FormatLine(lpDateStr, cchDate,
+                                  g_settings.bottomLine.get()) +
                        1;
             }
         }
@@ -1780,7 +1913,7 @@ HRESULT WINAPI ClockButton_v_GetTooltipText_Hook(LPVOID pThis,
         size_t size = g_getTooltipTextBufferSize + stringLen;
         if (size > 4) {
             wcscpy(p, L"\r\n\r\n");
-            FormatLine(p + 4, size - 4, g_settings.tooltipLine);
+            FormatLine(p + 4, size - 4, g_settings.tooltipLine.get());
         }
     }
 
@@ -1888,7 +2021,7 @@ int WINAPI GetTimeFormatEx_Hook_Win10(LPCWSTR lpLocaleName,
         InitializeFormattedStrings(lpTime);
 
         if (wcscmp(g_settings.topLine, L"-") != 0) {
-            return FormatLine(lpTimeStr, cchTime, g_settings.topLine) + 1;
+            return FormatLine(lpTimeStr, cchTime, g_settings.topLine.get()) + 1;
         }
     }
 
