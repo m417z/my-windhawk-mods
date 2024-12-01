@@ -2,7 +2,7 @@
 // @id              taskbar-clock-customization
 // @name            Taskbar Clock Customization
 // @description     Customize the taskbar clock: define a custom date/time format, add a news feed, customize fonts and colors, and more
-// @version         1.3.3
+// @version         1.4
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
@@ -303,6 +303,7 @@ using namespace std::string_view_literals;
 
 #include <inspectable.h>
 #include <knownfolders.h>
+#include <psapi.h>
 #include <shlobj.h>
 #include <wininet.h>
 
@@ -393,9 +394,13 @@ enum class WinVersion {
     Win10,
     Win11,
     Win11_22H2,
+    Win11_24H2,
 };
 
 WinVersion g_winVersion;
+
+std::atomic<bool> g_initialized;
+std::atomic<bool> g_explorerPatcherInitialized;
 
 WCHAR g_timeFormatted[FORMATTED_BUFFER_SIZE];
 WCHAR g_dateFormatted[FORMATTED_BUFFER_SIZE];
@@ -2093,16 +2098,18 @@ VS_FIXEDFILEINFO* GetModuleVersionInfo(HMODULE hModule, UINT* puPtrLen) {
         }
     }
 
-    if (puPtrLen)
+    if (puPtrLen) {
         *puPtrLen = uPtrLen;
+    }
 
     return (VS_FIXEDFILEINFO*)pFixedFileInfo;
 }
 
 WinVersion GetExplorerVersion() {
     VS_FIXEDFILEINFO* fixedFileInfo = GetModuleVersionInfo(nullptr, nullptr);
-    if (!fixedFileInfo)
+    if (!fixedFileInfo) {
         return WinVersion::Unsupported;
+    }
 
     WORD major = HIWORD(fixedFileInfo->dwFileVersionMS);
     WORD minor = LOWORD(fixedFileInfo->dwFileVersionMS);
@@ -2113,12 +2120,15 @@ WinVersion GetExplorerVersion() {
 
     switch (major) {
         case 10:
-            if (build < 22000)
+            if (build < 22000) {
                 return WinVersion::Win10;
-            else if (build <= 22000)
+            } else if (build <= 22000) {
                 return WinVersion::Win11;
-            else
+            } else if (build < 26100) {
                 return WinVersion::Win11_22H2;
+            } else {
+                return WinVersion::Win11_24H2;
+            }
             break;
     }
 
@@ -2415,6 +2425,309 @@ bool HookSymbolsWithOnlineCacheFallback(HMODULE module,
     return HookSymbols(module, symbolHooks, symbolHooksCount);
 }
 
+bool HookExplorerPatcherSymbols(HMODULE explorerPatcherModule) {
+    if (g_explorerPatcherInitialized.exchange(true)) {
+        return true;
+    }
+
+    if (g_winVersion >= WinVersion::Win11) {
+        g_winVersion = WinVersion::Win10;
+    }
+
+    struct EXPLORER_PATCHER_HOOK {
+        PCSTR symbol;
+        void** pOriginalFunction;
+        void* hookFunction = nullptr;
+        bool optional = false;
+    };
+
+    EXPLORER_PATCHER_HOOK hooks[] = {
+        {R"(?UpdateTextStringsIfNecessary@ClockButton@@AEAAIPEA_N@Z)",
+         (void**)&ClockButton_UpdateTextStringsIfNecessary_Original,
+         (void*)ClockButton_UpdateTextStringsIfNecessary_Hook},
+        {R"(?CalculateMinimumSize@ClockButton@@QEAA?AUtagSIZE@@U2@@Z)",
+         (void**)&ClockButton_CalculateMinimumSize_Original,
+         (void*)ClockButton_CalculateMinimumSize_Hook},
+        {R"(?GetTextSpacingForOrientation@ClockButton@@AEAAH_NHHHH@Z)",
+         (void**)&ClockButton_GetTextSpacingForOrientation_Original,
+         (void*)ClockButton_GetTextSpacingForOrientation_Hook},
+        {R"(?v_GetTooltipText@ClockButton@@MEAAJPEAPEAUHINSTANCE__@@PEAPEAGPEAG_K@Z)",
+         (void**)&ClockButton_v_GetTooltipText_Original,
+         (void*)ClockButton_v_GetTooltipText_Hook, true},
+        {R"(?v_OnDisplayStateChange@ClockButton@@MEAAX_N@Z)",
+         (void**)&ClockButton_v_OnDisplayStateChange_Original},
+    };
+
+    bool succeeded = true;
+
+    for (const auto& hook : hooks) {
+        void* ptr = (void*)GetProcAddress(explorerPatcherModule, hook.symbol);
+        if (!ptr) {
+            Wh_Log(L"ExplorerPatcher symbol%s doesn't exist: %S",
+                   hook.optional ? L" (optional)" : L"", hook.symbol);
+            if (!hook.optional) {
+                succeeded = false;
+            }
+            continue;
+        }
+
+        if (hook.hookFunction) {
+            Wh_SetFunctionHook(ptr, hook.hookFunction, hook.pOriginalFunction);
+        } else {
+            *hook.pOriginalFunction = ptr;
+        }
+    }
+
+    if (g_initialized) {
+        Wh_ApplyHookOperations();
+    }
+
+    return succeeded;
+}
+
+bool HandleModuleIfExplorerPatcher(HMODULE module) {
+    WCHAR moduleFilePath[MAX_PATH];
+    switch (
+        GetModuleFileName(module, moduleFilePath, ARRAYSIZE(moduleFilePath))) {
+        case 0:
+        case ARRAYSIZE(moduleFilePath):
+            return false;
+    }
+
+    PCWSTR moduleFileName = wcsrchr(moduleFilePath, L'\\');
+    if (!moduleFileName) {
+        return false;
+    }
+
+    moduleFileName++;
+
+    if (_wcsnicmp(L"ep_taskbar.", moduleFileName, sizeof("ep_taskbar.") - 1) !=
+        0) {
+        return true;
+    }
+
+    Wh_Log(L"ExplorerPatcher taskbar loaded: %s", moduleFileName);
+    return HookExplorerPatcherSymbols(module);
+}
+
+void HandleLoadedExplorerPatcher() {
+    HMODULE hMods[1024];
+    DWORD cbNeeded;
+    if (EnumProcessModules(GetCurrentProcess(), hMods, sizeof(hMods),
+                           &cbNeeded)) {
+        for (size_t i = 0; i < cbNeeded / sizeof(HMODULE); i++) {
+            HandleModuleIfExplorerPatcher(hMods[i]);
+        }
+    }
+}
+
+using LoadLibraryExW_t = decltype(&LoadLibraryExW);
+LoadLibraryExW_t LoadLibraryExW_Original;
+HMODULE WINAPI LoadLibraryExW_Hook(LPCWSTR lpLibFileName,
+                                   HANDLE hFile,
+                                   DWORD dwFlags) {
+    HMODULE module = LoadLibraryExW_Original(lpLibFileName, hFile, dwFlags);
+    if (module && !((ULONG_PTR)module & 3) && !g_explorerPatcherInitialized) {
+        HandleModuleIfExplorerPatcher(module);
+    }
+
+    return module;
+}
+
+bool HookWin10TaskbarSymbols() {
+    SYMBOL_HOOK explorerExeHooks[] = {
+        {
+            {
+                LR"(private: unsigned int __cdecl ClockButton::UpdateTextStringsIfNecessary(bool *))",
+                LR"(private: unsigned int __cdecl ClockButton::UpdateTextStringsIfNecessary(bool * __ptr64) __ptr64)",
+            },
+            (void**)&ClockButton_UpdateTextStringsIfNecessary_Original,
+            (void*)ClockButton_UpdateTextStringsIfNecessary_Hook,
+        },
+        {
+            {
+                LR"(public: struct tagSIZE __cdecl ClockButton::CalculateMinimumSize(struct tagSIZE))",
+                LR"(public: struct tagSIZE __cdecl ClockButton::CalculateMinimumSize(struct tagSIZE) __ptr64)",
+            },
+            (void**)&ClockButton_CalculateMinimumSize_Original,
+            (void*)ClockButton_CalculateMinimumSize_Hook,
+        },
+        {
+            {
+                LR"(private: int __cdecl ClockButton::GetTextSpacingForOrientation(bool,int,int,int,int))",
+                LR"(private: int __cdecl ClockButton::GetTextSpacingForOrientation(bool,int,int,int,int) __ptr64)",
+            },
+            (void**)&ClockButton_GetTextSpacingForOrientation_Original,
+            (void*)ClockButton_GetTextSpacingForOrientation_Hook,
+        },
+        {
+            {
+                LR"(protected: virtual long __cdecl ClockButton::v_GetTooltipText(struct HINSTANCE__ * *,unsigned short * *,unsigned short *,unsigned __int64))",
+                LR"(protected: virtual long __cdecl ClockButton::v_GetTooltipText(struct HINSTANCE__ * __ptr64 * __ptr64,unsigned short * __ptr64 * __ptr64,unsigned short * __ptr64,unsigned __int64) __ptr64)",
+            },
+            (void**)&ClockButton_v_GetTooltipText_Original,
+            (void*)ClockButton_v_GetTooltipText_Hook,
+            true,
+        },
+        {
+            {
+                LR"(protected: virtual void __cdecl ClockButton::v_OnDisplayStateChange(bool))",
+                LR"(protected: virtual void __cdecl ClockButton::v_OnDisplayStateChange(bool) __ptr64)",
+            },
+            (void**)&ClockButton_v_OnDisplayStateChange_Original,
+        },
+    };
+
+    if (!HookSymbolsWithOnlineCacheFallback(GetModuleHandle(nullptr),
+                                            explorerExeHooks,
+                                            ARRAYSIZE(explorerExeHooks))) {
+        Wh_Log(L"HookSymbols failed");
+        return false;
+    }
+
+    return true;
+}
+
+bool GetTaskbarViewDllPath(WCHAR path[MAX_PATH]) {
+    WCHAR szWindowsDirectory[MAX_PATH];
+    if (!GetWindowsDirectory(szWindowsDirectory,
+                             ARRAYSIZE(szWindowsDirectory))) {
+        Wh_Log(L"GetWindowsDirectory failed");
+        return false;
+    }
+
+    // Windows 11 version 22H2.
+    wcscpy_s(path, MAX_PATH, szWindowsDirectory);
+    wcscat_s(
+        path, MAX_PATH,
+        LR"(\SystemApps\MicrosoftWindows.Client.Core_cw5n1h2txyewy\Taskbar.View.dll)");
+    if (GetFileAttributes(path) != INVALID_FILE_ATTRIBUTES) {
+        return true;
+    }
+
+    // Windows 11 version 21H2.
+    wcscpy_s(path, MAX_PATH, szWindowsDirectory);
+    wcscat_s(
+        path, MAX_PATH,
+        LR"(\SystemApps\MicrosoftWindows.Client.CBS_cw5n1h2txyewy\ExplorerExtensions.dll)");
+    if (GetFileAttributes(path) != INVALID_FILE_ATTRIBUTES) {
+        return true;
+    }
+
+    return false;
+}
+
+bool HookTaskbarViewDllSymbols() {
+    WCHAR dllPath[MAX_PATH];
+    if (!GetTaskbarViewDllPath(dllPath)) {
+        Wh_Log(L"Taskbar view module not found");
+        return false;
+    }
+
+    HMODULE module =
+        LoadLibraryEx(dllPath, nullptr, LOAD_WITH_ALTERED_SEARCH_PATH);
+    if (!module) {
+        Wh_Log(L"Taskbar view module couldn't be loaded");
+        return false;
+    }
+
+    // Taskbar.View.dll, ExplorerExtensions.dll
+    SYMBOL_HOOK symbolHooks[] = {
+        {
+            {
+                LR"(private: void __cdecl winrt::SystemTray::implementation::ClockSystemTrayIconDataModel::RefreshIcon(class SystemTrayTelemetry::ClockUpdate &))",
+                LR"(private: void __cdecl winrt::SystemTray::implementation::ClockSystemTrayIconDataModel::RefreshIcon(class SystemTrayTelemetry::ClockUpdate & __ptr64) __ptr64)",
+            },
+            (void**)&ClockSystemTrayIconDataModel_RefreshIcon_Original,
+            (void*)ClockSystemTrayIconDataModel_RefreshIcon_Hook,
+        },
+        {
+            {
+                LR"(private: struct winrt::hstring __cdecl winrt::SystemTray::implementation::ClockSystemTrayIconDataModel::GetTimeToolTipString(struct _SYSTEMTIME const &,struct _SYSTEMTIME const &,class SystemTrayTelemetry::ClockUpdate &))",
+                LR"(private: struct winrt::hstring __cdecl winrt::SystemTray::implementation::ClockSystemTrayIconDataModel::GetTimeToolTipString(struct _SYSTEMTIME const & __ptr64,struct _SYSTEMTIME const & __ptr64,class SystemTrayTelemetry::ClockUpdate & __ptr64) __ptr64)",
+            },
+            (void**)&ClockSystemTrayIconDataModel_GetTimeToolTipString_Original,
+            (void*)ClockSystemTrayIconDataModel_GetTimeToolTipString_Hook,
+            true,
+        },
+        {
+            {
+                LR"(private: struct winrt::hstring __cdecl winrt::SystemTray::implementation::ClockSystemTrayIconDataModel::GetTimeToolTipString2(struct _SYSTEMTIME const &,struct _SYSTEMTIME const &,class SystemTrayTelemetry::ClockUpdate &))",
+                LR"(private: struct winrt::hstring __cdecl winrt::SystemTray::implementation::ClockSystemTrayIconDataModel::GetTimeToolTipString2(struct _SYSTEMTIME const & __ptr64,struct _SYSTEMTIME const & __ptr64,class SystemTrayTelemetry::ClockUpdate & __ptr64) __ptr64)",
+            },
+            (void**)&ClockSystemTrayIconDataModel_GetTimeToolTipString2_Original,
+            (void*)ClockSystemTrayIconDataModel_GetTimeToolTipString2_Hook,
+            true,
+        },
+        {
+            {
+                LR"(public: void __cdecl winrt::SystemTray::implementation::DateTimeIconContent::OnApplyTemplate(void))",
+                LR"(public: void __cdecl winrt::SystemTray::implementation::DateTimeIconContent::OnApplyTemplate(void) __ptr64)",
+            },
+            (void**)&DateTimeIconContent_OnApplyTemplate_Original,
+            (void*)DateTimeIconContent_OnApplyTemplate_Hook,
+            true,
+        },
+        {
+            {
+                LR"(public: virtual int __cdecl winrt::impl::produce<struct winrt::SystemTray::implementation::BadgeIconContent,struct winrt::SystemTray::IBadgeIconContent>::get_ViewModel(void * *))",
+                LR"(public: virtual int __cdecl winrt::impl::produce<struct winrt::SystemTray::implementation::BadgeIconContent,struct winrt::SystemTray::IBadgeIconContent>::get_ViewModel(void * __ptr64 * __ptr64) __ptr64)",
+            },
+            (void**)&BadgeIconContent_get_ViewModel_Original,
+            (void*)BadgeIconContent_get_ViewModel_Hook,
+            true,
+        },
+        {
+            {
+                LR"(private: struct winrt::hstring __cdecl winrt::SystemTray::implementation::ClockSystemTrayIconDataModel::GetTimeToolTipString(struct _SYSTEMTIME *,struct _TIME_DYNAMIC_ZONE_INFORMATION *,class SystemTrayTelemetry::ClockUpdate &))",
+                LR"(private: struct winrt::hstring __cdecl winrt::SystemTray::implementation::ClockSystemTrayIconDataModel::GetTimeToolTipString(struct _SYSTEMTIME * __ptr64,struct _TIME_DYNAMIC_ZONE_INFORMATION * __ptr64,class SystemTrayTelemetry::ClockUpdate & __ptr64) __ptr64)",
+            },
+            (void**)&ClockSystemTrayIconDataModel_GetTimeToolTipString_2_Original,
+            (void*)ClockSystemTrayIconDataModel_GetTimeToolTipString_2_Hook,
+            true,  // Until Windows 11 version 21H2.
+        },
+        {
+            {
+                LR"(public: int __cdecl winrt::impl::consume_Windows_Globalization_ICalendar<struct winrt::Windows::Globalization::ICalendar>::Second(void)const )",
+                LR"(public: int __cdecl winrt::impl::consume_Windows_Globalization_ICalendar<struct winrt::Windows::Globalization::ICalendar>::Second(void)const __ptr64)",
+            },
+            (void**)&ICalendar_Second_Original,
+            (void*)ICalendar_Second_Hook,
+            true,  // Until Windows 11 version 21H2.
+        },
+        {
+            {
+                LR"(public: static __cdecl winrt::Windows::System::Threading::ThreadPoolTimer::CreateTimer(struct winrt::Windows::System::Threading::TimerElapsedHandler const &,class std::chrono::duration<__int64,struct std::ratio<1,10000000> > const &))",
+                LR"(public: static __cdecl winrt::Windows::System::Threading::ThreadPoolTimer::CreateTimer(struct winrt::Windows::System::Threading::TimerElapsedHandler const & __ptr64,class std::chrono::duration<__int64,struct std::ratio<1,10000000> > const & __ptr64) __ptr64)",
+                // Windows 11 21H2:
+                LR"(public: struct winrt::Windows::System::Threading::ThreadPoolTimer __cdecl winrt::impl::consume_Windows_System_Threading_IThreadPoolTimerStatics<struct winrt::Windows::System::Threading::IThreadPoolTimerStatics>::CreateTimer(struct winrt::Windows::System::Threading::TimerElapsedHandler const &,class std::chrono::duration<__int64,struct std::ratio<1,10000000> > const &)const )",
+            },
+            (void**)&ThreadPoolTimer_CreateTimer_Original,
+            (void*)ThreadPoolTimer_CreateTimer_Hook,
+            true,  // Only for more precise clock, see comment in the hook.
+        },
+        {
+            {
+                LR"(public: __cdecl <lambda_b19cf72fe9674443383aa89d5c22450b>::operator()(struct winrt::Windows::System::Threading::IThreadPoolTimerStatics const &)const )",
+                LR"(public: __cdecl <lambda_b19cf72fe9674443383aa89d5c22450b>::operator()(struct winrt::Windows::System::Threading::IThreadPoolTimerStatics const & __ptr64)const __ptr64)",
+                // Windows 11 21H2:
+                LR"(public: struct winrt::Windows::System::Threading::ThreadPoolTimer __cdecl <lambda_b19cf72fe9674443383aa89d5c22450b>::operator()(struct winrt::Windows::System::Threading::IThreadPoolTimerStatics const &)const )",
+            },
+            (void**)&ThreadPoolTimer_CreateTimer_lambda_Original,
+            (void*)ThreadPoolTimer_CreateTimer_lambda_Hook,
+            true,  // Only for more precise clock, see comment in the hook.
+        },
+    };
+
+    if (!HookSymbolsWithOnlineCacheFallback(module, symbolHooks,
+                                            ARRAYSIZE(symbolHooks))) {
+        Wh_Log(L"HookSymbols failed");
+        return false;
+    }
+
+    return true;
+}
+
 void LoadSettings() {
     g_settings.showSeconds = Wh_GetIntSetting(L"ShowSeconds");
     g_settings.timeFormat = Wh_GetStringSetting(L"TimeFormat");
@@ -2636,9 +2949,34 @@ BOOL Wh_ModInit() {
         return FALSE;
     }
 
-    if (g_winVersion >= WinVersion::Win11 && g_settings.oldTaskbarOnWin11) {
-        g_winVersion = WinVersion::Win10;
+    if (g_settings.oldTaskbarOnWin11) {
+        bool hasWin10Taskbar = g_winVersion < WinVersion::Win11_24H2;
+
+        if (g_winVersion >= WinVersion::Win11) {
+            g_winVersion = WinVersion::Win10;
+        }
+
+        if (hasWin10Taskbar && !HookWin10TaskbarSymbols()) {
+            return FALSE;
+        }
+    } else if (g_winVersion >= WinVersion::Win11) {
+        if (!HookTaskbarViewDllSymbols()) {
+            return FALSE;
+        }
+    } else {
+        if (!HookWin10TaskbarSymbols()) {
+            return FALSE;
+        }
     }
+
+    HandleLoadedExplorerPatcher();
+
+    HMODULE kernelBaseModule = GetModuleHandle(L"kernelbase.dll");
+    FARPROC pKernelBaseLoadLibraryExW =
+        GetProcAddress(kernelBaseModule, "LoadLibraryExW");
+    Wh_SetFunctionHook((void*)pKernelBaseLoadLibraryExW,
+                       (void*)LoadLibraryExW_Hook,
+                       (void**)&LoadLibraryExW_Original);
 
     HMODULE hUser32 = LoadLibrary(L"user32.dll");
     if (hUser32) {
@@ -2646,233 +2984,16 @@ BOOL Wh_ModInit() {
             (GetDpiForWindow_t)GetProcAddress(hUser32, "GetDpiForWindow");
     }
 
-    SYMBOL_HOOK taskbarHooks11[] =  //
-        {
-            {
-                {
-                    LR"(private: void __cdecl winrt::SystemTray::implementation::ClockSystemTrayIconDataModel::RefreshIcon(class SystemTrayTelemetry::ClockUpdate &))",
-                    LR"(private: void __cdecl winrt::SystemTray::implementation::ClockSystemTrayIconDataModel::RefreshIcon(class SystemTrayTelemetry::ClockUpdate & __ptr64) __ptr64)",
-                },
-                (void**)&ClockSystemTrayIconDataModel_RefreshIcon_Original,
-                (void*)ClockSystemTrayIconDataModel_RefreshIcon_Hook,
-            },
-            {
-                {
-                    LR"(private: struct winrt::hstring __cdecl winrt::SystemTray::implementation::ClockSystemTrayIconDataModel::GetTimeToolTipString(struct _SYSTEMTIME const &,struct _SYSTEMTIME const &,class SystemTrayTelemetry::ClockUpdate &))",
-                    LR"(private: struct winrt::hstring __cdecl winrt::SystemTray::implementation::ClockSystemTrayIconDataModel::GetTimeToolTipString(struct _SYSTEMTIME const & __ptr64,struct _SYSTEMTIME const & __ptr64,class SystemTrayTelemetry::ClockUpdate & __ptr64) __ptr64)",
-                },
-                (void**)&ClockSystemTrayIconDataModel_GetTimeToolTipString_Original,
-                (void*)ClockSystemTrayIconDataModel_GetTimeToolTipString_Hook,
-                true,
-            },
-            {
-                {
-                    LR"(private: struct winrt::hstring __cdecl winrt::SystemTray::implementation::ClockSystemTrayIconDataModel::GetTimeToolTipString2(struct _SYSTEMTIME const &,struct _SYSTEMTIME const &,class SystemTrayTelemetry::ClockUpdate &))",
-                    LR"(private: struct winrt::hstring __cdecl winrt::SystemTray::implementation::ClockSystemTrayIconDataModel::GetTimeToolTipString2(struct _SYSTEMTIME const & __ptr64,struct _SYSTEMTIME const & __ptr64,class SystemTrayTelemetry::ClockUpdate & __ptr64) __ptr64)",
-                },
-                (void**)&ClockSystemTrayIconDataModel_GetTimeToolTipString2_Original,
-                (void*)ClockSystemTrayIconDataModel_GetTimeToolTipString2_Hook,
-                true,
-            },
-            {
-                {
-                    LR"(public: void __cdecl winrt::SystemTray::implementation::DateTimeIconContent::OnApplyTemplate(void))",
-                    LR"(public: void __cdecl winrt::SystemTray::implementation::DateTimeIconContent::OnApplyTemplate(void) __ptr64)",
-                },
-                (void**)&DateTimeIconContent_OnApplyTemplate_Original,
-                (void*)DateTimeIconContent_OnApplyTemplate_Hook,
-                true,
-            },
-            {
-                {
-                    LR"(public: virtual int __cdecl winrt::impl::produce<struct winrt::SystemTray::implementation::BadgeIconContent,struct winrt::SystemTray::IBadgeIconContent>::get_ViewModel(void * *))",
-                    LR"(public: virtual int __cdecl winrt::impl::produce<struct winrt::SystemTray::implementation::BadgeIconContent,struct winrt::SystemTray::IBadgeIconContent>::get_ViewModel(void * __ptr64 * __ptr64) __ptr64)",
-                },
-                (void**)&BadgeIconContent_get_ViewModel_Original,
-                (void*)BadgeIconContent_get_ViewModel_Hook,
-                true,
-            },
-            {
-                {
-                    LR"(private: struct winrt::hstring __cdecl winrt::SystemTray::implementation::ClockSystemTrayIconDataModel::GetTimeToolTipString(struct _SYSTEMTIME *,struct _TIME_DYNAMIC_ZONE_INFORMATION *,class SystemTrayTelemetry::ClockUpdate &))",
-                    LR"(private: struct winrt::hstring __cdecl winrt::SystemTray::implementation::ClockSystemTrayIconDataModel::GetTimeToolTipString(struct _SYSTEMTIME * __ptr64,struct _TIME_DYNAMIC_ZONE_INFORMATION * __ptr64,class SystemTrayTelemetry::ClockUpdate & __ptr64) __ptr64)",
-                },
-                (void**)&ClockSystemTrayIconDataModel_GetTimeToolTipString_2_Original,
-                (void*)ClockSystemTrayIconDataModel_GetTimeToolTipString_2_Hook,
-                true,  // Until Windows 11 version 21H2.
-            },
-            {
-                {
-                    LR"(public: int __cdecl winrt::impl::consume_Windows_Globalization_ICalendar<struct winrt::Windows::Globalization::ICalendar>::Second(void)const )",
-                    LR"(public: int __cdecl winrt::impl::consume_Windows_Globalization_ICalendar<struct winrt::Windows::Globalization::ICalendar>::Second(void)const __ptr64)",
-                },
-                (void**)&ICalendar_Second_Original,
-                (void*)ICalendar_Second_Hook,
-                true,  // Until Windows 11 version 21H2.
-            },
-            {
-                {
-                    LR"(public: static __cdecl winrt::Windows::System::Threading::ThreadPoolTimer::CreateTimer(struct winrt::Windows::System::Threading::TimerElapsedHandler const &,class std::chrono::duration<__int64,struct std::ratio<1,10000000> > const &))",
-                    LR"(public: static __cdecl winrt::Windows::System::Threading::ThreadPoolTimer::CreateTimer(struct winrt::Windows::System::Threading::TimerElapsedHandler const & __ptr64,class std::chrono::duration<__int64,struct std::ratio<1,10000000> > const & __ptr64) __ptr64)",
-                    // Windows 11 21H2:
-                    LR"(public: struct winrt::Windows::System::Threading::ThreadPoolTimer __cdecl winrt::impl::consume_Windows_System_Threading_IThreadPoolTimerStatics<struct winrt::Windows::System::Threading::IThreadPoolTimerStatics>::CreateTimer(struct winrt::Windows::System::Threading::TimerElapsedHandler const &,class std::chrono::duration<__int64,struct std::ratio<1,10000000> > const &)const )",
-                },
-                (void**)&ThreadPoolTimer_CreateTimer_Original,
-                (void*)ThreadPoolTimer_CreateTimer_Hook,
-                true,  // Only for more precise clock, see comment in the hook.
-            },
-            {
-                {
-                    LR"(public: __cdecl <lambda_b19cf72fe9674443383aa89d5c22450b>::operator()(struct winrt::Windows::System::Threading::IThreadPoolTimerStatics const &)const )",
-                    LR"(public: __cdecl <lambda_b19cf72fe9674443383aa89d5c22450b>::operator()(struct winrt::Windows::System::Threading::IThreadPoolTimerStatics const & __ptr64)const __ptr64)",
-                    // Windows 11 21H2:
-                    LR"(public: struct winrt::Windows::System::Threading::ThreadPoolTimer __cdecl <lambda_b19cf72fe9674443383aa89d5c22450b>::operator()(struct winrt::Windows::System::Threading::IThreadPoolTimerStatics const &)const )",
-                },
-                (void**)&ThreadPoolTimer_CreateTimer_lambda_Original,
-                (void*)ThreadPoolTimer_CreateTimer_lambda_Hook,
-                true,  // Only for more precise clock, see comment in the hook.
-            },
-        };
-
-    SYMBOL_HOOK taskbarHooks10[] = {
-        {
-            {
-                LR"(private: unsigned int __cdecl ClockButton::UpdateTextStringsIfNecessary(bool *))",
-                LR"(private: unsigned int __cdecl ClockButton::UpdateTextStringsIfNecessary(bool * __ptr64) __ptr64)",
-            },
-            (void**)&ClockButton_UpdateTextStringsIfNecessary_Original,
-            (void*)ClockButton_UpdateTextStringsIfNecessary_Hook,
-        },
-        {
-            {
-                LR"(public: struct tagSIZE __cdecl ClockButton::CalculateMinimumSize(struct tagSIZE))",
-                LR"(public: struct tagSIZE __cdecl ClockButton::CalculateMinimumSize(struct tagSIZE) __ptr64)",
-            },
-            (void**)&ClockButton_CalculateMinimumSize_Original,
-            (void*)ClockButton_CalculateMinimumSize_Hook,
-        },
-        {
-            {
-                LR"(private: int __cdecl ClockButton::GetTextSpacingForOrientation(bool,int,int,int,int))",
-                LR"(private: int __cdecl ClockButton::GetTextSpacingForOrientation(bool,int,int,int,int) __ptr64)",
-            },
-            (void**)&ClockButton_GetTextSpacingForOrientation_Original,
-            (void*)ClockButton_GetTextSpacingForOrientation_Hook,
-        },
-        {
-            {
-                LR"(protected: virtual long __cdecl ClockButton::v_GetTooltipText(struct HINSTANCE__ * *,unsigned short * *,unsigned short *,unsigned __int64))",
-                LR"(protected: virtual long __cdecl ClockButton::v_GetTooltipText(struct HINSTANCE__ * __ptr64 * __ptr64,unsigned short * __ptr64 * __ptr64,unsigned short * __ptr64,unsigned __int64) __ptr64)",
-            },
-            (void**)&ClockButton_v_GetTooltipText_Original,
-            (void*)ClockButton_v_GetTooltipText_Hook,
-            true,
-        },
-        {
-            {
-                LR"(protected: virtual void __cdecl ClockButton::v_OnDisplayStateChange(bool))",
-                LR"(protected: virtual void __cdecl ClockButton::v_OnDisplayStateChange(bool) __ptr64)",
-            },
-            (void**)&ClockButton_v_OnDisplayStateChange_Original,
-        },
-    };
-
-    if (g_winVersion <= WinVersion::Win10) {
-        if (!HookSymbolsWithOnlineCacheFallback(GetModuleHandle(nullptr),
-                                                taskbarHooks10,
-                                                ARRAYSIZE(taskbarHooks10))) {
-            return FALSE;
-        }
-    } else {
-        WCHAR szWindowsDirectory[MAX_PATH];
-        if (!GetWindowsDirectory(szWindowsDirectory,
-                                 ARRAYSIZE(szWindowsDirectory))) {
-            Wh_Log(L"GetWindowsDirectory failed");
-            return FALSE;
-        }
-
-        HMODULE module = nullptr;
-
-        if (g_winVersion == WinVersion::Win11) {
-            WCHAR szTargetDllPath[MAX_PATH];
-            wcscpy_s(szTargetDllPath, szWindowsDirectory);
-            wcscat_s(
-                szTargetDllPath,
-                LR"(\SystemApps\MicrosoftWindows.Client.CBS_cw5n1h2txyewy\ExplorerExtensions.dll)");
-
-            module = GetModuleHandle(szTargetDllPath);
-            if (!module) {
-                // Try to load dependency DLLs. At process start, if they're not
-                // loaded, loading the ExplorerExtensions DLL fails.
-                WCHAR szRuntimeDllPath[MAX_PATH];
-
-                PWSTR pProgramFilesDirectory;
-                if (FAILED(SHGetKnownFolderPath(FOLDERID_ProgramFiles, 0,
-                                                nullptr,
-                                                &pProgramFilesDirectory))) {
-                    Wh_Log(
-                        L"SHGetKnownFolderPath(FOLDERID_ProgramFiles) failed");
-                    return FALSE;
-                }
-
-                wcscpy_s(szRuntimeDllPath, pProgramFilesDirectory);
-                wcscat_s(
-                    szRuntimeDllPath,
-                    LR"(\WindowsApps\Microsoft.VCLibs.140.00_14.0.29231.0_x64__8wekyb3d8bbwe\vcruntime140_app.dll)");
-                LoadLibrary(szRuntimeDllPath);
-
-                wcscpy_s(szRuntimeDllPath, pProgramFilesDirectory);
-                wcscat_s(
-                    szRuntimeDllPath,
-                    LR"(\WindowsApps\Microsoft.VCLibs.140.00_14.0.29231.0_x64__8wekyb3d8bbwe\vcruntime140_1_app.dll)");
-                LoadLibrary(szRuntimeDllPath);
-
-                wcscpy_s(szRuntimeDllPath, pProgramFilesDirectory);
-                wcscat_s(
-                    szRuntimeDllPath,
-                    LR"(\WindowsApps\Microsoft.VCLibs.140.00_14.0.29231.0_x64__8wekyb3d8bbwe\msvcp140_app.dll)");
-                LoadLibrary(szRuntimeDllPath);
-
-                CoTaskMemFree(pProgramFilesDirectory);
-
-                module = LoadLibraryEx(szTargetDllPath, nullptr,
-                                       LOAD_WITH_ALTERED_SEARCH_PATH);
-            }
-        } else {
-            WCHAR szTargetDllPath[MAX_PATH];
-            wcscpy_s(szTargetDllPath, szWindowsDirectory);
-            wcscat_s(
-                szTargetDllPath,
-                LR"(\SystemApps\MicrosoftWindows.Client.Core_cw5n1h2txyewy\Taskbar.View.dll)");
-
-            module = LoadLibraryEx(szTargetDllPath, nullptr,
-                                   LOAD_WITH_ALTERED_SEARCH_PATH);
-        }
-
-        if (!module) {
-            Wh_Log(L"Failed loading Taskbar View module");
-            return FALSE;
-        }
-
-        if (!HookSymbolsWithOnlineCacheFallback(module, taskbarHooks11,
-                                                ARRAYSIZE(taskbarHooks11))) {
-            return FALSE;
-        }
-    }
-
     // Must use GetProcAddress for the functions below, otherwise the stubs in
     // kernel32.dll are being hooked.
-    HMODULE hKernelBase = GetModuleHandle(L"kernelbase.dll");
-    if (!hKernelBase) {
-        return FALSE;
-    }
-
-    FARPROC pGetTimeFormatEx = GetProcAddress(hKernelBase, "GetTimeFormatEx");
+    FARPROC pGetTimeFormatEx =
+        GetProcAddress(kernelBaseModule, "GetTimeFormatEx");
     if (!pGetTimeFormatEx) {
         return FALSE;
     }
 
-    FARPROC pGetDateFormatEx = GetProcAddress(hKernelBase, "GetDateFormatEx");
+    FARPROC pGetDateFormatEx =
+        GetProcAddress(kernelBaseModule, "GetDateFormatEx");
     if (!pGetDateFormatEx) {
         return FALSE;
     }
@@ -2885,7 +3006,8 @@ BOOL Wh_ModInit() {
                            (void*)GetDateFormatEx_Hook_Win10,
                            (void**)&GetDateFormatEx_Original);
 
-        FARPROC pGetDateFormatW = GetProcAddress(hKernelBase, "GetDateFormatW");
+        FARPROC pGetDateFormatW =
+            GetProcAddress(kernelBaseModule, "GetDateFormatW");
         if (pGetDateFormatW) {
             Wh_SetFunctionHook((void*)pGetDateFormatW,
                                (void*)GetDateFormatW_Hook_Win10,
@@ -2893,7 +3015,8 @@ BOOL Wh_ModInit() {
         }
     } else {
         if (g_winVersion >= WinVersion::Win11_22H2) {
-            FARPROC pGetLocalTime = GetProcAddress(hKernelBase, "GetLocalTime");
+            FARPROC pGetLocalTime =
+                GetProcAddress(kernelBaseModule, "GetLocalTime");
             if (!pGetLocalTime) {
                 return FALSE;
             }
@@ -2913,11 +3036,19 @@ BOOL Wh_ModInit() {
                            (void**)&SendMessageW_Original);
     }
 
+    g_initialized = true;
+
     return TRUE;
 }
 
 void Wh_ModAfterInit() {
     Wh_Log(L">");
+
+    // Try again in case there's a race between the previous attempt and the
+    // LoadLibraryExW hook.
+    if (!g_explorerPatcherInitialized) {
+        HandleLoadedExplorerPatcher();
+    }
 
     WebContentUpdateThreadInit();
 
