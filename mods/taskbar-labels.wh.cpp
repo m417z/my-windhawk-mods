@@ -1025,11 +1025,6 @@ void UpdateTaskListButtonWithLabelStyle(
             continue;
         }
 
-        Wh_Log(L"$$ >> %s", indicatorClassName);
-        Wh_Log(L"$$ [%s]",
-               labelControlElement ? labelControlElement.Text().c_str() : L"");
-        Wh_Log(L"$$ %p", winrt::get_abi(indicatorElement));
-
         bool isProgressIndicator =
             wcscmp(indicatorClassName, L"ProgressIndicator") == 0;
 
@@ -1084,10 +1079,6 @@ void UpdateTaskListButtonWithLabelStyle(
         }
 
         state.lines[state.line++] = __LINE__;
-        Wh_Log(L"$$ firstColumnWidthPixels=%f", firstColumnWidthPixels);
-        Wh_Log(L"$$ indicatorElementWidth=%f", indicatorElementWidth);
-        Wh_Log(L"$$ taskListButtonWidth=%f", taskListButtonWidth);
-        Wh_Log(L"$$ minWidth=%f", minWidth);
 
         // High values of maximumTaskbarItemWidth together with a fullWidth
         // indicator can crash the process due to a refresh loop. Use this as a
