@@ -3164,6 +3164,7 @@ bool HookTaskbarViewDllSymbols(HMODULE module) {
                 },
                 (void**)&CopilotIcon_UpdateVisualStates_Original,
                 (void*)CopilotIcon_UpdateVisualStates_Hook,
+                true,  // Removed in insider builds around KB5046756.
             },
             {
                 {
@@ -3171,6 +3172,7 @@ bool HookTaskbarViewDllSymbols(HMODULE module) {
                 },
                 (void**)&CopilotIcon_ToggleEdgeCopilot_Original,
                 (void*)CopilotIcon_ToggleEdgeCopilot_Hook,
+                true,  // Removed in insider builds around KB5046756.
             },
             {
                 {
