@@ -1161,19 +1161,35 @@ std::atomic<DWORD> g_gsReplyCounter;
 
 enum : unsigned {
     ES_QUERY_OK,
+    ES_QUERY_NO_INDEX,
     ES_QUERY_NO_MEMORY,
     ES_QUERY_NO_ES_IPC,
     ES_QUERY_NO_PLUGIN_IPC,
     ES_QUERY_TIMEOUT,
     ES_QUERY_REPLY_TIMEOUT,
     ES_QUERY_NO_RESULT,
+    ES_QUERY_DISABLED,
 };
+
 PCWSTR g_gsQueryStatus[] = {
-    L"<Ok>",          L"No Memory",     L"No ES IPC", L"No Plugin IPC",
-    L"Query Timeout", L"Reply Timeout", L"No Result",
+    L"Ok",
+    L"No Index",
+    L"No Memory",
+    L"No ES IPC",
+    L"No Plugin IPC",
+    L"Query Timeout",
+    L"Reply Timeout",
+    L"No Result",
+    L"Disabled",
 };
 
 HANDLE g_everything4Wh_Thread;
+
+bool IsReparse(PCWSTR FolderPath) {
+    WIN32_FILE_ATTRIBUTE_DATA fad = {};
+    return GetFileAttributesEx(FolderPath, GetFileExInfoStandard, &fad) &&
+           (fad.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT);
+}
 
 unsigned Everything4Wh_GetFileSize(PCWSTR folderPath, int64_t* size) {
     *size = 0;
@@ -1182,6 +1198,11 @@ unsigned Everything4Wh_GetFileSize(PCWSTR folderPath, int64_t* size) {
     if (pClient) {
         *size = Everything3_GetFolderSizeFromFilenameW(pClient, folderPath);
         Everything3_DestroyClient(pClient);
+
+        if (!*size && IsReparse(folderPath)) {
+            return ES_QUERY_NO_INDEX;
+        }
+
         return ES_QUERY_OK;
     }
 
@@ -1256,6 +1277,8 @@ unsigned Everything4Wh_GetFileSize(PCWSTR folderPath, int64_t* size) {
             result = ES_QUERY_REPLY_TIMEOUT;
         } else if (!g_gsReply.bResult) {
             result = ES_QUERY_NO_RESULT;
+        } else if (!g_gsReply.liSize && IsReparse(folderPath)) {
+            result = ES_QUERY_NO_INDEX;
         } else {
             *size = g_gsReply.liSize;
             result = ES_QUERY_OK;
