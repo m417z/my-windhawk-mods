@@ -1237,12 +1237,13 @@ unsigned Everything4Wh_GetFileSize(PCWSTR folderPath, int64_t* size) {
 
     pQuery->reply_hwnd = (DWORD)(DWORD_PTR)hReceiverWnd;
     pQuery->reply_copydata_message = ++g_gsReplyCounter;
-    // Always consider Pokémon distinct from Pokemon.
+    // Pokémon != Pokemon | folder != FOLDER (Windows Subsystem for Linux).
     pQuery->search_flags =
         EVERYTHING_IPC_MATCHCASE | EVERYTHING_IPC_MATCHDIACRITICS;
     pQuery->offset = 0;
     pQuery->max_results = 1;
     pQuery->request_flags = EVERYTHING_IPC_QUERY2_REQUEST_SIZE;
+    // Unused (defined for clarity).
     pQuery->sort_type = EVERYTHING_IPC_SORT_NAME_ASCENDING;
 
     swprintf_s((LPWSTR)(pQuery + 1),
