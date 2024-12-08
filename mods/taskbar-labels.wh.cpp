@@ -1619,7 +1619,7 @@ LONG WINAPI RegGetValueW_Hook(HKEY hkey,
         *pcbData == sizeof(DWORD)) {
         Wh_Log(L">");
 
-        DWORD taskbarGlomLevel = (ret = ERROR_SUCCESS) ? *(DWORD*)pvData : 0;
+        DWORD taskbarGlomLevel = (ret == ERROR_SUCCESS) ? *(DWORD*)pvData : 0;
         DWORD taskbarGlomLevelOriginal = taskbarGlomLevel;
 
         if (!g_unloading) {
