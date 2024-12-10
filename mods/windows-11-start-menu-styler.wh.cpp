@@ -132,6 +132,34 @@ specified as following: `Style@VisualState=Value`, in which case the style will
 only apply when the visual state group specified in the target matches the
 specified visual state.
 
+### Search WebView styles
+
+While the start menu uses WinUI for its user interface, most of the search
+content (all but the top search bar) is a WebView element. To style the search
+WebView, CSS targets and styles can be used. For example, to set a red
+background, the target `body` and the style `background: red !important` can be
+used.
+
+### Search WebView custom JavaScript code
+
+Custom JavaScript code can be injected into the search content WebView. One use
+case example is loading the [DOM
+Inspector](https://github.com/janmyler/DOM-inspector) script to inspect the
+search content elements:
+
+![Screenshot](https://i.imgur.com/19PL0ss.png)
+
+The following JavaScript code can be used to load a bundled version of DOM
+Inspector:
+
+```
+const s=document.createElement('script');s.setAttribute('src','https://m417z.github.io/DOM-inspector/acid-dom/bundled.js');document.head.appendChild(s);
+```
+
+To reset all side-effects of the injected scripts, clear the custom code in the
+mod settings and then terminate the search host process. It will be relaunched
+automatically by Windows.
+
 ### Resource variables
 
 Some variables, such as size and padding for various controls, are defined as
@@ -171,6 +199,14 @@ code from the **TranslucentTB** project.
     - styles: [""]
       $name: Styles
   $name: Control styles
+- webContentStyles:
+  - - target: ""
+      $name: Target
+    - styles: [""]
+      $name: Styles
+  $name: Search WebView styles
+- webContentCustomJs: ""
+  $name: Search WebView custom JavaScript code
 - resourceVariables:
   - - variableKey: ""
       $name: Variable key
@@ -1627,6 +1663,13 @@ struct deleter_from_fn {
 using string_setting_unique_ptr =
     std::unique_ptr<const WCHAR[], deleter_from_fn<Wh_FreeStringSetting>>;
 
+enum class Target {
+    StartMenu,
+    SearchHost,
+};
+
+Target g_target;
+
 using PropertyKeyValue =
     std::pair<DependencyProperty, winrt::Windows::Foundation::IInspectable>;
 
@@ -1693,6 +1736,17 @@ struct ElementCustomizationState {
 
 std::unordered_map<InstanceHandle, ElementCustomizationState>
     g_elementsCustomizationState;
+
+std::wstring g_webContentCss;
+std::wstring g_webContentJs;
+
+struct WebViewCustomizationState {
+    winrt::weak_ref<FrameworkElement> element;
+    winrt::event_token navigationCompletedEventToken;
+};
+
+std::unordered_map<InstanceHandle, WebViewCustomizationState>
+    g_webViewsCustomizationState;
 
 bool g_elementPropertyModifying;
 
@@ -2302,9 +2356,126 @@ void RestoreCustomizationsForVisualStateGroup(
     }
 }
 
+// https://stackoverflow.com/a/29752943
+std::wstring ReplaceAll(std::wstring_view source,
+                        std::wstring_view from,
+                        std::wstring_view to) {
+    std::wstring newString;
+
+    size_t lastPos = 0;
+    size_t findPos;
+
+    while ((findPos = source.find(from, lastPos)) != source.npos) {
+        newString.append(source, lastPos, findPos - lastPos);
+        newString += to;
+        lastPos = findPos + from.length();
+    }
+
+    // Care for the rest after last occurrence.
+    newString += source.substr(lastPos);
+
+    return newString;
+}
+
+bool ApplyWebViewCustomizations(Controls::WebView webViewElement) {
+    auto source = webViewElement.Source();
+    if (!source) {
+        return false;
+    }
+
+    auto canonicalUri = source.AbsoluteCanonicalUri();
+    Wh_Log(L"WebView source: %s", canonicalUri.c_str());
+
+    if (canonicalUri != L"https://www.bing.com/WS/Init") {
+        return false;
+    }
+
+    std::wstring jsCode =
+        LR"(
+        const styleElementId = "windhawk-windows-11-start-menu-styler-style";
+        const styleContent = `
+    )";
+
+    jsCode += ReplaceAll(g_webContentCss, L"`", L"\\`");
+
+    jsCode +=
+        LR"(
+        `;
+        if (!document.getElementById(styleElementId)) {
+            const style = document.createElement("style");
+            style.id = styleElementId;
+            style.textContent = styleContent;
+            document.head.appendChild(style);
+        }
+    )";
+
+    jsCode += g_webContentJs;
+
+    Wh_Log(L"======================================== JS:");
+    Wh_Log(L"%p", winrt::get_abi(webViewElement));
+    std::wstringstream ss(jsCode);
+    std::wstring line;
+    while (std::getline(ss, line, L'\n')) {
+        Wh_Log(L"%s", line.c_str());
+    }
+    Wh_Log(L"========================================");
+
+    webViewElement.InvokeScriptAsync(
+        L"eval",
+        winrt::single_threaded_vector<winrt::hstring>({jsCode.c_str()}));
+
+    return true;
+}
+
+void ClearWebViewCustomizations(Controls::WebView webViewElement) {
+    PCWSTR jsCode =
+        LR"(
+        const styleElementId = "windhawk-windows-11-start-menu-styler-style";
+        const style = document.getElementById(styleElementId);
+        if (style) {
+            style.parentNode.removeChild(style);
+        }
+    )";
+
+    Wh_Log(L"======================================== JS:");
+    Wh_Log(L"%p", winrt::get_abi(webViewElement));
+    std::wstringstream ss(jsCode);
+    std::wstring line;
+    while (std::getline(ss, line, L'\n')) {
+        Wh_Log(L"%s", line.c_str());
+    }
+    Wh_Log(L"========================================");
+
+    webViewElement.InvokeScriptAsync(
+        L"eval", winrt::single_threaded_vector<winrt::hstring>(
+                     {winrt::to_hstring(jsCode)}));
+}
+
 void ApplyCustomizations(InstanceHandle handle,
                          FrameworkElement element,
                          PCWSTR fallbackClassName) {
+    if ((!g_webContentCss.empty() || !g_webContentJs.empty()) &&
+        winrt::get_class_name(element) == L"Windows.UI.Xaml.Controls.WebView") {
+        auto& webViewCustomizationState = g_webViewsCustomizationState[handle];
+        if (!webViewCustomizationState.element.get()) {
+            webViewCustomizationState.element = element;
+
+            auto webViewElement = element.as<Controls::WebView>();
+
+            ApplyWebViewCustomizations(webViewElement);
+
+            webViewCustomizationState.navigationCompletedEventToken =
+                webViewElement.NavigationCompleted(
+                    [](const Controls::WebView& sender,
+                       const Controls::WebViewNavigationCompletedEventArgs&
+                           args) {
+                        if (args.IsSuccess()) {
+                            ApplyWebViewCustomizations(sender);
+                        }
+                    });
+        }
+    }
+
     auto overrides = FindElementPropertyOverrides(element, fallbackClassName);
     if (overrides.empty()) {
         return;
@@ -2342,22 +2513,37 @@ void ApplyCustomizations(InstanceHandle handle,
 }
 
 void CleanupCustomizations(InstanceHandle handle) {
-    auto it = g_elementsCustomizationState.find(handle);
-    if (it == g_elementsCustomizationState.end()) {
-        return;
+    if (auto it = g_elementsCustomizationState.find(handle);
+        it != g_elementsCustomizationState.end()) {
+        auto& elementCustomizationState = it->second;
+
+        auto element = elementCustomizationState.element.get();
+
+        for (const auto& [visualStateGroupOptionalWeakPtrIter, stateIter] :
+             elementCustomizationState.perVisualStateGroup) {
+            RestoreCustomizationsForVisualStateGroup(
+                element, visualStateGroupOptionalWeakPtrIter, stateIter);
+        }
+
+        g_elementsCustomizationState.erase(it);
     }
 
-    auto& elementCustomizationState = it->second;
+    if (auto it = g_webViewsCustomizationState.find(handle);
+        it != g_webViewsCustomizationState.end()) {
+        auto& webViewCustomizationState = it->second;
 
-    auto element = elementCustomizationState.element.get();
+        auto element = webViewCustomizationState.element.get();
+        if (element) {
+            auto webViewElement = element.as<Controls::WebView>();
 
-    for (const auto& [visualStateGroupOptionalWeakPtrIter, stateIter] :
-         elementCustomizationState.perVisualStateGroup) {
-        RestoreCustomizationsForVisualStateGroup(
-            element, visualStateGroupOptionalWeakPtrIter, stateIter);
+            ClearWebViewCustomizations(webViewElement);
+
+            webViewElement.NavigationCompleted(
+                webViewCustomizationState.navigationCompletedEventToken);
+        }
+
+        g_webViewsCustomizationState.erase(it);
     }
-
-    g_elementsCustomizationState.erase(it);
 }
 
 ElementMatcher ElementMatcherFromString(std::wstring_view str) {
@@ -2584,6 +2770,46 @@ bool ProcessSingleTargetStylesFromSettings(int index) {
     return true;
 }
 
+void ProcessWebStylesFromSettings() {
+    std::wstring webContentCss;
+
+    for (int i = 0;; i++) {
+        string_setting_unique_ptr targetStringSetting(
+            Wh_GetStringSetting(L"webContentStyles[%d].target", i));
+        if (!*targetStringSetting.get()) {
+            break;
+        }
+
+        Wh_Log(L"Processing WebView styles for %s", targetStringSetting.get());
+
+        webContentCss += targetStringSetting.get();
+        webContentCss += L" {\n";
+
+        for (int styleIndex = 0;; styleIndex++) {
+            string_setting_unique_ptr styleSetting(Wh_GetStringSetting(
+                L"webContentStyles[%d].styles[%d]", i, styleIndex));
+            if (!*styleSetting.get()) {
+                break;
+            }
+
+            // Skip if commented.
+            if (styleSetting[0] == L'/' && styleSetting[1] == L'/') {
+                continue;
+            }
+
+            webContentCss += styleSetting.get();
+            webContentCss += L";\n";
+        }
+
+        webContentCss += L"}\n";
+    }
+
+    g_webContentCss = std::move(webContentCss);
+    g_webContentJs =
+        string_setting_unique_ptr(Wh_GetStringSetting(L"webContentCustomJs"))
+            .get();
+}
+
 void ProcessAllStylesFromSettings() {
     PCWSTR themeName = Wh_GetStringSetting(L"theme");
     const Theme* theme = nullptr;
@@ -2636,6 +2862,10 @@ void ProcessAllStylesFromSettings() {
         } catch (std::exception const& ex) {
             Wh_Log(L"Error: %S", ex.what());
         }
+    }
+
+    if (g_target == Target::SearchHost) {
+        ProcessWebStylesFromSettings();
     }
 }
 
@@ -2707,6 +2937,21 @@ void UninitializeSettingsAndTap() {
     g_elementsCustomizationState.clear();
 
     g_elementsCustomizationRules.clear();
+
+    for (const auto& [handle, webViewCustomizationState] :
+         g_webViewsCustomizationState) {
+        auto element = webViewCustomizationState.element.get();
+        if (element) {
+            auto webViewElement = element.as<Controls::WebView>();
+
+            ClearWebViewCustomizations(webViewElement);
+
+            webViewElement.NavigationCompleted(
+                webViewCustomizationState.navigationCompletedEventToken);
+        }
+    }
+
+    g_webViewsCustomizationState.clear();
 
     g_targetThreadId = 0;
 }
@@ -2909,6 +3154,28 @@ HWND GetCoreWnd() {
 
 BOOL Wh_ModInit() {
     Wh_Log(L">");
+
+    g_target = Target::StartMenu;
+
+    WCHAR moduleFilePath[MAX_PATH];
+    switch (
+        GetModuleFileName(nullptr, moduleFilePath, ARRAYSIZE(moduleFilePath))) {
+        case 0:
+        case ARRAYSIZE(moduleFilePath):
+            Wh_Log(L"GetModuleFileName failed");
+            break;
+
+        default:
+            if (PCWSTR moduleFileName = wcsrchr(moduleFilePath, L'\\')) {
+                moduleFileName++;
+                if (_wcsicmp(moduleFileName, L"SearchHost.exe") == 0) {
+                    g_target = Target::SearchHost;
+                }
+            } else {
+                Wh_Log(L"GetModuleFileName returned an unsupported path");
+            }
+            break;
+    }
 
     HMODULE user32Module = LoadLibrary(L"user32.dll");
     if (user32Module) {
