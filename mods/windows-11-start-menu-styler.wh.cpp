@@ -2,7 +2,7 @@
 // @id              windows-11-start-menu-styler
 // @name            Windows 11 Start Menu Styler
 // @description     Customize the start menu with themes contributed by others or create your own
-// @version         1.1.7
+// @version         1.2
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
@@ -1821,8 +1821,8 @@ void SetOrClearValue(DependencyObject elementDo,
 std::wstring EscapeXmlAttribute(std::wstring_view data) {
     std::wstring buffer;
     buffer.reserve(data.size());
-    for (size_t pos = 0; pos != data.size(); ++pos) {
-        switch (data[pos]) {
+    for (const auto c : data) {
+        switch (c) {
             case '&':
                 buffer.append(L"&amp;");
                 break;
@@ -1839,7 +1839,7 @@ std::wstring EscapeXmlAttribute(std::wstring_view data) {
                 buffer.append(L"&gt;");
                 break;
             default:
-                buffer.append(&data[pos], 1);
+                buffer.push_back(c);
                 break;
         }
     }
@@ -2373,25 +2373,24 @@ void RestoreCustomizationsForVisualStateGroup(
     }
 }
 
-// https://stackoverflow.com/a/29752943
-std::wstring ReplaceAll(std::wstring_view source,
-                        std::wstring_view from,
-                        std::wstring_view to) {
-    std::wstring newString;
-
-    size_t lastPos = 0;
-    size_t findPos;
-
-    while ((findPos = source.find(from, lastPos)) != source.npos) {
-        newString.append(source, lastPos, findPos - lastPos);
-        newString += to;
-        lastPos = findPos + from.length();
+std::wstring EscapeJsTemplateString(std::wstring_view str) {
+    std::wstring buffer;
+    buffer.reserve(str.size());
+    for (const auto c : str) {
+        switch (c) {
+            case '\\':
+                buffer.append(L"\\\\");
+                break;
+            case '`':
+                buffer.append(L"\\`");
+                break;
+            default:
+                buffer.push_back(c);
+                break;
+        }
     }
 
-    // Care for the rest after last occurrence.
-    newString += source.substr(lastPos);
-
-    return newString;
+    return buffer;
 }
 
 bool ApplyWebViewCustomizations(Controls::WebView webViewElement) {
@@ -2413,7 +2412,7 @@ bool ApplyWebViewCustomizations(Controls::WebView webViewElement) {
         const styleContent = `
     )";
 
-    jsCode += ReplaceAll(g_webContentCss, L"`", L"\\`");
+    jsCode += EscapeJsTemplateString(g_webContentCss);
 
     jsCode +=
         LR"(
