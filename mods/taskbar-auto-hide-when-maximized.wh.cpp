@@ -1,7 +1,7 @@
 // ==WindhawkMod==
 // @id              taskbar-auto-hide-when-maximized
 // @name            Taskbar auto-hide when maximized
-// @description     When auto-hide is enabled, makes the taskbar auto-hide only when a window is maximized or intersects the taskbar
+// @description     Makes the taskbar auto-hide only when a window is maximized or intersects the taskbar
 // @version         1.1.2
 // @author          m417z
 // @github          https://github.com/m417z
@@ -24,8 +24,8 @@
 /*
 # Taskbar auto-hide when maximized
 
-When auto-hide is enabled, makes the taskbar auto-hide only when a window is
-maximized or intersects the taskbar.
+Makes the taskbar auto-hide only when a window is maximized or intersects the
+taskbar.
 
 **Note:** To customize the old taskbar on Windows 11 (if using ExplorerPatcher
 or a similar tool), enable the relevant option in the mod's settings.
@@ -83,6 +83,7 @@ WinVersion g_winVersion;
 std::atomic<bool> g_initialized;
 std::atomic<bool> g_explorerPatcherInitialized;
 
+bool g_wasAutoHideEnabled;
 std::mutex g_winEventHookThreadMutex;
 std::atomic<HANDLE> g_winEventHookThread;
 std::unordered_map<void*, HWND> g_alwaysShowTaskbars;
@@ -116,6 +117,30 @@ bool IsWindowCloaked(HWND hwnd) {
     return SUCCEEDED(DwmGetWindowAttribute(hwnd, DWMWA_CLOAKED, &isCloaked,
                                            sizeof(isCloaked))) &&
            isCloaked;
+}
+
+bool SetTaskbarAutoHide(bool set) {
+    APPBARDATA abd;
+
+    // Both ABM_GETSTATE and ABM_SETSTATE require cbSize to be set.
+    abd.cbSize = sizeof(APPBARDATA);
+
+    // Get state.
+    UINT state = (UINT)SHAppBarMessage(ABM_GETSTATE, &abd);
+
+    // Determine auto hide state.
+    if (set) {
+        abd.lParam = state | ABS_AUTOHIDE;
+    } else {
+        abd.lParam = state & ~ABS_AUTOHIDE;
+    }
+
+    if (abd.lParam != state) {
+        // Set state.
+        SHAppBarMessage(ABM_SETSTATE, &abd);
+    }
+
+    return state & ABS_AUTOHIDE;
 }
 
 HWND GetTaskbarWnd() {
@@ -881,6 +906,8 @@ void Wh_ModAfterInit() {
         HandleLoadedExplorerPatcher();
     }
 
+    g_wasAutoHideEnabled = SetTaskbarAutoHide(true);
+
     WNDCLASS wndclass;
     if (GetClassInfo(GetModuleHandle(nullptr), L"Shell_TrayWnd", &wndclass)) {
         AdjustAllTaskbars();
@@ -895,6 +922,10 @@ void Wh_ModUninit() {
         WaitForSingleObject(g_winEventHookThread, INFINITE);
         CloseHandle(g_winEventHookThread);
         g_winEventHookThread = nullptr;
+    }
+
+    if (!g_wasAutoHideEnabled) {
+        SetTaskbarAutoHide(false);
     }
 }
 
