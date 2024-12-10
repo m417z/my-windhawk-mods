@@ -75,6 +75,10 @@ RosePine](https://github.com/ramensoftware/windows-11-start-menu-styling-guide/b
 \
 Windows11_Metro10Minimal](https://github.com/ramensoftware/windows-11-start-menu-styling-guide/blob/main/Themes/Windows11_Metro10Minimal/README.md)
 
+[![Everblush](https://raw.githubusercontent.com/ramensoftware/windows-11-start-menu-styling-guide/main/Themes/Everblush/screenshot-small.png)
+\
+Everblush](https://github.com/ramensoftware/windows-11-start-menu-styling-guide/blob/main/Themes/Everblush/README.md)
+
 More themes can be found in the **Themes** section of [The Windows 11 start menu
 styling
 guide](https://github.com/ramensoftware/windows-11-start-menu-styling-guide/blob/main/README.md#themes).
@@ -193,6 +197,7 @@ code from the **TranslucentTB** project.
   - Fluent2Inspired: Fluent2Inspired
   - RosePine: RosePine
   - Windows11_Metro10Minimal: Windows11_Metro10Minimal
+  - Everblush: Everblush
 - controlStyles:
   - - target: ""
       $name: Target
@@ -1183,6 +1188,74 @@ const Theme g_themeWindows11_Metro10Minimal = {{
         L"BorderBrush:=<AcrylicBrush TintColor=\"{ThemeResource SurfaceStrokeColorDefault}\" FallbackColor=\"{ThemeResource SurfaceStrokeColorDefault}\" TintOpacity=\"0\" TintLuminosityOpacity=\".25\" Opacity=\"1\"/>"}},
     ThemeTargetStyles{L"Border#LayerBorder", {
         L"Visibility=1"}},
+}};
+
+const Theme g_themeEverblush = {{
+    ThemeTargetStyles{L"Border#AcrylicBorder", {
+        L"Background=#141b1e",
+        L"BorderBrush=#268ccf7e"}},
+    ThemeTargetStyles{L"Border#AcrylicOverlay", {
+        L"Background=#141b1e"}},
+    ThemeTargetStyles{L"StartDocked.SearchBoxToggleButton > Grid > Border", {
+        L"Background=#232a2d",
+        L"BorderBrush=transparent"}},
+    ThemeTargetStyles{L"StartMenu.ExpandedFolderList > Grid > Border", {
+        L"Background=#232a2d"}},
+    ThemeTargetStyles{L"TextBlock#PlaceholderText", {
+        L"Foreground=#80b3b9b8"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Button", {
+        L"Background=#d28ccf7e"}},
+    ThemeTargetStyles{L"StackPanel > Windows.UI.Xaml.Controls.Button", {
+        L"Background=transparent",
+        L"BorderBrush=transparent"}},
+    ThemeTargetStyles{L"Microsoft.UI.Xaml.Controls.ItemsRepeater > Windows.UI.Xaml.Controls.Button", {
+        L"Background=transparent",
+        L"BorderBrush=transparent"}},
+    ThemeTargetStyles{L"TextBlock#DisplayName", {
+        L"Foreground=#b3b9b8"}},
+    ThemeTargetStyles{L"TextBlock#Title", {
+        L"Foreground=#b3b9b8"}},
+    ThemeTargetStyles{L"TextBlock#Subtitle", {
+        L"Foreground=#6cbfbf"}},
+    ThemeTargetStyles{L"TextBlock#PinnedListHeaderText", {
+        L"Foreground=#8ccf7e"}},
+    ThemeTargetStyles{L"TextBlock#TopLevelSuggestionsListHeaderText", {
+        L"Foreground=#8ccf7e"}},
+    ThemeTargetStyles{L"TextBlock#AllAppsHeading", {
+        L"Foreground=#8ccf7e"}},
+    ThemeTargetStyles{L"TextBlock#MoreSuggestionsListHeaderText", {
+        L"Foreground=#8ccf7e"}},
+    ThemeTargetStyles{L"TextBlock#AppDisplayName", {
+        L"Foreground=#b3b9b8"}},
+    ThemeTargetStyles{L"TextBlock#Text ", {
+        L"Foreground=#e5c76b"}},
+    ThemeTargetStyles{L"TextBlock#FolderGlyph", {
+        L"Foreground=#e5c76b"}},
+    ThemeTargetStyles{L"TextBlock#StatusMessage", {
+        L"Foreground=#8ccf7e"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Border#ContentBorder > Windows.UI.Xaml.Controls.Grid#DroppedFlickerWorkaroundWrapper > Border@CommonStates", {
+        L"Background:=<LinearGradientBrush StartPoint=\"0.5,0\" EndPoint=\"0,0.5\"> <GradientStop Color=\"#268ccf7e\" Offset=\"0\" /><GradientStop Color=\"#26e5c76b\" Offset=\"1\" /></LinearGradientBrush>",
+        L"BorderBrush:=<LinearGradientBrush StartPoint=\"0.5,0\" EndPoint=\"0,0.5\"> <GradientStop Color=\"#828ccf7e\" Offset=\"0\" /><GradientStop Color=\"#82e5c76b\" Offset=\"1\" /></LinearGradientBrush>",
+        L"CornerRadius=6"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Border#ContentBorder > Windows.UI.Xaml.Controls.Grid#DroppedFlickerWorkaroundWrapper > Border#BackgroundBorder", {
+        L"Background=transparent"}},
+    ThemeTargetStyles{L" Border#AppBorder", {
+        L"Background=#141b1e"}},
+    ThemeTargetStyles{L"Border#TaskbarSearchBackground", {
+        L"Background=#232a2d",
+        L"BorderBrush=transparent"}},
+    ThemeTargetStyles{L"Grid", {
+        L"RequestedTheme=2"}},
+    ThemeTargetStyles{L"TextBlock#UserTileNameText", {
+        L"Foreground=#67b0e8"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.ContentPresenter > Windows.UI.Xaml.Controls.FontIcon > Windows.UI.Xaml.Controls.Grid > Windows.UI.Xaml.Controls.TextBlock", {
+        L"Foreground=#6cbfbf"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Grid > Windows.UI.Xaml.Controls.FontIcon > Windows.UI.Xaml.Controls.Grid > Windows.UI.Xaml.Controls.TextBlock", {
+        L"Foreground=#e5c76b"}},
+    ThemeTargetStyles{L"MenuFlyoutPresenter", {
+        L"Background=#232a2d"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.FontIcon#SearchGlyph > Windows.UI.Xaml.Controls.Grid > Windows.UI.Xaml.Controls.TextBlock", {
+        L"Foreground=#232a2d"}},
 }};
 
 // clang-format on
@@ -2777,6 +2850,8 @@ void ProcessAllStylesFromSettings() {
         theme = &g_themeRosePine;
     } else if (wcscmp(themeName, L"Windows11_Metro10Minimal") == 0) {
         theme = &g_themeWindows11_Metro10Minimal;
+    } else if (wcscmp(themeName, L"Everblush") == 0) {
+        theme = &g_themeEverblush;
     }
     Wh_FreeStringSetting(themeName);
 
