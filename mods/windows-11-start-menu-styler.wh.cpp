@@ -1661,6 +1661,7 @@ HRESULT InjectWindhawkTAP() noexcept
 
 #include <winrt/Windows.Foundation.Collections.h>
 #include <winrt/Windows.Foundation.h>
+#include <winrt/Windows.UI.Core.h>
 #include <winrt/Windows.UI.Text.h>
 #include <winrt/Windows.UI.Xaml.Controls.h>
 #include <winrt/Windows.UI.Xaml.Markup.h>
@@ -1767,6 +1768,9 @@ std::unordered_map<InstanceHandle, WebViewCustomizationState>
 
 bool g_elementPropertyModifying;
 
+winrt::Windows::Foundation::IAsyncOperation<bool>
+    g_delayedAllAppsRootVisibilitySet;
+
 winrt::Windows::Foundation::IInspectable ReadLocalValueWithWorkaround(
     DependencyObject elementDo,
     DependencyProperty property) {
@@ -1789,7 +1793,42 @@ winrt::Windows::Foundation::IInspectable ReadLocalValueWithWorkaround(
 
 void SetOrClearValue(DependencyObject elementDo,
                      DependencyProperty property,
-                     winrt::Windows::Foundation::IInspectable value) {
+                     winrt::Windows::Foundation::IInspectable value,
+                     bool initialApply = false) {
+    // Below is a workaround to the following bug: If the AllAppsRoot Grid is
+    // made visible too early, it becomes truncated such that only the part
+    // that's visible without scrolling is accessible. The rest of the content
+    // is blank. Delaying the property setting seems to fix it. See:
+    // https://github.com/ramensoftware/windhawk-mods/issues/1335
+    if (winrt::get_class_name(elementDo) == L"Windows.UI.Xaml.Controls.Grid" &&
+        elementDo.as<FrameworkElement>().Name() == L"AllAppsRoot" &&
+        property == UIElement::VisibilityProperty()) {
+        if (value != DependencyProperty::UnsetValue() && initialApply &&
+            !g_delayedAllAppsRootVisibilitySet) {
+            Wh_Log(L"Delaying SetValue for AllAppsRoot");
+            g_delayedAllAppsRootVisibilitySet =
+                elementDo.Dispatcher().TryRunAsync(
+                    winrt::Windows::UI::Core::CoreDispatcherPriority::High,
+                    [elementDo = std::move(elementDo),
+                     property = std::move(property),
+                     value = std::move(value)]() {
+                        Wh_Log(L"Running delayed SetValue for AllAppsRoot");
+                        try {
+                            elementDo.SetValue(property, value);
+                        } catch (winrt::hresult_error const& ex) {
+                            Wh_Log(L"Error %08X: %s", ex.code(),
+                                   ex.message().c_str());
+                        }
+                        g_delayedAllAppsRootVisibilitySet = nullptr;
+                    });
+            return;
+        } else if (g_delayedAllAppsRootVisibilitySet) {
+            Wh_Log(L"Canceling delayed SetValue for AllAppsRoot");
+            g_delayedAllAppsRootVisibilitySet.Cancel();
+            g_delayedAllAppsRootVisibilitySet = nullptr;
+        }
+    }
+
     if (value == DependencyProperty::UnsetValue()) {
         elementDo.ClearValue(property);
         return;
@@ -2233,7 +2272,8 @@ void ApplyCustomizationsForVisualStateGroup(
             propertyCustomizationState.originalValue =
                 ReadLocalValueWithWorkaround(element, property);
             propertyCustomizationState.customValue = it->second;
-            SetOrClearValue(element, property, it->second);
+            SetOrClearValue(element, property, it->second,
+                            /*initialApply=*/true);
         }
 
         propertyCustomizationState.propertyChangedToken =
@@ -2941,6 +2981,11 @@ void ProcessResourceVariablesFromSettings() {
 }
 
 void UninitializeSettingsAndTap() {
+    if (g_delayedAllAppsRootVisibilitySet) {
+        g_delayedAllAppsRootVisibilitySet.Cancel();
+        g_delayedAllAppsRootVisibilitySet = nullptr;
+    }
+
     for (const auto& [handle, elementCustomizationState] :
          g_elementsCustomizationState) {
         auto element = elementCustomizationState.element.get();
