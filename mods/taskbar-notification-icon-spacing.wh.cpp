@@ -63,6 +63,7 @@ versions check out [7+ Taskbar Tweaker](https://tweaker.ramensoftware.com/).
 
 #include <windhawk_utils.h>
 
+#include <atomic>
 #include <functional>
 #include <list>
 
@@ -81,13 +82,15 @@ struct {
     int overflowIconsPerRow;
 } g_settings;
 
+std::atomic<bool> g_unloading;
+
 using FrameworkElementLoadedEventRevoker = winrt::impl::event_revoker<
     IFrameworkElement,
     &winrt::impl::abi<IFrameworkElement>::type::remove_Loaded>;
 
 std::list<FrameworkElementLoadedEventRevoker> g_autoRevokerList;
 
-bool g_overflowApplied;
+winrt::weak_ref<FrameworkElement> g_overflowRootGrid;
 
 HWND GetTaskbarWnd() {
     HWND hTaskbarWnd = FindWindow(L"Shell_TrayWnd", nullptr);
@@ -510,30 +513,7 @@ void* WINAPI IconView_IconView_Hook(void* pThis) {
     return ret;
 }
 
-using OverflowXamlIslandManager_ShowWindow_t =
-    void(WINAPI*)(void* pThis, POINT pt, int inputDeviceKind);
-OverflowXamlIslandManager_ShowWindow_t
-    OverflowXamlIslandManager_ShowWindow_Original;
-void WINAPI OverflowXamlIslandManager_ShowWindow_Hook(void* pThis,
-                                                      POINT pt,
-                                                      int inputDeviceKind) {
-    Wh_Log(L">");
-
-    OverflowXamlIslandManager_ShowWindow_Original(pThis, pt, inputDeviceKind);
-
-    if (g_overflowApplied) {
-        return;
-    }
-
-    g_overflowApplied = true;
-
-    FrameworkElement overflowRootGrid = nullptr;
-    ((IUnknown**)pThis)[5]->QueryInterface(winrt::guid_of<Controls::Grid>(),
-                                           winrt::put_abi(overflowRootGrid));
-    if (!overflowRootGrid) {
-        return;
-    }
-
+void ApplyOverflowStyle(FrameworkElement overflowRootGrid) {
     Controls::WrapGrid wrapGrid = nullptr;
 
     FrameworkElement child = overflowRootGrid;
@@ -550,13 +530,16 @@ void WINAPI OverflowXamlIslandManager_ShowWindow_Hook(void* pThis,
         return;
     }
 
-    int width = g_settings.overflowIconWidth;
+    int width = g_unloading ? 40 : g_settings.overflowIconWidth;
+    int maxRows = g_unloading ? 5 : g_settings.overflowIconsPerRow;
+    Wh_Log(
+        L"Setting ItemWidth/ItemHeight=%d, MaximumRowsOrColumns=%d for "
+        L"WrapGrid",
+        width, maxRows);
 
-    Wh_Log(L"Setting ItemWidth, ItemWidth=%d for WrapGrid", width);
     wrapGrid.ItemWidth(width);
     wrapGrid.ItemHeight(width);
-
-    wrapGrid.MaximumRowsOrColumns(g_settings.overflowIconsPerRow);
+    wrapGrid.MaximumRowsOrColumns(maxRows);
 
     EnumChildElements(wrapGrid, [width](FrameworkElement child) {
         auto className = winrt::get_class_name(child);
@@ -573,6 +556,36 @@ void WINAPI OverflowXamlIslandManager_ShowWindow_Hook(void* pThis,
 
         return false;
     });
+}
+
+using OverflowXamlIslandManager_InitializeIfNeeded_t =
+    void(WINAPI*)(void* pThis);
+OverflowXamlIslandManager_InitializeIfNeeded_t
+    OverflowXamlIslandManager_InitializeIfNeeded_Original;
+void WINAPI OverflowXamlIslandManager_InitializeIfNeeded_Hook(void* pThis) {
+    Wh_Log(L">");
+
+    OverflowXamlIslandManager_InitializeIfNeeded_Original(pThis);
+
+    if (g_overflowRootGrid.get()) {
+        return;
+    }
+
+    FrameworkElement overflowRootGrid = nullptr;
+    ((IUnknown**)pThis)[5]->QueryInterface(winrt::guid_of<Controls::Grid>(),
+                                           winrt::put_abi(overflowRootGrid));
+    if (!overflowRootGrid) {
+        Wh_Log(L"No OverflowRootGrid");
+        return;
+    }
+
+    if (!overflowRootGrid.IsLoaded()) {
+        Wh_Log(L"OverflowRootGrid not loaded");
+        return;
+    }
+
+    g_overflowRootGrid = overflowRootGrid;
+    ApplyOverflowStyle(overflowRootGrid);
 }
 
 void* CTaskBand_ITaskListWndSite_vftable;
@@ -685,13 +698,13 @@ void LoadSettings() {
     g_settings.overflowIconsPerRow = Wh_GetIntSetting(L"overflowIconsPerRow");
 }
 
-void ApplySettings(int width) {
+void ApplySettings() {
     struct ApplySettingsParam {
         HWND hTaskbarWnd;
         int width;
     };
 
-    Wh_Log(L"Applying settings: %d", width);
+    Wh_Log(L"Applying settings");
 
     HWND hTaskbarWnd = GetTaskbarWnd();
     if (!hTaskbarWnd) {
@@ -701,7 +714,7 @@ void ApplySettings(int width) {
 
     ApplySettingsParam param{
         .hTaskbarWnd = hTaskbarWnd,
-        .width = width,
+        .width = g_unloading ? 32 : g_settings.notificationIconWidth,
     };
 
     RunFromWindowThread(
@@ -710,7 +723,6 @@ void ApplySettings(int width) {
             ApplySettingsParam& param = *(ApplySettingsParam*)pParam;
 
             g_autoRevokerList.clear();
-            g_overflowApplied = false;
 
             auto xamlRoot = GetTaskbarXamlRoot(param.hTaskbarWnd);
             if (!xamlRoot) {
@@ -720,6 +732,10 @@ void ApplySettings(int width) {
 
             if (!ApplyStyle(xamlRoot, param.width)) {
                 Wh_Log(L"ApplyStyles failed");
+            }
+
+            if (auto overflowRootGrid = g_overflowRootGrid.get()) {
+                ApplyOverflowStyle(overflowRootGrid);
             }
         },
         &param);
@@ -751,9 +767,9 @@ bool HookTaskbarViewDllSymbols() {
             IconView_IconView_Hook,
         },
         {
-            {LR"(private: void __cdecl winrt::SystemTray::OverflowXamlIslandManager::ShowWindow(struct tagPOINT,enum winrt::WindowsUdk::UI::Shell::InputDeviceKind))"},
-            &OverflowXamlIslandManager_ShowWindow_Original,
-            OverflowXamlIslandManager_ShowWindow_Hook,
+            {LR"(private: void __cdecl winrt::SystemTray::OverflowXamlIslandManager::InitializeIfNeeded(void))"},
+            &OverflowXamlIslandManager_InitializeIfNeeded_Original,
+            OverflowXamlIslandManager_InitializeIfNeeded_Hook,
         },
     };
 
@@ -804,13 +820,15 @@ BOOL Wh_ModInit() {
 void Wh_ModAfterInit() {
     Wh_Log(L">");
 
-    ApplySettings(g_settings.notificationIconWidth);
+    ApplySettings();
 }
 
 void Wh_ModBeforeUninit() {
     Wh_Log(L">");
 
-    ApplySettings(32);
+    g_unloading = true;
+
+    ApplySettings();
 }
 
 void Wh_ModUninit() {
@@ -822,5 +840,5 @@ void Wh_ModSettingsChanged() {
 
     LoadSettings();
 
-    ApplySettings(g_settings.notificationIconWidth);
+    ApplySettings();
 }
