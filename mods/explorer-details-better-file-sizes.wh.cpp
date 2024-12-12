@@ -1184,6 +1184,7 @@ PCWSTR g_gsQueryStatus[] = {
 };
 
 HANDLE g_everything4Wh_Thread;
+HANDLE g_everything4Wh_ThreadReadyEvent;
 
 bool IsReparse(PCWSTR FolderPath) {
     WIN32_FILE_ATTRIBUTE_DATA fad = {};
@@ -1380,6 +1381,8 @@ DWORD WINAPI Everything4Wh_Thread(void* parameter) {
     g_gsReceiverWnd = hReceiverWnd;
 
     Wh_Log(L"hReceiverWnd=%08X", (DWORD)(ULONG_PTR)hReceiverWnd);
+
+    SetEvent(g_everything4Wh_ThreadReadyEvent);
 
     BOOL bRet;
     MSG msg;
@@ -2307,6 +2310,8 @@ BOOL Wh_ModInit() {
 
 void Wh_ModAfterInit() {
     if (g_settings.calculateFolderSizes == CalculateFolderSizes::everything) {
+        g_everything4Wh_ThreadReadyEvent =
+            CreateEvent(nullptr, TRUE, FALSE, nullptr);
         g_everything4Wh_Thread =
             CreateThread(nullptr, 0, Everything4Wh_Thread, nullptr, 0, nullptr);
     }
@@ -2316,6 +2321,9 @@ void Wh_ModUninit() {
     Wh_Log(L">");
 
     if (g_everything4Wh_Thread) {
+        // Wait for a message queue to be created.
+        WaitForSingleObject(g_everything4Wh_ThreadReadyEvent, INFINITE);
+        CloseHandle(g_everything4Wh_ThreadReadyEvent);
         PostThreadMessage(GetThreadId(g_everything4Wh_Thread), WM_APP, 0, 0);
         WaitForSingleObject(g_everything4Wh_Thread, INFINITE);
         CloseHandle(g_everything4Wh_Thread);
