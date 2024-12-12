@@ -158,8 +158,7 @@ struct {
 HMODULE g_propsysModule;
 std::atomic<int> g_hookRefCount;
 
-thread_local bool g_inCDefItem_GetValue;
-thread_local bool g_inCFSFolder_CompareIDs_Hook;
+thread_local bool g_inCFileOperation_PerformOperations;
 
 auto hookRefCountScope() {
     g_hookRefCount++;
@@ -1561,8 +1560,8 @@ HRESULT WINAPI CFSFolder__GetSize_Hook(void* pCFSFolder,
 
     HRESULT ret = CFSFolder__GetSize_Original(pCFSFolder, itemidChild, idFolder,
                                               propVariant);
-    if ((!g_inCDefItem_GetValue && !g_inCFSFolder_CompareIDs_Hook) ||
-        ret != S_OK || propVariant->vt != VT_EMPTY) {
+    if (g_inCFileOperation_PerformOperations || ret != S_OK ||
+        propVariant->vt != VT_EMPTY) {
         return ret;
     }
 
@@ -1642,25 +1641,16 @@ HRESULT WINAPI CFSFolder__GetSize_Hook(void* pCFSFolder,
     return S_OK;
 }
 
-using CDefItem_GetValue_t = HRESULT(WINAPI*)(void* pCFSFolder,
-                                             void* param1,
-                                             void* param2,
-                                             void* param3,
-                                             void* param4);
-CDefItem_GetValue_t CDefItem_GetValue_Original;
-HRESULT WINAPI CDefItem_GetValue_Hook(void* pCFSFolder,
-                                      void* param1,
-                                      void* param2,
-                                      void* param3,
-                                      void* param4) {
+using CFileOperation_PerformOperations_t = HRESULT(WINAPI*)(void* pThis);
+CFileOperation_PerformOperations_t CFileOperation_PerformOperations_Original;
+HRESULT WINAPI CFileOperation_PerformOperations_Hook(void* pThis) {
     auto hookScope = hookRefCountScope();
 
-    g_inCDefItem_GetValue = true;
+    g_inCFileOperation_PerformOperations = true;
 
-    HRESULT ret =
-        CDefItem_GetValue_Original(pCFSFolder, param1, param2, param3, param4);
+    HRESULT ret = CFileOperation_PerformOperations_Original(pThis);
 
-    g_inCDefItem_GetValue = false;
+    g_inCFileOperation_PerformOperations = false;
 
     return ret;
 }
@@ -1704,8 +1694,6 @@ HRESULT WINAPI CFSFolder_CompareIDs_Hook(void* pCFSFolder,
         return original();
     }
 
-    g_inCFSFolder_CompareIDs_Hook = true;
-
     _variant_t value1;
     _variant_t value2;
     bool succeeded =
@@ -1715,8 +1703,6 @@ HRESULT WINAPI CFSFolder_CompareIDs_Hook(void* pCFSFolder,
         SUCCEEDED(CFSFolder_GetDetailsEx_Original(
             pCFSFolder, itemid2, &columnSCID, value2.GetAddress())) &&
         value2.vt == VT_UI8;
-
-    g_inCFSFolder_CompareIDs_Hook = false;
 
     if (!succeeded) {
         return original();
@@ -1957,19 +1943,13 @@ bool HookWindowsStorageSymbols() {
         {
             {
 #ifdef _WIN64
-                LR"(public: virtual long __cdecl CDefItem::GetValue(enum VALUE_ACCESS_MODE,struct _tagpropertykey const &,struct tagPROPVARIANT *,enum VALUE_STATE *))",
-
-                // Older Win10 versions.
-                LR"(public: virtual long __cdecl CDefItem::GetValue(enum tagACCESS_MODE,struct _tagpropertykey const &,struct tagPROPVARIANT *,enum tagVALUE_STATE *))",
+                LR"(public: virtual long __cdecl CFileOperation::PerformOperations(void))",
 #else
-                LR"(public: virtual long __stdcall CDefItem::GetValue(enum VALUE_ACCESS_MODE,struct _tagpropertykey const &,struct tagPROPVARIANT *,enum VALUE_STATE *))",
-
-                // Older Win10 versions.
-                LR"(public: virtual long __stdcall CDefItem::GetValue(enum tagACCESS_MODE,struct _tagpropertykey const &,struct tagPROPVARIANT *,enum tagVALUE_STATE *))",
+                LR"(public: virtual long __stdcall CFileOperation::PerformOperations(void))",
 #endif
             },
-            &CDefItem_GetValue_Original,
-            CDefItem_GetValue_Hook,
+            &CFileOperation_PerformOperations_Original,
+            CFileOperation_PerformOperations_Hook,
         },
         {
             {
