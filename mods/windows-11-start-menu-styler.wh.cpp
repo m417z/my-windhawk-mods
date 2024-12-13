@@ -10,7 +10,7 @@
 // @include         StartMenuExperienceHost.exe
 // @include         SearchHost.exe
 // @architecture    x86-64
-// @compilerOptions -lcomctl32 -lole32 -loleaut32 -lruntimeobject -lversion -Wl,--export-all-symbols
+// @compilerOptions -lcomctl32 -lole32 -loleaut32 -lruntimeobject -Wl,--export-all-symbols
 // ==/WindhawkMod==
 
 // Source code is published under The GNU General Public License v3.0.
@@ -1670,6 +1670,13 @@ HRESULT InjectWindhawkTAP() noexcept
 
 using namespace winrt::Windows::UI::Xaml;
 
+enum class Target {
+    StartMenu,
+    SearchHost,
+};
+
+Target g_target;
+
 // https://stackoverflow.com/a/51274008
 template <auto fn>
 struct deleter_from_fn {
@@ -1680,13 +1687,6 @@ struct deleter_from_fn {
 };
 using string_setting_unique_ptr =
     std::unique_ptr<const WCHAR[], deleter_from_fn<Wh_FreeStringSetting>>;
-
-enum class Target {
-    StartMenu,
-    SearchHost,
-};
-
-Target g_target;
 
 using PropertyKeyValue =
     std::pair<DependencyProperty, winrt::Windows::Foundation::IInspectable>;
