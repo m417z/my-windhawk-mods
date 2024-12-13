@@ -44,6 +44,11 @@ TranslucentShell](https://github.com/ramensoftware/windows-11-notification-cente
 \
 Unified](https://github.com/ramensoftware/windows-11-notification-center-styling-guide/blob/main/Themes/Unified/README.md)
 
+More themes can be found in the **Themes** section of [The Windows 11
+notification center styling
+guide](https://github.com/ramensoftware/windows-11-notification-center-styling-guide/blob/main/README.md#themes).
+Contributions of new themes are welcome!
+
 ## Advanced styling
 
 Aside from themes, the settings have two sections: control styles and resource
