@@ -1408,8 +1408,8 @@ void SetOrClearValue(DependencyObject elementDo,
 std::wstring EscapeXmlAttribute(std::wstring_view data) {
     std::wstring buffer;
     buffer.reserve(data.size());
-    for (size_t pos = 0; pos != data.size(); ++pos) {
-        switch (data[pos]) {
+    for (const auto c : data) {
+        switch (c) {
             case '&':
                 buffer.append(L"&amp;");
                 break;
@@ -1426,7 +1426,7 @@ std::wstring EscapeXmlAttribute(std::wstring_view data) {
                 buffer.append(L"&gt;");
                 break;
             default:
-                buffer.append(&data[pos], 1);
+                buffer.push_back(c);
                 break;
         }
     }
@@ -2079,22 +2079,20 @@ void CleanupCustomizations(InstanceHandle handle) {
         g_backgroundFillDelayedApplyData.erase(it);
     }
 
-    auto it = g_elementsCustomizationState.find(handle);
-    if (it == g_elementsCustomizationState.end()) {
-        return;
+    if (auto it = g_elementsCustomizationState.find(handle);
+        it != g_elementsCustomizationState.end()) {
+        auto& elementCustomizationState = it->second;
+
+        auto element = elementCustomizationState.element.get();
+
+        for (const auto& [visualStateGroupOptionalWeakPtrIter, stateIter] :
+             elementCustomizationState.perVisualStateGroup) {
+            RestoreCustomizationsForVisualStateGroup(
+                element, visualStateGroupOptionalWeakPtrIter, stateIter);
+        }
+
+        g_elementsCustomizationState.erase(it);
     }
-
-    auto& elementCustomizationState = it->second;
-
-    auto element = elementCustomizationState.element.get();
-
-    for (const auto& [visualStateGroupOptionalWeakPtrIter, stateIter] :
-         elementCustomizationState.perVisualStateGroup) {
-        RestoreCustomizationsForVisualStateGroup(
-            element, visualStateGroupOptionalWeakPtrIter, stateIter);
-    }
-
-    g_elementsCustomizationState.erase(it);
 }
 
 ElementMatcher ElementMatcherFromString(std::wstring_view str) {
