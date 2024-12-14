@@ -463,7 +463,7 @@ HRESULT VisualTreeWatcher::OnElementStateChanged(InstanceHandle, VisualElementSt
 
 #include <ocidl.h>
 
-winrt::weak_ref<VisualTreeWatcher> g_visualTreeWatcher;
+winrt::com_ptr<VisualTreeWatcher> g_visualTreeWatcher;
 
 // {C85D8CC7-5463-40E8-A432-F5916B6427E5}
 static constexpr CLSID CLSID_WindhawkTAP = { 0xc85d8cc7, 0x5463, 0x40e8, { 0xa4, 0x32, 0xf5, 0x91, 0x6b, 0x64, 0x27, 0xe5 } };
@@ -485,9 +485,9 @@ private:
 HRESULT WindhawkTAP::SetSite(IUnknown *pUnkSite) try
 {
     // Only ever 1 VTW at once.
-    if (auto visualTreeWatcher = g_visualTreeWatcher.get())
+    if (g_visualTreeWatcher)
     {
-        visualTreeWatcher->UnadviseVisualTreeChange();
+        g_visualTreeWatcher->UnadviseVisualTreeChange();
         g_visualTreeWatcher = nullptr;
     }
 
@@ -1760,8 +1760,8 @@ void UninitializeForCurrentThread() {
 }
 
 void UninitializeSettingsAndTap() {
-    if (auto visualTreeWatcher = g_visualTreeWatcher.get()) {
-        visualTreeWatcher->UnadviseVisualTreeChange();
+    if (g_visualTreeWatcher) {
+        g_visualTreeWatcher->UnadviseVisualTreeChange();
         g_visualTreeWatcher = nullptr;
     }
 
