@@ -174,7 +174,6 @@ code from the **TranslucentTB** project.
 */
 // ==/WindhawkModSettings==
 
-#include <windows.ui.xaml.hosting.desktopwindowxamlsource.h>
 #include <xamlom.h>
 
 #include <atomic>
@@ -308,27 +307,20 @@ HMODULE GetCurrentModuleHandle() {
 
 #pragma region winrt_hpp
 
-#include <guiddef.h>
 #include <Unknwn.h>
 #include <winrt/base.h>
 
 // forward declare namespaces we alias
 namespace winrt {
     namespace Windows {
-        namespace Foundation::Collections {}
-        namespace UI::Xaml {
-            namespace Controls {}
-            namespace Hosting {}
-        }
+        namespace Foundation {}
+        namespace UI::Xaml {}
     }
 }
 
 // alias some long namespaces for convenience
 namespace wf = winrt::Windows::Foundation;
-// namespace wfc = wf::Collections;
 namespace wux = winrt::Windows::UI::Xaml;
-// namespace wuxc = wux::Controls;
-namespace wuxh = wux::Hosting;
 
 #pragma endregion  // winrt_hpp
 
@@ -355,13 +347,11 @@ private:
     HRESULT STDMETHODCALLTYPE OnVisualTreeChange(ParentChildRelation relation, VisualElement element, VisualMutationType mutationType) override;
     HRESULT STDMETHODCALLTYPE OnElementStateChanged(InstanceHandle element, VisualElementState elementState, LPCWSTR context) noexcept override;
 
-    template<typename T>
-    T FromHandle(InstanceHandle handle)
+    wf::IInspectable FromHandle(InstanceHandle handle)
     {
         wf::IInspectable obj;
         winrt::check_hresult(m_XamlDiagnostics->GetIInspectableFromHandle(handle, reinterpret_cast<::IInspectable**>(winrt::put_abi(obj))));
-
-        return obj.as<T>();
+        return obj;
     }
 
     winrt::com_ptr<IXamlDiagnostics> m_XamlDiagnostics = nullptr;
@@ -370,8 +360,6 @@ private:
 #pragma endregion  // visualtreewatcher_hpp
 
 #pragma region visualtreewatcher_cpp
-
-#include <winrt/Windows.UI.Xaml.Hosting.h>
 
 VisualTreeWatcher::VisualTreeWatcher(winrt::com_ptr<IUnknown> site) :
     m_XamlDiagnostics(site.as<IXamlDiagnostics>())
@@ -387,6 +375,7 @@ VisualTreeWatcher::VisualTreeWatcher(winrt::com_ptr<IUnknown> site) :
         [](LPVOID lpParam) -> DWORD {
             auto watcher = reinterpret_cast<VisualTreeWatcher*>(lpParam);
             HRESULT hr = watcher->m_XamlDiagnostics.as<IVisualTreeService3>()->AdviseVisualTreeChange(watcher);
+            watcher->Release();
             if (FAILED(hr)) {
                 Wh_Log(L"Error %08X", hr);
             }
@@ -394,6 +383,7 @@ VisualTreeWatcher::VisualTreeWatcher(winrt::com_ptr<IUnknown> site) :
         },
         this, 0, nullptr);
     if (thread) {
+        AddRef();
         CloseHandle(thread);
     }
 }
@@ -432,19 +422,16 @@ HRESULT VisualTreeWatcher::OnVisualTreeChange(ParentChildRelation, VisualElement
 
     if (mutationType == Add)
     {
-        const auto inspectable = FromHandle<wf::IInspectable>(element.Handle);
-
+        const auto inspectable = FromHandle(element.Handle);
         auto frameworkElement = inspectable.try_as<wux::FrameworkElement>();
-        if (!frameworkElement)
-        {
-            const auto desktopXamlSource = FromHandle<wuxh::DesktopWindowXamlSource>(element.Handle);
-            frameworkElement = desktopXamlSource.Content().try_as<wux::FrameworkElement>();
-        }
-
         if (frameworkElement)
         {
             Wh_Log(L"FrameworkElement name: %s", frameworkElement.Name().c_str());
             ApplyCustomizations(element.Handle, frameworkElement, element.Type);
+        }
+        else
+        {
+            Wh_Log(L"Skipping non-FrameworkElement");
         }
     }
     else if (mutationType == Remove)
@@ -476,8 +463,7 @@ HRESULT VisualTreeWatcher::OnElementStateChanged(InstanceHandle, VisualElementSt
 
 #include <ocidl.h>
 
-// TODO: weak_ref might be better here.
-winrt::com_ptr<VisualTreeWatcher> g_visualTreeWatcher;
+winrt::weak_ref<VisualTreeWatcher> g_visualTreeWatcher;
 
 // {C85D8CC7-5463-40E8-A432-F5916B6427E5}
 static constexpr CLSID CLSID_WindhawkTAP = { 0xc85d8cc7, 0x5463, 0x40e8, { 0xa4, 0x32, 0xf5, 0x91, 0x6b, 0x64, 0x27, 0xe5 } };
@@ -499,9 +485,9 @@ private:
 HRESULT WindhawkTAP::SetSite(IUnknown *pUnkSite) try
 {
     // Only ever 1 VTW at once.
-    if (g_visualTreeWatcher)
+    if (auto visualTreeWatcher = g_visualTreeWatcher.get())
     {
-        g_visualTreeWatcher->UnadviseVisualTreeChange();
+        visualTreeWatcher->UnadviseVisualTreeChange();
         g_visualTreeWatcher = nullptr;
     }
 
@@ -1774,8 +1760,8 @@ void UninitializeForCurrentThread() {
 }
 
 void UninitializeSettingsAndTap() {
-    if (g_visualTreeWatcher) {
-        g_visualTreeWatcher->UnadviseVisualTreeChange();
+    if (auto visualTreeWatcher = g_visualTreeWatcher.get()) {
+        visualTreeWatcher->UnadviseVisualTreeChange();
         g_visualTreeWatcher = nullptr;
     }
 
