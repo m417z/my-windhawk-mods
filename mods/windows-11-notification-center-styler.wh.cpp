@@ -368,7 +368,7 @@ VisualTreeWatcher::VisualTreeWatcher(winrt::com_ptr<IUnknown> site) :
     // winrt::check_hresult(m_XamlDiagnostics.as<IVisualTreeService3>()->AdviseVisualTreeChange(this));
 
     // Calling AdviseVisualTreeChange from the current thread causes the app to
-    // hang on Windows 10 in Advising::RunOnUIThread. Creating a new thread and
+    // hang in Advising::RunOnUIThread sometimes. Creating a new thread and
     // calling it from there fixes it.
     HANDLE thread = CreateThread(
         nullptr, 0,
