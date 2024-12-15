@@ -102,6 +102,11 @@ code from the **TranslucentTB** project.
     - value: ""
       $name: Value
   $name: Resource variables
+- explorerFrameContainerHeight: 0
+  $name: Explorer frame container height
+  $description: >-
+    The height of the explorer frame container which includes the tabs, the
+    address bar, and the command bar, set to zero to use the default height
 */
 // ==/WindhawkModSettings==
 
@@ -112,6 +117,12 @@ code from the **TranslucentTB** project.
 #undef GetCurrentTime
 
 #include <winrt/Microsoft.UI.Xaml.h>
+
+struct {
+    int explorerFrameContainerHeight;
+} g_settings;
+
+bool g_windowsUIFileExplorerSymbolsHooked;
 
 std::atomic<bool> g_initialized;
 thread_local bool g_initializedForThread;
@@ -482,6 +493,8 @@ HRESULT InjectWindhawkTAP() noexcept
 
 // clang-format on
 ////////////////////////////////////////////////////////////////////////////////
+
+#include <windhawk_utils.h>
 
 #include <list>
 #include <optional>
@@ -1718,11 +1731,70 @@ std::vector<HWND> GetExplorerWnds() {
     return hWnds;
 }
 
+using XamlIslandViewAdapter_get_DesiredSizeInPhysicalPixels_t =
+    HRESULT(WINAPI*)(void* pThis, SIZE* size);
+XamlIslandViewAdapter_get_DesiredSizeInPhysicalPixels_t
+    XamlIslandViewAdapter_get_DesiredSizeInPhysicalPixels_Original;
+HRESULT WINAPI
+XamlIslandViewAdapter_get_DesiredSizeInPhysicalPixels_Hook(void* pThis,
+                                                           SIZE* size) {
+    Wh_Log(L">");
+
+    HRESULT ret =
+        XamlIslandViewAdapter_get_DesiredSizeInPhysicalPixels_Original(pThis,
+                                                                       size);
+
+    if (SUCCEEDED(ret) && g_settings.explorerFrameContainerHeight) {
+        int originalCy = size->cy;
+        size->cy =
+            MulDiv(size->cy, g_settings.explorerFrameContainerHeight, 136);
+        Wh_Log(L"%d -> %d", originalCy, size->cy);
+    }
+
+    return ret;
+}
+
+bool HookWindowsUIFileExplorerSymbols() {
+    HMODULE module = LoadLibrary(L"Windows.UI.FileExplorer.dll");
+    if (!module) {
+        Wh_Log(L"Couldn't load Windows.UI.FileExplorer.dll");
+        return false;
+    }
+
+    // Windows.UI.FileExplorer.dll
+    WindhawkUtils::SYMBOL_HOOK hooks[] = {
+        {
+            {LR"(public: virtual long __cdecl XamlIslandViewAdapter::get_DesiredSizeInPhysicalPixels(struct tagSIZE *))"},
+            &XamlIslandViewAdapter_get_DesiredSizeInPhysicalPixels_Original,
+            XamlIslandViewAdapter_get_DesiredSizeInPhysicalPixels_Hook,
+        },
+    };
+
+    if (!HookSymbols(module, hooks, ARRAYSIZE(hooks))) {
+        Wh_Log(L"HookSymbols failed");
+        return false;
+    }
+
+    return true;
+}
+
+void LoadSettings() {
+    g_settings.explorerFrameContainerHeight =
+        Wh_GetIntSetting(L"explorerFrameContainerHeight");
+}
+
 BOOL Wh_ModInit() {
     Wh_Log(L">");
 
+    LoadSettings();
+
     Wh_SetFunctionHook((void*)CreateWindowExW, (void*)CreateWindowExW_Hook,
                        (void**)&CreateWindowExW_Original);
+
+    if (g_settings.explorerFrameContainerHeight &&
+        HookWindowsUIFileExplorerSymbols()) {
+        g_windowsUIFileExplorerSymbolsHooked = true;
+    }
 
     return TRUE;
 }
@@ -1778,5 +1850,14 @@ void Wh_ModSettingsChanged() {
     if (hExplorerWnds.size() > 0) {
         Wh_Log(L"Reinitializing - Found explorer windows");
         InitializeSettingsAndTap();
+    }
+
+    LoadSettings();
+
+    if (!g_windowsUIFileExplorerSymbolsHooked &&
+        g_settings.explorerFrameContainerHeight &&
+        HookWindowsUIFileExplorerSymbols()) {
+        Wh_ApplyHookOperations();
+        g_windowsUIFileExplorerSymbolsHooked = true;
     }
 }
