@@ -2,7 +2,7 @@
 // @id              explorer-details-better-file-sizes
 // @name            Better file sizes in Explorer details
 // @description     Optional improvements: show folder sizes, use MB/GB for large files (by default, all sizes are shown in KBs), use IEC terms (such as KiB instead of KB)
-// @version         1.4.5
+// @version         1.4.6
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
@@ -64,7 +64,7 @@ To show folder sizes via "Everything" integration:
   Alpha](https://www.voidtools.com/forum/viewtopic.php?t=9787) are supported.
   With version 1.5.0.1384a or newer, the mod uses the new [Everything
   SDK3](https://www.voidtools.com/forum/viewtopic.php?t=15853), which results in
-  a much faster query time (can be around 20x faster).
+  a much faster folder size query (can be around 20x faster).
 
 ### Calculated manually
 
