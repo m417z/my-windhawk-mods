@@ -673,7 +673,9 @@ DWORD WINAPI WebContentUpdateThread(LPVOID lpThreadParameter) {
     while (true) {
         UpdateWebContent();
 
-        DWORD seconds = g_settings.webContentsUpdateInterval * 60;
+        DWORD seconds = g_settings.webContentsUpdateInterval >= 1
+                            ? g_settings.webContentsUpdateInterval * 60
+                            : 1;
         if (!g_webContentLoaded && seconds > kSecondsForQuickRetry) {
             seconds = kSecondsForQuickRetry;
         }
