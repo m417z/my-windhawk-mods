@@ -1676,8 +1676,14 @@ HRESULT WINAPI CFSFolder__GetSize_Hook(void* pCFSFolder,
 
                 if (result == ES_QUERY_NO_RESULT ||
                     result == ES_QUERY_NO_INDEX) {
+                    // Try resolving the path in case it contains a reparse
+                    // point.
                     auto resolved = ResolvePath(path);
-                    if (!resolved.empty() && resolved != path) {
+                    if (resolved.empty()) {
+                        Wh_Log(L"Failed to resolve path");
+                    } else if (resolved == path) {
+                        Wh_Log(L"Path is already resolved");
+                    } else {
                         Wh_Log(L"Trying resolved path %s", resolved.c_str());
                         result =
                             Everything4Wh_GetFileSize(resolved.c_str(), &size);
