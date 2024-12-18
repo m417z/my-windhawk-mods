@@ -131,10 +131,22 @@ Labels can also be shown or hidden per-program in the settings.
     The maximum width, only used for the Windows adaptive width
 - fontSize: 12
   $name: Font size
+- fontFamily: ""
+  $name: Font family
+  $description: >-
+    For a list of fonts that are shipped with Windows 11, refer to the following
+    page:
+
+    https://learn.microsoft.com/en-us/typography/fonts/windows_11_font_list
 - leftAndRightPaddingSize: 8
   $name: Left and right padding size
 - spaceBetweenIconAndLabel: 8
   $name: Space between icon and label
+- runningIndicatorHeight: 0
+  $name: Running indicator height
+  $description: Set to zero for the default height
+- runningIndicatorVerticalOffset: 0
+  $name: Running indicator vertical offset
 - alwaysShowThumbnailLabels: false
   $name: Always show thumbnail labels
   $description: >-
@@ -168,6 +180,7 @@ Labels can also be shown or hidden per-program in the settings.
 #include <winrt/Windows.Foundation.Collections.h>
 #include <winrt/Windows.UI.Core.h>
 #include <winrt/Windows.UI.Xaml.Controls.h>
+#include <winrt/Windows.UI.Xaml.Interop.h>
 #include <winrt/Windows.UI.Xaml.Markup.h>
 #include <winrt/Windows.UI.Xaml.Media.h>
 #include <winrt/base.h>
@@ -216,8 +229,11 @@ struct {
     int minimumTaskbarItemWidth;
     int maximumTaskbarItemWidth;
     int fontSize;
+    string_setting_unique_ptr fontFamily;
     int leftAndRightPaddingSize;
     int spaceBetweenIconAndLabel;
+    int runningIndicatorHeight;
+    int runningIndicatorVerticalOffset;
     bool alwaysShowThumbnailLabels;
     string_setting_unique_ptr labelForSingleItem;
     string_setting_unique_ptr labelForMultipleItems;
@@ -1003,6 +1019,18 @@ void UpdateTaskListButtonWithLabelStyle(
         if (labelControlElement.FontSize() != fontSize) {
             labelControlElement.FontSize(fontSize);
         }
+
+        PCWSTR fontFamily = g_unloading ? nullptr : g_settings.fontFamily.get();
+        if (fontFamily && *fontFamily) {
+            labelControlElement.FontFamily(
+                Markup::XamlBindingHelper::ConvertValue(
+                    winrt::xaml_typename<Media::FontFamily>(),
+                    winrt::box_value(fontFamily))
+                    .as<Media::FontFamily>());
+        } else {
+            labelControlElement.as<DependencyObject>().ClearValue(
+                Controls::TextBlock::FontFamilyProperty());
+        }
     }
 
     iconElement.HorizontalAlignment((g_unloading || !labelControlElement)
@@ -1117,6 +1145,17 @@ void UpdateTaskListButtonWithLabelStyle(
         indicatorElement.Margin(indicatorMargin);
         indicatorElement.HorizontalAlignment(indicatorHorizontalAlignment);
 
+        int height = g_unloading || !g_settings.runningIndicatorHeight
+                         ? 3
+                         : g_settings.runningIndicatorHeight;
+        indicatorElement.Height(height);
+
+        int verticalOffset =
+            g_unloading ? 0 : g_settings.runningIndicatorVerticalOffset;
+        Media::TranslateTransform verticalOffsetTransform;
+        verticalOffsetTransform.Y(verticalOffset);
+        indicatorElement.RenderTransform(verticalOffsetTransform);
+
         if (isProgressIndicator) {
             auto element = indicatorElement;
             if ((element = FindChildByName(element, L"LayoutRoot")) &&
@@ -1124,9 +1163,13 @@ void UpdateTaskListButtonWithLabelStyle(
                 (element = FindChildByClassName(
                      element, L"Windows.UI.Xaml.Controls.Border")) &&
                 (element = FindChildByClassName(
-                     element, L"Windows.UI.Xaml.Controls.Grid")) &&
-                (element = FindChildByName(element, L"ProgressBarTrack"))) {
-                element.MinWidth(minWidth);
+                     element, L"Windows.UI.Xaml.Controls.Grid"))) {
+                auto progressBarTrack =
+                    FindChildByName(element, L"ProgressBarTrack");
+                if (progressBarTrack) {
+                    element.Height(height);
+                    progressBarTrack.MinWidth(minWidth);
+                }
             }
         }
     }
@@ -1781,10 +1824,16 @@ void LoadSettings() {
         g_settings.fontSize = 1;
     }
 
+    g_settings.fontFamily.reset(Wh_GetStringSetting(L"fontFamily"));
+
     g_settings.leftAndRightPaddingSize =
         Wh_GetIntSetting(L"leftAndRightPaddingSize");
     g_settings.spaceBetweenIconAndLabel =
         Wh_GetIntSetting(L"spaceBetweenIconAndLabel");
+    g_settings.runningIndicatorHeight =
+        Wh_GetIntSetting(L"runningIndicatorHeight");
+    g_settings.runningIndicatorVerticalOffset =
+        Wh_GetIntSetting(L"runningIndicatorVerticalOffset");
     g_settings.alwaysShowThumbnailLabels =
         Wh_GetIntSetting(L"alwaysShowThumbnailLabels");
     g_settings.labelForSingleItem.reset(
