@@ -1270,10 +1270,10 @@ unsigned Everything4Wh_GetFileSize(PCWSTR folderPath, int64_t* size) {
         return ES_QUERY_NO_PLUGIN_IPC;
     }
 
-    HWND hEverything = FindWindow(EVERYTHING_IPC_WNDCLASSW, nullptr);
+    HWND hEverything = FindWindow(EVERYTHING_IPC_WNDCLASSW_15A, nullptr);
 
     if (!hEverything) {
-        hEverything = FindWindow(EVERYTHING_IPC_WNDCLASSW_15A, nullptr);
+        hEverything = FindWindow(EVERYTHING_IPC_WNDCLASSW, nullptr);
     }
 
     if (!hEverything) {
