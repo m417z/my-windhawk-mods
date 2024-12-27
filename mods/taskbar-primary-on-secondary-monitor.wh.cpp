@@ -8,6 +8,7 @@
 // @twitter         https://twitter.com/m417z
 // @homepage        https://m417z.com/
 // @include         explorer.exe
+// @include         ShellHost.exe
 // @architecture    x86-64
 // @compilerOptions -lversion
 // ==/WindhawkMod==
@@ -55,6 +56,13 @@ struct {
     int monitor;
     bool oldTaskbarOnWin11;
 } g_settings;
+
+enum class Target {
+    Explorer,
+    ShellHost,  // Win11 24H2.
+};
+
+Target g_target;
 
 enum class WinVersion {
     Unsupported,
@@ -349,34 +357,58 @@ BOOL Wh_ModInit() {
 
     LoadSettings();
 
-    g_winVersion = GetExplorerVersion();
-    if (g_winVersion == WinVersion::Unsupported) {
-        Wh_Log(L"Unsupported Windows version");
-        return FALSE;
+    g_target = Target::Explorer;
+
+    WCHAR moduleFilePath[MAX_PATH];
+    switch (
+        GetModuleFileName(nullptr, moduleFilePath, ARRAYSIZE(moduleFilePath))) {
+        case 0:
+        case ARRAYSIZE(moduleFilePath):
+            Wh_Log(L"GetModuleFileName failed");
+            break;
+
+        default:
+            if (PCWSTR moduleFileName = wcsrchr(moduleFilePath, L'\\')) {
+                moduleFileName++;
+                if (_wcsicmp(moduleFileName, L"ShellHost.exe") == 0) {
+                    g_target = Target::ShellHost;
+                }
+            } else {
+                Wh_Log(L"GetModuleFileName returned an unsupported path");
+            }
+            break;
     }
 
-    if (g_settings.oldTaskbarOnWin11) {
-        bool hasWin10Taskbar = g_winVersion < WinVersion::Win11_24H2;
-
-        if (g_winVersion >= WinVersion::Win11) {
-            g_winVersion = WinVersion::Win10;
-        }
-
-        if (hasWin10Taskbar && !HookTaskbarSymbols()) {
+    if (g_target == Target::Explorer) {
+        g_winVersion = GetExplorerVersion();
+        if (g_winVersion == WinVersion::Unsupported) {
+            Wh_Log(L"Unsupported Windows version");
             return FALSE;
         }
-    } else if (!HookTaskbarSymbols()) {
-        return FALSE;
+
+        if (g_settings.oldTaskbarOnWin11) {
+            bool hasWin10Taskbar = g_winVersion < WinVersion::Win11_24H2;
+
+            if (g_winVersion >= WinVersion::Win11) {
+                g_winVersion = WinVersion::Win10;
+            }
+
+            if (hasWin10Taskbar && !HookTaskbarSymbols()) {
+                return FALSE;
+            }
+        } else if (!HookTaskbarSymbols()) {
+            return FALSE;
+        }
+
+        HandleLoadedExplorerPatcher();
+
+        HMODULE kernelBaseModule = GetModuleHandle(L"kernelbase.dll");
+        FARPROC pKernelBaseLoadLibraryExW =
+            GetProcAddress(kernelBaseModule, "LoadLibraryExW");
+        Wh_SetFunctionHook((void*)pKernelBaseLoadLibraryExW,
+                           (void*)LoadLibraryExW_Hook,
+                           (void**)&LoadLibraryExW_Original);
     }
-
-    HandleLoadedExplorerPatcher();
-
-    HMODULE kernelBaseModule = GetModuleHandle(L"kernelbase.dll");
-    FARPROC pKernelBaseLoadLibraryExW =
-        GetProcAddress(kernelBaseModule, "LoadLibraryExW");
-    Wh_SetFunctionHook((void*)pKernelBaseLoadLibraryExW,
-                       (void*)LoadLibraryExW_Hook,
-                       (void**)&LoadLibraryExW_Original);
 
     WindhawkUtils::Wh_SetFunctionHookT(MonitorFromPoint, MonitorFromPoint_Hook,
                                        &MonitorFromPoint_Original);
@@ -389,13 +421,15 @@ BOOL Wh_ModInit() {
 void Wh_ModAfterInit() {
     Wh_Log(L">");
 
-    // Try again in case there's a race between the previous attempt and the
-    // LoadLibraryExW hook.
-    if (!g_explorerPatcherInitialized) {
-        HandleLoadedExplorerPatcher();
-    }
+    if (g_target == Target::Explorer) {
+        // Try again in case there's a race between the previous attempt and the
+        // LoadLibraryExW hook.
+        if (!g_explorerPatcherInitialized) {
+            HandleLoadedExplorerPatcher();
+        }
 
-    ApplySettings();
+        ApplySettings();
+    }
 }
 
 void Wh_ModBeforeUninit() {
@@ -403,7 +437,9 @@ void Wh_ModBeforeUninit() {
 
     g_unloading = true;
 
-    ApplySettings();
+    if (g_target == Target::Explorer) {
+        ApplySettings();
+    }
 }
 
 void Wh_ModUninit() {
@@ -417,9 +453,11 @@ BOOL Wh_ModSettingsChanged(BOOL* bReload) {
 
     LoadSettings();
 
-    *bReload = g_settings.oldTaskbarOnWin11 != prevOldTaskbarOnWin11;
-    if (!*bReload) {
-        ApplySettings();
+    if (g_target == Target::Explorer) {
+        *bReload = g_settings.oldTaskbarOnWin11 != prevOldTaskbarOnWin11;
+        if (!*bReload) {
+            ApplySettings();
+        }
     }
 
     return TRUE;
