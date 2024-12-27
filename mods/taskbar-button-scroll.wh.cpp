@@ -232,45 +232,54 @@ void WINAPI CTaskListWnd__HandleClick_Hook(void* pThis,
 }
 
 BOOL CanMinimizeWindow(HWND hWnd) {
-    if (IsIconic(hWnd) || !IsWindowEnabled(hWnd))
+    if (IsIconic(hWnd) || !IsWindowEnabled(hWnd)) {
         return FALSE;
+    }
 
     long lWndStyle = GetWindowLong(hWnd, GWL_STYLE);
-    if (!(lWndStyle & WS_MINIMIZEBOX))
+    if (!(lWndStyle & WS_MINIMIZEBOX)) {
         return FALSE;
+    }
 
-    if ((lWndStyle & (WS_CAPTION | WS_SYSMENU)) != (WS_CAPTION | WS_SYSMENU))
+    if ((lWndStyle & (WS_CAPTION | WS_SYSMENU)) != (WS_CAPTION | WS_SYSMENU)) {
         return TRUE;
+    }
 
     HMENU hSystemMenu = GetSystemMenu(hWnd, FALSE);
-    if (!hSystemMenu)
+    if (!hSystemMenu) {
         return FALSE;
+    }
 
     UINT uMenuState = GetMenuState(hSystemMenu, SC_MINIMIZE, MF_BYCOMMAND);
-    if (uMenuState == (UINT)-1)
+    if (uMenuState == (UINT)-1) {
         return TRUE;
+    }
 
     return ((uMenuState & MF_DISABLED) == FALSE);
 }
 
 BOOL CanMaximizeWindow(HWND hWnd) {
-    if (!IsWindowEnabled(hWnd))
+    if (!IsWindowEnabled(hWnd)) {
         return FALSE;
+    }
 
     long lWndStyle = GetWindowLong(hWnd, GWL_STYLE);
-    if (!(lWndStyle & WS_MAXIMIZEBOX))
+    if (!(lWndStyle & WS_MAXIMIZEBOX)) {
         return FALSE;
+    }
 
     return TRUE;
 }
 
 BOOL CanRestoreWindow(HWND hWnd) {
-    if (!IsWindowEnabled(hWnd))
+    if (!IsWindowEnabled(hWnd)) {
         return FALSE;
+    }
 
     long lWndStyle = GetWindowLong(hWnd, GWL_STYLE);
-    if (!(lWndStyle & WS_MAXIMIZEBOX))
+    if (!(lWndStyle & WS_MAXIMIZEBOX)) {
         return FALSE;
+    }
 
     return TRUE;
 }
@@ -284,8 +293,9 @@ void SwitchToWindow(HWND hWnd) {
         IsWindowEnabled(hTempWnd)) {
         HWND hOwnerWnd = GetWindow(hTempWnd, GW_OWNER);
 
-        while (hOwnerWnd && hOwnerWnd != hWnd)
+        while (hOwnerWnd && hOwnerWnd != hWnd) {
             hOwnerWnd = GetWindow(hOwnerWnd, GW_OWNER);
+        }
 
         if (hOwnerWnd == hWnd) {
             bRestore = IsIconic(hWnd);
@@ -297,8 +307,9 @@ void SwitchToWindow(HWND hWnd) {
         ShowWindowAsync(hWnd, SW_RESTORE);
     } else {
         SwitchToThisWindow(hActiveWnd, TRUE);
-        if (bRestore)
+        if (bRestore) {
             ShowWindowAsync(hWnd, SW_RESTORE);
+        }
     }
 }
 
