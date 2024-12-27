@@ -354,6 +354,21 @@ BOOL WINAPI CApi_PostMessageW_Hook(void* pThis,
     return CApi_PostMessageW_Original(pThis, hWnd, Msg, wParam, lParam);
 }
 
+using CApi_BringWindowToTop_t = BOOL(WINAPI*)(void* pThis, HWND hWnd);
+CApi_BringWindowToTop_t CApi_BringWindowToTop_Original;
+BOOL WINAPI CApi_BringWindowToTop_Hook(void* pThis, HWND hWnd) {
+    if (g_groupMenuCommandThreadId == GetCurrentThreadId()) {
+        Wh_Log(L">");
+
+        // This function is being called by CTaskGroup::GroupMenuCommand for the
+        // SC_RESTORE command. Calling BringWindowToTop for a window that's not
+        // responding causes the taskbar to hang. Skip it.
+        return TRUE;
+    }
+
+    return CApi_BringWindowToTop_Original(pThis, hWnd);
+}
+
 using CTaskItem_IsVisibleOnCurrentVirtualDesktop_t = bool(WINAPI*)(void* pThis);
 CTaskItem_IsVisibleOnCurrentVirtualDesktop_t
     CTaskItem_IsVisibleOnCurrentVirtualDesktop_Original;
@@ -901,6 +916,11 @@ bool HookTaskbarDllSymbols() {
             {LR"(public: virtual int __cdecl CApi::PostMessageW(struct HWND__ *,unsigned int,unsigned __int64,__int64))"},
             &CApi_PostMessageW_Original,
             CApi_PostMessageW_Hook,
+        },
+        {
+            {LR"(public: virtual int __cdecl CApi::BringWindowToTop(struct HWND__ *))"},
+            &CApi_BringWindowToTop_Original,
+            CApi_BringWindowToTop_Hook,
         },
         {
             {LR"(public: virtual long __cdecl CTaskListWnd::ShowLivePreview(struct ITaskItem *,unsigned long))"},
