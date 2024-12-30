@@ -919,6 +919,32 @@ Style GetStyleFromXamlSetters(const std::wstring_view type,
     return styleInspectable.as<Style>();
 }
 
+Style GetStyleFromXamlSettersWithFallbackType(
+    const std::wstring_view type,
+    const std::wstring_view fallbackType,
+    const std::wstring_view xamlStyleSetters) {
+    try {
+        return GetStyleFromXamlSetters(type, xamlStyleSetters);
+    } catch (winrt::hresult_error const& ex) {
+        constexpr HRESULT kStowedException = 0x802B000A;
+        if (ex.code() != kStowedException) {
+            throw;
+        }
+
+        // For some types such as JumpViewUI.JumpListListViewItem, the following
+        // error is returned:
+        //
+        // Error 802B000A: Failed to create a 'System.Type' from the text
+        // 'windhawkstyler:JumpListListViewItem'. [Line: 8 Position: 12]
+        //
+        // Retry with a fallback type, which will allow to at least use the
+        // basic properties.
+        Wh_Log(L"Retrying with fallback type type due to error %08X: %s",
+               ex.code(), ex.message().c_str());
+        return GetStyleFromXamlSetters(fallbackType, xamlStyleSetters);
+    }
+}
+
 const PropertyOverrides& GetResolvedPropertyOverrides(
     const std::wstring_view type,
     PropertyOverridesMaybeUnresolved* propertyOverridesMaybeUnresolved) {
@@ -957,7 +983,8 @@ const PropertyOverrides& GetResolvedPropertyOverrides(
                 }
             }
 
-            auto style = GetStyleFromXamlSetters(type, xaml);
+            auto style = GetStyleFromXamlSettersWithFallbackType(
+                type, winrt::name_of<FrameworkElement>(), xaml);
 
             uint32_t i = 0;
             for (const auto& rule : styleRules) {
@@ -1005,7 +1032,8 @@ const PropertyValues& GetResolvedPropertyValues(
                 xaml += L"\" />\n";
             }
 
-            auto style = GetStyleFromXamlSetters(type, xaml);
+            auto style = GetStyleFromXamlSettersWithFallbackType(
+                type, winrt::name_of<FrameworkElement>(), xaml);
 
             for (size_t i = 0; i < propertyValuesStr.size(); i++) {
                 const auto setter = style.Setters().GetAt(i).as<Setter>();
