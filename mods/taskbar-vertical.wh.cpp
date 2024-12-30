@@ -709,7 +709,7 @@ HRESULT WINAPI CTaskListWnd_ComputeJumpViewPosition_Hook(
     int x = monitorInfo.rcWork.left +
             (monitorInfo.rcWork.right - monitorInfo.rcWork.left) / 2 + counter;
     point->X = x;
-    point->Y = monitorInfo.rcWork.bottom;
+    point->Y = monitorInfo.rcWork.bottom - 1;
 
     return ret;
 }
