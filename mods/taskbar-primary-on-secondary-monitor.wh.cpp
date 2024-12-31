@@ -2,7 +2,7 @@
 // @id              taskbar-primary-on-secondary-monitor
 // @name            Primary taskbar on secondary monitor
 // @description     Move the primary taskbar, including the tray icons, notifications, action center, etc. to another monitor
-// @version         1.0
+// @version         1.1
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
@@ -38,6 +38,14 @@ center, etc. to another monitor.
   $name: Monitor
   $description: >-
     The monitor number to have the primary taskbar on
+- monitorInterfaceName: ""
+  $name: Monitor interface name
+  $description: >-
+    If not empty, the given monitor interface name (can also be an interface
+    name substring) will be used instead of the monitor number. Can be useful if
+    the monitor numbers change often. To see all available interface names, set
+    any interface name, enable mod logs and look for "Found display device"
+    messages.
 - oldTaskbarOnWin11: false
   $name: Customize the old taskbar on Windows 11
   $description: >-
@@ -54,6 +62,7 @@ center, etc. to another monitor.
 
 struct {
     int monitor;
+    WindhawkUtils::StringSetting monitorInterfaceName;
     bool oldTaskbarOnWin11;
 } g_settings;
 
@@ -94,8 +103,7 @@ HMONITOR GetMonitorById(int monitorId) {
     HMONITOR monitorResult = nullptr;
     int currentMonitorId = 0;
 
-    auto monitorEnumProc = [&monitorResult, &currentMonitorId,
-                            monitorId](HMONITOR hMonitor) -> BOOL {
+    auto monitorEnumProc = [&](HMONITOR hMonitor) -> BOOL {
         if (currentMonitorId == monitorId) {
             monitorResult = hMonitor;
             return FALSE;
@@ -107,7 +115,46 @@ HMONITOR GetMonitorById(int monitorId) {
     EnumDisplayMonitors(
         nullptr, nullptr,
         [](HMONITOR hMonitor, HDC hdc, LPRECT lprcMonitor,
-           LPARAM dwData) WINAPI -> BOOL {
+           LPARAM dwData) -> BOOL {
+            auto& proc = *reinterpret_cast<decltype(monitorEnumProc)*>(dwData);
+            return proc(hMonitor);
+        },
+        reinterpret_cast<LPARAM>(&monitorEnumProc));
+
+    return monitorResult;
+}
+
+HMONITOR GetMonitorByInterfaceNameSubstr(PCWSTR interfaceNameSubstr) {
+    HMONITOR monitorResult = nullptr;
+
+    auto monitorEnumProc = [&](HMONITOR hMonitor) -> BOOL {
+        MONITORINFOEX monitorInfo = {};
+        monitorInfo.cbSize = sizeof(monitorInfo);
+
+        if (GetMonitorInfo(hMonitor, &monitorInfo)) {
+            DISPLAY_DEVICE displayDevice = {
+                .cb = sizeof(displayDevice),
+            };
+
+            if (EnumDisplayDevices(monitorInfo.szDevice, 0, &displayDevice,
+                                   EDD_GET_DEVICE_INTERFACE_NAME)) {
+                Wh_Log(L"Found display device %s, interface name: %s",
+                       monitorInfo.szDevice, displayDevice.DeviceID);
+
+                if (wcsstr(displayDevice.DeviceID, interfaceNameSubstr)) {
+                    Wh_Log(L"Matched display device");
+                    monitorResult = hMonitor;
+                    return FALSE;
+                }
+            }
+        }
+        return TRUE;
+    };
+
+    EnumDisplayMonitors(
+        nullptr, nullptr,
+        [](HMONITOR hMonitor, HDC hdc, LPRECT lprcMonitor,
+           LPARAM dwData) -> BOOL {
             auto& proc = *reinterpret_cast<decltype(monitorEnumProc)*>(dwData);
             return proc(hMonitor);
         },
@@ -121,8 +168,17 @@ MonitorFromPoint_t MonitorFromPoint_Original;
 HMONITOR WINAPI MonitorFromPoint_Hook(POINT pt, DWORD dwFlags) {
     Wh_Log(L">");
 
-    if (pt.x == 0 && pt.y == 0 && g_settings.monitor >= 1) {
-        if (HMONITOR monitor = GetMonitorById(g_settings.monitor - 1)) {
+    if (pt.x == 0 && pt.y == 0) {
+        HMONITOR monitor = nullptr;
+
+        if (*g_settings.monitorInterfaceName.get()) {
+            monitor = GetMonitorByInterfaceNameSubstr(
+                g_settings.monitorInterfaceName.get());
+        } else if (g_settings.monitor >= 1) {
+            monitor = GetMonitorById(g_settings.monitor - 1);
+        }
+
+        if (monitor) {
             return monitor;
         }
     }
@@ -136,10 +192,15 @@ TrayUI__SetStuckMonitor_t TrayUI__SetStuckMonitor_Original;
 HRESULT WINAPI TrayUI__SetStuckMonitor_Hook(void* pThis, HMONITOR monitor) {
     Wh_Log(L">");
 
-    if (!g_unloading && g_settings.monitor >= 1) {
-        monitor = GetMonitorById(g_settings.monitor - 1);
-    } else {
-        monitor = nullptr;
+    monitor = nullptr;
+
+    if (!g_unloading) {
+        if (*g_settings.monitorInterfaceName.get()) {
+            monitor = GetMonitorByInterfaceNameSubstr(
+                g_settings.monitorInterfaceName.get());
+        } else if (g_settings.monitor >= 1) {
+            monitor = GetMonitorById(g_settings.monitor - 1);
+        }
     }
 
     if (!monitor) {
@@ -349,6 +410,8 @@ void ApplySettings() {
 
 void LoadSettings() {
     g_settings.monitor = Wh_GetIntSetting(L"monitor");
+    g_settings.monitorInterfaceName =
+        WindhawkUtils::StringSetting::make(L"monitorInterfaceName");
     g_settings.oldTaskbarOnWin11 = Wh_GetIntSetting(L"oldTaskbarOnWin11");
 }
 
