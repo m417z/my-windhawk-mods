@@ -2437,7 +2437,10 @@ bool ApplyWebViewCustomizations(Controls::WebView webViewElement) {
     auto canonicalUri = source.AbsoluteCanonicalUri();
     Wh_Log(L"WebView source: %s", canonicalUri.c_str());
 
-    if (canonicalUri != L"https://www.bing.com/WS/Init") {
+    if (canonicalUri != L"https://www.bing.com/WS/Init" &&
+        canonicalUri !=
+            L"ms-appx-web://microsoftwindows.client.cbs/Cortana.UI/cache/"
+            L"svlocal/desktop/2.html") {
         return false;
     }
 
