@@ -2,7 +2,7 @@
 // @id              windows-11-notification-center-styler
 // @name            Windows 11 Notification Center Styler
 // @description     Customize the Notification Center with themes contributed by others or create your own
-// @version         1.1.4
+// @version         1.1.5
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
@@ -43,6 +43,10 @@ TranslucentShell](https://github.com/ramensoftware/windows-11-notification-cente
 [![Unified](https://raw.githubusercontent.com/ramensoftware/windows-11-notification-center-styling-guide/main/Themes/Unified/screenshot-small.png)
 \
 Unified](https://github.com/ramensoftware/windows-11-notification-center-styling-guide/blob/main/Themes/Unified/README.md)
+
+[![10JumpLists](https://raw.githubusercontent.com/ramensoftware/windows-11-notification-center-styling-guide/main/Themes/10JumpLists/screenshot-small.png)
+\
+10JumpLists](https://github.com/ramensoftware/windows-11-notification-center-styling-guide/blob/main/Themes/10JumpLists/README.md)
 
 More themes can be found in the **Themes** section of [The Windows 11
 notification center styling
@@ -159,6 +163,7 @@ code from the **TranslucentTB** project.
   - "": None
   - TranslucentShell: TranslucentShell
   - Unified: Unified
+  - 10JumpLists: 10JumpLists
 - controlStyles:
   - - target: ""
       $name: Target
@@ -278,6 +283,72 @@ const Theme g_themeUnified = {{
         L"BorderThickness=1,1,1,0",
         L"Margin=0,0,0,0"}},
     ThemeTargetStyles{L"QuickActions.ControlCenter.FrameWithContentChanged#L2Frame", {
+        L"CornerRadius=0"}},
+}};
+
+const Theme g_theme10JumpLists = {{
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Grid#JumpListGrid", {
+        L"Margin=0,0,0,0",
+        L"CornerRadius=0",
+        L"Width=256"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Border#JumpListRestyledAcrylic", {
+        L"CornerRadius=0",
+        L"Background=Transparent",
+        L"BorderThickness=0,0,0,0"}},
+    ThemeTargetStyles{L"JumpViewUI.SystemItemListView#SystemItemList", {
+        L"Width=256"}},
+    ThemeTargetStyles{L"JumpViewUI.TaskbarJumpListFrame", {
+        L"Width=256",
+        L"RequestedTheme=2"}},
+    ThemeTargetStyles{L"JumpViewUI.JumpListListView#ItemList", {
+        L"Width=256",
+        L"Background:=<AcrylicBrush TintColor=\"#202020\" TintOpacity=\"0.75\" FallbackColor=\"#202020\" />",
+        L"Padding=0,5,0,5"}},
+    ThemeTargetStyles{L"JumpViewUI.SystemItemControl > Windows.UI.Xaml.Controls.Grid > Windows.UI.Xaml.Controls.Grid > Windows.UI.Xaml.Controls.TextBlock", {
+        L"FontFamily=Segoe MDL2 Assets"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Button#PinButton > Windows.UI.Xaml.Controls.Grid > Windows.UI.Xaml.Controls.ContentPresenter#ContentPresenter > Windows.UI.Xaml.Controls.TextBlock", {
+        L"FontFamily=Segoe MDL2 Assets"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Button#PinButton", {
+        L"Width=30",
+        L"Height=30"}},
+    ThemeTargetStyles{L"JumpViewUI.JumpListListViewItem", {
+        L"Margin=0,0,0,0",
+        L"Height=30"}},
+    ThemeTargetStyles{L"JumpViewUI.SystemItemListViewItem", {
+        L"Margin=0,0,0,0",
+        L"Height=30"}},
+    ThemeTargetStyles{L"JumpViewUI.SystemItemListViewItem > Windows.UI.Xaml.Controls.Grid#LayoutRoot@CommonStates > Windows.UI.Xaml.Controls.Border#BackgroundBorder", {
+        L"CornerRadius=0",
+        L"Background@PointerOver:=<RevealBorderBrush Color=\"Transparent\" TargetTheme=\"1\" Opacity=\"0.5\" FallbackColor=\"#353535\" />",
+        L"Background@Pressed:=<RevealBorderBrush Color=\"Transparent\" TargetTheme=\"1\" Opacity=\"0.9\" FallbackColor=\"#4c4c4c\" />",
+        L"BorderBrush@PointerOver:=<RevealBorderBrush Color=\"Transparent\" TargetTheme=\"1\" Opacity=\"1\" />",
+        L"BorderBrush@Pressed:=<RevealBorderBrush Color=\"Transparent\" TargetTheme=\"1\" Opacity=\"1\" />",
+        L"BorderThickness=1,1,1,1"}},
+    ThemeTargetStyles{L"JumpViewUI.JumpListListViewItem > Windows.UI.Xaml.Controls.Grid#LayoutRoot@CommonStates > Windows.UI.Xaml.Controls.Border#BackgroundBorder", {
+        L"CornerRadius=0",
+        L"Background@PointerOver:=<RevealBorderBrush Color=\"Transparent\" TargetTheme=\"1\" Opacity=\"0.5\" FallbackColor=\"#353535\"/>",
+        L"Background@Pressed:=<RevealBorderBrush Color=\"Transparent\" TargetTheme=\"1\" Opacity=\"0.9\" FallbackColor=\"#4c4c4c\" />",
+        L"BorderBrush@PointerOver:=<RevealBorderBrush Color=\"Transparent\" TargetTheme=\"1\" Opacity=\"1\" />",
+        L"BorderBrush@Pressed:=<RevealBorderBrush Color=\"Transparent\" TargetTheme=\"1\" Opacity=\"1\" />",
+        L"BorderThickness=1,1,1,1"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Button#PinButton > Windows.UI.Xaml.Controls.Grid > Windows.UI.Xaml.Shapes.Rectangle", {
+        L"Visibility=Collapsed"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.TextBlock#DisplayNameTextBlock", {
+        L"FontSize=12"}},
+    ThemeTargetStyles{L"JumpViewUI.JumpListCategoryHeaderControl > Windows.UI.Xaml.Controls.Grid > Windows.UI.Xaml.Controls.TextBlock#HeadingTextBlock", {
+        L"Margin=12,10,12,6"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Grid#SystemItemsContainer > Windows.UI.Xaml.Shapes.Rectangle", {
+        L"Visibility=Collapsed"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Grid#SystemItemsContainer", {
+        L"Padding=0,5,0,5",
+        L"Background:=<AcrylicBrush TintColor=\"#101010\" TintOpacity=\"0.75\" FallbackColor=\"#101010\" />"}},
+    ThemeTargetStyles{L"JumpViewUI.JumpListListViewItem > Windows.UI.Xaml.Controls.Grid#LayoutRoot > Windows.UI.Xaml.Controls.ContentPresenter#ContentPresenter > Windows.UI.Xaml.Controls.Grid#LayoutRoot > Windows.UI.Xaml.Shapes.Rectangle", {
+        L"Margin=12,4,12,4"}},
+    ThemeTargetStyles{L"JumpViewUI.JumpListControl#JumpList", {
+        L"Margin=0,0,0,0"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Button#PinButton > Windows.UI.Xaml.Controls.Grid@CommonStates > Windows.UI.Xaml.Controls.Border#BackgroundBorder", {
+        L"Background@PointerOver:=<AcrylicBrush TintColor=\"#7d8787\" TintOpacity=\"0.3\" FallbackColor=\"#494949\" />",
+        L"Background@Pressed:=<AcrylicBrush TintColor=\"#788787\" TintOpacity=\"0.3\" FallbackColor=\"#5d5d5d\" />",
         L"CornerRadius=0"}},
 }};
 
@@ -1683,6 +1754,8 @@ void ProcessAllStylesFromSettings() {
         theme = &g_themeTranslucentShell;
     } else if (wcscmp(themeName, L"Unified") == 0) {
         theme = &g_themeUnified;
+    } else if (wcscmp(themeName, L"10JumpLists") == 0) {
+        theme = &g_theme10JumpLists;
     }
     Wh_FreeStringSetting(themeName);
 
