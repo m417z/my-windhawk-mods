@@ -699,6 +699,7 @@ LRESULT CALLBACK ThumbnailWindowSubclassProc(HWND hWnd,
         case WM_TIMER:
             switch (wParam) {
                 case kRefreshTaskbarTimer: {
+                    KillTimer(hWnd, kRefreshTaskbarTimer);
                     void* thumbnail = (void*)GetWindowLongPtr(hWnd, 0);
                     CTaskListThumbnailWnd__RefreshThumbnail_Original(
                         thumbnail, g_thumbnailContextMenuLastIndex);
