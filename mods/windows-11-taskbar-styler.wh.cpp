@@ -2205,10 +2205,6 @@ StyleRule StyleRuleFromString(std::wstring_view str) {
     auto atPos = name.find(L'@');
     if (atPos != name.npos) {
         result.visualState = TrimStringView(name.substr(atPos + 1));
-        if (result.visualState.empty()) {
-            throw std::runtime_error("Bad style syntax, empty visual state");
-        }
-
         name = name.substr(0, atPos);
     }
 
