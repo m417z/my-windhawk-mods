@@ -1961,6 +1961,30 @@ HRESULT WINAPI PSFormatForDisplay_Hook(const PROPERTYKEY& propkey,
                                        cchText);
 }
 
+using PSStrFormatKBSizeW_t = void*(WINAPI*)(size_t size,
+                                            LPWSTR pwszText,
+                                            DWORD cchText);
+PSStrFormatKBSizeW_t PSStrFormatKBSizeW_Original;
+void* WINAPI PSStrFormatKBSizeW_Hook(size_t size,
+                                     LPWSTR pwszText,
+                                     DWORD cchText) {
+    Wh_Log(L">");
+
+    void* ret = PSStrFormatKBSizeW_Original(size, pwszText, cchText);
+
+    int len = wcslen(pwszText);
+    if (len < 2 || (size_t)len + 1 > cchText - 1 || pwszText[len - 2] != 'K' ||
+        pwszText[len - 1] != 'B') {
+        return ret;
+    }
+
+    pwszText[len - 1] = 'i';
+    pwszText[len] = 'B';
+    pwszText[len + 1] = '\0';
+
+    return ret;
+}
+
 using LoadStringW_t = decltype(&LoadStringW);
 LoadStringW_t LoadStringW_Original;
 int WINAPI LoadStringW_Hook(HINSTANCE hInstance,
@@ -2331,10 +2355,20 @@ BOOL Wh_ModInit() {
     }
 
     if (g_settings.useIecTerms) {
-        g_propsysModule = GetModuleHandle(L"propsys.dll");
-        if (!g_propsysModule) {
+        HMODULE propsysModule = GetModuleHandle(L"propsys.dll");
+        if (!propsysModule) {
             Wh_Log(L"Failed getting propsys.dll");
             return FALSE;
+        }
+
+        g_propsysModule = propsysModule;
+
+        if (!g_settings.disableKbOnlySizes) {
+            auto pPSStrFormatKBSizeW =
+                (PSStrFormatKBSizeW_t)GetProcAddress(propsysModule, (PCSTR)422);
+            WindhawkUtils::Wh_SetFunctionHookT(pPSStrFormatKBSizeW,
+                                               PSStrFormatKBSizeW_Hook,
+                                               &PSStrFormatKBSizeW_Original);
         }
 
         HMODULE kernelBaseModule = GetModuleHandle(L"kernelbase.dll");
