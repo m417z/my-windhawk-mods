@@ -9,6 +9,7 @@
 // @homepage        https://m417z.com/
 // @include         StartMenuExperienceHost.exe
 // @include         SearchHost.exe
+// @include         SearchApp.exe
 // @architecture    x86-64
 // @compilerOptions -lcomctl32 -lole32 -loleaut32 -lruntimeobject -Wl,--export-all-symbols
 // ==/WindhawkMod==
@@ -2438,9 +2439,16 @@ bool ApplyWebViewCustomizations(Controls::WebView webViewElement) {
     Wh_Log(L"WebView source: %s", canonicalUri.c_str());
 
     if (canonicalUri != L"https://www.bing.com/WS/Init" &&
+        // Offline content (DisableSearchBoxSuggestions registry option).
         canonicalUri !=
             L"ms-appx-web://microsoftwindows.client.cbs/Cortana.UI/cache/"
-            L"svlocal/desktop/2.html") {
+            L"svlocal/desktop/2.html" &&
+        // Windows 10 (SearchApp.exe).
+        canonicalUri !=
+            L"https://www.bing.com/AS/API/WindowsCortanaPane/V2/Init" &&
+        canonicalUri !=
+            L"ms-appx-web://microsoft.windows.search/cache/local/desktop/"
+            L"2.html") {
         return false;
     }
 
@@ -3225,7 +3233,8 @@ BOOL Wh_ModInit() {
         default:
             if (PCWSTR moduleFileName = wcsrchr(moduleFilePath, L'\\')) {
                 moduleFileName++;
-                if (_wcsicmp(moduleFileName, L"SearchHost.exe") == 0) {
+                if (_wcsicmp(moduleFileName, L"SearchHost.exe") == 0 ||
+                    _wcsicmp(moduleFileName, L"SearchApp.exe") == 0) {
                     g_target = Target::SearchHost;
                 }
             } else {
