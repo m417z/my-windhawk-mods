@@ -162,6 +162,7 @@ struct {
     bool useIecTerms;
 } g_settings;
 
+bool g_isEverything;
 HMODULE g_propsysModule;
 std::atomic<int> g_hookRefCount;
 
@@ -1252,6 +1253,11 @@ std::wstring ResolvePath(PCWSTR path) {
 unsigned Everything4Wh_GetFileSize(PCWSTR folderPath, int64_t* size) {
     *size = 0;
 
+    // Prevent querying from within the Everything process to avoid deadlocks.
+    if (g_isEverything) {
+        return ES_QUERY_NO_ES_IPC;
+    }
+
     EVERYTHING3_CLIENT* pClient = Everything3_ConnectW(L"1.5a");
     if (pClient) {
         *size = Everything3_GetFolderSizeFromFilenameW(pClient, folderPath);
@@ -1277,13 +1283,6 @@ unsigned Everything4Wh_GetFileSize(PCWSTR folderPath, int64_t* size) {
     }
 
     if (!hEverything) {
-        return ES_QUERY_NO_ES_IPC;
-    }
-
-    // Prevent querying from within the Everything process to avoid deadlocks.
-    DWORD dwEverythingProcessId = 0;
-    GetWindowThreadProcessId(hEverything, &dwEverythingProcessId);
-    if (dwEverythingProcessId == GetCurrentProcessId()) {
         return ES_QUERY_NO_ES_IPC;
     }
 
@@ -2337,10 +2336,37 @@ BOOL Wh_ModInit() {
             Wh_Log(L"Failed hooking Windows Storage symbols");
             return false;
         }
+    }
 
-        WindhawkUtils::Wh_SetFunctionHookT(
-            SHOpenFolderAndSelectItems, SHOpenFolderAndSelectItems_Hook,
-            &SHOpenFolderAndSelectItems_Original);
+    if (g_settings.calculateFolderSizes == CalculateFolderSizes::everything) {
+        bool isEverything = false;
+        WCHAR moduleFilePath[MAX_PATH];
+        switch (GetModuleFileName(nullptr, moduleFilePath,
+                                  ARRAYSIZE(moduleFilePath))) {
+            case 0:
+            case ARRAYSIZE(moduleFilePath):
+                Wh_Log(L"GetModuleFileName failed");
+                break;
+
+            default:
+                if (PCWSTR moduleFileName = wcsrchr(moduleFilePath, L'\\')) {
+                    moduleFileName++;
+                    if (_wcsicmp(moduleFileName, L"Everything.exe") == 0) {
+                        isEverything = true;
+                    }
+                } else {
+                    Wh_Log(L"GetModuleFileName returned an unsupported path");
+                }
+                break;
+        }
+
+        if (isEverything) {
+            g_isEverything = true;
+
+            WindhawkUtils::Wh_SetFunctionHookT(
+                SHOpenFolderAndSelectItems, SHOpenFolderAndSelectItems_Hook,
+                &SHOpenFolderAndSelectItems_Original);
+        }
     }
 
     if (g_settings.disableKbOnlySizes) {
