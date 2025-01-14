@@ -71,8 +71,10 @@ struct {
 
 std::atomic<bool> g_unloading;
 
-bool g_startMenuWidthChanged;
-bool g_searchMenuPosChanged;
+HWND g_startMenuWnd;
+int g_startMenuOriginalWidth;
+HWND g_searchMenuWnd;
+int g_searchMenuOriginalX;
 
 typedef enum MONITOR_DPI_TYPE {
     MDT_EFFECTIVE_DPI = 0,
@@ -676,14 +678,16 @@ HRESULT WINAPI DwmSetWindowAttribute_Hook(HWND hwnd,
             cxNew = MulDiv(
                 g_settings.startMenuWidth ? g_settings.startMenuWidth : 660,
                 monitorDpiX, 96);
-            g_startMenuWidthChanged = true;
+            g_startMenuWnd = hwnd;
+            g_startMenuOriginalWidth = cx;
         } else {
-            if (!g_startMenuWidthChanged) {
+            if (!g_startMenuOriginalWidth) {
                 return original();
             }
 
-            cxNew = monitorInfo.rcWork.right - monitorInfo.rcWork.left;
-            g_startMenuWidthChanged = false;
+            cxNew = g_startMenuOriginalWidth;
+            g_startMenuWnd = nullptr;
+            g_startMenuOriginalWidth = 0;
         }
 
         if (cxNew == cx) {
@@ -702,16 +706,16 @@ HRESULT WINAPI DwmSetWindowAttribute_Hook(HWND hwnd,
             }
 
             xNew = monitorInfo.rcWork.left;
-            g_searchMenuPosChanged = true;
+            g_searchMenuWnd = hwnd;
+            g_searchMenuOriginalX = x;
         } else {
-            if (!g_searchMenuPosChanged) {
+            if (!g_searchMenuOriginalX) {
                 return original();
             }
 
-            xNew = monitorInfo.rcWork.left +
-                   (monitorInfo.rcWork.right - monitorInfo.rcWork.left) / 2 -
-                   cx / 2;
-            g_searchMenuPosChanged = false;
+            xNew = g_searchMenuOriginalX;
+            g_searchMenuWnd = nullptr;
+            g_searchMenuOriginalX = 0;
         }
 
         if (xNew == x) {
@@ -780,6 +784,38 @@ void Wh_ModBeforeUninit() {
 
 void Wh_ModUninit() {
     Wh_Log(L">");
+
+    if (g_startMenuWnd && g_startMenuOriginalWidth) {
+        RECT rect;
+        if (GetWindowRect(g_startMenuWnd, &rect)) {
+            int x = rect.left;
+            int y = rect.top;
+            int cx = rect.right - rect.left;
+            int cy = rect.bottom - rect.top;
+
+            if (g_startMenuOriginalWidth != cx) {
+                cx = g_startMenuOriginalWidth;
+                SetWindowPos(g_startMenuWnd, nullptr, x, y, cx, cy,
+                             SWP_NOZORDER | SWP_NOACTIVATE);
+            }
+        }
+    }
+
+    if (g_searchMenuWnd && g_searchMenuOriginalX) {
+        RECT rect;
+        if (GetWindowRect(g_searchMenuWnd, &rect)) {
+            int x = rect.left;
+            int y = rect.top;
+            int cx = rect.right - rect.left;
+            int cy = rect.bottom - rect.top;
+
+            if (g_searchMenuOriginalX != x) {
+                x = g_searchMenuOriginalX;
+                SetWindowPos(g_searchMenuWnd, nullptr, x, y, cx, cy,
+                             SWP_NOZORDER | SWP_NOACTIVATE);
+            }
+        }
+    }
 }
 
 void Wh_ModSettingsChanged() {
