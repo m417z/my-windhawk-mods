@@ -135,15 +135,23 @@ BOOL Wh_ModInit(void)
     WindhawkUtils::SYMBOL_HOOK startMenuHooks[] = {
         {
             {
-                LR"(public: void __cdecl winrt::impl::consume_WindowsUdk_UI_StartScreen_Implementation_IDockedStartControllerOverrides<struct winrt::WindowsUdk::UI::StartScreen::Implementation::DockedStartController>::ShowAllApps(void)const )",
+                // First seen in StartMenu.dll version 2124.33803.0.0.
+                LR"(public: __cdecl winrt::impl::consume_WindowsUdk_UI_StartScreen_Implementation_IDockedStartControllerOverrides<struct winrt::WindowsUdk::UI::StartScreen::Implementation::IDockedStartControllerOverrides>::ShowAllApps(void)const )",
+                // Older symbol.
                 LR"(public: __cdecl winrt::impl::consume_WindowsUdk_UI_StartScreen_Implementation_IDockedStartControllerOverrides<struct winrt::WindowsUdk::UI::StartScreen::Implementation::DockedStartController>::ShowAllApps(void)const )",
+                // Even older symbol.
+                LR"(public: void __cdecl winrt::impl::consume_WindowsUdk_UI_StartScreen_Implementation_IDockedStartControllerOverrides<struct winrt::WindowsUdk::UI::StartScreen::Implementation::DockedStartController>::ShowAllApps(void)const )",
             },
             (void**)&pOriginalShowAllApps,
         },
         {
             {
-                LR"(public: void __cdecl winrt::impl::consume_WindowsUdk_UI_StartScreen_Implementation_IDockedStartControllerOverrides<struct winrt::WindowsUdk::UI::StartScreen::Implementation::DockedStartController>::HideAllApps(void)const )",
+                // First seen in StartMenu.dll version 2124.33803.0.0.
+                LR"(public: __cdecl winrt::impl::consume_WindowsUdk_UI_StartScreen_Implementation_IDockedStartControllerOverrides<struct winrt::WindowsUdk::UI::StartScreen::Implementation::IDockedStartControllerOverrides>::HideAllApps(void)const )",
+                // Older symbol.
                 LR"(public: __cdecl winrt::impl::consume_WindowsUdk_UI_StartScreen_Implementation_IDockedStartControllerOverrides<struct winrt::WindowsUdk::UI::StartScreen::Implementation::DockedStartController>::HideAllApps(void)const )",
+                // Even older symbol.
+                LR"(public: void __cdecl winrt::impl::consume_WindowsUdk_UI_StartScreen_Implementation_IDockedStartControllerOverrides<struct winrt::WindowsUdk::UI::StartScreen::Implementation::DockedStartController>::HideAllApps(void)const )",
             },
             (void**)&pOriginalHideAllApps,
             (void*)HideAllAppsHook,
@@ -158,6 +166,7 @@ BOOL Wh_ModInit(void)
     };
 
     if (!HookSymbols(module, startMenuHooks, ARRAYSIZE(startMenuHooks))) {
+        Wh_Log(L"HookSymbols failed");
         return FALSE;
     }
 
