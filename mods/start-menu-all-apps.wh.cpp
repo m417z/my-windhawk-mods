@@ -2,7 +2,7 @@
 // @id              start-menu-all-apps
 // @name            Show all apps by default in start menu
 // @description     When the Windows 11 start menu is opened, show all apps right away
-// @version         1.0.2
+// @version         1.0.3
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
@@ -132,7 +132,7 @@ BOOL Wh_ModInit(void)
         return FALSE;
     }
 
-    WindhawkUtils::SYMBOL_HOOK startMenuHooks[] = {
+    WindhawkUtils::SYMBOL_HOOK startMenuDllHooks[] = {
         {
             {
                 // First seen in StartMenu.dll version 2124.33803.0.0.
@@ -165,7 +165,7 @@ BOOL Wh_ModInit(void)
         }
     };
 
-    if (!HookSymbols(module, startMenuHooks, ARRAYSIZE(startMenuHooks))) {
+    if (!HookSymbols(module, startMenuDllHooks, ARRAYSIZE(startMenuDllHooks))) {
         Wh_Log(L"HookSymbols failed");
         return FALSE;
     }
