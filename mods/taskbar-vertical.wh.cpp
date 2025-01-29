@@ -1802,11 +1802,17 @@ void UpdateTaskListButton(FrameworkElement taskListButtonElement) {
         }
     }
 
-    bool isSecondaryTaskbar =
-        IsSecondaryTaskbar(taskListButtonElement.XamlRoot());
-    TaskbarLocation taskbarLocation = isSecondaryTaskbar
-                                          ? g_settings.taskbarLocationSecondary
-                                          : g_settings.taskbarLocation;
+    bool indicatorsOnTop = false;
+    if (!g_unloading) {
+        bool isSecondaryTaskbar =
+            IsSecondaryTaskbar(taskListButtonElement.XamlRoot());
+        TaskbarLocation taskbarLocation =
+            isSecondaryTaskbar ? g_settings.taskbarLocationSecondary
+                               : g_settings.taskbarLocation;
+        if (taskbarLocation == TaskbarLocation::right) {
+            indicatorsOnTop = true;
+        }
+    }
 
     PCWSTR indicatorClassNames[] = {
         L"RunningIndicator",
@@ -1819,10 +1825,9 @@ void UpdateTaskListButton(FrameworkElement taskListButtonElement) {
             continue;
         }
 
-        indicatorElement.VerticalAlignment(
-            !g_unloading && taskbarLocation == TaskbarLocation::right
-                ? VerticalAlignment::Top
-                : VerticalAlignment::Bottom);
+        indicatorElement.VerticalAlignment(indicatorsOnTop
+                                               ? VerticalAlignment::Top
+                                               : VerticalAlignment::Bottom);
     }
 }
 
