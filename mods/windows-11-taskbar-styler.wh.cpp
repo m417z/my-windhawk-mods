@@ -1514,8 +1514,36 @@ Style GetStyleFromXamlSetters(const std::wstring_view type,
     return styleInspectable.as<Style>();
 }
 
+Style GetStyleFromXamlSettersWithFallbackType(
+    const std::wstring_view type,
+    const std::wstring_view fallbackType,
+    const std::wstring_view xamlStyleSetters) {
+    try {
+        return GetStyleFromXamlSetters(type, xamlStyleSetters);
+    } catch (winrt::hresult_error const& ex) {
+        constexpr HRESULT kStowedException = 0x802B000A;
+        if (ex.code() != kStowedException || fallbackType.empty() ||
+            fallbackType == type) {
+            throw;
+        }
+
+        // For some types such as JumpViewUI.JumpListListViewItem, the following
+        // error is returned:
+        //
+        // Error 802B000A: Failed to create a 'System.Type' from the text
+        // 'windhawkstyler:JumpListListViewItem'. [Line: 8 Position: 12]
+        //
+        // Retry with a fallback type, which will allow to at least use the
+        // basic properties.
+        Wh_Log(L"Retrying with fallback type type due to error %08X: %s",
+               ex.code(), ex.message().c_str());
+        return GetStyleFromXamlSetters(fallbackType, xamlStyleSetters);
+    }
+}
+
 const PropertyOverrides& GetResolvedPropertyOverrides(
     const std::wstring_view type,
+    const std::wstring_view fallbackType,
     PropertyOverridesMaybeUnresolved* propertyOverridesMaybeUnresolved) {
     if (const auto* resolved =
             std::get_if<PropertyOverrides>(propertyOverridesMaybeUnresolved)) {
@@ -1552,7 +1580,8 @@ const PropertyOverrides& GetResolvedPropertyOverrides(
                 }
             }
 
-            auto style = GetStyleFromXamlSetters(type, xaml);
+            auto style = GetStyleFromXamlSettersWithFallbackType(
+                type, fallbackType, xaml);
 
             uint32_t i = 0;
             for (const auto& rule : styleRules) {
@@ -1578,6 +1607,7 @@ const PropertyOverrides& GetResolvedPropertyOverrides(
 
 const PropertyValues& GetResolvedPropertyValues(
     const std::wstring_view type,
+    const std::wstring_view fallbackType,
     PropertyValuesMaybeUnresolved* propertyValuesMaybeUnresolved) {
     if (const auto* resolved =
             std::get_if<PropertyValues>(propertyValuesMaybeUnresolved)) {
@@ -1600,7 +1630,8 @@ const PropertyValues& GetResolvedPropertyValues(
                 xaml += L"\" />\n";
             }
 
-            auto style = GetStyleFromXamlSetters(type, xaml);
+            auto style = GetStyleFromXamlSettersWithFallbackType(
+                type, fallbackType, xaml);
 
             for (size_t i = 0; i < propertyValuesStr.size(); i++) {
                 const auto setter = style.Setters().GetAt(i).as<Setter>();
@@ -1682,8 +1713,9 @@ bool TestElementMatcher(FrameworkElement element,
 
     auto elementDo = element.as<DependencyObject>();
 
-    for (const auto& propertyValue :
-         GetResolvedPropertyValues(matcher.type, &matcher.propertyValues)) {
+    for (const auto& propertyValue : GetResolvedPropertyValues(
+             matcher.type, fallbackClassName ? fallbackClassName : L"",
+             &matcher.propertyValues)) {
         const auto value =
             ReadLocalValueWithWorkaround(elementDo, propertyValue.first);
         if (!value) {
@@ -1782,8 +1814,10 @@ FindElementPropertyOverrides(FrameworkElement element,
 
         auto& overridesForVisualStateGroup = overrides[visualStateGroup];
         for (const auto& [property, valuesPerVisualState] :
-             GetResolvedPropertyOverrides(override.elementMatcher.type,
-                                          &override.propertyOverrides)) {
+             GetResolvedPropertyOverrides(
+                 override.elementMatcher.type,
+                 fallbackClassName ? fallbackClassName : L"",
+                 &override.propertyOverrides)) {
             bool propertyInserted = propertiesAdded.insert(property).second;
             if (!propertyInserted) {
                 continue;
