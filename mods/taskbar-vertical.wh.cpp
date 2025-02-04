@@ -1011,7 +1011,7 @@ void WINAPI TaskbarController_UpdateFrameHeight_Hook(void* pThis) {
     // Setting the height right away can result in ellipsis.
     // https://github.com/ramensoftware/windhawk-mods/issues/981
     taskbarFrameElement.Dispatcher().TryRunAsync(
-        winrt::Windows::UI::Core::CoreDispatcherPriority::High,
+        winrt::Windows::UI::Core::CoreDispatcherPriority::Low,
         [taskbarFrameElement]() {
             taskbarFrameElement.Height(
                 std::numeric_limits<double>::quiet_NaN());
