@@ -2410,7 +2410,9 @@ bool TestElementMatcher(FrameworkElement element,
     auto elementDo = element.as<DependencyObject>();
 
     for (const auto& propertyValue : GetResolvedPropertyValues(
-             matcher.type, fallbackClassName ? fallbackClassName : L"",
+             matcher.type,
+             fallbackClassName ? fallbackClassName
+                               : winrt::name_of<FrameworkElement>(),
              &matcher.propertyValues)) {
         const auto value =
             ReadLocalValueWithWorkaround(elementDo, propertyValue.first);
@@ -2512,7 +2514,8 @@ FindElementPropertyOverrides(FrameworkElement element,
         for (const auto& [property, valuesPerVisualState] :
              GetResolvedPropertyOverrides(
                  override.elementMatcher.type,
-                 fallbackClassName ? fallbackClassName : L"",
+                 fallbackClassName ? fallbackClassName
+                                   : winrt::name_of<FrameworkElement>(),
                  &override.propertyOverrides)) {
             bool propertyInserted = propertiesAdded.insert(property).second;
             if (!propertyInserted) {
