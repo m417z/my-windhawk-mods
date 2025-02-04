@@ -167,6 +167,10 @@ bool g_inAugmentedEntryPointButton_UpdateButtonPadding;
 bool g_inCTaskListThumbnailWnd_DisplayUI;
 bool g_inCTaskListThumbnailWnd_LayoutThumbnails;
 bool g_inOverflowFlyoutModel_Show;
+bool g_inFlyoutFrame_UpdateFlyoutPosition;
+bool g_inHoverFlyoutController_UpdateFlyoutWindowPosition;
+
+winrt::Windows::Foundation::Size g_flyoutPositionSize;
 
 std::vector<winrt::weak_ref<XamlRoot>> g_notifyIconsUpdated;
 
@@ -2232,6 +2236,49 @@ NotificationAreaIconsDataModel_GetInvocationPointRelativeToScreen_Hook(
     return ret;
 }
 
+using FlyoutFrame_UpdateFlyoutPosition_t = void(WINAPI*)(void* pThis);
+FlyoutFrame_UpdateFlyoutPosition_t FlyoutFrame_UpdateFlyoutPosition_Original;
+void WINAPI FlyoutFrame_UpdateFlyoutPosition_Hook(void* pThis) {
+    Wh_Log(L">");
+
+    g_inFlyoutFrame_UpdateFlyoutPosition = true;
+    g_flyoutPositionSize = {};
+
+    FlyoutFrame_UpdateFlyoutPosition_Original(pThis);
+
+    g_inFlyoutFrame_UpdateFlyoutPosition = false;
+}
+
+using HoverFlyoutController_UpdateFlyoutWindowPosition_t =
+    void(WINAPI*)(void* pThis);
+HoverFlyoutController_UpdateFlyoutWindowPosition_t
+    HoverFlyoutController_UpdateFlyoutWindowPosition_Original;
+void WINAPI HoverFlyoutController_UpdateFlyoutWindowPosition_Hook(void* pThis) {
+    Wh_Log(L">");
+
+    g_inHoverFlyoutController_UpdateFlyoutWindowPosition = true;
+
+    HoverFlyoutController_UpdateFlyoutWindowPosition_Original(pThis);
+
+    g_inHoverFlyoutController_UpdateFlyoutWindowPosition = false;
+}
+
+using Grid_DesiredSize_t = winrt::Windows::Foundation::Size*(
+    WINAPI*)(void* pThis, winrt::Windows::Foundation::Size* size);
+Grid_DesiredSize_t Grid_DesiredSize_Original;
+winrt::Windows::Foundation::Size* WINAPI
+Grid_DesiredSize_Hook(void* pThis, winrt::Windows::Foundation::Size* size) {
+    Wh_Log(L">");
+
+    auto ret = Grid_DesiredSize_Original(pThis, size);
+
+    if (g_inFlyoutFrame_UpdateFlyoutPosition) {
+        g_flyoutPositionSize = *size;
+    }
+
+    return ret;
+}
+
 BOOL WINAPI GetWindowRect_Hook(HWND hWnd, LPRECT lpRect) {
     BOOL ret = GetWindowRect_Original(hWnd, lpRect);
     if (ret && !g_unloading &&
@@ -2577,6 +2624,27 @@ BOOL WINAPI SetWindowPos_Hook(HWND hWnd,
         } else if (Y > monitorInfo.rcWork.bottom - cy) {
             Y = monitorInfo.rcWork.bottom - cy;
         }
+    } else if (_wcsicmp(szClassName, L"XamlExplorerHostIslandWindow") == 0 &&
+               g_inHoverFlyoutController_UpdateFlyoutWindowPosition) {
+        if (uFlags & (SWP_NOMOVE | SWP_NOSIZE)) {
+            return original();
+        }
+
+        DWORD messagePos = GetMessagePos();
+        POINT pt{
+            GET_X_LPARAM(messagePos),
+            GET_Y_LPARAM(messagePos),
+        };
+
+        HMONITOR monitor = MonitorFromPoint(pt, MONITOR_DEFAULTTONEAREST);
+
+        MONITORINFO monitorInfo{
+            .cbSize = sizeof(MONITORINFO),
+        };
+        GetMonitorInfo(monitor, &monitorInfo);
+
+        X = monitorInfo.rcWork.left;
+        cx = monitorInfo.rcWork.right - monitorInfo.rcWork.left;
     } else {
         return original();
     }
@@ -2620,6 +2688,54 @@ BOOL WINAPI MoveWindow_Hook(HWND hWnd,
     Wh_Log(L">");
 
     return MoveWindow_Original(hWnd, X, Y, nHeight, nHeight, bRepaint);
+}
+
+using MapWindowPoints_t = decltype(&MapWindowPoints);
+MapWindowPoints_t MapWindowPoints_Original;
+int WINAPI MapWindowPoints_Hook(HWND hWndFrom,
+                                HWND hWndTo,
+                                LPPOINT lpPoints,
+                                UINT cPoints) {
+    int ret = MapWindowPoints_Original(hWndFrom, hWndTo, lpPoints, cPoints);
+
+    if (!g_inFlyoutFrame_UpdateFlyoutPosition || cPoints != 1) {
+        return ret;
+    }
+
+    Wh_Log(L">");
+
+    DWORD messagePos = GetMessagePos();
+    POINT pt{
+        GET_X_LPARAM(messagePos),
+        GET_Y_LPARAM(messagePos),
+    };
+
+    HMONITOR monitor = MonitorFromPoint(pt, MONITOR_DEFAULTTONEAREST);
+    MONITORINFO monitorInfo{
+        .cbSize = sizeof(MONITORINFO),
+    };
+    GetMonitorInfo(monitor, &monitorInfo);
+
+    UINT monitorDpiX = 96;
+    UINT monitorDpiY = 96;
+    GetDpiForMonitor(monitor, MDT_DEFAULT, &monitorDpiX, &monitorDpiY);
+
+    int flyoutHeight = MulDiv(g_flyoutPositionSize.Height, monitorDpiY, 96);
+
+    // Align to bottom instead of top.
+    lpPoints->y += flyoutHeight;
+
+    if (lpPoints->y < monitorInfo.rcWork.top) {
+        lpPoints->y = monitorInfo.rcWork.top;
+    }
+
+    // Center vertically for thumb.
+    lpPoints->y -= flyoutHeight / 2;
+
+    // Center vertically for taskbar button.
+    lpPoints->y += MulDiv(56 / 2, monitorDpiY, 96);
+
+    return ret;
 }
 
 namespace CoreWindowUI {
@@ -3240,6 +3356,30 @@ bool HookTaskbarViewDllSymbols(HMODULE module) {
                 (void*)
                     NotificationAreaIconsDataModel_GetInvocationPointRelativeToScreen_Hook,
             },
+            {
+                {
+                    LR"(private: void __cdecl winrt::Taskbar::implementation::FlyoutFrame::UpdateFlyoutPosition(void))",
+                },
+                (void**)&FlyoutFrame_UpdateFlyoutPosition_Original,
+                (void*)FlyoutFrame_UpdateFlyoutPosition_Hook,
+                true,  // New XAML thumbnails, enabled in late Windows 11 24H2.
+            },
+            {
+                {
+                    LR"(private: void __cdecl winrt::Taskbar::implementation::HoverFlyoutController::UpdateFlyoutWindowPosition(void))",
+                },
+                (void**)&HoverFlyoutController_UpdateFlyoutWindowPosition_Original,
+                (void*)HoverFlyoutController_UpdateFlyoutWindowPosition_Hook,
+                true,  // New XAML thumbnails, enabled in late Windows 11 24H2.
+            },
+            {
+                {
+                    LR"(public: __cdecl winrt::impl::consume_Windows_UI_Xaml_IUIElement<struct winrt::Windows::UI::Xaml::Controls::Grid>::DesiredSize(void)const )",
+                },
+                (void**)&Grid_DesiredSize_Original,
+                (void*)Grid_DesiredSize_Hook,
+                true,  // New XAML thumbnails, enabled in late Windows 11 24H2.
+            },
         };
 
         if (!HookSymbols(module, symbolHooks, ARRAYSIZE(symbolHooks))) {
@@ -3377,6 +3517,9 @@ BOOL ModInitWithTaskbarView(HMODULE taskbarViewModule) {
 
     Wh_SetFunctionHook((void*)MoveWindow, (void*)MoveWindow_Hook,
                        (void**)&MoveWindow_Original);
+
+    Wh_SetFunctionHook((void*)MapWindowPoints, (void*)MapWindowPoints_Hook,
+                       (void**)&MapWindowPoints_Original);
 
     return TRUE;
 }
