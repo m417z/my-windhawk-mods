@@ -930,8 +930,19 @@ void UpdateTaskListButton(FrameworkElement taskListButtonElement) {
 
     bool indicatorsOnTop = false;
     if (!g_unloading && g_settings.runningIndicatorsOnTop) {
-        bool isSecondaryTaskbar =
-            IsSecondaryTaskbar(taskListButtonElement.XamlRoot());
+        auto taskbarFrameRepeaterElement =
+            Media::VisualTreeHelper::GetParent(taskListButtonElement)
+                .as<FrameworkElement>();
+
+        bool isSecondaryTaskbar = false;
+        if (!taskbarFrameRepeaterElement ||
+            taskbarFrameRepeaterElement.Name() != L"TaskbarFrameRepeater") {
+            // TODO: Can also be "OverflowFlyoutListRepeater".
+        } else {
+            isSecondaryTaskbar =
+                IsSecondaryTaskbar(taskListButtonElement.XamlRoot());
+        }
+
         TaskbarLocation taskbarLocation =
             isSecondaryTaskbar ? g_settings.taskbarLocationSecondary
                                : g_settings.taskbarLocation;
