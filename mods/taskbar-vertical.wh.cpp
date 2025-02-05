@@ -1002,26 +1002,21 @@ void WINAPI TaskbarController_UpdateFrameHeight_Hook(void* pThis) {
 
     TaskbarController_UpdateFrameHeight_Original(pThis);
 
-    // Set the width/height to NaN (Auto) to always match the parent
-    // width/height.
+    // Set the width to NaN (Auto) to always match the parent width.
     taskbarFrameElement.Width(std::numeric_limits<double>::quiet_NaN());
 
-    // Setting the height right away can result in ellipsis.
-    // https://github.com/ramensoftware/windhawk-mods/issues/981
-    taskbarFrameElement.Dispatcher().TryRunAsync(
-        winrt::Windows::UI::Core::CoreDispatcherPriority::Low,
-        [taskbarFrameElement]() {
-            taskbarFrameElement.Height(
-                std::numeric_limits<double>::quiet_NaN());
-
-            // Adjust parent grid height.
-            auto contentGrid =
-                Media::VisualTreeHelper::GetParent(taskbarFrameElement)
-                    .try_as<FrameworkElement>();
-            if (contentGrid) {
-                contentGrid.Height(std::numeric_limits<double>::quiet_NaN());
-            }
-        });
+    // Adjust parent grid height if needed.
+    auto contentGrid = Media::VisualTreeHelper::GetParent(taskbarFrameElement)
+                           .try_as<FrameworkElement>();
+    if (contentGrid) {
+        double height = taskbarFrameElement.Height();
+        double contentGridHeight = contentGrid.Height();
+        if (contentGridHeight > 0 && contentGridHeight != height) {
+            Wh_Log(L"Adjusting contentGrid.Height: %f->%f", contentGridHeight,
+                   height);
+            contentGrid.Height(height);
+        }
+    }
 }
 
 using SystemTraySecondaryController_UpdateFrameSize_t =
