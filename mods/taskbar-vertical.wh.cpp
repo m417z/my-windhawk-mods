@@ -781,8 +781,12 @@ void* WINAPI XamlExplorerHostWindow_XamlExplorerHostWindow_Hook(
         };
         GetMonitorInfo(monitor, &monitorInfo);
 
+        UINT monitorDpiX = 96;
+        UINT monitorDpiY = 96;
+        GetDpiForMonitor(monitor, MDT_DEFAULT, &monitorDpiX, &monitorDpiY);
+
         winrt::Windows::Foundation::Rect rectNew = *rect;
-        rectNew.Width = 72;
+        rectNew.Width = MulDiv(72, monitorDpiX, 96);
 
         switch (GetTaskbarLocationForMonitor(monitor)) {
             case TaskbarLocation::left:
@@ -792,6 +796,25 @@ void* WINAPI XamlExplorerHostWindow_XamlExplorerHostWindow_Hook(
             case TaskbarLocation::right:
                 rectNew.X = monitorInfo.rcWork.right - rectNew.Width;
                 break;
+        }
+
+        int maxHeight = MulDiv(314, monitorDpiX, 96);
+        if (rectNew.Height > maxHeight) {
+            rectNew.Height = maxHeight;
+        }
+
+        DWORD messagePos = GetMessagePos();
+        POINT pt{
+            GET_X_LPARAM(messagePos),
+            GET_Y_LPARAM(messagePos),
+        };
+
+        rectNew.Y = pt.y - rectNew.Height / 2;
+
+        if (rectNew.Y < monitorInfo.rcWork.top) {
+            rectNew.Y = monitorInfo.rcWork.top;
+        } else if (rectNew.Y > monitorInfo.rcWork.bottom - rectNew.Height) {
+            rectNew.Y = monitorInfo.rcWork.bottom - rectNew.Height;
         }
 
         return XamlExplorerHostWindow_XamlExplorerHostWindow_Original(
@@ -1970,67 +1993,65 @@ void WINAPI OverflowFlyoutList_OnApplyTemplate_Hook(LPVOID pThis) {
         return;
     }
 
-    try {
-        element.MaxHeight(48);
-        element.MaxWidth(310);
+    Controls::ScrollViewer overflowScrollView =
+        FindChildByName(element, L"OverflowScrollView")
+            .try_as<Controls::ScrollViewer>();
+    if (!overflowScrollView) {
+        return;
+    }
 
-        auto parentElement =
-            Media::VisualTreeHelper::GetParent(element).as<FrameworkElement>();
+    FrameworkElement contentElement =
+        overflowScrollView.Content().try_as<FrameworkElement>();
+    if (!contentElement) {
+        return;
+    }
 
-        if (parentElement) {
-            parentElement = Media::VisualTreeHelper::GetParent(parentElement)
-                                .as<FrameworkElement>();
-        }
+    auto hoverFlyoutContent =
+        Media::VisualTreeHelper::GetParent(element).as<FrameworkElement>();
+    if (!hoverFlyoutContent) {
+        return;
+    }
 
-        if (parentElement) {
-            {
-                Media::RotateTransform transform;
-                transform.Angle(180);
-                element.RenderTransform(transform);
+    auto hoverFlyoutGrid =
+        Media::VisualTreeHelper::GetParent(hoverFlyoutContent)
+            .as<FrameworkElement>();
+    if (!hoverFlyoutGrid) {
+        return;
+    }
 
-                float origin = 0.5;
-                element.RenderTransformOrigin({origin, origin});
-            }
+    Media::RotateTransform transform;
+    transform.Angle(90);
+    element.RenderTransform(transform);
 
-            {
-                Media::RotateTransform transform;
-                transform.Angle(-90);
-                parentElement.RenderTransform(transform);
+    float origin = 0.5;
+    element.RenderTransformOrigin({origin, origin});
 
-                float origin = 0;
-                parentElement.RenderTransformOrigin({origin, origin});
-            }
+    double desiredSize = 300;
 
-            auto translation = parentElement.Translation();
-            if (!translation.x) {
-                DWORD messagePos = GetMessagePos();
-                POINT pt{
-                    GET_X_LPARAM(messagePos),
-                    GET_Y_LPARAM(messagePos),
-                };
+    element.MaxHeight(desiredSize);
+    element.MaxWidth(desiredSize);
+    element.MinHeight(desiredSize);
+    element.MinWidth(desiredSize);
 
-                HMONITOR monitor =
-                    MonitorFromPoint(pt, MONITOR_DEFAULTTONEAREST);
-                MONITORINFO monitorInfo{
-                    .cbSize = sizeof(MONITORINFO),
-                };
-                GetMonitorInfo(monitor, &monitorInfo);
-                UINT monitorDpiX = 96;
-                UINT monitorDpiY = 96;
-                GetDpiForMonitor(monitor, MDT_DEFAULT, &monitorDpiX,
-                                 &monitorDpiY);
-                pt.x = MulDiv(pt.x, 96, monitorDpiX);
-                pt.y = MulDiv(pt.y, 96, monitorDpiY);
+    {
+        auto margin = element.Margin();
+        margin.Left -= (desiredSize - 48) / 2;
+        margin.Right += (desiredSize - 48) / 2;
+        element.Margin(margin);
+    }
 
-                translation.x = 48 - 61 + 12;
-                translation.y = pt.y + 40;
+    hoverFlyoutContent.MaxHeight(desiredSize);
+    hoverFlyoutContent.MaxWidth(desiredSize);
+    hoverFlyoutContent.MinHeight(desiredSize);
+    hoverFlyoutContent.MinWidth(desiredSize);
 
-                parentElement.Translation(translation);
-            }
-        }
-    } catch (...) {
-        HRESULT hr = winrt::to_hresult();
-        Wh_Log(L"Error %08X", hr);
+    hoverFlyoutGrid.MaxWidth(54);
+
+    double contentElementExtraHeight = contentElement.Height() - desiredSize;
+    if (contentElementExtraHeight > 0) {
+        auto margin = contentElement.Margin();
+        margin.Top -= contentElementExtraHeight / 2;
+        contentElement.Margin(margin);
     }
 }
 
@@ -2562,6 +2583,35 @@ BOOL WINAPI SetWindowPos_Hook(HWND hWnd,
         } else if (Y > monitorInfo.rcWork.bottom - cy) {
             Y = monitorInfo.rcWork.bottom - cy;
         }
+
+        // If hovering over the overflow window, exclude it.
+        HWND windowFromPoint = WindowFromPoint(pt);
+        if (windowFromPoint &&
+            GetWindowThreadProcessId(windowFromPoint, nullptr) ==
+                GetWindowThreadProcessId(GetTaskbarWnd(), nullptr)) {
+            WCHAR szClassNameFromPoint[64];
+            if (GetClassName(windowFromPoint, szClassNameFromPoint,
+                             ARRAYSIZE(szClassNameFromPoint)) &&
+                _wcsicmp(szClassNameFromPoint,
+                         L"XamlExplorerHostIslandWindow") == 0) {
+                UINT monitorDpiX = 96;
+                UINT monitorDpiY = 96;
+                GetDpiForMonitor(monitor, MDT_DEFAULT, &monitorDpiX,
+                                 &monitorDpiY);
+
+                int overflowWidth = MulDiv(54 + 12, monitorDpiX, 96);
+
+                switch (GetTaskbarLocationForMonitor(monitor)) {
+                    case TaskbarLocation::left:
+                        X += overflowWidth;
+                        break;
+
+                    case TaskbarLocation::right:
+                        X -= overflowWidth;
+                        break;
+                }
+            }
+        }
     } else if (_wcsicmp(szClassName, L"Xaml_WindowedPopupClass") == 0) {
         if (uFlags & (SWP_NOMOVE | SWP_NOSIZE)) {
             return original();
@@ -2649,6 +2699,68 @@ BOOL WINAPI SetWindowPos_Hook(HWND hWnd,
 
         X = monitorInfo.rcWork.left;
         cx = monitorInfo.rcWork.right - monitorInfo.rcWork.left;
+
+        // If hovering over the overflow window, exclude it.
+        HWND windowFromPoint = WindowFromPoint(pt);
+        if (windowFromPoint &&
+            GetWindowThreadProcessId(windowFromPoint, nullptr) ==
+                GetWindowThreadProcessId(hWnd, nullptr)) {
+            WCHAR szClassNameFromPoint[64];
+            if (GetClassName(windowFromPoint, szClassNameFromPoint,
+                             ARRAYSIZE(szClassNameFromPoint)) &&
+                _wcsicmp(szClassNameFromPoint,
+                         L"XamlExplorerHostIslandWindow") == 0) {
+                UINT monitorDpiX = 96;
+                UINT monitorDpiY = 96;
+                GetDpiForMonitor(monitor, MDT_DEFAULT, &monitorDpiX,
+                                 &monitorDpiY);
+
+                int overflowWidth = MulDiv(54 + 12, monitorDpiX, 96);
+
+                switch (GetTaskbarLocationForMonitor(monitor)) {
+                    case TaskbarLocation::left:
+                        if (overflowWidth > 0 && overflowWidth < cx) {
+                            X += overflowWidth;
+                            cx -= overflowWidth;
+                        }
+                        break;
+
+                    case TaskbarLocation::right:
+                        if (overflowWidth > 0 && overflowWidth < cx) {
+                            cx -= overflowWidth;
+                        }
+                        break;
+                }
+            }
+        }
+    } else if (_wcsicmp(szClassName, L"XamlExplorerHostIslandWindow") == 0 &&
+               g_inOverflowFlyoutModel_Show) {
+        if (uFlags & (SWP_NOMOVE | SWP_NOSIZE)) {
+            return original();
+        }
+
+        DWORD messagePos = GetMessagePos();
+        POINT pt{
+            GET_X_LPARAM(messagePos),
+            GET_Y_LPARAM(messagePos),
+        };
+
+        HMONITOR monitor = MonitorFromPoint(pt, MONITOR_DEFAULTTONEAREST);
+
+        MONITORINFO monitorInfo{
+            .cbSize = sizeof(MONITORINFO),
+        };
+        GetMonitorInfo(monitor, &monitorInfo);
+
+        UINT monitorDpiX = 96;
+        UINT monitorDpiY = 96;
+        GetDpiForMonitor(monitor, MDT_DEFAULT, &monitorDpiX, &monitorDpiY);
+
+        if (X < monitorInfo.rcWork.left) {
+            X = monitorInfo.rcWork.left;
+        } else if (X > monitorInfo.rcWork.right - cx) {
+            X = monitorInfo.rcWork.right - cx;
+        }
     } else {
         return original();
     }
