@@ -121,10 +121,6 @@ With labels:
 
 using namespace winrt::Windows::UI::Xaml;
 
-#ifndef SPI_SETLOGICALDPIOVERRIDE
-#define SPI_SETLOGICALDPIOVERRIDE 0x009F
-#endif
-
 enum class TaskbarLocation {
     left,
     right,
