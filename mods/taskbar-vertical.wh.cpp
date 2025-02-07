@@ -3323,128 +3323,128 @@ bool HookTaskbarViewDllSymbols(HMODULE module) {
     WindhawkUtils::SYMBOL_HOOK symbolHooks[] = {
         {
             {LR"(public: __cdecl winrt::impl::consume_Windows_Foundation_Collections_IMap<struct winrt::Windows::UI::Xaml::ResourceDictionary,struct winrt::Windows::Foundation::IInspectable,struct winrt::Windows::Foundation::IInspectable>::Lookup(struct winrt::Windows::Foundation::IInspectable const &)const )"},
-            (void**)&ResourceDictionary_Lookup_Original,
-            (void*)ResourceDictionary_Lookup_Hook,
+            &ResourceDictionary_Lookup_Original,
+            ResourceDictionary_Lookup_Hook,
         },
         {
             {LR"(private: double __cdecl winrt::SystemTray::implementation::SystemTrayController::GetFrameSize(enum winrt::WindowsUdk::UI::Shell::TaskbarSize))"},
-            (void**)&SystemTrayController_GetFrameSize_Original,
-            (void*)SystemTrayController_GetFrameSize_Hook,
+            &SystemTrayController_GetFrameSize_Original,
+            SystemTrayController_GetFrameSize_Hook,
             true,  // From Windows 11 version 22H2, inlined sometimes.
         },
         {
             {LR"(private: double __cdecl winrt::SystemTray::implementation::SystemTraySecondaryController::GetFrameSize(enum winrt::WindowsUdk::UI::Shell::TaskbarSize))"},
-            (void**)&SystemTraySecondaryController_GetFrameSize_Original,
-            (void*)SystemTraySecondaryController_GetFrameSize_Hook,
+            &SystemTraySecondaryController_GetFrameSize_Original,
+            SystemTraySecondaryController_GetFrameSize_Hook,
         },
         {
             {LR"(public: static double __cdecl winrt::Taskbar::implementation::TaskbarConfiguration::GetFrameSize(enum winrt::WindowsUdk::UI::Shell::TaskbarSize))"},
-            (void**)&TaskbarConfiguration_GetFrameSize_Original,
-            (void*)TaskbarConfiguration_GetFrameSize_Hook,
+            &TaskbarConfiguration_GetFrameSize_Original,
+            TaskbarConfiguration_GetFrameSize_Hook,
         },
         {
             {LR"(private: void __cdecl winrt::SystemTray::implementation::SystemTrayController::UpdateFrameSize(void))"},
-            (void**)&SystemTrayController_UpdateFrameSize_SymbolAddress,
+            &SystemTrayController_UpdateFrameSize_SymbolAddress,
             nullptr,  // Hooked manually, we need the symbol address.
         },
         {
             {LR"(private: void __cdecl winrt::Taskbar::implementation::TaskbarController::OnGroupingModeChanged(void))"},
-            (void**)&TaskbarController_OnGroupingModeChanged,
+            &TaskbarController_OnGroupingModeChanged,
         },
         {
             {LR"(private: void __cdecl winrt::Taskbar::implementation::TaskbarController::UpdateFrameHeight(void))"},
-            (void**)&TaskbarController_UpdateFrameHeight_Original,
-            (void*)TaskbarController_UpdateFrameHeight_Hook,
+            &TaskbarController_UpdateFrameHeight_Original,
+            TaskbarController_UpdateFrameHeight_Hook,
         },
         {
             {LR"(private: void __cdecl winrt::SystemTray::implementation::SystemTraySecondaryController::UpdateFrameSize(void))"},
-            (void**)&SystemTraySecondaryController_UpdateFrameSize_Original,
-            (void*)SystemTraySecondaryController_UpdateFrameSize_Hook,
+            &SystemTraySecondaryController_UpdateFrameSize_Original,
+            SystemTraySecondaryController_UpdateFrameSize_Hook,
         },
         {
             {LR"(public: __cdecl winrt::impl::consume_Windows_UI_Xaml_IFrameworkElement<struct winrt::SystemTray::SystemTrayFrame>::Height(double)const )"},
-            (void**)&SystemTrayFrame_Height_Original,
-            (void*)SystemTrayFrame_Height_Hook,
+            &SystemTrayFrame_Height_Original,
+            SystemTrayFrame_Height_Hook,
         },
         {
             {LR"(public: virtual int __cdecl winrt::impl::produce<struct winrt::Taskbar::implementation::TaskbarFrame,struct winrt::Windows::UI::Xaml::IFrameworkElementOverrides>::MeasureOverride(struct winrt::Windows::Foundation::Size,struct winrt::Windows::Foundation::Size *))"},
-            (void**)&TaskbarFrame_MeasureOverride_Original,
-            (void*)TaskbarFrame_MeasureOverride_Hook,
+            &TaskbarFrame_MeasureOverride_Original,
+            TaskbarFrame_MeasureOverride_Hook,
         },
         {
             {LR"(protected: virtual void __cdecl winrt::Taskbar::implementation::AugmentedEntryPointButton::UpdateButtonPadding(void))"},
-            (void**)&AugmentedEntryPointButton_UpdateButtonPadding_Original,
-            (void*)AugmentedEntryPointButton_UpdateButtonPadding_Hook,
+            &AugmentedEntryPointButton_UpdateButtonPadding_Original,
+            AugmentedEntryPointButton_UpdateButtonPadding_Hook,
         },
         {
             {LR"(public: __cdecl winrt::impl::consume_Windows_UI_Xaml_IFrameworkElement<struct winrt::Windows::UI::Xaml::Controls::Primitives::RepeatButton>::Width(double)const )"},
-            (void**)&RepeatButton_Width_Original,
-            (void*)RepeatButton_Width_Hook,
+            &RepeatButton_Width_Original,
+            RepeatButton_Width_Hook,
         },
         {
             {LR"(public: __cdecl winrt::SystemTray::implementation::IconView::IconView(void))"},
-            (void**)&IconView_IconView_Original,
-            (void*)IconView_IconView_Hook,
+            &IconView_IconView_Original,
+            IconView_IconView_Hook,
         },
         {
             {LR"(private: void __cdecl winrt::Taskbar::implementation::TaskListButton::UpdateVisualStates(void))"},
-            (void**)&TaskListButton_UpdateVisualStates_Original,
-            (void*)TaskListButton_UpdateVisualStates_Hook,
+            &TaskListButton_UpdateVisualStates_Original,
+            TaskListButton_UpdateVisualStates_Hook,
         },
         {
             {LR"(protected: virtual void __cdecl winrt::Taskbar::implementation::ExperienceToggleButton::UpdateVisualStates(void))"},
-            (void**)&ExperienceToggleButton_UpdateVisualStates_Original,
-            (void*)ExperienceToggleButton_UpdateVisualStates_Hook,
+            &ExperienceToggleButton_UpdateVisualStates_Original,
+            ExperienceToggleButton_UpdateVisualStates_Hook,
         },
         {
             {LR"(protected: virtual void __cdecl winrt::Taskbar::implementation::SearchBoxButton::UpdateVisualStates(void))"},
-            (void**)&SearchBoxButton_UpdateVisualStates_Original,
-            (void*)SearchBoxButton_UpdateVisualStates_Hook,
+            &SearchBoxButton_UpdateVisualStates_Original,
+            SearchBoxButton_UpdateVisualStates_Hook,
         },
         {
             {LR"(public: void __cdecl winrt::Taskbar::implementation::OverflowFlyoutList::OnApplyTemplate(void))"},
-            (void**)&OverflowFlyoutList_OnApplyTemplate_Original,
-            (void*)OverflowFlyoutList_OnApplyTemplate_Hook,
+            &OverflowFlyoutList_OnApplyTemplate_Original,
+            OverflowFlyoutList_OnApplyTemplate_Hook,
         },
         {
             {LR"(private: void __cdecl winrt::SystemTray::implementation::CopilotIcon::UpdateVisualStates(void))"},
-            (void**)&CopilotIcon_UpdateVisualStates_Original,
-            (void*)CopilotIcon_UpdateVisualStates_Hook,
+            &CopilotIcon_UpdateVisualStates_Original,
+            CopilotIcon_UpdateVisualStates_Hook,
             true,  // Removed in insider builds around KB5046756.
         },
         {
             {LR"(private: void __cdecl winrt::SystemTray::implementation::CopilotIcon::ToggleEdgeCopilot(void))"},
-            (void**)&CopilotIcon_ToggleEdgeCopilot_Original,
-            (void*)CopilotIcon_ToggleEdgeCopilot_Hook,
+            &CopilotIcon_ToggleEdgeCopilot_Original,
+            CopilotIcon_ToggleEdgeCopilot_Hook,
             true,  // Removed in insider builds around KB5046756.
         },
         {
             {LR"(public: void __cdecl winrt::Taskbar::implementation::OverflowFlyoutModel::Show(void))"},
-            (void**)&OverflowFlyoutModel_Show_Original,
-            (void*)OverflowFlyoutModel_Show_Hook,
+            &OverflowFlyoutModel_Show_Original,
+            OverflowFlyoutModel_Show_Hook,
         },
         {
             {LR"(private: struct winrt::Windows::Foundation::Point __cdecl winrt::SystemTray::implementation::NotificationAreaIconsDataModel::GetInvocationPointRelativeToScreen(struct winrt::Windows::Foundation::Point const &))"},
-            (void**)&NotificationAreaIconsDataModel_GetInvocationPointRelativeToScreen_Original,
-            (void*)
-                NotificationAreaIconsDataModel_GetInvocationPointRelativeToScreen_Hook,
+            &NotificationAreaIconsDataModel_GetInvocationPointRelativeToScreen_Original,
+
+            NotificationAreaIconsDataModel_GetInvocationPointRelativeToScreen_Hook,
         },
         {
             {LR"(private: void __cdecl winrt::Taskbar::implementation::FlyoutFrame::UpdateFlyoutPosition(void))"},
-            (void**)&FlyoutFrame_UpdateFlyoutPosition_Original,
-            (void*)FlyoutFrame_UpdateFlyoutPosition_Hook,
+            &FlyoutFrame_UpdateFlyoutPosition_Original,
+            FlyoutFrame_UpdateFlyoutPosition_Hook,
             true,  // New XAML thumbnails, enabled in late Windows 11 24H2.
         },
         {
             {LR"(private: void __cdecl winrt::Taskbar::implementation::HoverFlyoutController::UpdateFlyoutWindowPosition(void))"},
-            (void**)&HoverFlyoutController_UpdateFlyoutWindowPosition_Original,
-            (void*)HoverFlyoutController_UpdateFlyoutWindowPosition_Hook,
+            &HoverFlyoutController_UpdateFlyoutWindowPosition_Original,
+            HoverFlyoutController_UpdateFlyoutWindowPosition_Hook,
             true,  // New XAML thumbnails, enabled in late Windows 11 24H2.
         },
         {
             {LR"(public: __cdecl winrt::impl::consume_Windows_UI_Xaml_IUIElement<struct winrt::Windows::UI::Xaml::Controls::Grid>::DesiredSize(void)const )"},
-            (void**)&Grid_DesiredSize_Original,
-            (void*)Grid_DesiredSize_Hook,
+            &Grid_DesiredSize_Original,
+            Grid_DesiredSize_Hook,
             true,  // New XAML thumbnails, enabled in late Windows 11 24H2.
         },
     };
@@ -3454,10 +3454,10 @@ bool HookTaskbarViewDllSymbols(HMODULE module) {
     }
 
     if (SystemTrayController_UpdateFrameSize_SymbolAddress) {
-        Wh_SetFunctionHook(
-            (void*)SystemTrayController_UpdateFrameSize_SymbolAddress,
-            (void*)SystemTrayController_UpdateFrameSize_Hook,
-            (void**)&SystemTrayController_UpdateFrameSize_Original);
+        WindhawkUtils::SetFunctionHook(
+            SystemTrayController_UpdateFrameSize_SymbolAddress,
+            SystemTrayController_UpdateFrameSize_Hook,
+            &SystemTrayController_UpdateFrameSize_Original);
     }
 
     return true;
@@ -3473,67 +3473,67 @@ bool HookTaskbarDllSymbols() {
     WindhawkUtils::SYMBOL_HOOK taskbarDllHooks[] = {
         {
             {LR"(public: virtual bool __cdecl IconContainer::IsStorageRecreationRequired(class CCoSimpleArray<unsigned int,4294967294,class CSimpleArrayStandardCompareHelper<unsigned int> > const &,enum IconContainerFlags))"},
-            (void**)&IconContainer_IsStorageRecreationRequired_Original,
-            (void*)IconContainer_IsStorageRecreationRequired_Hook,
+            &IconContainer_IsStorageRecreationRequired_Original,
+            IconContainer_IsStorageRecreationRequired_Hook,
         },
         {
             {LR"(public: virtual void __cdecl TrayUI::GetMinSize(struct HMONITOR__ *,struct tagSIZE *))"},
-            (void**)&TrayUI_GetMinSize_Original,
-            (void*)TrayUI_GetMinSize_Hook,
+            &TrayUI_GetMinSize_Original,
+            TrayUI_GetMinSize_Hook,
         },
         {
             {LR"(public: void __cdecl TrayUI::_StuckTrayChange(void))"},
-            (void**)&TrayUI__StuckTrayChange_Original,
+            &TrayUI__StuckTrayChange_Original,
         },
         {
             {LR"(public: void __cdecl TrayUI::_HandleSettingChange(struct HWND__ *,unsigned int,unsigned __int64,__int64))"},
-            (void**)&TrayUI__HandleSettingChange_Original,
-            (void*)TrayUI__HandleSettingChange_Hook,
+            &TrayUI__HandleSettingChange_Original,
+            TrayUI__HandleSettingChange_Hook,
         },
         {
             {LR"(public: virtual unsigned int __cdecl TrayUI::GetDockedRect(struct tagRECT *,int))"},
-            (void**)&TrayUI_GetDockedRect_Original,
-            (void*)TrayUI_GetDockedRect_Hook,
+            &TrayUI_GetDockedRect_Original,
+            TrayUI_GetDockedRect_Hook,
         },
         {
             {LR"(public: virtual void __cdecl TrayUI::MakeStuckRect(struct tagRECT *,struct tagRECT const *,struct tagSIZE,unsigned int))"},
-            (void**)&TrayUI_MakeStuckRect_Original,
-            (void*)TrayUI_MakeStuckRect_Hook,
+            &TrayUI_MakeStuckRect_Original,
+            TrayUI_MakeStuckRect_Hook,
         },
         {
             {LR"(public: virtual void __cdecl TrayUI::GetStuckInfo(struct tagRECT *,unsigned int *))"},
-            (void**)&TrayUI_GetStuckInfo_Original,
-            (void*)TrayUI_GetStuckInfo_Hook,
+            &TrayUI_GetStuckInfo_Original,
+            TrayUI_GetStuckInfo_Hook,
         },
         {
             {LR"(public: virtual __int64 __cdecl TrayUI::WndProc(struct HWND__ *,unsigned int,unsigned __int64,__int64,bool *))"},
-            (void**)&TrayUI_WndProc_Original,
-            (void*)TrayUI_WndProc_Hook,
+            &TrayUI_WndProc_Original,
+            TrayUI_WndProc_Hook,
         },
         {
             {LR"(private: virtual __int64 __cdecl CSecondaryTray::v_WndProc(struct HWND__ *,unsigned int,unsigned __int64,__int64))"},
-            (void**)&CSecondaryTray_v_WndProc_Original,
-            (void*)CSecondaryTray_v_WndProc_Hook,
+            &CSecondaryTray_v_WndProc_Original,
+            CSecondaryTray_v_WndProc_Hook,
         },
         {
             {LR"(protected: long __cdecl CTaskListWnd::_ComputeJumpViewPosition(struct ITaskBtnGroup *,int,struct Windows::Foundation::Point &,enum Windows::UI::Xaml::HorizontalAlignment &,enum Windows::UI::Xaml::VerticalAlignment &)const )"},
-            (void**)&CTaskListWnd_ComputeJumpViewPosition_Original,
-            (void*)CTaskListWnd_ComputeJumpViewPosition_Hook,
+            &CTaskListWnd_ComputeJumpViewPosition_Original,
+            CTaskListWnd_ComputeJumpViewPosition_Hook,
         },
         {
             {LR"(public: virtual int __cdecl CTaskListThumbnailWnd::DisplayUI(struct ITaskBtnGroup *,struct ITaskItem *,struct ITaskItem *,unsigned long))"},
-            (void**)&CTaskListThumbnailWnd_DisplayUI_Original,
-            (void*)CTaskListThumbnailWnd_DisplayUI_Hook,
+            &CTaskListThumbnailWnd_DisplayUI_Original,
+            CTaskListThumbnailWnd_DisplayUI_Hook,
         },
         {
             {LR"(public: virtual void __cdecl CTaskListThumbnailWnd::LayoutThumbnails(void))"},
-            (void**)&CTaskListThumbnailWnd_LayoutThumbnails_Original,
-            (void*)CTaskListThumbnailWnd_LayoutThumbnails_Hook,
+            &CTaskListThumbnailWnd_LayoutThumbnails_Original,
+            CTaskListThumbnailWnd_LayoutThumbnails_Hook,
         },
         {
             {LR"(public: __cdecl winrt::Windows::Internal::Shell::XamlExplorerHost::XamlExplorerHostWindow::XamlExplorerHostWindow(unsigned int,struct winrt::Windows::Foundation::Rect const &,unsigned int))"},
-            (void**)&XamlExplorerHostWindow_XamlExplorerHostWindow_Original,
-            (void*)XamlExplorerHostWindow_XamlExplorerHostWindow_Hook,
+            &XamlExplorerHostWindow_XamlExplorerHostWindow_Original,
+            XamlExplorerHostWindow_XamlExplorerHostWindow_Hook,
         },
     };
 
@@ -3549,26 +3549,26 @@ BOOL ModInitWithTaskbarView(HMODULE taskbarViewModule) {
         return FALSE;
     }
 
-    Wh_SetFunctionHook((void*)GetWindowRect, (void*)GetWindowRect_Hook,
-                       (void**)&GetWindowRect_Original);
+    WindhawkUtils::SetFunctionHook(GetWindowRect, GetWindowRect_Hook,
+                                   &GetWindowRect_Original);
 
-    Wh_SetFunctionHook((void*)SetWindowPos, (void*)SetWindowPos_Hook,
-                       (void**)&SetWindowPos_Original);
+    WindhawkUtils::SetFunctionHook(SetWindowPos, SetWindowPos_Hook,
+                                   &SetWindowPos_Original);
 
-    Wh_SetFunctionHook((void*)MoveWindow, (void*)MoveWindow_Hook,
-                       (void**)&MoveWindow_Original);
+    WindhawkUtils::SetFunctionHook(MoveWindow, MoveWindow_Hook,
+                                   &MoveWindow_Original);
 
-    Wh_SetFunctionHook((void*)MapWindowPoints, (void*)MapWindowPoints_Hook,
-                       (void**)&MapWindowPoints_Original);
+    WindhawkUtils::SetFunctionHook(MapWindowPoints, MapWindowPoints_Hook,
+                                   &MapWindowPoints_Original);
 
     HMODULE dwmapiModule = LoadLibrary(L"dwmapi.dll");
     if (dwmapiModule) {
         FARPROC pDwmSetWindowAttribute =
             GetProcAddress(dwmapiModule, "DwmSetWindowAttribute");
         if (pDwmSetWindowAttribute) {
-            Wh_SetFunctionHook((void*)pDwmSetWindowAttribute,
-                               (void*)DwmSetWindowAttribute_Hook,
-                               (void**)&DwmSetWindowAttribute_Original);
+            WindhawkUtils::SetFunctionHook(
+                (decltype(&DwmSetWindowAttribute))pDwmSetWindowAttribute,
+                DwmSetWindowAttribute_Hook, &DwmSetWindowAttribute_Original);
         }
     }
 
@@ -3611,9 +3611,9 @@ BOOL Wh_ModInit() {
 
     if (g_target == Target::ShellExperienceHost ||
         g_target == Target::ShellHost) {
-        Wh_SetFunctionHook((void*)SetWindowPos,
-                           (void*)CoreWindowUI::SetWindowPos_Hook,
-                           (void**)&SetWindowPos_Original);
+        WindhawkUtils::SetFunctionHook(SetWindowPos,
+                                       CoreWindowUI::SetWindowPos_Hook,
+                                       &SetWindowPos_Original);
         return TRUE;
     }
 
