@@ -591,18 +591,18 @@ void WINAPI SystemTrayFrame_Height_Hook(void* pThis, double value) {
 
 using TaskbarFrame_MeasureOverride_t =
     int(WINAPI*)(void* pThis,
-                 void* param1,
+                 winrt::Windows::Foundation::Size size,
                  winrt::Windows::Foundation::Size* resultSize);
 TaskbarFrame_MeasureOverride_t TaskbarFrame_MeasureOverride_Original;
 int WINAPI TaskbarFrame_MeasureOverride_Hook(
     void* pThis,
-    void* param1,
+    winrt::Windows::Foundation::Size size,
     winrt::Windows::Foundation::Size* resultSize) {
     g_hookCallCounter++;
 
     Wh_Log(L">");
 
-    int ret = TaskbarFrame_MeasureOverride_Original(pThis, param1, resultSize);
+    int ret = TaskbarFrame_MeasureOverride_Original(pThis, size, resultSize);
 
     g_pendingMeasureOverride = false;
 
