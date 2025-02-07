@@ -3063,10 +3063,6 @@ void AdjustCoreWindowSize(int x, int y, int* width, int* height) {
 }
 
 void AdjustCoreWindowPos(int* x, int* y, int width, int height) {
-    if (g_unloading) {
-        return;
-    }
-
     const POINT pt = {*x, *y};
     HMONITOR monitor = MonitorFromPoint(pt, MONITOR_DEFAULTTONEAREST);
 
@@ -3076,6 +3072,11 @@ void AdjustCoreWindowPos(int* x, int* y, int width, int height) {
 
     RECT rc;
     if (!GetMonitorRect(monitor, &rc)) {
+        return;
+    }
+
+    if (g_unloading) {
+        *x = rc.right - width;
         return;
     }
 
