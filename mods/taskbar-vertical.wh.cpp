@@ -101,6 +101,7 @@ With labels:
 
 #include <dwmapi.h>
 #include <knownfolders.h>
+#include <shellscalingapi.h>
 #include <shlobj.h>
 #include <uiautomation.h>
 #include <windowsx.h>
@@ -176,23 +177,6 @@ std::list<FrameworkElementLoadedEventRevoker> g_notifyIconAutoRevokerList;
 
 int g_copilotPosTimerCounter;
 UINT_PTR g_copilotPosTimer;
-
-WINUSERAPI UINT WINAPI GetDpiForWindow(HWND hwnd);
-typedef enum MONITOR_DPI_TYPE {
-    MDT_EFFECTIVE_DPI = 0,
-    MDT_ANGULAR_DPI = 1,
-    MDT_RAW_DPI = 2,
-    MDT_DEFAULT = MDT_EFFECTIVE_DPI
-} MONITOR_DPI_TYPE;
-STDAPI GetDpiForMonitor(HMONITOR hmonitor,
-                        MONITOR_DPI_TYPE dpiType,
-                        UINT* dpiX,
-                        UINT* dpiY);
-
-// Available since Windows 10 version 1607, missing in older MinGW headers.
-using GetThreadDescription_t =
-    WINBASEAPI HRESULT(WINAPI*)(HANDLE hThread, PWSTR* ppszThreadDescription);
-GetThreadDescription_t pGetThreadDescription;
 
 bool GetMonitorRect(HMONITOR monitor, RECT* rc) {
     MONITORINFO monitorInfo{
@@ -748,6 +732,9 @@ void WINAPI CTaskListThumbnailWnd_LayoutThumbnails_Hook(void* pThis) {
     g_inCTaskListThumbnailWnd_LayoutThumbnails = false;
 }
 
+// This hook is unnecessary with XAML refresh (new thumbnails and other UI
+// updates). Instead, look for the other location that checks for
+// g_inOverflowFlyoutModel_Show.
 using XamlExplorerHostWindow_XamlExplorerHostWindow_t =
     void*(WINAPI*)(void* pThis,
                    unsigned int param1,
@@ -2524,9 +2511,7 @@ BOOL WINAPI SetWindowPos_Hook(HWND hWnd,
         }
 
         PWSTR threadDescription;
-        HRESULT hr = pGetThreadDescription
-                         ? pGetThreadDescription(thread, &threadDescription)
-                         : E_FAIL;
+        HRESULT hr = GetThreadDescription(thread, &threadDescription);
         CloseHandle(thread);
         if (FAILED(hr)) {
             return original();
@@ -2731,6 +2716,9 @@ BOOL WINAPI SetWindowPos_Hook(HWND hWnd,
         }
     } else if (_wcsicmp(szClassName, L"XamlExplorerHostIslandWindow") == 0 &&
                g_inOverflowFlyoutModel_Show) {
+        // This flow is only called with XAML refresh. For code that took care
+        // of it before XAML refresh, see the other code that checks for
+        // g_inOverflowFlyoutModel_Show.
         if (uFlags & (SWP_NOMOVE | SWP_NOSIZE)) {
             return original();
         }
@@ -3009,9 +2997,7 @@ bool IsTargetCoreWindow(HWND hWnd, int* extraXAdjustment) {
         }
 
         PWSTR threadDescription;
-        HRESULT hr = pGetThreadDescription
-                         ? pGetThreadDescription(thread, &threadDescription)
-                         : E_FAIL;
+        HRESULT hr = GetThreadDescription(thread, &threadDescription);
         CloseHandle(thread);
         if (FAILED(hr)) {
             return false;
@@ -3580,11 +3566,6 @@ BOOL Wh_ModInit() {
     Wh_Log(L">");
 
     LoadSettings();
-
-    if (HMODULE kernel32Module = LoadLibrary(L"kernel32.dll")) {
-        pGetThreadDescription = (GetThreadDescription_t)GetProcAddress(
-            kernel32Module, "GetThreadDescription");
-    }
 
     g_target = Target::Explorer;
 
