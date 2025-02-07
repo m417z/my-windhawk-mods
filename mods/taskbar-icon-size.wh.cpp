@@ -1070,93 +1070,64 @@ bool HookTaskbarViewDllSymbols(HMODULE module) {
             {
                 {
                     LR"(public: __cdecl winrt::impl::consume_Windows_Foundation_Collections_IMap<struct winrt::Windows::UI::Xaml::ResourceDictionary,struct winrt::Windows::Foundation::IInspectable,struct winrt::Windows::Foundation::IInspectable>::Lookup(struct winrt::Windows::Foundation::IInspectable const &)const )",
-                    LR"(public: __cdecl winrt::impl::consume_Windows_Foundation_Collections_IMap<struct winrt::Windows::UI::Xaml::ResourceDictionary,struct winrt::Windows::Foundation::IInspectable,struct winrt::Windows::Foundation::IInspectable>::Lookup(struct winrt::Windows::Foundation::IInspectable const & __ptr64)const __ptr64)",
 
                     // Windows 11 version 21H2.
                     LR"(public: struct winrt::Windows::Foundation::IInspectable __cdecl winrt::impl::consume_Windows_Foundation_Collections_IMap<struct winrt::Windows::UI::Xaml::ResourceDictionary,struct winrt::Windows::Foundation::IInspectable,struct winrt::Windows::Foundation::IInspectable>::Lookup(struct winrt::Windows::Foundation::IInspectable const &)const )",
-                    LR"(public: struct winrt::Windows::Foundation::IInspectable __cdecl winrt::impl::consume_Windows_Foundation_Collections_IMap<struct winrt::Windows::UI::Xaml::ResourceDictionary,struct winrt::Windows::Foundation::IInspectable,struct winrt::Windows::Foundation::IInspectable>::Lookup(struct winrt::Windows::Foundation::IInspectable const & __ptr64)const __ptr64)",
                 },
                 (void**)&ResourceDictionary_Lookup_Original,
                 (void*)ResourceDictionary_Lookup_Hook,
             },
             {
-                {
-                    LR"(public: virtual int __cdecl winrt::impl::produce<struct winrt::Taskbar::implementation::TaskListItemViewModel,struct winrt::Taskbar::ITaskListItemViewModel>::GetIconHeight(void *,double *))",
-                    LR"(public: virtual int __cdecl winrt::impl::produce<struct winrt::Taskbar::implementation::TaskListItemViewModel,struct winrt::Taskbar::ITaskListItemViewModel>::GetIconHeight(void * __ptr64,double * __ptr64) __ptr64)",
-                },
+                {LR"(public: virtual int __cdecl winrt::impl::produce<struct winrt::Taskbar::implementation::TaskListItemViewModel,struct winrt::Taskbar::ITaskListItemViewModel>::GetIconHeight(void *,double *))"},
                 (void**)&TaskListItemViewModel_GetIconHeight_Original,
                 (void*)TaskListItemViewModel_GetIconHeight_Hook,
                 true,  // Gone in KB5040527 (Taskbar.View.dll 2124.16310.10.0).
             },
             {
-                {
-                    LR"(public: virtual int __cdecl winrt::impl::produce<struct winrt::Taskbar::implementation::TaskListGroupViewModel,struct winrt::Taskbar::ITaskbarAppItemViewModel>::GetIconHeight(void *,double *))",
-                    LR"(public: virtual int __cdecl winrt::impl::produce<struct winrt::Taskbar::implementation::TaskListGroupViewModel,struct winrt::Taskbar::ITaskbarAppItemViewModel>::GetIconHeight(void * __ptr64,double * __ptr64) __ptr64)",
-                },
+                {LR"(public: virtual int __cdecl winrt::impl::produce<struct winrt::Taskbar::implementation::TaskListGroupViewModel,struct winrt::Taskbar::ITaskbarAppItemViewModel>::GetIconHeight(void *,double *))"},
                 (void**)&TaskListGroupViewModel_GetIconHeight_Original,
                 (void*)TaskListGroupViewModel_GetIconHeight_Hook,
                 true,  // Missing in older Windows 11 versions.
             },
             {
-                {
-                    LR"(public: static double __cdecl winrt::Taskbar::implementation::TaskbarConfiguration::GetIconHeightInViewPixels(enum winrt::WindowsUdk::UI::Shell::TaskbarSize))",
-                    LR"(public: static double __cdecl winrt::Taskbar::implementation::TaskbarConfiguration::GetIconHeightInViewPixels(enum winrt::WindowsUdk::UI::Shell::TaskbarSize) __ptr64)",
-                },
+                {LR"(public: static double __cdecl winrt::Taskbar::implementation::TaskbarConfiguration::GetIconHeightInViewPixels(enum winrt::WindowsUdk::UI::Shell::TaskbarSize))"},
                 (void**)&TaskbarConfiguration_GetIconHeightInViewPixels_taskbarSizeEnum_Original,
                 (void*)
                     TaskbarConfiguration_GetIconHeightInViewPixels_taskbarSizeEnum_Hook,
             },
             {
-                {
-                    LR"(public: static double __cdecl winrt::Taskbar::implementation::TaskbarConfiguration::GetIconHeightInViewPixels(double))",
-                    LR"(public: static double __cdecl winrt::Taskbar::implementation::TaskbarConfiguration::GetIconHeightInViewPixels(double) __ptr64)",
-                },
+                {LR"(public: static double __cdecl winrt::Taskbar::implementation::TaskbarConfiguration::GetIconHeightInViewPixels(double))"},
                 (void**)&TaskbarConfiguration_GetIconHeightInViewPixels_double_Original,
                 (void*)
                     TaskbarConfiguration_GetIconHeightInViewPixels_double_Hook,
                 true,  // From Windows 11 version 22H2.
             },
             {
-                {
-                    LR"(private: double __cdecl winrt::SystemTray::implementation::SystemTrayController::GetFrameSize(enum winrt::WindowsUdk::UI::Shell::TaskbarSize))",
-                    LR"(private: double __cdecl winrt::SystemTray::implementation::SystemTrayController::GetFrameSize(enum winrt::WindowsUdk::UI::Shell::TaskbarSize) __ptr64)",
-                },
+                {LR"(private: double __cdecl winrt::SystemTray::implementation::SystemTrayController::GetFrameSize(enum winrt::WindowsUdk::UI::Shell::TaskbarSize))"},
                 (void**)&SystemTrayController_GetFrameSize_Original,
                 (void*)SystemTrayController_GetFrameSize_Hook,
                 true,  // From Windows 11 version 22H2, inlined sometimes.
             },
             {
-                {
-                    LR"(private: double __cdecl winrt::SystemTray::implementation::SystemTraySecondaryController::GetFrameSize(enum winrt::WindowsUdk::UI::Shell::TaskbarSize))",
-                    LR"(private: double __cdecl winrt::SystemTray::implementation::SystemTraySecondaryController::GetFrameSize(enum winrt::WindowsUdk::UI::Shell::TaskbarSize) __ptr64)",
-                },
+                {LR"(private: double __cdecl winrt::SystemTray::implementation::SystemTraySecondaryController::GetFrameSize(enum winrt::WindowsUdk::UI::Shell::TaskbarSize))"},
                 (void**)&SystemTraySecondaryController_GetFrameSize_Original,
                 (void*)SystemTraySecondaryController_GetFrameSize_Hook,
                 true,  // From Windows 11 version 22H2.
             },
             {
-                {
-                    LR"(public: static double __cdecl winrt::Taskbar::implementation::TaskbarConfiguration::GetFrameSize(enum winrt::WindowsUdk::UI::Shell::TaskbarSize))",
-                    LR"(public: static double __cdecl winrt::Taskbar::implementation::TaskbarConfiguration::GetFrameSize(enum winrt::WindowsUdk::UI::Shell::TaskbarSize) __ptr64)",
-                },
+                {LR"(public: static double __cdecl winrt::Taskbar::implementation::TaskbarConfiguration::GetFrameSize(enum winrt::WindowsUdk::UI::Shell::TaskbarSize))"},
                 (void**)&TaskbarConfiguration_GetFrameSize_Original,
                 (void*)TaskbarConfiguration_GetFrameSize_Hook,
                 true,  // From Windows 11 version 22H2.
             },
             {
-                {
-                    LR"(private: void __cdecl winrt::SystemTray::implementation::SystemTrayController::UpdateFrameSize(void))",
-                    LR"(private: void __cdecl winrt::SystemTray::implementation::SystemTrayController::UpdateFrameSize(void) __ptr64)",
-                },
+                {LR"(private: void __cdecl winrt::SystemTray::implementation::SystemTrayController::UpdateFrameSize(void))"},
                 (void**)&SystemTrayController_UpdateFrameSize_SymbolAddress,
                 nullptr,  // Hooked manually, we need the symbol address.
                 true,     // Missing in older Windows 11 versions.
             },
             {
-                {
-                    LR"(public: __cdecl winrt::impl::consume_Windows_UI_Xaml_IFrameworkElement<struct winrt::Taskbar::implementation::TaskbarFrame>::MaxHeight(double)const )",
-                    LR"(public: __cdecl winrt::impl::consume_Windows_UI_Xaml_IFrameworkElement<struct winrt::Taskbar::implementation::TaskbarFrame>::MaxHeight(double)const __ptr64)",
-                },
+                {LR"(public: __cdecl winrt::impl::consume_Windows_UI_Xaml_IFrameworkElement<struct winrt::Taskbar::implementation::TaskbarFrame>::MaxHeight(double)const )"},
                 (void**)&TaskbarFrame_MaxHeight_double_Original,
                 nullptr,
                 true,  // From Windows 11 version 22H2.
@@ -1164,105 +1135,70 @@ bool HookTaskbarViewDllSymbols(HMODULE module) {
             {
                 {
                     LR"(public: __cdecl winrt::impl::consume_Windows_UI_Xaml_IFrameworkElement<struct winrt::Taskbar::implementation::TaskbarFrame>::Height(double)const )",
-                    LR"(public: __cdecl winrt::impl::consume_Windows_UI_Xaml_IFrameworkElement<struct winrt::Taskbar::implementation::TaskbarFrame>::Height(double)const __ptr64)",
 
                     // Windows 11 version 21H2.
                     LR"(public: void __cdecl winrt::impl::consume_Windows_UI_Xaml_IFrameworkElement<struct winrt::Taskbar::implementation::TaskbarFrame>::Height(double)const )",
-                    LR"(public: void __cdecl winrt::impl::consume_Windows_UI_Xaml_IFrameworkElement<struct winrt::Taskbar::implementation::TaskbarFrame>::Height(double)const __ptr64)",
                 },
                 (void**)&TaskbarFrame_Height_double_Original,
                 (void*)TaskbarFrame_Height_double_Hook,
                 true,  // Gone in Windows 11 version 24H2.
             },
             {
-                {
-                    LR"(private: void __cdecl winrt::Taskbar::implementation::TaskbarController::OnGroupingModeChanged(void))",
-                    LR"(private: void __cdecl winrt::Taskbar::implementation::TaskbarController::OnGroupingModeChanged(void) __ptr64)",
-                },
+                {LR"(private: void __cdecl winrt::Taskbar::implementation::TaskbarController::OnGroupingModeChanged(void))"},
                 (void**)&TaskbarController_OnGroupingModeChanged,
                 nullptr,
                 true,  // Missing in older Windows 11 versions.
             },
             {
-                {
-                    LR"(private: void __cdecl winrt::Taskbar::implementation::TaskbarController::UpdateFrameHeight(void))",
-                    LR"(private: void __cdecl winrt::Taskbar::implementation::TaskbarController::UpdateFrameHeight(void) __ptr64)",
-                },
+                {LR"(private: void __cdecl winrt::Taskbar::implementation::TaskbarController::UpdateFrameHeight(void))"},
                 (void**)&TaskbarController_UpdateFrameHeight_Original,
                 (void*)TaskbarController_UpdateFrameHeight_Hook,
                 true,  // Missing in older Windows 11 versions.
             },
             {
-                {
-                    LR"(private: void __cdecl winrt::SystemTray::implementation::SystemTraySecondaryController::UpdateFrameSize(void))",
-                    LR"(private: void __cdecl winrt::SystemTray::implementation::SystemTraySecondaryController::UpdateFrameSize(void) __ptr64)",
-                },
+                {LR"(private: void __cdecl winrt::SystemTray::implementation::SystemTraySecondaryController::UpdateFrameSize(void))"},
                 (void**)&SystemTraySecondaryController_UpdateFrameSize_Original,
                 (void*)SystemTraySecondaryController_UpdateFrameSize_Hook,
                 true,  // Missing in older Windows 11 versions.
             },
             {
-                {
-                    LR"(public: __cdecl winrt::impl::consume_Windows_UI_Xaml_IFrameworkElement<struct winrt::SystemTray::SystemTrayFrame>::Height(double)const )",
-                    LR"(public: __cdecl winrt::impl::consume_Windows_UI_Xaml_IFrameworkElement<struct winrt::SystemTray::SystemTrayFrame>::Height(double)const __ptr64)",
-                },
+                {LR"(public: __cdecl winrt::impl::consume_Windows_UI_Xaml_IFrameworkElement<struct winrt::SystemTray::SystemTrayFrame>::Height(double)const )"},
                 (void**)&SystemTrayFrame_Height_Original,
                 (void*)SystemTrayFrame_Height_Hook,
                 true,  // From Windows 11 version 22H2.
             },
             {
-                {
-                    LR"(public: virtual int __cdecl winrt::impl::produce<struct winrt::Taskbar::implementation::TaskbarFrame,struct winrt::Windows::UI::Xaml::IFrameworkElementOverrides>::MeasureOverride(struct winrt::Windows::Foundation::Size,struct winrt::Windows::Foundation::Size *))",
-                    LR"(public: virtual int __cdecl winrt::impl::produce<struct winrt::Taskbar::implementation::TaskbarFrame,struct winrt::Windows::UI::Xaml::IFrameworkElementOverrides>::MeasureOverride(struct winrt::Windows::Foundation::Size,struct winrt::Windows::Foundation::Size * __ptr64) __ptr64)",
-                },
+                {LR"(public: virtual int __cdecl winrt::impl::produce<struct winrt::Taskbar::implementation::TaskbarFrame,struct winrt::Windows::UI::Xaml::IFrameworkElementOverrides>::MeasureOverride(struct winrt::Windows::Foundation::Size,struct winrt::Windows::Foundation::Size *))"},
                 (void**)&TaskbarFrame_MeasureOverride_Original,
                 (void*)TaskbarFrame_MeasureOverride_Hook,
             },
             {
-                {
-                    LR"(private: void __cdecl winrt::Taskbar::implementation::TaskListButton::UpdateIconColumnDefinition(void))",
-                    LR"(private: void __cdecl winrt::Taskbar::implementation::TaskListButton::UpdateIconColumnDefinition(void) __ptr64)",
-                },
+                {LR"(private: void __cdecl winrt::Taskbar::implementation::TaskListButton::UpdateIconColumnDefinition(void))"},
                 (void**)&TaskListButton_UpdateIconColumnDefinition_Original,
                 nullptr,
                 true,  // Missing in older Windows 11 versions.
             },
             {
-                {
-                    LR"(private: void __cdecl winrt::Taskbar::implementation::TaskListButton::UpdateButtonPadding(void))",
-                    LR"(private: void __cdecl winrt::Taskbar::implementation::TaskListButton::UpdateButtonPadding(void) __ptr64)",
-                },
+                {LR"(private: void __cdecl winrt::Taskbar::implementation::TaskListButton::UpdateButtonPadding(void))"},
                 (void**)&TaskListButton_UpdateButtonPadding_Original,
             },
             {
-                {
-                    LR"(private: void __cdecl winrt::Taskbar::implementation::TaskListButton::UpdateVisualStates(void))",
-                    LR"(private: void __cdecl winrt::Taskbar::implementation::TaskListButton::UpdateVisualStates(void) __ptr64)",
-                },
+                {LR"(private: void __cdecl winrt::Taskbar::implementation::TaskListButton::UpdateVisualStates(void))"},
                 (void**)&TaskListButton_UpdateVisualStates_Original,
                 (void*)TaskListButton_UpdateVisualStates_Hook,
             },
             {
-                {
-                    LR"(protected: virtual void __cdecl winrt::Taskbar::implementation::ExperienceToggleButton::UpdateButtonPadding(void))",
-                    LR"(protected: virtual void __cdecl winrt::Taskbar::implementation::ExperienceToggleButton::UpdateButtonPadding(void) __ptr64)",
-                },
+                {LR"(protected: virtual void __cdecl winrt::Taskbar::implementation::ExperienceToggleButton::UpdateButtonPadding(void))"},
                 (void**)&ExperienceToggleButton_UpdateButtonPadding_Original,
                 (void*)ExperienceToggleButton_UpdateButtonPadding_Hook,
             },
             {
-                {
-                    LR"(protected: virtual void __cdecl winrt::Taskbar::implementation::AugmentedEntryPointButton::UpdateButtonPadding(void))",
-                    LR"(protected: virtual void __cdecl winrt::Taskbar::implementation::AugmentedEntryPointButton::UpdateButtonPadding(void) __ptr64)",
-                },
+                {LR"(protected: virtual void __cdecl winrt::Taskbar::implementation::AugmentedEntryPointButton::UpdateButtonPadding(void))"},
                 (void**)&AugmentedEntryPointButton_UpdateButtonPadding_Original,
                 (void*)AugmentedEntryPointButton_UpdateButtonPadding_Hook,
             },
             {
-                {
-                    LR"(public: __cdecl winrt::impl::consume_Windows_UI_Xaml_IFrameworkElement<struct winrt::Windows::UI::Xaml::Controls::Primitives::RepeatButton>::Width(double)const )",
-                    LR"(public: __cdecl winrt::impl::consume_Windows_UI_Xaml_IFrameworkElement<struct winrt::Windows::UI::Xaml::Controls::Primitives::RepeatButton>::Width(double)const __ptr64)",
-                },
+                {LR"(public: __cdecl winrt::impl::consume_Windows_UI_Xaml_IFrameworkElement<struct winrt::Windows::UI::Xaml::Controls::Primitives::RepeatButton>::Width(double)const )"},
                 (void**)&RepeatButton_Width_Original,
                 (void*)RepeatButton_Width_Hook,
                 true,  // From Windows 11 version 22H2.
@@ -1293,58 +1229,37 @@ bool HookTaskbarDllSymbols() {
 
     WindhawkUtils::SYMBOL_HOOK taskbarDllHooks[] = {
         {
-            {
-                LR"(void __cdecl IconUtils::GetIconSize(bool,enum IconUtils::IconType,struct tagSIZE *))",
-                LR"(void __cdecl IconUtils::GetIconSize(bool,enum IconUtils::IconType,struct tagSIZE * __ptr64))",
-            },
+            {LR"(void __cdecl IconUtils::GetIconSize(bool,enum IconUtils::IconType,struct tagSIZE *))"},
             (void**)&IconUtils_GetIconSize_Original,
             (void*)IconUtils_GetIconSize_Hook,
         },
         {
-            {
-                LR"(public: virtual bool __cdecl IconContainer::IsStorageRecreationRequired(class CCoSimpleArray<unsigned int,4294967294,class CSimpleArrayStandardCompareHelper<unsigned int> > const &,enum IconContainerFlags))",
-                LR"(public: virtual bool __cdecl IconContainer::IsStorageRecreationRequired(class CCoSimpleArray<unsigned int,4294967294,class CSimpleArrayStandardCompareHelper<unsigned int> > const & __ptr64,enum IconContainerFlags) __ptr64)",
-            },
+            {LR"(public: virtual bool __cdecl IconContainer::IsStorageRecreationRequired(class CCoSimpleArray<unsigned int,4294967294,class CSimpleArrayStandardCompareHelper<unsigned int> > const &,enum IconContainerFlags))"},
             (void**)&IconContainer_IsStorageRecreationRequired_Original,
             (void*)IconContainer_IsStorageRecreationRequired_Hook,
         },
         {
-            {
-                LR"(public: virtual void __cdecl TrayUI::GetMinSize(struct HMONITOR__ *,struct tagSIZE *))",
-                LR"(public: virtual void __cdecl TrayUI::GetMinSize(struct HMONITOR__ * __ptr64,struct tagSIZE * __ptr64) __ptr64)",
-            },
+            {LR"(public: virtual void __cdecl TrayUI::GetMinSize(struct HMONITOR__ *,struct tagSIZE *))"},
             (void**)&TrayUI_GetMinSize_Original,
             (void*)TrayUI_GetMinSize_Hook,
             true,
         },
         {
-            {
-                LR"(public: virtual unsigned __int64 __cdecl CIconLoadingFunctions::GetClassLongPtrW(struct HWND__ *,int))",
-                LR"(public: virtual unsigned __int64 __cdecl CIconLoadingFunctions::GetClassLongPtrW(struct HWND__ * __ptr64,int) __ptr64)",
-            },
+            {LR"(public: virtual unsigned __int64 __cdecl CIconLoadingFunctions::GetClassLongPtrW(struct HWND__ *,int))"},
             (void**)&CIconLoadingFunctions_GetClassLongPtrW_Original,
             (void*)CIconLoadingFunctions_GetClassLongPtrW_Hook,
         },
         {
-            {
-                LR"(public: virtual int __cdecl CIconLoadingFunctions::SendMessageCallbackW(struct HWND__ *,unsigned int,unsigned __int64,__int64,void (__cdecl*)(struct HWND__ *,unsigned int,unsigned __int64,__int64),unsigned __int64))",
-                LR"(public: virtual int __cdecl CIconLoadingFunctions::SendMessageCallbackW(struct HWND__ * __ptr64,unsigned int,unsigned __int64,__int64,void (__cdecl*)(struct HWND__ * __ptr64,unsigned int,unsigned __int64,__int64),unsigned __int64) __ptr64)",
-            },
+            {LR"(public: virtual int __cdecl CIconLoadingFunctions::SendMessageCallbackW(struct HWND__ *,unsigned int,unsigned __int64,__int64,void (__cdecl*)(struct HWND__ *,unsigned int,unsigned __int64,__int64),unsigned __int64))"},
             (void**)&CIconLoadingFunctions_SendMessageCallbackW_Original,
             (void*)CIconLoadingFunctions_SendMessageCallbackW_Hook,
         },
         {
-            {
-                LR"(public: void __cdecl TrayUI::_StuckTrayChange(void))",
-                LR"(public: void __cdecl TrayUI::_StuckTrayChange(void) __ptr64)",
-            },
+            {LR"(public: void __cdecl TrayUI::_StuckTrayChange(void))"},
             (void**)&TrayUI__StuckTrayChange_Original,
         },
         {
-            {
-                LR"(public: void __cdecl TrayUI::_HandleSettingChange(struct HWND__ *,unsigned int,unsigned __int64,__int64))",
-                LR"(public: void __cdecl TrayUI::_HandleSettingChange(struct HWND__ * __ptr64,unsigned int,unsigned __int64,__int64) __ptr64)",
-            },
+            {LR"(public: void __cdecl TrayUI::_HandleSettingChange(struct HWND__ *,unsigned int,unsigned __int64,__int64))"},
             (void**)&TrayUI__HandleSettingChange_Original,
             (void*)TrayUI__HandleSettingChange_Hook,
         },

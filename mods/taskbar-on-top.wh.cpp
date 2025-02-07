@@ -1467,79 +1467,59 @@ bool GetTaskbarViewDllPath(WCHAR path[MAX_PATH]) {
 }
 
 bool HookTaskbarViewDllSymbols(HMODULE module) {
-    {
-        // Taskbar.View.dll, ExplorerExtensions.dll
-        WindhawkUtils::SYMBOL_HOOK symbolHooks[] = {
-            {
-                {
-                    LR"(private: void __cdecl winrt::Taskbar::implementation::TaskbarController::OnGroupingModeChanged(void))",
-                },
-                (void**)&TaskbarController_OnGroupingModeChanged,
-                nullptr,
-                true,  // Missing in older Windows 11 versions.
-            },
-            {
-                {
-                    LR"(private: void __cdecl winrt::Taskbar::implementation::TaskbarController::UpdateFrameHeight(void))",
-                },
-                (void**)&TaskbarController_UpdateFrameHeight_Original,
-                (void*)TaskbarController_UpdateFrameHeight_Hook,
-                true,  // Missing in older Windows 11 versions.
-            },
-            {
-                {
-                    LR"(public: __cdecl winrt::Taskbar::implementation::TaskbarFrame::TaskbarFrame(void))",
-                },
-                (void**)&TaskbarFrame_TaskbarFrame_Original,
-                (void*)TaskbarFrame_TaskbarFrame_Hook,
-            },
-            {
-                {
-                    LR"(public: __cdecl winrt::SystemTray::implementation::IconView::IconView(void))",
-                },
-                (void**)&IconView_IconView_Original,
-                (void*)IconView_IconView_Hook,
-            },
-            {
-                {
-                    LR"(private: void __cdecl winrt::Taskbar::implementation::TaskListButton::UpdateVisualStates(void))",
-                },
-                (void**)&TaskListButton_UpdateVisualStates_Original,
-                (void*)TaskListButton_UpdateVisualStates_Hook,
-            },
-            {
-                {
-                    LR"(public: void __cdecl winrt::Taskbar::implementation::OverflowFlyoutModel::Show(void))",
-                },
-                (void**)&OverflowFlyoutModel_Show_Original,
-                (void*)OverflowFlyoutModel_Show_Hook,
-            },
-            {
-                {
-                    LR"(public: __cdecl winrt::impl::consume_Windows_UI_Xaml_Controls_Primitives_IFlyoutBase5<struct winrt::Windows::UI::Xaml::Controls::MenuFlyout>::ShowAt(struct winrt::Windows::UI::Xaml::DependencyObject const &,struct winrt::Windows::UI::Xaml::Controls::Primitives::FlyoutShowOptions const &)const )",
-                },
-                (void**)&MenuFlyout_ShowAt_Original,
-                (void*)MenuFlyout_ShowAt_Hook,
-            },
-            {
-                {
-                    LR"(public: void __cdecl winrt::SystemTray::implementation::TextIconContent::ShowContextMenu(void))",
-                },
-                (void**)&TextIconContent_ShowContextMenu_Original,
-                (void*)TextIconContent_ShowContextMenu_Hook,
-            },
-            {
-                {
-                    LR"(public: void __cdecl winrt::SystemTray::implementation::DateTimeIconContent::ShowContextMenu(void))",
-                },
-                (void**)&DateTimeIconContent_ShowContextMenu_Original,
-                (void*)DateTimeIconContent_ShowContextMenu_Hook,
-            },
-        };
+    // Taskbar.View.dll, ExplorerExtensions.dll
+    WindhawkUtils::SYMBOL_HOOK symbolHooks[] = {
+        {
+            {LR"(private: void __cdecl winrt::Taskbar::implementation::TaskbarController::OnGroupingModeChanged(void))"},
+            (void**)&TaskbarController_OnGroupingModeChanged,
+            nullptr,
+            true,  // Missing in older Windows 11 versions.
+        },
+        {
+            {LR"(private: void __cdecl winrt::Taskbar::implementation::TaskbarController::UpdateFrameHeight(void))"},
+            (void**)&TaskbarController_UpdateFrameHeight_Original,
+            (void*)TaskbarController_UpdateFrameHeight_Hook,
+            true,  // Missing in older Windows 11 versions.
+        },
+        {
+            {LR"(public: __cdecl winrt::Taskbar::implementation::TaskbarFrame::TaskbarFrame(void))"},
+            (void**)&TaskbarFrame_TaskbarFrame_Original,
+            (void*)TaskbarFrame_TaskbarFrame_Hook,
+        },
+        {
+            {LR"(public: __cdecl winrt::SystemTray::implementation::IconView::IconView(void))"},
+            (void**)&IconView_IconView_Original,
+            (void*)IconView_IconView_Hook,
+        },
+        {
+            {LR"(private: void __cdecl winrt::Taskbar::implementation::TaskListButton::UpdateVisualStates(void))"},
+            (void**)&TaskListButton_UpdateVisualStates_Original,
+            (void*)TaskListButton_UpdateVisualStates_Hook,
+        },
+        {
+            {LR"(public: void __cdecl winrt::Taskbar::implementation::OverflowFlyoutModel::Show(void))"},
+            (void**)&OverflowFlyoutModel_Show_Original,
+            (void*)OverflowFlyoutModel_Show_Hook,
+        },
+        {
+            {LR"(public: __cdecl winrt::impl::consume_Windows_UI_Xaml_Controls_Primitives_IFlyoutBase5<struct winrt::Windows::UI::Xaml::Controls::MenuFlyout>::ShowAt(struct winrt::Windows::UI::Xaml::DependencyObject const &,struct winrt::Windows::UI::Xaml::Controls::Primitives::FlyoutShowOptions const &)const )"},
+            (void**)&MenuFlyout_ShowAt_Original,
+            (void*)MenuFlyout_ShowAt_Hook,
+        },
+        {
+            {LR"(public: void __cdecl winrt::SystemTray::implementation::TextIconContent::ShowContextMenu(void))"},
+            (void**)&TextIconContent_ShowContextMenu_Original,
+            (void*)TextIconContent_ShowContextMenu_Hook,
+        },
+        {
+            {LR"(public: void __cdecl winrt::SystemTray::implementation::DateTimeIconContent::ShowContextMenu(void))"},
+            (void**)&DateTimeIconContent_ShowContextMenu_Original,
+            (void*)DateTimeIconContent_ShowContextMenu_Hook,
+        },
+    };
 
-        if (!HookSymbols(module, symbolHooks, ARRAYSIZE(symbolHooks))) {
-            return false;
-        }
+    if (!HookSymbols(module, symbolHooks, ARRAYSIZE(symbolHooks))) {
+        return false;
     }
 
     return true;
@@ -1554,85 +1534,61 @@ bool HookTaskbarDllSymbols() {
 
     WindhawkUtils::SYMBOL_HOOK taskbarDllHooks[] = {
         {
-            {
-                LR"(public: void __cdecl TrayUI::_StuckTrayChange(void))",
-            },
+            {LR"(public: void __cdecl TrayUI::_StuckTrayChange(void))"},
             (void**)&TrayUI__StuckTrayChange_Original,
         },
         {
-            {
-                LR"(public: void __cdecl TrayUI::_HandleSettingChange(struct HWND__ *,unsigned int,unsigned __int64,__int64))",
-            },
+            {LR"(public: void __cdecl TrayUI::_HandleSettingChange(struct HWND__ *,unsigned int,unsigned __int64,__int64))"},
             (void**)&TrayUI__HandleSettingChange_Original,
             (void*)TrayUI__HandleSettingChange_Hook,
         },
         {
-            {
-                LR"(public: virtual unsigned int __cdecl TrayUI::GetDockedRect(struct tagRECT *,int))",
-            },
+            {LR"(public: virtual unsigned int __cdecl TrayUI::GetDockedRect(struct tagRECT *,int))"},
             (void**)&TrayUI_GetDockedRect_Original,
             (void*)TrayUI_GetDockedRect_Hook,
         },
         {
-            {
-                LR"(public: virtual void __cdecl TrayUI::MakeStuckRect(struct tagRECT *,struct tagRECT const *,struct tagSIZE,unsigned int))",
-            },
+            {LR"(public: virtual void __cdecl TrayUI::MakeStuckRect(struct tagRECT *,struct tagRECT const *,struct tagSIZE,unsigned int))"},
             (void**)&TrayUI_MakeStuckRect_Original,
             (void*)TrayUI_MakeStuckRect_Hook,
         },
         {
-            {
-                LR"(public: virtual void __cdecl TrayUI::GetStuckInfo(struct tagRECT *,unsigned int *))",
-            },
+            {LR"(public: virtual void __cdecl TrayUI::GetStuckInfo(struct tagRECT *,unsigned int *))"},
             (void**)&TrayUI_GetStuckInfo_Original,
             (void*)TrayUI_GetStuckInfo_Hook,
         },
         {
-            {
-                LR"(public: virtual __int64 __cdecl TrayUI::WndProc(struct HWND__ *,unsigned int,unsigned __int64,__int64,bool *))",
-            },
+            {LR"(public: virtual __int64 __cdecl TrayUI::WndProc(struct HWND__ *,unsigned int,unsigned __int64,__int64,bool *))"},
             (void**)&TrayUI_WndProc_Original,
             (void*)TrayUI_WndProc_Hook,
         },
         {
-            {
-                LR"(private: virtual __int64 __cdecl CSecondaryTray::v_WndProc(struct HWND__ *,unsigned int,unsigned __int64,__int64))",
-            },
+            {LR"(private: virtual __int64 __cdecl CSecondaryTray::v_WndProc(struct HWND__ *,unsigned int,unsigned __int64,__int64))"},
             (void**)&CSecondaryTray_v_WndProc_Original,
             (void*)CSecondaryTray_v_WndProc_Hook,
         },
         {
-            {
-                LR"(protected: long __cdecl CTaskListWnd::_ComputeJumpViewPosition(struct ITaskBtnGroup *,int,struct Windows::Foundation::Point &,enum Windows::UI::Xaml::HorizontalAlignment &,enum Windows::UI::Xaml::VerticalAlignment &)const )",
-            },
+            {LR"(protected: long __cdecl CTaskListWnd::_ComputeJumpViewPosition(struct ITaskBtnGroup *,int,struct Windows::Foundation::Point &,enum Windows::UI::Xaml::HorizontalAlignment &,enum Windows::UI::Xaml::VerticalAlignment &)const )"},
             (void**)&CTaskListWnd_ComputeJumpViewPosition_Original,
             (void*)CTaskListWnd_ComputeJumpViewPosition_Hook,
         },
         {
-            {
-                LR"(public: virtual int __cdecl CTaskListThumbnailWnd::DisplayUI(struct ITaskBtnGroup *,struct ITaskItem *,struct ITaskItem *,unsigned long))",
-            },
+            {LR"(public: virtual int __cdecl CTaskListThumbnailWnd::DisplayUI(struct ITaskBtnGroup *,struct ITaskItem *,struct ITaskItem *,unsigned long))"},
             (void**)&CTaskListThumbnailWnd_DisplayUI_Original,
             (void*)CTaskListThumbnailWnd_DisplayUI_Hook,
         },
         {
-            {
-                LR"(public: virtual void __cdecl CTaskListThumbnailWnd::LayoutThumbnails(void))",
-            },
+            {LR"(public: virtual void __cdecl CTaskListThumbnailWnd::LayoutThumbnails(void))"},
             (void**)&CTaskListThumbnailWnd_LayoutThumbnails_Original,
             (void*)CTaskListThumbnailWnd_LayoutThumbnails_Hook,
         },
         {
-            {
-                LR"(public: __cdecl winrt::Windows::Internal::Shell::XamlExplorerHost::XamlExplorerHostWindow::XamlExplorerHostWindow(unsigned int,struct winrt::Windows::Foundation::Rect const &,unsigned int))",
-            },
+            {LR"(public: __cdecl winrt::Windows::Internal::Shell::XamlExplorerHost::XamlExplorerHostWindow::XamlExplorerHostWindow(unsigned int,struct winrt::Windows::Foundation::Rect const &,unsigned int))"},
             (void**)&XamlExplorerHostWindow_XamlExplorerHostWindow_Original,
             (void*)XamlExplorerHostWindow_XamlExplorerHostWindow_Hook,
         },
         {
-            {
-                LR"(public: virtual int __cdecl winrt::impl::produce<struct winrt::WindowsUdk::UI::Shell::implementation::TaskbarSettings,struct winrt::WindowsUdk::UI::Shell::ITaskbarSettings>::get_Alignment(int *))",
-            },
+            {LR"(public: virtual int __cdecl winrt::impl::produce<struct winrt::WindowsUdk::UI::Shell::implementation::TaskbarSettings,struct winrt::WindowsUdk::UI::Shell::ITaskbarSettings>::get_Alignment(int *))"},
             (void**)&ITaskbarSettings_get_Alignment_Original,
             (void*)ITaskbarSettings_get_Alignment_Hook,
         },

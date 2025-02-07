@@ -874,94 +874,55 @@ BOOL Wh_ModInit() {
     // Taskbar.dll, explorer.exe
     WindhawkUtils::SYMBOL_HOOK symbolHooks[] = {
         {
-            {
-                LR"(private: void __cdecl CTaskListThumbnailWnd::_RefreshThumbnail(int) __ptr64)",
-                LR"(private: void __cdecl CTaskListThumbnailWnd::_RefreshThumbnail(int))",
-            },
+            {LR"(private: void __cdecl CTaskListThumbnailWnd::_RefreshThumbnail(int))"},
             (void**)&CTaskListThumbnailWnd__RefreshThumbnail,
         },
         {
-            {
-                LR"(protected: struct ITaskBtnGroup * __ptr64 __cdecl CTaskListWnd::_GetTBGroupFromGroup(struct ITaskGroup * __ptr64,int * __ptr64) __ptr64)",
-                LR"(protected: struct ITaskBtnGroup * __cdecl CTaskListWnd::_GetTBGroupFromGroup(struct ITaskGroup *,int *))",
-            },
+            {LR"(protected: struct ITaskBtnGroup * __cdecl CTaskListWnd::_GetTBGroupFromGroup(struct ITaskGroup *,int *))"},
             (void**)&CTaskListWnd__GetTBGroupFromGroup,
         },
         {
-            {
-                LR"(public: virtual void __cdecl CTaskListThumbnailWnd::Dismiss(int,int) __ptr64)",
-                LR"(public: virtual void __cdecl CTaskListThumbnailWnd::Dismiss(int,int))",
-            },
+            {LR"(public: virtual void __cdecl CTaskListThumbnailWnd::Dismiss(int,int))"},
             (void**)&CTaskListThumbnailWnd_Dismiss,
         },
         {
-            {
-                LR"(public: virtual struct ITaskGroup * __ptr64 __cdecl CTaskListThumbnailWnd::GetTaskGroup(void)const __ptr64)",
-                LR"(public: virtual struct ITaskGroup * __cdecl CTaskListThumbnailWnd::GetTaskGroup(void)const )",
-            },
+            {LR"(public: virtual struct ITaskGroup * __cdecl CTaskListThumbnailWnd::GetTaskGroup(void)const )"},
             (void**)&CTaskListThumbnailWnd_GetTaskGroup,
         },
         {
-            {
-                LR"(private: void __cdecl CTaskListThumbnailWnd::_RegisterThumbBars(void) __ptr64)",
-                LR"(private: void __cdecl CTaskListThumbnailWnd::_RegisterThumbBars(void))",
-            },
+            {LR"(private: void __cdecl CTaskListThumbnailWnd::_RegisterThumbBars(void))"},
             (void**)&CTaskListThumbnailWnd__RegisterThumbBars,
         },
         {
-            {
-                LR"(public: virtual int __cdecl CTaskListThumbnailWnd::GetHoverIndex(void)const __ptr64)",
-                LR"(public: virtual int __cdecl CTaskListThumbnailWnd::GetHoverIndex(void)const )",
-            },
+            {LR"(public: virtual int __cdecl CTaskListThumbnailWnd::GetHoverIndex(void)const )"},
             (void**)&CTaskListThumbnailWnd_GetHoverIndex,
         },
         {
-            {
-                LR"(public: virtual struct HWND__ * __ptr64 __cdecl CTaskListThumbnailWnd::GetHwnd(void) __ptr64)",
-                LR"(public: virtual struct HWND__ * __cdecl CTaskListThumbnailWnd::GetHwnd(void))",
-            },
+            {LR"(public: virtual struct HWND__ * __cdecl CTaskListThumbnailWnd::GetHwnd(void))"},
             (void**)&CTaskListThumbnailWnd_GetHwnd,
         },
         {
-            {
-                LR"(public: virtual long __cdecl CTaskListWnd::TaskInclusionChanged(struct ITaskGroup * __ptr64,struct ITaskItem * __ptr64) __ptr64)",
-                LR"(public: virtual long __cdecl CTaskListWnd::TaskInclusionChanged(struct ITaskGroup *,struct ITaskItem *))",
-            },
+            {LR"(public: virtual long __cdecl CTaskListWnd::TaskInclusionChanged(struct ITaskGroup *,struct ITaskItem *))"},
             (void**)&CTaskListWnd_TaskInclusionChanged,
         },
         {
-            {
-                LR"(public: virtual struct ITaskItem * __ptr64 __cdecl CTaskThumbnail::GetTaskItem(void) __ptr64)",
-                LR"(public: virtual struct ITaskItem * __cdecl CTaskThumbnail::GetTaskItem(void))",
-            },
+            {LR"(public: virtual struct ITaskItem * __cdecl CTaskThumbnail::GetTaskItem(void))"},
             (void**)&CTaskThumbnail_GetTaskItem,
         },
         {
-            {
-                LR"(public: virtual enum eTBGROUPTYPE __cdecl CTaskBtnGroup::GetGroupType(void) __ptr64)",
-                LR"(public: virtual enum eTBGROUPTYPE __cdecl CTaskBtnGroup::GetGroupType(void))",
-            },
+            {LR"(public: virtual enum eTBGROUPTYPE __cdecl CTaskBtnGroup::GetGroupType(void))"},
             (void**)&CTaskBtnGroup_GetGroupType,
         },
         {
-            {
-                LR"(public: virtual int __cdecl CTaskBtnGroup::GetNumItems(void) __ptr64)",
-                LR"(public: virtual int __cdecl CTaskBtnGroup::GetNumItems(void))",
-            },
+            {LR"(public: virtual int __cdecl CTaskBtnGroup::GetNumItems(void))"},
             (void**)&CTaskBtnGroup_GetNumItems,
         },
         {
-            {
-                LR"(public: virtual struct ITaskItem * __ptr64 __cdecl CTaskBtnGroup::GetTaskItem(int) __ptr64)",
-                LR"(public: virtual struct ITaskItem * __cdecl CTaskBtnGroup::GetTaskItem(int))",
-            },
+            {LR"(public: virtual struct ITaskItem * __cdecl CTaskBtnGroup::GetTaskItem(int))"},
             (void**)&CTaskBtnGroup_GetTaskItem,
         },
         {
-            {
-                LR"(public: virtual bool __cdecl TaskItemFilter::IsTaskAllowed(struct ITaskItem * __ptr64) __ptr64)",
-                LR"(public: virtual bool __cdecl TaskItemFilter::IsTaskAllowed(struct ITaskItem *))",
-            },
+            {LR"(public: virtual bool __cdecl TaskItemFilter::IsTaskAllowed(struct ITaskItem *))"},
             (void**)&TaskItemFilter_IsTaskAllowed_Original,
             (void*)TaskItemFilter_IsTaskAllowed_Hook,
         },

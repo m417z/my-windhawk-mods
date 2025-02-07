@@ -495,75 +495,64 @@ bool HookTaskbarSymbols() {
     // Taskbar.dll, explorer.exe
     WindhawkUtils::SYMBOL_HOOK symbolHooks[] = {
         // Win11 only:
-        {{
-             LR"(public: virtual long __cdecl CTaskListWnd::HandleClick(struct ITaskGroup *,struct ITaskItem *,struct winrt::Windows::System::LauncherOptions const &))",
-             LR"(public: virtual long __cdecl CTaskListWnd::HandleClick(struct ITaskGroup * __ptr64,struct ITaskItem * __ptr64,struct winrt::Windows::System::LauncherOptions const & __ptr64) __ptr64)",
-         },
-         (void**)&CTaskListWnd_HandleClick_Original,
-         (void*)CTaskListWnd_HandleClick_Hook},
+        {
+            {LR"(public: virtual long __cdecl CTaskListWnd::HandleClick(struct ITaskGroup *,struct ITaskItem *,struct winrt::Windows::System::LauncherOptions const &))"},
+            (void**)&CTaskListWnd_HandleClick_Original,
+            (void*)CTaskListWnd_HandleClick_Hook,
+        },
         // Win10 and Win11:
-        {{
-             LR"(protected: void __cdecl CTaskListWnd::_HandleClick(struct ITaskBtnGroup *,int,enum CTaskListWnd::eCLICKACTION,int,int))",
-             LR"(protected: void __cdecl CTaskListWnd::_HandleClick(struct ITaskBtnGroup * __ptr64,int,enum CTaskListWnd::eCLICKACTION,int,int) __ptr64)",
-         },
-         (void**)&CTaskListWnd__HandleClick_Original,
-         (void*)CTaskListWnd__HandleClick_Hook},
-        {{
-             LR"(public: virtual long __cdecl CTaskBand::Launch(struct ITaskGroup *,struct tagPOINT const &,enum LaunchFromTaskbarOptions))",
-             LR"(public: virtual long __cdecl CTaskBand::Launch(struct ITaskGroup * __ptr64,struct tagPOINT const & __ptr64,enum LaunchFromTaskbarOptions) __ptr64)",
-         },
-         (void**)&CTaskBand_Launch_Original,
-         (void*)CTaskBand_Launch_Hook},
-        {{
-             LR"(public: virtual long __cdecl CTaskListWnd::GetActiveBtn(struct ITaskGroup * *,int *))",
-             LR"(public: virtual long __cdecl CTaskListWnd::GetActiveBtn(struct ITaskGroup * __ptr64 * __ptr64,int * __ptr64) __ptr64)",
-         },
-         (void**)&CTaskListWnd_GetActiveBtn_Original},
-        {{
-             LR"(public: virtual void __cdecl CTaskListWnd::ProcessJumpViewCloseWindow(struct HWND__ *,struct ITaskGroup *,struct HMONITOR__ *))",
-             LR"(public: virtual void __cdecl CTaskListWnd::ProcessJumpViewCloseWindow(struct HWND__ * __ptr64,struct ITaskGroup * __ptr64,struct HMONITOR__ * __ptr64) __ptr64)",
-         },
-         (void**)&CTaskListWnd_ProcessJumpViewCloseWindow_Original},
-        {{
-             // Win11:
-             LR"(protected: void __cdecl CTaskBand::_EndTask(struct HWND__ * const,int))",
-             LR"(protected: void __cdecl CTaskBand::_EndTask(struct HWND__ * __ptr64 const,int) __ptr64)",
+        {
+            {LR"(protected: void __cdecl CTaskListWnd::_HandleClick(struct ITaskBtnGroup *,int,enum CTaskListWnd::eCLICKACTION,int,int))"},
+            (void**)&CTaskListWnd__HandleClick_Original,
+            (void*)CTaskListWnd__HandleClick_Hook,
+        },
+        {
+            {LR"(public: virtual long __cdecl CTaskBand::Launch(struct ITaskGroup *,struct tagPOINT const &,enum LaunchFromTaskbarOptions))"},
+            (void**)&CTaskBand_Launch_Original,
+            (void*)CTaskBand_Launch_Hook,
+        },
+        {
+            {LR"(public: virtual long __cdecl CTaskListWnd::GetActiveBtn(struct ITaskGroup * *,int *))"},
+            (void**)&CTaskListWnd_GetActiveBtn_Original,
+        },
+        {
+            {LR"(public: virtual void __cdecl CTaskListWnd::ProcessJumpViewCloseWindow(struct HWND__ *,struct ITaskGroup *,struct HMONITOR__ *))"},
+            (void**)&CTaskListWnd_ProcessJumpViewCloseWindow_Original,
+        },
+        {
+            {
+                // Win11:
+                LR"(protected: void __cdecl CTaskBand::_EndTask(struct HWND__ * const,int))",
 
-             // Win10:
-             LR"(protected: void __thiscall CTaskBand::_EndTask(struct HWND__ * const,int))",
-             LR"(protected: void __thiscall CTaskBand::_EndTask(struct HWND__ * __ptr64 const,int) __ptr64)",
-         },
-         (void**)&CTaskBand__EndTask_Original},
-        {{
-             LR"(public: virtual enum eTBGROUPTYPE __cdecl CTaskBtnGroup::GetGroupType(void))",
-             LR"(public: virtual enum eTBGROUPTYPE __cdecl CTaskBtnGroup::GetGroupType(void) __ptr64)",
-         },
-         (void**)&CTaskBtnGroup_GetGroupType_Original},
-        {{
-             LR"(public: virtual struct ITaskGroup * __cdecl CTaskBtnGroup::GetGroup(void))",
-             LR"(public: virtual struct ITaskGroup * __ptr64 __cdecl CTaskBtnGroup::GetGroup(void) __ptr64)",
-         },
-         (void**)&CTaskBtnGroup_GetGroup_Original},
-        {{
-             LR"(public: virtual struct ITaskItem * __cdecl CTaskBtnGroup::GetTaskItem(int))",
-             LR"(public: virtual struct ITaskItem * __ptr64 __cdecl CTaskBtnGroup::GetTaskItem(int) __ptr64)",
-         },
-         (void**)&CTaskBtnGroup_GetTaskItem_Original},
-        {{
-             LR"(public: virtual struct HWND__ * __cdecl CWindowTaskItem::GetWindow(void))",
-             LR"(public: virtual struct HWND__ * __ptr64 __cdecl CWindowTaskItem::GetWindow(void) __ptr64)",
-         },
-         (void**)&CWindowTaskItem_GetWindow_Original},
-        {{
-             LR"(public: virtual struct HWND__ * __cdecl CImmersiveTaskItem::GetWindow(void))",
-             LR"(public: virtual struct HWND__ * __ptr64 __cdecl CImmersiveTaskItem::GetWindow(void) __ptr64)",
-         },
-         (void**)&CImmersiveTaskItem_GetWindow_Original},
-        {{
-             LR"(const CImmersiveTaskItem::`vftable'{for `ITaskItem'})",
-             LR"(const CImmersiveTaskItem::`vftable'{for `ITaskItem'} __ptr64)",
-         },
-         (void**)&CImmersiveTaskItem_vftable}};
+                // Win10:
+                LR"(protected: void __thiscall CTaskBand::_EndTask(struct HWND__ * const,int))",
+            },
+            (void**)&CTaskBand__EndTask_Original,
+        },
+        {
+            {LR"(public: virtual enum eTBGROUPTYPE __cdecl CTaskBtnGroup::GetGroupType(void))"},
+            (void**)&CTaskBtnGroup_GetGroupType_Original,
+        },
+        {
+            {LR"(public: virtual struct ITaskGroup * __cdecl CTaskBtnGroup::GetGroup(void))"},
+            (void**)&CTaskBtnGroup_GetGroup_Original,
+        },
+        {
+            {LR"(public: virtual struct ITaskItem * __cdecl CTaskBtnGroup::GetTaskItem(int))"},
+            (void**)&CTaskBtnGroup_GetTaskItem_Original,
+        },
+        {
+            {LR"(public: virtual struct HWND__ * __cdecl CWindowTaskItem::GetWindow(void))"},
+            (void**)&CWindowTaskItem_GetWindow_Original,
+        },
+        {
+            {LR"(public: virtual struct HWND__ * __cdecl CImmersiveTaskItem::GetWindow(void))"},
+            (void**)&CImmersiveTaskItem_GetWindow_Original,
+        },
+        {
+            {LR"(const CImmersiveTaskItem::`vftable'{for `ITaskItem'})"},
+            (void**)&CImmersiveTaskItem_vftable,
+        }};
 
     if (g_winVersion <= WinVersion::Win10) {
         WindhawkUtils::SYMBOL_HOOK* symbolHooksWin10 = symbolHooks + 1;

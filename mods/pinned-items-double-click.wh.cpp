@@ -221,26 +221,17 @@ BOOL Wh_ModInit() {
     // Taskbar.dll, explorer.exe
     WindhawkUtils::SYMBOL_HOOK symbolHooks[] = {
         {
-            {
-                LR"(public: virtual enum eTBGROUPTYPE __cdecl CTaskBtnGroup::GetGroupType(void))",
-                LR"(public: virtual enum eTBGROUPTYPE __cdecl CTaskBtnGroup::GetGroupType(void) __ptr64)",
-            },
+            {LR"(public: virtual enum eTBGROUPTYPE __cdecl CTaskBtnGroup::GetGroupType(void))"},
             (void**)&CTaskBtnGroup_GetGroupType_Original,
         },
         {
-            {
-                LR"(protected: void __cdecl CTaskListWnd::_HandleClick(struct ITaskBtnGroup *,int,enum CTaskListWnd::eCLICKACTION,int,int))",
-                LR"(protected: void __cdecl CTaskListWnd::_HandleClick(struct ITaskBtnGroup * __ptr64,int,enum CTaskListWnd::eCLICKACTION,int,int) __ptr64)",
-            },
+            {LR"(protected: void __cdecl CTaskListWnd::_HandleClick(struct ITaskBtnGroup *,int,enum CTaskListWnd::eCLICKACTION,int,int))"},
             (void**)&CTaskListWnd__HandleClick_Original,
             (void*)CTaskListWnd__HandleClick_Hook,
         },
         {
             // Windows 10 only.
-            {
-                LR"(protected: void __cdecl CTaskListWnd::_HandleMouseButtonDown(unsigned __int64,struct tagPOINT const &,bool))",
-                LR"(protected: void __cdecl CTaskListWnd::_HandleMouseButtonDown(unsigned __int64,struct tagPOINT const & __ptr64,bool) __ptr64)",
-            },
+            {LR"(protected: void __cdecl CTaskListWnd::_HandleMouseButtonDown(unsigned __int64,struct tagPOINT const &,bool))"},
             (void**)&CTaskListWnd__HandleMouseButtonDown_Original,
             (void*)CTaskListWnd__HandleMouseButtonDown_Hook,
             true,
