@@ -105,8 +105,9 @@ bool IsFolderViewWnd(HWND hWnd) {
         return false;
     }
 
-    if (!GetClassName(hParentWnd2, buffer, ARRAYSIZE(buffer)) ||
-        _wcsicmp(buffer, L"Progman")) {
+    if ((!GetClassName(hParentWnd2, buffer, ARRAYSIZE(buffer)) ||
+         _wcsicmp(buffer, L"Progman")) &&
+        hParentWnd2 != GetShellWindow()) {
         return false;
     }
 
