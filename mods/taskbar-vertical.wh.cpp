@@ -2,7 +2,7 @@
 // @id              taskbar-vertical
 // @name            Vertical Taskbar for Windows 11
 // @description     Finally, the missing vertical taskbar option for Windows 11! Move the taskbar to the left or right side of the screen.
-// @version         1.3.2
+// @version         1.3.3
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
@@ -3013,15 +3013,8 @@ int WINAPI MapWindowPoints_Hook(HWND hWndFrom,
 
     int flyoutHeight = MulDiv(g_flyoutPositionSize.Height, monitorDpiY, 96);
 
-    // Align to bottom instead of top.
-    lpPoints->y += flyoutHeight;
-
-    if (lpPoints->y < monitorInfo.rcWork.top) {
-        lpPoints->y = monitorInfo.rcWork.top;
-    }
-
-    // Center vertically for thumb.
-    lpPoints->y -= flyoutHeight / 2;
+    // Center vertically.
+    lpPoints->y += flyoutHeight / 2;
 
     // Center vertically for taskbar button.
     lpPoints->y += MulDiv(56 / 2, monitorDpiY, 96);
