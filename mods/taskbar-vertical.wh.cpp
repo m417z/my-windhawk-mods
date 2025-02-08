@@ -916,7 +916,7 @@ double WINAPI TaskbarConfiguration_GetFrameSize_Hook(int enumTaskbarSize) {
     return TaskbarConfiguration_GetFrameSize_Original(enumTaskbarSize);
 }
 
-#if defined(_M_ARM64)
+#ifdef _M_ARM64
 thread_local double* g_TaskbarConfiguration_UpdateFrameSize_frameSize;
 
 using TaskbarConfiguration_UpdateFrameSize_t = void(WINAPI*)(void* pThis);
@@ -991,7 +991,7 @@ void WINAPI Event_operator_call_Hook(void* pThis) {
 
     Event_operator_call_Original(pThis);
 }
-#endif
+#endif  // _M_ARM64
 
 using SystemTrayController_UpdateFrameSize_t = void(WINAPI*)(void* pThis);
 SystemTrayController_UpdateFrameSize_t
@@ -3513,7 +3513,7 @@ bool HookTaskbarViewDllSymbols(HMODULE module) {
             &TaskbarConfiguration_GetFrameSize_Original,
             TaskbarConfiguration_GetFrameSize_Hook,
         },
-#if defined(_M_ARM64)
+#ifdef _M_ARM64
         // In ARM64, the TaskbarConfiguration::GetFrameSize function is inlined.
         // As a workaround, hook TaskbarConfiguration::UpdateFrameSize which its
         // inlined in and do some ugly assembly tinkering.
@@ -3639,7 +3639,7 @@ bool HookTaskbarViewDllSymbols(HMODULE module) {
         return false;
     }
 
-#if defined(_M_ARM64)
+#ifdef _M_ARM64
     if (TaskbarConfiguration_UpdateFrameSize_SymbolAddress) {
         WindhawkUtils::SetFunctionHook(
             TaskbarConfiguration_UpdateFrameSize_SymbolAddress,
