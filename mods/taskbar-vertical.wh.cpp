@@ -1172,9 +1172,13 @@ void WINAPI TaskbarController_UpdateFrameHeight_Hook(void* pThis) {
         return;
     }
 
-    taskbarFrameElement.MaxHeight(std::numeric_limits<double>::infinity());
+    // Setting a max height value serves as a workaround for excessive ellipsis.
+    // https://github.com/ramensoftware/windhawk-mods/issues/981
+    taskbarFrameElement.MaxHeight(200);
 
     TaskbarController_UpdateFrameHeight_Original(pThis);
+
+    taskbarFrameElement.MaxHeight(std::numeric_limits<double>::infinity());
 
     // Set the width to NaN (Auto) to always match the parent width.
     taskbarFrameElement.Width(std::numeric_limits<double>::quiet_NaN());
