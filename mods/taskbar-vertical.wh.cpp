@@ -1096,6 +1096,10 @@ TaskbarController_UpdateFrameHeight_t
 void WINAPI TaskbarController_UpdateFrameHeight_Hook(void* pThis) {
     Wh_Log(L">");
 
+    if (g_unloading) {
+        return TaskbarController_UpdateFrameHeight_Original(pThis);
+    }
+
     static LONG taskbarFrameOffset = []() -> LONG {
 #if defined(_M_X64)
         // 48:83EC 28               | sub rsp,28
@@ -1171,29 +1175,46 @@ void WINAPI TaskbarController_UpdateFrameHeight_Hook(void* pThis) {
         return;
     }
 
-    // Setting a max height value serves as a workaround for excessive ellipsis.
-    // https://github.com/ramensoftware/windhawk-mods/issues/981
-    taskbarFrameElement.MaxHeight(200);
-
     TaskbarController_UpdateFrameHeight_Original(pThis);
 
     taskbarFrameElement.MaxHeight(std::numeric_limits<double>::infinity());
 
-    // Set the width to NaN (Auto) to always match the parent width.
+    // Set the width, height to NaN (Auto) to always match the parent.
     taskbarFrameElement.Width(std::numeric_limits<double>::quiet_NaN());
+    taskbarFrameElement.Height(std::numeric_limits<double>::quiet_NaN());
 
-    // Adjust parent grid height if needed.
+    // Adjust parent grid height too, for compatibility with some tablet or
+    // touch-optimized mode.
     auto contentGrid = Media::VisualTreeHelper::GetParent(taskbarFrameElement)
                            .try_as<FrameworkElement>();
     if (contentGrid) {
-        double height = taskbarFrameElement.Height();
-        double contentGridHeight = contentGrid.Height();
-        if (contentGridHeight > 0 && contentGridHeight != height) {
-            Wh_Log(L"Adjusting contentGrid.Height: %f->%f", contentGridHeight,
-                   height);
-            contentGrid.Height(height);
-        }
+        contentGrid.Height(std::numeric_limits<double>::quiet_NaN());
     }
+
+    // taskbarFrameElement must have height, otherwise overflow popup causes
+    // a crash. Set it based on border height.
+    taskbarFrameElement.Dispatcher().TryRunAsync(
+        winrt::Windows::UI::Core::CoreDispatcherPriority::Low,
+        [taskbarFrameElement]() {
+            auto contentGrid =
+                Media::VisualTreeHelper::GetParent(taskbarFrameElement)
+                    .try_as<FrameworkElement>();
+            if (!contentGrid) {
+                return;
+            }
+
+            auto border = Media::VisualTreeHelper::GetParent(contentGrid)
+                              .try_as<FrameworkElement>();
+            if (!border) {
+                return;
+            }
+
+            double borderHeight = border.Height();
+            if (borderHeight > 0) {
+                Wh_Log(L"Setting taskbar frame height to %f", borderHeight);
+                taskbarFrameElement.Height(borderHeight);
+            }
+        });
 }
 
 using SystemTraySecondaryController_UpdateFrameSize_t =
