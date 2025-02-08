@@ -53,7 +53,7 @@ struct {
 
 using FlashWindow_t = decltype(&FlashWindow);
 FlashWindow_t FlashWindow_Original;
-BOOL WINAPI FlashWindow_Hook(HWND hWnd, WINBOOL bInvert) {
+BOOL WINAPI FlashWindow_Hook(HWND hWnd, BOOL bInvert) {
     Wh_Log(L">");
 
     if (g_settings.mode == Mode::prevent) {

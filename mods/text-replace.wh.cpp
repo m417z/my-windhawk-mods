@@ -197,7 +197,7 @@ BOOL WINAPI ModifyMenuWHook(HMENU hMenu,UINT uPosition,UINT uFlags,UINT_PTR uIDN
 
 using InsertMenuItemA_t = decltype(&InsertMenuItemA);
 InsertMenuItemA_t pOriginalInsertMenuItemA;
-BOOL WINAPI InsertMenuItemAHook(HMENU hmenu,UINT item,WINBOOL fByPosition,LPCMENUITEMINFOA lpmi)
+BOOL WINAPI InsertMenuItemAHook(HMENU hmenu,UINT item,BOOL fByPosition,LPCMENUITEMINFOA lpmi)
 {
     if ((
         (lpmi->fMask & MIIM_STRING) ||
@@ -214,7 +214,7 @@ BOOL WINAPI InsertMenuItemAHook(HMENU hmenu,UINT item,WINBOOL fByPosition,LPCMEN
 
 using InsertMenuItemW_t = decltype(&InsertMenuItemW);
 InsertMenuItemW_t pOriginalInsertMenuItemW;
-BOOL WINAPI InsertMenuItemWHook(HMENU hmenu,UINT item,WINBOOL fByPosition,LPCMENUITEMINFOW lpmi)
+BOOL WINAPI InsertMenuItemWHook(HMENU hmenu,UINT item,BOOL fByPosition,LPCMENUITEMINFOW lpmi)
 {
     if ((
         (lpmi->fMask & MIIM_STRING) ||
@@ -231,7 +231,7 @@ BOOL WINAPI InsertMenuItemWHook(HMENU hmenu,UINT item,WINBOOL fByPosition,LPCMEN
 
 using SetMenuItemInfoA_t = decltype(&SetMenuItemInfoA);
 SetMenuItemInfoA_t pOriginalSetMenuItemInfoA;
-BOOL WINAPI SetMenuItemInfoAHook(HMENU hmenu,UINT item,WINBOOL fByPosition,LPCMENUITEMINFOA lpmi)
+BOOL WINAPI SetMenuItemInfoAHook(HMENU hmenu,UINT item,BOOL fByPosition,LPCMENUITEMINFOA lpmi)
 {
     if ((
         (lpmi->fMask & MIIM_STRING) ||
@@ -248,7 +248,7 @@ BOOL WINAPI SetMenuItemInfoAHook(HMENU hmenu,UINT item,WINBOOL fByPosition,LPCME
 
 using SetMenuItemInfoW_t = decltype(&SetMenuItemInfoW);
 SetMenuItemInfoW_t pOriginalSetMenuItemInfoW;
-BOOL WINAPI SetMenuItemInfoWHook(HMENU hmenu,UINT item,WINBOOL fByPosition,LPCMENUITEMINFOW lpmi)
+BOOL WINAPI SetMenuItemInfoWHook(HMENU hmenu,UINT item,BOOL fByPosition,LPCMENUITEMINFOW lpmi)
 {
     if ((
         (lpmi->fMask & MIIM_STRING) ||

@@ -2934,7 +2934,7 @@ BOOL WINAPI MoveWindow_Hook(HWND hWnd,
                             int Y,
                             int nWidth,
                             int nHeight,
-                            WINBOOL bRepaint) {
+                            BOOL bRepaint) {
     auto original = [&]() {
         return MoveWindow_Original(hWnd, X, Y, nWidth, nHeight, bRepaint);
     };

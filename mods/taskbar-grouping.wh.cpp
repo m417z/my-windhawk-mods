@@ -1249,7 +1249,7 @@ int WINAPI CompareStringOrdinal_Hook(LPCWCH lpString1,
                                      int cchCount1,
                                      LPCWCH lpString2,
                                      int cchCount2,
-                                     WINBOOL bIgnoreCase) {
+                                     BOOL bIgnoreCase) {
     if (g_compareStringOrdinalHookThreadId == GetCurrentThreadId() &&
         cchCount1 == -1 && cchCount2 == -1) {
         PCWSTR suffix1 = FindAppIdSuffix(lpString1);
