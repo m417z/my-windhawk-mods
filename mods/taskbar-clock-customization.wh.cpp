@@ -299,12 +299,7 @@ styles, such as the font color and size.
 
 using namespace std::string_view_literals;
 
-#include <initguid.h>  // must come before knownfolders.h
-
-#include <inspectable.h>
-#include <knownfolders.h>
 #include <psapi.h>
-#include <shlobj.h>
 #include <wininet.h>
 
 #undef GetCurrentTime
@@ -1601,7 +1596,7 @@ HRESULT WINAPI BadgeIconContent_get_ViewModel_Hook(LPVOID pThis, LPVOID pArgs) {
     try {
         winrt::Windows::Foundation::IInspectable obj = nullptr;
         winrt::check_hresult(
-            ((IInspectable*)pThis)
+            ((IUnknown*)pThis)
                 ->QueryInterface(
                     winrt::guid_of<winrt::Windows::Foundation::IInspectable>(),
                     winrt::put_abi(obj)));

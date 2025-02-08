@@ -172,12 +172,6 @@ Labels can also be shown or hidden per-program in the settings.
 
 #undef GetCurrentTime
 
-#include <initguid.h>  // must come before knownfolders.h
-
-#include <inspectable.h>
-#include <knownfolders.h>
-#include <shlobj.h>
-
 #include <winrt/Windows.Foundation.Collections.h>
 #include <winrt/Windows.UI.Core.h>
 #include <winrt/Windows.UI.Xaml.Controls.h>

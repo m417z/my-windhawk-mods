@@ -66,11 +66,7 @@ versions weren't tested and are probably not compatible.
 
 #include <windhawk_utils.h>
 
-#include <initguid.h>  // must come before knownfolders.h
-
 #include <dwmapi.h>
-#include <knownfolders.h>
-#include <shlobj.h>
 #include <windowsx.h>
 
 #undef GetCurrentTime

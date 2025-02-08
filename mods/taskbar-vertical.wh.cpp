@@ -97,11 +97,10 @@ With labels:
 
 #include <windhawk_utils.h>
 
-#include <initguid.h>  // must come before knownfolders.h
+#include <initguid.h>  // must come before uiautomation.h
 
 #include <dwmapi.h>
 #include <shellscalingapi.h>
-#include <shlobj.h>
 #include <uiautomation.h>
 #include <windowsx.h>
 
