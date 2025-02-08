@@ -790,6 +790,7 @@ void WINAPI TaskListButton_UpdateVisualStates_Hook(void* pThis) {
     if (TaskListButton_UpdateIconColumnDefinition_Original &&
         (g_applyingSettings || g_taskbarButtonWidthCustomized)) {
         static LONG mediumTaskbarButtonExtentOffset = []() -> LONG {
+#if defined(_M_X64)
             // 40:53              | push rbx
             // 48:83EC 60         | sub rsp,60
             // 0F297424 50        | movaps xmmword ptr ss:[rsp+50],xmm6
@@ -815,6 +816,68 @@ void WINAPI TaskListButton_UpdateVisualStates_Hook(void* pThis) {
                     return offset;
                 }
             }
+#elif defined(_M_ARM64)
+            // ...
+            // fd41b670 ldr  d16,[x19,#0x368]
+            // fd419e71 ldr  d17,[x19,#0x338]
+            // 1e703a31 fsub d17,d17,d16
+            // fd41be70 ldr  d16,[x19,#0x378]
+            // 1e703a28 fsub d8,d17,d16
+            const DWORD* start = (const DWORD*)
+                TaskListButton_UpdateIconColumnDefinition_Original;
+            const DWORD* end = start + 0x80;
+            std::regex regex1(R"(fsub\s+d\d+, (d\d+), d\d+)");
+            const DWORD* cmdWithReg1 = nullptr;
+            std::string reg1;
+            for (const DWORD* p = start; p != end; p++) {
+                WH_DISASM_RESULT result1;
+                if (!Wh_Disasm((void*)p, &result1)) {
+                    break;
+                }
+
+                std::string_view s1 = result1.text;
+                if (s1 == "ret") {
+                    break;
+                }
+
+                std::match_results<std::string_view::const_iterator> match1;
+                if (std::regex_match(s1.begin(), s1.end(), match1, regex1)) {
+                    // Wh_Log(L"%S", result1.text);
+                    cmdWithReg1 = p;
+                    reg1 = match1[1];
+                    break;
+                }
+            }
+
+            if (cmdWithReg1) {
+                std::regex regex2(R"(ldr\s+(d\d+), \[x\d+, #0x([0-9a-f]+)\])");
+                for (const DWORD* p = start; p != cmdWithReg1; p++) {
+                    WH_DISASM_RESULT result1;
+                    if (!Wh_Disasm((void*)p, &result1)) {
+                        break;
+                    }
+
+                    std::string_view s1 = result1.text;
+                    if (s1 == "ret") {
+                        break;
+                    }
+
+                    std::match_results<std::string_view::const_iterator> match1;
+                    if (!std::regex_match(s1.begin(), s1.end(), match1,
+                                          regex2) ||
+                        match1[1] != reg1) {
+                        continue;
+                    }
+
+                    // Wh_Log(L"%S", result1.text);
+                    LONG offset = std::stoull(match1[2], nullptr, 16);
+                    Wh_Log(L"mediumTaskbarButtonExtentOffset=0x%X", offset);
+                    return offset;
+                }
+            }
+#else
+#error "Unsupported architecture"
+#endif
 
             Wh_Log(L"mediumTaskbarButtonExtentOffset not found");
             return 0;
