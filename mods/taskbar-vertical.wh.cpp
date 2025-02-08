@@ -876,7 +876,7 @@ double WINAPI SystemTrayController_GetFrameSize_Hook(void* pThis,
                                                      int enumTaskbarSize) {
     Wh_Log(L">");
 
-    if (enumTaskbarSize == 1 && !g_unloading) {
+    if ((enumTaskbarSize == 1 || enumTaskbarSize == 2) && !g_unloading) {
         return GetPrimaryMonitorHeightDpiUnscaled();
     }
 
@@ -892,7 +892,7 @@ SystemTraySecondaryController_GetFrameSize_Hook(void* pThis,
                                                 int enumTaskbarSize) {
     Wh_Log(L">");
 
-    if (enumTaskbarSize == 1 && !g_unloading) {
+    if ((enumTaskbarSize == 1 || enumTaskbarSize == 2) && !g_unloading) {
         return GetPrimaryMonitorHeightDpiUnscaled();
     }
 
@@ -906,7 +906,7 @@ TaskbarConfiguration_GetFrameSize_t TaskbarConfiguration_GetFrameSize_Original;
 double WINAPI TaskbarConfiguration_GetFrameSize_Hook(int enumTaskbarSize) {
     Wh_Log(L">");
 
-    if (enumTaskbarSize == 1 && !g_unloading) {
+    if ((enumTaskbarSize == 1 || enumTaskbarSize == 2) && !g_unloading) {
         if (!g_originalTaskbarHeight) {
             g_originalTaskbarHeight =
                 TaskbarConfiguration_GetFrameSize_Original(enumTaskbarSize);

@@ -85,6 +85,10 @@ versions weren't tested and are probably not compatible.
 #include <functional>
 #include <list>
 
+#ifdef _M_ARM64
+#include <regex>
+#endif
+
 using namespace winrt::Windows::UI::Xaml;
 
 #ifndef SPI_SETLOGICALDPIOVERRIDE
@@ -741,6 +745,7 @@ void WINAPI TaskbarController_UpdateFrameHeight_Hook(void* pThis) {
     Wh_Log(L">");
 
     static LONG taskbarFrameOffset = []() -> LONG {
+#if defined(_M_X64)
         // 48:83EC 28               | sub rsp,28
         // 48:8B81 88020000         | mov rax,qword ptr ds:[rcx+288]
         // or
@@ -753,6 +758,39 @@ void WINAPI TaskbarController_UpdateFrameHeight_Hook(void* pThis) {
             Wh_Log(L"taskbarFrameOffset=0x%X", offset);
             return offset;
         }
+#elif defined(_M_ARM64)
+        // 00000001`806b1810 a9bf7bfd stp fp,lr,[sp,#-0x10]!
+        // 00000001`806b1814 910003fd mov fp,sp
+        // 00000001`806b1818 aa0003e8 mov x8,x0
+        // 00000001`806b181c f9414500 ldr x0,[x8,#0x288]
+        const DWORD* start =
+            (const DWORD*)TaskbarController_OnGroupingModeChanged;
+        const DWORD* end = start + 10;
+        std::regex regex1(R"(ldr\s+x\d+, \[x\d+, #0x([0-9a-f]+)\])");
+        for (const DWORD* p = start; p != end; p++) {
+            WH_DISASM_RESULT result1;
+            if (!Wh_Disasm((void*)p, &result1)) {
+                break;
+            }
+
+            std::string_view s1 = result1.text;
+            if (s1 == "ret") {
+                break;
+            }
+
+            std::match_results<std::string_view::const_iterator> match1;
+            if (!std::regex_match(s1.begin(), s1.end(), match1, regex1)) {
+                continue;
+            }
+
+            // Wh_Log(L"%S", result1.text);
+            LONG offset = std::stoull(match1[1], nullptr, 16);
+            Wh_Log(L"taskbarFrameOffset=0x%X", offset);
+            return offset;
+        }
+#else
+#error "Unsupported architecture"
+#endif
 
         Wh_Log(L"taskbarFrameOffset not found");
         return 0;

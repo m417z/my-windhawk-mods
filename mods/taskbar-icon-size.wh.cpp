@@ -88,6 +88,10 @@ Also check out the **Taskbar tray icon spacing** mod.
 #include <limits>
 #include <optional>
 
+#ifdef _M_ARM64
+#include <regex>
+#endif
+
 using namespace winrt::Windows::UI::Xaml;
 
 #ifndef SPI_SETLOGICALDPIOVERRIDE
@@ -197,12 +201,14 @@ ResourceDictionary_Lookup_Hook(void* pThis,
     return ret;
 }
 
-using IconUtils_GetIconSize_t = void(WINAPI*)(bool small, int type, SIZE* size);
+using IconUtils_GetIconSize_t = void(WINAPI*)(bool isSmall,
+                                              int type,
+                                              SIZE* size);
 IconUtils_GetIconSize_t IconUtils_GetIconSize_Original;
-void WINAPI IconUtils_GetIconSize_Hook(bool small, int type, SIZE* size) {
-    IconUtils_GetIconSize_Original(small, type, size);
+void WINAPI IconUtils_GetIconSize_Hook(bool isSmall, int type, SIZE* size) {
+    IconUtils_GetIconSize_Original(isSmall, type, size);
 
-    if (!g_unloading && !small) {
+    if (!g_unloading && !isSmall) {
         size->cx = MulDiv(size->cx, g_settings.iconSize, 24);
         size->cy = MulDiv(size->cy, g_settings.iconSize, 24);
     }
@@ -435,6 +441,84 @@ double WINAPI TaskbarConfiguration_GetFrameSize_Hook(int enumTaskbarSize) {
     return TaskbarConfiguration_GetFrameSize_Original(enumTaskbarSize);
 }
 
+#if defined(_M_ARM64)
+thread_local double* g_TaskbarConfiguration_UpdateFrameSize_frameSize;
+
+using TaskbarConfiguration_UpdateFrameSize_t = void(WINAPI*)(void* pThis);
+TaskbarConfiguration_UpdateFrameSize_t
+    TaskbarConfiguration_UpdateFrameSize_SymbolAddress;
+TaskbarConfiguration_UpdateFrameSize_t
+    TaskbarConfiguration_UpdateFrameSize_Original;
+void WINAPI TaskbarConfiguration_UpdateFrameSize_Hook(void* pThis) {
+    Wh_Log(L">");
+
+    static LONG frameSizeOffset = []() -> LONG {
+        // Find the offset to the frame size.
+        // str d16, [x19, #0x50]
+        const DWORD* start =
+            (const DWORD*)TaskbarConfiguration_UpdateFrameSize_SymbolAddress;
+        const DWORD* end = start + 0x80;
+        std::regex regex1(R"(str\s+d\d+, \[x\d+, #0x([0-9a-f]+)\])");
+        for (const DWORD* p = start; p != end; p++) {
+            WH_DISASM_RESULT result1;
+            if (!Wh_Disasm((void*)p, &result1)) {
+                break;
+            }
+
+            std::string_view s1 = result1.text;
+            if (s1 == "ret") {
+                break;
+            }
+
+            std::match_results<std::string_view::const_iterator> match1;
+            if (!std::regex_match(s1.begin(), s1.end(), match1, regex1)) {
+                continue;
+            }
+
+            // Wh_Log(L"%S", result1.text);
+            LONG offset = std::stoull(match1[1], nullptr, 16);
+            Wh_Log(L"frameSizeOffset=0x%X", offset);
+            return offset;
+        }
+
+        Wh_Log(L"frameSizeOffset not found");
+        return 0;
+    }();
+
+    if (frameSizeOffset <= 0) {
+        Wh_Log(L"frameSizeOffset <= 0");
+        TaskbarConfiguration_UpdateFrameSize_Original(pThis);
+        return;
+    }
+
+    g_TaskbarConfiguration_UpdateFrameSize_frameSize =
+        (double*)((BYTE*)pThis + frameSizeOffset);
+
+    TaskbarConfiguration_UpdateFrameSize_Original(pThis);
+
+    g_TaskbarConfiguration_UpdateFrameSize_frameSize = nullptr;
+}
+
+using Event_operator_call_t = void(WINAPI*)(void* pThis);
+Event_operator_call_t Event_operator_call_Original;
+void WINAPI Event_operator_call_Hook(void* pThis) {
+    Wh_Log(L">");
+
+    if (g_TaskbarConfiguration_UpdateFrameSize_frameSize) {
+        if (!g_originalTaskbarHeight) {
+            g_originalTaskbarHeight =
+                *g_TaskbarConfiguration_UpdateFrameSize_frameSize;
+        }
+
+        if (g_taskbarHeight) {
+            *g_TaskbarConfiguration_UpdateFrameSize_frameSize = g_taskbarHeight;
+        }
+    }
+
+    Event_operator_call_Original(pThis);
+}
+#endif
+
 using SystemTrayController_UpdateFrameSize_t = void(WINAPI*)(void* pThis);
 SystemTrayController_UpdateFrameSize_t
     SystemTrayController_UpdateFrameSize_SymbolAddress;
@@ -444,8 +528,8 @@ void WINAPI SystemTrayController_UpdateFrameSize_Hook(void* pThis) {
     Wh_Log(L">");
 
     static LONG lastHeightOffset = []() -> LONG {
-        // Find the last height offset to reset the height value.
-        //
+    // Find the last height offset to reset the height value.
+#if defined(_M_X64)
         // 66 0f 2e b3 b0 00 00 00 UCOMISD    uVar4,qword ptr [RBX + 0xb0]
         // 7a 4c                   JP         LAB_180075641
         // 75 4a                   JNZ        LAB_180075641
@@ -460,6 +544,59 @@ void WINAPI SystemTrayController_UpdateFrameSize_Hook(void* pThis) {
                 return offset;
             }
         }
+#elif defined(_M_ARM64)
+        // fd405a70 ldr  d16,[x19,#0xB0]
+        // 1e702000 fcmp d0,d16
+        // 54000080 beq  [...]::UpdateFrameSize+0x6c
+        const DWORD* start =
+            (const DWORD*)SystemTrayController_UpdateFrameSize_SymbolAddress;
+        const DWORD* end = start + 0x80;
+        std::regex regex1(R"(ldr\s+d\d+, \[x\d+, #0x([0-9a-f]+)\])");
+        std::regex regex2(R"(fcmp\s+d\d+, d\d+)");
+        std::regex regex3(R"(b\.eq\s+0x[0-9a-f]+)");
+        for (const DWORD* p = start; p != end; p++) {
+            WH_DISASM_RESULT result1;
+            if (!Wh_Disasm((void*)p, &result1)) {
+                break;
+            }
+
+            std::string_view s1 = result1.text;
+            if (s1 == "ret") {
+                break;
+            }
+
+            std::match_results<std::string_view::const_iterator> match1;
+            if (!std::regex_match(s1.begin(), s1.end(), match1, regex1)) {
+                continue;
+            }
+
+            WH_DISASM_RESULT result2;
+            if (!Wh_Disasm((void*)(p + 1), &result2)) {
+                break;
+            }
+            std::string_view s2 = result2.text;
+            if (!std::regex_match(s2.begin(), s2.end(), regex2)) {
+                continue;
+            }
+            WH_DISASM_RESULT result3;
+            if (!Wh_Disasm((void*)(p + 2), &result3)) {
+                break;
+            }
+            std::string_view s3 = result3.text;
+            if (!std::regex_match(s3.begin(), s3.end(), regex3)) {
+                continue;
+            }
+
+            // Wh_Log(L"%S", result1.text);
+            // Wh_Log(L"%S", result2.text);
+            // Wh_Log(L"%S", result3.text);
+            LONG offset = std::stoull(match1[1], nullptr, 16);
+            Wh_Log(L"lastHeightOffset=0x%X", offset);
+            return offset;
+        }
+#else
+#error "Unsupported architecture"
+#endif
 
         Wh_Log(L"lastHeightOffset not found");
         return 0;
@@ -502,6 +639,7 @@ void WINAPI TaskbarController_UpdateFrameHeight_Hook(void* pThis) {
     Wh_Log(L">");
 
     static LONG taskbarFrameOffset = []() -> LONG {
+#if defined(_M_X64)
         // 48:83EC 28               | sub rsp,28
         // 48:8B81 88020000         | mov rax,qword ptr ds:[rcx+288]
         // or
@@ -514,6 +652,39 @@ void WINAPI TaskbarController_UpdateFrameHeight_Hook(void* pThis) {
             Wh_Log(L"taskbarFrameOffset=0x%X", offset);
             return offset;
         }
+#elif defined(_M_ARM64)
+        // 00000001`806b1810 a9bf7bfd stp fp,lr,[sp,#-0x10]!
+        // 00000001`806b1814 910003fd mov fp,sp
+        // 00000001`806b1818 aa0003e8 mov x8,x0
+        // 00000001`806b181c f9414500 ldr x0,[x8,#0x288]
+        const DWORD* start =
+            (const DWORD*)TaskbarController_OnGroupingModeChanged;
+        const DWORD* end = start + 10;
+        std::regex regex1(R"(ldr\s+x\d+, \[x\d+, #0x([0-9a-f]+)\])");
+        for (const DWORD* p = start; p != end; p++) {
+            WH_DISASM_RESULT result1;
+            if (!Wh_Disasm((void*)p, &result1)) {
+                break;
+            }
+
+            std::string_view s1 = result1.text;
+            if (s1 == "ret") {
+                break;
+            }
+
+            std::match_results<std::string_view::const_iterator> match1;
+            if (!std::regex_match(s1.begin(), s1.end(), match1, regex1)) {
+                continue;
+            }
+
+            // Wh_Log(L"%S", result1.text);
+            LONG offset = std::stoull(match1[1], nullptr, 16);
+            Wh_Log(L"taskbarFrameOffset=0x%X", offset);
+            return offset;
+        }
+#else
+#error "Unsupported architecture"
+#endif
 
         Wh_Log(L"taskbarFrameOffset not found");
         return 0;
@@ -1120,6 +1291,22 @@ bool HookTaskbarViewDllSymbols(HMODULE module) {
                 (void*)TaskbarConfiguration_GetFrameSize_Hook,
                 true,  // From Windows 11 version 22H2.
             },
+#if defined(_M_ARM64)
+            // In ARM64, the TaskbarConfiguration::GetFrameSize function is
+            // inlined. As a workaround, hook
+            // TaskbarConfiguration::UpdateFrameSize which its inlined in and do
+            // some ugly assembly tinkering.
+            {
+                {LR"(private: void __cdecl winrt::Taskbar::implementation::TaskbarConfiguration::UpdateFrameSize(void))"},
+                &TaskbarConfiguration_UpdateFrameSize_SymbolAddress,
+                nullptr,  // Hooked manually, we need the symbol address.
+            },
+            {
+                {LR"(public: void __cdecl winrt::event<struct winrt::delegate<> >::operator()<>(void))"},
+                &Event_operator_call_Original,
+                Event_operator_call_Hook,
+            },
+#endif
             {
                 {LR"(private: void __cdecl winrt::SystemTray::implementation::SystemTrayController::UpdateFrameSize(void))"},
                 (void**)&SystemTrayController_UpdateFrameSize_SymbolAddress,
@@ -1209,6 +1396,15 @@ bool HookTaskbarViewDllSymbols(HMODULE module) {
         Wh_Log(L"HookSymbols failed");
         return false;
     }
+
+#if defined(_M_ARM64)
+    if (TaskbarConfiguration_UpdateFrameSize_SymbolAddress) {
+        Wh_SetFunctionHook(
+            (void*)TaskbarConfiguration_UpdateFrameSize_SymbolAddress,
+            (void*)TaskbarConfiguration_UpdateFrameSize_Hook,
+            (void**)&TaskbarConfiguration_UpdateFrameSize_Original);
+    }
+#endif
 
     if (SystemTrayController_UpdateFrameSize_SymbolAddress) {
         Wh_SetFunctionHook(
