@@ -110,7 +110,10 @@ std::atomic<int> g_hookCallCounter;
 bool g_inCTaskListThumbnailWnd_DisplayUI;
 bool g_inCTaskListThumbnailWnd_LayoutThumbnails;
 bool g_inOverflowFlyoutModel_Show;
+bool g_inFlyoutFrame_UpdateFlyoutPosition;
 int g_lastTaskbarAlignment;
+
+winrt::Windows::Foundation::Size g_flyoutPositionSize;
 
 using FrameworkElementLoadedEventRevoker = winrt::impl::event_revoker<
     IFrameworkElement,
@@ -1035,6 +1038,35 @@ void WINAPI OverflowFlyoutModel_Show_Hook(void* pThis) {
     g_inOverflowFlyoutModel_Show = false;
 }
 
+using FlyoutFrame_UpdateFlyoutPosition_t = void(WINAPI*)(void* pThis);
+FlyoutFrame_UpdateFlyoutPosition_t FlyoutFrame_UpdateFlyoutPosition_Original;
+void WINAPI FlyoutFrame_UpdateFlyoutPosition_Hook(void* pThis) {
+    Wh_Log(L">");
+
+    g_inFlyoutFrame_UpdateFlyoutPosition = true;
+    g_flyoutPositionSize = {};
+
+    FlyoutFrame_UpdateFlyoutPosition_Original(pThis);
+
+    g_inFlyoutFrame_UpdateFlyoutPosition = false;
+}
+
+using Grid_DesiredSize_t = winrt::Windows::Foundation::Size*(
+    WINAPI*)(void* pThis, winrt::Windows::Foundation::Size* size);
+Grid_DesiredSize_t Grid_DesiredSize_Original;
+winrt::Windows::Foundation::Size* WINAPI
+Grid_DesiredSize_Hook(void* pThis, winrt::Windows::Foundation::Size* size) {
+    Wh_Log(L">");
+
+    auto ret = Grid_DesiredSize_Original(pThis, size);
+
+    if (g_inFlyoutFrame_UpdateFlyoutPosition) {
+        g_flyoutPositionSize = *size;
+    }
+
+    return ret;
+}
+
 using MenuFlyout_ShowAt_t = void*(WINAPI*)(void* pThis,
                                            void* placementTarget,
                                            void* showOptions);
@@ -1279,6 +1311,54 @@ BOOL WINAPI SetWindowPos_Hook(HWND hWnd,
            Y + cy);
 
     return SetWindowPos_Original(hWnd, hWndInsertAfter, X, Y, cx, cy, uFlags);
+}
+
+using MapWindowPoints_t = decltype(&MapWindowPoints);
+MapWindowPoints_t MapWindowPoints_Original;
+int WINAPI MapWindowPoints_Hook(HWND hWndFrom,
+                                HWND hWndTo,
+                                LPPOINT lpPoints,
+                                UINT cPoints) {
+    int ret = MapWindowPoints_Original(hWndFrom, hWndTo, lpPoints, cPoints);
+
+    if (!g_inFlyoutFrame_UpdateFlyoutPosition || cPoints != 1) {
+        return ret;
+    }
+
+    Wh_Log(L">");
+
+    DWORD messagePos = GetMessagePos();
+    POINT pt{
+        GET_X_LPARAM(messagePos),
+        GET_Y_LPARAM(messagePos),
+    };
+
+    HMONITOR monitor = MonitorFromPoint(pt, MONITOR_DEFAULTTONEAREST);
+    MONITORINFO monitorInfo{
+        .cbSize = sizeof(MONITORINFO),
+    };
+    GetMonitorInfo(monitor, &monitorInfo);
+
+    if (GetTaskbarLocationForMonitor(monitor) != TaskbarLocation::top) {
+        return ret;
+    }
+
+    UINT monitorDpiX = 96;
+    UINT monitorDpiY = 96;
+    GetDpiForMonitor(monitor, MDT_DEFAULT, &monitorDpiX, &monitorDpiY);
+
+    int flyoutHeight = MulDiv(g_flyoutPositionSize.Height, monitorDpiY, 96);
+
+    // Align to bottom instead of top.
+    lpPoints->y += flyoutHeight;
+
+    // Add work area space.
+    lpPoints->y += monitorInfo.rcWork.top - monitorInfo.rcMonitor.top;
+
+    // Add margin.
+    lpPoints->y += MulDiv(12, monitorDpiY, 96);
+
+    return ret;
 }
 
 std::wstring GetProcessFileName(DWORD dwProcessId) {
@@ -1536,6 +1616,22 @@ bool HookTaskbarViewDllSymbols(HMODULE module) {
             (void*)OverflowFlyoutModel_Show_Hook,
         },
         {
+            {
+                LR"(private: void __cdecl winrt::Taskbar::implementation::FlyoutFrame::UpdateFlyoutPosition(void))",
+            },
+            (void**)&FlyoutFrame_UpdateFlyoutPosition_Original,
+            (void*)FlyoutFrame_UpdateFlyoutPosition_Hook,
+            true,  // New XAML thumbnails, enabled in late Windows 11 24H2.
+        },
+        {
+            {
+                LR"(public: __cdecl winrt::impl::consume_Windows_UI_Xaml_IUIElement<struct winrt::Windows::UI::Xaml::Controls::Grid>::DesiredSize(void)const )",
+            },
+            (void**)&Grid_DesiredSize_Original,
+            (void*)Grid_DesiredSize_Hook,
+            true,  // New XAML thumbnails, enabled in late Windows 11 24H2.
+        },
+        {
             {LR"(public: __cdecl winrt::impl::consume_Windows_UI_Xaml_Controls_Primitives_IFlyoutBase5<struct winrt::Windows::UI::Xaml::Controls::MenuFlyout>::ShowAt(struct winrt::Windows::UI::Xaml::DependencyObject const &,struct winrt::Windows::UI::Xaml::Controls::Primitives::FlyoutShowOptions const &)const )"},
             (void**)&MenuFlyout_ShowAt_Original,
             (void*)MenuFlyout_ShowAt_Hook,
@@ -1642,6 +1738,9 @@ BOOL ModInitWithTaskbarView(HMODULE taskbarViewModule) {
 
     Wh_SetFunctionHook((void*)SetWindowPos, (void*)SetWindowPos_Hook,
                        (void**)&SetWindowPos_Original);
+
+    Wh_SetFunctionHook((void*)MapWindowPoints, (void*)MapWindowPoints_Hook,
+                       (void**)&MapWindowPoints_Original);
 
     HMODULE dwmapiModule = LoadLibrary(L"dwmapi.dll");
     if (dwmapiModule) {
