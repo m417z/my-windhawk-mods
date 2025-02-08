@@ -100,7 +100,6 @@ With labels:
 #include <initguid.h>  // must come before knownfolders.h
 
 #include <dwmapi.h>
-#include <knownfolders.h>
 #include <shellscalingapi.h>
 #include <shlobj.h>
 #include <uiautomation.h>
