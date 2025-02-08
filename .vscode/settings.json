@@ -1,24 +1,37 @@
 {
     "cSpell.words": [
         "ARRAYSIZE",
+        "DISASM",
         "DLGPROC",
+        "dwmapi",
+        "FARPROC",
         "HBITMAP",
         "HCURSOR",
         "HICON",
         "HINSTANCE",
         "HMENU",
+        "HMONITOR",
         "HRESULT",
+        "hstring",
         "HWND",
         "INTRESOURCE",
         "LPARAM",
         "LPCSTR",
         "LPWSTR",
+        "NOZORDER",
         "NTAPI",
         "NTSTATUS",
         "PCSTR",
         "PCWSTR",
         "PWSTR",
+        "Tweaker",
         "Unsubclass",
+        "wcsicmp",
+        "winrt",
         "WPARAM"
+    ],
+    "cSpell.ignoreRegExpList": [
+        "^// @compilerOptions .*$",
+        "^#include .*$"
     ]
 }
