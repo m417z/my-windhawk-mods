@@ -14,7 +14,8 @@
                 "NTDDI_VERSION=0x0A000008",
                 "__USE_MINGW_ANSI_STDIO=0",
                 "WH_MOD",
-                "WH_EDITING"
+                "WH_EDITING",
+                "NOMINMAX"
             ],
             "windowsSdkVersion": "10.0.22621.0",
             "compilerPath": "cl.exe",
