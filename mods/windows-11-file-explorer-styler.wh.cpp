@@ -641,7 +641,8 @@ void SetOrClearValue(DependencyObject elementDo,
         // `SetValue` results in the following error: 0x80004002 (No such
         // interface supported). Box it as `Windows.UI.Text.FontWeight` as a
         // workaround.
-        if (property == Controls::TextBlock::FontWeightProperty()) {
+        if (property == Controls::TextBlock::FontWeightProperty() ||
+            property == Controls::Control::FontWeightProperty()) {
             auto valueInt = value.try_as<int>();
             if (valueInt && *valueInt >= std::numeric_limits<uint16_t>::min() &&
                 *valueInt <= std::numeric_limits<uint16_t>::max()) {
