@@ -78,7 +78,8 @@ struct {
 
 constexpr UINT_PTR kRefreshTaskbarTimer = 1731020327;
 
-double g_invokingTaskListButtonAutomationInvokeMouseWheelDelta;
+double g_pointerWheelEventMouseWheelDelta;
+DWORD g_pointerWheelEventMouseWheelTime;
 WPARAM g_invokingContextMenuWParam;
 int g_thumbnailContextMenuLastIndex;
 void* g_lastScrollTarget;
@@ -168,13 +169,25 @@ void WINAPI CTaskListWnd__HandleClick_Hook(void* pThis,
                                            int param5) {
     Wh_Log(L"> clickAction=%d, taskItemIndex=%d", clickAction, taskItemIndex);
 
-    if (!g_invokingTaskListButtonAutomationInvokeMouseWheelDelta) {
+    DWORD now = GetTickCount();
+
+    if (!g_pointerWheelEventMouseWheelDelta &&
+        now - g_pointerWheelEventMouseWheelTime < 400) {
+        Wh_Log(L"Too soon after wheel scroll, ignoring event");
+        return;
+    }
+
+    if (now - g_pointerWheelEventMouseWheelTime > 1000 * 5) {
+        g_pointerWheelEventMouseWheelDelta = 0;
+    }
+
+    if (!g_pointerWheelEventMouseWheelDelta) {
         return CTaskListWnd__HandleClick_Original(
             pThis, taskBtnGroup, taskItemIndex, clickAction, param4, param5);
     }
 
-    short delta = static_cast<short>(
-        g_invokingTaskListButtonAutomationInvokeMouseWheelDelta);
+    short delta = static_cast<short>(g_pointerWheelEventMouseWheelDelta);
+    g_pointerWheelEventMouseWheelDelta = 0;
 
     if (g_lastScrollTarget == taskBtnGroup &&
         GetTickCount() - g_lastScrollTime < 1000 * 5) {
@@ -213,17 +226,24 @@ void WINAPI CTaskListWnd__HandleClick_Hook(void* pThis,
                                    : CTaskBtnGroup_GetTaskItem_Original(
                                          taskBtnGroup, taskItemIndex);
 
+                Wh_Log(L"Triggering command 0x%04X", command);
                 CTaskGroup_GroupMenuCommand_Original(
                     taskGroup, *EV_MM_TASKLIST_TASK_ITEM_FILTER(pThis),
                     command);
 
                 g_groupMenuCommandThreadId = 0;
                 g_groupMenuCommandTaskItem = nullptr;
+            } else {
+                Wh_Log(L"Ignoring pinned item");
             }
+        } else {
+            Wh_Log(L"No task group");
         }
 
         g_lastScrollCommand = command;
         g_lastScrollCommandTime = GetTickCount();
+    } else {
+        Wh_Log(L"Ignoring event");
     }
 
     g_lastScrollTarget = taskBtnGroup;
@@ -395,42 +415,38 @@ bool WINAPI CTaskItem_IsVisibleOnCurrentVirtualDesktop_Hook(void* pThis) {
     return CTaskItem_IsVisibleOnCurrentVirtualDesktop_Original(pThis);
 }
 
-using TaskListButton_AutomationInvoke_t = void(WINAPI*)(void* pThis);
-TaskListButton_AutomationInvoke_t TaskListButton_AutomationInvoke_Original;
+using TaskListButton_FlyoutFrame_OnPointerWheelChanged_t =
+    int(WINAPI*)(void* pThis, void* pArgs);
 
-using TaskListButton_OnPointerWheelChanged_t = int(WINAPI*)(void* pThis,
-                                                            void* pArgs);
-TaskListButton_OnPointerWheelChanged_t
-    TaskListButton_OnPointerWheelChanged_Original;
-int TaskListButton_OnPointerWheelChanged_Hook(void* pThis, void* pArgs) {
+int TaskListButton_FlyoutFrame_OnPointerWheelChanged_Hook(
+    void* pThis,
+    void* pArgs,
+    TaskListButton_FlyoutFrame_OnPointerWheelChanged_t originalFunctionPtr) {
     Wh_Log(L">");
 
-    auto original = [&]() {
-        return TaskListButton_OnPointerWheelChanged_Original(pThis, pArgs);
-    };
+    auto original = [=]() { return originalFunctionPtr(pThis, pArgs); };
 
-    if (!g_settings.scrollOverTaskbarButtons) {
-        return original();
-    }
-
-    winrt::Windows::Foundation::IInspectable taskListButton = nullptr;
+    UIElement element = nullptr;
     ((IUnknown*)pThis)
-        ->QueryInterface(
-            winrt::guid_of<winrt::Windows::Foundation::IInspectable>(),
-            winrt::put_abi(taskListButton));
-
-    if (!taskListButton) {
+        ->QueryInterface(winrt::guid_of<UIElement>(), winrt::put_abi(element));
+    if (!element) {
         return original();
     }
 
-    auto className = winrt::get_class_name(taskListButton);
+    auto className = winrt::get_class_name(element);
     Wh_Log(L"%s", className.c_str());
 
-    if (className != L"Taskbar.TaskListButton") {
+    if (className == L"Taskbar.TaskListButton") {
+        if (!g_settings.scrollOverTaskbarButtons) {
+            return original();
+        }
+    } else if (className == L"Taskbar.FlyoutFrame") {
+        if (!g_settings.scrollOverThumbnailPreviews) {
+            return original();
+        }
+    } else {
         return original();
     }
-
-    UIElement taskListButtonElement = taskListButton.as<UIElement>();
 
     Input::PointerRoutedEventArgs args = nullptr;
     ((IUnknown*)pArgs)
@@ -440,97 +456,59 @@ int TaskListButton_OnPointerWheelChanged_Hook(void* pThis, void* pArgs) {
         return original();
     }
 
-    double delta = args.GetCurrentPoint(taskListButtonElement)
-                       .Properties()
-                       .MouseWheelDelta();
+    double delta = args.GetCurrentPoint(element).Properties().MouseWheelDelta();
     if (!delta) {
         return original();
     }
 
+    DWORD now = GetTickCount();
+    if (now - g_pointerWheelEventMouseWheelTime > 1000 * 5) {
+        g_pointerWheelEventMouseWheelDelta = 0;
+    }
+
+    g_pointerWheelEventMouseWheelDelta += delta;
+    g_pointerWheelEventMouseWheelTime = GetTickCount();
+
+    Wh_Log(L"Simulating a mouse click");
+
     // Allows to steal focus.
-    INPUT input;
-    ZeroMemory(&input, sizeof(INPUT));
+    INPUT input{};
     SendInput(1, &input, sizeof(INPUT));
 
-    g_invokingTaskListButtonAutomationInvokeMouseWheelDelta = delta;
-    TaskListButton_AutomationInvoke_Original(
-        (BYTE*)winrt::get_abi(taskListButton) - 0x18);
-    g_invokingTaskListButtonAutomationInvokeMouseWheelDelta = 0;
+    DWORD messagePos = GetMessagePos();
+    POINT pt{
+        GET_X_LPARAM(messagePos),
+        GET_Y_LPARAM(messagePos),
+    };
+
+    HWND windowFromPoint = WindowFromPoint(pt);
+    if (GetWindowThreadProcessId(windowFromPoint, nullptr) ==
+        GetCurrentThreadId()) {
+        SetForegroundWindow(windowFromPoint);
+    }
+
+    INPUT inputs[] = {
+        {.type = INPUT_MOUSE, .mi = {.dwFlags = MOUSEEVENTF_LEFTDOWN}},
+        {.type = INPUT_MOUSE, .mi = {.dwFlags = MOUSEEVENTF_LEFTUP}},
+    };
+    SendInput(ARRAYSIZE(inputs), inputs, sizeof(INPUT));
 
     args.Handled(true);
     return 0;
 }
 
-using ExtendedUIXamlRefresh___private_IsEnabled_t = bool(WINAPI*)(void* pThis);
-ExtendedUIXamlRefresh___private_IsEnabled_t
-    ExtendedUIXamlRefresh___private_IsEnabled_Original;
-bool ExtendedUIXamlRefresh___private_IsEnabled_Hook(void* pThis) {
-    // The flag breaks the AutomationInvoke functionality, disable it in this
-    // flow.
-    if (g_invokingTaskListButtonAutomationInvokeMouseWheelDelta) {
-        Wh_Log(L">");
-        return false;
-    }
-
-    return ExtendedUIXamlRefresh___private_IsEnabled_Original(pThis);
+TaskListButton_FlyoutFrame_OnPointerWheelChanged_t
+    TaskListButton_OnPointerWheelChanged_Original;
+int WINAPI TaskListButton_OnPointerWheelChanged_Hook(void* pThis, void* pArgs) {
+    return TaskListButton_FlyoutFrame_OnPointerWheelChanged_Hook(
+        pThis, pArgs, TaskListButton_OnPointerWheelChanged_Original);
 }
 
-// wParam - TRUE to subclass, FALSE to unsubclass
-// lParam - subclass data
-UINT g_subclassRegisteredMsg = RegisterWindowMessage(
-    L"Windhawk_SetWindowSubclassFromAnyThread_" WH_MOD_ID);
-
-BOOL SetWindowSubclassFromAnyThread(HWND hWnd,
-                                    SUBCLASSPROC pfnSubclass,
-                                    UINT_PTR uIdSubclass,
-                                    DWORD_PTR dwRefData) {
-    struct SET_WINDOW_SUBCLASS_FROM_ANY_THREAD_PARAM {
-        SUBCLASSPROC pfnSubclass;
-        UINT_PTR uIdSubclass;
-        DWORD_PTR dwRefData;
-        BOOL result;
-    };
-
-    DWORD dwThreadId = GetWindowThreadProcessId(hWnd, nullptr);
-    if (dwThreadId == 0) {
-        return FALSE;
-    }
-
-    if (dwThreadId == GetCurrentThreadId()) {
-        return SetWindowSubclass(hWnd, pfnSubclass, uIdSubclass, dwRefData);
-    }
-
-    HHOOK hook = SetWindowsHookEx(
-        WH_CALLWNDPROC,
-        [](int nCode, WPARAM wParam, LPARAM lParam) WINAPI -> LRESULT {
-            if (nCode == HC_ACTION) {
-                const CWPSTRUCT* cwp = (const CWPSTRUCT*)lParam;
-                if (cwp->message == g_subclassRegisteredMsg && cwp->wParam) {
-                    SET_WINDOW_SUBCLASS_FROM_ANY_THREAD_PARAM* param =
-                        (SET_WINDOW_SUBCLASS_FROM_ANY_THREAD_PARAM*)cwp->lParam;
-                    param->result =
-                        SetWindowSubclass(cwp->hwnd, param->pfnSubclass,
-                                          param->uIdSubclass, param->dwRefData);
-                }
-            }
-
-            return CallNextHookEx(nullptr, nCode, wParam, lParam);
-        },
-        nullptr, dwThreadId);
-    if (!hook) {
-        return FALSE;
-    }
-
-    SET_WINDOW_SUBCLASS_FROM_ANY_THREAD_PARAM param;
-    param.pfnSubclass = pfnSubclass;
-    param.uIdSubclass = uIdSubclass;
-    param.dwRefData = dwRefData;
-    param.result = FALSE;
-    SendMessage(hWnd, g_subclassRegisteredMsg, TRUE, (LPARAM)&param);
-
-    UnhookWindowsHookEx(hook);
-
-    return param.result;
+TaskListButton_FlyoutFrame_OnPointerWheelChanged_t
+    FlyoutFrame_OnPointerWheelChanged_Original;
+int WINAPI FlyoutFrame_OnPointerWheelChanged_Hook(void* pThis, void* pArgs) {
+    return TaskListButton_FlyoutFrame_OnPointerWheelChanged_Hook(
+        pThis, pArgs, FlyoutFrame_OnPointerWheelChanged_Original);
 }
 
 using CTaskListWnd_ShowLivePreview_t = HWND(WINAPI*)(void* pThis,
@@ -681,13 +659,8 @@ LRESULT CALLBACK ThumbnailWindowSubclassProc(HWND hWnd,
                                              UINT uMsg,
                                              WPARAM wParam,
                                              LPARAM lParam,
-                                             UINT_PTR uIdSubclass,
                                              DWORD_PTR dwRefData) {
     LRESULT result = 0;
-
-    if (uMsg == WM_NCDESTROY || (uMsg == g_subclassRegisteredMsg && !wParam)) {
-        RemoveWindowSubclass(hWnd, ThumbnailWindowSubclassProc, 0);
-    }
 
     switch (uMsg) {
         case WM_MOUSEWHEEL:
@@ -729,11 +702,13 @@ LRESULT CALLBACK ThumbnailWindowSubclassProc(HWND hWnd,
 }
 
 void SubclassThumbnailWindow(HWND hWnd) {
-    SetWindowSubclassFromAnyThread(hWnd, ThumbnailWindowSubclassProc, 0, 0);
+    WindhawkUtils::SetWindowSubclassFromAnyThread(
+        hWnd, ThumbnailWindowSubclassProc, 0);
 }
 
 void UnsubclassThumbnailWindow(HWND hWnd) {
-    SendMessage(hWnd, g_subclassRegisteredMsg, FALSE, 0);
+    WindhawkUtils::RemoveWindowSubclassFromAnyThread(
+        hWnd, ThumbnailWindowSubclassProc);
 }
 
 void HandleIdentifiedThumbnailWindow(HWND hWnd) {
@@ -747,7 +722,7 @@ void FindCurrentProcessThumbnailWindows(HWND hTaskbarWnd) {
 
     EnumThreadWindows(
         dwThreadId,
-        [](HWND hWnd, LPARAM lParam) WINAPI -> BOOL {
+        [](HWND hWnd, LPARAM lParam) -> BOOL {
             WCHAR szClassName[32];
             if (GetClassName(hWnd, szClassName, ARRAYSIZE(szClassName)) == 0) {
                 return TRUE;
@@ -871,23 +846,43 @@ bool HookTaskbarViewDllSymbols() {
     // Taskbar.View.dll
     WindhawkUtils::SYMBOL_HOOK symbolHooks[] = {
         {
-            {LR"(public: void __cdecl winrt::Taskbar::implementation::TaskListButton::AutomationInvoke(void))"},
-            &TaskListButton_AutomationInvoke_Original,
-        },
-        {
             {LR"(public: virtual int __cdecl winrt::impl::produce<struct winrt::Taskbar::implementation::TaskListButton,struct winrt::Windows::UI::Xaml::Controls::IControlOverrides>::OnPointerWheelChanged(void *))"},
             &TaskListButton_OnPointerWheelChanged_Original,
-            TaskListButton_OnPointerWheelChanged_Hook,
+            nullptr,  // Both OnPointerWheelChanged can have the same address.
         },
         {
-            {LR"(public: bool __cdecl wil::details::FeatureImpl<struct __WilExternalFeatureTraits_Feature_ExtendedUIXamlRefresh>::__private_IsEnabled(void))"},
-            &ExtendedUIXamlRefresh___private_IsEnabled_Original,
-            ExtendedUIXamlRefresh___private_IsEnabled_Hook,
-            true,
+            {LR"(public: virtual int __cdecl winrt::impl::produce<struct winrt::Taskbar::implementation::FlyoutFrame,struct winrt::Windows::UI::Xaml::Controls::IControlOverrides>::OnPointerWheelChanged(void *))"},
+            &FlyoutFrame_OnPointerWheelChanged_Original,
+            nullptr,  // Both OnPointerWheelChanged can have the same address.
+            true,     // New XAML refresh thumbnails.
         },
     };
 
-    return HookSymbols(module, symbolHooks, ARRAYSIZE(symbolHooks));
+    if (!HookSymbols(module, symbolHooks, ARRAYSIZE(symbolHooks))) {
+        Wh_Log(L"HookSymbols failed");
+        return false;
+    }
+
+    // Only hook second OnPointerWheelChanged if the address is different from
+    // the first one.
+    bool hookFlyoutFrame_OnPointerWheelChanged_Original =
+        FlyoutFrame_OnPointerWheelChanged_Original != nullptr &&
+        FlyoutFrame_OnPointerWheelChanged_Original !=
+            TaskListButton_OnPointerWheelChanged_Original;
+
+    WindhawkUtils::SetFunctionHook(
+        TaskListButton_OnPointerWheelChanged_Original,
+        TaskListButton_OnPointerWheelChanged_Hook,
+        &TaskListButton_OnPointerWheelChanged_Original);
+
+    if (hookFlyoutFrame_OnPointerWheelChanged_Original) {
+        WindhawkUtils::SetFunctionHook(
+            FlyoutFrame_OnPointerWheelChanged_Original,
+            FlyoutFrame_OnPointerWheelChanged_Hook,
+            &FlyoutFrame_OnPointerWheelChanged_Original);
+    }
+
+    return true;
 }
 
 bool HookTaskbarDllSymbols() {
@@ -980,7 +975,12 @@ bool HookTaskbarDllSymbols() {
         },
     };
 
-    return HookSymbols(module, taskbarDllHooks, ARRAYSIZE(taskbarDllHooks));
+    if (!HookSymbols(module, taskbarDllHooks, ARRAYSIZE(taskbarDllHooks))) {
+        Wh_Log(L"HookSymbols failed");
+        return false;
+    }
+
+    return true;
 }
 
 BOOL Wh_ModInit() {
