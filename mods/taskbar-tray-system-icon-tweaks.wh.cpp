@@ -373,6 +373,12 @@ SystemTrayIconIdent IdentifySystemTrayIconFromText(std::wstring_view text) {
         case L'\uF2A8':  // Full bell, Do Not Disturb
             return SystemTrayIconIdent::kBellFull;
 
+        // Language supplementary icons.
+        // Found by installing all the built-in input methods from:
+        // https://learn.microsoft.com/en-us/windows-hardware/manufacture/desktop/windows-language-pack-default-values?view=windows-11#input-method-editors
+        // and identify the icon code in the fonts Segoe Fluent and AXPIcons.ttf.
+        // https://learn.microsoft.com/en-us/windows/apps/design/style/segoe-fluent-icons-font
+        // %SystemRoot%\SystemApps\MicrosoftWindows.Client.Core_cw5n1h2txyewy\SystemTray\Assets\AXPIcons.ttf
         case L'\uE4D7':  // (Maybe) English Private mode
         case L'\uE4D8':  // (Maybe) Chinese Private mode
         case L'\uE5BF':  // (Maybe) English mode locked
@@ -546,6 +552,13 @@ void ApplyNonActivatableStackIconViewStyle(
     }
 
     if (!child) {
+        // Some input methods use LanguageImageIconContent/ImageIconContent instead of
+        // LanguageTextIconContent/TextIconContent with icon fonts. If the language bar
+        // is hidden and the user switches from a "text" input method to a "image" input
+        // method, the invisible element will not be populated with the new type of icon
+        // content but become empty instead. Then the icon will be permanently hidden 
+        // even after disabling the mod. This code forces the empty element to become 
+        // visible and populated, fixing this issue.
         if (Media::VisualTreeHelper::GetChildrenCount(notifyIconViewElement) == 0) {
             notifyIconViewElement.Visibility(Visibility::Visible);
         }
