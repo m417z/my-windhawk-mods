@@ -169,6 +169,9 @@ HWND g_startMenuWnd;
 
 winrt::Windows::Foundation::Size g_flyoutPositionSize;
 
+std::vector<winrt::weak_ref<FrameworkElement>>
+    g_taskbarFramesPendingHeightUpdate;
+
 std::vector<winrt::weak_ref<XamlRoot>> g_notifyIconsUpdated;
 
 using FrameworkElementLoadedEventRevoker = winrt::impl::event_revoker<
@@ -1190,30 +1193,22 @@ void WINAPI TaskbarController_UpdateFrameHeight_Hook(void* pThis) {
         contentGrid.Height(std::numeric_limits<double>::quiet_NaN());
     }
 
-    // taskbarFrameElement must have height, otherwise overflow popup causes
-    // a crash. Set it based on border height.
-    taskbarFrameElement.Dispatcher().TryRunAsync(
-        winrt::Windows::UI::Core::CoreDispatcherPriority::Low,
-        [taskbarFrameElement]() {
-            auto contentGrid =
-                Media::VisualTreeHelper::GetParent(taskbarFrameElement)
-                    .try_as<FrameworkElement>();
-            if (!contentGrid) {
-                return;
-            }
+    // taskbarFrameElement must have height, otherwise overflow popup causes a
+    // crash. Queue it for an update.
+    bool updateAlreadyPending = false;
 
-            auto border = Media::VisualTreeHelper::GetParent(contentGrid)
-                              .try_as<FrameworkElement>();
-            if (!border) {
-                return;
+    for (auto weakPtr : g_taskbarFramesPendingHeightUpdate) {
+        if (auto ptr = weakPtr.get()) {
+            if (ptr == taskbarFrameElement) {
+                updateAlreadyPending = true;
+                break;
             }
+        }
+    }
 
-            double borderHeight = border.Height();
-            if (borderHeight > 0) {
-                Wh_Log(L"Setting taskbar frame height to %f", borderHeight);
-                taskbarFrameElement.Height(borderHeight);
-            }
-        });
+    if (!updateAlreadyPending) {
+        g_taskbarFramesPendingHeightUpdate.push_back(taskbarFrameElement);
+    }
 }
 
 using SystemTraySecondaryController_UpdateFrameSize_t =
@@ -1586,19 +1581,16 @@ void ApplySystemTrayIconStyle(FrameworkElement systemTrayIconElement) {
             iconContent.as<DependencyObject>().ClearValue(
                 FrameworkElement::WidthProperty());
             iconContent.as<DependencyObject>().ClearValue(
+                FrameworkElement::HeightProperty());
+            iconContent.as<DependencyObject>().ClearValue(
                 FrameworkElement::MarginProperty());
         } else {
-            iconContent.Width(1000);
-
-            // If the margin is set right away, it results in an invisible clock
-            // on secondary taskbars on load.
-            iconContent.Dispatcher().TryRunAsync(
-                winrt::Windows::UI::Core::CoreDispatcherPriority::Low,
-                [iconContent]() {
-                    double marginValue = -(1000.0 - 40) / 2;
-                    iconContent.Margin(
-                        Thickness{marginValue, 0, marginValue, 0});
-                });
+            double width = g_settings.taskbarWidth - 4;
+            double height = 40;
+            iconContent.Width(width);
+            iconContent.Height(height);
+            double marginValue = -(width - height) / 2;
+            iconContent.Margin(Thickness{marginValue, 0, marginValue, 0});
         }
 
         FrameworkElement stackPanel = nullptr;
@@ -2056,20 +2048,27 @@ void WINAPI TaskListButton_UpdateVisualStates_Hook(void* pThis) {
         Wh_Log(L"Error %08X", hr);
     }
 
-    auto xamlRoot = taskListButtonElement.XamlRoot();
-    if (xamlRoot) {
-        try {
-            ApplyStyleIfNeeded(xamlRoot);
-        } catch (...) {
-            HRESULT hr = winrt::to_hresult();
-            Wh_Log(L"Error %08X", hr);
-        }
+    auto taskbarFrameRepeaterElement =
+        Media::VisualTreeHelper::GetParent(taskListButtonElement)
+            .try_as<FrameworkElement>();
+    if (taskbarFrameRepeaterElement &&
+        taskbarFrameRepeaterElement.Name() == L"TaskbarFrameRepeater") {
+        // Can also be "OverflowFlyoutListRepeater".
+        auto xamlRoot = taskListButtonElement.XamlRoot();
+        if (xamlRoot) {
+            try {
+                ApplyStyleIfNeeded(xamlRoot);
+            } catch (...) {
+                HRESULT hr = winrt::to_hresult();
+                Wh_Log(L"Error %08X", hr);
+            }
 
-        try {
-            UpdateNotifyIconsIfNeeded(xamlRoot);
-        } catch (...) {
-            HRESULT hr = winrt::to_hresult();
-            Wh_Log(L"Error %08X", hr);
+            try {
+                UpdateNotifyIconsIfNeeded(xamlRoot);
+            } catch (...) {
+                HRESULT hr = winrt::to_hresult();
+                Wh_Log(L"Error %08X", hr);
+            }
         }
     }
 }
@@ -2374,6 +2373,33 @@ using OverflowFlyoutModel_Show_t = void(WINAPI*)(void* pThis);
 OverflowFlyoutModel_Show_t OverflowFlyoutModel_Show_Original;
 void WINAPI OverflowFlyoutModel_Show_Hook(void* pThis) {
     Wh_Log(L">");
+
+    // taskbarFrameElement must have height, otherwise overflow popup causes a
+    // crash. Set it based on the parent border.
+    for (auto weakPtr : g_taskbarFramesPendingHeightUpdate) {
+        if (auto taskbarFrameElement = weakPtr.get()) {
+            auto contentGrid =
+                Media::VisualTreeHelper::GetParent(taskbarFrameElement)
+                    .try_as<FrameworkElement>();
+            if (!contentGrid) {
+                continue;
+            }
+
+            auto border = Media::VisualTreeHelper::GetParent(contentGrid)
+                              .try_as<FrameworkElement>();
+            if (!border) {
+                continue;
+            }
+
+            double borderHeight = border.Height();
+            if (borderHeight > 0) {
+                Wh_Log(L"Setting taskbar frame height to %f", borderHeight);
+                taskbarFrameElement.Height(borderHeight);
+            }
+        }
+    }
+
+    g_taskbarFramesPendingHeightUpdate.clear();
 
     g_inOverflowFlyoutModel_Show = true;
 
