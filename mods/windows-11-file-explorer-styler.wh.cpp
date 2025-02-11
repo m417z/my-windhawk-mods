@@ -635,8 +635,6 @@ void SetOrClearValue(DependencyObject elementDo,
     // This might fail. See `ReadLocalValueWithWorkaround` for an example (which
     // we now handle but there might be other cases).
     try {
-        // TODO: Is this still needed?
-#if 0
         // `setter.Value()` returns font weight as an int. Using it with
         // `SetValue` results in the following error: 0x80004002 (No such
         // interface supported). Box it as `Windows.UI.Text.FontWeight` as a
@@ -650,7 +648,6 @@ void SetOrClearValue(DependencyObject elementDo,
                     static_cast<uint16_t>(*valueInt)});
             }
         }
-#endif
 
         elementDo.SetValue(property, value);
     } catch (winrt::hresult_error const& ex) {
