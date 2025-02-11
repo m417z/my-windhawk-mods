@@ -115,8 +115,6 @@ std::atomic<DWORD> g_groupMenuCommandThreadId;
 void* g_groupMenuCommandTaskItem;
 ULONGLONG g_noDismissHoverUIUntil;
 
-std::unordered_set<HWND> g_thumbnailWindows;
-
 #pragma region offsets
 
 void* CTaskListWnd_SetTaskFilter;
@@ -795,10 +793,6 @@ using CTaskListThumbnailWnd__RefreshThumbnail_t = void(WINAPI*)(void* pThis,
 CTaskListThumbnailWnd__RefreshThumbnail_t
     CTaskListThumbnailWnd__RefreshThumbnail_Original;
 
-using CTaskListThumbnailWnd_GetHoverIndex_t = int(WINAPI*)(void* pThis);
-CTaskListThumbnailWnd_GetHoverIndex_t
-    CTaskListThumbnailWnd_GetHoverIndex_Original;
-
 bool OnThumbnailWheelScroll(HWND hWnd,
                             UINT uMsg,
                             WPARAM wParam,
@@ -829,17 +823,18 @@ bool OnThumbnailWheelScroll(HWND hWnd,
     return true;
 }
 
-LRESULT CALLBACK ThumbnailWindowSubclassProc(HWND hWnd,
-                                             UINT uMsg,
-                                             WPARAM wParam,
-                                             LPARAM lParam,
-                                             DWORD_PTR dwRefData) {
-    LRESULT result = 0;
-
-    switch (uMsg) {
+using CTaskListThumbnailWnd_v_WndProc_t = LRESULT(
+    WINAPI*)(void* pThis, HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam);
+CTaskListThumbnailWnd_v_WndProc_t CTaskListThumbnailWnd_v_WndProc_Original;
+LRESULT WINAPI CTaskListThumbnailWnd_v_WndProc_Hook(void* pThis,
+                                                    HWND hWnd,
+                                                    UINT Msg,
+                                                    WPARAM wParam,
+                                                    LPARAM lParam) {
+    switch (Msg) {
         case WM_MOUSEWHEEL:
-            if (!OnThumbnailWheelScroll(hWnd, uMsg, wParam, lParam)) {
-                result = DefSubclassProc(hWnd, uMsg, wParam, lParam);
+            if (OnThumbnailWheelScroll(hWnd, Msg, wParam, lParam)) {
+                return 0;
             }
             break;
 
@@ -850,143 +845,16 @@ LRESULT CALLBACK ThumbnailWindowSubclassProc(HWND hWnd,
                     void* thumbnail = (void*)GetWindowLongPtr(hWnd, 0);
                     CTaskListThumbnailWnd__RefreshThumbnail_Original(
                         thumbnail, g_thumbnailContextMenuLastIndex);
-                    result = 0;
-                    break;
-                }
-
-                default: {
-                    result = DefSubclassProc(hWnd, uMsg, wParam, lParam);
-                    break;
+                    return 0;
                 }
             }
             break;
-
-        case WM_NCDESTROY:
-            g_thumbnailWindows.erase(hWnd);
-
-            result = DefSubclassProc(hWnd, uMsg, wParam, lParam);
-            break;
-
-        default:
-            result = DefSubclassProc(hWnd, uMsg, wParam, lParam);
-            break;
     }
 
-    return result;
-}
+    LRESULT ret = CTaskListThumbnailWnd_v_WndProc_Original(pThis, hWnd, Msg,
+                                                           wParam, lParam);
 
-void SubclassThumbnailWindow(HWND hWnd) {
-    WindhawkUtils::SetWindowSubclassFromAnyThread(
-        hWnd, ThumbnailWindowSubclassProc, 0);
-}
-
-void UnsubclassThumbnailWindow(HWND hWnd) {
-    WindhawkUtils::RemoveWindowSubclassFromAnyThread(
-        hWnd, ThumbnailWindowSubclassProc);
-}
-
-void HandleIdentifiedThumbnailWindow(HWND hWnd) {
-    g_thumbnailWindows.insert(hWnd);
-    SubclassThumbnailWindow(hWnd);
-}
-
-void FindCurrentProcessThumbnailWindows(HWND hTaskbarWnd) {
-    DWORD dwProcessId;
-    DWORD dwThreadId = GetWindowThreadProcessId(hTaskbarWnd, &dwProcessId);
-
-    EnumThreadWindows(
-        dwThreadId,
-        [](HWND hWnd, LPARAM lParam) -> BOOL {
-            WCHAR szClassName[32];
-            if (GetClassName(hWnd, szClassName, ARRAYSIZE(szClassName)) == 0) {
-                return TRUE;
-            }
-
-            if (_wcsicmp(szClassName, L"TaskListThumbnailWnd") == 0) {
-                g_thumbnailWindows.insert(hWnd);
-            }
-
-            return TRUE;
-        },
-        0);
-}
-
-using CreateWindowExW_t = decltype(&CreateWindowExW);
-CreateWindowExW_t CreateWindowExW_Original;
-HWND WINAPI CreateWindowExW_Hook(DWORD dwExStyle,
-                                 LPCWSTR lpClassName,
-                                 LPCWSTR lpWindowName,
-                                 DWORD dwStyle,
-                                 int X,
-                                 int Y,
-                                 int nWidth,
-                                 int nHeight,
-                                 HWND hWndParent,
-                                 HMENU hMenu,
-                                 HINSTANCE hInstance,
-                                 PVOID lpParam) {
-    HWND hWnd = CreateWindowExW_Original(dwExStyle, lpClassName, lpWindowName,
-                                         dwStyle, X, Y, nWidth, nHeight,
-                                         hWndParent, hMenu, hInstance, lpParam);
-
-    if (!hWnd) {
-        return hWnd;
-    }
-
-    BOOL bTextualClassName = ((ULONG_PTR)lpClassName & ~(ULONG_PTR)0xffff) != 0;
-
-    if (bTextualClassName &&
-        _wcsicmp(lpClassName, L"TaskListThumbnailWnd") == 0) {
-        Wh_Log(L"Thumbnail window created: %08X", (DWORD)(ULONG_PTR)hWnd);
-        HandleIdentifiedThumbnailWindow(hWnd);
-    }
-
-    return hWnd;
-}
-
-using CreateWindowInBand_t = HWND(WINAPI*)(DWORD dwExStyle,
-                                           LPCWSTR lpClassName,
-                                           LPCWSTR lpWindowName,
-                                           DWORD dwStyle,
-                                           int X,
-                                           int Y,
-                                           int nWidth,
-                                           int nHeight,
-                                           HWND hWndParent,
-                                           HMENU hMenu,
-                                           HINSTANCE hInstance,
-                                           PVOID lpParam,
-                                           DWORD dwBand);
-CreateWindowInBand_t CreateWindowInBand_Original;
-HWND WINAPI CreateWindowInBand_Hook(DWORD dwExStyle,
-                                    LPCWSTR lpClassName,
-                                    LPCWSTR lpWindowName,
-                                    DWORD dwStyle,
-                                    int X,
-                                    int Y,
-                                    int nWidth,
-                                    int nHeight,
-                                    HWND hWndParent,
-                                    HMENU hMenu,
-                                    HINSTANCE hInstance,
-                                    PVOID lpParam,
-                                    DWORD dwBand) {
-    HWND hWnd = CreateWindowInBand_Original(
-        dwExStyle, lpClassName, lpWindowName, dwStyle, X, Y, nWidth, nHeight,
-        hWndParent, hMenu, hInstance, lpParam, dwBand);
-    if (!hWnd) {
-        return hWnd;
-    }
-
-    BOOL bTextualClassName = ((ULONG_PTR)lpClassName & ~(ULONG_PTR)0xffff) != 0;
-
-    if (bTextualClassName &&
-        _wcsicmp(lpClassName, L"TaskListThumbnailWnd") == 0) {
-        Wh_Log(L"Thumbnail window created: %08X", (DWORD)(ULONG_PTR)hWnd);
-        HandleIdentifiedThumbnailWindow(hWnd);
-    }
-
-    return hWnd;
+    return ret;
 }
 
 void LoadSettings() {
@@ -1162,6 +1030,11 @@ bool HookTaskbarSymbols() {
             CTaskListThumbnailWnd_ThumbIndexFromPoint_Hook,
         },
         {
+            {LR"(protected: virtual __int64 __cdecl CTaskListWnd::v_WndProc(struct HWND__ *,unsigned int,unsigned __int64,__int64))"},
+            &CTaskListWnd_v_WndProc_Original,
+            CTaskListWnd_v_WndProc_Hook,
+        },
+        {
             {LR"(private: void __cdecl CTaskListThumbnailWnd::_HandleContextMenu(struct tagPOINT,int))"},
             &CTaskListThumbnailWnd__HandleContextMenu_Original,
         },
@@ -1170,9 +1043,9 @@ bool HookTaskbarSymbols() {
             &CTaskListThumbnailWnd__RefreshThumbnail_Original,
         },
         {
-            {LR"(protected: virtual __int64 __cdecl CTaskListWnd::v_WndProc(struct HWND__ *,unsigned int,unsigned __int64,__int64))"},
-            &CTaskListWnd_v_WndProc_Original,
-            CTaskListWnd_v_WndProc_Hook,
+            {LR"(private: virtual __int64 __cdecl CTaskListThumbnailWnd::v_WndProc(struct HWND__ *,unsigned int,unsigned __int64,__int64))"},
+            &CTaskListThumbnailWnd_v_WndProc_Original,
+            CTaskListThumbnailWnd_v_WndProc_Hook,
         },
         // For offsets:
         {
@@ -1441,20 +1314,6 @@ BOOL Wh_ModInit() {
     //                    (void*)LoadLibraryExW_Hook,
     //                    (void**)&LoadLibraryExW_Original);
 
-    Wh_SetFunctionHook((void*)CreateWindowExW, (void*)CreateWindowExW_Hook,
-                       (void**)&CreateWindowExW_Original);
-
-    HMODULE user32Module = LoadLibrary(L"user32.dll");
-    if (user32Module) {
-        void* pCreateWindowInBand =
-            (void*)GetProcAddress(user32Module, "CreateWindowInBand");
-        if (pCreateWindowInBand) {
-            Wh_SetFunctionHook(pCreateWindowInBand,
-                               (void*)CreateWindowInBand_Hook,
-                               (void**)&CreateWindowInBand_Original);
-        }
-    }
-
     g_initialized = true;
 
     return TRUE;
@@ -1468,27 +1327,10 @@ void Wh_ModAfterInit() {
     // if (!g_explorerPatcherInitialized) {
     //     HandleLoadedExplorerPatcher();
     // }
-
-    DWORD dwProcessId;
-    DWORD dwCurrentProcessId = GetCurrentProcessId();
-
-    HWND hTaskbarWnd = FindWindow(L"Shell_TrayWnd", nullptr);
-    if (hTaskbarWnd && GetWindowThreadProcessId(hTaskbarWnd, &dwProcessId) &&
-        dwProcessId == dwCurrentProcessId) {
-        FindCurrentProcessThumbnailWindows(hTaskbarWnd);
-        for (HWND hWnd : g_thumbnailWindows) {
-            Wh_Log(L"Thumbnail window found: %08X", (DWORD)(ULONG_PTR)hWnd);
-            SubclassThumbnailWindow(hWnd);
-        }
-    }
 }
 
 void Wh_ModUninit() {
     Wh_Log(L">");
-
-    for (HWND hWnd : g_thumbnailWindows) {
-        UnsubclassThumbnailWindow(hWnd);
-    }
 }
 
 BOOL Wh_ModSettingsChanged(BOOL* bReload) {
