@@ -1432,14 +1432,14 @@ BOOL Wh_ModInit() {
         }
     }
 
-    HandleLoadedExplorerPatcher();
+    // HandleLoadedExplorerPatcher();
 
-    HMODULE kernelBaseModule = GetModuleHandle(L"kernelbase.dll");
-    FARPROC pKernelBaseLoadLibraryExW =
-        GetProcAddress(kernelBaseModule, "LoadLibraryExW");
-    Wh_SetFunctionHook((void*)pKernelBaseLoadLibraryExW,
-                       (void*)LoadLibraryExW_Hook,
-                       (void**)&LoadLibraryExW_Original);
+    // HMODULE kernelBaseModule = GetModuleHandle(L"kernelbase.dll");
+    // FARPROC pKernelBaseLoadLibraryExW =
+    //     GetProcAddress(kernelBaseModule, "LoadLibraryExW");
+    // Wh_SetFunctionHook((void*)pKernelBaseLoadLibraryExW,
+    //                    (void*)LoadLibraryExW_Hook,
+    //                    (void**)&LoadLibraryExW_Original);
 
     Wh_SetFunctionHook((void*)CreateWindowExW, (void*)CreateWindowExW_Hook,
                        (void**)&CreateWindowExW_Original);
@@ -1463,11 +1463,11 @@ BOOL Wh_ModInit() {
 void Wh_ModAfterInit() {
     Wh_Log(L">");
 
-    // Try again in case there's a race between the previous attempt and the
-    // LoadLibraryExW hook.
-    if (!g_explorerPatcherInitialized) {
-        HandleLoadedExplorerPatcher();
-    }
+    // // Try again in case there's a race between the previous attempt and the
+    // // LoadLibraryExW hook.
+    // if (!g_explorerPatcherInitialized) {
+    //     HandleLoadedExplorerPatcher();
+    // }
 
     DWORD dwProcessId;
     DWORD dwCurrentProcessId = GetCurrentProcessId();
