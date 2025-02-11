@@ -45,6 +45,9 @@ mod.
 ## Known limitations
 
 * The option to automatically hide the taskbar isn't supported.
+* After disabling the mod, some leftover artifacts might stay, such as
+  incorrectly rotated icons. Restarting explorer.exe will clear all such
+  leftovers.
 
 ## Funding
 
@@ -2333,7 +2336,7 @@ bool UpdateCopilotPosition() {
     };
 
     EnumWindows(
-        [](HWND hWnd, LPARAM lParam) WINAPI -> BOOL {
+        [](HWND hWnd, LPARAM lParam) -> BOOL {
             auto& proc = *reinterpret_cast<decltype(enumWindowProc)*>(lParam);
             return proc(hWnd, lParam);
         },
@@ -2360,7 +2363,7 @@ void WINAPI CopilotIcon_ToggleEdgeCopilot_Hook(void* pThis) {
            UINT uMsg,         // WM_TIMER message
            UINT_PTR idEvent,  // timer identifier
            DWORD dwTime       // current system time
-           ) WINAPI {
+        ) {
             g_copilotPosTimerCounter++;
             if (UpdateCopilotPosition() || g_copilotPosTimerCounter >= 10) {
                 KillTimer(nullptr, g_copilotPosTimer);
@@ -3240,7 +3243,7 @@ std::vector<HWND> GetCoreWindows() {
     std::vector<HWND> hWnds;
     ENUM_WINDOWS_PARAM param = {&hWnds};
     EnumWindows(
-        [](HWND hWnd, LPARAM lParam) WINAPI -> BOOL {
+        [](HWND hWnd, LPARAM lParam) -> BOOL {
             ENUM_WINDOWS_PARAM& param = *(ENUM_WINDOWS_PARAM*)lParam;
 
             if (IsTargetCoreWindow(hWnd, nullptr)) {
@@ -3453,7 +3456,7 @@ void ApplySettings(bool waitForApply = true) {
     // Calling CreateRectRgn posts window size change events which cause element
     // sizes and positions to be recalculated.
     EnumWindows(
-        [](HWND hWnd, LPARAM lParam) WINAPI -> BOOL {
+        [](HWND hWnd, LPARAM lParam) -> BOOL {
             DWORD dwProcessId = 0;
             if (!GetWindowThreadProcessId(hWnd, &dwProcessId) ||
                 dwProcessId != GetCurrentProcessId()) {
