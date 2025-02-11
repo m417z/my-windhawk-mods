@@ -76,6 +76,8 @@ struct {
     bool reverseScrollingDirection;
 } g_settings;
 
+constexpr int kShortDelay = 400;
+constexpr int kLongDelay = 5000;
 constexpr UINT_PTR kRefreshTaskbarTimer = 1731020327;
 
 double g_pointerWheelEventMouseWheelDelta;
@@ -95,16 +97,23 @@ std::unordered_set<HWND> g_thumbnailWindows;
 
 #pragma region offsets
 
-void* CTaskListWnd__TaskCreated;
+void* CTaskListWnd_IsTaskAllowed;
 
 size_t OffsetFromAssembly(void* func,
                           size_t defValue,
-                          std::string opcode = "mov",
+                          std::string opcode,
                           int limit = 30) {
+#if defined(_M_X64)
     // Example: mov rax, [rcx+0xE0]
     std::regex regex(
         opcode +
         R"( r(?:[a-z]{2}|\d{1,2}), \[r(?:[a-z]{2}|\d{1,2})\+(0x[0-9A-F]+)\])");
+#elif defined(_M_ARM64)
+    // Example: ldr x0, [x8, #0x288]
+    std::regex regex(opcode + R"(\s+x\d+, \[x\d+, #0x([0-9a-f]+)\])");
+#else
+#error "Unsupported architecture"
+#endif
 
     BYTE* p = (BYTE*)func;
     for (int i = 0; i < limit; i++) {
@@ -131,11 +140,17 @@ size_t OffsetFromAssembly(void* func,
     return defValue;
 }
 
-PVOID* EV_MM_TASKLIST_TASK_ITEM_FILTER(PVOID lp) {
+void* Get_TaskItemFilter_For_CTaskListWnd_ITaskListUI(void* pThis_ITaskListUI) {
     static size_t offset =
-        OffsetFromAssembly(CTaskListWnd__TaskCreated, 0x268, "mov", 40);
+#if defined(_M_X64)
+        OffsetFromAssembly(CTaskListWnd_IsTaskAllowed, 0x1F8, "mov", 10);
+#elif defined(_M_ARM64)
+        OffsetFromAssembly(CTaskListWnd_IsTaskAllowed, 0x1F8, "ldr", 10);
+#else
+#error "Unsupported architecture"
+#endif
 
-    return (PVOID*)((DWORD_PTR)lp + offset);
+    return *(void**)((DWORD_PTR)pThis_ITaskListUI + offset);
 }
 
 #pragma endregion  // offsets
@@ -154,43 +169,49 @@ using CTaskGroup_GroupMenuCommand_t = HRESULT(WINAPI*)(void* pThis,
                                                        int command);
 CTaskGroup_GroupMenuCommand_t CTaskGroup_GroupMenuCommand_Original;
 
-using CTaskListWnd__HandleClick_t = void(WINAPI*)(void* pThis,
-                                                  void* taskBtnGroup,
-                                                  int taskItemIndex,
-                                                  int clickAction,
-                                                  int param4,
-                                                  int param5);
-CTaskListWnd__HandleClick_t CTaskListWnd__HandleClick_Original;
-void WINAPI CTaskListWnd__HandleClick_Hook(void* pThis,
-                                           void* taskBtnGroup,
-                                           int taskItemIndex,
-                                           int clickAction,
-                                           int param4,
-                                           int param5) {
-    Wh_Log(L"> clickAction=%d, taskItemIndex=%d", clickAction, taskItemIndex);
+void* CTaskListWnd_vftable_CImpWndProc;
+void* CTaskListWnd_vftable_ITaskListUI;
 
-    DWORD now = GetTickCount();
+void* QueryViaVtable(void* object, void* vtable) {
+    void* ptr = object;
+    while (*(void**)ptr != vtable) {
+        ptr = (void**)ptr + 1;
+    }
+    return ptr;
+}
+
+void* QueryViaVtableBackwards(void* object, void* vtable) {
+    void* ptr = object;
+    while (*(void**)ptr != vtable) {
+        ptr = (void**)ptr - 1;
+    }
+    return ptr;
+}
+
+constexpr int kScrollCommandOriginal = -1;
+
+int GetScrollCommand(void* scrollTarget) {
+    DWORD tickCountNow = GetTickCount();
 
     if (!g_pointerWheelEventMouseWheelDelta &&
-        now - g_pointerWheelEventMouseWheelTime < 400) {
+        tickCountNow - g_pointerWheelEventMouseWheelTime < kShortDelay) {
         Wh_Log(L"Too soon after wheel scroll, ignoring event");
-        return;
+        return 0;
     }
 
-    if (now - g_pointerWheelEventMouseWheelTime > 1000 * 5) {
+    if (tickCountNow - g_pointerWheelEventMouseWheelTime >= kLongDelay) {
         g_pointerWheelEventMouseWheelDelta = 0;
     }
 
     if (!g_pointerWheelEventMouseWheelDelta) {
-        return CTaskListWnd__HandleClick_Original(
-            pThis, taskBtnGroup, taskItemIndex, clickAction, param4, param5);
+        return kScrollCommandOriginal;
     }
 
     short delta = static_cast<short>(g_pointerWheelEventMouseWheelDelta);
     g_pointerWheelEventMouseWheelDelta = 0;
 
-    if (g_lastScrollTarget == taskBtnGroup &&
-        GetTickCount() - g_lastScrollTime < 1000 * 5) {
+    if (g_lastScrollTarget == scrollTarget &&
+        tickCountNow - g_lastScrollTime < kLongDelay) {
         delta += g_lastScrollDeltaRemainder;
     }
 
@@ -209,46 +230,131 @@ void WINAPI CTaskListWnd__HandleClick_Hook(void* pThis,
         command = SC_MINIMIZE;
     }
 
-    if (command &&
-        (g_lastScrollTarget != taskBtnGroup || command != g_lastScrollCommand ||
-         GetTickCount() - g_lastScrollCommandTime >= 500)) {
-        void* taskGroup = CTaskBtnGroup_GetGroup_Original(taskBtnGroup);
-        if (taskGroup) {
-            // Group types:
-            // 1 - Single item or multiple uncombined items
-            // 2 - Pinned item
-            // 3 - Multiple combined items
-            int groupType = CTaskBtnGroup_GetGroupType_Original(taskBtnGroup);
-            if (groupType != 2) {
-                g_groupMenuCommandThreadId = GetCurrentThreadId();
-                g_groupMenuCommandTaskItem =
-                    groupType == 3 ? nullptr
-                                   : CTaskBtnGroup_GetTaskItem_Original(
-                                         taskBtnGroup, taskItemIndex);
-
-                Wh_Log(L"Triggering command 0x%04X", command);
-                CTaskGroup_GroupMenuCommand_Original(
-                    taskGroup, *EV_MM_TASKLIST_TASK_ITEM_FILTER(pThis),
-                    command);
-
-                g_groupMenuCommandThreadId = 0;
-                g_groupMenuCommandTaskItem = nullptr;
-            } else {
-                Wh_Log(L"Ignoring pinned item");
-            }
-        } else {
-            Wh_Log(L"No task group");
-        }
-
-        g_lastScrollCommand = command;
-        g_lastScrollCommandTime = GetTickCount();
-    } else {
-        Wh_Log(L"Ignoring event");
+    if (command && g_lastScrollTarget == scrollTarget &&
+        command == g_lastScrollCommand &&
+        tickCountNow - g_lastScrollCommandTime < kShortDelay) {
+        Wh_Log(L"Ignoring rapid event");
+        command = 0;
     }
 
-    g_lastScrollTarget = taskBtnGroup;
-    g_lastScrollTime = GetTickCount();
+    if (command) {
+        g_lastScrollCommand = command;
+        g_lastScrollCommandTime = tickCountNow;
+    }
+
+    g_lastScrollTarget = scrollTarget;
+    g_lastScrollTime = tickCountNow;
     g_lastScrollDeltaRemainder = delta % WHEEL_DELTA;
+
+    return command;
+}
+
+using CTaskListWnd__HandleClick_t = void(WINAPI*)(void* pThis,
+                                                  void* taskBtnGroup,
+                                                  int taskItemIndex,
+                                                  int clickAction,
+                                                  int param4,
+                                                  int param5);
+CTaskListWnd__HandleClick_t CTaskListWnd__HandleClick_Original;
+void WINAPI CTaskListWnd__HandleClick_Hook(void* pThis,
+                                           void* taskBtnGroup,
+                                           int taskItemIndex,
+                                           int clickAction,
+                                           int param4,
+                                           int param5) {
+    Wh_Log(L"> clickAction=%d, taskItemIndex=%d", clickAction, taskItemIndex);
+
+    int command = GetScrollCommand(taskBtnGroup);
+    switch (command) {
+        case 0:
+            return;
+
+        case kScrollCommandOriginal:
+            return CTaskListWnd__HandleClick_Original(
+                pThis, taskBtnGroup, taskItemIndex, clickAction, param4,
+                param5);
+    }
+
+    void* taskGroup = CTaskBtnGroup_GetGroup_Original(taskBtnGroup);
+    if (!taskGroup) {
+        Wh_Log(L"No task group");
+        return;
+    }
+
+    // Group types:
+    // 1 - Single item or multiple uncombined items
+    // 2 - Pinned item
+    // 3 - Multiple combined items
+    int groupType = CTaskBtnGroup_GetGroupType_Original(taskBtnGroup);
+    if (groupType == 2) {
+        Wh_Log(L"Ignoring pinned item");
+        return;
+    }
+
+    g_groupMenuCommandThreadId = GetCurrentThreadId();
+    g_groupMenuCommandTaskItem =
+        groupType == 3
+            ? nullptr
+            : CTaskBtnGroup_GetTaskItem_Original(taskBtnGroup, taskItemIndex);
+
+    void* pThis_CImpWndProc =
+        QueryViaVtableBackwards(pThis, CTaskListWnd_vftable_CImpWndProc);
+
+    void* pThis_ITaskListUI =
+        QueryViaVtable(pThis_CImpWndProc, CTaskListWnd_vftable_ITaskListUI);
+
+    Wh_Log(L"Triggering command 0x%04X", command);
+    CTaskGroup_GroupMenuCommand_Original(
+        taskGroup,
+        Get_TaskItemFilter_For_CTaskListWnd_ITaskListUI(pThis_ITaskListUI),
+        command);
+
+    g_groupMenuCommandThreadId = 0;
+    g_groupMenuCommandTaskItem = nullptr;
+}
+
+using CTaskListWnd_HandleExtendedUIClick_t =
+    HRESULT(WINAPI*)(void* pThis,
+                     void* taskGroup,
+                     void* taskItem,
+                     void* launcherOptions);
+CTaskListWnd_HandleExtendedUIClick_t
+    CTaskListWnd_HandleExtendedUIClick_Original;
+HRESULT WINAPI CTaskListWnd_HandleExtendedUIClick_Hook(void* pThis,
+                                                       void* taskGroup,
+                                                       void* taskItem,
+                                                       void* launcherOptions) {
+    Wh_Log(L">");
+
+    int command = GetScrollCommand(taskGroup);
+    switch (command) {
+        case 0:
+            return S_OK;
+
+        case kScrollCommandOriginal:
+            return CTaskListWnd_HandleExtendedUIClick_Original(
+                pThis, taskGroup, taskItem, launcherOptions);
+    }
+
+    g_groupMenuCommandThreadId = GetCurrentThreadId();
+    g_groupMenuCommandTaskItem = taskItem;
+
+    void* pThis_CImpWndProc =
+        QueryViaVtableBackwards(pThis, CTaskListWnd_vftable_CImpWndProc);
+
+    void* pThis_ITaskListUI =
+        QueryViaVtable(pThis_CImpWndProc, CTaskListWnd_vftable_ITaskListUI);
+
+    Wh_Log(L"Triggering command 0x%04X", command);
+    CTaskGroup_GroupMenuCommand_Original(
+        taskGroup,
+        Get_TaskItemFilter_For_CTaskListWnd_ITaskListUI(pThis_ITaskListUI),
+        command);
+
+    g_groupMenuCommandThreadId = 0;
+    g_groupMenuCommandTaskItem = nullptr;
+
+    return S_OK;
 }
 
 BOOL CanMinimizeWindow(HWND hWnd) {
@@ -426,6 +532,10 @@ int TaskListButton_FlyoutFrame_OnPointerWheelChanged_Hook(
 
     auto original = [=]() { return originalFunctionPtr(pThis, pArgs); };
 
+    if (GetKeyState(VK_CONTROL) < 0) {
+        return original();
+    }
+
     UIElement element = nullptr;
     ((IUnknown*)pThis)
         ->QueryInterface(winrt::guid_of<UIElement>(), winrt::put_abi(element));
@@ -462,7 +572,7 @@ int TaskListButton_FlyoutFrame_OnPointerWheelChanged_Hook(
     }
 
     DWORD now = GetTickCount();
-    if (now - g_pointerWheelEventMouseWheelTime > 1000 * 5) {
+    if (now - g_pointerWheelEventMouseWheelTime >= kLongDelay) {
         g_pointerWheelEventMouseWheelDelta = 0;
     }
 
@@ -487,9 +597,13 @@ int TaskListButton_FlyoutFrame_OnPointerWheelChanged_Hook(
         SetForegroundWindow(windowFromPoint);
     }
 
+    // Ctrl+Click, Ctrl helps handle grouped taskbar items.
     INPUT inputs[] = {
+        {.type = INPUT_KEYBOARD, .ki = {.wVk = VK_CONTROL}},
         {.type = INPUT_MOUSE, .mi = {.dwFlags = MOUSEEVENTF_LEFTDOWN}},
         {.type = INPUT_MOUSE, .mi = {.dwFlags = MOUSEEVENTF_LEFTUP}},
+        {.type = INPUT_KEYBOARD,
+         .ki = {.wVk = VK_CONTROL, .dwFlags = KEYEVENTF_KEYUP}},
     };
     SendInput(ARRAYSIZE(inputs), inputs, sizeof(INPUT));
 
@@ -545,7 +659,7 @@ void WINAPI CTaskListWnd_OnContextMenu_Hook(void* pThis,
     short delta = GET_WHEEL_DELTA_WPARAM(g_invokingContextMenuWParam);
 
     if (g_lastScrollTarget == taskItem &&
-        GetTickCount() - g_lastScrollTime < 1000 * 5) {
+        GetTickCount() - g_lastScrollTime < kLongDelay) {
         delta += g_lastScrollDeltaRemainder;
     }
 
@@ -566,7 +680,7 @@ void WINAPI CTaskListWnd_OnContextMenu_Hook(void* pThis,
 
         if (hTaskItemWnd) {
             CTaskListWnd_ShowLivePreview_Original(pThis, nullptr, 0);
-            g_noDismissHoverUIUntil = GetTickCount64() + 400;
+            g_noDismissHoverUIUntil = GetTickCount64() + kShortDelay;
 
             KillTimer(hWnd, 2006);
 
@@ -910,9 +1024,22 @@ bool HookTaskbarDllSymbols() {
             &CTaskGroup_GroupMenuCommand_Original,
         },
         {
+            {LR"(const CTaskListWnd::`vftable'{for `CImpWndProc'})"},
+            &CTaskListWnd_vftable_CImpWndProc,
+        },
+        {
+            {LR"(const CTaskListWnd::`vftable'{for `ITaskListUI'})"},
+            &CTaskListWnd_vftable_ITaskListUI,
+        },
+        {
             {LR"(protected: void __cdecl CTaskListWnd::_HandleClick(struct ITaskBtnGroup *,int,enum CTaskListWnd::eCLICKACTION,int,int))"},
             &CTaskListWnd__HandleClick_Original,
             CTaskListWnd__HandleClick_Hook,
+        },
+        {
+            {LR"(public: virtual long __cdecl CTaskListWnd::HandleExtendedUIClick(struct ITaskGroup *,struct ITaskItem *,struct winrt::Windows::System::LauncherOptions const &))"},
+            &CTaskListWnd_HandleExtendedUIClick_Original,
+            CTaskListWnd_HandleExtendedUIClick_Hook,
         },
         {
             {LR"(public: virtual bool __cdecl CTaskItem::IsVisibleOnCurrentVirtualDesktop(void))"},
@@ -970,8 +1097,8 @@ bool HookTaskbarDllSymbols() {
         },
         // For offsets:
         {
-            {LR"(protected: long __cdecl CTaskListWnd::_TaskCreated(struct ITaskGroup *,struct ITaskItem *,int))"},
-            &CTaskListWnd__TaskCreated,
+            {LR"(public: virtual bool __cdecl CTaskListWnd::IsTaskAllowed(struct ITaskItem *))"},
+            &CTaskListWnd_IsTaskAllowed,
         },
     };
 
