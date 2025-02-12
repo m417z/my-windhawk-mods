@@ -74,7 +74,6 @@ or a similar tool), enable the relevant option in the mod's settings.
 #include <regex>
 #include <string>
 #include <string_view>
-#include <unordered_set>
 
 using namespace winrt::Windows::UI::Xaml;
 
@@ -118,6 +117,10 @@ ULONGLONG g_noDismissHoverUIUntil;
 #pragma region offsets
 
 void* CTaskListWnd_SetTaskFilter;
+
+// Only for ExplorerPatcher.
+using CTaskListWnd_GetTaskFilterPtr_t = void** (*)(void*);
+CTaskListWnd_GetTaskFilterPtr_t CTaskListWnd_GetTaskFilterPtr;
 
 size_t OffsetFromAssemblyRegex(void* func,
                                size_t defValue,
@@ -264,6 +267,33 @@ int GetScrollCommand(void* scrollTarget) {
     return command;
 }
 
+void TriggerScrollCommand(void* pThis,
+                          void* taskGroup,
+                          void* taskItem,
+                          int command) {
+    g_groupMenuCommandThreadId = GetCurrentThreadId();
+    g_groupMenuCommandTaskItem = taskItem;
+
+    void* pThis_CImpWndProc =
+        QueryViaVtableBackwards(pThis, CTaskListWnd_vftable_CImpWndProc);
+
+    void* taskFilter;
+    if (CTaskListWnd_GetTaskFilterPtr) {
+        taskFilter = *CTaskListWnd_GetTaskFilterPtr(pThis_CImpWndProc);
+    } else {
+        void* pThis_ITaskListUI =
+            QueryViaVtable(pThis_CImpWndProc, CTaskListWnd_vftable_ITaskListUI);
+        taskFilter =
+            Get_TaskItemFilter_For_CTaskListWnd_ITaskListUI(pThis_ITaskListUI);
+    }
+
+    Wh_Log(L"Triggering command 0x%04X", command);
+    CTaskGroup_GroupMenuCommand_Original(taskGroup, taskFilter, command);
+
+    g_groupMenuCommandThreadId = 0;
+    g_groupMenuCommandTaskItem = nullptr;
+}
+
 using CTaskListWnd__HandleClick_t = void(WINAPI*)(void* pThis,
                                                   void* taskBtnGroup,
                                                   int taskItemIndex,
@@ -306,26 +336,11 @@ void WINAPI CTaskListWnd__HandleClick_Hook(void* pThis,
         return;
     }
 
-    g_groupMenuCommandThreadId = GetCurrentThreadId();
-    g_groupMenuCommandTaskItem =
-        groupType == 3
-            ? nullptr
-            : CTaskBtnGroup_GetTaskItem_Original(taskBtnGroup, taskItemIndex);
+    void* taskItem = groupType == 3 ? nullptr
+                                    : CTaskBtnGroup_GetTaskItem_Original(
+                                          taskBtnGroup, taskItemIndex);
 
-    void* pThis_CImpWndProc =
-        QueryViaVtableBackwards(pThis, CTaskListWnd_vftable_CImpWndProc);
-
-    void* pThis_ITaskListUI =
-        QueryViaVtable(pThis_CImpWndProc, CTaskListWnd_vftable_ITaskListUI);
-
-    Wh_Log(L"Triggering command 0x%04X", command);
-    CTaskGroup_GroupMenuCommand_Original(
-        taskGroup,
-        Get_TaskItemFilter_For_CTaskListWnd_ITaskListUI(pThis_ITaskListUI),
-        command);
-
-    g_groupMenuCommandThreadId = 0;
-    g_groupMenuCommandTaskItem = nullptr;
+    TriggerScrollCommand(pThis, taskGroup, taskItem, command);
 }
 
 using CTaskListWnd_HandleExtendedUIClick_t =
@@ -351,24 +366,7 @@ HRESULT WINAPI CTaskListWnd_HandleExtendedUIClick_Hook(void* pThis,
                 pThis, taskGroup, taskItem, launcherOptions);
     }
 
-    g_groupMenuCommandThreadId = GetCurrentThreadId();
-    g_groupMenuCommandTaskItem = taskItem;
-
-    void* pThis_CImpWndProc =
-        QueryViaVtableBackwards(pThis, CTaskListWnd_vftable_CImpWndProc);
-
-    void* pThis_ITaskListUI =
-        QueryViaVtable(pThis_CImpWndProc, CTaskListWnd_vftable_ITaskListUI);
-
-    Wh_Log(L"Triggering command 0x%04X", command);
-    CTaskGroup_GroupMenuCommand_Original(
-        taskGroup,
-        Get_TaskItemFilter_For_CTaskListWnd_ITaskListUI(pThis_ITaskListUI),
-        command);
-
-    g_groupMenuCommandThreadId = 0;
-    g_groupMenuCommandTaskItem = nullptr;
-
+    TriggerScrollCommand(pThis, taskGroup, taskItem, command);
     return S_OK;
 }
 
@@ -1119,6 +1117,24 @@ WinVersion GetExplorerVersion() {
     return WinVersion::Unsupported;
 }
 
+struct EXPLORER_PATCHER_HOOK {
+    PCSTR symbol;
+    void** pOriginalFunction;
+    void* hookFunction = nullptr;
+    bool optional = false;
+
+    template <typename Prototype>
+    EXPLORER_PATCHER_HOOK(
+        PCSTR symbol,
+        Prototype** originalFunction,
+        std::type_identity_t<Prototype*> hookFunction = nullptr,
+        bool optional = false)
+        : symbol(symbol),
+          pOriginalFunction(reinterpret_cast<void**>(originalFunction)),
+          hookFunction(reinterpret_cast<void*>(hookFunction)),
+          optional(optional) {}
+};
+
 bool HookExplorerPatcherSymbols(HMODULE explorerPatcherModule) {
     if (g_explorerPatcherInitialized.exchange(true)) {
         return true;
@@ -1128,72 +1144,58 @@ bool HookExplorerPatcherSymbols(HMODULE explorerPatcherModule) {
         g_winVersion = WinVersion::Win10;
     }
 
-    struct EXPLORER_PATCHER_HOOK {
-        PCSTR symbol;
-        void** pOriginalFunction;
-        void* hookFunction = nullptr;
-        bool optional = false;
-    };
-
     EXPLORER_PATCHER_HOOK hooks[] = {
         {R"(?GetGroup@CTaskBtnGroup@@UEAAPEAUITaskGroup@@XZ)",
-         (void**)&CTaskBtnGroup_GetGroup_Original},
+         &CTaskBtnGroup_GetGroup_Original},
         {R"(?GetGroupType@CTaskBtnGroup@@UEAA?AW4eTBGROUPTYPE@@XZ)",
-         (void**)&CTaskBtnGroup_GetGroupType_Original},
+         &CTaskBtnGroup_GetGroupType_Original},
         {R"(?GetTaskItem@CTaskBtnGroup@@UEAAPEAUITaskItem@@H@Z)",
-         (void**)&CTaskBtnGroup_GetTaskItem_Original},
+         &CTaskBtnGroup_GetTaskItem_Original},
         {R"(?GroupMenuCommand@CTaskGroup@@UEAAJPEAUITaskItemFilter@@H@Z)",
-         (void**)&CTaskGroup_GroupMenuCommand_Original},
+         &CTaskGroup_GroupMenuCommand_Original},
         {R"(??_7CTaskListWnd@@6BCImpWndProc@@@)",
-         (void**)&CTaskListWnd_vftable_CImpWndProc},
+         &CTaskListWnd_vftable_CImpWndProc},
         {R"(??_7CTaskListWnd@@6BITaskListUI@@@)",
-         (void**)&CTaskListWnd_vftable_ITaskListUI},
+         &CTaskListWnd_vftable_ITaskListUI},
         {R"(?_HandleClick@CTaskListWnd@@IEAAXPEAUITaskBtnGroup@@HW4eCLICKACTION@1@HH@Z)",
-         (void**)&CTaskListWnd__HandleClick_Original,
-         (void*)CTaskListWnd__HandleClick_Hook},
-        // {R"()",
-        //  (void**)&CTaskListWnd_HandleExtendedUIClick_Original,
-        //  (void*)CTaskListWnd_HandleExtendedUIClick_Hook,
-        //  true},
-        // TODO:
-        {R"(public: virtual bool __cdecl CTaskItem::IsVisibleOnCurrentVirtualDesktop(void))",
-         (void**)&CTaskItem_IsVisibleOnCurrentVirtualDesktop_Original,
-         (void*)CTaskItem_IsVisibleOnCurrentVirtualDesktop_Hook},
-        // TODO:
-        {R"(public: virtual int __cdecl CApi::PostMessageW(struct HWND__ *,unsigned int,unsigned __int64,__int64))",
-         (void**)&CApi_PostMessageW_Original, (void*)CApi_PostMessageW_Hook},
-        // TODO:
-        {R"(public: virtual int __cdecl CApi::BringWindowToTop(struct HWND__ *))",
-         (void**)&CApi_BringWindowToTop_Original,
-         (void*)CApi_BringWindowToTop_Hook},
+         &CTaskListWnd__HandleClick_Original, CTaskListWnd__HandleClick_Hook},
+        // {R"()", &CTaskListWnd_HandleExtendedUIClick_Original,
+        //  CTaskListWnd_HandleExtendedUIClick_Hook, true},
+        {R"(?IsVisibleOnCurrentVirtualDesktop@CTaskItem@@UEAA_NXZ)",
+         &CTaskItem_IsVisibleOnCurrentVirtualDesktop_Original,
+         CTaskItem_IsVisibleOnCurrentVirtualDesktop_Hook},
+        {R"(?PostMessageW@CApi@@UEAAHPEAUHWND__@@I_K_J@Z)",
+         &CApi_PostMessageW_Original, CApi_PostMessageW_Hook},
+        {R"(?BringWindowToTop@CApi@@UEAAHPEAUHWND__@@@Z)",
+         &CApi_BringWindowToTop_Original, CApi_BringWindowToTop_Hook},
         {R"(?ShowLivePreview@CTaskListWnd@@UEAAJPEAUITaskItem@@K@Z)",
-         (void**)&CTaskListWnd_ShowLivePreview_Original},
+         &CTaskListWnd_ShowLivePreview_Original},
         {R"(?GetWindow@CWindowTaskItem@@UEAAPEAUHWND__@@XZ)",
-         (void**)&CWindowTaskItem_GetWindow_Original},
+         &CWindowTaskItem_GetWindow_Original},
         {R"(?GetWindow@CImmersiveTaskItem@@UEAAPEAUHWND__@@XZ)",
-         (void**)&CImmersiveTaskItem_GetWindow_Original},
+         &CImmersiveTaskItem_GetWindow_Original},
         {R"(??_7CImmersiveTaskItem@@6BITaskItem@@@)",
-         (void**)&CImmersiveTaskItem_vftable},
+         &CImmersiveTaskItem_vftable},
         {R"(?OnContextMenu@CTaskListWnd@@UEAAXUtagPOINT@@PEAUHWND__@@_NPEAUITaskGroup@@PEAUITaskItem@@@Z)",
-         (void**)&CTaskListWnd_OnContextMenu_Original,
-         (void*)CTaskListWnd_OnContextMenu_Hook},
+         &CTaskListWnd_OnContextMenu_Original, CTaskListWnd_OnContextMenu_Hook},
         {R"(?DismissHoverUI@CTaskListWnd@@UEAAJH@Z)",
-         (void**)&CTaskListWnd_DismissHoverUI_Original,
-         (void*)CTaskListWnd_DismissHoverUI_Hook},
+         &CTaskListWnd_DismissHoverUI_Original,
+         CTaskListWnd_DismissHoverUI_Hook},
         {R"(?ThumbIndexFromPoint@CTaskListThumbnailWnd@@UEBAHAEBUtagPOINT@@@Z)",
-         (void**)&CTaskListThumbnailWnd_ThumbIndexFromPoint_Original,
-         (void*)CTaskListThumbnailWnd_ThumbIndexFromPoint_Hook},
-        {R"(?_HandleContextMenu@CTaskListThumbnailWnd@@AEAAXUtagPOINT@@H@Z)",
-         (void**)&CTaskListThumbnailWnd__HandleContextMenu_Original},
-        {R"(?_RefreshThumbnail@CTaskListThumbnailWnd@@AEAAXH@Z)",
-         (void**)&CTaskListThumbnailWnd__RefreshThumbnail_Original},
+         &CTaskListThumbnailWnd_ThumbIndexFromPoint_Original,
+         CTaskListThumbnailWnd_ThumbIndexFromPoint_Hook},
         {R"(?v_WndProc@CTaskListWnd@@MEAA_JPEAUHWND__@@I_K_J@Z)",
-         (void**)&CTaskListWnd_v_WndProc_Original,
-         (void*)CTaskListWnd_v_WndProc_Hook},
+         &CTaskListWnd_v_WndProc_Original, CTaskListWnd_v_WndProc_Hook},
+        {R"(?_HandleContextMenu@CTaskListThumbnailWnd@@AEAAXUtagPOINT@@H@Z)",
+         &CTaskListThumbnailWnd__HandleContextMenu_Original},
+        {R"(?_RefreshThumbnail@CTaskListThumbnailWnd@@AEAAXH@Z)",
+         &CTaskListThumbnailWnd__RefreshThumbnail_Original},
+        {R"(?v_WndProc@CTaskListThumbnailWnd@@EEAA_JPEAUHWND__@@I_K_J@Z)",
+         &CTaskListThumbnailWnd_v_WndProc_Original,
+         CTaskListThumbnailWnd_v_WndProc_Hook},
         // For offsets:
-        // TODO
-        {R"(?SetTaskFilter@CTaskListWnd@@UEAAXPEAUITaskItemFilter@@@Z)",
-         (void**)&CTaskListWnd_SetTaskFilter},
+        {R"(?CTaskListWnd_GetTaskFilterPtr@@YAPEAXPEAVCTaskListWnd@@@Z)",
+         &CTaskListWnd_GetTaskFilterPtr},
     };
 
     bool succeeded = true;
@@ -1216,14 +1218,16 @@ bool HookExplorerPatcherSymbols(HMODULE explorerPatcherModule) {
         }
     }
 
-    if (g_initialized) {
+    if (!succeeded) {
+        Wh_Log(L"HookExplorerPatcherSymbols failed");
+    } else if (g_initialized) {
         Wh_ApplyHookOperations();
     }
 
     return succeeded;
 }
 
-bool HandleModuleIfExplorerPatcher(HMODULE module) {
+bool IsExplorerPatcherModule(HMODULE module) {
     WCHAR moduleFilePath[MAX_PATH];
     switch (
         GetModuleFileName(module, moduleFilePath, ARRAYSIZE(moduleFilePath))) {
@@ -1239,24 +1243,28 @@ bool HandleModuleIfExplorerPatcher(HMODULE module) {
 
     moduleFileName++;
 
-    if (_wcsnicmp(L"ep_taskbar.", moduleFileName, sizeof("ep_taskbar.") - 1) !=
+    if (_wcsnicmp(L"ep_taskbar.", moduleFileName, sizeof("ep_taskbar.") - 1) ==
         0) {
+        Wh_Log(L"ExplorerPatcher taskbar module: %s", moduleFileName);
         return true;
     }
 
-    Wh_Log(L"ExplorerPatcher taskbar loaded: %s", moduleFileName);
-    return HookExplorerPatcherSymbols(module);
+    return false;
 }
 
-void HandleLoadedExplorerPatcher() {
+bool HandleLoadedExplorerPatcher() {
     HMODULE hMods[1024];
     DWORD cbNeeded;
     if (EnumProcessModules(GetCurrentProcess(), hMods, sizeof(hMods),
                            &cbNeeded)) {
         for (size_t i = 0; i < cbNeeded / sizeof(HMODULE); i++) {
-            HandleModuleIfExplorerPatcher(hMods[i]);
+            if (IsExplorerPatcherModule(hMods[i])) {
+                return HookExplorerPatcherSymbols(hMods[i]);
+            }
         }
     }
+
+    return true;
 }
 
 using LoadLibraryExW_t = decltype(&LoadLibraryExW);
@@ -1266,7 +1274,9 @@ HMODULE WINAPI LoadLibraryExW_Hook(LPCWSTR lpLibFileName,
                                    DWORD dwFlags) {
     HMODULE module = LoadLibraryExW_Original(lpLibFileName, hFile, dwFlags);
     if (module && !((ULONG_PTR)module & 3) && !g_explorerPatcherInitialized) {
-        HandleModuleIfExplorerPatcher(module);
+        if (IsExplorerPatcherModule(module)) {
+            HookExplorerPatcherSymbols(module);
+        }
     }
 
     return module;
@@ -1307,14 +1317,17 @@ BOOL Wh_ModInit() {
         }
     }
 
-    // HandleLoadedExplorerPatcher();
+    if (!HandleLoadedExplorerPatcher()) {
+        Wh_Log(L"HandleLoadedExplorerPatcher failed");
+        return FALSE;
+    }
 
-    // HMODULE kernelBaseModule = GetModuleHandle(L"kernelbase.dll");
-    // FARPROC pKernelBaseLoadLibraryExW =
-    //     GetProcAddress(kernelBaseModule, "LoadLibraryExW");
-    // Wh_SetFunctionHook((void*)pKernelBaseLoadLibraryExW,
-    //                    (void*)LoadLibraryExW_Hook,
-    //                    (void**)&LoadLibraryExW_Original);
+    HMODULE kernelBaseModule = GetModuleHandle(L"kernelbase.dll");
+    FARPROC pKernelBaseLoadLibraryExW =
+        GetProcAddress(kernelBaseModule, "LoadLibraryExW");
+    Wh_SetFunctionHook((void*)pKernelBaseLoadLibraryExW,
+                       (void*)LoadLibraryExW_Hook,
+                       (void**)&LoadLibraryExW_Original);
 
     g_initialized = true;
 
@@ -1324,11 +1337,11 @@ BOOL Wh_ModInit() {
 void Wh_ModAfterInit() {
     Wh_Log(L">");
 
-    // // Try again in case there's a race between the previous attempt and the
-    // // LoadLibraryExW hook.
-    // if (!g_explorerPatcherInitialized) {
-    //     HandleLoadedExplorerPatcher();
-    // }
+    // Try again in case there's a race between the previous attempt and the
+    // LoadLibraryExW hook.
+    if (!g_explorerPatcherInitialized) {
+        HandleLoadedExplorerPatcher();
+    }
 }
 
 void Wh_ModUninit() {
