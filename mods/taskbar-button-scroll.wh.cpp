@@ -2,7 +2,7 @@
 // @id              taskbar-button-scroll
 // @name            Taskbar minimize/restore on scroll
 // @description     Minimize/restore by scrolling the mouse wheel over taskbar buttons and thumbnail previews (Windows 11 only)
-// @version         1.0.7
+// @version         1.1
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
@@ -124,7 +124,7 @@ CTaskListWnd_GetTaskFilterPtr_t CTaskListWnd_GetTaskFilterPtr;
 
 size_t OffsetFromAssemblyRegex(void* func,
                                size_t defValue,
-                               const std::regex& regex,
+                               std::regex regex,
                                int limit = 30) {
     BYTE* p = (BYTE*)func;
     for (int i = 0; i < limit; i++) {
@@ -913,13 +913,13 @@ bool HookTaskbarViewDllSymbols() {
         FlyoutFrame_OnPointerWheelChanged_Original !=
             TaskListButton_OnPointerWheelChanged_Original;
 
-    WindhawkUtils::SetFunctionHook(
+    WindhawkUtils::Wh_SetFunctionHookT(
         TaskListButton_OnPointerWheelChanged_Original,
         TaskListButton_OnPointerWheelChanged_Hook,
         &TaskListButton_OnPointerWheelChanged_Original);
 
     if (hookFlyoutFrame_OnPointerWheelChanged_Original) {
-        WindhawkUtils::SetFunctionHook(
+        WindhawkUtils::Wh_SetFunctionHookT(
             FlyoutFrame_OnPointerWheelChanged_Original,
             FlyoutFrame_OnPointerWheelChanged_Hook,
             &FlyoutFrame_OnPointerWheelChanged_Original);
@@ -941,7 +941,7 @@ bool HookTaskbarSymbols() {
     }
 
     // Taskbar.dll, explorer.exe
-    WindhawkUtils::SYMBOL_HOOK taskbarDllHooks[] = {
+    WindhawkUtils::SYMBOL_HOOK symbolHooks[] = {
         {
             {LR"(public: virtual struct ITaskGroup * __cdecl CTaskBtnGroup::GetGroup(void))"},
             &CTaskBtnGroup_GetGroup_Original,
@@ -1054,7 +1054,7 @@ bool HookTaskbarSymbols() {
         },
     };
 
-    if (!HookSymbols(module, taskbarDllHooks, ARRAYSIZE(taskbarDllHooks))) {
+    if (!HookSymbols(module, symbolHooks, ARRAYSIZE(symbolHooks))) {
         Wh_Log(L"HookSymbols failed");
         return false;
     }
