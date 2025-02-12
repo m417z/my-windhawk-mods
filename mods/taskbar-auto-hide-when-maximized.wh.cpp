@@ -42,6 +42,9 @@ or a similar tool), enable the relevant option in the mod's settings.
   - intersected: Auto-hide when a window is maximized or intersects the taskbar
   - maximized: Auto-hide only when a window is maximized
   - never: Never auto-hide
+- primaryOnly: false
+  $name: Primary monitor only
+  $description: Apply the mod's behavior only to the primary monitor taskbar. Secondary monitors will use Windows' default auto-hide behavior.
 - oldTaskbarOnWin11: false
   $name: Customize the old taskbar on Windows 11
   $description: >-
@@ -68,6 +71,7 @@ enum class Mode {
 
 struct {
     Mode mode;
+    bool primaryOnly;
     bool oldTaskbarOnWin11;
 } g_settings;
 
@@ -218,6 +222,10 @@ bool GetTaskbarRectForMonitor(HMONITOR monitor, RECT* rect) {
 bool ShouldAlwaysShowTaskbar(HWND hMMTaskbarWnd, HMONITOR monitor) {
     if (g_settings.mode == Mode::never) {
         return true;
+    }
+
+    if (g_settings.primaryOnly && monitor != MonitorFromPoint({0,0}, MONITOR_DEFAULTTOPRIMARY)) {
+        return false;
     }
 
     bool canHideTaskbar = false;
@@ -849,6 +857,7 @@ void LoadSettings() {
     }
     Wh_FreeStringSetting(mode);
 
+    g_settings.primaryOnly = Wh_GetIntSetting(L"primaryOnly");
     g_settings.oldTaskbarOnWin11 = Wh_GetIntSetting(L"oldTaskbarOnWin11");
 }
 
