@@ -149,16 +149,18 @@ size_t OffsetFromAssemblyRegex(void* func,
 }
 
 void* Get_TaskItemFilter_For_CTaskListWnd_ITaskListUI(void* pThis_ITaskListUI) {
+    static size_t offset =
 #if defined(_M_X64)
-    static std::regex regex(R"(add rcx, 0x([0-9a-f]+))",
-                            std::regex_constants::icase);
-    size_t offset =
-        OffsetFromAssemblyRegex(CTaskListWnd_SetTaskFilter, 0x1F8, regex, 10);
+        OffsetFromAssemblyRegex(CTaskListWnd_SetTaskFilter, 0x1F8,
+                                std::regex(R"(add rcx, 0x([0-9a-f]+))",
+                                           std::regex_constants::icase),
+                                10);
 #elif defined(_M_ARM64)
-    static std::regex regex(R"(add\s+x\d+, x\d+, #0x([0-9a-f]+))",
-                            std::regex_constants::icase);
-    size_t offset =
-        OffsetFromAssemblyRegex(CTaskListWnd_SetTaskFilter, 0x1F8, regex, 10);
+        OffsetFromAssemblyRegex(
+            CTaskListWnd_SetTaskFilter, 0x1F8,
+            std::regex(R"(add\s+x\d+, x\d+, #0x([0-9a-f]+))",
+                       std::regex_constants::icase),
+            10);
 #else
 #error "Unsupported architecture"
 #endif
