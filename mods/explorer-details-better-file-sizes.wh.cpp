@@ -1169,25 +1169,23 @@ std::atomic<DWORD> g_gsReplyCounter;
 enum : unsigned {
     ES_QUERY_OK,
     ES_QUERY_NO_INDEX,
-    ES_QUERY_NO_MEMORY,
     ES_QUERY_NO_ES_IPC,
     ES_QUERY_NO_PLUGIN_IPC,
     ES_QUERY_TIMEOUT,
     ES_QUERY_REPLY_TIMEOUT,
     ES_QUERY_NO_RESULT,
-    ES_QUERY_DISABLED,
+    ES_QUERY_ZERO_SIZE_REPARSE_POINT,
 };
 
 PCWSTR g_gsQueryStatus[] = {
     L"Ok",
     L"No Index",
-    L"No Memory",
     L"No ES IPC",
     L"No Plugin IPC",
     L"Query Timeout",
     L"Reply Timeout",
     L"No Result",
-    L"Disabled",
+    L"Zero-size reparse point",
 };
 
 HANDLE g_everything4Wh_Thread;
@@ -1263,8 +1261,12 @@ unsigned Everything4Wh_GetFileSize(PCWSTR folderPath, int64_t* size) {
         *size = Everything3_GetFolderSizeFromFilenameW(pClient, folderPath);
         Everything3_DestroyClient(pClient);
 
-        if (*size == -1 || (!*size && IsReparse(folderPath))) {
+        if (*size == -1) {
             return ES_QUERY_NO_INDEX;
+        }
+
+        if (!*size && IsReparse(folderPath)) {
+            return ES_QUERY_ZERO_SIZE_REPARSE_POINT;
         }
 
         return ES_QUERY_OK;
@@ -1336,7 +1338,7 @@ unsigned Everything4Wh_GetFileSize(PCWSTR folderPath, int64_t* size) {
         } else if (!g_gsReply.bResult) {
             result = ES_QUERY_NO_RESULT;
         } else if (!g_gsReply.liSize && IsReparse(folderPath)) {
-            result = ES_QUERY_NO_INDEX;
+            result = ES_QUERY_ZERO_SIZE_REPARSE_POINT;
         } else {
             *size = g_gsReply.liSize;
             result = ES_QUERY_OK;
@@ -1673,15 +1675,14 @@ HRESULT WINAPI CFSFolder__GetSize_Hook(void* pCFSFolder,
                 int64_t size;
                 unsigned result = Everything4Wh_GetFileSize(path, &size);
 
-                if (result == ES_QUERY_NO_RESULT ||
-                    result == ES_QUERY_NO_INDEX) {
-                    // Try resolving the path in case it contains a reparse
-                    // point.
+                if (result == ES_QUERY_ZERO_SIZE_REPARSE_POINT) {
                     auto resolved = ResolvePath(path);
                     if (resolved.empty()) {
                         Wh_Log(L"Failed to resolve path");
                     } else if (resolved == path) {
                         Wh_Log(L"Path is already resolved");
+                        size = 0;
+                        result = ES_QUERY_OK;
                     } else {
                         Wh_Log(L"Trying resolved path %s", resolved.c_str());
                         result =
