@@ -49,7 +49,9 @@ or a similar tool), enable the relevant option in the mod's settings.
 #include <windhawk_utils.h>
 
 #include <commctrl.h>
+#include <psapi.h>
 
+#include <atomic>
 #include <regex>
 #include <string>
 #include <string_view>
@@ -63,9 +65,13 @@ enum class WinVersion {
     Unsupported,
     Win10,
     Win11,
+    Win11_24H2,
 };
 
-WinVersion g_explorerVersion;
+WinVersion g_winVersion;
+
+std::atomic<bool> g_initialized;
+std::atomic<bool> g_explorerPatcherInitialized;
 
 std::unordered_set<HWND> g_thumbnailWindows;
 
@@ -357,7 +363,7 @@ bool MoveTaskInTaskList(LONG_PTR lpMMTaskListLongPtr,
 
     DPA_InsertPtr(buttonsArray, indexTo, button);
 
-    if (g_explorerVersion <= WinVersion::Win10) {
+    if (g_winVersion <= WinVersion::Win10) {
         HWND hMMTaskListWnd = *(HWND*)(lpMMTaskListLongPtr + 0x08);
         InvalidateRect(hMMTaskListWnd, nullptr, FALSE);
     } else {
@@ -504,7 +510,7 @@ BOOL SetWindowSubclassFromAnyThread(HWND hWnd,
 
     HHOOK hook = SetWindowsHookEx(
         WH_CALLWNDPROC,
-        [](int nCode, WPARAM wParam, LPARAM lParam) WINAPI -> LRESULT {
+        [](int nCode, WPARAM wParam, LPARAM lParam) -> LRESULT {
             if (nCode == HC_ACTION) {
                 const CWPSTRUCT* cwp = (const CWPSTRUCT*)lParam;
                 if (cwp->message == g_subclassRegisteredMsg && cwp->wParam) {
@@ -650,7 +656,7 @@ void FindCurrentProcessThumbnailWindows() {
 
     EnumThreadWindows(
         dwThreadId,
-        [](HWND hWnd, LPARAM lParam) WINAPI -> BOOL {
+        [](HWND hWnd, LPARAM lParam) -> BOOL {
             WCHAR szClassName[32];
             if (GetClassName(hWnd, szClassName, ARRAYSIZE(szClassName)) == 0)
                 return TRUE;
@@ -738,6 +744,87 @@ HWND WINAPI CreateWindowInBand_Hook(DWORD dwExStyle,
     return hWnd;
 }
 
+bool HookTaskbarSymbols() {
+    HMODULE module;
+    if (g_winVersion <= WinVersion::Win10) {
+        module = GetModuleHandle(nullptr);
+    } else {
+        module = LoadLibrary(L"taskbar.dll");
+        if (!module) {
+            Wh_Log(L"Couldn't load taskbar.dll");
+            return false;
+        }
+    }
+
+    // Taskbar.dll, explorer.exe
+    WindhawkUtils::SYMBOL_HOOK symbolHooks[] = {
+        {
+            {LR"(private: void __cdecl CTaskListThumbnailWnd::_RefreshThumbnail(int))"},
+            (void**)&CTaskListThumbnailWnd__RefreshThumbnail,
+        },
+        {
+            {LR"(protected: struct ITaskBtnGroup * __cdecl CTaskListWnd::_GetTBGroupFromGroup(struct ITaskGroup *,int *))"},
+            (void**)&CTaskListWnd__GetTBGroupFromGroup,
+        },
+        {
+            // For offsets.
+            {LR"(public: virtual void __cdecl CTaskListThumbnailWnd::Dismiss(int,int))"},
+            (void**)&CTaskListThumbnailWnd_Dismiss,
+        },
+        {
+            // For offsets.
+            {LR"(public: virtual struct ITaskGroup * __cdecl CTaskListThumbnailWnd::GetTaskGroup(void)const )"},
+            (void**)&CTaskListThumbnailWnd_GetTaskGroup,
+        },
+        {
+            // For offsets.
+            {LR"(private: void __cdecl CTaskListThumbnailWnd::_RegisterThumbBars(void))"},
+            (void**)&CTaskListThumbnailWnd__RegisterThumbBars,
+        },
+        {
+            // For offsets.
+            {LR"(public: virtual int __cdecl CTaskListThumbnailWnd::GetHoverIndex(void)const )"},
+            (void**)&CTaskListThumbnailWnd_GetHoverIndex,
+        },
+        {
+            {LR"(public: virtual struct HWND__ * __cdecl CTaskListThumbnailWnd::GetHwnd(void))"},
+            (void**)&CTaskListThumbnailWnd_GetHwnd,
+        },
+        {
+            {LR"(public: virtual long __cdecl CTaskListWnd::TaskInclusionChanged(struct ITaskGroup *,struct ITaskItem *))"},
+            (void**)&CTaskListWnd_TaskInclusionChanged,
+        },
+        {
+            {LR"(public: virtual struct ITaskItem * __cdecl CTaskThumbnail::GetTaskItem(void))"},
+            (void**)&CTaskThumbnail_GetTaskItem,
+        },
+        {
+            {LR"(public: virtual enum eTBGROUPTYPE __cdecl CTaskBtnGroup::GetGroupType(void))"},
+            (void**)&CTaskBtnGroup_GetGroupType,
+        },
+        {
+            {LR"(public: virtual int __cdecl CTaskBtnGroup::GetNumItems(void))"},
+            (void**)&CTaskBtnGroup_GetNumItems,
+        },
+        {
+            {LR"(public: virtual struct ITaskItem * __cdecl CTaskBtnGroup::GetTaskItem(int))"},
+            (void**)&CTaskBtnGroup_GetTaskItem,
+        },
+        {
+            {LR"(public: virtual bool __cdecl TaskItemFilter::IsTaskAllowed(struct ITaskItem *))"},
+            (void**)&TaskItemFilter_IsTaskAllowed_Original,
+            (void*)TaskItemFilter_IsTaskAllowed_Hook,
+        },
+    };
+
+    if (!HookSymbols(module, symbolHooks, ARRAYSIZE(symbolHooks))) {
+        Wh_Log(L"HookSymbols failed");
+        return false;
+    }
+
+    return true;
+}
+
 bool InitOffsets() {
     // Expected implementation:
     // 48:895C24 10              | mov qword ptr ss:[rsp+10],rbx
@@ -821,34 +908,172 @@ VS_FIXEDFILEINFO* GetModuleVersionInfo(HMODULE hModule, UINT* puPtrLen) {
         }
     }
 
-    if (puPtrLen)
+    if (puPtrLen) {
         *puPtrLen = uPtrLen;
+    }
 
     return (VS_FIXEDFILEINFO*)pFixedFileInfo;
 }
 
 WinVersion GetExplorerVersion() {
     VS_FIXEDFILEINFO* fixedFileInfo = GetModuleVersionInfo(nullptr, nullptr);
-    if (!fixedFileInfo)
+    if (!fixedFileInfo) {
         return WinVersion::Unsupported;
+    }
 
     WORD major = HIWORD(fixedFileInfo->dwFileVersionMS);
     WORD minor = LOWORD(fixedFileInfo->dwFileVersionMS);
     WORD build = HIWORD(fixedFileInfo->dwFileVersionLS);
     WORD qfe = LOWORD(fixedFileInfo->dwFileVersionLS);
 
-    Wh_Log(L"Explorer version: %u.%u.%u.%u", major, minor, build, qfe);
+    Wh_Log(L"Version: %u.%u.%u.%u", major, minor, build, qfe);
 
     switch (major) {
         case 10:
-            if (build < 22000)
+            if (build < 22000) {
                 return WinVersion::Win10;
-            else
+            } else if (build < 26100) {
                 return WinVersion::Win11;
+            } else {
+                return WinVersion::Win11_24H2;
+            }
             break;
     }
 
     return WinVersion::Unsupported;
+}
+
+struct EXPLORER_PATCHER_HOOK {
+    PCSTR symbol;
+    void** pOriginalFunction;
+    void* hookFunction = nullptr;
+    bool optional = false;
+
+    template <typename Prototype>
+    EXPLORER_PATCHER_HOOK(
+        PCSTR symbol,
+        Prototype** originalFunction,
+        std::type_identity_t<Prototype*> hookFunction = nullptr,
+        bool optional = false)
+        : symbol(symbol),
+          pOriginalFunction(reinterpret_cast<void**>(originalFunction)),
+          hookFunction(reinterpret_cast<void*>(hookFunction)),
+          optional(optional) {}
+};
+
+bool HookExplorerPatcherSymbols(HMODULE explorerPatcherModule) {
+    if (g_explorerPatcherInitialized.exchange(true)) {
+        return true;
+    }
+
+    if (g_winVersion >= WinVersion::Win11) {
+        g_winVersion = WinVersion::Win10;
+    }
+
+    EXPLORER_PATCHER_HOOK hooks[] = {
+        {R"(?_RefreshThumbnail@CTaskListThumbnailWnd@@AEAAXH@Z)",
+         &CTaskListThumbnailWnd__RefreshThumbnail},
+        {R"(?_GetTBGroupFromGroup@CTaskListWnd@@IEAAPEAUITaskBtnGroup@@PEAUITaskGroup@@PEAH@Z)",
+         &CTaskListWnd__GetTBGroupFromGroup},
+        {R"(?GetHWND@CTaskListThumbnailWnd@@UEBAPEAUHWND__@@XZ)",
+         &CTaskListThumbnailWnd_GetHwnd},
+        {R"(?TaskInclusionChanged@CTaskListWnd@@UEAAJPEAUITaskGroup@@PEAUITaskItem@@@Z)",
+         &CTaskListWnd_TaskInclusionChanged},
+        {R"(?GetTaskItem@CTaskThumbnail@@UEAAPEAUITaskItem@@XZ)",
+         &CTaskThumbnail_GetTaskItem},
+        {R"(?GetGroupType@CTaskBtnGroup@@UEAA?AW4eTBGROUPTYPE@@XZ)",
+         &CTaskBtnGroup_GetGroupType},
+        {R"(?GetNumItems@CTaskBtnGroup@@UEAAHXZ)",
+         &CTaskBtnGroup_GetNumItems},
+        {R"(?GetTaskItem@CTaskBtnGroup@@UEAAPEAUITaskItem@@H@Z)",
+         &CTaskBtnGroup_GetTaskItem},
+        {R"(?IsTaskAllowed@TaskItemFilter@@UEAA_NPEAUITaskItem@@@Z)",
+         &TaskItemFilter_IsTaskAllowed_Original,
+         TaskItemFilter_IsTaskAllowed_Hook},
+    };
+
+    bool succeeded = true;
+
+    for (const auto& hook : hooks) {
+        void* ptr = (void*)GetProcAddress(explorerPatcherModule, hook.symbol);
+        if (!ptr) {
+            Wh_Log(L"ExplorerPatcher symbol%s doesn't exist: %S",
+                   hook.optional ? L" (optional)" : L"", hook.symbol);
+            if (!hook.optional) {
+                succeeded = false;
+            }
+            continue;
+        }
+
+        if (hook.hookFunction) {
+            Wh_SetFunctionHook(ptr, hook.hookFunction, hook.pOriginalFunction);
+        } else {
+            *hook.pOriginalFunction = ptr;
+        }
+    }
+
+    if (!succeeded) {
+        Wh_Log(L"HookExplorerPatcherSymbols failed");
+    } else if (g_initialized) {
+        Wh_ApplyHookOperations();
+    }
+
+    return succeeded;
+}
+
+bool IsExplorerPatcherModule(HMODULE module) {
+    WCHAR moduleFilePath[MAX_PATH];
+    switch (
+        GetModuleFileName(module, moduleFilePath, ARRAYSIZE(moduleFilePath))) {
+        case 0:
+        case ARRAYSIZE(moduleFilePath):
+            return false;
+    }
+
+    PCWSTR moduleFileName = wcsrchr(moduleFilePath, L'\\');
+    if (!moduleFileName) {
+        return false;
+    }
+
+    moduleFileName++;
+
+    if (_wcsnicmp(L"ep_taskbar.", moduleFileName, sizeof("ep_taskbar.") - 1) ==
+        0) {
+        Wh_Log(L"ExplorerPatcher taskbar module: %s", moduleFileName);
+        return true;
+    }
+
+    return false;
+}
+
+bool HandleLoadedExplorerPatcher() {
+    HMODULE hMods[1024];
+    DWORD cbNeeded;
+    if (EnumProcessModules(GetCurrentProcess(), hMods, sizeof(hMods),
+                           &cbNeeded)) {
+        for (size_t i = 0; i < cbNeeded / sizeof(HMODULE); i++) {
+            if (IsExplorerPatcherModule(hMods[i])) {
+                return HookExplorerPatcherSymbols(hMods[i]);
+            }
+        }
+    }
+
+    return true;
+}
+
+using LoadLibraryExW_t = decltype(&LoadLibraryExW);
+LoadLibraryExW_t LoadLibraryExW_Original;
+HMODULE WINAPI LoadLibraryExW_Hook(LPCWSTR lpLibFileName,
+                                   HANDLE hFile,
+                                   DWORD dwFlags) {
+    HMODULE module = LoadLibraryExW_Original(lpLibFileName, hFile, dwFlags);
+    if (module && !((ULONG_PTR)module & 3) && !g_explorerPatcherInitialized) {
+        if (IsExplorerPatcherModule(module)) {
+            HookExplorerPatcherSymbols(module);
+        }
+    }
+
+    return module;
 }
 
 void LoadSettings() {
@@ -860,94 +1085,41 @@ BOOL Wh_ModInit() {
 
     LoadSettings();
 
-    g_explorerVersion = GetExplorerVersion();
-    if (g_explorerVersion == WinVersion::Unsupported) {
-        Wh_Log(L"Unsupported Explorer version");
-        return FALSE;
-    }
+    if (g_settings.oldTaskbarOnWin11) {
+        bool hasWin10Taskbar = g_winVersion < WinVersion::Win11_24H2;
 
-    if (g_explorerVersion >= WinVersion::Win11 &&
-        g_settings.oldTaskbarOnWin11) {
-        g_explorerVersion = WinVersion::Win10;
-    }
+        if (g_winVersion >= WinVersion::Win11) {
+            g_winVersion = WinVersion::Win10;
+        }
 
-    // Taskbar.dll, explorer.exe
-    WindhawkUtils::SYMBOL_HOOK symbolHooks[] = {
-        {
-            {LR"(private: void __cdecl CTaskListThumbnailWnd::_RefreshThumbnail(int))"},
-            (void**)&CTaskListThumbnailWnd__RefreshThumbnail,
-        },
-        {
-            {LR"(protected: struct ITaskBtnGroup * __cdecl CTaskListWnd::_GetTBGroupFromGroup(struct ITaskGroup *,int *))"},
-            (void**)&CTaskListWnd__GetTBGroupFromGroup,
-        },
-        {
-            {LR"(public: virtual void __cdecl CTaskListThumbnailWnd::Dismiss(int,int))"},
-            (void**)&CTaskListThumbnailWnd_Dismiss,
-        },
-        {
-            {LR"(public: virtual struct ITaskGroup * __cdecl CTaskListThumbnailWnd::GetTaskGroup(void)const )"},
-            (void**)&CTaskListThumbnailWnd_GetTaskGroup,
-        },
-        {
-            {LR"(private: void __cdecl CTaskListThumbnailWnd::_RegisterThumbBars(void))"},
-            (void**)&CTaskListThumbnailWnd__RegisterThumbBars,
-        },
-        {
-            {LR"(public: virtual int __cdecl CTaskListThumbnailWnd::GetHoverIndex(void)const )"},
-            (void**)&CTaskListThumbnailWnd_GetHoverIndex,
-        },
-        {
-            {LR"(public: virtual struct HWND__ * __cdecl CTaskListThumbnailWnd::GetHwnd(void))"},
-            (void**)&CTaskListThumbnailWnd_GetHwnd,
-        },
-        {
-            {LR"(public: virtual long __cdecl CTaskListWnd::TaskInclusionChanged(struct ITaskGroup *,struct ITaskItem *))"},
-            (void**)&CTaskListWnd_TaskInclusionChanged,
-        },
-        {
-            {LR"(public: virtual struct ITaskItem * __cdecl CTaskThumbnail::GetTaskItem(void))"},
-            (void**)&CTaskThumbnail_GetTaskItem,
-        },
-        {
-            {LR"(public: virtual enum eTBGROUPTYPE __cdecl CTaskBtnGroup::GetGroupType(void))"},
-            (void**)&CTaskBtnGroup_GetGroupType,
-        },
-        {
-            {LR"(public: virtual int __cdecl CTaskBtnGroup::GetNumItems(void))"},
-            (void**)&CTaskBtnGroup_GetNumItems,
-        },
-        {
-            {LR"(public: virtual struct ITaskItem * __cdecl CTaskBtnGroup::GetTaskItem(int))"},
-            (void**)&CTaskBtnGroup_GetTaskItem,
-        },
-        {
-            {LR"(public: virtual bool __cdecl TaskItemFilter::IsTaskAllowed(struct ITaskItem *))"},
-            (void**)&TaskItemFilter_IsTaskAllowed_Original,
-            (void*)TaskItemFilter_IsTaskAllowed_Hook,
-        },
-    };
+        if (hasWin10Taskbar && !HookTaskbarSymbols()) {
+            return FALSE;
+        }
+    } else if (g_winVersion >= WinVersion::Win11) {
+        // if (!HookTaskbarViewDllSymbols()) {
+        //     return FALSE;
+        // }
 
-    HMODULE module;
-
-    if (g_explorerVersion <= WinVersion::Win10) {
-        module = GetModuleHandle(nullptr);
-        if (!HookSymbols(module, symbolHooks, ARRAYSIZE(symbolHooks))) {
-            Wh_Log(L"HookSymbols failed");
+        if (!HookTaskbarSymbols()) {
             return FALSE;
         }
     } else {
-        module = LoadLibrary(L"taskbar.dll");
-        if (!module) {
-            Wh_Log(L"Couldn't load taskbar.dll");
-            return FALSE;
-        }
-
-        if (!HookSymbols(module, symbolHooks, ARRAYSIZE(symbolHooks))) {
-            Wh_Log(L"HookSymbols failed");
+        if (!HookTaskbarSymbols()) {
             return FALSE;
         }
     }
+
+    if (!HandleLoadedExplorerPatcher()) {
+        Wh_Log(L"HandleLoadedExplorerPatcher failed");
+        return FALSE;
+    }
+
+    HMODULE kernelBaseModule = GetModuleHandle(L"kernelbase.dll");
+    auto pKernelBaseLoadLibraryExW = (decltype(&LoadLibraryExW))GetProcAddress(
+        kernelBaseModule, "LoadLibraryExW");
+    WindhawkUtils::Wh_SetFunctionHookT(pKernelBaseLoadLibraryExW,
+                                       LoadLibraryExW_Hook,
+                                       &LoadLibraryExW_Original);
 
     if (!InitOffsets()) {
         return FALSE;
@@ -967,15 +1139,23 @@ BOOL Wh_ModInit() {
         }
     }
 
+    g_initialized = true;
+
     return TRUE;
 }
 
 void Wh_ModAfterInit() {
     Wh_Log(L">");
 
+    // Try again in case there's a race between the previous attempt and the
+    // LoadLibraryExW hook.
+    if (!g_explorerPatcherInitialized) {
+        HandleLoadedExplorerPatcher();
+    }
+
     HMODULE module;
 
-    if (g_explorerVersion <= WinVersion::Win10) {
+    if (g_winVersion <= WinVersion::Win10) {
         module = GetModuleHandle(nullptr);
     } else {
         module = LoadLibrary(L"taskbar.dll");
