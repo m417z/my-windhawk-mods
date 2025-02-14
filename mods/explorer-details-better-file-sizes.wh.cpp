@@ -1168,7 +1168,6 @@ std::atomic<DWORD> g_gsReplyCounter;
 
 enum : unsigned {
     ES_QUERY_OK,
-    ES_QUERY_NO_INDEX,
     ES_QUERY_NO_ES_IPC,
     ES_QUERY_NO_PLUGIN_IPC,
     ES_QUERY_TIMEOUT,
@@ -1179,7 +1178,6 @@ enum : unsigned {
 
 PCWSTR g_gsQueryStatus[] = {
     L"Ok",
-    L"No Index",
     L"No ES IPC",
     L"No Plugin IPC",
     L"Query Timeout",
@@ -1262,7 +1260,7 @@ unsigned Everything4Wh_GetFileSize(PCWSTR folderPath, int64_t* size) {
         Everything3_DestroyClient(pClient);
 
         if (*size == -1) {
-            return ES_QUERY_NO_INDEX;
+            return ES_QUERY_NO_RESULT;
         }
 
         if (!*size && IsReparse(folderPath)) {
@@ -1675,7 +1673,17 @@ HRESULT WINAPI CFSFolder__GetSize_Hook(void* pCFSFolder,
                 int64_t size;
                 unsigned result = Everything4Wh_GetFileSize(path, &size);
 
-                if (result == ES_QUERY_ZERO_SIZE_REPARSE_POINT) {
+                // Regular reparse points are indexed with size 0, and
+                // ES_QUERY_ZERO_SIZE_REPARSE_POINT is returned when querying
+                // the link itself. Subfolders of reparse points aren't indexed,
+                // so ES_QUERY_NO_RESULT is returned in this case.
+                //
+                // In some cases, reparse points are indexed with the real size.
+                // In these cases, it was observed that the path resolves to
+                // itself. An example is OneDrive, see:
+                // https://github.com/ramensoftware/windhawk-mods/issues/1527
+                if (result == ES_QUERY_ZERO_SIZE_REPARSE_POINT ||
+                    result == ES_QUERY_NO_RESULT) {
                     auto resolved = ResolvePath(path);
                     if (resolved.empty()) {
                         Wh_Log(L"Failed to resolve path");
