@@ -74,8 +74,6 @@ bool g_thumbDragDone;
 bool g_taskItemFilterDisallowAll;
 DWORD g_taskInclusionChangeLastTickCount;
 
-std::atomic<DWORD> g_getPtrIndex_captureAndReturnFoundForThreadId;
-HDPA g_getPtrIndex_lastHdpa;
 std::atomic<DWORD> g_getPtr_captureForThreadId;
 HDPA g_getPtr_lastHdpa;
 
@@ -121,10 +119,8 @@ using CTaskListThumbnailWnd_TaskReordered_t = void(WINAPI*)(void* pThis,
                                                             void* taskItem);
 CTaskListThumbnailWnd_TaskReordered_t CTaskListThumbnailWnd_TaskReordered;
 
-using CTaskGroup_AddTaskItem_t = HRESULT(WINAPI*)(void* pThis,
-                                                  void* param1,
-                                                  void* param2);
-CTaskGroup_AddTaskItem_t CTaskGroup_AddTaskItem;
+using CTaskGroup_GetNumItems_t = int(WINAPI*)(PVOID pThis);
+CTaskGroup_GetNumItems_t CTaskGroup_GetNumItems;
 
 using CTaskListWnd__GetTBGroupFromGroup_t =
     void*(WINAPI*)(void* pThis, void* pTaskGroup, int* pTaskBtnGroupIndex);
@@ -250,14 +246,38 @@ bool MoveTaskInTaskList(HWND hMMTaskListWnd,
     return true;
 }
 
+HDPA GetTaskItemsArray(void* taskGroup) {
+    // This is a horrible hack, but it's the best way I found to get the array
+    // of task items from a task group. It relies on the implementation of
+    // CTaskGroup::GetNumItems being just this:
+    //
+    // return DPA_GetPtrCount(this->taskItemsArray);
+    //
+    // Or in other words:
+    //
+    // return *(int*)this[taskItemsArrayOffset];
+    //
+    // Instead of calling it with a real taskGroup object, we call it with an
+    // array of pointers to ints. The returned int value is actually the offset
+    // to the array member.
+
+    static size_t offset = []() {
+        constexpr int kIntArraySize = 256;
+        int arrayOfInts[kIntArraySize];
+        int* arrayOfIntPtrs[kIntArraySize];
+        for (int i = 0; i < kIntArraySize; i++) {
+            arrayOfInts[i] = i;
+            arrayOfIntPtrs[i] = &arrayOfInts[i];
+        }
+
+        return CTaskGroup_GetNumItems(arrayOfIntPtrs);
+    }();
+
+    return (HDPA)((void**)taskGroup)[offset];
+}
+
 bool MoveTaskInGroup(void* taskGroup, void* taskItemFrom, void* taskItemTo) {
-    g_getPtrIndex_lastHdpa = nullptr;
-
-    g_getPtrIndex_captureAndReturnFoundForThreadId = GetCurrentThreadId();
-    CTaskGroup_AddTaskItem(taskGroup, nullptr, nullptr);
-    g_getPtrIndex_captureAndReturnFoundForThreadId = 0;
-
-    HDPA taskItemsArray = g_getPtrIndex_lastHdpa;
+    HDPA taskItemsArray = GetTaskItemsArray(taskGroup);
     if (!taskItemsArray) {
         return false;
     }
@@ -470,19 +490,6 @@ LRESULT WINAPI CTaskListThumbnailWnd_v_WndProc_Hook(void* pThis,
     return result;
 }
 
-using DPA_GetPtrIndex_t = decltype(&DPA_GetPtrIndex);
-DPA_GetPtrIndex_t DPA_GetPtrIndex_Original;
-int WINAPI DPA_GetPtrIndex_Hook(HDPA hdpa, const void* p) {
-    if (g_getPtrIndex_captureAndReturnFoundForThreadId ==
-        GetCurrentThreadId()) {
-        g_getPtrIndex_lastHdpa = hdpa;
-        // Return a ridiculous index, it's not supposed to be used.
-        return 0x7EFEFEFE;
-    }
-
-    return DPA_GetPtrIndex_Original(hdpa, p);
-}
-
 using DPA_GetPtr_t = decltype(&DPA_GetPtr);
 DPA_GetPtr_t DPA_GetPtr_Original;
 PVOID WINAPI DPA_GetPtr_Hook(HDPA hdpa, INT_PTR i) {
@@ -544,8 +551,8 @@ bool HookTaskbarSymbols() {
             &CTaskListThumbnailWnd_TaskReordered,
         },
         {
-            {LR"(public: virtual long __cdecl CTaskGroup::AddTaskItem(struct ITaskItem *,struct ITaskItem *))"},
-            &CTaskGroup_AddTaskItem,
+            {LR"(public: virtual int __cdecl CTaskGroup::GetNumItems(void))"},
+            &CTaskGroup_GetNumItems,
         },
         {
             {LR"(protected: struct ITaskBtnGroup * __cdecl CTaskListWnd::_GetTBGroupFromGroup(struct ITaskGroup *,int *))"},
@@ -678,8 +685,7 @@ bool HookExplorerPatcherSymbols(HMODULE explorerPatcherModule) {
          &CTaskListThumbnailWnd_GetTaskGroup},
         {R"(?TaskReordered@CTaskListThumbnailWnd@@UEAAXPEAUITaskItem@@@Z)",
          &CTaskListThumbnailWnd_TaskReordered},
-        {R"(?AddTaskItem@CTaskGroup@@UEAAJPEAUITaskItem@@0@Z)",
-         &CTaskGroup_AddTaskItem},
+        {R"(?GetNumItems@CTaskGroup@@UEAAHXZ)", &CTaskGroup_GetNumItems},
         {R"(?_GetTBGroupFromGroup@CTaskListWnd@@IEAAPEAUITaskBtnGroup@@PEAUITaskGroup@@PEAH@Z)",
          &CTaskListWnd__GetTBGroupFromGroup},
         {R"(?GetGroupType@CTaskBtnGroup@@UEAA?AW4eTBGROUPTYPE@@XZ)",
@@ -830,9 +836,6 @@ BOOL Wh_ModInit() {
     WindhawkUtils::Wh_SetFunctionHookT(pKernelBaseLoadLibraryExW,
                                        LoadLibraryExW_Hook,
                                        &LoadLibraryExW_Original);
-
-    WindhawkUtils::Wh_SetFunctionHookT(DPA_GetPtrIndex, DPA_GetPtrIndex_Hook,
-                                       &DPA_GetPtrIndex_Original);
 
     WindhawkUtils::Wh_SetFunctionHookT(DPA_GetPtr, DPA_GetPtr_Hook,
                                        &DPA_GetPtr_Original);
