@@ -887,7 +887,22 @@ int WINAPI TaskItemThumbnailList_OnPointerReleased_Hook(void* pThis,
 
     int ret = TaskItemThumbnailList_OnPointerReleased_Original(pThis, pArgs);
 
-    g_reorderingXamlThumbnails = false;
+    FrameworkElement element = nullptr;
+    ((IUnknown*)pThis)
+        ->QueryInterface(winrt::guid_of<FrameworkElement>(),
+                         winrt::put_abi(element));
+
+    if (!element) {
+        return ret;
+    }
+
+    auto className = winrt::get_class_name(element);
+    Wh_Log(L"%s", className.c_str());
+
+    if (className == L"Taskbar.TaskItemThumbnailList" ||
+        className == L"Taskbar.TaskItemThumbnailScrollableList") {
+        g_reorderingXamlThumbnails = false;
+    }
 
     return ret;
 }
