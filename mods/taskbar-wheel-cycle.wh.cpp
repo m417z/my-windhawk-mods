@@ -193,22 +193,17 @@ int* EV_MM_TASKLIST_ACTIVE_BUTTON_INDEX(LONG_PTR lp) {
 #pragma region scroll
 
 PVOID GetTaskBand() {
-    static PVOID taskBand = nullptr;
-    if (taskBand) {
-        return taskBand;
-    }
-
     HWND hTaskbarWnd = FindWindow(L"Shell_TrayWnd", nullptr);
     DWORD processId = 0;
     if (hTaskbarWnd && GetWindowThreadProcessId(hTaskbarWnd, &processId) &&
         processId == GetCurrentProcessId()) {
         HWND hTaskSwWnd = (HWND)GetProp(hTaskbarWnd, L"TaskbandHWND");
         if (hTaskSwWnd) {
-            taskBand = (PVOID)GetWindowLongPtr(hTaskSwWnd, 0);
+            return (PVOID)GetWindowLongPtr(hTaskSwWnd, 0);
         }
     }
 
-    return taskBand;
+    return nullptr;
 }
 
 void SwitchToTaskItem(PVOID taskItem) {
@@ -579,7 +574,7 @@ HWND GetTaskbarForMonitor(HWND hTaskbarWnd, HMONITOR monitor) {
 
     EnumThreadWindows(
         taskbarThreadId,
-        [](HWND hWnd, LPARAM lParam) WINAPI -> BOOL {
+        [](HWND hWnd, LPARAM lParam) -> BOOL {
             auto& proc = *reinterpret_cast<decltype(enumWindowsProc)*>(lParam);
             return proc(hWnd);
         },
