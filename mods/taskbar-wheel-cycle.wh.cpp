@@ -100,7 +100,6 @@ HWND g_lastScrollTarget = nullptr;
 DWORD g_lastScrollTime;
 short g_lastScrollDeltaRemainder;
 
-HWND g_hTaskbarWnd;
 bool g_hotkeyLeftRegistered = false;
 bool g_hotkeyRightRegistered = false;
 
@@ -108,6 +107,17 @@ enum {
     kHotkeyIdLeft = 1682530408,  // From epochconverter.com
     kHotkeyIdRight,
 };
+
+HWND GetTaskBandWnd() {
+    HWND hTaskbarWnd = FindWindow(L"Shell_TrayWnd", nullptr);
+    DWORD processId = 0;
+    if (hTaskbarWnd && GetWindowThreadProcessId(hTaskbarWnd, &processId) &&
+        processId == GetCurrentProcessId()) {
+        return (HWND)GetProp(hTaskbarWnd, L"TaskbandHWND");
+    }
+
+    return nullptr;
+}
 
 using CTaskBtnGroup_GetGroupType_t = int(WINAPI*)(void* pThis);
 CTaskBtnGroup_GetGroupType_t CTaskBtnGroup_GetGroupType;
@@ -986,35 +996,48 @@ enum {
     HOTKEY_UPDATE,
 };
 
-LRESULT CALLBACK TaskbarWindowSubclassProc(HWND hWnd,
-                                           UINT uMsg,
-                                           WPARAM wParam,
-                                           LPARAM lParam,
-                                           DWORD_PTR dwRefData) {
+using CTaskBand_v_WndProc_t = LRESULT(
+    WINAPI*)(void* pThis, HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam);
+CTaskBand_v_WndProc_t CTaskBand_v_WndProc_Original;
+LRESULT WINAPI CTaskBand_v_WndProc_Hook(void* pThis,
+                                        HWND hWnd,
+                                        UINT Msg,
+                                        WPARAM wParam,
+                                        LPARAM lParam) {
     LRESULT result = 0;
 
-    switch (uMsg) {
+    auto originalProc = [pThis](HWND hWnd, UINT Msg, WPARAM wParam,
+                                LPARAM lParam) {
+        return CTaskBand_v_WndProc_Original(pThis, hWnd, Msg, wParam, lParam);
+    };
+
+    switch (Msg) {
         case WM_HOTKEY:
             switch (wParam) {
                 case kHotkeyIdLeft:
                 case kHotkeyIdRight:
-                    OnTaskbarHotkey(hWnd, static_cast<int>(wParam));
+                    OnTaskbarHotkey(GetAncestor(hWnd, GA_ROOT),
+                                    static_cast<int>(wParam));
                     break;
 
                 default:
-                    result = DefSubclassProc(hWnd, uMsg, wParam, lParam);
+                    result = originalProc(hWnd, Msg, wParam, lParam);
                     break;
             }
             break;
 
-        case WM_NCDESTROY:
+        case WM_CREATE:
+            result = originalProc(hWnd, Msg, wParam, lParam);
+            RegisterHotkeys(hWnd);
+            break;
+
+        case WM_DESTROY:
             UnregisterHotkeys(hWnd);
-            g_hTaskbarWnd = nullptr;
-            result = DefSubclassProc(hWnd, uMsg, wParam, lParam);
+            result = originalProc(hWnd, Msg, wParam, lParam);
             break;
 
         default:
-            if (uMsg == g_hotkeyRegisteredMsg) {
+            if (Msg == g_hotkeyRegisteredMsg) {
                 switch (wParam) {
                     case HOTKEY_REGISTER:
                         RegisterHotkeys(hWnd);
@@ -1030,59 +1053,12 @@ LRESULT CALLBACK TaskbarWindowSubclassProc(HWND hWnd,
                         break;
                 }
             } else {
-                result = DefSubclassProc(hWnd, uMsg, wParam, lParam);
+                result = originalProc(hWnd, Msg, wParam, lParam);
             }
             break;
     }
 
     return result;
-}
-
-void SubclassTaskbarWindow(HWND hWnd) {
-    WindhawkUtils::SetWindowSubclassFromAnyThread(hWnd,
-                                                  TaskbarWindowSubclassProc, 0);
-}
-
-void UnsubclassTaskbarWindow(HWND hWnd) {
-    WindhawkUtils::RemoveWindowSubclassFromAnyThread(hWnd,
-                                                     TaskbarWindowSubclassProc);
-}
-
-void HandleIdentifiedTaskbarWindow(HWND hWnd) {
-    g_hTaskbarWnd = hWnd;
-    SubclassTaskbarWindow(hWnd);
-    SendMessage(hWnd, g_hotkeyRegisteredMsg, HOTKEY_REGISTER, 0);
-}
-
-using CreateWindowExW_t = decltype(&CreateWindowExW);
-CreateWindowExW_t CreateWindowExW_Original;
-HWND WINAPI CreateWindowExW_Hook(DWORD dwExStyle,
-                                 LPCWSTR lpClassName,
-                                 LPCWSTR lpWindowName,
-                                 DWORD dwStyle,
-                                 int X,
-                                 int Y,
-                                 int nWidth,
-                                 int nHeight,
-                                 HWND hWndParent,
-                                 HMENU hMenu,
-                                 HINSTANCE hInstance,
-                                 LPVOID lpParam) {
-    HWND hWnd = CreateWindowExW_Original(dwExStyle, lpClassName, lpWindowName,
-                                         dwStyle, X, Y, nWidth, nHeight,
-                                         hWndParent, hMenu, hInstance, lpParam);
-    if (!hWnd) {
-        return hWnd;
-    }
-
-    BOOL bTextualClassName = ((ULONG_PTR)lpClassName & ~(ULONG_PTR)0xffff) != 0;
-
-    if (bTextualClassName && _wcsicmp(lpClassName, L"Shell_TrayWnd") == 0) {
-        Wh_Log(L"Taskbar window created: %08X", (DWORD)(ULONG_PTR)hWnd);
-        HandleIdentifiedTaskbarWindow(hWnd);
-    }
-
-    return hWnd;
 }
 
 void LoadSettings() {
@@ -1191,6 +1167,11 @@ bool HookTaskbarDllSymbols() {
             {LR"(public: virtual void __cdecl CTaskListWnd::SwitchToItem(struct ITaskItem *))"},
             (void**)&CTaskListWnd_SwitchToItem_Original,
         },
+        {
+            {LR"(protected: virtual __int64 __cdecl CTaskBand::v_WndProc(struct HWND__ *,unsigned int,unsigned __int64,__int64))"},
+            (void**)&CTaskBand_v_WndProc_Original,
+            (void*)CTaskBand_v_WndProc_Hook,
+        },
         // For offsets:
         {
             {LR"(public: virtual long __cdecl CTaskListWnd::GetFocusedBtn(struct ITaskGroup * *,int *))"},
@@ -1218,32 +1199,22 @@ BOOL Wh_ModInit() {
         return FALSE;
     }
 
-    Wh_SetFunctionHook((void*)CreateWindowExW, (void*)CreateWindowExW_Hook,
-                       (void**)&CreateWindowExW_Original);
-
     return TRUE;
 }
 
 void Wh_ModAfterInit() {
     Wh_Log(L">");
 
-    DWORD dwProcessId;
-    DWORD dwCurrentProcessId = GetCurrentProcessId();
-
-    HWND hTaskbarWnd = FindWindow(L"Shell_TrayWnd", nullptr);
-    if (hTaskbarWnd && GetWindowThreadProcessId(hTaskbarWnd, &dwProcessId) &&
-        dwProcessId == dwCurrentProcessId) {
-        Wh_Log(L"Taskbar window found: %08X", (DWORD)(ULONG_PTR)hTaskbarWnd);
-        HandleIdentifiedTaskbarWindow(hTaskbarWnd);
+    if (HWND hTaskBandWnd = GetTaskBandWnd()) {
+        SendMessage(hTaskBandWnd, g_hotkeyRegisteredMsg, HOTKEY_REGISTER, 0);
     }
 }
 
-void Wh_ModUninit() {
+void Wh_ModBeforeUninit() {
     Wh_Log(L">");
 
-    if (g_hTaskbarWnd) {
-        SendMessage(g_hTaskbarWnd, g_hotkeyRegisteredMsg, HOTKEY_UNREGISTER, 0);
-        UnsubclassTaskbarWindow(g_hTaskbarWnd);
+    if (HWND hTaskBandWnd = GetTaskBandWnd()) {
+        SendMessage(hTaskBandWnd, g_hotkeyRegisteredMsg, HOTKEY_UNREGISTER, 0);
     }
 }
 
@@ -1252,7 +1223,7 @@ void Wh_ModSettingsChanged() {
 
     LoadSettings();
 
-    if (g_hTaskbarWnd) {
-        SendMessage(g_hTaskbarWnd, g_hotkeyRegisteredMsg, HOTKEY_UPDATE, 0);
+    if (HWND hTaskBandWnd = GetTaskBandWnd()) {
+        SendMessage(hTaskBandWnd, g_hotkeyRegisteredMsg, HOTKEY_UPDATE, 0);
     }
 }
