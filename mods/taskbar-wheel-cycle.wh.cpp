@@ -126,11 +126,26 @@ CImmersiveTaskItem_GetWindow_t CImmersiveTaskItem_GetWindow_Original;
 
 void* CImmersiveTaskItem_vftable;
 
-using CTaskBand_SwitchTo_t =
-    HRESULT(WINAPI*)(PVOID pThis,
-                     PVOID taskItem,
-                     BOOL trueMeansBringToFrontFalseMeansToggleMinimizeRestore);
-CTaskBand_SwitchTo_t CTaskBand_SwitchTo_Original;
+void* CTaskListWnd_vftable_ITaskListSite;
+
+using CTaskListWnd_SwitchToItem_t = void(WINAPI*)(void* pThis, void* taskItem);
+CTaskListWnd_SwitchToItem_t CTaskListWnd_SwitchToItem_Original;
+
+void* QueryViaVtable(void* object, void* vtable) {
+    void* ptr = object;
+    while (*(void**)ptr != vtable) {
+        ptr = (void**)ptr + 1;
+    }
+    return ptr;
+}
+
+void* QueryViaVtableBackwards(void* object, void* vtable) {
+    void* ptr = object;
+    while (*(void**)ptr != vtable) {
+        ptr = (void**)ptr - 1;
+    }
+    return ptr;
+}
 
 #pragma region offsets
 
@@ -192,27 +207,11 @@ int* EV_MM_TASKLIST_ACTIVE_BUTTON_INDEX(LONG_PTR lp) {
 
 #pragma region scroll
 
-PVOID GetTaskBand() {
-    HWND hTaskbarWnd = FindWindow(L"Shell_TrayWnd", nullptr);
-    DWORD processId = 0;
-    if (hTaskbarWnd && GetWindowThreadProcessId(hTaskbarWnd, &processId) &&
-        processId == GetCurrentProcessId()) {
-        HWND hTaskSwWnd = (HWND)GetProp(hTaskbarWnd, L"TaskbandHWND");
-        if (hTaskSwWnd) {
-            return (PVOID)GetWindowLongPtr(hTaskSwWnd, 0);
-        }
-    }
+void SwitchToTaskItem(LONG_PTR lpMMTaskListLongPtr, void* taskItem) {
+    void* pThis_ITaskListSite = QueryViaVtable(
+        (void*)lpMMTaskListLongPtr, CTaskListWnd_vftable_ITaskListSite);
 
-    return nullptr;
-}
-
-void SwitchToTaskItem(PVOID taskItem) {
-    PVOID taskBand = GetTaskBand();
-    if (!taskBand) {
-        return;
-    }
-
-    CTaskBand_SwitchTo_Original((BYTE*)taskBand + 0x48, taskItem, TRUE);
+    CTaskListWnd_SwitchToItem_Original(pThis_ITaskListSite, taskItem);
 }
 
 HWND GetTaskItemWnd(PVOID taskItem) {
@@ -473,7 +472,7 @@ void OnTaskListScroll(HWND hMMTaskListWnd, short delta) {
                                              g_settings.skipMinimizedWindows,
                                              g_settings.wrapAround, nullptr);
         if (targetTaskItem) {
-            SwitchToTaskItem(targetTaskItem);
+            SwitchToTaskItem(lpMMTaskListLongPtr, targetTaskItem);
         }
     }
 
@@ -590,7 +589,7 @@ TaskbarFrame_OnPointerWheelChanged_t
 int TaskbarFrame_OnPointerWheelChanged_Hook(PVOID pThis, PVOID pArgs) {
     Wh_Log(L">");
 
-    auto original = [&]() {
+    auto original = [=]() {
         return TaskbarFrame_OnPointerWheelChanged_Original(pThis, pArgs);
     };
 
@@ -972,7 +971,7 @@ bool OnTaskbarHotkey(HWND hWnd, int hotkeyId) {
                                          g_settings.skipMinimizedWindows,
                                          g_settings.wrapAround, nullptr);
     if (targetTaskItem) {
-        SwitchToTaskItem(targetTaskItem);
+        SwitchToTaskItem(lpTaskListLongPtr, targetTaskItem);
     }
 
     return true;
@@ -1185,8 +1184,12 @@ bool HookTaskbarDllSymbols() {
             (void**)&CImmersiveTaskItem_vftable,
         },
         {
-            {LR"(public: virtual long __cdecl CTaskBand::SwitchTo(struct ITaskItem *,int))"},
-            (void**)&CTaskBand_SwitchTo_Original,
+            {LR"(const CTaskListWnd::`vftable'{for `ITaskListSite'})"},
+            (void**)&CTaskListWnd_vftable_ITaskListSite,
+        },
+        {
+            {LR"(public: virtual void __cdecl CTaskListWnd::SwitchToItem(struct ITaskItem *))"},
+            (void**)&CTaskListWnd_SwitchToItem_Original,
         },
         // For offsets:
         {
