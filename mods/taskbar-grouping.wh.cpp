@@ -548,17 +548,22 @@ PCWSTR WINAPI CTaskGroup_GetAppID_Hook(PVOID pThis) {
 }
 
 PVOID GetTaskBand() {
+    static PVOID taskBand = nullptr;
+    if (taskBand) {
+        return taskBand;
+    }
+
     HWND hTaskbarWnd = FindWindow(L"Shell_TrayWnd", nullptr);
     DWORD processId = 0;
     if (hTaskbarWnd && GetWindowThreadProcessId(hTaskbarWnd, &processId) &&
         processId == GetCurrentProcessId()) {
         HWND hTaskSwWnd = (HWND)GetProp(hTaskbarWnd, L"TaskbandHWND");
         if (hTaskSwWnd) {
-            return (PVOID)GetWindowLongPtr(hTaskSwWnd, 0);
+            taskBand = (PVOID)GetWindowLongPtr(hTaskSwWnd, 0);
         }
     }
 
-    return nullptr;
+    return taskBand;
 }
 
 winrt::com_ptr<IUnknown> GetTaskGroupWithoutSuffix(
