@@ -90,6 +90,12 @@ With labels:
   - top: Top
   - center: Center
   - bottom: Bottom
+- startMenuAlignment: top
+  $name: Start menu vertical alignment
+  $options:
+  - top: Top
+  - center: Center
+  - bottom: Bottom
 - startMenuWidth: 0
   $name: Start menu width
   $description: >-
@@ -138,11 +144,18 @@ enum class JumpListAlignment {
     bottom,
 };
 
+enum class StartMenuAlignment {
+    top,
+    center,
+    bottom,
+};
+
 struct {
     TaskbarLocation taskbarLocation;
     TaskbarLocation taskbarLocationSecondary;
     int taskbarWidth;
     JumpListAlignment jumpListAlignment;
+    StartMenuAlignment startMenuAlignment;
     int startMenuWidth;
 } g_settings;
 
@@ -3141,11 +3154,30 @@ HRESULT WINAPI DwmSetWindowAttribute_Hook(HWND hwnd,
             cyNew = h2;
         }
 
-        if (xNew == x && cxNew == cx && cyNew == cy) {
+        int yNew;
+        switch (g_settings.startMenuAlignment) {
+            case StartMenuAlignment::top:
+                yNew = monitorInfo.rcWork.top;
+                break;
+
+            case StartMenuAlignment::center:
+                yNew =
+                    monitorInfo.rcWork.top + (monitorInfo.rcWork.bottom -
+                                              monitorInfo.rcWork.top - cyNew) /
+                                                 2;
+                break;
+
+            case StartMenuAlignment::bottom:
+                yNew = monitorInfo.rcWork.bottom - cyNew;
+                break;
+        }
+
+        if (xNew == x && yNew == y && cxNew == cx && cyNew == cy) {
             return original();
         }
 
         x = xNew;
+        y = yNew;
         cx = cxNew;
         cy = cyNew;
         g_startMenuWnd = hwnd;
@@ -3161,7 +3193,22 @@ HRESULT WINAPI DwmSetWindowAttribute_Hook(HWND hwnd,
                 break;
         }
 
-        int yNew = monitorInfo.rcWork.top;
+        int yNew;
+        switch (g_settings.startMenuAlignment) {
+            case StartMenuAlignment::top:
+                yNew = monitorInfo.rcWork.top;
+                break;
+
+            case StartMenuAlignment::center:
+                yNew = monitorInfo.rcWork.top + (monitorInfo.rcWork.bottom -
+                                                 monitorInfo.rcWork.top - cy) /
+                                                    2;
+                break;
+
+            case StartMenuAlignment::bottom:
+                yNew = monitorInfo.rcWork.bottom - cy;
+                break;
+        }
 
         if (xNew == x && yNew == y) {
             return original();
@@ -3400,6 +3447,15 @@ void LoadSettings() {
         g_settings.jumpListAlignment = JumpListAlignment::bottom;
     }
     Wh_FreeStringSetting(jumpListAlignment);
+
+    PCWSTR startMenuAlignment = Wh_GetStringSetting(L"startMenuAlignment");
+    g_settings.startMenuAlignment = StartMenuAlignment::top;
+    if (wcscmp(startMenuAlignment, L"center") == 0) {
+        g_settings.startMenuAlignment = StartMenuAlignment::center;
+    } else if (wcscmp(startMenuAlignment, L"bottom") == 0) {
+        g_settings.startMenuAlignment = StartMenuAlignment::bottom;
+    }
+    Wh_FreeStringSetting(startMenuAlignment);
 
     g_settings.startMenuWidth = Wh_GetIntSetting(L"startMenuWidth");
 }
