@@ -101,6 +101,13 @@ With labels:
   $description: >-
     Set to zero to use the system default width, set to a custom value if using
     a customized start menu, e.g. with the Windows 11 Start Menu Styler mod
+- clockContainerHeight: 0
+  $name: Clock container height
+  $description: >-
+    Set to zero to use the default height value, setting a custom height can be
+    useful for a customized clock with a non-standard size
+
+    Note: Disable and re-enable the mod to apply this option
 */
 // ==/WindhawkModSettings==
 
@@ -157,7 +164,10 @@ struct {
     JumpListAlignment jumpListAlignment;
     StartMenuAlignment startMenuAlignment;
     int startMenuWidth;
+    int clockContainerHeight;
 } g_settings;
+
+constexpr int kDefaultClockContainerHeight = 40;
 
 enum class Target {
     Explorer,
@@ -1585,11 +1595,17 @@ void ApplySystemTrayIconStyle(FrameworkElement systemTrayIconElement) {
     float origin = g_unloading ? 0 : 0.5;
     iconContent.RenderTransformOrigin({origin, origin});
 
+    int clockContainerHeight = g_settings.clockContainerHeight;
+    if (clockContainerHeight <= 0) {
+        clockContainerHeight = kDefaultClockContainerHeight;
+    }
+
     if (g_unloading) {
         iconContent.as<DependencyObject>().ClearValue(
             FrameworkElement::MaxHeightProperty());
     } else {
-        iconContent.MaxHeight(isDateTimeIcon ? 40 : iconContent.ActualWidth());
+        iconContent.MaxHeight(isDateTimeIcon ? clockContainerHeight
+                                             : iconContent.ActualWidth());
     }
 
     if (isDateTimeIcon) {
@@ -1602,11 +1618,13 @@ void ApplySystemTrayIconStyle(FrameworkElement systemTrayIconElement) {
                 FrameworkElement::MarginProperty());
         } else {
             double width = g_settings.taskbarWidth - 4;
-            double height = 40;
+            double height = clockContainerHeight;
             iconContent.Width(width);
             iconContent.Height(height);
-            double marginValue = -(width - height) / 2;
-            iconContent.Margin(Thickness{marginValue, 0, marginValue, 0});
+            double marginValue = (width - height) / 2;
+
+            iconContent.Margin(Thickness{-marginValue, marginValue,
+                                         -marginValue, marginValue});
         }
 
         FrameworkElement stackPanel = nullptr;
@@ -3458,6 +3476,7 @@ void LoadSettings() {
     Wh_FreeStringSetting(startMenuAlignment);
 
     g_settings.startMenuWidth = Wh_GetIntSetting(L"startMenuWidth");
+    g_settings.clockContainerHeight = Wh_GetIntSetting(L"clockContainerHeight");
 }
 
 HWND GetTaskbarWnd() {
