@@ -1115,8 +1115,8 @@ bool HookTaskbarViewDllSymbols() {
     WindhawkUtils::SYMBOL_HOOK symbolHooks[] = {
         {
             {LR"(public: virtual int __cdecl winrt::impl::produce<struct winrt::Taskbar::implementation::TaskbarFrame,struct winrt::Windows::UI::Xaml::Controls::IControlOverrides>::OnPointerWheelChanged(void *))"},
-            (void**)&TaskbarFrame_OnPointerWheelChanged_Original,
-            (void*)TaskbarFrame_OnPointerWheelChanged_Hook,
+            &TaskbarFrame_OnPointerWheelChanged_Original,
+            TaskbarFrame_OnPointerWheelChanged_Hook,
         },
     };
 
@@ -1133,60 +1133,60 @@ bool HookTaskbarDllSymbols() {
     WindhawkUtils::SYMBOL_HOOK taskbarDllHooks[] = {
         {
             {LR"(const CTaskListWnd::`vftable'{for `ITaskListUI'})"},
-            (void**)&CTaskListWnd_vftable_ITaskListUI,
+            &CTaskListWnd_vftable_ITaskListUI,
         },
         {
             {LR"(const CTaskListWnd::`vftable'{for `ITaskListSite'})"},
-            (void**)&CTaskListWnd_vftable_ITaskListSite,
+            &CTaskListWnd_vftable_ITaskListSite,
         },
         {
             {LR"(const CTaskListWnd::`vftable'{for `ITaskListAcc'})"},
-            (void**)&CTaskListWnd_vftable_ITaskListAcc,
+            &CTaskListWnd_vftable_ITaskListAcc,
         },
         {
             {LR"(const CImmersiveTaskItem::`vftable'{for `ITaskItem'})"},
-            (void**)&CImmersiveTaskItem_vftable,
+            &CImmersiveTaskItem_vftable,
         },
         {
             {LR"(public: virtual int __cdecl CTaskListWnd::GetButtonGroupCount(void))"},
-            (void**)&CTaskListWnd_GetButtonGroupCount,
+            &CTaskListWnd_GetButtonGroupCount,
         },
         {
             {LR"(public: virtual long __cdecl CTaskListWnd::GetActiveBtn(struct ITaskGroup * *,int *))"},
-            (void**)&CTaskListWnd_GetActiveBtn,
+            &CTaskListWnd_GetActiveBtn,
         },
         {
             {LR"(protected: struct ITaskBtnGroup * __cdecl CTaskListWnd::_GetTBGroupFromGroup(struct ITaskGroup *,int *))"},
-            (void**)&CTaskListWnd__GetTBGroupFromGroup,
+            &CTaskListWnd__GetTBGroupFromGroup,
         },
         {
             {LR"(public: virtual enum eTBGROUPTYPE __cdecl CTaskBtnGroup::GetGroupType(void))"},
-            (void**)&CTaskBtnGroup_GetGroupType,
+            &CTaskBtnGroup_GetGroupType,
         },
         {
             {LR"(public: virtual int __cdecl CTaskBtnGroup::GetNumItems(void))"},
-            (void**)&CTaskBtnGroup_GetNumItems,
+            &CTaskBtnGroup_GetNumItems,
         },
         {
             {LR"(public: virtual struct ITaskItem * __cdecl CTaskBtnGroup::GetTaskItem(int))"},
-            (void**)&CTaskBtnGroup_GetTaskItem,
+            &CTaskBtnGroup_GetTaskItem,
         },
         {
             {LR"(public: virtual struct HWND__ * __cdecl CWindowTaskItem::GetWindow(void))"},
-            (void**)&CWindowTaskItem_GetWindow_Original,
+            &CWindowTaskItem_GetWindow_Original,
         },
         {
             {LR"(public: virtual struct HWND__ * __cdecl CImmersiveTaskItem::GetWindow(void))"},
-            (void**)&CImmersiveTaskItem_GetWindow_Original,
+            &CImmersiveTaskItem_GetWindow_Original,
         },
         {
             {LR"(public: virtual void __cdecl CTaskListWnd::SwitchToItem(struct ITaskItem *))"},
-            (void**)&CTaskListWnd_SwitchToItem_Original,
+            &CTaskListWnd_SwitchToItem_Original,
         },
         {
             {LR"(protected: virtual __int64 __cdecl CTaskBand::v_WndProc(struct HWND__ *,unsigned int,unsigned __int64,__int64))"},
-            (void**)&CTaskBand_v_WndProc_Original,
-            (void*)CTaskBand_v_WndProc_Hook,
+            &CTaskBand_v_WndProc_Original,
+            CTaskBand_v_WndProc_Hook,
         },
     };
 
