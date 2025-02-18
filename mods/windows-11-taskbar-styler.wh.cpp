@@ -2206,7 +2206,7 @@ void ApplyCustomizations(InstanceHandle handle,
                UINT uMsg,         // WM_TIMER message
                UINT_PTR idEvent,  // timer identifier
                DWORD dwTime       // current system time
-               ) WINAPI {
+            ) {
                 Wh_Log(L"Running delayed customization of BackgroundFill");
 
                 for (auto it = g_backgroundFillDelayedApplyData.begin();
@@ -2759,7 +2759,7 @@ bool RunFromWindowThread(HWND hWnd,
 
     HHOOK hook = SetWindowsHookEx(
         WH_CALLWNDPROC,
-        [](int nCode, WPARAM wParam, LPARAM lParam) WINAPI -> LRESULT {
+        [](int nCode, WPARAM wParam, LPARAM lParam) -> LRESULT {
             if (nCode == HC_ACTION) {
                 const CWPSTRUCT* cwp = (const CWPSTRUCT*)lParam;
                 if (cwp->message == runFromWindowThreadRegisteredMsg) {
@@ -2817,8 +2817,7 @@ void Wh_ModAfterInit() {
     if (hTaskbarUiWnd) {
         Wh_Log(L"Initializing - Found DesktopWindowContentBridge window");
         RunFromWindowThread(
-            hTaskbarUiWnd, [](PVOID) WINAPI { InitializeSettingsAndTap(); },
-            nullptr);
+            hTaskbarUiWnd, [](PVOID) { InitializeSettingsAndTap(); }, nullptr);
     }
 }
 
@@ -2834,7 +2833,7 @@ void Wh_ModUninit() {
     if (hTaskbarUiWnd) {
         Wh_Log(L"Uninitializing - Found DesktopWindowContentBridge window");
         RunFromWindowThread(
-            hTaskbarUiWnd, [](PVOID) WINAPI { UninitializeSettingsAndTap(); },
+            hTaskbarUiWnd, [](PVOID) { UninitializeSettingsAndTap(); },
             nullptr);
     }
 }
@@ -2852,7 +2851,7 @@ void Wh_ModSettingsChanged() {
         Wh_Log(L"Reinitializing - Found DesktopWindowContentBridge window");
         RunFromWindowThread(
             hTaskbarUiWnd,
-            [](PVOID) WINAPI {
+            [](PVOID) {
                 UninitializeSettingsAndTap();
                 InitializeSettingsAndTap();
             },

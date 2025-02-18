@@ -3468,7 +3468,7 @@ bool RunFromWindowThread(HWND hWnd,
 
     HHOOK hook = SetWindowsHookEx(
         WH_CALLWNDPROC,
-        [](int nCode, WPARAM wParam, LPARAM lParam) WINAPI -> LRESULT {
+        [](int nCode, WPARAM wParam, LPARAM lParam) -> LRESULT {
             if (nCode == HC_ACTION) {
                 const CWPSTRUCT* cwp = (const CWPSTRUCT*)lParam;
                 if (cwp->message == runFromWindowThreadRegisteredMsg) {
@@ -3503,7 +3503,7 @@ HWND GetCoreWnd() {
     HWND hWnd = nullptr;
     ENUM_WINDOWS_PARAM param = {&hWnd};
     EnumWindows(
-        [](HWND hWnd, LPARAM lParam) WINAPI -> BOOL {
+        [](HWND hWnd, LPARAM lParam) -> BOOL {
             ENUM_WINDOWS_PARAM& param = *(ENUM_WINDOWS_PARAM*)lParam;
 
             DWORD dwProcessId = 0;
@@ -3584,8 +3584,7 @@ void Wh_ModAfterInit() {
     if (hCoreWnd) {
         Wh_Log(L"Initializing - Found core window");
         RunFromWindowThread(
-            hCoreWnd, [](PVOID) WINAPI { InitializeSettingsAndTap(); },
-            nullptr);
+            hCoreWnd, [](PVOID) { InitializeSettingsAndTap(); }, nullptr);
     }
 }
 
@@ -3601,8 +3600,7 @@ void Wh_ModUninit() {
     if (hCoreWnd) {
         Wh_Log(L"Uninitializing - Found core window");
         RunFromWindowThread(
-            hCoreWnd, [](PVOID) WINAPI { UninitializeSettingsAndTap(); },
-            nullptr);
+            hCoreWnd, [](PVOID) { UninitializeSettingsAndTap(); }, nullptr);
     }
 }
 
@@ -3619,7 +3617,7 @@ void Wh_ModSettingsChanged() {
         Wh_Log(L"Reinitializing - Found core window");
         RunFromWindowThread(
             hCoreWnd,
-            [](PVOID) WINAPI {
+            [](PVOID) {
                 UninitializeSettingsAndTap();
                 InitializeSettingsAndTap();
             },

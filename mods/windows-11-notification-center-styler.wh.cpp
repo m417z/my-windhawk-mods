@@ -1923,7 +1923,7 @@ bool RunFromWindowThread(HWND hWnd,
 
     HHOOK hook = SetWindowsHookEx(
         WH_CALLWNDPROC,
-        [](int nCode, WPARAM wParam, LPARAM lParam) WINAPI -> LRESULT {
+        [](int nCode, WPARAM wParam, LPARAM lParam) -> LRESULT {
             if (nCode == HC_ACTION) {
                 const CWPSTRUCT* cwp = (const CWPSTRUCT*)lParam;
                 if (cwp->message == runFromWindowThreadRegisteredMsg) {
@@ -1970,7 +1970,7 @@ bool RunFromWindowThreadViaPostMessage(HWND hWnd,
 
     HHOOK hook = SetWindowsHookEx(
         WH_GETMESSAGE,
-        [](int nCode, WPARAM wParam, LPARAM lParam) WINAPI -> LRESULT {
+        [](int nCode, WPARAM wParam, LPARAM lParam) -> LRESULT {
             if (nCode == HC_ACTION && wParam == PM_REMOVE) {
                 MSG* msg = (MSG*)lParam;
                 if (msg->message ==
@@ -2030,7 +2030,7 @@ void OnWindowCreated(HWND hWnd, LPCWSTR lpClassName, PCSTR funcName) {
                 // Initializing at this point is too early and doesn't work.
                 RunFromWindowThreadViaPostMessage(
                     hWnd,
-                    [](PVOID) WINAPI {
+                    [](PVOID) {
                         InitializeForCurrentThread();
                         InitializeSettingsAndTap();
                     },
@@ -2128,7 +2128,7 @@ std::vector<HWND> GetCoreWnds() {
     std::vector<HWND> hWnds;
     ENUM_WINDOWS_PARAM param = {&hWnds};
     EnumWindows(
-        [](HWND hWnd, LPARAM lParam) WINAPI -> BOOL {
+        [](HWND hWnd, LPARAM lParam) -> BOOL {
             ENUM_WINDOWS_PARAM& param = *(ENUM_WINDOWS_PARAM*)lParam;
 
             DWORD dwProcessId = 0;
@@ -2218,8 +2218,7 @@ void Wh_ModAfterInit() {
     for (auto hCoreWnd : hCoreWnds) {
         Wh_Log(L"Initializing for %08X", (DWORD)(ULONG_PTR)hCoreWnd);
         RunFromWindowThread(
-            hCoreWnd, [](PVOID) WINAPI { InitializeForCurrentThread(); },
-            nullptr);
+            hCoreWnd, [](PVOID) { InitializeForCurrentThread(); }, nullptr);
     }
 
     if (hCoreWnds.size() > 0) {
@@ -2237,8 +2236,7 @@ void Wh_ModUninit() {
     for (auto hCoreWnd : hCoreWnds) {
         Wh_Log(L"Uninitializing for %08X", (DWORD)(ULONG_PTR)hCoreWnd);
         RunFromWindowThread(
-            hCoreWnd, [](PVOID) WINAPI { UninitializeForCurrentThread(); },
-            nullptr);
+            hCoreWnd, [](PVOID) { UninitializeForCurrentThread(); }, nullptr);
     }
 }
 
@@ -2252,7 +2250,7 @@ void Wh_ModSettingsChanged() {
         Wh_Log(L"Reinitializing for %08X", (DWORD)(ULONG_PTR)hCoreWnd);
         RunFromWindowThread(
             hCoreWnd,
-            [](PVOID) WINAPI {
+            [](PVOID) {
                 UninitializeForCurrentThread();
                 InitializeForCurrentThread();
             },
