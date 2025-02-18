@@ -1952,6 +1952,10 @@ void UpdateTaskListButton(FrameworkElement taskListButtonElement) {
         return;
     }
 
+    // For some reason, translation is being set to a NaN.
+    iconElement.Translation(
+        winrt::Windows::Foundation::Numerics::float3::zero());
+
     double angle = g_unloading ? 0 : -90;
     Media::RotateTransform transform;
     transform.Angle(angle);
@@ -1959,10 +1963,6 @@ void UpdateTaskListButton(FrameworkElement taskListButtonElement) {
 
     float origin = g_unloading ? 0 : 0.5;
     iconElement.RenderTransformOrigin({origin, origin});
-
-    // For some reason, translation is being set to a NaN.
-    iconElement.Translation(
-        winrt::Windows::Foundation::Numerics::float3::zero());
 
     auto labelControlElement =
         FindChildByName(iconPanelElement, L"LabelControl");
