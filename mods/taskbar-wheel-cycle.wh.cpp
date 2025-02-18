@@ -2,14 +2,14 @@
 // @id              taskbar-wheel-cycle
 // @name            Cycle taskbar buttons with mouse wheel
 // @description     Use the mouse wheel while hovering over the taskbar to cycle between taskbar buttons (Windows 11 only)
-// @version         1.1.6
+// @version         1.1.7
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
 // @homepage        https://m417z.com/
 // @include         explorer.exe
 // @architecture    x86-64
-// @compilerOptions -lcomctl32 -loleaut32 -lole32 -lruntimeobject
+// @compilerOptions -lcomctl32 -loleaut32 -lole32 -lruntimeobject -lversion
 // ==/WindhawkMod==
 
 // Source code is published under The GNU General Public License v3.0.
@@ -30,8 +30,11 @@ buttons.
 In addition, keyboard shortcuts can be used. The default shortcuts are `Alt+[`
 and `Alt+]`, but they can be changed in the mod settings.
 
-Only Windows 11 is currently supported. For older Windows versions check out [7+
-Taskbar Tweaker](https://tweaker.ramensoftware.com/).
+Only Windows 10 64-bit and Windows 11 are supported. For older Windows versions
+check out [7+ Taskbar Tweaker](https://tweaker.ramensoftware.com/).
+
+**Note:** To customize the old taskbar on Windows 11 (if using ExplorerPatcher
+or a similar tool), enable the relevant option in the mod's settings.
 
 ![Demonstration](https://i.imgur.com/FtpUjt1.gif)
 */
@@ -59,6 +62,7 @@ Taskbar Tweaker](https://tweaker.ramensoftware.com/).
 #include <windhawk_utils.h>
 
 #include <commctrl.h>
+#include <psapi.h>
 #include <windowsx.h>
 
 #undef GetCurrentTime
@@ -68,6 +72,7 @@ Taskbar Tweaker](https://tweaker.ramensoftware.com/).
 #include <winrt/Windows.UI.Xaml.Input.h>
 
 #include <algorithm>
+#include <atomic>
 #include <memory>
 #include <string>
 #include <string_view>
@@ -93,7 +98,20 @@ struct {
     bool reverseScrollingDirection;
     string_setting_unique_ptr cycleLeftKeyboardShortcut;
     string_setting_unique_ptr cycleRightKeyboardShortcut;
+    bool oldTaskbarOnWin11;
 } g_settings;
+
+enum class WinVersion {
+    Unsupported,
+    Win10,
+    Win11,
+    Win11_24H2,
+};
+
+WinVersion g_winVersion;
+
+std::atomic<bool> g_initialized;
+std::atomic<bool> g_explorerPatcherInitialized;
 
 HWND g_lastScrollTarget = nullptr;
 DWORD g_lastScrollTime;
@@ -588,68 +606,6 @@ HWND GetTaskbarForMonitor(HWND hTaskbarWnd, HMONITOR monitor) {
     return hResultWnd;
 }
 
-using TaskbarFrame_OnPointerWheelChanged_t = int(WINAPI*)(PVOID pThis,
-                                                          PVOID pArgs);
-TaskbarFrame_OnPointerWheelChanged_t
-    TaskbarFrame_OnPointerWheelChanged_Original;
-int TaskbarFrame_OnPointerWheelChanged_Hook(PVOID pThis, PVOID pArgs) {
-    Wh_Log(L">");
-
-    auto original = [=]() {
-        return TaskbarFrame_OnPointerWheelChanged_Original(pThis, pArgs);
-    };
-
-    winrt::Windows::Foundation::IInspectable taskbarFrame = nullptr;
-    ((IUnknown*)pThis)
-        ->QueryInterface(
-            winrt::guid_of<winrt::Windows::Foundation::IInspectable>(),
-            winrt::put_abi(taskbarFrame));
-
-    if (!taskbarFrame) {
-        return original();
-    }
-
-    auto className = winrt::get_class_name(taskbarFrame);
-    Wh_Log(L"%s", className.c_str());
-
-    if (className != L"Taskbar.TaskbarFrame") {
-        return original();
-    }
-
-    auto taskbarFrameElement = taskbarFrame.as<UIElement>();
-
-    Input::PointerRoutedEventArgs args = nullptr;
-    ((IUnknown*)pArgs)
-        ->QueryInterface(winrt::guid_of<Input::PointerRoutedEventArgs>(),
-                         winrt::put_abi(args));
-    if (!args) {
-        return original();
-    }
-
-    DWORD messagePos = GetMessagePos();
-    POINT pt = {GET_X_LPARAM(messagePos), GET_Y_LPARAM(messagePos)};
-    HWND hMMTaskListWnd = TaskListFromPoint(pt);
-    if (!hMMTaskListWnd) {
-        return original();
-    }
-
-    auto currentPoint = args.GetCurrentPoint(taskbarFrameElement);
-    double delta = currentPoint.Properties().MouseWheelDelta();
-    if (!delta) {
-        return original();
-    }
-
-    // Allows to steal focus.
-    INPUT input;
-    ZeroMemory(&input, sizeof(INPUT));
-    SendInput(1, &input, sizeof(INPUT));
-
-    OnTaskListScroll(hMMTaskListWnd, static_cast<short>(delta));
-
-    args.Handled(true);
-    return 0;
-}
-
 bool FromStringHotKey(std::wstring_view hotkeyString,
                       UINT* modifiersOut,
                       UINT* vkOut) {
@@ -1057,6 +1013,150 @@ LRESULT WINAPI CTaskBand_v_WndProc_Hook(void* pThis,
     return result;
 }
 
+using TrayUI_WndProc_t = LRESULT(WINAPI*)(void* pThis,
+                                          HWND hWnd,
+                                          UINT Msg,
+                                          WPARAM wParam,
+                                          LPARAM lParam,
+                                          bool* flag);
+TrayUI_WndProc_t TrayUI_WndProc_Original;
+LRESULT WINAPI TrayUI_WndProc_Hook(void* pThis,
+                                   HWND hWnd,
+                                   UINT Msg,
+                                   WPARAM wParam,
+                                   LPARAM lParam,
+                                   bool* flag) {
+    if (Msg == WM_MOUSEWHEEL) {
+        HWND hTaskListWnd = TaskListFromTaskbarWnd(hWnd);
+
+        RECT rc{};
+        GetWindowRect(hTaskListWnd, &rc);
+
+        POINT pt{
+            .x = GET_X_LPARAM(lParam),
+            .y = GET_Y_LPARAM(lParam),
+        };
+
+        if (PtInRect(&rc, pt)) {
+            short delta = GET_WHEEL_DELTA_WPARAM(wParam);
+
+            // Allows to steal focus.
+            INPUT input{};
+            SendInput(1, &input, sizeof(INPUT));
+
+            OnTaskListScroll(hTaskListWnd, delta);
+
+            *flag = false;
+            return 0;
+        }
+    }
+
+    LRESULT ret =
+        TrayUI_WndProc_Original(pThis, hWnd, Msg, wParam, lParam, flag);
+
+    return ret;
+}
+
+using CSecondaryTray_v_WndProc_t = LRESULT(
+    WINAPI*)(void* pThis, HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam);
+CSecondaryTray_v_WndProc_t CSecondaryTray_v_WndProc_Original;
+LRESULT WINAPI CSecondaryTray_v_WndProc_Hook(void* pThis,
+                                             HWND hWnd,
+                                             UINT Msg,
+                                             WPARAM wParam,
+                                             LPARAM lParam) {
+    if (Msg == WM_MOUSEWHEEL) {
+        HWND hSecondaryTaskListWnd = TaskListFromSecondaryTaskbarWnd(hWnd);
+
+        RECT rc{};
+        GetWindowRect(hSecondaryTaskListWnd, &rc);
+
+        POINT pt{
+            .x = GET_X_LPARAM(lParam),
+            .y = GET_Y_LPARAM(lParam),
+        };
+
+        if (PtInRect(&rc, pt)) {
+            short delta = GET_WHEEL_DELTA_WPARAM(wParam);
+
+            // Allows to steal focus.
+            INPUT input{};
+            SendInput(1, &input, sizeof(INPUT));
+
+            OnTaskListScroll(hSecondaryTaskListWnd, delta);
+
+            return 0;
+        }
+    }
+
+    LRESULT ret =
+        CSecondaryTray_v_WndProc_Original(pThis, hWnd, Msg, wParam, lParam);
+
+    return ret;
+}
+
+using TaskbarFrame_OnPointerWheelChanged_t = int(WINAPI*)(PVOID pThis,
+                                                          PVOID pArgs);
+TaskbarFrame_OnPointerWheelChanged_t
+    TaskbarFrame_OnPointerWheelChanged_Original;
+int TaskbarFrame_OnPointerWheelChanged_Hook(PVOID pThis, PVOID pArgs) {
+    Wh_Log(L">");
+
+    auto original = [=]() {
+        return TaskbarFrame_OnPointerWheelChanged_Original(pThis, pArgs);
+    };
+
+    winrt::Windows::Foundation::IInspectable taskbarFrame = nullptr;
+    ((IUnknown*)pThis)
+        ->QueryInterface(
+            winrt::guid_of<winrt::Windows::Foundation::IInspectable>(),
+            winrt::put_abi(taskbarFrame));
+
+    if (!taskbarFrame) {
+        return original();
+    }
+
+    auto className = winrt::get_class_name(taskbarFrame);
+    Wh_Log(L"%s", className.c_str());
+
+    if (className != L"Taskbar.TaskbarFrame") {
+        return original();
+    }
+
+    auto taskbarFrameElement = taskbarFrame.as<UIElement>();
+
+    Input::PointerRoutedEventArgs args = nullptr;
+    ((IUnknown*)pArgs)
+        ->QueryInterface(winrt::guid_of<Input::PointerRoutedEventArgs>(),
+                         winrt::put_abi(args));
+    if (!args) {
+        return original();
+    }
+
+    DWORD messagePos = GetMessagePos();
+    POINT pt = {GET_X_LPARAM(messagePos), GET_Y_LPARAM(messagePos)};
+    HWND hMMTaskListWnd = TaskListFromPoint(pt);
+    if (!hMMTaskListWnd) {
+        return original();
+    }
+
+    auto currentPoint = args.GetCurrentPoint(taskbarFrameElement);
+    double delta = currentPoint.Properties().MouseWheelDelta();
+    if (!delta) {
+        return original();
+    }
+
+    // Allows to steal focus.
+    INPUT input;
+    ZeroMemory(&input, sizeof(INPUT));
+    SendInput(1, &input, sizeof(INPUT));
+
+    OnTaskListScroll(hMMTaskListWnd, static_cast<short>(delta));
+
+    args.Handled(true);
+    return 0;
+}
+
 void LoadSettings() {
     g_settings.skipMinimizedWindows = Wh_GetIntSetting(L"skipMinimizedWindows");
     g_settings.wrapAround = Wh_GetIntSetting(L"wrapAround");
@@ -1066,6 +1166,7 @@ void LoadSettings() {
         Wh_GetStringSetting(L"cycleLeftKeyboardShortcut"));
     g_settings.cycleRightKeyboardShortcut.reset(
         Wh_GetStringSetting(L"cycleRightKeyboardShortcut"));
+    g_settings.oldTaskbarOnWin11 = Wh_GetIntSetting(L"oldTaskbarOnWin11");
 }
 
 bool GetTaskbarViewDllPath(WCHAR path[MAX_PATH]) {
@@ -1120,17 +1221,28 @@ bool HookTaskbarViewDllSymbols() {
         },
     };
 
-    return HookSymbols(module, symbolHooks, ARRAYSIZE(symbolHooks));
-}
-
-bool HookTaskbarDllSymbols() {
-    HMODULE module = LoadLibrary(L"taskbar.dll");
-    if (!module) {
-        Wh_Log(L"Failed to load taskbar.dll");
+    if (!HookSymbols(module, symbolHooks, ARRAYSIZE(symbolHooks))) {
+        Wh_Log(L"HookSymbols failed");
         return false;
     }
 
-    WindhawkUtils::SYMBOL_HOOK taskbarDllHooks[] = {
+    return true;
+}
+
+bool HookTaskbarSymbols() {
+    HMODULE module;
+    if (g_winVersion <= WinVersion::Win10) {
+        module = GetModuleHandle(nullptr);
+    } else {
+        module = LoadLibrary(L"taskbar.dll");
+        if (!module) {
+            Wh_Log(L"Couldn't load taskbar.dll");
+            return false;
+        }
+    }
+
+    // Taskbar.dll, explorer.exe
+    WindhawkUtils::SYMBOL_HOOK symbolHooks[] = {
         {
             {LR"(const CTaskListWnd::`vftable'{for `ITaskListUI'})"},
             &CTaskListWnd_vftable_ITaskListUI,
@@ -1188,9 +1300,226 @@ bool HookTaskbarDllSymbols() {
             &CTaskBand_v_WndProc_Original,
             CTaskBand_v_WndProc_Hook,
         },
+        {
+            {LR"(public: virtual __int64 __cdecl TrayUI::WndProc(struct HWND__ *,unsigned int,unsigned __int64,__int64,bool *))"},
+            &TrayUI_WndProc_Original,
+            TrayUI_WndProc_Hook,
+        },
+        {
+            {LR"(private: virtual __int64 __cdecl CSecondaryTray::v_WndProc(struct HWND__ *,unsigned int,unsigned __int64,__int64))"},
+            &CSecondaryTray_v_WndProc_Original,
+            CSecondaryTray_v_WndProc_Hook,
+        },
     };
 
-    return HookSymbols(module, taskbarDllHooks, ARRAYSIZE(taskbarDllHooks));
+    if (!HookSymbols(module, symbolHooks, ARRAYSIZE(symbolHooks))) {
+        Wh_Log(L"HookSymbols failed");
+        return false;
+    }
+
+    return true;
+}
+
+VS_FIXEDFILEINFO* GetModuleVersionInfo(HMODULE hModule, UINT* puPtrLen) {
+    void* pFixedFileInfo = nullptr;
+    UINT uPtrLen = 0;
+
+    HRSRC hResource =
+        FindResource(hModule, MAKEINTRESOURCE(VS_VERSION_INFO), RT_VERSION);
+    if (hResource) {
+        HGLOBAL hGlobal = LoadResource(hModule, hResource);
+        if (hGlobal) {
+            void* pData = LockResource(hGlobal);
+            if (pData) {
+                if (!VerQueryValue(pData, L"\\", &pFixedFileInfo, &uPtrLen) ||
+                    uPtrLen == 0) {
+                    pFixedFileInfo = nullptr;
+                    uPtrLen = 0;
+                }
+            }
+        }
+    }
+
+    if (puPtrLen) {
+        *puPtrLen = uPtrLen;
+    }
+
+    return (VS_FIXEDFILEINFO*)pFixedFileInfo;
+}
+
+WinVersion GetExplorerVersion() {
+    VS_FIXEDFILEINFO* fixedFileInfo = GetModuleVersionInfo(nullptr, nullptr);
+    if (!fixedFileInfo) {
+        return WinVersion::Unsupported;
+    }
+
+    WORD major = HIWORD(fixedFileInfo->dwFileVersionMS);
+    WORD minor = LOWORD(fixedFileInfo->dwFileVersionMS);
+    WORD build = HIWORD(fixedFileInfo->dwFileVersionLS);
+    WORD qfe = LOWORD(fixedFileInfo->dwFileVersionLS);
+
+    Wh_Log(L"Version: %u.%u.%u.%u", major, minor, build, qfe);
+
+    switch (major) {
+        case 10:
+            if (build < 22000) {
+                return WinVersion::Win10;
+            } else if (build < 26100) {
+                return WinVersion::Win11;
+            } else {
+                return WinVersion::Win11_24H2;
+            }
+            break;
+    }
+
+    return WinVersion::Unsupported;
+}
+
+struct EXPLORER_PATCHER_HOOK {
+    PCSTR symbol;
+    void** pOriginalFunction;
+    void* hookFunction = nullptr;
+    bool optional = false;
+
+    template <typename Prototype>
+    EXPLORER_PATCHER_HOOK(
+        PCSTR symbol,
+        Prototype** originalFunction,
+        std::type_identity_t<Prototype*> hookFunction = nullptr,
+        bool optional = false)
+        : symbol(symbol),
+          pOriginalFunction(reinterpret_cast<void**>(originalFunction)),
+          hookFunction(reinterpret_cast<void*>(hookFunction)),
+          optional(optional) {}
+};
+
+bool HookExplorerPatcherSymbols(HMODULE explorerPatcherModule) {
+    if (g_explorerPatcherInitialized.exchange(true)) {
+        return true;
+    }
+
+    if (g_winVersion >= WinVersion::Win11) {
+        g_winVersion = WinVersion::Win10;
+    }
+
+    EXPLORER_PATCHER_HOOK hooks[] = {
+        {R"(??_7CTaskListWnd@@6BITaskListUI@@@)",
+         &CTaskListWnd_vftable_ITaskListUI},
+        {R"(??_7CTaskListWnd@@6BITaskListSite@@@)",
+         &CTaskListWnd_vftable_ITaskListSite},
+        {R"(??_7CTaskListWnd@@6BITaskListAcc@@@)",
+         &CTaskListWnd_vftable_ITaskListAcc},
+        {R"(??_7CImmersiveTaskItem@@6BITaskItem@@@)",
+         &CImmersiveTaskItem_vftable},
+        {R"(?GetButtonGroupCount@CTaskListWnd@@UEAAHXZ)",
+         &CTaskListWnd_GetButtonGroupCount},
+        {R"(?GetActiveBtn@CTaskListWnd@@UEAAJPEAPEAUITaskGroup@@PEAH@Z)",
+         &CTaskListWnd_GetActiveBtn},
+        {R"(?_GetTBGroupFromGroup@CTaskListWnd@@IEAAPEAUITaskBtnGroup@@PEAUITaskGroup@@PEAH@Z)",
+         &CTaskListWnd__GetTBGroupFromGroup},
+        {R"(?GetGroupType@CTaskBtnGroup@@UEAA?AW4eTBGROUPTYPE@@XZ)",
+         &CTaskBtnGroup_GetGroupType},
+        {R"(?GetNumItems@CTaskBtnGroup@@UEAAHXZ)", &CTaskBtnGroup_GetNumItems},
+        {R"(?GetTaskItem@CTaskBtnGroup@@UEAAPEAUITaskItem@@H@Z)",
+         &CTaskBtnGroup_GetTaskItem},
+        {R"(?GetWindow@CWindowTaskItem@@UEAAPEAUHWND__@@XZ)",
+         &CWindowTaskItem_GetWindow_Original},
+        {R"(?GetWindow@CImmersiveTaskItem@@UEAAPEAUHWND__@@XZ)",
+         &CImmersiveTaskItem_GetWindow_Original},
+        {R"(?SwitchToItem@CTaskListWnd@@UEAAXPEAUITaskItem@@@Z)",
+         &CTaskListWnd_SwitchToItem_Original},
+        {R"(?v_WndProc@CTaskBand@@MEAA_JPEAUHWND__@@I_K_J@Z)",
+         &CTaskBand_v_WndProc_Original, CTaskBand_v_WndProc_Hook},
+        {R"(?WndProc@TrayUI@@UEAA_JPEAUHWND__@@I_K_JPEA_N@Z)",
+         &TrayUI_WndProc_Original, TrayUI_WndProc_Hook},
+        // Exported after 67.1:
+        {R"(?v_WndProc@CSecondaryTray@@EEAA_JPEAUHWND__@@I_K_J@Z)",
+         &CSecondaryTray_v_WndProc_Original, CSecondaryTray_v_WndProc_Hook,
+         true},
+    };
+
+    bool succeeded = true;
+
+    for (const auto& hook : hooks) {
+        void* ptr = (void*)GetProcAddress(explorerPatcherModule, hook.symbol);
+        if (!ptr) {
+            Wh_Log(L"ExplorerPatcher symbol%s doesn't exist: %S",
+                   hook.optional ? L" (optional)" : L"", hook.symbol);
+            if (!hook.optional) {
+                succeeded = false;
+            }
+            continue;
+        }
+
+        if (hook.hookFunction) {
+            Wh_SetFunctionHook(ptr, hook.hookFunction, hook.pOriginalFunction);
+        } else {
+            *hook.pOriginalFunction = ptr;
+        }
+    }
+
+    if (!succeeded) {
+        Wh_Log(L"HookExplorerPatcherSymbols failed");
+    } else if (g_initialized) {
+        Wh_ApplyHookOperations();
+    }
+
+    return succeeded;
+}
+
+bool IsExplorerPatcherModule(HMODULE module) {
+    WCHAR moduleFilePath[MAX_PATH];
+    switch (
+        GetModuleFileName(module, moduleFilePath, ARRAYSIZE(moduleFilePath))) {
+        case 0:
+        case ARRAYSIZE(moduleFilePath):
+            return false;
+    }
+
+    PCWSTR moduleFileName = wcsrchr(moduleFilePath, L'\\');
+    if (!moduleFileName) {
+        return false;
+    }
+
+    moduleFileName++;
+
+    if (_wcsnicmp(L"ep_taskbar.", moduleFileName, sizeof("ep_taskbar.") - 1) ==
+        0) {
+        Wh_Log(L"ExplorerPatcher taskbar module: %s", moduleFileName);
+        return true;
+    }
+
+    return false;
+}
+
+bool HandleLoadedExplorerPatcher() {
+    HMODULE hMods[1024];
+    DWORD cbNeeded;
+    if (EnumProcessModules(GetCurrentProcess(), hMods, sizeof(hMods),
+                           &cbNeeded)) {
+        for (size_t i = 0; i < cbNeeded / sizeof(HMODULE); i++) {
+            if (IsExplorerPatcherModule(hMods[i])) {
+                return HookExplorerPatcherSymbols(hMods[i]);
+            }
+        }
+    }
+
+    return true;
+}
+
+using LoadLibraryExW_t = decltype(&LoadLibraryExW);
+LoadLibraryExW_t LoadLibraryExW_Original;
+HMODULE WINAPI LoadLibraryExW_Hook(LPCWSTR lpLibFileName,
+                                   HANDLE hFile,
+                                   DWORD dwFlags) {
+    HMODULE module = LoadLibraryExW_Original(lpLibFileName, hFile, dwFlags);
+    if (module && !((ULONG_PTR)module & 3) && !g_explorerPatcherInitialized) {
+        if (IsExplorerPatcherModule(module)) {
+            HookExplorerPatcherSymbols(module);
+        }
+    }
+
+    return module;
 }
 
 BOOL Wh_ModInit() {
@@ -1198,19 +1527,61 @@ BOOL Wh_ModInit() {
 
     LoadSettings();
 
-    if (!HookTaskbarViewDllSymbols()) {
+    g_winVersion = GetExplorerVersion();
+    if (g_winVersion == WinVersion::Unsupported) {
+        Wh_Log(L"Unsupported Windows version");
         return FALSE;
     }
 
-    if (!HookTaskbarDllSymbols()) {
+    if (g_settings.oldTaskbarOnWin11) {
+        bool hasWin10Taskbar = g_winVersion < WinVersion::Win11_24H2;
+
+        if (g_winVersion >= WinVersion::Win11) {
+            g_winVersion = WinVersion::Win10;
+        }
+
+        if (hasWin10Taskbar && !HookTaskbarSymbols()) {
+            return FALSE;
+        }
+    } else if (g_winVersion >= WinVersion::Win11) {
+        if (!HookTaskbarViewDllSymbols()) {
+            return FALSE;
+        }
+
+        if (!HookTaskbarSymbols()) {
+            return FALSE;
+        }
+    } else {
+        if (!HookTaskbarSymbols()) {
+            return FALSE;
+        }
+    }
+
+    if (!HandleLoadedExplorerPatcher()) {
+        Wh_Log(L"HandleLoadedExplorerPatcher failed");
         return FALSE;
     }
+
+    HMODULE kernelBaseModule = GetModuleHandle(L"kernelbase.dll");
+    auto pKernelBaseLoadLibraryExW = (decltype(&LoadLibraryExW))GetProcAddress(
+        kernelBaseModule, "LoadLibraryExW");
+    WindhawkUtils::Wh_SetFunctionHookT(pKernelBaseLoadLibraryExW,
+                                       LoadLibraryExW_Hook,
+                                       &LoadLibraryExW_Original);
+
+    g_initialized = true;
 
     return TRUE;
 }
 
 void Wh_ModAfterInit() {
     Wh_Log(L">");
+
+    // Try again in case there's a race between the previous attempt and the
+    // LoadLibraryExW hook.
+    if (!g_explorerPatcherInitialized) {
+        HandleLoadedExplorerPatcher();
+    }
 
     if (HWND hTaskBandWnd = GetTaskBandWnd()) {
         SendMessage(hTaskBandWnd, g_hotkeyRegisteredMsg, HOTKEY_REGISTER, 0);
@@ -1225,12 +1596,21 @@ void Wh_ModBeforeUninit() {
     }
 }
 
-void Wh_ModSettingsChanged() {
+BOOL Wh_ModSettingsChanged(BOOL* bReload) {
     Wh_Log(L">");
 
+    bool prevOldTaskbarOnWin11 = g_settings.oldTaskbarOnWin11;
+
     LoadSettings();
+
+    *bReload = g_settings.oldTaskbarOnWin11 != prevOldTaskbarOnWin11;
+    if (*bReload) {
+        return TRUE;
+    }
 
     if (HWND hTaskBandWnd = GetTaskBandWnd()) {
         SendMessage(hTaskBandWnd, g_hotkeyRegisteredMsg, HOTKEY_UPDATE, 0);
     }
+
+    return TRUE;
 }
