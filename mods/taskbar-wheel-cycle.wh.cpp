@@ -69,7 +69,6 @@ Taskbar Tweaker](https://tweaker.ramensoftware.com/).
 
 #include <algorithm>
 #include <memory>
-#include <regex>
 #include <string>
 #include <string_view>
 #include <unordered_map>
@@ -119,6 +118,24 @@ HWND GetTaskBandWnd() {
     return nullptr;
 }
 
+void* CTaskListWnd_vftable_ITaskListUI;
+void* CTaskListWnd_vftable_ITaskListSite;
+void* CTaskListWnd_vftable_ITaskListAcc;
+void* CImmersiveTaskItem_vftable;
+
+using CTaskListWnd_GetButtonGroupCount_t = int(WINAPI*)(void* pThis);
+CTaskListWnd_GetButtonGroupCount_t CTaskListWnd_GetButtonGroupCount;
+
+using CTaskListWnd_GetActiveBtn_t = HRESULT(WINAPI*)(void* pThis,
+                                                     void** taskGroup,
+                                                     int* buttonIndex);
+CTaskListWnd_GetActiveBtn_t CTaskListWnd_GetActiveBtn;
+
+using CTaskListWnd__GetTBGroupFromGroup_t = void*(WINAPI*)(void* pThis,
+                                                           void* taskGroup,
+                                                           int* index);
+CTaskListWnd__GetTBGroupFromGroup_t CTaskListWnd__GetTBGroupFromGroup;
+
 using CTaskBtnGroup_GetGroupType_t = int(WINAPI*)(void* pThis);
 CTaskBtnGroup_GetGroupType_t CTaskBtnGroup_GetGroupType;
 
@@ -133,10 +150,6 @@ CWindowTaskItem_GetWindow_t CWindowTaskItem_GetWindow_Original;
 
 using CImmersiveTaskItem_GetWindow_t = HWND(WINAPI*)(PVOID pThis);
 CImmersiveTaskItem_GetWindow_t CImmersiveTaskItem_GetWindow_Original;
-
-void* CImmersiveTaskItem_vftable;
-
-void* CTaskListWnd_vftable_ITaskListSite;
 
 using CTaskListWnd_SwitchToItem_t = void(WINAPI*)(void* pThis, void* taskItem);
 CTaskListWnd_SwitchToItem_t CTaskListWnd_SwitchToItem_Original;
@@ -156,64 +169,6 @@ void* QueryViaVtableBackwards(void* object, void* vtable) {
     }
     return ptr;
 }
-
-#pragma region offsets
-
-void* CTaskListWnd_GetFocusedBtn;
-void* CTaskListWnd__FixupTaskIndicies;
-
-size_t OffsetFromAssembly(void* func,
-                          size_t defValue,
-                          std::string opcode = "mov",
-                          int limit = 30) {
-    // Example: mov rax, [rcx+0xE0]
-    std::regex regex(
-        opcode +
-        R"( r(?:[a-z]{2}|\d{1,2}), \[r(?:[a-z]{2}|\d{1,2})\+(0x[0-9A-F]+)\])");
-
-    BYTE* p = (BYTE*)func;
-    for (int i = 0; i < limit; i++) {
-        WH_DISASM_RESULT result;
-        if (!Wh_Disasm(p, &result)) {
-            break;
-        }
-
-        p += result.length;
-
-        std::string_view s = result.text;
-        if (s == "ret") {
-            break;
-        }
-
-        std::match_results<std::string_view::const_iterator> match;
-        if (std::regex_match(s.begin(), s.end(), match, regex)) {
-            // Wh_Log(L"%S", result.text);
-            return std::stoull(match[1], nullptr, 16);
-        }
-    }
-
-    Wh_Log(L"Failed for %p", func);
-    return defValue;
-}
-
-HDPA* EV_MM_TASKLIST_BUTTON_GROUPS_HDPA(LONG_PTR lp) {
-    static size_t offset = OffsetFromAssembly(CTaskListWnd_GetFocusedBtn, 0xE0);
-
-    return (HDPA*)(lp + offset);
-}
-
-LONG_PTR** EV_MM_TASKLIST_ACTIVE_BUTTON_GROUP(LONG_PTR lp) {
-    static size_t offset =
-        OffsetFromAssembly(CTaskListWnd__FixupTaskIndicies, 0x130, "cmp");
-
-    return (LONG_PTR**)(lp + offset);
-}
-
-int* EV_MM_TASKLIST_ACTIVE_BUTTON_INDEX(LONG_PTR lp) {
-    return (int*)(EV_MM_TASKLIST_ACTIVE_BUTTON_GROUP(lp) + 1);
-}
-
-#pragma endregion  // offsets
 
 #pragma region scroll
 
@@ -384,6 +339,36 @@ LONG_PTR* TaskbarScrollHelper(int button_groups_count,
         button_groups[button_group_index], button_index);
 }
 
+HDPA GetTaskBtnGroupsArray(void* taskList_ITaskListUI) {
+    // This is a horrible hack, but it's the best way I found to get the array
+    // of task button groups from a task list. It relies on the implementation
+    // of CTaskListWnd::GetButtonGroupCount being just this:
+    //
+    // return DPA_GetPtrCount(this->buttonGroupsArray);
+    //
+    // Or in other words:
+    //
+    // return *(int*)this[buttonGroupsArrayOffset];
+    //
+    // Instead of calling it with a real taskList object, we call it with an
+    // array of pointers to ints. The returned int value is actually the offset
+    // to the array member.
+
+    static size_t offset = []() {
+        constexpr int kIntArraySize = 256;
+        int arrayOfInts[kIntArraySize];
+        int* arrayOfIntPtrs[kIntArraySize];
+        for (int i = 0; i < kIntArraySize; i++) {
+            arrayOfInts[i] = i;
+            arrayOfIntPtrs[i] = &arrayOfInts[i];
+        }
+
+        return CTaskListWnd_GetButtonGroupCount(arrayOfIntPtrs);
+    }();
+
+    return (HDPA)((void**)taskList_ITaskListUI)[offset];
+}
+
 LONG_PTR* TaskbarScroll(LONG_PTR lpMMTaskListLongPtr,
                         int nRotates,
                         BOOL bSkipMinimized,
@@ -393,8 +378,10 @@ LONG_PTR* TaskbarScroll(LONG_PTR lpMMTaskListLongPtr,
         return nullptr;
     }
 
-    LONG_PTR* plp =
-        (LONG_PTR*)*EV_MM_TASKLIST_BUTTON_GROUPS_HDPA(lpMMTaskListLongPtr);
+    void* taskList_ITaskListUI = QueryViaVtable(
+        (void*)lpMMTaskListLongPtr, CTaskListWnd_vftable_ITaskListUI);
+
+    LONG_PTR* plp = (LONG_PTR*)GetTaskBtnGroupsArray(taskList_ITaskListUI);
     if (!plp) {
         return nullptr;
     }
@@ -433,10 +420,19 @@ LONG_PTR* TaskbarScroll(LONG_PTR lpMMTaskListLongPtr,
             button_index_active = -1;
         }
     } else {
+        void* taskList_ITaskListAcc = QueryViaVtable(
+            (void*)lpMMTaskListLongPtr, CTaskListWnd_vftable_ITaskListAcc);
+
+        winrt::com_ptr<IUnknown> task_group_active;
+        CTaskListWnd_GetActiveBtn(taskList_ITaskListAcc,
+                                  task_group_active.put_void(),
+                                  &button_index_active);
+
         LONG_PTR* button_group_active =
-            *EV_MM_TASKLIST_ACTIVE_BUTTON_GROUP(lpMMTaskListLongPtr);
-        button_index_active =
-            *EV_MM_TASKLIST_ACTIVE_BUTTON_INDEX(lpMMTaskListLongPtr);
+            task_group_active ? (LONG_PTR*)CTaskListWnd__GetTBGroupFromGroup(
+                                    (void*)lpMMTaskListLongPtr,
+                                    task_group_active.get(), nullptr)
+                              : nullptr;
 
         if (button_group_active && button_index_active >= 0) {
             int i;
@@ -1136,6 +1132,34 @@ bool HookTaskbarDllSymbols() {
 
     WindhawkUtils::SYMBOL_HOOK taskbarDllHooks[] = {
         {
+            {LR"(const CTaskListWnd::`vftable'{for `ITaskListUI'})"},
+            (void**)&CTaskListWnd_vftable_ITaskListUI,
+        },
+        {
+            {LR"(const CTaskListWnd::`vftable'{for `ITaskListSite'})"},
+            (void**)&CTaskListWnd_vftable_ITaskListSite,
+        },
+        {
+            {LR"(const CTaskListWnd::`vftable'{for `ITaskListAcc'})"},
+            (void**)&CTaskListWnd_vftable_ITaskListAcc,
+        },
+        {
+            {LR"(const CImmersiveTaskItem::`vftable'{for `ITaskItem'})"},
+            (void**)&CImmersiveTaskItem_vftable,
+        },
+        {
+            {LR"(public: virtual int __cdecl CTaskListWnd::GetButtonGroupCount(void))"},
+            (void**)&CTaskListWnd_GetButtonGroupCount,
+        },
+        {
+            {LR"(public: virtual long __cdecl CTaskListWnd::GetActiveBtn(struct ITaskGroup * *,int *))"},
+            (void**)&CTaskListWnd_GetActiveBtn,
+        },
+        {
+            {LR"(protected: struct ITaskBtnGroup * __cdecl CTaskListWnd::_GetTBGroupFromGroup(struct ITaskGroup *,int *))"},
+            (void**)&CTaskListWnd__GetTBGroupFromGroup,
+        },
+        {
             {LR"(public: virtual enum eTBGROUPTYPE __cdecl CTaskBtnGroup::GetGroupType(void))"},
             (void**)&CTaskBtnGroup_GetGroupType,
         },
@@ -1156,14 +1180,6 @@ bool HookTaskbarDllSymbols() {
             (void**)&CImmersiveTaskItem_GetWindow_Original,
         },
         {
-            {LR"(const CImmersiveTaskItem::`vftable'{for `ITaskItem'})"},
-            (void**)&CImmersiveTaskItem_vftable,
-        },
-        {
-            {LR"(const CTaskListWnd::`vftable'{for `ITaskListSite'})"},
-            (void**)&CTaskListWnd_vftable_ITaskListSite,
-        },
-        {
             {LR"(public: virtual void __cdecl CTaskListWnd::SwitchToItem(struct ITaskItem *))"},
             (void**)&CTaskListWnd_SwitchToItem_Original,
         },
@@ -1171,15 +1187,6 @@ bool HookTaskbarDllSymbols() {
             {LR"(protected: virtual __int64 __cdecl CTaskBand::v_WndProc(struct HWND__ *,unsigned int,unsigned __int64,__int64))"},
             (void**)&CTaskBand_v_WndProc_Original,
             (void*)CTaskBand_v_WndProc_Hook,
-        },
-        // For offsets:
-        {
-            {LR"(public: virtual long __cdecl CTaskListWnd::GetFocusedBtn(struct ITaskGroup * *,int *))"},
-            (void**)&CTaskListWnd_GetFocusedBtn,
-        },
-        {
-            {LR"(protected: void __cdecl CTaskListWnd::_FixupTaskIndicies(struct ITaskBtnGroup *,int,int))"},
-            (void**)&CTaskListWnd__FixupTaskIndicies,
         },
     };
 
