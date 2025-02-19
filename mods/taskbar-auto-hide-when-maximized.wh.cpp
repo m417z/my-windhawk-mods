@@ -46,6 +46,9 @@ or a similar tool), enable the relevant option in the mod's settings.
   $name: Apply only to focused window
   $description: >-
     Enable this option to apply the auto-hide taskbar feature only to the selected window.
+- primaryOnly: false
+  $name: Primary monitor only
+  $description: Apply the mod's behavior only to the primary monitor taskbar. Secondary monitors will use Windows' default auto-hide behavior.
 - oldTaskbarOnWin11: false
   $name: Customize the old taskbar on Windows 11
   $description: >-
@@ -72,6 +75,7 @@ enum class Mode {
 
 struct {
     Mode mode;
+    bool primaryOnly;
     bool oldTaskbarOnWin11;
     bool focusedWindow;
 } g_settings;
@@ -268,6 +272,10 @@ bool CanHideTaskbar(HWND hWnd, HMONITOR monitor) {
 bool ShouldAlwaysShowTaskbar(HMONITOR monitor) {
     if (g_settings.mode == Mode::never) {
         return true;
+    }
+
+    if (g_settings.primaryOnly && monitor != MonitorFromPoint({0,0}, MONITOR_DEFAULTTOPRIMARY)) {
+        return false;
     }
 
     bool canHideTaskbar = false;
@@ -875,6 +883,7 @@ void LoadSettings() {
     }
     Wh_FreeStringSetting(mode);
 
+    g_settings.primaryOnly = Wh_GetIntSetting(L"primaryOnly");
     g_settings.oldTaskbarOnWin11 = Wh_GetIntSetting(L"oldTaskbarOnWin11");
     g_settings.focusedWindow = Wh_GetIntSetting(L"focusedWindow");
 }
