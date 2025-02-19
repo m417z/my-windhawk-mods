@@ -314,6 +314,10 @@ std::wstring GetWindowAppId(HWND hWnd) {
 }
 
 bool IsWindowExcluded(HWND hWnd) {
+    if (g_settings.excludedPrograms.empty()) {
+        return false;
+    }
+
     DWORD resolvedWindowProcessPathLen = 0;
     WCHAR resolvedWindowProcessPath[MAX_PATH];
     WCHAR resolvedWindowProcessPathUpper[MAX_PATH];
