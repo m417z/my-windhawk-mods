@@ -42,7 +42,7 @@ or a similar tool), enable the relevant option in the mod's settings.
   - intersected: Auto-hide when a window is maximized or intersects the taskbar
   - maximized: Auto-hide only when a window is maximized
   - never: Never auto-hide
-- focusedWindow: true
+- focusedWindow: false
   $name: Apply only to focused window
   $description: >-
     Enable this option to apply the auto-hide taskbar feature only to the selected window.
