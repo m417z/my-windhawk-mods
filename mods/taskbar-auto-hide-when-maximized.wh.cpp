@@ -42,12 +42,12 @@ or a similar tool), enable the relevant option in the mod's settings.
   - intersected: Auto-hide when a window is maximized or intersects the taskbar
   - maximized: Auto-hide only when a window is maximized
   - never: Never auto-hide
-- focusedWindow: false
-  $name: Apply only to focused window
+- foregroundWindowOnly: false
+  $name: Apply only to foreground window
   $description: >-
     Enable this option to apply the auto-hide taskbar feature only to the
     selected window.
-- primaryOnly: false
+- primaryMonitorOnly: false
   $name: Primary monitor only
   $description: >-
     Apply the mod's behavior only to the primary monitor taskbar. Secondary
@@ -78,8 +78,8 @@ enum class Mode {
 
 struct {
     Mode mode;
-    bool focusedWindow;
-    bool primaryOnly;
+    bool foregroundWindowOnly;
+    bool primaryMonitorOnly;
     bool oldTaskbarOnWin11;
 } g_settings;
 
@@ -98,7 +98,7 @@ std::atomic<bool> g_explorerPatcherInitialized;
 bool g_wasAutoHideEnabled;
 std::mutex g_winEventHookThreadMutex;
 std::atomic<HANDLE> g_winEventHookThread;
-std::unordered_map<void*, HWND> g_alwaysShowTaskbars;
+std::unordered_map<void*, HWND> g_taskbarsKeptShown;
 UINT_PTR g_pendingEventsTimer;
 
 static const UINT g_getTaskbarRectRegisteredMsg =
@@ -132,24 +132,24 @@ bool IsWindowCloaked(HWND hwnd) {
 }
 
 bool SetTaskbarAutoHide(bool set) {
-    APPBARDATA abd;
+    APPBARDATA appBarData;
 
     // Both ABM_GETSTATE and ABM_SETSTATE require cbSize to be set.
-    abd.cbSize = sizeof(APPBARDATA);
+    appBarData.cbSize = sizeof(APPBARDATA);
 
     // Get state.
-    UINT state = (UINT)SHAppBarMessage(ABM_GETSTATE, &abd);
+    UINT state = (UINT)SHAppBarMessage(ABM_GETSTATE, &appBarData);
 
     // Determine auto hide state.
     if (set) {
-        abd.lParam = state | ABS_AUTOHIDE;
+        appBarData.lParam = state | ABS_AUTOHIDE;
     } else {
-        abd.lParam = state & ~ABS_AUTOHIDE;
+        appBarData.lParam = state & ~ABS_AUTOHIDE;
     }
 
-    if (abd.lParam != state) {
+    if (appBarData.lParam != state) {
         // Set state.
-        SHAppBarMessage(ABM_SETSTATE, &abd);
+        SHAppBarMessage(ABM_SETSTATE, &appBarData);
     }
 
     return state & ABS_AUTOHIDE;
@@ -227,7 +227,7 @@ bool GetTaskbarRectForMonitor(HMONITOR monitor, RECT* rect) {
     return true;
 }
 
-bool CanHideTaskbar(HWND hWnd, HMONITOR monitor) {
+bool CanHideTaskbarForWindow(HWND hWnd, HMONITOR monitor) {
     RECT taskbarRect{};
     GetTaskbarRectForMonitor(monitor, &taskbarRect);
 
@@ -272,26 +272,25 @@ bool CanHideTaskbar(HWND hWnd, HMONITOR monitor) {
     return false;
 }
 
-bool ShouldAlwaysShowTaskbar(HMONITOR monitor) {
+bool ShouldKeepTaskbarShown(HMONITOR monitor) {
     if (g_settings.mode == Mode::never) {
         return true;
     }
 
-    if (g_settings.primaryOnly &&
+    if (g_settings.primaryMonitorOnly &&
         monitor != MonitorFromPoint({0, 0}, MONITOR_DEFAULTTOPRIMARY)) {
         return false;
     }
 
-    bool canHideTaskbar = false;
-
-    if (g_settings.focusedWindow) {
-        HWND hFocusedWnd = GetForegroundWindow();
-        canHideTaskbar = CanHideTaskbar(hFocusedWnd, monitor);
-        return !canHideTaskbar;
+    if (g_settings.foregroundWindowOnly) {
+        HWND hForegroundWnd = GetForegroundWindow();
+        return !CanHideTaskbarForWindow(hForegroundWnd, monitor);
     }
 
+    bool canHideTaskbar = false;
+
     auto enumWindowsProc = [&](HWND hWnd) -> BOOL {
-        canHideTaskbar = CanHideTaskbar(hWnd, monitor);
+        canHideTaskbar = CanHideTaskbarForWindow(hWnd, monitor);
         return !canHideTaskbar;
     };
 
@@ -376,8 +375,8 @@ TrayUI__Hide_t TrayUI__Hide_Original;
 void WINAPI TrayUI__Hide_Hook(void* pThis) {
     Wh_Log(L">");
 
-    auto it = g_alwaysShowTaskbars.find(pThis);
-    if (it != g_alwaysShowTaskbars.end()) {
+    auto it = g_taskbarsKeptShown.find(pThis);
+    if (it != g_taskbarsKeptShown.end()) {
         KillTimer(it->second, kTrayUITimerHide);
         return;
     }
@@ -390,8 +389,8 @@ CSecondaryTray__AutoHide_t CSecondaryTray__AutoHide_Original;
 void WINAPI CSecondaryTray__AutoHide_Hook(void* pThis, bool param1) {
     Wh_Log(L">");
 
-    auto it = g_alwaysShowTaskbars.find(pThis);
-    if (it != g_alwaysShowTaskbars.end()) {
+    auto it = g_taskbarsKeptShown.find(pThis);
+    if (it != g_taskbarsKeptShown.end()) {
         KillTimer(it->second, kTrayUITimerHide);
         return;
     }
@@ -439,24 +438,24 @@ LRESULT WINAPI TrayUI_WndProc_Hook(void* pThis,
         }
     } else if (Msg == g_updateTaskbarStateRegisteredMsg) {
         HMONITOR monitor = TrayUI_GetStuckMonitor_Original(pThis);
-        bool alwaysShow = ShouldAlwaysShowTaskbar(monitor);
+        bool keepShown = ShouldKeepTaskbarShown(monitor);
 
         void* pTrayUI_IInspectable =
             QueryViaVtableBackwards(pThis, TrayUI_vftable_IInspectable);
 
-        bool alwaysShown = g_alwaysShowTaskbars.contains(pTrayUI_IInspectable);
+        bool keptShown = g_taskbarsKeptShown.contains(pTrayUI_IInspectable);
 
-        if (alwaysShow != alwaysShown) {
-            Wh_Log(L"> alwaysShow=%d", alwaysShow);
+        if (keepShown != keptShown) {
+            Wh_Log(L"> keepShown=%d", keepShown);
 
-            if (alwaysShow) {
-                g_alwaysShowTaskbars[pTrayUI_IInspectable] = hWnd;
+            if (keepShown) {
+                g_taskbarsKeptShown[pTrayUI_IInspectable] = hWnd;
 
                 void* pTrayUI_ITrayComponentHost =
                     QueryViaVtable(pThis, TrayUI_vftable_ITrayComponentHost);
                 TrayUI_Unhide_Original(pTrayUI_ITrayComponentHost, 0, 0);
             } else {
-                g_alwaysShowTaskbars.erase(pTrayUI_IInspectable);
+                g_taskbarsKeptShown.erase(pTrayUI_IInspectable);
 
                 SetTimer(hWnd, kTrayUITimerHide, 0, nullptr);
             }
@@ -487,19 +486,19 @@ LRESULT WINAPI CSecondaryTray_v_WndProc_Hook(void* pThis,
         HMONITOR monitor =
             CSecondaryTray_GetMonitor_Original(pCSecondaryTray_ISecondaryTray);
 
-        bool alwaysShow = ShouldAlwaysShowTaskbar(monitor);
+        bool keepShown = ShouldKeepTaskbarShown(monitor);
 
-        bool alwaysShown = g_alwaysShowTaskbars.contains(pThis);
+        bool keptShown = g_taskbarsKeptShown.contains(pThis);
 
-        if (alwaysShow != alwaysShown) {
-            Wh_Log(L"> alwaysShow=%d", alwaysShow);
+        if (keepShown != keptShown) {
+            Wh_Log(L"> keepShown=%d", keepShown);
 
-            if (alwaysShow) {
-                g_alwaysShowTaskbars[pThis] = hWnd;
+            if (keepShown) {
+                g_taskbarsKeptShown[pThis] = hWnd;
 
                 CSecondaryTray__Unhide_Original(pThis, 0, 0);
             } else {
-                g_alwaysShowTaskbars.erase(pThis);
+                g_taskbarsKeptShown.erase(pThis);
 
                 SetTimer(hWnd, kTrayUITimerHide, 0, nullptr);
             }
@@ -574,7 +573,7 @@ DWORD WINAPI WinEventHookThread(LPVOID lpThreadParameter) {
     }
 
     HWINEVENTHOOK winSystemEventHook1 = nullptr;
-    if (g_settings.focusedWindow) {
+    if (g_settings.foregroundWindowOnly) {
         winSystemEventHook1 =
             SetWinEventHook(EVENT_SYSTEM_FOREGROUND, EVENT_SYSTEM_FOREGROUND,
                             nullptr, WinEventProc, 0, 0, WINEVENT_OUTOFCONTEXT);
@@ -890,8 +889,8 @@ void LoadSettings() {
     }
     Wh_FreeStringSetting(mode);
 
-    g_settings.focusedWindow = Wh_GetIntSetting(L"focusedWindow");
-    g_settings.primaryOnly = Wh_GetIntSetting(L"primaryOnly");
+    g_settings.foregroundWindowOnly = Wh_GetIntSetting(L"foregroundWindowOnly");
+    g_settings.primaryMonitorOnly = Wh_GetIntSetting(L"primaryMonitorOnly");
     g_settings.oldTaskbarOnWin11 = Wh_GetIntSetting(L"oldTaskbarOnWin11");
 }
 
@@ -975,7 +974,7 @@ void Wh_ModUninit() {
 BOOL Wh_ModSettingsChanged(BOOL* bReload) {
     Wh_Log(L">");
 
-    bool prevFocusedWindow = g_settings.focusedWindow;
+    bool prevForegroundWindowOnly = g_settings.foregroundWindowOnly;
     bool prevOldTaskbarOnWin11 = g_settings.oldTaskbarOnWin11;
 
     LoadSettings();
@@ -986,7 +985,7 @@ BOOL Wh_ModSettingsChanged(BOOL* bReload) {
     }
 
     if (g_settings.mode == Mode::never ||
-        prevFocusedWindow != g_settings.focusedWindow) {
+        prevForegroundWindowOnly != g_settings.foregroundWindowOnly) {
         std::lock_guard<std::mutex> guard(g_winEventHookThreadMutex);
 
         if (g_winEventHookThread) {
