@@ -45,10 +45,13 @@ or a similar tool), enable the relevant option in the mod's settings.
 - focusedWindow: false
   $name: Apply only to focused window
   $description: >-
-    Enable this option to apply the auto-hide taskbar feature only to the selected window.
+    Enable this option to apply the auto-hide taskbar feature only to the
+    selected window.
 - primaryOnly: false
   $name: Primary monitor only
-  $description: Apply the mod's behavior only to the primary monitor taskbar. Secondary monitors will use Windows' default auto-hide behavior.
+  $description: >-
+    Apply the mod's behavior only to the primary monitor taskbar. Secondary
+    monitors will use Windows' default auto-hide behavior.
 - oldTaskbarOnWin11: false
   $name: Customize the old taskbar on Windows 11
   $description: >-
@@ -75,9 +78,9 @@ enum class Mode {
 
 struct {
     Mode mode;
+    bool focusedWindow;
     bool primaryOnly;
     bool oldTaskbarOnWin11;
-    bool focusedWindow;
 } g_settings;
 
 enum class WinVersion {
@@ -202,7 +205,7 @@ HWND FindTaskbarWindows(std::unordered_set<HWND>* secondaryTaskbarWindows) {
 
     EnumThreadWindows(
         taskbarThreadId,
-        [](HWND hWnd, LPARAM lParam) WINAPI -> BOOL {
+        [](HWND hWnd, LPARAM lParam) -> BOOL {
             auto& proc = *reinterpret_cast<decltype(enumWindowsProc)*>(lParam);
             return proc(hWnd);
         },
@@ -274,7 +277,8 @@ bool ShouldAlwaysShowTaskbar(HMONITOR monitor) {
         return true;
     }
 
-    if (g_settings.primaryOnly && monitor != MonitorFromPoint({0,0}, MONITOR_DEFAULTTOPRIMARY)) {
+    if (g_settings.primaryOnly &&
+        monitor != MonitorFromPoint({0, 0}, MONITOR_DEFAULTTOPRIMARY)) {
         return false;
     }
 
@@ -292,7 +296,7 @@ bool ShouldAlwaysShowTaskbar(HMONITOR monitor) {
     };
 
     EnumWindows(
-        [](HWND hWnd, LPARAM lParam) WINAPI -> BOOL {
+        [](HWND hWnd, LPARAM lParam) -> BOOL {
             auto& proc = *reinterpret_cast<decltype(enumWindowsProc)*>(lParam);
             return proc(hWnd);
         },
@@ -537,7 +541,7 @@ void CALLBACK WinEventProc(HWINEVENTHOOK hWinEventHook,
                     UINT uMsg,         // WM_TIMER message
                     UINT_PTR idEvent,  // timer identifier
                     DWORD dwTime       // current system time
-                    ) WINAPI {
+                 ) {
                      Wh_Log(L">");
 
                      KillTimer(nullptr, g_pendingEventsTimer);
@@ -570,8 +574,8 @@ DWORD WINAPI WinEventHookThread(LPVOID lpThreadParameter) {
     }
 
     HWINEVENTHOOK winSystemEventHook1 =
-        SetWinEventHook(EVENT_SYSTEM_FOREGROUND, EVENT_SYSTEM_FOREGROUND, nullptr,
-                        WinEventProc, 0, 0, WINEVENT_OUTOFCONTEXT);
+        SetWinEventHook(EVENT_SYSTEM_FOREGROUND, EVENT_SYSTEM_FOREGROUND,
+                        nullptr, WinEventProc, 0, 0, WINEVENT_OUTOFCONTEXT);
     if (!winSystemEventHook1) {
         Wh_Log(L"Error: SetWinEventHook");
     }
@@ -883,9 +887,9 @@ void LoadSettings() {
     }
     Wh_FreeStringSetting(mode);
 
+    g_settings.focusedWindow = Wh_GetIntSetting(L"focusedWindow");
     g_settings.primaryOnly = Wh_GetIntSetting(L"primaryOnly");
     g_settings.oldTaskbarOnWin11 = Wh_GetIntSetting(L"oldTaskbarOnWin11");
-    g_settings.focusedWindow = Wh_GetIntSetting(L"focusedWindow");
 }
 
 BOOL Wh_ModInit() {
