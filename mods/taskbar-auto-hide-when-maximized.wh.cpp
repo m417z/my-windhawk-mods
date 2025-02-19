@@ -573,11 +573,14 @@ DWORD WINAPI WinEventHookThread(LPVOID lpThreadParameter) {
         Wh_Log(L"Error: SetWinEventHook");
     }
 
-    HWINEVENTHOOK winSystemEventHook1 =
-        SetWinEventHook(EVENT_SYSTEM_FOREGROUND, EVENT_SYSTEM_FOREGROUND,
-                        nullptr, WinEventProc, 0, 0, WINEVENT_OUTOFCONTEXT);
-    if (!winSystemEventHook1) {
-        Wh_Log(L"Error: SetWinEventHook");
+    HWINEVENTHOOK winSystemEventHook1 = nullptr;
+    if (g_settings.focusedWindow) {
+        winSystemEventHook1 =
+            SetWinEventHook(EVENT_SYSTEM_FOREGROUND, EVENT_SYSTEM_FOREGROUND,
+                            nullptr, WinEventProc, 0, 0, WINEVENT_OUTOFCONTEXT);
+        if (!winSystemEventHook1) {
+            Wh_Log(L"Error: SetWinEventHook");
+        }
     }
 
     BOOL bRet;
@@ -972,6 +975,7 @@ void Wh_ModUninit() {
 BOOL Wh_ModSettingsChanged(BOOL* bReload) {
     Wh_Log(L">");
 
+    bool prevFocusedWindow = g_settings.focusedWindow;
     bool prevOldTaskbarOnWin11 = g_settings.oldTaskbarOnWin11;
 
     LoadSettings();
@@ -981,7 +985,8 @@ BOOL Wh_ModSettingsChanged(BOOL* bReload) {
         return TRUE;
     }
 
-    if (g_settings.mode == Mode::never) {
+    if (g_settings.mode == Mode::never ||
+        prevFocusedWindow != g_settings.focusedWindow) {
         std::lock_guard<std::mutex> guard(g_winEventHookThreadMutex);
 
         if (g_winEventHookThread) {
