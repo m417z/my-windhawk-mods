@@ -405,7 +405,8 @@ bool CanHideTaskbarForWindow(HWND hWnd, HMONITOR monitor) {
     }
 
     RECT windowRect;
-    GetWindowRect(hWnd, &windowRect);
+    DwmGetWindowAttribute(hWnd, DWMWA_EXTENDED_FRAME_BOUNDS, &windowRect,
+                          sizeof(windowRect));
 
     MONITORINFO monitorInfo{
         .cbSize = sizeof(MONITORINFO),
