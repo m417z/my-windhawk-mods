@@ -228,9 +228,6 @@ bool GetTaskbarRectForMonitor(HMONITOR monitor, RECT* rect) {
 }
 
 bool CanHideTaskbarForWindow(HWND hWnd, HMONITOR monitor) {
-    RECT taskbarRect{};
-    GetTaskbarRectForMonitor(monitor, &taskbarRect);
-
     HWND hShellWindow = GetShellWindow();
 
     if (hWnd == hShellWindow || GetProp(hWnd, L"DesktopWindow") ||
@@ -261,16 +258,30 @@ bool CanHideTaskbarForWindow(HWND hWnd, HMONITOR monitor) {
         return false;
     }
 
+    RECT windowRect;
+    GetWindowRect(hWnd, &windowRect);
+
+    MONITORINFO monitorInfo{
+        .cbSize = sizeof(MONITORINFO),
+    };
+    GetMonitorInfo(monitor, &monitorInfo);
+
+    // Don't keep the taskbar shown for a fullscreen window.
+    if (EqualRect(&windowRect, &monitorInfo.rcMonitor)) {
+        return true;
+    }
+
     // It makes sense to treat arranged windows (e.g. with Win+left) as
-    // maximized, as they occupy the whole taskbar height. Still check for
+    // maximized, as they occupy the whole monitor height. Still check for
     // intersection, as a window can also just occupy the upper side of the
     // screen (e.g. Win+left, Win+up).
     if (g_settings.mode == Mode::intersected ||
         (g_settings.mode == Mode::maximized && isWindowArranged)) {
-        RECT rc;
+        RECT taskbarRect{};
+        GetTaskbarRectForMonitor(monitor, &taskbarRect);
+
         RECT intersectRect;
-        if (GetWindowRect(hWnd, &rc) &&
-            IntersectRect(&intersectRect, &rc, &taskbarRect)) {
+        if (IntersectRect(&intersectRect, &windowRect, &taskbarRect)) {
             return true;
         }
     }
