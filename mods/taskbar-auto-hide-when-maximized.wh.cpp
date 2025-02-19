@@ -255,12 +255,18 @@ bool CanHideTaskbarForWindow(HWND hWnd, HMONITOR monitor) {
         return false;
     }
 
-    if (pIsWindowArranged && pIsWindowArranged(hWnd) &&
+    bool isWindowArranged = pIsWindowArranged && pIsWindowArranged(hWnd);
+    if (isWindowArranged &&
         MonitorFromWindow(hWnd, MONITOR_DEFAULTTONEAREST) != monitor) {
         return false;
     }
 
-    if (g_settings.mode == Mode::intersected) {
+    // It makes sense to treat arranged windows (e.g. with Win+left) as
+    // maximized, as they occupy the whole taskbar height. Still check for
+    // intersection, as a window can also just occupy the upper side of the
+    // screen (e.g. Win+left, Win+up).
+    if (g_settings.mode == Mode::intersected ||
+        (g_settings.mode == Mode::maximized && isWindowArranged)) {
         RECT rc;
         RECT intersectRect;
         if (GetWindowRect(hWnd, &rc) &&
