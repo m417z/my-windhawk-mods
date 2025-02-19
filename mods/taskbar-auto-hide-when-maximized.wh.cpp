@@ -437,13 +437,13 @@ bool CanHideTaskbarForWindow(HWND hWnd, HMONITOR monitor) {
 }
 
 bool ShouldKeepTaskbarShown(HMONITOR monitor) {
-    if (g_settings.mode == Mode::never) {
-        return true;
-    }
-
     if (g_settings.primaryMonitorOnly &&
         monitor != MonitorFromPoint({0, 0}, MONITOR_DEFAULTTOPRIMARY)) {
         return false;
+    }
+
+    if (g_settings.mode == Mode::never) {
+        return true;
     }
 
     if (g_settings.foregroundWindowOnly) {
