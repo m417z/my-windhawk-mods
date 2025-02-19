@@ -42,6 +42,10 @@ or a similar tool), enable the relevant option in the mod's settings.
   - intersected: Auto-hide when a window is maximized or intersects the taskbar
   - maximized: Auto-hide only when a window is maximized
   - never: Never auto-hide
+- focusedWindow: true
+  $name: Apply only to focused window
+  $description: >-
+    Enable this option to apply the auto-hide taskbar feature only to the selected window.
 - primaryOnly: false
   $name: Primary monitor only
   $description: Apply the mod's behavior only to the primary monitor taskbar. Secondary monitors will use Windows' default auto-hide behavior.
@@ -73,6 +77,7 @@ struct {
     Mode mode;
     bool primaryOnly;
     bool oldTaskbarOnWin11;
+    bool focusedWindow;
 } g_settings;
 
 enum class WinVersion {
@@ -219,7 +224,52 @@ bool GetTaskbarRectForMonitor(HMONITOR monitor, RECT* rect) {
     return true;
 }
 
-bool ShouldAlwaysShowTaskbar(HWND hMMTaskbarWnd, HMONITOR monitor) {
+bool CanHideTaskbar(HWND hWnd, HMONITOR monitor) {
+    RECT taskbarRect{};
+    GetTaskbarRectForMonitor(monitor, &taskbarRect);
+
+    HWND hShellWindow = GetShellWindow();
+
+    if (hWnd == hShellWindow || GetProp(hWnd, L"DesktopWindow") ||
+        IsTaskbarWindow(hWnd) || !IsWindowVisible(hWnd) ||
+        IsWindowCloaked(hWnd) || IsIconic(hWnd)) {
+        return false;
+    }
+
+    if (GetWindowLong(hWnd, GWL_EXSTYLE) & WS_EX_NOACTIVATE) {
+        return false;
+    }
+
+    WINDOWPLACEMENT wp{
+        .length = sizeof(WINDOWPLACEMENT),
+    };
+
+    if (GetWindowPlacement(hWnd, &wp) && wp.showCmd == SW_SHOWMAXIMIZED) {
+        if (MonitorFromWindow(hWnd, MONITOR_DEFAULTTONEAREST) == monitor) {
+            return true;
+        }
+
+        return false;
+    }
+
+    if (pIsWindowArranged && pIsWindowArranged(hWnd) &&
+        MonitorFromWindow(hWnd, MONITOR_DEFAULTTONEAREST) != monitor) {
+        return false;
+    }
+
+    if (g_settings.mode == Mode::intersected) {
+        RECT rc;
+        RECT intersectRect;
+        if (GetWindowRect(hWnd, &rc) &&
+            IntersectRect(&intersectRect, &rc, &taskbarRect)) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+bool ShouldAlwaysShowTaskbar(HMONITOR monitor) {
     if (g_settings.mode == Mode::never) {
         return true;
     }
@@ -230,50 +280,15 @@ bool ShouldAlwaysShowTaskbar(HWND hMMTaskbarWnd, HMONITOR monitor) {
 
     bool canHideTaskbar = false;
 
-    RECT taskbarRect{};
-    GetTaskbarRectForMonitor(monitor, &taskbarRect);
-
-    HWND hShellWindow = GetShellWindow();
+    if (g_settings.focusedWindow) {
+        HWND hFocusedWnd = GetForegroundWindow();
+        canHideTaskbar = CanHideTaskbar(hFocusedWnd, monitor);
+        return !canHideTaskbar;
+    }
 
     auto enumWindowsProc = [&](HWND hWnd) -> BOOL {
-        if (hWnd == hShellWindow || GetProp(hWnd, L"DesktopWindow") ||
-            IsTaskbarWindow(hWnd) || !IsWindowVisible(hWnd) ||
-            IsWindowCloaked(hWnd) || IsIconic(hWnd)) {
-            return TRUE;
-        }
-
-        if (GetWindowLong(hWnd, GWL_EXSTYLE) & WS_EX_NOACTIVATE) {
-            return TRUE;
-        }
-
-        WINDOWPLACEMENT wp{
-            .length = sizeof(WINDOWPLACEMENT),
-        };
-        if (GetWindowPlacement(hWnd, &wp) && wp.showCmd == SW_SHOWMAXIMIZED) {
-            if (MonitorFromWindow(hWnd, MONITOR_DEFAULTTONEAREST) == monitor) {
-                canHideTaskbar = true;
-                return FALSE;
-            }
-
-            return TRUE;
-        }
-
-        if (pIsWindowArranged && pIsWindowArranged(hWnd) &&
-            MonitorFromWindow(hWnd, MONITOR_DEFAULTTONEAREST) != monitor) {
-            return TRUE;
-        }
-
-        if (g_settings.mode == Mode::intersected) {
-            RECT rc;
-            RECT intersectRect;
-            if (GetWindowRect(hWnd, &rc) &&
-                IntersectRect(&intersectRect, &rc, &taskbarRect)) {
-                canHideTaskbar = true;
-                return FALSE;
-            }
-        }
-
-        return TRUE;
+        canHideTaskbar = CanHideTaskbar(hWnd, monitor);
+        return !canHideTaskbar;
     };
 
     EnumWindows(
@@ -420,7 +435,7 @@ LRESULT WINAPI TrayUI_WndProc_Hook(void* pThis,
         }
     } else if (Msg == g_updateTaskbarStateRegisteredMsg) {
         HMONITOR monitor = TrayUI_GetStuckMonitor_Original(pThis);
-        bool alwaysShow = ShouldAlwaysShowTaskbar(hWnd, monitor);
+        bool alwaysShow = ShouldAlwaysShowTaskbar(monitor);
 
         void* pTrayUI_IInspectable =
             QueryViaVtableBackwards(pThis, TrayUI_vftable_IInspectable);
@@ -468,7 +483,7 @@ LRESULT WINAPI CSecondaryTray_v_WndProc_Hook(void* pThis,
         HMONITOR monitor =
             CSecondaryTray_GetMonitor_Original(pCSecondaryTray_ISecondaryTray);
 
-        bool alwaysShow = ShouldAlwaysShowTaskbar(hWnd, monitor);
+        bool alwaysShow = ShouldAlwaysShowTaskbar(monitor);
 
         bool alwaysShown = g_alwaysShowTaskbars.contains(pThis);
 
@@ -554,6 +569,13 @@ DWORD WINAPI WinEventHookThread(LPVOID lpThreadParameter) {
         Wh_Log(L"Error: SetWinEventHook");
     }
 
+    HWINEVENTHOOK winSystemEventHook1 =
+        SetWinEventHook(EVENT_SYSTEM_FOREGROUND, EVENT_SYSTEM_FOREGROUND, nullptr,
+                        WinEventProc, 0, 0, WINEVENT_OUTOFCONTEXT);
+    if (!winSystemEventHook1) {
+        Wh_Log(L"Error: SetWinEventHook");
+    }
+
     BOOL bRet;
     MSG msg;
     while ((bRet = GetMessage(&msg, NULL, 0, 0)) != 0) {
@@ -581,6 +603,10 @@ DWORD WINAPI WinEventHookThread(LPVOID lpThreadParameter) {
 
     if (winObjectEventHook3) {
         UnhookWinEvent(winObjectEventHook3);
+    }
+
+    if (winSystemEventHook1) {
+        UnhookWinEvent(winSystemEventHook1);
     }
 
     return 0;
@@ -859,6 +885,7 @@ void LoadSettings() {
 
     g_settings.primaryOnly = Wh_GetIntSetting(L"primaryOnly");
     g_settings.oldTaskbarOnWin11 = Wh_GetIntSetting(L"oldTaskbarOnWin11");
+    g_settings.focusedWindow = Wh_GetIntSetting(L"focusedWindow");
 }
 
 BOOL Wh_ModInit() {

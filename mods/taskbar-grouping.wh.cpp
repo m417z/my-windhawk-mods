@@ -2,7 +2,7 @@
 // @id              taskbar-grouping
 // @name            Disable grouping on the taskbar
 // @description     Causes a separate button to be created on the taskbar for each new window
-// @version         1.3.7
+// @version         1.3.8
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
@@ -37,7 +37,7 @@ choose to group Paint and Notepad:
 **Note:** After enabling the mod, the relevant windows must be reopened to apply
 the grouping settings.
 
-Only Windows 10 64-bit and Windows 11 are supported. For other Windows versions
+Only Windows 10 64-bit and Windows 11 are supported. For older Windows versions
 check out [7+ Taskbar Tweaker](https://tweaker.ramensoftware.com/).
 
 **Note:** To customize the old taskbar on Windows 11 (if using ExplorerPatcher
@@ -467,21 +467,32 @@ void ProcessResolvedWindow(PVOID pThis, RESOLVEDWINDOW* resolvedWindow) {
     }
 }
 
-using CTaskBand__HandleWindowResolved_t =
-    void(WINAPI*)(PVOID pThis, RESOLVEDWINDOW* resolvedWindow);
-CTaskBand__HandleWindowResolved_t CTaskBand__HandleWindowResolved_Original;
-void WINAPI
-CTaskBand__HandleWindowResolved_Hook(PVOID pThis,
-                                     RESOLVEDWINDOW* resolvedWindow) {
-    Wh_Log(L">");
+using CTaskBand_v_WndProc_t = LRESULT(
+    WINAPI*)(void* pThis, HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam);
+CTaskBand_v_WndProc_t CTaskBand_v_WndProc_Original;
+LRESULT WINAPI CTaskBand_v_WndProc_Hook(void* pThis,
+                                        HWND hWnd,
+                                        UINT Msg,
+                                        WPARAM wParam,
+                                        LPARAM lParam) {
+    LRESULT ret;
 
-    g_compareStringOrdinalHookThreadId = GetCurrentThreadId();
-    g_compareStringOrdinalIgnoreSuffix = true;
+    // Calls CTaskBand::_HandleWindowResolved.
+    if (Msg == 0x44A) {
+        Wh_Log(L">");
 
-    CTaskBand__HandleWindowResolved_Original(pThis, resolvedWindow);
+        g_compareStringOrdinalHookThreadId = GetCurrentThreadId();
+        g_compareStringOrdinalIgnoreSuffix = true;
 
-    g_compareStringOrdinalHookThreadId = 0;
-    g_compareStringOrdinalIgnoreSuffix = false;
+        ret = CTaskBand_v_WndProc_Original(pThis, hWnd, Msg, wParam, lParam);
+
+        g_compareStringOrdinalHookThreadId = 0;
+        g_compareStringOrdinalIgnoreSuffix = false;
+    } else {
+        ret = CTaskBand_v_WndProc_Original(pThis, hWnd, Msg, wParam, lParam);
+    }
+
+    return ret;
 }
 
 using CTaskBand__HandleItemResolved_t =
@@ -498,7 +509,7 @@ void WINAPI CTaskBand__HandleItemResolved_Hook(PVOID pThis,
                                                PVOID taskItem) {
     Wh_Log(L">");
 
-    // Reset flags set by CTaskBand__HandleWindowResolved_Hook.
+    // Reset flags set by CTaskBand_v_WndProc_Hook.
     g_compareStringOrdinalHookThreadId = 0;
     g_compareStringOrdinalIgnoreSuffix = false;
 
@@ -971,7 +982,7 @@ CTaskListWnd_HandleTaskGroupUnpinned_t
 void SwapTaskGroupIds(PVOID taskGroup1, PVOID taskGroup2) {
     WCHAR appId1Copy[MAX_PATH] = L"";
     if (PCWSTR appId1 = CTaskGroup_GetAppID_Original(taskGroup1)) {
-        wcscpy_s(appId1Copy, CTaskGroup_GetAppID_Original(taskGroup1));
+        wcscpy_s(appId1Copy, appId1);
     }
 
     ITEMIDLIST* idList1Copy = nullptr;
@@ -1330,6 +1341,24 @@ WinVersion GetExplorerVersion() {
     return WinVersion::Unsupported;
 }
 
+struct EXPLORER_PATCHER_HOOK {
+    PCSTR symbol;
+    void** pOriginalFunction;
+    void* hookFunction = nullptr;
+    bool optional = false;
+
+    template <typename Prototype>
+    EXPLORER_PATCHER_HOOK(
+        PCSTR symbol,
+        Prototype** originalFunction,
+        std::type_identity_t<Prototype*> hookFunction = nullptr,
+        bool optional = false)
+        : symbol(symbol),
+          pOriginalFunction(reinterpret_cast<void**>(originalFunction)),
+          hookFunction(reinterpret_cast<void*>(hookFunction)),
+          optional(optional) {}
+};
+
 bool HookExplorerPatcherSymbols(HMODULE explorerPatcherModule) {
     if (g_explorerPatcherInitialized.exchange(true)) {
         return true;
@@ -1339,108 +1368,91 @@ bool HookExplorerPatcherSymbols(HMODULE explorerPatcherModule) {
         g_winVersion = WinVersion::Win10;
     }
 
-    struct EXPLORER_PATCHER_HOOK {
-        PCSTR symbol;
-        void** pOriginalFunction;
-        void* hookFunction = nullptr;
-        bool optional = false;
-    };
-
     EXPLORER_PATCHER_HOOK hooks[] = {
         {R"(?GetNumItems@CTaskGroup@@UEAAHXZ)",
-         (void**)&CTaskGroup_GetNumItems_Original},
-        {R"(?SetAppID@CTaskGroup@@UEAAJPEBG@Z)",
-         (void**)&CTaskGroup_SetAppID_Original},
-        {R"(?GetFlags@CTaskGroup@@UEBAKXZ)",
-         (void**)&CTaskGroup_GetFlags_Original},
+         &CTaskGroup_GetNumItems_Original},
+        {R"(?SetAppID@CTaskGroup@@UEAAJPEBG@Z)", &CTaskGroup_SetAppID_Original},
+        {R"(?GetFlags@CTaskGroup@@UEBAKXZ)", &CTaskGroup_GetFlags_Original},
         {R"(?UpdateFlags@CTaskGroup@@UEAAJKK@Z)",
-         (void**)&CTaskGroup_UpdateFlags_Original},
+         &CTaskGroup_UpdateFlags_Original},
         {R"(?GetTitleText@CTaskGroup@@UEAAJPEAUITaskItem@@PEAGH@Z)",
-         (void**)&CTaskGroup_GetTitleText_Original},
-        {R"(?SetTip@CTaskGroup@@UEAAJPEBG@Z)",
-         (void**)&CTaskGroup_SetTip_Original},
+         &CTaskGroup_GetTitleText_Original},
+        {R"(?SetTip@CTaskGroup@@UEAAJPEBG@Z)", &CTaskGroup_SetTip_Original},
         {R"(?GetIconId@CTaskGroup@@UEAAJPEAUITaskItem@@PEAH@Z)",
-         (void**)&CTaskGroup_GetIconId_Original},
+         &CTaskGroup_GetIconId_Original},
         {R"(?SetIconId@CTaskGroup@@UEAAJPEAUITaskItem@@H@Z)",
-         (void**)&CTaskGroup_SetIconId_Original},
+         &CTaskGroup_SetIconId_Original},
         {R"(?DoesWindowMatch@CTaskGroup@@UEAAJPEAUHWND__@@PEBU_ITEMIDLIST_ABSOLUTE@@PEBGPEAW4WINDOWMATCHCONFIDENCE@@PEAPEAUITaskItem@@@Z)",
-         (void**)&CTaskGroup_DoesWindowMatch_Original},
+         &CTaskGroup_DoesWindowMatch_Original},
         {R"(?_MatchWindow@CTaskBand@@IEAAJPEAUHWND__@@PEBU_ITEMIDLIST_ABSOLUTE@@PEBGW4WINDOWMATCHCONFIDENCE@@PEAPEAUITaskGroup@@PEAPEAUITaskItem@@@Z)",
-         (void**)&CTaskBand__MatchWindow_Original},
+         &CTaskBand__MatchWindow_Original},
         {R"(?GetGroupType@CTaskBtnGroup@@UEAA?AW4eTBGROUPTYPE@@XZ)",
-         (void**)&CTaskBtnGroup_GetGroupType_Original},
-        {R"(?_HandleWindowResolved@CTaskBand@@IEAAXPEAURESOLVEDWINDOW@@@Z)",
-         (void**)&CTaskBand__HandleWindowResolved_Original,
-         (void*)CTaskBand__HandleWindowResolved_Hook},
+         &CTaskBtnGroup_GetGroupType_Original},
+        {R"(?v_WndProc@CTaskBand@@MEAA_JPEAUHWND__@@I_K_J@Z)",
+         &CTaskBand_v_WndProc_Original, CTaskBand_v_WndProc_Hook},
         {R"(?_HandleItemResolved@CTaskBand@@IEAAXPEAURESOLVEDWINDOW@@PEAUITaskListUI@@PEAUITaskGroup@@PEAUITaskItem@@@Z)",
-         (void**)&CTaskBand__HandleItemResolved_Original,
-         (void*)CTaskBand__HandleItemResolved_Hook},
+         &CTaskBand__HandleItemResolved_Original,
+         CTaskBand__HandleItemResolved_Hook},
         {R"(?_Launch@CLauncherTask@CTaskBand@@AEAAJXZ)",
-         (void**)&CTaskBand__Launch_Original, (void*)CTaskBand__Launch_Hook},
-        {R"(?GetAppID@CTaskGroup@@UEAAPEBGXZ)",
-         (void**)&CTaskGroup_GetAppID_Original,
-         (void*)CTaskGroup_GetAppID_Hook},
+         &CTaskBand__Launch_Original, CTaskBand__Launch_Hook},
+        {R"(?GetAppID@CTaskGroup@@UEAAPEBGXZ)", &CTaskGroup_GetAppID_Original,
+         CTaskGroup_GetAppID_Hook},
         {R"(?IsImmersiveGroup@CTaskGroup@@UEAA_NXZ)",
-         (void**)&CTaskGroup_IsImmersiveGroup_Original,
-         (void*)CTaskGroup_IsImmersiveGroup_Hook},
+         &CTaskGroup_IsImmersiveGroup_Original,
+         CTaskGroup_IsImmersiveGroup_Hook},
         {R"(?GetApplicationIDList@CTaskGroup@@UEAAPEAU_ITEMIDLIST_ABSOLUTE@@XZ)",
-         (void**)&CTaskGroup_GetApplicationIDList_Original},
+         &CTaskGroup_GetApplicationIDList_Original},
         {R"(?GetShortcutIDList@CTaskGroup@@UEAAPEBU_ITEMIDLIST_ABSOLUTE@@XZ)",
-         (void**)&CTaskGroup_GetShortcutIDList_Original,
-         (void*)CTaskGroup_GetShortcutIDList_Hook},
+         &CTaskGroup_GetShortcutIDList_Original,
+         CTaskGroup_GetShortcutIDList_Hook},
         {R"(?SetShortcutIDList@CTaskGroup@@UEAAJPEBU_ITEMIDLIST_ABSOLUTE@@@Z)",
-         (void**)&CTaskGroup_SetShortcutIDList_Original},
+         &CTaskGroup_SetShortcutIDList_Original},
         {R"(?GetIconResource@CTaskGroup@@UEAAPEBGXZ)",
-         (void**)&CTaskGroup_GetIconResource_Original,
-         (void*)CTaskGroup_GetIconResource_Hook},
+         &CTaskGroup_GetIconResource_Original, CTaskGroup_GetIconResource_Hook},
         {R"(?_UpdateItemIcon@CTaskBand@@IEAAXPEAUITaskGroup@@PEAUITaskItem@@@Z)",
-         (void**)&CTaskBand__UpdateItemIcon_Original,
-         (void*)CTaskBand__UpdateItemIcon_Hook},
+         &CTaskBand__UpdateItemIcon_Original, CTaskBand__UpdateItemIcon_Hook},
         {R"(?Launch@CTaskBand@@UEAAJPEAUITaskGroup@@AEBUtagPOINT@@W4LaunchFromTaskbarOptions@@@Z)",
-         (void**)&CTaskBand_Launch_Original, (void*)CTaskBand_Launch_Hook},
+         &CTaskBand_Launch_Original, CTaskBand_Launch_Hook},
         {R"(?GetLauncherName@CTaskGroup@@UEAAJPEAPEAG@Z)",
-         (void**)&CTaskGroup_GetLauncherName_Original,
-         (void*)CTaskGroup_GetLauncherName_Hook},
+         &CTaskGroup_GetLauncherName_Original, CTaskGroup_GetLauncherName_Hook},
         {R"(?_GetJumpViewParams@CTaskListWnd@@IEBAJPEAUITaskBtnGroup@@PEAUITaskItem@@H_NPEAPEAUIJumpViewParams@JumpView@Shell@Internal@Windows@ABI@@@Z)",
-         (void**)&CTaskListWnd__GetJumpViewParams_Original,
-         (void*)CTaskListWnd__GetJumpViewParams_Hook},
+         &CTaskListWnd__GetJumpViewParams_Original,
+         CTaskListWnd__GetJumpViewParams_Hook},
         // {// Available from Windows 11.
-        //  R"()", (void**)&CTaskBtnGroup_GetIcon_Original,
-        //  (void*)CTaskBtnGroup_GetIcon_Hook, true},
+        //  R"()", &CTaskBtnGroup_GetIcon_Original, CTaskBtnGroup_GetIcon_Hook,
+        //  true},
         {// Available until Windows 10.
          R"(?_DrawRegularButton@CTaskBtnGroup@@AEAAXPEAUHDC__@@AEBUBUTTONRENDERINFO@@@Z)",
-         (void**)&CTaskBtnGroup__DrawRegularButton_Original,
-         (void*)CTaskBtnGroup__DrawRegularButton_Hook, true},
+         &CTaskBtnGroup__DrawRegularButton_Original,
+         CTaskBtnGroup__DrawRegularButton_Hook, true},
         {R"(?GetGroup@CTaskBtnGroup@@UEAAPEAUITaskGroup@@XZ)",
-         (void**)&CTaskBtnGroup_GetGroup_Original,
-         (void*)CTaskBtnGroup_GetGroup_Hook},
+         &CTaskBtnGroup_GetGroup_Original, CTaskBtnGroup_GetGroup_Hook},
         {R"(?_GetTBGroupFromGroup@CTaskListWnd@@IEAAPEAUITaskBtnGroup@@PEAUITaskGroup@@PEAH@Z)",
-         (void**)&CTaskListWnd__GetTBGroupFromGroup_Original},
+         &CTaskListWnd__GetTBGroupFromGroup_Original},
         {R"(?IsOnPrimaryTaskband@CTaskListWnd@@UEAAHXZ)",
-         (void**)&CTaskListWnd_IsOnPrimaryTaskband_Original},
+         &CTaskListWnd_IsOnPrimaryTaskband_Original},
         {R"(?_CreateTBGroup@CTaskListWnd@@IEAAPEAUITaskBtnGroup@@PEAUITaskGroup@@H@Z)",
-         (void**)&CTaskListWnd__CreateTBGroup_Original,
-         (void*)CTaskListWnd__CreateTBGroup_Hook},
+         &CTaskListWnd__CreateTBGroup_Original,
+         CTaskListWnd__CreateTBGroup_Hook},
         {// Available from Windows 11.
          R"(?HandleTaskGroupSwitchItemAdded@CTaskBand@@IEAAJPEAUISwitchItem@Multitasking@ComposableShell@Internal@Windows@ABI@@@Z)",
-         (void**)&CTaskBand_HandleTaskGroupSwitchItemAdded_Original,
-         (void*)CTaskBand_HandleTaskGroupSwitchItemAdded_Hook, true},
+         &CTaskBand_HandleTaskGroupSwitchItemAdded_Original,
+         CTaskBand_HandleTaskGroupSwitchItemAdded_Hook, true},
         // {// Available from Windows 11.
-        //  R"()", (void**)&CTaskListWnd_GroupChanged_Original, nullptr, true},
+        //  R"()", &CTaskListWnd_GroupChanged_Original, nullptr, true},
         {R"(?HandleTaskGroupPinned@CTaskListWnd@@UEAAXPEAUITaskGroup@@@Z)",
-         (void**)&CTaskListWnd_HandleTaskGroupPinned_Original},
+         &CTaskListWnd_HandleTaskGroupPinned_Original},
         {R"(?HandleTaskGroupUnpinned@CTaskListWnd@@UEAAXPEAUITaskGroup@@W4HandleTaskGroupUnpinnedFlags@@@Z)",
-         (void**)&CTaskListWnd_HandleTaskGroupUnpinned_Original},
+         &CTaskListWnd_HandleTaskGroupUnpinned_Original},
         {// An older variant, see the newer variant below.
          R"(?TaskDestroyed@CTaskListWnd@@UEAAJPEAUITaskGroup@@PEAUITaskItem@@W4TaskDestroyedFlags@@@Z)",
-         (void**)&CTaskListWnd_TaskDestroyed_Original,
-         (void*)CTaskListWnd_TaskDestroyed_Hook, true},
+         &CTaskListWnd_TaskDestroyed_Original, CTaskListWnd_TaskDestroyed_Hook,
+         true},
         // {// A newer variant seen in insider builds.
-        //  R"()", (void**)&CTaskListWnd_TaskDestroyed_2_Original,
-        //  (void*)CTaskListWnd_TaskDestroyed_2_Hook, true},
+        //  R"()", &CTaskListWnd_TaskDestroyed_2_Original,
+        //  CTaskListWnd_TaskDestroyed_2_Hook, true},
         {R"(?_TaskCreated@CTaskListWnd@@IEAAJPEAUITaskGroup@@PEAUITaskItem@@H@Z)",
-         (void**)&CTaskListWnd__TaskCreated_Original,
-         (void*)CTaskListWnd__TaskCreated_Hook},
+         &CTaskListWnd__TaskCreated_Original, CTaskListWnd__TaskCreated_Hook},
     };
 
     bool succeeded = true;
@@ -1463,14 +1475,16 @@ bool HookExplorerPatcherSymbols(HMODULE explorerPatcherModule) {
         }
     }
 
-    if (g_initialized) {
+    if (!succeeded) {
+        Wh_Log(L"HookExplorerPatcherSymbols failed");
+    } else if (g_initialized) {
         Wh_ApplyHookOperations();
     }
 
     return succeeded;
 }
 
-bool HandleModuleIfExplorerPatcher(HMODULE module) {
+bool IsExplorerPatcherModule(HMODULE module) {
     WCHAR moduleFilePath[MAX_PATH];
     switch (
         GetModuleFileName(module, moduleFilePath, ARRAYSIZE(moduleFilePath))) {
@@ -1486,24 +1500,28 @@ bool HandleModuleIfExplorerPatcher(HMODULE module) {
 
     moduleFileName++;
 
-    if (_wcsnicmp(L"ep_taskbar.", moduleFileName, sizeof("ep_taskbar.") - 1) !=
+    if (_wcsnicmp(L"ep_taskbar.", moduleFileName, sizeof("ep_taskbar.") - 1) ==
         0) {
+        Wh_Log(L"ExplorerPatcher taskbar module: %s", moduleFileName);
         return true;
     }
 
-    Wh_Log(L"ExplorerPatcher taskbar loaded: %s", moduleFileName);
-    return HookExplorerPatcherSymbols(module);
+    return false;
 }
 
-void HandleLoadedExplorerPatcher() {
+bool HandleLoadedExplorerPatcher() {
     HMODULE hMods[1024];
     DWORD cbNeeded;
     if (EnumProcessModules(GetCurrentProcess(), hMods, sizeof(hMods),
                            &cbNeeded)) {
         for (size_t i = 0; i < cbNeeded / sizeof(HMODULE); i++) {
-            HandleModuleIfExplorerPatcher(hMods[i]);
+            if (IsExplorerPatcherModule(hMods[i])) {
+                return HookExplorerPatcherSymbols(hMods[i]);
+            }
         }
     }
+
+    return true;
 }
 
 using LoadLibraryExW_t = decltype(&LoadLibraryExW);
@@ -1513,7 +1531,9 @@ HMODULE WINAPI LoadLibraryExW_Hook(LPCWSTR lpLibFileName,
                                    DWORD dwFlags) {
     HMODULE module = LoadLibraryExW_Original(lpLibFileName, hFile, dwFlags);
     if (module && !((ULONG_PTR)module & 3) && !g_explorerPatcherInitialized) {
-        HandleModuleIfExplorerPatcher(module);
+        if (IsExplorerPatcherModule(module)) {
+            HookExplorerPatcherSymbols(module);
+        }
     }
 
     return module;
@@ -1521,193 +1541,194 @@ HMODULE WINAPI LoadLibraryExW_Hook(LPCWSTR lpLibFileName,
 
 bool HookTaskbarSymbols() {
     // Taskbar.dll, explorer.exe
-    WindhawkUtils::SYMBOL_HOOK symbolHooks[] = {
-        {
-            {LR"(public: virtual int __cdecl CTaskGroup::GetNumItems(void))"},
-            (void**)&CTaskGroup_GetNumItems_Original,
-        },
-        {
-            {LR"(public: virtual long __cdecl CTaskGroup::SetAppID(unsigned short const *))"},
-            (void**)&CTaskGroup_SetAppID_Original,
-        },
-        {
-            {LR"(public: virtual unsigned long __cdecl CTaskGroup::GetFlags(void)const )"},
-            (void**)&CTaskGroup_GetFlags_Original,
-        },
-        {
-            {LR"(public: virtual long __cdecl CTaskGroup::UpdateFlags(unsigned long,unsigned long))"},
-            (void**)&CTaskGroup_UpdateFlags_Original,
-        },
-        {
-            {LR"(public: virtual long __cdecl CTaskGroup::GetTitleText(struct ITaskItem *,unsigned short *,int))"},
-            (void**)&CTaskGroup_GetTitleText_Original,
-        },
-        {
-            {LR"(public: virtual long __cdecl CTaskGroup::SetTip(unsigned short const *))"},
-            (void**)&CTaskGroup_SetTip_Original,
-        },
-        {
-            {LR"(public: virtual long __cdecl CTaskGroup::GetIconId(struct ITaskItem *,int *))"},
-            (void**)&CTaskGroup_GetIconId_Original,
-        },
-        {
-            {LR"(public: virtual long __cdecl CTaskGroup::SetIconId(struct ITaskItem *,int))"},
-            (void**)&CTaskGroup_SetIconId_Original,
-        },
-        {
-            {LR"(public: virtual long __cdecl CTaskGroup::DoesWindowMatch(struct HWND__ *,struct _ITEMIDLIST_ABSOLUTE const *,unsigned short const *,enum WINDOWMATCHCONFIDENCE *,struct ITaskItem * *))"},
-            (void**)&CTaskGroup_DoesWindowMatch_Original,
-        },
-        {
-            {LR"(protected: long __cdecl CTaskBand::_MatchWindow(struct HWND__ *,struct _ITEMIDLIST_ABSOLUTE const *,unsigned short const *,enum WINDOWMATCHCONFIDENCE,struct ITaskGroup * *,struct ITaskItem * *))"},
-            (void**)&CTaskBand__MatchWindow_Original,
-        },
-        {
-            {LR"(public: virtual enum eTBGROUPTYPE __cdecl CTaskBtnGroup::GetGroupType(void))"},
-            (void**)&CTaskBtnGroup_GetGroupType_Original,
-        },
-        {
-            {LR"(protected: void __cdecl CTaskBand::_HandleWindowResolved(struct RESOLVEDWINDOW *))"},
-            (void**)&CTaskBand__HandleWindowResolved_Original,
-            (void*)CTaskBand__HandleWindowResolved_Hook,
-        },
-        {
-            {LR"(protected: void __cdecl CTaskBand::_HandleItemResolved(struct RESOLVEDWINDOW *,struct ITaskListUI *,struct ITaskGroup *,struct ITaskItem *))"},
-            (void**)&CTaskBand__HandleItemResolved_Original,
-            (void*)CTaskBand__HandleItemResolved_Hook,
-        },
-        {
-            {LR"(private: long __cdecl CTaskBand::CLauncherTask::_Launch(void))"},
-            (void**)&CTaskBand__Launch_Original,
-            (void*)CTaskBand__Launch_Hook,
-        },
-        {
-            {LR"(public: virtual unsigned short const * __cdecl CTaskGroup::GetAppID(void))"},
-            (void**)&CTaskGroup_GetAppID_Original,
-            (void*)CTaskGroup_GetAppID_Hook,
-        },
-        {
-            {LR"(public: virtual bool __cdecl CTaskGroup::IsImmersiveGroup(void))"},
-            (void**)&CTaskGroup_IsImmersiveGroup_Original,
-            (void*)CTaskGroup_IsImmersiveGroup_Hook,
-        },
-        {
-            {LR"(public: virtual struct _ITEMIDLIST_ABSOLUTE * __cdecl CTaskGroup::GetApplicationIDList(void))"},
-            (void**)&CTaskGroup_GetApplicationIDList_Original,
-        },
-        {
-            {LR"(public: virtual struct _ITEMIDLIST_ABSOLUTE const * __cdecl CTaskGroup::GetShortcutIDList(void))"},
-            (void**)&CTaskGroup_GetShortcutIDList_Original,
-            (void*)CTaskGroup_GetShortcutIDList_Hook,
-        },
-        {
-            {LR"(public: virtual long __cdecl CTaskGroup::SetShortcutIDList(struct _ITEMIDLIST_ABSOLUTE const *))"},
-            (void**)&CTaskGroup_SetShortcutIDList_Original,
-        },
-        {
-            {LR"(public: virtual unsigned short const * __cdecl CTaskGroup::GetIconResource(void))"},
-            (void**)&CTaskGroup_GetIconResource_Original,
-            (void*)CTaskGroup_GetIconResource_Hook,
-        },
-        {
-            {LR"(protected: void __cdecl CTaskBand::_UpdateItemIcon(struct ITaskGroup *,struct ITaskItem *))"},
-            (void**)&CTaskBand__UpdateItemIcon_Original,
-            (void*)CTaskBand__UpdateItemIcon_Hook,
-        },
-        {
-            {LR"(public: virtual long __cdecl CTaskBand::Launch(struct ITaskGroup *,struct tagPOINT const &,enum LaunchFromTaskbarOptions))"},
-            (void**)&CTaskBand_Launch_Original,
-            (void*)CTaskBand_Launch_Hook,
-        },
-        {
-            {LR"(public: virtual long __cdecl CTaskGroup::GetLauncherName(unsigned short * *))"},
-            (void**)&CTaskGroup_GetLauncherName_Original,
-            (void*)CTaskGroup_GetLauncherName_Hook,
-        },
-        {
-            {LR"(protected: long __cdecl CTaskListWnd::_GetJumpViewParams(struct ITaskBtnGroup *,struct ITaskItem *,int,bool,struct Windows::Internal::Shell::JumpView::IJumpViewParams * *)const )"},
-            (void**)&CTaskListWnd__GetJumpViewParams_Original,
-            (void*)CTaskListWnd__GetJumpViewParams_Hook,
-        },
-        {
-            // Available from Windows 11.
-            {LR"(public: virtual long __cdecl CTaskBtnGroup::GetIcon(struct ITaskItem *,struct HICON__ * *))"},
-            (void**)&CTaskBtnGroup_GetIcon_Original,
-            (void*)CTaskBtnGroup_GetIcon_Hook,
-            true,
-        },
-        {
-            // Available until Windows 10.
-            {LR"(private: void __cdecl CTaskBtnGroup::_DrawRegularButton(struct HDC__ *,struct BUTTONRENDERINFO const &))"},
-            (void**)&CTaskBtnGroup__DrawRegularButton_Original,
-            (void*)CTaskBtnGroup__DrawRegularButton_Hook,
-            true,
-        },
-        {
-            {LR"(public: virtual struct ITaskGroup * __cdecl CTaskBtnGroup::GetGroup(void))"},
-            (void**)&CTaskBtnGroup_GetGroup_Original,
-            (void*)CTaskBtnGroup_GetGroup_Hook,
-        },
-        {
-            {LR"(protected: struct ITaskBtnGroup * __cdecl CTaskListWnd::_GetTBGroupFromGroup(struct ITaskGroup *,int *))"},
-            (void**)&CTaskListWnd__GetTBGroupFromGroup_Original,
-        },
-        {
-            {LR"(public: virtual int __cdecl CTaskListWnd::IsOnPrimaryTaskband(void))"},
-            (void**)&CTaskListWnd_IsOnPrimaryTaskband_Original,
-        },
-        {
-            {LR"(protected: struct ITaskBtnGroup * __cdecl CTaskListWnd::_CreateTBGroup(struct ITaskGroup *,int))"},
-            (void**)&CTaskListWnd__CreateTBGroup_Original,
-            (void*)CTaskListWnd__CreateTBGroup_Hook,
-        },
-        {
-            // Available from Windows 11.
-            {LR"(protected: void __cdecl CTaskBand::HandleTaskGroupSwitchItemAdded(struct winrt::Windows::Internal::ComposableShell::Multitasking::ISwitchItem const &))"},
-            (void**)&CTaskBand_HandleTaskGroupSwitchItemAdded_Original,
-            (void*)CTaskBand_HandleTaskGroupSwitchItemAdded_Hook,
-            true,
-        },
-        {
-            // Available from Windows 11.
-            {LR"(public: virtual void __cdecl CTaskListWnd::GroupChanged(struct ITaskGroup *,enum winrt::WindowsUdk::UI::Shell::TaskGroupProperty))"},
-            (void**)&CTaskListWnd_GroupChanged_Original,
-            nullptr,
-            true,
-        },
-        {
-            {LR"(public: virtual void __cdecl CTaskListWnd::HandleTaskGroupPinned(struct ITaskGroup *))"},
-            (void**)&CTaskListWnd_HandleTaskGroupPinned_Original,
-        },
+    WindhawkUtils::SYMBOL_HOOK symbolHooks[] =  //
         {
             {
-                LR"(public: virtual void __cdecl CTaskListWnd::HandleTaskGroupUnpinned(struct ITaskGroup *))",
-
-                // Before Windows 11 24H2.
-                LR"(public: virtual void __cdecl CTaskListWnd::HandleTaskGroupUnpinned(struct ITaskGroup *,enum HandleTaskGroupUnpinnedFlags))",
+                {LR"(public: virtual int __cdecl CTaskGroup::GetNumItems(void))"},
+                (void**)&CTaskGroup_GetNumItems_Original,
             },
-            (void**)&CTaskListWnd_HandleTaskGroupUnpinned_Original,
-        },
-        {
-            // An older variant, see the newer variant below.
-            {LR"(public: virtual long __cdecl CTaskListWnd::TaskDestroyed(struct ITaskGroup *,struct ITaskItem *,enum TaskDestroyedFlags))"},
-            (void**)&CTaskListWnd_TaskDestroyed_Original,
-            (void*)CTaskListWnd_TaskDestroyed_Hook,
-            true,
-        },
-        {
-            // A newer variant seen in insider builds.
-            {LR"(public: virtual long __cdecl CTaskListWnd::TaskDestroyed(struct ITaskGroup *,struct ITaskItem *))"},
-            (void**)&CTaskListWnd_TaskDestroyed_2_Original,
-            (void*)CTaskListWnd_TaskDestroyed_2_Hook,
-            true,
-        },
-        {
-            {LR"(protected: long __cdecl CTaskListWnd::_TaskCreated(struct ITaskGroup *,struct ITaskItem *,int))"},
-            (void**)&CTaskListWnd__TaskCreated_Original,
-            (void*)CTaskListWnd__TaskCreated_Hook,
-        },
-    };
+            {
+                {LR"(public: virtual long __cdecl CTaskGroup::SetAppID(unsigned short const *))"},
+                (void**)&CTaskGroup_SetAppID_Original,
+            },
+            {
+                {LR"(public: virtual unsigned long __cdecl CTaskGroup::GetFlags(void)const )"},
+                (void**)&CTaskGroup_GetFlags_Original,
+            },
+            {
+                {LR"(public: virtual long __cdecl CTaskGroup::UpdateFlags(unsigned long,unsigned long))"},
+                (void**)&CTaskGroup_UpdateFlags_Original,
+            },
+            {
+                {LR"(public: virtual long __cdecl CTaskGroup::GetTitleText(struct ITaskItem *,unsigned short *,int))"},
+                (void**)&CTaskGroup_GetTitleText_Original,
+            },
+            {
+                {LR"(public: virtual long __cdecl CTaskGroup::SetTip(unsigned short const *))"},
+                (void**)&CTaskGroup_SetTip_Original,
+            },
+            {
+                {LR"(public: virtual long __cdecl CTaskGroup::GetIconId(struct ITaskItem *,int *))"},
+                (void**)&CTaskGroup_GetIconId_Original,
+            },
+            {
+                {LR"(public: virtual long __cdecl CTaskGroup::SetIconId(struct ITaskItem *,int))"},
+                (void**)&CTaskGroup_SetIconId_Original,
+            },
+            {
+                {LR"(public: virtual long __cdecl CTaskGroup::DoesWindowMatch(struct HWND__ *,struct _ITEMIDLIST_ABSOLUTE const *,unsigned short const *,enum WINDOWMATCHCONFIDENCE *,struct ITaskItem * *))"},
+                (void**)&CTaskGroup_DoesWindowMatch_Original,
+            },
+            {
+                {LR"(protected: long __cdecl CTaskBand::_MatchWindow(struct HWND__ *,struct _ITEMIDLIST_ABSOLUTE const *,unsigned short const *,enum WINDOWMATCHCONFIDENCE,struct ITaskGroup * *,struct ITaskItem * *))"},
+                (void**)&CTaskBand__MatchWindow_Original,
+            },
+            {
+                {LR"(public: virtual enum eTBGROUPTYPE __cdecl CTaskBtnGroup::GetGroupType(void))"},
+                (void**)&CTaskBtnGroup_GetGroupType_Original,
+            },
+            {
+                {LR"(protected: virtual __int64 __cdecl CTaskBand::v_WndProc(struct HWND__ *,unsigned int,unsigned __int64,__int64))"},
+                (void**)&CTaskBand_v_WndProc_Original,
+                (void*)CTaskBand_v_WndProc_Hook,
+            },
+            {
+                {LR"(protected: void __cdecl CTaskBand::_HandleItemResolved(struct RESOLVEDWINDOW *,struct ITaskListUI *,struct ITaskGroup *,struct ITaskItem *))"},
+                (void**)&CTaskBand__HandleItemResolved_Original,
+                (void*)CTaskBand__HandleItemResolved_Hook,
+            },
+            {
+                {LR"(private: long __cdecl CTaskBand::CLauncherTask::_Launch(void))"},
+                (void**)&CTaskBand__Launch_Original,
+                (void*)CTaskBand__Launch_Hook,
+            },
+            {
+                {LR"(public: virtual unsigned short const * __cdecl CTaskGroup::GetAppID(void))"},
+                (void**)&CTaskGroup_GetAppID_Original,
+                (void*)CTaskGroup_GetAppID_Hook,
+            },
+            {
+                {LR"(public: virtual bool __cdecl CTaskGroup::IsImmersiveGroup(void))"},
+                (void**)&CTaskGroup_IsImmersiveGroup_Original,
+                (void*)CTaskGroup_IsImmersiveGroup_Hook,
+            },
+            {
+                {LR"(public: virtual struct _ITEMIDLIST_ABSOLUTE * __cdecl CTaskGroup::GetApplicationIDList(void))"},
+                (void**)&CTaskGroup_GetApplicationIDList_Original,
+            },
+            {
+                {LR"(public: virtual struct _ITEMIDLIST_ABSOLUTE const * __cdecl CTaskGroup::GetShortcutIDList(void))"},
+                (void**)&CTaskGroup_GetShortcutIDList_Original,
+                (void*)CTaskGroup_GetShortcutIDList_Hook,
+            },
+            {
+                {LR"(public: virtual long __cdecl CTaskGroup::SetShortcutIDList(struct _ITEMIDLIST_ABSOLUTE const *))"},
+                (void**)&CTaskGroup_SetShortcutIDList_Original,
+            },
+            {
+                {LR"(public: virtual unsigned short const * __cdecl CTaskGroup::GetIconResource(void))"},
+                (void**)&CTaskGroup_GetIconResource_Original,
+                (void*)CTaskGroup_GetIconResource_Hook,
+            },
+            {
+                {LR"(protected: void __cdecl CTaskBand::_UpdateItemIcon(struct ITaskGroup *,struct ITaskItem *))"},
+                (void**)&CTaskBand__UpdateItemIcon_Original,
+                (void*)CTaskBand__UpdateItemIcon_Hook,
+            },
+            {
+                {LR"(public: virtual long __cdecl CTaskBand::Launch(struct ITaskGroup *,struct tagPOINT const &,enum LaunchFromTaskbarOptions))"},
+                (void**)&CTaskBand_Launch_Original,
+                (void*)CTaskBand_Launch_Hook,
+            },
+            {
+                {LR"(public: virtual long __cdecl CTaskGroup::GetLauncherName(unsigned short * *))"},
+                (void**)&CTaskGroup_GetLauncherName_Original,
+                (void*)CTaskGroup_GetLauncherName_Hook,
+            },
+            {
+                {LR"(protected: long __cdecl CTaskListWnd::_GetJumpViewParams(struct ITaskBtnGroup *,struct ITaskItem *,int,bool,struct Windows::Internal::Shell::JumpView::IJumpViewParams * *)const )"},
+                (void**)&CTaskListWnd__GetJumpViewParams_Original,
+                (void*)CTaskListWnd__GetJumpViewParams_Hook,
+            },
+            {
+                // Available from Windows 11.
+                {LR"(public: virtual long __cdecl CTaskBtnGroup::GetIcon(struct ITaskItem *,struct HICON__ * *))"},
+                (void**)&CTaskBtnGroup_GetIcon_Original,
+                (void*)CTaskBtnGroup_GetIcon_Hook,
+                true,
+            },
+            {
+                // Available until Windows 10.
+                {LR"(private: void __cdecl CTaskBtnGroup::_DrawRegularButton(struct HDC__ *,struct BUTTONRENDERINFO const &))"},
+                (void**)&CTaskBtnGroup__DrawRegularButton_Original,
+                (void*)CTaskBtnGroup__DrawRegularButton_Hook,
+                true,
+            },
+            {
+                {LR"(public: virtual struct ITaskGroup * __cdecl CTaskBtnGroup::GetGroup(void))"},
+                (void**)&CTaskBtnGroup_GetGroup_Original,
+                (void*)CTaskBtnGroup_GetGroup_Hook,
+            },
+            {
+                {LR"(protected: struct ITaskBtnGroup * __cdecl CTaskListWnd::_GetTBGroupFromGroup(struct ITaskGroup *,int *))"},
+                (void**)&CTaskListWnd__GetTBGroupFromGroup_Original,
+            },
+            {
+                {LR"(public: virtual int __cdecl CTaskListWnd::IsOnPrimaryTaskband(void))"},
+                (void**)&CTaskListWnd_IsOnPrimaryTaskband_Original,
+            },
+            {
+                {LR"(protected: struct ITaskBtnGroup * __cdecl CTaskListWnd::_CreateTBGroup(struct ITaskGroup *,int))"},
+                (void**)&CTaskListWnd__CreateTBGroup_Original,
+                (void*)CTaskListWnd__CreateTBGroup_Hook,
+            },
+            {
+                // Available from Windows 11.
+                {LR"(protected: void __cdecl CTaskBand::HandleTaskGroupSwitchItemAdded(struct winrt::Windows::Internal::ComposableShell::Multitasking::ISwitchItem const &))"},
+                (void**)&CTaskBand_HandleTaskGroupSwitchItemAdded_Original,
+                (void*)CTaskBand_HandleTaskGroupSwitchItemAdded_Hook,
+                true,
+            },
+            {
+                // Available from Windows 11.
+                {LR"(public: virtual void __cdecl CTaskListWnd::GroupChanged(struct ITaskGroup *,enum winrt::WindowsUdk::UI::Shell::TaskGroupProperty))"},
+                (void**)&CTaskListWnd_GroupChanged_Original,
+                nullptr,
+                true,
+            },
+            {
+                {LR"(public: virtual void __cdecl CTaskListWnd::HandleTaskGroupPinned(struct ITaskGroup *))"},
+                (void**)&CTaskListWnd_HandleTaskGroupPinned_Original,
+            },
+            {
+                {
+                    LR"(public: virtual void __cdecl CTaskListWnd::HandleTaskGroupUnpinned(struct ITaskGroup *))",
+
+                    // Before Windows 11 24H2.
+                    LR"(public: virtual void __cdecl CTaskListWnd::HandleTaskGroupUnpinned(struct ITaskGroup *,enum HandleTaskGroupUnpinnedFlags))",
+                },
+                (void**)&CTaskListWnd_HandleTaskGroupUnpinned_Original,
+            },
+            {
+                // An older variant, see the newer variant below.
+                {LR"(public: virtual long __cdecl CTaskListWnd::TaskDestroyed(struct ITaskGroup *,struct ITaskItem *,enum TaskDestroyedFlags))"},
+                (void**)&CTaskListWnd_TaskDestroyed_Original,
+                (void*)CTaskListWnd_TaskDestroyed_Hook,
+                true,
+            },
+            {
+                // A newer variant seen in insider builds.
+                {LR"(public: virtual long __cdecl CTaskListWnd::TaskDestroyed(struct ITaskGroup *,struct ITaskItem *))"},
+                (void**)&CTaskListWnd_TaskDestroyed_2_Original,
+                (void*)CTaskListWnd_TaskDestroyed_2_Hook,
+                true,
+            },
+            {
+                {LR"(protected: long __cdecl CTaskListWnd::_TaskCreated(struct ITaskGroup *,struct ITaskItem *,int))"},
+                (void**)&CTaskListWnd__TaskCreated_Original,
+                (void*)CTaskListWnd__TaskCreated_Hook,
+            },
+        };
 
     HMODULE module;
     if (g_winVersion <= WinVersion::Win10) {
@@ -1843,7 +1864,10 @@ BOOL Wh_ModInit() {
         return FALSE;
     }
 
-    HandleLoadedExplorerPatcher();
+    if (!HandleLoadedExplorerPatcher()) {
+        Wh_Log(L"HandleLoadedExplorerPatcher failed");
+        return FALSE;
+    }
 
     HMODULE kernelBaseModule = GetModuleHandle(L"kernelbase.dll");
     FARPROC pKernelBaseLoadLibraryExW =

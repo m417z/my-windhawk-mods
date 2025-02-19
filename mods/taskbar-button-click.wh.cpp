@@ -30,7 +30,7 @@ instance.
 Holding Ctrl while middle clicking will end the running task. The key
 combination can be configured or disabled in the mod settings.
 
-Only Windows 10 64-bit and Windows 11 are supported. For other Windows versions
+Only Windows 10 64-bit and Windows 11 are supported. For older Windows versions
 check out [7+ Taskbar Tweaker](https://tweaker.ramensoftware.com/).
 
 **Note:** To customize the old taskbar on Windows 11 (if using ExplorerPatcher

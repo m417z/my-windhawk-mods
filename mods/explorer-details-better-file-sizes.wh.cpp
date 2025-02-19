@@ -2,15 +2,14 @@
 // @id              explorer-details-better-file-sizes
 // @name            Better file sizes in Explorer details
 // @description     Optional improvements: show folder sizes, use MB/GB for large files (by default, all sizes are shown in KBs), use IEC terms (such as KiB instead of KB)
-// @version         1.4.7
+// @version         1.4.8
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
 // @homepage        https://m417z.com/
 // @include         *
 // @exclude         conhost.exe
-// @exclude         Plex.exe
-// @exclude         Plex Media Server.exe
+// @exclude         Plex*.exe
 // @compilerOptions -lole32 -loleaut32 -lpropsys
 // ==/WindhawkMod==
 
@@ -1169,25 +1168,21 @@ std::atomic<DWORD> g_gsReplyCounter;
 enum : unsigned {
     ES_QUERY_OK,
     ES_QUERY_NO_INDEX,
-    ES_QUERY_NO_MEMORY,
     ES_QUERY_NO_ES_IPC,
     ES_QUERY_NO_PLUGIN_IPC,
     ES_QUERY_TIMEOUT,
     ES_QUERY_REPLY_TIMEOUT,
-    ES_QUERY_NO_RESULT,
-    ES_QUERY_DISABLED,
+    ES_QUERY_ZERO_SIZE_REPARSE_POINT,
 };
 
 PCWSTR g_gsQueryStatus[] = {
     L"Ok",
     L"No Index",
-    L"No Memory",
     L"No ES IPC",
     L"No Plugin IPC",
     L"Query Timeout",
     L"Reply Timeout",
-    L"No Result",
-    L"Disabled",
+    L"Zero-size reparse point",
 };
 
 HANDLE g_everything4Wh_Thread;
@@ -1263,8 +1258,12 @@ unsigned Everything4Wh_GetFileSize(PCWSTR folderPath, int64_t* size) {
         *size = Everything3_GetFolderSizeFromFilenameW(pClient, folderPath);
         Everything3_DestroyClient(pClient);
 
-        if (*size == -1 || (!*size && IsReparse(folderPath))) {
+        if (*size == -1) {
             return ES_QUERY_NO_INDEX;
+        }
+
+        if (!*size && IsReparse(folderPath)) {
+            return ES_QUERY_ZERO_SIZE_REPARSE_POINT;
         }
 
         return ES_QUERY_OK;
@@ -1334,9 +1333,9 @@ unsigned Everything4Wh_GetFileSize(PCWSTR folderPath, int64_t* size) {
         if (waitResult != WAIT_OBJECT_0) {
             result = ES_QUERY_REPLY_TIMEOUT;
         } else if (!g_gsReply.bResult) {
-            result = ES_QUERY_NO_RESULT;
-        } else if (!g_gsReply.liSize && IsReparse(folderPath)) {
             result = ES_QUERY_NO_INDEX;
+        } else if (!g_gsReply.liSize && IsReparse(folderPath)) {
+            result = ES_QUERY_ZERO_SIZE_REPARSE_POINT;
         } else {
             *size = g_gsReply.liSize;
             result = ES_QUERY_OK;
@@ -1673,15 +1672,26 @@ HRESULT WINAPI CFSFolder__GetSize_Hook(void* pCFSFolder,
                 int64_t size;
                 unsigned result = Everything4Wh_GetFileSize(path, &size);
 
-                if (result == ES_QUERY_NO_RESULT ||
+                // Regular reparse points are indexed with size 0, and
+                // ES_QUERY_ZERO_SIZE_REPARSE_POINT is returned when querying
+                // the link itself. Subfolders of reparse points aren't indexed,
+                // so ES_QUERY_NO_INDEX is returned in this case.
+                if (result == ES_QUERY_ZERO_SIZE_REPARSE_POINT ||
                     result == ES_QUERY_NO_INDEX) {
-                    // Try resolving the path in case it contains a reparse
-                    // point.
                     auto resolved = ResolvePath(path);
                     if (resolved.empty()) {
                         Wh_Log(L"Failed to resolve path");
                     } else if (resolved == path) {
                         Wh_Log(L"Path is already resolved");
+
+                        // In some cases, reparse points are indexed with the
+                        // real size. In these cases, it was observed that the
+                        // path resolves to itself. An example is OneDrive, see:
+                        // https://github.com/ramensoftware/windhawk-mods/issues/1527
+                        if (result == ES_QUERY_ZERO_SIZE_REPARSE_POINT) {
+                            size = 0;
+                            result = ES_QUERY_OK;
+                        }
                     } else {
                         Wh_Log(L"Trying resolved path %s", resolved.c_str());
                         result =

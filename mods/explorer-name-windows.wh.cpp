@@ -35,12 +35,12 @@ Assign custom names to explorer windows, just like in Chrome.
 #include <string>
 #include <unordered_map>
 
-struct CabinedWindowData {
+struct CabinetWindowData {
     std::wstring originalText;
     std::wstring customText;
 };
 
-std::unordered_map<HWND, CabinedWindowData> g_cabinetWindows;
+std::unordered_map<HWND, CabinetWindowData> g_cabinetWindows;
 
 constexpr UINT_PTR IDM_MYSYSTEM = 1001;
 

@@ -90,11 +90,24 @@ With labels:
   - top: Top
   - center: Center
   - bottom: Bottom
+- startMenuAlignment: top
+  $name: Start menu vertical alignment
+  $options:
+  - top: Top
+  - center: Center
+  - bottom: Bottom
 - startMenuWidth: 0
   $name: Start menu width
   $description: >-
     Set to zero to use the system default width, set to a custom value if using
     a customized start menu, e.g. with the Windows 11 Start Menu Styler mod
+- clockContainerHeight: 0
+  $name: Clock container height
+  $description: >-
+    Set to zero to use the default height value, setting a custom height can be
+    useful for a customized clock with a non-standard size
+
+    Note: Disable and re-enable the mod to apply this option
 */
 // ==/WindhawkModSettings==
 
@@ -138,13 +151,23 @@ enum class JumpListAlignment {
     bottom,
 };
 
+enum class StartMenuAlignment {
+    top,
+    center,
+    bottom,
+};
+
 struct {
     TaskbarLocation taskbarLocation;
     TaskbarLocation taskbarLocationSecondary;
     int taskbarWidth;
     JumpListAlignment jumpListAlignment;
+    StartMenuAlignment startMenuAlignment;
     int startMenuWidth;
+    int clockContainerHeight;
 } g_settings;
+
+constexpr int kDefaultClockContainerHeight = 40;
 
 enum class Target {
     Explorer,
@@ -1572,11 +1595,17 @@ void ApplySystemTrayIconStyle(FrameworkElement systemTrayIconElement) {
     float origin = g_unloading ? 0 : 0.5;
     iconContent.RenderTransformOrigin({origin, origin});
 
+    int clockContainerHeight = g_settings.clockContainerHeight;
+    if (clockContainerHeight <= 0) {
+        clockContainerHeight = kDefaultClockContainerHeight;
+    }
+
     if (g_unloading) {
         iconContent.as<DependencyObject>().ClearValue(
             FrameworkElement::MaxHeightProperty());
     } else {
-        iconContent.MaxHeight(isDateTimeIcon ? 40 : iconContent.ActualWidth());
+        iconContent.MaxHeight(isDateTimeIcon ? clockContainerHeight
+                                             : iconContent.ActualWidth());
     }
 
     if (isDateTimeIcon) {
@@ -1589,11 +1618,13 @@ void ApplySystemTrayIconStyle(FrameworkElement systemTrayIconElement) {
                 FrameworkElement::MarginProperty());
         } else {
             double width = g_settings.taskbarWidth - 4;
-            double height = 40;
+            double height = clockContainerHeight;
             iconContent.Width(width);
             iconContent.Height(height);
-            double marginValue = -(width - height) / 2;
-            iconContent.Margin(Thickness{marginValue, 0, marginValue, 0});
+            double marginValue = (width - height) / 2;
+
+            iconContent.Margin(Thickness{-marginValue, marginValue,
+                                         -marginValue, marginValue});
         }
 
         FrameworkElement stackPanel = nullptr;
@@ -1921,6 +1952,10 @@ void UpdateTaskListButton(FrameworkElement taskListButtonElement) {
         return;
     }
 
+    // For some reason, translation is being set to a NaN.
+    iconElement.Translation(
+        winrt::Windows::Foundation::Numerics::float3::zero());
+
     double angle = g_unloading ? 0 : -90;
     Media::RotateTransform transform;
     transform.Angle(angle);
@@ -1928,10 +1963,6 @@ void UpdateTaskListButton(FrameworkElement taskListButtonElement) {
 
     float origin = g_unloading ? 0 : 0.5;
     iconElement.RenderTransformOrigin({origin, origin});
-
-    // For some reason, translation is being set to a NaN.
-    iconElement.Translation(
-        winrt::Windows::Foundation::Numerics::float3::zero());
 
     auto labelControlElement =
         FindChildByName(iconPanelElement, L"LabelControl");
@@ -3141,11 +3172,30 @@ HRESULT WINAPI DwmSetWindowAttribute_Hook(HWND hwnd,
             cyNew = h2;
         }
 
-        if (xNew == x && cxNew == cx && cyNew == cy) {
+        int yNew;
+        switch (g_settings.startMenuAlignment) {
+            case StartMenuAlignment::top:
+                yNew = monitorInfo.rcWork.top;
+                break;
+
+            case StartMenuAlignment::center:
+                yNew =
+                    monitorInfo.rcWork.top + (monitorInfo.rcWork.bottom -
+                                              monitorInfo.rcWork.top - cyNew) /
+                                                 2;
+                break;
+
+            case StartMenuAlignment::bottom:
+                yNew = monitorInfo.rcWork.bottom - cyNew;
+                break;
+        }
+
+        if (xNew == x && yNew == y && cxNew == cx && cyNew == cy) {
             return original();
         }
 
         x = xNew;
+        y = yNew;
         cx = cxNew;
         cy = cyNew;
         g_startMenuWnd = hwnd;
@@ -3161,7 +3211,22 @@ HRESULT WINAPI DwmSetWindowAttribute_Hook(HWND hwnd,
                 break;
         }
 
-        int yNew = monitorInfo.rcWork.top;
+        int yNew;
+        switch (g_settings.startMenuAlignment) {
+            case StartMenuAlignment::top:
+                yNew = monitorInfo.rcWork.top;
+                break;
+
+            case StartMenuAlignment::center:
+                yNew = monitorInfo.rcWork.top + (monitorInfo.rcWork.bottom -
+                                                 monitorInfo.rcWork.top - cy) /
+                                                    2;
+                break;
+
+            case StartMenuAlignment::bottom:
+                yNew = monitorInfo.rcWork.bottom - cy;
+                break;
+        }
 
         if (xNew == x && yNew == y) {
             return original();
@@ -3401,7 +3466,17 @@ void LoadSettings() {
     }
     Wh_FreeStringSetting(jumpListAlignment);
 
+    PCWSTR startMenuAlignment = Wh_GetStringSetting(L"startMenuAlignment");
+    g_settings.startMenuAlignment = StartMenuAlignment::top;
+    if (wcscmp(startMenuAlignment, L"center") == 0) {
+        g_settings.startMenuAlignment = StartMenuAlignment::center;
+    } else if (wcscmp(startMenuAlignment, L"bottom") == 0) {
+        g_settings.startMenuAlignment = StartMenuAlignment::bottom;
+    }
+    Wh_FreeStringSetting(startMenuAlignment);
+
     g_settings.startMenuWidth = Wh_GetIntSetting(L"startMenuWidth");
+    g_settings.clockContainerHeight = Wh_GetIntSetting(L"clockContainerHeight");
 }
 
 HWND GetTaskbarWnd() {
