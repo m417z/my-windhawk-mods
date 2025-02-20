@@ -567,30 +567,27 @@ BOOL Wh_ModInit() {
             return FALSE;
         }
     } else if (g_winVersion >= WinVersion::Win11) {
-        // For the new XAML thumbnail.
-        if (g_winVersion >= WinVersion::Win11_24H2) {
-            if (!HookTaskbarViewDllSymbols()) {
-                return FALSE;
-            }
-
-            HMODULE win32u = GetModuleHandle(L"win32u.dll");
-            if (!win32u) {
-                Wh_Log(L"Failed to get win32u.dll");
-                return FALSE;
-            }
-
-            WindhawkUtils::Wh_SetFunctionHookT(
-                (ShowWindow_t)GetProcAddress(win32u, "NtUserShowWindow"),
-                ShowWindow_Hook, &ShowWindow_Original);
-
-            WindhawkUtils::Wh_SetFunctionHookT(
-                (EnableWindow_t)GetProcAddress(win32u, "NtUserEnableWindow"),
-                EnableWindow_Hook, &EnableWindow_Original);
+        if (!HookTaskbarViewDllSymbols()) {
+            return FALSE;
         }
 
         if (!HookTaskbarSymbols()) {
             return FALSE;
         }
+
+        HMODULE win32u = GetModuleHandle(L"win32u.dll");
+        if (!win32u) {
+            Wh_Log(L"Failed to get win32u.dll");
+            return FALSE;
+        }
+
+        WindhawkUtils::Wh_SetFunctionHookT(
+            (ShowWindow_t)GetProcAddress(win32u, "NtUserShowWindow"),
+            ShowWindow_Hook, &ShowWindow_Original);
+
+        WindhawkUtils::Wh_SetFunctionHookT(
+            (EnableWindow_t)GetProcAddress(win32u, "NtUserEnableWindow"),
+            EnableWindow_Hook, &EnableWindow_Original);
     } else {
         if (!HookTaskbarSymbols()) {
             return FALSE;
