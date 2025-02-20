@@ -165,7 +165,7 @@ bool g_isEverything;
 HMODULE g_propsysModule;
 std::atomic<int> g_hookRefCount;
 
-thread_local bool g_inCFileOperation_PerformOperations;
+thread_local bool g_inCRecursiveFolderOperation_Prepare;
 
 auto hookRefCountScope() {
     g_hookRefCount++;
@@ -1616,7 +1616,7 @@ HRESULT WINAPI CFSFolder__GetSize_Hook(void* pCFSFolder,
 
     HRESULT ret = CFSFolder__GetSize_Original(pCFSFolder, itemidChild, idFolder,
                                               propVariant);
-    if (g_inCFileOperation_PerformOperations || ret != S_OK ||
+    if (g_inCRecursiveFolderOperation_Prepare || ret != S_OK ||
         propVariant->vt != VT_EMPTY) {
         return ret;
     }
@@ -1726,16 +1726,16 @@ HRESULT WINAPI CFSFolder__GetSize_Hook(void* pCFSFolder,
     return S_OK;
 }
 
-using CFileOperation_PerformOperations_t = HRESULT(WINAPI*)(void* pThis);
-CFileOperation_PerformOperations_t CFileOperation_PerformOperations_Original;
-HRESULT WINAPI CFileOperation_PerformOperations_Hook(void* pThis) {
+using CRecursiveFolderOperation_Prepare_t = HRESULT(__thiscall*)(void* pThis);
+CRecursiveFolderOperation_Prepare_t CRecursiveFolderOperation_Prepare_Original;
+HRESULT __thiscall CRecursiveFolderOperation_Prepare_Hook(void* pThis) {
     auto hookScope = hookRefCountScope();
 
-    g_inCFileOperation_PerformOperations = true;
+    g_inCRecursiveFolderOperation_Prepare = true;
 
-    HRESULT ret = CFileOperation_PerformOperations_Original(pThis);
+    HRESULT ret = CRecursiveFolderOperation_Prepare_Original(pThis);
 
-    g_inCFileOperation_PerformOperations = false;
+    g_inCRecursiveFolderOperation_Prepare = false;
 
     return ret;
 }
@@ -2052,13 +2052,13 @@ bool HookWindowsStorageSymbols() {
         {
             {
 #ifdef _WIN64
-                LR"(public: virtual long __cdecl CFileOperation::PerformOperations(void))",
+                LR"(public: long __cdecl CRecursiveFolderOperation::Prepare(void))",
 #else
-                LR"(public: virtual long __stdcall CFileOperation::PerformOperations(void))",
+                LR"(public: long __thiscall CRecursiveFolderOperation::Prepare(void))",
 #endif
             },
-            &CFileOperation_PerformOperations_Original,
-            CFileOperation_PerformOperations_Hook,
+            &CRecursiveFolderOperation_Prepare_Original,
+            CRecursiveFolderOperation_Prepare_Hook,
         },
         {
             {
