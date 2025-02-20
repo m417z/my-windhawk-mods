@@ -10,7 +10,7 @@
 // @include         *
 // @exclude         conhost.exe
 // @exclude         Plex*.exe
-// @compilerOptions -lole32 -loleaut32 -lpropsys
+// @compilerOptions -lole32 -loleaut32 -lpropsys -ldbghelp -lshlwapi -lversion
 // ==/WindhawkMod==
 
 // Source code is published under The GNU General Public License v3.0.
@@ -146,6 +146,12 @@ KiB?](https://devblogs.microsoft.com/oldnewthing/20090611-00/?p=17933).
 #include <shobjidl.h>
 #include <shtypes.h>
 #include <winrt/base.h>
+
+#include <dbghelp.h>
+#include <shlwapi.h>
+
+#include <sstream>
+#include <string>
 
 enum class CalculateFolderSizes {
     disabled,
@@ -1603,6 +1609,116 @@ bool GetFolderPathFromIShellFolder(IShellFolder2* shellFolder,
     return false;
 }
 
+VS_FIXEDFILEINFO* GetModuleVersionInfo(HMODULE hModule, UINT* puPtrLen) {
+    void* pFixedFileInfo = nullptr;
+    UINT uPtrLen = 0;
+
+    HRSRC hResource =
+        FindResource(hModule, MAKEINTRESOURCE(VS_VERSION_INFO), RT_VERSION);
+    if (hResource) {
+        HGLOBAL hGlobal = LoadResource(hModule, hResource);
+        if (hGlobal) {
+            void* pData = LockResource(hGlobal);
+            if (pData) {
+                if (!VerQueryValue(pData, L"\\", &pFixedFileInfo, &uPtrLen) ||
+                    uPtrLen == 0) {
+                    pFixedFileInfo = nullptr;
+                    uPtrLen = 0;
+                }
+            }
+        }
+    }
+
+    if (puPtrLen) {
+        *puPtrLen = uPtrLen;
+    }
+
+    return (VS_FIXEDFILEINFO*)pFixedFileInfo;
+}
+
+void AppendModuleNameVersion(std::wstring* string, HMODULE hModule) {
+    WCHAR buffer[1025];
+
+    WCHAR szModuleName[MAX_PATH];
+    if (!GetModuleFileName(hModule, szModuleName, _countof(szModuleName))) {
+        szModuleName[0] = L'?';
+        szModuleName[1] = L'\0';
+    }
+
+    *string += PathFindFileName(szModuleName);
+
+    VS_FIXEDFILEINFO* pFixedFileInfo = GetModuleVersionInfo(hModule, NULL);
+    if (pFixedFileInfo) {
+        wsprintf(buffer, L" %hu.%hu.%hu.%hu",
+                 HIWORD(pFixedFileInfo->dwFileVersionMS),  // Major version
+                 LOWORD(pFixedFileInfo->dwFileVersionMS),  // Minor version
+                 HIWORD(pFixedFileInfo->dwFileVersionLS),  // Build number
+                 LOWORD(pFixedFileInfo->dwFileVersionLS)   // QFE
+        );
+        *string += buffer;
+    }
+}
+
+#define PTR64BIT L"%016I64X"
+
+std::wstring GetStackTrace() {
+    std::wstring result;
+
+    unsigned int i;
+    void* stack[100];
+    unsigned short frames;
+    SYMBOL_INFOW* symbol;
+    HANDLE process;
+    HMODULE module_handle;
+    WCHAR buffer[1025];
+
+    process = GetCurrentProcess();
+
+    if (!SymInitialize(process, NULL, TRUE)) {
+        return result;
+    }
+
+    frames = CaptureStackBackTrace(0, 100, stack, NULL);
+    symbol =
+        (SYMBOL_INFOW*)HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY,
+                                 sizeof(SYMBOL_INFOW) + 256 * sizeof(WCHAR));
+    if (symbol) {
+        symbol->MaxNameLen = 255;
+        symbol->SizeOfStruct = sizeof(SYMBOL_INFOW);
+
+        for (i = 0; i < frames; i++) {
+            wsprintf(buffer, L"%i: %p", frames - i - 1, stack[i]);
+            result += buffer;
+
+            if (SymFromAddrW(process, (DWORD64)(stack[i]), 0, symbol)) {
+                wsprintf(buffer, L" (%s - " PTR64BIT L")", symbol->Name,
+                         symbol->Address);
+                result += buffer;
+            }
+
+            if (GetModuleHandleEx(
+                    GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
+                        GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                    (LPCWSTR)(stack[i]), &module_handle)) {
+                result += L" [";
+
+                AppendModuleNameVersion(&result, module_handle);
+
+                wsprintf(buffer, L" - %p]", module_handle);
+                result += buffer;
+            }
+
+            result += L"\n";
+        }
+
+        HeapFree(GetProcessHeap(), 0, symbol);
+    }
+
+    SymCleanup(process);
+
+    return result;
+}
+
 using CFSFolder__GetSize_t = HRESULT(WINAPI*)(void* pCFSFolder,
                                               const ITEMID_CHILD* itemidChild,
                                               const void* idFolder,
@@ -1620,6 +1736,14 @@ HRESULT WINAPI CFSFolder__GetSize_Hook(void* pCFSFolder,
         propVariant->vt != VT_EMPTY) {
         return ret;
     }
+
+    Wh_Log(L"======================================== XAML:");
+    std::wstringstream ss(GetStackTrace());
+    std::wstring line;
+    while (std::getline(ss, line, L'\n')) {
+        Wh_Log(L"%s", line.c_str());
+    }
+    Wh_Log(L"========================================");
 
     switch (g_settings.calculateFolderSizes) {
         case CalculateFolderSizes::disabled:
