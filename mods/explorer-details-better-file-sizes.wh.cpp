@@ -172,6 +172,7 @@ HMODULE g_propsysModule;
 std::atomic<int> g_hookRefCount;
 
 thread_local bool g_inCRecursiveFolderOperation_Prepare;
+thread_local bool g_inCRecursiveFolderOperation_Do;
 
 auto hookRefCountScope() {
     g_hookRefCount++;
@@ -1732,7 +1733,8 @@ HRESULT WINAPI CFSFolder__GetSize_Hook(void* pCFSFolder,
 
     HRESULT ret = CFSFolder__GetSize_Original(pCFSFolder, itemidChild, idFolder,
                                               propVariant);
-    if (g_inCRecursiveFolderOperation_Prepare || ret != S_OK ||
+    if (g_inCRecursiveFolderOperation_Prepare ||
+        g_inCRecursiveFolderOperation_Do || ret != S_OK ||
         propVariant->vt != VT_EMPTY) {
         return ret;
     }
@@ -1860,6 +1862,20 @@ HRESULT __thiscall CRecursiveFolderOperation_Prepare_Hook(void* pThis) {
     HRESULT ret = CRecursiveFolderOperation_Prepare_Original(pThis);
 
     g_inCRecursiveFolderOperation_Prepare = false;
+
+    return ret;
+}
+
+using CRecursiveFolderOperation_Do_t = HRESULT(__thiscall*)(void* pThis);
+CRecursiveFolderOperation_Do_t CRecursiveFolderOperation_Do_Original;
+HRESULT __thiscall CRecursiveFolderOperation_Do_Hook(void* pThis) {
+    auto hookScope = hookRefCountScope();
+
+    g_inCRecursiveFolderOperation_Do = true;
+
+    HRESULT ret = CRecursiveFolderOperation_Do_Original(pThis);
+
+    g_inCRecursiveFolderOperation_Do = false;
 
     return ret;
 }
@@ -2183,6 +2199,17 @@ bool HookWindowsStorageSymbols() {
             },
             &CRecursiveFolderOperation_Prepare_Original,
             CRecursiveFolderOperation_Prepare_Hook,
+        },
+        {
+            {
+#ifdef _WIN64
+                LR"(public: virtual long __cdecl CRecursiveFolderOperation::Do(void))",
+#else
+                LR"(public: virtual long __thiscall CRecursiveFolderOperation::Do(void))",
+#endif
+            },
+            &CRecursiveFolderOperation_Do_Original,
+            CRecursiveFolderOperation_Do_Hook,
         },
         {
             {
