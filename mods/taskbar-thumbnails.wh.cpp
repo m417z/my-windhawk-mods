@@ -153,6 +153,12 @@ HoverFlyoutModel_TransitionToFlyoutVisibleStickyState_Hook(void* pThis,
                                                            void* param1) {
     Wh_Log(L">");
 
+    if (g_settings.mode != Mode::disabled) {
+        HoverFlyoutModel_TransitionToFlyoutVisibleStickyState_Original(pThis,
+                                                                       param1);
+        return;
+    }
+
     g_inTransitionToFlyoutVisibleStickyState = true;
 
     HoverFlyoutModel_TransitionToFlyoutVisibleStickyState_Original(pThis,
@@ -184,6 +190,12 @@ HoverFlyoutController_ShowTaskListButtonHoverFlyout_Hook(void* pThis,
                                                          void* param2,
                                                          int param3) {
     Wh_Log(L">");
+
+    if (g_settings.mode != Mode::disabled) {
+        HoverFlyoutController_ShowTaskListButtonHoverFlyout_Original(
+            pThis, param1, param2, param3);
+        return;
+    }
 
     g_showTaskListButtonHoverFlyoutThreadId = GetCurrentThreadId();
 
