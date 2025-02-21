@@ -2,7 +2,7 @@
 // @id              taskbar-thumbnails
 // @name            Disable Taskbar Thumbnails
 // @description     Disable taskbar thumbnails on hover, or replace them with a list
-// @version         1.1.1
+// @version         1.1.2
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
