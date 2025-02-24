@@ -374,10 +374,6 @@ bool IsWindowExcluded(HWND hWnd) {
 }
 
 bool CanHideTaskbarForWindow(HWND hWnd, HMONITOR monitor) {
-    if (IsWindowExcluded(hWnd)) {
-        return false;
-    }
-
     HWND hShellWindow = GetShellWindow();
 
     if (hWnd == hShellWindow || GetProp(hWnd, L"DesktopWindow") ||
@@ -387,6 +383,10 @@ bool CanHideTaskbarForWindow(HWND hWnd, HMONITOR monitor) {
     }
 
     if (GetWindowLong(hWnd, GWL_EXSTYLE) & WS_EX_NOACTIVATE) {
+        return false;
+    }
+
+    if (IsWindowExcluded(hWnd)) {
         return false;
     }
 
