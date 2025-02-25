@@ -47,7 +47,7 @@ or a similar tool), enable the relevant option in the mod's settings.
   $description: >-
     Enable this option to apply the auto-hide taskbar feature only to the
     selected window.
-- excludedPrograms: [excluded1.exe]
+- excludedPrograms: [""]
   $name: Excluded programs
   $description: >-
     The taskbar won't auto-hide due to windows of these programs being maximized
