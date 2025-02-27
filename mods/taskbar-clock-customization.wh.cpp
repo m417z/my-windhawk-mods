@@ -692,6 +692,15 @@ DWORD WINAPI WebContentUpdateThread(LPVOID lpThreadParameter) {
 }
 
 void WebContentUpdateThreadInit() {
+    // A fuzzy check to see if any of the lines contain the web content pattern.
+    // If not, no need to fire up the thread.
+    if (!wcsstr(g_settings.topLine, L"%web") &&
+        !wcsstr(g_settings.bottomLine, L"%web") &&
+        !wcsstr(g_settings.middleLine, L"%web") &&
+        !wcsstr(g_settings.tooltipLine, L"%web")) {
+        return;
+    }
+
     std::lock_guard<std::mutex> guard(g_webContentMutex);
 
     g_webContentLoaded = false;
