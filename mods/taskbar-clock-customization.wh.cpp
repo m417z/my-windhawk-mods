@@ -217,6 +217,7 @@ styles, such as the font color and size.
     $description: Can be a positive or a negative number
   $name: Top line style (Windows 11 version 22H2 and newer)
 - DateStyle:
+  - Visible: true
   - TextColor: ""
     $name: Text color
     $description: >-
@@ -343,7 +344,7 @@ struct WebContentsSettings {
 };
 
 struct TextStyleSettings {
-    std::optional<bool> visible;
+    bool visible;
     StringSetting textColor;
     StringSetting textAlignment;
     int fontSize;
@@ -426,6 +427,8 @@ WCHAR g_webContentFull[FORMATTED_BUFFER_SIZE];
 struct ClockElementStyleData {
     winrt::weak_ref<FrameworkElement> dateTimeIconContentElement;
     DWORD styleIndex;
+    std::optional<int64_t> dateVisibilityPropertyChangedToken;
+    std::optional<int64_t> timeVisibilityPropertyChangedToken;
 };
 
 std::atomic<bool> g_clockElementStyleEnabled;
@@ -1379,13 +1382,34 @@ void ApplyStackPanelStyles(Controls::StackPanel stackPanel,
     }
 }
 
-void ApplyTextBlockStyles(Controls::TextBlock textBlock,
-                          const TextStyleSettings* textStyleSettings,
-                          bool noWrap) {
-    if (textStyleSettings && !textStyleSettings->visible.value_or(true)) {
+void ApplyTextBlockStyles(
+    Controls::TextBlock textBlock,
+    const TextStyleSettings* textStyleSettings,
+    bool noWrap,
+    std::optional<int64_t>* visibilityPropertyChangedToken) {
+    if (visibilityPropertyChangedToken->has_value()) {
+        textBlock.UnregisterPropertyChangedCallback(
+            UIElement::VisibilityProperty(),
+            visibilityPropertyChangedToken->value());
+    }
+
+    if (textStyleSettings && !textStyleSettings->visible) {
         textBlock.Visibility(Visibility::Collapsed);
+        *visibilityPropertyChangedToken =
+            textBlock.RegisterPropertyChangedCallback(
+                UIElement::VisibilityProperty(),
+                [](DependencyObject sender, DependencyProperty property) {
+                    auto textBlock = sender.try_as<Controls::TextBlock>();
+                    if (!textBlock) {
+                        return;
+                    }
+
+                    textBlock.Visibility(Visibility::Collapsed);
+                });
         return;
     }
+
+    visibilityPropertyChangedToken->reset();
 
     textBlock.Visibility(Visibility::Visible);
 
@@ -1563,10 +1587,12 @@ void ApplyDateTimeIconContentStyles(
     ApplyStackPanelStyles(stackPanel, maxWidth, textSpacing);
     ApplyTextBlockStyles(
         dateInnerTextBlock,
-        clockElementStyleEnabled ? &g_settings.dateStyle : nullptr, noWrap);
+        clockElementStyleEnabled ? &g_settings.dateStyle : nullptr, noWrap,
+        &clockElementStyleData->dateVisibilityPropertyChangedToken);
     ApplyTextBlockStyles(
         timeInnerTextBlock,
-        clockElementStyleEnabled ? &g_settings.timeStyle : nullptr, noWrap);
+        clockElementStyleEnabled ? &g_settings.timeStyle : nullptr, noWrap,
+        &clockElementStyleData->timeVisibilityPropertyChangedToken);
 
     clockElementStyleData->styleIndex = clockElementStyleIndex;
 }
@@ -2455,6 +2481,7 @@ void LoadSettings() {
     g_settings.timeStyle.characterSpacing =
         Wh_GetIntSetting(L"TimeStyle.CharacterSpacing");
 
+    g_settings.dateStyle.visible = Wh_GetIntSetting(L"DateStyle.Visible");
     g_settings.dateStyle.textColor =
         Wh_GetStringSetting(L"DateStyle.TextColor");
     g_settings.dateStyle.textAlignment =
@@ -2473,12 +2500,12 @@ void LoadSettings() {
 
     g_clockElementStyleEnabled =
         (g_settings.maxWidth || g_settings.textSpacing ||
-         !*g_settings.timeStyle.visible || *g_settings.timeStyle.textColor ||
+         !g_settings.timeStyle.visible || *g_settings.timeStyle.textColor ||
          *g_settings.timeStyle.textAlignment || g_settings.timeStyle.fontSize ||
          *g_settings.timeStyle.fontFamily || *g_settings.timeStyle.fontWeight ||
          *g_settings.timeStyle.fontStyle || *g_settings.timeStyle.fontStretch ||
          g_settings.timeStyle.characterSpacing ||
-         *g_settings.dateStyle.textColor ||
+         !g_settings.dateStyle.visible || *g_settings.dateStyle.textColor ||
          *g_settings.dateStyle.textAlignment || g_settings.dateStyle.fontSize ||
          *g_settings.dateStyle.fontFamily || *g_settings.dateStyle.fontWeight ||
          *g_settings.dateStyle.fontStyle || *g_settings.dateStyle.fontStretch ||
