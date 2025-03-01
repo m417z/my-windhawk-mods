@@ -1189,9 +1189,13 @@ PCWSTR g_gsQueryStatus[] = {
 HANDLE g_everything4Wh_Thread;
 HANDLE g_everything4Wh_ThreadReadyEvent;
 
-bool IsReparse(PCWSTR FolderPath) {
+bool IsUncPath(PCWSTR folderPath) {
+    return folderPath[0] == L'\\' && folderPath[1] == L'\\';
+}
+
+bool IsReparse(PCWSTR folderPath) {
     WIN32_FILE_ATTRIBUTE_DATA fad = {};
-    return GetFileAttributesEx(FolderPath, GetFileExInfoStandard, &fad) &&
+    return GetFileAttributesEx(folderPath, GetFileExInfoStandard, &fad) &&
            (fad.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT);
 }
 
@@ -1678,8 +1682,15 @@ HRESULT WINAPI CFSFolder__GetSize_Hook(void* pCFSFolder,
                 // ES_QUERY_ZERO_SIZE_REPARSE_POINT is returned when querying
                 // the link itself. Subfolders of reparse points aren't indexed,
                 // so ES_QUERY_NO_INDEX is returned in this case.
+                //
+                // Avoid resolving UNC folders which are not indexed as it can
+                // be slow, and will be done for all folders if the UNC host
+                // isn't indexed.
                 if (result == ES_QUERY_ZERO_SIZE_REPARSE_POINT ||
-                    result == ES_QUERY_NO_INDEX) {
+                    (result == ES_QUERY_NO_INDEX && !IsUncPath(path))) {
+                    Wh_Log(L"Resolving path due to status: %s",
+                           g_gsQueryStatus[result]);
+
                     auto resolved = ResolvePath(path);
                     if (resolved.empty()) {
                         Wh_Log(L"Failed to resolve path");
