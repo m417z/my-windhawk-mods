@@ -2,7 +2,7 @@
 // @id              taskbar-auto-hide-when-maximized
 // @name            Taskbar auto-hide when maximized
 // @description     Makes the taskbar auto-hide only when a window is maximized or intersects the taskbar
-// @version         1.2
+// @version         1.2.1
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
@@ -116,6 +116,9 @@ std::mutex g_winEventHookThreadMutex;
 std::atomic<HANDLE> g_winEventHookThread;
 std::unordered_map<void*, HWND> g_taskbarsKeptShown;
 UINT_PTR g_pendingEventsTimer;
+
+constexpr WCHAR kUpdateTaskbarStatePendingTickCount[] =
+    L"Windhawk_UpdateTaskbarStatePendingTickCount_" WH_MOD_ID;
 
 static const UINT g_getTaskbarRectRegisteredMsg =
     RegisterWindowMessage(L"Windhawk_GetTaskbarRect_" WH_MOD_ID);
@@ -479,7 +482,7 @@ void* QueryViaVtableBackwards(void* object, void* vtable) {
 
 DWORD WINAPI WinEventHookThread(LPVOID lpThreadParameter);
 
-void AdjustTaskbar(HWND hMMTaskbarWnd) {
+void AdjustTaskbar(HWND hMMTaskbarWnd, bool clearPendingWhenDone = false) {
     if (g_settings.mode != Mode::never) {
         if (!g_winEventHookThread) {
             std::lock_guard<std::mutex> guard(g_winEventHookThreadMutex);
@@ -491,7 +494,8 @@ void AdjustTaskbar(HWND hMMTaskbarWnd) {
         }
     }
 
-    PostMessage(hMMTaskbarWnd, g_updateTaskbarStateRegisteredMsg, 0, 0);
+    PostMessage(hMMTaskbarWnd, g_updateTaskbarStateRegisteredMsg,
+                clearPendingWhenDone, 0);
 }
 
 void AdjustAllTaskbars() {
@@ -504,6 +508,50 @@ void AdjustAllTaskbars() {
     for (HWND hSecondaryWnd : secondaryTaskbarWindows) {
         AdjustTaskbar(hSecondaryWnd);
     }
+}
+
+bool AdjustAllTaskbarsIfNotPending() {
+    std::unordered_set<HWND> secondaryTaskbarWindows;
+    HWND hWnd = FindTaskbarWindows(&secondaryTaskbarWindows);
+
+    DWORD currentTickCount = GetTickCount();
+    DWORD pendingTickCount = 0;
+
+    if (hWnd) {
+        DWORD tickCount = (DWORD)(DWORD_PTR)GetProp(
+            hWnd, kUpdateTaskbarStatePendingTickCount);
+        if (tickCount > pendingTickCount) {
+            pendingTickCount = tickCount;
+        }
+    }
+
+    for (HWND hSecondaryWnd : secondaryTaskbarWindows) {
+        DWORD tickCount = (DWORD)(DWORD_PTR)GetProp(
+            hSecondaryWnd, kUpdateTaskbarStatePendingTickCount);
+        if (tickCount > pendingTickCount) {
+            pendingTickCount = tickCount;
+        }
+    }
+
+    // Consider times larger than 10 seconds as expired, to prevent having
+    // it stuck in this state.
+    if (pendingTickCount && currentTickCount - pendingTickCount < 1000 * 10) {
+        return false;
+    }
+
+    if (hWnd) {
+        SetProp(hWnd, kUpdateTaskbarStatePendingTickCount,
+                (HANDLE)(DWORD_PTR)currentTickCount);
+        AdjustTaskbar(hWnd, /*clearPendingWhenDone=*/true);
+    }
+
+    for (HWND hSecondaryWnd : secondaryTaskbarWindows) {
+        SetProp(hSecondaryWnd, kUpdateTaskbarStatePendingTickCount,
+                (HANDLE)(DWORD_PTR)currentTickCount);
+        AdjustTaskbar(hSecondaryWnd, /*clearPendingWhenDone=*/true);
+    }
+
+    return true;
 }
 
 void* TrayUI_vftable_IInspectable;
@@ -617,6 +665,10 @@ LRESULT WINAPI TrayUI_WndProc_Hook(void* pThis,
                 SetTimer(hWnd, kTrayUITimerHide, 0, nullptr);
             }
         }
+
+        if (wParam) {
+            RemoveProp(hWnd, kUpdateTaskbarStatePendingTickCount);
+        }
     }
 
     LRESULT ret =
@@ -660,6 +712,10 @@ LRESULT WINAPI CSecondaryTray_v_WndProc_Hook(void* pThis,
                 SetTimer(hWnd, kTrayUITimerHide, 0, nullptr);
             }
         }
+
+        if (wParam) {
+            RemoveProp(hWnd, kUpdateTaskbarStatePendingTickCount);
+        }
     }
 
     LRESULT ret =
@@ -691,20 +747,23 @@ void CALLBACK WinEventProc(HWINEVENTHOOK hWinEventHook,
         return;
     }
 
-    g_pendingEventsTimer =
-        SetTimer(nullptr, 0, 200,
-                 [](HWND hwnd,         // handle of window for timer messages
-                    UINT uMsg,         // WM_TIMER message
-                    UINT_PTR idEvent,  // timer identifier
-                    DWORD dwTime       // current system time
-                 ) {
-                     Wh_Log(L">");
+    g_pendingEventsTimer = SetTimer(
+        nullptr, 0, 200,
+        [](HWND hwnd,         // handle of window for timer messages
+           UINT uMsg,         // WM_TIMER message
+           UINT_PTR idEvent,  // timer identifier
+           DWORD dwTime       // current system time
+        ) {
+            Wh_Log(L">");
 
-                     KillTimer(nullptr, g_pendingEventsTimer);
-                     g_pendingEventsTimer = 0;
+            if (!AdjustAllTaskbarsIfNotPending()) {
+                Wh_Log(L"Adjustment already pending, will retry later...");
+                return;
+            }
 
-                     AdjustAllTaskbars();
-                 });
+            KillTimer(nullptr, g_pendingEventsTimer);
+            g_pendingEventsTimer = 0;
+        });
 }
 
 DWORD WINAPI WinEventHookThread(LPVOID lpThreadParameter) {
