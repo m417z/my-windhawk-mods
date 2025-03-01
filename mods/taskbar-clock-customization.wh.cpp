@@ -130,15 +130,15 @@ styles, such as the font color and size.
     Set 0 for the default system value. A negative value can be used for
     negative spacing.
 - WebContentsItems:
-  - - Url: https://feeds.bbci.co.uk/news/world/rss.xml
+  - - Url: https://rss.nytimes.com/services/xml/rss/nyt/World.xml
       $name: Web content URL
     - BlockStart: '<item>'
       $name: Web content block start
       $description: The string in the webpage to start from
-    - Start: '<title><![CDATA['
+    - Start: '<title>'
       $name: Web content start
       $description: The string just before the content
-    - End: ']]></title>'
+    - End: '</title>'
       $name: Web content end
       $description: The string just after the content
     - MaxLength: 28
