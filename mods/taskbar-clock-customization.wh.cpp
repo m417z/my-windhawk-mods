@@ -398,18 +398,26 @@ WinVersion g_winVersion;
 std::atomic<bool> g_initialized;
 std::atomic<bool> g_explorerPatcherInitialized;
 
-WCHAR g_timeFormatted[FORMATTED_BUFFER_SIZE];
-WCHAR g_dateFormatted[FORMATTED_BUFFER_SIZE];
-WCHAR g_weekdayFormatted[FORMATTED_BUFFER_SIZE];
-WCHAR g_weekdayNumFormatted[INTEGER_BUFFER_SIZE];
-WCHAR g_weeknumFormatted[INTEGER_BUFFER_SIZE];
-WCHAR g_weeknumIsoFormatted[INTEGER_BUFFER_SIZE];
-WCHAR g_dayOfYearFormatted[INTEGER_BUFFER_SIZE];
-WCHAR g_timezoneFormatted[FORMATTED_BUFFER_SIZE];
+int g_formatIndex;
+SYSTEMTIME g_formatTime;
 
-std::vector<std::wstring> g_timeExtraFormatted;
-std::vector<std::wstring> g_dateExtraFormatted;
-std::vector<std::wstring> g_weekdayExtraFormatted;
+template <size_t N>
+struct FormattedString {
+    int formatIndex;
+    WCHAR buffer[N];
+};
+
+FormattedString<FORMATTED_BUFFER_SIZE> g_timeFormatted;
+std::vector<std::wstring> g_timeFormattedExtra;
+FormattedString<FORMATTED_BUFFER_SIZE> g_dateFormatted;
+std::vector<std::wstring> g_dateFormattedExtra;
+FormattedString<FORMATTED_BUFFER_SIZE> g_weekdayFormatted;
+std::vector<std::wstring> g_weekdayFormattedExtra;
+FormattedString<INTEGER_BUFFER_SIZE> g_weekdayNumFormatted;
+FormattedString<INTEGER_BUFFER_SIZE> g_weeknumFormatted;
+FormattedString<INTEGER_BUFFER_SIZE> g_weeknumIsoFormatted;
+FormattedString<INTEGER_BUFFER_SIZE> g_dayOfYearFormatted;
+FormattedString<FORMATTED_BUFFER_SIZE> g_timezoneFormatted;
 
 HANDLE g_webContentUpdateThread;
 HANDLE g_webContentUpdateRefreshEvent;
@@ -740,6 +748,19 @@ void WebContentUpdateThreadUninit() {
     }
 }
 
+DWORD GetStartDayOfWeek(const SYSTEMTIME* time) {
+    // https://stackoverflow.com/a/39344961
+    DWORD startDayOfWeek;
+    GetLocaleInfoEx(
+        LOCALE_NAME_USER_DEFAULT, LOCALE_IFIRSTDAYOFWEEK | LOCALE_RETURN_NUMBER,
+        (PWSTR)&startDayOfWeek, sizeof(startDayOfWeek) / sizeof(WCHAR));
+
+    // Start from Sunday instead of Monday.
+    startDayOfWeek = (startDayOfWeek + 1) % 7;
+
+    return startDayOfWeek;
+}
+
 int CalculateWeeknum(const SYSTEMTIME* time, DWORD startDayOfWeek) {
     SYSTEMTIME secondWeek{
         .wYear = time->wYear,
@@ -943,81 +964,202 @@ std::vector<std::wstring> SplitTimeFormatString(std::wstring_view s) {
     return result;
 }
 
-void InitializeFormattedStrings(const SYSTEMTIME* time) {
-    auto timeFormatParts = SplitTimeFormatString(g_settings.timeFormat.get());
+PCWSTR GetTimeFormattedWithExtra(std::vector<std::wstring>** extra) {
+    if (g_timeFormatted.formatIndex != g_formatIndex) {
+        const SYSTEMTIME* time = &g_formatTime;
 
-    GetTimeFormatEx_Original(
-        nullptr, g_settings.showSeconds ? 0 : TIME_NOSECONDS, time,
-        !timeFormatParts[0].empty() ? timeFormatParts[0].c_str() : nullptr,
-        g_timeFormatted, ARRAYSIZE(g_timeFormatted));
+        auto timeFormatParts =
+            SplitTimeFormatString(g_settings.timeFormat.get());
 
-    g_timeExtraFormatted.resize(timeFormatParts.size() - 1);
-    for (size_t i = 1; i < timeFormatParts.size(); i++) {
-        WCHAR formatted[FORMATTED_BUFFER_SIZE];
         GetTimeFormatEx_Original(
             nullptr, g_settings.showSeconds ? 0 : TIME_NOSECONDS, time,
-            !timeFormatParts[i].empty() ? timeFormatParts[i].c_str() : nullptr,
-            formatted, ARRAYSIZE(formatted));
-        g_timeExtraFormatted[i - 1] = formatted;
+            !timeFormatParts[0].empty() ? timeFormatParts[0].c_str() : nullptr,
+            g_timeFormatted.buffer, ARRAYSIZE(g_timeFormatted.buffer));
+
+        g_timeFormattedExtra.resize(timeFormatParts.size() - 1);
+        for (size_t i = 1; i < timeFormatParts.size(); i++) {
+            WCHAR formatted[FORMATTED_BUFFER_SIZE];
+            GetTimeFormatEx_Original(
+                nullptr, g_settings.showSeconds ? 0 : TIME_NOSECONDS, time,
+                !timeFormatParts[i].empty() ? timeFormatParts[i].c_str()
+                                            : nullptr,
+                formatted, ARRAYSIZE(formatted));
+            g_timeFormattedExtra[i - 1] = formatted;
+        }
+
+        g_timeFormatted.formatIndex = g_formatIndex;
     }
 
-    auto dateFormatParts = SplitTimeFormatString(g_settings.dateFormat.get());
+    if (extra) {
+        *extra = &g_timeFormattedExtra;
+    }
 
-    GetDateFormatEx_Original(
-        nullptr, DATE_AUTOLAYOUT, time,
-        !dateFormatParts[0].empty() ? dateFormatParts[0].c_str() : nullptr,
-        g_dateFormatted, ARRAYSIZE(g_dateFormatted), nullptr);
+    return g_timeFormatted.buffer;
+}
 
-    g_dateExtraFormatted.resize(dateFormatParts.size() - 1);
-    for (size_t i = 1; i < dateFormatParts.size(); i++) {
-        WCHAR formatted[FORMATTED_BUFFER_SIZE];
+PCWSTR GetTimeFormatted() {
+    return GetTimeFormattedWithExtra(nullptr);
+}
+
+std::vector<std::wstring>* GetTimeFormattedExtra() {
+    std::vector<std::wstring>* extra;
+    GetTimeFormattedWithExtra(&extra);
+    return extra;
+}
+
+PCWSTR GetDateFormattedWithExtra(std::vector<std::wstring>** extra) {
+    if (g_dateFormatted.formatIndex != g_formatIndex) {
+        const SYSTEMTIME* time = &g_formatTime;
+
+        auto dateFormatParts =
+            SplitTimeFormatString(g_settings.dateFormat.get());
+
         GetDateFormatEx_Original(
             nullptr, DATE_AUTOLAYOUT, time,
-            !dateFormatParts[i].empty() ? dateFormatParts[i].c_str() : nullptr,
-            formatted, ARRAYSIZE(formatted), nullptr);
-        g_dateExtraFormatted[i - 1] = formatted;
+            !dateFormatParts[0].empty() ? dateFormatParts[0].c_str() : nullptr,
+            g_dateFormatted.buffer, ARRAYSIZE(g_dateFormatted.buffer), nullptr);
+
+        g_dateFormattedExtra.resize(dateFormatParts.size() - 1);
+        for (size_t i = 1; i < dateFormatParts.size(); i++) {
+            WCHAR formatted[FORMATTED_BUFFER_SIZE];
+            GetDateFormatEx_Original(nullptr, DATE_AUTOLAYOUT, time,
+                                     !dateFormatParts[i].empty()
+                                         ? dateFormatParts[i].c_str()
+                                         : nullptr,
+                                     formatted, ARRAYSIZE(formatted), nullptr);
+            g_dateFormattedExtra[i - 1] = formatted;
+        }
+
+        g_dateFormatted.formatIndex = g_formatIndex;
     }
 
-    auto weekdayFormatParts =
-        SplitTimeFormatString(g_settings.weekdayFormat.get());
+    if (extra) {
+        *extra = &g_dateFormattedExtra;
+    }
 
-    GetDateFormatEx_Original(
-        nullptr, DATE_AUTOLAYOUT, time,
-        !weekdayFormatParts[0].empty() ? weekdayFormatParts[0].c_str()
-                                       : nullptr,
-        g_weekdayFormatted, ARRAYSIZE(g_weekdayFormatted), nullptr);
+    return g_dateFormatted.buffer;
+}
 
-    g_weekdayExtraFormatted.resize(weekdayFormatParts.size() - 1);
-    for (size_t i = 1; i < weekdayFormatParts.size(); i++) {
-        WCHAR formatted[FORMATTED_BUFFER_SIZE];
+PCWSTR GetDateFormatted() {
+    return GetDateFormattedWithExtra(nullptr);
+}
+
+std::vector<std::wstring>* GetDateFormattedExtra() {
+    std::vector<std::wstring>* extra;
+    GetDateFormattedWithExtra(&extra);
+    return extra;
+}
+
+PCWSTR GetWeekdayFormattedWithExtra(std::vector<std::wstring>** extra) {
+    if (g_weekdayFormatted.formatIndex != g_formatIndex) {
+        const SYSTEMTIME* time = &g_formatTime;
+
+        auto weekdayFormatParts =
+            SplitTimeFormatString(g_settings.weekdayFormat.get());
+
         GetDateFormatEx_Original(nullptr, DATE_AUTOLAYOUT, time,
-                                 !weekdayFormatParts[i].empty()
-                                     ? weekdayFormatParts[i].c_str()
+                                 !weekdayFormatParts[0].empty()
+                                     ? weekdayFormatParts[0].c_str()
                                      : nullptr,
-                                 formatted, ARRAYSIZE(formatted), nullptr);
-        g_weekdayExtraFormatted[i - 1] = formatted;
+                                 g_weekdayFormatted.buffer,
+                                 ARRAYSIZE(g_weekdayFormatted.buffer), nullptr);
+
+        g_weekdayFormattedExtra.resize(weekdayFormatParts.size() - 1);
+        for (size_t i = 1; i < weekdayFormatParts.size(); i++) {
+            WCHAR formatted[FORMATTED_BUFFER_SIZE];
+            GetDateFormatEx_Original(nullptr, DATE_AUTOLAYOUT, time,
+                                     !weekdayFormatParts[i].empty()
+                                         ? weekdayFormatParts[i].c_str()
+                                         : nullptr,
+                                     formatted, ARRAYSIZE(formatted), nullptr);
+            g_weekdayFormattedExtra[i - 1] = formatted;
+        }
+
+        g_weekdayFormatted.formatIndex = g_formatIndex;
     }
 
-    // https://stackoverflow.com/a/39344961
-    DWORD startDayOfWeek;
-    GetLocaleInfoEx(
-        LOCALE_NAME_USER_DEFAULT, LOCALE_IFIRSTDAYOFWEEK | LOCALE_RETURN_NUMBER,
-        (PWSTR)&startDayOfWeek, sizeof(startDayOfWeek) / sizeof(WCHAR));
+    if (extra) {
+        *extra = &g_weekdayFormattedExtra;
+    }
 
-    // Start from Sunday instead of Monday.
-    startDayOfWeek = (startDayOfWeek + 1) % 7;
+    return g_weekdayFormatted.buffer;
+}
 
-    swprintf_s(g_weekdayNumFormatted, L"%d",
-               1 + (7 + time->wDayOfWeek - startDayOfWeek) % 7);
+PCWSTR GetWeekdayFormatted() {
+    return GetWeekdayFormattedWithExtra(nullptr);
+}
 
-    swprintf_s(g_weeknumFormatted, L"%d",
-               CalculateWeeknum(time, startDayOfWeek));
+std::vector<std::wstring>* GetWeekdayFormattedExtra() {
+    std::vector<std::wstring>* extra;
+    GetWeekdayFormattedWithExtra(&extra);
+    return extra;
+}
 
-    swprintf_s(g_weeknumIsoFormatted, L"%d", CalculateWeeknumIso(time));
+PCWSTR GetWeekdayNumFormatted() {
+    if (g_weekdayNumFormatted.formatIndex != g_formatIndex) {
+        const SYSTEMTIME* time = &g_formatTime;
 
-    swprintf_s(g_dayOfYearFormatted, L"%d", CalculateDayOfYearNumber(time));
+        DWORD startDayOfWeek = GetStartDayOfWeek(time);
 
-    GetTimeZone(g_timezoneFormatted, ARRAYSIZE(g_timezoneFormatted));
+        swprintf_s(g_weekdayNumFormatted.buffer, L"%d",
+                   1 + (7 + time->wDayOfWeek - startDayOfWeek) % 7);
+
+        g_weekdayNumFormatted.formatIndex = g_formatIndex;
+    }
+
+    return g_weekdayNumFormatted.buffer;
+}
+
+PCWSTR GetWeeknumFormatted() {
+    if (g_weeknumFormatted.formatIndex != g_formatIndex) {
+        const SYSTEMTIME* time = &g_formatTime;
+
+        DWORD startDayOfWeek = GetStartDayOfWeek(time);
+
+        swprintf_s(g_weeknumFormatted.buffer, L"%d",
+                   CalculateWeeknum(time, startDayOfWeek));
+
+        g_weeknumFormatted.formatIndex = g_formatIndex;
+    }
+
+    return g_weeknumFormatted.buffer;
+}
+
+PCWSTR GetWeeknumIsoFormatted() {
+    if (g_weeknumIsoFormatted.formatIndex != g_formatIndex) {
+        const SYSTEMTIME* time = &g_formatTime;
+
+        swprintf_s(g_weeknumIsoFormatted.buffer, L"%d",
+                   CalculateWeeknumIso(time));
+
+        g_weeknumIsoFormatted.formatIndex = g_formatIndex;
+    }
+
+    return g_weeknumIsoFormatted.buffer;
+}
+
+PCWSTR GetDayOfYearFormatted() {
+    if (g_dayOfYearFormatted.formatIndex != g_formatIndex) {
+        const SYSTEMTIME* time = &g_formatTime;
+
+        swprintf_s(g_dayOfYearFormatted.buffer, L"%d",
+                   CalculateDayOfYearNumber(time));
+
+        g_dayOfYearFormatted.formatIndex = g_formatIndex;
+    }
+
+    return g_dayOfYearFormatted.buffer;
+}
+
+PCWSTR GetTimezoneFormatted() {
+    if (g_timezoneFormatted.formatIndex != g_formatIndex) {
+        GetTimeZone(g_timezoneFormatted.buffer,
+                    ARRAYSIZE(g_timezoneFormatted.buffer));
+
+        g_timezoneFormatted.formatIndex = g_formatIndex;
+    }
+
+    return g_timezoneFormatted.buffer;
 }
 
 int ResolveFormatTokenWithDigit(std::wstring_view format,
@@ -1046,24 +1188,26 @@ int ResolveFormatTokenWithDigit(std::wstring_view format,
 }
 
 size_t ResolveFormatToken(std::wstring_view format, PCWSTR* resolved) {
+    using FormattedStringValueGetter = PCWSTR (*)();
+
     struct {
         std::wstring_view token;
-        PCWSTR value;
+        FormattedStringValueGetter valueGetter;
     } formatTokens[] = {
-        {L"%time%"sv, g_timeFormatted},
-        {L"%date%"sv, g_dateFormatted},
-        {L"%weekday%"sv, g_weekdayFormatted},
-        {L"%weekday_num%"sv, g_weekdayNumFormatted},
-        {L"%weeknum%"sv, g_weeknumFormatted},
-        {L"%weeknum_iso%"sv, g_weeknumIsoFormatted},
-        {L"%dayofyear%"sv, g_dayOfYearFormatted},
-        {L"%timezone%"sv, g_timezoneFormatted},
-        {L"%newline%"sv, L"\n"},
+        {L"%time%"sv, GetTimeFormatted},
+        {L"%date%"sv, GetDateFormatted},
+        {L"%weekday%"sv, GetWeekdayFormatted},
+        {L"%weekday_num%"sv, GetWeekdayNumFormatted},
+        {L"%weeknum%"sv, GetWeeknumFormatted},
+        {L"%weeknum_iso%"sv, GetWeeknumIsoFormatted},
+        {L"%dayofyear%"sv, GetDayOfYearFormatted},
+        {L"%timezone%"sv, GetTimezoneFormatted},
+        {L"%newline%"sv, []() { return L"\n"; }},
     };
 
     for (const auto& formatToken : formatTokens) {
         if (format.starts_with(formatToken.token)) {
-            *resolved = formatToken.value;
+            *resolved = formatToken.valueGetter();
             return formatToken.token.size();
         }
     }
@@ -1080,13 +1224,15 @@ size_t ResolveFormatToken(std::wstring_view format, PCWSTR* resolved) {
         return token.size();
     }
 
+    using FormattedStringVectorGetter = std::vector<std::wstring>* (*)();
+
     struct {
         std::wstring_view prefix;
-        const std::vector<std::wstring>& valueVector;
+        FormattedStringVectorGetter valueVectorGetter;
     } formatExtraTokens[] = {
-        {L"%time"sv, g_timeExtraFormatted},
-        {L"%date"sv, g_dateExtraFormatted},
-        {L"%weekday"sv, g_weekdayExtraFormatted},
+        {L"%time"sv, GetTimeFormattedExtra},
+        {L"%date"sv, GetDateFormattedExtra},
+        {L"%weekday"sv, GetWeekdayFormattedExtra},
     };
 
     for (auto formatExtraToken : formatExtraTokens) {
@@ -1096,7 +1242,7 @@ size_t ResolveFormatToken(std::wstring_view format, PCWSTR* resolved) {
             continue;
         }
 
-        const auto& valueVector = formatExtraToken.valueVector;
+        const auto& valueVector = *formatExtraToken.valueVectorGetter();
 
         if (digit < 2 || static_cast<size_t>(digit - 2) >= valueVector.size()) {
             *resolved = L"-";
@@ -1834,8 +1980,8 @@ int WINAPI GetDateFormatEx_Hook_Win11(LPCWSTR lpLocaleName,
 
         if (!(dwFlags & DATE_LONGDATE)) {
             if (!cchDate || g_winVersion >= WinVersion::Win11_22H2) {
-                // First call, initialize strings.
-                InitializeFormattedStrings(lpDate);
+                g_formatTime = *lpDate;
+                g_formatIndex++;
             }
 
             if (wcscmp(g_settings.bottomLine, L"-") != 0) {
@@ -2055,7 +2201,8 @@ int WINAPI GetTimeFormatEx_Hook_Win10(LPCWSTR lpLocaleName,
                                       LPWSTR lpTimeStr,
                                       int cchTime) {
     if (g_updateTextStringThreadId == GetCurrentThreadId()) {
-        InitializeFormattedStrings(lpTime);
+        g_formatTime = *lpTime;
+        g_formatIndex++;
 
         if (wcscmp(g_settings.topLine, L"-") != 0) {
             return FormatLine(lpTimeStr, cchTime, g_settings.topLine.get()) + 1;
