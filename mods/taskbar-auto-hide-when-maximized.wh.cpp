@@ -374,18 +374,17 @@ bool IsWindowExcluded(HWND hWnd) {
 }
 
 bool CanHideTaskbarForWindow(HWND hWnd, HMONITOR monitor) {
-    HWND hShellWindow = GetShellWindow();
-
-    if (hWnd == hShellWindow || GetProp(hWnd, L"DesktopWindow") ||
-        IsTaskbarWindow(hWnd) || !IsWindowVisible(hWnd) ||
-        IsWindowCloaked(hWnd) || IsIconic(hWnd)) {
+    if (!IsWindowVisible(hWnd) || IsWindowCloaked(hWnd) || IsIconic(hWnd) ||
+        (GetWindowLong(hWnd, GWL_EXSTYLE) & WS_EX_NOACTIVATE)) {
         return false;
     }
 
-    if (GetWindowLong(hWnd, GWL_EXSTYLE) & WS_EX_NOACTIVATE) {
+    if (hWnd == GetShellWindow() || GetProp(hWnd, L"DesktopWindow") ||
+        IsTaskbarWindow(hWnd)) {
         return false;
     }
 
+    // Check this after the other checks, as it's the most expensive one.
     if (IsWindowExcluded(hWnd)) {
         return false;
     }
@@ -831,6 +830,24 @@ WinVersion GetExplorerVersion() {
     return WinVersion::Unsupported;
 }
 
+struct EXPLORER_PATCHER_HOOK {
+    PCSTR symbol;
+    void** pOriginalFunction;
+    void* hookFunction = nullptr;
+    bool optional = false;
+
+    template <typename Prototype>
+    EXPLORER_PATCHER_HOOK(
+        PCSTR symbol,
+        Prototype** originalFunction,
+        std::type_identity_t<Prototype*> hookFunction = nullptr,
+        bool optional = false)
+        : symbol(symbol),
+          pOriginalFunction(reinterpret_cast<void**>(originalFunction)),
+          hookFunction(reinterpret_cast<void*>(hookFunction)),
+          optional(optional) {}
+};
+
 bool HookExplorerPatcherSymbols(HMODULE explorerPatcherModule) {
     if (g_explorerPatcherInitialized.exchange(true)) {
         return true;
@@ -840,40 +857,32 @@ bool HookExplorerPatcherSymbols(HMODULE explorerPatcherModule) {
         g_winVersion = WinVersion::Win10;
     }
 
-    struct EXPLORER_PATCHER_HOOK {
-        PCSTR symbol;
-        void** pOriginalFunction;
-        void* hookFunction = nullptr;
-        bool optional = false;
-    };
-
     EXPLORER_PATCHER_HOOK hooks[] = {
-        {R"(??_7TrayUI@@6BITrayDeskBand@@@)",
-         (void**)&TrayUI_vftable_IInspectable},
+        {R"(??_7TrayUI@@6BITrayDeskBand@@@)", &TrayUI_vftable_IInspectable},
         {R"(??_7TrayUI@@6BITrayComponentHost@@@)",
-         (void**)&TrayUI_vftable_ITrayComponentHost},
+         &TrayUI_vftable_ITrayComponentHost},
         {R"(??_7CSecondaryTray@@6BISecondaryTray@@@)",
-         (void**)&CSecondaryTray_vftable_ISecondaryTray},
+         &CSecondaryTray_vftable_ISecondaryTray},
         {R"(?GetStuckMonitor@TrayUI@@UEAAPEAUHMONITOR__@@XZ)",
-         (void**)&TrayUI_GetStuckMonitor_Original},
+         &TrayUI_GetStuckMonitor_Original},
         {R"(?GetMonitor@CSecondaryTray@@UEAAPEAUHMONITOR__@@XZ)",
-         (void**)&CSecondaryTray_GetMonitor_Original},
+         &CSecondaryTray_GetMonitor_Original},
         {R"(?GetStuckRectForMonitor@TrayUI@@UEAA_NPEAUHMONITOR__@@PEAUtagRECT@@@Z)",
-         (void**)&TrayUI_GetStuckRectForMonitor_Original},
-        {R"(?_Hide@TrayUI@@QEAAXXZ)", (void**)&TrayUI__Hide_Original,
-         (void*)TrayUI__Hide_Hook},
+         &TrayUI_GetStuckRectForMonitor_Original},
+        {R"(?_Hide@TrayUI@@QEAAXXZ)", &TrayUI__Hide_Original,
+         TrayUI__Hide_Hook},
         {R"(?_AutoHide@CSecondaryTray@@AEAAX_N@Z)",
-         (void**)&CSecondaryTray__AutoHide_Original,
-         (void*)CSecondaryTray__AutoHide_Hook},
+         &CSecondaryTray__AutoHide_Original, CSecondaryTray__AutoHide_Hook},
         {R"(?Unhide@TrayUI@@UEAAXW4TrayUnhideFlags@TrayCommon@@W4UnhideRequest@3@@Z)",
-         (void**)&TrayUI_Unhide_Original},
+         &TrayUI_Unhide_Original},
         {R"(?_Unhide@CSecondaryTray@@AEAAXW4TrayUnhideFlags@TrayCommon@@W4UnhideRequest@3@@Z)",
-         (void**)&CSecondaryTray__Unhide_Original},
+         &CSecondaryTray__Unhide_Original},
         {R"(?WndProc@TrayUI@@UEAA_JPEAUHWND__@@I_K_JPEA_N@Z)",
-         (void**)&TrayUI_WndProc_Original, (void*)TrayUI_WndProc_Hook},
+         &TrayUI_WndProc_Original, TrayUI_WndProc_Hook},
         {R"(?v_WndProc@CSecondaryTray@@EEAA_JPEAUHWND__@@I_K_J@Z)",
-         (void**)&CSecondaryTray_v_WndProc_Original,
-         (void*)CSecondaryTray_v_WndProc_Hook},
+         &CSecondaryTray_v_WndProc_Original, CSecondaryTray_v_WndProc_Hook,
+         // Available in versions newer than 67.1.
+         true},
     };
 
     bool succeeded = true;
@@ -896,14 +905,16 @@ bool HookExplorerPatcherSymbols(HMODULE explorerPatcherModule) {
         }
     }
 
-    if (g_initialized) {
+    if (!succeeded) {
+        Wh_Log(L"HookExplorerPatcherSymbols failed");
+    } else if (g_initialized) {
         Wh_ApplyHookOperations();
     }
 
     return succeeded;
 }
 
-bool HandleModuleIfExplorerPatcher(HMODULE module) {
+bool IsExplorerPatcherModule(HMODULE module) {
     WCHAR moduleFilePath[MAX_PATH];
     switch (
         GetModuleFileName(module, moduleFilePath, ARRAYSIZE(moduleFilePath))) {
@@ -919,24 +930,28 @@ bool HandleModuleIfExplorerPatcher(HMODULE module) {
 
     moduleFileName++;
 
-    if (_wcsnicmp(L"ep_taskbar.", moduleFileName, sizeof("ep_taskbar.") - 1) !=
+    if (_wcsnicmp(L"ep_taskbar.", moduleFileName, sizeof("ep_taskbar.") - 1) ==
         0) {
+        Wh_Log(L"ExplorerPatcher taskbar module: %s", moduleFileName);
         return true;
     }
 
-    Wh_Log(L"ExplorerPatcher taskbar loaded: %s", moduleFileName);
-    return HookExplorerPatcherSymbols(module);
+    return false;
 }
 
-void HandleLoadedExplorerPatcher() {
+bool HandleLoadedExplorerPatcher() {
     HMODULE hMods[1024];
     DWORD cbNeeded;
     if (EnumProcessModules(GetCurrentProcess(), hMods, sizeof(hMods),
                            &cbNeeded)) {
         for (size_t i = 0; i < cbNeeded / sizeof(HMODULE); i++) {
-            HandleModuleIfExplorerPatcher(hMods[i]);
+            if (IsExplorerPatcherModule(hMods[i])) {
+                return HookExplorerPatcherSymbols(hMods[i]);
+            }
         }
     }
+
+    return true;
 }
 
 using LoadLibraryExW_t = decltype(&LoadLibraryExW);
@@ -946,7 +961,9 @@ HMODULE WINAPI LoadLibraryExW_Hook(LPCWSTR lpLibFileName,
                                    DWORD dwFlags) {
     HMODULE module = LoadLibraryExW_Original(lpLibFileName, hFile, dwFlags);
     if (module && !((ULONG_PTR)module & 3) && !g_explorerPatcherInitialized) {
-        HandleModuleIfExplorerPatcher(module);
+        if (IsExplorerPatcherModule(module)) {
+            HookExplorerPatcherSymbols(module);
+        }
     }
 
     return module;
@@ -1107,14 +1124,17 @@ BOOL Wh_ModInit() {
         return FALSE;
     }
 
-    HandleLoadedExplorerPatcher();
+    if (!HandleLoadedExplorerPatcher()) {
+        Wh_Log(L"HandleLoadedExplorerPatcher failed");
+        return FALSE;
+    }
 
     HMODULE kernelBaseModule = GetModuleHandle(L"kernelbase.dll");
-    FARPROC pKernelBaseLoadLibraryExW =
-        GetProcAddress(kernelBaseModule, "LoadLibraryExW");
-    Wh_SetFunctionHook((void*)pKernelBaseLoadLibraryExW,
-                       (void*)LoadLibraryExW_Hook,
-                       (void**)&LoadLibraryExW_Original);
+    auto pKernelBaseLoadLibraryExW = (decltype(&LoadLibraryExW))GetProcAddress(
+        kernelBaseModule, "LoadLibraryExW");
+    WindhawkUtils::Wh_SetFunctionHookT(pKernelBaseLoadLibraryExW,
+                                       LoadLibraryExW_Hook,
+                                       &LoadLibraryExW_Original);
 
     g_initialized = true;
 
