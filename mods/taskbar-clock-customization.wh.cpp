@@ -2,7 +2,7 @@
 // @id              taskbar-clock-customization
 // @name            Taskbar Clock Customization
 // @description     Customize the taskbar clock: define a custom date/time format, add a news feed, customize fonts and colors, and more
-// @version         1.4
+// @version         1.5
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
@@ -44,14 +44,20 @@ patterns can be used:
   * `%time<n>%` - additional time formats which can be specified by separating
     the time format string with `;`. `<n>` is the additional time format number,
     starting with 2.
+  * `%time_tz<n>%` - the time with a custom time zone. `<n>` is the time zone
+    number in the list of time zones configured in settings.
 * `%date%` - the date as configured by the date format in settings.
   * `%date<n>%` - additional date formats which can be specified by separating
     the date format string with `;`. `<n>` is the additional date format number,
     starting with 2.
+  * `%date_tz<n>%` - the date with a custom time zone. `<n>` is the time zone
+    number in the list of time zones configured in settings.
 * `%weekday%` - the week day as configured by the week day format in settings.
   * `%weekday<n>%` - additional week day formats which can be specified by
     separating the week day format string with `;`. `<n>` is the additional week
     day format number, starting with 2.
+  * `%weekday_tz<n>%` - the week day with a custom time zone. `<n>` is the time
+    zone number in the list of time zones configured in settings.
 * `%weekday_num%` - the week day number according to the [first day of
    week](https://superuser.com/q/61002) system configuration. For example, if
    first day of week is Sunday, then the week day number is 1 for Sunday, 2 for
@@ -86,35 +92,35 @@ styles, such as the font color and size.
     hh':'mm':'ss tt
   $name: Time format
   $description: >-
-    Leave empty for the default format, for syntax refer to the following page:
+    Leave empty for the default format. For syntax refer to the following page:
 
     https://docs.microsoft.com/en-us/windows/win32/api/datetimeapi/nf-datetimeapi-gettimeformatex#remarks
 - DateFormat: >-
     ddd',' MMM dd yyyy
   $name: Date format
   $description: >-
-    Leave empty for the default format, for syntax refer to the following page:
+    Leave empty for the default format. For syntax refer to the following page:
 
     https://docs.microsoft.com/en-us/windows/win32/intl/day--month--year--and-era-format-pictures
 - WeekdayFormat: dddd
   $name: Week day format
   $description: >-
-    Leave empty for the default format, for syntax refer to the following page:
+    Leave empty for the default format. For syntax refer to the following page:
 
     https://docs.microsoft.com/en-us/windows/win32/intl/day--month--year--and-era-format-pictures
 - TopLine: '%date% | %time%'
   $name: Top line
   $description: >-
-    Text to be shown on the first line, set to "-" for the default value, refer
-    to the mod details for list of patterns that can be used
+    Text to be shown on the first line. Set to "-" for the default value. Refer
+    to the mod details for list of patterns that can be used.
 - BottomLine: '%web1%'
   $name: Bottom line
   $description: >-
-    Only shown if the taskbar is large enough, set to "-" for the default value
+    Only shown if the taskbar is large enough. Set to "-" for the default value.
 - MiddleLine: '%weekday%'
   $name: Middle line (Windows 10 only)
   $description: >-
-    Only shown if the taskbar is large enough, set to "-" for the default value
+    Only shown if the taskbar is large enough. Set to "-" for the default value.
 - TooltipLine: '%web1_full%'
   $name: Tooltip extra line
 - Width: 180
@@ -123,7 +129,7 @@ styles, such as the font color and size.
   $name: Clock height (Windows 10 only)
 - MaxWidth: 0
   $name: Clock max width (Windows 11 only)
-  $description: Set to zero to have no max width
+  $description: Set to zero to have no max width.
 - TextSpacing: 0
   $name: Line spacing
   $description: >-
@@ -134,30 +140,36 @@ styles, such as the font color and size.
       $name: Web content URL
     - BlockStart: '<item>'
       $name: Web content block start
-      $description: The string in the webpage to start from
+      $description: The string in the webpage to start from.
     - Start: '<title>'
       $name: Web content start
-      $description: The string just before the content
+      $description: The string just before the content.
     - End: '</title>'
       $name: Web content end
-      $description: The string just after the content
+      $description: The string just after the content.
     - MaxLength: 28
       $name: Web content maximum length
-      $description: Longer strings will be truncated with ellipsis
+      $description: Longer strings will be truncated with ellipsis.
   $name: Web content items
   $description: >-
     Will be used to fetch data displayed in place of the %web<n>%,
-    %web<n>_full% patterns, where <n> is the web contents number
+    %web<n>_full% patterns, where <n> is the web contents number.
 - WebContentsUpdateInterval: 10
   $name: Web content update interval
-  $description: The update interval, in minutes, of the web content items
+  $description: The update interval, in minutes, of the web content items.
+- TimeZones: ["Eastern Standard Time"]
+  $name: Time zones
+  $description: >-
+    The list of time zones for patterns such as %time_tz1%. For a full list of
+    supported time zones, use the following PowerShell command: Get-TimeZone
+    -ListAvailable.
 - TimeStyle:
   - Visible: true
   - TextColor: ""
     $name: Text color
     $description: >-
       Can be a color name (Red, Black, ...) or an RGB/ARGB color code (like
-      #00FF00, #CC00FF00, ...)
+      #00FF00, #CC00FF00, ...).
   - TextAlignment: ""
     $name: Text alignment
     $options:
@@ -167,7 +179,7 @@ styles, such as the font color and size.
     - Left: Left
   - FontSize: 0
     $name: Font size
-    $description: Set to zero for the default size
+    $description: Set to zero for the default size.
   - FontFamily: ""
     $name: Font family
     $description: >-
@@ -199,7 +211,7 @@ styles, such as the font color and size.
     - Italic: Italic
   - FontStretch: ""
     $name: Font stretch
-    $description: Only supported for some fonts
+    $description: Only supported for some fonts.
     $options:
     - "": Default
     - Undefined: Undefined
@@ -214,7 +226,7 @@ styles, such as the font color and size.
     - UltraExpanded: Ultra expanded
   - CharacterSpacing: 0
     $name: Character spacing
-    $description: Can be a positive or a negative number
+    $description: Can be a positive or a negative number.
   $name: Top line style (Windows 11 version 22H2 and newer)
 - DateStyle:
   - Visible: true
@@ -222,7 +234,7 @@ styles, such as the font color and size.
     $name: Text color
     $description: >-
       Can be a color name (Red, Black, ...) or an RGB/ARGB color code (like
-      #00FF00, #CC00FF00, ...)
+      #00FF00, #CC00FF00, ...).
   - TextAlignment: ""
     $name: Text alignment
     $options:
@@ -232,7 +244,7 @@ styles, such as the font color and size.
     - Left: Left
   - FontSize: 0
     $name: Font size
-    $description: Set to zero for the default size
+    $description: Set to zero for the default size.
   - FontFamily: ""
     $name: Font family
     $description: >-
@@ -264,7 +276,7 @@ styles, such as the font color and size.
     - Italic: Italic
   - FontStretch: ""
     $name: Font stretch
-    $description: Only supported for some fonts
+    $description: Only supported for some fonts.
     $options:
     - "": Default
     - Undefined: Undefined
@@ -279,7 +291,7 @@ styles, such as the font color and size.
     - UltraExpanded: Ultra expanded
   - CharacterSpacing: 0
     $name: Character spacing
-    $description: Can be a positive or a negative number
+    $description: Can be a positive or a negative number.
   $name: Bottom line style (Windows 11 version 22H2 and newer)
 - oldTaskbarOnWin11: false
   $name: Customize the old taskbar on Windows 11
@@ -370,6 +382,7 @@ struct {
     int textSpacing;
     std::vector<WebContentsSettings> webContentsItems;
     int webContentsUpdateInterval;
+    std::vector<StringSetting> timeZones;
     TextStyleSettings timeStyle;
     TextStyleSettings dateStyle;
     bool oldTaskbarOnWin11;
@@ -398,26 +411,31 @@ WinVersion g_winVersion;
 std::atomic<bool> g_initialized;
 std::atomic<bool> g_explorerPatcherInitialized;
 
-int g_formatIndex;
+DWORD g_formatIndex;
 SYSTEMTIME g_formatTime;
 
 template <size_t N>
 struct FormattedString {
-    int formatIndex;
+    DWORD formatIndex;
     WCHAR buffer[N];
 };
 
 FormattedString<FORMATTED_BUFFER_SIZE> g_timeFormatted;
 std::vector<std::wstring> g_timeFormattedExtra;
+std::vector<FormattedString<FORMATTED_BUFFER_SIZE>> g_timeFormattedTz;
 FormattedString<FORMATTED_BUFFER_SIZE> g_dateFormatted;
 std::vector<std::wstring> g_dateFormattedExtra;
+std::vector<FormattedString<FORMATTED_BUFFER_SIZE>> g_dateFormattedTz;
 FormattedString<FORMATTED_BUFFER_SIZE> g_weekdayFormatted;
 std::vector<std::wstring> g_weekdayFormattedExtra;
+std::vector<FormattedString<FORMATTED_BUFFER_SIZE>> g_weekdayFormattedTz;
 FormattedString<INTEGER_BUFFER_SIZE> g_weekdayNumFormatted;
 FormattedString<INTEGER_BUFFER_SIZE> g_weeknumFormatted;
 FormattedString<INTEGER_BUFFER_SIZE> g_weeknumIsoFormatted;
 FormattedString<INTEGER_BUFFER_SIZE> g_dayOfYearFormatted;
 FormattedString<FORMATTED_BUFFER_SIZE> g_timezoneFormatted;
+
+std::vector<std::optional<DYNAMIC_TIME_ZONE_INFORMATION>> g_timeZoneInformation;
 
 HANDLE g_webContentUpdateThread;
 HANDLE g_webContentUpdateRefreshEvent;
@@ -445,6 +463,17 @@ std::vector<ClockElementStyleData> g_clockElementStyleData;
 
 using GetDpiForWindow_t = UINT(WINAPI*)(HWND hwnd);
 GetDpiForWindow_t pGetDpiForWindow;
+
+using SystemTimeToTzSpecificLocalTimeEx_t =
+    BOOL(WINAPI*)(const DYNAMIC_TIME_ZONE_INFORMATION* lpTimeZoneInformation,
+                  const SYSTEMTIME* lpUniversalTime,
+                  LPSYSTEMTIME lpLocalTime);
+SystemTimeToTzSpecificLocalTimeEx_t pSystemTimeToTzSpecificLocalTimeEx;
+
+using EnumDynamicTimeZoneInformation_t =
+    DWORD(WINAPI*)(const DWORD dwIndex,
+                   PDYNAMIC_TIME_ZONE_INFORMATION lpTimeZoneInformation);
+EnumDynamicTimeZoneInformation_t pEnumDynamicTimeZoneInformation;
 
 using GetLocalTime_t = decltype(&GetLocalTime);
 GetLocalTime_t GetLocalTime_Original;
@@ -703,15 +732,6 @@ DWORD WINAPI WebContentUpdateThread(LPVOID lpThreadParameter) {
 }
 
 void WebContentUpdateThreadInit() {
-    // A fuzzy check to see if any of the lines contain the web content pattern.
-    // If not, no need to fire up the thread.
-    if (!wcsstr(g_settings.topLine, L"%web") &&
-        !wcsstr(g_settings.bottomLine, L"%web") &&
-        !wcsstr(g_settings.middleLine, L"%web") &&
-        !wcsstr(g_settings.tooltipLine, L"%web")) {
-        return;
-    }
-
     std::lock_guard<std::mutex> guard(g_webContentMutex);
 
     g_webContentLoaded = false;
@@ -724,8 +744,16 @@ void WebContentUpdateThreadInit() {
     g_webContentStringsFull.clear();
     g_webContentStringsFull.resize(g_settings.webContentsItems.size());
 
-    if ((g_settings.webContentsUrl && *g_settings.webContentsUrl) ||
-        g_settings.webContentsItems.size() > 0) {
+    // A fuzzy check to see if any of the lines contain the web content pattern.
+    // If not, no need to fire up the thread.
+    bool webContentsIsBeingUsed = wcsstr(g_settings.topLine, L"%web") ||
+                                  wcsstr(g_settings.bottomLine, L"%web") ||
+                                  wcsstr(g_settings.middleLine, L"%web") ||
+                                  wcsstr(g_settings.tooltipLine, L"%web");
+
+    if (webContentsIsBeingUsed &&
+        ((g_settings.webContentsUrl && *g_settings.webContentsUrl) ||
+         g_settings.webContentsItems.size() > 0)) {
         g_webContentUpdateRefreshEvent =
             CreateEvent(nullptr, FALSE, FALSE, nullptr);
         g_webContentUpdateStopEvent =
@@ -746,6 +774,26 @@ void WebContentUpdateThreadUninit() {
         CloseHandle(g_webContentUpdateStopEvent);
         g_webContentUpdateStopEvent = nullptr;
     }
+}
+
+std::optional<DYNAMIC_TIME_ZONE_INFORMATION> GetTimeZoneInformation(
+    PCWSTR timeZone) {
+    if (!pEnumDynamicTimeZoneInformation) {
+        return std::nullopt;
+    }
+
+    DWORD i = 0;
+    DWORD dwResult;
+    do {
+        DYNAMIC_TIME_ZONE_INFORMATION dynamicTimezone;
+        dwResult = pEnumDynamicTimeZoneInformation(i++, &dynamicTimezone);
+        if (dwResult == ERROR_SUCCESS &&
+            _wcsicmp(dynamicTimezone.TimeZoneKeyName, timeZone) == 0) {
+            return dynamicTimezone;
+        }
+    } while (dwResult != ERROR_NO_MORE_ITEMS);
+
+    return std::nullopt;
 }
 
 DWORD GetStartDayOfWeek(const SYSTEMTIME* time) {
@@ -1007,6 +1055,44 @@ std::vector<std::wstring>* GetTimeFormattedExtra() {
     return extra;
 }
 
+PCWSTR GetTimeFormattedTz(size_t index) {
+    if (index >= g_settings.timeZones.size()) {
+        return nullptr;
+    }
+
+    auto& timeFormattedTz = g_timeFormattedTz[index];
+
+    if (timeFormattedTz.formatIndex != g_formatIndex) {
+        const auto& timeZoneInformation = g_timeZoneInformation[index];
+        if (timeZoneInformation && pSystemTimeToTzSpecificLocalTimeEx) {
+            SYSTEMTIME systemTime;
+            TzSpecificLocalTimeToSystemTime(nullptr, &g_formatTime,
+                                            &systemTime);
+
+            SYSTEMTIME timeTz;
+            pSystemTimeToTzSpecificLocalTimeEx(&*timeZoneInformation,
+                                               &systemTime, &timeTz);
+
+            const SYSTEMTIME* time = &timeTz;
+
+            auto timeFormatParts =
+                SplitTimeFormatString(g_settings.timeFormat.get());
+
+            GetTimeFormatEx_Original(
+                nullptr, g_settings.showSeconds ? 0 : TIME_NOSECONDS, time,
+                !timeFormatParts[0].empty() ? timeFormatParts[0].c_str()
+                                            : nullptr,
+                timeFormattedTz.buffer, ARRAYSIZE(timeFormattedTz.buffer));
+        } else {
+            wcscpy_s(timeFormattedTz.buffer, L"-");
+        }
+
+        timeFormattedTz.formatIndex = g_formatIndex;
+    }
+
+    return timeFormattedTz.buffer;
+}
+
 PCWSTR GetDateFormattedWithExtra(std::vector<std::wstring>** extra) {
     if (g_dateFormatted.formatIndex != g_formatIndex) {
         const SYSTEMTIME* time = &g_formatTime;
@@ -1048,6 +1134,45 @@ std::vector<std::wstring>* GetDateFormattedExtra() {
     std::vector<std::wstring>* extra;
     GetDateFormattedWithExtra(&extra);
     return extra;
+}
+
+PCWSTR GetDateFormattedTz(size_t index) {
+    if (index >= g_settings.timeZones.size()) {
+        return nullptr;
+    }
+
+    auto& dateFormattedTz = g_dateFormattedTz[index];
+
+    if (dateFormattedTz.formatIndex != g_formatIndex) {
+        const auto& timeZoneInformation = g_timeZoneInformation[index];
+        if (timeZoneInformation && pSystemTimeToTzSpecificLocalTimeEx) {
+            SYSTEMTIME systemTime;
+            TzSpecificLocalTimeToSystemTime(nullptr, &g_formatTime,
+                                            &systemTime);
+
+            SYSTEMTIME timeTz;
+            pSystemTimeToTzSpecificLocalTimeEx(&*timeZoneInformation,
+                                               &systemTime, &timeTz);
+
+            const SYSTEMTIME* time = &timeTz;
+
+            auto dateFormatParts =
+                SplitTimeFormatString(g_settings.dateFormat.get());
+
+            GetDateFormatEx_Original(
+                nullptr, DATE_AUTOLAYOUT, time,
+                !dateFormatParts[0].empty() ? dateFormatParts[0].c_str()
+                                            : nullptr,
+                dateFormattedTz.buffer, ARRAYSIZE(dateFormattedTz.buffer),
+                nullptr);
+        } else {
+            wcscpy_s(dateFormattedTz.buffer, L"-");
+        }
+
+        dateFormattedTz.formatIndex = g_formatIndex;
+    }
+
+    return dateFormattedTz.buffer;
 }
 
 PCWSTR GetWeekdayFormattedWithExtra(std::vector<std::wstring>** extra) {
@@ -1093,6 +1218,45 @@ std::vector<std::wstring>* GetWeekdayFormattedExtra() {
     std::vector<std::wstring>* extra;
     GetWeekdayFormattedWithExtra(&extra);
     return extra;
+}
+
+PCWSTR GetWeekdayFormattedTz(size_t index) {
+    if (index >= g_settings.timeZones.size()) {
+        return nullptr;
+    }
+
+    auto& weekdayFormattedTz = g_weekdayFormattedTz[index];
+
+    if (weekdayFormattedTz.formatIndex != g_formatIndex) {
+        const auto& timeZoneInformation = g_timeZoneInformation[index];
+        if (timeZoneInformation && pSystemTimeToTzSpecificLocalTimeEx) {
+            SYSTEMTIME systemTime;
+            TzSpecificLocalTimeToSystemTime(nullptr, &g_formatTime,
+                                            &systemTime);
+
+            SYSTEMTIME timeTz;
+            pSystemTimeToTzSpecificLocalTimeEx(&*timeZoneInformation,
+                                               &systemTime, &timeTz);
+
+            const SYSTEMTIME* time = &timeTz;
+
+            auto weekdayFormatParts =
+                SplitTimeFormatString(g_settings.weekdayFormat.get());
+
+            GetDateFormatEx_Original(
+                nullptr, DATE_AUTOLAYOUT, time,
+                !weekdayFormatParts[0].empty() ? weekdayFormatParts[0].c_str()
+                                               : nullptr,
+                weekdayFormattedTz.buffer, ARRAYSIZE(weekdayFormattedTz.buffer),
+                nullptr);
+        } else {
+            wcscpy_s(weekdayFormattedTz.buffer, L"-");
+        }
+
+        weekdayFormattedTz.formatIndex = g_formatIndex;
+    }
+
+    return weekdayFormattedTz.buffer;
 }
 
 PCWSTR GetWeekdayNumFormatted() {
@@ -1210,6 +1374,34 @@ size_t ResolveFormatToken(std::wstring_view format, PCWSTR* resolved) {
             *resolved = formatToken.valueGetter();
             return formatToken.token.size();
         }
+    }
+
+    using FormattedStringValueGetterTz = PCWSTR (*)(size_t index);
+
+    struct {
+        std::wstring_view prefix;
+        FormattedStringValueGetterTz valueGetter;
+    } formatTzTokens[] = {
+        {L"%time_tz"sv, GetTimeFormattedTz},
+        {L"%date_tz"sv, GetDateFormattedTz},
+        {L"%weekday_tz"sv, GetWeekdayFormattedTz},
+    };
+
+    for (auto formatTzToken : formatTzTokens) {
+        int digit =
+            ResolveFormatTokenWithDigit(format, formatTzToken.prefix, L"%"sv);
+        if (!digit) {
+            continue;
+        }
+
+        PCWSTR value = formatTzToken.valueGetter(digit - 1);
+        if (!value) {
+            *resolved = L"-";
+        } else {
+            *resolved = value;
+        }
+
+        return formatTzToken.prefix.size() + 2;
     }
 
     if (auto token = L"%web%"sv; format.starts_with(token)) {
@@ -1980,6 +2172,7 @@ int WINAPI GetDateFormatEx_Hook_Win11(LPCWSTR lpLocaleName,
 
         if (!(dwFlags & DATE_LONGDATE)) {
             if (!cchDate || g_winVersion >= WinVersion::Win11_22H2) {
+                // First call, save date for formatting.
                 g_formatTime = *lpDate;
                 g_formatIndex++;
             }
@@ -2314,6 +2507,24 @@ WinVersion GetExplorerVersion() {
     return WinVersion::Unsupported;
 }
 
+struct EXPLORER_PATCHER_HOOK {
+    PCSTR symbol;
+    void** pOriginalFunction;
+    void* hookFunction = nullptr;
+    bool optional = false;
+
+    template <typename Prototype>
+    EXPLORER_PATCHER_HOOK(
+        PCSTR symbol,
+        Prototype** originalFunction,
+        std::type_identity_t<Prototype*> hookFunction = nullptr,
+        bool optional = false)
+        : symbol(symbol),
+          pOriginalFunction(reinterpret_cast<void**>(originalFunction)),
+          hookFunction(reinterpret_cast<void*>(hookFunction)),
+          optional(optional) {}
+};
+
 bool HookExplorerPatcherSymbols(HMODULE explorerPatcherModule) {
     if (g_explorerPatcherInitialized.exchange(true)) {
         return true;
@@ -2323,28 +2534,21 @@ bool HookExplorerPatcherSymbols(HMODULE explorerPatcherModule) {
         g_winVersion = WinVersion::Win10;
     }
 
-    struct EXPLORER_PATCHER_HOOK {
-        PCSTR symbol;
-        void** pOriginalFunction;
-        void* hookFunction = nullptr;
-        bool optional = false;
-    };
-
     EXPLORER_PATCHER_HOOK hooks[] = {
         {R"(?UpdateTextStringsIfNecessary@ClockButton@@AEAAIPEA_N@Z)",
-         (void**)&ClockButton_UpdateTextStringsIfNecessary_Original,
-         (void*)ClockButton_UpdateTextStringsIfNecessary_Hook},
+         &ClockButton_UpdateTextStringsIfNecessary_Original,
+         ClockButton_UpdateTextStringsIfNecessary_Hook},
         {R"(?CalculateMinimumSize@ClockButton@@QEAA?AUtagSIZE@@U2@@Z)",
-         (void**)&ClockButton_CalculateMinimumSize_Original,
-         (void*)ClockButton_CalculateMinimumSize_Hook},
+         &ClockButton_CalculateMinimumSize_Original,
+         ClockButton_CalculateMinimumSize_Hook},
         {R"(?GetTextSpacingForOrientation@ClockButton@@AEAAH_NHHHH@Z)",
-         (void**)&ClockButton_GetTextSpacingForOrientation_Original,
-         (void*)ClockButton_GetTextSpacingForOrientation_Hook},
+         &ClockButton_GetTextSpacingForOrientation_Original,
+         ClockButton_GetTextSpacingForOrientation_Hook},
         {R"(?v_GetTooltipText@ClockButton@@MEAAJPEAPEAUHINSTANCE__@@PEAPEAGPEAG_K@Z)",
-         (void**)&ClockButton_v_GetTooltipText_Original,
-         (void*)ClockButton_v_GetTooltipText_Hook, true},
+         &ClockButton_v_GetTooltipText_Original,
+         ClockButton_v_GetTooltipText_Hook, true},
         {R"(?v_OnDisplayStateChange@ClockButton@@MEAAX_N@Z)",
-         (void**)&ClockButton_v_OnDisplayStateChange_Original},
+         &ClockButton_v_OnDisplayStateChange_Original},
     };
 
     bool succeeded = true;
@@ -2367,14 +2571,16 @@ bool HookExplorerPatcherSymbols(HMODULE explorerPatcherModule) {
         }
     }
 
-    if (g_initialized) {
+    if (!succeeded) {
+        Wh_Log(L"HookExplorerPatcherSymbols failed");
+    } else if (g_initialized) {
         Wh_ApplyHookOperations();
     }
 
     return succeeded;
 }
 
-bool HandleModuleIfExplorerPatcher(HMODULE module) {
+bool IsExplorerPatcherModule(HMODULE module) {
     WCHAR moduleFilePath[MAX_PATH];
     switch (
         GetModuleFileName(module, moduleFilePath, ARRAYSIZE(moduleFilePath))) {
@@ -2390,24 +2596,28 @@ bool HandleModuleIfExplorerPatcher(HMODULE module) {
 
     moduleFileName++;
 
-    if (_wcsnicmp(L"ep_taskbar.", moduleFileName, sizeof("ep_taskbar.") - 1) !=
+    if (_wcsnicmp(L"ep_taskbar.", moduleFileName, sizeof("ep_taskbar.") - 1) ==
         0) {
+        Wh_Log(L"ExplorerPatcher taskbar module: %s", moduleFileName);
         return true;
     }
 
-    Wh_Log(L"ExplorerPatcher taskbar loaded: %s", moduleFileName);
-    return HookExplorerPatcherSymbols(module);
+    return false;
 }
 
-void HandleLoadedExplorerPatcher() {
+bool HandleLoadedExplorerPatcher() {
     HMODULE hMods[1024];
     DWORD cbNeeded;
     if (EnumProcessModules(GetCurrentProcess(), hMods, sizeof(hMods),
                            &cbNeeded)) {
         for (size_t i = 0; i < cbNeeded / sizeof(HMODULE); i++) {
-            HandleModuleIfExplorerPatcher(hMods[i]);
+            if (IsExplorerPatcherModule(hMods[i])) {
+                return HookExplorerPatcherSymbols(hMods[i]);
+            }
         }
     }
+
+    return true;
 }
 
 using LoadLibraryExW_t = decltype(&LoadLibraryExW);
@@ -2417,7 +2627,9 @@ HMODULE WINAPI LoadLibraryExW_Hook(LPCWSTR lpLibFileName,
                                    DWORD dwFlags) {
     HMODULE module = LoadLibraryExW_Original(lpLibFileName, hFile, dwFlags);
     if (module && !((ULONG_PTR)module & 3) && !g_explorerPatcherInitialized) {
-        HandleModuleIfExplorerPatcher(module);
+        if (IsExplorerPatcherModule(module)) {
+            HookExplorerPatcherSymbols(module);
+        }
     }
 
     return module;
@@ -2611,6 +2823,26 @@ void LoadSettings() {
     g_settings.webContentsUpdateInterval =
         Wh_GetIntSetting(L"WebContentsUpdateInterval");
 
+    g_timeZoneInformation.clear();
+    g_timeFormattedTz.clear();
+    g_dateFormattedTz.clear();
+    g_weekdayFormattedTz.clear();
+
+    g_settings.timeZones.clear();
+    for (int i = 0;; i++) {
+        StringSetting timeZone = Wh_GetStringSetting(L"TimeZones[%d]", i);
+        if (*timeZone == '\0') {
+            break;
+        }
+
+        g_timeZoneInformation.emplace_back(GetTimeZoneInformation(timeZone));
+        g_timeFormattedTz.emplace_back();
+        g_dateFormattedTz.emplace_back();
+        g_weekdayFormattedTz.emplace_back();
+
+        g_settings.timeZones.push_back(std::move(timeZone));
+    }
+
     g_settings.timeStyle.visible = Wh_GetIntSetting(L"TimeStyle.Visible");
     g_settings.timeStyle.textColor =
         Wh_GetStringSetting(L"TimeStyle.TextColor");
@@ -2791,6 +3023,23 @@ void ApplySettings() {
 BOOL Wh_ModInit() {
     Wh_Log(L">");
 
+    if (HMODULE hUser32 = LoadLibrary(L"user32.dll")) {
+        pGetDpiForWindow =
+            (GetDpiForWindow_t)GetProcAddress(hUser32, "GetDpiForWindow");
+    }
+
+    if (HMODULE hKernel32 = LoadLibrary(L"kernel32.dll")) {
+        pSystemTimeToTzSpecificLocalTimeEx =
+            (SystemTimeToTzSpecificLocalTimeEx_t)GetProcAddress(
+                hKernel32, "SystemTimeToTzSpecificLocalTimeEx");
+    }
+
+    if (HMODULE hAdvapi32 = LoadLibrary(L"advapi32.dll")) {
+        pEnumDynamicTimeZoneInformation =
+            (EnumDynamicTimeZoneInformation_t)GetProcAddress(
+                hAdvapi32, "EnumDynamicTimeZoneInformation");
+    }
+
     LoadSettings();
 
     g_winVersion = GetExplorerVersion();
@@ -2819,7 +3068,10 @@ BOOL Wh_ModInit() {
         }
     }
 
-    HandleLoadedExplorerPatcher();
+    if (!HandleLoadedExplorerPatcher()) {
+        Wh_Log(L"HandleLoadedExplorerPatcher failed");
+        return FALSE;
+    }
 
     HMODULE kernelBaseModule = GetModuleHandle(L"kernelbase.dll");
     FARPROC pKernelBaseLoadLibraryExW =
@@ -2827,12 +3079,6 @@ BOOL Wh_ModInit() {
     Wh_SetFunctionHook((void*)pKernelBaseLoadLibraryExW,
                        (void*)LoadLibraryExW_Hook,
                        (void**)&LoadLibraryExW_Original);
-
-    HMODULE hUser32 = LoadLibrary(L"user32.dll");
-    if (hUser32) {
-        pGetDpiForWindow =
-            (GetDpiForWindow_t)GetProcAddress(hUser32, "GetDpiForWindow");
-    }
 
     // Must use GetProcAddress for the functions below, otherwise the stubs in
     // kernel32.dll are being hooked.
