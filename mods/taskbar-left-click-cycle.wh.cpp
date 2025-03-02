@@ -2,7 +2,7 @@
 // @id              taskbar-left-click-cycle
 // @name            Cycle through taskbar windows on click
 // @description     Makes clicking on combined taskbar items cycle through windows instead of opening thumbnail previews
-// @version         1.1.1
+// @version         1.1.2
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
@@ -74,6 +74,14 @@ std::atomic<bool> g_initialized;
 std::atomic<bool> g_explorerPatcherInitialized;
 
 bool g_inHandleWinNumHotKey;
+
+using ShouldCycleWindows_t = bool(WINAPI*)();
+ShouldCycleWindows_t ShouldCycleWindows_Original;
+bool WINAPI ShouldCycleWindows_Hook() {
+    Wh_Log(L">");
+
+    return true;
+}
 
 using CTaskBtnGroup_GetGroupType_t = int(WINAPI*)(PVOID pThis);
 CTaskBtnGroup_GetGroupType_t CTaskBtnGroup_GetGroupType_Original;
@@ -155,7 +163,38 @@ HRESULT WINAPI CTaskListWnd_HandleWinNumHotKey_Hook(void* pThis,
 }
 
 bool HookTaskbarViewDllSymbols() {
-    // TODO
+    WCHAR dllPath[MAX_PATH];
+    if (!GetWindowsDirectory(dllPath, ARRAYSIZE(dllPath))) {
+        Wh_Log(L"GetWindowsDirectory failed");
+        return false;
+    }
+
+    wcscat_s(
+        dllPath, MAX_PATH,
+        LR"(\SystemApps\MicrosoftWindows.Client.Core_cw5n1h2txyewy\Taskbar.View.dll)");
+
+    HMODULE module =
+        LoadLibraryEx(dllPath, nullptr, LOAD_WITH_ALTERED_SEARCH_PATH);
+    if (!module) {
+        Wh_Log(L"Taskbar view module couldn't be loaded");
+        return false;
+    }
+
+    // Taskbar.View.dll
+    WindhawkUtils::SYMBOL_HOOK symbolHooks[] = {
+        {
+            {LR"(bool __cdecl ShouldCycleWindows(void))"},
+            &ShouldCycleWindows_Original,
+            ShouldCycleWindows_Hook,
+            true,
+        },
+    };
+
+    if (!HookSymbols(module, symbolHooks, ARRAYSIZE(symbolHooks))) {
+        Wh_Log(L"HookSymbols failed");
+        return false;
+    }
+
     return true;
 }
 
