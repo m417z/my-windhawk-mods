@@ -2424,7 +2424,8 @@ BOOL Wh_ModInit() {
             default:
                 if (PCWSTR moduleFileName = wcsrchr(moduleFilePath, L'\\')) {
                     moduleFileName++;
-                    if (_wcsicmp(moduleFileName, L"Everything.exe") == 0) {
+                    if (_wcsicmp(moduleFileName, L"Everything.exe") == 0 ||
+                        _wcsicmp(moduleFileName, L"Everything64.exe") == 0) {
                         isEverything = true;
                     }
                 } else {
