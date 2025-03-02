@@ -136,7 +136,10 @@ KiB?](https://devblogs.microsoft.com/oldnewthing/20090611-00/?p=17933).
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <string_view>
 #include <vector>
+
+using namespace std::string_view_literals;
 
 #include <initguid.h>
 
@@ -1596,16 +1599,37 @@ std::optional<ULONGLONG> CalculateFolderSize(IShellFolder2* shellFolder) {
     return totalSize;
 }
 
-bool GetFolderPathFromIShellFolder(IShellFolder2* shellFolder,
-                                   WCHAR path[MAX_PATH]) {
+std::wstring GetFolderPathFromIShellFolder(IShellFolder2* shellFolder) {
     LPITEMIDLIST pidl;
     HRESULT hr = SHGetIDListFromObject(shellFolder, &pidl);
-    if (SUCCEEDED(hr)) {
-        bool succeeded = SHGetPathFromIDList(pidl, path);
-        CoTaskMemFree(pidl);
-        return succeeded;
+    if (FAILED(hr)) {
+        return {};
     }
-    return false;
+
+    std::wstring path;
+    path.resize(MAX_PATH);
+    while (
+        !SHGetPathFromIDListEx(pidl, &path[0], path.size(), GPFIDL_DEFAULT)) {
+        // The maximum path length is documented to be "approximately" 32,767.
+        if (path.size() >= 32767 + 256) {
+            CoTaskMemFree(pidl);
+            return {};
+        }
+
+        path.resize(path.size() * 2);
+    }
+
+    path.resize(wcslen(path.c_str()));
+
+    // SHGetPathFromIDListEx() for long path returns path with super path prefix
+    // "\\\\?\\".
+    constexpr auto kSuperPathPrefix = L"\\\\?\\"sv;
+    if (path.starts_with(kSuperPathPrefix)) {
+        path = path.substr(kSuperPathPrefix.size());
+    }
+
+    CoTaskMemFree(pidl);
+    return path;
 }
 
 using CFSFolder__GetSize_t = HRESULT(WINAPI*)(void* pCFSFolder,
@@ -1671,12 +1695,13 @@ HRESULT WINAPI CFSFolder__GetSize_Hook(void* pCFSFolder,
             Wh_Log(L"Failed: %08X", hr);
         } else if (g_settings.calculateFolderSizes ==
                    CalculateFolderSizes::everything) {
-            WCHAR path[MAX_PATH];
-            if (GetFolderPathFromIShellFolder(childFolder.get(), path)) {
-                Wh_Log(L"Getting size for %s", path);
+            const auto path = GetFolderPathFromIShellFolder(childFolder.get());
+            if (!path.empty()) {
+                Wh_Log(L"Getting size for %s", path.c_str());
 
                 int64_t size;
-                unsigned result = Everything4Wh_GetFileSize(path, &size);
+                unsigned result =
+                    Everything4Wh_GetFileSize(path.c_str(), &size);
 
                 // Regular reparse points are indexed with size 0, and
                 // ES_QUERY_ZERO_SIZE_REPARSE_POINT is returned when querying
@@ -1687,11 +1712,11 @@ HRESULT WINAPI CFSFolder__GetSize_Hook(void* pCFSFolder,
                 // be slow, and will be done for all folders if the UNC host
                 // isn't indexed.
                 if (result == ES_QUERY_ZERO_SIZE_REPARSE_POINT ||
-                    (result == ES_QUERY_NO_INDEX && !IsUncPath(path))) {
+                    (result == ES_QUERY_NO_INDEX && !IsUncPath(path.c_str()))) {
                     Wh_Log(L"Resolving path due to status: %s",
                            g_gsQueryStatus[result]);
 
-                    auto resolved = ResolvePath(path);
+                    auto resolved = ResolvePath(path.c_str());
                     if (resolved.empty()) {
                         Wh_Log(L"Failed to resolve path");
                     } else if (resolved == path) {
