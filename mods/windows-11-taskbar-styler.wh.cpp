@@ -1400,10 +1400,12 @@ HRESULT InjectWindhawkTAP() noexcept
 
 #include <winrt/Windows.Foundation.Collections.h>
 #include <winrt/Windows.Foundation.h>
+#include <winrt/Windows.UI.Core.h>
 #include <winrt/Windows.UI.Text.h>
 #include <winrt/Windows.UI.Xaml.Controls.h>
 #include <winrt/Windows.UI.Xaml.Markup.h>
 #include <winrt/Windows.UI.Xaml.Media.h>
+#include <winrt/Windows.UI.Xaml.Shapes.h>
 #include <winrt/Windows.UI.Xaml.h>
 
 using namespace winrt::Windows::UI::Xaml;
@@ -1488,14 +1490,9 @@ std::unordered_map<InstanceHandle, ElementCustomizationState>
 
 bool g_elementPropertyModifying;
 
-struct BackgroundFillDelayedApplyData {
-    UINT_PTR timer = 0;
-    winrt::weak_ref<wux::FrameworkElement> element;
-    std::wstring fallbackClassName;
-};
-
-std::unordered_map<InstanceHandle, BackgroundFillDelayedApplyData>
-    g_backgroundFillDelayedApplyData;
+std::list<std::pair<winrt::weak_ref<DependencyObject>,
+                    winrt::Windows::Foundation::IAsyncOperation<bool>>>
+    g_delayedBackgroundFillSet;
 
 winrt::Windows::Foundation::IInspectable ReadLocalValueWithWorkaround(
     DependencyObject elementDo,
@@ -1519,7 +1516,58 @@ winrt::Windows::Foundation::IInspectable ReadLocalValueWithWorkaround(
 
 void SetOrClearValue(DependencyObject elementDo,
                      DependencyProperty property,
-                     winrt::Windows::Foundation::IInspectable value) {
+                     winrt::Windows::Foundation::IInspectable value,
+                     bool initialApply = false) {
+    // If customized before
+    // `winrt::Taskbar::implementation::TaskbarBackground::OnApplyTemplate` is
+    // executed, it can lead to a crash, or the customization may be overridden.
+    // See:
+    // https://github.com/ramensoftware/windows-11-taskbar-styling-guide/issues/4
+    if (winrt::get_class_name(elementDo) ==
+            L"Windows.UI.Xaml.Shapes.Rectangle" &&
+        elementDo.as<FrameworkElement>().Name() == L"BackgroundFill" &&
+        property == Shapes::Shape::FillProperty()) {
+        auto it = std::find_if(g_delayedBackgroundFillSet.begin(),
+                               g_delayedBackgroundFillSet.end(),
+                               [&elementDo](const auto& it) {
+                                   if (auto elementDoIter = it.first.get()) {
+                                       return elementDoIter == elementDo;
+                                   }
+                                   return false;
+                               });
+
+        if (value != DependencyProperty::UnsetValue() && initialApply &&
+            it == g_delayedBackgroundFillSet.end()) {
+            Wh_Log(L"Delaying SetValue for BackgroundFill");
+            auto asyncOp = elementDo.Dispatcher().TryRunAsync(
+                winrt::Windows::UI::Core::CoreDispatcherPriority::High,
+                [elementDo = std::move(elementDo),
+                 property = std::move(property), value = std::move(value)]() {
+                    Wh_Log(L"Running delayed SetValue for BackgroundFill");
+                    try {
+                        elementDo.SetValue(property, value);
+                    } catch (winrt::hresult_error const& ex) {
+                        Wh_Log(L"Error %08X: %s", ex.code(),
+                               ex.message().c_str());
+                    }
+                    std::erase_if(g_delayedBackgroundFillSet,
+                                  [&elementDo](const auto& it) {
+                                      if (auto elementDoIter = it.first.get()) {
+                                          return elementDoIter == elementDo;
+                                      }
+                                      return false;
+                                  });
+                });
+            g_delayedBackgroundFillSet.emplace_back(elementDo,
+                                                    std::move(asyncOp));
+            return;
+        } else if (it != g_delayedBackgroundFillSet.end()) {
+            Wh_Log(L"Canceling delayed SetValue for BackgroundFill");
+            it->second.Cancel();
+            g_delayedBackgroundFillSet.erase(it);
+        }
+    }
+
     if (value == DependencyProperty::UnsetValue()) {
         elementDo.ClearValue(property);
         return;
@@ -2016,7 +2064,8 @@ void ApplyCustomizationsForVisualStateGroup(
             propertyCustomizationState.originalValue =
                 ReadLocalValueWithWorkaround(element, property);
             propertyCustomizationState.customValue = it->second;
-            SetOrClearValue(element, property, it->second);
+            SetOrClearValue(element, property, it->second,
+                            /*initialApply=*/true);
         }
 
         propertyCustomizationState.propertyChangedToken =
@@ -2156,9 +2205,9 @@ void RestoreCustomizationsForVisualStateGroup(
     }
 }
 
-void ApplyCustomizationsWithNoDelay(InstanceHandle handle,
-                                    FrameworkElement element,
-                                    PCWSTR fallbackClassName) {
+void ApplyCustomizations(InstanceHandle handle,
+                         FrameworkElement element,
+                         PCWSTR fallbackClassName) {
     auto overrides = FindElementPropertyOverrides(element, fallbackClassName);
     if (overrides.empty()) {
         return;
@@ -2195,71 +2244,7 @@ void ApplyCustomizationsWithNoDelay(InstanceHandle handle,
     }
 }
 
-void ApplyCustomizations(InstanceHandle handle,
-                         FrameworkElement element,
-                         PCWSTR fallbackClassName) {
-    if (winrt::get_class_name(element) == L"Windows.UI.Xaml.Shapes.Rectangle" &&
-        element.Name() == L"BackgroundFill") {
-        // If customized before
-        // `winrt::Taskbar::implementation::TaskbarBackground::OnApplyTemplate`
-        // is executed, it can lead to a crash, or the customization may be
-        // overridden. See:
-        // https://github.com/ramensoftware/windows-11-taskbar-styling-guide/issues/4
-        Wh_Log(L"Delaying customization of BackgroundFill");
-
-        auto& delayedApplyData = g_backgroundFillDelayedApplyData[handle];
-
-        auto previousTimer = delayedApplyData.timer;
-
-        delayedApplyData.element = element;
-        delayedApplyData.fallbackClassName = fallbackClassName;
-
-        delayedApplyData.timer = SetTimer(
-            nullptr, previousTimer, 0,
-            [](HWND hwnd,         // handle of window for timer messages
-               UINT uMsg,         // WM_TIMER message
-               UINT_PTR idEvent,  // timer identifier
-               DWORD dwTime       // current system time
-            ) {
-                Wh_Log(L"Running delayed customization of BackgroundFill");
-
-                for (auto it = g_backgroundFillDelayedApplyData.begin();
-                     it != g_backgroundFillDelayedApplyData.end(); ++it) {
-                    auto& delayedApplyData = it->second;
-                    if (delayedApplyData.timer != idEvent) {
-                        continue;
-                    }
-
-                    InstanceHandle handle = it->first;
-
-                    if (auto element = delayedApplyData.element.get()) {
-                        ApplyCustomizationsWithNoDelay(
-                            handle, std::move(element),
-                            delayedApplyData.fallbackClassName.c_str());
-                    } else {
-                        Wh_Log(L"Element no longer exists");
-                    }
-
-                    KillTimer(nullptr, delayedApplyData.timer);
-                    g_backgroundFillDelayedApplyData.erase(it);
-                    break;
-                }
-            });
-
-        return;
-    }
-
-    ApplyCustomizationsWithNoDelay(handle, std::move(element),
-                                   fallbackClassName);
-}
-
 void CleanupCustomizations(InstanceHandle handle) {
-    if (auto it = g_backgroundFillDelayedApplyData.find(handle);
-        it != g_backgroundFillDelayedApplyData.end()) {
-        KillTimer(nullptr, it->second.timer);
-        g_backgroundFillDelayedApplyData.erase(it);
-    }
-
     if (auto it = g_elementsCustomizationState.find(handle);
         it != g_elementsCustomizationState.end()) {
         auto& elementCustomizationState = it->second;
@@ -2673,11 +2658,11 @@ void ProcessResourceVariablesFromSettings() {
 }
 
 void UninitializeSettingsAndTap() {
-    for (auto& [handle, data] : g_backgroundFillDelayedApplyData) {
-        KillTimer(nullptr, data.timer);
+    for (const auto& [elementDo, asyncOp] : g_delayedBackgroundFillSet) {
+        asyncOp.Cancel();
     }
 
-    g_backgroundFillDelayedApplyData.clear();
+    g_delayedBackgroundFillSet.clear();
 
     for (const auto& [handle, elementCustomizationState] :
          g_elementsCustomizationState) {
