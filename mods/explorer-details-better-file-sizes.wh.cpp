@@ -2022,16 +2022,20 @@ HRESULT WINAPI PSFormatForDisplay_Hook(const PROPERTYKEY& propkey,
                                        cchText);
 }
 
-using PSStrFormatKBSizeW_t = void*(WINAPI*)(size_t size,
+using PSStrFormatKBSizeW_t = void*(WINAPI*)(ULONGLONG size,
                                             LPWSTR pwszText,
                                             DWORD cchText);
 PSStrFormatKBSizeW_t PSStrFormatKBSizeW_Original;
-void* WINAPI PSStrFormatKBSizeW_Hook(size_t size,
+void* WINAPI PSStrFormatKBSizeW_Hook(ULONGLONG size,
                                      LPWSTR pwszText,
                                      DWORD cchText) {
     Wh_Log(L">");
 
     void* ret = PSStrFormatKBSizeW_Original(size, pwszText, cchText);
+
+    if (!pwszText || cchText == 0) {
+        return ret;
+    }
 
     int len = wcslen(pwszText);
     if (len < 2 || (size_t)len + 1 > cchText - 1 || pwszText[len - 2] != 'K' ||
