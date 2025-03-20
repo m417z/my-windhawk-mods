@@ -1190,13 +1190,13 @@ PCWSTR GetWeekdayFormattedWithExtra(std::vector<std::wstring>** extra) {
 
         if (weekdayFormatParts[0] == L"custom") {
             if (g_settings.WeekdayFormatCustom.size() == 7) {
-                StringSetting M = Wh_GetStringSetting(L"WeekdayFormatCustom[%d]",0);
-                StringSetting T = Wh_GetStringSetting(L"WeekdayFormatCustom[%d]",1);
-                StringSetting W = Wh_GetStringSetting(L"WeekdayFormatCustom[%d]",2);
-                StringSetting R = Wh_GetStringSetting(L"WeekdayFormatCustom[%d]",3);
-                StringSetting F = Wh_GetStringSetting(L"WeekdayFormatCustom[%d]",4);
-                StringSetting S = Wh_GetStringSetting(L"WeekdayFormatCustom[%d]",5);
-                StringSetting U = Wh_GetStringSetting(L"WeekdayFormatCustom[%d]",6);
+                StringSetting M = g_settings.WeekdayFormatCustom[0];
+                StringSetting T = g_settings.WeekdayFormatCustom[1];
+                StringSetting W = g_settings.WeekdayFormatCustom[2];
+                StringSetting R = g_settings.WeekdayFormatCustom[3];
+                StringSetting F = g_settings.WeekdayFormatCustom[4];
+                StringSetting S = g_settings.WeekdayFormatCustom[5];
+                StringSetting U = g_settings.WeekdayFormatCustom[6];
                 switch (time->wDayOfWeek) { //Microsoft starts on Sunday=0
                     case 1: wcscpy(g_weekdayFormatted.buffer, M); break;
                     case 2: wcscpy(g_weekdayFormatted.buffer, T); break;
