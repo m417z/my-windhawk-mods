@@ -2,7 +2,7 @@
 // @id              windows-11-taskbar-styler
 // @name            Windows 11 Taskbar Styler
 // @description     Customize the taskbar with themes contributed by others or create your own
-// @version         1.3.10
+// @version         1.3.11
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
@@ -65,6 +65,10 @@ WinVista](https://github.com/ramensoftware/windows-11-taskbar-styling-guide/blob
 [![CleanSlate](https://raw.githubusercontent.com/ramensoftware/windows-11-taskbar-styling-guide/main/Themes/CleanSlate/screenshot.png)
 \
 CleanSlate](https://github.com/ramensoftware/windows-11-taskbar-styling-guide/blob/main/Themes/CleanSlate/README.md)
+
+[![BottomDensy](https://raw.githubusercontent.com/ramensoftware/windows-11-taskbar-styling-guide/main/Themes/BottomDensy/BottomDensyNoInd.png)
+\
+BottomDensy](https://github.com/ramensoftware/windows-11-taskbar-styling-guide/blob/main/Themes/BottomDensy/ReadMe.md)
 
 [![Lucent](https://raw.githubusercontent.com/ramensoftware/windows-11-taskbar-styling-guide/main/Themes/Lucent/screenshot.png)
 \
@@ -219,6 +223,8 @@ code from the **TranslucentTB** project.
   - DockLike: DockLike
   - WinVista: WinVista
   - CleanSlate: CleanSlate
+  - BottomDensy: BottomDensy
+  - BottomDensyNoInd: BottomDensyNoInd
   - Lucent: Lucent (Accented Bar)
   - Lucent_variant_Light: Lucent (Light Bar)
   - 21996Taskbar: 21996Taskbar
@@ -796,6 +802,77 @@ const Theme g_themeCleanSlate = {{
         L"Margin=-3,0,0,0"}},
     ThemeTargetStyles{L"Grid#OverflowRootGrid > Border", {
         L"Background:=<AcrylicBrush TintColor=\"{ThemeResource SystemAccentColorDark2}\" TintOpacity=\"0.4\" FallbackColor=\"{ThemeResource SystemAccentColorDark1}\" />"}},
+}};
+
+const Theme g_themeBottomDensy = {{
+  // Transparent taskbar
+  ThemeTargetStyles{L"Taskbar.TaskbarFrame > Grid#RootGrid > Taskbar.TaskbarBackground > Grid > Rectangle#BackgroundFill",{
+    L"Fill=Transparent"}},
+  ThemeTargetStyles{L"Rectangle#BackgroundStroke",{
+    L"Fill=Transparent"}},
+
+  // Indicators: on top
+  ThemeTargetStyles{L"Taskbar.TaskListLabeledButtonPanel@RunningIndicatorStates > Rectangle#RunningIndicator",{
+    L"Fill=#8f8f8f",L"Fill@ActiveRunningIndicator=#fef9f0",
+    L"Height=2",L"Width=2",L"Width@ActiveRunningIndicator=32",
+    L"Margin=0,-2,0,0",
+  }},
+  ThemeTargetStyles{L"Rectangle#RunningIndicator"                  	,{L"VerticalAlignment=0"}},
+  ThemeTargetStyles{L"Border#ProgressBarRoot"                      	,{L"VerticalAlignment=0"}},
+  ThemeTargetStyles{L"Rectangle#DeterminateProgressBarIndicator"   	,{L"VerticalAlignment=0"}},
+  ThemeTargetStyles{L"Rectangle#IndeterminateProgressBarIndicator" 	,{L"VerticalAlignment=0"}},
+  ThemeTargetStyles{L"Rectangle#IndeterminateProgressBarIndicator2"	,{L"VerticalAlignment=0"}},
+  // Icons @ bottom, no padding (adjust taskbar height to remove empty top)
+  ThemeTargetStyles{L"Taskbar.TaskListLabeledButtonPanel", {
+    L"Padding=2,0,2,0", //≝2,4,2,4
+    L"VerticalAlignment=2", //≝0
+  }},
+
+  // Start button: hidden (use the ∞ angle to use it instead)
+  ThemeTargetStyles{L"Taskbar.ExperienceToggleButton#LaunchListButton[AutomationProperties.AutomationId=StartButton]", {
+    L"Visibility=Collapsed",
+  }},
+}};
+
+const Theme g_themeBottomDensyNoInd = {{
+  // Transparent taskbar
+  ThemeTargetStyles{L"Taskbar.TaskbarFrame > Grid#RootGrid > Taskbar.TaskbarBackground > Grid > Rectangle#BackgroundFill",{
+    L"Fill=Transparent"}},
+  ThemeTargetStyles{L"Rectangle#BackgroundStroke",{
+    L"Fill=Transparent"}},
+
+  // Indicators: non inactive (mark the few not running instead), active ones "eat" into the icon to otherwise remove any space between the top of the icon and the taskbar edge
+  ThemeTargetStyles{L"Taskbar.TaskListLabeledButtonPanel@RunningIndicatorStates > Rectangle#RunningIndicator",{
+    L"Fill=#8f8f8f",L"Fill@ActiveRunningIndicator=#fef9f0",
+    L"Height=0",L"Width=0", L"Margin=0,0,0,0",
+    L"Height@ActiveRunningIndicator=2",L"Width@ActiveRunningIndicator=32",
+    L"Margin@ActiveRunningIndicator=0,-2,0,0",
+  }},
+  ThemeTargetStyles{L"Rectangle#RunningIndicator"                  	,{L"VerticalAlignment=0"}},
+  ThemeTargetStyles{L"Border#ProgressBarRoot"                      	,{L"VerticalAlignment=0"}},
+  ThemeTargetStyles{L"Rectangle#DeterminateProgressBarIndicator"   	,{L"VerticalAlignment=0"}},
+  ThemeTargetStyles{L"Rectangle#IndeterminateProgressBarIndicator" 	,{L"VerticalAlignment=0"}},
+  ThemeTargetStyles{L"Rectangle#IndeterminateProgressBarIndicator2"	,{L"VerticalAlignment=0"}},
+  // Icon indicators:
+  ThemeTargetStyles{L"Taskbar.TaskListLabeledButtonPanel@RunningIndicatorStates > Image#Icon", {
+    // Active running: slightly smaller icon to fit the active indicator
+    L"Width@ActiveRunningIndicator=30",
+    L"Height@ActiveRunningIndicator=30",
+    // Non-running: smaller icons @ bottom
+    L"Width@NoRunningIndicator=24",
+    L"Height@NoRunningIndicator=24",
+    L"Margin@NoRunningIndicator=0,8,0,0",
+  }},
+  // Icons @ bottom, no padding (adjust taskbar height to remove empty top)
+  ThemeTargetStyles{L"Taskbar.TaskListLabeledButtonPanel", {
+    L"Padding=2,0,2,0", //≝2,4,2,4
+    L"VerticalAlignment=2", //≝0
+  }},
+
+  // Start button: hidden (use the ∞ angle to use it instead)
+  ThemeTargetStyles{L"Taskbar.ExperienceToggleButton#LaunchListButton[AutomationProperties.AutomationId=StartButton]", {
+    L"Visibility=Collapsed",
+  }},
 }};
 
 const Theme g_themeLucent = {{
@@ -2566,6 +2643,10 @@ void ProcessAllStylesFromSettings() {
         theme = &g_themeWinVista;
     } else if (wcscmp(themeName, L"CleanSlate") == 0) {
         theme = &g_themeCleanSlate;
+    } else if (wcscmp(themeName, L"BottomDensy") == 0) {
+        theme = &g_themeBottomDensy;
+    } else if (wcscmp(themeName, L"BottomDensyNoInd") == 0) {
+        theme = &g_themeBottomDensyNoInd;
     } else if (wcscmp(themeName, L"Lucent") == 0) {
         theme = &g_themeLucent;
     } else if (wcscmp(themeName, L"Lucent_variant_Light") == 0) {
