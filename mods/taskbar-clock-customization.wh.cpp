@@ -1190,21 +1190,14 @@ PCWSTR GetWeekdayFormattedWithExtra(std::vector<std::wstring>** extra) {
 
         if (weekdayFormatParts[0] == L"custom") {
             if (g_settings.WeekdayFormatCustom.size() == 7) {
-                StringSetting M = g_settings.WeekdayFormatCustom[0];
-                StringSetting T = g_settings.WeekdayFormatCustom[1];
-                StringSetting W = g_settings.WeekdayFormatCustom[2];
-                StringSetting R = g_settings.WeekdayFormatCustom[3];
-                StringSetting F = g_settings.WeekdayFormatCustom[4];
-                StringSetting S = g_settings.WeekdayFormatCustom[5];
-                StringSetting U = g_settings.WeekdayFormatCustom[6];
                 switch (time->wDayOfWeek) { //Microsoft starts on Sunday=0
-                    case 1: wcscpy(g_weekdayFormatted.buffer, M); break;
-                    case 2: wcscpy(g_weekdayFormatted.buffer, T); break;
-                    case 3: wcscpy(g_weekdayFormatted.buffer, W); break;
-                    case 4: wcscpy(g_weekdayFormatted.buffer, R); break;
-                    case 5: wcscpy(g_weekdayFormatted.buffer, F); break;
-                    case 6: wcscpy(g_weekdayFormatted.buffer, S); break;
-                    case 0: wcscpy(g_weekdayFormatted.buffer, U); break;
+                    case 1: wcscpy(g_weekdayFormatted.buffer, g_settings.WeekdayFormatCustom[0]); break;
+                    case 2: wcscpy(g_weekdayFormatted.buffer, g_settings.WeekdayFormatCustom[1]); break;
+                    case 3: wcscpy(g_weekdayFormatted.buffer, g_settings.WeekdayFormatCustom[2]); break;
+                    case 4: wcscpy(g_weekdayFormatted.buffer, g_settings.WeekdayFormatCustom[3]); break;
+                    case 5: wcscpy(g_weekdayFormatted.buffer, g_settings.WeekdayFormatCustom[4]); break;
+                    case 6: wcscpy(g_weekdayFormatted.buffer, g_settings.WeekdayFormatCustom[5]); break;
+                    case 0: wcscpy(g_weekdayFormatted.buffer, g_settings.WeekdayFormatCustom[6]); break;
                     default:wcscpy(g_weekdayFormatted.buffer, L"?"); break;
                 }
             } else {
