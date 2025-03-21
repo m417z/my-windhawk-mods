@@ -88,6 +88,7 @@ issue](https://tweaker.userecho.com/topics/826-scroll-on-trackpadtouchpad-doesnt
 #include <endpointvolume.h>
 #include <mmdeviceapi.h>
 #include <objbase.h>
+#include <psapi.h>
 #include <windowsx.h>
 
 #include <atomic>
@@ -262,6 +263,7 @@ bool GetNotificationAreaRect(HWND hMMTaskbarWnd, RECT* rcResult) {
         return GetWindowRect(hClockButtonWnd, rcResult);
     }
 
+    SetRectEmpty(rcResult);
     return true;
 }
 
@@ -1652,8 +1654,8 @@ bool HookTaskbarViewDllSymbols(HMODULE module) {
     WindhawkUtils::SYMBOL_HOOK symbolHooks[] = {
         {
             {LR"(public: void __cdecl winrt::SystemTray::implementation::VolumeSystemTrayIconDataModel::OnIconClicked(struct winrt::SystemTray::IconClickedEventArgs const &))"},
-            (void**)&VolumeSystemTrayIconDataModel_OnIconClicked_Original,
-            (void*)VolumeSystemTrayIconDataModel_OnIconClicked_Hook,
+            &VolumeSystemTrayIconDataModel_OnIconClicked_Original,
+            VolumeSystemTrayIconDataModel_OnIconClicked_Hook,
             true,
         },
     };
@@ -1681,6 +1683,57 @@ void HandleLoadedModuleIfTaskbarView(HMODULE module, LPCWSTR lpLibFileName) {
     }
 }
 
+bool IsExplorerPatcherModule(HMODULE module) {
+    WCHAR moduleFilePath[MAX_PATH];
+    switch (
+        GetModuleFileName(module, moduleFilePath, ARRAYSIZE(moduleFilePath))) {
+        case 0:
+        case ARRAYSIZE(moduleFilePath):
+            return false;
+    }
+
+    PCWSTR moduleFileName = wcsrchr(moduleFilePath, L'\\');
+    if (!moduleFileName) {
+        return false;
+    }
+
+    moduleFileName++;
+
+    if (_wcsnicmp(L"ep_taskbar.", moduleFileName, sizeof("ep_taskbar.") - 1) ==
+        0) {
+        Wh_Log(L"ExplorerPatcher taskbar module: %s", moduleFileName);
+        return true;
+    }
+
+    return false;
+}
+
+void HandleLoadedExplorerPatcher() {
+    HMODULE hMods[1024];
+    DWORD cbNeeded;
+    if (EnumProcessModules(GetCurrentProcess(), hMods, sizeof(hMods),
+                           &cbNeeded)) {
+        for (size_t i = 0; i < cbNeeded / sizeof(HMODULE); i++) {
+            if (IsExplorerPatcherModule(hMods[i])) {
+                if (g_nExplorerVersion >= WIN_VERSION_11_21H2) {
+                    g_nExplorerVersion = WIN_VERSION_10_20H1;
+                }
+                break;
+            }
+        }
+    }
+}
+
+void HandleLoadedModuleIfExplorerPatcher(HMODULE module) {
+    if (module && !((ULONG_PTR)module & 3)) {
+        if (IsExplorerPatcherModule(module)) {
+            if (g_nExplorerVersion >= WIN_VERSION_11_21H2) {
+                g_nExplorerVersion = WIN_VERSION_10_20H1;
+            }
+        }
+    }
+}
+
 using LoadLibraryExW_t = decltype(&LoadLibraryExW);
 LoadLibraryExW_t LoadLibraryExW_Original;
 HMODULE WINAPI LoadLibraryExW_Hook(LPCWSTR lpLibFileName,
@@ -1688,6 +1741,7 @@ HMODULE WINAPI LoadLibraryExW_Hook(LPCWSTR lpLibFileName,
                                    DWORD dwFlags) {
     HMODULE module = LoadLibraryExW_Original(lpLibFileName, hFile, dwFlags);
     if (module) {
+        HandleLoadedModuleIfExplorerPatcher(module);
         HandleLoadedModuleIfTaskbarView(module, lpLibFileName);
     }
 
@@ -1743,6 +1797,8 @@ BOOL Wh_ModInit() {
         }
     }
 
+    HandleLoadedExplorerPatcher();
+
     g_initialized = true;
 
     return TRUE;
@@ -1762,6 +1818,10 @@ void Wh_ModAfterInit() {
             }
         }
     }
+
+    // Try again in case there's a race between the previous attempt and the
+    // LoadLibraryExW hook.
+    HandleLoadedExplorerPatcher();
 
     WNDCLASS wndclass;
     if (GetClassInfo(GetModuleHandle(NULL), L"Shell_TrayWnd", &wndclass)) {
