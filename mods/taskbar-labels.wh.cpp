@@ -1001,8 +1001,8 @@ void UpdateTaskListButtonWithLabelStyle(
             labelControlElement.FontSize(fontSize);
         }
 
-        PCWSTR fontFamily = g_unloading ? nullptr : g_settings.fontFamily.get();
-        if (fontFamily && *fontFamily) {
+        PCWSTR fontFamily = g_unloading ? L"" : g_settings.fontFamily.get();
+        if (*fontFamily) {
             labelControlElement.FontFamily(
                 Markup::XamlBindingHelper::ConvertValue(
                     winrt::xaml_typename<Media::FontFamily>(),
@@ -1128,7 +1128,7 @@ void UpdateTaskListButtonWithLabelStyle(
 
         int height = g_unloading || !g_settings.runningIndicatorHeight
                          ? 3
-                         : g_settings.runningIndicatorHeight;
+                         : std::max(g_settings.runningIndicatorHeight, 0);
         indicatorElement.Height(height);
 
         int verticalOffset =
