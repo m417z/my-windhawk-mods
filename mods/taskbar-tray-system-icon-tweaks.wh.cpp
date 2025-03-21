@@ -2,7 +2,7 @@
 // @id              taskbar-tray-system-icon-tweaks
 // @name            Taskbar tray system icon tweaks
 // @description     Allows hiding system icons (volume, network, battery), the bell (always or when there are no new notifications), and the "Show desktop" button (Windows 11 only)
-// @version         1.2.1
+// @version         1.2.2
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
@@ -589,56 +589,72 @@ void ApplyNonActivatableStackIconViewStyle(
 }
 
 void ApplyControlCenterButtonIconStyle(FrameworkElement systemTrayIconElement) {
-    FrameworkElement systemTrayTextIconContent = nullptr;
+    FrameworkElement contentGrid = nullptr;
 
     FrameworkElement child = systemTrayIconElement;
     if ((child = FindChildByName(child, L"ContainerGrid")) &&
-        (child = FindChildByName(child, L"ContentGrid")) &&
-        (child = FindChildByClassName(child, L"SystemTray.TextIconContent"))) {
-        systemTrayTextIconContent = child;
+        (child = FindChildByName(child, L"ContentGrid"))) {
+        contentGrid = child;
     } else {
-        Wh_Log(L"Failed to get SystemTray.TextIconContent");
+        Wh_Log(L"Failed to get ContentGrid");
         return;
     }
-
-    Controls::TextBlock innerTextBlock = nullptr;
-
-    child = systemTrayTextIconContent;
-    if ((child = FindChildByName(child, L"ContainerGrid")) &&
-        (child = FindChildByName(child, L"Base")) &&
-        (child = FindChildByName(child, L"InnerTextBlock"))) {
-        innerTextBlock = child.as<Controls::TextBlock>();
-    } else {
-        Wh_Log(L"Failed to get InnerTextBlock");
-        return;
-    }
-
-    auto text = innerTextBlock.Text();
-    auto systemTrayIconIdent = IdentifySystemTrayIconFromText(text);
 
     bool hide = false;
-    if (!g_unloading) {
-        switch (systemTrayIconIdent) {
-            case SystemTrayIconIdent::kVolume:
-                hide = g_settings.hideVolumeIcon;
-                break;
-
-            case SystemTrayIconIdent::kNetwork:
-                hide = g_settings.hideNetworkIcon;
-                break;
-
-            case SystemTrayIconIdent::kBattery:
-                hide = g_settings.hideBatteryIcon;
-                break;
-
-            default:
-                Wh_Log(L"Failed");
-                break;
+    FrameworkElement systemTrayTextIconContent =
+        FindChildByClassName(contentGrid, L"SystemTray.BatteryIconContent");
+    if (systemTrayTextIconContent) {
+        if (!g_unloading) {
+            hide = g_settings.hideBatteryIcon;
         }
-    }
 
-    Wh_Log(L"System tray icon %d (%s), hide=%d", (int)systemTrayIconIdent,
-           StringToHex(text).c_str(), hide);
+        Wh_Log(L"System battery tray icon, hide=%d", hide);
+    } else {
+        systemTrayTextIconContent =
+            FindChildByClassName(contentGrid, L"SystemTray.TextIconContent");
+        if (!systemTrayTextIconContent) {
+            Wh_Log(L"Failed to get SystemTray.TextIconContent");
+            return;
+        }
+
+        Controls::TextBlock innerTextBlock = nullptr;
+
+        child = systemTrayTextIconContent;
+        if ((child = FindChildByName(child, L"ContainerGrid")) &&
+            (child = FindChildByName(child, L"Base")) &&
+            (child = FindChildByName(child, L"InnerTextBlock"))) {
+            innerTextBlock = child.as<Controls::TextBlock>();
+        } else {
+            Wh_Log(L"Failed to get InnerTextBlock");
+            return;
+        }
+
+        auto text = innerTextBlock.Text();
+        auto systemTrayIconIdent = IdentifySystemTrayIconFromText(text);
+
+        if (!g_unloading) {
+            switch (systemTrayIconIdent) {
+                case SystemTrayIconIdent::kVolume:
+                    hide = g_settings.hideVolumeIcon;
+                    break;
+
+                case SystemTrayIconIdent::kNetwork:
+                    hide = g_settings.hideNetworkIcon;
+                    break;
+
+                case SystemTrayIconIdent::kBattery:
+                    hide = g_settings.hideBatteryIcon;
+                    break;
+
+                default:
+                    Wh_Log(L"Failed");
+                    break;
+            }
+        }
+
+        Wh_Log(L"System tray icon %d (%s), hide=%d", (int)systemTrayIconIdent,
+               StringToHex(text).c_str(), hide);
+    }
 
     bool hidden =
         systemTrayTextIconContent.Visibility() == Visibility::Collapsed;
