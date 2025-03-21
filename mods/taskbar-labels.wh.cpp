@@ -2,7 +2,7 @@
 // @id              taskbar-labels
 // @name            Taskbar Labels for Windows 11
 // @description     Customize text labels and combining for running programs on the taskbar (Windows 11 only)
-// @version         1.3.6
+// @version         1.4
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
@@ -188,17 +188,6 @@ Labels can also be shown or hidden per-program in the settings.
 
 using namespace winrt::Windows::UI::Xaml;
 
-// https://stackoverflow.com/a/51274008
-template <auto fn>
-struct deleter_from_fn {
-    template <typename T>
-    constexpr void operator()(T* arg) const {
-        fn(arg);
-    }
-};
-using string_setting_unique_ptr =
-    std::unique_ptr<const WCHAR[], deleter_from_fn<Wh_FreeStringSetting>>;
-
 enum class Mode {
     labelsWithoutCombining,
     noLabelsWithCombining,
@@ -222,14 +211,14 @@ struct {
     int minimumTaskbarItemWidth;
     int maximumTaskbarItemWidth;
     int fontSize;
-    string_setting_unique_ptr fontFamily;
+    WindhawkUtils::StringSetting fontFamily;
     int leftAndRightPaddingSize;
     int spaceBetweenIconAndLabel;
     int runningIndicatorHeight;
     int runningIndicatorVerticalOffset;
     bool alwaysShowThumbnailLabels;
-    string_setting_unique_ptr labelForSingleItem;
-    string_setting_unique_ptr labelForMultipleItems;
+    WindhawkUtils::StringSetting labelForSingleItem;
+    WindhawkUtils::StringSetting labelForMultipleItems;
 } g_settings;
 
 std::atomic<bool> g_taskbarViewDllLoaded;
@@ -1296,7 +1285,7 @@ void UpdateTaskListButtonCustomizations(
                         UINT uMsg,  // WM_TIMER message
                         UINT_PTR idEvent,  // timer identifier
                         DWORD dwTime       // current system time
-                        ) {
+                     ) {
                          KillTimer(nullptr, g_invalidateTaskListButtonTimer);
                          g_invalidateTaskListButtonTimer = 0;
 
@@ -1816,7 +1805,7 @@ void LoadSettings() {
         g_settings.fontSize = 1;
     }
 
-    g_settings.fontFamily.reset(Wh_GetStringSetting(L"fontFamily"));
+    g_settings.fontFamily = WindhawkUtils::StringSetting::make(L"fontFamily");
 
     g_settings.leftAndRightPaddingSize =
         Wh_GetIntSetting(L"leftAndRightPaddingSize");
@@ -1828,10 +1817,10 @@ void LoadSettings() {
         Wh_GetIntSetting(L"runningIndicatorVerticalOffset");
     g_settings.alwaysShowThumbnailLabels =
         Wh_GetIntSetting(L"alwaysShowThumbnailLabels");
-    g_settings.labelForSingleItem.reset(
-        Wh_GetStringSetting(L"labelForSingleItem"));
-    g_settings.labelForMultipleItems.reset(
-        Wh_GetStringSetting(L"labelForMultipleItems"));
+    g_settings.labelForSingleItem =
+        WindhawkUtils::StringSetting::make(L"labelForSingleItem");
+    g_settings.labelForMultipleItems =
+        WindhawkUtils::StringSetting::make(L"labelForMultipleItems");
 }
 
 void ApplySettings() {
@@ -1860,75 +1849,75 @@ bool HookTaskbarViewDllSymbols(HMODULE module) {
         {
             {
                 {LR"(public: __cdecl winrt::impl::consume_WindowsUdk_UI_Shell_ITaskbarSettings5<struct winrt::WindowsUdk::UI::Shell::TaskbarSettings>::GroupingMode(void)const )"},
-                (void**)&TaskbarSettings_GroupingMode_Original,
+                &TaskbarSettings_GroupingMode_Original,
                 nullptr,
                 true,
             },
             {
                 {LR"(public: virtual int __cdecl winrt::impl::produce<struct winrt::Taskbar::implementation::TaskListButton,struct winrt::Taskbar::ITaskListButton>::get_IsRunning(bool *))"},
-                (void**)&TaskListButton_get_IsRunning_Original,
+                &TaskListButton_get_IsRunning_Original,
             },
             {
                 {LR"(private: void __cdecl winrt::Taskbar::implementation::TaskListButton::UpdateVisualStates(void))"},
-                (void**)&TaskListButton_UpdateVisualStates_Original,
-                (void*)TaskListButton_UpdateVisualStates_Hook,
+                &TaskListButton_UpdateVisualStates_Original,
+                TaskListButton_UpdateVisualStates_Hook,
             },
             {
                 {LR"(private: void __cdecl winrt::Taskbar::implementation::TaskListButton::UpdateButtonPadding(void))"},
-                (void**)&TaskListButton_UpdateButtonPadding_Original,
-                (void*)TaskListButton_UpdateButtonPadding_Hook,
+                &TaskListButton_UpdateButtonPadding_Original,
+                TaskListButton_UpdateButtonPadding_Hook,
             },
             {
                 {LR"(private: void __cdecl winrt::Taskbar::implementation::TaskListButton::UpdateBadgeSize(void))"},
-                (void**)&TaskListButton_UpdateBadgeSize_Original,
-                (void*)TaskListButton_UpdateBadgeSize_Hook,
+                &TaskListButton_UpdateBadgeSize_Original,
+                TaskListButton_UpdateBadgeSize_Hook,
             },
             {
                 {LR"(private: void __cdecl winrt::Taskbar::implementation::TaskbarFrame::OnTaskbarLayoutChildBoundsChanged(void))"},
-                (void**)&TaskbarFrame_OnTaskbarLayoutChildBoundsChanged_Original,
-                (void*)TaskbarFrame_OnTaskbarLayoutChildBoundsChanged_Hook,
+                &TaskbarFrame_OnTaskbarLayoutChildBoundsChanged_Original,
+                TaskbarFrame_OnTaskbarLayoutChildBoundsChanged_Hook,
             },
             {
                 {LR"(public: void __cdecl winrt::Taskbar::implementation::TaskListButton::Icon(struct winrt::Windows::Storage::Streams::IRandomAccessStream))"},
-                (void**)&TaskListButton_Icon_Original,
-                (void*)TaskListButton_Icon_Hook,
+                &TaskListButton_Icon_Original,
+                TaskListButton_Icon_Hook,
             },
             {
                 {LR"(public: virtual int __cdecl winrt::impl::produce<struct winrt::Taskbar::implementation::TaskListButton,struct winrt::Taskbar::ITaskbarButton>::get_MinScalableWidth(float *))"},
-                (void**)&ITaskbarButton_get_MinScalableWidth_Original,
-                (void*)ITaskbarButton_get_MinScalableWidth_Hook,
+                &ITaskbarButton_get_MinScalableWidth_Original,
+                ITaskbarButton_get_MinScalableWidth_Hook,
                 true,
             },
             {
                 {LR"(public: __cdecl winrt::impl::consume_Taskbar_ITaskbarAppItemViewModel<struct winrt::Taskbar::ITaskbarAppItemViewModel>::HasLabel(void)const )"},
-                (void**)&ITaskbarAppItemViewModel_HasLabels_Original,
-                (void*)ITaskbarAppItemViewModel_HasLabels_Hook,
+                &ITaskbarAppItemViewModel_HasLabels_Original,
+                ITaskbarAppItemViewModel_HasLabels_Hook,
                 true,
             },
             {
                 {LR"(const winrt::impl::produce<struct winrt::Taskbar::implementation::TaskListWindowViewModel,struct winrt::Taskbar::ITaskListWindowViewModel>::`vftable')"},
-                (void**)&ITaskListWindowViewModel_vftable,
+                &ITaskListWindowViewModel_vftable,
                 nullptr,
                 true,
             },
             {
                 {LR"(public: virtual int __cdecl winrt::impl::produce<struct winrt::Taskbar::implementation::TaskListWindowViewModel,struct winrt::Taskbar::ITaskListWindowViewModel>::get_TaskItem(void * *))"},
-                (void**)&ITaskListWindowViewModel_get_TaskItem,
+                &ITaskListWindowViewModel_get_TaskItem,
                 nullptr,
                 true,
             },
             {
                 {LR"(public: virtual int __cdecl winrt::impl::produce<struct winrt::Taskbar::implementation::TaskListWindowViewModel,struct winrt::Taskbar::ITaskbarAppItemViewModel>::get_HasLabel(bool *))"},
-                (void**)&TaskListWindowViewModel_ITaskbarAppItemViewModel_get_HasLabel_Original,
-                (void*)
-                    TaskListWindowViewModel_ITaskbarAppItemViewModel_get_HasLabel_Hook,
+                &TaskListWindowViewModel_ITaskbarAppItemViewModel_get_HasLabel_Original,
+
+                TaskListWindowViewModel_ITaskbarAppItemViewModel_get_HasLabel_Hook,
                 true,
             },
             {
                 {LR"(public: virtual int __cdecl winrt::impl::produce<struct winrt::Taskbar::implementation::TaskListGroupViewModel,struct winrt::Taskbar::ITaskbarAppItemViewModel>::get_HasLabel(bool *))"},
-                (void**)&TaskListGroupViewModel_ITaskbarAppItemViewModel_get_HasLabel_Original,
-                (void*)
-                    TaskListGroupViewModel_ITaskbarAppItemViewModel_get_HasLabel_Hook,
+                &TaskListGroupViewModel_ITaskbarAppItemViewModel_get_HasLabel_Original,
+
+                TaskListGroupViewModel_ITaskbarAppItemViewModel_get_HasLabel_Hook,
                 true,
             },
             {
@@ -1938,7 +1927,7 @@ bool HookTaskbarViewDllSymbols(HMODULE module) {
                     // Symbol before update KB5036980:
                     LR"(class wil::details::FeatureImpl<struct __WilFeatureTraits_Feature_29785186> `private: static class wil::details::FeatureImpl<struct __WilFeatureTraits_Feature_29785186> & __cdecl wil::Feature<struct __WilFeatureTraits_Feature_29785186>::GetImpl(void)'::`2'::impl)",
                 },
-                (void**)&wil_Feature_GetImpl_Original,
+                &wil_Feature_GetImpl_Original,
                 nullptr,
                 true,
             },
@@ -1949,7 +1938,7 @@ bool HookTaskbarViewDllSymbols(HMODULE module) {
                     // Symbols before update KB5036980:
                     LR"(public: bool __cdecl wil::details::FeatureImpl<struct __WilFeatureTraits_Feature_29785186>::__private_IsEnabled(enum wil::ReportingKind))",
                 },
-                (void**)&WilFeatureTraits_Feature_29785186_IsEnabled_Original,
+                &WilFeatureTraits_Feature_29785186_IsEnabled_Original,
                 nullptr,
                 true,
             },
@@ -2008,8 +1997,8 @@ bool HookTaskbarDllSymbols() {
     WindhawkUtils::SYMBOL_HOOK taskbarDllHooks[] = {
         {
             {LR"(public: virtual int __cdecl CTaskListThumbnailWnd::DisplayUI(struct ITaskBtnGroup *,struct ITaskItem *,struct ITaskItem *,unsigned long))"},
-            (void**)&CTaskListThumbnailWnd_DisplayUI_Original,
-            (void*)CTaskListThumbnailWnd_DisplayUI_Hook,
+            &CTaskListThumbnailWnd_DisplayUI_Original,
+            CTaskListThumbnailWnd_DisplayUI_Hook,
         },
     };
 
@@ -2031,42 +2020,42 @@ bool HookTaskbarDllSymbolsOldImplementation() {
     WindhawkUtils::SYMBOL_HOOK taskbarDllHooks[] = {
         {
             {LR"(protected: struct ITaskBtnGroup * __cdecl CTaskListWnd::_GetTBGroupFromGroup(struct ITaskGroup *,int *))"},
-            (void**)&CTaskListWnd__GetTBGroupFromGroup_Original,
+            &CTaskListWnd__GetTBGroupFromGroup_Original,
         },
         {
             {LR"(public: virtual int __cdecl CTaskBtnGroup::GetNumItems(void))"},
-            (void**)&CTaskBtnGroup_GetNumItems_Original,
+            &CTaskBtnGroup_GetNumItems_Original,
         },
         {
             {LR"(public: virtual struct ITaskItem * __cdecl CTaskBtnGroup::GetTaskItem(int))"},
-            (void**)&CTaskBtnGroup_GetTaskItem_Original,
+            &CTaskBtnGroup_GetTaskItem_Original,
         },
         {
             {LR"(public: virtual long __cdecl CTaskGroup::GetTitleText(struct ITaskItem *,unsigned short *,int))"},
-            (void**)&CTaskGroup_GetTitleText_Original,
+            &CTaskGroup_GetTitleText_Original,
         },
         {
             {LR"(public: virtual bool __cdecl IconContainer::IsStorageRecreationRequired(class CCoSimpleArray<unsigned int,4294967294,class CSimpleArrayStandardCompareHelper<unsigned int> > const &,enum IconContainerFlags))"},
-            (void**)&IconContainer_IsStorageRecreationRequired_Original,
-            (void*)IconContainer_IsStorageRecreationRequired_Hook,
+            &IconContainer_IsStorageRecreationRequired_Original,
+            IconContainer_IsStorageRecreationRequired_Hook,
         },
         {
             {LR"(public: virtual void __cdecl CTaskListWnd::GroupChanged(struct ITaskGroup *,enum winrt::WindowsUdk::UI::Shell::TaskGroupProperty))"},
-            (void**)&CTaskListWnd_GroupChanged_Original,
-            (void*)CTaskListWnd_GroupChanged_Hook,
+            &CTaskListWnd_GroupChanged_Original,
+            CTaskListWnd_GroupChanged_Hook,
         },
         {
             // An older variant, see the newer variant below.
             {LR"(public: virtual long __cdecl CTaskListWnd::TaskDestroyed(struct ITaskGroup *,struct ITaskItem *,enum TaskDestroyedFlags))"},
-            (void**)&CTaskListWnd_TaskDestroyed_Original,
-            (void*)CTaskListWnd_TaskDestroyed_Hook,
+            &CTaskListWnd_TaskDestroyed_Original,
+            CTaskListWnd_TaskDestroyed_Hook,
             true,
         },
         {
             // A newer variant seen in insider builds.
             {LR"(public: virtual long __cdecl CTaskListWnd::TaskDestroyed(struct ITaskGroup *,struct ITaskItem *))"},
-            (void**)&CTaskListWnd_TaskDestroyed_2_Original,
-            (void*)CTaskListWnd_TaskDestroyed_2_Hook,
+            &CTaskListWnd_TaskDestroyed_2_Original,
+            CTaskListWnd_TaskDestroyed_2_Hook,
             true,
         },
     };
@@ -2104,11 +2093,10 @@ BOOL ModInitWithTaskbarView(HMODULE taskbarViewModule) {
         }
 
         HMODULE kernelBaseModule = GetModuleHandle(L"kernelbase.dll");
-        FARPROC pKernelBaseRegGetValueW =
-            GetProcAddress(kernelBaseModule, "RegGetValueW");
-        Wh_SetFunctionHook((void*)pKernelBaseRegGetValueW,
-                           (void*)RegGetValueW_Hook,
-                           (void**)&RegGetValueW_Original);
+        auto pKernelBaseRegGetValueW = (decltype(&RegGetValueW))GetProcAddress(
+            kernelBaseModule, "RegGetValueW");
+        WindhawkUtils::Wh_SetFunctionHookT(
+            pKernelBaseRegGetValueW, RegGetValueW_Hook, &RegGetValueW_Original);
     }
 
     return TRUE;
