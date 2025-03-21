@@ -2,7 +2,7 @@
 // @id              taskbar-icon-size
 // @name            Taskbar height and icon size
 // @description     Control the taskbar height and icon size, improve icon quality (Windows 11 only)
-// @version         1.2.16
+// @version         1.2.17
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
@@ -98,7 +98,6 @@ struct {
     int taskbarButtonWidth;
 } g_settings;
 
-WCHAR g_taskbarViewDllPath[MAX_PATH];
 std::atomic<bool> g_taskbarViewDllLoaded;
 std::atomic<bool> g_applyingSettings;
 std::atomic<bool> g_pendingMeasureOverride;
@@ -904,6 +903,24 @@ void WINAPI TaskListButton_UpdateVisualStates_Hook(void* pThis) {
     }
 
     TaskListButton_UpdateVisualStates_Original(pThis);
+
+    if (g_applyingSettings) {
+        FrameworkElement taskListButtonElement = nullptr;
+        ((IUnknown*)pThis + 3)
+            ->QueryInterface(winrt::guid_of<FrameworkElement>(),
+                             winrt::put_abi(taskListButtonElement));
+        if (taskListButtonElement) {
+            if (auto iconPanelElement =
+                    FindChildByName(taskListButtonElement, L"IconPanel")) {
+                if (auto iconElement =
+                        FindChildByName(iconPanelElement, L"Icon")) {
+                    double iconSize = g_unloading ? 24 : g_settings.iconSize;
+                    iconElement.Width(iconSize);
+                    iconElement.Height(iconSize);
+                }
+            }
+        }
+    }
 }
 
 using ExperienceToggleButton_UpdateButtonPadding_t = void(WINAPI*)(void* pThis);
@@ -1180,9 +1197,13 @@ void ApplySettings(int taskbarHeight) {
 
     HWND hTaskbarWnd = GetTaskbarWnd();
     if (!hTaskbarWnd) {
+        Wh_Log(L"No taskbar found");
         g_taskbarHeight = taskbarHeight;
         return;
     }
+
+    Wh_Log(L"Applying settings for taskbar %08X",
+           (DWORD)(DWORD_PTR)hTaskbarWnd);
 
     if (!g_taskbarHeight) {
         RECT taskbarRect{};
@@ -1255,35 +1276,6 @@ void ApplySettings(int taskbarHeight) {
     g_applyingSettings = false;
 }
 
-bool GetTaskbarViewDllPath(WCHAR path[MAX_PATH]) {
-    WCHAR szWindowsDirectory[MAX_PATH];
-    if (!GetWindowsDirectory(szWindowsDirectory,
-                             ARRAYSIZE(szWindowsDirectory))) {
-        Wh_Log(L"GetWindowsDirectory failed");
-        return false;
-    }
-
-    // Windows 11 version 22H2.
-    wcscpy_s(path, MAX_PATH, szWindowsDirectory);
-    wcscat_s(
-        path, MAX_PATH,
-        LR"(\SystemApps\MicrosoftWindows.Client.Core_cw5n1h2txyewy\Taskbar.View.dll)");
-    if (GetFileAttributes(path) != INVALID_FILE_ATTRIBUTES) {
-        return true;
-    }
-
-    // Windows 11 version 21H2.
-    wcscpy_s(path, MAX_PATH, szWindowsDirectory);
-    wcscat_s(
-        path, MAX_PATH,
-        LR"(\SystemApps\MicrosoftWindows.Client.CBS_cw5n1h2txyewy\ExplorerExtensions.dll)");
-    if (GetFileAttributes(path) != INVALID_FILE_ATTRIBUTES) {
-        return true;
-    }
-
-    return false;
-}
-
 bool HookTaskbarViewDllSymbols(HMODULE module) {
     // Taskbar.View.dll, ExplorerExtensions.dll
     WindhawkUtils::SYMBOL_HOOK symbolHooks[] =  //
@@ -1291,7 +1283,7 @@ bool HookTaskbarViewDllSymbols(HMODULE module) {
             {
                 // For Windows 11 version 21H2.
                 {LR"(__real@4048000000000000)"},
-                (void**)&double_48_value_Original,
+                &double_48_value_Original,
                 nullptr,
                 true,
             },
@@ -1302,50 +1294,50 @@ bool HookTaskbarViewDllSymbols(HMODULE module) {
                     // Windows 11 version 21H2.
                     LR"(public: struct winrt::Windows::Foundation::IInspectable __cdecl winrt::impl::consume_Windows_Foundation_Collections_IMap<struct winrt::Windows::UI::Xaml::ResourceDictionary,struct winrt::Windows::Foundation::IInspectable,struct winrt::Windows::Foundation::IInspectable>::Lookup(struct winrt::Windows::Foundation::IInspectable const &)const )",
                 },
-                (void**)&ResourceDictionary_Lookup_Original,
-                (void*)ResourceDictionary_Lookup_Hook,
+                &ResourceDictionary_Lookup_Original,
+                ResourceDictionary_Lookup_Hook,
             },
             {
                 {LR"(public: virtual int __cdecl winrt::impl::produce<struct winrt::Taskbar::implementation::TaskListItemViewModel,struct winrt::Taskbar::ITaskListItemViewModel>::GetIconHeight(void *,double *))"},
-                (void**)&TaskListItemViewModel_GetIconHeight_Original,
-                (void*)TaskListItemViewModel_GetIconHeight_Hook,
+                &TaskListItemViewModel_GetIconHeight_Original,
+                TaskListItemViewModel_GetIconHeight_Hook,
                 true,  // Gone in KB5040527 (Taskbar.View.dll 2124.16310.10.0).
             },
             {
                 {LR"(public: virtual int __cdecl winrt::impl::produce<struct winrt::Taskbar::implementation::TaskListGroupViewModel,struct winrt::Taskbar::ITaskbarAppItemViewModel>::GetIconHeight(void *,double *))"},
-                (void**)&TaskListGroupViewModel_GetIconHeight_Original,
-                (void*)TaskListGroupViewModel_GetIconHeight_Hook,
+                &TaskListGroupViewModel_GetIconHeight_Original,
+                TaskListGroupViewModel_GetIconHeight_Hook,
                 true,  // Missing in older Windows 11 versions.
             },
             {
                 {LR"(public: static double __cdecl winrt::Taskbar::implementation::TaskbarConfiguration::GetIconHeightInViewPixels(enum winrt::WindowsUdk::UI::Shell::TaskbarSize))"},
-                (void**)&TaskbarConfiguration_GetIconHeightInViewPixels_taskbarSizeEnum_Original,
-                (void*)
-                    TaskbarConfiguration_GetIconHeightInViewPixels_taskbarSizeEnum_Hook,
+                &TaskbarConfiguration_GetIconHeightInViewPixels_taskbarSizeEnum_Original,
+
+                TaskbarConfiguration_GetIconHeightInViewPixels_taskbarSizeEnum_Hook,
             },
             {
                 {LR"(public: static double __cdecl winrt::Taskbar::implementation::TaskbarConfiguration::GetIconHeightInViewPixels(double))"},
-                (void**)&TaskbarConfiguration_GetIconHeightInViewPixels_double_Original,
-                (void*)
-                    TaskbarConfiguration_GetIconHeightInViewPixels_double_Hook,
+                &TaskbarConfiguration_GetIconHeightInViewPixels_double_Original,
+
+                TaskbarConfiguration_GetIconHeightInViewPixels_double_Hook,
                 true,  // From Windows 11 version 22H2.
             },
             {
                 {LR"(private: double __cdecl winrt::SystemTray::implementation::SystemTrayController::GetFrameSize(enum winrt::WindowsUdk::UI::Shell::TaskbarSize))"},
-                (void**)&SystemTrayController_GetFrameSize_Original,
-                (void*)SystemTrayController_GetFrameSize_Hook,
+                &SystemTrayController_GetFrameSize_Original,
+                SystemTrayController_GetFrameSize_Hook,
                 true,  // From Windows 11 version 22H2, inlined sometimes.
             },
             {
                 {LR"(private: double __cdecl winrt::SystemTray::implementation::SystemTraySecondaryController::GetFrameSize(enum winrt::WindowsUdk::UI::Shell::TaskbarSize))"},
-                (void**)&SystemTraySecondaryController_GetFrameSize_Original,
-                (void*)SystemTraySecondaryController_GetFrameSize_Hook,
+                &SystemTraySecondaryController_GetFrameSize_Original,
+                SystemTraySecondaryController_GetFrameSize_Hook,
                 true,  // From Windows 11 version 22H2.
             },
             {
                 {LR"(public: static double __cdecl winrt::Taskbar::implementation::TaskbarConfiguration::GetFrameSize(enum winrt::WindowsUdk::UI::Shell::TaskbarSize))"},
-                (void**)&TaskbarConfiguration_GetFrameSize_Original,
-                (void*)TaskbarConfiguration_GetFrameSize_Hook,
+                &TaskbarConfiguration_GetFrameSize_Original,
+                TaskbarConfiguration_GetFrameSize_Hook,
                 true,  // From Windows 11 version 22H2.
             },
 #ifdef _M_ARM64
@@ -1366,13 +1358,13 @@ bool HookTaskbarViewDllSymbols(HMODULE module) {
 #endif
             {
                 {LR"(private: void __cdecl winrt::SystemTray::implementation::SystemTrayController::UpdateFrameSize(void))"},
-                (void**)&SystemTrayController_UpdateFrameSize_SymbolAddress,
+                &SystemTrayController_UpdateFrameSize_SymbolAddress,
                 nullptr,  // Hooked manually, we need the symbol address.
                 true,     // Missing in older Windows 11 versions.
             },
             {
                 {LR"(public: __cdecl winrt::impl::consume_Windows_UI_Xaml_IFrameworkElement<struct winrt::Taskbar::implementation::TaskbarFrame>::MaxHeight(double)const )"},
-                (void**)&TaskbarFrame_MaxHeight_double_Original,
+                &TaskbarFrame_MaxHeight_double_Original,
                 nullptr,
                 true,  // From Windows 11 version 22H2.
             },
@@ -1383,68 +1375,68 @@ bool HookTaskbarViewDllSymbols(HMODULE module) {
                     // Windows 11 version 21H2.
                     LR"(public: void __cdecl winrt::impl::consume_Windows_UI_Xaml_IFrameworkElement<struct winrt::Taskbar::implementation::TaskbarFrame>::Height(double)const )",
                 },
-                (void**)&TaskbarFrame_Height_double_Original,
-                (void*)TaskbarFrame_Height_double_Hook,
+                &TaskbarFrame_Height_double_Original,
+                TaskbarFrame_Height_double_Hook,
                 true,  // Gone in Windows 11 version 24H2.
             },
             {
                 {LR"(private: void __cdecl winrt::Taskbar::implementation::TaskbarController::OnGroupingModeChanged(void))"},
-                (void**)&TaskbarController_OnGroupingModeChanged,
+                &TaskbarController_OnGroupingModeChanged,
                 nullptr,
                 true,  // Missing in older Windows 11 versions.
             },
             {
                 {LR"(private: void __cdecl winrt::Taskbar::implementation::TaskbarController::UpdateFrameHeight(void))"},
-                (void**)&TaskbarController_UpdateFrameHeight_Original,
-                (void*)TaskbarController_UpdateFrameHeight_Hook,
+                &TaskbarController_UpdateFrameHeight_Original,
+                TaskbarController_UpdateFrameHeight_Hook,
                 true,  // Missing in older Windows 11 versions.
             },
             {
                 {LR"(private: void __cdecl winrt::SystemTray::implementation::SystemTraySecondaryController::UpdateFrameSize(void))"},
-                (void**)&SystemTraySecondaryController_UpdateFrameSize_Original,
-                (void*)SystemTraySecondaryController_UpdateFrameSize_Hook,
+                &SystemTraySecondaryController_UpdateFrameSize_Original,
+                SystemTraySecondaryController_UpdateFrameSize_Hook,
                 true,  // Missing in older Windows 11 versions.
             },
             {
                 {LR"(public: __cdecl winrt::impl::consume_Windows_UI_Xaml_IFrameworkElement<struct winrt::SystemTray::SystemTrayFrame>::Height(double)const )"},
-                (void**)&SystemTrayFrame_Height_Original,
-                (void*)SystemTrayFrame_Height_Hook,
+                &SystemTrayFrame_Height_Original,
+                SystemTrayFrame_Height_Hook,
                 true,  // From Windows 11 version 22H2.
             },
             {
                 {LR"(public: virtual int __cdecl winrt::impl::produce<struct winrt::Taskbar::implementation::TaskbarFrame,struct winrt::Windows::UI::Xaml::IFrameworkElementOverrides>::MeasureOverride(struct winrt::Windows::Foundation::Size,struct winrt::Windows::Foundation::Size *))"},
-                (void**)&TaskbarFrame_MeasureOverride_Original,
-                (void*)TaskbarFrame_MeasureOverride_Hook,
+                &TaskbarFrame_MeasureOverride_Original,
+                TaskbarFrame_MeasureOverride_Hook,
             },
             {
                 {LR"(private: void __cdecl winrt::Taskbar::implementation::TaskListButton::UpdateIconColumnDefinition(void))"},
-                (void**)&TaskListButton_UpdateIconColumnDefinition_Original,
+                &TaskListButton_UpdateIconColumnDefinition_Original,
                 nullptr,
                 true,  // Missing in older Windows 11 versions.
             },
             {
                 {LR"(private: void __cdecl winrt::Taskbar::implementation::TaskListButton::UpdateButtonPadding(void))"},
-                (void**)&TaskListButton_UpdateButtonPadding_Original,
+                &TaskListButton_UpdateButtonPadding_Original,
             },
             {
                 {LR"(private: void __cdecl winrt::Taskbar::implementation::TaskListButton::UpdateVisualStates(void))"},
-                (void**)&TaskListButton_UpdateVisualStates_Original,
-                (void*)TaskListButton_UpdateVisualStates_Hook,
+                &TaskListButton_UpdateVisualStates_Original,
+                TaskListButton_UpdateVisualStates_Hook,
             },
             {
                 {LR"(protected: virtual void __cdecl winrt::Taskbar::implementation::ExperienceToggleButton::UpdateButtonPadding(void))"},
-                (void**)&ExperienceToggleButton_UpdateButtonPadding_Original,
-                (void*)ExperienceToggleButton_UpdateButtonPadding_Hook,
+                &ExperienceToggleButton_UpdateButtonPadding_Original,
+                ExperienceToggleButton_UpdateButtonPadding_Hook,
             },
             {
                 {LR"(protected: virtual void __cdecl winrt::Taskbar::implementation::AugmentedEntryPointButton::UpdateButtonPadding(void))"},
-                (void**)&AugmentedEntryPointButton_UpdateButtonPadding_Original,
-                (void*)AugmentedEntryPointButton_UpdateButtonPadding_Hook,
+                &AugmentedEntryPointButton_UpdateButtonPadding_Original,
+                AugmentedEntryPointButton_UpdateButtonPadding_Hook,
             },
             {
                 {LR"(public: __cdecl winrt::impl::consume_Windows_UI_Xaml_IFrameworkElement<struct winrt::Windows::UI::Xaml::Controls::Primitives::RepeatButton>::Width(double)const )"},
-                (void**)&RepeatButton_Width_Original,
-                (void*)RepeatButton_Width_Hook,
+                &RepeatButton_Width_Original,
+                RepeatButton_Width_Hook,
                 true,  // From Windows 11 version 22H2.
             },
         };
@@ -1456,18 +1448,18 @@ bool HookTaskbarViewDllSymbols(HMODULE module) {
 
 #ifdef _M_ARM64
     if (TaskbarConfiguration_UpdateFrameSize_SymbolAddress) {
-        Wh_SetFunctionHook(
-            (void*)TaskbarConfiguration_UpdateFrameSize_SymbolAddress,
-            (void*)TaskbarConfiguration_UpdateFrameSize_Hook,
-            (void**)&TaskbarConfiguration_UpdateFrameSize_Original);
+        WindhawkUtils::Wh_SetFunctionHookT(
+            TaskbarConfiguration_UpdateFrameSize_SymbolAddress,
+            TaskbarConfiguration_UpdateFrameSize_Hook,
+            &TaskbarConfiguration_UpdateFrameSize_Original);
     }
 #endif
 
     if (SystemTrayController_UpdateFrameSize_SymbolAddress) {
-        Wh_SetFunctionHook(
-            (void*)SystemTrayController_UpdateFrameSize_SymbolAddress,
-            (void*)SystemTrayController_UpdateFrameSize_Hook,
-            (void**)&SystemTrayController_UpdateFrameSize_Original);
+        WindhawkUtils::Wh_SetFunctionHookT(
+            SystemTrayController_UpdateFrameSize_SymbolAddress,
+            SystemTrayController_UpdateFrameSize_Hook,
+            &SystemTrayController_UpdateFrameSize_Original);
     }
 
     return true;
@@ -1483,38 +1475,38 @@ bool HookTaskbarDllSymbols() {
     WindhawkUtils::SYMBOL_HOOK taskbarDllHooks[] = {
         {
             {LR"(void __cdecl IconUtils::GetIconSize(bool,enum IconUtils::IconType,struct tagSIZE *))"},
-            (void**)&IconUtils_GetIconSize_Original,
-            (void*)IconUtils_GetIconSize_Hook,
+            &IconUtils_GetIconSize_Original,
+            IconUtils_GetIconSize_Hook,
         },
         {
             {LR"(public: virtual bool __cdecl IconContainer::IsStorageRecreationRequired(class CCoSimpleArray<unsigned int,4294967294,class CSimpleArrayStandardCompareHelper<unsigned int> > const &,enum IconContainerFlags))"},
-            (void**)&IconContainer_IsStorageRecreationRequired_Original,
-            (void*)IconContainer_IsStorageRecreationRequired_Hook,
+            &IconContainer_IsStorageRecreationRequired_Original,
+            IconContainer_IsStorageRecreationRequired_Hook,
         },
         {
             {LR"(public: virtual void __cdecl TrayUI::GetMinSize(struct HMONITOR__ *,struct tagSIZE *))"},
-            (void**)&TrayUI_GetMinSize_Original,
-            (void*)TrayUI_GetMinSize_Hook,
+            &TrayUI_GetMinSize_Original,
+            TrayUI_GetMinSize_Hook,
             true,
         },
         {
             {LR"(public: virtual unsigned __int64 __cdecl CIconLoadingFunctions::GetClassLongPtrW(struct HWND__ *,int))"},
-            (void**)&CIconLoadingFunctions_GetClassLongPtrW_Original,
-            (void*)CIconLoadingFunctions_GetClassLongPtrW_Hook,
+            &CIconLoadingFunctions_GetClassLongPtrW_Original,
+            CIconLoadingFunctions_GetClassLongPtrW_Hook,
         },
         {
             {LR"(public: virtual int __cdecl CIconLoadingFunctions::SendMessageCallbackW(struct HWND__ *,unsigned int,unsigned __int64,__int64,void (__cdecl*)(struct HWND__ *,unsigned int,unsigned __int64,__int64),unsigned __int64))"},
-            (void**)&CIconLoadingFunctions_SendMessageCallbackW_Original,
-            (void*)CIconLoadingFunctions_SendMessageCallbackW_Hook,
+            &CIconLoadingFunctions_SendMessageCallbackW_Original,
+            CIconLoadingFunctions_SendMessageCallbackW_Hook,
         },
         {
             {LR"(public: void __cdecl TrayUI::_StuckTrayChange(void))"},
-            (void**)&TrayUI__StuckTrayChange_Original,
+            &TrayUI__StuckTrayChange_Original,
         },
         {
             {LR"(public: void __cdecl TrayUI::_HandleSettingChange(struct HWND__ *,unsigned int,unsigned __int64,__int64))"},
-            (void**)&TrayUI__HandleSettingChange_Original,
-            (void*)TrayUI__HandleSettingChange_Hook,
+            &TrayUI__HandleSettingChange_Original,
+            TrayUI__HandleSettingChange_Hook,
         },
     };
 
@@ -1526,19 +1518,13 @@ bool HookTaskbarDllSymbols() {
     return true;
 }
 
-BOOL ModInitWithTaskbarView(HMODULE taskbarViewModule) {
-    if (!HookTaskbarViewDllSymbols(taskbarViewModule)) {
-        return FALSE;
+HMODULE GetTaskbarViewModuleHandle() {
+    HMODULE module = GetModuleHandle(L"Taskbar.View.dll");
+    if (!module) {
+        module = GetModuleHandle(L"ExplorerExtensions.dll");
     }
 
-    if (!HookTaskbarDllSymbols()) {
-        return FALSE;
-    }
-
-    Wh_SetFunctionHook((void*)SHAppBarMessage, (void*)SHAppBarMessage_Hook,
-                       (void**)&SHAppBarMessage_Original);
-
-    return TRUE;
+    return module;
 }
 
 using LoadLibraryExW_t = decltype(&LoadLibraryExW);
@@ -1547,16 +1533,17 @@ HMODULE WINAPI LoadLibraryExW_Hook(LPCWSTR lpLibFileName,
                                    HANDLE hFile,
                                    DWORD dwFlags) {
     HMODULE module = LoadLibraryExW_Original(lpLibFileName, hFile, dwFlags);
-    if (!module || g_unloading) {
+    if (!module) {
         return module;
     }
 
-    if (!g_taskbarViewDllLoaded &&
-        _wcsicmp(g_taskbarViewDllPath, lpLibFileName) == 0 &&
-        !g_taskbarViewDllLoaded.exchange(true) &&
-        ModInitWithTaskbarView(module)) {
-        Wh_ApplyHookOperations();
-        ApplySettings(g_settings.taskbarHeight);
+    if (!g_taskbarViewDllLoaded && GetTaskbarViewModuleHandle() == module &&
+        !g_taskbarViewDllLoaded.exchange(true)) {
+        Wh_Log(L"Loaded %s", lpLibFileName);
+
+        if (HookTaskbarViewDllSymbols(module)) {
+            Wh_ApplyHookOperations();
+        }
     }
 
     return module;
@@ -1567,26 +1554,29 @@ BOOL Wh_ModInit() {
 
     LoadSettings();
 
-    if (!GetTaskbarViewDllPath(g_taskbarViewDllPath)) {
-        Wh_Log(L"Taskbar view module not found");
+    if (!HookTaskbarDllSymbols()) {
         return FALSE;
     }
 
-    HMODULE taskbarViewModule = LoadLibraryEx(g_taskbarViewDllPath, nullptr,
-                                              LOAD_WITH_ALTERED_SEARCH_PATH);
-    if (taskbarViewModule) {
+    WindhawkUtils::Wh_SetFunctionHookT(SHAppBarMessage, SHAppBarMessage_Hook,
+                                       &SHAppBarMessage_Original);
+
+    if (HMODULE taskbarViewModule = GetTaskbarViewModuleHandle()) {
         g_taskbarViewDllLoaded = true;
-        return ModInitWithTaskbarView(taskbarViewModule);
+        if (!HookTaskbarViewDllSymbols(taskbarViewModule)) {
+            return FALSE;
+        }
+    } else {
+        Wh_Log(L"Taskbar view module not loaded yet");
+
+        HMODULE kernelBaseModule = GetModuleHandle(L"kernelbase.dll");
+        auto pKernelBaseLoadLibraryExW =
+            (decltype(&LoadLibraryExW))GetProcAddress(kernelBaseModule,
+                                                      "LoadLibraryExW");
+        WindhawkUtils::Wh_SetFunctionHookT(pKernelBaseLoadLibraryExW,
+                                           LoadLibraryExW_Hook,
+                                           &LoadLibraryExW_Original);
     }
-
-    Wh_Log(L"Taskbar view module not loaded yet");
-
-    HMODULE kernelBaseModule = GetModuleHandle(L"kernelbase.dll");
-    FARPROC pKernelBaseLoadLibraryExW =
-        GetProcAddress(kernelBaseModule, "LoadLibraryExW");
-    Wh_SetFunctionHook((void*)pKernelBaseLoadLibraryExW,
-                       (void*)LoadLibraryExW_Hook,
-                       (void**)&LoadLibraryExW_Original);
 
     return TRUE;
 }
@@ -1594,17 +1584,19 @@ BOOL Wh_ModInit() {
 void Wh_ModAfterInit() {
     Wh_Log(L">");
 
-    if (g_taskbarViewDllLoaded) {
-        ApplySettings(g_settings.taskbarHeight);
-    } else {
-        HMODULE taskbarViewModule = LoadLibraryEx(
-            g_taskbarViewDllPath, nullptr, LOAD_WITH_ALTERED_SEARCH_PATH);
-        if (taskbarViewModule && !g_taskbarViewDllLoaded.exchange(true) &&
-            ModInitWithTaskbarView(taskbarViewModule)) {
-            Wh_ApplyHookOperations();
-            ApplySettings(g_settings.taskbarHeight);
+    if (!g_taskbarViewDllLoaded) {
+        if (HMODULE taskbarViewModule = GetTaskbarViewModuleHandle()) {
+            if (!g_taskbarViewDllLoaded.exchange(true)) {
+                Wh_Log(L"Got Taskbar.View.dll");
+
+                if (HookTaskbarViewDllSymbols(taskbarViewModule)) {
+                    Wh_ApplyHookOperations();
+                }
+            }
         }
     }
+
+    ApplySettings(g_settings.taskbarHeight);
 }
 
 void Wh_ModBeforeUninit() {
@@ -1612,9 +1604,7 @@ void Wh_ModBeforeUninit() {
 
     g_unloading = true;
 
-    if (g_taskbarViewDllLoaded) {
-        ApplySettings(g_originalTaskbarHeight ? g_originalTaskbarHeight : 48);
-    }
+    ApplySettings(g_originalTaskbarHeight ? g_originalTaskbarHeight : 48);
 }
 
 void Wh_ModUninit() {
@@ -1630,7 +1620,5 @@ void Wh_ModSettingsChanged() {
 
     LoadSettings();
 
-    if (g_taskbarViewDllLoaded) {
-        ApplySettings(g_settings.taskbarHeight);
-    }
+    ApplySettings(g_settings.taskbarHeight);
 }

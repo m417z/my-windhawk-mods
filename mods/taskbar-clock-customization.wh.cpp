@@ -2,7 +2,7 @@
 // @id              taskbar-clock-customization
 // @name            Taskbar Clock Customization
 // @description     Customize the taskbar clock: define a custom date/time format, add a news feed, customize fonts and colors, and more
-// @version         1.6.1
+// @version         1.5.2
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
@@ -415,6 +415,7 @@ enum class WinVersion {
 
 WinVersion g_winVersion;
 
+std::atomic<bool> g_taskbarViewDllLoaded;
 std::atomic<bool> g_initialized;
 std::atomic<bool> g_explorerPatcherInitialized;
 
@@ -2652,19 +2653,12 @@ bool HandleLoadedExplorerPatcher() {
     return true;
 }
 
-using LoadLibraryExW_t = decltype(&LoadLibraryExW);
-LoadLibraryExW_t LoadLibraryExW_Original;
-HMODULE WINAPI LoadLibraryExW_Hook(LPCWSTR lpLibFileName,
-                                   HANDLE hFile,
-                                   DWORD dwFlags) {
-    HMODULE module = LoadLibraryExW_Original(lpLibFileName, hFile, dwFlags);
+void HandleLoadedModuleIfExplorerPatcher(HMODULE module) {
     if (module && !((ULONG_PTR)module & 3) && !g_explorerPatcherInitialized) {
         if (IsExplorerPatcherModule(module)) {
             HookExplorerPatcherSymbols(module);
         }
     }
-
-    return module;
 }
 
 bool HookWin10TaskbarSymbols() {
@@ -2705,49 +2699,7 @@ bool HookWin10TaskbarSymbols() {
     return true;
 }
 
-bool GetTaskbarViewDllPath(WCHAR path[MAX_PATH]) {
-    WCHAR szWindowsDirectory[MAX_PATH];
-    if (!GetWindowsDirectory(szWindowsDirectory,
-                             ARRAYSIZE(szWindowsDirectory))) {
-        Wh_Log(L"GetWindowsDirectory failed");
-        return false;
-    }
-
-    // Windows 11 version 22H2.
-    wcscpy_s(path, MAX_PATH, szWindowsDirectory);
-    wcscat_s(
-        path, MAX_PATH,
-        LR"(\SystemApps\MicrosoftWindows.Client.Core_cw5n1h2txyewy\Taskbar.View.dll)");
-    if (GetFileAttributes(path) != INVALID_FILE_ATTRIBUTES) {
-        return true;
-    }
-
-    // Windows 11 version 21H2.
-    wcscpy_s(path, MAX_PATH, szWindowsDirectory);
-    wcscat_s(
-        path, MAX_PATH,
-        LR"(\SystemApps\MicrosoftWindows.Client.CBS_cw5n1h2txyewy\ExplorerExtensions.dll)");
-    if (GetFileAttributes(path) != INVALID_FILE_ATTRIBUTES) {
-        return true;
-    }
-
-    return false;
-}
-
-bool HookTaskbarViewDllSymbols() {
-    WCHAR dllPath[MAX_PATH];
-    if (!GetTaskbarViewDllPath(dllPath)) {
-        Wh_Log(L"Taskbar view module not found");
-        return false;
-    }
-
-    HMODULE module =
-        LoadLibraryEx(dllPath, nullptr, LOAD_WITH_ALTERED_SEARCH_PATH);
-    if (!module) {
-        Wh_Log(L"Taskbar view module couldn't be loaded");
-        return false;
-    }
-
+bool HookTaskbarViewDllSymbols(HMODULE module) {
     // Taskbar.View.dll, ExplorerExtensions.dll
     WindhawkUtils::SYMBOL_HOOK symbolHooks[] = {
         {
@@ -2819,6 +2771,40 @@ bool HookTaskbarViewDllSymbols() {
     }
 
     return true;
+}
+
+HMODULE GetTaskbarViewModuleHandle() {
+    HMODULE module = GetModuleHandle(L"Taskbar.View.dll");
+    if (!module) {
+        module = GetModuleHandle(L"ExplorerExtensions.dll");
+    }
+
+    return module;
+}
+
+void HandleLoadedModuleIfTaskbarView(HMODULE module, LPCWSTR lpLibFileName) {
+    if (!g_taskbarViewDllLoaded && GetTaskbarViewModuleHandle() == module &&
+        !g_taskbarViewDllLoaded.exchange(true)) {
+        Wh_Log(L"Loaded %s", lpLibFileName);
+
+        if (HookTaskbarViewDllSymbols(module)) {
+            Wh_ApplyHookOperations();
+        }
+    }
+}
+
+using LoadLibraryExW_t = decltype(&LoadLibraryExW);
+LoadLibraryExW_t LoadLibraryExW_Original;
+HMODULE WINAPI LoadLibraryExW_Hook(LPCWSTR lpLibFileName,
+                                   HANDLE hFile,
+                                   DWORD dwFlags) {
+    HMODULE module = LoadLibraryExW_Original(lpLibFileName, hFile, dwFlags);
+    if (module) {
+        HandleLoadedModuleIfExplorerPatcher(module);
+        HandleLoadedModuleIfTaskbarView(module, lpLibFileName);
+    }
+
+    return module;
 }
 
 void LoadSettings() {
@@ -3098,8 +3084,13 @@ BOOL Wh_ModInit() {
             return FALSE;
         }
     } else if (g_winVersion >= WinVersion::Win11) {
-        if (!HookTaskbarViewDllSymbols()) {
-            return FALSE;
+        if (HMODULE taskbarViewModule = GetTaskbarViewModuleHandle()) {
+            g_taskbarViewDllLoaded = true;
+            if (!HookTaskbarViewDllSymbols(taskbarViewModule)) {
+                return FALSE;
+            }
+        } else {
+            Wh_Log(L"Taskbar view module not loaded yet");
         }
     } else {
         if (!HookWin10TaskbarSymbols()) {
@@ -3113,11 +3104,11 @@ BOOL Wh_ModInit() {
     }
 
     HMODULE kernelBaseModule = GetModuleHandle(L"kernelbase.dll");
-    FARPROC pKernelBaseLoadLibraryExW =
-        GetProcAddress(kernelBaseModule, "LoadLibraryExW");
-    Wh_SetFunctionHook((void*)pKernelBaseLoadLibraryExW,
-                       (void*)LoadLibraryExW_Hook,
-                       (void**)&LoadLibraryExW_Original);
+    auto pKernelBaseLoadLibraryExW = (decltype(&LoadLibraryExW))GetProcAddress(
+        kernelBaseModule, "LoadLibraryExW");
+    WindhawkUtils::Wh_SetFunctionHookT(pKernelBaseLoadLibraryExW,
+                                       LoadLibraryExW_Hook,
+                                       &LoadLibraryExW_Original);
 
     // Must use GetProcAddress for the functions below, otherwise the stubs in
     // kernel32.dll are being hooked.
@@ -3179,6 +3170,18 @@ BOOL Wh_ModInit() {
 void Wh_ModAfterInit() {
     Wh_Log(L">");
 
+    if (!g_taskbarViewDllLoaded) {
+        if (HMODULE taskbarViewModule = GetTaskbarViewModuleHandle()) {
+            if (!g_taskbarViewDllLoaded.exchange(true)) {
+                Wh_Log(L"Got Taskbar.View.dll");
+
+                if (HookTaskbarViewDllSymbols(taskbarViewModule)) {
+                    Wh_ApplyHookOperations();
+                }
+            }
+        }
+    }
+
     // Try again in case there's a race between the previous attempt and the
     // LoadLibraryExW hook.
     if (!g_explorerPatcherInitialized) {
@@ -3191,6 +3194,8 @@ void Wh_ModAfterInit() {
 }
 
 void Wh_ModBeforeUninit() {
+    Wh_Log(L">");
+
     if (g_winVersion >= WinVersion::Win11 &&
         g_clockElementStyleEnabled.exchange(false)) {
         DWORD styleIndex = ++g_clockElementStyleIndex;

@@ -2,7 +2,7 @@
 // @id              taskbar-multirow
 // @name            Multirow taskbar for Windows 11
 // @description     Span taskbar items across multiple rows, just like it was possible before Windows 11
-// @version         1.0
+// @version         1.0.1
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
@@ -48,6 +48,7 @@ Windows 11.
 
 #include <windhawk_utils.h>
 
+#include <atomic>
 #include <functional>
 #include <unordered_map>
 #include <vector>
@@ -65,6 +66,7 @@ struct {
     int rows;
 } g_settings;
 
+std::atomic<bool> g_taskbarViewDllLoaded;
 std::atomic<bool> g_unloading;
 
 struct TaskbarState {
@@ -322,7 +324,7 @@ bool RunFromWindowThread(HWND hWnd,
 
     HHOOK hook = SetWindowsHookEx(
         WH_CALLWNDPROC,
-        [](int nCode, WPARAM wParam, LPARAM lParam) WINAPI -> LRESULT {
+        [](int nCode, WPARAM wParam, LPARAM lParam) -> LRESULT {
             if (nCode == HC_ACTION) {
                 const CWPSTRUCT* cwp = (const CWPSTRUCT*)lParam;
                 if (cwp->message == runFromWindowThreadRegisteredMsg) {
@@ -354,7 +356,7 @@ void ApplySettingsFromTaskbarThread() {
 
     EnumThreadWindows(
         GetCurrentThreadId(),
-        [](HWND hWnd, LPARAM lParam) WINAPI -> BOOL {
+        [](HWND hWnd, LPARAM lParam) -> BOOL {
             WCHAR szClassName[32];
             if (GetClassName(hWnd, szClassName, ARRAYSIZE(szClassName)) == 0) {
                 return TRUE;
@@ -387,8 +389,7 @@ void ApplySettingsFromTaskbarThread() {
 void ApplySettings(HWND hTaskbarWnd) {
     RunFromWindowThread(
         hTaskbarWnd,
-        [](void* pParam) WINAPI -> void { ApplySettingsFromTaskbarThread(); },
-        0);
+        [](void* pParam) -> void { ApplySettingsFromTaskbarThread(); }, 0);
 }
 
 using IUIElement_Arrange_t =
@@ -542,24 +543,7 @@ bool HookTaskbarDllSymbols() {
     return true;
 }
 
-bool HookTaskbarViewDllSymbols() {
-    WCHAR dllPath[MAX_PATH];
-    if (!GetWindowsDirectory(dllPath, ARRAYSIZE(dllPath))) {
-        Wh_Log(L"GetWindowsDirectory failed");
-        return false;
-    }
-
-    wcscat_s(
-        dllPath, MAX_PATH,
-        LR"(\SystemApps\MicrosoftWindows.Client.Core_cw5n1h2txyewy\Taskbar.View.dll)");
-
-    HMODULE module =
-        LoadLibraryEx(dllPath, nullptr, LOAD_WITH_ALTERED_SEARCH_PATH);
-    if (!module) {
-        Wh_Log(L"Taskbar view module couldn't be loaded");
-        return false;
-    }
-
+bool HookTaskbarViewDllSymbols(HMODULE module) {
     // Taskbar.View.dll
     WindhawkUtils::SYMBOL_HOOK symbolHooks[] = {
         {
@@ -582,6 +566,39 @@ bool HookTaskbarViewDllSymbols() {
     return true;
 }
 
+HMODULE GetTaskbarViewModuleHandle() {
+    HMODULE module = GetModuleHandle(L"Taskbar.View.dll");
+    if (!module) {
+        module = GetModuleHandle(L"ExplorerExtensions.dll");
+    }
+
+    return module;
+}
+
+void HandleLoadedModuleIfTaskbarView(HMODULE module, LPCWSTR lpLibFileName) {
+    if (!g_taskbarViewDllLoaded && GetTaskbarViewModuleHandle() == module &&
+        !g_taskbarViewDllLoaded.exchange(true)) {
+        Wh_Log(L"Loaded %s", lpLibFileName);
+
+        if (HookTaskbarViewDllSymbols(module)) {
+            Wh_ApplyHookOperations();
+        }
+    }
+}
+
+using LoadLibraryExW_t = decltype(&LoadLibraryExW);
+LoadLibraryExW_t LoadLibraryExW_Original;
+HMODULE WINAPI LoadLibraryExW_Hook(LPCWSTR lpLibFileName,
+                                   HANDLE hFile,
+                                   DWORD dwFlags) {
+    HMODULE module = LoadLibraryExW_Original(lpLibFileName, hFile, dwFlags);
+    if (module) {
+        HandleLoadedModuleIfTaskbarView(module, lpLibFileName);
+    }
+
+    return module;
+}
+
 void LoadSettings() {
     g_settings.rows = Wh_GetIntSetting(L"rows");
 }
@@ -595,8 +612,21 @@ BOOL Wh_ModInit() {
         return FALSE;
     }
 
-    if (!HookTaskbarViewDllSymbols()) {
-        return FALSE;
+    if (HMODULE taskbarViewModule = GetTaskbarViewModuleHandle()) {
+        g_taskbarViewDllLoaded = true;
+        if (!HookTaskbarViewDllSymbols(taskbarViewModule)) {
+            return FALSE;
+        }
+    } else {
+        Wh_Log(L"Taskbar view module not loaded yet");
+
+        HMODULE kernelBaseModule = GetModuleHandle(L"kernelbase.dll");
+        auto pKernelBaseLoadLibraryExW =
+            (decltype(&LoadLibraryExW))GetProcAddress(kernelBaseModule,
+                                                      "LoadLibraryExW");
+        WindhawkUtils::Wh_SetFunctionHookT(pKernelBaseLoadLibraryExW,
+                                           LoadLibraryExW_Hook,
+                                           &LoadLibraryExW_Original);
     }
 
     return TRUE;
@@ -604,6 +634,18 @@ BOOL Wh_ModInit() {
 
 void Wh_ModAfterInit() {
     Wh_Log(L">");
+
+    if (!g_taskbarViewDllLoaded) {
+        if (HMODULE taskbarViewModule = GetTaskbarViewModuleHandle()) {
+            if (!g_taskbarViewDllLoaded.exchange(true)) {
+                Wh_Log(L"Got Taskbar.View.dll");
+
+                if (HookTaskbarViewDllSymbols(taskbarViewModule)) {
+                    Wh_ApplyHookOperations();
+                }
+            }
+        }
+    }
 
     HWND hTaskbarWnd = GetTaskbarWnd();
     if (hTaskbarWnd) {

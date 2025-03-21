@@ -2,7 +2,7 @@
 // @id              taskbar-vertical
 // @name            Vertical Taskbar for Windows 11
 // @description     Finally, the missing vertical taskbar option for Windows 11! Move the taskbar to the left or right side of the screen.
-// @version         1.3.3
+// @version         1.3.4
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
@@ -177,7 +177,7 @@ enum class Target {
 
 Target g_target;
 
-WCHAR g_taskbarViewDllPath[MAX_PATH];
+std::atomic<bool> g_taskbarViewDllLoaded;
 std::atomic<bool> g_applyingSettings;
 std::atomic<bool> g_pendingMeasureOverride;
 std::atomic<bool> g_unloading;
@@ -3564,35 +3564,6 @@ void ApplySettings(bool waitForApply = true) {
         reinterpret_cast<LPARAM>(&monitorEnumProc));
 }
 
-bool GetTaskbarViewDllPath(WCHAR path[MAX_PATH]) {
-    WCHAR szWindowsDirectory[MAX_PATH];
-    if (!GetWindowsDirectory(szWindowsDirectory,
-                             ARRAYSIZE(szWindowsDirectory))) {
-        Wh_Log(L"GetWindowsDirectory failed");
-        return false;
-    }
-
-    // Windows 11 version 22H2.
-    wcscpy_s(path, MAX_PATH, szWindowsDirectory);
-    wcscat_s(
-        path, MAX_PATH,
-        LR"(\SystemApps\MicrosoftWindows.Client.Core_cw5n1h2txyewy\Taskbar.View.dll)");
-    if (GetFileAttributes(path) != INVALID_FILE_ATTRIBUTES) {
-        return true;
-    }
-
-    // Windows 11 version 21H2.
-    wcscpy_s(path, MAX_PATH, szWindowsDirectory);
-    wcscat_s(
-        path, MAX_PATH,
-        LR"(\SystemApps\MicrosoftWindows.Client.CBS_cw5n1h2txyewy\ExplorerExtensions.dll)");
-    if (GetFileAttributes(path) != INVALID_FILE_ATTRIBUTES) {
-        return true;
-    }
-
-    return false;
-}
-
 bool HookTaskbarViewDllSymbols(HMODULE module) {
     // Taskbar.View.dll, ExplorerExtensions.dll
     WindhawkUtils::SYMBOL_HOOK symbolHooks[] = {
@@ -3762,6 +3733,39 @@ bool HookTaskbarViewDllSymbols(HMODULE module) {
     return true;
 }
 
+HMODULE GetTaskbarViewModuleHandle() {
+    HMODULE module = GetModuleHandle(L"Taskbar.View.dll");
+    if (!module) {
+        module = GetModuleHandle(L"ExplorerExtensions.dll");
+    }
+
+    return module;
+}
+
+void HandleLoadedModuleIfTaskbarView(HMODULE module, LPCWSTR lpLibFileName) {
+    if (!g_taskbarViewDllLoaded && GetTaskbarViewModuleHandle() == module &&
+        !g_taskbarViewDllLoaded.exchange(true)) {
+        Wh_Log(L"Loaded %s", lpLibFileName);
+
+        if (HookTaskbarViewDllSymbols(module)) {
+            Wh_ApplyHookOperations();
+        }
+    }
+}
+
+using LoadLibraryExW_t = decltype(&LoadLibraryExW);
+LoadLibraryExW_t LoadLibraryExW_Original;
+HMODULE WINAPI LoadLibraryExW_Hook(LPCWSTR lpLibFileName,
+                                   HANDLE hFile,
+                                   DWORD dwFlags) {
+    HMODULE module = LoadLibraryExW_Original(lpLibFileName, hFile, dwFlags);
+    if (module) {
+        HandleLoadedModuleIfTaskbarView(module, lpLibFileName);
+    }
+
+    return module;
+}
+
 bool HookTaskbarDllSymbols() {
     HMODULE module = LoadLibrary(L"taskbar.dll");
     if (!module) {
@@ -3839,41 +3843,6 @@ bool HookTaskbarDllSymbols() {
     return HookSymbols(module, taskbarDllHooks, ARRAYSIZE(taskbarDllHooks));
 }
 
-BOOL ModInitWithTaskbarView(HMODULE taskbarViewModule) {
-    if (!HookTaskbarViewDllSymbols(taskbarViewModule)) {
-        return FALSE;
-    }
-
-    if (!HookTaskbarDllSymbols()) {
-        return FALSE;
-    }
-
-    WindhawkUtils::SetFunctionHook(GetWindowRect, GetWindowRect_Hook,
-                                   &GetWindowRect_Original);
-
-    WindhawkUtils::SetFunctionHook(SetWindowPos, SetWindowPos_Hook,
-                                   &SetWindowPos_Original);
-
-    WindhawkUtils::SetFunctionHook(MoveWindow, MoveWindow_Hook,
-                                   &MoveWindow_Original);
-
-    WindhawkUtils::SetFunctionHook(MapWindowPoints, MapWindowPoints_Hook,
-                                   &MapWindowPoints_Original);
-
-    HMODULE dwmapiModule = LoadLibrary(L"dwmapi.dll");
-    if (dwmapiModule) {
-        FARPROC pDwmSetWindowAttribute =
-            GetProcAddress(dwmapiModule, "DwmSetWindowAttribute");
-        if (pDwmSetWindowAttribute) {
-            WindhawkUtils::SetFunctionHook(
-                (decltype(&DwmSetWindowAttribute))pDwmSetWindowAttribute,
-                DwmSetWindowAttribute_Hook, &DwmSetWindowAttribute_Original);
-        }
-    }
-
-    return TRUE;
-}
-
 BOOL Wh_ModInit() {
     Wh_Log(L">");
 
@@ -3911,18 +3880,50 @@ BOOL Wh_ModInit() {
         return TRUE;
     }
 
-    if (!GetTaskbarViewDllPath(g_taskbarViewDllPath)) {
-        Wh_Log(L"Taskbar view module not found");
+    if (HMODULE taskbarViewModule = GetTaskbarViewModuleHandle()) {
+        g_taskbarViewDllLoaded = true;
+        if (!HookTaskbarViewDllSymbols(taskbarViewModule)) {
+            return FALSE;
+        }
+    } else {
+        Wh_Log(L"Taskbar view module not loaded yet");
+
+        HMODULE kernelBaseModule = GetModuleHandle(L"kernelbase.dll");
+        auto pKernelBaseLoadLibraryExW =
+            (decltype(&LoadLibraryExW))GetProcAddress(kernelBaseModule,
+                                                      "LoadLibraryExW");
+        WindhawkUtils::SetFunctionHook(pKernelBaseLoadLibraryExW,
+                                       LoadLibraryExW_Hook,
+                                       &LoadLibraryExW_Original);
+    }
+
+    if (!HookTaskbarDllSymbols()) {
         return FALSE;
     }
 
-    HMODULE taskbarViewModule = LoadLibraryEx(g_taskbarViewDllPath, nullptr,
-                                              LOAD_WITH_ALTERED_SEARCH_PATH);
-    if (taskbarViewModule) {
-        return ModInitWithTaskbarView(taskbarViewModule);
+    WindhawkUtils::SetFunctionHook(GetWindowRect, GetWindowRect_Hook,
+                                   &GetWindowRect_Original);
+
+    WindhawkUtils::SetFunctionHook(SetWindowPos, SetWindowPos_Hook,
+                                   &SetWindowPos_Original);
+
+    WindhawkUtils::SetFunctionHook(MoveWindow, MoveWindow_Hook,
+                                   &MoveWindow_Original);
+
+    WindhawkUtils::SetFunctionHook(MapWindowPoints, MapWindowPoints_Hook,
+                                   &MapWindowPoints_Original);
+
+    HMODULE dwmapiModule = LoadLibrary(L"dwmapi.dll");
+    if (dwmapiModule) {
+        FARPROC pDwmSetWindowAttribute =
+            GetProcAddress(dwmapiModule, "DwmSetWindowAttribute");
+        if (pDwmSetWindowAttribute) {
+            WindhawkUtils::SetFunctionHook(
+                (decltype(&DwmSetWindowAttribute))pDwmSetWindowAttribute,
+                DwmSetWindowAttribute_Hook, &DwmSetWindowAttribute_Original);
+        }
     }
 
-    Wh_Log(L"Taskbar view module not loaded yet");
     return FALSE;
 }
 
@@ -3930,6 +3931,18 @@ void Wh_ModAfterInit() {
     Wh_Log(L">");
 
     if (g_target == Target::Explorer) {
+        if (!g_taskbarViewDllLoaded) {
+            if (HMODULE taskbarViewModule = GetTaskbarViewModuleHandle()) {
+                if (!g_taskbarViewDllLoaded.exchange(true)) {
+                    Wh_Log(L"Got Taskbar.View.dll");
+
+                    if (HookTaskbarViewDllSymbols(taskbarViewModule)) {
+                        Wh_ApplyHookOperations();
+                    }
+                }
+            }
+        }
+
         ApplySettings();
     } else if (g_target == Target::ShellExperienceHost ||
                g_target == Target::ShellHost) {
