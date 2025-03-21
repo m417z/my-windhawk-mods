@@ -1570,21 +1570,27 @@ void ApplySystemTrayIconStyle(FrameworkElement systemTrayIconElement) {
 
     auto iconContent =
         FindChildByClassName(contentGrid, L"SystemTray.TextIconContent");
+
+    if (!iconContent) {
+        iconContent =
+            FindChildByClassName(contentGrid, L"SystemTray.BatteryIconContent");
+    }
+
     if (!iconContent) {
         iconContent = FindChildByClassName(
             contentGrid, L"SystemTray.LanguageTextIconContent");
+    }
 
-        if (!iconContent) {
-            iconContent = FindChildByClassName(
-                contentGrid, L"SystemTray.DateTimeIconContent");
-            if (iconContent) {
-                isDateTimeIcon = true;
-            }
+    if (!iconContent) {
+        iconContent = FindChildByClassName(contentGrid,
+                                           L"SystemTray.DateTimeIconContent");
+        if (iconContent) {
+            isDateTimeIcon = true;
         }
+    }
 
-        if (!iconContent) {
-            return;
-        }
+    if (!iconContent) {
+        return;
     }
 
     double angle = g_unloading ? 0 : -90;
@@ -3711,6 +3717,7 @@ bool HookTaskbarViewDllSymbols(HMODULE module) {
     };
 
     if (!HookSymbols(module, symbolHooks, ARRAYSIZE(symbolHooks))) {
+        Wh_Log(L"HookSymbols failed");
         return false;
     }
 
@@ -3840,7 +3847,12 @@ bool HookTaskbarDllSymbols() {
         },
     };
 
-    return HookSymbols(module, taskbarDllHooks, ARRAYSIZE(taskbarDllHooks));
+    if (!HookSymbols(module, taskbarDllHooks, ARRAYSIZE(taskbarDllHooks))) {
+        Wh_Log(L"HookSymbols failed");
+        return false;
+    }
+
+    return true;
 }
 
 BOOL Wh_ModInit() {
@@ -3924,7 +3936,7 @@ BOOL Wh_ModInit() {
         }
     }
 
-    return FALSE;
+    return TRUE;
 }
 
 void Wh_ModAfterInit() {
