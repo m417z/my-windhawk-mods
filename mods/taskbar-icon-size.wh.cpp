@@ -98,7 +98,6 @@ struct {
     int taskbarButtonWidth;
 } g_settings;
 
-WCHAR g_taskbarViewDllPath[MAX_PATH];
 std::atomic<bool> g_taskbarViewDllLoaded;
 std::atomic<bool> g_applyingSettings;
 std::atomic<bool> g_pendingMeasureOverride;
@@ -904,6 +903,24 @@ void WINAPI TaskListButton_UpdateVisualStates_Hook(void* pThis) {
     }
 
     TaskListButton_UpdateVisualStates_Original(pThis);
+
+    if (g_applyingSettings) {
+        FrameworkElement taskListButtonElement = nullptr;
+        ((IUnknown*)pThis + 3)
+            ->QueryInterface(winrt::guid_of<FrameworkElement>(),
+                             winrt::put_abi(taskListButtonElement));
+        if (taskListButtonElement) {
+            if (auto iconPanelElement =
+                    FindChildByName(taskListButtonElement, L"IconPanel")) {
+                if (auto iconElement =
+                        FindChildByName(iconPanelElement, L"Icon")) {
+                    double iconSize = g_unloading ? 24 : g_settings.iconSize;
+                    iconElement.Width(iconSize);
+                    iconElement.Height(iconSize);
+                }
+            }
+        }
+    }
 }
 
 using ExperienceToggleButton_UpdateButtonPadding_t = void(WINAPI*)(void* pThis);
@@ -1180,9 +1197,13 @@ void ApplySettings(int taskbarHeight) {
 
     HWND hTaskbarWnd = GetTaskbarWnd();
     if (!hTaskbarWnd) {
+        Wh_Log(L"No taskbar found");
         g_taskbarHeight = taskbarHeight;
         return;
     }
+
+    Wh_Log(L"Applying settings for taskbar %08X",
+           (DWORD)(DWORD_PTR)hTaskbarWnd);
 
     if (!g_taskbarHeight) {
         RECT taskbarRect{};
@@ -1253,35 +1274,6 @@ void ApplySettings(int taskbarHeight) {
     }
 
     g_applyingSettings = false;
-}
-
-bool GetTaskbarViewDllPath(WCHAR path[MAX_PATH]) {
-    WCHAR szWindowsDirectory[MAX_PATH];
-    if (!GetWindowsDirectory(szWindowsDirectory,
-                             ARRAYSIZE(szWindowsDirectory))) {
-        Wh_Log(L"GetWindowsDirectory failed");
-        return false;
-    }
-
-    // Windows 11 version 22H2.
-    wcscpy_s(path, MAX_PATH, szWindowsDirectory);
-    wcscat_s(
-        path, MAX_PATH,
-        LR"(\SystemApps\MicrosoftWindows.Client.Core_cw5n1h2txyewy\Taskbar.View.dll)");
-    if (GetFileAttributes(path) != INVALID_FILE_ATTRIBUTES) {
-        return true;
-    }
-
-    // Windows 11 version 21H2.
-    wcscpy_s(path, MAX_PATH, szWindowsDirectory);
-    wcscat_s(
-        path, MAX_PATH,
-        LR"(\SystemApps\MicrosoftWindows.Client.CBS_cw5n1h2txyewy\ExplorerExtensions.dll)");
-    if (GetFileAttributes(path) != INVALID_FILE_ATTRIBUTES) {
-        return true;
-    }
-
-    return false;
 }
 
 bool HookTaskbarViewDllSymbols(HMODULE module) {
@@ -1526,19 +1518,13 @@ bool HookTaskbarDllSymbols() {
     return true;
 }
 
-BOOL ModInitWithTaskbarView(HMODULE taskbarViewModule) {
-    if (!HookTaskbarViewDllSymbols(taskbarViewModule)) {
-        return FALSE;
+HMODULE GetTaskbarViewModuleHandle() {
+    HMODULE module = GetModuleHandle(L"Taskbar.View.dll");
+    if (!module) {
+        module = GetModuleHandle(L"ExplorerExtensions.dll");
     }
 
-    if (!HookTaskbarDllSymbols()) {
-        return FALSE;
-    }
-
-    Wh_SetFunctionHook((void*)SHAppBarMessage, (void*)SHAppBarMessage_Hook,
-                       (void**)&SHAppBarMessage_Original);
-
-    return TRUE;
+    return module;
 }
 
 using LoadLibraryExW_t = decltype(&LoadLibraryExW);
@@ -1547,16 +1533,17 @@ HMODULE WINAPI LoadLibraryExW_Hook(LPCWSTR lpLibFileName,
                                    HANDLE hFile,
                                    DWORD dwFlags) {
     HMODULE module = LoadLibraryExW_Original(lpLibFileName, hFile, dwFlags);
-    if (!module || g_unloading) {
+    if (!module) {
         return module;
     }
 
-    if (!g_taskbarViewDllLoaded &&
-        _wcsicmp(g_taskbarViewDllPath, lpLibFileName) == 0 &&
-        !g_taskbarViewDllLoaded.exchange(true) &&
-        ModInitWithTaskbarView(module)) {
-        Wh_ApplyHookOperations();
-        ApplySettings(g_settings.taskbarHeight);
+    if (!g_taskbarViewDllLoaded && GetTaskbarViewModuleHandle() == module &&
+        !g_taskbarViewDllLoaded.exchange(true)) {
+        Wh_Log(L"Loaded %s", lpLibFileName);
+
+        if (HookTaskbarViewDllSymbols(module)) {
+            Wh_ApplyHookOperations();
+        }
     }
 
     return module;
@@ -1567,26 +1554,29 @@ BOOL Wh_ModInit() {
 
     LoadSettings();
 
-    if (!GetTaskbarViewDllPath(g_taskbarViewDllPath)) {
-        Wh_Log(L"Taskbar view module not found");
+    if (!HookTaskbarDllSymbols()) {
         return FALSE;
     }
 
-    HMODULE taskbarViewModule = LoadLibraryEx(g_taskbarViewDllPath, nullptr,
-                                              LOAD_WITH_ALTERED_SEARCH_PATH);
-    if (taskbarViewModule) {
+    Wh_SetFunctionHook((void*)SHAppBarMessage, (void*)SHAppBarMessage_Hook,
+                       (void**)&SHAppBarMessage_Original);
+
+    if (HMODULE taskbarViewModule = GetTaskbarViewModuleHandle()) {
         g_taskbarViewDllLoaded = true;
-        return ModInitWithTaskbarView(taskbarViewModule);
+        if (!HookTaskbarViewDllSymbols(taskbarViewModule)) {
+            return FALSE;
+        }
+    } else {
+        Wh_Log(L"Taskbar view module not loaded yet");
+
+        HMODULE kernelBaseModule = GetModuleHandle(L"kernelbase.dll");
+        auto pKernelBaseLoadLibraryExW =
+            (decltype(&LoadLibraryExW))GetProcAddress(kernelBaseModule,
+                                                      "LoadLibraryExW");
+        WindhawkUtils::Wh_SetFunctionHookT(pKernelBaseLoadLibraryExW,
+                                           LoadLibraryExW_Hook,
+                                           &LoadLibraryExW_Original);
     }
-
-    Wh_Log(L"Taskbar view module not loaded yet");
-
-    HMODULE kernelBaseModule = GetModuleHandle(L"kernelbase.dll");
-    FARPROC pKernelBaseLoadLibraryExW =
-        GetProcAddress(kernelBaseModule, "LoadLibraryExW");
-    Wh_SetFunctionHook((void*)pKernelBaseLoadLibraryExW,
-                       (void*)LoadLibraryExW_Hook,
-                       (void**)&LoadLibraryExW_Original);
 
     return TRUE;
 }
@@ -1594,17 +1584,19 @@ BOOL Wh_ModInit() {
 void Wh_ModAfterInit() {
     Wh_Log(L">");
 
-    if (g_taskbarViewDllLoaded) {
-        ApplySettings(g_settings.taskbarHeight);
-    } else {
-        HMODULE taskbarViewModule = LoadLibraryEx(
-            g_taskbarViewDllPath, nullptr, LOAD_WITH_ALTERED_SEARCH_PATH);
-        if (taskbarViewModule && !g_taskbarViewDllLoaded.exchange(true) &&
-            ModInitWithTaskbarView(taskbarViewModule)) {
-            Wh_ApplyHookOperations();
-            ApplySettings(g_settings.taskbarHeight);
+    if (!g_taskbarViewDllLoaded) {
+        if (HMODULE taskbarViewModule = GetTaskbarViewModuleHandle()) {
+            if (!g_taskbarViewDllLoaded.exchange(true)) {
+                Wh_Log(L"Got Taskbar.View.dll");
+
+                if (HookTaskbarViewDllSymbols(taskbarViewModule)) {
+                    Wh_ApplyHookOperations();
+                }
+            }
         }
     }
+
+    ApplySettings(g_settings.taskbarHeight);
 }
 
 void Wh_ModBeforeUninit() {
@@ -1612,9 +1604,7 @@ void Wh_ModBeforeUninit() {
 
     g_unloading = true;
 
-    if (g_taskbarViewDllLoaded) {
-        ApplySettings(g_originalTaskbarHeight ? g_originalTaskbarHeight : 48);
-    }
+    ApplySettings(g_originalTaskbarHeight ? g_originalTaskbarHeight : 48);
 }
 
 void Wh_ModUninit() {
@@ -1630,7 +1620,5 @@ void Wh_ModSettingsChanged() {
 
     LoadSettings();
 
-    if (g_taskbarViewDllLoaded) {
-        ApplySettings(g_settings.taskbarHeight);
-    }
+    ApplySettings(g_settings.taskbarHeight);
 }
