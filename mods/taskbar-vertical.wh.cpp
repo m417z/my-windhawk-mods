@@ -1309,7 +1309,10 @@ bool ApplyStyle(FrameworkElement taskbarFrame,
         }
 
         // Fix the edge of the taskbar being non-clickable by moving the edge
-        // pixel out of the screen.
+        // pixels out of the screen.
+        margin.Left -= 1;
+        margin.Top -= 1;
+        margin.Right -= 1;
         margin.Bottom -= 1;
     }
 
@@ -1340,13 +1343,23 @@ bool ApplyStyle(FrameworkElement taskbarFrame,
         (child =
              FindChildByClassName(child, L"Windows.UI.Xaml.Controls.Grid")) &&
         (child = FindChildByName(child, L"BackgroundStroke"))) {
-        if (!g_unloading && taskbarLocation == TaskbarLocation::right) {
-            child.VerticalAlignment(VerticalAlignment::Bottom);
-            // Account for the extra margin above.
-            child.Margin(Thickness{0, 0, 0, 1});
-        } else {
+        if (g_unloading) {
             child.VerticalAlignment(VerticalAlignment::Top);
             child.Margin(Thickness{});
+        } else {
+            switch (taskbarLocation) {
+                case TaskbarLocation::left:
+                    child.VerticalAlignment(VerticalAlignment::Top);
+                    // Account for the extra margin above.
+                    child.Margin(Thickness{0, 1, 0, 0});
+                    break;
+
+                case TaskbarLocation::right:
+                    child.VerticalAlignment(VerticalAlignment::Bottom);
+                    // Account for the extra margin above.
+                    child.Margin(Thickness{0, 0, 0, 1});
+                    break;
+            }
         }
     }
 
