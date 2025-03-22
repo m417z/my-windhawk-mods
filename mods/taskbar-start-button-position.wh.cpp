@@ -51,6 +51,7 @@ Only Windows 11 is supported.
 
 #include <atomic>
 #include <functional>
+#include <string>
 
 #include <dwmapi.h>
 
