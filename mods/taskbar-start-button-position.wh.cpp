@@ -780,12 +780,13 @@ BOOL Wh_ModInit() {
 
     HMODULE dwmapiModule = LoadLibrary(L"dwmapi.dll");
     if (dwmapiModule) {
-        FARPROC pDwmSetWindowAttribute =
-            GetProcAddress(dwmapiModule, "DwmSetWindowAttribute");
+        auto pDwmSetWindowAttribute =
+            (decltype(&DwmSetWindowAttribute))GetProcAddress(
+                dwmapiModule, "DwmSetWindowAttribute");
         if (pDwmSetWindowAttribute) {
-            Wh_SetFunctionHook((void*)pDwmSetWindowAttribute,
-                               (void*)DwmSetWindowAttribute_Hook,
-                               (void**)&DwmSetWindowAttribute_Original);
+            WindhawkUtils::Wh_SetFunctionHookT(pDwmSetWindowAttribute,
+                                               DwmSetWindowAttribute_Hook,
+                                               &DwmSetWindowAttribute_Original);
         }
     }
 
