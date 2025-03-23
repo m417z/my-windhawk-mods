@@ -281,14 +281,23 @@ FrameworkElement FindChildByClassName(FrameworkElement element,
     return nullptr;
 }
 
-HWND GetTaskbarWnd() {
-    HWND hTaskbarWnd = FindWindow(L"Shell_TrayWnd", nullptr);
+HWND FindCurrentProcessTaskbarWnd() {
+    HWND hTaskbarWnd = nullptr;
 
-    DWORD processId = 0;
-    if (!hTaskbarWnd || !GetWindowThreadProcessId(hTaskbarWnd, &processId) ||
-        processId != GetCurrentProcessId()) {
-        return nullptr;
-    }
+    EnumWindows(
+        [](HWND hWnd, LPARAM lParam) -> BOOL {
+            DWORD dwProcessId;
+            WCHAR className[32];
+            if (GetWindowThreadProcessId(hWnd, &dwProcessId) &&
+                dwProcessId == GetCurrentProcessId() &&
+                GetClassName(hWnd, className, ARRAYSIZE(className)) &&
+                _wcsicmp(className, L"Shell_TrayWnd") == 0) {
+                *reinterpret_cast<HWND*>(lParam) = hWnd;
+                return FALSE;
+            }
+            return TRUE;
+        },
+        reinterpret_cast<LPARAM>(&hTaskbarWnd));
 
     return hTaskbarWnd;
 }
@@ -357,7 +366,7 @@ std::wstring GetWindowAppId(HWND hWnd) {
 }
 
 void RecalculateLabels() {
-    HWND hTaskbarWnd = GetTaskbarWnd();
+    HWND hTaskbarWnd = FindCurrentProcessTaskbarWnd();
     if (!hTaskbarWnd) {
         return;
     }
@@ -473,7 +482,7 @@ double CalculateTaskbarItemWidth(FrameworkElement taskbarFrameRepeaterElement,
     // For older versions (pre-KB5022913). Only works correctly on primary
     // monitor.
     if (!taskbarFrameRepeaterEndOffset) {
-        HWND hTaskbarWnd = GetTaskbarWnd();
+        HWND hTaskbarWnd = FindCurrentProcessTaskbarWnd();
         if (!hTaskbarWnd) {
             return minWidth;
         }
@@ -1827,7 +1836,7 @@ void ApplySettings() {
     if (!g_hasNativeLabelsImplementation) {
         RecalculateLabels();
     } else {
-        HWND hTaskbarWnd = GetTaskbarWnd();
+        HWND hTaskbarWnd = FindCurrentProcessTaskbarWnd();
         if (!hTaskbarWnd) {
             return;
         }

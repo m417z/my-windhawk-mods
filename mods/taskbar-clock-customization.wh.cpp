@@ -2919,78 +2919,101 @@ void LoadSettings() {
     }
 }
 
-void ApplySettingsWin11() {
-    DWORD dwProcessId;
-    DWORD dwCurrentProcessId = GetCurrentProcessId();
+HWND FindCurrentProcessTaskbarWnd() {
+    HWND hTaskbarWnd = nullptr;
 
-    HWND hTaskbarWnd = FindWindow(L"Shell_TrayWnd", nullptr);
-    if (hTaskbarWnd && GetWindowThreadProcessId(hTaskbarWnd, &dwProcessId) &&
-        dwProcessId == dwCurrentProcessId) {
-        // Touch a registry value to trigger a watcher for a clock update. Do so
-        // only if the current explorer.exe instance owns the taskbar.
-        constexpr WCHAR kTempValueName[] =
-            L"_temp_windhawk_taskbar-taskbar-clock-customization";
-        HKEY hSubKey;
-        LONG result = RegOpenKeyEx(HKEY_CURRENT_USER,
-                                   L"Control Panel\\TimeDate\\AdditionalClocks",
-                                   0, KEY_WRITE, &hSubKey);
-        if (result == ERROR_SUCCESS) {
-            if (RegSetValueEx(hSubKey, kTempValueName, 0, REG_SZ,
-                              (const BYTE*)L"",
-                              sizeof(WCHAR)) != ERROR_SUCCESS) {
-                Wh_Log(L"Failed to create temp value");
-            } else if (RegDeleteValue(hSubKey, kTempValueName) !=
-                       ERROR_SUCCESS) {
-                Wh_Log(L"Failed to remove temp value");
+    EnumWindows(
+        [](HWND hWnd, LPARAM lParam) -> BOOL {
+            DWORD dwProcessId;
+            WCHAR className[32];
+            if (GetWindowThreadProcessId(hWnd, &dwProcessId) &&
+                dwProcessId == GetCurrentProcessId() &&
+                GetClassName(hWnd, className, ARRAYSIZE(className)) &&
+                _wcsicmp(className, L"Shell_TrayWnd") == 0) {
+                *reinterpret_cast<HWND*>(lParam) = hWnd;
+                return FALSE;
             }
+            return TRUE;
+        },
+        reinterpret_cast<LPARAM>(&hTaskbarWnd));
 
-            RegCloseKey(hSubKey);
-        } else {
-            Wh_Log(L"Failed to open subkey: %d", result);
+    return hTaskbarWnd;
+}
+
+void ApplySettingsWin11() {
+    HWND hTaskbarWnd = FindCurrentProcessTaskbarWnd();
+    if (!hTaskbarWnd) {
+        return;
+    }
+
+    // Touch a registry value to trigger a watcher for a clock update. Do so
+    // only if the current explorer.exe instance owns the taskbar.
+    constexpr WCHAR kTempValueName[] =
+        L"_temp_windhawk_taskbar-taskbar-clock-customization";
+    HKEY hSubKey;
+    LONG result = RegOpenKeyEx(HKEY_CURRENT_USER,
+                               L"Control Panel\\TimeDate\\AdditionalClocks", 0,
+                               KEY_WRITE, &hSubKey);
+    if (result == ERROR_SUCCESS) {
+        if (RegSetValueEx(hSubKey, kTempValueName, 0, REG_SZ, (const BYTE*)L"",
+                          sizeof(WCHAR)) != ERROR_SUCCESS) {
+            Wh_Log(L"Failed to create temp value");
+        } else if (RegDeleteValue(hSubKey, kTempValueName) != ERROR_SUCCESS) {
+            Wh_Log(L"Failed to remove temp value");
         }
+
+        RegCloseKey(hSubKey);
+    } else {
+        Wh_Log(L"Failed to open subkey: %d", result);
     }
 }
 
 void ApplySettingsWin10() {
-    DWORD dwProcessId;
-    DWORD dwCurrentProcessId = GetCurrentProcessId();
+    HWND hTaskbarWnd = FindCurrentProcessTaskbarWnd();
+    if (!hTaskbarWnd) {
+        return;
+    }
 
-    HWND hTaskbarWnd = FindWindow(L"Shell_TrayWnd", nullptr);
-    if (hTaskbarWnd && GetWindowThreadProcessId(hTaskbarWnd, &dwProcessId) &&
-        dwProcessId == dwCurrentProcessId) {
-        // Apply size.
-        RECT rc;
-        if (GetClientRect(hTaskbarWnd, &rc)) {
-            SendMessage(hTaskbarWnd, WM_SIZE, SIZE_RESTORED,
-                        MAKELPARAM(rc.right - rc.left, rc.bottom - rc.top));
-        }
+    // Apply size.
+    RECT rc;
+    if (GetClientRect(hTaskbarWnd, &rc)) {
+        SendMessage(hTaskbarWnd, WM_SIZE, SIZE_RESTORED,
+                    MAKELPARAM(rc.right - rc.left, rc.bottom - rc.top));
+    }
 
-        // Apply text.
-        HWND hTrayNotifyWnd =
-            FindWindowEx(hTaskbarWnd, nullptr, L"TrayNotifyWnd", nullptr);
-        if (hTrayNotifyWnd) {
-            HWND hTrayClockWWnd = FindWindowEx(hTrayNotifyWnd, nullptr,
-                                               L"TrayClockWClass", nullptr);
-            if (hTrayClockWWnd) {
-                LONG_PTR lpTrayClockWClassLongPtr =
-                    GetWindowLongPtr(hTrayClockWWnd, 0);
-                if (lpTrayClockWClassLongPtr) {
-                    ClockButton_v_OnDisplayStateChange_Original(
-                        (LPVOID)lpTrayClockWClassLongPtr, true);
-                }
+    // Apply text.
+    HWND hTrayNotifyWnd =
+        FindWindowEx(hTaskbarWnd, nullptr, L"TrayNotifyWnd", nullptr);
+    if (hTrayNotifyWnd) {
+        HWND hTrayClockWWnd =
+            FindWindowEx(hTrayNotifyWnd, nullptr, L"TrayClockWClass", nullptr);
+        if (hTrayClockWWnd) {
+            LONG_PTR lpTrayClockWClassLongPtr =
+                GetWindowLongPtr(hTrayClockWWnd, 0);
+            if (lpTrayClockWClassLongPtr) {
+                ClockButton_v_OnDisplayStateChange_Original(
+                    (LPVOID)lpTrayClockWClassLongPtr, true);
             }
         }
     }
 
-    HWND hSecondaryTaskbarWnd = FindWindow(L"Shell_SecondaryTrayWnd", nullptr);
-    while (hSecondaryTaskbarWnd &&
-           GetWindowThreadProcessId(hSecondaryTaskbarWnd, &dwProcessId) &&
-           dwProcessId == dwCurrentProcessId) {
+    DWORD taskbarThreadId = GetWindowThreadProcessId(hTaskbarWnd, nullptr);
+    if (!taskbarThreadId) {
+        return;
+    }
+
+    auto enumWindowsProc = [](HWND hWnd) {
+        WCHAR szClassName[32];
+        if (!GetClassName(hWnd, szClassName, ARRAYSIZE(szClassName)) ||
+            _wcsicmp(szClassName, L"Shell_SecondaryTrayWnd") != 0) {
+            return;
+        }
+
         // Apply size.
         RECT rc;
-        if (GetClientRect(hSecondaryTaskbarWnd, &rc)) {
+        if (GetClientRect(hWnd, &rc)) {
             WINDOWPOS windowpos;
-            windowpos.hwnd = hSecondaryTaskbarWnd;
+            windowpos.hwnd = hWnd;
             windowpos.hwndInsertAfter = nullptr;
             windowpos.x = 0;
             windowpos.y = 0;
@@ -2998,13 +3021,12 @@ void ApplySettingsWin10() {
             windowpos.cy = rc.bottom - rc.top;
             windowpos.flags = SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE;
 
-            SendMessage(hSecondaryTaskbarWnd, WM_WINDOWPOSCHANGED, 0,
-                        (LPARAM)&windowpos);
+            SendMessage(hWnd, WM_WINDOWPOSCHANGED, 0, (LPARAM)&windowpos);
         }
 
         // Apply text.
-        HWND hClockButtonWnd = FindWindowEx(hSecondaryTaskbarWnd, nullptr,
-                                            L"ClockButton", nullptr);
+        HWND hClockButtonWnd =
+            FindWindowEx(hWnd, nullptr, L"ClockButton", nullptr);
         if (hClockButtonWnd) {
             LONG_PTR lpClockButtonLongPtr =
                 GetWindowLongPtr(hClockButtonWnd, 0);
@@ -3013,10 +3035,16 @@ void ApplySettingsWin10() {
                     (LPVOID)lpClockButtonLongPtr, true);
             }
         }
+    };
 
-        hSecondaryTaskbarWnd = FindWindowEx(nullptr, hSecondaryTaskbarWnd,
-                                            L"Shell_SecondaryTrayWnd", nullptr);
-    }
+    EnumThreadWindows(
+        taskbarThreadId,
+        [](HWND hWnd, LPARAM lParam) -> BOOL {
+            auto& proc = *reinterpret_cast<decltype(enumWindowsProc)*>(lParam);
+            proc(hWnd);
+            return TRUE;
+        },
+        reinterpret_cast<LPARAM>(&enumWindowsProc));
 }
 
 void ApplySettings() {

@@ -80,14 +80,23 @@ struct TaskbarState {
 
 std::unordered_map<void*, TaskbarState> g_taskbarState;
 
-HWND GetTaskbarWnd() {
-    HWND hTaskbarWnd = FindWindow(L"Shell_TrayWnd", nullptr);
+HWND FindCurrentProcessTaskbarWnd() {
+    HWND hTaskbarWnd = nullptr;
 
-    DWORD processId = 0;
-    if (!hTaskbarWnd || !GetWindowThreadProcessId(hTaskbarWnd, &processId) ||
-        processId != GetCurrentProcessId()) {
-        return nullptr;
-    }
+    EnumWindows(
+        [](HWND hWnd, LPARAM lParam) -> BOOL {
+            DWORD dwProcessId;
+            WCHAR className[32];
+            if (GetWindowThreadProcessId(hWnd, &dwProcessId) &&
+                dwProcessId == GetCurrentProcessId() &&
+                GetClassName(hWnd, className, ARRAYSIZE(className)) &&
+                _wcsicmp(className, L"Shell_TrayWnd") == 0) {
+                *reinterpret_cast<HWND*>(lParam) = hWnd;
+                return FALSE;
+            }
+            return TRUE;
+        },
+        reinterpret_cast<LPARAM>(&hTaskbarWnd));
 
     return hTaskbarWnd;
 }
@@ -786,7 +795,7 @@ void Wh_ModAfterInit() {
         }
     }
 
-    HWND hTaskbarWnd = GetTaskbarWnd();
+    HWND hTaskbarWnd = FindCurrentProcessTaskbarWnd();
     if (hTaskbarWnd) {
         ApplySettings(hTaskbarWnd);
     }
@@ -797,7 +806,7 @@ void Wh_ModBeforeUninit() {
 
     g_unloading = true;
 
-    HWND hTaskbarWnd = GetTaskbarWnd();
+    HWND hTaskbarWnd = FindCurrentProcessTaskbarWnd();
     if (hTaskbarWnd) {
         ApplySettings(hTaskbarWnd);
     }
@@ -812,7 +821,7 @@ void Wh_ModSettingsChanged() {
 
     LoadSettings();
 
-    HWND hTaskbarWnd = GetTaskbarWnd();
+    HWND hTaskbarWnd = FindCurrentProcessTaskbarWnd();
     if (hTaskbarWnd) {
         ApplySettings(hTaskbarWnd);
     }

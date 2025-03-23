@@ -460,27 +460,31 @@ void ComFuncVirtualDesktopFixAfterDPA_InsertPtr(HDPA pdpa, int index, void* p) {
     OnButtonGroupInserted(lpTaskSwLongPtr, pdpa, index);
 }
 
-bool InitializeTaskbarVariables(HWND hTaskbarWnd) {
-    DWORD processId;
-    DWORD taskbarThreadId = GetWindowThreadProcessId(hTaskbarWnd, &processId);
+HWND FindCurrentProcessTaskbarWnd() {
+    HWND hTaskbarWnd = nullptr;
 
-    if (!taskbarThreadId) {
-        Wh_Log(L"GetWindowThreadProcessId() failed for taskbar %08X",
-               (DWORD)(ULONG_PTR)hTaskbarWnd);
-        return false;
-    }
+    EnumWindows(
+        [](HWND hWnd, LPARAM lParam) -> BOOL {
+            DWORD dwProcessId;
+            WCHAR className[32];
+            if (GetWindowThreadProcessId(hWnd, &dwProcessId) &&
+                dwProcessId == GetCurrentProcessId() &&
+                GetClassName(hWnd, className, ARRAYSIZE(className)) &&
+                _wcsicmp(className, L"Shell_TrayWnd") == 0) {
+                *reinterpret_cast<HWND*>(lParam) = hWnd;
+                return FALSE;
+            }
+            return TRUE;
+        },
+        reinterpret_cast<LPARAM>(&hTaskbarWnd));
 
-    if (processId != GetCurrentProcessId()) {
-        Wh_Log(L"Taskbar %08X is from another process",
-               (DWORD)(ULONG_PTR)hTaskbarWnd);
-        return false;
-    }
+    return hTaskbarWnd;
+}
 
+void InitializeTaskbarVariables(HWND hTaskbarWnd) {
     Wh_Log(L"Initialized for taskbar %08X", (DWORD)(ULONG_PTR)hTaskbarWnd);
-
-    g_taskbarThreadId = taskbarThreadId;
+    g_taskbarThreadId = GetWindowThreadProcessId(hTaskbarWnd, nullptr);
     g_hTaskbarWnd = hTaskbarWnd;
-    return true;
 }
 
 using DPA_InsertPtr_t = decltype(&DPA_InsertPtr);
@@ -670,7 +674,7 @@ BOOL Wh_ModInit() {
 void Wh_ModAfterInit() {
     Wh_Log(L">");
 
-    HWND hTaskbarWnd = FindWindow(L"Shell_TrayWnd", nullptr);
+    HWND hTaskbarWnd = FindCurrentProcessTaskbarWnd();
     if (hTaskbarWnd) {
         InitializeTaskbarVariables(hTaskbarWnd);
     }

@@ -547,16 +547,35 @@ PCWSTR WINAPI CTaskGroup_GetAppID_Hook(PVOID pThis) {
     return CTaskGroup_GetAppID_Original(pThis);
 }
 
+HWND FindCurrentProcessTaskbarWnd() {
+    HWND hTaskbarWnd = nullptr;
+
+    EnumWindows(
+        [](HWND hWnd, LPARAM lParam) -> BOOL {
+            DWORD dwProcessId;
+            WCHAR className[32];
+            if (GetWindowThreadProcessId(hWnd, &dwProcessId) &&
+                dwProcessId == GetCurrentProcessId() &&
+                GetClassName(hWnd, className, ARRAYSIZE(className)) &&
+                _wcsicmp(className, L"Shell_TrayWnd") == 0) {
+                *reinterpret_cast<HWND*>(lParam) = hWnd;
+                return FALSE;
+            }
+            return TRUE;
+        },
+        reinterpret_cast<LPARAM>(&hTaskbarWnd));
+
+    return hTaskbarWnd;
+}
+
 PVOID GetTaskBand() {
     static PVOID taskBand = nullptr;
     if (taskBand) {
         return taskBand;
     }
 
-    HWND hTaskbarWnd = FindWindow(L"Shell_TrayWnd", nullptr);
-    DWORD processId = 0;
-    if (hTaskbarWnd && GetWindowThreadProcessId(hTaskbarWnd, &processId) &&
-        processId == GetCurrentProcessId()) {
+    HWND hTaskbarWnd = FindCurrentProcessTaskbarWnd();
+    if (hTaskbarWnd) {
         HWND hTaskSwWnd = (HWND)GetProp(hTaskbarWnd, L"TaskbandHWND");
         if (hTaskSwWnd) {
             taskBand = (PVOID)GetWindowLongPtr(hTaskSwWnd, 0);

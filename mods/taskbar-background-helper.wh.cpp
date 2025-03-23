@@ -262,22 +262,40 @@ BOOL ResetTaskbarStyle(HWND hWnd) {
     return SetWindowCompositionAttribute_Original(hWnd, &data);
 }
 
-HWND GetTaskbarForMonitor(HMONITOR monitor) {
-    HWND hTaskbarWnd = FindWindow(L"Shell_TrayWnd", nullptr);
-    if (!hTaskbarWnd) {
-        return nullptr;
-    }
+HWND FindCurrentProcessTaskbarWnd() {
+    HWND hTaskbarWnd = nullptr;
 
-    DWORD taskbarThreadId = 0;
-    DWORD taskbarProcessId = 0;
-    if (!(taskbarThreadId =
-              GetWindowThreadProcessId(hTaskbarWnd, &taskbarProcessId)) ||
-        taskbarProcessId != GetCurrentProcessId()) {
+    EnumWindows(
+        [](HWND hWnd, LPARAM lParam) -> BOOL {
+            DWORD dwProcessId;
+            WCHAR className[32];
+            if (GetWindowThreadProcessId(hWnd, &dwProcessId) &&
+                dwProcessId == GetCurrentProcessId() &&
+                GetClassName(hWnd, className, ARRAYSIZE(className)) &&
+                _wcsicmp(className, L"Shell_TrayWnd") == 0) {
+                *reinterpret_cast<HWND*>(lParam) = hWnd;
+                return FALSE;
+            }
+            return TRUE;
+        },
+        reinterpret_cast<LPARAM>(&hTaskbarWnd));
+
+    return hTaskbarWnd;
+}
+
+HWND GetTaskbarForMonitor(HMONITOR monitor) {
+    HWND hTaskbarWnd = FindCurrentProcessTaskbarWnd();
+    if (!hTaskbarWnd) {
         return nullptr;
     }
 
     if (MonitorFromWindow(hTaskbarWnd, MONITOR_DEFAULTTONEAREST) == monitor) {
         return hTaskbarWnd;
+    }
+
+    DWORD taskbarThreadId = GetWindowThreadProcessId(hTaskbarWnd, nullptr);
+    if (!taskbarThreadId) {
+        return nullptr;
     }
 
     HWND hResultWnd = nullptr;
@@ -302,7 +320,7 @@ HWND GetTaskbarForMonitor(HMONITOR monitor) {
 
     EnumThreadWindows(
         taskbarThreadId,
-        [](HWND hWnd, LPARAM lParam) WINAPI -> BOOL {
+        [](HWND hWnd, LPARAM lParam) -> BOOL {
             auto& proc = *reinterpret_cast<decltype(enumWindowsProc)*>(lParam);
             return proc(hWnd);
         },
@@ -355,7 +373,7 @@ bool DoesMonitorHaveMaximizedWindow(HMONITOR monitor) {
     };
 
     EnumWindows(
-        [](HWND hWnd, LPARAM lParam) WINAPI -> BOOL {
+        [](HWND hWnd, LPARAM lParam) -> BOOL {
             auto& proc = *reinterpret_cast<decltype(enumWindowsProc)*>(lParam);
             return proc(hWnd);
         },
@@ -396,7 +414,7 @@ void CALLBACK WinEventProc(HWINEVENTHOOK hWinEventHook,
                     UINT uMsg,         // WM_TIMER message
                     UINT_PTR idEvent,  // timer identifier
                     DWORD dwTime       // current system time
-                    ) WINAPI {
+                 ) {
                      Wh_Log(L">");
 
                      KillTimer(nullptr, g_pendingMonitorsTimer);
@@ -529,7 +547,7 @@ HWND FindCurrentProcessTaskbarWindows(
     HWND hWnd = nullptr;
     ENUM_WINDOWS_PARAM param = {&hWnd, secondaryTaskbarWindows};
     EnumWindows(
-        [](HWND hWnd, LPARAM lParam) WINAPI -> BOOL {
+        [](HWND hWnd, LPARAM lParam) -> BOOL {
             ENUM_WINDOWS_PARAM& param = *(ENUM_WINDOWS_PARAM*)lParam;
 
             DWORD dwProcessId = 0;

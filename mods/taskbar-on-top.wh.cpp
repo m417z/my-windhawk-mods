@@ -199,14 +199,23 @@ bool GetMonitorRect(HMONITOR monitor, RECT* rc) {
            CopyRect(rc, &monitorInfo.rcMonitor);
 }
 
-HWND GetTaskbarWnd() {
-    HWND hTaskbarWnd = FindWindow(L"Shell_TrayWnd", nullptr);
+HWND FindCurrentProcessTaskbarWnd() {
+    HWND hTaskbarWnd = nullptr;
 
-    DWORD processId = 0;
-    if (!hTaskbarWnd || !GetWindowThreadProcessId(hTaskbarWnd, &processId) ||
-        processId != GetCurrentProcessId()) {
-        return nullptr;
-    }
+    EnumWindows(
+        [](HWND hWnd, LPARAM lParam) -> BOOL {
+            DWORD dwProcessId;
+            WCHAR className[32];
+            if (GetWindowThreadProcessId(hWnd, &dwProcessId) &&
+                dwProcessId == GetCurrentProcessId() &&
+                GetClassName(hWnd, className, ARRAYSIZE(className)) &&
+                _wcsicmp(className, L"Shell_TrayWnd") == 0) {
+                *reinterpret_cast<HWND*>(lParam) = hWnd;
+                return FALSE;
+            }
+            return TRUE;
+        },
+        reinterpret_cast<LPARAM>(&hTaskbarWnd));
 
     return hTaskbarWnd;
 }
@@ -1273,7 +1282,8 @@ BOOL WINAPI SetWindowPos_Hook(HWND hWnd,
         WCHAR rootOwnerClassName[64];
         if (_wcsicmp(szClassName, L"Xaml_WindowedPopupClass") == 0 &&
             GetWindowThreadProcessId(hWnd, nullptr) ==
-                GetWindowThreadProcessId(GetTaskbarWnd(), nullptr) &&
+                GetWindowThreadProcessId(FindCurrentProcessTaskbarWnd(),
+                                         nullptr) &&
             GetClassName(GetAncestor(hWnd, GA_ROOTOWNER), rootOwnerClassName,
                          ARRAYSIZE(rootOwnerClassName)) &&
             _wcsicmp(rootOwnerClassName, L"XamlExplorerHostIslandWindow") ==
@@ -1338,7 +1348,8 @@ BOOL WINAPI SetWindowPos_Hook(HWND hWnd,
         HWND windowFromPoint = WindowFromPoint(pt);
         if (windowFromPoint &&
             GetWindowThreadProcessId(windowFromPoint, nullptr) ==
-                GetWindowThreadProcessId(GetTaskbarWnd(), nullptr)) {
+                GetWindowThreadProcessId(FindCurrentProcessTaskbarWnd(),
+                                         nullptr)) {
             WCHAR szClassNameFromPoint[64];
             if (GetClassName(windowFromPoint, szClassNameFromPoint,
                              ARRAYSIZE(szClassNameFromPoint)) &&
@@ -1562,7 +1573,7 @@ void LoadSettings() {
 }
 
 void ApplySettings() {
-    HWND hTaskbarWnd = GetTaskbarWnd();
+    HWND hTaskbarWnd = FindCurrentProcessTaskbarWnd();
     if (!hTaskbarWnd) {
         return;
     }

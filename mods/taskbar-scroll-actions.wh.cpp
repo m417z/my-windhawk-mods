@@ -8,6 +8,7 @@
 // @twitter         https://twitter.com/m417z
 // @homepage        https://m417z.com/
 // @include         explorer.exe
+// @architecture    x86-64
 // @compilerOptions -lcomctl32 -lole32 -loleaut32 -lversion
 // ==/WindhawkMod==
 
@@ -144,6 +145,27 @@ bool IsTaskbarWindow(HWND hWnd) {
 
     return _wcsicmp(szClassName, L"Shell_TrayWnd") == 0 ||
            _wcsicmp(szClassName, L"Shell_SecondaryTrayWnd") == 0;
+}
+
+HWND FindCurrentProcessTaskbarWnd() {
+    HWND hTaskbarWnd = nullptr;
+
+    EnumWindows(
+        [](HWND hWnd, LPARAM lParam) -> BOOL {
+            DWORD dwProcessId;
+            WCHAR className[32];
+            if (GetWindowThreadProcessId(hWnd, &dwProcessId) &&
+                dwProcessId == GetCurrentProcessId() &&
+                GetClassName(hWnd, className, ARRAYSIZE(className)) &&
+                _wcsicmp(className, L"Shell_TrayWnd") == 0) {
+                *reinterpret_cast<HWND*>(lParam) = hWnd;
+                return FALSE;
+            }
+            return TRUE;
+        },
+        reinterpret_cast<LPARAM>(&hTaskbarWnd));
+
+    return hTaskbarWnd;
 }
 
 bool GetNotificationAreaRect(HWND hMMTaskbarWnd, RECT* rcResult) {
@@ -672,7 +694,7 @@ bool SwitchDesktopViaKeyboardShortcut(int clicks) {
     }
 
     // To allow to switch if the foreground window is of an elevated process.
-    HWND hTaskbarWnd = FindWindow(L"Shell_TrayWnd", nullptr);
+    HWND hTaskbarWnd = FindCurrentProcessTaskbarWnd();
     if (hTaskbarWnd) {
         SetForegroundWindow(hTaskbarWnd);
     }
@@ -785,7 +807,7 @@ BOOL SetWindowSubclassFromAnyThread(HWND hWnd,
 
     HHOOK hook = SetWindowsHookEx(
         WH_CALLWNDPROC,
-        [](int nCode, WPARAM wParam, LPARAM lParam) WINAPI -> LRESULT {
+        [](int nCode, WPARAM wParam, LPARAM lParam) -> LRESULT {
             if (nCode == HC_ACTION) {
                 const CWPSTRUCT* cwp = (const CWPSTRUCT*)lParam;
                 if (cwp->message == g_subclassRegisteredMsg && cwp->wParam) {
@@ -995,7 +1017,7 @@ HWND FindCurrentProcessTaskbarWindows(
     HWND hWnd = nullptr;
     ENUM_WINDOWS_PARAM param = {&hWnd, secondaryTaskbarWindows};
     EnumWindows(
-        [](HWND hWnd, LPARAM lParam) WINAPI -> BOOL {
+        [](HWND hWnd, LPARAM lParam) -> BOOL {
             ENUM_WINDOWS_PARAM& param = *(ENUM_WINDOWS_PARAM*)lParam;
 
             DWORD dwProcessId = 0;

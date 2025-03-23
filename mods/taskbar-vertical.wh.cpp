@@ -540,7 +540,26 @@ bool IsTaskbarWindow(HWND hWnd) {
            _wcsicmp(szClassName, L"Shell_SecondaryTrayWnd") == 0;
 }
 
-HWND GetTaskbarWnd();
+HWND FindCurrentProcessTaskbarWnd() {
+    HWND hTaskbarWnd = nullptr;
+
+    EnumWindows(
+        [](HWND hWnd, LPARAM lParam) -> BOOL {
+            DWORD dwProcessId;
+            WCHAR className[32];
+            if (GetWindowThreadProcessId(hWnd, &dwProcessId) &&
+                dwProcessId == GetCurrentProcessId() &&
+                GetClassName(hWnd, className, ARRAYSIZE(className)) &&
+                _wcsicmp(className, L"Shell_TrayWnd") == 0) {
+                *reinterpret_cast<HWND*>(lParam) = hWnd;
+                return FALSE;
+            }
+            return TRUE;
+        },
+        reinterpret_cast<LPARAM>(&hTaskbarWnd));
+
+    return hTaskbarWnd;
+}
 
 LRESULT TaskbarWndProcPostProcess(HWND hWnd,
                                   UINT Msg,
@@ -865,7 +884,7 @@ ResourceDictionary_Lookup_Hook(void* pThis,
         return ret;
     }
 
-    HWND hTaskbarWnd = GetTaskbarWnd();
+    HWND hTaskbarWnd = FindCurrentProcessTaskbarWnd();
     if (!hTaskbarWnd) {
         return ret;
     }
@@ -2486,7 +2505,7 @@ NotificationAreaIconsDataModel_GetInvocationPointRelativeToScreen_Hook(
         GET_Y_LPARAM(messagePos),
     };
 
-    HWND hTaskbarWnd = GetTaskbarWnd();
+    HWND hTaskbarWnd = FindCurrentProcessTaskbarWnd();
     if (!hTaskbarWnd || WindowFromPoint(pt) != hTaskbarWnd) {
         return original();
     }
@@ -2839,7 +2858,7 @@ BOOL WINAPI SetWindowPos_Hook(HWND hWnd,
         HWND windowFromPoint = WindowFromPoint(pt);
         if (windowFromPoint &&
             GetWindowThreadProcessId(windowFromPoint, nullptr) ==
-                GetWindowThreadProcessId(GetTaskbarWnd(), nullptr)) {
+                GetWindowThreadProcessId(FindCurrentProcessTaskbarWnd(), nullptr)) {
             WCHAR szClassNameFromPoint[64];
             if (GetClassName(windowFromPoint, szClassNameFromPoint,
                              ARRAYSIZE(szClassNameFromPoint)) &&
@@ -3498,20 +3517,8 @@ void LoadSettings() {
     g_settings.clockContainerHeight = Wh_GetIntSetting(L"clockContainerHeight");
 }
 
-HWND GetTaskbarWnd() {
-    HWND hTaskbarWnd = FindWindow(L"Shell_TrayWnd", nullptr);
-
-    DWORD processId = 0;
-    if (!hTaskbarWnd || !GetWindowThreadProcessId(hTaskbarWnd, &processId) ||
-        processId != GetCurrentProcessId()) {
-        return nullptr;
-    }
-
-    return hTaskbarWnd;
-}
-
 void ApplySettings(bool waitForApply = true) {
-    HWND hTaskbarWnd = GetTaskbarWnd();
+    HWND hTaskbarWnd = FindCurrentProcessTaskbarWnd();
     if (!hTaskbarWnd) {
         return;
     }
@@ -3549,14 +3556,9 @@ void ApplySettings(bool waitForApply = true) {
 
     // Calling CreateRectRgn posts window size change events which cause element
     // sizes and positions to be recalculated.
-    EnumWindows(
+    EnumThreadWindows(
+        GetWindowThreadProcessId(hTaskbarWnd, nullptr),
         [](HWND hWnd, LPARAM lParam) -> BOOL {
-            DWORD dwProcessId = 0;
-            if (!GetWindowThreadProcessId(hWnd, &dwProcessId) ||
-                dwProcessId != GetCurrentProcessId()) {
-                return TRUE;
-            }
-
             if (IsTaskbarWindow(hWnd)) {
                 SetWindowRgn(hWnd, nullptr, TRUE);
             }

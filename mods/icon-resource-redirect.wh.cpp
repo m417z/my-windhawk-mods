@@ -2172,11 +2172,25 @@ BOOL Wh_ModInit() {
     return TRUE;
 }
 
-bool DoesTaskbarBelongToCurrentProcess() {
-    HWND hTaskbarWnd = FindWindow(L"Shell_TrayWnd", nullptr);
-    DWORD dwProcessId;
-    return hTaskbarWnd && GetWindowThreadProcessId(hTaskbarWnd, &dwProcessId) &&
-           dwProcessId == GetCurrentProcessId();
+HWND FindCurrentProcessTaskbarWnd() {
+    HWND hTaskbarWnd = nullptr;
+
+    EnumWindows(
+        [](HWND hWnd, LPARAM lParam) WINAPI -> BOOL {
+            DWORD dwProcessId;
+            WCHAR className[32];
+            if (GetWindowThreadProcessId(hWnd, &dwProcessId) &&
+                dwProcessId == GetCurrentProcessId() &&
+                GetClassName(hWnd, className, ARRAYSIZE(className)) &&
+                _wcsicmp(className, L"Shell_TrayWnd") == 0) {
+                *reinterpret_cast<HWND*>(lParam) = hWnd;
+                return FALSE;
+            }
+            return TRUE;
+        },
+        reinterpret_cast<LPARAM>(&hTaskbarWnd));
+
+    return hTaskbarWnd;
 }
 
 void Wh_ModUninit() {
@@ -2184,7 +2198,7 @@ void Wh_ModUninit() {
 
     FreeAndClearRedirectedModules();
 
-    if (DoesTaskbarBelongToCurrentProcess()) {
+    if (FindCurrentProcessTaskbarWnd()) {
         // Let other processes some time to unload the mod.
         Sleep(400);
 
@@ -2207,7 +2221,7 @@ BOOL Wh_ModSettingsChanged(BOOL* bReload) {
 
     FreeAndClearRedirectedModules();
 
-    if (DoesTaskbarBelongToCurrentProcess()) {
+    if (FindCurrentProcessTaskbarWnd()) {
         // Let other processes some time to load the new config.
         Sleep(400);
 
