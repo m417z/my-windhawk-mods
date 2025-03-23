@@ -163,9 +163,11 @@ BOOL WINAPI ShowWindow_Hook(HWND hWnd, int nCmdShow) {
 using IsWindowVisible_t = decltype(&IsWindowVisible);
 IsWindowVisible_t IsWindowVisible_Original;
 BOOL WINAPI IsWindowVisible_Hook(HWND hWnd) {
+    BOOL ret = IsWindowVisible_Original(hWnd);
+
     // Checked in CTaskListWnd::HandleWinNumHotKey, Win+num hotkeys don't work
     // if the window is hidden. Return TRUE to make the hotkeys work.
-    if (g_settings.fullyHide) {
+    if (!ret && g_settings.fullyHide) {
         WCHAR szClassName[32];
         if (GetClassName(hWnd, szClassName, ARRAYSIZE(szClassName)) &&
             _wcsicmp(szClassName, L"MSTaskSwWClass") == 0) {
@@ -173,8 +175,6 @@ BOOL WINAPI IsWindowVisible_Hook(HWND hWnd) {
             return TRUE;
         }
     }
-
-    BOOL ret = IsWindowVisible_Original(hWnd);
 
     return ret;
 }
