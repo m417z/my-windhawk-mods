@@ -1672,8 +1672,13 @@ HMODULE GetTaskbarViewModuleHandle() {
     return module;
 }
 
+bool ShouldHookTaskbarViewDllSymbols() {
+    return g_nWinVersion >= WIN_VERSION_11_22H2 && g_settings.middleClickToMute;
+}
+
 void HandleLoadedModuleIfTaskbarView(HMODULE module, LPCWSTR lpLibFileName) {
-    if (!g_taskbarViewDllLoaded && GetTaskbarViewModuleHandle() == module &&
+    if (ShouldHookTaskbarViewDllSymbols() && !g_taskbarViewDllLoaded &&
+        GetTaskbarViewModuleHandle() == module &&
         !g_taskbarViewDllLoaded.exchange(true)) {
         Wh_Log(L"Loaded %s", lpLibFileName);
 
@@ -1764,7 +1769,7 @@ BOOL Wh_ModInit() {
         g_nExplorerVersion = WIN_VERSION_10_20H1;
     }
 
-    if (g_nWinVersion >= WIN_VERSION_11_22H2 && g_settings.middleClickToMute) {
+    if (ShouldHookTaskbarViewDllSymbols()) {
         if (HMODULE taskbarViewModule = GetTaskbarViewModuleHandle()) {
             g_taskbarViewDllLoaded = true;
             if (!HookTaskbarViewDllSymbols(taskbarViewModule)) {
@@ -1772,14 +1777,6 @@ BOOL Wh_ModInit() {
             }
         } else {
             Wh_Log(L"Taskbar view module not loaded yet");
-
-            HMODULE kernelBaseModule = GetModuleHandle(L"kernelbase.dll");
-            auto pKernelBaseLoadLibraryExW =
-                (decltype(&LoadLibraryExW))GetProcAddress(kernelBaseModule,
-                                                          "LoadLibraryExW");
-            WindhawkUtils::Wh_SetFunctionHookT(pKernelBaseLoadLibraryExW,
-                                               LoadLibraryExW_Hook,
-                                               &LoadLibraryExW_Original);
         }
     }
 
@@ -1799,6 +1796,13 @@ BOOL Wh_ModInit() {
 
     HandleLoadedExplorerPatcher();
 
+    HMODULE kernelBaseModule = GetModuleHandle(L"kernelbase.dll");
+    auto pKernelBaseLoadLibraryExW = (decltype(&LoadLibraryExW))GetProcAddress(
+        kernelBaseModule, "LoadLibraryExW");
+    WindhawkUtils::Wh_SetFunctionHookT(pKernelBaseLoadLibraryExW,
+                                       LoadLibraryExW_Hook,
+                                       &LoadLibraryExW_Original);
+
     g_initialized = true;
 
     return TRUE;
@@ -1807,7 +1811,7 @@ BOOL Wh_ModInit() {
 void Wh_ModAfterInit() {
     Wh_Log(L">");
 
-    if (!g_taskbarViewDllLoaded) {
+    if (ShouldHookTaskbarViewDllSymbols() && !g_taskbarViewDllLoaded) {
         if (HMODULE taskbarViewModule = GetTaskbarViewModuleHandle()) {
             if (!g_taskbarViewDllLoaded.exchange(true)) {
                 Wh_Log(L"Got Taskbar.View.dll");

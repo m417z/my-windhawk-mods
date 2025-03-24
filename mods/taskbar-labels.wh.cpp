@@ -2144,7 +2144,7 @@ void Wh_ModAfterInit() {
             if (!g_taskbarViewDllLoaded.exchange(true)) {
                 Wh_Log(L"Got Taskbar.View.dll");
 
-                if (HookTaskbarViewDllSymbols(taskbarViewModule)) {
+                if (ModInitWithTaskbarView(taskbarViewModule)) {
                     Wh_ApplyHookOperations();
                 }
             }
