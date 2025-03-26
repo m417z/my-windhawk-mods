@@ -1,7 +1,7 @@
 // ==WindhawkMod==
 // @id              taskbar-show-desktop-button-aero-peek
-// @name            Taskbar Show Desktop Button Aero Peek
-// @description     Enable Aero Peek when hovering over the Show Desktop button, like it was possible before Windows 11
+// @name            Aero Peek on "Show desktop" button hover
+// @description     Enable Aero Peek when hovering over the "Show Desktop" button, like it was possible before Windows 11
 // @version         1.0
 // @author          m417z
 // @github          https://github.com/m417z
@@ -22,10 +22,13 @@
 
 // ==WindhawkModReadme==
 /*
-# Taskbar Show Desktop Button Aero Peek
+# Aero Peek on "Show desktop" button hover
 
-Enable Aero Peek when hovering over the Show Desktop button, like it was
+Enable Aero Peek when hovering over the "Show Desktop" button, like it was
 possible before Windows 11.
+
+Note that Aero Peek can also be activated with the `Win+,` (Win key, then the
+comma key) keyboard shortcut.
 
 Only Windows 11 is supported. This mod isn't needed for Windows 7 to 10, where
 this behavior is already present.
