@@ -2,7 +2,7 @@
 // @id              taskbar-show-desktop-button-aero-peek
 // @name            Aero Peek on "Show desktop" button hover
 // @description     Enable Aero Peek when hovering over the "Show Desktop" button, like it was possible before Windows 11
-// @version         1.0
+// @version         1.0.1
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
@@ -157,11 +157,11 @@ void AeroPeekOnHoverStop() {
     }
 }
 
-using TextIconContent_OnPointerMoved_t = int(WINAPI*)(void* pThis, void* pArgs);
-TextIconContent_OnPointerMoved_t TextIconContent_OnPointerMoved_Original;
-int WINAPI TextIconContent_OnPointerMoved_Hook(void* pThis, void* pArgs) {
+using IconView_OnPointerMoved_t = int(WINAPI*)(void* pThis, void* pArgs);
+IconView_OnPointerMoved_t IconView_OnPointerMoved_Original;
+int WINAPI IconView_OnPointerMoved_Hook(void* pThis, void* pArgs) {
     auto original = [=]() {
-        return TextIconContent_OnPointerMoved_Original(pThis, pArgs);
+        return IconView_OnPointerMoved_Original(pThis, pArgs);
     };
 
     FrameworkElement element = nullptr;
@@ -175,7 +175,7 @@ int WINAPI TextIconContent_OnPointerMoved_Hook(void* pThis, void* pArgs) {
 
     auto className = winrt::get_class_name(element);
 
-    if (className != L"SystemTray.TextIconContent" ||
+    if (className != L"SystemTray.IconView" ||
         !IsChildOfElementByName(element, L"ShowDesktopStack")) {
         return original();
     }
@@ -196,7 +196,8 @@ int WINAPI TextIconContent_OnPointerMoved_Hook(void* pThis, void* pArgs) {
     if (!g_startPointerPos) {
         g_startPointerPos = pointerPos;
         AeroPeekOnHoverStartTimer();
-    } else if (IsDragDistance(*g_startPointerPos, pointerPos)) {
+    } else if (!g_aeroPeekOn &&
+               IsDragDistance(*g_startPointerPos, pointerPos)) {
         AeroPeekOnHoverStop();
         g_startPointerPos = pointerPos;
         AeroPeekOnHoverStartTimer();
@@ -205,12 +206,11 @@ int WINAPI TextIconContent_OnPointerMoved_Hook(void* pThis, void* pArgs) {
     return original();
 }
 
-using TextIconContent_OnPointerExited_t = int(WINAPI*)(void* pThis,
-                                                       void* pArgs);
-TextIconContent_OnPointerExited_t TextIconContent_OnPointerExited_Original;
-int WINAPI TextIconContent_OnPointerExited_Hook(void* pThis, void* pArgs) {
+using IconView_OnPointerExited_t = int(WINAPI*)(void* pThis, void* pArgs);
+IconView_OnPointerExited_t IconView_OnPointerExited_Original;
+int WINAPI IconView_OnPointerExited_Hook(void* pThis, void* pArgs) {
     auto original = [=]() {
-        return TextIconContent_OnPointerExited_Original(pThis, pArgs);
+        return IconView_OnPointerExited_Original(pThis, pArgs);
     };
 
     FrameworkElement element = nullptr;
@@ -224,7 +224,7 @@ int WINAPI TextIconContent_OnPointerExited_Hook(void* pThis, void* pArgs) {
 
     auto className = winrt::get_class_name(element);
 
-    if (className != L"SystemTray.TextIconContent" ||
+    if (className != L"SystemTray.IconView" ||
         !IsChildOfElementByName(element, L"ShowDesktopStack")) {
         return original();
     }
@@ -241,14 +241,14 @@ bool HookTaskbarViewDllSymbols(HMODULE module) {
     // Taskbar.View.dll
     WindhawkUtils::SYMBOL_HOOK symbolHooks[] = {
         {
-            {LR"(public: virtual int __cdecl winrt::impl::produce<struct winrt::SystemTray::implementation::TextIconContent,struct winrt::Windows::UI::Xaml::Controls::IControlOverrides>::OnPointerMoved(void *))"},
-            &TextIconContent_OnPointerMoved_Original,
-            TextIconContent_OnPointerMoved_Hook,
+            {LR"(public: virtual int __cdecl winrt::impl::produce<struct winrt::SystemTray::implementation::IconView,struct winrt::Windows::UI::Xaml::Controls::IControlOverrides>::OnPointerMoved(void *))"},
+            &IconView_OnPointerMoved_Original,
+            IconView_OnPointerMoved_Hook,
         },
         {
-            {LR"(public: virtual int __cdecl winrt::impl::produce<struct winrt::SystemTray::implementation::TextIconContent,struct winrt::Windows::UI::Xaml::Controls::IControlOverrides>::OnPointerExited(void *))"},
-            &TextIconContent_OnPointerExited_Original,
-            TextIconContent_OnPointerExited_Hook,
+            {LR"(public: virtual int __cdecl winrt::impl::produce<struct winrt::SystemTray::implementation::IconView,struct winrt::Windows::UI::Xaml::Controls::IControlOverrides>::OnPointerExited(void *))"},
+            &IconView_OnPointerExited_Original,
+            IconView_OnPointerExited_Hook,
         },
     };
 
