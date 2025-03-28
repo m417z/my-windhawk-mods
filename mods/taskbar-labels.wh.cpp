@@ -1126,6 +1126,7 @@ void UpdateTaskListButtonWithLabelStyle(
         if (!g_unloading && labelControlElement) {
             if (indicatorStyle == IndicatorStyle::left) {
                 indicatorMargin.Left =
+                    (40 - firstColumnWidthPixels) + (iconWidth - 24) +
                     (g_settings.leftAndRightPaddingSize - 8) * 2;
             } else {
                 indicatorMargin.Left = (taskListButtonWidth - minWidth) / 2 - 2;
