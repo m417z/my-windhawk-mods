@@ -586,6 +586,14 @@ int StringCopyTruncated(PWSTR dest,
     return i;
 }
 
+//modify webContent: remove html tags
+void removeSubstrings(std::wstring& source, const std::wstring& toRemove) {
+    size_t pos;
+    while ((pos = source.find(toRemove)) != std::wstring::npos) {
+        source.erase(pos, toRemove.length());
+    }
+}
+
 std::wstring ExtractWebContent(const std::wstring& webContent,
                                PCWSTR webContentsBlockStart,
                                PCWSTR webContentsStart,
@@ -607,7 +615,12 @@ std::wstring ExtractWebContent(const std::wstring& webContent,
         return std::wstring();
     }
 
-    return webContent.substr(start, end - start);
+    //modify webContent: remove html tags
+    std::wstring webContentModified = webContent.substr(start, end - start);
+    std::wstring toRemove;
+    toRemove = L"<br />"; removeSubstrings(webContentModified, toRemove);//duplicate line for multiple removes
+
+    return webContentModified;
 }
 
 void UpdateWebContent() {
