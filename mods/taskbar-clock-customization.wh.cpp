@@ -314,6 +314,7 @@ styles, such as the font color and size.
 #include <string>
 #include <string_view>
 #include <vector>
+#include <regex>
 
 using namespace std::string_view_literals;
 
@@ -591,14 +592,6 @@ int StringCopyTruncated(PWSTR dest,
     return i;
 }
 
-//modify webContent: remove html tags
-void removeSubstrings(std::wstring& source, const std::wstring& toRemove) {
-    size_t pos;
-    while ((pos = source.find(toRemove)) != std::wstring::npos) {
-        source.erase(pos, toRemove.length());
-    }
-}
-
 std::wstring ExtractWebContent(const std::wstring& webContent,
                                PCWSTR webContentsBlockStart,
                                PCWSTR webContentsStart,
@@ -688,10 +681,11 @@ void UpdateWebContent() {
         std::wstring extracted = ExtractWebContent(*urlContent, item.blockStart,
                                                    item.start, item.end);
 
-        //modify webContent: remove html tags
+        //strip html tags, decode entities such as &amp;
         if (item.parseHtml ) {
-            std::wstring toRemove;
-            toRemove = L"<br />"; removeSubstrings(extracted, toRemove);//duplicate line for multiple removes
+            std::wregex pattern(L"<br />");
+            std::wstring replacement = L"";
+            extracted = std::regex_replace(extracted, pattern, replacement);
         }
 
         std::lock_guard<std::mutex> guard(g_webContentMutex);
