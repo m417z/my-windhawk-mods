@@ -683,9 +683,10 @@ void UpdateWebContent() {
 
         //strip html tags, decode entities such as &amp;
         if (item.parseHtml ) {
-            std::wregex pattern(L"<br />");
-            std::wstring replacement = L"";
-            extracted = std::regex_replace(extracted, pattern, replacement);
+            extracted = std::regex_replace(extracted, std::wregex(L"<!\\[CDATA\\["), L"");//CDATA start
+            extracted = std::regex_replace(extracted, std::wregex(L"\\]\\]>"), L"");//CDATA ending
+            extracted = std::regex_replace(extracted, std::wregex(L"<[^>]+>"), L"");//html tags
+            //# html entities
         }
 
         std::lock_guard<std::mutex> guard(g_webContentMutex);
