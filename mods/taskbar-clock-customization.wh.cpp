@@ -152,6 +152,9 @@ styles, such as the font color and size.
     - MaxLength: 28
       $name: Web content maximum length
       $description: Longer strings will be truncated with ellipsis.
+    - ParseHtml: false
+      $name: Parse as html
+      $description: If the fetched web content includes html tags or entities such as &amp; they can be stripped/ decoded with this
   $name: Web content items
   $description: >-
     Will be used to fetch data displayed in place of the %web<n>%,
@@ -355,6 +358,7 @@ struct WebContentsSettings {
     StringSetting start;
     StringSetting end;
     int maxLength;
+    bool parseHtml;
 };
 
 struct TextStyleSettings {
@@ -396,6 +400,7 @@ struct {
     StringSetting webContentsStart;
     StringSetting webContentsEnd;
     int webContentsMaxLength;
+    bool webContentsParseHtml;
 } g_settings;
 
 #define FORMATTED_BUFFER_SIZE 256
@@ -615,12 +620,7 @@ std::wstring ExtractWebContent(const std::wstring& webContent,
         return std::wstring();
     }
 
-    //modify webContent: remove html tags
-    std::wstring webContentModified = webContent.substr(start, end - start);
-    std::wstring toRemove;
-    toRemove = L"<br />"; removeSubstrings(webContentModified, toRemove);//duplicate line for multiple removes
-
-    return webContentModified;
+    return webContent.substr(start, end - start);
 }
 
 void UpdateWebContent() {
@@ -687,6 +687,12 @@ void UpdateWebContent() {
 
         std::wstring extracted = ExtractWebContent(*urlContent, item.blockStart,
                                                    item.start, item.end);
+
+        //modify webContent: remove html tags
+        if (item.parseHtml ) {
+            std::wstring toRemove;
+            toRemove = L"<br />"; removeSubstrings(extracted, toRemove);//duplicate line for multiple removes
+        }
 
         std::lock_guard<std::mutex> guard(g_webContentMutex);
 
@@ -2837,6 +2843,7 @@ void LoadSettings() {
         item.start = Wh_GetStringSetting(L"WebContentsItems[%d].Start", i);
         item.end = Wh_GetStringSetting(L"WebContentsItems[%d].End", i);
         item.maxLength = Wh_GetIntSetting(L"WebContentsItems[%d].MaxLength", i);
+        item.parseHtml = Wh_GetIntSetting(L"WebContentsItems[%d].ParseHtml", i);
 
         g_settings.webContentsItems.push_back(std::move(item));
     }
@@ -2930,6 +2937,8 @@ void LoadSettings() {
         g_settings.webContentsEnd = Wh_GetStringSetting(L"WebContentsEnd");
         g_settings.webContentsMaxLength =
             Wh_GetIntSetting(L"WebContentsMaxLength");
+        g_settings.webContentsParseHtml =
+            Wh_GetIntSetting(L"WebContentsParseHtml");
     }
 }
 
