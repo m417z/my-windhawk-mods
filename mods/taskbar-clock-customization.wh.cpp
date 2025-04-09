@@ -152,9 +152,12 @@ styles, such as the font color and size.
     - MaxLength: 28
       $name: Web content maximum length
       $description: Longer strings will be truncated with ellipsis.
-    - ParseHtml: false
-      $name: Parse as html
-      $description: If the fetched web content includes html tags or entities such as &amp; they can be stripped/ decoded with this
+    - ContentMode: "plain text"
+      $name: Content mode
+      $description: '"plain text" leaves the result unchanged. If the fetched web content includes html tags or entities such as &amp; they can be stripped/ decoded with "parse as html".'
+      $options:
+      - "plain text": plain text
+      - "parse as html": parse as html
   $name: Web content items
   $description: >-
     Will be used to fetch data displayed in place of the %web<n>%,
@@ -359,7 +362,7 @@ struct WebContentsSettings {
     StringSetting start;
     StringSetting end;
     int maxLength;
-    bool parseHtml;
+    StringSetting contentMode;
 };
 
 struct TextStyleSettings {
@@ -401,7 +404,7 @@ struct {
     StringSetting webContentsStart;
     StringSetting webContentsEnd;
     int webContentsMaxLength;
-    bool webContentsParseHtml;
+    StringSetting webContentsContentMode;
 } g_settings;
 
 #define FORMATTED_BUFFER_SIZE 256
@@ -682,7 +685,7 @@ void UpdateWebContent() {
                                                    item.start, item.end);
 
         //strip html tags, decode entities such as &amp;
-        if (item.parseHtml ) {
+        if (wcscmp(item.contentMode, L"parse as html") == 0) {
             extracted = std::regex_replace(extracted, std::wregex(L"<!\\[CDATA\\["), L"");//CDATA start
             extracted = std::regex_replace(extracted, std::wregex(L"\\]\\]>"), L"");//CDATA ending
             extracted = std::regex_replace(extracted, std::wregex(L"<[^>]+>"), L"");//html tags
@@ -2856,7 +2859,7 @@ void LoadSettings() {
         item.start = Wh_GetStringSetting(L"WebContentsItems[%d].Start", i);
         item.end = Wh_GetStringSetting(L"WebContentsItems[%d].End", i);
         item.maxLength = Wh_GetIntSetting(L"WebContentsItems[%d].MaxLength", i);
-        item.parseHtml = Wh_GetIntSetting(L"WebContentsItems[%d].ParseHtml", i);
+        item.contentMode = Wh_GetStringSetting(L"WebContentsItems[%d].ContentMode", i);
 
         g_settings.webContentsItems.push_back(std::move(item));
     }
@@ -2950,8 +2953,8 @@ void LoadSettings() {
         g_settings.webContentsEnd = Wh_GetStringSetting(L"WebContentsEnd");
         g_settings.webContentsMaxLength =
             Wh_GetIntSetting(L"WebContentsMaxLength");
-        g_settings.webContentsParseHtml =
-            Wh_GetIntSetting(L"WebContentsParseHtml");
+        g_settings.webContentsContentMode =
+            Wh_GetStringSetting(L"WebContentsContentMode");
     }
 }
 
