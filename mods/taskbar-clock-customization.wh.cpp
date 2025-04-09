@@ -686,7 +686,25 @@ void UpdateWebContent() {
             extracted = std::regex_replace(extracted, std::wregex(L"<!\\[CDATA\\["), L"");//CDATA start
             extracted = std::regex_replace(extracted, std::wregex(L"\\]\\]>"), L"");//CDATA ending
             extracted = std::regex_replace(extracted, std::wregex(L"<[^>]+>"), L"");//html tags
-            //# html entities
+            //html entities (most common)
+            extracted = regex_replace(extracted, std::wregex(L"&amp;"), L"&");//sometimes &amp;<other entity>; is used, so it needs to be replaced first
+            std::unordered_map<std::wstring, std::wstring> htmlEntities = {
+                { L"&quot;", L"\"" },
+                { L"&apos;", L"'" },
+                { L"&lt;", L"<" },
+                { L"&gt;", L">" },
+                { L"&nbsp;", L" " },
+                { L"&auml;", L"ä" },
+                { L"&Auml;", L"Ä" },
+                { L"&ouml;", L"ö" },
+                { L"&Ouml;", L"Ö" },
+                { L"&uuml;", L"ü" },
+                { L"&Uuml;", L"Ü" },
+                { L"&szlig;", L"ß" }
+            };
+            for (auto& i : htmlEntities) {
+                extracted = regex_replace(extracted, std::wregex(i.first), i.second);
+            };
         }
 
         std::lock_guard<std::mutex> guard(g_webContentMutex);
