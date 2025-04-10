@@ -176,6 +176,7 @@ bool g_inTaskBandLaunch;
 bool g_inUpdateItemIcon;
 bool g_inTaskBtnGroupGetIcon;
 bool g_inGetJumpViewParams;
+bool g_inShowJumpView;
 bool g_inFindTaskBtnGroup;
 PVOID g_findTaskBtnGroup_TaskGroupSentinel =
     &g_findTaskBtnGroup_TaskGroupSentinel;
@@ -536,7 +537,7 @@ CTaskGroup_GetAppID_t CTaskGroup_GetAppID_Original;
 PCWSTR WINAPI CTaskGroup_GetAppID_Hook(PVOID pThis) {
     Wh_Log(L">");
 
-    if (g_inUpdateItemIcon) {
+    if (g_inUpdateItemIcon || g_inShowJumpView) {
         winrt::com_ptr<IUnknown> taskGroupWithoutSuffix =
             GetTaskGroupWithoutSuffix(pThis);
         if (taskGroupWithoutSuffix) {
@@ -771,6 +772,25 @@ HRESULT WINAPI CTaskListWnd__GetJumpViewParams_Hook(PVOID pThis,
     HRESULT ret = CTaskListWnd__GetJumpViewParams_Original(
         pThis, taskBtnGroup, taskItem, param3, param4, param5);
     g_inGetJumpViewParams = false;
+
+    return ret;
+}
+
+using CTaskListWnd_ShowJumpView_t = HRESULT(WINAPI*)(PVOID pThis,
+                                                     PVOID taskGroup,
+                                                     PVOID taskItem,
+                                                     bool param3);
+CTaskListWnd_ShowJumpView_t CTaskListWnd_ShowJumpView_Original;
+HRESULT WINAPI CTaskListWnd_ShowJumpView_Hook(PVOID pThis,
+                                              PVOID taskGroup,
+                                              PVOID taskItem,
+                                              bool param3) {
+    Wh_Log(L">");
+
+    g_inShowJumpView = true;
+    HRESULT ret =
+        CTaskListWnd_ShowJumpView_Original(pThis, taskGroup, taskItem, param3);
+    g_inShowJumpView = false;
 
     return ret;
 }
@@ -1668,6 +1688,11 @@ bool HookTaskbarSymbols() {
                 {LR"(protected: long __cdecl CTaskListWnd::_GetJumpViewParams(struct ITaskBtnGroup *,struct ITaskItem *,int,bool,struct Windows::Internal::Shell::JumpView::IJumpViewParams * *)const )"},
                 &CTaskListWnd__GetJumpViewParams_Original,
                 CTaskListWnd__GetJumpViewParams_Hook,
+            },
+            {
+                {LR"(public: virtual long __cdecl CTaskListWnd::ShowJumpView(struct ITaskGroup *,struct ITaskItem *,bool))"},
+                &CTaskListWnd_ShowJumpView_Original,
+                CTaskListWnd_ShowJumpView_Hook,
             },
             {
                 // Available from Windows 11.
