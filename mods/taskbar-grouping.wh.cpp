@@ -1457,6 +1457,8 @@ bool HookExplorerPatcherSymbols(HMODULE explorerPatcherModule) {
         {R"(?_GetJumpViewParams@CTaskListWnd@@IEBAJPEAUITaskBtnGroup@@PEAUITaskItem@@H_NPEAPEAUIJumpViewParams@JumpView@Shell@Internal@Windows@ABI@@@Z)",
          &CTaskListWnd__GetJumpViewParams_Original,
          CTaskListWnd__GetJumpViewParams_Hook},
+        {R"(?ShowJumpView@CTaskListWnd@@UEAAJPEAUITaskGroup@@PEAUITaskItem@@_N@Z)",
+         &CTaskListWnd_ShowJumpView_Original, CTaskListWnd_ShowJumpView_Hook},
         // {// Available from Windows 11.
         //  R"()", &CTaskBtnGroup_GetIcon_Original, CTaskBtnGroup_GetIcon_Hook,
         //  true},
