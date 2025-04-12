@@ -619,6 +619,43 @@ std::wstring ExtractWebContent(const std::wstring& webContent,
     return webContent.substr(start, end - start);
 }
 
+void DecodeHtmlAndStripTags(std::wstring& input) {
+    //todo simple performant string replace all function for when regex isnt needed
+
+    //strip html tags
+    input = std::regex_replace(input, std::wregex(L"<!\\[CDATA\\[(.*?)\\]\\]>"), L"$1");//CDATA
+    input = std::regex_replace(input, std::wregex(L"<br />"), L"\n");//br-tags replace to newlines so `hallo<br />world` and `hallo<br />\nworld` are treated the same
+    input = std::regex_replace(input, std::wregex(L"<[a-zA-Z/][^>]*>"), L" ");//html tags replace to space so multiple segments aren't glued together
+
+    //whitespace cleaning
+    input = std::regex_replace(input, std::wregex(L"[ \\t]+"), L" ");//multiple whitespaces->one space
+    input = std::regex_replace(input, std::wregex(L"\\r"), L"");//simplify line ending formats
+    input = std::regex_replace(input, std::wregex(L"\\n\\s+|\\s+\\n"), L"\n");//multiple newlines->one newline, remove whitespace from start and end of line (also: whitespace-only lines)
+    input = std::regex_replace(input, std::wregex(L"^\\s+|\\s+$"), L"");//remove whitespace (including newlines) from start and end of result
+
+    //html named entities (most common)
+    input = regex_replace(input, std::wregex(L"&amp;"), L"&");//sometimes &amp;<other entity>; is used, so it needs to be replaced first
+    std::unordered_map<std::wstring, std::wstring> htmlEntities = {
+        { L"&quot;", L"\"" },
+        { L"&apos;", L"'" },
+        { L"&lt;", L"<" },
+        { L"&gt;", L">" },
+        { L"&nbsp;", L" " },
+        { L"&auml;", L"ä" },
+        { L"&Auml;", L"Ä" },
+        { L"&ouml;", L"ö" },
+        { L"&Ouml;", L"Ö" },
+        { L"&uuml;", L"ü" },
+        { L"&Uuml;", L"Ü" },
+        { L"&szlig;", L"ß" }
+    };
+    for (auto& i : htmlEntities) {
+        input = regex_replace(input, std::wregex(i.first), i.second);
+    };
+
+    //todo html numeric entities (decimal or hex)
+}
+
 void UpdateWebContent() {
     int failed = 0;
 
@@ -684,38 +721,8 @@ void UpdateWebContent() {
         std::wstring extracted = ExtractWebContent(*urlContent, item.blockStart,
                                                    item.start, item.end);
 
-        //strip html tags, decode entities such as &amp;
         if (wcscmp(item.contentMode, L"parse as html") == 0) {
-            //strip html tags
-            extracted = std::regex_replace(extracted, std::wregex(L"<!\\[CDATA\\[(.*?)\\]\\]>"), L"$1");//CDATA
-            extracted = std::regex_replace(extracted, std::wregex(L"<br />"), L"\n");//br-tags replace to newlines so `hallo<br />world` and `hallo<br />\nworld` are treated the same
-            extracted = std::regex_replace(extracted, std::wregex(L"<[a-zA-Z/][^>]*>"), L" ");//html tags replace to space so multiple segments aren't glued together
-
-            //whitespace cleaning
-            extracted = std::regex_replace(extracted, std::wregex(L"[ \\t]+"), L" ");//multiple whitespaces->one space
-            extracted = std::regex_replace(extracted, std::wregex(L"\\r"), L"");//simplify line ending formats
-            extracted = std::regex_replace(extracted, std::wregex(L"\\n\\s+|\\s+\\n"), L"\n");//multiple newlines->one newline, remove whitespace from start and end of line (also: whitespace-only lines)
-            extracted = std::regex_replace(extracted, std::wregex(L"^\\s+|\\s+$"), L"");//remove whitespace (including newlines) from start and end of result
-
-            //html entities (most common)
-            extracted = regex_replace(extracted, std::wregex(L"&amp;"), L"&");//sometimes &amp;<other entity>; is used, so it needs to be replaced first
-            std::unordered_map<std::wstring, std::wstring> htmlEntities = {
-                { L"&quot;", L"\"" },
-                { L"&apos;", L"'" },
-                { L"&lt;", L"<" },
-                { L"&gt;", L">" },
-                { L"&nbsp;", L" " },
-                { L"&auml;", L"ä" },
-                { L"&Auml;", L"Ä" },
-                { L"&ouml;", L"ö" },
-                { L"&Ouml;", L"Ö" },
-                { L"&uuml;", L"ü" },
-                { L"&Uuml;", L"Ü" },
-                { L"&szlig;", L"ß" }
-            };
-            for (auto& i : htmlEntities) {
-                extracted = regex_replace(extracted, std::wregex(i.first), i.second);
-            };
+            DecodeHtmlAndStripTags(extracted);
         }
 
         std::lock_guard<std::mutex> guard(g_webContentMutex);
