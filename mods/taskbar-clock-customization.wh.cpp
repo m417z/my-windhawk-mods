@@ -619,12 +619,19 @@ std::wstring ExtractWebContent(const std::wstring& webContent,
     return webContent.substr(start, end - start);
 }
 
-void DecodeHtmlAndStripTags(std::wstring& input) {
-    //todo simple performant string replace all function for when regex isnt needed
+// Replace all occurrences of `from` with `to` in-place (simple performant string replace all function for when regex isn't needed)
+void ReplaceAll(std::wstring& str, std::wstring_view from, std::wstring_view to) {
+    size_t pos = 0;
+    while ((pos = str.find(from, pos)) != std::wstring::npos) {
+        str.replace(pos, from.length(), to);
+        pos += to.length();
+    }
+}
 
+void DecodeHtmlAndStripTags(std::wstring& input) {
     //strip html tags
     input = std::regex_replace(input, std::wregex(L"<!\\[CDATA\\[(.*?)\\]\\]>"), L"$1");//CDATA
-    input = std::regex_replace(input, std::wregex(L"<br />"), L"\n");//br-tags replace to newlines so `hallo<br />world` and `hallo<br />\nworld` are treated the same
+    ReplaceAll(input, L"<br />", L"\n");//br-tags replace to newlines so `hallo<br />world` and `hallo<br />\nworld` are treated the same
     input = std::regex_replace(input, std::wregex(L"<[a-zA-Z/][^>]*>"), L" ");//html tags replace to space so multiple segments aren't glued together
 
     //whitespace cleaning
@@ -634,8 +641,8 @@ void DecodeHtmlAndStripTags(std::wstring& input) {
     input = std::regex_replace(input, std::wregex(L"^\\s+|\\s+$"), L"");//remove whitespace (including newlines) from start and end of result
 
     //html named entities (most common)
-    input = regex_replace(input, std::wregex(L"&amp;"), L"&");//sometimes &amp;<other entity>; is used, so it needs to be replaced first
-    std::unordered_map<std::wstring, std::wstring> htmlEntities = {
+    ReplaceAll(input, L"&amp;", L"&");//sometimes &amp;<other entity>; is used, so it needs to be replaced first
+    static const std::pair<std::wstring_view, std::wstring_view> htmlEntities[] = {
         { L"&quot;", L"\"" },
         { L"&apos;", L"'" },
         { L"&lt;", L"<" },
@@ -649,9 +656,9 @@ void DecodeHtmlAndStripTags(std::wstring& input) {
         { L"&Uuml;", L"Ü" },
         { L"&szlig;", L"ß" }
     };
-    for (auto& i : htmlEntities) {
-        input = regex_replace(input, std::wregex(i.first), i.second);
-    };
+    for (const auto& [entity, replacement] : htmlEntities) {
+        ReplaceAll(input, entity, replacement);
+    }
 
     //todo html numeric entities (decimal or hex)
 }
