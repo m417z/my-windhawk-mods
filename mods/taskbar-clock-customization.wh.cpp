@@ -686,9 +686,17 @@ void UpdateWebContent() {
 
         //strip html tags, decode entities such as &amp;
         if (wcscmp(item.contentMode, L"parse as html") == 0) {
-            extracted = std::regex_replace(extracted, std::wregex(L"<!\\[CDATA\\["), L"");//CDATA start
-            extracted = std::regex_replace(extracted, std::wregex(L"\\]\\]>"), L"");//CDATA ending
-            extracted = std::regex_replace(extracted, std::wregex(L"<[^>]+>"), L"");//html tags
+            //strip html tags
+            extracted = std::regex_replace(extracted, std::wregex(L"<!\\[CDATA\\[(.*?)\\]\\]>"), L"$1");//CDATA
+            extracted = std::regex_replace(extracted, std::wregex(L"<br />"), L"\n");//br-tags replace to newlines so `hallo<br />world` and `hallo<br />\nworld` are treated the same
+            extracted = std::regex_replace(extracted, std::wregex(L"<[a-zA-Z/][^>]*>"), L" ");//html tags replace to space so multiple segments aren't glued together
+
+            //whitespace cleaning
+            extracted = std::regex_replace(extracted, std::wregex(L"[ \\t]+"), L" ");//multiple whitespaces->one space
+            extracted = std::regex_replace(extracted, std::wregex(L"\\r"), L"");//simplify line ending formats
+            extracted = std::regex_replace(extracted, std::wregex(L"\\n\\s+|\\s+\\n"), L"\n");//multiple newlines->one newline, remove whitespace from start and end of line (also: whitespace-only lines)
+            extracted = std::regex_replace(extracted, std::wregex(L"^\\s+|\\s+$"), L"");//remove whitespace (including newlines) from start and end of result
+
             //html entities (most common)
             extracted = regex_replace(extracted, std::wregex(L"&amp;"), L"&");//sometimes &amp;<other entity>; is used, so it needs to be replaced first
             std::unordered_map<std::wstring, std::wstring> htmlEntities = {
