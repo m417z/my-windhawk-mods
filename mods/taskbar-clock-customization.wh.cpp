@@ -619,13 +619,36 @@ std::wstring ExtractWebContent(const std::wstring& webContent,
     return webContent.substr(start, end - start);
 }
 
-// Replace all occurrences of `from` with `to` in-place (simple performant string replace all function for when regex isn't needed)
+//simple performant string replace all function for when regex isn't needed
 void ReplaceAll(std::wstring& str, std::wstring_view from, std::wstring_view to) {
     size_t pos = 0;
     while ((pos = str.find(from, pos)) != std::wstring::npos) {
         str.replace(pos, from.length(), to);
         pos += to.length();
     }
+}
+
+std::wstring DecodeHtmlNumEntities(std::wstring& input) {
+    std::wstring output;
+    static const std::wregex numericEntity(L"&#(x?[0-9A-Fa-f]+);");
+    std::wsmatch match;
+    std::wstring::const_iterator searchStart(input.cbegin());
+    while (std::regex_search(searchStart, input.cend(), match, numericEntity)) {
+        output += match.prefix().str();//append text before match
+        std::wstring_view numStr = match[1].str();//view over matched group
+        try {
+            int base = (numStr.starts_with(L"x") || numStr.starts_with(L"X")) ? 16 : 10;
+            unsigned int code = std::stoi(std::wstring{
+                numStr.substr(base == 16 ? 1 : 0)
+            }, nullptr, base);
+            output += std::wstring(1, static_cast<wchar_t>(code));//append decoded character
+        } catch (...) {
+            output += match.str();//append original match on error
+        }
+        searchStart = match.suffix().first;//move past the current match
+    }
+    output += std::wstring(searchStart, input.cend());//append remaining text
+    return output;
 }
 
 void DecodeHtmlAndStripTags(std::wstring& input) {
@@ -660,7 +683,8 @@ void DecodeHtmlAndStripTags(std::wstring& input) {
         ReplaceAll(input, entity, replacement);
     }
 
-    //todo html numeric entities (decimal or hex)
+    //html numeric entities (decimal or hex)
+    input = DecodeHtmlNumEntities(input);
 }
 
 void UpdateWebContent() {
