@@ -154,10 +154,12 @@ styles, such as the font color and size.
       $description: Longer strings will be truncated with ellipsis.
     - ContentMode: "plain text"
       $name: Content mode
-      $description: '"plain text" leaves the result unchanged. If the fetched web content includes html tags or entities such as &amp; they can be stripped/ decoded with "parse as html".'
+      $description: '"plain text" leaves the result unchanged. If the fetched web content includes html/ xml/ rss tags or entities such as &amp; they can be stripped/ decoded with the other options.'
       $options:
-      - "plain text": plain text
-      - "parse as html": parse as html
+      - plainText: plain text
+      - libHtml: parse as html with Windows library, doesn't need to be valid, not implemented yet
+      - libXml: parse as xml/ rss with Windows library, must be valid xml, all tags opened must be closed
+      - internalHtmlXml: parse as html/ xml/ rss with internal method, doesn't need to be valid
   $name: Web content items
   $description: >-
     Will be used to fetch data displayed in place of the %web<n>%,
@@ -331,6 +333,7 @@ using namespace std::string_view_literals;
 #include <winrt/Windows.UI.Xaml.Interop.h>
 #include <winrt/Windows.UI.Xaml.Markup.h>
 #include <winrt/Windows.UI.Xaml.Media.h>
+#include <winrt/Windows.Data.Xml.Dom.h>
 
 using namespace winrt::Windows::UI::Xaml;
 
@@ -752,7 +755,22 @@ void UpdateWebContent() {
         std::wstring extracted = ExtractWebContent(*urlContent, item.blockStart,
                                                    item.start, item.end);
 
-        if (wcscmp(item.contentMode, L"parse as html") == 0) {
+        if (wcscmp(item.contentMode, L"libHtml") == 0) {
+            extracted = L"Not implemented yet";
+        }
+
+        if (wcscmp(item.contentMode, L"libXml") == 0) {
+            try {
+                extracted = L"<p>" + extracted + L"</p>";
+                winrt::Windows::Data::Xml::Dom::XmlDocument xmlDoc;
+                xmlDoc.LoadXml(winrt::hstring(extracted));
+                extracted = xmlDoc.InnerText();
+            } catch (...) {
+                extracted = L"Decoding error";
+            }
+        }
+
+        if (wcscmp(item.contentMode, L"internalHtmlXml") == 0) {
             DecodeHtmlAndStripTags(extracted);
         }
 
