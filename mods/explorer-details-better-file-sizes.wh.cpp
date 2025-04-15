@@ -1189,7 +1189,8 @@ PCWSTR g_gsQueryStatus[] = {
     L"Zero-size reparse point",
 };
 
-HANDLE g_everything4Wh_Thread;
+std::mutex g_everything4Wh_ThreadMutex;
+std::atomic<HANDLE> g_everything4Wh_Thread;
 HANDLE g_everything4Wh_ThreadReadyEvent;
 
 bool IsUncPath(PCWSTR folderPath) {
@@ -1253,6 +1254,8 @@ std::wstring ResolvePath(PCWSTR path) {
     return result;
 }
 
+DWORD WINAPI Everything4Wh_Thread(void* parameter);
+
 unsigned Everything4Wh_GetFileSize(PCWSTR folderPath, int64_t* size) {
     *size = 0;
 
@@ -1277,12 +1280,6 @@ unsigned Everything4Wh_GetFileSize(PCWSTR folderPath, int64_t* size) {
         return ES_QUERY_OK;
     }
 
-    HWND hReceiverWnd = g_gsReceiverWnd;
-
-    if (!hReceiverWnd) {
-        return ES_QUERY_NO_PLUGIN_IPC;
-    }
-
     HWND hEverything = FindWindow(EVERYTHING_IPC_WNDCLASSW_15A, nullptr);
 
     if (!hEverything) {
@@ -1291,6 +1288,33 @@ unsigned Everything4Wh_GetFileSize(PCWSTR folderPath, int64_t* size) {
 
     if (!hEverything) {
         return ES_QUERY_NO_ES_IPC;
+    }
+
+    if (!g_everything4Wh_Thread) {
+        std::lock_guard<std::mutex> guard(g_everything4Wh_ThreadMutex);
+
+        if (!g_everything4Wh_Thread) {
+            g_everything4Wh_ThreadReadyEvent =
+                CreateEvent(nullptr, TRUE, FALSE, nullptr);
+
+            g_everything4Wh_Thread = CreateThread(
+                nullptr, 0, Everything4Wh_Thread, nullptr, 0, nullptr);
+            if (g_everything4Wh_Thread) {
+                // Wait for a message queue to be created.
+                WaitForSingleObject(g_everything4Wh_ThreadReadyEvent, INFINITE);
+                CloseHandle(g_everything4Wh_ThreadReadyEvent);
+            } else {
+                Wh_Log(L"CreateThread failed: %d", GetLastError());
+            }
+
+            g_everything4Wh_ThreadReadyEvent = nullptr;
+        }
+    }
+
+    HWND hReceiverWnd = g_gsReceiverWnd;
+
+    if (!hReceiverWnd) {
+        return ES_QUERY_NO_PLUGIN_IPC;
     }
 
     DWORD dwSize = sizeof(EVERYTHING_IPC_QUERY2) +
@@ -2502,30 +2526,17 @@ BOOL Wh_ModInit() {
     return TRUE;
 }
 
-void Wh_ModAfterInit() {
-    if (g_settings.calculateFolderSizes == CalculateFolderSizes::everything) {
-        g_everything4Wh_ThreadReadyEvent =
-            CreateEvent(nullptr, TRUE, FALSE, nullptr);
-        g_everything4Wh_Thread =
-            CreateThread(nullptr, 0, Everything4Wh_Thread, nullptr, 0, nullptr);
-    }
-}
-
 void Wh_ModUninit() {
     Wh_Log(L">");
 
-    if (g_everything4Wh_Thread) {
-        // Wait for a message queue to be created.
-        WaitForSingleObject(g_everything4Wh_ThreadReadyEvent, INFINITE);
-        CloseHandle(g_everything4Wh_ThreadReadyEvent);
-        PostThreadMessage(GetThreadId(g_everything4Wh_Thread), WM_APP, 0, 0);
-        WaitForSingleObject(g_everything4Wh_Thread, INFINITE);
-        CloseHandle(g_everything4Wh_Thread);
-        g_everything4Wh_Thread = nullptr;
-    }
-
     while (g_hookRefCount > 0) {
         Sleep(200);
+    }
+
+    if (HANDLE thread = g_everything4Wh_Thread.exchange(nullptr)) {
+        PostThreadMessage(GetThreadId(thread), WM_APP, 0, 0);
+        WaitForSingleObject(thread, INFINITE);
+        CloseHandle(thread);
     }
 }
 
