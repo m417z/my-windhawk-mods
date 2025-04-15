@@ -2,7 +2,7 @@
 // @id              explorer-details-better-file-sizes
 // @name            Better file sizes in Explorer details
 // @description     Optional improvements: show folder sizes, use MB/GB for large files (by default, all sizes are shown in KBs), use IEC terms (such as KiB instead of KB)
-// @version         1.4.8
+// @version         1.4.9
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
@@ -1206,7 +1206,7 @@ bool IsReparse(PCWSTR folderPath) {
 // Code based on:
 // https://github.com/transmission/transmission/blob/f2aeb11b0733957d8d77d7038daa3ae88442dd5b/libtransmission/file-win32.cc
 std::wstring NativePathToPath(std::wstring_view wide_path) {
-    constexpr std::wstring_view NativeUncPathPrefix{L"\\\\?\\UNC\\"};
+    constexpr auto NativeUncPathPrefix = L"\\\\?\\UNC\\"sv;
     if (wide_path.starts_with(NativeUncPathPrefix)) {
         wide_path.remove_prefix(std::size(NativeUncPathPrefix));
         std::wstring result{L"\\\\"};
@@ -1214,7 +1214,7 @@ std::wstring NativePathToPath(std::wstring_view wide_path) {
         return result;
     }
 
-    constexpr std::wstring_view NativeLocalPathPrefix{L"\\\\?\\"};
+    constexpr auto NativeLocalPathPrefix = L"\\\\?\\"sv;
     if (wide_path.starts_with(NativeLocalPathPrefix)) {
         wide_path.remove_prefix(std::size(NativeLocalPathPrefix));
         return std::wstring{wide_path};
@@ -1644,6 +1644,7 @@ std::wstring GetFolderPathFromIShellFolder(IShellFolder2* shellFolder) {
     }
 
     path.resize(wcslen(path.c_str()));
+    CoTaskMemFree(pidl);
 
     // SHGetPathFromIDListEx() for long path returns path with super path prefix
     // "\\\\?\\".
@@ -1652,7 +1653,6 @@ std::wstring GetFolderPathFromIShellFolder(IShellFolder2* shellFolder) {
         path = path.substr(kSuperPathPrefix.size());
     }
 
-    CoTaskMemFree(pidl);
     return path;
 }
 
