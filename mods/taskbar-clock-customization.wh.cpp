@@ -152,6 +152,14 @@ styles, such as the font color and size.
     - MaxLength: 28
       $name: Web content maximum length
       $description: Longer strings will be truncated with ellipsis.
+    - ContentMode: "plain text"
+      $name: Content mode
+      $description: '"plain text" leaves the result unchanged. If the fetched web content includes html/ xml/ rss tags or entities such as &amp; they can be stripped/ decoded with the other options. "parse as html with Windows library" is dependent on MSHTML from Internet Explorer 11/ IE Mode in Microsoft Edge; if it doesn''t run try "Control Panel/ Programs/ Turn Windows Features On or Off/ enable ''Internet Explorer 11''".'
+      $options:
+      - plainText: plain text
+      - libHtml: parse as html with Windows library, doesn't need to be valid
+      - libXml: parse as xml/ rss with Windows library, must be valid xml, all tags opened must be closed
+      - internalHtmlXml: parse as html/ xml/ rss with internal method, doesn't need to be valid
   $name: Web content items
   $description: >-
     Will be used to fetch data displayed in place of the %web<n>%,
@@ -311,6 +319,7 @@ styles, such as the font color and size.
 #include <string>
 #include <string_view>
 #include <vector>
+#include <regex>
 
 using namespace std::string_view_literals;
 
@@ -324,6 +333,15 @@ using namespace std::string_view_literals;
 #include <winrt/Windows.UI.Xaml.Interop.h>
 #include <winrt/Windows.UI.Xaml.Markup.h>
 #include <winrt/Windows.UI.Xaml.Media.h>
+
+//needed for libHtml
+#include <comdef.h>
+#include <unknwn.h>//required for IID_IUnknown
+#include <mshtml.h>//required for IHTMLDocument2
+#include <Windows.h>
+
+//needed for libXml
+#include <winrt/Windows.Data.Xml.Dom.h>
 
 using namespace winrt::Windows::UI::Xaml;
 
@@ -355,6 +373,7 @@ struct WebContentsSettings {
     StringSetting start;
     StringSetting end;
     int maxLength;
+    StringSetting contentMode;
 };
 
 struct TextStyleSettings {
@@ -396,6 +415,7 @@ struct {
     StringSetting webContentsStart;
     StringSetting webContentsEnd;
     int webContentsMaxLength;
+    StringSetting webContentsContentMode;
 } g_settings;
 
 #define FORMATTED_BUFFER_SIZE 256
@@ -610,6 +630,168 @@ std::wstring ExtractWebContent(const std::wstring& webContent,
     return webContent.substr(start, end - start);
 }
 
+//simple performant string replace all function for when regex isn't needed
+void ReplaceAll(std::wstring& str, std::wstring_view from, std::wstring_view to) {
+    size_t pos = 0;
+    while ((pos = str.find(from, pos)) != std::wstring::npos) {
+        str.replace(pos, from.length(), to);
+        pos += to.length();
+    }
+}
+
+
+//manually defining IID_IHTMLDocument2 and IID_IUnknown for compatibility
+const IID IID_IHTMLDocument2 = {0x332C4425, 0x26CB, 0x11D0, {0xB4, 0x83, 0x00, 0xC0, 0x4F, 0xD9, 0x01, 0x19}};
+const IID IID_IUnknown = {0x00000000, 0x0000, 0x0000, {0xC0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x46}};
+
+void ParseTags_libHtml(std::wstring& html)
+{
+    CoInitialize(NULL);
+
+    //retrieve CLSID dynamically
+    CLSID clsid;
+    HRESULT hr = CLSIDFromProgID(L"HTMLFILE", &clsid);
+    if (FAILED(hr))
+    {
+        wchar_t hresultText[32];
+        swprintf(hresultText, 32, L"HRESULT: 0x%08X", hr);
+        html = L"Failed to retrieve CLSID for HTML document. " + std::wstring(hresultText);
+        return;
+    }
+
+    //create instance using IUnknown and query for IHTMLDocument2
+    IUnknown* pUnknown = nullptr;
+    hr = CoCreateInstance(clsid, NULL, CLSCTX_INPROC_SERVER, IID_IUnknown, (void**)&pUnknown);
+    if (FAILED(hr) || !pUnknown)
+    {
+        wchar_t hresultText[32];
+        swprintf(hresultText, 32, L"HRESULT: 0x%08X", hr);
+        html = L"CoCreateInstance failed. " + std::wstring(hresultText);
+        return;
+    }
+
+    IHTMLDocument2* pDoc = nullptr;
+    hr = pUnknown->QueryInterface(IID_IHTMLDocument2, (void**)&pDoc);
+    pUnknown->Release();//release IUnknown after querying the interface
+
+    if (FAILED(hr) || !pDoc)
+    {
+        wchar_t hresultText[32];
+        swprintf(hresultText, 32, L"HRESULT: 0x%08X", hr);
+        html = L"QueryInterface for IHTMLDocument2 failed. " + std::wstring(hresultText);
+        return;
+    }
+
+    //prepare HTML content for processing
+    VARIANT varHtml;
+    varHtml.vt = VT_BSTR;
+    varHtml.bstrVal = SysAllocString(html.c_str());
+
+    SAFEARRAY* psa = SafeArrayCreateVector(VT_VARIANT, 0, 1);
+    if (psa)
+    {
+        LONG index = 0;
+        SafeArrayPutElement(psa, &index, &varHtml);
+
+        pDoc->write(psa);
+        SafeArrayDestroy(psa);
+    }
+    SysFreeString(varHtml.bstrVal);
+
+    //extract plain text from the HTML document
+    IHTMLElement* pBody = nullptr;
+    pDoc->get_body(&pBody);
+    if (pBody)
+    {
+        BSTR text;
+        if (SUCCEEDED(pBody->get_innerText(&text)) && text)
+        {
+            html.assign(text, SysStringLen(text));//store extracted text
+            SysFreeString(text);
+        }
+        else
+        {
+            html = L"Failed to extract text.";
+        }
+        pBody->Release();
+    }
+
+    pDoc->Release();
+    CoUninitialize();
+}
+
+void ParseTags_libXml(std::wstring& xml)
+{
+    try {
+        xml = L"<p>" + xml + L"</p>";
+        winrt::Windows::Data::Xml::Dom::XmlDocument xmlDoc;
+        xmlDoc.LoadXml(winrt::hstring(xml));
+        xml = xmlDoc.InnerText();
+    } catch (...) {
+        xml = L"Decoding error";
+	}
+}
+
+std::wstring DecodeHtmlNumEntities(std::wstring& input) {
+    std::wstring output;
+    static const std::wregex numericEntity(L"&#(x?[0-9A-Fa-f]+);");
+    std::wsmatch match;
+    std::wstring_view numStr;
+    std::wstring::const_iterator searchStart(input.cbegin());
+    while (std::regex_search(searchStart, input.cend(), match, numericEntity)) {
+        output += match.prefix().str();//append text before match
+        numStr = match[1].str();//view over matched group
+        try {
+            int base = (numStr.starts_with(L"x") || numStr.starts_with(L"X")) ? 16 : 10;
+            unsigned int code = std::stoi(std::wstring{
+                numStr.substr(base == 16 ? 1 : 0)
+            }, nullptr, base);
+            output += std::wstring(1, static_cast<wchar_t>(code));//append decoded character
+        } catch (...) {
+            output += match.str();//append original match on error
+        }
+        searchStart = match.suffix().first;//move past the current match
+    }
+    output += std::wstring(searchStart, input.cend());//append remaining text
+    return output;
+}
+
+void ParseTags_internal(std::wstring& input) {
+    //strip html tags
+    input = std::regex_replace(input, std::wregex(L"<!\\[CDATA\\[(.*?)\\]\\]>"), L"$1");//CDATA
+    ReplaceAll(input, L"<br />", L"\n");//br-tags replace to newlines so `hallo<br />world` and `hallo<br />\nworld` are treated the same
+    input = std::regex_replace(input, std::wregex(L"<[a-zA-Z/][^>]*>"), L" ");//html tags replace to space so multiple segments aren't glued together
+
+    //whitespace cleaning
+    input = std::regex_replace(input, std::wregex(L"[ \\t]+"), L" ");//multiple whitespaces->one space
+    input = std::regex_replace(input, std::wregex(L"\\r"), L"");//simplify line ending formats
+    input = std::regex_replace(input, std::wregex(L"\\n\\s+|\\s+\\n"), L"\n");//multiple newlines->one newline, remove whitespace from start and end of line (also: whitespace-only lines)
+    input = std::regex_replace(input, std::wregex(L"^\\s+|\\s+$"), L"");//remove whitespace (including newlines) from start and end of result
+
+    //html named entities (most common)
+    ReplaceAll(input, L"&amp;", L"&");//sometimes &amp;<other entity>; is used, so it needs to be replaced first
+    static const std::pair<std::wstring_view, std::wstring_view> htmlEntities[] = {
+        { L"&quot;", L"\"" },
+        { L"&apos;", L"'" },
+        { L"&lt;", L"<" },
+        { L"&gt;", L">" },
+        { L"&nbsp;", L" " },
+        { L"&auml;", L"ä" },
+        { L"&Auml;", L"Ä" },
+        { L"&ouml;", L"ö" },
+        { L"&Ouml;", L"Ö" },
+        { L"&uuml;", L"ü" },
+        { L"&Uuml;", L"Ü" },
+        { L"&szlig;", L"ß" }
+    };
+    for (const auto& [entity, replacement] : htmlEntities) {
+        ReplaceAll(input, entity, replacement);
+    }
+
+    //html numeric entities (decimal or hex)
+    input = DecodeHtmlNumEntities(input);
+}
+
 void UpdateWebContent() {
     int failed = 0;
 
@@ -674,6 +856,18 @@ void UpdateWebContent() {
 
         std::wstring extracted = ExtractWebContent(*urlContent, item.blockStart,
                                                    item.start, item.end);
+
+        if (wcscmp(item.contentMode, L"libHtml") == 0) {
+            ParseTags_libHtml(extracted);
+        }
+
+        if (wcscmp(item.contentMode, L"libXml") == 0) {
+            ParseTags_libXml(extracted);
+        }
+
+        if (wcscmp(item.contentMode, L"internalHtmlXml") == 0) {
+            ParseTags_internal(extracted);
+        }
 
         std::lock_guard<std::mutex> guard(g_webContentMutex);
 
@@ -2824,6 +3018,7 @@ void LoadSettings() {
         item.start = Wh_GetStringSetting(L"WebContentsItems[%d].Start", i);
         item.end = Wh_GetStringSetting(L"WebContentsItems[%d].End", i);
         item.maxLength = Wh_GetIntSetting(L"WebContentsItems[%d].MaxLength", i);
+        item.contentMode = Wh_GetStringSetting(L"WebContentsItems[%d].ContentMode", i);
 
         g_settings.webContentsItems.push_back(std::move(item));
     }
@@ -2917,6 +3112,8 @@ void LoadSettings() {
         g_settings.webContentsEnd = Wh_GetStringSetting(L"WebContentsEnd");
         g_settings.webContentsMaxLength =
             Wh_GetIntSetting(L"WebContentsMaxLength");
+        g_settings.webContentsContentMode =
+            Wh_GetStringSetting(L"WebContentsContentMode");
     }
 }
 
