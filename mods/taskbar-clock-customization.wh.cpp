@@ -635,10 +635,11 @@ std::wstring DecodeHtmlNumEntities(std::wstring& input) {
     std::wstring output;
     static const std::wregex numericEntity(L"&#(x?[0-9A-Fa-f]+);");
     std::wsmatch match;
+    std::wstring_view numStr;
     std::wstring::const_iterator searchStart(input.cbegin());
     while (std::regex_search(searchStart, input.cend(), match, numericEntity)) {
         output += match.prefix().str();//append text before match
-        std::wstring_view numStr = match[1].str();//view over matched group
+        numStr = match[1].str();//view over matched group
         try {
             int base = (numStr.starts_with(L"x") || numStr.starts_with(L"X")) ? 16 : 10;
             unsigned int code = std::stoi(std::wstring{
