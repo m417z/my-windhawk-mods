@@ -154,10 +154,10 @@ styles, such as the font color and size.
       $description: Longer strings will be truncated with ellipsis.
     - ContentMode: "plain text"
       $name: Content mode
-      $description: '"plain text" leaves the result unchanged. If the fetched web content includes html/ xml/ rss tags or entities such as &amp; they can be stripped/ decoded with the other options.'
+      $description: '"plain text" leaves the result unchanged. If the fetched web content includes html/ xml/ rss tags or entities such as &amp; they can be stripped/ decoded with the other options. "parse as html with Windows library" is dependent on MSHTML from Internet Explorer 11; if it doesn''t run try "Control Panel/ Programs/ Turn Windows Features On or Off/ enable ''Internet Explorer 11''".'
       $options:
       - plainText: plain text
-      - libHtml: parse as html with Windows library, doesn't need to be valid, not implemented yet
+      - libHtml: parse as html with Windows library, doesn't need to be valid
       - libXml: parse as xml/ rss with Windows library, must be valid xml, all tags opened must be closed
       - internalHtmlXml: parse as html/ xml/ rss with internal method, doesn't need to be valid
   $name: Web content items
@@ -333,6 +333,14 @@ using namespace std::string_view_literals;
 #include <winrt/Windows.UI.Xaml.Interop.h>
 #include <winrt/Windows.UI.Xaml.Markup.h>
 #include <winrt/Windows.UI.Xaml.Media.h>
+
+//needed for libHtml
+#include <comdef.h>
+#include <unknwn.h>//required for IID_IUnknown
+#include <mshtml.h>//required for IHTMLDocument2
+#include <Windows.h>
+
+//needed for libXml
 #include <winrt/Windows.Data.Xml.Dom.h>
 
 using namespace winrt::Windows::UI::Xaml;
@@ -631,6 +639,99 @@ void ReplaceAll(std::wstring& str, std::wstring_view from, std::wstring_view to)
     }
 }
 
+
+//manually defining IID_IHTMLDocument2 and IID_IUnknown for compatibility
+const IID IID_IHTMLDocument2 = {0x332C4425, 0x26CB, 0x11D0, {0xB4, 0x83, 0x00, 0xC0, 0x4F, 0xD9, 0x01, 0x19}};
+const IID IID_IUnknown = {0x00000000, 0x0000, 0x0000, {0xC0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x46}};
+
+void ParseTags_libHtml(std::wstring& html)
+{
+    CoInitialize(NULL);
+
+    //retrieve CLSID dynamically
+    CLSID clsid;
+    HRESULT hr = CLSIDFromProgID(L"HTMLFILE", &clsid);
+    if (FAILED(hr))
+    {
+        wchar_t hresultText[32];
+        swprintf(hresultText, 32, L"HRESULT: 0x%08X", hr);
+        html = L"Failed to retrieve CLSID for HTML document. " + std::wstring(hresultText);
+        return;
+    }
+
+    //create instance using IUnknown and query for IHTMLDocument2
+    IUnknown* pUnknown = nullptr;
+    hr = CoCreateInstance(clsid, NULL, CLSCTX_INPROC_SERVER, IID_IUnknown, (void**)&pUnknown);
+    if (FAILED(hr) || !pUnknown)
+    {
+        wchar_t hresultText[32];
+        swprintf(hresultText, 32, L"HRESULT: 0x%08X", hr);
+        html = L"CoCreateInstance failed. " + std::wstring(hresultText);
+        return;
+    }
+
+    IHTMLDocument2* pDoc = nullptr;
+    hr = pUnknown->QueryInterface(IID_IHTMLDocument2, (void**)&pDoc);
+    pUnknown->Release(); //release IUnknown after querying the interface
+
+    if (FAILED(hr) || !pDoc)
+    {
+        wchar_t hresultText[32];
+        swprintf(hresultText, 32, L"HRESULT: 0x%08X", hr);
+        html = L"QueryInterface for IHTMLDocument2 failed. " + std::wstring(hresultText);
+        return;
+    }
+
+    //prepare HTML content for processing
+    VARIANT varHtml;
+    varHtml.vt = VT_BSTR;
+    varHtml.bstrVal = SysAllocString(html.c_str());
+
+    SAFEARRAY* psa = SafeArrayCreateVector(VT_VARIANT, 0, 1);
+    if (psa)
+    {
+        LONG index = 0;
+        SafeArrayPutElement(psa, &index, &varHtml);
+
+        pDoc->write(psa);
+        SafeArrayDestroy(psa);
+    }
+    SysFreeString(varHtml.bstrVal);
+
+    //extract plain text from the HTML document
+    IHTMLElement* pBody = nullptr;
+    pDoc->get_body(&pBody);
+    if (pBody)
+    {
+        BSTR text;
+        if (SUCCEEDED(pBody->get_innerText(&text)) && text)
+        {
+            html.assign(text, SysStringLen(text)); //store extracted text
+            SysFreeString(text);
+        }
+        else
+        {
+            html = L"Failed to extract text.";
+        }
+        pBody->Release();
+    }
+
+    pDoc->Release();
+    CoUninitialize();
+}
+
+void ParseTags_libXml(std::wstring& xml)
+{
+    try {
+        xml = L"<p>" + xml + L"</p>";
+        winrt::Windows::Data::Xml::Dom::XmlDocument xmlDoc;
+        xmlDoc.LoadXml(winrt::hstring(xml));
+        xml = xmlDoc.InnerText();
+    } catch (...) {
+        xml = L"Decoding error";
+	}
+}
+
 std::wstring DecodeHtmlNumEntities(std::wstring& input) {
     std::wstring output;
     static const std::wregex numericEntity(L"&#(x?[0-9A-Fa-f]+);");
@@ -655,7 +756,7 @@ std::wstring DecodeHtmlNumEntities(std::wstring& input) {
     return output;
 }
 
-void DecodeHtmlAndStripTags(std::wstring& input) {
+void ParseTags_internal(std::wstring& input) {
     //strip html tags
     input = std::regex_replace(input, std::wregex(L"<!\\[CDATA\\[(.*?)\\]\\]>"), L"$1");//CDATA
     ReplaceAll(input, L"<br />", L"\n");//br-tags replace to newlines so `hallo<br />world` and `hallo<br />\nworld` are treated the same
@@ -757,22 +858,15 @@ void UpdateWebContent() {
                                                    item.start, item.end);
 
         if (wcscmp(item.contentMode, L"libHtml") == 0) {
-            extracted = L"Not implemented yet";
+            ParseTags_libHtml(extracted);
         }
 
         if (wcscmp(item.contentMode, L"libXml") == 0) {
-            try {
-                extracted = L"<p>" + extracted + L"</p>";
-                winrt::Windows::Data::Xml::Dom::XmlDocument xmlDoc;
-                xmlDoc.LoadXml(winrt::hstring(extracted));
-                extracted = xmlDoc.InnerText();
-            } catch (...) {
-                extracted = L"Decoding error";
-            }
+            ParseTags_libXml(extracted);
         }
 
         if (wcscmp(item.contentMode, L"internalHtmlXml") == 0) {
-            DecodeHtmlAndStripTags(extracted);
+            ParseTags_internal(extracted);
         }
 
         std::lock_guard<std::mutex> guard(g_webContentMutex);
