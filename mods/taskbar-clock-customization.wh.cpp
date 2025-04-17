@@ -154,7 +154,7 @@ styles, such as the font color and size.
       $description: Longer strings will be truncated with ellipsis.
     - ContentMode: "plain text"
       $name: Content mode
-      $description: '"plain text" leaves the result unchanged. If the fetched web content includes html/ xml/ rss tags or entities such as &amp; they can be stripped/ decoded with the other options. "parse as html with Windows library" is dependent on MSHTML from Internet Explorer 11; if it doesn''t run try "Control Panel/ Programs/ Turn Windows Features On or Off/ enable ''Internet Explorer 11''".'
+      $description: '"plain text" leaves the result unchanged. If the fetched web content includes html/ xml/ rss tags or entities such as &amp; they can be stripped/ decoded with the other options. "parse as html with Windows library" is dependent on MSHTML from Internet Explorer 11/ IE Mode in Microsoft Edge; if it doesn''t run try "Control Panel/ Programs/ Turn Windows Features On or Off/ enable ''Internet Explorer 11''".'
       $options:
       - plainText: plain text
       - libHtml: parse as html with Windows library, doesn't need to be valid
@@ -672,7 +672,7 @@ void ParseTags_libHtml(std::wstring& html)
 
     IHTMLDocument2* pDoc = nullptr;
     hr = pUnknown->QueryInterface(IID_IHTMLDocument2, (void**)&pDoc);
-    pUnknown->Release(); //release IUnknown after querying the interface
+    pUnknown->Release();//release IUnknown after querying the interface
 
     if (FAILED(hr) || !pDoc)
     {
@@ -706,7 +706,7 @@ void ParseTags_libHtml(std::wstring& html)
         BSTR text;
         if (SUCCEEDED(pBody->get_innerText(&text)) && text)
         {
-            html.assign(text, SysStringLen(text)); //store extracted text
+            html.assign(text, SysStringLen(text));//store extracted text
             SysFreeString(text);
         }
         else
