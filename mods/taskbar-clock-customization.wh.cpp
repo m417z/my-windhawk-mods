@@ -154,7 +154,7 @@ styles, such as the font color and size.
       $description: Longer strings will be truncated with ellipsis.
     - ContentMode: "plain text"
       $name: Content mode
-      $description: '"plain text" leaves the result unchanged. If the fetched web content includes html/ xml/ rss tags or entities such as &amp; they can be stripped/ decoded with the other options. "parse as html with Windows library" is dependent on MSHTML from Internet Explorer 11/ IE Mode in Microsoft Edge; if it doesn''t run try "Control Panel/ Programs/ Turn Windows Features On or Off/ enable ''Internet Explorer 11''".'
+      $description: '"plain text" leaves the result unchanged. If the fetched web content includes html/ xml/ rss tags or entities such as &amp; they can be stripped/ decoded with the other options.'
       $options:
       - plainText: plain text
       - libHtml: parse as html with Windows library, doesn't need to be valid
@@ -334,13 +334,13 @@ using namespace std::string_view_literals;
 #include <winrt/Windows.UI.Xaml.Markup.h>
 #include <winrt/Windows.UI.Xaml.Media.h>
 
-//needed for libHtml
+// needed for libHtml
 #include <comdef.h>
-#include <unknwn.h>//required for IID_IUnknown
-#include <mshtml.h>//required for IHTMLDocument2
+#include <unknwn.h>// required for IID_IUnknown
+#include <mshtml.h>// required for IHTMLDocument2
 #include <Windows.h>
 
-//needed for libXml
+// needed for libXml
 #include <winrt/Windows.Data.Xml.Dom.h>
 
 using namespace winrt::Windows::UI::Xaml;
@@ -630,7 +630,7 @@ std::wstring ExtractWebContent(const std::wstring& webContent,
     return webContent.substr(start, end - start);
 }
 
-//simple performant string replace all function for when regex isn't needed
+// simple performant string replace all function for when regex isn't needed
 void ReplaceAll(std::wstring& str, std::wstring_view from, std::wstring_view to) {
     size_t pos = 0;
     while ((pos = str.find(from, pos)) != std::wstring::npos) {
@@ -639,16 +639,17 @@ void ReplaceAll(std::wstring& str, std::wstring_view from, std::wstring_view to)
     }
 }
 
-
-//manually defining IID_IHTMLDocument2 and IID_IUnknown for compatibility
-const IID IID_IHTMLDocument2 = {0x332C4425, 0x26CB, 0x11D0, {0xB4, 0x83, 0x00, 0xC0, 0x4F, 0xD9, 0x01, 0x19}};
-const IID IID_IUnknown = {0x00000000, 0x0000, 0x0000, {0xC0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x46}};
-
 void ParseTags_libHtml(std::wstring& html)
 {
+    // "parse as html with Windows library" is dependent on MSHTML from Internet Explorer 11/ IE Mode in Microsoft Edge; if it doesn't run try "Control Panel/ Programs/ Turn Windows Features On or Off/ enable 'Internet Explorer 11'".
+
+    // manually defining IID_IHTMLDocument2 and IID_IUnknown in case they aren't automatically loaded
+    const IID IID_IHTMLDocument2 = {0x332C4425, 0x26CB, 0x11D0, {0xB4, 0x83, 0x00, 0xC0, 0x4F, 0xD9, 0x01, 0x19}};
+    const IID IID_IUnknown = {0x00000000, 0x0000, 0x0000, {0xC0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x46}};
+
     CoInitialize(NULL);
 
-    //retrieve CLSID dynamically
+    // retrieve CLSID dynamically
     CLSID clsid;
     HRESULT hr = CLSIDFromProgID(L"HTMLFILE", &clsid);
     if (FAILED(hr))
@@ -659,7 +660,7 @@ void ParseTags_libHtml(std::wstring& html)
         return;
     }
 
-    //create instance using IUnknown and query for IHTMLDocument2
+    // create instance using IUnknown and query for IHTMLDocument2
     IUnknown* pUnknown = nullptr;
     hr = CoCreateInstance(clsid, NULL, CLSCTX_INPROC_SERVER, IID_IUnknown, (void**)&pUnknown);
     if (FAILED(hr) || !pUnknown)
@@ -672,7 +673,7 @@ void ParseTags_libHtml(std::wstring& html)
 
     IHTMLDocument2* pDoc = nullptr;
     hr = pUnknown->QueryInterface(IID_IHTMLDocument2, (void**)&pDoc);
-    pUnknown->Release();//release IUnknown after querying the interface
+    pUnknown->Release();// release IUnknown after querying the interface
 
     if (FAILED(hr) || !pDoc)
     {
@@ -682,7 +683,7 @@ void ParseTags_libHtml(std::wstring& html)
         return;
     }
 
-    //prepare HTML content for processing
+    // prepare HTML content for processing
     VARIANT varHtml;
     varHtml.vt = VT_BSTR;
     varHtml.bstrVal = SysAllocString(html.c_str());
@@ -698,7 +699,7 @@ void ParseTags_libHtml(std::wstring& html)
     }
     SysFreeString(varHtml.bstrVal);
 
-    //extract plain text from the HTML document
+    // extract plain text from the HTML document
     IHTMLElement* pBody = nullptr;
     pDoc->get_body(&pBody);
     if (pBody)
@@ -706,7 +707,7 @@ void ParseTags_libHtml(std::wstring& html)
         BSTR text;
         if (SUCCEEDED(pBody->get_innerText(&text)) && text)
         {
-            html.assign(text, SysStringLen(text));//store extracted text
+            html.assign(text, SysStringLen(text));// store extracted text
             SysFreeString(text);
         }
         else
@@ -739,37 +740,37 @@ std::wstring DecodeHtmlNumEntities(std::wstring& input) {
     std::wstring_view numStr;
     std::wstring::const_iterator searchStart(input.cbegin());
     while (std::regex_search(searchStart, input.cend(), match, numericEntity)) {
-        output += match.prefix().str();//append text before match
-        numStr = match[1].str();//view over matched group
+        output += match.prefix().str();// append text before match
+        numStr = match[1].str();// view over matched group
         try {
             int base = (numStr.starts_with(L"x") || numStr.starts_with(L"X")) ? 16 : 10;
             unsigned int code = std::stoi(std::wstring{
                 numStr.substr(base == 16 ? 1 : 0)
             }, nullptr, base);
-            output += std::wstring(1, static_cast<wchar_t>(code));//append decoded character
+            output += std::wstring(1, static_cast<wchar_t>(code));// append decoded character
         } catch (...) {
-            output += match.str();//append original match on error
+            output += match.str();// append original match on error
         }
-        searchStart = match.suffix().first;//move past the current match
+        searchStart = match.suffix().first;// move past the current match
     }
-    output += std::wstring(searchStart, input.cend());//append remaining text
+    output += std::wstring(searchStart, input.cend());// append remaining text
     return output;
 }
 
 void ParseTags_internal(std::wstring& input) {
-    //strip html tags
-    input = std::regex_replace(input, std::wregex(L"<!\\[CDATA\\[(.*?)\\]\\]>"), L"$1");//CDATA
-    ReplaceAll(input, L"<br />", L"\n");//br-tags replace to newlines so `hallo<br />world` and `hallo<br />\nworld` are treated the same
-    input = std::regex_replace(input, std::wregex(L"<[a-zA-Z/][^>]*>"), L" ");//html tags replace to space so multiple segments aren't glued together
+    // strip html tags
+    input = std::regex_replace(input, std::wregex(L"<!\\[CDATA\\[(.*?)\\]\\]>"), L"$1");// CDATA
+    ReplaceAll(input, L"<br />", L"\n");// br-tags replace to newlines so `hallo<br />world` and `hallo<br />\nworld` are treated the same
+    input = std::regex_replace(input, std::wregex(L"<[a-zA-Z/][^>]*>"), L" ");// html tags replace to space so multiple segments aren't glued together
 
-    //whitespace cleaning
-    input = std::regex_replace(input, std::wregex(L"[ \\t]+"), L" ");//multiple whitespaces->one space
-    input = std::regex_replace(input, std::wregex(L"\\r"), L"");//simplify line ending formats
-    input = std::regex_replace(input, std::wregex(L"\\n\\s+|\\s+\\n"), L"\n");//multiple newlines->one newline, remove whitespace from start and end of line (also: whitespace-only lines)
-    input = std::regex_replace(input, std::wregex(L"^\\s+|\\s+$"), L"");//remove whitespace (including newlines) from start and end of result
+    // whitespace cleaning
+    input = std::regex_replace(input, std::wregex(L"[ \\t]+"), L" ");// multiple whitespaces->one space
+    input = std::regex_replace(input, std::wregex(L"\\r"), L"");// simplify line ending formats
+    input = std::regex_replace(input, std::wregex(L"\\n\\s+|\\s+\\n"), L"\n");// multiple newlines->one newline, remove whitespace from start and end of line (also: whitespace-only lines)
+    input = std::regex_replace(input, std::wregex(L"^\\s+|\\s+$"), L"");// remove whitespace (including newlines) from start and end of result
 
-    //html named entities (most common)
-    ReplaceAll(input, L"&amp;", L"&");//sometimes &amp;<other entity>; is used, so it needs to be replaced first
+    // html named entities (most common)
+    ReplaceAll(input, L"&amp;", L"&");// sometimes &amp;<other entity>; is used, so it needs to be replaced first
     static const std::pair<std::wstring_view, std::wstring_view> htmlEntities[] = {
         { L"&quot;", L"\"" },
         { L"&apos;", L"'" },
@@ -788,7 +789,7 @@ void ParseTags_internal(std::wstring& input) {
         ReplaceAll(input, entity, replacement);
     }
 
-    //html numeric entities (decimal or hex)
+    // html numeric entities (decimal or hex)
     input = DecodeHtmlNumEntities(input);
 }
 
