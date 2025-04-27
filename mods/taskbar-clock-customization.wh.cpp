@@ -647,8 +647,6 @@ void ParseTags_libHtml(std::wstring& html)
     const IID IID_IHTMLDocument2 = {0x332C4425, 0x26CB, 0x11D0, {0xB4, 0x83, 0x00, 0xC0, 0x4F, 0xD9, 0x01, 0x19}};
     const IID IID_IUnknown = {0x00000000, 0x0000, 0x0000, {0xC0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x46}};
 
-    CoInitialize(NULL);
-
     // retrieve CLSID dynamically
     CLSID clsid;
     HRESULT hr = CLSIDFromProgID(L"HTMLFILE", &clsid);
@@ -661,7 +659,7 @@ void ParseTags_libHtml(std::wstring& html)
     }
 
     // create instance using IUnknown and query for IHTMLDocument2
-    IUnknown* pUnknown = nullptr;
+    winrt::com_ptr<IUnknown> pUnknown;
     hr = CoCreateInstance(clsid, NULL, CLSCTX_INPROC_SERVER, IID_IUnknown, (void**)&pUnknown);
     if (FAILED(hr) || !pUnknown)
     {
@@ -673,7 +671,6 @@ void ParseTags_libHtml(std::wstring& html)
 
     IHTMLDocument2* pDoc = nullptr;
     hr = pUnknown->QueryInterface(IID_IHTMLDocument2, (void**)&pDoc);
-    pUnknown->Release();// release IUnknown after querying the interface
 
     if (FAILED(hr) || !pDoc)
     {
@@ -718,7 +715,6 @@ void ParseTags_libHtml(std::wstring& html)
     }
 
     pDoc->Release();
-    CoUninitialize();
 }
 
 void ParseTags_libXml(std::wstring& xml)
