@@ -11,6 +11,7 @@
 // @include         msedge.exe
 // @include         opera.exe
 // @include         brave.exe
+// @include         *\YandexBrowser\Application\browser.exe
 // @compilerOptions -lcomctl32 -lgdi32
 // ==/WindhawkMod==
 
@@ -285,13 +286,24 @@ bool IsBrowserWindow(HWND hWnd) {
         return false;
     }
 
-    WCHAR szClassName[32];
-    if (GetClassName(hWnd, szClassName, ARRAYSIZE(szClassName)) == 0 ||
-        wcsicmp(szClassName, L"Chrome_WidgetWin_1") != 0) {
+    WCHAR windowClassName[256];
+    if (!GetClassName(hWnd, windowClassName, ARRAYSIZE(windowClassName))) {
         return false;
     }
 
-    return true;
+    bool classNameMatch = false;
+    PCWSTR classNames[] = {
+        L"Chrome_WidgetWin_1",
+        L"YandexBrowser_WidgetWin_1",
+    };
+    for (PCWSTR className : classNames) {
+        if (_wcsicmp(windowClassName, className) == 0) {
+            classNameMatch = true;
+            break;
+        }
+    }
+
+    return classNameMatch;
 }
 
 BOOL CALLBACK InitialEnumBrowserWindowsFunc(HWND hWnd, LPARAM lParam) {
