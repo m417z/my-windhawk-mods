@@ -9,7 +9,7 @@
 // @homepage        https://m417z.com/
 // @include         explorer.exe
 // @architecture    x86-64
-// @compilerOptions -lversion
+// @compilerOptions -ldwmapi -lversion
 // ==/WindhawkMod==
 
 // Source code is published under The GNU General Public License v3.0.
@@ -52,6 +52,7 @@ or a similar tool), enable the relevant option in the mod's settings.
 
 #include <windhawk_utils.h>
 
+#include <dwmapi.h>
 #include <psapi.h>
 
 #include <atomic>
@@ -147,36 +148,8 @@ HWND FindTaskbarWindows(std::vector<HWND>* secondaryTaskbarWindows) {
     return hTaskbarWnd;
 }
 
-using ShowWindow_t = decltype(&ShowWindow);
-ShowWindow_t ShowWindow_Original;
-BOOL WINAPI ShowWindow_Hook(HWND hWnd, int nCmdShow) {
-    if (g_settings.fullyHide && IsTaskbarWindow(hWnd)) {
-        Wh_Log(L">");
-        return TRUE;
-    }
-
-    BOOL ret = ShowWindow_Original(hWnd, nCmdShow);
-
-    return ret;
-}
-
-using IsWindowVisible_t = decltype(&IsWindowVisible);
-IsWindowVisible_t IsWindowVisible_Original;
-BOOL WINAPI IsWindowVisible_Hook(HWND hWnd) {
-    BOOL ret = IsWindowVisible_Original(hWnd);
-
-    // Checked in CTaskListWnd::HandleWinNumHotKey, Win+num hotkeys don't work
-    // if the window is hidden. Return TRUE to make the hotkeys work.
-    if (!ret && g_settings.fullyHide) {
-        WCHAR szClassName[32];
-        if (GetClassName(hWnd, szClassName, ARRAYSIZE(szClassName)) &&
-            _wcsicmp(szClassName, L"MSTaskSwWClass") == 0) {
-            Wh_Log(L">");
-            return TRUE;
-        }
-    }
-
-    return ret;
+void CloakWindow(HWND hWnd, BOOL cloak) {
+    DwmSetWindowAttribute(hWnd, DWMWA_CLOAK, &cloak, sizeof(cloak));
 }
 
 using SetTimer_t = decltype(&SetTimer);
@@ -211,13 +184,13 @@ void WINAPI TrayUI_SlideWindow_Hook(void* pThis,
     Wh_Log(L">");
 
     if (show && g_settings.fullyHide) {
-        ShowWindow_Original(hWnd, SW_SHOWNA);
+        CloakWindow(hWnd, FALSE);
     }
 
     TrayUI_SlideWindow_Original(pThis, hWnd, rc, monitor, show, flag);
 
     if (!show && g_settings.fullyHide) {
-        ShowWindow_Original(hWnd, SW_HIDE);
+        CloakWindow(hWnd, TRUE);
     }
 }
 
@@ -463,12 +436,6 @@ BOOL Wh_ModInit() {
                                        LoadLibraryExW_Hook,
                                        &LoadLibraryExW_Original);
 
-    WindhawkUtils::Wh_SetFunctionHookT(ShowWindow, ShowWindow_Hook,
-                                       &ShowWindow_Original);
-
-    WindhawkUtils::Wh_SetFunctionHookT(IsWindowVisible, IsWindowVisible_Hook,
-                                       &IsWindowVisible_Original);
-
     WindhawkUtils::Wh_SetFunctionHookT(SetTimer, SetTimer_Hook,
                                        &SetTimer_Original);
 
@@ -477,12 +444,12 @@ BOOL Wh_ModInit() {
     return TRUE;
 }
 
-void ShowAllTaskbars(int nCmdShow) {
+void CloakAllTaskbars(BOOL cloak) {
     std::vector<HWND> secondaryTaskbarWindows;
     HWND taskbarWindow = FindTaskbarWindows(&secondaryTaskbarWindows);
-    ShowWindow_Original(taskbarWindow, nCmdShow);
+    CloakWindow(taskbarWindow, cloak);
     for (HWND hWnd : secondaryTaskbarWindows) {
-        ShowWindow_Original(hWnd, nCmdShow);
+        CloakWindow(hWnd, cloak);
     }
 }
 
@@ -496,7 +463,7 @@ void Wh_ModAfterInit() {
     }
 
     if (g_settings.fullyHide) {
-        ShowAllTaskbars(SW_HIDE);
+        CloakAllTaskbars(TRUE);
     }
 }
 
@@ -504,7 +471,7 @@ void Wh_ModUninit() {
     Wh_Log(L">");
 
     if (g_settings.fullyHide) {
-        ShowAllTaskbars(SW_SHOWNA);
+        CloakAllTaskbars(FALSE);
     }
 }
 
@@ -518,9 +485,9 @@ BOOL Wh_ModSettingsChanged(BOOL* bReload) {
 
     if (g_settings.fullyHide != prevFullyHide) {
         if (g_settings.fullyHide) {
-            ShowAllTaskbars(SW_HIDE);
+            CloakAllTaskbars(TRUE);
         } else {
-            ShowAllTaskbars(SW_SHOWNA);
+            CloakAllTaskbars(FALSE);
         }
     }
 
