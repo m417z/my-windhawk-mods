@@ -154,10 +154,10 @@ enum {
 #define WM_POINTERWHEEL 0x024E
 #endif
 
-static int g_nWinVersion;
-static int g_nExplorerVersion;
-static HWND g_hTaskbarWnd;
-static DWORD g_dwTaskbarThreadId;
+int g_nWinVersion;
+int g_nExplorerVersion;
+HWND g_hTaskbarWnd;
+DWORD g_dwTaskbarThreadId;
 
 #pragma region functions
 
@@ -1205,7 +1205,7 @@ static BOOL CALLBACK EnumThreadFindSndVolTrayControlWnd(HWND hWnd,
 // wParam - TRUE to subclass, FALSE to unsubclass
 // lParam - subclass data
 UINT g_subclassRegisteredMsg = RegisterWindowMessage(
-    L"Windhawk_SetWindowSubclassFromAnyThread_taskbar-volume-control");
+    L"Windhawk_SetWindowSubclassFromAnyThread_" WH_MOD_ID);
 
 BOOL SetWindowSubclassFromAnyThread(HWND hWnd,
                                     SUBCLASSPROC pfnSubclass,
@@ -1262,7 +1262,7 @@ BOOL SetWindowSubclassFromAnyThread(HWND hWnd,
 }
 
 bool OnMouseWheel(HWND hWnd, WPARAM wParam, LPARAM lParam) {
-    if (GetCapture() != NULL) {
+    if (GetCapture()) {
         return false;
     }
 
@@ -1278,7 +1278,7 @@ bool OnMouseWheel(HWND hWnd, WPARAM wParam, LPARAM lParam) {
         return false;
     }
 
-    // Allows to steal focus
+    // Allows to steal focus.
     INPUT input;
     ZeroMemory(&input, sizeof(INPUT));
     SendInput(1, &input, sizeof(INPUT));
@@ -1530,7 +1530,6 @@ HWND WINAPI CreateWindowExW_Hook(DWORD dwExStyle,
     HWND hWnd = CreateWindowExW_Original(dwExStyle, lpClassName, lpWindowName,
                                          dwStyle, X, Y, nWidth, nHeight,
                                          hWndParent, hMenu, hInstance, lpParam);
-
     if (!hWnd)
         return hWnd;
 
