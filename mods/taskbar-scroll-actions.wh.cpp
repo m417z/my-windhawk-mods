@@ -9,7 +9,7 @@
 // @homepage        https://m417z.com/
 // @include         explorer.exe
 // @architecture    x86-64
-// @compilerOptions -lcomctl32 -lole32 -loleaut32 -lversion
+// @compilerOptions -lcomctl32 -lgdi32 -lole32 -loleaut32 -lversion
 // ==/WindhawkMod==
 
 // Source code is published under The GNU General Public License v3.0.
@@ -68,16 +68,18 @@ issue](https://tweaker.userecho.com/topics/826-scroll-on-trackpadtouchpad-doesnt
   $name: Customize the old taskbar on Windows 11
   $description: >-
     Enable this option to customize the old taskbar on Windows 11 (if using
-    ExplorerPatcher or a similar tool). Note: For Windhawk versions older than
-    1.3, you have to disable and re-enable the mod to apply this option.
+    ExplorerPatcher or a similar tool).
 */
 // ==/WindhawkModSettings==
+
+#include <windhawk_utils.h>
 
 #include <initguid.h>
 
 #include <combaseapi.h>
 #include <commctrl.h>
 #include <comutil.h>
+#include <psapi.h>
 #include <wbemcli.h>
 #include <windowsx.h>
 
@@ -136,6 +138,32 @@ HWND g_hTaskbarWnd;
 DWORD g_dwTaskbarThreadId;
 
 #pragma region functions
+
+UINT GetDpiForWindowWithFallback(HWND hWnd) {
+    using GetDpiForWindow_t = UINT(WINAPI*)(HWND hwnd);
+    static GetDpiForWindow_t pGetDpiForWindow = []() {
+        HMODULE hUser32 = GetModuleHandle(L"user32.dll");
+        if (hUser32) {
+            return (GetDpiForWindow_t)GetProcAddress(hUser32,
+                                                     "GetDpiForWindow");
+        }
+
+        return (GetDpiForWindow_t) nullptr;
+    }();
+
+    int iDpi = 96;
+    if (pGetDpiForWindow) {
+        iDpi = pGetDpiForWindow(hWnd);
+    } else {
+        HDC hdc = GetDC(NULL);
+        if (hdc) {
+            iDpi = GetDeviceCaps(hdc, LOGPIXELSX);
+            ReleaseDC(NULL, hdc);
+        }
+    }
+
+    return iDpi;
+}
 
 bool IsTaskbarWindow(HWND hWnd) {
     WCHAR szClassName[32];
@@ -210,12 +238,14 @@ bool GetNotificationAreaRect(HWND hMMTaskbarWnd, RECT* rcResult) {
         // On newer Win11 versions, the clock on secondary taskbars is difficult
         // to detect without either UI Automation or UWP UI APIs. Just consider
         // the last pixels, not accurate, but better than nothing.
+        int lastPixels =
+            MulDiv(50, GetDpiForWindowWithFallback(hMMTaskbarWnd), 96);
         CopyRect(rcResult, &rcTaskbar);
-        if (rcResult->right - rcResult->left > 50) {
+        if (rcResult->right - rcResult->left > lastPixels) {
             if (GetWindowLong(hMMTaskbarWnd, GWL_EXSTYLE) & WS_EX_LAYOUTRTL) {
-                rcResult->right = rcResult->left + 50;
+                rcResult->right = rcResult->left + lastPixels;
             } else {
-                rcResult->left = rcResult->right - 50;
+                rcResult->left = rcResult->right - lastPixels;
             }
         }
 
@@ -232,6 +262,7 @@ bool GetNotificationAreaRect(HWND hMMTaskbarWnd, RECT* rcResult) {
         return GetWindowRect(hClockButtonWnd, rcResult);
     }
 
+    SetRectEmpty(rcResult);
     return true;
 }
 
@@ -706,7 +737,7 @@ bool SwitchDesktopViaKeyboardShortcut(int clicks) {
     }
 
     INPUT* input = new INPUT[clicks * 2 + 4];
-    for (size_t i = 0; i < clicks * 2 + 4; i++) {
+    for (int i = 0; i < clicks * 2 + 4; i++) {
         input[i].type = INPUT_KEYBOARD;
         input[i].ki.wScan = 0;
         input[i].ki.time = 0;
@@ -718,7 +749,7 @@ bool SwitchDesktopViaKeyboardShortcut(int clicks) {
     input[1].ki.wVk = VK_LCONTROL;
     input[1].ki.dwFlags = 0;
 
-    for (size_t i = 0; i < clicks; i++) {
+    for (int i = 0; i < clicks; i++) {
         input[2 + i * 2].ki.wVk = key;
         input[2 + i * 2].ki.dwFlags = 0;
         input[2 + i * 2 + 1].ki.wVk = key;
@@ -783,7 +814,7 @@ void InvokeScrollAction(WPARAM wParam, LPARAM lMousePosParam) {
 // wParam - TRUE to subclass, FALSE to unsubclass
 // lParam - subclass data
 UINT g_subclassRegisteredMsg = RegisterWindowMessage(
-    L"Windhawk_SetWindowSubclassFromAnyThread_taskbar-scroll-actions");
+    L"Windhawk_SetWindowSubclassFromAnyThread_" WH_MOD_ID);
 
 BOOL SetWindowSubclassFromAnyThread(HWND hWnd,
                                     SUBCLASSPROC pfnSubclass,
@@ -1147,6 +1178,70 @@ void LoadSettings() {
     g_settings.oldTaskbarOnWin11 = Wh_GetIntSetting(L"oldTaskbarOnWin11");
 }
 
+bool IsExplorerPatcherModule(HMODULE module) {
+    WCHAR moduleFilePath[MAX_PATH];
+    switch (
+        GetModuleFileName(module, moduleFilePath, ARRAYSIZE(moduleFilePath))) {
+        case 0:
+        case ARRAYSIZE(moduleFilePath):
+            return false;
+    }
+
+    PCWSTR moduleFileName = wcsrchr(moduleFilePath, L'\\');
+    if (!moduleFileName) {
+        return false;
+    }
+
+    moduleFileName++;
+
+    if (_wcsnicmp(L"ep_taskbar.", moduleFileName, sizeof("ep_taskbar.") - 1) ==
+        0) {
+        Wh_Log(L"ExplorerPatcher taskbar module: %s", moduleFileName);
+        return true;
+    }
+
+    return false;
+}
+
+void HandleLoadedExplorerPatcher() {
+    HMODULE hMods[1024];
+    DWORD cbNeeded;
+    if (EnumProcessModules(GetCurrentProcess(), hMods, sizeof(hMods),
+                           &cbNeeded)) {
+        for (size_t i = 0; i < cbNeeded / sizeof(HMODULE); i++) {
+            if (IsExplorerPatcherModule(hMods[i])) {
+                if (g_nExplorerVersion >= WIN_VERSION_11_21H2) {
+                    g_nExplorerVersion = WIN_VERSION_10_20H1;
+                }
+                break;
+            }
+        }
+    }
+}
+
+void HandleLoadedModuleIfExplorerPatcher(HMODULE module) {
+    if (module && !((ULONG_PTR)module & 3)) {
+        if (IsExplorerPatcherModule(module)) {
+            if (g_nExplorerVersion >= WIN_VERSION_11_21H2) {
+                g_nExplorerVersion = WIN_VERSION_10_20H1;
+            }
+        }
+    }
+}
+
+using LoadLibraryExW_t = decltype(&LoadLibraryExW);
+LoadLibraryExW_t LoadLibraryExW_Original;
+HMODULE WINAPI LoadLibraryExW_Hook(LPCWSTR lpLibFileName,
+                                   HANDLE hFile,
+                                   DWORD dwFlags) {
+    HMODULE module = LoadLibraryExW_Original(lpLibFileName, hFile, dwFlags);
+    if (module) {
+        HandleLoadedModuleIfExplorerPatcher(module);
+    }
+
+    return module;
+}
+
 BOOL Wh_ModInit() {
     Wh_Log(L">");
 
@@ -1177,6 +1272,15 @@ BOOL Wh_ModInit() {
         }
     }
 
+    HandleLoadedExplorerPatcher();
+
+    HMODULE kernelBaseModule = GetModuleHandle(L"kernelbase.dll");
+    auto pKernelBaseLoadLibraryExW = (decltype(&LoadLibraryExW))GetProcAddress(
+        kernelBaseModule, "LoadLibraryExW");
+    WindhawkUtils::Wh_SetFunctionHookT(pKernelBaseLoadLibraryExW,
+                                       LoadLibraryExW_Hook,
+                                       &LoadLibraryExW_Original);
+
     g_initialized = true;
 
     return TRUE;
@@ -1184,6 +1288,10 @@ BOOL Wh_ModInit() {
 
 void Wh_ModAfterInit() {
     Wh_Log(L">");
+
+    // Try again in case there's a race between the previous attempt and the
+    // LoadLibraryExW hook.
+    HandleLoadedExplorerPatcher();
 
     WNDCLASS wndclass;
     if (GetClassInfo(GetModuleHandle(NULL), L"Shell_TrayWnd", &wndclass)) {
@@ -1217,12 +1325,4 @@ BOOL Wh_ModSettingsChanged(BOOL* bReload) {
     *bReload = g_settings.oldTaskbarOnWin11 != prevOldTaskbarOnWin11;
 
     return TRUE;
-}
-
-// For pre-1.3 Windhawk compatibility.
-void Wh_ModSettingsChanged() {
-    Wh_Log(L"> pre-1.3");
-
-    BOOL bReload = FALSE;
-    Wh_ModSettingsChanged(&bReload);
 }
