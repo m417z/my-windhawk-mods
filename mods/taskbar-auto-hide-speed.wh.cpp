@@ -1,7 +1,7 @@
 // ==WindhawkMod==
 // @id              taskbar-auto-hide-speed
 // @name            Taskbar auto-hide speed
-// @description     Customize the taskbar auto-hide speed and frame rate to make it feel less sluggish and janky
+// @description     Customize the taskbar auto-hide animation speed and frame rate to make it feel less sluggish and janky
 // @version         1.0
 // @author          m417z
 // @github          https://github.com/m417z
@@ -24,8 +24,8 @@
 /*
 # Taskbar auto-hide speed
 
-Customize the taskbar auto-hide speed and frame rate to make it feel less
-sluggish and janky.
+Customize the taskbar auto-hide animation speed and frame rate to make it feel
+less sluggish and janky.
 
 ![Demonstration](https://i.imgur.com/x7pg5xX.gif)
 */
