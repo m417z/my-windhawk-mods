@@ -111,7 +111,8 @@ WinVersion g_winVersion;
 std::atomic<bool> g_initialized;
 std::atomic<bool> g_explorerPatcherInitialized;
 
-bool g_wasAutoHideEnabled;
+bool g_wasAutoHideProcessed;
+bool g_wasAutoHideDisabled;
 std::mutex g_winEventHookThreadMutex;
 std::atomic<HANDLE> g_winEventHookThread;
 std::unordered_map<void*, HWND> g_taskbarsKeptShown;
@@ -666,6 +667,11 @@ LRESULT WINAPI TrayUI_WndProc_Hook(void* pThis,
             SetRectEmpty(rect);
         }
     } else if (Msg == g_updateTaskbarStateRegisteredMsg) {
+        if (!g_wasAutoHideProcessed) {
+            g_wasAutoHideProcessed = true;
+            g_wasAutoHideDisabled = !SetTaskbarAutoHide(true);
+        }
+
         HMONITOR monitor = TrayUI_GetStuckMonitor_Original(pThis);
         bool keepShown = ShouldKeepTaskbarShown(monitor);
 
@@ -1233,8 +1239,6 @@ void Wh_ModAfterInit() {
         HandleLoadedExplorerPatcher();
     }
 
-    g_wasAutoHideEnabled = SetTaskbarAutoHide(true);
-
     WNDCLASS wndclass;
     if (GetClassInfo(GetModuleHandle(nullptr), L"Shell_TrayWnd", &wndclass)) {
         AdjustAllTaskbars();
@@ -1251,7 +1255,7 @@ void Wh_ModUninit() {
         g_winEventHookThread = nullptr;
     }
 
-    if (!g_wasAutoHideEnabled) {
+    if (g_wasAutoHideDisabled) {
         SetTaskbarAutoHide(false);
     }
 }
