@@ -82,6 +82,7 @@ or a similar tool), enable the relevant option in the mod's settings.
 
 #include <atomic>
 #include <mutex>
+#include <string>
 #include <unordered_map>
 #include <unordered_set>
 
