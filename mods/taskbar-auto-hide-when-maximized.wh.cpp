@@ -386,7 +386,10 @@ bool IsWindowExcluded(HWND hWnd) {
     return false;
 }
 
-bool CanHideTaskbarForWindow(HWND hWnd, HMONITOR monitor) {
+bool CanHideTaskbarForWindow(HWND hWnd,
+                             HMONITOR monitor,
+                             const MONITORINFO* monitorInfo,
+                             const RECT* taskbarRect) {
     if (!IsWindowVisible(hWnd) || IsWindowCloaked(hWnd) || IsIconic(hWnd) ||
         (GetWindowLong(hWnd, GWL_EXSTYLE) & WS_EX_NOACTIVATE)) {
         return false;
@@ -419,17 +422,12 @@ bool CanHideTaskbarForWindow(HWND hWnd, HMONITOR monitor) {
         return false;
     }
 
-    RECT windowRect;
+    RECT windowRect{};
     DwmGetWindowAttribute(hWnd, DWMWA_EXTENDED_FRAME_BOUNDS, &windowRect,
                           sizeof(windowRect));
 
-    MONITORINFO monitorInfo{
-        .cbSize = sizeof(MONITORINFO),
-    };
-    GetMonitorInfo(monitor, &monitorInfo);
-
     // Don't keep the taskbar shown for a fullscreen window.
-    if (EqualRect(&windowRect, &monitorInfo.rcMonitor)) {
+    if (EqualRect(&windowRect, &monitorInfo->rcMonitor)) {
         return true;
     }
 
@@ -439,11 +437,8 @@ bool CanHideTaskbarForWindow(HWND hWnd, HMONITOR monitor) {
     // screen (e.g. Win+left, Win+up).
     if (g_settings.mode == Mode::intersected ||
         (g_settings.mode == Mode::maximized && isWindowArranged)) {
-        RECT taskbarRect{};
-        GetTaskbarRectForMonitor(monitor, &taskbarRect);
-
         RECT intersectRect;
-        if (IntersectRect(&intersectRect, &windowRect, &taskbarRect)) {
+        if (IntersectRect(&intersectRect, &windowRect, taskbarRect)) {
             return true;
         }
     }
@@ -461,9 +456,19 @@ bool ShouldKeepTaskbarShown(HMONITOR monitor) {
         return true;
     }
 
+    MONITORINFO monitorInfo{
+        .cbSize = sizeof(MONITORINFO),
+    };
+    GetMonitorInfo(monitor, &monitorInfo);
+
+    RECT taskbarRect{};
+    GetTaskbarRectForMonitor(monitor, &taskbarRect);
+
     if (g_settings.foregroundWindowOnly) {
         HWND hForegroundWnd = GetForegroundWindow();
-        return !CanHideTaskbarForWindow(hForegroundWnd, monitor);
+        return !hForegroundWnd ||
+               !CanHideTaskbarForWindow(hForegroundWnd, monitor, &monitorInfo,
+                                        &taskbarRect);
     }
 
     bool canHideTaskbar = false;
@@ -475,7 +480,8 @@ bool ShouldKeepTaskbarShown(HMONITOR monitor) {
             return TRUE;
         }
 
-        canHideTaskbar = CanHideTaskbarForWindow(hWnd, monitor);
+        canHideTaskbar =
+            CanHideTaskbarForWindow(hWnd, monitor, &monitorInfo, &taskbarRect);
         return !canHideTaskbar;
     };
 
