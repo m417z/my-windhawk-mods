@@ -9,7 +9,7 @@
 // @homepage        https://m417z.com/
 // @include         explorer.exe
 // @architecture    x86-64
-// @compilerOptions -ldwmapi
+// @compilerOptions -ldwmapi -loleaut32 -lruntimeobject
 // ==/WindhawkMod==
 
 // Source code is published under The GNU General Public License v3.0.
@@ -52,6 +52,9 @@ a workaround.
     $name: Green
   - blue: 39
     $name: Blue
+  - accentColor: false
+    $name: Current theme accent color
+    $description: If enabled, the color values above are ignored
   - transparency: 128
     $name: Transparency
   $name: Custom color
@@ -76,6 +79,9 @@ a workaround.
       $name: Green
     - blue: 39
       $name: Blue
+    - accentColor: false
+      $name: Current theme accent color
+      $description: If enabled, the color values above are ignored
     - transparency: 128
       $name: Transparency
     $name: Custom color
@@ -87,6 +93,8 @@ a workaround.
 #include <windhawk_utils.h>
 
 #include <dwmapi.h>
+
+#include <winrt/Windows.UI.ViewManagement.h>
 
 #include <atomic>
 #include <mutex>
@@ -102,6 +110,7 @@ enum class BackgroundStyle {
 struct TaskbarStyle {
     BackgroundStyle backgroundStyle;
     COLORREF color;
+    bool accentColor;
 };
 
 struct {
@@ -248,7 +257,23 @@ BOOL SetTaskbarStyle(HWND hWnd) {
             break;
     }
 
-    ACCENTPOLICY policy = {accentState, accentFlags, style.color, 0};
+    COLORREF color = style.color;
+    if (style.accentColor) {
+        try {
+            const winrt::Windows::UI::ViewManagement::UISettings uiSettings;
+            const auto accentColor{uiSettings.GetColorValue(
+                winrt::Windows::UI::ViewManagement::UIColorType::Accent)};
+
+            color = (COLORREF)((BYTE)accentColor.R |
+                               ((WORD)((BYTE)accentColor.G) << 8) |
+                               (((DWORD)(BYTE)accentColor.B) << 16) |
+                               (color & 0xFF000000));
+        } catch (winrt::hresult_error const& ex) {
+            Wh_Log(L"Error %08X: %s", ex.code(), ex.message().c_str());
+        }
+    }
+
+    ACCENTPOLICY policy = {accentState, accentFlags, color, 0};
 
     WINDOWCOMPOSITIONATTRIBDATA data = {WCA_ACCENT_POLICY, &policy,
                                         sizeof(policy)};
@@ -596,11 +621,13 @@ void LoadSettings() {
     int red = Wh_GetIntSetting(L"color.red");
     int green = Wh_GetIntSetting(L"color.green");
     int blue = Wh_GetIntSetting(L"color.blue");
+    bool accentColor = Wh_GetIntSetting(L"color.accentColor");
     int transparency = Wh_GetIntSetting(L"color.transparency");
 
     g_settings.style.color = (COLORREF)((BYTE)red | ((WORD)((BYTE)green) << 8) |
                                         (((DWORD)(BYTE)blue) << 16) |
                                         (((DWORD)(BYTE)transparency) << 24));
+    g_settings.style.accentColor = accentColor;
 
     g_settings.onlyWhenMaximized = Wh_GetIntSetting(L"onlyWhenMaximized");
 
