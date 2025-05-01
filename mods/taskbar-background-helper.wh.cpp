@@ -84,6 +84,8 @@ a workaround.
 */
 // ==/WindhawkModSettings==
 
+#include <windhawk_utils.h>
+
 #include <dwmapi.h>
 
 #include <atomic>
@@ -283,14 +285,22 @@ HWND FindCurrentProcessTaskbarWnd() {
     return hTaskbarWnd;
 }
 
-HWND GetTaskbarForMonitor(HMONITOR monitor) {
+bool IsTaskbarWindow(HWND hWnd) {
+    WCHAR szClassName[32];
+    if (!GetClassName(hWnd, szClassName, ARRAYSIZE(szClassName))) {
+        return false;
+    }
+
+    return _wcsicmp(szClassName, L"Shell_TrayWnd") == 0 ||
+           _wcsicmp(szClassName, L"Shell_SecondaryTrayWnd") == 0;
+}
+
+HWND FindTaskbarWindows(std::unordered_set<HWND>* secondaryTaskbarWindows) {
+    secondaryTaskbarWindows->clear();
+
     HWND hTaskbarWnd = FindCurrentProcessTaskbarWnd();
     if (!hTaskbarWnd) {
         return nullptr;
-    }
-
-    if (MonitorFromWindow(hTaskbarWnd, MONITOR_DEFAULTTONEAREST) == monitor) {
-        return hTaskbarWnd;
     }
 
     DWORD taskbarThreadId = GetWindowThreadProcessId(hTaskbarWnd, nullptr);
@@ -298,24 +308,17 @@ HWND GetTaskbarForMonitor(HMONITOR monitor) {
         return nullptr;
     }
 
-    HWND hResultWnd = nullptr;
-
-    auto enumWindowsProc = [monitor, &hResultWnd](HWND hWnd) -> BOOL {
+    auto enumWindowsProc = [&secondaryTaskbarWindows](HWND hWnd) -> BOOL {
         WCHAR szClassName[32];
         if (GetClassName(hWnd, szClassName, ARRAYSIZE(szClassName)) == 0) {
             return TRUE;
         }
 
-        if (_wcsicmp(szClassName, L"Shell_SecondaryTrayWnd") != 0) {
-            return TRUE;
+        if (_wcsicmp(szClassName, L"Shell_SecondaryTrayWnd") == 0) {
+            secondaryTaskbarWindows->insert(hWnd);
         }
 
-        if (MonitorFromWindow(hWnd, MONITOR_DEFAULTTONEAREST) != monitor) {
-            return TRUE;
-        }
-
-        hResultWnd = hWnd;
-        return FALSE;
+        return TRUE;
     };
 
     EnumThreadWindows(
@@ -326,11 +329,11 @@ HWND GetTaskbarForMonitor(HMONITOR monitor) {
         },
         reinterpret_cast<LPARAM>(&enumWindowsProc));
 
-    return hResultWnd;
+    return hTaskbarWnd;
 }
 
-bool DoesMonitorHaveMaximizedWindow(HMONITOR monitor) {
-    bool hasMaximized = false;
+bool DoesMonitorHaveMaximizedWindow(HMONITOR monitor, HWND hMMTaskbarWnd) {
+    bool hasMaximizedWindow = false;
 
     MONITORINFO monitorInfo{
         .cbSize = sizeof(monitorInfo),
@@ -339,17 +342,23 @@ bool DoesMonitorHaveMaximizedWindow(HMONITOR monitor) {
 
     HWND hShellWindow = GetShellWindow();
 
+    DWORD dwTaskbarThreadId = GetWindowThreadProcessId(hMMTaskbarWnd, nullptr);
+
     auto enumWindowsProc = [&](HWND hWnd) -> BOOL {
+        if (GetWindowThreadProcessId(hWnd, nullptr) == dwTaskbarThreadId) {
+            return TRUE;
+        }
+
         if (MonitorFromWindow(hWnd, MONITOR_DEFAULTTONEAREST) != monitor) {
             return TRUE;
         }
 
-        if (hWnd == hShellWindow || GetProp(hWnd, L"DesktopWindow") ||
-            !IsWindowVisible(hWnd) || IsWindowCloaked(hWnd) || IsIconic(hWnd)) {
+        if (!IsWindowVisible(hWnd) || IsWindowCloaked(hWnd) || IsIconic(hWnd) ||
+            (GetWindowLong(hWnd, GWL_EXSTYLE) & WS_EX_NOACTIVATE)) {
             return TRUE;
         }
 
-        if (GetWindowLong(hWnd, GWL_EXSTYLE) & WS_EX_NOACTIVATE) {
+        if (hWnd == hShellWindow || GetProp(hWnd, L"DesktopWindow")) {
             return TRUE;
         }
 
@@ -357,15 +366,17 @@ bool DoesMonitorHaveMaximizedWindow(HMONITOR monitor) {
             .length = sizeof(WINDOWPLACEMENT),
         };
         if (GetWindowPlacement(hWnd, &wp) && wp.showCmd == SW_SHOWMAXIMIZED) {
-            hasMaximized = true;
+            hasMaximizedWindow = true;
             return FALSE;
         }
 
-        RECT rc;
-        if (GetWindowRect(hWnd, &rc) &&
-            EqualRect(&rc, &monitorInfo.rcMonitor)) {
+        RECT windowRect{};
+        DwmGetWindowAttribute(hWnd, DWMWA_EXTENDED_FRAME_BOUNDS, &windowRect,
+                              sizeof(windowRect));
+
+        if (EqualRect(&windowRect, &monitorInfo.rcMonitor)) {
             // Spans across the whole monitor, e.g. Win+Tab view.
-            hasMaximized = true;
+            hasMaximizedWindow = true;
             return FALSE;
         }
 
@@ -379,7 +390,7 @@ bool DoesMonitorHaveMaximizedWindow(HMONITOR monitor) {
         },
         reinterpret_cast<LPARAM>(&enumWindowsProc));
 
-    return hasMaximized;
+    return hasMaximizedWindow;
 }
 
 void CALLBACK WinEventProc(HWINEVENTHOOK hWinEventHook,
@@ -390,7 +401,7 @@ void CALLBACK WinEventProc(HWINEVENTHOOK hWinEventHook,
                            DWORD dwEventThread,
                            DWORD dwmsEventTime) {
     if (idObject != OBJID_WINDOW ||
-        (GetWindowLong(hWnd, GWL_STYLE) & WS_CHILD)) {
+        (GetWindowLong(hWnd, GWL_STYLE) & WS_CHILD) || IsTaskbarWindow(hWnd)) {
         return;
     }
 
@@ -408,29 +419,52 @@ void CALLBACK WinEventProc(HWINEVENTHOOK hWinEventHook,
         return;
     }
 
-    g_pendingMonitorsTimer =
-        SetTimer(nullptr, 0, 200,
-                 [](HWND hwnd,         // handle of window for timer messages
-                    UINT uMsg,         // WM_TIMER message
-                    UINT_PTR idEvent,  // timer identifier
-                    DWORD dwTime       // current system time
-                 ) {
-                     Wh_Log(L">");
+    g_pendingMonitorsTimer = SetTimer(
+        nullptr, 0, 200,
+        [](HWND hwnd,         // handle of window for timer messages
+           UINT uMsg,         // WM_TIMER message
+           UINT_PTR idEvent,  // timer identifier
+           DWORD dwTime       // current system time
+        ) {
+            Wh_Log(L">");
 
-                     KillTimer(nullptr, g_pendingMonitorsTimer);
-                     g_pendingMonitorsTimer = 0;
+            KillTimer(nullptr, g_pendingMonitorsTimer);
+            g_pendingMonitorsTimer = 0;
 
-                     for (HMONITOR monitor : g_pendingMonitors) {
-                         HWND hMMTaskbarWnd = GetTaskbarForMonitor(monitor);
-                         if (DoesMonitorHaveMaximizedWindow(monitor)) {
-                             SetTaskbarStyle(hMMTaskbarWnd);
-                         } else {
-                             ResetTaskbarStyle(hMMTaskbarWnd);
-                         }
-                     }
+            std::unordered_set<HWND> secondaryTaskbarWindows;
+            HWND hTaskbarWnd = FindTaskbarWindows(&secondaryTaskbarWindows);
 
-                     g_pendingMonitors.clear();
-                 });
+            for (HMONITOR monitor : g_pendingMonitors) {
+                HWND hMMTaskbarWnd = nullptr;
+
+                if (hTaskbarWnd &&
+                    MonitorFromWindow(hTaskbarWnd, MONITOR_DEFAULTTONEAREST) ==
+                        monitor) {
+                    hMMTaskbarWnd = hTaskbarWnd;
+                } else {
+                    for (HWND hSecondaryTaskbarWnd : secondaryTaskbarWindows) {
+                        if (MonitorFromWindow(hSecondaryTaskbarWnd,
+                                              MONITOR_DEFAULTTONEAREST) ==
+                            monitor) {
+                            hMMTaskbarWnd = hSecondaryTaskbarWnd;
+                            break;
+                        }
+                    }
+                }
+
+                if (!hMMTaskbarWnd) {
+                    continue;
+                }
+
+                if (DoesMonitorHaveMaximizedWindow(monitor, hMMTaskbarWnd)) {
+                    SetTaskbarStyle(hMMTaskbarWnd);
+                } else {
+                    ResetTaskbarStyle(hMMTaskbarWnd);
+                }
+            }
+
+            g_pendingMonitors.clear();
+        });
 }
 
 DWORD WINAPI WinEventHookThread(LPVOID lpThreadParameter) {
@@ -499,7 +533,7 @@ BOOL AdjustTaskbarStyle(HWND hWnd) {
         }
 
         HMONITOR monitor = MonitorFromWindow(hWnd, MONITOR_DEFAULTTONEAREST);
-        if (!DoesMonitorHaveMaximizedWindow(monitor)) {
+        if (!DoesMonitorHaveMaximizedWindow(monitor, hWnd)) {
             return ResetTaskbarStyle(hWnd);
         }
     }
@@ -537,46 +571,9 @@ BOOL WINAPI SetWindowCompositionAttribute_Hook(
     return AdjustTaskbarStyle(hWnd);
 }
 
-HWND FindCurrentProcessTaskbarWindows(
-    std::unordered_set<HWND>* secondaryTaskbarWindows) {
-    struct ENUM_WINDOWS_PARAM {
-        HWND* hWnd;
-        std::unordered_set<HWND>* secondaryTaskbarWindows;
-    };
-
-    HWND hWnd = nullptr;
-    ENUM_WINDOWS_PARAM param = {&hWnd, secondaryTaskbarWindows};
-    EnumWindows(
-        [](HWND hWnd, LPARAM lParam) -> BOOL {
-            ENUM_WINDOWS_PARAM& param = *(ENUM_WINDOWS_PARAM*)lParam;
-
-            DWORD dwProcessId = 0;
-            if (!GetWindowThreadProcessId(hWnd, &dwProcessId) ||
-                dwProcessId != GetCurrentProcessId()) {
-                return TRUE;
-            }
-
-            WCHAR szClassName[32];
-            if (GetClassName(hWnd, szClassName, ARRAYSIZE(szClassName)) == 0) {
-                return TRUE;
-            }
-
-            if (_wcsicmp(szClassName, L"Shell_TrayWnd") == 0) {
-                *param.hWnd = hWnd;
-            } else if (_wcsicmp(szClassName, L"Shell_SecondaryTrayWnd") == 0) {
-                param.secondaryTaskbarWindows->insert(hWnd);
-            }
-
-            return TRUE;
-        },
-        (LPARAM)&param);
-
-    return hWnd;
-}
-
 void AdjustAllTaskbarStyles() {
     std::unordered_set<HWND> secondaryTaskbarWindows;
-    HWND hWnd = FindCurrentProcessTaskbarWindows(&secondaryTaskbarWindows);
+    HWND hWnd = FindTaskbarWindows(&secondaryTaskbarWindows);
     if (hWnd) {
         AdjustTaskbarStyle(hWnd);
     }
@@ -655,9 +652,9 @@ BOOL Wh_ModInit() {
         return FALSE;
     }
 
-    Wh_SetFunctionHook((void*)pSetWindowCompositionAttribute,
-                       (void*)SetWindowCompositionAttribute_Hook,
-                       (void**)&SetWindowCompositionAttribute_Original);
+    WindhawkUtils::Wh_SetFunctionHookT(pSetWindowCompositionAttribute,
+                                       SetWindowCompositionAttribute_Hook,
+                                       &SetWindowCompositionAttribute_Original);
 
     return TRUE;
 }
@@ -666,7 +663,7 @@ void Wh_ModAfterInit() {
     Wh_Log(L">");
 
     WNDCLASS wndclass;
-    if (GetClassInfo(GetModuleHandle(NULL), L"Shell_TrayWnd", &wndclass)) {
+    if (GetClassInfo(GetModuleHandle(nullptr), L"Shell_TrayWnd", &wndclass)) {
         AdjustAllTaskbarStyles();
     }
 }
@@ -682,7 +679,7 @@ void Wh_ModUninit() {
     }
 
     std::unordered_set<HWND> secondaryTaskbarWindows;
-    HWND hWnd = FindCurrentProcessTaskbarWindows(&secondaryTaskbarWindows);
+    HWND hWnd = FindTaskbarWindows(&secondaryTaskbarWindows);
     if (hWnd) {
         ResetTaskbarStyle(hWnd);
     }
