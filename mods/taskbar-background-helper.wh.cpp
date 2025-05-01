@@ -9,7 +9,7 @@
 // @homepage        https://m417z.com/
 // @include         explorer.exe
 // @architecture    x86-64
-// @compilerOptions -ldwmapi -loleaut32 -lruntimeobject
+// @compilerOptions -ldwmapi -lole32 -loleaut32 -lruntimeobject
 // ==/WindhawkMod==
 
 // Source code is published under The GNU General Public License v3.0.
@@ -63,6 +63,19 @@ a workaround.
   $name: Only when maximized
   $description: >-
     Only apply the style when there's a maximized window on the monitor
+- excludedPrograms: [""]
+  $name: Excluded programs
+  $description: >-
+    If the "Only when maximized" option is enabled, these programs will be
+    ignored when maximized.
+
+    Entries can be process names, paths or application IDs, for example:
+
+    mspaint.exe
+
+    C:\Windows\System32\notepad.exe
+
+    Microsoft.WindowsCalculator_8wekyb3d8bbwe!App
 - styleForDarkMode:
   - use: false
     $name: Use a separate background for dark mode
@@ -99,6 +112,7 @@ a workaround.
 #include <atomic>
 #include <mutex>
 #include <optional>
+#include <string>
 #include <unordered_set>
 
 enum class BackgroundStyle {
@@ -116,6 +130,7 @@ struct TaskbarStyle {
 struct {
     TaskbarStyle style;
     bool onlyWhenMaximized;
+    std::unordered_set<std::wstring> excludedPrograms;
     std::optional<TaskbarStyle> darkModeStyle;
 } g_settings;
 
@@ -123,6 +138,13 @@ std::mutex g_winEventHookThreadMutex;
 std::atomic<HANDLE> g_winEventHookThread;
 std::unordered_set<HMONITOR> g_pendingMonitors;
 UINT_PTR g_pendingMonitorsTimer;
+
+#if __cplusplus < 202302L
+// Missing in older MinGW headers.
+DECLARE_HANDLE(CO_MTA_USAGE_COOKIE);
+WINOLEAPI CoIncrementMTAUsage(CO_MTA_USAGE_COOKIE* pCookie);
+WINOLEAPI CoDecrementMTAUsage(CO_MTA_USAGE_COOKIE Cookie);
+#endif
 
 // Missing in older MinGW headers.
 #ifndef EVENT_OBJECT_CLOAKED
@@ -357,6 +379,129 @@ HWND FindTaskbarWindows(std::unordered_set<HWND>* secondaryTaskbarWindows) {
     return hTaskbarWnd;
 }
 
+// https://gist.github.com/m417z/451dfc2dad88d7ba88ed1814779a26b4
+std::wstring GetWindowAppId(HWND hWnd) {
+    // {c8900b66-a973-584b-8cae-355b7f55341b}
+    constexpr winrt::guid CLSID_StartMenuCacheAndAppResolver{
+        0x660b90c8,
+        0x73a9,
+        0x4b58,
+        {0x8c, 0xae, 0x35, 0x5b, 0x7f, 0x55, 0x34, 0x1b}};
+
+    // {de25675a-72de-44b4-9373-05170450c140}
+    constexpr winrt::guid IID_IAppResolver_8{
+        0xde25675a,
+        0x72de,
+        0x44b4,
+        {0x93, 0x73, 0x05, 0x17, 0x04, 0x50, 0xc1, 0x40}};
+
+    struct IAppResolver_8 : public IUnknown {
+       public:
+        virtual HRESULT STDMETHODCALLTYPE GetAppIDForShortcut() = 0;
+        virtual HRESULT STDMETHODCALLTYPE GetAppIDForShortcutObject() = 0;
+        virtual HRESULT STDMETHODCALLTYPE
+        GetAppIDForWindow(HWND hWnd,
+                          WCHAR** pszAppId,
+                          void* pUnknown1,
+                          void* pUnknown2,
+                          void* pUnknown3) = 0;
+        virtual HRESULT STDMETHODCALLTYPE
+        GetAppIDForProcess(DWORD dwProcessId,
+                           WCHAR** pszAppId,
+                           void* pUnknown1,
+                           void* pUnknown2,
+                           void* pUnknown3) = 0;
+    };
+
+    HRESULT hr;
+    std::wstring result;
+
+    CO_MTA_USAGE_COOKIE cookie;
+    bool mtaUsageIncreased = SUCCEEDED(CoIncrementMTAUsage(&cookie));
+
+    winrt::com_ptr<IAppResolver_8> appResolver;
+    hr = CoCreateInstance(CLSID_StartMenuCacheAndAppResolver, nullptr,
+                          CLSCTX_INPROC_SERVER | CLSCTX_INPROC_HANDLER,
+                          IID_IAppResolver_8, appResolver.put_void());
+    if (SUCCEEDED(hr)) {
+        WCHAR* pszAppId;
+        hr = appResolver->GetAppIDForWindow(hWnd, &pszAppId, nullptr, nullptr,
+                                            nullptr);
+        if (SUCCEEDED(hr)) {
+            result = pszAppId;
+            CoTaskMemFree(pszAppId);
+        }
+    }
+
+    appResolver = nullptr;
+
+    if (mtaUsageIncreased) {
+        CoDecrementMTAUsage(cookie);
+    }
+
+    return result;
+}
+
+bool IsWindowExcluded(HWND hWnd) {
+    if (g_settings.excludedPrograms.empty()) {
+        return false;
+    }
+
+    DWORD resolvedWindowProcessPathLen = 0;
+    WCHAR resolvedWindowProcessPath[MAX_PATH];
+    WCHAR resolvedWindowProcessPathUpper[MAX_PATH];
+
+    DWORD dwProcessId = 0;
+    if (GetWindowThreadProcessId(hWnd, &dwProcessId)) {
+        HANDLE hProcess =
+            OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, dwProcessId);
+        if (hProcess) {
+            DWORD dwSize = ARRAYSIZE(resolvedWindowProcessPath);
+            if (QueryFullProcessImageName(hProcess, 0,
+                                          resolvedWindowProcessPath, &dwSize)) {
+                resolvedWindowProcessPathLen = dwSize;
+            }
+
+            CloseHandle(hProcess);
+        }
+    }
+
+    if (resolvedWindowProcessPathLen > 0) {
+        LCMapStringEx(LOCALE_NAME_USER_DEFAULT, LCMAP_UPPERCASE,
+                      resolvedWindowProcessPath,
+                      resolvedWindowProcessPathLen + 1,
+                      resolvedWindowProcessPathUpper,
+                      resolvedWindowProcessPathLen + 1, nullptr, nullptr, 0);
+    } else {
+        *resolvedWindowProcessPath = L'\0';
+        *resolvedWindowProcessPathUpper = L'\0';
+    }
+
+    if (resolvedWindowProcessPathLen > 0 &&
+        g_settings.excludedPrograms.contains(resolvedWindowProcessPathUpper)) {
+        return true;
+    }
+
+    if (PCWSTR programFileNameUpper =
+            wcsrchr(resolvedWindowProcessPathUpper, L'\\')) {
+        programFileNameUpper++;
+        if (*programFileNameUpper &&
+            g_settings.excludedPrograms.contains(programFileNameUpper)) {
+            return true;
+        }
+    }
+
+    std::wstring appId = GetWindowAppId(hWnd);
+    LCMapStringEx(LOCALE_NAME_USER_DEFAULT, LCMAP_UPPERCASE, appId.data(),
+                  appId.length(), appId.data(), appId.length(), nullptr,
+                  nullptr, 0);
+    if (g_settings.excludedPrograms.contains(appId.c_str())) {
+        return true;
+    }
+
+    return false;
+}
+
 bool DoesMonitorHaveMaximizedWindow(HMONITOR monitor, HWND hMMTaskbarWnd) {
     bool hasMaximizedWindow = false;
 
@@ -384,6 +529,11 @@ bool DoesMonitorHaveMaximizedWindow(HMONITOR monitor, HWND hMMTaskbarWnd) {
         }
 
         if (hWnd == hShellWindow || GetProp(hWnd, L"DesktopWindow")) {
+            return TRUE;
+        }
+
+        // Check this after the other checks, as it's the most expensive one.
+        if (IsWindowExcluded(hWnd)) {
             return TRUE;
         }
 
@@ -630,6 +780,29 @@ void LoadSettings() {
     g_settings.style.accentColor = accentColor;
 
     g_settings.onlyWhenMaximized = Wh_GetIntSetting(L"onlyWhenMaximized");
+
+    g_settings.excludedPrograms.clear();
+
+    for (int i = 0;; i++) {
+        PCWSTR program = Wh_GetStringSetting(L"excludedPrograms[%d]", i);
+
+        bool hasProgram = *program;
+        if (hasProgram) {
+            std::wstring programUpper = program;
+            LCMapStringEx(
+                LOCALE_NAME_USER_DEFAULT, LCMAP_UPPERCASE, &programUpper[0],
+                static_cast<int>(programUpper.length()), &programUpper[0],
+                static_cast<int>(programUpper.length()), nullptr, nullptr, 0);
+
+            g_settings.excludedPrograms.insert(std::move(programUpper));
+        }
+
+        Wh_FreeStringSetting(program);
+
+        if (!hasProgram) {
+            break;
+        }
+    }
 
     if (Wh_GetIntSetting(L"styleForDarkMode.use")) {
         TaskbarStyle style;
