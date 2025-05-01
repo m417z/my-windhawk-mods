@@ -200,69 +200,72 @@ bool GetNotificationAreaRect(HWND hMMTaskbarWnd, RECT* rcResult) {
     if (hMMTaskbarWnd == g_hTaskbarWnd) {
         HWND hTrayNotifyWnd =
             FindWindowEx(hMMTaskbarWnd, NULL, L"TrayNotifyWnd", NULL);
-        if (!hTrayNotifyWnd) {
-            return false;
+        if (hTrayNotifyWnd && GetWindowRect(hTrayNotifyWnd, rcResult) &&
+            !IsRectEmpty(rcResult)) {
+            return true;
         }
 
-        return GetWindowRect(hTrayNotifyWnd, rcResult);
-    }
-
-    if (g_nExplorerVersion >= WIN_VERSION_11_21H2) {
+        // When attaching an external monitor, it was observed that the rect can
+        // be empty. Use fallback in this case.
+    } else if (g_nExplorerVersion >= WIN_VERSION_11_21H2) {
         RECT rcTaskbar;
-        if (!GetWindowRect(hMMTaskbarWnd, &rcTaskbar)) {
-            return false;
-        }
-
-        HWND hBridgeWnd = FindWindowEx(
-            hMMTaskbarWnd, NULL,
-            L"Windows.UI.Composition.DesktopWindowContentBridge", NULL);
-        while (hBridgeWnd) {
-            RECT rcBridge;
-            if (!GetWindowRect(hBridgeWnd, &rcBridge)) {
-                break;
-            }
-
-            if (rcBridge.left != rcTaskbar.left ||
-                rcBridge.top != rcTaskbar.top ||
-                rcBridge.right != rcTaskbar.right ||
-                rcBridge.bottom != rcTaskbar.bottom) {
-                CopyRect(rcResult, &rcBridge);
-                return true;
-            }
-
-            hBridgeWnd = FindWindowEx(
-                hMMTaskbarWnd, hBridgeWnd,
+        if (GetWindowRect(hMMTaskbarWnd, &rcTaskbar)) {
+            HWND hBridgeWnd = FindWindowEx(
+                hMMTaskbarWnd, NULL,
                 L"Windows.UI.Composition.DesktopWindowContentBridge", NULL);
+            while (hBridgeWnd) {
+                RECT rcBridge;
+                if (!GetWindowRect(hBridgeWnd, &rcBridge)) {
+                    break;
+                }
+
+                if (!EqualRect(&rcBridge, &rcTaskbar)) {
+                    if (IsRectEmpty(&rcBridge)) {
+                        break;
+                    }
+
+                    CopyRect(rcResult, &rcBridge);
+                    return true;
+                }
+
+                hBridgeWnd = FindWindowEx(
+                    hMMTaskbarWnd, hBridgeWnd,
+                    L"Windows.UI.Composition.DesktopWindowContentBridge", NULL);
+            }
         }
 
         // On newer Win11 versions, the clock on secondary taskbars is difficult
-        // to detect without either UI Automation or UWP UI APIs. Just consider
-        // the last pixels, not accurate, but better than nothing.
-        int lastPixels =
-            MulDiv(50, GetDpiForWindowWithFallback(hMMTaskbarWnd), 96);
-        CopyRect(rcResult, &rcTaskbar);
-        if (rcResult->right - rcResult->left > lastPixels) {
-            if (GetWindowLong(hMMTaskbarWnd, GWL_EXSTYLE) & WS_EX_LAYOUTRTL) {
-                rcResult->right = rcResult->left + lastPixels;
-            } else {
-                rcResult->left = rcResult->right - lastPixels;
-            }
+        // to detect without either UI Automation or UWP UI APIs. Use fallback.
+    } else if (g_nExplorerVersion >= WIN_VERSION_10_R1) {
+        HWND hClockButtonWnd =
+            FindWindowEx(hMMTaskbarWnd, NULL, L"ClockButton", NULL);
+        if (hClockButtonWnd && GetWindowRect(hClockButtonWnd, rcResult) &&
+            !IsRectEmpty(rcResult)) {
+            return true;
         }
-
+    } else {
+        // In older Windows versions, there's no clock on the secondary taskbar.
+        SetRectEmpty(rcResult);
         return true;
     }
 
-    if (g_nExplorerVersion >= WIN_VERSION_10_R1) {
-        HWND hClockButtonWnd =
-            FindWindowEx(hMMTaskbarWnd, NULL, L"ClockButton", NULL);
-        if (!hClockButtonWnd) {
-            return false;
-        }
-
-        return GetWindowRect(hClockButtonWnd, rcResult);
+    RECT rcTaskbar;
+    if (!GetWindowRect(hMMTaskbarWnd, &rcTaskbar)) {
+        return false;
     }
 
-    SetRectEmpty(rcResult);
+    // Just consider the last pixels as a fallback, not accurate, but better
+    // than nothing.
+    int lastPixels = MulDiv(50, GetDpiForWindowWithFallback(hMMTaskbarWnd), 96);
+    CopyRect(rcResult, &rcTaskbar);
+    if (rcResult->right - rcResult->left > lastPixels) {
+        if (GetWindowLong(hMMTaskbarWnd, GWL_EXSTYLE) & WS_EX_LAYOUTRTL) {
+            rcResult->right = rcResult->left + lastPixels;
+        } else {
+            rcResult->left = rcResult->right - lastPixels;
+        }
+    }
+
     return true;
 }
 
