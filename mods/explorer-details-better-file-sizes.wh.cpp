@@ -1265,6 +1265,11 @@ unsigned Everything4Wh_GetFileSize(PCWSTR folderPath, int64_t* size) {
     }
 
     EVERYTHING3_CLIENT* pClient = Everything3_ConnectW(L"1.5a");
+
+    if (!pClient) {
+        pClient = Everything3_ConnectW(nullptr);
+    }
+
     if (pClient) {
         *size = Everything3_GetFolderSizeFromFilenameW(pClient, folderPath);
         Everything3_DestroyClient(pClient);
