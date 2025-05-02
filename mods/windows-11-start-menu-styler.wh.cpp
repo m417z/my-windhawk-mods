@@ -1923,6 +1923,7 @@ HRESULT InjectWindhawkTAP() noexcept
 #include <roapi.h>
 #include <winstring.h>
 
+#include <winrt/Microsoft.Web.WebView2.Core.h>
 #include <winrt/Windows.Foundation.Collections.h>
 #include <winrt/Windows.Foundation.h>
 #include <winrt/Windows.UI.Core.h>
@@ -2024,6 +2025,7 @@ std::wstring g_webContentJs;
 
 struct WebViewCustomizationState {
     winrt::weak_ref<FrameworkElement> element;
+    bool isWebView2 = false;
     winrt::event_token navigationCompletedEventToken;
 };
 
@@ -2715,6 +2717,44 @@ void RestoreCustomizationsForVisualStateGroup(
     }
 }
 
+// winrt::WebView2Standalone::Controls::IWebView2
+// 59C47E46-CC96-525F-A17C-2C213F988447
+constexpr winrt::guid IID_WebView2Standalone_IWebView2{
+    0x59C47E46,
+    0xCC96,
+    0x525F,
+    {0xA1, 0x7C, 0x2C, 0x21, 0x3F, 0x98, 0x84, 0x47}};
+
+// clang-format off
+struct WebView2Standalone_IWebView2 : ::IInspectable {
+    virtual int32_t __stdcall get_CoreWebView2(void**) noexcept = 0;
+    virtual int32_t __stdcall get_CoreWebView2Controller(void**) noexcept = 0;
+    virtual int32_t __stdcall EnsureCoreWebView2Async(void**) noexcept = 0;
+    virtual int32_t __stdcall ExecuteScriptAsync(void*, void**) noexcept = 0;
+    virtual int32_t __stdcall get_Source(void**) noexcept = 0;
+    virtual int32_t __stdcall put_Source(void*) noexcept = 0;
+    virtual int32_t __stdcall get_CanGoForward(bool*) noexcept = 0;
+    virtual int32_t __stdcall put_CanGoForward(bool) noexcept = 0;
+    virtual int32_t __stdcall get_CanGoBack(bool*) noexcept = 0;
+    virtual int32_t __stdcall put_CanGoBack(bool) noexcept = 0;
+    virtual int32_t __stdcall Reload() noexcept = 0;
+    virtual int32_t __stdcall GoForward() noexcept = 0;
+    virtual int32_t __stdcall GoBack() noexcept = 0;
+    virtual int32_t __stdcall NavigateToString(void*) noexcept = 0;
+    virtual int32_t __stdcall Close() noexcept = 0;
+    virtual int32_t __stdcall add_NavigationCompleted(void*, winrt::event_token*) noexcept = 0;
+    virtual int32_t __stdcall remove_NavigationCompleted(winrt::event_token) noexcept = 0;
+    virtual int32_t __stdcall add_WebMessageReceived(void*, winrt::event_token*) noexcept = 0;
+    virtual int32_t __stdcall remove_WebMessageReceived(winrt::event_token) noexcept = 0;
+    virtual int32_t __stdcall add_NavigationStarting(void*, winrt::event_token*) noexcept = 0;
+    virtual int32_t __stdcall remove_NavigationStarting(winrt::event_token) noexcept = 0;
+    virtual int32_t __stdcall add_CoreProcessFailed(void*, winrt::event_token*) noexcept = 0;
+    virtual int32_t __stdcall remove_CoreProcessFailed(winrt::event_token) noexcept = 0;
+    virtual int32_t __stdcall add_CoreWebView2Initialized(void*, winrt::event_token*) noexcept = 0;
+    virtual int32_t __stdcall remove_CoreWebView2Initialized(winrt::event_token) noexcept = 0;
+};
+// clang-format on
+
 std::wstring EscapeJsTemplateString(std::wstring_view str) {
     std::wstring buffer;
     buffer.reserve(str.size());
@@ -2735,7 +2775,46 @@ std::wstring EscapeJsTemplateString(std::wstring_view str) {
     return buffer;
 }
 
-bool ApplyWebViewCustomizations(Controls::WebView webViewElement) {
+std::wstring CreateWebViewJsCodeForApply() {
+    std::wstring jsCode =
+        LR"(
+        (() => {
+        const styleElementId = "windhawk-windows-11-start-menu-styler-style";
+        const styleContent = `
+    )";
+
+    jsCode += EscapeJsTemplateString(g_webContentCss);
+
+    jsCode +=
+        LR"(
+        `;
+        if (!document.getElementById(styleElementId)) {
+            const style = document.createElement("style");
+            style.id = styleElementId;
+            style.textContent = styleContent;
+            document.head.appendChild(style);
+        }
+    )";
+
+    jsCode += g_webContentJs;
+
+    jsCode +=
+        LR"(
+        })();
+    )";
+
+    Wh_Log(L"======================================== JS:");
+    std::wstringstream ss(jsCode);
+    std::wstring line;
+    while (std::getline(ss, line, L'\n')) {
+        Wh_Log(L"%s", line.c_str());
+    }
+    Wh_Log(L"========================================");
+
+    return jsCode;
+}
+
+bool ApplyWebViewStyleCustomizations(Controls::WebView webViewElement) {
     auto source = webViewElement.Source();
     if (!source) {
         return false;
@@ -2758,79 +2837,59 @@ bool ApplyWebViewCustomizations(Controls::WebView webViewElement) {
         return false;
     }
 
-    std::wstring jsCode =
-        LR"(
-        const styleElementId = "windhawk-windows-11-start-menu-styler-style";
-        const styleContent = `
-    )";
-
-    jsCode += EscapeJsTemplateString(g_webContentCss);
-
-    jsCode +=
-        LR"(
-        `;
-        if (!document.getElementById(styleElementId)) {
-            const style = document.createElement("style");
-            style.id = styleElementId;
-            style.textContent = styleContent;
-            document.head.appendChild(style);
-        }
-    )";
-
-    jsCode += g_webContentJs;
-
-    Wh_Log(L"======================================== JS:");
-    Wh_Log(L"%p", winrt::get_abi(webViewElement));
-    std::wstringstream ss(jsCode);
-    std::wstring line;
-    while (std::getline(ss, line, L'\n')) {
-        Wh_Log(L"%s", line.c_str());
-    }
-    Wh_Log(L"========================================");
+    std::wstring jsCode = CreateWebViewJsCodeForApply();
 
     webViewElement.InvokeScriptAsync(
-        L"eval",
-        winrt::single_threaded_vector<winrt::hstring>({jsCode.c_str()}));
+        L"eval", winrt::single_threaded_vector<winrt::hstring>(
+                     {winrt::hstring(jsCode.c_str(), jsCode.size())}));
 
     return true;
 }
 
-void ClearWebViewCustomizations(Controls::WebView webViewElement) {
-    PCWSTR jsCode =
-        LR"(
-        const styleElementId = "windhawk-windows-11-start-menu-styler-style";
-        const style = document.getElementById(styleElementId);
-        if (style) {
-            style.parentNode.removeChild(style);
-        }
-    )";
-
-    Wh_Log(L"======================================== JS:");
-    Wh_Log(L"%p", winrt::get_abi(webViewElement));
-    std::wstringstream ss(jsCode);
-    std::wstring line;
-    while (std::getline(ss, line, L'\n')) {
-        Wh_Log(L"%s", line.c_str());
+bool ApplyWebView2StyleCustomizations(
+    WebView2Standalone_IWebView2* webViewElement) {
+    void* sourcePtr;
+    winrt::check_hresult(webViewElement->get_Source(&sourcePtr));
+    auto source = winrt::Windows::Foundation::Uri{
+        sourcePtr, winrt::take_ownership_from_abi};
+    if (!source) {
+        return false;
     }
-    Wh_Log(L"========================================");
 
-    webViewElement.InvokeScriptAsync(
-        L"eval", winrt::single_threaded_vector<winrt::hstring>(
-                     {winrt::to_hstring(jsCode)}));
+    auto canonicalUri = source.AbsoluteCanonicalUri();
+    Wh_Log(L"WebView source: %s", canonicalUri.c_str());
+
+    if (canonicalUri != L"https://www.bing.com/WS/Init" &&
+        // Offline content (DisableSearchBoxSuggestions registry option).
+        canonicalUri !=
+            L"https://searchapp.bundleassets.example/desktop/2.html") {
+        return false;
+    }
+
+    std::wstring jsCode = CreateWebViewJsCodeForApply();
+
+    void* operationPtr;
+    auto jsCodeHstring = winrt::hstring(jsCode.c_str(), jsCode.size());
+    winrt::check_hresult(webViewElement->ExecuteScriptAsync(
+        *(void**)(&jsCodeHstring), &operationPtr));
+    auto operation =
+        winrt::Windows::Foundation::IAsyncOperation<winrt::hstring>{
+            operationPtr, winrt::take_ownership_from_abi};
+
+    return true;
 }
 
-void ApplyCustomizations(InstanceHandle handle,
-                         FrameworkElement element,
-                         PCWSTR fallbackClassName) {
-    if ((!g_webContentCss.empty() || !g_webContentJs.empty()) &&
-        winrt::get_class_name(element) == L"Windows.UI.Xaml.Controls.WebView") {
+void ApplyCustomizationsIfWebView(InstanceHandle handle,
+                                  FrameworkElement element) {
+    auto className = winrt::get_class_name(element);
+    if (className == L"Windows.UI.Xaml.Controls.WebView") {
         auto& webViewCustomizationState = g_webViewsCustomizationState[handle];
         if (!webViewCustomizationState.element.get()) {
             webViewCustomizationState.element = element;
 
             auto webViewElement = element.as<Controls::WebView>();
 
-            ApplyWebViewCustomizations(webViewElement);
+            ApplyWebViewStyleCustomizations(webViewElement);
 
             webViewCustomizationState.navigationCompletedEventToken =
                 webViewElement.NavigationCompleted(
@@ -2838,9 +2897,134 @@ void ApplyCustomizations(InstanceHandle handle,
                        const Controls::WebViewNavigationCompletedEventArgs&
                            args) {
                         if (args.IsSuccess()) {
-                            ApplyWebViewCustomizations(sender);
+                            ApplyWebViewStyleCustomizations(sender);
                         }
                     });
+        }
+    } else if (className == L"WebView2Standalone.Controls.WebView2") {
+        auto& webViewCustomizationState = g_webViewsCustomizationState[handle];
+        if (!webViewCustomizationState.element.get()) {
+            webViewCustomizationState.element = element;
+            webViewCustomizationState.isWebView2 = true;
+
+            winrt::com_ptr<WebView2Standalone_IWebView2> webViewElement;
+            winrt::check_hresult(
+                ((IUnknown*)winrt::get_abi(element))
+                    ->QueryInterface(IID_WebView2Standalone_IWebView2,
+                                     webViewElement.put_void()));
+
+            ApplyWebView2StyleCustomizations(webViewElement.get());
+
+            winrt::Windows::Foundation::TypedEventHandler<
+                winrt::Windows::Foundation::IInspectable,
+                winrt::Microsoft::Web::WebView2::Core::
+                    CoreWebView2NavigationCompletedEventArgs>
+                eventHandler =
+                    [](const winrt::Windows::Foundation::IInspectable& sender,
+                       const winrt::Microsoft::Web::WebView2::Core::
+                           CoreWebView2NavigationCompletedEventArgs& args) {
+                        if (args.IsSuccess()) {
+                            winrt::com_ptr<WebView2Standalone_IWebView2>
+                                webViewElement;
+                            winrt::check_hresult(
+                                ((IUnknown*)winrt::get_abi(sender))
+                                    ->QueryInterface(
+                                        IID_WebView2Standalone_IWebView2,
+                                        webViewElement.put_void()));
+
+                            ApplyWebView2StyleCustomizations(
+                                webViewElement.get());
+                        }
+                    };
+
+            winrt::check_hresult(webViewElement->add_NavigationCompleted(
+                *(void**)(&eventHandler),
+                put_abi(
+                    webViewCustomizationState.navigationCompletedEventToken)));
+        }
+    }
+}
+
+PCWSTR CreateWebViewJsCodeForClear() {
+    PCWSTR jsCode =
+        LR"(
+        (() => {
+        const styleElementId = "windhawk-windows-11-start-menu-styler-style";
+        const style = document.getElementById(styleElementId);
+        if (style) {
+            style.parentNode.removeChild(style);
+        }
+        })();
+    )";
+
+    Wh_Log(L"======================================== JS:");
+    std::wstringstream ss(jsCode);
+    std::wstring line;
+    while (std::getline(ss, line, L'\n')) {
+        Wh_Log(L"%s", line.c_str());
+    }
+    Wh_Log(L"========================================");
+
+    return jsCode;
+}
+
+void ClearWebViewStyleCustomizations(Controls::WebView webViewElement) {
+    PCWSTR jsCode = CreateWebViewJsCodeForClear();
+
+    webViewElement.InvokeScriptAsync(
+        L"eval", winrt::single_threaded_vector<winrt::hstring>(
+                     {winrt::hstring(jsCode)}));
+}
+
+void ClearWebView2StyleCustomizations(
+    WebView2Standalone_IWebView2* webViewElement) {
+    PCWSTR jsCode = CreateWebViewJsCodeForClear();
+
+    void* operationPtr;
+    auto jsCodeHstring = winrt::hstring(jsCode);
+    winrt::check_hresult(webViewElement->ExecuteScriptAsync(
+        *(void**)(&jsCodeHstring), &operationPtr));
+    auto operation =
+        winrt::Windows::Foundation::IAsyncOperation<winrt::hstring>{
+            operationPtr, winrt::take_ownership_from_abi};
+}
+
+void ClearWebViewCustomizations(
+    const WebViewCustomizationState& webViewCustomizationState) {
+    auto element = webViewCustomizationState.element.get();
+    if (!element) {
+        return;
+    }
+
+    if (!webViewCustomizationState.isWebView2) {
+        auto webViewElement = element.as<Controls::WebView>();
+
+        ClearWebViewStyleCustomizations(webViewElement);
+
+        webViewElement.NavigationCompleted(
+            webViewCustomizationState.navigationCompletedEventToken);
+    } else {
+        winrt::com_ptr<WebView2Standalone_IWebView2> webViewElement;
+        winrt::check_hresult(
+            ((IUnknown*)winrt::get_abi(element))
+                ->QueryInterface(IID_WebView2Standalone_IWebView2,
+                                 webViewElement.put_void()));
+
+        ClearWebView2StyleCustomizations(webViewElement.get());
+
+        winrt::check_hresult(webViewElement->remove_NavigationCompleted(
+            webViewCustomizationState.navigationCompletedEventToken));
+    }
+}
+
+void ApplyCustomizations(InstanceHandle handle,
+                         FrameworkElement element,
+                         PCWSTR fallbackClassName) {
+    if (!g_webContentCss.empty() || !g_webContentJs.empty()) {
+        try {
+            ApplyCustomizationsIfWebView(handle, element);
+        } catch (winrt::hresult_error const& ex) {
+            Wh_Log(L"Error %08X: %s", ex.code(), ex.message().c_str());
         }
     }
 
@@ -2898,16 +3082,11 @@ void CleanupCustomizations(InstanceHandle handle) {
 
     if (auto it = g_webViewsCustomizationState.find(handle);
         it != g_webViewsCustomizationState.end()) {
-        auto& webViewCustomizationState = it->second;
-
-        auto element = webViewCustomizationState.element.get();
-        if (element) {
-            auto webViewElement = element.as<Controls::WebView>();
-
-            ClearWebViewCustomizations(webViewElement);
-
-            webViewElement.NavigationCompleted(
-                webViewCustomizationState.navigationCompletedEventToken);
+        const auto& webViewCustomizationState = it->second;
+        try {
+            ClearWebViewCustomizations(webViewCustomizationState);
+        } catch (winrt::hresult_error const& ex) {
+            Wh_Log(L"Error %08X: %s", ex.code(), ex.message().c_str());
         }
 
         g_webViewsCustomizationState.erase(it);
@@ -3317,14 +3496,10 @@ void UninitializeSettingsAndTap() {
 
     for (const auto& [handle, webViewCustomizationState] :
          g_webViewsCustomizationState) {
-        auto element = webViewCustomizationState.element.get();
-        if (element) {
-            auto webViewElement = element.as<Controls::WebView>();
-
-            ClearWebViewCustomizations(webViewElement);
-
-            webViewElement.NavigationCompleted(
-                webViewCustomizationState.navigationCompletedEventToken);
+        try {
+            ClearWebViewCustomizations(webViewCustomizationState);
+        } catch (winrt::hresult_error const& ex) {
+            Wh_Log(L"Error %08X: %s", ex.code(), ex.message().c_str());
         }
     }
 
