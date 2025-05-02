@@ -1264,10 +1264,10 @@ unsigned Everything4Wh_GetFileSize(PCWSTR folderPath, int64_t* size) {
         return ES_QUERY_NO_ES_IPC;
     }
 
-    EVERYTHING3_CLIENT* pClient = Everything3_ConnectW(L"1.5a");
+    EVERYTHING3_CLIENT* pClient = Everything3_ConnectW(nullptr);
 
     if (!pClient) {
-        pClient = Everything3_ConnectW(nullptr);
+        pClient = Everything3_ConnectW(L"1.5a");
     }
 
     if (pClient) {
