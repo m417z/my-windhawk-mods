@@ -2,7 +2,7 @@
 // @id              start-menu-all-apps
 // @name            Show all apps by default in start menu
 // @description     When the Windows 11 start menu is opened, show all apps right away
-// @version         1.0.3
+// @version         1.0.4
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
@@ -38,6 +38,9 @@ After (when the start menu is opened):
 
 #include <windhawk_utils.h>
 
+bool g_inStartInnerFrameConstructor;
+void* g_IDockedStartControllerOverrides_as_pThis;
+
 using ShowAllApps_t = void(WINAPI*)(void* pThis);
 ShowAllApps_t ShowAllApps_Original;
 
@@ -62,12 +65,41 @@ void* WINAPI StartInnerFrameConstructor_Hook(void* pThis,
                                              void* param2) {
     Wh_Log(L">");
 
+    g_inStartInnerFrameConstructor = true;
+
     void* ret = StartInnerFrameConstructor_Original(
         pThis, dockedStartController, param2);
 
+    g_inStartInnerFrameConstructor = false;
+
+    void* controllerOverrides = g_IDockedStartControllerOverrides_as_pThis;
+    if (!controllerOverrides) {
+        // In older versions, IDockedStartControllerOverrides_as doesn't exist,
+        // and the param is the right variable.
+        controllerOverrides = dockedStartController;
+    }
+
     // Show all apps on initialization. Prepares the start menu for the first
     // time it's opened.
-    ShowAllApps_Original(dockedStartController);
+    ShowAllApps_Original(controllerOverrides);
+
+    return ret;
+}
+
+using IDockedStartControllerOverrides_as_t = void*(WINAPI*)(void* pThis,
+                                                            void* param1);
+IDockedStartControllerOverrides_as_t
+    IDockedStartControllerOverrides_as_Original;
+void* WINAPI IDockedStartControllerOverrides_as_Hook(void* pThis,
+                                                     void* param1) {
+    Wh_Log(L">");
+
+    if (g_inStartInnerFrameConstructor &&
+        !g_IDockedStartControllerOverrides_as_pThis) {
+        g_IDockedStartControllerOverrides_as_pThis = pThis;
+    }
+
+    void* ret = IDockedStartControllerOverrides_as_Original(pThis, param1);
 
     return ret;
 }
@@ -136,6 +168,12 @@ BOOL Wh_ModInit() {
             {LR"(public: __cdecl winrt::StartMenu::implementation::StartInnerFrame::StartInnerFrame(struct winrt::WindowsUdk::UI::StartScreen::Implementation::DockedStartController const &,struct winrt::Windows::Foundation::IInspectable const &))"},
             &StartInnerFrameConstructor_Original,
             StartInnerFrameConstructor_Hook,
+        },
+        {
+            {LR"(struct winrt::WindowsUdk::UI::StartScreen::Implementation::IDockedStartControllerOverrides __cdecl winrt::impl::as<struct winrt::WindowsUdk::UI::StartScreen::Implementation::IDockedStartControllerOverrides,struct winrt::impl::abi<struct winrt::Windows::Foundation::IUnknown,void>::type,0>(struct winrt::impl::abi<struct winrt::Windows::Foundation::IUnknown,void>::type *))"},
+            &IDockedStartControllerOverrides_as_Original,
+            IDockedStartControllerOverrides_as_Hook,
+            true,  // Added in KB5055627.
         },
     };
 
