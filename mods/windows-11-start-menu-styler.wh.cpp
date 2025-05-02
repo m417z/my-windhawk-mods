@@ -1923,7 +1923,6 @@ HRESULT InjectWindhawkTAP() noexcept
 #include <roapi.h>
 #include <winstring.h>
 
-#include <winrt/Microsoft.Web.WebView2.Core.h>
 #include <winrt/Windows.Foundation.Collections.h>
 #include <winrt/Windows.Foundation.h>
 #include <winrt/Windows.UI.Core.h>
@@ -2725,6 +2724,13 @@ constexpr winrt::guid IID_WebView2Standalone_IWebView2{
     0x525F,
     {0xA1, 0x7C, 0x2C, 0x21, 0x3F, 0x98, 0x84, 0x47}};
 
+// 4865E238-036A-5664-95A3-447EC44CF498
+constexpr winrt::guid IID_ICoreWebView2NavigationCompletedEventArgs{
+    0x4865E238,
+    0x036A,
+    0x5664,
+    {0x95, 0xA3, 0x44, 0x7E, 0xC4, 0x4C, 0xF4, 0x98}};
+
 // clang-format off
 struct WebView2Standalone_IWebView2 : ::IInspectable {
     virtual int32_t __stdcall get_CoreWebView2(void**) noexcept = 0;
@@ -2752,6 +2758,12 @@ struct WebView2Standalone_IWebView2 : ::IInspectable {
     virtual int32_t __stdcall remove_CoreProcessFailed(winrt::event_token) noexcept = 0;
     virtual int32_t __stdcall add_CoreWebView2Initialized(void*, winrt::event_token*) noexcept = 0;
     virtual int32_t __stdcall remove_CoreWebView2Initialized(winrt::event_token) noexcept = 0;
+};
+
+struct ICoreWebView2NavigationCompletedEventArgs : ::IInspectable {
+    virtual int32_t __stdcall get_IsSuccess(bool*) noexcept = 0;
+    virtual int32_t __stdcall get_WebErrorStatus(int32_t*) noexcept = 0;
+    virtual int32_t __stdcall get_NavigationId(uint64_t*) noexcept = 0;
 };
 // clang-format on
 
@@ -2917,25 +2929,33 @@ void ApplyCustomizationsIfWebView(InstanceHandle handle,
 
             winrt::Windows::Foundation::TypedEventHandler<
                 winrt::Windows::Foundation::IInspectable,
-                winrt::Microsoft::Web::WebView2::Core::
-                    CoreWebView2NavigationCompletedEventArgs>
-                eventHandler =
-                    [](const winrt::Windows::Foundation::IInspectable& sender,
-                       const winrt::Microsoft::Web::WebView2::Core::
-                           CoreWebView2NavigationCompletedEventArgs& args) {
-                        if (args.IsSuccess()) {
-                            winrt::com_ptr<WebView2Standalone_IWebView2>
-                                webViewElement;
-                            winrt::check_hresult(
-                                ((IUnknown*)winrt::get_abi(sender))
-                                    ->QueryInterface(
-                                        IID_WebView2Standalone_IWebView2,
-                                        webViewElement.put_void()));
+                winrt::Windows::Foundation::IInspectable>
+                eventHandler = [](const winrt::Windows::Foundation::
+                                      IInspectable& sender,
+                                  const winrt::Windows::Foundation::
+                                      IInspectable& args) {
+                    winrt::com_ptr<ICoreWebView2NavigationCompletedEventArgs>
+                        webViewArgs;
+                    winrt::check_hresult(
+                        ((IUnknown*)winrt::get_abi(args))
+                            ->QueryInterface(
+                                IID_ICoreWebView2NavigationCompletedEventArgs,
+                                webViewArgs.put_void()));
 
-                            ApplyWebView2StyleCustomizations(
-                                webViewElement.get());
-                        }
-                    };
+                    bool success;
+                    winrt::check_hresult(webViewArgs->get_IsSuccess(&success));
+                    if (!success) {
+                        return;
+                    }
+
+                    winrt::com_ptr<WebView2Standalone_IWebView2> webViewElement;
+                    winrt::check_hresult(
+                        ((IUnknown*)winrt::get_abi(sender))
+                            ->QueryInterface(IID_WebView2Standalone_IWebView2,
+                                             webViewElement.put_void()));
+
+                    ApplyWebView2StyleCustomizations(webViewElement.get());
+                };
 
             winrt::check_hresult(webViewElement->add_NavigationCompleted(
                 *(void**)(&eventHandler),
