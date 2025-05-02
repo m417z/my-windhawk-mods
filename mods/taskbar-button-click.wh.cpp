@@ -25,7 +25,8 @@
 # Middle click to close on the taskbar
 
 Close programs with the middle click on the taskbar instead of creating a new
-instance.
+instance. Note that Shift+click can be used in Windows as an alternative way to
+create a new instance, which is not affected by this mod.
 
 Holding Ctrl while middle clicking will end the running task. The key
 combination can be configured or disabled in the mod settings.
