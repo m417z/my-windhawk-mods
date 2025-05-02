@@ -45,6 +45,8 @@ For a more detailed explanation and examples, refer to the sections below.
 
 The [UWPSpy](https://ramensoftware.com/uwpspy) tool can be used to inspect the
 file explorer control elements in real time, and experiment with various styles.
+To target file explorer with UWPSpy, select the `explorer.exe` process and the
+WinUI 3 target framework.
 
 ### Control styles
 
