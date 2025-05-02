@@ -172,8 +172,7 @@ The following JavaScript code can be used to load a bundled version of DOM
 Inspector:
 
 ```
-const
-s=document.createElement('script');s.setAttribute('src','https://m417z.github.io/DOM-inspector/acid-dom/bundled.js');document.head.appendChild(s);
+const s=document.createElement('script');s.setAttribute('src','https://m417z.github.io/DOM-inspector/acid-dom/bundled.js');document.head.appendChild(s);
 ```
 
 To reset all side-effects of the injected scripts, clear the custom code in the
