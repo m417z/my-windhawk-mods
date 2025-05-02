@@ -1152,7 +1152,9 @@ typedef struct {
 
 constexpr DWORD kGsTimeoutIPC = 1000;
 
-#define GS_SEARCH_PREFIX L"folder:wfn:\""
+// Prefix with :: to always use the built-in search modifiers. See:
+// https://www.voidtools.com/forum/viewtopic.php?p=75105#p75105
+#define GS_SEARCH_PREFIX L"::folder:::wfn:\""
 #define GS_SEARCH_SUFFIX L"\""
 
 std::atomic<HWND> g_gsReceiverWnd;
