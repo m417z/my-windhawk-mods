@@ -36,6 +36,11 @@ Styler** and **Windows 11 Notification Center Styler** mods.
 
 No themes are currently integrated into the mod.
 
+More themes can be found in the **Themes** section of [The Windows 11 file
+explorer styling
+guide](https://github.com/ramensoftware/windows-11-file-explorer-styling-guide/blob/main/README.md#themes).
+Contributions of new themes are welcome!
+
 ## Advanced styling
 
 Aside from themes, the settings have two sections: control styles and resource
@@ -47,6 +52,10 @@ The [UWPSpy](https://ramensoftware.com/uwpspy) tool can be used to inspect the
 file explorer control elements in real time, and experiment with various styles.
 To target file explorer with UWPSpy, select the `explorer.exe` process and the
 WinUI 3 target framework.
+
+For a collection of commonly requested file explorer styling customizations,
+check out [The Windows 11 file explorer styling
+guide](https://github.com/ramensoftware/windows-11-file-explorer-styling-guide/blob/main/README.md).
 
 ### Control styles
 
