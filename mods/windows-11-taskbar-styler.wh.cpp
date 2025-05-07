@@ -641,11 +641,11 @@ const Theme g_themeRosePine = {{
 }};
 
 const Theme g_themeDockLike = {{
-    ThemeTargetStyles{L"Taskbar.TaskbarFrame#TaskbarFrame", {
+    ThemeTargetStyles{L"Taskbar.TaskbarFrame", {
         L"Width=Auto",
         L"HorizontalAlignment=Center",
         L"Margin=250,0,250,0"}},
-    ThemeTargetStyles{L"Taskbar.TaskbarFrame#TaskbarFrame > Grid#RootGrid", {
+    ThemeTargetStyles{L"Taskbar.TaskbarFrame > Grid#RootGrid", {
         L"Background:=<AcrylicBrush TintColor=\"{ThemeResource SystemChromeAltHighColor}\" TintOpacity=\"0.8\" FallbackColor=\"{ThemeResource SystemChromeLowColor}\" />",
         L"Padding=6,0,6,0",
         L"CornerRadius=8,8,0,0",
@@ -929,8 +929,7 @@ const Theme g_theme21996Taskbar = {{
     ThemeTargetStyles{L"SystemTray.NotifyIconView#NotifyItemIcon", {
         L"CornerRadius=0",
         L"Height=61",
-        L"Margin=0,-5,0,0",
-        L"Width=22"}},
+        L"Margin=0,-5,0,0"}},
     ThemeTargetStyles{L"SystemTray.ChevronIconView", {
         L"CornerRadius=0",
         L"Height=61",
@@ -948,11 +947,9 @@ const Theme g_theme21996Taskbar = {{
         L"Padding=0,0,0,0",
         L"Margin=0,0,0,0"}},
     ThemeTargetStyles{L"SystemTray.Stack#NonActivatableStack", {
-        L"Visibility=Collapsed",
         L"Height=61",
         L"CornerRadius=0",
-        L"Margin=0,-7.5,0,0",
-        L"Width=36"}},
+        L"Margin=0,-7.5,-6,0"}},
     ThemeTargetStyles{L"Rectangle#ShowDesktopPipe@CommonStates", {
         L"Width=9",
         L"Margin=0,0,-10,0",
@@ -960,7 +957,7 @@ const Theme g_theme21996Taskbar = {{
         L"Fill@Active:=<AcrylicBrush TintColor=\"{ThemeResource SystemBaseLowColor}\" TintOpacity=\"0.5\" Opacity=\"0\"/>",
         L"Stroke:=<SolidColorBrush Color=\"{ThemeResource SystemBaseHighColor}\" Opacity=\"0.5\"/>"}},
     ThemeTargetStyles{L"SystemTray.OmniButton#ControlCenterButton", {
-        L"Padding=0,0,0,0",
+        L"Padding=0",
         L"CornerRadius=0",
         L"Margin=0,0,0,0"}},
     ThemeTargetStyles{L"SystemTray.AdaptiveTextBlock#LanguageInnerTextBlock > TextBlock#InnerTextBlock", {
@@ -980,11 +977,11 @@ const Theme g_theme21996Taskbar = {{
     ThemeTargetStyles{L"SystemTray.AdaptiveTextBlock#Underlay > Windows.UI.Xaml.Controls.TextBlock#InnerTextBlock", {
         L"FontFamily=Segoe MDL2 Assets"}},
     ThemeTargetStyles{L"SystemTray.OmniButton#ControlCenterButton > Grid > ContentPresenter > ItemsPresenter > StackPanel > ContentPresenter[1] > SystemTray.IconView > Grid > Grid", {
-        L"Margin=-5,0,0,0"}},
+        L"Margin=-6,0,0,0"}},
     ThemeTargetStyles{L"SystemTray.Stack#MainStack > Windows.UI.Xaml.Controls.Grid#Content", {
         L"CornerRadius=0",
         L"Height=61",
-        L"Margin=0,-7,0,0"}},
+        L"Margin=-4,-7,-4,0"}},
     ThemeTargetStyles{L"Windows.UI.Xaml.Controls.StackPanel > Windows.UI.Xaml.Controls.TextBlock#TimeInnerTextBlock", {
         L"FontFamily=Segoe UI",
         L"TextAlignment=0",
@@ -1003,26 +1000,22 @@ const Theme g_theme21996Taskbar = {{
     ThemeTargetStyles{L"SystemTray.Stack#NotifyIconStack", {
         L"Width=24"}},
     ThemeTargetStyles{L"SystemTray.OmniButton#ControlCenterButton > Grid > ContentPresenter > ItemsPresenter > StackPanel > ContentPresenter > SystemTray.IconView#SystemTrayIcon > Grid > Grid > SystemTray.TextIconContent > Windows.UI.Xaml.Controls.Grid > SystemTray.AdaptiveTextBlock > Windows.UI.Xaml.Controls.TextBlock", {
-        L"Text=\uE115",
-        L"FontSize=16.5",
-        L"Margin=0,-1,0,0",
+        L"FontSize=16",
+        L"Margin=0,-1,-0,0",
         L"FontWeight=0"}},
     ThemeTargetStyles{L"SystemTray.CopilotIcon#CopilotIcon", {
-        L"Visibility=Collapsed",
+        L"Visibility=Visible",
         L"Margin=0,-7,0,0",
         L"Height=61"}},
     ThemeTargetStyles{L"SystemTray.NotificationAreaOverflow > Windows.UI.Xaml.Controls.Grid#OverflowRootGrid > Windows.UI.Xaml.Controls.Border#OverflowFlyoutBackgroundBorder", {
-        L"CornerRadius=0"}},
+        L"CornerRadius=0",
+        L"Background:=<AcrylicBrush TintColor=\"{ThemeResource SystemChromeMediumColor}\" TintOpacity=\"0.76\" TintLuminosityOpacity=\"0.77\" FallbackColor=\"{ThemeResource SystemChromeMediumColor}\" />"}},
     ThemeTargetStyles{L"SystemTray.NotificationAreaOverflow > Windows.UI.Xaml.Controls.Grid#OverflowRootGrid > Windows.UI.Xaml.Controls.ItemsControl > Windows.UI.Xaml.Controls.ItemsPresenter > Windows.UI.Xaml.Controls.WrapGrid", {
         L"Margin=0,0,0,0"}},
     ThemeTargetStyles{L"SystemTray.NotifyIconView", {
         L"CornerRadius=0"}},
     ThemeTargetStyles{L"Windows.UI.Xaml.Controls.ScrollViewer > Windows.UI.Xaml.Controls.ScrollContentPresenter > Windows.UI.Xaml.Controls.Border > SystemTray.NotificationAreaOverflow", {
         L"Transform3D:=<CompositeTransform3D TranslateY=\"15\" />"}},
-    ThemeTargetStyles{L"SystemTray.OmniButton#ControlCenterButton > Grid > ContentPresenter > ItemsPresenter > StackPanel > ContentPresenter[1] > SystemTray.IconView > Grid > Grid", {
-        L"Visibility=Collapsed"}},
-    ThemeTargetStyles{L"SystemTray.OmniButton#ControlCenterButton > Grid > ContentPresenter > ItemsPresenter > StackPanel > ContentPresenter[3] > SystemTray.IconView > Grid > Grid", {
-        L"Visibility=Collapsed"}},
     ThemeTargetStyles{L"SystemTray.OmniButton#ControlCenterButton", {
         L"Visibility=Visible"}},
     ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Grid#RootGrid", {
@@ -1031,6 +1024,42 @@ const Theme g_theme21996Taskbar = {{
         L"Opacity=0.5"}},
     ThemeTargetStyles{L"Windows.UI.Xaml.Shapes.Rectangle#BackgroundStroke", {
         L"Visibility=Collapsed"}},
+    ThemeTargetStyles{L"SystemTray.OmniButton#ControlCenterButton > Grid > ContentPresenter > ItemsPresenter > StackPanel > ContentPresenter[3] > SystemTray.IconView > Grid > Grid", {
+        L"Margin=0,0,-6,0"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.ContentPresenter#HoverFlyoutContent", {
+        L"CornerRadius=0",
+        L"Margin=0,0,0,-15",
+        L"Background:=<AcrylicBrush TintColor=\"{ThemeResource SystemChromeMediumHighColor}\" TintOpacity=\"0.76\" TintLuminosityOpacity=\"0.67\" FallbackColor=\"{ThemeResource SystemChromeMediumColor}\" />"}},
+    ThemeTargetStyles{L"Taskbar.TaskItemThumbnailView > Grid > TextBlock", {
+        L"FontFamily=Segoe UI",
+        L"FontSize=12",
+        L"Margin=3,0,8,8"}},
+    ThemeTargetStyles{L"Taskbar.TaskItemThumbnailView > Windows.UI.Xaml.Controls.Grid > Microsoft.UI.Xaml.Controls.ItemsRepeater > Windows.UI.Xaml.Controls.Image", {
+        L"Margin=0,-7,0,0"}},
+    ThemeTargetStyles{L"Taskbar.TaskItemThumbnailView > Grid > Button > ContentPresenter > TextBlock", {
+        L"FontFamily=Segoe MDL2 Assets"}},
+    ThemeTargetStyles{L"Taskbar.TaskItemThumbnailView > Grid > Button", {
+        L"CornerRadius=0",
+        L"Height=32",
+        L"Margin=0,0,0,9",
+        L"Width=32"}},
+    ThemeTargetStyles{L"Grid#DetailedViewGrid", {
+        L"Margin=0,-7,0,0"}},
+    ThemeTargetStyles{L"Taskbar.TaskItemThumbnailView > Grid > Border", {
+        L"BorderBrush:=<SolidColorBrush Color=\"{ThemeResource SystemBaseHighColor}\" Opacity=\"0.5\" />",
+        L"CornerRadius=0"}},
+    ThemeTargetStyles{L"SystemTray.OmniButton#NotificationCenterButton > Windows.UI.Xaml.Controls.Grid > Windows.UI.Xaml.Controls.ContentPresenter > Windows.UI.Xaml.Controls.ItemsPresenter > Windows.UI.Xaml.Controls.StackPanel > Windows.UI.Xaml.Controls.ContentPresenter > SystemTray.IconView > Windows.UI.Xaml.Controls.Grid > Windows.UI.Xaml.Controls.ContentPresenter > Windows.UI.Xaml.Controls.Grid > SystemTray.TextIconContent > Windows.UI.Xaml.Controls.Grid > SystemTray.AdaptiveTextBlock#Base > Windows.UI.Xaml.Controls.TextBlock", {
+        L"Text=\u200E\uE91C",
+        L"FontWeight=Light",
+        L"FontSize=16.4",
+        L"Foreground:=<SolidColorBrush Color=\"{ThemeResource SystemBaseHighColor}\" />",
+        L"Margin=-1,0,1,0"}},
+    ThemeTargetStyles{L"SystemTray.OmniButton#NotificationCenterButton > Windows.UI.Xaml.Controls.Grid > Windows.UI.Xaml.Controls.ContentPresenter > Windows.UI.Xaml.Controls.ItemsPresenter > Windows.UI.Xaml.Controls.StackPanel > Windows.UI.Xaml.Controls.ContentPresenter > SystemTray.IconView", {
+        L"CornerRadius=0",
+        L"Padding=0,0,0,0"}},
+    ThemeTargetStyles{L"SystemTray.DateTimeIconContent > Windows.UI.Xaml.Controls.Grid > Windows.UI.Xaml.Controls.StackPanel > Windows.UI.Xaml.Controls.TextBlock", {
+        L"FontFamily=Segoe UI",
+        L"TextAlignment=Center"}},
 }};
 
 // clang-format on
