@@ -136,6 +136,9 @@ provides a built-in blur brush via the `WindhawkBlur` object, which supports the
 `BlurAmount` and `TintColor` properties. For example: `Fill:=<WindhawkBlur
 BlurAmount="10" TintColor="#80FF00FF"/>`.
 
+Targets and styles starting with two slashes (`//`) are ignored. This can be
+useful for temporarily disabling a target or style.
+
 A couple of practical examples:
 
 #### Task list button corner radius
@@ -3193,6 +3196,11 @@ bool ProcessSingleTargetStylesFromSettings(int index) {
         Wh_GetStringSetting(L"controlStyles[%d].target", index));
     if (!*targetStringSetting.get()) {
         return false;
+    }
+
+    // Skip if commented.
+    if (targetStringSetting[0] == L'/' && targetStringSetting[1] == L'/') {
+        return true;
     }
 
     Wh_Log(L"Processing styles for %s", targetStringSetting.get());
