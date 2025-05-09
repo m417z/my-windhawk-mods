@@ -277,6 +277,25 @@ const Theme g_themeTranslucentShell = {{
         L"FocusVisualPrimaryThickness=0,0,0,0"}},
     ThemeTargetStyles{L"ActionCenter.FlexibleItemView", {
         L"CornerRadius=15"}},
+    ThemeTargetStyles{L"ControlCenter.MediaTransportControls#MediaTransportControls > Windows.UI.Xaml.Controls.Grid#MediaTransportControlsRegion", {
+        L"Height=470"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Grid#AlbumTextAndArtContainer", {
+        L"Height=350"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Grid#ThumbnailImage", {
+        L"Width=300",
+        L"Height=300",
+        L"HorizontalAlignment=Center",
+        L"VerticalAlignment=Top",
+        L"Grid.Column=1"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Grid#ThumbnailImage > Windows.UI.Xaml.Controls.Border", {
+        L"CornerRadius=10"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.StackPanel#PrimaryAndSecondaryTextContainer", {
+        L"VerticalAlignment=Bottom",
+        L"Grid.Column=0"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.StackPanel#PrimaryAndSecondaryTextContainer > Windows.UI.Xaml.Controls.TextBlock#TitleText", {
+        L"TextAlignment=Center"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.StackPanel#PrimaryAndSecondaryTextContainer > Windows.UI.Xaml.Controls.TextBlock#SubtitleText", {
+        L"TextAlignment=Center"}},
 }};
 
 const Theme g_themeUnified = {{
