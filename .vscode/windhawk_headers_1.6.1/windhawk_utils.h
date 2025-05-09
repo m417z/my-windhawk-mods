@@ -5,17 +5,10 @@
 #include <commctrl.h>
 
 #include <algorithm>
+#include <initializer_list>
 #include <memory>
 #include <string_view>
 #include <type_traits>
-#include <utility>
-
-#ifdef WH_ENABLE_DEPRECATED_PARTS
-// Not used in this file, but was used in previous versions and some mods now
-// rely on it.
-#include <string>
-#include <vector>
-#endif  // WH_ENABLE_DEPRECATED_PARTS
 
 // Windhawk utilities that can be used by including this header file.
 namespace WindhawkUtils {
@@ -27,11 +20,11 @@ struct SYMBOL_HOOK {
      * @param symbols The list of symbol names to match. The first symbol that
      *     will match one of the names will be used.
      * @param originalFunction The pointer to the function pointer that will
-     *     receive the symbol address.
+     *     receive the symbol address. Can be `nullptr`.
      * @param hookFunction The hook function to set, or `nullptr` to only
      *     retrieve's the symbol's address.
      * @param optional If set to `true`, the absence of this symbol isn't
-     *     considered an error. If the symbol isn't found, `pOriginalFunction`
+     *     considered an error. If the symbol isn't found, `originalFunction`
      *     will be left unchanged.
      */
     template <typename Prototype>
@@ -41,7 +34,7 @@ struct SYMBOL_HOOK {
                 bool optional = false)
         : symbols(CopySymbols(symbols)),
           symbolsCount(symbols.size()),
-          pOriginalFunction(reinterpret_cast<void**>(originalFunction)),
+          originalFunction(reinterpret_cast<void**>(originalFunction)),
           hookFunction(reinterpret_cast<void*>(hookFunction)),
           optional(optional) {}
 
@@ -91,7 +84,7 @@ struct SYMBOL_HOOK {
 
     std::unique_ptr<SymbolString[]> symbols;
     size_t symbolsCount = 0;
-    void** pOriginalFunction = nullptr;
+    void** originalFunction = nullptr;
     void* hookFunction = nullptr;
     bool optional = false;
 
@@ -233,26 +226,6 @@ inline bool HookSymbols(HMODULE module,
     return false;
 #endif
 }
-
-#ifdef WH_ENABLE_DEPRECATED_PARTS
-// Deprecated, available for backwards compatibility.
-inline bool HookSymbols(HMODULE module,
-                        const SYMBOL_HOOK* symbolHooks,
-                        size_t symbolHooksCount,
-                        const WH_FIND_SYMBOL_OPTIONS* options) {
-    if (!options) {
-        return HookSymbols(module, symbolHooks, symbolHooksCount);
-    }
-
-    WH_HOOK_SYMBOLS_OPTIONS hookSymbolsOptions{
-        .optionsSize = sizeof(hookSymbolsOptions),
-        .symbolServer = options->symbolServer,
-        .noUndecoratedSymbols = options->noUndecoratedSymbols,
-    };
-    return HookSymbols(module, symbolHooks, symbolHooksCount,
-                       &hookSymbolsOptions);
-}
-#endif  // WH_ENABLE_DEPRECATED_PARTS
 
 // Implementation details.
 namespace detail {
