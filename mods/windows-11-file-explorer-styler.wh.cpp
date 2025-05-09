@@ -2,7 +2,7 @@
 // @id              windows-11-file-explorer-styler
 // @name            Windows 11 File Explorer Styler
 // @description     Customize the File Explorer with themes contributed by others or create your own
-// @version         1.0
+// @version         1.1
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
@@ -34,7 +34,14 @@ Styler** and **Windows 11 Notification Center Styler** mods.
 
 ## Themes
 
-No themes are currently integrated into the mod.
+Themes are collections of styles. The following themes are integrated into the
+mod and can be selected in the settings:
+
+[![Minimal
+Explorer11](https://raw.githubusercontent.com/ramensoftware/windows-11-file-explorer-styling-guide/main/Themes/Minimal%20Explorer11/screenshot-small.png)
+\
+Minimal
+Explorer11](https://github.com/ramensoftware/windows-11-file-explorer-styling-guide/blob/main/Themes/Minimal%20Explorer11/README.md)
 
 More themes can be found in the **Themes** section of [The Windows 11 file
 explorer styling
@@ -106,6 +113,15 @@ code from the **TranslucentTB** project.
 
 // ==WindhawkModSettings==
 /*
+- theme: ""
+  $name: Theme
+  $description: >-
+    Themes are collections of styles. For details about the themes below, or for
+    information about submitting your own theme, refer to the relevant section
+    in the mod details.
+  $options:
+  - "": None
+  - Minimal Explorer11: Minimal Explorer11
 - controlStyles:
   - - target: ""
       $name: Target
@@ -144,16 +160,115 @@ code from the **TranslucentTB** project.
 #include <xamlom.h>
 
 #include <atomic>
+#include <vector>
 
 #undef GetCurrentTime
 
 #include <winrt/Microsoft.UI.Xaml.h>
 
+struct ThemeTargetStyles {
+    PCWSTR target;
+    std::vector<PCWSTR> styles;
+};
+
+struct Theme {
+    std::vector<ThemeTargetStyles> targetStyles;
+    int explorerFrameContainerHeight = 0;
+};
+
+// clang-format off
+
+const Theme g_themeMinimal_Explorer11 = {{
+    ThemeTargetStyles{L"AppBarButton#backButton > Grid#Root@CommonStates > Border#AppBarButtonInnerBorder", {
+        L"Background@Normal:=<AcrylicBrush TintColor=\"Transparent\" Opacity=\"0.07\"/>",
+        L"Background@PointerOver:=<AcrylicBrush TintColor=\"Transparent\" Opacity=\"0.12\"/>",
+        L"Background@Pressed:=<AcrylicBrush TintColor=\"Transparent\" Opacity=\"0.12\"/>",
+        L"Background@Disabled:=<AcrylicBrush TintColor=\"Transparent\" Opacity=\"0.05\"/>"}},
+    ThemeTargetStyles{L"AppBarButton#forwardButton > Grid#Root@CommonStates > Border#AppBarButtonInnerBorder", {
+        L"Background@Normal:=<AcrylicBrush TintColor=\"Transparent\" Opacity=\"0.05\"/>",
+        L"Background@PointerOver:=<AcrylicBrush TintColor=\"Transparent\" Opacity=\"0.12\"/>",
+        L"Background@Pressed:=<AcrylicBrush TintColor=\"Transparent\" Opacity=\"0.12\"/>",
+        L"Background@Disabled:=<AcrylicBrush TintColor=\"Transparent\" Opacity=\"0.05\"/>"}},
+    ThemeTargetStyles{L"AppBarButton#refreshButton", {
+        L"Visibility=Collapsed"}},
+    ThemeTargetStyles{L"AppBarButton#upButton", {
+        L"Visibility=Collapsed"}},
+    ThemeTargetStyles{L"Border#BottomBorderLine", {
+        L"Visibility=Collapsed"}},
+    ThemeTargetStyles{L"FileExplorerExtensions.CommandBarControl", {
+        L"Visibility=Collapsed"}},
+    ThemeTargetStyles{L"FileExplorerExtensions.AddressBarControl > Grid#PART_LayoutRoot > Grid#NormalModeGrid", {
+        L"BorderThickness=0,0,0,1",
+        L"BorderBrush=#A0A0A0"}},
+    ThemeTargetStyles{L"Grid#DetailsViewControlRootGrid", {
+        L"Background=Transparent"}},
+    ThemeTargetStyles{L"Grid#TabContainerGrid > Border#LeftBottomBorderLine", {
+        L"Visibility=Collapsed"}},
+    ThemeTargetStyles{L"Grid#TabContainerGrid > Border#RightBottomBorderLine", {
+        L"Visibility=Collapsed"}},
+    ThemeTargetStyles{L"StackPanel#DetailsViewThumbnail > Grid", {
+        L"Background=Transparent"}},
+    ThemeTargetStyles{L"TabViewItem", {
+        L"Margin=0,0,3,0"}},
+    ThemeTargetStyles{L"TabViewItem > Grid#LayoutRoot", {
+        L"CornerRadius=4",
+        L"Margin=0,-3,0,3",
+        L"Height=28"}},
+    ThemeTargetStyles{L"TabViewItem > Grid#LayoutRoot > Canvas", {
+        L"Visibility=Collapsed"}},
+    ThemeTargetStyles{L"TabViewItem > Grid#LayoutRoot > Grid#TabContainer", {
+        L"Background=Transparent",
+        L"BorderBrush=Transparent"}},
+    ThemeTargetStyles{L"TabViewItem > Grid#LayoutRoot@CommonStates", {
+        L"Background@Selected:=<SolidColorBrush Color=\"#808080\" Opacity=\"0.35\"/>",
+        L"Background@PointerOverSelected:=<SolidColorBrush Color=\"#808080\" Opacity=\"0.35\"/>",
+        L"Background@PointerOver:=<AcrylicBrush TintColor=\"Transparent\" Opacity=\"0.13\"/>",
+        L"Background@Normal:=<AcrylicBrush TintColor=\"Transparent\" Opacity=\"0.05\"/>",
+        L"Background@PressedSelected:=<SolidColorBrush Color=\"#808080\" Opacity=\"0.35\"/>"}},
+    ThemeTargetStyles{L"Grid#FileExplorerAddressBarGrid", {
+        L"Grid.ColumnSpan=2",
+        L"Margin=0,0,10,0"}},
+    ThemeTargetStyles{L"AutoSuggestBox#FileExplorerSearchBox", {
+        L"Visibility=Collapsed"}},
+    ThemeTargetStyles{L"AppBarButton#backButton > Grid#Root", {
+        L"Padding=2"}},
+    ThemeTargetStyles{L"AppBarButton#forwardButton > Grid#Root", {
+        L"Padding=2"}},
+    ThemeTargetStyles{L"AppBarButton#forwardButton > Grid#Root > Grid#ContentRoot > Viewbox#ContentViewbox", {
+        L"Margin=9"}},
+    ThemeTargetStyles{L"AppBarButton#backButton > Grid#Root > Grid#ContentRoot > Viewbox#ContentViewbox", {
+        L"Margin=9"}},
+    ThemeTargetStyles{L"Grid#PART_LayoutRoot", {
+        L"MinHeight=28",
+        L"Height=28"}},
+    ThemeTargetStyles{L"Grid#TabContainerGrid > Border > Button#AddButton", {
+        L"Margin=0,0,20,4"}},
+    ThemeTargetStyles{L"Border#ScrollIncreaseButtonContainer", {
+        L"Margin=0,0,0,4"}},
+    ThemeTargetStyles{L"Border#ScrollDecreaseButtonContainer", {
+        L"Margin=0,0,0,4"}},
+    ThemeTargetStyles{L"Grid#FileExplorerAddressBarGrid", {
+        L"Visibility=Collapsed"}},
+    ThemeTargetStyles{L"FileExplorerExtensions.NavigationBarControl#NavigationBarControl", {
+        L"Grid.Row=0",
+        L"Grid.RowSpan=2"}},
+    ThemeTargetStyles{L"FileExplorerExtensions.FileExplorerTabControl", {
+        L"Margin=100,0,0,-15",
+        L"Grid.RowSpan=2"}},
+    ThemeTargetStyles{L"FileExplorerExtensions.NavigationBarControl > Grid#NavigationBarControlGrid", {
+        L"Margin=0,0,0,-18",
+        L"Background=Transparent",
+        L"Width=100",
+        L"HorizontalAlignment=0"}},
+}, /*explorerFrameContainerHeight=*/42};
+
+// clang-format on
+
 struct {
     int explorerFrameContainerHeight;
 } g_settings;
 
-bool g_windowsUIFileExplorerSymbolsHooked;
+int g_themeExplorerFrameContainerHeight;
 
 std::atomic<bool> g_initialized;
 thread_local bool g_initializedForThread;
@@ -1612,7 +1727,38 @@ bool ProcessSingleTargetStylesFromSettings(
 }
 
 void ProcessAllStylesFromSettings() {
+    PCWSTR themeName = Wh_GetStringSetting(L"theme");
+    const Theme* theme = nullptr;
+    if (wcscmp(themeName, L"Minimal Explorer11") == 0) {
+        theme = &g_themeMinimal_Explorer11;
+    }
+    Wh_FreeStringSetting(themeName);
+
     StyleConstants styleConstants = LoadStyleConstants();
+
+    if (theme) {
+        for (const auto& themeTargetStyle : theme->targetStyles) {
+            try {
+                std::vector<std::wstring> styles;
+                styles.reserve(themeTargetStyle.styles.size());
+                for (const auto& s : themeTargetStyle.styles) {
+                    styles.push_back(ApplyStyleConstants(s, styleConstants));
+                }
+
+                AddElementCustomizationRules(themeTargetStyle.target,
+                                             std::move(styles));
+            } catch (winrt::hresult_error const& ex) {
+                Wh_Log(L"Error %08X", ex.code());
+            } catch (std::exception const& ex) {
+                Wh_Log(L"Error: %S", ex.what());
+            }
+        }
+
+        g_themeExplorerFrameContainerHeight =
+            theme->explorerFrameContainerHeight;
+    } else {
+        g_themeExplorerFrameContainerHeight = 0;
+    }
 
     for (int i = 0;; i++) {
         try {
@@ -1949,10 +2095,14 @@ XamlIslandViewAdapter_get_DesiredSizeInPhysicalPixels_Hook(void* pThis,
         XamlIslandViewAdapter_get_DesiredSizeInPhysicalPixels_Original(pThis,
                                                                        size);
 
-    if (SUCCEEDED(ret) && g_settings.explorerFrameContainerHeight) {
+    int explorerFrameContainerHeight = g_settings.explorerFrameContainerHeight;
+    if (!explorerFrameContainerHeight) {
+        explorerFrameContainerHeight = g_themeExplorerFrameContainerHeight;
+    }
+
+    if (SUCCEEDED(ret) && explorerFrameContainerHeight) {
         int originalCy = size->cy;
-        size->cy =
-            MulDiv(size->cy, g_settings.explorerFrameContainerHeight, 136);
+        size->cy = MulDiv(size->cy, explorerFrameContainerHeight, 136);
         Wh_Log(L"%d -> %d", originalCy, size->cy);
     }
 
@@ -2015,10 +2165,7 @@ BOOL Wh_ModInit() {
         }
     }
 
-    if (g_settings.explorerFrameContainerHeight &&
-        HookWindowsUIFileExplorerSymbols()) {
-        g_windowsUIFileExplorerSymbolsHooked = true;
-    }
+    HookWindowsUIFileExplorerSymbols();
 
     return TRUE;
 }
@@ -2075,11 +2222,4 @@ void Wh_ModSettingsChanged() {
     }
 
     LoadSettings();
-
-    if (!g_windowsUIFileExplorerSymbolsHooked &&
-        g_settings.explorerFrameContainerHeight &&
-        HookWindowsUIFileExplorerSymbols()) {
-        Wh_ApplyHookOperations();
-        g_windowsUIFileExplorerSymbolsHooked = true;
-    }
 }
