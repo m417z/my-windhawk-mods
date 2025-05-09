@@ -483,7 +483,12 @@ bool ShouldKeepTaskbarShown(HMONITOR monitor) {
 
         canHideTaskbar =
             CanHideTaskbarForWindow(hWnd, monitor, &monitorInfo, &taskbarRect);
-        return !canHideTaskbar;
+        if (!canHideTaskbar) {
+            return TRUE;
+        }
+
+        Wh_Log(L"Can hide taskbar for window %p", hWnd);
+        return FALSE;
     };
 
     EnumWindows(

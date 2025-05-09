@@ -541,6 +541,7 @@ bool DoesMonitorHaveMaximizedWindow(HMONITOR monitor, HWND hMMTaskbarWnd) {
             .length = sizeof(WINDOWPLACEMENT),
         };
         if (GetWindowPlacement(hWnd, &wp) && wp.showCmd == SW_SHOWMAXIMIZED) {
+            Wh_Log(L"Maximized window %p", hWnd);
             hasMaximizedWindow = true;
             return FALSE;
         }
@@ -551,6 +552,7 @@ bool DoesMonitorHaveMaximizedWindow(HMONITOR monitor, HWND hMMTaskbarWnd) {
 
         if (EqualRect(&windowRect, &monitorInfo.rcMonitor)) {
             // Spans across the whole monitor, e.g. Win+Tab view.
+            Wh_Log(L"Fullscreen window %p", hWnd);
             hasMaximizedWindow = true;
             return FALSE;
         }
