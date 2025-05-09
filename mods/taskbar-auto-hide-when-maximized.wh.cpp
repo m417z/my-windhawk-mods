@@ -119,6 +119,14 @@ std::atomic<HANDLE> g_winEventHookThread;
 std::unordered_map<void*, HWND> g_taskbarsKeptShown;
 UINT_PTR g_pendingEventsTimer;
 
+// TrayUI::_HandleTrayPrivateSettingMessage
+constexpr UINT kHandleTrayPrivateSettingMessage = WM_USER + 0x1CA;
+
+enum {
+    kTrayPrivateSettingAutoHideGet = 3,
+    kTrayPrivateSettingAutoHideSet = 4,
+};
+
 constexpr WCHAR kUpdateTaskbarStatePendingTickCount[] =
     L"Windhawk_UpdateTaskbarStatePendingTickCount_" WH_MOD_ID;
 
@@ -157,30 +165,6 @@ bool IsWindowCloaked(HWND hwnd) {
     return SUCCEEDED(DwmGetWindowAttribute(hwnd, DWMWA_CLOAKED, &isCloaked,
                                            sizeof(isCloaked))) &&
            isCloaked;
-}
-
-bool SetTaskbarAutoHide(bool set) {
-    APPBARDATA appBarData;
-
-    // Both ABM_GETSTATE and ABM_SETSTATE require cbSize to be set.
-    appBarData.cbSize = sizeof(APPBARDATA);
-
-    // Get state.
-    UINT state = (UINT)SHAppBarMessage(ABM_GETSTATE, &appBarData);
-
-    // Determine auto hide state.
-    if (set) {
-        appBarData.lParam = state | ABS_AUTOHIDE;
-    } else {
-        appBarData.lParam = state & ~ABS_AUTOHIDE;
-    }
-
-    if (appBarData.lParam != state) {
-        // Set state.
-        SHAppBarMessage(ABM_SETSTATE, &appBarData);
-    }
-
-    return state & ABS_AUTOHIDE;
 }
 
 HWND FindCurrentProcessTaskbarWnd() {
@@ -666,6 +650,14 @@ LRESULT WINAPI TrayUI_WndProc_Hook(void* pThis,
     if (Msg == WM_NCCREATE) {
         Wh_Log(L"WM_NCCREATE: %08X", (DWORD)(ULONG_PTR)hWnd);
         AdjustTaskbar(hWnd);
+    } else if (Msg == kHandleTrayPrivateSettingMessage) {
+        // Prevent auto-hide from being disabled while the mod is loaded.
+        if ((DWORD)wParam == 4) {
+            BOOL bSetAutoHideEnabled = (BOOL)lParam;
+            if (!bSetAutoHideEnabled) {
+                return 0;
+            }
+        }
     } else if (Msg == g_getTaskbarRectRegisteredMsg) {
         HMONITOR monitor = (HMONITOR)wParam;
         RECT* rect = (RECT*)lParam;
@@ -681,7 +673,13 @@ LRESULT WINAPI TrayUI_WndProc_Hook(void* pThis,
     } else if (Msg == g_updateTaskbarStateRegisteredMsg) {
         if (!g_wasAutoHideProcessed) {
             g_wasAutoHideProcessed = true;
-            g_wasAutoHideDisabled = !SetTaskbarAutoHide(true);
+            g_wasAutoHideDisabled =
+                !SendMessage(hWnd, kHandleTrayPrivateSettingMessage,
+                             kTrayPrivateSettingAutoHideGet, 0);
+            if (g_wasAutoHideDisabled) {
+                SendMessage(hWnd, kHandleTrayPrivateSettingMessage,
+                            kTrayPrivateSettingAutoHideSet, TRUE);
+            }
         }
 
         HMONITOR monitor = TrayUI_GetStuckMonitor_Original(pThis);
@@ -1268,7 +1266,11 @@ void Wh_ModUninit() {
     }
 
     if (g_wasAutoHideDisabled) {
-        SetTaskbarAutoHide(false);
+        HWND hTaskbarWnd = FindCurrentProcessTaskbarWnd();
+        if (hTaskbarWnd) {
+            SendMessage(hTaskbarWnd, kHandleTrayPrivateSettingMessage,
+                        kTrayPrivateSettingAutoHideSet, FALSE);
+        }
     }
 }
 
