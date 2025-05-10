@@ -4074,8 +4074,7 @@ void Wh_ModAfterInit() {
         initialize = true;
     }
 
-    auto hXamlHostWnds = GetXamlHostWnds();
-    for (auto hXamlHostWnd : hXamlHostWnds) {
+    for (auto hXamlHostWnd : GetXamlHostWnds()) {
         Wh_Log(L"Initializing for %08X", (DWORD)(ULONG_PTR)hXamlHostWnd);
         RunFromWindowThread(
             hXamlHostWnd, [](PVOID) { InitializeForCurrentThread(); }, nullptr);
@@ -4100,8 +4099,7 @@ void Wh_ModUninit() {
             nullptr);
     }
 
-    auto hXamlHostWnds = GetXamlHostWnds();
-    for (auto hXamlHostWnd : hXamlHostWnds) {
+    for (auto hXamlHostWnd : GetXamlHostWnds()) {
         Wh_Log(L"Uninitializing for %08X", (DWORD)(ULONG_PTR)hXamlHostWnd);
         RunFromWindowThread(
             hXamlHostWnd, [](PVOID) { UninitializeForCurrentThread(); },
@@ -4129,8 +4127,7 @@ void Wh_ModSettingsChanged() {
         initialize = true;
     }
 
-    auto hXamlHostWnds = GetXamlHostWnds();
-    for (auto hXamlHostWnd : hXamlHostWnds) {
+    for (auto hXamlHostWnd : GetXamlHostWnds()) {
         Wh_Log(L"Reinitializing for %08X", (DWORD)(ULONG_PTR)hXamlHostWnd);
         RunFromWindowThread(
             hXamlHostWnd,
