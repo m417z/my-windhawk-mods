@@ -452,7 +452,7 @@ bool MoveTaskInGroup(void* taskGroup, void* taskItemFrom, void* taskItemTo) {
 bool MoveItemsFromThumbnail(void* lpMMThumbnailLongPtr,
                             int indexFrom,
                             int indexTo) {
-    Wh_Log(L">");
+    Wh_Log(L"> %d->%d", indexFrom, indexTo);
 
     void* taskItemFrom =
         CTaskListThumbnailWnd__GetTaskItem(lpMMThumbnailLongPtr, indexFrom);
@@ -524,7 +524,7 @@ LRESULT WINAPI CTaskListThumbnailWnd_v_WndProc_Hook(void* pThis,
                         lpMMThumbnailLongPtr);
                 int trackedIndex = CTaskListThumbnailWnd_GetHoverIndex(
                     lpMMThumbnailLongPtr_IExtendedUISwitcher);
-                if (trackedIndex != g_thumbDraggedIndex &&
+                if (trackedIndex >= 0 && trackedIndex != g_thumbDraggedIndex &&
                     MoveItemsFromThumbnail(lpMMThumbnailLongPtr,
                                            g_thumbDraggedIndex, trackedIndex)) {
                     g_thumbDraggedIndex = trackedIndex;
