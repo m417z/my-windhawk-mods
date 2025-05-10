@@ -1251,7 +1251,8 @@ const Theme g_themexdark = {{
 
 // clang-format on
 
-std::atomic<DWORD> g_targetThreadId = 0;
+std::atomic<bool> g_initialized;
+thread_local bool g_initializedForThread;
 
 void ApplyCustomizations(InstanceHandle handle,
                          winrt::Windows::UI::Xaml::FrameworkElement element,
@@ -1368,11 +1369,6 @@ void VisualTreeWatcher::UnadviseVisualTreeChange()
 
 HRESULT VisualTreeWatcher::OnVisualTreeChange(ParentChildRelation, VisualElement element, VisualMutationType mutationType) try
 {
-    if (GetCurrentThreadId() != g_targetThreadId)
-    {
-        return S_OK;
-    }
-
     Wh_Log(L"========================================");
 
     switch (mutationType)
@@ -1710,7 +1706,8 @@ struct ElementCustomizationRules {
     PropertyOverridesMaybeUnresolved propertyOverrides;
 };
 
-std::vector<ElementCustomizationRules> g_elementsCustomizationRules;
+thread_local std::vector<ElementCustomizationRules>
+    g_elementsCustomizationRules;
 
 struct ElementPropertyCustomizationState {
     std::optional<winrt::Windows::Foundation::IInspectable> originalValue;
@@ -1734,13 +1731,14 @@ struct ElementCustomizationState {
         perVisualStateGroup;
 };
 
-std::unordered_map<InstanceHandle, ElementCustomizationState>
+thread_local std::unordered_map<InstanceHandle, ElementCustomizationState>
     g_elementsCustomizationState;
 
-bool g_elementPropertyModifying;
+thread_local bool g_elementPropertyModifying;
 
-std::list<std::pair<winrt::weak_ref<DependencyObject>,
-                    winrt::Windows::Foundation::IAsyncOperation<bool>>>
+thread_local std::list<
+    std::pair<winrt::weak_ref<DependencyObject>,
+              winrt::Windows::Foundation::IAsyncOperation<bool>>>
     g_delayedBackgroundFillSet;
 
 winrt::Windows::Foundation::IInspectable ReadLocalValueWithWorkaround(
@@ -3727,7 +3725,7 @@ void ProcessResourceVariablesFromSettings() {
     }
 }
 
-void UninitializeSettingsAndTap() {
+void UninitializeForCurrentThread() {
     for (const auto& [elementDo, asyncOp] : g_delayedBackgroundFillSet) {
         asyncOp.Cancel();
     }
@@ -3749,58 +3747,38 @@ void UninitializeSettingsAndTap() {
 
     g_elementsCustomizationRules.clear();
 
-    g_targetThreadId = 0;
+    g_initializedForThread = false;
 }
 
-void InitializeSettingsAndTap() {
-    DWORD kNoThreadId = 0;
-    if (!g_targetThreadId.compare_exchange_strong(kNoThreadId,
-                                                  GetCurrentThreadId())) {
+void UninitializeSettingsAndTap() {
+    if (g_visualTreeWatcher) {
+        g_visualTreeWatcher->UnadviseVisualTreeChange();
+        g_visualTreeWatcher = nullptr;
+    }
+
+    g_initialized = false;
+}
+
+void InitializeForCurrentThread() {
+    if (g_initializedForThread) {
         return;
     }
 
     ProcessAllStylesFromSettings();
     ProcessResourceVariablesFromSettings();
 
+    g_initializedForThread = true;
+}
+
+void InitializeSettingsAndTap() {
+    if (g_initialized.exchange(true)) {
+        return;
+    }
+
     HRESULT hr = InjectWindhawkTAP();
     if (FAILED(hr)) {
         Wh_Log(L"Error %08X", hr);
     }
-}
-
-using CreateWindowExW_t = decltype(&CreateWindowExW);
-CreateWindowExW_t CreateWindowExW_Original;
-HWND WINAPI CreateWindowExW_Hook(DWORD dwExStyle,
-                                 LPCWSTR lpClassName,
-                                 LPCWSTR lpWindowName,
-                                 DWORD dwStyle,
-                                 int X,
-                                 int Y,
-                                 int nWidth,
-                                 int nHeight,
-                                 HWND hWndParent,
-                                 HMENU hMenu,
-                                 HINSTANCE hInstance,
-                                 PVOID lpParam) {
-    HWND hWnd = CreateWindowExW_Original(dwExStyle, lpClassName, lpWindowName,
-                                         dwStyle, X, Y, nWidth, nHeight,
-                                         hWndParent, hMenu, hInstance, lpParam);
-    if (!hWnd) {
-        return hWnd;
-    }
-
-    WCHAR className[64];
-    if (!g_targetThreadId && hWndParent &&
-        GetClassName(hWnd, className, ARRAYSIZE(className)) &&
-        _wcsicmp(className,
-                 L"Windows.UI.Composition.DesktopWindowContentBridge") == 0 &&
-        GetClassName(hWndParent, className, ARRAYSIZE(className)) &&
-        _wcsicmp(className, L"Shell_TrayWnd") == 0) {
-        Wh_Log(L"Initializing - Created DesktopWindowContentBridge window");
-        InitializeSettingsAndTap();
-    }
-
-    return hWnd;
 }
 
 using RunFromWindowThreadProc_t = void(WINAPI*)(PVOID parameter);
@@ -3855,6 +3833,173 @@ bool RunFromWindowThread(HWND hWnd,
     return true;
 }
 
+void OnWindowCreated(HWND hWnd,
+                     HWND hWndParent,
+                     LPCWSTR lpClassName,
+                     PCSTR funcName) {
+    BOOL bTextualClassName = ((ULONG_PTR)lpClassName & ~(ULONG_PTR)0xffff) != 0;
+
+    WCHAR className[64];
+    if (hWndParent && GetClassName(hWnd, className, ARRAYSIZE(className)) &&
+        _wcsicmp(className,
+                 L"Windows.UI.Composition.DesktopWindowContentBridge") == 0 &&
+        GetClassName(hWndParent, className, ARRAYSIZE(className)) &&
+        _wcsicmp(className, L"Shell_TrayWnd") == 0) {
+        Wh_Log(L"Initializing - Created DesktopWindowContentBridge window");
+        InitializeForCurrentThread();
+        InitializeSettingsAndTap();
+        return;
+    }
+
+    if (bTextualClassName &&
+        _wcsicmp(lpClassName, L"XamlExplorerHostIslandWindow") == 0) {
+        Wh_Log(L"Initializing - Created XAML host window: %08X via %S",
+               (DWORD)(ULONG_PTR)hWnd, funcName);
+        InitializeForCurrentThread();
+        InitializeSettingsAndTap();
+        return;
+    }
+}
+
+using CreateWindowExW_t = decltype(&CreateWindowExW);
+CreateWindowExW_t CreateWindowExW_Original;
+HWND WINAPI CreateWindowExW_Hook(DWORD dwExStyle,
+                                 LPCWSTR lpClassName,
+                                 LPCWSTR lpWindowName,
+                                 DWORD dwStyle,
+                                 int X,
+                                 int Y,
+                                 int nWidth,
+                                 int nHeight,
+                                 HWND hWndParent,
+                                 HMENU hMenu,
+                                 HINSTANCE hInstance,
+                                 PVOID lpParam) {
+    HWND hWnd = CreateWindowExW_Original(dwExStyle, lpClassName, lpWindowName,
+                                         dwStyle, X, Y, nWidth, nHeight,
+                                         hWndParent, hMenu, hInstance, lpParam);
+    if (!hWnd) {
+        return hWnd;
+    }
+
+    OnWindowCreated(hWnd, hWndParent, lpClassName, __FUNCTION__);
+
+    return hWnd;
+}
+
+using CreateWindowInBand_t = HWND(WINAPI*)(DWORD dwExStyle,
+                                           LPCWSTR lpClassName,
+                                           LPCWSTR lpWindowName,
+                                           DWORD dwStyle,
+                                           int X,
+                                           int Y,
+                                           int nWidth,
+                                           int nHeight,
+                                           HWND hWndParent,
+                                           HMENU hMenu,
+                                           HINSTANCE hInstance,
+                                           PVOID lpParam,
+                                           DWORD dwBand);
+CreateWindowInBand_t CreateWindowInBand_Original;
+HWND WINAPI CreateWindowInBand_Hook(DWORD dwExStyle,
+                                    LPCWSTR lpClassName,
+                                    LPCWSTR lpWindowName,
+                                    DWORD dwStyle,
+                                    int X,
+                                    int Y,
+                                    int nWidth,
+                                    int nHeight,
+                                    HWND hWndParent,
+                                    HMENU hMenu,
+                                    HINSTANCE hInstance,
+                                    PVOID lpParam,
+                                    DWORD dwBand) {
+    HWND hWnd = CreateWindowInBand_Original(
+        dwExStyle, lpClassName, lpWindowName, dwStyle, X, Y, nWidth, nHeight,
+        hWndParent, hMenu, hInstance, lpParam, dwBand);
+    if (!hWnd) {
+        return hWnd;
+    }
+
+    OnWindowCreated(hWnd, hWndParent, lpClassName, __FUNCTION__);
+
+    return hWnd;
+}
+
+using CreateWindowInBandEx_t = HWND(WINAPI*)(DWORD dwExStyle,
+                                             LPCWSTR lpClassName,
+                                             LPCWSTR lpWindowName,
+                                             DWORD dwStyle,
+                                             int X,
+                                             int Y,
+                                             int nWidth,
+                                             int nHeight,
+                                             HWND hWndParent,
+                                             HMENU hMenu,
+                                             HINSTANCE hInstance,
+                                             PVOID lpParam,
+                                             DWORD dwBand,
+                                             DWORD dwTypeFlags);
+CreateWindowInBandEx_t CreateWindowInBandEx_Original;
+HWND WINAPI CreateWindowInBandEx_Hook(DWORD dwExStyle,
+                                      LPCWSTR lpClassName,
+                                      LPCWSTR lpWindowName,
+                                      DWORD dwStyle,
+                                      int X,
+                                      int Y,
+                                      int nWidth,
+                                      int nHeight,
+                                      HWND hWndParent,
+                                      HMENU hMenu,
+                                      HINSTANCE hInstance,
+                                      PVOID lpParam,
+                                      DWORD dwBand,
+                                      DWORD dwTypeFlags) {
+    HWND hWnd = CreateWindowInBandEx_Original(
+        dwExStyle, lpClassName, lpWindowName, dwStyle, X, Y, nWidth, nHeight,
+        hWndParent, hMenu, hInstance, lpParam, dwBand, dwTypeFlags);
+    if (!hWnd) {
+        return hWnd;
+    }
+
+    OnWindowCreated(hWnd, hWndParent, lpClassName, __FUNCTION__);
+
+    return hWnd;
+}
+
+std::vector<HWND> GetXamlHostWnds() {
+    struct ENUM_WINDOWS_PARAM {
+        std::vector<HWND>* hWnds;
+    };
+
+    std::vector<HWND> hWnds;
+    ENUM_WINDOWS_PARAM param = {&hWnds};
+    EnumWindows(
+        [](HWND hWnd, LPARAM lParam) -> BOOL {
+            ENUM_WINDOWS_PARAM& param = *(ENUM_WINDOWS_PARAM*)lParam;
+
+            DWORD dwProcessId = 0;
+            if (!GetWindowThreadProcessId(hWnd, &dwProcessId) ||
+                dwProcessId != GetCurrentProcessId()) {
+                return TRUE;
+            }
+
+            WCHAR szClassName[32];
+            if (GetClassName(hWnd, szClassName, ARRAYSIZE(szClassName)) == 0) {
+                return TRUE;
+            }
+
+            if (_wcsicmp(szClassName, L"XamlExplorerHostIslandWindow") == 0) {
+                param.hWnds->push_back(hWnd);
+            }
+
+            return TRUE;
+        },
+        (LPARAM)&param);
+
+    return hWnds;
+}
+
 HWND FindCurrentProcessTaskbarWnd() {
     HWND hTaskbarWnd = nullptr;
 
@@ -3893,33 +4038,73 @@ BOOL Wh_ModInit() {
     Wh_SetFunctionHook((void*)CreateWindowExW, (void*)CreateWindowExW_Hook,
                        (void**)&CreateWindowExW_Original);
 
+    HMODULE user32Module = LoadLibrary(L"user32.dll");
+    if (user32Module) {
+        void* pCreateWindowInBand =
+            (void*)GetProcAddress(user32Module, "CreateWindowInBand");
+        if (pCreateWindowInBand) {
+            Wh_SetFunctionHook(pCreateWindowInBand,
+                               (void*)CreateWindowInBand_Hook,
+                               (void**)&CreateWindowInBand_Original);
+        }
+
+        void* pCreateWindowInBandEx =
+            (void*)GetProcAddress(user32Module, "CreateWindowInBandEx");
+        if (pCreateWindowInBandEx) {
+            Wh_SetFunctionHook(pCreateWindowInBandEx,
+                               (void*)CreateWindowInBandEx_Hook,
+                               (void**)&CreateWindowInBandEx_Original);
+        }
+    }
+
     return TRUE;
 }
 
 void Wh_ModAfterInit() {
     Wh_Log(L">");
 
+    bool initialize = false;
+
     HWND hTaskbarUiWnd = GetTaskbarUiWnd();
     if (hTaskbarUiWnd) {
         Wh_Log(L"Initializing - Found DesktopWindowContentBridge window");
         RunFromWindowThread(
-            hTaskbarUiWnd, [](PVOID) { InitializeSettingsAndTap(); }, nullptr);
+            hTaskbarUiWnd, [](PVOID) { InitializeForCurrentThread(); },
+            nullptr);
+        initialize = true;
+    }
+
+    auto hXamlHostWnds = GetXamlHostWnds();
+    for (auto hXamlHostWnd : hXamlHostWnds) {
+        Wh_Log(L"Initializing for %08X", (DWORD)(ULONG_PTR)hXamlHostWnd);
+        RunFromWindowThread(
+            hXamlHostWnd, [](PVOID) { InitializeForCurrentThread(); }, nullptr);
+        initialize = true;
+    }
+
+    if (initialize) {
+        InitializeSettingsAndTap();
     }
 }
 
 void Wh_ModUninit() {
     Wh_Log(L">");
 
-    if (g_visualTreeWatcher) {
-        g_visualTreeWatcher->UnadviseVisualTreeChange();
-        g_visualTreeWatcher = nullptr;
-    }
+    UninitializeSettingsAndTap();
 
     HWND hTaskbarUiWnd = GetTaskbarUiWnd();
     if (hTaskbarUiWnd) {
         Wh_Log(L"Uninitializing - Found DesktopWindowContentBridge window");
         RunFromWindowThread(
-            hTaskbarUiWnd, [](PVOID) { UninitializeSettingsAndTap(); },
+            hTaskbarUiWnd, [](PVOID) { UninitializeForCurrentThread(); },
+            nullptr);
+    }
+
+    auto hXamlHostWnds = GetXamlHostWnds();
+    for (auto hXamlHostWnd : hXamlHostWnds) {
+        Wh_Log(L"Uninitializing for %08X", (DWORD)(ULONG_PTR)hXamlHostWnd);
+        RunFromWindowThread(
+            hXamlHostWnd, [](PVOID) { UninitializeForCurrentThread(); },
             nullptr);
     }
 }
@@ -3927,10 +4112,9 @@ void Wh_ModUninit() {
 void Wh_ModSettingsChanged() {
     Wh_Log(L">");
 
-    if (g_visualTreeWatcher) {
-        g_visualTreeWatcher->UnadviseVisualTreeChange();
-        g_visualTreeWatcher = nullptr;
-    }
+    UninitializeSettingsAndTap();
+
+    bool initialize = false;
 
     HWND hTaskbarUiWnd = GetTaskbarUiWnd();
     if (hTaskbarUiWnd) {
@@ -3938,9 +4122,27 @@ void Wh_ModSettingsChanged() {
         RunFromWindowThread(
             hTaskbarUiWnd,
             [](PVOID) {
-                UninitializeSettingsAndTap();
-                InitializeSettingsAndTap();
+                UninitializeForCurrentThread();
+                InitializeForCurrentThread();
             },
             nullptr);
+        initialize = true;
+    }
+
+    auto hXamlHostWnds = GetXamlHostWnds();
+    for (auto hXamlHostWnd : hXamlHostWnds) {
+        Wh_Log(L"Reinitializing for %08X", (DWORD)(ULONG_PTR)hXamlHostWnd);
+        RunFromWindowThread(
+            hXamlHostWnd,
+            [](PVOID) {
+                UninitializeForCurrentThread();
+                InitializeForCurrentThread();
+            },
+            nullptr);
+        initialize = true;
+    }
+
+    if (initialize) {
+        InitializeSettingsAndTap();
     }
 }
