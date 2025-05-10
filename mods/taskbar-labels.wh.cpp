@@ -2,7 +2,7 @@
 // @id              taskbar-labels
 // @name            Taskbar Labels for Windows 11
 // @description     Customize text labels and combining for running programs on the taskbar (Windows 11 only)
-// @version         1.4
+// @version         1.4.1
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
@@ -138,13 +138,20 @@ Labels can also be shown or hidden per-program in the settings.
     page:
 
     https://learn.microsoft.com/en-us/typography/fonts/windows_11_font_list
+- textTrimming: characterEllipsis
+  $name: Text trimming
+  $options:
+  - characterEllipsis: Trim at character with ellipsis (...)
+  - wordEllipsis: Trim at word with ellipsis (...)
+  - clip: Clip at a pixel level (Windows 11 default)
 - leftAndRightPaddingSize: 8
   $name: Left and right padding size
 - spaceBetweenIconAndLabel: 8
   $name: Space between icon and label
 - runningIndicatorHeight: 0
   $name: Running indicator height
-  $description: Set to zero for the default height
+  $description: >-
+    Set to zero for the default height, set to -1 to hide it
 - runningIndicatorVerticalOffset: 0
   $name: Running indicator vertical offset
 - alwaysShowThumbnailLabels: false
@@ -212,6 +219,7 @@ struct {
     int maximumTaskbarItemWidth;
     int fontSize;
     WindhawkUtils::StringSetting fontFamily;
+    TextTrimming textTrimming;
     int leftAndRightPaddingSize;
     int spaceBetweenIconAndLabel;
     int runningIndicatorHeight;
@@ -990,12 +998,6 @@ void UpdateTaskListButtonWithLabelStyle(
                 std::numeric_limits<double>::infinity());
         }
 
-        auto textTrimming =
-            g_unloading ? TextTrimming::Clip : TextTrimming::CharacterEllipsis;
-        if (labelControlElement.TextTrimming() != textTrimming) {
-            labelControlElement.TextTrimming(textTrimming);
-        }
-
         auto labelControlMargin = labelControlElement.Margin();
         labelControlMargin.Left =
             g_unloading ? 0
@@ -1012,14 +1014,28 @@ void UpdateTaskListButtonWithLabelStyle(
 
         PCWSTR fontFamily = g_unloading ? L"" : g_settings.fontFamily.get();
         if (*fontFamily) {
-            labelControlElement.FontFamily(
-                Markup::XamlBindingHelper::ConvertValue(
-                    winrt::xaml_typename<Media::FontFamily>(),
-                    winrt::box_value(fontFamily))
-                    .as<Media::FontFamily>());
+            if (labelControlElement.FontFamily().Source() != fontFamily) {
+                labelControlElement.FontFamily(
+                    Markup::XamlBindingHelper::ConvertValue(
+                        winrt::xaml_typename<Media::FontFamily>(),
+                        winrt::box_value(fontFamily))
+                        .as<Media::FontFamily>());
+            }
         } else {
-            labelControlElement.as<DependencyObject>().ClearValue(
-                Controls::TextBlock::FontFamilyProperty());
+            auto labelControlElementDp =
+                labelControlElement.as<DependencyObject>();
+            if (labelControlElementDp.ReadLocalValue(
+                    Controls::TextBlock::FontFamilyProperty()) !=
+                DependencyProperty::UnsetValue()) {
+                labelControlElementDp.ClearValue(
+                    Controls::TextBlock::FontFamilyProperty());
+            }
+        }
+
+        auto textTrimming =
+            g_unloading ? TextTrimming::Clip : g_settings.textTrimming;
+        if (labelControlElement.TextTrimming() != textTrimming) {
+            labelControlElement.TextTrimming(textTrimming);
         }
     }
 
@@ -1816,6 +1832,15 @@ void LoadSettings() {
     }
 
     g_settings.fontFamily = WindhawkUtils::StringSetting::make(L"fontFamily");
+
+    PCWSTR textTrimming = Wh_GetStringSetting(L"textTrimming");
+    g_settings.textTrimming = TextTrimming::CharacterEllipsis;
+    if (wcscmp(textTrimming, L"wordEllipsis") == 0) {
+        g_settings.textTrimming = TextTrimming::WordEllipsis;
+    } else if (wcscmp(textTrimming, L"clip") == 0) {
+        g_settings.textTrimming = TextTrimming::Clip;
+    }
+    Wh_FreeStringSetting(textTrimming);
 
     g_settings.leftAndRightPaddingSize =
         Wh_GetIntSetting(L"leftAndRightPaddingSize");
