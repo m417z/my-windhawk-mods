@@ -59,15 +59,14 @@ or a similar tool), enable the relevant option in the mod's settings.
   - keepInPlace: Pinned items remain in place
   - keepInPlaceAndNoUngrouping: >-
       Pinned items remain in place, group running instances
-- placeUngroupedItemsTogether: false
+- placeUngroupedItemsTogether: "0"
   $name: Place ungrouped items together
   $description: >-
     Place each newly opened item next to existing items it would group with.
-- ignorePinnedItemsWhenPlacingUngroupedItemsTogether: false
-  $name: Ignore pinned items when placing ungrouped items together
-  $description: >-
-    If this and "Place ungrouped items together" is enabled above,
-    pinned items will be skipped when searching for the place of the new item
+  $options:
+  - 0: Off
+  - 1: On
+  - nonPinnedOnly: On, ignore pinned items
 - useWindowIcons: false
   $name: Use window icons
   $description: >-
@@ -151,10 +150,11 @@ enum class GroupingMode {
     inverse,
 };
 
+enum class PlaceUngroupedItemsTogetherMode { off, on, nonPinnedOnly };
+
 struct {
     PinnedItemsMode pinnedItemsMode;
-    bool placeUngroupedItemsTogether;
-    bool ignorePinnedItemsWhenPlacingUngroupedItemsTogether;
+    PlaceUngroupedItemsTogetherMode placeUngroupedItemsTogether;
     bool useWindowIcons;
     std::unordered_set<std::wstring> excludedProgramItems;
     std::vector<std::wstring> customGroupNames;
@@ -924,7 +924,9 @@ int WINAPI DPA_InsertPtr_Hook(HDPA hdpa, int i, void* p) {
 
     Wh_Log(L">");
 
-    if (!g_settings.placeUngroupedItemsTogether || i != DA_LAST || !p) {
+    if (g_settings.placeUngroupedItemsTogether ==
+            PlaceUngroupedItemsTogetherMode::off ||
+        i != DA_LAST || !p) {
         return original();
     }
 
@@ -950,7 +952,8 @@ int WINAPI DPA_InsertPtr_Hook(HDPA hdpa, int i, void* p) {
             continue;
         }
 
-        if (g_settings.ignorePinnedItemsWhenPlacingUngroupedItemsTogether) {
+        if (g_settings.placeUngroupedItemsTogether ==
+            PlaceUngroupedItemsTogetherMode::nonPinnedOnly) {
             bool pinned = CTaskGroup_GetFlags_Original(taskGroupIter) & 1;
             if (pinned) {
                 continue;
@@ -1819,10 +1822,19 @@ void LoadSettings() {
     }
     Wh_FreeStringSetting(pinnedItemsMode);
 
+    PCWSTR placeUngroupedItemsTogetherMode =
+        Wh_GetStringSetting(L"placeUngroupedItemsTogether");
     g_settings.placeUngroupedItemsTogether =
-        Wh_GetIntSetting(L"placeUngroupedItemsTogether");
-    g_settings.ignorePinnedItemsWhenPlacingUngroupedItemsTogether =
-            Wh_GetIntSetting(L"ignorePinnedItemsWhenPlacingUngroupedItemsTogether");
+        PlaceUngroupedItemsTogetherMode::off;
+    if (wcscmp(placeUngroupedItemsTogetherMode, L"1") == 0) {
+        g_settings.placeUngroupedItemsTogether =
+            PlaceUngroupedItemsTogetherMode::on;
+    } else if (wcscmp(placeUngroupedItemsTogetherMode, L"nonPinnedOnly") == 0) {
+        g_settings.placeUngroupedItemsTogether =
+            PlaceUngroupedItemsTogetherMode::nonPinnedOnly;
+    }
+    Wh_FreeStringSetting(placeUngroupedItemsTogetherMode);
+
     g_settings.useWindowIcons = Wh_GetIntSetting(L"useWindowIcons");
 
     g_settings.excludedProgramItems.clear();
