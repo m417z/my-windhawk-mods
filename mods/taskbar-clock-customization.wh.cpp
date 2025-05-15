@@ -669,9 +669,8 @@ void ParseTags_libHtml(std::wstring& html)
         return;
     }
 
-    IHTMLDocument2* pDoc = nullptr;
+    winrt::com_ptr<IHTMLDocument2> pDoc;
     hr = pUnknown->QueryInterface(IID_IHTMLDocument2, (void**)&pDoc);
-
     if (FAILED(hr) || !pDoc)
     {
         wchar_t hresultText[32];
@@ -697,8 +696,8 @@ void ParseTags_libHtml(std::wstring& html)
     SysFreeString(varHtml.bstrVal);
 
     // extract plain text from the HTML document
-    IHTMLElement* pBody = nullptr;
-    pDoc->get_body(&pBody);
+    winrt::com_ptr<IHTMLElement> pBody;
+    pDoc->get_body(pBody.put());
     if (pBody)
     {
         BSTR text;
@@ -711,10 +710,7 @@ void ParseTags_libHtml(std::wstring& html)
         {
             html = L"Failed to extract text.";
         }
-        pBody->Release();
     }
-
-    pDoc->Release();
 }
 
 void ParseTags_libXml(std::wstring& xml)
