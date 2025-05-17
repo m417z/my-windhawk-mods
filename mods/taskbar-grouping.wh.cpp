@@ -2,7 +2,7 @@
 // @id              taskbar-grouping
 // @name            Disable grouping on the taskbar
 // @description     Causes a separate button to be created on the taskbar for each new window
-// @version         1.3.10
+// @version         1.3.9
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
@@ -145,12 +145,16 @@ enum class PinnedItemsMode {
     keepInPlaceAndNoUngrouping,
 };
 
+enum class PlaceUngroupedItemsTogetherMode {
+    off,
+    on,
+    nonPinnedOnly,
+};
+
 enum class GroupingMode {
     regular,
     inverse,
 };
-
-enum class PlaceUngroupedItemsTogetherMode { off, on, nonPinnedOnly };
 
 struct {
     PinnedItemsMode pinnedItemsMode;
