@@ -2172,6 +2172,18 @@ BOOL Wh_ModInit() {
     return TRUE;
 }
 
+bool IsExplorerProcess() {
+    WCHAR path[MAX_PATH];
+    if (!GetWindowsDirectory(path, ARRAYSIZE(path))) {
+        Wh_Log(L"GetWindowsDirectory failed");
+        return false;
+    }
+
+    wcscat_s(path, MAX_PATH, L"\\explorer.exe");
+
+    return GetModuleHandle(path) == GetModuleHandle(nullptr);
+}
+
 HWND FindCurrentProcessTaskbarWnd() {
     HWND hTaskbarWnd = nullptr;
 
@@ -2198,7 +2210,7 @@ void Wh_ModUninit() {
 
     FreeAndClearRedirectedModules();
 
-    if (FindCurrentProcessTaskbarWnd()) {
+    if (IsExplorerProcess() && FindCurrentProcessTaskbarWnd()) {
         // Let other processes some time to unload the mod.
         Sleep(400);
 
@@ -2221,7 +2233,7 @@ BOOL Wh_ModSettingsChanged(BOOL* bReload) {
 
     FreeAndClearRedirectedModules();
 
-    if (FindCurrentProcessTaskbarWnd()) {
+    if (IsExplorerProcess() && FindCurrentProcessTaskbarWnd()) {
         // Let other processes some time to load the new config.
         Sleep(400);
 
