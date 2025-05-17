@@ -757,6 +757,46 @@ HRESULT WINAPI DwmSetWindowAttribute_Hook(HWND hwnd,
     return original();
 }
 
+void RestoreMenuPositions() {
+    if (g_startMenuWnd && g_startMenuOriginalWidth) {
+        RECT rect;
+        if (GetWindowRect(g_startMenuWnd, &rect)) {
+            int x = rect.left;
+            int y = rect.top;
+            int cx = rect.right - rect.left;
+            int cy = rect.bottom - rect.top;
+
+            if (g_startMenuOriginalWidth != cx) {
+                cx = g_startMenuOriginalWidth;
+                SetWindowPos(g_startMenuWnd, nullptr, x, y, cx, cy,
+                             SWP_NOZORDER | SWP_NOACTIVATE);
+            }
+        }
+
+        g_startMenuWnd = nullptr;
+        g_startMenuOriginalWidth = 0;
+    }
+
+    if (g_searchMenuWnd && g_searchMenuOriginalX) {
+        RECT rect;
+        if (GetWindowRect(g_searchMenuWnd, &rect)) {
+            int x = rect.left;
+            int y = rect.top;
+            int cx = rect.right - rect.left;
+            int cy = rect.bottom - rect.top;
+
+            if (g_searchMenuOriginalX != x) {
+                x = g_searchMenuOriginalX;
+                SetWindowPos(g_searchMenuWnd, nullptr, x, y, cx, cy,
+                             SWP_NOZORDER | SWP_NOACTIVATE);
+            }
+        }
+
+        g_searchMenuWnd = nullptr;
+        g_searchMenuOriginalX = 0;
+    }
+}
+
 void LoadSettings() {
     g_settings.startMenuOnTheLeft = Wh_GetIntSetting(L"startMenuOnTheLeft");
     g_settings.startMenuWidth = Wh_GetIntSetting(L"startMenuWidth");
@@ -838,41 +878,12 @@ void Wh_ModBeforeUninit() {
 void Wh_ModUninit() {
     Wh_Log(L">");
 
-    if (g_startMenuWnd && g_startMenuOriginalWidth) {
-        RECT rect;
-        if (GetWindowRect(g_startMenuWnd, &rect)) {
-            int x = rect.left;
-            int y = rect.top;
-            int cx = rect.right - rect.left;
-            int cy = rect.bottom - rect.top;
-
-            if (g_startMenuOriginalWidth != cx) {
-                cx = g_startMenuOriginalWidth;
-                SetWindowPos(g_startMenuWnd, nullptr, x, y, cx, cy,
-                             SWP_NOZORDER | SWP_NOACTIVATE);
-            }
-        }
-    }
-
-    if (g_searchMenuWnd && g_searchMenuOriginalX) {
-        RECT rect;
-        if (GetWindowRect(g_searchMenuWnd, &rect)) {
-            int x = rect.left;
-            int y = rect.top;
-            int cx = rect.right - rect.left;
-            int cy = rect.bottom - rect.top;
-
-            if (g_searchMenuOriginalX != x) {
-                x = g_searchMenuOriginalX;
-                SetWindowPos(g_searchMenuWnd, nullptr, x, y, cx, cy,
-                             SWP_NOZORDER | SWP_NOACTIVATE);
-            }
-        }
-    }
+    RestoreMenuPositions();
 }
 
 void Wh_ModSettingsChanged() {
     Wh_Log(L">");
 
+    RestoreMenuPositions();
     LoadSettings();
 }
