@@ -642,43 +642,51 @@ void ReplaceAll(std::wstring& str, std::wstring_view from, std::wstring_view to)
 
 void ParseTags_libHtml(std::wstring& html)
 {
-    CoInitialize(NULL);
-    IHTMLDocument2* pDoc = nullptr;
+    // "parse as html with Windows library" is dependent on MSHTML from Internet Explorer 11/ IE Mode in Microsoft Edge; if it doesn't run try "Control Panel/ Programs/ Turn Windows Features On or Off/ enable 'Internet Explorer 11'".
 
+    // create instance using CLSID CLSID_HTMLDocument and IID IID_IHTMLDocument2
+    winrt::com_ptr<IHTMLDocument2> pDoc;
     HRESULT hr = CoCreateInstance(CLSID_HTMLDocument, NULL, CLSCTX_INPROC_SERVER, IID_IHTMLDocument2, (void**)&pDoc);
-    if (SUCCEEDED(hr) && pDoc)
+    if (not(SUCCEEDED(hr) && pDoc))
     {
-        VARIANT varHtml;
-        varHtml.vt = VT_BSTR;
-        varHtml.bstrVal = SysAllocString(html.c_str());
+        wchar_t hresultText[32];
+        swprintf(hresultText, 32, L"HRESULT: 0x%08X", hr);
+        html = L"CoCreateInstance failed. " + std::wstring(hresultText);
+        return;
+    }
 
-        SAFEARRAY* psa = SafeArrayCreateVector(VT_VARIANT, 0, 1);
-        if (psa)
+    // prepare HTML content for processing
+    VARIANT varHtml;
+    varHtml.vt = VT_BSTR;
+    varHtml.bstrVal = SysAllocString(html.c_str());
+
+    SAFEARRAY* psa = SafeArrayCreateVector(VT_VARIANT, 0, 1);
+    if (psa)
+    {
+        LONG index = 0;
+        SafeArrayPutElement(psa, &index, &varHtml);
+
+        pDoc->write(psa);
+        SafeArrayDestroy(psa);
+    }
+    SysFreeString(varHtml.bstrVal);
+
+    // extract plain text from the HTML document
+    winrt::com_ptr<IHTMLElement> pBody;
+    pDoc->get_body(pBody.put());
+    if (pBody)
+    {
+        BSTR text;
+        if (SUCCEEDED(pBody->get_innerText(&text)) && text)
         {
-            LONG index = 0;
-            SafeArrayPutElement(psa, &index, &varHtml);
-
-            pDoc->write(psa);
-            SafeArrayDestroy(psa);
-        }
-        SysFreeString(varHtml.bstrVal);
-
-        IHTMLElement* pBody = nullptr;
-        pDoc->get_body(&pBody);
-        if (pBody)
-        {
-            BSTR text;
-            pBody->get_innerText(&text);
-
-            html.assign(text, SysStringLen(text));
+            html.assign(text, SysStringLen(text));// store extracted text
             SysFreeString(text);
-            pBody->Release();
         }
-
-        pDoc->Release();
-    } else {html = L"not SUCCEEDED(hr)";}
-
-    CoUninitialize();
+        else
+        {
+            html = L"Failed to extract text.";
+        }
+    }
 }
 
 void ParseTags_libXml(std::wstring& xml)
@@ -690,7 +698,7 @@ void ParseTags_libXml(std::wstring& xml)
         xml = xmlDoc.InnerText();
     } catch (...) {
         xml = L"Decoding error";
-	}
+    }
 }
 
 std::wstring DecodeHtmlNumEntities(std::wstring& input) {
