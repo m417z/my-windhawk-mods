@@ -335,11 +335,8 @@ using namespace std::string_view_literals;
 #include <winrt/Windows.UI.Xaml.Media.h>
 
 // needed for libHtml
-#include <comdef.h>
-#include <unknwn.h>// required for IID_IUnknown
 #include <initguid.h>// loads CLSID CLSID_HTMLDocument and IID IID_IHTMLDocument2
-#include <mshtml.h>// required for IHTMLDocument2
-#include <Windows.h>
+#include <mshtml.h>
 
 // needed for libXml
 #include <winrt/Windows.Data.Xml.Dom.h>
