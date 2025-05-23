@@ -668,6 +668,7 @@ HRESULT WINAPI CTaskListWnd_HandleExtendedUIClick_Hook(void* pThis,
     Wh_Log(L">");
 
     if (g_reorderingXamlThumbnails) {
+        g_reorderingXamlThumbnails = false;
         return S_OK;
     }
 
@@ -775,8 +776,12 @@ int WINAPI TaskItemThumbnailList_OnPointerMoved_Hook(void* pThis, void* pArgs) {
         return TaskItemThumbnailList_OnPointerMoved_Original(pThis, pArgs);
     };
 
-    if (!GetCapture() ||
-        GetTickCount() - g_taskInclusionChangeLastTickCount <= 60) {
+    if (!GetCapture()) {
+        g_reorderingXamlThumbnails = false;
+        return original();
+    }
+
+    if (GetTickCount() - g_taskInclusionChangeLastTickCount <= 60) {
         return original();
     }
 
@@ -884,36 +889,6 @@ int WINAPI TaskItemThumbnailList_OnPointerMoved_Hook(void* pThis, void* pArgs) {
     }
 
     return original();
-}
-
-using TaskItemThumbnailList_OnPointerReleased_t = int(WINAPI*)(void* pThis,
-                                                               void* pArgs);
-TaskItemThumbnailList_OnPointerReleased_t
-    TaskItemThumbnailList_OnPointerReleased_Original;
-int WINAPI TaskItemThumbnailList_OnPointerReleased_Hook(void* pThis,
-                                                        void* pArgs) {
-    Wh_Log(L">");
-
-    int ret = TaskItemThumbnailList_OnPointerReleased_Original(pThis, pArgs);
-
-    FrameworkElement element = nullptr;
-    ((IUnknown*)pThis)
-        ->QueryInterface(winrt::guid_of<FrameworkElement>(),
-                         winrt::put_abi(element));
-
-    if (!element) {
-        return ret;
-    }
-
-    auto className = winrt::get_class_name(element);
-    Wh_Log(L"%s", className.c_str());
-
-    if (className == L"Taskbar.TaskItemThumbnailList" ||
-        className == L"Taskbar.TaskItemThumbnailScrollableList") {
-        g_reorderingXamlThumbnails = false;
-    }
-
-    return ret;
 }
 
 using DPA_GetPtr_t = decltype(&DPA_GetPtr);
@@ -1050,12 +1025,6 @@ bool HookTaskbarViewDllSymbols(HMODULE module) {
             {LR"(public: virtual int __cdecl winrt::impl::produce<struct winrt::Taskbar::implementation::TaskItemThumbnailList,struct winrt::Windows::UI::Xaml::Controls::IControlOverrides>::OnPointerMoved(void *))"},
             &TaskItemThumbnailList_OnPointerMoved_Original,
             TaskItemThumbnailList_OnPointerMoved_Hook,
-            true,  // New XAML thumbnails, enabled in late Windows 11 24H2.
-        },
-        {
-            {LR"(public: virtual int __cdecl winrt::impl::produce<struct winrt::Taskbar::implementation::TaskItemThumbnailList,struct winrt::Windows::UI::Xaml::Controls::IControlOverrides>::OnPointerReleased(void *))"},
-            &TaskItemThumbnailList_OnPointerReleased_Original,
-            TaskItemThumbnailList_OnPointerReleased_Hook,
             true,  // New XAML thumbnails, enabled in late Windows 11 24H2.
         },
     };
