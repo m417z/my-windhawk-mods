@@ -641,76 +641,46 @@ void ReplaceAll(std::wstring& str, std::wstring_view from, std::wstring_view to)
 
 void ParseTags_libHtml(std::wstring& html)
 {
-    // "parse as html with Windows library" is dependent on MSHTML from Internet Explorer 11/ IE Mode in Microsoft Edge; if it doesn't run try "Control Panel/ Programs/ Turn Windows Features On or Off/ enable 'Internet Explorer 11'".
-
-    // manually defining IID_IHTMLDocument2 and IID_IUnknown in case they aren't automatically loaded
+    const CLSID CLSID_HTMLDocument = {0x25336920, 0x03F9, 0x11CF, {0x8F, 0xD0, 0x00, 0xAA, 0x00, 0x68, 0x06, 0xFA}};
     const IID IID_IHTMLDocument2 = {0x332C4425, 0x26CB, 0x11D0, {0xB4, 0x83, 0x00, 0xC0, 0x4F, 0xD9, 0x01, 0x19}};
-    const IID IID_IUnknown = {0x00000000, 0x0000, 0x0000, {0xC0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x46}};
 
-    // retrieve CLSID dynamically
-    CLSID clsid;
-    HRESULT hr = CLSIDFromProgID(L"HTMLFILE", &clsid);
-    if (FAILED(hr))
+    CoInitialize(NULL);
+    IHTMLDocument2* pDoc = nullptr;
+
+    HRESULT hr = CoCreateInstance(CLSID_HTMLDocument, NULL, CLSCTX_INPROC_SERVER, IID_IHTMLDocument2, (void**)&pDoc);
+    if (SUCCEEDED(hr) && pDoc)
     {
-        wchar_t hresultText[32];
-        swprintf(hresultText, 32, L"HRESULT: 0x%08X", hr);
-        html = L"Failed to retrieve CLSID for HTML document. " + std::wstring(hresultText);
-        return;
-    }
+        VARIANT varHtml;
+        varHtml.vt = VT_BSTR;
+        varHtml.bstrVal = SysAllocString(html.c_str());
 
-    // create instance using IUnknown and query for IHTMLDocument2
-    winrt::com_ptr<IUnknown> pUnknown;
-    hr = CoCreateInstance(clsid, NULL, CLSCTX_INPROC_SERVER, IID_IUnknown, (void**)&pUnknown);
-    if (FAILED(hr) || !pUnknown)
-    {
-        wchar_t hresultText[32];
-        swprintf(hresultText, 32, L"HRESULT: 0x%08X", hr);
-        html = L"CoCreateInstance failed. " + std::wstring(hresultText);
-        return;
-    }
-
-    winrt::com_ptr<IHTMLDocument2> pDoc;
-    hr = pUnknown->QueryInterface(IID_IHTMLDocument2, (void**)&pDoc);
-    if (FAILED(hr) || !pDoc)
-    {
-        wchar_t hresultText[32];
-        swprintf(hresultText, 32, L"HRESULT: 0x%08X", hr);
-        html = L"QueryInterface for IHTMLDocument2 failed. " + std::wstring(hresultText);
-        return;
-    }
-
-    // prepare HTML content for processing
-    VARIANT varHtml;
-    varHtml.vt = VT_BSTR;
-    varHtml.bstrVal = SysAllocString(html.c_str());
-
-    SAFEARRAY* psa = SafeArrayCreateVector(VT_VARIANT, 0, 1);
-    if (psa)
-    {
-        LONG index = 0;
-        SafeArrayPutElement(psa, &index, &varHtml);
-
-        pDoc->write(psa);
-        SafeArrayDestroy(psa);
-    }
-    SysFreeString(varHtml.bstrVal);
-
-    // extract plain text from the HTML document
-    winrt::com_ptr<IHTMLElement> pBody;
-    pDoc->get_body(pBody.put());
-    if (pBody)
-    {
-        BSTR text;
-        if (SUCCEEDED(pBody->get_innerText(&text)) && text)
+        SAFEARRAY* psa = SafeArrayCreateVector(VT_VARIANT, 0, 1);
+        if (psa)
         {
-            html.assign(text, SysStringLen(text));// store extracted text
+            LONG index = 0;
+            SafeArrayPutElement(psa, &index, &varHtml);
+
+            pDoc->write(psa);
+            SafeArrayDestroy(psa);
+        }
+        SysFreeString(varHtml.bstrVal);
+
+        IHTMLElement* pBody = nullptr;
+        pDoc->get_body(&pBody);
+        if (pBody)
+        {
+            BSTR text;
+            pBody->get_innerText(&text);
+
+            html.assign(text, SysStringLen(text));
             SysFreeString(text);
+            pBody->Release();
         }
-        else
-        {
-            html = L"Failed to extract text.";
-        }
-    }
+
+        pDoc->Release();
+    } else {html = L"not SUCCEEDED(hr)";}
+
+    CoUninitialize();
 }
 
 void ParseTags_libXml(std::wstring& xml)
