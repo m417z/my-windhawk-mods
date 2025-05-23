@@ -337,6 +337,7 @@ using namespace std::string_view_literals;
 // needed for libHtml
 #include <comdef.h>
 #include <unknwn.h>// required for IID_IUnknown
+#include <initguid.h>// loads CLSID CLSID_HTMLDocument and IID IID_IHTMLDocument2
 #include <mshtml.h>// required for IHTMLDocument2
 #include <Windows.h>
 
@@ -641,9 +642,6 @@ void ReplaceAll(std::wstring& str, std::wstring_view from, std::wstring_view to)
 
 void ParseTags_libHtml(std::wstring& html)
 {
-    const CLSID CLSID_HTMLDocument = {0x25336920, 0x03F9, 0x11CF, {0x8F, 0xD0, 0x00, 0xAA, 0x00, 0x68, 0x6F, 0x13}};
-    const IID IID_IHTMLDocument2 = {0x332C4425, 0x26CB, 0x11D0, {0xB4, 0x83, 0x00, 0xC0, 0x4F, 0xD9, 0x01, 0x19}};
-
     CoInitialize(NULL);
     IHTMLDocument2* pDoc = nullptr;
 
