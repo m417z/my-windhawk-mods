@@ -335,7 +335,7 @@ using namespace std::string_view_literals;
 #include <winrt/Windows.UI.Xaml.Media.h>
 
 // needed for libHtml
-#include <initguid.h>// loads CLSID CLSID_HTMLDocument and IID IID_IHTMLDocument2
+#include <initguid.h>// loads CLSID_HTMLDocument and IID_IHTMLDocument2
 #include <mshtml.h>
 
 // needed for libXml
@@ -641,7 +641,7 @@ void ParseTags_libHtml(std::wstring& html)
 {
     // "parse as html with Windows library" is dependent on MSHTML from Internet Explorer 11/ IE Mode in Microsoft Edge; if it doesn't run try "Control Panel/ Programs/ Turn Windows Features On or Off/ enable 'Internet Explorer 11'".
 
-    // create instance using CLSID CLSID_HTMLDocument and IID IID_IHTMLDocument2
+    // create instance using CLSID_HTMLDocument and IID_IHTMLDocument2
     winrt::com_ptr<IHTMLDocument2> pDoc;
     HRESULT hr = CoCreateInstance(CLSID_HTMLDocument, NULL, CLSCTX_INPROC_SERVER, IID_IHTMLDocument2, (void**)&pDoc);
     if (not(SUCCEEDED(hr) && pDoc))
@@ -662,7 +662,6 @@ void ParseTags_libHtml(std::wstring& html)
     {
         LONG index = 0;
         SafeArrayPutElement(psa, &index, &varHtml);
-
         pDoc->write(psa);
         SafeArrayDestroy(psa);
     }
@@ -679,10 +678,7 @@ void ParseTags_libHtml(std::wstring& html)
             html.assign(text, SysStringLen(text));// store extracted text
             SysFreeString(text);
         }
-        else
-        {
-            html = L"Failed to extract text.";
-        }
+        else {html = L"Failed to extract text.";}
     }
 }
 
