@@ -195,9 +195,6 @@ HWND g_startMenuWnd;
 
 winrt::Windows::Foundation::Size g_flyoutPositionSize;
 
-std::vector<winrt::weak_ref<FrameworkElement>>
-    g_taskbarFramesPendingHeightUpdate;
-
 std::vector<winrt::weak_ref<XamlRoot>> g_notifyIconsUpdated;
 
 using FrameworkElementLoadedEventRevoker = winrt::impl::event_revoker<
@@ -1237,23 +1234,6 @@ void WINAPI TaskbarController_UpdateFrameHeight_Hook(void* pThis) {
     if (contentGrid) {
         contentGrid.Height(std::numeric_limits<double>::quiet_NaN());
     }
-
-    // taskbarFrameElement must have height, otherwise overflow popup causes a
-    // crash. Queue it for an update.
-    bool updateAlreadyPending = false;
-
-    for (auto weakPtr : g_taskbarFramesPendingHeightUpdate) {
-        if (auto ptr = weakPtr.get()) {
-            if (ptr == taskbarFrameElement) {
-                updateAlreadyPending = true;
-                break;
-            }
-        }
-    }
-
-    if (!updateAlreadyPending) {
-        g_taskbarFramesPendingHeightUpdate.push_back(taskbarFrameElement);
-    }
 }
 
 using SystemTraySecondaryController_UpdateFrameSize_t =
@@ -1311,6 +1291,16 @@ bool ApplyStyle(FrameworkElement taskbarFrame,
                 const winrt::Windows::Foundation::Size& size) {
     auto contentGrid =
         Media::VisualTreeHelper::GetParent(taskbarFrame).as<Controls::Grid>();
+
+    auto border = Media::VisualTreeHelper::GetParent(contentGrid)
+                      .try_as<FrameworkElement>();
+    if (border) {
+        double borderHeight = border.Height();
+        if (borderHeight > 0) {
+            Wh_Log(L"Setting taskbar frame height to %f", borderHeight);
+            taskbarFrame.Height(borderHeight);
+        }
+    }
 
     double angle = g_unloading ? 0 : 90;
     Media::RotateTransform transform;
@@ -2446,33 +2436,6 @@ OverflowFlyoutModel_Show_t OverflowFlyoutModel_Show_Original;
 void WINAPI OverflowFlyoutModel_Show_Hook(void* pThis) {
     Wh_Log(L">");
 
-    // taskbarFrameElement must have height, otherwise overflow popup causes a
-    // crash. Set it based on the parent border.
-    for (auto weakPtr : g_taskbarFramesPendingHeightUpdate) {
-        if (auto taskbarFrameElement = weakPtr.get()) {
-            auto contentGrid =
-                Media::VisualTreeHelper::GetParent(taskbarFrameElement)
-                    .try_as<FrameworkElement>();
-            if (!contentGrid) {
-                continue;
-            }
-
-            auto border = Media::VisualTreeHelper::GetParent(contentGrid)
-                              .try_as<FrameworkElement>();
-            if (!border) {
-                continue;
-            }
-
-            double borderHeight = border.Height();
-            if (borderHeight > 0) {
-                Wh_Log(L"Setting taskbar frame height to %f", borderHeight);
-                taskbarFrameElement.Height(borderHeight);
-            }
-        }
-    }
-
-    g_taskbarFramesPendingHeightUpdate.clear();
-
     g_inOverflowFlyoutModel_Show = true;
 
     OverflowFlyoutModel_Show_Original(pThis);
@@ -2858,7 +2821,8 @@ BOOL WINAPI SetWindowPos_Hook(HWND hWnd,
         HWND windowFromPoint = WindowFromPoint(pt);
         if (windowFromPoint &&
             GetWindowThreadProcessId(windowFromPoint, nullptr) ==
-                GetWindowThreadProcessId(FindCurrentProcessTaskbarWnd(), nullptr)) {
+                GetWindowThreadProcessId(FindCurrentProcessTaskbarWnd(),
+                                         nullptr)) {
             WCHAR szClassNameFromPoint[64];
             if (GetClassName(windowFromPoint, szClassNameFromPoint,
                              ARRAYSIZE(szClassNameFromPoint)) &&
