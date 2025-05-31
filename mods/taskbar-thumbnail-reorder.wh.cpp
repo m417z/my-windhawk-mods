@@ -457,18 +457,21 @@ bool MoveItemsFromThumbnail(void* lpMMThumbnailLongPtr,
     void* taskItemFrom =
         CTaskListThumbnailWnd__GetTaskItem(lpMMThumbnailLongPtr, indexFrom);
     if (!taskItemFrom) {
+        Wh_Log(L"Failed to get task item");
         return false;
     }
 
     void* taskItemTo =
         CTaskListThumbnailWnd__GetTaskItem(lpMMThumbnailLongPtr, indexTo);
     if (!taskItemTo) {
+        Wh_Log(L"Failed to get task item");
         return false;
     }
 
     if (!MoveTaskInGroup(
             CTaskListThumbnailWnd_GetTaskGroup(lpMMThumbnailLongPtr),
             taskItemFrom, taskItemTo)) {
+        Wh_Log(L"Failed to move task item");
         return false;
     }
 
@@ -764,7 +767,10 @@ void MoveItemsFromXAMLThumbnail(int indexFrom, int indexTo) {
         return;
     }
 
-    MoveTaskInGroup(taskGroupFrom, taskItemFrom, taskItemTo);
+    if (!MoveTaskInGroup(taskGroupFrom, taskItemFrom, taskItemTo)) {
+        Wh_Log(L"Failed to move task item");
+        return;
+    }
 }
 
 using TaskItemThumbnailList_OnPointerMoved_t = int(WINAPI*)(void* pThis,
