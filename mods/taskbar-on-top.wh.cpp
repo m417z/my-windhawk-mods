@@ -1266,23 +1266,37 @@ BOOL WINAPI SetWindowPos_Hook(HWND hWnd,
         UINT monitorDpiY = 96;
         GetDpiForMonitor(monitor, MDT_DEFAULT, &monitorDpiX, &monitorDpiY);
 
+        bool adjusted = false;
+
         WCHAR rootOwnerClassName[64];
         if (_wcsicmp(szClassName, L"Xaml_WindowedPopupClass") == 0 &&
             GetWindowThreadProcessId(hWnd, nullptr) ==
                 GetWindowThreadProcessId(FindCurrentProcessTaskbarWnd(),
                                          nullptr) &&
             GetClassName(GetAncestor(hWnd, GA_ROOTOWNER), rootOwnerClassName,
-                         ARRAYSIZE(rootOwnerClassName)) &&
-            _wcsicmp(rootOwnerClassName, L"XamlExplorerHostIslandWindow") ==
+                         ARRAYSIZE(rootOwnerClassName))) {
+            if (_wcsicmp(rootOwnerClassName, L"XamlExplorerHostIslandWindow") ==
                 0) {
-            // Probably hovering a XAML thumbnail preview, make it so that the
-            // tooltip doesn't cover the thumbnail preview.
-            Y = monitorInfo.rcWork.top +
-                MulDiv(10 + g_lastFlyoutPositionSize.Height, monitorDpiY, 96);
-        } else if (Y < monitorInfo.rcWork.top) {
-            Y = monitorInfo.rcWork.top;
-        } else if (Y > monitorInfo.rcWork.bottom - cy) {
-            Y = monitorInfo.rcWork.bottom - cy;
+                // Probably hovering a XAML thumbnail preview, make it so that
+                // the tooltip doesn't cover the thumbnail preview.
+                Y = monitorInfo.rcWork.top +
+                    MulDiv(10 + g_lastFlyoutPositionSize.Height, monitorDpiY,
+                           96);
+                adjusted = true;
+            } else if (_wcsicmp(rootOwnerClassName,
+                                L"TopLevelWindowForOverflowXamlIsland") == 0) {
+                // Don't adjust to prevent tooltips from covering the overflow
+                // flyout.
+                adjusted = true;
+            }
+        }
+
+        if (!adjusted) {
+            if (Y < monitorInfo.rcWork.top) {
+                Y = monitorInfo.rcWork.top;
+            } else if (Y > monitorInfo.rcWork.bottom - cy) {
+                Y = monitorInfo.rcWork.bottom - cy;
+            }
         }
     } else if (_wcsicmp(szClassName, L"Windows.UI.Core.CoreWindow") == 0) {
         if (uFlags & SWP_NOMOVE) {
