@@ -109,10 +109,10 @@ std::atomic<int> g_hookCallCounter;
 bool g_inCTaskListThumbnailWnd_DisplayUI;
 bool g_inCTaskListThumbnailWnd_LayoutThumbnails;
 bool g_inOverflowFlyoutModel_Show;
-bool g_inFlyoutFrame_UpdateFlyoutPosition;
 int g_lastTaskbarAlignment;
 
-winrt::Windows::Foundation::Size g_flyoutPositionSize;
+std::atomic<DWORD> g_UpdateFlyoutPosition_threadId;
+void* g_UpdateFlyoutPosition_pThis;
 
 using FrameworkElementLoadedEventRevoker = winrt::impl::event_revoker<
     IFrameworkElement,
@@ -1063,28 +1063,13 @@ FlyoutFrame_UpdateFlyoutPosition_t FlyoutFrame_UpdateFlyoutPosition_Original;
 void WINAPI FlyoutFrame_UpdateFlyoutPosition_Hook(void* pThis) {
     Wh_Log(L">");
 
-    g_inFlyoutFrame_UpdateFlyoutPosition = true;
-    g_flyoutPositionSize = {};
+    g_UpdateFlyoutPosition_threadId = GetCurrentThreadId();
+    g_UpdateFlyoutPosition_pThis = pThis;
 
     FlyoutFrame_UpdateFlyoutPosition_Original(pThis);
 
-    g_inFlyoutFrame_UpdateFlyoutPosition = false;
-}
-
-using Grid_DesiredSize_t = winrt::Windows::Foundation::Size*(
-    WINAPI*)(void* pThis, winrt::Windows::Foundation::Size* size);
-Grid_DesiredSize_t Grid_DesiredSize_Original;
-winrt::Windows::Foundation::Size* WINAPI
-Grid_DesiredSize_Hook(void* pThis, winrt::Windows::Foundation::Size* size) {
-    Wh_Log(L">");
-
-    auto ret = Grid_DesiredSize_Original(pThis, size);
-
-    if (g_inFlyoutFrame_UpdateFlyoutPosition) {
-        g_flyoutPositionSize = *size;
-    }
-
-    return ret;
+    g_UpdateFlyoutPosition_threadId = 0;
+    g_UpdateFlyoutPosition_pThis = nullptr;
 }
 
 using MenuFlyout_ShowAt_t =
@@ -1383,11 +1368,37 @@ int WINAPI MapWindowPoints_Hook(HWND hWndFrom,
                                 UINT cPoints) {
     int ret = MapWindowPoints_Original(hWndFrom, hWndTo, lpPoints, cPoints);
 
-    if (!g_inFlyoutFrame_UpdateFlyoutPosition || cPoints != 1) {
+    if (GetCurrentThreadId() != g_UpdateFlyoutPosition_threadId ||
+        !g_UpdateFlyoutPosition_pThis || cPoints != 1) {
         return ret;
     }
 
     Wh_Log(L">");
+
+    FrameworkElement flyoutFrame = nullptr;
+    ((IUnknown**)g_UpdateFlyoutPosition_pThis)[1]->QueryInterface(
+        winrt::guid_of<FrameworkElement>(), winrt::put_abi(flyoutFrame));
+    if (!flyoutFrame) {
+        Wh_Log(L"Error getting flyoutFrame");
+        return ret;
+    }
+
+    FrameworkElement hoverFlyoutCanvas =
+        FindChildByName(flyoutFrame, L"HoverFlyoutCanvas");
+    if (!hoverFlyoutCanvas) {
+        Wh_Log(L"No HoverFlyoutCanvas");
+        return ret;
+    }
+
+    Controls::Grid hoverFlyoutGrid =
+        FindChildByName(hoverFlyoutCanvas, L"HoverFlyoutGrid")
+            .try_as<Controls::Grid>();
+    if (!hoverFlyoutGrid) {
+        Wh_Log(L"No HoverFlyoutGrid");
+        return ret;
+    }
+
+    auto flyoutPositionSize = hoverFlyoutGrid.DesiredSize();
 
     DWORD messagePos = GetMessagePos();
     POINT pt{
@@ -1409,7 +1420,7 @@ int WINAPI MapWindowPoints_Hook(HWND hWndFrom,
     UINT monitorDpiY = 96;
     GetDpiForMonitor(monitor, MDT_DEFAULT, &monitorDpiX, &monitorDpiY);
 
-    int flyoutHeight = MulDiv(g_flyoutPositionSize.Height, monitorDpiY, 96);
+    int flyoutHeight = MulDiv(flyoutPositionSize.Height, monitorDpiY, 96);
 
     // Align to bottom instead of top.
     lpPoints->y += flyoutHeight;
@@ -1642,14 +1653,6 @@ bool HookTaskbarViewDllSymbols(HMODULE module) {
             },
             &FlyoutFrame_UpdateFlyoutPosition_Original,
             FlyoutFrame_UpdateFlyoutPosition_Hook,
-            true,  // New XAML thumbnails, enabled in late Windows 11 24H2.
-        },
-        {
-            {
-                LR"(public: __cdecl winrt::impl::consume_Windows_UI_Xaml_IUIElement<struct winrt::Windows::UI::Xaml::Controls::Grid>::DesiredSize(void)const )",
-            },
-            &Grid_DesiredSize_Original,
-            Grid_DesiredSize_Hook,
             true,  // New XAML thumbnails, enabled in late Windows 11 24H2.
         },
         {
