@@ -1377,6 +1377,81 @@ BOOL WINAPI SetWindowPos_Hook(HWND hWnd,
     return SetWindowPos_Original(hWnd, hWndInsertAfter, X, Y, cx, cy, uFlags);
 }
 
+using MoveWindow_t = decltype(&MoveWindow);
+MoveWindow_t MoveWindow_Original;
+BOOL WINAPI MoveWindow_Hook(HWND hWnd,
+                            int X,
+                            int Y,
+                            int nWidth,
+                            int nHeight,
+                            BOOL bRepaint) {
+    auto original = [=]() {
+        return MoveWindow_Original(hWnd, X, Y, nWidth, nHeight, bRepaint);
+    };
+
+    WCHAR szClassName[64];
+    if (GetClassName(hWnd, szClassName, ARRAYSIZE(szClassName)) == 0) {
+        return original();
+    }
+
+    if (_wcsicmp(szClassName, L"XamlExplorerHostIslandWindow") == 0) {
+        DWORD threadId = GetWindowThreadProcessId(hWnd, nullptr);
+        if (!threadId) {
+            return original();
+        }
+
+        HANDLE thread =
+            OpenThread(THREAD_QUERY_LIMITED_INFORMATION, FALSE, threadId);
+        if (!thread) {
+            return original();
+        }
+
+        PWSTR threadDescription;
+        HRESULT hr = pGetThreadDescription
+                         ? pGetThreadDescription(thread, &threadDescription)
+                         : E_FAIL;
+        CloseHandle(thread);
+        if (FAILED(hr)) {
+            return original();
+        }
+
+        bool isMultitaskingView =
+            wcscmp(threadDescription, L"MultitaskingView") == 0;
+
+        LocalFree(threadDescription);
+
+        if (!isMultitaskingView) {
+            return original();
+        }
+
+        POINT pt;
+        GetCursorPos(&pt);
+
+        HMONITOR monitor = MonitorFromPoint(pt, MONITOR_DEFAULTTONEAREST);
+        if (GetTaskbarLocationForMonitor(monitor) == TaskbarLocation::bottom) {
+            return original();
+        }
+
+        MONITORINFO monitorInfo{
+            .cbSize = sizeof(MONITORINFO),
+        };
+        GetMonitorInfo(monitor, &monitorInfo);
+
+        UINT monitorDpiX = 96;
+        UINT monitorDpiY = 96;
+        GetDpiForMonitor(monitor, MDT_DEFAULT, &monitorDpiX, &monitorDpiY);
+
+        Y = monitorInfo.rcWork.top + MulDiv(12, monitorDpiY, 96);
+    } else {
+        return original();
+    }
+
+    Wh_Log(L"Adjusting pos for %s: %dx%d, %dx%d", szClassName, X, Y, X + nWidth,
+           Y + nHeight);
+
+    return MoveWindow_Original(hWnd, X, Y, nWidth, nHeight, bRepaint);
+}
+
 using MapWindowPoints_t = decltype(&MapWindowPoints);
 MapWindowPoints_t MapWindowPoints_Original;
 int WINAPI MapWindowPoints_Hook(HWND hWndFrom,
@@ -1835,6 +1910,9 @@ BOOL Wh_ModInit() {
 
     WindhawkUtils::Wh_SetFunctionHookT(SetWindowPos, SetWindowPos_Hook,
                                        &SetWindowPos_Original);
+
+    WindhawkUtils::Wh_SetFunctionHookT(MoveWindow, MoveWindow_Hook,
+                                       &MoveWindow_Original);
 
     WindhawkUtils::Wh_SetFunctionHookT(MapWindowPoints, MapWindowPoints_Hook,
                                        &MapWindowPoints_Original);
