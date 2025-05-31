@@ -1966,6 +1966,8 @@ BOOL Wh_ModInit() {
     WindhawkUtils::Wh_SetFunctionHookT(DPA_DeletePtr, DPA_DeletePtr_Hook,
                                        &DPA_DeletePtr_Original);
 
+    g_initialized = true;
+
     return TRUE;
 }
 
