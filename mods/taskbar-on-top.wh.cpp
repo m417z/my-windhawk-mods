@@ -114,6 +114,8 @@ int g_lastTaskbarAlignment;
 std::atomic<DWORD> g_UpdateFlyoutPosition_threadId;
 void* g_UpdateFlyoutPosition_pThis;
 
+winrt::Windows::Foundation::Size g_lastFlyoutPositionSize;
+
 using FrameworkElementLoadedEventRevoker = winrt::impl::event_revoker<
     IFrameworkElement,
     &winrt::impl::abi<IFrameworkElement>::type::remove_Loaded>;
@@ -1274,8 +1276,9 @@ BOOL WINAPI SetWindowPos_Hook(HWND hWnd,
             _wcsicmp(rootOwnerClassName, L"XamlExplorerHostIslandWindow") ==
                 0) {
             // Probably hovering a XAML thumbnail preview, make it so that the
-            // tooltip doesn't cover the close button.
-            Y += cy + MulDiv(40, monitorDpiY, 96);
+            // tooltip doesn't cover the thumbnail preview.
+            Y = monitorInfo.rcWork.top +
+                MulDiv(10 + g_lastFlyoutPositionSize.Height, monitorDpiY, 96);
         } else if (Y < monitorInfo.rcWork.top) {
             Y = monitorInfo.rcWork.top;
         } else if (Y > monitorInfo.rcWork.bottom - cy) {
@@ -1399,6 +1402,7 @@ int WINAPI MapWindowPoints_Hook(HWND hWndFrom,
     }
 
     auto flyoutPositionSize = hoverFlyoutGrid.DesiredSize();
+    g_lastFlyoutPositionSize = flyoutPositionSize;
 
     DWORD messagePos = GetMessagePos();
     POINT pt{
