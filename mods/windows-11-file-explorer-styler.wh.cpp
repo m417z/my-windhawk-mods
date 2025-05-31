@@ -2,7 +2,7 @@
 // @id              windows-11-file-explorer-styler
 // @name            Windows 11 File Explorer Styler
 // @description     Customize the File Explorer with themes contributed by others or create your own
-// @version         1.1
+// @version         1.2
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
@@ -42,6 +42,18 @@ Explorer11](https://raw.githubusercontent.com/ramensoftware/windows-11-file-expl
 \
 Minimal
 Explorer11](https://github.com/ramensoftware/windows-11-file-explorer-styling-guide/blob/main/Themes/Minimal%20Explorer11/README.md)
+
+[![Tabless](https://raw.githubusercontent.com/ramensoftware/windows-11-file-explorer-styling-guide/main/Themes/Tabless/screenshot-small.png)
+\
+Tabless](https://github.com/ramensoftware/windows-11-file-explorer-styling-guide/blob/main/Themes/Tabless/README.md)
+
+[![NoCommandBar](https://raw.githubusercontent.com/ramensoftware/windows-11-file-explorer-styling-guide/main/Themes/NoCommandBar/screenshot-small.png)
+\
+NoCommandBar](https://github.com/ramensoftware/windows-11-file-explorer-styling-guide/blob/main/Themes/NoCommandBar/README.md)
+
+[![MicaBar](https://raw.githubusercontent.com/ramensoftware/windows-11-file-explorer-styling-guide/main/Themes/MicaBar/screenshot-small.png)
+\
+MicaBar](https://github.com/ramensoftware/windows-11-file-explorer-styling-guide/blob/main/Themes/MicaBar/README.md)
 
 More themes can be found in the **Themes** section of [The Windows 11 file
 explorer styling
@@ -131,6 +143,9 @@ from the **TranslucentTB** project.
   $options:
   - "": None
   - Minimal Explorer11: Minimal Explorer11
+  - Tabless: Tabless
+  - NoCommandBar: NoCommandBar
+  - MicaBar: MicaBar
 - controlStyles:
   - - target: ""
       $name: Target
@@ -182,6 +197,7 @@ struct ThemeTargetStyles {
 
 struct Theme {
     std::vector<ThemeTargetStyles> targetStyles;
+    std::vector<PCWSTR> styleConstants;
     int explorerFrameContainerHeight = 0;
 };
 
@@ -269,7 +285,60 @@ const Theme g_themeMinimal_Explorer11 = {{
         L"Background=Transparent",
         L"Width=100",
         L"HorizontalAlignment=0"}},
-}, /*explorerFrameContainerHeight=*/42};
+}, {}, /*explorerFrameContainerHeight=*/42};
+
+const Theme g_themeTabless = {{
+    ThemeTargetStyles{L"Microsoft.UI.Xaml.Controls.Grid#CommandBarControlRootGrid", {
+        L"Background=Transparent"}},
+    ThemeTargetStyles{L"Microsoft.UI.Xaml.Controls.Grid#ContentRoot", {
+        L"Background=Transparent"}},
+    ThemeTargetStyles{L"FileExplorerExtensions.NavigationBarControl", {
+        L"Grid.Row=$NavigationBarGrid"}},
+    ThemeTargetStyles{L"FileExplorerExtensions.CommandBarControl", {
+        L"Grid.Row=$CommandBarGrid"}},
+    ThemeTargetStyles{L"Microsoft.UI.Xaml.Controls.Grid#TabContainerGrid > Border", {
+        L"Visibility=Collapsed"}},
+    ThemeTargetStyles{L"Microsoft.UI.Xaml.Controls.Grid#TabContainer > Microsoft.UI.Xaml.Controls.Button#CloseButton", {
+        L"Visibility=Collapsed"}},
+    ThemeTargetStyles{L"Microsoft.UI.Xaml.Controls.TabViewItem > Microsoft.UI.Xaml.Controls.Grid#LayoutRoot > Microsoft.UI.Xaml.Controls.Canvas", {
+        L"Opacity=0"}},
+    ThemeTargetStyles{L"Grid#NavigationBarControlGrid", {
+        L"Background:=<SolidColorBrush Color=\"{ThemeResource SystemChromeLowColor}\" />"}},
+    ThemeTargetStyles{L"Microsoft.UI.Xaml.Controls.Grid#TabContainer", {
+        L"BorderThickness=0"}},
+    ThemeTargetStyles{L"Microsoft.UI.Xaml.Controls.ContentPresenter > Microsoft.UI.Xaml.Controls.StackPanel > Microsoft.UI.Xaml.Controls.TextBlock", {
+        L"FontFamily=Segoe UI, Segoe Fluent Icons",
+        L"FontWeight=Normal"}},
+    ThemeTargetStyles{L"Microsoft.UI.Xaml.Controls.Grid#CommandBarControlRootGrid", {
+        L"BorderThickness=0,0,0,1"}},
+    ThemeTargetStyles{L"FileExplorerExtensions.FileExplorerTabControl", {
+        L"Height=36"}},
+    ThemeTargetStyles{L"Microsoft.UI.Xaml.Controls.Grid#TabContainer", {
+        L"Padding=1,0,0,1"}},
+    ThemeTargetStyles{L"Microsoft.UI.Xaml.Controls.Viewbox#IconBox", {
+        L"Margin=0,0,4,0"}},
+    ThemeTargetStyles{L"Microsoft.UI.Xaml.Controls.TabViewItem", {
+        L"Margin=0,-8,0,0"}},
+}, {
+    L"NavigationBarGrid=2",
+    L"CommandBarGrid=1",
+}, /*explorerFrameContainerHeight=*/0};
+
+const Theme g_themeNoCommandBar = {{
+    ThemeTargetStyles{L"FileExplorerExtensions.CommandBarControl", {
+        L"Visibility=Collapsed"}},
+    ThemeTargetStyles{L"FileExplorerExtensions.NavigationBarControl", {
+        L"Grid.RowSpan=2",
+        L"Margin=0,0,0,1"}},
+}, {}, /*explorerFrameContainerHeight=*/87};
+
+const Theme g_themeMicaBar = {{
+    ThemeTargetStyles{L"Grid#CommandBarControlRootGrid", {
+        L"Background:=<SolidColorBrush Color=\"{ThemeResource LayerOnMicaBaseAltFillColorDefault}\"/>",
+        L"BorderThickness=0,0,0,1"}},
+    ThemeTargetStyles{L"CommandBar#FileExplorerCommandBar", {
+        L"Background=Transparent"}},
+}, {}, /*explorerFrameContainerHeight=*/0};
 
 // clang-format on
 
@@ -2159,8 +2228,34 @@ void CleanupCustomizations(InstanceHandle handle) {
 using StyleConstant = std::pair<std::wstring, std::wstring>;
 using StyleConstants = std::vector<StyleConstant>;
 
-StyleConstants LoadStyleConstants() {
+std::optional<StyleConstant> ParseStyleConstant(std::wstring_view constant) {
+    // Skip if commented.
+    if (constant.starts_with(L"//")) {
+        return std::nullopt;
+    }
+
+    auto eqPos = constant.find(L'=');
+    if (eqPos == constant.npos) {
+        Wh_Log(L"Skipping entry with no '=': %.*s",
+               static_cast<int>(constant.length()), constant.data());
+        return std::nullopt;
+    }
+
+    auto key = TrimStringView(constant.substr(0, eqPos));
+    auto val = TrimStringView(constant.substr(eqPos + 1));
+
+    return StyleConstant{std::wstring(key), std::wstring(val)};
+}
+
+StyleConstants LoadStyleConstants(
+    const std::vector<PCWSTR>& themeStyleConstants) {
     StyleConstants result;
+
+    for (const auto themeStyleConstant : themeStyleConstants) {
+        if (auto parsed = ParseStyleConstant(themeStyleConstant)) {
+            result.push_back(std::move(*parsed));
+        }
+    }
 
     for (int i = 0;; i++) {
         string_setting_unique_ptr constantSetting(
@@ -2169,24 +2264,9 @@ StyleConstants LoadStyleConstants() {
             break;
         }
 
-        // Skip if commented.
-        if (constantSetting[0] == L'/' && constantSetting[1] == L'/') {
-            continue;
+        if (auto parsed = ParseStyleConstant(constantSetting.get())) {
+            result.push_back(std::move(*parsed));
         }
-
-        std::wstring_view constant = constantSetting.get();
-
-        auto eqPos = constant.find(L'=');
-        if (eqPos == constant.npos) {
-            Wh_Log(L"Skipping entry with no '=': %.*s",
-                   static_cast<int>(constant.length()), constant.data());
-            continue;
-        }
-
-        auto key = TrimStringView(constant.substr(0, eqPos));
-        auto val = TrimStringView(constant.substr(eqPos + 1));
-
-        result.push_back({std::wstring(key), std::wstring(val)});
     }
 
     // Reverse the order to allow overriding definitions with the same name.
@@ -2466,10 +2546,17 @@ void ProcessAllStylesFromSettings() {
     const Theme* theme = nullptr;
     if (wcscmp(themeName, L"Minimal Explorer11") == 0) {
         theme = &g_themeMinimal_Explorer11;
+    } else if (wcscmp(themeName, L"Tabless") == 0) {
+        theme = &g_themeTabless;
+    } else if (wcscmp(themeName, L"NoCommandBar") == 0) {
+        theme = &g_themeNoCommandBar;
+    } else if (wcscmp(themeName, L"MicaBar") == 0) {
+        theme = &g_themeMicaBar;
     }
     Wh_FreeStringSetting(themeName);
 
-    StyleConstants styleConstants = LoadStyleConstants();
+    StyleConstants styleConstants = LoadStyleConstants(
+        theme ? theme->styleConstants : std::vector<PCWSTR>{});
 
     if (theme) {
         for (const auto& themeTargetStyle : theme->targetStyles) {
