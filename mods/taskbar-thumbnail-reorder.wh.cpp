@@ -9,7 +9,7 @@
 // @homepage        https://m417z.com/
 // @include         explorer.exe
 // @architecture    x86-64
-// @compilerOptions -lcomctl32 -lole32 -loleaut32 -lruntimeobject -lversion
+// @compilerOptions -lcomctl32 -lole32 -loleaut32 -lruntimeobject -lversion -ldbghelp
 // ==/WindhawkMod==
 
 // Source code is published under The GNU General Public License v3.0.
@@ -58,6 +58,12 @@ or a similar tool), enable the relevant option in the mod's settings.
 
 #include <commctrl.h>
 #include <psapi.h>
+
+#include <initguid.h>
+
+#include <dbghelp.h>
+#include <knownfolders.h>
+#include <shlobj.h>
 
 #include <atomic>
 #include <functional>
@@ -229,6 +235,58 @@ bool WINAPI TaskItemFilter_IsTaskAllowed_Hook(void* pThis, void* pTaskItem) {
     return TaskItemFilter_IsTaskAllowed_Original(pThis, pTaskItem);
 }
 
+BOOL WriteMiniDump(PEXCEPTION_POINTERS ExceptionInfo, BOOL bFullDump) {
+    PWSTR desktopPath;
+    if (SHGetKnownFolderPath(FOLDERID_Desktop, 0, nullptr, &desktopPath) !=
+        S_OK) {
+        Wh_Log(L"SHGetKnownFolderPath failed");
+        return FALSE;
+    }
+
+    WCHAR szDumpFile[MAX_PATH];
+    wcscpy_s(szDumpFile, desktopPath);
+    wcscat_s(szDumpFile, L"\\WindhawkMiniDump.dmp");
+
+    HANDLE hFile =
+        CreateFile(szDumpFile, GENERIC_WRITE, FILE_SHARE_READ, nullptr,
+                   CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (hFile == INVALID_HANDLE_VALUE) {
+        return FALSE;
+    }
+
+    MINIDUMP_EXCEPTION_INFORMATION mei;
+    MINIDUMP_EXCEPTION_INFORMATION* pmei = nullptr;
+
+    if (ExceptionInfo) {
+        mei.ClientPointers = TRUE;
+        mei.ExceptionPointers = ExceptionInfo;
+        mei.ThreadId = GetCurrentThreadId();
+        pmei = &mei;
+    }
+
+    MINIDUMP_TYPE DumpType = MiniDumpNormal;
+    if (bFullDump) {
+        // MINIDUMP_TYPE enumeration - https://stackoverflow.com/a/5041924
+        DumpType =
+            (MINIDUMP_TYPE)(MiniDumpWithFullMemory | MiniDumpWithHandleData |
+                            MiniDumpWithThreadInfo |
+                            MiniDumpWithProcessThreadData |
+                            MiniDumpWithFullMemoryInfo |
+                            MiniDumpWithUnloadedModules |
+                            MiniDumpWithFullAuxiliaryState |
+                            MiniDumpIgnoreInaccessibleMemory |
+                            MiniDumpWithTokenInformation);
+    }
+
+    BOOL bSucceeded =
+        MiniDumpWriteDump(GetCurrentProcess(), GetCurrentProcessId(), hFile,
+                          DumpType, pmei, nullptr, nullptr);
+
+    CloseHandle(hFile);
+
+    return bSucceeded;
+}
+
 bool MoveTaskInTaskList(HWND hMMTaskListWnd,
                         void* lpMMTaskListLongPtr,
                         void* taskGroup,
@@ -254,6 +312,27 @@ bool MoveTaskInTaskList(HWND hMMTaskListWnd,
     g_getPtr_captureForThreadId = 0;
 
     if (indexFrom == -1) {
+        static volatile bool wroteDump = false;
+        if (!wroteDump) {
+            Wh_Log(L"Creating dump");
+
+            static volatile HWND hMMTaskListWnd_;
+            hMMTaskListWnd_ = hMMTaskListWnd;
+            static volatile void* lpMMTaskListLongPtr_;
+            lpMMTaskListLongPtr_ = lpMMTaskListLongPtr;
+            static volatile void* taskGroup_;
+            taskGroup_ = taskGroup;
+            static volatile void* taskItemFrom_;
+            taskItemFrom_ = taskItemFrom;
+            static volatile void* taskItemTo_;
+            taskItemTo_ = taskItemTo;
+
+            WriteMiniDump(nullptr, /*bFullDump=*/true);
+
+            wroteDump = true;
+            Wh_Log(L"Created dump");
+        }
+
         Wh_Log(L"Moving failed");
         return false;
     }
