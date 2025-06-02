@@ -1,7 +1,7 @@
 // ==WindhawkMod==
 // @id              windows-11-notification-center-styler
 // @name            Windows 11 Notification Center Styler
-// @description     Customize the Notification Center with themes contributed by others or create your own
+// @description     Customize the Notification Center and Action Center with themes contributed by others or create your own
 // @version         1.2
 // @author          m417z
 // @github          https://github.com/m417z
@@ -25,8 +25,8 @@
 /*
 # Windows 11 Notification Center Styler
 
-Customize the Notification Center with themes contributed by others or create
-your own.
+Customize the Notification Center and Action Center with themes contributed by
+others or create your own.
 
 Also check out the **Windows 11 Taskbar Styler**, **Windows 11 Start Menu
 Styler** mods.
