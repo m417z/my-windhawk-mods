@@ -2,7 +2,7 @@
 // @id              extension-change-no-warning
 // @name            Turn off change file extension warning
 // @description     When a file is renamed and its extension is changed, a confirmation warning appears, this mod turns it off
-// @version         1.0
+// @version         1.0.1
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
