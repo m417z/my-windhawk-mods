@@ -2,7 +2,7 @@
 // @id              taskbar-button-click
 // @name            Middle click to close on the taskbar
 // @description     Close programs with a middle click on the taskbar instead of creating a new instance
-// @version         1.0.7
+// @version         1.0.8
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
@@ -187,7 +187,7 @@ void WINAPI CTaskListWnd__HandleClick_Hook(LPVOID pThis,
                                            int param5) {
     Wh_Log(L"> %d", clickAction);
 
-    if (!CTaskListWnd_HandleClick_Original) {
+    if (g_winVersion <= WinVersion::Win10) {
         // A magic number for Win10.
         g_pCTaskListWndHandlingClick = (BYTE*)pThis + 0x28;
     }
@@ -199,7 +199,7 @@ void WINAPI CTaskListWnd__HandleClick_Hook(LPVOID pThis,
     CTaskListWnd__HandleClick_Original(pThis, taskBtnGroup, taskItemIndex,
                                        clickAction, param4, param5);
 
-    if (!CTaskListWnd_HandleClick_Original) {
+    if (g_winVersion <= WinVersion::Win10) {
         g_pCTaskListWndHandlingClick = nullptr;
     }
 
