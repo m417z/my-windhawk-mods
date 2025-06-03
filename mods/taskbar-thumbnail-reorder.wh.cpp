@@ -237,13 +237,11 @@ bool MoveTaskInTaskList(HWND hMMTaskListWnd,
     void* taskBtnGroup = CTaskListWnd__GetTBGroupFromGroup(lpMMTaskListLongPtr,
                                                            taskGroup, nullptr);
     if (!taskBtnGroup) {
-        Wh_Log(L"Moving failed");
         return false;
     }
 
     int taskBtnGroupType = CTaskBtnGroup_GetGroupType(taskBtnGroup);
     if (taskBtnGroupType != 1 && taskBtnGroupType != 3) {
-        Wh_Log(L"Moving failed");
         return false;
     }
 
@@ -254,13 +252,11 @@ bool MoveTaskInTaskList(HWND hMMTaskListWnd,
     g_getPtr_captureForThreadId = 0;
 
     if (indexFrom == -1) {
-        Wh_Log(L"Moving failed");
         return false;
     }
 
     HDPA buttonsArray = g_getPtr_lastHdpa;
     if (!buttonsArray) {
-        Wh_Log(L"Moving failed");
         return false;
     }
 
@@ -271,18 +267,15 @@ bool MoveTaskInTaskList(HWND hMMTaskListWnd,
     g_getPtr_captureForThreadId = 0;
 
     if (indexTo == -1) {
-        Wh_Log(L"Moving failed");
         return false;
     }
 
     if (g_getPtr_lastHdpa != buttonsArray) {
-        Wh_Log(L"Moving failed");
         return false;
     }
 
     void* button = (void*)DPA_DeletePtr(buttonsArray, indexFrom);
     if (!button) {
-        Wh_Log(L"Moving failed");
         return false;
     }
 
@@ -301,10 +294,6 @@ bool MoveTaskInTaskList(HWND hMMTaskListWnd,
                 _wcsicmp(szClassName, L"TaskListThumbnailWnd") != 0) {
                 hThumbnailWnd = nullptr;
             }
-        }
-
-        if (!hThumbnailWnd) {
-            Wh_Log(L"Moving failed");
         }
 
         if (hThumbnailWnd) {
@@ -368,7 +357,6 @@ HDPA GetTaskItemsArray(void* taskGroup) {
 bool MoveTaskInGroup(void* taskGroup, void* taskItemFrom, void* taskItemTo) {
     HDPA taskItemsArray = GetTaskItemsArray(taskGroup);
     if (!taskItemsArray) {
-        Wh_Log(L"Moving failed");
         return false;
     }
 
@@ -384,7 +372,6 @@ bool MoveTaskInGroup(void* taskGroup, void* taskItemFrom, void* taskItemTo) {
     }
 
     if (indexFrom == -1) {
-        Wh_Log(L"Moving failed");
         return false;
     }
 
@@ -397,7 +384,6 @@ bool MoveTaskInGroup(void* taskGroup, void* taskItemFrom, void* taskItemTo) {
     }
 
     if (indexTo == -1) {
-        Wh_Log(L"Moving failed");
         return false;
     }
 
@@ -422,14 +408,12 @@ bool MoveTaskInGroup(void* taskGroup, void* taskItemFrom, void* taskItemTo) {
         }
 
         if (!hMMTaskSwWnd) {
-            Wh_Log(L"No hMMTaskSwWnd");
             return;
         }
 
         HWND hMMTaskListWnd =
             FindWindowEx(hMMTaskSwWnd, nullptr, L"MSTaskListWClass", nullptr);
         if (!hMMTaskListWnd) {
-            Wh_Log(L"No hMMTaskListWnd");
             return;
         }
 
