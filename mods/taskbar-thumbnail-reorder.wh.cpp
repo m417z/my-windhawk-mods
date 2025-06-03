@@ -419,8 +419,11 @@ bool MoveTaskInGroup(void* taskGroup, void* taskItemFrom, void* taskItemTo) {
 
         void* lpMMTaskListLongPtr = (void*)GetWindowLongPtr(hMMTaskListWnd, 0);
 
-        MoveTaskInTaskList(hMMTaskListWnd, lpMMTaskListLongPtr, taskGroup,
-                           taskItemFrom, taskItemTo);
+        if (!MoveTaskInTaskList(hMMTaskListWnd, lpMMTaskListLongPtr, taskGroup,
+                                taskItemFrom, taskItemTo)) {
+            Wh_Log(L"Failed to move task item in taskbar %08X",
+                   (DWORD)(DWORD_PTR)hMMTaskListWnd);
+        }
     };
 
     EnumThreadWindows(
