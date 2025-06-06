@@ -295,6 +295,7 @@ struct ThemeTargetStyles {
 
 struct Theme {
     std::vector<ThemeTargetStyles> targetStyles;
+    std::vector<PCWSTR> styleConstants;
 };
 
 // clang-format off
@@ -3235,8 +3236,34 @@ void CleanupCustomizations(InstanceHandle handle) {
 using StyleConstant = std::pair<std::wstring, std::wstring>;
 using StyleConstants = std::vector<StyleConstant>;
 
-StyleConstants LoadStyleConstants() {
+std::optional<StyleConstant> ParseStyleConstant(std::wstring_view constant) {
+    // Skip if commented.
+    if (constant.starts_with(L"//")) {
+        return std::nullopt;
+    }
+
+    auto eqPos = constant.find(L'=');
+    if (eqPos == constant.npos) {
+        Wh_Log(L"Skipping entry with no '=': %.*s",
+               static_cast<int>(constant.length()), constant.data());
+        return std::nullopt;
+    }
+
+    auto key = TrimStringView(constant.substr(0, eqPos));
+    auto val = TrimStringView(constant.substr(eqPos + 1));
+
+    return StyleConstant{std::wstring(key), std::wstring(val)};
+}
+
+StyleConstants LoadStyleConstants(
+    const std::vector<PCWSTR>& themeStyleConstants) {
     StyleConstants result;
+
+    for (const auto themeStyleConstant : themeStyleConstants) {
+        if (auto parsed = ParseStyleConstant(themeStyleConstant)) {
+            result.push_back(std::move(*parsed));
+        }
+    }
 
     for (int i = 0;; i++) {
         string_setting_unique_ptr constantSetting(
@@ -3245,24 +3272,9 @@ StyleConstants LoadStyleConstants() {
             break;
         }
 
-        // Skip if commented.
-        if (constantSetting[0] == L'/' && constantSetting[1] == L'/') {
-            continue;
+        if (auto parsed = ParseStyleConstant(constantSetting.get())) {
+            result.push_back(std::move(*parsed));
         }
-
-        std::wstring_view constant = constantSetting.get();
-
-        auto eqPos = constant.find(L'=');
-        if (eqPos == constant.npos) {
-            Wh_Log(L"Skipping entry with no '=': %.*s",
-                   static_cast<int>(constant.length()), constant.data());
-            continue;
-        }
-
-        auto key = TrimStringView(constant.substr(0, eqPos));
-        auto val = TrimStringView(constant.substr(eqPos + 1));
-
-        result.push_back({std::wstring(key), std::wstring(val)});
     }
 
     // Reverse the order to allow overriding definitions with the same name.
@@ -3638,7 +3650,8 @@ void ProcessAllStylesFromSettings() {
     }
     Wh_FreeStringSetting(themeName);
 
-    StyleConstants styleConstants = LoadStyleConstants();
+    StyleConstants styleConstants = LoadStyleConstants(
+        theme ? theme->styleConstants : std::vector<PCWSTR>{});
 
     if (theme) {
         for (const auto& themeTargetStyle : theme->targetStyles) {
