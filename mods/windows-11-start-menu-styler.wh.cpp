@@ -228,6 +228,12 @@ from the **TranslucentTB** project.
   - 21996: "21996"
   - Down Aero: Down Aero
   - UniMenu: UniMenu
+- disableNewStartMenuLayout: false
+  $name: Disable the new start menu layout
+  $description: >-
+    Allows to disable the new start menu layout which is incompatible with some
+    themes. Disabling it won't result in visible changes, but the start menu
+    Phone Link pane can't be used when the new layout is disabled.
 - controlStyles:
   - - target: ""
       $name: Target
@@ -2071,6 +2077,8 @@ bool g_elementPropertyModifying;
 
 winrt::Windows::Foundation::IAsyncOperation<bool>
     g_delayedAllAppsRootVisibilitySet;
+
+bool g_disableNewStartMenuLayout;
 
 winrt::Windows::Foundation::IInspectable ReadLocalValueWithWorkaround(
     DependencyObject elementDo,
@@ -4576,6 +4584,49 @@ HWND GetCoreWnd() {
     return hWnd;
 }
 
+enum FEATURE_ENABLED_STATE {
+    FEATURE_ENABLED_STATE_DEFAULT = 0,
+    FEATURE_ENABLED_STATE_DISABLED = 1,
+    FEATURE_ENABLED_STATE_ENABLED = 2,
+};
+
+#pragma pack(push, 1)
+struct RTL_FEATURE_CONFIGURATION {
+    unsigned int featureId;
+    unsigned __int32 group : 4;
+    FEATURE_ENABLED_STATE enabledState : 2;
+    unsigned __int32 enabledStateOptions : 1;
+    unsigned __int32 unused1 : 1;
+    unsigned __int32 variant : 6;
+    unsigned __int32 variantPayloadKind : 2;
+    unsigned __int32 unused2 : 16;
+    unsigned int payload;
+};
+#pragma pack(pop)
+
+using RtlQueryFeatureConfiguration_t = int(NTAPI*)(UINT32,
+                                                   int,
+                                                   INT64*,
+                                                   RTL_FEATURE_CONFIGURATION*);
+RtlQueryFeatureConfiguration_t RtlQueryFeatureConfiguration_Original;
+int NTAPI RtlQueryFeatureConfiguration_Hook(UINT32 featureId,
+                                            int group,
+                                            INT64* variant,
+                                            RTL_FEATURE_CONFIGURATION* config) {
+    int ret = RtlQueryFeatureConfiguration_Original(featureId, group, variant,
+                                                    config);
+
+    switch (featureId) {
+        case 48697323:
+            // Disable the Start Menu Phone Link layout feature.
+            // https://winaero.com/enable-phone-link-flyout-start-menu/
+            config->enabledState = FEATURE_ENABLED_STATE_DISABLED;
+            break;
+    }
+
+    return ret;
+}
+
 BOOL Wh_ModInit() {
     Wh_Log(L">");
 
@@ -4621,6 +4672,22 @@ BOOL Wh_ModInit() {
         }
     }
 
+    if (g_target == Target::StartMenu &&
+        (g_disableNewStartMenuLayout =
+             Wh_GetIntSetting(L"disableNewStartMenuLayout"))) {
+        HMODULE hNtDll = LoadLibraryW(L"ntdll.dll");
+        RtlQueryFeatureConfiguration_t pRtlQueryFeatureConfiguration =
+            (RtlQueryFeatureConfiguration_t)GetProcAddress(
+                hNtDll, "RtlQueryFeatureConfiguration");
+        if (pRtlQueryFeatureConfiguration) {
+            Wh_SetFunctionHook((void*)pRtlQueryFeatureConfiguration,
+                               (void*)RtlQueryFeatureConfiguration_Hook,
+                               (void**)&RtlQueryFeatureConfiguration_Original);
+        } else {
+            Wh_Log(L"Failed to hook RtlQueryFeatureConfiguration");
+        }
+    }
+
     return TRUE;
 }
 
@@ -4653,6 +4720,14 @@ void Wh_ModUninit() {
 
 void Wh_ModSettingsChanged() {
     Wh_Log(L">");
+
+    if (g_target == Target::StartMenu &&
+        Wh_GetIntSetting(L"disableNewStartMenuLayout") !=
+            g_disableNewStartMenuLayout) {
+        // Exit to have the new setting take effect. The process will be
+        // relaunched automatically.
+        ExitProcess(0);
+    }
 
     if (g_visualTreeWatcher) {
         g_visualTreeWatcher->UnadviseVisualTreeChange();
