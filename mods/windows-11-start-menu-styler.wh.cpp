@@ -288,6 +288,7 @@ struct ThemeTargetStyles {
 
 struct Theme {
     std::vector<ThemeTargetStyles> targetStyles;
+    std::vector<ThemeTargetStyles> webViewTargetStyles;
     std::vector<PCWSTR> styleConstants;
 };
 
@@ -4199,8 +4200,24 @@ bool ProcessSingleTargetStylesFromSettings(
     return true;
 }
 
-void ProcessWebStylesFromSettings(const StyleConstants& styleConstants) {
+void ProcessWebStylesFromSettings(
+    const StyleConstants& styleConstants,
+    const std::vector<ThemeTargetStyles>& themeStyles) {
     std::wstring webContentCss;
+
+    for (const auto& themeStyle : themeStyles) {
+        Wh_Log(L"Processing theme WebView styles for %s", themeStyle.target);
+
+        webContentCss += themeStyle.target;
+        webContentCss += L" {\n";
+
+        for (const auto& style : themeStyle.styles) {
+            webContentCss += ApplyStyleConstants(style, styleConstants);
+            webContentCss += L";\n";
+        }
+
+        webContentCss += L"}\n";
+    }
 
     for (int i = 0;; i++) {
         string_setting_unique_ptr targetStringSetting(
@@ -4309,7 +4326,9 @@ void ProcessAllStylesFromSettings() {
     }
 
     if (g_target == Target::SearchHost) {
-        ProcessWebStylesFromSettings(styleConstants);
+        ProcessWebStylesFromSettings(styleConstants,
+                                     theme ? theme->webViewTargetStyles
+                                           : std::vector<ThemeTargetStyles>{});
     }
 }
 
