@@ -5205,6 +5205,12 @@ void Wh_ModUninit() {
     Wh_Log(L">");
 
     if (g_target == Target::StartMenu) {
+        if (g_disableNewStartMenuLayout) {
+            // Exit to have the new setting take effect. The process will be
+            // relaunched automatically.
+            ExitProcess(0);
+        }
+
         StopStatsTimer();
     }
 
