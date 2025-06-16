@@ -159,7 +159,6 @@ styles, such as the font color and size.
       - plainText: plain text
       - libHtml: parse as html with Windows library, doesn't need to be valid
       - libXml: parse as xml/ rss with Windows library, must be valid xml, all tags opened must be closed
-      - internalHtmlXml: parse as html/ xml/ rss with internal method, doesn't need to be valid
   $name: Web content items
   $description: >-
     Will be used to fetch data displayed in place of the %web<n>%,
@@ -628,15 +627,6 @@ std::wstring ExtractWebContent(const std::wstring& webContent,
     return webContent.substr(start, end - start);
 }
 
-// simple performant string replace all function for when regex isn't needed
-void ReplaceAll(std::wstring& str, std::wstring_view from, std::wstring_view to) {
-    size_t pos = 0;
-    while ((pos = str.find(from, pos)) != std::wstring::npos) {
-        str.replace(pos, from.length(), to);
-        pos += to.length();
-    }
-}
-
 void ParseTags_libHtml(std::wstring& html)
 {
     // "parse as html with Windows library" is dependent on MSHTML from Internet Explorer 11/ IE Mode in Microsoft Edge; if it doesn't run try "Control Panel/ Programs/ Turn Windows Features On or Off/ enable 'Internet Explorer 11'".
@@ -692,65 +682,6 @@ void ParseTags_libXml(std::wstring& xml)
     } catch (...) {
         xml = L"Decoding error";
     }
-}
-
-std::wstring DecodeHtmlNumEntities(std::wstring& input) {
-    std::wstring output;
-    static const std::wregex numericEntity(L"&#(x?[0-9A-Fa-f]+);");
-    std::wsmatch match;
-    std::wstring::const_iterator searchStart(input.cbegin());
-    while (std::regex_search(searchStart, input.cend(), match, numericEntity)) {
-        output += match.prefix().str();// append text before match
-        std::wstring numStr = match[1].str();
-        try {
-            int base = (numStr.starts_with(L"x") || numStr.starts_with(L"X")) ? 16 : 10;
-            unsigned int code = std::stoi(std::wstring{
-                numStr.substr(base == 16 ? 1 : 0)
-            }, nullptr, base);
-            output += std::wstring(1, static_cast<wchar_t>(code));// append decoded character
-        } catch (...) {
-            output += match.str();// append original match on error
-        }
-        searchStart = match.suffix().first;// move past the current match
-    }
-    output += std::wstring(searchStart, input.cend());// append remaining text
-    return output;
-}
-
-void ParseTags_internal(std::wstring& input) {
-    // strip html tags
-    input = std::regex_replace(input, std::wregex(L"<!\\[CDATA\\[(.*?)\\]\\]>"), L"$1");// CDATA
-    ReplaceAll(input, L"<br />", L"\n");// br-tags replace to newlines so `hallo<br />world` and `hallo<br />\nworld` are treated the same
-    input = std::regex_replace(input, std::wregex(L"<[a-zA-Z/][^>]*>"), L" ");// html tags replace to space so multiple segments aren't glued together
-
-    // whitespace cleaning
-    input = std::regex_replace(input, std::wregex(L"[ \\t]+"), L" ");// multiple whitespaces->one space
-    input = std::regex_replace(input, std::wregex(L"\\r"), L"");// simplify line ending formats
-    input = std::regex_replace(input, std::wregex(L"\\n\\s+|\\s+\\n"), L"\n");// multiple newlines->one newline, remove whitespace from start and end of line (also: whitespace-only lines)
-    input = std::regex_replace(input, std::wregex(L"^\\s+|\\s+$"), L"");// remove whitespace (including newlines) from start and end of result
-
-    // html named entities (most common)
-    ReplaceAll(input, L"&amp;", L"&");// sometimes &amp;<other entity>; is used, so it needs to be replaced first
-    static const std::pair<std::wstring_view, std::wstring_view> htmlEntities[] = {
-        { L"&quot;", L"\"" },
-        { L"&apos;", L"'" },
-        { L"&lt;", L"<" },
-        { L"&gt;", L">" },
-        { L"&nbsp;", L" " },
-        { L"&auml;", L"ä" },
-        { L"&Auml;", L"Ä" },
-        { L"&ouml;", L"ö" },
-        { L"&Ouml;", L"Ö" },
-        { L"&uuml;", L"ü" },
-        { L"&Uuml;", L"Ü" },
-        { L"&szlig;", L"ß" }
-    };
-    for (const auto& [entity, replacement] : htmlEntities) {
-        ReplaceAll(input, entity, replacement);
-    }
-
-    // html numeric entities (decimal or hex)
-    input = DecodeHtmlNumEntities(input);
 }
 
 void UpdateWebContent() {
@@ -824,10 +755,6 @@ void UpdateWebContent() {
 
         if (wcscmp(item.contentMode, L"libXml") == 0) {
             ParseTags_libXml(extracted);
-        }
-
-        if (wcscmp(item.contentMode, L"internalHtmlXml") == 0) {
-            ParseTags_internal(extracted);
         }
 
         std::lock_guard<std::mutex> guard(g_webContentMutex);
