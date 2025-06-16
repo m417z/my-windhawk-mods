@@ -157,8 +157,8 @@ styles, such as the font color and size.
       $description: '"plain text" leaves the result unchanged. If the fetched web content includes html/ xml/ rss tags or entities such as &amp; they can be stripped/ decoded with the other options.'
       $options:
       - plainText: plain text
-      - libHtml: parse as html with Windows library, doesn't need to be valid
-      - libXml: parse as xml/ rss with Windows library, must be valid xml, all tags opened must be closed
+      - html: parse as html, doesn't need to be valid
+      - xml: parse as xml/ rss, must be valid xml, all tags opened must be closed
   $name: Web content items
   $description: >-
     Will be used to fetch data displayed in place of the %web<n>%,
@@ -333,11 +333,11 @@ using namespace std::string_view_literals;
 #include <winrt/Windows.UI.Xaml.Markup.h>
 #include <winrt/Windows.UI.Xaml.Media.h>
 
-// needed for libHtml
+// needed for Html
 #include <initguid.h>// loads CLSID_HTMLDocument and IID_IHTMLDocument2
 #include <mshtml.h>
 
-// needed for libXml
+// needed for Xml
 #include <winrt/Windows.Data.Xml.Dom.h>
 
 using namespace winrt::Windows::UI::Xaml;
@@ -627,7 +627,7 @@ std::wstring ExtractWebContent(const std::wstring& webContent,
     return webContent.substr(start, end - start);
 }
 
-void ParseTags_libHtml(std::wstring& html)
+void ParseTags_Html(std::wstring& html)
 {
     // "parse as html with Windows library" is dependent on MSHTML from Internet Explorer 11/ IE Mode in Microsoft Edge; if it doesn't run try "Control Panel/ Programs/ Turn Windows Features On or Off/ enable 'Internet Explorer 11'".
 
@@ -672,7 +672,7 @@ void ParseTags_libHtml(std::wstring& html)
     }
 }
 
-void ParseTags_libXml(std::wstring& xml)
+void ParseTags_Xml(std::wstring& xml)
 {
     try {
         xml = L"<p>" + xml + L"</p>";
@@ -749,12 +749,12 @@ void UpdateWebContent() {
         std::wstring extracted = ExtractWebContent(*urlContent, item.blockStart,
                                                    item.start, item.end);
 
-        if (wcscmp(item.contentMode, L"libHtml") == 0) {
-            ParseTags_libHtml(extracted);
+        if (wcscmp(item.contentMode, L"html") == 0) {
+            ParseTags_Html(extracted);
         }
 
-        if (wcscmp(item.contentMode, L"libXml") == 0) {
-            ParseTags_libXml(extracted);
+        if (wcscmp(item.contentMode, L"xml") == 0) {
+            ParseTags_Xml(extracted);
         }
 
         std::lock_guard<std::mutex> guard(g_webContentMutex);
