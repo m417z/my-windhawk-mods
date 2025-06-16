@@ -335,10 +335,8 @@ using namespace std::string_view_literals;
 #include <winrt/Windows.UI.Xaml.Media.h>
 
 // needed for libHtml
-#include <comdef.h>
-#include <unknwn.h>// required for IID_IUnknown
-#include <mshtml.h>// required for IHTMLDocument2
-#include <Windows.h>
+#include <initguid.h>// loads CLSID_HTMLDocument and IID_IHTMLDocument2
+#include <mshtml.h>
 
 // needed for libXml
 #include <winrt/Windows.Data.Xml.Dom.h>
@@ -643,39 +641,14 @@ void ParseTags_libHtml(std::wstring& html)
 {
     // "parse as html with Windows library" is dependent on MSHTML from Internet Explorer 11/ IE Mode in Microsoft Edge; if it doesn't run try "Control Panel/ Programs/ Turn Windows Features On or Off/ enable 'Internet Explorer 11'".
 
-    // manually defining IID_IHTMLDocument2 and IID_IUnknown in case they aren't automatically loaded
-    const IID IID_IHTMLDocument2 = {0x332C4425, 0x26CB, 0x11D0, {0xB4, 0x83, 0x00, 0xC0, 0x4F, 0xD9, 0x01, 0x19}};
-    const IID IID_IUnknown = {0x00000000, 0x0000, 0x0000, {0xC0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x46}};
-
-    // retrieve CLSID dynamically
-    CLSID clsid;
-    HRESULT hr = CLSIDFromProgID(L"HTMLFILE", &clsid);
-    if (FAILED(hr))
-    {
-        wchar_t hresultText[32];
-        swprintf(hresultText, 32, L"HRESULT: 0x%08X", hr);
-        html = L"Failed to retrieve CLSID for HTML document. " + std::wstring(hresultText);
-        return;
-    }
-
-    // create instance using IUnknown and query for IHTMLDocument2
-    winrt::com_ptr<IUnknown> pUnknown;
-    hr = CoCreateInstance(clsid, NULL, CLSCTX_INPROC_SERVER, IID_IUnknown, (void**)&pUnknown);
-    if (FAILED(hr) || !pUnknown)
+    // create instance using CLSID_HTMLDocument and IID_IHTMLDocument2
+    winrt::com_ptr<IHTMLDocument2> pDoc;
+    HRESULT hr = CoCreateInstance(CLSID_HTMLDocument, NULL, CLSCTX_INPROC_SERVER, IID_IHTMLDocument2, (void**)&pDoc);
+    if (not(SUCCEEDED(hr) && pDoc))
     {
         wchar_t hresultText[32];
         swprintf(hresultText, 32, L"HRESULT: 0x%08X", hr);
         html = L"CoCreateInstance failed. " + std::wstring(hresultText);
-        return;
-    }
-
-    winrt::com_ptr<IHTMLDocument2> pDoc;
-    hr = pUnknown->QueryInterface(IID_IHTMLDocument2, (void**)&pDoc);
-    if (FAILED(hr) || !pDoc)
-    {
-        wchar_t hresultText[32];
-        swprintf(hresultText, 32, L"HRESULT: 0x%08X", hr);
-        html = L"QueryInterface for IHTMLDocument2 failed. " + std::wstring(hresultText);
         return;
     }
 
@@ -689,7 +662,6 @@ void ParseTags_libHtml(std::wstring& html)
     {
         LONG index = 0;
         SafeArrayPutElement(psa, &index, &varHtml);
-
         pDoc->write(psa);
         SafeArrayDestroy(psa);
     }
@@ -706,10 +678,7 @@ void ParseTags_libHtml(std::wstring& html)
             html.assign(text, SysStringLen(text));// store extracted text
             SysFreeString(text);
         }
-        else
-        {
-            html = L"Failed to extract text.";
-        }
+        else {html = L"Failed to extract text.";}
     }
 }
 
@@ -722,7 +691,7 @@ void ParseTags_libXml(std::wstring& xml)
         xml = xmlDoc.InnerText();
     } catch (...) {
         xml = L"Decoding error";
-	}
+    }
 }
 
 std::wstring DecodeHtmlNumEntities(std::wstring& input) {
