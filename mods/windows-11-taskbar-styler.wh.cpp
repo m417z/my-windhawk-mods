@@ -2828,6 +2828,12 @@ VisualStateGroup GetVisualStateGroup(FrameworkElement element,
         }
     }
 
+    // Same as above for an updated element layout (around Jun 2025).
+    if (winrt::get_class_name(element) ==
+        L"SearchUx.SearchUI.SearchButtonRootGrid") {
+        return nullptr;
+    }
+
     auto list = VisualStateManager::GetVisualStateGroups(element);
 
     for (const auto& v : list) {
