@@ -2816,14 +2816,11 @@ VisualStateGroup GetVisualStateGroup(FrameworkElement element,
     // The TaskListButtonPanel child element of the search box (with "Icon and
     // label" configuration) returns a list of size 1, but accessing the first
     // item leads to a null dereference crash. Skip this element.
-    if (winrt::get_class_name(element) == L"Taskbar.TaskListButtonPanel" &&
-        element.Name() == L"ExperienceToggleButtonRootPanel") {
+    if (winrt::get_class_name(element) == L"Taskbar.TaskListButtonPanel") {
         auto parent = Media::VisualTreeHelper::GetParent(element)
                           .try_as<FrameworkElement>();
-        if (parent &&
-            winrt::get_class_name(parent) ==
-                L"Taskbar.SearchBoxLaunchListButton" &&
-            parent.Name() == L"SearchBoxLaunchListButton") {
+        if (parent && winrt::get_class_name(parent) ==
+                          L"Taskbar.SearchBoxLaunchListButton") {
             return nullptr;
         }
     }
@@ -2831,7 +2828,12 @@ VisualStateGroup GetVisualStateGroup(FrameworkElement element,
     // Same as above for an updated element layout (around Jun 2025).
     if (winrt::get_class_name(element) ==
         L"SearchUx.SearchUI.SearchButtonRootGrid") {
-        return nullptr;
+        auto parent = Media::VisualTreeHelper::GetParent(element)
+                          .try_as<FrameworkElement>();
+        if (parent && winrt::get_class_name(parent) ==
+                          L"SearchUx.SearchUI.SearchPillButton") {
+            return nullptr;
+        }
     }
 
     auto list = VisualStateManager::GetVisualStateGroups(element);
