@@ -107,30 +107,31 @@ The resource lookup order then becomes:
 - themePaths: [""]
   $name: Theme paths
   $description: >-
-    Folders with alternative resource files and theme.ini, or .ini files
+    Each path can be a folder with alternative resource files and the theme.ini
+    file, or the .ini theme file itself.
 - redirectionResourcePaths:
-  - - original: '%SystemRoot%\System32\imageres.dll'
+  - - original: ""
       $name: The redirected resource file
       $description: >-
-        The original file from which resources are loaded, can be a pattern
+        The original file from which resources are loaded. Can be a pattern
         where '*' matches any number of characters and '?' matches any single
-        character
-    - redirect: 'C:\my-themes\theme-1\imageres.dll'
+        character.
+    - redirect: ""
       $name: The redirection resource file
-      $description: The custom resource file that will be used instead
+      $description: The custom resource file that will be used instead.
   $name: Redirection resource paths
 - allResourceRedirect: false
   $name: Redirect all loaded resources (experimental)
   $description: >-
     Try to redirect all loaded resources, not only the supported resources
-    that are listed in the description
+    that are listed in the description.
 - themeFolder: ""
-  $name: Theme folder (old option)
+  $name: Theme folder (deprecated)
   $description: >-
-    A folder with alternative resource files and theme.ini
+    A folder with alternative resource files and theme.ini.
 
     This option will be removed in the future, please use the new "Theme paths"
-    option above
+    option above.
 */
 // ==/WindhawkModSettings==
 
