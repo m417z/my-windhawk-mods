@@ -8,7 +8,6 @@
 // @twitter         https://twitter.com/m417z
 // @homepage        https://m417z.com/
 // @include         *
-// @compilerOptions -lshlwapi
 // ==/WindhawkMod==
 
 // Source code is published under The GNU General Public License v3.0.
@@ -38,9 +37,9 @@ the repository.
 A short demonstration can be found [here on
 YouTube](https://youtu.be/irzVmKHB83E).
 
-## Theme folders
+## Theme paths
 
-Theme folders can be set in the settings. A theme folder is a folder with
+Theme paths can be set in the settings. A theme path is a folder with
 alternative resource files, and the `theme.ini` file that contains redirection
 rules. For example, the `theme.ini` file may contain the following:
 
@@ -52,6 +51,8 @@ rules. For example, the `theme.ini` file may contain the following:
 
 In this case, the folder must also contain the `explorer.exe`, `imageres.dll`
 files which will be used as the redirection resource files.
+
+Alternatively, the theme path can be the `.ini` file itself.
 
 ## Supported resource types and loading methods
 
@@ -103,10 +104,10 @@ The resource lookup order then becomes:
 
 // ==WindhawkModSettings==
 /*
-- themeFolders: [""]
-  $name: Theme folders
+- themePaths: [""]
+  $name: Theme paths
   $description: >-
-    Folders with alternative resource files and theme.ini
+    Folders with alternative resource files and theme.ini, or .ini files
 - redirectionResourcePaths:
   - - original: '%SystemRoot%\System32\imageres.dll'
       $name: The redirected resource file
@@ -128,16 +129,16 @@ The resource lookup order then becomes:
   $description: >-
     A folder with alternative resource files and theme.ini
 
-    This option will be removed in the future, please use the new "Theme
-    folders" option above
+    This option will be removed in the future, please use the new "Theme paths"
+    option above
 */
 // ==/WindhawkModSettings==
 
 #include <psapi.h>
 #include <shlobj.h>
-#include <shlwapi.h>
 
 #include <atomic>
+#include <filesystem>
 #include <functional>
 #include <mutex>
 #include <optional>
@@ -1899,35 +1900,28 @@ void LoadSettings() {
         }
     };
 
-    auto addRedirectionThemeFolder = [&addRedirectionPath](PCWSTR themeFolder) {
-        WCHAR themeIniFile[MAX_PATH];
-        if (!PathCombine(themeIniFile, themeFolder, L"theme.ini")) {
-            DWORD dwError = GetLastError();
-            Wh_Log(L"Error using theme folder %s: %u", themeFolder, dwError);
-            return false;
+    auto addRedirectionThemePath = [&addRedirectionPath](PCWSTR themePath) {
+        auto initialPath = std::filesystem::path{themePath};
+
+        std::filesystem::path themeFolder;
+        std::filesystem::path themeIniFile;
+        if (std::filesystem::is_directory(initialPath)) {
+            themeFolder = initialPath;
+            themeIniFile = themeFolder / L"theme.ini";
+        } else {
+            themeIniFile = initialPath;
+            themeFolder = themeIniFile.parent_path();
         }
 
-        WIN32_FILE_ATTRIBUTE_DATA fileAttr;
-        if (!GetFileAttributesEx(themeIniFile, GetFileExInfoStandard,
-                                 &fileAttr)) {
-            DWORD dwError = GetLastError();
-            Wh_Log(L"Error getting attributes for %s: %u", themeIniFile,
-                   dwError);
-            return false;
-        }
-
-        ULARGE_INTEGER uli{
-            .LowPart = fileAttr.nFileSizeLow,
-            .HighPart = fileAttr.nFileSizeHigh,
-        };
-        ULONGLONG fileSize = uli.QuadPart;
+        auto fileSize = std::filesystem::file_size(themeIniFile);
 
         std::wstring data(fileSize + 2, L'\0');
-        DWORD result = GetPrivateProfileSection(L"redirections", data.data(),
-                                                data.size(), themeIniFile);
+        DWORD result = GetPrivateProfileSection(
+            L"redirections", data.data(), data.size(), themeIniFile.c_str());
         if (!result || result == data.size() - 2) {
             DWORD dwError = GetLastError();
-            Wh_Log(L"Error reading data from %s: %u", themeIniFile, dwError);
+            Wh_Log(L"Error reading data from %s: %u", themeIniFile.c_str(),
+                   dwError);
             return false;
         }
 
@@ -1937,13 +1931,8 @@ void LoadSettings() {
             if (pEq) {
                 *pEq = L'\0';
 
-                WCHAR redirectFile[MAX_PATH];
-                if (PathCombine(redirectFile, themeFolder, pEq + 1)) {
-                    addRedirectionPath(p, redirectFile);
-                } else {
-                    DWORD dwError = GetLastError();
-                    Wh_Log(L"Skipping %s=%s: %u", p, pEq + 1, dwError);
-                }
+                auto redirectFile = themeFolder / (pEq + 1);
+                addRedirectionPath(p, redirectFile.c_str());
             } else {
                 Wh_Log(L"Skipping %s", p);
             }
@@ -1955,20 +1944,28 @@ void LoadSettings() {
     };
 
     for (int i = 0;; i++) {
-        PCWSTR themeFolder = Wh_GetStringSetting(L"themeFolders[%d]", i);
-        bool hasThemeFolder = *themeFolder;
-        if (hasThemeFolder) {
-            addRedirectionThemeFolder(themeFolder);
+        PCWSTR themePath = Wh_GetStringSetting(L"themePaths[%d]", i);
+        bool hasThemePath = *themePath;
+        if (hasThemePath) {
+            try {
+                addRedirectionThemePath(themePath);
+            } catch (const std::exception& ex) {
+                Wh_Log(L"Error: %S", ex.what());
+            }
         }
-        Wh_FreeStringSetting(themeFolder);
-        if (!hasThemeFolder) {
+        Wh_FreeStringSetting(themePath);
+        if (!hasThemePath) {
             break;
         }
     }
 
     PCWSTR themeFolder = Wh_GetStringSetting(L"themeFolder");
     if (*themeFolder) {
-        addRedirectionThemeFolder(themeFolder);
+        try {
+            addRedirectionThemePath(themeFolder);
+        } catch (const std::exception& ex) {
+            Wh_Log(L"Error: %S", ex.what());
+        }
     }
     Wh_FreeStringSetting(themeFolder);
 
