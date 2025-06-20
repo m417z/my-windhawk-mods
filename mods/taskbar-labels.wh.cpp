@@ -1095,6 +1095,9 @@ void UpdateTaskListButtonWithLabelStyle(
                                       winrt::box_value(2));
         }
 
+        double maxWidth = std::max(taskListButtonWidth - 6, 0.0);
+        indicatorElement.MaxWidth(maxWidth);
+
         double minWidth = 0;
 
         double indicatorElementWidth = indicatorElement.Width();
@@ -1112,6 +1115,10 @@ void UpdateTaskListButtonWithLabelStyle(
                 if (minWidth < 0) {
                     minWidth = 0;
                 }
+            }
+
+            if (minWidth > maxWidth) {
+                minWidth = maxWidth;
             }
         }
 
