@@ -152,6 +152,13 @@ styles, such as the font color and size.
     - MaxLength: 28
       $name: Web content maximum length
       $description: Longer strings will be truncated with ellipsis.
+    - ContentMode: "plain text"
+      $name: Content mode
+      $description: '"plain text" leaves the result unchanged. If the fetched web content includes html/ xml/ rss tags or entities such as &amp; they can be stripped/ decoded with the other options.'
+      $options:
+      - plainText: plain text
+      - html: parse as html, doesn't need to be valid
+      - xml: parse as xml/ rss, must be valid xml, all tags opened must be closed
   $name: Web content items
   $description: >-
     Will be used to fetch data displayed in place of the %web<n>%,
@@ -311,6 +318,7 @@ styles, such as the font color and size.
 #include <string>
 #include <string_view>
 #include <vector>
+#include <regex>
 
 using namespace std::string_view_literals;
 
@@ -324,6 +332,13 @@ using namespace std::string_view_literals;
 #include <winrt/Windows.UI.Xaml.Interop.h>
 #include <winrt/Windows.UI.Xaml.Markup.h>
 #include <winrt/Windows.UI.Xaml.Media.h>
+
+// needed for Html
+#include <initguid.h>// loads CLSID_HTMLDocument and IID_IHTMLDocument2
+#include <mshtml.h>
+
+// needed for Xml
+#include <winrt/Windows.Data.Xml.Dom.h>
 
 using namespace winrt::Windows::UI::Xaml;
 
@@ -355,6 +370,7 @@ struct WebContentsSettings {
     StringSetting start;
     StringSetting end;
     int maxLength;
+    StringSetting contentMode;
 };
 
 struct TextStyleSettings {
@@ -396,6 +412,7 @@ struct {
     StringSetting webContentsStart;
     StringSetting webContentsEnd;
     int webContentsMaxLength;
+    StringSetting webContentsContentMode;
 } g_settings;
 
 #define FORMATTED_BUFFER_SIZE 256
@@ -610,6 +627,63 @@ std::wstring ExtractWebContent(const std::wstring& webContent,
     return webContent.substr(start, end - start);
 }
 
+void ParseTags_Html(std::wstring& html)
+{
+    // "parse as html with Windows library" is dependent on MSHTML from Internet Explorer 11/ IE Mode in Microsoft Edge; if it doesn't run try "Control Panel/ Programs/ Turn Windows Features On or Off/ enable 'Internet Explorer 11'".
+
+    // create instance using CLSID_HTMLDocument and IID_IHTMLDocument2
+    winrt::com_ptr<IHTMLDocument2> pDoc;
+    HRESULT hr = CoCreateInstance(CLSID_HTMLDocument, NULL, CLSCTX_INPROC_SERVER, IID_IHTMLDocument2, (void**)&pDoc);
+    if (not(SUCCEEDED(hr) && pDoc))
+    {
+        wchar_t hresultText[32];
+        swprintf(hresultText, 32, L"HRESULT: 0x%08X", hr);
+        html = L"CoCreateInstance failed. " + std::wstring(hresultText);
+        return;
+    }
+
+    // prepare HTML content for processing
+    VARIANT varHtml;
+    varHtml.vt = VT_BSTR;
+    varHtml.bstrVal = SysAllocString(html.c_str());
+
+    SAFEARRAY* psa = SafeArrayCreateVector(VT_VARIANT, 0, 1);
+    if (psa)
+    {
+        LONG index = 0;
+        SafeArrayPutElement(psa, &index, &varHtml);
+        pDoc->write(psa);
+        SafeArrayDestroy(psa);
+    }
+    SysFreeString(varHtml.bstrVal);
+
+    // extract plain text from the HTML document
+    winrt::com_ptr<IHTMLElement> pBody;
+    pDoc->get_body(pBody.put());
+    if (pBody)
+    {
+        BSTR text;
+        if (SUCCEEDED(pBody->get_innerText(&text)) && text)
+        {
+            html.assign(text, SysStringLen(text));// store extracted text
+            SysFreeString(text);
+        }
+        else {html = L"Failed to extract text.";}
+    }
+}
+
+void ParseTags_Xml(std::wstring& xml)
+{
+    try {
+        xml = L"<p>" + xml + L"</p>";
+        winrt::Windows::Data::Xml::Dom::XmlDocument xmlDoc;
+        xmlDoc.LoadXml(winrt::hstring(xml));
+        xml = xmlDoc.InnerText();
+    } catch (...) {
+        xml = L"Decoding error";
+    }
+}
+
 void UpdateWebContent() {
     int failed = 0;
 
@@ -674,6 +748,14 @@ void UpdateWebContent() {
 
         std::wstring extracted = ExtractWebContent(*urlContent, item.blockStart,
                                                    item.start, item.end);
+
+        if (wcscmp(item.contentMode, L"html") == 0) {
+            ParseTags_Html(extracted);
+        }
+
+        if (wcscmp(item.contentMode, L"xml") == 0) {
+            ParseTags_Xml(extracted);
+        }
 
         std::lock_guard<std::mutex> guard(g_webContentMutex);
 
@@ -2824,6 +2906,7 @@ void LoadSettings() {
         item.start = Wh_GetStringSetting(L"WebContentsItems[%d].Start", i);
         item.end = Wh_GetStringSetting(L"WebContentsItems[%d].End", i);
         item.maxLength = Wh_GetIntSetting(L"WebContentsItems[%d].MaxLength", i);
+        item.contentMode = Wh_GetStringSetting(L"WebContentsItems[%d].ContentMode", i);
 
         g_settings.webContentsItems.push_back(std::move(item));
     }
@@ -2917,6 +3000,8 @@ void LoadSettings() {
         g_settings.webContentsEnd = Wh_GetStringSetting(L"WebContentsEnd");
         g_settings.webContentsMaxLength =
             Wh_GetIntSetting(L"WebContentsMaxLength");
+        g_settings.webContentsContentMode =
+            Wh_GetStringSetting(L"WebContentsContentMode");
     }
 }
 
