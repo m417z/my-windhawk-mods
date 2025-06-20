@@ -1989,6 +1989,10 @@ void LoadSettings() {
         }
     }
 
+    // Reverse the order to allow later entries override earlier ones.
+    std::reverse(pathPatterns.begin(), pathPatterns.end());
+    std::reverse(pathPatternsA.begin(), pathPatternsA.end());
+
     std::unique_lock lock{g_redirectionResourcePathsMutex};
     g_redirectionResourcePaths = std::move(paths);
     g_redirectionResourcePathsA = std::move(pathsA);
