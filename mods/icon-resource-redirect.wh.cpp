@@ -2,7 +2,7 @@
 // @id              icon-resource-redirect
 // @name            Resource Redirect
 // @description     Define alternative files for loading various resources (e.g. icons in imageres.dll) for simple theming without having to modify system files
-// @version         1.1.9
+// @version         1.2
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
@@ -26,6 +26,8 @@
 Define alternative files for loading various resources (e.g. icons in
 imageres.dll) for simple theming without having to modify system files.
 
+**Note**: This mod requires Windhawk v1.6 or newer.
+
 ## Icon themes
 
 A collection of community contributed icon theme packs can be found in the
@@ -33,10 +35,9 @@ A collection of community contributed icon theme packs can be found in the
 themes](https://github.com/ramensoftware/resource-redirect-icon-themes)
 repository. An icon theme can be selected in the mod's settings.
 
-### Manual installation
-
-An icon theme can be installed manually by downloading it and specifying its
-path in the mod's settings. For details, refer to the guide in the repository.
+An icon theme can also be installed manually by downloading it and specifying
+its path in the mod's settings. For details, refer to the guide in the
+repository.
 
 A short demonstration can be found [here on
 YouTube](https://youtu.be/irzVmKHB83E).
@@ -2452,8 +2453,8 @@ std::wstring GetIconThemePath(std::wstring_view iconTheme) {
 }
 
 void LoadSettings() {
-    g_settings.allResourceRedirect = Wh_GetIntSetting(L"allResourceRedirect");
     g_settings.iconTheme = WindhawkUtils::StringSetting::make(L"iconTheme");
+    g_settings.allResourceRedirect = Wh_GetIntSetting(L"allResourceRedirect");
 
     std::unordered_map<std::wstring, std::vector<std::wstring>> paths;
     std::unordered_map<std::string, std::vector<std::string>> pathsA;
