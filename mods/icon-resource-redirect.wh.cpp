@@ -8,7 +8,7 @@
 // @twitter         https://twitter.com/m417z
 // @homepage        https://m417z.com/
 // @include         *
-// @compilerOptions -lole32 -loleaut32
+// @compilerOptions -lcomctl32 -lole32 -loleaut32
 // ==/WindhawkMod==
 
 // Source code is published under The GNU General Public License v3.0.
@@ -308,6 +308,8 @@ The resource lookup order then becomes:
 */
 // ==/WindhawkModSettings==
 
+#include <windhawk_utils.h>
+
 #include <initguid.h>
 
 #include <comutil.h>
@@ -332,6 +334,7 @@ The resource lookup order then becomes:
 #endif
 
 struct {
+    WindhawkUtils::StringSetting iconTheme;
     bool allResourceRedirect;
 } g_settings;
 
@@ -350,6 +353,27 @@ std::shared_mutex g_redirectionResourceModulesMutex;
 std::unordered_map<std::wstring, HMODULE> g_redirectionResourceModules;
 
 std::atomic<DWORD> g_operationCounter;
+
+HANDLE g_clearCachePromptThread;
+std::atomic<HWND> g_clearCachePromptWindow;
+
+constexpr WCHAR kClearCachePromptTitle[] =
+    L"Resource Redirect - Windhawk";
+constexpr WCHAR kClearCachePromptText[] =
+    L"For some icons to be updated, the icon cache must be cleared. Do you "
+    L"want to clear the icon cache now?\n\nIcon cache files will be deleted, "
+    L"and Explorer will be restarted.";
+constexpr WCHAR kClearCacheCommand[] =
+    LR"(cmd /c "echo Terminating Explorer...)"
+    LR"( & taskkill /f /im explorer.exe)"
+    LR"( & timeout /t 1 /nobreak >nul)"
+    LR"( & del /f /q /a "%LocalAppData%\IconCache.db")"
+    LR"( & del /f /s /q /a "%LocalAppData%\Microsoft\Windows\Explorer\iconcache_*.db")"
+    LR"( & del /f /s /q /a "%LocalAppData%\Microsoft\Windows\Explorer\thumbcache_*.db")"
+    LR"( & timeout /t 1 /nobreak >nul)"
+    LR"( & start explorer.exe)"
+    LR"( & echo Starting Explorer...)"
+    LR"( & timeout /t 3 /nobreak >nul")";
 
 // https://github.com/tidwall/match.c
 //
@@ -2062,6 +2086,66 @@ bool DoesCurrentProcessOwnTaskbar() {
     return IsExplorerProcess() && FindCurrentProcessTaskbarWnd();
 }
 
+void PromptToClearCache() {
+    if (g_clearCachePromptThread) {
+        if (WaitForSingleObject(g_clearCachePromptThread, 0) != WAIT_OBJECT_0) {
+            return;
+        }
+
+        CloseHandle(g_clearCachePromptThread);
+    }
+
+    g_clearCachePromptThread = CreateThread(
+        nullptr, 0,
+        [](LPVOID lpParameter) WINAPI -> DWORD {
+            TASKDIALOGCONFIG taskDialogConfig{
+                .cbSize = sizeof(taskDialogConfig),
+                .dwFlags = TDF_ALLOW_DIALOG_CANCELLATION,
+                .dwCommonButtons = TDCBF_YES_BUTTON | TDCBF_NO_BUTTON,
+                .pszWindowTitle = kClearCachePromptTitle,
+                .pszMainIcon = TD_INFORMATION_ICON,
+                .pszContent = kClearCachePromptText,
+                .pfCallback = [](HWND hwnd, UINT msg, WPARAM wParam,
+                                 LPARAM lParam, LONG_PTR lpRefData)
+                                  WINAPI -> HRESULT {
+                    switch (msg) {
+                        case TDN_CREATED:
+                            g_clearCachePromptWindow = hwnd;
+                            SetWindowPos(hwnd, HWND_TOPMOST, 0, 0, 0, 0,
+                                         SWP_NOMOVE | SWP_NOSIZE);
+                            break;
+
+                        case TDN_DESTROYED:
+                            g_clearCachePromptWindow = nullptr;
+                            break;
+                    }
+
+                    return S_OK;
+                },
+            };
+
+            int button;
+            if (SUCCEEDED(TaskDialogIndirect(&taskDialogConfig, &button,
+                                             nullptr, nullptr)) &&
+                button == IDYES) {
+                WCHAR commandLine[ARRAYSIZE(kClearCacheCommand)];
+                memcpy(commandLine, kClearCacheCommand, sizeof(kClearCacheCommand));
+                STARTUPINFO si = {
+                    .cb = sizeof(si),
+                };
+                PROCESS_INFORMATION pi{};
+                if (CreateProcess(nullptr, commandLine, nullptr, nullptr, FALSE,
+                                  0, nullptr, nullptr, &si, &pi)) {
+                    CloseHandle(pi.hThread);
+                    CloseHandle(pi.hProcess);
+                }
+            }
+
+            return 0;
+        },
+        nullptr, 0, nullptr);
+}
+
 HANDLE LockTempFileExclusive(PCWSTR filePath, DWORD timeoutMs) {
     HANDLE hFile =
         CreateFile(filePath, GENERIC_READ | GENERIC_WRITE,
@@ -2369,6 +2453,7 @@ std::wstring GetIconThemePath(std::wstring_view iconTheme) {
 
 void LoadSettings() {
     g_settings.allResourceRedirect = Wh_GetIntSetting(L"allResourceRedirect");
+    g_settings.iconTheme = WindhawkUtils::StringSetting::make(L"iconTheme");
 
     std::unordered_map<std::wstring, std::vector<std::wstring>> paths;
     std::unordered_map<std::string, std::vector<std::string>> pathsA;
@@ -2465,9 +2550,9 @@ void LoadSettings() {
         return true;
     };
 
-    PCWSTR iconTheme = Wh_GetStringSetting(L"iconTheme");
-    if (*iconTheme) {
-        std::wstring iconThemePath = GetIconThemePath(iconTheme);
+    if (*g_settings.iconTheme) {
+        std::wstring iconThemePath =
+            GetIconThemePath(g_settings.iconTheme.get());
         if (!iconThemePath.empty()) {
             try {
                 addRedirectionThemePath(iconThemePath.c_str());
@@ -2476,7 +2561,6 @@ void LoadSettings() {
             }
         }
     }
-    Wh_FreeStringSetting(iconTheme);
 
     for (int i = 0;; i++) {
         PCWSTR themePath = Wh_GetStringSetting(L"themePaths[%d]", i);
@@ -2713,7 +2797,18 @@ void Wh_ModUninit() {
 
     FreeAndClearRedirectedModules();
 
-    if (IsExplorerProcess() && FindCurrentProcessTaskbarWnd()) {
+    HWND clearCachePromptWindow = g_clearCachePromptWindow;
+    if (clearCachePromptWindow) {
+        PostMessage(clearCachePromptWindow, WM_CLOSE, 0, 0);
+    }
+
+    if (g_clearCachePromptThread) {
+        WaitForSingleObject(g_clearCachePromptThread, INFINITE);
+        CloseHandle(g_clearCachePromptThread);
+        g_clearCachePromptThread = nullptr;
+    }
+
+    if (DoesCurrentProcessOwnTaskbar()) {
         // Let other processes some time to unload the mod.
         Sleep(400);
 
@@ -2725,6 +2820,7 @@ void Wh_ModUninit() {
 BOOL Wh_ModSettingsChanged(BOOL* bReload) {
     Wh_Log(L">");
 
+    auto prevIconTheme = std::move(g_settings.iconTheme);
     int prevAllResourceRedirect = g_settings.allResourceRedirect;
 
     LoadSettings();
@@ -2737,6 +2833,10 @@ BOOL Wh_ModSettingsChanged(BOOL* bReload) {
     FreeAndClearRedirectedModules();
 
     if (DoesCurrentProcessOwnTaskbar()) {
+        if (wcscmp(g_settings.iconTheme, prevIconTheme) != 0) {
+            PromptToClearCache();
+        }
+
         // Let other processes some time to load the new config.
         Sleep(400);
 
