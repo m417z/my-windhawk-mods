@@ -2178,9 +2178,16 @@ HRESULT UnzipToFolder(BSTR zipFilePath, BSTR destinationPath) {
             return hr;
 
         if (isFolder) {
+            winrt::com_ptr<IDispatch> zipSubFolderDispatch;
+            hr = zipSubFolderItem->get_GetFolder(zipSubFolderDispatch.put());
+            if (FAILED(hr))
+                return hr;
+            if (!zipSubFolderDispatch)
+                return E_FAIL;
+
             winrt::com_ptr<Folder> zipSubFolder;
-            hr = zipSubFolderItem->get_GetFolder(
-                (IDispatch**)zipSubFolder.put());
+            hr = zipSubFolderDispatch->QueryInterface(
+                IID_PPV_ARGS(zipSubFolder.put()));
             if (FAILED(hr))
                 return hr;
             if (!zipSubFolder)
