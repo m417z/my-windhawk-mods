@@ -442,6 +442,32 @@ std::wstring GetWindowAppId(HWND hWnd) {
     return result;
 }
 
+std::wstring GetProcessFileName(DWORD dwProcessId) {
+    HANDLE hProcess =
+        OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, dwProcessId);
+    if (!hProcess) {
+        return std::wstring{};
+    }
+
+    WCHAR processPath[MAX_PATH];
+
+    DWORD dwSize = ARRAYSIZE(processPath);
+    if (!QueryFullProcessImageName(hProcess, 0, processPath, &dwSize)) {
+        CloseHandle(hProcess);
+        return std::wstring{};
+    }
+
+    CloseHandle(hProcess);
+
+    PCWSTR processFileNameUpper = wcsrchr(processPath, L'\\');
+    if (!processFileNameUpper) {
+        return std::wstring{};
+    }
+
+    processFileNameUpper++;
+    return processFileNameUpper;
+}
+
 bool IsWindowExcluded(HWND hWnd) {
     if (g_settings.excludedPrograms.empty()) {
         return false;
@@ -515,7 +541,8 @@ bool DoesMonitorHaveMaximizedWindow(HMONITOR monitor, HWND hMMTaskbarWnd) {
     DWORD dwTaskbarThreadId = GetWindowThreadProcessId(hMMTaskbarWnd, nullptr);
 
     auto enumWindowsProc = [&](HWND hWnd) -> BOOL {
-        if (GetWindowThreadProcessId(hWnd, nullptr) == dwTaskbarThreadId) {
+        DWORD dwProcessId = 0;
+        if (GetWindowThreadProcessId(hWnd, &dwProcessId) == dwTaskbarThreadId) {
             return TRUE;
         }
 
@@ -541,7 +568,8 @@ bool DoesMonitorHaveMaximizedWindow(HMONITOR monitor, HWND hMMTaskbarWnd) {
             .length = sizeof(WINDOWPLACEMENT),
         };
         if (GetWindowPlacement(hWnd, &wp) && wp.showCmd == SW_SHOWMAXIMIZED) {
-            Wh_Log(L"Maximized window %p", hWnd);
+            Wh_Log(L"Maximized window %p (%s)", hWnd,
+                   GetProcessFileName(dwProcessId).c_str());
             hasMaximizedWindow = true;
             return FALSE;
         }
@@ -552,7 +580,8 @@ bool DoesMonitorHaveMaximizedWindow(HMONITOR monitor, HWND hMMTaskbarWnd) {
 
         if (EqualRect(&windowRect, &monitorInfo.rcMonitor)) {
             // Spans across the whole monitor, e.g. Win+Tab view.
-            Wh_Log(L"Fullscreen window %p", hWnd);
+            Wh_Log(L"Fullscreen window %p (%s)", hWnd,
+                   GetProcessFileName(dwProcessId).c_str());
             hasMaximizedWindow = true;
             return FALSE;
         }

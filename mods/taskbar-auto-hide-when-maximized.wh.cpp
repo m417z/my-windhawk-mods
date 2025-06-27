@@ -311,6 +311,32 @@ std::wstring GetWindowAppId(HWND hWnd) {
     return result;
 }
 
+std::wstring GetProcessFileName(DWORD dwProcessId) {
+    HANDLE hProcess =
+        OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, dwProcessId);
+    if (!hProcess) {
+        return std::wstring{};
+    }
+
+    WCHAR processPath[MAX_PATH];
+
+    DWORD dwSize = ARRAYSIZE(processPath);
+    if (!QueryFullProcessImageName(hProcess, 0, processPath, &dwSize)) {
+        CloseHandle(hProcess);
+        return std::wstring{};
+    }
+
+    CloseHandle(hProcess);
+
+    PCWSTR processFileNameUpper = wcsrchr(processPath, L'\\');
+    if (!processFileNameUpper) {
+        return std::wstring{};
+    }
+
+    processFileNameUpper++;
+    return processFileNameUpper;
+}
+
 bool IsWindowExcluded(HWND hWnd) {
     if (g_settings.excludedPrograms.empty()) {
         return false;
@@ -461,7 +487,8 @@ bool ShouldKeepTaskbarShown(HMONITOR monitor) {
     DWORD dwTaskbarThreadId = GetCurrentThreadId();
 
     auto enumWindowsProc = [&](HWND hWnd) -> BOOL {
-        if (GetWindowThreadProcessId(hWnd, nullptr) == dwTaskbarThreadId) {
+        DWORD dwProcessId = 0;
+        if (GetWindowThreadProcessId(hWnd, &dwProcessId) == dwTaskbarThreadId) {
             return TRUE;
         }
 
@@ -471,7 +498,8 @@ bool ShouldKeepTaskbarShown(HMONITOR monitor) {
             return TRUE;
         }
 
-        Wh_Log(L"Can hide taskbar for window %p", hWnd);
+        Wh_Log(L"Can hide taskbar for window %p (%s)", hWnd,
+               GetProcessFileName(dwProcessId).c_str());
         return FALSE;
     };
 
