@@ -10,6 +10,11 @@
 // @include         *
 // @exclude         conhost.exe
 // @exclude         Plex*.exe
+// @exclude         backgroundTaskHost.exe
+// @exclude         LockApp.exe
+// @exclude         SearchHost.exe
+// @exclude         ShellExperienceHost.exe
+// @exclude         StartMenuExperienceHost.exe
 // @compilerOptions -lole32 -loleaut32 -lpropsys
 // ==/WindhawkMod==
 
