@@ -869,7 +869,8 @@ BOOL Wh_ModInit() {
 
     LoadSettings();
 
-    HMODULE hUser32 = LoadLibrary(L"user32.dll");
+    HMODULE hUser32 =
+        LoadLibraryEx(L"user32.dll", nullptr, LOAD_LIBRARY_SEARCH_SYSTEM32);
     if (!hUser32) {
         Wh_Log(L"Error loading user32.dll");
         return FALSE;

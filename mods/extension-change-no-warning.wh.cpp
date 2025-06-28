@@ -98,7 +98,8 @@ BOOL Wh_ModInit() {
 
     // Also hook ShellMessageBoxInternal which was added in newer builds around
     // April 2025.
-    HMODULE shlwapiModule = LoadLibrary(L"shlwapi.dll");
+    HMODULE shlwapiModule =
+        LoadLibraryEx(L"shlwapi.dll", nullptr, LOAD_LIBRARY_SEARCH_SYSTEM32);
     if (shlwapiModule) {
         if (auto pShellMessageBoxInternal =
                 GetProcAddress(shlwapiModule, "ShellMessageBoxInternal")) {

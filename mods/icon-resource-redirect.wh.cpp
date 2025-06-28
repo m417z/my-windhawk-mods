@@ -1678,7 +1678,8 @@ void DirectUI_DUIXmlParser_SetDefaultHInstance(void* pThis, HMODULE hModule) {
     using DirectUI_DUIXmlParser_SetDefaultHInstance_t =
         void(__thiscall*)(void* pThis, HMODULE hModule);
     static DirectUI_DUIXmlParser_SetDefaultHInstance_t pSetDefaultHInstance = []() {
-        HMODULE duiModule = LoadLibrary(L"dui70.dll");
+        HMODULE duiModule =
+            LoadLibraryEx(L"dui70.dll", NULL, LOAD_LIBRARY_SEARCH_SYSTEM32);
         if (duiModule) {
             PCSTR procName =
 #ifdef _WIN64
@@ -2126,7 +2127,8 @@ void PromptToClearCache() {
             };
 
             static decltype(&TaskDialogIndirect) pTaskDialogIndirect = []() {
-                HMODULE hComctl32 = LoadLibrary(L"comctl32.dll");
+                HMODULE hComctl32 = LoadLibraryEx(L"comctl32.dll", nullptr,
+                                                  LOAD_LIBRARY_SEARCH_SYSTEM32);
                 if (!hComctl32) {
                     Wh_Log(L"Failed to load comctl32.dll");
                     return (decltype(&TaskDialogIndirect))nullptr;
@@ -2743,7 +2745,8 @@ BOOL Wh_ModInit() {
 
     // All of these end up calling FindResourceEx, LoadResource, SizeofResource.
     if (!g_settings.allResourceRedirect) {
-        HMODULE shcoreModule = LoadLibrary(L"shcore.dll");
+        HMODULE shcoreModule =
+            LoadLibraryEx(L"shcore.dll", nullptr, LOAD_LIBRARY_SEARCH_SYSTEM32);
         if (shcoreModule) {
             FARPROC pSHCreateStreamOnModuleResourceW =
                 GetProcAddress(shcoreModule, (PCSTR)109);
@@ -2759,7 +2762,8 @@ BOOL Wh_ModInit() {
             Wh_Log(L"Couldn't load shcore.dll");
         }
 
-        HMODULE duiModule = LoadLibrary(L"dui70.dll");
+        HMODULE duiModule =
+            LoadLibraryEx(L"dui70.dll", nullptr, LOAD_LIBRARY_SEARCH_SYSTEM32);
         if (duiModule) {
             PCSTR SetXMLFromResource_Name =
                 R"(?_SetXMLFromResource@DUIXmlParser@DirectUI@@IAEJPBG0PAUHINSTANCE__@@11@Z)";

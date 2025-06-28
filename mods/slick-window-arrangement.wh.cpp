@@ -1181,7 +1181,7 @@ BOOL Wh_ModInit()
 
     LoadSettings();
 
-    HMODULE hUser32 = LoadLibrary(L"user32.dll");
+    HMODULE hUser32 = LoadLibraryEx(L"user32.dll", nullptr, LOAD_LIBRARY_SEARCH_SYSTEM32);
     if (hUser32) {
         pGetThreadDpiAwarenessContext = (GetThreadDpiAwarenessContext_t)GetProcAddress(hUser32, "GetThreadDpiAwarenessContext");
         pSetThreadDpiAwarenessContext = (SetThreadDpiAwarenessContext_t)GetProcAddress(hUser32, "SetThreadDpiAwarenessContext");
@@ -1191,7 +1191,7 @@ BOOL Wh_ModInit()
         pIsWindowArranged = (IsWindowArranged_t)GetProcAddress(hUser32, "IsWindowArranged");
     }
 
-    HMODULE hShcore = LoadLibrary(L"shcore.dll");
+    HMODULE hShcore = LoadLibraryEx(L"shcore.dll", nullptr, LOAD_LIBRARY_SEARCH_SYSTEM32);
     if (hShcore) {
         pGetDpiForMonitor = (GetDpiForMonitor_t)GetProcAddress(hShcore, "GetDpiForMonitor");
     }

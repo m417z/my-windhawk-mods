@@ -3753,7 +3753,8 @@ HMODULE WINAPI LoadLibraryExW_Hook(LPCWSTR lpLibFileName,
 }
 
 bool HookTaskbarDllSymbols() {
-    HMODULE module = LoadLibrary(L"taskbar.dll");
+    HMODULE module =
+        LoadLibraryEx(L"taskbar.dll", nullptr, LOAD_LIBRARY_SEARCH_SYSTEM32);
     if (!module) {
         Wh_Log(L"Failed to load taskbar.dll");
         return false;
@@ -3904,7 +3905,8 @@ BOOL Wh_ModInit() {
     WindhawkUtils::SetFunctionHook(MapWindowPoints, MapWindowPoints_Hook,
                                    &MapWindowPoints_Original);
 
-    HMODULE dwmapiModule = LoadLibrary(L"dwmapi.dll");
+    HMODULE dwmapiModule =
+        LoadLibraryEx(L"dwmapi.dll", nullptr, LOAD_LIBRARY_SEARCH_SYSTEM32);
     if (dwmapiModule) {
         FARPROC pDwmSetWindowAttribute =
             GetProcAddress(dwmapiModule, "DwmSetWindowAttribute");

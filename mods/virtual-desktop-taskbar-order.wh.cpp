@@ -629,7 +629,8 @@ BOOL Wh_ModInit() {
         },
     };
 
-    HMODULE taskbarModule = LoadLibrary(L"taskbar.dll");
+    HMODULE taskbarModule =
+        LoadLibraryEx(L"taskbar.dll", nullptr, LOAD_LIBRARY_SEARCH_SYSTEM32);
     if (!taskbarModule) {
         Wh_Log(L"Couldn't load taskbar.dll");
         return FALSE;
@@ -650,7 +651,8 @@ BOOL Wh_ModInit() {
         },
     };
 
-    HMODULE twinuiPcshellModule = LoadLibrary(L"twinui.pcshell.dll");
+    HMODULE twinuiPcshellModule = LoadLibraryEx(L"twinui.pcshell.dll", nullptr,
+                                                LOAD_LIBRARY_SEARCH_SYSTEM32);
     if (!twinuiPcshellModule) {
         Wh_Log(L"Couldn't load twinui.pcshell.dll");
         return FALSE;

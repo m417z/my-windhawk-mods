@@ -730,7 +730,8 @@ HRESULT WINAPI CoCreateInstance_Hook(REFCLSID rclsid,
 }
 
 bool HookExplorerFrameSymbols() {
-    HMODULE module = LoadLibrary(L"explorerframe.dll");
+    HMODULE module = LoadLibraryEx(L"explorerframe.dll", nullptr,
+                                   LOAD_LIBRARY_SEARCH_SYSTEM32);
     if (!module) {
         Wh_Log(L"Couldn't load explorerframe.dll");
         return false;
@@ -773,7 +774,8 @@ bool HookWindowsUIFileExplorerSymbols() {
         return true;
     }
 
-    HMODULE module = LoadLibrary(L"Windows.UI.FileExplorer.dll");
+    HMODULE module = LoadLibraryEx(L"Windows.UI.FileExplorer.dll", nullptr,
+                                   LOAD_LIBRARY_SEARCH_SYSTEM32);
     if (!module) {
         Wh_Log(L"Couldn't load Windows.UI.FileExplorer.dll");
         return false;

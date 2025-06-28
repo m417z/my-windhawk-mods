@@ -302,7 +302,8 @@ BOOL Wh_ModInit() {
 
     LoadSettings();
 
-    HMODULE dwmapiModule = LoadLibrary(L"dwmapi.dll");
+    HMODULE dwmapiModule =
+        LoadLibraryEx(L"dwmapi.dll", nullptr, LOAD_LIBRARY_SEARCH_SYSTEM32);
     if (dwmapiModule) {
         pDwmpActivateLivePreview =
             (DwmpActivateLivePreview_t)GetProcAddress(dwmapiModule, (PCSTR)113);

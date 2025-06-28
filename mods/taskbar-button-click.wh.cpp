@@ -582,7 +582,8 @@ bool HookTaskbarSymbols() {
             return false;
         }
     } else {
-        HMODULE taskbarModule = LoadLibrary(L"taskbar.dll");
+        HMODULE taskbarModule = LoadLibraryEx(L"taskbar.dll", nullptr,
+                                              LOAD_LIBRARY_SEARCH_SYSTEM32);
         if (!taskbarModule) {
             Wh_Log(L"Couldn't load taskbar.dll");
             return false;

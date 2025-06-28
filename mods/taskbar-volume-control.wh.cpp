@@ -1785,7 +1785,8 @@ BOOL Wh_ModInit() {
     Wh_SetFunctionHook((void*)CreateWindowExW, (void*)CreateWindowExW_Hook,
                        (void**)&CreateWindowExW_Original);
 
-    HMODULE user32Module = LoadLibrary(L"user32.dll");
+    HMODULE user32Module =
+        LoadLibraryEx(L"user32.dll", nullptr, LOAD_LIBRARY_SEARCH_SYSTEM32);
     if (user32Module) {
         void* pCreateWindowInBand =
             (void*)GetProcAddress(user32Module, "CreateWindowInBand");

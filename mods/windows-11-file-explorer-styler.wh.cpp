@@ -2932,7 +2932,8 @@ XamlIslandViewAdapter_get_DesiredSizeInPhysicalPixels_Hook(void* pThis,
 }
 
 bool HookWindowsUIFileExplorerSymbols() {
-    HMODULE module = LoadLibrary(L"Windows.UI.FileExplorer.dll");
+    HMODULE module = LoadLibraryEx(L"Windows.UI.FileExplorer.dll", nullptr,
+                                   LOAD_LIBRARY_SEARCH_SYSTEM32);
     if (!module) {
         Wh_Log(L"Couldn't load Windows.UI.FileExplorer.dll");
         return false;
@@ -2968,7 +2969,8 @@ BOOL Wh_ModInit() {
     Wh_SetFunctionHook((void*)CreateWindowExW, (void*)CreateWindowExW_Hook,
                        (void**)&CreateWindowExW_Original);
 
-    HMODULE user32Module = LoadLibrary(L"user32.dll");
+    HMODULE user32Module =
+        LoadLibraryEx(L"user32.dll", nullptr, LOAD_LIBRARY_SEARCH_SYSTEM32);
     if (user32Module) {
         void* pCreateWindowInBand =
             (void*)GetProcAddress(user32Module, "CreateWindowInBand");

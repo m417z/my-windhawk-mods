@@ -2117,7 +2117,8 @@ int WINAPI LoadStringW_Hook(HINSTANCE hInstance,
 }
 
 bool HookWindowsStorageSymbols() {
-    HMODULE windowsStorageModule = LoadLibrary(L"windows.storage.dll");
+    HMODULE windowsStorageModule = LoadLibraryEx(
+        L"windows.storage.dll", nullptr, LOAD_LIBRARY_SEARCH_SYSTEM32);
     if (!windowsStorageModule) {
         Wh_Log(L"Failed to load windows.storage.dll");
         return false;

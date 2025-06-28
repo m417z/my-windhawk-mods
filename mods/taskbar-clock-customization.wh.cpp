@@ -3059,18 +3059,21 @@ void ApplySettings() {
 BOOL Wh_ModInit() {
     Wh_Log(L">");
 
-    if (HMODULE hUser32 = LoadLibrary(L"user32.dll")) {
+    if (HMODULE hUser32 = LoadLibraryEx(L"user32.dll", nullptr,
+                                        LOAD_LIBRARY_SEARCH_SYSTEM32)) {
         pGetDpiForWindow =
             (GetDpiForWindow_t)GetProcAddress(hUser32, "GetDpiForWindow");
     }
 
-    if (HMODULE hKernel32 = LoadLibrary(L"kernel32.dll")) {
+    if (HMODULE hKernel32 = LoadLibraryEx(L"kernel32.dll", nullptr,
+                                          LOAD_LIBRARY_SEARCH_SYSTEM32)) {
         pSystemTimeToTzSpecificLocalTimeEx =
             (SystemTimeToTzSpecificLocalTimeEx_t)GetProcAddress(
                 hKernel32, "SystemTimeToTzSpecificLocalTimeEx");
     }
 
-    if (HMODULE hAdvapi32 = LoadLibrary(L"advapi32.dll")) {
+    if (HMODULE hAdvapi32 = LoadLibraryEx(L"advapi32.dll", nullptr,
+                                          LOAD_LIBRARY_SEARCH_SYSTEM32)) {
         pEnumDynamicTimeZoneInformation =
             (EnumDynamicTimeZoneInformation_t)GetProcAddress(
                 hAdvapi32, "EnumDynamicTimeZoneInformation");

@@ -1806,7 +1806,8 @@ HMODULE WINAPI LoadLibraryExW_Hook(LPCWSTR lpLibFileName,
 }
 
 bool HookTaskbarDllSymbols() {
-    HMODULE module = LoadLibrary(L"taskbar.dll");
+    HMODULE module =
+        LoadLibraryEx(L"taskbar.dll", nullptr, LOAD_LIBRARY_SEARCH_SYSTEM32);
     if (!module) {
         Wh_Log(L"Failed to load taskbar.dll");
         return false;
@@ -1882,7 +1883,8 @@ BOOL Wh_ModInit() {
 
     LoadSettings();
 
-    if (HMODULE kernel32Module = LoadLibrary(L"kernel32.dll")) {
+    if (HMODULE kernel32Module = LoadLibraryEx(L"kernel32.dll", nullptr,
+                                               LOAD_LIBRARY_SEARCH_SYSTEM32)) {
         pGetThreadDescription = (GetThreadDescription_t)GetProcAddress(
             kernel32Module, "GetThreadDescription");
     }
@@ -1917,7 +1919,8 @@ BOOL Wh_ModInit() {
     WindhawkUtils::Wh_SetFunctionHookT(MapWindowPoints, MapWindowPoints_Hook,
                                        &MapWindowPoints_Original);
 
-    HMODULE dwmapiModule = LoadLibrary(L"dwmapi.dll");
+    HMODULE dwmapiModule =
+        LoadLibraryEx(L"dwmapi.dll", nullptr, LOAD_LIBRARY_SEARCH_SYSTEM32);
     if (dwmapiModule) {
         auto pDwmSetWindowAttribute =
             (decltype(&DwmSetWindowAttribute))GetProcAddress(

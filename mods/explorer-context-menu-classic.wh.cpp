@@ -103,7 +103,8 @@ bool WINAPI CNscTree_ShouldShowMiniMenu_Hook(void* pThis, void* param1) {
 }
 
 bool HookExplorerFrameSymbols() {
-    HMODULE module = LoadLibrary(L"explorerframe.dll");
+    HMODULE module = LoadLibraryEx(L"explorerframe.dll", nullptr,
+                                   LOAD_LIBRARY_SEARCH_SYSTEM32);
     if (!module) {
         Wh_Log(L"Couldn't load explorerframe.dll");
         return false;
@@ -136,7 +137,8 @@ BOOL Wh_ModInit() {
         return FALSE;
     }
 
-    HMODULE shcoreModule = LoadLibrary(L"shcore.dll");
+    HMODULE shcoreModule =
+        LoadLibraryEx(L"shcore.dll", nullptr, LOAD_LIBRARY_SEARCH_SYSTEM32);
     if (!shcoreModule) {
         Wh_Log(L"Error loading shcore.dll");
         return FALSE;

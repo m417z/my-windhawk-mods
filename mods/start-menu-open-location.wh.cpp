@@ -225,7 +225,8 @@ BOOL Wh_ModInit() {
         },
     };
 
-    HMODULE twinuiPcshellModule = LoadLibrary(L"twinui.pcshell.dll");
+    HMODULE twinuiPcshellModule = LoadLibraryEx(L"twinui.pcshell.dll", nullptr,
+                                                LOAD_LIBRARY_SEARCH_SYSTEM32);
     if (!twinuiPcshellModule) {
         Wh_Log(L"Couldn't load twinui.pcshell.dll");
         return FALSE;

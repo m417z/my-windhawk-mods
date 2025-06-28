@@ -1101,7 +1101,8 @@ bool HookTaskbarSymbols() {
     if (g_winVersion <= WinVersion::Win10) {
         module = GetModuleHandle(nullptr);
     } else {
-        module = LoadLibrary(L"taskbar.dll");
+        module = LoadLibraryEx(L"taskbar.dll", nullptr,
+                               LOAD_LIBRARY_SEARCH_SYSTEM32);
         if (!module) {
             Wh_Log(L"Couldn't load taskbar.dll");
             return false;
@@ -1225,7 +1226,8 @@ BOOL Wh_ModInit() {
 
     LoadSettings();
 
-    HMODULE hUser32Module = LoadLibrary(L"user32.dll");
+    HMODULE hUser32Module =
+        LoadLibraryEx(L"user32.dll", nullptr, LOAD_LIBRARY_SEARCH_SYSTEM32);
     if (hUser32Module) {
         pIsWindowArranged = (IsWindowArranged_t)GetProcAddress(
             hUser32Module, "IsWindowArranged");
