@@ -252,6 +252,7 @@ from the **TranslucentTB** project.
   $options:
   - "": None
   - WinXP: WinXP
+  - WinXP_variant_Zune: WinXP (Zune)
   - Bubbles: Bubbles
   - TranslucentTaskbar: TranslucentTaskbar
   - Squircle: Squircle
@@ -366,6 +367,69 @@ const Theme g_themeWinXP = {{
         L"Padding=4,0,0,0"}},
     ThemeTargetStyles{L"Grid#OverflowRootGrid > Border", {
         L"Background:=<LinearGradientBrush StartPoint=\"0.5,0\" EndPoint=\"0.5,1\"> <GradientStop Color=\"#3168d5\" Offset=\"0.0\" /> <GradientStop Color=\"#4993E6\" Offset=\"0.1\" /> <GradientStop Color=\"#2157D7\" Offset=\"0.35\" /> <GradientStop Color=\"#2663E0\" Offset=\"0.8\" /> <GradientStop Color=\"#1941A5\" Offset=\"1.0\" /></LinearGradientBrush>"}},
+}};
+
+const Theme g_themeWinXP_variant_Zune = {{
+    ThemeTargetStyles{L"Rectangle#BackgroundFill", {
+        L"Fill:=<LinearGradientBrush StartPoint=\"0.5,0.5\" EndPoint=\"0.5,1\"> <GradientStop Color=\"#656565\" Offset=\"0.0\" /> <GradientStop Color=\"#363636\" Offset=\"0.1\" /> <GradientStop Color=\"#363636\" Offset=\"0.35\" /> <GradientStop Color=\"#363636\" Offset=\"0.8\" /> <GradientStop Color=\"#363636\" Offset=\"1.0\" /></LinearGradientBrush>",
+        L"VerticalAlignment=Stretch",
+        L"Height=Auto"}},
+    ThemeTargetStyles{L"Taskbar.ExperienceToggleButton#LaunchListButton[AutomationProperties.AutomationId=StartButton]", {
+        L"CornerRadius=0",
+        L"Margin=-4,0,4,0",
+        L"MaxWidth=48"}},
+    ThemeTargetStyles{L"Taskbar.ExperienceToggleButton#LaunchListButton[AutomationProperties.AutomationId=StartButton] > Taskbar.TaskListButtonPanel", {
+        L"Padding=0",
+        L"Background:=<LinearGradientBrush StartPoint=\"0.5,0.5\" EndPoint=\"0.5,1\"> <GradientStop Color=\"#D76A27\" Offset=\"0.05\" /> <GradientStop Color=\"#B44704\" Offset=\"0.1\" /> <GradientStop Color=\"#772E01\" Offset=\"0.5\" /> <GradientStop Color=\"#772E01\" Offset=\"1\" /> <GradientStop Color=\"#AA4201\" Offset=\"1\" /></LinearGradientBrush>"}},
+    ThemeTargetStyles{L"Taskbar.ExperienceToggleButton#LaunchListButton[AutomationProperties.AutomationId=StartButton] > Taskbar.TaskListButtonPanel > Border#BackgroundElement", {
+        L"Background:=<ImageBrush Stretch=\"Uniform\" ImageSource=\"https://i.imgur.com/BvXJlkj.png\" />",
+        L"Height=32"}},
+    ThemeTargetStyles{L"Taskbar.ExperienceToggleButton#LaunchListButton[AutomationProperties.AutomationId=StartButton] > Taskbar.TaskListButtonPanel > Microsoft.UI.Xaml.Controls.AnimatedVisualPlayer#Icon", {
+        L"Visibility=Collapsed"}},
+    ThemeTargetStyles{L"TextBlock#LabelControl", {
+        L"Foreground=White"}},
+    ThemeTargetStyles{L"Rectangle#RunningIndicator", {
+        L"Visibility=Collapsed"}},
+    ThemeTargetStyles{L"TextBlock#TimeInnerTextBlock", {
+        L"Foreground=White"}},
+    ThemeTargetStyles{L"TextBlock#DateInnerTextBlock", {
+        L"Foreground=White"}},
+    ThemeTargetStyles{L"SystemTray.TextIconContent > Grid > SystemTray.AdaptiveTextBlock#Base > TextBlock", {
+        L"Foreground=White"}},
+    ThemeTargetStyles{L"Taskbar.TaskListLabeledButtonPanel@RunningIndicatorStates > Border#BackgroundElement", {
+        L"Background@ActiveRunningIndicator:=<LinearGradientBrush StartPoint=\"0.5,0.5\" EndPoint=\"0.5,1\"> <GradientStop Color=\"#6B6B6B\" Offset=\"0.0\" /> <GradientStop Color=\"#434343\" Offset=\"0.1\" /> <GradientStop Color=\"#434343\" Offset=\"0.35\" /> <GradientStop Color=#434343\" Offset=\"0.8\" /> <GradientStop Color=\"#434343\" Offset=\"1.0\" /></LinearGradientBrush>",
+        L"Background:=<LinearGradientBrush StartPoint=\"0.5,0.5\" EndPoint=\"0.5,1\"> <GradientStop Color=\"#6B6B6B\" Offset=\"0.0\" /> <GradientStop Color=\"#434343\" Offset=\"0.1\" /> <GradientStop Color=\"#434343\" Offset=\"0.35\" /> <GradientStop Color=#434343\" Offset=\"0.8\" /> <GradientStop Color=\"#434343\" Offset=\"1.0\" /></LinearGradientBrush>",
+        L"BorderThickness=1",
+        L"BorderBrush@NoRunningIndicator=Transparent",
+        L"CornerRadius=3"}},
+    ThemeTargetStyles{L"Taskbar.TaskListLabeledButtonPanel@RunningIndicatorStates > Border", {
+        L"BorderThickness=1",
+        L"CornerRadius=2",
+        L"BorderBrush@NoRunningIndicator=Transparent",
+        L"Margin=-2,-1,-2,-1"}},
+    ThemeTargetStyles{L"Taskbar.TaskListLabeledButtonPanel@RunningIndicatorStates > Border#BackgroundElement", {
+        L"BorderBrush=#BB4B4B4B",
+        L"Margin=1",
+        L"BorderThickness=1",
+        L"Background:=<LinearGradientBrush StartPoint=\"0.5,0.42\" EndPoint=\"0.5,0.75\"> <GradientStop Color=\"#6B6B6B\" Offset=\"0.0\" /> <GradientStop Color=\"#363636\" Offset=\"0.5\" /> <GradientStop Color=\"#363636\" Offset=\"0.35\" /> <GradientStop Color=\"#363636\" Offset=\"0.8\" /> <GradientStop Color=\"#363636\" Offset=\"1.0\" /></LinearGradientBrush>",
+        L"BorderBrush@NoRunningIndicator=Transparent",
+        L"Background@NoRunningIndicator=Transparent"}},
+    ThemeTargetStyles{L"Rectangle#BackgroundStroke", {
+        L"Fill=#858585"}},
+    ThemeTargetStyles{L"Grid#SystemTrayFrameGrid", {
+        L"Background:=<LinearGradientBrush StartPoint=\"0.5,0.42\" EndPoint=\"0.5,0.75\"> <GradientStop Color=\"#454545\" Offset=\"0.0\" /> <GradientStop Color=\"#313131\" Offset=\"0.5\" /> <GradientStop Color=\"#363636\" Offset=\"0.35\" /> <GradientStop Color=\"#1D1D1D\" Offset=\"0.8\" /> <GradientStop Color=\"#1D1D1D\" Offset=\"1.0\" /></LinearGradientBrush>",
+        L"BorderThickness=1,0,0,0",
+        L"BorderBrush=#222222",
+        L"Padding=4,0,0,0"}},
+    ThemeTargetStyles{L"Taskbar.TaskListButton#TaskListButton > Taskbar.TaskListLabeledButtonPanel#IconPanel@RunningIndicatorStates > Windows.UI.Xaml.Controls.Image#Icon", {
+        L"Height@NoRunningIndicator=16"}},
+    ThemeTargetStyles{L"Taskbar.TaskListButton#TaskListButton > Taskbar.TaskListLabeledButtonPanel#IconPanel@RunningIndicatorStates", {
+        L"Margin@NoRunningIndicator=-7,0,-7,0",
+        L"Padding@NoRunningIndicator=0"}},
+    ThemeTargetStyles{L"Taskbar.TaskListButton", {
+        L"Margin=-1.5"}},
+    ThemeTargetStyles{L"Grid#OverflowRootGrid > Border", {
+        L"Background:=<LinearGradientBrush StartPoint=\"0.5,0.5\" EndPoint=\"0.5,1\"> <GradientStop Color=\"#656565\" Offset=\"0.0\" /> <GradientStop Color=\"#363636\" Offset=\"0.1\" /> <GradientStop Color=\"#363636\" Offset=\"0.35\" /> <GradientStop Color=\"#363636\" Offset=\"0.8\" /> <GradientStop Color=\"#363636\" Offset=\"1.0\" /></LinearGradientBrush>"}},
 }};
 
 const Theme g_themeBubbles = {{
@@ -4462,6 +4526,8 @@ void ProcessAllStylesFromSettings() {
     const Theme* theme = nullptr;
     if (wcscmp(themeName, L"WinXP") == 0) {
         theme = &g_themeWinXP;
+    } else if (wcscmp(themeName, L"WinXP_variant_Zune") == 0) {
+        theme = &g_themeWinXP_variant_Zune;
     } else if (wcscmp(themeName, L"Bubbles") == 0) {
         theme = &g_themeBubbles;
     } else if (wcscmp(themeName, L"TranslucentTaskbar") == 0) {
