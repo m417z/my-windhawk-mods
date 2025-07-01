@@ -39,24 +39,31 @@ bool IsRenameMessageBoxParams(HINSTANCE hAppInst,
            hAppInst == GetModuleHandle(L"shell32.dll");
 }
 
-// Forwarding arguments of varadic functions isn't supported in C/C++:
+// Forwarding arguments of variadic functions isn't supported in C/C++:
 // https://stackoverflow.com/q/3530771
 //
 // Therefore, instead of using `decltype(&ShellMessageBoxW)`, only declare the
-// first arguments (must be at least 4 as they're passed in registers in x86-64)
-// and use the musttail attribute to ensure that a tail call is used, which in
-// turn ensures that the rest of the arguments are passed along in the stack.
+// first arguments (must be at least 4 as they're passed in registers in x86-64,
+// 8 for ARM64) and use the musttail attribute to ensure that a tail call is
+// used, which in turn ensures that the rest of the arguments are passed along
+// in the stack.
 using ShellMessageBoxW_t = int(__cdecl*)(HINSTANCE hAppInst,
                                          HWND hWnd,
                                          LPCWSTR lpcText,
                                          LPCWSTR lpcTitle,
-                                         UINT fuStyle);
+                                         UINT fuStyle,
+                                         void* param6,
+                                         void* param7,
+                                         void* param8);
 ShellMessageBoxW_t ShellMessageBoxW_Original;
 int __cdecl ShellMessageBoxW_Hook(HINSTANCE hAppInst,
                                   HWND hWnd,
                                   LPCWSTR lpcText,
                                   LPCWSTR lpcTitle,
-                                  UINT fuStyle) {
+                                  UINT fuStyle,
+                                  void* param6,
+                                  void* param7,
+                                  void* param8) {
     Wh_Log(L">");
 
     if (IsRenameMessageBoxParams(hAppInst, lpcText, lpcTitle, fuStyle)) {
@@ -64,7 +71,7 @@ int __cdecl ShellMessageBoxW_Hook(HINSTANCE hAppInst,
     }
 
     [[clang::musttail]] return ShellMessageBoxW_Original(
-        hAppInst, hWnd, lpcText, lpcTitle, fuStyle);
+        hAppInst, hWnd, lpcText, lpcTitle, fuStyle, param6, param7, param8);
 }
 
 using ShellMessageBoxInternal_t = int(__cdecl*)(HINSTANCE hAppInst,
@@ -72,14 +79,18 @@ using ShellMessageBoxInternal_t = int(__cdecl*)(HINSTANCE hAppInst,
                                                 DWORD dwFlags,
                                                 LPCWSTR lpcText,
                                                 LPCWSTR lpcTitle,
-                                                UINT fuStyle);
+                                                UINT fuStyle,
+                                                void* param7,
+                                                void* param8);
 ShellMessageBoxInternal_t ShellMessageBoxInternal_Original;
 int __cdecl ShellMessageBoxInternal_Hook(HINSTANCE hAppInst,
                                          HWND hWnd,
                                          DWORD dwFlags,
                                          LPCWSTR lpcText,
                                          LPCWSTR lpcTitle,
-                                         UINT fuStyle) {
+                                         UINT fuStyle,
+                                         void* param7,
+                                         void* param8) {
     Wh_Log(L">");
 
     if (IsRenameMessageBoxParams(hAppInst, lpcText, lpcTitle, fuStyle)) {
@@ -87,7 +98,7 @@ int __cdecl ShellMessageBoxInternal_Hook(HINSTANCE hAppInst,
     }
 
     [[clang::musttail]] return ShellMessageBoxInternal_Original(
-        hAppInst, hWnd, dwFlags, lpcText, lpcTitle, fuStyle);
+        hAppInst, hWnd, dwFlags, lpcText, lpcTitle, fuStyle, param7, param8);
 }
 
 BOOL Wh_ModInit() {
