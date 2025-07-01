@@ -384,20 +384,6 @@ TaskbarConfiguration_GetIconHeightInViewPixels_double_Hook(double baseHeight) {
         baseHeight);
 }
 
-using TaskbarConfiguration_GetIconHeightInViewPixels_method_t =
-    double(WINAPI*)(void* pThis);
-TaskbarConfiguration_GetIconHeightInViewPixels_method_t
-    TaskbarConfiguration_GetIconHeightInViewPixels_method_Original;
-double WINAPI
-TaskbarConfiguration_GetIconHeightInViewPixels_method_Hook(void* pThis) {
-    if (!g_unloading) {
-        return g_settings.iconSize;
-    }
-
-    return TaskbarConfiguration_GetIconHeightInViewPixels_method_Original(
-        pThis);
-}
-
 using SystemTrayController_GetFrameSize_t =
     double(WINAPI*)(void* pThis, int enumTaskbarSize);
 SystemTrayController_GetFrameSize_t SystemTrayController_GetFrameSize_Original;
@@ -1335,19 +1321,15 @@ bool HookTaskbarViewDllSymbols(HMODULE module) {
             {
                 {LR"(public: static double __cdecl winrt::Taskbar::implementation::TaskbarConfiguration::GetIconHeightInViewPixels(enum winrt::WindowsUdk::UI::Shell::TaskbarSize))"},
                 &TaskbarConfiguration_GetIconHeightInViewPixels_taskbarSizeEnum_Original,
+
                 TaskbarConfiguration_GetIconHeightInViewPixels_taskbarSizeEnum_Hook,
             },
             {
                 {LR"(public: static double __cdecl winrt::Taskbar::implementation::TaskbarConfiguration::GetIconHeightInViewPixels(double))"},
                 &TaskbarConfiguration_GetIconHeightInViewPixels_double_Original,
+
                 TaskbarConfiguration_GetIconHeightInViewPixels_double_Hook,
                 true,  // From Windows 11 version 22H2.
-            },
-            {
-                {LR"(public: double __cdecl winrt::Taskbar::implementation::TaskbarConfiguration::GetIconHeightInViewPixels(void))"},
-                &TaskbarConfiguration_GetIconHeightInViewPixels_method_Original,
-                TaskbarConfiguration_GetIconHeightInViewPixels_method_Hook,
-                true,  // From KB5044384 (October 2024).
             },
             {
                 {LR"(private: double __cdecl winrt::SystemTray::implementation::SystemTrayController::GetFrameSize(enum winrt::WindowsUdk::UI::Shell::TaskbarSize))"},
