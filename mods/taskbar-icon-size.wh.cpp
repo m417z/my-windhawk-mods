@@ -93,6 +93,7 @@ struct {
 } g_settings;
 
 std::atomic<bool> g_taskbarViewDllLoaded;
+std::atomic<bool> g_searchUxUiDllLoaded;
 std::atomic<bool> g_applyingSettings;
 std::atomic<bool> g_pendingMeasureOverride;
 std::atomic<bool> g_unloading;
@@ -241,38 +242,83 @@ FrameworkElement FindChildByClassName(FrameworkElement element,
     });
 }
 
-using ResourceDictionary_Lookup_t = winrt::Windows::Foundation::IInspectable*(
-    WINAPI*)(void* pThis,
-             void** result,
-             winrt::Windows::Foundation::IInspectable* key);
-ResourceDictionary_Lookup_t ResourceDictionary_Lookup_Original;
-winrt::Windows::Foundation::IInspectable* WINAPI
-ResourceDictionary_Lookup_Hook(void* pThis,
-                               void** result,
-                               winrt::Windows::Foundation::IInspectable* key) {
-    // Wh_Log(L">");
-
-    auto ret = ResourceDictionary_Lookup_Original(pThis, result, key);
-    if (!*ret) {
-        return ret;
+void OverrideResourceDirectoryLookup(
+    PCSTR sourceFunctionName,
+    const winrt::Windows::Foundation::IInspectable* key,
+    winrt::Windows::Foundation::IInspectable* value) {
+    if (g_unloading) {
+        return;
     }
 
-    auto keyString = key->try_as<winrt::hstring>();
-    if (!keyString || keyString != L"MediumTaskbarButtonExtent") {
-        return ret;
+    const auto keyString = key->try_as<winrt::hstring>();
+    if (!keyString) {
+        return;
     }
 
-    auto valueDouble = ret->try_as<double>();
+    if (*keyString != L"MediumTaskbarButtonExtent" &&
+        *keyString != L"SmallTaskbarButtonExtent") {
+        return;
+    }
+
+    const auto valueDouble = value->try_as<double>();
     if (!valueDouble) {
-        return ret;
+        return;
     }
 
     double newValueDouble = g_settings.taskbarButtonWidth;
     if (newValueDouble != *valueDouble) {
-        Wh_Log(L"Overriding value %s: %f->%f", keyString->c_str(), *valueDouble,
-               newValueDouble);
-        *ret = winrt::box_value(newValueDouble);
+        Wh_Log(L"[%S] Overriding value %s: %f->%f", sourceFunctionName,
+               keyString->c_str(), *valueDouble, newValueDouble);
+        *value = winrt::box_value(newValueDouble);
     }
+}
+
+using ResourceDictionary_Lookup_TaskbarView_t =
+    winrt::Windows::Foundation::IInspectable*(
+        WINAPI*)(void* pThis,
+                 void** result,
+                 winrt::Windows::Foundation::IInspectable* key);
+ResourceDictionary_Lookup_TaskbarView_t
+    ResourceDictionary_Lookup_TaskbarView_Original;
+winrt::Windows::Foundation::IInspectable* WINAPI
+ResourceDictionary_Lookup_TaskbarView_Hook(
+    void* pThis,
+    void** result,
+    winrt::Windows::Foundation::IInspectable* key) {
+    // Wh_Log(L">");
+
+    auto ret =
+        ResourceDictionary_Lookup_TaskbarView_Original(pThis, result, key);
+    if (!*ret) {
+        return ret;
+    }
+
+    OverrideResourceDirectoryLookup(__FUNCTION__, key, ret);
+
+    return ret;
+}
+
+using ResourceDictionary_Lookup_SearchUxUi_t =
+    winrt::Windows::Foundation::IInspectable*(
+        WINAPI*)(void* pThis,
+                 void** result,
+                 winrt::Windows::Foundation::IInspectable* key);
+ResourceDictionary_Lookup_SearchUxUi_t
+    ResourceDictionary_Lookup_SearchUxUi_Original;
+winrt::Windows::Foundation::IInspectable* WINAPI
+ResourceDictionary_Lookup_SearchUxUi_Hook(
+    void* pThis,
+    void** result,
+    winrt::Windows::Foundation::IInspectable* key) {
+    // Wh_Log(L">");
+
+    auto ret =
+        ResourceDictionary_Lookup_SearchUxUi_Original(pThis, result, key);
+    if (!*ret) {
+        return ret;
+    }
+
+    OverrideResourceDirectoryLookup(__FUNCTION__, key, ret);
 
     return ret;
 }
@@ -1171,6 +1217,56 @@ void WINAPI ExperienceToggleButton_UpdateButtonPadding_Hook(void* pThis) {
     }
 }
 
+using SearchButtonBase_UpdateButtonPadding_t = void(WINAPI*)(void* pThis);
+SearchButtonBase_UpdateButtonPadding_t
+    SearchButtonBase_UpdateButtonPadding_Original;
+void WINAPI SearchButtonBase_UpdateButtonPadding_Hook(void* pThis) {
+    Wh_Log(L">");
+
+    SearchButtonBase_UpdateButtonPadding_Original(pThis);
+
+    if (g_hasDynamicIconScaling && g_unloading) {
+        return;
+    }
+
+    FrameworkElement toggleButtonElement = nullptr;
+    ((IUnknown**)pThis)[1]->QueryInterface(winrt::guid_of<FrameworkElement>(),
+                                           winrt::put_abi(toggleButtonElement));
+    if (!toggleButtonElement) {
+        return;
+    }
+
+    auto panelElement =
+        FindChildByName(toggleButtonElement, L"SearchBoxButtonRootPanel")
+            .try_as<Controls::Grid>();
+    if (!panelElement) {
+        return;
+    }
+
+    // Only if search icon and not a search box.
+    auto searchBoxTextBlock =
+        FindChildByName(panelElement, L"SearchBoxTextBlock");
+    if (searchBoxTextBlock &&
+        searchBoxTextBlock.Visibility() != Visibility::Collapsed) {
+        return;
+    }
+
+    const double defaultWidth = 44;
+
+    double buttonWidth = panelElement.Width();
+    if (!(buttonWidth > 0)) {
+        return;
+    }
+
+    double newWidth =
+        (g_unloading ? defaultWidth : g_settings.taskbarButtonWidth);
+    if (newWidth != buttonWidth) {
+        Wh_Log(L"Updating MediumTaskbarButtonExtent: %f->%f", buttonWidth,
+               newWidth);
+        panelElement.Width(newWidth);
+    }
+}
+
 using AugmentedEntryPointButton_UpdateButtonPadding_t =
     void(WINAPI*)(void* pThis);
 AugmentedEntryPointButton_UpdateButtonPadding_t
@@ -1505,8 +1601,8 @@ bool HookTaskbarViewDllSymbols(HMODULE module) {
                     // Windows 11 version 21H2.
                     LR"(public: struct winrt::Windows::Foundation::IInspectable __cdecl winrt::impl::consume_Windows_Foundation_Collections_IMap<struct winrt::Windows::UI::Xaml::ResourceDictionary,struct winrt::Windows::Foundation::IInspectable,struct winrt::Windows::Foundation::IInspectable>::Lookup(struct winrt::Windows::Foundation::IInspectable const &)const )",
                 },
-                &ResourceDictionary_Lookup_Original,
-                ResourceDictionary_Lookup_Hook,
+                &ResourceDictionary_Lookup_TaskbarView_Original,
+                ResourceDictionary_Lookup_TaskbarView_Hook,
             },
             {
                 // Pre-DynamicIconScaling.
@@ -1706,6 +1802,29 @@ bool HookTaskbarViewDllSymbols(HMODULE module) {
     return true;
 }
 
+bool HookSearchUxUiDllSymbols(HMODULE module) {
+    // SearchUx.UI.dll
+    WindhawkUtils::SYMBOL_HOOK symbolHooks[] = {
+        {
+            {LR"(public: __cdecl winrt::impl::consume_Windows_Foundation_Collections_IMap<struct winrt::Windows::UI::Xaml::ResourceDictionary,struct winrt::Windows::Foundation::IInspectable,struct winrt::Windows::Foundation::IInspectable>::Lookup(struct winrt::Windows::Foundation::IInspectable const &)const )"},
+            &ResourceDictionary_Lookup_SearchUxUi_Original,
+            ResourceDictionary_Lookup_SearchUxUi_Hook,
+        },
+        {
+            {LR"(protected: virtual void __cdecl winrt::SearchUx::SearchUI::implementation::SearchButtonBase::UpdateButtonPadding(void))"},
+            &SearchButtonBase_UpdateButtonPadding_Original,
+            SearchButtonBase_UpdateButtonPadding_Hook,
+        },
+    };
+
+    if (!HookSymbols(module, symbolHooks, ARRAYSIZE(symbolHooks))) {
+        Wh_Log(L"HookSymbols failed");
+        return false;
+    }
+
+    return true;
+}
+
 bool HookTaskbarDllSymbols() {
     HMODULE module =
         LoadLibraryEx(L"taskbar.dll", nullptr, LOAD_LIBRARY_SEARCH_SYSTEM32);
@@ -1773,6 +1892,10 @@ HMODULE GetTaskbarViewModuleHandle() {
     return module;
 }
 
+HMODULE GetSearchUxUiModuleHandle() {
+    return GetModuleHandle(L"SearchUx.UI.dll");
+}
+
 using LoadLibraryExW_t = decltype(&LoadLibraryExW);
 LoadLibraryExW_t LoadLibraryExW_Original;
 HMODULE WINAPI LoadLibraryExW_Hook(LPCWSTR lpLibFileName,
@@ -1792,6 +1915,15 @@ HMODULE WINAPI LoadLibraryExW_Hook(LPCWSTR lpLibFileName,
         }
     }
 
+    if (!g_searchUxUiDllLoaded && GetSearchUxUiModuleHandle() == module &&
+        !g_searchUxUiDllLoaded.exchange(true)) {
+        Wh_Log(L"Loaded %s", lpLibFileName);
+
+        if (HookSearchUxUiDllSymbols(module)) {
+            Wh_ApplyHookOperations();
+        }
+    }
+
     return module;
 }
 
@@ -1804,8 +1936,7 @@ BOOL Wh_ModInit() {
         return FALSE;
     }
 
-    WindhawkUtils::Wh_SetFunctionHookT(SHAppBarMessage, SHAppBarMessage_Hook,
-                                       &SHAppBarMessage_Original);
+    bool delayLoadingNeeded = false;
 
     if (HMODULE taskbarViewModule = GetTaskbarViewModuleHandle()) {
         g_taskbarViewDllLoaded = true;
@@ -1814,7 +1945,20 @@ BOOL Wh_ModInit() {
         }
     } else {
         Wh_Log(L"Taskbar view module not loaded yet");
+        delayLoadingNeeded = true;
+    }
 
+    if (HMODULE searchUxUiModule = GetSearchUxUiModuleHandle()) {
+        g_searchUxUiDllLoaded = true;
+        if (!HookSearchUxUiDllSymbols(searchUxUiModule)) {
+            return FALSE;
+        }
+    } else {
+        Wh_Log(L"Search UX UI module not loaded yet");
+        delayLoadingNeeded = true;
+    }
+
+    if (delayLoadingNeeded) {
         HMODULE kernelBaseModule = GetModuleHandle(L"kernelbase.dll");
         auto pKernelBaseLoadLibraryExW =
             (decltype(&LoadLibraryExW))GetProcAddress(kernelBaseModule,
@@ -1823,6 +1967,9 @@ BOOL Wh_ModInit() {
                                            LoadLibraryExW_Hook,
                                            &LoadLibraryExW_Original);
     }
+
+    WindhawkUtils::Wh_SetFunctionHookT(SHAppBarMessage, SHAppBarMessage_Hook,
+                                       &SHAppBarMessage_Original);
 
     return TRUE;
 }
@@ -1836,6 +1983,18 @@ void Wh_ModAfterInit() {
                 Wh_Log(L"Got Taskbar.View.dll");
 
                 if (HookTaskbarViewDllSymbols(taskbarViewModule)) {
+                    Wh_ApplyHookOperations();
+                }
+            }
+        }
+    }
+
+    if (!g_searchUxUiDllLoaded) {
+        if (HMODULE searchUxUiModule = GetSearchUxUiModuleHandle()) {
+            if (!g_searchUxUiDllLoaded.exchange(true)) {
+                Wh_Log(L"Got SearchUx.UI.dll");
+
+                if (HookSearchUxUiDllSymbols(searchUxUiModule)) {
                     Wh_ApplyHookOperations();
                 }
             }
