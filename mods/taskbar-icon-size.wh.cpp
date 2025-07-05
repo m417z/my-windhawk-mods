@@ -34,16 +34,16 @@ change the size of icons, and so the original quality icons can be used, as well
 as any other icon size.
 
 ![Before screenshot](https://i.imgur.com/TLza5fp.png) \
-*Icon size: 24x24, taskbar height: 48 (Windows 11 default)*
+*taskbar height: 48, Icon size: 24x24 (Windows 11 default)*
 
 ![After screenshot, large icons](https://i.imgur.com/3b8h40F.png) \
-*Icon size: 32x32, taskbar height: 52*
+*taskbar height: 52, Icon size: 32x32*
 
 ![After screenshot, small icons](https://i.imgur.com/Xy04Zcu.png) \
-*Icon size: 16x16, taskbar height: 34*
+*taskbar height: 34, Icon size: 16x16*
 
 ![After screenshot, small and narrow icons](https://i.imgur.com/fsx8C56.png) \
-*Icon size: 16x16, taskbar height: 34, taskbar button width: 28*
+*taskbar height: 34, Icon size: 16x16, taskbar button width: 28*
 
 Only Windows 11 is supported. For older Windows versions check out [7+ Taskbar
 Tweaker](https://tweaker.ramensoftware.com/).
@@ -54,18 +54,32 @@ Also check out the **Taskbar tray icon spacing** mod.
 
 // ==WindhawkModSettings==
 /*
-- IconSize: 32
-  $name: Icon size
-  $description: >-
-    The size, in pixels, of icons on the taskbar (Windows 11 default: 24)
 - TaskbarHeight: 52
   $name: Taskbar height
   $description: >-
     The height, in pixels, of the taskbar (Windows 11 default: 48)
+- IconSize: 32
+  $name: Icon size
+  $description: >-
+    The size, in pixels, of icons on the taskbar (Windows 11 default: 24)
 - TaskbarButtonWidth: 44
   $name: Taskbar button width
   $description: >-
     The width, in pixels, of the taskbar buttons (Windows 11 default: 44)
+- IconSizeSmall: 16
+  $name: Small icon size
+  $description: >-
+    The size, in pixels, of small icons on the taskbar (Windows 11 default: 16)
+
+    Used in newer Windows 11 builds with support for small taskbar icons (around
+    July 2025)
+- TaskbarButtonWidthSmall: 32
+  $name: Small taskbar button width
+  $description: >-
+    The width, in pixels, of the small taskbar buttons (Windows 11 default: 32)
+
+    Used in newer Windows 11 builds with support for small taskbar icons (around
+    July 2025)
 */
 // ==/WindhawkModSettings==
 
@@ -87,9 +101,11 @@ Also check out the **Taskbar tray icon spacing** mod.
 using namespace winrt::Windows::UI::Xaml;
 
 struct {
-    int iconSize;
     int taskbarHeight;
+    int iconSize;
     int taskbarButtonWidth;
+    int iconSizeSmall;
+    int taskbarButtonWidthSmall;
 } g_settings;
 
 std::atomic<bool> g_taskbarViewDllLoaded;
@@ -100,6 +116,7 @@ std::atomic<bool> g_unloading;
 std::atomic<int> g_hookCallCounter;
 
 bool g_hasDynamicIconScaling;
+bool g_smallIconSize;
 int g_originalTaskbarHeight;
 int g_taskbarHeight;
 bool g_inSystemTrayController_UpdateFrameSize;
@@ -255,8 +272,12 @@ void OverrideResourceDirectoryLookup(
         return;
     }
 
-    if (*keyString != L"MediumTaskbarButtonExtent" &&
-        *keyString != L"SmallTaskbarButtonExtent") {
+    double newValueDouble;
+    if (*keyString == L"MediumTaskbarButtonExtent") {
+        newValueDouble = g_settings.taskbarButtonWidth;
+    } else if (*keyString == L"SmallTaskbarButtonExtent") {
+        newValueDouble = g_settings.taskbarButtonWidthSmall;
+    } else {
         return;
     }
 
@@ -265,7 +286,6 @@ void OverrideResourceDirectoryLookup(
         return;
     }
 
-    double newValueDouble = g_settings.taskbarButtonWidth;
     if (newValueDouble != *valueDouble) {
         Wh_Log(L"[%S] Overriding value %s: %f->%f", sourceFunctionName,
                keyString->c_str(), *valueDouble, newValueDouble);
@@ -559,12 +579,14 @@ TaskbarConfiguration_GetIconHeightInViewPixels_method_t
     TaskbarConfiguration_GetIconHeightInViewPixels_method_Original;
 double WINAPI
 TaskbarConfiguration_GetIconHeightInViewPixels_method_Hook(void* pThis) {
+    double iconSize =
+        TaskbarConfiguration_GetIconHeightInViewPixels_method_Original(pThis);
+
     if (!g_unloading) {
-        return g_settings.iconSize;
+        return iconSize <= 16 ? g_settings.iconSizeSmall : g_settings.iconSize;
     }
 
-    return TaskbarConfiguration_GetIconHeightInViewPixels_method_Original(
-        pThis);
+    return iconSize;
 }
 
 using TaskListButton_IconHeight_t = void(WINAPI*)(void* pThis, double height);
@@ -611,7 +633,7 @@ void WINAPI TaskListButton_IconHeight_Hook(void* pThis, double height) {
     if (!g_unloading) {
         // Make sure to use a different value for other calculations such as
         // padding.
-        *iconHeight = 24;
+        *iconHeight = g_smallIconSize ? 16 : 24;
     }
 }
 
@@ -1114,6 +1136,8 @@ void WINAPI TaskListButton_UpdateVisualStates_Hook(void* pThis) {
         }();
 
         if (mediumTaskbarButtonExtentOffset > 0) {
+            bool updateButtonPadding = false;
+
             double* mediumTaskbarButtonExtent =
                 (double*)((BYTE*)pThis + mediumTaskbarButtonExtentOffset);
             if (*mediumTaskbarButtonExtent >= 1 &&
@@ -1126,16 +1150,37 @@ void WINAPI TaskListButton_UpdateVisualStates_Hook(void* pThis) {
                         L"TaskListButton: %f->%f",
                         *mediumTaskbarButtonExtent, newValue);
                     *mediumTaskbarButtonExtent = newValue;
-                    g_taskbarButtonWidthCustomized = true;
-                    TaskListButton_UpdateButtonPadding_Original(pThis);
+                    updateButtonPadding = true;
                 }
+            }
+
+            double* smallTaskbarButtonExtent =
+                g_hasDynamicIconScaling ? mediumTaskbarButtonExtent - 1
+                                        : nullptr;
+            if (smallTaskbarButtonExtent && *smallTaskbarButtonExtent >= 1 &&
+                *smallTaskbarButtonExtent < 10000) {
+                double newValue =
+                    g_unloading ? 32 : g_settings.taskbarButtonWidthSmall;
+                if (newValue != *smallTaskbarButtonExtent) {
+                    Wh_Log(
+                        L"Updating SmallTaskbarButtonExtent for "
+                        L"TaskListButton: %f->%f",
+                        *smallTaskbarButtonExtent, newValue);
+                    *smallTaskbarButtonExtent = newValue;
+                    updateButtonPadding = true;
+                }
+            }
+
+            if (updateButtonPadding) {
+                g_taskbarButtonWidthCustomized = true;
+                TaskListButton_UpdateButtonPadding_Original(pThis);
             }
         }
     }
 
     TaskListButton_UpdateVisualStates_Original(pThis);
 
-    if (g_applyingSettings) {
+    if (g_applyingSettings && !g_hasDynamicIconScaling) {
         FrameworkElement taskListButtonElement = nullptr;
         ((IUnknown*)pThis + 3)
             ->QueryInterface(winrt::guid_of<FrameworkElement>(),
@@ -1152,6 +1197,20 @@ void WINAPI TaskListButton_UpdateVisualStates_Hook(void* pThis) {
             }
         }
     }
+}
+
+using LaunchListItemViewModel_IconHeight_t = void(WINAPI*)(void* pThis,
+                                                           double iconHeight);
+LaunchListItemViewModel_IconHeight_t
+    LaunchListItemViewModel_IconHeight_Original;
+void WINAPI LaunchListItemViewModel_IconHeight_Hook(void* pThis,
+                                                    double iconHeight) {
+    Wh_Log(L">");
+
+    g_smallIconSize = iconHeight == g_settings.iconSizeSmall &&
+                      iconHeight != g_settings.iconSize;
+
+    LaunchListItemViewModel_IconHeight_Original(pThis, iconHeight);
 }
 
 using ExperienceToggleButton_UpdateButtonPadding_t = void(WINAPI*)(void* pThis);
@@ -1180,7 +1239,6 @@ void WINAPI ExperienceToggleButton_UpdateButtonPadding_Hook(void* pThis) {
         return;
     }
 
-    const double defaultWidth = 44;
     double defaultWidthExtra = 0;
 
     auto className = winrt::get_class_name(toggleButtonElement);
@@ -1207,9 +1265,13 @@ void WINAPI ExperienceToggleButton_UpdateButtonPadding_Hook(void* pThis) {
         return;
     }
 
-    double newWidth =
-        (g_unloading ? defaultWidth : g_settings.taskbarButtonWidth) +
-        defaultWidthExtra;
+    double defaultWidth = g_smallIconSize ? 32 : 44;
+    double overrideWidth =
+        g_unloading ? defaultWidth
+                    : (g_smallIconSize ? g_settings.taskbarButtonWidthSmall
+                                       : g_settings.taskbarButtonWidth);
+
+    double newWidth = overrideWidth + defaultWidthExtra;
     if (newWidth != buttonWidth) {
         Wh_Log(L"Updating MediumTaskbarButtonExtent for %s: %f->%f",
                className.c_str(), buttonWidth, newWidth);
@@ -1251,15 +1313,18 @@ void WINAPI SearchButtonBase_UpdateButtonPadding_Hook(void* pThis) {
         return;
     }
 
-    const double defaultWidth = 44;
-
     double buttonWidth = panelElement.Width();
     if (!(buttonWidth > 0)) {
         return;
     }
 
-    double newWidth =
-        (g_unloading ? defaultWidth : g_settings.taskbarButtonWidth);
+    double defaultWidth = g_smallIconSize ? 32 : 44;
+    double overrideWidth =
+        g_unloading ? defaultWidth
+                    : (g_smallIconSize ? g_settings.taskbarButtonWidthSmall
+                                       : g_settings.taskbarButtonWidth);
+
+    double newWidth = overrideWidth;
     if (newWidth != buttonWidth) {
         Wh_Log(L"Updating MediumTaskbarButtonExtent: %f->%f", buttonWidth,
                newWidth);
@@ -1460,9 +1525,12 @@ auto WINAPI SHAppBarMessage_Hook(DWORD dwMessage, PAPPBARDATA pData) {
 }
 
 void LoadSettings() {
-    g_settings.iconSize = Wh_GetIntSetting(L"IconSize");
     g_settings.taskbarHeight = Wh_GetIntSetting(L"TaskbarHeight");
+    g_settings.iconSize = Wh_GetIntSetting(L"IconSize");
     g_settings.taskbarButtonWidth = Wh_GetIntSetting(L"TaskbarButtonWidth");
+    g_settings.iconSizeSmall = Wh_GetIntSetting(L"IconSizeSmall");
+    g_settings.taskbarButtonWidthSmall =
+        Wh_GetIntSetting(L"TaskbarButtonWidthSmall");
 }
 
 HWND FindCurrentProcessTaskbarWnd() {
@@ -1743,6 +1811,11 @@ bool HookTaskbarViewDllSymbols(HMODULE module) {
                 {LR"(private: void __cdecl winrt::Taskbar::implementation::TaskListButton::UpdateVisualStates(void))"},
                 &TaskListButton_UpdateVisualStates_Original,
                 TaskListButton_UpdateVisualStates_Hook,
+            },
+            {
+                {LR"(public: virtual void __cdecl winrt::Taskbar::implementation::LaunchListItemViewModel::IconHeight(double))"},
+                &LaunchListItemViewModel_IconHeight_Original,
+                LaunchListItemViewModel_IconHeight_Hook,
             },
             {
                 {LR"(protected: virtual void __cdecl winrt::Taskbar::implementation::ExperienceToggleButton::UpdateButtonPadding(void))"},
