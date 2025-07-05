@@ -469,6 +469,11 @@ using ShellIconLoaderV2_LoadAsyncIcon__ResumeCoro_t =
 ShellIconLoaderV2_LoadAsyncIcon__ResumeCoro_t
     ShellIconLoaderV2_LoadAsyncIcon__ResumeCoro_Original;
 void WINAPI ShellIconLoaderV2_LoadAsyncIcon__ResumeCoro_Hook(void* pThis) {
+    if (g_hasDynamicIconScaling) {
+        ShellIconLoaderV2_LoadAsyncIcon__ResumeCoro_Original(pThis);
+        return;
+    }
+
     Wh_Log(L">");
 
     g_shellIconLoaderV2_LoadAsyncIcon__ResumeCoro_ThreadId =
