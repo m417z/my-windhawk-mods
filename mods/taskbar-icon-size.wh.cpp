@@ -119,6 +119,7 @@ bool g_hasDynamicIconScaling;
 bool g_smallIconSize;
 int g_originalTaskbarHeight;
 int g_taskbarHeight;
+std::atomic<DWORD> g_shellIconLoaderV2_LoadAsyncIcon__ResumeCoro_ThreadId;
 bool g_inSystemTrayController_UpdateFrameSize;
 bool g_taskbarButtonWidthCustomized;
 bool g_inAugmentedEntryPointButton_UpdateButtonPadding;
@@ -461,6 +462,21 @@ CIconLoadingFunctions_SendMessageCallbackW_Hook(void* pThis,
         pThis, hWnd, Msg, wParam, lParam, lpResultCallBack, dwData);
 
     return ret;
+}
+
+using ShellIconLoaderV2_LoadAsyncIcon__ResumeCoro_t =
+    void(WINAPI*)(void* pThis);
+ShellIconLoaderV2_LoadAsyncIcon__ResumeCoro_t
+    ShellIconLoaderV2_LoadAsyncIcon__ResumeCoro_Original;
+void WINAPI ShellIconLoaderV2_LoadAsyncIcon__ResumeCoro_Hook(void* pThis) {
+    Wh_Log(L">");
+
+    g_shellIconLoaderV2_LoadAsyncIcon__ResumeCoro_ThreadId =
+        GetCurrentThreadId();
+
+    ShellIconLoaderV2_LoadAsyncIcon__ResumeCoro_Original(pThis);
+
+    g_shellIconLoaderV2_LoadAsyncIcon__ResumeCoro_ThreadId = 0;
 }
 
 using TrayUI__StuckTrayChange_t = void(WINAPI*)(void* pThis);
@@ -1524,6 +1540,29 @@ auto WINAPI SHAppBarMessage_Hook(DWORD dwMessage, PAPPBARDATA pData) {
     return ret;
 }
 
+using SendMessageTimeoutW_t = decltype(&SendMessageTimeoutW);
+SendMessageTimeoutW_t SendMessageTimeoutW_Original;
+LRESULT WINAPI SendMessageTimeoutW_Hook(HWND hWnd,
+                                        UINT Msg,
+                                        WPARAM wParam,
+                                        LPARAM lParam,
+                                        UINT fuFlags,
+                                        UINT uTimeout,
+                                        PDWORD_PTR lpdwResult) {
+    if (g_shellIconLoaderV2_LoadAsyncIcon__ResumeCoro_ThreadId ==
+            GetCurrentThreadId() &&
+        !g_unloading && Msg == WM_GETICON && wParam == ICON_BIG &&
+        (g_smallIconSize ? g_settings.iconSizeSmall : g_settings.iconSize) <=
+            16) {
+        wParam = ICON_SMALL2;
+    }
+
+    LRESULT ret = SendMessageTimeoutW_Original(hWnd, Msg, wParam, lParam,
+                                               fuFlags, uTimeout, lpdwResult);
+
+    return ret;
+}
+
 void LoadSettings() {
     g_settings.taskbarHeight = Wh_GetIntSetting(L"TaskbarHeight");
     g_settings.iconSize = Wh_GetIntSetting(L"IconSize");
@@ -1938,6 +1977,12 @@ bool HookTaskbarDllSymbols() {
             CIconLoadingFunctions_SendMessageCallbackW_Hook,
         },
         {
+            // Pre-DynamicIconScaling.
+            {LR"(static  ShellIconLoaderV2::LoadAsyncIcon$_ResumeCoro$1())"},
+            &ShellIconLoaderV2_LoadAsyncIcon__ResumeCoro_Original,
+            ShellIconLoaderV2_LoadAsyncIcon__ResumeCoro_Hook,
+        },
+        {
             {LR"(public: void __cdecl TrayUI::_StuckTrayChange(void))"},
             &TrayUI__StuckTrayChange_Original,
         },
@@ -2043,6 +2088,10 @@ BOOL Wh_ModInit() {
 
     WindhawkUtils::Wh_SetFunctionHookT(SHAppBarMessage, SHAppBarMessage_Hook,
                                        &SHAppBarMessage_Original);
+
+    WindhawkUtils::Wh_SetFunctionHookT(SendMessageTimeoutW,
+                                       SendMessageTimeoutW_Hook,
+                                       &SendMessageTimeoutW_Original);
 
     return TRUE;
 }
