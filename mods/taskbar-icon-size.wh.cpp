@@ -2,7 +2,7 @@
 // @id              taskbar-icon-size
 // @name            Taskbar height and icon size
 // @description     Control the taskbar height and icon size, improve icon quality (Windows 11 only)
-// @version         1.2.17
+// @version         1.3
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
@@ -34,16 +34,16 @@ change the size of icons, and so the original quality icons can be used, as well
 as any other icon size.
 
 ![Before screenshot](https://i.imgur.com/TLza5fp.png) \
-*taskbar height: 48, Icon size: 24x24 (Windows 11 default)*
+*Taskbar height: 48, icon size: 24x24 (Windows 11 default)*
 
 ![After screenshot, large icons](https://i.imgur.com/3b8h40F.png) \
-*taskbar height: 52, Icon size: 32x32*
+*Taskbar height: 52, icon size: 32x32*
 
 ![After screenshot, small icons](https://i.imgur.com/Xy04Zcu.png) \
-*taskbar height: 34, Icon size: 16x16*
+*Taskbar height: 34, icon size: 16x16*
 
 ![After screenshot, small and narrow icons](https://i.imgur.com/fsx8C56.png) \
-*taskbar height: 34, Icon size: 16x16, taskbar button width: 28*
+*Taskbar height: 34, icon size: 16x16, taskbar button width: 28*
 
 Only Windows 11 is supported. For older Windows versions check out [7+ Taskbar
 Tweaker](https://tweaker.ramensoftware.com/).
@@ -612,10 +612,8 @@ TaskbarConfiguration_GetIconHeightInViewPixels_method_Hook(void* pThis) {
 
 using TaskListButton_IconHeight_t = void(WINAPI*)(void* pThis, double height);
 TaskListButton_IconHeight_t TaskListButton_IconHeight_SymbolAddress;
-TaskListButton_IconHeight_t TaskListButton_IconHeight_Original;
-void WINAPI TaskListButton_IconHeight_Hook(void* pThis, double height) {
-    Wh_Log(L">");
 
+size_t GetIconHeightOffset() {
     static size_t iconHeightOffset = []() {
         size_t offset =
 #if defined(_M_X64)
@@ -637,6 +635,18 @@ void WINAPI TaskListButton_IconHeight_Hook(void* pThis, double height) {
         return offset;
     }();
 
+    return iconHeightOffset;
+}
+
+void TaskListButton_IconHeight_InitOffsets() {
+    GetIconHeightOffset();
+}
+
+TaskListButton_IconHeight_t TaskListButton_IconHeight_Original;
+void WINAPI TaskListButton_IconHeight_Hook(void* pThis, double height) {
+    Wh_Log(L">");
+
+    size_t iconHeightOffset = GetIconHeightOffset();
     if (!iconHeightOffset || iconHeightOffset > 0xFFFF) {
         TaskListButton_IconHeight_Original(pThis, height);
         return;
@@ -714,11 +724,8 @@ thread_local double* g_TaskbarConfiguration_UpdateFrameSize_frameSize;
 using TaskbarConfiguration_UpdateFrameSize_t = void(WINAPI*)(void* pThis);
 TaskbarConfiguration_UpdateFrameSize_t
     TaskbarConfiguration_UpdateFrameSize_SymbolAddress;
-TaskbarConfiguration_UpdateFrameSize_t
-    TaskbarConfiguration_UpdateFrameSize_Original;
-void WINAPI TaskbarConfiguration_UpdateFrameSize_Hook(void* pThis) {
-    Wh_Log(L">");
 
+LONG GetFrameSizeOffset() {
     static LONG frameSizeOffset = []() -> LONG {
         // Find the offset to the frame size.
         // str d16, [x19, #0x50]
@@ -752,6 +759,19 @@ void WINAPI TaskbarConfiguration_UpdateFrameSize_Hook(void* pThis) {
         return 0;
     }();
 
+    return frameSizeOffset;
+}
+
+void TaskbarConfiguration_UpdateFrameSize_InitOffsets() {
+    GetFrameSizeOffset();
+}
+
+TaskbarConfiguration_UpdateFrameSize_t
+    TaskbarConfiguration_UpdateFrameSize_Original;
+void WINAPI TaskbarConfiguration_UpdateFrameSize_Hook(void* pThis) {
+    Wh_Log(L">");
+
+    LONG frameSizeOffset = GetFrameSizeOffset();
     if (frameSizeOffset <= 0) {
         Wh_Log(L"frameSizeOffset <= 0");
         TaskbarConfiguration_UpdateFrameSize_Original(pThis);
@@ -789,11 +809,8 @@ void WINAPI Event_operator_call_Hook(void* pThis) {
 using SystemTrayController_UpdateFrameSize_t = void(WINAPI*)(void* pThis);
 SystemTrayController_UpdateFrameSize_t
     SystemTrayController_UpdateFrameSize_SymbolAddress;
-SystemTrayController_UpdateFrameSize_t
-    SystemTrayController_UpdateFrameSize_Original;
-void WINAPI SystemTrayController_UpdateFrameSize_Hook(void* pThis) {
-    Wh_Log(L">");
 
+LONG GetLastHeightOffset() {
     static LONG lastHeightOffset = []() -> LONG {
     // Find the last height offset to reset the height value.
 #if defined(_M_X64)
@@ -869,6 +886,19 @@ void WINAPI SystemTrayController_UpdateFrameSize_Hook(void* pThis) {
         return 0;
     }();
 
+    return lastHeightOffset;
+}
+
+void SystemTrayController_UpdateFrameSize_InitOffsets() {
+    GetLastHeightOffset();
+}
+
+SystemTrayController_UpdateFrameSize_t
+    SystemTrayController_UpdateFrameSize_Original;
+void WINAPI SystemTrayController_UpdateFrameSize_Hook(void* pThis) {
+    Wh_Log(L">");
+
+    LONG lastHeightOffset = GetLastHeightOffset();
     if (lastHeightOffset > 0) {
         *(double*)((BYTE*)pThis + lastHeightOffset) = 0;
     }
@@ -1887,6 +1917,7 @@ bool HookTaskbarViewDllSymbols(HMODULE module) {
     }
 
     if (TaskListButton_IconHeight_SymbolAddress) {
+        TaskListButton_IconHeight_InitOffsets();
         WindhawkUtils::Wh_SetFunctionHookT(
             TaskListButton_IconHeight_SymbolAddress,
             TaskListButton_IconHeight_Hook,
@@ -1895,6 +1926,7 @@ bool HookTaskbarViewDllSymbols(HMODULE module) {
 
 #ifdef _M_ARM64
     if (TaskbarConfiguration_UpdateFrameSize_SymbolAddress) {
+        TaskbarConfiguration_UpdateFrameSize_InitOffsets();
         WindhawkUtils::Wh_SetFunctionHookT(
             TaskbarConfiguration_UpdateFrameSize_SymbolAddress,
             TaskbarConfiguration_UpdateFrameSize_Hook,
@@ -1903,6 +1935,7 @@ bool HookTaskbarViewDllSymbols(HMODULE module) {
 #endif
 
     if (SystemTrayController_UpdateFrameSize_SymbolAddress) {
+        SystemTrayController_UpdateFrameSize_InitOffsets();
         WindhawkUtils::Wh_SetFunctionHookT(
             SystemTrayController_UpdateFrameSize_SymbolAddress,
             SystemTrayController_UpdateFrameSize_Hook,
