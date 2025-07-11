@@ -354,7 +354,7 @@ const Theme g_theme10JumpLists = {{
     ThemeTargetStyles{L"JumpViewUI.JumpListListView#ItemList", {
         L"Width=256",
         L"Padding=0,5,0,5",
-        L"Background:=<AcrylicBrush TintColor=\"{ThemeResource SystemChromeMediumColor}\" TintOpacity=\"0.78\" TintLuminosityOpacity=\"0.77\"  FallbackColor=\"{ThemeResource SystemChromeMediumColor}\" />"}},
+        L"Background:=<AcrylicBrush TintColor=\"{ThemeResource SystemChromeMediumColor}\" TintOpacity=\"0.78\" TintLuminosityOpacity=\"0.77\" FallbackColor=\"{ThemeResource SystemChromeMediumColor}\" />"}},
     ThemeTargetStyles{L"JumpViewUI.SystemItemControl > Windows.UI.Xaml.Controls.Grid > Windows.UI.Xaml.Controls.Grid > Windows.UI.Xaml.Controls.TextBlock", {
         L"FontFamily=Segoe MDL2 Assets"}},
     ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Button#PinButton > Windows.UI.Xaml.Controls.Grid > Windows.UI.Xaml.Controls.ContentPresenter#ContentPresenter > Windows.UI.Xaml.Controls.TextBlock", {
@@ -394,7 +394,7 @@ const Theme g_theme10JumpLists = {{
         L"Visibility=Collapsed"}},
     ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Grid#SystemItemsContainer", {
         L"Padding=0,5,0,5",
-        L"Background:=<AcrylicBrush TintColor=\"{ThemeResource SystemChromeMediumColor}\" TintOpacity=\"0.78\" TintLuminosityOpacity=\"0.77\"  FallbackColor=\"{ThemeResource SystemChromeLowColor}\" />"}},
+        L"Background:=<AcrylicBrush TintColor=\"{ThemeResource SystemChromeMediumColor}\" TintOpacity=\"0.78\" TintLuminosityOpacity=\"0.77\" FallbackColor=\"{ThemeResource SystemChromeLowColor}\" />"}},
     ThemeTargetStyles{L"JumpViewUI.JumpListListViewItem > Windows.UI.Xaml.Controls.Grid#LayoutRoot > Windows.UI.Xaml.Controls.ContentPresenter#ContentPresenter > Windows.UI.Xaml.Controls.Grid#LayoutRoot > Windows.UI.Xaml.Shapes.Rectangle", {
         L"Margin=12,4,12,4"}},
     ThemeTargetStyles{L"JumpViewUI.JumpListControl#JumpList", {
@@ -407,67 +407,88 @@ const Theme g_theme10JumpLists = {{
 
 const Theme g_themeMatter = {{
     ThemeTargetStyles{L"Grid#NotificationCenterGrid", {
-        L"Background:=<AcrylicBrush TintOpacity=\"0\" TintColor=\"Black\" TintLuminosityOpacity=\"0.4\" Opacity=\"1\" FallbackColor=\"#262626\"/>",
+        L"Background:=$base",
         L"BorderThickness=0,0,0,0",
-        L"CornerRadius=17"}},
+        L"CornerRadius=$r1",
+        L"Shadow :="}},
     ThemeTargetStyles{L"Grid#CalendarCenterGrid", {
-        L"Background:=<AcrylicBrush TintOpacity=\"0\" TintColor=\"Black\" TintLuminosityOpacity=\"0.4\" Opacity=\"1\" FallbackColor=\"#262626\"/>",
+        L"Background:=$base",
         L"BorderThickness=0,0,0,0",
-        L"CornerRadius=17"}},
+        L"CornerRadius=$r1",
+        L"Shadow :=",
+        L"Margin = 0,6,0,6",
+        L"MinHeight = 40"}},
     ThemeTargetStyles{L"ScrollViewer#CalendarControlScrollViewer", {
-        L"Background:=<AcrylicBrush TintOpacity=\"0\" TintColor=\"Black\" TintLuminosityOpacity=\"0.5\" Opacity=\"1\" FallbackColor=\"#0d0d0d\"/>",
-        L"CornerRadius=14",
-        L"Margin=-10,11,-10,-14"}},
+        L"Background:=$overlay",
+        L"CornerRadius=$r2",
+        L"Margin=-10,11,-10,-14",
+        L"Shadow :="}},
     ThemeTargetStyles{L"Border#CalendarHeaderMinimizedOverlay", {
-        L"Background:=<AcrylicBrush TintOpacity=\"0\" TintColor=\"Black\" TintLuminosityOpacity=\"0.5\" Opacity=\"1\" FallbackColor=\"#0d0d0d\"/>",
-        L"CornerRadius=18"}},
+        L"Background:=$overlay",
+        L"CornerRadius=$r2",
+        L"Shadow :=",
+        L"Margin =-10,-6,-10,-8",
+        L"Height = 45"}},
     ThemeTargetStyles{L"ActionCenter.FocusSessionControl#FocusSessionControl > Grid#FocusGrid", {
-        L"Background:=<AcrylicBrush TintOpacity=\"0\" TintColor=\"Black\" TintLuminosityOpacity=\"0.5\" Opacity=\"1\" FallbackColor=\"#0d0d0d\"/>",
-        L"CornerRadius=14",
-        L"Margin=6,7,6,6"}},
+        L"Background:=$overlay",
+        L"CornerRadius=$r2",
+        L"Margin=6,7,6,6",
+        L"Shadow :="}},
     ThemeTargetStyles{L"MenuFlyoutPresenter", {
-        L"Background:=<AcrylicBrush TintOpacity=\"0\" TintColor=\"Black\" TintLuminosityOpacity=\"0.5\" Opacity=\"1\" FallbackColor=\"#0d0d0d\"/>",
+        L"Background:=$base",
         L"BorderThickness=0,0,0,0",
-        L"CornerRadius=12",
-        L"Padding=1,2,1,2"}},
+        L"CornerRadius=$r3",
+        L"Padding=1,2,1,2",
+        L"Shadow :="}},
     ThemeTargetStyles{L"Border#JumpListRestyledAcrylic", {
-        L"Background:=<AcrylicBrush TintOpacity=\"0\" TintColor=\"Black\" TintLuminosityOpacity=\"0.4\" Opacity=\"1\" FallbackColor=\"#262626\"/>",
+        L"Background:=$base",
         L"BorderThickness=0,0,0,0",
-        L"CornerRadius=12",
-        L"Margin=-2,-2,-2,-2"}},
+        L"CornerRadius=$r3",
+        L"Margin=-2,-2,-2,-2",
+        L"Shadow :="}},
     ThemeTargetStyles{L"Grid#ControlCenterRegion", {
-        L"Background:=<AcrylicBrush TintOpacity=\"0\" TintColor=\"Black\" TintLuminosityOpacity=\"0.4\" Opacity=\"1\" FallbackColor=\"#262626\"/>",
-        L"CornerRadius=17",
-        L"BorderThickness=0,0,0,0"}},
-    ThemeTargetStyles{L"ContentPresenter#PageContent", {
-        L"Background:= <SolidColorBrush Color=\"Transparent\"/>"}},
-    ThemeTargetStyles{L"ContentPresenter#PageContent > Grid > Border", {
-        L"Background:=<AcrylicBrush TintOpacity=\"0\" TintColor=\"Black\" TintLuminosityOpacity=\"0.5\" Opacity=\"1\" FallbackColor=\"#0d0d0d\"/>",
-        L"CornerRadius=14",
-        L"Margin=8,0,8,2"}},
-    ThemeTargetStyles{L"QuickActions.ControlCenter.AccessibleWindow#PageWindow > ContentPresenter > Grid#FullScreenPageRoot", {
-        L"Background:= <SolidColorBrush Color=\"Transparent\"/>"}},
-    ThemeTargetStyles{L"QuickActions.ControlCenter.AccessibleWindow#PageWindow > ContentPresenter > Grid#FullScreenPageRoot > ContentPresenter#PageHeader", {
-        L"Background:=<AcrylicBrush TintOpacity=\"0\" TintColor=\"Black\" TintLuminosityOpacity=\"0.5\" Opacity=\"1\" FallbackColor=\"#0d0d0d\"/>",
-        L"CornerRadius=14",
-        L"Margin=7,7,7,7"}},
-    ThemeTargetStyles{L"ScrollViewer#ListContent", {
-        L"Background:=<AcrylicBrush TintOpacity=\"0\" TintColor=\"Black\" TintLuminosityOpacity=\"0.5\" Opacity=\"1\" FallbackColor=\"#0d0d0d\"/>",
-        L"CornerRadius=14",
-        L"Margin=8,0,8,0"}},
-    ThemeTargetStyles{L"ActionCenter.FlexibleToastView#FlexibleNormalToastView", {
-        L"Background:= <SolidColorBrush Color=\"Transparent\"/>"}},
-    ThemeTargetStyles{L"Border#ToastBackgroundBorder2", {
-        L"Background:=<AcrylicBrush TintOpacity=\"0\" TintColor=\"Black\" TintLuminosityOpacity=\"0.4\" Opacity=\"1\" FallbackColor=\"#262626\"/>",
+        L"Background:=$base",
+        L"CornerRadius=$r1",
         L"BorderThickness=0,0,0,0",
-        L"CornerRadius=16"}},
+        L"Shadow :=",
+        L"Margin = 0,0,0,-6"}},
+    ThemeTargetStyles{L"ContentPresenter#PageContent", {
+        L"Background:= $transparent",
+        L"Shadow :="}},
+    ThemeTargetStyles{L"ContentPresenter#PageContent > Grid > Border", {
+        L"Background:=$overlay",
+        L"CornerRadius=$r2",
+        L"Margin=8,0,8,2",
+        L"Shadow :="}},
+    ThemeTargetStyles{L"QuickActions.ControlCenter.AccessibleWindow#PageWindow > ContentPresenter > Grid#FullScreenPageRoot", {
+        L"Background:= $transparent",
+        L"Shadow :="}},
+    ThemeTargetStyles{L"QuickActions.ControlCenter.AccessibleWindow#PageWindow > ContentPresenter > Grid#FullScreenPageRoot > ContentPresenter#PageHeader", {
+        L"Background:=$overlay",
+        L"CornerRadius=$r2",
+        L"Margin=7,7,7,7",
+        L"Shadow :="}},
+    ThemeTargetStyles{L"ScrollViewer#ListContent", {
+        L"Background:=$overlay",
+        L"CornerRadius=$r2",
+        L"Margin=8,0,8,0",
+        L"Shadow :="}},
+    ThemeTargetStyles{L"ActionCenter.FlexibleToastView#FlexibleNormalToastView", {
+        L"Background:= $transparent",
+        L"Shadow :="}},
+    ThemeTargetStyles{L"Border#ToastBackgroundBorder2", {
+        L"Background:=$base",
+        L"BorderThickness=0,0,0,0",
+        L"CornerRadius=16",
+        L"Shadow :="}},
     ThemeTargetStyles{L"JumpViewUI.SystemItemListViewItem > Grid#LayoutRoot > Border#BackgroundBorder", {
-        L"Background:=<AcrylicBrush TintOpacity=\"0\" TintColor=\"Black\" TintLuminosityOpacity=\"0.5\" Opacity=\"1\" FallbackColor=\"#0d0d0d\"/>",
+        L"Background:=$overlay",
         L"CornerRadius=8"}},
     ThemeTargetStyles{L"JumpViewUI.JumpListListViewItem > Grid#LayoutRoot > Border#BackgroundBorder", {
         L"CornerRadius=6"}},
     ThemeTargetStyles{L"ActionCenter.FlexibleItemView", {
-        L"CornerRadius=16"}},
+        L"CornerRadius=16",
+        L"Shadow :="}},
     ThemeTargetStyles{L"QuickActions.AccessibleToggleButton#ToggleButton", {
         L"CornerRadius=13",
         L"BorderThickness = 0"}},
@@ -476,48 +497,45 @@ const Theme g_themeMatter = {{
         L"Margin=4,0,-4,0",
         L"BorderThickness = 0"}},
     ThemeTargetStyles{L"Grid#NotificationCenterTopBanner", {
-        L"Background:=<AcrylicBrush TintOpacity=\"0\" TintColor=\"Black\" TintLuminosityOpacity=\"0.5\" Opacity=\"1\" FallbackColor=\"#0d0d0d\"/>",
-        L"CornerRadius=14",
-        L"Margin=7,7,7,7"}},
+        L"Background:=$overlay",
+        L"CornerRadius=$r2",
+        L"Margin=6"}},
     ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Grid#L1Grid > Border", {
-        L"Background:= <SolidColorBrush Color=\"Transparent\"/>"}},
+        L"Background:= $transparent"}},
     ThemeTargetStyles{L"Windows.UI.Xaml.Controls.ContentPresenter", {
         L"BorderThickness=0"}},
-    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Button#FooterButton[AutomationProperties.Name = Edit quick settings] ", {
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Button#FooterButton[AutomationProperties.Name = Edit quick settings]", {
         L"Margin = 0,0,8,0",
-        L"CornerRadius = 12"}},
-    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Button[AutomationProperties.AutomationId = Microsoft.QuickAction.Battery] ", {
+        L"CornerRadius=$r3"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Button[AutomationProperties.AutomationId = Microsoft.QuickAction.Battery]", {
         L"Margin = 2,0,0,0",
-        L"CornerRadius = 12"}},
-    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Button#FooterButton[AutomationProperties.Name = All settings] ", {
+        L"CornerRadius=$r3"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Button#FooterButton[AutomationProperties.Name = All settings]", {
         L"Margin = 0,0,-1,0",
         L"CornerRadius = 13"}},
-    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Button[AutomationProperties.AutomationId = Microsoft.QuickAction.Volume] ", {
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Button[AutomationProperties.AutomationId = Microsoft.QuickAction.Volume]", {
         L"CornerRadius = 10"}},
-    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Button#VolumeL2Button[AutomationProperties.Name = Select a sound output] ", {
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Button#VolumeL2Button[AutomationProperties.Name = Select a sound output]", {
         L"CornerRadius = 10"}},
     ThemeTargetStyles{L"Windows.UI.Xaml.Shapes.Rectangle#HorizontalTrackRect", {
-        L"Height  = 8",
-        L"Margin = 6,-1,12,0",
-        L"Fill := <AcrylicBrush TintOpacity=\"0\" TintColor=\"Black\" TintLuminosityOpacity=\"0.5\" Opacity=\"1\" FallbackColor=\"#0d0d0d\"/>"}},
+        L"Height = 10",
+        L"Fill := $overlay",
+        L"RadiusY = 3",
+        L"RadiusX = 3"}},
     ThemeTargetStyles{L"Windows.UI.Xaml.Shapes.Rectangle#HorizontalDecreaseRect", {
-        L"Height  =8",
-        L"Margin = 6,-1,-10,0",
-        L"Fill:=<SolidColorBrush Color=\"{ThemeResource SystemAccentColorLight1}\" />"}},
-    ThemeTargetStyles{L"Windows.UI.Xaml.Shapes.Ellipse#SliderInnerThumb", {
-        L"Height = 12",
-        L"Width = 12",
-        L"Margin = -1,0,0,0"}},
+        L"Height =10",
+        L"RadiusY = 3",
+        L"RadiusX = 3",
+        L"Margin = 0"}},
     ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Primitives.Thumb#HorizontalThumb", {
-        L"Height = 18",
-        L"Width = 18",
-        L"Margin = 0,-1,0,0",
-        L"Visibility  = 1"}},
+        L"Visibility = 1"}},
     ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Grid#MediaTransportControlsRegion", {
         L"Height=470",
-        L"CornerRadius = 17",
-        L"BorderThickness  = 0 ",
-        L"Background:=<AcrylicBrush TintOpacity=\"0\" TintColor=\"Black\" TintLuminosityOpacity=\"0.4\" Opacity=\"1\" FallbackColor=\"#262626\"/>"}},
+        L"CornerRadius=$r1",
+        L"BorderThickness = 0",
+        L"Background:=$base",
+        L"Shadow :=",
+        L"Margin = 0,0,0,12"}},
     ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Grid#AlbumTextAndArtContainer", {
         L"Height=347"}},
     ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Grid#ThumbnailImage", {
@@ -527,7 +545,7 @@ const Theme g_themeMatter = {{
         L"VerticalAlignment=Top",
         L"Grid.Column=1",
         L"Margin=0,2,0,0",
-        L"CornerRadius = 14"}},
+        L"CornerRadius=$r2"}},
     ThemeTargetStyles{L"Windows.UI.Xaml.Controls.StackPanel#PrimaryAndSecondaryTextContainer", {
         L"VerticalAlignment=Bottom",
         L"Margin = 0,5,0,-5"}},
@@ -545,25 +563,25 @@ const Theme g_themeMatter = {{
         L"Height=48",
         L"Margin = 0,12,0,-12"}},
     ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Primitives.RepeatButton#PreviousButton > Windows.UI.Xaml.Controls.ContentPresenter#ContentPresenter@CommonStates", {
-        L"Background@Normal:=<AcrylicBrush TintOpacity=\"0\" TintColor=\"Black\" TintLuminosityOpacity=\"0.5\" Opacity=\"1\" FallbackColor=\"#0d0d0d\"/>",
-        L"Background@PointerOver:=<AcrylicBrush TintOpacity=\"0\" TintColor=\"Black\" TintLuminosityOpacity=\"0.3\" Opacity=\"1\" FallbackColor=\"#333333\"/>",
-        L"Background@Pressed:=<AcrylicBrush TintOpacity=\"0\" TintColor=\"Black\" TintLuminosityOpacity=\"0.5\" Opacity=\"1\" FallbackColor=\"#0d0d0d\"/>",
+        L"Background@Normal:=$overlay",
+        L"Background@PointerOver:=$accentColor",
+        L"Background@Pressed:=$overlay2",
         L"Width=40",
         L"Height= 30",
         L"CornerRadius = 6",
         L"Margin = 15,0,0,0"}},
     ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Button#PlayPauseButton > Windows.UI.Xaml.Controls.ContentPresenter#ContentPresenter@CommonStates", {
-        L"Background@Normal:=<AcrylicBrush TintOpacity=\"0\" TintColor=\"Black\" TintLuminosityOpacity=\"0.5\" Opacity=\"1\" FallbackColor=\"#0d0d0d\"/>",
-        L"Background@PointerOver:=<AcrylicBrush TintOpacity=\"0\" TintColor=\"Black\" TintLuminosityOpacity=\"0.3\" Opacity=\"1\" FallbackColor=\"#333333\"/>",
-        L"Background@Pressed:=<AcrylicBrush TintOpacity=\"0\" TintColor=\"Black\" TintLuminosityOpacity=\"0.5\" Opacity=\"1\" FallbackColor=\"#0d0d0d\"/>",
+        L"Background@Normal:=$overlay",
+        L"Background@PointerOver:=$accentColor",
+        L"Background@Pressed:=$overlay2",
         L"Width=40",
         L"Height = 40",
         L"CornerRadius = 8",
         L"Margin = -10,0,0,0"}},
     ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Primitives.RepeatButton#NextButton > Windows.UI.Xaml.Controls.ContentPresenter#ContentPresenter@CommonStates", {
-        L"Background@Normal:=<AcrylicBrush TintOpacity=\"0\" TintColor=\"Black\" TintLuminosityOpacity=\"0.5\" Opacity=\"1\" FallbackColor=\"#0d0d0d\"/>",
-        L"Background@PointerOver:=<AcrylicBrush TintOpacity=\"0\" TintColor=\"Black\" TintLuminosityOpacity=\"0.3\" Opacity=\"1\" FallbackColor=\"#333333\"/>",
-        L"Background@Pressed:=<AcrylicBrush TintOpacity=\"0\" TintColor=\"Black\" TintLuminosityOpacity=\"0.5\" Opacity=\"1\" FallbackColor=\"#0d0d0d\"/>",
+        L"Background@Normal:=$overlay",
+        L"Background@PointerOver:=$accentColor",
+        L"Background@Pressed:=$overlay2",
         L"Width=40",
         L"Height = 30",
         L"CornerRadius = 6",
@@ -575,7 +593,92 @@ const Theme g_themeMatter = {{
         L"Height = 20",
         L"Width = 20"}},
     ThemeTargetStyles{L"Grid#MediaTransportControlsRoot", {
-        L"Background:= <SolidColorBrush Color=\"Transparent\"/>"}},
+        L"Background:= $transparent"}},
+    ThemeTargetStyles{L"Grid#ToastPeekRegion", {
+        L"Background =",
+        L"RenderTransform:=<TranslateTransform Y=\"-495\" X=\"395\" />",
+        L"Grid.Column = 0",
+        L"Grid.Row = 2"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.CalendarViewDayItem > Windows.UI.Xaml.Controls.Border", {
+        L"CornerRadius = 8",
+        L"Margin = 1,2,1,2"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.CalendarViewDayItem", {
+        L"CornerRadius = 8"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Control > Windows.UI.Xaml.Controls.Border", {
+        L"CornerRadius = 8"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Primitives.CalendarViewItem", {
+        L"CornerRadius = 8"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.ListViewHeaderItem", {
+        L"Margin = 50,6,50,2",
+        L"CornerRadius = 8",
+        L"Height = 35"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Button#SettingsButton", {
+        L"CornerRadius = 4"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Button#DismissButton", {
+        L"CornerRadius = 4"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.StackPanel#CalendarHeader", {
+        L"Margin = 6,0,0,0"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.ScrollContentPresenter#ScrollContentPresenter", {
+        L"Margin = 1,2,1,2"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Grid#WeekDayNames", {
+        L"Background := <SolidColorBrush Color=\"{ThemeResource SystemAccentColorLight1}\" Opacity = \"0.8\" />",
+        L"CornerRadius = 8",
+        L"Margin = 4,0,4,0",
+        L"Padding = 0,-5,0,-3"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.ListViewItem", {
+        L"CornerRadius=$r3"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Grid#RootGrid > Windows.UI.Xaml.Controls.ContentPresenter#ContentPresenter", {
+        L"Background := <SolidColorBrush Color=\"{ThemeResource SystemAccentColorLight1}\" Opacity = \"0.5\" />",
+        L"BorderThickness = 0",
+        L"CornerRadius = 8"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Grid > Windows.UI.Xaml.Controls.Border#ItemOpaquePlating", {
+        L"Background := $overlay2",
+        L"BorderThickness = 0",
+        L"CornerRadius=$r3"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Grid#StandardHeroContainer", {
+        L"Margin = 12,0,12,0",
+        L"CornerRadius = 0",
+        L"Height = 150"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Primitives.ScrollBar#VerticalScrollBar", {
+        L"Visibility = 1"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Grid#SliderContainer", {
+        L"Margin = 0-2,0,0"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Button#BackButton", {
+        L"CornerRadius=$r3"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Shapes.Rectangle#OuterBorder", {
+        L"RadiusX = 6",
+        L"RadiusY = 6",
+        L"Height = 18"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Shapes.Rectangle#SwitchKnobOff", {
+        L"RadiusY = 3",
+        L"RadiusX = 3"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Border#SwitchKnobOn", {
+        L"CornerRadius = 3"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Shapes.Rectangle#SwitchKnobBounds", {
+        L"RadiusX = 6",
+        L"RadiusY = 6",
+        L"Height = 18"}},
+    ThemeTargetStyles{L"ActionCenter.NotificationListViewItem", {
+        L"Margin = 5,2,5,3"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Grid[AutomationProperties.LocalizedLandmarkType = Footer]", {
+        L"BorderThickness = 0"}},
+    ThemeTargetStyles{L"NetworkUX.View.SettingsListViewItem > Windows.UI.Xaml.Controls.Primitives.ListViewItemPresenter#Root", {
+        L"CornerRadius = 12"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.ContentPresenter > Windows.UI.Xaml.Controls.Border", {
+        L"BorderThickness = 0"}},
+    ThemeTargetStyles{L"Button#ClearAll", {
+        L"AccessKey=x"}},
+    ThemeTargetStyles{L"Button#ExpandCollapseButton", {
+        L"AccessKey=e"}},
+}, {
+    L"transparent = <SolidColorBrush Color=\"Transparent\"/>",
+    L"base = <AcrylicBrush TintColor=\"{ThemeResource SystemAltLowColor}\" TintOpacity=\"1\" TintLuminosityOpacity=\"0.6\" Opacity = \"1\" FallbackColor=\"{ThemeResource SystemChromeLowColor}\" />",
+    L"overlay = <AcrylicBrush TintColor=\"{ThemeResource SystemAltLowColor}\" TintOpacity=\"1\" TintLuminosityOpacity=\"0.6\" FallbackColor=\"{ThemeResource LayerFillColorDefault}\" />",
+    L"accentColor =<SolidColorBrush Color=\"{ThemeResource SystemAccentColorLight1}\" Opacity = \"1\" />",
+    L"overlay2 = <AcrylicBrush TintColor=\"{ThemeResource SystemAltLowColor}\" TintOpacity=\"1\" TintLuminosityOpacity=\"0.4\" FallbackColor=\"{ThemeResource CardStrokeColorDefaultSolid}\" />",
+    L"r1 = 18",
+    L"r2 = 14",
+    L"r3 = 12",
 }};
 
 // clang-format on
