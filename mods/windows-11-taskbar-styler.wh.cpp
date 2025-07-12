@@ -3600,7 +3600,9 @@ const PropertyOverrides& GetResolvedPropertyOverrides(
 
             for (const auto& rule : styleRules) {
                 propertyOverrideValues.push_back(
-                    rule.isXamlValue
+                    // Allow to use WindhawkBlur without ":=" for compatibility,
+                    // as it was always allowed in v1.5.
+                    true  // rule.isXamlValue
                         ? ParseNonXamlPropertyOverrideValue(rule.value)
                         : std::nullopt);
 
