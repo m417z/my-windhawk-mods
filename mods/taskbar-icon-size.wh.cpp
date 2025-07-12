@@ -680,7 +680,13 @@ void TaskListButton_IconHeight_InitOffsets() {
 
 TaskListButton_IconHeight_t TaskListButton_IconHeight_Original;
 void WINAPI TaskListButton_IconHeight_Hook(void* pThis, double height) {
-    Wh_Log(L">");
+    Wh_Log(L"> hasDynamicIconScaling=%d, height=%f", g_hasDynamicIconScaling,
+           height);
+
+    if (!g_hasDynamicIconScaling) {
+        TaskListButton_IconHeight_Original(pThis, height);
+        return;
+    }
 
     size_t iconHeightOffset = GetIconHeightOffset();
     if (!iconHeightOffset || iconHeightOffset > 0xFFFF) {
