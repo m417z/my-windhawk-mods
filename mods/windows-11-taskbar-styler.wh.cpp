@@ -3006,7 +3006,47 @@ HRESULT FloodEffect::GetProperty(UINT index, winrt::impl::abi_t<winrt::Windows::
 	switch (index)
 	{
 		case D2D1_FLOOD_PROP_COLOR:
-			*value = wf::PropertyValue::CreateSingleArray({ Color.x, Color.y, Color.z, Color.w }).as<winrt::impl::abi_t<winrt::Windows::Foundation::IPropertyValue>>().detach();
+            // clang-format on
+            {
+                wfn::float4 Color2;
+
+                if (Color.x == 0.0f && Color.y == 0.0f && Color.z == 0.0f) {
+                    auto resources = Application::Current().Resources();
+
+                    auto resource = resources.TryLookup(
+                        winrt::box_value(L"SystemAccentColorDark1"));
+
+                    if (resource) {
+                        if (auto colorBrush =
+                                resource
+                                    .try_as<wux::Media::SolidColorBrush>()) {
+                            Color2 = {colorBrush.Color().R / 255.0f,
+                                      colorBrush.Color().G / 255.0f,
+                                      colorBrush.Color().B / 255.0f,
+                                      colorBrush.Color().A / 255.0f};
+                        } else if (auto Color = resource.try_as<
+                                                winrt::Windows::UI::Color>()) {
+                            Color2 = {Color->R / 255.0f, Color->G / 255.0f,
+                                      Color->B / 255.0f, Color->A / 255.0f};
+                        } else {
+                            Wh_Log(L"SystemAccentColorDark1 is %s",
+                                   winrt::get_class_name(resource).c_str());
+                        }
+                    } else {
+                        Wh_Log(
+                            L"Failed to find SystemAccentColorDark1 resource");
+                    }
+                } else {
+                    Color2 = Color;
+                }
+
+                *value = wf::PropertyValue::CreateSingleArray(
+                             {Color2.x, Color2.y, Color2.z, Color.w})
+                             .as<winrt::impl::abi_t<
+                                 winrt::Windows::Foundation::IPropertyValue>>()
+                             .detach();
+            }
+            // clang-format off
 			break;
 
 		default:
