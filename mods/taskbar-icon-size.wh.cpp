@@ -668,7 +668,7 @@ size_t GetIconHeightOffset() {
 #error "Unsupported architecture"
 #endif
         Wh_Log(L"iconHeightOffset=0x%X", offset);
-        return offset;
+        return offset > 0xFFFF ? 0 : offset;
     }();
 
     return iconHeightOffset;
@@ -689,7 +689,7 @@ void WINAPI TaskListButton_IconHeight_Hook(void* pThis, double height) {
     }
 
     size_t iconHeightOffset = GetIconHeightOffset();
-    if (!iconHeightOffset || iconHeightOffset > 0xFFFF) {
+    if (!iconHeightOffset) {
         Wh_Log(L"Error: iconHeightOffset is invalid");
         TaskListButton_IconHeight_Original(pThis, height);
         return;
@@ -795,7 +795,7 @@ LONG GetFrameSizeOffset() {
             // Wh_Log(L"%S", result1.text);
             LONG offset = std::stoull(match1[1], nullptr, 16);
             Wh_Log(L"frameSizeOffset=0x%X", offset);
-            return offset;
+            return (offset < 0 || offset > 0xFFFF) ? 0 : offset;
         }
 
         Wh_Log(L"frameSizeOffset not found");
@@ -815,7 +815,7 @@ void WINAPI TaskbarConfiguration_UpdateFrameSize_Hook(void* pThis) {
     Wh_Log(L">");
 
     LONG frameSizeOffset = GetFrameSizeOffset();
-    if (frameSizeOffset <= 0) {
+    if (!frameSizeOffset) {
         Wh_Log(L"Error: frameSizeOffset is invalid");
         TaskbarConfiguration_UpdateFrameSize_Original(pThis);
         return;
@@ -868,7 +868,7 @@ LONG GetLastHeightOffset() {
                 p[8] == 0x7A && p[10] == 0x75) {
                 LONG offset = *(LONG*)(p + 4);
                 Wh_Log(L"lastHeightOffset=0x%X", offset);
-                return offset;
+                return (offset < 0 || offset > 0xFFFF) ? 0 : offset;
             }
         }
 #elif defined(_M_ARM64)
@@ -919,7 +919,7 @@ LONG GetLastHeightOffset() {
             // Wh_Log(L"%S", result3.text);
             LONG offset = std::stoull(match1[1], nullptr, 16);
             Wh_Log(L"lastHeightOffset=0x%X", offset);
-            return offset;
+            return (offset < 0 || offset > 0xFFFF) ? 0 : offset;
         }
 #else
 #error "Unsupported architecture"
@@ -942,7 +942,7 @@ void WINAPI SystemTrayController_UpdateFrameSize_Hook(void* pThis) {
     Wh_Log(L">");
 
     LONG lastHeightOffset = GetLastHeightOffset();
-    if (lastHeightOffset > 0) {
+    if (lastHeightOffset) {
         *(double*)((BYTE*)pThis + lastHeightOffset) = 0;
     } else {
         Wh_Log(L"Error: lastHeightOffset is invalid");
@@ -992,7 +992,7 @@ void WINAPI TaskbarController_UpdateFrameHeight_Hook(void* pThis) {
             (p[6] & 0xC0) == 0x80) {
             LONG offset = *(LONG*)(p + 7);
             Wh_Log(L"taskbarFrameOffset=0x%X", offset);
-            return offset;
+            return (offset < 0 || offset > 0xFFFF) ? 0 : offset;
         }
 #elif defined(_M_ARM64)
         // 00000001`806b1810 a9bf7bfd stp fp,lr,[sp,#-0x10]!
@@ -1022,7 +1022,7 @@ void WINAPI TaskbarController_UpdateFrameHeight_Hook(void* pThis) {
             // Wh_Log(L"%S", result1.text);
             LONG offset = std::stoull(match1[1], nullptr, 16);
             Wh_Log(L"taskbarFrameOffset=0x%X", offset);
-            return offset;
+            return (offset < 0 || offset > 0xFFFF) ? 0 : offset;
         }
 #else
 #error "Unsupported architecture"
@@ -1032,7 +1032,7 @@ void WINAPI TaskbarController_UpdateFrameHeight_Hook(void* pThis) {
         return 0;
     }();
 
-    if (taskbarFrameOffset <= 0) {
+    if (!taskbarFrameOffset) {
         Wh_Log(L"Error: taskbarFrameOffset is invalid");
         TaskbarController_UpdateFrameHeight_Original(pThis);
         return;
@@ -1154,14 +1154,14 @@ void WINAPI TaskListButton_UpdateVisualStates_Hook(void* pThis) {
                     (p[3] & 0x81) == 0x81) {
                     LONG offset = *(LONG*)(p + 4);
                     Wh_Log(L"mediumTaskbarButtonExtentOffset=0x%X", offset);
-                    return offset;
+                    return (offset < 0 || offset > 0xFFFF) ? 0 : offset;
                 }
 
                 if (p[0] == 0xF2 && p[1] == 0x44 && p[2] == 0x0F &&
                     p[3] == 0x10 && (p[4] & 0x81) == 0x81) {
                     LONG offset = *(LONG*)(p + 5);
                     Wh_Log(L"mediumTaskbarButtonExtentOffset=0x%X", offset);
-                    return offset;
+                    return (offset < 0 || offset > 0xFFFF) ? 0 : offset;
                 }
             }
 #elif defined(_M_ARM64)
@@ -1220,7 +1220,7 @@ void WINAPI TaskListButton_UpdateVisualStates_Hook(void* pThis) {
                     // Wh_Log(L"%S", result1.text);
                     LONG offset = std::stoull(match1[2], nullptr, 16);
                     Wh_Log(L"mediumTaskbarButtonExtentOffset=0x%X", offset);
-                    return offset;
+                    return (offset < 0 || offset > 0xFFFF) ? 0 : offset;
                 }
             }
 #else
@@ -1231,7 +1231,7 @@ void WINAPI TaskListButton_UpdateVisualStates_Hook(void* pThis) {
             return 0;
         }();
 
-        if (mediumTaskbarButtonExtentOffset > 0) {
+        if (mediumTaskbarButtonExtentOffset) {
             bool updateButtonPadding = false;
 
             double* mediumTaskbarButtonExtent =
