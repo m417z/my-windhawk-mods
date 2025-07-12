@@ -3268,7 +3268,7 @@ void SetOrClearValue(DependencyObject elementDo,
             std::get_if<winrt::Windows::Foundation::IInspectable>(
                 &overrideValue)) {
         value = *inspectable;
-    } else if (auto* blurBrashParams =
+    } else if (auto* blurBrushParams =
                    std::get_if<XamlBlurBrushParams>(&overrideValue)) {
         if (auto uiElement = elementDo.try_as<UIElement>()) {
             auto compositor =
@@ -3276,8 +3276,8 @@ void SetOrClearValue(DependencyObject elementDo,
                     .Compositor();
 
             value = winrt::make<XamlBlurBrush>(std::move(compositor),
-                                               blurBrashParams->blurAmount,
-                                               blurBrashParams->tint);
+                                               blurBrushParams->blurAmount,
+                                               blurBrushParams->tint);
         } else {
             Wh_Log(L"Can't get UIElement for blur brush");
             return;
