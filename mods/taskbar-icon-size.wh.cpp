@@ -678,39 +678,6 @@ void TaskListButton_IconHeight_InitOffsets() {
     GetIconHeightOffset();
 }
 
-TaskListButton_IconHeight_t TaskListButton_IconHeight_Original;
-void WINAPI TaskListButton_IconHeight_Hook(void* pThis, double height) {
-    Wh_Log(L"> hasDynamicIconScaling=%d, height=%f", g_hasDynamicIconScaling,
-           height);
-
-    if (!g_hasDynamicIconScaling) {
-        TaskListButton_IconHeight_Original(pThis, height);
-        return;
-    }
-
-    size_t iconHeightOffset = GetIconHeightOffset();
-    if (!iconHeightOffset) {
-        Wh_Log(L"Error: iconHeightOffset is invalid");
-        TaskListButton_IconHeight_Original(pThis, height);
-        return;
-    }
-
-    double* iconHeight = (double*)((BYTE*)pThis + iconHeightOffset);
-
-    if (g_applyingSettings) {
-        // Make sure the function doesn't think that the value wasn't changed.
-        *iconHeight = 1;
-    }
-
-    TaskListButton_IconHeight_Original(pThis, height);
-
-    if (!g_unloading) {
-        // Make sure to use a different value for other calculations such as
-        // padding.
-        *iconHeight = g_smallIconSize ? 16 : 24;
-    }
-}
-
 using SystemTrayController_GetFrameSize_t =
     double(WINAPI*)(void* pThis, int enumTaskbarSize);
 SystemTrayController_GetFrameSize_t SystemTrayController_GetFrameSize_Original;
@@ -1129,6 +1096,36 @@ void* TaskListButton_UpdateIconColumnDefinition_Original;
 using TaskListButton_UpdateButtonPadding_t = void(WINAPI*)(void* pThis);
 TaskListButton_UpdateButtonPadding_t
     TaskListButton_UpdateButtonPadding_Original;
+void WINAPI TaskListButton_UpdateButtonPadding_Hook(void* pThis) {
+    Wh_Log(L"> hasDynamicIconScaling=%d", g_hasDynamicIconScaling);
+
+    if (!g_hasDynamicIconScaling) {
+        TaskListButton_UpdateButtonPadding_Original(pThis);
+        return;
+    }
+
+    // Make sure to use a different value for other calculations such as
+    // padding. Value 16 and 32 have special treatment.
+    double* iconHeight = nullptr;
+    double prevIconHeight;
+    if (g_hasDynamicIconScaling) {
+        size_t iconHeightOffset = GetIconHeightOffset();
+        if (iconHeightOffset) {
+            iconHeight = (double*)((BYTE*)pThis + iconHeightOffset);
+            prevIconHeight = *iconHeight;
+            double newIconHeight = g_smallIconSize ? 16 : 24;
+            Wh_Log(L"Setting iconHeight: %f->%f", prevIconHeight,
+                   newIconHeight);
+            *iconHeight = newIconHeight;
+        }
+    }
+
+    TaskListButton_UpdateButtonPadding_Original(pThis);
+
+    if (iconHeight) {
+        *iconHeight = prevIconHeight;
+    }
+}
 
 using TaskListButton_UpdateVisualStates_t = void(WINAPI*)(void* pThis);
 TaskListButton_UpdateVisualStates_t TaskListButton_UpdateVisualStates_Original;
@@ -1269,7 +1266,7 @@ void WINAPI TaskListButton_UpdateVisualStates_Hook(void* pThis) {
 
             if (updateButtonPadding) {
                 g_taskbarButtonWidthCustomized = true;
-                TaskListButton_UpdateButtonPadding_Original(pThis);
+                TaskListButton_UpdateButtonPadding_Hook(pThis);
             }
         } else {
             Wh_Log(L"Error: mediumTaskbarButtonExtentOffset is invalid");
@@ -1840,8 +1837,8 @@ bool HookTaskbarViewDllSymbols(HMODULE module) {
             {
                 {LR"(public: void __cdecl winrt::Taskbar::implementation::TaskListButton::IconHeight(double))"},
                 &TaskListButton_IconHeight_SymbolAddress,
-                nullptr,  // Hooked manually, we need the symbol address.
-                true,     // From KB5058499 (May 2025).
+                nullptr,
+                true,  // From KB5058499 (May 2025).
             },
             {
                 {LR"(private: double __cdecl winrt::SystemTray::implementation::SystemTrayController::GetFrameSize(enum winrt::WindowsUdk::UI::Shell::TaskbarSize))"},
@@ -1938,6 +1935,7 @@ bool HookTaskbarViewDllSymbols(HMODULE module) {
             {
                 {LR"(private: void __cdecl winrt::Taskbar::implementation::TaskListButton::UpdateButtonPadding(void))"},
                 &TaskListButton_UpdateButtonPadding_Original,
+                TaskListButton_UpdateButtonPadding_Hook,
             },
             {
                 {LR"(private: void __cdecl winrt::Taskbar::implementation::TaskListButton::UpdateVisualStates(void))"},
@@ -1977,10 +1975,6 @@ bool HookTaskbarViewDllSymbols(HMODULE module) {
 
     if (TaskListButton_IconHeight_SymbolAddress) {
         TaskListButton_IconHeight_InitOffsets();
-        WindhawkUtils::Wh_SetFunctionHookT(
-            TaskListButton_IconHeight_SymbolAddress,
-            TaskListButton_IconHeight_Hook,
-            &TaskListButton_IconHeight_Original);
     }
 
 #ifdef _M_ARM64
