@@ -5087,9 +5087,14 @@ int NTAPI RtlQueryFeatureConfiguration_Hook(UINT32 featureId,
                                                     config);
 
     switch (featureId) {
+        // Disable the Start Menu Phone Link layout feature.
+        // https://winaero.com/enable-phone-link-flyout-start-menu/
         case 48697323:
-            // Disable the Start Menu Phone Link layout feature.
-            // https://winaero.com/enable-phone-link-flyout-start-menu/
+        // Disable the revamped Start menu experience.
+        // https://x.com/phantomofearth/status/1907877141540118888
+        case 47205210:
+        // case 49221331:
+        case 49402389:
             config->enabledState = FEATURE_ENABLED_STATE_DISABLED;
             break;
     }
