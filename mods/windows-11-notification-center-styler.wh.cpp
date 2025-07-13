@@ -105,8 +105,10 @@ specified visual state.
 
 For the XAML syntax, in addition to the built-in taskbar objects, the mod
 provides a built-in blur brush via the `WindhawkBlur` object, which supports the
-`BlurAmount` and `TintColor` properties. For example: `Fill:=<WindhawkBlur
-BlurAmount="10" TintColor="#80FF00FF"/>`.
+`BlurAmount`, `TintColor`, and `TintOpacity` properties. For example:
+`Fill:=<WindhawkBlur BlurAmount="10" TintColor="#80FF00FF"/>`. Theme resources
+are also supported, for example: `Fill:=<WindhawkBlur BlurAmount="18"
+TintColor="{ThemeResource SystemAccentColorDark1}" TintOpacity="0.5"/>`.
 
 Targets and styles starting with two slashes (`//`) are ignored. This can be
 useful for temporarily disabling a target or style.
@@ -1933,13 +1935,17 @@ std::optional<PropertyOverrideValue> ParseNonXamlPropertyOverrideValue(
     }
     substr = substr.substr(0, substr.size() - std::size(kWindhawkBlurSuffix));
 
-    auto value = XamlBlurBrushParams{
-        .blurAmount = 0,
-        .tint = {},
-    };
+    bool pendingTintColorThemeResource = false;
+    wf::Numerics::float4 tint{};
+    float tintOpacity = std::numeric_limits<float>::quiet_NaN();
+    float blurAmount = 0;
 
-    constexpr auto kBlurAmountPrefix = L"BlurAmount=\""sv;
+    constexpr auto kTintColorThemeResourcePrefix =
+        L"TintColor=\"{ThemeResource"sv;
+    constexpr auto kTintColorThemeResourceSuffix = L"}\""sv;
     constexpr auto kTintColorPrefix = L"TintColor=\"#"sv;
+    constexpr auto kTintOpacityPrefix = L"TintOpacity=\""sv;
+    constexpr auto kBlurAmountPrefix = L"BlurAmount=\""sv;
     for (const auto prop : SplitStringView(substr, L" ")) {
         const auto propSubstr = TrimStringView(prop);
         if (propSubstr.empty()) {
@@ -1949,12 +1955,44 @@ std::optional<PropertyOverrideValue> ParseNonXamlPropertyOverrideValue(
         Wh_Log(L"  %.*s", static_cast<int>(propSubstr.length()),
                propSubstr.data());
 
-        if (propSubstr.starts_with(kBlurAmountPrefix) &&
-            propSubstr.back() == L'\"') {
-            auto valStr = propSubstr.substr(
-                std::size(kBlurAmountPrefix),
-                propSubstr.size() - std::size(kBlurAmountPrefix) - 1);
-            value.blurAmount = std::stoi(std::wstring(valStr));
+        if (pendingTintColorThemeResource) {
+            if (!propSubstr.ends_with(kTintColorThemeResourceSuffix)) {
+                throw std::runtime_error(
+                    "WindhawkBlur: Invalid TintColor theme resource syntax");
+            }
+
+            pendingTintColorThemeResource = false;
+
+            auto themeResourceName = propSubstr.substr(
+                0,
+                propSubstr.size() - std::size(kTintColorThemeResourceSuffix));
+
+            auto resources = Application::Current().Resources();
+            auto resource = resources.TryLookup(
+                winrt::box_value(winrt::hstring(themeResourceName)));
+            if (resource) {
+                if (auto colorBrush =
+                        resource.try_as<wux::Media::SolidColorBrush>()) {
+                    auto color = colorBrush.Color();
+                    tint = {color.R / 255.0f, color.G / 255.0f,
+                            color.B / 255.0f, color.A / 255.0f};
+                } else if (auto color =
+                               resource.try_as<winrt::Windows::UI::Color>()) {
+                    tint = {color->R / 255.0f, color->G / 255.0f,
+                            color->B / 255.0f, color->A / 255.0f};
+                } else {
+                    Wh_Log(L"Resource type is unsupported: %s",
+                           winrt::get_class_name(resource).c_str());
+                }
+            } else {
+                Wh_Log(L"Failed to find resource");
+            }
+
+            continue;
+        }
+
+        if (propSubstr == kTintColorThemeResourcePrefix) {
+            pendingTintColorThemeResource = true;
             continue;
         }
 
@@ -1982,14 +2020,50 @@ std::optional<PropertyOverrideValue> ParseNonXamlPropertyOverrideValue(
             uint8_t r = LOBYTE(HIWORD(valNum));
             uint8_t g = HIBYTE(LOWORD(valNum));
             uint8_t b = LOBYTE(LOWORD(valNum));
-            value.tint = {r / 255.0f, g / 255.0f, b / 255.0f, a / 255.0f};
+            tint = {r / 255.0f, g / 255.0f, b / 255.0f, a / 255.0f};
+            continue;
+        }
+
+        if (propSubstr.starts_with(kTintOpacityPrefix) &&
+            propSubstr.back() == L'\"') {
+            auto valStr = propSubstr.substr(
+                std::size(kTintOpacityPrefix),
+                propSubstr.size() - std::size(kTintOpacityPrefix) - 1);
+            tintOpacity = std::stof(std::wstring(valStr));
+            continue;
+        }
+
+        if (propSubstr.starts_with(kBlurAmountPrefix) &&
+            propSubstr.back() == L'\"') {
+            auto valStr = propSubstr.substr(
+                std::size(kBlurAmountPrefix),
+                propSubstr.size() - std::size(kBlurAmountPrefix) - 1);
+            blurAmount = std::stof(std::wstring(valStr));
             continue;
         }
 
         throw std::runtime_error("WindhawkBlur: Bad property");
     }
 
-    return value;
+    if (pendingTintColorThemeResource) {
+        throw std::runtime_error(
+            "WindhawkBlur: Unterminated TintColor theme resource");
+    }
+
+    if (!std::isnan(tintOpacity)) {
+        if (tintOpacity < 0.0f) {
+            tintOpacity = 0.0f;
+        } else if (tintOpacity > 1.0f) {
+            tintOpacity = 1.0f;
+        }
+
+        tint.w = tintOpacity;
+    }
+
+    return XamlBlurBrushParams{
+        .blurAmount = blurAmount,
+        .tint = tint,
+    };
 }
 
 Style GetStyleFromXamlSetters(const std::wstring_view type,
