@@ -3056,6 +3056,16 @@ int WINAPI MapWindowPoints_Hook(HWND hWndFrom,
         return ret;
     }
 
+    FrameworkElement hoverFlyoutContent =
+        FindChildByName(hoverFlyoutGrid, L"HoverFlyoutContent");
+    if (!hoverFlyoutContent) {
+        Wh_Log(L"Error: HoverFlyoutContent not found");
+        return ret;
+    }
+
+    bool isList = !!FindChildByClassName(
+        hoverFlyoutContent, L"Taskbar.TaskItemThumbnailScrollableList");
+
     DWORD messagePos = GetMessagePos();
     POINT pt{
         GET_X_LPARAM(messagePos),
@@ -3074,11 +3084,21 @@ int WINAPI MapWindowPoints_Hook(HWND hWndFrom,
 
     int flyoutHeight = MulDiv(hoverFlyoutGrid.ActualHeight(), monitorDpiY, 96);
 
-    // Center vertically.
-    lpPoints->y += flyoutHeight / 2;
+    int offsetToAdd = 0;
 
-    // Center vertically for taskbar button.
-    lpPoints->y += MulDiv(56 / 2, monitorDpiY, 96);
+    if (isList) {
+        // Align to bottom.
+        offsetToAdd = flyoutHeight;
+    } else {
+        // Center vertically.
+        offsetToAdd = flyoutHeight / 2;
+
+        // Center vertically for taskbar button.
+        offsetToAdd += MulDiv(56 / 2, monitorDpiY, 96);
+    }
+
+    lpPoints->y +=
+        std::min(offsetToAdd, (int)(monitorInfo.rcWork.bottom - pt.y));
 
     return ret;
 }
