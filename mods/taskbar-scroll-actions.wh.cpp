@@ -51,6 +51,7 @@ issue](https://tweaker.userecho.com/topics/826-scroll-on-trackpadtouchpad-doesnt
   $options:
   - virtualDesktopSwitch: Switch virtual desktop
   - brightnessChange: Change monitor brightness
+  - micVolumeChange: Change microphone volume
 - scrollArea: taskbar
   $name: Scroll area
   $options:
@@ -89,11 +90,14 @@ issue](https://tweaker.userecho.com/topics/826-scroll-on-trackpadtouchpad-doesnt
 #include <wbemcli.h>
 #include <windowsx.h>
 
+#include <endpointvolume.h>
+#include <mmdeviceapi.h>
 #include <unordered_set>
 
 enum class ScrollAction {
     virtualDesktopSwitch,
     brightnessChange,
+    micVolumeChange,
 };
 
 enum class ScrollArea {
@@ -778,6 +782,89 @@ bool SwitchDesktopViaKeyboardShortcut(int clicks) {
     return true;
 }
 
+#pragma region microphone_volume
+
+const static GUID XIID_IMMDeviceEnumerator = {
+    0xA95664D2,
+    0x9614,
+    0x4F35,
+    {0xA7, 0x46, 0xDE, 0x8D, 0xB6, 0x36, 0x17, 0xE6}};
+const static GUID XIID_MMDeviceEnumerator = {
+    0xBCDE0395,
+    0xE52F,
+    0x467C,
+    {0x8E, 0x3D, 0xC4, 0x57, 0x92, 0x91, 0x69, 0x2E}};
+const static GUID XIID_IAudioEndpointVolume = {
+    0x5CDF2C82,
+    0x841E,
+    0x4546,
+    {0x97, 0x22, 0x0C, 0xF7, 0x40, 0x78, 0x22, 0x9A}};
+
+bool g_bMicVolInitialized;
+IMMDeviceEnumerator* g_pDeviceEnumerator;
+
+void MicVolInit() {
+    HRESULT hr = CoCreateInstance(
+        XIID_MMDeviceEnumerator, NULL, CLSCTX_INPROC_SERVER,
+        XIID_IMMDeviceEnumerator, (LPVOID*)&g_pDeviceEnumerator);
+    if (FAILED(hr))
+        g_pDeviceEnumerator = NULL;
+}
+
+void MicVolUninit() {
+    if (g_pDeviceEnumerator) {
+        g_pDeviceEnumerator->Release();
+        g_pDeviceEnumerator = NULL;
+    }
+}
+
+BOOL AddMicMasterVolumeLevelScalar(float fMasterVolumeAdd) {
+    IMMDevice* defaultDevice = NULL;
+    IAudioEndpointVolume* endpointVolume = NULL;
+    HRESULT hr;
+    float fMasterVolume;
+    BOOL bSuccess = FALSE;
+
+    if (!g_bMicVolInitialized) {
+        MicVolInit();
+        g_bMicVolInitialized = true;
+    }
+
+    if (g_pDeviceEnumerator) {
+        hr = g_pDeviceEnumerator->GetDefaultAudioEndpoint(eCapture, eConsole,
+                                                          &defaultDevice);
+        if (SUCCEEDED(hr)) {
+            hr = defaultDevice->Activate(XIID_IAudioEndpointVolume,
+                                         CLSCTX_INPROC_SERVER, NULL,
+                                         (LPVOID*)&endpointVolume);
+            if (SUCCEEDED(hr)) {
+                if (SUCCEEDED(endpointVolume->GetMasterVolumeLevelScalar(
+                        &fMasterVolume))) {
+                    fMasterVolume += fMasterVolumeAdd;
+
+                    if (fMasterVolume < 0.0)
+                        fMasterVolume = 0.0;
+                    else if (fMasterVolume > 1.0)
+                        fMasterVolume = 1.0;
+
+                    if (SUCCEEDED(endpointVolume->SetMasterVolumeLevelScalar(
+                            fMasterVolume, NULL))) {
+                        bSuccess = TRUE;
+                    }
+                }
+
+                endpointVolume->Release();
+            }
+
+            defaultDevice->Release();
+        }
+    }
+
+    return bSuccess;
+}
+
+#pragma endregion  // microphone_volume
+
 DWORD g_lastScrollTime;
 int g_lastScrollDeltaRemainder;
 DWORD g_lastActionTime;
@@ -829,6 +916,14 @@ void InvokeScrollAction(WPARAM wParam, LPARAM lMousePosParam) {
                 }
                 break;
             }
+
+            case ScrollAction::micVolumeChange:
+                if (AddMicMasterVolumeLevelScalar(clicks * 0.01f)) {
+                    Wh_Log(L"Changed microphone volume by %d%%", clicks);
+                } else {
+                    Wh_Log(L"Error changing microphone volume");
+                }
+                break;
         }
 
         g_lastActionTime = GetTickCount();
@@ -1189,6 +1284,8 @@ void LoadSettings() {
     g_settings.scrollAction = ScrollAction::virtualDesktopSwitch;
     if (wcscmp(scrollAction, L"brightnessChange") == 0) {
         g_settings.scrollAction = ScrollAction::brightnessChange;
+    } else if (wcscmp(scrollAction, L"micVolumeChange") == 0) {
+        g_settings.scrollAction = ScrollAction::micVolumeChange;
     }
     Wh_FreeStringSetting(scrollAction);
 
@@ -1344,6 +1441,8 @@ void Wh_ModUninit() {
             UnsubclassTaskbarWindow(hSecondaryWnd);
         }
     }
+
+    MicVolUninit();
 }
 
 BOOL Wh_ModSettingsChanged(BOOL* bReload) {
