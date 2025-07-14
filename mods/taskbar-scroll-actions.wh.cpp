@@ -2,7 +2,7 @@
 // @id              taskbar-scroll-actions
 // @name            Taskbar Scroll Actions
 // @description     Assign actions for scrolling over the taskbar, including virtual desktop switching and monitor brightness control
-// @version         1.0.1
+// @version         1.1
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
@@ -86,12 +86,12 @@ issue](https://tweaker.userecho.com/topics/826-scroll-on-trackpadtouchpad-doesnt
 #include <combaseapi.h>
 #include <commctrl.h>
 #include <comutil.h>
+#include <endpointvolume.h>
+#include <mmdeviceapi.h>
 #include <psapi.h>
 #include <wbemcli.h>
 #include <windowsx.h>
 
-#include <endpointvolume.h>
-#include <mmdeviceapi.h>
 #include <unordered_set>
 
 enum class ScrollAction {
@@ -1103,9 +1103,9 @@ void HandleIdentifiedInputSiteWindow(HWND hWnd) {
     // At first, I tried to subclass the window instead of hooking its wndproc,
     // but the inputsite.dll code checks that the value wasn't changed, and
     // crashes otherwise.
-    void* wndProc = (void*)GetWindowLongPtr(hWnd, GWLP_WNDPROC);
-    Wh_SetFunctionHook(wndProc, (void*)InputSiteWindowProc_Hook,
-                       (void**)&InputSiteWindowProc_Original);
+    auto wndProc = (WNDPROC)GetWindowLongPtr(hWnd, GWLP_WNDPROC);
+    WindhawkUtils::Wh_SetFunctionHookT(wndProc, InputSiteWindowProc_Hook,
+                                       &InputSiteWindowProc_Original);
 
     if (g_initialized) {
         Wh_ApplyHookOperations();
@@ -1385,18 +1385,18 @@ BOOL Wh_ModInit() {
         g_nExplorerVersion = WIN_VERSION_10_20H1;
     }
 
-    Wh_SetFunctionHook((void*)CreateWindowExW, (void*)CreateWindowExW_Hook,
-                       (void**)&CreateWindowExW_Original);
+    WindhawkUtils::Wh_SetFunctionHookT(CreateWindowExW, CreateWindowExW_Hook,
+                                       &CreateWindowExW_Original);
 
     HMODULE user32Module =
         LoadLibraryEx(L"user32.dll", nullptr, LOAD_LIBRARY_SEARCH_SYSTEM32);
     if (user32Module) {
-        void* pCreateWindowInBand =
-            (void*)GetProcAddress(user32Module, "CreateWindowInBand");
+        auto pCreateWindowInBand = (CreateWindowInBand_t)GetProcAddress(
+            user32Module, "CreateWindowInBand");
         if (pCreateWindowInBand) {
-            Wh_SetFunctionHook(pCreateWindowInBand,
-                               (void*)CreateWindowInBand_Hook,
-                               (void**)&CreateWindowInBand_Original);
+            WindhawkUtils::Wh_SetFunctionHookT(pCreateWindowInBand,
+                                               CreateWindowInBand_Hook,
+                                               &CreateWindowInBand_Original);
         }
     }
 
