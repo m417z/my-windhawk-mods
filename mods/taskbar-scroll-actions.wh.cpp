@@ -62,6 +62,12 @@ issue](https://tweaker.userecho.com/topics/826-scroll-on-trackpadtouchpad-doesnt
   $description: >-
     Allows to configure the change that will occur with each notch of mouse
     wheel movement.
+- throttleMs: 0
+  $name: Throttle time (milliseconds)
+  $description: >-
+    Prevents new actions from being triggered for this amount of time after the
+    last one. Set to 0 to disable throttling. Useful for preventing a single
+    scroll wheel 'flick' from switching multiple desktops.
 - reverseScrollingDirection: false
   $name: Reverse scrolling direction
 - oldTaskbarOnWin11: false
@@ -100,6 +106,7 @@ struct {
     ScrollAction scrollAction;
     ScrollArea scrollArea;
     int scrollStep;
+    int throttleMs;
     bool reverseScrollingDirection;
     bool oldTaskbarOnWin11;
 } g_settings;
@@ -773,6 +780,7 @@ bool SwitchDesktopViaKeyboardShortcut(int clicks) {
 
 DWORD g_lastScrollTime;
 int g_lastScrollDeltaRemainder;
+DWORD g_lastActionTime;
 
 void InvokeScrollAction(WPARAM wParam, LPARAM lMousePosParam) {
     int delta = GET_WHEEL_DELTA_WPARAM(wParam) * g_settings.scrollStep;
@@ -787,6 +795,22 @@ void InvokeScrollAction(WPARAM wParam, LPARAM lMousePosParam) {
 
     int clicks = delta / WHEEL_DELTA;
     Wh_Log(L"%d clicks (delta=%d)", clicks, delta);
+
+    if (clicks != 0 && g_settings.throttleMs > 0) {
+        if (GetTickCount() - g_lastActionTime < (DWORD)g_settings.throttleMs) {
+            // It's too soon, ignore this scroll event.
+            clicks = 0;
+
+            // Reset reminder too.
+            delta = 0;
+        } else if (clicks < -1 || clicks > 1) {
+            // Throttle to a single action at a time.
+            clicks = clicks > 0 ? 1 : -1;
+
+            // Reset reminder if going too fast.
+            delta = 0;
+        }
+    }
 
     if (clicks != 0) {
         switch (g_settings.scrollAction) {
@@ -806,6 +830,8 @@ void InvokeScrollAction(WPARAM wParam, LPARAM lMousePosParam) {
                 break;
             }
         }
+
+        g_lastActionTime = GetTickCount();
     }
 
     g_lastScrollTime = GetTickCount();
@@ -1176,6 +1202,7 @@ void LoadSettings() {
     Wh_FreeStringSetting(scrollArea);
 
     g_settings.scrollStep = Wh_GetIntSetting(L"scrollStep");
+    g_settings.throttleMs = Wh_GetIntSetting(L"throttleMs");
     g_settings.reverseScrollingDirection =
         Wh_GetIntSetting(L"reverseScrollingDirection");
     g_settings.oldTaskbarOnWin11 = Wh_GetIntSetting(L"oldTaskbarOnWin11");
