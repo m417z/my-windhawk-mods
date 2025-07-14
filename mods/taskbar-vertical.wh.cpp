@@ -189,11 +189,9 @@ bool g_inAugmentedEntryPointButton_UpdateButtonPadding;
 bool g_inCTaskListThumbnailWnd_DisplayUI;
 bool g_inCTaskListThumbnailWnd_LayoutThumbnails;
 bool g_inOverflowFlyoutModel_Show;
-bool g_inFlyoutFrame_UpdateFlyoutPosition;
+thread_local void* g_flyoutFrame_UpdateFlyoutPosition_pThis;
 bool g_inHoverFlyoutController_UpdateFlyoutWindowPosition;
 HWND g_startMenuWnd;
-
-winrt::Windows::Foundation::Size g_flyoutPositionSize;
 
 std::vector<winrt::weak_ref<XamlRoot>> g_notifyIconsUpdated;
 
@@ -2501,12 +2499,11 @@ FlyoutFrame_UpdateFlyoutPosition_t FlyoutFrame_UpdateFlyoutPosition_Original;
 void WINAPI FlyoutFrame_UpdateFlyoutPosition_Hook(void* pThis) {
     Wh_Log(L">");
 
-    g_inFlyoutFrame_UpdateFlyoutPosition = true;
-    g_flyoutPositionSize = {};
+    g_flyoutFrame_UpdateFlyoutPosition_pThis = pThis;
 
     FlyoutFrame_UpdateFlyoutPosition_Original(pThis);
 
-    g_inFlyoutFrame_UpdateFlyoutPosition = false;
+    g_flyoutFrame_UpdateFlyoutPosition_pThis = nullptr;
 }
 
 using HoverFlyoutController_UpdateFlyoutWindowPosition_t =
@@ -2521,22 +2518,6 @@ void WINAPI HoverFlyoutController_UpdateFlyoutWindowPosition_Hook(void* pThis) {
     HoverFlyoutController_UpdateFlyoutWindowPosition_Original(pThis);
 
     g_inHoverFlyoutController_UpdateFlyoutWindowPosition = false;
-}
-
-using Grid_DesiredSize_t = winrt::Windows::Foundation::Size*(
-    WINAPI*)(void* pThis, winrt::Windows::Foundation::Size* size);
-Grid_DesiredSize_t Grid_DesiredSize_Original;
-winrt::Windows::Foundation::Size* WINAPI
-Grid_DesiredSize_Hook(void* pThis, winrt::Windows::Foundation::Size* size) {
-    Wh_Log(L">");
-
-    auto ret = Grid_DesiredSize_Original(pThis, size);
-
-    if (g_inFlyoutFrame_UpdateFlyoutPosition) {
-        g_flyoutPositionSize = *size;
-    }
-
-    return ret;
 }
 
 BOOL WINAPI GetWindowRect_Hook(HWND hWnd, LPRECT lpRect) {
@@ -2989,10 +2970,6 @@ BOOL WINAPI SetWindowPos_Hook(HWND hWnd,
         };
         GetMonitorInfo(monitor, &monitorInfo);
 
-        UINT monitorDpiX = 96;
-        UINT monitorDpiY = 96;
-        GetDpiForMonitor(monitor, MDT_DEFAULT, &monitorDpiX, &monitorDpiY);
-
         if (X < monitorInfo.rcWork.left) {
             X = monitorInfo.rcWork.left;
         } else if (X > monitorInfo.rcWork.right - cx) {
@@ -3051,11 +3028,33 @@ int WINAPI MapWindowPoints_Hook(HWND hWndFrom,
                                 UINT cPoints) {
     int ret = MapWindowPoints_Original(hWndFrom, hWndTo, lpPoints, cPoints);
 
-    if (!g_inFlyoutFrame_UpdateFlyoutPosition || cPoints != 1) {
+    if (!g_flyoutFrame_UpdateFlyoutPosition_pThis || cPoints != 1) {
         return ret;
     }
 
     Wh_Log(L">");
+
+    FrameworkElement flyoutElement = nullptr;
+    ((IUnknown**)g_flyoutFrame_UpdateFlyoutPosition_pThis)[1]->QueryInterface(
+        winrt::guid_of<FrameworkElement>(), winrt::put_abi(flyoutElement));
+    if (!flyoutElement) {
+        Wh_Log(L"Error: Flyout element not found");
+        return ret;
+    }
+
+    auto hoverFlyoutCanvas =
+        FindChildByName(flyoutElement, L"HoverFlyoutCanvas");
+    if (!hoverFlyoutCanvas) {
+        Wh_Log(L"Error: HoverFlyoutCanvas not found");
+        return ret;
+    }
+
+    FrameworkElement hoverFlyoutGrid =
+        FindChildByName(hoverFlyoutCanvas, L"HoverFlyoutGrid");
+    if (!hoverFlyoutGrid) {
+        Wh_Log(L"Error: HoverFlyoutGrid not found");
+        return ret;
+    }
 
     DWORD messagePos = GetMessagePos();
     POINT pt{
@@ -3073,7 +3072,7 @@ int WINAPI MapWindowPoints_Hook(HWND hWndFrom,
     UINT monitorDpiY = 96;
     GetDpiForMonitor(monitor, MDT_DEFAULT, &monitorDpiX, &monitorDpiY);
 
-    int flyoutHeight = MulDiv(g_flyoutPositionSize.Height, monitorDpiY, 96);
+    int flyoutHeight = MulDiv(hoverFlyoutGrid.ActualHeight(), monitorDpiY, 96);
 
     // Center vertically.
     lpPoints->y += flyoutHeight / 2;
@@ -3685,12 +3684,6 @@ bool HookTaskbarViewDllSymbols(HMODULE module) {
             {LR"(private: void __cdecl winrt::Taskbar::implementation::HoverFlyoutController::UpdateFlyoutWindowPosition(void))"},
             &HoverFlyoutController_UpdateFlyoutWindowPosition_Original,
             HoverFlyoutController_UpdateFlyoutWindowPosition_Hook,
-            true,  // New XAML thumbnails, enabled in late Windows 11 24H2.
-        },
-        {
-            {LR"(public: __cdecl winrt::impl::consume_Windows_UI_Xaml_IUIElement<struct winrt::Windows::UI::Xaml::Controls::Grid>::DesiredSize(void)const )"},
-            &Grid_DesiredSize_Original,
-            Grid_DesiredSize_Hook,
             true,  // New XAML thumbnails, enabled in late Windows 11 24H2.
         },
     };
