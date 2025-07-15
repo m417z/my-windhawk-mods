@@ -12,6 +12,7 @@
 // @include         opera.exe
 // @include         brave.exe
 // @include         *\YandexBrowser\Application\browser.exe
+// @include         thorium.exe
 // @compilerOptions -lcomctl32 -lgdi32
 // ==/WindhawkMod==
 
@@ -30,7 +31,7 @@
 Use the mouse wheel while hovering over the tab bar to switch between tabs.
 
 Currently supported browsers: Google Chrome, Microsoft Edge, Opera, Brave,
-Yandex Browser.
+Yandex Browser, Thorium.
 
 ![demonstration](https://i.imgur.com/GWCsO70.gif)
 */
