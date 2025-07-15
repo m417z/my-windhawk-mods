@@ -424,8 +424,6 @@ const Theme g_themeSideBySide2 = {{
         L"Padding=48,3,-36,16"}},
     ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Grid#AllAppsPaneHeader", {
         L"Margin=97,0,0,0"}},
-    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Grid#TopLevelSuggestionsContainer", {
-        L"Height=302"}},
     ThemeTargetStyles{L"StartDocked.NavigationPaneView#NavigationPane", {
         L"FlowDirection=1",
         L"Margin=30,0,30,0"}},
@@ -736,67 +734,77 @@ const Theme g_themeWindows10 = {{
 }};
 
 const Theme g_themeWindows10_variant_Minimal = {{
+    ThemeTargetStyles{L"Grid", {
+        L"RequestedTheme=2"}},
     ThemeTargetStyles{L"Grid#RootContent", {
         L"Height=800"}},
     ThemeTargetStyles{L"Rectangle[4]", {
         L"Margin=0,-20,0,0"}},
     ThemeTargetStyles{L"StartDocked.StartSizingFrame", {
-        L"Margin=-14,25,12,-12"}},
+        L"Margin=-15,24,450,0",
+        L"MinWidth=400",
+        L"Width=400"}},
     ThemeTargetStyles{L"StartDocked.SearchBoxToggleButton", {
-        L"Visibility=Collapsed",
-        L"Height=0"}},
+        L"Visibility=Collapsed"}},
     ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Grid#AllAppsRoot", {
         L"Width=425",
-        L"Height=Auto",
         L"Visibility=Visible",
-        L"Margin=-510,-69,510,0"}},
+        L"Margin=-750,-18,750,0"}},
     ThemeTargetStyles{L"Border#AcrylicBorder", {
-        L"BorderThickness=1.5",
         L"BorderBrush:=<RevealBorderBrush Color=\"Transparent\" TargetTheme=\"1\" Opacity=\"1\"/>",
-        L"Width=400",
-        L"HorizontalAlignment=0"}},
-    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Border#BackgroundBorder", {
+        L"BorderThickness=2.5,1,1.5,1",
+        L"MaxWidth=400",
+        L"Margin=-121,0,121,0"}},
+    ThemeTargetStyles{L"Border#BackgroundBorder", {
         L"CornerRadius=0",
-        L"BorderThickness=1",
+        L"BorderThickness=0,1,1,0",
         L"BorderBrush:=<RevealBorderBrush Color=\"Transparent\" TargetTheme=\"1\" Opacity=\"1\"/>"}},
-    ThemeTargetStyles{L"Border#BorderBackground", {
+    ThemeTargetStyles{L"Grid#ContentBorder@CommonStates > Border#BorderBackground", {
         L"CornerRadius=0",
         L"BorderThickness=1",
-        L"BorderBrush:=<RevealBorderBrush Color=\"Transparent\" TargetTheme=\"1\" Opacity=\"0.42\"/>"}},
-    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Border#Border", {
+        L"BorderBrush@PointerOver:=<RevealBorderBrush Color=\"Transparent\" TargetTheme=\"1\" Opacity=\"0.42\"/>",
+        L"Background@PointerOver:=<RevealBorderBrush Color=\"Transparent\" TargetTheme=\"1\" Opacity=\"0.42\"/>"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Border#Border@CommonStates", {
         L"CornerRadius=0",
-        L"BorderBrush:=<RevealBorderBrush Color=\"Transparent\" TargetTheme=\"1\" Opacity=\"0.5\"/>"}},
-    ThemeTargetStyles{L"Border#AcrylicOverlay", {
-        L"Visibility=Collapsed"}},
+        L"BorderBrush@PointerOver:=<RevealBorderBrush Color=\"Transparent\" TargetTheme=\"1\" Opacity=\"0.5\"/>",
+        L"Background@PointerOver:=<RevealBorderBrush Color=\"Transparent\" TargetTheme=\"1\" Opacity=\"1\"/>"}},
     ThemeTargetStyles{L"Grid#ContentBorder@CommonStates", {
-        L"Background@PointerOver:=<RevealBorderBrush Color=\"Transparent\" TargetTheme=\"1\" Opacity=\"0.32\"/>",
-        L"BorderBrush@PointerOver:=<RevealBorderBrush Color=\"Transparent\" TargetTheme=\"1\" Opacity=\"1\"/>"}},
+        L"Background@Pressed:=<RevealBorderBrush Color=\"Transparent\" TargetTheme=\"1\" Opacity=\"1\"/>"}},
     ThemeTargetStyles{L"StartDocked.NavigationPaneView", {
-        L"Transform3D:=<CompositeTransform3D RotationZ=\"270\" TranslateY=\"-172\" TranslateX=\"-12\"/>",
-        L"Width=745",
-        L"CornerRadius=8",
-        L"Grid.Row=0"}},
+        L"Transform3D:=<CompositeTransform3D RotationZ=\"270\" />",
+        L"Width=740",
+        L"VerticalAlignment=0",
+        L"Margin=40,-557,0,0"}},
     ThemeTargetStyles{L"StartDocked.AppListView#NavigationPanePlacesListView", {
-        L"Transform3D:=<CompositeTransform3D TranslateX=\"141\" CenterX=\"250\" />",
-        L"Grid.Column=0"}},
+        L"HorizontalAlignment=2",
+        L"Margin=0,0,202,0"}},
     ThemeTargetStyles{L"StartDocked.UserTileView", {
-        L"Transform3D:=<CompositeTransform3D TranslateX=\"85\" />"}},
+        L"HorizontalAlignment=2",
+        L"Margin=0,-2,37,0",
+        L"Transform3D:=<CompositeTransform3D TranslateX=\"50\" />",
+        L"Height=42"}},
     ThemeTargetStyles{L"Windows.UI.Xaml.Controls.TextBlock#UserTileNameText", {
         L"Visibility=Collapsed"}},
-    ThemeTargetStyles{L"Grid#UserTileIcon", {
-        L"Transform3D:=<CompositeTransform3D  RotationZ=\"90\" TranslateY=\"32\"/>"}},
+    ThemeTargetStyles{L"StartDocked.NavigationPaneButton > Grid@CommonStates > Windows.UI.Xaml.Controls.ContentPresenter > Grid > Grid#UserTileIcon", {
+        L"Margin=-3,0,-3,-62",
+        L"Transform3D:=<CompositeTransform3D RotationZ=\"90\" />",
+        L"Width=30",
+        L"Height=30"}},
     ThemeTargetStyles{L"StartDocked.AppListViewItem > Grid > ContentPresenter", {
-        L"Transform3D:=<CompositeTransform3D RotationZ=\"90\" TranslateY=\"40\"/>"}},
+        L"Transform3D:=<CompositeTransform3D RotationZ=\"90\" />",
+        L"Margin=0,40,0,-40"}},
     ThemeTargetStyles{L"StartDocked.PowerOptionsView", {
-        L"Transform3D:=<CompositeTransform3D TranslateY=\"-300\" TranslateX=\"475\" RotationZ=\"90\" />",
-        L"Margin=-680,340,680,-340"}},
+        L"Transform3D:=<CompositeTransform3D TranslateY=\"-600\" TranslateX=\"465\" RotationZ=\"90\" />",
+        L"Margin=-669,640,670,-640"}},
+    ThemeTargetStyles{L"Grid#AllAppsPaneHeader", {
+        L"Visibility=Collapsed"}},
     ThemeTargetStyles{L"Windows.UI.Xaml.Controls.TextBlock#PinnedListHeaderText", {
         L"Visibility=Collapsed"}},
-    ThemeTargetStyles{L"StartMenu.PinnedList", {
-        L"Visibility=Collapsed"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.GridView", {
+        L"ItemsSource:="}},
     ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Primitives.ScrollBar", {
-        L"Margin=0,-12,31,12",
-        L"Height=690"}},
+        L"Margin=0,-15,32,15",
+        L"Height=692"}},
     ThemeTargetStyles{L"MenuFlyoutSeparator", {
         L"Margin=0,-2,0,-2",
         L"Padding=4"}},
@@ -805,30 +813,36 @@ const Theme g_themeWindows10_variant_Minimal = {{
     ThemeTargetStyles{L"MenuFlyoutPresenter", {
         L"BorderBrush:=<RevealBorderBrush Color=\"Transparent\" TargetTheme=\"1\" Opacity=\"1\"/>"}},
     ThemeTargetStyles{L"MenuFlyoutPresenter > Border > ScrollViewer", {
-        L"BorderThickness=1",
         L"CornerRadius=8",
-        L"Padding=0",
-        L"Margin=0"}},
+        L"Padding=-3,0,-1,0"}},
+    ThemeTargetStyles{L"Grid#TopLevelSuggestionsListHeader", {
+        L"Visibility=Collapsed"}},
+    ThemeTargetStyles{L"StartMenu.ExpandedFolderList > Grid > Border", {
+        L"BorderBrush:=<RevealBorderBrush Color=\"Transparent\" TargetTheme=\"1\" Opacity=\"0.8\"/>",
+        L"Margin=-145,0,145,0",
+        L"Width=312"}},
+    ThemeTargetStyles{L"StartMenu.ExpandedFolderList > Grid > Grid", {
+        L"CornerRadius=8",
+        L"Width=350",
+        L"Margin=-295,0,0,0"}},
     ThemeTargetStyles{L"Border#UninstallFlyoutPresenterBorder", {
         L"BorderBrush:=<RevealBorderBrush Color=\"Transparent\" TargetTheme=\"1\" Opacity=\"0.8\"/>"}},
     ThemeTargetStyles{L"Windows.UI.Xaml.Controls.ContentDialog", {
-        L"Margin=-650,250,0,0"}},
-    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Button#CloseAllAppsButton", {
-        L"Visibility=Collapsed"}},
+        L"Margin=-960,214,0,0",
+        L"BorderBrush:=<RevealBorderBrush Color=\"Transparent\" TargetTheme=\"1\" Opacity=\"0.8\"/>"}},
     ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Button#ZoomOutButton", {
-        L"Width=40",
-        L"Height=40",
-        L"Margin=0,0,379,687.5",
+        L"Width=38",
+        L"Height=38",
+        L"Margin=0,0,383,679",
         L"Visibility=Visible",
-        L"FontSize=14",
-        L"BorderBrush:=<RevealBorderBrush Color=\"Transparent\" TargetTheme=\"1\" Opacity=\"1\"/>"}},
+        L"FontSize=14"}},
     ThemeTargetStyles{L"Windows.UI.Xaml.Controls.SemanticZoom#ZoomControl", {
         L"IsZoomOutButtonEnabled=True"}},
     ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Button#ZoomOutButton > Windows.UI.Xaml.Controls.ContentPresenter#ContentPresenter > Windows.UI.Xaml.Controls.TextBlock", {
         L"Text=\uE75F",
-        L"FontSize=28",
-        L"Padding=0,8,0,0",
-        L"Margin=0,0,0,10",
+        L"FontSize=27",
+        L"Padding=0,7,0,0",
+        L"Margin=0,1,0,8",
         L"Visibility=Visible"}},
     ThemeTargetStyles{L"Grid#ShowMoreSuggestions", {
         L"Visibility=Collapsed"}},
@@ -836,33 +850,72 @@ const Theme g_themeWindows10_variant_Minimal = {{
         L"Visibility=Collapsed"}},
     ThemeTargetStyles{L"Grid#MoreSuggestionsRoot", {
         L"Visibility=Collapsed"}},
-    ThemeTargetStyles{L"Border#UninstallFlyoutPresenterBorder", {
-        L"BorderBrush:=<RevealBorderBrush Color=\"Transparent\" TargetTheme=\"1\" Opacity=\"0.8\"/>"}},
+    ThemeTargetStyles{L"Button#Header > Border#Border@CommonStates", {
+        L"BorderThickness=1",
+        L"Background@PointerOver:=<RevealBorderBrush Color=\"Transparent\" TargetTheme=\"1\" Opacity=\"0.5\"/>",
+        L"Background@Pressed:=<RevealBorderBrush Color=\"Transparent\" TargetTheme=\"1\" Opacity=\"0.5\"/>",
+        L"Visibility=Visible"}},
+    ThemeTargetStyles{L"TextBlock#Text", {
+        L"FontSize=16",
+        L"HorizontalAlignment=3",
+        L"VerticalAlignment=2",
+        L"Height=64",
+        L"Padding=5,40,0,0"}},
+    ThemeTargetStyles{L"StartDocked.NavigationPaneButton#UserTileButton > Grid@CommonStates > Border", {
+        L"BorderBrush:=<RevealBorderBrush Color=\"Transparent\" TargetTheme=\"1\" Opacity=\"1\"/>",
+        L"CornerRadius=5,0,0,0",
+        L"Margin=1,1,2,1.5",
+        L"BorderThickness=1,2,1,0",
+        L"Background@Pressed:=<RevealBorderBrush Color=\"Transparent\" TargetTheme=\"1\" Opacity=\"1\"/>"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Button#ZoomOutButton > Windows.UI.Xaml.Controls.ContentPresenter@CommonStates", {
+        L"Background@PointerOver:=<RevealBorderBrush Color=\"Transparent\" TargetTheme=\"1\" Opacity=\"1\"/>",
+        L"BorderBrush@PointerOver:=<RevealBorderBrush Color=\"Transparent\" TargetTheme=\"1\" Opacity=\"1\"/>",
+        L"CornerRadius=5"}},
+    ThemeTargetStyles{L"Grid#TopLevelSuggestionsContainer", {
+        L"Visibility=Collapsed"}},
+    ThemeTargetStyles{L"StartMenu.ExpandedFolderList > Grid > Grid > Microsoft.UI.Xaml.Controls.PipsPager#PinnedListPipsPager", {
+        L"Margin=-18,0,0,0"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Grid#InnerContent > Rectangle", {
+        L"Visibility=Collapsed"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.TextBlock#AllAppsHeading", {
+        L"Visibility=Collapsed"}},
+    ThemeTargetStyles{L"StartDocked.NavigationPaneButton#PowerButton > Grid@CommonStates > Border", {
+        L"BorderThickness=0,0,1,1",
+        L"Margin=0.5,2,0,0"}},
     ThemeTargetStyles{L"Button#ShowAllAppsButton", {
         L"Visibility=Collapsed"}},
-    ThemeTargetStyles{L"Grid#ShowMoreSuggestions", {
-        L"Visibility=Collapsed"}},
-    ThemeTargetStyles{L"Grid#TopLevelSuggestionsListHeader", {
-        L"Visibility=Collapsed"}},
-    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.GridView", {
-        L"Visibility=Collapsed"}},
-    ThemeTargetStyles{L"Border#DropShadow", {
-        L"Visibility=Collapsed"}},
-    ThemeTargetStyles{L"StartDocked.NavigationPaneButton#UserTileButton > Grid > Border", {
-        L"CornerRadius=5,0,0,0"}},
-    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.ListView#ZoomAppsList", {
-        L"Margin=-14,0,14,0"}},
-    ThemeTargetStyles{L"StartDocked.AllAppsZoomListViewItem > Grid ", {
-        L"CornerRadius=5"}},
-    ThemeTargetStyles{L"StartDocked.AllAppsZoomListViewItem > Grid > Border", {
-        L"CornerRadius=5"}},
-    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Frame", {
-        L"MaxWidth=400",
-        L"HorizontalAlignment=0"}},
-    ThemeTargetStyles{L"Border", {
-        L"FocusVisualMargin=1"}},
-    ThemeTargetStyles{L"Grid", {
-        L"RequestedTheme=2"}},
+    ThemeTargetStyles{L"Border#ContentBorder@CommonStates > Grid > Border#HighContrastBorder", {
+        L"Background@PointerOver:=<RevealBorderBrush Color=\"Transparent\" TargetTheme=\"1\" Opacity=\"0.5\"/>",
+        L"BorderBrush@PointerOver:=<RevealBorderBrush Color=\"#22FFFFFF\" TargetTheme=\"1\" Opacity=\"1\"/>",
+        L"Background@Pressed:=<RevealBorderBrush Color=\"Transparent\" TargetTheme=\"1\" Opacity=\"0.64\"/>",
+        L"BorderBrush@Pressed:=<RevealBorderBrush Color=\"#22FFFFFF\" TargetTheme=\"1\" Opacity=\"1\"/>"}},
+    ThemeTargetStyles{L"StartDocked.AllAppsZoomListViewItem > Grid@CommonStates > Border", {
+        L"BorderThickness=1",
+        L"BorderBrush@PointerOver:=<RevealBorderBrush Color=\"Transparent\" TargetTheme=\"1\" Opacity=\"1\"/>",
+        L"CornerRadius=4"}},
+    ThemeTargetStyles{L"Cortana.UI.Views.TaskbarSearchPage", {
+        L"Margin=-100,17,0,-25",
+        L"Width=740",
+        L"Padding=0",
+        L"Height=750"}},
+    ThemeTargetStyles{L"Border#AppBorder", {
+        L"BorderBrush:=<RevealBorderBrush Color=\"Transparent\" TargetTheme=\"1\" Opacity=\"1\"/>"}},
+    ThemeTargetStyles{L"Grid#QueryFormulationRoot", {
+        L"Padding=-14,0,-14,0"}},
+    ThemeTargetStyles{L"Grid#BorderGrid", {
+        L"Background=Transparent"}},
+    ThemeTargetStyles{L"Border#TaskbarSearchBackground", {
+        L"Background=#88FFFFFF"}},
+    ThemeTargetStyles{L"FlyoutPresenter", {
+        L"Margin=10,20,140,0"}},
+    ThemeTargetStyles{L"FlyoutPresenter > Border", {
+        L"BorderBrush:=<RevealBorderBrush Color=\"Transparent\" TargetTheme=\"1\" Opacity=\"0.8\"/>",
+        L"BorderThickness=1",
+        L"CornerRadius=8"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.ContentDialog > Border > Grid > Border", {
+        L"BorderBrush:=<RevealBorderBrush Color=\"Transparent\" TargetTheme=\"1\" Opacity=\"1\"/>"}},
+    ThemeTargetStyles{L"StartDocked.StartSizingFramePanel > Border#DropShadow", {
+        L"MaxWidth=150"}},
 }};
 
 const Theme g_themeWindows10_variant_NewStartMenu = {{
@@ -1232,13 +1285,13 @@ const Theme g_themeWindows10_variant_Minimal_NewStartMenu = {{
 
 const Theme g_themeTranslucentStartMenu = {{
     ThemeTargetStyles{L"Border#AcrylicBorder", {
-        L"Background:=<AcrylicBrush TintColor=\"Black\" TintLuminosityOpacity=\"0.12\" TintOpacity=\"0\" Opacity=\"1\" FallbackColor=\"#70262626\"/>",
+        L"Background:=$CommonBgBrush",
         L"BorderThickness=0",
         L"CornerRadius=15"}},
     ThemeTargetStyles{L"Border#AcrylicOverlay", {
         L"Visibility=Collapsed"}},
     ThemeTargetStyles{L"Border#BorderElement", {
-        L"Background:=<AcrylicBrush TintLuminosityOpacity=\"0.03\" TintOpacity=\"0\" Opacity=\"1\" FallbackColor=\"#70262626\"/>",
+        L"Background:=<WindhawkBlur BlurAmount=\"25\" TintColor=\"#15000000\"/>",
         L"BorderThickness=0",
         L"CornerRadius=10"}},
     ThemeTargetStyles{L"Grid#ShowMoreSuggestions", {
@@ -1249,21 +1302,21 @@ const Theme g_themeTranslucentStartMenu = {{
         L"Visibility=Collapsed"}},
     ThemeTargetStyles{L"StartMenu.PinnedList", {
         L"Height=504"}},
-    ThemeTargetStyles{L"MenuFlyoutPresenter", {
-        L"Background:=<AcrylicBrush TintColor=\"Black\" TintLuminosityOpacity=\"0.12\" TintOpacity=\"0\" Opacity=\"1\" FallbackColor=\"#70262626\"/>",
+    ThemeTargetStyles{L"MenuFlyoutPresenter > Border", {
+        L"Background:=<WindhawkBlur BlurAmount=\"25\" TintColor=\"#00000000\"/>",
         L"BorderThickness=0"}},
     ThemeTargetStyles{L"Border#AppBorder", {
-        L"Background:=<AcrylicBrush TintColor=\"Black\" TintLuminosityOpacity=\"0.12\" TintOpacity=\"0\" Opacity=\"1\" FallbackColor=\"#70262626\"/>",
+        L"Background:=$CommonBgBrush",
         L"BorderThickness=0",
         L"CornerRadius=15"}},
     ThemeTargetStyles{L"Border#AccentAppBorder", {
-        L"Background:=<AcrylicBrush TintColor=\"Black\" TintLuminosityOpacity=\"0.12\" TintOpacity=\"0\" Opacity=\"1\" FallbackColor=\"#70262626\"/>",
+        L"Background:=$CommonBgBrush",
         L"BorderThickness=0",
         L"CornerRadius=15"}},
     ThemeTargetStyles{L"Border#LayerBorder", {
         L"Visibility=Collapsed"}},
     ThemeTargetStyles{L"Border#TaskbarSearchBackground", {
-        L"Background:=<AcrylicBrush TintColor=\"Transparent\" TintLuminosityOpacity=\"0.03\" TintOpacity=\"0\" Opacity=\"1\" FallbackColor=\"#70262626\"/>",
+        L"Background:=<WindhawkBlur BlurAmount=\"25\" TintColor=\"#15000000\"/>",
         L"BorderThickness=0",
         L"CornerRadius=10"}},
     ThemeTargetStyles{L"Border#ContentBorder@CommonStates > Grid#DroppedFlickerWorkaroundWrapper > Border", {
@@ -1274,7 +1327,7 @@ const Theme g_themeTranslucentStartMenu = {{
         L"Background@Pressed:=<RevealBorderBrush Color=\"Transparent\" TargetTheme=\"1\" Opacity=\"0.3\"/>",
         L"BorderBrush@Pressed:=<RevealBorderBrush Color=\"Transparent\" TargetTheme=\"1\" Opacity=\"1\"/>"}},
     ThemeTargetStyles{L"Button#ShowAllAppsButton > ContentPresenter@CommonStates", {
-        L"Background@Normal:=<AcrylicBrush TintColor=\"Transparent\" TintLuminosityOpacity=\"0.05\" TintOpacity=\"1\" Opacity=\"1\" FallbackColor=\"#70262626\"/>",
+        L"Background@Normal:=<WindhawkBlur BlurAmount=\"25\" TintColor=\"#15C0C0C0\"/>",
         L"Background@PointerOver:=<RevealBorderBrush Color=\"Transparent\" TargetTheme=\"1\" Opacity=\"0.5\"/>",
         L"BorderBrush@PointerOver:=<RevealBorderBrush Color=\"Transparent\" TargetTheme=\"1\" Opacity=\"1\"/>",
         L"BorderThickness=1"}},
@@ -1297,13 +1350,13 @@ const Theme g_themeTranslucentStartMenu = {{
         L"BorderThickness=1",
         L"Margin@Normal=4"}},
     ThemeTargetStyles{L"ToolTip > ContentPresenter#LayoutRoot", {
-        L"Background:=<AcrylicBrush TintColor=\"Transparent\" TintOpacity=\"0\" TintLuminosityOpacity=\"0\" Opacity=\"1\" FallbackColor=\"#A0262626\"/>"}},
+        L"Background:=<WindhawkBlur BlurAmount=\"25\" TintColor=\"#00000000\"/>"}},
     ThemeTargetStyles{L"StartDocked.AllAppsGridListViewItem > Grid@CommonStates > Border", {
         L"BorderBrush@PointerOver:=<RevealBorderBrush Color=\"Transparent\" TargetTheme=\"1\" Opacity=\"0.8\"/>",
         L"Background@PointerOver:=<RevealBorderBrush Color=\"Transparent\" TargetTheme=\"1\" Opacity=\"0.55\"/>",
         L"BorderThickness=1"}},
     ThemeTargetStyles{L"Button#CloseAllAppsButton > ContentPresenter@CommonStates", {
-        L"Background@Normal:=<AcrylicBrush TintColor=\"Transparent\" TintLuminosityOpacity=\"0.05\" TintOpacity=\"1\" Opacity=\"1\" FallbackColor=\"#70262626\"/>",
+        L"Background@Normal:=<WindhawkBlur BlurAmount=\"25\" TintColor=\"#15C0C0C0\"/>",
         L"Background@PointerOver:=<RevealBorderBrush Color=\"Transparent\" TargetTheme=\"1\" Opacity=\"0.5\"/>",
         L"BorderBrush@PointerOver:=<RevealBorderBrush Color=\"Transparent\" TargetTheme=\"1\" Opacity=\"1\"/>",
         L"BorderThickness=1"}},
@@ -1317,8 +1370,10 @@ const Theme g_themeTranslucentStartMenu = {{
     ThemeTargetStyles{L"Border#DropShadow", {
         L"CornerRadius=15"}},
     ThemeTargetStyles{L"StartDocked.AllAppsGridListViewItem > Grid#ContentBorder@CommonStates", {
-        L"Background@PointerOver:=<AcrylicBrush TintColor=\"Transparent\" TintLuminosityOpacity=\"0.05\" TintOpacity=\"0\" Opacity=\"1\"/>",
+        L"Background@PointerOver:=<WindhawkBlur BlurAmount=\"25\" TintColor=\"#15C0C0C0\"/>",
         L"CornerRadius=4"}},
+}, {}, {
+    L"CommonBgBrush=<WindhawkBlur BlurAmount=\"25\" TintColor=\"#25323232\"/>",
 }};
 
 const Theme g_themeTranslucentStartMenu_variant_NewStartMenu = {{
@@ -1457,8 +1512,6 @@ const Theme g_themeWindows11_Metro10 = {{
         L"Padding=90,3,6,16"}},
     ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Grid#AllAppsPaneHeader", {
         L"Margin=97,-10,0,0"}},
-    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Grid#SuggestionsParentContainer", {
-        L"Height=168"}},
     ThemeTargetStyles{L"StartDocked.NavigationPaneView#NavigationPane", {
         L"FlowDirection=0",
         L"Margin=30,0,30,0"}},
@@ -1497,8 +1550,6 @@ const Theme g_themeWindows11_Metro10 = {{
         L"Margin=0,-100,0,24"}},
     ThemeTargetStyles{L"StartMenu.PinnedList", {
         L"MaxHeight=400"}},
-    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.TextBlock#PinnedListHeaderText", {
-        L"Margin=-30,-2,0,0"}},
     ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Grid#SuggestionsParentContainer", {
         L"Margin=-20,0,0,0"}},
     ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Grid#TopLevelSuggestionsListHeader", {
@@ -1579,8 +1630,6 @@ const Theme g_themeFluent2Inspired = {{
     ThemeTargetStyles{L"Border#dropshadow", {
         L"CornerRadius=12",
         L"Margin=-1"}},
-    ThemeTargetStyles{L"Cortana.UI.Views.RichSearchBoxControl#SearchBoxControl", {
-        L"Margin=33,33,33,10"}},
     ThemeTargetStyles{L"TextBlock#UserTileNameText", {
         L"Visibility=1"}},
     ThemeTargetStyles{L"TextBlock#AllAppsHeading", {
@@ -1645,13 +1694,13 @@ const Theme g_themeFluent2Inspired = {{
         L"Background:=<SolidColorBrush Color=\"{ThemeResource TextFillColorInverse}\" Opacity=\".2\"/>",
         L"CornerRadiusProtected=8",
         L"BorderThicknessProtected=1",
-        L"BorderBrushProtected:=<SolidColorBrush Color=\"{ThemeResource SurfaceStrokeColorDefault}\" Opacity=\".35\"/>",
-        L"Margin=0,0,0,20"}},
+        L"BorderBrushProtected:=<SolidColorBrush Color=\"{ThemeResource SurfaceStrokeColorDefault}\" Opacity=\".35\"/>"}},
     ThemeTargetStyles{L"ListViewItem", {
-        L"Margin=1,5,-5,-5",
-        L"CornerRadius=4"}},
+        L"Margin=1,0,-6,0",
+        L"CornerRadius=4",
+        L"Padding=0,0,6,0"}},
     ThemeTargetStyles{L"Button#Header", {
-        L"Margin=4,0,-3,-5"}},
+        L"Margin=4,0,-3,0"}},
     ThemeTargetStyles{L"StartDocked.AllAppsPane#AllAppsPanel", {
         L"Margin=-20,0,-6,0"}},
     ThemeTargetStyles{L"TextBlock#PlaceholderTextContentPresenter", {
@@ -1719,22 +1768,14 @@ const Theme g_themeFluent2Inspired = {{
         L"Height=38",
         L"Width=38"}},
     ThemeTargetStyles{L"Grid#ContentBorder > ContentPresenter > FontIcon", {
+        L"Margin=6,0,0,0",
         L"Opacity=.85"}},
-    ThemeTargetStyles{L"StartDocked.AppListView#NavigationPanePlacesListView", {
-        L"Padding=2,0,6,0"}},
     ThemeTargetStyles{L"StartDocked.AppListView#NavigationPanePlacesListView > Border > ScrollViewer > Border#Root > Grid > ScrollContentPresenter > ItemsPresenter > ItemsStackPanel > ListViewItem", {
         L"Margin=-2,0,0,0"}},
     ThemeTargetStyles{L"StartDocked.AppListView#NavigationPanePlacesListView", {
         L"Margin=0,0,-46,0"}},
-    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.ItemsWrapGrid", {
-        L"ItemHeight=84"}},
-    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Primitives.ScrollBar#VerticalScrollBar", {
-        L"Transform3D:=<CompositeTransform3D TranslateX=\"-40\" />",
-        L"Margin=0,5,0,55"}},
-    ThemeTargetStyles{L"Grid#ContentBorder > Border#BorderBackground", {
-        L"Margin=1,0,-1,0"}},
-    ThemeTargetStyles{L"StackPanel#RootPanel > Button#Header > Border#Border", {
-        L"Margin=0,0,-1,0"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.GridViewItem", {
+        L"Height=84"}},
 }};
 
 const Theme g_themeFluent2Inspired_variant_NewStartMenu = {{
@@ -1955,8 +1996,6 @@ const Theme g_themeRosePine = {{
         L"CornerRadius=25",
         L"BorderBrush=#ebbcba",
         L"Background=#191724"}},
-    ThemeTargetStyles{L"StartDocked.StartSizingFramePanel", {
-        L"CornerRadius=25"}},
     ThemeTargetStyles{L"Windows.UI.Xaml.Controls.FontIcon > Windows.UI.Xaml.Controls.Grid > Windows.UI.Xaml.Controls.TextBlock", {
         L"Foreground=#eb6f92"}},
     ThemeTargetStyles{L"Windows.UI.Xaml.Controls.TextBlock#AppDisplayName", {
@@ -1967,8 +2006,6 @@ const Theme g_themeRosePine = {{
         L"Visibility=Collapsed"}},
     ThemeTargetStyles{L"Windows.UI.Xaml.Controls.TextBlock#AllAppsHeading", {
         L"Visibility=Collapsed"}},
-    ThemeTargetStyles{L"StartDocked.StartSizingFrame", {
-        L"MaxHeight=580"}},
     ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Grid#UserTileIcon", {
         L"Visibility=Collapsed"}},
     ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Border#AcrylicOverlay", {
@@ -2016,10 +2053,6 @@ const Theme g_themeRosePine = {{
     ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Border#TaskbarSearchBackground", {
         L"BorderThickness=1.5",
         L"BorderBrush=#ebbcba"}},
-    ThemeTargetStyles{L"StartDocked.LauncherFrame > Grid#RootGrid > Grid#RootContent", {
-        L"MaxWidth=500",
-        L"Width=500",
-        L"MinWidth=500"}},
     ThemeTargetStyles{L"StartDocked.StartSizingFramePanel", {
         L"MaxWidth=500",
         L"Width=500",
@@ -2218,7 +2251,7 @@ const Theme g_themeEverblush = {{
         L"Foreground=#8ccf7e"}},
     ThemeTargetStyles{L"TextBlock#AppDisplayName", {
         L"Foreground=#b3b9b8"}},
-    ThemeTargetStyles{L"TextBlock#Text ", {
+    ThemeTargetStyles{L"TextBlock#Text", {
         L"Foreground=#e5c76b"}},
     ThemeTargetStyles{L"TextBlock#FolderGlyph", {
         L"Foreground=#e5c76b"}},
@@ -2230,7 +2263,7 @@ const Theme g_themeEverblush = {{
         L"CornerRadius=6"}},
     ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Border#ContentBorder > Windows.UI.Xaml.Controls.Grid#DroppedFlickerWorkaroundWrapper > Border#BackgroundBorder", {
         L"Background=transparent"}},
-    ThemeTargetStyles{L" Border#AppBorder", {
+    ThemeTargetStyles{L"Border#AppBorder", {
         L"Background=#141b1e"}},
     ThemeTargetStyles{L"Border#TaskbarSearchBackground", {
         L"Background=#232a2d",
@@ -2285,9 +2318,6 @@ const Theme g_theme21996 = {{
         L"BorderBrush:=<SolidColorBrush Color=\"{ThemeResource SystemAccentColorLight1}\" />",
         L"BorderThickness=2,2,2,2",
         L"Margin=-2,-0,0,-2"}},
-    ThemeTargetStyles{L"StartDocked.SearchBoxToggleButton", {
-        L"CornerRadius=4",
-        L"Height=40"}},
     ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Grid#SearchBoxOnTaskbarGleamContainer", {
         L"CornerRadius=4"}},
     ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Grid#SearchBoxOnTaskbarGleamImageContainer", {
@@ -2329,12 +2359,14 @@ const Theme g_themeDown_Aero = {{
     ThemeTargetStyles{L"StartMenu.PinnedList", {
         L"Height=340"}},
     ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Grid#ShowMoreSuggestions", {
-        L"RenderTransform:=<TranslateTransform Y=\"-408\"  />"}},
+        L"RenderTransform:=<TranslateTransform Y=\"-408\" />"}},
     ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Grid#NoTopLevelSuggestionsText", {
         L"Height=0"}},
     ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Grid#ShowMoreSuggestions > Windows.UI.Xaml.Controls.Button > Windows.UI.Xaml.Controls.ContentPresenter > Windows.UI.Xaml.Controls.StackPanel > Windows.UI.Xaml.Controls.TextBlock", {
         L"Text=Recommended"}},
     ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Border#DropShadow", {
+        L"CornerRadius=30"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Border#StartDropShadow", {
         L"CornerRadius=30"}},
     ThemeTargetStyles{L"StartDocked.LauncherFrame > Grid#RootGrid > Grid#RootContent > Grid#MainContent > Grid#InnerContent > Rectangle", {
         L"Visibility=Collapsed"}},
@@ -2417,10 +2449,10 @@ const Theme g_themeUniMenu = {{
         L"Margin=-8,10,0,0"}},
     ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Grid#UndockedRoot", {
         L"Margin=0,-70,0,-90"}},
-    ThemeTargetStyles{L"StartMenu.PinnedList ", {
+    ThemeTargetStyles{L"StartMenu.PinnedList", {
         L"Height=375",
         L"Margin=13,30,-13,0"}},
-    ThemeTargetStyles{L"StartDocked.SearchBoxToggleButton ", {
+    ThemeTargetStyles{L"StartDocked.SearchBoxToggleButton", {
         L"Width=480",
         L"Height=40",
         L"Margin=-100,0,0,30",
@@ -2432,7 +2464,7 @@ const Theme g_themeUniMenu = {{
         L"Margin=-68,-870,0,0"}},
     ThemeTargetStyles{L"Windows.UI.Xaml.Controls.GridView#PinnedList > Windows.UI.Xaml.Controls.Border > Windows.UI.Xaml.Controls.ScrollViewer > Windows.UI.Xaml.Controls.Border > Windows.UI.Xaml.Controls.Grid > Windows.UI.Xaml.Controls.ScrollContentPresenter > Windows.UI.Xaml.Controls.ItemsPresenter > Windows.UI.Xaml.Controls.ItemsWrapGrid > Windows.UI.Xaml.Controls.GridViewItem", {
         L"Margin=5,10,0,0"}},
-    ThemeTargetStyles{L"StartMenu.PinnedList  > Grid#Root", {
+    ThemeTargetStyles{L"StartMenu.PinnedList > Grid#Root", {
         L"Padding=0"}},
     ThemeTargetStyles{L"TextBlock#PinnedListHeaderText", {
         L"Visibility=Collapsed"}},
@@ -2465,7 +2497,7 @@ const Theme g_themeUniMenu = {{
         L"Background:=<AcrylicBrush TintColor=\"{ThemeResource CardStrokeColorDefaultSolid}\" FallbackColor=\"{ThemeResource CardStrokeColorDefaultSolid}\" TintOpacity=\".3\" TintLuminosityOpacity=\".5\" Opacity=\"1\"/>",
         L"BorderBrush:=<AcrylicBrush TintColor=\"{ThemeResource SurfaceStrokeColorDefault}\" FallbackColor=\"{ThemeResource SurfaceStrokeColorDefault}\" TintOpacity=\".2\" TintLuminosityOpacity=\".3\" Opacity=\"1\"/>",
         L"Background@PointerOver:=<AcrylicBrush TintColor=\"{ThemeResource SurfaceStrokeColorDefault}\" FallbackColor=\"{ThemeResource SurfaceStrokeColorDefault}\" TintOpacity=\"0\" TintLuminosityOpacity=\".2\" Opacity=\"1\"/>"}},
-    ThemeTargetStyles{L"Button#CloseAllAppsButton ", {
+    ThemeTargetStyles{L"Button#CloseAllAppsButton", {
         L"Margin=0,-102,-33,0"}},
     ThemeTargetStyles{L"Grid#AllAppsRoot", {
         L"Margin=0,-20,0,-40"}},
@@ -2479,6 +2511,8 @@ const Theme g_themeUniMenu = {{
         L"Margin=6,6,6,12",
         L"CornerRadius=8"}},
     ThemeTargetStyles{L"Border#DropShadow", {
+        L"Visibility=Collapsed"}},
+    ThemeTargetStyles{L"Border#StartDropShadow", {
         L"Visibility=Collapsed"}},
     ThemeTargetStyles{L"Cortana.UI.Views.TaskbarSearchPage", {
         L"Margin=5,0,0,8"}},
@@ -2694,8 +2728,6 @@ const Theme g_themeLegacyFluent = {{
 }};
 
 const Theme g_themeOnlySearch = {{
-    ThemeTargetStyles{L"StartDocked.StartSizingFrame", {
-        L"MaxHeight=160"}},
     ThemeTargetStyles{L"StartDocked.StartSizingFrame", {
         L"MinHeight=100"}},
     ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Grid#UndockedRoot", {
