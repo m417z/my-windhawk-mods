@@ -2,7 +2,7 @@
 // @id              windows-11-notification-center-styler
 // @name            Windows 11 Notification Center Styler
 // @description     Customize the Notification Center and Action Center with themes contributed by others or create your own
-// @version         1.3.1
+// @version         1.3.2
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
@@ -249,7 +249,7 @@ const Theme g_themeTranslucentShell = {{
         L"Background=Transparent"}},
     ThemeTargetStyles{L"ActionCenter.FocusSessionControl#FocusSessionControl > Grid#FocusGrid", {
         L"Background=Transparent"}},
-    ThemeTargetStyles{L"MenuFlyoutPresenter", {
+    ThemeTargetStyles{L"MenuFlyoutPresenter > Border", {
         L"Background:=<WindhawkBlur BlurAmount=\"25\" TintColor=\"#00000000\"/>",
         L"BorderThickness=0,0,0,0",
         L"CornerRadius=15",
@@ -1241,21 +1241,21 @@ public:
 	void OnConnected();
 	void OnDisconnected();
 
-    // The ISolidColorBrush implementation is required for
-    // ActionCenter::FlexibleToastView::OnToastBackgroundBorderBackgroundChanged
-    // in Windows.UI.ActionCenter.dll. If missing, the app crashes while trying
-    // to show the first notification, which results in a crash loop.
-    winrt::Windows::UI::Color Color() const {
-        return winrt::Windows::UI::Color{
-            static_cast<uint8_t>(std::round(m_tint.w * 255.0f)),
-            static_cast<uint8_t>(std::round(m_tint.x * 255.0f)),
-            static_cast<uint8_t>(std::round(m_tint.y * 255.0f)),
-            static_cast<uint8_t>(std::round(m_tint.z * 255.0f)),
-        };
-    }
-    void Color(winrt::Windows::UI::Color const& value) {
-        // Do nothing.
-    }
+	// The ISolidColorBrush implementation is required for
+	// ActionCenter::FlexibleToastView::OnToastBackgroundBorderBackgroundChanged
+	// in Windows.UI.ActionCenter.dll. If missing, the app crashes while trying
+	// to show the first notification, which results in a crash loop.
+	winrt::Windows::UI::Color Color() const {
+		return winrt::Windows::UI::Color{
+			static_cast<uint8_t>(std::round(m_tint.w * 255.0f)),
+			static_cast<uint8_t>(std::round(m_tint.x * 255.0f)),
+			static_cast<uint8_t>(std::round(m_tint.y * 255.0f)),
+			static_cast<uint8_t>(std::round(m_tint.z * 255.0f)),
+		};
+	}
+	void Color(winrt::Windows::UI::Color const& value) {
+		// Do nothing.
+	}
 
 private:
 	wuc::Compositor m_compositor;
