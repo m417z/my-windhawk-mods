@@ -3142,7 +3142,7 @@ enum class Target {
 
 Target g_target;
 
-bool g_isNewStartMenuLayout;
+bool g_isRedesignedStartMenu;
 
 // https://stackoverflow.com/a/51274008
 template <auto fn>
@@ -5502,7 +5502,7 @@ void ProcessAllStylesFromSettings() {
     PCWSTR themeName = Wh_GetStringSetting(L"theme");
     const Theme* theme = nullptr;
     if (wcscmp(themeName, L"NoRecommendedSection") == 0) {
-        theme = g_isNewStartMenuLayout
+        theme = g_isRedesignedStartMenu
                     ? &g_themeNoRecommendedSection_variant_NewStartMenu
                     : &g_themeNoRecommendedSection;
     } else if (wcscmp(themeName, L"SideBySide") == 0) {
@@ -5512,25 +5512,25 @@ void ProcessAllStylesFromSettings() {
     } else if (wcscmp(themeName, L"SideBySideMinimal") == 0) {
         theme = &g_themeSideBySideMinimal;
     } else if (wcscmp(themeName, L"Windows10") == 0) {
-        theme = g_isNewStartMenuLayout ? &g_themeWindows10_variant_NewStartMenu
-                                       : &g_themeWindows10;
+        theme = g_isRedesignedStartMenu ? &g_themeWindows10_variant_NewStartMenu
+                                        : &g_themeWindows10;
     } else if (wcscmp(themeName, L"Windows10_variant_Minimal") == 0) {
-        theme = g_isNewStartMenuLayout
+        theme = g_isRedesignedStartMenu
                     ? &g_themeWindows10_variant_Minimal_NewStartMenu
                     : &g_themeWindows10_variant_Minimal;
     } else if (wcscmp(themeName, L"TranslucentStartMenu") == 0) {
-        theme = g_isNewStartMenuLayout
+        theme = g_isRedesignedStartMenu
                     ? &g_themeTranslucentStartMenu_variant_NewStartMenu
                     : &g_themeTranslucentStartMenu;
     } else if (wcscmp(themeName, L"Windows11_Metro10") == 0) {
         theme = &g_themeWindows11_Metro10;
     } else if (wcscmp(themeName, L"Fluent2Inspired") == 0) {
-        theme = g_isNewStartMenuLayout
+        theme = g_isRedesignedStartMenu
                     ? &g_themeFluent2Inspired_variant_NewStartMenu
                     : &g_themeFluent2Inspired;
     } else if (wcscmp(themeName, L"RosePine") == 0) {
-        theme = g_isNewStartMenuLayout ? &g_themeRosePine_variant_NewStartMenu
-                                       : &g_themeRosePine;
+        theme = g_isRedesignedStartMenu ? &g_themeRosePine_variant_NewStartMenu
+                                        : &g_themeRosePine;
     } else if (wcscmp(themeName, L"Windows11_Metro10Minimal") == 0) {
         theme = &g_themeWindows11_Metro10Minimal;
     } else if (wcscmp(themeName, L"Everblush") == 0) {
@@ -6065,10 +6065,11 @@ BOOL Wh_ModInit() {
     g_disableNewStartMenuLayout =
         Wh_GetIntSetting(L"disableNewStartMenuLayout");
 
-    g_isNewStartMenuLayout =
-        !g_disableNewStartMenuLayout && IsOsFeatureEnabled(47205210) &&
-        IsOsFeatureEnabled(48433719) && IsOsFeatureEnabled(49221331) &&
-        IsOsFeatureEnabled(49402389);
+    g_isRedesignedStartMenu = !g_disableNewStartMenuLayout &&
+                              IsOsFeatureEnabled(47205210).value_or(false) &&
+                              IsOsFeatureEnabled(48433719).value_or(false) &&
+                              IsOsFeatureEnabled(49221331).value_or(false) &&
+                              IsOsFeatureEnabled(49402389).value_or(false);
 
     g_target = Target::StartMenu;
 
