@@ -1233,13 +1233,29 @@ typedef enum MY_D2D1_GAUSSIANBLUR_OPTIMIZATION
 #include <winrt/Windows.UI.Composition.h>
 #include <winrt/Windows.UI.Xaml.Media.h>
 
-class XamlBlurBrush : public wux::Media::XamlCompositionBrushBaseT<XamlBlurBrush>
+class XamlBlurBrush : public wux::Media::XamlCompositionBrushBaseT<XamlBlurBrush, wux::Media::ISolidColorBrush>
 {
 public:
 	XamlBlurBrush(wuc::Compositor compositor, float blurAmount, wfn::float4 tint);
 
 	void OnConnected();
 	void OnDisconnected();
+
+    // The ISolidColorBrush implementation is required for
+    // ActionCenter::FlexibleToastView::OnToastBackgroundBorderBackgroundChanged
+    // in Windows.UI.ActionCenter.dll. If missing, the app crashes while trying
+    // to show the first notification, which results in a crash loop.
+    winrt::Windows::UI::Color Color() const {
+        return winrt::Windows::UI::Color{
+            static_cast<uint8_t>(std::round(m_tint.w * 255.0f)),
+            static_cast<uint8_t>(std::round(m_tint.x * 255.0f)),
+            static_cast<uint8_t>(std::round(m_tint.y * 255.0f)),
+            static_cast<uint8_t>(std::round(m_tint.z * 255.0f)),
+        };
+    }
+    void Color(winrt::Windows::UI::Color const& value) {
+        // Do nothing.
+    }
 
 private:
 	wuc::Compositor m_compositor;
