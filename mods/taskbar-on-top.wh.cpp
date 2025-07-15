@@ -1467,12 +1467,20 @@ int WINAPI MapWindowPoints_Hook(HWND hWndFrom,
 
     Wh_Log(L">");
 
+    // For build 26120.4733 or newer with the 56848060 feature flag which
+    // enables thumbnail transition animations.
     FrameworkElement flyoutFrame = nullptr;
-    ((IUnknown**)g_UpdateFlyoutPosition_pThis)[1]->QueryInterface(
-        winrt::guid_of<FrameworkElement>(), winrt::put_abi(flyoutFrame));
+    ((IUnknown*)g_UpdateFlyoutPosition_pThis)
+        ->QueryInterface(winrt::guid_of<FrameworkElement>(),
+                         winrt::put_abi(flyoutFrame));
     if (!flyoutFrame) {
-        Wh_Log(L"Error getting flyoutFrame");
-        return ret;
+        // For previous builds.
+        ((IUnknown**)g_UpdateFlyoutPosition_pThis)[1]->QueryInterface(
+            winrt::guid_of<FrameworkElement>(), winrt::put_abi(flyoutFrame));
+        if (!flyoutFrame) {
+            Wh_Log(L"Error getting flyoutFrame");
+            return ret;
+        }
     }
 
     FrameworkElement hoverFlyoutCanvas =
