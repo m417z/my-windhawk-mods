@@ -1323,13 +1323,13 @@ const Theme g_themeTranslucentStartMenu = {{
 
 const Theme g_themeTranslucentStartMenu_variant_NewStartMenu = {{
     ThemeTargetStyles{L"Border#AcrylicBorder", {
-        L"Background:=<AcrylicBrush TintColor=\"Black\" TintLuminosityOpacity=\"0.12\" TintOpacity=\"0\" Opacity=\"1\" FallbackColor=\"#70262626\"/>",
+        L"Background:=<WindhawkBlur BlurAmount=\"25\" TintColor=\"#25323232\"/>",
         L"BorderThickness=0",
         L"CornerRadius=15"}},
     ThemeTargetStyles{L"Border#AcrylicOverlay", {
         L"Visibility=Collapsed"}},
     ThemeTargetStyles{L"Border#BorderElement", {
-        L"Background:=<AcrylicBrush TintLuminosityOpacity=\"0.03\" TintOpacity=\"0\" Opacity=\"1\" FallbackColor=\"#70262626\"/>",
+        L"Background:=<WindhawkBlur BlurAmount=\"25\" TintColor=\"#15000000\"/>",
         L"BorderThickness=0",
         L"CornerRadius=10"}},
     ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Grid#NoTopLevelSuggestionsText", {
@@ -1337,20 +1337,20 @@ const Theme g_themeTranslucentStartMenu_variant_NewStartMenu = {{
     ThemeTargetStyles{L"Grid#TopLevelSuggestionsListHeader", {
         L"Visibility=Collapsed"}},
     ThemeTargetStyles{L"MenuFlyoutPresenter", {
-        L"Background:=<AcrylicBrush TintColor=\"Black\" TintLuminosityOpacity=\"0.12\" TintOpacity=\"0\" Opacity=\"1\" FallbackColor=\"#70262626\"/>",
+        L"Background:=<WindhawkBlur BlurAmount=\"25\" TintColor=\"#00000000\"/>",
         L"BorderThickness=0"}},
     ThemeTargetStyles{L"Border#AppBorder", {
-        L"Background:=<AcrylicBrush TintColor=\"Black\" TintLuminosityOpacity=\"0.12\" TintOpacity=\"0\" Opacity=\"1\" FallbackColor=\"#70262626\"/>",
+        L"Background:=<WindhawkBlur BlurAmount=\"25\" TintColor=\"#25323232\"/>",
         L"BorderThickness=0",
         L"CornerRadius=15"}},
     ThemeTargetStyles{L"Border#AccentAppBorder", {
-        L"Background:=<AcrylicBrush TintColor=\"Black\" TintLuminosityOpacity=\"0.12\" TintOpacity=\"0\" Opacity=\"1\" FallbackColor=\"#70262626\"/>",
+        L"Background:=<WindhawkBlur BlurAmount=\"25\" TintColor=\"#25323232\"/>",
         L"BorderThickness=0",
         L"CornerRadius=15"}},
     ThemeTargetStyles{L"Border#LayerBorder", {
         L"Visibility=Collapsed"}},
     ThemeTargetStyles{L"Border#TaskbarSearchBackground", {
-        L"Background:=<AcrylicBrush TintColor=\"Transparent\" TintLuminosityOpacity=\"0.03\" TintOpacity=\"0\" Opacity=\"1\" FallbackColor=\"#70262626\"/>",
+        L"Background:=<WindhawkBlur BlurAmount=\"25\" TintColor=\"#15000000\"/>",
         L"BorderThickness=0",
         L"CornerRadius=10"}},
     ThemeTargetStyles{L"Border#ContentBorder@CommonStates > Grid#DroppedFlickerWorkaroundWrapper > Border", {
@@ -1361,7 +1361,7 @@ const Theme g_themeTranslucentStartMenu_variant_NewStartMenu = {{
         L"Background@Pressed:=<RevealBorderBrush Color=\"Transparent\" TargetTheme=\"1\" Opacity=\"0.3\"/>",
         L"BorderBrush@Pressed:=<RevealBorderBrush Color=\"Transparent\" TargetTheme=\"1\" Opacity=\"1\"/>"}},
     ThemeTargetStyles{L"Button#ShowAllAppsButton > ContentPresenter@CommonStates", {
-        L"Background@Normal:=<AcrylicBrush TintColor=\"Transparent\" TintLuminosityOpacity=\"0.05\" TintOpacity=\"1\" Opacity=\"1\" FallbackColor=\"#70262626\"/>",
+        L"Background@Normal:=<WindhawkBlur BlurAmount=\"25\" TintColor=\"#15C0C0C0\"/>",
         L"Background@PointerOver:=<RevealBorderBrush Color=\"Transparent\" TargetTheme=\"1\" Opacity=\"0.5\"/>",
         L"BorderBrush@PointerOver:=<RevealBorderBrush Color=\"Transparent\" TargetTheme=\"1\" Opacity=\"1\"/>",
         L"BorderThickness=1"}},
@@ -1381,13 +1381,13 @@ const Theme g_themeTranslucentStartMenu_variant_NewStartMenu = {{
         L"BorderThickness=1",
         L"Margin@Normal=4"}},
     ThemeTargetStyles{L"ToolTip > ContentPresenter#LayoutRoot", {
-        L"Background:=<AcrylicBrush TintColor=\"Transparent\" TintOpacity=\"0\" TintLuminosityOpacity=\"0\" Opacity=\"1\" FallbackColor=\"#A0262626\"/>"}},
+        L"Background:=<WindhawkBlur BlurAmount=\"25\" TintColor=\"#00000000\"/>"}},
     ThemeTargetStyles{L"StartDocked.AllAppsGridListViewItem > Grid@CommonStates > Border", {
         L"BorderBrush@PointerOver:=<RevealBorderBrush Color=\"Transparent\" TargetTheme=\"1\" Opacity=\"0.8\"/>",
         L"Background@PointerOver:=<RevealBorderBrush Color=\"Transparent\" TargetTheme=\"1\" Opacity=\"0.55\"/>",
         L"BorderThickness=1"}},
     ThemeTargetStyles{L"Button#CloseAllAppsButton > ContentPresenter@CommonStates", {
-        L"Background@Normal:=<AcrylicBrush TintColor=\"Transparent\" TintLuminosityOpacity=\"0.05\" TintOpacity=\"1\" Opacity=\"1\" FallbackColor=\"#70262626\"/>",
+        L"Background@Normal:=<WindhawkBlur BlurAmount=\"25\" TintColor=\"#15C0C0C0\"/>",
         L"Background@PointerOver:=<RevealBorderBrush Color=\"Transparent\" TargetTheme=\"1\" Opacity=\"0.5\"/>",
         L"BorderBrush@PointerOver:=<RevealBorderBrush Color=\"Transparent\" TargetTheme=\"1\" Opacity=\"1\"/>",
         L"BorderThickness=1"}},
@@ -1399,7 +1399,7 @@ const Theme g_themeTranslucentStartMenu_variant_NewStartMenu = {{
         L"CornerRadius=16",
         L"Margin=-1"}},
     ThemeTargetStyles{L"StartDocked.AllAppsGridListViewItem > Grid#ContentBorder@CommonStates", {
-        L"Background@PointerOver:=<AcrylicBrush TintColor=\"Transparent\" TintLuminosityOpacity=\"0.05\" TintOpacity=\"0\" Opacity=\"1\"/>",
+        L"Background@PointerOver:=<WindhawkBlur BlurAmount=\"25\" TintColor=\"#15C0C0C0\"/>",
         L"CornerRadius=4"}},
     ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Primitives.ToggleButton#ShowHideCompanion", {
         L"Visibility=Visible",
@@ -1415,7 +1415,7 @@ const Theme g_themeTranslucentStartMenu_variant_NewStartMenu = {{
         L"BorderThickness=1",
         L"Background:=<RevealBorderBrush Color=\"Transparent\" TargetTheme=\"1\" Opacity=\"0.4\"/>"}},
     ThemeTargetStyles{L"StartMenu.SearchBoxToggleButton > Grid ", {
-        L"Background:=<AcrylicBrush TintColor=\"Transparent\" TintLuminosityOpacity=\"0.25\" TintOpacity=\"0.25\" Opacity=\"1\"/>",
+        L"Background:=<WindhawkBlur BlurAmount=\"25\" TintColor=\"#15C0C0C0\"/>",
         L"CornerRadius=8"}},
     ThemeTargetStyles{L"TextBlock", {
         L"Foreground=White"}},
