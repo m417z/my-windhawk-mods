@@ -1254,14 +1254,14 @@ void WINAPI TaskbarController_UpdateFrameHeight_Hook(void* pThis) {
     }();
 
     if (taskbarFrameOffset <= 0) {
-        Wh_Log(L"taskbarFrameOffset <= 0");
+        Wh_Log(L"Error: taskbarFrameOffset <= 0");
         TaskbarController_UpdateFrameHeight_Original(pThis);
         return;
     }
 
     void* taskbarFrame = *(void**)((BYTE*)pThis + taskbarFrameOffset);
     if (!taskbarFrame) {
-        Wh_Log(L"!taskbarFrame");
+        Wh_Log(L"Error: taskbarFrame is null");
         TaskbarController_UpdateFrameHeight_Original(pThis);
         return;
     }
@@ -1271,18 +1271,18 @@ void WINAPI TaskbarController_UpdateFrameHeight_Hook(void* pThis) {
         winrt::guid_of<FrameworkElement>(),
         winrt::put_abi(taskbarFrameElement));
     if (!taskbarFrameElement) {
-        Wh_Log(L"!taskbarFrameElement");
+        Wh_Log(L"Error: Can't query taskbarFrameElement");
         TaskbarController_UpdateFrameHeight_Original(pThis);
         return;
     }
 
-    TaskbarController_UpdateFrameHeight_Original(pThis);
+    // Skip calling original, which sets a different height and causes troubles.
 
     taskbarFrameElement.MaxHeight(std::numeric_limits<double>::infinity());
 
-    // Set the width, height to NaN (Auto) to always match the parent.
+    // Set the width to NaN (Auto) to always match the parent. Height will be
+    // set in TaskbarFrame_MeasureOverride_Hook.
     taskbarFrameElement.Width(std::numeric_limits<double>::quiet_NaN());
-    taskbarFrameElement.Height(std::numeric_limits<double>::quiet_NaN());
 
     // Adjust parent grid height too, for compatibility with some tablet or
     // touch-optimized mode.
@@ -1344,20 +1344,12 @@ bool IsSecondaryTaskbar(XamlRoot xamlRoot) {
 
 bool UpdateNotifyIconsIfNeeded(XamlRoot xamlRoot);
 
-bool ApplyStyle(FrameworkElement taskbarFrame,
-                const winrt::Windows::Foundation::Size& size) {
+bool ApplyStyle(FrameworkElement taskbarFrame) {
     auto contentGrid =
         Media::VisualTreeHelper::GetParent(taskbarFrame).as<Controls::Grid>();
 
-    auto border = Media::VisualTreeHelper::GetParent(contentGrid)
-                      .try_as<FrameworkElement>();
-    if (border) {
-        double borderHeight = border.Height();
-        if (borderHeight > 0) {
-            Wh_Log(L"Setting taskbar frame height to %f", borderHeight);
-            taskbarFrame.Height(borderHeight);
-        }
-    }
+    auto border =
+        Media::VisualTreeHelper::GetParent(contentGrid).as<FrameworkElement>();
 
     double angle = g_unloading ? 0 : 90;
     Media::RotateTransform transform;
@@ -1367,9 +1359,12 @@ bool ApplyStyle(FrameworkElement taskbarFrame,
     float origin = g_unloading ? 0 : 0.5;
     contentGrid.RenderTransformOrigin({origin, origin});
 
+    double borderHeight = border.Height();
     Thickness margin{};
-    if (!g_unloading) {
-        double marginValue = size.Height - g_settings.taskbarWidth;
+    if (!g_unloading && borderHeight > 0) {
+        taskbarFrame.Height(borderHeight);
+
+        double marginValue = borderHeight - g_settings.taskbarWidth;
         if (marginValue > 0) {
             margin.Top = marginValue;
         }
@@ -1455,20 +1450,20 @@ int WINAPI TaskbarFrame_MeasureOverride_Hook(
 
     Wh_Log(L">");
 
-    int ret = TaskbarFrame_MeasureOverride_Original(pThis, size, resultSize);
-
     FrameworkElement taskbarFrameElement = nullptr;
     ((IUnknown*)pThis)
         ->QueryInterface(winrt::guid_of<FrameworkElement>(),
                          winrt::put_abi(taskbarFrameElement));
     if (taskbarFrameElement) {
         try {
-            ApplyStyle(taskbarFrameElement, *resultSize);
+            ApplyStyle(taskbarFrameElement);
         } catch (...) {
             HRESULT hr = winrt::to_hresult();
             Wh_Log(L"Error %08X", hr);
         }
     }
+
+    int ret = TaskbarFrame_MeasureOverride_Original(pThis, size, resultSize);
 
     g_pendingMeasureOverride = false;
 
@@ -1855,7 +1850,7 @@ bool ApplyStyleIfNeeded(XamlRoot xamlRoot) {
         return true;
     }
 
-    return ApplyStyle(taskbarFrame, taskbarFrame.ActualSize());
+    return ApplyStyle(taskbarFrame);
 }
 
 bool UpdateNotifyIconsIfNeeded(XamlRoot xamlRoot) {
