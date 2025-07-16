@@ -2854,25 +2854,10 @@ BOOL WINAPI SetWindowPos_Hook(HWND hWnd,
             return original();
         }
 
-        HANDLE thread =
-            OpenThread(THREAD_QUERY_LIMITED_INFORMATION, FALSE, threadId);
-        if (!thread) {
-            return original();
-        }
+        std::wstring threadDescription =
+            GetThreadIdDescriptionAsString(threadId);
 
-        PWSTR threadDescription;
-        HRESULT hr = GetThreadDescription(thread, &threadDescription);
-        CloseHandle(thread);
-        if (FAILED(hr)) {
-            return original();
-        }
-
-        bool isJumpViewUI = wcscmp(threadDescription, L"JumpViewUI") == 0;
-        bool isActionCenter = wcscmp(threadDescription, L"ActionCenter") == 0;
-
-        LocalFree(threadDescription);
-
-        if (isJumpViewUI) {
+        if (threadDescription == L"JumpViewUI") {
             POINT pt;
             GetCursorPos(&pt);
 
@@ -2942,7 +2927,7 @@ BOOL WINAPI SetWindowPos_Hook(HWND hWnd,
                     }
                 }
             }
-        } else if (isActionCenter) {
+        } else if (threadDescription == L"ActionCenter") {
             if (g_settings.taskbarLocation != TaskbarLocation::left) {
                 return original();
             }
@@ -3523,31 +3508,18 @@ bool IsTargetCoreWindow(HWND hWnd, int* extraXAdjustment) {
     }
 
     if (g_target == Target::ShellExperienceHost) {
-        HANDLE thread =
-            OpenThread(THREAD_QUERY_LIMITED_INFORMATION, FALSE, threadId);
-        if (!thread) {
+        std::wstring threadDescription =
+            GetThreadIdDescriptionAsString(threadId);
+
+        Wh_Log(L"%s", threadDescription.c_str());
+
+        if (threadDescription == L"QuickActions") {
+            if (extraXAdjustment &&
+                g_settings.taskbarLocation == TaskbarLocation::left) {
+                *extraXAdjustment = MulDiv(-29, GetDpiForWindow(hWnd), 96);
+            }
+        } else {
             return false;
-        }
-
-        PWSTR threadDescription;
-        HRESULT hr = GetThreadDescription(thread, &threadDescription);
-        CloseHandle(thread);
-        if (FAILED(hr)) {
-            return false;
-        }
-
-        bool isQuickActions = wcscmp(threadDescription, L"QuickActions") == 0;
-
-        Wh_Log(L"%s", threadDescription);
-        LocalFree(threadDescription);
-
-        if (!isQuickActions) {
-            return false;
-        }
-
-        if (isQuickActions && extraXAdjustment &&
-            g_settings.taskbarLocation == TaskbarLocation::left) {
-            *extraXAdjustment = MulDiv(-29, GetDpiForWindow(hWnd), 96);
         }
     }
 
