@@ -1583,13 +1583,16 @@ int WINAPI MapWindowPoints_Hook(HWND hWndFrom,
     int flyoutHeight = MulDiv(flyoutPositionSize.Height, monitorDpiY, 96);
 
     // Align to bottom instead of top.
-    lpPoints->y += flyoutHeight;
+    int offsetToAdd = flyoutHeight;
 
     // Add work area space.
-    lpPoints->y += monitorInfo.rcWork.top - monitorInfo.rcMonitor.top;
+    offsetToAdd += monitorInfo.rcWork.top - monitorInfo.rcMonitor.top;
 
     // Add margin.
-    lpPoints->y += MulDiv(12, monitorDpiY, 96);
+    offsetToAdd += MulDiv(12, monitorDpiY, 96);
+
+    lpPoints->y += std::min(offsetToAdd, (int)(monitorInfo.rcWork.bottom -
+                                               monitorInfo.rcMonitor.top));
 
     return ret;
 }
