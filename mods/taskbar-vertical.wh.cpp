@@ -192,6 +192,7 @@ bool g_inOverflowFlyoutModel_Show;
 thread_local void* g_flyoutFrame_UpdateFlyoutPosition_pThis;
 bool g_inHoverFlyoutController_UpdateFlyoutWindowPosition;
 HWND g_startMenuWnd;
+HWND g_notificationCenterWnd;
 
 std::vector<winrt::weak_ref<XamlRoot>> g_notifyIconsUpdated;
 
@@ -261,6 +262,59 @@ std::optional<bool> IsOsFeatureEnabled(UINT32 featureId) {
     }
 
     return std::nullopt;
+}
+
+std::wstring GetThreadDescriptionAsString(HANDLE thread) {
+    std::wstring result;
+
+    PWSTR threadDescription;
+    HRESULT hr = GetThreadDescription(thread, &threadDescription);
+    if (SUCCEEDED(hr)) {
+        result = threadDescription;
+        LocalFree(threadDescription);
+    }
+
+    return result;
+}
+
+std::wstring GetThreadIdDescriptionAsString(DWORD threadId) {
+    std::wstring result;
+
+    HANDLE thread =
+        OpenThread(THREAD_QUERY_LIMITED_INFORMATION, FALSE, threadId);
+    if (thread) {
+        result = GetThreadDescriptionAsString(thread);
+        CloseHandle(thread);
+    }
+
+    return result;
+}
+
+ULONGLONG GetThreadCreationTime(HANDLE thread) {
+    FILETIME creationTimeFt{};
+    FILETIME exitTime;
+    FILETIME kernelTime;
+    FILETIME userTime;
+    GetThreadTimes(thread, &creationTimeFt, &exitTime, &kernelTime, &userTime);
+
+    LARGE_INTEGER creationTimeLi;
+    creationTimeLi.LowPart = creationTimeFt.dwLowDateTime;
+    creationTimeLi.HighPart = creationTimeFt.dwHighDateTime;
+
+    return creationTimeLi.QuadPart;
+}
+
+ULONGLONG GetThreadIdCreationTime(DWORD threadId) {
+    ULONGLONG result = 0;
+
+    HANDLE thread =
+        OpenThread(THREAD_QUERY_LIMITED_INFORMATION, FALSE, threadId);
+    if (thread) {
+        result = GetThreadCreationTime(thread);
+        CloseHandle(thread);
+    }
+
+    return result;
 }
 
 bool GetMonitorRect(HMONITOR monitor, RECT* rc) {
@@ -2814,81 +2868,97 @@ BOOL WINAPI SetWindowPos_Hook(HWND hWnd,
         }
 
         bool isJumpViewUI = wcscmp(threadDescription, L"JumpViewUI") == 0;
+        bool isActionCenter = wcscmp(threadDescription, L"ActionCenter") == 0;
 
         LocalFree(threadDescription);
 
-        if (!isJumpViewUI) {
-            return original();
-        }
+        if (isJumpViewUI) {
+            POINT pt;
+            GetCursorPos(&pt);
 
-        POINT pt;
-        GetCursorPos(&pt);
+            HMONITOR monitor = MonitorFromPoint(pt, MONITOR_DEFAULTTONEAREST);
 
-        HMONITOR monitor = MonitorFromPoint(pt, MONITOR_DEFAULTTONEAREST);
+            MONITORINFO monitorInfo{
+                .cbSize = sizeof(MONITORINFO),
+            };
+            GetMonitorInfo(monitor, &monitorInfo);
 
-        MONITORINFO monitorInfo{
-            .cbSize = sizeof(MONITORINFO),
-        };
-        GetMonitorInfo(monitor, &monitorInfo);
+            switch (GetTaskbarLocationForMonitor(monitor)) {
+                case TaskbarLocation::left:
+                    X = monitorInfo.rcWork.left;
+                    break;
 
-        switch (GetTaskbarLocationForMonitor(monitor)) {
-            case TaskbarLocation::left:
-                X = monitorInfo.rcWork.left;
-                break;
+                case TaskbarLocation::right:
+                    X = monitorInfo.rcWork.right - cx;
+                    break;
+            }
 
-            case TaskbarLocation::right:
-                X = monitorInfo.rcWork.right - cx;
-                break;
-        }
+            switch (g_settings.jumpListAlignment) {
+                case JumpListAlignment::top:
+                    Y = pt.y - 32;
+                    break;
 
-        switch (g_settings.jumpListAlignment) {
-            case JumpListAlignment::top:
-                Y = pt.y - 32;
-                break;
+                case JumpListAlignment::center:
+                    Y = pt.y - cy / 2;
+                    break;
 
-            case JumpListAlignment::center:
-                Y = pt.y - cy / 2;
-                break;
+                case JumpListAlignment::bottom:
+                    Y = pt.y - cy + 32;
+                    break;
+            }
 
-            case JumpListAlignment::bottom:
-                Y = pt.y - cy + 32;
-                break;
-        }
+            if (Y < monitorInfo.rcWork.top) {
+                Y = monitorInfo.rcWork.top;
+            } else if (Y > monitorInfo.rcWork.bottom - cy) {
+                Y = monitorInfo.rcWork.bottom - cy;
+            }
 
-        if (Y < monitorInfo.rcWork.top) {
-            Y = monitorInfo.rcWork.top;
-        } else if (Y > monitorInfo.rcWork.bottom - cy) {
-            Y = monitorInfo.rcWork.bottom - cy;
-        }
+            // If hovering over the overflow window, exclude it.
+            HWND windowFromPoint = WindowFromPoint(pt);
+            if (windowFromPoint &&
+                GetWindowThreadProcessId(windowFromPoint, nullptr) ==
+                    GetWindowThreadProcessId(FindCurrentProcessTaskbarWnd(),
+                                             nullptr)) {
+                WCHAR szClassNameFromPoint[64];
+                if (GetClassName(windowFromPoint, szClassNameFromPoint,
+                                 ARRAYSIZE(szClassNameFromPoint)) &&
+                    _wcsicmp(szClassNameFromPoint,
+                             L"XamlExplorerHostIslandWindow") == 0) {
+                    UINT monitorDpiX = 96;
+                    UINT monitorDpiY = 96;
+                    GetDpiForMonitor(monitor, MDT_DEFAULT, &monitorDpiX,
+                                     &monitorDpiY);
 
-        // If hovering over the overflow window, exclude it.
-        HWND windowFromPoint = WindowFromPoint(pt);
-        if (windowFromPoint &&
-            GetWindowThreadProcessId(windowFromPoint, nullptr) ==
-                GetWindowThreadProcessId(FindCurrentProcessTaskbarWnd(),
-                                         nullptr)) {
-            WCHAR szClassNameFromPoint[64];
-            if (GetClassName(windowFromPoint, szClassNameFromPoint,
-                             ARRAYSIZE(szClassNameFromPoint)) &&
-                _wcsicmp(szClassNameFromPoint,
-                         L"XamlExplorerHostIslandWindow") == 0) {
-                UINT monitorDpiX = 96;
-                UINT monitorDpiY = 96;
-                GetDpiForMonitor(monitor, MDT_DEFAULT, &monitorDpiX,
-                                 &monitorDpiY);
+                    int overflowWidth = MulDiv(54 + 12, monitorDpiX, 96);
 
-                int overflowWidth = MulDiv(54 + 12, monitorDpiX, 96);
+                    switch (GetTaskbarLocationForMonitor(monitor)) {
+                        case TaskbarLocation::left:
+                            X += overflowWidth;
+                            break;
 
-                switch (GetTaskbarLocationForMonitor(monitor)) {
-                    case TaskbarLocation::left:
-                        X += overflowWidth;
-                        break;
-
-                    case TaskbarLocation::right:
-                        X -= overflowWidth;
-                        break;
+                        case TaskbarLocation::right:
+                            X -= overflowWidth;
+                            break;
+                    }
                 }
             }
+        } else if (isActionCenter) {
+            if (g_settings.taskbarLocation != TaskbarLocation::left) {
+                return original();
+            }
+
+            const POINT ptZero = {0, 0};
+            HMONITOR primaryMonitor =
+                MonitorFromPoint(ptZero, MONITOR_DEFAULTTOPRIMARY);
+
+            MONITORINFO monitorInfo{
+                .cbSize = sizeof(MONITORINFO),
+            };
+            GetMonitorInfo(primaryMonitor, &monitorInfo);
+
+            X = monitorInfo.rcWork.left;
+        } else {
+            return original();
         }
     } else if (_wcsicmp(szClassName, L"Xaml_WindowedPopupClass") == 0) {
         if (uFlags & (SWP_NOMOVE | SWP_NOSIZE)) {
@@ -3198,7 +3268,8 @@ HRESULT WINAPI DwmSetWindowAttribute_Hook(HWND hwnd,
     Wh_Log(L"> %08X", (DWORD)(DWORD_PTR)hwnd);
 
     DWORD processId = 0;
-    if (!hwnd || !GetWindowThreadProcessId(hwnd, &processId)) {
+    DWORD threadId = GetWindowThreadProcessId(hwnd, &processId);
+    if (!processId || !threadId) {
         return original();
     }
 
@@ -3207,6 +3278,7 @@ HRESULT WINAPI DwmSetWindowAttribute_Hook(HWND hwnd,
     enum class Target {
         StartMenu,
         SearchHost,
+        ShellExperienceHost,
     };
     Target target;
 
@@ -3224,7 +3296,69 @@ HRESULT WINAPI DwmSetWindowAttribute_Hook(HWND hwnd,
 
         target = Target::StartMenu;
     } else if (_wcsicmp(processFileName.c_str(), L"SearchHost.exe") == 0) {
+        // SearchHost.exe may have several threads with the
+        // Windows.UI.Core.CoreWindow window and the ActionCenter thread
+        // description. First such created thread always seems to be the action
+        // center itself, which is what we're looking for. Notifications are
+        // created in new such thread, and it's difficult to distinguish between
+        // the two. We use the thread creation time.
+        DWORD notificationCenterWndProcessId = 0;
+        if (g_notificationCenterWnd) {
+            GetWindowThreadProcessId(g_notificationCenterWnd,
+                                     &notificationCenterWndProcessId);
+        }
+
+        if (processId != notificationCenterWndProcessId) {
+            ULONGLONG creationTime = GetThreadIdCreationTime(threadId);
+
+            bool hasEarlierActionCenterThread = false;
+            auto enumWindowProc = [processId, threadId, creationTime,
+                                   &hasEarlierActionCenterThread](
+                                      HWND hWnd, LPARAM lParam) -> BOOL {
+                DWORD iterProcessId = 0;
+                DWORD iterThreadId = GetWindowThreadProcessId(hWnd, nullptr);
+                if (iterProcessId != processId || iterThreadId == threadId) {
+                    return TRUE;
+                }
+
+                WCHAR szClassName[32];
+                if (GetClassName(hWnd, szClassName, ARRAYSIZE(szClassName)) ==
+                        0 ||
+                    _wcsicmp(szClassName, L"Windows.UI.Core.CoreWindow") != 0) {
+                    return TRUE;
+                }
+
+                if (GetThreadIdDescriptionAsString(iterThreadId) !=
+                    L"ActionCenter") {
+                    return TRUE;
+                }
+
+                if (GetThreadIdCreationTime(iterThreadId) >= creationTime) {
+                    return TRUE;
+                }
+
+                hasEarlierActionCenterThread = true;
+                return FALSE;
+            };
+            EnumWindows(
+                [](HWND hWnd, LPARAM lParam) -> BOOL {
+                    auto& proc =
+                        *reinterpret_cast<decltype(enumWindowProc)*>(lParam);
+                    return proc(hWnd, lParam);
+                },
+                reinterpret_cast<LPARAM>(&enumWindowProc));
+
+            if (hasEarlierActionCenterThread) {
+                return original();
+            }
+        } else if (hwnd != g_notificationCenterWnd) {
+            return original();
+        }
+
         target = Target::SearchHost;
+    } else if (_wcsicmp(processFileName.c_str(), L"ShellExperienceHost.exe") ==
+               0) {
+        target = Target::ShellExperienceHost;
     } else {
         return original();
     }
@@ -3337,6 +3471,24 @@ HRESULT WINAPI DwmSetWindowAttribute_Hook(HWND hwnd,
 
         x = xNew;
         y = yNew;
+    } else if (target == Target::ShellExperienceHost) {
+        int xNew;
+        switch (GetTaskbarLocationForMonitor(monitor)) {
+            case TaskbarLocation::left:
+                xNew = monitorInfo.rcWork.left;
+                break;
+
+            case TaskbarLocation::right:
+                xNew = monitorInfo.rcWork.right - cx;
+                break;
+        }
+
+        if (xNew == x) {
+            return original();
+        }
+
+        x = xNew;
+        g_notificationCenterWnd = hwnd;
     }
 
     SetWindowPos_Original(hwnd, nullptr, x, y, cx, cy,
@@ -3384,13 +3536,12 @@ bool IsTargetCoreWindow(HWND hWnd, int* extraXAdjustment) {
             return false;
         }
 
-        bool isActionCenter = wcscmp(threadDescription, L"ActionCenter") == 0;
         bool isQuickActions = wcscmp(threadDescription, L"QuickActions") == 0;
 
         Wh_Log(L"%s", threadDescription);
         LocalFree(threadDescription);
 
-        if (!isActionCenter && !isQuickActions) {
+        if (!isQuickActions) {
             return false;
         }
 
@@ -4061,14 +4212,37 @@ void Wh_ModBeforeUninit() {
 
             RECT rect;
             if (GetWindowRect(g_startMenuWnd, &rect) &&
-                rect.left != monitorInfo.rcMonitor.left) {
-                int x = monitorInfo.rcMonitor.left;
+                rect.left != monitorInfo.rcWork.left) {
+                int x = monitorInfo.rcWork.left;
                 int y = rect.top;
                 int cx = rect.right - rect.left;
                 int cy = rect.bottom - rect.top;
 
-                SetWindowPos(g_startMenuWnd, nullptr, x, y, cx, cy,
-                             SWP_NOZORDER | SWP_NOACTIVATE);
+                SetWindowPos_Original(g_startMenuWnd, nullptr, x, y, cx, cy,
+                                      SWP_NOZORDER | SWP_NOACTIVATE);
+            }
+        }
+
+        // Restore notification center x position.
+        if (g_notificationCenterWnd) {
+            HMONITOR monitor = MonitorFromWindow(g_notificationCenterWnd,
+                                                 MONITOR_DEFAULTTONEAREST);
+
+            MONITORINFO monitorInfo{
+                .cbSize = sizeof(MONITORINFO),
+            };
+            GetMonitorInfo(monitor, &monitorInfo);
+
+            RECT rect;
+            if (GetWindowRect(g_notificationCenterWnd, &rect) &&
+                rect.right != monitorInfo.rcWork.right) {
+                int cx = rect.right - rect.left;
+                int cy = rect.bottom - rect.top;
+                int x = monitorInfo.rcWork.right - cx;
+                int y = rect.top;
+
+                SetWindowPos_Original(g_notificationCenterWnd, nullptr, x, y,
+                                      cx, cy, SWP_NOZORDER | SWP_NOACTIVATE);
             }
         }
 
