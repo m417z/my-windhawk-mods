@@ -290,33 +290,6 @@ std::wstring GetThreadIdDescriptionAsString(DWORD threadId) {
     return result;
 }
 
-ULONGLONG GetThreadCreationTime(HANDLE thread) {
-    FILETIME creationTimeFt{};
-    FILETIME exitTime;
-    FILETIME kernelTime;
-    FILETIME userTime;
-    GetThreadTimes(thread, &creationTimeFt, &exitTime, &kernelTime, &userTime);
-
-    LARGE_INTEGER creationTimeLi;
-    creationTimeLi.LowPart = creationTimeFt.dwLowDateTime;
-    creationTimeLi.HighPart = creationTimeFt.dwHighDateTime;
-
-    return creationTimeLi.QuadPart;
-}
-
-ULONGLONG GetThreadIdCreationTime(DWORD threadId) {
-    ULONGLONG result = 0;
-
-    HANDLE thread =
-        OpenThread(THREAD_QUERY_LIMITED_INFORMATION, FALSE, threadId);
-    if (thread) {
-        result = GetThreadCreationTime(thread);
-        CloseHandle(thread);
-    }
-
-    return result;
-}
-
 bool GetMonitorRect(HMONITOR monitor, RECT* rc) {
     MONITORINFO monitorInfo{
         .cbSize = sizeof(MONITORINFO),
@@ -3111,7 +3084,7 @@ BOOL WINAPI MoveWindow_Hook(HWND hWnd,
                             int nWidth,
                             int nHeight,
                             BOOL bRepaint) {
-    auto original = [&]() {
+    auto original = [=]() {
         return MoveWindow_Original(hWnd, X, Y, nWidth, nHeight, bRepaint);
     };
 
@@ -3281,65 +3254,6 @@ HRESULT WINAPI DwmSetWindowAttribute_Hook(HWND hwnd,
 
         target = Target::StartMenu;
     } else if (_wcsicmp(processFileName.c_str(), L"SearchHost.exe") == 0) {
-        // SearchHost.exe may have several threads with the
-        // Windows.UI.Core.CoreWindow window and the ActionCenter thread
-        // description. First such created thread always seems to be the action
-        // center itself, which is what we're looking for. Notifications are
-        // created in new such thread, and it's difficult to distinguish between
-        // the two. We use the thread creation time.
-        DWORD notificationCenterWndProcessId = 0;
-        if (g_notificationCenterWnd) {
-            GetWindowThreadProcessId(g_notificationCenterWnd,
-                                     &notificationCenterWndProcessId);
-        }
-
-        if (processId != notificationCenterWndProcessId) {
-            ULONGLONG creationTime = GetThreadIdCreationTime(threadId);
-
-            bool hasEarlierActionCenterThread = false;
-            auto enumWindowProc = [processId, threadId, creationTime,
-                                   &hasEarlierActionCenterThread](
-                                      HWND hWnd, LPARAM lParam) -> BOOL {
-                DWORD iterProcessId = 0;
-                DWORD iterThreadId = GetWindowThreadProcessId(hWnd, nullptr);
-                if (iterProcessId != processId || iterThreadId == threadId) {
-                    return TRUE;
-                }
-
-                WCHAR szClassName[32];
-                if (GetClassName(hWnd, szClassName, ARRAYSIZE(szClassName)) ==
-                        0 ||
-                    _wcsicmp(szClassName, L"Windows.UI.Core.CoreWindow") != 0) {
-                    return TRUE;
-                }
-
-                if (GetThreadIdDescriptionAsString(iterThreadId) !=
-                    L"ActionCenter") {
-                    return TRUE;
-                }
-
-                if (GetThreadIdCreationTime(iterThreadId) >= creationTime) {
-                    return TRUE;
-                }
-
-                hasEarlierActionCenterThread = true;
-                return FALSE;
-            };
-            EnumWindows(
-                [](HWND hWnd, LPARAM lParam) -> BOOL {
-                    auto& proc =
-                        *reinterpret_cast<decltype(enumWindowProc)*>(lParam);
-                    return proc(hWnd, lParam);
-                },
-                reinterpret_cast<LPARAM>(&enumWindowProc));
-
-            if (hasEarlierActionCenterThread) {
-                return original();
-            }
-        } else if (hwnd != g_notificationCenterWnd) {
-            return original();
-        }
-
         target = Target::SearchHost;
     } else if (_wcsicmp(processFileName.c_str(), L"ShellExperienceHost.exe") ==
                0) {
@@ -3612,7 +3526,7 @@ BOOL WINAPI SetWindowPos_Hook(HWND hWnd,
                               int cx,
                               int cy,
                               UINT uFlags) {
-    auto original = [&]() {
+    auto original = [=]() {
         return SetWindowPos_Original(hWnd, hWndInsertAfter, X, Y, cx, cy,
                                      uFlags);
     };
