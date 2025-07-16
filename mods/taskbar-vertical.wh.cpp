@@ -2,7 +2,7 @@
 // @id              taskbar-vertical
 // @name            Vertical Taskbar for Windows 11
 // @description     Finally, the missing vertical taskbar option for Windows 11! Move the taskbar to the left or right side of the screen.
-// @version         1.3.4
+// @version         1.3.5
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
@@ -2901,10 +2901,6 @@ BOOL WINAPI SetWindowPos_Hook(HWND hWnd,
                 }
             }
         } else if (threadDescription == L"ActionCenter") {
-            if (g_settings.taskbarLocation != TaskbarLocation::left) {
-                return original();
-            }
-
             const POINT ptZero = {0, 0};
             HMONITOR primaryMonitor =
                 MonitorFromPoint(ptZero, MONITOR_DEFAULTTOPRIMARY);
@@ -2914,7 +2910,15 @@ BOOL WINAPI SetWindowPos_Hook(HWND hWnd,
             };
             GetMonitorInfo(primaryMonitor, &monitorInfo);
 
-            X = monitorInfo.rcWork.left;
+            switch (g_settings.taskbarLocation) {
+                case TaskbarLocation::left:
+                    X = monitorInfo.rcWork.left;
+                    break;
+
+                case TaskbarLocation::right:
+                    X = monitorInfo.rcWork.right - cx;
+                    break;
+            }
         } else {
             return original();
         }
