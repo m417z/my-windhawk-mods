@@ -2,7 +2,7 @@
 // @id              search-menu-inspect-helper
 // @name            Search Menu Inspect Helper
 // @description     Helps inspect the search menu web view content via DevTools remote debugging, refer to the description for details
-// @version         0.1
+// @version         1.0
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
