@@ -1364,10 +1364,7 @@ void WINAPI ExperienceToggleButton_UpdateButtonPadding_Hook(void* pThis) {
         }
     } else if (className == L"Taskbar.SearchBoxButton") {
         // Only if search icon and not a search box.
-        auto searchBoxTextBlock =
-            FindChildByName(panelElement, L"SearchBoxTextBlock");
-        if (searchBoxTextBlock &&
-            searchBoxTextBlock.Visibility() != Visibility::Collapsed) {
+        if (panelElement.Margin() != Thickness{}) {
             return;
         }
     } else {
@@ -1425,10 +1422,7 @@ void WINAPI SearchButtonBase_UpdateButtonPadding_Hook(void* pThis) {
     }
 
     // Only if search icon and not a search box.
-    auto searchBoxTextBlock =
-        FindChildByName(panelElement, L"SearchBoxTextBlock");
-    if (searchBoxTextBlock &&
-        searchBoxTextBlock.Visibility() != Visibility::Collapsed) {
+    if (FindChildByName(panelElement, L"SearchBoxTextBlock")) {
         return;
     }
 
