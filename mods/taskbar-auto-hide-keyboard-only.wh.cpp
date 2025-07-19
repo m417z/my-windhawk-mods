@@ -2,7 +2,7 @@
 // @id              taskbar-auto-hide-keyboard-only
 // @name            Taskbar keyboard-only auto-hide
 // @description     When taskbar auto-hide is enabled, the taskbar will only be unhidden with the keyboard, hovering the mouse over the taskbar will not unhide it
-// @version         1.1.1
+// @version         1.1.2
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
