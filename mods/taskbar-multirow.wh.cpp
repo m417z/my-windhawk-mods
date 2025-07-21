@@ -2,7 +2,7 @@
 // @id              taskbar-multirow
 // @name            Multirow taskbar for Windows 11
 // @description     Span taskbar items across multiple rows, just like it was possible before Windows 11
-// @version         1.1
+// @version         1.1.1
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
@@ -74,7 +74,7 @@ struct {
 std::atomic<bool> g_taskbarViewDllLoaded;
 std::atomic<bool> g_unloading;
 
-thread_local bool g_TaskbarCollapsibleLayoutXamlTraits_ArrangeOverride;
+thread_local bool g_inTaskbarCollapsibleLayoutXamlTraits_ArrangeOverride;
 
 struct TaskbarState {
     winrt::weak_ref<XamlRoot> xamlRoot;
@@ -478,7 +478,8 @@ HRESULT WINAPI IUIElement_Arrange_Hook(void* pThis,
 
     auto original = [=] { return IUIElement_Arrange_Original(pThis, rect); };
 
-    if (!g_TaskbarCollapsibleLayoutXamlTraits_ArrangeOverride || g_unloading) {
+    if (!g_inTaskbarCollapsibleLayoutXamlTraits_ArrangeOverride ||
+        g_unloading) {
         return original();
     }
 
@@ -592,12 +593,12 @@ HRESULT WINAPI TaskbarCollapsibleLayoutXamlTraits_ArrangeOverride_Hook(
         return true;
     }();
 
-    g_TaskbarCollapsibleLayoutXamlTraits_ArrangeOverride = true;
+    g_inTaskbarCollapsibleLayoutXamlTraits_ArrangeOverride = true;
 
     HRESULT ret = TaskbarCollapsibleLayoutXamlTraits_ArrangeOverride_Original(
         pThis, context, size, resultSize);
 
-    g_TaskbarCollapsibleLayoutXamlTraits_ArrangeOverride = false;
+    g_inTaskbarCollapsibleLayoutXamlTraits_ArrangeOverride = false;
 
     return ret;
 }
