@@ -2264,6 +2264,10 @@ HRESULT VisualTreeWatcher::OnVisualTreeChange(ParentChildRelation, VisualElement
 {
     Wh_Log(L"========================================");
 
+    if (!g_initializedForThread) {
+        Wh_Log(L"NOTE: Not initialized for thread %u", GetCurrentThreadId());
+    }
+
     switch (mutationType)
     {
     case Add:
@@ -4851,7 +4855,8 @@ void OnWindowCreated(HWND hWnd,
     }
 
     if (bTextualClassName &&
-        _wcsicmp(lpClassName, L"XamlExplorerHostIslandWindow") == 0) {
+        (_wcsicmp(lpClassName, L"XamlExplorerHostIslandWindow") == 0 ||
+         _wcsicmp(lpClassName, L"Shell_InputSwitchTopLevelWindow") == 0)) {
         Wh_Log(L"Initializing - Created XAML host window: %08X via %S",
                (DWORD)(ULONG_PTR)hWnd, funcName);
         InitializeForCurrentThread();
@@ -4988,7 +4993,9 @@ std::vector<HWND> GetXamlHostWnds() {
                 return TRUE;
             }
 
-            if (_wcsicmp(szClassName, L"XamlExplorerHostIslandWindow") == 0) {
+            if (_wcsicmp(szClassName, L"XamlExplorerHostIslandWindow") == 0 ||
+                _wcsicmp(szClassName, L"Shell_InputSwitchTopLevelWindow") ==
+                    0) {
                 param.hWnds->push_back(hWnd);
             }
 
