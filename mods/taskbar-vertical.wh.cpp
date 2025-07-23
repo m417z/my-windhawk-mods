@@ -40,7 +40,10 @@ Some of the other taskbar mods, such as [Taskbar height and icon
 size](https://windhawk.net/mods/taskbar-icon-size), aren't compatible with this
 mod.
 
-**Note**: This mod requires Windhawk v1.5 or newer.
+## Notes
+
+* To have multiple columns of tray icons, use the [Taskbar tray icon spacing and
+  grid](https://windhawk.net/mods/taskbar-notification-icon-spacing) mod.
 
 ## Known limitations
 
