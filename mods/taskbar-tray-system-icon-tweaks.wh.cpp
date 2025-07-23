@@ -43,6 +43,8 @@ there are no new notifications), and the "Show desktop" button.
   $name: Hide microphone icon
 - hideGeolocationIcon: false
   $name: Hide location (e.g. GPS) icon
+- hideStudioEffectsIcon: false
+  $name: Hide Studio Effects icon
 - hideLanguageBar: false
   $name: Hide language bar
 - hideLanguageSupplementaryIcons: false
@@ -90,6 +92,7 @@ struct {
     bool hideBatteryIcon;
     bool hideMicrophoneIcon;
     bool hideGeolocationIcon;
+    bool hideStudioEffectsIcon;
     bool hideLanguageBar;
     bool hideLanguageSupplementaryIcons;
     HideBellIcon hideBellIcon;
@@ -239,6 +242,7 @@ enum class SystemTrayIconIdent {
     kBellFull,
     kBellFullDnd,
     kLanguage,
+    kStudioEffects,
 };
 
 SystemTrayIconIdent IdentifySystemTrayIconFromText(std::wstring_view text) {
@@ -421,6 +425,9 @@ SystemTrayIconIdent IdentifySystemTrayIconFromText(std::wstring_view text) {
         case L'\uEE75':  // (Maybe) HalfAlpha
         case L'\uEE76':  // (Maybe) HalfAlphaPrivateMode
             return SystemTrayIconIdent::kLanguage;
+
+        case L'\uEABC':
+            return SystemTrayIconIdent::kStudioEffects;
     }
 
     return SystemTrayIconIdent::kUnknown;
@@ -470,6 +477,10 @@ void ApplyMainStackIconViewStyle(FrameworkElement notifyIconViewElement) {
                 case SystemTrayIconIdent::kMicrophoneAndGeolocation:
                     hide = g_settings.hideMicrophoneIcon &&
                            g_settings.hideGeolocationIcon;
+                    break;
+
+                case SystemTrayIconIdent::kStudioEffects:
+                    hide = g_settings.hideStudioEffectsIcon;
                     break;
 
                 case SystemTrayIconIdent::kNone:
@@ -1338,6 +1349,7 @@ void LoadSettings() {
     g_settings.hideBatteryIcon = Wh_GetIntSetting(L"hideBatteryIcon");
     g_settings.hideMicrophoneIcon = Wh_GetIntSetting(L"hideMicrophoneIcon");
     g_settings.hideGeolocationIcon = Wh_GetIntSetting(L"hideGeolocationIcon");
+    g_settings.hideStudioEffectsIcon = Wh_GetIntSetting(L"hideStudioEffectsIcon");
     g_settings.hideLanguageBar = Wh_GetIntSetting(L"hideLanguageBar");
     g_settings.hideLanguageSupplementaryIcons =
         Wh_GetIntSetting(L"hideLanguageSupplementaryIcons");
