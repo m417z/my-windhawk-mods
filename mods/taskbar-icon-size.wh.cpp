@@ -1517,12 +1517,7 @@ using AugmentedEntryPointButton_UpdateButtonPadding_t =
 AugmentedEntryPointButton_UpdateButtonPadding_t
     AugmentedEntryPointButton_UpdateButtonPadding_Original;
 void WINAPI AugmentedEntryPointButton_UpdateButtonPadding_Hook(void* pThis) {
-    Wh_Log(L"> hasDynamicIconScaling=%d", g_hasDynamicIconScaling);
-
-    if (g_hasDynamicIconScaling) {
-        AugmentedEntryPointButton_UpdateButtonPadding_Original(pThis);
-        return;
-    }
+    Wh_Log(L">");
 
     g_inAugmentedEntryPointButton_UpdateButtonPadding = true;
 
@@ -1534,13 +1529,7 @@ void WINAPI AugmentedEntryPointButton_UpdateButtonPadding_Hook(void* pThis) {
 using RepeatButton_Width_t = void(WINAPI*)(void* pThis, double width);
 RepeatButton_Width_t RepeatButton_Width_Original;
 void WINAPI RepeatButton_Width_Hook(void* pThis, double width) {
-    Wh_Log(L"> hasDynamicIconScaling=%d, width=%f", g_hasDynamicIconScaling,
-           width);
-
-    if (g_hasDynamicIconScaling) {
-        RepeatButton_Width_Original(pThis, width);
-        return;
-    }
+    Wh_Log(L"> width=%f", width);
 
     RepeatButton_Width_Original(pThis, width);
 
@@ -2041,13 +2030,11 @@ bool HookTaskbarViewDllSymbols(HMODULE module) {
                 ExperienceToggleButton_UpdateButtonPadding_Hook,
             },
             {
-                // Pre-DynamicIconScaling.
                 {LR"(protected: virtual void __cdecl winrt::Taskbar::implementation::AugmentedEntryPointButton::UpdateButtonPadding(void))"},
                 &AugmentedEntryPointButton_UpdateButtonPadding_Original,
                 AugmentedEntryPointButton_UpdateButtonPadding_Hook,
             },
             {
-                // Pre-DynamicIconScaling.
                 {LR"(public: __cdecl winrt::impl::consume_Windows_UI_Xaml_IFrameworkElement<struct winrt::Windows::UI::Xaml::Controls::Primitives::RepeatButton>::Width(double)const )"},
                 &RepeatButton_Width_Original,
                 RepeatButton_Width_Hook,
