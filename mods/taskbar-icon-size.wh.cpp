@@ -1551,9 +1551,7 @@ void WINAPI RepeatButton_Width_Hook(void* pThis, double width) {
         return;
     }
 
-    int iconSize =
-        g_smallIconSize ? g_settings.iconSizeSmall : g_settings.iconSize;
-    double marginValue = static_cast<double>(40 - iconSize) / 2;
+    double marginValue = static_cast<double>(40 - g_settings.iconSize) / 2;
     if (marginValue < 0) {
         marginValue = 0;
     }
