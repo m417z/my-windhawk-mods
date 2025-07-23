@@ -218,6 +218,8 @@ void* CSecondaryTaskBand_ITaskListWndSite_vftable;
 using CTaskBand_GetTaskbarHost_t = void*(WINAPI*)(void* pThis, void** result);
 CTaskBand_GetTaskbarHost_t CTaskBand_GetTaskbarHost_Original;
 
+void* TaskbarHost_FrameHeight_Original;
+
 using CSecondaryTaskBand_GetTaskbarHost_t = void*(WINAPI*)(void* pThis,
                                                            void** result);
 CSecondaryTaskBand_GetTaskbarHost_t CSecondaryTaskBand_GetTaskbarHost_Original;
@@ -230,12 +232,29 @@ XamlRoot XamlRootFromTaskbarHostSharedPtr(void* taskbarHostSharedPtr[2]) {
         return nullptr;
     }
 
-    // Reference: TaskbarHost::FrameHeight
-    constexpr size_t kTaskbarElementIUnknownOffset = 0x40;
+    size_t taskbarElementIUnknownOffset = 0x48;
+
+#if defined(_M_X64)
+    {
+        // 48:83EC 28 | sub rsp,28
+        // 48:83C1 48 | add rcx,48
+        const BYTE* b = (const BYTE*)TaskbarHost_FrameHeight_Original;
+        if (b[0] == 0x48 && b[1] == 0x83 && b[2] == 0xEC && b[4] == 0x48 &&
+            b[5] == 0x83 && b[6] == 0xC1 && b[7] <= 0x7F) {
+            taskbarElementIUnknownOffset = b[7];
+        } else {
+            Wh_Log(L"Unsupported TaskbarHost::FrameHeight");
+        }
+    }
+#elif defined(_M_ARM64)
+    // Just use the default offset which will hopefully work in most cases.
+#else
+#error "Unsupported architecture"
+#endif
 
     auto* taskbarElementIUnknown =
         *(IUnknown**)((BYTE*)taskbarHostSharedPtr[0] +
-                      kTaskbarElementIUnknownOffset);
+                      taskbarElementIUnknownOffset);
 
     FrameworkElement taskbarElement = nullptr;
     taskbarElementIUnknown->QueryInterface(winrt::guid_of<FrameworkElement>(),
@@ -542,6 +561,10 @@ bool HookTaskbarDllSymbols() {
         {
             {LR"(public: virtual class std::shared_ptr<class TaskbarHost> __cdecl CTaskBand::GetTaskbarHost(void)const )"},
             &CTaskBand_GetTaskbarHost_Original,
+        },
+        {
+            {LR"(public: int __cdecl TaskbarHost::FrameHeight(void)const )"},
+            &TaskbarHost_FrameHeight_Original,
         },
         {
             {LR"(public: virtual class std::shared_ptr<class TaskbarHost> __cdecl CSecondaryTaskBand::GetTaskbarHost(void)const )"},
