@@ -1,8 +1,8 @@
 // ==WindhawkMod==
 // @id              taskbar-notification-icon-spacing
-// @name            Taskbar tray icon spacing
-// @description     Reduce or increase the spacing between tray icons on the taskbar (Windows 11 only)
-// @version         1.1.2
+// @name            Taskbar tray icon spacing and grid
+// @description     Reduce or increase the spacing between tray icons on the taskbar, optionally have a grid of tray icons (Windows 11 only)
+// @version         1.2
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
@@ -22,21 +22,25 @@
 
 // ==WindhawkModReadme==
 /*
-# Taskbar tray icon spacing
+# Taskbar tray icon spacing and grid
 
-Reduce or increase the spacing between tray icons on the taskbar.
+Reduce or increase the spacing between tray icons on the taskbar, optionally
+have a grid of tray icons.
 
 Only Windows 11 version 22H2 or newer is currently supported. For older Windows
 versions check out [7+ Taskbar Tweaker](https://tweaker.ramensoftware.com/).
 
-![Tray icon width: 32](https://i.imgur.com/78eRcAJ.png) \
+![Tray icon width: 32](https://i.imgur.com/BGWZf6x.png) \
 *Tray icon width: 32 (Windows 11 default)*
 
-![Tray icon width: 24](https://i.imgur.com/4hgxHJ0.png) \
+![Tray icon width: 24](https://i.imgur.com/EIyWATk.png) \
 *Tray icon width: 24*
 
-![Tray icon width: 18](https://i.imgur.com/cErw24I.png) \
+![Tray icon width: 18](https://i.imgur.com/MPi1F3m.png) \
 *Tray icon width: 18*
+
+![Tray icon width: 18, rows: 2](https://i.imgur.com/zOUUTmb.png) \
+*Tray icon width: 18, rows: 2*
 */
 // ==/WindhawkModReadme==
 
@@ -45,6 +49,10 @@ versions check out [7+ Taskbar Tweaker](https://tweaker.ramensoftware.com/).
 - notificationIconWidth: 24
   $name: Tray icon width
   $description: 'Windows 11 default: 32'
+- notificationIconRows: 1
+  $name: Tray icon rows
+  $description: >-
+    Allows having a grid of tray icons
 - overflowIconWidth: 32
   $name: Tray overflow icon width
   $description: >-
@@ -78,6 +86,7 @@ using namespace winrt::Windows::UI::Xaml;
 
 struct {
     int notificationIconWidth;
+    int notificationIconRows;
     int overflowIconWidth;
     int overflowIconsPerRow;
 } g_settings;
@@ -91,6 +100,7 @@ using FrameworkElementLoadedEventRevoker = winrt::impl::event_revoker<
 
 std::list<FrameworkElementLoadedEventRevoker> g_autoRevokerList;
 
+winrt::weak_ref<FrameworkElement> g_notificationAreaIconsStackPanel;
 winrt::weak_ref<FrameworkElement> g_overflowRootGrid;
 
 HWND FindCurrentProcessTaskbarWnd() {
@@ -247,7 +257,89 @@ void ApplyNotifyIconViewStyle(FrameworkElement notifyIconViewElement,
     }
 }
 
-bool ApplyNotifyIconsStyle(FrameworkElement notificationAreaIcons, int width) {
+void ApplyNotifyIconsStackPanelGridStyle(FrameworkElement stackPanel,
+                                         int rows,
+                                         int width) {
+    double itemHeight = 0;
+    if (rows > 1) {
+        double stackPanelHeight = stackPanel.ActualHeight();
+        double gap = stackPanelHeight - 16 * rows;
+        double gapPerItem = std::max(gap, 0.0) / (rows + 1);
+        // Force the gap to be an even number to prevent blurry icons.
+        int gapPerItemEven = static_cast<int>(gapPerItem) / 2 * 2;
+        itemHeight = 16 + gapPerItemEven;
+    }
+
+    int indexIter = 0;
+    EnumChildElements(stackPanel, [width, rows, itemHeight,
+                                   &indexIter](FrameworkElement child) {
+        int index = indexIter++;
+
+        auto childClassName = winrt::get_class_name(child);
+        if (childClassName != L"Windows.UI.Xaml.Controls.ContentPresenter") {
+            Wh_Log(L"Unsupported class name %s of child",
+                   childClassName.c_str());
+            return false;
+        }
+
+        if (rows > 1) {
+            child.Height(itemHeight);
+
+            Media::TranslateTransform transform;
+
+            int xOffset = width * (-index + index / rows);
+            transform.X(xOffset);
+
+            double yOffset =
+                itemHeight * (index % rows) - itemHeight * (rows - 1) / 2;
+            transform.Y(yOffset);
+
+            child.RenderTransform(transform);
+        } else {
+            auto childDp = child.as<DependencyObject>();
+            childDp.ClearValue(FrameworkElement::HeightProperty());
+            childDp.ClearValue(UIElement::RenderTransformProperty());
+        }
+
+        return false;
+    });
+
+    if (rows > 1) {
+        int desiredWidth = width * ((indexIter + rows - 1) / rows);
+        stackPanel.Width(desiredWidth);
+    } else {
+        stackPanel.as<DependencyObject>().ClearValue(
+            FrameworkElement::WidthProperty());
+    }
+
+    g_notificationAreaIconsStackPanel = stackPanel;
+}
+
+void ApplyNotifyIconsStackPanelGridStyleOfIcon(
+    FrameworkElement notifyIconViewElement,
+    int rows,
+    int width) {
+    auto contentPresenter =
+        Media::VisualTreeHelper::GetParent(notifyIconViewElement)
+            .try_as<FrameworkElement>();
+    if (!contentPresenter || winrt::get_class_name(contentPresenter) !=
+                                 L"Windows.UI.Xaml.Controls.ContentPresenter") {
+        return;
+    }
+
+    auto stackPanel = Media::VisualTreeHelper::GetParent(contentPresenter)
+                          .try_as<FrameworkElement>();
+    if (!stackPanel || winrt::get_class_name(stackPanel) !=
+                           L"Windows.UI.Xaml.Controls.StackPanel") {
+        return;
+    }
+
+    ApplyNotifyIconsStackPanelGridStyle(stackPanel, rows, width);
+}
+
+bool ApplyNotifyIconsStyle(FrameworkElement notificationAreaIcons,
+                           int rows,
+                           int width) {
     FrameworkElement stackPanel = nullptr;
 
     FrameworkElement child = notificationAreaIcons;
@@ -280,6 +372,8 @@ bool ApplyNotifyIconsStyle(FrameworkElement notificationAreaIcons, int width) {
         ApplyNotifyIconViewStyle(notifyIconViewElement, width);
         return false;
     });
+
+    ApplyNotifyIconsStackPanelGridStyle(stackPanel, rows, width);
 
     return true;
 }
@@ -410,7 +504,7 @@ bool ApplyIconStackStyle(PCWSTR containerName,
     return true;
 }
 
-bool ApplyStyle(XamlRoot xamlRoot, int width) {
+bool ApplyStyle(XamlRoot xamlRoot, int rows, int width) {
     FrameworkElement systemTrayFrameGrid = nullptr;
 
     FrameworkElement child = xamlRoot.Content().try_as<FrameworkElement>();
@@ -430,7 +524,7 @@ bool ApplyStyle(XamlRoot xamlRoot, int width) {
         FindChildByName(systemTrayFrameGrid, L"NotificationAreaIcons");
     if (notificationAreaIcons) {
         somethingSucceeded |=
-            ApplyNotifyIconsStyle(notificationAreaIcons, width);
+            ApplyNotifyIconsStyle(notificationAreaIcons, rows, width);
     }
 
     FrameworkElement controlCenterButton =
@@ -498,6 +592,13 @@ void* WINAPI IconView_IconView_Hook(void* pThis) {
                 } else {
                     ApplyNotifyIconViewStyle(iconView,
                                              g_settings.notificationIconWidth);
+
+                    int rows =
+                        g_unloading ? 1 : g_settings.notificationIconRows;
+                    if (rows > 1) {
+                        ApplyNotifyIconsStackPanelGridStyleOfIcon(
+                            iconView, rows, g_settings.notificationIconWidth);
+                    }
                 }
             } else if (className == L"SystemTray.IconView") {
                 if (iconView.Name() == L"SystemTrayIcon") {
@@ -596,6 +697,22 @@ void WINAPI OverflowXamlIslandManager_InitializeIfNeeded_Hook(void* pThis) {
 
     g_overflowRootGrid = overflowRootGrid;
     ApplyOverflowStyle(overflowRootGrid);
+}
+
+using StackViewModel_UpdateIconIndexes_t = void(WINAPI*)(void* pThis);
+StackViewModel_UpdateIconIndexes_t StackViewModel_UpdateIconIndexes_Original;
+void WINAPI StackViewModel_UpdateIconIndexes_Hook(void* pThis) {
+    Wh_Log(L">");
+
+    StackViewModel_UpdateIconIndexes_Original(pThis);
+
+    int rows = g_unloading ? 1 : g_settings.notificationIconRows;
+    if (rows > 1) {
+        if (auto stackPanel = g_notificationAreaIconsStackPanel.get()) {
+            ApplyNotifyIconsStackPanelGridStyle(
+                stackPanel, rows, g_settings.notificationIconWidth);
+        }
+    }
 }
 
 void* CTaskBand_ITaskListWndSite_vftable;
@@ -722,14 +839,19 @@ bool RunFromWindowThread(HWND hWnd,
 
 void LoadSettings() {
     g_settings.notificationIconWidth =
-        Wh_GetIntSetting(L"notificationIconWidth");
-    g_settings.overflowIconWidth = Wh_GetIntSetting(L"overflowIconWidth");
-    g_settings.overflowIconsPerRow = Wh_GetIntSetting(L"overflowIconsPerRow");
+        std::max(Wh_GetIntSetting(L"notificationIconWidth"), 1);
+    g_settings.notificationIconRows =
+        std::max(Wh_GetIntSetting(L"notificationIconRows"), 1);
+    g_settings.overflowIconWidth =
+        std::max(Wh_GetIntSetting(L"overflowIconWidth"), 1);
+    g_settings.overflowIconsPerRow =
+        std::max(Wh_GetIntSetting(L"overflowIconsPerRow"), 1);
 }
 
 void ApplySettings() {
     struct ApplySettingsParam {
         HWND hTaskbarWnd;
+        int rows;
         int width;
     };
 
@@ -743,6 +865,7 @@ void ApplySettings() {
 
     ApplySettingsParam param{
         .hTaskbarWnd = hTaskbarWnd,
+        .rows = g_unloading ? 1 : g_settings.notificationIconRows,
         .width = g_unloading ? 32 : g_settings.notificationIconWidth,
     };
 
@@ -759,7 +882,7 @@ void ApplySettings() {
                 return;
             }
 
-            if (!ApplyStyle(xamlRoot, param.width)) {
+            if (!ApplyStyle(xamlRoot, param.rows, param.width)) {
                 Wh_Log(L"ApplyStyles failed");
             }
 
@@ -782,6 +905,11 @@ bool HookTaskbarViewDllSymbols(HMODULE module) {
             {LR"(private: void __cdecl winrt::SystemTray::OverflowXamlIslandManager::InitializeIfNeeded(void))"},
             &OverflowXamlIslandManager_InitializeIfNeeded_Original,
             OverflowXamlIslandManager_InitializeIfNeeded_Hook,
+        },
+        {
+            {LR"(private: void __cdecl winrt::SystemTray::implementation::StackViewModel::UpdateIconIndexes(void))"},
+            &StackViewModel_UpdateIconIndexes_Original,
+            StackViewModel_UpdateIconIndexes_Hook,
         },
     };
 
