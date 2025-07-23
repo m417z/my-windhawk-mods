@@ -1146,6 +1146,8 @@ void WINAPI TaskListButton_OverlayIcon_Hook(void* pThis, void* param1) {
     // doesn't update from the badge to the dot, but new badges are shown as
     // dots with small icons. Fixing it might require hooking several additional
     // functions. Maybe one day...
+    //
+    // This hook handles non-UWP badges (e.g. the Win7 taskbar sample).
     double* iconHeight = nullptr;
     double prevIconHeight;
     if (size_t iconHeightOffset = GetIconHeightOffset()) {
@@ -1157,6 +1159,40 @@ void WINAPI TaskListButton_OverlayIcon_Hook(void* pThis, void* param1) {
     }
 
     TaskListButton_OverlayIcon_Original(pThis, param1);
+
+    if (iconHeight) {
+        *iconHeight = prevIconHeight;
+    }
+}
+
+using TaskListButton_UpdateBadge_t = void(WINAPI*)(void* pThis);
+TaskListButton_UpdateBadge_t TaskListButton_UpdateBadge_Original;
+void WINAPI TaskListButton_UpdateBadge_Hook(void* pThis) {
+    Wh_Log(L"> hasDynamicIconScaling=%d", g_hasDynamicIconScaling);
+
+    if (!g_hasDynamicIconScaling || g_unloading) {
+        TaskListButton_UpdateBadge_Original(pThis);
+        return;
+    }
+
+    // Value 16 causes badges to be shown as a small dot. There are still some
+    // glitches with the badges, e.g. switching from large icons to small icons
+    // doesn't update from the badge to the dot, but new badges are shown as
+    // dots with small icons. Fixing it might require hooking several additional
+    // functions. Maybe one day...
+    //
+    // This hook handles UWP badges (e.g. Unigram).
+    double* iconHeight = nullptr;
+    double prevIconHeight;
+    if (size_t iconHeightOffset = GetIconHeightOffset()) {
+        iconHeight = (double*)((BYTE*)pThis + iconHeightOffset);
+        prevIconHeight = *iconHeight;
+        double newIconHeight = 24;
+        Wh_Log(L"Setting iconHeight: %f->%f", prevIconHeight, newIconHeight);
+        *iconHeight = newIconHeight;
+    }
+
+    TaskListButton_UpdateBadge_Original(pThis);
 
     if (iconHeight) {
         *iconHeight = prevIconHeight;
@@ -1976,6 +2012,11 @@ bool HookTaskbarViewDllSymbols(HMODULE module) {
                 {LR"(public: void __cdecl winrt::Taskbar::implementation::TaskListButton::OverlayIcon(struct winrt::Windows::Storage::Streams::IRandomAccessStream const &))"},
                 &TaskListButton_OverlayIcon_Original,
                 TaskListButton_OverlayIcon_Hook,
+            },
+            {
+                {LR"(private: void __cdecl winrt::Taskbar::implementation::TaskListButton::UpdateBadge(void))"},
+                &TaskListButton_UpdateBadge_Original,
+                TaskListButton_UpdateBadge_Hook,
             },
             {
                 {LR"(private: void __cdecl winrt::Taskbar::implementation::TaskListButton::UpdateIconColumnDefinition(void))"},
