@@ -1,8 +1,8 @@
 // ==WindhawkMod==
 // @id              taskbar-tray-system-icon-tweaks
 // @name            Taskbar tray system icon tweaks
-// @description     Allows hiding system icons (volume, network, battery), the bell (always or when there are no new notifications), and the "Show desktop" button (Windows 11 only)
-// @version         1.2.2
+// @description     Allows hiding system icons: volume, network, battery, microphone, location/GPS, Studio Effects, language bar, bell (always or when there are no new notifications), and the "Show desktop" button (hide or set width)
+// @version         1.2.3
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
@@ -24,8 +24,11 @@
 /*
 # Taskbar tray system icon tweaks
 
-Allows hiding system icons (volume, network, battery), the bell (always or when
-there are no new notifications), and the "Show desktop" button.
+Allows hiding system icons: volume, network, battery, microphone, location/GPS,
+Studio Effects, language bar, bell (always or when there are no new
+notifications), and the "Show desktop" button (hide or set width).
+
+Only Windows 11 is supported.
 
 ![Demonstration](https://i.imgur.com/YfO676m.gif)
 */
@@ -67,6 +70,7 @@ there are no new notifications), and the "Show desktop" button.
 #include <atomic>
 #include <functional>
 #include <list>
+#include <string>
 
 #undef GetCurrentTime
 
@@ -1349,7 +1353,8 @@ void LoadSettings() {
     g_settings.hideBatteryIcon = Wh_GetIntSetting(L"hideBatteryIcon");
     g_settings.hideMicrophoneIcon = Wh_GetIntSetting(L"hideMicrophoneIcon");
     g_settings.hideGeolocationIcon = Wh_GetIntSetting(L"hideGeolocationIcon");
-    g_settings.hideStudioEffectsIcon = Wh_GetIntSetting(L"hideStudioEffectsIcon");
+    g_settings.hideStudioEffectsIcon =
+        Wh_GetIntSetting(L"hideStudioEffectsIcon");
     g_settings.hideLanguageBar = Wh_GetIntSetting(L"hideLanguageBar");
     g_settings.hideLanguageSupplementaryIcons =
         Wh_GetIntSetting(L"hideLanguageSupplementaryIcons");
