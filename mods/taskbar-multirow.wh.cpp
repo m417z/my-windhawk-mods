@@ -2,7 +2,7 @@
 // @id              taskbar-multirow
 // @name            Multirow taskbar for Windows 11
 // @description     Span taskbar items across multiple rows, just like it was possible before Windows 11
-// @version         1.1.1
+// @version         1.1.2
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
@@ -32,8 +32,10 @@ Windows 11.
 * The mod doesn't change the taskbar height, it only makes the task list span
   across multiple rows. To change the taskbar height, use the [Taskbar height
   and icon size](https://windhawk.net/mods/taskbar-icon-size) mod.
+* To have multiple rows of tray icons, use the [Taskbar tray icon spacing and
+  grid](https://windhawk.net/mods/taskbar-notification-icon-spacing) mod.
 
-![Screenshot](https://i.imgur.com/ZpzoDXy.png)
+![Screenshot](https://i.imgur.com/xEK7NhR.png)
 */
 // ==/WindhawkModReadme==
 
