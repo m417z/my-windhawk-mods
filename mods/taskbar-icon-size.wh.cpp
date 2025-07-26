@@ -1584,12 +1584,18 @@ void WINAPI RepeatButton_Width_Hook(void* pThis, double width) {
         if (widePanel) {
             auto margin = Thickness{3, 3, 3, 3};
 
-            if (!g_unloading && marginValue < 3) {
+            if (!g_unloading && marginValue <= 3) {
                 labelsTopBorderExtraMargin = 3 - marginValue;
                 margin.Left = marginValue;
                 margin.Top = marginValue;
-                margin.Right = marginValue;
-                margin.Bottom = marginValue;
+
+                // Logically these should be marginValue too, but having no
+                // right/bottom margin doesn't seem to matter, while having
+                // values which are too tight sometimes cause the icon to
+                // disappear for some reason. Relevant issue:
+                // https://github.com/ramensoftware/windhawk-mods/issues/726
+                margin.Right = 0;
+                margin.Bottom = 0;
             }
 
             Wh_Log(L"Setting Margin=%f,%f,%f,%f for panel", margin.Left,
@@ -1606,16 +1612,20 @@ void WINAPI RepeatButton_Width_Hook(void* pThis, double width) {
             if (!g_unloading) {
                 margin.Left = marginValue;
                 margin.Top = marginValue;
-                margin.Right = marginValue;
-                margin.Bottom = marginValue;
+
+                // Logically these should be marginValue too, but having no
+                // right/bottom margin doesn't seem to matter, while having
+                // values which are too tight sometimes cause the icon to
+                // disappear for some reason. Relevant issue:
+                // https://github.com/ramensoftware/windhawk-mods/issues/726
+                margin.Right = 0;
+                margin.Bottom = 0;
 
                 if (g_taskbarHeight < 48) {
                     margin.Top -= static_cast<double>(48 - g_taskbarHeight) / 2;
                     if (margin.Top < 0) {
                         margin.Top = 0;
                     }
-
-                    margin.Bottom = marginValue * 2 - margin.Top;
                 }
             }
 
