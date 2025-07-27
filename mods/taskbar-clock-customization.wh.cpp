@@ -594,6 +594,32 @@ std::optional<std::wstring> GetUrlContent(PCWSTR lpUrl,
     return unicodeContent;
 }
 
+// https://stackoverflow.com/a/54364173
+std::wstring_view TrimStringView(std::wstring_view s) {
+    s.remove_prefix(std::min(s.find_first_not_of(L" \t\r\v\n"), s.size()));
+    s.remove_suffix(
+        std::min(s.size() - s.find_last_not_of(L" \t\r\v\n") - 1, s.size()));
+    return s;
+}
+
+// https://stackoverflow.com/a/46931770
+std::vector<std::wstring_view> SplitStringView(std::wstring_view s,
+                                               std::wstring_view delimiter) {
+    size_t pos_start = 0, pos_end, delim_len = delimiter.length();
+    std::wstring_view token;
+    std::vector<std::wstring_view> res;
+
+    while ((pos_end = s.find(delimiter, pos_start)) !=
+           std::wstring_view::npos) {
+        token = s.substr(pos_start, pos_end - pos_start);
+        pos_start = pos_end + delim_len;
+        res.push_back(token);
+    }
+
+    res.push_back(s.substr(pos_start));
+    return res;
+}
+
 int StringCopyTruncated(PWSTR dest,
                         size_t destSize,
                         PCWSTR src,
@@ -613,7 +639,7 @@ int StringCopyTruncated(PWSTR dest,
     return i;
 }
 
-std::wstring ExtractWebContent(const std::wstring& webContent,
+std::wstring ExtractWebContent(std::wstring_view webContent,
                                PCWSTR webContentsBlockStart,
                                PCWSTR webContentsStart,
                                PCWSTR webContentsEnd) {
@@ -629,12 +655,13 @@ std::wstring ExtractWebContent(const std::wstring& webContent,
 
     start += wcslen(webContentsStart);
 
-    auto end = webContent.find(webContentsEnd, start);
+    auto end = *webContentsEnd ? webContent.find(webContentsEnd, start)
+                               : webContent.length();
     if (end == std::wstring::npos) {
         return std::wstring();
     }
 
-    return webContent.substr(start, end - start);
+    return std::wstring(TrimStringView(webContent.substr(start, end - start)));
 }
 
 std::wstring ExtractTextFromHtml(std::wstring html) {
@@ -775,8 +802,9 @@ void UpdateWebContent() {
                     break;
             }
         } catch (const winrt::hresult_error& ex) {
-            extracted = std::format(L"Content error {:08X}: {}",
-                                    ex.code().value, ex.message());
+            extracted =
+                std::format(L"Content error {:08X}: {}",
+                            static_cast<DWORD>(ex.code().value), ex.message());
         } catch (const std::exception& ex) {
             extracted = std::format(
                 L"Content error: {}",
@@ -1087,32 +1115,6 @@ void GetTimeZone(WCHAR* buffer, size_t bufferSize) {
     _snwprintf_s(buffer, bufferSize, _TRUNCATE, L"%c%02d:%02d",
                  bias <= 0 ? L'+' : L'-', static_cast<int>(hours),
                  static_cast<int>(minutes));
-}
-
-// https://stackoverflow.com/a/54364173
-std::wstring_view TrimStringView(std::wstring_view s) {
-    s.remove_prefix(std::min(s.find_first_not_of(L" \t\r\v\n"), s.size()));
-    s.remove_suffix(
-        std::min(s.size() - s.find_last_not_of(L" \t\r\v\n") - 1, s.size()));
-    return s;
-}
-
-// https://stackoverflow.com/a/46931770
-std::vector<std::wstring_view> SplitStringView(std::wstring_view s,
-                                               std::wstring_view delimiter) {
-    size_t pos_start = 0, pos_end, delim_len = delimiter.length();
-    std::wstring_view token;
-    std::vector<std::wstring_view> res;
-
-    while ((pos_end = s.find(delimiter, pos_start)) !=
-           std::wstring_view::npos) {
-        token = s.substr(pos_start, pos_end - pos_start);
-        pos_start = pos_end + delim_len;
-        res.push_back(token);
-    }
-
-    res.push_back(s.substr(pos_start));
-    return res;
 }
 
 std::vector<std::wstring> SplitTimeFormatString(std::wstring_view s) {
