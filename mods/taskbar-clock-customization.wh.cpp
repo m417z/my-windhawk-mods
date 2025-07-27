@@ -644,12 +644,12 @@ std::wstring ExtractWebContent(std::wstring_view webContent,
                                PCWSTR webContentsStart,
                                PCWSTR webContentsEnd) {
     auto block = webContent.find(webContentsBlockStart);
-    if (block == std::wstring::npos) {
+    if (block == webContent.npos) {
         return std::wstring();
     }
 
     auto start = webContent.find(webContentsStart, block);
-    if (start == std::wstring::npos) {
+    if (start == webContent.npos) {
         return std::wstring();
     }
 
@@ -657,11 +657,11 @@ std::wstring ExtractWebContent(std::wstring_view webContent,
 
     auto end = *webContentsEnd ? webContent.find(webContentsEnd, start)
                                : webContent.length();
-    if (end == std::wstring::npos) {
+    if (end == webContent.npos) {
         return std::wstring();
     }
 
-    return std::wstring(TrimStringView(webContent.substr(start, end - start)));
+    return std::wstring(webContent.substr(start, end - start));
 }
 
 std::wstring ExtractTextFromHtml(std::wstring html) {
