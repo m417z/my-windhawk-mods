@@ -149,9 +149,6 @@ styles, such as the font color and size.
     - End: '</title>'
       $name: Web content end
       $description: The string just after the content.
-    - MaxLength: 28
-      $name: Web content maximum length
-      $description: Longer strings will be truncated with ellipsis.
     - ContentMode: xmlHtml
       $name: Content mode
       $description: >-
@@ -164,6 +161,16 @@ styles, such as the font color and size.
       - html: HTML
       - xml: XML
       - xmlHtml: XML+HTML
+    - SearchReplace:
+      - - Search: ""
+        - Replace: ""
+      $name: Content search/replace
+      $description: >-
+        Regular expression-based search and replace operations applied to the
+        extracted content.
+    - MaxLength: 28
+      $name: Web content maximum length
+      $description: Longer strings will be truncated with ellipsis.
   $name: Web content items
   $description: >-
     Will be used to fetch data displayed in place of the %web<n>%,
@@ -321,6 +328,7 @@ styles, such as the font color and size.
 #include <format>
 #include <mutex>
 #include <optional>
+#include <regex>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -380,8 +388,9 @@ struct WebContentsSettings {
     StringSetting blockStart;
     StringSetting start;
     StringSetting end;
-    int maxLength;
     ContentMode contentMode;
+    std::vector<std::pair<std::wregex, std::wstring>> searchReplace;
+    int maxLength;
 };
 
 struct TextStyleSettings {
@@ -809,6 +818,10 @@ void UpdateWebContent() {
             extracted = std::format(
                 L"Content error: {}",
                 std::wstring(ex.what(), ex.what() + strlen(ex.what())));
+        }
+
+        for (const auto& [s, r] : item.searchReplace) {
+            extracted = std::regex_replace(extracted, s, r);
         }
 
         std::lock_guard<std::mutex> guard(g_webContentMutex);
@@ -2933,7 +2946,6 @@ void LoadSettings() {
             Wh_GetStringSetting(L"WebContentsItems[%d].BlockStart", i);
         item.start = Wh_GetStringSetting(L"WebContentsItems[%d].Start", i);
         item.end = Wh_GetStringSetting(L"WebContentsItems[%d].End", i);
-        item.maxLength = Wh_GetIntSetting(L"WebContentsItems[%d].MaxLength", i);
 
         item.contentMode = ContentMode::plainText;
         StringSetting contentMode =
@@ -2945,6 +2957,27 @@ void LoadSettings() {
         } else if (wcscmp(contentMode, L"xmlHtml") == 0) {
             item.contentMode = ContentMode::xmlHtml;
         }
+
+        for (int j = 0;; j++) {
+            StringSetting search = Wh_GetStringSetting(
+                L"WebContentsItems[%d].SearchReplace[%d].Search", i, j);
+            if (*search == '\0') {
+                break;
+            }
+
+            StringSetting replace = Wh_GetStringSetting(
+                L"WebContentsItems[%d].SearchReplace[%d].Replace", i, j);
+
+            try {
+                item.searchReplace.push_back(
+                    {std::wregex(search), std::wstring(replace)});
+            } catch (const std::exception& ex) {
+                Wh_Log(L"Invalid search pattern \"%s\": %hs", search.get(),
+                       ex.what());
+            }
+        }
+
+        item.maxLength = Wh_GetIntSetting(L"WebContentsItems[%d].MaxLength", i);
 
         g_settings.webContentsItems.push_back(std::move(item));
     }
