@@ -152,7 +152,7 @@ styles, such as the font color and size.
     - MaxLength: 28
       $name: Web content maximum length
       $description: Longer strings will be truncated with ellipsis.
-    - ContentMode: plainText
+    - ContentMode: xmlHtml
       $name: Content mode
       $description: >-
         The plain text mode leaves the content unchanged. Tags or entities such
@@ -160,7 +160,7 @@ styles, such as the font color and size.
         mode requires the content to be well-formed XML. The XML+HTML mode can
         be useful for RSS feeds.
       $options:
-      - plainText: Plain text
+      - "": Plain text
       - html: HTML
       - xml: XML
       - xmlHtml: XML+HTML
