@@ -1,7 +1,7 @@
 // ==WindhawkMod==
 // @id              taskbar-clock-customization
 // @name            Taskbar Clock Customization
-// @description     Customize the taskbar clock: define a custom date/time format, add a news feed, customize fonts and colors, and more
+// @description     Customize the taskbar clock: define a custom date/time format, add a news feed or weather, customize fonts and colors, and more
 // @version         1.5.2
 // @author          m417z
 // @github          https://github.com/m417z
@@ -9,7 +9,7 @@
 // @homepage        https://m417z.com/
 // @include         explorer.exe
 // @architecture    x86-64
-// @compilerOptions -D__USE_MINGW_ANSI_STDIO=0 -lole32 -loleaut32 -lruntimeobject -lversion -lwininet
+// @compilerOptions -lole32 -loleaut32 -lruntimeobject -lshlwapi -lversion -lwininet
 // ==/WindhawkMod==
 
 // Source code is published under The GNU General Public License v3.0.
@@ -70,6 +70,8 @@ patterns can be used:
   ellipsis, where `<n>` is the web contents number.
 * `%web<n>_full%` - the full web contents as configured in settings, where `<n>`
   is the web contents number.
+* `%weather%` - Weather information, powered by [wttr.in](https://wttr.in/),
+  using the location and format configured in settings.
 * `%newline%` - a newline.
 
 ## Text styles
@@ -175,6 +177,16 @@ styles, such as the font color and size.
   $description: >-
     Will be used to fetch data displayed in place of the %web<n>%,
     %web<n>_full% patterns, where <n> is the web contents number.
+- WebContentWeatherLocation: ""
+  $name: Weather location
+  $description: >-
+    Get weather information for a specific location. Keep empty to use the
+    current location. For details, refer to the documentation of wttr.in.
+- WebContentWeatherFormat: "%c \uD83C\uDF21\uFE0F%t \uD83C\uDF2C\uFE0F%w"
+  $name: Weather format
+  $description: >-
+    The weather information format. For details, refer to the documentation of
+    wttr.in.
 - WebContentsUpdateInterval: 10
   $name: Web content update interval
   $description: The update interval, in minutes, of the web content items.
@@ -340,6 +352,7 @@ using namespace std::string_view_literals;
 #include <comutil.h>
 #include <mshtml.h>
 #include <psapi.h>
+#include <shlwapi.h>
 #include <wininet.h>
 
 #undef GetCurrentTime
@@ -420,6 +433,8 @@ struct {
     int maxWidth;
     int textSpacing;
     std::vector<WebContentsSettings> webContentsItems;
+    StringSetting webContentWeatherLocation;
+    StringSetting webContentWeatherFormat;
     int webContentsUpdateInterval;
     std::vector<StringSetting> timeZones;
     TextStyleSettings timeStyle;
@@ -484,6 +499,7 @@ std::atomic<bool> g_webContentLoaded;
 
 std::vector<std::optional<std::wstring>> g_webContentStrings;
 std::vector<std::optional<std::wstring>> g_webContentStringsFull;
+std::optional<std::wstring> g_webContentWeather;
 
 // Kept for compatibility with old settings:
 WCHAR g_webContent[FORMATTED_BUFFER_SIZE];
@@ -601,6 +617,27 @@ std::optional<std::wstring> GetUrlContent(PCWSTR lpUrl,
     HeapFree(GetProcessHeap(), 0, pUrlContent);
 
     return unicodeContent;
+}
+
+// https://stackoverflow.com/a/29752943
+std::wstring ReplaceAll(std::wstring_view source,
+                        std::wstring_view from,
+                        std::wstring_view to) {
+    std::wstring newString;
+
+    size_t lastPos = 0;
+    size_t findPos;
+
+    while ((findPos = source.find(from, lastPos)) != source.npos) {
+        newString.append(source, lastPos, findPos - lastPos);
+        newString += to;
+        lastPos = findPos + from.length();
+    }
+
+    // Care for the rest after last occurrence.
+    newString += source.substr(lastPos);
+
+    return newString;
 }
 
 // https://stackoverflow.com/a/54364173
@@ -727,6 +764,85 @@ std::wstring ExtractTextFromXml(std::wstring xml) {
     return std::wstring(xmlDoc.InnerText());
 }
 
+bool IsStrInDateTimePatternSettings(PCWSTR str) {
+    return wcsstr(g_settings.topLine, str) ||
+           wcsstr(g_settings.bottomLine, str) ||
+           wcsstr(g_settings.middleLine, str) ||
+           wcsstr(g_settings.tooltipLine, str);
+}
+
+std::wstring EscapeUrlComponent(PCWSTR input,
+                                DWORD flags = URL_ESCAPE_ASCII_URI_COMPONENT |
+                                              URL_ESCAPE_AS_UTF8) {
+    WCHAR outStack[256];
+    DWORD needed = ARRAYSIZE(outStack);
+    HRESULT hr = UrlEscape(input, outStack, &needed, flags);
+    if (SUCCEEDED(hr)) {
+        return outStack;
+    }
+
+    if (hr != E_POINTER || needed < 1) {
+        Wh_Log(L"UrlEscape error %08X", hr);
+        return std::wstring();
+    }
+
+    std::wstring out(needed - 1, L'\0');
+    hr = UrlEscape(input, &out[0], &needed, flags);
+    if (FAILED(hr)) {
+        Wh_Log(L"UrlEscape error %08X", hr);
+        return std::wstring();
+    }
+
+    return out;
+}
+
+bool UpdateWeatherWebContent() {
+    std::wstring format = g_settings.webContentWeatherFormat.get();
+    if (format.empty()) {
+        format = L"%c \U0001F321\uFE0F%t \U0001F32C\uFE0F%w";
+    }
+
+    // Spaces are added after the weather emoji by the server. Add a marker
+    // character after it to be able to remove the spaces. See:
+    // https://github.com/chubin/wttr.in/issues/345
+    format = ReplaceAll(format, L"%c", L"%c\uE000");
+
+    std::wstring weatherUrl = L"https://wttr.in/";
+    weatherUrl += EscapeUrlComponent(g_settings.webContentWeatherLocation);
+    weatherUrl += L"?format=";
+    weatherUrl += EscapeUrlComponent(format.c_str());
+    std::optional<std::wstring> urlContent = GetUrlContent(weatherUrl.c_str());
+    if (!urlContent) {
+        return false;
+    }
+
+    // Remove spaces after the %c emoji.
+    std::wstring weatherContent;
+
+    size_t lastPos = 0;
+    size_t findPos;
+
+    while ((findPos = urlContent->find(L'\uE000', lastPos)) !=
+           urlContent->npos) {
+        size_t lastPosCount = findPos - lastPos;
+        while (lastPosCount > 0 &&
+               urlContent->at(lastPos + lastPosCount - 1) == L' ') {
+            lastPosCount--;
+        }
+
+        weatherContent.append(*urlContent, lastPos, lastPosCount);
+        lastPos = findPos + 1;
+    }
+
+    // Care for the rest after last occurrence.
+    weatherContent += urlContent->substr(lastPos);
+
+    std::lock_guard<std::mutex> guard(g_webContentMutex);
+    g_webContentWeather = weatherContent;
+
+    return true;
+}
+
 void UpdateWebContent() {
     int failed = 0;
 
@@ -777,6 +893,17 @@ void UpdateWebContent() {
     }
 
     for (size_t i = 0; i < g_settings.webContentsItems.size(); i++) {
+        WCHAR patternSubstring[32];
+        swprintf_s(patternSubstring, L"%%web%i%%", i + 1);
+
+        WCHAR patternSubstringFull[32];
+        swprintf_s(patternSubstringFull, L"%%web%i_full%%", i + 1);
+
+        if (!IsStrInDateTimePatternSettings(patternSubstring) &&
+            !IsStrInDateTimePatternSettings(patternSubstringFull)) {
+            continue;
+        }
+
         const auto& item = g_settings.webContentsItems[i];
 
         if (item.url.get() != lastUrl) {
@@ -844,6 +971,11 @@ void UpdateWebContent() {
         g_webContentStringsFull[i] = std::move(extracted);
     }
 
+    if (IsStrInDateTimePatternSettings(L"%weather%") &&
+        !UpdateWeatherWebContent()) {
+        failed++;
+    }
+
     if (failed == 0) {
         g_webContentLoaded = true;
     }
@@ -860,9 +992,7 @@ DWORD WINAPI WebContentUpdateThread(LPVOID lpThreadParameter) {
     while (true) {
         UpdateWebContent();
 
-        DWORD seconds = g_settings.webContentsUpdateInterval >= 1
-                            ? g_settings.webContentsUpdateInterval * 60
-                            : 1;
+        DWORD seconds = std::max(g_settings.webContentsUpdateInterval, 1) * 60;
         if (!g_webContentLoaded && seconds > kSecondsForQuickRetry) {
             seconds = kSecondsForQuickRetry;
         }
@@ -886,26 +1016,13 @@ DWORD WINAPI WebContentUpdateThread(LPVOID lpThreadParameter) {
 void WebContentUpdateThreadInit() {
     std::lock_guard<std::mutex> guard(g_webContentMutex);
 
-    g_webContentLoaded = false;
-
-    *g_webContent = L'\0';
-    *g_webContentFull = L'\0';
-
-    g_webContentStrings.clear();
     g_webContentStrings.resize(g_settings.webContentsItems.size());
-    g_webContentStringsFull.clear();
     g_webContentStringsFull.resize(g_settings.webContentsItems.size());
 
     // A fuzzy check to see if any of the lines contain the web content pattern.
     // If not, no need to fire up the thread.
-    bool webContentsIsBeingUsed = wcsstr(g_settings.topLine, L"%web") ||
-                                  wcsstr(g_settings.bottomLine, L"%web") ||
-                                  wcsstr(g_settings.middleLine, L"%web") ||
-                                  wcsstr(g_settings.tooltipLine, L"%web");
-
-    if (webContentsIsBeingUsed &&
-        ((g_settings.webContentsUrl && *g_settings.webContentsUrl) ||
-         g_settings.webContentsItems.size() > 0)) {
+    if (IsStrInDateTimePatternSettings(L"%web") ||
+        IsStrInDateTimePatternSettings(L"%weather%")) {
         g_webContentUpdateRefreshEvent =
             CreateEvent(nullptr, FALSE, FALSE, nullptr);
         g_webContentUpdateStopEvent =
@@ -926,6 +1043,15 @@ void WebContentUpdateThreadUninit() {
         CloseHandle(g_webContentUpdateStopEvent);
         g_webContentUpdateStopEvent = nullptr;
     }
+
+    g_webContentLoaded = false;
+
+    *g_webContent = L'\0';
+    *g_webContentFull = L'\0';
+
+    g_webContentStrings.clear();
+    g_webContentStringsFull.clear();
+    g_webContentWeather.reset();
 }
 
 std::optional<DYNAMIC_TIME_ZONE_INFORMATION> GetTimeZoneInformation(
@@ -1610,6 +1736,13 @@ size_t ResolveFormatToken(std::wstring_view format, PCWSTR* resolved) {
         return "%web1_full%"sv.size();
     }
 
+    if (auto token = L"%weather%"sv; format.starts_with(token)) {
+        std::lock_guard<std::mutex> guard(g_webContentMutex);
+        *resolved =
+            g_webContentWeather ? g_webContentWeather->c_str() : L"Loading...";
+        return token.size();
+    }
+
     return 0;
 }
 
@@ -1624,6 +1757,8 @@ int FormatLine(PWSTR buffer, size_t bufferSize, std::wstring_view format) {
     PWSTR bufferEnd = bufferStart + bufferSize;
     while (!formatSuffix.empty() && bufferEnd - buffer > 1) {
         if (formatSuffix[0] == L'%') {
+            // TODO: we can get a pointer to a string which requires a lock. Fix
+            // by passing a lambda instead.
             PCWSTR srcStr = nullptr;
             size_t formatTokenLen = ResolveFormatToken(formatSuffix, &srcStr);
             if (formatTokenLen > 0) {
@@ -2982,6 +3117,11 @@ void LoadSettings() {
         g_settings.webContentsItems.push_back(std::move(item));
     }
 
+    g_settings.webContentWeatherLocation =
+        Wh_GetStringSetting(L"WebContentWeatherLocation");
+    g_settings.webContentWeatherFormat =
+        Wh_GetStringSetting(L"WebContentWeatherFormat");
+
     g_settings.webContentsUpdateInterval =
         Wh_GetIntSetting(L"WebContentsUpdateInterval");
 
@@ -3056,14 +3196,8 @@ void LoadSettings() {
     g_settings.oldTaskbarOnWin11 = Wh_GetIntSetting(L"oldTaskbarOnWin11");
 
     // Kept for compatibility with old settings:
-    if (wcsstr(g_settings.topLine, L"%web%") ||
-        wcsstr(g_settings.bottomLine, L"%web%") ||
-        wcsstr(g_settings.middleLine, L"%web%") ||
-        wcsstr(g_settings.tooltipLine, L"%web%") ||
-        wcsstr(g_settings.topLine, L"%web_full%") ||
-        wcsstr(g_settings.bottomLine, L"%web_full%") ||
-        wcsstr(g_settings.middleLine, L"%web_full%") ||
-        wcsstr(g_settings.tooltipLine, L"%web_full%")) {
+    if (IsStrInDateTimePatternSettings(L"%web%") ||
+        IsStrInDateTimePatternSettings(L"%web_full%")) {
         g_settings.webContentsUrl = Wh_GetStringSetting(L"WebContentsUrl");
         g_settings.webContentsBlockStart =
             Wh_GetStringSetting(L"WebContentsBlockStart");
