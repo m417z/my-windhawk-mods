@@ -338,6 +338,7 @@ styles, such as the font color and size.
 
 #include <atomic>
 #include <format>
+#include <functional>
 #include <mutex>
 #include <optional>
 #include <regex>
@@ -1610,7 +1611,9 @@ int ResolveFormatTokenWithDigit(std::wstring_view format,
     return digitChar - L'0';
 }
 
-size_t ResolveFormatToken(std::wstring_view format, PCWSTR* resolved) {
+size_t ResolveFormatToken(
+    std::wstring_view format,
+    std::function<void(PCWSTR resolvedStr)> resolvedCallback) {
     using FormattedStringValueGetter = PCWSTR (*)();
 
     struct {
@@ -1630,7 +1633,7 @@ size_t ResolveFormatToken(std::wstring_view format, PCWSTR* resolved) {
 
     for (const auto& formatToken : formatTokens) {
         if (format.starts_with(formatToken.token)) {
-            *resolved = formatToken.valueGetter();
+            resolvedCallback(formatToken.valueGetter());
             return formatToken.token.size();
         }
     }
@@ -1655,23 +1658,22 @@ size_t ResolveFormatToken(std::wstring_view format, PCWSTR* resolved) {
 
         PCWSTR value = formatTzToken.valueGetter(digit - 1);
         if (!value) {
-            *resolved = L"-";
-        } else {
-            *resolved = value;
+            value = L"-";
         }
 
+        resolvedCallback(value);
         return formatTzToken.prefix.size() + 2;
     }
 
     if (auto token = L"%web%"sv; format.starts_with(token)) {
         std::lock_guard<std::mutex> guard(g_webContentMutex);
-        *resolved = *g_webContent ? g_webContent : L"Loading...";
+        resolvedCallback(*g_webContent ? g_webContent : L"Loading...");
         return token.size();
     }
 
     if (auto token = L"%web_full%"sv; format.starts_with(token)) {
         std::lock_guard<std::mutex> guard(g_webContentMutex);
-        *resolved = *g_webContentFull ? g_webContentFull : L"Loading...";
+        resolvedCallback(*g_webContentFull ? g_webContentFull : L"Loading...");
         return token.size();
     }
 
@@ -1694,12 +1696,14 @@ size_t ResolveFormatToken(std::wstring_view format, PCWSTR* resolved) {
 
         const auto& valueVector = *formatExtraToken.valueVectorGetter();
 
+        PCWSTR value;
         if (digit < 2 || static_cast<size_t>(digit - 2) >= valueVector.size()) {
-            *resolved = L"-";
+            value = L"-";
         } else {
-            *resolved = valueVector[digit - 2].c_str();
+            value = valueVector[digit - 2].c_str();
         }
 
+        resolvedCallback(value);
         return formatExtraToken.prefix.size() + 2;
     }
 
@@ -1708,14 +1712,16 @@ size_t ResolveFormatToken(std::wstring_view format, PCWSTR* resolved) {
 
         std::lock_guard<std::mutex> guard(g_webContentMutex);
 
+        PCWSTR value;
         if (index >= g_webContentStrings.size()) {
-            *resolved = L"-";
+            value = L"-";
         } else if (!g_webContentStrings[index]) {
-            *resolved = L"Loading...";
+            value = L"Loading...";
         } else {
-            *resolved = g_webContentStrings[index]->c_str();
+            value = g_webContentStrings[index]->c_str();
         }
 
+        resolvedCallback(value);
         return "%web1%"sv.size();
     }
 
@@ -1725,21 +1731,23 @@ size_t ResolveFormatToken(std::wstring_view format, PCWSTR* resolved) {
 
         std::lock_guard<std::mutex> guard(g_webContentMutex);
 
+        PCWSTR value;
         if (index >= g_webContentStringsFull.size()) {
-            *resolved = L"-";
+            value = L"-";
         } else if (!g_webContentStringsFull[index]) {
-            *resolved = L"Loading...";
+            value = L"Loading...";
         } else {
-            *resolved = g_webContentStringsFull[index]->c_str();
+            value = g_webContentStringsFull[index]->c_str();
         }
 
+        resolvedCallback(value);
         return "%web1_full%"sv.size();
     }
 
     if (auto token = L"%weather%"sv; format.starts_with(token)) {
         std::lock_guard<std::mutex> guard(g_webContentMutex);
-        *resolved =
-            g_webContentWeather ? g_webContentWeather->c_str() : L"Loading...";
+        resolvedCallback(g_webContentWeather ? g_webContentWeather->c_str()
+                                             : L"Loading...");
         return token.size();
     }
 
@@ -1757,14 +1765,14 @@ int FormatLine(PWSTR buffer, size_t bufferSize, std::wstring_view format) {
     PWSTR bufferEnd = bufferStart + bufferSize;
     while (!formatSuffix.empty() && bufferEnd - buffer > 1) {
         if (formatSuffix[0] == L'%') {
-            // TODO: we can get a pointer to a string which requires a lock. Fix
-            // by passing a lambda instead.
-            PCWSTR srcStr = nullptr;
-            size_t formatTokenLen = ResolveFormatToken(formatSuffix, &srcStr);
+            bool truncated = false;
+            size_t formatTokenLen = ResolveFormatToken(
+                formatSuffix,
+                [&buffer, bufferEnd, &truncated](PCWSTR resolvedStr) {
+                    buffer += StringCopyTruncated(buffer, bufferEnd - buffer,
+                                                  resolvedStr, &truncated);
+                });
             if (formatTokenLen > 0) {
-                bool truncated;
-                buffer += StringCopyTruncated(buffer, bufferEnd - buffer,
-                                              srcStr, &truncated);
                 if (truncated) {
                     break;
                 }
