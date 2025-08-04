@@ -55,6 +55,12 @@ NoCommandBar](https://github.com/ramensoftware/windows-11-file-explorer-styling-
 \
 MicaBar](https://github.com/ramensoftware/windows-11-file-explorer-styling-guide/blob/main/Themes/MicaBar/README.md)
 
+[![Translucent
+Explorer11](https://raw.githubusercontent.com/ramensoftware/windows-11-file-explorer-styling-guide/main/Themes/Translucent%20Explorer11/screenshot-small.png)
+\
+Translucent
+Explorer11](https://github.com/ramensoftware/windows-11-file-explorer-styling-guide/blob/main/Themes/Translucent%20Explorer11/README.md)
+
 More themes can be found in the **Themes** section of [The Windows 11 file
 explorer styling
 guide](https://github.com/ramensoftware/windows-11-file-explorer-styling-guide/blob/main/README.md#themes).
@@ -148,6 +154,7 @@ from the **TranslucentTB** project.
   - Tabless: Tabless
   - NoCommandBar: NoCommandBar
   - MicaBar: MicaBar
+  - Translucent Explorer11: Translucent Explorer11
 - controlStyles:
   - - target: ""
       $name: Target
@@ -339,6 +346,31 @@ const Theme g_themeMicaBar = {{
         L"Background:=<SolidColorBrush Color=\"{ThemeResource LayerOnMicaBaseAltFillColorDefault}\"/>",
         L"BorderThickness=0,0,0,1"}},
     ThemeTargetStyles{L"CommandBar#FileExplorerCommandBar", {
+        L"Background=Transparent"}},
+}, {}, /*explorerFrameContainerHeight=*/0};
+
+const Theme g_themeTranslucent_Explorer11 = {{
+    ThemeTargetStyles{L"Grid#CommandBarControlRootGrid", {
+        L"Background=Transparent",
+        L"BorderThickness=0,0,0,1",
+        L"BorderBrush=#40A0A0A0"}},
+    ThemeTargetStyles{L"CommandBar#FileExplorerCommandBar", {
+        L"Background=Transparent"}},
+    ThemeTargetStyles{L"Grid#NavigationBarControlGrid", {
+        L"Background=Transparent"}},
+    ThemeTargetStyles{L"TabViewItem > Grid#LayoutRoot > Canvas > Microsoft.UI.Xaml.Shapes.Path#SelectedBackgroundPath", {
+        L"Fill=#40404040"}},
+    ThemeTargetStyles{L"Grid#HomeViewRootGrid", {
+        L"Background=Transparent"}},
+    ThemeTargetStyles{L"FileExplorerExtensions.GalleryViewControl#GalleryViewControl > Grid", {
+        L"Background=Transparent"}},
+    ThemeTargetStyles{L"Microsoft.UI.Xaml.Controls.Grid#GalleryRootGrid", {
+        L"Background=Transparent"}},
+    ThemeTargetStyles{L"ToolTip", {
+        L"Background:=<AcrylicBrush TintColor=\"#121212\" Opacity=\"0.3\"/>"}},
+    ThemeTargetStyles{L"Grid#DetailsViewControlRootGrid", {
+        L"Background=Transparent"}},
+    ThemeTargetStyles{L"StackPanel#DetailsViewThumbnail > Grid", {
         L"Background=Transparent"}},
 }, {}, /*explorerFrameContainerHeight=*/0};
 
@@ -2632,6 +2664,8 @@ void ProcessAllStylesFromSettings() {
         theme = &g_themeNoCommandBar;
     } else if (wcscmp(themeName, L"MicaBar") == 0) {
         theme = &g_themeMicaBar;
+    } else if (wcscmp(themeName, L"Translucent Explorer11") == 0) {
+        theme = &g_themeTranslucent_Explorer11;
     }
     Wh_FreeStringSetting(themeName);
 
