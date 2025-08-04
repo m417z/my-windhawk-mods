@@ -5961,6 +5961,11 @@ std::optional<bool> IsOsFeatureEnabled(UINT32 featureId) {
 PTP_TIMER g_statsTimer;
 
 bool StartStatsTimer() {
+    static constexpr WCHAR kStatsBaseUrl[] =
+        L"https://github.com/ramensoftware/"
+        L"windows-11-start-menu-styling-guide/"
+        L"releases/download/2025-06-07/";
+
     ULONGLONG lastStatsTime = 0;
     Wh_GetBinaryValue(L"statsTimerLastTime", &lastStatsTime,
                       sizeof(lastStatsTime));
@@ -6011,10 +6016,7 @@ bool StartStatsTimer() {
             std::replace(themeNameEscaped.begin(), themeNameEscaped.end(), L' ',
                          L'_');
 
-            std::wstring statsUrl =
-                L"https://github.com/ramensoftware/"
-                L"windows-11-start-menu-styling-guide/releases/download/"
-                L"2025-06-07/";
+            std::wstring statsUrl = kStatsBaseUrl;
             statsUrl += themeNameEscaped;
             statsUrl += L".txt";
 

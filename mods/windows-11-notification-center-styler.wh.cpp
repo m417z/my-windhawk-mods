@@ -3432,6 +3432,11 @@ std::vector<HWND> GetCoreWnds() {
 PTP_TIMER g_statsTimer;
 
 bool StartStatsTimer() {
+    static constexpr WCHAR kStatsBaseUrl[] =
+        L"https://github.com/ramensoftware/"
+        L"windows-11-notification-center-styling-guide/"
+        L"releases/download/stats-v1/";
+
     ULONGLONG lastStatsTime = 0;
     Wh_GetBinaryValue(L"statsTimerLastTime", &lastStatsTime,
                       sizeof(lastStatsTime));
@@ -3482,11 +3487,7 @@ bool StartStatsTimer() {
             std::replace(themeNameEscaped.begin(), themeNameEscaped.end(), L' ',
                          L'_');
 
-            std::wstring statsUrl =
-                L"https://github.com/ramensoftware/"
-                L"windows-11-notification-center-styling-guide/releases/"
-                L"download/"
-                L"stats-v1/";
+            std::wstring statsUrl = kStatsBaseUrl;
             statsUrl += themeNameEscaped;
             statsUrl += L".txt";
 

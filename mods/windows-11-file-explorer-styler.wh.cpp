@@ -3036,6 +3036,109 @@ bool HookWindowsUIFileExplorerSymbols() {
     return true;
 }
 
+PTP_TIMER g_statsTimer;
+
+bool StartStatsTimer() {
+    static constexpr WCHAR kStatsBaseUrl[] =
+        L"https://github.com/ramensoftware/"
+        L"windows-11-file-explorer-styling-guide/"
+        L"releases/download/stats-v1/";
+
+    ULONGLONG lastStatsTime = 0;
+    Wh_GetBinaryValue(L"statsTimerLastTime", &lastStatsTime,
+                      sizeof(lastStatsTime));
+
+    // -1 can be set for disabling the stats timer.
+    if (lastStatsTime == 0xFFFFFFFF'FFFFFFFF) {
+        return false;
+    }
+
+    FILETIME currentTimeFt;
+    GetSystemTimeAsFileTime(&currentTimeFt);
+
+    ULONGLONG currentTime = ((ULONGLONG)currentTimeFt.dwHighDateTime << 32) |
+                            currentTimeFt.dwLowDateTime;
+
+    constexpr ULONGLONG k10Minutes = 10 * 60 * 10000000LL;
+    constexpr ULONGLONG k24Hours = 24 * 60 * 60 * 10000000LL;
+
+    ULONGLONG minDueTime = currentTime + k10Minutes;
+    ULONGLONG maxDueTime = currentTime + k24Hours;
+
+    ULONGLONG dueTime = k24Hours - (currentTime - lastStatsTime);
+    if (dueTime < minDueTime) {
+        dueTime = minDueTime;
+    } else if (dueTime > maxDueTime) {
+        dueTime = maxDueTime;
+    }
+
+    g_statsTimer = CreateThreadpoolTimer(
+        [](PTP_CALLBACK_INSTANCE, PVOID, PTP_TIMER) {
+            Wh_Log(L">");
+
+            FILETIME currentTimeFt;
+            GetSystemTimeAsFileTime(&currentTimeFt);
+            ULONGLONG currentTime =
+                ((ULONGLONG)currentTimeFt.dwHighDateTime << 32) |
+                currentTimeFt.dwLowDateTime;
+
+            Wh_SetBinaryValue(L"statsTimerLastTime", &currentTime,
+                              sizeof(currentTime));
+
+            string_setting_unique_ptr themeName(Wh_GetStringSetting(L"theme"));
+            if (!*themeName.get()) {
+                return;
+            }
+
+            std::wstring themeNameEscaped = themeName.get();
+            std::replace(themeNameEscaped.begin(), themeNameEscaped.end(), L' ',
+                         L'_');
+
+            std::wstring statsUrl = kStatsBaseUrl;
+            statsUrl += themeNameEscaped;
+            statsUrl += L".txt";
+
+            Wh_Log(L"Submitting stats to %s", statsUrl.c_str());
+
+            const WH_URL_CONTENT* content =
+                Wh_GetUrlContent(statsUrl.c_str(), nullptr);
+            if (!content) {
+                Wh_Log(L"Failed to get stats content");
+                return;
+            }
+
+            if (content->statusCode != 200) {
+                Wh_Log(L"Stats content status code: %d", content->statusCode);
+            }
+
+            Wh_FreeUrlContent(content);
+            Wh_Log(L"Stats content submitted");
+        },
+        nullptr, nullptr);
+    if (!g_statsTimer) {
+        Wh_Log(L"Failed to create stats timer");
+        return false;
+    }
+
+    constexpr DWORD k24HoursInMs = 24 * 60 * 60 * 1000;
+    constexpr ULONGLONG k10MinutesInMs = 10 * 60 * 1000;
+
+    FILETIME dueTimeFt;
+    dueTimeFt.dwLowDateTime = (DWORD)(dueTime & 0xFFFFFFFF);
+    dueTimeFt.dwHighDateTime = (DWORD)(dueTime >> 32);
+    SetThreadpoolTimer(g_statsTimer, &dueTimeFt, k24HoursInMs, k10MinutesInMs);
+    return true;
+}
+
+void StopStatsTimer() {
+    if (g_statsTimer) {
+        SetThreadpoolTimer(g_statsTimer, nullptr, 0, 0);
+        WaitForThreadpoolTimerCallbacks(g_statsTimer, TRUE);
+        CloseThreadpoolTimer(g_statsTimer);
+        g_statsTimer = nullptr;
+    }
+}
+
 void LoadSettings() {
     g_settings.explorerFrameContainerHeight =
         Wh_GetIntSetting(L"explorerFrameContainerHeight");
@@ -3071,6 +3174,8 @@ BOOL Wh_ModInit() {
 
     HookWindowsUIFileExplorerSymbols();
 
+    StartStatsTimer();
+
     return TRUE;
 }
 
@@ -3092,6 +3197,8 @@ void Wh_ModAfterInit() {
 
 void Wh_ModUninit() {
     Wh_Log(L">");
+
+    StopStatsTimer();
 
     UninitializeSettingsAndTap();
 
