@@ -66,6 +66,11 @@ patterns can be used:
   number](https://en.wikipedia.org/wiki/ISO_week_date).
 * `%dayofyear%` - the day of year starting from January 1st.
 * `%timezone%` - the time zone in ISO 8601 format.
+* System performance metrics:
+  * `%upload_speed%` - system-wide upload transfer rate.
+  * `%download_speed%` - system-wide download transfer rate.
+  * `%cpu%` - CPU usage.
+  * `%ram%` - RAM usage.
 * `%web<n>%` - the web contents as configured in settings, truncated with
   ellipsis, where `<n>` is the web contents number.
 * `%web<n>_full%` - the full web contents as configured in settings, where `<n>`
@@ -489,6 +494,11 @@ FormattedString<INTEGER_BUFFER_SIZE> g_weeknumFormatted;
 FormattedString<INTEGER_BUFFER_SIZE> g_weeknumIsoFormatted;
 FormattedString<INTEGER_BUFFER_SIZE> g_dayOfYearFormatted;
 FormattedString<FORMATTED_BUFFER_SIZE> g_timezoneFormatted;
+
+FormattedString<FORMATTED_BUFFER_SIZE> g_uploadSpeedFormatted;
+FormattedString<FORMATTED_BUFFER_SIZE> g_downloadSpeedFormatted;
+FormattedString<FORMATTED_BUFFER_SIZE> g_cpuFormatted;
+FormattedString<FORMATTED_BUFFER_SIZE> g_ramFormatted;
 
 std::vector<std::optional<DYNAMIC_TIME_ZONE_INFORMATION>> g_timeZoneInformation;
 
@@ -1586,6 +1596,271 @@ PCWSTR GetTimezoneFormatted() {
     return g_timezoneFormatted.buffer;
 }
 
+enum class MetricType {
+    kUploadSpeed,
+    kDownloadSpeed,
+    kCpu,
+    kRam,
+
+    kCount,
+};
+
+class QueryDataCollectionSession {
+   public:
+    QueryDataCollectionSession() {
+        winrt::check_hresult(PdhOpenQuery(nullptr, 0, &query_));
+    }
+
+    QueryDataCollectionSession(const QueryDataCollectionSession&) = delete;
+    QueryDataCollectionSession& operator=(const QueryDataCollectionSession&) =
+        delete;
+    QueryDataCollectionSession(QueryDataCollectionSession&&) = delete;
+    QueryDataCollectionSession& operator=(QueryDataCollectionSession&&) =
+        delete;
+
+    ~QueryDataCollectionSession() { PdhCloseQuery(query_); }
+
+    bool AddMetric(MetricType type) {
+        PCWSTR counter_path;
+        bool is_wildcard = false;
+
+        switch (type) {
+            case MetricType::kDownloadSpeed:
+                counter_path = L"\\Network Interface(*)\\Bytes Received/sec";
+                is_wildcard = true;
+                break;
+            case MetricType::kUploadSpeed:
+                counter_path = L"\\Network Interface(*)\\Bytes Sent/sec";
+                is_wildcard = true;
+                break;
+            case MetricType::kCpu:
+                counter_path = L"\\Processor(_Total)\\% Processor Time";
+                break;
+            case MetricType::kRam:
+                counter_path = L"\\Memory\\% Committed Bytes In Use";
+                break;
+            default:
+                return false;
+        }
+
+        auto& metric = metrics_[static_cast<int>(type)];
+        if (!metric.counters.empty()) {
+            return false;
+        }
+
+        if (is_wildcard) {
+            for (const auto& path : ExpandWildcard(counter_path)) {
+                PDH_HCOUNTER counter;
+                HRESULT hr = PdhAddCounter(query_, path.c_str(), 0, &counter);
+                if (SUCCEEDED(hr)) {
+                    metric.counters.push_back(counter);
+                } else {
+                    Wh_Log(L"PdhAddCounter error %08X", hr);
+                }
+            }
+        } else {
+            PDH_HCOUNTER counter;
+            HRESULT hr = PdhAddCounter(query_, counter_path, 0, &counter);
+            if (SUCCEEDED(hr)) {
+                metric.counters.push_back(counter);
+            } else {
+                Wh_Log(L"PdhAddCounter error %08X", hr);
+            }
+        }
+
+        return !metric.counters.empty();
+    }
+
+    bool SampleData() {
+        HRESULT hr = PdhCollectQueryData(query_);
+        if (FAILED(hr)) {
+            Wh_Log(L"PdhCollectQueryData error %08X", hr);
+            return false;
+        }
+
+        return true;
+    }
+
+    double QueryData(MetricType type) {
+        const auto& metric = metrics_[static_cast<int>(type)];
+
+        double sum = 0.0;
+        for (auto counter : metric.counters) {
+            PDH_FMT_COUNTERVALUE val;
+            HRESULT hr = PdhGetFormattedCounterValue(counter, PDH_FMT_DOUBLE,
+                                                     nullptr, &val);
+            if (SUCCEEDED(hr)) {
+                sum += val.doubleValue;
+            } else {
+                Wh_Log(L"PdhGetFormattedCounterValue error %08X", hr);
+            }
+        }
+
+        return sum;
+    }
+
+   private:
+    std::vector<std::wstring> ExpandWildcard(PCWSTR wildcard_path) {
+        DWORD required = 0;
+        HRESULT hr = PdhExpandWildCardPath(nullptr, wildcard_path, nullptr,
+                                           &required, 0);
+        if (FAILED(hr) && hr != static_cast<HRESULT>(PDH_MORE_DATA)) {
+            Wh_Log(L"PdhExpandWildCardPath error %08X", hr);
+            return {};
+        }
+
+        if (required == 0) {
+            return {};
+        }
+
+        std::vector<WCHAR> buffer(required);
+        hr = PdhExpandWildCardPath(nullptr, wildcard_path, buffer.data(),
+                                   &required, 0);
+        if (FAILED(hr)) {
+            Wh_Log(L"PdhExpandWildCardPath error %08X", hr);
+            return {};
+        }
+
+        std::vector<std::wstring> out_paths;
+        WCHAR* p = buffer.data();
+        while (*p) {
+            Wh_Log(L"Expanded path: %s", p);
+            out_paths.emplace_back(p);
+            p += wcslen(p) + 1;
+        }
+        return out_paths;
+    }
+
+    struct MetricData {
+        std::vector<PDH_HCOUNTER> counters;
+    };
+
+    PDH_HQUERY query_;
+    MetricData metrics_[static_cast<int>(MetricType::kCount)];
+};
+
+std::optional<QueryDataCollectionSession> g_queryDataCollectionSession;
+ULONGLONG g_queryDataCollectionIndex;
+ULONGLONG g_queryDataCollectionLastSampleTime;
+
+void DataCollectionSessionInit() {
+    bool metrics[static_cast<int>(MetricType::kCount)]{};
+    metrics[static_cast<int>(MetricType::kUploadSpeed)] =
+        IsStrInDateTimePatternSettings(L"%upload_speed%");
+    metrics[static_cast<int>(MetricType::kDownloadSpeed)] =
+        IsStrInDateTimePatternSettings(L"%download_speed%");
+    metrics[static_cast<int>(MetricType::kCpu)] =
+        IsStrInDateTimePatternSettings(L"%cpu%");
+    metrics[static_cast<int>(MetricType::kRam)] =
+        IsStrInDateTimePatternSettings(L"%ram%");
+
+    if (!std::any_of(std::begin(metrics), std::end(metrics),
+                     [](bool x) { return x; })) {
+        return;
+    }
+
+    try {
+        g_queryDataCollectionSession.emplace();
+    } catch (...) {
+        HRESULT hr = winrt::to_hresult();
+        Wh_Log(L"Error %08X", hr);
+        return;
+    }
+
+    for (size_t i = 0; i < ARRAYSIZE(metrics); i++) {
+        MetricType metric = static_cast<MetricType>(i);
+        g_queryDataCollectionSession->AddMetric(metric);
+    }
+
+    g_queryDataCollectionSession->SampleData();
+}
+
+void DataCollectionSessionUninit() {
+    g_queryDataCollectionSession.reset();
+    g_queryDataCollectionIndex = 0;
+}
+
+void DataCollectionSampleIfNeeded() {
+    FILETIME formatTimeFt{};
+    SystemTimeToFileTime(&g_formatTime, &formatTimeFt);
+    ULARGE_INTEGER formatTimeInt{
+        .LowPart = formatTimeFt.dwLowDateTime,
+        .HighPart = formatTimeFt.dwHighDateTime,
+    };
+
+    constexpr ULONGLONG kSecondIn100Ns = 10000000ULL;
+    ULONGLONG interval =
+        kSecondIn100Ns * std::max(g_settings.dataCollectionUpdateInterval, 1);
+    ULONGLONG expectedSampleTime = formatTimeInt.QuadPart / interval * interval;
+    if (g_queryDataCollectionLastSampleTime != expectedSampleTime) {
+        if (g_queryDataCollectionSession) {
+            g_queryDataCollectionSession->SampleData();
+        }
+
+        g_queryDataCollectionIndex++;
+        g_queryDataCollectionLastSampleTime = expectedSampleTime;
+    }
+}
+
+void FormatInternetSpeed(int bytesPerSec, PWSTR buffer, size_t bufferSize) {
+    constexpr int kKb = 1024;
+    constexpr int kMb = kKb * 1024;
+
+    if (bytesPerSec >= kMb) {
+        swprintf_s(buffer, bufferSize, L"%.1f Mb/s",
+                   static_cast<double>(bytesPerSec) / kMb);
+    } else if (bytesPerSec >= kKb) {
+        swprintf_s(buffer, bufferSize, L"%.1f Kb/s",
+                   static_cast<double>(bytesPerSec) / kKb);
+    } else {
+        swprintf_s(buffer, bufferSize, L"%d B/s", bytesPerSec);
+    }
+}
+
+template <size_t N>
+PCWSTR GetMetricFormatted(FormattedString<N>& formattedString,
+                          MetricType metricType) {
+    DataCollectionSampleIfNeeded();
+
+    if (formattedString.formatIndex != g_queryDataCollectionIndex) {
+        if (g_queryDataCollectionSession) {
+            double val = g_queryDataCollectionSession->QueryData(metricType);
+            if (metricType == MetricType::kUploadSpeed ||
+                metricType == MetricType::kDownloadSpeed) {
+                FormatInternetSpeed(val, formattedString.buffer,
+                                    ARRAYSIZE(formattedString.buffer));
+            } else {
+                swprintf_s(formattedString.buffer, L"%d%%",
+                           static_cast<int>(val));
+            }
+        } else {
+            wcscpy_s(formattedString.buffer, ARRAYSIZE(formattedString.buffer),
+                     L"-");
+        }
+
+        formattedString.formatIndex = g_queryDataCollectionIndex;
+    }
+
+    return formattedString.buffer;
+}
+
+PCWSTR GetUploadSpeedFormatted() {
+    return GetMetricFormatted(g_uploadSpeedFormatted, MetricType::kUploadSpeed);
+}
+
+PCWSTR GetDownloadSpeedFormatted() {
+    return GetMetricFormatted(g_downloadSpeedFormatted,
+                              MetricType::kDownloadSpeed);
+}
+
+PCWSTR GetCpuFormatted() {
+    return GetMetricFormatted(g_cpuFormatted, MetricType::kCpu);
+}
+
+PCWSTR GetRamFormatted() {
+    return GetMetricFormatted(g_ramFormatted, MetricType::kRam);
+}
+
 int ResolveFormatTokenWithDigit(std::wstring_view format,
                                 std::wstring_view formatTokenPrefix,
                                 std::wstring_view formatTokenSuffix) {
@@ -1628,6 +1903,10 @@ size_t ResolveFormatToken(
         {L"%weeknum_iso%"sv, GetWeeknumIsoFormatted},
         {L"%dayofyear%"sv, GetDayOfYearFormatted},
         {L"%timezone%"sv, GetTimezoneFormatted},
+        {L"%upload_speed%"sv, GetUploadSpeedFormatted},
+        {L"%download_speed%"sv, GetDownloadSpeedFormatted},
+        {L"%cpu%"sv, GetCpuFormatted},
+        {L"%ram%"sv, GetRamFormatted},
         {L"%newline%"sv, []() { return L"\n"; }},
     };
 
@@ -1853,8 +2132,9 @@ void WINAPI ClockSystemTrayIconDataModel_RefreshIcon_Hook(LPVOID pThis,
     Wh_Log(L">");
 
     g_refreshIconThreadId = GetCurrentThreadId();
-    g_refreshIconNeedToAdjustTimer =
-        g_settings.showSeconds || !g_webContentLoaded;
+    g_refreshIconNeedToAdjustTimer = g_settings.showSeconds ||
+                                     g_queryDataCollectionSession ||
+                                     !g_webContentLoaded;
 
     ClockSystemTrayIconDataModel_RefreshIcon_Original(pThis, param1);
 
@@ -2588,7 +2868,8 @@ ClockButton_UpdateTextStringsIfNecessary_Hook(LPVOID pThis, bool* param1) {
 
     g_updateTextStringThreadId = 0;
 
-    if (g_settings.showSeconds || !g_webContentLoaded) {
+    if (g_settings.showSeconds || g_queryDataCollectionSession ||
+        !g_webContentLoaded) {
         // Return the time-out value for the time of the next update.
         SYSTEMTIME time;
         GetLocalTime(&time);
@@ -3076,6 +3357,8 @@ void LoadSettings() {
     g_settings.height = Wh_GetIntSetting(L"Height");
     g_settings.maxWidth = Wh_GetIntSetting(L"MaxWidth");
     g_settings.textSpacing = Wh_GetIntSetting(L"TextSpacing");
+    g_settings.dataCollectionUpdateInterval =
+        Wh_GetIntSetting(L"DataCollectionUpdateInterval");
 
     g_settings.webContentsItems.clear();
     for (int i = 0;; i++) {
@@ -3498,6 +3781,7 @@ void Wh_ModAfterInit() {
     }
 
     WebContentUpdateThreadInit();
+    DataCollectionSessionInit();
 
     ApplySettings();
 }
@@ -3534,6 +3818,7 @@ void Wh_ModUninit() {
     Wh_Log(L">");
 
     WebContentUpdateThreadUninit();
+    DataCollectionSessionUninit();
 
     ApplySettings();
 }
@@ -3542,6 +3827,7 @@ BOOL Wh_ModSettingsChanged(BOOL* bReload) {
     Wh_Log(L">");
 
     WebContentUpdateThreadUninit();
+    DataCollectionSessionUninit();
 
     bool prevOldTaskbarOnWin11 = g_settings.oldTaskbarOnWin11;
 
@@ -3553,6 +3839,7 @@ BOOL Wh_ModSettingsChanged(BOOL* bReload) {
     }
 
     WebContentUpdateThreadInit();
+    DataCollectionSessionInit();
 
     ApplySettings();
 
