@@ -1,15 +1,15 @@
 // ==WindhawkMod==
 // @id              taskbar-clock-customization
 // @name            Taskbar Clock Customization
-// @description     Customize the taskbar clock: define a custom date/time format, add a news feed or weather, customize fonts and colors, and more
-// @version         1.5.2
+// @description     Custom date/time format, news feed, weather, performance metrics (upload/download speed, CPU, RAM), custom fonts and colors, and more
+// @version         1.6
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
 // @homepage        https://m417z.com/
 // @include         explorer.exe
 // @architecture    x86-64
-// @compilerOptions -lole32 -loleaut32 -lruntimeobject -lshlwapi -lversion -lwininet
+// @compilerOptions -lole32 -loleaut32 -lpdh -lruntimeobject -lshlwapi -lversion -lwininet
 // ==/WindhawkMod==
 
 // Source code is published under The GNU General Public License v3.0.
@@ -24,15 +24,22 @@
 /*
 # Taskbar Clock Customization
 
-Customize the taskbar clock: define a custom date/time format, add a news feed,
-customize fonts and colors, and more.
+Custom date/time format, news feed, weather, performance metrics
+(upload/download speed, CPU, RAM), custom fonts and colors, and more.
 
 Only Windows 10 64-bit and Windows 11 are supported.
 
 **Note:** To customize the old taskbar on Windows 11 (if using ExplorerPatcher
 or a similar tool), enable the relevant option in the mod's settings.
 
-![Screenshot](https://i.imgur.com/gM9kbH5.png)
+![News screenshot](https://i.imgur.com/p03o9l7.png) \
+_News (default mod settings)_
+
+![Weather screenshot](https://i.imgur.com/Re7mQd6.png) \
+_Weather_
+
+![System performance metrics screenshot](https://i.imgur.com/vXWvFU2.png) \
+_System performance metrics_
 
 ## Available patterns
 
@@ -142,8 +149,13 @@ styles, such as the font color and size.
 - TextSpacing: 0
   $name: Line spacing
   $description: >-
-    Set 0 for the default system value. A negative value can be used for
+    Set to zero for the default system value. A negative value can be used for
     negative spacing.
+- DataCollectionUpdateInterval: 1
+  $name: System performance metrics update interval
+  $description: >-
+    The update interval, in seconds, of the system performance metrics such as
+    CPU and RAM usage.
 - WebContentsItems:
   - - Url: https://rss.nytimes.com/services/xml/rss/nyt/World.xml
       $name: Web content URL
@@ -341,8 +353,9 @@ styles, such as the font color and size.
 
 #include <windhawk_utils.h>
 
+using WindhawkUtils::StringSetting;
+
 #include <atomic>
-#include <format>
 #include <functional>
 #include <mutex>
 #include <optional>
@@ -357,6 +370,8 @@ using namespace std::string_view_literals;
 
 #include <comutil.h>
 #include <mshtml.h>
+#include <pdh.h>
+#include <pdhmsg.h>
 #include <psapi.h>
 #include <shlwapi.h>
 #include <wininet.h>
@@ -373,27 +388,10 @@ using namespace std::string_view_literals;
 
 using namespace winrt::Windows::UI::Xaml;
 
-class StringSetting {
-   public:
-    StringSetting() = default;
-    StringSetting(PCWSTR valueName) : m_stringSetting(valueName) {}
-    operator PCWSTR() const { return m_stringSetting.get(); }
-    PCWSTR get() const { return m_stringSetting.get(); }
-
-   private:
-    // https://stackoverflow.com/a/51274008
-    template <auto fn>
-    struct deleter_from_fn {
-        template <typename T>
-        constexpr void operator()(T* arg) const {
-            fn(arg);
-        }
-    };
-    using string_setting_unique_ptr =
-        std::unique_ptr<const WCHAR[], deleter_from_fn<Wh_FreeStringSetting>>;
-
-    string_setting_unique_ptr m_stringSetting;
-};
+// For Windhawk 1.4 and earlier compatibility.
+#ifndef URL_ESCAPE_ASCII_URI_COMPONENT
+#define URL_ESCAPE_ASCII_URI_COMPONENT 0x00080000
+#endif
 
 enum class ContentMode {
     plainText,
@@ -438,6 +436,7 @@ struct {
     int height;
     int maxWidth;
     int textSpacing;
+    int dataCollectionUpdateInterval;
     std::vector<WebContentsSettings> webContentsItems;
     StringSetting webContentWeatherLocation;
     StringSetting webContentWeatherFormat;
@@ -949,17 +948,23 @@ void UpdateWebContent() {
                     break;
             }
         } catch (const winrt::hresult_error& ex) {
-            extracted =
-                std::format(L"Content error {:08X}: {}",
-                            static_cast<DWORD>(ex.code().value), ex.message());
+            WCHAR buffer[256];
+            _snwprintf_s(buffer, _TRUNCATE, L"Content error %08X: %s",
+                         ex.code().value, ex.message().c_str());
+            extracted = buffer;
         } catch (const std::exception& ex) {
-            extracted = std::format(
-                L"Content error: {}",
-                std::wstring(ex.what(), ex.what() + strlen(ex.what())));
+            WCHAR buffer[256];
+            _snwprintf_s(buffer, _TRUNCATE, L"Content error: %S", ex.what());
+            extracted = buffer;
         }
 
         for (const auto& [s, r] : item.searchReplace) {
-            extracted = std::regex_replace(extracted, s, r);
+            try {
+                extracted = std::regex_replace(extracted, s, r);
+            } catch (const std::regex_error& ex) {
+                Wh_Log(L"Search/replace error %08X: %S",
+                       static_cast<DWORD>(ex.code()), ex.what());
+            }
         }
 
         std::lock_guard<std::mutex> guard(g_webContentMutex);
@@ -1740,8 +1745,8 @@ class QueryDataCollectionSession {
 };
 
 std::optional<QueryDataCollectionSession> g_queryDataCollectionSession;
-ULONGLONG g_queryDataCollectionIndex;
 ULONGLONG g_queryDataCollectionLastSampleTime;
+DWORD g_queryDataCollectionIndex;
 
 void DataCollectionSessionInit() {
     bool metrics[static_cast<int>(MetricType::kCount)]{};
@@ -3333,14 +3338,14 @@ HMODULE WINAPI LoadLibraryExW_Hook(LPCWSTR lpLibFileName,
 
 void LoadSettings() {
     g_settings.showSeconds = Wh_GetIntSetting(L"ShowSeconds");
-    g_settings.timeFormat = Wh_GetStringSetting(L"TimeFormat");
-    g_settings.dateFormat = Wh_GetStringSetting(L"DateFormat");
-    g_settings.weekdayFormat = Wh_GetStringSetting(L"WeekdayFormat");
+    g_settings.timeFormat = StringSetting::make(L"TimeFormat");
+    g_settings.dateFormat = StringSetting::make(L"DateFormat");
+    g_settings.weekdayFormat = StringSetting::make(L"WeekdayFormat");
 
     g_settings.weekdayFormatCustom.clear();
     if (wcscmp(g_settings.weekdayFormat, L"custom") == 0) {
         StringSetting weekdayFormatCustom =
-            Wh_GetStringSetting(L"WeekdayFormatCustom");
+            StringSetting::make(L"WeekdayFormatCustom");
         for (const auto weekdayName :
              SplitStringView(weekdayFormatCustom.get(), L",")) {
             g_settings.weekdayFormatCustom.emplace_back(
@@ -3349,10 +3354,10 @@ void LoadSettings() {
         g_settings.weekdayFormatCustom.resize(7);
     }
 
-    g_settings.topLine = Wh_GetStringSetting(L"TopLine");
-    g_settings.bottomLine = Wh_GetStringSetting(L"BottomLine");
-    g_settings.middleLine = Wh_GetStringSetting(L"MiddleLine");
-    g_settings.tooltipLine = Wh_GetStringSetting(L"TooltipLine");
+    g_settings.topLine = StringSetting::make(L"TopLine");
+    g_settings.bottomLine = StringSetting::make(L"BottomLine");
+    g_settings.middleLine = StringSetting::make(L"MiddleLine");
+    g_settings.tooltipLine = StringSetting::make(L"TooltipLine");
     g_settings.width = Wh_GetIntSetting(L"Width");
     g_settings.height = Wh_GetIntSetting(L"Height");
     g_settings.maxWidth = Wh_GetIntSetting(L"MaxWidth");
@@ -3363,19 +3368,19 @@ void LoadSettings() {
     g_settings.webContentsItems.clear();
     for (int i = 0;; i++) {
         WebContentsSettings item;
-        item.url = Wh_GetStringSetting(L"WebContentsItems[%d].Url", i);
+        item.url = StringSetting::make(L"WebContentsItems[%d].Url", i);
         if (*item.url == '\0') {
             break;
         }
 
         item.blockStart =
-            Wh_GetStringSetting(L"WebContentsItems[%d].BlockStart", i);
-        item.start = Wh_GetStringSetting(L"WebContentsItems[%d].Start", i);
-        item.end = Wh_GetStringSetting(L"WebContentsItems[%d].End", i);
+            StringSetting::make(L"WebContentsItems[%d].BlockStart", i);
+        item.start = StringSetting::make(L"WebContentsItems[%d].Start", i);
+        item.end = StringSetting::make(L"WebContentsItems[%d].End", i);
 
         item.contentMode = ContentMode::plainText;
         StringSetting contentMode =
-            Wh_GetStringSetting(L"WebContentsItems[%d].ContentMode", i);
+            StringSetting::make(L"WebContentsItems[%d].ContentMode", i);
         if (wcscmp(contentMode, L"xml") == 0) {
             item.contentMode = ContentMode::xml;
         } else if (wcscmp(contentMode, L"html") == 0) {
@@ -3385,13 +3390,13 @@ void LoadSettings() {
         }
 
         for (int j = 0;; j++) {
-            StringSetting search = Wh_GetStringSetting(
+            StringSetting search = StringSetting::make(
                 L"WebContentsItems[%d].SearchReplace[%d].Search", i, j);
             if (*search == '\0') {
                 break;
             }
 
-            StringSetting replace = Wh_GetStringSetting(
+            StringSetting replace = StringSetting::make(
                 L"WebContentsItems[%d].SearchReplace[%d].Replace", i, j);
 
             try {
@@ -3409,9 +3414,9 @@ void LoadSettings() {
     }
 
     g_settings.webContentWeatherLocation =
-        Wh_GetStringSetting(L"WebContentWeatherLocation");
+        StringSetting::make(L"WebContentWeatherLocation");
     g_settings.webContentWeatherFormat =
-        Wh_GetStringSetting(L"WebContentWeatherFormat");
+        StringSetting::make(L"WebContentWeatherFormat");
 
     g_settings.webContentsUpdateInterval =
         Wh_GetIntSetting(L"WebContentsUpdateInterval");
@@ -3423,7 +3428,7 @@ void LoadSettings() {
 
     g_settings.timeZones.clear();
     for (int i = 0;; i++) {
-        StringSetting timeZone = Wh_GetStringSetting(L"TimeZones[%d]", i);
+        StringSetting timeZone = StringSetting::make(L"TimeZones[%d]", i);
         if (*timeZone == '\0') {
             break;
         }
@@ -3438,35 +3443,35 @@ void LoadSettings() {
 
     g_settings.timeStyle.hidden = Wh_GetIntSetting(L"TimeStyle.Hidden");
     g_settings.timeStyle.textColor =
-        Wh_GetStringSetting(L"TimeStyle.TextColor");
+        StringSetting::make(L"TimeStyle.TextColor");
     g_settings.timeStyle.textAlignment =
-        Wh_GetStringSetting(L"TimeStyle.TextAlignment");
+        StringSetting::make(L"TimeStyle.TextAlignment");
     g_settings.timeStyle.fontSize = Wh_GetIntSetting(L"TimeStyle.FontSize");
     g_settings.timeStyle.fontFamily =
-        Wh_GetStringSetting(L"TimeStyle.FontFamily");
+        StringSetting::make(L"TimeStyle.FontFamily");
     g_settings.timeStyle.fontWeight =
-        Wh_GetStringSetting(L"TimeStyle.FontWeight");
+        StringSetting::make(L"TimeStyle.FontWeight");
     g_settings.timeStyle.fontStyle =
-        Wh_GetStringSetting(L"TimeStyle.FontStyle");
+        StringSetting::make(L"TimeStyle.FontStyle");
     g_settings.timeStyle.fontStretch =
-        Wh_GetStringSetting(L"TimeStyle.FontStretch");
+        StringSetting::make(L"TimeStyle.FontStretch");
     g_settings.timeStyle.characterSpacing =
         Wh_GetIntSetting(L"TimeStyle.CharacterSpacing");
 
     g_settings.dateStyle.hidden = Wh_GetIntSetting(L"DateStyle.Hidden");
     g_settings.dateStyle.textColor =
-        Wh_GetStringSetting(L"DateStyle.TextColor");
+        StringSetting::make(L"DateStyle.TextColor");
     g_settings.dateStyle.textAlignment =
-        Wh_GetStringSetting(L"DateStyle.TextAlignment");
+        StringSetting::make(L"DateStyle.TextAlignment");
     g_settings.dateStyle.fontSize = Wh_GetIntSetting(L"DateStyle.FontSize");
     g_settings.dateStyle.fontFamily =
-        Wh_GetStringSetting(L"DateStyle.FontFamily");
+        StringSetting::make(L"DateStyle.FontFamily");
     g_settings.dateStyle.fontWeight =
-        Wh_GetStringSetting(L"DateStyle.FontWeight");
+        StringSetting::make(L"DateStyle.FontWeight");
     g_settings.dateStyle.fontStyle =
-        Wh_GetStringSetting(L"DateStyle.FontStyle");
+        StringSetting::make(L"DateStyle.FontStyle");
     g_settings.dateStyle.fontStretch =
-        Wh_GetStringSetting(L"DateStyle.FontStretch");
+        StringSetting::make(L"DateStyle.FontStretch");
     g_settings.dateStyle.characterSpacing =
         Wh_GetIntSetting(L"DateStyle.CharacterSpacing");
 
@@ -3489,11 +3494,11 @@ void LoadSettings() {
     // Kept for compatibility with old settings:
     if (IsStrInDateTimePatternSettings(L"%web%") ||
         IsStrInDateTimePatternSettings(L"%web_full%")) {
-        g_settings.webContentsUrl = Wh_GetStringSetting(L"WebContentsUrl");
+        g_settings.webContentsUrl = StringSetting::make(L"WebContentsUrl");
         g_settings.webContentsBlockStart =
-            Wh_GetStringSetting(L"WebContentsBlockStart");
-        g_settings.webContentsStart = Wh_GetStringSetting(L"WebContentsStart");
-        g_settings.webContentsEnd = Wh_GetStringSetting(L"WebContentsEnd");
+            StringSetting::make(L"WebContentsBlockStart");
+        g_settings.webContentsStart = StringSetting::make(L"WebContentsStart");
+        g_settings.webContentsEnd = StringSetting::make(L"WebContentsEnd");
         g_settings.webContentsMaxLength =
             Wh_GetIntSetting(L"WebContentsMaxLength");
     }
