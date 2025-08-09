@@ -9,7 +9,7 @@
 // @homepage        https://m417z.com/
 // @include         explorer.exe
 // @architecture    x86-64
-// @compilerOptions -D__USE_MINGW_ANSI_STDIO=0 -lcomctl32 -lole32 -loleaut32 -lshlwapi -lversion
+// @compilerOptions -lcomctl32 -lole32 -loleaut32 -lshlwapi -lversion
 // ==/WindhawkMod==
 
 // Source code is published under The GNU General Public License v3.0.
