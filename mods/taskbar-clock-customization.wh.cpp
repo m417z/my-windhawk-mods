@@ -1812,10 +1812,10 @@ void FormatInternetSpeed(int bytesPerSec, PWSTR buffer, size_t bufferSize) {
     constexpr int kMb = kKb * 1024;
 
     if (bytesPerSec >= kMb) {
-        swprintf_s(buffer, bufferSize, L"%.1f Mb/s",
+        swprintf_s(buffer, bufferSize, L"%.1f MB/s",
                    static_cast<double>(bytesPerSec) / kMb);
     } else if (bytesPerSec >= kKb) {
-        swprintf_s(buffer, bufferSize, L"%.1f Kb/s",
+        swprintf_s(buffer, bufferSize, L"%.1f KB/s",
                    static_cast<double>(bytesPerSec) / kKb);
     } else {
         swprintf_s(buffer, bufferSize, L"%d B/s", bytesPerSec);
