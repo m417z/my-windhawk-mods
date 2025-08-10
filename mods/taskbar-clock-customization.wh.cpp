@@ -84,6 +84,7 @@ patterns can be used:
   * `%media_album%` - currently playing media album.
   * `%media_status%` - media playback status (Playing, Paused, Stopped).
   * `%media_info%` - combined media info (Artist - Title).
+  * `%media_info_ellipsis%` - combined media info (Artist - Title) with length limit.
 * `%web<n>%` - the web contents as configured in settings, truncated with
   ellipsis, where `<n>` is the web contents number.
 * `%web<n>_full%` - the full web contents as configured in settings, where `<n>`
@@ -177,6 +178,16 @@ styles, such as the font color and size.
     List of media player names to ignore. Players in this list will not be shown
     even if they are active. Player names are case-insensitive. Examples: "Spotify", 
     "Windows Media Player", "VLC media player". Leave empty string to disable.
+- MediaInfoMaxLength: 50
+  $name: Media info maximum length
+  $description: >-
+    Maximum number of characters for the %media_info_ellipsis% pattern. Longer strings 
+    will be truncated with ellipsis. Set to 0 for no limit.
+- RemoveMediaInfoBrackets: false
+  $name: Remove brackets from media info
+  $description: >-
+    Remove text in brackets from media info patterns. For example, "Song (feat. Artist)" 
+    becomes "Song". This applies before length truncation for %media_info_ellipsis%.
 - WebContentsItems:
   - - Url: https://rss.nytimes.com/services/xml/rss/nyt/World.xml
       $name: Web content URL
@@ -464,6 +475,8 @@ struct {
     int mediaUpdateInterval;
     bool hideMediaOnPause;
     std::vector<StringSetting> ignoredMediaPlayers;
+    int mediaInfoMaxLength;
+    bool removeMediaInfoBrackets;
     std::vector<WebContentsSettings> webContentsItems;
     StringSetting webContentWeatherLocation;
     StringSetting webContentWeatherFormat;
@@ -531,6 +544,7 @@ FormattedString<FORMATTED_BUFFER_SIZE> g_mediaArtistFormatted;
 FormattedString<FORMATTED_BUFFER_SIZE> g_mediaAlbumFormatted;
 FormattedString<FORMATTED_BUFFER_SIZE> g_mediaStatusFormatted;
 FormattedString<FORMATTED_BUFFER_SIZE> g_mediaInfoFormatted;
+FormattedString<FORMATTED_BUFFER_SIZE> g_mediaInfoEllipsisFormatted;
 
 std::vector<std::optional<DYNAMIC_TIME_ZONE_INFORMATION>> g_timeZoneInformation;
 
@@ -1136,6 +1150,51 @@ bool IsMediaPlayerIgnored(const winrt::hstring& playerName) {
     return false;
 }
 
+std::wstring RemoveBracketsFromString(const std::wstring& input) {
+    if (!g_settings.removeMediaInfoBrackets) {
+        return input;
+    }
+    
+    std::wstring result = input;
+    
+    // Remove content in parentheses ()
+    size_t start = 0;
+    while ((start = result.find(L'(', start)) != std::wstring::npos) {
+        size_t end = result.find(L')', start);
+        if (end != std::wstring::npos) {
+            // Remove the parentheses and content, including any preceding space
+            if (start > 0 && result[start - 1] == L' ') {
+                start--;
+            }
+            result.erase(start, end - start + 1);
+        } else {
+            break;
+        }
+    }
+    
+    // Remove content in square brackets []
+    start = 0;
+    while ((start = result.find(L'[', start)) != std::wstring::npos) {
+        size_t end = result.find(L']', start);
+        if (end != std::wstring::npos) {
+            // Remove the brackets and content, including any preceding space
+            if (start > 0 && result[start - 1] == L' ') {
+                start--;
+            }
+            result.erase(start, end - start + 1);
+        } else {
+            break;
+        }
+    }
+    
+    // Trim trailing spaces
+    while (!result.empty() && result.back() == L' ') {
+        result.pop_back();
+    }
+    
+    return result;
+}
+
 void UpdateMediaInfo() {
     FILETIME formatTimeFt{};
     SystemTimeToFileTime(&g_formatTime, &formatTimeFt);
@@ -1160,6 +1219,7 @@ void UpdateMediaInfo() {
                 wcscpy_s(g_mediaAlbumFormatted.buffer, L"");
                 wcscpy_s(g_mediaStatusFormatted.buffer, L"Stopped");
                 wcscpy_s(g_mediaInfoFormatted.buffer, L"");
+                wcscpy_s(g_mediaInfoEllipsisFormatted.buffer, L"");
                 return;
             }
 
@@ -1252,6 +1312,7 @@ void UpdateMediaInfo() {
                 wcscpy_s(g_mediaAlbumFormatted.buffer, L"");
                 wcscpy_s(g_mediaStatusFormatted.buffer, L"Stopped");
                 wcscpy_s(g_mediaInfoFormatted.buffer, L"");
+                wcscpy_s(g_mediaInfoEllipsisFormatted.buffer, L"");
                 return;
             }
 
@@ -1282,14 +1343,34 @@ void UpdateMediaInfo() {
                          FORMATTED_BUFFER_SIZE - 1);
 
                 // Create combined info
-                if (!artist.empty() && !title.empty()) {
+                std::wstring processedArtist = RemoveBracketsFromString(std::wstring(artist));
+                std::wstring processedTitle = RemoveBracketsFromString(std::wstring(title));
+                
+                if (!processedArtist.empty() && !processedTitle.empty()) {
                     swprintf_s(g_mediaInfoFormatted.buffer, L"%s - %s", 
-                              artist.c_str(), title.c_str());
-                } else if (!title.empty()) {
-                    wcsncpy_s(g_mediaInfoFormatted.buffer, title.c_str(), 
+                              processedArtist.c_str(), processedTitle.c_str());
+                } else if (!processedTitle.empty()) {
+                    wcsncpy_s(g_mediaInfoFormatted.buffer, processedTitle.c_str(), 
                              FORMATTED_BUFFER_SIZE - 1);
                 } else {
                     wcscpy_s(g_mediaInfoFormatted.buffer, L"");
+                }
+
+                // Create ellipsis version for %media_info_ellipsis%
+                wcscpy_s(g_mediaInfoEllipsisFormatted.buffer, g_mediaInfoFormatted.buffer);
+                if (g_settings.mediaInfoMaxLength > 0) {
+                    size_t currentLength = wcslen(g_mediaInfoEllipsisFormatted.buffer);
+                    if (currentLength > (size_t)g_settings.mediaInfoMaxLength) {
+                        // Truncate with ellipsis
+                        if (g_settings.mediaInfoMaxLength >= 3) {
+                            g_mediaInfoEllipsisFormatted.buffer[g_settings.mediaInfoMaxLength - 3] = L'.';
+                            g_mediaInfoEllipsisFormatted.buffer[g_settings.mediaInfoMaxLength - 2] = L'.';
+                            g_mediaInfoEllipsisFormatted.buffer[g_settings.mediaInfoMaxLength - 1] = L'.';
+                            g_mediaInfoEllipsisFormatted.buffer[g_settings.mediaInfoMaxLength] = L'\0';
+                        } else {
+                            g_mediaInfoEllipsisFormatted.buffer[g_settings.mediaInfoMaxLength] = L'\0';
+                        }
+                    }
                 }
             }
 
@@ -1318,6 +1399,7 @@ void UpdateMediaInfo() {
                 wcscpy_s(g_mediaArtistFormatted.buffer, L"");
                 wcscpy_s(g_mediaAlbumFormatted.buffer, L"");
                 wcscpy_s(g_mediaInfoFormatted.buffer, L"");
+                wcscpy_s(g_mediaInfoEllipsisFormatted.buffer, L"");
             }
 
         } catch (...) {
@@ -1326,6 +1408,7 @@ void UpdateMediaInfo() {
             wcscpy_s(g_mediaAlbumFormatted.buffer, L"");
             wcscpy_s(g_mediaStatusFormatted.buffer, L"Error");
             wcscpy_s(g_mediaInfoFormatted.buffer, L"");
+            wcscpy_s(g_mediaInfoEllipsisFormatted.buffer, L"");
         }
 
         g_mediaLastUpdateTime = expectedUpdateTime;
@@ -2199,10 +2282,26 @@ PCWSTR GetMediaInfoFormatted() {
             UpdateMediaInfo();
         } else {
             wcscpy_s(g_mediaInfoFormatted.buffer, L"");
+            wcscpy_s(g_mediaInfoEllipsisFormatted.buffer, L"");
         }
         g_mediaInfoFormatted.formatIndex = g_formatIndex;
+        g_mediaInfoEllipsisFormatted.formatIndex = g_formatIndex;
     }
     return g_mediaInfoFormatted.buffer;
+}
+
+PCWSTR GetMediaInfoEllipsisFormatted() {
+    if (g_mediaInfoEllipsisFormatted.formatIndex != g_formatIndex) {
+        if (g_mediaSessionInitialized) {
+            UpdateMediaInfo();
+        } else {
+            wcscpy_s(g_mediaInfoFormatted.buffer, L"");
+            wcscpy_s(g_mediaInfoEllipsisFormatted.buffer, L"");
+        }
+        g_mediaInfoFormatted.formatIndex = g_formatIndex;
+        g_mediaInfoEllipsisFormatted.formatIndex = g_formatIndex;
+    }
+    return g_mediaInfoEllipsisFormatted.buffer;
 }
 
 int ResolveFormatTokenWithDigit(std::wstring_view format,
@@ -2256,6 +2355,7 @@ size_t ResolveFormatToken(
         {L"%media_album%"sv, GetMediaAlbumFormatted},
         {L"%media_status%"sv, GetMediaStatusFormatted},
         {L"%media_info%"sv, GetMediaInfoFormatted},
+        {L"%media_info_ellipsis%"sv, GetMediaInfoEllipsisFormatted},
         {L"%newline%"sv, []() { return L"\n"; }},
     };
 
@@ -3712,6 +3812,10 @@ void LoadSettings() {
         Wh_GetIntSetting(L"MediaUpdateInterval");
     g_settings.hideMediaOnPause = 
         Wh_GetIntSetting(L"HideMediaOnPause");
+    g_settings.mediaInfoMaxLength = 
+        Wh_GetIntSetting(L"MediaInfoMaxLength");
+    g_settings.removeMediaInfoBrackets = 
+        Wh_GetIntSetting(L"RemoveMediaInfoBrackets");
 
     g_settings.ignoredMediaPlayers.clear();
     for (int i = 0;; i++) {
