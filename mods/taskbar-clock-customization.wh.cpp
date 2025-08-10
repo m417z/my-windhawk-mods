@@ -1157,31 +1157,63 @@ std::wstring RemoveBracketsFromString(const std::wstring& input) {
     
     std::wstring result = input;
     
-    // Remove content in parentheses ()
+    // Remove content in parentheses (), but ignore empty ones ()
     size_t start = 0;
     while ((start = result.find(L'(', start)) != std::wstring::npos) {
         size_t end = result.find(L')', start);
         if (end != std::wstring::npos) {
-            // Remove the parentheses and content, including any preceding space
-            if (start > 0 && result[start - 1] == L' ') {
-                start--;
+            // Check if parentheses contain anything other than whitespace
+            std::wstring content = result.substr(start + 1, end - start - 1);
+            bool hasContent = false;
+            for (wchar_t c : content) {
+                if (c != L' ' && c != L'\t' && c != L'\n' && c != L'\r') {
+                    hasContent = true;
+                    break;
+                }
             }
-            result.erase(start, end - start + 1);
+            
+            if (hasContent) {
+                // Remove the parentheses and content, including any preceding space
+                size_t removeStart = start;
+                if (start > 0 && result[start - 1] == L' ') {
+                    removeStart--;
+                }
+                result.erase(removeStart, end - removeStart + 1);
+                start = removeStart;
+            } else {
+                start = end + 1;
+            }
         } else {
             break;
         }
     }
     
-    // Remove content in square brackets []
+    // Remove content in square brackets [], but ignore empty ones []
     start = 0;
     while ((start = result.find(L'[', start)) != std::wstring::npos) {
         size_t end = result.find(L']', start);
         if (end != std::wstring::npos) {
-            // Remove the brackets and content, including any preceding space
-            if (start > 0 && result[start - 1] == L' ') {
-                start--;
+            // Check if brackets contain anything other than whitespace
+            std::wstring content = result.substr(start + 1, end - start - 1);
+            bool hasContent = false;
+            for (wchar_t c : content) {
+                if (c != L' ' && c != L'\t' && c != L'\n' && c != L'\r') {
+                    hasContent = true;
+                    break;
+                }
             }
-            result.erase(start, end - start + 1);
+            
+            if (hasContent) {
+                // Remove the brackets and content, including any preceding space
+                size_t removeStart = start;
+                if (start > 0 && result[start - 1] == L' ') {
+                    removeStart--;
+                }
+                result.erase(removeStart, end - removeStart + 1);
+                start = removeStart;
+            } else {
+                start = end + 1;
+            }
         } else {
             break;
         }
