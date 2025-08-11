@@ -1654,7 +1654,7 @@ class QueryDataCollectionSession {
         }
 
         if (is_wildcard) {
-            for (const auto& path : ExpandWildcard(counter_path)) {
+            for (const auto& path : ExpandEnglishWildcard(counter_path)) {
                 PDH_HCOUNTER counter;
                 HRESULT hr = PdhAddCounter(query_, path.c_str(), 0, &counter);
                 if (SUCCEEDED(hr)) {
@@ -1665,11 +1665,12 @@ class QueryDataCollectionSession {
             }
         } else {
             PDH_HCOUNTER counter;
-            HRESULT hr = PdhAddCounter(query_, counter_path, 0, &counter);
+            HRESULT hr =
+                PdhAddEnglishCounter(query_, counter_path, 0, &counter);
             if (SUCCEEDED(hr)) {
                 metric.counters.push_back(counter);
             } else {
-                Wh_Log(L"PdhAddCounter error %08X", hr);
+                Wh_Log(L"PdhAddEnglishCounter error %08X", hr);
             }
         }
 
@@ -1705,12 +1706,49 @@ class QueryDataCollectionSession {
     }
 
    private:
-    std::vector<std::wstring> ExpandWildcard(PCWSTR wildcard_path) {
+    // Implemented according to the note here:
+    // https://learn.microsoft.com/en-us/windows/win32/api/pdh/nf-pdh-pdhaddenglishcounterw
+    std::vector<std::wstring> ExpandEnglishWildcard(PCWSTR wildcard_path) {
+        // Step 1: Add English counter with wildcards to get localized path.
+        PDH_HCOUNTER temp_counter;
+        HRESULT hr =
+            PdhAddEnglishCounter(query_, wildcard_path, 0, &temp_counter);
+        if (FAILED(hr)) {
+            Wh_Log(L"PdhAddEnglishCounter error %08X", hr);
+            return {};
+        }
+
+        // Step 2: Get counter info to obtain localized full path.
         DWORD required = 0;
-        HRESULT hr = PdhExpandWildCardPath(nullptr, wildcard_path, nullptr,
-                                           &required, 0);
+        hr = PdhGetCounterInfo(temp_counter, FALSE, &required, nullptr);
         if (FAILED(hr) && hr != static_cast<HRESULT>(PDH_MORE_DATA)) {
-            Wh_Log(L"PdhExpandWildCardPath error %08X", hr);
+            Wh_Log(L"PdhGetCounterInfo (size) error %08X", hr);
+            PdhRemoveCounter(temp_counter);
+            return {};
+        }
+
+        if (required == 0) {
+            PdhRemoveCounter(temp_counter);
+            return {};
+        }
+
+        std::vector<BYTE> counter_info_buffer(required);
+        PDH_COUNTER_INFO* counter_info =
+            reinterpret_cast<PDH_COUNTER_INFO*>(counter_info_buffer.data());
+
+        hr = PdhGetCounterInfo(temp_counter, FALSE, &required, counter_info);
+        PdhRemoveCounter(temp_counter);
+        if (FAILED(hr)) {
+            Wh_Log(L"PdhGetCounterInfo error %08X", hr);
+            return {};
+        }
+
+        // Step 3: Expand wildcards using the localized path.
+        required = 0;
+        hr = PdhExpandWildCardPath(nullptr, counter_info->szFullPath, nullptr,
+                                   &required, 0);
+        if (FAILED(hr) && hr != static_cast<HRESULT>(PDH_MORE_DATA)) {
+            Wh_Log(L"PdhExpandWildCardPath (localized, size) error %08X", hr);
             return {};
         }
 
@@ -1718,18 +1756,18 @@ class QueryDataCollectionSession {
             return {};
         }
 
-        std::vector<WCHAR> buffer(required);
-        hr = PdhExpandWildCardPath(nullptr, wildcard_path, buffer.data(),
-                                   &required, 0);
+        std::vector<WCHAR> path_buffer(required);
+        hr = PdhExpandWildCardPath(nullptr, counter_info->szFullPath,
+                                   path_buffer.data(), &required, 0);
         if (FAILED(hr)) {
-            Wh_Log(L"PdhExpandWildCardPath error %08X", hr);
+            Wh_Log(L"PdhExpandWildCardPath (localized) error %08X", hr);
             return {};
         }
 
         std::vector<std::wstring> out_paths;
-        WCHAR* p = buffer.data();
+        WCHAR* p = path_buffer.data();
         while (*p) {
-            Wh_Log(L"Expanded path: %s", p);
+            Wh_Log(L"Expanded localized path: %s", p);
             out_paths.emplace_back(p);
             p += wcslen(p) + 1;
         }
