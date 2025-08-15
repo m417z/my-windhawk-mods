@@ -2,7 +2,7 @@
 // @id              taskbar-clock-customization
 // @name            Taskbar Clock Customization
 // @description     Custom date/time format, news feed, weather, performance metrics (upload/download speed, CPU, RAM), custom fonts and colors, and more
-// @version         1.6.1
+// @version         1.6.2
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
@@ -1845,6 +1845,7 @@ void DataCollectionSessionInit() {
 
 void DataCollectionSessionUninit() {
     g_dataCollectionSession.reset();
+    g_dataCollectionLastFormatIndex = 0;
 }
 
 DWORD GetDataCollectionFormatIndex() {
