@@ -38,7 +38,7 @@ _News (default mod settings)_
 ![Weather screenshot](https://i.imgur.com/Re7mQd6.png) \
 _Weather_
 
-![System performance metrics screenshot](https://i.imgur.com/vXWvFU2.png) \
+![System performance metrics screenshot](https://i.imgur.com/QhyYv0D.png) \
 _System performance metrics_
 
 ## Available patterns
@@ -1760,19 +1760,47 @@ void DataCollectionSampleIfNeeded() {
     }
 }
 
-void FormatInternetSpeed(int bytesPerSec, PWSTR buffer, size_t bufferSize) {
-    constexpr int kKb = 1024;
-    constexpr int kMb = kKb * 1024;
-
-    if (bytesPerSec >= kMb) {
-        swprintf_s(buffer, bufferSize, L"%.1f MB/s",
-                   static_cast<double>(bytesPerSec) / kMb);
-    } else if (bytesPerSec >= kKb) {
-        swprintf_s(buffer, bufferSize, L"%.1f KB/s",
-                   static_cast<double>(bytesPerSec) / kKb);
-    } else {
-        swprintf_s(buffer, bufferSize, L"%d B/s", bytesPerSec);
+std::wstring FormatLocaleNum(double val, unsigned int digitsAfterDecimal) {
+    int valStrLen = _scwprintf(L"%.17f", val);
+    if (valStrLen < 0) {
+        return std::wstring();
     }
+
+    std::wstring valStr(valStrLen + 1, L'\0');
+    if (swprintf_s(valStr.data(), valStr.size(), L"%.17f", val) < 0) {
+        return std::wstring();
+    }
+
+    WCHAR decSep[4];
+    if (!GetLocaleInfoEx(LOCALE_NAME_USER_DEFAULT, LOCALE_SDECIMAL, decSep,
+                         ARRAYSIZE(decSep))) {
+        // Fallback.
+        decSep[0] = L'.';
+        decSep[1] = L'\0';
+    }
+
+    NUMBERFMTW fmt{
+        .NumDigits = digitsAfterDecimal,
+        .LeadingZero = 1,
+        .lpDecimalSep = const_cast<LPWSTR>(decSep),
+        .lpThousandSep = const_cast<LPWSTR>(L""),
+    };
+
+    // Query required size.
+    int needed = GetNumberFormatEx(LOCALE_NAME_USER_DEFAULT, 0, valStr.c_str(),
+                                   &fmt, nullptr, 0);
+    if (needed == 0) {
+        return std::wstring();
+    }
+
+    // Format.
+    std::wstring out(needed - 1, L'\0');
+    if (GetNumberFormatEx(LOCALE_NAME_USER_DEFAULT, 0, valStr.c_str(), &fmt,
+                          out.data(), needed) == 0) {
+        return std::wstring();
+    }
+
+    return out;
 }
 
 template <size_t N>
@@ -1785,11 +1813,38 @@ PCWSTR GetMetricFormatted(FormattedString<N>& formattedString,
             double val = g_queryDataCollectionSession->QueryData(metricType);
             if (metricType == MetricType::kUploadSpeed ||
                 metricType == MetricType::kDownloadSpeed) {
-                FormatInternetSpeed(val, formattedString.buffer,
-                                    ARRAYSIZE(formattedString.buffer));
+                double valMb = val / (1024 * 1024);
+
+                // Keep identical width for <1000 values.
+                int digitsAfterDecimal = 0;
+                PCWSTR prefix = L"";
+                if (valMb < 10) {
+                    digitsAfterDecimal = 2;
+                } else if (valMb < 100) {
+                    digitsAfterDecimal = 1;
+                } else if (valMb < 1000) {
+                    // Punctuation Space.
+                    prefix = L"\u2008";
+                }
+
+                std::wstring valMbFormatted =
+                    FormatLocaleNum(valMb, digitsAfterDecimal);
+
+                swprintf_s(formattedString.buffer, L"%s%s MB/s", prefix,
+                           valMbFormatted.c_str());
             } else {
-                swprintf_s(formattedString.buffer, L"%d%%",
-                           static_cast<int>(val));
+                int valDecimal = static_cast<int>(val);
+
+                // Cap to 99 to keep identical width in all cases.
+                if (valDecimal == 100) {
+                    valDecimal = 99;
+                }
+
+                // Pad to keep identical width in all cases.
+                PCWSTR prefix = valDecimal < 10 ? L"  " : L"";
+
+                swprintf_s(formattedString.buffer, L"%s%d%%", prefix,
+                           valDecimal);
             }
         } else {
             wcscpy_s(formattedString.buffer, ARRAYSIZE(formattedString.buffer),
