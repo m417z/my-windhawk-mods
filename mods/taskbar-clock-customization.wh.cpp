@@ -1658,7 +1658,7 @@ class QueryDataCollectionSession {
     ~QueryDataCollectionSession() { PdhCloseQuery(query_); }
 
     bool AddMetric(MetricType type) {
-        PCWSTR counter_path;
+        PCWSTR counter_path = nullptr;
         switch (type) {
             case MetricType::kDownloadSpeed:
                 counter_path = L"\\Network Interface(*)\\Bytes Received/sec";
@@ -1672,13 +1672,6 @@ class QueryDataCollectionSession {
             case MetricType::kRam:
                 counter_path = L"\\Memory\\% Committed Bytes In Use";
                 break;
-            default:
-                return false;
-        }
-
-        auto& metric = metrics_[static_cast<int>(type)];
-        if (!metric.counters.empty()) {
-            return false;
         }
 
         PDH_HCOUNTER counter;
@@ -1688,7 +1681,7 @@ class QueryDataCollectionSession {
             return false;
         }
 
-        metric.counters.push_back(counter);
+        counters_[static_cast<int>(type)] = counter;
         return true;
     }
 
@@ -1703,30 +1696,22 @@ class QueryDataCollectionSession {
     }
 
     double QueryData(MetricType type) {
-        const auto& metric = metrics_[static_cast<int>(type)];
+        PDH_HCOUNTER counter = counters_[static_cast<int>(type)];
 
-        double sum = 0.0;
-        for (auto counter : metric.counters) {
-            PDH_FMT_COUNTERVALUE val;
-            HRESULT hr = PdhGetFormattedCounterValue(counter, PDH_FMT_DOUBLE,
-                                                     nullptr, &val);
-            if (SUCCEEDED(hr)) {
-                sum += val.doubleValue;
-            } else {
-                Wh_Log(L"PdhGetFormattedCounterValue error %08X", hr);
-            }
+        PDH_FMT_COUNTERVALUE val;
+        HRESULT hr =
+            PdhGetFormattedCounterValue(counter, PDH_FMT_DOUBLE, nullptr, &val);
+        if (FAILED(hr)) {
+            Wh_Log(L"PdhGetFormattedCounterValue error %08X", hr);
+            return 0;
         }
 
-        return sum;
+        return val.doubleValue;
     }
 
    private:
-    struct MetricData {
-        std::vector<PDH_HCOUNTER> counters;
-    };
-
     PDH_HQUERY query_;
-    MetricData metrics_[static_cast<int>(MetricType::kCount)];
+    PDH_HCOUNTER counters_[static_cast<int>(MetricType::kCount)]{};
 };
 
 std::optional<QueryDataCollectionSession> g_queryDataCollectionSession;
