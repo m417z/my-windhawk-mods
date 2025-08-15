@@ -166,6 +166,15 @@ styles, such as the font color and size.
   $description: >-
     The weather information format. For details, refer to the documentation of
     wttr.in.
+- WebContentWeatherUnits: autoDetect
+  $name: Weather units
+  $description: >-
+    The weather units. For details, refer to the documentation of wttr.in.
+  $options:
+  - autoDetect: Auto (default)
+  - uscs: USCS (used by default in US)
+  - metric: Metric (SI) (used by default everywhere except US)
+  - metricMsWind: Metric (SI), but show wind speed in m/s
 - WebContentsItems:
   - - Url: https://rss.nytimes.com/services/xml/rss/nyt/World.xml
       $name: Web content URL
@@ -394,6 +403,13 @@ using namespace winrt::Windows::UI::Xaml;
 #define URL_ESCAPE_ASCII_URI_COMPONENT 0x00080000
 #endif
 
+enum class WebContentWeatherUnits {
+    autoDetect,
+    uscs,
+    metric,
+    metricMsWind,
+};
+
 enum class ContentMode {
     plainText,
     html,
@@ -440,6 +456,7 @@ struct {
     int dataCollectionUpdateInterval;
     StringSetting webContentWeatherLocation;
     StringSetting webContentWeatherFormat;
+    WebContentWeatherUnits webContentWeatherUnits;
     std::vector<WebContentsSettings> webContentsItems;
     int webContentsUpdateInterval;
     std::vector<StringSetting> timeZones;
@@ -820,7 +837,21 @@ bool UpdateWeatherWebContent() {
 
     std::wstring weatherUrl = L"https://wttr.in/";
     weatherUrl += EscapeUrlComponent(g_settings.webContentWeatherLocation);
-    weatherUrl += L"?format=";
+    weatherUrl += L'?';
+    switch (g_settings.webContentWeatherUnits) {
+        case WebContentWeatherUnits::autoDetect:
+            break;
+        case WebContentWeatherUnits::uscs:
+            weatherUrl += L"u&";
+            break;
+        case WebContentWeatherUnits::metric:
+            weatherUrl += L"m&";
+            break;
+        case WebContentWeatherUnits::metricMsWind:
+            weatherUrl += L"M&";
+            break;
+    }
+    weatherUrl += L"format=";
     weatherUrl += EscapeUrlComponent(format.c_str());
     std::optional<std::wstring> urlContent = GetUrlContent(weatherUrl.c_str());
     if (!urlContent) {
@@ -3377,6 +3408,18 @@ void LoadSettings() {
         StringSetting::make(L"WebContentWeatherLocation");
     g_settings.webContentWeatherFormat =
         StringSetting::make(L"WebContentWeatherFormat");
+
+    g_settings.webContentWeatherUnits = WebContentWeatherUnits::autoDetect;
+    StringSetting webContentWeatherUnits =
+        StringSetting::make(L"WebContentWeatherUnits");
+    if (wcscmp(webContentWeatherUnits, L"uscs") == 0) {
+        g_settings.webContentWeatherUnits = WebContentWeatherUnits::uscs;
+    } else if (wcscmp(webContentWeatherUnits, L"metric") == 0) {
+        g_settings.webContentWeatherUnits = WebContentWeatherUnits::metric;
+    } else if (wcscmp(webContentWeatherUnits, L"metricMsWind") == 0) {
+        g_settings.webContentWeatherUnits =
+            WebContentWeatherUnits::metricMsWind;
+    }
 
     g_settings.webContentsItems.clear();
     for (int i = 0;; i++) {
