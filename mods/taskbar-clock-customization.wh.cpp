@@ -1672,6 +1672,11 @@ class QueryDataCollectionSession {
                 return false;
         }
 
+        auto& metric = metrics_[static_cast<int>(type)];
+        if (!metric.counters.empty()) {
+            return false;
+        }
+
         PDH_HCOUNTER counter;
         HRESULT hr = PdhAddEnglishCounter(query_, counter_path, 0, &counter);
         if (FAILED(hr)) {
@@ -1679,7 +1684,7 @@ class QueryDataCollectionSession {
             return false;
         }
 
-        counters_[static_cast<int>(type)] = counter;
+        metric.counters.push_back(counter);
         return true;
     }
 
@@ -1694,22 +1699,30 @@ class QueryDataCollectionSession {
     }
 
     double QueryData(MetricType type) {
-        PDH_HCOUNTER counter = counters_[static_cast<int>(type)];
+        const auto& metric = metrics_[static_cast<int>(type)];
 
-        PDH_FMT_COUNTERVALUE val;
-        HRESULT hr =
-            PdhGetFormattedCounterValue(counter, PDH_FMT_DOUBLE, nullptr, &val);
-        if (FAILED(hr)) {
-            Wh_Log(L"PdhGetFormattedCounterValue error %08X", hr);
-            return 0;
+        double sum = 0.0;
+        for (auto counter : metric.counters) {
+            PDH_FMT_COUNTERVALUE val;
+            HRESULT hr = PdhGetFormattedCounterValue(counter, PDH_FMT_DOUBLE,
+                                                     nullptr, &val);
+            if (SUCCEEDED(hr)) {
+                sum += val.doubleValue;
+            } else {
+                Wh_Log(L"PdhGetFormattedCounterValue error %08X", hr);
+            }
         }
 
-        return val.doubleValue;
+        return sum;
     }
 
    private:
+    struct MetricData {
+        std::vector<PDH_HCOUNTER> counters;
+    };
+
     PDH_HQUERY query_;
-    PDH_HCOUNTER counters_[static_cast<int>(MetricType::kCount)]{};
+    MetricData metrics_[static_cast<int>(MetricType::kCount)];
 };
 
 std::optional<QueryDataCollectionSession> g_dataCollectionSession;
