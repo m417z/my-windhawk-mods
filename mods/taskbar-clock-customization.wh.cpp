@@ -1637,7 +1637,6 @@ enum class MetricType {
     kUploadSpeed,
     kDownloadSpeed,
     kCpu,
-    kRam,
 
     kCount,
 };
@@ -1658,7 +1657,7 @@ class QueryDataCollectionSession {
     ~QueryDataCollectionSession() { PdhCloseQuery(query_); }
 
     bool AddMetric(MetricType type) {
-        PCWSTR counter_path = nullptr;
+        PCWSTR counter_path;
         switch (type) {
             case MetricType::kDownloadSpeed:
                 counter_path = L"\\Network Interface(*)\\Bytes Received/sec";
@@ -1669,9 +1668,8 @@ class QueryDataCollectionSession {
             case MetricType::kCpu:
                 counter_path = L"\\Processor(_Total)\\% Processor Time";
                 break;
-            case MetricType::kRam:
-                counter_path = L"\\Memory\\% Committed Bytes In Use";
-                break;
+            default:
+                return false;
         }
 
         PDH_HCOUNTER counter;
@@ -1726,8 +1724,6 @@ void DataCollectionSessionInit() {
         IsStrInDateTimePatternSettings(L"%download_speed%");
     metrics[static_cast<int>(MetricType::kCpu)] =
         IsStrInDateTimePatternSettings(L"%cpu%");
-    metrics[static_cast<int>(MetricType::kRam)] =
-        IsStrInDateTimePatternSettings(L"%ram%");
 
     if (!std::any_of(std::begin(metrics), std::end(metrics),
                      [](bool x) { return x; })) {
@@ -1820,6 +1816,39 @@ std::wstring FormatLocaleNum(double val, unsigned int digitsAfterDecimal) {
     return out;
 }
 
+void FormatTransferSpeed(double val, PWSTR buffer, size_t bufferSize) {
+    double valMb = val / (1024 * 1024);
+
+    // Keep identical width for <1000 values.
+    int digitsAfterDecimal = 0;
+    PCWSTR prefix = L"";
+    if (valMb < 10) {
+        digitsAfterDecimal = 2;
+    } else if (valMb < 100) {
+        digitsAfterDecimal = 1;
+    } else if (valMb < 1000) {
+        // Punctuation Space.
+        prefix = L"\u2008";
+    }
+
+    std::wstring valMbFormatted = FormatLocaleNum(valMb, digitsAfterDecimal);
+
+    swprintf_s(buffer, bufferSize, L"%s%s MB/s", prefix,
+               valMbFormatted.c_str());
+}
+
+void FormatPercentValue(int val, PWSTR buffer, size_t bufferSize) {
+    // Cap to 99 to keep identical width in all cases.
+    if (val == 100) {
+        val = 99;
+    }
+
+    // Pad to keep identical width in all cases.
+    PCWSTR prefix = val < 10 ? L"  " : L"";
+
+    swprintf_s(buffer, bufferSize, L"%s%d%%", prefix, val);
+}
+
 template <size_t N>
 PCWSTR GetMetricFormatted(FormattedString<N>& formattedString,
                           MetricType metricType) {
@@ -1830,42 +1859,15 @@ PCWSTR GetMetricFormatted(FormattedString<N>& formattedString,
             double val = g_queryDataCollectionSession->QueryData(metricType);
             if (metricType == MetricType::kUploadSpeed ||
                 metricType == MetricType::kDownloadSpeed) {
-                double valMb = val / (1024 * 1024);
-
-                // Keep identical width for <1000 values.
-                int digitsAfterDecimal = 0;
-                PCWSTR prefix = L"";
-                if (valMb < 10) {
-                    digitsAfterDecimal = 2;
-                } else if (valMb < 100) {
-                    digitsAfterDecimal = 1;
-                } else if (valMb < 1000) {
-                    // Punctuation Space.
-                    prefix = L"\u2008";
-                }
-
-                std::wstring valMbFormatted =
-                    FormatLocaleNum(valMb, digitsAfterDecimal);
-
-                swprintf_s(formattedString.buffer, L"%s%s MB/s", prefix,
-                           valMbFormatted.c_str());
+                FormatTransferSpeed(val, formattedString.buffer,
+                                    ARRAYSIZE(formattedString.buffer));
             } else {
-                int valDecimal = static_cast<int>(val);
-
-                // Cap to 99 to keep identical width in all cases.
-                if (valDecimal == 100) {
-                    valDecimal = 99;
-                }
-
-                // Pad to keep identical width in all cases.
-                PCWSTR prefix = valDecimal < 10 ? L"  " : L"";
-
-                swprintf_s(formattedString.buffer, L"%s%d%%", prefix,
-                           valDecimal);
+                FormatPercentValue(static_cast<int>(val),
+                                   formattedString.buffer,
+                                   ARRAYSIZE(formattedString.buffer));
             }
         } else {
-            wcscpy_s(formattedString.buffer, ARRAYSIZE(formattedString.buffer),
-                     L"-");
+            wcscpy_s(formattedString.buffer, L"-");
         }
 
         formattedString.formatIndex = g_queryDataCollectionIndex;
@@ -1888,7 +1890,24 @@ PCWSTR GetCpuFormatted() {
 }
 
 PCWSTR GetRamFormatted() {
-    return GetMetricFormatted(g_ramFormatted, MetricType::kRam);
+    DataCollectionSampleIfNeeded();
+
+    if (g_ramFormatted.formatIndex != g_queryDataCollectionIndex) {
+        MEMORYSTATUSEX status{
+            .dwLength = sizeof(status),
+        };
+
+        if (GlobalMemoryStatusEx(&status)) {
+            FormatPercentValue(status.dwMemoryLoad, g_ramFormatted.buffer,
+                               ARRAYSIZE(g_ramFormatted.buffer));
+        } else {
+            wcscpy_s(g_ramFormatted.buffer, L"-");
+        }
+
+        g_ramFormatted.formatIndex = g_queryDataCollectionIndex;
+    }
+
+    return g_ramFormatted.buffer;
 }
 
 int ResolveFormatTokenWithDigit(std::wstring_view format,
