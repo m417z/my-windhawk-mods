@@ -78,12 +78,12 @@ patterns can be used:
   * `%download_speed%` - system-wide download transfer rate.
   * `%cpu%` - CPU usage.
   * `%ram%` - RAM usage.
+* `%weather%` - Weather information, powered by [wttr.in](https://wttr.in/),
+  using the location and format configured in settings.
 * `%web<n>%` - the web contents as configured in settings, truncated with
   ellipsis, where `<n>` is the web contents number.
 * `%web<n>_full%` - the full web contents as configured in settings, where `<n>`
   is the web contents number.
-* `%weather%` - Weather information, powered by [wttr.in](https://wttr.in/),
-  using the location and format configured in settings.
 * `%newline%` - a newline.
 
 ## Text styles
@@ -156,6 +156,16 @@ styles, such as the font color and size.
   $description: >-
     The update interval, in seconds, of the system performance metrics such as
     CPU and RAM usage.
+- WebContentWeatherLocation: ""
+  $name: Weather location
+  $description: >-
+    Get weather information for a specific location. Keep empty to use the
+    current location. For details, refer to the documentation of wttr.in.
+- WebContentWeatherFormat: "%c \uD83C\uDF21\uFE0F%t \uD83C\uDF2C\uFE0F%w"
+  $name: Weather format
+  $description: >-
+    The weather information format. For details, refer to the documentation of
+    wttr.in.
 - WebContentsItems:
   - - Url: https://rss.nytimes.com/services/xml/rss/nyt/World.xml
       $name: Web content URL
@@ -192,21 +202,12 @@ styles, such as the font color and size.
       $description: Longer strings will be truncated with ellipsis.
   $name: Web content items
   $description: >-
-    Will be used to fetch data displayed in place of the %web<n>%,
+    Will be used to fetch data displayed in place of the %web<n>% and
     %web<n>_full% patterns, where <n> is the web contents number.
-- WebContentWeatherLocation: ""
-  $name: Weather location
-  $description: >-
-    Get weather information for a specific location. Keep empty to use the
-    current location. For details, refer to the documentation of wttr.in.
-- WebContentWeatherFormat: "%c \uD83C\uDF21\uFE0F%t \uD83C\uDF2C\uFE0F%w"
-  $name: Weather format
-  $description: >-
-    The weather information format. For details, refer to the documentation of
-    wttr.in.
 - WebContentsUpdateInterval: 10
   $name: Web content update interval
-  $description: The update interval, in minutes, of the web content items.
+  $description: >-
+    The update interval, in minutes, of the weather and the web content items.
 - TimeZones: ["Eastern Standard Time"]
   $name: Time zones
   $description: >-
@@ -437,9 +438,9 @@ struct {
     int maxWidth;
     int textSpacing;
     int dataCollectionUpdateInterval;
-    std::vector<WebContentsSettings> webContentsItems;
     StringSetting webContentWeatherLocation;
     StringSetting webContentWeatherFormat;
+    std::vector<WebContentsSettings> webContentsItems;
     int webContentsUpdateInterval;
     std::vector<StringSetting> timeZones;
     TextStyleSettings timeStyle;
@@ -3372,6 +3373,10 @@ void LoadSettings() {
     g_settings.textSpacing = Wh_GetIntSetting(L"TextSpacing");
     g_settings.dataCollectionUpdateInterval =
         Wh_GetIntSetting(L"DataCollectionUpdateInterval");
+    g_settings.webContentWeatherLocation =
+        StringSetting::make(L"WebContentWeatherLocation");
+    g_settings.webContentWeatherFormat =
+        StringSetting::make(L"WebContentWeatherFormat");
 
     g_settings.webContentsItems.clear();
     for (int i = 0;; i++) {
@@ -3420,11 +3425,6 @@ void LoadSettings() {
 
         g_settings.webContentsItems.push_back(std::move(item));
     }
-
-    g_settings.webContentWeatherLocation =
-        StringSetting::make(L"WebContentWeatherLocation");
-    g_settings.webContentWeatherFormat =
-        StringSetting::make(L"WebContentWeatherFormat");
 
     g_settings.webContentsUpdateInterval =
         Wh_GetIntSetting(L"WebContentsUpdateInterval");
