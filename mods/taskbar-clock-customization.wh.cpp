@@ -1712,9 +1712,8 @@ class QueryDataCollectionSession {
     PDH_HCOUNTER counters_[static_cast<int>(MetricType::kCount)]{};
 };
 
-std::optional<QueryDataCollectionSession> g_queryDataCollectionSession;
-ULONGLONG g_queryDataCollectionLastSampleTime;
-DWORD g_queryDataCollectionIndex;
+std::optional<QueryDataCollectionSession> g_dataCollectionSession;
+DWORD g_dataCollectionLastFormatIndex;
 
 void DataCollectionSessionInit() {
     bool metrics[static_cast<int>(MetricType::kCount)]{};
@@ -1731,7 +1730,7 @@ void DataCollectionSessionInit() {
     }
 
     try {
-        g_queryDataCollectionSession.emplace();
+        g_dataCollectionSession.emplace();
     } catch (...) {
         HRESULT hr = winrt::to_hresult();
         Wh_Log(L"Error %08X", hr);
@@ -1740,18 +1739,17 @@ void DataCollectionSessionInit() {
 
     for (size_t i = 0; i < ARRAYSIZE(metrics); i++) {
         MetricType metric = static_cast<MetricType>(i);
-        g_queryDataCollectionSession->AddMetric(metric);
+        g_dataCollectionSession->AddMetric(metric);
     }
 
-    g_queryDataCollectionSession->SampleData();
+    g_dataCollectionSession->SampleData();
 }
 
 void DataCollectionSessionUninit() {
-    g_queryDataCollectionSession.reset();
-    g_queryDataCollectionIndex = 0;
+    g_dataCollectionSession.reset();
 }
 
-void DataCollectionSampleIfNeeded() {
+DWORD GetDataCollectionFormatIndex() {
     FILETIME formatTimeFt{};
     SystemTimeToFileTime(&g_formatTime, &formatTimeFt);
     ULARGE_INTEGER formatTimeInt{
@@ -1762,14 +1760,17 @@ void DataCollectionSampleIfNeeded() {
     constexpr ULONGLONG kSecondIn100Ns = 10000000ULL;
     ULONGLONG interval =
         kSecondIn100Ns * std::max(g_settings.dataCollectionUpdateInterval, 1);
-    ULONGLONG expectedSampleTime = formatTimeInt.QuadPart / interval * interval;
-    if (g_queryDataCollectionLastSampleTime != expectedSampleTime) {
-        if (g_queryDataCollectionSession) {
-            g_queryDataCollectionSession->SampleData();
+    return static_cast<DWORD>(formatTimeInt.QuadPart / interval);
+}
+
+void DataCollectionSampleIfNeeded() {
+    DWORD dataCollectionFormatIndex = GetDataCollectionFormatIndex();
+    if (g_dataCollectionLastFormatIndex != dataCollectionFormatIndex) {
+        if (g_dataCollectionSession) {
+            g_dataCollectionSession->SampleData();
         }
 
-        g_queryDataCollectionIndex++;
-        g_queryDataCollectionLastSampleTime = expectedSampleTime;
+        g_dataCollectionLastFormatIndex = dataCollectionFormatIndex;
     }
 }
 
@@ -1854,9 +1855,10 @@ PCWSTR GetMetricFormatted(FormattedString<N>& formattedString,
                           MetricType metricType) {
     DataCollectionSampleIfNeeded();
 
-    if (formattedString.formatIndex != g_queryDataCollectionIndex) {
-        if (g_queryDataCollectionSession) {
-            double val = g_queryDataCollectionSession->QueryData(metricType);
+    DWORD dataCollectionFormatIndex = GetDataCollectionFormatIndex();
+    if (formattedString.formatIndex != dataCollectionFormatIndex) {
+        if (g_dataCollectionSession) {
+            double val = g_dataCollectionSession->QueryData(metricType);
             if (metricType == MetricType::kUploadSpeed ||
                 metricType == MetricType::kDownloadSpeed) {
                 FormatTransferSpeed(val, formattedString.buffer,
@@ -1870,7 +1872,7 @@ PCWSTR GetMetricFormatted(FormattedString<N>& formattedString,
             wcscpy_s(formattedString.buffer, L"-");
         }
 
-        formattedString.formatIndex = g_queryDataCollectionIndex;
+        formattedString.formatIndex = dataCollectionFormatIndex;
     }
 
     return formattedString.buffer;
@@ -1890,13 +1892,11 @@ PCWSTR GetCpuFormatted() {
 }
 
 PCWSTR GetRamFormatted() {
-    DataCollectionSampleIfNeeded();
-
-    if (g_ramFormatted.formatIndex != g_queryDataCollectionIndex) {
+    DWORD dataCollectionFormatIndex = GetDataCollectionFormatIndex();
+    if (g_ramFormatted.formatIndex != dataCollectionFormatIndex) {
         MEMORYSTATUSEX status{
             .dwLength = sizeof(status),
         };
-
         if (GlobalMemoryStatusEx(&status)) {
             FormatPercentValue(status.dwMemoryLoad, g_ramFormatted.buffer,
                                ARRAYSIZE(g_ramFormatted.buffer));
@@ -1904,7 +1904,7 @@ PCWSTR GetRamFormatted() {
             wcscpy_s(g_ramFormatted.buffer, L"-");
         }
 
-        g_ramFormatted.formatIndex = g_queryDataCollectionIndex;
+        g_ramFormatted.formatIndex = dataCollectionFormatIndex;
     }
 
     return g_ramFormatted.buffer;
@@ -2182,7 +2182,7 @@ void WINAPI ClockSystemTrayIconDataModel_RefreshIcon_Hook(LPVOID pThis,
 
     g_refreshIconThreadId = GetCurrentThreadId();
     g_refreshIconNeedToAdjustTimer = g_settings.showSeconds ||
-                                     g_queryDataCollectionSession ||
+                                     g_dataCollectionSession ||
                                      !g_webContentLoaded;
 
     ClockSystemTrayIconDataModel_RefreshIcon_Original(pThis, param1);
@@ -2917,7 +2917,7 @@ ClockButton_UpdateTextStringsIfNecessary_Hook(LPVOID pThis, bool* param1) {
 
     g_updateTextStringThreadId = 0;
 
-    if (g_settings.showSeconds || g_queryDataCollectionSession ||
+    if (g_settings.showSeconds || g_dataCollectionSession ||
         !g_webContentLoaded) {
         // Return the time-out value for the time of the next update.
         SYSTEMTIME time;
