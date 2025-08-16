@@ -2236,16 +2236,22 @@ using ClockSystemTrayIconDataModel_RefreshIcon_t = void(WINAPI*)(
 );
 ClockSystemTrayIconDataModel_RefreshIcon_t
     ClockSystemTrayIconDataModel_RefreshIcon_Original;
+ClockSystemTrayIconDataModel_RefreshIcon_t
+    ClockSystemTrayIconDataModel2_RefreshIcon_Original;
 
 using ClockSystemTrayIconDataModel_GetTimeToolTipString_t =
     LPVOID(WINAPI*)(LPVOID pThis, LPVOID, LPVOID, LPVOID, LPVOID);
 ClockSystemTrayIconDataModel_GetTimeToolTipString_t
     ClockSystemTrayIconDataModel_GetTimeToolTipString_Original;
+ClockSystemTrayIconDataModel_GetTimeToolTipString_t
+    ClockSystemTrayIconDataModel2_GetTimeToolTipString_Original;
 
 using ClockSystemTrayIconDataModel_GetTimeToolTipString2_t =
     LPVOID(WINAPI*)(LPVOID pThis, LPVOID, LPVOID, LPVOID, LPVOID);
 ClockSystemTrayIconDataModel_GetTimeToolTipString2_t
     ClockSystemTrayIconDataModel_GetTimeToolTipString2_Original;
+ClockSystemTrayIconDataModel_GetTimeToolTipString2_t
+    ClockSystemTrayIconDataModel2_GetTimeToolTipString2_Original;
 
 using DateTimeIconContent_OnApplyTemplate_t = void(WINAPI*)(LPVOID pThis);
 DateTimeIconContent_OnApplyTemplate_t
@@ -2275,19 +2281,35 @@ using ThreadPoolTimer_CreateTimer_lambda_t = LPVOID(WINAPI*)(DWORD_PTR** param1,
 ThreadPoolTimer_CreateTimer_lambda_t
     ThreadPoolTimer_CreateTimer_lambda_Original;
 
-void WINAPI ClockSystemTrayIconDataModel_RefreshIcon_Hook(LPVOID pThis,
-                                                          LPVOID param1) {
-    Wh_Log(L">");
-
+void ClockSystemTrayIconDataModel_RefreshIcon_Hook_Impl(
+    LPVOID pThis,
+    LPVOID param1,
+    ClockSystemTrayIconDataModel_RefreshIcon_t original) {
     g_refreshIconThreadId = GetCurrentThreadId();
     g_refreshIconNeedToAdjustTimer = g_settings.showSeconds ||
                                      g_dataCollectionSession ||
                                      !g_webContentLoaded;
 
-    ClockSystemTrayIconDataModel_RefreshIcon_Original(pThis, param1);
+    original(pThis, param1);
 
     g_refreshIconThreadId = 0;
     g_refreshIconNeedToAdjustTimer = false;
+}
+
+void WINAPI ClockSystemTrayIconDataModel_RefreshIcon_Hook(LPVOID pThis,
+                                                          LPVOID param1) {
+    Wh_Log(L">");
+
+    ClockSystemTrayIconDataModel_RefreshIcon_Hook_Impl(
+        pThis, param1, ClockSystemTrayIconDataModel_RefreshIcon_Original);
+}
+
+void WINAPI ClockSystemTrayIconDataModel2_RefreshIcon_Hook(LPVOID pThis,
+                                                           LPVOID param1) {
+    Wh_Log(L">");
+
+    ClockSystemTrayIconDataModel_RefreshIcon_Hook_Impl(
+        pThis, param1, ClockSystemTrayIconDataModel2_RefreshIcon_Original);
 }
 
 void UpdateToolTipString(LPVOID tooltipPtrPtr) {
@@ -2345,6 +2367,24 @@ void UpdateToolTipString(LPVOID tooltipPtrPtr) {
     *(shared_hstring_header**)tooltipPtrPtr = tooltipHeaderNew;
 }
 
+LPVOID ClockSystemTrayIconDataModel_GetTimeToolTipString_Hook_Impl(
+    LPVOID pThis,
+    LPVOID param1,
+    LPVOID param2,
+    LPVOID param3,
+    LPVOID param4,
+    ClockSystemTrayIconDataModel_GetTimeToolTipString_t original) {
+    g_inGetTimeToolTipString = true;
+
+    LPVOID ret = original(pThis, param1, param2, param3, param4);
+
+    UpdateToolTipString(ret);
+
+    g_inGetTimeToolTipString = false;
+
+    return ret;
+}
+
 LPVOID WINAPI
 ClockSystemTrayIconDataModel_GetTimeToolTipString_Hook(LPVOID pThis,
                                                        LPVOID param1,
@@ -2353,10 +2393,35 @@ ClockSystemTrayIconDataModel_GetTimeToolTipString_Hook(LPVOID pThis,
                                                        LPVOID param4) {
     Wh_Log(L">");
 
+    return ClockSystemTrayIconDataModel_GetTimeToolTipString_Hook_Impl(
+        pThis, param1, param2, param3, param4,
+        ClockSystemTrayIconDataModel_GetTimeToolTipString_Original);
+}
+
+LPVOID WINAPI
+ClockSystemTrayIconDataModel2_GetTimeToolTipString_Hook(LPVOID pThis,
+                                                        LPVOID param1,
+                                                        LPVOID param2,
+                                                        LPVOID param3,
+                                                        LPVOID param4) {
+    Wh_Log(L">");
+
+    return ClockSystemTrayIconDataModel_GetTimeToolTipString_Hook_Impl(
+        pThis, param1, param2, param3, param4,
+        ClockSystemTrayIconDataModel2_GetTimeToolTipString_Original);
+}
+
+LPVOID
+ClockSystemTrayIconDataModel_GetTimeToolTipString2_Hook_Impl(
+    LPVOID pThis,
+    LPVOID param1,
+    LPVOID param2,
+    LPVOID param3,
+    LPVOID param4,
+    ClockSystemTrayIconDataModel_GetTimeToolTipString2_t original) {
     g_inGetTimeToolTipString = true;
 
-    LPVOID ret = ClockSystemTrayIconDataModel_GetTimeToolTipString_Original(
-        pThis, param1, param2, param3, param4);
+    LPVOID ret = original(pThis, param1, param2, param3, param4);
 
     UpdateToolTipString(ret);
 
@@ -2373,16 +2438,22 @@ ClockSystemTrayIconDataModel_GetTimeToolTipString2_Hook(LPVOID pThis,
                                                         LPVOID param4) {
     Wh_Log(L">");
 
-    g_inGetTimeToolTipString = true;
+    return ClockSystemTrayIconDataModel_GetTimeToolTipString2_Hook_Impl(
+        pThis, param1, param2, param3, param4,
+        ClockSystemTrayIconDataModel_GetTimeToolTipString2_Original);
+}
 
-    LPVOID ret = ClockSystemTrayIconDataModel_GetTimeToolTipString2_Original(
-        pThis, param1, param2, param3, param4);
+LPVOID WINAPI
+ClockSystemTrayIconDataModel2_GetTimeToolTipString2_Hook(LPVOID pThis,
+                                                         LPVOID param1,
+                                                         LPVOID param2,
+                                                         LPVOID param3,
+                                                         LPVOID param4) {
+    Wh_Log(L">");
 
-    UpdateToolTipString(ret);
-
-    g_inGetTimeToolTipString = false;
-
-    return ret;
+    return ClockSystemTrayIconDataModel_GetTimeToolTipString2_Hook_Impl(
+        pThis, param1, param2, param3, param4,
+        ClockSystemTrayIconDataModel2_GetTimeToolTipString2_Original);
 }
 
 FrameworkElement FindChildByName(FrameworkElement element,
@@ -3372,69 +3443,88 @@ bool HookWin10TaskbarSymbols() {
 
 bool HookTaskbarViewDllSymbols(HMODULE module) {
     // Taskbar.View.dll, ExplorerExtensions.dll
-    WindhawkUtils::SYMBOL_HOOK symbolHooks[] = {
-        {
-            {LR"(private: void __cdecl winrt::SystemTray::implementation::ClockSystemTrayIconDataModel::RefreshIcon(class SystemTrayTelemetry::ClockUpdate &))"},
-            &ClockSystemTrayIconDataModel_RefreshIcon_Original,
-            ClockSystemTrayIconDataModel_RefreshIcon_Hook,
-        },
-        {
-            {LR"(private: struct winrt::hstring __cdecl winrt::SystemTray::implementation::ClockSystemTrayIconDataModel::GetTimeToolTipString(struct _SYSTEMTIME const &,struct _SYSTEMTIME const &,class SystemTrayTelemetry::ClockUpdate &))"},
-            &ClockSystemTrayIconDataModel_GetTimeToolTipString_Original,
-            ClockSystemTrayIconDataModel_GetTimeToolTipString_Hook,
-            true,
-        },
-        {
-            {LR"(private: struct winrt::hstring __cdecl winrt::SystemTray::implementation::ClockSystemTrayIconDataModel::GetTimeToolTipString2(struct _SYSTEMTIME const &,struct _SYSTEMTIME const &,class SystemTrayTelemetry::ClockUpdate &))"},
-            &ClockSystemTrayIconDataModel_GetTimeToolTipString2_Original,
-            ClockSystemTrayIconDataModel_GetTimeToolTipString2_Hook,
-            true,
-        },
-        {
-            {LR"(public: void __cdecl winrt::SystemTray::implementation::DateTimeIconContent::OnApplyTemplate(void))"},
-            &DateTimeIconContent_OnApplyTemplate_Original,
-            DateTimeIconContent_OnApplyTemplate_Hook,
-            true,
-        },
-        {
-            {LR"(public: virtual int __cdecl winrt::impl::produce<struct winrt::SystemTray::implementation::BadgeIconContent,struct winrt::SystemTray::IBadgeIconContent>::get_ViewModel(void * *))"},
-            &BadgeIconContent_get_ViewModel_Original,
-            BadgeIconContent_get_ViewModel_Hook,
-            true,
-        },
-        {
-            {LR"(private: struct winrt::hstring __cdecl winrt::SystemTray::implementation::ClockSystemTrayIconDataModel::GetTimeToolTipString(struct _SYSTEMTIME *,struct _TIME_DYNAMIC_ZONE_INFORMATION *,class SystemTrayTelemetry::ClockUpdate &))"},
-            &ClockSystemTrayIconDataModel_GetTimeToolTipString_2_Original,
-            ClockSystemTrayIconDataModel_GetTimeToolTipString_2_Hook,
-            true,  // Until Windows 11 version 21H2.
-        },
-        {
-            {LR"(public: int __cdecl winrt::impl::consume_Windows_Globalization_ICalendar<struct winrt::Windows::Globalization::ICalendar>::Second(void)const )"},
-            &ICalendar_Second_Original,
-            ICalendar_Second_Hook,
-            true,  // Until Windows 11 version 21H2.
-        },
+    WindhawkUtils::SYMBOL_HOOK symbolHooks[] =  //
         {
             {
-                LR"(public: static __cdecl winrt::Windows::System::Threading::ThreadPoolTimer::CreateTimer(struct winrt::Windows::System::Threading::TimerElapsedHandler const &,class std::chrono::duration<__int64,struct std::ratio<1,10000000> > const &))",
-                // Windows 11 21H2:
-                LR"(public: struct winrt::Windows::System::Threading::ThreadPoolTimer __cdecl winrt::impl::consume_Windows_System_Threading_IThreadPoolTimerStatics<struct winrt::Windows::System::Threading::IThreadPoolTimerStatics>::CreateTimer(struct winrt::Windows::System::Threading::TimerElapsedHandler const &,class std::chrono::duration<__int64,struct std::ratio<1,10000000> > const &)const )",
+                {LR"(private: void __cdecl winrt::SystemTray::implementation::ClockSystemTrayIconDataModel::RefreshIcon(class SystemTrayTelemetry::ClockUpdate &))"},
+                &ClockSystemTrayIconDataModel_RefreshIcon_Original,
+                ClockSystemTrayIconDataModel_RefreshIcon_Hook,
             },
-            &ThreadPoolTimer_CreateTimer_Original,
-            ThreadPoolTimer_CreateTimer_Hook,
-            true,  // Only for more precise clock, see comment in the hook.
-        },
-        {
             {
-                LR"(public: __cdecl <lambda_b19cf72fe9674443383aa89d5c22450b>::operator()(struct winrt::Windows::System::Threading::IThreadPoolTimerStatics const &)const )",
-                // Windows 11 21H2:
-                LR"(public: struct winrt::Windows::System::Threading::ThreadPoolTimer __cdecl <lambda_b19cf72fe9674443383aa89d5c22450b>::operator()(struct winrt::Windows::System::Threading::IThreadPoolTimerStatics const &)const )",
+                {LR"(private: void __cdecl winrt::SystemTray::implementation::ClockSystemTrayIconDataModel2::RefreshIcon(class SystemTrayTelemetry::ClockUpdate &))"},
+                &ClockSystemTrayIconDataModel2_RefreshIcon_Original,
+                ClockSystemTrayIconDataModel2_RefreshIcon_Hook,
+                true,  // Added with feature flag 38762814
             },
-            &ThreadPoolTimer_CreateTimer_lambda_Original,
-            ThreadPoolTimer_CreateTimer_lambda_Hook,
-            true,  // Only for more precise clock, see comment in the hook.
-        },
-    };
+            {
+                {LR"(private: struct winrt::hstring __cdecl winrt::SystemTray::implementation::ClockSystemTrayIconDataModel::GetTimeToolTipString(struct _SYSTEMTIME const &,struct _SYSTEMTIME const &,class SystemTrayTelemetry::ClockUpdate &))"},
+                &ClockSystemTrayIconDataModel_GetTimeToolTipString_Original,
+                ClockSystemTrayIconDataModel_GetTimeToolTipString_Hook,
+                true,
+            },
+            {
+                {LR"(private: struct winrt::hstring __cdecl winrt::SystemTray::implementation::ClockSystemTrayIconDataModel2::GetTimeToolTipString(struct _SYSTEMTIME const &,struct _SYSTEMTIME const &,class SystemTrayTelemetry::ClockUpdate &))"},
+                &ClockSystemTrayIconDataModel2_GetTimeToolTipString_Original,
+                ClockSystemTrayIconDataModel2_GetTimeToolTipString_Hook,
+                true,  // Added with feature flag 38762814
+            },
+            {
+                {LR"(private: struct winrt::hstring __cdecl winrt::SystemTray::implementation::ClockSystemTrayIconDataModel::GetTimeToolTipString2(struct _SYSTEMTIME const &,struct _SYSTEMTIME const &,class SystemTrayTelemetry::ClockUpdate &))"},
+                &ClockSystemTrayIconDataModel_GetTimeToolTipString2_Original,
+                ClockSystemTrayIconDataModel_GetTimeToolTipString2_Hook,
+                true,
+            },
+            {
+                {LR"(private: struct winrt::hstring __cdecl winrt::SystemTray::implementation::ClockSystemTrayIconDataModel2::GetTimeToolTipString2(struct _SYSTEMTIME const &,struct _SYSTEMTIME const &,class SystemTrayTelemetry::ClockUpdate &))"},
+                &ClockSystemTrayIconDataModel2_GetTimeToolTipString2_Original,
+                ClockSystemTrayIconDataModel2_GetTimeToolTipString2_Hook,
+                true,  // Added with feature flag 38762814
+            },
+            {
+                {LR"(public: void __cdecl winrt::SystemTray::implementation::DateTimeIconContent::OnApplyTemplate(void))"},
+                &DateTimeIconContent_OnApplyTemplate_Original,
+                DateTimeIconContent_OnApplyTemplate_Hook,
+                true,
+            },
+            {
+                {LR"(public: virtual int __cdecl winrt::impl::produce<struct winrt::SystemTray::implementation::BadgeIconContent,struct winrt::SystemTray::IBadgeIconContent>::get_ViewModel(void * *))"},
+                &BadgeIconContent_get_ViewModel_Original,
+                BadgeIconContent_get_ViewModel_Hook,
+                true,
+            },
+            {
+                {LR"(private: struct winrt::hstring __cdecl winrt::SystemTray::implementation::ClockSystemTrayIconDataModel::GetTimeToolTipString(struct _SYSTEMTIME *,struct _TIME_DYNAMIC_ZONE_INFORMATION *,class SystemTrayTelemetry::ClockUpdate &))"},
+                &ClockSystemTrayIconDataModel_GetTimeToolTipString_2_Original,
+                ClockSystemTrayIconDataModel_GetTimeToolTipString_2_Hook,
+                true,  // Until Windows 11 version 21H2.
+            },
+            {
+                {LR"(public: int __cdecl winrt::impl::consume_Windows_Globalization_ICalendar<struct winrt::Windows::Globalization::ICalendar>::Second(void)const )"},
+                &ICalendar_Second_Original,
+                ICalendar_Second_Hook,
+                true,  // Until Windows 11 version 21H2.
+            },
+            {
+                {
+                    LR"(public: static __cdecl winrt::Windows::System::Threading::ThreadPoolTimer::CreateTimer(struct winrt::Windows::System::Threading::TimerElapsedHandler const &,class std::chrono::duration<__int64,struct std::ratio<1,10000000> > const &))",
+                    // Windows 11 21H2:
+                    LR"(public: struct winrt::Windows::System::Threading::ThreadPoolTimer __cdecl winrt::impl::consume_Windows_System_Threading_IThreadPoolTimerStatics<struct winrt::Windows::System::Threading::IThreadPoolTimerStatics>::CreateTimer(struct winrt::Windows::System::Threading::TimerElapsedHandler const &,class std::chrono::duration<__int64,struct std::ratio<1,10000000> > const &)const )",
+                },
+                &ThreadPoolTimer_CreateTimer_Original,
+                ThreadPoolTimer_CreateTimer_Hook,
+                true,  // Only for more precise clock, see comment in the hook.
+            },
+            {
+                {
+                    LR"(public: __cdecl <lambda_b19cf72fe9674443383aa89d5c22450b>::operator()(struct winrt::Windows::System::Threading::IThreadPoolTimerStatics const &)const )",
+                    // Windows 11 21H2:
+                    LR"(public: struct winrt::Windows::System::Threading::ThreadPoolTimer __cdecl <lambda_b19cf72fe9674443383aa89d5c22450b>::operator()(struct winrt::Windows::System::Threading::IThreadPoolTimerStatics const &)const )",
+                },
+                &ThreadPoolTimer_CreateTimer_lambda_Original,
+                ThreadPoolTimer_CreateTimer_lambda_Hook,
+                true,  // Only for more precise clock, see comment in the hook.
+            },
+        };
 
     if (!HookSymbols(module, symbolHooks, ARRAYSIZE(symbolHooks))) {
         Wh_Log(L"HookSymbols failed");
