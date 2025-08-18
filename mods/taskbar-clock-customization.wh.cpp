@@ -162,7 +162,9 @@ styles, such as the font color and size.
     The unit to use for displaying the upload/download transfer rate.
   $options:
   - mbs: MB/s
+  - mbs_dynamic: MB/s, KB/s or B/s (dynamic)
   - mbits: MBit/s
+  - mbits_dynamic: MBit/s or KBit/s (dynamic)
 - NetworkMetricsShowUnit: true
   $name: Network metrics show unit
   $description: Show the unit next to the upload/download transfer rate.
@@ -434,7 +436,9 @@ enum class ContentMode {
 
 enum class NetworkMetricsUnits {
     mbs,
+    mbs_dynamic,
     mbits,
+    mbits_dynamic,
 };
 
 struct WebContentsSettings {
@@ -1948,10 +1952,39 @@ void FormatTransferSpeed(double val, PWSTR buffer, size_t bufferSize) {
             valUnit = val / (1024 * 1024);
             unit = L" MB/s";
             break;
+        case NetworkMetricsUnits::mbs_dynamic: {
+            double mbs = val / (1024 * 1024);
+            
+            if (mbs >= 1.0) {
+                valUnit = mbs;
+                unit = L" MB/s";
+            } else if (mbs >= 0.1) {
+                valUnit = mbs * 1024;
+                unit = L" KB/s";
+            } else {
+                valUnit = mbs * 1024 * 1024;
+                unit = L" B/s";
+            }
+
+            break;
+        }
         case NetworkMetricsUnits::mbits:
             valUnit = val * 8.0 / 1000000.0;
             unit = L" MBit/s";
             break;
+        case NetworkMetricsUnits::mbits_dynamic: {
+            double mbits = val * 8.0 / 1000000.0;
+            
+            if (mbits >= 1.0) {
+                valUnit = mbits;
+                unit = L" MBit/s";
+            } else {
+                valUnit = mbits * 1000.0;
+                unit = L" KBit/s";
+            }
+
+            break;
+        }
     }
 
     if (!g_settings.networkMetricsShowUnit) {
@@ -3646,8 +3679,12 @@ void LoadSettings() {
     g_settings.networkMetricsUnit = NetworkMetricsUnits::mbs;
     StringSetting networkMetricsUnit =
         StringSetting::make(L"NetworkMetricsUnit");
-    if (wcscmp(networkMetricsUnit, L"mbits") == 0) {
+    if (wcscmp(networkMetricsUnit, L"mbs_dynamic") == 0) {
+        g_settings.networkMetricsUnit = NetworkMetricsUnits::mbs_dynamic;
+    } else if (wcscmp(networkMetricsUnit, L"mbits") == 0) {
         g_settings.networkMetricsUnit = NetworkMetricsUnits::mbits;
+    } else if (wcscmp(networkMetricsUnit, L"mbits_dynamic") == 0) {
+        g_settings.networkMetricsUnit = NetworkMetricsUnits::mbits_dynamic;
     }
 
     g_settings.networkMetricsShowUnit = Wh_GetIntSetting(L"NetworkMetricsShowUnit");
