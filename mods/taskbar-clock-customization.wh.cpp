@@ -152,18 +152,17 @@ styles, such as the font color and size.
     Set to zero for the default system value. A negative value can be used for
     negative spacing.
 - DataCollection:
-  - NetworkMetricsUnit: mbs
-    $name: Network metrics unit
+  - NetworkMetricsFormat: mbs
+    $name: Network metrics format
     $description: >-
-      The unit to use for displaying the upload/download transfer rate.
+      The format to use for displaying the upload/download transfer rate.
     $options:
     - mbs: MB/s
-    - mbsDynamic: MB/s, KB/s or B/s (dynamic)
+    - mbsNumberOnly: MB/s, number only
+    - mbsDynamic: MB/s or KB/s (dynamic)
     - mbits: MBit/s
+    - mbitsNumberOnly: MBit/s, number only
     - mbitsDynamic: MBit/s or KBit/s (dynamic)
-  - NetworkMetricsShowUnit: true
-    $name: Network metrics show unit
-    $description: Show the unit next to the upload/download transfer rate.
   - NetworkMetricsFixedDecimals: -1
     $name: Network metrics fixed decimal places
     $description: >-
@@ -175,7 +174,7 @@ styles, such as the font color and size.
       The update interval, in seconds, of the system performance metrics.
   $name: System performance metrics
   $description: >-
-    Settings for system performance metrics such as upload/download speed and
+    Settings for system performance metrics: upload/download transfer rate and
     CPU/RAM usage.
 - WebContentWeatherLocation: ""
   $name: Weather location
@@ -424,10 +423,12 @@ using namespace winrt::Windows::UI::Xaml;
 #define URL_ESCAPE_ASCII_URI_COMPONENT 0x00080000
 #endif
 
-enum class NetworkMetricsUnits {
+enum class NetworkMetricsFormat {
     mbs,
+    mbsNumberOnly,
     mbsDynamic,
     mbits,
+    mbitsNumberOnly,
     mbitsDynamic,
 };
 
@@ -481,8 +482,7 @@ struct {
     int height;
     int maxWidth;
     int textSpacing;
-    NetworkMetricsUnits networkMetricsUnit;
-    bool networkMetricsShowUnit;
+    NetworkMetricsFormat networkMetricsFormat;
     int networkMetricsFixedDecimals;
     int dataCollectionUpdateInterval;
     StringSetting webContentWeatherLocation;
@@ -1948,51 +1948,52 @@ std::wstring FormatLocaleNum(double val, unsigned int digitsAfterDecimal) {
 }
 
 void FormatTransferSpeed(double val, PWSTR buffer, size_t bufferSize) {
+    constexpr int kKBInBytes = 1024;
+    constexpr int kMBInBytes = 1024 * kKBInBytes;
+    constexpr int kKbitInBytes = 1000 / 8;
+    constexpr int kMbitInBytes = 1000 * kKbitInBytes;
+
     double valUnit;
     PCWSTR unit = L"";
 
-    switch (g_settings.networkMetricsUnit) {
-        case NetworkMetricsUnits::mbs:
-            valUnit = val / (1024 * 1024);
+    switch (g_settings.networkMetricsFormat) {
+        case NetworkMetricsFormat::mbs:
+            valUnit = val / kMBInBytes;
             unit = L" MB/s";
             break;
-        case NetworkMetricsUnits::mbsDynamic: {
-            double mbs = val / (1024 * 1024);
 
-            if (mbs >= 1.0) {
-                valUnit = mbs;
-                unit = L" MB/s";
-            } else if (mbs >= 0.1) {
-                valUnit = mbs * 1024;
+        case NetworkMetricsFormat::mbsNumberOnly:
+            valUnit = val / kMBInBytes;
+            break;
+
+        case NetworkMetricsFormat::mbsDynamic:
+            if (val / kKBInBytes < 1000) {
+                valUnit = val / kKBInBytes;
                 unit = L" KB/s";
             } else {
-                valUnit = mbs * 1024 * 1024;
-                unit = L" B/s";
+                valUnit = val / kMBInBytes;
+                unit = L" MB/s";
             }
-
             break;
-        }
-        case NetworkMetricsUnits::mbits:
-            valUnit = val * 8.0 / 1000000.0;
+
+        case NetworkMetricsFormat::mbits:
+            valUnit = val / kMbitInBytes;
             unit = L" MBit/s";
             break;
-        case NetworkMetricsUnits::mbitsDynamic: {
-            double mbits = val * 8.0 / 1000000.0;
 
-            if (mbits >= 1.0) {
-                valUnit = mbits;
-                unit = L" MBit/s";
-            } else {
-                valUnit = mbits * 1000.0;
-                unit = L" KBit/s";
-            }
-
+        case NetworkMetricsFormat::mbitsNumberOnly:
+            valUnit = val / kMbitInBytes;
             break;
-        }
-    }
 
-    if (!g_settings.networkMetricsShowUnit) {
-        unit = L"";
+        case NetworkMetricsFormat::mbitsDynamic:
+            if (val / kKbitInBytes < 1000) {
+                valUnit = val / kKbitInBytes;
+                unit = L" KBit/s";
+            } else {
+                valUnit = val / kMbitInBytes;
+                unit = L" MBit/s";
+            }
+            break;
     }
 
     int digitsAfterDecimal = 0;
@@ -3678,19 +3679,21 @@ void LoadSettings() {
     g_settings.maxWidth = Wh_GetIntSetting(L"MaxWidth");
     g_settings.textSpacing = Wh_GetIntSetting(L"TextSpacing");
 
-    g_settings.networkMetricsUnit = NetworkMetricsUnits::mbs;
-    StringSetting networkMetricsUnit =
-        StringSetting::make(L"DataCollection.NetworkMetricsUnit");
-    if (wcscmp(networkMetricsUnit, L"mbsDynamic") == 0) {
-        g_settings.networkMetricsUnit = NetworkMetricsUnits::mbsDynamic;
-    } else if (wcscmp(networkMetricsUnit, L"mbits") == 0) {
-        g_settings.networkMetricsUnit = NetworkMetricsUnits::mbits;
-    } else if (wcscmp(networkMetricsUnit, L"mbitsDynamic") == 0) {
-        g_settings.networkMetricsUnit = NetworkMetricsUnits::mbitsDynamic;
+    g_settings.networkMetricsFormat = NetworkMetricsFormat::mbs;
+    StringSetting networkMetricsFormat =
+        StringSetting::make(L"DataCollection.NetworkMetricsFormat");
+    if (wcscmp(networkMetricsFormat, L"mbsNumberOnly") == 0) {
+        g_settings.networkMetricsFormat = NetworkMetricsFormat::mbsNumberOnly;
+    } else if (wcscmp(networkMetricsFormat, L"mbsDynamic") == 0) {
+        g_settings.networkMetricsFormat = NetworkMetricsFormat::mbsDynamic;
+    } else if (wcscmp(networkMetricsFormat, L"mbits") == 0) {
+        g_settings.networkMetricsFormat = NetworkMetricsFormat::mbits;
+    } else if (wcscmp(networkMetricsFormat, L"mbitsNumberOnly") == 0) {
+        g_settings.networkMetricsFormat = NetworkMetricsFormat::mbitsNumberOnly;
+    } else if (wcscmp(networkMetricsFormat, L"mbitsDynamic") == 0) {
+        g_settings.networkMetricsFormat = NetworkMetricsFormat::mbitsDynamic;
     }
 
-    g_settings.networkMetricsShowUnit =
-        Wh_GetIntSetting(L"DataCollection.NetworkMetricsShowUnit");
     g_settings.networkMetricsFixedDecimals =
         Wh_GetIntSetting(L"DataCollection.NetworkMetricsFixedDecimals");
     g_settings.dataCollectionUpdateInterval =
