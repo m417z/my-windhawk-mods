@@ -441,11 +441,18 @@ enum class NetworkMetricsFormat {
     mbitsDynamic,
 };
 
-enum class DataCollectionPercentageFormat {
+enum class PercentageFormat {
     spacePaddingAndSymbol,
     spacePadding,
     zeroPadding,
     noPadding,
+};
+
+struct DataCollectionSettings {
+    NetworkMetricsFormat networkMetricsFormat;
+    int networkMetricsFixedDecimals;
+    PercentageFormat percentageFormat;
+    int updateInterval;
 };
 
 enum class WebContentWeatherUnits {
@@ -498,10 +505,7 @@ struct {
     int height;
     int maxWidth;
     int textSpacing;
-    NetworkMetricsFormat networkMetricsFormat;
-    int networkMetricsFixedDecimals;
-    DataCollectionPercentageFormat dataCollectionPercentageFormat;
-    int dataCollectionUpdateInterval;
+    DataCollectionSettings dataCollection;
     StringSetting webContentWeatherLocation;
     StringSetting webContentWeatherFormat;
     WebContentWeatherUnits webContentWeatherUnits;
@@ -1906,7 +1910,7 @@ DWORD GetDataCollectionFormatIndex() {
 
     constexpr ULONGLONG kSecondIn100Ns = 10000000ULL;
     ULONGLONG interval =
-        kSecondIn100Ns * std::max(g_settings.dataCollectionUpdateInterval, 1);
+        kSecondIn100Ns * std::max(g_settings.dataCollection.updateInterval, 1);
     return static_cast<DWORD>(formatTimeInt.QuadPart / interval);
 }
 
@@ -1973,7 +1977,7 @@ void FormatTransferSpeed(double val, PWSTR buffer, size_t bufferSize) {
     double valUnit;
     PCWSTR unit = L"";
 
-    switch (g_settings.networkMetricsFormat) {
+    switch (g_settings.dataCollection.networkMetricsFormat) {
         case NetworkMetricsFormat::mbs:
             valUnit = val / kMBInBytes;
             unit = L" MB/s";
@@ -2016,7 +2020,7 @@ void FormatTransferSpeed(double val, PWSTR buffer, size_t bufferSize) {
     int digitsAfterDecimal = 0;
     PCWSTR prefix = L"";
 
-    if (g_settings.networkMetricsFixedDecimals == -1) {
+    if (g_settings.dataCollection.networkMetricsFixedDecimals == -1) {
         // Keep identical width for <1000 values.
         if (valUnit < 10) {
             digitsAfterDecimal = 2;
@@ -2027,7 +2031,8 @@ void FormatTransferSpeed(double val, PWSTR buffer, size_t bufferSize) {
             prefix = L"\u2008";
         }
     } else {
-        digitsAfterDecimal = g_settings.networkMetricsFixedDecimals;
+        digitsAfterDecimal =
+            g_settings.dataCollection.networkMetricsFixedDecimals;
     }
 
     std::wstring valUnitFormatted =
@@ -2046,21 +2051,21 @@ void FormatPercentValue(int val, PWSTR buffer, size_t bufferSize) {
     PCWSTR padding = L"";
     PCWSTR suffix = L"";
 
-    switch (g_settings.dataCollectionPercentageFormat) {
-        case DataCollectionPercentageFormat::spacePaddingAndSymbol:
+    switch (g_settings.dataCollection.percentageFormat) {
+        case PercentageFormat::spacePaddingAndSymbol:
             padding = L"  ";
             suffix = L"%";
             break;
 
-        case DataCollectionPercentageFormat::spacePadding:
+        case PercentageFormat::spacePadding:
             padding = L"  ";
             break;
 
-        case DataCollectionPercentageFormat::zeroPadding:
+        case PercentageFormat::zeroPadding:
             padding = L"0";
             break;
 
-        case DataCollectionPercentageFormat::noPadding:
+        case PercentageFormat::noPadding:
             break;
     }
 
@@ -3717,40 +3722,45 @@ void LoadSettings() {
     g_settings.maxWidth = Wh_GetIntSetting(L"MaxWidth");
     g_settings.textSpacing = Wh_GetIntSetting(L"TextSpacing");
 
-    g_settings.networkMetricsFormat = NetworkMetricsFormat::mbs;
+    g_settings.dataCollection.networkMetricsFormat = NetworkMetricsFormat::mbs;
     StringSetting networkMetricsFormat =
         StringSetting::make(L"DataCollection.NetworkMetricsFormat");
     if (wcscmp(networkMetricsFormat, L"mbsNumberOnly") == 0) {
-        g_settings.networkMetricsFormat = NetworkMetricsFormat::mbsNumberOnly;
+        g_settings.dataCollection.networkMetricsFormat =
+            NetworkMetricsFormat::mbsNumberOnly;
     } else if (wcscmp(networkMetricsFormat, L"mbsDynamic") == 0) {
-        g_settings.networkMetricsFormat = NetworkMetricsFormat::mbsDynamic;
+        g_settings.dataCollection.networkMetricsFormat =
+            NetworkMetricsFormat::mbsDynamic;
     } else if (wcscmp(networkMetricsFormat, L"mbits") == 0) {
-        g_settings.networkMetricsFormat = NetworkMetricsFormat::mbits;
+        g_settings.dataCollection.networkMetricsFormat =
+            NetworkMetricsFormat::mbits;
     } else if (wcscmp(networkMetricsFormat, L"mbitsNumberOnly") == 0) {
-        g_settings.networkMetricsFormat = NetworkMetricsFormat::mbitsNumberOnly;
+        g_settings.dataCollection.networkMetricsFormat =
+            NetworkMetricsFormat::mbitsNumberOnly;
     } else if (wcscmp(networkMetricsFormat, L"mbitsDynamic") == 0) {
-        g_settings.networkMetricsFormat = NetworkMetricsFormat::mbitsDynamic;
+        g_settings.dataCollection.networkMetricsFormat =
+            NetworkMetricsFormat::mbitsDynamic;
     }
 
-    g_settings.networkMetricsFixedDecimals =
+    g_settings.dataCollection.networkMetricsFixedDecimals =
         Wh_GetIntSetting(L"DataCollection.NetworkMetricsFixedDecimals");
 
-    g_settings.dataCollectionPercentageFormat =
-        DataCollectionPercentageFormat::spacePaddingAndSymbol;
-    StringSetting dataCollectionPercentageFormat =
+    g_settings.dataCollection.percentageFormat =
+        PercentageFormat::spacePaddingAndSymbol;
+    StringSetting percentageFormat =
         StringSetting::make(L"DataCollection.PercentageFormat");
-    if (wcscmp(dataCollectionPercentageFormat, L"spacePadding") == 0) {
-        g_settings.dataCollectionPercentageFormat =
-            DataCollectionPercentageFormat::spacePadding;
-    } else if (wcscmp(dataCollectionPercentageFormat, L"zeroPadding") == 0) {
-        g_settings.dataCollectionPercentageFormat =
-            DataCollectionPercentageFormat::zeroPadding;
-    } else if (wcscmp(dataCollectionPercentageFormat, L"noPadding") == 0) {
-        g_settings.dataCollectionPercentageFormat =
-            DataCollectionPercentageFormat::noPadding;
+    if (wcscmp(percentageFormat, L"spacePadding") == 0) {
+        g_settings.dataCollection.percentageFormat =
+            PercentageFormat::spacePadding;
+    } else if (wcscmp(percentageFormat, L"zeroPadding") == 0) {
+        g_settings.dataCollection.percentageFormat =
+            PercentageFormat::zeroPadding;
+    } else if (wcscmp(percentageFormat, L"noPadding") == 0) {
+        g_settings.dataCollection.percentageFormat =
+            PercentageFormat::noPadding;
     }
 
-    g_settings.dataCollectionUpdateInterval =
+    g_settings.dataCollection.updateInterval =
         Wh_GetIntSetting(L"DataCollection.UpdateInterval");
 
     g_settings.webContentWeatherLocation =
