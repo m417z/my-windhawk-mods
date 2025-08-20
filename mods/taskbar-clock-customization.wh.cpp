@@ -168,6 +168,15 @@ styles, such as the font color and size.
     $description: >-
       Always use this amount of decimal places for the upload/download transfer
       rate (-1 means auto/same width).
+  - PercentageFormat: spacePaddingAndSymbol
+    $name: Percentage format
+    $description: >-
+      The format to use for displaying the CPU/RAM usage percentage.
+    $options:
+    - spacePaddingAndSymbol: Pad with spaces, add percentage symbol
+    - spacePadding: Pad with spaces, number only
+    - zeroPadding: Pad with zeros, number only
+    - noPadding: No padding, number only
   - UpdateInterval: 1
     $name: Update interval
     $description: >-
@@ -432,6 +441,13 @@ enum class NetworkMetricsFormat {
     mbitsDynamic,
 };
 
+enum class DataCollectionPercentageFormat {
+    spacePaddingAndSymbol,
+    spacePadding,
+    zeroPadding,
+    noPadding,
+};
+
 enum class WebContentWeatherUnits {
     autoDetect,
     uscs,
@@ -484,6 +500,7 @@ struct {
     int textSpacing;
     NetworkMetricsFormat networkMetricsFormat;
     int networkMetricsFixedDecimals;
+    DataCollectionPercentageFormat dataCollectionPercentageFormat;
     int dataCollectionUpdateInterval;
     StringSetting webContentWeatherLocation;
     StringSetting webContentWeatherFormat;
@@ -2026,10 +2043,31 @@ void FormatPercentValue(int val, PWSTR buffer, size_t bufferSize) {
         val = 99;
     }
 
-    // Pad to keep identical width in all cases.
-    PCWSTR prefix = val < 10 ? L"  " : L"";
+    PCWSTR padding = L"";
+    PCWSTR suffix = L"";
 
-    swprintf_s(buffer, bufferSize, L"%s%d%%", prefix, val);
+    switch (g_settings.dataCollectionPercentageFormat) {
+        case DataCollectionPercentageFormat::spacePaddingAndSymbol:
+            padding = L"  ";
+            suffix = L"%";
+            break;
+
+        case DataCollectionPercentageFormat::spacePadding:
+            padding = L"  ";
+            break;
+
+        case DataCollectionPercentageFormat::zeroPadding:
+            padding = L"0";
+            break;
+
+        case DataCollectionPercentageFormat::noPadding:
+            break;
+    }
+
+    // Pad to keep identical width in all cases.
+    PCWSTR prefix = val < 10 ? padding : L"";
+
+    swprintf_s(buffer, bufferSize, L"%s%d%s", prefix, val, suffix);
 }
 
 template <size_t N>
@@ -3696,6 +3734,22 @@ void LoadSettings() {
 
     g_settings.networkMetricsFixedDecimals =
         Wh_GetIntSetting(L"DataCollection.NetworkMetricsFixedDecimals");
+
+    g_settings.dataCollectionPercentageFormat =
+        DataCollectionPercentageFormat::spacePaddingAndSymbol;
+    StringSetting dataCollectionPercentageFormat =
+        StringSetting::make(L"DataCollection.PercentageFormat");
+    if (wcscmp(dataCollectionPercentageFormat, L"spacePadding") == 0) {
+        g_settings.dataCollectionPercentageFormat =
+            DataCollectionPercentageFormat::spacePadding;
+    } else if (wcscmp(dataCollectionPercentageFormat, L"zeroPadding") == 0) {
+        g_settings.dataCollectionPercentageFormat =
+            DataCollectionPercentageFormat::zeroPadding;
+    } else if (wcscmp(dataCollectionPercentageFormat, L"noPadding") == 0) {
+        g_settings.dataCollectionPercentageFormat =
+            DataCollectionPercentageFormat::noPadding;
+    }
+
     g_settings.dataCollectionUpdateInterval =
         Wh_GetIntSetting(L"DataCollection.UpdateInterval");
 
