@@ -1722,7 +1722,7 @@ class QueryDataCollectionSession {
                 is_wildcard = true;
                 break;
             case MetricType::kCpu:
-                counter_path = L"\\Processor(_Total)\\% Processor Time";
+                counter_path = L"\\Processor Information(_Total)\\% Processor Utility";
                 break;
             default:
                 return false;
@@ -2044,7 +2044,7 @@ void FormatTransferSpeed(double val, PWSTR buffer, size_t bufferSize) {
 
 void FormatPercentValue(int val, PWSTR buffer, size_t bufferSize) {
     // Cap to 99 to keep identical width in all cases.
-    if (val == 100) {
+    if (val >= 100) {
         val = 99;
     }
 
