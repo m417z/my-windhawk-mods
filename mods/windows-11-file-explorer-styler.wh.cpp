@@ -823,7 +823,9 @@ using PropertyOverridesUnresolved = std::vector<StyleRule>;
 
 struct XamlBlurBrushParams {
     float blurAmount;
-    wf::Numerics::float4 tint;
+    winrt::Windows::UI::Color tint;
+    std::optional<uint8_t> tintOpacity;
+    std::wstring tintThemeResourceKey;  // Empty if not from ThemeResource
 };
 
 using PropertyOverrideValue =
@@ -904,7 +906,6 @@ winrt::Windows::Foundation::IInspectable ReadLocalValueWithWorkaround(
 
 #include <winrt/Microsoft.UI.Xaml.Hosting.h>
 
-namespace wfn = wf::Numerics;
 namespace wge = winrt::Windows::Graphics::Effects;
 namespace muc = winrt::Microsoft::UI::Composition;
 namespace muxh = mux::Hosting;
@@ -931,19 +932,30 @@ typedef enum MY_D2D1_GAUSSIANBLUR_OPTIMIZATION
 #include <winrt/Windows.Foundation.Numerics.h>
 #include <winrt/Microsoft.UI.Composition.h>
 #include <winrt/Microsoft.UI.Xaml.Media.h>
+#include <winrt/Windows.UI.ViewManagement.h>
 
 class XamlBlurBrush : public mux::Media::XamlCompositionBrushBaseT<XamlBlurBrush>
 {
 public:
-	XamlBlurBrush(muc::Compositor compositor, float blurAmount, wfn::float4 tint);
+	XamlBlurBrush(muc::Compositor compositor,
+	              float blurAmount,
+	              winrt::Windows::UI::Color tint,
+	              std::optional<uint8_t> tintOpacity,
+	              winrt::hstring tintThemeResourceKey);
 
 	void OnConnected();
 	void OnDisconnected();
 
 private:
+	void RefreshThemeTint();
+	void OnThemeRefreshed();
+
 	muc::Compositor m_compositor;
 	float m_blurAmount;
-	wfn::float4 m_tint;
+	winrt::Windows::UI::Color m_tint;
+	std::optional<uint8_t> m_tintOpacity;
+	winrt::hstring m_tintThemeResourceKey;
+	winrt::Windows::UI::ViewManagement::UISettings m_uiSettings;
 };
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -1192,7 +1204,7 @@ public:
 	winrt::hstring Name();
 	void Name(winrt::hstring name);
 
-	wfn::float4 Color = { 0.0f, 0.0f, 0.0f, 1.0f };
+	winrt::Windows::UI::Color Color{};
 private:
 	winrt::hstring m_name = L"FloodEffect";
 };
@@ -1250,7 +1262,12 @@ HRESULT FloodEffect::GetProperty(UINT index, winrt::impl::abi_t<winrt::Windows::
 	switch (index)
 	{
 		case D2D1_FLOOD_PROP_COLOR:
-			*value = wf::PropertyValue::CreateSingleArray({ Color.x, Color.y, Color.z, Color.w }).as<winrt::impl::abi_t<winrt::Windows::Foundation::IPropertyValue>>().detach();
+			*value = wf::PropertyValue::CreateSingleArray({
+				Color.R / 255.0f,
+				Color.G / 255.0f,
+				Color.B / 255.0f,
+				Color.A / 255.0f,
+			}).as<winrt::impl::abi_t<winrt::Windows::Foundation::IPropertyValue>>().detach();
 			break;
 
 		default:
@@ -1459,11 +1476,37 @@ void GaussianBlurEffect::Name(winrt::hstring name)
 
 ////////////////////////////////////////////////////////////////////////////////
 // XamlBlurBrush.cpp
-XamlBlurBrush::XamlBlurBrush(muc::Compositor compositor, float blurAmount, wfn::float4 tint) :
+#include <winrt/Microsoft.UI.Dispatching.h>
+
+XamlBlurBrush::XamlBlurBrush(muc::Compositor compositor,
+                             float blurAmount,
+                             winrt::Windows::UI::Color tint,
+                             std::optional<uint8_t> tintOpacity,
+                             winrt::hstring tintThemeResourceKey) :
 	m_compositor(std::move(compositor)),
 	m_blurAmount(blurAmount),
-	m_tint(tint)
-{ }
+	m_tint(tint),
+	m_tintOpacity(tintOpacity),
+	m_tintThemeResourceKey(std::move(tintThemeResourceKey))
+{
+	if (!m_tintThemeResourceKey.empty())
+	{
+		RefreshThemeTint();
+
+		auto dq = winrt::Microsoft::UI::Dispatching::DispatcherQueue::GetForCurrentThread();
+
+		m_uiSettings.ColorValuesChanged([weakThis = get_weak(), dq] (auto const&, auto const&)
+		{
+			dq.TryEnqueue([weakThis]
+			{
+				if (auto self = weakThis.get())
+				{
+					self->OnThemeRefreshed();
+				}
+			});
+		});
+	}
+}
 
 void XamlBlurBrush::OnConnected()
 {
@@ -1483,7 +1526,11 @@ void XamlBlurBrush::OnConnected()
 		compositeEffect->Sources.push_back(*floodEffect);
 		compositeEffect->Mode = D2D1_COMPOSITE_MODE_SOURCE_OVER;
 
-		auto factory = m_compositor.CreateEffectFactory(*compositeEffect);
+		auto factory = m_compositor.CreateEffectFactory(
+			*compositeEffect,
+			// List of animatable properties.
+			{L"FloodEffect.Color"}
+		);
 		auto blurBrush = factory.CreateBrush();
 		blurBrush.SetSourceParameter(L"backdrop", backdropBrush);
 
@@ -1497,6 +1544,59 @@ void XamlBlurBrush::OnDisconnected()
 	{
 		brush.Close();
 		CompositionBrush(nullptr);
+	}
+}
+
+void XamlBlurBrush::RefreshThemeTint()
+{
+	if (m_tintThemeResourceKey.empty())
+	{
+		return;
+	}
+
+	auto resources = Application::Current().Resources();
+	auto resource = resources.TryLookup(winrt::box_value(m_tintThemeResourceKey));
+	if (!resource)
+	{
+		Wh_Log(L"Failed to find resource");
+		return;
+	}
+
+	if (auto colorBrush = resource.try_as<mux::Media::SolidColorBrush>())
+	{
+		m_tint = colorBrush.Color();
+	}
+	else if (auto color = resource.try_as<winrt::Windows::UI::Color>())
+	{
+		m_tint = *color;
+	}
+	else
+	{
+		Wh_Log(L"Resource type is unsupported: %s",
+			winrt::get_class_name(resource).c_str());
+		return;
+	}
+
+	if (m_tintOpacity)
+	{
+		m_tint.A = *m_tintOpacity;
+	}
+}
+
+void XamlBlurBrush::OnThemeRefreshed()
+{
+	Wh_Log(L"Theme refreshed");
+
+	auto prevTint = m_tint;
+
+	RefreshThemeTint();
+
+	if (prevTint != m_tint)
+	{
+		if (auto effectBrush = CompositionBrush().try_as<muc::CompositionEffectBrush>())
+		{
+			effectBrush.Properties().InsertColor(L"FloodEffect.Color", m_tint);
+		}
 	}
 }
 
@@ -1518,9 +1618,10 @@ void SetOrClearValue(DependencyObject elementDo,
                 muxh::ElementCompositionPreview::GetElementVisual(uiElement)
                     .Compositor();
 
-            value = winrt::make<XamlBlurBrush>(std::move(compositor),
-                                               blurBrushParams->blurAmount,
-                                               blurBrushParams->tint);
+            value = winrt::make<XamlBlurBrush>(
+                std::move(compositor), blurBrushParams->blurAmount,
+                blurBrushParams->tint, blurBrushParams->tintOpacity,
+                winrt::hstring(blurBrushParams->tintThemeResourceKey));
         } else {
             Wh_Log(L"Can't get UIElement for blur brush");
             return;
@@ -1635,7 +1736,8 @@ std::optional<PropertyOverrideValue> ParseNonXamlPropertyOverrideValue(
     substr = substr.substr(0, substr.size() - std::size(kWindhawkBlurSuffix));
 
     bool pendingTintColorThemeResource = false;
-    wf::Numerics::float4 tint{};
+    std::wstring tintThemeResourceKey;
+    winrt::Windows::UI::Color tint{};
     float tintOpacity = std::numeric_limits<float>::quiet_NaN();
     float blurAmount = 0;
 
@@ -1662,30 +1764,9 @@ std::optional<PropertyOverrideValue> ParseNonXamlPropertyOverrideValue(
 
             pendingTintColorThemeResource = false;
 
-            auto themeResourceName = propSubstr.substr(
+            tintThemeResourceKey = propSubstr.substr(
                 0,
                 propSubstr.size() - std::size(kTintColorThemeResourceSuffix));
-
-            auto resources = Application::Current().Resources();
-            auto resource = resources.TryLookup(
-                winrt::box_value(winrt::hstring(themeResourceName)));
-            if (resource) {
-                if (auto colorBrush =
-                        resource.try_as<mux::Media::SolidColorBrush>()) {
-                    auto color = colorBrush.Color();
-                    tint = {color.R / 255.0f, color.G / 255.0f,
-                            color.B / 255.0f, color.A / 255.0f};
-                } else if (auto color =
-                               resource.try_as<winrt::Windows::UI::Color>()) {
-                    tint = {color->R / 255.0f, color->G / 255.0f,
-                            color->B / 255.0f, color->A / 255.0f};
-                } else {
-                    Wh_Log(L"Resource type is unsupported: %s",
-                           winrt::get_class_name(resource).c_str());
-                }
-            } else {
-                Wh_Log(L"Failed to find resource");
-            }
 
             continue;
         }
@@ -1719,7 +1800,7 @@ std::optional<PropertyOverrideValue> ParseNonXamlPropertyOverrideValue(
             uint8_t r = LOBYTE(HIWORD(valNum));
             uint8_t g = HIBYTE(LOWORD(valNum));
             uint8_t b = LOBYTE(LOWORD(valNum));
-            tint = {r / 255.0f, g / 255.0f, b / 255.0f, a / 255.0f};
+            tint = {a, r, g, b};
             continue;
         }
 
@@ -1756,12 +1837,15 @@ std::optional<PropertyOverrideValue> ParseNonXamlPropertyOverrideValue(
             tintOpacity = 1.0f;
         }
 
-        tint.w = tintOpacity;
+        tint.A = static_cast<uint8_t>(tintOpacity * 255.0f);
     }
 
     return XamlBlurBrushParams{
         .blurAmount = blurAmount,
         .tint = tint,
+        .tintOpacity =
+            !std::isnan(tintOpacity) ? std::optional(tint.A) : std::nullopt,
+        .tintThemeResourceKey = std::move(tintThemeResourceKey),
     };
 }
 
