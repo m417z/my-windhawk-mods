@@ -4169,6 +4169,9 @@ BOOL Wh_ModInit() {
                                            &SendMessageW_Original);
     }
 
+    WebContentUpdateThreadInit();
+    DataCollectionSessionInit();
+
     g_initialized = true;
 
     return TRUE;
@@ -4194,9 +4197,6 @@ void Wh_ModAfterInit() {
     if (!g_explorerPatcherInitialized) {
         HandleLoadedExplorerPatcher();
     }
-
-    WebContentUpdateThreadInit();
-    DataCollectionSessionInit();
 
     ApplySettings();
 }
