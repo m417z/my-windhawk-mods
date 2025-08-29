@@ -1722,7 +1722,8 @@ class QueryDataCollectionSession {
                 is_wildcard = true;
                 break;
             case MetricType::kCpu:
-                counter_path = L"\\Processor Information(_Total)\\% Processor Utility";
+                counter_path =
+                    L"\\Processor Information(_Total)\\% Processor Utility";
                 break;
             default:
                 return false;
@@ -1888,8 +1889,10 @@ void DataCollectionSessionInit() {
     }
 
     for (size_t i = 0; i < ARRAYSIZE(metrics); i++) {
-        MetricType metric = static_cast<MetricType>(i);
-        g_dataCollectionSession->AddMetric(metric);
+        if (metrics[i]) {
+            MetricType metric = static_cast<MetricType>(i);
+            g_dataCollectionSession->AddMetric(metric);
+        }
     }
 
     g_dataCollectionSession->SampleData();
