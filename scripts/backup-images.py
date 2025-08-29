@@ -9,40 +9,44 @@ code_folder_path = script_dir.parent / "mods"
 images_folder_path = script_dir.parent / "images"
 
 session = requests.Session()
-session.headers.update({'User-Agent': 'Mozilla/5.0'})
+session.headers.update({"User-Agent": 'Mozilla/5.0'})
 
 
 def find_image_urls(file_path: Path) -> List[str]:
-    with file_path.open('r', encoding='utf-8') as file:
+    with file_path.open("r", encoding="utf-8") as file:
         content = file.read()
+
     return re.findall(url_pattern, content)
 
 
-def download_image(url: str, save_path: Path):
-    if save_path.exists():
-        return
+def image_url_to_path(url: str):
+    return url.split('/')[-1]
 
-    response = session.get(url)
+
+def download_image(url: str, save_path: Path):
+    response = session.get(url, stream=True)
     response.raise_for_status()
 
-    with save_path.open('wb') as file:
-        file.write(response.content)
+    save_path.parent.mkdir(parents=True, exist_ok=True)
+    with save_path.open("wb") as file:
+        for chunk in response.iter_content(chunk_size=8192):
+            if chunk:
+                file.write(chunk)
 
     print(f"Downloaded and saved: {save_path.name}")
 
 
 def process_code_files(code_folder: Path, images_folder: Path):
-    stale_images = list(images_folder.glob('*'))
+    stale_images = list(images_folder.glob("*"))
 
     image_urls: set[str] = set()
-    for file_path in code_folder.glob('*.wh.cpp'):
+    for file_path in code_folder.glob("*.wh.cpp"):
         image_urls.update(find_image_urls(file_path))
 
     for url in image_urls:
-        # Extract image name from URL
-        image_name = url.split('/')[-1]
-        image_path = images_folder / image_name
-        download_image(url, image_path)
+        image_path = images_folder / image_url_to_path(url)
+        if not image_path.exists():
+            download_image(url, image_path)
 
         if image_path in stale_images:
             stale_images.remove(image_path)
