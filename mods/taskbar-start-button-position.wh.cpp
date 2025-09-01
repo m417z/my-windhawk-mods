@@ -61,6 +61,7 @@ Only Windows 11 is supported.
 #include <winrt/Windows.UI.Core.h>
 #include <winrt/Windows.UI.Xaml.Automation.h>
 #include <winrt/Windows.UI.Xaml.Media.h>
+#include <winrt/Windows.UI.Xaml.Shapes.h>
 #include <winrt/Windows.UI.Xaml.h>
 #include <winrt/base.h>
 
@@ -73,6 +74,8 @@ struct {
 
 std::atomic<bool> g_taskbarViewDllLoaded;
 std::atomic<bool> g_unloading;
+
+thread_local bool g_TaskbarCollapsibleLayoutXamlTraits_ArrangeOverride;
 
 HWND g_startMenuWnd;
 int g_startMenuOriginalWidth;
@@ -411,21 +414,20 @@ void ApplySettings(HWND hTaskbarWnd) {
 }
 
 using IUIElement_Arrange_t =
-    HRESULT(WINAPI*)(void* pThis, const winrt::Windows::Foundation::Rect* rect);
+    HRESULT(WINAPI*)(void* pThis, winrt::Windows::Foundation::Rect rect);
 IUIElement_Arrange_t IUIElement_Arrange_Original;
-HRESULT WINAPI
-IUIElement_Arrange_Hook(void* pThis,
-                        const winrt::Windows::Foundation::Rect* rect) {
+HRESULT WINAPI IUIElement_Arrange_Hook(void* pThis,
+                                       winrt::Windows::Foundation::Rect rect) {
     Wh_Log(L">");
 
     auto original = [=] { return IUIElement_Arrange_Original(pThis, rect); };
 
-    if (g_unloading) {
+    if (!g_TaskbarCollapsibleLayoutXamlTraits_ArrangeOverride || g_unloading) {
         return original();
     }
 
     FrameworkElement element = nullptr;
-    (*(IUnknown**)pThis)
+    ((IUnknown*)pThis)
         ->QueryInterface(winrt::guid_of<FrameworkElement>(),
                          winrt::put_abi(element));
     if (!element) {
@@ -503,9 +505,46 @@ IUIElement_Arrange_Hook(void* pThis,
     }
 
     // Force the start button to have X = 0.
-    winrt::Windows::Foundation::Rect newRect = *rect;
+    winrt::Windows::Foundation::Rect newRect = rect;
     newRect.X = 0;
-    return IUIElement_Arrange_Original(pThis, &newRect);
+    return IUIElement_Arrange_Original(pThis, newRect);
+}
+
+using TaskbarCollapsibleLayoutXamlTraits_ArrangeOverride_t =
+    HRESULT(WINAPI*)(void* pThis,
+                     void* context,
+                     winrt::Windows::Foundation::Size size,
+                     winrt::Windows::Foundation::Size* resultSize);
+TaskbarCollapsibleLayoutXamlTraits_ArrangeOverride_t
+    TaskbarCollapsibleLayoutXamlTraits_ArrangeOverride_Original;
+HRESULT WINAPI TaskbarCollapsibleLayoutXamlTraits_ArrangeOverride_Hook(
+    void* pThis,
+    void* context,
+    winrt::Windows::Foundation::Size size,
+    winrt::Windows::Foundation::Size* resultSize) {
+    Wh_Log(L">");
+
+    [[maybe_unused]] static bool hooked = [] {
+        Shapes::Rectangle rectangle;
+        IUIElement element = rectangle;
+
+        void** vtable = *(void***)winrt::get_abi(element);
+        auto arrange = (IUIElement_Arrange_t)vtable[92];
+
+        WindhawkUtils::Wh_SetFunctionHookT(arrange, IUIElement_Arrange_Hook,
+                                           &IUIElement_Arrange_Original);
+        Wh_ApplyHookOperations();
+        return true;
+    }();
+
+    g_TaskbarCollapsibleLayoutXamlTraits_ArrangeOverride = true;
+
+    HRESULT ret = TaskbarCollapsibleLayoutXamlTraits_ArrangeOverride_Original(
+        pThis, context, size, resultSize);
+
+    g_TaskbarCollapsibleLayoutXamlTraits_ArrangeOverride = false;
+
+    return ret;
 }
 
 using AugmentedEntryPointButton_UpdateButtonPadding_t =
@@ -583,9 +622,9 @@ bool HookTaskbarViewDllSymbols(HMODULE module) {
     // Taskbar.View.dll
     WindhawkUtils::SYMBOL_HOOK symbolHooks[] = {
         {
-            {LR"(public: __cdecl winrt::impl::consume_Windows_UI_Xaml_IUIElement<struct winrt::Windows::UI::Xaml::IUIElement>::Arrange(struct winrt::Windows::Foundation::Rect const &)const )"},
-            &IUIElement_Arrange_Original,
-            IUIElement_Arrange_Hook,
+            {LR"(public: virtual int __cdecl winrt::impl::produce<struct winrt::Taskbar::implementation::TaskbarCollapsibleLayout,struct winrt::Microsoft::UI::Xaml::Controls::IVirtualizingLayoutOverrides>::ArrangeOverride(void *,struct winrt::Windows::Foundation::Size,struct winrt::Windows::Foundation::Size *))"},
+            &TaskbarCollapsibleLayoutXamlTraits_ArrangeOverride_Original,
+            TaskbarCollapsibleLayoutXamlTraits_ArrangeOverride_Hook,
         },
         {
             {LR"(protected: virtual void __cdecl winrt::Taskbar::implementation::AugmentedEntryPointButton::UpdateButtonPadding(void))"},
