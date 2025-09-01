@@ -268,6 +268,7 @@ from the **TranslucentTB** project.
   - Lucent_variant_Light: Lucent (Light Bar)
   - 21996Taskbar: 21996Taskbar
   - BottomDensy: BottomDensy
+  - BottomDensy_variant_NoInd: BottomDensy (NoInd)
   - TaskbarXII: TaskbarXII
   - xdark: xdark
   - Windows7: Windows7
@@ -1607,6 +1608,53 @@ const Theme g_themeBottomDensy = {{
     ThemeTargetStyles{L"WrapGrid > ContentPresenter > SystemTray.NotifyIconView > Grid#ContainerGrid > ContentPresenter#ContentPresenter > Grid#ContentGrid > SystemTray.ImageIconContent > Grid#ContainerGrid > Image", {
         L"Width=20",
         L"Height=20"}},
+}};
+
+const Theme g_themeBottomDensy_variant_NoInd = {{
+    ThemeTargetStyles{L"Taskbar.TaskbarFrame > Grid#RootGrid > Taskbar.TaskbarBackground > Grid > Rectangle#BackgroundFill", {
+        L"Fill=Transparent"}},
+    ThemeTargetStyles{L"Rectangle#BackgroundStroke", {
+        L"Fill=Transparent"}},
+    ThemeTargetStyles{L"Taskbar.TaskListLabeledButtonPanel@RunningIndicatorStates > Rectangle#RunningIndicator", {
+        L"Fill=#8f8f8f",
+        L"Fill@ActiveRunningIndicator=#fef9f0",
+        L"Width=0",
+        L"Height=0",
+        L"Margin=0,0,0,0",
+        L"Width@ActiveRunningIndicator=32",
+        L"Height@ActiveRunningIndicator=2",
+        L"Margin@ActiveRunningIndicator=0,-2,0,0"}},
+    ThemeTargetStyles{L"Taskbar.TaskListLabeledButtonPanel@RunningIndicatorStates > muxc:ProgressBar#ProgressIndicator", {
+        L"VerticalAlignment=0"}},
+    ThemeTargetStyles{L"Rectangle#RunningIndicator", {
+        L"VerticalAlignment=0"}},
+    ThemeTargetStyles{L"Border#ProgressBarRoot", {
+        L"VerticalAlignment=0"}},
+    ThemeTargetStyles{L"Rectangle#IndeterminateProgressBarIndicator", {
+        L"VerticalAlignment=0"}},
+    ThemeTargetStyles{L"Rectangle#IndeterminateProgressBarIndicator2", {
+        L"VerticalAlignment=0"}},
+    ThemeTargetStyles{L"Taskbar.TaskListLabeledButtonPanel", {
+        L"Padding=2,0,2,0",
+        L"VerticalAlignment=2"}},
+    ThemeTargetStyles{L"Taskbar.ExperienceToggleButton#LaunchListButton[AutomationProperties.AutomationId=StartButton]", {
+        L"Visibility=Collapsed"}},
+    ThemeTargetStyles{L"SystemTray.Stack#ShowDesktopStack", {
+        L"Width=1"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Shapes.Rectangle#ShowDesktopPipe", {
+        L"HorizontalAlignment=0"}},
+    ThemeTargetStyles{L"SystemTray.NotificationAreaIcons#NotificationAreaIcons > ItemsPresenter > StackPanel > ContentPresenter > SystemTray.NotifyIconView#NotifyItemIcon > Grid#ContainerGrid > ContentPresenter#ContentPresenter > Grid#ContentGrid > SystemTray.ImageIconContent > Grid#ContainerGrid > Image", {
+        L"Width=20",
+        L"Height=20"}},
+    ThemeTargetStyles{L"WrapGrid > ContentPresenter > SystemTray.NotifyIconView > Grid#ContainerGrid > ContentPresenter#ContentPresenter > Grid#ContentGrid > SystemTray.ImageIconContent > Grid#ContainerGrid > Image", {
+        L"Width=20",
+        L"Height=20"}},
+    ThemeTargetStyles{L"Taskbar.TaskListLabeledButtonPanel@RunningIndicatorStates > Image#Icon", {
+        L"Width@ActiveRunningIndicator=30",
+        L"Height@ActiveRunningIndicator=30",
+        L"Width@NoRunningIndicator=26",
+        L"Height@NoRunningIndicator=26",
+        L"Margin@NoRunningIndicator=0,6,0,0"}},
 }};
 
 const Theme g_themeTaskbarXII = {{
@@ -4749,6 +4797,8 @@ void ProcessAllStylesFromSettings() {
         theme = &g_theme21996Taskbar;
     } else if (wcscmp(themeName, L"BottomDensy") == 0) {
         theme = &g_themeBottomDensy;
+    } else if (wcscmp(themeName, L"BottomDensy_variant_NoInd") == 0) {
+        theme = &g_themeBottomDensy_variant_NoInd;
     } else if (wcscmp(themeName, L"TaskbarXII") == 0) {
         theme = &g_themeTaskbarXII;
     } else if (wcscmp(themeName, L"xdark") == 0) {
