@@ -650,7 +650,12 @@ using TaskListButton_IconHeight_t = void(WINAPI*)(void* pThis, double height);
 TaskListButton_IconHeight_t TaskListButton_IconHeight_Original;
 
 size_t GetIconHeightOffset() {
-    static size_t iconHeightOffset = []() {
+    static size_t iconHeightOffset = []() -> size_t {
+        if (!TaskListButton_IconHeight_Original) {
+            Wh_Log(L"Error: TaskListButton_IconHeight_Original is null");
+            return 0;
+        }
+
         size_t offset =
 #if defined(_M_X64)
             OffsetFromAssemblyRegex(
@@ -737,6 +742,13 @@ TaskbarConfiguration_UpdateFrameSize_t
 
 LONG GetFrameSizeOffset() {
     static LONG frameSizeOffset = []() -> LONG {
+        if (!TaskbarConfiguration_UpdateFrameSize_SymbolAddress) {
+            Wh_Log(
+                L"Error: TaskbarConfiguration_UpdateFrameSize_SymbolAddress is "
+                L"null");
+            return 0;
+        }
+
         // Find the offset to the frame size.
         // str d16, [x19, #0x50]
         const DWORD* start =
@@ -822,7 +834,14 @@ SystemTrayController_UpdateFrameSize_t
 
 LONG GetLastHeightOffset() {
     static LONG lastHeightOffset = []() -> LONG {
-    // Find the last height offset to reset the height value.
+        if (!SystemTrayController_UpdateFrameSize_SymbolAddress) {
+            Wh_Log(
+                L"Error: SystemTrayController_UpdateFrameSize_SymbolAddress is "
+                L"null");
+            return 0;
+        }
+
+        // Find the last height offset to reset the height value.
 #if defined(_M_X64)
         // 66 0f 2e b3 b0 00 00 00 UCOMISD    uVar4,qword ptr [RBX + 0xb0]
         // 7a 4c                   JP         LAB_180075641
@@ -943,6 +962,13 @@ void* TaskbarController_OnGroupingModeChanged_Original;
 
 LONG GetTaskbarFrameOffset() {
     static LONG taskbarFrameOffset = []() -> LONG {
+        if (!TaskbarController_OnGroupingModeChanged_Original) {
+            Wh_Log(
+                L"Error: TaskbarController_OnGroupingModeChanged_Original is "
+                L"null");
+            return 0;
+        }
+
 #if defined(_M_X64)
         // 48:83EC 28               | sub rsp,28
         // 48:8B81 88020000         | mov rax,qword ptr ds:[rcx+288]
