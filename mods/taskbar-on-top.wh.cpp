@@ -794,10 +794,29 @@ bool IsSecondaryTaskbar(XamlRoot xamlRoot) {
 }
 
 void ApplyTaskbarFrameStyle(FrameworkElement taskbarFrame) {
-    if (g_settings.taskbarLocation != TaskbarLocation::top) {
+    bool isSecondaryTaskbar = IsSecondaryTaskbar(taskbarFrame.XamlRoot());
+
+    TaskbarLocation taskbarLocation = isSecondaryTaskbar
+                                          ? g_settings.taskbarLocationSecondary
+                                          : g_settings.taskbarLocation;
+    if (taskbarLocation != TaskbarLocation::top) {
         return;
     }
 
+    Thickness margin{};
+    if (!g_unloading) {
+        // Fix the edge of the taskbar being non-clickable by moving the edge
+        // pixels out of the screen.
+        margin.Left -= 1;
+        margin.Top -= 1;
+        margin.Right -= 1;
+    }
+
+    if (auto rootGrid = FindChildByName(taskbarFrame, L"RootGrid")) {
+        rootGrid.Margin(margin);
+    }
+
+    // Align the background stroke to the bottom.
     FrameworkElement backgroundStroke = nullptr;
 
     FrameworkElement child = taskbarFrame;
@@ -809,11 +828,10 @@ void ApplyTaskbarFrameStyle(FrameworkElement taskbarFrame) {
         backgroundStroke = child;
     }
 
-    if (!backgroundStroke) {
-        return;
+    if (backgroundStroke) {
+        backgroundStroke.VerticalAlignment(
+            g_unloading ? VerticalAlignment::Top : VerticalAlignment::Bottom);
     }
-
-    backgroundStroke.VerticalAlignment(VerticalAlignment::Bottom);
 }
 
 void* TaskbarController_OnGroupingModeChanged;
