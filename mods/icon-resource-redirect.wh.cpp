@@ -757,6 +757,35 @@ bool RedirectModule(DWORD c,
     return false;
 }
 
+typedef struct {
+    int targetIndex;
+    int currentIndex;
+    WORD foundId;
+} ENUMICONCTX;
+
+BOOL CALLBACK EnumIconsProc(HMODULE hModule,
+                            LPCWSTR lpszType,
+                            LPWSTR lpszName,
+                            LONG_PTR lParam) {
+    ENUMICONCTX* ctx = (ENUMICONCTX*)lParam;
+
+    if (ctx->currentIndex == ctx->targetIndex) {
+        // Return 0 for non-numerical name.
+        if (IS_INTRESOURCE(lpszName)) {
+            ctx->foundId = (WORD)(LONG_PTR)lpszName;
+        }
+        return FALSE;  // Stop enumeration.
+    }
+    ctx->currentIndex++;
+    return TRUE;  // Continue.
+}
+
+WORD GetIconGroupIdByIndex(HMODULE hModule, int index) {
+    ENUMICONCTX ctx = {index, 0, 0};
+    EnumResourceNamesW(hModule, RT_GROUP_ICON, EnumIconsProc, (LONG_PTR)&ctx);
+    return ctx.foundId;  // 0 if not found or if string resource name.
+}
+
 using PrivateExtractIconsW_t = decltype(&PrivateExtractIconsW);
 PrivateExtractIconsW_t PrivateExtractIconsW_Original;
 UINT WINAPI PrivateExtractIconsW_Hook(LPCWSTR szFileName,
@@ -784,11 +813,38 @@ UINT WINAPI PrivateExtractIconsW_Hook(LPCWSTR szFileName,
             Wh_Log(L"[%u] flags: 0x%08X", c, flags);
         },
         [&](PCWSTR fileNameRedirect) {
+            // nIconIndex can be either:
+            // * Negative: the icon id
+            // * Non-negative: The icon index (0 for first icon, etc.)
+            //
+            // Using the non-negative value for the redirected file is
+            // problematic as it might contain only part of the icons.
+            // Therefore, convert it to an id before proceeding.
+            int iconId = nIconIndex;
+            if (iconId >= 0) {
+                HMODULE module = LoadLibraryEx(szFileName, nullptr,
+                                               LOAD_LIBRARY_AS_DATAFILE);
+                if (module) {
+                    iconId = -GetIconGroupIdByIndex(module, iconId);
+                    FreeLibrary(module);
+
+                    if (iconId == 0) {
+                        Wh_Log(L"[%u] Failed to get icon group id", c);
+                        return false;
+                    }
+                } else {
+                    Wh_Log(L"[%u] Failed to get module handle", c);
+                    return false;
+                }
+
+                Wh_Log(L"[%u] Using id %d for icon index %d", c, -iconId, nIconIndex);
+            }
+
             if (phicon) {
                 std::fill_n(phicon, nIcons, nullptr);
             }
 
-            result = PrivateExtractIconsW_Original(fileNameRedirect, nIconIndex,
+            result = PrivateExtractIconsW_Original(fileNameRedirect, iconId,
                                                    cxIcon, cyIcon, phicon,
                                                    piconid, nIcons, flags);
             if (result != 0xFFFFFFFF && result != 0) {
@@ -843,7 +899,7 @@ UINT WINAPI PrivateExtractIconsW_Hook(LPCWSTR szFileName,
                 HICON testIcon = nullptr;
                 UINT testIconId;
                 UINT testResult = PrivateExtractIconsW_Original(
-                    fileNameRedirect, nIconIndex, LOWORD(cxIcon),
+                    fileNameRedirect, iconId, LOWORD(cxIcon),
                     LOWORD(cyIcon), &testIcon, &testIconId, 1,
                     flags & ~LR_EXACTSIZEONLY);
 
