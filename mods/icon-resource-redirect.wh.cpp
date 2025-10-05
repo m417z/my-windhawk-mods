@@ -360,6 +360,27 @@ std::atomic<DWORD> g_operationCounter;
 HANDLE g_clearCachePromptThread;
 std::atomic<HWND> g_clearCachePromptWindow;
 
+// The resource operation count is used to mark recognized high level resource
+// operations, which will then be checked in the lower level hooks:
+// FindResourceExA, FindResourceExW, LoadResource, SizeofResource,
+// RtlLoadString. This allows handling recognized high level calls in a more
+// reliable way.
+//
+// Example: Consider LoadImageW for loading an icon. Internally, it reads two
+// resources: the icon group resource and the actual icon resource. If the
+// FindResourceExW hook runs for both resources, it might fall back for the icon
+// group, but redirect the actual icon resource, causing a mismatch. By handling
+// the redirection in LoadImageW, both operations are either redirected or not.
+thread_local int g_resourceOperationCount;
+
+auto resourceOperationCountScope() {
+    g_resourceOperationCount++;
+    return std::unique_ptr<decltype(g_resourceOperationCount),
+                           void (*)(decltype(g_resourceOperationCount)*)>{
+        &g_resourceOperationCount,
+        [](auto resourceOperationCount) { (*resourceOperationCount)--; }};
+}
+
 constexpr WCHAR kClearCachePromptTitle[] = L"Resource Redirect - Windhawk";
 constexpr WCHAR kClearCachePromptText[] =
     L"For some icons to be updated, the icon cache must be cleared. Do you "
@@ -796,6 +817,7 @@ UINT WINAPI PrivateExtractIconsW_Hook(LPCWSTR szFileName,
                                       UINT* piconid,
                                       UINT nIcons,
                                       UINT flags) {
+    auto resOp = resourceOperationCountScope();
     DWORD c = ++g_operationCounter;
 
     Wh_Log(L"[%u] > Icon index: %d, file name: %s", c, nIconIndex, szFileName);
@@ -837,7 +859,8 @@ UINT WINAPI PrivateExtractIconsW_Hook(LPCWSTR szFileName,
                     return false;
                 }
 
-                Wh_Log(L"[%u] Using id %d for icon index %d", c, -iconId, nIconIndex);
+                Wh_Log(L"[%u] Using id %d for icon index %d", c, -iconId,
+                       nIconIndex);
             }
 
             if (phicon) {
@@ -899,9 +922,8 @@ UINT WINAPI PrivateExtractIconsW_Hook(LPCWSTR szFileName,
                 HICON testIcon = nullptr;
                 UINT testIconId;
                 UINT testResult = PrivateExtractIconsW_Original(
-                    fileNameRedirect, iconId, LOWORD(cxIcon),
-                    LOWORD(cyIcon), &testIcon, &testIconId, 1,
-                    flags & ~LR_EXACTSIZEONLY);
+                    fileNameRedirect, iconId, LOWORD(cxIcon), LOWORD(cyIcon),
+                    &testIcon, &testIconId, 1, flags & ~LR_EXACTSIZEONLY);
 
                 if (testIcon) {
                     DestroyIcon(testIcon);
@@ -948,6 +970,7 @@ HANDLE LoadImageAW_Hook(HINSTANCE hInst,
                         int cx,
                         int cy,
                         UINT fuLoad) {
+    auto resOp = resourceOperationCountScope();
     DWORD c = ++g_operationCounter;
 
     PCWSTR typeClarification = L"";
@@ -1053,6 +1076,7 @@ HANDLE WINAPI LoadImageW_Hook(HINSTANCE hInst,
 
 template <auto* Original, typename T>
 HICON LoadIconAW_Hook(HINSTANCE hInstance, const T* lpIconName) {
+    auto resOp = resourceOperationCountScope();
     DWORD c = ++g_operationCounter;
 
     WCHAR prefix[64];
@@ -1103,6 +1127,7 @@ HICON WINAPI LoadIconW_Hook(HINSTANCE hInstance, LPCWSTR lpIconName) {
 
 template <auto* Original, typename T>
 HCURSOR LoadCursorAW_Hook(HINSTANCE hInstance, const T* lpCursorName) {
+    auto resOp = resourceOperationCountScope();
     DWORD c = ++g_operationCounter;
 
     WCHAR prefix[64];
@@ -1154,6 +1179,7 @@ HCURSOR WINAPI LoadCursorW_Hook(HINSTANCE hInstance, LPCWSTR lpCursorName) {
 
 template <auto* Original, typename T>
 HBITMAP LoadBitmapAW_Hook(HINSTANCE hInstance, const T* lpBitmapName) {
+    auto resOp = resourceOperationCountScope();
     DWORD c = ++g_operationCounter;
 
     WCHAR prefix[64];
@@ -1205,6 +1231,7 @@ HBITMAP WINAPI LoadBitmapW_Hook(HINSTANCE hInstance, LPCWSTR lpBitmapName) {
 
 template <auto* Original, typename T>
 HMENU LoadMenuAW_Hook(HINSTANCE hInstance, const T* lpMenuName) {
+    auto resOp = resourceOperationCountScope();
     DWORD c = ++g_operationCounter;
 
     WCHAR prefix[64];
@@ -1257,6 +1284,7 @@ INT_PTR DialogBoxParamAW_Hook(HINSTANCE hInstance,
                               HWND hWndParent,
                               DLGPROC lpDialogFunc,
                               LPARAM dwInitParam) {
+    auto resOp = resourceOperationCountScope();
     DWORD c = ++g_operationCounter;
 
     WCHAR prefix[64];
@@ -1328,6 +1356,7 @@ HWND CreateDialogParamAW_Hook(HINSTANCE hInstance,
                               HWND hWndParent,
                               DLGPROC lpDialogFunc,
                               LPARAM dwInitParam) {
+    auto resOp = resourceOperationCountScope();
     DWORD c = ++g_operationCounter;
 
     WCHAR prefix[64];
@@ -1391,6 +1420,7 @@ int LoadStringAW_Hook(HINSTANCE hInstance,
                       UINT uID,
                       T* lpBuffer,
                       int cchBufferMax) {
+    auto resOp = resourceOperationCountScope();
     DWORD c = ++g_operationCounter;
 
     WCHAR prefix[64];
@@ -1513,6 +1543,10 @@ HRSRC WINAPI FindResourceExA_Hook(HMODULE hModule,
                                   LPCSTR lpType,
                                   LPCSTR lpName,
                                   WORD wLanguage) {
+    if (g_resourceOperationCount > 0) {
+        return FindResourceExA_Original(hModule, lpType, lpName, wLanguage);
+    }
+
     return FindResourceExAW_Hook<&FindResourceExA_Original>(hModule, lpType,
                                                             lpName, wLanguage);
 }
@@ -1523,6 +1557,10 @@ HRSRC WINAPI FindResourceExW_Hook(HMODULE hModule,
                                   LPCWSTR lpType,
                                   LPCWSTR lpName,
                                   WORD wLanguage) {
+    if (g_resourceOperationCount > 0) {
+        return FindResourceExW_Original(hModule, lpType, lpName, wLanguage);
+    }
+
     return FindResourceExAW_Hook<&FindResourceExW_Original>(hModule, lpType,
                                                             lpName, wLanguage);
 }
@@ -1552,6 +1590,10 @@ bool IsResourceHandlePartOfModule(HMODULE hModule, HRSRC hResInfo) {
 using LoadResource_t = decltype(&LoadResource);
 LoadResource_t LoadResource_Original;
 HGLOBAL WINAPI LoadResource_Hook(HMODULE hModule, HRSRC hResInfo) {
+    if (g_resourceOperationCount > 0) {
+        return LoadResource_Original(hModule, hResInfo);
+    }
+
     DWORD c = ++g_operationCounter;
 
     Wh_Log(L"[%u] > hModule=%p, hResInfo=%p", c, hModule, hResInfo);
@@ -1588,6 +1630,10 @@ HGLOBAL WINAPI LoadResource_Hook(HMODULE hModule, HRSRC hResInfo) {
 using SizeofResource_t = decltype(&SizeofResource);
 SizeofResource_t SizeofResource_Original;
 DWORD WINAPI SizeofResource_Hook(HMODULE hModule, HRSRC hResInfo) {
+    if (g_resourceOperationCount > 0) {
+        return SizeofResource_Original(hModule, hResInfo);
+    }
+
     DWORD c = ++g_operationCounter;
 
     Wh_Log(L"[%u] > hModule=%p, hResInfo=%p", c, hModule, hResInfo);
@@ -1644,6 +1690,12 @@ HRESULT NTAPI RtlLoadString_Hook(_In_ PVOID DllHandle,
                                  _Out_writes_(ReturnLanguageLen)
                                      PWSTR ReturnLanguageName,
                                  _Inout_opt_ PULONG ReturnLanguageLen) {
+    if (g_resourceOperationCount > 0) {
+        return RtlLoadString_Original(DllHandle, StringId, StringLanguage,
+                                      Flags, ReturnString, ReturnStringLen,
+                                      ReturnLanguageName, ReturnLanguageLen);
+    }
+
     DWORD c = ++g_operationCounter;
 
     Wh_Log(L"[%u] > string number: %u", c, StringId);
@@ -1688,6 +1740,7 @@ HRESULT WINAPI SHCreateStreamOnModuleResourceW_Hook(HMODULE hModule,
                                                     LPCWSTR pwszName,
                                                     LPCWSTR pwszType,
                                                     IStream** ppStream) {
+    auto resOp = resourceOperationCountScope();
     DWORD c = ++g_operationCounter;
 
     PCWSTR logTypeStr;
@@ -1776,6 +1829,7 @@ HRESULT __thiscall SetXMLFromResource_Hook(void* pThis,
                                            HMODULE hModule,
                                            HINSTANCE param4,
                                            HINSTANCE param5) {
+    auto resOp = resourceOperationCountScope();
     DWORD c = ++g_operationCounter;
 
     PCWSTR logTypeStr;
@@ -1853,6 +1907,7 @@ void* WINAPI DirectUI_CreateString_Hook(PCWSTR name, HINSTANCE hInstance) {
         return DirectUI_CreateString_Original(name, hInstance);
     }
 
+    auto resOp = resourceOperationCountScope();
     DWORD c = ++g_operationCounter;
 
     Wh_Log(L"[%u] > DUI string number: %u", c, (DWORD)(ULONG_PTR)name);
@@ -2722,65 +2777,63 @@ BOOL Wh_ModInit() {
                        (void*)PrivateExtractIconsW_Hook,
                        (void**)&PrivateExtractIconsW_Original);
 
-    if (!g_settings.allResourceRedirect) {
-        // The functions below use FindResourceEx, LoadResource, SizeofResource.
-        Wh_SetFunctionHook((void*)LoadImageA, (void*)LoadImageA_Hook,
-                           (void**)&LoadImageA_Original);
+    // The functions below use FindResourceEx, LoadResource, SizeofResource.
+    Wh_SetFunctionHook((void*)LoadImageA, (void*)LoadImageA_Hook,
+                       (void**)&LoadImageA_Original);
 
-        Wh_SetFunctionHook((void*)LoadImageW, (void*)LoadImageW_Hook,
-                           (void**)&LoadImageW_Original);
+    Wh_SetFunctionHook((void*)LoadImageW, (void*)LoadImageW_Hook,
+                       (void**)&LoadImageW_Original);
 
-        Wh_SetFunctionHook((void*)LoadIconA, (void*)LoadIconA_Hook,
-                           (void**)&LoadIconA_Original);
+    Wh_SetFunctionHook((void*)LoadIconA, (void*)LoadIconA_Hook,
+                       (void**)&LoadIconA_Original);
 
-        Wh_SetFunctionHook((void*)LoadIconW, (void*)LoadIconW_Hook,
-                           (void**)&LoadIconW_Original);
+    Wh_SetFunctionHook((void*)LoadIconW, (void*)LoadIconW_Hook,
+                       (void**)&LoadIconW_Original);
 
-        Wh_SetFunctionHook((void*)LoadCursorA, (void*)LoadCursorA_Hook,
-                           (void**)&LoadCursorA_Original);
+    Wh_SetFunctionHook((void*)LoadCursorA, (void*)LoadCursorA_Hook,
+                       (void**)&LoadCursorA_Original);
 
-        Wh_SetFunctionHook((void*)LoadCursorW, (void*)LoadCursorW_Hook,
-                           (void**)&LoadCursorW_Original);
+    Wh_SetFunctionHook((void*)LoadCursorW, (void*)LoadCursorW_Hook,
+                       (void**)&LoadCursorW_Original);
 
-        Wh_SetFunctionHook((void*)LoadBitmapA, (void*)LoadBitmapA_Hook,
-                           (void**)&LoadBitmapA_Original);
+    Wh_SetFunctionHook((void*)LoadBitmapA, (void*)LoadBitmapA_Hook,
+                       (void**)&LoadBitmapA_Original);
 
-        Wh_SetFunctionHook((void*)LoadBitmapW, (void*)LoadBitmapW_Hook,
-                           (void**)&LoadBitmapW_Original);
+    Wh_SetFunctionHook((void*)LoadBitmapW, (void*)LoadBitmapW_Hook,
+                       (void**)&LoadBitmapW_Original);
 
-        Wh_SetFunctionHook((void*)LoadMenuA, (void*)LoadMenuA_Hook,
-                           (void**)&LoadMenuA_Original);
+    Wh_SetFunctionHook((void*)LoadMenuA, (void*)LoadMenuA_Hook,
+                       (void**)&LoadMenuA_Original);
 
-        Wh_SetFunctionHook((void*)LoadMenuW, (void*)LoadMenuW_Hook,
-                           (void**)&LoadMenuW_Original);
+    Wh_SetFunctionHook((void*)LoadMenuW, (void*)LoadMenuW_Hook,
+                       (void**)&LoadMenuW_Original);
 
-        Wh_SetFunctionHook((void*)DialogBoxParamA, (void*)DialogBoxParamA_Hook,
-                           (void**)&DialogBoxParamA_Original);
+    Wh_SetFunctionHook((void*)DialogBoxParamA, (void*)DialogBoxParamA_Hook,
+                       (void**)&DialogBoxParamA_Original);
 
-        Wh_SetFunctionHook((void*)DialogBoxParamW, (void*)DialogBoxParamW_Hook,
-                           (void**)&DialogBoxParamW_Original);
+    Wh_SetFunctionHook((void*)DialogBoxParamW, (void*)DialogBoxParamW_Hook,
+                       (void**)&DialogBoxParamW_Original);
 
-        Wh_SetFunctionHook((void*)CreateDialogParamA,
-                           (void*)CreateDialogParamA_Hook,
-                           (void**)&CreateDialogParamA_Original);
+    Wh_SetFunctionHook((void*)CreateDialogParamA,
+                       (void*)CreateDialogParamA_Hook,
+                       (void**)&CreateDialogParamA_Original);
 
-        Wh_SetFunctionHook((void*)CreateDialogParamW,
-                           (void*)CreateDialogParamW_Hook,
-                           (void**)&CreateDialogParamW_Original);
+    Wh_SetFunctionHook((void*)CreateDialogParamW,
+                       (void*)CreateDialogParamW_Hook,
+                       (void**)&CreateDialogParamW_Original);
 
-        // The functions below use RtlLoadString.
-        Wh_SetFunctionHook((void*)LoadStringA, (void*)LoadStringA_u_Hook,
-                           (void**)&LoadStringA_u_Original);
+    // The functions below use RtlLoadString.
+    Wh_SetFunctionHook((void*)LoadStringA, (void*)LoadStringA_u_Hook,
+                       (void**)&LoadStringA_u_Original);
 
-        Wh_SetFunctionHook((void*)LoadStringW, (void*)LoadStringW_u_Hook,
-                           (void**)&LoadStringW_u_Original);
+    Wh_SetFunctionHook((void*)LoadStringW, (void*)LoadStringW_u_Hook,
+                       (void**)&LoadStringW_u_Original);
 
-        setKernelFunctionHook("LoadStringA", (void*)LoadStringA_k_Hook,
-                              (void**)&LoadStringA_k_Original);
+    setKernelFunctionHook("LoadStringA", (void*)LoadStringA_k_Hook,
+                          (void**)&LoadStringA_k_Original);
 
-        setKernelFunctionHook("LoadStringW", (void*)LoadStringW_k_Hook,
-                              (void**)&LoadStringW_k_Original);
-    }
+    setKernelFunctionHook("LoadStringW", (void*)LoadStringW_k_Hook,
+                          (void**)&LoadStringW_k_Original);
 
     if (g_settings.allResourceRedirect) {
         setKernelFunctionHook("FindResourceExA", (void*)FindResourceExA_Hook,
@@ -2800,68 +2853,66 @@ BOOL Wh_ModInit() {
         }
     }
 
-    // All of these end up calling FindResourceEx, LoadResource, SizeofResource.
-    if (!g_settings.allResourceRedirect) {
-        HMODULE shcoreModule =
-            LoadLibraryEx(L"shcore.dll", nullptr, LOAD_LIBRARY_SEARCH_SYSTEM32);
-        if (shcoreModule) {
-            FARPROC pSHCreateStreamOnModuleResourceW =
-                GetProcAddress(shcoreModule, (PCSTR)109);
-            if (pSHCreateStreamOnModuleResourceW) {
-                Wh_SetFunctionHook(
-                    (void*)pSHCreateStreamOnModuleResourceW,
-                    (void*)SHCreateStreamOnModuleResourceW_Hook,
-                    (void**)&SHCreateStreamOnModuleResourceW_Original);
-            } else {
-                Wh_Log(L"Couldn't find SHCreateStreamOnModuleResourceW (#109)");
-            }
+    // The functions below use FindResourceEx, LoadResource, SizeofResource.
+    HMODULE shcoreModule =
+        LoadLibraryEx(L"shcore.dll", nullptr, LOAD_LIBRARY_SEARCH_SYSTEM32);
+    if (shcoreModule) {
+        FARPROC pSHCreateStreamOnModuleResourceW =
+            GetProcAddress(shcoreModule, (PCSTR)109);
+        if (pSHCreateStreamOnModuleResourceW) {
+            Wh_SetFunctionHook(
+                (void*)pSHCreateStreamOnModuleResourceW,
+                (void*)SHCreateStreamOnModuleResourceW_Hook,
+                (void**)&SHCreateStreamOnModuleResourceW_Original);
         } else {
-            Wh_Log(L"Couldn't load shcore.dll");
+            Wh_Log(L"Couldn't find SHCreateStreamOnModuleResourceW (#109)");
+        }
+    } else {
+        Wh_Log(L"Couldn't load shcore.dll");
+    }
+
+    HMODULE duiModule =
+        LoadLibraryEx(L"dui70.dll", nullptr, LOAD_LIBRARY_SEARCH_SYSTEM32);
+    if (duiModule) {
+        PCSTR SetXMLFromResource_Name =
+            R"(?_SetXMLFromResource@DUIXmlParser@DirectUI@@IAEJPBG0PAUHINSTANCE__@@11@Z)";
+        FARPROC pSetXMLFromResource =
+            GetProcAddress(duiModule, SetXMLFromResource_Name);
+        if (!pSetXMLFromResource) {
+#ifdef _WIN64
+            PCSTR SetXMLFromResource_Name_Win10_x64 =
+                R"(?_SetXMLFromResource@DUIXmlParser@DirectUI@@IEAAJPEBG0PEAUHINSTANCE__@@11@Z)";
+            pSetXMLFromResource =
+                GetProcAddress(duiModule, SetXMLFromResource_Name_Win10_x64);
+#endif
         }
 
-        HMODULE duiModule =
-            LoadLibraryEx(L"dui70.dll", nullptr, LOAD_LIBRARY_SEARCH_SYSTEM32);
-        if (duiModule) {
-            PCSTR SetXMLFromResource_Name =
-                R"(?_SetXMLFromResource@DUIXmlParser@DirectUI@@IAEJPBG0PAUHINSTANCE__@@11@Z)";
-            FARPROC pSetXMLFromResource =
-                GetProcAddress(duiModule, SetXMLFromResource_Name);
-            if (!pSetXMLFromResource) {
-#ifdef _WIN64
-                PCSTR SetXMLFromResource_Name_Win10_x64 =
-                    R"(?_SetXMLFromResource@DUIXmlParser@DirectUI@@IEAAJPEBG0PEAUHINSTANCE__@@11@Z)";
-                pSetXMLFromResource = GetProcAddress(
-                    duiModule, SetXMLFromResource_Name_Win10_x64);
-#endif
-            }
+        if (pSetXMLFromResource) {
+            Wh_SetFunctionHook((void*)pSetXMLFromResource,
+                               (void*)SetXMLFromResource_Hook,
+                               (void**)&SetXMLFromResource_Original);
+        } else {
+            Wh_Log(L"Couldn't find SetXMLFromResource");
+        }
 
-            if (pSetXMLFromResource) {
-                Wh_SetFunctionHook((void*)pSetXMLFromResource,
-                                   (void*)SetXMLFromResource_Hook,
-                                   (void**)&SetXMLFromResource_Original);
-            } else {
-                Wh_Log(L"Couldn't find SetXMLFromResource");
-            }
-
-            PCSTR DirectUI_CreateString_Name =
+        PCSTR DirectUI_CreateString_Name =
 #ifdef _WIN64
-                R"(?CreateString@Value@DirectUI@@SAPEAV12@PEBGPEAUHINSTANCE__@@@Z)";
+            R"(?CreateString@Value@DirectUI@@SAPEAV12@PEBGPEAUHINSTANCE__@@@Z)";
 #else
-                R"(?CreateString@Value@DirectUI@@SGPAV12@PBGPAUHINSTANCE__@@@Z)";
+            R"(?CreateString@Value@DirectUI@@SGPAV12@PBGPAUHINSTANCE__@@@Z)";
 #endif
-            FARPROC pDirectUI_CreateString =
-                GetProcAddress(duiModule, DirectUI_CreateString_Name);
+        FARPROC pDirectUI_CreateString =
+            GetProcAddress(duiModule, DirectUI_CreateString_Name);
 
-            if (pDirectUI_CreateString) {
-                Wh_SetFunctionHook((void*)pDirectUI_CreateString,
-                                   (void*)DirectUI_CreateString_Hook,
-                                   (void**)&DirectUI_CreateString_Original);
-            } else {
-                Wh_Log(L"Couldn't find DirectUI::Value::CreateString");
-            }
+        if (pDirectUI_CreateString) {
+            Wh_SetFunctionHook((void*)pDirectUI_CreateString,
+                               (void*)DirectUI_CreateString_Hook,
+                               (void**)&DirectUI_CreateString_Original);
         } else {
-            Wh_Log(L"Couldn't load dui70.dll");
+            Wh_Log(L"Couldn't find DirectUI::Value::CreateString");
         }
+    } else {
+        Wh_Log(L"Couldn't load dui70.dll");
     }
 
     return TRUE;
