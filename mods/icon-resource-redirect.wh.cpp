@@ -360,8 +360,7 @@ std::atomic<DWORD> g_operationCounter;
 HANDLE g_clearCachePromptThread;
 std::atomic<HWND> g_clearCachePromptWindow;
 
-constexpr WCHAR kClearCachePromptTitle[] =
-    L"Resource Redirect - Windhawk";
+constexpr WCHAR kClearCachePromptTitle[] = L"Resource Redirect - Windhawk";
 constexpr WCHAR kClearCachePromptText[] =
     L"For some icons to be updated, the icon cache must be cleared. Do you "
     L"want to clear the icon cache now?\n\nIcon cache files will be deleted, "
