@@ -191,7 +191,7 @@ bool g_inFindTaskBtnGroup;
 PVOID g_findTaskBtnGroup_TaskGroupSentinel =
     &g_findTaskBtnGroup_TaskGroupSentinel;
 std::function<bool(PVOID)> g_findTaskBtnGroup_Callback;
-std::atomic<DWORD> g_cTaskListWnd__CreateTBGroup_ThreadId;
+std::atomic<DWORD> g_cTaskListWnd_TaskCreated_ThreadId;
 bool g_disableGetLauncherName;
 std::atomic<DWORD> g_compareStringOrdinalHookThreadId;
 bool g_compareStringOrdinalIgnoreSuffix;
@@ -886,24 +886,6 @@ PVOID FindTaskBtnGroup(PVOID taskList,
 using CTaskListWnd_IsOnPrimaryTaskband_t = BOOL(WINAPI*)(PVOID pThis);
 CTaskListWnd_IsOnPrimaryTaskband_t CTaskListWnd_IsOnPrimaryTaskband_Original;
 
-using CTaskListWnd__CreateTBGroup_t = PVOID(WINAPI*)(PVOID pThis,
-                                                     PVOID taskGroup,
-                                                     int index);
-CTaskListWnd__CreateTBGroup_t CTaskListWnd__CreateTBGroup_Original;
-PVOID WINAPI CTaskListWnd__CreateTBGroup_Hook(PVOID pThis,
-                                              PVOID taskGroup,
-                                              int index) {
-    Wh_Log(L">");
-
-    g_cTaskListWnd__CreateTBGroup_ThreadId = GetCurrentThreadId();
-
-    PVOID ret = CTaskListWnd__CreateTBGroup_Original(pThis, taskGroup, index);
-
-    g_cTaskListWnd__CreateTBGroup_ThreadId = 0;
-
-    return ret;
-}
-
 using DPA_InsertPtr_t = decltype(&DPA_InsertPtr);
 DPA_InsertPtr_t DPA_InsertPtr_Original;
 int WINAPI DPA_InsertPtr_Hook(HDPA hdpa, int i, void* p) {
@@ -922,7 +904,7 @@ int WINAPI DPA_InsertPtr_Hook(HDPA hdpa, int i, void* p) {
 
     auto original = [=]() { return DPA_InsertPtr_Original(hdpa, i, p); };
 
-    if (g_cTaskListWnd__CreateTBGroup_ThreadId != GetCurrentThreadId()) {
+    if (g_cTaskListWnd_TaskCreated_ThreadId != GetCurrentThreadId()) {
         return original();
     }
 
@@ -1140,6 +1122,25 @@ void HandleUnsuffixedInstanceOnTaskDestroyed(PVOID taskList_TaskListUI,
         g_doingPinnedItemSwapToTaskGroup = nullptr;
         g_doingPinnedItemSwapIndex = -1;
     }
+}
+
+using CTaskListWnd_TaskCreated_t = LONG_PTR(WINAPI*)(PVOID pThis,
+                                                     PVOID taskGroup,
+                                                     PVOID taskItem);
+CTaskListWnd_TaskCreated_t CTaskListWnd_TaskCreated_Original;
+LONG_PTR WINAPI CTaskListWnd_TaskCreated_Hook(PVOID pThis,
+                                              PVOID taskGroup,
+                                              PVOID taskItem) {
+    Wh_Log(L">");
+
+    g_cTaskListWnd_TaskCreated_ThreadId = GetCurrentThreadId();
+
+    LONG_PTR ret =
+        CTaskListWnd_TaskCreated_Original(pThis, taskGroup, taskItem);
+
+    g_cTaskListWnd_TaskCreated_ThreadId = 0;
+
+    return ret;
 }
 
 LONG_PTR OnTaskDestroyed(std::function<LONG_PTR()> original,
@@ -1492,9 +1493,8 @@ bool HookExplorerPatcherSymbols(HMODULE explorerPatcherModule) {
          &CTaskListWnd__GetTBGroupFromGroup_Original},
         {R"(?IsOnPrimaryTaskband@CTaskListWnd@@UEAAHXZ)",
          &CTaskListWnd_IsOnPrimaryTaskband_Original},
-        {R"(?_CreateTBGroup@CTaskListWnd@@IEAAPEAUITaskBtnGroup@@PEAUITaskGroup@@H@Z)",
-         &CTaskListWnd__CreateTBGroup_Original,
-         CTaskListWnd__CreateTBGroup_Hook},
+        {R"(?TaskCreated@CTaskListWnd@@UEAAJPEAUITaskGroup@@PEAUITaskItem@@@Z)",
+         &CTaskListWnd_TaskCreated_Original, CTaskListWnd_TaskCreated_Hook},
         {// Available from Windows 11.
          R"(?HandleTaskGroupSwitchItemAdded@CTaskBand@@IEAAJPEAUISwitchItem@Multitasking@ComposableShell@Internal@Windows@ABI@@@Z)",
          &CTaskBand_HandleTaskGroupSwitchItemAdded_Original,
@@ -1744,11 +1744,6 @@ bool HookTaskbarSymbols() {
                 &CTaskListWnd_IsOnPrimaryTaskband_Original,
             },
             {
-                {LR"(protected: struct ITaskBtnGroup * __cdecl CTaskListWnd::_CreateTBGroup(struct ITaskGroup *,int))"},
-                &CTaskListWnd__CreateTBGroup_Original,
-                CTaskListWnd__CreateTBGroup_Hook,
-            },
-            {
                 // Available from Windows 11.
                 {LR"(protected: void __cdecl CTaskBand::HandleTaskGroupSwitchItemAdded(struct winrt::Windows::Internal::ComposableShell::Multitasking::ISwitchItem const &))"},
                 &CTaskBand_HandleTaskGroupSwitchItemAdded_Original,
@@ -1774,6 +1769,11 @@ bool HookTaskbarSymbols() {
                     LR"(public: virtual void __cdecl CTaskListWnd::HandleTaskGroupUnpinned(struct ITaskGroup *,enum HandleTaskGroupUnpinnedFlags))",
                 },
                 &CTaskListWnd_HandleTaskGroupUnpinned_Original,
+            },
+            {
+                {LR"(public: virtual long __cdecl CTaskListWnd::TaskCreated(struct ITaskGroup *,struct ITaskItem *))"},
+                &CTaskListWnd_TaskCreated_Original,
+                CTaskListWnd_TaskCreated_Hook,
             },
             {
                 // An older variant, see the newer variant below.
