@@ -1,7 +1,7 @@
 // ==WindhawkMod==
 // @id              taskbar-clock-customization
 // @name            Taskbar Clock Customization
-// @description     Custom date/time format, news feed, weather, performance metrics (upload/download speed, CPU, RAM), custom fonts and colors, and more
+// @description     Custom date/time format, news feed, weather, performance metrics (upload/download speed, CPU, RAM, battery), custom fonts and colors, and more
 // @version         1.6.3
 // @author          m417z
 // @github          https://github.com/m417z
