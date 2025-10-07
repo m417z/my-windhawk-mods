@@ -883,6 +883,18 @@ std::wstring EscapeUrlComponent(PCWSTR input,
     return out;
 }
 
+std::wstring GetWeatherCacheKey() {
+    // Change the URL every 10 minutes to avoid caching.
+    FILETIME ft;
+    GetSystemTimeAsFileTime(&ft);
+    ULARGE_INTEGER uli{
+        .LowPart = ft.dwLowDateTime,
+        .HighPart = ft.dwHighDateTime,
+    };
+    uli.QuadPart /= 10000000ULL * 60 * 10;
+    return std::to_wstring(uli.QuadPart);
+}
+
 bool UpdateWeatherWebContent() {
     std::wstring format = g_settings.webContentWeatherFormat.get();
     if (format.empty()) {
@@ -912,6 +924,10 @@ bool UpdateWeatherWebContent() {
     }
     weatherUrl += L"format=";
     weatherUrl += EscapeUrlComponent(format.c_str());
+    // Set a random language as a way to avoid caching the result.
+    // https://github.com/chubin/wttr.in/issues/705#issuecomment-3109898903
+    weatherUrl += L"&lang=_nocache_";
+    weatherUrl += GetWeatherCacheKey();
     std::optional<std::wstring> urlContent = GetUrlContent(weatherUrl.c_str());
     if (!urlContent) {
         return false;
@@ -1729,7 +1745,8 @@ class QueryDataCollectionSession {
                 is_wildcard = true;
                 break;
             case MetricType::kCpu:
-                counter_path = L"\\Processor Information(_Total)\\% Processor Utility";
+                counter_path =
+                    L"\\Processor Information(_Total)\\% Processor Utility";
                 break;
             default:
                 return false;
@@ -1901,8 +1918,10 @@ void DataCollectionSessionInit() {
     }
 
     for (size_t i = 0; i < ARRAYSIZE(metrics); i++) {
-        MetricType metric = static_cast<MetricType>(i);
-        g_dataCollectionSession->AddMetric(metric);
+        if (metrics[i]) {
+            MetricType metric = static_cast<MetricType>(i);
+            g_dataCollectionSession->AddMetric(metric);
+        }
     }
 
     g_dataCollectionSession->SampleData();
@@ -4249,6 +4268,9 @@ BOOL Wh_ModInit() {
                                            &SendMessageW_Original);
     }
 
+    WebContentUpdateThreadInit();
+    DataCollectionSessionInit();
+
     g_initialized = true;
 
     return TRUE;
@@ -4274,9 +4296,6 @@ void Wh_ModAfterInit() {
     if (!g_explorerPatcherInitialized) {
         HandleLoadedExplorerPatcher();
     }
-
-    WebContentUpdateThreadInit();
-    DataCollectionSessionInit();
 
     ApplySettings();
 }
