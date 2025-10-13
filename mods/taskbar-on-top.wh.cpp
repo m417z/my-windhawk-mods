@@ -1715,16 +1715,7 @@ HRESULT WINAPI DwmSetWindowAttribute_Hook(HWND hwnd,
     int cy = targetRect.bottom - targetRect.top;
 
     if (target == Target::StartMenu) {
-        MONITORINFO monitorInfo{
-            .cbSize = sizeof(MONITORINFO),
-        };
-        GetMonitorInfo(monitor, &monitorInfo);
-
-        // Change height and x. Normally only height should be changed, but x
-        // sometimes becomes incorrect for some reason:
-        // https://github.com/ramensoftware/windhawk-mods/issues/2401
-        int xNew = monitorInfo.rcWork.left;
-
+        // Only change height.
         const int h1 = MulDiv(750, monitorDpiY, 96);
         const int h2 = MulDiv(694, monitorDpiY, 96);
         int cyNew = cy;
@@ -1734,11 +1725,10 @@ HRESULT WINAPI DwmSetWindowAttribute_Hook(HWND hwnd,
             cyNew = h2;
         }
 
-        if (xNew == x && cyNew == cy) {
+        if (cyNew == cy) {
             return original();
         }
 
-        x = xNew;
         cy = cyNew;
     } else if (target == Target::SearchHost) {
         // Only change y.
