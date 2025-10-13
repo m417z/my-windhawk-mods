@@ -761,7 +761,10 @@ HRESULT WINAPI DwmSetWindowAttribute_Hook(HWND hwnd,
     int cy = targetRect.bottom - targetRect.top;
 
     if (target == Target::StartMenu) {
-        // Only change width.
+        // Change width and x. Normally only width should be changed, but x
+        // sometimes becomes incorrect for some reason:
+        // https://github.com/ramensoftware/windhawk-mods/issues/2401
+        int xNew = monitorInfo.rcWork.left;
         int cxNew;
 
         if (g_settings.startMenuOnTheLeft) {
@@ -780,10 +783,11 @@ HRESULT WINAPI DwmSetWindowAttribute_Hook(HWND hwnd,
             g_startMenuOriginalWidth = 0;
         }
 
-        if (cxNew == cx) {
+        if (xNew == x && cxNew == cx) {
             return original();
         }
 
+        x = xNew;
         cx = cxNew;
     } else if (target == Target::SearchHost) {
         // Only change x.
