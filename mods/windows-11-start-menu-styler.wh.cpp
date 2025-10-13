@@ -6174,7 +6174,6 @@ BOOL Wh_ModInit() {
 
     g_isRedesignedStartMenu = !g_disableNewStartMenuLayout &&
                               IsOsFeatureEnabled(47205210).value_or(false) &&
-                              IsOsFeatureEnabled(48433719).value_or(false) &&
                               IsOsFeatureEnabled(49221331).value_or(false) &&
                               IsOsFeatureEnabled(49402389).value_or(false);
 

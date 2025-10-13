@@ -2113,10 +2113,8 @@ bool HookTaskbarViewDllSymbols(HMODULE module) {
         TaskListButton_UpdateIconColumnDefinition_InitOffsets();
     }
 
-    constexpr UINT kUxAccOptimization = 48433719;
     constexpr UINT kDynamicIconScaling = 29785184;
     if (TaskbarConfiguration_GetIconHeightInViewPixels_method_Original &&
-        IsOsFeatureEnabled(kUxAccOptimization).value_or(true) &&
         IsOsFeatureEnabled(kDynamicIconScaling).value_or(true)) {
         g_hasDynamicIconScaling = true;
         Wh_Log(L"Dynamic icon scaling is enabled");

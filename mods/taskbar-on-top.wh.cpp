@@ -1686,7 +1686,6 @@ HRESULT WINAPI DwmSetWindowAttribute_Hook(HWND hwnd,
         // The redesigned Start menu has variable height, don't adjust it.
         static bool isRedesignedStartMenu =
             IsOsFeatureEnabled(47205210).value_or(false) &&
-            IsOsFeatureEnabled(48433719).value_or(false) &&
             IsOsFeatureEnabled(49221331).value_or(false) &&
             IsOsFeatureEnabled(49402389).value_or(false);
         if (isRedesignedStartMenu) {
