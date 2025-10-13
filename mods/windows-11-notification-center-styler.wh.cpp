@@ -1256,12 +1256,7 @@ public:
 	// in Windows.UI.ActionCenter.dll. If missing, the app crashes while trying
 	// to show the first notification, which results in a crash loop.
 	winrt::Windows::UI::Color Color() const {
-		return winrt::Windows::UI::Color{
-			static_cast<uint8_t>(std::round(m_tint.w * 255.0f)),
-			static_cast<uint8_t>(std::round(m_tint.x * 255.0f)),
-			static_cast<uint8_t>(std::round(m_tint.y * 255.0f)),
-			static_cast<uint8_t>(std::round(m_tint.z * 255.0f)),
-		};
+		return m_tint;
 	}
 	void Color(winrt::Windows::UI::Color const& value) {
 		// Do nothing.
