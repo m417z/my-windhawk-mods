@@ -2249,7 +2249,7 @@ PCWSTR GetBatteryTimeFormatted() {
                 }
             }
         } else {
-            wcscpy_s(g_batteryTimeFormatted.buffer, L"-");
+            wcscpy_s(g_batteryTimeFormatted.buffer, L"");
         }
 
         g_batteryTimeFormatted.formatIndex = dataCollectionFormatIndex;
