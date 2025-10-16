@@ -80,6 +80,7 @@ patterns can be used:
   * `%cpu%` - CPU usage.
   * `%ram%` - RAM usage.
   * `%battery%` - battery level percentage.
+  * `%battery_time%` - battery time remaining, formatted using the time format setting.
   * `%power%` - battery power in watts (negative when discharging, positive when charging).
 * `%weather%` - Weather information, powered by [wttr.in](https://wttr.in/),
   using the location and format configured in settings.
@@ -574,6 +575,7 @@ FormattedString<FORMATTED_BUFFER_SIZE> g_totalSpeedFormatted;
 FormattedString<FORMATTED_BUFFER_SIZE> g_cpuFormatted;
 FormattedString<FORMATTED_BUFFER_SIZE> g_ramFormatted;
 FormattedString<FORMATTED_BUFFER_SIZE> g_batteryFormatted;
+FormattedString<FORMATTED_BUFFER_SIZE> g_batteryTimeFormatted;
 FormattedString<FORMATTED_BUFFER_SIZE> g_powerFormatted;
 
 std::vector<std::optional<DYNAMIC_TIME_ZONE_INFORMATION>> g_timeZoneInformation;
@@ -2206,6 +2208,56 @@ PCWSTR GetBatteryFormatted() {
     return g_batteryFormatted.buffer;
 }
 
+PCWSTR GetBatteryTimeFormatted() {
+    DWORD dataCollectionFormatIndex = GetDataCollectionFormatIndex();
+    if (g_batteryTimeFormatted.formatIndex != dataCollectionFormatIndex) {
+        SYSTEM_POWER_STATUS powerStatus;
+        if (GetSystemPowerStatus(&powerStatus) &&
+            powerStatus.BatteryLifeTime != (DWORD)-1) {
+            // Convert seconds to hours, minutes, seconds
+            DWORD totalSeconds = powerStatus.BatteryLifeTime;
+            DWORD hours = totalSeconds / 3600;
+            DWORD minutes = (totalSeconds % 3600) / 60;
+            DWORD seconds = totalSeconds % 60;
+
+            // Create a SYSTEMTIME structure for formatting
+            SYSTEMTIME time{};
+            time.wHour = (WORD)hours;
+            time.wMinute = (WORD)minutes;
+            time.wSecond = (WORD)seconds;
+
+            // Use the existing time format setting
+            auto timeFormatParts =
+                SplitTimeFormatString(g_settings.timeFormat.get());
+
+            if (GetTimeFormatEx_Original) {
+                GetTimeFormatEx_Original(
+                    nullptr, g_settings.showSeconds ? 0 : TIME_NOSECONDS, &time,
+                    !timeFormatParts[0].empty() ? timeFormatParts[0].c_str() : nullptr,
+                    g_batteryTimeFormatted.buffer,
+                    ARRAYSIZE(g_batteryTimeFormatted.buffer));
+            } else {
+                // Fallback to simple format if GetTimeFormatEx is not available
+                if (g_settings.showSeconds) {
+                    swprintf_s(g_batteryTimeFormatted.buffer,
+                              ARRAYSIZE(g_batteryTimeFormatted.buffer),
+                              L"%02u:%02u:%02u", hours, minutes, seconds);
+                } else {
+                    swprintf_s(g_batteryTimeFormatted.buffer,
+                              ARRAYSIZE(g_batteryTimeFormatted.buffer),
+                              L"%02u:%02u", hours, minutes);
+                }
+            }
+        } else {
+            wcscpy_s(g_batteryTimeFormatted.buffer, L"-");
+        }
+
+        g_batteryTimeFormatted.formatIndex = dataCollectionFormatIndex;
+    }
+
+    return g_batteryTimeFormatted.buffer;
+}
+
 PCWSTR GetPowerFormatted() {
     DWORD dataCollectionFormatIndex = GetDataCollectionFormatIndex();
     if (g_powerFormatted.formatIndex != dataCollectionFormatIndex) {
@@ -2279,6 +2331,7 @@ size_t ResolveFormatToken(
         {L"%cpu%"sv, GetCpuFormatted},
         {L"%ram%"sv, GetRamFormatted},
         {L"%battery%"sv, GetBatteryFormatted},
+        {L"%battery_time%"sv, GetBatteryTimeFormatted},
         {L"%power%"sv, GetPowerFormatted},
         {L"%newline%"sv, []() { return L"\n"; }},
     };
