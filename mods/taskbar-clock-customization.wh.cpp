@@ -80,7 +80,7 @@ patterns can be used:
   * `%cpu%` - CPU usage.
   * `%ram%` - RAM usage.
   * `%battery%` - battery level percentage.
-  * `%battery_time%` - battery time remaining, formatted using the time format setting.
+  * `%battery_time%` - battery time remaining (charging time left / discharging time left), formatted using the time format setting.
   * `%power%` - battery power in watts (negative when discharging, positive when charging).
 * `%weather%` - Weather information, powered by [wttr.in](https://wttr.in/),
   using the location and format configured in settings.
@@ -2211,50 +2211,29 @@ PCWSTR GetBatteryFormatted() {
 PCWSTR GetBatteryTimeFormatted() {
     DWORD dataCollectionFormatIndex = GetDataCollectionFormatIndex();
     if (g_batteryTimeFormatted.formatIndex != dataCollectionFormatIndex) {
-        SYSTEM_POWER_STATUS powerStatus;
-        if (GetSystemPowerStatus(&powerStatus) &&
-            powerStatus.BatteryLifeTime != (DWORD)-1) {
-            // Convert seconds to hours, minutes, seconds
-            DWORD totalSeconds = powerStatus.BatteryLifeTime;
-            DWORD hours = totalSeconds / 3600;
-            DWORD minutes = (totalSeconds % 3600) / 60;
-            DWORD seconds = totalSeconds % 60;
+        DWORD totalSeconds = 0;
+        SYSTEM_POWER_STATUS ps;
 
-            // Create a SYSTEMTIME structure for formatting
-            SYSTEMTIME time{};
-            time.wHour = (WORD)hours;
-            time.wMinute = (WORD)minutes;
-            time.wSecond = (WORD)seconds;
-
-            // Use the existing time format setting
-            auto timeFormatParts =
-                SplitTimeFormatString(g_settings.timeFormat.get());
-
-            if (GetTimeFormatEx_Original) {
-                GetTimeFormatEx_Original(
-                    nullptr, g_settings.showSeconds ? 0 : TIME_NOSECONDS, &time,
-                    !timeFormatParts[0].empty() ? timeFormatParts[0].c_str() : nullptr,
-                    g_batteryTimeFormatted.buffer,
-                    ARRAYSIZE(g_batteryTimeFormatted.buffer));
-            } else {
-                // Fallback to simple format if GetTimeFormatEx is not available
-                if (g_settings.showSeconds) {
-                    swprintf_s(g_batteryTimeFormatted.buffer,
-                              ARRAYSIZE(g_batteryTimeFormatted.buffer),
-                              L"%02u:%02u:%02u", hours, minutes, seconds);
-                } else {
-                    swprintf_s(g_batteryTimeFormatted.buffer,
-                              ARRAYSIZE(g_batteryTimeFormatted.buffer),
-                              L"%02u:%02u", hours, minutes);
+        if (GetSystemPowerStatus(&ps)) {
+            if (ps.BatteryLifeTime != (DWORD)-1) {
+                totalSeconds = ps.BatteryLifeTime;
+            }
+            else if (ps.ACLineStatus == 1 && ps.BatteryLifePercent < 100) {
+                SYSTEM_BATTERY_STATE bs{};
+                NTSTATUS status = CallNtPowerInformation(SystemBatteryState, nullptr, 0, &bs, sizeof(bs));
+                if (status == 0 && bs.Rate > 0) {
+                    DWORD remainingCapacity = bs.MaxCapacity - bs.RemainingCapacity;
+                    totalSeconds = (remainingCapacity * 3600) / bs.Rate;
                 }
             }
-        } else {
-            wcscpy_s(g_batteryTimeFormatted.buffer, L"");
         }
+
+        DWORD hours = totalSeconds / 3600;
+        DWORD minutes = (totalSeconds % 3600) / 60;
+        swprintf_s(g_batteryTimeFormatted.buffer, ARRAYSIZE(g_batteryTimeFormatted.buffer), L"%u:%02u", hours, minutes);
 
         g_batteryTimeFormatted.formatIndex = dataCollectionFormatIndex;
     }
-
     return g_batteryTimeFormatted.buffer;
 }
 
