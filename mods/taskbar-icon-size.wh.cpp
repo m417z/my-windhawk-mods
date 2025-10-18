@@ -48,7 +48,7 @@ as any other icon size.
 Only Windows 11 is supported. For older Windows versions check out [7+ Taskbar
 Tweaker](https://tweaker.ramensoftware.com/).
 
-Also check out the **Taskbar tray icon spacing** mod.
+Also check out the **Taskbar tray icon spacing and grid** mod.
 */
 // ==/WindhawkModReadme==
 
@@ -260,6 +260,18 @@ FrameworkElement FindChildByClassName(FrameworkElement element,
     });
 }
 
+bool IsVerticalTaskbar() {
+    APPBARDATA appBarData = {
+        .cbSize = sizeof(APPBARDATA),
+    };
+    if (!SHAppBarMessage(ABM_GETTASKBARPOS, &appBarData)) {
+        Wh_Log(L"SHAppBarMessage(ABM_GETTASKBARPOS) failed");
+        return false;
+    }
+
+    return appBarData.uEdge == ABE_LEFT || appBarData.uEdge == ABE_RIGHT;
+}
+
 void OverrideResourceDirectoryLookup(
     PCSTR sourceFunctionName,
     const winrt::Windows::Foundation::IInspectable* key,
@@ -406,7 +418,7 @@ void WINAPI TrayUI_GetMinSize_Hook(void* pThis, HMONITOR monitor, SIZE* size) {
 
     // Reassign min height to fix displaced secondary taskbar when auto-hide is
     // enabled.
-    if (g_taskbarHeight) {
+    if (!IsVerticalTaskbar() && g_taskbarHeight) {
         UINT dpiX = 0;
         UINT dpiY = 0;
         GetDpiForMonitor(monitor, MDT_DEFAULT, &dpiX, &dpiY);
@@ -690,7 +702,8 @@ double WINAPI SystemTrayController_GetFrameSize_Hook(void* pThis,
                                                      int enumTaskbarSize) {
     Wh_Log(L"> %d", enumTaskbarSize);
 
-    if (g_taskbarHeight && (enumTaskbarSize == 1 || enumTaskbarSize == 2)) {
+    if (!IsVerticalTaskbar() && g_taskbarHeight &&
+        (enumTaskbarSize == 1 || enumTaskbarSize == 2)) {
         return g_taskbarHeight;
     }
 
@@ -706,7 +719,8 @@ SystemTraySecondaryController_GetFrameSize_Hook(void* pThis,
                                                 int enumTaskbarSize) {
     Wh_Log(L"> %d", enumTaskbarSize);
 
-    if (g_taskbarHeight && (enumTaskbarSize == 1 || enumTaskbarSize == 2)) {
+    if (!IsVerticalTaskbar() && g_taskbarHeight &&
+        (enumTaskbarSize == 1 || enumTaskbarSize == 2)) {
         return g_taskbarHeight;
     }
 
@@ -726,7 +740,8 @@ double WINAPI TaskbarConfiguration_GetFrameSize_Hook(int enumTaskbarSize) {
             TaskbarConfiguration_GetFrameSize_Original(enumTaskbarSize);
     }
 
-    if (g_taskbarHeight && (enumTaskbarSize == 1 || enumTaskbarSize == 2)) {
+    if (!IsVerticalTaskbar() && g_taskbarHeight &&
+        (enumTaskbarSize == 1 || enumTaskbarSize == 2)) {
         return g_taskbarHeight;
     }
 
@@ -819,7 +834,7 @@ void WINAPI Event_operator_call_Hook(void* pThis) {
                 *g_TaskbarConfiguration_UpdateFrameSize_frameSize;
         }
 
-        if (g_taskbarHeight) {
+        if (!IsVerticalTaskbar() && g_taskbarHeight) {
             *g_TaskbarConfiguration_UpdateFrameSize_frameSize = g_taskbarHeight;
         }
     }
@@ -927,6 +942,11 @@ SystemTrayController_UpdateFrameSize_t
 void WINAPI SystemTrayController_UpdateFrameSize_Hook(void* pThis) {
     Wh_Log(L">");
 
+    if (IsVerticalTaskbar()) {
+        SystemTrayController_UpdateFrameSize_Original(pThis);
+        return;
+    }
+
     LONG lastHeightOffset = GetLastHeightOffset();
     if (lastHeightOffset) {
         *(double*)((BYTE*)pThis + lastHeightOffset) = 0;
@@ -949,6 +969,11 @@ using TaskbarFrame_Height_double_t = void(WINAPI*)(void* pThis, double value);
 TaskbarFrame_Height_double_t TaskbarFrame_Height_double_Original;
 void WINAPI TaskbarFrame_Height_double_Hook(void* pThis, double value) {
     Wh_Log(L">");
+
+    if (IsVerticalTaskbar()) {
+        TaskbarFrame_Height_double_Original(pThis, value);
+        return;
+    }
 
     if (TaskbarFrame_MaxHeight_double_Original) {
         TaskbarFrame_MaxHeight_double_Original(
@@ -1034,6 +1059,11 @@ TaskbarController_UpdateFrameHeight_t
 void WINAPI TaskbarController_UpdateFrameHeight_Hook(void* pThis) {
     Wh_Log(L">");
 
+    if (IsVerticalTaskbar()) {
+        TaskbarController_UpdateFrameHeight_Original(pThis);
+        return;
+    }
+
     LONG taskbarFrameOffset = GetTaskbarFrameOffset();
     if (!taskbarFrameOffset) {
         Wh_Log(L"Error: taskbarFrameOffset is invalid");
@@ -1095,7 +1125,7 @@ SystemTrayFrame_Height_t SystemTrayFrame_Height_Original;
 void WINAPI SystemTrayFrame_Height_Hook(void* pThis, double value) {
     // Wh_Log(L">");
 
-    if (g_inSystemTrayController_UpdateFrameSize) {
+    if (!IsVerticalTaskbar() && g_inSystemTrayController_UpdateFrameSize) {
         Wh_Log(L">");
         // Set the system tray height to NaN, otherwise it may not match the
         // custom taskbar height.
@@ -1721,7 +1751,8 @@ auto WINAPI SHAppBarMessage_Hook(DWORD dwMessage, PAPPBARDATA pData) {
     auto ret = SHAppBarMessage_Original(dwMessage, pData);
 
     // This is used to position secondary taskbars.
-    if (dwMessage == ABM_QUERYPOS && ret && g_taskbarHeight) {
+    if (dwMessage == ABM_QUERYPOS && ret && !IsVerticalTaskbar() &&
+        g_taskbarHeight) {
         Wh_Log(L">");
         pData->rc.top =
             pData->rc.bottom -
@@ -1820,7 +1851,7 @@ void ApplySettings(int taskbarHeight) {
 
     g_applyingSettings = true;
 
-    if (taskbarHeight == g_taskbarHeight) {
+    if (!IsVerticalTaskbar() && taskbarHeight == g_taskbarHeight) {
         g_pendingMeasureOverride = true;
 
         // Temporarily change the height to force a UI refresh.
@@ -1859,13 +1890,17 @@ void ApplySettings(int taskbarHeight) {
     // Trigger TrayUI::_HandleSettingChange.
     SendMessage(hTaskbarWnd, WM_SETTINGCHANGE, SPI_SETLOGICALDPIOVERRIDE, 0);
 
-    // Wait for the change to apply.
-    for (int i = 0; i < 100; i++) {
-        if (!g_pendingMeasureOverride) {
-            break;
-        }
+    if (!IsVerticalTaskbar()) {
+        // Wait for the change to apply.
+        for (int i = 0; i < 100; i++) {
+            if (!g_pendingMeasureOverride) {
+                break;
+            }
 
-        Sleep(100);
+            Sleep(100);
+        }
+    } else {
+        g_pendingMeasureOverride = false;
     }
 
     HWND hReBarWindow32 =
