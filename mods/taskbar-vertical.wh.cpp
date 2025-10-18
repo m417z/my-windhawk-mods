@@ -36,8 +36,8 @@ set in the mod settings.
 The mod was designed for up-to-date Windows 11 versions 22H2 to 24H2. Other
 versions weren't tested and are probably not compatible.
 
-Some of the other taskbar mods, such as [Taskbar height and icon
-size](https://windhawk.net/mods/taskbar-icon-size), aren't compatible with this
+Some of the other taskbar mods, such as [Multirow taskbar for Windows
+11](https://windhawk.net/mods/taskbar-multirow), aren't compatible with this
 mod.
 
 ## Notes
