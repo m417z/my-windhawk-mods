@@ -109,8 +109,6 @@ With labels:
   $description: >-
     Set to zero to use the default height value, setting a custom height can be
     useful for a customized clock with a non-standard size
-
-    Note: Disable and re-enable the mod to apply this option
 */
 // ==/WindhawkModSettings==
 
@@ -207,6 +205,9 @@ std::list<FrameworkElementLoadedEventRevoker> g_notifyIconAutoRevokerList;
 
 int g_copilotPosTimerCounter;
 UINT_PTR g_copilotPosTimer;
+
+const UINT g_settingsChangedTaskbarMessage =
+    RegisterWindowMessage(L"Windhawk_SettingsChangedTaskbarMessage_" WH_MOD_ID);
 
 std::optional<bool> IsOsFeatureEnabled(UINT32 featureId) {
     enum FEATURE_ENABLED_STATE {
@@ -624,6 +625,9 @@ bool IsTaskbarWindow(HWND hWnd) {
            _wcsicmp(szClassName, L"Shell_SecondaryTrayWnd") == 0;
 }
 
+bool UpdateNotifyIcons(XamlRoot xamlRoot);
+bool UpdateNotifyIconsIfNeeded(XamlRoot xamlRoot);
+
 HWND FindCurrentProcessTaskbarWnd() {
     HWND hTaskbarWnd = nullptr;
 
@@ -729,6 +733,16 @@ LRESULT TaskbarWndProcPostProcess(HWND hWnd,
             SetWindowRgn(hWnd, nullptr, TRUE);
             break;
         }
+
+        default:
+            if (Msg == g_settingsChangedTaskbarMessage) {
+                for (const auto& xamlRootRef : g_notifyIconsUpdated) {
+                    if (auto xamlRoot = xamlRootRef.get()) {
+                        UpdateNotifyIcons(xamlRoot);
+                    }
+                }
+            }
+            break;
     }
 
     return result;
@@ -1383,8 +1397,6 @@ bool IsSecondaryTaskbar(XamlRoot xamlRoot) {
     return controlCenterButton.ActualWidth() < 5;
 }
 
-bool UpdateNotifyIconsIfNeeded(XamlRoot xamlRoot);
-
 bool ApplyStyle(FrameworkElement taskbarFrame) {
     auto contentGrid =
         Media::VisualTreeHelper::GetParent(taskbarFrame).as<Controls::Grid>();
@@ -1778,10 +1790,6 @@ void ApplySystemTrayIconStyle(FrameworkElement systemTrayIconElement) {
 
 void ApplySystemTrayChevronIconViewStyle(
     FrameworkElement systemTrayChevronIconViewElement) {
-    if (g_settings.taskbarLocation != TaskbarLocation::right) {
-        return;
-    }
-
     FrameworkElement baseTextBlock = nullptr;
 
     FrameworkElement child = systemTrayChevronIconViewElement;
@@ -1798,12 +1806,15 @@ void ApplySystemTrayChevronIconViewStyle(
         return;
     }
 
-    double angle = g_unloading ? 0 : 180;
+    bool shouldRotate =
+        !g_unloading && g_settings.taskbarLocation == TaskbarLocation::right;
+
+    double angle = shouldRotate ? 180 : 0;
     Media::RotateTransform transform;
     transform.Angle(angle);
     baseTextBlock.RenderTransform(transform);
 
-    float origin = g_unloading ? 0 : 0.5;
+    float origin = shouldRotate ? 0.5 : 0;
     baseTextBlock.RenderTransformOrigin({origin, origin});
 }
 
@@ -1892,35 +1903,7 @@ bool ApplyStyleIfNeeded(XamlRoot xamlRoot) {
     return ApplyStyle(taskbarFrame);
 }
 
-bool UpdateNotifyIconsIfNeeded(XamlRoot xamlRoot) {
-    bool notifyIconsUpdated =
-        std::find_if(g_notifyIconsUpdated.begin(), g_notifyIconsUpdated.end(),
-                     [&xamlRoot](auto x) {
-                         auto element = x.get();
-                         return element && element == xamlRoot;
-                     }) != g_notifyIconsUpdated.end();
-
-    if (!g_unloading) {
-        if (notifyIconsUpdated) {
-            return true;
-        }
-
-        g_notifyIconsUpdated.push_back(winrt::make_weak(xamlRoot));
-    } else {
-        if (!notifyIconsUpdated) {
-            return true;
-        }
-
-        g_notifyIconsUpdated.erase(
-            std::remove_if(g_notifyIconsUpdated.begin(),
-                           g_notifyIconsUpdated.end(),
-                           [&xamlRoot](auto x) {
-                               auto element = x.get();
-                               return element && element == xamlRoot;
-                           }),
-            g_notifyIconsUpdated.end());
-    }
-
+bool UpdateNotifyIcons(XamlRoot xamlRoot) {
     FrameworkElement rootGrid = xamlRoot.Content().try_as<FrameworkElement>();
 
     FrameworkElement systemTrayFrameGrid = nullptr;
@@ -2057,6 +2040,38 @@ bool UpdateNotifyIconsIfNeeded(XamlRoot xamlRoot) {
     }
 
     return true;
+}
+
+bool UpdateNotifyIconsIfNeeded(XamlRoot xamlRoot) {
+    bool notifyIconsUpdated =
+        std::find_if(g_notifyIconsUpdated.begin(), g_notifyIconsUpdated.end(),
+                     [&xamlRoot](auto x) {
+                         auto element = x.get();
+                         return element && element == xamlRoot;
+                     }) != g_notifyIconsUpdated.end();
+
+    if (!g_unloading) {
+        if (notifyIconsUpdated) {
+            return true;
+        }
+
+        g_notifyIconsUpdated.push_back(winrt::make_weak(xamlRoot));
+    } else {
+        if (!notifyIconsUpdated) {
+            return true;
+        }
+
+        g_notifyIconsUpdated.erase(
+            std::remove_if(g_notifyIconsUpdated.begin(),
+                           g_notifyIconsUpdated.end(),
+                           [&xamlRoot](auto x) {
+                               auto element = x.get();
+                               return element && element == xamlRoot;
+                           }),
+            g_notifyIconsUpdated.end());
+    }
+
+    return UpdateNotifyIcons(xamlRoot);
 }
 
 void UpdateTaskListButton(FrameworkElement taskListButtonElement) {
@@ -3625,7 +3640,7 @@ void LoadSettings() {
     g_settings.clockContainerHeight = Wh_GetIntSetting(L"clockContainerHeight");
 }
 
-void ApplySettings(bool waitForApply = true) {
+void ApplySettings(bool settingsChanged = false) {
     HWND hTaskbarWnd = FindCurrentProcessTaskbarWnd();
     if (!hTaskbarWnd) {
         return;
@@ -3633,14 +3648,14 @@ void ApplySettings(bool waitForApply = true) {
 
     g_applyingSettings = true;
 
-    if (waitForApply) {
+    if (!settingsChanged) {
         g_pendingMeasureOverride = true;
     }
 
     // Trigger TrayUI::_HandleSettingChange.
     SendMessage(hTaskbarWnd, WM_SETTINGCHANGE, SPI_SETLOGICALDPIOVERRIDE, 0);
 
-    if (waitForApply) {
+    if (!settingsChanged) {
         // Wait for the change to apply.
         for (int i = 0; i < 100; i++) {
             if (!g_pendingMeasureOverride) {
@@ -3691,6 +3706,10 @@ void ApplySettings(bool waitForApply = true) {
             return proc(hMonitor);
         },
         reinterpret_cast<LPARAM>(&monitorEnumProc));
+
+    if (settingsChanged) {
+        PostMessage(hTaskbarWnd, g_settingsChangedTaskbarMessage, 0, 0);
+    }
 }
 
 bool HookTaskbarViewDllSymbols(HMODULE module) {
@@ -4163,7 +4182,7 @@ void Wh_ModSettingsChanged() {
     LoadSettings();
 
     if (g_target == Target::Explorer) {
-        ApplySettings(/*waitForApply=*/false);
+        ApplySettings(/*settingsChanged=*/true);
     } else if (g_target == Target::ShellExperienceHost ||
                g_target == Target::ShellHost) {
         CoreWindowUI::ApplySettings();
