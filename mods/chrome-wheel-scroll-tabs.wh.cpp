@@ -46,6 +46,12 @@ Yandex Browser, Thorium.
   $description: >-
     Switch between tabs when the mouse's horizontal scroll wheel is tilted or
     rotated
+- throttleMs: 0
+  $name: Throttle time (milliseconds)
+  $description: >-
+    Prevents new actions from being triggered for this amount of time after the
+    last one. Set to 0 to disable throttling. Useful for preventing a single
+    scroll wheel 'flick' from switching multiple tabs.
 - scrollAreaLimit:
   - pixelsFromTop: 0
     $name: Pixels from top
@@ -66,6 +72,7 @@ Yandex Browser, Thorium.
 struct {
     bool reverseScrollingDirection;
     bool horizontalScrolling;
+    int throttleMs;
     int scrollAreaLimitPixelsFromTop;
     int scrollAreaLimitPixelsFromLeft;
 } g_settings;
@@ -75,6 +82,7 @@ DWORD g_uiThreadId;
 DWORD g_lastScrollTime;
 HWND g_lastScrollWnd;
 short g_lastScrollDeltaRemainder;
+DWORD g_lastActionTime;
 
 // wParam - TRUE to subclass, FALSE to unsubclass
 // lParam - subclass data
@@ -235,36 +243,55 @@ bool OnMouseWheel(HWND hWnd, WORD keys, short delta, int xPos, int yPos) {
     int clicks = delta / WHEEL_DELTA;
     Wh_Log(L"%d clicks (delta=%d)", clicks, delta);
 
+    if (clicks != 0 && g_settings.throttleMs > 0) {
+        if (GetTickCount() - g_lastActionTime < (DWORD)g_settings.throttleMs) {
+            // It's too soon, ignore this scroll event.
+            clicks = 0;
+
+            // Reset reminder too.
+            delta = 0;
+        } else if (clicks < -1 || clicks > 1) {
+            // Throttle to a single action at a time.
+            clicks = clicks > 0 ? 1 : -1;
+
+            // Reset reminder if going too fast.
+            delta = 0;
+        }
+    }
+
     WORD key = VK_NEXT;
     if (clicks < 0) {
         clicks = -clicks;
         key = VK_PRIOR;
     }
 
-    INPUT* input = new INPUT[clicks * 2 + 2];
-    for (int i = 0; i < clicks * 2 + 2; i++) {
-        input[i].type = INPUT_KEYBOARD;
-        input[i].ki.wScan = 0;
-        input[i].ki.time = 0;
-        input[i].ki.dwExtraInfo = 0;
+    if (clicks > 0) {
+        INPUT* input = new INPUT[clicks * 2 + 2];
+        for (int i = 0; i < clicks * 2 + 2; i++) {
+            input[i].type = INPUT_KEYBOARD;
+            input[i].ki.wScan = 0;
+            input[i].ki.time = 0;
+            input[i].ki.dwExtraInfo = 0;
+        }
+
+        input[0].ki.wVk = VK_CONTROL;
+        input[0].ki.dwFlags = 0;
+
+        for (int i = 0; i < clicks; i++) {
+            input[1 + i * 2].ki.wVk = key;
+            input[1 + i * 2].ki.dwFlags = 0;
+            input[1 + i * 2 + 1].ki.wVk = key;
+            input[1 + i * 2 + 1].ki.dwFlags = KEYEVENTF_KEYUP;
+        }
+
+        input[1 + clicks * 2].ki.wVk = VK_CONTROL;
+        input[1 + clicks * 2].ki.dwFlags = KEYEVENTF_KEYUP;
+
+        SendInput(clicks * 2 + 2, input, sizeof(input[0]));
+        g_lastActionTime = GetTickCount();
+
+        delete[] input;
     }
-
-    input[0].ki.wVk = VK_CONTROL;
-    input[0].ki.dwFlags = 0;
-
-    for (int i = 0; i < clicks; i++) {
-        input[1 + i * 2].ki.wVk = key;
-        input[1 + i * 2].ki.dwFlags = 0;
-        input[1 + i * 2 + 1].ki.wVk = key;
-        input[1 + i * 2 + 1].ki.dwFlags = KEYEVENTF_KEYUP;
-    }
-
-    input[1 + clicks * 2].ki.wVk = VK_CONTROL;
-    input[1 + clicks * 2].ki.dwFlags = KEYEVENTF_KEYUP;
-
-    SendInput(clicks * 2 + 2, input, sizeof(input[0]));
-
-    delete[] input;
 
     g_lastScrollTime = GetTickCount();
     g_lastScrollWnd = hWnd;
@@ -420,6 +447,7 @@ void LoadSettings() {
     g_settings.reverseScrollingDirection =
         Wh_GetIntSetting(L"reverseScrollingDirection");
     g_settings.horizontalScrolling = Wh_GetIntSetting(L"horizontalScrolling");
+    g_settings.throttleMs = Wh_GetIntSetting(L"throttleMs");
     g_settings.scrollAreaLimitPixelsFromTop =
         Wh_GetIntSetting(L"scrollAreaLimit.pixelsFromTop");
     g_settings.scrollAreaLimitPixelsFromLeft =
