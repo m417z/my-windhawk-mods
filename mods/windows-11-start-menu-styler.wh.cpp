@@ -339,7 +339,9 @@ const Theme g_themeNoRecommendedSection_variant_ClassicStartMenu = {{
         L"Height=504"}},
 }};
 
-const Theme g_themeSideBySide = {{
+const Theme g_themeSideBySide = {};
+
+const Theme g_themeSideBySide_variant_ClassicStartMenu = {{
     ThemeTargetStyles{L"Grid#UndockedRoot", {
         L"MaxWidth=700",
         L"Margin=0,0,300,0"}},
@@ -398,7 +400,9 @@ const Theme g_themeSideBySide = {{
         L"Background:=<AcrylicBrush TintColor=\"{ThemeResource CardStrokeColorDefaultSolid}\" FallbackColor=\"{ThemeResource CardStrokeColorDefaultSolid}\" TintOpacity=\"0.1\" TintLuminosityOpacity=\"1\" Opacity=\"1\"/>"}},
 }};
 
-const Theme g_themeSideBySide2 = {{
+const Theme g_themeSideBySide2 = {};
+
+const Theme g_themeSideBySide2_variant_ClassicStartMenu = {{
     ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Grid#UndockedRoot", {
         L"Visibility=Visible",
         L"Width=510",
@@ -494,7 +498,9 @@ const Theme g_themeSideBySide2 = {{
         L"Margin=-245,-12,0,0"}},
 }};
 
-const Theme g_themeSideBySideMinimal = {{
+const Theme g_themeSideBySideMinimal = {};
+
+const Theme g_themeSideBySideMinimal_variant_ClassicStartMenu = {{
     ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Grid#UndockedRoot", {
         L"Visibility=Visible",
         L"Width=348",
@@ -1484,7 +1490,9 @@ const Theme g_themeTranslucentStartMenu_variant_ClassicStartMenu = {{
     L"CommonBgBrush=<WindhawkBlur BlurAmount=\"25\" TintColor=\"#25323232\"/>",
 }};
 
-const Theme g_themeWindows11_Metro10 = {{
+const Theme g_themeWindows11_Metro10 = {};
+
+const Theme g_themeWindows11_Metro10_variant_ClassicStartMenu = {{
     ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Grid#UndockedRoot", {
         L"Visibility=Visible",
         L"MaxWidth=600",
@@ -2165,7 +2173,9 @@ const Theme g_themeRosePine_variant_ClassicStartMenu = {{
         L"Margin=-50,0,-50,0"}},
 }};
 
-const Theme g_themeWindows11_Metro10Minimal = {{
+const Theme g_themeWindows11_Metro10Minimal = {};
+
+const Theme g_themeWindows11_Metro10Minimal_variant_ClassicStartMenu = {{
     ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Grid#UndockedRoot", {
         L"MaxWidth=0",
         L"Margin=0"}},
@@ -2214,7 +2224,9 @@ const Theme g_themeWindows11_Metro10Minimal = {{
         L"Visibility=1"}},
 }};
 
-const Theme g_themeEverblush = {{
+const Theme g_themeEverblush = {};
+
+const Theme g_themeEverblush_variant_ClassicStartMenu = {{
     ThemeTargetStyles{L"Border#AcrylicBorder", {
         L"Background=#141b1e",
         L"BorderBrush=#268ccf7e"}},
@@ -2282,7 +2294,9 @@ const Theme g_themeEverblush = {{
         L"Foreground=#232a2d"}},
 }};
 
-const Theme g_theme21996 = {{
+const Theme g_theme21996 = {};
+
+const Theme g_theme21996_variant_ClassicStartMenu = {{
     ThemeTargetStyles{L"Border#TaskbarSearchBackground", {
         L"CornerRadius=4",
         L"BorderThickness=0,0,0,0",
@@ -2351,7 +2365,9 @@ const Theme g_theme21996 = {{
         L"Background:=<AcrylicBrush TintColor=\"{ThemeResource SystemChromeMediumColor}\" TintOpacity=\"0\" TintLuminosityOpacity=\"0.7\" FallbackColor=\"{ThemeResource SystemChromeLowColor}\" />"}},
 }};
 
-const Theme g_themeDown_Aero = {{
+const Theme g_themeDown_Aero = {};
+
+const Theme g_themeDown_Aero_variant_ClassicStartMenu = {{
     ThemeTargetStyles{L"StartDocked.StartSizingFrame", {
         L"MaxHeight=520"}},
     ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Grid#TopLevelSuggestionsListHeader", {
@@ -2427,7 +2443,9 @@ const Theme g_themeDown_Aero = {{
         L"CornerRadius=15"}},
 }};
 
-const Theme g_themeUniMenu = {{
+const Theme g_themeUniMenu = {};
+
+const Theme g_themeUniMenu_variant_ClassicStartMenu = {{
     ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Grid#NoTopLevelSuggestionsText", {
         L"Visibility=Collapsed"}},
     ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Grid#TopLevelSuggestionsContainer", {
@@ -2527,7 +2545,9 @@ const Theme g_themeUniMenu = {{
         L"Visibility=Collapsed"}},
 }};
 
-const Theme g_themeLegacyFluent = {{
+const Theme g_themeLegacyFluent = {};
+
+const Theme g_themeLegacyFluent_variant_ClassicStartMenu = {{
     ThemeTargetStyles{L"Windows.UI.Xaml.Controls.GridViewItem > Windows.UI.Xaml.Controls.Border#ContentBorder@CommonStates > Windows.UI.Xaml.Controls.Grid#DroppedFlickerWorkaroundWrapper > Windows.UI.Xaml.Controls.Border#BackgroundBorder", {
         L"BorderBrush:=<RevealBorderBrush Color=\"{ThemeResource SystemListLowColor}\" TargetTheme=\"1\" Opacity=\"1\" />",
         L"BorderThickness=2",
@@ -2727,7 +2747,9 @@ const Theme g_themeLegacyFluent = {{
         L"font-family: Segoe MDL2 Assets !important"}},
 }};
 
-const Theme g_themeOnlySearch = {{
+const Theme g_themeOnlySearch = {};
+
+const Theme g_themeOnlySearch_variant_ClassicStartMenu = {{
     ThemeTargetStyles{L"StartDocked.StartSizingFrame", {
         L"MinHeight=100"}},
     ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Grid#UndockedRoot", {
@@ -5805,14 +5827,21 @@ void ProcessAllStylesFromSettings() {
                     ? &g_themeNoRecommendedSection
                     : &g_themeNoRecommendedSection_variant_ClassicStartMenu;
     } else if (wcscmp(themeName, L"SideBySide") == 0) {
-        theme = &g_themeSideBySide;
+        theme = g_isRedesignedStartMenu
+                    ? &g_themeSideBySide
+                    : &g_themeSideBySide_variant_ClassicStartMenu;
     } else if (wcscmp(themeName, L"SideBySide2") == 0) {
-        theme = &g_themeSideBySide2;
+        theme = g_isRedesignedStartMenu
+                    ? &g_themeSideBySide2
+                    : &g_themeSideBySide2_variant_ClassicStartMenu;
     } else if (wcscmp(themeName, L"SideBySideMinimal") == 0) {
-        theme = &g_themeSideBySideMinimal;
+        theme = g_isRedesignedStartMenu
+                    ? &g_themeSideBySideMinimal
+                    : &g_themeSideBySideMinimal_variant_ClassicStartMenu;
     } else if (wcscmp(themeName, L"Windows10") == 0) {
-        theme = g_isRedesignedStartMenu ? &g_themeWindows10
-                                        : &g_themeWindows10_variant_ClassicStartMenu;
+        theme = g_isRedesignedStartMenu
+                    ? &g_themeWindows10
+                    : &g_themeWindows10_variant_ClassicStartMenu;
     } else if (wcscmp(themeName, L"Windows10_variant_Minimal") == 0) {
         theme = g_isRedesignedStartMenu
                     ? &g_themeWindows10_variant_Minimal
@@ -5822,28 +5851,45 @@ void ProcessAllStylesFromSettings() {
                     ? &g_themeTranslucentStartMenu
                     : &g_themeTranslucentStartMenu_variant_ClassicStartMenu;
     } else if (wcscmp(themeName, L"Windows11_Metro10") == 0) {
-        theme = &g_themeWindows11_Metro10;
+        theme = g_isRedesignedStartMenu
+                    ? &g_themeWindows11_Metro10
+                    : &g_themeWindows11_Metro10_variant_ClassicStartMenu;
     } else if (wcscmp(themeName, L"Fluent2Inspired") == 0) {
         theme = g_isRedesignedStartMenu
                     ? &g_themeFluent2Inspired
                     : &g_themeFluent2Inspired_variant_ClassicStartMenu;
     } else if (wcscmp(themeName, L"RosePine") == 0) {
-        theme = g_isRedesignedStartMenu ? &g_themeRosePine
-                                        : &g_themeRosePine_variant_ClassicStartMenu;
+        theme = g_isRedesignedStartMenu
+                    ? &g_themeRosePine
+                    : &g_themeRosePine_variant_ClassicStartMenu;
     } else if (wcscmp(themeName, L"Windows11_Metro10Minimal") == 0) {
-        theme = &g_themeWindows11_Metro10Minimal;
+        theme = g_isRedesignedStartMenu
+                    ? &g_themeWindows11_Metro10Minimal
+                    : &g_themeWindows11_Metro10Minimal_variant_ClassicStartMenu;
     } else if (wcscmp(themeName, L"Everblush") == 0) {
-        theme = &g_themeEverblush;
+        theme = g_isRedesignedStartMenu
+                    ? &g_themeEverblush
+                    : &g_themeEverblush_variant_ClassicStartMenu;
     } else if (wcscmp(themeName, L"21996") == 0) {
-        theme = &g_theme21996;
+        theme = g_isRedesignedStartMenu
+                    ? &g_theme21996
+                    : &g_theme21996_variant_ClassicStartMenu;
     } else if (wcscmp(themeName, L"Down Aero") == 0) {
-        theme = &g_themeDown_Aero;
+        theme = g_isRedesignedStartMenu
+                    ? &g_themeDown_Aero
+                    : &g_themeDown_Aero_variant_ClassicStartMenu;
     } else if (wcscmp(themeName, L"UniMenu") == 0) {
-        theme = &g_themeUniMenu;
+        theme = g_isRedesignedStartMenu
+                    ? &g_themeUniMenu
+                    : &g_themeUniMenu_variant_ClassicStartMenu;
     } else if (wcscmp(themeName, L"LegacyFluent") == 0) {
-        theme = &g_themeLegacyFluent;
+        theme = g_isRedesignedStartMenu
+                    ? &g_themeLegacyFluent
+                    : &g_themeLegacyFluent_variant_ClassicStartMenu;
     } else if (wcscmp(themeName, L"OnlySearch") == 0) {
-        theme = &g_themeOnlySearch;
+        theme = g_isRedesignedStartMenu
+                    ? &g_themeOnlySearch
+                    : &g_themeOnlySearch_variant_ClassicStartMenu;
     }
     Wh_FreeStringSetting(themeName);
 
