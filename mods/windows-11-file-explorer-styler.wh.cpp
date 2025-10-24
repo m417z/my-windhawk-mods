@@ -2,7 +2,7 @@
 // @id              windows-11-file-explorer-styler
 // @name            Windows 11 File Explorer Styler
 // @description     Customize the File Explorer with themes contributed by others or create your own
-// @version         1.2.1
+// @version         1.2.2
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
@@ -1121,14 +1121,14 @@ struct ImageBrushFailedLoadInfo {
 
 struct FailedImageBrushesForThread {
     std::list<ImageBrushFailedLoadInfo> failedImageBrushes;
-    winrt::Windows::System::DispatcherQueue dispatcher{nullptr};
+    winrt::Microsoft::UI::Dispatching::DispatcherQueue dispatcher{nullptr};
 };
 
 thread_local FailedImageBrushesForThread g_failedImageBrushesForThread;
 
 // Global registry of all threads that have failed image brushes.
 std::mutex g_failedImageBrushesRegistryMutex;
-std::vector<winrt::weak_ref<winrt::Windows::System::DispatcherQueue>>
+std::vector<winrt::weak_ref<winrt::Microsoft::UI::Dispatching::DispatcherQueue>>
     g_failedImageBrushesRegistry;
 winrt::event_token g_networkStatusChangedToken;
 
@@ -1896,7 +1896,7 @@ void OnNetworkStatusChanged(
     Wh_Log(L"Network status changed, dispatching retry to all UI threads");
 
     // Get snapshot of dispatchers under lock.
-    std::vector<winrt::Windows::System::DispatcherQueue> dispatchers;
+    std::vector<winrt::Microsoft::UI::Dispatching::DispatcherQueue> dispatchers;
     {
         std::lock_guard<std::mutex> lock(g_failedImageBrushesRegistryMutex);
 
@@ -1977,8 +1977,8 @@ void SetupImageBrushTracking(Media::ImageBrush const& brush,
     // Ensure we have a dispatcher for this thread.
     if (!g_failedImageBrushesForThread.dispatcher) {
         try {
-            g_failedImageBrushesForThread.dispatcher =
-                winrt::Windows::System::DispatcherQueue::GetForCurrentThread();
+            g_failedImageBrushesForThread.dispatcher = winrt::Microsoft::UI::
+                Dispatching::DispatcherQueue::GetForCurrentThread();
             if (g_failedImageBrushesForThread.dispatcher) {
                 // Register this thread's dispatcher globally.
                 std::lock_guard<std::mutex> lock(
@@ -3616,7 +3616,7 @@ bool StartStatsTimer() {
     static constexpr WCHAR kStatsBaseUrl[] =
         L"https://github.com/ramensoftware/"
         L"windows-11-file-explorer-styling-guide/"
-        L"releases/download/stats-v1/";
+        L"releases/download/stats-v2/";
 
     ULONGLONG lastStatsTime = 0;
     Wh_GetBinaryValue(L"statsTimerLastTime", &lastStatsTime,
