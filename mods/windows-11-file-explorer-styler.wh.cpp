@@ -37,6 +37,20 @@ Styler** and **Windows 11 Notification Center Styler** mods.
 Themes are collections of styles. The following themes are integrated into the
 mod and can be selected in the settings:
 
+[![Translucent
+Explorer11](https://raw.githubusercontent.com/ramensoftware/windows-11-file-explorer-styling-guide/main/Themes/Translucent%20Explorer11/screenshot-small.png)
+\
+Translucent
+Explorer11](https://github.com/ramensoftware/windows-11-file-explorer-styling-guide/blob/main/Themes/Translucent%20Explorer11/README.md)
+
+[![MicaBar](https://raw.githubusercontent.com/ramensoftware/windows-11-file-explorer-styling-guide/main/Themes/MicaBar/screenshot-small.png)
+\
+MicaBar](https://github.com/ramensoftware/windows-11-file-explorer-styling-guide/blob/main/Themes/MicaBar/README.md)
+
+[![NoCommandBar](https://raw.githubusercontent.com/ramensoftware/windows-11-file-explorer-styling-guide/main/Themes/NoCommandBar/screenshot-small.png)
+\
+NoCommandBar](https://github.com/ramensoftware/windows-11-file-explorer-styling-guide/blob/main/Themes/NoCommandBar/README.md)
+
 [![Minimal
 Explorer11](https://raw.githubusercontent.com/ramensoftware/windows-11-file-explorer-styling-guide/main/Themes/Minimal%20Explorer11/screenshot-small.png)
 \
@@ -46,20 +60,6 @@ Explorer11](https://github.com/ramensoftware/windows-11-file-explorer-styling-gu
 [![Tabless](https://raw.githubusercontent.com/ramensoftware/windows-11-file-explorer-styling-guide/main/Themes/Tabless/screenshot-small.png)
 \
 Tabless](https://github.com/ramensoftware/windows-11-file-explorer-styling-guide/blob/main/Themes/Tabless/README.md)
-
-[![NoCommandBar](https://raw.githubusercontent.com/ramensoftware/windows-11-file-explorer-styling-guide/main/Themes/NoCommandBar/screenshot-small.png)
-\
-NoCommandBar](https://github.com/ramensoftware/windows-11-file-explorer-styling-guide/blob/main/Themes/NoCommandBar/README.md)
-
-[![MicaBar](https://raw.githubusercontent.com/ramensoftware/windows-11-file-explorer-styling-guide/main/Themes/MicaBar/screenshot-small.png)
-\
-MicaBar](https://github.com/ramensoftware/windows-11-file-explorer-styling-guide/blob/main/Themes/MicaBar/README.md)
-
-[![Translucent
-Explorer11](https://raw.githubusercontent.com/ramensoftware/windows-11-file-explorer-styling-guide/main/Themes/Translucent%20Explorer11/screenshot-small.png)
-\
-Translucent
-Explorer11](https://github.com/ramensoftware/windows-11-file-explorer-styling-guide/blob/main/Themes/Translucent%20Explorer11/README.md)
 
 More themes can be found in the **Themes** section of [The Windows 11 file
 explorer styling
@@ -150,11 +150,11 @@ from the **TranslucentTB** project.
     in the mod details.
   $options:
   - "": None
+  - Translucent Explorer11: Translucent Explorer11
+  - MicaBar: MicaBar
+  - NoCommandBar: NoCommandBar
   - Minimal Explorer11: Minimal Explorer11
   - Tabless: Tabless
-  - NoCommandBar: NoCommandBar
-  - MicaBar: MicaBar
-  - Translucent Explorer11: Translucent Explorer11
 - controlStyles:
   - - target: ""
       $name: Target
@@ -211,6 +211,47 @@ struct Theme {
 };
 
 // clang-format off
+
+const Theme g_themeTranslucent_Explorer11 = {{
+    ThemeTargetStyles{L"Grid#CommandBarControlRootGrid", {
+        L"Background=Transparent",
+        L"BorderThickness=0,0,0,1",
+        L"BorderBrush=#40A0A0A0"}},
+    ThemeTargetStyles{L"CommandBar#FileExplorerCommandBar", {
+        L"Background=Transparent"}},
+    ThemeTargetStyles{L"Grid#NavigationBarControlGrid", {
+        L"Background=Transparent"}},
+    ThemeTargetStyles{L"TabViewItem > Grid#LayoutRoot > Canvas > Microsoft.UI.Xaml.Shapes.Path#SelectedBackgroundPath", {
+        L"Fill=#40404040"}},
+    ThemeTargetStyles{L"Grid#HomeViewRootGrid", {
+        L"Background=Transparent"}},
+    ThemeTargetStyles{L"FileExplorerExtensions.GalleryViewControl#GalleryViewControl > Grid", {
+        L"Background=Transparent"}},
+    ThemeTargetStyles{L"Microsoft.UI.Xaml.Controls.Grid#GalleryRootGrid", {
+        L"Background=Transparent"}},
+    ThemeTargetStyles{L"ToolTip", {
+        L"Background:=<AcrylicBrush TintColor=\"#121212\" Opacity=\"0.3\"/>"}},
+    ThemeTargetStyles{L"Grid#DetailsViewControlRootGrid", {
+        L"Background=Transparent"}},
+    ThemeTargetStyles{L"StackPanel#DetailsViewThumbnail > Grid", {
+        L"Background=Transparent"}},
+}, {}, /*explorerFrameContainerHeight=*/0};
+
+const Theme g_themeMicaBar = {{
+    ThemeTargetStyles{L"Grid#CommandBarControlRootGrid", {
+        L"Background:=<SolidColorBrush Color=\"{ThemeResource LayerOnMicaBaseAltFillColorDefault}\"/>",
+        L"BorderThickness=0,0,0,1"}},
+    ThemeTargetStyles{L"CommandBar#FileExplorerCommandBar", {
+        L"Background=Transparent"}},
+}, {}, /*explorerFrameContainerHeight=*/0};
+
+const Theme g_themeNoCommandBar = {{
+    ThemeTargetStyles{L"FileExplorerExtensions.CommandBarControl", {
+        L"Visibility=Collapsed"}},
+    ThemeTargetStyles{L"FileExplorerExtensions.NavigationBarControl", {
+        L"Grid.RowSpan=2",
+        L"Margin=0,0,0,1"}},
+}, {}, /*explorerFrameContainerHeight=*/87};
 
 const Theme g_themeMinimal_Explorer11 = {{
     ThemeTargetStyles{L"AppBarButton#backButton > Grid#Root@CommonStates > Border#AppBarButtonInnerBorder", {
@@ -332,47 +373,6 @@ const Theme g_themeTabless = {{
     L"NavigationBarGrid=2",
     L"CommandBarGrid=1",
 }, /*explorerFrameContainerHeight=*/0};
-
-const Theme g_themeNoCommandBar = {{
-    ThemeTargetStyles{L"FileExplorerExtensions.CommandBarControl", {
-        L"Visibility=Collapsed"}},
-    ThemeTargetStyles{L"FileExplorerExtensions.NavigationBarControl", {
-        L"Grid.RowSpan=2",
-        L"Margin=0,0,0,1"}},
-}, {}, /*explorerFrameContainerHeight=*/87};
-
-const Theme g_themeMicaBar = {{
-    ThemeTargetStyles{L"Grid#CommandBarControlRootGrid", {
-        L"Background:=<SolidColorBrush Color=\"{ThemeResource LayerOnMicaBaseAltFillColorDefault}\"/>",
-        L"BorderThickness=0,0,0,1"}},
-    ThemeTargetStyles{L"CommandBar#FileExplorerCommandBar", {
-        L"Background=Transparent"}},
-}, {}, /*explorerFrameContainerHeight=*/0};
-
-const Theme g_themeTranslucent_Explorer11 = {{
-    ThemeTargetStyles{L"Grid#CommandBarControlRootGrid", {
-        L"Background=Transparent",
-        L"BorderThickness=0,0,0,1",
-        L"BorderBrush=#40A0A0A0"}},
-    ThemeTargetStyles{L"CommandBar#FileExplorerCommandBar", {
-        L"Background=Transparent"}},
-    ThemeTargetStyles{L"Grid#NavigationBarControlGrid", {
-        L"Background=Transparent"}},
-    ThemeTargetStyles{L"TabViewItem > Grid#LayoutRoot > Canvas > Microsoft.UI.Xaml.Shapes.Path#SelectedBackgroundPath", {
-        L"Fill=#40404040"}},
-    ThemeTargetStyles{L"Grid#HomeViewRootGrid", {
-        L"Background=Transparent"}},
-    ThemeTargetStyles{L"FileExplorerExtensions.GalleryViewControl#GalleryViewControl > Grid", {
-        L"Background=Transparent"}},
-    ThemeTargetStyles{L"Microsoft.UI.Xaml.Controls.Grid#GalleryRootGrid", {
-        L"Background=Transparent"}},
-    ThemeTargetStyles{L"ToolTip", {
-        L"Background:=<AcrylicBrush TintColor=\"#121212\" Opacity=\"0.3\"/>"}},
-    ThemeTargetStyles{L"Grid#DetailsViewControlRootGrid", {
-        L"Background=Transparent"}},
-    ThemeTargetStyles{L"StackPanel#DetailsViewThumbnail > Grid", {
-        L"Background=Transparent"}},
-}, {}, /*explorerFrameContainerHeight=*/0};
 
 // clang-format on
 
@@ -2955,16 +2955,16 @@ bool ProcessSingleTargetStylesFromSettings(
 void ProcessAllStylesFromSettings() {
     PCWSTR themeName = Wh_GetStringSetting(L"theme");
     const Theme* theme = nullptr;
-    if (wcscmp(themeName, L"Minimal Explorer11") == 0) {
+    if (wcscmp(themeName, L"Translucent Explorer11") == 0) {
+        theme = &g_themeTranslucent_Explorer11;
+    } else if (wcscmp(themeName, L"MicaBar") == 0) {
+        theme = &g_themeMicaBar;
+    } else if (wcscmp(themeName, L"NoCommandBar") == 0) {
+        theme = &g_themeNoCommandBar;
+    } else if (wcscmp(themeName, L"Minimal Explorer11") == 0) {
         theme = &g_themeMinimal_Explorer11;
     } else if (wcscmp(themeName, L"Tabless") == 0) {
         theme = &g_themeTabless;
-    } else if (wcscmp(themeName, L"NoCommandBar") == 0) {
-        theme = &g_themeNoCommandBar;
-    } else if (wcscmp(themeName, L"MicaBar") == 0) {
-        theme = &g_themeMicaBar;
-    } else if (wcscmp(themeName, L"Translucent Explorer11") == 0) {
-        theme = &g_themeTranslucent_Explorer11;
     }
     Wh_FreeStringSetting(themeName);
 
