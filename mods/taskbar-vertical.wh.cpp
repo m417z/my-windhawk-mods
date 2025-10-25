@@ -3622,10 +3622,18 @@ void ApplyStyleClassicStartMenu(FrameworkElement content,
         }
     } else {
         if (!g_previousCanvasTop.has_value()) {
-            g_previousCanvasTop = Controls::Canvas::GetTop(startSizingFrame);
+            double canvasTop = Controls::Canvas::GetTop(startSizingFrame);
+            // The value might be zero when not yet initialized.
+            if (canvasTop) {
+                g_previousCanvasTop = canvasTop;
+            }
         }
         if (!g_previousCanvasLeft.has_value()) {
-            g_previousCanvasLeft = Controls::Canvas::GetLeft(startSizingFrame);
+            double canvasLeft = Controls::Canvas::GetLeft(startSizingFrame);
+            // The value might be zero when not yet initialized.
+            if (canvasLeft) {
+                g_previousCanvasLeft = canvasLeft;
+            }
         }
 
         MONITORINFO monitorInfo{
