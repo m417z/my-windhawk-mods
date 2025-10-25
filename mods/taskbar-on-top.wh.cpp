@@ -2466,23 +2466,23 @@ BOOL Wh_ModInit() {
         auto pKernelBaseLoadLibraryExW =
             (decltype(&LoadLibraryExW))GetProcAddress(kernelBaseModule,
                                                       "LoadLibraryExW");
-        WindhawkUtils::Wh_SetFunctionHookT(pKernelBaseLoadLibraryExW,
-                                           LoadLibraryExW_Hook,
-                                           &LoadLibraryExW_Original);
+        WindhawkUtils::SetFunctionHook(pKernelBaseLoadLibraryExW,
+                                       LoadLibraryExW_Hook,
+                                       &LoadLibraryExW_Original);
     }
 
     if (!HookTaskbarDllSymbols()) {
         return FALSE;
     }
 
-    WindhawkUtils::Wh_SetFunctionHookT(SetWindowPos, SetWindowPos_Hook,
-                                       &SetWindowPos_Original);
+    WindhawkUtils::SetFunctionHook(SetWindowPos, SetWindowPos_Hook,
+                                   &SetWindowPos_Original);
 
-    WindhawkUtils::Wh_SetFunctionHookT(MoveWindow, MoveWindow_Hook,
-                                       &MoveWindow_Original);
+    WindhawkUtils::SetFunctionHook(MoveWindow, MoveWindow_Hook,
+                                   &MoveWindow_Original);
 
-    WindhawkUtils::Wh_SetFunctionHookT(MapWindowPoints, MapWindowPoints_Hook,
-                                       &MapWindowPoints_Original);
+    WindhawkUtils::SetFunctionHook(MapWindowPoints, MapWindowPoints_Hook,
+                                   &MapWindowPoints_Original);
 
     HMODULE dwmapiModule =
         LoadLibraryEx(L"dwmapi.dll", nullptr, LOAD_LIBRARY_SEARCH_SYSTEM32);
@@ -2491,9 +2491,9 @@ BOOL Wh_ModInit() {
             (decltype(&DwmSetWindowAttribute))GetProcAddress(
                 dwmapiModule, "DwmSetWindowAttribute");
         if (pDwmSetWindowAttribute) {
-            WindhawkUtils::Wh_SetFunctionHookT(pDwmSetWindowAttribute,
-                                               DwmSetWindowAttribute_Hook,
-                                               &DwmSetWindowAttribute_Original);
+            WindhawkUtils::SetFunctionHook(pDwmSetWindowAttribute,
+                                           DwmSetWindowAttribute_Hook,
+                                           &DwmSetWindowAttribute_Original);
         }
     }
 
