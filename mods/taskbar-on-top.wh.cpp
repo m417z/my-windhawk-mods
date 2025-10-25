@@ -1951,7 +1951,7 @@ void ApplyStyleClassicStartMenu(FrameworkElement content,
         // Use the monitor size and not the content size, because the content
         // size might not be updated yet when this function is called.
         double canvasHeight =
-            MulDiv(monitorInfo.rcMonitor.bottom - monitorInfo.rcMonitor.top, 96,
+            MulDiv(monitorInfo.rcWork.bottom - monitorInfo.rcWork.top, 96,
                    monitorDpiY);
 
         constexpr int kStartMenuMargin = 12;
