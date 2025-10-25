@@ -207,7 +207,7 @@ bool ApplyStyle(XamlRoot xamlRoot) {
         });
     if (widgetElement) {
         auto margin = widgetElement.Margin();
-        margin.Left = g_unloading ? 0 : 34;
+        margin.Left = g_unloading ? 0 : 44;
         widgetElement.Margin(margin);
     }
 
@@ -547,6 +547,59 @@ HRESULT WINAPI TaskbarCollapsibleLayoutXamlTraits_ArrangeOverride_Hook(
     return ret;
 }
 
+using ExperienceToggleButton_UpdateButtonPadding_t = void(WINAPI*)(void* pThis);
+ExperienceToggleButton_UpdateButtonPadding_t
+    ExperienceToggleButton_UpdateButtonPadding_Original;
+void WINAPI ExperienceToggleButton_UpdateButtonPadding_Hook(void* pThis) {
+    Wh_Log(L">");
+
+    ExperienceToggleButton_UpdateButtonPadding_Original(pThis);
+
+    if (g_unloading) {
+        return;
+    }
+
+    FrameworkElement toggleButtonElement = nullptr;
+    ((IUnknown**)pThis)[1]->QueryInterface(winrt::guid_of<FrameworkElement>(),
+                                           winrt::put_abi(toggleButtonElement));
+    if (!toggleButtonElement) {
+        return;
+    }
+
+    auto panelElement =
+        FindChildByName(toggleButtonElement, L"ExperienceToggleButtonRootPanel")
+            .try_as<Controls::Grid>();
+    if (!panelElement) {
+        return;
+    }
+
+    auto className = winrt::get_class_name(toggleButtonElement);
+    if (className == L"Taskbar.ExperienceToggleButton") {
+        auto automationId = Automation::AutomationProperties::GetAutomationId(
+            toggleButtonElement);
+        if (automationId == L"StartButton") {
+            // Start button properties differ depending on whether Explorer is
+            // started with centered icons or left-aligned icons. This seems to
+            // be a bug in Explorer. Compare the start button in these two
+            // cases:
+            // 1. Left-align in settings, restart Explorer.
+            // 2. Center-align in settings, restart Explorer, left-align.
+            //
+            // You can see that in the second case, the start button lacks the
+            // padding on the left.
+            //
+            // This workaround adds this padding.
+            if (panelElement.Width() == 45) {
+                panelElement.Width(55);
+            }
+
+            if (panelElement.Padding() == Thickness{2, 4, 2, 4}) {
+                panelElement.Padding(Thickness{12, 4, 2, 4});
+            }
+        }
+    }
+}
+
 using AugmentedEntryPointButton_UpdateButtonPadding_t =
     void(WINAPI*)(void* pThis);
 AugmentedEntryPointButton_UpdateButtonPadding_t
@@ -575,7 +628,7 @@ void WINAPI AugmentedEntryPointButton_UpdateButtonPadding_Hook(void* pThis) {
             }
 
             auto margin = button.Margin();
-            margin.Left = 34;
+            margin.Left = 44;
             button.Margin(margin);
         });
 }
@@ -625,6 +678,11 @@ bool HookTaskbarViewDllSymbols(HMODULE module) {
             {LR"(public: virtual int __cdecl winrt::impl::produce<struct winrt::Taskbar::implementation::TaskbarCollapsibleLayout,struct winrt::Microsoft::UI::Xaml::Controls::IVirtualizingLayoutOverrides>::ArrangeOverride(void *,struct winrt::Windows::Foundation::Size,struct winrt::Windows::Foundation::Size *))"},
             &TaskbarCollapsibleLayoutXamlTraits_ArrangeOverride_Original,
             TaskbarCollapsibleLayoutXamlTraits_ArrangeOverride_Hook,
+        },
+        {
+            {LR"(protected: virtual void __cdecl winrt::Taskbar::implementation::ExperienceToggleButton::UpdateButtonPadding(void))"},
+            &ExperienceToggleButton_UpdateButtonPadding_Original,
+            ExperienceToggleButton_UpdateButtonPadding_Hook,
         },
         {
             {LR"(protected: virtual void __cdecl winrt::Taskbar::implementation::AugmentedEntryPointButton::UpdateButtonPadding(void))"},
