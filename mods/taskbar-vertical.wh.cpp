@@ -1685,7 +1685,13 @@ void ApplySystemTrayIconStyle(FrameworkElement systemTrayIconElement) {
         }
     }
 
-    bool isDateTimeIcon = false;
+    enum class IconType {
+        DateTime,
+        Battery,
+        Other,
+    };
+
+    IconType iconType = IconType::Other;
 
     auto iconContent =
         FindChildByClassName(contentGrid, L"SystemTray.TextIconContent");
@@ -1693,6 +1699,9 @@ void ApplySystemTrayIconStyle(FrameworkElement systemTrayIconElement) {
     if (!iconContent) {
         iconContent =
             FindChildByClassName(contentGrid, L"SystemTray.BatteryIconContent");
+        if (iconContent) {
+            iconType = IconType::Battery;
+        }
     }
 
     if (!iconContent) {
@@ -1704,7 +1713,7 @@ void ApplySystemTrayIconStyle(FrameworkElement systemTrayIconElement) {
         iconContent = FindChildByClassName(contentGrid,
                                            L"SystemTray.DateTimeIconContent");
         if (iconContent) {
-            isDateTimeIcon = true;
+            iconType = IconType::DateTime;
         }
     }
 
@@ -1729,11 +1738,12 @@ void ApplySystemTrayIconStyle(FrameworkElement systemTrayIconElement) {
         iconContent.as<DependencyObject>().ClearValue(
             FrameworkElement::MaxHeightProperty());
     } else {
-        iconContent.MaxHeight(isDateTimeIcon ? clockContainerHeight
-                                             : iconContent.ActualWidth());
+        iconContent.MaxHeight(iconType == IconType::DateTime
+                                  ? clockContainerHeight
+                                  : iconContent.ActualWidth());
     }
 
-    if (isDateTimeIcon) {
+    if (iconType == IconType::DateTime) {
         if (g_unloading) {
             iconContent.as<DependencyObject>().ClearValue(
                 FrameworkElement::WidthProperty());
@@ -1779,6 +1789,76 @@ void ApplySystemTrayIconStyle(FrameworkElement systemTrayIconElement) {
             timeInnerTextBlock.TextAlignment(
                 g_unloading ? TextAlignment::End : TextAlignment::Center);
         }
+    } else if (iconType == IconType::Battery) {
+        auto iconContentContainerGrid =
+            FindChildByName(iconContent, L"ContainerGrid");
+        if (!iconContentContainerGrid) {
+            return;
+        }
+
+        auto iconContentStackPanel =
+            FindChildByClassName(iconContentContainerGrid,
+                                 L"Windows.UI.Xaml.Controls.StackPanel")
+                .try_as<Controls::StackPanel>();
+        if (!iconContentStackPanel) {
+            return;
+        }
+
+        auto iconContentGrid =
+            FindChildByClassName(iconContentStackPanel,
+                                 L"Windows.UI.Xaml.Controls.Grid")
+                .try_as<Controls::Grid>();
+        if (!iconContentGrid) {
+            return;
+        }
+
+        auto batteryTextBlock =
+            FindChildByName(iconContentStackPanel, L"BatteryTextBlock")
+                .try_as<Controls::TextBlock>();
+        if (!batteryTextBlock ||
+            batteryTextBlock.Visibility() != Visibility::Visible) {
+            return;
+        }
+
+        if (g_unloading) {
+            iconContent.as<DependencyObject>().ClearValue(
+                FrameworkElement::WidthProperty());
+        } else {
+            iconContent.Width(42);
+        }
+
+        iconContentStackPanel.Orientation(
+            g_unloading ? Controls::Orientation::Horizontal
+                        : Controls::Orientation::Vertical);
+
+        if (g_unloading) {
+            iconContentStackPanel.as<DependencyObject>().ClearValue(
+                FrameworkElement::VerticalAlignmentProperty());
+        } else {
+            iconContentStackPanel.VerticalAlignment(VerticalAlignment::Center);
+        }
+
+        iconContentStackPanel.HorizontalAlignment(
+            g_unloading ? HorizontalAlignment::Left
+                        : HorizontalAlignment::Center);
+
+        if (g_unloading) {
+            iconContentGrid.as<DependencyObject>().ClearValue(
+                FrameworkElement::HorizontalAlignmentProperty());
+        } else {
+            iconContentGrid.HorizontalAlignment(HorizontalAlignment::Center);
+        }
+
+        if (g_unloading) {
+            iconContentGrid.as<DependencyObject>().ClearValue(
+                FrameworkElement::HorizontalAlignmentProperty());
+        } else {
+            iconContentGrid.HorizontalAlignment(HorizontalAlignment::Center);
+        }
+
+        Thickness margin = batteryTextBlock.Margin();
+        margin.Left = g_unloading ? 3 : 0;
+        batteryTextBlock.Margin(margin);
     }
 }
 
