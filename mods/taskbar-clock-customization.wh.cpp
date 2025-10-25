@@ -876,18 +876,6 @@ std::wstring EscapeUrlComponent(PCWSTR input,
     return out;
 }
 
-std::wstring GetWeatherCacheKey() {
-    // Change the URL every 10 minutes to avoid caching.
-    FILETIME ft;
-    GetSystemTimeAsFileTime(&ft);
-    ULARGE_INTEGER uli{
-        .LowPart = ft.dwLowDateTime,
-        .HighPart = ft.dwHighDateTime,
-    };
-    uli.QuadPart /= 10000000ULL * 60 * 10;
-    return std::to_wstring(uli.QuadPart);
-}
-
 bool UpdateWeatherWebContent() {
     std::wstring format = g_settings.webContentWeatherFormat.get();
     if (format.empty()) {
@@ -917,10 +905,6 @@ bool UpdateWeatherWebContent() {
     }
     weatherUrl += L"format=";
     weatherUrl += EscapeUrlComponent(format.c_str());
-    // Set a random language as a way to avoid caching the result.
-    // https://github.com/chubin/wttr.in/issues/705#issuecomment-3109898903
-    weatherUrl += L"&lang=_nocache_";
-    weatherUrl += GetWeatherCacheKey();
     std::optional<std::wstring> urlContent = GetUrlContent(weatherUrl.c_str());
     if (!urlContent) {
         return false;
