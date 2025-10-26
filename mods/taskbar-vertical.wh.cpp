@@ -3339,12 +3339,16 @@ HRESULT WINAPI DwmSetWindowAttribute_Hook(HWND hwnd,
     std::wstring processFileName = GetProcessFileName(processId);
 
     enum class DwmTarget {
+        StartMenu,
         SearchHost,
         ShellExperienceHost,
     };
     DwmTarget target;
 
-    if (_wcsicmp(processFileName.c_str(), L"SearchHost.exe") == 0) {
+    if (_wcsicmp(processFileName.c_str(), L"StartMenuExperienceHost.exe") ==
+        0) {
+        target = DwmTarget::StartMenu;
+    } else if (_wcsicmp(processFileName.c_str(), L"SearchHost.exe") == 0) {
         target = DwmTarget::SearchHost;
     } else if (_wcsicmp(processFileName.c_str(), L"ShellExperienceHost.exe") ==
                0) {
@@ -3374,7 +3378,19 @@ HRESULT WINAPI DwmSetWindowAttribute_Hook(HWND hwnd,
     int cx = targetRect.right - targetRect.left;
     int cy = targetRect.bottom - targetRect.top;
 
-    if (target == DwmTarget::SearchHost) {
+    if (target == DwmTarget::StartMenu) {
+        // Make full width of work area. By default, for some reason, it
+        // occupies the whole monitor width.
+        int xNew = monitorInfo.rcWork.left;
+        int cxNew = monitorInfo.rcWork.right - monitorInfo.rcWork.left;
+
+        if (xNew == x && cxNew == cx) {
+            return original();
+        }
+
+        x = xNew;
+        cx = cxNew;
+    } else if (target == DwmTarget::SearchHost) {
         int xNew;
         switch (GetTaskbarLocationForMonitor(monitor)) {
             case TaskbarLocation::left:
@@ -3665,10 +3681,10 @@ void ApplyStyleClassicStartMenu(FrameworkElement content,
         // Use the monitor size and not the content size, because the content
         // size might not be updated yet when this function is called.
         double canvasWidth =
-            MulDiv(monitorInfo.rcMonitor.right - monitorInfo.rcMonitor.left, 96,
+            MulDiv(monitorInfo.rcWork.right - monitorInfo.rcWork.left, 96,
                    monitorDpiX);
         double canvasHeight =
-            MulDiv(monitorInfo.rcMonitor.bottom - monitorInfo.rcMonitor.top, 96,
+            MulDiv(monitorInfo.rcWork.bottom - monitorInfo.rcWork.top, 96,
                    monitorDpiY);
 
         constexpr int kStartMenuMargin = 12;
@@ -3692,12 +3708,12 @@ void ApplyStyleClassicStartMenu(FrameworkElement content,
         double newLeft;
         switch (taskbarLocation) {
             case TaskbarLocation::left:
-                newLeft = g_settings.taskbarWidth + kStartMenuMargin;
+                newLeft = kStartMenuMargin;
                 break;
 
             case TaskbarLocation::right:
                 newLeft = canvasWidth - startSizingFrame.ActualWidth() -
-                          g_settings.taskbarWidth - kStartMenuMargin;
+                          kStartMenuMargin;
                 break;
         }
 
@@ -3778,8 +3794,6 @@ void ApplyStyleRedesignedStartMenu(FrameworkElement content,
     if (g_unloading) {
         frameRoot.HorizontalAlignment(g_previousHorizontalAlignment.value_or(
             HorizontalAlignment::Center));
-        margin.Left = 0;
-        margin.Right = 0;
     } else {
         if (!g_previousHorizontalAlignment) {
             g_previousHorizontalAlignment = frameRoot.HorizontalAlignment();
@@ -3788,14 +3802,10 @@ void ApplyStyleRedesignedStartMenu(FrameworkElement content,
         switch (taskbarLocation) {
             case TaskbarLocation::left:
                 frameRoot.HorizontalAlignment(HorizontalAlignment::Left);
-                margin.Left = g_settings.taskbarWidth;
-                margin.Right = 0;
                 break;
 
             case TaskbarLocation::right:
                 frameRoot.HorizontalAlignment(HorizontalAlignment::Right);
-                margin.Left = 0;
-                margin.Right = g_settings.taskbarWidth;
                 break;
         }
     }
