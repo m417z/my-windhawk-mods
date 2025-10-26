@@ -2,7 +2,7 @@
 // @id              start-menu-all-apps
 // @name            Show all apps by default in start menu
 // @description     When the Windows 11 start menu is opened, show all apps right away
-// @version         1.0.4
+// @version         1.0.5
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
