@@ -3937,6 +3937,25 @@ void Wh_ModUninit() {
         RunFromWindowThread(
             hCoreWnd, [](PVOID) { UninitializeForCurrentThread(); }, nullptr);
     }
+
+    // Unregister global network status change handler.
+    if (g_networkStatusChangedToken) {
+        try {
+            winrt::Windows::Networking::Connectivity::NetworkInformation::
+                NetworkStatusChanged(g_networkStatusChangedToken);
+            Wh_Log(L"Unregistered global network status change handler");
+        } catch (winrt::hresult_error const& ex) {
+            Wh_Log(L"Error unregistering network status handler %08X: %s",
+                   ex.code(), ex.message().c_str());
+        }
+        g_networkStatusChangedToken = {};
+    }
+
+    // Clear the dispatcher registry.
+    {
+        std::lock_guard<std::mutex> lock(g_failedImageBrushesRegistryMutex);
+        g_failedImageBrushesRegistry.clear();
+    }
 }
 
 void Wh_ModSettingsChanged() {
@@ -3960,24 +3979,5 @@ void Wh_ModSettingsChanged() {
 
     if (initialize) {
         InitializeSettingsAndTap();
-    }
-
-    // Unregister global network status change handler.
-    if (g_networkStatusChangedToken) {
-        try {
-            winrt::Windows::Networking::Connectivity::NetworkInformation::
-                NetworkStatusChanged(g_networkStatusChangedToken);
-            Wh_Log(L"Unregistered global network status change handler");
-        } catch (winrt::hresult_error const& ex) {
-            Wh_Log(L"Error unregistering network status handler %08X: %s",
-                   ex.code(), ex.message().c_str());
-        }
-        g_networkStatusChangedToken = {};
-    }
-
-    // Clear the dispatcher registry.
-    {
-        std::lock_guard<std::mutex> lock(g_failedImageBrushesRegistryMutex);
-        g_failedImageBrushesRegistry.clear();
     }
 }
