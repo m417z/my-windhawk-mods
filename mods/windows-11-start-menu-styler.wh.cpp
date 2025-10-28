@@ -8147,100 +8147,6 @@ void InitializeSettingsAndTap() {
     }
 }
 
-using CreateWindowInBand_t = HWND(WINAPI*)(DWORD dwExStyle,
-                                           LPCWSTR lpClassName,
-                                           LPCWSTR lpWindowName,
-                                           DWORD dwStyle,
-                                           int X,
-                                           int Y,
-                                           int nWidth,
-                                           int nHeight,
-                                           HWND hWndParent,
-                                           HMENU hMenu,
-                                           HINSTANCE hInstance,
-                                           PVOID lpParam,
-                                           DWORD dwBand);
-CreateWindowInBand_t CreateWindowInBand_Original;
-HWND WINAPI CreateWindowInBand_Hook(DWORD dwExStyle,
-                                    LPCWSTR lpClassName,
-                                    LPCWSTR lpWindowName,
-                                    DWORD dwStyle,
-                                    int X,
-                                    int Y,
-                                    int nWidth,
-                                    int nHeight,
-                                    HWND hWndParent,
-                                    HMENU hMenu,
-                                    HINSTANCE hInstance,
-                                    PVOID lpParam,
-                                    DWORD dwBand) {
-    HWND hWnd = CreateWindowInBand_Original(
-        dwExStyle, lpClassName, lpWindowName, dwStyle, X, Y, nWidth, nHeight,
-        hWndParent, hMenu, hInstance, lpParam, dwBand);
-    if (!hWnd) {
-        return hWnd;
-    }
-
-    BOOL bTextualClassName = ((ULONG_PTR)lpClassName & ~(ULONG_PTR)0xffff) != 0;
-
-    if (bTextualClassName &&
-        _wcsicmp(lpClassName, L"Windows.UI.Core.CoreWindow") == 0) {
-        Wh_Log(L"Initializing - Created core window: %08X",
-               (DWORD)(ULONG_PTR)hWnd);
-        InitializeSettingsAndTap();
-    }
-
-    return hWnd;
-}
-
-using CreateWindowInBandEx_t = HWND(WINAPI*)(DWORD dwExStyle,
-                                             LPCWSTR lpClassName,
-                                             LPCWSTR lpWindowName,
-                                             DWORD dwStyle,
-                                             int X,
-                                             int Y,
-                                             int nWidth,
-                                             int nHeight,
-                                             HWND hWndParent,
-                                             HMENU hMenu,
-                                             HINSTANCE hInstance,
-                                             PVOID lpParam,
-                                             DWORD dwBand,
-                                             DWORD dwTypeFlags);
-CreateWindowInBandEx_t CreateWindowInBandEx_Original;
-HWND WINAPI CreateWindowInBandEx_Hook(DWORD dwExStyle,
-                                      LPCWSTR lpClassName,
-                                      LPCWSTR lpWindowName,
-                                      DWORD dwStyle,
-                                      int X,
-                                      int Y,
-                                      int nWidth,
-                                      int nHeight,
-                                      HWND hWndParent,
-                                      HMENU hMenu,
-                                      HINSTANCE hInstance,
-                                      PVOID lpParam,
-                                      DWORD dwBand,
-                                      DWORD dwTypeFlags) {
-    HWND hWnd = CreateWindowInBandEx_Original(
-        dwExStyle, lpClassName, lpWindowName, dwStyle, X, Y, nWidth, nHeight,
-        hWndParent, hMenu, hInstance, lpParam, dwBand, dwTypeFlags);
-    if (!hWnd) {
-        return hWnd;
-    }
-
-    BOOL bTextualClassName = ((ULONG_PTR)lpClassName & ~(ULONG_PTR)0xffff) != 0;
-
-    if (bTextualClassName &&
-        _wcsicmp(lpClassName, L"Windows.UI.Core.CoreWindow") == 0) {
-        Wh_Log(L"Initializing - Created core window: %08X",
-               (DWORD)(ULONG_PTR)hWnd);
-        InitializeSettingsAndTap();
-    }
-
-    return hWnd;
-}
-
 using RunFromWindowThreadProc_t = void(WINAPI*)(PVOID parameter);
 
 bool RunFromWindowThread(HWND hWnd,
@@ -8291,6 +8197,169 @@ bool RunFromWindowThread(HWND hWnd,
     UnhookWindowsHookEx(hook);
 
     return true;
+}
+
+bool RunFromWindowThreadViaPostMessage(HWND hWnd,
+                                       RunFromWindowThreadProc_t proc,
+                                       PVOID procParam) {
+    static const UINT runFromWindowThreadRegisteredMsgViaPostMessage =
+        RegisterWindowMessage(
+            L"Windhawk_RunFromWindowThreadViaPostMessage_" WH_MOD_ID);
+
+    struct RUN_FROM_WINDOW_THREAD_PARAM {
+        RunFromWindowThreadProc_t proc;
+        PVOID procParam;
+        HHOOK hook;
+    };
+
+    DWORD dwThreadId = GetWindowThreadProcessId(hWnd, nullptr);
+    if (dwThreadId == 0) {
+        return false;
+    }
+
+    HHOOK hook = SetWindowsHookEx(
+        WH_GETMESSAGE,
+        [](int nCode, WPARAM wParam, LPARAM lParam) -> LRESULT {
+            if (nCode == HC_ACTION && wParam == PM_REMOVE) {
+                MSG* msg = (MSG*)lParam;
+                if (msg->message ==
+                    runFromWindowThreadRegisteredMsgViaPostMessage) {
+                    auto* param = (RUN_FROM_WINDOW_THREAD_PARAM*)msg->lParam;
+                    if (param) {
+                        param->proc(param->procParam);
+                        UnhookWindowsHookEx(param->hook);
+                        delete param;
+                        msg->lParam = 0;
+                    }
+                }
+            }
+
+            return CallNextHookEx(nullptr, nCode, wParam, lParam);
+        },
+        nullptr, dwThreadId);
+    if (!hook) {
+        return false;
+    }
+
+    auto* param = new RUN_FROM_WINDOW_THREAD_PARAM{
+        .proc = proc,
+        .procParam = procParam,
+        .hook = hook,
+    };
+    if (!PostMessage(hWnd, runFromWindowThreadRegisteredMsgViaPostMessage, 0,
+                     (LPARAM)param)) {
+        UnhookWindowsHookEx(hook);
+        delete param;
+        return false;
+    }
+
+    return true;
+}
+
+void OnWindowCreated(HWND hWnd, LPCWSTR lpClassName, PCSTR funcName) {
+    BOOL bTextualClassName = ((ULONG_PTR)lpClassName & ~(ULONG_PTR)0xffff) != 0;
+
+    switch (g_target) {
+        case Target::StartMenu:
+            if (bTextualClassName &&
+                _wcsicmp(lpClassName, L"Windows.UI.Core.CoreWindow") == 0) {
+                Wh_Log(L"Initializing - Created core window: %08X via %S",
+                       (DWORD)(ULONG_PTR)hWnd, funcName);
+                InitializeSettingsAndTap();
+            }
+            break;
+
+        case Target::SearchHost:
+            if (bTextualClassName &&
+                _wcsicmp(lpClassName, L"Windows.UI.Core.CoreWindow") == 0) {
+                Wh_Log(L"Initializing - Created core window: %08X via %S",
+                       (DWORD)(ULONG_PTR)hWnd, funcName);
+                // Initializing at this point is too early and doesn't work.
+                RunFromWindowThreadViaPostMessage(
+                    hWnd, [](PVOID) { InitializeSettingsAndTap(); }, nullptr);
+            }
+            break;
+    }
+}
+
+using CreateWindowInBand_t = HWND(WINAPI*)(DWORD dwExStyle,
+                                           LPCWSTR lpClassName,
+                                           LPCWSTR lpWindowName,
+                                           DWORD dwStyle,
+                                           int X,
+                                           int Y,
+                                           int nWidth,
+                                           int nHeight,
+                                           HWND hWndParent,
+                                           HMENU hMenu,
+                                           HINSTANCE hInstance,
+                                           PVOID lpParam,
+                                           DWORD dwBand);
+CreateWindowInBand_t CreateWindowInBand_Original;
+HWND WINAPI CreateWindowInBand_Hook(DWORD dwExStyle,
+                                    LPCWSTR lpClassName,
+                                    LPCWSTR lpWindowName,
+                                    DWORD dwStyle,
+                                    int X,
+                                    int Y,
+                                    int nWidth,
+                                    int nHeight,
+                                    HWND hWndParent,
+                                    HMENU hMenu,
+                                    HINSTANCE hInstance,
+                                    PVOID lpParam,
+                                    DWORD dwBand) {
+    HWND hWnd = CreateWindowInBand_Original(
+        dwExStyle, lpClassName, lpWindowName, dwStyle, X, Y, nWidth, nHeight,
+        hWndParent, hMenu, hInstance, lpParam, dwBand);
+    if (!hWnd) {
+        return hWnd;
+    }
+
+    OnWindowCreated(hWnd, lpClassName, __FUNCTION__);
+
+    return hWnd;
+}
+
+using CreateWindowInBandEx_t = HWND(WINAPI*)(DWORD dwExStyle,
+                                             LPCWSTR lpClassName,
+                                             LPCWSTR lpWindowName,
+                                             DWORD dwStyle,
+                                             int X,
+                                             int Y,
+                                             int nWidth,
+                                             int nHeight,
+                                             HWND hWndParent,
+                                             HMENU hMenu,
+                                             HINSTANCE hInstance,
+                                             PVOID lpParam,
+                                             DWORD dwBand,
+                                             DWORD dwTypeFlags);
+CreateWindowInBandEx_t CreateWindowInBandEx_Original;
+HWND WINAPI CreateWindowInBandEx_Hook(DWORD dwExStyle,
+                                      LPCWSTR lpClassName,
+                                      LPCWSTR lpWindowName,
+                                      DWORD dwStyle,
+                                      int X,
+                                      int Y,
+                                      int nWidth,
+                                      int nHeight,
+                                      HWND hWndParent,
+                                      HMENU hMenu,
+                                      HINSTANCE hInstance,
+                                      PVOID lpParam,
+                                      DWORD dwBand,
+                                      DWORD dwTypeFlags) {
+    HWND hWnd = CreateWindowInBandEx_Original(
+        dwExStyle, lpClassName, lpWindowName, dwStyle, X, Y, nWidth, nHeight,
+        hWndParent, hMenu, hInstance, lpParam, dwBand, dwTypeFlags);
+    if (!hWnd) {
+        return hWnd;
+    }
+
+    OnWindowCreated(hWnd, lpClassName, __FUNCTION__);
+
+    return hWnd;
 }
 
 HWND GetCoreWnd() {
