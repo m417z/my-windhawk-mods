@@ -52,6 +52,14 @@ Unified](https://github.com/ramensoftware/windows-11-notification-center-styling
 \
 10JumpLists](https://github.com/ramensoftware/windows-11-notification-center-styling-guide/blob/main/Themes/10JumpLists/README.md)
 
+[![WindowGlass](https://raw.githubusercontent.com/ramensoftware/windows-11-notification-center-styling-guide/main/Themes/WindowGlass/screenshot-small.png)
+\
+WindowGlass](https://github.com/ramensoftware/windows-11-notification-center-styling-guide/blob/main/Themes/WindowGlass/README.md)
+
+[![Oversimplified&Accentuated](https://raw.githubusercontent.com/ramensoftware/windows-11-notification-center-styling-guide/main/Themes/Oversimplified&Accentuated/screenshot-small.png)
+\
+Oversimplified&Accentuated](https://github.com/ramensoftware/windows-11-notification-center-styling-guide/blob/main/Themes/Oversimplified&Accentuated/README.md)
+
 More themes can be found in the **Themes** section of [The Windows 11
 notification center styling
 guide](https://github.com/ramensoftware/windows-11-notification-center-styling-guide/blob/main/README.md#themes).
@@ -140,7 +148,8 @@ Makes panel non full-height when there are fewer notifications (fit to size). \
 **Target**: `Grid#ControlCenterRegion` \
 **Style**: `CornerRadius=0`
 
-#### Calendar and notification titlebars: titles on the right, buttons on the left
+#### Calendar and notification titlebars: titles on the right, buttons on the
+left
 **Target**: `Grid#RootContent` \
 **Style**: `FlowDirection=1`
 
@@ -183,6 +192,9 @@ from the **TranslucentTB** project.
   - Matter: Matter
   - Unified: Unified
   - 10JumpLists: 10JumpLists
+  - WindowGlass: WindowGlass
+  - WindowGlass_variant_alternative: WindowGlass (Alternative)
+  - Oversimplified&Accentuated: Oversimplified&Accentuated
 - controlStyles:
   - - target: ""
       $name: Target
@@ -703,6 +715,909 @@ const Theme g_theme10JumpLists = {{
     ThemeTargetStyles{L"Windows.UI.Xaml.Controls.MenuFlyoutItem > Grid", {
         L"BorderThickness=1,1,1,1",
         L"Margin=0"}},
+}};
+
+const Theme g_themeWindowGlass = {{
+    ThemeTargetStyles{L"Grid#NotificationCenterGrid", {
+        L"Background:=$Background",
+        L"BorderThickness=$BorderThickness",
+        L"CornerRadius=$CornerRadius",
+        L"BorderBrush:=$BorderBrush"}},
+    ThemeTargetStyles{L"Grid#CalendarCenterGrid", {
+        L"Background:=$Background",
+        L"BorderThickness=$BorderThickness",
+        L"CornerRadius=$CornerRadius",
+        L"Margin=0,6,0,6",
+        L"MinHeight=40",
+        L"BorderBrush:=$BorderBrush"}},
+    ThemeTargetStyles{L"ScrollViewer#CalendarControlScrollViewer", {
+        L"Background:=$ElementBG",
+        L"CornerRadius=$r2",
+        L"Margin=-10,11,-10,-14",
+        L"BorderBrush:=$ElementBorderBrush",
+        L"BorderThickness=$ElementBorderThickness"}},
+    ThemeTargetStyles{L"Border#CalendarHeaderMinimizedOverlay", {
+        L"Background:=$ElementBG",
+        L"CornerRadius=$r2",
+        L"Margin=-10,-6,-10,-8",
+        L"Height=45",
+        L"BorderBrush:=$ElementBorderBrush",
+        L"BorderThickness=$ElementBorderThickness"}},
+    ThemeTargetStyles{L"ActionCenter.FocusSessionControl#FocusSessionControl > Grid#FocusGrid", {
+        L"Background:=$Background",
+        L"CornerRadius=$r2",
+        L"Margin=6,7,6,6",
+        L"BorderThickness=$BorderThickness",
+        L"BorderBrush:=$BorderBrush"}},
+    ThemeTargetStyles{L"MenuFlyoutPresenter", {
+        L"Background:=$Background",
+        L"BorderThickness=$BorderThickness",
+        L"CornerRadius=$r3",
+        L"Padding=1,2,1,2",
+        L"BorderBrush:=$BorderBrush"}},
+    ThemeTargetStyles{L"Border#JumpListRestyledAcrylic", {
+        L"Background:=$Background",
+        L"BorderThickness=$BorderThickness",
+        L"CornerRadius=$r3",
+        L"Margin=-2,-2,-2,-2",
+        L"BorderBrush:=$BorderBrush"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Grid#ControlCenterRegion", {
+        L"Background:=$Background",
+        L"CornerRadius=$CornerRadius",
+        L"BorderThickness=$BorderThickness",
+        L"BorderBrush:=$BorderBrush",
+        L"Height=Auto",
+        L"MaxHeight:=380",
+        L"MinHeight:=300"}},
+    ThemeTargetStyles{L"ContentPresenter#PageContent", {
+        L"Background:=$transparent"}},
+    ThemeTargetStyles{L"ContentPresenter#PageContent > Grid > Border", {
+        L"Background:=$overlay",
+        L"CornerRadius=$r2",
+        L"Margin=8,0,8,2"}},
+    ThemeTargetStyles{L"QuickActions.ControlCenter.AccessibleWindow#PageWindow > ContentPresenter > Grid#FullScreenPageRoot", {
+        L"Background:=$transparent"}},
+    ThemeTargetStyles{L"QuickActions.ControlCenter.AccessibleWindow#PageWindow > ContentPresenter > Grid#FullScreenPageRoot > ContentPresenter#PageHeader", {
+        L"Background:=$overlay",
+        L"CornerRadius=$r2",
+        L"Margin=7,7,7,7"}},
+    ThemeTargetStyles{L"ScrollViewer#ListContent", {
+        L"Background:=$overlay",
+        L"CornerRadius=$r2",
+        L"Margin=8,0,8,0"}},
+    ThemeTargetStyles{L"ActionCenter.FlexibleToastView#FlexibleNormalToastView", {
+        L"Background:=$transparent"}},
+    ThemeTargetStyles{L"Border#ToastBackgroundBorder2", {
+        L"Background:=$Background",
+        L"BorderThickness=$BorderThickness",
+        L"CornerRadius=16",
+        L"BorderBrush:=$BorderBrush"}},
+    ThemeTargetStyles{L"JumpViewUI.SystemItemListViewItem > Grid#LayoutRoot > Border#BackgroundBorder", {
+        L"Background:=Trabsparent",
+        L"CornerRadius=8"}},
+    ThemeTargetStyles{L"JumpViewUI.JumpListListViewItem > Grid#LayoutRoot > Border#BackgroundBorder", {
+        L"CornerRadius=6"}},
+    ThemeTargetStyles{L"ActionCenter.FlexibleItemView", {
+        L"CornerRadius=16"}},
+    ThemeTargetStyles{L"Grid#NotificationCenterTopBanner", {
+        L"Background:=Transparent",
+        L"CornerRadius=$r2",
+        L"Margin=6"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Grid#L1Grid > Border", {
+        L"Background:=$transparent"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.ContentPresenter", {
+        L"BorderThickness=0"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Button#FooterButton[AutomationProperties.Name=Edit quick settings]", {
+        L"Margin=0,0,8,0",
+        L"CornerRadius=$r3"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Button[AutomationProperties.AutomationId=Microsoft.QuickAction.Battery]", {
+        L"Margin=2,0,0,0",
+        L"CornerRadius=$r3"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Button#FooterButton[AutomationProperties.Name=All settings]", {
+        L"Margin=0,0,-1,0",
+        L"CornerRadius=13",
+        L"BorderThickness=$BorderThickness"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Button[AutomationProperties.AutomationId=Microsoft.QuickAction.Volume]", {
+        L"CornerRadius=10"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Button#VolumeL2Button[AutomationProperties.Name=Select a sound output]", {
+        L"CornerRadius=10"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Shapes.Rectangle#HorizontalTrackRect", {
+        L"Height=10",
+        L"Fill:=$overlay",
+        L"RadiusY=5",
+        L"RadiusX=5",
+        L"Margin=0,-10,10,-10"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Shapes.Rectangle#HorizontalDecreaseRect", {
+        L"Height=10",
+        L"RadiusY=5",
+        L"RadiusX=5",
+        L"Margin=0,-10,-10,-10"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Primitives.Thumb#HorizontalThumb", {
+        L"Visibility=Visible",
+        L"Height=25",
+        L"Width=40",
+        L"Margin=0"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Grid#MediaTransportControlsRegion", {
+        L"Height=100",
+        L"CornerRadius=$CornerRadius",
+        L"BorderThickness=$BorderThickness",
+        L"Background:=$Background",
+        L"Margin=0,10,0,10",
+        L"BorderBrush:=$BorderBrush",
+        L"Grid.Row=1"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Grid#AlbumTextAndArtContainer", {
+        L"Height=55",
+        L"MaxWidth:=150",
+        L"HorizontalAlignment=Left"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Grid#ThumbnailImage", {
+        L"Visibility=1"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.StackPanel#PrimaryAndSecondaryTextContainer", {
+        L"VerticalAlignment=Center",
+        L"HorizontalAlignment=Left",
+        L"Margin=0,0,10,0"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.StackPanel#PrimaryAndSecondaryTextContainer > Windows.UI.Xaml.Controls.TextBlock#Title", {
+        L"TextAlignment=Center",
+        L"FontSize=18"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.StackPanel#PrimaryAndSecondaryTextContainer > Windows.UI.Xaml.Controls.TextBlock#Subtitle", {
+        L"TextAlignment=Center",
+        L"FontFamily=vivo Sans EN VF",
+        L"Margin=0,3,0,0",
+        L"FontWeight=600"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.ListView#MediaButtonsListView", {
+        L"VerticalAlignment=Center",
+        L"Height=20",
+        L"Margin=130,-60,0,0",
+        L"Width=Auto",
+        L"HorizontalAlignment=Right",
+        L"Visibility=2"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Primitives.RepeatButton#PreviousButton", {
+        L"Width=40",
+        L"Height=40",
+        L"Margin=10,0,0,0"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Button#PlayPauseButton", {
+        L"Width=40",
+        L"Height=40",
+        L"Margin=0"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Primitives.RepeatButton#NextButton", {
+        L"Width=40",
+        L"Height=30",
+        L"Margin=0,0,10,0"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.TextBlock#AppNameText", {
+        L"FontFamily=vivo Sans EN VF",
+        L"FontSize=16"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Image#IconImage", {
+        L"Height=20",
+        L"Width=20"}},
+    ThemeTargetStyles{L"Grid#MediaTransportControlsRoot", {
+        L"Background:=$transparent"}},
+    ThemeTargetStyles{L"Grid#ToastPeekRegion", {
+        L"Background=",
+        L"RenderTransform:=<TranslateTransform Y=\"-495\" X=\"395\" />",
+        L"Grid.Column=0",
+        L"Grid.Row=2"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.CalendarViewDayItem > Windows.UI.Xaml.Controls.Border", {
+        L"CornerRadius=8",
+        L"Margin=1,2,1,2"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.CalendarViewDayItem", {
+        L"CornerRadius=8"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Control > Windows.UI.Xaml.Controls.Border", {
+        L"CornerRadius=8"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Primitives.CalendarViewItem", {
+        L"CornerRadius=8"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.ListViewHeaderItem", {
+        L"Margin=50,6,50,2",
+        L"CornerRadius=8",
+        L"Height=35"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Button#SettingsButton", {
+        L"CornerRadius=4"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Button#DismissButton", {
+        L"CornerRadius=4"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.StackPanel#CalendarHeader", {
+        L"Margin=6,0,0,0"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.ScrollContentPresenter#ScrollContentPresenter", {
+        L"Margin=1,2,1,2"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Grid#WeekDayNames", {
+        L"Background :=$ElementSysColor",
+        L"CornerRadius=8",
+        L"Margin=4,0,4,0",
+        L"Padding=0,-5,0,-3"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.ListViewItem", {
+        L"CornerRadius=$r3"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Grid#RootGrid > Windows.UI.Xaml.Controls.ContentPresenter#ContentPresenter", {
+        L"Background:=<SolidColorBrush Color=\"{ThemeResource SystemAccentColorLight1}\" Opacity=\"0.5\"/>",
+        L"BorderThickness=0",
+        L"CornerRadius=8"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Grid > Windows.UI.Xaml.Controls.Border#ItemOpaquePlating", {
+        L"Background :=$overlay2",
+        L"BorderThickness=0",
+        L"CornerRadius=$r3"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Grid#StandardHeroContainer", {
+        L"Margin=12,0,12,0",
+        L"CornerRadius=0",
+        L"Height=150"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Primitives.ScrollBar#VerticalScrollBar", {
+        L"Visibility=1"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Grid#SliderContainer", {
+        L"Margin=0-2,0,0"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Button#BackButton", {
+        L"CornerRadius=$r3"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Shapes.Rectangle#OuterBorder", {
+        L"RadiusX=8",
+        L"RadiusY=8",
+        L"Height=18"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Shapes.Rectangle#SwitchKnobOff", {
+        L"RadiusY=8",
+        L"RadiusX=8"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Border#SwitchKnobOn", {
+        L"CornerRadius=8"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Shapes.Rectangle#SwitchKnobBounds", {
+        L"RadiusX=8",
+        L"RadiusY=8",
+        L"Height=18"}},
+    ThemeTargetStyles{L"ActionCenter.NotificationListViewItem", {
+        L"Margin=5,2,5,3"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Grid[AutomationProperties.LocalizedLandmarkType=Footer]", {
+        L"BorderThickness=0"}},
+    ThemeTargetStyles{L"NetworkUX.View.SettingsListViewItem > Windows.UI.Xaml.Controls.Primitives.ListViewItemPresenter#Root", {
+        L"CornerRadius=12"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.ContentPresenter > Windows.UI.Xaml.Controls.Border", {
+        L"BorderThickness=0"}},
+    ThemeTargetStyles{L"Button#ClearAll", {
+        L"AccessKey=x"}},
+    ThemeTargetStyles{L"Button#ExpandCollapseButton", {
+        L"AccessKey=e"}},
+    ThemeTargetStyles{L"ControlCenter.PaginatedToggleButton#ToggleButton > Windows.UI.Xaml.Controls.ContentPresenter#ContentPresenter", {
+        L"CornerRadius=$r2",
+        L"BorderThickness=$ElementBorderThickness",
+        L"BorderBrush:=$ElementBorderBrush"}},
+    ThemeTargetStyles{L"ControlCenter.PaginatedToggleButton#SplitL2Button > Windows.UI.Xaml.Controls.ContentPresenter#ContentPresenter", {
+        L"CornerRadius=30",
+        L"BorderThickness=$ElementBorderThickness",
+        L"BorderBrush:=$ElementBorderBrush"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Primitives.Thumb#HorizontalThumb > Windows.UI.Xaml.Controls.Border", {
+        L"CornerRadius=12",
+        L"Background:=$Background",
+        L"BorderBrush:=$BorderBrush",
+        L"BorderThickness=$BorderThickness"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Primitives.Thumb#HorizontalThumb > Windows.UI.Xaml.Controls.Border > Windows.UI.Xaml.Shapes.Ellipse#SliderInnerThumb", {
+        L"Visibility=Collapsed"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.ToolTip > Windows.UI.Xaml.Controls.ContentPresenter#LayoutRoot", {
+        L"Background:=$Background",
+        L"BorderBrush:=$BorderBrush",
+        L"BorderThickness=$BorderThickness",
+        L"CornerRadius=10"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Primitives.RepeatButton#PreviousButton > Windows.UI.Xaml.Controls.ContentPresenter#ContentPresenter@CommonStates", {
+        L"Foreground@Normal:=$ElementSysColor",
+        L"Foreground@PointerOver:=$ElementSysColor2",
+        L"Foreground@Pressed:=$ElementSysColor3",
+        L"Foreground@Disabled:=$ElementSysColor4",
+        L"Background:=Transparent"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Button#PlayPauseButton > Windows.UI.Xaml.Controls.ContentPresenter#ContentPresenter@CommonStates", {
+        L"Foreground@Normal:=$ElementSysColor",
+        L"Foreground@PointerOver:=$ElementSysColor2",
+        L"Foreground@Pressed:=$ElementSysColor3",
+        L"Foreground@Disabled:=$ElementSysColor4",
+        L"Background:=Transparent"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Primitives.RepeatButton#NextButton > Windows.UI.Xaml.Controls.ContentPresenter#ContentPresenter@CommonStates", {
+        L"Foreground@Normal:=$ElementSysColor",
+        L"Foreground@PointerOver:=$ElementSysColor2",
+        L"Foreground@Pressed:=$ElementSysColor3",
+        L"Foreground@Disabled:=$ElementSysColor4",
+        L"Background:=Transparent"}},
+    ThemeTargetStyles{L"Grid#ControlCenterRegion", {
+        L"Grid.Row=0"}},
+    ThemeTargetStyles{L"ControlCenter.MediaTransportControls", {
+        L"VerticalAlignment=2",
+        L"Grid.Row=1",
+        L"Canvas.ZIndex=1"}},
+    ThemeTargetStyles{L"Grid#RootGrid", {
+        L"VerticalAlignment=3",
+        L"MinHeight=0"}},
+}, {
+    L"transparent=<SolidColorBrush Color=\"Transparent\"/>",
+    L"Background=<WindhawkBlur BlurAmount=\"15\" TintColor=\"#10808080\"/>",
+    L"overlay=<SolidColorBrush Color=\"{ThemeResource SystemChromeAltHighColor}\" Opacity=\"0.1\" />",
+    L"overlay2=<WindhawkBlur BlurAmount=\"20\" TintColor=\"#60353535\"/>",
+    L"CornerRadius=20",
+    L"r2=14",
+    L"r3=12",
+    L"BorderThickness=0.3,1,0.3,0.3",
+    L"BorderBrush2=<LinearGradientBrush StartPoint=\"0,0\" EndPoint=\"0,1\"><GradientStop Color=\"{ThemeResource SystemChromeHighColor}\" Offset=\"0.0\" /><GradientStop Color=\"{ThemeResource SystemChromeLowColor}\" Offset=\"0.15\" /><GradientStop Color=\"{ThemeResource SystemChromeHighColor}\" Offset=\"0.95\" /></LinearGradientBrush>",
+    L"Background2=<AcrylicBrush TintColor=\"{ThemeResource SystemChromeAltHighColor}\" TintOpacity=\"0.3\" FallbackColor=\"{ThemeResource SystemChromeAltHighColor}\" />",
+    L"ElementBG=<SolidColorBrush Color=\"{ThemeResource SystemChromeAltHighColor}\" Opacity=\"0.3\" />",
+    L"ElementBorderBrush=<LinearGradientBrush StartPoint=\"0,0\" EndPoint=\"0,1\"><GradientStop Color=\"#50808080\" Offset=\"1\" /><GradientStop Color=\"#50606060\" Offset=\"0.15\" /></LinearGradientBrush>",
+    L"ElementCornerRadius=20",
+    L"ElementBorderThickness=0.3,0.3,0.3,1",
+    L"BorderBrush=<LinearGradientBrush StartPoint=\"0,0\" EndPoint=\"0,1\"><GradientStop Color=\"#50808080\" Offset=\"0.0\" /><GradientStop Color=\"#50404040\" Offset=\"0.25\" /><GradientStop Color=\"#50808080\" Offset=\"1\" /></LinearGradientBrush>",
+    L"ElementSysColor=<SolidColorBrush Color=\"{ThemeResource SystemAccentColorLight1}\" Opacity=\"1\" />",
+    L"ElementSysColor2=<SolidColorBrush Color=\"{ThemeResource SystemAccentColorLight2}\" Opacity=\"1\" />",
+    L"ElementSysColor3=<SolidColorBrush Color=\"{ThemeResource SystemAccentColorLight3}\" Opacity=\"1\" />",
+    L"ElementSysColor4=<SolidColorBrush Color=\"{ThemeResource SystemAccentColorDark1}\" Opacity=\"1\" />",
+}};
+
+const Theme g_themeWindowGlass_variant_alternative = {{
+    ThemeTargetStyles{L"Grid#NotificationCenterGrid", {
+        L"Background:=$Background",
+        L"BorderThickness=$BorderThickness",
+        L"CornerRadius=$CornerRadius",
+        L"BorderBrush:=$BorderBrush"}},
+    ThemeTargetStyles{L"Grid#CalendarCenterGrid", {
+        L"Background:=$Background",
+        L"BorderThickness=$BorderThickness",
+        L"CornerRadius=$CornerRadius",
+        L"Margin = 0,6,0,6",
+        L"MinHeight = 40",
+        L"BorderBrush:=$BorderBrush"}},
+    ThemeTargetStyles{L"ScrollViewer#CalendarControlScrollViewer", {
+        L"Background:=$ElementBG",
+        L"CornerRadius=$r2",
+        L"Margin=-10,11,-10,-14",
+        L"BorderBrush:=$ElementBorderBrush",
+        L"BorderThickness=$ElementBorderThickness"}},
+    ThemeTargetStyles{L"Border#CalendarHeaderMinimizedOverlay", {
+        L"Background:=$ElementBG",
+        L"CornerRadius=$r2",
+        L"Margin=-10,-6,-10,-8",
+        L"Height=45",
+        L"BorderBrush:=$ElementBorderBrush",
+        L"BorderThickness=$ElementBorderThickness"}},
+    ThemeTargetStyles{L"ActionCenter.FocusSessionControl#FocusSessionControl > Grid#FocusGrid", {
+        L"Background:=$Background",
+        L"CornerRadius=$r2",
+        L"Margin=6,7,6,6",
+        L"BorderThickness=$BorderThickness",
+        L"BorderBrush:=$BorderBrush"}},
+    ThemeTargetStyles{L"MenuFlyoutPresenter", {
+        L"Background:=$Background",
+        L"BorderThickness=$BorderThickness",
+        L"CornerRadius=$r3",
+        L"Padding=1,2,1,2",
+        L"BorderBrush:=$BorderBrush"}},
+    ThemeTargetStyles{L"Border#JumpListRestyledAcrylic", {
+        L"Background:=$Background",
+        L"BorderThickness=$BorderThickness",
+        L"CornerRadius=$r3",
+        L"Margin=-2,-2,-2,-2",
+        L"BorderBrush:=$BorderBrush"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Grid#ControlCenterRegion", {
+        L"Background:=$Background",
+        L"CornerRadius=$CornerRadius",
+        L"BorderThickness=$BorderThickness",
+        L"Margin=0,5,0,10",
+        L"BorderBrush:=$BorderBrush",
+        L"RenderTransform:=<TranslateTransform X=\"0\" Y=\"0\"/>",
+        L"Height=Auto",
+        L"MaxHeight:=380",
+        L"MinHeight:=300"}},
+    ThemeTargetStyles{L"ContentPresenter#PageContent", {
+        L"Background:= $transparent"}},
+    ThemeTargetStyles{L"ContentPresenter#PageContent > Grid > Border", {
+        L"Background:=$overlay",
+        L"CornerRadius=$r2",
+        L"Margin=8,0,8,2"}},
+    ThemeTargetStyles{L"QuickActions.ControlCenter.AccessibleWindow#PageWindow > ContentPresenter > Grid#FullScreenPageRoot", {
+        L"Background:= $transparent"}},
+    ThemeTargetStyles{L"QuickActions.ControlCenter.AccessibleWindow#PageWindow > ContentPresenter > Grid#FullScreenPageRoot > ContentPresenter#PageHeader", {
+        L"Background:=$overlay",
+        L"CornerRadius=$r2",
+        L"Margin=7,7,7,7"}},
+    ThemeTargetStyles{L"ScrollViewer#ListContent", {
+        L"Background:=$overlay",
+        L"CornerRadius=$r2",
+        L"Margin=8,0,8,0"}},
+    ThemeTargetStyles{L"ActionCenter.FlexibleToastView#FlexibleNormalToastView", {
+        L"Background:= $transparent"}},
+    ThemeTargetStyles{L"Border#ToastBackgroundBorder2", {
+        L"Background:=$Background",
+        L"BorderThickness=$BorderThickness",
+        L"CornerRadius=16",
+        L"BorderBrush:=$BorderBrush"}},
+    ThemeTargetStyles{L"JumpViewUI.SystemItemListViewItem > Grid#LayoutRoot > Border#BackgroundBorder", {
+        L"Background:=Trabsparent",
+        L"CornerRadius=8"}},
+    ThemeTargetStyles{L"JumpViewUI.JumpListListViewItem > Grid#LayoutRoot > Border#BackgroundBorder", {
+        L"CornerRadius=6"}},
+    ThemeTargetStyles{L"ActionCenter.FlexibleItemView", {
+        L"CornerRadius=16"}},
+    ThemeTargetStyles{L"Grid#NotificationCenterTopBanner", {
+        L"Background:=Transparent",
+        L"CornerRadius=$r2",
+        L"Margin=6"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Grid#L1Grid > Border", {
+        L"Background:= $transparent"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.ContentPresenter", {
+        L"BorderThickness=0"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Button#FooterButton[AutomationProperties.Name = Edit quick settings]", {
+        L"Margin = 0,0,8,0",
+        L"CornerRadius=$r3"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Button[AutomationProperties.AutomationId = Microsoft.QuickAction.Battery]", {
+        L"Margin = 2,0,0,0",
+        L"CornerRadius=$r3"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Button#FooterButton[AutomationProperties.Name = All settings]", {
+        L"Margin = 0,0,-1,0",
+        L"CornerRadius = 13",
+        L"BorderThickness=$BorderThickness"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Button[AutomationProperties.AutomationId = Microsoft.QuickAction.Volume]", {
+        L"CornerRadius = 10"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Button#VolumeL2Button[AutomationProperties.Name = Select a sound output]", {
+        L"CornerRadius = 10"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Shapes.Rectangle#HorizontalTrackRect", {
+        L"Height=10",
+        L"Fill:=$overlay",
+        L"RadiusY=5",
+        L"RadiusX=5",
+        L"Margin=0,-10,10,-10"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Shapes.Rectangle#HorizontalDecreaseRect", {
+        L"Height=10",
+        L"RadiusY=5",
+        L"RadiusX=5",
+        L"Margin=0,-10,-10,-10"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Primitives.Thumb#HorizontalThumb", {
+        L"Visibility=Visible",
+        L"Height=25",
+        L"Width=40",
+        L"Margin=0"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Grid#MediaTransportControlsRegion", {
+        L"Height=100",
+        L"CornerRadius=$CornerRadius",
+        L"BorderThickness=$BorderThickness",
+        L"Background:=$Background",
+        L"Margin=0,20,0,5",
+        L"BorderBrush:=$BorderBrush",
+        L"RenderTransform:=<TranslateTransform X=\"0\" Y=\"0\"/>"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Grid#AlbumTextAndArtContainer", {
+        L"Height=55",
+        L"MaxWidth:=150",
+        L"HorizontalAlignment=Left"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Grid#ThumbnailImage", {
+        L"Visibility=1"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.StackPanel#PrimaryAndSecondaryTextContainer", {
+        L"VerticalAlignment=Center",
+        L"HorizontalAlignment=Left",
+        L"Margin=0,0,10,0"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.StackPanel#PrimaryAndSecondaryTextContainer > Windows.UI.Xaml.Controls.TextBlock#Title", {
+        L"TextAlignment=Center",
+        L"FontSize=18"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.StackPanel#PrimaryAndSecondaryTextContainer > Windows.UI.Xaml.Controls.TextBlock#Subtitle", {
+        L"TextAlignment=Center",
+        L"FontFamily=vivo Sans EN VF",
+        L"Margin = 0,3,0,0",
+        L"FontWeight=600"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.ListView#MediaButtonsListView", {
+        L"VerticalAlignment=Center",
+        L"Height=20",
+        L"Margin=130,-60,0,0",
+        L"Width=Auto",
+        L"HorizontalAlignment=Right",
+        L"Visibility=2"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Primitives.RepeatButton#PreviousButton", {
+        L"Width=40",
+        L"Height=40",
+        L"Margin=10,0,0,0"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Button#PlayPauseButton", {
+        L"Width=40",
+        L"Height = 40",
+        L"Margin=0"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Primitives.RepeatButton#NextButton", {
+        L"Width=40",
+        L"Height = 30",
+        L"Margin=0,0,10,0"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.TextBlock#AppNameText", {
+        L"FontFamily=vivo Sans EN VF",
+        L"FontSize = 16"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Image#IconImage", {
+        L"Height = 20",
+        L"Width = 20"}},
+    ThemeTargetStyles{L"Grid#MediaTransportControlsRoot", {
+        L"Background:= $transparent"}},
+    ThemeTargetStyles{L"Grid#ToastPeekRegion", {
+        L"Background =",
+        L"RenderTransform:=<TranslateTransform Y=\"-495\" X=\"395\" />",
+        L"Grid.Column = 0",
+        L"Grid.Row = 2"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.CalendarViewDayItem > Windows.UI.Xaml.Controls.Border", {
+        L"CornerRadius = 8",
+        L"Margin = 1,2,1,2"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.CalendarViewDayItem", {
+        L"CornerRadius = 8"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Control > Windows.UI.Xaml.Controls.Border", {
+        L"CornerRadius = 8"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Primitives.CalendarViewItem", {
+        L"CornerRadius = 8"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.ListViewHeaderItem", {
+        L"Margin = 50,6,50,2",
+        L"CornerRadius = 8",
+        L"Height = 35"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Button#SettingsButton", {
+        L"CornerRadius = 4"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Button#DismissButton", {
+        L"CornerRadius = 4"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.StackPanel#CalendarHeader", {
+        L"Margin = 6,0,0,0"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.ScrollContentPresenter#ScrollContentPresenter", {
+        L"Margin = 1,2,1,2"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Grid#WeekDayNames", {
+        L"Background :=$ElementSysColor",
+        L"CornerRadius = 8",
+        L"Margin = 4,0,4,0",
+        L"Padding = 0,-5,0,-3"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.ListViewItem", {
+        L"CornerRadius=$r3"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Grid#RootGrid > Windows.UI.Xaml.Controls.ContentPresenter#ContentPresenter", {
+        L"Background:=<SolidColorBrush Color=\"{ThemeResource SystemAccentColorLight1}\" Opacity =\"0.5\"/>",
+        L"BorderThickness=0",
+        L"CornerRadius=8"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Grid > Windows.UI.Xaml.Controls.Border#ItemOpaquePlating", {
+        L"Background := $overlay2",
+        L"BorderThickness = 0",
+        L"CornerRadius=$r3"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Grid#StandardHeroContainer", {
+        L"Margin = 12,0,12,0",
+        L"CornerRadius = 0",
+        L"Height = 150"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Primitives.ScrollBar#VerticalScrollBar", {
+        L"Visibility = 1"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Grid#SliderContainer", {
+        L"Margin = 0-2,0,0"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Button#BackButton", {
+        L"CornerRadius=$r3"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Shapes.Rectangle#OuterBorder", {
+        L"RadiusX = 8",
+        L"RadiusY = 8",
+        L"Height = 18"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Shapes.Rectangle#SwitchKnobOff", {
+        L"RadiusY = 8",
+        L"RadiusX = 8"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Border#SwitchKnobOn", {
+        L"CornerRadius =8"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Shapes.Rectangle#SwitchKnobBounds", {
+        L"RadiusX =8",
+        L"RadiusY =8",
+        L"Height = 18"}},
+    ThemeTargetStyles{L"ActionCenter.NotificationListViewItem", {
+        L"Margin = 5,2,5,3"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Grid[AutomationProperties.LocalizedLandmarkType = Footer]", {
+        L"BorderThickness = 0"}},
+    ThemeTargetStyles{L"NetworkUX.View.SettingsListViewItem > Windows.UI.Xaml.Controls.Primitives.ListViewItemPresenter#Root", {
+        L"CornerRadius = 12"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.ContentPresenter > Windows.UI.Xaml.Controls.Border", {
+        L"BorderThickness = 0"}},
+    ThemeTargetStyles{L"Button#ClearAll", {
+        L"AccessKey=x"}},
+    ThemeTargetStyles{L"Button#ExpandCollapseButton", {
+        L"AccessKey=e"}},
+    ThemeTargetStyles{L"ControlCenter.PaginatedToggleButton#ToggleButton > Windows.UI.Xaml.Controls.ContentPresenter#ContentPresenter", {
+        L"CornerRadius=$r2",
+        L"BorderThickness=$ElementBorderThickness",
+        L"BorderBrush:=$ElementBorderBrush"}},
+    ThemeTargetStyles{L"ControlCenter.PaginatedToggleButton#SplitL2Button > Windows.UI.Xaml.Controls.ContentPresenter#ContentPresenter", {
+        L"CornerRadius=30",
+        L"BorderThickness=$ElementBorderThickness",
+        L"BorderBrush:=$ElementBorderBrush"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Primitives.Thumb#HorizontalThumb > Windows.UI.Xaml.Controls.Border", {
+        L"CornerRadius=12",
+        L"Background:=$Background",
+        L"BorderBrush:=$BorderBrush",
+        L"BorderThickness=$BorderThickness"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Primitives.Thumb#HorizontalThumb > Windows.UI.Xaml.Controls.Border > Windows.UI.Xaml.Shapes.Ellipse#SliderInnerThumb", {
+        L"Visibility=Collapsed"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.ToolTip > Windows.UI.Xaml.Controls.ContentPresenter#LayoutRoot", {
+        L"Background:=$Background",
+        L"BorderBrush:=$BorderBrush",
+        L"BorderThickness=$BorderThickness",
+        L"CornerRadius=10"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Primitives.RepeatButton#PreviousButton > Windows.UI.Xaml.Controls.ContentPresenter#ContentPresenter@CommonStates", {
+        L"Foreground@Normal:=$ElementSysColor",
+        L"Foreground@PointerOver:=$ElementSysColor2",
+        L"Foreground@Pressed:=$ElementSysColor3",
+        L"Foreground@Disabled:=$ElementSysColor4",
+        L"Background:=Transparent"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Button#PlayPauseButton > Windows.UI.Xaml.Controls.ContentPresenter#ContentPresenter@CommonStates", {
+        L"Foreground@Normal:=$ElementSysColor",
+        L"Foreground@PointerOver:=$ElementSysColor2",
+        L"Foreground@Pressed:=$ElementSysColor3",
+        L"Foreground@Disabled:=$ElementSysColor4",
+        L"Background:=Transparent"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Primitives.RepeatButton#NextButton > Windows.UI.Xaml.Controls.ContentPresenter#ContentPresenter@CommonStates", {
+        L"Foreground@Normal:=$ElementSysColor",
+        L"Foreground@PointerOver:=$ElementSysColor2",
+        L"Foreground@Pressed:=$ElementSysColor3",
+        L"Foreground@Disabled:=$ElementSysColor4",
+        L"Background:=Transparent"}},
+}, {
+    L"transparent=<SolidColorBrush Color=\"Transparent\"/>",
+    L"Background=<WindhawkBlur BlurAmount=\"15\" TintColor=\"#10808080\"/>",
+    L"overlay=<SolidColorBrush Color=\"{ThemeResource SystemChromeAltHighColor}\" Opacity=\"0.1\" />",
+    L"overlay2=<WindhawkBlur BlurAmount=\"20\" TintColor=\"#60353535\"/>",
+    L"CornerRadius=20",
+    L"r2=14",
+    L"r3=12",
+    L"BorderThickness=0.3,1,0.3,0.3",
+    L"BorderBrush2=<LinearGradientBrush StartPoint=\"0,0\" EndPoint=\"0,1\"><GradientStop Color=\"{ThemeResource SystemChromeHighColor}\" Offset=\"0.0\" /><GradientStop Color=\"{ThemeResource SystemChromeLowColor}\" Offset=\"0.15\" /><GradientStop Color=\"{ThemeResource SystemChromeHighColor}\" Offset=\"0.95\" /></LinearGradientBrush>",
+    L"Background2=<AcrylicBrush TintColor=\"{ThemeResource SystemChromeAltHighColor}\" TintOpacity=\"0.3\" FallbackColor=\"{ThemeResource SystemChromeAltHighColor}\" />",
+    L"ElementBG=<SolidColorBrush Color=\"{ThemeResource SystemChromeAltHighColor}\" Opacity=\"0.3\" />",
+    L"ElementBorderBrush=<LinearGradientBrush StartPoint=\"0,0\" EndPoint=\"0,1\"><GradientStop Color=\"#50808080\" Offset=\"1\" /><GradientStop Color=\"#50606060\" Offset=\"0.15\" /></LinearGradientBrush>",
+    L"ElementCornerRadius=20",
+    L"ElementBorderThickness=0.3,0.3,0.3,1",
+    L"BorderBrush=<LinearGradientBrush StartPoint=\"0,0\" EndPoint=\"0,1\"><GradientStop Color=\"#50808080\" Offset=\"0.0\" /><GradientStop Color=\"#50404040\" Offset=\"0.25\" /><GradientStop Color=\"#50808080\" Offset=\"1\" /></LinearGradientBrush>",
+    L"ElementSysColor=<SolidColorBrush Color=\"{ThemeResource SystemAccentColorLight1}\" Opacity=\"1\" />",
+    L"ElementSysColor2=<SolidColorBrush Color=\"{ThemeResource SystemAccentColorLight2}\" Opacity=\"1\" />",
+    L"ElementSysColor3=<SolidColorBrush Color=\"{ThemeResource SystemAccentColorLight3}\" Opacity=\"1\" />",
+    L"ElementSysColor4=<SolidColorBrush Color=\"{ThemeResource SystemAccentColorDark1}\" Opacity=\"1\" />",
+}};
+
+const Theme g_themeOversimplified_Accentuated = {{
+    ThemeTargetStyles{L"MenuFlyoutPresenter", {
+        L"Background:=$DarkAccent",
+        L"BorderBrush=Transparent",
+        L"Shadow:="}},
+    ThemeTargetStyles{L"ToolTip > ContentPresenter#LayoutRoot", {
+        L"Background:=$DarkAccent",
+        L"BorderBrush:=$Reveal",
+        L"Shadow:="}},
+    ThemeTargetStyles{L"Grid#NotificationCenterGrid", {
+        L"Background:=$Alt",
+        L"BorderBrush=Transparent",
+        L"Shadow:="}},
+    ThemeTargetStyles{L"TextBlock#NotificationsTextBlock", {
+        L"Visibility=Collapsed"}},
+    ThemeTargetStyles{L"Button#ClearAll", {
+        L"AccessKey=C"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Primitives.ToggleButton#DoNotDisturbButton", {
+        L"AccessKey=D"}},
+    ThemeTargetStyles{L"Microsoft.UI.Xaml.Controls.AnimatedIcon#DoNotDisturbButtonIcon", {
+        L"Height=16",
+        L"Width=16"}},
+    ThemeTargetStyles{L"Grid#DoNotDisturbSubtext", {
+        L"Background:=$Accent",
+        L"BorderBrush:=$Reveal",
+        L"BorderThickness=2",
+        L"CornerRadius=5",
+        L"Margin=0,0,0,10"}},
+    ThemeTargetStyles{L"Grid#DoNotDisturbSubtext > TextBlock[1]", {
+        L"Visibility=Collapsed"}},
+    ThemeTargetStyles{L"Grid#DoNotDisturbSubtext > TextBlock[2]", {
+        L"HorizontalAlignment=Center",
+        L"FontSize=18"}},
+    ThemeTargetStyles{L"Grid#DoNotDisturbSubtext > TextBlock[3]", {
+        L"TextAlignment=Center",
+        L"FontSize=11"}},
+    ThemeTargetStyles{L"Grid#DoNotDisturbSubtext > Button", {
+        L"HorizontalAlignment=Center",
+        L"Margin= 0,0,0,0"}},
+    ThemeTargetStyles{L"TextBlock#NotificationSettingsButtonText[Text=Notification settings]", {
+        L"Text=Settings"}},
+    ThemeTargetStyles{L"Border#ItemOpaquePlating", {
+        L"BorderBrush:=$Reveal"}},
+    ThemeTargetStyles{L"Border#StandardImageBorder", {
+        L"Height=30",
+        L"Width=30"}},
+    ThemeTargetStyles{L"Grid#GroupTitleGrid > TextBlock#Title", {
+        L"Visibility=Collapsed"}},
+    ThemeTargetStyles{L"Grid > Button#VerbButton", {
+        L"BorderBrush=Transparent"}},
+    ThemeTargetStyles{L"Border#PopupBorder", {
+        L"Background:=$DarkAccent",
+        L"Shadow:="}},
+    ThemeTargetStyles{L"ProgressBar#progressBar > Grid > Border#DeterminateRoot", {
+        L"Background=Transparent"}},
+    ThemeTargetStyles{L"Border#ToastBackgroundBorder2", {
+        L"Background:=$Alt",
+        L"BorderBrush=Transparent",
+        L"CornerRadius=15",
+        L"Shadow:="}},
+    ThemeTargetStyles{L"Border#AppLogoBorder2", {
+        L"Height=30",
+        L"Width=30"}},
+    ThemeTargetStyles{L"Border#AppLogoBorder", {
+        L"Height=30",
+        L"Width=30"}},
+    ThemeTargetStyles{L"Image#AppLogo2", {
+        L"Height=30",
+        L"Width=30"}},
+    ThemeTargetStyles{L"Grid#ToastTitleBar > TextBlock#SenderName", {
+        L"Visibility=Collapsed"}},
+    ThemeTargetStyles{L"Grid#CalendarCenterGrid", {
+        L"Background:=$Alt",
+        L"BorderBrush=Transparent",
+        L"CornerRadius=20",
+        L"Shadow:="}},
+    ThemeTargetStyles{L"Border#CalendarHeaderMinimizedOverlay", {
+        L"Background=Transparent"}},
+    ThemeTargetStyles{L"Button#ExpandCollapseButton", {
+        L"Background=Transparent",
+        L"BorderBrush=Transparent",
+        L"AccessKey=E"}},
+    ThemeTargetStyles{L"ScrollViewer#CalendarControlScrollViewer", {
+        L"Background=Transparent",
+        L"BorderBrush=Transparent"}},
+    ThemeTargetStyles{L"CalendarViewDayItem", {
+        L"CornerRadius=10"}},
+    ThemeTargetStyles{L"CalendarViewDayItem > Border", {
+        L"BorderBrush:= <RevealBorderBrush Color=\"Transparent\" TargetTheme=\"1\" Opacity=\"1\" />",
+        L"CornerRadius=12"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Primitives.CalendarPanel#YearViewPanel > Control", {
+        L"CornerRadius=12"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Primitives.CalendarPanel#YearViewPanel > Control > Border", {
+        L"BorderBrush:=$Reveal",
+        L"BorderThickness=2",
+        L"CornerRadius=12"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Primitives.CalendarPanel#DecadeViewPanel > Control", {
+        L"CornerRadius=12"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Primitives.CalendarPanel#DecadeViewPanel > Control > Border", {
+        L"BorderBrush:=$Reveal",
+        L"BorderThickness=2",
+        L"CornerRadius=12"}},
+    ThemeTargetStyles{L"Grid#FocusGrid", {
+        L"Background=Transparent",
+        L"BorderBrush=Transparent"}},
+    ThemeTargetStyles{L"Button#IncreaseTimeButton", {
+        L"Background=Transparent",
+        L"BorderBrush=Transparent"}},
+    ThemeTargetStyles{L"Button#DecreaseTimeButton", {
+        L"Background=Transparent",
+        L"BorderBrush=Transparent"}},
+    ThemeTargetStyles{L"Button#StartButton", {
+        L"Background=Transparent",
+        L"BorderBrush=Transparent"}},
+    ThemeTargetStyles{L"Grid#ControlCenterRegion", {
+        L"Background=Transparent",
+        L"BorderBrush=Transparent",
+        L"CornerRadius=20",
+        L"Shadow:="}},
+    ThemeTargetStyles{L"Grid#L1Grid > Border", {
+        L"Background=Transparent"}},
+    ThemeTargetStyles{L"Grid#L1Grid", {
+        L"Background:=$Alt",
+        L"BorderBrush=Transparent",
+        L"CornerRadius=20"}},
+    ThemeTargetStyles{L"ControlCenter.PaginatedGridView > Grid > GridView#RootGridView", {
+        L"Height=auto"}},
+    ThemeTargetStyles{L"Microsoft.UI.Xaml.Controls.PipsPager#QuickActionsPager", {
+        L"Visibility=Collapsed"}},
+    ThemeTargetStyles{L"ContentPresenter#ContentPresenter", {
+        L"BorderBrush=Transparent"}},
+    ThemeTargetStyles{L"ControlCenter.PaginatedToggleButton", {
+        L"Height=60"}},
+    ThemeTargetStyles{L"ContentControl > ContentPresenter > Grid > Grid", {
+        L"CornerRadius=12"}},
+    ThemeTargetStyles{L"ControlCenter.PaginatedToggleButton > ContentPresenter#ContentPresenter@CommonStates", {
+        L"Background@Normal:= <AcrylicBrush TintColor=\"{ThemeResource SystemAltHighColor}\" FallbackColor=\"{ThemeResource CardStrokeColorDefaultSolid}\" />",
+        L"Background@Checked:=$Accent",
+        L"Background@CheckedPointerOver:= <AcrylicBrush TintColor=\"{ThemeResource SystemAccentColorLight1}\" TintOpacity=\"0.6\" TintLuminosityOpacity=\"0.6\" FallbackColor=\"{ThemeResource SystemAccentColorLight1}\" />",
+        L"Background@CheckedPressed:= <AcrylicBrush TintColor=\"{ThemeResource SystemAccentColorDark1}\" TintOpacity=\"0.6\" TintLuminosityOpacity=\"0.6\" FallbackColor=\"{ThemeResource SystemAccentColorDark1}\" />",
+        L"Background@CheckedDisabled:= <AcrylicBrush TintColor=\"red\" TintOpacity=\"0.6\" TintLuminosityOpacity=\"0.6\" FallbackColor=\"red\" />"}},
+    ThemeTargetStyles{L"Grid > Microsoft.UI.Xaml.Controls.AnimatedIcon", {
+        L"Height=30",
+        L"Width=30"}},
+    ThemeTargetStyles{L"ContentPresenter#Content > StackPanel > TextBlock", {
+        L"Visibility=Collapsed"}},
+    ThemeTargetStyles{L"ControlCenter.PaginatedToggleButton#ToggleButton[AutomationProperties.Name=Accessibility]", {
+        L"CornerRadius=10"}},
+    ThemeTargetStyles{L"ControlCenter.PaginatedToggleButton#ToggleButton[AutomationProperties.Name=Cast]", {
+        L"CornerRadius=10"}},
+    ThemeTargetStyles{L"ControlCenter.PaginatedToggleButton#ToggleButton[AutomationProperties.Name=Project]", {
+        L"CornerRadius=10"}},
+    ThemeTargetStyles{L"ControlCenter.PaginatedGridView > Grid", {
+        L"BorderBrush=Transparent"}},
+    ThemeTargetStyles{L"Rectangle#HorizontalTrackRect", {
+        L"Opacity=0"}},
+    ThemeTargetStyles{L"Rectangle#HorizontalDecreaseRect", {
+        L"Fill:=$Accent",
+        L"Height=6"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Primitives.Thumb#HorizontalThumb > Border", {
+        L"Visibility=Collapsed"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Primitives.Thumb#HorizontalThumb", {
+        L"Width=0"}},
+    ThemeTargetStyles{L"Microsoft.UI.Xaml.Controls.AnimatedIcon#BrightnessPlayer", {
+        L"Height=25",
+        L"Width=25"}},
+    ThemeTargetStyles{L"Microsoft.UI.Xaml.Controls.AnimatedIcon#FooterButtonIcon", {
+        L"Height=25",
+        L"Width=25"}},
+    ThemeTargetStyles{L"Button#VolumeL2Button > ContentPresenter > StackPanel > FontIcon[1]", {
+        L"FontSize=20"}},
+    ThemeTargetStyles{L"StackPanel > ContentPresenter > ContentControl > ContentPresenter > Button > ContentPresenter > StackPanel > TextBlock#Icon", {
+        L"FontSize=25"}},
+    ThemeTargetStyles{L"StackPanel > ContentPresenter > ContentControl > ContentPresenter > Button > ContentPresenter > StackPanel > TextBlock[2]", {
+        L"FontSize=16"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Primitives.ToggleButton > ContentPresenter > Microsoft.UI.Xaml.Controls.AnimatedIcon", {
+        L"Height=25",
+        L"Width=25"}},
+    ThemeTargetStyles{L"Grid#L1Grid > Grid", {
+        L"BorderBrush=Transparent"}},
+    ThemeTargetStyles{L"ContentPresenter#PageHeader", {
+        L"Background=Transparent"}},
+    ThemeTargetStyles{L"Grid#FullScreenPageRoot > ContentPresenter#PageHeader > Border > Grid > Button#BackButton", {
+        L"CornerRadius=14"}},
+    ThemeTargetStyles{L"ContentPresenter > Grid#FullScreenPageRoot", {
+        L"Background:=$DarkAccent"}},
+    ThemeTargetStyles{L"ContentPresenter#PageContent > Grid > Border", {
+        L"Background=Transparent"}},
+    ThemeTargetStyles{L"Grid > ScrollViewer#ListContent", {
+        L"Background=Transparent"}},
+    ThemeTargetStyles{L"Border#SwitchKnobOn", {
+        L"Background="}},
+    ThemeTargetStyles{L"StackPanel > ContentPresenter > Border", {
+        L"BorderBrush=Transparent"}},
+    ThemeTargetStyles{L"Border#WADFeatureFooter", {
+        L"BorderBrush=Transparent"}},
+    ThemeTargetStyles{L"Grid#MediaTransportControlsRoot", {
+        L"Background=Transparent"}},
+    ThemeTargetStyles{L"Grid#MediaTransportControlsRegion", {
+        L"Background:=$DarkAccent",
+        L"BorderBrush=Transparent",
+        L"CornerRadius=20",
+        L"Height=Auto",
+        L"Shadow:="}},
+    ThemeTargetStyles{L"Grid#MediaTransportControlsRoot > Grid[2]", {
+        L"Margin=-8,0,0,12"}},
+    ThemeTargetStyles{L"StackPanel#PrimaryAndSecondaryTextContainer", {
+        L"Visibility=Collapsed"}},
+    ThemeTargetStyles{L"Grid#AlbumTextAndArtContainer", {
+        L"HorizontalAlignment=Center"}},
+    ThemeTargetStyles{L"Grid#ThumbnailImage", {
+        L"CornerRadius=15",
+        L"Height=300",
+        L"Width=300"}},
+    ThemeTargetStyles{L"Border#JumpListRestyledAcrylic", {
+        L"Background:=$DarkAccent",
+        L"CornerRadius=15",
+        L"Shadow:="}},
+    ThemeTargetStyles{L"GridViewItem[1] > Windows.UI.Xaml.Controls.Primitives.ListViewItemPresenter#Root > ContentControl > ContentPresenter > Grid > Grid > ControlCenter.PaginatedToggleButton#ToggleButton", {
+        L"AccessKey=1"}},
+    ThemeTargetStyles{L"GridViewItem[2] > Windows.UI.Xaml.Controls.Primitives.ListViewItemPresenter#Root > ContentControl > ContentPresenter > Grid > Grid > ControlCenter.PaginatedToggleButton#ToggleButton", {
+        L"AccessKey=2"}},
+    ThemeTargetStyles{L"GridViewItem[3] > Windows.UI.Xaml.Controls.Primitives.ListViewItemPresenter#Root > ContentControl > ContentPresenter > Grid > Grid > ControlCenter.PaginatedToggleButton#ToggleButton", {
+        L"AccessKey=3"}},
+    ThemeTargetStyles{L"GridViewItem[4] > Windows.UI.Xaml.Controls.Primitives.ListViewItemPresenter#Root > ContentControl > ContentPresenter > Grid > Grid > ControlCenter.PaginatedToggleButton#ToggleButton", {
+        L"AccessKey=4"}},
+    ThemeTargetStyles{L"GridViewItem[5] > Windows.UI.Xaml.Controls.Primitives.ListViewItemPresenter#Root > ContentControl > ContentPresenter > Grid > Grid > ControlCenter.PaginatedToggleButton#ToggleButton", {
+        L"AccessKey=5"}},
+    ThemeTargetStyles{L"GridViewItem[6] > Windows.UI.Xaml.Controls.Primitives.ListViewItemPresenter#Root > ContentControl > ContentPresenter > Grid > Grid > ControlCenter.PaginatedToggleButton#ToggleButton", {
+        L"AccessKey=6"}},
+    ThemeTargetStyles{L"GridViewItem[7] > Windows.UI.Xaml.Controls.Primitives.ListViewItemPresenter#Root > ContentControl > ContentPresenter > Grid > Grid > ControlCenter.PaginatedToggleButton#ToggleButton", {
+        L"AccessKey=7"}},
+    ThemeTargetStyles{L"GridViewItem[8] > Windows.UI.Xaml.Controls.Primitives.ListViewItemPresenter#Root > ContentControl > ContentPresenter > Grid > Grid > ControlCenter.PaginatedToggleButton#ToggleButton", {
+        L"AccessKey=8"}},
+    ThemeTargetStyles{L"GridViewItem[9] > Windows.UI.Xaml.Controls.Primitives.ListViewItemPresenter#Root > ContentControl > ContentPresenter > Grid > Grid > ControlCenter.PaginatedToggleButton#ToggleButton", {
+        L"AccessKey=9"}},
+    ThemeTargetStyles{L"GridViewItem[10] > Windows.UI.Xaml.Controls.Primitives.ListViewItemPresenter#Root > ContentControl > ContentPresenter > Grid > Grid > ControlCenter.PaginatedToggleButton#ToggleButton", {
+        L"AccessKey=0"}},
+    ThemeTargetStyles{L"GridViewItem[11] > Windows.UI.Xaml.Controls.Primitives.ListViewItemPresenter#Root > ContentControl > ContentPresenter > Grid > Grid > ControlCenter.PaginatedToggleButton#ToggleButton", {
+        L"AccessKey=-"}},
+    ThemeTargetStyles{L"GridViewItem[1] > Windows.UI.Xaml.Controls.Primitives.ListViewItemPresenter#Root > ContentControl > ContentPresenter > Grid > ControlCenter.PaginatedToggleButton#ToggleButton", {
+        L"AccessKey=1"}},
+    ThemeTargetStyles{L"GridViewItem[2] > Windows.UI.Xaml.Controls.Primitives.ListViewItemPresenter#Root > ContentControl > ContentPresenter > Grid > ControlCenter.PaginatedToggleButton#ToggleButton", {
+        L"AccessKey=2"}},
+    ThemeTargetStyles{L"GridViewItem[3] > Windows.UI.Xaml.Controls.Primitives.ListViewItemPresenter#Root > ContentControl > ContentPresenter > Grid > ControlCenter.PaginatedToggleButton#ToggleButton", {
+        L"AccessKey=3"}},
+    ThemeTargetStyles{L"GridViewItem[4] > Windows.UI.Xaml.Controls.Primitives.ListViewItemPresenter#Root > ContentControl > ContentPresenter > Grid > ControlCenter.PaginatedToggleButton#ToggleButton", {
+        L"AccessKey=4"}},
+    ThemeTargetStyles{L"GridViewItem[5] > Windows.UI.Xaml.Controls.Primitives.ListViewItemPresenter#Root > ContentControl > ContentPresenter > Grid > ControlCenter.PaginatedToggleButton#ToggleButton", {
+        L"AccessKey=5"}},
+    ThemeTargetStyles{L"GridViewItem[6] > Windows.UI.Xaml.Controls.Primitives.ListViewItemPresenter#Root > ContentControl > ContentPresenter > Grid > ControlCenter.PaginatedToggleButton#ToggleButton", {
+        L"AccessKey=6"}},
+    ThemeTargetStyles{L"GridViewItem[7] > Windows.UI.Xaml.Controls.Primitives.ListViewItemPresenter#Root > ContentControl > ContentPresenter > Grid > ControlCenter.PaginatedToggleButton#ToggleButton", {
+        L"AccessKey=7"}},
+    ThemeTargetStyles{L"GridViewItem[8] > Windows.UI.Xaml.Controls.Primitives.ListViewItemPresenter#Root > ContentControl > ContentPresenter > Grid > ControlCenter.PaginatedToggleButton#ToggleButton", {
+        L"AccessKey=8"}},
+    ThemeTargetStyles{L"GridViewItem[9] > Windows.UI.Xaml.Controls.Primitives.ListViewItemPresenter#Root > ContentControl > ContentPresenter > Grid > ControlCenter.PaginatedToggleButton#ToggleButton", {
+        L"AccessKey=9"}},
+    ThemeTargetStyles{L"GridViewItem[10] > Windows.UI.Xaml.Controls.Primitives.ListViewItemPresenter#Root > ContentControl > ContentPresenter > Grid > ControlCenter.PaginatedToggleButton#ToggleButton", {
+        L"AccessKey=0"}},
+    ThemeTargetStyles{L"GridViewItem[11] > Windows.UI.Xaml.Controls.Primitives.ListViewItemPresenter#Root > ContentControl > ContentPresenter > Grid > ControlCenter.PaginatedToggleButton#ToggleButton", {
+        L"AccessKey=-"}},
+    ThemeTargetStyles{L"Grid#RootGrid > QuickActions.ControlCenter.FrameWithContentChanged#L2Frame", {
+        L"Background=Transparent"}},
+    ThemeTargetStyles{L"QuickActions.ControlCenter.AccessibleWindow#PageWindow", {
+        L"Background=Transparent"}},
+}, {
+    L"Alt = <AcrylicBrush TintColor=\"{ThemeResource SystemAltHighColor}\" TintOpacity=\"0.6\" TintLuminosityOpacity=\"0.6\" FallbackColor=\"{ThemeResource SystemAltHighColor}\" />",
+    L"Accent = <AcrylicBrush TintColor=\"{ThemeResource SystemAccentColor}\" TintOpacity=\"0.6\" TintLuminosityOpacity=\"0.6\" FallbackColor=\"{ThemeResource SystemAccentColor}\" />",
+    L"DarkAccent = <AcrylicBrush TintColor=\"{ThemeResource SystemAccentColorDark1}\" TintOpacity=\"0.6\" TintLuminosityOpacity=\"0.3\" FallbackColor=\"{ThemeResource SystemAccentColorDark1}\" />",
+    L"SolidAccent = <SolidColorBrush Color=\"{ThemeResource SystemAccentColor}\" Opacity=\"1\"/>",
+    L"Reveal = <RevealBorderBrush Color=\"Transparent\" TargetTheme=\"1\" Opacity=\"1\" />",
 }};
 
 // clang-format on
@@ -3336,6 +4251,12 @@ void ProcessAllStylesFromSettings() {
         theme = &g_themeUnified;
     } else if (wcscmp(themeName, L"10JumpLists") == 0) {
         theme = &g_theme10JumpLists;
+    } else if (wcscmp(themeName, L"WindowGlass") == 0) {
+        theme = &g_themeWindowGlass;
+    } else if (wcscmp(themeName, L"WindowGlass_variant_alternative") == 0) {
+        theme = &g_themeWindowGlass_variant_alternative;
+    } else if (wcscmp(themeName, L"Oversimplified&Accentuated") == 0) {
+        theme = &g_themeOversimplified_Accentuated;
     }
     Wh_FreeStringSetting(themeName);
 
