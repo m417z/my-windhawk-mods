@@ -596,26 +596,30 @@ const Theme g_themeMatter = {{
 const Theme g_themeUnified = {{
     ThemeTargetStyles{L"ActionCenter.FocusSessionControl", {
         L"Height=0"}},
-    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Grid#ControlCenterRegion", {
-        L"CornerRadius=0"}},
     ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Grid#CalendarCenterGrid", {
-        L"CornerRadius=0",
+        L"CornerRadius=0,0,6,6",
         L"Margin=0,0,0,12",
         L"BorderThickness=1,0,1,1"}},
     ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Grid#NotificationCenterGrid", {
-        L"CornerRadius=0",
-        L"BorderThickness=1,1,1,0"}},
-    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.CalendarViewDayItem", {
-        L"CornerRadius=0",
-        L"Margin=1,1,1,1"}},
-    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.CalendarViewDayItem > Windows.UI.Xaml.Controls.Border", {
-        L"CornerRadius=3"}},
+        L"CornerRadius=6,6,0,0"}},
     ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Grid#MediaTransportControlsRegion", {
-        L"CornerRadius=0",
+        L"CornerRadius=6,6,0,0",
         L"BorderThickness=1,1,1,0",
-        L"Margin=0,0,0,0"}},
-    ThemeTargetStyles{L"QuickActions.ControlCenter.FrameWithContentChanged#L2Frame", {
-        L"CornerRadius=0"}},
+        L"Margin=0,0,0,-6"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Border#CalendarHeaderMinimizedOverlay", {
+        L"Visibility=Visible"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.ScrollViewer#CalendarControlScrollViewer", {
+        L"BorderThickness=0"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.ContentPresenter", {
+        L"BackgroundTransition:=<BrushTransition Duration=\"0:0:0.083\"/>"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Primitives.ListViewItemPresenter#Root > Windows.UI.Xaml.Controls.Border", {
+        L"BackgroundTransition:=<BrushTransition Duration=\"0:0:0.083\"/>"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.ComboBox > Windows.UI.Xaml.Controls.Grid > Windows.UI.Xaml.Controls.Border", {
+        L"BackgroundTransition:=<BrushTransition Duration=\"0:0:0.083\"/>"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.CalendarViewDayItem > Windows.UI.Xaml.Controls.Border", {
+        L"BackgroundTransition:=<BrushTransition Duration=\"0:0:0.083\"/>"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Control > Windows.UI.Xaml.Controls.Border", {
+        L"BackgroundTransition:=<BrushTransition Duration=\"0:0:0.083\"/>"}},
 }};
 
 const Theme g_theme10JumpLists = {{
@@ -633,8 +637,7 @@ const Theme g_theme10JumpLists = {{
         L"Width=256"}},
     ThemeTargetStyles{L"JumpViewUI.JumpListListView#ItemList", {
         L"Width=256",
-        L"Padding=0,5,0,5",
-        L"Background:=<AcrylicBrush TintColor=\"{ThemeResource SystemChromeMediumColor}\" TintOpacity=\"0.78\" TintLuminosityOpacity=\"0.77\" FallbackColor=\"{ThemeResource SystemChromeMediumColor}\" />"}},
+        L"Padding=0,5,0,5"}},
     ThemeTargetStyles{L"JumpViewUI.SystemItemControl > Windows.UI.Xaml.Controls.Grid > Windows.UI.Xaml.Controls.Grid > Windows.UI.Xaml.Controls.TextBlock", {
         L"FontFamily=Segoe MDL2 Assets"}},
     ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Button#PinButton > Windows.UI.Xaml.Controls.Grid > Windows.UI.Xaml.Controls.ContentPresenter#ContentPresenter > Windows.UI.Xaml.Controls.TextBlock", {
@@ -673,8 +676,7 @@ const Theme g_theme10JumpLists = {{
     ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Grid#SystemItemsContainer > Windows.UI.Xaml.Shapes.Rectangle", {
         L"Visibility=Collapsed"}},
     ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Grid#SystemItemsContainer", {
-        L"Padding=0,5,0,5",
-        L"Background:=<AcrylicBrush TintColor=\"{ThemeResource SystemChromeMediumColor}\" TintOpacity=\"0.78\" TintLuminosityOpacity=\"0.77\" FallbackColor=\"{ThemeResource SystemChromeLowColor}\" />"}},
+        L"Padding=0,5,0,5"}},
     ThemeTargetStyles{L"JumpViewUI.JumpListListViewItem > Windows.UI.Xaml.Controls.Grid#LayoutRoot > Windows.UI.Xaml.Controls.ContentPresenter#ContentPresenter > Windows.UI.Xaml.Controls.Grid#LayoutRoot > Windows.UI.Xaml.Shapes.Rectangle", {
         L"Margin=12,4,12,4"}},
     ThemeTargetStyles{L"JumpViewUI.JumpListControl#JumpList", {
@@ -683,6 +685,24 @@ const Theme g_theme10JumpLists = {{
         L"Background@PointerOver:=<AcrylicBrush TintColor=\"{ThemeResource SystemListLowColor}\" TintOpacity=\"1\" Opacity=\"0.5\" FallbackColor=\"{ThemeResource SystemListLowColor}\"/>",
         L"Background@Pressed:=<AcrylicBrush TintColor=\"{ThemeResource SystemListLowColor}\" TintOpacity=\"1\" Opacity=\"0.9\" FallbackColor=\"{ThemeResource SystemListMediumColor}\"/>",
         L"CornerRadius=0"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Border#JumpListAcrylic", {
+        L"Visibility=Visible"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Grid#SystemItemsContainer > Windows.UI.Xaml.Controls.Border#SystemItemsAcrylic", {
+        L"Visibility=Visible",
+        L"Margin=0,-5,0,-5"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.MenuFlyoutPresenter > Windows.UI.Xaml.Controls.Border", {
+        L"CornerRadius=0",
+        L"Background:=<AcrylicBrush TintColor=\"{ThemeResource SystemAltHighColor}\" TintOpacity=\"0.6\" FallbackColor=\"{ThemeResource SystemChromeMediumColor}\" />"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.MenuFlyoutItem", {
+        L"CornerRadius=0"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.ContentPresenter#IconContent > Windows.UI.Xaml.Controls.FontIcon > Windows.UI.Xaml.Controls.Grid > Windows.UI.Xaml.Controls.TextBlock", {
+        L"FontFamily=Segoe MDL2 Assets, Segoe UI"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.MenuFlyoutItem > Grid > TextBlock", {
+        L"FontSize=12",
+        L"FontFamily=Segoe UI"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.MenuFlyoutItem > Grid", {
+        L"BorderThickness=1,1,1,1",
+        L"Margin=0"}},
 }};
 
 // clang-format on
