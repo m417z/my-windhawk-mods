@@ -77,6 +77,7 @@ versions weren't tested and are probably not compatible.
 
 #include <dwmapi.h>
 #include <roapi.h>
+#include <shellapi.h>
 #include <windowsx.h>
 #include <winstring.h>
 
@@ -120,6 +121,13 @@ enum class Target {
 };
 
 Target g_target;
+
+// Inset height in pixels to remove gap above taskbar when positioned at top.
+int g_taskbarTopInsetHeight = 2;
+
+// Auto-hide trigger height in pixels. Set to 0 to disable the auto-hide fix.  You must
+// approach within this many pixels of the monitor top to show the taskbar when hidden.
+int g_autoHideTriggerHeight = 2;
 
 std::atomic<bool> g_taskbarViewDllLoaded;
 std::atomic<bool> g_applyingSettings;
@@ -278,6 +286,12 @@ bool GetMonitorRect(HMONITOR monitor, RECT* rc) {
     };
     return GetMonitorInfo(monitor, &monitorInfo) &&
            CopyRect(rc, &monitorInfo.rcMonitor);
+}
+
+bool IsTaskbarAutoHideEnabled() {
+    APPBARDATA abd = {sizeof(APPBARDATA)};
+    UINT state = (UINT)SHAppBarMessage(ABM_GETSTATE, &abd);
+    return (state & ABS_AUTOHIDE) != 0;
 }
 
 HWND FindCurrentProcessTaskbarWnd() {
@@ -592,7 +606,30 @@ LRESULT TaskbarWndProcPostProcess(HWND hWnd,
                         RECT monitorRect;
                         GetMonitorRect(monitor, &monitorRect);
 
-                        windowpos->y = monitorRect.top;
+                        // Normal positioning without auto-hide adjustment
+                        int yPosition = monitorRect.top - g_taskbarTopInsetHeight;
+
+                        // Auto-hide positioning: move taskbar mostly off-screen when hiding
+                        if (g_autoHideTriggerHeight > 0 && IsTaskbarAutoHideEnabled()) {
+                            // Check if cursor is within the taskbar's current bounds
+                            POINT cursorPos;
+                            GetCursorPos(&cursorPos);
+
+                            RECT currentRect;
+                            GetWindowRect(hWnd, &currentRect);
+                        
+                            // Check if cursor is in the taskbar area (on screen and over taskbar)
+                            int currentHeight = currentRect.bottom - currentRect.top;
+                            bool cursorInTaskbarArea = cursorPos.y >= monitorRect.top &&
+                                                       cursorPos.y < monitorRect.top + currentHeight;
+                            if (!cursorInTaskbarArea) {
+                                // Cursor is not in taskbar - hide it by moving mostly off-screen
+                                yPosition -= currentHeight - g_autoHideTriggerHeight
+                                                           - g_taskbarTopInsetHeight;
+                            }
+                        }
+
+                        windowpos->y = yPosition;
                     }
                 }
             }
