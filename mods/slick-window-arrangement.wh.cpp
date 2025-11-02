@@ -297,11 +297,25 @@ private:
             return TRUE;
         }
 
+        if (pIsWindowArranged && pIsWindowArranged(hWnd)) {
+            return TRUE;
+        }
+
+        if (GetWindow(hWnd, GW_OWNER) != NULL) {
+            return TRUE;
+        }
+
         if (!IsWindowVisible(hWnd) || IsWindowCloaked(hWnd) || IsIconic(hWnd)) {
             return TRUE;
         }
 
-        if (GetWindowLong(hWnd, GWL_EXSTYLE) & (WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW)) {
+        if (GetWindowLong(hWnd, GWL_EXSTYLE) & WS_EX_TOOLWINDOW) {
+            if (GetWindowTextLength(hWnd) == 0) {
+                return TRUE;
+            }
+        }
+
+        if (GetWindowLong(hWnd, GWL_EXSTYLE) & WS_EX_NOACTIVATE) {
             return TRUE;
         }
 
