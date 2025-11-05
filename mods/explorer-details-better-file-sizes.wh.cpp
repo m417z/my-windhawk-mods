@@ -2105,27 +2105,39 @@ int WINAPI LoadStringW_Hook(HINSTANCE hInstance,
         return ret;
     }
 
-    PCWSTR newStr = nullptr;
-    if (wcscmp(lpBuffer, L"%s KB") == 0) {
-        newStr = L"%s KiB";
-    } else if (wcscmp(lpBuffer, L"%s MB") == 0) {
-        newStr = L"%s MiB";
-    } else if (wcscmp(lpBuffer, L"%s GB") == 0) {
-        newStr = L"%s GiB";
-    } else if (wcscmp(lpBuffer, L"%s TB") == 0) {
-        newStr = L"%s TiB";
-    } else if (wcscmp(lpBuffer, L"%s PB") == 0) {
-        newStr = L"%s PiB";
-    } else if (wcscmp(lpBuffer, L"%s EB") == 0) {
-        newStr = L"%s EiB";
-    }
-
-    if (!newStr) {
+    // Check if the string matches the regex: "%s( |\u00A0)?[KMGTPE]B".
+    PWSTR p = lpBuffer;
+    if (*p++ != '%' || *p++ != 's') {
         return ret;
     }
 
-    Wh_Log(L"> Overriding string %u: %s -> %s", uID, lpBuffer, newStr);
-    wcsncpy_s(lpBuffer, cchBufferMax, newStr, cchBufferMax - 1);
+    // Skip space or non-breaking space.
+    if (*p == ' ' || *p == L'\u00A0') {
+        p++;
+    }
+
+    if (*p != 'K' && *p != 'M' && *p != 'G' && *p != 'T' && *p != 'P' &&
+        *p != 'E') {
+        return ret;
+    }
+    p++;
+
+    if (*p++ != 'B' || *p != '\0') {
+        return ret;
+    }
+
+    Wh_Log(L"> Overriding string %u: %s", uID, lpBuffer);
+
+    size_t originalStringLen = p - lpBuffer;
+
+    // Override "B" to "iB".
+    p[-1] = 'i';
+
+    if ((size_t)cchBufferMax >= originalStringLen + 2) {
+        p[0] = 'B';
+        p[1] = '\0';
+    }
+
     return wcslen(lpBuffer);
 }
 
