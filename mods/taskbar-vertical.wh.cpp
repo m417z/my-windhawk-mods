@@ -3559,13 +3559,6 @@ void ApplyStyleClassicStartMenu(FrameworkElement content,
     FrameworkElement startSizingFrame =
         FindChildByClassName(content, L"StartDocked.StartSizingFrame");
     if (!startSizingFrame) {
-        // Try the Windows 10 Start menu class name, in case of Windows 11 with
-        // the Windows 10 Start menu, e.g. with ExplorerPatcher.
-        startSizingFrame =
-            FindChildByClassName(content, L"StartUI.StartSizingFrame");
-    }
-
-    if (!startSizingFrame) {
         Wh_Log(L"Failed to find StartDocked.StartSizingFrame");
         return;
     }
