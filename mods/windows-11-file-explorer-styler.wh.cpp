@@ -1138,8 +1138,13 @@ winrt::Windows::Foundation::IInspectable ReadLocalValueWithWorkaround(
     const auto value = elementDo.ReadLocalValue(property);
     // TODO: Is this still needed?
 #if 0
-    if (value && winrt::get_class_name(value) ==
-                     L"Windows.UI.Xaml.Data.BindingExpressionBase") {
+    if (!value) {
+        return value;
+    }
+
+    auto className = winrt::get_class_name(value);
+    if (className == L"Windows.UI.Xaml.Data.BindingExpressionBase" ||
+        className == L"Windows.UI.Xaml.Data.BindingExpression") {
         // BindingExpressionBase was observed to be returned for XAML properties
         // that were declared as following:
         //

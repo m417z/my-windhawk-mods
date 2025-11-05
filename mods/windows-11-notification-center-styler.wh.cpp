@@ -148,7 +148,8 @@ Makes panel non full-height when there are fewer notifications (fit to size). \
 **Target**: `Grid#ControlCenterRegion` \
 **Style**: `CornerRadius=0`
 
-#### Calendar and notification titlebars: titles on the right, buttons on the left
+#### Calendar and notification titlebars: titles on the right, buttons on the
+left
 **Target**: `Grid#RootContent` \
 **Style**: `FlowDirection=1`
 
@@ -2146,8 +2147,13 @@ winrt::Windows::Foundation::IInspectable ReadLocalValueWithWorkaround(
     DependencyObject elementDo,
     DependencyProperty property) {
     const auto value = elementDo.ReadLocalValue(property);
-    if (value && winrt::get_class_name(value) ==
-                     L"Windows.UI.Xaml.Data.BindingExpressionBase") {
+    if (!value) {
+        return value;
+    }
+
+    auto className = winrt::get_class_name(value);
+    if (className == L"Windows.UI.Xaml.Data.BindingExpressionBase" ||
+        className == L"Windows.UI.Xaml.Data.BindingExpression") {
         // BindingExpressionBase was observed to be returned for XAML properties
         // that were declared as following:
         //
