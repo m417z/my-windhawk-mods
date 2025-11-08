@@ -122,9 +122,6 @@ enum class Target {
 
 Target g_target;
 
-// Inset height in pixels to remove gap above taskbar when positioned at top.
-constexpr int kTaskbarTopInsetHeight = 2;
-
 // Auto-hide trigger height in pixels. Set to 0 to disable the auto-hide fix.  You must
 // approach within this many pixels of the monitor top to show the taskbar when hidden.
 constexpr int kAutoHideTriggerHeight = 2;
@@ -607,7 +604,7 @@ LRESULT TaskbarWndProcPostProcess(HWND hWnd,
                         GetMonitorRect(monitor, &monitorRect);
 
                         // Normal positioning without auto-hide adjustment
-                        int yPosition = monitorRect.top - kTaskbarTopInsetHeight;
+                        int yPosition = monitorRect.top;
 
                         // Auto-hide positioning: move taskbar mostly off-screen when hiding
                         if (kAutoHideTriggerHeight > 0 && IsTaskbarAutoHideEnabled()) {
@@ -624,8 +621,7 @@ LRESULT TaskbarWndProcPostProcess(HWND hWnd,
                                                        cursorPos.y < monitorRect.top + currentHeight;
                             if (!cursorInTaskbarArea) {
                                 // Cursor is not in taskbar - hide it by moving mostly off-screen
-                                yPosition -= currentHeight - kAutoHideTriggerHeight
-                                                           - kTaskbarTopInsetHeight;
+                                yPosition -= currentHeight - kAutoHideTriggerHeight;
                             }
                         }
 
