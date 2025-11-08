@@ -2,7 +2,7 @@
 // @id              taskbar-on-top
 // @name            Taskbar on top for Windows 11
 // @description     Moves the Windows 11 taskbar to the top of the screen
-// @version         1.1.6
+// @version         1.1.5
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
@@ -123,11 +123,11 @@ enum class Target {
 Target g_target;
 
 // Inset height in pixels to remove gap above taskbar when positioned at top.
-int g_taskbarTopInsetHeight = 2;
+constexpr int kTaskbarTopInsetHeight = 2;
 
 // Auto-hide trigger height in pixels. Set to 0 to disable the auto-hide fix.  You must
 // approach within this many pixels of the monitor top to show the taskbar when hidden.
-int g_autoHideTriggerHeight = 2;
+constexpr int kAutoHideTriggerHeight = 2;
 
 std::atomic<bool> g_taskbarViewDllLoaded;
 std::atomic<bool> g_applyingSettings;
@@ -607,10 +607,10 @@ LRESULT TaskbarWndProcPostProcess(HWND hWnd,
                         GetMonitorRect(monitor, &monitorRect);
 
                         // Normal positioning without auto-hide adjustment
-                        int yPosition = monitorRect.top - g_taskbarTopInsetHeight;
+                        int yPosition = monitorRect.top - kTaskbarTopInsetHeight;
 
                         // Auto-hide positioning: move taskbar mostly off-screen when hiding
-                        if (g_autoHideTriggerHeight > 0 && IsTaskbarAutoHideEnabled()) {
+                        if (kAutoHideTriggerHeight > 0 && IsTaskbarAutoHideEnabled()) {
                             // Check if cursor is within the taskbar's current bounds
                             POINT cursorPos;
                             GetCursorPos(&cursorPos);
@@ -624,8 +624,8 @@ LRESULT TaskbarWndProcPostProcess(HWND hWnd,
                                                        cursorPos.y < monitorRect.top + currentHeight;
                             if (!cursorInTaskbarArea) {
                                 // Cursor is not in taskbar - hide it by moving mostly off-screen
-                                yPosition -= currentHeight - g_autoHideTriggerHeight
-                                                           - g_taskbarTopInsetHeight;
+                                yPosition -= currentHeight - kAutoHideTriggerHeight
+                                                           - kTaskbarTopInsetHeight;
                             }
                         }
 
