@@ -7,7 +7,7 @@
 // @github       https://github.com/m417z
 // @twitter      https://twitter.com/m417z
 // @homepage     https://m417z.com/
-// @include      link.exe
+// @include      *\MSVC\*\bin\*\link.exe
 // ==/WindhawkMod==
 
 // Source code is published under The GNU General Public License v3.0.
