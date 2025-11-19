@@ -27,11 +27,6 @@
 
 Moves the Windows 11 taskbar to the top of the screen.
 
-## Compatibility
-
-The mod was designed for up-to-date Windows 11 versions 22H2 to 24H2. Other
-versions weren't tested and are probably not compatible.
-
 ## Known limitations
 
 * The Action Center (Win+A) stays on the bottom. For now, you can use [this
