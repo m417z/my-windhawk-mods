@@ -4280,6 +4280,7 @@ bool HookTaskbarViewDllSymbols(HMODULE module) {
                 {LR"(private: double __cdecl winrt::SystemTray::implementation::SystemTraySecondaryController::GetFrameSize(enum winrt::WindowsUdk::UI::Shell::TaskbarSize))"},
                 &SystemTraySecondaryController_GetFrameSize_Original,
                 SystemTraySecondaryController_GetFrameSize_Hook,
+                true,  // Missing in very old build (end of 2023).
             },
             {
                 {LR"(public: static double __cdecl winrt::Taskbar::implementation::TaskbarConfiguration::GetFrameSize(enum winrt::WindowsUdk::UI::Shell::TaskbarSize))"},
