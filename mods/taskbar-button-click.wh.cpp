@@ -2,7 +2,7 @@
 // @id              taskbar-button-click
 // @name            Middle click to close on the taskbar
 // @description     Close programs with a middle click on the taskbar instead of creating a new instance
-// @version         1.0.8
+// @version         1.0.9
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
@@ -289,6 +289,12 @@ long WINAPI CTaskBand_Launch_Hook(LPVOID pThis,
         taskItemIndex = g_CTaskListWndTaskItemIndex;
     }
 
+    bool ctrlDown = GetKeyState(VK_CONTROL) < 0;
+    bool altDown = GetKeyState(VK_MENU) < 0;
+    bool endTask = (ctrlDown || altDown) &&
+                   g_settings.keysToEndTaskCtrl == ctrlDown &&
+                   g_settings.keysToEndTaskAlt == altDown;
+
     HWND hWnd = nullptr;
 
     if (taskItemIndex >= 0) {
@@ -301,16 +307,14 @@ long WINAPI CTaskBand_Launch_Hook(LPVOID pThis,
 
         if (*(void**)taskItem == CImmersiveTaskItem_vftable) {
             hWnd = CImmersiveTaskItem_GetWindow_Original(taskItem);
+
+            // Don't end task for immersive (Store/Modern) apps, as multiple
+            // apps might share the same process.
+            endTask = false;
         } else {
             hWnd = CWindowTaskItem_GetWindow_Original(taskItem);
         }
     }
-
-    bool ctrlDown = GetKeyState(VK_CONTROL) < 0;
-    bool altDown = GetKeyState(VK_MENU) < 0;
-    bool endTask = (ctrlDown || altDown) &&
-                   g_settings.keysToEndTaskCtrl == ctrlDown &&
-                   g_settings.keysToEndTaskAlt == altDown;
 
     if (endTask) {
         if (hWnd) {
