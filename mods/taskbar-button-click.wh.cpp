@@ -101,12 +101,7 @@ WinVersion g_winVersion;
 std::atomic<bool> g_initialized;
 std::atomic<bool> g_explorerPatcherInitialized;
 
-struct TaskBtnGroupButtonInfo {
-    void* taskBtnGroup;
-    int buttonIndex;
-};
-
-std::unordered_map<void*, TaskBtnGroupButtonInfo> g_lastTaskListActiveItem;
+std::unordered_map<void*, void*> g_lastTaskListActiveTaskItem;
 
 using CTaskListWnd_HandleClick_t = long(WINAPI*)(
     LPVOID pThis,
@@ -152,6 +147,9 @@ CTaskBand__EndTask_t CTaskBand__EndTask_Original;
 
 using CTaskBtnGroup_GetGroupType_t = int(WINAPI*)(LPVOID pThis);
 CTaskBtnGroup_GetGroupType_t CTaskBtnGroup_GetGroupType_Original;
+
+using CTaskBtnGroup_GetNumItems_t = int(WINAPI*)(LPVOID pThis);
+CTaskBtnGroup_GetNumItems_t CTaskBtnGroup_GetNumItems_Original;
 
 using CTaskBtnGroup_GetGroup_t = LPVOID(WINAPI*)(LPVOID pThis);
 CTaskBtnGroup_GetGroup_t CTaskBtnGroup_GetGroup_Original;
@@ -271,19 +269,27 @@ long WINAPI CTaskBand_Launch_Hook(LPVOID pThis,
 
         if (g_settings.multipleItemsBehavior ==
             MULTIPLE_ITEMS_BEHAVIOR_CLOSE_FOREGROUND) {
-            auto it =
-                g_lastTaskListActiveItem.find(g_pTaskListLongPtrHandlingClick);
-            if (it == g_lastTaskListActiveItem.end()) {
+            auto it = g_lastTaskListActiveTaskItem.find(
+                g_pTaskListLongPtrHandlingClick);
+            if (it == g_lastTaskListActiveTaskItem.end()) {
                 return 0;
             }
 
-            const auto& lastActiveItem = it->second;
-            if (lastActiveItem.taskBtnGroup != g_pCTaskListWndTaskBtnGroup ||
-                lastActiveItem.buttonIndex < 0) {
-                return 0;
+            void* lastActiveTaskItem = it->second;
+
+            int buttonsCount =
+                CTaskBtnGroup_GetNumItems_Original(g_pCTaskListWndTaskBtnGroup);
+            for (int i = 0; i < buttonsCount; i++) {
+                if ((LONG_PTR*)CTaskBtnGroup_GetTaskItem_Original(
+                        g_pCTaskListWndTaskBtnGroup, i) == lastActiveTaskItem) {
+                    taskItemIndex = i;
+                    break;
+                }
             }
 
-            taskItemIndex = lastActiveItem.buttonIndex;
+            if (taskItemIndex < 0) {
+                return 0;
+            }
         }
     } else {
         taskItemIndex = g_CTaskListWndTaskItemIndex;
@@ -341,10 +347,10 @@ void WINAPI CTaskListWnd__SetActiveItem_Hook(LPVOID pThis,
                                              int buttonIndex) {
     Wh_Log(L">");
 
-    g_lastTaskListActiveItem[pThis] = {
-        .taskBtnGroup = taskBtnGroup,
-        .buttonIndex = buttonIndex,
-    };
+    g_lastTaskListActiveTaskItem[pThis] =
+        taskBtnGroup
+            ? CTaskBtnGroup_GetTaskItem_Original(taskBtnGroup, buttonIndex)
+            : nullptr;
 
     CTaskListWnd__SetActiveItem_Original(pThis, taskBtnGroup, buttonIndex);
 }
@@ -449,6 +455,8 @@ bool HookExplorerPatcherSymbols(HMODULE explorerPatcherModule) {
          &CTaskBand__EndTask_Original},
         {R"(?GetGroupType@CTaskBtnGroup@@UEAA?AW4eTBGROUPTYPE@@XZ)",
          &CTaskBtnGroup_GetGroupType_Original},
+        {R"(?GetNumItems@CTaskBtnGroup@@UEAAHXZ)",
+         &CTaskBtnGroup_GetNumItems_Original},
         {R"(?GetGroup@CTaskBtnGroup@@UEAAPEAUITaskGroup@@XZ)",
          &CTaskBtnGroup_GetGroup_Original},
         {R"(?GetTaskItem@CTaskBtnGroup@@UEAAPEAUITaskItem@@H@Z)",
@@ -587,6 +595,10 @@ bool HookTaskbarSymbols() {
         {
             {LR"(public: virtual enum eTBGROUPTYPE __cdecl CTaskBtnGroup::GetGroupType(void))"},
             &CTaskBtnGroup_GetGroupType_Original,
+        },
+        {
+            {LR"(public: virtual int __cdecl CTaskBtnGroup::GetNumItems(void))"},
+            &CTaskBtnGroup_GetNumItems_Original,
         },
         {
             {LR"(public: virtual struct ITaskGroup * __cdecl CTaskBtnGroup::GetGroup(void))"},

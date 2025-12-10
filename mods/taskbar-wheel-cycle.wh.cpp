@@ -114,12 +114,7 @@ std::atomic<bool> g_taskbarViewDllLoaded;
 std::atomic<bool> g_initialized;
 std::atomic<bool> g_explorerPatcherInitialized;
 
-struct TaskBtnGroupButtonInfo {
-    void* taskBtnGroup;
-    int buttonIndex;
-};
-
-std::unordered_map<void*, TaskBtnGroupButtonInfo> g_lastTaskListActiveItem;
+std::unordered_map<void*, void*> g_lastTaskListActiveTaskItem;
 
 HWND g_lastScrollTarget = nullptr;
 DWORD g_lastScrollTime;
@@ -432,15 +427,23 @@ LONG_PTR* TaskbarScroll(LONG_PTR lpMMTaskListLongPtr,
     int button_group_index_active = -1;
     int button_index_active = -1;
 
-    if (src_task_item) {
+    LONG_PTR* taskItem = src_task_item;
+    if (!taskItem) {
+        auto it = g_lastTaskListActiveTaskItem.find((void*)lpMMTaskListLongPtr);
+        if (it != g_lastTaskListActiveTaskItem.end()) {
+            taskItem = (LONG_PTR*)it->second;
+        }
+    }
+
+    if (taskItem) {
         for (int i = 0; i < button_groups_count; i++) {
             int button_group_type =
                 CTaskBtnGroup_GetGroupType(button_groups[i]);
             if (button_group_type == 1 || button_group_type == 3) {
                 int buttons_count = CTaskBtnGroup_GetNumItems(button_groups[i]);
                 for (int j = 0; j < buttons_count; j++) {
-                    if ((LONG_PTR*)CTaskBtnGroup_GetTaskItem(
-                            button_groups[i], j) == src_task_item) {
+                    if ((LONG_PTR*)CTaskBtnGroup_GetTaskItem(button_groups[i],
+                                                             j) == taskItem) {
                         button_group_index_active = i;
                         button_index_active = j;
                         break;
@@ -448,25 +451,6 @@ LONG_PTR* TaskbarScroll(LONG_PTR lpMMTaskListLongPtr,
                 }
 
                 if (button_group_index_active != -1) {
-                    break;
-                }
-            }
-        }
-    } else if (auto it =
-                   g_lastTaskListActiveItem.find((void*)lpMMTaskListLongPtr);
-               it != g_lastTaskListActiveItem.end()) {
-        LONG_PTR* last_button_group_active = (LONG_PTR*)it->second.taskBtnGroup;
-        int last_button_index_active = it->second.buttonIndex;
-        if (last_button_group_active && last_button_index_active >= 0) {
-            for (int i = 0; i < button_groups_count; i++) {
-                if (button_groups[i] == last_button_group_active) {
-                    int buttons_count =
-                        CTaskBtnGroup_GetNumItems(button_groups[i]);
-                    if (buttons_count > 0) {
-                        button_group_index_active = i;
-                        button_index_active = std::min(last_button_index_active,
-                                                       buttons_count - 1);
-                    }
                     break;
                 }
             }
@@ -965,10 +949,9 @@ void WINAPI CTaskListWnd__SetActiveItem_Hook(void* pThis,
                                              int buttonIndex) {
     Wh_Log(L">");
 
-    g_lastTaskListActiveItem[pThis] = {
-        .taskBtnGroup = taskBtnGroup,
-        .buttonIndex = buttonIndex,
-    };
+    g_lastTaskListActiveTaskItem[pThis] =
+        taskBtnGroup ? CTaskBtnGroup_GetTaskItem(taskBtnGroup, buttonIndex)
+                     : nullptr;
 
     CTaskListWnd__SetActiveItem_Original(pThis, taskBtnGroup, buttonIndex);
 }
