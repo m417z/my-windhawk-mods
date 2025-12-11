@@ -2,7 +2,7 @@
 // @id              taskbar-wheel-cycle
 // @name            Cycle taskbar buttons with mouse wheel
 // @description     Use the mouse wheel and/or keyboard shortcuts to cycle between taskbar buttons
-// @version         1.1.10
+// @version         1.2.0
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
@@ -29,6 +29,23 @@ buttons.
 
 In addition, keyboard shortcuts can be used. The default shortcuts are `Alt+[`
 and `Alt+]`, but they can be changed in the mod settings.
+
+## Enhanced Features
+
+**Same-Process Cycling**: Use `Ctrl+Alt+[` and `Ctrl+Alt+]` to cycle only
+between windows of the same application (e.g., switch between multiple Chrome
+windows or multiple Cursor windows).
+
+**Cross-Process Navigation**: The standard `Alt+[` and `Alt+]` shortcuts now
+intelligently skip windows from the same process, making it easier to switch
+between different applications.
+
+**Taskbar Button Reordering**: Use `Ctrl+Shift+;` and `Ctrl+Shift+'` to move
+the active window's button group left or right in the taskbar, allowing you to
+organize your taskbar buttons.
+
+**Multiple Shortcut Sets**: Configure a second set of keyboard shortcuts for all
+cycling operations, providing more flexibility in your workflow.
 
 Only Windows 10 64-bit and Windows 11 are supported. For older Windows versions
 check out [7+ Taskbar Tweaker](https://tweaker.ramensoftware.com/).
