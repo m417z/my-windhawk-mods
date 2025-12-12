@@ -1,83 +1,80 @@
 // ==WindhawkMod==
-// @id              taskbar-volume-control
-// @name            Taskbar Volume Control
-// @description     Control the system volume by scrolling over the taskbar
-// @version         1.2.2
-// @author          m417z
+// @id              taskbar-volume-brightness-wmi
+// @name            Taskbar Volume & Brightness (WMI Fix)
+// @description     Split taskbar control: Left = Brightness (WMI/DDC), Right = Volume.
+// @version         1.4.1
+// @author          m417z (Modified)
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
 // @homepage        https://m417z.com/
 // @include         explorer.exe
-// @compilerOptions -DWINVER=0x0A00 -lcomctl32 -ldwmapi -lgdi32 -lole32 -lversion
+// @compilerOptions -DWINVER=0x0A00 -lcomctl32 -ldwmapi -lgdi32 -lole32 -lversion -ldxva2 -lpowrprof -lwbemuuid -loleaut32
 // ==/WindhawkMod==
-
-// Source code is published under The GNU General Public License v3.0.
-//
-// For bug reports and feature requests, please open an issue here:
-// https://github.com/ramensoftware/windhawk-mods/issues
-//
-// For pull requests, development takes place here:
-// https://github.com/m417z/my-windhawk-mods
 
 // ==WindhawkModReadme==
 /*
-# Taskbar Volume Control
+# Taskbar Volume & Brightness Control (WMI Fix)
+Control the system volume by scrolling over the right side of the taskbar, 
+and control monitor brightness by scrolling over the left side.
 
-Control the system volume by scrolling over the taskbar.
+## Features
+*   **Scroll on Right Half**: Changes System Volume.
+*   **Scroll on Left Half**: Changes Monitor Brightness.
+*   **Middle Click**: Mute/Unmute.
 
-**Note:** Some laptop touchpads might not support scrolling over the taskbar. A
-workaround is to use the "pinch to zoom" gesture. For details, check out [a
-relevant
-issue](https://tweaker.userecho.com/topics/826-scroll-on-trackpadtouchpad-doesnt-trigger-mouse-wheel-options).
+## Laptop Support (WMI)
+This version uses **WMI (Windows Management Instrumentation)** to control brightness.
+This is the most reliable method for internal laptop screens.
+It also supports **DDC/CI** for external monitors.
 
-![Demonstration](https://i.imgur.com/B6mtUj9.gif)
+## Troubleshooting
+If brightness doesn't work:
+1. Go to the **Settings** tab.
+2. Change **Brightness Control Method** to **"Laptop (WMI)"**.
+3. If that fails, try **"Legacy (Power API)"**.
 */
 // ==/WindhawkModReadme==
 
 // ==WindhawkModSettings==
 /*
-- volumeIndicator: win11
-  $name: Volume control indicator
+- brightnessMethod: auto
+  $name: Brightness Control Method
+  $description: Choose the method used to control brightness. 'Auto' tries WMI (Laptop) then DDC (External).
   $options:
-  - win11: Windows 11
-  - modern: Windows 10
-  - classic: Windows 7
+  - auto: Auto (Recommended)
+  - wmi: Laptop (WMI)
+  - ddc: External (DDC/CI)
+  - power: Legacy (Power API)
+- volumeIndicator: win11
+  $name: Volume indicator
+  $description: The volume indicator style.
+  $options:
   - none: None
+  - classic: Classic (Windows 7)
+  - modern: Modern (Windows 10)
+  - win11: Windows 11 native
 - scrollArea: taskbar
   $name: Scroll area
+  $description: The area where scrolling triggers the volume control.
   $options:
-  - taskbar: The taskbar
-  - notification_area: The tray area
-  - taskbarWithoutNotificationArea: The taskbar without the tray area
+  - taskbar: Taskbar
+  - notification_area: Notification area
+  - taskbarWithoutNotificationArea: Taskbar without notification area
 - middleClickToMute: true
   $name: Middle click to mute
-  $description: >-
-    With this option enabled, middle clicking the volume tray icon will
-    mute/unmute the system volume (Windows 11 version 22H2 or newer).
-- ctrlScrollVolumeChange: false
-  $name: Ctrl + Scroll to change volume
-  $description: >-
-    When enabled, holding the Ctrl key and scrolling the mouse wheel will change
-    the system volume.
+  $description: Mute/unmute the volume by middle clicking on the taskbar.
+- ctrlScrollVolumeChange: true
+  $name: Hold Ctrl to change volume
+  $description: Change the volume when holding Ctrl while scrolling. If disabled, holding Ctrl prevents volume change.
 - noAutomaticMuteToggle: false
-  $name: No automatic mute toggle
-  $description: >-
-    For the Windows 11 indicator, this option causes volume scrolling to be
-    disabled when the volume is muted. For the None control indicator: By
-    default, the output device is muted once the volume reaches zero, and is
-    unmuted on any change to a non-zero volume. Enabling this option turns off
-    this functionality, such that the device mute status is not changed.
+  $name: Don't toggle mute automatically
+  $description: Don't unmute when volume is increased, and don't mute when volume is decreased to 0.
 - volumeChangeStep: 2
   $name: Volume change step
-  $description: >-
-    Allows to configure the volume change that will occur with each notch of
-    mouse wheel movement. This option has effect only for the Windows 11, None
-    control indicators. For the Windows 11 indicator, must be a multiple of 2.
+  $description: The amount of volume change per scroll notch.
 - oldTaskbarOnWin11: false
-  $name: Customize the old taskbar on Windows 11
-  $description: >-
-    Enable this option to customize the old taskbar on Windows 11 (if using
-    ExplorerPatcher or a similar tool).
+  $name: Old taskbar on Windows 11
+  $description: Set to true if you're using ExplorerPatcher to restore the Windows 10 taskbar on Windows 11.
 */
 // ==/WindhawkModSettings==
 
@@ -91,8 +88,25 @@ issue](https://tweaker.userecho.com/topics/826-scroll-on-trackpadtouchpad-doesnt
 #include <psapi.h>
 #include <windowsx.h>
 
+// Monitor & Power Includes
+#include <highlevelmonitorconfigurationapi.h>
+#include <physicalmonitorenumerationapi.h>
+#include <vector>
+#include <powrprof.h>
+#include <initguid.h>
+#include <wbemidl.h>
+// #include <comdef.h> // Removed to avoid linker errors
+
 #include <atomic>
 #include <unordered_set>
+
+// Define Power GUIDs manually if missing in MinGW environment
+#ifndef GUID_VIDEO_SUBGROUP
+DEFINE_GUID(GUID_VIDEO_SUBGROUP, 0x7516b95f, 0xf776, 0x4464, 0x8c, 0x53, 0x06, 0x16, 0x7f, 0x40, 0xcc, 0x99);
+#endif
+#ifndef GUID_DEVICE_POWER_POLICY_VIDEO_BRIGHTNESS
+DEFINE_GUID(GUID_DEVICE_POWER_POLICY_VIDEO_BRIGHTNESS, 0xaded5e82, 0xb621, 0x4740, 0xa6, 0x39, 0x65, 0x6f, 0x55, 0x0b, 0x36, 0x29);
+#endif
 
 enum class VolumeIndicator {
     None,
@@ -107,7 +121,15 @@ enum class ScrollArea {
     taskbarWithoutNotificationArea,
 };
 
+enum class BrightnessMethod {
+    Auto,
+    WMI,
+    DDC,
+    Power
+};
+
 struct {
+    BrightnessMethod brightnessMethod;
     VolumeIndicator volumeIndicator;
     ScrollArea scrollArea;
     bool middleClickToMute;
@@ -154,10 +176,10 @@ enum {
 #define WM_POINTERWHEEL 0x024E
 #endif
 
-int g_nWinVersion;
-int g_nExplorerVersion;
-HWND g_hTaskbarWnd;
-DWORD g_dwTaskbarThreadId;
+static int g_nWinVersion;
+static int g_nExplorerVersion;
+static HWND g_hTaskbarWnd;
+static DWORD g_dwTaskbarThreadId;
 
 #pragma region functions
 
@@ -201,72 +223,69 @@ bool GetNotificationAreaRect(HWND hMMTaskbarWnd, RECT* rcResult) {
     if (hMMTaskbarWnd == g_hTaskbarWnd) {
         HWND hTrayNotifyWnd =
             FindWindowEx(hMMTaskbarWnd, NULL, L"TrayNotifyWnd", NULL);
-        if (hTrayNotifyWnd && GetWindowRect(hTrayNotifyWnd, rcResult) &&
-            !IsRectEmpty(rcResult)) {
-            return true;
+        if (!hTrayNotifyWnd) {
+            return false;
         }
 
-        // When attaching an external monitor, it was observed that the rect can
-        // be empty. Use fallback in this case.
-    } else if (g_nExplorerVersion >= WIN_VERSION_11_21H2) {
+        return GetWindowRect(hTrayNotifyWnd, rcResult);
+    }
+
+    if (g_nExplorerVersion >= WIN_VERSION_11_21H2) {
         RECT rcTaskbar;
-        if (GetWindowRect(hMMTaskbarWnd, &rcTaskbar)) {
-            HWND hBridgeWnd = FindWindowEx(
-                hMMTaskbarWnd, NULL,
-                L"Windows.UI.Composition.DesktopWindowContentBridge", NULL);
-            while (hBridgeWnd) {
-                RECT rcBridge;
-                if (!GetWindowRect(hBridgeWnd, &rcBridge)) {
-                    break;
-                }
+        if (!GetWindowRect(hMMTaskbarWnd, &rcTaskbar)) {
+            return false;
+        }
 
-                if (!EqualRect(&rcBridge, &rcTaskbar)) {
-                    if (IsRectEmpty(&rcBridge)) {
-                        break;
-                    }
-
-                    CopyRect(rcResult, &rcBridge);
-                    return true;
-                }
-
-                hBridgeWnd = FindWindowEx(
-                    hMMTaskbarWnd, hBridgeWnd,
-                    L"Windows.UI.Composition.DesktopWindowContentBridge", NULL);
+        HWND hBridgeWnd = FindWindowEx(
+            hMMTaskbarWnd, NULL,
+            L"Windows.UI.Composition.DesktopWindowContentBridge", NULL);
+        while (hBridgeWnd) {
+            RECT rcBridge;
+            if (!GetWindowRect(hBridgeWnd, &rcBridge)) {
+                break;
             }
+
+            if (rcBridge.left != rcTaskbar.left ||
+                rcBridge.top != rcTaskbar.top ||
+                rcBridge.right != rcTaskbar.right ||
+                rcBridge.bottom != rcTaskbar.bottom) {
+                CopyRect(rcResult, &rcBridge);
+                return true;
+            }
+
+            hBridgeWnd = FindWindowEx(
+                hMMTaskbarWnd, hBridgeWnd,
+                L"Windows.UI.Composition.DesktopWindowContentBridge", NULL);
         }
 
         // On newer Win11 versions, the clock on secondary taskbars is difficult
-        // to detect without either UI Automation or UWP UI APIs. Use fallback.
-    } else if (g_nExplorerVersion >= WIN_VERSION_10_R1) {
-        HWND hClockButtonWnd =
-            FindWindowEx(hMMTaskbarWnd, NULL, L"ClockButton", NULL);
-        if (hClockButtonWnd && GetWindowRect(hClockButtonWnd, rcResult) &&
-            !IsRectEmpty(rcResult)) {
-            return true;
+        // to detect without either UI Automation or UWP UI APIs. Just consider
+        // the last pixels, not accurate, but better than nothing.
+        int lastPixels =
+            MulDiv(50, GetDpiForWindowWithFallback(hMMTaskbarWnd), 96);
+        CopyRect(rcResult, &rcTaskbar);
+        if (rcResult->right - rcResult->left > lastPixels) {
+            if (GetWindowLong(hMMTaskbarWnd, GWL_EXSTYLE) & WS_EX_LAYOUTRTL) {
+                rcResult->right = rcResult->left + lastPixels;
+            } else {
+                rcResult->left = rcResult->right - lastPixels;
+            }
         }
-    } else {
-        // In older Windows versions, there's no clock on the secondary taskbar.
-        SetRectEmpty(rcResult);
+
         return true;
     }
 
-    RECT rcTaskbar;
-    if (!GetWindowRect(hMMTaskbarWnd, &rcTaskbar)) {
-        return false;
-    }
-
-    // Just consider the last pixels as a fallback, not accurate, but better
-    // than nothing.
-    int lastPixels = MulDiv(50, GetDpiForWindowWithFallback(hMMTaskbarWnd), 96);
-    CopyRect(rcResult, &rcTaskbar);
-    if (rcResult->right - rcResult->left > lastPixels) {
-        if (GetWindowLong(hMMTaskbarWnd, GWL_EXSTYLE) & WS_EX_LAYOUTRTL) {
-            rcResult->right = rcResult->left + lastPixels;
-        } else {
-            rcResult->left = rcResult->right - lastPixels;
+    if (g_nExplorerVersion >= WIN_VERSION_10_R1) {
+        HWND hClockButtonWnd =
+            FindWindowEx(hMMTaskbarWnd, NULL, L"ClockButton", NULL);
+        if (!hClockButtonWnd) {
+            return false;
         }
+
+        return GetWindowRect(hClockButtonWnd, rcResult);
     }
 
+    SetRectEmpty(rcResult);
     return true;
 }
 
@@ -1208,7 +1227,7 @@ static BOOL CALLBACK EnumThreadFindSndVolTrayControlWnd(HWND hWnd,
 // wParam - TRUE to subclass, FALSE to unsubclass
 // lParam - subclass data
 UINT g_subclassRegisteredMsg = RegisterWindowMessage(
-    L"Windhawk_SetWindowSubclassFromAnyThread_" WH_MOD_ID);
+    L"Windhawk_SetWindowSubclassFromAnyThread_taskbar-volume-control");
 
 BOOL SetWindowSubclassFromAnyThread(HWND hWnd,
                                     SUBCLASSPROC pfnSubclass,
@@ -1264,8 +1283,304 @@ BOOL SetWindowSubclassFromAnyThread(HWND hWnd,
     return param.result;
 }
 
+// ---------------------------------------------------------
+// WMI Brightness Control
+// ---------------------------------------------------------
+
+void AdjustBrightnessWMI(int nWheelDelta) {
+    HRESULT hres;
+    
+    // Step 1: Initialize COM. 
+    hres =  CoInitializeEx(0, COINIT_MULTITHREADED); 
+    
+    if (SUCCEEDED(hres)) {
+        hres =  CoInitializeSecurity(
+            NULL, 
+            -1,                          
+            NULL,                        
+            NULL,                        
+            RPC_C_AUTHN_LEVEL_DEFAULT,   
+            RPC_C_IMP_LEVEL_IMPERSONATE, 
+            NULL,                        
+            EOAC_NONE,                   
+            NULL                         
+            );
+    }
+    
+    // Step 3: Obtain the initial locator to WMI
+    IWbemLocator *pLoc = NULL;
+    hres = CoCreateInstance(
+        CLSID_WbemLocator,             
+        0, 
+        CLSCTX_INPROC_SERVER, 
+        IID_IWbemLocator, (LPVOID *) &pLoc);
+ 
+    if (FAILED(hres)) {
+        Wh_Log(L"WMI: Failed to create IWbemLocator. Error code = 0x%X", hres);
+        if (hres != RPC_E_CHANGED_MODE) CoUninitialize();
+        return;
+    }
+ 
+    // Step 4: Connect to WMI through the IWbemLocator::ConnectServer method
+    IWbemServices *pSvc = NULL;
+    BSTR bstrNamespace = SysAllocString(L"ROOT\\WMI");
+    hres = pLoc->ConnectServer(
+         bstrNamespace,           // Object path of WMI namespace
+         NULL,                    // User name. NULL = current user
+         NULL,                    // User password. NULL = current
+         0,                       // Locale. NULL indicates current
+         NULL,                    // Security flags.
+         0,                       // Authority (for example, Kerberos)
+         0,                       // Context object 
+         &pSvc                    // pointer to IWbemServices proxy
+         );
+    SysFreeString(bstrNamespace);
+    
+    if (FAILED(hres)) {
+        Wh_Log(L"WMI: Could not connect to ROOT\\WMI. Error code = 0x%X", hres);
+        pLoc->Release();     
+        if (hres != RPC_E_CHANGED_MODE) CoUninitialize();
+        return;
+    }
+    
+    // Step 5: Set security levels on the proxy
+    hres = CoSetProxyBlanket(
+       pSvc,                        
+       RPC_C_AUTHN_WINNT,           
+       RPC_C_AUTHZ_NONE,            
+       NULL,                        
+       RPC_C_AUTHN_LEVEL_CALL,      
+       RPC_C_IMP_LEVEL_IMPERSONATE, 
+       NULL,                        
+       EOAC_NONE                    
+    );
+
+    if (FAILED(hres)) {
+       Wh_Log(L"WMI: Could not set proxy blanket. Error code = 0x%X", hres);
+       pSvc->Release();
+       pLoc->Release();     
+       if (hres != RPC_E_CHANGED_MODE) CoUninitialize();
+       return;
+    }
+
+    // Step 6: Get current brightness
+    IEnumWbemClassObject* pEnumerator = NULL;
+    BSTR bstrWQL = SysAllocString(L"WQL");
+    BSTR bstrQuery = SysAllocString(L"SELECT CurrentBrightness FROM WmiMonitorBrightness");
+    hres = pSvc->ExecQuery(
+        bstrWQL, 
+        bstrQuery,
+        WBEM_FLAG_FORWARD_ONLY | WBEM_FLAG_RETURN_IMMEDIATELY, 
+        NULL,
+        &pEnumerator);
+    SysFreeString(bstrWQL);
+    SysFreeString(bstrQuery);
+        
+    if (FAILED(hres)) {
+        Wh_Log(L"WMI: Query failed. Error code = 0x%X", hres);
+        pSvc->Release();
+        pLoc->Release();
+        if (hres != RPC_E_CHANGED_MODE) CoUninitialize();
+        return;
+    }
+
+    IWbemClassObject *pclsObj = NULL;
+    ULONG uReturn = 0;
+    int currentBrightness = 0;
+    bool found = false;
+
+    while (pEnumerator) {
+        HRESULT hr = pEnumerator->Next(WBEM_INFINITE, 1, &pclsObj, &uReturn);
+        if(0 == uReturn) {
+            break;
+        }
+
+        VARIANT vtProp;
+        hr = pclsObj->Get(L"CurrentBrightness", 0, &vtProp, 0, 0);
+        if (SUCCEEDED(hr)) {
+            currentBrightness = vtProp.uiVal; 
+            found = true;
+        }
+        VariantClear(&vtProp);
+        pclsObj->Release();
+        if(found) break; 
+    }
+    pEnumerator->Release();
+
+    if (!found) {
+        Wh_Log(L"WMI: No brightness monitor found.");
+        pSvc->Release();
+        pLoc->Release();
+        if (hres != RPC_E_CHANGED_MODE) CoUninitialize();
+        return;
+    }
+
+    // Step 7: Calculate new brightness
+    int step = 10;
+    if (g_settings.volumeChangeStep > 0) step = g_settings.volumeChangeStep * 2;
+    int clicks = nWheelDelta / WHEEL_DELTA;
+    int newBrightness = currentBrightness + (clicks * step);
+    if (newBrightness < 0) newBrightness = 0;
+    if (newBrightness > 100) newBrightness = 100;
+
+    Wh_Log(L"WMI: Setting brightness from %d to %d", currentBrightness, newBrightness);
+
+    // Step 8: Execute WmiSetBrightness method
+    BSTR ClassName = SysAllocString(L"WmiMonitorBrightnessMethods");
+    IWbemClassObject* pClass = NULL;
+    hres = pSvc->GetObject(ClassName, 0, NULL, &pClass, NULL);
+
+    if (SUCCEEDED(hres)) {
+        IWbemClassObject* pInParamsDefinition = NULL;
+        BSTR bstrMethodName = SysAllocString(L"WmiSetBrightness");
+        hres = pClass->GetMethod(bstrMethodName, 0, &pInParamsDefinition, NULL);
+
+        if (SUCCEEDED(hres)) {
+            IWbemClassObject* pClassInstance = NULL;
+            hres = pInParamsDefinition->SpawnInstance(0, &pClassInstance);
+
+            if (SUCCEEDED(hres)) {
+                VARIANT varTimeout;
+                varTimeout.vt = VT_I4;
+                varTimeout.lVal = 1; 
+                
+                VARIANT varBrightness;
+                varBrightness.vt = VT_UI1;
+                varBrightness.bVal = (BYTE)newBrightness;
+
+                pClassInstance->Put(L"Timeout", 0, &varTimeout, 0);
+                pClassInstance->Put(L"Brightness", 0, &varBrightness, 0);
+
+                // Quick hack: Loop instances and execute on first.
+                IEnumWbemClassObject* pEnumMethods = NULL;
+                hres = pSvc->CreateInstanceEnum(ClassName, WBEM_FLAG_FORWARD_ONLY, NULL, &pEnumMethods);
+                if (SUCCEEDED(hres)) {
+                    IWbemClassObject* pMethodObj = NULL;
+                    while (pEnumMethods) {
+                         pEnumMethods->Next(WBEM_INFINITE, 1, &pMethodObj, &uReturn);
+                         if (0 == uReturn) break;
+                         
+                         VARIANT vtPath;
+                         pMethodObj->Get(L"__PATH", 0, &vtPath, 0, 0);
+                         
+                         hres = pSvc->ExecMethod(vtPath.bstrVal, bstrMethodName, 0, NULL, pClassInstance, NULL, NULL);
+                         
+                         VariantClear(&vtPath);
+                         pMethodObj->Release();
+                         break; // Apply to first found
+                    }
+                    pEnumMethods->Release();
+                }
+
+                pClassInstance->Release();
+            }
+            pInParamsDefinition->Release();
+        }
+        SysFreeString(bstrMethodName);
+        pClass->Release();
+    }
+    SysFreeString(ClassName);
+
+    // Cleanup
+    pSvc->Release();
+    pLoc->Release();
+    // CoUninitialize(); 
+}
+
+
+void AdjustBrightnessPower(int nWheelDelta) {
+    Wh_Log(L"Using Power API (Legacy)");
+    GUID *pActiveScheme = NULL;
+    if (PowerGetActiveScheme(NULL, &pActiveScheme) != ERROR_SUCCESS) return;
+
+    SYSTEM_POWER_STATUS sps;
+    GetSystemPowerStatus(&sps);
+    bool isAC = (sps.ACLineStatus != 0); // 1=AC, 0=Battery, 255=Unknown
+
+    DWORD value;
+    if (isAC) {
+        PowerReadACValueIndex(NULL, pActiveScheme, &GUID_VIDEO_SUBGROUP, &GUID_DEVICE_POWER_POLICY_VIDEO_BRIGHTNESS, &value);
+    } else {
+        PowerReadDCValueIndex(NULL, pActiveScheme, &GUID_VIDEO_SUBGROUP, &GUID_DEVICE_POWER_POLICY_VIDEO_BRIGHTNESS, &value);
+    }
+    
+    int step = 10;
+    if (g_settings.volumeChangeStep > 0) step = g_settings.volumeChangeStep * 2;
+    int clicks = nWheelDelta / WHEEL_DELTA;
+    int newValue = (int)value + (clicks * step);
+    if (newValue < 0) newValue = 0;
+    if (newValue > 100) newValue = 100;
+
+    if (isAC) {
+        PowerWriteACValueIndex(NULL, pActiveScheme, &GUID_VIDEO_SUBGROUP, &GUID_DEVICE_POWER_POLICY_VIDEO_BRIGHTNESS, newValue);
+    } else {
+        PowerWriteDCValueIndex(NULL, pActiveScheme, &GUID_VIDEO_SUBGROUP, &GUID_DEVICE_POWER_POLICY_VIDEO_BRIGHTNESS, newValue);
+    }
+    
+    PowerSetActiveScheme(NULL, pActiveScheme);
+    LocalFree(pActiveScheme);
+}
+
+void AdjustBrightnessDDC(int nWheelDelta, bool *successOut) {
+    POINT pt;
+    GetCursorPos(&pt);
+    HMONITOR hMonitor = MonitorFromPoint(pt, MONITOR_DEFAULTTOPRIMARY);
+
+    DWORD dwNumPhysicalMonitors = 0;
+    bool success = false;
+    
+    if (GetNumberOfPhysicalMonitorsFromHMONITOR(hMonitor, &dwNumPhysicalMonitors) && dwNumPhysicalMonitors > 0) {
+        std::vector<PHYSICAL_MONITOR> pPhysicalMonitors(dwNumPhysicalMonitors);
+        if (GetPhysicalMonitorsFromHMONITOR(hMonitor, dwNumPhysicalMonitors, pPhysicalMonitors.data())) {
+            DWORD dwMin, dwMax, dwCurrent;
+            // Try first monitor
+            if (GetMonitorBrightness(pPhysicalMonitors[0].hPhysicalMonitor, &dwMin, &dwCurrent, &dwMax)) {
+                Wh_Log(L"Using DDC/CI (External)");
+                int step = 10; 
+                if (g_settings.volumeChangeStep > 0) step = g_settings.volumeChangeStep * 2; 
+
+                int clicks = nWheelDelta / WHEEL_DELTA;
+                int newBrightness = (int)dwCurrent + (clicks * step);
+
+                if (newBrightness < (int)dwMin) newBrightness = (int)dwMin;
+                if (newBrightness > (int)dwMax) newBrightness = (int)dwMax;
+
+                if (SetMonitorBrightness(pPhysicalMonitors[0].hPhysicalMonitor, (DWORD)newBrightness)) {
+                    success = true;
+                }
+            }
+            DestroyPhysicalMonitors(dwNumPhysicalMonitors, pPhysicalMonitors.data());
+        }
+    }
+    
+    if (successOut) *successOut = success;
+}
+
+void AdjustBrightness(int nWheelDelta) {
+    // Method: Laptop (WMI)
+    if (g_settings.brightnessMethod == BrightnessMethod::WMI) {
+        AdjustBrightnessWMI(nWheelDelta);
+        return;
+    }
+
+    // Method: External (DDC)
+    if (g_settings.brightnessMethod == BrightnessMethod::DDC) {
+        AdjustBrightnessDDC(nWheelDelta, NULL);
+        return;
+    }
+
+    // Method: Power (Legacy)
+    if (g_settings.brightnessMethod == BrightnessMethod::Power) {
+        AdjustBrightnessPower(nWheelDelta);
+        return;
+    }
+
+    // Method: Auto (Default)
+    AdjustBrightnessWMI(nWheelDelta);
+}
+
 bool OnMouseWheel(HWND hWnd, WPARAM wParam, LPARAM lParam) {
-    if (GetCapture()) {
+    if (GetCapture() != NULL) {
         return false;
     }
 
@@ -1281,7 +1596,39 @@ bool OnMouseWheel(HWND hWnd, WPARAM wParam, LPARAM lParam) {
         return false;
     }
 
-    // Allows to steal focus.
+    // --- SPLIT LOGIC START ---
+    RECT rc;
+    GetWindowRect(hWnd, &rc);
+    int width = rc.right - rc.left;
+    int height = rc.bottom - rc.top;
+
+    bool isBrightnessArea = false;
+
+    // Check if taskbar is horizontal or vertical to determine split direction
+    if (width > height) { 
+        // Horizontal Taskbar: Left half is brightness
+        if ((pt.x - rc.left) < (width / 2)) {
+            isBrightnessArea = true;
+        }
+    } else {
+        // Vertical Taskbar: Top half is brightness
+        if ((pt.y - rc.top) < (height / 2)) {
+            isBrightnessArea = true;
+        }
+    }
+
+    if (isBrightnessArea) {
+        // Allows to steal focus (copied from original mod behavior)
+        INPUT input;
+        ZeroMemory(&input, sizeof(INPUT));
+        SendInput(1, &input, sizeof(INPUT));
+
+        AdjustBrightness(GET_WHEEL_DELTA_WPARAM(wParam));
+        return true;
+    }
+    // --- SPLIT LOGIC END ---
+
+    // Allows to steal focus
     INPUT input;
     ZeroMemory(&input, sizeof(INPUT));
     SendInput(1, &input, sizeof(INPUT));
@@ -1421,9 +1768,9 @@ void HandleIdentifiedInputSiteWindow(HWND hWnd) {
     // At first, I tried to subclass the window instead of hooking its wndproc,
     // but the inputsite.dll code checks that the value wasn't changed, and
     // crashes otherwise.
-    auto wndProc = (WNDPROC)GetWindowLongPtr(hWnd, GWLP_WNDPROC);
-    WindhawkUtils::Wh_SetFunctionHookT(wndProc, InputSiteWindowProc_Hook,
-                                       &InputSiteWindowProc_Original);
+    void* wndProc = (void*)GetWindowLongPtr(hWnd, GWLP_WNDPROC);
+    Wh_SetFunctionHook(wndProc, (void*)InputSiteWindowProc_Hook,
+                       (void**)&InputSiteWindowProc_Original);
 
     if (g_initialized) {
         Wh_ApplyHookOperations();
@@ -1533,6 +1880,7 @@ HWND WINAPI CreateWindowExW_Hook(DWORD dwExStyle,
     HWND hWnd = CreateWindowExW_Original(dwExStyle, lpClassName, lpWindowName,
                                          dwStyle, X, Y, nWidth, nHeight,
                                          hWndParent, hMenu, hInstance, lpParam);
+
     if (!hWnd)
         return hWnd;
 
@@ -1599,6 +1947,17 @@ HWND WINAPI CreateWindowInBand_Hook(DWORD dwExStyle,
 }
 
 void LoadSettings() {
+    PCWSTR brightnessMethod = Wh_GetStringSetting(L"brightnessMethod");
+    g_settings.brightnessMethod = BrightnessMethod::Auto;
+    if (wcscmp(brightnessMethod, L"wmi") == 0) {
+        g_settings.brightnessMethod = BrightnessMethod::WMI;
+    } else if (wcscmp(brightnessMethod, L"ddc") == 0) {
+        g_settings.brightnessMethod = BrightnessMethod::DDC;
+    } else if (wcscmp(brightnessMethod, L"power") == 0) {
+        g_settings.brightnessMethod = BrightnessMethod::Power;
+    }
+    Wh_FreeStringSetting(brightnessMethod);
+
     PCWSTR volumeIndicator = Wh_GetStringSetting(L"volumeIndicator");
     g_settings.volumeIndicator = VolumeIndicator::Win11;
     if (wcscmp(volumeIndicator, L"modern") == 0) {
@@ -1674,13 +2033,8 @@ HMODULE GetTaskbarViewModuleHandle() {
     return module;
 }
 
-bool ShouldHookTaskbarViewDllSymbols() {
-    return g_nWinVersion >= WIN_VERSION_11_22H2 && g_settings.middleClickToMute;
-}
-
 void HandleLoadedModuleIfTaskbarView(HMODULE module, LPCWSTR lpLibFileName) {
-    if (ShouldHookTaskbarViewDllSymbols() && !g_taskbarViewDllLoaded &&
-        GetTaskbarViewModuleHandle() == module &&
+    if (!g_taskbarViewDllLoaded && GetTaskbarViewModuleHandle() == module &&
         !g_taskbarViewDllLoaded.exchange(true)) {
         Wh_Log(L"Loaded %s", lpLibFileName);
 
@@ -1771,7 +2125,7 @@ BOOL Wh_ModInit() {
         g_nExplorerVersion = WIN_VERSION_10_20H1;
     }
 
-    if (ShouldHookTaskbarViewDllSymbols()) {
+    if (g_nWinVersion >= WIN_VERSION_11_22H2 && g_settings.middleClickToMute) {
         if (HMODULE taskbarViewModule = GetTaskbarViewModuleHandle()) {
             g_taskbarViewDllLoaded = true;
             if (!HookTaskbarViewDllSymbols(taskbarViewModule)) {
@@ -1779,32 +2133,32 @@ BOOL Wh_ModInit() {
             }
         } else {
             Wh_Log(L"Taskbar view module not loaded yet");
+
+            HMODULE kernelBaseModule = GetModuleHandle(L"kernelbase.dll");
+            auto pKernelBaseLoadLibraryExW =
+                (decltype(&LoadLibraryExW))GetProcAddress(kernelBaseModule,
+                                                          "LoadLibraryExW");
+            Wh_SetFunctionHook((void*)pKernelBaseLoadLibraryExW,
+                               (void*)LoadLibraryExW_Hook,
+                               (void**)&LoadLibraryExW_Original);
         }
     }
 
-    WindhawkUtils::Wh_SetFunctionHookT(CreateWindowExW, CreateWindowExW_Hook,
-                                       &CreateWindowExW_Original);
+    Wh_SetFunctionHook((void*)CreateWindowExW, (void*)CreateWindowExW_Hook,
+                       (void**)&CreateWindowExW_Original);
 
-    HMODULE user32Module =
-        LoadLibraryEx(L"user32.dll", nullptr, LOAD_LIBRARY_SEARCH_SYSTEM32);
+    HMODULE user32Module = LoadLibrary(L"user32.dll");
     if (user32Module) {
-        auto pCreateWindowInBand = (CreateWindowInBand_t)GetProcAddress(
-            user32Module, "CreateWindowInBand");
+        void* pCreateWindowInBand =
+            (void*)GetProcAddress(user32Module, "CreateWindowInBand");
         if (pCreateWindowInBand) {
-            WindhawkUtils::Wh_SetFunctionHookT(pCreateWindowInBand,
-                                               CreateWindowInBand_Hook,
-                                               &CreateWindowInBand_Original);
+            Wh_SetFunctionHook(pCreateWindowInBand,
+                               (void*)CreateWindowInBand_Hook,
+                               (void**)&CreateWindowInBand_Original);
         }
     }
 
     HandleLoadedExplorerPatcher();
-
-    HMODULE kernelBaseModule = GetModuleHandle(L"kernelbase.dll");
-    auto pKernelBaseLoadLibraryExW = (decltype(&LoadLibraryExW))GetProcAddress(
-        kernelBaseModule, "LoadLibraryExW");
-    WindhawkUtils::Wh_SetFunctionHookT(pKernelBaseLoadLibraryExW,
-                                       LoadLibraryExW_Hook,
-                                       &LoadLibraryExW_Original);
 
     g_initialized = true;
 
@@ -1814,7 +2168,7 @@ BOOL Wh_ModInit() {
 void Wh_ModAfterInit() {
     Wh_Log(L">");
 
-    if (ShouldHookTaskbarViewDllSymbols() && !g_taskbarViewDllLoaded) {
+    if (!g_taskbarViewDllLoaded) {
         if (HMODULE taskbarViewModule = GetTaskbarViewModuleHandle()) {
             if (!g_taskbarViewDllLoaded.exchange(true)) {
                 Wh_Log(L"Got Taskbar.View.dll");
