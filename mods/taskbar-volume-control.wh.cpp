@@ -1287,135 +1287,104 @@ BOOL SetWindowSubclassFromAnyThread(HWND hWnd,
 // WMI Brightness Control
 // ---------------------------------------------------------
 
+// Global variables for WMI Caching
+IWbemServices* g_pWmiSvc = nullptr;
+IWbemClassObject* g_pWmiClass = NULL;
+IWbemClassObject* g_pWmiClassInstance = NULL;
+bool g_wmiInitialized = false;
+
+void UninitWMI() {
+    if (g_pWmiClassInstance) { g_pWmiClassInstance->Release(); g_pWmiClassInstance = NULL; }
+    if (g_pWmiClass) { g_pWmiClass->Release(); g_pWmiClass = NULL; }
+    if (g_pWmiSvc) { g_pWmiSvc->Release(); g_pWmiSvc = NULL; }
+    if (g_wmiInitialized) { CoUninitialize(); g_wmiInitialized = false; }
+}
+
+bool InitWMI() {
+    if (g_pWmiSvc) return true; // Already initialized
+
+    HRESULT hres = CoInitializeEx(0, COINIT_MULTITHREADED);
+    if (FAILED(hres) && hres != RPC_E_CHANGED_MODE) return false;
+    g_wmiInitialized = true;
+
+    hres = CoInitializeSecurity(NULL, -1, NULL, NULL, RPC_C_AUTHN_LEVEL_DEFAULT, RPC_C_IMP_LEVEL_IMPERSONATE, NULL, EOAC_NONE, NULL);
+
+    IWbemLocator* pLoc = NULL;
+    hres = CoCreateInstance(CLSID_WbemLocator, 0, CLSCTX_INPROC_SERVER, IID_IWbemLocator, (LPVOID*)&pLoc);
+    if (FAILED(hres)) return false;
+
+    BSTR bstrNamespace = SysAllocString(L"ROOT\\WMI");
+    hres = pLoc->ConnectServer(bstrNamespace, NULL, NULL, 0, NULL, 0, 0, &g_pWmiSvc);
+    SysFreeString(bstrNamespace);
+    pLoc->Release();
+
+    if (FAILED(hres)) return false;
+
+    CoSetProxyBlanket(g_pWmiSvc, RPC_C_AUTHN_WINNT, RPC_C_AUTHZ_NONE, NULL, RPC_C_AUTHN_LEVEL_CALL, RPC_C_IMP_LEVEL_IMPERSONATE, NULL, EOAC_NONE);
+
+    // Cache the Class and Instance definitions too
+    BSTR ClassName = SysAllocString(L"WmiMonitorBrightnessMethods");
+    hres = g_pWmiSvc->GetObject(ClassName, 0, NULL, &g_pWmiClass, NULL);
+    SysFreeString(ClassName);
+
+    if (FAILED(hres)) return false;
+
+    IWbemClassObject* pInParamsDefinition = NULL;
+    BSTR bstrMethodName = SysAllocString(L"WmiSetBrightness");
+    hres = g_pWmiClass->GetMethod(bstrMethodName, 0, &pInParamsDefinition, NULL);
+    SysFreeString(bstrMethodName);
+
+    if (SUCCEEDED(hres)) {
+        pInParamsDefinition->SpawnInstance(0, &g_pWmiClassInstance);
+        pInParamsDefinition->Release();
+    }
+
+    return (g_pWmiClassInstance != NULL);
+}
+
 void AdjustBrightnessWMI(int nWheelDelta) {
+    // 1. Ensure Connection Exists
+    if (!InitWMI()) {
+        Wh_Log(L"WMI: Failed to initialize.");
+        return;
+    }
+
     HRESULT hres;
     
-    // Step 1: Initialize COM. 
-    hres =  CoInitializeEx(0, COINIT_MULTITHREADED); 
-    
-    if (SUCCEEDED(hres)) {
-        hres =  CoInitializeSecurity(
-            NULL, 
-            -1,                          
-            NULL,                        
-            NULL,                        
-            RPC_C_AUTHN_LEVEL_DEFAULT,   
-            RPC_C_IMP_LEVEL_IMPERSONATE, 
-            NULL,                        
-            EOAC_NONE,                   
-            NULL                         
-            );
-    }
-    
-    // Step 3: Obtain the initial locator to WMI
-    IWbemLocator *pLoc = NULL;
-    hres = CoCreateInstance(
-        CLSID_WbemLocator,             
-        0, 
-        CLSCTX_INPROC_SERVER, 
-        IID_IWbemLocator, (LPVOID *) &pLoc);
- 
-    if (FAILED(hres)) {
-        Wh_Log(L"WMI: Failed to create IWbemLocator. Error code = 0x%X", hres);
-        if (hres != RPC_E_CHANGED_MODE) CoUninitialize();
-        return;
-    }
- 
-    // Step 4: Connect to WMI through the IWbemLocator::ConnectServer method
-    IWbemServices *pSvc = NULL;
-    BSTR bstrNamespace = SysAllocString(L"ROOT\\WMI");
-    hres = pLoc->ConnectServer(
-         bstrNamespace,           // Object path of WMI namespace
-         NULL,                    // User name. NULL = current user
-         NULL,                    // User password. NULL = current
-         0,                       // Locale. NULL indicates current
-         NULL,                    // Security flags.
-         0,                       // Authority (for example, Kerberos)
-         0,                       // Context object 
-         &pSvc                    // pointer to IWbemServices proxy
-         );
-    SysFreeString(bstrNamespace);
-    
-    if (FAILED(hres)) {
-        Wh_Log(L"WMI: Could not connect to ROOT\\WMI. Error code = 0x%X", hres);
-        pLoc->Release();     
-        if (hres != RPC_E_CHANGED_MODE) CoUninitialize();
-        return;
-    }
-    
-    // Step 5: Set security levels on the proxy
-    hres = CoSetProxyBlanket(
-       pSvc,                        
-       RPC_C_AUTHN_WINNT,           
-       RPC_C_AUTHZ_NONE,            
-       NULL,                        
-       RPC_C_AUTHN_LEVEL_CALL,      
-       RPC_C_IMP_LEVEL_IMPERSONATE, 
-       NULL,                        
-       EOAC_NONE                    
-    );
-
-    if (FAILED(hres)) {
-       Wh_Log(L"WMI: Could not set proxy blanket. Error code = 0x%X", hres);
-       pSvc->Release();
-       pLoc->Release();     
-       if (hres != RPC_E_CHANGED_MODE) CoUninitialize();
-       return;
-    }
-
-    // Step 6: Get current brightness
+    // 2. Get Current Brightness
+    // We still query this every time to ensure we aren't out of sync with system
     IEnumWbemClassObject* pEnumerator = NULL;
     BSTR bstrWQL = SysAllocString(L"WQL");
     BSTR bstrQuery = SysAllocString(L"SELECT CurrentBrightness FROM WmiMonitorBrightness");
-    hres = pSvc->ExecQuery(
-        bstrWQL, 
-        bstrQuery,
-        WBEM_FLAG_FORWARD_ONLY | WBEM_FLAG_RETURN_IMMEDIATELY, 
-        NULL,
-        &pEnumerator);
+    hres = g_pWmiSvc->ExecQuery(bstrWQL, bstrQuery, WBEM_FLAG_FORWARD_ONLY | WBEM_FLAG_RETURN_IMMEDIATELY, NULL, &pEnumerator);
     SysFreeString(bstrWQL);
     SysFreeString(bstrQuery);
-        
-    if (FAILED(hres)) {
-        Wh_Log(L"WMI: Query failed. Error code = 0x%X", hres);
-        pSvc->Release();
-        pLoc->Release();
-        if (hres != RPC_E_CHANGED_MODE) CoUninitialize();
-        return;
-    }
 
-    IWbemClassObject *pclsObj = NULL;
+    if (FAILED(hres)) return;
+
+    IWbemClassObject* pclsObj = NULL;
     ULONG uReturn = 0;
     int currentBrightness = 0;
     bool found = false;
 
     while (pEnumerator) {
-        HRESULT hr = pEnumerator->Next(WBEM_INFINITE, 1, &pclsObj, &uReturn);
-        if(0 == uReturn) {
-            break;
-        }
+        pEnumerator->Next(WBEM_INFINITE, 1, &pclsObj, &uReturn);
+        if (0 == uReturn) break;
 
         VARIANT vtProp;
-        hr = pclsObj->Get(L"CurrentBrightness", 0, &vtProp, 0, 0);
-        if (SUCCEEDED(hr)) {
-            currentBrightness = vtProp.uiVal; 
+        if (SUCCEEDED(pclsObj->Get(L"CurrentBrightness", 0, &vtProp, 0, 0))) {
+            currentBrightness = vtProp.uiVal;
             found = true;
         }
         VariantClear(&vtProp);
         pclsObj->Release();
-        if(found) break; 
+        if (found) break;
     }
     pEnumerator->Release();
 
-    if (!found) {
-        Wh_Log(L"WMI: No brightness monitor found.");
-        pSvc->Release();
-        pLoc->Release();
-        if (hres != RPC_E_CHANGED_MODE) CoUninitialize();
-        return;
-    }
+    if (!found) return;
 
-    // Step 7: Calculate new brightness
+    // 3. Calculate New
     int step = 10;
     if (g_settings.volumeChangeStep > 0) step = g_settings.volumeChangeStep * 2;
     int clicks = nWheelDelta / WHEEL_DELTA;
@@ -1423,68 +1392,46 @@ void AdjustBrightnessWMI(int nWheelDelta) {
     if (newBrightness < 0) newBrightness = 0;
     if (newBrightness > 100) newBrightness = 100;
 
-    Wh_Log(L"WMI: Setting brightness from %d to %d", currentBrightness, newBrightness);
+    if (newBrightness == currentBrightness) return; // Optimization: Don't write if no change
 
-    // Step 8: Execute WmiSetBrightness method
+    // 4. Set Brightness using Cached Instance
+    VARIANT varTimeout;
+    varTimeout.vt = VT_I4;
+    varTimeout.lVal = 1;
+
+    VARIANT varBrightness;
+    varBrightness.vt = VT_UI1;
+    varBrightness.bVal = (BYTE)newBrightness;
+
+    g_pWmiClassInstance->Put(L"Timeout", 0, &varTimeout, 0);
+    g_pWmiClassInstance->Put(L"Brightness", 0, &varBrightness, 0);
+
     BSTR ClassName = SysAllocString(L"WmiMonitorBrightnessMethods");
-    IWbemClassObject* pClass = NULL;
-    hres = pSvc->GetObject(ClassName, 0, NULL, &pClass, NULL);
+    BSTR bstrMethodName = SysAllocString(L"WmiSetBrightness");
 
+    // Loop instances and execute
+    IEnumWbemClassObject* pEnumMethods = NULL;
+    hres = g_pWmiSvc->CreateInstanceEnum(ClassName, WBEM_FLAG_FORWARD_ONLY, NULL, &pEnumMethods);
     if (SUCCEEDED(hres)) {
-        IWbemClassObject* pInParamsDefinition = NULL;
-        BSTR bstrMethodName = SysAllocString(L"WmiSetBrightness");
-        hres = pClass->GetMethod(bstrMethodName, 0, &pInParamsDefinition, NULL);
+        IWbemClassObject* pMethodObj = NULL;
+        while (pEnumMethods) {
+            pEnumMethods->Next(WBEM_INFINITE, 1, &pMethodObj, &uReturn);
+            if (0 == uReturn) break;
 
-        if (SUCCEEDED(hres)) {
-            IWbemClassObject* pClassInstance = NULL;
-            hres = pInParamsDefinition->SpawnInstance(0, &pClassInstance);
+            VARIANT vtPath;
+            pMethodObj->Get(L"__PATH", 0, &vtPath, 0, 0);
 
-            if (SUCCEEDED(hres)) {
-                VARIANT varTimeout;
-                varTimeout.vt = VT_I4;
-                varTimeout.lVal = 1; 
-                
-                VARIANT varBrightness;
-                varBrightness.vt = VT_UI1;
-                varBrightness.bVal = (BYTE)newBrightness;
+            g_pWmiSvc->ExecMethod(vtPath.bstrVal, bstrMethodName, 0, NULL, g_pWmiClassInstance, NULL, NULL);
 
-                pClassInstance->Put(L"Timeout", 0, &varTimeout, 0);
-                pClassInstance->Put(L"Brightness", 0, &varBrightness, 0);
-
-                // Quick hack: Loop instances and execute on first.
-                IEnumWbemClassObject* pEnumMethods = NULL;
-                hres = pSvc->CreateInstanceEnum(ClassName, WBEM_FLAG_FORWARD_ONLY, NULL, &pEnumMethods);
-                if (SUCCEEDED(hres)) {
-                    IWbemClassObject* pMethodObj = NULL;
-                    while (pEnumMethods) {
-                         pEnumMethods->Next(WBEM_INFINITE, 1, &pMethodObj, &uReturn);
-                         if (0 == uReturn) break;
-                         
-                         VARIANT vtPath;
-                         pMethodObj->Get(L"__PATH", 0, &vtPath, 0, 0);
-                         
-                         hres = pSvc->ExecMethod(vtPath.bstrVal, bstrMethodName, 0, NULL, pClassInstance, NULL, NULL);
-                         
-                         VariantClear(&vtPath);
-                         pMethodObj->Release();
-                         break; // Apply to first found
-                    }
-                    pEnumMethods->Release();
-                }
-
-                pClassInstance->Release();
-            }
-            pInParamsDefinition->Release();
+            VariantClear(&vtPath);
+            pMethodObj->Release();
+            break; // Apply to first found
         }
-        SysFreeString(bstrMethodName);
-        pClass->Release();
+        pEnumMethods->Release();
     }
+    
     SysFreeString(ClassName);
-
-    // Cleanup
-    pSvc->Release();
-    pLoc->Release();
-    // CoUninitialize(); 
+    SysFreeString(bstrMethodName);
 }
 
 
@@ -2207,6 +2154,7 @@ void Wh_ModUninit() {
 
     CleanupSndVol();
     SndVolUninit();
+    UninitWMI(); 
 }
 
 BOOL Wh_ModSettingsChanged(BOOL* bReload) {
