@@ -1526,7 +1526,19 @@ std::vector<BYTE> PIDLToVector(const ITEMIDLIST* pidl) {
     return std::vector<BYTE>(ptr, ptr + size);
 }
 
-thread_local winrt::com_ptr<IShellFolder2> g_cacheShellFolder;
+std::vector<BYTE> GetVectorFromIShellFolder(IShellFolder2* shellFolder) {
+    LPITEMIDLIST pidl;
+    HRESULT hr = SHGetIDListFromObject(shellFolder, &pidl);
+    if (FAILED(hr)) {
+        return {};
+    }
+
+    std::vector<BYTE> pidlVector = PIDLToVector(pidl);
+    CoTaskMemFree(pidl);
+    return pidlVector;
+}
+
+thread_local std::vector<BYTE> g_cacheShellFolder;
 thread_local std::map<std::vector<BYTE>, std::optional<ULONGLONG>>
     g_cacheShellFolderSizes;
 thread_local DWORD g_cacheShellFolderLastUsedTickCount;
@@ -1721,12 +1733,15 @@ HRESULT WINAPI CFSFolder__GetSize_Hook(void* pCFSFolder,
         return S_OK;
     }
 
-    if (shellFolder2 != g_cacheShellFolder ||
+    auto shellFolder2Vector = GetVectorFromIShellFolder(shellFolder2.get());
+    if (shellFolder2Vector.empty() ||
+        shellFolder2Vector != g_cacheShellFolder ||
         GetTickCount() - g_cacheShellFolderLastUsedTickCount > 1000) {
+        Wh_Log(L"Clearing cache");
         g_cacheShellFolderSizes.clear();
     }
 
-    g_cacheShellFolder = shellFolder2;
+    g_cacheShellFolder = std::move(shellFolder2Vector);
 
     auto [cacheIt, cacheMissing] = g_cacheShellFolderSizes.try_emplace(
         PIDLToVector(itemidChild), std::nullopt);
