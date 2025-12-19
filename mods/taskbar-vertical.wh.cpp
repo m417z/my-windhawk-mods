@@ -2782,6 +2782,108 @@ NotificationAreaIconsDataModel_GetInvocationPointRelativeToScreen_Hook(
     return ret;
 }
 
+using DragDropManager_ElementPointToScreenPoint_t =
+    POINT*(WINAPI*)(void* pThis,
+                    POINT* pt,
+                    void* notifyIconView,
+                    HWND hWnd,
+                    void* pointerRoutedEventArgs);
+DragDropManager_ElementPointToScreenPoint_t
+    DragDropManager_ElementPointToScreenPoint_Original;
+POINT* WINAPI
+DragDropManager_ElementPointToScreenPoint_Hook(void* pThis,
+                                               POINT* pt,
+                                               void* notifyIconView,
+                                               HWND hWnd,
+                                               void* pointerRoutedEventArgs) {
+    Wh_Log(L">");
+
+    POINT* ret = DragDropManager_ElementPointToScreenPoint_Original(
+        pThis, pt, notifyIconView, hWnd, pointerRoutedEventArgs);
+
+    if (g_unloading) {
+        return ret;
+    }
+
+    if (!IsTaskbarWindow(hWnd)) {
+        return ret;
+    }
+
+    HWND hTaskbarWnd = hWnd;
+    RECT taskbarRectNative;
+    if (!GetWindowRect_Original(hTaskbarWnd, &taskbarRectNative)) {
+        return ret;
+    }
+
+    UINT taskbarDpi = GetDpiForWindow(hTaskbarWnd);
+
+    int taskbarHeight = MulDiv(taskbarRectNative.bottom - taskbarRectNative.top,
+                               96, taskbarDpi);
+
+    // Adjust to account for the taskbar rotation.
+    *ret = POINT{
+        taskbarRectNative.left +
+            MulDiv(taskbarHeight - (ret->y - taskbarRectNative.top), taskbarDpi,
+                   96),
+        taskbarRectNative.top +
+            MulDiv(ret->x - taskbarRectNative.left, taskbarDpi, 96),
+    };
+
+    return ret;
+}
+
+using DragDropManager_ScreenRectForElement_t =
+    RECT*(WINAPI*)(void* pThis,
+                   RECT* rc,
+                   void* frameworkElement,
+                   HWND hWnd);
+DragDropManager_ScreenRectForElement_t
+    DragDropManager_ScreenRectForElement_Original;
+RECT* WINAPI DragDropManager_ScreenRectForElement_Hook(void* pThis,
+                                                       RECT* rc,
+                                                       void* frameworkElement,
+                                                       HWND hWnd) {
+    Wh_Log(L">");
+
+    RECT* ret = DragDropManager_ScreenRectForElement_Original(
+        pThis, rc, frameworkElement, hWnd);
+
+    if (g_unloading) {
+        return ret;
+    }
+
+    if (!IsTaskbarWindow(hWnd)) {
+        return ret;
+    }
+
+    HWND hTaskbarWnd = hWnd;
+    RECT taskbarRectNative;
+    if (!GetWindowRect_Original(hTaskbarWnd, &taskbarRectNative)) {
+        return ret;
+    }
+
+    UINT taskbarDpi = GetDpiForWindow(hTaskbarWnd);
+
+    int taskbarHeight = MulDiv(taskbarRectNative.bottom - taskbarRectNative.top,
+                               96, taskbarDpi);
+
+    // Adjust to account for the taskbar rotation.
+    *ret = RECT{
+        taskbarRectNative.left +
+            MulDiv(taskbarHeight - (ret->bottom - taskbarRectNative.top),
+                   taskbarDpi, 96),
+        taskbarRectNative.top +
+            MulDiv(ret->left - taskbarRectNative.left, taskbarDpi, 96),
+        taskbarRectNative.left +
+            MulDiv(taskbarHeight - (ret->top - taskbarRectNative.top),
+                   taskbarDpi, 96),
+        taskbarRectNative.top +
+            MulDiv(ret->right - taskbarRectNative.left, taskbarDpi, 96),
+    };
+
+    return ret;
+}
+
 using FlyoutFrame_UpdateFlyoutPosition_t = void(WINAPI*)(void* pThis);
 FlyoutFrame_UpdateFlyoutPosition_t FlyoutFrame_UpdateFlyoutPosition_Original;
 void WINAPI FlyoutFrame_UpdateFlyoutPosition_Hook(void* pThis) {
@@ -4514,6 +4616,16 @@ bool HookTaskbarViewDllSymbols(HMODULE module) {
                 {LR"(private: struct winrt::Windows::Foundation::Point __cdecl winrt::SystemTray::implementation::NotificationAreaIconsDataModel::GetInvocationPointRelativeToScreen(struct winrt::Windows::Foundation::Point const &))"},
                 &NotificationAreaIconsDataModel_GetInvocationPointRelativeToScreen_Original,
                 NotificationAreaIconsDataModel_GetInvocationPointRelativeToScreen_Hook,
+            },
+            {
+                {LR"(private: struct tagPOINT __cdecl winrt::SystemTray::implementation::DragDropManager::ElementPointToScreenPoint(struct winrt::SystemTray::implementation::NotifyIconView const &,struct HWND__ *,struct winrt::Windows::UI::Xaml::Input::PointerRoutedEventArgs const &))"},
+                &DragDropManager_ElementPointToScreenPoint_Original,
+                DragDropManager_ElementPointToScreenPoint_Hook,
+            },
+            {
+                {LR"(private: struct tagRECT __cdecl winrt::SystemTray::implementation::DragDropManager::ScreenRectForElement(struct winrt::Windows::UI::Xaml::FrameworkElement const &,struct HWND__ *))"},
+                &DragDropManager_ScreenRectForElement_Original,
+                DragDropManager_ScreenRectForElement_Hook,
             },
             {
                 {LR"(private: void __cdecl winrt::Taskbar::implementation::FlyoutFrame::UpdateFlyoutPosition(void))"},
