@@ -2268,12 +2268,14 @@ void UpdateTaskListButton(FrameworkElement taskListButtonElement) {
 
         Controls::Grid::SetColumn(labelControlElement, g_unloading ? 1 : 0);
 
+        double iconWidth = iconElement.ActualWidth();
+
         Thickness margin{};
         if (!g_unloading) {
-            margin.Left = -40 - g_settings.taskbarWidth / 2.0;
+            margin.Left = -iconWidth - 16 - g_settings.taskbarWidth / 2.0;
             margin.Top = 0;
             margin.Right = -g_settings.taskbarWidth / 2.0;
-            margin.Bottom = iconElement.ActualWidth() + 20;
+            margin.Bottom = iconWidth + 20;
         }
         labelControlElement.Margin(margin);
 
