@@ -357,16 +357,10 @@ from the **TranslucentTB** project.
 - themeResourceVariables: [""]
   $name: Resource variables
   $description: >-
-    Use 'Key=Value' to override an existing resource with a new value, e.g.:
+    Use "Key=Value" to override an existing resource with a new value.
 
-    TaskbarContextMenuMargin=4
-
-    Use 'Key@Dark=Value' or 'Key@Light=Value' to define theme-aware resources
-    that can be referenced with {ThemeResource key} in styles, e.g.:
-
-    MyColor@Dark={ThemeResource SystemAccentColorDark1}
-
-    MyColor@Light={ThemeResource SystemAccentColorLight2}
+    Use "Key@Dark=Value" or "Key@Light=Value" to define theme-aware resources
+    that can be referenced with {ThemeResource Key} in styles.
 */
 // ==/WindhawkModSettings==
 
