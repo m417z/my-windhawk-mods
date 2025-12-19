@@ -1505,13 +1505,13 @@ int WINAPI TaskbarFrame_MeasureOverride_Hook(
 
     Wh_Log(L">");
 
-    FrameworkElement taskbarFrameElement = nullptr;
+    FrameworkElement taskbarFrame = nullptr;
     ((IUnknown*)pThis)
         ->QueryInterface(winrt::guid_of<FrameworkElement>(),
-                         winrt::put_abi(taskbarFrameElement));
-    if (taskbarFrameElement) {
+                         winrt::put_abi(taskbarFrame));
+    if (taskbarFrame) {
         try {
-            ApplyStyle(taskbarFrameElement);
+            ApplyStyle(taskbarFrame);
         } catch (...) {
             HRESULT hr = winrt::to_hresult();
             Wh_Log(L"Error %08X", hr);
@@ -1521,6 +1521,48 @@ int WINAPI TaskbarFrame_MeasureOverride_Hook(
     int ret = TaskbarFrame_MeasureOverride_Original(pThis, size, resultSize);
 
     g_pendingMeasureOverride = false;
+
+    g_hookCallCounter--;
+
+    return ret;
+}
+
+using SystemTrayFrame_MeasureOverride_t =
+    int(WINAPI*)(void* pThis,
+                 winrt::Windows::Foundation::Size size,
+                 winrt::Windows::Foundation::Size* resultSize);
+SystemTrayFrame_MeasureOverride_t SystemTrayFrame_MeasureOverride_Original;
+int WINAPI SystemTrayFrame_MeasureOverride_Hook(
+    void* pThis,
+    winrt::Windows::Foundation::Size size,
+    winrt::Windows::Foundation::Size* resultSize) {
+    g_hookCallCounter++;
+
+    Wh_Log(L">");
+
+    FrameworkElement systemTrayFrame = nullptr;
+    ((IUnknown*)pThis)
+        ->QueryInterface(winrt::guid_of<FrameworkElement>(),
+                         winrt::put_abi(systemTrayFrame));
+    if (systemTrayFrame) {
+        try {
+            auto contentGrid =
+                Media::VisualTreeHelper::GetParent(systemTrayFrame)
+                    .as<Controls::Grid>();
+            if (contentGrid) {
+                auto taskbarFrame =
+                    FindChildByName(contentGrid, L"TaskbarFrame");
+                if (taskbarFrame) {
+                    ApplyStyle(taskbarFrame);
+                }
+            }
+        } catch (...) {
+            HRESULT hr = winrt::to_hresult();
+            Wh_Log(L"Error %08X", hr);
+        }
+    }
+
+    int ret = SystemTrayFrame_MeasureOverride_Original(pThis, size, resultSize);
 
     g_hookCallCounter--;
 
@@ -1674,63 +1716,14 @@ void ApplyNotifyIconViewStyle(FrameworkElement notifyIconViewElement) {
     }
 }
 
-void ApplySystemTrayIconStyle(FrameworkElement systemTrayIconElement) {
-    auto containerGrid =
-        FindChildByName(systemTrayIconElement, L"ContainerGrid");
-    if (!containerGrid) {
-        return;
-    }
+enum class SystemTrayIconType {
+    DateTime,
+    Battery,
+    Other,
+};
 
-    auto contentGrid = FindChildByName(containerGrid, L"ContentGrid");
-    if (!contentGrid) {
-        auto contentPresenter =
-            FindChildByName(containerGrid, L"ContentPresenter");
-        if (!contentPresenter) {
-            return;
-        }
-
-        contentGrid = FindChildByName(contentPresenter, L"ContentGrid");
-        if (!contentGrid) {
-            return;
-        }
-    }
-
-    enum class IconType {
-        DateTime,
-        Battery,
-        Other,
-    };
-
-    IconType iconType = IconType::Other;
-
-    auto iconContent =
-        FindChildByClassName(contentGrid, L"SystemTray.TextIconContent");
-
-    if (!iconContent) {
-        iconContent =
-            FindChildByClassName(contentGrid, L"SystemTray.BatteryIconContent");
-        if (iconContent) {
-            iconType = IconType::Battery;
-        }
-    }
-
-    if (!iconContent) {
-        iconContent = FindChildByClassName(
-            contentGrid, L"SystemTray.LanguageTextIconContent");
-    }
-
-    if (!iconContent) {
-        iconContent = FindChildByClassName(contentGrid,
-                                           L"SystemTray.DateTimeIconContent");
-        if (iconContent) {
-            iconType = IconType::DateTime;
-        }
-    }
-
-    if (!iconContent) {
-        return;
-    }
-
+void ApplySystemTrayIconContentStyle(FrameworkElement iconContent,
+                                     SystemTrayIconType iconType) {
     double angle = g_unloading ? 0 : -90;
     Media::RotateTransform transform;
     transform.Angle(angle);
@@ -1748,12 +1741,12 @@ void ApplySystemTrayIconStyle(FrameworkElement systemTrayIconElement) {
         iconContent.as<DependencyObject>().ClearValue(
             FrameworkElement::MaxHeightProperty());
     } else {
-        iconContent.MaxHeight(iconType == IconType::DateTime
+        iconContent.MaxHeight(iconType == SystemTrayIconType::DateTime
                                   ? clockContainerHeight
                                   : iconContent.ActualWidth());
     }
 
-    if (iconType == IconType::DateTime) {
+    if (iconType == SystemTrayIconType::DateTime) {
         if (g_unloading) {
             iconContent.as<DependencyObject>().ClearValue(
                 FrameworkElement::WidthProperty());
@@ -1799,7 +1792,7 @@ void ApplySystemTrayIconStyle(FrameworkElement systemTrayIconElement) {
             timeInnerTextBlock.TextAlignment(
                 g_unloading ? TextAlignment::End : TextAlignment::Center);
         }
-    } else if (iconType == IconType::Battery) {
+    } else if (iconType == SystemTrayIconType::Battery) {
         auto iconContentContainerGrid =
             FindChildByName(iconContent, L"ContainerGrid");
         if (!iconContentContainerGrid) {
@@ -1870,6 +1863,60 @@ void ApplySystemTrayIconStyle(FrameworkElement systemTrayIconElement) {
         margin.Left = g_unloading ? 3 : 0;
         batteryTextBlock.Margin(margin);
     }
+}
+
+void ApplySystemTrayIconStyle(FrameworkElement systemTrayIconElement) {
+    auto containerGrid =
+        FindChildByName(systemTrayIconElement, L"ContainerGrid");
+    if (!containerGrid) {
+        return;
+    }
+
+    auto contentGrid = FindChildByName(containerGrid, L"ContentGrid");
+    if (!contentGrid) {
+        auto contentPresenter =
+            FindChildByName(containerGrid, L"ContentPresenter");
+        if (!contentPresenter) {
+            return;
+        }
+
+        contentGrid = FindChildByName(contentPresenter, L"ContentGrid");
+        if (!contentGrid) {
+            return;
+        }
+    }
+
+    SystemTrayIconType iconType = SystemTrayIconType::Other;
+
+    auto iconContent =
+        FindChildByClassName(contentGrid, L"SystemTray.TextIconContent");
+
+    if (!iconContent) {
+        iconContent =
+            FindChildByClassName(contentGrid, L"SystemTray.BatteryIconContent");
+        if (iconContent) {
+            iconType = SystemTrayIconType::Battery;
+        }
+    }
+
+    if (!iconContent) {
+        iconContent = FindChildByClassName(
+            contentGrid, L"SystemTray.LanguageTextIconContent");
+    }
+
+    if (!iconContent) {
+        iconContent = FindChildByClassName(contentGrid,
+                                           L"SystemTray.DateTimeIconContent");
+        if (iconContent) {
+            iconType = SystemTrayIconType::DateTime;
+        }
+    }
+
+    if (!iconContent) {
+        return;
+    }
+
+    ApplySystemTrayIconContentStyle(iconContent, iconType);
 }
 
 void ApplySystemTrayChevronIconViewStyle(
@@ -1959,6 +2006,30 @@ void* WINAPI IconView_IconView_Hook(PVOID pThis) {
         });
 
     return ret;
+}
+
+using DateTimeIconContent_OnApplyTemplate_t = void(WINAPI*)(void* pThis);
+DateTimeIconContent_OnApplyTemplate_t
+    DateTimeIconContent_OnApplyTemplate_Original;
+void WINAPI DateTimeIconContent_OnApplyTemplate_Hook(void* pThis) {
+    Wh_Log(L">");
+
+    DateTimeIconContent_OnApplyTemplate_Original(pThis);
+
+    FrameworkElement dateTimeIconContent = nullptr;
+    ((IUnknown**)pThis)[1]->QueryInterface(winrt::guid_of<FrameworkElement>(),
+                                           winrt::put_abi(dateTimeIconContent));
+    if (!dateTimeIconContent) {
+        return;
+    }
+
+    try {
+        ApplySystemTrayIconContentStyle(dateTimeIconContent,
+                                        SystemTrayIconType::DateTime);
+    } catch (...) {
+        HRESULT hr = winrt::to_hresult();
+        Wh_Log(L"Error %08X", hr);
+    }
 }
 
 bool ApplyStyleIfNeeded(XamlRoot xamlRoot) {
@@ -2139,10 +2210,19 @@ bool UpdateNotifyIconsIfNeeded(XamlRoot xamlRoot) {
             return true;
         }
 
+        if (!UpdateNotifyIcons(xamlRoot)) {
+            return false;
+        }
+
         g_notifyIconsUpdated.push_back(winrt::make_weak(xamlRoot));
+        return true;
     } else {
         if (!notifyIconsUpdated) {
             return true;
+        }
+
+        if (!UpdateNotifyIcons(xamlRoot)) {
+            return false;
         }
 
         g_notifyIconsUpdated.erase(
@@ -2153,9 +2233,8 @@ bool UpdateNotifyIconsIfNeeded(XamlRoot xamlRoot) {
                                return element && element == xamlRoot;
                            }),
             g_notifyIconsUpdated.end());
+        return true;
     }
-
-    return UpdateNotifyIcons(xamlRoot);
 }
 
 void UpdateTaskListButton(FrameworkElement taskListButtonElement) {
@@ -4405,6 +4484,11 @@ bool HookTaskbarViewDllSymbols(HMODULE module) {
                 TaskbarFrame_MeasureOverride_Hook,
             },
             {
+                {LR"(public: virtual int __cdecl winrt::impl::produce<struct winrt::SystemTray::implementation::SystemTrayFrame,struct winrt::Windows::UI::Xaml::IFrameworkElementOverrides>::MeasureOverride(struct winrt::Windows::Foundation::Size,struct winrt::Windows::Foundation::Size *))"},
+                &SystemTrayFrame_MeasureOverride_Original,
+                SystemTrayFrame_MeasureOverride_Hook,
+            },
+            {
                 {LR"(protected: virtual void __cdecl winrt::Taskbar::implementation::AugmentedEntryPointButton::UpdateButtonPadding(void))"},
                 &AugmentedEntryPointButton_UpdateButtonPadding_Original,
                 AugmentedEntryPointButton_UpdateButtonPadding_Hook,
@@ -4418,6 +4502,11 @@ bool HookTaskbarViewDllSymbols(HMODULE module) {
                 {LR"(public: __cdecl winrt::SystemTray::implementation::IconView::IconView(void))"},
                 &IconView_IconView_Original,
                 IconView_IconView_Hook,
+            },
+            {
+                {LR"(public: void __cdecl winrt::SystemTray::implementation::DateTimeIconContent::OnApplyTemplate(void))"},
+                &DateTimeIconContent_OnApplyTemplate_Original,
+                DateTimeIconContent_OnApplyTemplate_Hook,
             },
             {
                 {LR"(public: void __cdecl winrt::Taskbar::implementation::TaskListButton::OnApplyTemplate(void))"},
