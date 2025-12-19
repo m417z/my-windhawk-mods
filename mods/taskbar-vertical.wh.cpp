@@ -3099,16 +3099,20 @@ BOOL WINAPI SetWindowPos_Hook(HWND hWnd,
                 }
             }
         } else if (threadDescription == L"ActionCenter") {
-            const POINT ptZero = {0, 0};
-            HMONITOR primaryMonitor =
-                MonitorFromPoint(ptZero, MONITOR_DEFAULTTOPRIMARY);
+            RECT rect{
+                .left = X,
+                .top = Y,
+                .right = X + cx,
+                .bottom = Y + cy,
+            };
+            HMONITOR monitor = MonitorFromRect(&rect, MONITOR_DEFAULTTONEAREST);
 
             MONITORINFO monitorInfo{
                 .cbSize = sizeof(MONITORINFO),
             };
-            GetMonitorInfo(primaryMonitor, &monitorInfo);
+            GetMonitorInfo(monitor, &monitorInfo);
 
-            switch (g_settings.taskbarLocation) {
+            switch (GetTaskbarLocationForMonitor(monitor)) {
                 case TaskbarLocation::left:
                     X = monitorInfo.rcWork.left;
                     break;
