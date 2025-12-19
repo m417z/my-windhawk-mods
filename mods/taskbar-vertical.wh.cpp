@@ -3447,6 +3447,12 @@ HRESULT WINAPI DwmSetWindowAttribute_Hook(HWND hwnd,
         target = DwmTarget::SearchHost;
     } else if (_wcsicmp(processFileName.c_str(), L"ShellExperienceHost.exe") ==
                0) {
+        std::wstring threadDescription =
+            GetThreadIdDescriptionAsString(threadId);
+        if (threadDescription == L"SharePickerUI") {
+            return original();
+        }
+
         target = DwmTarget::ShellExperienceHost;
     } else {
         return original();
