@@ -26,6 +26,8 @@
 
 By default, Windows uses the same auto-hide setting for all monitors. This mod
 allows setting different auto-hide settings for each monitor.
+
+This mod requires auto-hide to be enabled in Windows settings.
 */
 // ==/WindhawkModReadme==
 
