@@ -2833,10 +2833,7 @@ DragDropManager_ElementPointToScreenPoint_Hook(void* pThis,
 }
 
 using DragDropManager_ScreenRectForElement_t =
-    RECT*(WINAPI*)(void* pThis,
-                   RECT* rc,
-                   void* frameworkElement,
-                   HWND hWnd);
+    RECT*(WINAPI*)(void* pThis, RECT* rc, void* frameworkElement, HWND hWnd);
 DragDropManager_ScreenRectForElement_t
     DragDropManager_ScreenRectForElement_Original;
 RECT* WINAPI DragDropManager_ScreenRectForElement_Hook(void* pThis,
@@ -3588,17 +3585,24 @@ HRESULT WINAPI DwmSetWindowAttribute_Hook(HWND hwnd,
     int cy = targetRect.bottom - targetRect.top;
 
     if (target == DwmTarget::StartMenu) {
-        // Make full width of work area. By default, for some reason, it
-        // occupies the whole monitor width.
-        int xNew = monitorInfo.rcWork.left;
-        int cxNew = monitorInfo.rcWork.right - monitorInfo.rcWork.left;
+        // By default, for some reason, the start menu window occupies the whole
+        // monitor width. We avoid resizing it because it was causing glitches.
+        int xNew;
+        switch (GetTaskbarLocationForMonitor(monitor)) {
+            case TaskbarLocation::left:
+                xNew = monitorInfo.rcWork.left;
+                break;
 
-        if (xNew == x && cxNew == cx) {
+            case TaskbarLocation::right:
+                xNew = monitorInfo.rcWork.right - cx;
+                break;
+        }
+
+        if (xNew == x) {
             return original();
         }
 
         x = xNew;
-        cx = cxNew;
     } else if (target == DwmTarget::SearchHost) {
         int xNew;
         switch (GetTaskbarLocationForMonitor(monitor)) {
