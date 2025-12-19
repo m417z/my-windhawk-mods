@@ -1400,9 +1400,16 @@ bool IsSecondaryTaskbar(XamlRoot xamlRoot) {
     return controlCenterButton.ActualWidth() < 5;
 }
 
-bool ApplyStyle(FrameworkElement taskbarFrame) {
-    auto contentGrid =
-        Media::VisualTreeHelper::GetParent(taskbarFrame).as<Controls::Grid>();
+bool ApplyStyle(XamlRoot xamlRoot) {
+    FrameworkElement contentGrid =
+        xamlRoot.Content().try_as<FrameworkElement>();
+
+    auto taskbarFrame = FindChildByName(contentGrid, L"TaskbarFrame");
+    if (!taskbarFrame) {
+        return false;
+    }
+
+    contentGrid = contentGrid.as<Controls::Grid>();
 
     auto border =
         Media::VisualTreeHelper::GetParent(contentGrid).as<FrameworkElement>();
@@ -1447,7 +1454,7 @@ bool ApplyStyle(FrameworkElement taskbarFrame) {
         }
     }
 
-    bool isSecondaryTaskbar = IsSecondaryTaskbar(taskbarFrame.XamlRoot());
+    bool isSecondaryTaskbar = IsSecondaryTaskbar(xamlRoot);
     TaskbarLocation taskbarLocation = isSecondaryTaskbar
                                           ? g_settings.taskbarLocationSecondary
                                           : g_settings.taskbarLocation;
@@ -1478,14 +1485,11 @@ bool ApplyStyle(FrameworkElement taskbarFrame) {
         }
     }
 
-    auto xamlRoot = taskbarFrame.XamlRoot();
-    if (xamlRoot) {
-        try {
-            UpdateNotifyIconsIfNeeded(xamlRoot);
-        } catch (...) {
-            HRESULT hr = winrt::to_hresult();
-            Wh_Log(L"Error %08X", hr);
-        }
+    try {
+        UpdateNotifyIconsIfNeeded(xamlRoot);
+    } catch (...) {
+        HRESULT hr = winrt::to_hresult();
+        Wh_Log(L"Error %08X", hr);
     }
 
     return true;
@@ -1510,7 +1514,7 @@ int WINAPI TaskbarFrame_MeasureOverride_Hook(
                          winrt::put_abi(taskbarFrame));
     if (taskbarFrame) {
         try {
-            ApplyStyle(taskbarFrame);
+            ApplyStyle(taskbarFrame.XamlRoot());
         } catch (...) {
             HRESULT hr = winrt::to_hresult();
             Wh_Log(L"Error %08X", hr);
@@ -1545,16 +1549,7 @@ int WINAPI SystemTrayFrame_MeasureOverride_Hook(
                          winrt::put_abi(systemTrayFrame));
     if (systemTrayFrame) {
         try {
-            auto contentGrid =
-                Media::VisualTreeHelper::GetParent(systemTrayFrame)
-                    .as<Controls::Grid>();
-            if (contentGrid) {
-                auto taskbarFrame =
-                    FindChildByName(contentGrid, L"TaskbarFrame");
-                if (taskbarFrame) {
-                    ApplyStyle(taskbarFrame);
-                }
-            }
+            ApplyStyle(systemTrayFrame.XamlRoot());
         } catch (...) {
             HRESULT hr = winrt::to_hresult();
             Wh_Log(L"Error %08X", hr);
@@ -2054,7 +2049,7 @@ bool ApplyStyleIfNeeded(XamlRoot xamlRoot) {
         return true;
     }
 
-    return ApplyStyle(taskbarFrame);
+    return ApplyStyle(xamlRoot);
 }
 
 bool UpdateNotifyIcons(XamlRoot xamlRoot) {
