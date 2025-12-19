@@ -4098,6 +4098,7 @@ using namespace std::string_view_literals;
 #include <winrt/Windows.Foundation.Collections.h>
 #include <winrt/Windows.Foundation.h>
 #include <winrt/Windows.Networking.Connectivity.h>
+#include <winrt/Windows.System.h>
 #include <winrt/Windows.UI.Core.h>
 #include <winrt/Windows.UI.Text.h>
 #include <winrt/Windows.UI.ViewManagement.h>
@@ -6799,8 +6800,13 @@ void ProcessResourceVariablesFromSettings() {
     // Register for color changes to refresh theme resource references.
     if (!g_themeResourceEntries.empty()) {
         g_uiSettings = winrt::Windows::UI::ViewManagement::UISettings();
-        g_colorValuesChangedToken = g_uiSettings.ColorValuesChanged(
-            [](auto&&, auto&&) { RefreshThemeResourceEntries(); });
+        auto dispatcherQueue =
+            winrt::Windows::System::DispatcherQueue::GetForCurrentThread();
+        g_colorValuesChangedToken =
+            g_uiSettings.ColorValuesChanged([dispatcherQueue](auto&&, auto&&) {
+                dispatcherQueue.TryEnqueue(
+                    []() { RefreshThemeResourceEntries(); });
+            });
     }
 }
 
