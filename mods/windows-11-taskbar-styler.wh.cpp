@@ -245,16 +245,43 @@ A couple of practical examples:
 
 ### Resource variables
 
-Some variables, such as size and padding for various controls, are defined as
-resource variables. Here are several examples:
+Some variables, such as size and padding for various controls, colors, and
+brushes, are defined as resource variables. You can override existing resources
+or define new theme-aware resources.
 
-* `TaskbarContextMenuMargin`: The margin between the taskbar and the start
+#### Overriding existing resources
+
+Use `key=value` to override an existing resource, for example:
+
+* `TaskbarContextMenuMargin=4`: The margin between the taskbar and the start
   button context menu.
 
-* `ContextMenuMargin`: The margin between the taskbar and the tray area context
-  menu.
+* `ContextMenuMargin=8`: The margin between the taskbar and the tray area
+  context menu.
 
-* `MediumTaskbarButtonExtent`: The width of the taskbar buttons.
+* `MediumTaskbarButtonExtent=48`: The width of the taskbar buttons.
+
+#### Defining theme-aware resources
+
+Use `Key@Dark=value` and `Key@Light=value` to define new resources with
+different values for dark and light themes. These can then be referenced in
+styles using `{ThemeResource key}`.
+
+For example, to define a custom accent color that automatically adjusts based on
+the system theme:
+
+```
+AutoAccent@Dark={ThemeResource SystemAccentColorDark1}
+AutoAccent@Light={ThemeResource SystemAccentColorLight2}
+```
+
+Then use it in a style:
+
+```
+Background:=<SolidColorBrush Color="{ThemeResource AutoAccent}" />
+```
+
+The value will automatically update when the system accent color changes.
 
 ## Implementation notes
 
@@ -327,12 +354,19 @@ from the **TranslucentTB** project.
     Fill=$mainColor
 
     Background:=<AcrylicBrush TintColor="$mainColor" TintOpacity="0.3" />
-- resourceVariables:
-  - - variableKey: ""
-      $name: Variable key
-    - value: ""
-      $name: Value
+- themeResourceVariables: [""]
   $name: Resource variables
+  $description: >-
+    Use 'Key=Value' to override an existing resource with a new value, e.g.:
+
+    TaskbarContextMenuMargin=4
+
+    Use 'Key@Dark=Value' or 'Key@Light=Value' to define theme-aware resources
+    that can be referenced with {ThemeResource key} in styles, e.g.:
+
+    MyColor@Dark={ThemeResource SystemAccentColorDark1}
+
+    MyColor@Light={ThemeResource SystemAccentColorLight2}
 */
 // ==/WindhawkModSettings==
 
@@ -4066,6 +4100,7 @@ using namespace std::string_view_literals;
 #include <winrt/Windows.Networking.Connectivity.h>
 #include <winrt/Windows.UI.Core.h>
 #include <winrt/Windows.UI.Text.h>
+#include <winrt/Windows.UI.ViewManagement.h>
 #include <winrt/Windows.UI.Xaml.Controls.h>
 #include <winrt/Windows.UI.Xaml.Markup.h>
 #include <winrt/Windows.UI.Xaml.Media.Imaging.h>
@@ -4192,6 +4227,36 @@ std::mutex g_failedImageBrushesRegistryMutex;
 std::vector<winrt::weak_ref<winrt::Windows::System::DispatcherQueue>>
     g_failedImageBrushesRegistry;
 winrt::event_token g_networkStatusChangedToken;
+
+enum class ResourceVariableTheme {
+    None,
+    Dark,
+    Light,
+};
+
+struct ResourceVariableEntry {
+    std::wstring key;
+    std::wstring value;
+    ResourceVariableTheme theme;
+};
+
+// Track original resource values for restoration (per-thread since
+// Application::Current().Resources() is per-thread).
+thread_local std::unordered_map<std::wstring,
+                                winrt::Windows::Foundation::IInspectable>
+    g_originalResourceValues;
+
+// Track our merged theme dictionary for cleanup (per-thread).
+thread_local ResourceDictionary g_resourceVariablesThemeDict{nullptr};
+
+// Track theme resource entries that reference {ThemeResource ...} for refresh
+// (per-thread).
+thread_local std::vector<ResourceVariableEntry> g_themeResourceEntries;
+
+// For listening to theme color changes (per-thread).
+thread_local winrt::Windows::UI::ViewManagement::UISettings g_uiSettings{
+    nullptr};
+thread_local winrt::event_token g_colorValuesChangedToken;
 
 winrt::Windows::Foundation::IInspectable ReadLocalValueWithWorkaround(
     DependencyObject elementDo,
@@ -6525,23 +6590,106 @@ void ProcessAllStylesFromSettings() {
     }
 }
 
-bool ProcessSingleResourceVariableFromSettings(int index) {
-    string_setting_unique_ptr variableKeyStringSetting(
-        Wh_GetStringSetting(L"resourceVariables[%d].variableKey", index));
-    if (!*variableKeyStringSetting.get()) {
+std::optional<ResourceVariableEntry> ParseResourceVariable(
+    std::wstring_view entry,
+    const StyleConstants& styleConstants) {
+    // Skip if commented.
+    if (entry.starts_with(L"//")) {
+        return std::nullopt;
+    }
+
+    // Find the first '=' to split key and value.
+    auto eqPos = entry.find(L'=');
+    if (eqPos == entry.npos) {
+        Wh_Log(L"Skipping entry with no '=': %.*s",
+               static_cast<int>(entry.length()), entry.data());
+        return std::nullopt;
+    }
+
+    auto keyPart = TrimStringView(entry.substr(0, eqPos));
+    auto valueRaw = TrimStringView(entry.substr(eqPos + 1));
+    auto value = ApplyStyleConstants(valueRaw, styleConstants);
+
+    ResourceVariableTheme theme = ResourceVariableTheme::None;
+    std::wstring key;
+
+    // Check for @theme suffix in key part.
+    auto atPos = keyPart.find(L'@');
+    if (atPos != keyPart.npos) {
+        key = TrimStringView(keyPart.substr(0, atPos));
+        auto themePart = TrimStringView(keyPart.substr(atPos + 1));
+        if (themePart == L"Dark") {
+            theme = ResourceVariableTheme::Dark;
+        } else if (themePart == L"Light") {
+            theme = ResourceVariableTheme::Light;
+        } else {
+            Wh_Log(L"Unknown theme '%.*s', expected 'dark' or 'light'",
+                   static_cast<int>(themePart.size()), themePart.data());
+            return std::nullopt;
+        }
+    } else {
+        key = std::wstring(keyPart);
+    }
+
+    return ResourceVariableEntry{std::move(key), std::move(value), theme};
+}
+
+constexpr std::wstring_view kThemeResourcePrefix = L"{ThemeResource ";
+
+bool IsThemeResourceReference(std::wstring_view value) {
+    return value.starts_with(kThemeResourcePrefix) && value.ends_with(L"}");
+}
+
+winrt::Windows::Foundation::IInspectable ResolveResourceVariableValue(
+    ResourceDictionary resources,
+    std::wstring_view value) {
+    // Check for {ThemeResource X} syntax - look up the resource directly
+    // to preserve dynamic theme-aware behavior.
+    if (IsThemeResourceReference(value)) {
+        auto resourceKey =
+            value.substr(kThemeResourcePrefix.size(),
+                         value.size() - kThemeResourcePrefix.size() - 1);
+        return resources.Lookup(
+            winrt::box_value(winrt::hstring(TrimStringView(resourceKey))));
+    }
+
+    // For other values, use boxed string (works for colors, etc.).
+    return winrt::box_value(winrt::hstring(value));
+}
+
+// Returns true if a theme resource was added.
+bool ProcessResourceVariableFromSetting(ResourceDictionary resources,
+                                        ResourceDictionary darkDict,
+                                        ResourceDictionary lightDict,
+                                        const ResourceVariableEntry& entry) {
+    auto boxedKey = winrt::box_value(entry.key);
+
+    if (entry.theme != ResourceVariableTheme::None) {
+        // Key@Dark= or Key@Light= - add to theme dict.
+        auto value = ResolveResourceVariableValue(resources, entry.value);
+        if (entry.theme == ResourceVariableTheme::Dark) {
+            darkDict.Insert(boxedKey, value);
+        } else {
+            lightDict.Insert(boxedKey, value);
+        }
+        return true;
+    }
+
+    // key= - convert using existing resource type.
+    auto existingResource = resources.TryLookup(boxedKey);
+    if (!existingResource) {
+        Wh_Log(L"Resource variable key '%s' not found, skipping",
+               entry.key.c_str());
         return false;
     }
 
-    Wh_Log(L"Processing resource variable %s", variableKeyStringSetting.get());
+    if (!g_originalResourceValues.contains(entry.key)) {
+        g_originalResourceValues[entry.key] = existingResource;
+    }
 
-    std::wstring_view variableKey = variableKeyStringSetting.get();
+    auto resourceClassName = winrt::get_class_name(existingResource);
 
-    auto resources = Application::Current().Resources();
-
-    auto resource = resources.Lookup(winrt::box_value(variableKey));
-
-    // Example: Windows.Foundation.IReference`1<Windows.UI.Xaml.Thickness>
-    auto resourceClassName = winrt::get_class_name(resource);
+    // Unwrap IReference<T> to get inner type name.
     if (resourceClassName.starts_with(L"Windows.Foundation.IReference`1<") &&
         resourceClassName.ends_with(L'>')) {
         size_t prefixSize = sizeof("Windows.Foundation.IReference`1<") - 1;
@@ -6550,31 +6698,135 @@ bool ProcessSingleResourceVariableFromSettings(int index) {
                            resourceClassName.size() - prefixSize - 1);
     }
 
-    auto resourceTypeName = Interop::TypeName{resourceClassName};
+    resources.Insert(boxedKey, Markup::XamlBindingHelper::ConvertValue(
+                                   Interop::TypeName{resourceClassName},
+                                   winrt::box_value(entry.value)));
+    return false;
+}
 
-    string_setting_unique_ptr valueStringSetting(
-        Wh_GetStringSetting(L"resourceVariables[%d].value", index));
+void RefreshThemeResourceEntries() {
+    if (g_themeResourceEntries.empty()) {
+        return;
+    }
 
-    std::wstring_view value = valueStringSetting.get();
+    Wh_Log(L"Refreshing %zu theme resource entries",
+           g_themeResourceEntries.size());
 
-    resources.Insert(winrt::box_value(variableKey),
-                     Markup::XamlBindingHelper::ConvertValue(
-                         resourceTypeName, winrt::box_value(value)));
+    auto resources = Application::Current().Resources();
 
-    return true;
+    auto darkDict = g_resourceVariablesThemeDict.ThemeDictionaries()
+                        .TryLookup(winrt::box_value(L"Dark"))
+                        .try_as<ResourceDictionary>();
+    auto lightDict = g_resourceVariablesThemeDict.ThemeDictionaries()
+                         .TryLookup(winrt::box_value(L"Light"))
+                         .try_as<ResourceDictionary>();
+
+    for (const auto& entry : g_themeResourceEntries) {
+        try {
+            auto boxedKey = winrt::box_value(entry.key);
+            auto value = ResolveResourceVariableValue(resources, entry.value);
+
+            if (entry.theme == ResourceVariableTheme::Dark && darkDict) {
+                darkDict.Insert(boxedKey, value);
+            } else if (entry.theme == ResourceVariableTheme::Light &&
+                       lightDict) {
+                lightDict.Insert(boxedKey, value);
+            }
+        } catch (winrt::hresult_error const& ex) {
+            Wh_Log(L"Error refreshing '%s': %08X", entry.key.c_str(),
+                   ex.code());
+        }
+    }
 }
 
 void ProcessResourceVariablesFromSettings() {
+    StyleConstants styleConstants = LoadStyleConstants(std::vector<PCWSTR>{});
+
+    auto resources = Application::Current().Resources();
+
+    // Create theme dictionaries for @Dark/@Light resources.
+    g_resourceVariablesThemeDict = ResourceDictionary();
+    ResourceDictionary darkDict;
+    ResourceDictionary lightDict;
+    bool hasThemeResources = false;
+
     for (int i = 0;; i++) {
+        string_setting_unique_ptr setting(
+            Wh_GetStringSetting(L"themeResourceVariables[%d]", i));
+        if (!*setting.get()) {
+            break;
+        }
+
+        Wh_Log(L"Processing theme resource variable %s", setting.get());
+
+        auto parsed = ParseResourceVariable(setting.get(), styleConstants);
+        if (!parsed) {
+            continue;
+        }
+
         try {
-            if (!ProcessSingleResourceVariableFromSettings(i)) {
-                break;
+            if (ProcessResourceVariableFromSetting(resources, darkDict,
+                                                   lightDict, *parsed)) {
+                hasThemeResources = true;
+
+                // Track entries with {ThemeResource ...} for refresh on color
+                // change.
+                if (IsThemeResourceReference(parsed->value)) {
+                    g_themeResourceEntries.push_back(*parsed);
+                }
             }
         } catch (winrt::hresult_error const& ex) {
             Wh_Log(L"Error %08X: %s", ex.code(), ex.message().c_str());
         } catch (std::exception const& ex) {
             Wh_Log(L"Error: %S", ex.what());
         }
+    }
+
+    if (hasThemeResources) {
+        g_resourceVariablesThemeDict.ThemeDictionaries().Insert(
+            winrt::box_value(L"Dark"), darkDict);
+        g_resourceVariablesThemeDict.ThemeDictionaries().Insert(
+            winrt::box_value(L"Light"), lightDict);
+        resources.MergedDictionaries().Append(g_resourceVariablesThemeDict);
+    }
+
+    // Register for color changes to refresh theme resource references.
+    if (!g_themeResourceEntries.empty()) {
+        g_uiSettings = winrt::Windows::UI::ViewManagement::UISettings();
+        g_colorValuesChangedToken = g_uiSettings.ColorValuesChanged(
+            [](auto&&, auto&&) { RefreshThemeResourceEntries(); });
+    }
+}
+
+void UninitializeResourceVariables() {
+    // Unregister color change handler.
+    if (g_colorValuesChangedToken) {
+        g_uiSettings.ColorValuesChanged(g_colorValuesChangedToken);
+        g_colorValuesChangedToken = {};
+    }
+    g_uiSettings = nullptr;
+    g_themeResourceEntries.clear();
+
+    // Restore original resource values.
+    auto resources = Application::Current().Resources();
+    for (const auto& [key, originalValue] : g_originalResourceValues) {
+        try {
+            resources.Insert(winrt::box_value(key), originalValue);
+        } catch (...) {
+            HRESULT hr = winrt::to_hresult();
+            Wh_Log(L"Error %08X", hr);
+        }
+    }
+    g_originalResourceValues.clear();
+
+    // Remove our merged theme dictionary.
+    if (g_resourceVariablesThemeDict) {
+        auto merged = resources.MergedDictionaries();
+        uint32_t index;
+        if (merged.IndexOf(g_resourceVariablesThemeDict, index)) {
+            merged.RemoveAt(index);
+        }
+        g_resourceVariablesThemeDict = nullptr;
     }
 }
 
@@ -6604,6 +6856,8 @@ void UninitializeForCurrentThread() {
     g_elementsCustomizationState.clear();
 
     g_elementsCustomizationRules.clear();
+
+    UninitializeResourceVariables();
 
     g_initializedForThread = false;
 }
