@@ -158,6 +158,13 @@ using GetThreadDescription_t =
     WINBASEAPI HRESULT(WINAPI*)(HANDLE hThread, PWSTR* ppszThreadDescription);
 GetThreadDescription_t pGetThreadDescription;
 
+// Private API for window band (z-order band).
+// https://blog.adeltax.com/window-z-order-in-windows-10/
+using GetWindowBand_t = BOOL(WINAPI*)(HWND hWnd, PDWORD pdwBand);
+GetWindowBand_t pGetWindowBand;
+
+constexpr DWORD ZBID_SYSTEM_TOOLS = 16;
+
 VS_FIXEDFILEINFO* GetModuleVersionInfo(HMODULE hModule, UINT* puPtrLen) {
     void* pFixedFileInfo = nullptr;
     UINT uPtrLen = 0;
@@ -1606,6 +1613,15 @@ BOOL WINAPI MoveWindow_Hook(HWND hWnd,
             return original();
         }
 
+        // Skip Alt+Tab window, which uses band ZBID_SYSTEM_TOOLS. The
+        // virtual desktop switcher uses band ZBID_IMMERSIVE_EDGY.
+        if (pGetWindowBand) {
+            DWORD band = 0;
+            if (pGetWindowBand(hWnd, &band) && band == ZBID_SYSTEM_TOOLS) {
+                return original();
+            }
+        }
+
         POINT pt;
         GetCursorPos(&pt);
 
@@ -2523,6 +2539,12 @@ BOOL Wh_ModInit() {
                                                LOAD_LIBRARY_SEARCH_SYSTEM32)) {
         pGetThreadDescription = (GetThreadDescription_t)GetProcAddress(
             kernel32Module, "GetThreadDescription");
+    }
+
+    if (HMODULE user32Module = LoadLibraryEx(L"user32.dll", nullptr,
+                                             LOAD_LIBRARY_SEARCH_SYSTEM32)) {
+        pGetWindowBand =
+            (GetWindowBand_t)GetProcAddress(user32Module, "GetWindowBand");
     }
 
     if (HMODULE taskbarViewModule = GetTaskbarViewModuleHandle()) {
