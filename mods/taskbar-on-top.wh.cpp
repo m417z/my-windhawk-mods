@@ -475,8 +475,8 @@ DWORD WINAPI TrayUI_GetDockedRect_Hook(void* pThis, RECT* rect, BOOL param2) {
             break;
 
         case TaskbarLocation::bottom:
-            rect->top = monitorRect.bottom - height;
-            rect->bottom = monitorRect.bottom;
+            // rect->top = monitorRect.bottom - height;
+            // rect->bottom = monitorRect.bottom;
             break;
     }
 
@@ -520,8 +520,8 @@ void WINAPI TrayUI_MakeStuckRect_Hook(void* pThis,
             break;
 
         case TaskbarLocation::bottom:
-            rect->top = monitorRect.bottom - height;
-            rect->bottom = monitorRect.bottom;
+            // rect->top = monitorRect.bottom - height;
+            // rect->bottom = monitorRect.bottom;
             break;
     }
 }
@@ -543,7 +543,7 @@ void WINAPI TrayUI_GetStuckInfo_Hook(void* pThis,
             break;
 
         case TaskbarLocation::bottom:
-            *taskbarPos = ABE_BOTTOM;
+            // *taskbarPos = ABE_BOTTOM;
             break;
     }
 }
@@ -605,8 +605,8 @@ LRESULT TaskbarWndProcPostProcess(HWND hWnd,
                         break;
 
                     case TaskbarLocation::bottom:
-                        rect->top = monitorRect.bottom - height;
-                        rect->bottom = monitorRect.bottom;
+                        // rect->top = monitorRect.bottom - height;
+                        // rect->bottom = monitorRect.bottom;
                         break;
                 }
             }
