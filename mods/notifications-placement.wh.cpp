@@ -97,6 +97,13 @@ struct {
     int verticalDistanceFromScreenEdge;
 } g_settings;
 
+enum class Target {
+    Explorer,
+    ShellExperienceHost,
+};
+
+Target g_target;
+
 WINUSERAPI UINT WINAPI GetDpiForWindow(HWND hwnd);
 typedef enum MONITOR_DPI_TYPE {
     MDT_EFFECTIVE_DPI = 0,
@@ -289,7 +296,7 @@ std::vector<HWND> GetCoreWindows() {
     std::vector<HWND> hWnds;
     ENUM_WINDOWS_PARAM param = {&hWnds};
     EnumWindows(
-        [](HWND hWnd, LPARAM lParam) WINAPI -> BOOL {
+        [](HWND hWnd, LPARAM lParam) -> BOOL {
             ENUM_WINDOWS_PARAM& param = *(ENUM_WINDOWS_PARAM*)lParam;
 
             if (IsTargetCoreWindow(hWnd)) {
@@ -492,11 +499,9 @@ BOOL WINAPI SetWindowPos_Hook(HWND hWnd,
     return SetWindowPos_Original(hWnd, hWndInsertAfter, X, Y, cx, cy, uFlags);
 }
 
-void ApplySettings() {
-    if (!GetModuleHandle(L"ShellExperienceHost.exe")) {
-        return;
-    }
+namespace ShellExperienceHost {
 
+void ApplySettings() {
     for (HWND hCoreWnd : GetCoreWindows()) {
         Wh_Log(L"Adjusting core window %08X", (DWORD)(ULONG_PTR)hCoreWnd);
 
@@ -516,6 +521,8 @@ void ApplySettings() {
                               SWP_NOZORDER | SWP_NOACTIVATE);
     }
 }
+
+}  // namespace ShellExperienceHost
 
 void LoadSettings() {
     g_settings.monitor = Wh_GetIntSetting(L"monitor");
@@ -552,8 +559,30 @@ BOOL Wh_ModInit() {
 
     LoadSettings();
 
-    Wh_SetFunctionHook((void*)SetWindowPos, (void*)SetWindowPos_Hook,
-                       (void**)&SetWindowPos_Original);
+    g_target = Target::Explorer;
+
+    WCHAR moduleFilePath[MAX_PATH];
+    switch (
+        GetModuleFileName(nullptr, moduleFilePath, ARRAYSIZE(moduleFilePath))) {
+        case 0:
+        case ARRAYSIZE(moduleFilePath):
+            Wh_Log(L"GetModuleFileName failed");
+            break;
+
+        default:
+            if (PCWSTR moduleFileName = wcsrchr(moduleFilePath, L'\\')) {
+                moduleFileName++;
+                if (_wcsicmp(moduleFileName, L"ShellExperienceHost.exe") == 0) {
+                    g_target = Target::ShellExperienceHost;
+                }
+            } else {
+                Wh_Log(L"GetModuleFileName returned an unsupported path");
+            }
+            break;
+    }
+
+    WindhawkUtils::SetFunctionHook(SetWindowPos, SetWindowPos_Hook,
+                                   &SetWindowPos_Original);
 
     return TRUE;
 }
@@ -561,7 +590,9 @@ BOOL Wh_ModInit() {
 void Wh_ModAfterInit() {
     Wh_Log(L">");
 
-    ApplySettings();
+    if (g_target == Target::ShellExperienceHost) {
+        ShellExperienceHost::ApplySettings();
+    }
 }
 
 void Wh_ModBeforeUninit() {
@@ -569,7 +600,9 @@ void Wh_ModBeforeUninit() {
 
     g_unloading = true;
 
-    ApplySettings();
+    if (g_target == Target::ShellExperienceHost) {
+        ShellExperienceHost::ApplySettings();
+    }
 }
 
 void Wh_ModUninit() {
@@ -581,5 +614,7 @@ void Wh_ModSettingsChanged() {
 
     LoadSettings();
 
-    ApplySettings();
+    if (g_target == Target::ShellExperienceHost) {
+        ShellExperienceHost::ApplySettings();
+    }
 }
