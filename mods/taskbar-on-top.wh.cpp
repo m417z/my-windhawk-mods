@@ -35,7 +35,6 @@ Moves the Windows 11 taskbar to the top of the screen.
 * For some devices, mostly tablets and touchscreen devices, the taskbar may
   appear in the wrong location after enabling the mod. An explorer restart
   usually fixes it.
-* The option to automatically hide the taskbar isn't supported.
 
 ![Screenshot](https://i.imgur.com/LqBwGVn.png)
 */
