@@ -104,6 +104,8 @@ enum class Target {
 
 Target g_target;
 
+bool g_inCToastCenterExperienceManager_PositionView;
+
 WINUSERAPI UINT WINAPI GetDpiForWindow(HWND hwnd);
 typedef enum MONITOR_DPI_TYPE {
     MDT_EFFECTIVE_DPI = 0,
@@ -313,9 +315,6 @@ std::vector<HWND> GetCoreWindows() {
 void AdjustCoreWindowPos(int* x, int* y, int* cx, int* cy) {
     Wh_Log(L"Before: %dx%d %dx%d", *x, *y, *cx, *cy);
 
-    HMONITOR primaryMonitor =
-        MonitorFromPoint({0, 0}, MONITOR_DEFAULTTONEAREST);
-
     HMONITOR srcMonitor = MonitorFromPoint({*x + *cx / 2, *y + *cy * 2},
                                            MONITOR_DEFAULTTONEAREST);
 
@@ -344,6 +343,9 @@ void AdjustCoreWindowPos(int* x, int* y, int* cx, int* cy) {
     }
 
     if (!destMonitor) {
+        HMONITOR primaryMonitor =
+            MonitorFromPoint({0, 0}, MONITOR_DEFAULTTONEAREST);
+
         destMonitor = primaryMonitor;
     }
 
@@ -396,21 +398,6 @@ void AdjustCoreWindowPos(int* x, int* y, int* cx, int* cy) {
         }
     }
 
-    if (destMonitor != primaryMonitor) {
-        UINT destMonitorDpiX = 96;
-        UINT destMonitorDpiY = 96;
-        GetDpiForMonitor(destMonitor, MDT_DEFAULT, &destMonitorDpiX,
-                         &destMonitorDpiY);
-
-        UINT primaryMonitorDpiX = 96;
-        UINT primaryMonitorDpiY = 96;
-        GetDpiForMonitor(primaryMonitor, MDT_DEFAULT, &primaryMonitorDpiX,
-                         &primaryMonitorDpiY);
-
-        *cx = MulDiv(*cx, destMonitorDpiX, primaryMonitorDpiX);
-        // *cy = MulDiv(*cy, destMonitorDpiY, primaryMonitorDpiY);
-    }
-
     switch (g_unloading ? HorizontalPlacement::right
                         : g_settings.horizontalPlacement) {
         case HorizontalPlacement::right:
@@ -450,6 +437,49 @@ void AdjustCoreWindowPos(int* x, int* y, int* cx, int* cy) {
     }
 
     Wh_Log(L"After: %dx%d %dx%d", *x, *y, *cx, *cy);
+}
+
+using CToastCenterExperienceManager_PositionView_t =
+    HRESULT(WINAPI*)(void* pThis);
+CToastCenterExperienceManager_PositionView_t
+    CToastCenterExperienceManager_PositionView_Original;
+HRESULT WINAPI CToastCenterExperienceManager_PositionView_Hook(void* pThis) {
+    Wh_Log(L">");
+
+    g_inCToastCenterExperienceManager_PositionView = true;
+    HRESULT ret = CToastCenterExperienceManager_PositionView_Original(pThis);
+    g_inCToastCenterExperienceManager_PositionView = false;
+
+    return ret;
+}
+
+using MonitorFromPoint_t = decltype(&MonitorFromPoint);
+MonitorFromPoint_t MonitorFromPoint_Original;
+HMONITOR WINAPI MonitorFromPoint_Hook(POINT pt, DWORD dwFlags) {
+    Wh_Log(L">");
+
+    if (g_inCToastCenterExperienceManager_PositionView && !g_unloading &&
+        pt.x == 0 && pt.y == 0) {
+        HMONITOR monitor = nullptr;
+
+        if (*g_settings.monitorInterfaceName.get()) {
+            monitor = GetMonitorByInterfaceNameSubstr(
+                g_settings.monitorInterfaceName.get());
+        } else if (g_settings.monitor == 0) {
+            POINT cursorPt;
+            GetCursorPos(&cursorPt);
+            monitor =
+                MonitorFromPoint_Original(cursorPt, MONITOR_DEFAULTTONEAREST);
+        } else if (g_settings.monitor >= 1) {
+            monitor = GetMonitorById(g_settings.monitor - 1);
+        }
+
+        if (monitor) {
+            return monitor;
+        }
+    }
+
+    return MonitorFromPoint_Original(pt, dwFlags);
 }
 
 using SetWindowPos_t = decltype(&SetWindowPos);
@@ -524,6 +554,31 @@ void ApplySettings() {
 
 }  // namespace ShellExperienceHost
 
+bool HookTwinuiPcshellSymbols() {
+    HMODULE module = LoadLibraryEx(L"twinui.pcshell.dll", nullptr,
+                                   LOAD_LIBRARY_SEARCH_SYSTEM32);
+    if (!module) {
+        Wh_Log(L"Loading twinui.pcshell.dll failed");
+        return false;
+    }
+
+    // twinui.pcshell.dll
+    WindhawkUtils::SYMBOL_HOOK symbolHooks[] = {
+        {
+            {LR"(private: long __cdecl CToastCenterExperienceManager::PositionView(void))"},
+            &CToastCenterExperienceManager_PositionView_Original,
+            CToastCenterExperienceManager_PositionView_Hook,
+        },
+    };
+
+    if (!HookSymbols(module, symbolHooks, ARRAYSIZE(symbolHooks))) {
+        Wh_Log(L"HookSymbols failed");
+        return false;
+    }
+
+    return true;
+}
+
 void LoadSettings() {
     g_settings.monitor = Wh_GetIntSetting(L"monitor");
     g_settings.monitorInterfaceName =
@@ -583,6 +638,16 @@ BOOL Wh_ModInit() {
 
     WindhawkUtils::SetFunctionHook(SetWindowPos, SetWindowPos_Hook,
                                    &SetWindowPos_Original);
+
+    if (g_target == Target::Explorer) {
+        if (!HookTwinuiPcshellSymbols()) {
+            return FALSE;
+        }
+
+        WindhawkUtils::Wh_SetFunctionHookT(MonitorFromPoint,
+                                           MonitorFromPoint_Hook,
+                                           &MonitorFromPoint_Original);
+    }
 
     return TRUE;
 }
