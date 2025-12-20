@@ -664,16 +664,21 @@ LRESULT TaskbarWndProcPostProcess(HWND hWnd,
                             // and over taskbar).
                             int currentHeight =
                                 currentRect.bottom - currentRect.top;
-                            bool cursorInTaskbarArea =
+                            bool cursorInShownTaskbarArea =
                                 pt.x >= monitorRect.left &&
                                 pt.x < monitorRect.right &&
                                 pt.y >= monitorRect.top &&
                                 pt.y < monitorRect.top + currentHeight;
-                            if (!cursorInTaskbarArea) {
+                            if (!cursorInShownTaskbarArea) {
                                 // Cursor is not in taskbar - hide it by moving
                                 // mostly off-screen.
-                                yPosition -=
-                                    currentHeight - kAutoHideTriggerHeight;
+                                UINT monitorDpiX = 96;
+                                UINT monitorDpiY = 96;
+                                GetDpiForMonitor(monitor, MDT_DEFAULT,
+                                                 &monitorDpiX, &monitorDpiY);
+                                int triggerHeight = MulDiv(
+                                    kAutoHideTriggerHeight, monitorDpiY, 96);
+                                yPosition -= currentHeight - triggerHeight;
                             }
                         }
 
