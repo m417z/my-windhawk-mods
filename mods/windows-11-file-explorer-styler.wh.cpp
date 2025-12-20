@@ -183,15 +183,18 @@ from the **TranslucentTB** project.
     Themes are collections of styles. For details about the themes below, or for
     information about submitting your own theme, refer to the relevant section
     in the mod details.
+
+    Themes marked with * are designed to be used together with the Translucent
+    Windows mod.
   $options:
   - "": None
-  - Translucent Explorer11: Translucent Explorer11
+  - Translucent Explorer11: Translucent Explorer11 *
   - MicaBar: MicaBar
   - NoCommandBar: NoCommandBar
   - Minimal Explorer11: Minimal Explorer11
   - Tabless: Tabless
   - Matter: Matter
-  - WindowGlass: WindowGlass
+  - WindowGlass: WindowGlass *
 - controlStyles:
   - - target: ""
       $name: Target
