@@ -2,7 +2,7 @@
 // @id              notifications-placement
 // @name            Customize Windows notifications placement
 // @description     Move notifications to another monitor or another corner of the screen
-// @version         1.1
+// @version         1.2
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
@@ -132,7 +132,7 @@ Target g_target;
 
 bool g_inCToastCenterExperienceManager_PositionView;
 
-bool g_animationDirectionAdjusted;
+bool g_customAnimationDirectionApplied;
 
 WINUSERAPI UINT WINAPI GetDpiForWindow(HWND hwnd);
 typedef enum MONITOR_DPI_TYPE {
@@ -578,7 +578,7 @@ void UpdateAnimationDirectionStyle() {
             break;
     }
 
-    if (!g_animationDirectionAdjusted && !angle) {
+    if (!g_customAnimationDirectionApplied && !angle) {
         return;
     }
 
@@ -593,8 +593,6 @@ void UpdateAnimationDirectionStyle() {
         Wh_Log(L"Failed to get window content");
         return;
     }
-
-    g_animationDirectionAdjusted = true;
 
     FrameworkElement launcherFrame = nullptr;
 
@@ -620,6 +618,7 @@ void UpdateAnimationDirectionStyle() {
     }
 
     FrameworkElement rootGridContent = nullptr;
+    child = launcherFrame;
     if ((child = FindChildByName(child, L"FlexibleNormalToastView")) &&
         (child = FindChildByName(child, L"MainGrid")) &&
         (child = FindChildByName(child, L"RevealGrid2"))) {
@@ -628,6 +627,7 @@ void UpdateAnimationDirectionStyle() {
 
     if (!rootGridContent) {
         Wh_Log(L"Failed to find root grid content");
+        return;
     }
 
     Media::RotateTransform transform;
@@ -640,6 +640,8 @@ void UpdateAnimationDirectionStyle() {
     auto origin = winrt::Windows::Foundation::Point{0.5, 0.5};
     launcherFrame.RenderTransformOrigin(origin);
     rootGridContent.RenderTransformOrigin(origin);
+
+    g_customAnimationDirectionApplied = (angle != 0);
 }
 
 using SetWindowPos_t = decltype(&SetWindowPos);
