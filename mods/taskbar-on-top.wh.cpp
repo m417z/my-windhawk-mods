@@ -117,8 +117,8 @@ enum class Target {
 
 Target g_target;
 
-// Auto-hide trigger height in pixels. Set to 0 to disable the auto-hide fix.  You must
-// approach within this many pixels of the monitor top to show the taskbar when hidden.
+// Auto-hide trigger height in pixels. You must approach within this many pixels
+// of the monitor top to show the taskbar when hidden.
 constexpr int kAutoHideTriggerHeight = 2;
 
 std::atomic<bool> g_taskbarViewDllLoaded;
@@ -544,6 +544,7 @@ LRESULT TaskbarWndProcPostProcess(HWND hWnd,
                                   UINT Msg,
                                   WPARAM wParam,
                                   LPARAM lParam,
+                                  bool secondaryTaskbar,
                                   LRESULT result) {
     switch (Msg) {
         case WM_SIZING: {
@@ -598,25 +599,37 @@ LRESULT TaskbarWndProcPostProcess(HWND hWnd,
                         RECT monitorRect;
                         GetMonitorRect(monitor, &monitorRect);
 
-                        // Normal positioning without auto-hide adjustment
+                        // Normal positioning without auto-hide adjustment.
                         int yPosition = monitorRect.top;
 
-                        // Auto-hide positioning: move taskbar mostly off-screen when hiding
-                        if (kAutoHideTriggerHeight > 0 && IsTaskbarAutoHideEnabled()) {
-                            // Check if cursor is within the taskbar's current bounds
-                            POINT cursorPos;
-                            GetCursorPos(&cursorPos);
+                        // Auto-hide positioning: move taskbar mostly off-screen
+                        // when hiding.
+                        if (!secondaryTaskbar && IsTaskbarAutoHideEnabled()) {
+                            // Check if cursor is within the taskbar's current
+                            // bounds.
+                            DWORD messagePos = GetMessagePos();
+                            POINT pt{
+                                GET_X_LPARAM(messagePos),
+                                GET_Y_LPARAM(messagePos),
+                            };
 
                             RECT currentRect;
                             GetWindowRect(hWnd, &currentRect);
-                        
-                            // Check if cursor is in the taskbar area (on screen and over taskbar)
-                            int currentHeight = currentRect.bottom - currentRect.top;
-                            bool cursorInTaskbarArea = cursorPos.y >= monitorRect.top &&
-                                                       cursorPos.y < monitorRect.top + currentHeight;
+
+                            // Check if cursor is in the taskbar area (on screen
+                            // and over taskbar).
+                            int currentHeight =
+                                currentRect.bottom - currentRect.top;
+                            bool cursorInTaskbarArea =
+                                pt.x >= monitorRect.left &&
+                                pt.x < monitorRect.right &&
+                                pt.y >= monitorRect.top &&
+                                pt.y < monitorRect.top + currentHeight;
                             if (!cursorInTaskbarArea) {
-                                // Cursor is not in taskbar - hide it by moving mostly off-screen
-                                yPosition -= currentHeight - kAutoHideTriggerHeight;
+                                // Cursor is not in taskbar - hide it by moving
+                                // mostly off-screen.
+                                yPosition -=
+                                    currentHeight - kAutoHideTriggerHeight;
                             }
                         }
 
@@ -651,7 +664,8 @@ LRESULT WINAPI TrayUI_WndProc_Hook(void* pThis,
     LRESULT ret =
         TrayUI_WndProc_Original(pThis, hWnd, Msg, wParam, lParam, flag);
 
-    ret = TaskbarWndProcPostProcess(hWnd, Msg, wParam, lParam, ret);
+    ret = TaskbarWndProcPostProcess(hWnd, Msg, wParam, lParam,
+                                    /*secondaryTaskbar=*/false, ret);
 
     g_hookCallCounter--;
 
@@ -673,7 +687,8 @@ LRESULT WINAPI CSecondaryTray_v_WndProc_Hook(void* pThis,
     LRESULT ret =
         CSecondaryTray_v_WndProc_Original(pThis, hWnd, Msg, wParam, lParam);
 
-    ret = TaskbarWndProcPostProcess(hWnd, Msg, wParam, lParam, ret);
+    ret = TaskbarWndProcPostProcess(hWnd, Msg, wParam, lParam,
+                                    /*secondaryTaskbar=*/true, ret);
 
     g_hookCallCounter--;
 
