@@ -10,7 +10,7 @@
 // @include         explorer.exe
 // @include         ShellExperienceHost.exe
 // @architecture    x86-64
-// @compilerOptions -DWINVER=0x0A00 -lshcore
+// @compilerOptions -DWINVER=0x0A00 -lole32 -loleaut32 -lruntimeobject -lshcore
 // ==/WindhawkMod==
 
 // Source code is published under The GNU General Public License v3.0.
@@ -64,15 +64,32 @@ Only Windows 10 64-bit and Windows 11 are supported.
   - center: Center
 - verticalDistanceFromScreenEdge: 0
   $name: Distance from the bottom/top side of the screen
+- animationDirection: automatic
+  $name: Notification appearance animation direction
+  $options:
+  - automatic: Automatic
+  - fromLeft: From left
+  - fromRight: From right
+  - fromTop: From top
+  - fromBottom: From bottom
 */
 // ==/WindhawkModSettings==
 
 #include <windhawk_utils.h>
 
+#undef GetCurrentTime
+
+#include <winrt/Windows.UI.Xaml.Media.h>
+#include <winrt/Windows.UI.Xaml.h>
+#include <winrt/base.h>
+
 #include <atomic>
+#include <functional>
 #include <string>
 #include <unordered_set>
 #include <vector>
+
+using namespace winrt::Windows::UI::Xaml;
 
 std::atomic<bool> g_unloading;
 
@@ -88,6 +105,14 @@ enum class VerticalPlacement {
     center,
 };
 
+enum class AnimationDirection {
+    automatic,
+    fromLeft,
+    fromRight,
+    fromTop,
+    fromBottom,
+};
+
 struct {
     int monitor;
     WindhawkUtils::StringSetting monitorInterfaceName;
@@ -95,6 +120,7 @@ struct {
     int horizontalDistanceFromScreenEdge;
     VerticalPlacement verticalPlacement;
     int verticalDistanceFromScreenEdge;
+    AnimationDirection animationDirection;
 } g_settings;
 
 enum class Target {
@@ -105,6 +131,8 @@ enum class Target {
 Target g_target;
 
 bool g_inCToastCenterExperienceManager_PositionView;
+
+bool g_animationDirectionAdjusted;
 
 WINUSERAPI UINT WINAPI GetDpiForWindow(HWND hwnd);
 typedef enum MONITOR_DPI_TYPE {
@@ -214,6 +242,40 @@ std::wstring GetProcessFileName(DWORD dwProcessId) {
 
     processFileNameUpper++;
     return processFileNameUpper;
+}
+
+FrameworkElement EnumChildElements(
+    FrameworkElement element,
+    std::function<bool(FrameworkElement)> enumCallback) {
+    int childrenCount = Media::VisualTreeHelper::GetChildrenCount(element);
+
+    for (int i = 0; i < childrenCount; i++) {
+        auto child = Media::VisualTreeHelper::GetChild(element, i)
+                         .try_as<FrameworkElement>();
+        if (!child) {
+            Wh_Log(L"Failed to get child %d of %d", i + 1, childrenCount);
+            continue;
+        }
+
+        if (enumCallback(child)) {
+            return child;
+        }
+    }
+
+    return nullptr;
+}
+
+FrameworkElement FindChildByName(FrameworkElement element, PCWSTR name) {
+    return EnumChildElements(element, [name](FrameworkElement child) {
+        return child.Name() == name;
+    });
+}
+
+FrameworkElement FindChildByClassName(FrameworkElement element,
+                                      PCWSTR className) {
+    return EnumChildElements(element, [className](FrameworkElement child) {
+        return winrt::get_class_name(child) == className;
+    });
 }
 
 bool IsTargetCoreWindow(HWND hWnd) {
@@ -482,6 +544,104 @@ HMONITOR WINAPI MonitorFromPoint_Hook(POINT pt, DWORD dwFlags) {
     return MonitorFromPoint_Original(pt, dwFlags);
 }
 
+void UpdateAnimationDirectionStyle() {
+    int angle = 0;
+
+    switch (g_unloading ? AnimationDirection::fromRight
+                        : g_settings.animationDirection) {
+        case AnimationDirection::automatic:
+            if (g_settings.horizontalPlacement == HorizontalPlacement::center) {
+                if (g_settings.verticalPlacement == VerticalPlacement::bottom) {
+                    angle = 90;
+                } else {
+                    angle = -90;
+                }
+            } else if (g_settings.horizontalPlacement ==
+                       HorizontalPlacement::left) {
+                angle = 180;
+            }
+            break;
+
+        case AnimationDirection::fromLeft:
+            angle = 180;
+            break;
+
+        case AnimationDirection::fromRight:
+            break;
+
+        case AnimationDirection::fromTop:
+            angle = 90;
+            break;
+
+        case AnimationDirection::fromBottom:
+            angle = -90;
+            break;
+    }
+
+    if (!g_animationDirectionAdjusted && !angle) {
+        return;
+    }
+
+    auto window = Window::Current();
+    if (!window) {
+        Wh_Log(L"Failed to get current window");
+        return;
+    }
+
+    FrameworkElement windowContent = window.Content().as<FrameworkElement>();
+    if (!windowContent) {
+        Wh_Log(L"Failed to get window content");
+        return;
+    }
+
+    g_animationDirectionAdjusted = true;
+
+    FrameworkElement launcherFrame = nullptr;
+
+    FrameworkElement child = windowContent;
+    if ((child = FindChildByClassName(
+             child, L"Windows.UI.Xaml.Controls.ContentPresenter")) &&
+        (child =
+             FindChildByClassName(child, L"ActionCenter.ToastCenterPage")) &&
+        (child = FindChildByName(child, L"ToastCenterMainGrid")) &&
+        (child = FindChildByName(child, L"ToastCenterView")) &&
+        (child = FindChildByName(child, L"ToastCenterScrollViewer")) &&
+        (child = FindChildByName(child, L"Root")) &&
+        (child =
+             FindChildByClassName(child, L"Windows.UI.Xaml.Controls.Grid")) &&
+        (child = FindChildByName(child, L"ScrollContentPresenter")) &&
+        (child = FindChildByName(child, L"ToastCenterGrid"))) {
+        launcherFrame = child;
+    }
+
+    if (!launcherFrame) {
+        Wh_Log(L"Failed to find launcher frame");
+        return;
+    }
+
+    FrameworkElement rootGridContent = nullptr;
+    if ((child = FindChildByName(child, L"FlexibleNormalToastView")) &&
+        (child = FindChildByName(child, L"MainGrid")) &&
+        (child = FindChildByName(child, L"RevealGrid2"))) {
+        rootGridContent = child;
+    }
+
+    if (!rootGridContent) {
+        Wh_Log(L"Failed to find root grid content");
+    }
+
+    Media::RotateTransform transform;
+    transform.Angle(angle);
+    launcherFrame.RenderTransform(transform);
+    Media::RotateTransform transform2;
+    transform2.Angle(-angle);
+    rootGridContent.RenderTransform(transform2);
+
+    auto origin = winrt::Windows::Foundation::Point{0.5, 0.5};
+    launcherFrame.RenderTransformOrigin(origin);
+    rootGridContent.RenderTransformOrigin(origin);
+}
+
 using SetWindowPos_t = decltype(&SetWindowPos);
 SetWindowPos_t SetWindowPos_Original;
 BOOL WINAPI SetWindowPos_Hook(HWND hWnd,
@@ -526,7 +686,15 @@ BOOL WINAPI SetWindowPos_Hook(HWND hWnd,
 
     AdjustCoreWindowPos(&X, &Y, &cx, &cy);
 
-    return SetWindowPos_Original(hWnd, hWndInsertAfter, X, Y, cx, cy, uFlags);
+    BOOL ret =
+        SetWindowPos_Original(hWnd, hWndInsertAfter, X, Y, cx, cy, uFlags);
+
+    if (g_target == Target::ShellExperienceHost &&
+        GetWindowThreadProcessId(hWnd, nullptr) == GetCurrentThreadId()) {
+        UpdateAnimationDirectionStyle();
+    }
+
+    return ret;
 }
 
 namespace ShellExperienceHost {
@@ -607,6 +775,19 @@ void LoadSettings() {
 
     g_settings.verticalDistanceFromScreenEdge =
         Wh_GetIntSetting(L"verticalDistanceFromScreenEdge");
+
+    PCWSTR animationDirection = Wh_GetStringSetting(L"animationDirection");
+    g_settings.animationDirection = AnimationDirection::automatic;
+    if (wcscmp(animationDirection, L"fromLeft") == 0) {
+        g_settings.animationDirection = AnimationDirection::fromLeft;
+    } else if (wcscmp(animationDirection, L"fromRight") == 0) {
+        g_settings.animationDirection = AnimationDirection::fromRight;
+    } else if (wcscmp(animationDirection, L"fromTop") == 0) {
+        g_settings.animationDirection = AnimationDirection::fromTop;
+    } else if (wcscmp(animationDirection, L"fromBottom") == 0) {
+        g_settings.animationDirection = AnimationDirection::fromBottom;
+    }
+    Wh_FreeStringSetting(animationDirection);
 }
 
 BOOL Wh_ModInit() {
