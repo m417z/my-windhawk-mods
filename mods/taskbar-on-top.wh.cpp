@@ -1902,7 +1902,6 @@ namespace StartMenuUI {
 bool g_applyStylePending;
 bool g_inApplyStyle;
 bool g_startMenuAnimationAdjusted;
-std::optional<double> g_previousCanvasTop;
 winrt::weak_ref<DependencyObject> g_startSizingFrameWeakRef;
 int64_t g_canvasTopPropertyChangedToken;
 int64_t g_canvasLeftPropertyChangedToken;
@@ -2026,49 +2025,13 @@ void ApplyStyleClassicStartMenu(FrameworkElement content,
         }
     }
 
-    if (g_unloading) {
-        if (g_previousCanvasTop.has_value()) {
-            Wh_Log(L"Restoring Canvas.Top to %f", g_previousCanvasTop.value());
-            Controls::Canvas::SetTop(startSizingFrame,
-                                     g_previousCanvasTop.value());
-        }
-    } else {
-        if (!g_previousCanvasTop.has_value()) {
-            double canvasTop = Controls::Canvas::GetTop(startSizingFrame);
-            // The value might be zero when not yet initialized.
-            if (canvasTop) {
-                g_previousCanvasTop = canvasTop;
-            }
-        }
+    Wh_Log(L"Invalidating measure");
+    startSizingFrame.InvalidateMeasure();
 
-        MONITORINFO monitorInfo{
-            .cbSize = sizeof(MONITORINFO),
-        };
-        GetMonitorInfo(monitor, &monitorInfo);
-
-        UINT monitorDpiX = 96;
-        UINT monitorDpiY = 96;
-        GetDpiForMonitor(monitor, MDT_DEFAULT, &monitorDpiX, &monitorDpiY);
-
-        // Use the monitor size and not the content size, because the content
-        // size might not be updated yet when this function is called.
-        double canvasHeight =
-            MulDiv(monitorInfo.rcWork.bottom - monitorInfo.rcWork.top, 96,
-                   monitorDpiY);
-
+    if (!g_unloading && taskbarLocation == TaskbarLocation::top) {
         constexpr int kStartMenuMargin = 12;
 
-        double newTop;
-        switch (taskbarLocation) {
-            case TaskbarLocation::top:
-                newTop = kStartMenuMargin;
-                break;
-
-            case TaskbarLocation::bottom:
-                newTop = canvasHeight - startSizingFrame.ActualHeight() -
-                         kStartMenuMargin;
-                break;
-        }
+        double newTop = kStartMenuMargin;
 
         Wh_Log(L"Setting Canvas.Top to %f", newTop);
         Controls::Canvas::SetTop(startSizingFrame, newTop);
