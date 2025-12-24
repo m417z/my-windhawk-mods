@@ -30,6 +30,45 @@ allows setting different auto-hide settings for each monitor.
 This mod requires auto-hide to be enabled in Windows settings.
 
 This mod is only supported on Windows 11.
+
+## Selecting a monitor
+
+You can select a monitor by its number or by its interface name in the mod
+settings.
+
+### By monitor number
+
+Set the **Monitor** setting to the desired monitor number (1, 2, 3, etc.). Note
+that this number may differ from the monitor number shown in Windows Display
+Settings.
+
+### By interface name
+
+If monitor numbers change frequently (e.g., after locking your PC or
+restarting), you can use the monitor's interface name instead. To find the
+interface name:
+
+1. Go to the mod's **Advanced** tab.
+2. Set **Debug logging** to **Mod logs**.
+3. Click on **Show log output**.
+4. In the mod settings, enter any text (e.g., `TEST`) in the **Monitor interface
+   name** field.
+5. Hover over one of the taskbars to trigger the mod's logic.
+6. In the log output, look for lines containing `Found display device`. You will
+   see one line per monitor, for example:
+   ```
+   Found display device \\.\DISPLAY1, interface name: \\?\DISPLAY#DELA1D2#5&abc123#0#{e6f07b5f-ee97-4a90-b076-33f57bf4eaa7}
+   Found display device \\.\DISPLAY2, interface name: \\?\DISPLAY#GSM5B09#4&def456#0#{e6f07b5f-ee97-4a90-b076-33f57bf4eaa7}
+   ```
+   Use the interface name that follows the "interface name:" text. You may need
+   to experiment to determine which interface name corresponds to which physical
+   monitor.
+7. Copy the relevant interface name (or a unique substring of it) into the
+   **Monitor interface name** setting.
+8. Set **Debug logging** back to **None** when done.
+
+The **Monitor interface name** setting takes priority over the **Monitor**
+number when both are configured.
 */
 // ==/WindhawkModReadme==
 
