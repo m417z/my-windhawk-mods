@@ -457,7 +457,7 @@ bool CanHideTaskbarForWindow(HWND hWnd,
     return false;
 }
 
-bool ShouldKeepTaskbarShown(HMONITOR monitor) {
+bool ShouldKeepTaskbarShown(HWND hTaskbarWnd, HMONITOR monitor) {
     if (g_settings.primaryMonitorOnly &&
         monitor != MonitorFromPoint({0, 0}, MONITOR_DEFAULTTOPRIMARY)) {
         return false;
@@ -498,7 +498,8 @@ bool ShouldKeepTaskbarShown(HMONITOR monitor) {
             return TRUE;
         }
 
-        Wh_Log(L"Can hide taskbar for window %p (%s)", hWnd,
+        Wh_Log(L"Can hide taskbar %08X for window %08X (%s)",
+               (DWORD)(DWORD_PTR)hTaskbarWnd, (DWORD)(DWORD_PTR)hWnd,
                GetProcessFileName(dwProcessId).c_str());
         return FALSE;
     };
@@ -711,7 +712,7 @@ LRESULT WINAPI TrayUI_WndProc_Hook(void* pThis,
         }
 
         HMONITOR monitor = TrayUI_GetStuckMonitor_Original(pThis);
-        bool keepShown = ShouldKeepTaskbarShown(monitor);
+        bool keepShown = ShouldKeepTaskbarShown(hWnd, monitor);
 
         void* pTrayUI_IInspectable =
             QueryViaVtableBackwards(pThis, TrayUI_vftable_IInspectable);
@@ -763,7 +764,7 @@ LRESULT WINAPI CSecondaryTray_v_WndProc_Hook(void* pThis,
         HMONITOR monitor =
             CSecondaryTray_GetMonitor_Original(pCSecondaryTray_ISecondaryTray);
 
-        bool keepShown = ShouldKeepTaskbarShown(monitor);
+        bool keepShown = ShouldKeepTaskbarShown(hWnd, monitor);
 
         bool keptShown = g_taskbarsKeptShown.contains(pThis);
 
