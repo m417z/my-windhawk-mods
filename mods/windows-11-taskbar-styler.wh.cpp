@@ -364,6 +364,7 @@ from the **TranslucentTB** project.
 */
 // ==/WindhawkModSettings==
 
+#include <commctrl.h>
 #include <xamlom.h>
 
 #include <atomic>
@@ -3703,6 +3704,91 @@ const Theme g_themeLuminosity_variant_Compact = {{
 std::atomic<bool> g_initialized;
 thread_local bool g_initializedForThread;
 
+HANDLE g_restartExplorerPromptThread;
+std::atomic<HWND> g_restartExplorerPromptWindow;
+
+constexpr WCHAR kRestartExplorerPromptTitle[] =
+    L"Windows 11 Taskbar Styler - Windhawk";
+constexpr WCHAR kRestartExplorerPromptTextFormat[] =
+    L"Restarting Explorer is required for the mod to activate.\n\nDo you want "
+    L"to restart Explorer now?\n\nStatus code: 0x%08X";
+constexpr WCHAR kRestartExplorerCommand[] =
+    LR"(cmd /c "echo Terminating Explorer...)"
+    LR"( & taskkill /f /im explorer.exe)"
+    LR"( & timeout /t 1 /nobreak >nul)"
+    LR"( & start explorer.exe)"
+    LR"( & echo Starting Explorer...)"
+    LR"( & timeout /t 3 /nobreak >nul")";
+
+void PromptToRestartExplorer(HRESULT statusCode) {
+    if (g_restartExplorerPromptThread) {
+        if (WaitForSingleObject(g_restartExplorerPromptThread, 0) !=
+            WAIT_OBJECT_0) {
+            return;
+        }
+
+        CloseHandle(g_restartExplorerPromptThread);
+    }
+
+    g_restartExplorerPromptThread = CreateThread(
+        nullptr, 0,
+        [](LPVOID lpParameter) -> DWORD {
+            HRESULT statusCode =
+                static_cast<HRESULT>(reinterpret_cast<ULONG_PTR>(lpParameter));
+
+            WCHAR promptText[256];
+            _snwprintf_s(promptText, _TRUNCATE,
+                         kRestartExplorerPromptTextFormat, statusCode);
+
+            TASKDIALOGCONFIG taskDialogConfig{
+                .cbSize = sizeof(taskDialogConfig),
+                .dwFlags = TDF_ALLOW_DIALOG_CANCELLATION,
+                .dwCommonButtons = TDCBF_YES_BUTTON | TDCBF_NO_BUTTON,
+                .pszWindowTitle = kRestartExplorerPromptTitle,
+                .pszMainIcon = TD_INFORMATION_ICON,
+                .pszContent = promptText,
+                .pfCallback = [](HWND hwnd, UINT msg, WPARAM wParam,
+                                 LPARAM lParam, LONG_PTR lpRefData) -> HRESULT {
+                    switch (msg) {
+                        case TDN_CREATED:
+                            g_restartExplorerPromptWindow = hwnd;
+                            SetWindowPos(hwnd, HWND_TOPMOST, 0, 0, 0, 0,
+                                         SWP_NOMOVE | SWP_NOSIZE);
+                            break;
+
+                        case TDN_DESTROYED:
+                            g_restartExplorerPromptWindow = nullptr;
+                            break;
+                    }
+
+                    return S_OK;
+                },
+            };
+
+            int button;
+            if (SUCCEEDED(TaskDialogIndirect(&taskDialogConfig, &button,
+                                             nullptr, nullptr)) &&
+                button == IDYES) {
+                WCHAR commandLine[ARRAYSIZE(kRestartExplorerCommand)];
+                memcpy(commandLine, kRestartExplorerCommand,
+                       sizeof(kRestartExplorerCommand));
+                STARTUPINFO si = {
+                    .cb = sizeof(si),
+                };
+                PROCESS_INFORMATION pi{};
+                if (CreateProcess(nullptr, commandLine, nullptr, nullptr, FALSE,
+                                  0, nullptr, nullptr, &si, &pi)) {
+                    CloseHandle(pi.hThread);
+                    CloseHandle(pi.hProcess);
+                }
+            }
+
+            return 0;
+        },
+        reinterpret_cast<LPVOID>(static_cast<ULONG_PTR>(statusCode)), 0,
+        nullptr);
+}
+
 void ApplyCustomizations(InstanceHandle handle,
                          winrt::Windows::UI::Xaml::FrameworkElement element,
                          PCWSTR fallbackClassName);
@@ -3794,7 +3880,8 @@ VisualTreeWatcher::VisualTreeWatcher(winrt::com_ptr<IUnknown> site) :
             HRESULT hr = watcher->m_XamlDiagnostics.as<IVisualTreeService3>()->AdviseVisualTreeChange(watcher);
             watcher->Release();
             if (FAILED(hr)) {
-                Wh_Log(L"Error %08X", hr);
+                Wh_Log(L"AdviseVisualTreeChange failed with error %08X", hr);
+                PromptToRestartExplorer(hr);
             }
             return 0;
         },
@@ -7338,6 +7425,17 @@ void Wh_ModAfterInit() {
 
 void Wh_ModUninit() {
     Wh_Log(L">");
+
+    HWND restartExplorerPromptWindow = g_restartExplorerPromptWindow;
+    if (restartExplorerPromptWindow) {
+        PostMessage(restartExplorerPromptWindow, WM_CLOSE, 0, 0);
+    }
+
+    if (g_restartExplorerPromptThread) {
+        WaitForSingleObject(g_restartExplorerPromptThread, INFINITE);
+        CloseHandle(g_restartExplorerPromptThread);
+        g_restartExplorerPromptThread = nullptr;
+    }
 
     StopStatsTimer();
 
