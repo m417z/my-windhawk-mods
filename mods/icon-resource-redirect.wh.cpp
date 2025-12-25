@@ -2478,15 +2478,25 @@ bool DownloadAndExtractIconTheme(std::wstring_view relativeUrl,
     return SUCCEEDED(hr);
 }
 
-bool EnsureIconThemeAvailable(const std::filesystem::path& storagePath,
-                              const std::filesystem::path& targetPath,
-                              std::wstring_view themeName,
-                              std::wstring_view relativeUrl) {
+std::filesystem::path EnsureIconThemeAvailable(
+    const std::filesystem::path& storagePath,
+    std::wstring_view themeName,
+    std::wstring_view relativeUrl,
+    PCWSTR themeFolderKey) {
     std::error_code ec;
-    if (std::filesystem::is_directory(targetPath, ec)) {
-        return true;
+
+    // Check if we have a stored folder name for this theme.
+    WCHAR storedFolderName[MAX_PATH];
+    Wh_GetStringValue(themeFolderKey, storedFolderName,
+                      ARRAYSIZE(storedFolderName));
+    if (*storedFolderName) {
+        auto storedPath = storagePath / storedFolderName;
+        if (std::filesystem::is_directory(storedPath, ec)) {
+            return storedPath;
+        }
     }
 
+    // Theme not available, need to find a usable folder and download.
     WCHAR lastErrorThemeName[256];
     Wh_GetStringValue(L"lastErrorThemeName", lastErrorThemeName,
                       ARRAYSIZE(lastErrorThemeName));
@@ -2507,8 +2517,43 @@ bool EnsureIconThemeAvailable(const std::filesystem::path& storagePath,
             (timeNow.QuadPart - timeLastError.QuadPart) / 10000000;
         if (elapsedSec < 60 * 60 * 4) {
             Wh_Log(L"Aborting due to error %u seconds ago", elapsedSec);
-            return false;
+            return std::filesystem::path();
         }
+    }
+
+    // Find a usable folder name.
+    std::filesystem::path targetPath;
+    std::wstring folderName;
+    for (int suffix = 0; suffix < 100; suffix++) {
+        if (suffix == 0) {
+            folderName = themeName;
+        } else {
+            folderName =
+                std::wstring(themeName) + L"_" + std::to_wstring(suffix + 1);
+        }
+
+        targetPath = storagePath / folderName;
+
+        if (!std::filesystem::is_directory(targetPath, ec)) {
+            // Folder doesn't exist, we can use it.
+            break;
+        }
+
+        // Folder exists, try to remove it.
+        Wh_Log(L"Folder exists, trying to remove: %s", targetPath.c_str());
+        std::filesystem::remove_all(targetPath, ec);
+
+        if (!std::filesystem::is_directory(targetPath, ec)) {
+            // Successfully removed.
+            break;
+        }
+
+        Wh_Log(L"Failed to remove folder, trying next name");
+    }
+
+    if (std::filesystem::is_directory(targetPath, ec)) {
+        Wh_Log(L"Failed to find a usable folder name");
+        return std::filesystem::path();
     }
 
     Wh_Log(L"Downloading from %.*s", static_cast<int>(relativeUrl.length()),
@@ -2530,10 +2575,13 @@ bool EnsureIconThemeAvailable(const std::filesystem::path& storagePath,
                           std::wstring(themeName).c_str());
         Wh_SetIntValue(L"lastErrorTimeHigh", (int)filetimeNow.dwHighDateTime);
         Wh_SetIntValue(L"lastErrorTimeLow", (int)filetimeNow.dwLowDateTime);
-        return false;
+        return std::filesystem::path();
     }
 
-    return true;
+    // Store the folder name on successful download and extract.
+    Wh_SetStringValue(themeFolderKey, folderName.c_str());
+
+    return targetPath;
 }
 
 std::wstring GetIconThemePath(std::wstring_view iconTheme) {
@@ -2554,10 +2602,17 @@ std::wstring GetIconThemePath(std::wstring_view iconTheme) {
 
     const auto storagePath = std::filesystem::path{storagePathBuffer};
 
-    auto targetPath = storagePath / themeName;
-    std::error_code ec;
-    if (std::filesystem::is_directory(targetPath, ec)) {
-        return targetPath;
+    auto themeFolderKey = L"themeFolder_" + std::wstring(themeName);
+
+    WCHAR storedFolderName[MAX_PATH];
+    Wh_GetStringValue(themeFolderKey.c_str(), storedFolderName,
+                      ARRAYSIZE(storedFolderName));
+    if (*storedFolderName) {
+        auto storedPath = storagePath / storedFolderName;
+        std::error_code ec;
+        if (std::filesystem::is_directory(storedPath, ec)) {
+            return storedPath;
+        }
     }
 
     auto lockFilePath = storagePath / L"_lock";
@@ -2568,10 +2623,8 @@ std::wstring GetIconThemePath(std::wstring_view iconTheme) {
         return std::wstring();
     }
 
-    if (!EnsureIconThemeAvailable(storagePath, targetPath, themeName,
-                                  relativeUrl)) {
-        targetPath.clear();
-    }
+    auto targetPath = EnsureIconThemeAvailable(
+        storagePath, themeName, relativeUrl, themeFolderKey.c_str());
 
     UnlockTempFileExclusive(lockFile);
     DeleteFile(lockFilePath.c_str());
