@@ -760,7 +760,10 @@ VisualTreeWatcher::~VisualTreeWatcher()
 void VisualTreeWatcher::UnadviseVisualTreeChange()
 {
     Wh_Log(L"UnadviseVisualTreeChange VisualTreeWatcher");
-    winrt::check_hresult(m_XamlDiagnostics.as<IVisualTreeService3>()->UnadviseVisualTreeChange(this));
+    HRESULT hr = m_XamlDiagnostics.as<IVisualTreeService3>()->UnadviseVisualTreeChange(this);
+    if (FAILED(hr)) {
+        Wh_Log(L"UnadviseVisualTreeChange failed with error %08X", hr);
+    }
 }
 
 HRESULT VisualTreeWatcher::OnVisualTreeChange(ParentChildRelation, VisualElement element, VisualMutationType mutationType) try
