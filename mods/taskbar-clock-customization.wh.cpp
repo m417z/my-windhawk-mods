@@ -150,6 +150,11 @@ styles, such as the font color and size.
     Only shown if the taskbar is large enough. Set to "-" for the default value.
 - TooltipLine: '%web1_full%'
   $name: Tooltip extra line
+- TooltipLineMode: append
+  $name: Tooltip line mode
+  $options:
+  - append: Append to default tooltip
+  - replace: Replace default tooltip
 - Width: 180
   $name: Clock width (Windows 10 only)
 - Height: 60
@@ -457,6 +462,11 @@ using namespace winrt::Windows::UI::Xaml;
 #define URL_ESCAPE_ASCII_URI_COMPONENT 0x00080000
 #endif
 
+enum class TooltipLineMode {
+    append,
+    replace,
+};
+
 enum class NetworkMetricsFormat {
     mbs,
     mbsNumberOnly,
@@ -529,6 +539,7 @@ struct {
     StringSetting bottomLine;
     StringSetting middleLine;
     StringSetting tooltipLine;
+    TooltipLineMode tooltipLineMode;
     int width;
     int height;
     int maxWidth;
@@ -2876,10 +2887,13 @@ void UpdateToolTipString(LPVOID tooltipPtrPtr) {
     shared_hstring_header* tooltipHeader =
         *(shared_hstring_header**)tooltipPtrPtr;
 
-    uint64_t bytesRequired =
-        sizeof(shared_hstring_header) +
-        sizeof(wchar_t) *
-            (tooltipHeader->length + separator.length() + extraLength);
+    uint64_t bytesRequired = sizeof(shared_hstring_header);
+    if (g_settings.tooltipLineMode == TooltipLineMode::replace) {
+        bytesRequired += sizeof(wchar_t) * extraLength;
+    } else {
+        bytesRequired += sizeof(wchar_t) * (tooltipHeader->length +
+                                            separator.length() + extraLength);
+    }
 
     shared_hstring_header* tooltipHeaderNew =
         (shared_hstring_header*)HeapReAlloc(GetProcessHeap(), 0, tooltipHeader,
@@ -2890,13 +2904,19 @@ void UpdateToolTipString(LPVOID tooltipPtrPtr) {
 
     tooltipHeaderNew->ptr = tooltipHeaderNew->buffer;
 
-    memcpy(tooltipHeaderNew->buffer + tooltipHeaderNew->length,
-           separator.data(), sizeof(wchar_t) * separator.length());
-    tooltipHeaderNew->length += separator.length();
+    if (g_settings.tooltipLineMode == TooltipLineMode::replace) {
+        memcpy(tooltipHeaderNew->buffer, extraLine,
+               sizeof(wchar_t) * extraLength);
+        tooltipHeaderNew->length = extraLength;
+    } else {
+        memcpy(tooltipHeaderNew->buffer + tooltipHeaderNew->length,
+               separator.data(), sizeof(wchar_t) * separator.length());
+        tooltipHeaderNew->length += separator.length();
 
-    memcpy(tooltipHeaderNew->buffer + tooltipHeaderNew->length, extraLine,
-           sizeof(wchar_t) * extraLength);
-    tooltipHeaderNew->length += extraLength;
+        memcpy(tooltipHeaderNew->buffer + tooltipHeaderNew->length, extraLine,
+               sizeof(wchar_t) * extraLength);
+        tooltipHeaderNew->length += extraLength;
+    }
 
     tooltipHeaderNew->buffer[tooltipHeaderNew->length] = L'\0';
 
@@ -3594,12 +3614,17 @@ HRESULT WINAPI ClockButton_v_GetTooltipText_Hook(LPVOID pThis,
                                                         param3, param4);
 
     if (g_getTooltipTextBuffer) {
-        size_t stringLen = wcslen(g_getTooltipTextBuffer);
-        WCHAR* p = g_getTooltipTextBuffer + stringLen;
-        size_t size = g_getTooltipTextBufferSize + stringLen;
-        if (size > 4) {
-            wcscpy(p, L"\r\n\r\n");
-            FormatLine(p + 4, size - 4, g_settings.tooltipLine.get());
+        if (g_settings.tooltipLineMode == TooltipLineMode::replace) {
+            FormatLine(g_getTooltipTextBuffer, g_getTooltipTextBufferSize,
+                       g_settings.tooltipLine.get());
+        } else {
+            size_t stringLen = wcslen(g_getTooltipTextBuffer);
+            WCHAR* p = g_getTooltipTextBuffer + stringLen;
+            size_t size = g_getTooltipTextBufferSize - stringLen;
+            if (size > 4) {
+                wcscpy(p, L"\r\n\r\n");
+                FormatLine(p + 4, size - 4, g_settings.tooltipLine.get());
+            }
         }
     }
 
@@ -4127,6 +4152,13 @@ void LoadSettings() {
     g_settings.bottomLine = StringSetting::make(L"BottomLine");
     g_settings.middleLine = StringSetting::make(L"MiddleLine");
     g_settings.tooltipLine = StringSetting::make(L"TooltipLine");
+
+    g_settings.tooltipLineMode = TooltipLineMode::append;
+    StringSetting tooltipLineMode = StringSetting::make(L"TooltipLineMode");
+    if (wcscmp(tooltipLineMode, L"replace") == 0) {
+        g_settings.tooltipLineMode = TooltipLineMode::replace;
+    }
+
     g_settings.width = Wh_GetIntSetting(L"Width");
     g_settings.height = Wh_GetIntSetting(L"Height");
     g_settings.maxWidth = Wh_GetIntSetting(L"MaxWidth");
