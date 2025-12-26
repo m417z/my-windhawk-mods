@@ -9,7 +9,7 @@
 // @homepage        https://m417z.com/
 // @include         explorer.exe
 // @architecture    x86-64
-// @compilerOptions -lole32 -loleaut32 -lpdh -lpowrprof -lruntimeobject -lshlwapi -lversion -lwininet
+// @compilerOptions -ldxgi -lole32 -loleaut32 -lpdh -lpowrprof -lruntimeobject -lshlwapi -lversion -lwininet
 // ==/WindhawkMod==
 
 // Source code is published under The GNU General Public License v3.0.
@@ -189,6 +189,18 @@ styles, such as the font color and size.
     $name: Update interval
     $description: >-
       The update interval, in seconds, of the system performance metrics.
+  - NetworkAdapterName: ""
+    $name: Network adapter name
+    $description: >-
+      The network adapter to use for upload/download metrics. Leave empty to
+      sum all adapters. Partial match is supported. To list adapters, run:
+      typeperf -qx "Network Interface"
+  - GpuAdapterName: ""
+    $name: GPU adapter name
+    $description: >-
+      The GPU adapter to use for GPU usage metrics. Leave empty to sum all
+      adapters. Partial match is supported. To list adapters, run: wmic path
+      win32_videocontroller get Name
   $name: System performance metrics
   $description: >-
     Settings for system performance metrics: upload/download transfer rate and
@@ -416,6 +428,7 @@ using namespace std::string_view_literals;
 #include <initguid.h>  // Must come before mshtml.h
 
 #include <comutil.h>
+#include <dxgi.h>
 #include <mshtml.h>
 #include <pdh.h>
 #include <pdhmsg.h>
@@ -462,6 +475,8 @@ struct DataCollectionSettings {
     int networkMetricsFixedDecimals;
     PercentageFormat percentageFormat;
     int updateInterval;
+    StringSetting networkAdapterName;
+    StringSetting gpuAdapterName;
 };
 
 enum class WebContentWeatherUnits {
@@ -1726,15 +1741,18 @@ class QueryDataCollectionSession {
     bool AddMetric(MetricType type) {
         PCWSTR counter_path;
         bool is_wildcard = false;
+        PCWSTR adapter_name = nullptr;
 
         switch (type) {
             case MetricType::kDownloadSpeed:
                 counter_path = L"\\Network Interface(*)\\Bytes Received/sec";
                 is_wildcard = true;
+                adapter_name = g_settings.dataCollection.networkAdapterName;
                 break;
             case MetricType::kUploadSpeed:
                 counter_path = L"\\Network Interface(*)\\Bytes Sent/sec";
                 is_wildcard = true;
+                adapter_name = g_settings.dataCollection.networkAdapterName;
                 break;
             case MetricType::kCpu:
                 counter_path =
@@ -1743,6 +1761,7 @@ class QueryDataCollectionSession {
             case MetricType::kGpuUsage:
                 counter_path = L"\\GPU Engine(*)\\Utilization Percentage";
                 is_wildcard = true;
+                adapter_name = g_settings.dataCollection.gpuAdapterName;
                 break;
             default:
                 return false;
@@ -1754,7 +1773,19 @@ class QueryDataCollectionSession {
         }
 
         if (is_wildcard) {
-            for (const auto& path : ExpandEnglishWildcard(counter_path)) {
+            auto paths = ExpandEnglishWildcard(counter_path);
+
+            // Filter paths by adapter name if specified.
+            if (adapter_name && *adapter_name && !paths.empty()) {
+                if (type == MetricType::kGpuUsage) {
+                    paths = FilterGpuPathsByAdapterName(paths, adapter_name);
+                } else {
+                    paths =
+                        FilterNetworkPathsByAdapterName(paths, adapter_name);
+                }
+            }
+
+            for (const auto& path : paths) {
                 PDH_HCOUNTER counter;
                 HRESULT hr = PdhAddCounter(query_, path.c_str(), 0, &counter);
                 if (SUCCEEDED(hr)) {
@@ -1787,26 +1818,23 @@ class QueryDataCollectionSession {
         return true;
     }
 
-    double QueryData(MetricType type) {
+    std::optional<double> QueryData(MetricType type) {
         const auto& metric = metrics_[static_cast<int>(type)];
 
+        if (metric.counters.empty()) {
+            return std::nullopt;
+        }
+
         double sum = 0.0;
-        int count = 0;
         for (auto counter : metric.counters) {
             PDH_FMT_COUNTERVALUE val;
             HRESULT hr = PdhGetFormattedCounterValue(counter, PDH_FMT_DOUBLE,
                                                      nullptr, &val);
             if (SUCCEEDED(hr)) {
                 sum += val.doubleValue;
-                count++;
             } else {
                 Wh_Log(L"PdhGetFormattedCounterValue error %08X", hr);
             }
-        }
-
-        // Use average for GPU usage (each engine reports its own percentage).
-        if (type == MetricType::kGpuUsage && count > 0) {
-            return sum / count;
         }
 
         return sum;
@@ -1879,6 +1907,140 @@ class QueryDataCollectionSession {
             p += wcslen(p) + 1;
         }
         return out_paths;
+    }
+
+    // Extract the instance name from a PDH counter path.
+    // E.g., "\Network Interface(Intel...)\Bytes Received/sec" -> "Intel..."
+    static std::wstring_view ExtractInstanceName(std::wstring_view path) {
+        auto start = path.find(L'(');
+        if (start == std::wstring_view::npos) {
+            return {};
+        }
+        auto end = path.rfind(L')');
+        if (end == std::wstring_view::npos || end <= start) {
+            return {};
+        }
+        return path.substr(start + 1, end - start - 1);
+    }
+
+    // Extract the LUID from a GPU Engine instance name.
+    // E.g., "pid_1234_luid_0x00000000_0x0000ABCD_phys_0_eng_0_engtype_3D"
+    //       -> "0x00000000_0x0000ABCD"
+    static std::wstring_view ExtractGpuLuid(std::wstring_view instance) {
+        auto luid_pos = instance.find(L"luid_");
+        if (luid_pos == std::wstring_view::npos) {
+            return {};
+        }
+        auto luid_start = luid_pos + 5;  // Skip "luid_"
+        auto phys_pos = instance.find(L"_phys_", luid_start);
+        if (phys_pos == std::wstring_view::npos) {
+            return {};
+        }
+        return instance.substr(luid_start, phys_pos - luid_start);
+    }
+
+    // Filter network paths by adapter name (substring match).
+    static std::vector<std::wstring> FilterNetworkPathsByAdapterName(
+        const std::vector<std::wstring>& paths,
+        PCWSTR adapter_name) {
+        Wh_Log(L"Filtering network adapters by name: %s", adapter_name);
+
+        std::vector<std::wstring> filtered;
+        for (const auto& path : paths) {
+            std::wstring_view instance = ExtractInstanceName(path);
+            if (instance.empty()) {
+                continue;
+            }
+
+            if (wcsstr(std::wstring(instance).c_str(), adapter_name)) {
+                Wh_Log(L"Matched network adapter: %.*s",
+                       static_cast<int>(instance.size()), instance.data());
+                filtered.push_back(path);
+            }
+        }
+
+        if (filtered.empty()) {
+            Wh_Log(L"No network adapters matched");
+        }
+
+        return filtered;
+    }
+
+    // Get the LUID for a GPU adapter by name using DXGI.
+    static std::wstring GetGpuLuidByName(PCWSTR gpu_name) {
+        winrt::com_ptr<IDXGIFactory> factory;
+        if (FAILED(CreateDXGIFactory(IID_PPV_ARGS(factory.put())))) {
+            return {};
+        }
+
+        for (UINT i = 0;; i++) {
+            winrt::com_ptr<IDXGIAdapter> adapter;
+            if (factory->EnumAdapters(i, adapter.put()) ==
+                DXGI_ERROR_NOT_FOUND) {
+                break;
+            }
+
+            DXGI_ADAPTER_DESC desc{};
+            if (FAILED(adapter->GetDesc(&desc))) {
+                continue;
+            }
+
+            Wh_Log(L"DXGI adapter %u: %s (LUID: 0x%08X_0x%08X)", i,
+                   desc.Description, desc.AdapterLuid.HighPart,
+                   desc.AdapterLuid.LowPart);
+
+            if (wcsstr(desc.Description, gpu_name)) {
+                WCHAR luid_str[32];
+                swprintf_s(luid_str, L"0x%08x_0x%08x",
+                           desc.AdapterLuid.HighPart, desc.AdapterLuid.LowPart);
+                Wh_Log(L"Matched GPU: %s -> LUID %s", desc.Description,
+                       luid_str);
+                return luid_str;
+            }
+        }
+
+        return {};
+    }
+
+    // Filter GPU paths by adapter name (uses DXGI to map name to LUID).
+    static std::vector<std::wstring> FilterGpuPathsByAdapterName(
+        const std::vector<std::wstring>& paths,
+        PCWSTR gpu_name) {
+        Wh_Log(L"Filtering GPU adapters by name: %s", gpu_name);
+
+        // Get the LUID for the GPU name.
+        std::wstring target_luid = GetGpuLuidByName(gpu_name);
+        if (target_luid.empty()) {
+            Wh_Log(L"GPU not found by name, using all adapters");
+            return paths;
+        }
+
+        std::vector<std::wstring> filtered;
+        for (const auto& path : paths) {
+            std::wstring_view instance = ExtractInstanceName(path);
+            if (instance.empty()) {
+                continue;
+            }
+
+            auto luid = ExtractGpuLuid(instance);
+            if (luid.empty()) {
+                continue;
+            }
+
+            if (_wcsicmp(std::wstring(luid).c_str(), target_luid.c_str()) ==
+                0) {
+                filtered.push_back(path);
+            }
+        }
+
+        if (filtered.empty()) {
+            Wh_Log(L"No GPU paths matched LUID %s, using all adapters",
+                   target_luid.c_str());
+            return paths;
+        }
+
+        Wh_Log(L"Filtered to %zu GPU paths", filtered.size());
+        return filtered;
     }
 
     struct MetricData {
@@ -2135,9 +2297,12 @@ PCWSTR GetUploadSpeedFormatted() {
             if (!g_dataCollectionSession) {
                 return false;
             }
-            double val =
+            std::optional<double> val =
                 g_dataCollectionSession->QueryData(MetricType::kUploadSpeed);
-            FormatTransferSpeed(val, buffer, bufferSize);
+            if (!val) {
+                return false;
+            }
+            FormatTransferSpeed(*val, buffer, bufferSize);
             return true;
         });
 }
@@ -2149,9 +2314,12 @@ PCWSTR GetDownloadSpeedFormatted() {
             if (!g_dataCollectionSession) {
                 return false;
             }
-            double val =
+            std::optional<double> val =
                 g_dataCollectionSession->QueryData(MetricType::kDownloadSpeed);
-            FormatTransferSpeed(val, buffer, bufferSize);
+            if (!val) {
+                return false;
+            }
+            FormatTransferSpeed(*val, buffer, bufferSize);
             return true;
         });
 }
@@ -2163,11 +2331,14 @@ PCWSTR GetTotalSpeedFormatted() {
             if (!g_dataCollectionSession) {
                 return false;
             }
-            double uploadSpeed =
+            std::optional<double> uploadSpeed =
                 g_dataCollectionSession->QueryData(MetricType::kUploadSpeed);
-            double downloadSpeed =
+            std::optional<double> downloadSpeed =
                 g_dataCollectionSession->QueryData(MetricType::kDownloadSpeed);
-            double totalSpeed = uploadSpeed + downloadSpeed;
+            if (!uploadSpeed || !downloadSpeed) {
+                return false;
+            }
+            double totalSpeed = *uploadSpeed + *downloadSpeed;
             FormatTransferSpeed(totalSpeed, buffer, bufferSize);
             return true;
         });
@@ -2180,8 +2351,12 @@ PCWSTR GetCpuFormatted() {
             if (!g_dataCollectionSession) {
                 return false;
             }
-            double val = g_dataCollectionSession->QueryData(MetricType::kCpu);
-            FormatPercentValue(static_cast<int>(val), buffer, bufferSize);
+            std::optional<double> val =
+                g_dataCollectionSession->QueryData(MetricType::kCpu);
+            if (!val) {
+                return false;
+            }
+            FormatPercentValue(static_cast<int>(*val), buffer, bufferSize);
             return true;
         });
 }
@@ -2202,15 +2377,19 @@ PCWSTR GetRamFormatted() {
 
 PCWSTR GetGpuFormatted() {
     DataCollectionSampleIfNeeded();
-    return GetMetricFormatted(g_gpuFormatted, [](PWSTR buffer,
-                                                 size_t bufferSize) {
-        if (!g_dataCollectionSession) {
-            return false;
-        }
-        double val = g_dataCollectionSession->QueryData(MetricType::kGpuUsage);
-        FormatPercentValue(static_cast<int>(val), buffer, bufferSize);
-        return true;
-    });
+    return GetMetricFormatted(
+        g_gpuFormatted, [](PWSTR buffer, size_t bufferSize) {
+            if (!g_dataCollectionSession) {
+                return false;
+            }
+            std::optional<double> val =
+                g_dataCollectionSession->QueryData(MetricType::kGpuUsage);
+            if (!val) {
+                return false;
+            }
+            FormatPercentValue(static_cast<int>(*val), buffer, bufferSize);
+            return true;
+        });
 }
 
 PCWSTR GetBatteryFormatted() {
@@ -3905,6 +4084,12 @@ void LoadSettings() {
 
     g_settings.dataCollection.updateInterval =
         Wh_GetIntSetting(L"DataCollection.UpdateInterval");
+
+    g_settings.dataCollection.networkAdapterName =
+        StringSetting::make(L"DataCollection.NetworkAdapterName");
+
+    g_settings.dataCollection.gpuAdapterName =
+        StringSetting::make(L"DataCollection.GpuAdapterName");
 
     g_settings.webContentWeatherLocation =
         StringSetting::make(L"WebContentWeatherLocation");
