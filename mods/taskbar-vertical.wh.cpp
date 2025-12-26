@@ -2441,9 +2441,6 @@ void ApplyExperienceButtonStyle(FrameworkElement toggleButtonElement) {
     float origin = g_unloading ? 0 : 0.5;
     iconElement.RenderTransformOrigin({origin, origin});
 
-    iconElement.MaxHeight(g_unloading ? std::numeric_limits<double>::infinity()
-                                      : 24);
-
     auto xamlRoot = toggleButtonElement.XamlRoot();
     if (xamlRoot) {
         try {
