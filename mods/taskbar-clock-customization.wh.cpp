@@ -78,6 +78,9 @@ patterns can be used:
   * `%upload_speed%` - system-wide upload transfer rate.
   * `%download_speed%` - system-wide download transfer rate.
   * `%total_speed%` - combined upload and download transfer rate.
+  * `%disk_read%` - disk read speed.
+  * `%disk_write%` - disk write speed.
+  * `%disk_total%` - combined disk read and write speed.
   * `%cpu%` - CPU usage.
   * `%ram%` - RAM usage.
   * `%gpu%` - GPU usage.
@@ -163,7 +166,8 @@ styles, such as the font color and size.
   - NetworkMetricsFormat: mbs
     $name: Network metrics format
     $description: >-
-      The format to use for displaying the upload/download transfer rate.
+      The format to use for displaying the upload/download transfer rate. Also
+      used for the disk read/write speed.
     $options:
     - mbs: MB/s
     - mbsNumberOnly: MB/s, number only
@@ -204,9 +208,6 @@ styles, such as the font color and size.
       adapters. Partial match is supported. To list adapters, run: wmic path
       win32_videocontroller get Name
   $name: System performance metrics
-  $description: >-
-    Settings for system performance metrics: upload/download transfer rate and
-    CPU/RAM usage.
 - WebContentWeatherLocation: ""
   $name: Weather location
   $description: >-
@@ -594,6 +595,9 @@ FormattedString<FORMATTED_BUFFER_SIZE> g_timezoneFormatted;
 FormattedString<FORMATTED_BUFFER_SIZE> g_uploadSpeedFormatted;
 FormattedString<FORMATTED_BUFFER_SIZE> g_downloadSpeedFormatted;
 FormattedString<FORMATTED_BUFFER_SIZE> g_totalSpeedFormatted;
+FormattedString<FORMATTED_BUFFER_SIZE> g_diskReadSpeedFormatted;
+FormattedString<FORMATTED_BUFFER_SIZE> g_diskWriteSpeedFormatted;
+FormattedString<FORMATTED_BUFFER_SIZE> g_diskTotalSpeedFormatted;
 FormattedString<FORMATTED_BUFFER_SIZE> g_cpuFormatted;
 FormattedString<FORMATTED_BUFFER_SIZE> g_ramFormatted;
 FormattedString<FORMATTED_BUFFER_SIZE> g_gpuFormatted;
@@ -1720,6 +1724,8 @@ PCWSTR GetTimezoneFormatted() {
 enum class MetricType {
     kUploadSpeed,
     kDownloadSpeed,
+    kDiskReadSpeed,
+    kDiskWriteSpeed,
     kCpu,
     kGpuUsage,
 
@@ -1756,6 +1762,12 @@ class QueryDataCollectionSession {
                 counter_path = L"\\Network Interface(*)\\Bytes Sent/sec";
                 is_wildcard = true;
                 adapter_name = g_settings.dataCollection.networkAdapterName;
+                break;
+            case MetricType::kDiskReadSpeed:
+                counter_path = L"\\PhysicalDisk(_Total)\\Disk Read Bytes/sec";
+                break;
+            case MetricType::kDiskWriteSpeed:
+                counter_path = L"\\PhysicalDisk(_Total)\\Disk Write Bytes/sec";
                 break;
             case MetricType::kCpu:
                 counter_path =
@@ -2063,16 +2075,28 @@ void DataCollectionSessionInit() {
         IsStrInDateTimePatternSettings(L"%upload_speed%");
     metrics[static_cast<int>(MetricType::kDownloadSpeed)] =
         IsStrInDateTimePatternSettings(L"%download_speed%");
-    metrics[static_cast<int>(MetricType::kCpu)] =
-        IsStrInDateTimePatternSettings(L"%cpu%");
-    metrics[static_cast<int>(MetricType::kGpuUsage)] =
-        IsStrInDateTimePatternSettings(L"%gpu%");
 
     // If total_speed is used, we need both upload and download metrics.
     if (IsStrInDateTimePatternSettings(L"%total_speed%")) {
         metrics[static_cast<int>(MetricType::kUploadSpeed)] = true;
         metrics[static_cast<int>(MetricType::kDownloadSpeed)] = true;
     }
+
+    metrics[static_cast<int>(MetricType::kDiskReadSpeed)] =
+        IsStrInDateTimePatternSettings(L"%disk_read%");
+    metrics[static_cast<int>(MetricType::kDiskWriteSpeed)] =
+        IsStrInDateTimePatternSettings(L"%disk_write%");
+
+    // If disk_total is used, we need both read and write metrics.
+    if (IsStrInDateTimePatternSettings(L"%disk_total%")) {
+        metrics[static_cast<int>(MetricType::kDiskReadSpeed)] = true;
+        metrics[static_cast<int>(MetricType::kDiskWriteSpeed)] = true;
+    }
+
+    metrics[static_cast<int>(MetricType::kCpu)] =
+        IsStrInDateTimePatternSettings(L"%cpu%");
+    metrics[static_cast<int>(MetricType::kGpuUsage)] =
+        IsStrInDateTimePatternSettings(L"%gpu%");
 
     if (!std::any_of(std::begin(metrics), std::end(metrics),
                      [](bool x) { return x; })) {
@@ -2351,6 +2375,60 @@ PCWSTR GetTotalSpeedFormatted() {
         });
 }
 
+PCWSTR GetDiskReadSpeedFormatted() {
+    DataCollectionSampleIfNeeded();
+    return GetMetricFormatted(
+        g_diskReadSpeedFormatted, [](PWSTR buffer, size_t bufferSize) {
+            if (!g_dataCollectionSession) {
+                return false;
+            }
+            std::optional<double> val =
+                g_dataCollectionSession->QueryData(MetricType::kDiskReadSpeed);
+            if (!val) {
+                return false;
+            }
+            FormatTransferSpeed(*val, buffer, bufferSize);
+            return true;
+        });
+}
+
+PCWSTR GetDiskWriteSpeedFormatted() {
+    DataCollectionSampleIfNeeded();
+    return GetMetricFormatted(
+        g_diskWriteSpeedFormatted, [](PWSTR buffer, size_t bufferSize) {
+            if (!g_dataCollectionSession) {
+                return false;
+            }
+            std::optional<double> val =
+                g_dataCollectionSession->QueryData(MetricType::kDiskWriteSpeed);
+            if (!val) {
+                return false;
+            }
+            FormatTransferSpeed(*val, buffer, bufferSize);
+            return true;
+        });
+}
+
+PCWSTR GetDiskTotalSpeedFormatted() {
+    DataCollectionSampleIfNeeded();
+    return GetMetricFormatted(
+        g_diskTotalSpeedFormatted, [](PWSTR buffer, size_t bufferSize) {
+            if (!g_dataCollectionSession) {
+                return false;
+            }
+            std::optional<double> readSpeed =
+                g_dataCollectionSession->QueryData(MetricType::kDiskReadSpeed);
+            std::optional<double> writeSpeed =
+                g_dataCollectionSession->QueryData(MetricType::kDiskWriteSpeed);
+            if (!readSpeed || !writeSpeed) {
+                return false;
+            }
+            double totalSpeed = *readSpeed + *writeSpeed;
+            FormatTransferSpeed(totalSpeed, buffer, bufferSize);
+            return true;
+        });
+}
+
 PCWSTR GetCpuFormatted() {
     DataCollectionSampleIfNeeded();
     return GetMetricFormatted(
@@ -2504,6 +2582,9 @@ size_t ResolveFormatToken(
         {L"%upload_speed%"sv, GetUploadSpeedFormatted},
         {L"%download_speed%"sv, GetDownloadSpeedFormatted},
         {L"%total_speed%"sv, GetTotalSpeedFormatted},
+        {L"%disk_read%"sv, GetDiskReadSpeedFormatted},
+        {L"%disk_write%"sv, GetDiskWriteSpeedFormatted},
+        {L"%disk_total%"sv, GetDiskTotalSpeedFormatted},
         {L"%cpu%"sv, GetCpuFormatted},
         {L"%ram%"sv, GetRamFormatted},
         {L"%gpu%"sv, GetGpuFormatted},
