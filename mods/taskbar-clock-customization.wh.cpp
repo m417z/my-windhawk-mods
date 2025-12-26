@@ -2095,25 +2095,13 @@ void FormatPercentValue(int val, PWSTR buffer, size_t bufferSize) {
     swprintf_s(buffer, bufferSize, L"%s%d%s", prefix, val, suffix);
 }
 
-template <size_t N>
+template <size_t N, typename Formatter>
 PCWSTR GetMetricFormatted(FormattedString<N>& formattedString,
-                          MetricType metricType) {
-    DataCollectionSampleIfNeeded();
-
+                          Formatter formatter) {
     DWORD dataCollectionFormatIndex = GetDataCollectionFormatIndex();
     if (formattedString.formatIndex != dataCollectionFormatIndex) {
-        if (g_dataCollectionSession) {
-            double val = g_dataCollectionSession->QueryData(metricType);
-            if (metricType == MetricType::kUploadSpeed ||
-                metricType == MetricType::kDownloadSpeed) {
-                FormatTransferSpeed(val, formattedString.buffer,
-                                    ARRAYSIZE(formattedString.buffer));
-            } else {
-                FormatPercentValue(static_cast<int>(val),
-                                   formattedString.buffer,
-                                   ARRAYSIZE(formattedString.buffer));
-            }
-        } else {
+        if (!formatter(formattedString.buffer,
+                       ARRAYSIZE(formattedString.buffer))) {
             wcscpy_s(formattedString.buffer, L"-");
         }
 
@@ -2124,81 +2112,92 @@ PCWSTR GetMetricFormatted(FormattedString<N>& formattedString,
 }
 
 PCWSTR GetUploadSpeedFormatted() {
-    return GetMetricFormatted(g_uploadSpeedFormatted, MetricType::kUploadSpeed);
+    DataCollectionSampleIfNeeded();
+    return GetMetricFormatted(
+        g_uploadSpeedFormatted, [](PWSTR buffer, size_t bufferSize) {
+            if (!g_dataCollectionSession) {
+                return false;
+            }
+            double val =
+                g_dataCollectionSession->QueryData(MetricType::kUploadSpeed);
+            FormatTransferSpeed(val, buffer, bufferSize);
+            return true;
+        });
 }
 
 PCWSTR GetDownloadSpeedFormatted() {
-    return GetMetricFormatted(g_downloadSpeedFormatted,
-                              MetricType::kDownloadSpeed);
+    DataCollectionSampleIfNeeded();
+    return GetMetricFormatted(
+        g_downloadSpeedFormatted, [](PWSTR buffer, size_t bufferSize) {
+            if (!g_dataCollectionSession) {
+                return false;
+            }
+            double val =
+                g_dataCollectionSession->QueryData(MetricType::kDownloadSpeed);
+            FormatTransferSpeed(val, buffer, bufferSize);
+            return true;
+        });
 }
 
 PCWSTR GetTotalSpeedFormatted() {
     DataCollectionSampleIfNeeded();
-
-    DWORD dataCollectionFormatIndex = GetDataCollectionFormatIndex();
-    if (g_totalSpeedFormatted.formatIndex != dataCollectionFormatIndex) {
-        if (g_dataCollectionSession) {
+    return GetMetricFormatted(
+        g_totalSpeedFormatted, [](PWSTR buffer, size_t bufferSize) {
+            if (!g_dataCollectionSession) {
+                return false;
+            }
             double uploadSpeed =
                 g_dataCollectionSession->QueryData(MetricType::kUploadSpeed);
             double downloadSpeed =
                 g_dataCollectionSession->QueryData(MetricType::kDownloadSpeed);
             double totalSpeed = uploadSpeed + downloadSpeed;
-            FormatTransferSpeed(totalSpeed, g_totalSpeedFormatted.buffer,
-                                ARRAYSIZE(g_totalSpeedFormatted.buffer));
-        } else {
-            wcscpy_s(g_totalSpeedFormatted.buffer, L"-");
-        }
-
-        g_totalSpeedFormatted.formatIndex = dataCollectionFormatIndex;
-    }
-
-    return g_totalSpeedFormatted.buffer;
+            FormatTransferSpeed(totalSpeed, buffer, bufferSize);
+            return true;
+        });
 }
 
 PCWSTR GetCpuFormatted() {
-    return GetMetricFormatted(g_cpuFormatted, MetricType::kCpu);
+    DataCollectionSampleIfNeeded();
+    return GetMetricFormatted(
+        g_cpuFormatted, [](PWSTR buffer, size_t bufferSize) {
+            if (!g_dataCollectionSession) {
+                return false;
+            }
+            double val = g_dataCollectionSession->QueryData(MetricType::kCpu);
+            FormatPercentValue(static_cast<int>(val), buffer, bufferSize);
+            return true;
+        });
 }
 
 PCWSTR GetRamFormatted() {
-    DWORD dataCollectionFormatIndex = GetDataCollectionFormatIndex();
-    if (g_ramFormatted.formatIndex != dataCollectionFormatIndex) {
-        MEMORYSTATUSEX status{
-            .dwLength = sizeof(status),
-        };
-        if (GlobalMemoryStatusEx(&status)) {
-            FormatPercentValue(status.dwMemoryLoad, g_ramFormatted.buffer,
-                               ARRAYSIZE(g_ramFormatted.buffer));
-        } else {
-            wcscpy_s(g_ramFormatted.buffer, L"-");
-        }
-
-        g_ramFormatted.formatIndex = dataCollectionFormatIndex;
-    }
-
-    return g_ramFormatted.buffer;
+    return GetMetricFormatted(
+        g_ramFormatted, [](PWSTR buffer, size_t bufferSize) {
+            MEMORYSTATUSEX status{
+                .dwLength = sizeof(status),
+            };
+            if (!GlobalMemoryStatusEx(&status)) {
+                return false;
+            }
+            FormatPercentValue(status.dwMemoryLoad, buffer, bufferSize);
+            return true;
+        });
 }
 
 PCWSTR GetBatteryFormatted() {
-    DWORD dataCollectionFormatIndex = GetDataCollectionFormatIndex();
-    if (g_batteryFormatted.formatIndex != dataCollectionFormatIndex) {
+    return GetMetricFormatted(g_batteryFormatted, [](PWSTR buffer,
+                                                     size_t bufferSize) {
         SYSTEM_POWER_STATUS powerStatus;
-        if (GetSystemPowerStatus(&powerStatus)) {
-            FormatPercentValue(powerStatus.BatteryLifePercent,
-                               g_batteryFormatted.buffer,
-                               ARRAYSIZE(g_batteryFormatted.buffer));
-        } else {
-            wcscpy_s(g_batteryFormatted.buffer, L"-");
+        if (!GetSystemPowerStatus(&powerStatus)) {
+            return false;
         }
-
-        g_batteryFormatted.formatIndex = dataCollectionFormatIndex;
-    }
-
-    return g_batteryFormatted.buffer;
+        FormatPercentValue(powerStatus.BatteryLifePercent, buffer, bufferSize);
+        return true;
+    });
 }
 
 PCWSTR GetBatteryTimeFormatted() {
-    DWORD dataCollectionFormatIndex = GetDataCollectionFormatIndex();
-    if (g_batteryTimeFormatted.formatIndex != dataCollectionFormatIndex) {
+    return GetMetricFormatted(g_batteryTimeFormatted, [](PWSTR buffer,
+                                                         size_t bufferSize) {
         DWORD totalSeconds = 0;
         SYSTEM_POWER_STATUS ps;
 
@@ -2219,35 +2218,29 @@ PCWSTR GetBatteryTimeFormatted() {
 
         DWORD hours = totalSeconds / 3600;
         DWORD minutes = (totalSeconds % 3600) / 60;
-        swprintf_s(g_batteryTimeFormatted.buffer, L"%u:%02u", hours, minutes);
-
-        g_batteryTimeFormatted.formatIndex = dataCollectionFormatIndex;
-    }
-    return g_batteryTimeFormatted.buffer;
+        swprintf_s(buffer, bufferSize, L"%u:%02u", hours, minutes);
+        return true;
+    });
 }
 
 PCWSTR GetPowerFormatted() {
-    DWORD dataCollectionFormatIndex = GetDataCollectionFormatIndex();
-    if (g_powerFormatted.formatIndex != dataCollectionFormatIndex) {
-        SYSTEM_BATTERY_STATE batteryState{};
+    return GetMetricFormatted(
+        g_powerFormatted, [](PWSTR buffer, size_t bufferSize) {
+            SYSTEM_BATTERY_STATE batteryState{};
 
-        NTSTATUS status =
-            CallNtPowerInformation(SystemBatteryState, nullptr, 0,
-                                   &batteryState, sizeof(batteryState));
+            NTSTATUS status =
+                CallNtPowerInformation(SystemBatteryState, nullptr, 0,
+                                       &batteryState, sizeof(batteryState));
 
-        if (status == 0 && batteryState.MaxCapacity > 0 &&
-            batteryState.Rate != 0) {
-            long powerWatts = static_cast<long>(batteryState.Rate) / 1000;
-
-            swprintf_s(g_powerFormatted.buffer, L"%+ldW", powerWatts);
-        } else {
-            wcscpy_s(g_powerFormatted.buffer, L"");
-        }
-
-        g_powerFormatted.formatIndex = dataCollectionFormatIndex;
-    }
-
-    return g_powerFormatted.buffer;
+            if (status == 0 && batteryState.MaxCapacity > 0 &&
+                batteryState.Rate != 0) {
+                long powerWatts = static_cast<long>(batteryState.Rate) / 1000;
+                swprintf_s(buffer, bufferSize, L"%+ldW", powerWatts);
+            } else {
+                wcscpy_s(buffer, bufferSize, L"");
+            }
+            return true;
+        });
 }
 
 int ResolveFormatTokenWithDigit(std::wstring_view format,
