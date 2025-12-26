@@ -2,7 +2,7 @@
 // @id              taskbar-clock-customization
 // @name            Taskbar Clock Customization
 // @description     Custom date/time format, news feed, weather, performance metrics (upload/download speed, CPU, RAM, GPU, battery), media player info, custom fonts and colors, and more
-// @version         1.6.3
+// @version         1.7
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
@@ -89,7 +89,9 @@ patterns can be used:
     time left).
   * `%power%` - battery power in watts (negative when discharging, positive when
     charging).
-* Media player info:
+* Media player info (requires a
+  [GSMTC-compatible](https://github.com/ModernFlyouts-Community/ModernFlyouts/blob/main/docs/GSMTC-Support-And-Popular-Apps.md)
+  media player):
   * `%media_title%` - currently playing media title.
   * `%media_artist%` - currently playing media artist.
   * `%media_album%` - currently playing media album.
@@ -192,11 +194,12 @@ styles, such as the font color and size.
     $name: Network metrics fixed decimal places
     $description: >-
       Always use this amount of decimal places for the upload/download transfer
-      rate (-1 means auto/same width).
+      rate (-1 means auto/same width). Also used for the disk read/write speed.
   - PercentageFormat: spacePaddingAndSymbol
     $name: Percentage format
     $description: >-
-      The format to use for displaying the CPU/RAM usage percentage.
+      The format to use for displaying percentage values (CPU, RAM, GPU,
+      battery).
     $options:
     - spacePaddingAndSymbol: Pad with spaces, add percentage symbol
     - spacePadding: Pad with spaces, number only
@@ -2073,7 +2076,7 @@ class QueryDataCollectionSession {
 
             if (wcsstr(desc.Description, gpu_name)) {
                 WCHAR luid_str[32];
-                swprintf_s(luid_str, L"0x%08x_0x%08x",
+                swprintf_s(luid_str, L"0x%08X_0x%08X",
                            desc.AdapterLuid.HighPart, desc.AdapterLuid.LowPart);
                 Wh_Log(L"Matched GPU: %s -> LUID %s", desc.Description,
                        luid_str);
@@ -2175,12 +2178,17 @@ void RemoveBracketedContent(std::wstring& str, wchar_t open, wchar_t close) {
         }
 
         if (hasContent) {
-            // Remove the brackets and content, including preceding space
+            // Remove the brackets and content, plus one adjacent space
             size_t removeStart = start;
+            size_t removeEnd = end;
             if (start > 0 && str[start - 1] == L' ') {
+                // Prefer removing preceding space
                 removeStart--;
+            } else if (end + 1 < str.size() && str[end + 1] == L' ') {
+                // Otherwise remove following space
+                removeEnd++;
             }
-            str.erase(removeStart, end - removeStart + 1);
+            str.erase(removeStart, removeEnd - removeStart + 1);
             start = removeStart;
         } else {
             start = end + 1;
@@ -2197,12 +2205,13 @@ std::wstring RemoveBracketsFromString(std::wstring_view input) {
     RemoveBracketedContent(result, L'(', L')');
     RemoveBracketedContent(result, L'[', L']');
 
-    // Trim trailing spaces
-    while (!result.empty() && result.back() == L' ') {
-        result.pop_back();
+    // Trim leading and trailing spaces
+    size_t startPos = result.find_first_not_of(L' ');
+    if (startPos == std::wstring::npos) {
+        return std::wstring();
     }
-
-    return result;
+    size_t endPos = result.find_last_not_of(L' ');
+    return result.substr(startPos, endPos - startPos + 1);
 }
 
 void ClearMediaFormattedStrings() {
@@ -2468,11 +2477,26 @@ void SubscribeToMediaSession() {
 
         g_mediaPlaybackChangedToken = session.PlaybackInfoChanged(
             [](auto&&, auto&&) { g_mediaDataDirty = true; });
-
     } catch (...) {
         HRESULT hr = winrt::to_hresult();
         Wh_Log(L"SubscribeToMediaSession error %08X", hr);
     }
+}
+
+void MediaSessionUninit() {
+    UnsubscribeFromMediaSession();
+
+    if (g_mediaSessionManager) {
+        try {
+            g_mediaSessionManager.SessionsChanged(g_mediaSessionsChangedToken);
+        } catch (...) {
+            HRESULT hr = winrt::to_hresult();
+            Wh_Log(L"MediaSessionUninit error: %08X", hr);
+        }
+        g_mediaSessionManager = nullptr;
+    }
+
+    g_mediaDataDirty = true;
 }
 
 void OnMediaSessionsChanged() {
@@ -2502,24 +2526,8 @@ void MediaSessionInit() {
     } catch (...) {
         HRESULT hr = winrt::to_hresult();
         Wh_Log(L"MediaSessionInit error %08X", hr);
-        g_mediaSessionManager = nullptr;
+        MediaSessionUninit();
     }
-}
-
-void MediaSessionUninit() {
-    UnsubscribeFromMediaSession();
-
-    if (g_mediaSessionManager) {
-        try {
-            g_mediaSessionManager.SessionsChanged(g_mediaSessionsChangedToken);
-        } catch (...) {
-            HRESULT hr = winrt::to_hresult();
-            Wh_Log(L"MediaSessionUninit error: %08X", hr);
-        }
-        g_mediaSessionManager = nullptr;
-    }
-
-    g_mediaDataDirty = true;
 }
 
 DWORD GetDataCollectionFormatIndex() {
@@ -2926,10 +2934,10 @@ PCWSTR GetPowerFormatted() {
                 batteryState.Rate != 0) {
                 long powerWatts = static_cast<long>(batteryState.Rate) / 1000;
                 swprintf_s(buffer, bufferSize, L"%+ldW", powerWatts);
-            } else {
-                wcscpy_s(buffer, bufferSize, L"");
+                return true;
             }
-            return true;
+
+            return false;
         });
 }
 
