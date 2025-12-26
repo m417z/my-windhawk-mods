@@ -1,7 +1,7 @@
 // ==WindhawkMod==
 // @id              taskbar-clock-customization
 // @name            Taskbar Clock Customization
-// @description     Custom date/time format, news feed, weather, performance metrics (upload/download speed, CPU, RAM, GPU, battery), custom fonts and colors, and more
+// @description     Custom date/time format, news feed, weather, performance metrics (upload/download speed, CPU, RAM, GPU, battery), media player info, custom fonts and colors, and more
 // @version         1.6.3
 // @author          m417z
 // @github          https://github.com/m417z
@@ -25,8 +25,8 @@
 # Taskbar Clock Customization
 
 Custom date/time format, news feed, weather, performance metrics
-(upload/download speed, CPU, GPU, RAM, battery), custom fonts and colors, and
-more.
+(upload/download speed, CPU, GPU, RAM, battery), media player info, custom fonts
+and colors, and more.
 
 Only Windows 10 64-bit and Windows 11 are supported.
 
@@ -89,6 +89,14 @@ patterns can be used:
     time left).
   * `%power%` - battery power in watts (negative when discharging, positive when
     charging).
+* Media player info:
+  * `%media_title%` - currently playing media title.
+  * `%media_artist%` - currently playing media artist.
+  * `%media_album%` - currently playing media album.
+  * `%media_status%` - media playback status icon (⏯, ⏸, ⏹).
+  * `%media_info%` - combined media info (Artist - Title), truncated with
+    ellipsis. It's recommended to use this field on the taskbar, and other
+    fields in the tooltip.
 * `%weather%` - Weather information, powered by [wttr.in](https://wttr.in/),
   using the location and format configured in settings.
 * `%web<n>%` - the web contents as configured in settings, truncated with
@@ -213,6 +221,23 @@ styles, such as the font color and size.
       adapters. Partial match is supported. To list adapters, run: wmic path
       win32_videocontroller get Name
   $name: System performance metrics
+- MediaPlayer:
+  - IgnoredPlayers: [""]
+    $name: Ignored media players
+    $description: >-
+      List of media player names to ignore (case-insensitive, partial match).
+      Examples: "Spotify", "VLC". Leave empty to disable.
+  - MaxLength: 28
+    $name: Maximum info length
+    $description: >-
+      Maximum characters for %media_info%. Longer strings are truncated with
+      ellipsis. Set to 0 for no limit.
+  - RemoveBrackets: false
+    $name: Remove brackets from info
+    $description: >-
+      Remove text in brackets from media info. E.g., "Song (feat. Artist)"
+      becomes "Song".
+  $name: Media player info
 - WebContentWeatherLocation: ""
   $name: Weather location
   $description: >-
@@ -422,6 +447,7 @@ styles, such as the font color and size.
 
 using WindhawkUtils::StringSetting;
 
+#include <algorithm>
 #include <atomic>
 #include <functional>
 #include <mutex>
@@ -449,6 +475,7 @@ using namespace std::string_view_literals;
 
 #include <winrt/Windows.Data.Xml.Dom.h>
 #include <winrt/Windows.Foundation.Collections.h>
+#include <winrt/Windows.Media.Control.h>
 #include <winrt/Windows.UI.Xaml.Controls.h>
 #include <winrt/Windows.UI.Xaml.Interop.h>
 #include <winrt/Windows.UI.Xaml.Markup.h>
@@ -491,6 +518,12 @@ struct DataCollectionSettings {
     int updateInterval;
     StringSetting networkAdapterName;
     StringSetting gpuAdapterName;
+};
+
+struct MediaPlayerSettings {
+    std::vector<StringSetting> ignoredPlayers;
+    int maxLength;
+    bool removeBrackets;
 };
 
 enum class WebContentWeatherUnits {
@@ -545,6 +578,7 @@ struct {
     int maxWidth;
     int textSpacing;
     DataCollectionSettings dataCollection;
+    MediaPlayerSettings mediaPlayer;
     StringSetting webContentWeatherLocation;
     StringSetting webContentWeatherFormat;
     WebContentWeatherUnits webContentWeatherUnits;
@@ -615,6 +649,22 @@ FormattedString<FORMATTED_BUFFER_SIZE> g_gpuFormatted;
 FormattedString<FORMATTED_BUFFER_SIZE> g_batteryFormatted;
 FormattedString<FORMATTED_BUFFER_SIZE> g_batteryTimeFormatted;
 FormattedString<FORMATTED_BUFFER_SIZE> g_powerFormatted;
+
+FormattedString<FORMATTED_BUFFER_SIZE> g_mediaTitleFormatted;
+FormattedString<FORMATTED_BUFFER_SIZE> g_mediaArtistFormatted;
+FormattedString<FORMATTED_BUFFER_SIZE> g_mediaAlbumFormatted;
+FormattedString<FORMATTED_BUFFER_SIZE> g_mediaStatusFormatted;
+FormattedString<FORMATTED_BUFFER_SIZE> g_mediaInfoFormatted;
+
+winrt::Windows::Media::Control::GlobalSystemMediaTransportControlsSessionManager
+    g_mediaSessionManager{nullptr};
+winrt::Windows::Media::Control::GlobalSystemMediaTransportControlsSession
+    g_mediaCurrentSession{nullptr};
+std::mutex g_mediaMutex;
+std::atomic<bool> g_mediaDataDirty{true};
+winrt::event_token g_mediaSessionsChangedToken;
+winrt::event_token g_mediaPropertiesChangedToken;
+winrt::event_token g_mediaPlaybackChangedToken;
 
 std::vector<std::optional<DYNAMIC_TIME_ZONE_INFORMATION>> g_timeZoneInformation;
 
@@ -809,6 +859,22 @@ int StringCopyTruncated(PWSTR dest,
 
     *dest = L'\0';
     *truncated = *src;
+    return i;
+}
+
+int StringCopyTruncatedWithEllipsis(PWSTR dest, size_t destSize, PCWSTR src) {
+    if (destSize == 0) {
+        return 0;
+    }
+
+    bool truncated = false;
+    size_t i = StringCopyTruncated(dest, destSize, src, &truncated);
+    if (truncated && destSize >= 4) {
+        dest[destSize - 4] = L'.';
+        dest[destSize - 3] = L'.';
+        dest[destSize - 2] = L'.';
+        dest[destSize - 1] = L'\0';
+    }
     return i;
 }
 
@@ -1011,23 +1077,12 @@ void UpdateWebContent() {
                 maxLen = g_settings.webContentsMaxLength;
             }
 
-            bool truncated;
-            StringCopyTruncated(g_webContent, maxLen + 1, extracted.c_str(),
-                                &truncated);
-            if (truncated && maxLen >= 3) {
-                g_webContent[maxLen - 1] = L'.';
-                g_webContent[maxLen - 2] = L'.';
-                g_webContent[maxLen - 3] = L'.';
-            }
+            StringCopyTruncatedWithEllipsis(g_webContent, maxLen + 1,
+                                            extracted.c_str());
 
-            maxLen = ARRAYSIZE(g_webContentFull) - 1;
-            StringCopyTruncated(g_webContentFull, maxLen + 1, extracted.c_str(),
-                                &truncated);
-            if (truncated && maxLen >= 3) {
-                g_webContentFull[maxLen - 1] = L'.';
-                g_webContentFull[maxLen - 2] = L'.';
-                g_webContentFull[maxLen - 3] = L'.';
-            }
+            StringCopyTruncatedWithEllipsis(g_webContentFull,
+                                            ARRAYSIZE(g_webContentFull),
+                                            extracted.c_str());
         } else {
             failed++;
         }
@@ -1978,7 +2033,7 @@ class QueryDataCollectionSession {
                 continue;
             }
 
-            if (wcsstr(std::wstring(instance).c_str(), adapter_name)) {
+            if (instance.find(adapter_name) != std::wstring_view::npos) {
                 Wh_Log(L"Matched network adapter: %.*s",
                        static_cast<int>(instance.size()), instance.data());
                 filtered.push_back(path);
@@ -1987,6 +2042,7 @@ class QueryDataCollectionSession {
 
         if (filtered.empty()) {
             Wh_Log(L"No network adapters matched");
+            return {};
         }
 
         return filtered;
@@ -2037,8 +2093,8 @@ class QueryDataCollectionSession {
         // Get the LUID for the GPU name.
         std::wstring target_luid = GetGpuLuidByName(gpu_name);
         if (target_luid.empty()) {
-            Wh_Log(L"GPU not found by name, using all adapters");
-            return paths;
+            Wh_Log(L"GPU not found by name");
+            return {};
         }
 
         std::vector<std::wstring> filtered;
@@ -2060,9 +2116,8 @@ class QueryDataCollectionSession {
         }
 
         if (filtered.empty()) {
-            Wh_Log(L"No GPU paths matched LUID %s, using all adapters",
-                   target_luid.c_str());
-            return paths;
+            Wh_Log(L"No GPU paths matched LUID %s", target_luid.c_str());
+            return {};
         }
 
         Wh_Log(L"Filtered to %zu GPU paths", filtered.size());
@@ -2079,6 +2134,239 @@ class QueryDataCollectionSession {
 
 std::optional<QueryDataCollectionSession> g_dataCollectionSession;
 DWORD g_dataCollectionLastFormatIndex;
+
+// Media player helper functions
+
+bool IsMediaPlayerIgnored(const winrt::hstring& appId) {
+    std::wstring appIdLower(appId);
+    std::transform(appIdLower.begin(), appIdLower.end(), appIdLower.begin(),
+                   ::towlower);
+
+    for (const auto& ignored : g_settings.mediaPlayer.ignoredPlayers) {
+        std::wstring ignoredLower(ignored.get());
+        if (ignoredLower.empty()) {
+            continue;
+        }
+        std::transform(ignoredLower.begin(), ignoredLower.end(),
+                       ignoredLower.begin(), ::towlower);
+        if (appIdLower.find(ignoredLower) != std::wstring::npos) {
+            return true;
+        }
+    }
+    return false;
+}
+
+void RemoveBracketedContent(std::wstring& str, wchar_t open, wchar_t close) {
+    size_t start = 0;
+    while ((start = str.find(open, start)) != std::wstring::npos) {
+        size_t end = str.find(close, start);
+        if (end == std::wstring::npos) {
+            break;
+        }
+
+        // Check if brackets contain anything other than whitespace
+        bool hasContent = false;
+        for (size_t i = start + 1; i < end; i++) {
+            wchar_t c = str[i];
+            if (c != L' ' && c != L'\t' && c != L'\n' && c != L'\r') {
+                hasContent = true;
+                break;
+            }
+        }
+
+        if (hasContent) {
+            // Remove the brackets and content, including preceding space
+            size_t removeStart = start;
+            if (start > 0 && str[start - 1] == L' ') {
+                removeStart--;
+            }
+            str.erase(removeStart, end - removeStart + 1);
+            start = removeStart;
+        } else {
+            start = end + 1;
+        }
+    }
+}
+
+std::wstring RemoveBracketsFromString(std::wstring_view input) {
+    if (!g_settings.mediaPlayer.removeBrackets) {
+        return std::wstring(input);
+    }
+
+    std::wstring result(input);
+    RemoveBracketedContent(result, L'(', L')');
+    RemoveBracketedContent(result, L'[', L']');
+
+    // Trim trailing spaces
+    while (!result.empty() && result.back() == L' ') {
+        result.pop_back();
+    }
+
+    return result;
+}
+
+void ClearMediaFormattedStrings() {
+    wcscpy_s(g_mediaTitleFormatted.buffer, L"");
+    wcscpy_s(g_mediaArtistFormatted.buffer, L"");
+    wcscpy_s(g_mediaAlbumFormatted.buffer, L"");
+    wcscpy_s(g_mediaStatusFormatted.buffer, L"");
+    wcscpy_s(g_mediaInfoFormatted.buffer, L"");
+}
+
+winrt::Windows::Media::Control::GlobalSystemMediaTransportControlsSession
+FindActiveMediaSession() {
+    if (!g_mediaSessionManager) {
+        return nullptr;
+    }
+
+    // First try the current session
+    auto currentSession = g_mediaSessionManager.GetCurrentSession();
+    if (currentSession) {
+        try {
+            auto appId = currentSession.SourceAppUserModelId();
+            if (!IsMediaPlayerIgnored(appId)) {
+                return currentSession;
+            }
+        } catch (...) {
+            HRESULT hr = winrt::to_hresult();
+            Wh_Log(L"Failed to get app ID for current session: %08X", hr);
+            return currentSession;
+        }
+    }
+
+    // If current session is ignored or null, search for an alternative
+    try {
+        auto sessions = g_mediaSessionManager.GetSessions();
+        for (uint32_t i = 0; i < sessions.Size(); i++) {
+            auto session = sessions.GetAt(i);
+            try {
+                auto appId = session.SourceAppUserModelId();
+                if (IsMediaPlayerIgnored(appId)) {
+                    continue;
+                }
+
+                auto playbackInfo = session.GetPlaybackInfo();
+                auto status = playbackInfo.PlaybackStatus();
+
+                // Prefer playing or paused sessions
+                using Status = winrt::Windows::Media::Control::
+                    GlobalSystemMediaTransportControlsSessionPlaybackStatus;
+                if (status == Status::Playing || status == Status::Paused) {
+                    return session;
+                }
+            } catch (...) {
+                HRESULT hr = winrt::to_hresult();
+                Wh_Log(L"Failed to query session %u: %08X", i, hr);
+                continue;
+            }
+        }
+
+        // If no active session found, return first non-ignored one
+        for (uint32_t i = 0; i < sessions.Size(); i++) {
+            auto session = sessions.GetAt(i);
+            try {
+                auto appId = session.SourceAppUserModelId();
+                if (!IsMediaPlayerIgnored(appId)) {
+                    return session;
+                }
+            } catch (...) {
+                HRESULT hr = winrt::to_hresult();
+                Wh_Log(L"Failed to get app ID for session %u: %08X", i, hr);
+                return session;
+            }
+        }
+    } catch (...) {
+        HRESULT hr = winrt::to_hresult();
+        Wh_Log(L"Failed to get media sessions: %08X", hr);
+    }
+
+    return nullptr;
+}
+
+void RefreshMediaData() {
+    std::lock_guard<std::mutex> guard(g_mediaMutex);
+
+    try {
+        if (!g_mediaSessionManager) {
+            ClearMediaFormattedStrings();
+            return;
+        }
+
+        auto session = FindActiveMediaSession();
+        if (!session) {
+            ClearMediaFormattedStrings();
+            return;
+        }
+
+        auto mediaProperties = session.TryGetMediaPropertiesAsync().get();
+        auto playbackInfo = session.GetPlaybackInfo();
+
+        if (!mediaProperties) {
+            ClearMediaFormattedStrings();
+            return;
+        }
+
+        // Get playback status as emoji
+        auto status = playbackInfo.PlaybackStatus();
+        using Status = winrt::Windows::Media::Control::
+            GlobalSystemMediaTransportControlsSessionPlaybackStatus;
+
+        switch (status) {
+            case Status::Playing:
+                wcscpy_s(g_mediaStatusFormatted.buffer, L"\u23EF");  // ⏯
+                break;
+            case Status::Paused:
+                wcscpy_s(g_mediaStatusFormatted.buffer, L"\u23F8");  // ⏸
+                break;
+            case Status::Stopped:
+                wcscpy_s(g_mediaStatusFormatted.buffer, L"\u23F9");  // ⏹
+                break;
+            default:
+                wcscpy_s(g_mediaStatusFormatted.buffer, L"");
+                break;
+        }
+
+        auto title = mediaProperties.Title();
+        auto artist = mediaProperties.Artist();
+        auto album = mediaProperties.AlbumTitle();
+
+        StringCopyTruncatedWithEllipsis(g_mediaTitleFormatted.buffer,
+                                        ARRAYSIZE(g_mediaTitleFormatted.buffer),
+                                        title.c_str());
+        StringCopyTruncatedWithEllipsis(
+            g_mediaArtistFormatted.buffer,
+            ARRAYSIZE(g_mediaArtistFormatted.buffer), artist.c_str());
+        StringCopyTruncatedWithEllipsis(g_mediaAlbumFormatted.buffer,
+                                        ARRAYSIZE(g_mediaAlbumFormatted.buffer),
+                                        album.c_str());
+
+        // Create combined info with bracket removal
+        std::wstring processedArtist = RemoveBracketsFromString(artist);
+        std::wstring processedTitle = RemoveBracketsFromString(title);
+
+        std::wstring combinedInfo;
+        if (!processedArtist.empty() && !processedTitle.empty()) {
+            combinedInfo = processedArtist + L" - " + processedTitle;
+        } else if (!processedTitle.empty()) {
+            combinedInfo = processedTitle;
+        }
+
+        int maxLen = ARRAYSIZE(g_mediaInfoFormatted.buffer) - 1;
+        if (g_settings.mediaPlayer.maxLength > 0 &&
+            g_settings.mediaPlayer.maxLength < maxLen) {
+            maxLen = g_settings.mediaPlayer.maxLength;
+        }
+
+        StringCopyTruncatedWithEllipsis(g_mediaInfoFormatted.buffer, maxLen + 1,
+                                        combinedInfo.c_str());
+    } catch (...) {
+        HRESULT hr = winrt::to_hresult();
+        Wh_Log(L"RefreshMediaData error: %08X", hr);
+        ClearMediaFormattedStrings();
+    }
+
+    g_mediaDataDirty = false;
+}
 
 void DataCollectionSessionInit() {
     bool metrics[static_cast<int>(MetricType::kCount)]{};
@@ -2135,6 +2423,103 @@ void DataCollectionSessionInit() {
 void DataCollectionSessionUninit() {
     g_dataCollectionSession.reset();
     g_dataCollectionLastFormatIndex = 0;
+}
+
+bool IsMediaPatternUsed() {
+    return IsStrInDateTimePatternSettings(L"%media_title%") ||
+           IsStrInDateTimePatternSettings(L"%media_artist%") ||
+           IsStrInDateTimePatternSettings(L"%media_album%") ||
+           IsStrInDateTimePatternSettings(L"%media_status%") ||
+           IsStrInDateTimePatternSettings(L"%media_info%");
+}
+
+void UnsubscribeFromMediaSession() {
+    if (g_mediaCurrentSession) {
+        try {
+            g_mediaCurrentSession.MediaPropertiesChanged(
+                g_mediaPropertiesChangedToken);
+            g_mediaCurrentSession.PlaybackInfoChanged(
+                g_mediaPlaybackChangedToken);
+        } catch (...) {
+            HRESULT hr = winrt::to_hresult();
+            Wh_Log(L"UnsubscribeFromMediaSession error: %08X", hr);
+        }
+        g_mediaCurrentSession = nullptr;
+    }
+}
+
+void SubscribeToMediaSession() {
+    UnsubscribeFromMediaSession();
+
+    if (!g_mediaSessionManager) {
+        return;
+    }
+
+    try {
+        auto session = FindActiveMediaSession();
+        if (!session) {
+            return;
+        }
+
+        g_mediaCurrentSession = session;
+
+        g_mediaPropertiesChangedToken = session.MediaPropertiesChanged(
+            [](auto&&, auto&&) { g_mediaDataDirty = true; });
+
+        g_mediaPlaybackChangedToken = session.PlaybackInfoChanged(
+            [](auto&&, auto&&) { g_mediaDataDirty = true; });
+
+    } catch (...) {
+        HRESULT hr = winrt::to_hresult();
+        Wh_Log(L"SubscribeToMediaSession error %08X", hr);
+    }
+}
+
+void OnMediaSessionsChanged() {
+    g_mediaDataDirty = true;
+    SubscribeToMediaSession();
+}
+
+void MediaSessionInit() {
+    if (!IsMediaPatternUsed()) {
+        return;
+    }
+
+    try {
+        g_mediaSessionManager =
+            winrt::Windows::Media::Control::
+                GlobalSystemMediaTransportControlsSessionManager::RequestAsync()
+                    .get();
+
+        // Subscribe to SessionsChanged event
+        g_mediaSessionsChangedToken = g_mediaSessionManager.SessionsChanged(
+            [](auto&&, auto&&) { OnMediaSessionsChanged(); });
+
+        // Subscribe to current session events
+        SubscribeToMediaSession();
+
+        RefreshMediaData();
+    } catch (...) {
+        HRESULT hr = winrt::to_hresult();
+        Wh_Log(L"MediaSessionInit error %08X", hr);
+        g_mediaSessionManager = nullptr;
+    }
+}
+
+void MediaSessionUninit() {
+    UnsubscribeFromMediaSession();
+
+    if (g_mediaSessionManager) {
+        try {
+            g_mediaSessionManager.SessionsChanged(g_mediaSessionsChangedToken);
+        } catch (...) {
+            HRESULT hr = winrt::to_hresult();
+            Wh_Log(L"MediaSessionUninit error: %08X", hr);
+        }
+        g_mediaSessionManager = nullptr;
+    }
+
+    g_mediaDataDirty = true;
 }
 
 DWORD GetDataCollectionFormatIndex() {
@@ -2548,6 +2933,37 @@ PCWSTR GetPowerFormatted() {
         });
 }
 
+void RefreshMediaDataIfDirty() {
+    if (g_mediaDataDirty) {
+        RefreshMediaData();
+    }
+}
+
+PCWSTR GetMediaTitleFormatted() {
+    RefreshMediaDataIfDirty();
+    return g_mediaTitleFormatted.buffer;
+}
+
+PCWSTR GetMediaArtistFormatted() {
+    RefreshMediaDataIfDirty();
+    return g_mediaArtistFormatted.buffer;
+}
+
+PCWSTR GetMediaAlbumFormatted() {
+    RefreshMediaDataIfDirty();
+    return g_mediaAlbumFormatted.buffer;
+}
+
+PCWSTR GetMediaStatusFormatted() {
+    RefreshMediaDataIfDirty();
+    return g_mediaStatusFormatted.buffer;
+}
+
+PCWSTR GetMediaInfoFormatted() {
+    RefreshMediaDataIfDirty();
+    return g_mediaInfoFormatted.buffer;
+}
+
 int ResolveFormatTokenWithDigit(std::wstring_view format,
                                 std::wstring_view formatTokenPrefix,
                                 std::wstring_view formatTokenSuffix) {
@@ -2602,6 +3018,11 @@ size_t ResolveFormatToken(
         {L"%battery%"sv, GetBatteryFormatted},
         {L"%battery_time%"sv, GetBatteryTimeFormatted},
         {L"%power%"sv, GetPowerFormatted},
+        {L"%media_title%"sv, GetMediaTitleFormatted},
+        {L"%media_artist%"sv, GetMediaArtistFormatted},
+        {L"%media_album%"sv, GetMediaAlbumFormatted},
+        {L"%media_status%"sv, GetMediaStatusFormatted},
+        {L"%media_info%"sv, GetMediaInfoFormatted},
         {L"%newline%"sv, []() { return L"\n"; }},
     };
 
@@ -4214,6 +4635,21 @@ void LoadSettings() {
     g_settings.dataCollection.gpuAdapterName =
         StringSetting::make(L"DataCollection.GpuAdapterName");
 
+    g_settings.mediaPlayer.maxLength =
+        Wh_GetIntSetting(L"MediaPlayer.MaxLength");
+    g_settings.mediaPlayer.removeBrackets =
+        Wh_GetIntSetting(L"MediaPlayer.RemoveBrackets");
+
+    g_settings.mediaPlayer.ignoredPlayers.clear();
+    for (int i = 0;; i++) {
+        StringSetting player =
+            StringSetting::make(L"MediaPlayer.IgnoredPlayers[%d]", i);
+        if (*player == '\0') {
+            break;
+        }
+        g_settings.mediaPlayer.ignoredPlayers.push_back(std::move(player));
+    }
+
     g_settings.webContentWeatherLocation =
         StringSetting::make(L"WebContentWeatherLocation");
     g_settings.webContentWeatherFormat =
@@ -4622,6 +5058,7 @@ BOOL Wh_ModInit() {
 
     WebContentUpdateThreadInit();
     DataCollectionSessionInit();
+    MediaSessionInit();
 
     g_initialized = true;
 
@@ -4685,6 +5122,7 @@ void Wh_ModUninit() {
 
     WebContentUpdateThreadUninit();
     DataCollectionSessionUninit();
+    MediaSessionUninit();
 
     ApplySettings();
 }
@@ -4694,6 +5132,7 @@ BOOL Wh_ModSettingsChanged(BOOL* bReload) {
 
     WebContentUpdateThreadUninit();
     DataCollectionSessionUninit();
+    MediaSessionUninit();
 
     bool prevOldTaskbarOnWin11 = g_settings.oldTaskbarOnWin11;
 
@@ -4706,6 +5145,7 @@ BOOL Wh_ModSettingsChanged(BOOL* bReload) {
 
     WebContentUpdateThreadInit();
     DataCollectionSessionInit();
+    MediaSessionInit();
 
     ApplySettings();
 
