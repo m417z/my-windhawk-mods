@@ -25,7 +25,7 @@
 # Taskbar Clock Customization
 
 Custom date/time format, news feed, weather, performance metrics
-(upload/download speed, CPU, RAM), custom fonts and colors, and more.
+(upload/download speed, CPU, RAM, battery), custom fonts and colors, and more.
 
 Only Windows 10 64-bit and Windows 11 are supported.
 
@@ -80,8 +80,10 @@ patterns can be used:
   * `%cpu%` - CPU usage.
   * `%ram%` - RAM usage.
   * `%battery%` - battery level percentage.
-  * `%battery_time%` - battery time remaining (charging time left / discharging time left), formatted using the time format setting.
-  * `%power%` - battery power in watts (negative when discharging, positive when charging).
+  * `%battery_time%` - battery time remaining (charging time left / discharging
+    time left).
+  * `%power%` - battery power in watts (negative when discharging, positive when
+    charging).
 * `%weather%` - Weather information, powered by [wttr.in](https://wttr.in/),
   using the location and format configured in settings.
 * `%web<n>%` - the web contents as configured in settings, truncated with
@@ -1884,7 +1886,7 @@ void DataCollectionSessionInit() {
     metrics[static_cast<int>(MetricType::kCpu)] =
         IsStrInDateTimePatternSettings(L"%cpu%");
 
-    // If total_speed is used, we need both upload and download metrics
+    // If total_speed is used, we need both upload and download metrics.
     if (IsStrInDateTimePatternSettings(L"%total_speed%")) {
         metrics[static_cast<int>(MetricType::kUploadSpeed)] = true;
         metrics[static_cast<int>(MetricType::kDownloadSpeed)] = true;
@@ -2136,8 +2138,10 @@ PCWSTR GetTotalSpeedFormatted() {
     DWORD dataCollectionFormatIndex = GetDataCollectionFormatIndex();
     if (g_totalSpeedFormatted.formatIndex != dataCollectionFormatIndex) {
         if (g_dataCollectionSession) {
-            double uploadSpeed = g_dataCollectionSession->QueryData(MetricType::kUploadSpeed);
-            double downloadSpeed = g_dataCollectionSession->QueryData(MetricType::kDownloadSpeed);
+            double uploadSpeed =
+                g_dataCollectionSession->QueryData(MetricType::kUploadSpeed);
+            double downloadSpeed =
+                g_dataCollectionSession->QueryData(MetricType::kDownloadSpeed);
             double totalSpeed = uploadSpeed + downloadSpeed;
             FormatTransferSpeed(totalSpeed, g_totalSpeedFormatted.buffer,
                                 ARRAYSIZE(g_totalSpeedFormatted.buffer));
@@ -2201,12 +2205,13 @@ PCWSTR GetBatteryTimeFormatted() {
         if (GetSystemPowerStatus(&ps)) {
             if (ps.BatteryLifeTime != (DWORD)-1) {
                 totalSeconds = ps.BatteryLifeTime;
-            }
-            else if (ps.ACLineStatus == 1 && ps.BatteryLifePercent < 100) {
+            } else if (ps.ACLineStatus == 1 && ps.BatteryLifePercent < 100) {
                 SYSTEM_BATTERY_STATE bs{};
-                NTSTATUS status = CallNtPowerInformation(SystemBatteryState, nullptr, 0, &bs, sizeof(bs));
+                NTSTATUS status = CallNtPowerInformation(
+                    SystemBatteryState, nullptr, 0, &bs, sizeof(bs));
                 if (status == 0 && bs.Rate > 0) {
-                    DWORD remainingCapacity = bs.MaxCapacity - bs.RemainingCapacity;
+                    DWORD remainingCapacity =
+                        bs.MaxCapacity - bs.RemainingCapacity;
                     totalSeconds = (remainingCapacity * 3600) / bs.Rate;
                 }
             }
@@ -2214,7 +2219,7 @@ PCWSTR GetBatteryTimeFormatted() {
 
         DWORD hours = totalSeconds / 3600;
         DWORD minutes = (totalSeconds % 3600) / 60;
-        swprintf_s(g_batteryTimeFormatted.buffer, ARRAYSIZE(g_batteryTimeFormatted.buffer), L"%u:%02u", hours, minutes);
+        swprintf_s(g_batteryTimeFormatted.buffer, L"%u:%02u", hours, minutes);
 
         g_batteryTimeFormatted.formatIndex = dataCollectionFormatIndex;
     }
@@ -2226,16 +2231,15 @@ PCWSTR GetPowerFormatted() {
     if (g_powerFormatted.formatIndex != dataCollectionFormatIndex) {
         SYSTEM_BATTERY_STATE batteryState{};
 
-        NTSTATUS status = CallNtPowerInformation(
-            SystemBatteryState, nullptr, 0,
-            &batteryState, sizeof(batteryState));
+        NTSTATUS status =
+            CallNtPowerInformation(SystemBatteryState, nullptr, 0,
+                                   &batteryState, sizeof(batteryState));
 
-        if (status == 0 && batteryState.MaxCapacity > 0 && batteryState.Rate != 0) {
+        if (status == 0 && batteryState.MaxCapacity > 0 &&
+            batteryState.Rate != 0) {
             long powerWatts = static_cast<long>(batteryState.Rate) / 1000;
 
-            swprintf_s(g_powerFormatted.buffer,
-                      ARRAYSIZE(g_powerFormatted.buffer),
-                      L"%+ldW", powerWatts);
+            swprintf_s(g_powerFormatted.buffer, L"%+ldW", powerWatts);
         } else {
             wcscpy_s(g_powerFormatted.buffer, L"");
         }
