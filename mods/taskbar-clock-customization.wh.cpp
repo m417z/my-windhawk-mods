@@ -1,7 +1,7 @@
 // ==WindhawkMod==
 // @id              taskbar-clock-customization
 // @name            Taskbar Clock Customization
-// @description     Custom date/time format, news feed, weather, performance metrics (upload/download speed, CPU, RAM, battery), custom fonts and colors, and more
+// @description     Custom date/time format, news feed, weather, performance metrics (upload/download speed, CPU, RAM, GPU, battery), custom fonts and colors, and more
 // @version         1.6.3
 // @author          m417z
 // @github          https://github.com/m417z
@@ -25,7 +25,8 @@
 # Taskbar Clock Customization
 
 Custom date/time format, news feed, weather, performance metrics
-(upload/download speed, CPU, RAM, battery), custom fonts and colors, and more.
+(upload/download speed, CPU, GPU, RAM, battery), custom fonts and colors, and
+more.
 
 Only Windows 10 64-bit and Windows 11 are supported.
 
@@ -79,6 +80,7 @@ patterns can be used:
   * `%total_speed%` - combined upload and download transfer rate.
   * `%cpu%` - CPU usage.
   * `%ram%` - RAM usage.
+  * `%gpu%` - GPU usage.
   * `%battery%` - battery level percentage.
   * `%battery_time%` - battery time remaining (charging time left / discharging
     time left).
@@ -576,6 +578,7 @@ FormattedString<FORMATTED_BUFFER_SIZE> g_downloadSpeedFormatted;
 FormattedString<FORMATTED_BUFFER_SIZE> g_totalSpeedFormatted;
 FormattedString<FORMATTED_BUFFER_SIZE> g_cpuFormatted;
 FormattedString<FORMATTED_BUFFER_SIZE> g_ramFormatted;
+FormattedString<FORMATTED_BUFFER_SIZE> g_gpuFormatted;
 FormattedString<FORMATTED_BUFFER_SIZE> g_batteryFormatted;
 FormattedString<FORMATTED_BUFFER_SIZE> g_batteryTimeFormatted;
 FormattedString<FORMATTED_BUFFER_SIZE> g_powerFormatted;
@@ -1700,6 +1703,7 @@ enum class MetricType {
     kUploadSpeed,
     kDownloadSpeed,
     kCpu,
+    kGpuUsage,
 
     kCount,
 };
@@ -1735,6 +1739,10 @@ class QueryDataCollectionSession {
             case MetricType::kCpu:
                 counter_path =
                     L"\\Processor Information(_Total)\\% Processor Utility";
+                break;
+            case MetricType::kGpuUsage:
+                counter_path = L"\\GPU Engine(*)\\Utilization Percentage";
+                is_wildcard = true;
                 break;
             default:
                 return false;
@@ -1783,15 +1791,22 @@ class QueryDataCollectionSession {
         const auto& metric = metrics_[static_cast<int>(type)];
 
         double sum = 0.0;
+        int count = 0;
         for (auto counter : metric.counters) {
             PDH_FMT_COUNTERVALUE val;
             HRESULT hr = PdhGetFormattedCounterValue(counter, PDH_FMT_DOUBLE,
                                                      nullptr, &val);
             if (SUCCEEDED(hr)) {
                 sum += val.doubleValue;
+                count++;
             } else {
                 Wh_Log(L"PdhGetFormattedCounterValue error %08X", hr);
             }
+        }
+
+        // Use average for GPU usage (each engine reports its own percentage).
+        if (type == MetricType::kGpuUsage && count > 0) {
+            return sum / count;
         }
 
         return sum;
@@ -1885,6 +1900,8 @@ void DataCollectionSessionInit() {
         IsStrInDateTimePatternSettings(L"%download_speed%");
     metrics[static_cast<int>(MetricType::kCpu)] =
         IsStrInDateTimePatternSettings(L"%cpu%");
+    metrics[static_cast<int>(MetricType::kGpuUsage)] =
+        IsStrInDateTimePatternSettings(L"%gpu%");
 
     // If total_speed is used, we need both upload and download metrics.
     if (IsStrInDateTimePatternSettings(L"%total_speed%")) {
@@ -2183,6 +2200,19 @@ PCWSTR GetRamFormatted() {
         });
 }
 
+PCWSTR GetGpuFormatted() {
+    DataCollectionSampleIfNeeded();
+    return GetMetricFormatted(g_gpuFormatted, [](PWSTR buffer,
+                                                 size_t bufferSize) {
+        if (!g_dataCollectionSession) {
+            return false;
+        }
+        double val = g_dataCollectionSession->QueryData(MetricType::kGpuUsage);
+        FormatPercentValue(static_cast<int>(val), buffer, bufferSize);
+        return true;
+    });
+}
+
 PCWSTR GetBatteryFormatted() {
     return GetMetricFormatted(g_batteryFormatted, [](PWSTR buffer,
                                                      size_t bufferSize) {
@@ -2290,6 +2320,7 @@ size_t ResolveFormatToken(
         {L"%total_speed%"sv, GetTotalSpeedFormatted},
         {L"%cpu%"sv, GetCpuFormatted},
         {L"%ram%"sv, GetRamFormatted},
+        {L"%gpu%"sv, GetGpuFormatted},
         {L"%battery%"sv, GetBatteryFormatted},
         {L"%battery_time%"sv, GetBatteryTimeFormatted},
         {L"%power%"sv, GetPowerFormatted},
