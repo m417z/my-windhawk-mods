@@ -183,6 +183,8 @@ styles, such as the font color and size.
     $options:
     - spacePaddingAndSymbol: Pad with spaces, add percentage symbol
     - spacePadding: Pad with spaces, number only
+    - singleSpacePadding: >-
+        Pad with a single space, number only (for monospaced fonts)
     - zeroPadding: Pad with zeros, number only
     - noPadding: No padding, number only
   - UpdateInterval: 1
@@ -466,6 +468,7 @@ enum class NetworkMetricsFormat {
 enum class PercentageFormat {
     spacePaddingAndSymbol,
     spacePadding,
+    singleSpacePadding,
     zeroPadding,
     noPadding,
 };
@@ -2258,6 +2261,10 @@ void FormatPercentValue(int val, PWSTR buffer, size_t bufferSize) {
 
         case PercentageFormat::spacePadding:
             padding = L"  ";
+            break;
+
+        case PercentageFormat::singleSpacePadding:
+            padding = L" ";
             break;
 
         case PercentageFormat::zeroPadding:
@@ -4074,6 +4081,9 @@ void LoadSettings() {
     if (wcscmp(percentageFormat, L"spacePadding") == 0) {
         g_settings.dataCollection.percentageFormat =
             PercentageFormat::spacePadding;
+    } else if (wcscmp(percentageFormat, L"singleSpacePadding") == 0) {
+        g_settings.dataCollection.percentageFormat =
+            PercentageFormat::singleSpacePadding;
     } else if (wcscmp(percentageFormat, L"zeroPadding") == 0) {
         g_settings.dataCollection.percentageFormat =
             PercentageFormat::zeroPadding;
