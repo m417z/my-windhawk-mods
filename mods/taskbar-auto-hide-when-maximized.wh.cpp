@@ -810,7 +810,37 @@ void CALLBACK WinEventProc(HWINEVENTHOOK hWinEventHook,
         return;
     }
 
-    Wh_Log(L"> %08X", (DWORD)(ULONG_PTR)hWnd);
+    Wh_Log(
+        L"Event %s for window %08X (%s)",
+        [](DWORD event) -> PCWSTR {
+            switch (event) {
+                case EVENT_OBJECT_CREATE:
+                    return L"OBJECT_CREATE";
+                case EVENT_OBJECT_DESTROY:
+                    return L"OBJECT_DESTROY";
+                case EVENT_OBJECT_SHOW:
+                    return L"OBJECT_SHOW";
+                case EVENT_OBJECT_HIDE:
+                    return L"OBJECT_HIDE";
+                case EVENT_OBJECT_LOCATIONCHANGE:
+                    return L"OBJECT_LOCATIONCHANGE";
+                case EVENT_OBJECT_CLOAKED:
+                    return L"OBJECT_CLOAKED";
+                case EVENT_OBJECT_UNCLOAKED:
+                    return L"OBJECT_UNCLOAKED";
+                case EVENT_SYSTEM_FOREGROUND:
+                    return L"SYSTEM_FOREGROUND";
+                default:
+                    return L"UNKNOWN";
+            }
+        }(event),
+        (DWORD)(ULONG_PTR)hWnd,
+        GetProcessFileName([](HWND hWnd) -> DWORD {
+            DWORD dwProcessId = 0;
+            GetWindowThreadProcessId(hWnd, &dwProcessId);
+            return dwProcessId;
+        }(hWnd))
+            .c_str());
 
     if (g_pendingEventsTimer) {
         return;
