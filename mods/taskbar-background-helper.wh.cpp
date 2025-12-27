@@ -468,6 +468,37 @@ std::wstring GetProcessFileName(DWORD dwProcessId) {
     return processFileNameUpper;
 }
 
+std::wstring GetWindowLogInfo(HWND hWnd) {
+    DWORD dwProcessId = 0;
+    GetWindowThreadProcessId(hWnd, &dwProcessId);
+    std::wstring processName = GetProcessFileName(dwProcessId);
+
+    WCHAR className[256];
+    if (!GetClassName(hWnd, className, ARRAYSIZE(className))) {
+        wcscpy_s(className, L"<unknown>");
+    }
+
+    WCHAR windowName[256];
+    if (!GetWindowText(hWnd, windowName, ARRAYSIZE(windowName))) {
+        windowName[0] = L'\0';
+    }
+
+    LONG style = GetWindowLong(hWnd, GWL_STYLE);
+    LONG exStyle = GetWindowLong(hWnd, GWL_EXSTYLE);
+
+    RECT rect{};
+    GetWindowRect(hWnd, &rect);
+
+    WCHAR buffer[1024];
+    swprintf_s(buffer,
+               L"window %08X: process=%s, class=%s, name=%s, "
+               L"style=0x%08X, exStyle=0x%08X, rect={%d,%d,%d,%d}",
+               (DWORD)(DWORD_PTR)hWnd, processName.c_str(), className,
+               windowName, style, exStyle, rect.left, rect.top, rect.right,
+               rect.bottom);
+    return buffer;
+}
+
 bool IsWindowExcluded(HWND hWnd) {
     if (g_settings.excludedPrograms.empty()) {
         return false;
@@ -568,9 +599,9 @@ bool DoesMonitorHaveMaximizedWindow(HMONITOR monitor, HWND hMMTaskbarWnd) {
             .length = sizeof(WINDOWPLACEMENT),
         };
         if (GetWindowPlacement(hWnd, &wp) && wp.showCmd == SW_SHOWMAXIMIZED) {
-            Wh_Log(L"Maximized window %08X for taskbar %08X (%s)",
-                   (DWORD)(DWORD_PTR)hWnd, (DWORD)(DWORD_PTR)hMMTaskbarWnd,
-                   GetProcessFileName(dwProcessId).c_str());
+            Wh_Log(L"Maximized %s for taskbar %08X",
+                   GetWindowLogInfo(hWnd).c_str(),
+                   (DWORD)(DWORD_PTR)hMMTaskbarWnd);
             hasMaximizedWindow = true;
             return FALSE;
         }
@@ -581,9 +612,9 @@ bool DoesMonitorHaveMaximizedWindow(HMONITOR monitor, HWND hMMTaskbarWnd) {
 
         if (EqualRect(&windowRect, &monitorInfo.rcMonitor)) {
             // Spans across the whole monitor, e.g. Win+Tab view.
-            Wh_Log(L"Fullscreen window %08X for taskbar %08X (%s)",
-                   (DWORD)(DWORD_PTR)hWnd, (DWORD)(DWORD_PTR)hMMTaskbarWnd,
-                   GetProcessFileName(dwProcessId).c_str());
+            Wh_Log(L"Fullscreen %s for taskbar %08X",
+                   GetWindowLogInfo(hWnd).c_str(),
+                   (DWORD)(DWORD_PTR)hMMTaskbarWnd);
             hasMaximizedWindow = true;
             return FALSE;
         }
@@ -618,7 +649,29 @@ void CALLBACK WinEventProc(HWINEVENTHOOK hWinEventHook,
         return;
     }
 
-    Wh_Log(L"> %08X", (DWORD)(ULONG_PTR)hWnd);
+    Wh_Log(
+        L"Event %s for %s",
+        [](DWORD event) -> PCWSTR {
+            switch (event) {
+                case EVENT_OBJECT_CREATE:
+                    return L"OBJECT_CREATE";
+                case EVENT_OBJECT_DESTROY:
+                    return L"OBJECT_DESTROY";
+                case EVENT_OBJECT_SHOW:
+                    return L"OBJECT_SHOW";
+                case EVENT_OBJECT_HIDE:
+                    return L"OBJECT_HIDE";
+                case EVENT_OBJECT_LOCATIONCHANGE:
+                    return L"OBJECT_LOCATIONCHANGE";
+                case EVENT_OBJECT_CLOAKED:
+                    return L"OBJECT_CLOAKED";
+                case EVENT_OBJECT_UNCLOAKED:
+                    return L"OBJECT_UNCLOAKED";
+                default:
+                    return L"UNKNOWN";
+            }
+        }(event),
+        GetWindowLogInfo(hWnd).c_str());
 
     HMONITOR monitor = MonitorFromWindow(hWnd, MONITOR_DEFAULTTONEAREST);
     g_pendingMonitors.insert(monitor);

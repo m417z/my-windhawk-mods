@@ -337,6 +337,37 @@ std::wstring GetProcessFileName(DWORD dwProcessId) {
     return processFileNameUpper;
 }
 
+std::wstring GetWindowLogInfo(HWND hWnd) {
+    DWORD dwProcessId = 0;
+    GetWindowThreadProcessId(hWnd, &dwProcessId);
+    std::wstring processName = GetProcessFileName(dwProcessId);
+
+    WCHAR className[256];
+    if (!GetClassName(hWnd, className, ARRAYSIZE(className))) {
+        wcscpy_s(className, L"<unknown>");
+    }
+
+    WCHAR windowName[256];
+    if (!GetWindowText(hWnd, windowName, ARRAYSIZE(windowName))) {
+        windowName[0] = L'\0';
+    }
+
+    LONG style = GetWindowLong(hWnd, GWL_STYLE);
+    LONG exStyle = GetWindowLong(hWnd, GWL_EXSTYLE);
+
+    RECT rect{};
+    GetWindowRect(hWnd, &rect);
+
+    WCHAR buffer[1024];
+    swprintf_s(buffer,
+               L"window %08X: process=%s, class=%s, name=%s, "
+               L"style=0x%08X, exStyle=0x%08X, rect={%d,%d,%d,%d}",
+               (DWORD)(DWORD_PTR)hWnd, processName.c_str(), className,
+               windowName, style, exStyle, rect.left, rect.top, rect.right,
+               rect.bottom);
+    return buffer;
+}
+
 bool IsWindowExcluded(HWND hWnd) {
     if (g_settings.excludedPrograms.empty()) {
         return false;
@@ -498,9 +529,8 @@ bool ShouldKeepTaskbarShown(HWND hTaskbarWnd, HMONITOR monitor) {
             return TRUE;
         }
 
-        Wh_Log(L"Can hide taskbar %08X for window %08X (%s)",
-               (DWORD)(DWORD_PTR)hTaskbarWnd, (DWORD)(DWORD_PTR)hWnd,
-               GetProcessFileName(dwProcessId).c_str());
+        Wh_Log(L"Can hide taskbar %08X for %s", (DWORD)(DWORD_PTR)hTaskbarWnd,
+               GetWindowLogInfo(hWnd).c_str());
         return FALSE;
     };
 
@@ -811,7 +841,7 @@ void CALLBACK WinEventProc(HWINEVENTHOOK hWinEventHook,
     }
 
     Wh_Log(
-        L"Event %s for window %08X (%s)",
+        L"Event %s for %s",
         [](DWORD event) -> PCWSTR {
             switch (event) {
                 case EVENT_OBJECT_CREATE:
@@ -834,13 +864,7 @@ void CALLBACK WinEventProc(HWINEVENTHOOK hWinEventHook,
                     return L"UNKNOWN";
             }
         }(event),
-        (DWORD)(ULONG_PTR)hWnd,
-        GetProcessFileName([](HWND hWnd) -> DWORD {
-            DWORD dwProcessId = 0;
-            GetWindowThreadProcessId(hWnd, &dwProcessId);
-            return dwProcessId;
-        }(hWnd))
-            .c_str());
+        GetWindowLogInfo(hWnd).c_str());
 
     if (g_pendingEventsTimer) {
         return;
