@@ -105,7 +105,7 @@ patterns can be used:
   ellipsis, where `<n>` is the web contents number.
 * `%web<n>_full%` - the full web contents as configured in settings, where `<n>`
   is the web contents number.
-* `%newline%` - a newline.
+* `%newline%` or `%n%` - a newline.
 
 ## Text styles
 
@@ -3032,6 +3032,7 @@ size_t ResolveFormatToken(
         {L"%media_status%"sv, GetMediaStatusFormatted},
         {L"%media_info%"sv, GetMediaInfoFormatted},
         {L"%newline%"sv, []() { return L"\n"; }},
+        {L"%n%"sv, []() { return L"\n"; }},
     };
 
     for (const auto& formatToken : formatTokens) {
