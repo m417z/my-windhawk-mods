@@ -2922,23 +2922,33 @@ PCWSTR GetBatteryTimeFormatted() {
 }
 
 PCWSTR GetPowerFormatted() {
-    return GetMetricFormatted(
-        g_powerFormatted, [](PWSTR buffer, size_t bufferSize) {
-            SYSTEM_BATTERY_STATE batteryState{};
+    return GetMetricFormatted(g_powerFormatted, [](PWSTR buffer,
+                                                   size_t bufferSize) {
+        SYSTEM_BATTERY_STATE batteryState{};
+        NTSTATUS status =
+            CallNtPowerInformation(SystemBatteryState, nullptr, 0,
+                                   &batteryState, sizeof(batteryState));
+        if (status == 0 && batteryState.MaxCapacity > 0) {
+            DWORD rate = batteryState.Rate;
 
-            NTSTATUS status =
-                CallNtPowerInformation(SystemBatteryState, nullptr, 0,
-                                       &batteryState, sizeof(batteryState));
-
-            if (status == 0 && batteryState.MaxCapacity > 0 &&
-                batteryState.Rate != 0) {
-                long powerWatts = static_cast<long>(batteryState.Rate) / 1000;
-                swprintf_s(buffer, bufferSize, L"%+ldW", powerWatts);
-                return true;
+            // When some batteries charge the Rate is:
+            // 0x80000000 == -2147483648 (LONG) == 2147483648 (DWORD)
+            // https://github.com/jay/battstatus/blob/418d1872f6c4e560f6b46880d9577947f17cc414/battstatus.cpp#L265
+            if (rate == 0x80000000) {
+                rate = 0;
             }
 
-            return false;
-        });
+            long powerMilliWatts = static_cast<long>(rate);
+
+            long powerWatts =
+                (powerMilliWatts + (powerMilliWatts >= 0 ? 500 : -500)) / 1000;
+
+            swprintf_s(buffer, bufferSize, L"%+ldW", powerWatts);
+            return true;
+        }
+
+        return false;
+    });
 }
 
 void RefreshMediaDataIfDirty() {
