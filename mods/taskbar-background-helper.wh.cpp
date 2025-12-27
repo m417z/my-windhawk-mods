@@ -568,7 +568,8 @@ bool DoesMonitorHaveMaximizedWindow(HMONITOR monitor, HWND hMMTaskbarWnd) {
             .length = sizeof(WINDOWPLACEMENT),
         };
         if (GetWindowPlacement(hWnd, &wp) && wp.showCmd == SW_SHOWMAXIMIZED) {
-            Wh_Log(L"Maximized window %p (%s)", hWnd,
+            Wh_Log(L"Maximized window %08X for taskbar %08X (%s)",
+                   (DWORD)(DWORD_PTR)hWnd, (DWORD)(DWORD_PTR)hMMTaskbarWnd,
                    GetProcessFileName(dwProcessId).c_str());
             hasMaximizedWindow = true;
             return FALSE;
@@ -580,7 +581,8 @@ bool DoesMonitorHaveMaximizedWindow(HMONITOR monitor, HWND hMMTaskbarWnd) {
 
         if (EqualRect(&windowRect, &monitorInfo.rcMonitor)) {
             // Spans across the whole monitor, e.g. Win+Tab view.
-            Wh_Log(L"Fullscreen window %p (%s)", hWnd,
+            Wh_Log(L"Fullscreen window %08X for taskbar %08X (%s)",
+                   (DWORD)(DWORD_PTR)hWnd, (DWORD)(DWORD_PTR)hMMTaskbarWnd,
                    GetProcessFileName(dwProcessId).c_str());
             hasMaximizedWindow = true;
             return FALSE;
