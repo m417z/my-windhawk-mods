@@ -2812,18 +2812,10 @@ DragDropManager_ElementPointToScreenPoint_Hook(void* pThis,
         return ret;
     }
 
-    UINT taskbarDpi = GetDpiForWindow(hTaskbarWnd);
-
-    int taskbarHeight = MulDiv(taskbarRectNative.bottom - taskbarRectNative.top,
-                               96, taskbarDpi);
-
     // Adjust to account for the taskbar rotation.
     *ret = POINT{
-        taskbarRectNative.left +
-            MulDiv(taskbarHeight - (ret->y - taskbarRectNative.top), taskbarDpi,
-                   96),
-        taskbarRectNative.top +
-            MulDiv(ret->x - taskbarRectNative.left, taskbarDpi, 96),
+        taskbarRectNative.left + taskbarRectNative.bottom - ret->y,
+        taskbarRectNative.top + ret->x - taskbarRectNative.left,
     };
 
     return ret;
@@ -2856,23 +2848,12 @@ RECT* WINAPI DragDropManager_ScreenRectForElement_Hook(void* pThis,
         return ret;
     }
 
-    UINT taskbarDpi = GetDpiForWindow(hTaskbarWnd);
-
-    int taskbarHeight = MulDiv(taskbarRectNative.bottom - taskbarRectNative.top,
-                               96, taskbarDpi);
-
     // Adjust to account for the taskbar rotation.
     *ret = RECT{
-        taskbarRectNative.left +
-            MulDiv(taskbarHeight - (ret->bottom - taskbarRectNative.top),
-                   taskbarDpi, 96),
-        taskbarRectNative.top +
-            MulDiv(ret->left - taskbarRectNative.left, taskbarDpi, 96),
-        taskbarRectNative.left +
-            MulDiv(taskbarHeight - (ret->top - taskbarRectNative.top),
-                   taskbarDpi, 96),
-        taskbarRectNative.top +
-            MulDiv(ret->right - taskbarRectNative.left, taskbarDpi, 96),
+        taskbarRectNative.left + taskbarRectNative.bottom - ret->bottom,
+        taskbarRectNative.top + ret->left - taskbarRectNative.left,
+        taskbarRectNative.left + taskbarRectNative.bottom - ret->top,
+        taskbarRectNative.top + ret->right - taskbarRectNative.left,
     };
 
     return ret;
