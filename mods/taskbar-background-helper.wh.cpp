@@ -257,6 +257,8 @@ bool IsWindowCloaked(HWND hwnd) {
 }
 
 BOOL SetTaskbarStyle(HWND hWnd) {
+    Wh_Log(L">");
+
     TaskbarStyle& style =
         (g_settings.darkModeStyle && IsWindowsDarkModeEnabled())
             ? *g_settings.darkModeStyle
@@ -303,6 +305,8 @@ BOOL SetTaskbarStyle(HWND hWnd) {
 }
 
 BOOL ResetTaskbarStyle(HWND hWnd) {
+    Wh_Log(L">");
+
     // TrayUI::_OnThemeChanged
     // TrayUI::OnShellModeChanged
     ACCENTPOLICY policy = {ACCENT_ENABLE_TRANSPARENTGRADIENT, 0x13, 0, 0};
