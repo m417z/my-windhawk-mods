@@ -558,7 +558,8 @@ HWND GetTaskbarForMonitor(HWND hTaskbarWnd, HMONITOR monitor) {
         return nullptr;
     }
 
-    if (MonitorFromWindow(hTaskbarWnd, MONITOR_DEFAULTTONEAREST) == monitor) {
+    HMONITOR taskbarMonitor = (HMONITOR)GetProp(hTaskbarWnd, L"TaskbarMonitor");
+    if (taskbarMonitor == monitor) {
         return hTaskbarWnd;
     }
 
@@ -574,7 +575,8 @@ HWND GetTaskbarForMonitor(HWND hTaskbarWnd, HMONITOR monitor) {
             return TRUE;
         }
 
-        if (MonitorFromWindow(hWnd, MONITOR_DEFAULTTONEAREST) != monitor) {
+        HMONITOR taskbarMonitor = (HMONITOR)GetProp(hWnd, L"TaskbarMonitor");
+        if (taskbarMonitor != monitor) {
             return TRUE;
         }
 
