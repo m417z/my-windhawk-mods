@@ -139,6 +139,129 @@ struct {
 std::mutex g_winEventHookThreadMutex;
 std::atomic<HANDLE> g_winEventHookThread;
 
+#if __cplusplus < 202302L
+// Missing in older MinGW headers.
+DECLARE_HANDLE(CO_MTA_USAGE_COOKIE);
+WINOLEAPI CoIncrementMTAUsage(CO_MTA_USAGE_COOKIE* pCookie);
+WINOLEAPI CoDecrementMTAUsage(CO_MTA_USAGE_COOKIE Cookie);
+#endif
+
+// Missing in older MinGW headers.
+#ifndef EVENT_OBJECT_CLOAKED
+#define EVENT_OBJECT_CLOAKED 0x8017
+#endif
+#ifndef EVENT_OBJECT_UNCLOAKED
+#define EVENT_OBJECT_UNCLOAKED 0x8018
+#endif
+
+// Aero Peek events (Show desktop preview).
+// Reference:
+// https://github.com/TranslucentTB/TranslucentTB/blob/9cfa9eeed5c264f33c8f005512a6649124a69845/Common/undoc/winuser.hpp
+static constexpr DWORD EVENT_SYSTEM_PEEKSTART = 0x0021;
+static constexpr DWORD EVENT_SYSTEM_PEEKEND = 0x0022;
+
+enum WINDOWCOMPOSITIONATTRIB {
+    WCA_UNDEFINED = 0,
+    WCA_NCRENDERING_ENABLED = 1,
+    WCA_NCRENDERING_POLICY = 2,
+    WCA_TRANSITIONS_FORCEDISABLED = 3,
+    WCA_ALLOW_NCPAINT = 4,
+    WCA_CAPTION_BUTTON_BOUNDS = 5,
+    WCA_NONCLIENT_RTL_LAYOUT = 6,
+    WCA_FORCE_ICONIC_REPRESENTATION = 7,
+    WCA_EXTENDED_FRAME_BOUNDS = 8,
+    WCA_HAS_ICONIC_BITMAP = 9,
+    WCA_THEME_ATTRIBUTES = 10,
+    WCA_NCRENDERING_EXILED = 11,
+    WCA_NCADORNMENTINFO = 12,
+    WCA_EXCLUDED_FROM_LIVEPREVIEW = 13,
+    WCA_VIDEO_OVERLAY_ACTIVE = 14,
+    WCA_FORCE_ACTIVEWINDOW_APPEARANCE = 15,
+    WCA_DISALLOW_PEEK = 16,
+    WCA_CLOAK = 17,
+    WCA_CLOAKED = 18,
+    WCA_ACCENT_POLICY = 19,
+    WCA_FREEZE_REPRESENTATION = 20,
+    WCA_EVER_UNCLOAKED = 21,
+    WCA_VISUAL_OWNER = 22,
+    WCA_HOLOGRAPHIC = 23,
+    WCA_EXCLUDED_FROM_DDA = 24,
+    WCA_PASSIVEUPDATEMODE = 25,
+    WCA_USEDARKMODECOLORS = 26,
+    WCA_CORNER_STYLE = 27,
+    WCA_PART_COLOR = 28,
+    WCA_DISABLE_MOVESIZE_FEEDBACK = 29,
+    WCA_SYSTEMBACKDROP_TYPE = 30,
+    WCA_SET_TAGGED_WINDOW_RECT = 31,
+    WCA_CLEAR_TAGGED_WINDOW_RECT = 32,
+    WCA_REMOTEAPP_POLICY = 33,
+    WCA_HAS_ACCENT_POLICY = 34,
+    WCA_REDIRECTIONBITMAP_FILL_COLOR = 35,
+    WCA_REDIRECTIONBITMAP_ALPHA = 36,
+    WCA_BORDER_MARGINS = 37,
+    WCA_LAST = 38,
+};
+
+// Affects the rendering of the background of a window.
+enum ACCENT_STATE {
+    // Default value. Background is black.
+    ACCENT_DISABLED = 0,
+    // Background is GradientColor, alpha channel ignored.
+    ACCENT_ENABLE_GRADIENT = 1,
+    // Background is GradientColor.
+    ACCENT_ENABLE_TRANSPARENTGRADIENT = 2,
+    // Background is GradientColor, with blur effect.
+    ACCENT_ENABLE_BLURBEHIND = 3,
+    // Background is GradientColor, with acrylic blur effect.
+    ACCENT_ENABLE_ACRYLICBLURBEHIND = 4,
+    // Allows desktop apps to use Compositor.CreateHostBackdropBrush
+    ACCENT_ENABLE_HOSTBACKDROP = 5,
+    // Unknown. Seems to draw background fully transparent.
+    ACCENT_INVALID_STATE = 6,
+};
+
+struct ACCENTPOLICY {
+    ACCENT_STATE accentState;
+    UINT accentFlags;
+    COLORREF gradientColor;
+    LONG animationId;
+};
+
+struct WINDOWCOMPOSITIONATTRIBDATA {
+    WINDOWCOMPOSITIONATTRIB attrib;
+    void* pvData;
+    UINT cbData;
+};
+
+using SetWindowCompositionAttribute_t =
+    BOOL(WINAPI*)(HWND hWnd, const WINDOWCOMPOSITIONATTRIBDATA* pAttrData);
+SetWindowCompositionAttribute_t SetWindowCompositionAttribute_Original;
+
+// https://stackoverflow.com/a/51336913
+bool IsWindowsDarkModeEnabled() {
+    constexpr WCHAR kSubKeyPath[] =
+        L"Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize";
+
+    DWORD value = 0;
+    DWORD valueSize = sizeof(value);
+    LONG result =
+        RegGetValue(HKEY_CURRENT_USER, kSubKeyPath, L"AppsUseLightTheme",
+                    RRF_RT_REG_DWORD, nullptr, &value, &valueSize);
+    if (result != ERROR_SUCCESS) {
+        return false;
+    }
+
+    return value == 0;
+}
+
+// https://devblogs.microsoft.com/oldnewthing/20200302-00/?p=103507
+bool IsWindowCloaked(HWND hwnd) {
+    BOOL isCloaked = FALSE;
+    return SUCCEEDED(DwmGetWindowAttribute(hwnd, DWMWA_CLOAKED, &isCloaked,
+                                           sizeof(isCloaked))) &&
+           isCloaked;
+}
+
 class MonitorState {
    public:
     struct MonitorChange {
@@ -269,131 +392,35 @@ class MonitorState {
 
 MonitorState g_monitorState;
 
-#if __cplusplus < 202302L
-// Missing in older MinGW headers.
-DECLARE_HANDLE(CO_MTA_USAGE_COOKIE);
-WINOLEAPI CoIncrementMTAUsage(CO_MTA_USAGE_COOKIE* pCookie);
-WINOLEAPI CoDecrementMTAUsage(CO_MTA_USAGE_COOKIE Cookie);
-#endif
+// Encapsulates special view modes (Peek, Multitasking View) that should
+// temporarily reset taskbar style to non-maximized.
+class SpecialViewModeState {
+   public:
+    enum class Mode { None, Peek, MultitaskingView };
 
-// Missing in older MinGW headers.
-#ifndef EVENT_OBJECT_CLOAKED
-#define EVENT_OBJECT_CLOAKED 0x8017
-#endif
-#ifndef EVENT_OBJECT_UNCLOAKED
-#define EVENT_OBJECT_UNCLOAKED 0x8018
-#endif
+    // Returns true if any special view mode is active.
+    bool IsActive() const { return m_mode != Mode::None; }
 
-// Aero Peek events (Show desktop preview).
-// Reference:
-// https://github.com/TranslucentTB/TranslucentTB/blob/9cfa9eeed5c264f33c8f005512a6649124a69845/Common/undoc/winuser.hpp
-static constexpr DWORD EVENT_SYSTEM_PEEKSTART = 0x0021;
-static constexpr DWORD EVENT_SYSTEM_PEEKEND = 0x0022;
-
-std::atomic<bool> g_inPeekMode{false};
-std::atomic<bool> g_inMultitaskingView{false};
-
-enum WINDOWCOMPOSITIONATTRIB {
-    WCA_UNDEFINED = 0,
-    WCA_NCRENDERING_ENABLED = 1,
-    WCA_NCRENDERING_POLICY = 2,
-    WCA_TRANSITIONS_FORCEDISABLED = 3,
-    WCA_ALLOW_NCPAINT = 4,
-    WCA_CAPTION_BUTTON_BOUNDS = 5,
-    WCA_NONCLIENT_RTL_LAYOUT = 6,
-    WCA_FORCE_ICONIC_REPRESENTATION = 7,
-    WCA_EXTENDED_FRAME_BOUNDS = 8,
-    WCA_HAS_ICONIC_BITMAP = 9,
-    WCA_THEME_ATTRIBUTES = 10,
-    WCA_NCRENDERING_EXILED = 11,
-    WCA_NCADORNMENTINFO = 12,
-    WCA_EXCLUDED_FROM_LIVEPREVIEW = 13,
-    WCA_VIDEO_OVERLAY_ACTIVE = 14,
-    WCA_FORCE_ACTIVEWINDOW_APPEARANCE = 15,
-    WCA_DISALLOW_PEEK = 16,
-    WCA_CLOAK = 17,
-    WCA_CLOAKED = 18,
-    WCA_ACCENT_POLICY = 19,
-    WCA_FREEZE_REPRESENTATION = 20,
-    WCA_EVER_UNCLOAKED = 21,
-    WCA_VISUAL_OWNER = 22,
-    WCA_HOLOGRAPHIC = 23,
-    WCA_EXCLUDED_FROM_DDA = 24,
-    WCA_PASSIVEUPDATEMODE = 25,
-    WCA_USEDARKMODECOLORS = 26,
-    WCA_CORNER_STYLE = 27,
-    WCA_PART_COLOR = 28,
-    WCA_DISABLE_MOVESIZE_FEEDBACK = 29,
-    WCA_SYSTEMBACKDROP_TYPE = 30,
-    WCA_SET_TAGGED_WINDOW_RECT = 31,
-    WCA_CLEAR_TAGGED_WINDOW_RECT = 32,
-    WCA_REMOTEAPP_POLICY = 33,
-    WCA_HAS_ACCENT_POLICY = 34,
-    WCA_REDIRECTIONBITMAP_FILL_COLOR = 35,
-    WCA_REDIRECTIONBITMAP_ALPHA = 36,
-    WCA_BORDER_MARGINS = 37,
-    WCA_LAST = 38,
-};
-
-// Affects the rendering of the background of a window.
-enum ACCENT_STATE {
-    // Default value. Background is black.
-    ACCENT_DISABLED = 0,
-    // Background is GradientColor, alpha channel ignored.
-    ACCENT_ENABLE_GRADIENT = 1,
-    // Background is GradientColor.
-    ACCENT_ENABLE_TRANSPARENTGRADIENT = 2,
-    // Background is GradientColor, with blur effect.
-    ACCENT_ENABLE_BLURBEHIND = 3,
-    // Background is GradientColor, with acrylic blur effect.
-    ACCENT_ENABLE_ACRYLICBLURBEHIND = 4,
-    // Allows desktop apps to use Compositor.CreateHostBackdropBrush
-    ACCENT_ENABLE_HOSTBACKDROP = 5,
-    // Unknown. Seems to draw background fully transparent.
-    ACCENT_INVALID_STATE = 6,
-};
-
-struct ACCENTPOLICY {
-    ACCENT_STATE accentState;
-    UINT accentFlags;
-    COLORREF gradientColor;
-    LONG animationId;
-};
-
-struct WINDOWCOMPOSITIONATTRIBDATA {
-    WINDOWCOMPOSITIONATTRIB attrib;
-    void* pvData;
-    UINT cbData;
-};
-
-using SetWindowCompositionAttribute_t =
-    BOOL(WINAPI*)(HWND hWnd, const WINDOWCOMPOSITIONATTRIBDATA* pAttrData);
-SetWindowCompositionAttribute_t SetWindowCompositionAttribute_Original;
-
-// https://stackoverflow.com/a/51336913
-bool IsWindowsDarkModeEnabled() {
-    constexpr WCHAR kSubKeyPath[] =
-        L"Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize";
-
-    DWORD value = 0;
-    DWORD valueSize = sizeof(value);
-    LONG result =
-        RegGetValue(HKEY_CURRENT_USER, kSubKeyPath, L"AppsUseLightTheme",
-                    RRF_RT_REG_DWORD, nullptr, &value, &valueSize);
-    if (result != ERROR_SUCCESS) {
-        return false;
+    // Sets the special view mode. Returns true if mode changed.
+    bool SetMode(Mode mode) {
+        Mode expected = Mode::None;
+        return m_mode.compare_exchange_strong(expected, mode);
     }
 
-    return value == 0;
-}
+    // Clears a specific mode (only if it's the current mode).
+    // Returns true if mode was cleared.
+    bool ClearMode(Mode mode) {
+        Mode expected = mode;
+        return m_mode.compare_exchange_strong(expected, Mode::None);
+    }
 
-// https://devblogs.microsoft.com/oldnewthing/20200302-00/?p=103507
-bool IsWindowCloaked(HWND hwnd) {
-    BOOL isCloaked = FALSE;
-    return SUCCEEDED(DwmGetWindowAttribute(hwnd, DWMWA_CLOAKED, &isCloaked,
-                                           sizeof(isCloaked))) &&
-           isCloaked;
-}
+    void Reset() { m_mode = Mode::None; }
+
+   private:
+    std::atomic<Mode> m_mode{Mode::None};
+};
+
+SpecialViewModeState g_specialViewMode;
 
 BOOL SetTaskbarStyle(HWND hWnd) {
     Wh_Log(L">");
@@ -586,6 +613,32 @@ void UpdateTaskbarStyleForMonitor(HMONITOR monitor, bool hasMaximized) {
         SetTaskbarStyle(hMMTaskbarWnd);
     } else {
         ResetTaskbarStyle(hMMTaskbarWnd);
+    }
+}
+
+// Updates all taskbars based on current special view mode and maximized state.
+// If in special view mode, resets all taskbars. Otherwise, sets style based on
+// whether each monitor has maximized windows.
+void UpdateAllTaskbarStyles() {
+    bool inSpecialMode = g_specialViewMode.IsActive();
+
+    std::unordered_set<HWND> secondaryTaskbarWindows;
+    HWND hTaskbarWnd = FindTaskbarWindows(&secondaryTaskbarWindows);
+
+    if (hTaskbarWnd) {
+        HMONITOR monitor =
+            MonitorFromWindow(hTaskbarWnd, MONITOR_DEFAULTTONEAREST);
+        bool hasMaximized =
+            !inSpecialMode && g_monitorState.HasMaximizedWindow(monitor);
+        UpdateTaskbarStyleForMonitor(monitor, hasMaximized);
+    }
+
+    for (HWND hSecondaryWnd : secondaryTaskbarWindows) {
+        HMONITOR monitor =
+            MonitorFromWindow(hSecondaryWnd, MONITOR_DEFAULTTONEAREST);
+        bool hasMaximized =
+            !inSpecialMode && g_monitorState.HasMaximizedWindow(monitor);
+        UpdateTaskbarStyleForMonitor(monitor, hasMaximized);
     }
 }
 
@@ -801,7 +854,7 @@ bool IsMultitaskingViewWindow(HWND hWnd) {
     bool isMultitaskingView = false;
     PWSTR description = nullptr;
     if (SUCCEEDED(GetThreadDescription(hThread, &description)) && description) {
-        isMultitaskingView = (wcsstr(description, L"MultitaskingView") != nullptr);
+        isMultitaskingView = wcscmp(description, L"MultitaskingView") == 0;
         LocalFree(description);
     }
 
@@ -915,40 +968,24 @@ void CALLBACK WinEventProc(HWINEVENTHOOK hWinEventHook,
 
     // Check for Multitasking View (Win+Tab) window state changes.
     if (IsMultitaskingViewWindow(hWnd)) {
-        bool entering = (event == EVENT_OBJECT_SHOW ||
-                         event == EVENT_OBJECT_UNCLOAKED ||
-                         event == EVENT_OBJECT_CREATE);
-        bool leaving = (event == EVENT_OBJECT_HIDE ||
-                        event == EVENT_OBJECT_CLOAKED ||
-                        event == EVENT_OBJECT_DESTROY);
+        bool entering = event == EVENT_OBJECT_SHOW ||
+                        event == EVENT_OBJECT_UNCLOAKED ||
+                        event == EVENT_OBJECT_CREATE;
+        bool leaving = event == EVENT_OBJECT_HIDE ||
+                       event == EVENT_OBJECT_CLOAKED ||
+                       event == EVENT_OBJECT_DESTROY;
 
-        if (entering || leaving) {
-            Wh_Log(L"MultitaskingView %s", entering ? L"entering" : L"leaving");
-            g_inMultitaskingView = entering;
-
-            // Don't update if still in peek mode.
-            if (g_inPeekMode) {
-                return;
+        if (entering) {
+            Wh_Log(L"MultitaskingView entering");
+            if (g_specialViewMode.SetMode(
+                    SpecialViewModeState::Mode::MultitaskingView)) {
+                UpdateAllTaskbarStyles();
             }
-
-            // Update all taskbars
-            std::unordered_set<HWND> secondaryTaskbarWindows;
-            HWND hTaskbarWnd = FindTaskbarWindows(&secondaryTaskbarWindows);
-
-            if (hTaskbarWnd) {
-                HMONITOR monitor =
-                    MonitorFromWindow(hTaskbarWnd, MONITOR_DEFAULTTONEAREST);
-                bool hasMaximized =
-                    !entering && g_monitorState.HasMaximizedWindow(monitor);
-                UpdateTaskbarStyleForMonitor(monitor, hasMaximized);
-            }
-
-            for (HWND hSecondaryWnd : secondaryTaskbarWindows) {
-                HMONITOR monitor =
-                    MonitorFromWindow(hSecondaryWnd, MONITOR_DEFAULTTONEAREST);
-                bool hasMaximized =
-                    !entering && g_monitorState.HasMaximizedWindow(monitor);
-                UpdateTaskbarStyleForMonitor(monitor, hasMaximized);
+        } else if (leaving) {
+            Wh_Log(L"MultitaskingView leaving");
+            if (g_specialViewMode.ClearMode(
+                    SpecialViewModeState::Mode::MultitaskingView)) {
+                UpdateAllTaskbarStyles();
             }
         }
 
@@ -993,8 +1030,8 @@ void CALLBACK WinEventProc(HWINEVENTHOOK hWinEventHook,
     }
 
     // Update taskbar style for each monitor that changed
-    // (but not if in peek/multitasking mode - handlers will restore when done)
-    if (!g_inPeekMode && !g_inMultitaskingView) {
+    // (but not if in special view mode - handlers will restore when done)
+    if (!g_specialViewMode.IsActive()) {
         for (const auto& change : changes) {
             Wh_Log(L"Monitor %p state changed to %s", change.monitor,
                    change.hasMaximized ? L"maximized" : L"not maximized");
@@ -1013,31 +1050,14 @@ void CALLBACK PeekEventProc(HWINEVENTHOOK hWinEventHook,
     bool entering = (event == EVENT_SYSTEM_PEEKSTART);
     Wh_Log(L"Peek %s", entering ? L"start" : L"end");
 
-    g_inPeekMode = entering;
-
-    // Don't update if still in multitasking view.
-    if (g_inMultitaskingView) {
-        return;
-    }
-
-    // Update all taskbars: reset style when entering peek, restore when leaving
-    std::unordered_set<HWND> secondaryTaskbarWindows;
-    HWND hTaskbarWnd = FindTaskbarWindows(&secondaryTaskbarWindows);
-
-    if (hTaskbarWnd) {
-        HMONITOR monitor =
-            MonitorFromWindow(hTaskbarWnd, MONITOR_DEFAULTTONEAREST);
-        bool hasMaximized =
-            !entering && g_monitorState.HasMaximizedWindow(monitor);
-        UpdateTaskbarStyleForMonitor(monitor, hasMaximized);
-    }
-
-    for (HWND hSecondaryWnd : secondaryTaskbarWindows) {
-        HMONITOR monitor =
-            MonitorFromWindow(hSecondaryWnd, MONITOR_DEFAULTTONEAREST);
-        bool hasMaximized =
-            !entering && g_monitorState.HasMaximizedWindow(monitor);
-        UpdateTaskbarStyleForMonitor(monitor, hasMaximized);
+    if (entering) {
+        if (g_specialViewMode.SetMode(SpecialViewModeState::Mode::Peek)) {
+            UpdateAllTaskbarStyles();
+        }
+    } else {
+        if (g_specialViewMode.ClearMode(SpecialViewModeState::Mode::Peek)) {
+            UpdateAllTaskbarStyles();
+        }
     }
 }
 
@@ -1103,8 +1123,7 @@ DWORD WINAPI WinEventHookThread(LPVOID lpThreadParameter) {
         UnhookWinEvent(winPeekEventHook);
     }
 
-    g_inPeekMode = false;
-    g_inMultitaskingView = false;
+    g_specialViewMode.Reset();
 
     return 0;
 }
@@ -1155,7 +1174,7 @@ BOOL AdjustTaskbarStyle(HWND hWnd) {
         }
 
         HMONITOR monitor = MonitorFromWindow(hWnd, MONITOR_DEFAULTTONEAREST);
-        if (g_inPeekMode || g_inMultitaskingView ||
+        if (g_specialViewMode.IsActive() ||
             !g_monitorState.HasMaximizedWindow(monitor)) {
             return ResetTaskbarStyle(hWnd);
         }
