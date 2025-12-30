@@ -495,11 +495,11 @@ std::wstring GetWindowLogInfo(HWND hWnd) {
 
     WCHAR buffer[1024];
     swprintf_s(buffer,
-               L"window %08X: process=%s, class=%s, name=%s, "
+               L"window %08X: PID=%u, process=%s, class=%s, name=%s, "
                L"style=0x%08X, exStyle=0x%08X, rect={%d,%d,%d,%d}",
-               (DWORD)(DWORD_PTR)hWnd, processName.c_str(), className,
-               windowName, style, exStyle, rect.left, rect.top, rect.right,
-               rect.bottom);
+               (DWORD)(DWORD_PTR)hWnd, dwProcessId, processName.c_str(),
+               className, windowName, style, exStyle, rect.left, rect.top,
+               rect.right, rect.bottom);
     return buffer;
 }
 
