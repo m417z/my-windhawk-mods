@@ -284,6 +284,14 @@ WINOLEAPI CoDecrementMTAUsage(CO_MTA_USAGE_COOKIE Cookie);
 #define EVENT_OBJECT_UNCLOAKED 0x8018
 #endif
 
+// Aero Peek events (Show desktop preview).
+// Reference:
+// https://github.com/TranslucentTB/TranslucentTB/blob/9cfa9eeed5c264f33c8f005512a6649124a69845/Common/undoc/winuser.hpp
+static constexpr DWORD EVENT_SYSTEM_PEEKSTART = 0x0021;
+static constexpr DWORD EVENT_SYSTEM_PEEKEND = 0x0022;
+
+std::atomic<bool> g_inPeekMode{false};
+
 enum WINDOWCOMPOSITIONATTRIB {
     WCA_UNDEFINED = 0,
     WCA_NCRENDERING_ENABLED = 1,
@@ -777,6 +785,13 @@ bool IsWindowActiveCandidate(HWND hWnd,
         return false;
     }
 
+    // Exclude DWM aero peek window.
+    WCHAR className[256];
+    if (GetClassName(hWnd, className, ARRAYSIZE(className)) &&
+        _wcsicmp(className, L"LivePreview") == 0) {
+        return false;
+    }
+
     // Check this after the other checks, as it's the most expensive one.
     if (IsWindowExcluded(hWnd)) {
         return false;
@@ -895,10 +910,46 @@ void CALLBACK WinEventProc(HWINEVENTHOOK hWinEventHook,
     }
 
     // Update taskbar style for each monitor that changed
-    for (const auto& change : changes) {
-        Wh_Log(L"Monitor %p state changed to %s", change.monitor,
-               change.hasMaximized ? L"maximized" : L"not maximized");
-        UpdateTaskbarStyleForMonitor(change.monitor, change.hasMaximized);
+    // (but not if in peek mode - peek handler will restore when done)
+    if (!g_inPeekMode) {
+        for (const auto& change : changes) {
+            Wh_Log(L"Monitor %p state changed to %s", change.monitor,
+                   change.hasMaximized ? L"maximized" : L"not maximized");
+            UpdateTaskbarStyleForMonitor(change.monitor, change.hasMaximized);
+        }
+    }
+}
+
+void CALLBACK PeekEventProc(HWINEVENTHOOK hWinEventHook,
+                            DWORD event,
+                            HWND hWnd,
+                            LONG idObject,
+                            LONG idChild,
+                            DWORD dwEventThread,
+                            DWORD dwmsEventTime) {
+    bool entering = (event == EVENT_SYSTEM_PEEKSTART);
+    Wh_Log(L"Peek %s", entering ? L"start" : L"end");
+
+    g_inPeekMode = entering;
+
+    // Update all taskbars: reset style when entering peek, restore when leaving
+    std::unordered_set<HWND> secondaryTaskbarWindows;
+    HWND hTaskbarWnd = FindTaskbarWindows(&secondaryTaskbarWindows);
+
+    if (hTaskbarWnd) {
+        HMONITOR monitor =
+            MonitorFromWindow(hTaskbarWnd, MONITOR_DEFAULTTONEAREST);
+        bool hasMaximized =
+            !entering && g_monitorState.HasMaximizedWindow(monitor);
+        UpdateTaskbarStyleForMonitor(monitor, hasMaximized);
+    }
+
+    for (HWND hSecondaryWnd : secondaryTaskbarWindows) {
+        HMONITOR monitor =
+            MonitorFromWindow(hSecondaryWnd, MONITOR_DEFAULTTONEAREST);
+        bool hasMaximized =
+            !entering && g_monitorState.HasMaximizedWindow(monitor);
+        UpdateTaskbarStyleForMonitor(monitor, hasMaximized);
     }
 }
 
@@ -922,6 +973,13 @@ DWORD WINAPI WinEventHookThread(LPVOID lpThreadParameter) {
                         WinEventProc, 0, 0, WINEVENT_OUTOFCONTEXT);
     if (!winObjectEventHook3) {
         Wh_Log(L"Error: SetWinEventHook");
+    }
+
+    HWINEVENTHOOK winPeekEventHook =
+        SetWinEventHook(EVENT_SYSTEM_PEEKSTART, EVENT_SYSTEM_PEEKEND, nullptr,
+                        PeekEventProc, 0, 0, WINEVENT_OUTOFCONTEXT);
+    if (!winPeekEventHook) {
+        Wh_Log(L"Error: SetWinEventHook for PEEK");
     }
 
     BOOL bRet;
@@ -952,6 +1010,12 @@ DWORD WINAPI WinEventHookThread(LPVOID lpThreadParameter) {
     if (winObjectEventHook3) {
         UnhookWinEvent(winObjectEventHook3);
     }
+
+    if (winPeekEventHook) {
+        UnhookWinEvent(winPeekEventHook);
+    }
+
+    g_inPeekMode = false;
 
     return 0;
 }
@@ -1002,7 +1066,7 @@ BOOL AdjustTaskbarStyle(HWND hWnd) {
         }
 
         HMONITOR monitor = MonitorFromWindow(hWnd, MONITOR_DEFAULTTONEAREST);
-        if (!g_monitorState.HasMaximizedWindow(monitor)) {
+        if (g_inPeekMode || !g_monitorState.HasMaximizedWindow(monitor)) {
             return ResetTaskbarStyle(hWnd);
         }
     }
