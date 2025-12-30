@@ -291,6 +291,7 @@ static constexpr DWORD EVENT_SYSTEM_PEEKSTART = 0x0021;
 static constexpr DWORD EVENT_SYSTEM_PEEKEND = 0x0022;
 
 std::atomic<bool> g_inPeekMode{false};
+std::atomic<bool> g_inMultitaskingView{false};
 
 enum WINDOWCOMPOSITIONATTRIB {
     WCA_UNDEFINED = 0,
@@ -768,6 +769,46 @@ bool IsWindowExcluded(HWND hWnd) {
     return false;
 }
 
+// Detects Win+Tab / Task View window.
+// Uses ZBID_IMMERSIVE_APPCHROME band, MultitaskingView thread description, and
+// taskbar process.
+bool IsMultitaskingViewWindow(HWND hWnd) {
+    // Must be in the current process (explorer.exe).
+    DWORD dwProcessId = 0;
+    DWORD dwThreadId = GetWindowThreadProcessId(hWnd, &dwProcessId);
+    if (!dwThreadId || dwProcessId != GetCurrentProcessId()) {
+        return false;
+    }
+
+    // Check window band - must be ZBID_IMMERSIVE_APPCHROME (5).
+    using GetWindowBand_t = BOOL(WINAPI*)(HWND hWnd, PDWORD pdwBand);
+    static const auto pGetWindowBand = (GetWindowBand_t)GetProcAddress(
+        GetModuleHandle(L"user32.dll"), "GetWindowBand");
+    if (pGetWindowBand) {
+        DWORD band = 0;
+        if (!pGetWindowBand(hWnd, &band) || band != 5) {
+            return false;
+        }
+    }
+
+    // Check thread description for "MultitaskingView".
+    HANDLE hThread =
+        OpenThread(THREAD_QUERY_LIMITED_INFORMATION, FALSE, dwThreadId);
+    if (!hThread) {
+        return false;
+    }
+
+    bool isMultitaskingView = false;
+    PWSTR description = nullptr;
+    if (SUCCEEDED(GetThreadDescription(hThread, &description)) && description) {
+        isMultitaskingView = (wcsstr(description, L"MultitaskingView") != nullptr);
+        LocalFree(description);
+    }
+
+    CloseHandle(hThread);
+    return isMultitaskingView;
+}
+
 bool IsWindowActiveCandidate(HWND hWnd,
                              DWORD dwTaskbarThreadId,
                              HWND hShellWindow) {
@@ -872,6 +913,48 @@ void CALLBACK WinEventProc(HWINEVENTHOOK hWinEventHook,
             GetWindowLogInfo(hWnd).c_str());
     };
 
+    // Check for Multitasking View (Win+Tab) window state changes.
+    if (IsMultitaskingViewWindow(hWnd)) {
+        bool entering = (event == EVENT_OBJECT_SHOW ||
+                         event == EVENT_OBJECT_UNCLOAKED ||
+                         event == EVENT_OBJECT_CREATE);
+        bool leaving = (event == EVENT_OBJECT_HIDE ||
+                        event == EVENT_OBJECT_CLOAKED ||
+                        event == EVENT_OBJECT_DESTROY);
+
+        if (entering || leaving) {
+            Wh_Log(L"MultitaskingView %s", entering ? L"entering" : L"leaving");
+            g_inMultitaskingView = entering;
+
+            // Don't update if still in peek mode.
+            if (g_inPeekMode) {
+                return;
+            }
+
+            // Update all taskbars
+            std::unordered_set<HWND> secondaryTaskbarWindows;
+            HWND hTaskbarWnd = FindTaskbarWindows(&secondaryTaskbarWindows);
+
+            if (hTaskbarWnd) {
+                HMONITOR monitor =
+                    MonitorFromWindow(hTaskbarWnd, MONITOR_DEFAULTTONEAREST);
+                bool hasMaximized =
+                    !entering && g_monitorState.HasMaximizedWindow(monitor);
+                UpdateTaskbarStyleForMonitor(monitor, hasMaximized);
+            }
+
+            for (HWND hSecondaryWnd : secondaryTaskbarWindows) {
+                HMONITOR monitor =
+                    MonitorFromWindow(hSecondaryWnd, MONITOR_DEFAULTTONEAREST);
+                bool hasMaximized =
+                    !entering && g_monitorState.HasMaximizedWindow(monitor);
+                UpdateTaskbarStyleForMonitor(monitor, hasMaximized);
+            }
+        }
+
+        return;
+    }
+
     std::vector<MonitorState::MonitorChange> changes;
 
     if (event == EVENT_OBJECT_DESTROY) {
@@ -910,8 +993,8 @@ void CALLBACK WinEventProc(HWINEVENTHOOK hWinEventHook,
     }
 
     // Update taskbar style for each monitor that changed
-    // (but not if in peek mode - peek handler will restore when done)
-    if (!g_inPeekMode) {
+    // (but not if in peek/multitasking mode - handlers will restore when done)
+    if (!g_inPeekMode && !g_inMultitaskingView) {
         for (const auto& change : changes) {
             Wh_Log(L"Monitor %p state changed to %s", change.monitor,
                    change.hasMaximized ? L"maximized" : L"not maximized");
@@ -931,6 +1014,11 @@ void CALLBACK PeekEventProc(HWINEVENTHOOK hWinEventHook,
     Wh_Log(L"Peek %s", entering ? L"start" : L"end");
 
     g_inPeekMode = entering;
+
+    // Don't update if still in multitasking view.
+    if (g_inMultitaskingView) {
+        return;
+    }
 
     // Update all taskbars: reset style when entering peek, restore when leaving
     std::unordered_set<HWND> secondaryTaskbarWindows;
@@ -1016,6 +1104,7 @@ DWORD WINAPI WinEventHookThread(LPVOID lpThreadParameter) {
     }
 
     g_inPeekMode = false;
+    g_inMultitaskingView = false;
 
     return 0;
 }
@@ -1066,7 +1155,8 @@ BOOL AdjustTaskbarStyle(HWND hWnd) {
         }
 
         HMONITOR monitor = MonitorFromWindow(hWnd, MONITOR_DEFAULTTONEAREST);
-        if (g_inPeekMode || !g_monitorState.HasMaximizedWindow(monitor)) {
+        if (g_inPeekMode || g_inMultitaskingView ||
+            !g_monitorState.HasMaximizedWindow(monitor)) {
             return ResetTaskbarStyle(hWnd);
         }
     }
