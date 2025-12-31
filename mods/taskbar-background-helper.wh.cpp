@@ -2,7 +2,7 @@
 // @id              taskbar-background-helper
 // @name            Taskbar Background Helper
 // @description     Sets the taskbar background for the transparent parts, always or only when there's a maximized window, designed to be used with Windows 11 Taskbar Styler
-// @version         1.1
+// @version         1.2
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
@@ -236,6 +236,11 @@ struct WINDOWCOMPOSITIONATTRIBDATA {
 using SetWindowCompositionAttribute_t =
     BOOL(WINAPI*)(HWND hWnd, const WINDOWCOMPOSITIONATTRIBDATA* pAttrData);
 SetWindowCompositionAttribute_t SetWindowCompositionAttribute_Original;
+
+// Private API for window band (z-order band).
+// https://blog.adeltax.com/window-z-order-in-windows-10/
+using GetWindowBand_t = BOOL(WINAPI*)(HWND hWnd, PDWORD pdwBand);
+GetWindowBand_t pGetWindowBand;
 
 // https://stackoverflow.com/a/51336913
 bool IsWindowsDarkModeEnabled() {
@@ -549,17 +554,20 @@ HWND FindTaskbarWindows(std::unordered_set<HWND>* secondaryTaskbarWindows) {
     return hTaskbarWnd;
 }
 
-HWND GetTaskbarForMonitor(HWND hTaskbarWnd, HMONITOR monitor) {
-    DWORD taskbarThreadId = 0;
-    DWORD taskbarProcessId = 0;
-    if (!(taskbarThreadId =
-              GetWindowThreadProcessId(hTaskbarWnd, &taskbarProcessId)) ||
-        taskbarProcessId != GetCurrentProcessId()) {
+HWND GetTaskbarForMonitor(HMONITOR monitor) {
+    HWND hTaskbarWnd = FindCurrentProcessTaskbarWnd();
+    if (!hTaskbarWnd) {
         return nullptr;
     }
 
-    if (MonitorFromWindow(hTaskbarWnd, MONITOR_DEFAULTTONEAREST) == monitor) {
+    HMONITOR taskbarMonitor = (HMONITOR)GetProp(hTaskbarWnd, L"TaskbarMonitor");
+    if (taskbarMonitor == monitor) {
         return hTaskbarWnd;
+    }
+
+    DWORD taskbarThreadId = GetWindowThreadProcessId(hTaskbarWnd, nullptr);
+    if (!taskbarThreadId) {
+        return nullptr;
     }
 
     HWND hResultWnd = nullptr;
@@ -594,17 +602,8 @@ HWND GetTaskbarForMonitor(HWND hTaskbarWnd, HMONITOR monitor) {
     return hResultWnd;
 }
 
-HWND GetTaskbarWindowForMonitor(HMONITOR monitor) {
-    HWND hTaskbarWnd = FindCurrentProcessTaskbarWnd();
-    if (hTaskbarWnd) {
-        return GetTaskbarForMonitor(hTaskbarWnd, monitor);
-    }
-
-    return nullptr;
-}
-
 void UpdateTaskbarStyleForMonitor(HMONITOR monitor, bool hasMaximized) {
-    HWND hMMTaskbarWnd = GetTaskbarWindowForMonitor(monitor);
+    HWND hMMTaskbarWnd = GetTaskbarForMonitor(monitor);
     if (!hMMTaskbarWnd) {
         return;
     }
@@ -616,29 +615,35 @@ void UpdateTaskbarStyleForMonitor(HMONITOR monitor, bool hasMaximized) {
     }
 }
 
-// Updates all taskbars based on current special view mode and maximized state.
-// If in special view mode, resets all taskbars. Otherwise, sets style based on
-// whether each monitor has maximized windows.
-void UpdateAllTaskbarStyles() {
-    bool inSpecialMode = g_specialViewMode.IsActive();
-
-    std::unordered_set<HWND> secondaryTaskbarWindows;
-    HWND hTaskbarWnd = FindTaskbarWindows(&secondaryTaskbarWindows);
-
-    if (hTaskbarWnd) {
-        HMONITOR monitor =
-            MonitorFromWindow(hTaskbarWnd, MONITOR_DEFAULTTONEAREST);
-        bool hasMaximized =
-            !inSpecialMode && g_monitorState.HasMaximizedWindow(monitor);
-        UpdateTaskbarStyleForMonitor(monitor, hasMaximized);
+BOOL ApplyTaskbarStyleForWindow(HWND hWnd) {
+    if (!g_settings.onlyWhenMaximized) {
+        return SetTaskbarStyle(hWnd);
     }
 
+    HMONITOR monitor = MonitorFromWindow(hWnd, MONITOR_DEFAULTTONEAREST);
+    if (g_specialViewMode.IsActive() ||
+        !g_monitorState.HasMaximizedWindow(monitor)) {
+        return ResetTaskbarStyle(hWnd);
+    }
+
+    return SetTaskbarStyle(hWnd);
+}
+
+void EnsureMonitoringThreadStarted();
+
+// Updates all taskbars based on current special view mode and maximized state.
+void UpdateAllTaskbarStyles() {
+    std::unordered_set<HWND> secondaryTaskbarWindows;
+    HWND hTaskbarWnd = FindTaskbarWindows(&secondaryTaskbarWindows);
+    if (!hTaskbarWnd) {
+        return;
+    }
+
+    EnsureMonitoringThreadStarted();
+    ApplyTaskbarStyleForWindow(hTaskbarWnd);
+
     for (HWND hSecondaryWnd : secondaryTaskbarWindows) {
-        HMONITOR monitor =
-            MonitorFromWindow(hSecondaryWnd, MONITOR_DEFAULTTONEAREST);
-        bool hasMaximized =
-            !inSpecialMode && g_monitorState.HasMaximizedWindow(monitor);
-        UpdateTaskbarStyleForMonitor(monitor, hasMaximized);
+        ApplyTaskbarStyleForWindow(hSecondaryWnd);
     }
 }
 
@@ -834,9 +839,6 @@ bool IsMultitaskingViewWindow(HWND hWnd) {
     }
 
     // Check window band - must be ZBID_IMMERSIVE_APPCHROME (5).
-    using GetWindowBand_t = BOOL(WINAPI*)(HWND hWnd, PDWORD pdwBand);
-    static const auto pGetWindowBand = (GetWindowBand_t)GetProcAddress(
-        GetModuleHandle(L"user32.dll"), "GetWindowBand");
     if (pGetWindowBand) {
         DWORD band = 0;
         if (!pGetWindowBand(hWnd, &band) || band != 5) {
@@ -1124,6 +1126,7 @@ DWORD WINAPI WinEventHookThread(LPVOID lpThreadParameter) {
     }
 
     g_specialViewMode.Reset();
+    g_monitorState.Clear();
 
     return 0;
 }
@@ -1161,26 +1164,17 @@ void PopulateMonitorState() {
         reinterpret_cast<LPARAM>(&enumWindowsProc));
 }
 
-BOOL AdjustTaskbarStyle(HWND hWnd) {
-    if (g_settings.onlyWhenMaximized) {
-        if (!g_winEventHookThread) {
-            std::lock_guard<std::mutex> guard(g_winEventHookThreadMutex);
-
-            if (!g_winEventHookThread) {
-                PopulateMonitorState();
-                g_winEventHookThread = CreateThread(
-                    nullptr, 0, WinEventHookThread, nullptr, 0, nullptr);
-            }
-        }
-
-        HMONITOR monitor = MonitorFromWindow(hWnd, MONITOR_DEFAULTTONEAREST);
-        if (g_specialViewMode.IsActive() ||
-            !g_monitorState.HasMaximizedWindow(monitor)) {
-            return ResetTaskbarStyle(hWnd);
-        }
+void EnsureMonitoringThreadStarted() {
+    if (!g_settings.onlyWhenMaximized || g_winEventHookThread) {
+        return;
     }
 
-    return SetTaskbarStyle(hWnd);
+    std::lock_guard<std::mutex> guard(g_winEventHookThreadMutex);
+    if (!g_winEventHookThread) {
+        PopulateMonitorState();
+        g_winEventHookThread =
+            CreateThread(nullptr, 0, WinEventHookThread, nullptr, 0, nullptr);
+    }
 }
 
 BOOL WINAPI SetWindowCompositionAttribute_Hook(
@@ -1200,29 +1194,12 @@ BOOL WINAPI SetWindowCompositionAttribute_Hook(
         return original();
     }
 
-    WCHAR szClassName[32];
-    if (GetClassName(hWnd, szClassName, ARRAYSIZE(szClassName)) == 0) {
+    if (!IsTaskbarWindow(hWnd)) {
         return original();
     }
 
-    if (_wcsicmp(szClassName, L"Shell_TrayWnd") != 0 &&
-        _wcsicmp(szClassName, L"Shell_SecondaryTrayWnd") != 0) {
-        return original();
-    }
-
-    return AdjustTaskbarStyle(hWnd);
-}
-
-void AdjustAllTaskbarStyles() {
-    std::unordered_set<HWND> secondaryTaskbarWindows;
-    HWND hWnd = FindTaskbarWindows(&secondaryTaskbarWindows);
-    if (hWnd) {
-        AdjustTaskbarStyle(hWnd);
-    }
-
-    for (HWND hSecondaryWnd : secondaryTaskbarWindows) {
-        AdjustTaskbarStyle(hSecondaryWnd);
-    }
+    EnsureMonitoringThreadStarted();
+    return ApplyTaskbarStyleForWindow(hWnd);
 }
 
 void LoadSettings() {
@@ -1324,6 +1301,8 @@ BOOL Wh_ModInit() {
                                        SetWindowCompositionAttribute_Hook,
                                        &SetWindowCompositionAttribute_Original);
 
+    pGetWindowBand = (GetWindowBand_t)GetProcAddress(hUser32, "GetWindowBand");
+
     return TRUE;
 }
 
@@ -1332,7 +1311,7 @@ void Wh_ModAfterInit() {
 
     WNDCLASS wndclass;
     if (GetClassInfo(GetModuleHandle(nullptr), L"Shell_TrayWnd", &wndclass)) {
-        AdjustAllTaskbarStyles();
+        UpdateAllTaskbarStyles();
     }
 }
 
@@ -1373,7 +1352,5 @@ void Wh_ModSettingsChanged() {
         }
     }
 
-    g_monitorState.Clear();
-
-    AdjustAllTaskbarStyles();
+    UpdateAllTaskbarStyles();
 }
