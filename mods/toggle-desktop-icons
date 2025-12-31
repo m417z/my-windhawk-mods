@@ -18,7 +18,6 @@ Double-click an empty area of the desktop to toggle the "Show desktop icons"
 setting.
 */
 // ==/WindhawkModReadme==
-a
 #include <windhawk_utils.h>
 
 #include <commctrl.h>
@@ -50,14 +49,22 @@ int AbsDelta(int a, int b) {
     return delta < 0 ? -delta : delta;
 }
 
-BOOL CALLBACK EnumChildProc(HWND hWnd, LPARAM lParam) {
-    wchar_t className[64];
-    if (!GetClassNameW(hWnd, className,
-                       sizeof(className) / sizeof(className[0]))) {
-        return TRUE;
+bool IsDesktopListView(HWND window) {
+    if (!window || !IsWindow(window)) {
+        return false;
     }
 
-    if (wcscmp(className, L"SysListView32") == 0) {
+    wchar_t className[64];
+    if (!GetClassNameW(window, className,
+                       sizeof(className) / sizeof(className[0]))) {
+        return false;
+    }
+
+    return wcscmp(className, L"SysListView32") == 0;
+}
+
+BOOL CALLBACK EnumChildProc(HWND hWnd, LPARAM lParam) {
+    if (IsDesktopListView(hWnd)) {
         *reinterpret_cast<HWND*>(lParam) = hWnd;
         return FALSE;
     }
@@ -86,29 +93,51 @@ BOOL CALLBACK EnumWindowsProc(HWND hWnd, LPARAM lParam) {
 }
 
 HWND FindDesktopListView() {
-    if (g_listViewWnd && IsWindow(g_listViewWnd)) {
+    if (IsDesktopListView(g_listViewWnd)) {
         return g_listViewWnd;
     }
 
     g_listViewWnd = nullptr;
     EnumWindows(EnumWindowsProc, reinterpret_cast<LPARAM>(&g_listViewWnd));
+    if (!IsDesktopListView(g_listViewWnd)) {
+        g_listViewWnd = nullptr;
+    }
+
     return g_listViewWnd;
 }
 
-bool IsDesktopForeground() {
-    HWND foreground = GetForegroundWindow();
-    if (!foreground || !IsWindow(foreground)) {
+bool IsDesktopClickTarget(HWND listView, POINT screenPt) {
+    if (!IsDesktopListView(listView)) {
         return false;
     }
 
-    wchar_t className[64];
-    if (!GetClassNameW(foreground, className,
-                       sizeof(className) / sizeof(className[0]))) {
+    HWND desktopRoot = GetAncestor(listView, GA_ROOT);
+    if (!desktopRoot) {
+        desktopRoot = listView;
+    }
+
+    HWND hitWnd = WindowFromPoint(screenPt);
+    if (!hitWnd || !IsWindow(hitWnd)) {
         return false;
     }
 
-    return wcscmp(className, L"WorkerW") == 0 ||
-           wcscmp(className, L"Progman") == 0;
+    HWND hitRoot = GetAncestor(hitWnd, GA_ROOT);
+    if (!hitRoot) {
+        hitRoot = hitWnd;
+    }
+
+    return hitRoot == desktopRoot;
+}
+
+bool IsShellProcess() {
+    HWND shell = GetShellWindow();
+    if (!shell || !IsWindow(shell)) {
+        return true;
+    }
+
+    DWORD shellPid = 0;
+    GetWindowThreadProcessId(shell, &shellPid);
+    return shellPid == GetCurrentProcessId();
 }
 
 bool ToggleHideIconsRegistry(bool* outHidden) {
@@ -195,12 +224,12 @@ bool IsListViewEmptySpace(HWND listView, POINT screenPt) {
 }
 
 void HandleDesktopDoubleClick(POINT screenPt) {
-    if (!IsDesktopForeground()) {
+    HWND listView = FindDesktopListView();
+    if (!listView) {
         return;
     }
 
-    HWND listView = FindDesktopListView();
-    if (!listView) {
+    if (!IsDesktopClickTarget(listView, screenPt)) {
         return;
     }
 
@@ -272,6 +301,10 @@ DWORD WINAPI HookThreadProc(LPVOID) {
 }  // namespace
 
 BOOL Wh_ModInit() {
+    if (!IsShellProcess()) {
+        return TRUE;
+    }
+
     INITCOMMONCONTROLSEX icc{
         .dwSize = sizeof(icc),
         .dwICC = ICC_LISTVIEW_CLASSES,
