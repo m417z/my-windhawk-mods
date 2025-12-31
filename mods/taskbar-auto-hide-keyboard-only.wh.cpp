@@ -299,6 +299,23 @@ UINT_PTR WINAPI SetTimer_Hook(HWND hWnd,
     return ret;
 }
 
+void ShowAllTaskbars() {
+    if (!SetTimer_Original) {
+        return;
+    }
+
+    std::vector<HWND> secondaryTaskbarWindows;
+    HWND taskbarWindow = FindTaskbarWindows(&secondaryTaskbarWindows);
+    if (taskbarWindow) {
+        // Use the original SetTimer to bypass the unhide-blocking hook.
+        SetTimer_Original(taskbarWindow, kTrayUITimerUnhide, 0, nullptr);
+    }
+
+    for (HWND hWnd : secondaryTaskbarWindows) {
+        SetTimer_Original(hWnd, kTrayUITimerUnhide, 0, nullptr);
+    }
+}
+
 enum class ToggleAction {
     Show,
     Hide,
@@ -715,7 +732,10 @@ BOOL Wh_ModInit() {
     Wh_Log(L">");
 
     LoadSettings();
-    g_toggleState.store(ToggleState::Default, std::memory_order_relaxed);
+    g_toggleState.store(
+        g_settings.toggleOnHotkey ? ToggleState::ForcedShown
+                                  : ToggleState::Default,
+        std::memory_order_relaxed);
     g_lastToggleTick.store(0, std::memory_order_relaxed);
 
     g_winVersion = GetExplorerVersion();
@@ -776,7 +796,13 @@ void Wh_ModAfterInit() {
         HandleLoadedExplorerPatcher();
     }
 
-    if (g_settings.fullyHide) {
+    if (g_settings.toggleOnHotkey) {
+        CancelHideTimers();
+        if (g_settings.fullyHide) {
+            CloakAllTaskbars(FALSE);
+        }
+        ShowAllTaskbars();
+    } else if (g_settings.fullyHide) {
         CloakAllTaskbars(TRUE);
     }
 }
