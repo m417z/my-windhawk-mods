@@ -28,7 +28,7 @@ When taskbar auto-hide is enabled, the taskbar will only be unhidden with the
 keyboard, hovering the mouse over the taskbar will not unhide it. For example,
 the Win key or Ctrl+Esc will unhide the taskbar.
 
-Optional: enable the Ctrl+Esc sticky toggle setting to lock taskbar visibility
+Optional: enable the sticky toggle setting to lock taskbar visibility
 until you press Ctrl+Esc again.
 
 **Note:** To customize the old taskbar on Windows 11 (if using ExplorerPatcher
@@ -46,11 +46,10 @@ or a similar tool), enable the relevant option in the mod's settings.
     auto-hide, leaving no traces at all. With this option, the taskbar can only
     be unhidden via the keyboard.
 - toggleOnHotkey: false
-  $name: Ctrl+Esc sticky toggle
+  $name: Sticky toggle
   $description: >-
     Press Ctrl+Esc to toggle and lock taskbar visibility. The taskbar stays
-    shown or hidden until you press Ctrl+Esc again, and other keyboard unhide
-    triggers won't override a forced hidden state. This setting requires
+    shown or hidden until you press Ctrl+Esc again, and other keyboard triggers won't override a forced hidden state. This setting requires
     auto-hide to be enabled in Windows settings.
 - oldTaskbarOnWin11: false
   $name: Customize the old taskbar on Windows 11
