@@ -1,0 +1,353 @@
+// ==WindhawkMod==
+// @id              toggle-desktop-icons
+// @name            Toggle desktop icons
+// @description     Double-click the desktop background to toggle desktop icons/shortcuts
+// @version         1.0.0
+// @author          roosmsg
+// @github          https://github.com/roosmsg
+// @include         explorer.exe
+// @architecture    x86-64
+// @compilerOptions -lcomctl32 -ladvapi32
+// ==/WindhawkMod==
+
+// ==WindhawkModReadme==
+/*
+# Toggle desktop icons
+
+Double-click an empty area of the desktop to toggle desktop icons/shortcuts.
+setting.
+*/
+// ==/WindhawkModReadme==
+#include <windhawk_utils.h>
+
+#include <commctrl.h>
+#include <windows.h>
+
+namespace {
+
+constexpr wchar_t kDesktopRegPath[] =
+    L"Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Advanced";
+constexpr wchar_t kHideIconsValueName[] = L"HideIcons";
+
+HHOOK g_mouseHook = nullptr;
+HANDLE g_hookThread = nullptr;
+HANDLE g_hookThreadReady = nullptr;
+DWORD g_hookThreadId = 0;
+
+DWORD g_lastClickTime = 0;
+POINT g_lastClickPt = {};
+bool g_hasLastClick = false;
+
+DWORD g_doubleClickTime = 0;
+int g_doubleClickCx = 0;
+int g_doubleClickCy = 0;
+
+HWND g_listViewWnd = nullptr;
+
+int AbsDelta(int a, int b) {
+    int delta = a - b;
+    return delta < 0 ? -delta : delta;
+}
+
+bool IsDesktopListView(HWND window) {
+    if (!window || !IsWindow(window)) {
+        return false;
+    }
+
+    wchar_t className[64];
+    if (!GetClassNameW(window, className,
+                       sizeof(className) / sizeof(className[0]))) {
+        return false;
+    }
+
+    return wcscmp(className, L"SysListView32") == 0;
+}
+
+BOOL CALLBACK EnumChildProc(HWND hWnd, LPARAM lParam) {
+    if (IsDesktopListView(hWnd)) {
+        *reinterpret_cast<HWND*>(lParam) = hWnd;
+        return FALSE;
+    }
+
+    return TRUE;
+}
+
+BOOL CALLBACK EnumWindowsProc(HWND hWnd, LPARAM lParam) {
+    wchar_t className[64];
+    if (!GetClassNameW(hWnd, className,
+                       sizeof(className) / sizeof(className[0]))) {
+        return TRUE;
+    }
+
+    if (wcscmp(className, L"WorkerW") != 0 &&
+        wcscmp(className, L"Progman") != 0) {
+        return TRUE;
+    }
+
+    if (!IsWindowVisible(hWnd)) {
+        return TRUE;
+    }
+
+    EnumChildWindows(hWnd, EnumChildProc, lParam);
+    return *reinterpret_cast<HWND*>(lParam) == nullptr;
+}
+
+HWND FindDesktopListView() {
+    if (IsDesktopListView(g_listViewWnd)) {
+        return g_listViewWnd;
+    }
+
+    g_listViewWnd = nullptr;
+    EnumWindows(EnumWindowsProc, reinterpret_cast<LPARAM>(&g_listViewWnd));
+    if (!IsDesktopListView(g_listViewWnd)) {
+        g_listViewWnd = nullptr;
+    }
+
+    return g_listViewWnd;
+}
+
+bool IsDesktopClickTarget(HWND listView, POINT screenPt) {
+    if (!IsDesktopListView(listView)) {
+        return false;
+    }
+
+    HWND desktopRoot = GetAncestor(listView, GA_ROOT);
+    if (!desktopRoot) {
+        desktopRoot = listView;
+    }
+
+    HWND hitWnd = WindowFromPoint(screenPt);
+    if (!hitWnd || !IsWindow(hitWnd)) {
+        return false;
+    }
+
+    HWND hitRoot = GetAncestor(hitWnd, GA_ROOT);
+    if (!hitRoot) {
+        hitRoot = hitWnd;
+    }
+
+    return hitRoot == desktopRoot;
+}
+
+bool IsShellProcess() {
+    HWND shell = GetShellWindow();
+    if (!shell || !IsWindow(shell)) {
+        return true;
+    }
+
+    DWORD shellPid = 0;
+    GetWindowThreadProcessId(shell, &shellPid);
+    return shellPid == GetCurrentProcessId();
+}
+
+bool ToggleHideIconsRegistry(bool* outHidden) {
+    HKEY key = nullptr;
+    LONG status = RegOpenKeyExW(
+        HKEY_CURRENT_USER, kDesktopRegPath, 0, KEY_QUERY_VALUE | KEY_SET_VALUE,
+        &key);
+    if (status != ERROR_SUCCESS) {
+        return false;
+    }
+
+    DWORD value = 0;
+    DWORD type = 0;
+    DWORD size = sizeof(value);
+    status = RegQueryValueExW(key, kHideIconsValueName, nullptr, &type,
+                              reinterpret_cast<BYTE*>(&value), &size);
+    if (status != ERROR_SUCCESS || type != REG_DWORD) {
+        value = 0;
+    }
+
+    DWORD newValue = value ? 0 : 1;
+    status = RegSetValueExW(key, kHideIconsValueName, 0, REG_DWORD,
+                            reinterpret_cast<const BYTE*>(&newValue),
+                            sizeof(newValue));
+    RegCloseKey(key);
+
+    if (status != ERROR_SUCCESS) {
+        return false;
+    }
+
+    if (outHidden) {
+        *outHidden = (newValue != 0);
+    }
+
+    return true;
+}
+
+void BroadcastExplorerSettingChange() {
+    SendMessageTimeoutW(HWND_BROADCAST, WM_SETTINGCHANGE, 0,
+                        reinterpret_cast<LPARAM>(kDesktopRegPath),
+                        SMTO_ABORTIFHUNG, 200, nullptr);
+}
+
+void ToggleDesktopIcons(HWND listView) {
+    bool hideIcons = false;
+    if (ToggleHideIconsRegistry(&hideIcons)) {
+        BroadcastExplorerSettingChange();
+    } else if (listView && IsWindow(listView)) {
+        hideIcons = IsWindowVisible(listView);
+    }
+
+    if (listView && IsWindow(listView)) {
+        ShowWindow(listView, hideIcons ? SW_HIDE : SW_SHOW);
+    }
+}
+
+bool IsListViewEmptySpace(HWND listView, POINT screenPt) {
+    if (!listView || !IsWindow(listView)) {
+        return false;
+    }
+
+    if (!IsWindowVisible(listView)) {
+        return true;
+    }
+
+    POINT clientPt = screenPt;
+    if (!ScreenToClient(listView, &clientPt)) {
+        return false;
+    }
+
+    LVHITTESTINFO hit{};
+    hit.pt = clientPt;
+    ListView_HitTest(listView, &hit);
+
+    if (hit.iItem != -1) {
+        return false;
+    }
+
+    if (hit.flags & LVHT_ONITEM) {
+        return false;
+    }
+
+    return true;
+}
+
+void HandleDesktopDoubleClick(POINT screenPt) {
+    HWND listView = FindDesktopListView();
+    if (!listView) {
+        return;
+    }
+
+    if (!IsDesktopClickTarget(listView, screenPt)) {
+        return;
+    }
+
+    if (!IsListViewEmptySpace(listView, screenPt)) {
+        return;
+    }
+
+    ToggleDesktopIcons(listView);
+}
+
+LRESULT CALLBACK LowLevelMouseProc(int code, WPARAM wParam, LPARAM lParam) {
+    if (code < 0) {
+        return CallNextHookEx(g_mouseHook, code, wParam, lParam);
+    }
+
+    if (wParam == WM_LBUTTONDOWN) {
+        const MSLLHOOKSTRUCT* info =
+            reinterpret_cast<const MSLLHOOKSTRUCT*>(lParam);
+        if (info) {
+            if (g_hasLastClick) {
+                DWORD deltaTime = info->time - g_lastClickTime;
+                if (deltaTime <= g_doubleClickTime &&
+                    AbsDelta(info->pt.x, g_lastClickPt.x) <= g_doubleClickCx &&
+                    AbsDelta(info->pt.y, g_lastClickPt.y) <= g_doubleClickCy) {
+                    g_hasLastClick = false;
+                    HandleDesktopDoubleClick(info->pt);
+                    return CallNextHookEx(g_mouseHook, code, wParam, lParam);
+                }
+            }
+
+            g_hasLastClick = true;
+            g_lastClickTime = info->time;
+            g_lastClickPt = info->pt;
+        }
+    }
+
+    return CallNextHookEx(g_mouseHook, code, wParam, lParam);
+}
+
+DWORD WINAPI HookThreadProc(LPVOID) {
+    g_hookThreadId = GetCurrentThreadId();
+    MSG msg;
+    PeekMessageW(&msg, nullptr, WM_USER, WM_USER, PM_NOREMOVE);
+
+    g_mouseHook = SetWindowsHookExW(WH_MOUSE_LL, LowLevelMouseProc, nullptr, 0);
+    if (!g_mouseHook) {
+        Wh_Log(L"Failed to install mouse hook, error=%lu", GetLastError());
+        if (g_hookThreadReady) {
+            SetEvent(g_hookThreadReady);
+        }
+        return 0;
+    }
+
+    if (g_hookThreadReady) {
+        SetEvent(g_hookThreadReady);
+    }
+
+    while (GetMessageW(&msg, nullptr, 0, 0) > 0) {
+    }
+
+    if (g_mouseHook) {
+        UnhookWindowsHookEx(g_mouseHook);
+        g_mouseHook = nullptr;
+    }
+
+    return 0;
+}
+
+}  // namespace
+
+BOOL Wh_ModInit() {
+    if (!IsShellProcess()) {
+        return TRUE;
+    }
+
+    INITCOMMONCONTROLSEX icc{
+        .dwSize = sizeof(icc),
+        .dwICC = ICC_LISTVIEW_CLASSES,
+    };
+    InitCommonControlsEx(&icc);
+
+    g_doubleClickTime = GetDoubleClickTime();
+    g_doubleClickCx = GetSystemMetrics(SM_CXDOUBLECLK);
+    g_doubleClickCy = GetSystemMetrics(SM_CYDOUBLECLK);
+    g_hasLastClick = false;
+    g_listViewWnd = nullptr;
+
+    g_hookThreadReady = CreateEventW(nullptr, TRUE, FALSE, nullptr);
+    g_hookThread = CreateThread(nullptr, 0, HookThreadProc, nullptr, 0, nullptr);
+    if (!g_hookThread) {
+        Wh_Log(L"Failed to start mouse hook thread");
+        if (g_hookThreadReady) {
+            CloseHandle(g_hookThreadReady);
+            g_hookThreadReady = nullptr;
+        }
+    } else if (g_hookThreadReady) {
+        WaitForSingleObject(g_hookThreadReady, 2000);
+    }
+
+    return TRUE;
+}
+
+void Wh_ModUninit() {
+    if (g_hookThreadId != 0) {
+        PostThreadMessageW(g_hookThreadId, WM_QUIT, 0, 0);
+    }
+
+    if (g_hookThread) {
+        WaitForSingleObject(g_hookThread, 2000);
+        CloseHandle(g_hookThread);
+        g_hookThread = nullptr;
+    }
+
+    if (g_hookThreadReady) {
+        CloseHandle(g_hookThreadReady);
+        g_hookThreadReady = nullptr;
+    }
+
+    g_hookThreadId = 0;
+    g_listViewWnd = nullptr;
+}
