@@ -44,7 +44,7 @@ or a similar tool), enable the relevant option in the mod's settings.
     Normally, the taskbar is hidden to a thin line which can be clicked to
     unhide it. This option makes it so that the taskbar is fully hidden on
     auto-hide, leaving no traces at all. With this option, the taskbar can only
-    be unhidden via the keyboard.
+    be unhidden via the keyboard. The Windows setting "Auto Hide Taskbar" must be enabled for this to work.
 - toggleOnHotkey: false
   $name: Sticky toggle
   $description: >-
@@ -55,8 +55,7 @@ or a similar tool), enable the relevant option in the mod's settings.
   $description: >-
     When enabled, sticky toggle updates the Windows auto-hide setting so
     maximized windows resize around the taskbar. Disable to keep window sizes
-    fixed and let the taskbar overlay them. Press Ctrl+Alt+Esc to toggle
-    this setting.
+    fixed and let the taskbar overlay them.
 - oldTaskbarOnWin11: false
   $name: Customize the old taskbar on Windows 11
   $description: >-
@@ -100,7 +99,6 @@ enum class ToggleState {
 
 std::atomic<ToggleState> g_toggleState{ToggleState::Default};
 std::atomic<DWORD> g_lastToggleTick{0};
-std::atomic<DWORD> g_lastResizeToggleTick{0};
 std::atomic<bool> g_autoHideStateCaptured{false};
 std::atomic<bool> g_autoHideOriginalEnabled{false};
 HHOOK g_keyboardHook = nullptr;
@@ -127,7 +125,6 @@ enum {
 constexpr DWORD kToggleDebounceMs = 250;
 constexpr UINT kKeyboardHookThreadQuitMsg = WM_APP + 0x217;
 constexpr UINT kKeyboardHookThreadToggleMsg = WM_APP + 0x218;
-constexpr UINT kKeyboardHookThreadResizeToggleMsg = WM_APP + 0x219;
 
 bool IsTaskbarWindow(HWND hWnd) {
     WCHAR szClassName[32];
@@ -357,21 +354,12 @@ void UpdateAutoHideForToggleState(ToggleState state) {
     }
 }
 
-bool IsCtrlKeyPressed() {
-    return (GetAsyncKeyState(VK_CONTROL) & 0x8000) ||
-           (GetAsyncKeyState(VK_LCONTROL) & 0x8000) ||
-           (GetAsyncKeyState(VK_RCONTROL) & 0x8000);
-}
-
-bool IsAltKeyPressed() {
-    return (GetAsyncKeyState(VK_MENU) & 0x8000) ||
-           (GetAsyncKeyState(VK_LMENU) & 0x8000) ||
-           (GetAsyncKeyState(VK_RMENU) & 0x8000);
-}
-
 bool IsCtrlEscPressed() {
-    return IsCtrlKeyPressed() && !IsAltKeyPressed() &&
-           (GetAsyncKeyState(VK_ESCAPE) & 0x8000);
+    bool ctrlDown =
+        (GetAsyncKeyState(VK_CONTROL) & 0x8000) ||
+        (GetAsyncKeyState(VK_LCONTROL) & 0x8000) ||
+        (GetAsyncKeyState(VK_RCONTROL) & 0x8000);
+    return ctrlDown && (GetAsyncKeyState(VK_ESCAPE) & 0x8000);
 }
 
 bool IsWinKeyPressed() {
@@ -479,53 +467,20 @@ void HandleStickyToggleFromKeyboard() {
     }
 }
 
-void HandleResizeToggleFromKeyboard() {
-    DWORD now = GetTickCount();
-    DWORD lastTick =
-        g_lastResizeToggleTick.load(std::memory_order_relaxed);
-    if (lastTick && now - lastTick < kToggleDebounceMs) {
-        return;
-    }
-
-    g_lastResizeToggleTick.store(now, std::memory_order_relaxed);
-    g_settings.resizeOnStickyToggle = !g_settings.resizeOnStickyToggle;
-
-    if (!g_settings.resizeOnStickyToggle) {
-        RestoreAutoHideOriginalState();
-        g_autoHideStateCaptured.store(false, std::memory_order_relaxed);
-        return;
-    }
-
-    if (g_settings.toggleOnHotkey) {
-        g_autoHideStateCaptured.store(false, std::memory_order_relaxed);
-        UpdateAutoHideForToggleState(
-            g_toggleState.load(std::memory_order_relaxed));
-    }
-}
-
 LRESULT CALLBACK LowLevelKeyboardProc(int nCode,
                                       WPARAM wParam,
                                       LPARAM lParam) {
     if (nCode == HC_ACTION && g_settings.toggleOnHotkey &&
+        g_toggleState.load(std::memory_order_relaxed) ==
+            ToggleState::ForcedShown &&
         (wParam == WM_KEYDOWN || wParam == WM_SYSKEYDOWN)) {
         const auto* info = reinterpret_cast<KBDLLHOOKSTRUCT*>(lParam);
         if (info && info->vkCode == VK_ESCAPE) {
-            bool ctrlDown = IsCtrlKeyPressed();
-            bool altDown = IsAltKeyPressed();
-            if (ctrlDown && altDown) {
-                if (g_keyboardHookThreadId) {
-                    PostThreadMessage(g_keyboardHookThreadId,
-                                      kKeyboardHookThreadResizeToggleMsg, 0,
-                                      0);
-                } else {
-                    HandleResizeToggleFromKeyboard();
-                }
-                return 1;
-            }
-
-            if (ctrlDown &&
-                g_toggleState.load(std::memory_order_relaxed) ==
-                    ToggleState::ForcedShown) {
+            bool ctrlDown =
+                (GetAsyncKeyState(VK_CONTROL) & 0x8000) ||
+                (GetAsyncKeyState(VK_LCONTROL) & 0x8000) ||
+                (GetAsyncKeyState(VK_RCONTROL) & 0x8000);
+            if (ctrlDown) {
                 if (g_keyboardHookThreadId) {
                     PostThreadMessage(g_keyboardHookThreadId,
                                       kKeyboardHookThreadToggleMsg, 0, 0);
@@ -575,12 +530,6 @@ DWORD WINAPI KeyboardHookThreadProc(LPVOID lpThreadParameter) {
         if (msg.hwnd == nullptr &&
             msg.message == kKeyboardHookThreadToggleMsg) {
             HandleStickyToggleFromKeyboard();
-            continue;
-        }
-
-        if (msg.hwnd == nullptr &&
-            msg.message == kKeyboardHookThreadResizeToggleMsg) {
-            HandleResizeToggleFromKeyboard();
             continue;
         }
 
