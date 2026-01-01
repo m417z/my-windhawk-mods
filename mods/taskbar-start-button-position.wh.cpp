@@ -747,13 +747,13 @@ std::wstring GetProcessFileName(DWORD dwProcessId) {
 
     CloseHandle(hProcess);
 
-    PCWSTR processFileNameUpper = wcsrchr(processPath, L'\\');
-    if (!processFileNameUpper) {
+    PCWSTR processFileName = wcsrchr(processPath, L'\\');
+    if (!processFileName) {
         return std::wstring{};
     }
 
-    processFileNameUpper++;
-    return processFileNameUpper;
+    processFileName++;
+    return processFileName;
 }
 
 using DwmSetWindowAttribute_t = decltype(&DwmSetWindowAttribute);
