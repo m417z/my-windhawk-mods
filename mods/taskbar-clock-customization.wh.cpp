@@ -235,6 +235,10 @@ styles, such as the font color and size.
     $description: >-
       Maximum characters for %media_info%. Longer strings are truncated with
       ellipsis. Set to 0 for no limit.
+  - NoMediaText: ""
+    $name: No media text
+    $description: >-
+      Text that will be shown as %media_info% when no media is playing.
   - RemoveBrackets: false
     $name: Remove brackets from info
     $description: >-
@@ -526,6 +530,7 @@ struct DataCollectionSettings {
 struct MediaPlayerSettings {
     std::vector<StringSetting> ignoredPlayers;
     int maxLength;
+    StringSetting noMediaText;
     bool removeBrackets;
 };
 
@@ -2219,7 +2224,7 @@ void ClearMediaFormattedStrings() {
     wcscpy_s(g_mediaArtistFormatted.buffer, L"");
     wcscpy_s(g_mediaAlbumFormatted.buffer, L"");
     wcscpy_s(g_mediaStatusFormatted.buffer, L"");
-    wcscpy_s(g_mediaInfoFormatted.buffer, L"");
+    wcscpy_s(g_mediaInfoFormatted.buffer, g_settings.mediaPlayer.noMediaText);
 }
 
 winrt::Windows::Media::Control::GlobalSystemMediaTransportControlsSession
@@ -4663,6 +4668,8 @@ void LoadSettings() {
 
     g_settings.mediaPlayer.maxLength =
         Wh_GetIntSetting(L"MediaPlayer.MaxLength");
+    g_settings.mediaPlayer.noMediaText =
+        StringSetting::make(L"MediaPlayer.NoMediaText");
     g_settings.mediaPlayer.removeBrackets =
         Wh_GetIntSetting(L"MediaPlayer.RemoveBrackets");
 
