@@ -730,30 +730,6 @@ GetDateFormatW_t GetDateFormatW_Original;
 using SendMessageW_t = decltype(&SendMessageW);
 SendMessageW_t SendMessageW_Original;
 
-class ComMtaUsage {
-   public:
-    ComMtaUsage() {
-        HRESULT hr = CoIncrementMTAUsage(&m_cookie);
-        m_success = SUCCEEDED(hr);
-        if (!m_success) {
-            Wh_Log(L"CoIncrementMTAUsage failed: %08X", hr);
-        }
-    }
-
-    ~ComMtaUsage() {
-        if (m_success) {
-            CoDecrementMTAUsage(m_cookie);
-        }
-    }
-
-    ComMtaUsage(const ComMtaUsage&) = delete;
-    ComMtaUsage& operator=(const ComMtaUsage&) = delete;
-
-   private:
-    CO_MTA_USAGE_COOKIE m_cookie = nullptr;
-    bool m_success = false;
-};
-
 std::optional<std::wstring> GetUrlContent(PCWSTR lpUrl,
                                           bool failIfNot200 = true) {
     HINTERNET hOpenHandle = InternetOpen(
@@ -2513,8 +2489,6 @@ void SubscribeToMediaSession() {
 }
 
 void MediaSessionUninit() {
-    ComMtaUsage comMtaUsage;
-
     UnsubscribeFromMediaSession();
 
     if (g_mediaSessionManager) {
@@ -2539,8 +2513,6 @@ void MediaSessionInit() {
     if (!IsMediaPatternUsed()) {
         return;
     }
-
-    ComMtaUsage comMtaUsage;
 
     try {
         g_mediaSessionManager =
