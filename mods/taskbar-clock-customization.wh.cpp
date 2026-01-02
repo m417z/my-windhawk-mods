@@ -2,7 +2,7 @@
 // @id              taskbar-clock-customization
 // @name            Taskbar Clock Customization
 // @description     Custom date/time format, news feed, weather, performance metrics (upload/download speed, CPU, RAM, GPU, battery), media player info, custom fonts and colors, and more
-// @version         1.7
+// @version         1.7.1
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
@@ -235,10 +235,10 @@ styles, such as the font color and size.
     $description: >-
       Maximum characters for %media_info%. Longer strings are truncated with
       ellipsis. Set to 0 for no limit.
-  - NoMediaText: ""
+  - NoMediaText: No media
     $name: No media text
     $description: >-
-      Text that will be shown as %media_info% when no media is playing.
+      Text that will be shown for %media_info% when no media is playing.
   - RemoveBrackets: false
     $name: Remove brackets from info
     $description: >-
@@ -2355,7 +2355,9 @@ void ClearMediaFormattedStrings() {
     wcscpy_s(g_mediaArtistFormatted.buffer, L"");
     wcscpy_s(g_mediaAlbumFormatted.buffer, L"");
     wcscpy_s(g_mediaStatusFormatted.buffer, L"");
-    wcscpy_s(g_mediaInfoFormatted.buffer, g_settings.mediaPlayer.noMediaText);
+    StringCopyTruncatedWithEllipsis(g_mediaInfoFormatted.buffer,
+                                    ARRAYSIZE(g_mediaInfoFormatted.buffer),
+                                    g_settings.mediaPlayer.noMediaText);
 }
 
 winrt::Windows::Media::Control::GlobalSystemMediaTransportControlsSession
