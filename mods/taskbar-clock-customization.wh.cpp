@@ -2672,10 +2672,9 @@ void FormatTransferSpeed(double val, PWSTR buffer, size_t bufferSize) {
                unit);
 }
 
-void FormatPercentValue(int val, PWSTR buffer, size_t bufferSize) {
-    // Cap to 99 to keep identical width in all cases.
-    if (val >= 100) {
-        val = 99;
+void FormatPercentValue(int val, PWSTR buffer, size_t bufferSize, int maxVal) {
+    if (val > maxVal) {
+        val = maxVal;
     }
 
     PCWSTR padding = L"";
@@ -2835,19 +2834,21 @@ PCWSTR GetDiskTotalSpeedFormatted() {
 
 PCWSTR GetCpuFormatted() {
     DataCollectionSampleIfNeeded();
-    return GetMetricFormatted(
-        g_cpuFormatted, [](PWSTR buffer, size_t bufferSize) {
-            if (!g_dataCollectionSession) {
-                return false;
-            }
-            std::optional<double> val =
-                g_dataCollectionSession->QueryData(MetricType::kCpu);
-            if (!val) {
-                return false;
-            }
-            FormatPercentValue(static_cast<int>(*val), buffer, bufferSize);
-            return true;
-        });
+    return GetMetricFormatted(g_cpuFormatted, [](PWSTR buffer,
+                                                 size_t bufferSize) {
+        if (!g_dataCollectionSession) {
+            return false;
+        }
+        std::optional<double> val =
+            g_dataCollectionSession->QueryData(MetricType::kCpu);
+        if (!val) {
+            return false;
+        }
+        // Cap to 99 to keep identical width in all cases.
+        int maxVal = 99;
+        FormatPercentValue(static_cast<int>(*val), buffer, bufferSize, maxVal);
+        return true;
+    });
 }
 
 PCWSTR GetRamFormatted() {
@@ -2859,38 +2860,44 @@ PCWSTR GetRamFormatted() {
             if (!GlobalMemoryStatusEx(&status)) {
                 return false;
             }
-            FormatPercentValue(status.dwMemoryLoad, buffer, bufferSize);
+            // Cap to 99 to keep identical width in all cases.
+            int maxVal = 99;
+            FormatPercentValue(status.dwMemoryLoad, buffer, bufferSize, maxVal);
             return true;
         });
 }
 
 PCWSTR GetGpuFormatted() {
     DataCollectionSampleIfNeeded();
-    return GetMetricFormatted(
-        g_gpuFormatted, [](PWSTR buffer, size_t bufferSize) {
-            if (!g_dataCollectionSession) {
-                return false;
-            }
-            std::optional<double> val =
-                g_dataCollectionSession->QueryData(MetricType::kGpuUsage);
-            if (!val) {
-                return false;
-            }
-            FormatPercentValue(static_cast<int>(*val), buffer, bufferSize);
-            return true;
-        });
+    return GetMetricFormatted(g_gpuFormatted, [](PWSTR buffer,
+                                                 size_t bufferSize) {
+        if (!g_dataCollectionSession) {
+            return false;
+        }
+        std::optional<double> val =
+            g_dataCollectionSession->QueryData(MetricType::kGpuUsage);
+        if (!val) {
+            return false;
+        }
+        // Cap to 99 to keep identical width in all cases.
+        int maxVal = 99;
+        FormatPercentValue(static_cast<int>(*val), buffer, bufferSize, maxVal);
+        return true;
+    });
 }
 
 PCWSTR GetBatteryFormatted() {
-    return GetMetricFormatted(g_batteryFormatted, [](PWSTR buffer,
-                                                     size_t bufferSize) {
-        SYSTEM_POWER_STATUS powerStatus;
-        if (!GetSystemPowerStatus(&powerStatus)) {
-            return false;
-        }
-        FormatPercentValue(powerStatus.BatteryLifePercent, buffer, bufferSize);
-        return true;
-    });
+    return GetMetricFormatted(
+        g_batteryFormatted, [](PWSTR buffer, size_t bufferSize) {
+            SYSTEM_POWER_STATUS powerStatus;
+            if (!GetSystemPowerStatus(&powerStatus)) {
+                return false;
+            }
+            int maxVal = 100;
+            FormatPercentValue(powerStatus.BatteryLifePercent, buffer,
+                               bufferSize, maxVal);
+            return true;
+        });
 }
 
 PCWSTR GetBatteryTimeFormatted() {
