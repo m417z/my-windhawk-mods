@@ -625,6 +625,7 @@ std::atomic<bool> g_explorerPatcherInitialized;
 
 DWORD g_formatIndex;
 SYSTEMTIME g_formatTime;
+std::mutex g_formatLineMutex;
 
 template <size_t N>
 struct FormattedString {
@@ -1254,6 +1255,8 @@ void WebContentUpdateThreadUninit() {
         CloseHandle(g_webContentUpdateStopEvent);
         g_webContentUpdateStopEvent = nullptr;
     }
+
+    std::lock_guard<std::mutex> guard(g_webContentMutex);
 
     g_webContentLoaded = false;
 
@@ -3313,6 +3316,8 @@ int FormatLine(PWSTR buffer, size_t bufferSize, std::wstring_view format) {
         return 0;
     }
 
+    std::lock_guard<std::mutex> guard(g_formatLineMutex);
+
     std::wstring_view formatSuffix = format;
 
     PWSTR bufferStart = buffer;
@@ -5282,8 +5287,12 @@ void Wh_ModUninit() {
     Wh_Log(L">");
 
     WebContentUpdateThreadUninit();
-    DataCollectionSessionUninit();
-    MediaSessionUninit();
+
+    {
+        std::lock_guard<std::mutex> guard(g_formatLineMutex);
+        DataCollectionSessionUninit();
+        MediaSessionUninit();
+    }
 
     ApplySettings();
 }
@@ -5292,8 +5301,12 @@ BOOL Wh_ModSettingsChanged(BOOL* bReload) {
     Wh_Log(L">");
 
     WebContentUpdateThreadUninit();
-    DataCollectionSessionUninit();
-    MediaSessionUninit();
+
+    {
+        std::lock_guard<std::mutex> guard(g_formatLineMutex);
+        DataCollectionSessionUninit();
+        MediaSessionUninit();
+    }
 
     bool prevOldTaskbarOnWin11 = g_settings.oldTaskbarOnWin11;
 
@@ -5305,8 +5318,12 @@ BOOL Wh_ModSettingsChanged(BOOL* bReload) {
     }
 
     WebContentUpdateThreadInit();
-    DataCollectionSessionInit();
-    MediaSessionInit();
+
+    {
+        std::lock_guard<std::mutex> guard(g_formatLineMutex);
+        DataCollectionSessionInit();
+        MediaSessionInit();
+    }
 
     ApplySettings();
 
