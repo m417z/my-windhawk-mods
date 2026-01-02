@@ -5184,3 +5184,23 @@ BOOL Wh_ModSettingsChanged(BOOL* bReload) {
 
     return TRUE;
 }
+
+BOOL WINAPI DllMain(HINSTANCE hinstDLL, DWORD fdwReason, LPVOID lpReserved) {
+    switch (fdwReason) {
+        case DLL_PROCESS_ATTACH:
+        case DLL_THREAD_ATTACH:
+        case DLL_THREAD_DETACH:
+            break;
+
+        case DLL_PROCESS_DETACH:
+            // Do not release media-related objects if process termination
+            // scenario, as it can lead to hangs.
+            if (lpReserved) {
+                winrt::detach_abi(g_mediaSessionManager);
+                winrt::detach_abi(g_mediaCurrentSession);
+            }
+            break;
+    }
+
+    return TRUE;
+}
