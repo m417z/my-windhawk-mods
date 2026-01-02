@@ -462,6 +462,7 @@ using WindhawkUtils::StringSetting;
 #include <regex>
 #include <string>
 #include <string_view>
+#include <unordered_set>
 #include <vector>
 
 using namespace std::string_view_literals;
@@ -1821,324 +1822,422 @@ class QueryDataCollectionSession {
 
     ~QueryDataCollectionSession() { PdhCloseQuery(query_); }
 
-    bool AddMetric(MetricType type) {
-        PCWSTR counter_path;
-        bool is_wildcard = false;
-        PCWSTR adapter_name = nullptr;
-
-        switch (type) {
-            case MetricType::kDownloadSpeed:
-                counter_path = L"\\Network Interface(*)\\Bytes Received/sec";
-                is_wildcard = true;
-                adapter_name = g_settings.dataCollection.networkAdapterName;
-                break;
-            case MetricType::kUploadSpeed:
-                counter_path = L"\\Network Interface(*)\\Bytes Sent/sec";
-                is_wildcard = true;
-                adapter_name = g_settings.dataCollection.networkAdapterName;
-                break;
-            case MetricType::kDiskReadSpeed:
-                counter_path = L"\\PhysicalDisk(_Total)\\Disk Read Bytes/sec";
-                break;
-            case MetricType::kDiskWriteSpeed:
-                counter_path = L"\\PhysicalDisk(_Total)\\Disk Write Bytes/sec";
-                break;
-            case MetricType::kCpu:
-                counter_path =
-                    L"\\Processor Information(_Total)\\% Processor Utility";
-                break;
-            case MetricType::kGpuUsage:
-                counter_path = L"\\GPU Engine(*)\\Utilization Percentage";
-                is_wildcard = true;
-                adapter_name = g_settings.dataCollection.gpuAdapterName;
-                break;
-            default:
-                return false;
-        }
-
-        auto& metric = metrics_[static_cast<int>(type)];
-        if (!metric.counters.empty()) {
-            return false;
-        }
-
-        if (is_wildcard) {
-            auto paths = ExpandEnglishWildcard(counter_path);
-
-            // Filter paths by adapter name if specified.
-            if (adapter_name && *adapter_name && !paths.empty()) {
-                if (type == MetricType::kGpuUsage) {
-                    paths = FilterGpuPathsByAdapterName(paths, adapter_name);
-                } else {
-                    paths =
-                        FilterNetworkPathsByAdapterName(paths, adapter_name);
-                }
-            }
-
-            for (const auto& path : paths) {
-                PDH_HCOUNTER counter;
-                HRESULT hr = PdhAddCounter(query_, path.c_str(), 0, &counter);
-                if (SUCCEEDED(hr)) {
-                    metric.counters.push_back(counter);
-                } else {
-                    Wh_Log(L"PdhAddCounter error %08X", hr);
-                }
-            }
-        } else {
-            PDH_HCOUNTER counter;
-            HRESULT hr =
-                PdhAddEnglishCounter(query_, counter_path, 0, &counter);
-            if (SUCCEEDED(hr)) {
-                metric.counters.push_back(counter);
-            } else {
-                Wh_Log(L"PdhAddEnglishCounter error %08X", hr);
-            }
-        }
-
-        return !metric.counters.empty();
-    }
-
-    bool SampleData() {
-        HRESULT hr = PdhCollectQueryData(query_);
-        if (FAILED(hr)) {
-            Wh_Log(L"PdhCollectQueryData error %08X", hr);
-            return false;
-        }
-
-        return true;
-    }
-
-    std::optional<double> QueryData(MetricType type) {
-        const auto& metric = metrics_[static_cast<int>(type)];
-
-        if (metric.counters.empty()) {
-            return std::nullopt;
-        }
-
-        double sum = 0.0;
-        for (auto counter : metric.counters) {
-            PDH_FMT_COUNTERVALUE val;
-            HRESULT hr = PdhGetFormattedCounterValue(counter, PDH_FMT_DOUBLE,
-                                                     nullptr, &val);
-            if (SUCCEEDED(hr)) {
-                sum += val.doubleValue;
-            } else {
-                Wh_Log(L"PdhGetFormattedCounterValue error %08X", hr);
-            }
-        }
-
-        return sum;
-    }
+    bool AddMetric(MetricType type);
+    void UpdateMetric(MetricType type);
+    bool SampleData();
+    std::optional<double> QueryData(MetricType type);
 
    private:
-    // Implemented according to the note here:
-    // https://learn.microsoft.com/en-us/windows/win32/api/pdh/nf-pdh-pdhaddenglishcounterw
-    std::vector<std::wstring> ExpandEnglishWildcard(PCWSTR wildcard_path) {
-        // Step 1: Add English counter with wildcards to get localized path.
-        PDH_HCOUNTER temp_counter;
-        HRESULT hr =
-            PdhAddEnglishCounter(query_, wildcard_path, 0, &temp_counter);
-        if (FAILED(hr)) {
-            Wh_Log(L"PdhAddEnglishCounter error %08X", hr);
-            return {};
-        }
-
-        // Step 2: Get counter info to obtain localized full path.
-        DWORD required = 0;
-        hr = PdhGetCounterInfo(temp_counter, FALSE, &required, nullptr);
-        if (FAILED(hr) && hr != static_cast<HRESULT>(PDH_MORE_DATA)) {
-            Wh_Log(L"PdhGetCounterInfo (size) error %08X", hr);
-            PdhRemoveCounter(temp_counter);
-            return {};
-        }
-
-        if (required == 0) {
-            PdhRemoveCounter(temp_counter);
-            return {};
-        }
-
-        std::vector<BYTE> counter_info_buffer(required);
-        PDH_COUNTER_INFO* counter_info =
-            reinterpret_cast<PDH_COUNTER_INFO*>(counter_info_buffer.data());
-
-        hr = PdhGetCounterInfo(temp_counter, FALSE, &required, counter_info);
-        PdhRemoveCounter(temp_counter);
-        if (FAILED(hr)) {
-            Wh_Log(L"PdhGetCounterInfo error %08X", hr);
-            return {};
-        }
-
-        // Step 3: Expand wildcards using the localized path.
-        required = 0;
-        hr = PdhExpandWildCardPath(nullptr, counter_info->szFullPath, nullptr,
-                                   &required, 0);
-        if (FAILED(hr) && hr != static_cast<HRESULT>(PDH_MORE_DATA)) {
-            Wh_Log(L"PdhExpandWildCardPath (localized, size) error %08X", hr);
-            return {};
-        }
-
-        if (required == 0) {
-            return {};
-        }
-
-        std::vector<WCHAR> path_buffer(required);
-        hr = PdhExpandWildCardPath(nullptr, counter_info->szFullPath,
-                                   path_buffer.data(), &required, 0);
-        if (FAILED(hr)) {
-            Wh_Log(L"PdhExpandWildCardPath (localized) error %08X", hr);
-            return {};
-        }
-
-        std::vector<std::wstring> out_paths;
-        WCHAR* p = path_buffer.data();
-        while (*p) {
-            Wh_Log(L"Expanded localized path: %s", p);
-            out_paths.emplace_back(p);
-            p += wcslen(p) + 1;
-        }
-        return out_paths;
-    }
-
-    // Extract the instance name from a PDH counter path.
-    // E.g., "\Network Interface(Intel...)\Bytes Received/sec" -> "Intel..."
-    static std::wstring_view ExtractInstanceName(std::wstring_view path) {
-        auto start = path.find(L'(');
-        if (start == std::wstring_view::npos) {
-            return {};
-        }
-        auto end = path.rfind(L')');
-        if (end == std::wstring_view::npos || end <= start) {
-            return {};
-        }
-        return path.substr(start + 1, end - start - 1);
-    }
-
-    // Extract the LUID from a GPU Engine instance name.
-    // E.g., "pid_1234_luid_0x00000000_0x0000ABCD_phys_0_eng_0_engtype_3D"
-    //       -> "0x00000000_0x0000ABCD"
-    static std::wstring_view ExtractGpuLuid(std::wstring_view instance) {
-        auto luid_pos = instance.find(L"luid_");
-        if (luid_pos == std::wstring_view::npos) {
-            return {};
-        }
-        auto luid_start = luid_pos + 5;  // Skip "luid_"
-        auto phys_pos = instance.find(L"_phys_", luid_start);
-        if (phys_pos == std::wstring_view::npos) {
-            return {};
-        }
-        return instance.substr(luid_start, phys_pos - luid_start);
-    }
-
-    // Filter network paths by adapter name (substring match).
+    std::vector<std::wstring> ExpandEnglishWildcard(PCWSTR wildcard_path);
+    static std::wstring_view ExtractInstanceName(std::wstring_view path);
+    static std::wstring_view ExtractGpuLuid(std::wstring_view instance);
     static std::vector<std::wstring> FilterNetworkPathsByAdapterName(
         const std::vector<std::wstring>& paths,
-        PCWSTR adapter_name) {
-        Wh_Log(L"Filtering network adapters by name: %s", adapter_name);
-
-        std::vector<std::wstring> filtered;
-        for (const auto& path : paths) {
-            std::wstring_view instance = ExtractInstanceName(path);
-            if (instance.empty()) {
-                continue;
-            }
-
-            if (instance.find(adapter_name) != std::wstring_view::npos) {
-                Wh_Log(L"Matched network adapter: %.*s",
-                       static_cast<int>(instance.size()), instance.data());
-                filtered.push_back(path);
-            }
-        }
-
-        if (filtered.empty()) {
-            Wh_Log(L"No network adapters matched");
-            return {};
-        }
-
-        return filtered;
-    }
-
-    // Get the LUID for a GPU adapter by name using DXGI.
-    static std::wstring GetGpuLuidByName(PCWSTR gpu_name) {
-        winrt::com_ptr<IDXGIFactory> factory;
-        if (FAILED(CreateDXGIFactory(IID_PPV_ARGS(factory.put())))) {
-            return {};
-        }
-
-        for (UINT i = 0;; i++) {
-            winrt::com_ptr<IDXGIAdapter> adapter;
-            if (factory->EnumAdapters(i, adapter.put()) ==
-                DXGI_ERROR_NOT_FOUND) {
-                break;
-            }
-
-            DXGI_ADAPTER_DESC desc{};
-            if (FAILED(adapter->GetDesc(&desc))) {
-                continue;
-            }
-
-            Wh_Log(L"DXGI adapter %u: %s (LUID: 0x%08X_0x%08X)", i,
-                   desc.Description, desc.AdapterLuid.HighPart,
-                   desc.AdapterLuid.LowPart);
-
-            if (wcsstr(desc.Description, gpu_name)) {
-                WCHAR luid_str[32];
-                swprintf_s(luid_str, L"0x%08X_0x%08X",
-                           desc.AdapterLuid.HighPart, desc.AdapterLuid.LowPart);
-                Wh_Log(L"Matched GPU: %s -> LUID %s", desc.Description,
-                       luid_str);
-                return luid_str;
-            }
-        }
-
-        return {};
-    }
-
-    // Filter GPU paths by adapter name (uses DXGI to map name to LUID).
+        PCWSTR adapter_name);
+    static std::wstring GetGpuLuidByName(PCWSTR gpu_name);
     static std::vector<std::wstring> FilterGpuPathsByAdapterName(
         const std::vector<std::wstring>& paths,
-        PCWSTR gpu_name) {
-        Wh_Log(L"Filtering GPU adapters by name: %s", gpu_name);
+        PCWSTR gpu_name);
 
-        // Get the LUID for the GPU name.
-        std::wstring target_luid = GetGpuLuidByName(gpu_name);
-        if (target_luid.empty()) {
-            Wh_Log(L"GPU not found by name");
-            return {};
-        }
+    std::vector<std::wstring> ExpandAndFilterWildcardPaths(
+        MetricType type,
+        PCWSTR counter_path,
+        PCWSTR adapter_name) {
+        auto paths = ExpandEnglishWildcard(counter_path);
 
-        std::vector<std::wstring> filtered;
-        for (const auto& path : paths) {
-            std::wstring_view instance = ExtractInstanceName(path);
-            if (instance.empty()) {
-                continue;
-            }
-
-            auto luid = ExtractGpuLuid(instance);
-            if (luid.empty()) {
-                continue;
-            }
-
-            if (_wcsicmp(std::wstring(luid).c_str(), target_luid.c_str()) ==
-                0) {
-                filtered.push_back(path);
+        // Filter paths by adapter name if specified.
+        if (adapter_name && *adapter_name && !paths.empty()) {
+            if (type == MetricType::kGpuUsage) {
+                paths = FilterGpuPathsByAdapterName(paths, adapter_name);
+            } else {
+                paths = FilterNetworkPathsByAdapterName(paths, adapter_name);
             }
         }
 
-        if (filtered.empty()) {
-            Wh_Log(L"No GPU paths matched LUID %s", target_luid.c_str());
-            return {};
-        }
-
-        Wh_Log(L"Filtered to %zu GPU paths", filtered.size());
-        return filtered;
+        return paths;
     }
 
+    struct CounterEntry {
+        std::wstring path;
+        PDH_HCOUNTER counter;
+    };
+
     struct MetricData {
-        std::vector<PDH_HCOUNTER> counters;
+        std::vector<CounterEntry> counters;
+        bool is_wildcard = false;
+        PCWSTR adapter_name = nullptr;
     };
 
     PDH_HQUERY query_;
     MetricData metrics_[static_cast<int>(MetricType::kCount)];
 };
+
+bool QueryDataCollectionSession::AddMetric(MetricType type) {
+    PCWSTR counter_path;
+    bool is_wildcard = false;
+    PCWSTR adapter_name = nullptr;
+
+    switch (type) {
+        case MetricType::kDownloadSpeed:
+            counter_path = L"\\Network Interface(*)\\Bytes Received/sec";
+            is_wildcard = true;
+            adapter_name = g_settings.dataCollection.networkAdapterName;
+            break;
+        case MetricType::kUploadSpeed:
+            counter_path = L"\\Network Interface(*)\\Bytes Sent/sec";
+            is_wildcard = true;
+            adapter_name = g_settings.dataCollection.networkAdapterName;
+            break;
+        case MetricType::kDiskReadSpeed:
+            counter_path = L"\\PhysicalDisk(_Total)\\Disk Read Bytes/sec";
+            break;
+        case MetricType::kDiskWriteSpeed:
+            counter_path = L"\\PhysicalDisk(_Total)\\Disk Write Bytes/sec";
+            break;
+        case MetricType::kCpu:
+            counter_path =
+                L"\\Processor Information(_Total)\\% Processor Utility";
+            break;
+        case MetricType::kGpuUsage:
+            counter_path = L"\\GPU Engine(*)\\Utilization Percentage";
+            is_wildcard = true;
+            adapter_name = g_settings.dataCollection.gpuAdapterName;
+            break;
+        default:
+            return false;
+    }
+
+    auto& metric = metrics_[static_cast<int>(type)];
+    if (!metric.counters.empty()) {
+        return false;
+    }
+
+    metric.is_wildcard = is_wildcard;
+    metric.adapter_name = adapter_name;
+
+    if (is_wildcard) {
+        auto paths =
+            ExpandAndFilterWildcardPaths(type, counter_path, adapter_name);
+
+        for (const auto& path : paths) {
+            PDH_HCOUNTER counter;
+            HRESULT hr = PdhAddCounter(query_, path.c_str(), 0, &counter);
+            if (SUCCEEDED(hr)) {
+                metric.counters.push_back({path, counter});
+            } else {
+                Wh_Log(L"PdhAddCounter error %08X", hr);
+            }
+        }
+    } else {
+        PDH_HCOUNTER counter;
+        HRESULT hr = PdhAddEnglishCounter(query_, counter_path, 0, &counter);
+        if (SUCCEEDED(hr)) {
+            metric.counters.push_back({counter_path, counter});
+        } else {
+            Wh_Log(L"PdhAddEnglishCounter error %08X", hr);
+        }
+    }
+
+    return !metric.counters.empty();
+}
+
+void QueryDataCollectionSession::UpdateMetric(MetricType type) {
+    auto& metric = metrics_[static_cast<int>(type)];
+
+    if (!metric.is_wildcard) {
+        return;
+    }
+
+    PCWSTR counter_path;
+    switch (type) {
+        case MetricType::kDownloadSpeed:
+            counter_path = L"\\Network Interface(*)\\Bytes Received/sec";
+            break;
+        case MetricType::kUploadSpeed:
+            counter_path = L"\\Network Interface(*)\\Bytes Sent/sec";
+            break;
+        case MetricType::kGpuUsage:
+            counter_path = L"\\GPU Engine(*)\\Utilization Percentage";
+            break;
+        default:
+            return;
+    }
+
+    auto current_paths =
+        ExpandAndFilterWildcardPaths(type, counter_path, metric.adapter_name);
+
+    // Build a set of current paths for quick lookup.
+    std::unordered_set<std::wstring> current_path_set(current_paths.begin(),
+                                                      current_paths.end());
+
+    // Remove counters that are no longer valid.
+    for (auto it = metric.counters.begin(); it != metric.counters.end();) {
+        if (current_path_set.find(it->path) == current_path_set.end()) {
+            Wh_Log(L"Removing outdated counter: %s", it->path.c_str());
+            PdhRemoveCounter(it->counter);
+            it = metric.counters.erase(it);
+        } else {
+            ++it;
+        }
+    }
+
+    // Build a set of existing paths.
+    std::unordered_set<std::wstring> existing_paths;
+    for (const auto& entry : metric.counters) {
+        existing_paths.insert(entry.path);
+    }
+
+    // Add new counters.
+    for (const auto& path : current_paths) {
+        if (existing_paths.find(path) == existing_paths.end()) {
+            PDH_HCOUNTER counter;
+            HRESULT hr = PdhAddCounter(query_, path.c_str(), 0, &counter);
+            if (SUCCEEDED(hr)) {
+                Wh_Log(L"Adding new counter: %s", path.c_str());
+                metric.counters.push_back({path, counter});
+            } else {
+                Wh_Log(L"PdhAddCounter error %08X for %s", hr, path.c_str());
+            }
+        }
+    }
+}
+
+bool QueryDataCollectionSession::SampleData() {
+    HRESULT hr = PdhCollectQueryData(query_);
+    if (FAILED(hr)) {
+        Wh_Log(L"PdhCollectQueryData error %08X", hr);
+        return false;
+    }
+
+    return true;
+}
+
+std::optional<double> QueryDataCollectionSession::QueryData(MetricType type) {
+    UpdateMetric(type);
+
+    const auto& metric = metrics_[static_cast<int>(type)];
+
+    if (metric.counters.empty()) {
+        return std::nullopt;
+    }
+
+    double sum = 0.0;
+    for (const auto& entry : metric.counters) {
+        PDH_FMT_COUNTERVALUE val;
+        HRESULT hr = PdhGetFormattedCounterValue(entry.counter, PDH_FMT_DOUBLE,
+                                                 nullptr, &val);
+        if (SUCCEEDED(hr)) {
+            sum += val.doubleValue;
+        } else {
+            Wh_Log(L"PdhGetFormattedCounterValue error %08X", hr);
+        }
+    }
+
+    return sum;
+}
+
+// Implemented according to the note here:
+// https://learn.microsoft.com/en-us/windows/win32/api/pdh/nf-pdh-pdhaddenglishcounterw
+std::vector<std::wstring> QueryDataCollectionSession::ExpandEnglishWildcard(
+    PCWSTR wildcard_path) {
+    // Step 1: Add English counter with wildcards to get localized path.
+    PDH_HCOUNTER temp_counter;
+    HRESULT hr = PdhAddEnglishCounter(query_, wildcard_path, 0, &temp_counter);
+    if (FAILED(hr)) {
+        Wh_Log(L"PdhAddEnglishCounter error %08X", hr);
+        return {};
+    }
+
+    // Step 2: Get counter info to obtain localized full path.
+    DWORD required = 0;
+    hr = PdhGetCounterInfo(temp_counter, FALSE, &required, nullptr);
+    if (FAILED(hr) && hr != static_cast<HRESULT>(PDH_MORE_DATA)) {
+        Wh_Log(L"PdhGetCounterInfo (size) error %08X", hr);
+        PdhRemoveCounter(temp_counter);
+        return {};
+    }
+
+    if (required == 0) {
+        PdhRemoveCounter(temp_counter);
+        return {};
+    }
+
+    std::vector<BYTE> counter_info_buffer(required);
+    PDH_COUNTER_INFO* counter_info =
+        reinterpret_cast<PDH_COUNTER_INFO*>(counter_info_buffer.data());
+
+    hr = PdhGetCounterInfo(temp_counter, FALSE, &required, counter_info);
+    PdhRemoveCounter(temp_counter);
+    if (FAILED(hr)) {
+        Wh_Log(L"PdhGetCounterInfo error %08X", hr);
+        return {};
+    }
+
+    // Step 3: Expand wildcards using the localized path.
+    required = 0;
+    hr = PdhExpandWildCardPath(nullptr, counter_info->szFullPath, nullptr,
+                               &required, 0);
+    if (FAILED(hr) && hr != static_cast<HRESULT>(PDH_MORE_DATA)) {
+        Wh_Log(L"PdhExpandWildCardPath (localized, size) error %08X", hr);
+        return {};
+    }
+
+    if (required == 0) {
+        return {};
+    }
+
+    std::vector<WCHAR> path_buffer(required);
+    hr = PdhExpandWildCardPath(nullptr, counter_info->szFullPath,
+                               path_buffer.data(), &required, 0);
+    if (FAILED(hr)) {
+        Wh_Log(L"PdhExpandWildCardPath (localized) error %08X", hr);
+        return {};
+    }
+
+    std::vector<std::wstring> out_paths;
+    WCHAR* p = path_buffer.data();
+    while (*p) {
+        Wh_Log(L"Expanded localized path: %s", p);
+        out_paths.emplace_back(p);
+        p += wcslen(p) + 1;
+    }
+    return out_paths;
+}
+
+// Extract the instance name from a PDH counter path.
+// E.g., "\Network Interface(Intel...)\Bytes Received/sec" -> "Intel..."
+std::wstring_view QueryDataCollectionSession::ExtractInstanceName(
+    std::wstring_view path) {
+    auto start = path.find(L'(');
+    if (start == std::wstring_view::npos) {
+        return {};
+    }
+    auto end = path.rfind(L')');
+    if (end == std::wstring_view::npos || end <= start) {
+        return {};
+    }
+    return path.substr(start + 1, end - start - 1);
+}
+
+// Extract the LUID from a GPU Engine instance name.
+// E.g., "pid_1234_luid_0x00000000_0x0000ABCD_phys_0_eng_0_engtype_3D"
+//       -> "0x00000000_0x0000ABCD"
+std::wstring_view QueryDataCollectionSession::ExtractGpuLuid(
+    std::wstring_view instance) {
+    auto luid_pos = instance.find(L"luid_");
+    if (luid_pos == std::wstring_view::npos) {
+        return {};
+    }
+    auto luid_start = luid_pos + 5;  // Skip "luid_"
+    auto phys_pos = instance.find(L"_phys_", luid_start);
+    if (phys_pos == std::wstring_view::npos) {
+        return {};
+    }
+    return instance.substr(luid_start, phys_pos - luid_start);
+}
+
+// Filter network paths by adapter name (substring match).
+std::vector<std::wstring>
+QueryDataCollectionSession::FilterNetworkPathsByAdapterName(
+    const std::vector<std::wstring>& paths,
+    PCWSTR adapter_name) {
+    Wh_Log(L"Filtering network adapters by name: %s", adapter_name);
+
+    std::vector<std::wstring> filtered;
+    for (const auto& path : paths) {
+        std::wstring_view instance = ExtractInstanceName(path);
+        if (instance.empty()) {
+            continue;
+        }
+
+        if (instance.find(adapter_name) != std::wstring_view::npos) {
+            Wh_Log(L"Matched network adapter: %.*s",
+                   static_cast<int>(instance.size()), instance.data());
+            filtered.push_back(path);
+        }
+    }
+
+    if (filtered.empty()) {
+        Wh_Log(L"No network adapters matched");
+        return {};
+    }
+
+    return filtered;
+}
+
+// Get the LUID for a GPU adapter by name using DXGI.
+std::wstring QueryDataCollectionSession::GetGpuLuidByName(PCWSTR gpu_name) {
+    winrt::com_ptr<IDXGIFactory> factory;
+    if (FAILED(CreateDXGIFactory(IID_PPV_ARGS(factory.put())))) {
+        return {};
+    }
+
+    for (UINT i = 0;; i++) {
+        winrt::com_ptr<IDXGIAdapter> adapter;
+        if (factory->EnumAdapters(i, adapter.put()) == DXGI_ERROR_NOT_FOUND) {
+            break;
+        }
+
+        DXGI_ADAPTER_DESC desc{};
+        if (FAILED(adapter->GetDesc(&desc))) {
+            continue;
+        }
+
+        Wh_Log(L"DXGI adapter %u: %s (LUID: 0x%08X_0x%08X)", i,
+               desc.Description, desc.AdapterLuid.HighPart,
+               desc.AdapterLuid.LowPart);
+
+        if (wcsstr(desc.Description, gpu_name)) {
+            WCHAR luid_str[32];
+            swprintf_s(luid_str, L"0x%08X_0x%08X", desc.AdapterLuid.HighPart,
+                       desc.AdapterLuid.LowPart);
+            Wh_Log(L"Matched GPU: %s -> LUID %s", desc.Description, luid_str);
+            return luid_str;
+        }
+    }
+
+    return {};
+}
+
+// Filter GPU paths by adapter name (uses DXGI to map name to LUID).
+std::vector<std::wstring>
+QueryDataCollectionSession::FilterGpuPathsByAdapterName(
+    const std::vector<std::wstring>& paths,
+    PCWSTR gpu_name) {
+    Wh_Log(L"Filtering GPU adapters by name: %s", gpu_name);
+
+    // Get the LUID for the GPU name.
+    std::wstring target_luid = GetGpuLuidByName(gpu_name);
+    if (target_luid.empty()) {
+        Wh_Log(L"GPU not found by name");
+        return {};
+    }
+
+    std::vector<std::wstring> filtered;
+    for (const auto& path : paths) {
+        std::wstring_view instance = ExtractInstanceName(path);
+        if (instance.empty()) {
+            continue;
+        }
+
+        auto luid = ExtractGpuLuid(instance);
+        if (luid.empty()) {
+            continue;
+        }
+
+        if (_wcsicmp(std::wstring(luid).c_str(), target_luid.c_str()) == 0) {
+            filtered.push_back(path);
+        }
+    }
+
+    if (filtered.empty()) {
+        Wh_Log(L"No GPU paths matched LUID %s", target_luid.c_str());
+        return {};
+    }
+
+    Wh_Log(L"Filtered to %zu GPU paths", filtered.size());
+    return filtered;
+}
 
 std::optional<QueryDataCollectionSession> g_dataCollectionSession;
 DWORD g_dataCollectionLastFormatIndex;
