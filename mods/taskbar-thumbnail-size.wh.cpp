@@ -29,7 +29,8 @@ Customize the size of the new taskbar thumbnails in Windows 11.
 By default, this mod uses simple percentage-based scaling. You can optionally
 enable absolute sizing mode to set specific pixel dimensions for thumbnails.
 
-For older Windows versions, the size of taskbar thumbnails can be changed via the registry:
+For older Windows versions, the size of taskbar thumbnails can be changed via
+the registry:
 
 * [Change Size of Taskbar Thumbnail Previews in Windows
   11](https://www.elevenforum.com/t/change-size-of-taskbar-thumbnail-previews-in-windows-11.6340/)
@@ -45,7 +46,8 @@ For older Windows versions, the size of taskbar thumbnails can be changed via th
 /*
 - size: 150
   $name: Thumbnail size (percentage)
-  $description: Percentage of the original size. Used when absolute sizing is disabled.
+  $description: >-
+    Percentage of the original size. Used when absolute sizing is disabled.
 - useAbsoluteSize: false
   $name: Use absolute sizing
   $description: >-
@@ -132,7 +134,9 @@ ThumbnailHelpers_GetScaledThumbnailSize_Hook(
 
     float currentWidth = originalResult->Width;
     float currentHeight = originalResult->Height;
-    float aspectRatio = (currentWidth > 0) ? (currentHeight / currentWidth) : 1.0f;
+    float aspectRatio = (currentWidth > 0 && currentHeight > 0)
+                            ? (currentHeight / currentWidth)
+                            : 1.0f;
 
     float targetWidth = currentWidth;
     float targetHeight = currentHeight;
