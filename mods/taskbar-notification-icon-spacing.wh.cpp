@@ -53,6 +53,33 @@ versions check out [7+ Taskbar Tweaker](https://tweaker.ramensoftware.com/).
   $name: Tray icon rows
   $description: >-
     Allows having a grid of tray icons
+- gridArrangement: columnFirstTopToBottom
+  $name: Grid arrangement
+  $description: >-
+    The order in which tray icons are arranged when using multiple rows.
+    Column-first fills each column before moving to the next. Row-first fills
+    each row before moving to the next. Examples with icons A-G and 2 rows:
+
+      Column-first, top-to-bottom:
+        A C E G
+        B D F
+
+      Row-first, left-to-right:
+        A B C D
+        E F G
+
+      Column-first, bottom-to-top:
+        B D F
+        A C E G
+
+      Row-first, bottom row first:
+        E F G
+        A B C D
+  $options:
+  - columnFirstTopToBottom: Column-first, top-to-bottom
+  - rowFirstLeftToRight: Row-first, left-to-right
+  - columnFirstBottomToTop: Column-first, bottom-to-top
+  - rowFirstBottomRowFirst: Row-first, bottom row first
 - overflowIconWidth: 32
   $name: Tray overflow icon width
   $description: >-
@@ -84,9 +111,17 @@ versions check out [7+ Taskbar Tweaker](https://tweaker.ramensoftware.com/).
 
 using namespace winrt::Windows::UI::Xaml;
 
+enum class GridArrangement {
+    columnFirstTopToBottom,
+    rowFirstLeftToRight,
+    columnFirstBottomToTop,
+    rowFirstBottomRowFirst,
+};
+
 struct {
     int notificationIconWidth;
     int notificationIconRows;
+    GridArrangement gridArrangement;
     int overflowIconWidth;
     int overflowIconsPerRow;
 } g_settings;
@@ -270,8 +305,16 @@ void ApplyNotifyIconsStackPanelGridStyle(FrameworkElement stackPanel,
         itemHeight = 16 + gapPerItemEven;
     }
 
+    // Count children first for row-first arrangements.
+    int childCount = Media::VisualTreeHelper::GetChildrenCount(stackPanel);
+    int cols = (childCount + rows - 1) / rows;
+
+    GridArrangement arrangement = g_unloading
+                                      ? GridArrangement::columnFirstTopToBottom
+                                      : g_settings.gridArrangement;
+
     int indexIter = 0;
-    EnumChildElements(stackPanel, [width, rows, itemHeight,
+    EnumChildElements(stackPanel, [width, rows, itemHeight, cols, arrangement,
                                    &indexIter](FrameworkElement child) {
         int index = indexIter++;
 
@@ -285,13 +328,32 @@ void ApplyNotifyIconsStackPanelGridStyle(FrameworkElement stackPanel,
         if (rows > 1) {
             child.Height(itemHeight);
 
+            int col, row;
+            switch (arrangement) {
+                case GridArrangement::columnFirstTopToBottom:
+                    col = index / rows;
+                    row = index % rows;
+                    break;
+                case GridArrangement::rowFirstLeftToRight:
+                    col = index % cols;
+                    row = index / cols;
+                    break;
+                case GridArrangement::columnFirstBottomToTop:
+                    col = index / rows;
+                    row = (rows - 1) - (index % rows);
+                    break;
+                case GridArrangement::rowFirstBottomRowFirst:
+                    col = index % cols;
+                    row = (rows - 1) - (index / cols);
+                    break;
+            }
+
             Media::TranslateTransform transform;
 
-            int xOffset = width * (-index + index / rows);
+            int xOffset = width * (col - index);
             transform.X(xOffset);
 
-            double yOffset =
-                itemHeight * (index % rows) - itemHeight * (rows - 1) / 2;
+            double yOffset = itemHeight * row - itemHeight * (rows - 1) / 2;
             transform.Y(yOffset);
 
             child.RenderTransform(transform);
@@ -842,6 +904,18 @@ void LoadSettings() {
         std::max(Wh_GetIntSetting(L"notificationIconWidth"), 1);
     g_settings.notificationIconRows =
         std::max(Wh_GetIntSetting(L"notificationIconRows"), 1);
+
+    PCWSTR gridArrangement = Wh_GetStringSetting(L"gridArrangement");
+    g_settings.gridArrangement = GridArrangement::columnFirstTopToBottom;
+    if (wcscmp(gridArrangement, L"rowFirstLeftToRight") == 0) {
+        g_settings.gridArrangement = GridArrangement::rowFirstLeftToRight;
+    } else if (wcscmp(gridArrangement, L"columnFirstBottomToTop") == 0) {
+        g_settings.gridArrangement = GridArrangement::columnFirstBottomToTop;
+    } else if (wcscmp(gridArrangement, L"rowFirstBottomRowFirst") == 0) {
+        g_settings.gridArrangement = GridArrangement::rowFirstBottomRowFirst;
+    }
+    Wh_FreeStringSetting(gridArrangement);
+
     g_settings.overflowIconWidth =
         std::max(Wh_GetIntSetting(L"overflowIconWidth"), 1);
     g_settings.overflowIconsPerRow =
