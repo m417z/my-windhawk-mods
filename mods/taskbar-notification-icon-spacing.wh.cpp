@@ -2,7 +2,7 @@
 // @id              taskbar-notification-icon-spacing
 // @name            Taskbar tray icon spacing and grid
 // @description     Reduce or increase the spacing between tray icons on the taskbar, optionally have a grid of tray icons (Windows 11 only)
-// @version         1.2
+// @version         1.3
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
@@ -53,33 +53,34 @@ versions check out [7+ Taskbar Tweaker](https://tweaker.ramensoftware.com/).
   $name: Tray icon rows
   $description: >-
     Allows having a grid of tray icons
-- gridArrangement: columnFirstTopToBottom
+- gridArrangement: rowFirstLeftToRight
   $name: Grid arrangement
   $description: >-
     The order in which tray icons are arranged when using multiple rows.
-    Column-first fills each column before moving to the next. Row-first fills
-    each row before moving to the next. Examples with icons A-G and 2 rows:
-
-      Column-first, top-to-bottom:
-        A C E G
-        B D F
+    Row-first fills each row before moving to the next.
+    Column-first fills each column before moving to the next.
+    Examples with icons A-G and 2 rows:
 
       Row-first, left-to-right:
         A B C D
         E F G
 
-      Column-first, bottom-to-top:
-        B D F
+      Column-first, top-to-bottom:
         A C E G
+        B D F
 
       Row-first, bottom row first:
         E F G
         A B C D
+
+      Column-first, bottom-to-top:
+        B D F
+        A C E G
   $options:
-  - columnFirstTopToBottom: Column-first, top-to-bottom
   - rowFirstLeftToRight: Row-first, left-to-right
-  - columnFirstBottomToTop: Column-first, bottom-to-top
+  - columnFirstTopToBottom: Column-first, top-to-bottom
   - rowFirstBottomRowFirst: Row-first, bottom row first
+  - columnFirstBottomToTop: Column-first, bottom-to-top
 - overflowIconWidth: 32
   $name: Tray overflow icon width
   $description: >-
@@ -112,10 +113,10 @@ versions check out [7+ Taskbar Tweaker](https://tweaker.ramensoftware.com/).
 using namespace winrt::Windows::UI::Xaml;
 
 enum class GridArrangement {
-    columnFirstTopToBottom,
     rowFirstLeftToRight,
-    columnFirstBottomToTop,
+    columnFirstTopToBottom,
     rowFirstBottomRowFirst,
+    columnFirstBottomToTop,
 };
 
 struct {
@@ -309,9 +310,7 @@ void ApplyNotifyIconsStackPanelGridStyle(FrameworkElement stackPanel,
     int childCount = Media::VisualTreeHelper::GetChildrenCount(stackPanel);
     int cols = (childCount + rows - 1) / rows;
 
-    GridArrangement arrangement = g_unloading
-                                      ? GridArrangement::columnFirstTopToBottom
-                                      : g_settings.gridArrangement;
+    GridArrangement arrangement = g_settings.gridArrangement;
 
     int indexIter = 0;
     EnumChildElements(stackPanel, [width, rows, itemHeight, cols, arrangement,
@@ -330,21 +329,21 @@ void ApplyNotifyIconsStackPanelGridStyle(FrameworkElement stackPanel,
 
             int col, row;
             switch (arrangement) {
-                case GridArrangement::columnFirstTopToBottom:
-                    col = index / rows;
-                    row = index % rows;
-                    break;
                 case GridArrangement::rowFirstLeftToRight:
                     col = index % cols;
                     row = index / cols;
                     break;
-                case GridArrangement::columnFirstBottomToTop:
+                case GridArrangement::columnFirstTopToBottom:
                     col = index / rows;
-                    row = (rows - 1) - (index % rows);
+                    row = index % rows;
                     break;
                 case GridArrangement::rowFirstBottomRowFirst:
                     col = index % cols;
                     row = (rows - 1) - (index / cols);
+                    break;
+                case GridArrangement::columnFirstBottomToTop:
+                    col = index / rows;
+                    row = (rows - 1) - (index % rows);
                     break;
             }
 
@@ -906,13 +905,13 @@ void LoadSettings() {
         std::max(Wh_GetIntSetting(L"notificationIconRows"), 1);
 
     PCWSTR gridArrangement = Wh_GetStringSetting(L"gridArrangement");
-    g_settings.gridArrangement = GridArrangement::columnFirstTopToBottom;
-    if (wcscmp(gridArrangement, L"rowFirstLeftToRight") == 0) {
-        g_settings.gridArrangement = GridArrangement::rowFirstLeftToRight;
-    } else if (wcscmp(gridArrangement, L"columnFirstBottomToTop") == 0) {
-        g_settings.gridArrangement = GridArrangement::columnFirstBottomToTop;
+    g_settings.gridArrangement = GridArrangement::rowFirstLeftToRight;
+    if (wcscmp(gridArrangement, L"columnFirstTopToBottom") == 0) {
+        g_settings.gridArrangement = GridArrangement::columnFirstTopToBottom;
     } else if (wcscmp(gridArrangement, L"rowFirstBottomRowFirst") == 0) {
         g_settings.gridArrangement = GridArrangement::rowFirstBottomRowFirst;
+    } else if (wcscmp(gridArrangement, L"columnFirstBottomToTop") == 0) {
+        g_settings.gridArrangement = GridArrangement::columnFirstBottomToTop;
     }
     Wh_FreeStringSetting(gridArrangement);
 
