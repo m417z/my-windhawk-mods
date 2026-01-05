@@ -839,11 +839,9 @@ bool IsMultitaskingViewWindow(HWND hWnd) {
     }
 
     // Check window band - must be ZBID_IMMERSIVE_APPCHROME (5).
-    if (pGetWindowBand) {
-        DWORD band = 0;
-        if (!pGetWindowBand(hWnd, &band) || band != 5) {
-            return false;
-        }
+    DWORD band = 0;
+    if (!pGetWindowBand || !pGetWindowBand(hWnd, &band) || band != 5) {
+        return false;
     }
 
     // Check thread description for "MultitaskingView".
