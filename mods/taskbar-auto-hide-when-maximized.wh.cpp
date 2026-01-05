@@ -834,7 +834,8 @@ LRESULT WINAPI TrayUI_WndProc_Hook(void* pThis,
             SetRectEmpty(rect);
         }
     } else if (Msg == g_updateTaskbarStateRegisteredMsg) {
-        if (!g_wasAutoHideProcessed) {
+        bool firstTime = !g_wasAutoHideProcessed;
+        if (firstTime) {
             g_wasAutoHideProcessed = true;
             g_wasAutoHideDisabled =
                 !SendMessage(hWnd, kHandleTrayPrivateSettingMessage,
@@ -853,7 +854,7 @@ LRESULT WINAPI TrayUI_WndProc_Hook(void* pThis,
 
         bool keptShown = g_taskbarsKeptShown.contains(pTrayUI_IInspectable);
 
-        if (keepShown != keptShown) {
+        if (firstTime || keepShown != keptShown) {
             Wh_Log(L"> keepShown=%d", keepShown);
 
             if (keepShown) {
