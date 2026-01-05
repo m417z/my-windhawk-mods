@@ -120,6 +120,7 @@ std::atomic<HANDLE> g_winEventHookThread;
 std::unordered_map<void*, HWND> g_taskbarsKeptShown;
 std::unordered_map<HWND, void*> g_taskbarToViewCoordinator;
 UINT_PTR g_pendingEventsTimer;
+std::atomic<bool> g_multitaskingViewActive;
 
 // TrayUI::_HandleTrayPrivateSettingMessage
 constexpr UINT kHandleTrayPrivateSettingMessage = WM_USER + 0x1CA;
@@ -161,12 +162,54 @@ WINOLEAPI CoDecrementMTAUsage(CO_MTA_USAGE_COOKIE Cookie);
 using IsWindowArranged_t = BOOL(WINAPI*)(HWND hwnd);
 IsWindowArranged_t pIsWindowArranged;
 
+// Private API for window band (z-order band).
+// https://blog.adeltax.com/window-z-order-in-windows-10/
+using GetWindowBand_t = BOOL(WINAPI*)(HWND hWnd, PDWORD pdwBand);
+GetWindowBand_t pGetWindowBand;
+
 // https://devblogs.microsoft.com/oldnewthing/20200302-00/?p=103507
 bool IsWindowCloaked(HWND hwnd) {
     BOOL isCloaked = FALSE;
     return SUCCEEDED(DwmGetWindowAttribute(hwnd, DWMWA_CLOAKED, &isCloaked,
                                            sizeof(isCloaked))) &&
            isCloaked;
+}
+
+// Detects Win+Tab / Task View window.
+// Uses ZBID_IMMERSIVE_APPCHROME band, MultitaskingView thread description, and
+// taskbar process.
+bool IsMultitaskingViewWindow(HWND hWnd) {
+    // Must be in the current process (explorer.exe).
+    DWORD dwProcessId = 0;
+    DWORD dwThreadId = GetWindowThreadProcessId(hWnd, &dwProcessId);
+    if (!dwThreadId || dwProcessId != GetCurrentProcessId()) {
+        return false;
+    }
+
+    // Check window band - must be ZBID_IMMERSIVE_APPCHROME (5).
+    if (pGetWindowBand) {
+        DWORD band = 0;
+        if (!pGetWindowBand(hWnd, &band) || band != 5) {
+            return false;
+        }
+    }
+
+    // Check thread description for "MultitaskingView".
+    HANDLE hThread =
+        OpenThread(THREAD_QUERY_LIMITED_INFORMATION, FALSE, dwThreadId);
+    if (!hThread) {
+        return false;
+    }
+
+    bool isMultitaskingView = false;
+    PWSTR description = nullptr;
+    if (SUCCEEDED(GetThreadDescription(hThread, &description)) && description) {
+        isMultitaskingView = wcscmp(description, L"MultitaskingView") == 0;
+        LocalFree(description);
+    }
+
+    CloseHandle(hThread);
+    return isMultitaskingView;
 }
 
 HWND FindCurrentProcessTaskbarWnd() {
@@ -497,6 +540,11 @@ bool ShouldKeepTaskbarShown(HWND hTaskbarWnd, HMONITOR monitor) {
     }
 
     if (g_settings.mode == Mode::never) {
+        return true;
+    }
+
+    // Always show taskbar when MultitaskingView (Win+Tab) is active.
+    if (g_multitaskingViewActive) {
         return true;
     }
 
@@ -910,6 +958,26 @@ void CALLBACK WinEventProc(HWINEVENTHOOK hWinEventHook,
         return;
     }
 
+    // Check for Multitasking View (Win+Tab) window state changes.
+    if (IsMultitaskingViewWindow(hWnd)) {
+        bool entering = event == EVENT_OBJECT_SHOW ||
+                        event == EVENT_OBJECT_UNCLOAKED ||
+                        event == EVENT_OBJECT_CREATE;
+        bool leaving = event == EVENT_OBJECT_HIDE ||
+                       event == EVENT_OBJECT_CLOAKED ||
+                       event == EVENT_OBJECT_DESTROY;
+
+        if (entering && !g_multitaskingViewActive.exchange(true)) {
+            Wh_Log(L"MultitaskingView entering");
+        } else if (leaving && g_multitaskingViewActive.exchange(false)) {
+            Wh_Log(L"MultitaskingView leaving");
+        } else {
+            return;
+        }
+
+        // Fall through to trigger timer for all taskbars.
+    }
+
     Wh_Log(
         L"Event %s for %s",
         [](DWORD event) -> PCWSTR {
@@ -1023,6 +1091,8 @@ DWORD WINAPI WinEventHookThread(LPVOID lpThreadParameter) {
     if (winSystemEventHook1) {
         UnhookWinEvent(winSystemEventHook1);
     }
+
+    g_multitaskingViewActive = false;
 
     return 0;
 }
@@ -1409,6 +1479,8 @@ BOOL Wh_ModInit() {
     if (hUser32Module) {
         pIsWindowArranged = (IsWindowArranged_t)GetProcAddress(
             hUser32Module, "IsWindowArranged");
+        pGetWindowBand =
+            (GetWindowBand_t)GetProcAddress(hUser32Module, "GetWindowBand");
     }
 
     g_winVersion = GetExplorerVersion();
