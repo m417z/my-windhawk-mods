@@ -2,14 +2,14 @@
 // @id              taskbar-auto-hide-per-monitor
 // @name            Taskbar auto-hide per monitor
 // @description     By default, Windows uses the same auto-hide setting for all monitors. This mod allows setting different auto-hide settings for each monitor.
-// @version         1.0.1
+// @version         1.0.2
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
 // @homepage        https://m417z.com/
 // @include         explorer.exe
 // @architecture    x86-64
-// @compilerOptions -lruntimeobject -lversion
+// @compilerOptions -lversion
 // ==/WindhawkMod==
 
 // Source code is published under The GNU General Public License v3.0.
@@ -103,7 +103,6 @@ number when both are configured.
 
 #include <atomic>
 #include <optional>
-#include <unordered_map>
 #include <vector>
 
 struct MonitorConfig {
@@ -130,7 +129,6 @@ std::atomic<bool> g_initialized;
 std::atomic<bool> g_explorerPatcherInitialized;
 
 bool g_autoHideDisabledForMonitor;
-std::unordered_map<HWND, void*> g_taskbarToViewCoordinator;
 
 void ToggleAutoHideToApplySettings() {
     APPBARDATA abd = {sizeof(abd)};
@@ -232,51 +230,27 @@ std::optional<bool> GetAutoHideDisabledForMonitor(HMONITOR monitor) {
     return std::nullopt;
 }
 
-using ViewCoordinator_ShouldStayExpandedChanged_t =
-    void(WINAPI*)(void* pThis, HWND hMMTaskbarWnd, bool shouldStayExpanded);
-ViewCoordinator_ShouldStayExpandedChanged_t
-    ViewCoordinator_ShouldStayExpandedChanged_Original;
-void WINAPI
-ViewCoordinator_ShouldStayExpandedChanged_Hook(void* pThis,
-                                               HWND hMMTaskbarWnd,
-                                               bool shouldStayExpanded) {
-    Wh_Log(L"> shouldStayExpanded=%d", shouldStayExpanded);
+using ViewCoordinator_ShouldTaskbarBeExpanded_t =
+    bool(WINAPI*)(void* pThis, HWND hMMTaskbarWnd, bool expanded);
+ViewCoordinator_ShouldTaskbarBeExpanded_t
+    ViewCoordinator_ShouldTaskbarBeExpanded_Original;
+bool WINAPI ViewCoordinator_ShouldTaskbarBeExpanded_Hook(void* pThis,
+                                                         HWND hMMTaskbarWnd,
+                                                         bool expanded) {
+    Wh_Log(L"> hMMTaskbarWnd=%08X, expanded=%d",
+           (DWORD)(ULONG_PTR)hMMTaskbarWnd, expanded);
 
-    g_taskbarToViewCoordinator[hMMTaskbarWnd] = pThis;
-
-    ViewCoordinator_ShouldStayExpandedChanged_Original(pThis, hMMTaskbarWnd,
-                                                       shouldStayExpanded);
-}
-
-using ViewCoordinator_HandleIsPointerOverTaskbarFrameChanged_t =
-    void(WINAPI*)(void* pThis,
-                  HWND hMMTaskbarWnd,
-                  bool isPointerOver,
-                  int inputDeviceKind);
-ViewCoordinator_HandleIsPointerOverTaskbarFrameChanged_t
-    ViewCoordinator_HandleIsPointerOverTaskbarFrameChanged_Original;
-void WINAPI ViewCoordinator_HandleIsPointerOverTaskbarFrameChanged_Hook(
-    void* pThis,
-    HWND hMMTaskbarWnd,
-    bool isPointerOver,
-    int inputDeviceKind) {
-    Wh_Log(L"> isPointerOver=%d", isPointerOver);
-
-    g_taskbarToViewCoordinator[hMMTaskbarWnd] = pThis;
-
-    // Block pointer-leave notification if auto-hide is disabled for this
-    // monitor.
-    if (!isPointerOver) {
-        HMONITOR monitor =
-            MonitorFromWindow(hMMTaskbarWnd, MONITOR_DEFAULTTONEAREST);
-        auto autoHideDisabled = GetAutoHideDisabledForMonitor(monitor);
-        if (autoHideDisabled && *autoHideDisabled) {
-            return;
-        }
+    // Return true if auto-hide is disabled for this monitor.
+    HMONITOR monitor =
+        MonitorFromWindow(hMMTaskbarWnd, MONITOR_DEFAULTTONEAREST);
+    auto autoHideDisabled = GetAutoHideDisabledForMonitor(monitor);
+    if (autoHideDisabled && *autoHideDisabled) {
+        Wh_Log(L"Returning true for monitor with auto-hide disabled");
+        return true;
     }
 
-    ViewCoordinator_HandleIsPointerOverTaskbarFrameChanged_Original(
-        pThis, hMMTaskbarWnd, isPointerOver, inputDeviceKind);
+    return ViewCoordinator_ShouldTaskbarBeExpanded_Original(
+        pThis, hMMTaskbarWnd, expanded);
 }
 
 using CSecondaryTray_GetMonitor_t = HMONITOR(WINAPI*)(void* pThis);
@@ -467,17 +441,12 @@ WinVersion GetExplorerVersion() {
 }
 
 bool HookTaskbarViewDllSymbols(HMODULE module) {
+    // Taskbar.View.dll
     WindhawkUtils::SYMBOL_HOOK symbolHooks[] = {
         {
-            {LR"(public: void __cdecl winrt::Taskbar::implementation::ViewCoordinator::ShouldStayExpandedChanged(unsigned __int64,bool))"},
-            &ViewCoordinator_ShouldStayExpandedChanged_Original,
-            ViewCoordinator_ShouldStayExpandedChanged_Hook,
-            true,
-        },
-        {
-            {LR"(public: void __cdecl winrt::Taskbar::implementation::ViewCoordinator::HandleIsPointerOverTaskbarFrameChanged(unsigned __int64,bool,enum winrt::WindowsUdk::UI::Shell::InputDeviceKind))"},
-            &ViewCoordinator_HandleIsPointerOverTaskbarFrameChanged_Original,
-            ViewCoordinator_HandleIsPointerOverTaskbarFrameChanged_Hook,
+            {LR"(public: bool __cdecl winrt::Taskbar::implementation::ViewCoordinator::ShouldTaskbarBeExpanded(unsigned __int64,bool))"},
+            &ViewCoordinator_ShouldTaskbarBeExpanded_Original,
+            ViewCoordinator_ShouldTaskbarBeExpanded_Hook,
             true,
         },
     };
