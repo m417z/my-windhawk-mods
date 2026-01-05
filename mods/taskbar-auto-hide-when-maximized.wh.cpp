@@ -2,7 +2,7 @@
 // @id              taskbar-auto-hide-when-maximized
 // @name            Taskbar auto-hide when maximized
 // @description     Makes the taskbar auto-hide only when a window is maximized or intersects the taskbar
-// @version         1.2.3
+// @version         1.2.4
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
@@ -187,11 +187,9 @@ bool IsMultitaskingViewWindow(HWND hWnd) {
     }
 
     // Check window band - must be ZBID_IMMERSIVE_APPCHROME (5).
-    if (pGetWindowBand) {
-        DWORD band = 0;
-        if (!pGetWindowBand(hWnd, &band) || band != 5) {
-            return false;
-        }
+    DWORD band = 0;
+    if (!pGetWindowBand || !pGetWindowBand(hWnd, &band) || band != 5) {
+        return false;
     }
 
     // Check thread description for "MultitaskingView".
@@ -568,8 +566,7 @@ bool ShouldKeepTaskbarShown(HWND hTaskbarWnd, HMONITOR monitor) {
     DWORD dwTaskbarThreadId = GetCurrentThreadId();
 
     auto enumWindowsProc = [&](HWND hWnd) -> BOOL {
-        DWORD dwProcessId = 0;
-        if (GetWindowThreadProcessId(hWnd, &dwProcessId) == dwTaskbarThreadId) {
+        if (GetWindowThreadProcessId(hWnd, nullptr) == dwTaskbarThreadId) {
             return TRUE;
         }
 
