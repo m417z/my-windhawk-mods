@@ -29,7 +29,8 @@ Customize the size of the new taskbar thumbnails in Windows 11.
 By default, this mod uses simple percentage-based scaling. You can optionally
 enable absolute sizing mode to set specific pixel dimensions for thumbnails.
 
-For older Windows versions, the size of taskbar thumbnails can be changed via the registry:
+For older Windows versions, the size of taskbar thumbnails can be changed via
+the registry:
 
 * [Change Size of Taskbar Thumbnail Previews in Windows
   11](https://www.elevenforum.com/t/change-size-of-taskbar-thumbnail-previews-in-windows-11.6340/)
@@ -85,6 +86,7 @@ For older Windows versions, the size of taskbar thumbnails can be changed via th
 
 #undef GetCurrentTime
 
+#include <winrt/Windows.Foundation.Collections.h>
 #include <winrt/Windows.UI.Xaml.h>
 
 using namespace winrt::Windows::UI::Xaml;
@@ -117,14 +119,17 @@ ThumbnailHelpers_GetScaledThumbnailSize_Hook(
 
     if (!g_settings.useAbsoluteSize) {
         // Original percentage-based behavior
-        ThumbnailHelpers_GetScaledThumbnailSize_Original(
-            result, size, scale * g_settings.size / 100.0);
-        Wh_Log(L"%fx%f", result->Width, result->Height);
-        return result;
+        winrt::Windows::Foundation::Size* ret =
+            ThumbnailHelpers_GetScaledThumbnailSize_Original(
+                result, size, scale * g_settings.size / 100.0);
+
+        Wh_Log(L"%fx%f", ret->Width, ret->Height);
+        return ret;
     }
 
     // Absolute sizing mode
-    ThumbnailHelpers_GetScaledThumbnailSize_Original(result, size, scale);
+    winrt::Windows::Foundation::Size* originalResult =
+        ThumbnailHelpers_GetScaledThumbnailSize_Original(result, size, scale);
 
     float currentWidth = result->Width;
     float currentHeight = result->Height;
@@ -227,11 +232,13 @@ void WINAPI TaskItemThumbnailView_OnApplyTemplate_Hook(void* pThis) {
         Wh_Log(L"maxWidth=%f", element.MaxWidth());
         element.MaxWidth(std::numeric_limits<double>::infinity());
     } catch (...) {
-        Wh_Log(L"Error %08X", winrt::to_hresult());
+        HRESULT hr = winrt::to_hresult();
+        Wh_Log(L"Error %08X", hr);
     }
 }
 
 bool HookTaskbarViewDllSymbols(HMODULE module) {
+    // Taskbar.View.dll
     WindhawkUtils::SYMBOL_HOOK symbolHooks[] = {
         {
             {LR"(struct winrt::Windows::Foundation::Size __cdecl winrt::Taskbar::implementation::ThumbnailHelpers::GetScaledThumbnailSize(struct winrt::Windows::Foundation::Size,float))"},
