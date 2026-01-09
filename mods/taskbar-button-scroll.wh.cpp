@@ -66,9 +66,11 @@ or a similar tool), enable the relevant option in the mod's settings.
 
 #undef GetCurrentTime
 
+#include <winrt/Windows.Foundation.Collections.h>
 #include <winrt/Windows.UI.Input.h>
 #include <winrt/Windows.UI.Xaml.Controls.h>
 #include <winrt/Windows.UI.Xaml.Input.h>
+#include <winrt/Windows.UI.Xaml.Media.h>
 
 #include <atomic>
 #include <regex>
@@ -114,6 +116,8 @@ DWORD g_lastScrollCommandTime;
 std::atomic<DWORD> g_groupMenuCommandThreadId;
 void* g_groupMenuCommandTaskItem;
 ULONGLONG g_noDismissHoverUIUntil;
+bool g_captureTaskGroup;
+void* g_capturedTaskGroup;
 
 #pragma region offsets
 
@@ -198,6 +202,58 @@ CTaskGroup_GroupMenuCommand_t CTaskGroup_GroupMenuCommand_Original;
 void* CTaskListWnd_vftable_CImpWndProc;
 void* CTaskListWnd_vftable_ITaskListUI;
 
+using TaskItemThumbnail_ReportClicked_t = void(WINAPI*)(void* pThis,
+                                                        void* launcherOptions);
+TaskItemThumbnail_ReportClicked_t TaskItemThumbnail_ReportClicked_Original;
+
+using TaskItem_ReportClicked_t = int(WINAPI*)(void* pThis, void* param);
+TaskItem_ReportClicked_t TaskItem_ReportClicked_Original;
+
+using TaskGroup_ReportClicked_t = int(WINAPI*)(void* pThis, void* param);
+TaskGroup_ReportClicked_t TaskGroup_ReportClicked_Original;
+
+using TryGetItemFromContainer_TaskItemThumbnailViewModel_t =
+    void*(WINAPI*)(void** output, UIElement* container);
+TryGetItemFromContainer_TaskItemThumbnailViewModel_t
+    TryGetItemFromContainer_TaskItemThumbnailViewModel_Original;
+
+using TaskItemThumbnailViewModel_get_TaskItemThumbnail_t =
+    int(WINAPI*)(void* pThis, void** taskItemThumbnail);
+TaskItemThumbnailViewModel_get_TaskItemThumbnail_t
+    TaskItemThumbnailViewModel_get_TaskItemThumbnail_Original;
+
+using TryGetItemFromContainer_TaskListWindowViewModel_t =
+    void*(WINAPI*)(void** output, UIElement* container);
+TryGetItemFromContainer_TaskListWindowViewModel_t
+    TryGetItemFromContainer_TaskListWindowViewModel_Original;
+
+using TaskListWindowViewModel_get_TaskItem_t = int(WINAPI*)(void* pThis,
+                                                            void** taskItem);
+TaskListWindowViewModel_get_TaskItem_t
+    TaskListWindowViewModel_get_TaskItem_Original;
+
+using TryGetItemFromContainer_TaskListGroupViewModel_t =
+    void*(WINAPI*)(void** output, UIElement* container);
+TryGetItemFromContainer_TaskListGroupViewModel_t
+    TryGetItemFromContainer_TaskListGroupViewModel_Original;
+
+using TaskListGroupViewModel_IsRequestingAttention_t =
+    bool(WINAPI*)(void* pThis);
+TaskListGroupViewModel_IsRequestingAttention_t
+    TaskListGroupViewModel_IsRequestingAttention_Original;
+
+using ITaskGroup_IsRequestingAttention_t = bool(WINAPI*)(void* pThis);
+ITaskGroup_IsRequestingAttention_t ITaskGroup_IsRequestingAttention_Original;
+bool WINAPI ITaskGroup_IsRequestingAttention_Hook(void* pThis) {
+    if (g_captureTaskGroup) {
+        Wh_Log(L">");
+        g_capturedTaskGroup = *(void**)pThis;
+        return false;
+    }
+
+    return ITaskGroup_IsRequestingAttention_Original(pThis);
+}
+
 void* QueryViaVtable(void* object, void* vtable) {
     void* ptr = object;
     while (*(void**)ptr != vtable) {
@@ -212,6 +268,51 @@ void* QueryViaVtableBackwards(void* object, void* vtable) {
         ptr = (void**)ptr - 1;
     }
     return ptr;
+}
+
+void* GetTaskItemFromTaskListButton(UIElement element) {
+    winrt::com_ptr<IUnknown> windowViewModel = nullptr;
+    TryGetItemFromContainer_TaskListWindowViewModel_Original(
+        windowViewModel.put_void(), &element);
+    if (!windowViewModel) {
+        return nullptr;
+    }
+
+    winrt::com_ptr<IUnknown> taskItem;
+    TaskListWindowViewModel_get_TaskItem_Original(windowViewModel.get(),
+                                                  taskItem.put_void());
+    return taskItem.get();
+}
+
+void* GetTaskGroupFromTaskListButton(UIElement element) {
+    winrt::com_ptr<IUnknown> groupViewModel = nullptr;
+    TryGetItemFromContainer_TaskListGroupViewModel_Original(
+        groupViewModel.put_void(), &element);
+    if (!groupViewModel) {
+        return nullptr;
+    }
+
+    g_capturedTaskGroup = nullptr;
+    g_captureTaskGroup = true;
+    TaskListGroupViewModel_IsRequestingAttention_Original(
+        (void**)groupViewModel.get() - 1);
+    g_captureTaskGroup = false;
+    return g_capturedTaskGroup;
+}
+
+void* GetTaskItemThumbnailFromElement(UIElement element) {
+    winrt::com_ptr<IUnknown> thumbnailViewModel = nullptr;
+    TryGetItemFromContainer_TaskItemThumbnailViewModel_Original(
+        thumbnailViewModel.put_void(), &element);
+
+    if (thumbnailViewModel) {
+        winrt::com_ptr<IUnknown> taskItemThumbnail;
+        TaskItemThumbnailViewModel_get_TaskItemThumbnail_Original(
+            thumbnailViewModel.get(), taskItemThumbnail.put_void());
+        return taskItemThumbnail.get();
+    }
+
+    return nullptr;
 }
 
 constexpr int kScrollCommandOriginal = -1;
@@ -573,14 +674,24 @@ int TaskListButton_FlyoutFrame_OnPointerWheelChanged_Hook(
     auto className = winrt::get_class_name(element);
     Wh_Log(L"%s", className.c_str());
 
+    bool isThumbnail = false;
     if (className == L"Taskbar.TaskListButton") {
-        if (!g_settings.scrollOverTaskbarButtons) {
+        if (!g_settings.scrollOverTaskbarButtons ||
+            !TryGetItemFromContainer_TaskListWindowViewModel_Original ||
+            !TaskListWindowViewModel_get_TaskItem_Original ||
+            !TryGetItemFromContainer_TaskListGroupViewModel_Original ||
+            !TaskListGroupViewModel_IsRequestingAttention_Original ||
+            !ITaskGroup_IsRequestingAttention_Original) {
             return original();
         }
     } else if (className == L"Taskbar.FlyoutFrame") {
-        if (!g_settings.scrollOverThumbnailPreviews) {
+        if (!g_settings.scrollOverThumbnailPreviews ||
+            !TryGetItemFromContainer_TaskItemThumbnailViewModel_Original ||
+            !TaskItemThumbnailViewModel_get_TaskItemThumbnail_Original) {
             return original();
         }
+
+        isThumbnail = true;
     } else {
         return original();
     }
@@ -606,34 +717,52 @@ int TaskListButton_FlyoutFrame_OnPointerWheelChanged_Hook(
     g_pointerWheelEventMouseWheelDelta += delta;
     g_pointerWheelEventMouseWheelTime = GetTickCount();
 
-    Wh_Log(L"Simulating a mouse click with delta %d",
-           g_pointerWheelEventMouseWheelDelta);
+    void* taskItemThumbnail = nullptr;
+    void* taskItem = nullptr;
+    void* taskGroup = nullptr;
 
-    // Allows to steal focus.
-    INPUT input{};
-    SendInput(1, &input, sizeof(INPUT));
-
-    DWORD messagePos = GetMessagePos();
-    POINT pt{
-        GET_X_LPARAM(messagePos),
-        GET_Y_LPARAM(messagePos),
-    };
-
-    HWND windowFromPoint = WindowFromPoint(pt);
-    if (GetWindowThreadProcessId(windowFromPoint, nullptr) ==
-        GetCurrentThreadId()) {
-        SetForegroundWindow(windowFromPoint);
+    if (isThumbnail) {
+        // For thumbnails, find the hovered thumbnail element and get its
+        // TaskItemThumbnail.
+        auto pointerPos = args.GetCurrentPoint(element).Position();
+        auto hoveredElement =
+            Media::VisualTreeHelper::FindElementsInHostCoordinates(pointerPos,
+                                                                   element);
+        for (const auto& child : hoveredElement) {
+            if (winrt::get_class_name(child) ==
+                L"Taskbar.TaskItemThumbnailView") {
+                taskItemThumbnail =
+                    GetTaskItemThumbnailFromElement(child.as<UIElement>());
+                break;
+            }
+        }
+    } else {
+        taskItem = GetTaskItemFromTaskListButton(element);
+        if (!taskItem) {
+            taskGroup = GetTaskGroupFromTaskListButton(element);
+        }
     }
 
-    // Ctrl+Click, Ctrl helps handle grouped taskbar items.
-    INPUT inputs[] = {
-        {.type = INPUT_KEYBOARD, .ki = {.wVk = VK_CONTROL}},
-        {.type = INPUT_MOUSE, .mi = {.dwFlags = MOUSEEVENTF_LEFTDOWN}},
-        {.type = INPUT_MOUSE, .mi = {.dwFlags = MOUSEEVENTF_LEFTUP}},
-        {.type = INPUT_KEYBOARD,
-         .ki = {.wVk = VK_CONTROL, .dwFlags = KEYEVENTF_KEYUP}},
-    };
-    SendInput(ARRAYSIZE(inputs), inputs, sizeof(INPUT));
+    if (taskItemThumbnail || taskItem || taskGroup) {
+        Wh_Log(
+            L"Triggering click with delta %d, taskItem=%p, taskGroup=%p, "
+            L"taskItemThumbnail=%p",
+            g_pointerWheelEventMouseWheelDelta, taskItem, taskGroup,
+            taskItemThumbnail);
+
+        // Allows to steal focus.
+        INPUT input{};
+        SendInput(1, &input, sizeof(INPUT));
+
+        if (taskItemThumbnail) {
+            TaskItemThumbnail_ReportClicked_Original(
+                (void**)taskItemThumbnail + 1, nullptr);
+        } else if (taskItem) {
+            TaskItem_ReportClicked_Original(taskItem, nullptr);
+        } else if (taskGroup) {
+            TaskGroup_ReportClicked_Original(taskGroup, nullptr);
+        }
+    }
 
     args.Handled(true);
     return 0;
@@ -895,6 +1024,48 @@ bool HookTaskbarViewDllSymbols(HMODULE module) {
             nullptr,  // Both OnPointerWheelChanged can have the same address.
             true,     // New XAML refresh thumbnails.
         },
+        {
+            {LR"(struct winrt::Taskbar::TaskItemThumbnailViewModel __cdecl TryGetItemFromContainer<struct winrt::Taskbar::TaskItemThumbnailViewModel>(struct winrt::Windows::UI::Xaml::UIElement const &))"},
+            &TryGetItemFromContainer_TaskItemThumbnailViewModel_Original,
+            nullptr,
+            true,
+        },
+        {
+            {LR"(public: virtual int __cdecl winrt::impl::produce<struct winrt::Taskbar::implementation::TaskItemThumbnailViewModel,struct winrt::Taskbar::ITaskItemThumbnailViewModel>::get_TaskItemThumbnail(void * *))"},
+            &TaskItemThumbnailViewModel_get_TaskItemThumbnail_Original,
+            nullptr,
+            true,
+        },
+        {
+            {LR"(struct winrt::Taskbar::TaskListWindowViewModel __cdecl TryGetItemFromContainer<struct winrt::Taskbar::TaskListWindowViewModel>(struct winrt::Windows::UI::Xaml::UIElement const &))"},
+            &TryGetItemFromContainer_TaskListWindowViewModel_Original,
+            nullptr,
+            true,
+        },
+        {
+            {LR"(public: virtual int __cdecl winrt::impl::produce<struct winrt::Taskbar::implementation::TaskListWindowViewModel,struct winrt::Taskbar::ITaskListWindowViewModel>::get_TaskItem(void * *))"},
+            &TaskListWindowViewModel_get_TaskItem_Original,
+            nullptr,
+            true,
+        },
+        {
+            {LR"(struct winrt::Taskbar::TaskListGroupViewModel __cdecl TryGetItemFromContainer<struct winrt::Taskbar::TaskListGroupViewModel>(struct winrt::Windows::UI::Xaml::UIElement const &))"},
+            &TryGetItemFromContainer_TaskListGroupViewModel_Original,
+            nullptr,
+            true,
+        },
+        {
+            {LR"(public: bool __cdecl winrt::Taskbar::implementation::TaskListGroupViewModel::IsRequestingAttention(void)const )"},
+            &TaskListGroupViewModel_IsRequestingAttention_Original,
+            nullptr,
+            true,
+        },
+        {
+            {LR"(public: __cdecl winrt::impl::consume_WindowsUdk_UI_Shell_ITaskGroup<struct winrt::WindowsUdk::UI::Shell::ITaskGroup>::IsRequestingAttention(void)const )"},
+            &ITaskGroup_IsRequestingAttention_Original,
+            ITaskGroup_IsRequestingAttention_Hook,
+            true,
+        },
     };
 
     if (!HookSymbols(module, symbolHooks, ARRAYSIZE(symbolHooks))) {
@@ -1070,6 +1241,25 @@ bool HookTaskbarSymbols() {
             {LR"(public: virtual void __cdecl CTaskListWnd::SetTaskFilter(struct ITaskItemFilter *))"},
             &CTaskListWnd_SetTaskFilter,
         },
+        // For XAML taskbar ReportClicked:
+        {
+            {LR"(public: virtual int __cdecl winrt::impl::produce<struct winrt::WindowsUdk::UI::Shell::implementation::TaskItemThumbnail,struct winrt::WindowsUdk::UI::Shell::ITaskItemThumbnail2>::ReportClicked(void *))"},
+            &TaskItemThumbnail_ReportClicked_Original,
+            nullptr,
+            true,  // Only on Windows 11.
+        },
+        {
+            {LR"(public: virtual int __cdecl winrt::impl::produce<struct winrt::WindowsUdk::UI::Shell::implementation::TaskItem,struct winrt::WindowsUdk::UI::Shell::ITaskItem>::ReportClicked(void *))"},
+            &TaskItem_ReportClicked_Original,
+            nullptr,
+            true,  // Only on Windows 11.
+        },
+        {
+            {LR"(public: virtual int __cdecl winrt::impl::produce<struct winrt::WindowsUdk::UI::Shell::implementation::TaskGroup,struct winrt::WindowsUdk::UI::Shell::ITaskGroup>::ReportClicked(void *))"},
+            &TaskGroup_ReportClicked_Original,
+            nullptr,
+            true,  // Only on Windows 11.
+        },
     };
 
     if (!HookSymbols(module, symbolHooks, ARRAYSIZE(symbolHooks))) {
@@ -1214,6 +1404,9 @@ bool HookExplorerPatcherSymbols(HMODULE explorerPatcherModule) {
         // For offsets:
         {R"(?CTaskListWnd_GetTaskFilterPtr@@YAPEAXPEAVCTaskListWnd@@@Z)",
          &CTaskListWnd_GetTaskFilterPtr},
+        // No need for TaskItemThumbnail_ReportClicked_Original.
+        // No need for TaskItem_ReportClicked_Original.
+        // No need for TaskGroup_ReportClicked_Original.
     };
 
     bool succeeded = true;
