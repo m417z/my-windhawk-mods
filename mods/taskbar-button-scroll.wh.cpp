@@ -270,7 +270,7 @@ void* QueryViaVtableBackwards(void* object, void* vtable) {
     return ptr;
 }
 
-void* GetTaskItemFromTaskListButton(UIElement element) {
+void* GetWindowsUdkTaskItemFromTaskListButton(UIElement element) {
     winrt::com_ptr<IUnknown> windowViewModel = nullptr;
     TryGetItemFromContainer_TaskListWindowViewModel_Original(
         windowViewModel.put_void(), &element);
@@ -278,13 +278,13 @@ void* GetTaskItemFromTaskListButton(UIElement element) {
         return nullptr;
     }
 
-    winrt::com_ptr<IUnknown> taskItem;
-    TaskListWindowViewModel_get_TaskItem_Original(windowViewModel.get(),
-                                                  taskItem.put_void());
-    return taskItem.get();
+    winrt::com_ptr<IUnknown> windowsUdkTaskItem;
+    TaskListWindowViewModel_get_TaskItem_Original(
+        windowViewModel.get(), windowsUdkTaskItem.put_void());
+    return windowsUdkTaskItem.get();
 }
 
-void* GetTaskGroupFromTaskListButton(UIElement element) {
+void* GetWindowsUdkTaskGroupFromTaskListButton(UIElement element) {
     winrt::com_ptr<IUnknown> groupViewModel = nullptr;
     TryGetItemFromContainer_TaskListGroupViewModel_Original(
         groupViewModel.put_void(), &element);
@@ -300,16 +300,16 @@ void* GetTaskGroupFromTaskListButton(UIElement element) {
     return g_capturedTaskGroup;
 }
 
-void* GetTaskItemThumbnailFromElement(UIElement element) {
+void* GetWindowsUdkTaskItemThumbnailFromElement(UIElement element) {
     winrt::com_ptr<IUnknown> thumbnailViewModel = nullptr;
     TryGetItemFromContainer_TaskItemThumbnailViewModel_Original(
         thumbnailViewModel.put_void(), &element);
 
     if (thumbnailViewModel) {
-        winrt::com_ptr<IUnknown> taskItemThumbnail;
+        winrt::com_ptr<IUnknown> windowsUdkTaskItemThumbnail;
         TaskItemThumbnailViewModel_get_TaskItemThumbnail_Original(
-            thumbnailViewModel.get(), taskItemThumbnail.put_void());
-        return taskItemThumbnail.get();
+            thumbnailViewModel.get(), windowsUdkTaskItemThumbnail.put_void());
+        return windowsUdkTaskItemThumbnail.get();
     }
 
     return nullptr;
@@ -717,9 +717,9 @@ int TaskListButton_FlyoutFrame_OnPointerWheelChanged_Hook(
     g_pointerWheelEventMouseWheelDelta += delta;
     g_pointerWheelEventMouseWheelTime = GetTickCount();
 
-    void* taskItemThumbnail = nullptr;
-    void* taskItem = nullptr;
-    void* taskGroup = nullptr;
+    void* windowsUdkTaskItemThumbnail = nullptr;
+    void* windowsUdkTaskItem = nullptr;
+    void* windowsUdkTaskGroup = nullptr;
 
     if (isThumbnail) {
         // For thumbnails, find the hovered thumbnail element and get its
@@ -731,36 +731,39 @@ int TaskListButton_FlyoutFrame_OnPointerWheelChanged_Hook(
         for (const auto& child : hoveredElement) {
             if (winrt::get_class_name(child) ==
                 L"Taskbar.TaskItemThumbnailView") {
-                taskItemThumbnail =
-                    GetTaskItemThumbnailFromElement(child.as<UIElement>());
+                windowsUdkTaskItemThumbnail =
+                    GetWindowsUdkTaskItemThumbnailFromElement(
+                        child.as<UIElement>());
                 break;
             }
         }
     } else {
-        taskItem = GetTaskItemFromTaskListButton(element);
-        if (!taskItem) {
-            taskGroup = GetTaskGroupFromTaskListButton(element);
+        windowsUdkTaskItem = GetWindowsUdkTaskItemFromTaskListButton(element);
+        if (!windowsUdkTaskItem) {
+            windowsUdkTaskGroup =
+                GetWindowsUdkTaskGroupFromTaskListButton(element);
         }
     }
 
-    if (taskItemThumbnail || taskItem || taskGroup) {
+    if (windowsUdkTaskItemThumbnail || windowsUdkTaskItem ||
+        windowsUdkTaskGroup) {
         Wh_Log(
-            L"Triggering click with delta %d, taskItem=%p, taskGroup=%p, "
-            L"taskItemThumbnail=%p",
-            g_pointerWheelEventMouseWheelDelta, taskItem, taskGroup,
-            taskItemThumbnail);
+            L"Triggering click with delta %d, windowsUdkTaskItem=%p, "
+            L"windowsUdkTaskGroup=%p, windowsUdkTaskItemThumbnail=%p",
+            g_pointerWheelEventMouseWheelDelta, windowsUdkTaskItem,
+            windowsUdkTaskGroup, windowsUdkTaskItemThumbnail);
 
         // Allows to steal focus.
         INPUT input{};
         SendInput(1, &input, sizeof(INPUT));
 
-        if (taskItemThumbnail) {
+        if (windowsUdkTaskItemThumbnail) {
             TaskItemThumbnail_ReportClicked_Original(
-                (void**)taskItemThumbnail + 1, nullptr);
-        } else if (taskItem) {
-            TaskItem_ReportClicked_Original(taskItem, nullptr);
-        } else if (taskGroup) {
-            TaskGroup_ReportClicked_Original(taskGroup, nullptr);
+                (void**)windowsUdkTaskItemThumbnail + 1, nullptr);
+        } else if (windowsUdkTaskItem) {
+            TaskItem_ReportClicked_Original(windowsUdkTaskItem, nullptr);
+        } else if (windowsUdkTaskGroup) {
+            TaskGroup_ReportClicked_Original(windowsUdkTaskGroup, nullptr);
         }
     }
 
