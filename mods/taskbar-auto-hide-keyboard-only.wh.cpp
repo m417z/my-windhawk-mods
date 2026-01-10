@@ -2,7 +2,7 @@
 // @id              taskbar-auto-hide-keyboard-only
 // @name            Taskbar keyboard-only auto-hide
 // @description     When taskbar auto-hide is enabled, the taskbar will only be unhidden with the keyboard, hovering the mouse over the taskbar will not unhide it
-// @version         1.1.2
+// @version         1.1.3
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
@@ -28,6 +28,9 @@ When taskbar auto-hide is enabled, the taskbar will only be unhidden with the
 keyboard, hovering the mouse over the taskbar will not unhide it. For example,
 the Win key or Ctrl+Esc will unhide the taskbar.
 
+Optional: enable the sticky toggle setting to lock taskbar visibility
+until you press Ctrl+Esc again.
+
 **Note:** To customize the old taskbar on Windows 11 (if using ExplorerPatcher
 or a similar tool), enable the relevant option in the mod's settings.
 */
@@ -41,7 +44,18 @@ or a similar tool), enable the relevant option in the mod's settings.
     Normally, the taskbar is hidden to a thin line which can be clicked to
     unhide it. This option makes it so that the taskbar is fully hidden on
     auto-hide, leaving no traces at all. With this option, the taskbar can only
-    be unhidden via the keyboard.
+    be unhidden via the keyboard. The Windows setting "Auto Hide Taskbar" must be enabled for this to work.
+- toggleOnHotkey: false
+  $name: Sticky toggle
+  $description: >-
+    Press Ctrl+Esc to toggle and lock taskbar visibility. The taskbar stays
+    shown or hidden until you press Ctrl+Esc again.
+- resizeOnStickyToggle: true
+  $name: Resize windows on sticky toggle
+  $description: >-
+    When enabled, sticky toggle updates the Windows auto-hide setting so
+    maximized windows resize around the taskbar. Disable to keep window sizes
+    fixed and let the taskbar overlay them.
 - oldTaskbarOnWin11: false
   $name: Customize the old taskbar on Windows 11
   $description: >-
@@ -60,6 +74,8 @@ or a similar tool), enable the relevant option in the mod's settings.
 
 struct {
     bool fullyHide;
+    bool toggleOnHotkey;
+    bool resizeOnStickyToggle;
     bool oldTaskbarOnWin11;
 } g_settings;
 
@@ -75,10 +91,40 @@ WinVersion g_winVersion;
 std::atomic<bool> g_initialized;
 std::atomic<bool> g_explorerPatcherInitialized;
 
+enum class ToggleState {
+    Default,
+    ForcedShown,
+    ForcedHidden,
+};
+
+std::atomic<ToggleState> g_toggleState{ToggleState::Default};
+std::atomic<DWORD> g_lastToggleTick{0};
+std::atomic<bool> g_autoHideStateCaptured{false};
+std::atomic<bool> g_autoHideOriginalEnabled{false};
+HHOOK g_keyboardHook = nullptr;
+HANDLE g_keyboardHookThread = nullptr;
+DWORD g_keyboardHookThreadId = 0;
+HANDLE g_keyboardHookReadyEvent = nullptr;
+
 enum {
     kTrayUITimerHide = 2,
     kTrayUITimerUnhide = 3,
 };
+
+static const UINT g_setAutoHideStateRegisteredMsg =
+    RegisterWindowMessage(L"Windhawk_SetTaskbarAutoHide_" WH_MOD_ID);
+
+// TrayUI::_HandleTrayPrivateSettingMessage.
+constexpr UINT kHandleTrayPrivateSettingMessage = WM_USER + 0x1CA;
+
+enum {
+    kTrayPrivateSettingAutoHideGet = 3,
+    kTrayPrivateSettingAutoHideSet = 4,
+};
+
+constexpr DWORD kToggleDebounceMs = 250;
+constexpr UINT kKeyboardHookThreadQuitMsg = WM_APP + 0x217;
+constexpr UINT kKeyboardHookThreadToggleMsg = WM_APP + 0x218;
 
 bool IsTaskbarWindow(HWND hWnd) {
     WCHAR szClassName[32];
@@ -152,12 +198,189 @@ void CloakWindow(HWND hWnd, BOOL cloak) {
     DwmSetWindowAttribute(hWnd, DWMWA_CLOAK, &cloak, sizeof(cloak));
 }
 
+bool IsTaskbarShown(HWND hWnd) {
+    if (!hWnd) {
+        return false;
+    }
+
+    if (g_settings.fullyHide) {
+        BOOL cloaked = FALSE;
+        if (SUCCEEDED(DwmGetWindowAttribute(hWnd, DWMWA_CLOAKED, &cloaked,
+                                            sizeof(cloaked))) &&
+            cloaked) {
+            return false;
+        }
+    }
+
+    RECT rect{};
+    if (!GetWindowRect(hWnd, &rect)) {
+        return false;
+    }
+
+    HMONITOR monitor = MonitorFromWindow(hWnd, MONITOR_DEFAULTTONEAREST);
+    MONITORINFO monitorInfo{
+        .cbSize = sizeof(monitorInfo),
+    };
+    if (!GetMonitorInfo(monitor, &monitorInfo)) {
+        return false;
+    }
+
+    RECT intersect{};
+    if (!IntersectRect(&intersect, &rect, &monitorInfo.rcMonitor)) {
+        return false;
+    }
+
+    int width = intersect.right - intersect.left;
+    int height = intersect.bottom - intersect.top;
+    if (width <= 0 || height <= 0) {
+        return false;
+    }
+
+    int taskbarWidth = rect.right - rect.left;
+    int taskbarHeight = rect.bottom - rect.top;
+    int taskbarThickness =
+        taskbarWidth < taskbarHeight ? taskbarWidth : taskbarHeight;
+    if (taskbarThickness <= 0) {
+        return false;
+    }
+
+    int visibleThickness = width < height ? width : height;
+    return visibleThickness * 2 >= taskbarThickness;
+}
+
+bool AreAnyTaskbarsShown() {
+    std::vector<HWND> secondaryTaskbarWindows;
+    HWND taskbarWindow = FindTaskbarWindows(&secondaryTaskbarWindows);
+    if (!taskbarWindow) {
+        return false;
+    }
+
+    if (IsTaskbarShown(taskbarWindow)) {
+        return true;
+    }
+
+    for (HWND hWnd : secondaryTaskbarWindows) {
+        if (IsTaskbarShown(hWnd)) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+void HideAllTaskbars() {
+    std::vector<HWND> secondaryTaskbarWindows;
+    HWND taskbarWindow = FindTaskbarWindows(&secondaryTaskbarWindows);
+    if (taskbarWindow) {
+        SetTimer(taskbarWindow, kTrayUITimerHide, 0, nullptr);
+    }
+
+    for (HWND hWnd : secondaryTaskbarWindows) {
+        SetTimer(hWnd, kTrayUITimerHide, 0, nullptr);
+    }
+}
+
+void CancelHideTimers() {
+    std::vector<HWND> secondaryTaskbarWindows;
+    HWND taskbarWindow = FindTaskbarWindows(&secondaryTaskbarWindows);
+    if (taskbarWindow) {
+        KillTimer(taskbarWindow, kTrayUITimerHide);
+    }
+
+    for (HWND hWnd : secondaryTaskbarWindows) {
+        KillTimer(hWnd, kTrayUITimerHide);
+    }
+}
+
+bool GetTaskbarAutoHideEnabled(bool* enabled) {
+    HWND hTaskbarWnd = FindCurrentProcessTaskbarWnd();
+    if (!hTaskbarWnd) {
+        return false;
+    }
+
+    *enabled = SendMessage(hTaskbarWnd, kHandleTrayPrivateSettingMessage,
+                           kTrayPrivateSettingAutoHideGet, 0) != 0;
+    return true;
+}
+
+void SetTaskbarAutoHideEnabled(bool enabled) {
+    HWND hTaskbarWnd = FindCurrentProcessTaskbarWnd();
+    if (!hTaskbarWnd) {
+        return;
+    }
+
+    if (SendNotifyMessage(hTaskbarWnd, g_setAutoHideStateRegisteredMsg,
+                          enabled ? TRUE : FALSE, 0)) {
+        return;
+    }
+
+    SendNotifyMessage(hTaskbarWnd, kHandleTrayPrivateSettingMessage,
+                      kTrayPrivateSettingAutoHideSet, enabled ? TRUE : FALSE);
+}
+
+void CaptureAutoHideOriginalState() {
+    if (g_autoHideStateCaptured.exchange(true, std::memory_order_relaxed)) {
+        return;
+    }
+
+    bool enabled = false;
+    if (!GetTaskbarAutoHideEnabled(&enabled)) {
+        g_autoHideStateCaptured.store(false, std::memory_order_relaxed);
+        return;
+    }
+
+    g_autoHideOriginalEnabled.store(enabled, std::memory_order_relaxed);
+}
+
+void RestoreAutoHideOriginalState() {
+    if (!g_autoHideStateCaptured.load(std::memory_order_relaxed)) {
+        return;
+    }
+
+    SetTaskbarAutoHideEnabled(
+        g_autoHideOriginalEnabled.load(std::memory_order_relaxed));
+    g_autoHideStateCaptured.store(false, std::memory_order_relaxed);
+}
+
+void UpdateAutoHideForToggleState(ToggleState state) {
+    if (!g_settings.toggleOnHotkey || !g_settings.resizeOnStickyToggle) {
+        return;
+    }
+
+    if (state == ToggleState::ForcedHidden ||
+        state == ToggleState::ForcedShown) {
+        CaptureAutoHideOriginalState();
+        SetTaskbarAutoHideEnabled(state == ToggleState::ForcedHidden);
+    }
+}
+
+bool IsCtrlEscPressed() {
+    bool ctrlDown =
+        (GetAsyncKeyState(VK_CONTROL) & 0x8000) ||
+        (GetAsyncKeyState(VK_LCONTROL) & 0x8000) ||
+        (GetAsyncKeyState(VK_RCONTROL) & 0x8000);
+    return ctrlDown && (GetAsyncKeyState(VK_ESCAPE) & 0x8000);
+}
+
+bool IsWinKeyPressed() {
+    return (GetAsyncKeyState(VK_LWIN) & 0x8000) ||
+           (GetAsyncKeyState(VK_RWIN) & 0x8000);
+}
+
 using SetTimer_t = decltype(&SetTimer);
 SetTimer_t SetTimer_Original;
 UINT_PTR WINAPI SetTimer_Hook(HWND hWnd,
                               UINT_PTR nIDEvent,
                               UINT uElapse,
                               TIMERPROC lpTimerFunc) {
+    if (nIDEvent == kTrayUITimerHide && IsTaskbarWindow(hWnd) &&
+        g_settings.toggleOnHotkey &&
+        g_toggleState.load(std::memory_order_relaxed) ==
+            ToggleState::ForcedShown) {
+        Wh_Log(L">");
+        return 1;
+    }
+
     if (nIDEvent == kTrayUITimerUnhide && IsTaskbarWindow(hWnd)) {
         Wh_Log(L">");
         return 1;
@@ -166,6 +389,351 @@ UINT_PTR WINAPI SetTimer_Hook(HWND hWnd,
     UINT_PTR ret = SetTimer_Original(hWnd, nIDEvent, uElapse, lpTimerFunc);
 
     return ret;
+}
+
+void ShowAllTaskbars() {
+    if (!SetTimer_Original) {
+        return;
+    }
+
+    std::vector<HWND> secondaryTaskbarWindows;
+    HWND taskbarWindow = FindTaskbarWindows(&secondaryTaskbarWindows);
+    if (taskbarWindow) {
+        // Use the original SetTimer to bypass the unhide-blocking hook.
+        SetTimer_Original(taskbarWindow, kTrayUITimerUnhide, 0, nullptr);
+    }
+
+    for (HWND hWnd : secondaryTaskbarWindows) {
+        SetTimer_Original(hWnd, kTrayUITimerUnhide, 0, nullptr);
+    }
+}
+
+enum class ToggleAction {
+    Show,
+    Hide,
+};
+
+struct ToggleDecision {
+    ToggleAction action;
+    bool isNewToggle;
+};
+
+ToggleDecision DecideToggleAction(DWORD now) {
+    ToggleState state = g_toggleState.load(std::memory_order_relaxed);
+    DWORD lastTick = g_lastToggleTick.load(std::memory_order_relaxed);
+    if (lastTick && now - lastTick < kToggleDebounceMs) {
+        if (state == ToggleState::ForcedShown) {
+            return {ToggleAction::Show, false};
+        }
+        return {ToggleAction::Hide, false};
+    }
+
+    bool shouldHide = false;
+    if (state == ToggleState::ForcedShown) {
+        shouldHide = true;
+    } else if (state == ToggleState::ForcedHidden) {
+        shouldHide = false;
+    } else {
+        shouldHide = AreAnyTaskbarsShown();
+    }
+
+    return {shouldHide ? ToggleAction::Hide : ToggleAction::Show, true};
+}
+
+void HandleStickyToggleFromKeyboard() {
+    DWORD now = GetTickCount();
+    ToggleDecision decision = DecideToggleAction(now);
+    if (decision.action == ToggleAction::Hide) {
+        if (decision.isNewToggle) {
+            g_toggleState.store(ToggleState::ForcedHidden,
+                                std::memory_order_relaxed);
+            g_lastToggleTick.store(now, std::memory_order_relaxed);
+            UpdateAutoHideForToggleState(ToggleState::ForcedHidden);
+        }
+        HideAllTaskbars();
+        return;
+    }
+
+    if (decision.isNewToggle) {
+        g_toggleState.store(ToggleState::ForcedShown,
+                            std::memory_order_relaxed);
+        g_lastToggleTick.store(now, std::memory_order_relaxed);
+    }
+
+    CancelHideTimers();
+    ShowAllTaskbars();
+    if (decision.isNewToggle) {
+        UpdateAutoHideForToggleState(ToggleState::ForcedShown);
+    }
+}
+
+LRESULT CALLBACK LowLevelKeyboardProc(int nCode,
+                                      WPARAM wParam,
+                                      LPARAM lParam) {
+    if (nCode == HC_ACTION && g_settings.toggleOnHotkey &&
+        g_toggleState.load(std::memory_order_relaxed) ==
+            ToggleState::ForcedShown &&
+        (wParam == WM_KEYDOWN || wParam == WM_SYSKEYDOWN)) {
+        const auto* info = reinterpret_cast<KBDLLHOOKSTRUCT*>(lParam);
+        if (info && info->vkCode == VK_ESCAPE) {
+            bool ctrlDown =
+                (GetAsyncKeyState(VK_CONTROL) & 0x8000) ||
+                (GetAsyncKeyState(VK_LCONTROL) & 0x8000) ||
+                (GetAsyncKeyState(VK_RCONTROL) & 0x8000);
+            if (ctrlDown) {
+                if (g_keyboardHookThreadId) {
+                    PostThreadMessage(g_keyboardHookThreadId,
+                                      kKeyboardHookThreadToggleMsg, 0, 0);
+                } else {
+                    HandleStickyToggleFromKeyboard();
+                }
+                // Swallow Ctrl+Esc so the Start menu doesn't open.
+                return 1;
+            }
+        }
+    }
+
+    return CallNextHookEx(g_keyboardHook, nCode, wParam, lParam);
+}
+
+DWORD WINAPI KeyboardHookThreadProc(LPVOID lpThreadParameter) {
+    MSG msg;
+    PeekMessage(&msg, nullptr, WM_USER, WM_USER, PM_NOREMOVE);
+
+    g_keyboardHook =
+        SetWindowsHookExW(WH_KEYBOARD_LL, LowLevelKeyboardProc, nullptr, 0);
+    if (!g_keyboardHook) {
+        Wh_Log(L"Failed to install keyboard hook");
+        if (g_keyboardHookReadyEvent) {
+            SetEvent(g_keyboardHookReadyEvent);
+        }
+        return 0;
+    }
+
+    if (g_keyboardHookReadyEvent) {
+        SetEvent(g_keyboardHookReadyEvent);
+    }
+
+    BOOL bRet;
+    while ((bRet = GetMessage(&msg, nullptr, 0, 0)) != 0) {
+        if (bRet == -1) {
+            msg.wParam = 0;
+            break;
+        }
+
+        if (msg.hwnd == nullptr &&
+            msg.message == kKeyboardHookThreadQuitMsg) {
+            PostQuitMessage(0);
+            continue;
+        }
+
+        if (msg.hwnd == nullptr &&
+            msg.message == kKeyboardHookThreadToggleMsg) {
+            HandleStickyToggleFromKeyboard();
+            continue;
+        }
+
+        TranslateMessage(&msg);
+        DispatchMessage(&msg);
+    }
+
+    if (g_keyboardHook) {
+        UnhookWindowsHookEx(g_keyboardHook);
+        g_keyboardHook = nullptr;
+    }
+
+    return 0;
+}
+
+void InstallKeyboardHook() {
+    if (g_keyboardHookThread || !g_settings.toggleOnHotkey) {
+        return;
+    }
+
+    g_keyboardHookReadyEvent = CreateEvent(nullptr, TRUE, FALSE, nullptr);
+    g_keyboardHookThread = CreateThread(nullptr, 0, KeyboardHookThreadProc,
+                                        nullptr, 0, &g_keyboardHookThreadId);
+    if (!g_keyboardHookThread) {
+        Wh_Log(L"Failed to start keyboard hook thread");
+        if (g_keyboardHookReadyEvent) {
+            CloseHandle(g_keyboardHookReadyEvent);
+            g_keyboardHookReadyEvent = nullptr;
+        }
+        return;
+    }
+
+    if (g_keyboardHookReadyEvent) {
+        WaitForSingleObject(g_keyboardHookReadyEvent, 2000);
+        CloseHandle(g_keyboardHookReadyEvent);
+        g_keyboardHookReadyEvent = nullptr;
+    }
+
+    if (!g_keyboardHook) {
+        PostThreadMessage(g_keyboardHookThreadId, kKeyboardHookThreadQuitMsg, 0,
+                          0);
+        WaitForSingleObject(g_keyboardHookThread, 1000);
+        CloseHandle(g_keyboardHookThread);
+        g_keyboardHookThread = nullptr;
+        g_keyboardHookThreadId = 0;
+    }
+}
+
+void UninstallKeyboardHook() {
+    if (!g_keyboardHookThread) {
+        return;
+    }
+
+    PostThreadMessage(g_keyboardHookThreadId, kKeyboardHookThreadQuitMsg, 0, 0);
+    WaitForSingleObject(g_keyboardHookThread, 1000);
+    CloseHandle(g_keyboardHookThread);
+    g_keyboardHookThread = nullptr;
+    g_keyboardHookThreadId = 0;
+}
+
+using TrayUI_Unhide_t = void(WINAPI*)(void* pThis,
+                                      int trayUnhideFlags,
+                                      int unhideRequest);
+TrayUI_Unhide_t TrayUI_Unhide_Original;
+void WINAPI TrayUI_Unhide_Hook(void* pThis,
+                               int trayUnhideFlags,
+                               int unhideRequest) {
+    if (!g_settings.toggleOnHotkey) {
+        TrayUI_Unhide_Original(pThis, trayUnhideFlags, unhideRequest);
+        return;
+    }
+
+    if (!IsCtrlEscPressed()) {
+        if (g_toggleState.load(std::memory_order_relaxed) ==
+            ToggleState::ForcedHidden &&
+            !IsWinKeyPressed()) {
+            return;
+        }
+
+        TrayUI_Unhide_Original(pThis, trayUnhideFlags, unhideRequest);
+        return;
+    }
+
+    DWORD now = GetTickCount();
+    ToggleDecision decision = DecideToggleAction(now);
+    if (decision.action == ToggleAction::Hide) {
+        if (decision.isNewToggle) {
+            g_toggleState.store(ToggleState::ForcedHidden,
+                                std::memory_order_relaxed);
+            g_lastToggleTick.store(now, std::memory_order_relaxed);
+            UpdateAutoHideForToggleState(ToggleState::ForcedHidden);
+        }
+        HideAllTaskbars();
+        return;
+    }
+
+    if (decision.isNewToggle) {
+        g_toggleState.store(ToggleState::ForcedShown,
+                            std::memory_order_relaxed);
+        g_lastToggleTick.store(now, std::memory_order_relaxed);
+    }
+
+    CancelHideTimers();
+    TrayUI_Unhide_Original(pThis, trayUnhideFlags, unhideRequest);
+    if (decision.isNewToggle) {
+        UpdateAutoHideForToggleState(ToggleState::ForcedShown);
+    }
+}
+
+using CSecondaryTray__Unhide_t = void(WINAPI*)(void* pThis,
+                                               int trayUnhideFlags,
+                                               int unhideRequest);
+CSecondaryTray__Unhide_t CSecondaryTray__Unhide_Original;
+void WINAPI CSecondaryTray__Unhide_Hook(void* pThis,
+                                        int trayUnhideFlags,
+                                        int unhideRequest) {
+    if (!g_settings.toggleOnHotkey) {
+        CSecondaryTray__Unhide_Original(pThis, trayUnhideFlags, unhideRequest);
+        return;
+    }
+
+    if (!IsCtrlEscPressed()) {
+        if (g_toggleState.load(std::memory_order_relaxed) ==
+            ToggleState::ForcedHidden &&
+            !IsWinKeyPressed()) {
+            return;
+        }
+
+        CSecondaryTray__Unhide_Original(pThis, trayUnhideFlags, unhideRequest);
+        return;
+    }
+
+    DWORD now = GetTickCount();
+    ToggleDecision decision = DecideToggleAction(now);
+    if (decision.action == ToggleAction::Hide) {
+        if (decision.isNewToggle) {
+            g_toggleState.store(ToggleState::ForcedHidden,
+                                std::memory_order_relaxed);
+            g_lastToggleTick.store(now, std::memory_order_relaxed);
+            UpdateAutoHideForToggleState(ToggleState::ForcedHidden);
+        }
+        HideAllTaskbars();
+        return;
+    }
+
+    if (decision.isNewToggle) {
+        g_toggleState.store(ToggleState::ForcedShown,
+                            std::memory_order_relaxed);
+        g_lastToggleTick.store(now, std::memory_order_relaxed);
+    }
+
+    CancelHideTimers();
+    CSecondaryTray__Unhide_Original(pThis, trayUnhideFlags, unhideRequest);
+    if (decision.isNewToggle) {
+        UpdateAutoHideForToggleState(ToggleState::ForcedShown);
+    }
+}
+
+using TrayUI_WndProc_t = LRESULT(WINAPI*)(void* pThis,
+                                          HWND hWnd,
+                                          UINT Msg,
+                                          WPARAM wParam,
+                                          LPARAM lParam,
+                                          bool* flag);
+TrayUI_WndProc_t TrayUI_WndProc_Original;
+LRESULT WINAPI TrayUI_WndProc_Hook(void* pThis,
+                                   HWND hWnd,
+                                   UINT Msg,
+                                   WPARAM wParam,
+                                   LPARAM lParam,
+                                   bool* flag) {
+    if (Msg == g_setAutoHideStateRegisteredMsg) {
+        SendMessage(hWnd, kHandleTrayPrivateSettingMessage,
+                    kTrayPrivateSettingAutoHideSet, (BOOL)wParam);
+        return 1;
+    }
+
+    return TrayUI_WndProc_Original(pThis, hWnd, Msg, wParam, lParam, flag);
+}
+
+using TrayUI__Hide_t = void(WINAPI*)(void* pThis);
+TrayUI__Hide_t TrayUI__Hide_Original;
+void WINAPI TrayUI__Hide_Hook(void* pThis) {
+    if (g_settings.toggleOnHotkey &&
+        g_toggleState.load(std::memory_order_relaxed) ==
+            ToggleState::ForcedShown) {
+        CancelHideTimers();
+        return;
+    }
+
+    TrayUI__Hide_Original(pThis);
+}
+
+using CSecondaryTray__AutoHide_t = void(WINAPI*)(void* pThis, bool param1);
+CSecondaryTray__AutoHide_t CSecondaryTray__AutoHide_Original;
+void WINAPI CSecondaryTray__AutoHide_Hook(void* pThis, bool param1) {
+    if (g_settings.toggleOnHotkey &&
+        g_toggleState.load(std::memory_order_relaxed) ==
+            ToggleState::ForcedShown) {
+        CancelHideTimers();
+        return;
+    }
+
+    CSecondaryTray__AutoHide_Original(pThis, param1);
 }
 
 using TrayUI_SlideWindow_t = void(WINAPI*)(void* pThis,
@@ -213,6 +781,35 @@ bool HookTaskbarSymbols() {
             {LR"(public: virtual void __cdecl TrayUI::SlideWindow(struct HWND__ *,struct tagRECT const *,struct HMONITOR__ *,bool,bool))"},
             &TrayUI_SlideWindow_Original,
             TrayUI_SlideWindow_Hook,
+        },
+        {
+            {LR"(public: void __cdecl TrayUI::_Hide(void))"},
+            &TrayUI__Hide_Original,
+            TrayUI__Hide_Hook,
+            true,
+        },
+        {
+            {LR"(private: void __cdecl CSecondaryTray::_AutoHide(bool))"},
+            &CSecondaryTray__AutoHide_Original,
+            CSecondaryTray__AutoHide_Hook,
+            true,
+        },
+        {
+            {LR"(public: virtual void __cdecl TrayUI::Unhide(enum TrayCommon::TrayUnhideFlags,enum TrayCommon::UnhideRequest))"},
+            &TrayUI_Unhide_Original,
+            TrayUI_Unhide_Hook,
+            true,
+        },
+        {
+            {LR"(public: virtual __int64 __cdecl TrayUI::WndProc(struct HWND__ *,unsigned int,unsigned __int64,__int64,bool *))"},
+            &TrayUI_WndProc_Original,
+            TrayUI_WndProc_Hook,
+        },
+        {
+            {LR"(private: void __cdecl CSecondaryTray::_Unhide(enum TrayCommon::TrayUnhideFlags,enum TrayCommon::UnhideRequest))"},
+            &CSecondaryTray__Unhide_Original,
+            CSecondaryTray__Unhide_Hook,
+            true,
         },
     };
 
@@ -309,6 +906,17 @@ bool HookExplorerPatcherSymbols(HMODULE explorerPatcherModule) {
     EXPLORER_PATCHER_HOOK hooks[] = {
         {R"(?SlideWindow@TrayUI@@UEAAXPEAUHWND__@@PEBUtagRECT@@PEAUHMONITOR__@@_N3@Z)",
          &TrayUI_SlideWindow_Original, TrayUI_SlideWindow_Hook},
+        {R"(?_Hide@TrayUI@@QEAAXXZ)", &TrayUI__Hide_Original,
+         TrayUI__Hide_Hook, true},
+        {R"(?_AutoHide@CSecondaryTray@@AEAAX_N@Z)",
+         &CSecondaryTray__AutoHide_Original, CSecondaryTray__AutoHide_Hook,
+         true},
+        {R"(?Unhide@TrayUI@@UEAAXW4TrayUnhideFlags@TrayCommon@@W4UnhideRequest@3@@Z)",
+         &TrayUI_Unhide_Original, TrayUI_Unhide_Hook, true},
+        {R"(?WndProc@TrayUI@@UEAA_JPEAUHWND__@@I_K_JPEA_N@Z)",
+         &TrayUI_WndProc_Original, TrayUI_WndProc_Hook},
+        {R"(?_Unhide@CSecondaryTray@@AEAAXW4TrayUnhideFlags@TrayCommon@@W4UnhideRequest@3@@Z)",
+         &CSecondaryTray__Unhide_Original, CSecondaryTray__Unhide_Hook, true},
     };
 
     bool succeeded = true;
@@ -397,6 +1005,9 @@ HMODULE WINAPI LoadLibraryExW_Hook(LPCWSTR lpLibFileName,
 
 void LoadSettings() {
     g_settings.fullyHide = Wh_GetIntSetting(L"fullyHide");
+    g_settings.toggleOnHotkey = Wh_GetIntSetting(L"toggleOnHotkey");
+    g_settings.resizeOnStickyToggle =
+        Wh_GetIntSetting(L"resizeOnStickyToggle");
     g_settings.oldTaskbarOnWin11 = Wh_GetIntSetting(L"oldTaskbarOnWin11");
 }
 
@@ -404,6 +1015,11 @@ BOOL Wh_ModInit() {
     Wh_Log(L">");
 
     LoadSettings();
+    g_toggleState.store(
+        g_settings.toggleOnHotkey ? ToggleState::ForcedShown
+                                  : ToggleState::Default,
+        std::memory_order_relaxed);
+    g_lastToggleTick.store(0, std::memory_order_relaxed);
 
     g_winVersion = GetExplorerVersion();
     if (g_winVersion == WinVersion::Unsupported) {
@@ -463,13 +1079,24 @@ void Wh_ModAfterInit() {
         HandleLoadedExplorerPatcher();
     }
 
-    if (g_settings.fullyHide) {
+    if (g_settings.toggleOnHotkey) {
+        InstallKeyboardHook();
+        CancelHideTimers();
+        if (g_settings.fullyHide) {
+            CloakAllTaskbars(FALSE);
+        }
+        ShowAllTaskbars();
+        UpdateAutoHideForToggleState(ToggleState::ForcedShown);
+    } else if (g_settings.fullyHide) {
         CloakAllTaskbars(TRUE);
     }
 }
 
 void Wh_ModUninit() {
     Wh_Log(L">");
+
+    UninstallKeyboardHook();
+    RestoreAutoHideOriginalState();
 
     if (g_settings.fullyHide) {
         CloakAllTaskbars(FALSE);
@@ -481,8 +1108,38 @@ BOOL Wh_ModSettingsChanged(BOOL* bReload) {
 
     bool prevOldTaskbarOnWin11 = g_settings.oldTaskbarOnWin11;
     bool prevFullyHide = g_settings.fullyHide;
+    bool prevToggleOnHotkey = g_settings.toggleOnHotkey;
+    bool prevResizeOnStickyToggle = g_settings.resizeOnStickyToggle;
 
     LoadSettings();
+
+    if (g_settings.toggleOnHotkey != prevToggleOnHotkey) {
+        if (!g_settings.toggleOnHotkey) {
+            UninstallKeyboardHook();
+            RestoreAutoHideOriginalState();
+        } else {
+            InstallKeyboardHook();
+            g_autoHideStateCaptured.store(false, std::memory_order_relaxed);
+            if (g_settings.resizeOnStickyToggle) {
+                CaptureAutoHideOriginalState();
+            }
+        }
+
+        g_toggleState.store(ToggleState::Default,
+                            std::memory_order_relaxed);
+        g_lastToggleTick.store(0, std::memory_order_relaxed);
+    }
+
+    if (g_settings.resizeOnStickyToggle != prevResizeOnStickyToggle) {
+        if (!g_settings.resizeOnStickyToggle) {
+            RestoreAutoHideOriginalState();
+            g_autoHideStateCaptured.store(false, std::memory_order_relaxed);
+        } else if (g_settings.toggleOnHotkey) {
+            g_autoHideStateCaptured.store(false, std::memory_order_relaxed);
+            UpdateAutoHideForToggleState(
+                g_toggleState.load(std::memory_order_relaxed));
+        }
+    }
 
     if (g_settings.fullyHide != prevFullyHide) {
         if (g_settings.fullyHide) {
