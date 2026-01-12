@@ -68,7 +68,7 @@ Hotkeys are specified in the format: `Modifier+Modifier+Key`
   MediaStop
 - Modifier keys (for Virtual key press): LWin, RWin, LShift, RShift, LCtrl,
   RCtrl, LAlt, RAlt
-- Any VK_* code from [Virtual-Key
+- Some of the VK_* codes from [Virtual-Key
   Codes](https://learn.microsoft.com/en-us/windows/win32/inputdev/virtual-key-codes)
 
 **Examples:**
@@ -365,6 +365,15 @@ enum {
 // Message to uninit COM from GUI thread
 static const UINT g_uninitCOMMsg =
     RegisterWindowMessage(L"Windhawk_UnInit_COM_" WH_MOD_ID);
+
+// Timer constants for keypress retry when modifier keys are pressed
+static const int kMaxKeypressRetryCount = 50;  // ~500ms max wait
+static const UINT kKeypressRetryIntervalMs = 10;
+
+// Pending keypress storage for deferred send
+static std::vector<int> g_pendingKeypressKeys;
+static int g_pendingKeypressRetryCount = 0;
+static UINT_PTR g_keypressTimerId = 0;
 
 // Forward declarations
 void LoadSettings();
@@ -789,8 +798,17 @@ void ShowDesktop() {
     }
 }
 
-// Sends virtual key sequence
-void SendKeypress(const std::vector<int>& keys) {
+// Checks if any modifier keys are currently pressed
+bool AreModifierKeysPressed() {
+    return (GetAsyncKeyState(VK_CONTROL) & 0x8000) ||
+           (GetAsyncKeyState(VK_MENU) & 0x8000) ||  // Alt
+           (GetAsyncKeyState(VK_SHIFT) & 0x8000) ||
+           (GetAsyncKeyState(VK_LWIN) & 0x8000) ||
+           (GetAsyncKeyState(VK_RWIN) & 0x8000);
+}
+
+// Internal function to send virtual key sequence
+void SendKeypressInternal(const std::vector<int>& keys) {
     if (keys.empty()) {
         return;
     }
@@ -817,6 +835,50 @@ void SendKeypress(const std::vector<int>& keys) {
     }
 
     SendInput(NUM_KEYS * 2, input.get(), sizeof(input[0]));
+}
+
+// Timer callback to retry sending keypress when modifier keys are released
+void CALLBACK KeypressRetryTimerProc(HWND, UINT, UINT_PTR timerId, DWORD) {
+    if (!AreModifierKeysPressed()) {
+        // Keys released, send the keypress
+        KillTimer(nullptr, timerId);
+        g_keypressTimerId = 0;
+        Wh_Log(L"Modifier keys released, sending deferred keypress");
+        SendKeypressInternal(g_pendingKeypressKeys);
+        g_pendingKeypressKeys.clear();
+    } else if (++g_pendingKeypressRetryCount >= kMaxKeypressRetryCount) {
+        // Timeout - send anyway
+        KillTimer(nullptr, timerId);
+        g_keypressTimerId = 0;
+        Wh_Log(L"Timeout waiting for modifier keys, sending anyway");
+        SendKeypressInternal(g_pendingKeypressKeys);
+        g_pendingKeypressKeys.clear();
+    }
+}
+
+// Sends virtual key sequence, deferring if modifier keys are pressed
+void SendKeypress(const std::vector<int>& keys) {
+    if (keys.empty()) {
+        return;
+    }
+
+    // Cancel any pending keypress
+    if (g_keypressTimerId) {
+        KillTimer(nullptr, g_keypressTimerId);
+        g_keypressTimerId = 0;
+    }
+
+    if (AreModifierKeysPressed()) {
+        // Defer keypress - store and start thread timer
+        g_pendingKeypressKeys = keys;
+        g_pendingKeypressRetryCount = 0;
+        g_keypressTimerId =
+            SetTimer(nullptr, 0, kKeypressRetryIntervalMs, KeypressRetryTimerProc);
+        Wh_Log(L"Modifier keys pressed, deferring keypress");
+        return;
+    }
+
+    SendKeypressInternal(keys);
 }
 
 void SendCtrlAltTabKeypress() {
