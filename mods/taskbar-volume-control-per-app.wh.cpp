@@ -30,6 +30,9 @@ Scrolling over a taskbar button will adjust the volume of that specific
 application. A tooltip shows the current volume percentage, or "No audio
 session" if the app has no active audio.
 
+For controlling the overall system volume, check out the [Taskbar Volume
+Control](https://windhawk.net/mods/taskbar-volume-control) mod.
+
 ![Demonstration](https://i.imgur.com/56QHjUv.gif)
 */
 // ==/WindhawkModReadme==
@@ -58,6 +61,7 @@ session" if the app has no active audio.
 #include <windhawk_utils.h>
 
 #include <atomic>
+#include <functional>
 
 #include <audiopolicy.h>
 #include <endpointvolume.h>
@@ -134,13 +138,20 @@ void SndVolUninit() {
     }
 }
 
-// Adjust volume for all audio sessions matching the given process ID.
-// Returns the new volume level (0-100) or -1 if no sessions found.
-int AdjustAppVolume(DWORD targetPID, float fVolumeAdd) {
+// Callback type for processing audio sessions.
+// Returns true to continue iterating, false to stop.
+using AudioSessionCallback =
+    std::function<bool(ISimpleAudioVolume* simpleVolume)>;
+
+// Iterates over all audio sessions for a given process ID.
+// Calls the callback for each matching session's ISimpleAudioVolume.
+// Returns true if at least one session was found and processed.
+bool ForEachAudioSession(DWORD targetPID,
+                         const AudioSessionCallback& callback) {
     if (!g_pDeviceEnumerator) {
         SndVolInit();
         if (!g_pDeviceEnumerator) {
-            return -1;
+            return false;
         }
     }
 
@@ -148,29 +159,28 @@ int AdjustAppVolume(DWORD targetPID, float fVolumeAdd) {
     HRESULT hr = g_pDeviceEnumerator->GetDefaultAudioEndpoint(
         eRender, eConsole, defaultDevice.put());
     if (FAILED(hr)) {
-        return -1;
+        return false;
     }
 
     winrt::com_ptr<IAudioSessionManager2> sessionManager;
     hr = defaultDevice->Activate(XIID_IAudioSessionManager2, CLSCTX_ALL, NULL,
                                  sessionManager.put_void());
     if (FAILED(hr)) {
-        return -1;
+        return false;
     }
 
     winrt::com_ptr<IAudioSessionEnumerator> sessionEnumerator;
     hr = sessionManager->GetSessionEnumerator(sessionEnumerator.put());
     if (FAILED(hr)) {
-        return -1;
+        return false;
     }
 
     int sessionCount = 0;
     hr = sessionEnumerator->GetCount(&sessionCount);
     if (FAILED(hr)) {
-        return -1;
+        return false;
     }
 
-    int newVolumePercent = -1;
     bool foundSession = false;
 
     for (int i = 0; i < sessionCount; i++) {
@@ -205,107 +215,69 @@ int AdjustAppVolume(DWORD targetPID, float fVolumeAdd) {
             continue;
         }
 
-        float currentVolume = 0.0f;
-        hr = simpleVolume->GetMasterVolume(&currentVolume);
-        if (SUCCEEDED(hr)) {
-            float newVolume = currentVolume + fVolumeAdd;
-            if (newVolume < 0.0f)
-                newVolume = 0.0f;
-            else if (newVolume > 1.0f)
-                newVolume = 1.0f;
-
-            hr = simpleVolume->SetMasterVolume(newVolume, NULL);
-            if (SUCCEEDED(hr)) {
-                foundSession = true;
-                newVolumePercent = (int)(newVolume * 100.0f + 0.5f);
-
-                // Handle mute state based on volume.
-                if (!g_settings.noAutomaticMuteToggle) {
-                    if (newVolume < 0.005f) {
-                        simpleVolume->SetMute(TRUE, NULL);
-                    } else {
-                        simpleVolume->SetMute(FALSE, NULL);
-                    }
-                }
-            }
+        foundSession = true;
+        if (!callback(simpleVolume.get())) {
+            break;
         }
     }
 
-    return foundSession ? newVolumePercent : -1;
+    return foundSession;
+}
+
+// Adjust volume for all audio sessions matching the given process ID.
+// Returns the new volume level (0-100) or -1 if no sessions found.
+int AdjustAppVolume(DWORD targetPID, float fVolumeAdd) {
+    int newVolumePercent = -1;
+
+    bool found = ForEachAudioSession(targetPID, [&](ISimpleAudioVolume* vol) {
+        float currentVolume = 0.0f;
+        HRESULT hr = vol->GetMasterVolume(&currentVolume);
+        if (FAILED(hr)) {
+            return true;  // Continue to next session.
+        }
+
+        float newVolume = currentVolume + fVolumeAdd;
+        if (newVolume < 0.0f) {
+            newVolume = 0.0f;
+        } else if (newVolume > 1.0f) {
+            newVolume = 1.0f;
+        }
+
+        hr = vol->SetMasterVolume(newVolume, NULL);
+        if (SUCCEEDED(hr)) {
+            newVolumePercent = (int)(newVolume * 100.0f + 0.5f);
+
+            // Handle mute state based on volume.
+            if (!g_settings.noAutomaticMuteToggle) {
+                if (newVolume < 0.005f) {
+                    vol->SetMute(TRUE, NULL);
+                } else {
+                    vol->SetMute(FALSE, NULL);
+                }
+            }
+        }
+
+        return true;  // Continue to process all sessions.
+    });
+
+    return found ? newVolumePercent : -1;
 }
 
 // Get the current volume for a process (returns 0-100 or -1 if no session).
 int GetAppVolume(DWORD targetPID) {
-    if (!g_pDeviceEnumerator) {
-        return -1;
-    }
+    int volumePercent = -1;
 
-    winrt::com_ptr<IMMDevice> defaultDevice;
-    HRESULT hr = g_pDeviceEnumerator->GetDefaultAudioEndpoint(
-        eRender, eConsole, defaultDevice.put());
-    if (FAILED(hr)) {
-        return -1;
-    }
-
-    winrt::com_ptr<IAudioSessionManager2> sessionManager;
-    hr = defaultDevice->Activate(XIID_IAudioSessionManager2, CLSCTX_ALL, NULL,
-                                 sessionManager.put_void());
-    if (FAILED(hr)) {
-        return -1;
-    }
-
-    winrt::com_ptr<IAudioSessionEnumerator> sessionEnumerator;
-    hr = sessionManager->GetSessionEnumerator(sessionEnumerator.put());
-    if (FAILED(hr)) {
-        return -1;
-    }
-
-    int sessionCount = 0;
-    hr = sessionEnumerator->GetCount(&sessionCount);
-    if (FAILED(hr)) {
-        return -1;
-    }
-
-    for (int i = 0; i < sessionCount; i++) {
-        winrt::com_ptr<IAudioSessionControl> sessionControl;
-        hr = sessionEnumerator->GetSession(i, sessionControl.put());
-        if (FAILED(hr)) {
-            continue;
-        }
-
-        winrt::com_ptr<IAudioSessionControl2> sessionControl2;
-        hr = sessionControl->QueryInterface(__uuidof(IAudioSessionControl2),
-                                            sessionControl2.put_void());
-        if (FAILED(hr)) {
-            continue;
-        }
-
-        DWORD sessionPID = 0;
-        hr = sessionControl2->GetProcessId(&sessionPID);
-        if (FAILED(hr) || sessionPID != targetPID) {
-            continue;
-        }
-
-        // Skip system sounds session.
-        if (sessionControl2->IsSystemSoundsSession() == S_OK) {
-            continue;
-        }
-
-        winrt::com_ptr<ISimpleAudioVolume> simpleVolume;
-        hr = sessionControl2->QueryInterface(__uuidof(ISimpleAudioVolume),
-                                             simpleVolume.put_void());
-        if (FAILED(hr)) {
-            continue;
-        }
-
+    ForEachAudioSession(targetPID, [&](ISimpleAudioVolume* vol) {
         float currentVolume = 0.0f;
-        hr = simpleVolume->GetMasterVolume(&currentVolume);
+        HRESULT hr = vol->GetMasterVolume(&currentVolume);
         if (SUCCEEDED(hr)) {
-            return (int)(currentVolume * 100.0f + 0.5f);
+            volumePercent = (int)(currentVolume * 100.0f + 0.5f);
+            return false;  // Stop after finding first session.
         }
-    }
+        return true;  // Continue to next session.
+    });
 
-    return -1;
+    return volumePercent;
 }
 
 HWND FindCurrentProcessTaskbarWnd() {
@@ -586,6 +558,7 @@ DWORD GetProcessIdFromTaskListButton(UIElement element) {
 
 struct {
     Controls::Primitives::Popup popup = nullptr;
+    FrameworkElement taskbarFrame = nullptr;
     UINT_PTR hideTimer = 0;
 } g_volumeTooltipState;
 
@@ -612,9 +585,35 @@ void CALLBACK HideVolumeTooltipTimerProc(HWND hwnd,
     }
 }
 
+// Tooltip positioning offset from cursor in pixels.
+constexpr int kTooltipOffset = 12;
+
+void UpdateTooltipVerticalPosition() {
+    if (!g_volumeTooltipState.popup || !g_volumeTooltipState.taskbarFrame) {
+        return;
+    }
+
+    auto popup = g_volumeTooltipState.popup;
+    auto border = popup.Child().try_as<FrameworkElement>();
+    if (!border) {
+        return;
+    }
+
+    double taskbarHeight = g_volumeTooltipState.taskbarFrame.ActualHeight();
+    double tooltipHeight = border.ActualHeight();
+    popup.VerticalOffset((taskbarHeight - tooltipHeight) / 2);
+}
+
+void UpdateTooltipHorizontalPosition(double cursorX) {
+    if (!g_volumeTooltipState.popup) {
+        return;
+    }
+
+    g_volumeTooltipState.popup.HorizontalOffset(cursorX + kTooltipOffset);
+}
+
 void ShowVolumeTooltip(FrameworkElement taskbarFrame,
                        double cursorX,
-                       double cursorY,
                        PCWSTR text) {
     if (!taskbarFrame) {
         return;
@@ -635,8 +634,14 @@ void ShowVolumeTooltip(FrameworkElement taskbarFrame,
         popup.IsHitTestVisible(false);
         popup.Child(border);
 
+        // Update vertical position when the border size changes.
+        border.SizeChanged(
+            [](auto&&, auto&&) { UpdateTooltipVerticalPosition(); });
+
         g_volumeTooltipState.popup = popup;
     }
+
+    g_volumeTooltipState.taskbarFrame = taskbarFrame;
 
     auto popup = g_volumeTooltipState.popup;
     auto border = popup.Child().try_as<Controls::Border>();
@@ -661,9 +666,12 @@ void ShowVolumeTooltip(FrameworkElement taskbarFrame,
     // Set XamlRoot and position near cursor.
     popup.XamlRoot(taskbarFrame.XamlRoot());
 
-    // Position at cursor X, vertically centered in taskbar.
-    popup.HorizontalOffset(cursorX + 12);
-    popup.VerticalOffset(taskbarFrame.ActualHeight() / 2 - 12);
+    // Position horizontally offset from cursor.
+    UpdateTooltipHorizontalPosition(cursorX);
+
+    // Vertical position will be set by SizeChanged handler once measured.
+    // Set initial estimate for first display.
+    UpdateTooltipVerticalPosition();
 
     popup.IsOpen(true);
 
@@ -689,6 +697,7 @@ void HideVolumeTooltip() {
 void CleanupVolumeTooltip() {
     HideVolumeTooltip();
     g_volumeTooltipState.popup = nullptr;
+    g_volumeTooltipState.taskbarFrame = nullptr;
 }
 
 // Per-app volume wheel scroll handling.
@@ -757,7 +766,6 @@ int WINAPI TaskListButton_OnPointerWheelChanged_Hook(void* pThis, void* pArgs) {
     if (taskbarFrame) {
         auto point = args.GetCurrentPoint(taskbarFrame);
         double cursorX = point.Position().X;
-        double cursorY = point.Position().Y;
 
         WCHAR tooltipText[64];
         if (newVolume >= 0) {
@@ -765,7 +773,7 @@ int WINAPI TaskListButton_OnPointerWheelChanged_Hook(void* pThis, void* pArgs) {
         } else {
             wcscpy_s(tooltipText, L"No audio session");
         }
-        ShowVolumeTooltip(taskbarFrame, cursorX, cursorY, tooltipText);
+        ShowVolumeTooltip(taskbarFrame, cursorX, tooltipText);
     }
 
     // Mark event as handled.
@@ -799,6 +807,46 @@ int WINAPI TaskListButton_OnPointerExited_Hook(void* pThis, void* pArgs) {
     return original();
 }
 
+using TaskListButton_OnPointerMoved_t = int(WINAPI*)(void* pThis, void* pArgs);
+TaskListButton_OnPointerMoved_t TaskListButton_OnPointerMoved_Original;
+int WINAPI TaskListButton_OnPointerMoved_Hook(void* pThis, void* pArgs) {
+    auto original = [=]() {
+        return TaskListButton_OnPointerMoved_Original(pThis, pArgs);
+    };
+
+    // Only update if tooltip is currently shown.
+    if (!g_volumeTooltipState.popup || !g_volumeTooltipState.popup.IsOpen() ||
+        !g_volumeTooltipState.taskbarFrame) {
+        return original();
+    }
+
+    UIElement element = nullptr;
+    ((IUnknown*)pThis)
+        ->QueryInterface(winrt::guid_of<UIElement>(), winrt::put_abi(element));
+    if (!element) {
+        return original();
+    }
+
+    auto className = winrt::get_class_name(element);
+    if (className != L"Taskbar.TaskListButton") {
+        return original();
+    }
+
+    Input::PointerRoutedEventArgs args = nullptr;
+    ((IUnknown*)pArgs)
+        ->QueryInterface(winrt::guid_of<Input::PointerRoutedEventArgs>(),
+                         winrt::put_abi(args));
+    if (!args) {
+        return original();
+    }
+
+    // Update horizontal position to follow cursor.
+    auto point = args.GetCurrentPoint(g_volumeTooltipState.taskbarFrame);
+    UpdateTooltipHorizontalPosition(point.Position().X);
+
+    return original();
+}
+
 void LoadSettings() {
     g_settings.volumeChangeStep = Wh_GetIntSetting(L"volumeChangeStep");
     g_settings.noAutomaticMuteToggle =
@@ -819,6 +867,11 @@ bool HookTaskbarViewDllSymbols(HMODULE module) {
             {LR"(public: virtual int __cdecl winrt::impl::produce<struct winrt::Taskbar::implementation::TaskListButton,struct winrt::Windows::UI::Xaml::Controls::IControlOverrides>::OnPointerExited(void *))"},
             &TaskListButton_OnPointerExited_Original,
             TaskListButton_OnPointerExited_Hook,
+        },
+        {
+            {LR"(public: virtual int __cdecl winrt::impl::produce<struct winrt::Taskbar::implementation::TaskListButton,struct winrt::Windows::UI::Xaml::Controls::IControlOverrides>::OnPointerMoved(void *))"},
+            &TaskListButton_OnPointerMoved_Original,
+            TaskListButton_OnPointerMoved_Hook,
         },
         {
             {LR"(struct winrt::Taskbar::TaskListWindowViewModel __cdecl TryGetItemFromContainer<struct winrt::Taskbar::TaskListWindowViewModel>(struct winrt::Windows::UI::Xaml::UIElement const &))"},
@@ -931,6 +984,10 @@ BOOL Wh_ModInit() {
 
     LoadSettings();
 
+    if (!HookTaskbarDllSymbols()) {
+        return FALSE;
+    }
+
     if (HMODULE taskbarViewModule = GetTaskbarViewModuleHandle()) {
         g_taskbarViewDllLoaded = true;
         if (!HookTaskbarViewDllSymbols(taskbarViewModule)) {
@@ -939,8 +996,6 @@ BOOL Wh_ModInit() {
     } else {
         Wh_Log(L"Taskbar view module not loaded yet");
     }
-
-    HookTaskbarDllSymbols();
 
     HMODULE kernelBaseModule = GetModuleHandle(L"kernelbase.dll");
     auto pKernelBaseLoadLibraryExW = (decltype(&LoadLibraryExW))GetProcAddress(
