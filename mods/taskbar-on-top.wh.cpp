@@ -1618,19 +1618,24 @@ BOOL WINAPI MoveWindow_Hook(HWND hWnd,
             return original();
         }
 
-        // Skip Alt+Tab window, which uses band ZBID_SYSTEM_TOOLS. The
-        // virtual desktop switcher uses band ZBID_IMMERSIVE_EDGY.
-        if (pGetWindowBand) {
-            DWORD band = 0;
-            if (pGetWindowBand(hWnd, &band) && band == ZBID_SYSTEM_TOOLS) {
-                return original();
-            }
+        // Only handle the virtual desktop switcher, which shows up when
+        // hovering over the task view button in the taskbar. Skip Alt+Tab
+        // window, which uses band ZBID_SYSTEM_TOOLS. The virtual desktop
+        // switcher uses band ZBID_IMMERSIVE_EDGY.
+        DWORD band = 0;
+        if (pGetWindowBand && pGetWindowBand(hWnd, &band) &&
+            band == ZBID_SYSTEM_TOOLS) {
+            return original();
         }
 
-        POINT pt;
-        GetCursorPos(&pt);
+        RECT rect{
+            .left = X,
+            .top = Y,
+            .right = X + nWidth,
+            .bottom = Y + nHeight,
+        };
 
-        HMONITOR monitor = MonitorFromPoint(pt, MONITOR_DEFAULTTONEAREST);
+        HMONITOR monitor = MonitorFromRect(&rect, MONITOR_DEFAULTTONEAREST);
         if (GetTaskbarLocationForMonitor(monitor) == TaskbarLocation::bottom) {
             return original();
         }
