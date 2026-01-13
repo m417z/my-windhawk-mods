@@ -3381,17 +3381,56 @@ BOOL WINAPI MoveWindow_Hook(HWND hWnd,
     }
 
     if (_wcsicmp(szClassName,
-                 L"Windows.UI.Composition.DesktopWindowContentBridge") != 0) {
+                 L"Windows.UI.Composition.DesktopWindowContentBridge") == 0) {
+        if (!IsTaskbarWindow(GetAncestor(hWnd, GA_ROOT))) {
+            return original();
+        }
+
+        nWidth = nHeight;
+    } else if (_wcsicmp(szClassName, L"XamlExplorerHostIslandWindow") == 0) {
+        DWORD threadId = GetWindowThreadProcessId(hWnd, nullptr);
+        if (!threadId) {
+            return original();
+        }
+
+        if (GetThreadIdDescriptionAsString(threadId) != L"MultitaskingView") {
+            return original();
+        }
+
+        RECT rect{
+            .left = X,
+            .top = Y,
+            .right = X + nWidth,
+            .bottom = Y + nHeight,
+        };
+
+        HMONITOR monitor = MonitorFromRect(&rect, MONITOR_DEFAULTTONEAREST);
+
+        MONITORINFO monitorInfo{
+            .cbSize = sizeof(MONITORINFO),
+        };
+        GetMonitorInfo(monitor, &monitorInfo);
+
+        // Make sure the Alt+Tab/Win+Tab window doesn't overlap with the
+        // taskbar. This function seems to only be called for Alt+Tab. Win+Tab
+        // is create by CreateWindowInBand, and an inner child window is
+        // positioned with SetWindowPos. It'd be nice to handle that case too,
+        // maybe one day...
+        if (X < monitorInfo.rcWork.left) {
+            X = monitorInfo.rcWork.left;
+        }
+
+        if (nHeight > monitorInfo.rcWork.bottom - monitorInfo.rcWork.top) {
+            nHeight = monitorInfo.rcWork.bottom - monitorInfo.rcWork.top;
+        }
+    } else {
         return original();
     }
 
-    if (!IsTaskbarWindow(GetAncestor(hWnd, GA_ROOT))) {
-        return original();
-    }
+    Wh_Log(L"Adjusting pos for %s: %dx%d, %dx%d", szClassName, X, Y, X + nWidth,
+           Y + nHeight);
 
-    Wh_Log(L">");
-
-    return MoveWindow_Original(hWnd, X, Y, nHeight, nHeight, bRepaint);
+    return MoveWindow_Original(hWnd, X, Y, nWidth, nHeight, bRepaint);
 }
 
 using MapWindowPoints_t = decltype(&MapWindowPoints);
