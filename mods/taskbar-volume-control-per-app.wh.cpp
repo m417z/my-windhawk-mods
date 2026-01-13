@@ -9,7 +9,7 @@
 // @homepage        https://m417z.com/
 // @include         explorer.exe
 // @architecture    x86-64
-// @compilerOptions -lcomctl32 -lole32 -loleaut32 -lruntimeobject
+// @compilerOptions -lcomctl32 -lntdll -lole32 -loleaut32 -lruntimeobject
 // ==/WindhawkMod==
 
 // Source code is published under The GNU General Public License v3.0.
@@ -62,10 +62,13 @@ Control](https://windhawk.net/mods/taskbar-volume-control) mod.
 
 #include <atomic>
 #include <functional>
+#include <string>
 
 #include <audiopolicy.h>
 #include <endpointvolume.h>
 #include <mmdeviceapi.h>
+#include <tlhelp32.h>
+#include <winternl.h>
 
 #undef GetCurrentTime
 
@@ -224,9 +227,109 @@ bool ForEachAudioSession(DWORD targetPID,
     return foundSession;
 }
 
+// Get the command line of a process from its handle.
+// Returns empty string on failure.
+std::wstring GetProcessCommandLine(HANDLE hProcess) {
+    PROCESS_BASIC_INFORMATION pbi;
+    ULONG returnLength;
+    NTSTATUS status = NtQueryInformationProcess(
+        hProcess, ProcessBasicInformation, &pbi, sizeof(pbi), &returnLength);
+
+    if (!NT_SUCCESS(status) || !pbi.PebBaseAddress) {
+        return {};
+    }
+
+    PEB peb;
+    if (!ReadProcessMemory(hProcess, pbi.PebBaseAddress, &peb, sizeof(peb),
+                           nullptr)) {
+        return {};
+    }
+
+    RTL_USER_PROCESS_PARAMETERS params;
+    if (!ReadProcessMemory(hProcess, peb.ProcessParameters, &params,
+                           sizeof(params), nullptr)) {
+        return {};
+    }
+
+    std::wstring cmdLine(params.CommandLine.Length / sizeof(WCHAR), L'\0');
+    if (!ReadProcessMemory(hProcess, params.CommandLine.Buffer, cmdLine.data(),
+                           params.CommandLine.Length, nullptr)) {
+        return {};
+    }
+
+    return cmdLine;
+}
+
+// Find Chromium's audio subprocess for a given parent process.
+// Chromium-based browsers run audio in a separate utility process with
+// specific command line flags. Returns the audio subprocess PID or 0 if not
+// found.
+DWORD FindChromiumAudioSubprocess(DWORD parentPID) {
+    HANDLE snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+    if (snapshot == INVALID_HANDLE_VALUE) {
+        return 0;
+    }
+
+    DWORD audioSubprocessPID = 0;
+
+    PROCESSENTRY32 pe32;
+    pe32.dwSize = sizeof(pe32);
+
+    if (Process32First(snapshot, &pe32)) {
+        do {
+            if (pe32.th32ParentProcessID != parentPID) {
+                continue;
+            }
+
+            HANDLE hProcess =
+                OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION | PROCESS_VM_READ,
+                            FALSE, pe32.th32ProcessID);
+            if (!hProcess) {
+                continue;
+            }
+
+            std::wstring cmdLine = GetProcessCommandLine(hProcess);
+            CloseHandle(hProcess);
+
+            if (cmdLine.empty()) {
+                continue;
+            }
+
+            // Parse command line and check for Chromium audio service flags.
+            int argc = 0;
+            LPWSTR* argv = CommandLineToArgvW(cmdLine.c_str(), &argc);
+            if (!argv) {
+                continue;
+            }
+
+            bool isUtility = false;
+            bool isAudioService = false;
+            for (int i = 0; i < argc; i++) {
+                if (wcscmp(argv[i], L"--type=utility") == 0) {
+                    isUtility = true;
+                } else if (wcscmp(argv[i],
+                                  L"--utility-sub-type=audio.mojom."
+                                  L"AudioService") == 0) {
+                    isAudioService = true;
+                }
+            }
+
+            LocalFree(argv);
+
+            if (isUtility && isAudioService) {
+                audioSubprocessPID = pe32.th32ProcessID;
+                break;
+            }
+        } while (Process32Next(snapshot, &pe32));
+    }
+
+    CloseHandle(snapshot);
+    return audioSubprocessPID;
+}
+
 // Adjust volume for all audio sessions matching the given process ID.
 // Returns the new volume level (0-100) or -1 if no sessions found.
-int AdjustAppVolume(DWORD targetPID, float fVolumeAdd) {
+int AdjustAppVolumeForPID(DWORD targetPID, float fVolumeAdd) {
     int newVolumePercent = -1;
 
     bool found = ForEachAudioSession(targetPID, [&](ISimpleAudioVolume* vol) {
@@ -263,8 +366,23 @@ int AdjustAppVolume(DWORD targetPID, float fVolumeAdd) {
     return found ? newVolumePercent : -1;
 }
 
+int AdjustAppVolume(DWORD targetPID, float fVolumeAdd) {
+    int result = AdjustAppVolumeForPID(targetPID, fVolumeAdd);
+    if (result >= 0) {
+        return result;
+    }
+
+    // Try Chromium audio subprocess if no session found.
+    DWORD audioSubprocessPID = FindChromiumAudioSubprocess(targetPID);
+    if (audioSubprocessPID) {
+        result = AdjustAppVolumeForPID(audioSubprocessPID, fVolumeAdd);
+    }
+
+    return result;
+}
+
 // Get the current volume for a process (returns 0-100 or -1 if no session).
-int GetAppVolume(DWORD targetPID) {
+int GetAppVolumeForPID(DWORD targetPID) {
     int volumePercent = -1;
 
     ForEachAudioSession(targetPID, [&](ISimpleAudioVolume* vol) {
@@ -278,6 +396,21 @@ int GetAppVolume(DWORD targetPID) {
     });
 
     return volumePercent;
+}
+
+int GetAppVolume(DWORD targetPID) {
+    int result = GetAppVolumeForPID(targetPID);
+    if (result >= 0) {
+        return result;
+    }
+
+    // Try Chromium audio subprocess if no session found.
+    DWORD audioSubprocessPID = FindChromiumAudioSubprocess(targetPID);
+    if (audioSubprocessPID) {
+        result = GetAppVolumeForPID(audioSubprocessPID);
+    }
+
+    return result;
 }
 
 HWND FindCurrentProcessTaskbarWnd() {
