@@ -62,6 +62,7 @@ Control](https://windhawk.net/mods/taskbar-volume-control) mod.
 
 #include <atomic>
 #include <functional>
+#include <optional>
 #include <string>
 
 #include <audiopolicy.h>
@@ -327,12 +328,17 @@ DWORD FindChromiumAudioSubprocess(DWORD parentPID) {
     return audioSubprocessPID;
 }
 
-// Adjust volume for all audio sessions matching the given process ID.
-// Returns the new volume level (0-100) or -1 if no sessions found.
-int AdjustAppVolumeForPID(DWORD targetPID, float fVolumeAdd) {
-    int newVolumePercent = -1;
+struct AppVolumeResult {
+    int volume;  // 0-100.
+    bool muted;
+};
 
-    bool found = ForEachAudioSession(targetPID, [&](ISimpleAudioVolume* vol) {
+// Adjust volume for all audio sessions matching the given process ID.
+std::optional<AppVolumeResult> AdjustAppVolumeForPID(DWORD targetPID,
+                                                     float fVolumeAdd) {
+    std::optional<AppVolumeResult> result;
+
+    ForEachAudioSession(targetPID, [&](ISimpleAudioVolume* vol) {
         float currentVolume = 0.0f;
         HRESULT hr = vol->GetMasterVolume(&currentVolume);
         if (FAILED(hr)) {
@@ -348,27 +354,39 @@ int AdjustAppVolumeForPID(DWORD targetPID, float fVolumeAdd) {
 
         hr = vol->SetMasterVolume(newVolume, NULL);
         if (SUCCEEDED(hr)) {
-            newVolumePercent = (int)(newVolume * 100.0f + 0.5f);
+            AppVolumeResult r;
+            r.volume = (int)(newVolume * 100.0f + 0.5f);
 
             // Handle mute state based on volume.
             if (!g_settings.noAutomaticMuteToggle) {
                 if (newVolume < 0.005f) {
                     vol->SetMute(TRUE, NULL);
+                    r.muted = true;
                 } else {
                     vol->SetMute(FALSE, NULL);
+                    r.muted = false;
+                }
+            } else {
+                // Read actual mute state.
+                BOOL isMuted = FALSE;
+                if (SUCCEEDED(vol->GetMute(&isMuted))) {
+                    r.muted = isMuted;
                 }
             }
+
+            result = r;
         }
 
         return true;  // Continue to process all sessions.
     });
 
-    return found ? newVolumePercent : -1;
+    return result;
 }
 
-int AdjustAppVolume(DWORD targetPID, float fVolumeAdd) {
-    int result = AdjustAppVolumeForPID(targetPID, fVolumeAdd);
-    if (result >= 0) {
+std::optional<AppVolumeResult> AdjustAppVolume(DWORD targetPID,
+                                               float fVolumeAdd) {
+    auto result = AdjustAppVolumeForPID(targetPID, fVolumeAdd);
+    if (result) {
         return result;
     }
 
@@ -923,7 +941,7 @@ int WINAPI TaskListButton_OnPointerWheelChanged_Hook(void* pThis, void* pArgs) {
     float volumeChange = (float)delta * step * (0.01f / WHEEL_DELTA);
 
     // Adjust the app's volume.
-    int newVolume = AdjustAppVolume(processId, volumeChange);
+    auto volumeResult = AdjustAppVolume(processId, volumeChange);
 
     // Show tooltip near cursor.
     FrameworkElement taskbarFrame = FindTaskbarFrameAncestor(element);
@@ -932,10 +950,12 @@ int WINAPI TaskListButton_OnPointerWheelChanged_Hook(void* pThis, void* pArgs) {
         double cursorX = point.Position().X;
 
         WCHAR tooltipText[64];
-        if (newVolume >= 0) {
-            swprintf_s(tooltipText, L"Volume: %d%%", newVolume);
-        } else {
+        if (!volumeResult) {
             wcscpy_s(tooltipText, L"No audio session");
+        } else if (volumeResult->muted) {
+            wcscpy_s(tooltipText, L"Muted");
+        } else {
+            swprintf_s(tooltipText, L"Volume: %d%%", volumeResult->volume);
         }
         ShowVolumeTooltip(taskbarFrame, cursorX, tooltipText);
     }
