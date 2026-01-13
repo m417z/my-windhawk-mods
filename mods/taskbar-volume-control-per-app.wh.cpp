@@ -692,6 +692,8 @@ DWORD GetProcessIdFromTaskListButton(UIElement element) {
 struct {
     Controls::Primitives::Popup popup = nullptr;
     FrameworkElement taskbarFrame = nullptr;
+    double rotationAngle = 0.0;
+    double cursorX = 0.0;
     UINT_PTR hideTimer = 0;
 } g_volumeTooltipState;
 
@@ -721,28 +723,57 @@ void CALLBACK HideVolumeTooltipTimerProc(HWND hwnd,
 // Tooltip positioning offset from cursor in pixels.
 constexpr int kTooltipOffset = 12;
 
-void UpdateTooltipVerticalPosition() {
+// Get rotation angle from element's parent RenderTransform.
+// Used to detect vertical taskbar orientation.
+double GetParentRotationAngle(FrameworkElement element) {
+    auto parent =
+        Media::VisualTreeHelper::GetParent(element).try_as<UIElement>();
+    if (!parent) {
+        return 0.0;
+    }
+
+    auto transform = parent.RenderTransform();
+    if (!transform) {
+        return 0.0;
+    }
+
+    if (auto rotateTransform = transform.try_as<Media::RotateTransform>()) {
+        return rotateTransform.Angle();
+    }
+
+    if (auto transformGroup = transform.try_as<Media::TransformGroup>()) {
+        for (auto child : transformGroup.Children()) {
+            if (auto rotateTransform = child.try_as<Media::RotateTransform>()) {
+                return rotateTransform.Angle();
+            }
+        }
+    }
+
+    return 0.0;
+}
+
+void UpdateTooltipPosition() {
     if (!g_volumeTooltipState.popup || !g_volumeTooltipState.taskbarFrame) {
         return;
     }
 
     auto popup = g_volumeTooltipState.popup;
-    auto border = popup.Child().try_as<FrameworkElement>();
-    if (!border) {
-        return;
+    double cursorX = g_volumeTooltipState.cursorX;
+
+    if (g_volumeTooltipState.rotationAngle == 0.0) {
+        // Horizontal taskbar: follow cursor horizontally, center vertically.
+        auto border = popup.Child().try_as<FrameworkElement>();
+        double taskbarHeight = g_volumeTooltipState.taskbarFrame.ActualHeight();
+        double tooltipHeight = border ? border.ActualHeight() : 0;
+
+        popup.HorizontalOffset(cursorX + kTooltipOffset);
+        popup.VerticalOffset((taskbarHeight - tooltipHeight) / 2);
+    } else {
+        // Vertical taskbar: follow cursor along taskbar, fixed horizontal
+        // offset.
+        popup.HorizontalOffset(kTooltipOffset);
+        popup.VerticalOffset(cursorX + kTooltipOffset);
     }
-
-    double taskbarHeight = g_volumeTooltipState.taskbarFrame.ActualHeight();
-    double tooltipHeight = border.ActualHeight();
-    popup.VerticalOffset((taskbarHeight - tooltipHeight) / 2);
-}
-
-void UpdateTooltipHorizontalPosition(double cursorX) {
-    if (!g_volumeTooltipState.popup) {
-        return;
-    }
-
-    g_volumeTooltipState.popup.HorizontalOffset(cursorX + kTooltipOffset);
 }
 
 void ShowVolumeTooltip(FrameworkElement taskbarFrame,
@@ -767,14 +798,14 @@ void ShowVolumeTooltip(FrameworkElement taskbarFrame,
         popup.IsHitTestVisible(false);
         popup.Child(border);
 
-        // Update vertical position when the border size changes.
-        border.SizeChanged(
-            [](auto&&, auto&&) { UpdateTooltipVerticalPosition(); });
+        // Update position when the border size changes.
+        border.SizeChanged([](auto&&, auto&&) { UpdateTooltipPosition(); });
 
         g_volumeTooltipState.popup = popup;
     }
 
     g_volumeTooltipState.taskbarFrame = taskbarFrame;
+    g_volumeTooltipState.cursorX = cursorX;
 
     auto popup = g_volumeTooltipState.popup;
     auto border = popup.Child().try_as<Controls::Border>();
@@ -799,12 +830,10 @@ void ShowVolumeTooltip(FrameworkElement taskbarFrame,
     // Set XamlRoot and position near cursor.
     popup.XamlRoot(taskbarFrame.XamlRoot());
 
-    // Position horizontally offset from cursor.
-    UpdateTooltipHorizontalPosition(cursorX);
+    // Check if taskbar frame's parent is rotated (vertical taskbar).
+    g_volumeTooltipState.rotationAngle = GetParentRotationAngle(taskbarFrame);
 
-    // Vertical position will be set by SizeChanged handler once measured.
-    // Set initial estimate for first display.
-    UpdateTooltipVerticalPosition();
+    UpdateTooltipPosition();
 
     popup.IsOpen(true);
 
@@ -831,6 +860,8 @@ void CleanupVolumeTooltip() {
     HideVolumeTooltip();
     g_volumeTooltipState.popup = nullptr;
     g_volumeTooltipState.taskbarFrame = nullptr;
+    g_volumeTooltipState.rotationAngle = 0.0;
+    g_volumeTooltipState.cursorX = 0.0;
 }
 
 // Per-app volume wheel scroll handling.
@@ -973,9 +1004,10 @@ int WINAPI TaskListButton_OnPointerMoved_Hook(void* pThis, void* pArgs) {
         return original();
     }
 
-    // Update horizontal position to follow cursor.
+    // Update position to follow cursor.
     auto point = args.GetCurrentPoint(g_volumeTooltipState.taskbarFrame);
-    UpdateTooltipHorizontalPosition(point.Position().X);
+    g_volumeTooltipState.cursorX = point.Position().X;
+    UpdateTooltipPosition();
 
     return original();
 }
