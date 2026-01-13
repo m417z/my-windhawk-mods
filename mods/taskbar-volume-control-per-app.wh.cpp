@@ -54,6 +54,11 @@ Control](https://windhawk.net/mods/taskbar-volume-control) mod.
   $description: >-
     When enabled, scrolling the mouse wheel will only change the volume when
     the Ctrl key is held down.
+- terseFormat: false
+  $name: Terse format
+  $description: >-
+    When enabled, the tooltip shows a compact format with emojis instead of
+    text (e.g., "🔊 64%" instead of "Volume: 64%").
 - noAutomaticMuteToggle: false
   $name: No automatic mute toggle
   $description: >-
@@ -92,6 +97,7 @@ struct {
     int volumeChangeStep;
     bool ctrlClickToMute;
     bool ctrlScrollVolumeChange;
+    bool terseFormat;
     bool noAutomaticMuteToggle;
 } g_settings;
 
@@ -995,11 +1001,14 @@ int WINAPI TaskListButton_OnPointerWheelChanged_Hook(void* pThis, void* pArgs) {
 
         WCHAR tooltipText[64];
         if (!volumeResult) {
-            wcscpy_s(tooltipText, L"No audio session");
+            wcscpy_s(tooltipText,
+                     g_settings.terseFormat ? L"🔕" : L"No audio session");
         } else if (volumeResult->muted) {
-            wcscpy_s(tooltipText, L"Muted");
+            wcscpy_s(tooltipText, g_settings.terseFormat ? L"🔇" : L"Muted");
         } else {
-            swprintf_s(tooltipText, L"Volume: %d%%", volumeResult->volume);
+            swprintf_s(tooltipText,
+                       g_settings.terseFormat ? L"🔊 %d%%" : L"Volume: %d%%",
+                       volumeResult->volume);
         }
         ShowVolumeTooltip(taskbarFrame, cursorX, tooltipText);
     }
@@ -1135,16 +1144,21 @@ int WINAPI TaskListButton_OnPointerPressed_Hook(void* pThis, void* pArgs) {
 
         WCHAR tooltipText[64];
         if (!newMuteState) {
-            wcscpy_s(tooltipText, L"No audio session");
+            wcscpy_s(tooltipText,
+                     g_settings.terseFormat ? L"🔕" : L"No audio session");
         } else if (*newMuteState) {
-            wcscpy_s(tooltipText, L"Muted");
+            wcscpy_s(tooltipText, g_settings.terseFormat ? L"🔇" : L"Muted");
         } else {
             // Get current volume to display.
             int volume = GetAppVolume(processId);
             if (volume >= 0) {
-                swprintf_s(tooltipText, L"Volume: %d%%", volume);
+                swprintf_s(
+                    tooltipText,
+                    g_settings.terseFormat ? L"🔊 %d%%" : L"Volume: %d%%",
+                    volume);
             } else {
-                wcscpy_s(tooltipText, L"Unmuted");
+                wcscpy_s(tooltipText,
+                         g_settings.terseFormat ? L"🔊" : L"Unmuted");
             }
         }
         ShowVolumeTooltip(taskbarFrame, cursorX, tooltipText);
@@ -1160,6 +1174,7 @@ void LoadSettings() {
     g_settings.ctrlClickToMute = Wh_GetIntSetting(L"ctrlClickToMute");
     g_settings.noAutomaticMuteToggle =
         Wh_GetIntSetting(L"noAutomaticMuteToggle");
+    g_settings.terseFormat = Wh_GetIntSetting(L"terseFormat");
     g_settings.ctrlScrollVolumeChange =
         Wh_GetIntSetting(L"ctrlScrollVolumeChange");
 }
