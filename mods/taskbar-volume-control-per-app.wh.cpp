@@ -74,6 +74,7 @@ Control](https://windhawk.net/mods/taskbar-volume-control) mod.
 #include <functional>
 #include <optional>
 #include <string>
+#include <unordered_map>
 
 #include <audiopolicy.h>
 #include <endpointvolume.h>
@@ -277,7 +278,7 @@ std::wstring GetProcessCommandLine(HANDLE hProcess) {
 // Chromium-based browsers run audio in a separate utility process with
 // specific command line flags. Returns the audio subprocess PID or 0 if not
 // found.
-DWORD FindChromiumAudioSubprocess(DWORD parentPID) {
+DWORD FindChromiumAudioSubprocessUncached(DWORD parentPID) {
     HANDLE snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
     if (snapshot == INVALID_HANDLE_VALUE) {
         return 0;
@@ -337,6 +338,46 @@ DWORD FindChromiumAudioSubprocess(DWORD parentPID) {
     }
 
     CloseHandle(snapshot);
+    return audioSubprocessPID;
+}
+
+// Cache for Chromium audio subprocess lookups to avoid expensive repeated
+// process enumeration.
+struct ChromiumAudioSubprocessCache {
+    DWORD audioSubprocessPID;
+    ULONGLONG timestamp;
+};
+std::unordered_map<DWORD, ChromiumAudioSubprocessCache>
+    g_chromiumAudioSubprocessCache;
+constexpr ULONGLONG kChromiumCacheTTL = 5000;  // 5 seconds.
+
+DWORD FindChromiumAudioSubprocess(DWORD parentPID) {
+    ULONGLONG now = GetTickCount64();
+
+    // Check cache first.
+    auto it = g_chromiumAudioSubprocessCache.find(parentPID);
+    if (it != g_chromiumAudioSubprocessCache.end()) {
+        if (now - it->second.timestamp < kChromiumCacheTTL) {
+            return it->second.audioSubprocessPID;
+        }
+    }
+
+    // Cache miss or expired, do the lookup.
+    DWORD audioSubprocessPID = FindChromiumAudioSubprocessUncached(parentPID);
+
+    // Clean up expired entries.
+    for (auto cacheIt = g_chromiumAudioSubprocessCache.begin();
+         cacheIt != g_chromiumAudioSubprocessCache.end();) {
+        if (now - cacheIt->second.timestamp >= kChromiumCacheTTL) {
+            cacheIt = g_chromiumAudioSubprocessCache.erase(cacheIt);
+        } else {
+            ++cacheIt;
+        }
+    }
+
+    // Update cache.
+    g_chromiumAudioSubprocessCache[parentPID] = {audioSubprocessPID, now};
+
     return audioSubprocessPID;
 }
 
