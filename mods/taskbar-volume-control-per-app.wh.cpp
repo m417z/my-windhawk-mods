@@ -44,6 +44,11 @@ Control](https://windhawk.net/mods/taskbar-volume-control) mod.
   $description: >-
     Allows to configure the volume change that will occur with each notch of
     mouse wheel movement.
+- ctrlClickToMute: true
+  $name: Ctrl + Click to mute
+  $description: >-
+    When enabled, Ctrl+clicking on a taskbar button will toggle the mute state
+    of the application.
 - ctrlScrollVolumeChange: false
   $name: Ctrl + Scroll to change volume
   $description: >-
@@ -85,6 +90,7 @@ using namespace winrt::Windows::UI::Xaml;
 
 struct {
     int volumeChangeStep;
+    bool ctrlClickToMute;
     bool ctrlScrollVolumeChange;
     bool noAutomaticMuteToggle;
 } g_settings;
@@ -426,6 +432,44 @@ int GetAppVolume(DWORD targetPID) {
     DWORD audioSubprocessPID = FindChromiumAudioSubprocess(targetPID);
     if (audioSubprocessPID) {
         result = GetAppVolumeForPID(audioSubprocessPID);
+    }
+
+    return result;
+}
+
+// Toggle mute state for a process. Returns new mute state, or nullopt if no
+// session.
+std::optional<bool> ToggleAppMuteForPID(DWORD targetPID) {
+    std::optional<bool> newMuteState;
+
+    ForEachAudioSession(targetPID, [&](ISimpleAudioVolume* vol) {
+        BOOL isMuted = FALSE;
+        HRESULT hr = vol->GetMute(&isMuted);
+        if (FAILED(hr)) {
+            return true;  // Continue to next session.
+        }
+
+        hr = vol->SetMute(!isMuted, NULL);
+        if (SUCCEEDED(hr)) {
+            newMuteState = !isMuted;
+        }
+
+        return true;  // Continue to process all sessions.
+    });
+
+    return newMuteState;
+}
+
+std::optional<bool> ToggleAppMute(DWORD targetPID) {
+    auto result = ToggleAppMuteForPID(targetPID);
+    if (result) {
+        return result;
+    }
+
+    // Try Chromium audio subprocess if no session found.
+    DWORD audioSubprocessPID = FindChromiumAudioSubprocess(targetPID);
+    if (audioSubprocessPID) {
+        result = ToggleAppMuteForPID(audioSubprocessPID);
     }
 
     return result;
@@ -1032,8 +1076,88 @@ int WINAPI TaskListButton_OnPointerMoved_Hook(void* pThis, void* pArgs) {
     return original();
 }
 
+using TaskListButton_OnPointerPressed_t = int(WINAPI*)(void* pThis,
+                                                       void* pArgs);
+TaskListButton_OnPointerPressed_t TaskListButton_OnPointerPressed_Original;
+int WINAPI TaskListButton_OnPointerPressed_Hook(void* pThis, void* pArgs) {
+    Wh_Log(L">");
+
+    auto original = [=]() {
+        return TaskListButton_OnPointerPressed_Original(pThis, pArgs);
+    };
+
+    if (!g_settings.ctrlClickToMute) {
+        return original();
+    }
+
+    // Check if Ctrl is pressed.
+    if (GetKeyState(VK_CONTROL) >= 0) {
+        return original();
+    }
+
+    UIElement element = nullptr;
+    ((IUnknown*)pThis)
+        ->QueryInterface(winrt::guid_of<UIElement>(), winrt::put_abi(element));
+    if (!element) {
+        return original();
+    }
+
+    auto className = winrt::get_class_name(element);
+    if (className != L"Taskbar.TaskListButton") {
+        return original();
+    }
+
+    Input::PointerRoutedEventArgs args = nullptr;
+    ((IUnknown*)pArgs)
+        ->QueryInterface(winrt::guid_of<Input::PointerRoutedEventArgs>(),
+                         winrt::put_abi(args));
+    if (!args) {
+        return original();
+    }
+
+    // Get process ID from the taskbar button.
+    DWORD processId = GetProcessIdFromTaskListButton(element);
+    if (!processId) {
+        Wh_Log(L"Could not get process ID from taskbar button");
+        return original();
+    }
+
+    Wh_Log(L"Ctrl+click to toggle mute: PID=%u", processId);
+
+    // Toggle mute state.
+    auto newMuteState = ToggleAppMute(processId);
+
+    // Show tooltip near cursor.
+    FrameworkElement taskbarFrame = FindTaskbarFrameAncestor(element);
+    if (taskbarFrame) {
+        auto point = args.GetCurrentPoint(taskbarFrame);
+        double cursorX = point.Position().X;
+
+        WCHAR tooltipText[64];
+        if (!newMuteState) {
+            wcscpy_s(tooltipText, L"No audio session");
+        } else if (*newMuteState) {
+            wcscpy_s(tooltipText, L"Muted");
+        } else {
+            // Get current volume to display.
+            int volume = GetAppVolume(processId);
+            if (volume >= 0) {
+                swprintf_s(tooltipText, L"Volume: %d%%", volume);
+            } else {
+                wcscpy_s(tooltipText, L"Unmuted");
+            }
+        }
+        ShowVolumeTooltip(taskbarFrame, cursorX, tooltipText);
+    }
+
+    // Mark event as handled to prevent normal click behavior.
+    args.Handled(true);
+    return 0;
+}
+
 void LoadSettings() {
     g_settings.volumeChangeStep = Wh_GetIntSetting(L"volumeChangeStep");
+    g_settings.ctrlClickToMute = Wh_GetIntSetting(L"ctrlClickToMute");
     g_settings.noAutomaticMuteToggle =
         Wh_GetIntSetting(L"noAutomaticMuteToggle");
     g_settings.ctrlScrollVolumeChange =
@@ -1057,6 +1181,11 @@ bool HookTaskbarViewDllSymbols(HMODULE module) {
             {LR"(public: virtual int __cdecl winrt::impl::produce<struct winrt::Taskbar::implementation::TaskListButton,struct winrt::Windows::UI::Xaml::Controls::IControlOverrides>::OnPointerMoved(void *))"},
             &TaskListButton_OnPointerMoved_Original,
             TaskListButton_OnPointerMoved_Hook,
+        },
+        {
+            {LR"(public: virtual int __cdecl winrt::impl::produce<struct winrt::Taskbar::implementation::TaskListButton,struct winrt::Windows::UI::Xaml::Controls::IControlOverrides>::OnPointerPressed(void *))"},
+            &TaskListButton_OnPointerPressed_Original,
+            TaskListButton_OnPointerPressed_Hook,
         },
         {
             {LR"(struct winrt::Taskbar::TaskListWindowViewModel __cdecl TryGetItemFromContainer<struct winrt::Taskbar::TaskListWindowViewModel>(struct winrt::Windows::UI::Xaml::UIElement const &))"},
