@@ -1049,6 +1049,12 @@ bool UpdateWeatherWebContent() {
         return false;
     }
 
+    // Ignore non-weather responses.
+    if (urlContent->empty() ||
+        *urlContent == L"This query is already being processed") {
+        return false;
+    }
+
     // Remove spaces after the %c emoji.
     std::wstring weatherContent;
 
