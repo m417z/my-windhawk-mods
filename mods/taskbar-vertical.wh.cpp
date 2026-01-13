@@ -212,6 +212,13 @@ UINT_PTR g_copilotPosTimer;
 const UINT g_settingsChangedTaskbarMessage =
     RegisterWindowMessage(L"Windhawk_SettingsChangedTaskbarMessage_" WH_MOD_ID);
 
+// Private API for window band (z-order band).
+// https://blog.adeltax.com/window-z-order-in-windows-10/
+using GetWindowBand_t = BOOL(WINAPI*)(HWND hWnd, PDWORD pdwBand);
+GetWindowBand_t pGetWindowBand;
+
+constexpr DWORD ZBID_SYSTEM_TOOLS = 16;
+
 std::optional<bool> IsOsFeatureEnabled(UINT32 featureId) {
     enum FEATURE_ENABLED_STATE {
         FEATURE_ENABLED_STATE_DEFAULT = 0,
@@ -3397,6 +3404,12 @@ BOOL WINAPI MoveWindow_Hook(HWND hWnd,
             return original();
         }
 
+        // The Alt+Tab window uses band ZBID_SYSTEM_TOOLS. The virtual desktop
+        // switcher uses band ZBID_IMMERSIVE_EDGY.
+        DWORD band = 0;
+        bool isAltTabWindow = pGetWindowBand && pGetWindowBand(hWnd, &band) &&
+                              band == ZBID_SYSTEM_TOOLS;
+
         RECT rect{
             .left = X,
             .top = Y,
@@ -3411,17 +3424,37 @@ BOOL WINAPI MoveWindow_Hook(HWND hWnd,
         };
         GetMonitorInfo(monitor, &monitorInfo);
 
-        // Make sure the Alt+Tab/Win+Tab window doesn't overlap with the
-        // taskbar. This function seems to only be called for Alt+Tab. Win+Tab
-        // is create by CreateWindowInBand, and an inner child window is
-        // positioned with SetWindowPos. It'd be nice to handle that case too,
-        // maybe one day...
-        if (X < monitorInfo.rcWork.left) {
-            X = monitorInfo.rcWork.left;
-        }
+        if (isAltTabWindow) {
+            // Make sure the Alt+Tab window doesn't overlap with the taskbar.
+            // This function seems to only be called for Alt+Tab. Win+Tab is
+            // create by CreateWindowInBand, and an inner child window is
+            // positioned with SetWindowPos. It'd be nice to handle that case
+            // too, maybe one day...
+            if (X < monitorInfo.rcWork.left) {
+                X = monitorInfo.rcWork.left;
+            }
 
-        if (nHeight > monitorInfo.rcWork.bottom - monitorInfo.rcWork.top) {
-            nHeight = monitorInfo.rcWork.bottom - monitorInfo.rcWork.top;
+            if (nWidth > monitorInfo.rcWork.right - X) {
+                nWidth = monitorInfo.rcWork.right - X;
+            }
+        } else {
+            // Handle the virtual desktop switcher, which shows up when hovering
+            // over the task view button in the taskbar.
+            POINT pt;
+            GetCursorPos(&pt);
+
+            UINT monitorDpiX = 96;
+            UINT monitorDpiY = 96;
+            GetDpiForMonitor(monitor, MDT_DEFAULT, &monitorDpiX, &monitorDpiY);
+
+            int marginY = MulDiv(12, monitorDpiY, 96);
+
+            Y = pt.y - nHeight / 2;
+            if (Y < monitorInfo.rcWork.top + marginY) {
+                Y = monitorInfo.rcWork.top + marginY;
+            } else if (Y > monitorInfo.rcWork.bottom - nHeight - marginY) {
+                Y = monitorInfo.rcWork.bottom - nHeight - marginY;
+            }
         }
     } else {
         return original();
@@ -4843,6 +4876,12 @@ BOOL Wh_ModInit() {
 
     if (!HookTaskbarDllSymbols()) {
         return FALSE;
+    }
+
+    if (HMODULE user32Module = LoadLibraryEx(L"user32.dll", nullptr,
+                                             LOAD_LIBRARY_SEARCH_SYSTEM32)) {
+        pGetWindowBand =
+            (GetWindowBand_t)GetProcAddress(user32Module, "GetWindowBand");
     }
 
     WindhawkUtils::SetFunctionHook(GetWindowRect, GetWindowRect_Hook,
