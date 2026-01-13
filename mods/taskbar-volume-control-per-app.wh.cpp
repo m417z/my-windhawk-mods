@@ -39,7 +39,7 @@ Control](https://windhawk.net/mods/taskbar-volume-control) mod.
 
 // ==WindhawkModSettings==
 /*
-- volumeChangeStep: 2
+- volumeChangeStep: 10
   $name: Volume change step
   $description: >-
     Allows to configure the volume change that will occur with each notch of
