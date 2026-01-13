@@ -1199,7 +1199,7 @@ int WINAPI TaskListButton_OnPointerPressed_Hook(void* pThis, void* pArgs) {
                     volume);
             } else {
                 wcscpy_s(tooltipText,
-                         g_settings.terseFormat ? L"🔊" : L"Unmuted");
+                         g_settings.terseFormat ? L"🔕" : L"No audio session");
             }
         }
         ShowVolumeTooltip(taskbarFrame, cursorX, tooltipText);
