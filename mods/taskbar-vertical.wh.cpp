@@ -3439,13 +3439,17 @@ BOOL WINAPI MoveWindow_Hook(HWND hWnd,
             }
         } else {
             // Handle the virtual desktop switcher, which shows up when hovering
-            // over the task view button in the taskbar.
-            POINT pt;
-            GetCursorPos(&pt);
-
+            // over the task view button in the taskbar. Note that X is still
+            // buggy, especially when the taskbar is on the right.
             UINT monitorDpiX = 96;
             UINT monitorDpiY = 96;
             GetDpiForMonitor(monitor, MDT_DEFAULT, &monitorDpiX, &monitorDpiY);
+
+            DWORD messagePos = GetMessagePos();
+            POINT pt{
+                GET_X_LPARAM(messagePos),
+                GET_Y_LPARAM(messagePos),
+            };
 
             int marginY = MulDiv(12, monitorDpiY, 96);
 
