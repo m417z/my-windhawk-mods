@@ -2,7 +2,7 @@
 // @id              taskbar-volume-control-per-app
 // @name            Taskbar Volume Control Per-App
 // @description     Control the per-app volume by scrolling over taskbar buttons
-// @version         1.1
+// @version         1.1.1
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
@@ -44,7 +44,7 @@ mods can be used simultaneously using one of these approaches:
 Note that if both mods are configured to act simultaneously, the Taskbar Volume
 Control mod takes precedence due to the way the mod works.
 
-![Demonstration](https://i.imgur.com/EVlnILh.gif)
+![Demonstration](https://i.imgur.com/56QHjUv.gif)
 */
 // ==/WindhawkModReadme==
 
