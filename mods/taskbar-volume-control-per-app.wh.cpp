@@ -2,7 +2,7 @@
 // @id              taskbar-volume-control-per-app
 // @name            Taskbar Volume Control Per-App
 // @description     Control the per-app volume by scrolling over taskbar buttons
-// @version         1.0
+// @version         1.1
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
@@ -44,7 +44,7 @@ mods can be used simultaneously using one of these approaches:
 Note that if both mods are configured to act simultaneously, the Taskbar Volume
 Control mod takes precedence due to the way the mod works.
 
-![Demonstration](https://i.imgur.com/56QHjUv.gif)
+![Demonstration](https://i.imgur.com/EVlnILh.gif)
 */
 // ==/WindhawkModReadme==
 
@@ -1100,11 +1100,11 @@ int WINAPI TaskListButton_OnPointerPressed_Hook(void* pThis, void* pArgs) {
 void LoadSettings() {
     g_settings.volumeChangeStep = Wh_GetIntSetting(L"volumeChangeStep");
     g_settings.ctrlClickToMute = Wh_GetIntSetting(L"ctrlClickToMute");
-    g_settings.noAutomaticMuteToggle =
-        Wh_GetIntSetting(L"noAutomaticMuteToggle");
-    g_settings.terseFormat = Wh_GetIntSetting(L"terseFormat");
     g_settings.ctrlScrollVolumeChange =
         Wh_GetIntSetting(L"ctrlScrollVolumeChange");
+    g_settings.terseFormat = Wh_GetIntSetting(L"terseFormat");
+    g_settings.noAutomaticMuteToggle =
+        Wh_GetIntSetting(L"noAutomaticMuteToggle");
 }
 
 bool HookTaskbarViewDllSymbols(HMODULE module) {
