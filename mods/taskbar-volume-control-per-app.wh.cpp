@@ -813,6 +813,7 @@ struct {
     winrt::weak_ref<FrameworkElement> taskbarFrame;
     double rotationAngle = 0.0;
     double cursorX = 0.0;
+    double cursorY = 0.0;
     UINT_PTR hideTimer = 0;
 } g_volumeTooltipState;
 
@@ -892,11 +893,9 @@ void UpdateTooltipPosition() {
 
     auto taskbarFrame = g_volumeTooltipState.taskbarFrame.get();
     if (!taskbarFrame) {
-        // Overflow popup: use screen coordinates.
-        POINT pt;
-        GetCursorPos(&pt);
-        popup.HorizontalOffset(pt.x + kTooltipOffset);
-        popup.VerticalOffset(pt.y - tooltipHeight / 2);
+        // Overflow popup: use stored cursor coordinates.
+        popup.HorizontalOffset(g_volumeTooltipState.cursorX + kTooltipOffset);
+        popup.VerticalOffset(g_volumeTooltipState.cursorY - tooltipHeight / 2);
     } else {
         // Main taskbar: use element-relative coordinates.
         double cursorX = g_volumeTooltipState.cursorX;
@@ -916,6 +915,7 @@ void UpdateTooltipPosition() {
 
 void ShowVolumeTooltip(FrameworkElement taskbarFrame,
                        double cursorX,
+                       double cursorY,
                        bool isOverflowPopup,
                        PCWSTR text) {
     if (!taskbarFrame) {
@@ -951,6 +951,7 @@ void ShowVolumeTooltip(FrameworkElement taskbarFrame,
     g_volumeTooltipState.taskbarFrame =
         isOverflowPopup ? nullptr : taskbarFrame;
     g_volumeTooltipState.cursorX = cursorX;
+    g_volumeTooltipState.cursorY = cursorY;
 
     auto popup = g_volumeTooltipState.popup;
     auto border = popup.Child().try_as<Controls::Border>();
@@ -1074,6 +1075,7 @@ int WINAPI TaskListButton_OnPointerWheelChanged_Hook(void* pThis, void* pArgs) {
     if (taskbarFrame) {
         auto point = args.GetCurrentPoint(taskbarFrame);
         double cursorX = point.Position().X;
+        double cursorY = point.Position().Y;
 
         WCHAR tooltipText[64];
         if (!volumeResult) {
@@ -1086,7 +1088,8 @@ int WINAPI TaskListButton_OnPointerWheelChanged_Hook(void* pThis, void* pArgs) {
                        g_settings.terseFormat ? L"🔊 %d%%" : L"Volume: %d%%",
                        volumeResult->volume);
         }
-        ShowVolumeTooltip(taskbarFrame, cursorX, isOverflowPopup, tooltipText);
+        ShowVolumeTooltip(taskbarFrame, cursorX, cursorY, isOverflowPopup,
+                          tooltipText);
     }
 
     // Mark event as handled.
@@ -1132,35 +1135,33 @@ int WINAPI TaskListButton_OnPointerMoved_Hook(void* pThis, void* pArgs) {
         return original();
     }
 
-    auto taskbarFrame = g_volumeTooltipState.taskbarFrame.get();
-    if (taskbarFrame) {
-        // Main taskbar: update element-relative cursor position.
-        UIElement element = nullptr;
-        ((IUnknown*)pThis)
-            ->QueryInterface(winrt::guid_of<UIElement>(),
-                             winrt::put_abi(element));
-        if (!element) {
-            return original();
-        }
-
-        auto className = winrt::get_class_name(element);
-        if (className != L"Taskbar.TaskListButton") {
-            return original();
-        }
-
-        Input::PointerRoutedEventArgs args = nullptr;
-        ((IUnknown*)pArgs)
-            ->QueryInterface(winrt::guid_of<Input::PointerRoutedEventArgs>(),
-                             winrt::put_abi(args));
-        if (!args) {
-            return original();
-        }
-
-        auto point = args.GetCurrentPoint(taskbarFrame);
-        g_volumeTooltipState.cursorX = point.Position().X;
+    UIElement element = nullptr;
+    ((IUnknown*)pThis)
+        ->QueryInterface(winrt::guid_of<UIElement>(), winrt::put_abi(element));
+    if (!element) {
+        return original();
     }
 
-    // Update position (uses GetCursorPos for screen coords mode).
+    auto className = winrt::get_class_name(element);
+    if (className != L"Taskbar.TaskListButton") {
+        return original();
+    }
+
+    Input::PointerRoutedEventArgs args = nullptr;
+    ((IUnknown*)pArgs)
+        ->QueryInterface(winrt::guid_of<Input::PointerRoutedEventArgs>(),
+                         winrt::put_abi(args));
+    if (!args) {
+        return original();
+    }
+
+    auto ancestorFrame = FindTaskbarFrameAncestor(element).element;
+    if (ancestorFrame) {
+        auto point = args.GetCurrentPoint(ancestorFrame);
+        g_volumeTooltipState.cursorX = point.Position().X;
+        g_volumeTooltipState.cursorY = point.Position().Y;
+    }
+
     UpdateTooltipPosition();
 
     return original();
@@ -1222,6 +1223,7 @@ int WINAPI TaskListButton_OnPointerPressed_Hook(void* pThis, void* pArgs) {
     if (taskbarFrame) {
         auto point = args.GetCurrentPoint(taskbarFrame);
         double cursorX = point.Position().X;
+        double cursorY = point.Position().Y;
 
         WCHAR tooltipText[64];
         if (!newMuteState) {
@@ -1242,7 +1244,8 @@ int WINAPI TaskListButton_OnPointerPressed_Hook(void* pThis, void* pArgs) {
                          g_settings.terseFormat ? L"🔕" : L"No audio session");
             }
         }
-        ShowVolumeTooltip(taskbarFrame, cursorX, isOverflowPopup, tooltipText);
+        ShowVolumeTooltip(taskbarFrame, cursorX, cursorY, isOverflowPopup,
+                          tooltipText);
     }
 
     // Mark event as handled to prevent normal click behavior.
