@@ -27,11 +27,22 @@
 Control the per-app volume by scrolling over taskbar buttons on Windows 11.
 
 Scrolling over a taskbar button will adjust the volume of that specific
-application. A tooltip shows the current volume percentage, or "No audio
-session" if the app has no active audio.
+application. Ctrl+clicking on a taskbar button will toggle mute for that app. A
+tooltip shows the current volume percentage, or "No audio session" if the app
+has no active audio.
 
 For controlling the overall system volume, check out the [Taskbar Volume
-Control](https://windhawk.net/mods/taskbar-volume-control) mod.
+Control](https://windhawk.net/mods/taskbar-volume-control) mod. Note that both
+mods can be used simultaneously using one of these approaches:
+1. Configure Taskbar Volume Control to use a limited region, such as the system
+   tray area, while this mod handles the app-specific volume on the task
+   buttons.
+2. Configure one of the mods to require the Ctrl key for volume changes, so that
+   holding Ctrl while scrolling adjusts the app volume (this mod), and normal
+   scrolling adjusts the system volume (Taskbar Volume Control), or vice versa.
+
+Note that if both mods are configured to act simultaneously, the Taskbar Volume
+Control mod takes precedence due to the way the mod works.
 
 ![Demonstration](https://i.imgur.com/56QHjUv.gif)
 */
@@ -422,9 +433,7 @@ std::optional<AppVolumeResult> AdjustAppVolumeForPID(DWORD targetPID,
             } else {
                 // Read actual mute state.
                 BOOL isMuted = FALSE;
-                if (SUCCEEDED(vol->GetMute(&isMuted))) {
-                    r.muted = isMuted;
-                }
+                r.muted = SUCCEEDED(vol->GetMute(&isMuted)) && isMuted;
             }
 
             result = r;
@@ -713,8 +722,9 @@ void* GetNativeTaskGroupFromWindowsUdkTaskGroup(void* windowsUdkTaskGroup) {
     return g_clickSentinel_TaskGroup;
 }
 
-void* GetWindowsUdkTaskItemFromTaskListButton(UIElement element) {
-    winrt::com_ptr<IUnknown> windowViewModel = nullptr;
+winrt::com_ptr<IUnknown> GetWindowsUdkTaskItemFromTaskListButton(
+    UIElement element) {
+    winrt::com_ptr<IUnknown> windowViewModel;
     TryGetItemFromContainer_TaskListWindowViewModel_Original(
         windowViewModel.put_void(), &element);
     if (!windowViewModel) {
@@ -724,7 +734,7 @@ void* GetWindowsUdkTaskItemFromTaskListButton(UIElement element) {
     winrt::com_ptr<IUnknown> windowsUdkTaskItem;
     TaskListWindowViewModel_get_TaskItem_Original(
         windowViewModel.get(), windowsUdkTaskItem.put_void());
-    return windowsUdkTaskItem.get();
+    return windowsUdkTaskItem;
 }
 
 void* GetWindowsUdkTaskGroupFromTaskListButton(UIElement element) {
@@ -761,10 +771,10 @@ HWND GetWindowFromTaskItem(void* taskItem) {
 // Tries to get from individual task item first, then from task group.
 DWORD GetProcessIdFromTaskListButton(UIElement element) {
     // First try to get from individual task item using sentinel pattern.
-    void* windowsUdkTaskItem = GetWindowsUdkTaskItemFromTaskListButton(element);
+    auto windowsUdkTaskItem = GetWindowsUdkTaskItemFromTaskListButton(element);
     if (windowsUdkTaskItem) {
         void* nativeTaskItem =
-            GetNativeTaskItemFromWindowsUdkTaskItem(windowsUdkTaskItem);
+            GetNativeTaskItemFromWindowsUdkTaskItem(windowsUdkTaskItem.get());
         if (nativeTaskItem) {
             HWND hWnd = GetWindowFromTaskItem(nativeTaskItem);
             if (hWnd) {
@@ -800,7 +810,7 @@ DWORD GetProcessIdFromTaskListButton(UIElement element) {
 
 struct {
     Controls::Primitives::Popup popup = nullptr;
-    FrameworkElement taskbarFrame = nullptr;
+    winrt::weak_ref<FrameworkElement> taskbarFrame;
     double rotationAngle = 0.0;
     double cursorX = 0.0;
     UINT_PTR hideTimer = 0;
@@ -862,7 +872,8 @@ double GetParentRotationAngle(FrameworkElement element) {
 }
 
 void UpdateTooltipPosition() {
-    if (!g_volumeTooltipState.popup || !g_volumeTooltipState.taskbarFrame) {
+    auto taskbarFrame = g_volumeTooltipState.taskbarFrame.get();
+    if (!g_volumeTooltipState.popup || !taskbarFrame) {
         return;
     }
 
@@ -872,7 +883,7 @@ void UpdateTooltipPosition() {
     if (g_volumeTooltipState.rotationAngle == 0.0) {
         // Horizontal taskbar: follow cursor horizontally, center vertically.
         auto border = popup.Child().try_as<FrameworkElement>();
-        double taskbarHeight = g_volumeTooltipState.taskbarFrame.ActualHeight();
+        double taskbarHeight = taskbarFrame.ActualHeight();
         double tooltipHeight = border ? border.ActualHeight() : 0;
 
         popup.HorizontalOffset(cursorX + kTooltipOffset);
@@ -963,10 +974,9 @@ void HideVolumeTooltip() {
     if (g_volumeTooltipState.popup) {
         g_volumeTooltipState.popup.IsOpen(false);
     }
-}
 
-void CleanupVolumeTooltip() {
-    HideVolumeTooltip();
+    // Destroy popup to disassociate from XamlRoot. A new one will be
+    // created next time.
     g_volumeTooltipState.popup = nullptr;
     g_volumeTooltipState.taskbarFrame = nullptr;
     g_volumeTooltipState.rotationAngle = 0.0;
@@ -1093,8 +1103,9 @@ int WINAPI TaskListButton_OnPointerMoved_Hook(void* pThis, void* pArgs) {
     };
 
     // Only update if tooltip is currently shown.
+    auto taskbarFrame = g_volumeTooltipState.taskbarFrame.get();
     if (!g_volumeTooltipState.popup || !g_volumeTooltipState.popup.IsOpen() ||
-        !g_volumeTooltipState.taskbarFrame) {
+        !taskbarFrame) {
         return original();
     }
 
@@ -1119,7 +1130,7 @@ int WINAPI TaskListButton_OnPointerMoved_Hook(void* pThis, void* pArgs) {
     }
 
     // Update position to follow cursor.
-    auto point = args.GetCurrentPoint(g_volumeTooltipState.taskbarFrame);
+    auto point = args.GetCurrentPoint(taskbarFrame);
     g_volumeTooltipState.cursorX = point.Position().X;
     UpdateTooltipPosition();
 
@@ -1401,7 +1412,7 @@ void Wh_ModUninit() {
         RunFromWindowThread(
             hTaskbarWnd,
             [](void*) {
-                CleanupVolumeTooltip();
+                HideVolumeTooltip();
                 SndVolUninit();
             },
             nullptr);
