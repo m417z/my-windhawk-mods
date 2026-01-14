@@ -851,7 +851,7 @@ void CALLBACK HideVolumeTooltipTimerProc(HWND hwnd,
 
 // Tooltip positioning offset from cursor in pixels.
 constexpr int kTooltipOffset = 12;
-constexpr int kTooltipOffsetVerticalTaskbarEdge = 4;
+constexpr int kTooltipOffsetTaskbarEdge = 4;
 
 // Get rotation angle from element's parent RenderTransform.
 // Used to detect vertical taskbar orientation.
@@ -904,10 +904,12 @@ void UpdateTooltipPosition() {
             // Horizontal taskbar.
             double taskbarHeight = taskbarFrame.ActualHeight();
             popup.HorizontalOffset(cursorX + kTooltipOffset);
-            popup.VerticalOffset((taskbarHeight - tooltipHeight) / 2);
+            popup.VerticalOffset(
+                std::max((taskbarHeight - tooltipHeight) / 2,
+                         static_cast<double>(kTooltipOffsetTaskbarEdge)));
         } else {
             // Vertical taskbar.
-            popup.HorizontalOffset(kTooltipOffsetVerticalTaskbarEdge);
+            popup.HorizontalOffset(kTooltipOffsetTaskbarEdge);
             popup.VerticalOffset(cursorX + kTooltipOffset);
         }
     }
