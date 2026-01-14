@@ -118,8 +118,8 @@ std::atomic<bool> g_taskbarViewDllLoaded;
 IMMDeviceEnumerator* g_pDeviceEnumerator;
 
 // Per-app volume: taskbar button integration.
-bool g_captureTaskGroup;
-void* g_capturedTaskGroup;
+thread_local bool g_captureTaskGroup;
+thread_local void* g_capturedTaskGroup;
 
 // Click sentinel pattern for getting native task item/group from WindowsUdk.
 WCHAR g_clickSentinel[] = L"click-sentinel";
@@ -629,21 +629,20 @@ using TryGetItemFromContainer_TaskListGroupViewModel_t =
 TryGetItemFromContainer_TaskListGroupViewModel_t
     TryGetItemFromContainer_TaskListGroupViewModel_Original;
 
-using TaskListGroupViewModel_IsRequestingAttention_t =
-    bool(WINAPI*)(void* pThis);
-TaskListGroupViewModel_IsRequestingAttention_t
-    TaskListGroupViewModel_IsRequestingAttention_Original;
+using TaskListGroupViewModel_IsMultiWindow_t = bool(WINAPI*)(void* pThis);
+TaskListGroupViewModel_IsMultiWindow_t
+    TaskListGroupViewModel_IsMultiWindow_Original;
 
-using ITaskGroup_IsRequestingAttention_t = bool(WINAPI*)(void* pThis);
-ITaskGroup_IsRequestingAttention_t ITaskGroup_IsRequestingAttention_Original;
-bool WINAPI ITaskGroup_IsRequestingAttention_Hook(void* pThis) {
+using ITaskGroup_IsRunning_t = bool(WINAPI*)(void* pThis);
+ITaskGroup_IsRunning_t ITaskGroup_IsRunning_Original;
+bool WINAPI ITaskGroup_IsRunning_Hook(void* pThis) {
     if (g_captureTaskGroup) {
         Wh_Log(L">");
         g_capturedTaskGroup = *(void**)pThis;
         return false;
     }
 
-    return ITaskGroup_IsRequestingAttention_Original(pThis);
+    return ITaskGroup_IsRunning_Original(pThis);
 }
 
 using CTaskGroup_GetNumItems_t = int(WINAPI*)(void* pThis);
@@ -747,8 +746,8 @@ void* GetWindowsUdkTaskGroupFromTaskListButton(UIElement element) {
 
     g_capturedTaskGroup = nullptr;
     g_captureTaskGroup = true;
-    TaskListGroupViewModel_IsRequestingAttention_Original(
-        (void**)groupViewModel.get() - 1);
+    TaskListGroupViewModel_IsMultiWindow_Original((void**)groupViewModel.get() -
+                                                  1);
     g_captureTaskGroup = false;
     return g_capturedTaskGroup;
 }
@@ -1301,13 +1300,13 @@ bool HookTaskbarViewDllSymbols(HMODULE module) {
             &TryGetItemFromContainer_TaskListGroupViewModel_Original,
         },
         {
-            {LR"(public: bool __cdecl winrt::Taskbar::implementation::TaskListGroupViewModel::IsRequestingAttention(void)const )"},
-            &TaskListGroupViewModel_IsRequestingAttention_Original,
+            {LR"(public: bool __cdecl winrt::Taskbar::implementation::TaskListGroupViewModel::IsMultiWindow(void)const )"},
+            &TaskListGroupViewModel_IsMultiWindow_Original,
         },
         {
-            {LR"(public: __cdecl winrt::impl::consume_WindowsUdk_UI_Shell_ITaskGroup<struct winrt::WindowsUdk::UI::Shell::ITaskGroup>::IsRequestingAttention(void)const )"},
-            &ITaskGroup_IsRequestingAttention_Original,
-            ITaskGroup_IsRequestingAttention_Hook,
+            {LR"(public: __cdecl winrt::impl::consume_WindowsUdk_UI_Shell_ITaskGroup<struct winrt::WindowsUdk::UI::Shell::ITaskGroup>::IsRunning(void)const )"},
+            &ITaskGroup_IsRunning_Original,
+            ITaskGroup_IsRunning_Hook,
         },
     };
 
