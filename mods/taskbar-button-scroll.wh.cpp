@@ -237,21 +237,20 @@ using TryGetItemFromContainer_TaskListGroupViewModel_t =
 TryGetItemFromContainer_TaskListGroupViewModel_t
     TryGetItemFromContainer_TaskListGroupViewModel_Original;
 
-using TaskListGroupViewModel_IsRequestingAttention_t =
-    bool(WINAPI*)(void* pThis);
-TaskListGroupViewModel_IsRequestingAttention_t
-    TaskListGroupViewModel_IsRequestingAttention_Original;
+using TaskListGroupViewModel_IsMultiWindow_t = bool(WINAPI*)(void* pThis);
+TaskListGroupViewModel_IsMultiWindow_t
+    TaskListGroupViewModel_IsMultiWindow_Original;
 
-using ITaskGroup_IsRequestingAttention_t = bool(WINAPI*)(void* pThis);
-ITaskGroup_IsRequestingAttention_t ITaskGroup_IsRequestingAttention_Original;
-bool WINAPI ITaskGroup_IsRequestingAttention_Hook(void* pThis) {
+using ITaskGroup_IsRunning_t = bool(WINAPI*)(void* pThis);
+ITaskGroup_IsRunning_t ITaskGroup_IsRunning_Original;
+bool WINAPI ITaskGroup_IsRunning_Hook(void* pThis) {
     if (g_captureTaskGroup) {
         Wh_Log(L">");
         g_capturedTaskGroup = *(void**)pThis;
         return false;
     }
 
-    return ITaskGroup_IsRequestingAttention_Original(pThis);
+    return ITaskGroup_IsRunning_Original(pThis);
 }
 
 void* QueryViaVtable(void* object, void* vtable) {
@@ -294,8 +293,8 @@ void* GetWindowsUdkTaskGroupFromTaskListButton(UIElement element) {
 
     g_capturedTaskGroup = nullptr;
     g_captureTaskGroup = true;
-    TaskListGroupViewModel_IsRequestingAttention_Original(
-        (void**)groupViewModel.get() - 1);
+    TaskListGroupViewModel_IsMultiWindow_Original((void**)groupViewModel.get() -
+                                                  1);
     g_captureTaskGroup = false;
     return g_capturedTaskGroup;
 }
@@ -680,8 +679,8 @@ int TaskListButton_FlyoutFrame_OnPointerWheelChanged_Hook(
             !TryGetItemFromContainer_TaskListWindowViewModel_Original ||
             !TaskListWindowViewModel_get_TaskItem_Original ||
             !TryGetItemFromContainer_TaskListGroupViewModel_Original ||
-            !TaskListGroupViewModel_IsRequestingAttention_Original ||
-            !ITaskGroup_IsRequestingAttention_Original) {
+            !TaskListGroupViewModel_IsMultiWindow_Original ||
+            !ITaskGroup_IsRunning_Original) {
             return original();
         }
     } else if (className == L"Taskbar.FlyoutFrame") {
@@ -1058,15 +1057,15 @@ bool HookTaskbarViewDllSymbols(HMODULE module) {
             true,
         },
         {
-            {LR"(public: bool __cdecl winrt::Taskbar::implementation::TaskListGroupViewModel::IsRequestingAttention(void)const )"},
-            &TaskListGroupViewModel_IsRequestingAttention_Original,
+            {LR"(public: bool __cdecl winrt::Taskbar::implementation::TaskListGroupViewModel::IsMultiWindow(void)const )"},
+            &TaskListGroupViewModel_IsMultiWindow_Original,
             nullptr,
             true,
         },
         {
-            {LR"(public: __cdecl winrt::impl::consume_WindowsUdk_UI_Shell_ITaskGroup<struct winrt::WindowsUdk::UI::Shell::ITaskGroup>::IsRequestingAttention(void)const )"},
-            &ITaskGroup_IsRequestingAttention_Original,
-            ITaskGroup_IsRequestingAttention_Hook,
+            {LR"(public: __cdecl winrt::impl::consume_WindowsUdk_UI_Shell_ITaskGroup<struct winrt::WindowsUdk::UI::Shell::ITaskGroup>::IsRunning(void)const )"},
+            &ITaskGroup_IsRunning_Original,
+            ITaskGroup_IsRunning_Hook,
             true,
         },
     };
