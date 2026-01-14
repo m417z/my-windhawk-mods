@@ -905,8 +905,8 @@ void UpdateTooltipPosition() {
             double taskbarHeight = taskbarFrame.ActualHeight();
             popup.HorizontalOffset(cursorX + kTooltipOffset);
             popup.VerticalOffset(
-                std::max((taskbarHeight - tooltipHeight) / 2,
-                         static_cast<double>(kTooltipOffsetTaskbarEdge)));
+                std::fmax((taskbarHeight - tooltipHeight) / 2,
+                          static_cast<double>(kTooltipOffsetTaskbarEdge)));
         } else {
             // Vertical taskbar.
             popup.HorizontalOffset(kTooltipOffsetTaskbarEdge);

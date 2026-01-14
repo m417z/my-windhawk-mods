@@ -300,7 +300,7 @@ void ApplyNotifyIconsStackPanelGridStyle(FrameworkElement stackPanel,
     if (rows > 1) {
         double stackPanelHeight = stackPanel.ActualHeight();
         double gap = stackPanelHeight - 16 * rows;
-        double gapPerItem = std::max(gap, 0.0) / (rows + 1);
+        double gapPerItem = std::fmax(gap, 0.0) / (rows + 1);
         // Force the gap to be an even number to prevent blurry icons.
         int gapPerItemEven = static_cast<int>(gapPerItem) / 2 * 2;
         itemHeight = 16 + gapPerItemEven;

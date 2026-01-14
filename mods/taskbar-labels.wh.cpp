@@ -988,9 +988,9 @@ void UpdateTaskListButtonWithLabelStyle(
 
         if (g_unloading) {
             labelControlElement.MaxWidth(
-                std::max(0.0, 176 - firstColumnWidthPixels));
+                std::fmax(0.0, 176 - firstColumnWidthPixels));
         } else if (g_settings.taskbarItemWidth == 0) {
-            labelControlElement.MaxWidth(std::max(
+            labelControlElement.MaxWidth(std::fmax(
                 0.0,
                 g_settings.maximumTaskbarItemWidth - firstColumnWidthPixels));
         } else {
@@ -1095,7 +1095,7 @@ void UpdateTaskListButtonWithLabelStyle(
                                       winrt::box_value(2));
         }
 
-        double maxWidth = std::max(taskListButtonWidth - 6, 0.0);
+        double maxWidth = std::fmax(taskListButtonWidth - 6, 0.0);
         indicatorElement.MaxWidth(maxWidth);
 
         double minWidth = 0;
@@ -1242,8 +1242,8 @@ void UpdateTaskListButtonCustomizations(
     bool isRunning = TaskListButton_IsRunning(taskListButtonElement);
     bool showLabels = isRunning;
     double minWidth =
-        std::min(g_initialTaskbarItemWidth,
-                 static_cast<double>(g_settings.taskbarItemWidth));
+        std::fmin(g_initialTaskbarItemWidth,
+                  static_cast<double>(g_settings.taskbarItemWidth));
 
     if (g_unloading) {
         showLabels = false;

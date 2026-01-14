@@ -702,12 +702,12 @@ void ShowDropIndicator(FrameworkElement targetElement,
             auto buttonTransform = button.TransformToVisual(indicatorParent);
             auto buttonPos = buttonTransform.TransformPoint({0, 0});
 
-            minX = (std::min)(minX, static_cast<double>(buttonPos.X));
-            maxX = (std::max)(maxX, static_cast<double>(buttonPos.X) +
-                                        button.ActualWidth());
-            minY = (std::min)(minY, static_cast<double>(buttonPos.Y));
-            maxY = (std::max)(maxY, static_cast<double>(buttonPos.Y) +
-                                        button.ActualHeight());
+            minX = std::fmin(minX, static_cast<double>(buttonPos.X));
+            maxX = std::fmax(
+                maxX, static_cast<double>(buttonPos.X) + button.ActualWidth());
+            minY = std::fmin(minY, static_cast<double>(buttonPos.Y));
+            maxY = std::fmax(
+                maxY, static_cast<double>(buttonPos.Y) + button.ActualHeight());
         }
 
         auto overlayColor = accentColor;
@@ -936,9 +936,9 @@ bool IsInNewGroupArea(FrameworkElement taskbarFrame,
             maxRightEdge = rightEdge;
         }
 
-        minY = (std::min)(minY, static_cast<double>(buttonPos.Y));
-        maxY = (std::max)(maxY, static_cast<double>(buttonPos.Y) +
-                                    button.ActualHeight());
+        minY = std::fmin(minY, static_cast<double>(buttonPos.Y));
+        maxY = std::fmax(
+            maxY, static_cast<double>(buttonPos.Y) + button.ActualHeight());
     }
 
     return position.X > maxRightEdge && maxRightEdge > 0 &&
