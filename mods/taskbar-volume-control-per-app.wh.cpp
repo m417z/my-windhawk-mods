@@ -1075,8 +1075,13 @@ int WINAPI TaskListButton_OnPointerWheelChanged_Hook(void* pThis, void* pArgs) {
     auto [taskbarFrame, isOverflowPopup] = FindTaskbarFrameAncestor(element);
     if (taskbarFrame) {
         auto point = args.GetCurrentPoint(taskbarFrame);
-        double cursorX = point.Position().X;
-        double cursorY = point.Position().Y;
+        // Transform from taskbarFrame-relative to root-relative coordinates.
+        auto transform = taskbarFrame.TransformToVisual(nullptr);
+        auto rootPoint =
+            transform.TransformPoint({static_cast<float>(point.Position().X),
+                                      static_cast<float>(point.Position().Y)});
+        double cursorX = rootPoint.X;
+        double cursorY = rootPoint.Y;
 
         WCHAR tooltipText[64];
         if (!volumeResult) {
@@ -1159,8 +1164,13 @@ int WINAPI TaskListButton_OnPointerMoved_Hook(void* pThis, void* pArgs) {
     auto ancestorFrame = FindTaskbarFrameAncestor(element).element;
     if (ancestorFrame) {
         auto point = args.GetCurrentPoint(ancestorFrame);
-        g_volumeTooltipState.cursorX = point.Position().X;
-        g_volumeTooltipState.cursorY = point.Position().Y;
+        // Transform from ancestorFrame-relative to root-relative coordinates.
+        auto transform = ancestorFrame.TransformToVisual(nullptr);
+        auto rootPoint =
+            transform.TransformPoint({static_cast<float>(point.Position().X),
+                                      static_cast<float>(point.Position().Y)});
+        g_volumeTooltipState.cursorX = rootPoint.X;
+        g_volumeTooltipState.cursorY = rootPoint.Y;
     }
 
     UpdateTooltipPosition();
@@ -1223,8 +1233,13 @@ int WINAPI TaskListButton_OnPointerPressed_Hook(void* pThis, void* pArgs) {
     auto [taskbarFrame, isOverflowPopup] = FindTaskbarFrameAncestor(element);
     if (taskbarFrame) {
         auto point = args.GetCurrentPoint(taskbarFrame);
-        double cursorX = point.Position().X;
-        double cursorY = point.Position().Y;
+        // Transform from taskbarFrame-relative to root-relative coordinates.
+        auto transform = taskbarFrame.TransformToVisual(nullptr);
+        auto rootPoint =
+            transform.TransformPoint({static_cast<float>(point.Position().X),
+                                      static_cast<float>(point.Position().Y)});
+        double cursorX = rootPoint.X;
+        double cursorY = rootPoint.Y;
 
         WCHAR tooltipText[64];
         if (!newMuteState) {
