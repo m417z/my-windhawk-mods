@@ -3356,6 +3356,10 @@ BOOL WINAPI SetWindowPos_Hook(HWND hWnd,
         } else if (X > monitorInfo.rcWork.right - cx) {
             X = monitorInfo.rcWork.right - cx;
         }
+
+        if (cx > monitorInfo.rcWork.right - monitorInfo.rcWork.left) {
+            cx = monitorInfo.rcWork.right - monitorInfo.rcWork.left;
+        }
     } else {
         return original();
     }
@@ -3432,10 +3436,12 @@ BOOL WINAPI MoveWindow_Hook(HWND hWnd,
             // too, maybe one day...
             if (X < monitorInfo.rcWork.left) {
                 X = monitorInfo.rcWork.left;
+            } else if (X > monitorInfo.rcWork.right - nWidth) {
+                X = monitorInfo.rcWork.right - nWidth;
             }
 
-            if (nWidth > monitorInfo.rcWork.right - X) {
-                nWidth = monitorInfo.rcWork.right - X;
+            if (nWidth > monitorInfo.rcWork.right - monitorInfo.rcWork.left) {
+                nWidth = monitorInfo.rcWork.right - monitorInfo.rcWork.left;
             }
         } else {
             // Handle the virtual desktop switcher, which shows up when hovering
