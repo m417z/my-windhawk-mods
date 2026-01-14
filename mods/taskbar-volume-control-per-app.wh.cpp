@@ -900,11 +900,18 @@ void UpdateTooltipPosition() {
         double cursorX = g_volumeTooltipState.cursorX;
         double cursorY = g_volumeTooltipState.cursorY;
 
+        // Get TaskbarFrame's position in root coordinates. In some cases,
+        // taskbarFrame may be contained in an element with a larger height,
+        // with a region above that's invisible.
+        auto transform = taskbarFrame.TransformToVisual(nullptr);
+        auto frameOrigin = transform.TransformPoint({0, 0});
+
         if (g_volumeTooltipState.rotationAngle == 0.0) {
             // Horizontal taskbar.
             double taskbarHeight = taskbarFrame.ActualHeight();
             popup.HorizontalOffset(cursorX + kTooltipOffset);
             popup.VerticalOffset(
+                frameOrigin.Y +
                 std::fmax((taskbarHeight - tooltipHeight) / 2,
                           static_cast<double>(kTooltipOffsetTaskbarEdge)));
         } else {
