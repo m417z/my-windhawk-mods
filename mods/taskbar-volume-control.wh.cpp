@@ -1269,7 +1269,8 @@ bool OnMouseWheel(HWND hWnd, WPARAM wParam, LPARAM lParam) {
         return false;
     }
 
-    if (g_settings.ctrlScrollVolumeChange && GetKeyState(VK_CONTROL) >= 0) {
+    bool ctrlKeyDown = GetKeyState(VK_CONTROL) < 0;
+    if (ctrlKeyDown != g_settings.ctrlScrollVolumeChange) {
         return false;
     }
 

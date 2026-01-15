@@ -1051,7 +1051,8 @@ int WINAPI TaskListButton_OnPointerWheelChanged_Hook(void* pThis, void* pArgs) {
     }
 
     // If Ctrl + Scroll is required, skip if Ctrl is not pressed.
-    if (g_settings.ctrlScrollVolumeChange && GetKeyState(VK_CONTROL) >= 0) {
+    bool ctrlKeyDown = GetKeyState(VK_CONTROL) < 0;
+    if (ctrlKeyDown != g_settings.ctrlScrollVolumeChange) {
         return original();
     }
 
