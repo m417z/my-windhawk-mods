@@ -329,9 +329,8 @@ bool GetMonitorRectDpiUnscaled(HMONITOR monitor, RECT* rc) {
 }
 
 int GetPrimaryMonitorHeightDpiUnscaled() {
-    const POINT ptZero = {0, 0};
     HMONITOR primaryMonitor =
-        MonitorFromPoint(ptZero, MONITOR_DEFAULTTOPRIMARY);
+        MonitorFromPoint({0, 0}, MONITOR_DEFAULTTOPRIMARY);
     RECT monitorRect;
     if (!GetMonitorRectDpiUnscaled(primaryMonitor, &monitorRect)) {
         return 0;
@@ -409,9 +408,8 @@ TaskbarLocation GetTaskbarLocationForMonitor(HMONITOR monitor) {
         return g_settings.taskbarLocation;
     }
 
-    const POINT ptZero = {0, 0};
     HMONITOR primaryMonitor =
-        MonitorFromPoint(ptZero, MONITOR_DEFAULTTOPRIMARY);
+        MonitorFromPoint({0, 0}, MONITOR_DEFAULTTOPRIMARY);
 
     return monitor == primaryMonitor ? g_settings.taskbarLocation
                                      : g_settings.taskbarLocationSecondary;

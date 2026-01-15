@@ -178,7 +178,7 @@ void SetDesktopStyle(HWND hFolderViewWnd, int view) {
     // Get working area of desktop and position desktop window accordingly.
     HMONITOR monitor = GetMonitorById(settings.monitor - 1);
     if (!monitor) {
-        monitor = MonitorFromPoint(POINT{0, 0}, MONITOR_DEFAULTTONEAREST);
+        monitor = MonitorFromPoint({0, 0}, MONITOR_DEFAULTTONEAREST);
     }
 
     MONITORINFO monitorInfo{

@@ -315,9 +315,8 @@ void WINAPI TrayUI__Hide_Hook(void* pThis) {
     Wh_Log(L">");
 
     // Check if auto-hide is disabled for the primary monitor.
-    const POINT ptZero = {0, 0};
     HMONITOR primaryMonitor =
-        MonitorFromPoint(ptZero, MONITOR_DEFAULTTOPRIMARY);
+        MonitorFromPoint({0, 0}, MONITOR_DEFAULTTOPRIMARY);
     auto autoHideDisabled = GetAutoHideDisabledForMonitor(primaryMonitor);
     if (autoHideDisabled && *autoHideDisabled) {
         HWND hTaskbarWnd = FindCurrentProcessTaskbarWnd();
