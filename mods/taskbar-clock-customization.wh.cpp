@@ -216,13 +216,15 @@ styles, such as the font color and size.
     $description: >-
       The network adapter to use for upload/download metrics. Leave empty to
       sum all adapters. Partial match is supported. To list adapters, run:
+
       typeperf -qx "Network Interface"
   - GpuAdapterName: ""
     $name: GPU adapter name
     $description: >-
       The GPU adapter to use for GPU usage metrics. Leave empty to sum all
-      adapters. Partial match is supported. To list adapters, run: wmic path
-      win32_videocontroller get Name
+      adapters. Partial match is supported. To list adapters, run:
+
+      wmic path win32_videocontroller get Name
   $name: System performance metrics
 - MediaPlayer:
   - IgnoredPlayers: [""]
