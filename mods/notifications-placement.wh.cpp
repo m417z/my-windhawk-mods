@@ -419,8 +419,13 @@ std::vector<HWND> GetCoreWindows() {
 void AdjustCoreWindowPos(int* x, int* y, int* cx, int* cy) {
     Wh_Log(L"Before: %dx%d %dx%d", *x, *y, *cx, *cy);
 
-    HMONITOR srcMonitor = MonitorFromPoint({*x + *cx / 2, *y + *cy * 2},
-                                           MONITOR_DEFAULTTONEAREST);
+    RECT rc{
+        .left = *x,
+        .top = *y,
+        .right = *x + *cx,
+        .bottom = *y + *cy,
+    };
+    HMONITOR srcMonitor = MonitorFromRect(&rc, MONITOR_DEFAULTTONEAREST);
 
     UINT srcMonitorDpiX = 96;
     UINT srcMonitorDpiY = 96;

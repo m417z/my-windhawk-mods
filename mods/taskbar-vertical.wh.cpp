@@ -4274,8 +4274,13 @@ void AdjustCoreWindowSize(int x, int y, int* width, int* height) {
 }
 
 void AdjustCoreWindowPos(int* x, int* y, int width, int height) {
-    const POINT pt = {*x, *y};
-    HMONITOR monitor = MonitorFromPoint(pt, MONITOR_DEFAULTTONEAREST);
+    RECT rc{
+        .left = *x,
+        .top = *y,
+        .right = *x + width,
+        .bottom = *y + height,
+    };
+    HMONITOR monitor = MonitorFromRect(&rc, MONITOR_DEFAULTTONEAREST);
 
     UINT monitorDpiX = 96;
     UINT monitorDpiY = 96;
