@@ -8909,6 +8909,28 @@ BOOL Wh_ModInit() {
 
     g_disableNewStartMenuLayout = GetDisableNewStartMenuLayout();
 
+    if (g_disableNewStartMenuLayout != DisableNewStartMenuLayout::dontDisable) {
+        // Only terminate if the process has been running for more than 30
+        // seconds.
+        FILETIME creationTime, exitTime, kernelTime, userTime;
+        if (GetProcessTimes(GetCurrentProcess(), &creationTime, &exitTime,
+                            &kernelTime, &userTime)) {
+            FILETIME currentTime;
+            GetSystemTimeAsFileTime(&currentTime);
+            ULARGE_INTEGER creation, current;
+            creation.LowPart = creationTime.dwLowDateTime;
+            creation.HighPart = creationTime.dwHighDateTime;
+            current.LowPart = currentTime.dwLowDateTime;
+            current.HighPart = currentTime.dwHighDateTime;
+            // 30 seconds in 100-nanosecond intervals.
+            if (current.QuadPart - creation.QuadPart > 30 * 10000000ULL) {
+                // Exit to have the new setting take effect. The process will be
+                // relaunched automatically.
+                ExitProcess(0);
+            }
+        }
+    }
+
     g_isRedesignedStartMenu =
         g_disableNewStartMenuLayout == DisableNewStartMenuLayout::dontDisable &&
         IsOsFeatureEnabled(47205210).value_or(false) &&
