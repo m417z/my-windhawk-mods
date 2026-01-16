@@ -194,7 +194,7 @@ HRESULT WINAPI DwmSetWindowAttribute_Hook(HWND hwnd,
     }
 
     std::wstring threadDescription = GetThreadIdDescriptionAsString(threadId);
-    if (threadDescription == L"SharePickerUI") {
+    if (threadDescription != L"ActionCenter") {
         return original();
     }
 
