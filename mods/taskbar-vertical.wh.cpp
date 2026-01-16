@@ -3612,7 +3612,7 @@ HRESULT WINAPI DwmSetWindowAttribute_Hook(HWND hwnd,
                0) {
         std::wstring threadDescription =
             GetThreadIdDescriptionAsString(threadId);
-        if (threadDescription == L"SharePickerUI") {
+        if (threadDescription != L"ActionCenter") {
             return original();
         }
 
@@ -4286,7 +4286,6 @@ void AdjustCoreWindowPos(int* x, int* y, int width, int height) {
     UINT monitorDpiY = 96;
     GetDpiForMonitor(monitor, MDT_DEFAULT, &monitorDpiX, &monitorDpiY);
 
-    RECT rc;
     if (!GetMonitorRect(monitor, &rc)) {
         return;
     }
