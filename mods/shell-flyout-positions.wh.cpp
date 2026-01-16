@@ -2,7 +2,7 @@
 // @id              shell-flyout-positions
 // @name            Shell Flyout Positions
 // @description     Customize the horizontal position of the Notification Center and Action Center on Windows 11
-// @version         1.0
+// @version         1.0.1
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
@@ -37,6 +37,8 @@ shift for fine-tuning.
 This is especially useful when using custom taskbar themes that relocate the
 system tray area, as you can reposition these flyouts to match your custom
 layout.
+
+![Screenshot](https://i.imgur.com/ezxArY1.png)
 */
 // ==/WindhawkModReadme==
 
