@@ -284,6 +284,26 @@ void WINAPI TaskbarHost_Start_System_Hook(void* pThis) {
     g_autoHideDisabledForMonitor = false;
 }
 
+using TaskbarHost_Start_t = void(WINAPI*)(void* pThis);
+TaskbarHost_Start_t TaskbarHost_Start_Original;
+void WINAPI TaskbarHost_Start_Hook(void* pThis) {
+    Wh_Log(L">");
+
+    // If TaskbarHost::Start_System is hooked (in newer builds), it will handle
+    // this.
+    if (TaskbarHost_Start_System_Original) {
+        return TaskbarHost_Start_Original(pThis);
+    }
+
+    // Disable auto-hide on all monitors during startup. Without this, secondary
+    // taskbars are stuck hidden if auto-hide is disabled for them.
+    g_autoHideDisabledForMonitor = true;
+
+    TaskbarHost_Start_Original(pThis);
+
+    g_autoHideDisabledForMonitor = false;
+}
+
 enum {
     kTrayUITimerHide = 2,
 };
@@ -518,6 +538,7 @@ bool HookExplorerPatcherSymbols(HMODULE explorerPatcherModule) {
         {R"(?CheckSize@CSecondaryTray@@UEAAXH@Z)",
          &CSecondaryTray_CheckSize_Original, CSecondaryTray_CheckSize_Hook},
         // TaskbarHost::Start_System is missing in ExplorerPatcher.
+        // TaskbarHost::Start is missing in ExplorerPatcher.
     };
 
     bool succeeded = true;
@@ -648,6 +669,13 @@ bool HookTaskbarSymbols() {
             {LR"(public: void __cdecl TaskbarHost::Start_System(void))"},
             &TaskbarHost_Start_System_Original,
             TaskbarHost_Start_System_Hook,
+            true,  // From 10.0.26100.5074
+        },
+        {
+            {LR"(public: void __cdecl TaskbarHost::Start(void))"},
+            &TaskbarHost_Start_Original,
+            TaskbarHost_Start_Hook,
+            true,
         },
     };
 
