@@ -285,12 +285,15 @@ from the **TranslucentTB** project.
       WindowGlass (Minimal) (for the redesigned Start menu)
   - Fluid: Fluid (for the redesigned Start menu)
   - Oversimplified&Accentuated: Oversimplified&Accentuated
-- disableNewStartMenuLayout: false
+- disableNewStartMenuLayout: "0"
   $name: Disable the new start menu layout
   $description: >-
     Allows to disable the new start menu layout which is incompatible with some
-    themes. The start menu Phone Link pane can't be used when the new layout is
-    disabled.
+    themes.
+  $options:
+  - 0: Don't disable (use Windows default)
+  - 1: Disable new layout and Phone Link
+  - 2: Disable new layout but keep Phone Link
 - controlStyles:
   - - target: ""
       $name: Target
@@ -5403,7 +5406,13 @@ bool g_elementPropertyModifying;
 winrt::Windows::Foundation::IAsyncOperation<bool>
     g_delayedAllAppsRootVisibilitySet;
 
-bool g_disableNewStartMenuLayout;
+enum class DisableNewStartMenuLayout {
+    dontDisable,
+    disableNewLayoutAndPhoneLink,
+    disableNewLayoutKeepPhoneLink,
+};
+
+DisableNewStartMenuLayout g_disableNewStartMenuLayout;
 
 // Global list to track ImageBrushes with failed loads for retry on network
 // reconnection.
@@ -8698,6 +8707,12 @@ int NTAPI RtlQueryFeatureConfiguration_Hook(UINT32 featureId,
         // Disable the Start Menu Phone Link layout feature.
         // https://winaero.com/enable-phone-link-flyout-start-menu/
         case 48697323:
+            if (g_disableNewStartMenuLayout ==
+                DisableNewStartMenuLayout::disableNewLayoutAndPhoneLink) {
+                config->enabledState = FEATURE_ENABLED_STATE_DISABLED;
+            }
+            break;
+
         // Disable the revamped Start menu experience.
         // https://x.com/phantomofearth/status/1907877141540118888
         case 47205210:
@@ -8873,16 +8888,32 @@ void StopStatsTimer() {
     }
 }
 
+DisableNewStartMenuLayout GetDisableNewStartMenuLayout() {
+    PCWSTR disableNewStartMenuLayoutStr =
+        Wh_GetStringSetting(L"disableNewStartMenuLayout");
+    DisableNewStartMenuLayout disableNewStartMenuLayout =
+        DisableNewStartMenuLayout::dontDisable;
+    if (wcscmp(disableNewStartMenuLayoutStr, L"1") == 0) {
+        disableNewStartMenuLayout =
+            DisableNewStartMenuLayout::disableNewLayoutAndPhoneLink;
+    } else if (wcscmp(disableNewStartMenuLayoutStr, L"2") == 0) {
+        disableNewStartMenuLayout =
+            DisableNewStartMenuLayout::disableNewLayoutKeepPhoneLink;
+    }
+    Wh_FreeStringSetting(disableNewStartMenuLayoutStr);
+    return disableNewStartMenuLayout;
+}
+
 BOOL Wh_ModInit() {
     Wh_Log(L">");
 
-    g_disableNewStartMenuLayout =
-        Wh_GetIntSetting(L"disableNewStartMenuLayout");
+    g_disableNewStartMenuLayout = GetDisableNewStartMenuLayout();
 
-    g_isRedesignedStartMenu = !g_disableNewStartMenuLayout &&
-                              IsOsFeatureEnabled(47205210).value_or(false) &&
-                              IsOsFeatureEnabled(49221331).value_or(false) &&
-                              IsOsFeatureEnabled(49402389).value_or(false);
+    g_isRedesignedStartMenu =
+        g_disableNewStartMenuLayout == DisableNewStartMenuLayout::dontDisable &&
+        IsOsFeatureEnabled(47205210).value_or(false) &&
+        IsOsFeatureEnabled(49221331).value_or(false) &&
+        IsOsFeatureEnabled(49402389).value_or(false);
 
     g_target = Target::StartMenu;
 
@@ -8927,7 +8958,8 @@ BOOL Wh_ModInit() {
         }
     }
 
-    if (g_target == Target::StartMenu && g_disableNewStartMenuLayout) {
+    if (g_target == Target::StartMenu &&
+        g_disableNewStartMenuLayout != DisableNewStartMenuLayout::dontDisable) {
         HMODULE hNtDll = LoadLibraryW(L"ntdll.dll");
         RtlQueryFeatureConfiguration_t pRtlQueryFeatureConfiguration =
             (RtlQueryFeatureConfiguration_t)GetProcAddress(
@@ -8963,7 +8995,8 @@ void Wh_ModUninit() {
     Wh_Log(L">");
 
     if (g_target == Target::StartMenu) {
-        if (g_disableNewStartMenuLayout) {
+        if (g_disableNewStartMenuLayout !=
+            DisableNewStartMenuLayout::dontDisable) {
             // Exit to have the new setting take effect. The process will be
             // relaunched automatically.
             ExitProcess(0);
@@ -9007,12 +9040,12 @@ void Wh_ModUninit() {
 void Wh_ModSettingsChanged() {
     Wh_Log(L">");
 
-    if (g_target == Target::StartMenu &&
-        Wh_GetIntSetting(L"disableNewStartMenuLayout") !=
-            g_disableNewStartMenuLayout) {
-        // Exit to have the new setting take effect. The process will be
-        // relaunched automatically.
-        ExitProcess(0);
+    if (g_target == Target::StartMenu) {
+        if (GetDisableNewStartMenuLayout() != g_disableNewStartMenuLayout) {
+            // Exit to have the new setting take effect. The process will be
+            // relaunched automatically.
+            ExitProcess(0);
+        }
     }
 
     if (g_visualTreeWatcher) {
