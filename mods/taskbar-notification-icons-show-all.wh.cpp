@@ -67,35 +67,48 @@ struct {
 // https://github.com/valinet/wh-mods/blob/61319815c7e018e392a08077dc364559548ade02/mods/valinet-unserver.wh.cpp#L95
 // https://stackoverflow.com/questions/937044/determine-path-to-registry-key-from-hkey-handle-in-c
 std::wstring GetPathFromHKEY(HKEY key) {
-    std::wstring keyPath;
-    if (key) {
-        HMODULE dll = GetModuleHandleW(L"ntdll.dll");
-        if (dll) {
-            typedef NTSTATUS(__stdcall * NtQueryKeyType)(
-                HANDLE KeyHandle, int KeyInformationClass, PVOID KeyInformation,
-                ULONG Length, PULONG ResultLength);
-            NtQueryKeyType func = reinterpret_cast<NtQueryKeyType>(
-                GetProcAddress(dll, "NtQueryKey"));
-            if (func) {
-                DWORD size = 0;
-                NTSTATUS result = func(key, 3, 0, 0, &size);
-                if (result == STATUS_BUFFER_TOO_SMALL) {
-                    size = size + 2;
-                    wchar_t* buffer = new (std::nothrow)
-                        wchar_t[size / sizeof(wchar_t)];  // size is in bytes
-                    if (buffer) {
-                        result = func(key, 3, buffer, size, &size);
-                        if (result == STATUS_SUCCESS) {
-                            buffer[size / sizeof(wchar_t)] = L'\0';
-                            keyPath = std::wstring(buffer + 2);
-                        }
-                        delete[] buffer;
-                    }
-                }
-            }
-        }
+    if (!key) {
+        return {};
     }
-    return keyPath;
+
+    using NtQueryKey_t = NTSTATUS(NTAPI*)(
+        HANDLE KeyHandle, int KeyInformationClass, PVOID KeyInformation,
+        ULONG Length, PULONG ResultLength);
+    static NtQueryKey_t pNtQueryKey = []() {
+        HMODULE hNtdll = GetModuleHandle(L"ntdll.dll");
+        if (hNtdll) {
+            return (NtQueryKey_t)GetProcAddress(hNtdll, "NtQueryKey");
+        }
+        return (NtQueryKey_t) nullptr;
+    }();
+
+    if (!pNtQueryKey) {
+        return {};
+    }
+
+    constexpr int kKeyNameInformation = 3;
+
+    ULONG size = 0;
+    NTSTATUS result = pNtQueryKey(key, kKeyNameInformation, nullptr, 0, &size);
+    if (result != STATUS_BUFFER_TOO_SMALL) {
+        return {};
+    }
+
+    std::vector<BYTE> buffer(size);
+    result = pNtQueryKey(key, kKeyNameInformation, buffer.data(), size, &size);
+    if (result != STATUS_SUCCESS || size < sizeof(ULONG)) {
+        return {};
+    }
+
+    // The buffer contains a KEY_NAME_INFORMATION structure:
+    // ULONG NameLength (4 bytes) + WCHAR Name[1].
+    ULONG nameLength = *reinterpret_cast<ULONG*>(buffer.data());
+    if (size < sizeof(ULONG) + nameLength) {
+        return {};
+    }
+
+    PCWSTR name = reinterpret_cast<PCWSTR>(buffer.data() + sizeof(ULONG));
+    return std::wstring(name, nameLength / sizeof(WCHAR));
 }
 
 // https://stackoverflow.com/a/46931770
