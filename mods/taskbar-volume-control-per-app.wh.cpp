@@ -461,42 +461,10 @@ std::optional<AppVolumeResult> AdjustAppVolume(DWORD targetPID,
     return result;
 }
 
-// Get the current volume for a process (returns 0-100 or -1 if no session).
-int GetAppVolumeForPID(DWORD targetPID) {
-    int volumePercent = -1;
-
-    ForEachAudioSession(targetPID, [&](ISimpleAudioVolume* vol) {
-        float currentVolume = 0.0f;
-        HRESULT hr = vol->GetMasterVolume(&currentVolume);
-        if (SUCCEEDED(hr)) {
-            volumePercent = (int)(currentVolume * 100.0f + 0.5f);
-            return false;  // Stop after finding first session.
-        }
-        return true;  // Continue to next session.
-    });
-
-    return volumePercent;
-}
-
-int GetAppVolume(DWORD targetPID) {
-    int result = GetAppVolumeForPID(targetPID);
-    if (result >= 0) {
-        return result;
-    }
-
-    // Try Chromium audio subprocess if no session found.
-    DWORD audioSubprocessPID = FindChromiumAudioSubprocess(targetPID);
-    if (audioSubprocessPID) {
-        result = GetAppVolumeForPID(audioSubprocessPID);
-    }
-
-    return result;
-}
-
-// Toggle mute state for a process. Returns new mute state, or nullopt if no
-// session.
-std::optional<bool> ToggleAppMuteForPID(DWORD targetPID) {
-    std::optional<bool> newMuteState;
+// Toggle mute state for a process. Returns new state with volume, or nullopt
+// if no session.
+std::optional<AppVolumeResult> ToggleAppMuteForPID(DWORD targetPID) {
+    std::optional<AppVolumeResult> result;
 
     ForEachAudioSession(targetPID, [&](ISimpleAudioVolume* vol) {
         BOOL isMuted = FALSE;
@@ -507,16 +475,26 @@ std::optional<bool> ToggleAppMuteForPID(DWORD targetPID) {
 
         hr = vol->SetMute(!isMuted, NULL);
         if (SUCCEEDED(hr)) {
-            newMuteState = !isMuted;
+            AppVolumeResult r;
+            r.muted = !isMuted;
+
+            float currentVolume = 0.0f;
+            if (SUCCEEDED(vol->GetMasterVolume(&currentVolume))) {
+                r.volume = (int)(currentVolume * 100.0f + 0.5f);
+            } else {
+                r.volume = 0;
+            }
+
+            result = r;
         }
 
         return true;  // Continue to process all sessions.
     });
 
-    return newMuteState;
+    return result;
 }
 
-std::optional<bool> ToggleAppMute(DWORD targetPID) {
+std::optional<AppVolumeResult> ToggleAppMute(DWORD targetPID) {
     auto result = ToggleAppMuteForPID(targetPID);
     if (result) {
         return result;
@@ -1018,6 +996,38 @@ void HideVolumeTooltip() {
     g_volumeTooltipState.cursorX = 0.0;
 }
 
+void ShowVolumeResultTooltip(UIElement element,
+                             Input::PointerRoutedEventArgs args,
+                             std::optional<AppVolumeResult> volumeResult) {
+    auto [taskbarFrame, isOverflowPopup] = FindTaskbarFrameAncestor(element);
+    if (!taskbarFrame) {
+        return;
+    }
+
+    auto point = args.GetCurrentPoint(taskbarFrame);
+    // Transform from taskbarFrame-relative to root-relative coordinates.
+    auto transform = taskbarFrame.TransformToVisual(nullptr);
+    auto rootPoint =
+        transform.TransformPoint({static_cast<float>(point.Position().X),
+                                  static_cast<float>(point.Position().Y)});
+    double cursorX = rootPoint.X;
+    double cursorY = rootPoint.Y;
+
+    WCHAR tooltipText[64];
+    if (!volumeResult) {
+        wcscpy_s(tooltipText,
+                 g_settings.terseFormat ? L"🔕" : L"No audio session");
+    } else if (volumeResult->muted) {
+        wcscpy_s(tooltipText, g_settings.terseFormat ? L"🔇" : L"Muted");
+    } else {
+        swprintf_s(tooltipText,
+                   g_settings.terseFormat ? L"🔊 %d%%" : L"Volume: %d%%",
+                   volumeResult->volume);
+    }
+    ShowVolumeTooltip(taskbarFrame, cursorX, cursorY, isOverflowPopup,
+                      tooltipText);
+}
+
 // Per-app volume wheel scroll handling.
 using TaskListButton_OnPointerWheelChanged_t = int(WINAPI*)(void* pThis,
                                                             void* pArgs);
@@ -1080,32 +1090,7 @@ int WINAPI TaskListButton_OnPointerWheelChanged_Hook(void* pThis, void* pArgs) {
     // Adjust the app's volume.
     auto volumeResult = AdjustAppVolume(processId, volumeChange);
 
-    // Show tooltip near cursor.
-    auto [taskbarFrame, isOverflowPopup] = FindTaskbarFrameAncestor(element);
-    if (taskbarFrame) {
-        auto point = args.GetCurrentPoint(taskbarFrame);
-        // Transform from taskbarFrame-relative to root-relative coordinates.
-        auto transform = taskbarFrame.TransformToVisual(nullptr);
-        auto rootPoint =
-            transform.TransformPoint({static_cast<float>(point.Position().X),
-                                      static_cast<float>(point.Position().Y)});
-        double cursorX = rootPoint.X;
-        double cursorY = rootPoint.Y;
-
-        WCHAR tooltipText[64];
-        if (!volumeResult) {
-            wcscpy_s(tooltipText,
-                     g_settings.terseFormat ? L"🔕" : L"No audio session");
-        } else if (volumeResult->muted) {
-            wcscpy_s(tooltipText, g_settings.terseFormat ? L"🔇" : L"Muted");
-        } else {
-            swprintf_s(tooltipText,
-                       g_settings.terseFormat ? L"🔊 %d%%" : L"Volume: %d%%",
-                       volumeResult->volume);
-        }
-        ShowVolumeTooltip(taskbarFrame, cursorX, cursorY, isOverflowPopup,
-                          tooltipText);
-    }
+    ShowVolumeResultTooltip(element, args, volumeResult);
 
     // Mark event as handled.
     args.Handled(true);
@@ -1236,42 +1221,9 @@ int WINAPI TaskListButton_OnPointerPressed_Hook(void* pThis, void* pArgs) {
     Wh_Log(L"Ctrl+click to toggle mute: PID=%u", processId);
 
     // Toggle mute state.
-    auto newMuteState = ToggleAppMute(processId);
+    auto muteResult = ToggleAppMute(processId);
 
-    // Show tooltip near cursor.
-    auto [taskbarFrame, isOverflowPopup] = FindTaskbarFrameAncestor(element);
-    if (taskbarFrame) {
-        auto point = args.GetCurrentPoint(taskbarFrame);
-        // Transform from taskbarFrame-relative to root-relative coordinates.
-        auto transform = taskbarFrame.TransformToVisual(nullptr);
-        auto rootPoint =
-            transform.TransformPoint({static_cast<float>(point.Position().X),
-                                      static_cast<float>(point.Position().Y)});
-        double cursorX = rootPoint.X;
-        double cursorY = rootPoint.Y;
-
-        WCHAR tooltipText[64];
-        if (!newMuteState) {
-            wcscpy_s(tooltipText,
-                     g_settings.terseFormat ? L"🔕" : L"No audio session");
-        } else if (*newMuteState) {
-            wcscpy_s(tooltipText, g_settings.terseFormat ? L"🔇" : L"Muted");
-        } else {
-            // Get current volume to display.
-            int volume = GetAppVolume(processId);
-            if (volume >= 0) {
-                swprintf_s(
-                    tooltipText,
-                    g_settings.terseFormat ? L"🔊 %d%%" : L"Volume: %d%%",
-                    volume);
-            } else {
-                wcscpy_s(tooltipText,
-                         g_settings.terseFormat ? L"🔕" : L"No audio session");
-            }
-        }
-        ShowVolumeTooltip(taskbarFrame, cursorX, cursorY, isOverflowPopup,
-                          tooltipText);
-    }
+    ShowVolumeResultTooltip(element, args, muteResult);
 
     // Mark event as handled to prevent normal click behavior.
     args.Handled(true);
