@@ -2240,7 +2240,9 @@ bool HookWindowsStorageSymbols() {
 // Separate mod implementation:
 // https://gist.github.com/m417z/f0cdf071868a6f31210e84dd0d444055.
 // The workaround is no longer needed for Windhawk v1.6 and newer.
+#if __has_include(<cxxabi.h>)
 #include <cxxabi.h>
+#endif
 #include <locale.h>
 namespace ProcessShutdownMessageBoxFix {
 
