@@ -9,7 +9,7 @@
 // @homepage        https://m417z.com/
 // @include         explorer.exe
 // @architecture    x86-64
-// @compilerOptions -lcomctl32 -ldxgi -ld2d1 -ldwrite -ld3d11 -ldcomp
+// @compilerOptions -lcomctl32 -ldxgi -ld2d1 -ldwrite -ld3d11 -ldcomp -lwininet -lpdh -lpowrprof -lshlwapi -lwindowsapp
 // ==/WindhawkMod==
 
 // Source code is published under The GNU General Public License v3.0.
@@ -30,24 +30,82 @@ per-pixel alpha transparency.
 
 ### Features
 
-* Customizable text content
+* Customizable text content with dynamic patterns
 * Font family, size, weight, and style options
 * Text color with transparency support (ARGB format)
 * Percentage-based positioning
 * Multi-monitor support
 
+### Supported Patterns
+
+**Time/Date:**
+* `%time%` - Current time (respects system format)
+* `%date%` - Current date (respects system format)
+* `%weekday%` - Day of week name
+* `%weekday_num%` - Day of week as number (1-7, based on system first day of
+week)
+* `%weeknum%` - Week number of year
+* `%dayofyear%` - Day of year (1-366)
+* `%timezone%` - Timezone offset (e.g., +02:00)
+
+**System Metrics:**
+* `%cpu%` - CPU usage percentage
+* `%ram%` - RAM usage percentage
+* `%battery%` - Battery percentage
+* `%battery_time%` - Battery time remaining (h:mm format)
+* `%power%` - Power consumption in watts (negative when discharging)
+* `%upload_speed%` - Network upload speed
+* `%download_speed%` - Network download speed
+* `%total_speed%` - Combined network speed
+* `%disk_read%` - Disk read speed
+* `%disk_write%` - Disk write speed
+* `%disk_total%` - Combined disk I/O speed
+* `%gpu%` - GPU usage percentage
+* `%weather%` - Weather information from [wttr.in](https://wttr.in/)
+
+**Media:**
+* `%media_title%` - Currently playing media title
+* `%media_artist%` - Currently playing media artist
+* `%media_album%` - Currently playing media album
+* `%media_status%` - Media playback status icon (▶, ⏸, ⏹)
+
+**Other:**
+* `%newline%` or `%n%` - Line break
+
+**Example:** `%time% %timezone%\n%date%` displays time with timezone on one line
+and date below it.
+
 ### Acknowledgements
 
 * Based on the technique from the [weebp](https://github.com/Francesco149/weebp)
 project.
+* Pattern system inspired by
+[Taskbar Clock
+Customization](https://windhawk.net/mods/taskbar-clock-customization).
 */
 // ==/WindhawkModReadme==
 
 // ==WindhawkModSettings==
 /*
-- text: Hello World
+- text: "%time%\n%date%"
   $name: Text content
-  $description: The text to display on the desktop
+  $description: >-
+    Text to display. Supports patterns: %time%, %date%, %weekday%,
+    %weekday_num%, %weeknum%, %dayofyear%, %timezone%, %cpu%, %ram%, %battery%,
+    %battery_time%, %power%, %upload_speed%, %download_speed%, %total_speed%,
+    %disk_read%, %disk_write%, %disk_total%, %gpu%, %weather%, %media_title%,
+    %media_artist%, %media_album%, %media_status%, %newline% (or %n%)
+- timeFormat: ""
+  $name: Time format
+  $description: >-
+    Custom time format (empty for system default). Example: HH:mm:ss
+- dateFormat: ""
+  $name: Date format
+  $description: >-
+    Custom date format (empty for system default). Example: yyyy-MM-dd
+- refreshInterval: 1
+  $name: Refresh interval (seconds)
+  $description: How often to update dynamic content (1-60)
 - fontSize: 48
   $name: Font size
   $description: Size of the text in points
@@ -87,6 +145,25 @@ project.
 - monitor: 1
   $name: Monitor
   $description: The monitor number to display text on (1-based)
+- weatherLocation: ""
+  $name: Weather location
+  $description: >-
+    Location for weather (city name, coordinates, etc.). Empty uses auto-detect
+    based on IP. For details, refer to the documentation of wttr.in.
+- weatherFormat: "%c %t"
+  $name: Weather format
+  $description: >-
+    The weather information format. For details, refer to the documentation of
+    wttr.in.
+- weatherUnits: autoDetect
+  $name: Weather units
+  $description: >-
+    The weather units. For details, refer to the documentation of wttr.in.
+  $options:
+  - autoDetect: Auto (default)
+  - uscs: USCS (used by default in US)
+  - metric: Metric (SI) (used by default everywhere except US)
+  - metricMsWind: Metric (SI), but show wind speed in m/s
 */
 // ==/WindhawkModSettings==
 
@@ -99,15 +176,43 @@ project.
 #include <dcomp.h>
 #include <dwrite.h>
 #include <dxgi1_3.h>
+#include <pdh.h>
+#include <pdhmsg.h>
+#include <powrprof.h>
+#include <shlwapi.h>
+#include <wininet.h>
 #include <wrl/client.h>
 
+#include <winrt/Windows.Foundation.Collections.h>
+#include <winrt/Windows.Media.Control.h>
+#include <winrt/base.h>
+
+#include <algorithm>
+#include <functional>
+#include <mutex>
+#include <optional>
+#include <string>
+#include <string_view>
+#include <thread>
+
+using namespace std::literals;
 using Microsoft::WRL::ComPtr;
 
 ////////////////////////////////////////////////////////////////////////////////
 // Types
 
+enum class WeatherUnits {
+    autoDetect,
+    uscs,
+    metric,
+    metricMsWind,
+};
+
 struct Settings {
     WindhawkUtils::StringSetting text;
+    WindhawkUtils::StringSetting timeFormat;
+    WindhawkUtils::StringSetting dateFormat;
+    int refreshInterval;
     int fontSize;
     BYTE colorA;
     BYTE colorR;
@@ -119,12 +224,82 @@ struct Settings {
     int verticalPosition;
     int horizontalPosition;
     int monitor;
+    WindhawkUtils::StringSetting weatherLocation;
+    WindhawkUtils::StringSetting weatherFormat;
+    WeatherUnits weatherUnits;
+};
+
+constexpr size_t FORMATTED_BUFFER_SIZE = 256;
+constexpr size_t INTEGER_BUFFER_SIZE = sizeof("-2147483648");
+
+template <size_t N>
+struct FormattedString {
+    DWORD formatIndex = 0;
+    WCHAR buffer[N] = {};
 };
 
 ////////////////////////////////////////////////////////////////////////////////
 // Globals
 
 Settings g_settings;
+
+// Format state.
+SYSTEMTIME g_formatTime;
+DWORD g_formatIndex = 0;
+
+FormattedString<FORMATTED_BUFFER_SIZE> g_timeFormatted;
+FormattedString<FORMATTED_BUFFER_SIZE> g_dateFormatted;
+FormattedString<FORMATTED_BUFFER_SIZE> g_weekdayFormatted;
+FormattedString<INTEGER_BUFFER_SIZE> g_weekdayNumFormatted;
+FormattedString<INTEGER_BUFFER_SIZE> g_weeknumFormatted;
+FormattedString<INTEGER_BUFFER_SIZE> g_dayOfYearFormatted;
+FormattedString<FORMATTED_BUFFER_SIZE> g_timezoneFormatted;
+FormattedString<INTEGER_BUFFER_SIZE> g_cpuFormatted;
+FormattedString<INTEGER_BUFFER_SIZE> g_ramFormatted;
+FormattedString<INTEGER_BUFFER_SIZE> g_batteryFormatted;
+FormattedString<INTEGER_BUFFER_SIZE> g_batteryTimeFormatted;
+FormattedString<INTEGER_BUFFER_SIZE> g_powerFormatted;
+FormattedString<FORMATTED_BUFFER_SIZE> g_uploadSpeedFormatted;
+FormattedString<FORMATTED_BUFFER_SIZE> g_downloadSpeedFormatted;
+FormattedString<FORMATTED_BUFFER_SIZE> g_totalSpeedFormatted;
+FormattedString<FORMATTED_BUFFER_SIZE> g_diskReadSpeedFormatted;
+FormattedString<FORMATTED_BUFFER_SIZE> g_diskWriteSpeedFormatted;
+FormattedString<FORMATTED_BUFFER_SIZE> g_diskTotalSpeedFormatted;
+FormattedString<INTEGER_BUFFER_SIZE> g_gpuFormatted;
+
+// Performance metrics.
+PDH_HQUERY g_metricsQuery = nullptr;
+PDH_HCOUNTER g_cpuCounter = nullptr;
+std::vector<PDH_HCOUNTER> g_uploadCounters;
+std::vector<PDH_HCOUNTER> g_downloadCounters;
+PDH_HCOUNTER g_diskReadCounter = nullptr;
+PDH_HCOUNTER g_diskWriteCounter = nullptr;
+std::vector<PDH_HCOUNTER> g_gpuCounters;
+
+// Weather web content.
+HANDLE g_weatherUpdateThread = nullptr;
+HANDLE g_weatherUpdateStopEvent = nullptr;
+std::mutex g_weatherMutex;
+std::atomic<bool> g_weatherLoaded{false};
+std::optional<std::wstring> g_weatherContent;
+
+// Media playback.
+FormattedString<FORMATTED_BUFFER_SIZE> g_mediaTitleFormatted;
+FormattedString<FORMATTED_BUFFER_SIZE> g_mediaArtistFormatted;
+FormattedString<FORMATTED_BUFFER_SIZE> g_mediaAlbumFormatted;
+FormattedString<INTEGER_BUFFER_SIZE> g_mediaStatusFormatted;
+winrt::Windows::Media::Control::GlobalSystemMediaTransportControlsSessionManager
+    g_mediaSessionManager{nullptr};
+winrt::Windows::Media::Control::GlobalSystemMediaTransportControlsSession
+    g_mediaCurrentSession{nullptr};
+std::mutex g_mediaMutex;
+std::atomic<bool> g_mediaDataDirty{true};
+winrt::event_token g_mediaSessionsChangedToken;
+winrt::event_token g_mediaPropertiesChangedToken;
+winrt::event_token g_mediaPlaybackChangedToken;
+
+// Refresh timer.
+UINT_PTR g_refreshTimer = 0;
 
 // DirectX device objects (shared).
 ComPtr<ID3D11Device> g_d3dDevice;
@@ -196,6 +371,17 @@ bool RunFromWindowThread(HWND hWnd,
     UnhookWindowsHookEx(hook);
 
     return true;
+}
+
+HMODULE GetCurrentModuleHandle() {
+    HMODULE module;
+    if (!GetModuleHandleEx(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
+                               GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                           L"", &module)) {
+        return nullptr;
+    }
+
+    return module;
 }
 
 HMONITOR GetMonitorById(int monitorId) {
@@ -286,6 +472,1234 @@ DWRITE_FONT_WEIGHT GetDWriteFontWeight() {
     if (g_settings.fontWeight <= 800)
         return DWRITE_FONT_WEIGHT_EXTRA_BOLD;
     return DWRITE_FONT_WEIGHT_BLACK;
+}
+
+int StringCopyTruncated(PWSTR dest,
+                        size_t destSize,
+                        PCWSTR src,
+                        bool* truncated) {
+    if (destSize == 0) {
+        *truncated = *src;
+        return 0;
+    }
+
+    size_t i;
+    for (i = 0; i < destSize - 1 && *src; i++) {
+        *dest++ = *src++;
+    }
+
+    *dest = L'\0';
+    *truncated = *src;
+    return static_cast<int>(i);
+}
+
+int StringCopyTruncatedWithEllipsis(PWSTR dest, size_t destSize, PCWSTR src) {
+    if (destSize == 0) {
+        return 0;
+    }
+
+    bool truncated = false;
+    int i = StringCopyTruncated(dest, destSize, src, &truncated);
+    if (truncated && destSize >= 4) {
+        dest[destSize - 4] = L'.';
+        dest[destSize - 3] = L'.';
+        dest[destSize - 2] = L'.';
+        dest[destSize - 1] = L'\0';
+    }
+    return i;
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// Pattern formatting
+
+std::vector<std::wstring> ExpandPdhWildcard(PCWSTR wildcardPath) {
+    std::vector<std::wstring> result;
+
+    DWORD pathListLength = 0;
+    PDH_STATUS status = PdhExpandWildCardPathW(nullptr, wildcardPath, nullptr,
+                                               &pathListLength, 0);
+    if (status != static_cast<PDH_STATUS>(PDH_MORE_DATA) ||
+        pathListLength == 0) {
+        return result;
+    }
+
+    std::wstring pathList(pathListLength, L'\0');
+    status = PdhExpandWildCardPathW(nullptr, wildcardPath, pathList.data(),
+                                    &pathListLength, 0);
+    if (status != static_cast<PDH_STATUS>(ERROR_SUCCESS)) {
+        return result;
+    }
+
+    // Parse null-terminated list of paths.
+    PCWSTR p = pathList.c_str();
+    while (*p) {
+        result.push_back(p);
+        p += wcslen(p) + 1;
+    }
+
+    return result;
+}
+
+std::optional<std::wstring> GetUrlContent(PCWSTR lpUrl) {
+    HINTERNET hOpenHandle = InternetOpen(
+        L"WindhawkMod", INTERNET_OPEN_TYPE_PRECONFIG, nullptr, nullptr, 0);
+    if (!hOpenHandle) {
+        return std::nullopt;
+    }
+
+    HINTERNET hUrlHandle =
+        InternetOpenUrl(hOpenHandle, lpUrl, nullptr, 0,
+                        INTERNET_FLAG_NO_AUTH | INTERNET_FLAG_NO_CACHE_WRITE |
+                            INTERNET_FLAG_NO_COOKIES | INTERNET_FLAG_NO_UI |
+                            INTERNET_FLAG_PRAGMA_NOCACHE | INTERNET_FLAG_RELOAD,
+                        0);
+    if (!hUrlHandle) {
+        InternetCloseHandle(hOpenHandle);
+        return std::nullopt;
+    }
+
+    DWORD dwStatusCode = 0;
+    DWORD dwStatusCodeSize = sizeof(dwStatusCode);
+    if (!HttpQueryInfo(hUrlHandle,
+                       HTTP_QUERY_STATUS_CODE | HTTP_QUERY_FLAG_NUMBER,
+                       &dwStatusCode, &dwStatusCodeSize, nullptr) ||
+        dwStatusCode != 200) {
+        InternetCloseHandle(hUrlHandle);
+        InternetCloseHandle(hOpenHandle);
+        return std::nullopt;
+    }
+
+    LPBYTE pUrlContent = (LPBYTE)HeapAlloc(GetProcessHeap(), 0, 0x400);
+    if (!pUrlContent) {
+        InternetCloseHandle(hUrlHandle);
+        InternetCloseHandle(hOpenHandle);
+        return std::nullopt;
+    }
+
+    DWORD dwNumberOfBytesRead;
+    InternetReadFile(hUrlHandle, pUrlContent, 0x400, &dwNumberOfBytesRead);
+    DWORD dwLength = dwNumberOfBytesRead;
+
+    while (dwNumberOfBytesRead) {
+        LPBYTE pNewUrlContent = (LPBYTE)HeapReAlloc(
+            GetProcessHeap(), 0, pUrlContent, dwLength + 0x400);
+        if (!pNewUrlContent) {
+            InternetCloseHandle(hUrlHandle);
+            InternetCloseHandle(hOpenHandle);
+            HeapFree(GetProcessHeap(), 0, pUrlContent);
+            return std::nullopt;
+        }
+
+        pUrlContent = pNewUrlContent;
+        InternetReadFile(hUrlHandle, pUrlContent + dwLength, 0x400,
+                         &dwNumberOfBytesRead);
+        dwLength += dwNumberOfBytesRead;
+    }
+
+    InternetCloseHandle(hUrlHandle);
+    InternetCloseHandle(hOpenHandle);
+
+    // Assume UTF-8.
+    int charsNeeded = MultiByteToWideChar(CP_UTF8, 0, (PCSTR)pUrlContent,
+                                          dwLength, nullptr, 0);
+    std::wstring unicodeContent(charsNeeded, L'\0');
+    MultiByteToWideChar(CP_UTF8, 0, (PCSTR)pUrlContent, dwLength,
+                        unicodeContent.data(), unicodeContent.size());
+
+    HeapFree(GetProcessHeap(), 0, pUrlContent);
+
+    return unicodeContent;
+}
+
+std::wstring ReplaceAll(std::wstring_view source,
+                        std::wstring_view from,
+                        std::wstring_view to) {
+    std::wstring newString;
+
+    size_t lastPos = 0;
+    size_t findPos;
+
+    while ((findPos = source.find(from, lastPos)) != source.npos) {
+        newString.append(source, lastPos, findPos - lastPos);
+        newString += to;
+        lastPos = findPos + from.length();
+    }
+
+    newString += source.substr(lastPos);
+
+    return newString;
+}
+
+std::wstring EscapeUrlComponent(PCWSTR input) {
+    WCHAR outStack[256];
+    DWORD needed = ARRAYSIZE(outStack);
+    HRESULT hr =
+        UrlEscape(input, outStack, &needed,
+                  URL_ESCAPE_ASCII_URI_COMPONENT | URL_ESCAPE_AS_UTF8);
+    if (SUCCEEDED(hr)) {
+        return outStack;
+    }
+
+    if (hr != E_POINTER || needed < 1) {
+        return std::wstring();
+    }
+
+    std::wstring out(needed - 1, L'\0');
+    hr = UrlEscape(input, &out[0], &needed,
+                   URL_ESCAPE_ASCII_URI_COMPONENT | URL_ESCAPE_AS_UTF8);
+    if (FAILED(hr)) {
+        return std::wstring();
+    }
+
+    return out;
+}
+
+std::wstring GetWeatherCacheKey() {
+    // Change the URL every 10 minutes to avoid caching.
+    FILETIME ft;
+    GetSystemTimeAsFileTime(&ft);
+    ULARGE_INTEGER uli{
+        .LowPart = ft.dwLowDateTime,
+        .HighPart = ft.dwHighDateTime,
+    };
+    uli.QuadPart /= 10000000ULL * 60 * 10;
+    return std::to_wstring(uli.QuadPart);
+}
+
+bool UpdateWeatherContent() {
+    std::wstring format = g_settings.weatherFormat.get();
+    if (format.empty()) {
+        format = L"%c %t";
+    }
+
+    // Spaces are added after the weather emoji by the server. Add a marker
+    // character after it to be able to remove the spaces.
+    // https://github.com/chubin/wttr.in/issues/345
+    format = ReplaceAll(format, L"%c", L"%c\uE000");
+
+    std::wstring weatherUrl = L"https://wttr.in/";
+    weatherUrl += EscapeUrlComponent(g_settings.weatherLocation.get());
+    weatherUrl += L'?';
+    switch (g_settings.weatherUnits) {
+        case WeatherUnits::autoDetect:
+            break;
+        case WeatherUnits::uscs:
+            weatherUrl += L"u&";
+            break;
+        case WeatherUnits::metric:
+            weatherUrl += L"m&";
+            break;
+        case WeatherUnits::metricMsWind:
+            weatherUrl += L"M&";
+            break;
+    }
+    weatherUrl += L"format=";
+    weatherUrl += EscapeUrlComponent(format.c_str());
+    // Set a random language as a way to avoid caching the result.
+    // https://github.com/chubin/wttr.in/issues/705#issuecomment-3109898903
+    weatherUrl += L"&lang=_nocache_";
+    weatherUrl += GetWeatherCacheKey();
+
+    std::optional<std::wstring> urlContent = GetUrlContent(weatherUrl.c_str());
+    if (!urlContent) {
+        return false;
+    }
+
+    // Ignore non-weather responses.
+    if (urlContent->empty() ||
+        *urlContent == L"This query is already being processed") {
+        return false;
+    }
+
+    // Remove spaces after the %c emoji.
+    std::wstring weatherContent;
+
+    size_t lastPos = 0;
+    size_t findPos;
+
+    while ((findPos = urlContent->find(L'\uE000', lastPos)) !=
+           urlContent->npos) {
+        size_t lastPosCount = findPos - lastPos;
+        while (lastPosCount > 0 &&
+               urlContent->at(lastPos + lastPosCount - 1) == L' ') {
+            lastPosCount--;
+        }
+
+        weatherContent.append(*urlContent, lastPos, lastPosCount);
+        lastPos = findPos + 1;
+    }
+
+    // Care for the rest after last occurrence.
+    weatherContent += urlContent->substr(lastPos);
+
+    {
+        std::lock_guard<std::mutex> guard(g_weatherMutex);
+        g_weatherContent = weatherContent;
+    }
+
+    return true;
+}
+
+DWORD WINAPI WeatherUpdateThread(LPVOID lpThreadParameter) {
+    constexpr DWORD kSecondsForQuickRetry = 30;
+    constexpr DWORD kSecondsForNormalUpdate = 600;  // 10 minutes
+
+    while (true) {
+        bool success = UpdateWeatherContent();
+        if (success) {
+            g_weatherLoaded = true;
+        }
+
+        DWORD seconds = kSecondsForNormalUpdate;
+        if (!g_weatherLoaded && seconds > kSecondsForQuickRetry) {
+            seconds = kSecondsForQuickRetry;
+        }
+
+        DWORD dwWaitResult = WaitForSingleObject(g_weatherUpdateStopEvent,
+                                                  seconds * 1000);
+        if (dwWaitResult == WAIT_OBJECT_0) {
+            break;  // Stop event signaled
+        }
+    }
+
+    return 0;
+}
+
+bool IsPatternUsed(PCWSTR pattern) {
+    PCWSTR text = g_settings.text.get();
+    return text && wcsstr(text, pattern);
+}
+
+void WeatherUpdateThreadInit() {
+    // Check if weather pattern is used in the text.
+    if (!IsPatternUsed(L"%weather%")) {
+        return;
+    }
+
+    g_weatherUpdateStopEvent = CreateEvent(nullptr, TRUE, FALSE, nullptr);
+    g_weatherUpdateThread =
+        CreateThread(nullptr, 0, WeatherUpdateThread, nullptr, 0, nullptr);
+}
+
+void WeatherUpdateThreadUninit() {
+    if (g_weatherUpdateThread) {
+        SetEvent(g_weatherUpdateStopEvent);
+        WaitForSingleObject(g_weatherUpdateThread, INFINITE);
+        CloseHandle(g_weatherUpdateThread);
+        g_weatherUpdateThread = nullptr;
+        CloseHandle(g_weatherUpdateStopEvent);
+        g_weatherUpdateStopEvent = nullptr;
+    }
+
+    std::lock_guard<std::mutex> guard(g_weatherMutex);
+    g_weatherLoaded = false;
+    g_weatherContent.reset();
+}
+
+void ClearMediaFormattedStrings() {
+    wcscpy_s(g_mediaTitleFormatted.buffer, L"");
+    wcscpy_s(g_mediaArtistFormatted.buffer, L"");
+    wcscpy_s(g_mediaAlbumFormatted.buffer, L"");
+    wcscpy_s(g_mediaStatusFormatted.buffer, L"");
+}
+
+winrt::Windows::Media::Control::GlobalSystemMediaTransportControlsSession
+FindActiveMediaSession() {
+    if (!g_mediaSessionManager) {
+        return nullptr;
+    }
+
+    // First try the current session.
+    auto currentSession = g_mediaSessionManager.GetCurrentSession();
+    if (currentSession) {
+        return currentSession;
+    }
+
+    // If no current session, search for an active one.
+    try {
+        auto sessions = g_mediaSessionManager.GetSessions();
+        for (uint32_t i = 0; i < sessions.Size(); i++) {
+            auto session = sessions.GetAt(i);
+            try {
+                auto playbackInfo = session.GetPlaybackInfo();
+                auto status = playbackInfo.PlaybackStatus();
+
+                using Status = winrt::Windows::Media::Control::
+                    GlobalSystemMediaTransportControlsSessionPlaybackStatus;
+                if (status == Status::Playing || status == Status::Paused) {
+                    return session;
+                }
+            } catch (...) {
+                continue;
+            }
+        }
+
+        // If no active session found, return first one.
+        if (sessions.Size() > 0) {
+            return sessions.GetAt(0);
+        }
+    } catch (...) {
+        HRESULT hr = winrt::to_hresult();
+        Wh_Log(L"Failed to get media sessions: %08X", hr);
+    }
+
+    return nullptr;
+}
+
+void RefreshMediaData() {
+    std::lock_guard<std::mutex> guard(g_mediaMutex);
+
+    try {
+        if (!g_mediaSessionManager) {
+            ClearMediaFormattedStrings();
+            return;
+        }
+
+        auto session = FindActiveMediaSession();
+        if (!session) {
+            ClearMediaFormattedStrings();
+            return;
+        }
+
+        auto mediaProperties = session.TryGetMediaPropertiesAsync().get();
+        auto playbackInfo = session.GetPlaybackInfo();
+
+        if (!mediaProperties) {
+            ClearMediaFormattedStrings();
+            return;
+        }
+
+        // Get playback status as emoji.
+        auto status = playbackInfo.PlaybackStatus();
+        using Status = winrt::Windows::Media::Control::
+            GlobalSystemMediaTransportControlsSessionPlaybackStatus;
+
+        switch (status) {
+            case Status::Playing:
+                wcscpy_s(g_mediaStatusFormatted.buffer, L"\u25B6");  // ▶
+                break;
+            case Status::Paused:
+                wcscpy_s(g_mediaStatusFormatted.buffer, L"\u23F8");  // ⏸
+                break;
+            case Status::Stopped:
+                wcscpy_s(g_mediaStatusFormatted.buffer, L"\u23F9");  // ⏹
+                break;
+            default:
+                wcscpy_s(g_mediaStatusFormatted.buffer, L"");
+                break;
+        }
+
+        auto title = mediaProperties.Title();
+        auto artist = mediaProperties.Artist();
+        auto album = mediaProperties.AlbumTitle();
+
+        StringCopyTruncatedWithEllipsis(g_mediaTitleFormatted.buffer,
+                                        ARRAYSIZE(g_mediaTitleFormatted.buffer),
+                                        title.c_str());
+        StringCopyTruncatedWithEllipsis(g_mediaArtistFormatted.buffer,
+                                        ARRAYSIZE(g_mediaArtistFormatted.buffer),
+                                        artist.c_str());
+        StringCopyTruncatedWithEllipsis(g_mediaAlbumFormatted.buffer,
+                                        ARRAYSIZE(g_mediaAlbumFormatted.buffer),
+                                        album.c_str());
+    } catch (...) {
+        HRESULT hr = winrt::to_hresult();
+        Wh_Log(L"RefreshMediaData error: %08X", hr);
+        ClearMediaFormattedStrings();
+    }
+
+    g_mediaDataDirty = false;
+}
+
+bool IsMediaPatternUsed() {
+    return IsPatternUsed(L"%media_title%") ||
+           IsPatternUsed(L"%media_artist%") ||
+           IsPatternUsed(L"%media_album%") ||
+           IsPatternUsed(L"%media_status%");
+}
+
+void UnsubscribeFromMediaSession() {
+    if (g_mediaCurrentSession) {
+        try {
+            g_mediaCurrentSession.MediaPropertiesChanged(
+                g_mediaPropertiesChangedToken);
+            g_mediaCurrentSession.PlaybackInfoChanged(
+                g_mediaPlaybackChangedToken);
+        } catch (...) {
+            HRESULT hr = winrt::to_hresult();
+            Wh_Log(L"UnsubscribeFromMediaSession error: %08X", hr);
+        }
+        g_mediaCurrentSession = nullptr;
+    }
+}
+
+void SubscribeToMediaSession() {
+    UnsubscribeFromMediaSession();
+
+    if (!g_mediaSessionManager) {
+        return;
+    }
+
+    try {
+        auto session = FindActiveMediaSession();
+        if (!session) {
+            return;
+        }
+
+        g_mediaCurrentSession = session;
+
+        g_mediaPropertiesChangedToken = session.MediaPropertiesChanged(
+            [](auto&&, auto&&) { g_mediaDataDirty = true; });
+
+        g_mediaPlaybackChangedToken = session.PlaybackInfoChanged(
+            [](auto&&, auto&&) { g_mediaDataDirty = true; });
+    } catch (...) {
+        HRESULT hr = winrt::to_hresult();
+        Wh_Log(L"SubscribeToMediaSession error %08X", hr);
+    }
+}
+
+void OnMediaSessionsChanged() {
+    g_mediaDataDirty = true;
+    SubscribeToMediaSession();
+}
+
+void MediaSessionInit() {
+    if (!IsMediaPatternUsed()) {
+        return;
+    }
+
+    try {
+        g_mediaSessionManager =
+            winrt::Windows::Media::Control::
+                GlobalSystemMediaTransportControlsSessionManager::RequestAsync()
+                    .get();
+
+        // Subscribe to SessionsChanged event.
+        g_mediaSessionsChangedToken = g_mediaSessionManager.SessionsChanged(
+            [](auto&&, auto&&) { OnMediaSessionsChanged(); });
+
+        // Subscribe to current session events.
+        SubscribeToMediaSession();
+
+        RefreshMediaData();
+    } catch (...) {
+        HRESULT hr = winrt::to_hresult();
+        Wh_Log(L"MediaSessionInit error %08X", hr);
+        g_mediaSessionManager = nullptr;
+    }
+}
+
+void MediaSessionUninit() {
+    UnsubscribeFromMediaSession();
+
+    if (g_mediaSessionManager) {
+        try {
+            g_mediaSessionManager.SessionsChanged(g_mediaSessionsChangedToken);
+        } catch (...) {
+            HRESULT hr = winrt::to_hresult();
+            Wh_Log(L"MediaSessionUninit error: %08X", hr);
+        }
+        g_mediaSessionManager = nullptr;
+    }
+
+    g_mediaDataDirty = true;
+    ClearMediaFormattedStrings();
+}
+
+bool InitMetrics() {
+    // Determine which metrics are needed based on patterns used.
+    bool needCpu = IsPatternUsed(L"%cpu%");
+    bool needUpload = IsPatternUsed(L"%upload_speed%");
+    bool needDownload = IsPatternUsed(L"%download_speed%");
+    bool needDiskRead = IsPatternUsed(L"%disk_read%");
+    bool needDiskWrite = IsPatternUsed(L"%disk_write%");
+    bool needGpu = IsPatternUsed(L"%gpu%");
+
+    // %total_speed% requires both upload and download.
+    if (IsPatternUsed(L"%total_speed%")) {
+        needUpload = true;
+        needDownload = true;
+    }
+
+    // %disk_total% requires both read and write.
+    if (IsPatternUsed(L"%disk_total%")) {
+        needDiskRead = true;
+        needDiskWrite = true;
+    }
+
+    // If no PDH metrics are needed, skip initialization.
+    if (!needCpu && !needUpload && !needDownload && !needDiskRead &&
+        !needDiskWrite && !needGpu) {
+        return true;
+    }
+
+    if (PdhOpenQuery(nullptr, 0, &g_metricsQuery) != ERROR_SUCCESS) {
+        return false;
+    }
+
+    // CPU counter.
+    if (needCpu) {
+        PdhAddEnglishCounter(
+            g_metricsQuery,
+            L"\\Processor Information(_Total)\\% Processor Utility", 0,
+            &g_cpuCounter);
+    }
+
+    // Network upload counters (wildcard expansion).
+    if (needUpload) {
+        auto uploadPaths =
+            ExpandPdhWildcard(L"\\Network Interface(*)\\Bytes Sent/sec");
+        for (const auto& path : uploadPaths) {
+            PDH_HCOUNTER counter;
+            if (PdhAddCounter(g_metricsQuery, path.c_str(), 0, &counter) ==
+                ERROR_SUCCESS) {
+                g_uploadCounters.push_back(counter);
+            }
+        }
+    }
+
+    // Network download counters (wildcard expansion).
+    if (needDownload) {
+        auto downloadPaths =
+            ExpandPdhWildcard(L"\\Network Interface(*)\\Bytes Received/sec");
+        for (const auto& path : downloadPaths) {
+            PDH_HCOUNTER counter;
+            if (PdhAddCounter(g_metricsQuery, path.c_str(), 0, &counter) ==
+                ERROR_SUCCESS) {
+                g_downloadCounters.push_back(counter);
+            }
+        }
+    }
+
+    // Disk read/write counters.
+    if (needDiskRead) {
+        PdhAddEnglishCounter(g_metricsQuery,
+                             L"\\PhysicalDisk(_Total)\\Disk Read Bytes/sec", 0,
+                             &g_diskReadCounter);
+    }
+    if (needDiskWrite) {
+        PdhAddEnglishCounter(g_metricsQuery,
+                             L"\\PhysicalDisk(_Total)\\Disk Write Bytes/sec", 0,
+                             &g_diskWriteCounter);
+    }
+
+    // GPU engine counters (wildcard expansion).
+    if (needGpu) {
+        auto gpuPaths =
+            ExpandPdhWildcard(L"\\GPU Engine(*)\\Utilization Percentage");
+        for (const auto& path : gpuPaths) {
+            PDH_HCOUNTER counter;
+            if (PdhAddCounter(g_metricsQuery, path.c_str(), 0, &counter) ==
+                ERROR_SUCCESS) {
+                g_gpuCounters.push_back(counter);
+            }
+        }
+    }
+
+    // First call initializes the counters.
+    PdhCollectQueryData(g_metricsQuery);
+    return true;
+}
+
+void UninitMetrics() {
+    if (g_metricsQuery) {
+        PdhCloseQuery(g_metricsQuery);
+        g_metricsQuery = nullptr;
+        g_cpuCounter = nullptr;
+        g_uploadCounters.clear();
+        g_downloadCounters.clear();
+        g_diskReadCounter = nullptr;
+        g_diskWriteCounter = nullptr;
+        g_gpuCounters.clear();
+    }
+}
+
+PCWSTR GetTimeFormatted() {
+    if (g_timeFormatted.formatIndex != g_formatIndex) {
+        PCWSTR format = g_settings.timeFormat.get();
+        GetTimeFormat(LOCALE_USER_DEFAULT, 0, &g_formatTime,
+                      (format && *format) ? format : nullptr,
+                      g_timeFormatted.buffer,
+                      ARRAYSIZE(g_timeFormatted.buffer));
+        g_timeFormatted.formatIndex = g_formatIndex;
+    }
+    return g_timeFormatted.buffer;
+}
+
+PCWSTR GetDateFormatted() {
+    if (g_dateFormatted.formatIndex != g_formatIndex) {
+        PCWSTR format = g_settings.dateFormat.get();
+        GetDateFormat(LOCALE_USER_DEFAULT, DATE_AUTOLAYOUT, &g_formatTime,
+                      (format && *format) ? format : nullptr,
+                      g_dateFormatted.buffer,
+                      ARRAYSIZE(g_dateFormatted.buffer));
+        g_dateFormatted.formatIndex = g_formatIndex;
+    }
+    return g_dateFormatted.buffer;
+}
+
+PCWSTR GetWeekdayFormatted() {
+    if (g_weekdayFormatted.formatIndex != g_formatIndex) {
+        GetDateFormat(LOCALE_USER_DEFAULT, DATE_AUTOLAYOUT, &g_formatTime,
+                      L"dddd", g_weekdayFormatted.buffer,
+                      ARRAYSIZE(g_weekdayFormatted.buffer));
+        g_weekdayFormatted.formatIndex = g_formatIndex;
+    }
+    return g_weekdayFormatted.buffer;
+}
+
+PCWSTR GetCpuFormatted() {
+    if (g_cpuFormatted.formatIndex != g_formatIndex) {
+        if (g_metricsQuery) {
+            PdhCollectQueryData(g_metricsQuery);
+            PDH_FMT_COUNTERVALUE val;
+            if (PdhGetFormattedCounterValue(g_cpuCounter, PDH_FMT_DOUBLE,
+                                            nullptr, &val) == ERROR_SUCCESS) {
+                int cpu = (std::min)(99, (int)val.doubleValue);
+                swprintf_s(g_cpuFormatted.buffer, L"%d%%", cpu);
+            } else {
+                wcscpy_s(g_cpuFormatted.buffer, L"-");
+            }
+        } else {
+            wcscpy_s(g_cpuFormatted.buffer, L"-");
+        }
+        g_cpuFormatted.formatIndex = g_formatIndex;
+    }
+    return g_cpuFormatted.buffer;
+}
+
+PCWSTR GetRamFormatted() {
+    if (g_ramFormatted.formatIndex != g_formatIndex) {
+        MEMORYSTATUSEX status{.dwLength = sizeof(status)};
+        if (GlobalMemoryStatusEx(&status)) {
+            swprintf_s(g_ramFormatted.buffer, L"%d%%",
+                       (int)status.dwMemoryLoad);
+        } else {
+            wcscpy_s(g_ramFormatted.buffer, L"-");
+        }
+        g_ramFormatted.formatIndex = g_formatIndex;
+    }
+    return g_ramFormatted.buffer;
+}
+
+PCWSTR GetBatteryFormatted() {
+    if (g_batteryFormatted.formatIndex != g_formatIndex) {
+        SYSTEM_POWER_STATUS ps;
+        if (GetSystemPowerStatus(&ps) && ps.BatteryLifePercent != 255) {
+            swprintf_s(g_batteryFormatted.buffer, L"%d%%",
+                       (int)ps.BatteryLifePercent);
+        } else {
+            wcscpy_s(g_batteryFormatted.buffer, L"-");
+        }
+        g_batteryFormatted.formatIndex = g_formatIndex;
+    }
+    return g_batteryFormatted.buffer;
+}
+
+PCWSTR GetBatteryTimeFormatted() {
+    if (g_batteryTimeFormatted.formatIndex != g_formatIndex) {
+        DWORD totalSeconds = 0;
+        SYSTEM_POWER_STATUS ps;
+
+        if (GetSystemPowerStatus(&ps)) {
+            if (ps.BatteryLifeTime != (DWORD)-1) {
+                // Discharging - use remaining time.
+                totalSeconds = ps.BatteryLifeTime;
+            } else if (ps.ACLineStatus == 1 && ps.BatteryLifePercent < 100) {
+                // Charging - calculate time to full.
+                SYSTEM_BATTERY_STATE bs{};
+                NTSTATUS status = CallNtPowerInformation(
+                    SystemBatteryState, nullptr, 0, &bs, sizeof(bs));
+                if (status == 0 && bs.Rate > 0) {
+                    DWORD remainingCapacity =
+                        bs.MaxCapacity - bs.RemainingCapacity;
+                    totalSeconds = (remainingCapacity * 3600) / bs.Rate;
+                }
+            }
+        }
+
+        DWORD hours = totalSeconds / 3600;
+        DWORD minutes = (totalSeconds % 3600) / 60;
+        swprintf_s(g_batteryTimeFormatted.buffer, L"%u:%02u", hours, minutes);
+        g_batteryTimeFormatted.formatIndex = g_formatIndex;
+    }
+    return g_batteryTimeFormatted.buffer;
+}
+
+PCWSTR GetPowerFormatted() {
+    if (g_powerFormatted.formatIndex != g_formatIndex) {
+        SYSTEM_BATTERY_STATE batteryState{};
+        NTSTATUS status =
+            CallNtPowerInformation(SystemBatteryState, nullptr, 0,
+                                   &batteryState, sizeof(batteryState));
+        if (status == 0 && batteryState.MaxCapacity > 0) {
+            DWORD rate = batteryState.Rate;
+
+            // When some batteries charge the Rate is:
+            // 0x80000000 == -2147483648 (LONG) == 2147483648 (DWORD)
+            // https://github.com/jay/battstatus/blob/418d1872f6c4e560f6b46880d9577947f17cc414/battstatus.cpp#L265
+            if (rate == 0x80000000) {
+                rate = 0;
+            }
+
+            long powerMilliWatts = static_cast<long>(rate);
+            long powerWatts =
+                (powerMilliWatts + (powerMilliWatts >= 0 ? 500 : -500)) / 1000;
+
+            swprintf_s(g_powerFormatted.buffer, L"%+ldW", powerWatts);
+        } else {
+            wcscpy_s(g_powerFormatted.buffer, L"-");
+        }
+        g_powerFormatted.formatIndex = g_formatIndex;
+    }
+    return g_powerFormatted.buffer;
+}
+
+void FormatTransferSpeed(double bytesPerSec, PWSTR buffer, size_t bufferSize) {
+    constexpr double KB = 1024.0;
+    constexpr double MB = 1024.0 * KB;
+
+    // Use KB/s for values < 1 MB/s, otherwise MB/s.
+    if (bytesPerSec < MB) {
+        double kbps = bytesPerSec / KB;
+        if (kbps < 10) {
+            swprintf_s(buffer, bufferSize, L"%.2f KB/s", kbps);
+        } else if (kbps < 100) {
+            swprintf_s(buffer, bufferSize, L"%.1f KB/s", kbps);
+        } else {
+            swprintf_s(buffer, bufferSize, L"%.0f KB/s", kbps);
+        }
+    } else {
+        double mbps = bytesPerSec / MB;
+        if (mbps < 10) {
+            swprintf_s(buffer, bufferSize, L"%.2f MB/s", mbps);
+        } else if (mbps < 100) {
+            swprintf_s(buffer, bufferSize, L"%.1f MB/s", mbps);
+        } else {
+            swprintf_s(buffer, bufferSize, L"%.0f MB/s", mbps);
+        }
+    }
+}
+
+double QueryNetworkSpeed(const std::vector<PDH_HCOUNTER>& counters) {
+    double total = 0.0;
+    for (PDH_HCOUNTER counter : counters) {
+        PDH_FMT_COUNTERVALUE val;
+        if (PdhGetFormattedCounterValue(counter, PDH_FMT_DOUBLE, nullptr,
+                                        &val) == ERROR_SUCCESS) {
+            total += val.doubleValue;
+        }
+    }
+    return total;
+}
+
+PCWSTR GetUploadSpeedFormatted() {
+    if (g_uploadSpeedFormatted.formatIndex != g_formatIndex) {
+        if (g_metricsQuery && !g_uploadCounters.empty()) {
+            PdhCollectQueryData(g_metricsQuery);
+            double speed = QueryNetworkSpeed(g_uploadCounters);
+            FormatTransferSpeed(speed, g_uploadSpeedFormatted.buffer,
+                                ARRAYSIZE(g_uploadSpeedFormatted.buffer));
+        } else {
+            wcscpy_s(g_uploadSpeedFormatted.buffer, L"-");
+        }
+        g_uploadSpeedFormatted.formatIndex = g_formatIndex;
+    }
+    return g_uploadSpeedFormatted.buffer;
+}
+
+PCWSTR GetDownloadSpeedFormatted() {
+    if (g_downloadSpeedFormatted.formatIndex != g_formatIndex) {
+        if (g_metricsQuery && !g_downloadCounters.empty()) {
+            PdhCollectQueryData(g_metricsQuery);
+            double speed = QueryNetworkSpeed(g_downloadCounters);
+            FormatTransferSpeed(speed, g_downloadSpeedFormatted.buffer,
+                                ARRAYSIZE(g_downloadSpeedFormatted.buffer));
+        } else {
+            wcscpy_s(g_downloadSpeedFormatted.buffer, L"-");
+        }
+        g_downloadSpeedFormatted.formatIndex = g_formatIndex;
+    }
+    return g_downloadSpeedFormatted.buffer;
+}
+
+PCWSTR GetTotalSpeedFormatted() {
+    if (g_totalSpeedFormatted.formatIndex != g_formatIndex) {
+        if (g_metricsQuery &&
+            (!g_uploadCounters.empty() || !g_downloadCounters.empty())) {
+            PdhCollectQueryData(g_metricsQuery);
+            double uploadSpeed = QueryNetworkSpeed(g_uploadCounters);
+            double downloadSpeed = QueryNetworkSpeed(g_downloadCounters);
+            FormatTransferSpeed(uploadSpeed + downloadSpeed,
+                                g_totalSpeedFormatted.buffer,
+                                ARRAYSIZE(g_totalSpeedFormatted.buffer));
+        } else {
+            wcscpy_s(g_totalSpeedFormatted.buffer, L"-");
+        }
+        g_totalSpeedFormatted.formatIndex = g_formatIndex;
+    }
+    return g_totalSpeedFormatted.buffer;
+}
+
+double QueryDiskSpeed(PDH_HCOUNTER counter) {
+    if (!counter) {
+        return 0.0;
+    }
+
+    PDH_FMT_COUNTERVALUE counterVal;
+    if (PdhGetFormattedCounterValue(counter, PDH_FMT_DOUBLE, nullptr,
+                                    &counterVal) == ERROR_SUCCESS) {
+        return counterVal.doubleValue;
+    }
+    return 0.0;
+}
+
+PCWSTR GetDiskReadSpeedFormatted() {
+    if (g_diskReadSpeedFormatted.formatIndex != g_formatIndex) {
+        if (g_metricsQuery && g_diskReadCounter) {
+            PdhCollectQueryData(g_metricsQuery);
+            double speed = QueryDiskSpeed(g_diskReadCounter);
+            FormatTransferSpeed(speed, g_diskReadSpeedFormatted.buffer,
+                                ARRAYSIZE(g_diskReadSpeedFormatted.buffer));
+        } else {
+            wcscpy_s(g_diskReadSpeedFormatted.buffer, L"-");
+        }
+        g_diskReadSpeedFormatted.formatIndex = g_formatIndex;
+    }
+    return g_diskReadSpeedFormatted.buffer;
+}
+
+PCWSTR GetDiskWriteSpeedFormatted() {
+    if (g_diskWriteSpeedFormatted.formatIndex != g_formatIndex) {
+        if (g_metricsQuery && g_diskWriteCounter) {
+            PdhCollectQueryData(g_metricsQuery);
+            double speed = QueryDiskSpeed(g_diskWriteCounter);
+            FormatTransferSpeed(speed, g_diskWriteSpeedFormatted.buffer,
+                                ARRAYSIZE(g_diskWriteSpeedFormatted.buffer));
+        } else {
+            wcscpy_s(g_diskWriteSpeedFormatted.buffer, L"-");
+        }
+        g_diskWriteSpeedFormatted.formatIndex = g_formatIndex;
+    }
+    return g_diskWriteSpeedFormatted.buffer;
+}
+
+PCWSTR GetDiskTotalSpeedFormatted() {
+    if (g_diskTotalSpeedFormatted.formatIndex != g_formatIndex) {
+        if (g_metricsQuery && (g_diskReadCounter || g_diskWriteCounter)) {
+            PdhCollectQueryData(g_metricsQuery);
+            double readSpeed = QueryDiskSpeed(g_diskReadCounter);
+            double writeSpeed = QueryDiskSpeed(g_diskWriteCounter);
+            FormatTransferSpeed(readSpeed + writeSpeed,
+                                g_diskTotalSpeedFormatted.buffer,
+                                ARRAYSIZE(g_diskTotalSpeedFormatted.buffer));
+        } else {
+            wcscpy_s(g_diskTotalSpeedFormatted.buffer, L"-");
+        }
+        g_diskTotalSpeedFormatted.formatIndex = g_formatIndex;
+    }
+    return g_diskTotalSpeedFormatted.buffer;
+}
+
+double QueryGpuUsage() {
+    double sum = 0.0;
+    for (const auto& counter : g_gpuCounters) {
+        PDH_FMT_COUNTERVALUE counterVal;
+        if (PdhGetFormattedCounterValue(counter, PDH_FMT_DOUBLE, nullptr,
+                                        &counterVal) == ERROR_SUCCESS) {
+            sum += counterVal.doubleValue;
+        }
+    }
+    return sum;
+}
+
+PCWSTR GetGpuFormatted() {
+    if (g_gpuFormatted.formatIndex != g_formatIndex) {
+        if (g_metricsQuery && !g_gpuCounters.empty()) {
+            PdhCollectQueryData(g_metricsQuery);
+            double usage = QueryGpuUsage();
+            // Cap at 99 for consistent width.
+            int cappedUsage = static_cast<int>(usage);
+            if (cappedUsage > 99) {
+                cappedUsage = 99;
+            }
+            wsprintf(g_gpuFormatted.buffer, L"%d", cappedUsage);
+        } else {
+            wcscpy_s(g_gpuFormatted.buffer, L"-");
+        }
+        g_gpuFormatted.formatIndex = g_formatIndex;
+    }
+    return g_gpuFormatted.buffer;
+}
+
+void RefreshMediaDataIfDirty() {
+    if (g_mediaDataDirty) {
+        RefreshMediaData();
+    }
+}
+
+PCWSTR GetMediaTitleFormatted() {
+    RefreshMediaDataIfDirty();
+    return g_mediaTitleFormatted.buffer;
+}
+
+PCWSTR GetMediaArtistFormatted() {
+    RefreshMediaDataIfDirty();
+    return g_mediaArtistFormatted.buffer;
+}
+
+PCWSTR GetMediaAlbumFormatted() {
+    RefreshMediaDataIfDirty();
+    return g_mediaAlbumFormatted.buffer;
+}
+
+PCWSTR GetMediaStatusFormatted() {
+    RefreshMediaDataIfDirty();
+    return g_mediaStatusFormatted.buffer;
+}
+
+// https://stackoverflow.com/a/39344961
+DWORD GetStartDayOfWeek() {
+    DWORD startDayOfWeek;
+    GetLocaleInfoEx(
+        LOCALE_NAME_USER_DEFAULT, LOCALE_IFIRSTDAYOFWEEK | LOCALE_RETURN_NUMBER,
+        (PWSTR)&startDayOfWeek, sizeof(startDayOfWeek) / sizeof(WCHAR));
+
+    // Start from Sunday instead of Monday.
+    startDayOfWeek = (startDayOfWeek + 1) % 7;
+
+    return startDayOfWeek;
+}
+
+int CalculateWeeknum(const SYSTEMTIME* time, DWORD startDayOfWeek) {
+    SYSTEMTIME secondWeek{
+        .wYear = time->wYear,
+        .wMonth = 1,
+        .wDay = 1,
+    };
+
+    // Calculate wDayOfWeek.
+    FILETIME fileTime;
+    SystemTimeToFileTime(&secondWeek, &fileTime);
+    FileTimeToSystemTime(&fileTime, &secondWeek);
+
+    do {
+        secondWeek.wDay++;
+        secondWeek.wDayOfWeek = (secondWeek.wDayOfWeek + 1) % 7;
+    } while (secondWeek.wDayOfWeek != startDayOfWeek);
+
+    FILETIME targetFileTime;
+    SystemTimeToFileTime(time, &targetFileTime);
+    ULARGE_INTEGER targetFileTimeInt{
+        .LowPart = targetFileTime.dwLowDateTime,
+        .HighPart = targetFileTime.dwHighDateTime,
+    };
+
+    FILETIME secondWeekFileTime;
+    SystemTimeToFileTime(&secondWeek, &secondWeekFileTime);
+    ULARGE_INTEGER secondWeekFileTimeInt{
+        .LowPart = secondWeekFileTime.dwLowDateTime,
+        .HighPart = secondWeekFileTime.dwHighDateTime,
+    };
+
+    int weeknum = 1;
+    if (targetFileTimeInt.QuadPart >= secondWeekFileTimeInt.QuadPart) {
+        ULONGLONG diff =
+            targetFileTimeInt.QuadPart - secondWeekFileTimeInt.QuadPart;
+        ULONGLONG weekIn100Ns = 10000000ULL * 60 * 60 * 24 * 7;
+        weeknum += 1 + static_cast<int>(diff / weekIn100Ns);
+    }
+
+    return weeknum;
+}
+
+// Adopted from VMime:
+// https://github.com/kisli/vmime/blob/fc69321d5304c73be685c890f3b30528aadcfeaf/src/vmime/utility/datetimeUtils.cpp#L239
+int CalculateDayOfYearNumber(const SYSTEMTIME* time) {
+    const int year = time->wYear;
+    const int month = time->wMonth;
+    const int day = time->wDay;
+
+    const bool leapYear =
+        ((year % 4) == 0 && (year % 100) != 0) || (year % 400) == 0;
+
+    static const int DAY_OF_YEAR_NUMBER_MAP[12] = {
+        0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334};
+
+    int DayOfYearNumber = day + DAY_OF_YEAR_NUMBER_MAP[month - 1];
+
+    if (leapYear && month > 2) {
+        DayOfYearNumber += 1;
+    }
+
+    return DayOfYearNumber;
+}
+
+// Adopted from:
+// https://github.com/microsoft/cpp_client_telemetry/blob/25bc0806f21ecb2587154494f073bfa581cd5089/lib/pal/desktop/WindowsEnvironmentInfo.hpp#L39
+void GetTimeZone(WCHAR* buffer, size_t bufferSize) {
+    long bias;
+
+    TIME_ZONE_INFORMATION timeZone = {};
+    if (GetTimeZoneInformation(&timeZone) == TIME_ZONE_ID_DAYLIGHT) {
+        bias = timeZone.Bias + timeZone.DaylightBias;
+    } else {
+        bias = timeZone.Bias + timeZone.StandardBias;
+    }
+
+    auto hours = (long long)abs(bias) / 60;
+    auto minutes = (long long)abs(bias) % 60;
+
+    // UTC = local time + bias; bias sign should be inverted.
+    _snwprintf_s(buffer, bufferSize, _TRUNCATE, L"%c%02d:%02d",
+                 bias <= 0 ? L'+' : L'-', static_cast<int>(hours),
+                 static_cast<int>(minutes));
+}
+
+PCWSTR GetWeekdayNumFormatted() {
+    if (g_weekdayNumFormatted.formatIndex != g_formatIndex) {
+        DWORD startDayOfWeek = GetStartDayOfWeek();
+        swprintf_s(g_weekdayNumFormatted.buffer, L"%d",
+                   1 + (7 + g_formatTime.wDayOfWeek - startDayOfWeek) % 7);
+        g_weekdayNumFormatted.formatIndex = g_formatIndex;
+    }
+    return g_weekdayNumFormatted.buffer;
+}
+
+PCWSTR GetWeeknumFormatted() {
+    if (g_weeknumFormatted.formatIndex != g_formatIndex) {
+        DWORD startDayOfWeek = GetStartDayOfWeek();
+        swprintf_s(g_weeknumFormatted.buffer, L"%d",
+                   CalculateWeeknum(&g_formatTime, startDayOfWeek));
+        g_weeknumFormatted.formatIndex = g_formatIndex;
+    }
+    return g_weeknumFormatted.buffer;
+}
+
+PCWSTR GetDayOfYearFormatted() {
+    if (g_dayOfYearFormatted.formatIndex != g_formatIndex) {
+        swprintf_s(g_dayOfYearFormatted.buffer, L"%d",
+                   CalculateDayOfYearNumber(&g_formatTime));
+        g_dayOfYearFormatted.formatIndex = g_formatIndex;
+    }
+    return g_dayOfYearFormatted.buffer;
+}
+
+PCWSTR GetTimezoneFormatted() {
+    if (g_timezoneFormatted.formatIndex != g_formatIndex) {
+        GetTimeZone(g_timezoneFormatted.buffer,
+                    ARRAYSIZE(g_timezoneFormatted.buffer));
+        g_timezoneFormatted.formatIndex = g_formatIndex;
+    }
+    return g_timezoneFormatted.buffer;
+}
+
+// Returns the length of the format token consumed, or 0 if not a recognized
+// token.
+size_t ResolveFormatToken(
+    std::wstring_view format,
+    std::function<void(PCWSTR resolvedStr)> resolvedCallback) {
+    struct TokenMapping {
+        std::wstring_view token;
+        PCWSTR (*getter)();
+    };
+
+    static const TokenMapping tokens[] = {
+        {L"%time%"sv, GetTimeFormatted},
+        {L"%date%"sv, GetDateFormatted},
+        {L"%weekday%"sv, GetWeekdayFormatted},
+        {L"%weekday_num%"sv, GetWeekdayNumFormatted},
+        {L"%weeknum%"sv, GetWeeknumFormatted},
+        {L"%dayofyear%"sv, GetDayOfYearFormatted},
+        {L"%timezone%"sv, GetTimezoneFormatted},
+        {L"%cpu%"sv, GetCpuFormatted},
+        {L"%ram%"sv, GetRamFormatted},
+        {L"%battery%"sv, GetBatteryFormatted},
+        {L"%battery_time%"sv, GetBatteryTimeFormatted},
+        {L"%power%"sv, GetPowerFormatted},
+        {L"%upload_speed%"sv, GetUploadSpeedFormatted},
+        {L"%download_speed%"sv, GetDownloadSpeedFormatted},
+        {L"%total_speed%"sv, GetTotalSpeedFormatted},
+        {L"%disk_read%"sv, GetDiskReadSpeedFormatted},
+        {L"%disk_write%"sv, GetDiskWriteSpeedFormatted},
+        {L"%disk_total%"sv, GetDiskTotalSpeedFormatted},
+        {L"%gpu%"sv, GetGpuFormatted},
+        {L"%media_title%"sv, GetMediaTitleFormatted},
+        {L"%media_artist%"sv, GetMediaArtistFormatted},
+        {L"%media_album%"sv, GetMediaAlbumFormatted},
+        {L"%media_status%"sv, GetMediaStatusFormatted},
+    };
+
+    // Check for newline patterns first.
+    if (format.starts_with(L"%newline%"sv)) {
+        resolvedCallback(L"\n");
+        return 9;  // length of "%newline%"
+    }
+    if (format.starts_with(L"%n%"sv)) {
+        resolvedCallback(L"\n");
+        return 3;  // length of "%n%"
+    }
+
+    // Check for weather pattern (requires mutex).
+    if (auto token = L"%weather%"sv; format.starts_with(token)) {
+        std::lock_guard<std::mutex> guard(g_weatherMutex);
+        resolvedCallback(g_weatherContent ? g_weatherContent->c_str()
+                                          : L"Loading...");
+        return token.size();
+    }
+
+    // Check other tokens.
+    for (const auto& t : tokens) {
+        if (format.starts_with(t.token)) {
+            resolvedCallback(t.getter());
+            return t.token.size();
+        }
+    }
+
+    return 0;  // Not a recognized token
+}
+
+int FormatLine(PWSTR buffer, size_t bufferSize, std::wstring_view format) {
+    if (bufferSize == 0) {
+        return 0;
+    }
+
+    std::wstring_view formatSuffix = format;
+    PWSTR bufferStart = buffer;
+    PWSTR bufferEnd = bufferStart + bufferSize;
+
+    while (!formatSuffix.empty() && bufferEnd - buffer > 1) {
+        if (formatSuffix[0] == L'%') {
+            bool truncated = false;
+            size_t formatTokenLen = ResolveFormatToken(
+                formatSuffix,
+                [&buffer, bufferEnd, &truncated](PCWSTR resolvedStr) {
+                    buffer += StringCopyTruncated(buffer, bufferEnd - buffer,
+                                                  resolvedStr, &truncated);
+                });
+            if (formatTokenLen > 0) {
+                if (truncated) {
+                    break;
+                }
+                formatSuffix = formatSuffix.substr(formatTokenLen);
+                continue;
+            }
+        }
+
+        *buffer++ = formatSuffix[0];
+        formatSuffix = formatSuffix.substr(1);
+    }
+
+    // Add ellipsis if truncated.
+    if (!formatSuffix.empty() && bufferSize >= 4) {
+        buffer[-1] = L'.';
+        buffer[-2] = L'.';
+        buffer[-3] = L'.';
+    }
+
+    *buffer = L'\0';
+    return static_cast<int>(buffer - bufferStart);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -590,7 +2004,10 @@ void ReleaseSwapChainResources() {
 }
 
 void RenderOverlay() {
+    Wh_Log(L"RenderOverlay called");
+
     if (!g_dc || !g_swapChain) {
+        Wh_Log(L"RenderOverlay: no dc or swapchain");
         return;
     }
 
@@ -602,8 +2019,18 @@ void RenderOverlay() {
     g_dc->BeginDraw();
     g_dc->Clear(D2D1::ColorF(0, 0, 0, 0));
 
-    PCWSTR text = g_settings.text.get();
-    if (text && *text && g_textFormat && g_textBrush) {
+    // Update format time and format the text.
+    GetLocalTime(&g_formatTime);
+    g_formatIndex++;
+
+    PCWSTR rawText = g_settings.text.get();
+    WCHAR formattedText[1024] = {};
+    if (rawText && *rawText) {
+        FormatLine(formattedText, ARRAYSIZE(formattedText), rawText);
+    }
+    PCWSTR text = formattedText;
+
+    if (*text && g_textFormat && g_textBrush) {
         HMONITOR monitor = GetMonitorById(g_settings.monitor - 1);
         if (!monitor) {
             monitor = MonitorFromPoint({0, 0}, MONITOR_DEFAULTTONEAREST);
@@ -658,6 +2085,46 @@ void RenderOverlay() {
 }
 
 ////////////////////////////////////////////////////////////////////////////////
+// Refresh timer
+
+void StartRefreshTimer() {
+    Wh_Log(L"StartRefreshTimer: g_refreshTimer=%u, g_overlayWnd=%p",
+           (unsigned)g_refreshTimer, g_overlayWnd);
+
+    if (g_refreshTimer || !g_overlayWnd) {
+        Wh_Log(L"StartRefreshTimer: skipping (already set or no window)");
+        return;
+    }
+
+    int interval = (std::max)(1, (std::min)(60, g_settings.refreshInterval));
+    g_refreshTimer = SetTimer(g_overlayWnd, 1, interval * 1000, nullptr);
+    Wh_Log(L"StartRefreshTimer: SetTimer returned %u, interval=%d sec",
+           (unsigned)g_refreshTimer, interval);
+}
+
+void StopRefreshTimer() {
+    Wh_Log(L"StopRefreshTimer: g_refreshTimer=%u", (unsigned)g_refreshTimer);
+    if (g_refreshTimer && g_overlayWnd) {
+        KillTimer(g_overlayWnd, g_refreshTimer);
+        g_refreshTimer = 0;
+    }
+}
+
+LRESULT CALLBACK OverlayWndProc(HWND hWnd,
+                                UINT uMsg,
+                                WPARAM wParam,
+                                LPARAM lParam) {
+    if (uMsg == WM_TIMER) {
+        Wh_Log(L"OverlayWndProc: WM_TIMER wParam=%u", (unsigned)wParam);
+        if (wParam == 1) {
+            RenderOverlay();
+            return 0;
+        }
+    }
+    return DefWindowProc(hWnd, uMsg, wParam, lParam);
+}
+
+////////////////////////////////////////////////////////////////////////////////
 // Overlay window management
 
 void CreateOverlayWindow() {
@@ -668,8 +2135,8 @@ void CreateOverlayWindow() {
     }
 
     WNDCLASS wc = {};
-    wc.lpfnWndProc = DefWindowProc;
-    wc.hInstance = GetModuleHandle(nullptr);
+    wc.lpfnWndProc = OverlayWndProc;
+    wc.hInstance = GetCurrentModuleHandle();
     wc.lpszClassName = L"DesktopOverlay_" WH_MOD_ID;
     RegisterClass(&wc);
 
@@ -690,10 +2157,12 @@ void CreateOverlayWindow() {
 
     if (CreateSwapChainResources(width, height)) {
         RenderOverlay();
+        StartRefreshTimer();
     }
 }
 
 void DestroyOverlayWindow() {
+    StopRefreshTimer();
     ReleaseSwapChainResources();
 
     if (g_overlayWnd) {
@@ -745,6 +2214,13 @@ HWND WINAPI CreateWindowExW_Hook(DWORD dwExStyle,
 
 void LoadSettings() {
     g_settings.text = WindhawkUtils::StringSetting::make(L"text");
+    g_settings.timeFormat = WindhawkUtils::StringSetting::make(L"timeFormat");
+    g_settings.dateFormat = WindhawkUtils::StringSetting::make(L"dateFormat");
+
+    g_settings.refreshInterval = Wh_GetIntSetting(L"refreshInterval");
+    if (g_settings.refreshInterval <= 0) {
+        g_settings.refreshInterval = 1;
+    }
 
     g_settings.fontSize = Wh_GetIntSetting(L"fontSize");
     if (g_settings.fontSize <= 0) {
@@ -793,6 +2269,22 @@ void LoadSettings() {
     if (g_settings.monitor <= 0) {
         g_settings.monitor = 1;
     }
+
+    g_settings.weatherLocation =
+        WindhawkUtils::StringSetting::make(L"weatherLocation");
+    g_settings.weatherFormat =
+        WindhawkUtils::StringSetting::make(L"weatherFormat");
+
+    PCWSTR weatherUnits = Wh_GetStringSetting(L"weatherUnits");
+    g_settings.weatherUnits = WeatherUnits::autoDetect;
+    if (wcscmp(weatherUnits, L"uscs") == 0) {
+        g_settings.weatherUnits = WeatherUnits::uscs;
+    } else if (wcscmp(weatherUnits, L"metric") == 0) {
+        g_settings.weatherUnits = WeatherUnits::metric;
+    } else if (wcscmp(weatherUnits, L"metricMsWind") == 0) {
+        g_settings.weatherUnits = WeatherUnits::metricMsWind;
+    }
+    Wh_FreeStringSetting(weatherUnits);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -807,6 +2299,10 @@ BOOL Wh_ModInit() {
         Wh_Log(L"InitDirectX failed");
         return FALSE;
     }
+
+    InitMetrics();
+    WeatherUpdateThreadInit();
+    MediaSessionInit();
 
     Wh_SetFunctionHook((void*)CreateWindowExW, (void*)CreateWindowExW_Hook,
                        (void**)&CreateWindowExW_Original);
@@ -837,6 +2333,9 @@ void Wh_ModUninit() {
         }
     }
 
+    MediaSessionUninit();
+    WeatherUpdateThreadUninit();
+    UninitMetrics();
     UninitDirectX();
 }
 
