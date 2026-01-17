@@ -1952,7 +1952,7 @@ bool QueryDataCollectionSession::AddMetric(MetricType type) {
 
         for (const auto& path : paths) {
             PDH_HCOUNTER counter;
-            HRESULT hr = PdhAddCounter(query_, path.c_str(), 0, &counter);
+            PDH_STATUS hr = PdhAddCounter(query_, path.c_str(), 0, &counter);
             if (SUCCEEDED(hr)) {
                 metric.counters.push_back({path, counter});
             } else {
@@ -1961,7 +1961,7 @@ bool QueryDataCollectionSession::AddMetric(MetricType type) {
         }
     } else {
         PDH_HCOUNTER counter;
-        HRESULT hr = PdhAddEnglishCounter(query_, counter_path, 0, &counter);
+        PDH_STATUS hr = PdhAddEnglishCounter(query_, counter_path, 0, &counter);
         if (SUCCEEDED(hr)) {
             metric.counters.push_back({counter_path, counter});
         } else {
@@ -2022,7 +2022,7 @@ void QueryDataCollectionSession::UpdateMetric(MetricType type) {
     for (const auto& path : current_paths) {
         if (existing_paths.find(path) == existing_paths.end()) {
             PDH_HCOUNTER counter;
-            HRESULT hr = PdhAddCounter(query_, path.c_str(), 0, &counter);
+            PDH_STATUS hr = PdhAddCounter(query_, path.c_str(), 0, &counter);
             if (SUCCEEDED(hr)) {
                 Wh_Log(L"Adding new counter: %s", path.c_str());
                 metric.counters.push_back({path, counter});
@@ -2034,7 +2034,7 @@ void QueryDataCollectionSession::UpdateMetric(MetricType type) {
 }
 
 bool QueryDataCollectionSession::SampleData() {
-    HRESULT hr = PdhCollectQueryData(query_);
+    PDH_STATUS hr = PdhCollectQueryData(query_);
     if (FAILED(hr)) {
         Wh_Log(L"PdhCollectQueryData error %08X", hr);
         return false;
@@ -2055,8 +2055,8 @@ std::optional<double> QueryDataCollectionSession::QueryData(MetricType type) {
     double sum = 0.0;
     for (const auto& entry : metric.counters) {
         PDH_FMT_COUNTERVALUE val;
-        HRESULT hr = PdhGetFormattedCounterValue(entry.counter, PDH_FMT_DOUBLE,
-                                                 nullptr, &val);
+        PDH_STATUS hr = PdhGetFormattedCounterValue(
+            entry.counter, PDH_FMT_DOUBLE, nullptr, &val);
         if (SUCCEEDED(hr)) {
             sum += val.doubleValue;
         } else {
@@ -2074,7 +2074,8 @@ std::vector<std::wstring> QueryDataCollectionSession::ExpandEnglishWildcard(
     bool quiet) {
     // Step 1: Add English counter with wildcards to get localized path.
     PDH_HCOUNTER temp_counter;
-    HRESULT hr = PdhAddEnglishCounter(query_, wildcard_path, 0, &temp_counter);
+    PDH_STATUS hr =
+        PdhAddEnglishCounter(query_, wildcard_path, 0, &temp_counter);
     if (FAILED(hr)) {
         Wh_Log(L"PdhAddEnglishCounter error %08X", hr);
         return {};
@@ -2083,7 +2084,7 @@ std::vector<std::wstring> QueryDataCollectionSession::ExpandEnglishWildcard(
     // Step 2: Get counter info to obtain localized full path.
     DWORD required = 0;
     hr = PdhGetCounterInfo(temp_counter, FALSE, &required, nullptr);
-    if (FAILED(hr) && hr != static_cast<HRESULT>(PDH_MORE_DATA)) {
+    if (FAILED(hr) && hr != static_cast<PDH_STATUS>(PDH_MORE_DATA)) {
         Wh_Log(L"PdhGetCounterInfo (size) error %08X", hr);
         PdhRemoveCounter(temp_counter);
         return {};
@@ -2109,7 +2110,7 @@ std::vector<std::wstring> QueryDataCollectionSession::ExpandEnglishWildcard(
     required = 0;
     hr = PdhExpandWildCardPath(nullptr, counter_info->szFullPath, nullptr,
                                &required, 0);
-    if (FAILED(hr) && hr != static_cast<HRESULT>(PDH_MORE_DATA)) {
+    if (FAILED(hr) && hr != static_cast<PDH_STATUS>(PDH_MORE_DATA)) {
         Wh_Log(L"PdhExpandWildCardPath (localized, size) error %08X", hr);
         return {};
     }
