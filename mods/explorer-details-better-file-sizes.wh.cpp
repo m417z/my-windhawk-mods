@@ -141,6 +141,7 @@ KiB?](https://devblogs.microsoft.com/oldnewthing/20090611-00/?p=17933).
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <string>
 #include <string_view>
 #include <vector>
 
