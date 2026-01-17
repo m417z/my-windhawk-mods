@@ -86,6 +86,7 @@ Control mod takes precedence due to the way the mod works.
 #include <optional>
 #include <string>
 #include <unordered_map>
+#include <vector>
 
 #include <audiopolicy.h>
 #include <endpointvolume.h>
@@ -167,15 +168,15 @@ void SndVolUninit() {
 }
 
 // Callback type for processing audio sessions.
+// Receives the session's process ID and session control interface.
 // Returns true to continue iterating, false to stop.
 using AudioSessionCallback =
-    std::function<bool(ISimpleAudioVolume* simpleVolume)>;
+    std::function<bool(DWORD pid, IAudioSessionControl2* sessionControl)>;
 
-// Iterates over all audio sessions for a given process ID.
-// Calls the callback for each matching session's ISimpleAudioVolume.
-// Returns true if at least one session was found and processed.
-bool ForEachAudioSession(DWORD targetPID,
-                         const AudioSessionCallback& callback) {
+// Iterates over all audio sessions.
+// Calls the callback for each session with its PID and IAudioSessionControl2.
+// Returns true if at least one session was processed.
+bool ForEachAudioSession(const AudioSessionCallback& callback) {
     if (!g_pDeviceEnumerator) {
         SndVolInit();
         if (!g_pDeviceEnumerator) {
@@ -225,26 +226,19 @@ bool ForEachAudioSession(DWORD targetPID,
             continue;
         }
 
-        DWORD sessionPID = 0;
-        hr = sessionControl2->GetProcessId(&sessionPID);
-        if (FAILED(hr) || sessionPID != targetPID) {
-            continue;
-        }
-
         // Skip system sounds session.
         if (sessionControl2->IsSystemSoundsSession() == S_OK) {
             continue;
         }
 
-        winrt::com_ptr<ISimpleAudioVolume> simpleVolume;
-        hr = sessionControl2->QueryInterface(__uuidof(ISimpleAudioVolume),
-                                             simpleVolume.put_void());
+        DWORD sessionPID = 0;
+        hr = sessionControl2->GetProcessId(&sessionPID);
         if (FAILED(hr)) {
             continue;
         }
 
         foundSession = true;
-        if (!callback(simpleVolume.get())) {
+        if (!callback(sessionPID, sessionControl2.get())) {
             break;
         }
     }
@@ -296,6 +290,7 @@ DWORD FindChromiumAudioSubprocessUncached(DWORD parentPID) {
     }
 
     DWORD audioSubprocessPID = 0;
+    std::vector<DWORD> rendererPIDs;
 
     PROCESSENTRY32 pe32;
     pe32.dwSize = sizeof(pe32);
@@ -329,6 +324,7 @@ DWORD FindChromiumAudioSubprocessUncached(DWORD parentPID) {
 
             bool isUtility = false;
             bool isAudioService = false;
+            bool isRenderer = false;
             for (int i = 0; i < argc; i++) {
                 if (wcscmp(argv[i], L"--type=utility") == 0) {
                     isUtility = true;
@@ -336,6 +332,8 @@ DWORD FindChromiumAudioSubprocessUncached(DWORD parentPID) {
                                   L"--utility-sub-type=audio.mojom."
                                   L"AudioService") == 0) {
                     isAudioService = true;
+                } else if (wcscmp(argv[i], L"--type=renderer") == 0) {
+                    isRenderer = true;
                 }
             }
 
@@ -344,12 +342,34 @@ DWORD FindChromiumAudioSubprocessUncached(DWORD parentPID) {
             if (isUtility && isAudioService) {
                 audioSubprocessPID = pe32.th32ProcessID;
                 break;
+            } else if (isRenderer) {
+                rendererPIDs.push_back(pe32.th32ProcessID);
             }
         } while (Process32Next(snapshot, &pe32));
     }
 
     CloseHandle(snapshot);
-    return audioSubprocessPID;
+
+    if (audioSubprocessPID) {
+        return audioSubprocessPID;
+    }
+
+    // Fallback: return first renderer process with audio session.
+    if (rendererPIDs.empty()) {
+        return 0;
+    }
+
+    DWORD rendererAudioPID = 0;
+    ForEachAudioSession([&](DWORD sessionPID, IAudioSessionControl2*) {
+        for (DWORD pid : rendererPIDs) {
+            if (sessionPID == pid) {
+                rendererAudioPID = pid;
+                return false;  // Stop iterating.
+            }
+        }
+        return true;  // Continue iterating.
+    });
+    return rendererAudioPID;
 }
 
 // Cache for Chromium audio subprocess lookups to avoid expensive repeated
@@ -402,7 +422,17 @@ std::optional<AppVolumeResult> AdjustAppVolumeForPID(DWORD targetPID,
                                                      float fVolumeAdd) {
     std::optional<AppVolumeResult> result;
 
-    ForEachAudioSession(targetPID, [&](ISimpleAudioVolume* vol) {
+    ForEachAudioSession([&](DWORD pid, IAudioSessionControl2* sessionControl) {
+        if (pid != targetPID) {
+            return true;  // Continue to next session.
+        }
+
+        winrt::com_ptr<ISimpleAudioVolume> vol;
+        if (FAILED(sessionControl->QueryInterface(__uuidof(ISimpleAudioVolume),
+                                                  vol.put_void()))) {
+            return true;  // Continue to next session.
+        }
+
         float currentVolume = 0.0f;
         HRESULT hr = vol->GetMasterVolume(&currentVolume);
         if (FAILED(hr)) {
@@ -466,7 +496,17 @@ std::optional<AppVolumeResult> AdjustAppVolume(DWORD targetPID,
 std::optional<AppVolumeResult> ToggleAppMuteForPID(DWORD targetPID) {
     std::optional<AppVolumeResult> result;
 
-    ForEachAudioSession(targetPID, [&](ISimpleAudioVolume* vol) {
+    ForEachAudioSession([&](DWORD pid, IAudioSessionControl2* sessionControl) {
+        if (pid != targetPID) {
+            return true;  // Continue to next session.
+        }
+
+        winrt::com_ptr<ISimpleAudioVolume> vol;
+        if (FAILED(sessionControl->QueryInterface(__uuidof(ISimpleAudioVolume),
+                                                  vol.put_void()))) {
+            return true;  // Continue to next session.
+        }
+
         BOOL isMuted = FALSE;
         HRESULT hr = vol->GetMute(&isMuted);
         if (FAILED(hr)) {
