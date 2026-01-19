@@ -37,9 +37,9 @@ mods can be used simultaneously using one of these approaches:
 1. Configure Taskbar Volume Control to use a limited region, such as the system
    tray area, while this mod handles the app-specific volume on the task
    buttons.
-2. Configure one of the mods to require the Ctrl key for volume changes, so that
+2. Configure this mod to require the Ctrl key for volume changes, so that
    holding Ctrl while scrolling adjusts the app volume (this mod), and normal
-   scrolling adjusts the system volume (Taskbar Volume Control), or vice versa.
+   scrolling adjusts the system volume (Taskbar Volume Control).
 
 Note that if both mods are configured to act simultaneously, the Taskbar Volume
 Control mod takes precedence due to the way the mod works.
