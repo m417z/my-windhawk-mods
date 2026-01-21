@@ -2027,7 +2027,7 @@ LSTATUS WINAPI RegQueryValueExW_Hook(HKEY hKey,
                                      LPDWORD lpcbData) {
     // Improve support for folder sizes in:
     // * Folder views (in addition to details): Tiles, Content
-    // * Details pane (enabled via OldNewExplorer or Open-Shell)
+    // * Details pane (enabled via OldNewExplorer)
     // * Status bar
     //
     // https://github.com/ramensoftware/windhawk-mods/issues/2491#issuecomment-3762519795
