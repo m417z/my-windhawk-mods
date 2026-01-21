@@ -105,7 +105,7 @@ Customization](https://windhawk.net/mods/taskbar-clock-customization).
 - fontSize: 48
   $name: Font size
   $description: Size of the text in points
-- textColor: "#80FFFFFF"
+- textColor: "#C0FFFFFF"
   $name: Text color
   $description: >-
     Color in ARGB hex format. Examples: #80FFFFFF (semi-transparent white),
@@ -139,7 +139,7 @@ Customization](https://windhawk.net/mods/taskbar-clock-customization).
     $name: Color
     $description: >-
       Background color in ARGB hex format. Default is semi-transparent black.
-  - padding: 10
+  - padding: 20
     $name: Padding
     $description: Padding around the text in pixels
   - cornerRadius: 8
@@ -2134,13 +2134,8 @@ void Wh_ModUninit() {
     Wh_Log(L">");
 
     if (g_overlayWnd) {
-        HWND hWorkerW = GetParent(g_overlayWnd);
-        if (hWorkerW) {
-            RunFromWindowThread(
-                hWorkerW, [](void*) { DestroyOverlayWindow(); }, nullptr);
-        } else {
-            DestroyOverlayWindow();
-        }
+        RunFromWindowThread(
+            g_overlayWnd, [](void*) { DestroyOverlayWindow(); }, nullptr);
     }
 
     WeatherUpdateThreadUninit();
