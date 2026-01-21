@@ -87,7 +87,10 @@ Customization](https://windhawk.net/mods/taskbar-clock-customization).
     Text to display. Supports patterns: %time%, %date%, %weekday%,
     %weekday_num%, %weeknum%, %dayofyear%, %timezone%, %cpu%, %ram%, %battery%,
     %battery_time%, %power%, %upload_speed%, %download_speed%, %total_speed%,
-    %disk_read%, %disk_write%, %disk_total%, %gpu%, %weather%, %newline% (or %n%)
+    %disk_read%, %disk_write%, %disk_total%, %gpu%, %weather%, %newline% (or
+    %n%)
+- showSeconds: true
+  $name: Show seconds
 - timeFormat: ""
   $name: Time format
   $description: >-
@@ -177,12 +180,12 @@ Customization](https://windhawk.net/mods/taskbar-clock-customization).
 #include <wrl/client.h>
 
 #include <algorithm>
+#include <atomic>
 #include <functional>
 #include <mutex>
 #include <optional>
 #include <string>
 #include <string_view>
-#include <thread>
 
 using namespace std::literals;
 using Microsoft::WRL::ComPtr;
@@ -199,6 +202,7 @@ enum class WeatherUnits {
 
 struct Settings {
     WindhawkUtils::StringSetting text;
+    bool showSeconds;
     WindhawkUtils::StringSetting timeFormat;
     WindhawkUtils::StringSetting dateFormat;
     int refreshInterval;
@@ -591,9 +595,8 @@ std::wstring ReplaceAll(std::wstring_view source,
 std::wstring EscapeUrlComponent(PCWSTR input) {
     WCHAR outStack[256];
     DWORD needed = ARRAYSIZE(outStack);
-    HRESULT hr =
-        UrlEscape(input, outStack, &needed,
-                  URL_ESCAPE_ASCII_URI_COMPONENT | URL_ESCAPE_AS_UTF8);
+    HRESULT hr = UrlEscape(input, outStack, &needed,
+                           URL_ESCAPE_ASCII_URI_COMPONENT | URL_ESCAPE_AS_UTF8);
     if (SUCCEEDED(hr)) {
         return outStack;
     }
@@ -713,8 +716,8 @@ DWORD WINAPI WeatherUpdateThread(LPVOID lpThreadParameter) {
             seconds = kSecondsForQuickRetry;
         }
 
-        DWORD dwWaitResult = WaitForSingleObject(g_weatherUpdateStopEvent,
-                                                  seconds * 1000);
+        DWORD dwWaitResult =
+            WaitForSingleObject(g_weatherUpdateStopEvent, seconds * 1000);
         if (dwWaitResult == WAIT_OBJECT_0) {
             break;  // Stop event signaled
         }
@@ -865,10 +868,19 @@ void UninitMetrics() {
 PCWSTR GetTimeFormatted() {
     if (g_timeFormatted.formatIndex != g_formatIndex) {
         PCWSTR format = g_settings.timeFormat.get();
-        GetTimeFormat(LOCALE_USER_DEFAULT, 0, &g_formatTime,
-                      (format && *format) ? format : nullptr,
-                      g_timeFormatted.buffer,
-                      ARRAYSIZE(g_timeFormatted.buffer));
+        DWORD dwFlags = g_settings.showSeconds ? 0 : TIME_NOSECONDS;
+
+        if (!g_settings.showSeconds && *format) {
+            // Remove seconds from custom format.
+            std::wstring formatNoSeconds = ReplaceAll(format, L"':'ss", L"");
+            GetTimeFormatEx(LOCALE_NAME_USER_DEFAULT, dwFlags, &g_formatTime,
+                            formatNoSeconds.c_str(), g_timeFormatted.buffer,
+                            ARRAYSIZE(g_timeFormatted.buffer));
+        } else {
+            GetTimeFormatEx(LOCALE_NAME_USER_DEFAULT, dwFlags, &g_formatTime,
+                            *format ? format : nullptr, g_timeFormatted.buffer,
+                            ARRAYSIZE(g_timeFormatted.buffer));
+        }
         g_timeFormatted.formatIndex = g_formatIndex;
     }
     return g_timeFormatted.buffer;
@@ -1931,6 +1943,7 @@ HWND WINAPI CreateWindowExW_Hook(DWORD dwExStyle,
 
 void LoadSettings() {
     g_settings.text = WindhawkUtils::StringSetting::make(L"text");
+    g_settings.showSeconds = Wh_GetIntSetting(L"showSeconds");
     g_settings.timeFormat = WindhawkUtils::StringSetting::make(L"timeFormat");
     g_settings.dateFormat = WindhawkUtils::StringSetting::make(L"dateFormat");
 
