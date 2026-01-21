@@ -12,6 +12,14 @@
 // @compilerOptions -lcomctl32 -ldxgi -ld2d1 -ldwrite -ld3d11 -ldcomp
 // ==/WindhawkMod==
 
+// Source code is published under The GNU General Public License v3.0.
+//
+// For bug reports and feature requests, please open an issue here:
+// https://github.com/ramensoftware/windhawk-mods/issues
+//
+// For pull requests, development takes place here:
+// https://github.com/m417z/my-windhawk-mods
+
 // ==WindhawkModReadme==
 /*
 # Desktop Overlay
@@ -25,8 +33,7 @@ per-pixel alpha transparency.
 * Customizable text content
 * Font family, size, weight, and style options
 * Text color with transparency support (ARGB format)
-* Horizontal and vertical alignment
-* Position offset adjustments
+* Percentage-based positioning
 * Multi-monitor support
 
 ### Acknowledgements
@@ -71,24 +78,12 @@ project.
   - "": Default
   - Normal: Normal
   - Italic: Italic
-- horizontalAlignment: center
-  $name: Horizontal alignment
-  $options:
-  - left: Left
-  - center: Center
-  - right: Right
-- verticalAlignment: center
-  $name: Vertical alignment
-  $options:
-  - top: Top
-  - center: Center
-  - bottom: Bottom
-- horizontalOffset: 0
-  $name: Horizontal offset
-  $description: Offset in pixels from the aligned position (positive = right)
-- verticalOffset: 0
-  $name: Vertical offset
-  $description: Offset in pixels from the aligned position (positive = down)
+- verticalPosition: 20
+  $name: Vertical position
+  $description: Position in percentage (0 = top, 50 = center, 100 = bottom)
+- horizontalPosition: 50
+  $name: Horizontal position
+  $description: Position in percentage (0 = left, 50 = center, 100 = right)
 - monitor: 1
   $name: Monitor
   $description: The monitor number to display text on (1-based)
@@ -111,17 +106,6 @@ using Microsoft::WRL::ComPtr;
 ////////////////////////////////////////////////////////////////////////////////
 // Types
 
-enum class HorizontalAlignment {
-    Left,
-    Center,
-    Right,
-};
-enum class VerticalAlignment {
-    Top,
-    Center,
-    Bottom,
-};
-
 struct Settings {
     WindhawkUtils::StringSetting text;
     int fontSize;
@@ -132,10 +116,8 @@ struct Settings {
     WindhawkUtils::StringSetting fontFamily;
     int fontWeight;
     bool fontItalic;
-    HorizontalAlignment horizontalAlignment;
-    VerticalAlignment verticalAlignment;
-    int horizontalOffset;
-    int verticalOffset;
+    int verticalPosition;
+    int horizontalPosition;
     int monitor;
 };
 
@@ -583,10 +565,11 @@ bool CreateSwapChainResources(UINT width, UINT height) {
         return false;
     }
 
-    // Create text brush with per-pixel alpha.
+    // Create text brush. Use full opacity here since transparency is applied
+    // via a layer during rendering (to also affect color emoji).
     D2D1_COLOR_F textColor =
         D2D1::ColorF(g_settings.colorR / 255.0f, g_settings.colorG / 255.0f,
-                     g_settings.colorB / 255.0f, g_settings.colorA / 255.0f);
+                     g_settings.colorB / 255.0f, 1.0f);
     hr = g_dc->CreateSolidColorBrush(textColor, &g_textBrush);
     if (FAILED(hr)) {
         Wh_Log(L"CreateSolidColorBrush failed: 0x%08X", hr);
@@ -641,40 +624,31 @@ void RenderOverlay() {
 
                 float textWidth = metrics.width;
                 float textHeight = metrics.height;
-                int workWidth = workArea.right - workArea.left;
-                int workHeight = workArea.bottom - workArea.top;
+                float workWidth = (float)(workArea.right - workArea.left);
+                float workHeight = (float)(workArea.bottom - workArea.top);
 
-                float x = 0, y = 0;
+                // Calculate position based on percentage (0-100).
+                // The text is centered at the percentage point.
+                float x = workArea.left +
+                          (workWidth - textWidth) *
+                              (g_settings.horizontalPosition / 100.0f);
+                float y =
+                    workArea.top + (workHeight - textHeight) *
+                                       (g_settings.verticalPosition / 100.0f);
 
-                switch (g_settings.horizontalAlignment) {
-                    case HorizontalAlignment::Left:
-                        x = (float)workArea.left;
-                        break;
-                    case HorizontalAlignment::Center:
-                        x = workArea.left + (workWidth - textWidth) / 2.0f;
-                        break;
-                    case HorizontalAlignment::Right:
-                        x = (float)workArea.right - textWidth;
-                        break;
-                }
-
-                switch (g_settings.verticalAlignment) {
-                    case VerticalAlignment::Top:
-                        y = (float)workArea.top;
-                        break;
-                    case VerticalAlignment::Center:
-                        y = workArea.top + (workHeight - textHeight) / 2.0f;
-                        break;
-                    case VerticalAlignment::Bottom:
-                        y = (float)workArea.bottom - textHeight;
-                        break;
-                }
-
-                x += g_settings.horizontalOffset;
-                y += g_settings.verticalOffset;
+                // Use a layer with opacity so color emoji also respect alpha.
+                float opacity = g_settings.colorA / 255.0f;
+                g_dc->PushLayer(
+                    D2D1::LayerParameters(D2D1::InfiniteRect(), nullptr,
+                                          D2D1_ANTIALIAS_MODE_PER_PRIMITIVE,
+                                          D2D1::IdentityMatrix(), opacity),
+                    nullptr);
 
                 g_dc->DrawTextLayout(D2D1::Point2F(x, y), textLayout.Get(),
-                                     g_textBrush.Get());
+                                     g_textBrush.Get(),
+                                     D2D1_DRAW_TEXT_OPTIONS_ENABLE_COLOR_FONT);
+
+                g_dc->PopLayer();
             }
         }
     }
@@ -812,26 +786,8 @@ void LoadSettings() {
     g_settings.fontItalic = wcscmp(fontStyle, L"Italic") == 0;
     Wh_FreeStringSetting(fontStyle);
 
-    PCWSTR horizontalAlignment = Wh_GetStringSetting(L"horizontalAlignment");
-    g_settings.horizontalAlignment = HorizontalAlignment::Center;
-    if (wcscmp(horizontalAlignment, L"left") == 0) {
-        g_settings.horizontalAlignment = HorizontalAlignment::Left;
-    } else if (wcscmp(horizontalAlignment, L"right") == 0) {
-        g_settings.horizontalAlignment = HorizontalAlignment::Right;
-    }
-    Wh_FreeStringSetting(horizontalAlignment);
-
-    PCWSTR verticalAlignment = Wh_GetStringSetting(L"verticalAlignment");
-    g_settings.verticalAlignment = VerticalAlignment::Center;
-    if (wcscmp(verticalAlignment, L"top") == 0) {
-        g_settings.verticalAlignment = VerticalAlignment::Top;
-    } else if (wcscmp(verticalAlignment, L"bottom") == 0) {
-        g_settings.verticalAlignment = VerticalAlignment::Bottom;
-    }
-    Wh_FreeStringSetting(verticalAlignment);
-
-    g_settings.horizontalOffset = Wh_GetIntSetting(L"horizontalOffset");
-    g_settings.verticalOffset = Wh_GetIntSetting(L"verticalOffset");
+    g_settings.verticalPosition = Wh_GetIntSetting(L"verticalPosition");
+    g_settings.horizontalPosition = Wh_GetIntSetting(L"horizontalPosition");
 
     g_settings.monitor = Wh_GetIntSetting(L"monitor");
     if (g_settings.monitor <= 0) {
