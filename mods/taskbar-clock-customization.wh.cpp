@@ -1528,6 +1528,24 @@ std::vector<std::wstring> SplitTimeFormatString(std::wstring_view s) {
     return result;
 }
 
+int GetTimeFormatExWithShowSeconds(LPCWSTR lpLocaleName,
+                                   const SYSTEMTIME* lpTime,
+                                   LPCWSTR lpFormat,
+                                   LPWSTR lpTimeStr,
+                                   int cchTime) {
+    DWORD dwFlags = g_settings.showSeconds ? 0 : TIME_NOSECONDS;
+
+    if (!g_settings.showSeconds && lpFormat) {
+        std::wstring formatNoSeconds = ReplaceAll(lpFormat, L"':'ss", L"");
+        return GetTimeFormatEx_Original(lpLocaleName, dwFlags, lpTime,
+                                        formatNoSeconds.c_str(), lpTimeStr,
+                                        cchTime);
+    }
+
+    return GetTimeFormatEx_Original(lpLocaleName, dwFlags, lpTime, lpFormat,
+                                    lpTimeStr, cchTime);
+}
+
 PCWSTR GetTimeFormattedWithExtra(std::vector<std::wstring>** extra) {
     if (g_timeFormatted.formatIndex != g_formatIndex) {
         const SYSTEMTIME* time = &g_formatTime;
@@ -1535,19 +1553,19 @@ PCWSTR GetTimeFormattedWithExtra(std::vector<std::wstring>** extra) {
         auto timeFormatParts =
             SplitTimeFormatString(g_settings.timeFormat.get());
 
-        GetTimeFormatEx_Original(
-            nullptr, g_settings.showSeconds ? 0 : TIME_NOSECONDS, time,
+        GetTimeFormatExWithShowSeconds(
+            nullptr, time,
             !timeFormatParts[0].empty() ? timeFormatParts[0].c_str() : nullptr,
             g_timeFormatted.buffer, ARRAYSIZE(g_timeFormatted.buffer));
 
         g_timeFormattedExtra.resize(timeFormatParts.size() - 1);
         for (size_t i = 1; i < timeFormatParts.size(); i++) {
             WCHAR formatted[FORMATTED_BUFFER_SIZE];
-            GetTimeFormatEx_Original(
-                nullptr, g_settings.showSeconds ? 0 : TIME_NOSECONDS, time,
-                !timeFormatParts[i].empty() ? timeFormatParts[i].c_str()
-                                            : nullptr,
-                formatted, ARRAYSIZE(formatted));
+            GetTimeFormatExWithShowSeconds(nullptr, time,
+                                           !timeFormatParts[i].empty()
+                                               ? timeFormatParts[i].c_str()
+                                               : nullptr,
+                                           formatted, ARRAYSIZE(formatted));
             g_timeFormattedExtra[i - 1] = formatted;
         }
 
@@ -1594,8 +1612,8 @@ PCWSTR GetTimeFormattedTz(size_t index) {
             auto timeFormatParts =
                 SplitTimeFormatString(g_settings.timeFormat.get());
 
-            GetTimeFormatEx_Original(
-                nullptr, g_settings.showSeconds ? 0 : TIME_NOSECONDS, time,
+            GetTimeFormatExWithShowSeconds(
+                nullptr, time,
                 !timeFormatParts[0].empty() ? timeFormatParts[0].c_str()
                                             : nullptr,
                 timeFormattedTz.buffer, ARRAYSIZE(timeFormattedTz.buffer));
