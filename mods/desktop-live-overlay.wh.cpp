@@ -1,6 +1,6 @@
 // ==WindhawkMod==
-// @id              desktop-overlay
-// @name            Desktop Overlay
+// @id              desktop-live-overlay
+// @name            Desktop Live Overlay
 // @description     Display custom content on the desktop behind icons
 // @version         0.1
 // @author          m417z
@@ -22,7 +22,7 @@
 
 // ==WindhawkModReadme==
 /*
-# Desktop Overlay
+# Desktop Live Overlay
 
 Display custom content on the desktop behind icons, such as text. Uses the
 WorkerW technique combined with Direct2D and DirectComposition for proper
