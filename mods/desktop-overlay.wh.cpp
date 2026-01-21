@@ -9,7 +9,7 @@
 // @homepage        https://m417z.com/
 // @include         explorer.exe
 // @architecture    x86-64
-// @compilerOptions -lcomctl32 -ldxgi -ld2d1 -ldwrite -ld3d11 -ldcomp -lwininet -lpdh -lpowrprof -lshlwapi -lwindowsapp
+// @compilerOptions -lcomctl32 -ldxgi -ld2d1 -ldwrite -ld3d11 -ldcomp -lwininet -lpdh -lpowrprof -lshlwapi
 // ==/WindhawkMod==
 
 // Source code is published under The GNU General Public License v3.0.
@@ -63,12 +63,6 @@ week)
 * `%gpu%` - GPU usage percentage
 * `%weather%` - Weather information from [wttr.in](https://wttr.in/)
 
-**Media:**
-* `%media_title%` - Currently playing media title
-* `%media_artist%` - Currently playing media artist
-* `%media_album%` - Currently playing media album
-* `%media_status%` - Media playback status icon (▶, ⏸, ⏹)
-
 **Other:**
 * `%newline%` or `%n%` - Line break
 
@@ -93,8 +87,7 @@ Customization](https://windhawk.net/mods/taskbar-clock-customization).
     Text to display. Supports patterns: %time%, %date%, %weekday%,
     %weekday_num%, %weeknum%, %dayofyear%, %timezone%, %cpu%, %ram%, %battery%,
     %battery_time%, %power%, %upload_speed%, %download_speed%, %total_speed%,
-    %disk_read%, %disk_write%, %disk_total%, %gpu%, %weather%, %media_title%,
-    %media_artist%, %media_album%, %media_status%, %newline% (or %n%)
+    %disk_read%, %disk_write%, %disk_total%, %gpu%, %weather%, %newline% (or %n%)
 - timeFormat: ""
   $name: Time format
   $description: >-
@@ -182,10 +175,6 @@ Customization](https://windhawk.net/mods/taskbar-clock-customization).
 #include <shlwapi.h>
 #include <wininet.h>
 #include <wrl/client.h>
-
-#include <winrt/Windows.Foundation.Collections.h>
-#include <winrt/Windows.Media.Control.h>
-#include <winrt/base.h>
 
 #include <algorithm>
 #include <functional>
@@ -282,21 +271,6 @@ HANDLE g_weatherUpdateStopEvent = nullptr;
 std::mutex g_weatherMutex;
 std::atomic<bool> g_weatherLoaded{false};
 std::optional<std::wstring> g_weatherContent;
-
-// Media playback.
-FormattedString<FORMATTED_BUFFER_SIZE> g_mediaTitleFormatted;
-FormattedString<FORMATTED_BUFFER_SIZE> g_mediaArtistFormatted;
-FormattedString<FORMATTED_BUFFER_SIZE> g_mediaAlbumFormatted;
-FormattedString<INTEGER_BUFFER_SIZE> g_mediaStatusFormatted;
-winrt::Windows::Media::Control::GlobalSystemMediaTransportControlsSessionManager
-    g_mediaSessionManager{nullptr};
-winrt::Windows::Media::Control::GlobalSystemMediaTransportControlsSession
-    g_mediaCurrentSession{nullptr};
-std::mutex g_mediaMutex;
-std::atomic<bool> g_mediaDataDirty{true};
-winrt::event_token g_mediaSessionsChangedToken;
-winrt::event_token g_mediaPropertiesChangedToken;
-winrt::event_token g_mediaPlaybackChangedToken;
 
 // Refresh timer.
 UINT_PTR g_refreshTimer = 0;
@@ -491,22 +465,6 @@ int StringCopyTruncated(PWSTR dest,
     *dest = L'\0';
     *truncated = *src;
     return static_cast<int>(i);
-}
-
-int StringCopyTruncatedWithEllipsis(PWSTR dest, size_t destSize, PCWSTR src) {
-    if (destSize == 0) {
-        return 0;
-    }
-
-    bool truncated = false;
-    int i = StringCopyTruncated(dest, destSize, src, &truncated);
-    if (truncated && destSize >= 4) {
-        dest[destSize - 4] = L'.';
-        dest[destSize - 3] = L'.';
-        dest[destSize - 2] = L'.';
-        dest[destSize - 1] = L'\0';
-    }
-    return i;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -794,217 +752,6 @@ void WeatherUpdateThreadUninit() {
     std::lock_guard<std::mutex> guard(g_weatherMutex);
     g_weatherLoaded = false;
     g_weatherContent.reset();
-}
-
-void ClearMediaFormattedStrings() {
-    wcscpy_s(g_mediaTitleFormatted.buffer, L"");
-    wcscpy_s(g_mediaArtistFormatted.buffer, L"");
-    wcscpy_s(g_mediaAlbumFormatted.buffer, L"");
-    wcscpy_s(g_mediaStatusFormatted.buffer, L"");
-}
-
-winrt::Windows::Media::Control::GlobalSystemMediaTransportControlsSession
-FindActiveMediaSession() {
-    if (!g_mediaSessionManager) {
-        return nullptr;
-    }
-
-    // First try the current session.
-    auto currentSession = g_mediaSessionManager.GetCurrentSession();
-    if (currentSession) {
-        return currentSession;
-    }
-
-    // If no current session, search for an active one.
-    try {
-        auto sessions = g_mediaSessionManager.GetSessions();
-        for (uint32_t i = 0; i < sessions.Size(); i++) {
-            auto session = sessions.GetAt(i);
-            try {
-                auto playbackInfo = session.GetPlaybackInfo();
-                auto status = playbackInfo.PlaybackStatus();
-
-                using Status = winrt::Windows::Media::Control::
-                    GlobalSystemMediaTransportControlsSessionPlaybackStatus;
-                if (status == Status::Playing || status == Status::Paused) {
-                    return session;
-                }
-            } catch (...) {
-                continue;
-            }
-        }
-
-        // If no active session found, return first one.
-        if (sessions.Size() > 0) {
-            return sessions.GetAt(0);
-        }
-    } catch (...) {
-        HRESULT hr = winrt::to_hresult();
-        Wh_Log(L"Failed to get media sessions: %08X", hr);
-    }
-
-    return nullptr;
-}
-
-void RefreshMediaData() {
-    std::lock_guard<std::mutex> guard(g_mediaMutex);
-
-    try {
-        if (!g_mediaSessionManager) {
-            ClearMediaFormattedStrings();
-            return;
-        }
-
-        auto session = FindActiveMediaSession();
-        if (!session) {
-            ClearMediaFormattedStrings();
-            return;
-        }
-
-        auto mediaProperties = session.TryGetMediaPropertiesAsync().get();
-        auto playbackInfo = session.GetPlaybackInfo();
-
-        if (!mediaProperties) {
-            ClearMediaFormattedStrings();
-            return;
-        }
-
-        // Get playback status as emoji.
-        auto status = playbackInfo.PlaybackStatus();
-        using Status = winrt::Windows::Media::Control::
-            GlobalSystemMediaTransportControlsSessionPlaybackStatus;
-
-        switch (status) {
-            case Status::Playing:
-                wcscpy_s(g_mediaStatusFormatted.buffer, L"\u25B6");  // ▶
-                break;
-            case Status::Paused:
-                wcscpy_s(g_mediaStatusFormatted.buffer, L"\u23F8");  // ⏸
-                break;
-            case Status::Stopped:
-                wcscpy_s(g_mediaStatusFormatted.buffer, L"\u23F9");  // ⏹
-                break;
-            default:
-                wcscpy_s(g_mediaStatusFormatted.buffer, L"");
-                break;
-        }
-
-        auto title = mediaProperties.Title();
-        auto artist = mediaProperties.Artist();
-        auto album = mediaProperties.AlbumTitle();
-
-        StringCopyTruncatedWithEllipsis(g_mediaTitleFormatted.buffer,
-                                        ARRAYSIZE(g_mediaTitleFormatted.buffer),
-                                        title.c_str());
-        StringCopyTruncatedWithEllipsis(g_mediaArtistFormatted.buffer,
-                                        ARRAYSIZE(g_mediaArtistFormatted.buffer),
-                                        artist.c_str());
-        StringCopyTruncatedWithEllipsis(g_mediaAlbumFormatted.buffer,
-                                        ARRAYSIZE(g_mediaAlbumFormatted.buffer),
-                                        album.c_str());
-    } catch (...) {
-        HRESULT hr = winrt::to_hresult();
-        Wh_Log(L"RefreshMediaData error: %08X", hr);
-        ClearMediaFormattedStrings();
-    }
-
-    g_mediaDataDirty = false;
-}
-
-bool IsMediaPatternUsed() {
-    return IsPatternUsed(L"%media_title%") ||
-           IsPatternUsed(L"%media_artist%") ||
-           IsPatternUsed(L"%media_album%") ||
-           IsPatternUsed(L"%media_status%");
-}
-
-void UnsubscribeFromMediaSession() {
-    if (g_mediaCurrentSession) {
-        try {
-            g_mediaCurrentSession.MediaPropertiesChanged(
-                g_mediaPropertiesChangedToken);
-            g_mediaCurrentSession.PlaybackInfoChanged(
-                g_mediaPlaybackChangedToken);
-        } catch (...) {
-            HRESULT hr = winrt::to_hresult();
-            Wh_Log(L"UnsubscribeFromMediaSession error: %08X", hr);
-        }
-        g_mediaCurrentSession = nullptr;
-    }
-}
-
-void SubscribeToMediaSession() {
-    UnsubscribeFromMediaSession();
-
-    if (!g_mediaSessionManager) {
-        return;
-    }
-
-    try {
-        auto session = FindActiveMediaSession();
-        if (!session) {
-            return;
-        }
-
-        g_mediaCurrentSession = session;
-
-        g_mediaPropertiesChangedToken = session.MediaPropertiesChanged(
-            [](auto&&, auto&&) { g_mediaDataDirty = true; });
-
-        g_mediaPlaybackChangedToken = session.PlaybackInfoChanged(
-            [](auto&&, auto&&) { g_mediaDataDirty = true; });
-    } catch (...) {
-        HRESULT hr = winrt::to_hresult();
-        Wh_Log(L"SubscribeToMediaSession error %08X", hr);
-    }
-}
-
-void OnMediaSessionsChanged() {
-    g_mediaDataDirty = true;
-    SubscribeToMediaSession();
-}
-
-void MediaSessionInit() {
-    if (!IsMediaPatternUsed()) {
-        return;
-    }
-
-    try {
-        g_mediaSessionManager =
-            winrt::Windows::Media::Control::
-                GlobalSystemMediaTransportControlsSessionManager::RequestAsync()
-                    .get();
-
-        // Subscribe to SessionsChanged event.
-        g_mediaSessionsChangedToken = g_mediaSessionManager.SessionsChanged(
-            [](auto&&, auto&&) { OnMediaSessionsChanged(); });
-
-        // Subscribe to current session events.
-        SubscribeToMediaSession();
-
-        RefreshMediaData();
-    } catch (...) {
-        HRESULT hr = winrt::to_hresult();
-        Wh_Log(L"MediaSessionInit error %08X", hr);
-        g_mediaSessionManager = nullptr;
-    }
-}
-
-void MediaSessionUninit() {
-    UnsubscribeFromMediaSession();
-
-    if (g_mediaSessionManager) {
-        try {
-            g_mediaSessionManager.SessionsChanged(g_mediaSessionsChangedToken);
-        } catch (...) {
-            HRESULT hr = winrt::to_hresult();
-            Wh_Log(L"MediaSessionUninit error: %08X", hr);
-        }
-        g_mediaSessionManager = nullptr;
-    }
-
-    g_mediaDataDirty = true;
-    ClearMediaFormattedStrings();
 }
 
 bool InitMetrics() {
@@ -1433,32 +1180,6 @@ PCWSTR GetGpuFormatted() {
     return g_gpuFormatted.buffer;
 }
 
-void RefreshMediaDataIfDirty() {
-    if (g_mediaDataDirty) {
-        RefreshMediaData();
-    }
-}
-
-PCWSTR GetMediaTitleFormatted() {
-    RefreshMediaDataIfDirty();
-    return g_mediaTitleFormatted.buffer;
-}
-
-PCWSTR GetMediaArtistFormatted() {
-    RefreshMediaDataIfDirty();
-    return g_mediaArtistFormatted.buffer;
-}
-
-PCWSTR GetMediaAlbumFormatted() {
-    RefreshMediaDataIfDirty();
-    return g_mediaAlbumFormatted.buffer;
-}
-
-PCWSTR GetMediaStatusFormatted() {
-    RefreshMediaDataIfDirty();
-    return g_mediaStatusFormatted.buffer;
-}
-
 // https://stackoverflow.com/a/39344961
 DWORD GetStartDayOfWeek() {
     DWORD startDayOfWeek;
@@ -1625,10 +1346,6 @@ size_t ResolveFormatToken(
         {L"%disk_write%"sv, GetDiskWriteSpeedFormatted},
         {L"%disk_total%"sv, GetDiskTotalSpeedFormatted},
         {L"%gpu%"sv, GetGpuFormatted},
-        {L"%media_title%"sv, GetMediaTitleFormatted},
-        {L"%media_artist%"sv, GetMediaArtistFormatted},
-        {L"%media_album%"sv, GetMediaAlbumFormatted},
-        {L"%media_status%"sv, GetMediaStatusFormatted},
     };
 
     // Check for newline patterns first.
@@ -2302,7 +2019,6 @@ BOOL Wh_ModInit() {
 
     InitMetrics();
     WeatherUpdateThreadInit();
-    MediaSessionInit();
 
     Wh_SetFunctionHook((void*)CreateWindowExW, (void*)CreateWindowExW_Hook,
                        (void**)&CreateWindowExW_Original);
@@ -2333,7 +2049,6 @@ void Wh_ModUninit() {
         }
     }
 
-    MediaSessionUninit();
     WeatherUpdateThreadUninit();
     UninitMetrics();
     UninitDirectX();
