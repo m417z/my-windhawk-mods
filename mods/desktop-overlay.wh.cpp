@@ -132,6 +132,20 @@ Customization](https://windhawk.net/mods/taskbar-clock-customization).
   - "": Default
   - Normal: Normal
   - Italic: Italic
+- background:
+  - enabled: false
+    $name: Enabled
+  - color: "#80000000"
+    $name: Color
+    $description: >-
+      Background color in ARGB hex format. Default is semi-transparent black.
+  - padding: 10
+    $name: Padding
+    $description: Padding around the text in pixels
+  - cornerRadius: 8
+    $name: Corner radius
+    $description: Border radius for rounded corners in pixels
+  $name: Background
 - verticalPosition: 20
   $name: Vertical position
   $description: Position in percentage (0 = top, 50 = center, 100 = bottom)
@@ -214,6 +228,13 @@ struct Settings {
     WindhawkUtils::StringSetting fontFamily;
     int fontWeight;
     bool fontItalic;
+    bool backgroundEnabled;
+    BYTE backgroundColorA;
+    BYTE backgroundColorR;
+    BYTE backgroundColorG;
+    BYTE backgroundColorB;
+    int backgroundPadding;
+    int backgroundCornerRadius;
     int verticalPosition;
     int horizontalPosition;
     int monitor;
@@ -296,6 +317,7 @@ ComPtr<IDCompositionTarget> g_compositionTarget;
 ComPtr<IDCompositionVisual> g_compositionVisual;
 ComPtr<IDWriteTextFormat> g_textFormat;
 ComPtr<ID2D1SolidColorBrush> g_textBrush;
+ComPtr<ID2D1SolidColorBrush> g_backgroundBrush;
 
 ////////////////////////////////////////////////////////////////////////////////
 // Utility functions
@@ -1722,10 +1744,25 @@ bool CreateSwapChainResources(UINT width, UINT height) {
         return false;
     }
 
+    // Create background brush.
+    if (g_settings.backgroundEnabled) {
+        D2D1_COLOR_F backgroundColor =
+            D2D1::ColorF(g_settings.backgroundColorR / 255.0f,
+                         g_settings.backgroundColorG / 255.0f,
+                         g_settings.backgroundColorB / 255.0f,
+                         g_settings.backgroundColorA / 255.0f);
+        hr = g_dc->CreateSolidColorBrush(backgroundColor, &g_backgroundBrush);
+        if (FAILED(hr)) {
+            Wh_Log(L"CreateSolidColorBrush (background) failed: 0x%08X", hr);
+            return false;
+        }
+    }
+
     return true;
 }
 
 void ReleaseSwapChainResources() {
+    g_backgroundBrush.Reset();
     g_textBrush.Reset();
     g_textFormat.Reset();
     g_compositionVisual.Reset();
@@ -1786,6 +1823,10 @@ void RenderOverlay() {
                 float workWidth = (float)(workArea.right - workArea.left);
                 float workHeight = (float)(workArea.bottom - workArea.top);
 
+                // Set layout width to actual text width so center alignment
+                // works correctly for positioning.
+                textLayout->SetMaxWidth(textWidth);
+
                 // Calculate position based on percentage (0-100).
                 // The text is centered at the percentage point.
                 float x = workArea.left +
@@ -1794,6 +1835,19 @@ void RenderOverlay() {
                 float y =
                     workArea.top + (workHeight - textHeight) *
                                        (g_settings.verticalPosition / 100.0f);
+
+                // Draw background if enabled.
+                if (g_backgroundBrush) {
+                    float padding = (float)g_settings.backgroundPadding;
+                    float radius = (float)g_settings.backgroundCornerRadius;
+                    D2D1_ROUNDED_RECT backgroundRect =
+                        D2D1::RoundedRect(D2D1::RectF(x - padding, y - padding,
+                                                      x + textWidth + padding,
+                                                      y + textHeight + padding),
+                                          radius, radius);
+                    g_dc->FillRoundedRectangle(backgroundRect,
+                                               g_backgroundBrush.Get());
+                }
 
                 // Use a layer with opacity so color emoji also respect alpha.
                 float opacity = g_settings.colorA / 255.0f;
@@ -1994,6 +2048,30 @@ void LoadSettings() {
     PCWSTR fontStyle = Wh_GetStringSetting(L"fontStyle");
     g_settings.fontItalic = wcscmp(fontStyle, L"Italic") == 0;
     Wh_FreeStringSetting(fontStyle);
+
+    g_settings.backgroundEnabled = Wh_GetIntSetting(L"background.enabled");
+
+    PCWSTR backgroundColor = Wh_GetStringSetting(L"background.color");
+    if (!ParseColor(backgroundColor, &g_settings.backgroundColorA,
+                    &g_settings.backgroundColorR, &g_settings.backgroundColorG,
+                    &g_settings.backgroundColorB)) {
+        g_settings.backgroundColorA = 0x80;
+        g_settings.backgroundColorR = 0x00;
+        g_settings.backgroundColorG = 0x00;
+        g_settings.backgroundColorB = 0x00;
+    }
+    Wh_FreeStringSetting(backgroundColor);
+
+    g_settings.backgroundPadding = Wh_GetIntSetting(L"background.padding");
+    if (g_settings.backgroundPadding < 0) {
+        g_settings.backgroundPadding = 10;
+    }
+
+    g_settings.backgroundCornerRadius =
+        Wh_GetIntSetting(L"background.cornerRadius");
+    if (g_settings.backgroundCornerRadius < 0) {
+        g_settings.backgroundCornerRadius = 8;
+    }
 
     g_settings.verticalPosition = Wh_GetIntSetting(L"verticalPosition");
     g_settings.horizontalPosition = Wh_GetIntSetting(L"horizontalPosition");
