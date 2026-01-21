@@ -1708,6 +1708,9 @@ bool CreateSwapChainResources(UINT width, UINT height) {
         return false;
     }
 
+    // Center text horizontally for multi-line support.
+    g_textFormat->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER);
+
     // Create text brush. Use full opacity here since transparency is applied
     // via a layer during rendering (to also affect color emoji).
     D2D1_COLOR_F textColor =
