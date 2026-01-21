@@ -74,11 +74,7 @@ week)
   - text: "%time%"
     $name: Text
     $description: >-
-      Text to display. Supports patterns: %time%, %date%, %weekday%,
-      %weekday_num%, %weeknum%, %dayofyear%, %timezone%, %cpu%, %ram%,
-      %battery%, %battery_time%, %power%, %upload_speed%, %download_speed%,
-      %total_speed%, %disk_read%, %disk_write%, %disk_total%, %gpu%, %weather%,
-      %newline% (or %n%)
+      Text to display. Supports patterns are listed in the mod description.
   - fontSize: 48
     $name: Font size
     $description: Size of the text in points
@@ -92,7 +88,7 @@ week)
     $description: >-
       Font family name. For a list of fonts shipped with Windows, see:
       https://learn.microsoft.com/en-us/typography/fonts/windows_11_font_list
-  - fontWeight: ""
+  - fontWeight: Bold
     $name: Font weight
     $options:
     - "": Default
@@ -111,14 +107,10 @@ week)
     - Italic: Italic
   $name: Top line
 - bottomLine:
-  - text: "%date%"
+  - text: "%date%%n%%weather%"
     $name: Text
     $description: >-
-      Text to display. Supports patterns: %time%, %date%, %weekday%,
-      %weekday_num%, %weeknum%, %dayofyear%, %timezone%, %cpu%, %ram%,
-      %battery%, %battery_time%, %power%, %upload_speed%, %download_speed%,
-      %total_speed%, %disk_read%, %disk_write%, %disk_total%, %gpu%, %weather%,
-      %newline% (or %n%)
+      Text to display. Supports patterns are listed in the mod description.
   - fontSize: 32
     $name: Font size
     $description: Size of the text in points
@@ -150,16 +142,20 @@ week)
     - Normal: Normal
     - Italic: Italic
   $name: Bottom line
-- showSeconds: true
+- showSeconds: false
   $name: Show seconds
 - timeFormat: ""
   $name: Time format
   $description: >-
-    Custom time format (empty for system default). Example: HH:mm:ss
+    Leave empty for the default format. For syntax refer to the following page:
+
+    https://docs.microsoft.com/en-us/windows/win32/api/datetimeapi/nf-datetimeapi-gettimeformatex#remarks
 - dateFormat: ""
   $name: Date format
   $description: >-
-    Custom date format (empty for system default). Example: yyyy-MM-dd
+    Leave empty for the default format. For syntax refer to the following page:
+
+    https://docs.microsoft.com/en-us/windows/win32/intl/day--month--year--and-era-format-pictures
 - refreshInterval: 1
   $name: Refresh interval (seconds)
   $description: How often to update dynamic content (1-60)
@@ -331,6 +327,7 @@ HANDLE g_weatherUpdateThread = nullptr;
 HANDLE g_weatherUpdateStopEvent = nullptr;
 std::mutex g_weatherMutex;
 std::atomic<bool> g_weatherLoaded{false};
+std::atomic<bool> g_unloading{false};
 std::optional<std::wstring> g_weatherContent;
 
 // Refresh timer.
@@ -1848,8 +1845,8 @@ void ReleaseSwapChainResources() {
 void RenderOverlay() {
     Wh_Log(L"RenderOverlay called");
 
-    if (!g_dc || !g_swapChain) {
-        Wh_Log(L"RenderOverlay: no dc or swapchain");
+    if (g_unloading || !g_dc || !g_swapChain || !g_dwriteFactory) {
+        Wh_Log(L"RenderOverlay: resources not available or unloading");
         return;
     }
 
@@ -2028,7 +2025,7 @@ LRESULT CALLBACK OverlayWndProc(HWND hWnd,
                                 UINT uMsg,
                                 WPARAM wParam,
                                 LPARAM lParam) {
-    if (uMsg == WM_TIMER) {
+    if (uMsg == WM_TIMER && !g_unloading) {
         Wh_Log(L"OverlayWndProc: WM_TIMER wParam=%u", (unsigned)wParam);
         if (wParam == 1) {
             RenderOverlay();
@@ -2274,6 +2271,8 @@ void Wh_ModAfterInit() {
 
 void Wh_ModUninit() {
     Wh_Log(L">");
+
+    g_unloading = true;
 
     if (g_overlayWnd) {
         RunFromWindowThread(
