@@ -160,7 +160,7 @@ week)
   $name: Refresh interval (seconds)
   $description: How often to update dynamic content (1-60)
 - background:
-  - enabled: false
+  - enabled: true
     $name: Enabled
   - color: "#80000000"
     $name: Color
@@ -230,6 +230,9 @@ week)
 
 using namespace std::literals;
 using Microsoft::WRL::ComPtr;
+
+#define TIMER_ID_REFRESH 1
+#define OVERLAY_WINDOW_CLASS (L"DesktopOverlay_" WH_MOD_ID)
 
 ////////////////////////////////////////////////////////////////////////////////
 // Types
@@ -330,8 +333,8 @@ std::atomic<bool> g_weatherLoaded{false};
 std::atomic<bool> g_unloading{false};
 std::optional<std::wstring> g_weatherContent;
 
-// Refresh timer.
-UINT_PTR g_refreshTimer = 0;
+// Cached result of whether system metrics are used (set during init).
+bool g_systemMetricsUsed = false;
 
 // DirectX device objects (shared).
 ComPtr<ID3D11Device> g_d3dDevice;
@@ -788,6 +791,15 @@ bool IsPatternUsed(PCWSTR pattern) {
     PCWSTR bottomText = g_settings.bottomLine.text.get();
     return (topText && wcsstr(topText, pattern)) ||
            (bottomText && wcsstr(bottomText, pattern));
+}
+
+bool IsSystemMetricsUsed() {
+    return IsPatternUsed(L"%cpu%") || IsPatternUsed(L"%ram%") ||
+           IsPatternUsed(L"%battery%") || IsPatternUsed(L"%battery_time%") ||
+           IsPatternUsed(L"%power%") || IsPatternUsed(L"%upload_speed%") ||
+           IsPatternUsed(L"%download_speed%") || IsPatternUsed(L"%total_speed%") ||
+           IsPatternUsed(L"%disk_read%") || IsPatternUsed(L"%disk_write%") ||
+           IsPatternUsed(L"%disk_total%") || IsPatternUsed(L"%gpu%");
 }
 
 void WeatherUpdateThreadInit() {
@@ -1998,26 +2010,51 @@ void RenderOverlay() {
 ////////////////////////////////////////////////////////////////////////////////
 // Refresh timer
 
-void StartRefreshTimer() {
-    Wh_Log(L"StartRefreshTimer: g_refreshTimer=%u, g_overlayWnd=%p",
-           (unsigned)g_refreshTimer, g_overlayWnd);
+UINT GetNextUpdateTimeout() {
+    // Determine if we need per-second updates.
+    bool needsSecondsUpdate =
+        g_settings.showSeconds || g_systemMetricsUsed || !g_weatherLoaded;
 
-    if (g_refreshTimer || !g_overlayWnd) {
-        Wh_Log(L"StartRefreshTimer: skipping (already set or no window)");
+    // Get current time for alignment calculations.
+    SYSTEMTIME time;
+    GetLocalTime(&time);
+
+    int refreshInterval =
+        (std::max)(1, (std::min)(60, g_settings.refreshInterval));
+
+    if (needsSecondsUpdate) {
+        if (refreshInterval == 1) {
+            // Align to the next second boundary.
+            return 1000 - time.wMilliseconds;
+        } else {
+            // Calculate time until next interval boundary.
+            int currentSecondInInterval = time.wSecond % refreshInterval;
+            int secondsUntilNext = refreshInterval - currentSecondInInterval;
+            if (secondsUntilNext == refreshInterval) {
+                // We're at the boundary, wait for next interval.
+                secondsUntilNext = refreshInterval;
+            }
+            return secondsUntilNext * 1000 - time.wMilliseconds;
+        }
+    } else {
+        // No seconds or system metrics - refresh every minute.
+        // Align to the next minute boundary.
+        return (60 - time.wSecond) * 1000 - time.wMilliseconds;
+    }
+}
+
+void ScheduleNextUpdate() {
+    if (!g_overlayWnd) {
         return;
     }
 
-    int interval = (std::max)(1, (std::min)(60, g_settings.refreshInterval));
-    g_refreshTimer = SetTimer(g_overlayWnd, 1, interval * 1000, nullptr);
-    Wh_Log(L"StartRefreshTimer: SetTimer returned %u, interval=%d sec",
-           (unsigned)g_refreshTimer, interval);
+    UINT timeout = GetNextUpdateTimeout();
+    SetTimer(g_overlayWnd, TIMER_ID_REFRESH, timeout, nullptr);
 }
 
 void StopRefreshTimer() {
-    Wh_Log(L"StopRefreshTimer: g_refreshTimer=%u", (unsigned)g_refreshTimer);
-    if (g_refreshTimer && g_overlayWnd) {
-        KillTimer(g_overlayWnd, g_refreshTimer);
-        g_refreshTimer = 0;
+    if (g_overlayWnd) {
+        KillTimer(g_overlayWnd, TIMER_ID_REFRESH);
     }
 }
 
@@ -2026,9 +2063,9 @@ LRESULT CALLBACK OverlayWndProc(HWND hWnd,
                                 WPARAM wParam,
                                 LPARAM lParam) {
     if (uMsg == WM_TIMER && !g_unloading) {
-        Wh_Log(L"OverlayWndProc: WM_TIMER wParam=%u", (unsigned)wParam);
-        if (wParam == 1) {
+        if (wParam == TIMER_ID_REFRESH) {
             RenderOverlay();
+            ScheduleNextUpdate();
             return 0;
         }
     }
@@ -2045,10 +2082,12 @@ void CreateOverlayWindow() {
         return;
     }
 
+    HINSTANCE hInstance = GetCurrentModuleHandle();
+
     WNDCLASS wc = {};
     wc.lpfnWndProc = OverlayWndProc;
-    wc.hInstance = GetCurrentModuleHandle();
-    wc.lpszClassName = L"DesktopOverlay_" WH_MOD_ID;
+    wc.hInstance = hInstance;
+    wc.lpszClassName = OVERLAY_WINDOW_CLASS;
     RegisterClass(&wc);
 
     RECT rc;
@@ -2063,12 +2102,13 @@ void CreateOverlayWindow() {
 
     if (!g_overlayWnd) {
         Wh_Log(L"Failed to create overlay window: %u", GetLastError());
+        UnregisterClass(OVERLAY_WINDOW_CLASS, hInstance);
         return;
     }
 
     if (CreateSwapChainResources(width, height)) {
         RenderOverlay();
-        StartRefreshTimer();
+        ScheduleNextUpdate();
     }
 }
 
@@ -2080,6 +2120,8 @@ void DestroyOverlayWindow() {
         DestroyWindow(g_overlayWnd);
         g_overlayWnd = nullptr;
     }
+
+    UnregisterClass(OVERLAY_WINDOW_CLASS, GetCurrentModuleHandle());
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -2244,6 +2286,7 @@ BOOL Wh_ModInit() {
     Wh_Log(L">");
 
     LoadSettings();
+    g_systemMetricsUsed = IsSystemMetricsUsed();
 
     if (!InitDirectX()) {
         Wh_Log(L"InitDirectX failed");
