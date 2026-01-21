@@ -2,7 +2,7 @@
 // @id              taskbar-volume-control-per-app
 // @name            Taskbar Volume Control Per-App
 // @description     Control the per-app volume by scrolling over taskbar buttons
-// @version         1.1.3
+// @version         1.1.4
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
@@ -31,20 +31,27 @@ application. Ctrl+clicking on a taskbar button will toggle mute for that app. A
 tooltip shows the current volume percentage, or "No audio session" if the app
 has no active audio.
 
+**Note:** Some laptop touchpads might not support scrolling over the taskbar. A
+workaround is to use the "pinch to zoom" gesture. For details, check out [a
+relevant
+issue](https://tweaker.userecho.com/topics/826-scroll-on-trackpadtouchpad-doesnt-trigger-mouse-wheel-options).
+
+![Demonstration](https://i.imgur.com/56QHjUv.gif)
+
+## Controlling the overall system volume
+
 For controlling the overall system volume, check out the [Taskbar Volume
 Control](https://windhawk.net/mods/taskbar-volume-control) mod. Note that both
 mods can be used simultaneously using one of these approaches:
 1. Configure Taskbar Volume Control to use a limited region, such as the system
    tray area, while this mod handles the app-specific volume on the task
    buttons.
-2. Configure this mod to require the Ctrl key for volume changes, so that
-   holding Ctrl while scrolling adjusts the app volume (this mod), and normal
-   scrolling adjusts the system volume (Taskbar Volume Control).
+2. Configure Taskbar Volume Control to require the Ctrl key for volume changes,
+   so that holding Ctrl while scrolling adjusts the system volume, and normal
+   scrolling adjusts per-app volume.
 
 Note that if both mods are configured to act simultaneously, the Taskbar Volume
 Control mod takes precedence due to the way the mod works.
-
-![Demonstration](https://i.imgur.com/56QHjUv.gif)
 */
 // ==/WindhawkModReadme==
 
@@ -82,6 +89,7 @@ Control mod takes precedence due to the way the mod works.
 #include <windhawk_utils.h>
 
 #include <atomic>
+#include <cmath>
 #include <functional>
 #include <optional>
 #include <string>
