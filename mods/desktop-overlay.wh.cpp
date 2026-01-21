@@ -65,30 +65,91 @@ week)
 
 **Other:**
 * `%newline%` or `%n%` - Line break
-
-**Example:** `%time% %timezone%\n%date%` displays time with timezone on one line
-and date below it.
-
-### Acknowledgements
-
-* Based on the technique from the [weebp](https://github.com/Francesco149/weebp)
-project.
-* Pattern system inspired by
-[Taskbar Clock
-Customization](https://windhawk.net/mods/taskbar-clock-customization).
 */
 // ==/WindhawkModReadme==
 
 // ==WindhawkModSettings==
 /*
-- text: "%time%\n%date%"
-  $name: Text content
-  $description: >-
-    Text to display. Supports patterns: %time%, %date%, %weekday%,
-    %weekday_num%, %weeknum%, %dayofyear%, %timezone%, %cpu%, %ram%, %battery%,
-    %battery_time%, %power%, %upload_speed%, %download_speed%, %total_speed%,
-    %disk_read%, %disk_write%, %disk_total%, %gpu%, %weather%, %newline% (or
-    %n%)
+- topLine:
+  - text: "%time%"
+    $name: Text
+    $description: >-
+      Text to display. Supports patterns: %time%, %date%, %weekday%,
+      %weekday_num%, %weeknum%, %dayofyear%, %timezone%, %cpu%, %ram%,
+      %battery%, %battery_time%, %power%, %upload_speed%, %download_speed%,
+      %total_speed%, %disk_read%, %disk_write%, %disk_total%, %gpu%, %weather%,
+      %newline% (or %n%)
+  - fontSize: 48
+    $name: Font size
+    $description: Size of the text in points
+  - textColor: "#C0FFFFFF"
+    $name: Text color
+    $description: >-
+      Color in ARGB hex format. Examples: #80FFFFFF (semi-transparent white),
+      #FF0000 (red), #80000000 (semi-transparent black)
+  - fontFamily: Segoe UI
+    $name: Font family
+    $description: >-
+      Font family name. For a list of fonts shipped with Windows, see:
+      https://learn.microsoft.com/en-us/typography/fonts/windows_11_font_list
+  - fontWeight: ""
+    $name: Font weight
+    $options:
+    - "": Default
+    - Thin: Thin
+    - Light: Light
+    - Normal: Normal
+    - Medium: Medium
+    - SemiBold: Semi bold
+    - Bold: Bold
+    - ExtraBold: Extra bold
+  - fontStyle: ""
+    $name: Font style
+    $options:
+    - "": Default
+    - Normal: Normal
+    - Italic: Italic
+  $name: Top line
+- bottomLine:
+  - text: "%date%"
+    $name: Text
+    $description: >-
+      Text to display. Supports patterns: %time%, %date%, %weekday%,
+      %weekday_num%, %weeknum%, %dayofyear%, %timezone%, %cpu%, %ram%,
+      %battery%, %battery_time%, %power%, %upload_speed%, %download_speed%,
+      %total_speed%, %disk_read%, %disk_write%, %disk_total%, %gpu%, %weather%,
+      %newline% (or %n%)
+  - fontSize: 32
+    $name: Font size
+    $description: Size of the text in points
+  - textColor: "#80FFFFFF"
+    $name: Text color
+    $description: >-
+      Color in ARGB hex format. Examples: #80FFFFFF (semi-transparent white),
+      #FF0000 (red), #80000000 (semi-transparent black)
+  - fontFamily: Segoe UI
+    $name: Font family
+    $description: >-
+      Font family name. For a list of fonts shipped with Windows, see:
+      https://learn.microsoft.com/en-us/typography/fonts/windows_11_font_list
+  - fontWeight: ""
+    $name: Font weight
+    $options:
+    - "": Default
+    - Thin: Thin
+    - Light: Light
+    - Normal: Normal
+    - Medium: Medium
+    - SemiBold: Semi bold
+    - Bold: Bold
+    - ExtraBold: Extra bold
+  - fontStyle: ""
+    $name: Font style
+    $options:
+    - "": Default
+    - Normal: Normal
+    - Italic: Italic
+  $name: Bottom line
 - showSeconds: true
   $name: Show seconds
 - timeFormat: ""
@@ -102,36 +163,6 @@ Customization](https://windhawk.net/mods/taskbar-clock-customization).
 - refreshInterval: 1
   $name: Refresh interval (seconds)
   $description: How often to update dynamic content (1-60)
-- fontSize: 48
-  $name: Font size
-  $description: Size of the text in points
-- textColor: "#C0FFFFFF"
-  $name: Text color
-  $description: >-
-    Color in ARGB hex format. Examples: #80FFFFFF (semi-transparent white),
-    #FF0000 (red), #80000000 (semi-transparent black)
-- fontFamily: Segoe UI
-  $name: Font family
-  $description: >-
-    Font family name. For a list of fonts shipped with Windows, see:
-    https://learn.microsoft.com/en-us/typography/fonts/windows_11_font_list
-- fontWeight: ""
-  $name: Font weight
-  $options:
-  - "": Default
-  - Thin: Thin
-  - Light: Light
-  - Normal: Normal
-  - Medium: Medium
-  - SemiBold: Semi bold
-  - Bold: Bold
-  - ExtraBold: Extra bold
-- fontStyle: ""
-  $name: Font style
-  $options:
-  - "": Default
-  - Normal: Normal
-  - Italic: Italic
 - background:
   - enabled: false
     $name: Enabled
@@ -214,12 +245,8 @@ enum class WeatherUnits {
     metricMsWind,
 };
 
-struct Settings {
+struct LineSettings {
     WindhawkUtils::StringSetting text;
-    bool showSeconds;
-    WindhawkUtils::StringSetting timeFormat;
-    WindhawkUtils::StringSetting dateFormat;
-    int refreshInterval;
     int fontSize;
     BYTE colorA;
     BYTE colorR;
@@ -228,6 +255,15 @@ struct Settings {
     WindhawkUtils::StringSetting fontFamily;
     int fontWeight;
     bool fontItalic;
+};
+
+struct Settings {
+    LineSettings topLine;
+    LineSettings bottomLine;
+    bool showSeconds;
+    WindhawkUtils::StringSetting timeFormat;
+    WindhawkUtils::StringSetting dateFormat;
+    int refreshInterval;
     bool backgroundEnabled;
     BYTE backgroundColorA;
     BYTE backgroundColorR;
@@ -315,8 +351,10 @@ ComPtr<ID2D1DeviceContext> g_dc;
 ComPtr<IDCompositionDevice> g_compositionDevice;
 ComPtr<IDCompositionTarget> g_compositionTarget;
 ComPtr<IDCompositionVisual> g_compositionVisual;
-ComPtr<IDWriteTextFormat> g_textFormat;
-ComPtr<ID2D1SolidColorBrush> g_textBrush;
+ComPtr<IDWriteTextFormat> g_topLineTextFormat;
+ComPtr<ID2D1SolidColorBrush> g_topLineTextBrush;
+ComPtr<IDWriteTextFormat> g_bottomLineTextFormat;
+ComPtr<ID2D1SolidColorBrush> g_bottomLineTextBrush;
 ComPtr<ID2D1SolidColorBrush> g_backgroundBrush;
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -454,22 +492,22 @@ bool ParseColor(PCWSTR colorStr, BYTE* a, BYTE* r, BYTE* g, BYTE* b) {
     return true;
 }
 
-DWRITE_FONT_WEIGHT GetDWriteFontWeight() {
-    if (g_settings.fontWeight <= 100)
+DWRITE_FONT_WEIGHT GetDWriteFontWeight(int fontWeight) {
+    if (fontWeight <= 100)
         return DWRITE_FONT_WEIGHT_THIN;
-    if (g_settings.fontWeight <= 200)
+    if (fontWeight <= 200)
         return DWRITE_FONT_WEIGHT_EXTRA_LIGHT;
-    if (g_settings.fontWeight <= 300)
+    if (fontWeight <= 300)
         return DWRITE_FONT_WEIGHT_LIGHT;
-    if (g_settings.fontWeight <= 400)
+    if (fontWeight <= 400)
         return DWRITE_FONT_WEIGHT_NORMAL;
-    if (g_settings.fontWeight <= 500)
+    if (fontWeight <= 500)
         return DWRITE_FONT_WEIGHT_MEDIUM;
-    if (g_settings.fontWeight <= 600)
+    if (fontWeight <= 600)
         return DWRITE_FONT_WEIGHT_SEMI_BOLD;
-    if (g_settings.fontWeight <= 700)
+    if (fontWeight <= 700)
         return DWRITE_FONT_WEIGHT_BOLD;
-    if (g_settings.fontWeight <= 800)
+    if (fontWeight <= 800)
         return DWRITE_FONT_WEIGHT_EXTRA_BOLD;
     return DWRITE_FONT_WEIGHT_BLACK;
 }
@@ -749,8 +787,10 @@ DWORD WINAPI WeatherUpdateThread(LPVOID lpThreadParameter) {
 }
 
 bool IsPatternUsed(PCWSTR pattern) {
-    PCWSTR text = g_settings.text.get();
-    return text && wcsstr(text, pattern);
+    PCWSTR topText = g_settings.topLine.text.get();
+    PCWSTR bottomText = g_settings.bottomLine.text.get();
+    return (topText && wcsstr(topText, pattern)) ||
+           (bottomText && wcsstr(bottomText, pattern));
 }
 
 void WeatherUpdateThreadInit() {
@@ -1713,34 +1753,65 @@ bool CreateSwapChainResources(UINT width, UINT height) {
         return false;
     }
 
-    // Create text format.
-    PCWSTR fontFamilyName = g_settings.fontFamily.get();
-    if (!fontFamilyName || !*fontFamilyName) {
-        fontFamilyName = L"Segoe UI";
+    // Create top line text format.
+    PCWSTR topFontFamily = g_settings.topLine.fontFamily.get();
+    if (!topFontFamily || !*topFontFamily) {
+        topFontFamily = L"Segoe UI";
     }
 
     hr = g_dwriteFactory->CreateTextFormat(
-        fontFamilyName, nullptr, GetDWriteFontWeight(),
-        g_settings.fontItalic ? DWRITE_FONT_STYLE_ITALIC
-                              : DWRITE_FONT_STYLE_NORMAL,
-        DWRITE_FONT_STRETCH_NORMAL, (FLOAT)g_settings.fontSize, L"",
-        &g_textFormat);
+        topFontFamily, nullptr,
+        GetDWriteFontWeight(g_settings.topLine.fontWeight),
+        g_settings.topLine.fontItalic ? DWRITE_FONT_STYLE_ITALIC
+                                      : DWRITE_FONT_STYLE_NORMAL,
+        DWRITE_FONT_STRETCH_NORMAL, (FLOAT)g_settings.topLine.fontSize, L"",
+        &g_topLineTextFormat);
     if (FAILED(hr)) {
-        Wh_Log(L"CreateTextFormat failed: 0x%08X", hr);
+        Wh_Log(L"CreateTextFormat (top) failed: 0x%08X", hr);
         return false;
     }
 
-    // Center text horizontally for multi-line support.
-    g_textFormat->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER);
+    g_topLineTextFormat->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER);
 
-    // Create text brush. Use full opacity here since transparency is applied
-    // via a layer during rendering (to also affect color emoji).
-    D2D1_COLOR_F textColor =
-        D2D1::ColorF(g_settings.colorR / 255.0f, g_settings.colorG / 255.0f,
-                     g_settings.colorB / 255.0f, 1.0f);
-    hr = g_dc->CreateSolidColorBrush(textColor, &g_textBrush);
+    // Create top line text brush.
+    D2D1_COLOR_F topTextColor =
+        D2D1::ColorF(g_settings.topLine.colorR / 255.0f,
+                     g_settings.topLine.colorG / 255.0f,
+                     g_settings.topLine.colorB / 255.0f, 1.0f);
+    hr = g_dc->CreateSolidColorBrush(topTextColor, &g_topLineTextBrush);
     if (FAILED(hr)) {
-        Wh_Log(L"CreateSolidColorBrush failed: 0x%08X", hr);
+        Wh_Log(L"CreateSolidColorBrush (top) failed: 0x%08X", hr);
+        return false;
+    }
+
+    // Create bottom line text format.
+    PCWSTR bottomFontFamily = g_settings.bottomLine.fontFamily.get();
+    if (!bottomFontFamily || !*bottomFontFamily) {
+        bottomFontFamily = L"Segoe UI";
+    }
+
+    hr = g_dwriteFactory->CreateTextFormat(
+        bottomFontFamily, nullptr,
+        GetDWriteFontWeight(g_settings.bottomLine.fontWeight),
+        g_settings.bottomLine.fontItalic ? DWRITE_FONT_STYLE_ITALIC
+                                         : DWRITE_FONT_STYLE_NORMAL,
+        DWRITE_FONT_STRETCH_NORMAL, (FLOAT)g_settings.bottomLine.fontSize, L"",
+        &g_bottomLineTextFormat);
+    if (FAILED(hr)) {
+        Wh_Log(L"CreateTextFormat (bottom) failed: 0x%08X", hr);
+        return false;
+    }
+
+    g_bottomLineTextFormat->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER);
+
+    // Create bottom line text brush.
+    D2D1_COLOR_F bottomTextColor =
+        D2D1::ColorF(g_settings.bottomLine.colorR / 255.0f,
+                     g_settings.bottomLine.colorG / 255.0f,
+                     g_settings.bottomLine.colorB / 255.0f, 1.0f);
+    hr = g_dc->CreateSolidColorBrush(bottomTextColor, &g_bottomLineTextBrush);
+    if (FAILED(hr)) {
+        Wh_Log(L"CreateSolidColorBrush (bottom) failed: 0x%08X", hr);
         return false;
     }
 
@@ -1763,8 +1834,10 @@ bool CreateSwapChainResources(UINT width, UINT height) {
 
 void ReleaseSwapChainResources() {
     g_backgroundBrush.Reset();
-    g_textBrush.Reset();
-    g_textFormat.Reset();
+    g_bottomLineTextBrush.Reset();
+    g_bottomLineTextFormat.Reset();
+    g_topLineTextBrush.Reset();
+    g_topLineTextFormat.Reset();
     g_compositionVisual.Reset();
     g_compositionTarget.Reset();
     g_compositionDevice.Reset();
@@ -1788,18 +1861,28 @@ void RenderOverlay() {
     g_dc->BeginDraw();
     g_dc->Clear(D2D1::ColorF(0, 0, 0, 0));
 
-    // Update format time and format the text.
+    // Update format time.
     GetLocalTime(&g_formatTime);
     g_formatIndex++;
 
-    PCWSTR rawText = g_settings.text.get();
-    WCHAR formattedText[1024] = {};
-    if (rawText && *rawText) {
-        FormatLine(formattedText, ARRAYSIZE(formattedText), rawText);
+    // Format both lines.
+    PCWSTR rawTopText = g_settings.topLine.text.get();
+    WCHAR formattedTopText[1024] = {};
+    if (rawTopText && *rawTopText) {
+        FormatLine(formattedTopText, ARRAYSIZE(formattedTopText), rawTopText);
     }
-    PCWSTR text = formattedText;
 
-    if (*text && g_textFormat && g_textBrush) {
+    PCWSTR rawBottomText = g_settings.bottomLine.text.get();
+    WCHAR formattedBottomText[1024] = {};
+    if (rawBottomText && *rawBottomText) {
+        FormatLine(formattedBottomText, ARRAYSIZE(formattedBottomText),
+                   rawBottomText);
+    }
+
+    bool hasTopLine = *formattedTopText && g_topLineTextFormat;
+    bool hasBottomLine = *formattedBottomText && g_bottomLineTextFormat;
+
+    if (hasTopLine || hasBottomLine) {
         HMONITOR monitor = GetMonitorById(g_settings.monitor - 1);
         if (!monitor) {
             monitor = MonitorFromPoint({0, 0}, MONITOR_DEFAULTTONEAREST);
@@ -1809,56 +1892,101 @@ void RenderOverlay() {
         if (GetMonitorInfo(monitor, &monitorInfo)) {
             RECT workArea = monitorInfo.rcWork;
 
-            ComPtr<IDWriteTextLayout> textLayout;
-            g_dwriteFactory->CreateTextLayout(text, (UINT32)wcslen(text),
-                                              g_textFormat.Get(), (FLOAT)width,
-                                              (FLOAT)height, &textLayout);
+            // Create text layouts for both lines.
+            ComPtr<IDWriteTextLayout> topLayout;
+            ComPtr<IDWriteTextLayout> bottomLayout;
+            float topWidth = 0, topHeight = 0;
+            float bottomWidth = 0, bottomHeight = 0;
 
-            if (textLayout) {
-                DWRITE_TEXT_METRICS metrics;
-                textLayout->GetMetrics(&metrics);
-
-                float textWidth = metrics.width;
-                float textHeight = metrics.height;
-                float workWidth = (float)(workArea.right - workArea.left);
-                float workHeight = (float)(workArea.bottom - workArea.top);
-
-                // Set layout width to actual text width so center alignment
-                // works correctly for positioning.
-                textLayout->SetMaxWidth(textWidth);
-
-                // Calculate position based on percentage (0-100).
-                // The text is centered at the percentage point.
-                float x = workArea.left +
-                          (workWidth - textWidth) *
-                              (g_settings.horizontalPosition / 100.0f);
-                float y =
-                    workArea.top + (workHeight - textHeight) *
-                                       (g_settings.verticalPosition / 100.0f);
-
-                // Draw background if enabled.
-                if (g_backgroundBrush) {
-                    float padding = (float)g_settings.backgroundPadding;
-                    float radius = (float)g_settings.backgroundCornerRadius;
-                    D2D1_ROUNDED_RECT backgroundRect =
-                        D2D1::RoundedRect(D2D1::RectF(x - padding, y - padding,
-                                                      x + textWidth + padding,
-                                                      y + textHeight + padding),
-                                          radius, radius);
-                    g_dc->FillRoundedRectangle(backgroundRect,
-                                               g_backgroundBrush.Get());
+            if (hasTopLine) {
+                g_dwriteFactory->CreateTextLayout(
+                    formattedTopText, (UINT32)wcslen(formattedTopText),
+                    g_topLineTextFormat.Get(), (FLOAT)width, (FLOAT)height,
+                    &topLayout);
+                if (topLayout) {
+                    DWRITE_TEXT_METRICS metrics;
+                    topLayout->GetMetrics(&metrics);
+                    topWidth = metrics.width;
+                    topHeight = metrics.height;
+                    topLayout->SetMaxWidth(topWidth);
                 }
+            }
 
-                // Use a layer with opacity so color emoji also respect alpha.
-                float opacity = g_settings.colorA / 255.0f;
+            if (hasBottomLine) {
+                g_dwriteFactory->CreateTextLayout(
+                    formattedBottomText, (UINT32)wcslen(formattedBottomText),
+                    g_bottomLineTextFormat.Get(), (FLOAT)width, (FLOAT)height,
+                    &bottomLayout);
+                if (bottomLayout) {
+                    DWRITE_TEXT_METRICS metrics;
+                    bottomLayout->GetMetrics(&metrics);
+                    bottomWidth = metrics.width;
+                    bottomHeight = metrics.height;
+                    bottomLayout->SetMaxWidth(bottomWidth);
+                }
+            }
+
+            // Calculate combined dimensions.
+            float totalWidth = std::max(topWidth, bottomWidth);
+            float totalHeight = topHeight + bottomHeight;
+            float workWidth = (float)(workArea.right - workArea.left);
+            float workHeight = (float)(workArea.bottom - workArea.top);
+
+            // Calculate position for the combined block.
+            float blockX = workArea.left +
+                           (workWidth - totalWidth) *
+                               (g_settings.horizontalPosition / 100.0f);
+            float blockY = workArea.top +
+                           (workHeight - totalHeight) *
+                               (g_settings.verticalPosition / 100.0f);
+
+            // Draw background if enabled.
+            if (g_backgroundBrush) {
+                float padding = (float)g_settings.backgroundPadding;
+                float radius = (float)g_settings.backgroundCornerRadius;
+                D2D1_ROUNDED_RECT backgroundRect = D2D1::RoundedRect(
+                    D2D1::RectF(blockX - padding, blockY - padding,
+                                blockX + totalWidth + padding,
+                                blockY + totalHeight + padding),
+                    radius, radius);
+                g_dc->FillRoundedRectangle(backgroundRect,
+                                           g_backgroundBrush.Get());
+            }
+
+            // Draw top line.
+            if (topLayout) {
+                float topX = blockX + (totalWidth - topWidth) / 2.0f;
+                float topY = blockY;
+
+                float opacity = g_settings.topLine.colorA / 255.0f;
                 g_dc->PushLayer(
                     D2D1::LayerParameters(D2D1::InfiniteRect(), nullptr,
                                           D2D1_ANTIALIAS_MODE_PER_PRIMITIVE,
                                           D2D1::IdentityMatrix(), opacity),
                     nullptr);
 
-                g_dc->DrawTextLayout(D2D1::Point2F(x, y), textLayout.Get(),
-                                     g_textBrush.Get(),
+                g_dc->DrawTextLayout(D2D1::Point2F(topX, topY), topLayout.Get(),
+                                     g_topLineTextBrush.Get(),
+                                     D2D1_DRAW_TEXT_OPTIONS_ENABLE_COLOR_FONT);
+
+                g_dc->PopLayer();
+            }
+
+            // Draw bottom line.
+            if (bottomLayout) {
+                float bottomX = blockX + (totalWidth - bottomWidth) / 2.0f;
+                float bottomY = blockY + topHeight;
+
+                float opacity = g_settings.bottomLine.colorA / 255.0f;
+                g_dc->PushLayer(
+                    D2D1::LayerParameters(D2D1::InfiniteRect(), nullptr,
+                                          D2D1_ANTIALIAS_MODE_PER_PRIMITIVE,
+                                          D2D1::IdentityMatrix(), opacity),
+                    nullptr);
+
+                g_dc->DrawTextLayout(D2D1::Point2F(bottomX, bottomY),
+                                     bottomLayout.Get(),
+                                     g_bottomLineTextBrush.Get(),
                                      D2D1_DRAW_TEXT_OPTIONS_ENABLE_COLOR_FONT);
 
                 g_dc->PopLayer();
@@ -1998,8 +2126,62 @@ HWND WINAPI CreateWindowExW_Hook(DWORD dwExStyle,
 ////////////////////////////////////////////////////////////////////////////////
 // Settings
 
+void LoadLineSettings(LineSettings& line, PCWSTR prefix, int defaultFontSize) {
+    WCHAR settingName[64];
+
+    swprintf_s(settingName, L"%s.text", prefix);
+    line.text = WindhawkUtils::StringSetting::make(settingName);
+
+    swprintf_s(settingName, L"%s.fontSize", prefix);
+    line.fontSize = Wh_GetIntSetting(settingName);
+    if (line.fontSize <= 0) {
+        line.fontSize = defaultFontSize;
+    }
+
+    swprintf_s(settingName, L"%s.textColor", prefix);
+    PCWSTR textColor = Wh_GetStringSetting(settingName);
+    if (!ParseColor(textColor, &line.colorA, &line.colorR, &line.colorG,
+                    &line.colorB)) {
+        line.colorA = 0xC0;
+        line.colorR = 0xFF;
+        line.colorG = 0xFF;
+        line.colorB = 0xFF;
+    }
+    Wh_FreeStringSetting(textColor);
+
+    swprintf_s(settingName, L"%s.fontFamily", prefix);
+    line.fontFamily = WindhawkUtils::StringSetting::make(settingName);
+
+    swprintf_s(settingName, L"%s.fontWeight", prefix);
+    PCWSTR fontWeight = Wh_GetStringSetting(settingName);
+    line.fontWeight = 400;
+    if (wcscmp(fontWeight, L"Thin") == 0) {
+        line.fontWeight = 100;
+    } else if (wcscmp(fontWeight, L"Light") == 0) {
+        line.fontWeight = 300;
+    } else if (wcscmp(fontWeight, L"Normal") == 0) {
+        line.fontWeight = 400;
+    } else if (wcscmp(fontWeight, L"Medium") == 0) {
+        line.fontWeight = 500;
+    } else if (wcscmp(fontWeight, L"SemiBold") == 0) {
+        line.fontWeight = 600;
+    } else if (wcscmp(fontWeight, L"Bold") == 0) {
+        line.fontWeight = 700;
+    } else if (wcscmp(fontWeight, L"ExtraBold") == 0) {
+        line.fontWeight = 800;
+    }
+    Wh_FreeStringSetting(fontWeight);
+
+    swprintf_s(settingName, L"%s.fontStyle", prefix);
+    PCWSTR fontStyle = Wh_GetStringSetting(settingName);
+    line.fontItalic = wcscmp(fontStyle, L"Italic") == 0;
+    Wh_FreeStringSetting(fontStyle);
+}
+
 void LoadSettings() {
-    g_settings.text = WindhawkUtils::StringSetting::make(L"text");
+    LoadLineSettings(g_settings.topLine, L"topLine", 48);
+    LoadLineSettings(g_settings.bottomLine, L"bottomLine", 32);
+
     g_settings.showSeconds = Wh_GetIntSetting(L"showSeconds");
     g_settings.timeFormat = WindhawkUtils::StringSetting::make(L"timeFormat");
     g_settings.dateFormat = WindhawkUtils::StringSetting::make(L"dateFormat");
@@ -2008,46 +2190,6 @@ void LoadSettings() {
     if (g_settings.refreshInterval <= 0) {
         g_settings.refreshInterval = 1;
     }
-
-    g_settings.fontSize = Wh_GetIntSetting(L"fontSize");
-    if (g_settings.fontSize <= 0) {
-        g_settings.fontSize = 48;
-    }
-
-    PCWSTR textColor = Wh_GetStringSetting(L"textColor");
-    if (!ParseColor(textColor, &g_settings.colorA, &g_settings.colorR,
-                    &g_settings.colorG, &g_settings.colorB)) {
-        g_settings.colorA = 0x80;
-        g_settings.colorR = 0xFF;
-        g_settings.colorG = 0xFF;
-        g_settings.colorB = 0xFF;
-    }
-    Wh_FreeStringSetting(textColor);
-
-    g_settings.fontFamily = WindhawkUtils::StringSetting::make(L"fontFamily");
-
-    PCWSTR fontWeight = Wh_GetStringSetting(L"fontWeight");
-    g_settings.fontWeight = 400;
-    if (wcscmp(fontWeight, L"Thin") == 0) {
-        g_settings.fontWeight = 100;
-    } else if (wcscmp(fontWeight, L"Light") == 0) {
-        g_settings.fontWeight = 300;
-    } else if (wcscmp(fontWeight, L"Normal") == 0) {
-        g_settings.fontWeight = 400;
-    } else if (wcscmp(fontWeight, L"Medium") == 0) {
-        g_settings.fontWeight = 500;
-    } else if (wcscmp(fontWeight, L"SemiBold") == 0) {
-        g_settings.fontWeight = 600;
-    } else if (wcscmp(fontWeight, L"Bold") == 0) {
-        g_settings.fontWeight = 700;
-    } else if (wcscmp(fontWeight, L"ExtraBold") == 0) {
-        g_settings.fontWeight = 800;
-    }
-    Wh_FreeStringSetting(fontWeight);
-
-    PCWSTR fontStyle = Wh_GetStringSetting(L"fontStyle");
-    g_settings.fontItalic = wcscmp(fontStyle, L"Italic") == 0;
-    Wh_FreeStringSetting(fontStyle);
 
     g_settings.backgroundEnabled = Wh_GetIntSetting(L"background.enabled");
 
