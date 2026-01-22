@@ -344,50 +344,100 @@ bool IsTargetCoreWindow(HWND hWnd) {
     // The strings were collected from here:
     // https://github.com/m417z/windows-language-files
     static const std::unordered_set<std::wstring> newNotificationStrings = {
-        L"Jakinarazpen berria",
-        L"Jauns paziņojums",
-        L"Naujas pranešimas",
-        L"Neue Benachrichtigung",
-        L"New notification",
-        L"Nieuwe melding",
-        L"Notificació nova",
-        L"Notificación nueva",
-        L"Notificare nouă",
-        L"Nouvelle notification",
-        L"Nova notificação",
-        L"Nova notificación",
-        L"Nova obavijesti",
-        L"Nové oznámení",
-        L"Nové oznámenie",
-        L"Novo obaveštenje",
-        L"Novo obvestilo",
-        L"Nowe powiadomienie",
-        L"Nueva notificación",
-        L"Nuova notifica",
-        L"Ny meddelelse",
-        L"Ny varsling",
-        L"Nytt meddelande",
-        L"Pemberitahuan baru",
-        L"Thông báo mới",
-        L"Új értesítés",
-        L"Uus teatis",
-        L"Uusi ilmoitus",
-        L"Yeni bildirim",
-        L"Νέα ειδοποίηση",
-        L"Нове сповіщення",
-        L"Ново известие",
-        L"Новое уведомление",
-        L"הודעה חדשה",
-        L"\u200f\u200fإعلام جديد",
-        L"การแจ้งให้ทราบใหม่",
-        L"새 알림",
-        L"新しい通知",
-        L"新通知",
+        L"Nuwe kennisgewing", // AF-ZA
+        L"አዲስ ማሳወቂያ", // AM-ET
+        L"নতুন জাননী", // AS-IN
+        L"Yeni bildiriş", // AZ-LATN-AZ
+        L"Новае апавяшчэнне", // BE-BY
+        L"নতুন বিজ্ঞপ্তি", // BN-IN
+        L"Novo obavještenje", // BS-LATN-BA
+        L"Notificació nova", // CA-ES-VALENCIA
+        L"ᎢᏤᎢ ᎧᏃᎮᏓ", // CHR-CHER-US
+        L"Hysbysiad newydd", // CY-GB
+        L"اعلان جدید", // FA-IR
+        L"Bagong notification", // FIL-PH
+        L"Fógra nua", // GA-IE
+        L"Brath ùr", // GD-GB
+        L"નવી સૂચના", // GU-IN
+        L"नई अधिसूचना", // HI-IN
+        L"Նոր ծանուցում", // HY-AM
+        L"Ný tilkynning", // IS-IS
+        L"ახალი შეტყობინება", // KA-GE
+        L"Жаңа хабарландыру", // KK-KZ
+        L"ការ​ជូន​ដំណឹង​ថ្មី", // KM-KH
+        L"ಹೊಸ ಪ್ರಕಟಣೆ", // KN-IN
+        L"नवी अधिसुचोवणी", // KOK-IN
+        L"Nei Notifikatioun", // LB-LU
+        L"ການແຈ້ງເຕືອນໃໝ່", // LO-LA
+        L"Whakamōhiotanga hōu", // MI-NZ
+        L"Ново известување", // MK-MK
+        L"പുതിയ അറിയിപ്പ്", // ML-IN
+        L"नवीन सूचना", // MR-IN
+        L"Pemberitahuan baharu", // MS-MY
+        L"Notifika ġdida", // MT-MT
+        L"नयाँ सूचना", // NE-NP
+        L"Nytt varsel", // NN-NO
+        L"ନୂତନ ବିଜ୍ଞପ୍ତି", // OR-IN
+        L"ਨਵੀਂ ਸੂਚਨਾ", // PA-IN
+        L"Musuq willana", // QUZ-PE
+        L"Njoftim i ri", // SQ-AL
+        L"Ново обавјештење", // SR-CYRL-BA
+        L"Ново обавештење", // SR-CYRL-RS
+        L"புதிய அறிவிப்பு", // TA-IN
+        L"కొత్త నోటిఫికేషన్", // TE-IN
+        L"Яңа белдерү", // TT-RU
+        L"يېڭى ئۇقتۇرۇش", // UG-CN
+        L"نئی اطلاع", // UR-PK
+        L"Yangi xabarnoma", // UZ-LATN-UZ
+        L"\u200f\u200fإعلام جديد", // AR-SA
+        L"Ново известие", // BG-BG
+        L"Notificació nova", // CA-ES
+        L"Nové oznámení", // CS-CZ
+        L"Ny meddelelse", // DA-DK
+        L"Neue Benachrichtigung", // DE-DE
+        L"Νέα ειδοποίηση", // EL-GR
+        L"New notification", // EN-GB
+        L"New notification", // EN-US
+        L"Notificación nueva", // ES-ES
+        L"Nueva notificación", // ES-MX
+        L"Uus teatis", // ET-EE
+        L"Jakinarazpen berria", // EU-ES
+        L"Uusi ilmoitus", // FI-FI
+        L"Nouvelle notification", // FR-CA
+        L"Nouvelle notification", // FR-FR
+        L"Nova notificación", // GL-ES
+        L"הודעה חדשה", // HE-IL
+        L"Nova obavijesti", // HR-HR
+        L"Új értesítés", // HU-HU
+        L"Pemberitahuan baru", // ID-ID
+        L"Nuova notifica", // IT-IT
+        L"新しい通知", // JA-JP
+        L"새 알림", // KO-KR
+        L"Naujas pranešimas", // LT-LT
+        L"Jauns paziņojums", // LV-LV
+        L"Ny varsling", // NB-NO
+        L"Nieuwe melding", // NL-NL
+        L"Nowe powiadomienie", // PL-PL
+        L"Nova notificação", // PT-BR
+        L"Nova notificação", // PT-PT
+        L"Notificare nouă", // RO-RO
+        L"Новое уведомление", // RU-RU
+        L"Nové oznámenie", // SK-SK
+        L"Novo obvestilo", // SL-SI
+        L"Novo obaveštenje", // SR-LATN-RS
+        L"Nytt meddelande", // SV-SE
+        L"การแจ้งให้ทราบใหม่", // TH-TH
+        L"Yeni bildirim", // TR-TR
+        L"Нове сповіщення", // UK-UA
+        L"Thông báo mới", // VI-VN
+        L"新通知", // ZH-CN
+        L"新通知", // ZH-TW
     };
 
-    WCHAR szWindowText[256];
+    WCHAR szWindowText[256]{};
     if (GetWindowText(hWnd, szWindowText, ARRAYSIZE(szWindowText)) == 0 ||
         !newNotificationStrings.contains(szWindowText)) {
+        Wh_Log(L"Not targeting CoreWindow, window text: %s", szWindowText);
         return false;
     }
 
