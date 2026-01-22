@@ -2233,7 +2233,10 @@ void CreateOverlayWindow() {
     wc.lpfnWndProc = OverlayWndProc;
     wc.hInstance = hInstance;
     wc.lpszClassName = OVERLAY_WINDOW_CLASS;
-    RegisterClass(&wc);
+    if (!RegisterClass(&wc)) {
+        Wh_Log(L"Failed to register overlay window class: %u", GetLastError());
+        return;
+    }
 
     RECT rc;
     GetWindowRect(hWorkerW, &rc);
@@ -2281,7 +2284,10 @@ void CreateMessageWindow() {
     wc.lpfnWndProc = MessageWndProc;
     wc.hInstance = hInstance;
     wc.lpszClassName = MESSAGE_WINDOW_CLASS;
-    RegisterClass(&wc);
+    if (!RegisterClass(&wc)) {
+        Wh_Log(L"Failed to register message window class: %u", GetLastError());
+        return;
+    }
 
     // Create a hidden top-level window (not message-only) to receive
     // WM_DISPLAYCHANGE which is only sent to top-level windows.
