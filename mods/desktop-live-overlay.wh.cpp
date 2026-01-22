@@ -233,7 +233,14 @@ showing time, date, system metrics, weather, and more.
 using namespace std::literals;
 using Microsoft::WRL::ComPtr;
 
-#define TIMER_ID_REFRESH 1
+// Overlay window timer IDs.
+#define TIMER_ID_OVERLAY_REFRESH 1
+
+// Message window timer IDs.
+#define TIMER_ID_MSG_DISPLAY_CHANGE 1
+#define TIMER_ID_MSG_RECREATE_OVERLAY 2
+
+#define WM_APP_CLEANUP (WM_APP + 1)
 #define OVERLAY_WINDOW_CLASS (L"DesktopOverlay_" WH_MOD_ID)
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -2124,12 +2131,12 @@ void ScheduleNextUpdate() {
     }
 
     UINT timeout = GetNextUpdateTimeout();
-    SetTimer(g_overlayWnd, TIMER_ID_REFRESH, timeout, nullptr);
+    SetTimer(g_overlayWnd, TIMER_ID_OVERLAY_REFRESH, timeout, nullptr);
 }
 
 void StopRefreshTimer() {
     if (g_overlayWnd) {
-        KillTimer(g_overlayWnd, TIMER_ID_REFRESH);
+        KillTimer(g_overlayWnd, TIMER_ID_OVERLAY_REFRESH);
     }
 }
 
@@ -2166,13 +2173,18 @@ void HandleDisplayChange() {
     }
 }
 
+// Forward declarations.
+void CreateOverlayWindow();
+void DestroyOverlayWindow(HWND hWnd);
+void DestroyMessageWindow(HWND hWnd);
+
 LRESULT CALLBACK OverlayWndProc(HWND hWnd,
                                 UINT uMsg,
                                 WPARAM wParam,
                                 LPARAM lParam) {
     switch (uMsg) {
         case WM_TIMER:
-            if (!g_unloading && wParam == TIMER_ID_REFRESH) {
+            if (!g_unloading && wParam == TIMER_ID_OVERLAY_REFRESH) {
                 RenderOverlay();
                 ScheduleNextUpdate();
                 return 0;
@@ -2188,11 +2200,25 @@ LRESULT CALLBACK OverlayWndProc(HWND hWnd,
             }
             break;
         }
+
+        case WM_DESTROY:
+            Wh_Log(L"Overlay WM_DESTROY");
+            StopRefreshTimer();
+            ReleaseSwapChainResources();
+            g_overlayWnd = nullptr;
+            // Schedule recreation if not unloading.
+            if (!g_unloading && g_messageWnd) {
+                SetTimer(g_messageWnd, TIMER_ID_MSG_RECREATE_OVERLAY, 200,
+                         nullptr);
+            }
+            return 0;
+
+        case WM_APP_CLEANUP:
+            DestroyOverlayWindow(hWnd);
+            return 0;
     }
     return DefWindowProc(hWnd, uMsg, wParam, lParam);
 }
-
-#define TIMER_ID_DISPLAY_CHANGE 1
 
 LRESULT CALLBACK MessageWndProc(HWND hWnd,
                                 UINT uMsg,
@@ -2203,15 +2229,26 @@ LRESULT CALLBACK MessageWndProc(HWND hWnd,
             Wh_Log(L"WM_DISPLAYCHANGE received");
             if (!g_unloading) {
                 // Delay handling to allow WorkerW to resize first.
-                SetTimer(hWnd, TIMER_ID_DISPLAY_CHANGE, 200, nullptr);
+                SetTimer(hWnd, TIMER_ID_MSG_DISPLAY_CHANGE, 200, nullptr);
             }
             return 0;
 
         case WM_TIMER:
-            if (wParam == TIMER_ID_DISPLAY_CHANGE && !g_unloading) {
-                KillTimer(hWnd, TIMER_ID_DISPLAY_CHANGE);
-                HandleDisplayChange();
+            if (g_unloading) {
+                return 0;
             }
+            if (wParam == TIMER_ID_MSG_DISPLAY_CHANGE) {
+                KillTimer(hWnd, TIMER_ID_MSG_DISPLAY_CHANGE);
+                HandleDisplayChange();
+            } else if (wParam == TIMER_ID_MSG_RECREATE_OVERLAY) {
+                KillTimer(hWnd, TIMER_ID_MSG_RECREATE_OVERLAY);
+                Wh_Log(L"Recreating overlay window");
+                CreateOverlayWindow();
+            }
+            return 0;
+
+        case WM_APP_CLEANUP:
+            DestroyMessageWindow(hWnd);
             return 0;
     }
     return DefWindowProc(hWnd, uMsg, wParam, lParam);
@@ -2220,6 +2257,33 @@ LRESULT CALLBACK MessageWndProc(HWND hWnd,
 ////////////////////////////////////////////////////////////////////////////////
 // Overlay window management
 
+bool g_overlayClassRegistered = false;
+
+bool RegisterOverlayWindowClass() {
+    if (g_overlayClassRegistered) {
+        return true;
+    }
+
+    WNDCLASS wc = {};
+    wc.lpfnWndProc = OverlayWndProc;
+    wc.hInstance = GetCurrentModuleHandle();
+    wc.lpszClassName = OVERLAY_WINDOW_CLASS;
+    if (!RegisterClass(&wc)) {
+        Wh_Log(L"Failed to register overlay window class: %u", GetLastError());
+        return false;
+    }
+
+    g_overlayClassRegistered = true;
+    return true;
+}
+
+void UnregisterOverlayWindowClass() {
+    if (g_overlayClassRegistered) {
+        UnregisterClass(OVERLAY_WINDOW_CLASS, GetCurrentModuleHandle());
+        g_overlayClassRegistered = false;
+    }
+}
+
 void CreateOverlayWindow() {
     HWND hWorkerW = GetWorkerW();
     if (!hWorkerW) {
@@ -2227,16 +2291,11 @@ void CreateOverlayWindow() {
         return;
     }
 
-    HINSTANCE hInstance = GetCurrentModuleHandle();
-
-    WNDCLASS wc = {};
-    wc.lpfnWndProc = OverlayWndProc;
-    wc.hInstance = hInstance;
-    wc.lpszClassName = OVERLAY_WINDOW_CLASS;
-    if (!RegisterClass(&wc)) {
-        Wh_Log(L"Failed to register overlay window class: %u", GetLastError());
+    if (!RegisterOverlayWindowClass()) {
         return;
     }
+
+    HINSTANCE hInstance = GetCurrentModuleHandle();
 
     RECT rc;
     GetWindowRect(hWorkerW, &rc);
@@ -2245,12 +2304,11 @@ void CreateOverlayWindow() {
 
     g_overlayWnd = CreateWindowEx(
         WS_EX_NOREDIRECTIONBITMAP | WS_EX_TRANSPARENT | WS_EX_NOACTIVATE,
-        wc.lpszClassName, nullptr, WS_CHILD | WS_VISIBLE, 0, 0, width, height,
-        hWorkerW, nullptr, wc.hInstance, nullptr);
+        OVERLAY_WINDOW_CLASS, nullptr, WS_CHILD | WS_VISIBLE, 0, 0, width,
+        height, hWorkerW, nullptr, hInstance, nullptr);
 
     if (!g_overlayWnd) {
         Wh_Log(L"Failed to create overlay window: %u", GetLastError());
-        UnregisterClass(OVERLAY_WINDOW_CLASS, hInstance);
         return;
     }
 
@@ -2260,16 +2318,11 @@ void CreateOverlayWindow() {
     }
 }
 
-void DestroyOverlayWindow() {
-    StopRefreshTimer();
+void DestroyOverlayWindow(HWND hWnd) {
     ReleaseSwapChainResources();
 
-    if (g_overlayWnd) {
-        DestroyWindow(g_overlayWnd);
-        g_overlayWnd = nullptr;
-    }
-
-    UnregisterClass(OVERLAY_WINDOW_CLASS, GetCurrentModuleHandle());
+    DestroyWindow(hWnd);
+    g_overlayWnd = nullptr;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -2277,35 +2330,52 @@ void DestroyOverlayWindow() {
 
 #define MESSAGE_WINDOW_CLASS L"DesktopLiveOverlay_Message_" WH_MOD_ID
 
-void CreateMessageWindow() {
-    HINSTANCE hInstance = GetCurrentModuleHandle();
+bool g_messageClassRegistered = false;
+
+bool RegisterMessageWindowClass() {
+    if (g_messageClassRegistered) {
+        return true;
+    }
 
     WNDCLASS wc = {};
     wc.lpfnWndProc = MessageWndProc;
-    wc.hInstance = hInstance;
+    wc.hInstance = GetCurrentModuleHandle();
     wc.lpszClassName = MESSAGE_WINDOW_CLASS;
     if (!RegisterClass(&wc)) {
         Wh_Log(L"Failed to register message window class: %u", GetLastError());
-        return;
+        return false;
     }
 
-    // Create a hidden top-level window (not message-only) to receive
-    // WM_DISPLAYCHANGE which is only sent to top-level windows.
-    g_messageWnd = CreateWindowEx(0, wc.lpszClassName, nullptr, 0, 0, 0, 0, 0,
-                                  nullptr, nullptr, hInstance, nullptr);
-    if (!g_messageWnd) {
-        Wh_Log(L"Failed to create message window: %u", GetLastError());
-        UnregisterClass(MESSAGE_WINDOW_CLASS, hInstance);
+    g_messageClassRegistered = true;
+    return true;
+}
+
+void UnregisterMessageWindowClass() {
+    if (g_messageClassRegistered) {
+        UnregisterClass(MESSAGE_WINDOW_CLASS, GetCurrentModuleHandle());
+        g_messageClassRegistered = false;
     }
 }
 
-void DestroyMessageWindow() {
-    if (g_messageWnd) {
-        DestroyWindow(g_messageWnd);
-        g_messageWnd = nullptr;
+void CreateMessageWindow() {
+    if (!RegisterMessageWindowClass()) {
+        return;
     }
 
-    UnregisterClass(MESSAGE_WINDOW_CLASS, GetCurrentModuleHandle());
+    HINSTANCE hInstance = GetCurrentModuleHandle();
+
+    // Create a hidden top-level window (not message-only) to receive
+    // WM_DISPLAYCHANGE which is only sent to top-level windows.
+    g_messageWnd = CreateWindowEx(0, MESSAGE_WINDOW_CLASS, nullptr, 0, 0, 0, 0,
+                                  0, nullptr, nullptr, hInstance, nullptr);
+    if (!g_messageWnd) {
+        Wh_Log(L"Failed to create message window: %u", GetLastError());
+    }
+}
+
+void DestroyMessageWindow(HWND hWnd) {
+    DestroyWindow(hWnd);
+    g_messageWnd = nullptr;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -2507,15 +2577,17 @@ void Wh_ModUninit() {
 
     g_unloading = true;
 
+    // Destroy windows from their owning thread.
     if (g_overlayWnd) {
-        RunFromWindowThread(
-            g_overlayWnd,
-            [](void*) {
-                DestroyOverlayWindow();
-                DestroyMessageWindow();
-            },
-            nullptr);
+        SendMessage(g_overlayWnd, WM_APP_CLEANUP, 0, 0);
     }
+    if (g_messageWnd) {
+        SendMessage(g_messageWnd, WM_APP_CLEANUP, 0, 0);
+    }
+
+    // Unregister classes regardless of whether windows still exist.
+    UnregisterOverlayWindowClass();
+    UnregisterMessageWindowClass();
 
     WeatherUpdateThreadUninit();
     UninitMetrics();
