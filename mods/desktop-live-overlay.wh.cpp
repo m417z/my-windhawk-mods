@@ -2,7 +2,7 @@
 // @id              desktop-live-overlay
 // @name            Desktop Live Overlay
 // @description     Display live, customizable content on the desktop behind icons. Perfect for showing time, date, system metrics, weather, and more.
-// @version         1.0
+// @version         1.0.1
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
@@ -2134,12 +2134,6 @@ void ScheduleNextUpdate() {
     SetTimer(g_overlayWnd, TIMER_ID_OVERLAY_REFRESH, timeout, nullptr);
 }
 
-void StopRefreshTimer() {
-    if (g_overlayWnd) {
-        KillTimer(g_overlayWnd, TIMER_ID_OVERLAY_REFRESH);
-    }
-}
-
 void HandleDisplayChange() {
     Wh_Log(L"HandleDisplayChange");
 
@@ -2175,8 +2169,6 @@ void HandleDisplayChange() {
 
 // Forward declarations.
 void CreateOverlayWindow();
-void DestroyOverlayWindow(HWND hWnd);
-void DestroyMessageWindow(HWND hWnd);
 
 LRESULT CALLBACK OverlayWndProc(HWND hWnd,
                                 UINT uMsg,
@@ -2203,7 +2195,6 @@ LRESULT CALLBACK OverlayWndProc(HWND hWnd,
 
         case WM_DESTROY:
             Wh_Log(L"Overlay WM_DESTROY");
-            StopRefreshTimer();
             ReleaseSwapChainResources();
             g_overlayWnd = nullptr;
             // Schedule recreation if not unloading.
@@ -2214,7 +2205,7 @@ LRESULT CALLBACK OverlayWndProc(HWND hWnd,
             return 0;
 
         case WM_APP_CLEANUP:
-            DestroyOverlayWindow(hWnd);
+            DestroyWindow(hWnd);
             return 0;
     }
     return DefWindowProc(hWnd, uMsg, wParam, lParam);
@@ -2247,8 +2238,12 @@ LRESULT CALLBACK MessageWndProc(HWND hWnd,
             }
             return 0;
 
+        case WM_DESTROY:
+            g_messageWnd = nullptr;
+            return 0;
+
         case WM_APP_CLEANUP:
-            DestroyMessageWindow(hWnd);
+            DestroyWindow(hWnd);
             return 0;
     }
     return DefWindowProc(hWnd, uMsg, wParam, lParam);
@@ -2285,6 +2280,10 @@ void UnregisterOverlayWindowClass() {
 }
 
 void CreateOverlayWindow() {
+    if (g_overlayWnd) {
+        return;
+    }
+
     HWND hWorkerW = GetWorkerW();
     if (!hWorkerW) {
         Wh_Log(L"Failed to find WorkerW");
@@ -2316,13 +2315,6 @@ void CreateOverlayWindow() {
         RenderOverlay();
         ScheduleNextUpdate();
     }
-}
-
-void DestroyOverlayWindow(HWND hWnd) {
-    ReleaseSwapChainResources();
-
-    DestroyWindow(hWnd);
-    g_overlayWnd = nullptr;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -2358,6 +2350,10 @@ void UnregisterMessageWindowClass() {
 }
 
 void CreateMessageWindow() {
+    if (g_messageWnd) {
+        return;
+    }
+
     if (!RegisterMessageWindowClass()) {
         return;
     }
@@ -2371,11 +2367,6 @@ void CreateMessageWindow() {
     if (!g_messageWnd) {
         Wh_Log(L"Failed to create message window: %u", GetLastError());
     }
-}
-
-void DestroyMessageWindow(HWND hWnd) {
-    DestroyWindow(hWnd);
-    g_messageWnd = nullptr;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
