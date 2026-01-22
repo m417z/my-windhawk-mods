@@ -38,21 +38,20 @@ struct SYMBOL_HOOK {
           hookFunction(reinterpret_cast<void*>(hookFunction)),
           optional(optional) {}
 
-#ifdef WH_ENABLE_DEPRECATED_PARTS
-    SYMBOL_HOOK(std::vector<std::wstring>, void***, std::nullptr_t, bool) {
-        Wh_Log(
-            L"WARNING!!! Your mod triggered code which is no longer supported. "
-            L"It only compiles for backwards compatibility. Please update your "
-            L"mod.");
-    }
-
-    SYMBOL_HOOK(const SYMBOL_HOOK&) {
-        Wh_Log(
-            L"WARNING!!! Your mod triggered code which is no longer supported. "
-            L"It only compiles for backwards compatibility. Please update your "
-            L"mod.");
-    }
-#endif  // WH_ENABLE_DEPRECATED_PARTS
+    /**
+     * @brief A strong-type constructor without `originalFunction`.
+     * @since Windhawk v1.7.1
+     */
+    template <typename Prototype>
+    SYMBOL_HOOK(std::initializer_list<std::wstring_view> symbols,
+                nullptr_t,
+                Prototype* hookFunction = nullptr,
+                bool optional = false)
+        : symbols(CopySymbols(symbols)),
+          symbolsCount(symbols.size()),
+          originalFunction(nullptr),
+          hookFunction(reinterpret_cast<void*>(hookFunction)),
+          optional(optional) {}
 
     /**
      * @brief A default constructor.
@@ -148,7 +147,7 @@ void RemoveWindowSubclassFromAnyThread(HWND hWnd, WH_SUBCLASSPROC pfnSubclass);
  * @param hookFunction A pointer to the detour function, which will override the
  *     target function.
  * @param originalFunction A pointer to the trampoline function, which will be
- *     used to call the original target function.
+ *     used to call the original target function. Can be `nullptr`.
  * @return A boolean value indicating whether the function succeeded.
  */
 template <typename Prototype>
@@ -158,6 +157,19 @@ BOOL SetFunctionHook(Prototype* targetFunction,
     return Wh_SetFunctionHook(reinterpret_cast<void*>(targetFunction),
                               reinterpret_cast<void*>(hookFunction),
                               reinterpret_cast<void**>(originalFunction));
+}
+
+/**
+ * @brief A strong-type wrapper for `Wh_SetFunctionHook` without
+ *     `originalFunction`.
+ * @since Windhawk v1.7.1
+ */
+template <typename Prototype>
+BOOL SetFunctionHook(Prototype* targetFunction,
+                     Prototype* hookFunction,
+                     nullptr_t) {
+    return Wh_SetFunctionHook(reinterpret_cast<void*>(targetFunction),
+                              reinterpret_cast<void*>(hookFunction), nullptr);
 }
 
 /**
@@ -257,18 +269,35 @@ inline LRESULT WINAPI SubclassProcWrapper(HWND hWnd,
     return pfnSubclass(hWnd, uMsg, wParam, lParam, dwRefData);
 }
 
+struct SET_WINDOW_SUBCLASS_FROM_ANY_THREAD_PARAM {
+    SUBCLASSPROC pfnSubclass;
+    UINT_PTR uIdSubclass;
+    DWORD_PTR dwRefData;
+    BOOL result;
+};
+
+inline LRESULT WINAPI CallWndProcToSetWindowSubclass(int nCode,
+                                                     WPARAM wParam,
+                                                     LPARAM lParam) {
+    if (nCode == HC_ACTION) {
+        const CWPSTRUCT* cwp = (const CWPSTRUCT*)lParam;
+        if (cwp->message == GetSubclassRegisteredMsg() && cwp->wParam) {
+            SET_WINDOW_SUBCLASS_FROM_ANY_THREAD_PARAM* param =
+                (SET_WINDOW_SUBCLASS_FROM_ANY_THREAD_PARAM*)cwp->lParam;
+            param->result =
+                SetWindowSubclass(cwp->hwnd, param->pfnSubclass,
+                                  param->uIdSubclass, param->dwRefData);
+        }
+    }
+
+    return CallNextHookEx(nullptr, nCode, wParam, lParam);
+}
+
 }  // namespace detail
 
 inline BOOL SetWindowSubclassFromAnyThread(HWND hWnd,
                                            WH_SUBCLASSPROC pfnSubclass,
                                            DWORD_PTR dwRefData) {
-    struct SET_WINDOW_SUBCLASS_FROM_ANY_THREAD_PARAM {
-        SUBCLASSPROC pfnSubclass;
-        UINT_PTR uIdSubclass;
-        DWORD_PTR dwRefData;
-        BOOL result;
-    };
-
     DWORD dwThreadId = GetWindowThreadProcessId(hWnd, nullptr);
     if (dwThreadId == 0) {
         return FALSE;
@@ -279,33 +308,20 @@ inline BOOL SetWindowSubclassFromAnyThread(HWND hWnd,
                                  (UINT_PTR)pfnSubclass, dwRefData);
     }
 
-    HHOOK hook = SetWindowsHookEx(
-        WH_CALLWNDPROC,
-        [](int nCode, WPARAM wParam, LPARAM lParam) WINAPI -> LRESULT {
-            if (nCode == HC_ACTION) {
-                const CWPSTRUCT* cwp = (const CWPSTRUCT*)lParam;
-                if (cwp->message == detail::GetSubclassRegisteredMsg() &&
-                    cwp->wParam) {
-                    SET_WINDOW_SUBCLASS_FROM_ANY_THREAD_PARAM* param =
-                        (SET_WINDOW_SUBCLASS_FROM_ANY_THREAD_PARAM*)cwp->lParam;
-                    param->result =
-                        SetWindowSubclass(cwp->hwnd, param->pfnSubclass,
-                                          param->uIdSubclass, param->dwRefData);
-                }
-            }
-
-            return CallNextHookEx(nullptr, nCode, wParam, lParam);
-        },
-        nullptr, dwThreadId);
+    HHOOK hook =
+        SetWindowsHookEx(WH_CALLWNDPROC, detail::CallWndProcToSetWindowSubclass,
+                         nullptr, dwThreadId);
     if (!hook) {
         return FALSE;
     }
 
-    SET_WINDOW_SUBCLASS_FROM_ANY_THREAD_PARAM param;
-    param.pfnSubclass = detail::SubclassProcWrapper;
-    param.uIdSubclass = (UINT_PTR)pfnSubclass;
-    param.dwRefData = dwRefData;
-    param.result = FALSE;
+    detail::SET_WINDOW_SUBCLASS_FROM_ANY_THREAD_PARAM param{
+        .pfnSubclass = detail::SubclassProcWrapper,
+        .uIdSubclass = (UINT_PTR)pfnSubclass,
+        .dwRefData = dwRefData,
+        .result = FALSE,
+    };
+
     SendMessage(hWnd, detail::GetSubclassRegisteredMsg(), TRUE, (WPARAM)&param);
 
     UnhookWindowsHookEx(hook);

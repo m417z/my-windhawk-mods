@@ -3,7 +3,7 @@
         {
             "name": "MSVC x64",
             "includePath": [
-                "${workspaceFolder}/.vscode/windhawk_headers_1.6.1"
+                "${workspaceFolder}/.vscode/windhawk_headers_1.7.3"
             ],
             "defines": [
                 "UNICODE",
@@ -20,7 +20,7 @@
             "cppStandard": "c++23",
             "intelliSenseMode": "windows-msvc-x64",
             "forcedInclude": [
-                "${workspaceFolder}/.vscode/windhawk_headers_1.6.1/windhawk_api.h"
+                "${workspaceFolder}/.vscode/windhawk_headers_1.7.3/windhawk_api.h"
             ]
         }
     ],
