@@ -1,15 +1,15 @@
 // ==WindhawkMod==
 // @id              desktop-live-overlay
 // @name            Desktop Live Overlay
-// @description     Display custom content on the desktop behind icons
-// @version         0.1
+// @description     Display live, customizable content on the desktop behind icons. Perfect for showing time, date, system metrics, weather, and more.
+// @version         1.0
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
 // @homepage        https://m417z.com/
 // @include         explorer.exe
 // @architecture    x86-64
-// @compilerOptions -lcomctl32 -ldxgi -ld2d1 -ldwrite -ld3d11 -ldcomp -lwininet -lpdh -lpowrprof -lshlwapi
+// @compilerOptions -lcomctl32 -ldxgi -ld2d1 -ldwrite -ld3d11 -ldcomp -lwininet -lpdh -lpowrprof -lshcore -lshlwapi
 // ==/WindhawkMod==
 
 // Source code is published under The GNU General Public License v3.0.
@@ -24,26 +24,25 @@
 /*
 # Desktop Live Overlay
 
-Display custom content on the desktop behind icons, such as text. Uses the
-WorkerW technique combined with Direct2D and DirectComposition for proper
-per-pixel alpha transparency.
+Display live, customizable content on the desktop behind icons. Perfect for
+showing time, date, system metrics, weather, and more.
 
 ### Features
 
-* Customizable text content with dynamic patterns
-* Font family, size, weight, and style options
-* Text color with transparency support (ARGB format)
-* Percentage-based positioning
-* Multi-monitor support
+* Two customizable text lines with independent styling
+* Dynamic patterns for time, date, system info, and weather
+* Font family, size, weight, and style options per line
+* Text color with transparency support
+* Optional background with customizable color, padding, and corner radius
+* Customizable positioning
 
 ### Supported Patterns
 
 **Time/Date:**
-* `%time%` - Current time (respects system format)
-* `%date%` - Current date (respects system format)
+* `%time%` - Current time
+* `%date%` - Current date
 * `%weekday%` - Day of week name
-* `%weekday_num%` - Day of week as number (1-7, based on system first day of
-week)
+* `%weekday_num%` - Day of week as number (1-7)
 * `%weeknum%` - Week number of year
 * `%dayofyear%` - Day of year (1-366)
 * `%timezone%` - Timezone offset (e.g., +02:00)
@@ -52,8 +51,8 @@ week)
 * `%cpu%` - CPU usage percentage
 * `%ram%` - RAM usage percentage
 * `%battery%` - Battery percentage
-* `%battery_time%` - Battery time remaining (h:mm format)
-* `%power%` - Power consumption in watts (negative when discharging)
+* `%battery_time%` - Battery time remaining
+* `%power%` - Power consumption in watts
 * `%upload_speed%` - Network upload speed
 * `%download_speed%` - Network download speed
 * `%total_speed%` - Combined network speed
@@ -61,10 +60,12 @@ week)
 * `%disk_write%` - Disk write speed
 * `%disk_total%` - Combined disk I/O speed
 * `%gpu%` - GPU usage percentage
-* `%weather%` - Weather information from [wttr.in](https://wttr.in/)
+* `%weather%` - Weather from [wttr.in](https://wttr.in/)
 
 **Other:**
 * `%newline%` or `%n%` - Line break
+
+![Screenshot](https://i.imgur.com/BW52sWf.png)
 */
 // ==/WindhawkModReadme==
 
@@ -74,7 +75,7 @@ week)
   - text: "%time%"
     $name: Text
     $description: >-
-      Text to display. Supports patterns are listed in the mod description.
+      Text to display. Supported patterns are listed in the mod description.
   - fontSize: 48
     $name: Font size
     $description: Size of the text in points
@@ -110,7 +111,7 @@ week)
   - text: "%date%%n%%weather%"
     $name: Text
     $description: >-
-      Text to display. Supports patterns are listed in the mod description.
+      Text to display. Supported patterns are listed in the mod description.
   - fontSize: 32
     $name: Font size
     $description: Size of the text in points
@@ -216,6 +217,7 @@ week)
 #include <pdh.h>
 #include <pdhmsg.h>
 #include <powrprof.h>
+#include <shellscalingapi.h>
 #include <shlwapi.h>
 #include <wininet.h>
 #include <wrl/client.h>
@@ -344,6 +346,9 @@ ComPtr<ID2D1Factory1> g_d2dFactory;
 ComPtr<ID2D1Device> g_d2dDevice;
 ComPtr<IDWriteFactory> g_dwriteFactory;
 
+// Message-only window for receiving system notifications.
+HWND g_messageWnd;
+
 // Overlay window and resources.
 HWND g_overlayWnd;
 ComPtr<IDXGISwapChain1> g_swapChain;
@@ -357,8 +362,19 @@ ComPtr<IDWriteTextFormat> g_bottomLineTextFormat;
 ComPtr<ID2D1SolidColorBrush> g_bottomLineTextBrush;
 ComPtr<ID2D1SolidColorBrush> g_backgroundBrush;
 
+// Current DPI scale factor (1.0 = 96 DPI).
+float g_dpiScale = 1.0f;
+
 ////////////////////////////////////////////////////////////////////////////////
 // Utility functions
+
+float GetMonitorDpiScale(HMONITOR monitor) {
+    UINT dpiX = 96, dpiY = 96;
+    if (SUCCEEDED(GetDpiForMonitor(monitor, MDT_EFFECTIVE_DPI, &dpiX, &dpiY))) {
+        return dpiX / 96.0f;
+    }
+    return 1.0f;
+}
 
 using RunFromWindowThreadProc_t = void(WINAPI*)(void* parameter);
 
@@ -756,6 +772,7 @@ bool UpdateWeatherContent() {
     {
         std::lock_guard<std::mutex> guard(g_weatherMutex);
         g_weatherContent = weatherContent;
+        g_weatherLoaded = true;
     }
 
     return true;
@@ -766,10 +783,7 @@ DWORD WINAPI WeatherUpdateThread(LPVOID lpThreadParameter) {
     constexpr DWORD kSecondsForNormalUpdate = 600;  // 10 minutes
 
     while (true) {
-        bool success = UpdateWeatherContent();
-        if (success) {
-            g_weatherLoaded = true;
-        }
+        UpdateWeatherContent();
 
         DWORD seconds = kSecondsForNormalUpdate;
         if (!g_weatherLoaded && seconds > kSecondsForQuickRetry) {
@@ -797,9 +811,10 @@ bool IsSystemMetricsUsed() {
     return IsPatternUsed(L"%cpu%") || IsPatternUsed(L"%ram%") ||
            IsPatternUsed(L"%battery%") || IsPatternUsed(L"%battery_time%") ||
            IsPatternUsed(L"%power%") || IsPatternUsed(L"%upload_speed%") ||
-           IsPatternUsed(L"%download_speed%") || IsPatternUsed(L"%total_speed%") ||
-           IsPatternUsed(L"%disk_read%") || IsPatternUsed(L"%disk_write%") ||
-           IsPatternUsed(L"%disk_total%") || IsPatternUsed(L"%gpu%");
+           IsPatternUsed(L"%download_speed%") ||
+           IsPatternUsed(L"%total_speed%") || IsPatternUsed(L"%disk_read%") ||
+           IsPatternUsed(L"%disk_write%") || IsPatternUsed(L"%disk_total%") ||
+           IsPatternUsed(L"%gpu%");
 }
 
 void WeatherUpdateThreadInit() {
@@ -986,8 +1001,8 @@ PCWSTR GetCpuFormatted() {
             PDH_FMT_COUNTERVALUE val;
             if (PdhGetFormattedCounterValue(g_cpuCounter, PDH_FMT_DOUBLE,
                                             nullptr, &val) == ERROR_SUCCESS) {
-                int cpu = (std::min)(99, (int)val.doubleValue);
-                swprintf_s(g_cpuFormatted.buffer, L"%d%%", cpu);
+                swprintf_s(g_cpuFormatted.buffer, L"%d%%",
+                           (int)val.doubleValue);
             } else {
                 wcscpy_s(g_cpuFormatted.buffer, L"-");
             }
@@ -1249,12 +1264,7 @@ PCWSTR GetGpuFormatted() {
         if (g_metricsQuery && !g_gpuCounters.empty()) {
             PdhCollectQueryData(g_metricsQuery);
             double usage = QueryGpuUsage();
-            // Cap at 99 for consistent width.
-            int cappedUsage = static_cast<int>(usage);
-            if (cappedUsage > 99) {
-                cappedUsage = 99;
-            }
-            wsprintf(g_gpuFormatted.buffer, L"%d", cappedUsage);
+            swprintf_s(g_gpuFormatted.buffer, L"%d", (int)usage);
         } else {
             wcscpy_s(g_gpuFormatted.buffer, L"-");
         }
@@ -1762,6 +1772,14 @@ bool CreateSwapChainResources(UINT width, UINT height) {
         return false;
     }
 
+    // Get DPI scale for the selected monitor.
+    HMONITOR monitor = GetMonitorById(g_settings.monitor - 1);
+    if (!monitor) {
+        monitor = MonitorFromPoint({0, 0}, MONITOR_DEFAULTTONEAREST);
+    }
+    g_dpiScale = GetMonitorDpiScale(monitor);
+    Wh_Log(L"DPI scale: %.2f", g_dpiScale);
+
     // Create top line text format.
     PCWSTR topFontFamily = g_settings.topLine.fontFamily.get();
     if (!topFontFamily || !*topFontFamily) {
@@ -1773,7 +1791,8 @@ bool CreateSwapChainResources(UINT width, UINT height) {
         GetDWriteFontWeight(g_settings.topLine.fontWeight),
         g_settings.topLine.fontItalic ? DWRITE_FONT_STYLE_ITALIC
                                       : DWRITE_FONT_STYLE_NORMAL,
-        DWRITE_FONT_STRETCH_NORMAL, (FLOAT)g_settings.topLine.fontSize, L"",
+        DWRITE_FONT_STRETCH_NORMAL,
+        (FLOAT)g_settings.topLine.fontSize * g_dpiScale, L"",
         &g_topLineTextFormat);
     if (FAILED(hr)) {
         Wh_Log(L"CreateTextFormat (top) failed: 0x%08X", hr);
@@ -1783,10 +1802,9 @@ bool CreateSwapChainResources(UINT width, UINT height) {
     g_topLineTextFormat->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER);
 
     // Create top line text brush.
-    D2D1_COLOR_F topTextColor =
-        D2D1::ColorF(g_settings.topLine.colorR / 255.0f,
-                     g_settings.topLine.colorG / 255.0f,
-                     g_settings.topLine.colorB / 255.0f, 1.0f);
+    D2D1_COLOR_F topTextColor = D2D1::ColorF(
+        g_settings.topLine.colorR / 255.0f, g_settings.topLine.colorG / 255.0f,
+        g_settings.topLine.colorB / 255.0f, 1.0f);
     hr = g_dc->CreateSolidColorBrush(topTextColor, &g_topLineTextBrush);
     if (FAILED(hr)) {
         Wh_Log(L"CreateSolidColorBrush (top) failed: 0x%08X", hr);
@@ -1804,7 +1822,8 @@ bool CreateSwapChainResources(UINT width, UINT height) {
         GetDWriteFontWeight(g_settings.bottomLine.fontWeight),
         g_settings.bottomLine.fontItalic ? DWRITE_FONT_STYLE_ITALIC
                                          : DWRITE_FONT_STYLE_NORMAL,
-        DWRITE_FONT_STRETCH_NORMAL, (FLOAT)g_settings.bottomLine.fontSize, L"",
+        DWRITE_FONT_STRETCH_NORMAL,
+        (FLOAT)g_settings.bottomLine.fontSize * g_dpiScale, L"",
         &g_bottomLineTextFormat);
     if (FAILED(hr)) {
         Wh_Log(L"CreateTextFormat (bottom) failed: 0x%08X", hr);
@@ -1854,6 +1873,50 @@ void ReleaseSwapChainResources() {
     g_swapChain.Reset();
 }
 
+bool ResizeSwapChain(UINT width, UINT height) {
+    if (!g_swapChain || !g_dc) {
+        return false;
+    }
+
+    Wh_Log(L"ResizeSwapChain: %ux%u", width, height);
+
+    // Release the current render target.
+    g_dc->SetTarget(nullptr);
+
+    // Resize swap chain buffers.
+    HRESULT hr =
+        g_swapChain->ResizeBuffers(0, width, height, DXGI_FORMAT_UNKNOWN, 0);
+    if (FAILED(hr)) {
+        Wh_Log(L"ResizeBuffers failed: 0x%08X", hr);
+        return false;
+    }
+
+    // Recreate bitmap target from resized swap chain surface.
+    ComPtr<IDXGISurface2> surface;
+    hr = g_swapChain->GetBuffer(0, IID_PPV_ARGS(&surface));
+    if (FAILED(hr)) {
+        Wh_Log(L"GetBuffer failed: 0x%08X", hr);
+        return false;
+    }
+
+    D2D1_BITMAP_PROPERTIES1 bitmapProperties = {};
+    bitmapProperties.pixelFormat.alphaMode = D2D1_ALPHA_MODE_PREMULTIPLIED;
+    bitmapProperties.pixelFormat.format = DXGI_FORMAT_B8G8R8A8_UNORM;
+    bitmapProperties.bitmapOptions =
+        D2D1_BITMAP_OPTIONS_TARGET | D2D1_BITMAP_OPTIONS_CANNOT_DRAW;
+
+    ComPtr<ID2D1Bitmap1> targetBitmap;
+    hr = g_dc->CreateBitmapFromDxgiSurface(surface.Get(), bitmapProperties,
+                                           &targetBitmap);
+    if (FAILED(hr)) {
+        Wh_Log(L"CreateBitmapFromDxgiSurface failed: 0x%08X", hr);
+        return false;
+    }
+
+    g_dc->SetTarget(targetBitmap.Get());
+    return true;
+}
+
 void RenderOverlay() {
     Wh_Log(L"RenderOverlay called");
 
@@ -1899,7 +1962,17 @@ void RenderOverlay() {
 
         MONITORINFO monitorInfo{.cbSize = sizeof(monitorInfo)};
         if (GetMonitorInfo(monitor, &monitorInfo)) {
-            RECT workArea = monitorInfo.rcWork;
+            // Convert from virtual screen coordinates to overlay window
+            // coordinates. The overlay window covers the entire virtual screen,
+            // so we need to offset by the virtual screen origin.
+            int virtualScreenX = GetSystemMetrics(SM_XVIRTUALSCREEN);
+            int virtualScreenY = GetSystemMetrics(SM_YVIRTUALSCREEN);
+
+            RECT workArea;
+            workArea.left = monitorInfo.rcWork.left - virtualScreenX;
+            workArea.top = monitorInfo.rcWork.top - virtualScreenY;
+            workArea.right = monitorInfo.rcWork.right - virtualScreenX;
+            workArea.bottom = monitorInfo.rcWork.bottom - virtualScreenY;
 
             // Create text layouts for both lines.
             ComPtr<IDWriteTextLayout> topLayout;
@@ -1942,17 +2015,19 @@ void RenderOverlay() {
             float workHeight = (float)(workArea.bottom - workArea.top);
 
             // Calculate position for the combined block.
-            float blockX = workArea.left +
-                           (workWidth - totalWidth) *
-                               (g_settings.horizontalPosition / 100.0f);
-            float blockY = workArea.top +
-                           (workHeight - totalHeight) *
-                               (g_settings.verticalPosition / 100.0f);
+            float blockX =
+                workArea.left + (workWidth - totalWidth) *
+                                    (g_settings.horizontalPosition / 100.0f);
+            float blockY =
+                workArea.top + (workHeight - totalHeight) *
+                                   (g_settings.verticalPosition / 100.0f);
 
             // Draw background if enabled.
             if (g_backgroundBrush) {
-                float padding = (float)g_settings.backgroundPadding;
-                float radius = (float)g_settings.backgroundCornerRadius;
+                float padding =
+                    (float)g_settings.backgroundPadding * g_dpiScale;
+                float radius =
+                    (float)g_settings.backgroundCornerRadius * g_dpiScale;
                 D2D1_ROUNDED_RECT backgroundRect = D2D1::RoundedRect(
                     D2D1::RectF(blockX - padding, blockY - padding,
                                 blockX + totalWidth + padding,
@@ -2058,16 +2133,86 @@ void StopRefreshTimer() {
     }
 }
 
+void HandleDisplayChange() {
+    Wh_Log(L"HandleDisplayChange");
+
+    if (!g_overlayWnd) {
+        return;
+    }
+
+    HWND hWorkerW = GetParent(g_overlayWnd);
+    if (!hWorkerW) {
+        return;
+    }
+
+    // Resize overlay window to match WorkerW.
+    RECT rc;
+    GetWindowRect(hWorkerW, &rc);
+    SetWindowPos(g_overlayWnd, nullptr, 0, 0, rc.right - rc.left,
+                 rc.bottom - rc.top, SWP_NOZORDER | SWP_NOACTIVATE);
+
+    // Check if DPI changed and recreate resources if needed.
+    HMONITOR monitor = GetMonitorById(g_settings.monitor - 1);
+    if (!monitor) {
+        monitor = MonitorFromPoint({0, 0}, MONITOR_DEFAULTTONEAREST);
+    }
+    float newDpiScale = GetMonitorDpiScale(monitor);
+    if (newDpiScale != g_dpiScale) {
+        Wh_Log(L"DPI changed: %.2f -> %.2f", g_dpiScale, newDpiScale);
+        ReleaseSwapChainResources();
+        GetClientRect(g_overlayWnd, &rc);
+        CreateSwapChainResources(rc.right - rc.left, rc.bottom - rc.top);
+        RenderOverlay();
+    }
+}
+
 LRESULT CALLBACK OverlayWndProc(HWND hWnd,
                                 UINT uMsg,
                                 WPARAM wParam,
                                 LPARAM lParam) {
-    if (uMsg == WM_TIMER && !g_unloading) {
-        if (wParam == TIMER_ID_REFRESH) {
-            RenderOverlay();
-            ScheduleNextUpdate();
-            return 0;
+    switch (uMsg) {
+        case WM_TIMER:
+            if (!g_unloading && wParam == TIMER_ID_REFRESH) {
+                RenderOverlay();
+                ScheduleNextUpdate();
+                return 0;
+            }
+            break;
+
+        case WM_WINDOWPOSCHANGED: {
+            const WINDOWPOS* wp = (const WINDOWPOS*)lParam;
+            if (!(wp->flags & SWP_NOSIZE) && !g_unloading) {
+                Wh_Log(L"WM_WINDOWPOSCHANGED: %dx%d", wp->cx, wp->cy);
+                ResizeSwapChain(wp->cx, wp->cy);
+                RenderOverlay();
+            }
+            break;
         }
+    }
+    return DefWindowProc(hWnd, uMsg, wParam, lParam);
+}
+
+#define TIMER_ID_DISPLAY_CHANGE 1
+
+LRESULT CALLBACK MessageWndProc(HWND hWnd,
+                                UINT uMsg,
+                                WPARAM wParam,
+                                LPARAM lParam) {
+    switch (uMsg) {
+        case WM_DISPLAYCHANGE:
+            Wh_Log(L"WM_DISPLAYCHANGE received");
+            if (!g_unloading) {
+                // Delay handling to allow WorkerW to resize first.
+                SetTimer(hWnd, TIMER_ID_DISPLAY_CHANGE, 200, nullptr);
+            }
+            return 0;
+
+        case WM_TIMER:
+            if (wParam == TIMER_ID_DISPLAY_CHANGE && !g_unloading) {
+                KillTimer(hWnd, TIMER_ID_DISPLAY_CHANGE);
+                HandleDisplayChange();
+            }
+            return 0;
     }
     return DefWindowProc(hWnd, uMsg, wParam, lParam);
 }
@@ -2125,6 +2270,39 @@ void DestroyOverlayWindow() {
 }
 
 ////////////////////////////////////////////////////////////////////////////////
+// Message window for system notifications
+
+#define MESSAGE_WINDOW_CLASS L"DesktopLiveOverlay_Message_" WH_MOD_ID
+
+void CreateMessageWindow() {
+    HINSTANCE hInstance = GetCurrentModuleHandle();
+
+    WNDCLASS wc = {};
+    wc.lpfnWndProc = MessageWndProc;
+    wc.hInstance = hInstance;
+    wc.lpszClassName = MESSAGE_WINDOW_CLASS;
+    RegisterClass(&wc);
+
+    // Create a hidden top-level window (not message-only) to receive
+    // WM_DISPLAYCHANGE which is only sent to top-level windows.
+    g_messageWnd = CreateWindowEx(0, wc.lpszClassName, nullptr, 0, 0, 0, 0, 0,
+                                  nullptr, nullptr, hInstance, nullptr);
+    if (!g_messageWnd) {
+        Wh_Log(L"Failed to create message window: %u", GetLastError());
+        UnregisterClass(MESSAGE_WINDOW_CLASS, hInstance);
+    }
+}
+
+void DestroyMessageWindow() {
+    if (g_messageWnd) {
+        DestroyWindow(g_messageWnd);
+        g_messageWnd = nullptr;
+    }
+
+    UnregisterClass(MESSAGE_WINDOW_CLASS, GetCurrentModuleHandle());
+}
+
+////////////////////////////////////////////////////////////////////////////////
 // Hooks
 
 using CreateWindowExW_t = decltype(&CreateWindowExW);
@@ -2157,6 +2335,7 @@ HWND WINAPI CreateWindowExW_Hook(DWORD dwExStyle,
                        [](HWND, UINT, UINT_PTR idEvent, DWORD) {
                            KillTimer(nullptr, idEvent);
                            CreateOverlayWindow();
+                           CreateMessageWindow();
                        });
 
     return hWnd;
@@ -2308,7 +2487,12 @@ void Wh_ModAfterInit() {
     HWND hWorkerW = GetWorkerW();
     if (hWorkerW) {
         RunFromWindowThread(
-            hWorkerW, [](void*) { CreateOverlayWindow(); }, nullptr);
+            hWorkerW,
+            [](void*) {
+                CreateOverlayWindow();
+                CreateMessageWindow();
+            },
+            nullptr);
     }
 }
 
@@ -2319,7 +2503,12 @@ void Wh_ModUninit() {
 
     if (g_overlayWnd) {
         RunFromWindowThread(
-            g_overlayWnd, [](void*) { DestroyOverlayWindow(); }, nullptr);
+            g_overlayWnd,
+            [](void*) {
+                DestroyOverlayWindow();
+                DestroyMessageWindow();
+            },
+            nullptr);
     }
 
     WeatherUpdateThreadUninit();
