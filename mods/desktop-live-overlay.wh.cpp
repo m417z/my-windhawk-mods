@@ -342,8 +342,9 @@ std::atomic<bool> g_weatherLoaded{false};
 std::atomic<bool> g_unloading{false};
 std::optional<std::wstring> g_weatherContent;
 
-// Cached result of whether system metrics are used (set during init).
+// Cached result of whether system metrics/weather are used (set during init).
 bool g_systemMetricsUsed = false;
+bool g_weatherUsed = false;
 
 // DirectX device objects (shared).
 ComPtr<ID3D11Device> g_d3dDevice;
@@ -825,8 +826,7 @@ bool IsSystemMetricsUsed() {
 }
 
 void WeatherUpdateThreadInit() {
-    // Check if weather pattern is used in the text.
-    if (!IsPatternUsed(L"%weather%")) {
+    if (!g_weatherUsed) {
         return;
     }
 
@@ -2094,8 +2094,8 @@ void RenderOverlay() {
 
 UINT GetNextUpdateTimeout() {
     // Determine if we need per-second updates.
-    bool needsSecondsUpdate =
-        g_settings.showSeconds || g_systemMetricsUsed || !g_weatherLoaded;
+    bool needsSecondsUpdate = g_settings.showSeconds || g_systemMetricsUsed ||
+                              (g_weatherUsed && !g_weatherLoaded);
 
     // Get current time for alignment calculations.
     SYSTEMTIME time;
@@ -2533,6 +2533,7 @@ BOOL Wh_ModInit() {
 
     LoadSettings();
     g_systemMetricsUsed = IsSystemMetricsUsed();
+    g_weatherUsed = IsPatternUsed(L"%weather%");
 
     if (!InitDirectX()) {
         Wh_Log(L"InitDirectX failed");
