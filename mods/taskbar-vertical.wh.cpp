@@ -2,7 +2,7 @@
 // @id              taskbar-vertical
 // @name            Vertical Taskbar for Windows 11
 // @description     Finally, the missing vertical taskbar option for Windows 11! Move the taskbar to the left or right side of the screen.
-// @version         1.3.9
+// @version         1.3.10
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
@@ -3429,7 +3429,7 @@ BOOL WINAPI MoveWindow_Hook(HWND hWnd,
         if (isAltTabWindow) {
             // Make sure the Alt+Tab window doesn't overlap with the taskbar.
             // This function seems to only be called for Alt+Tab. Win+Tab is
-            // create by CreateWindowInBand, and an inner child window is
+            // created by CreateWindowInBand, and an inner child window is
             // positioned with SetWindowPos. It'd be nice to handle that case
             // too, maybe one day...
             if (X < monitorInfo.rcWork.left) {
