@@ -2,7 +2,7 @@
 // @id              desktop-live-overlay
 // @name            Desktop Live Overlay
 // @description     Display live, customizable content on the desktop behind icons. Perfect for showing time, date, system metrics, weather, and more.
-// @version         1.0.1
+// @version         1.0.2
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
@@ -245,6 +245,7 @@ using Microsoft::WRL::ComPtr;
 #define TIMER_ID_MSG_RECREATE_OVERLAY 2
 
 #define WM_APP_CLEANUP (WM_APP + 1)
+#define WM_APP_SETTINGS_CHANGED (WM_APP + 2)
 #define OVERLAY_WINDOW_CLASS (L"DesktopOverlay_" WH_MOD_ID)
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -1835,12 +1836,16 @@ bool CreateSwapChainResources(UINT width, UINT height) {
     return true;
 }
 
-void ReleaseSwapChainResources() {
+void ReleaseTextResources() {
     g_backgroundBrush.Reset();
     g_bottomLineTextBrush.Reset();
     g_bottomLineTextFormat.Reset();
     g_topLineTextBrush.Reset();
     g_topLineTextFormat.Reset();
+}
+
+void ReleaseSwapChainResources() {
+    ReleaseTextResources();
     g_compositionVisual.Reset();
     g_compositionTarget.Reset();
     g_compositionDevice.Reset();
@@ -2205,6 +2210,7 @@ void HandleDisplayChange() {
 
 // Forward declarations.
 void CreateOverlayWindow();
+void ApplySettingsChanged();
 
 LRESULT CALLBACK OverlayWndProc(HWND hWnd,
                                 UINT uMsg,
@@ -2242,6 +2248,10 @@ LRESULT CALLBACK OverlayWndProc(HWND hWnd,
 
         case WM_APP_CLEANUP:
             DestroyWindow(hWnd);
+            return 0;
+
+        case WM_APP_SETTINGS_CHANGED:
+            ApplySettingsChanged();
             return 0;
     }
     return DefWindowProc(hWnd, uMsg, wParam, lParam);
@@ -2625,7 +2635,7 @@ void Wh_ModUninit() {
     UninitDirectX();
 }
 
-void Wh_ModSettingsChanged() {
+void ApplySettingsChanged() {
     Wh_Log(L">");
 
     // Save values needed for comparison before loading new settings.
@@ -2667,11 +2677,7 @@ void Wh_ModSettingsChanged() {
 
     // Recreate text resources (fonts, brushes).
     // This is cheap enough to always do.
-    g_topLineTextFormat.Reset();
-    g_topLineTextBrush.Reset();
-    g_bottomLineTextFormat.Reset();
-    g_bottomLineTextBrush.Reset();
-    g_backgroundBrush.Reset();
+    ReleaseTextResources();
     RecreateTextResources();
 
     // Handle monitor change.
@@ -2680,5 +2686,18 @@ void Wh_ModSettingsChanged() {
     }
 
     // Reschedule timer and trigger immediate re-render.
+    RenderOverlay();
     ScheduleNextUpdate();
+}
+
+void Wh_ModSettingsChanged() {
+    Wh_Log(L">");
+
+    // Marshal to overlay window thread to avoid races with rendering/timers.
+    if (g_overlayWnd) {
+        SendMessage(g_overlayWnd, WM_APP_SETTINGS_CHANGED, 0, 0);
+    } else {
+        // No overlay yet, safe to apply directly.
+        ApplySettingsChanged();
+    }
 }
