@@ -971,26 +971,6 @@ _Use_decl_annotations_ STDAPI DllCanUnloadNow(void)
 bool g_inInjectWindhawkTAP = false;
 
 using PFN_INITIALIZE_XAML_DIAGNOSTICS_EX = decltype(&InitializeXamlDiagnosticsEx);
-PFN_INITIALIZE_XAML_DIAGNOSTICS_EX InitializeXamlDiagnosticsEx_Original;
-HRESULT WINAPI InitializeXamlDiagnosticsEx_Hook(
-    _In_ PCWSTR endPointName,
-    _In_ DWORD pid,
-    _In_ PCWSTR wszDllXamlDiagnostics,
-    _In_ PCWSTR wszTAPDllName,
-    _In_ CLSID tapClsid,
-    _In_opt_ PCWSTR wszInitializationData) noexcept
-{
-    if (g_inInjectWindhawkTAP) {
-        return InitializeXamlDiagnosticsEx_Original(
-            endPointName, pid, wszDllXamlDiagnostics,
-            wszTAPDllName, tapClsid, wszInitializationData);
-    }
-
-    // Prevent other callers from initializing XAML diagnostics, which would
-    // interfere with the mod. Specifically, it was reported that
-    // ExplorerBlurMica does that and breaks this mod.
-    return E_ACCESSDENIED;
-}
 
 HRESULT InjectWindhawkTAP() noexcept
 {
@@ -1039,14 +1019,6 @@ HRESULT InjectWindhawkTAP() noexcept
     }
 
     g_inInjectWindhawkTAP = false;
-
-    if (!InitializeXamlDiagnosticsEx_Original)
-    {
-        Wh_Log(L"Hooking InitializeXamlDiagnosticsEx to block other consumers");
-        Wh_SetFunctionHook((void*)ixde, (void*)InitializeXamlDiagnosticsEx_Hook,
-                           (void**)&InitializeXamlDiagnosticsEx_Original);
-        Wh_ApplyHookOperations();
-    }
 
     return hr;
 }
@@ -3784,6 +3756,87 @@ HWND WINAPI CreateWindowInBandEx_Hook(DWORD dwExStyle,
     return hWnd;
 }
 
+PFN_INITIALIZE_XAML_DIAGNOSTICS_EX InitializeXamlDiagnosticsEx_Original;
+HRESULT WINAPI InitializeXamlDiagnosticsEx_Hook(
+    _In_ PCWSTR endPointName,
+    _In_ DWORD pid,
+    _In_ PCWSTR wszDllXamlDiagnostics,
+    _In_ PCWSTR wszTAPDllName,
+    _In_ CLSID tapClsid,
+    _In_opt_ PCWSTR wszInitializationData) {
+    if (g_inInjectWindhawkTAP) {
+        return InitializeXamlDiagnosticsEx_Original(
+            endPointName, pid, wszDllXamlDiagnostics, wszTAPDllName, tapClsid,
+            wszInitializationData);
+    }
+
+    void* retAddress = __builtin_return_address(0);
+
+    WCHAR modulePath[MAX_PATH];
+    Wh_Log(L"Blocking InitializeXamlDiagnosticsEx call from module %s",
+           [&modulePath, retAddress]() -> PCWSTR {
+               HMODULE module;
+               if (GetModuleHandleEx(
+                       GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
+                           GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                       reinterpret_cast<LPCWSTR>(retAddress), &module)) {
+                   if (GetModuleFileName(module, modulePath,
+                                         ARRAYSIZE(modulePath))) {
+                       return modulePath;
+                   }
+               }
+               return L"<unknown>";
+           }());
+
+    // Prevent other callers from initializing XAML diagnostics, which would
+    // interfere with the mod. Specifically, it was reported that
+    // ExplorerBlurMica does that and breaks this mod. Return success to avoid
+    // exception in the caller.
+    return S_OK;
+}
+
+void HookInitializeXamlDiagnosticsExIfNeeded() {
+    if (InitializeXamlDiagnosticsEx_Original) {
+        return;  // Already hooked
+    }
+
+    const HMODULE wux = GetModuleHandle(L"Microsoft.Internal.FrameworkUdk.dll");
+    if (!wux) {
+        return;  // DLL not loaded yet
+    }
+
+    const auto ixde = reinterpret_cast<PFN_INITIALIZE_XAML_DIAGNOSTICS_EX>(
+        GetProcAddress(wux, "InitializeXamlDiagnosticsEx"));
+    if (!ixde) {
+        return;
+    }
+
+    Wh_Log(L"Hooking InitializeXamlDiagnosticsEx to block other consumers");
+    WindhawkUtils::SetFunctionHook(ixde, InitializeXamlDiagnosticsEx_Hook,
+                                   &InitializeXamlDiagnosticsEx_Original);
+    Wh_ApplyHookOperations();
+}
+
+using LoadLibraryExW_t = decltype(&LoadLibraryExW);
+LoadLibraryExW_t LoadLibraryExW_Original;
+HMODULE WINAPI LoadLibraryExW_Hook(LPCWSTR lpLibFileName,
+                                   HANDLE hFile,
+                                   DWORD dwFlags) {
+    HMODULE module = LoadLibraryExW_Original(lpLibFileName, hFile, dwFlags);
+
+    if (module && !InitializeXamlDiagnosticsEx_Original && lpLibFileName) {
+        PCWSTR fileName = wcsrchr(lpLibFileName, L'\\');
+        fileName = fileName ? fileName + 1 : lpLibFileName;
+        // CoreMessagingXP.dll loads Microsoft.Internal.FrameworkUdk.dll via the
+        // import table.
+        if (_wcsicmp(fileName, L"CoreMessagingXP.dll") == 0) {
+            HookInitializeXamlDiagnosticsExIfNeeded();
+        }
+    }
+
+    return module;
+}
+
 using RunFromWindowThreadProc_t = void(WINAPI*)(PVOID parameter);
 
 bool RunFromWindowThread(HWND hWnd,
@@ -4052,28 +4105,38 @@ BOOL Wh_ModInit() {
 
     LoadSettings();
 
-    Wh_SetFunctionHook((void*)CreateWindowExW, (void*)CreateWindowExW_Hook,
-                       (void**)&CreateWindowExW_Original);
+    WindhawkUtils::SetFunctionHook(CreateWindowExW, CreateWindowExW_Hook,
+                                   &CreateWindowExW_Original);
 
     HMODULE user32Module =
         LoadLibraryEx(L"user32.dll", nullptr, LOAD_LIBRARY_SEARCH_SYSTEM32);
     if (user32Module) {
-        void* pCreateWindowInBand =
-            (void*)GetProcAddress(user32Module, "CreateWindowInBand");
+        auto pCreateWindowInBand = (CreateWindowInBand_t)GetProcAddress(
+            user32Module, "CreateWindowInBand");
         if (pCreateWindowInBand) {
-            Wh_SetFunctionHook(pCreateWindowInBand,
-                               (void*)CreateWindowInBand_Hook,
-                               (void**)&CreateWindowInBand_Original);
+            WindhawkUtils::SetFunctionHook(pCreateWindowInBand,
+                                           CreateWindowInBand_Hook,
+                                           &CreateWindowInBand_Original);
         }
 
-        void* pCreateWindowInBandEx =
-            (void*)GetProcAddress(user32Module, "CreateWindowInBandEx");
+        auto pCreateWindowInBandEx = (CreateWindowInBandEx_t)GetProcAddress(
+            user32Module, "CreateWindowInBandEx");
         if (pCreateWindowInBandEx) {
-            Wh_SetFunctionHook(pCreateWindowInBandEx,
-                               (void*)CreateWindowInBandEx_Hook,
-                               (void**)&CreateWindowInBandEx_Original);
+            WindhawkUtils::SetFunctionHook(pCreateWindowInBandEx,
+                                           CreateWindowInBandEx_Hook,
+                                           &CreateWindowInBandEx_Original);
         }
     }
+
+    HMODULE kernelBaseModule = GetModuleHandle(L"kernelbase.dll");
+    auto pKernelBaseLoadLibraryExW = (decltype(&LoadLibraryExW))GetProcAddress(
+        kernelBaseModule, "LoadLibraryExW");
+    WindhawkUtils::SetFunctionHook(pKernelBaseLoadLibraryExW,
+                                   LoadLibraryExW_Hook,
+                                   &LoadLibraryExW_Original);
+
+    // Hook immediately if DLL is already loaded.
+    HookInitializeXamlDiagnosticsExIfNeeded();
 
     HookWindowsUIFileExplorerSymbols();
 
