@@ -1666,6 +1666,42 @@ HWND GetWorkerW() {
 ////////////////////////////////////////////////////////////////////////////////
 // DirectX initialization
 
+void RunDxgiWorkaroundForExplorerPatcher() {
+    auto dxgiModule = GetModuleHandle(L"dxgi.dll");
+    if (!dxgiModule) {
+        return;
+    }
+
+    WCHAR dxgiPath[MAX_PATH];
+    switch (GetModuleFileName(dxgiModule, dxgiPath, ARRAYSIZE(dxgiPath))) {
+        case 0:
+        case ARRAYSIZE(dxgiPath):
+            Wh_Log(L"GetModuleFileName failed: %u", GetLastError());
+            return;
+    }
+
+    WCHAR explorerPatcherDxgiPath[MAX_PATH];
+    GetWindowsDirectory(explorerPatcherDxgiPath,
+                        ARRAYSIZE(explorerPatcherDxgiPath));
+    wcscat_s(explorerPatcherDxgiPath, L"\\dxgi.dll");
+
+    if (_wcsicmp(dxgiPath, explorerPatcherDxgiPath) != 0) {
+        return;
+    }
+
+    Wh_Log(L"Detected ExplorerPatcher dxgi.dll");
+
+    auto dxgiDeclareAdapterRemovalSupport = (HRESULT(WINAPI*)())GetProcAddress(
+        dxgiModule, "DXGIDeclareAdapterRemovalSupport");
+    if (!dxgiDeclareAdapterRemovalSupport) {
+        Wh_Log(L"DXGIDeclareAdapterRemovalSupport not found");
+        return;
+    }
+
+    Wh_Log(L"Calling DXGIDeclareAdapterRemovalSupport");
+    dxgiDeclareAdapterRemovalSupport();
+}
+
 bool InitDirectX() {
     HRESULT hr;
 
@@ -2576,6 +2612,8 @@ void LoadSettings() {
 
 BOOL Wh_ModInit() {
     Wh_Log(L">");
+
+    RunDxgiWorkaroundForExplorerPatcher();
 
     LoadSettings();
     g_systemMetricsUsed = IsSystemMetricsUsed();
