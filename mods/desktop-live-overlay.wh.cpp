@@ -306,6 +306,11 @@ struct FormattedString {
 
 Settings g_settings;
 
+// Initialization/unloading state.
+std::atomic<bool> g_lazyInitialized{false};
+std::atomic<bool> g_initSucceeded{false};
+std::atomic<bool> g_unloading{false};
+
 // Format state.
 SYSTEMTIME g_formatTime;
 DWORD g_formatIndex = 0;
@@ -346,7 +351,6 @@ HANDLE g_weatherUpdateThread = nullptr;
 HANDLE g_weatherUpdateStopEvent = nullptr;
 std::mutex g_weatherMutex;
 std::atomic<bool> g_weatherLoaded{false};
-std::atomic<bool> g_unloading{false};
 std::optional<std::wstring> g_weatherContent;
 
 // Cached result of whether system metrics/weather are used (set during init).
@@ -2361,8 +2365,37 @@ void UnregisterOverlayWindowClass() {
     }
 }
 
+bool EnsureLazyInitialized() {
+    if (g_lazyInitialized.exchange(true)) {
+        return g_initSucceeded;
+    }
+
+    g_systemMetricsUsed = IsSystemMetricsUsed();
+    g_weatherUsed = IsWeatherUsed();
+
+    RunDxgiWorkaroundForExplorerPatcher();
+
+    if (!InitDirectX()) {
+        Wh_Log(L"InitDirectX failed");
+        return false;
+    }
+
+    if (g_systemMetricsUsed) {
+        InitMetrics();
+    }
+
+    WeatherUpdateThreadInit();
+
+    g_initSucceeded = true;
+    return true;
+}
+
 void CreateOverlayWindow() {
     if (g_overlayWnd) {
+        return;
+    }
+
+    if (!EnsureLazyInitialized()) {
         return;
     }
 
@@ -2613,22 +2646,7 @@ void LoadSettings() {
 BOOL Wh_ModInit() {
     Wh_Log(L">");
 
-    RunDxgiWorkaroundForExplorerPatcher();
-
     LoadSettings();
-    g_systemMetricsUsed = IsSystemMetricsUsed();
-    g_weatherUsed = IsWeatherUsed();
-
-    if (!InitDirectX()) {
-        Wh_Log(L"InitDirectX failed");
-        return FALSE;
-    }
-
-    if (g_systemMetricsUsed) {
-        InitMetrics();
-    }
-
-    WeatherUpdateThreadInit();
 
     Wh_SetFunctionHook((void*)CreateWindowExW, (void*)CreateWindowExW_Hook,
                        (void**)&CreateWindowExW_Original);
@@ -2685,6 +2703,11 @@ void ApplySettingsChanged() {
 
     // Load new settings.
     LoadSettings();
+
+    // If lazy init hasn't happened, just return.
+    if (!g_lazyInitialized) {
+        return;
+    }
 
     // Reinitialize metrics to match new settings.
     UninitMetrics();
