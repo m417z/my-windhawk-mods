@@ -7269,7 +7269,8 @@ InitializeXamlDiagnosticsEx_Hook(_In_ PCWSTR endPointName,
                 L"%s\n\n"
                 L"There can only be one consumer at a time. Blocking it might "
                 L"break that module, but allowing it might break this mod.\n\n"
-                L"Do you want to block it?",
+                L"Do you want to block it?\n\n"
+                L"Note: You can change this behavior in the mod settings.",
                 modulePathStr);
             int result = MessageBox(nullptr, message,
                                     L"Windows 11 Taskbar Styler - Windhawk",
