@@ -827,6 +827,10 @@ bool IsSystemMetricsUsed() {
            IsPatternUsed(L"%gpu%");
 }
 
+bool IsWeatherUsed() {
+    return IsPatternUsed(L"%weather%");
+}
+
 void WeatherUpdateThreadInit() {
     if (!g_weatherUsed) {
         return;
@@ -958,6 +962,8 @@ void UninitMetrics() {
         g_diskWriteCounter = nullptr;
         g_gpuCounters.clear();
     }
+
+    g_metricsLastFormatIndex = 0;
 }
 
 PCWSTR GetTimeFormatted() {
@@ -1715,6 +1721,8 @@ void UninitDirectX() {
 ////////////////////////////////////////////////////////////////////////////////
 // Overlay rendering
 
+bool RecreateTextResources();
+
 bool CreateSwapChainResources(UINT width, UINT height) {
     HRESULT hr;
 
@@ -1816,6 +1824,29 @@ bool CreateSwapChainResources(UINT width, UINT height) {
     g_dpiScale = GetMonitorDpiScale(monitor);
     Wh_Log(L"DPI scale: %.2f", g_dpiScale);
 
+    if (!RecreateTextResources()) {
+        return false;
+    }
+
+    return true;
+}
+
+void ReleaseSwapChainResources() {
+    g_backgroundBrush.Reset();
+    g_bottomLineTextBrush.Reset();
+    g_bottomLineTextFormat.Reset();
+    g_topLineTextBrush.Reset();
+    g_topLineTextFormat.Reset();
+    g_compositionVisual.Reset();
+    g_compositionTarget.Reset();
+    g_compositionDevice.Reset();
+    g_dc.Reset();
+    g_swapChain.Reset();
+}
+
+bool RecreateTextResources() {
+    HRESULT hr;
+
     // Create top line text format.
     PCWSTR topFontFamily = g_settings.topLine.fontFamily.get();
     if (!topFontFamily || !*topFontFamily) {
@@ -1894,19 +1925,6 @@ bool CreateSwapChainResources(UINT width, UINT height) {
     }
 
     return true;
-}
-
-void ReleaseSwapChainResources() {
-    g_backgroundBrush.Reset();
-    g_bottomLineTextBrush.Reset();
-    g_bottomLineTextFormat.Reset();
-    g_topLineTextBrush.Reset();
-    g_topLineTextFormat.Reset();
-    g_compositionVisual.Reset();
-    g_compositionTarget.Reset();
-    g_compositionDevice.Reset();
-    g_dc.Reset();
-    g_swapChain.Reset();
 }
 
 bool ResizeSwapChain(UINT width, UINT height) {
@@ -2543,14 +2561,17 @@ BOOL Wh_ModInit() {
 
     LoadSettings();
     g_systemMetricsUsed = IsSystemMetricsUsed();
-    g_weatherUsed = IsPatternUsed(L"%weather%");
+    g_weatherUsed = IsWeatherUsed();
 
     if (!InitDirectX()) {
         Wh_Log(L"InitDirectX failed");
         return FALSE;
     }
 
-    InitMetrics();
+    if (g_systemMetricsUsed) {
+        InitMetrics();
+    }
+
     WeatherUpdateThreadInit();
 
     Wh_SetFunctionHook((void*)CreateWindowExW, (void*)CreateWindowExW_Hook,
@@ -2596,8 +2617,60 @@ void Wh_ModUninit() {
     UninitDirectX();
 }
 
-BOOL Wh_ModSettingsChanged(BOOL* bReload) {
+void Wh_ModSettingsChanged() {
     Wh_Log(L">");
-    *bReload = TRUE;
-    return TRUE;
+
+    // Save values needed for comparison before loading new settings.
+    bool oldWeatherUsed = g_weatherUsed;
+    std::wstring oldWeatherLocation = g_settings.weatherLocation.get();
+    std::wstring oldWeatherFormat = g_settings.weatherFormat.get();
+    WeatherUnits oldWeatherUnits = g_settings.weatherUnits;
+    int oldMonitor = g_settings.monitor;
+
+    // Load new settings.
+    LoadSettings();
+
+    // Reinitialize metrics to match new settings.
+    UninitMetrics();
+    g_systemMetricsUsed = IsSystemMetricsUsed();
+    if (g_systemMetricsUsed) {
+        InitMetrics();
+    }
+
+    // Check if weather usage or settings changed.
+    bool newWeatherUsed = IsWeatherUsed();
+    bool weatherSettingsChanged =
+        oldWeatherLocation != g_settings.weatherLocation.get() ||
+        oldWeatherFormat != g_settings.weatherFormat.get() ||
+        oldWeatherUnits != g_settings.weatherUnits;
+    if (oldWeatherUsed != newWeatherUsed ||
+        (newWeatherUsed && weatherSettingsChanged)) {
+        WeatherUpdateThreadUninit();
+        g_weatherUsed = newWeatherUsed;
+        if (g_weatherUsed) {
+            WeatherUpdateThreadInit();
+        }
+    }
+
+    // If overlay not created yet, skip visual updates.
+    if (!g_overlayWnd) {
+        return;
+    }
+
+    // Recreate text resources (fonts, brushes).
+    // This is cheap enough to always do.
+    g_topLineTextFormat.Reset();
+    g_topLineTextBrush.Reset();
+    g_bottomLineTextFormat.Reset();
+    g_bottomLineTextBrush.Reset();
+    g_backgroundBrush.Reset();
+    RecreateTextResources();
+
+    // Handle monitor change.
+    if (oldMonitor != g_settings.monitor) {
+        HandleDisplayChange();
+    }
+
+    // Reschedule timer and trigger immediate re-render.
+    ScheduleNextUpdate();
 }
