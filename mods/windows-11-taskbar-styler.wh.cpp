@@ -283,6 +283,24 @@ Background:=<SolidColorBrush Color="{ThemeResource AutoAccent}" />
 
 The value will automatically update when the system accent color changes.
 
+## XAML diagnostics consumer handling
+
+This mod uses XAML diagnostics to inspect and customize the taskbar. However,
+there can only be one XAML diagnostics consumer at a time. If another program
+(such as ExplorerBlurMica or TranslucentTB) tries to use XAML diagnostics while
+this mod is running, there will be a conflict.
+
+The **XAML diagnostics consumer handling** setting controls how this mod handles
+such conflicts:
+
+* **Alert**: When another program tries to use XAML diagnostics, a message box
+  will appear asking whether to block it. This allows you to decide on a
+  case-by-case basis.
+* **Block**: Automatically block other programs from using XAML diagnostics.
+  This ensures this mod works correctly, but might break the other program.
+* **Allow**: Allow other programs to use XAML diagnostics. This might break this
+  mod's styling, but allows the other program to work.
+
 ## Implementation notes
 
 The VisualTreeWatcher implementation is based on the
@@ -361,6 +379,17 @@ from the **TranslucentTB** project.
 
     Use "Key@Dark=Value" or "Key@Light=Value" to define theme-aware resources
     that can be referenced with {ThemeResource Key} in styles.
+- xamlDiagnosticsHandling: alert
+  $name: XAML diagnostics consumer handling
+  $description: >-
+    How to handle other programs that try to use XAML diagnostics. There can
+    only be one consumer at a time. Block will prevent other programs from using
+    it, which might break them. Allow will let them use it, which might break
+    this mod.
+  $options:
+  - alert: Alert (prompt before blocking)
+  - block: Block other consumers
+  - allow: Allow other consumers
 */
 // ==/WindhawkModSettings==
 
@@ -4108,6 +4137,8 @@ _Use_decl_annotations_ STDAPI DllCanUnloadNow(void)
 
 #pragma region api_cpp
 
+bool g_inInjectWindhawkTAP = false;
+
 using PFN_INITIALIZE_XAML_DIAGNOSTICS_EX = decltype(&InitializeXamlDiagnosticsEx);
 
 HRESULT InjectWindhawkTAP() noexcept
@@ -4141,6 +4172,8 @@ HRESULT InjectWindhawkTAP() noexcept
     // I didn't find a better way than trying many connections until one works.
     // Reference:
     // https://github.com/microsoft/microsoft-ui-xaml/blob/d74a0332cf0d5e58f12eddce1070fa7a79b4c2db/src/dxaml/xcp/dxaml/lib/DXamlCore.cpp#L2782
+    g_inInjectWindhawkTAP = true;
+
     HRESULT hr;
     for (int i = 0; i < 10000; i++)
     {
@@ -4154,6 +4187,8 @@ HRESULT InjectWindhawkTAP() noexcept
         }
     }
 
+    g_inInjectWindhawkTAP = false;
+
     return hr;
 }
 
@@ -4161,6 +4196,8 @@ HRESULT InjectWindhawkTAP() noexcept
 
 // clang-format on
 ////////////////////////////////////////////////////////////////////////////////
+
+#include <windhawk_utils.h>
 
 #include <list>
 #include <mutex>
@@ -4194,6 +4231,16 @@ using namespace std::string_view_literals;
 #include <winrt/Windows.UI.Xaml.h>
 
 using namespace winrt::Windows::UI::Xaml;
+
+enum class XamlDiagnosticsHandling {
+    kAlert,
+    kBlock,
+    kAllow,
+};
+
+struct {
+    XamlDiagnosticsHandling xamlDiagnosticsHandling;
+} g_settings;
 
 // https://stackoverflow.com/a/51274008
 template <auto fn>
@@ -7176,6 +7223,122 @@ HWND WINAPI CreateWindowInBandEx_Hook(DWORD dwExStyle,
     return hWnd;
 }
 
+PFN_INITIALIZE_XAML_DIAGNOSTICS_EX InitializeXamlDiagnosticsEx_Original;
+HRESULT WINAPI
+InitializeXamlDiagnosticsEx_Hook(_In_ PCWSTR endPointName,
+                                 _In_ DWORD pid,
+                                 _In_ PCWSTR wszDllXamlDiagnostics,
+                                 _In_ PCWSTR wszTAPDllName,
+                                 _In_ CLSID tapClsid,
+                                 _In_opt_ PCWSTR wszInitializationData) {
+    if (g_inInjectWindhawkTAP) {
+        return InitializeXamlDiagnosticsEx_Original(
+            endPointName, pid, wszDllXamlDiagnostics, wszTAPDllName, tapClsid,
+            wszInitializationData);
+    }
+
+    bool blockCall = false;
+
+    switch (g_settings.xamlDiagnosticsHandling) {
+        case XamlDiagnosticsHandling::kAlert: {
+            void* retAddress = __builtin_return_address(0);
+
+            WCHAR modulePath[MAX_PATH];
+            PCWSTR modulePathStr = L"<unknown>";
+            HMODULE module;
+            if (GetModuleHandleEx(
+                    GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
+                        GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                    reinterpret_cast<LPCWSTR>(retAddress), &module)) {
+                switch (GetModuleFileName(module, modulePath,
+                                          ARRAYSIZE(modulePath))) {
+                    case 0:
+                    case ARRAYSIZE(modulePath):
+                        break;
+
+                    default:
+                        modulePathStr = modulePath;
+                        break;
+                }
+            }
+
+            WCHAR message[1024];
+            _snwprintf_s(
+                message, _TRUNCATE,
+                L"The following module is trying to use XAML diagnostics:\n\n"
+                L"%s\n\n"
+                L"There can only be one consumer at a time. Blocking it might "
+                L"break that module, but allowing it might break this mod.\n\n"
+                L"Do you want to block it?",
+                modulePathStr);
+            int result = MessageBox(nullptr, message,
+                                    L"Windows 11 Taskbar Styler - Windhawk",
+                                    MB_YESNO | MB_ICONQUESTION | MB_TOPMOST);
+            blockCall = (result == IDYES);
+            break;
+        }
+
+        case XamlDiagnosticsHandling::kBlock:
+            blockCall = true;
+            break;
+
+        case XamlDiagnosticsHandling::kAllow:
+            blockCall = false;
+            break;
+    }
+
+    if (blockCall) {
+        Wh_Log(L"Blocking InitializeXamlDiagnosticsEx call");
+        // Return success to avoid exception in the caller.
+        return S_OK;
+    }
+
+    Wh_Log(L"Allowing InitializeXamlDiagnosticsEx call");
+    return InitializeXamlDiagnosticsEx_Original(
+        endPointName, pid, wszDllXamlDiagnostics, wszTAPDllName, tapClsid,
+        wszInitializationData);
+}
+
+void HookInitializeXamlDiagnosticsExIfNeeded() {
+    if (InitializeXamlDiagnosticsEx_Original) {
+        return;  // Already hooked
+    }
+
+    const HMODULE wux = GetModuleHandle(L"Windows.UI.Xaml.dll");
+    if (!wux) {
+        return;  // DLL not loaded yet
+    }
+
+    const auto ixde = reinterpret_cast<PFN_INITIALIZE_XAML_DIAGNOSTICS_EX>(
+        GetProcAddress(wux, "InitializeXamlDiagnosticsEx"));
+    if (!ixde) {
+        return;
+    }
+
+    Wh_Log(L"Hooking InitializeXamlDiagnosticsEx to handle other consumers");
+    WindhawkUtils::SetFunctionHook(ixde, InitializeXamlDiagnosticsEx_Hook,
+                                   &InitializeXamlDiagnosticsEx_Original);
+    Wh_ApplyHookOperations();
+}
+
+using LoadLibraryExW_t = decltype(&LoadLibraryExW);
+LoadLibraryExW_t LoadLibraryExW_Original;
+HMODULE WINAPI LoadLibraryExW_Hook(LPCWSTR lpLibFileName,
+                                   HANDLE hFile,
+                                   DWORD dwFlags) {
+    HMODULE module = LoadLibraryExW_Original(lpLibFileName, hFile, dwFlags);
+
+    if (module && !InitializeXamlDiagnosticsEx_Original && lpLibFileName) {
+        PCWSTR fileName = wcsrchr(lpLibFileName, L'\\');
+        fileName = fileName ? fileName + 1 : lpLibFileName;
+        if (_wcsicmp(fileName, L"Windows.UI.Xaml.dll") == 0) {
+            HookInitializeXamlDiagnosticsExIfNeeded();
+        }
+    }
+
+    return module;
+}
+
 std::vector<HWND> GetXamlHostWnds() {
     struct ENUM_WINDOWS_PARAM {
         std::vector<HWND>* hWnds;
@@ -7369,31 +7532,55 @@ void StopStatsTimer() {
     }
 }
 
+void LoadSettings() {
+    PCWSTR xamlDiagnosticsHandling =
+        Wh_GetStringSetting(L"xamlDiagnosticsHandling");
+    g_settings.xamlDiagnosticsHandling = XamlDiagnosticsHandling::kAlert;
+    if (wcscmp(xamlDiagnosticsHandling, L"block") == 0) {
+        g_settings.xamlDiagnosticsHandling = XamlDiagnosticsHandling::kBlock;
+    } else if (wcscmp(xamlDiagnosticsHandling, L"allow") == 0) {
+        g_settings.xamlDiagnosticsHandling = XamlDiagnosticsHandling::kAllow;
+    }
+    Wh_FreeStringSetting(xamlDiagnosticsHandling);
+}
+
 BOOL Wh_ModInit() {
     Wh_Log(L">");
 
-    Wh_SetFunctionHook((void*)CreateWindowExW, (void*)CreateWindowExW_Hook,
-                       (void**)&CreateWindowExW_Original);
+    LoadSettings();
+
+    WindhawkUtils::SetFunctionHook(CreateWindowExW, CreateWindowExW_Hook,
+                                   &CreateWindowExW_Original);
 
     HMODULE user32Module =
         LoadLibraryEx(L"user32.dll", nullptr, LOAD_LIBRARY_SEARCH_SYSTEM32);
     if (user32Module) {
-        void* pCreateWindowInBand =
-            (void*)GetProcAddress(user32Module, "CreateWindowInBand");
+        auto pCreateWindowInBand = (CreateWindowInBand_t)GetProcAddress(
+            user32Module, "CreateWindowInBand");
         if (pCreateWindowInBand) {
-            Wh_SetFunctionHook(pCreateWindowInBand,
-                               (void*)CreateWindowInBand_Hook,
-                               (void**)&CreateWindowInBand_Original);
+            WindhawkUtils::SetFunctionHook(pCreateWindowInBand,
+                                           CreateWindowInBand_Hook,
+                                           &CreateWindowInBand_Original);
         }
 
-        void* pCreateWindowInBandEx =
-            (void*)GetProcAddress(user32Module, "CreateWindowInBandEx");
+        auto pCreateWindowInBandEx = (CreateWindowInBandEx_t)GetProcAddress(
+            user32Module, "CreateWindowInBandEx");
         if (pCreateWindowInBandEx) {
-            Wh_SetFunctionHook(pCreateWindowInBandEx,
-                               (void*)CreateWindowInBandEx_Hook,
-                               (void**)&CreateWindowInBandEx_Original);
+            WindhawkUtils::SetFunctionHook(pCreateWindowInBandEx,
+                                           CreateWindowInBandEx_Hook,
+                                           &CreateWindowInBandEx_Original);
         }
     }
+
+    HMODULE kernelBaseModule = GetModuleHandle(L"kernelbase.dll");
+    auto pKernelBaseLoadLibraryExW = (decltype(&LoadLibraryExW))GetProcAddress(
+        kernelBaseModule, "LoadLibraryExW");
+    WindhawkUtils::SetFunctionHook(pKernelBaseLoadLibraryExW,
+                                   LoadLibraryExW_Hook,
+                                   &LoadLibraryExW_Original);
+
+    // Hook immediately if DLL is already loaded.
+    HookInitializeXamlDiagnosticsExIfNeeded();
 
     StartStatsTimer();
 
@@ -7514,4 +7701,6 @@ void Wh_ModSettingsChanged() {
     if (initialize) {
         InitializeSettingsAndTap();
     }
+
+    LoadSettings();
 }
