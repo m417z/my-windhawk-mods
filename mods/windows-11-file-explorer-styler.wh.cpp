@@ -3267,7 +3267,7 @@ bool ProcessSingleTargetStylesFromSettings(
     return true;
 }
 
-void ProcessAllStylesFromSettings() {
+const Theme* GetSelectedTheme() {
     PCWSTR themeName = Wh_GetStringSetting(L"theme");
     const Theme* theme = nullptr;
     if (wcscmp(themeName, L"Translucent Explorer11") == 0) {
@@ -3286,6 +3286,11 @@ void ProcessAllStylesFromSettings() {
         theme = &g_themeWindowGlass;
     }
     Wh_FreeStringSetting(themeName);
+    return theme;
+}
+
+void ProcessAllStylesFromSettings() {
+    const Theme* theme = GetSelectedTheme();
 
     StyleConstants styleConstants = LoadStyleConstants(
         theme ? theme->styleConstants : std::vector<PCWSTR>{});
@@ -3307,11 +3312,6 @@ void ProcessAllStylesFromSettings() {
                 Wh_Log(L"Error: %S", ex.what());
             }
         }
-
-        g_themeExplorerFrameContainerHeight =
-            theme->explorerFrameContainerHeight;
-    } else {
-        g_themeExplorerFrameContainerHeight = 0;
     }
 
     for (int i = 0;; i++) {
@@ -4100,10 +4100,17 @@ void LoadSettings() {
         Wh_GetIntSetting(L"explorerFrameContainerHeight");
 }
 
+void LoadThemeExplorerFrameContainerHeight() {
+    const Theme* theme = GetSelectedTheme();
+    g_themeExplorerFrameContainerHeight =
+        theme ? theme->explorerFrameContainerHeight : 0;
+}
+
 BOOL Wh_ModInit() {
     Wh_Log(L">");
 
     LoadSettings();
+    LoadThemeExplorerFrameContainerHeight();
 
     WindhawkUtils::SetFunctionHook(CreateWindowExW, CreateWindowExW_Hook,
                                    &CreateWindowExW_Original);
@@ -4218,4 +4225,5 @@ void Wh_ModSettingsChanged() {
     }
 
     LoadSettings();
+    LoadThemeExplorerFrameContainerHeight();
 }
