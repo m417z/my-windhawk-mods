@@ -86,9 +86,11 @@ patterns can be used:
   * `%gpu%` - GPU usage.
   * `%battery%` - battery level percentage.
   * `%battery_time%` - battery time remaining (charging time left / discharging
-    time left).
+    time left, in h:mm format). If the value is always zero, you might need to
+    enable battery time reporting in the BIOS.
   * `%power%` - battery power in watts (negative when discharging, positive when
-    charging).
+    charging). If the value is always zero, you might need to enable battery
+    time reporting in the BIOS.
 * Media player info (requires a
   [GSMTC-compatible](https://github.com/ModernFlyouts-Community/ModernFlyouts/blob/main/docs/GSMTC-Support-And-Popular-Apps.md)
   media player):

@@ -51,8 +51,12 @@ showing time, date, system metrics, weather, and more.
 * `%cpu%` - CPU usage percentage
 * `%ram%` - RAM usage percentage
 * `%battery%` - Battery percentage
-* `%battery_time%` - Battery time remaining
-* `%power%` - Power consumption in watts
+* `%battery_time%` - battery time remaining (charging time left / discharging
+  time left, in h:mm format). If the value is always zero, you might need to
+  enable battery time reporting in the BIOS.
+* `%power%` - battery power in watts (negative when discharging, positive when
+  charging). If the value is always zero, you might need to enable battery time
+  reporting in the BIOS.
 * `%upload_speed%` - Network upload speed
 * `%download_speed%` - Network download speed
 * `%total_speed%` - Combined network speed
