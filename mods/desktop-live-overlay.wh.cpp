@@ -2143,14 +2143,18 @@ UINT GetNextUpdateTimeout() {
     SYSTEMTIME time;
     GetLocalTime(&time);
 
+    // Add a small extra delay to make sure we are past the second/minute
+    // change.
+    constexpr UINT kExtraDelayMs = 200;
+
     // Refresh every second when seconds, system metrics, or pending weather.
     if (g_settings.showSeconds || g_systemMetricsUsed ||
         (g_weatherUsed && !g_weatherLoaded)) {
-        return 1000 - time.wMilliseconds;
+        return 1000 - time.wMilliseconds + kExtraDelayMs;
     }
 
     // No seconds or system metrics - refresh every minute.
-    return (60 - time.wSecond) * 1000 - time.wMilliseconds;
+    return (60 - time.wSecond) * 1000 - time.wMilliseconds + kExtraDelayMs;
 }
 
 void ScheduleNextUpdate() {
