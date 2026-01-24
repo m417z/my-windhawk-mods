@@ -2,7 +2,7 @@
 // @id              desktop-live-overlay
 // @name            Desktop Live Overlay
 // @description     Display live, customizable content on the desktop behind icons. Perfect for showing time, date, system metrics, weather, and more.
-// @version         1.0.2
+// @version         1.0.3
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
@@ -1615,6 +1615,13 @@ HWND GetWorkerW() {
         return nullptr;
     }
 
+    // Ensure Progman is in the current process.
+    DWORD progmanProcessId = 0;
+    GetWindowThreadProcessId(hProgman, &progmanProcessId);
+    if (progmanProcessId != GetCurrentProcessId()) {
+        return nullptr;
+    }
+
     // Send undocumented message to spawn WorkerW windows.
     SendMessage(hProgman, 0x052C, 0xD, 0);
     SendMessage(hProgman, 0x052C, 0xD, 1);
@@ -2704,8 +2711,8 @@ void ApplySettingsChanged() {
     // Load new settings.
     LoadSettings();
 
-    // If lazy init hasn't happened, just return.
-    if (!g_lazyInitialized) {
+    // If lazy init hasn't completed successfully, just return.
+    if (!g_lazyInitialized || !g_initSucceeded) {
         return;
     }
 
