@@ -968,7 +968,29 @@ _Use_decl_annotations_ STDAPI DllCanUnloadNow(void)
 
 #pragma region api_cpp
 
+bool g_inInjectWindhawkTAP = false;
+
 using PFN_INITIALIZE_XAML_DIAGNOSTICS_EX = decltype(&InitializeXamlDiagnosticsEx);
+PFN_INITIALIZE_XAML_DIAGNOSTICS_EX InitializeXamlDiagnosticsEx_Original;
+HRESULT WINAPI InitializeXamlDiagnosticsEx_Hook(
+    _In_ PCWSTR endPointName,
+    _In_ DWORD pid,
+    _In_ PCWSTR wszDllXamlDiagnostics,
+    _In_ PCWSTR wszTAPDllName,
+    _In_ CLSID tapClsid,
+    _In_opt_ PCWSTR wszInitializationData) noexcept
+{
+    if (g_inInjectWindhawkTAP) {
+        return InitializeXamlDiagnosticsEx_Original(
+            endPointName, pid, wszDllXamlDiagnostics,
+            wszTAPDllName, tapClsid, wszInitializationData);
+    }
+
+    // Prevent other callers from initializing XAML diagnostics, which would
+    // interfere with the mod. Specifically, it was reported that
+    // ExplorerBlurMica does that and breaks this mod.
+    return E_ACCESSDENIED;
+}
 
 HRESULT InjectWindhawkTAP() noexcept
 {
@@ -1001,6 +1023,8 @@ HRESULT InjectWindhawkTAP() noexcept
     // I didn't find a better way than trying many connections until one works.
     // Reference:
     // https://github.com/microsoft/microsoft-ui-xaml/blob/d74a0332cf0d5e58f12eddce1070fa7a79b4c2db/src/dxaml/xcp/dxaml/lib/DXamlCore.cpp#L2782
+    g_inInjectWindhawkTAP = true;
+
     HRESULT hr;
     for (int i = 0; i < 10000; i++)
     {
@@ -1012,6 +1036,16 @@ HRESULT InjectWindhawkTAP() noexcept
         {
             break;
         }
+    }
+
+    g_inInjectWindhawkTAP = false;
+
+    if (!InitializeXamlDiagnosticsEx_Original)
+    {
+        Wh_Log(L"Hooking InitializeXamlDiagnosticsEx to block other consumers");
+        Wh_SetFunctionHook((void*)ixde, (void*)InitializeXamlDiagnosticsEx_Hook,
+                           (void**)&InitializeXamlDiagnosticsEx_Original);
+        Wh_ApplyHookOperations();
     }
 
     return hr;
