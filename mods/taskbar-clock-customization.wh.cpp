@@ -627,6 +627,8 @@ std::atomic<bool> g_taskbarViewDllLoaded;
 std::atomic<bool> g_initialized;
 std::atomic<bool> g_explorerPatcherInitialized;
 
+bool g_formattingInitialized;
+
 DWORD g_formatIndex;
 SYSTEMTIME g_formatTime;
 std::mutex g_formatLineMutex;
@@ -1271,15 +1273,26 @@ void WebContentUpdateThreadInit() {
 }
 
 void WebContentUpdateThreadUninit() {
-    if (g_webContentUpdateThread) {
-        SetEvent(g_webContentUpdateStopEvent);
-        WaitForSingleObject(g_webContentUpdateThread, INFINITE);
-        CloseHandle(g_webContentUpdateThread);
+    HANDLE thread;
+    HANDLE stopEvent;
+    HANDLE refreshEvent;
+
+    {
+        std::lock_guard<std::mutex> guard(g_webContentMutex);
+        thread = g_webContentUpdateThread;
+        stopEvent = g_webContentUpdateStopEvent;
+        refreshEvent = g_webContentUpdateRefreshEvent;
         g_webContentUpdateThread = nullptr;
-        CloseHandle(g_webContentUpdateRefreshEvent);
-        g_webContentUpdateRefreshEvent = nullptr;
-        CloseHandle(g_webContentUpdateStopEvent);
         g_webContentUpdateStopEvent = nullptr;
+        g_webContentUpdateRefreshEvent = nullptr;
+    }
+
+    if (thread) {
+        SetEvent(stopEvent);
+        WaitForSingleObject(thread, INFINITE);
+        CloseHandle(thread);
+        CloseHandle(refreshEvent);
+        CloseHandle(stopEvent);
     }
 
     std::lock_guard<std::mutex> guard(g_webContentMutex);
@@ -3358,12 +3371,26 @@ size_t ResolveFormatToken(
     return 0;
 }
 
+void EnsureFormattingInitialized() {
+    if (g_formattingInitialized) {
+        return;
+    }
+
+    g_formattingInitialized = true;
+
+    WebContentUpdateThreadInit();
+    DataCollectionSessionInit();
+    MediaSessionInit();
+}
+
 int FormatLine(PWSTR buffer, size_t bufferSize, std::wstring_view format) {
     if (bufferSize == 0) {
         return 0;
     }
 
     std::lock_guard<std::mutex> guard(g_formatLineMutex);
+
+    EnsureFormattingInitialized();
 
     std::wstring_view formatSuffix = format;
 
@@ -5269,10 +5296,6 @@ BOOL Wh_ModInit() {
                                            &SendMessageW_Original);
     }
 
-    WebContentUpdateThreadInit();
-    DataCollectionSessionInit();
-    MediaSessionInit();
-
     g_initialized = true;
 
     return TRUE;
@@ -5333,26 +5356,30 @@ void Wh_ModBeforeUninit() {
 void Wh_ModUninit() {
     Wh_Log(L">");
 
-    WebContentUpdateThreadUninit();
+    if (g_formattingInitialized) {
+        WebContentUpdateThreadUninit();
 
-    {
-        std::lock_guard<std::mutex> guard(g_formatLineMutex);
-        DataCollectionSessionUninit();
-        MediaSessionUninit();
+        {
+            std::lock_guard<std::mutex> guard(g_formatLineMutex);
+            DataCollectionSessionUninit();
+            MediaSessionUninit();
+        }
+
+        ApplySettings();
     }
-
-    ApplySettings();
 }
 
 BOOL Wh_ModSettingsChanged(BOOL* bReload) {
     Wh_Log(L">");
 
-    WebContentUpdateThreadUninit();
+    if (g_formattingInitialized) {
+        WebContentUpdateThreadUninit();
 
-    {
-        std::lock_guard<std::mutex> guard(g_formatLineMutex);
-        DataCollectionSessionUninit();
-        MediaSessionUninit();
+        {
+            std::lock_guard<std::mutex> guard(g_formatLineMutex);
+            DataCollectionSessionUninit();
+            MediaSessionUninit();
+        }
     }
 
     bool prevOldTaskbarOnWin11 = g_settings.oldTaskbarOnWin11;
@@ -5364,15 +5391,17 @@ BOOL Wh_ModSettingsChanged(BOOL* bReload) {
         return TRUE;
     }
 
-    WebContentUpdateThreadInit();
+    if (g_formattingInitialized) {
+        WebContentUpdateThreadInit();
 
-    {
-        std::lock_guard<std::mutex> guard(g_formatLineMutex);
-        DataCollectionSessionInit();
-        MediaSessionInit();
+        {
+            std::lock_guard<std::mutex> guard(g_formatLineMutex);
+            DataCollectionSessionInit();
+            MediaSessionInit();
+        }
+
+        ApplySettings();
     }
-
-    ApplySettings();
 
     return TRUE;
 }
