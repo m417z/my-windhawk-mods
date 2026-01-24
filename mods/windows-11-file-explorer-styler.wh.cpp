@@ -163,6 +163,24 @@ Background:=<SolidColorBrush Color="{ThemeResource AutoAccent}" />
 
 The value will automatically update when the system accent color changes.
 
+## XAML diagnostics consumer handling
+
+This mod uses XAML diagnostics to inspect and customize the File Explorer.
+However, there can only be one XAML diagnostics consumer at a time. If another
+program (such as ExplorerBlurMica) tries to use XAML diagnostics while this mod
+is running, there will be a conflict.
+
+The **XAML diagnostics consumer handling** setting controls how this mod handles
+such conflicts:
+
+* **Alert**: When another program tries to use XAML diagnostics, a message box
+  will appear asking whether to block it. This allows you to decide on a
+  case-by-case basis.
+* **Block**: Automatically block other programs from using XAML diagnostics.
+  This ensures this mod works correctly, but might break the other program.
+* **Allow**: Allow other programs to use XAML diagnostics. This might break this
+  mod's styling, but allows the other program to work.
+
 ## Implementation notes
 
 The VisualTreeWatcher implementation is based on the
@@ -228,6 +246,17 @@ from the **TranslucentTB** project.
   $description: >-
     The height of the explorer frame container which includes the tabs, the
     address bar, and the command bar, set to zero to use the default height
+- xamlDiagnosticsHandling: alert
+  $name: XAML diagnostics consumer handling
+  $description: >-
+    How to handle other programs (e.g. ExplorerBlurMica) that try to use XAML
+    diagnostics. There can only be one consumer at a time. Block will prevent
+    other programs from using it, which might break them. Allow will let them
+    use it, which might break this mod.
+  $options:
+  - alert: Alert (prompt before blocking)
+  - block: Block other consumers
+  - allow: Allow other consumers
 */
 // ==/WindhawkModSettings==
 
@@ -639,8 +668,15 @@ const Theme g_themeWindowGlass = {{
 
 // clang-format on
 
+enum class XamlDiagnosticsHandling {
+    kAlert,
+    kBlock,
+    kAllow,
+};
+
 struct {
     int explorerFrameContainerHeight;
+    XamlDiagnosticsHandling xamlDiagnosticsHandling;
 } g_settings;
 
 int g_themeExplorerFrameContainerHeight;
@@ -3757,42 +3793,79 @@ HWND WINAPI CreateWindowInBandEx_Hook(DWORD dwExStyle,
 }
 
 PFN_INITIALIZE_XAML_DIAGNOSTICS_EX InitializeXamlDiagnosticsEx_Original;
-HRESULT WINAPI InitializeXamlDiagnosticsEx_Hook(
-    _In_ PCWSTR endPointName,
-    _In_ DWORD pid,
-    _In_ PCWSTR wszDllXamlDiagnostics,
-    _In_ PCWSTR wszTAPDllName,
-    _In_ CLSID tapClsid,
-    _In_opt_ PCWSTR wszInitializationData) {
+HRESULT WINAPI
+InitializeXamlDiagnosticsEx_Hook(_In_ PCWSTR endPointName,
+                                 _In_ DWORD pid,
+                                 _In_ PCWSTR wszDllXamlDiagnostics,
+                                 _In_ PCWSTR wszTAPDllName,
+                                 _In_ CLSID tapClsid,
+                                 _In_opt_ PCWSTR wszInitializationData) {
     if (g_inInjectWindhawkTAP) {
         return InitializeXamlDiagnosticsEx_Original(
             endPointName, pid, wszDllXamlDiagnostics, wszTAPDllName, tapClsid,
             wszInitializationData);
     }
 
-    void* retAddress = __builtin_return_address(0);
+    bool blockCall = false;
 
-    WCHAR modulePath[MAX_PATH];
-    Wh_Log(L"Blocking InitializeXamlDiagnosticsEx call from module %s",
-           [&modulePath, retAddress]() -> PCWSTR {
-               HMODULE module;
-               if (GetModuleHandleEx(
-                       GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
-                           GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
-                       reinterpret_cast<LPCWSTR>(retAddress), &module)) {
-                   if (GetModuleFileName(module, modulePath,
-                                         ARRAYSIZE(modulePath))) {
-                       return modulePath;
-                   }
-               }
-               return L"<unknown>";
-           }());
+    switch (g_settings.xamlDiagnosticsHandling) {
+        case XamlDiagnosticsHandling::kAlert: {
+            void* retAddress = __builtin_return_address(0);
 
-    // Prevent other callers from initializing XAML diagnostics, which would
-    // interfere with the mod. Specifically, it was reported that
-    // ExplorerBlurMica does that and breaks this mod. Return success to avoid
-    // exception in the caller.
-    return S_OK;
+            WCHAR modulePath[MAX_PATH];
+            PCWSTR modulePathStr = L"<unknown>";
+            HMODULE module;
+            if (GetModuleHandleEx(
+                    GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
+                        GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                    reinterpret_cast<LPCWSTR>(retAddress), &module)) {
+                switch (GetModuleFileName(module, modulePath,
+                                          ARRAYSIZE(modulePath))) {
+                    case 0:
+                    case ARRAYSIZE(modulePath):
+                        break;
+
+                    default:
+                        modulePathStr = modulePath;
+                        break;
+                }
+            }
+
+            WCHAR message[1024];
+            _snwprintf_s(
+                message, _TRUNCATE,
+                L"The following module is trying to use XAML diagnostics:\n\n"
+                L"%s\n\n"
+                L"There can only be one consumer at a time. Blocking it might "
+                L"break that module, but allowing it might break this mod.\n\n"
+                L"Do you want to block it?",
+                modulePathStr);
+            int result = MessageBox(
+                nullptr, message, L"Windows 11 File Explorer Styler - Windhawk",
+                MB_YESNO | MB_ICONQUESTION | MB_TOPMOST);
+            blockCall = (result == IDYES);
+            break;
+        }
+
+        case XamlDiagnosticsHandling::kBlock:
+            blockCall = true;
+            break;
+
+        case XamlDiagnosticsHandling::kAllow:
+            blockCall = false;
+            break;
+    }
+
+    if (blockCall) {
+        Wh_Log(L"Blocking InitializeXamlDiagnosticsEx call");
+        // Return success to avoid exception in the caller.
+        return S_OK;
+    }
+
+    Wh_Log(L"Allowing InitializeXamlDiagnosticsEx call");
+    return InitializeXamlDiagnosticsEx_Original(
+        endPointName, pid, wszDllXamlDiagnostics, wszTAPDllName, tapClsid,
+        wszInitializationData);
 }
 
 void HookInitializeXamlDiagnosticsExIfNeeded() {
@@ -3811,7 +3884,7 @@ void HookInitializeXamlDiagnosticsExIfNeeded() {
         return;
     }
 
-    Wh_Log(L"Hooking InitializeXamlDiagnosticsEx to block other consumers");
+    Wh_Log(L"Hooking InitializeXamlDiagnosticsEx to handle other consumers");
     WindhawkUtils::SetFunctionHook(ixde, InitializeXamlDiagnosticsEx_Hook,
                                    &InitializeXamlDiagnosticsEx_Original);
     Wh_ApplyHookOperations();
@@ -4098,6 +4171,16 @@ void StopStatsTimer() {
 void LoadSettings() {
     g_settings.explorerFrameContainerHeight =
         Wh_GetIntSetting(L"explorerFrameContainerHeight");
+
+    PCWSTR xamlDiagnosticsHandling =
+        Wh_GetStringSetting(L"xamlDiagnosticsHandling");
+    g_settings.xamlDiagnosticsHandling = XamlDiagnosticsHandling::kAlert;
+    if (wcscmp(xamlDiagnosticsHandling, L"block") == 0) {
+        g_settings.xamlDiagnosticsHandling = XamlDiagnosticsHandling::kBlock;
+    } else if (wcscmp(xamlDiagnosticsHandling, L"allow") == 0) {
+        g_settings.xamlDiagnosticsHandling = XamlDiagnosticsHandling::kAllow;
+    }
+    Wh_FreeStringSetting(xamlDiagnosticsHandling);
 }
 
 void LoadThemeExplorerFrameContainerHeight() {
