@@ -683,6 +683,7 @@ int g_themeExplorerFrameContainerHeight;
 
 std::atomic<bool> g_initialized;
 thread_local bool g_initializedForThread;
+thread_local bool g_resourceVariablesInitializedForThread;
 
 void ApplyCustomizations(InstanceHandle handle,
                          winrt::Microsoft::UI::Xaml::FrameworkElement element,
@@ -3631,7 +3632,10 @@ void UninitializeForCurrentThread() {
 
     g_elementsCustomizationRules.clear();
 
-    UninitializeResourceVariables();
+    if (g_resourceVariablesInitializedForThread) {
+        UninitializeResourceVariables();
+        g_resourceVariablesInitializedForThread = false;
+    }
 
     g_initializedForThread = false;
 }
@@ -3651,7 +3655,13 @@ void InitializeForCurrentThread() {
     }
 
     ProcessAllStylesFromSettings();
-    ProcessResourceVariablesFromSettings();
+
+    if (Application::Current()) {
+        ProcessResourceVariablesFromSettings();
+        g_resourceVariablesInitializedForThread = true;
+    } else {
+        Wh_Log(L"Application::Current() is null, skipping resource variables");
+    }
 
     g_initializedForThread = true;
 }
