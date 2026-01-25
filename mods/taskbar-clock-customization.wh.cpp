@@ -5356,52 +5356,37 @@ void Wh_ModBeforeUninit() {
 void Wh_ModUninit() {
     Wh_Log(L">");
 
-    if (g_formattingInitialized) {
+    {
+        std::lock_guard<std::mutex> guard(g_formatLineMutex);
         WebContentUpdateThreadUninit();
-
-        {
-            std::lock_guard<std::mutex> guard(g_formatLineMutex);
-            DataCollectionSessionUninit();
-            MediaSessionUninit();
-        }
-
-        ApplySettings();
+        DataCollectionSessionUninit();
+        MediaSessionUninit();
     }
+
+    ApplySettings();
 }
 
 BOOL Wh_ModSettingsChanged(BOOL* bReload) {
     Wh_Log(L">");
 
-    if (g_formattingInitialized) {
+    {
+        std::lock_guard<std::mutex> guard(g_formatLineMutex);
         WebContentUpdateThreadUninit();
+        DataCollectionSessionUninit();
+        MediaSessionUninit();
+        g_formattingInitialized = false;
 
-        {
-            std::lock_guard<std::mutex> guard(g_formatLineMutex);
-            DataCollectionSessionUninit();
-            MediaSessionUninit();
+        bool prevOldTaskbarOnWin11 = g_settings.oldTaskbarOnWin11;
+
+        LoadSettings();
+
+        *bReload = g_settings.oldTaskbarOnWin11 != prevOldTaskbarOnWin11;
+        if (*bReload) {
+            return TRUE;
         }
     }
 
-    bool prevOldTaskbarOnWin11 = g_settings.oldTaskbarOnWin11;
-
-    LoadSettings();
-
-    *bReload = g_settings.oldTaskbarOnWin11 != prevOldTaskbarOnWin11;
-    if (*bReload) {
-        return TRUE;
-    }
-
-    if (g_formattingInitialized) {
-        WebContentUpdateThreadInit();
-
-        {
-            std::lock_guard<std::mutex> guard(g_formatLineMutex);
-            DataCollectionSessionInit();
-            MediaSessionInit();
-        }
-
-        ApplySettings();
-    }
+    ApplySettings();
 
     return TRUE;
 }
