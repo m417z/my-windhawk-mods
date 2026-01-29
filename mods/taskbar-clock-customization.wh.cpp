@@ -126,18 +126,21 @@ styles, such as the font color and size.
     hh':'mm':'ss tt
   $name: Time format
   $description: >-
-    Leave empty for the default format. For syntax refer to the following page:
+    The format for the %time% pattern. Leave empty for the default format. For
+    syntax refer to the following page:
 
     https://docs.microsoft.com/en-us/windows/win32/api/datetimeapi/nf-datetimeapi-gettimeformatex#remarks
 - DateFormat: >-
     ddd',' MMM dd yyyy
   $name: Date format
   $description: >-
-    Leave empty for the default format. For syntax refer to the following page:
+    The format for the %date% pattern. Leave empty for the default format. For
+    syntax refer to the following page:
 
     https://docs.microsoft.com/en-us/windows/win32/intl/day--month--year--and-era-format-pictures
 - WeekdayFormat: dddd
   $name: Week day format
+  $description: The format for the %weekday% pattern.
   $options:
   - dddd: Full day of the week
   - ddd: Abbreviated day of the week
