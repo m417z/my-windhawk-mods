@@ -77,7 +77,7 @@ versions check out [7+ Taskbar Tweaker](https://tweaker.ramensoftware.com/).
         B D F
         A C E G
 
-     Column-first, bottom-to-top right-to-left:
+      Column-first, bottom-to-top right-to-left:
         _ F D B
         G E C A
   $options:
@@ -921,8 +921,10 @@ void LoadSettings() {
         g_settings.gridArrangement = GridArrangement::rowFirstBottomRowFirst;
     } else if (wcscmp(gridArrangement, L"columnFirstBottomToTop") == 0) {
         g_settings.gridArrangement = GridArrangement::columnFirstBottomToTop;
-    } else if (wcscmp(gridArrangement, L"columnFirstBottomToTopRightToLeft") == 0) {
-        g_settings.gridArrangement = GridArrangement::columnFirstBottomToTopRightToLeft;
+    } else if (wcscmp(gridArrangement, L"columnFirstBottomToTopRightToLeft") ==
+               0) {
+        g_settings.gridArrangement =
+            GridArrangement::columnFirstBottomToTopRightToLeft;
     }
     Wh_FreeStringSetting(gridArrangement);
 
