@@ -76,6 +76,10 @@ versions check out [7+ Taskbar Tweaker](https://tweaker.ramensoftware.com/).
       Column-first, bottom-to-top:
         B D F
         A C E G
+
+     Column-first, bottom-to-top right-to-left:
+        _ F D B
+        G E C A
   $options:
   - rowFirstLeftToRight: Row-first, left-to-right
   - columnFirstTopToBottom: Column-first, top-to-bottom
@@ -117,6 +121,7 @@ enum class GridArrangement {
     columnFirstTopToBottom,
     rowFirstBottomRowFirst,
     columnFirstBottomToTop,
+    columnFirstBottomToTopRightToLeft,
 };
 
 struct {
@@ -343,6 +348,10 @@ void ApplyNotifyIconsStackPanelGridStyle(FrameworkElement stackPanel,
                     break;
                 case GridArrangement::columnFirstBottomToTop:
                     col = index / rows;
+                    row = (rows - 1) - (index % rows);
+                    break;
+                case GridArrangement::columnFirstBottomToTopRightToLeft:
+                    col = (cols - 1) - (index / rows);
                     row = (rows - 1) - (index % rows);
                     break;
             }
@@ -912,6 +921,8 @@ void LoadSettings() {
         g_settings.gridArrangement = GridArrangement::rowFirstBottomRowFirst;
     } else if (wcscmp(gridArrangement, L"columnFirstBottomToTop") == 0) {
         g_settings.gridArrangement = GridArrangement::columnFirstBottomToTop;
+    } else if (wcscmp(gridArrangement, L"columnFirstBottomToTopRightToLeft") == 0) {
+        g_settings.gridArrangement = GridArrangement::columnFirstBottomToTopRightToLeft;
     }
     Wh_FreeStringSetting(gridArrangement);
 
