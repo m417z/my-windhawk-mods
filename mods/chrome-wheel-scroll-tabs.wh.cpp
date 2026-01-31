@@ -83,6 +83,7 @@ DWORD g_lastScrollTime;
 HWND g_lastScrollWnd;
 short g_lastScrollDeltaRemainder;
 DWORD g_lastActionTime;
+thread_local bool g_simulateCtrlKeyDown;
 
 // wParam - TRUE to subclass, FALSE to unsubclass
 // lParam - subclass data
@@ -213,12 +214,6 @@ bool OnMouseWheel(HWND hWnd, WORD keys, short delta, int xPos, int yPos) {
             return false;
     }
 
-    HWND hForegroundWnd = GetForegroundWindow();
-    if (!hForegroundWnd || GetAncestor(hForegroundWnd, GA_ROOTOWNER) != hWnd) {
-        g_lastScrollWnd = nullptr;
-        return false;
-    }
-
     if (GetKeyState(VK_MENU) < 0 || GetKeyState(VK_LWIN) < 0 ||
         GetKeyState(VK_RWIN) < 0 || GetKeyState(VK_PRIOR) < 0 ||
         GetKeyState(VK_NEXT) < 0) {
@@ -266,31 +261,36 @@ bool OnMouseWheel(HWND hWnd, WORD keys, short delta, int xPos, int yPos) {
     }
 
     if (clicks > 0) {
-        INPUT* input = new INPUT[clicks * 2 + 2];
-        for (int i = 0; i < clicks * 2 + 2; i++) {
-            input[i].type = INPUT_KEYBOARD;
-            input[i].ki.wScan = 0;
-            input[i].ki.time = 0;
-            input[i].ki.dwExtraInfo = 0;
+        Wh_Log(L"Simulating input for window %08X", (DWORD)(ULONG_PTR)hWnd);
+
+        // Set flag to fake Ctrl key state in GetKeyState hook.
+        g_simulateCtrlKeyDown = true;
+
+        // Check if window is already active.
+        HWND hForegroundWnd = GetForegroundWindow();
+        bool needsActivation = !hForegroundWnd || hForegroundWnd != hWnd;
+
+        if (needsActivation) {
+            // Fake window activation so key messages are processed even if not
+            // focused.
+            SendMessage(hWnd, WM_ACTIVATE, WA_ACTIVE, 0);
         }
 
-        input[0].ki.wVk = VK_CONTROL;
-        input[0].ki.dwFlags = 0;
-
+        // Send only Page Up/Down keys (Ctrl state will be faked via hooks).
         for (int i = 0; i < clicks; i++) {
-            input[1 + i * 2].ki.wVk = key;
-            input[1 + i * 2].ki.dwFlags = 0;
-            input[1 + i * 2 + 1].ki.wVk = key;
-            input[1 + i * 2 + 1].ki.dwFlags = KEYEVENTF_KEYUP;
+            SendMessage(hWnd, WM_KEYDOWN, key, 0);
+            SendMessage(hWnd, WM_KEYUP, key, 0);
         }
 
-        input[1 + clicks * 2].ki.wVk = VK_CONTROL;
-        input[1 + clicks * 2].ki.dwFlags = KEYEVENTF_KEYUP;
+        if (needsActivation) {
+            // Restore deactivated state.
+            SendMessage(hWnd, WM_ACTIVATE, WA_INACTIVE, 0);
+        }
 
-        SendInput(clicks * 2 + 2, input, sizeof(input[0]));
+        // Clear flag.
+        g_simulateCtrlKeyDown = false;
+
         g_lastActionTime = GetTickCount();
-
-        delete[] input;
     }
 
     g_lastScrollTime = GetTickCount();
@@ -443,6 +443,18 @@ HWND WINAPI CreateWindowExWHook(DWORD dwExStyle,
     return hWnd;
 }
 
+using GetKeyState_t = decltype(&GetKeyState);
+GetKeyState_t pOriginalGetKeyState;
+SHORT WINAPI GetKeyStateHook(int nVirtKey) {
+    if (g_simulateCtrlKeyDown) {
+        Wh_Log(L"Simulating for GetKeyState(%04X)", nVirtKey);
+        // High bit set = key is down.
+        return (nVirtKey == VK_CONTROL) ? 0x8000 : 0;
+    }
+
+    return pOriginalGetKeyState(nVirtKey);
+}
+
 void LoadSettings() {
     g_settings.reverseScrollingDirection =
         Wh_GetIntSetting(L"reverseScrollingDirection");
@@ -463,6 +475,9 @@ BOOL Wh_ModInit() {
 
     Wh_SetFunctionHook((void*)CreateWindowExW, (void*)CreateWindowExWHook,
                        (void**)&pOriginalCreateWindowExW);
+
+    Wh_SetFunctionHook((void*)GetKeyState, (void*)GetKeyStateHook,
+                       (void**)&pOriginalGetKeyState);
 
     EnumWindows(InitialEnumBrowserWindowsFunc, 0);
 
