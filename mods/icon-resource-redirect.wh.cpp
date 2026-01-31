@@ -781,7 +781,7 @@ bool RedirectModule(DWORD c,
 typedef struct {
     int targetIndex;
     int currentIndex;
-    WORD foundId;
+    LPWSTR foundName;
 } ENUMICONCTX;
 
 BOOL CALLBACK EnumIconsProc(HMODULE hModule,
@@ -791,20 +791,20 @@ BOOL CALLBACK EnumIconsProc(HMODULE hModule,
     ENUMICONCTX* ctx = (ENUMICONCTX*)lParam;
 
     if (ctx->currentIndex == ctx->targetIndex) {
-        // Return 0 for non-numerical name.
-        if (IS_INTRESOURCE(lpszName)) {
-            ctx->foundId = (WORD)(LONG_PTR)lpszName;
-        }
+        ctx->foundName = lpszName;
         return FALSE;  // Stop enumeration.
     }
+
     ctx->currentIndex++;
     return TRUE;  // Continue.
 }
 
-WORD GetIconGroupIdByIndex(HMODULE hModule, int index) {
-    ENUMICONCTX ctx = {index, 0, 0};
-    EnumResourceNamesW(hModule, RT_GROUP_ICON, EnumIconsProc, (LONG_PTR)&ctx);
-    return ctx.foundId;  // 0 if not found or if string resource name.
+LPWSTR GetIconGroupNameByIndex(HMODULE hModule, int index) {
+    ENUMICONCTX ctx = {
+        .targetIndex = index,
+    };
+    EnumResourceNames(hModule, RT_GROUP_ICON, EnumIconsProc, (LONG_PTR)&ctx);
+    return ctx.foundName;
 }
 
 using PrivateExtractIconsW_t = decltype(&PrivateExtractIconsW);
@@ -847,20 +847,25 @@ UINT WINAPI PrivateExtractIconsW_Hook(LPCWSTR szFileName,
                 HMODULE module = LoadLibraryEx(szFileName, nullptr,
                                                LOAD_LIBRARY_AS_DATAFILE);
                 if (module) {
-                    iconId = -GetIconGroupIdByIndex(module, iconId);
+                    LPWSTR iconGroupName =
+                        GetIconGroupNameByIndex(module, iconId);
                     FreeLibrary(module);
 
-                    if (iconId == 0) {
-                        Wh_Log(L"[%u] Failed to get icon group id", c);
-                        return false;
+                    // Best effort: use the icon id if available, otherwise
+                    // continue using the index.
+                    if (!iconGroupName) {
+                        Wh_Log(L"[%u] Failed to get icon group name", c);
+                    } else if (!IS_INTRESOURCE(iconGroupName)) {
+                        Wh_Log(L"[%u] Icon group name is not an id: %s", c,
+                               iconGroupName);
+                    } else {
+                        iconId = -(WORD)(ULONG_PTR)iconGroupName;
+                        Wh_Log(L"[%u] Using icon group id %d", c, -iconId);
                     }
                 } else {
+                    // May happen e.g. for .ico files.
                     Wh_Log(L"[%u] Failed to get module handle", c);
-                    return false;
                 }
-
-                Wh_Log(L"[%u] Using id %d for icon index %d", c, -iconId,
-                       nIconIndex);
             }
 
             if (phicon) {
