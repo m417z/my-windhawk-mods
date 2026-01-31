@@ -2,7 +2,7 @@
 // @id              explorer-details-better-file-sizes
 // @name            Better file sizes in Explorer details
 // @description     Optional improvements: show folder sizes, use MB/GB for large files (by default, all sizes are shown in KBs), use IEC terms (such as KiB instead of KB)
-// @version         1.4.11
+// @version         1.5
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
@@ -1925,12 +1925,6 @@ bool StartsWithCaseInsensitive(std::wstring_view str,
            _wcsnicmp(str.data(), prefix.data(), prefix.size()) == 0;
 }
 
-bool EndsWithCaseInsensitive(std::wstring_view str, std::wstring_view suffix) {
-    return str.size() >= suffix.size() &&
-           _wcsicmp(str.data() + str.size() - suffix.size(), suffix.data()) ==
-               0;
-}
-
 // https://github.com/valinet/wh-mods/blob/61319815c7e018e392a08077dc364559548ade02/mods/valinet-unserver.wh.cpp#L95
 // https://stackoverflow.com/questions/937044/determine-path-to-registry-key-from-hkey-handle-in-c
 std::wstring GetPathFromHKEY(HKEY key) {
@@ -2037,7 +2031,6 @@ LSTATUS WINAPI RegQueryValueExW_Hook(HKEY hKey,
         DWORD (*getMaxSize)();
         std::optional<std::wstring_view> (*getReplacementData)(
             std::wstring_view existingData);
-        bool mayBeAbsent = false;
     } replacements[]{
         {
             L"ContentViewModeForBrowse",
@@ -2120,7 +2113,6 @@ LSTATUS WINAPI RegQueryValueExW_Hook(HKEY hKey,
                 }
                 return std::nullopt;
             },
-            /*mayBeAbsent=*/true,
         },
     };
 
@@ -2150,7 +2142,7 @@ LSTATUS WINAPI RegQueryValueExW_Hook(HKEY hKey,
 
     const auto& replacement = *replacementIt;
 
-    if (ret == ERROR_FILE_NOT_FOUND && !replacement.mayBeAbsent) {
+    if (ret == ERROR_FILE_NOT_FOUND && !replacement.getReplacementData(L"")) {
         return ret;
     }
 
