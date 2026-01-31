@@ -2,7 +2,7 @@
 // @id              taskbar-button-scroll
 // @name            Taskbar minimize/restore on scroll
 // @description     Minimize/restore by scrolling the mouse wheel over taskbar buttons and thumbnail previews
-// @version         1.1.2
+// @version         1.1.3
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
@@ -202,8 +202,8 @@ CTaskGroup_GroupMenuCommand_t CTaskGroup_GroupMenuCommand_Original;
 void* CTaskListWnd_vftable_CImpWndProc;
 void* CTaskListWnd_vftable_ITaskListUI;
 
-using TaskItemThumbnail_ReportClicked_t = void(WINAPI*)(void* pThis,
-                                                        void* launcherOptions);
+using TaskItemThumbnail_ReportClicked_t = int(WINAPI*)(void* pThis,
+                                                       void* launcherOptions);
 TaskItemThumbnail_ReportClicked_t TaskItemThumbnail_ReportClicked_Original;
 
 using TaskItem_ReportClicked_t = int(WINAPI*)(void* pThis, void* param);
@@ -680,13 +680,16 @@ int TaskListButton_FlyoutFrame_OnPointerWheelChanged_Hook(
             !TaskListWindowViewModel_get_TaskItem_Original ||
             !TryGetItemFromContainer_TaskListGroupViewModel_Original ||
             !TaskListGroupViewModel_IsMultiWindow_Original ||
-            !ITaskGroup_IsRunning_Original) {
+            !ITaskGroup_IsRunning_Original ||
+            !TaskItem_ReportClicked_Original ||
+            !TaskGroup_ReportClicked_Original) {
             return original();
         }
     } else if (className == L"Taskbar.FlyoutFrame") {
         if (!g_settings.scrollOverThumbnailPreviews ||
             !TryGetItemFromContainer_TaskItemThumbnailViewModel_Original ||
-            !TaskItemThumbnailViewModel_get_TaskItemThumbnail_Original) {
+            !TaskItemThumbnailViewModel_get_TaskItemThumbnail_Original ||
+            !TaskItemThumbnail_ReportClicked_Original) {
             return original();
         }
 
