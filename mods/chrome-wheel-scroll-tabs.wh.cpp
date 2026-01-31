@@ -2,7 +2,7 @@
 // @id              chrome-wheel-scroll-tabs
 // @name            Chrome/Edge scroll tabs with mouse wheel
 // @description     Use the mouse wheel while hovering over the tab bar to switch between tabs
-// @version         1.2.1
+// @version         1.3
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
@@ -243,13 +243,13 @@ bool OnMouseWheel(HWND hWnd, WORD keys, short delta, int xPos, int yPos) {
             // It's too soon, ignore this scroll event.
             clicks = 0;
 
-            // Reset reminder too.
+            // Reset remainder too.
             delta = 0;
         } else if (clicks < -1 || clicks > 1) {
             // Throttle to a single action at a time.
             clicks = clicks > 0 ? 1 : -1;
 
-            // Reset reminder if going too fast.
+            // Reset remainder if going too fast.
             delta = 0;
         }
     }
