@@ -2,7 +2,7 @@
 // @id              icon-resource-redirect
 // @name            Resource Redirect
 // @description     Define alternative files for loading various resources (e.g. icons in imageres.dll) for simple theming without having to modify system files
-// @version         1.2.3
+// @version         1.2.4
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
@@ -886,7 +886,6 @@ UINT WINAPI PrivateExtractIconsW_Hook(LPCWSTR szFileName,
                 if (module) {
                     LPWSTR iconGroupName =
                         GetIconGroupNameByIndex(module, iconId);
-                    FreeLibrary(module);
 
                     // Best effort: use the icon id if available, otherwise
                     // continue using the index.
@@ -927,6 +926,8 @@ UINT WINAPI PrivateExtractIconsW_Hook(LPCWSTR szFileName,
                         iconId = -(WORD)(ULONG_PTR)iconGroupName;
                         Wh_Log(L"[%u] Using icon group id %d", c, -iconId);
                     }
+
+                    FreeLibrary(module);
                 } else {
                     // May happen e.g. for .ico files.
                     Wh_Log(L"[%u] Failed to get module handle", c);
