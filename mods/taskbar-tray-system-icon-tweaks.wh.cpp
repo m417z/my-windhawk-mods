@@ -613,13 +613,21 @@ void ApplyNonActivatableStackIconViewStyle(
 }
 
 void ApplyControlCenterButtonIconStyle(FrameworkElement systemTrayIconElement) {
-    FrameworkElement contentGrid = nullptr;
+    FrameworkElement containerGrid =
+        FindChildByName(systemTrayIconElement, L"ContainerGrid");
+    if (!containerGrid) {
+        Wh_Log(L"Failed to get ContainerGrid");
+        return;
+    }
 
-    FrameworkElement child = systemTrayIconElement;
-    if ((child = FindChildByName(child, L"ContainerGrid")) &&
-        (child = FindChildByName(child, L"ContentGrid"))) {
-        contentGrid = child;
-    } else {
+    FrameworkElement child =
+        FindChildByName(containerGrid, L"ContentPresenter");
+    if (!child) {
+        child = containerGrid;
+    }
+
+    FrameworkElement contentGrid = FindChildByName(child, L"ContentGrid");
+    if (!contentGrid) {
         Wh_Log(L"Failed to get ContentGrid");
         return;
     }
