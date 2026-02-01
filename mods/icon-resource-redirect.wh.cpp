@@ -884,11 +884,10 @@ UINT WINAPI PrivateExtractIconsW_Hook(LPCWSTR szFileName,
                 HMODULE module = LoadLibraryEx(szFileName, nullptr,
                                                LOAD_LIBRARY_AS_DATAFILE);
                 if (module) {
+                    bool resolved = false;
+
                     LPWSTR iconGroupName =
                         GetIconGroupNameByIndex(module, iconId);
-
-                    // Best effort: use the icon id if available, otherwise
-                    // continue using the index.
                     if (!iconGroupName) {
                         Wh_Log(L"[%u] Failed to get icon group name", c);
                     } else if (!IS_INTRESOURCE(iconGroupName)) {
@@ -906,6 +905,7 @@ UINT WINAPI PrivateExtractIconsW_Hook(LPCWSTR szFileName,
 
                             if (redirectIndex >= 0) {
                                 iconId = redirectIndex;
+                                resolved = true;
                                 Wh_Log(
                                     L"[%u] Found icon group name in redirect "
                                     L"file at index %d",
@@ -913,7 +913,7 @@ UINT WINAPI PrivateExtractIconsW_Hook(LPCWSTR szFileName,
                             } else {
                                 Wh_Log(
                                     L"[%u] Icon group name not found in "
-                                    L"redirect file, using original index",
+                                    L"redirect file",
                                     c);
                             }
                         } else {
@@ -924,10 +924,16 @@ UINT WINAPI PrivateExtractIconsW_Hook(LPCWSTR szFileName,
                         }
                     } else {
                         iconId = -(WORD)(ULONG_PTR)iconGroupName;
+                        resolved = true;
                         Wh_Log(L"[%u] Using icon group id %d", c, -iconId);
                     }
 
                     FreeLibrary(module);
+
+                    if (!resolved) {
+                        Wh_Log(L"[%u] Failed to get icon group name", c);
+                        return false;
+                    }
                 } else {
                     // May happen e.g. for .ico files.
                     Wh_Log(L"[%u] Failed to get module handle", c);
