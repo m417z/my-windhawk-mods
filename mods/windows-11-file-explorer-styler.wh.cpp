@@ -221,9 +221,9 @@ from the **TranslucentTB** project.
   $options:
   - "": Default for the selected theme
   - default: Windows default
-  - acrylicSystem: Acrylic
+  - acrylic: Acrylic
   - mica: Mica
-  - micaTabbed: MicaAlt
+  - micaAlt: MicaAlt
   - none: None
 - controlStyles:
   - - target: ""
@@ -289,9 +289,9 @@ struct ThemeTargetStyles {
 
 enum class BackgroundTranslucentEffect {
     kDefault,
-    kAcrylicSystem,
+    kAcrylic,
     kMica,
-    kMicaTabbed,
+    kMicaAlt,
     kNone,
 };
 
@@ -3755,13 +3755,13 @@ HRESULT WINAPI DwmSetWindowAttribute_Hook(HWND hWnd,
     switch (backgroundTranslucentEffect) {
         case BackgroundTranslucentEffect::kDefault:
             return original();
-        case BackgroundTranslucentEffect::kAcrylicSystem:
+        case BackgroundTranslucentEffect::kAcrylic:
             backdropType = DWMSBT_TRANSIENTWINDOW;
             break;
         case BackgroundTranslucentEffect::kMica:
             backdropType = DWMSBT_MAINWINDOW;
             break;
-        case BackgroundTranslucentEffect::kMicaTabbed:
+        case BackgroundTranslucentEffect::kMicaAlt:
             backdropType = DWMSBT_TABBEDWINDOW;
             break;
         case BackgroundTranslucentEffect::kNone:
@@ -3801,13 +3801,13 @@ void ApplyBackgroundTranslucentEffect(
         case BackgroundTranslucentEffect::kDefault:
             backdropType = DWMSBT_TABBEDWINDOW;
             break;
-        case BackgroundTranslucentEffect::kAcrylicSystem:
+        case BackgroundTranslucentEffect::kAcrylic:
             backdropType = DWMSBT_TRANSIENTWINDOW;
             break;
         case BackgroundTranslucentEffect::kMica:
             backdropType = DWMSBT_MAINWINDOW;
             break;
-        case BackgroundTranslucentEffect::kMicaTabbed:
+        case BackgroundTranslucentEffect::kMicaAlt:
             backdropType = DWMSBT_TABBEDWINDOW;
             break;
         case BackgroundTranslucentEffect::kNone:
@@ -4324,15 +4324,15 @@ void LoadSettings() {
     if (wcscmp(backgroundTranslucentEffect, L"default") == 0) {
         g_settings.backgroundTranslucentEffect =
             BackgroundTranslucentEffect::kDefault;
-    } else if (wcscmp(backgroundTranslucentEffect, L"acrylicSystem") == 0) {
+    } else if (wcscmp(backgroundTranslucentEffect, L"acrylic") == 0) {
         g_settings.backgroundTranslucentEffect =
-            BackgroundTranslucentEffect::kAcrylicSystem;
+            BackgroundTranslucentEffect::kAcrylic;
     } else if (wcscmp(backgroundTranslucentEffect, L"mica") == 0) {
         g_settings.backgroundTranslucentEffect =
             BackgroundTranslucentEffect::kMica;
-    } else if (wcscmp(backgroundTranslucentEffect, L"micaTabbed") == 0) {
+    } else if (wcscmp(backgroundTranslucentEffect, L"micaAlt") == 0) {
         g_settings.backgroundTranslucentEffect =
-            BackgroundTranslucentEffect::kMicaTabbed;
+            BackgroundTranslucentEffect::kMicaAlt;
     } else if (wcscmp(backgroundTranslucentEffect, L"none") == 0) {
         g_settings.backgroundTranslucentEffect =
             BackgroundTranslucentEffect::kNone;
