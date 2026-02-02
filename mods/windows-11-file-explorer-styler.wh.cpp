@@ -202,8 +202,8 @@ from the **TranslucentTB** project.
     information about submitting your own theme, refer to the relevant section
     in the mod details.
 
-    Themes marked with * are designed to be used together with the Translucent
-    Windows mod.
+    Themes marked with * are designed to be used with a translucent background
+    effect (see below).
   $options:
   - "": None
   - Translucent Explorer11: Translucent Explorer11 *
@@ -213,6 +213,18 @@ from the **TranslucentTB** project.
   - Tabless: Tabless
   - Matter: Matter
   - WindowGlass: WindowGlass *
+- backgroundTranslucentEffect: ""
+  $name: Translucent background effect
+  $description: >-
+    The translucent effect to use for the File Explorer background. For
+    additional translucent effects, check out the Translucent Windows mod.
+  $options:
+  - "": Default for the selected theme
+  - default: Windows default
+  - acrylicSystem: Acrylic
+  - mica: Mica
+  - micaTabbed: MicaAlt
+  - none: None
 - controlStyles:
   - - target: ""
       $name: Target
@@ -241,17 +253,6 @@ from the **TranslucentTB** project.
 
     Use "Key@Dark=Value" or "Key@Light=Value" to define theme-aware resources
     that can be referenced with {ThemeResource Key} in styles.
-- backgroundTranslucentEffect: default
-  $name: Background translucent effect
-  $description: >-
-    The translucent effect to use for the File Explorer background. For
-    additional translucent effects, check out the Translucent Windows mod.
-  $options:
-  - default: Default for the selected theme
-  - none: None
-  - acrylicSystem: Acrylic
-  - mica: Mica
-  - micaTabbed: MicaAlt
 - explorerFrameContainerHeight: 0
   $name: Explorer frame container height
   $description: >-
@@ -287,10 +288,11 @@ struct ThemeTargetStyles {
 };
 
 enum class BackgroundTranslucentEffect {
-    kNone,
+    kDefault,
     kAcrylicSystem,
     kMica,
     kMicaTabbed,
+    kNone,
 };
 
 struct Theme {
@@ -298,7 +300,7 @@ struct Theme {
     std::vector<PCWSTR> styleConstants;
     int explorerFrameContainerHeight = 0;
     BackgroundTranslucentEffect backgroundTranslucentEffect =
-        BackgroundTranslucentEffect::kNone;
+        BackgroundTranslucentEffect::kDefault;
 };
 
 // clang-format off
@@ -3751,7 +3753,7 @@ HRESULT WINAPI DwmSetWindowAttribute_Hook(HWND hWnd,
 
     int backdropType;
     switch (backgroundTranslucentEffect) {
-        case BackgroundTranslucentEffect::kNone:
+        case BackgroundTranslucentEffect::kDefault:
             return original();
         case BackgroundTranslucentEffect::kAcrylicSystem:
             backdropType = DWMSBT_TRANSIENTWINDOW;
@@ -3761,6 +3763,9 @@ HRESULT WINAPI DwmSetWindowAttribute_Hook(HWND hWnd,
             break;
         case BackgroundTranslucentEffect::kMicaTabbed:
             backdropType = DWMSBT_TABBEDWINDOW;
+            break;
+        case BackgroundTranslucentEffect::kNone:
+            backdropType = DWMSBT_NONE;
             break;
     }
 
@@ -3793,7 +3798,7 @@ void ApplyBackgroundTranslucentEffect(
 
     int backdropType;
     switch (effect) {
-        case BackgroundTranslucentEffect::kNone:
+        case BackgroundTranslucentEffect::kDefault:
             backdropType = DWMSBT_TABBEDWINDOW;
             break;
         case BackgroundTranslucentEffect::kAcrylicSystem:
@@ -3804,6 +3809,9 @@ void ApplyBackgroundTranslucentEffect(
             break;
         case BackgroundTranslucentEffect::kMicaTabbed:
             backdropType = DWMSBT_TABBEDWINDOW;
+            break;
+        case BackgroundTranslucentEffect::kNone:
+            backdropType = DWMSBT_NONE;
             break;
     }
 
@@ -4313,9 +4321,9 @@ void LoadSettings() {
     PCWSTR backgroundTranslucentEffect =
         Wh_GetStringSetting(L"backgroundTranslucentEffect");
     g_settings.backgroundTranslucentEffect.reset();
-    if (wcscmp(backgroundTranslucentEffect, L"none") == 0) {
+    if (wcscmp(backgroundTranslucentEffect, L"default") == 0) {
         g_settings.backgroundTranslucentEffect =
-            BackgroundTranslucentEffect::kNone;
+            BackgroundTranslucentEffect::kDefault;
     } else if (wcscmp(backgroundTranslucentEffect, L"acrylicSystem") == 0) {
         g_settings.backgroundTranslucentEffect =
             BackgroundTranslucentEffect::kAcrylicSystem;
@@ -4325,6 +4333,9 @@ void LoadSettings() {
     } else if (wcscmp(backgroundTranslucentEffect, L"micaTabbed") == 0) {
         g_settings.backgroundTranslucentEffect =
             BackgroundTranslucentEffect::kMicaTabbed;
+    } else if (wcscmp(backgroundTranslucentEffect, L"none") == 0) {
+        g_settings.backgroundTranslucentEffect =
+            BackgroundTranslucentEffect::kNone;
     }
     Wh_FreeStringSetting(backgroundTranslucentEffect);
 
@@ -4346,7 +4357,7 @@ void LoadThemeSettings() {
     const Theme* theme = GetSelectedTheme();
     g_themeBackgroundTranslucentEffect =
         theme ? theme->backgroundTranslucentEffect
-              : BackgroundTranslucentEffect::kNone;
+              : BackgroundTranslucentEffect::kDefault;
     g_themeExplorerFrameContainerHeight =
         theme ? theme->explorerFrameContainerHeight : 0;
 }
@@ -4448,7 +4459,7 @@ void Wh_ModUninit() {
                 if (GetTargetWindowType(hTargetWnd) ==
                     TargetWindowType::FileExplorer) {
                     ApplyBackgroundTranslucentEffect(
-                        hTargetWnd, BackgroundTranslucentEffect::kNone);
+                        hTargetWnd, BackgroundTranslucentEffect::kDefault);
                 }
             },
             (PVOID)hTargetWnd);
