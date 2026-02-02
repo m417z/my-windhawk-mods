@@ -9,7 +9,7 @@
 // @homepage        https://m417z.com/
 // @include         explorer.exe
 // @architecture    x86-64
-// @compilerOptions -lcomctl32 -lole32 -loleaut32 -lruntimeobject -Wl,--export-all-symbols
+// @compilerOptions -lcomctl32 -ldwmapi -lole32 -loleaut32 -lruntimeobject -Wl,--export-all-symbols
 // ==/WindhawkMod==
 
 // Source code is published under The GNU General Public License v3.0.
@@ -241,11 +241,22 @@ from the **TranslucentTB** project.
 
     Use "Key@Dark=Value" or "Key@Light=Value" to define theme-aware resources
     that can be referenced with {ThemeResource Key} in styles.
+- backgroundTranslucentEffect: default
+  $name: Background translucent effect
+  $description: >-
+    The translucent effect to use for the File Explorer background. For
+    additional translucent effects, check out the Translucent Windows mod.
+  $options:
+  - default: Default for the selected theme
+  - none: None
+  - acrylicSystem: Acrylic
+  - mica: Mica
+  - micaTabbed: MicaAlt
 - explorerFrameContainerHeight: 0
   $name: Explorer frame container height
   $description: >-
     The height of the explorer frame container which includes the tabs, the
-    address bar, and the command bar, set to zero to use the default height
+    address bar, and the command bar, set to zero to use the default height.
 - xamlDiagnosticsHandling: alert
   $name: XAML diagnostics consumer handling
   $description: >-
@@ -263,6 +274,7 @@ from the **TranslucentTB** project.
 #include <xamlom.h>
 
 #include <atomic>
+#include <optional>
 #include <vector>
 
 #undef GetCurrentTime
@@ -274,10 +286,19 @@ struct ThemeTargetStyles {
     std::vector<PCWSTR> styles;
 };
 
+enum class BackgroundTranslucentEffect {
+    kNone,
+    kAcrylicSystem,
+    kMica,
+    kMicaTabbed,
+};
+
 struct Theme {
     std::vector<ThemeTargetStyles> targetStyles;
     std::vector<PCWSTR> styleConstants;
     int explorerFrameContainerHeight = 0;
+    BackgroundTranslucentEffect backgroundTranslucentEffect =
+        BackgroundTranslucentEffect::kNone;
 };
 
 // clang-format off
@@ -675,10 +696,12 @@ enum class XamlDiagnosticsHandling {
 };
 
 struct {
+    std::optional<BackgroundTranslucentEffect> backgroundTranslucentEffect;
     int explorerFrameContainerHeight;
     XamlDiagnosticsHandling xamlDiagnosticsHandling;
 } g_settings;
 
+BackgroundTranslucentEffect g_themeBackgroundTranslucentEffect;
 int g_themeExplorerFrameContainerHeight;
 
 std::atomic<bool> g_initialized;
@@ -1081,6 +1104,7 @@ HRESULT InjectWindhawkTAP() noexcept
 using namespace std::string_view_literals;
 
 #include <commctrl.h>
+#include <dwmapi.h>
 #include <roapi.h>
 #include <winstring.h>
 
@@ -3677,20 +3701,126 @@ void InitializeSettingsAndTap() {
     }
 }
 
-bool IsTargetWindow(HWND hWnd) {
+enum class TargetWindowType {
+    None,
+    FileExplorer,
+    XamlExplorerHost,
+};
+
+TargetWindowType GetTargetWindowType(HWND hWnd) {
     WCHAR className[64];
     if (!GetClassName(hWnd, className, ARRAYSIZE(className))) {
-        return false;
+        return TargetWindowType::None;
     }
 
-    return _wcsicmp(className, L"CabinetWClass") == 0 ||
-           _wcsicmp(className, L"XamlExplorerHostIslandWindow_WASDK") == 0;
+    if (_wcsicmp(className, L"CabinetWClass") == 0) {
+        return TargetWindowType::FileExplorer;
+    }
+
+    // Used by the desktop context menu.
+    if (_wcsicmp(className, L"XamlExplorerHostIslandWindow_WASDK") == 0) {
+        return TargetWindowType::XamlExplorerHost;
+    }
+
+    return TargetWindowType::None;
+}
+
+using DwmSetWindowAttribute_t = decltype(&DwmSetWindowAttribute);
+DwmSetWindowAttribute_t DwmSetWindowAttribute_Original;
+HRESULT WINAPI DwmSetWindowAttribute_Hook(HWND hWnd,
+                                          DWORD dwAttribute,
+                                          LPCVOID pvAttribute,
+                                          DWORD cbAttribute) {
+    auto original = [=]() {
+        return DwmSetWindowAttribute_Original(hWnd, dwAttribute, pvAttribute,
+                                              cbAttribute);
+    };
+
+    if (dwAttribute != DWMWA_SYSTEMBACKDROP_TYPE &&
+        dwAttribute != DWMWA_USE_HOSTBACKDROPBRUSH) {
+        return original();
+    }
+
+    if (GetTargetWindowType(hWnd) != TargetWindowType::FileExplorer) {
+        return original();
+    }
+
+    auto backgroundTranslucentEffect =
+        g_settings.backgroundTranslucentEffect.value_or(
+            g_themeBackgroundTranslucentEffect);
+
+    int backdropType;
+    switch (backgroundTranslucentEffect) {
+        case BackgroundTranslucentEffect::kNone:
+            return original();
+        case BackgroundTranslucentEffect::kAcrylicSystem:
+            backdropType = DWMSBT_TRANSIENTWINDOW;
+            break;
+        case BackgroundTranslucentEffect::kMica:
+            backdropType = DWMSBT_MAINWINDOW;
+            break;
+        case BackgroundTranslucentEffect::kMicaTabbed:
+            backdropType = DWMSBT_TABBEDWINDOW;
+            break;
+    }
+
+    Wh_Log(L">");
+
+    return DwmSetWindowAttribute_Original(hWnd, DWMWA_SYSTEMBACKDROP_TYPE,
+                                          &backdropType, sizeof(backdropType));
+}
+
+void ApplyBackgroundTranslucentEffect(
+    HWND hWnd,
+    std::optional<BackgroundTranslucentEffect> effectToApply = std::nullopt) {
+    constexpr WCHAR kBackgroundTranslucentEffectAppliedKey[] =
+        L"windhawk_background_effect-" WH_MOD_ID;
+
+    auto effect =
+        effectToApply.value_or(g_settings.backgroundTranslucentEffect.value_or(
+            g_themeBackgroundTranslucentEffect));
+
+    if (effect == BackgroundTranslucentEffect::kNone) {
+        if (!RemoveProp(hWnd, kBackgroundTranslucentEffectAppliedKey)) {
+            return;
+        }
+    } else {
+        SetProp(hWnd, kBackgroundTranslucentEffectAppliedKey, (HANDLE)1);
+    }
+
+    Wh_Log(L"Applying background translucent effect %d for %08X",
+           static_cast<int>(effect), (DWORD)(ULONG_PTR)hWnd);
+
+    int backdropType;
+    switch (effect) {
+        case BackgroundTranslucentEffect::kNone:
+            backdropType = DWMSBT_TABBEDWINDOW;
+            break;
+        case BackgroundTranslucentEffect::kAcrylicSystem:
+            backdropType = DWMSBT_TRANSIENTWINDOW;
+            break;
+        case BackgroundTranslucentEffect::kMica:
+            backdropType = DWMSBT_MAINWINDOW;
+            break;
+        case BackgroundTranslucentEffect::kMicaTabbed:
+            backdropType = DWMSBT_TABBEDWINDOW;
+            break;
+    }
+
+    DwmSetWindowAttribute_Original(hWnd, DWMWA_SYSTEMBACKDROP_TYPE,
+                                   &backdropType, sizeof(backdropType));
 }
 
 void OnWindowCreated(HWND hWnd, PCSTR funcName) {
-    if (IsTargetWindow(hWnd)) {
+    TargetWindowType windowType = GetTargetWindowType(hWnd);
+    if (windowType != TargetWindowType::None) {
         Wh_Log(L"Initializing - Created window %08X via %S",
                (DWORD)(ULONG_PTR)hWnd, funcName);
+
+        if (windowType == TargetWindowType::FileExplorer) {
+            ApplyBackgroundTranslucentEffect(hWnd);
+        }
+
         InitializeForCurrentThread();
         InitializeSettingsAndTap();
     }
@@ -3990,7 +4120,7 @@ std::vector<HWND> GetTargetWnds() {
                 return TRUE;
             }
 
-            if (IsTargetWindow(hWnd)) {
+            if (GetTargetWindowType(hWnd) != TargetWindowType::None) {
                 param.hWnds->push_back(hWnd);
             }
 
@@ -4180,6 +4310,24 @@ void StopStatsTimer() {
 }
 
 void LoadSettings() {
+    PCWSTR backgroundTranslucentEffect =
+        Wh_GetStringSetting(L"backgroundTranslucentEffect");
+    g_settings.backgroundTranslucentEffect.reset();
+    if (wcscmp(backgroundTranslucentEffect, L"none") == 0) {
+        g_settings.backgroundTranslucentEffect =
+            BackgroundTranslucentEffect::kNone;
+    } else if (wcscmp(backgroundTranslucentEffect, L"acrylicSystem") == 0) {
+        g_settings.backgroundTranslucentEffect =
+            BackgroundTranslucentEffect::kAcrylicSystem;
+    } else if (wcscmp(backgroundTranslucentEffect, L"mica") == 0) {
+        g_settings.backgroundTranslucentEffect =
+            BackgroundTranslucentEffect::kMica;
+    } else if (wcscmp(backgroundTranslucentEffect, L"micaTabbed") == 0) {
+        g_settings.backgroundTranslucentEffect =
+            BackgroundTranslucentEffect::kMicaTabbed;
+    }
+    Wh_FreeStringSetting(backgroundTranslucentEffect);
+
     g_settings.explorerFrameContainerHeight =
         Wh_GetIntSetting(L"explorerFrameContainerHeight");
 
@@ -4194,8 +4342,11 @@ void LoadSettings() {
     Wh_FreeStringSetting(xamlDiagnosticsHandling);
 }
 
-void LoadThemeExplorerFrameContainerHeight() {
+void LoadThemeSettings() {
     const Theme* theme = GetSelectedTheme();
+    g_themeBackgroundTranslucentEffect =
+        theme ? theme->backgroundTranslucentEffect
+              : BackgroundTranslucentEffect::kNone;
     g_themeExplorerFrameContainerHeight =
         theme ? theme->explorerFrameContainerHeight : 0;
 }
@@ -4204,10 +4355,14 @@ BOOL Wh_ModInit() {
     Wh_Log(L">");
 
     LoadSettings();
-    LoadThemeExplorerFrameContainerHeight();
+    LoadThemeSettings();
 
     WindhawkUtils::SetFunctionHook(CreateWindowExW, CreateWindowExW_Hook,
                                    &CreateWindowExW_Original);
+
+    WindhawkUtils::SetFunctionHook(DwmSetWindowAttribute,
+                                   DwmSetWindowAttribute_Hook,
+                                   &DwmSetWindowAttribute_Original);
 
     HMODULE user32Module =
         LoadLibraryEx(L"user32.dll", nullptr, LOAD_LIBRARY_SEARCH_SYSTEM32);
@@ -4253,7 +4408,18 @@ void Wh_ModAfterInit() {
     for (auto hTargetWnd : hTargetWnds) {
         Wh_Log(L"Initializing for %08X", (DWORD)(ULONG_PTR)hTargetWnd);
         RunFromWindowThread(
-            hTargetWnd, [](PVOID) { InitializeForCurrentThread(); }, nullptr);
+            hTargetWnd,
+            [](PVOID param) {
+                HWND hTargetWnd = (HWND)param;
+
+                InitializeForCurrentThread();
+
+                if (GetTargetWindowType(hTargetWnd) ==
+                    TargetWindowType::FileExplorer) {
+                    ApplyBackgroundTranslucentEffect(hTargetWnd);
+                }
+            },
+            (PVOID)hTargetWnd);
     }
 
     if (hTargetWnds.size() > 0) {
@@ -4273,7 +4439,19 @@ void Wh_ModUninit() {
     for (auto hTargetWnd : hTargetWnds) {
         Wh_Log(L"Uninitializing for %08X", (DWORD)(ULONG_PTR)hTargetWnd);
         RunFromWindowThread(
-            hTargetWnd, [](PVOID) { UninitializeForCurrentThread(); }, nullptr);
+            hTargetWnd,
+            [](PVOID param) {
+                HWND hTargetWnd = (HWND)param;
+
+                UninitializeForCurrentThread();
+
+                if (GetTargetWindowType(hTargetWnd) ==
+                    TargetWindowType::FileExplorer) {
+                    ApplyBackgroundTranslucentEffect(
+                        hTargetWnd, BackgroundTranslucentEffect::kNone);
+                }
+            },
+            (PVOID)hTargetWnd);
     }
 
     // Unregister global network status change handler.
@@ -4301,23 +4479,30 @@ void Wh_ModSettingsChanged() {
 
     UninitializeSettingsAndTap();
 
+    LoadSettings();
+    LoadThemeSettings();
+
     auto hTargetWnds = GetTargetWnds();
     for (auto hTargetWnd : hTargetWnds) {
         Wh_Log(L"Reinitializing for %08X", (DWORD)(ULONG_PTR)hTargetWnd);
         RunFromWindowThread(
             hTargetWnd,
-            [](PVOID) {
+            [](PVOID param) {
+                HWND hTargetWnd = (HWND)param;
+
                 UninitializeForCurrentThread();
                 InitializeForCurrentThread();
+
+                if (GetTargetWindowType(hTargetWnd) ==
+                    TargetWindowType::FileExplorer) {
+                    ApplyBackgroundTranslucentEffect(hTargetWnd);
+                }
             },
-            nullptr);
+            (PVOID)hTargetWnd);
     }
 
     if (hTargetWnds.size() > 0) {
         Wh_Log(L"Reinitializing - Found target windows");
         InitializeSettingsAndTap();
     }
-
-    LoadSettings();
-    LoadThemeExplorerFrameContainerHeight();
 }
