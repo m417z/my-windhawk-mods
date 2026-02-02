@@ -931,8 +931,15 @@ UINT WINAPI PrivateExtractIconsW_Hook(LPCWSTR szFileName,
                     FreeLibrary(module);
 
                     if (!resolved) {
-                        Wh_Log(L"[%u] Failed to get icon group name", c);
-                        return false;
+                        if (iconId == 0) {
+                            // Allow using index 0 as fallback for convenience,
+                            // which likely means that the exact match isn't
+                            // that important and the first icon will do.
+                            Wh_Log(L"[%u] Using icon index 0 as fallback", c);
+                        } else {
+                            Wh_Log(L"[%u] Failed to get icon group name", c);
+                            return false;
+                        }
                     }
                 } else {
                     // May happen e.g. for .ico files.
