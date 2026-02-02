@@ -325,7 +325,7 @@ const Theme g_themeTranslucent_Explorer11 = {{
         L"Background=Transparent"}},
     ThemeTargetStyles{L"StackPanel#DetailsViewThumbnail > Grid", {
         L"Background=Transparent"}},
-}, {}, /*explorerFrameContainerHeight=*/0};
+}, {}, /*explorerFrameContainerHeight=*/0, BackgroundTranslucentEffect::kAcrylic};
 
 const Theme g_themeMicaBar = {{
     ThemeTargetStyles{L"Grid#CommandBarControlRootGrid", {
@@ -555,8 +555,8 @@ const Theme g_themeWindowGlass = {{
         L"Background:=$ButtonBackground",
         L"BorderBrush:=$ButtonBorder"}},
     ThemeTargetStyles{L"Microsoft.UI.Xaml.Controls.Grid#CommandBarControlRootGrid", {
-        L"Background:=Transparent",
-        L"BorderBrush:=Transparent"}},
+        L"Background=Transparent",
+        L"BorderBrush=Transparent"}},
     ThemeTargetStyles{L"Microsoft.UI.Xaml.Controls.CommandBar#FileExplorerCommandBar", {
         L"RenderTransform:=<TranslateTransform X=\"0\" Y=\"0\" />",
         L"HorizontalAlignment=Center",
@@ -571,17 +571,18 @@ const Theme g_themeWindowGlass = {{
     ThemeTargetStyles{L"Microsoft.UI.Xaml.Controls.CommandBar#FileExplorerCommandBar > Microsoft.UI.Xaml.Controls.Grid#LayoutRoot > Microsoft.UI.Xaml.Controls.Grid#ContentRoot", {
         L"CornerRadius=$CornerRadius",
         L"BorderThickness=$BorderThickness",
-        L"BorderBrush:=Transparent",
-        L"Background:=Transparent"}},
+        L"BorderBrush=Transparent",
+        L"Background=Transparent"}},
     ThemeTargetStyles{L"Microsoft.UI.Xaml.Controls.CommandBar#FileExplorerSecondaryCommandBar > Microsoft.UI.Xaml.Controls.Grid#LayoutRoot > Microsoft.UI.Xaml.Controls.Grid#ContentRoot", {
         L"CornerRadius=$CornerRadius",
         L"BorderThickness=$BorderThickness",
         L"BorderBrush:=$BorderBrush",
-        L"Background:=#10808080",
+        L"Background=#10808080",
         L"Visibility=Collapsed"}},
     ThemeTargetStyles{L"Microsoft.UI.Xaml.Controls.Grid#NavigationBarControlGrid", {
-        L"Background:=Transparent",
-        L"BorderBrush:=Transparent"}},
+        L"Background=Transparent",
+        L"BorderBrush=Transparent",
+        L"ColumnDefinitions:=<ColumnDefinitionCollection><ColumnDefinition Width=\"Auto\"/><ColumnDefinition Width=\"*\"/><ColumnDefinition Width=\"430\"/></ColumnDefinitionCollection>"}},
     ThemeTargetStyles{L"Microsoft.UI.Xaml.Controls.Grid#HomeViewRootGrid", {
         L"BorderBrush:=$MainContentBG",
         L"CornerRadius=8",
@@ -654,21 +655,18 @@ const Theme g_themeWindowGlass = {{
         L"CornerRadius=$CornerRadius"}},
     ThemeTargetStyles{L"Microsoft.UI.Xaml.Controls.AutoSuggestBox#FileExplorerSearchBox > Microsoft.UI.Xaml.Controls.Grid#LayoutRoot > Microsoft.UI.Xaml.Controls.TextBox#TextBox", {
         L"CornerRadius=$CornerRadius",
-        L"Width=250",
-        L"RenderTransform:=<TranslateTransform X=\"-50\" />",
-        L"Background:=Transparent",
-        L"BorderBrush:=Transparent"}},
+        L"Margin=0,0,180,0",
+        L"Background=Transparent",
+        L"BorderBrush=Transparent"}},
     ThemeTargetStyles{L"Microsoft.UI.Xaml.Controls.Grid#FileExplorerAddressBarGrid", {
-        L"Width=750",
-        L"HorizontalAlignment=Center",
-        L"RenderTransform:=<TranslateTransform X=\"120\" />",
+        L"MaxWidth=750",
         L"CornerRadius=$CornerRadius"}},
     ThemeTargetStyles{L"Microsoft.UI.Xaml.Controls.AutoSuggestBox#PART_AutoSuggestBox > Microsoft.UI.Xaml.Controls.Grid#LayoutRoot > Microsoft.UI.Xaml.Controls.TextBox#TextBox", {
         L"CornerRadius=$CornerRadius"}},
     ThemeTargetStyles{L"Microsoft.UI.Xaml.Controls.CommandBar#NavigationCommands", {
-        L"RenderTransform:=<TranslateTransform X=\"180\" />"}},
+        L"Margin=180,0,0,0"}},
     ThemeTargetStyles{L"Microsoft.UI.Xaml.Controls.Grid#RootContainer", {
-        L"Background:=Transparent"}},
+        L"Background=Transparent"}},
     ThemeTargetStyles{L"Microsoft.UI.Xaml.Controls.Border > Microsoft.UI.Xaml.Controls.Button#AddButton", {
         L"RenderTransform:=<TranslateTransform Y=\"-6\" />"}},
     ThemeTargetStyles{L"Microsoft.UI.Xaml.Controls.TextBlock#TextLabel", {
@@ -684,7 +682,7 @@ const Theme g_themeWindowGlass = {{
     L"CornerRadius=8",
     L"Background2=<SolidColorBrush Color=\"{ThemeResource SystemChromeAltHighColor}\" Opacity=\"0\" />",
     L"MainContentBG=<SolidColorBrush Color=\"{ThemeResource SystemChromeAltHighColor}\" Opacity=\"1\" />",
-}, /*explorerFrameContainerHeight=*/0};
+}, /*explorerFrameContainerHeight=*/0, BackgroundTranslucentEffect::kAcrylic};
 
 // clang-format on
 
