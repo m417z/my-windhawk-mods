@@ -7681,6 +7681,8 @@ void Wh_ModSettingsChanged() {
 
     UninitializeSettingsAndTap();
 
+    LoadSettings();
+
     bool initialize = false;
 
     HWND hTaskbarUiWnd = GetTaskbarUiWnd();
@@ -7711,6 +7713,4 @@ void Wh_ModSettingsChanged() {
     if (initialize) {
         InitializeSettingsAndTap();
     }
-
-    LoadSettings();
 }
