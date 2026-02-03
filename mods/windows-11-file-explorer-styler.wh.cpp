@@ -1324,27 +1324,52 @@ thread_local winrt::event_token g_colorValuesChangedToken;
 winrt::Windows::Foundation::IInspectable ReadLocalValueWithWorkaround(
     DependencyObject elementDo,
     DependencyProperty property) {
-    const auto value = elementDo.ReadLocalValue(property);
-    // TODO: Is this still needed?
+    auto value = elementDo.ReadLocalValue(property);
+
+    if (value) {
+        // A workaround for ColumnDefinitionCollection of
+        // NavigationBarControlGrid which can't be read by ReadLocalValue for
+        // some reason, even though it seems to be a local property.
+        if (value == DependencyProperty::UnsetValue()) {
+            auto grid = elementDo.try_as<Controls::Grid>();
+            if (grid && grid.Name() == L"NavigationBarControlGrid") {
+                auto value2 = elementDo.GetValue(property);
+                if (value2 && winrt::get_class_name(value2) ==
+                                  L"Microsoft.UI.Xaml.Controls."
+                                  L"ColumnDefinitionCollection") {
+                    Wh_Log(
+                        L"Using GetValue workaround for "
+                        L"ColumnDefinitionCollection");
+                    value = std::move(value2);
+                }
+            }
+        }
+
+        // TODO: Is this still needed?
 #if 0
-    if (!value) {
-        return value;
+        auto className = winrt::get_class_name(value);
+        if (className == L"Windows.UI.Xaml.Data.BindingExpressionBase" ||
+            className == L"Windows.UI.Xaml.Data.BindingExpression") {
+            // BindingExpressionBase was observed to be returned for XAML
+            // properties that were declared as following:
+            //
+            // <Border ... CornerRadius="{TemplateBinding CornerRadius}" />
+            //
+            // Calling SetValue with it fails with an error, so we won't be able
+            // to use it to restore the value. As a workaround, we use
+            // GetAnimationBaseValue to get the value.
+            Wh_Log(L"ReadLocalValue returned %s, using GetAnimationBaseValue",
+                   className.c_str());
+            value = elementDo.GetAnimationBaseValue(property);
+        }
+#endif
     }
 
-    auto className = winrt::get_class_name(value);
-    if (className == L"Windows.UI.Xaml.Data.BindingExpressionBase" ||
-        className == L"Windows.UI.Xaml.Data.BindingExpression") {
-        // BindingExpressionBase was observed to be returned for XAML properties
-        // that were declared as following:
-        //
-        // <Border ... CornerRadius="{TemplateBinding CornerRadius}" />
-        //
-        // Calling SetValue with it fails with an error, so we won't be able to
-        // use it to restore the value. As a workaround, we use
-        // GetAnimationBaseValue to get the value.
-        return elementDo.GetAnimationBaseValue(property);
-    }
-#endif
+    Wh_Log(L"Read property value %s",
+           value ? (value == DependencyProperty::UnsetValue()
+                        ? L"(unset)"
+                        : winrt::get_class_name(value).c_str())
+                 : L"(null)");
 
     return value;
 }
@@ -2232,9 +2257,12 @@ void SetOrClearValue(DependencyObject elementDo,
     }
 
     if (value == DependencyProperty::UnsetValue()) {
+        Wh_Log(L"Clearing property value");
         elementDo.ClearValue(property);
         return;
     }
+
+    Wh_Log(L"Setting property value %s", winrt::get_class_name(value).c_str());
 
     // Track ImageBrush with remote ImageSource for retry on network
     // reconnection. This handles cases where an ImageBrush is set as a property
