@@ -2,7 +2,7 @@
 // @id              windows-11-file-explorer-styler
 // @name            Windows 11 File Explorer Styler
 // @description     Customize the File Explorer with themes contributed by others or create your own
-// @version         1.2.2
+// @version         1.3
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
@@ -230,7 +230,7 @@ from the **TranslucentTB** project.
   - default: Windows default
   - acrylic: Acrylic
   - mica: Mica
-  - micaAlt: MicaAlt
+  - micaAlt: Mica Alt
   - none: None
 - backgroundTranslucentEffectRegion: ""
   $name: Translucent background effect region
@@ -3523,7 +3523,7 @@ std::optional<ResourceVariableEntry> ParseResourceVariable(
         } else if (themePart == L"Light") {
             theme = ResourceVariableTheme::Light;
         } else {
-            Wh_Log(L"Unknown theme '%.*s', expected 'dark' or 'light'",
+            Wh_Log(L"Unknown theme '%.*s', expected 'Dark' or 'Light'",
                    static_cast<int>(themePart.size()), themePart.data());
             return std::nullopt;
         }
@@ -4332,7 +4332,7 @@ bool StartStatsTimer() {
     static constexpr WCHAR kStatsBaseUrl[] =
         L"https://github.com/ramensoftware/"
         L"windows-11-file-explorer-styling-guide/"
-        L"releases/download/stats-v2/";
+        L"releases/download/stats-v3/";
 
     ULONGLONG lastStatsTime = 0;
     Wh_GetBinaryValue(L"statsTimerLastTime", &lastStatsTime,
