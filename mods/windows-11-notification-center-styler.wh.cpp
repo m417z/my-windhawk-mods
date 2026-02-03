@@ -4411,7 +4411,7 @@ std::optional<ResourceVariableEntry> ParseResourceVariable(
         } else if (themePart == L"Light") {
             theme = ResourceVariableTheme::Light;
         } else {
-            Wh_Log(L"Unknown theme '%.*s', expected 'dark' or 'light'",
+            Wh_Log(L"Unknown theme '%.*s', expected 'Dark' or 'Light'",
                    static_cast<int>(themePart.size()), themePart.data());
             return std::nullopt;
         }
