@@ -2209,24 +2209,30 @@ thread_local winrt::event_token g_colorValuesChangedToken;
 winrt::Windows::Foundation::IInspectable ReadLocalValueWithWorkaround(
     DependencyObject elementDo,
     DependencyProperty property) {
-    const auto value = elementDo.ReadLocalValue(property);
-    if (!value) {
-        return value;
+    auto value = elementDo.ReadLocalValue(property);
+    if (value) {
+        auto className = winrt::get_class_name(value);
+        if (className == L"Windows.UI.Xaml.Data.BindingExpressionBase" ||
+            className == L"Windows.UI.Xaml.Data.BindingExpression") {
+            // BindingExpressionBase was observed to be returned for XAML
+            // properties that were declared as following:
+            //
+            // <Border ... CornerRadius="{TemplateBinding CornerRadius}" />
+            //
+            // Calling SetValue with it fails with an error, so we won't be able
+            // to use it to restore the value. As a workaround, we use
+            // GetAnimationBaseValue to get the value.
+            Wh_Log(L"ReadLocalValue returned %s, using GetAnimationBaseValue",
+                   className.c_str());
+            value = elementDo.GetAnimationBaseValue(property);
+        }
     }
 
-    auto className = winrt::get_class_name(value);
-    if (className == L"Windows.UI.Xaml.Data.BindingExpressionBase" ||
-        className == L"Windows.UI.Xaml.Data.BindingExpression") {
-        // BindingExpressionBase was observed to be returned for XAML properties
-        // that were declared as following:
-        //
-        // <Border ... CornerRadius="{TemplateBinding CornerRadius}" />
-        //
-        // Calling SetValue with it fails with an error, so we won't be able to
-        // use it to restore the value. As a workaround, we use
-        // GetAnimationBaseValue to get the value.
-        return elementDo.GetAnimationBaseValue(property);
-    }
+    Wh_Log(L"Read property value %s",
+           value ? (value == DependencyProperty::UnsetValue()
+                        ? L"(unset)"
+                        : winrt::get_class_name(value).c_str())
+                 : L"(null)");
 
     return value;
 }
@@ -3125,9 +3131,12 @@ void SetOrClearValue(DependencyObject elementDo,
     }
 
     if (value == DependencyProperty::UnsetValue()) {
+        Wh_Log(L"Clearing property value");
         elementDo.ClearValue(property);
         return;
     }
+
+    Wh_Log(L"Setting property value %s", winrt::get_class_name(value).c_str());
 
     // Track ImageBrush with remote ImageSource for retry on network
     // reconnection. This handles cases where an ImageBrush is set as a property
