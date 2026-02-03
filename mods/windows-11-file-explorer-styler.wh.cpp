@@ -69,6 +69,14 @@ Matter](https://github.com/ramensoftware/windows-11-file-explorer-styling-guide/
 \
 WindowGlass](https://github.com/ramensoftware/windows-11-file-explorer-styling-guide/blob/main/Themes/WindowGlass/README.md)
 
+[![AddressSearchOnly](https://raw.githubusercontent.com/ramensoftware/windows-11-file-explorer-styling-guide/main/Themes/AddressSearchOnly/screenshot-small.png)
+\
+AddressSearchOnly](https://github.com/ramensoftware/windows-11-file-explorer-styling-guide/blob/main/Themes/AddressSearchOnly/README.md)
+
+[![TintedGlass](https://raw.githubusercontent.com/ramensoftware/windows-11-file-explorer-styling-guide/main/Themes/TintedGlass/screenshot-small.png)
+\
+TintedGlass](https://github.com/ramensoftware/windows-11-file-explorer-styling-guide/blob/main/Themes/TintedGlass/README.md)
+
 More themes can be found in the **Themes** section of [The Windows 11 file
 explorer styling
 guide](https://github.com/ramensoftware/windows-11-file-explorer-styling-guide/blob/main/README.md#themes).
@@ -210,6 +218,8 @@ from the **TranslucentTB** project.
   - Tabless: Tabless
   - Matter: Matter
   - WindowGlass: WindowGlass
+  - AddressSearchOnly: AddressSearchOnly
+  - TintedGlass: TintedGlass
 - backgroundTranslucentEffect: ""
   $name: Translucent background effect
   $description: >-
@@ -682,6 +692,55 @@ const Theme g_themeWindowGlass = {{
     L"CornerRadius=8",
     L"Background2=<SolidColorBrush Color=\"{ThemeResource SystemChromeAltHighColor}\" Opacity=\"0\" />",
     L"MainContentBG=<SolidColorBrush Color=\"{ThemeResource SystemChromeAltHighColor}\" Opacity=\"1\" />",
+}, /*explorerFrameContainerHeight=*/0, BackgroundTranslucentEffect::kAcrylic};
+
+const Theme g_themeAddressSearchOnly = {{
+    ThemeTargetStyles{L"FileExplorerExtensions.NavigationBarControl", {
+        L"Grid.Row=0",
+        L"Background=Transparent",
+        L"MinHeight=48",
+        L"Margin=0,26,0,1"}},
+    ThemeTargetStyles{L"Grid#NavigationBarControlGrid", {
+        L"Background=Transparent"}},
+    ThemeTargetStyles{L"FileExplorerExtensions.FileExplorerTabControl", {
+        L"Visibility=Collapsed"}},
+    ThemeTargetStyles{L"AppBarButton#refreshButton", {
+        L"Visibility=Collapsed"}},
+    ThemeTargetStyles{L"AppBarButton#upButton", {
+        L"Visibility=Collapsed"}},
+    ThemeTargetStyles{L"AppBarButton#backButton", {
+        L"Visibility=Collapsed"}},
+    ThemeTargetStyles{L"AppBarButton#forwardButton", {
+        L"Visibility=Collapsed"}},
+}, {}, /*explorerFrameContainerHeight=*/80};
+
+const Theme g_themeTintedGlass = {{
+    ThemeTargetStyles{L"Grid#CommandBarControlRootGrid", {
+        L"Background:=$CommonBgBrush",
+        L"BorderThickness=0,0,0,0",
+        L"BorderBrush=$CommonBgBrush"}},
+    ThemeTargetStyles{L"CommandBar#FileExplorerCommandBar", {
+        L"Background=Transparent"}},
+    ThemeTargetStyles{L"Grid#NavigationBarControlGrid", {
+        L"Background:=$CommonBgBrush"}},
+    ThemeTargetStyles{L"TabViewItem > Grid#LayoutRoot > Canvas > Microsoft.UI.Xaml.Shapes.Path#SelectedBackgroundPath", {
+        L"Fill:=$CommonBgBrush"}},
+    ThemeTargetStyles{L"Grid#HomeViewRootGrid", {
+        L"Background:=$CommonBgBrush"}},
+    ThemeTargetStyles{L"FileExplorerExtensions.GalleryViewControl#GalleryViewControl > Grid", {
+        L"Background:=$CommonBgBrush"}},
+    ThemeTargetStyles{L"Microsoft.UI.Xaml.Controls.Grid#GalleryRootGrid", {
+        L"Background:=$CommonBgBrush"}},
+    ThemeTargetStyles{L"ToolTip", {
+        L"Background:=$CommonBgBrush"}},
+    ThemeTargetStyles{L"Grid#DetailsViewControlRootGrid", {
+        L"Background:=$CommonBgBrush"}},
+    ThemeTargetStyles{L"StackPanel#DetailsViewThumbnail > Grid", {
+        L"Background:=$CommonBgBrush"}},
+    ThemeTargetStyles{L"TextBlock", {
+        L"Fill=#FFFFFF"}},
+}, {
+    L"CommonBgBrush=<WindhawkBlur BlurAmount=\"18\" TintColor=\"#80000000\"/>",
 }, /*explorerFrameContainerHeight=*/0, BackgroundTranslucentEffect::kAcrylic};
 
 // clang-format on
@@ -3342,6 +3401,10 @@ const Theme* GetSelectedTheme() {
         theme = &g_themeMatter;
     } else if (wcscmp(themeName, L"WindowGlass") == 0) {
         theme = &g_themeWindowGlass;
+    } else if (wcscmp(themeName, L"AddressSearchOnly") == 0) {
+        theme = &g_themeAddressSearchOnly;
+    } else if (wcscmp(themeName, L"TintedGlass") == 0) {
+        theme = &g_themeTintedGlass;
     }
     Wh_FreeStringSetting(themeName);
     return theme;
