@@ -232,6 +232,14 @@ from the **TranslucentTB** project.
   - mica: Mica
   - micaAlt: MicaAlt
   - none: None
+- backgroundTranslucentEffectRegion: ""
+  $name: Translucent background effect region
+  $description: >-
+    The region where the translucent background effect is applied. Note that
+    applying the effect to the entire window is only supported in dark mode.
+  $options:
+  - "": File Explorer frame only
+  - entireWindow: Entire window
 - controlStyles:
   - - target: ""
       $name: Target
@@ -745,6 +753,11 @@ const Theme g_themeTintedGlass = {{
 
 // clang-format on
 
+enum class BackgroundTranslucentEffectRegion {
+    kExplorerFrame,
+    kEntireWindow,
+};
+
 enum class XamlDiagnosticsHandling {
     kAlert,
     kBlock,
@@ -753,6 +766,7 @@ enum class XamlDiagnosticsHandling {
 
 struct {
     std::optional<BackgroundTranslucentEffect> backgroundTranslucentEffect;
+    BackgroundTranslucentEffectRegion backgroundTranslucentEffectRegion;
     int explorerFrameContainerHeight;
     XamlDiagnosticsHandling xamlDiagnosticsHandling;
 } g_settings;
@@ -3861,6 +3875,34 @@ HRESULT WINAPI DwmSetWindowAttribute_Hook(HWND hWnd,
                                           &backdropType, sizeof(backdropType));
 }
 
+using DwmExtendFrameIntoClientArea_t = decltype(&DwmExtendFrameIntoClientArea);
+DwmExtendFrameIntoClientArea_t DwmExtendFrameIntoClientArea_Original;
+HRESULT WINAPI DwmExtendFrameIntoClientArea_Hook(HWND hWnd,
+                                                 const MARGINS* pMarInset) {
+    auto original = [=]() {
+        return DwmExtendFrameIntoClientArea_Original(hWnd, pMarInset);
+    };
+
+    if (GetTargetWindowType(hWnd) != TargetWindowType::FileExplorer) {
+        return original();
+    }
+
+    auto backgroundTranslucentEffect =
+        g_settings.backgroundTranslucentEffect.value_or(
+            g_themeBackgroundTranslucentEffect);
+
+    if (backgroundTranslucentEffect == BackgroundTranslucentEffect::kNone ||
+        g_settings.backgroundTranslucentEffectRegion !=
+            BackgroundTranslucentEffectRegion::kEntireWindow) {
+        return original();
+    }
+
+    Wh_Log(L">");
+
+    MARGINS margins = {-1, -1, -1, -1};
+    return DwmExtendFrameIntoClientArea_Original(hWnd, &margins);
+}
+
 void ApplyBackgroundTranslucentEffect(
     HWND hWnd,
     std::optional<BackgroundTranslucentEffect> effectToApply = std::nullopt) {
@@ -3881,6 +3923,13 @@ void ApplyBackgroundTranslucentEffect(
 
     Wh_Log(L"Applying background translucent effect %d for %08X",
            static_cast<int>(effect), (DWORD)(ULONG_PTR)hWnd);
+
+    if (effect != BackgroundTranslucentEffect::kNone &&
+        g_settings.backgroundTranslucentEffectRegion ==
+            BackgroundTranslucentEffectRegion::kEntireWindow) {
+        MARGINS margins = {-1, -1, -1, -1};
+        DwmExtendFrameIntoClientArea_Original(hWnd, &margins);
+    }
 
     int backdropType;
     switch (effect) {
@@ -4404,6 +4453,16 @@ void StopStatsTimer() {
 }
 
 void LoadSettings() {
+    PCWSTR backgroundTranslucentEffectRegion =
+        Wh_GetStringSetting(L"backgroundTranslucentEffectRegion");
+    g_settings.backgroundTranslucentEffectRegion =
+        BackgroundTranslucentEffectRegion::kExplorerFrame;
+    if (wcscmp(backgroundTranslucentEffectRegion, L"entireWindow") == 0) {
+        g_settings.backgroundTranslucentEffectRegion =
+            BackgroundTranslucentEffectRegion::kEntireWindow;
+    }
+    Wh_FreeStringSetting(backgroundTranslucentEffectRegion);
+
     PCWSTR backgroundTranslucentEffect =
         Wh_GetStringSetting(L"backgroundTranslucentEffect");
     g_settings.backgroundTranslucentEffect.reset();
@@ -4460,6 +4519,10 @@ BOOL Wh_ModInit() {
     WindhawkUtils::SetFunctionHook(DwmSetWindowAttribute,
                                    DwmSetWindowAttribute_Hook,
                                    &DwmSetWindowAttribute_Original);
+
+    WindhawkUtils::SetFunctionHook(DwmExtendFrameIntoClientArea,
+                                   DwmExtendFrameIntoClientArea_Hook,
+                                   &DwmExtendFrameIntoClientArea_Original);
 
     HMODULE user32Module =
         LoadLibraryEx(L"user32.dll", nullptr, LOAD_LIBRARY_SEARCH_SYSTEM32);
