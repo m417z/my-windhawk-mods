@@ -2402,6 +2402,39 @@ HRESULT WINAPI PSFormatForDisplay_Hook(const PROPERTYKEY& propkey,
                                        cchText);
 }
 
+using PSStrFormatByteSizeW_t = void*(WINAPI*)(ULONGLONG size,
+                                              LPWSTR pwszText,
+                                              DWORD cchText);
+PSStrFormatByteSizeW_t PSStrFormatByteSizeW_Original;
+void* WINAPI PSStrFormatByteSizeW_Hook(ULONGLONG size,
+                                       LPWSTR pwszText,
+                                       DWORD cchText) {
+    Wh_Log(L">");
+
+    void* ret = PSStrFormatByteSizeW_Original(size, pwszText, cchText);
+
+    if (!pwszText || cchText == 0) {
+        return ret;
+    }
+
+    int len = wcslen(pwszText);
+    if (len < 2 || (size_t)len + 1 > cchText - 1 || pwszText[len - 1] != 'B') {
+        return ret;
+    }
+
+    WCHAR sizeUnit = pwszText[len - 2];
+    if (sizeUnit != 'K' && sizeUnit != 'M' && sizeUnit != 'G' &&
+        sizeUnit != 'T' && sizeUnit != 'P' && sizeUnit != 'E') {
+        return ret;
+    }
+
+    pwszText[len - 1] = 'i';
+    pwszText[len] = 'B';
+    pwszText[len + 1] = '\0';
+
+    return ret;
+}
+
 using PSStrFormatKBSizeW_t = void*(WINAPI*)(ULONGLONG size,
                                             LPWSTR pwszText,
                                             DWORD cchText);
@@ -2466,10 +2499,9 @@ int WINAPI LoadStringW_Hook(HINSTANCE hInstance,
 
     size_t originalStringLen = p - lpBuffer;
 
-    // Override "B" to "iB".
-    p[-1] = 'i';
-
     if ((size_t)cchBufferMax >= originalStringLen + 2) {
+        // Override "B" to "iB".
+        p[-1] = 'i';
         p[0] = 'B';
         p[1] = '\0';
     }
@@ -2873,13 +2905,17 @@ BOOL Wh_ModInit() {
 
         g_propsysModule = propsysModule;
 
-        if (!g_settings.disableKbOnlySizes) {
-            auto pPSStrFormatKBSizeW =
-                (PSStrFormatKBSizeW_t)GetProcAddress(propsysModule, (PCSTR)422);
-            WindhawkUtils::Wh_SetFunctionHookT(pPSStrFormatKBSizeW,
-                                               PSStrFormatKBSizeW_Hook,
-                                               &PSStrFormatKBSizeW_Original);
-        }
+        auto pPSStrFormatByteSizeW =
+            (PSStrFormatByteSizeW_t)GetProcAddress(propsysModule, (PCSTR)421);
+        WindhawkUtils::Wh_SetFunctionHookT(pPSStrFormatByteSizeW,
+                                           PSStrFormatByteSizeW_Hook,
+                                           &PSStrFormatByteSizeW_Original);
+
+        auto pPSStrFormatKBSizeW =
+            (PSStrFormatKBSizeW_t)GetProcAddress(propsysModule, (PCSTR)422);
+        WindhawkUtils::Wh_SetFunctionHookT(pPSStrFormatKBSizeW,
+                                           PSStrFormatKBSizeW_Hook,
+                                           &PSStrFormatKBSizeW_Original);
 
         HMODULE kernelBaseModule = GetModuleHandle(L"kernelbase.dll");
         HMODULE kernel32Module = GetModuleHandle(L"kernel32.dll");
