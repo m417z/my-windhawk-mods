@@ -3954,6 +3954,15 @@ void ApplyBackgroundTranslucentEffect(
                                    &backdropType, sizeof(backdropType));
 }
 
+void TriggerWindowCompositionUpdate(HWND hWnd) {
+    WINDOWPOS windowPos = {
+        .hwnd = hWnd,
+        .flags = SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE,
+    };
+    SendMessage(hWnd, WM_WINDOWPOSCHANGED, 0, (LPARAM)&windowPos);
+    SendMessage(hWnd, WM_DWMCOMPOSITIONCHANGED, 0, 0);
+}
+
 void OnWindowCreated(HWND hWnd, PCSTR funcName) {
     TargetWindowType windowType = GetTargetWindowType(hWnd);
     if (windowType != TargetWindowType::None) {
@@ -4577,6 +4586,7 @@ void Wh_ModAfterInit() {
                 if (GetTargetWindowType(hTargetWnd) ==
                     TargetWindowType::FileExplorer) {
                     ApplyBackgroundTranslucentEffect(hTargetWnd);
+                    TriggerWindowCompositionUpdate(hTargetWnd);
                 }
             },
             (PVOID)hTargetWnd);
@@ -4609,6 +4619,7 @@ void Wh_ModUninit() {
                     TargetWindowType::FileExplorer) {
                     ApplyBackgroundTranslucentEffect(
                         hTargetWnd, BackgroundTranslucentEffect::kDefault);
+                    TriggerWindowCompositionUpdate(hTargetWnd);
                 }
             },
             (PVOID)hTargetWnd);
@@ -4656,6 +4667,7 @@ void Wh_ModSettingsChanged() {
                 if (GetTargetWindowType(hTargetWnd) ==
                     TargetWindowType::FileExplorer) {
                     ApplyBackgroundTranslucentEffect(hTargetWnd);
+                    TriggerWindowCompositionUpdate(hTargetWnd);
                 }
             },
             (PVOID)hTargetWnd);
