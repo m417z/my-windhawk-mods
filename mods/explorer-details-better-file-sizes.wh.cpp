@@ -2418,7 +2418,7 @@ void* WINAPI PSStrFormatByteSizeW_Hook(ULONGLONG size,
     }
 
     int len = wcslen(pwszText);
-    if (len < 2 || (size_t)len + 1 > cchText - 1 || pwszText[len - 1] != 'B') {
+    if (len < 2 || pwszText[len - 1] != 'B') {
         return ret;
     }
 
@@ -2428,9 +2428,15 @@ void* WINAPI PSStrFormatByteSizeW_Hook(ULONGLONG size,
         return ret;
     }
 
-    pwszText[len - 1] = 'i';
-    pwszText[len] = 'B';
-    pwszText[len + 1] = '\0';
+    if (cchText >= (size_t)len + 2) {
+        pwszText[len - 1] = 'i';
+        pwszText[len] = 'B';
+        pwszText[len + 1] = '\0';
+
+        Wh_Log(L"Appended 'i' to size unit, new string: %s", pwszText);
+    } else {
+        Wh_Log(L"Not enough space to append 'i'");
+    }
 
     return ret;
 }
@@ -2451,14 +2457,19 @@ void* WINAPI PSStrFormatKBSizeW_Hook(ULONGLONG size,
     }
 
     int len = wcslen(pwszText);
-    if (len < 2 || (size_t)len + 1 > cchText - 1 || pwszText[len - 2] != 'K' ||
-        pwszText[len - 1] != 'B') {
+    if (len < 2 || pwszText[len - 2] != 'K' || pwszText[len - 1] != 'B') {
         return ret;
     }
 
-    pwszText[len - 1] = 'i';
-    pwszText[len] = 'B';
-    pwszText[len + 1] = '\0';
+    if (cchText >= (size_t)len + 2) {
+        pwszText[len - 1] = 'i';
+        pwszText[len] = 'B';
+        pwszText[len + 1] = '\0';
+
+        Wh_Log(L"Appended 'i' to size unit, new string: %s", pwszText);
+    } else {
+        Wh_Log(L"Not enough space to append 'i'");
+    }
 
     return ret;
 }
@@ -2497,16 +2508,20 @@ int WINAPI LoadStringW_Hook(HINSTANCE hInstance,
 
     Wh_Log(L"> Overriding string %u: %s", uID, lpBuffer);
 
-    size_t originalStringLen = p - lpBuffer;
+    size_t stringLen = p - lpBuffer;
 
-    if ((size_t)cchBufferMax >= originalStringLen + 2) {
-        // Override "B" to "iB".
+    if ((size_t)cchBufferMax >= stringLen + 2) {
         p[-1] = 'i';
         p[0] = 'B';
         p[1] = '\0';
+        stringLen++;
+
+        Wh_Log(L"Appended 'i' to size unit, new string: %s", lpBuffer);
+    } else {
+        Wh_Log(L"Not enough space to append 'i'");
     }
 
-    return wcslen(lpBuffer);
+    return stringLen;
 }
 
 bool HookWindowsStorageSymbols() {
