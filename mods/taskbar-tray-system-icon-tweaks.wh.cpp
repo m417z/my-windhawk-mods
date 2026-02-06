@@ -438,6 +438,7 @@ SystemTrayIconIdent IdentifySystemTrayIconFromText(std::wstring_view text) {
             return SystemTrayIconIdent::kStudioEffects;
 
         case L'\uEADD':
+        case L'\uEF97':
             return SystemTrayIconIdent::kRecall;
     }
 
