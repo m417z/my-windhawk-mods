@@ -409,7 +409,7 @@ SystemTrayIconIdent IdentifySystemTrayIconFromText(std::wstring_view text) {
         // Language supplementary icons.
         // Found by installing all the built-in input methods from:
         // https://learn.microsoft.com/en-us/windows-hardware/manufacture/desktop/windows-language-pack-default-values?view=windows-11#input-method-editors
-        // and identify the icon code in the fonts Segoe Fluent and
+        // and identifying the icon code in the fonts Segoe Fluent and
         // AXPIcons.ttf.
         // https://learn.microsoft.com/en-us/windows/apps/design/style/segoe-fluent-icons-font
         // %SystemRoot%\SystemApps\MicrosoftWindows.Client.Core_cw5n1h2txyewy\SystemTray\Assets\AXPIcons.ttf
@@ -437,8 +437,13 @@ SystemTrayIconIdent IdentifySystemTrayIconFromText(std::wstring_view text) {
         case L'\uEABC':
             return SystemTrayIconIdent::kStudioEffects;
 
+        // From:
+        // C:\Windows\SystemApps\MicrosoftWindows.Client.Core_cw5n1h2txyewy\SystemTray\Assets\RecallIcons.ttf
+        case L'\uEC83':
         case L'\uEADD':
+        case L'\uEB16':
         case L'\uEF97':
+        case L'\uF1C6':
             return SystemTrayIconIdent::kRecall;
     }
 
