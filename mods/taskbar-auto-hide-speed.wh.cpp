@@ -2,7 +2,7 @@
 // @id              taskbar-auto-hide-speed
 // @name            Taskbar auto-hide speed
 // @description     Customize the taskbar auto-hide animation speed and frame rate to make it feel less sluggish and janky
-// @version         1.0
+// @version         1.1
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
@@ -93,6 +93,23 @@ winrt::Windows::Foundation::TimeSpan g_collapseOriginalDuration;
 winrt::Windows::UI::Composition::KeyFrameAnimation g_expandAnimation = nullptr;
 winrt::Windows::Foundation::TimeSpan g_expandOriginalDuration;
 
+void SetAnimationDuration(
+    winrt::Windows::UI::Composition::KeyFrameAnimation animation,
+    winrt::Windows::Foundation::TimeSpan duration) {
+    // From the docs: Minimum allowed value is 1ms and maximum allowed value is
+    // 24 days.
+    constexpr auto kMin = duration_cast<winrt::Windows::Foundation::TimeSpan>(
+        std::chrono::milliseconds{1});
+    constexpr auto kMax = duration_cast<winrt::Windows::Foundation::TimeSpan>(
+        std::chrono::hours{24 * 24});
+    if (duration < kMin) {
+        duration = kMin;
+    } else if (duration > kMax) {
+        duration = kMax;
+    }
+    animation.Duration(duration);
+}
+
 using SharedAnimations_TaskbarCollapseAnimation_t =
     void**(WINAPI*)(void* pThis, void* param1);
 SharedAnimations_TaskbarCollapseAnimation_t
@@ -110,8 +127,8 @@ void** WINAPI SharedAnimations_TaskbarCollapseAnimation_Hook(void* pThis,
     if (!g_collapseAnimation) {
         g_collapseOriginalDuration = animation.Duration();
         g_collapseAnimation = animation;
-        animation.Duration(g_collapseOriginalDuration * 100 /
-                           g_settings.hideSpeedup);
+        SetAnimationDuration(animation, g_collapseOriginalDuration * 100 /
+                                            g_settings.hideSpeedup);
     }
 
     return ret;
@@ -134,8 +151,8 @@ void** WINAPI SharedAnimations_TaskbarExpandAnimation_Hook(void* pThis,
     if (!g_expandAnimation) {
         g_expandOriginalDuration = animation.Duration();
         g_expandAnimation = animation;
-        animation.Duration(g_expandOriginalDuration * 100 /
-                           g_settings.showSpeedup);
+        SetAnimationDuration(
+            animation, g_expandOriginalDuration * 100 / g_settings.showSpeedup);
     }
 
     return ret;
@@ -479,8 +496,8 @@ HMODULE WINAPI LoadLibraryExW_Hook(LPCWSTR lpLibFileName,
 }
 
 void LoadSettings() {
-    g_settings.showSpeedup = Wh_GetIntSetting(L"showSpeedup");
-    g_settings.hideSpeedup = Wh_GetIntSetting(L"hideSpeedup");
+    g_settings.showSpeedup = std::max(1, Wh_GetIntSetting(L"showSpeedup"));
+    g_settings.hideSpeedup = std::max(1, Wh_GetIntSetting(L"hideSpeedup"));
     g_settings.frameRate = Wh_GetIntSetting(L"frameRate");
     g_settings.oldTaskbarOnWin11 = Wh_GetIntSetting(L"oldTaskbarOnWin11");
 }
@@ -596,13 +613,14 @@ BOOL Wh_ModSettingsChanged(BOOL* bReload) {
     LoadSettings();
 
     if (g_collapseAnimation) {
-        g_collapseAnimation.Duration(g_collapseOriginalDuration * 100 /
-                                     g_settings.hideSpeedup);
+        SetAnimationDuration(
+            g_collapseAnimation,
+            g_collapseOriginalDuration * 100 / g_settings.hideSpeedup);
     }
 
     if (g_expandAnimation) {
-        g_expandAnimation.Duration(g_expandOriginalDuration * 100 /
-                                   g_settings.showSpeedup);
+        SetAnimationDuration(g_expandAnimation, g_expandOriginalDuration * 100 /
+                                                    g_settings.showSpeedup);
     }
 
     *bReload = g_settings.oldTaskbarOnWin11 != prevOldTaskbarOnWin11;
