@@ -102,7 +102,6 @@ number when both are configured.
 #include <shellapi.h>
 
 #include <atomic>
-#include <optional>
 #include <vector>
 
 struct MonitorConfig {
@@ -128,18 +127,28 @@ std::atomic<bool> g_taskbarViewDllLoaded;
 std::atomic<bool> g_initialized;
 std::atomic<bool> g_explorerPatcherInitialized;
 
+std::atomic<bool> g_pauseCustomizations;
+
 bool g_autoHideDisabledForMonitor;
 
 void ToggleAutoHideToApplySettings() {
+    g_pauseCustomizations = true;
+
     APPBARDATA abd = {sizeof(abd)};
     UINT state = (UINT)SHAppBarMessage(ABM_GETSTATE, &abd);
+
+    g_pauseCustomizations = false;
 
     if (state & ABS_AUTOHIDE) {
         Wh_Log(L"Auto-hide is enabled, toggling to apply settings");
 
+        g_pauseCustomizations = true;
+
         // Disable auto-hide
         abd.lParam = state & ~ABS_AUTOHIDE;
         SHAppBarMessage(ABM_SETSTATE, &abd);
+
+        g_pauseCustomizations = false;
 
         // Re-enable auto-hide
         abd.lParam = state;
@@ -211,7 +220,11 @@ HMONITOR GetMonitorByInterfaceNameSubstr(PCWSTR interfaceNameSubstr) {
     return monitorResult;
 }
 
-std::optional<bool> GetAutoHideDisabledForMonitor(HMONITOR monitor) {
+bool GetAutoHideDisabledForMonitor(HMONITOR monitor) {
+    if (g_pauseCustomizations) {
+        return false;
+    }
+
     for (const auto& config : g_settings.monitors) {
         HMONITOR configMonitor = nullptr;
 
@@ -227,7 +240,7 @@ std::optional<bool> GetAutoHideDisabledForMonitor(HMONITOR monitor) {
         }
     }
 
-    return std::nullopt;
+    return false;
 }
 
 using ViewCoordinator_ShouldTaskbarBeExpanded_t =
@@ -244,7 +257,7 @@ bool WINAPI ViewCoordinator_ShouldTaskbarBeExpanded_Hook(void* pThis,
     HMONITOR monitor =
         MonitorFromWindow(hMMTaskbarWnd, MONITOR_DEFAULTTONEAREST);
     auto autoHideDisabled = GetAutoHideDisabledForMonitor(monitor);
-    if (autoHideDisabled && *autoHideDisabled) {
+    if (autoHideDisabled) {
         Wh_Log(L"Returning true for monitor with auto-hide disabled");
         return true;
     }
@@ -338,7 +351,7 @@ void WINAPI TrayUI__Hide_Hook(void* pThis) {
     HMONITOR primaryMonitor =
         MonitorFromPoint({0, 0}, MONITOR_DEFAULTTOPRIMARY);
     auto autoHideDisabled = GetAutoHideDisabledForMonitor(primaryMonitor);
-    if (autoHideDisabled && *autoHideDisabled) {
+    if (autoHideDisabled) {
         HWND hTaskbarWnd = FindCurrentProcessTaskbarWnd();
         if (hTaskbarWnd) {
             KillTimer(hTaskbarWnd, kTrayUITimerHide);
@@ -356,7 +369,7 @@ HRESULT WINAPI CSecondaryTray__LoadSettings_Hook(void* pThis) {
 
     HMONITOR monitor = CSecondaryTray_GetMonitor_Original(pThis);
     auto autoHideDisabled = GetAutoHideDisabledForMonitor(monitor);
-    if (autoHideDisabled && *autoHideDisabled) {
+    if (autoHideDisabled) {
         g_autoHideDisabledForMonitor = true;
     }
 
@@ -374,7 +387,7 @@ void WINAPI CSecondaryTray_CheckSize_Hook(void* pThis, int param1) {
 
     HMONITOR monitor = CSecondaryTray_GetMonitor_Original(pThis);
     auto autoHideDisabled = GetAutoHideDisabledForMonitor(monitor);
-    if (autoHideDisabled && *autoHideDisabled) {
+    if (autoHideDisabled) {
         g_autoHideDisabledForMonitor = true;
     }
 
@@ -393,11 +406,60 @@ int WINAPI CTray_RecomputeWorkArea_Hook(void* pThis,
     Wh_Log(L">");
 
     auto autoHideDisabled = GetAutoHideDisabledForMonitor(monitor);
-    if (autoHideDisabled && *autoHideDisabled) {
+    if (autoHideDisabled) {
         g_autoHideDisabledForMonitor = true;
     }
 
     int ret = CTray_RecomputeWorkArea_Original(pThis, monitor, rect);
+
+    g_autoHideDisabledForMonitor = false;
+
+    return ret;
+}
+
+using CTray_AppBarSetAutoHideBar_t = BOOL(WINAPI*)(void* pThis,
+                                                   HWND hWnd,
+                                                   BOOL autoHide,
+                                                   UINT edge,
+                                                   HMONITOR monitor);
+CTray_AppBarSetAutoHideBar_t CTray_AppBarSetAutoHideBar_Original;
+BOOL WINAPI CTray_AppBarSetAutoHideBar_Hook(void* pThis,
+                                            HWND hWnd,
+                                            BOOL autoHide,
+                                            UINT edge,
+                                            HMONITOR monitor) {
+    Wh_Log(L">");
+
+    auto autoHideDisabled = GetAutoHideDisabledForMonitor(monitor);
+    if (autoHideDisabled) {
+        autoHide = FALSE;
+    }
+
+    BOOL ret = CTray_AppBarSetAutoHideBar_Original(pThis, hWnd, autoHide, edge,
+                                                   monitor);
+
+    return ret;
+}
+
+using CTray__OnAppBarMessage_t = UINT_PTR(WINAPI*)(void* pThis,
+                                                   COPYDATASTRUCT* cds);
+CTray__OnAppBarMessage_t CTray__OnAppBarMessage_Original;
+UINT_PTR WINAPI CTray__OnAppBarMessage_Hook(void* pThis, COPYDATASTRUCT* cds) {
+    Wh_Log(L">");
+
+    if (g_autoHideDisabledForMonitor) {
+        return CTray__OnAppBarMessage_Original(pThis, cds);
+    }
+
+    // Check if auto-hide is disabled for the primary monitor.
+    HMONITOR primaryMonitor =
+        MonitorFromPoint({0, 0}, MONITOR_DEFAULTTOPRIMARY);
+    auto autoHideDisabled = GetAutoHideDisabledForMonitor(primaryMonitor);
+    if (autoHideDisabled) {
+        g_autoHideDisabledForMonitor = true;
+    }
+
+    UINT_PTR ret = CTray__OnAppBarMessage_Original(pThis, cds);
 
     g_autoHideDisabledForMonitor = false;
 
@@ -695,6 +757,16 @@ bool HookExplorerExeSymbols() {
             {LR"(private: int __cdecl CTray::RecomputeWorkArea(struct HMONITOR__ *,struct tagRECT *))"},
             &CTray_RecomputeWorkArea_Original,
             CTray_RecomputeWorkArea_Hook,
+        },
+        {
+            {LR"(public: virtual int __cdecl CTray::AppBarSetAutoHideBar(struct HWND__ *,int,unsigned int,struct HMONITOR__ *))"},
+            &CTray_AppBarSetAutoHideBar_Original,
+            CTray_AppBarSetAutoHideBar_Hook,
+        },
+        {
+            {LR"(protected: __int64 __cdecl CTray::_OnAppBarMessage(struct tagCOPYDATASTRUCT *))"},
+            &CTray__OnAppBarMessage_Original,
+            CTray__OnAppBarMessage_Hook,
         },
     };
 
