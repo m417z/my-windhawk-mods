@@ -2,7 +2,7 @@
 // @id              taskbar-auto-hide-per-monitor
 // @name            Taskbar auto-hide per monitor
 // @description     By default, Windows uses the same auto-hide setting for all monitors. This mod allows setting different auto-hide settings for each monitor.
-// @version         1.0.2
+// @version         1.0.3
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
