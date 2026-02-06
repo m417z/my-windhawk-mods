@@ -3524,7 +3524,7 @@ void WINAPI ClockSystemTrayIconDataModel2_RefreshIcon_Hook(LPVOID pThis,
 void UpdateToolTipString(LPVOID tooltipPtrPtr) {
     auto separator = L"\r\n\r\n"sv;
 
-    WCHAR extraLine[256];
+    WCHAR extraLine[4096];
     size_t extraLength = FormatLine(extraLine, ARRAYSIZE(extraLine),
                                     g_settings.tooltipLine.get());
     if (extraLength == 0) {
