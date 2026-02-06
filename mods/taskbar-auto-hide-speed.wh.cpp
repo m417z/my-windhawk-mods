@@ -9,7 +9,7 @@
 // @homepage        https://m417z.com/
 // @include         explorer.exe
 // @architecture    x86-64
-// @compilerOptions -lversion
+// @compilerOptions -loleaut32 -lruntimeobject -lversion
 // ==/WindhawkMod==
 
 // Source code is published under The GNU General Public License v3.0.
@@ -35,14 +35,15 @@ less sluggish and janky.
 /*
 - showSpeedup: 250
   $name: Show animation speedup
-  $description: In percentage of the original speed
+  $description: In percentage of the original speed.
 - hideSpeedup: 250
   $name: Hide animation speedup
-  $description: In percentage of the original speed
+  $description: In percentage of the original speed.
 - frameRate: 90
   $name: Animation frame rate
   $description: >-
-    Frames per second, higher frame rate will use more CPU
+    Frames per second. Higher frame rate will use more CPU. Has no effect on the
+    new Windows 11 auto-hide animation.
 - oldTaskbarOnWin11: false
   $name: Customize the old taskbar on Windows 11
   $description: >-
@@ -52,6 +53,8 @@ less sluggish and janky.
 // ==/WindhawkModSettings==
 
 #include <windhawk_utils.h>
+
+#include <winrt/Windows.UI.Composition.h>
 
 #include <psapi.h>
 
@@ -73,6 +76,7 @@ enum class WinVersion {
 
 WinVersion g_winVersion;
 
+std::atomic<bool> g_taskbarViewDllLoaded;
 std::atomic<bool> g_initialized;
 std::atomic<bool> g_explorerPatcherInitialized;
 
@@ -82,6 +86,60 @@ std::atomic<DWORD> g_slideWindowThreadId;
 int g_slideWindowSpeedup;
 double g_slideWindowStartTime;
 double g_slideWindowLastFrameStartTime;
+
+winrt::Windows::UI::Composition::KeyFrameAnimation g_collapseAnimation =
+    nullptr;
+winrt::Windows::Foundation::TimeSpan g_collapseOriginalDuration;
+winrt::Windows::UI::Composition::KeyFrameAnimation g_expandAnimation = nullptr;
+winrt::Windows::Foundation::TimeSpan g_expandOriginalDuration;
+
+using SharedAnimations_TaskbarCollapseAnimation_t =
+    void**(WINAPI*)(void* pThis, void* param1);
+SharedAnimations_TaskbarCollapseAnimation_t
+    SharedAnimations_TaskbarCollapseAnimation_Original;
+void** WINAPI SharedAnimations_TaskbarCollapseAnimation_Hook(void* pThis,
+                                                             void* param1) {
+    Wh_Log(L">");
+
+    void** ret =
+        SharedAnimations_TaskbarCollapseAnimation_Original(pThis, param1);
+
+    winrt::Windows::UI::Composition::KeyFrameAnimation animation = nullptr;
+    winrt::copy_from_abi(animation, ret[0]);
+
+    if (!g_collapseAnimation) {
+        g_collapseOriginalDuration = animation.Duration();
+        g_collapseAnimation = animation;
+        animation.Duration(g_collapseOriginalDuration * 100 /
+                           g_settings.hideSpeedup);
+    }
+
+    return ret;
+}
+
+using SharedAnimations_TaskbarExpandAnimation_t = void**(WINAPI*)(void* pThis,
+                                                                  void* param1);
+SharedAnimations_TaskbarExpandAnimation_t
+    SharedAnimations_TaskbarExpandAnimation_Original;
+void** WINAPI SharedAnimations_TaskbarExpandAnimation_Hook(void* pThis,
+                                                           void* param1) {
+    Wh_Log(L">");
+
+    void** ret =
+        SharedAnimations_TaskbarExpandAnimation_Original(pThis, param1);
+
+    winrt::Windows::UI::Composition::KeyFrameAnimation animation = nullptr;
+    winrt::copy_from_abi(animation, ret[0]);
+
+    if (!g_expandAnimation) {
+        g_expandOriginalDuration = animation.Duration();
+        g_expandAnimation = animation;
+        animation.Duration(g_expandOriginalDuration * 100 /
+                           g_settings.showSpeedup);
+    }
+
+    return ret;
+}
 
 void TimerInitialize() {
     LARGE_INTEGER freq;
@@ -164,6 +222,52 @@ void WINAPI Sleep_Hook(DWORD dwMilliseconds) {
     }
 
     g_slideWindowLastFrameStartTime = TimerGetSeconds();
+}
+
+bool HookTaskbarViewDllSymbols(HMODULE module) {
+    // Taskbar.View.dll
+    WindhawkUtils::SYMBOL_HOOK symbolHooks[] = {
+        {
+            {LR"(public: struct std::pair<struct winrt::Windows::UI::Composition::KeyFrameAnimation,struct winrt::WindowsUdk::UI::Composition::AnimationLastFrameTelemetry> __cdecl winrt::Taskbar::implementation::SharedAnimations::TaskbarCollapseAnimation(void)const )"},
+            &SharedAnimations_TaskbarCollapseAnimation_Original,
+            SharedAnimations_TaskbarCollapseAnimation_Hook,
+            true,  // For the new Windows 11 animation.
+        },
+        {
+            {LR"(public: struct std::pair<struct winrt::Windows::UI::Composition::KeyFrameAnimation,struct winrt::WindowsUdk::UI::Composition::AnimationLastFrameTelemetry> __cdecl winrt::Taskbar::implementation::SharedAnimations::TaskbarExpandAnimation(void)const )"},
+            &SharedAnimations_TaskbarExpandAnimation_Original,
+            SharedAnimations_TaskbarExpandAnimation_Hook,
+            true,  // For the new Windows 11 animation.
+        },
+    };
+
+    if (!HookSymbols(module, symbolHooks, ARRAYSIZE(symbolHooks))) {
+        Wh_Log(L"HookSymbols failed");
+        return false;
+    }
+
+    return true;
+}
+
+HMODULE GetTaskbarViewModuleHandle() {
+    HMODULE module = GetModuleHandle(L"Taskbar.View.dll");
+    if (!module) {
+        module = GetModuleHandle(L"ExplorerExtensions.dll");
+    }
+
+    return module;
+}
+
+void HandleLoadedModuleIfTaskbarView(HMODULE module, LPCWSTR lpLibFileName) {
+    if (g_winVersion >= WinVersion::Win11 && !g_taskbarViewDllLoaded &&
+        GetTaskbarViewModuleHandle() == module &&
+        !g_taskbarViewDllLoaded.exchange(true)) {
+        Wh_Log(L"Loaded %s", lpLibFileName);
+
+        if (HookTaskbarViewDllSymbols(module)) {
+            Wh_ApplyHookOperations();
+        }
+    }
 }
 
 bool HookTaskbarSymbols() {
@@ -352,16 +456,23 @@ bool HandleLoadedExplorerPatcher() {
     return true;
 }
 
+void HandleLoadedModuleIfExplorerPatcher(HMODULE module) {
+    if (module && !((ULONG_PTR)module & 3) && !g_explorerPatcherInitialized) {
+        if (IsExplorerPatcherModule(module)) {
+            HookExplorerPatcherSymbols(module);
+        }
+    }
+}
+
 using LoadLibraryExW_t = decltype(&LoadLibraryExW);
 LoadLibraryExW_t LoadLibraryExW_Original;
 HMODULE WINAPI LoadLibraryExW_Hook(LPCWSTR lpLibFileName,
                                    HANDLE hFile,
                                    DWORD dwFlags) {
     HMODULE module = LoadLibraryExW_Original(lpLibFileName, hFile, dwFlags);
-    if (module && !((ULONG_PTR)module & 3) && !g_explorerPatcherInitialized) {
-        if (IsExplorerPatcherModule(module)) {
-            HookExplorerPatcherSymbols(module);
-        }
+    if (module) {
+        HandleLoadedModuleIfExplorerPatcher(module);
+        HandleLoadedModuleIfTaskbarView(module, lpLibFileName);
     }
 
     return module;
@@ -395,8 +506,23 @@ BOOL Wh_ModInit() {
         if (hasWin10Taskbar && !HookTaskbarSymbols()) {
             return FALSE;
         }
-    } else if (!HookTaskbarSymbols()) {
-        return FALSE;
+    } else if (g_winVersion >= WinVersion::Win11) {
+        if (HMODULE taskbarViewModule = GetTaskbarViewModuleHandle()) {
+            g_taskbarViewDllLoaded = true;
+            if (!HookTaskbarViewDllSymbols(taskbarViewModule)) {
+                return FALSE;
+            }
+        } else {
+            Wh_Log(L"Taskbar view module not loaded yet");
+        }
+
+        if (!HookTaskbarSymbols()) {
+            return FALSE;
+        }
+    } else {
+        if (!HookTaskbarSymbols()) {
+            return FALSE;
+        }
     }
 
     if (!HandleLoadedExplorerPatcher()) {
@@ -431,6 +557,18 @@ BOOL Wh_ModInit() {
 void Wh_ModAfterInit() {
     Wh_Log(L">");
 
+    if (g_winVersion >= WinVersion::Win11 && !g_taskbarViewDllLoaded) {
+        if (HMODULE taskbarViewModule = GetTaskbarViewModuleHandle()) {
+            if (!g_taskbarViewDllLoaded.exchange(true)) {
+                Wh_Log(L"Got Taskbar.View.dll");
+
+                if (HookTaskbarViewDllSymbols(taskbarViewModule)) {
+                    Wh_ApplyHookOperations();
+                }
+            }
+        }
+    }
+
     // Try again in case there's a race between the previous attempt and the
     // LoadLibraryExW hook.
     if (!g_explorerPatcherInitialized) {
@@ -440,6 +578,14 @@ void Wh_ModAfterInit() {
 
 void Wh_ModUninit() {
     Wh_Log(L">");
+
+    if (g_collapseAnimation) {
+        g_collapseAnimation.Duration(g_collapseOriginalDuration);
+    }
+
+    if (g_expandAnimation) {
+        g_expandAnimation.Duration(g_expandOriginalDuration);
+    }
 }
 
 BOOL Wh_ModSettingsChanged(BOOL* bReload) {
@@ -448,6 +594,16 @@ BOOL Wh_ModSettingsChanged(BOOL* bReload) {
     bool prevOldTaskbarOnWin11 = g_settings.oldTaskbarOnWin11;
 
     LoadSettings();
+
+    if (g_collapseAnimation) {
+        g_collapseAnimation.Duration(g_collapseOriginalDuration * 100 /
+                                     g_settings.hideSpeedup);
+    }
+
+    if (g_expandAnimation) {
+        g_expandAnimation.Duration(g_expandOriginalDuration * 100 /
+                                   g_settings.showSpeedup);
+    }
 
     *bReload = g_settings.oldTaskbarOnWin11 != prevOldTaskbarOnWin11;
 
