@@ -1,7 +1,7 @@
 // ==WindhawkMod==
 // @id              taskbar-tray-system-icon-tweaks
 // @name            Taskbar tray system icon tweaks
-// @description     Allows hiding system icons: volume, network, battery, microphone, location/GPS, Studio Effects, language bar, bell (always or when there are no new notifications), and the "Show desktop" button (hide or set width)
+// @description     Allows hiding system icons: volume, network, battery, microphone, location/GPS, Studio Effects, Recall, language bar, bell (always or when there are no new notifications), and the "Show desktop" button (hide or set width)
 // @version         1.2.3
 // @author          m417z
 // @github          https://github.com/m417z
@@ -25,7 +25,7 @@
 # Taskbar tray system icon tweaks
 
 Allows hiding system icons: volume, network, battery, microphone, location/GPS,
-Studio Effects, language bar, bell (always or when there are no new
+Studio Effects, Recall, language bar, bell (always or when there are no new
 notifications), and the "Show desktop" button (hide or set width).
 
 Only Windows 11 is supported.
@@ -48,6 +48,8 @@ Only Windows 11 is supported.
   $name: Hide location (e.g. GPS) icon
 - hideStudioEffectsIcon: false
   $name: Hide Studio Effects icon
+- hideRecallIcon: false
+  $name: Hide Recall icon
 - hideLanguageBar: false
   $name: Hide language bar
 - hideLanguageSupplementaryIcons: false
@@ -97,6 +99,7 @@ struct {
     bool hideMicrophoneIcon;
     bool hideGeolocationIcon;
     bool hideStudioEffectsIcon;
+    bool hideRecallIcon;
     bool hideLanguageBar;
     bool hideLanguageSupplementaryIcons;
     HideBellIcon hideBellIcon;
@@ -247,6 +250,7 @@ enum class SystemTrayIconIdent {
     kBellFullDnd,
     kLanguage,
     kStudioEffects,
+    kRecall,
 };
 
 SystemTrayIconIdent IdentifySystemTrayIconFromText(std::wstring_view text) {
@@ -432,6 +436,9 @@ SystemTrayIconIdent IdentifySystemTrayIconFromText(std::wstring_view text) {
 
         case L'\uEABC':
             return SystemTrayIconIdent::kStudioEffects;
+
+        case L'\uEADD':
+            return SystemTrayIconIdent::kRecall;
     }
 
     return SystemTrayIconIdent::kUnknown;
@@ -485,6 +492,10 @@ void ApplyMainStackIconViewStyle(FrameworkElement notifyIconViewElement) {
 
                 case SystemTrayIconIdent::kStudioEffects:
                     hide = g_settings.hideStudioEffectsIcon;
+                    break;
+
+                case SystemTrayIconIdent::kRecall:
+                    hide = g_settings.hideRecallIcon;
                     break;
 
                 case SystemTrayIconIdent::kNone:
@@ -1355,6 +1366,7 @@ void LoadSettings() {
     g_settings.hideGeolocationIcon = Wh_GetIntSetting(L"hideGeolocationIcon");
     g_settings.hideStudioEffectsIcon =
         Wh_GetIntSetting(L"hideStudioEffectsIcon");
+    g_settings.hideRecallIcon = Wh_GetIntSetting(L"hideRecallIcon");
     g_settings.hideLanguageBar = Wh_GetIntSetting(L"hideLanguageBar");
     g_settings.hideLanguageSupplementaryIcons =
         Wh_GetIntSetting(L"hideLanguageSupplementaryIcons");
