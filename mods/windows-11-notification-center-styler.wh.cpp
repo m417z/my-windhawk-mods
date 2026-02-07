@@ -60,6 +60,14 @@ WindowGlass](https://github.com/ramensoftware/windows-11-notification-center-sty
 \
 Oversimplified&Accentuated](https://github.com/ramensoftware/windows-11-notification-center-styling-guide/blob/main/Themes/Oversimplified&Accentuated/README.md)
 
+[![TintedGlass](https://raw.githubusercontent.com/ramensoftware/windows-11-notification-center-styling-guide/main/Themes/TintedGlass/screenshot-small.png)
+\
+TintedGlass](https://github.com/ramensoftware/windows-11-notification-center-styling-guide/blob/main/Themes/TintedGlass/README.md)
+
+[![Fluid](https://raw.githubusercontent.com/ramensoftware/windows-11-notification-center-styling-guide/main/Themes/Fluid/screenshot-small.png)
+\
+Fluid](https://github.com/ramensoftware/windows-11-notification-center-styling-guide/blob/main/Themes/Fluid/README.md)
+
 More themes can be found in the **Themes** section of [The Windows 11
 notification center styling
 guide](https://github.com/ramensoftware/windows-11-notification-center-styling-guide/blob/main/README.md#themes).
@@ -222,6 +230,8 @@ from the **TranslucentTB** project.
   - WindowGlass: WindowGlass
   - WindowGlass_variant_alternative: WindowGlass (Alternative)
   - Oversimplified&Accentuated: Oversimplified&Accentuated
+  - TintedGlass: TintedGlass
+  - Fluid: Fluid
 - controlStyles:
   - - target: ""
       $name: Target
@@ -1642,6 +1652,193 @@ const Theme g_themeOversimplified_Accentuated = {{
     L"DarkAccent = <AcrylicBrush TintColor=\"{ThemeResource SystemAccentColorDark1}\" TintOpacity=\"0.6\" TintLuminosityOpacity=\"0.3\" FallbackColor=\"{ThemeResource SystemAccentColorDark1}\" />",
     L"SolidAccent = <SolidColorBrush Color=\"{ThemeResource SystemAccentColor}\" Opacity=\"1\"/>",
     L"Reveal = <RevealBorderBrush Color=\"Transparent\" TargetTheme=\"1\" Opacity=\"1\" />",
+}};
+
+const Theme g_themeTintedGlass = {{
+    ThemeTargetStyles{L"Grid#NotificationCenterGrid", {
+        L"Background:=$Base",
+        L"BorderThickness=0,0,0,0",
+        L"CornerRadius=$Radius"}},
+    ThemeTargetStyles{L"Grid#CalendarCenterGrid", {
+        L"Background:=$Base",
+        L"BorderThickness=0,0,0,0",
+        L"CornerRadius=$Radius"}},
+    ThemeTargetStyles{L"ScrollViewer#CalendarControlScrollViewer", {
+        L"BorderThickness=0,0,0,0",
+        L"Background:=$Transparent"}},
+    ThemeTargetStyles{L"Border#CalendarHeaderMinimizedOverlay", {
+        L"Background:=$Transparent",
+        L"BorderThickness=0,0,0,0"}},
+    ThemeTargetStyles{L"ActionCenter.FocusSessionControl#FocusSessionControl > Grid#FocusGrid", {
+        L"Background:=$Transparent",
+        L"BorderThickness=0,0,0,0"}},
+    ThemeTargetStyles{L"MenuFlyoutPresenter > Border", {
+        L"Background:=$Overlay",
+        L"BorderThickness=0,0,0,0",
+        L"CornerRadius=$Radius",
+        L"Padding=2,4,2,4"}},
+    ThemeTargetStyles{L"Border#JumpListRestyledAcrylic", {
+        L"Background:=$Base",
+        L"BorderThickness=0,0,0,0",
+        L"CornerRadius=$Radius",
+        L"Margin=-2,-2,-2,-2"}},
+    ThemeTargetStyles{L"Grid#ControlCenterRegion", {
+        L"Background:=$Base",
+        L"BorderThickness=0,0,0,0",
+        L"CornerRadius=$Radius"}},
+    ThemeTargetStyles{L"Grid#L1Grid > Border", {
+        L"Background:=$Transparent",
+        L"BorderThickness=0,0,0,0"}},
+    ThemeTargetStyles{L"Grid#MediaTransportControlsRegion", {
+        L"Background:=$Base",
+        L"BorderThickness=0,0,0,0",
+        L"CornerRadius=$Radius"}},
+    ThemeTargetStyles{L"Grid#MediaTransportControlsRoot", {
+        L"Background:=$Transparent"}},
+    ThemeTargetStyles{L"ContentPresenter#PageContent", {
+        L"Background:=$Transparent"}},
+    ThemeTargetStyles{L"ContentPresenter#PageContent > Grid > Border", {
+        L"Background:=$Transparent"}},
+    ThemeTargetStyles{L"QuickActions.ControlCenter.AccessibleWindow#PageWindow > ContentPresenter > Grid#FullScreenPageRoot", {
+        L"Background:=$Transparent"}},
+    ThemeTargetStyles{L"QuickActions.ControlCenter.AccessibleWindow#PageWindow > ContentPresenter > Grid#FullScreenPageRoot > ContentPresenter#PageHeader", {
+        L"Background:=$Transparent"}},
+    ThemeTargetStyles{L"ScrollViewer#ListContent", {
+        L"Background:=$Transparent"}},
+    ThemeTargetStyles{L"ActionCenter.FlexibleToastView#FlexibleNormalToastView", {
+        L"Background:=$Transparent"}},
+    ThemeTargetStyles{L"Border#ToastBackgroundBorder2", {
+        L"Background:=$Base",
+        L"BorderThickness=0,0,0,0",
+        L"CornerRadius=$Radius"}},
+    ThemeTargetStyles{L"JumpViewUI.SystemItemListViewItem > Grid#LayoutRoot > Border#BackgroundBorder", {
+        L"Background:=$Transparent",
+        L"CornerRadius=$Radius"}},
+    ThemeTargetStyles{L"JumpViewUI.JumpListListViewItem > Grid#LayoutRoot > Border#BackgroundBorder", {
+        L"CornerRadius=$Radius"}},
+    ThemeTargetStyles{L"ActionCenter.FlexibleItemView", {
+        L"CornerRadius=$Radius"}},
+    ThemeTargetStyles{L"Grid#MediaTransportControlsRegion", {
+        L"Height=Auto"}},
+    ThemeTargetStyles{L"Grid#ThumbnailImage", {
+        L"Width=$thumbnailImageSize",
+        L"Height=$thumbnailImageSize",
+        L"HorizontalAlignment=Center",
+        L"VerticalAlignment=Top",
+        L"Grid.Column=1",
+        L"Margin=0,2,0,45"}},
+    ThemeTargetStyles{L"Grid#ThumbnailImage > Border", {
+        L"CornerRadius=$Radius"}},
+    ThemeTargetStyles{L"StackPanel#PrimaryAndSecondaryTextContainer", {
+        L"VerticalAlignment=Bottom",
+        L"Grid.Column=0"}},
+    ThemeTargetStyles{L"StackPanel#PrimaryAndSecondaryTextContainer > TextBlock#TitleText", {
+        L"TextAlignment=Center"}},
+    ThemeTargetStyles{L"StackPanel#PrimaryAndSecondaryTextContainer > TextBlock#SubtitleText", {
+        L"TextAlignment=Center"}},
+    ThemeTargetStyles{L"ContentControl#TogglesGroup > ContentPresenter > ControlCenter.PaginatedGridView > Grid", {
+        L"BorderThickness=0,0,0,0"}},
+    ThemeTargetStyles{L"Grid#FooterGrid", {
+        L"BorderThickness=0,0,0,0"}},
+}, {
+    L"Base=<WindhawkBlur BlurAmount=\"18\" TintColor=\"#80000000\"/>",
+    L"Radius=14",
+    L"Transparent=<SolidColorBrush Color=\"Transparent\"/>",
+    L"Accent=<SolidColorBrush Color=\"{ThemeResource SystemAccentColorLight1}\" Opacity = \"1\" />",
+    L"Overlay=<WindhawkBlur BlurAmount=\"18\" TintColor=\"#1AFFFFFF\"/>",
+    L"thumbnailImageSize=300",
+}};
+
+const Theme g_themeFluid = {{
+    ThemeTargetStyles{L"MenuFlyoutPresenter", {
+        L"BorderBrush:=$BorderBrush",
+        L"BorderThickness=1",
+        L"CornerRadius=$CornerRadius"}},
+    ThemeTargetStyles{L"ToolTip > ContentPresenter#LayoutRoot", {
+        L"BorderBrush:=$BorderBrush",
+        L"BorderThickness=1",
+        L"CornerRadius=$CornerRadius"}},
+    ThemeTargetStyles{L"Grid#NotificationCenterGrid", {
+        L"BorderBrush:=$BorderBrush",
+        L"BorderThickness=1",
+        L"CornerRadius=$CornerRadius",
+        L"VerticalAlignment=2"}},
+    ThemeTargetStyles{L"Grid#ControlCenterRegion", {
+        L"BorderBrush:=$BorderBrush",
+        L"BorderThickness=1",
+        L"CornerRadius=$CornerRadius"}},
+    ThemeTargetStyles{L"Button#ClearAll", {
+        L"AccessKey=x"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Primitives.ToggleButton#DoNotDisturbButton", {
+        L"AccessKey=d"}},
+    ThemeTargetStyles{L"Button#ExpandCollapseButton", {
+        L"AccessKey=e"}},
+    ThemeTargetStyles{L"Border#ItemOpaquePlating", {
+        L"BorderBrush:=$BorderBrush",
+        L"BorderThickness=$BorderThickness",
+        L"CornerRadius=$CornerRadius"}},
+    ThemeTargetStyles{L"Border#PopupBorder", {
+        L"CornerRadius=$CornerRadius"}},
+    ThemeTargetStyles{L"Border#ToastBackgroundBorder2", {
+        L"BorderBrush:=$BorderBrush",
+        L"BorderThickness=1",
+        L"CornerRadius=$CornerRadius"}},
+    ThemeTargetStyles{L"Grid#CalendarCenterGrid", {
+        L"BorderBrush:=$BorderBrush",
+        L"BorderThickness=1",
+        L"CornerRadius=$CornerRadius"}},
+    ThemeTargetStyles{L"Border#CalendarHeaderMinimizedOverlay", {
+        L"BorderBrush:=$BorderBrush",
+        L"BorderThickness=1",
+        L"CornerRadius=$CornerRadius"}},
+    ThemeTargetStyles{L"ScrollViewer#CalendarControlScrollViewer", {
+        L"BorderBrush:=$BorderBrush",
+        L"BorderThickness=$BorderThickness",
+        L"CornerRadius=$CornerRadius"}},
+    ThemeTargetStyles{L"CalendarViewDayItem", {
+        L"CornerRadius=$CornerRadius"}},
+    ThemeTargetStyles{L"CalendarViewDayItem > Border", {
+        L"CornerRadius=$CornerRadius"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Primitives.CalendarPanel#YearViewPanel > Control", {
+        L"CornerRadius=$CornerRadius"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Primitives.CalendarPanel#YearViewPanel > Control > Border", {
+        L"CornerRadius=$CornerRadius"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Primitives.CalendarPanel#DecadeViewPanel > Control", {
+        L"CornerRadius=$CornerRadius"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Primitives.CalendarPanel#DecadeViewPanel > Control > Border", {
+        L"CornerRadius=$CornerRadius"}},
+    ThemeTargetStyles{L"Grid > Microsoft.UI.Xaml.Controls.AnimatedIcon", {
+        L"BorderBrush:=$BorderBrush",
+        L"BorderThickness=$BorderThickness",
+        L"CornerRadius=$CornerRadius"}},
+    ThemeTargetStyles{L"ContentPresenter > Grid#FullScreenPageRoot", {
+        L"BorderBrush:=$BorderBrush",
+        L"BorderThickness=1",
+        L"CornerRadius=$CornerRadius"}},
+    ThemeTargetStyles{L"ContentPresenter#PageContent > Grid > Border", {
+        L"BorderBrush:=$BorderBrush",
+        L"BorderThickness=1",
+        L"CornerRadius=$CornerRadius"}},
+    ThemeTargetStyles{L"Grid > ScrollViewer#ListContent", {
+        L"BorderBrush:=$BorderBrush",
+        L"BorderThickness=1",
+        L"CornerRadius=$CornerRadius"}},
+    ThemeTargetStyles{L"Grid#MediaTransportControlsRoot", {
+        L"BorderBrush:=$BorderBrush",
+        L"BorderThickness=1",
+        L"CornerRadius=$CornerRadius"}},
+    ThemeTargetStyles{L"Grid#MediaTransportControlsRegion", {
+        L"BorderBrush:=$BorderBrush",
+        L"BorderThickness=1",
+        L"CornerRadius=$CornerRadius"}},
+    ThemeTargetStyles{L"Border#JumpListRestyledAcrylic", {
+        L"BorderBrush:=$BorderBrush",
+        L"BorderThickness=1",
+        L"CornerRadius=$CornerRadius"}},
+}, {
+    L"BorderBrush=<LinearGradientBrush x:Key=\"ShellTaskbarItemGradientStrokeColorSecondaryBrush\" MappingMode=\"Absolute\" StartPoint=\"0,0\" EndPoint=\"0,3\"><LinearGradientBrush.GradientStops><GradientStop Offset=\"0.33\" Color=\"#1AFFFFFF\" /><GradientStop Offset=\"1\" Color=\"#0FFFFFFF\" /></LinearGradientBrush.GradientStops></LinearGradientBrush>",
+    L"BorderThickness=2",
+    L"CornerRadius=4",
 }};
 
 // clang-format on
@@ -4350,6 +4547,10 @@ void ProcessAllStylesFromSettings() {
         theme = &g_themeWindowGlass_variant_alternative;
     } else if (wcscmp(themeName, L"Oversimplified&Accentuated") == 0) {
         theme = &g_themeOversimplified_Accentuated;
+    } else if (wcscmp(themeName, L"TintedGlass") == 0) {
+        theme = &g_themeTintedGlass;
+    } else if (wcscmp(themeName, L"Fluid") == 0) {
+        theme = &g_themeFluid;
     }
     Wh_FreeStringSetting(themeName);
 
