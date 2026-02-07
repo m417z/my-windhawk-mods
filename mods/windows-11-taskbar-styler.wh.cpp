@@ -5360,7 +5360,8 @@ void SetOrClearValue(DependencyObject elementDo,
         return;
     }
 
-    Wh_Log(L"Setting property value %s", winrt::get_class_name(value).c_str());
+    Wh_Log(L"Setting property value %s",
+           value ? winrt::get_class_name(value).c_str() : L"(null)");
 
     // Track ImageBrush with remote ImageSource for retry on network
     // reconnection. This handles cases where an ImageBrush is set as a property
