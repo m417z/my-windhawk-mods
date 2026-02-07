@@ -2,7 +2,7 @@
 // @id              taskbar-thumbnail-size
 // @name            Taskbar Thumbnail Size
 // @description     Customize the size of the new taskbar thumbnails in Windows 11
-// @version         1.2
+// @version         1.2.1
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
@@ -84,6 +84,7 @@ the registry:
 #include <windhawk_utils.h>
 
 #include <atomic>
+#include <cmath>
 
 #undef GetCurrentTime
 
@@ -106,7 +107,7 @@ std::atomic<bool> g_taskbarViewDllLoaded;
 
 using ThumbnailHelpers_GetScaledThumbnailSize_t =
     winrt::Windows::Foundation::Size*(
-        WINAPI*)(winrt::Windows::Foundation::Size * resultBuffer,
+        WINAPI*)(winrt::Windows::Foundation::Size* resultBuffer,
                  winrt::Windows::Foundation::Size size,
                  float scale);
 ThumbnailHelpers_GetScaledThumbnailSize_t
@@ -165,10 +166,9 @@ ThumbnailHelpers_GetScaledThumbnailSize_Hook(
         }
 
         // The minimum scale we must apply (to satisfy min constraints)
-        float minRequiredScale =
-            (std::max)(minScaleForWidth, minScaleForHeight);
+        float minRequiredScale = std::fmax(minScaleForWidth, minScaleForHeight);
         // The maximum scale we can apply (to satisfy max constraints)
-        float maxAllowedScale = (std::min)(maxScaleForWidth, maxScaleForHeight);
+        float maxAllowedScale = std::fmin(maxScaleForWidth, maxScaleForHeight);
 
         // Choose the scale that results in minimal change from original
         float finalScale = 1.0f;
