@@ -2,7 +2,7 @@
 // @id              taskbar-wheel-cycle
 // @name            Cycle taskbar buttons with mouse wheel
 // @description     Use the mouse wheel and/or keyboard shortcuts to cycle between taskbar buttons
-// @version         1.1.10
+// @version         1.2.0
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
@@ -27,8 +27,25 @@
 Use the mouse wheel while hovering over the taskbar to cycle between taskbar
 buttons.
 
-In addition, keyboard shortcuts can be used. The default shortcuts are `Alt+[`
-and `Alt+]`, but they can be changed in the mod settings.
+In addition, keyboard shortcuts can be used. The default shortcuts are
+`Ctrl+Space` (next) and `Shift+Space` (previous) for cycling between different
+applications, and `Ctrl+Alt+;` and `Ctrl+Alt+'` for cycling between windows of
+the same application. These can be changed in the mod's settings.
+
+## Enhanced Features
+
+**Same-Process Cycling**: Cycle only between windows of the same application
+(e.g., switch between multiple Chrome or Cursor windows) using dedicated
+keyboard shortcuts.
+
+**Cross-Process Navigation**: The standard shortcuts intelligently skip windows
+from the same process, making it easier to switch between different applications.
+
+**Switching Range Limit**: Optionally restrict switching to a specific range of
+taskbar icons, useful when you work with a fixed set of applications.
+
+**Auto-Minimize Other Windows**: Optionally minimize other windows when switching
+to a new window, creating a focused single-window workflow.
 
 Only Windows 10 64-bit and Windows 11 are supported. For older Windows versions
 check out [7+ Taskbar Tweaker](https://tweaker.ramensoftware.com/).
@@ -44,29 +61,65 @@ or a similar tool), enable the relevant option in the mod's settings.
 /*
 - skipMinimizedWindows: true
   $name: Skip minimized windows
+  $description: Skip minimized windows when cycling through taskbar buttons
 - wrapAround: true
   $name: Wrap around
+  $description: Wrap around when reaching the end of the taskbar
 - reverseScrollingDirection: false
   $name: Reverse scrolling direction
+  $description: Reverse the scrolling direction of the mouse wheel
 - enableMouseWheelCycling: true
   $name: Enable mouse wheel cycling
+  $description: Disable to only use keyboard shortcuts for cycling between taskbar buttons
+- cycleLeftKeyboardShortcut: Shift+VK_SPACE
+  $name: Cycle left keyboard shortcut (cross-process)
   $description: >-
-    Disable to only use keyboard shortcuts for cycling between taskbar buttons.
-- cycleLeftKeyboardShortcut: Alt+VK_OEM_4
-  $name: Cycle left keyboard shortcut
-  $description: >-
+    Cycle between windows, skipping windows from the same process.
+    Default: Shift+Space
     Possible modifier keys: Alt, Ctrl, Shift, Win. For possible shortcut keys,
     refer to the following page:
     https://learn.microsoft.com/en-us/windows/win32/inputdev/virtual-key-codes
 
     Set to an empty string to disable.
-- cycleRightKeyboardShortcut: Alt+VK_OEM_6
-  $name: Cycle right keyboard shortcut
+- cycleRightKeyboardShortcut: Ctrl+VK_SPACE
+  $name: Cycle right keyboard shortcut (cross-process)
+  $description: >-
+    Cycle between windows, skipping windows from the same process.
+    Default: Ctrl+Space
+    Set to an empty string to disable.
+- cycleSameProcessLeftKeyboardShortcut: Ctrl+Alt+VK_OEM_1
+  $name: Cycle left keyboard shortcut (same process)
+  $description: >-
+    Cycle only between windows of the same process.
+    Default: Ctrl+Alt+;
+    For example: switch between 3 Cursor windows.
+
+    Set to an empty string to disable.
+- cycleSameProcessRightKeyboardShortcut: Ctrl+Alt+VK_OEM_7
+  $name: Cycle right keyboard shortcut (same process)
+  $description: >-
+    Cycle only between windows of the same process.
+    Default: Ctrl+Alt+'
+    For example: switch between 3 Cursor windows.
+
+    Set to an empty string to disable.
+- minimizeOtherWindowsOnSwitch: false
+  $name: Minimize other windows on switch
+  $description: >-
+    When enabled, automatically minimize all other windows on the current monitor
+    when switching to a new window. Creates a focused single-window workflow.
+- limitSwitchingRange: false
+  $name: Limit switching range
+  $description: When enabled, only switch between icons within the specified range on the taskbar
+- rangeStart: 1
+  $name: Range start position
+  $description: The first icon position in the switching range (counting from 1)
+- rangeEnd: 5
+  $name: Range end position
+  $description: The last icon position in the switching range
 - oldTaskbarOnWin11: false
   $name: Customize the old taskbar on Windows 11
-  $description: >-
-    Enable this option to customize the old taskbar on Windows 11 (if using
-    ExplorerPatcher or a similar tool).
+  $description: Enable this option to customize the old taskbar on Windows 11 (if using ExplorerPatcher or a similar tool).
 */
 // ==/WindhawkModSettings==
 
@@ -98,6 +151,12 @@ struct {
     bool enableMouseWheelCycling;
     WindhawkUtils::StringSetting cycleLeftKeyboardShortcut;
     WindhawkUtils::StringSetting cycleRightKeyboardShortcut;
+    WindhawkUtils::StringSetting cycleSameProcessLeftKeyboardShortcut;
+    WindhawkUtils::StringSetting cycleSameProcessRightKeyboardShortcut;
+    bool minimizeOtherWindowsOnSwitch;
+    bool limitSwitchingRange;
+    int rangeStart;
+    int rangeEnd;
     bool oldTaskbarOnWin11;
 } g_settings;
 
@@ -114,18 +173,29 @@ std::atomic<bool> g_taskbarViewDllLoaded;
 std::atomic<bool> g_initialized;
 std::atomic<bool> g_explorerPatcherInitialized;
 
-std::unordered_map<void*, void*> g_lastTaskListActiveTaskItem;
-
 HWND g_lastScrollTarget = nullptr;
 DWORD g_lastScrollTime;
 short g_lastScrollDeltaRemainder;
 
 bool g_hotkeyLeftRegistered = false;
 bool g_hotkeyRightRegistered = false;
+bool g_hotkeySameProcessLeftRegistered = false;
+bool g_hotkeySameProcessRightRegistered = false;
 
 enum {
     kHotkeyIdLeft = 1682530408,  // From epochconverter.com
     kHotkeyIdRight,
+    kHotkeyIdSameProcessLeft,
+    kHotkeyIdSameProcessRight,
+};
+
+// Message types for inter-thread communication
+UINT g_hotkeyRegisteredMsg = 0;  // Will be initialized in Wh_ModInit
+
+enum {
+    MSG_HOTKEY_REGISTER,
+    MSG_HOTKEY_UNREGISTER,
+    MSG_HOTKEY_UPDATE,
 };
 
 HWND FindCurrentProcessTaskbarWnd() {
@@ -158,6 +228,10 @@ HWND GetTaskBandWnd() {
     return nullptr;
 }
 
+// Forward declarations
+HWND TaskListFromMMTaskbarWnd(HWND hMMTaskbarWnd);
+HWND GetTaskbarForMonitor(HWND hTaskbarWnd, HMONITOR monitor);
+
 void* CTaskListWnd_vftable_ITaskListUI;
 void* CTaskListWnd_vftable_ITaskListSite;
 void* CTaskListWnd_vftable_ITaskListAcc;
@@ -189,6 +263,14 @@ CImmersiveTaskItem_GetWindow_t CImmersiveTaskItem_GetWindow_Original;
 using CTaskListWnd_SwitchToItem_t = void(WINAPI*)(void* pThis, void* taskItem);
 CTaskListWnd_SwitchToItem_t CTaskListWnd_SwitchToItem_Original;
 
+using CTaskBtnGroup_IndexOfTaskItem_t = int(WINAPI*)(void* pThis, void* taskItem);
+CTaskBtnGroup_IndexOfTaskItem_t CTaskBtnGroup_IndexOfTaskItem;
+
+using CTaskListWnd_TaskInclusionChanged_t = HRESULT(WINAPI*)(void* pThis,
+                                                             void* pTaskGroup,
+                                                             void* pTaskItem);
+CTaskListWnd_TaskInclusionChanged_t CTaskListWnd_TaskInclusionChanged;
+
 void* QueryViaVtable(void* object, void* vtable) {
     void* ptr = object;
     while (*(void**)ptr != vtable) {
@@ -214,6 +296,77 @@ void SwitchToTaskItem(LONG_PTR lpMMTaskListLongPtr, void* taskItem) {
     CTaskListWnd_SwitchToItem_Original(pThis_ITaskListSite, taskItem);
 }
 
+// Minimize all other windows on the same monitor as the target window
+void MinimizeOtherWindowsOnSameMonitor(HWND targetWindow) {
+    if (!targetWindow || !g_settings.minimizeOtherWindowsOnSwitch) {
+        return;
+    }
+
+    // Get the monitor of the target window
+    HMONITOR targetMonitor = MonitorFromWindow(targetWindow, MONITOR_DEFAULTTONEAREST);
+    if (!targetMonitor) {
+        Wh_Log(L"Failed to get monitor for target window");
+        return;
+    }
+
+    Wh_Log(L"Minimizing other windows on same monitor as HWND %p", targetWindow);
+
+    // Enumerate all top-level windows
+    EnumWindows(
+        [](HWND hWnd, LPARAM lParam) -> BOOL {
+            HWND targetWnd = reinterpret_cast<HWND>(lParam);
+
+            // Skip if this is the target window
+            if (hWnd == targetWnd) {
+                return TRUE;
+            }
+
+            // Skip invisible windows
+            if (!IsWindowVisible(hWnd)) {
+                return TRUE;
+            }
+
+            // Skip already minimized windows
+            if (IsIconic(hWnd)) {
+                return TRUE;
+            }
+
+            // Get window class name to filter out system windows
+            WCHAR className[256];
+            if (!GetClassName(hWnd, className, ARRAYSIZE(className))) {
+                return TRUE;
+            }
+
+            // Skip taskbar and system windows
+            if (_wcsicmp(className, L"Shell_TrayWnd") == 0 ||
+                _wcsicmp(className, L"Shell_SecondaryTrayWnd") == 0 ||
+                _wcsicmp(className, L"Progman") == 0 ||
+                _wcsicmp(className, L"WorkerW") == 0 ||
+                _wcsicmp(className, L"Windows.UI.Core.CoreWindow") == 0) {
+                return TRUE;
+            }
+
+            // Skip tool windows
+            LONG exStyle = GetWindowLong(hWnd, GWL_EXSTYLE);
+            if (exStyle & WS_EX_TOOLWINDOW) {
+                return TRUE;
+            }
+
+            // Check if window is on the same monitor
+            HMONITOR windowMonitor = MonitorFromWindow(hWnd, MONITOR_DEFAULTTONEAREST);
+            HMONITOR targetMonitor = MonitorFromWindow(targetWnd, MONITOR_DEFAULTTONEAREST);
+
+            if (windowMonitor == targetMonitor) {
+                // Minimize this window
+                ShowWindow(hWnd, SW_MINIMIZE);
+                Wh_Log(L"Minimized window: %s (HWND %p)", className, hWnd);
+            }
+
+            return TRUE;
+        },
+        reinterpret_cast<LPARAM>(targetWindow));
+}
+
 HWND GetTaskItemWnd(PVOID taskItem) {
     if (*(void**)taskItem == CImmersiveTaskItem_vftable) {
         return CImmersiveTaskItem_GetWindow_Original(taskItem);
@@ -224,6 +377,60 @@ HWND GetTaskItemWnd(PVOID taskItem) {
 
 BOOL IsMinimizedTaskItem(LONG_PTR* task_item) {
     return IsIconic(GetTaskItemWnd(task_item));
+}
+
+// Get process name from window handle
+std::wstring GetProcessNameFromWindow(HWND hWnd) {
+    if (!hWnd) {
+        return L"";
+    }
+
+    DWORD processId = 0;
+    GetWindowThreadProcessId(hWnd, &processId);
+    if (!processId) {
+        return L"";
+    }
+
+    HANDLE hProcess = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, processId);
+    if (!hProcess) {
+        return L"";
+    }
+
+    WCHAR processPath[MAX_PATH] = {0};
+    DWORD size = MAX_PATH;
+    if (QueryFullProcessImageName(hProcess, 0, processPath, &size)) {
+        CloseHandle(hProcess);
+        // Extract just the filename from the full path
+        WCHAR* fileName = wcsrchr(processPath, L'\\');
+        if (fileName) {
+            return std::wstring(fileName + 1);
+        }
+        return std::wstring(processPath);
+    }
+
+    CloseHandle(hProcess);
+    return L"";
+}
+
+// Compare two windows by Z-order (returns true if hwnd1 is above hwnd2)
+bool IsWindowAboveInZOrder(HWND hwnd1, HWND hwnd2) {
+    if (!hwnd1 || !hwnd2 || hwnd1 == hwnd2) {
+        return false;
+    }
+
+    // Enumerate windows in Z-order from top to bottom
+    HWND hWnd = GetTopWindow(nullptr);
+    while (hWnd) {
+        if (hWnd == hwnd1) {
+            return true;  // hwnd1 is above hwnd2
+        }
+        if (hWnd == hwnd2) {
+            return false; // hwnd2 is above hwnd1
+        }
+        hWnd = GetWindow(hWnd, GW_HWNDNEXT);
+    }
+
+    return false;
 }
 
 BOOL TaskbarScrollRight(int button_groups_count,
@@ -292,88 +499,6 @@ BOOL TaskbarScrollLeft(int button_groups_count,
     return TRUE;
 }
 
-LONG_PTR* TaskbarScrollHelper(int button_groups_count,
-                              LONG_PTR** button_groups,
-                              int button_group_index_active,
-                              int button_index_active,
-                              int nRotates,
-                              BOOL bSkipMinimized,
-                              BOOL bWarpAround) {
-    int button_group_index, button_index;
-    BOOL bRotateRight;
-    int prev_button_group_index, prev_button_index;
-    BOOL bScrollSucceeded;
-
-    button_group_index = button_group_index_active;
-    button_index = button_index_active;
-
-    bRotateRight = TRUE;
-    if (nRotates < 0) {
-        bRotateRight = FALSE;
-        nRotates = -nRotates;
-    }
-
-    prev_button_group_index = button_group_index;
-    prev_button_index = button_index;
-
-    while (nRotates--) {
-        if (bRotateRight) {
-            bScrollSucceeded =
-                TaskbarScrollRight(button_groups_count, button_groups,
-                                   &button_group_index, &button_index);
-            while (bScrollSucceeded && bSkipMinimized &&
-                   IsMinimizedTaskItem((LONG_PTR*)CTaskBtnGroup_GetTaskItem(
-                       button_groups[button_group_index], button_index))) {
-                bScrollSucceeded =
-                    TaskbarScrollRight(button_groups_count, button_groups,
-                                       &button_group_index, &button_index);
-            }
-        } else {
-            bScrollSucceeded =
-                TaskbarScrollLeft(button_groups_count, button_groups,
-                                  &button_group_index, &button_index);
-            while (bScrollSucceeded && bSkipMinimized &&
-                   IsMinimizedTaskItem((LONG_PTR*)CTaskBtnGroup_GetTaskItem(
-                       button_groups[button_group_index], button_index))) {
-                bScrollSucceeded =
-                    TaskbarScrollLeft(button_groups_count, button_groups,
-                                      &button_group_index, &button_index);
-            }
-        }
-
-        if (!bScrollSucceeded) {
-            // If no results were found in the whole taskbar
-            if (prev_button_group_index == -1) {
-                return nullptr;
-            }
-
-            if (bWarpAround) {
-                // Continue from the beginning
-                button_group_index = -1;
-                button_index = -1;
-                nRotates++;
-            } else {
-                // Use the last successful result and stop
-                button_group_index = prev_button_group_index;
-                button_index = prev_button_index;
-
-                break;
-            }
-        }
-
-        prev_button_group_index = button_group_index;
-        prev_button_index = button_index;
-    }
-
-    if (button_group_index == button_group_index_active &&
-        button_index == button_index_active) {
-        return nullptr;
-    }
-
-    return (LONG_PTR*)CTaskBtnGroup_GetTaskItem(
-        button_groups[button_group_index], button_index);
-}
-
 HDPA GetTaskBtnGroupsArray(void* taskList_ITaskListUI) {
     // This is a horrible hack, but it's the best way I found to get the array
     // of task button groups from a task list. It relies on the implementation
@@ -404,9 +529,371 @@ HDPA GetTaskBtnGroupsArray(void* taskList_ITaskListUI) {
     return (HDPA)((void**)taskList_ITaskListUI)[offset];
 }
 
+// Range-aware scrolling function - ensures scrolling respects range boundaries
+BOOL TaskbarScrollWithRangeCheck(
+    BOOL bRotateRight,
+    int button_groups_count,
+    LONG_PTR** button_groups,
+    int* p_button_group_index,
+    int* p_button_index,
+    int min_index,
+    int max_index,
+    BOOL bWarpAround) {
+
+    int original_group = *p_button_group_index;
+    int original_index = *p_button_index;
+    BOOL bScrollSucceeded;
+
+    // Perform the basic scroll operation
+    if (bRotateRight) {
+        bScrollSucceeded = TaskbarScrollRight(button_groups_count, button_groups,
+                                             p_button_group_index, p_button_index);
+    } else {
+        bScrollSucceeded = TaskbarScrollLeft(button_groups_count, button_groups,
+                                            p_button_group_index, p_button_index);
+    }
+
+    // Handle scroll failure (reached end of taskbar)
+    if (!bScrollSucceeded) {
+        if (bWarpAround) {
+            // Wrap around to the other end
+            Wh_Log(L"Reached taskbar boundary, attempting wrap around");
+            if (bRotateRight) {
+                *p_button_group_index = -1;
+                *p_button_index = -1;
+                bScrollSucceeded = TaskbarScrollRight(button_groups_count, button_groups,
+                                                     p_button_group_index, p_button_index);
+            } else {
+                *p_button_group_index = button_groups_count;
+                *p_button_index = 0;
+                bScrollSucceeded = TaskbarScrollLeft(button_groups_count, button_groups,
+                                                    p_button_group_index, p_button_index);
+            }
+
+            if (!bScrollSucceeded) {
+                Wh_Log(L"Wrap around failed");
+                return FALSE;
+            }
+        } else {
+            Wh_Log(L"Reached taskbar boundary, no wrap around");
+            return FALSE;
+        }
+    }
+
+    // Check if the new position is within the allowed range
+    if (*p_button_group_index < min_index || *p_button_group_index > max_index) {
+        Wh_Log(L"Scrolled to position %d, outside allowed range [%d, %d]",
+               *p_button_group_index, min_index, max_index);
+
+        if (bWarpAround) {
+            // Wrap to the opposite end of the allowed range
+            // Use direct positioning instead of scrolling to avoid skipping invalid groups
+            if (bRotateRight) {
+                // Scrolling right went past max, wrap to min
+                Wh_Log(L"Wrapping to range start at index %d", min_index);
+                *p_button_group_index = min_index;
+                *p_button_index = 0;
+
+                // Verify the target position is valid
+                int button_group_type = CTaskBtnGroup_GetGroupType(button_groups[*p_button_group_index]);
+                if (button_group_type != 1 && button_group_type != 3) {
+                    Wh_Log(L"Range start position %d is not a valid button group (type=%d)",
+                           min_index, button_group_type);
+                    *p_button_group_index = original_group;
+                    *p_button_index = original_index;
+                    return FALSE;
+                }
+
+                Wh_Log(L"Successfully wrapped to range start at position %d", *p_button_group_index);
+            } else {
+                // Scrolling left went past min, wrap to max
+                Wh_Log(L"Wrapping to range end at index %d", max_index);
+                *p_button_group_index = max_index;
+
+                // Verify the target position is valid
+                int button_group_type = CTaskBtnGroup_GetGroupType(button_groups[*p_button_group_index]);
+                if (button_group_type != 1 && button_group_type != 3) {
+                    Wh_Log(L"Range end position %d is not a valid button group (type=%d)",
+                           max_index, button_group_type);
+                    *p_button_group_index = original_group;
+                    *p_button_index = original_index;
+                    return FALSE;
+                }
+
+                // Set to last item in the group
+                int buttons_count = CTaskBtnGroup_GetNumItems(button_groups[*p_button_group_index]);
+                *p_button_index = buttons_count - 1;
+
+                Wh_Log(L"Successfully wrapped to range end at position %d, button index %d",
+                       *p_button_group_index, *p_button_index);
+            }
+        } else {
+            // No wrap around - restore original position and fail
+            Wh_Log(L"No wrap around enabled, restoring original position");
+            *p_button_group_index = original_group;
+            *p_button_index = original_index;
+            return FALSE;
+        }
+    }
+
+    return TRUE;
+}
+
+LONG_PTR* TaskbarScrollHelper(int button_groups_count,
+                              LONG_PTR** button_groups,
+                              int button_group_index_active,
+                              int button_index_active,
+                              int nRotates,
+                              BOOL bWarpAround) {
+    int button_group_index, button_index;
+    BOOL bRotateRight;
+    int prev_button_group_index, prev_button_index;
+    BOOL bScrollSucceeded;
+
+    // Apply range limitation if enabled
+    int effective_min_index = 0;
+    int effective_max_index = button_groups_count - 1;
+
+    if (g_settings.limitSwitchingRange) {
+        // Convert from 1-based user input to 0-based indices
+        effective_min_index = g_settings.rangeStart - 1;
+        effective_max_index = g_settings.rangeEnd - 1;
+
+        // Validate and clamp to actual button group count
+        if (effective_min_index < 0) effective_min_index = 0;
+        if (effective_max_index >= button_groups_count) effective_max_index = button_groups_count - 1;
+        if (effective_min_index > effective_max_index) effective_min_index = effective_max_index;
+
+        Wh_Log(L"Range limit enabled: [%d, %d]", effective_min_index, effective_max_index);
+    }
+
+    button_group_index = button_group_index_active;
+    button_index = button_index_active;
+
+    bRotateRight = TRUE;
+    if (nRotates < 0) {
+        bRotateRight = FALSE;
+        nRotates = -nRotates;
+    }
+
+    // Get current process name to skip same processes
+    std::wstring currentProcessName;
+    if (button_group_index_active >= 0 && button_index_active >= 0) {
+        LONG_PTR* currentTaskItem = (LONG_PTR*)CTaskBtnGroup_GetTaskItem(
+            button_groups[button_group_index_active], button_index_active);
+        if (currentTaskItem) {
+            HWND currentWnd = GetTaskItemWnd(currentTaskItem);
+            currentProcessName = GetProcessNameFromWindow(currentWnd);
+            Wh_Log(L"Current process: %s", currentProcessName.c_str());
+        }
+    }
+
+    prev_button_group_index = button_group_index;
+    prev_button_index = button_index;
+
+    while (nRotates--) {
+        // Collect all candidate windows with a different process name
+        std::vector<std::pair<int, int>> candidatePositions; // pair<group_index, button_index>
+        std::wstring targetProcessName;
+        int search_group_index = button_group_index;
+        int search_button_index = button_index;
+        bool foundDifferent = false;
+
+        // Search in the rotation direction
+        for (int attempts = 0; attempts < button_groups_count * 10; attempts++) {
+            if (bRotateRight) {
+                bScrollSucceeded =
+                    TaskbarScrollRight(button_groups_count, button_groups,
+                                       &search_group_index, &search_button_index);
+            } else {
+                bScrollSucceeded =
+                    TaskbarScrollLeft(button_groups_count, button_groups,
+                                      &search_group_index, &search_button_index);
+            }
+
+            if (!bScrollSucceeded) {
+                if (bWarpAround && prev_button_group_index != -1) {
+                    // Wrap around
+                    search_group_index = bRotateRight ? -1 : button_groups_count;
+                    search_button_index = bRotateRight ? -1 : 0;
+                    continue;
+                } else {
+                    break;
+                }
+            }
+
+            // Check if we've come full circle
+            if (search_group_index == button_group_index_active &&
+                search_button_index == button_index_active) {
+                break;
+            }
+
+            // Skip if outside the allowed range
+            if (g_settings.limitSwitchingRange) {
+                 if (search_group_index < effective_min_index || search_group_index > effective_max_index) {
+                    if (bWarpAround) {
+                        // If we move out of range, wrap to the other side of the range
+                        if (bRotateRight) {
+                            search_group_index = effective_min_index -1; // Will be incremented to effective_min_index by TaskbarScrollRight
+                            search_button_index = -1;
+                        } else {
+                            search_group_index = effective_max_index + 1; // Will be decremented to effective_max_index by TaskbarScrollLeft
+                            search_button_index = 0;
+                        }
+                        continue;
+                    } else {
+                        // If not wrapping, stop at the boundary
+                        bScrollSucceeded = FALSE;
+                        break;
+                    }
+                }
+            }
+
+            LONG_PTR* taskItem = (LONG_PTR*)CTaskBtnGroup_GetTaskItem(
+                button_groups[search_group_index], search_button_index);
+
+            if (!taskItem) {
+                continue;
+            }
+
+            HWND taskWnd = GetTaskItemWnd(taskItem);
+            std::wstring processName = GetProcessNameFromWindow(taskWnd);
+
+            // Skip if same as current process
+            if (!currentProcessName.empty() &&
+                _wcsicmp(processName.c_str(), currentProcessName.c_str()) == 0) {
+                continue;
+            }
+
+            // Skip minimized windows if option is enabled
+            if (g_settings.skipMinimizedWindows && IsMinimizedTaskItem(taskItem)) {
+                continue;
+            }
+
+            // Found a different process
+            if (!foundDifferent) {
+                foundDifferent = true;
+                targetProcessName = processName;
+                candidatePositions.push_back({search_group_index, search_button_index});
+                Wh_Log(L"Found different process: %s at group=%d, index=%d",
+                       processName.c_str(), search_group_index, search_button_index);
+            } else if (_wcsicmp(processName.c_str(), targetProcessName.c_str()) == 0) {
+                // Same as target process, add to candidates
+                candidatePositions.push_back({search_group_index, search_button_index});
+                Wh_Log(L"Added candidate: %s at group=%d, index=%d",
+                       processName.c_str(), search_group_index, search_button_index);
+            } else {
+                // Different process found, stop collecting
+                break;
+            }
+        }
+
+        // If no different process found, fall back to original behavior
+        if (!foundDifferent) {
+            Wh_Log(L"No different process found, using original behavior");
+
+            // Use range-aware scrolling if range limit is enabled
+            if (g_settings.limitSwitchingRange) {
+                bScrollSucceeded = TaskbarScrollWithRangeCheck(
+                    bRotateRight,
+                    button_groups_count,
+                    button_groups,
+                    &button_group_index,
+                    &button_index,
+                    effective_min_index,
+                    effective_max_index,
+                    bWarpAround);
+
+                if (!bScrollSucceeded) {
+                    if (prev_button_group_index == -1) {
+                        return nullptr;
+                    }
+
+                    // Range limit prevented movement, stop here
+                    button_group_index = prev_button_group_index;
+                    button_index = prev_button_index;
+                    break;
+                }
+            } else {
+                // No range limit, use original scrolling
+                if (bRotateRight) {
+                    bScrollSucceeded =
+                        TaskbarScrollRight(button_groups_count, button_groups,
+                                           &button_group_index, &button_index);
+                } else {
+                    bScrollSucceeded =
+                        TaskbarScrollLeft(button_groups_count, button_groups,
+                                          &button_group_index, &button_index);
+                }
+
+                if (!bScrollSucceeded) {
+                    if (prev_button_group_index == -1) {
+                        return nullptr;
+                    }
+
+                    if (bWarpAround) {
+                        button_group_index = -1;
+                        button_index = -1;
+                        nRotates++;
+                    } else {
+                        button_group_index = prev_button_group_index;
+                        button_index = prev_button_index;
+                        break;
+                    }
+                }
+            }
+        } else {
+            // Select the best candidate based on Z-order (most recently active)
+            HWND bestWindow = nullptr;
+            int bestGroupIndex = -1;
+            int bestButtonIndex = -1;
+
+            for (const auto& pos : candidatePositions) {
+                LONG_PTR* taskItem = (LONG_PTR*)CTaskBtnGroup_GetTaskItem(
+                    button_groups[pos.first], pos.second);
+                if (!taskItem) {
+                    continue;
+                }
+
+                HWND wnd = GetTaskItemWnd(taskItem);
+                if (!wnd) {
+                    continue;
+                }
+
+                if (!bestWindow) {
+                    bestWindow = wnd;
+                    bestGroupIndex = pos.first;
+                    bestButtonIndex = pos.second;
+                } else if (IsWindowAboveInZOrder(wnd, bestWindow)) {
+                    bestWindow = wnd;
+                    bestGroupIndex = pos.first;
+                    bestButtonIndex = pos.second;
+                }
+            }
+
+            if (bestGroupIndex >= 0 && bestButtonIndex >= 0) {
+                button_group_index = bestGroupIndex;
+                button_index = bestButtonIndex;
+                Wh_Log(L"Selected best window at group=%d, index=%d",
+                       button_group_index, button_index);
+            }
+        }
+
+        prev_button_group_index = button_group_index;
+        prev_button_index = button_index;
+    }
+
+    if (button_group_index == button_group_index_active &&
+        button_index == button_index_active) {
+        return nullptr;
+    }
+
+    return (LONG_PTR*)CTaskBtnGroup_GetTaskItem(
+        button_groups[button_group_index], button_index);
+}
+
 LONG_PTR* TaskbarScroll(LONG_PTR lpMMTaskListLongPtr,
                         int nRotates,
-                        BOOL bSkipMinimized,
                         BOOL bWarpAround,
                         LONG_PTR* src_task_item) {
     if (nRotates == 0) {
@@ -427,23 +914,15 @@ LONG_PTR* TaskbarScroll(LONG_PTR lpMMTaskListLongPtr,
     int button_group_index_active = -1;
     int button_index_active = -1;
 
-    LONG_PTR* taskItem = src_task_item;
-    if (!taskItem) {
-        auto it = g_lastTaskListActiveTaskItem.find((void*)lpMMTaskListLongPtr);
-        if (it != g_lastTaskListActiveTaskItem.end()) {
-            taskItem = (LONG_PTR*)it->second;
-        }
-    }
-
-    if (taskItem) {
+    if (src_task_item) {
         for (int i = 0; i < button_groups_count; i++) {
             int button_group_type =
                 CTaskBtnGroup_GetGroupType(button_groups[i]);
             if (button_group_type == 1 || button_group_type == 3) {
                 int buttons_count = CTaskBtnGroup_GetNumItems(button_groups[i]);
                 for (int j = 0; j < buttons_count; j++) {
-                    if ((LONG_PTR*)CTaskBtnGroup_GetTaskItem(button_groups[i],
-                                                             j) == taskItem) {
+                    if ((LONG_PTR*)CTaskBtnGroup_GetTaskItem(
+                            button_groups[i], j) == src_task_item) {
                         button_group_index_active = i;
                         button_index_active = j;
                         break;
@@ -459,7 +938,7 @@ LONG_PTR* TaskbarScroll(LONG_PTR lpMMTaskListLongPtr,
 
     return TaskbarScrollHelper(button_groups_count, button_groups,
                                button_group_index_active, button_index_active,
-                               nRotates, bSkipMinimized, bWarpAround);
+                               nRotates, bWarpAround);
 }
 
 #pragma endregion  // scroll
@@ -477,12 +956,40 @@ void OnTaskListScroll(HWND hMMTaskListWnd, short delta) {
         if (g_settings.reverseScrollingDirection) {
             clicks = -clicks;
         }
-
+        
+        // For mouse wheel, always get the current active window to cycle from
+        HWND hForeground = GetForegroundWindow();
+        PVOID currentTaskItem = nullptr;
         LONG_PTR lpMMTaskListLongPtr = GetWindowLongPtr(hMMTaskListWnd, 0);
+
+        void* taskList_ITaskListUI = QueryViaVtable((void*)lpMMTaskListLongPtr, CTaskListWnd_vftable_ITaskListUI);
+        LONG_PTR* plp = (LONG_PTR*)GetTaskBtnGroupsArray(taskList_ITaskListUI);
+        if (plp) {
+            int button_groups_count = (int)plp[0];
+            LONG_PTR** button_groups = (LONG_PTR**)plp[1];
+
+            for (int i = 0; i < button_groups_count; i++) {
+                int button_group_type = CTaskBtnGroup_GetGroupType(button_groups[i]);
+                if (button_group_type == 1 || button_group_type == 3) {
+                    int buttons_count = CTaskBtnGroup_GetNumItems(button_groups[i]);
+                    for (int j = 0; j < buttons_count; j++) {
+                        PVOID taskItem = (PVOID)CTaskBtnGroup_GetTaskItem(button_groups[i], j);
+                        if (taskItem && GetTaskItemWnd(taskItem) == hForeground) {
+                            currentTaskItem = taskItem;
+                            goto found_item_scroll;
+                        }
+                    }
+                }
+            }
+        }
+        found_item_scroll:;
+
+
         PVOID targetTaskItem = TaskbarScroll(lpMMTaskListLongPtr, clicks,
-                                             g_settings.skipMinimizedWindows,
-                                             g_settings.wrapAround, nullptr);
+                                             g_settings.wrapAround, (LONG_PTR*)currentTaskItem);
         if (targetTaskItem) {
+            HWND targetWindow = GetTaskItemWnd(targetTaskItem);
+            MinimizeOtherWindowsOnSameMonitor(targetWindow);
             SwitchToTaskItem(lpMMTaskListLongPtr, targetTaskItem);
         }
     }
@@ -863,42 +1370,227 @@ void UnregisterHotkeys(HWND hWnd) {
         UnregisterHotKey(hWnd, kHotkeyIdRight);
         g_hotkeyRightRegistered = false;
     }
+
+    if (g_hotkeySameProcessLeftRegistered) {
+        UnregisterHotKey(hWnd, kHotkeyIdSameProcessLeft);
+        g_hotkeySameProcessLeftRegistered = false;
+    }
+
+    if (g_hotkeySameProcessRightRegistered) {
+        UnregisterHotKey(hWnd, kHotkeyIdSameProcessRight);
+        g_hotkeySameProcessRightRegistered = false;
+    }
 }
 
 void RegisterHotkeys(HWND hWnd) {
     if (!*g_settings.cycleLeftKeyboardShortcut &&
-        !*g_settings.cycleRightKeyboardShortcut) {
+        !*g_settings.cycleRightKeyboardShortcut &&
+        !*g_settings.cycleSameProcessLeftKeyboardShortcut &&
+        !*g_settings.cycleSameProcessRightKeyboardShortcut) {
         return;
     }
+
+    auto isEmptySetting = [](const WCHAR* s) { return !s || !*s; };
 
     UINT modifiers;
     UINT vk;
 
-    if (FromStringHotKey(g_settings.cycleLeftKeyboardShortcut.get(), &modifiers,
-                         &vk)) {
-        g_hotkeyLeftRegistered =
-            RegisterHotKey(hWnd, kHotkeyIdLeft, modifiers, vk);
-        if (!g_hotkeyLeftRegistered) {
-            Wh_Log(L"Couldn't register hotkey: %s",
-                   g_settings.cycleLeftKeyboardShortcut.get());
+    const WCHAR* leftHotkey = g_settings.cycleLeftKeyboardShortcut.get();
+    if (!isEmptySetting(leftHotkey)) {
+        if (FromStringHotKey(leftHotkey, &modifiers, &vk)) {
+            g_hotkeyLeftRegistered =
+                RegisterHotKey(hWnd, kHotkeyIdLeft, modifiers, vk);
+            if (!g_hotkeyLeftRegistered) {
+                Wh_Log(L"Couldn't register hotkey: %s", leftHotkey);
+            }
+        } else {
+            Wh_Log(L"Couldn't parse hotkey: %s", leftHotkey);
         }
-    } else {
-        Wh_Log(L"Couldn't parse hotkey: %s",
-               g_settings.cycleLeftKeyboardShortcut.get());
     }
 
-    if (FromStringHotKey(g_settings.cycleRightKeyboardShortcut.get(),
-                         &modifiers, &vk)) {
-        g_hotkeyRightRegistered =
-            RegisterHotKey(hWnd, kHotkeyIdRight, modifiers, vk);
-        if (!g_hotkeyRightRegistered) {
-            Wh_Log(L"Couldn't register hotkey: %s",
-                   g_settings.cycleRightKeyboardShortcut.get());
+    const WCHAR* rightHotkey = g_settings.cycleRightKeyboardShortcut.get();
+    if (!isEmptySetting(rightHotkey)) {
+        if (FromStringHotKey(rightHotkey, &modifiers, &vk)) {
+            g_hotkeyRightRegistered =
+                RegisterHotKey(hWnd, kHotkeyIdRight, modifiers, vk);
+            if (!g_hotkeyRightRegistered) {
+                Wh_Log(L"Couldn't register hotkey: %s", rightHotkey);
+            }
+        } else {
+            Wh_Log(L"Couldn't parse hotkey: %s", rightHotkey);
+        }
+    }
+
+    // Use default value if same process left shortcut is empty
+    const WCHAR* sameProcessLeftShortcut = g_settings.cycleSameProcessLeftKeyboardShortcut.get();
+    if (!sameProcessLeftShortcut || wcslen(sameProcessLeftShortcut) == 0) {
+        sameProcessLeftShortcut = L"Ctrl+Alt+VK_OEM_1";
+        Wh_Log(L"Using default same process left hotkey: %s", sameProcessLeftShortcut);
+    }
+
+    if (FromStringHotKey(sameProcessLeftShortcut, &modifiers, &vk)) {
+        g_hotkeySameProcessLeftRegistered =
+            RegisterHotKey(hWnd, kHotkeyIdSameProcessLeft, modifiers, vk);
+        if (!g_hotkeySameProcessLeftRegistered) {
+            Wh_Log(L"Couldn't register same process left hotkey: %s",
+                   sameProcessLeftShortcut);
+        } else {
+            Wh_Log(L"Registered same process left hotkey: %s", sameProcessLeftShortcut);
         }
     } else {
-        Wh_Log(L"Couldn't parse hotkey: %s",
-               g_settings.cycleRightKeyboardShortcut.get());
+        Wh_Log(L"Couldn't parse same process left hotkey: %s",
+               sameProcessLeftShortcut);
     }
+
+    // Use default value if same process right shortcut is empty
+    const WCHAR* sameProcessRightShortcut = g_settings.cycleSameProcessRightKeyboardShortcut.get();
+    if (!sameProcessRightShortcut || wcslen(sameProcessRightShortcut) == 0) {
+        sameProcessRightShortcut = L"Ctrl+Alt+VK_OEM_7";
+        Wh_Log(L"Using default same process right hotkey: %s", sameProcessRightShortcut);
+    }
+
+    if (FromStringHotKey(sameProcessRightShortcut, &modifiers, &vk)) {
+        g_hotkeySameProcessRightRegistered =
+            RegisterHotKey(hWnd, kHotkeyIdSameProcessRight, modifiers, vk);
+        if (!g_hotkeySameProcessRightRegistered) {
+            Wh_Log(L"Couldn't register same process right hotkey: %s",
+                   sameProcessRightShortcut);
+        } else {
+            Wh_Log(L"Registered same process right hotkey: %s", sameProcessRightShortcut);
+        }
+    } else {
+        Wh_Log(L"Couldn't parse same process right hotkey: %s",
+               sameProcessRightShortcut);
+    }
+}
+
+// Switch to another window of the same process
+bool OnTaskbarSameProcessHotkey(HWND hWnd, int hotkeyId) {
+    Wh_Log(L"Same process hotkey triggered");
+
+    DWORD messagePos = GetMessagePos();
+    POINT pt{
+        GET_X_LPARAM(messagePos),
+        GET_Y_LPARAM(messagePos),
+    };
+
+    HMONITOR monitor = MonitorFromPoint(pt, MONITOR_DEFAULTTONEAREST);
+    HWND hTaskbarForMonitor = GetTaskbarForMonitor(hWnd, monitor);
+    HWND hMMTaskListWnd = TaskListFromMMTaskbarWnd(
+        hTaskbarForMonitor ? hTaskbarForMonitor : hWnd);
+    if (!hMMTaskListWnd) {
+        return false;
+    }
+
+    LONG_PTR lpTaskListLongPtr = GetWindowLongPtr(hMMTaskListWnd, 0);
+    void* taskList_ITaskListUI = QueryViaVtable(
+        (void*)lpTaskListLongPtr, CTaskListWnd_vftable_ITaskListUI);
+
+    LONG_PTR* plp = (LONG_PTR*)GetTaskBtnGroupsArray(taskList_ITaskListUI);
+    if (!plp) {
+        return false;
+    }
+
+    int button_groups_count = (int)plp[0];
+    LONG_PTR** button_groups = (LONG_PTR**)plp[1];
+
+    // Get current foreground window process name
+    HWND hForeground = GetForegroundWindow();
+    std::wstring currentProcessName = GetProcessNameFromWindow(hForeground);
+    if (currentProcessName.empty()) {
+        Wh_Log(L"Could not get current process name");
+        return false;
+    }
+
+    Wh_Log(L"Current foreground process: %s", currentProcessName.c_str());
+
+    // Collect all windows of the same process
+    struct WindowInfo {
+        int groupIndex;
+        int buttonIndex;
+        HWND hwnd;
+        LONG_PTR* taskItem;
+    };
+    std::vector<WindowInfo> sameProcessWindows;
+
+    for (int i = 0; i < button_groups_count; i++) {
+        int button_group_type = CTaskBtnGroup_GetGroupType(button_groups[i]);
+        if (button_group_type == 1 || button_group_type == 3) {
+            int buttons_count = CTaskBtnGroup_GetNumItems(button_groups[i]);
+            for (int j = 0; j < buttons_count; j++) {
+                LONG_PTR* taskItem = (LONG_PTR*)CTaskBtnGroup_GetTaskItem(button_groups[i], j);
+                if (!taskItem) {
+                    continue;
+                }
+
+                HWND wnd = GetTaskItemWnd(taskItem);
+                std::wstring processName = GetProcessNameFromWindow(wnd);
+
+                if (_wcsicmp(processName.c_str(), currentProcessName.c_str()) == 0) {
+                    // Skip minimized windows if option is enabled
+                    if (g_settings.skipMinimizedWindows && IsMinimizedTaskItem(taskItem)) {
+                        continue;
+                    }
+
+                    sameProcessWindows.push_back({i, j, wnd, taskItem});
+                    Wh_Log(L"Found same process window: %s at group=%d, index=%d",
+                           processName.c_str(), i, j);
+                }
+            }
+        }
+    }
+
+    // If only one window or no windows found, do nothing
+    if (sameProcessWindows.size() <= 1) {
+        Wh_Log(L"Only one or no windows of this process, nothing to switch");
+        return false;
+    }
+
+    // Windows are kept in taskbar order (no sorting)
+    // This ensures consistent cycling behavior
+    Wh_Log(L"Total %d same process windows in taskbar order",
+           (int)sameProcessWindows.size());
+
+    // Find current window in the list
+    int currentIndex = -1;
+    for (size_t i = 0; i < sameProcessWindows.size(); i++) {
+        if (sameProcessWindows[i].hwnd == hForeground) {
+            currentIndex = static_cast<int>(i);
+            Wh_Log(L"Current window found at taskbar index %d (group=%d, button=%d)",
+                   currentIndex,
+                   sameProcessWindows[i].groupIndex,
+                   sameProcessWindows[i].buttonIndex);
+            break;
+        }
+    }
+
+    // If current window not found, use the first one in taskbar
+    if (currentIndex == -1) {
+        currentIndex = 0;
+        Wh_Log(L"Current window not found in list, starting from first window");
+    }
+
+    // Calculate next index based on direction
+    int nextIndex;
+    bool rotateRight = (hotkeyId == kHotkeyIdSameProcessRight);
+
+    if (rotateRight) {
+        nextIndex = (currentIndex + 1) % sameProcessWindows.size();
+    } else {
+        nextIndex = (currentIndex - 1 + sameProcessWindows.size()) % sameProcessWindows.size();
+    }
+
+    Wh_Log(L"Switching from taskbar index %d to %d (group=%d, button=%d)",
+           currentIndex, nextIndex,
+           sameProcessWindows[nextIndex].groupIndex,
+           sameProcessWindows[nextIndex].buttonIndex);
+
+    // Switch to the target window
+    HWND targetWindow = sameProcessWindows[nextIndex].hwnd;
+    MinimizeOtherWindowsOnSameMonitor(targetWindow);
+    SwitchToTaskItem(lpTaskListLongPtr, sameProcessWindows[nextIndex].taskItem);
+
+    return true;
 }
 
 bool OnTaskbarHotkey(HWND hWnd, int hotkeyId) {
@@ -920,42 +1612,59 @@ bool OnTaskbarHotkey(HWND hWnd, int hotkeyId) {
         return false;
     }
 
-    int clicks = hotkeyId == kHotkeyIdLeft ? -1 : 1;
+    int clicks;
+    switch (hotkeyId) {
+        case kHotkeyIdLeft:
+            clicks = -1;
+            break;
+
+        case kHotkeyIdRight:
+            clicks = 1;
+            break;
+
+        default:
+            return false;
+    }
 
     LONG_PTR lpTaskListLongPtr = GetWindowLongPtr(hMMTaskListWnd, 0);
+
+    // FIX: Find the current foreground window's task item to use as a starting point.
+    HWND hForeground = GetForegroundWindow();
+    PVOID currentTaskItem = nullptr;
+
+    void* taskList_ITaskListUI = QueryViaVtable(
+        (void*)lpTaskListLongPtr, CTaskListWnd_vftable_ITaskListUI);
+
+    LONG_PTR* plp = (LONG_PTR*)GetTaskBtnGroupsArray(taskList_ITaskListUI);
+    if (plp) {
+        int button_groups_count = (int)plp[0];
+        LONG_PTR** button_groups = (LONG_PTR**)plp[1];
+
+        for (int i = 0; i < button_groups_count; i++) {
+            int button_group_type = CTaskBtnGroup_GetGroupType(button_groups[i]);
+            if (button_group_type == 1 || button_group_type == 3) {
+                int buttons_count = CTaskBtnGroup_GetNumItems(button_groups[i]);
+                for (int j = 0; j < buttons_count; j++) {
+                    PVOID taskItem = (PVOID)CTaskBtnGroup_GetTaskItem(button_groups[i], j);
+                    if (taskItem && GetTaskItemWnd(taskItem) == hForeground) {
+                        currentTaskItem = taskItem;
+                        goto found_item;
+                    }
+                }
+            }
+        }
+    }
+    found_item:;
+
     PVOID targetTaskItem = TaskbarScroll(lpTaskListLongPtr, clicks,
-                                         g_settings.skipMinimizedWindows,
-                                         g_settings.wrapAround, nullptr);
+                                         g_settings.wrapAround, (LONG_PTR*)currentTaskItem);
     if (targetTaskItem) {
+        HWND targetWindow = GetTaskItemWnd(targetTaskItem);
+        MinimizeOtherWindowsOnSameMonitor(targetWindow);
         SwitchToTaskItem(lpTaskListLongPtr, targetTaskItem);
     }
 
     return true;
-}
-
-UINT g_hotkeyRegisteredMsg =
-    RegisterWindowMessage(L"Windhawk_hotkey_" WH_MOD_ID);
-
-enum {
-    HOTKEY_REGISTER,
-    HOTKEY_UNREGISTER,
-    HOTKEY_UPDATE,
-};
-
-using CTaskListWnd__SetActiveItem_t = void(WINAPI*)(void* pThis,
-                                                    void* taskBtnGroup,
-                                                    int buttonIndex);
-CTaskListWnd__SetActiveItem_t CTaskListWnd__SetActiveItem_Original;
-void WINAPI CTaskListWnd__SetActiveItem_Hook(void* pThis,
-                                             void* taskBtnGroup,
-                                             int buttonIndex) {
-    Wh_Log(L">");
-
-    g_lastTaskListActiveTaskItem[pThis] =
-        taskBtnGroup ? CTaskBtnGroup_GetTaskItem(taskBtnGroup, buttonIndex)
-                     : nullptr;
-
-    CTaskListWnd__SetActiveItem_Original(pThis, taskBtnGroup, buttonIndex);
 }
 
 using CTaskBand_v_WndProc_t = LRESULT(
@@ -982,6 +1691,12 @@ LRESULT WINAPI CTaskBand_v_WndProc_Hook(void* pThis,
                                     static_cast<int>(wParam));
                     break;
 
+                case kHotkeyIdSameProcessLeft:
+                case kHotkeyIdSameProcessRight:
+                    OnTaskbarSameProcessHotkey(GetAncestor(hWnd, GA_ROOT),
+                                               static_cast<int>(wParam));
+                    break;
+
                 default:
                     result = originalProc(hWnd, Msg, wParam, lParam);
                     break;
@@ -1001,15 +1716,15 @@ LRESULT WINAPI CTaskBand_v_WndProc_Hook(void* pThis,
         default:
             if (Msg == g_hotkeyRegisteredMsg) {
                 switch (wParam) {
-                    case HOTKEY_REGISTER:
+                    case MSG_HOTKEY_REGISTER:
                         RegisterHotkeys(hWnd);
                         break;
 
-                    case HOTKEY_UNREGISTER:
+                    case MSG_HOTKEY_UNREGISTER:
                         UnregisterHotkeys(hWnd);
                         break;
 
-                    case HOTKEY_UPDATE:
+                    case MSG_HOTKEY_UPDATE:
                         UnregisterHotkeys(hWnd);
                         RegisterHotkeys(hWnd);
                         break;
@@ -1182,7 +1897,16 @@ void LoadSettings() {
         WindhawkUtils::StringSetting::make(L"cycleLeftKeyboardShortcut");
     g_settings.cycleRightKeyboardShortcut =
         WindhawkUtils::StringSetting::make(L"cycleRightKeyboardShortcut");
+    g_settings.cycleSameProcessLeftKeyboardShortcut =
+        WindhawkUtils::StringSetting::make(L"cycleSameProcessLeftKeyboardShortcut");
+    g_settings.cycleSameProcessRightKeyboardShortcut =
+        WindhawkUtils::StringSetting::make(L"cycleSameProcessRightKeyboardShortcut");
+    g_settings.minimizeOtherWindowsOnSwitch =
+        Wh_GetIntSetting(L"minimizeOtherWindowsOnSwitch");
+    g_settings.limitSwitchingRange = Wh_GetIntSetting(L"limitSwitchingRange");
     g_settings.oldTaskbarOnWin11 = Wh_GetIntSetting(L"oldTaskbarOnWin11");
+    g_settings.rangeStart = Wh_GetIntSetting(L"rangeStart");
+    g_settings.rangeEnd = Wh_GetIntSetting(L"rangeEnd");
 }
 
 bool HookTaskbarViewDllSymbols(HMODULE module) {
@@ -1288,9 +2012,12 @@ bool HookTaskbarSymbols() {
             &CTaskListWnd_SwitchToItem_Original,
         },
         {
-            {LR"(protected: void __cdecl CTaskListWnd::_SetActiveItem(struct ITaskBtnGroup *,int))"},
-            &CTaskListWnd__SetActiveItem_Original,
-            CTaskListWnd__SetActiveItem_Hook,
+            {LR"(public: virtual int __cdecl CTaskBtnGroup::IndexOfTaskItem(struct ITaskItem *))"},
+            &CTaskBtnGroup_IndexOfTaskItem,
+        },
+        {
+            {LR"(public: virtual long __cdecl CTaskListWnd::TaskInclusionChanged(struct ITaskGroup *,struct ITaskItem *))"},
+            &CTaskListWnd_TaskInclusionChanged,
         },
         {
             {LR"(protected: virtual __int64 __cdecl CTaskBand::v_WndProc(struct HWND__ *,unsigned int,unsigned __int64,__int64))"},
@@ -1423,9 +2150,6 @@ bool HookExplorerPatcherSymbols(HMODULE explorerPatcherModule) {
          &CImmersiveTaskItem_GetWindow_Original},
         {R"(?SwitchToItem@CTaskListWnd@@UEAAXPEAUITaskItem@@@Z)",
          &CTaskListWnd_SwitchToItem_Original},
-        {R"(?_SetActiveItem@CTaskListWnd@@IEAAXPEAUITaskBtnGroup@@H@Z)",
-         &CTaskListWnd__SetActiveItem_Original,
-         CTaskListWnd__SetActiveItem_Hook},
         {R"(?v_WndProc@CTaskBand@@MEAA_JPEAUHWND__@@I_K_J@Z)",
          &CTaskBand_v_WndProc_Original, CTaskBand_v_WndProc_Hook},
         {R"(?WndProc@TrayUI@@UEAA_JPEAUHWND__@@I_K_JPEA_N@Z)",
@@ -1530,6 +2254,9 @@ HMODULE WINAPI LoadLibraryExW_Hook(LPCWSTR lpLibFileName,
 BOOL Wh_ModInit() {
     Wh_Log(L">");
 
+    // Initialize registered message for inter-thread communication
+    g_hotkeyRegisteredMsg = RegisterWindowMessage(L"Windhawk_hotkey_" WH_MOD_ID);
+
     LoadSettings();
 
     g_winVersion = GetExplorerVersion();
@@ -1575,9 +2302,9 @@ BOOL Wh_ModInit() {
     HMODULE kernelBaseModule = GetModuleHandle(L"kernelbase.dll");
     auto pKernelBaseLoadLibraryExW = (decltype(&LoadLibraryExW))GetProcAddress(
         kernelBaseModule, "LoadLibraryExW");
-    WindhawkUtils::Wh_SetFunctionHookT(pKernelBaseLoadLibraryExW,
-                                       LoadLibraryExW_Hook,
-                                       &LoadLibraryExW_Original);
+    WindhawkUtils::SetFunctionHook(pKernelBaseLoadLibraryExW,
+                                   LoadLibraryExW_Hook,
+                                   &LoadLibraryExW_Original);
 
     g_initialized = true;
 
@@ -1606,7 +2333,7 @@ void Wh_ModAfterInit() {
     }
 
     if (HWND hTaskBandWnd = GetTaskBandWnd()) {
-        SendMessage(hTaskBandWnd, g_hotkeyRegisteredMsg, HOTKEY_REGISTER, 0);
+        SendMessage(hTaskBandWnd, g_hotkeyRegisteredMsg, MSG_HOTKEY_REGISTER, 0);
     }
 }
 
@@ -1614,7 +2341,7 @@ void Wh_ModBeforeUninit() {
     Wh_Log(L">");
 
     if (HWND hTaskBandWnd = GetTaskBandWnd()) {
-        SendMessage(hTaskBandWnd, g_hotkeyRegisteredMsg, HOTKEY_UNREGISTER, 0);
+        SendMessage(hTaskBandWnd, g_hotkeyRegisteredMsg, MSG_HOTKEY_UNREGISTER, 0);
     }
 }
 
@@ -1631,7 +2358,7 @@ BOOL Wh_ModSettingsChanged(BOOL* bReload) {
     }
 
     if (HWND hTaskBandWnd = GetTaskBandWnd()) {
-        SendMessage(hTaskBandWnd, g_hotkeyRegisteredMsg, HOTKEY_UPDATE, 0);
+        SendMessage(hTaskBandWnd, g_hotkeyRegisteredMsg, MSG_HOTKEY_UPDATE, 0);
     }
 
     return TRUE;
