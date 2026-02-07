@@ -2908,43 +2908,37 @@ void ApplyCustomizationsForVisualStateGroup(
             SetOrClearValue(element, property, it->second);
         }
 
-        propertyCustomizationState
-            .propertyChangedToken = elementDo.RegisterPropertyChangedCallback(
-            property,
-            [&propertyCustomizationState](DependencyObject sender,
-                                          DependencyProperty property) {
-                if (g_elementPropertyModifying) {
-                    return;
-                }
-
-                auto element = sender.try_as<FrameworkElement>();
-                if (!element) {
-                    return;
-                }
-
-                if (!propertyCustomizationState.customValue) {
-                    return;
-                }
-
-                Wh_Log(L"Re-applying style for %s",
-                       winrt::get_class_name(element).c_str());
-
-                auto localValue =
-                    ReadLocalValueWithWorkaround(element, property);
-
-                if (auto* customValue =
-                        std::get_if<winrt::Windows::Foundation::IInspectable>(
-                            &*propertyCustomizationState.customValue)) {
-                    if (*customValue != localValue) {
-                        propertyCustomizationState.originalValue = localValue;
+        propertyCustomizationState.propertyChangedToken =
+            elementDo.RegisterPropertyChangedCallback(
+                property,
+                [&propertyCustomizationState](DependencyObject sender,
+                                              DependencyProperty property) {
+                    if (g_elementPropertyModifying) {
+                        return;
                     }
-                }
 
-                g_elementPropertyModifying = true;
-                SetOrClearValue(element, property,
-                                *propertyCustomizationState.customValue);
-                g_elementPropertyModifying = false;
-            });
+                    auto element = sender.try_as<FrameworkElement>();
+                    if (!element) {
+                        return;
+                    }
+
+                    if (!propertyCustomizationState.customValue) {
+                        return;
+                    }
+
+                    auto localValue =
+                        ReadLocalValueWithWorkaround(element, property);
+
+                    propertyCustomizationState.originalValue = localValue;
+
+                    Wh_Log(L"Re-applying style for %s",
+                           winrt::get_class_name(element).c_str());
+
+                    g_elementPropertyModifying = true;
+                    SetOrClearValue(element, property,
+                                    *propertyCustomizationState.customValue);
+                    g_elementPropertyModifying = false;
+                });
     }
 
     if (visualStateGroup) {
