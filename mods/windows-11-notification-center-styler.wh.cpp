@@ -2,7 +2,7 @@
 // @id              windows-11-notification-center-styler
 // @name            Windows 11 Notification Center Styler
 // @description     Customize the Notification Center and Action Center with themes contributed by others or create your own
-// @version         1.3.3
+// @version         1.4
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
@@ -156,8 +156,7 @@ Makes panel non full-height when there are fewer notifications (fit to size). \
 **Target**: `Grid#ControlCenterRegion` \
 **Style**: `CornerRadius=0`
 
-#### Calendar and notification titlebars: titles on the right, buttons on the
-left
+#### Calendar and notification titlebars: titles on the right, buttons on the left
 **Target**: `Grid#RootContent` \
 **Style**: `FlowDirection=1`
 
@@ -5163,7 +5162,7 @@ bool StartStatsTimer() {
     static constexpr WCHAR kStatsBaseUrl[] =
         L"https://github.com/ramensoftware/"
         L"windows-11-notification-center-styling-guide/"
-        L"releases/download/stats-v2/";
+        L"releases/download/stats-v3/";
 
     ULONGLONG lastStatsTime = 0;
     Wh_GetBinaryValue(L"statsTimerLastTime", &lastStatsTime,
