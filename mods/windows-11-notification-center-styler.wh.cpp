@@ -2420,14 +2420,17 @@ winrt::Windows::Foundation::IInspectable ReadLocalValueWithWorkaround(
             value = elementDo.GetAnimationBaseValue(property);
         }
     } else {
-        // A workaround for Fill of HorizontalTrackRect which can't be read by
-        // ReadLocalValue for some reason (null is returned instead).
+        // A workaround for Fill of HorizontalTrackRect or
+        // HorizontalDecreaseRect which can't be read by ReadLocalValue for some
+        // reason (null is returned instead).
         auto rect = elementDo.try_as<Shapes::Rectangle>();
-        if (rect && rect.Name() == L"HorizontalTrackRect") {
+        if (rect && (rect.Name() == L"HorizontalTrackRect" ||
+                     rect.Name() == L"HorizontalDecreaseRect")) {
             auto value2 = elementDo.GetValue(property);
             if (value2 && winrt::get_class_name(value2) ==
                               L"Windows.UI.Xaml.Media.SolidColorBrush") {
-                Wh_Log(L"Using GetValue workaround for HorizontalTrackRect");
+                Wh_Log(L"Using GetValue workaround for %s",
+                       rect.Name().c_str());
                 value = std::move(value2);
             }
         }
