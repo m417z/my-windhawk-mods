@@ -46,7 +46,8 @@ the registry:
 /*
 - size: 150
   $name: Thumbnail size (percentage)
-  $description: Percentage of the original size. Used when absolute sizing is disabled.
+  $description: >-
+    Percentage of the original size. Used when absolute sizing is disabled.
 - useAbsoluteSize: false
   $name: Use absolute sizing
   $description: >-
@@ -75,8 +76,8 @@ the registry:
 - preserveAspectRatio: true
   $name: Preserve aspect ratio
   $description: >-
-    Forcibly preserves thumbnail aspect ratios while fitting Maximum constraints.
-    Fits Minimum constraints as best as possible.
+    Forcibly preserves thumbnail aspect ratios while fitting Maximum
+    constraints. Fits Minimum constraints as best as possible.
 */
 // ==/WindhawkModSettings==
 
@@ -105,14 +106,14 @@ std::atomic<bool> g_taskbarViewDllLoaded;
 
 using ThumbnailHelpers_GetScaledThumbnailSize_t =
     winrt::Windows::Foundation::Size*(
-        WINAPI*)(winrt::Windows::Foundation::Size* result,
+        WINAPI*)(winrt::Windows::Foundation::Size * resultBuffer,
                  winrt::Windows::Foundation::Size size,
                  float scale);
 ThumbnailHelpers_GetScaledThumbnailSize_t
     ThumbnailHelpers_GetScaledThumbnailSize_Original;
 winrt::Windows::Foundation::Size* WINAPI
 ThumbnailHelpers_GetScaledThumbnailSize_Hook(
-    winrt::Windows::Foundation::Size* result,
+    winrt::Windows::Foundation::Size* resultBuffer,
     winrt::Windows::Foundation::Size size,
     float scale) {
     Wh_Log(L"> %fx%f %f", size.Width, size.Height, scale);
@@ -121,84 +122,98 @@ ThumbnailHelpers_GetScaledThumbnailSize_Hook(
         // Original percentage-based behavior
         winrt::Windows::Foundation::Size* ret =
             ThumbnailHelpers_GetScaledThumbnailSize_Original(
-                result, size, scale * g_settings.size / 100.0);
+                resultBuffer, size, scale * g_settings.size / 100.0);
 
         Wh_Log(L"%fx%f", ret->Width, ret->Height);
         return ret;
     }
 
     // Absolute sizing mode
-    winrt::Windows::Foundation::Size* originalResult =
-        ThumbnailHelpers_GetScaledThumbnailSize_Original(result, size, scale);
+    winrt::Windows::Foundation::Size* result =
+        ThumbnailHelpers_GetScaledThumbnailSize_Original(resultBuffer, size,
+                                                         scale);
 
     float currentWidth = result->Width;
     float currentHeight = result->Height;
 
+    if (currentWidth <= 0 || currentHeight <= 0) {
+        // Avoid division by zero and invalid sizes
+        Wh_Log(L"Invalid original size %fx%f, skipping", currentWidth,
+               currentHeight);
+        return result;
+    }
+
+    if (g_settings.preserveAspectRatio) {
+        // Calculate the scale factors needed to satisfy each constraint
+        // A scale > 1 means we need to enlarge, < 1 means shrink
+        float minScaleForWidth = 1.0f;
+        float minScaleForHeight = 1.0f;
+        float maxScaleForWidth = std::numeric_limits<float>::infinity();
+        float maxScaleForHeight = std::numeric_limits<float>::infinity();
+
+        if (g_settings.minWidth > 0) {
+            minScaleForWidth = g_settings.minWidth / currentWidth;
+        }
+        if (g_settings.minHeight > 0) {
+            minScaleForHeight = g_settings.minHeight / currentHeight;
+        }
+        if (g_settings.maxWidth > 0) {
+            maxScaleForWidth = g_settings.maxWidth / currentWidth;
+        }
+        if (g_settings.maxHeight > 0) {
+            maxScaleForHeight = g_settings.maxHeight / currentHeight;
+        }
+
+        // The minimum scale we must apply (to satisfy min constraints)
+        float minRequiredScale =
+            (std::max)(minScaleForWidth, minScaleForHeight);
+        // The maximum scale we can apply (to satisfy max constraints)
+        float maxAllowedScale = (std::min)(maxScaleForWidth, maxScaleForHeight);
+
+        // Choose the scale that results in minimal change from original
+        float finalScale = 1.0f;
+
+        if (maxAllowedScale >= minRequiredScale) {
+            // Constraints are satisfiable - pick scale closest to 1.0
+            if (minRequiredScale > 1.0f) {
+                // Need to enlarge to meet minimum constraints
+                finalScale = minRequiredScale;
+            } else if (maxAllowedScale < 1.0f) {
+                // Need to shrink to meet maximum constraints
+                finalScale = maxAllowedScale;
+            }
+            // else: current size already satisfies all constraints, keep
+            // scale = 1.0
+        } else {
+            // Constraints conflict - prioritize max constraints (fit within
+            // bounds)
+            finalScale = maxAllowedScale;
+        }
+
+        winrt::Windows::Foundation::Size* ret =
+            finalScale == 1.0f
+                ? result
+                : ThumbnailHelpers_GetScaledThumbnailSize_Original(
+                      resultBuffer, size, scale * finalScale);
+        Wh_Log(L"%fx%f", ret->Width, ret->Height);
+        return ret;
+    }
+
     float targetWidth = currentWidth;
     float targetHeight = currentHeight;
 
-    if (g_settings.preserveAspectRatio) {
-        if (currentWidth > 0 && currentHeight > 0) {
-            // Calculate the scale factors needed to satisfy each constraint
-            // A scale > 1 means we need to enlarge, < 1 means shrink
-            float minScaleForWidth = 1.0f;
-            float minScaleForHeight = 1.0f;
-            float maxScaleForWidth = std::numeric_limits<float>::infinity();
-            float maxScaleForHeight = std::numeric_limits<float>::infinity();
-
-            if (g_settings.minWidth > 0) {
-                minScaleForWidth = g_settings.minWidth / currentWidth;
-            }
-            if (g_settings.minHeight > 0) {
-                minScaleForHeight = g_settings.minHeight / currentHeight;
-            }
-            if (g_settings.maxWidth > 0) {
-                maxScaleForWidth = g_settings.maxWidth / currentWidth;
-            }
-            if (g_settings.maxHeight > 0) {
-                maxScaleForHeight = g_settings.maxHeight / currentHeight;
-            }
-
-            // The minimum scale we must apply (to satisfy min constraints)
-            float minRequiredScale = (std::max)(minScaleForWidth, minScaleForHeight);
-            // The maximum scale we can apply (to satisfy max constraints)
-            float maxAllowedScale = (std::min)(maxScaleForWidth, maxScaleForHeight);
-
-            // Choose the scale that results in minimal change from original
-            float finalScale = 1.0f;
-
-            if (maxAllowedScale >= minRequiredScale) {
-                // Constraints are satisfiable - pick scale closest to 1.0
-                if (minRequiredScale > 1.0f) {
-                    // Need to enlarge to meet minimum constraints
-                    finalScale = minRequiredScale;
-                } else if (maxAllowedScale < 1.0f) {
-                    // Need to shrink to meet maximum constraints
-                    finalScale = maxAllowedScale;
-                }
-                // else: current size already satisfies all constraints, keep scale = 1.0
-            } else {
-                // Constraints conflict - prioritize max constraints (fit within bounds)
-                finalScale = maxAllowedScale;
-            }
-
-            targetWidth = currentWidth * finalScale;
-            targetHeight = currentHeight * finalScale;
-        }
-    } else {
-        // Apply constraints without regard to aspect ratio
-        if (g_settings.minWidth > 0 && targetWidth < g_settings.minWidth) {
-            targetWidth = g_settings.minWidth;
-        }
-        if (g_settings.maxWidth > 0 && targetWidth > g_settings.maxWidth) {
-            targetWidth = g_settings.maxWidth;
-        }
-        if (g_settings.minHeight > 0 && targetHeight < g_settings.minHeight) {
-            targetHeight = g_settings.minHeight;
-        }
-        if (g_settings.maxHeight > 0 && targetHeight > g_settings.maxHeight) {
-            targetHeight = g_settings.maxHeight;
-        }
+    // Apply constraints without regard to aspect ratio
+    if (g_settings.minWidth > 0 && targetWidth < g_settings.minWidth) {
+        targetWidth = g_settings.minWidth;
+    }
+    if (g_settings.maxWidth > 0 && targetWidth > g_settings.maxWidth) {
+        targetWidth = g_settings.maxWidth;
+    }
+    if (g_settings.minHeight > 0 && targetHeight < g_settings.minHeight) {
+        targetHeight = g_settings.minHeight;
+    }
+    if (g_settings.maxHeight > 0 && targetHeight > g_settings.maxHeight) {
+        targetHeight = g_settings.maxHeight;
     }
 
     result->Width = targetWidth;
