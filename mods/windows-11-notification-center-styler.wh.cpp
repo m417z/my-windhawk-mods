@@ -2052,6 +2052,7 @@ using namespace std::string_view_literals;
 #include <winrt/Windows.UI.Xaml.Markup.h>
 #include <winrt/Windows.UI.Xaml.Media.Imaging.h>
 #include <winrt/Windows.UI.Xaml.Media.h>
+#include <winrt/Windows.UI.Xaml.Shapes.h>
 #include <winrt/Windows.UI.Xaml.h>
 
 using namespace winrt::Windows::UI::Xaml;
@@ -2225,6 +2226,18 @@ winrt::Windows::Foundation::IInspectable ReadLocalValueWithWorkaround(
             Wh_Log(L"ReadLocalValue returned %s, using GetAnimationBaseValue",
                    className.c_str());
             value = elementDo.GetAnimationBaseValue(property);
+        }
+    } else {
+        // A workaround for Fill of HorizontalTrackRect which can't be read by
+        // ReadLocalValue for some reason (null is returned instead).
+        auto rect = elementDo.try_as<Shapes::Rectangle>();
+        if (rect && rect.Name() == L"HorizontalTrackRect") {
+            auto value2 = elementDo.GetValue(property);
+            if (value2 && winrt::get_class_name(value2) ==
+                              L"Windows.UI.Xaml.Media.SolidColorBrush") {
+                Wh_Log(L"Using GetValue workaround for HorizontalTrackRect");
+                value = std::move(value2);
+            }
         }
     }
 
