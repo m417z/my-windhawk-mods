@@ -2,14 +2,14 @@
 // @id              taskbar-auto-hide-when-maximized
 // @name            Taskbar auto-hide when maximized
 // @description     Makes the taskbar auto-hide only when a window is maximized or intersects the taskbar
-// @version         1.2.4
+// @version         1.2.5
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
 // @homepage        https://m417z.com/
 // @include         explorer.exe
 // @architecture    x86-64
-// @compilerOptions -ldwmapi -lole32 -loleaut32 -lversion
+// @compilerOptions -ldwmapi -lole32 -loleaut32 -lruntimeobject -lversion
 // ==/WindhawkMod==
 
 // Source code is published under The GNU General Public License v3.0.
@@ -542,8 +542,15 @@ bool ShouldKeepTaskbarShown(HWND hTaskbarWnd, HMONITOR monitor) {
     }
 
     // Always show taskbar when MultitaskingView (Win+Tab) is active.
+    // [FIX #3] Foreground window validation - prevent stale flag
     if (g_multitaskingViewActive) {
-        return true;
+        HWND fg = GetForegroundWindow();
+        if (!fg || !IsMultitaskingViewWindow(fg)) {
+            Wh_Log(L"MultitaskingView flag was stale, resetting");
+            g_multitaskingViewActive = false;
+        } else {
+            return true;
+        }
     }
 
     MONITORINFO monitorInfo{
@@ -641,6 +648,16 @@ bool AdjustAllTaskbarsIfNotPending() {
     std::unordered_set<HWND> secondaryTaskbarWindows;
     HWND hWnd = FindTaskbarWindows(&secondaryTaskbarWindows);
 
+    // [FIX #2] Clean up dead HWNDs - critical hygiene
+    for (auto it = g_taskbarsKeptShown.begin(); it != g_taskbarsKeptShown.end();) {
+        if (!IsWindow(it->second)) {
+            Wh_Log(L"Cleaning up dead HWND from g_taskbarsKeptShown");
+            it = g_taskbarsKeptShown.erase(it);
+        } else {
+            ++it;
+        }
+    }
+
     DWORD currentTickCount = GetTickCount();
     DWORD pendingTickCount = 0;
 
@@ -681,43 +698,62 @@ bool AdjustAllTaskbarsIfNotPending() {
     return true;
 }
 
-using ViewCoordinator_ShouldTaskbarBeExpanded_t =
-    bool(WINAPI*)(void* pThis, HWND hMMTaskbarWnd, bool expanded);
-ViewCoordinator_ShouldTaskbarBeExpanded_t
-    ViewCoordinator_ShouldTaskbarBeExpanded_Original;
-bool WINAPI ViewCoordinator_ShouldTaskbarBeExpanded_Hook(void* pThis,
-                                                         HWND hMMTaskbarWnd,
-                                                         bool expanded) {
-    Wh_Log(L"> hMMTaskbarWnd=%08X, expanded=%d",
-           (DWORD)(ULONG_PTR)hMMTaskbarWnd, expanded);
+using ViewCoordinator_ShouldStayExpandedChanged_t =
+    void(WINAPI*)(void* pThis, HWND hMMTaskbarWnd, bool shouldStayExpanded);
+ViewCoordinator_ShouldStayExpandedChanged_t
+    ViewCoordinator_ShouldStayExpandedChanged_Original;
+void WINAPI
+ViewCoordinator_ShouldStayExpandedChanged_Hook(void* pThis,
+                                               HWND hMMTaskbarWnd,
+                                               bool shouldStayExpanded) {
+    Wh_Log(L"> shouldStayExpanded=%d", shouldStayExpanded);
 
     g_taskbarToViewCoordinator[hMMTaskbarWnd] = pThis;
 
-    // Return true if the taskbar should be kept shown.
-    for (const auto& pair : g_taskbarsKeptShown) {
-        if (pair.second == hMMTaskbarWnd) {
-            Wh_Log(L"Returning true for taskbar kept shown");
-            return true;
+    ViewCoordinator_ShouldStayExpandedChanged_Original(pThis, hMMTaskbarWnd,
+                                                       shouldStayExpanded);
+}
+
+using ViewCoordinator_HandleIsPointerOverTaskbarFrameChanged_t =
+    void(WINAPI*)(void* pThis,
+                  HWND hMMTaskbarWnd,
+                  bool isPointerOver,
+                  int inputDeviceKind);
+ViewCoordinator_HandleIsPointerOverTaskbarFrameChanged_t
+    ViewCoordinator_HandleIsPointerOverTaskbarFrameChanged_Original;
+void WINAPI ViewCoordinator_HandleIsPointerOverTaskbarFrameChanged_Hook(
+    void* pThis,
+    HWND hMMTaskbarWnd,
+    bool isPointerOver,
+    int inputDeviceKind) {
+    Wh_Log(L"> isPointerOver=%d", isPointerOver);
+
+    g_taskbarToViewCoordinator[hMMTaskbarWnd] = pThis;
+
+    // [FIX #4] Pointer-over hook - block only when valid
+    if (!isPointerOver) {
+        bool shouldBlock = false;
+        for (const auto& pair : g_taskbarsKeptShown) {
+            if (pair.second == hMMTaskbarWnd && IsWindow(pair.second)) {
+                shouldBlock = true;
+                break;
+            }
+        }
+        if (shouldBlock) {
+            return;
         }
     }
 
-    return ViewCoordinator_ShouldTaskbarBeExpanded_Original(
-        pThis, hMMTaskbarWnd, expanded);
+    ViewCoordinator_HandleIsPointerOverTaskbarFrameChanged_Original(
+        pThis, hMMTaskbarWnd, isPointerOver, inputDeviceKind);
 }
 
-using ViewCoordinator_UpdateIsExpanded_t =
-    void(WINAPI*)(void* pThis, HWND hMMTaskbarWnd, int reason);
-ViewCoordinator_UpdateIsExpanded_t ViewCoordinator_UpdateIsExpanded_Original;
-
-void UpdateViewCoordinatorIsExpanded(HWND hWnd) {
-    // From ViewCoordinator::HandleIsPointerOverTaskbarFrameChanged.
-    constexpr int kReasonIsPointerOverTaskbarFrameChanged = 7;
-
-    if (ViewCoordinator_UpdateIsExpanded_Original) {
+void NotifyViewCoordinatorPointerOverChanged(HWND hWnd, bool isPointerOver) {
+    if (ViewCoordinator_HandleIsPointerOverTaskbarFrameChanged_Original) {
         auto it = g_taskbarToViewCoordinator.find(hWnd);
         if (it != g_taskbarToViewCoordinator.end()) {
-            ViewCoordinator_UpdateIsExpanded_Original(
-                it->second, hWnd, kReasonIsPointerOverTaskbarFrameChanged);
+            ViewCoordinator_HandleIsPointerOverTaskbarFrameChanged_Original(
+                it->second, hWnd, isPointerOver, 2);
         }
     }
 }
@@ -850,13 +886,13 @@ LRESULT WINAPI TrayUI_WndProc_Hook(void* pThis,
                     QueryViaVtable(pThis, TrayUI_vftable_ITrayComponentHost);
                 TrayUI_Unhide_Original(pTrayUI_ITrayComponentHost, 0, 0);
 
-                UpdateViewCoordinatorIsExpanded(hWnd);
+                NotifyViewCoordinatorPointerOverChanged(hWnd, true);
             } else {
                 g_taskbarsKeptShown.erase(pTrayUI_IInspectable);
 
                 SetTimer(hWnd, kTrayUITimerHide, 0, nullptr);
 
-                UpdateViewCoordinatorIsExpanded(hWnd);
+                NotifyViewCoordinatorPointerOverChanged(hWnd, false);
             }
         }
 
@@ -904,13 +940,13 @@ LRESULT WINAPI CSecondaryTray_v_WndProc_Hook(void* pThis,
 
                 CSecondaryTray__Unhide_Original(pThis, 0, 0);
 
-                UpdateViewCoordinatorIsExpanded(hWnd);
+                NotifyViewCoordinatorPointerOverChanged(hWnd, true);
             } else {
                 g_taskbarsKeptShown.erase(pThis);
 
                 SetTimer(hWnd, kTrayUITimerHide, 0, nullptr);
 
-                UpdateViewCoordinatorIsExpanded(hWnd);
+                NotifyViewCoordinatorPointerOverChanged(hWnd, false);
             }
         }
 
@@ -994,18 +1030,41 @@ void CALLBACK WinEventProc(HWINEVENTHOOK hWinEventHook,
 
     g_pendingEventsTimer = SetTimer(
         nullptr, 0, 200,
-        [](HWND hwnd,         // handle of window for timer messages
-           UINT uMsg,         // WM_TIMER message
-           UINT_PTR idEvent,  // timer identifier
-           DWORD dwTime       // current system time
-        ) {
+        [](HWND hwnd, UINT uMsg, UINT_PTR idEvent, DWORD dwTime) {
             Wh_Log(L">");
 
+            // [FIX #1] Retry counter - hard reset if stuck
+            static int pendingRetryCount = 0;
+
             if (!AdjustAllTaskbarsIfNotPending()) {
-                Wh_Log(L"Adjustment already pending, will retry later...");
+                pendingRetryCount++;
+                Wh_Log(L"Adjustment pending, retry %d/15", pendingRetryCount);
+                
+                // Hard reset after ~3 seconds
+                if (pendingRetryCount >= 15) {
+                    Wh_Log(L"HARD RESET - clearing all states");
+                    
+                    g_taskbarsKeptShown.clear();
+                    g_multitaskingViewActive = false;
+                    
+                    std::unordered_set<HWND> secondaryTaskbarWindows;
+                    HWND hTaskbarWnd = FindTaskbarWindows(&secondaryTaskbarWindows);
+                    if (hTaskbarWnd) {
+                        RemoveProp(hTaskbarWnd, kUpdateTaskbarStatePendingTickCount);
+                    }
+                    for (HWND hSecondaryWnd : secondaryTaskbarWindows) {
+                        RemoveProp(hSecondaryWnd, kUpdateTaskbarStatePendingTickCount);
+                    }
+                    
+                    pendingRetryCount = 0;
+                    KillTimer(nullptr, g_pendingEventsTimer);
+                    g_pendingEventsTimer = 0;
+                    AdjustAllTaskbars();
+                }
                 return;
             }
 
+            pendingRetryCount = 0;
             KillTimer(nullptr, g_pendingEventsTimer);
             g_pendingEventsTimer = 0;
         });
@@ -1085,15 +1144,15 @@ bool HookTaskbarViewDllSymbols(HMODULE module) {
     // Taskbar.View.dll
     WindhawkUtils::SYMBOL_HOOK symbolHooks[] = {
         {
-            {LR"(public: bool __cdecl winrt::Taskbar::implementation::ViewCoordinator::ShouldTaskbarBeExpanded(unsigned __int64,bool))"},
-            &ViewCoordinator_ShouldTaskbarBeExpanded_Original,
-            ViewCoordinator_ShouldTaskbarBeExpanded_Hook,
+            {LR"(public: void __cdecl winrt::Taskbar::implementation::ViewCoordinator::ShouldStayExpandedChanged(unsigned __int64,bool))"},
+            &ViewCoordinator_ShouldStayExpandedChanged_Original,
+            ViewCoordinator_ShouldStayExpandedChanged_Hook,
             true,
         },
         {
-            {LR"(public: void __cdecl winrt::Taskbar::implementation::ViewCoordinator::UpdateIsExpanded(unsigned __int64,enum TaskbarTipTest::TaskbarExpandCollapseReason))"},
-            &ViewCoordinator_UpdateIsExpanded_Original,
-            nullptr,
+            {LR"(public: void __cdecl winrt::Taskbar::implementation::ViewCoordinator::HandleIsPointerOverTaskbarFrameChanged(unsigned __int64,bool,enum winrt::WindowsUdk::UI::Shell::InputDeviceKind))"},
+            &ViewCoordinator_HandleIsPointerOverTaskbarFrameChanged_Original,
+            ViewCoordinator_HandleIsPointerOverTaskbarFrameChanged_Hook,
             true,
         },
     };
