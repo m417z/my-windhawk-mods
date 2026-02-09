@@ -799,6 +799,7 @@ LRESULT WINAPI TrayUI_WndProc_Hook(void* pThis,
         AdjustTaskbar(hWnd);
     } else if (Msg == WM_NCDESTROY) {
         Wh_Log(L"WM_NCDESTROY: %08X", (DWORD)(ULONG_PTR)hWnd);
+        g_taskbarsKeptShown.erase(pThis);
         g_taskbarToViewCoordinator.erase(hWnd);
     } else if (Msg == kHandleTrayPrivateSettingMessage) {
         // Prevent auto-hide from being disabled while the mod is loaded.
@@ -884,6 +885,7 @@ LRESULT WINAPI CSecondaryTray_v_WndProc_Hook(void* pThis,
         AdjustTaskbar(hWnd);
     } else if (Msg == WM_NCDESTROY) {
         Wh_Log(L"WM_NCDESTROY: %08X", (DWORD)(ULONG_PTR)hWnd);
+        g_taskbarsKeptShown.erase(pThis);
         g_taskbarToViewCoordinator.erase(hWnd);
     } else if (Msg == g_updateTaskbarStateRegisteredMsg) {
         void* pCSecondaryTray_ISecondaryTray =
