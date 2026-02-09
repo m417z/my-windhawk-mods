@@ -3200,7 +3200,7 @@ int ResolveFormatTokenWithDigit(std::wstring_view format,
         return 0;
     }
 
-    char digitChar = format[formatTokenPrefix.size()];
+    WCHAR digitChar = format[formatTokenPrefix.size()];
     if (digitChar < L'1' || digitChar > L'9') {
         return 0;
     }
