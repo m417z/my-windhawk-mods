@@ -946,8 +946,7 @@ void CALLBACK WinEventProc(HWINEVENTHOOK hWinEventHook,
     }
 
     // Check for Multitasking View (Win+Tab) window state changes.
-    if (hWnd == g_multitaskingViewHwnd.load() ||
-        IsMultitaskingViewWindow(hWnd)) {
+    if (hWnd == g_multitaskingViewHwnd || IsMultitaskingViewWindow(hWnd)) {
         bool entering = event == EVENT_OBJECT_SHOW ||
                         event == EVENT_OBJECT_UNCLOAKED ||
                         event == EVENT_OBJECT_CREATE;
