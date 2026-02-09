@@ -2404,6 +2404,24 @@ winrt::Windows::Foundation::IInspectable ReadLocalValueWithWorkaround(
     DependencyProperty property) {
     auto value = elementDo.ReadLocalValue(property);
     if (value) {
+        // A workaround for RowDefinitionCollection of RootContent which can't
+        // be read by ReadLocalValue for some reason, even though it seems to be
+        // a local property.
+        if (value == DependencyProperty::UnsetValue()) {
+            auto grid = elementDo.try_as<Controls::Grid>();
+            if (grid && grid.Name() == L"RootContent") {
+                auto value2 = elementDo.GetValue(property);
+                if (value2 &&
+                    winrt::get_class_name(value2) ==
+                        L"Windows.UI.Xaml.Controls.RowDefinitionCollection") {
+                    Wh_Log(
+                        L"Using GetValue workaround for "
+                        L"RowDefinitionCollection");
+                    value = std::move(value2);
+                }
+            }
+        }
+
         auto className = winrt::get_class_name(value);
         if (className == L"Windows.UI.Xaml.Data.BindingExpressionBase" ||
             className == L"Windows.UI.Xaml.Data.BindingExpression") {
