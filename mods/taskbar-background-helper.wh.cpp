@@ -419,10 +419,43 @@ class SpecialViewModeState {
         return m_mode.compare_exchange_strong(expected, Mode::None);
     }
 
-    void Reset() { m_mode = Mode::None; }
+    // MultitaskingView — tracks HWND so the window can be identified on DESTROY
+    // events when properties can no longer be queried.
+    bool IsMultitaskingViewHwnd(HWND hWnd) const {
+        return m_multitaskingViewHwnd == hWnd;
+    }
+
+    bool EnterMultitaskingView(HWND hWnd) {
+        HWND expectedHwnd = nullptr;
+        if (!m_multitaskingViewHwnd.compare_exchange_strong(expectedHwnd,
+                                                            hWnd)) {
+            return false;
+        }
+        if (!SetMode(Mode::MultitaskingView)) {
+            m_multitaskingViewHwnd = nullptr;
+            return false;
+        }
+        return true;
+    }
+
+    bool LeaveMultitaskingView(HWND hWnd) {
+        HWND expectedHwnd = hWnd;
+        if (!m_multitaskingViewHwnd.compare_exchange_strong(expectedHwnd,
+                                                            nullptr)) {
+            return false;
+        }
+        ClearMode(Mode::MultitaskingView);
+        return true;
+    }
+
+    void Reset() {
+        m_mode = Mode::None;
+        m_multitaskingViewHwnd = nullptr;
+    }
 
    private:
     std::atomic<Mode> m_mode{Mode::None};
+    std::atomic<HWND> m_multitaskingViewHwnd{nullptr};
 };
 
 SpecialViewModeState g_specialViewMode;
@@ -967,7 +1000,8 @@ void CALLBACK WinEventProc(HWINEVENTHOOK hWinEventHook,
     };
 
     // Check for Multitasking View (Win+Tab) window state changes.
-    if (IsMultitaskingViewWindow(hWnd)) {
+    if (g_specialViewMode.IsMultitaskingViewHwnd(hWnd) ||
+        IsMultitaskingViewWindow(hWnd)) {
         bool entering = event == EVENT_OBJECT_SHOW ||
                         event == EVENT_OBJECT_UNCLOAKED ||
                         event == EVENT_OBJECT_CREATE;
@@ -975,18 +1009,12 @@ void CALLBACK WinEventProc(HWINEVENTHOOK hWinEventHook,
                        event == EVENT_OBJECT_CLOAKED ||
                        event == EVENT_OBJECT_DESTROY;
 
-        if (entering) {
+        if (entering && g_specialViewMode.EnterMultitaskingView(hWnd)) {
             Wh_Log(L"MultitaskingView entering");
-            if (g_specialViewMode.SetMode(
-                    SpecialViewModeState::Mode::MultitaskingView)) {
-                UpdateAllTaskbarStyles();
-            }
-        } else if (leaving) {
+            UpdateAllTaskbarStyles();
+        } else if (leaving && g_specialViewMode.LeaveMultitaskingView(hWnd)) {
             Wh_Log(L"MultitaskingView leaving");
-            if (g_specialViewMode.ClearMode(
-                    SpecialViewModeState::Mode::MultitaskingView)) {
-                UpdateAllTaskbarStyles();
-            }
+            UpdateAllTaskbarStyles();
         }
 
         return;
