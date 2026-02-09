@@ -120,7 +120,7 @@ std::atomic<HANDLE> g_winEventHookThread;
 std::unordered_map<void*, HWND> g_taskbarsKeptShown;
 std::unordered_map<HWND, void*> g_taskbarToViewCoordinator;
 UINT_PTR g_pendingEventsTimer;
-std::atomic<bool> g_multitaskingViewActive;
+std::atomic<HWND> g_multitaskingViewHwnd;
 
 // TrayUI::_HandleTrayPrivateSettingMessage
 constexpr UINT kHandleTrayPrivateSettingMessage = WM_USER + 0x1CA;
@@ -542,7 +542,7 @@ bool ShouldKeepTaskbarShown(HWND hTaskbarWnd, HMONITOR monitor) {
     }
 
     // Always show taskbar when MultitaskingView (Win+Tab) is active.
-    if (g_multitaskingViewActive) {
+    if (g_multitaskingViewHwnd) {
         return true;
     }
 
@@ -705,8 +705,9 @@ bool WINAPI ViewCoordinator_ShouldTaskbarBeExpanded_Hook(void* pThis,
         pThis, hMMTaskbarWnd, expanded);
 }
 
-using ViewCoordinator_UpdateIsExpanded_t =
-    void(WINAPI*)(void* pThis, HWND hMMTaskbarWnd, int reason);
+using ViewCoordinator_UpdateIsExpanded_t = void(WINAPI*)(void* pThis,
+                                                         HWND hMMTaskbarWnd,
+                                                         int reason);
 ViewCoordinator_UpdateIsExpanded_t ViewCoordinator_UpdateIsExpanded_Original;
 
 void UpdateViewCoordinatorIsExpanded(HWND hWnd) {
@@ -945,7 +946,8 @@ void CALLBACK WinEventProc(HWINEVENTHOOK hWinEventHook,
     }
 
     // Check for Multitasking View (Win+Tab) window state changes.
-    if (IsMultitaskingViewWindow(hWnd)) {
+    if (hWnd == g_multitaskingViewHwnd.load() ||
+        IsMultitaskingViewWindow(hWnd)) {
         bool entering = event == EVENT_OBJECT_SHOW ||
                         event == EVENT_OBJECT_UNCLOAKED ||
                         event == EVENT_OBJECT_CREATE;
@@ -953,9 +955,19 @@ void CALLBACK WinEventProc(HWINEVENTHOOK hWinEventHook,
                        event == EVENT_OBJECT_CLOAKED ||
                        event == EVENT_OBJECT_DESTROY;
 
-        if (entering && !g_multitaskingViewActive.exchange(true)) {
+        if (entering) {
+            HWND expected = nullptr;
+            if (!g_multitaskingViewHwnd.compare_exchange_strong(expected,
+                                                                hWnd)) {
+                return;
+            }
             Wh_Log(L"MultitaskingView entering");
-        } else if (leaving && g_multitaskingViewActive.exchange(false)) {
+        } else if (leaving) {
+            HWND expected = hWnd;
+            if (!g_multitaskingViewHwnd.compare_exchange_strong(expected,
+                                                                nullptr)) {
+                return;
+            }
             Wh_Log(L"MultitaskingView leaving");
         } else {
             return;
@@ -1078,7 +1090,7 @@ DWORD WINAPI WinEventHookThread(LPVOID lpThreadParameter) {
         UnhookWinEvent(winSystemEventHook1);
     }
 
-    g_multitaskingViewActive = false;
+    g_multitaskingViewHwnd = nullptr;
 
     return 0;
 }
