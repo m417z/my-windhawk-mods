@@ -300,8 +300,8 @@ HRSRC WINAPI FindResourceExW_Hook(HMODULE hModule,
                                   LPCWSTR lpType,
                                   LPCWSTR lpName,
                                   WORD wLanguage) {
-    if (g_settings.suffixRemovalMode != SuffixRemovalMode::Off && hModule &&
-        lpType == RT_STRING && lpName == MAKEINTRESOURCE(2195) &&
+    if (g_settings.suffixRemovalMode == SuffixRemovalMode::FileExplorerOnly &&
+        hModule && lpType == RT_STRING && lpName == MAKEINTRESOURCE(2195) &&
         hModule == GetModuleHandle(L"explorerframe.dll")) {
         Wh_Log(L">");
         SetLastError(ERROR_RESOURCE_NAME_NOT_FOUND);
