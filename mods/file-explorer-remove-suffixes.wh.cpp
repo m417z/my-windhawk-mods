@@ -2,7 +2,7 @@
 // @id              file-explorer-remove-suffixes
 // @name            Remove Taskbar Window Suffixes
 // @description     Remove suffixes from taskbar window titles for File Explorer and other programs, or configure custom text replacement rules
-// @version         1.1
+// @version         1.1.1
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
