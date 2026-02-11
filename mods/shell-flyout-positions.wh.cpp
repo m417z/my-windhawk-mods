@@ -38,6 +38,12 @@ This is especially useful when using custom taskbar themes that relocate the
 system tray area, as you can reposition these flyouts to match your custom
 layout.
 
+Note: The Notification Center and Action Center can be moved to the top of the
+screen with the help of the [Windows 11 Notification Center
+Styler](https://windhawk.net/mods/windows-11-notification-center-styler) mod.
+For the necessary configuration, see [this comment on
+GitHub](https://github.com/ramensoftware/windhawk-mods/issues/1053#issuecomment-2405461863).
+
 ![Screenshot](https://i.imgur.com/ezxArY1.png)
 */
 // ==/WindhawkModReadme==
