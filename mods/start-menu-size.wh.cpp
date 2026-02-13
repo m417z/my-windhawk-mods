@@ -39,12 +39,12 @@ _Example for making the Start menu smaller_
   $name: Width
   $description: >-
     A custom width for the Start menu in pixels. Set to 0 to use the default
-    system value
+    system value.
 - height: 0
   $name: Height
   $description: >-
     A custom height for the Start menu in pixels. Set to 0 to use the default
-    system value
+    system value.
 */
 // ==/WindhawkModSettings==
 
