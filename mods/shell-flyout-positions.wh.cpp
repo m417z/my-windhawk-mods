@@ -845,10 +845,6 @@ void ApplyStyleClassicStartMenu(FrameworkElement content, HMONITOR monitor) {
         };
         GetMonitorInfo(monitor, &monitorInfo);
 
-        UINT monitorDpiX = 96;
-        UINT monitorDpiY = 96;
-        GetDpiForMonitor(monitor, MDT_DEFAULT, &monitorDpiX, &monitorDpiY);
-
         double canvasWidth = content.ActualWidth();
         double canvasHeight = content.ActualHeight();
 
