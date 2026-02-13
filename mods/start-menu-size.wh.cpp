@@ -28,6 +28,11 @@ Set a custom size for the Start menu on Windows 11.
 
 Allows you to override the default width and height of the Start menu.
 
+The classic menu width is 642, and the height is 726. [The redesigned Start
+menu](https://microsoft.design/articles/start-fresh-redesigning-windows-start-menu/)
+width is 834, and the height occupies the full screen height. The sizes might
+vary for smaller screen sizes.
+
 ![Screenshot](https://i.imgur.com/FoFSFOV.png) \
 _Example for making the Start menu smaller_
 */
