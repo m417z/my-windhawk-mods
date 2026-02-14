@@ -10,7 +10,7 @@
 // @include         explorer.exe
 // @include         ShellHost.exe
 // @architecture    x86-64
-// @compilerOptions -lversion
+// @compilerOptions -lversion -lwtsapi32
 // ==/WindhawkMod==
 
 // Source code is published under The GNU General Public License v3.0.
@@ -56,8 +56,10 @@ interface name:
 6. In the log output, look for lines containing `Found display device`. You will
    see one line per monitor, for example:
    ```
-   Found display device \\.\DISPLAY1, interface name: \\?\DISPLAY#DELA1D2#5&abc123#0#{e6f07b5f-ee97-4a90-b076-33f57bf4eaa7}
-   Found display device \\.\DISPLAY2, interface name: \\?\DISPLAY#GSM5B09#4&def456#0#{e6f07b5f-ee97-4a90-b076-33f57bf4eaa7}
+   Found display device \\.\DISPLAY1, interface name:
+    \\?\DISPLAY#DELA1D2#5&abc123#0#{e6f07b5f-ee97-4a90-b076-33f57bf4eaa7} Found
+    display device \\.\DISPLAY2, interface name:
+    \\?\DISPLAY#GSM5B09#4&def456#0#{e6f07b5f-ee97-4a90-b076-33f57bf4eaa7}
    ```
    Use the interface name that follows the "interface name:" text. You may need
    to experiment to determine which interface name corresponds to which physical
@@ -96,6 +98,7 @@ number when both are configured.
 #include <windhawk_utils.h>
 
 #include <psapi.h>
+#include <wtsapi32.h>
 
 #include <atomic>
 
@@ -124,6 +127,7 @@ WinVersion g_winVersion;
 std::atomic<bool> g_initialized;
 std::atomic<bool> g_explorerPatcherInitialized;
 
+std::atomic<bool> g_lastIsSessionLocked;
 std::atomic<bool> g_unloading;
 
 HWND FindCurrentProcessTaskbarWnd() {
@@ -211,30 +215,68 @@ HMONITOR GetMonitorByInterfaceNameSubstr(PCWSTR interfaceNameSubstr) {
     return monitorResult;
 }
 
+void BroadcastShellHookDisplayChange() {
+    // Broadcast display change SHELLHOOK message, handled by
+    // CImmersiveMonitorManager::_HandleDisplayChangeMessage in twinui.dll.
+    // lParam is related to desktop rotation, later read by
+    // CImmersiveMonitorManager::_HandleDeferredDesktopRotation.
+    UINT shellhookMessage = RegisterWindowMessage(L"SHELLHOOK");
+    PostMessage(HWND_BROADCAST, shellhookMessage, 35, 0);
+}
+
+bool IsSessionLocked() {
+    WTSINFOEX* sessionInfoEx = nullptr;
+    DWORD bytesReturned = 0;
+    if (!WTSQuerySessionInformation(
+            WTS_CURRENT_SERVER_HANDLE, WTS_CURRENT_SESSION, WTSSessionInfoEx,
+            reinterpret_cast<LPWSTR*>(&sessionInfoEx), &bytesReturned)) {
+        return false;
+    }
+
+    bool locked = sessionInfoEx->Level == 1 &&
+                  sessionInfoEx->Data.WTSInfoExLevel1.SessionFlags ==
+                      WTS_SESSIONSTATE_LOCK;
+
+    WTSFreeMemory(sessionInfoEx);
+    return locked;
+}
+
+bool ShouldReturnFakePrimaryMonitor() {
+    if (g_unloading) {
+        return false;
+    }
+
+    bool sessionLocked = IsSessionLocked();
+
+    bool sessionLockStateChanged =
+        g_lastIsSessionLocked.exchange(sessionLocked) != sessionLocked;
+
+    if (sessionLockStateChanged) {
+        Wh_Log(L"Session lock state changed: %s",
+               sessionLocked ? L"locked" : L"unlocked");
+
+        // Notify the system about display change so that it can re-evaluate
+        // which monitor is primary. This is needed for the lock screen to show
+        // up on the real primary monitor.
+        BroadcastShellHookDisplayChange();
+    }
+
+    return !sessionLocked;
+}
+
 using MonitorFromPoint_t = decltype(&MonitorFromPoint);
 MonitorFromPoint_t MonitorFromPoint_Original;
 HMONITOR WINAPI MonitorFromPoint_Hook(POINT pt, DWORD dwFlags) {
-    Wh_Log(L">");
-
     auto original = [=] { return MonitorFromPoint_Original(pt, dwFlags); };
 
     if (pt.x != 0 || pt.y != 0) {
         return original();
     }
 
-    // Don't hook for the lock screen to avoid inconsistent display of the
-    // various lock screen elements.
-    HMODULE lockControllerModule = GetModuleHandle(L"lockcontroller.dll");
-    if (lockControllerModule) {
-        void* retAddress = __builtin_return_address(0);
+    Wh_Log(L">");
 
-        HMODULE module;
-        if (GetModuleHandleEx(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
-                                  GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
-                              (PCWSTR)retAddress, &module) &&
-            module == lockControllerModule) {
-            return original();
-        }
+    if (!ShouldReturnFakePrimaryMonitor()) {
+        return original();
     }
 
     HMONITOR monitor = nullptr;
@@ -251,6 +293,119 @@ HMONITOR WINAPI MonitorFromPoint_Hook(POINT pt, DWORD dwFlags) {
     }
 
     return monitor;
+}
+
+using MonitorFromRect_t = decltype(&MonitorFromRect);
+MonitorFromRect_t MonitorFromRect_Original;
+HMONITOR WINAPI MonitorFromRect_Hook(LPCRECT lprc, DWORD dwFlags) {
+    auto original = [=] { return MonitorFromRect_Original(lprc, dwFlags); };
+
+    if (!lprc || lprc->left != 0 || lprc->top != 0 || lprc->right != 0 ||
+        lprc->bottom != 0) {
+        return original();
+    }
+
+    Wh_Log(L">");
+
+    if (!ShouldReturnFakePrimaryMonitor()) {
+        return original();
+    }
+
+    HMONITOR monitor = nullptr;
+
+    if (*g_settings.monitorInterfaceName.get()) {
+        monitor = GetMonitorByInterfaceNameSubstr(
+            g_settings.monitorInterfaceName.get());
+    } else if (g_settings.monitor >= 1) {
+        monitor = GetMonitorById(g_settings.monitor - 1);
+    }
+
+    if (!monitor) {
+        return original();
+    }
+
+    return monitor;
+}
+
+using EnumDisplayDevicesW_t = decltype(&EnumDisplayDevicesW);
+EnumDisplayDevicesW_t EnumDisplayDevicesW_Original;
+BOOL WINAPI EnumDisplayDevicesW_Hook(LPCWSTR lpDevice,
+                                     DWORD iDevNum,
+                                     PDISPLAY_DEVICEW lpDisplayDevice,
+                                     DWORD dwFlags) {
+    BOOL result = EnumDisplayDevicesW_Original(lpDevice, iDevNum,
+                                               lpDisplayDevice, dwFlags);
+
+    if (!result || !lpDisplayDevice || lpDevice) {
+        return result;
+    }
+
+    Wh_Log(L">");
+
+    if (!ShouldReturnFakePrimaryMonitor()) {
+        return result;
+    }
+
+    HMONITOR targetMonitor = nullptr;
+
+    if (*g_settings.monitorInterfaceName.get()) {
+        targetMonitor = GetMonitorByInterfaceNameSubstr(
+            g_settings.monitorInterfaceName.get());
+    } else if (g_settings.monitor >= 1) {
+        targetMonitor = GetMonitorById(g_settings.monitor - 1);
+    }
+
+    if (!targetMonitor) {
+        return result;
+    }
+
+    MONITORINFOEX monitorInfo = {};
+    monitorInfo.cbSize = sizeof(monitorInfo);
+    if (!GetMonitorInfo(targetMonitor, &monitorInfo)) {
+        return result;
+    }
+
+    if (wcscmp(lpDisplayDevice->DeviceName, monitorInfo.szDevice) == 0) {
+        lpDisplayDevice->StateFlags |= DISPLAY_DEVICE_PRIMARY_DEVICE;
+    } else {
+        lpDisplayDevice->StateFlags &= ~DISPLAY_DEVICE_PRIMARY_DEVICE;
+    }
+
+    return result;
+}
+
+struct WinrtRect {
+    float X;
+    float Y;
+    float Width;
+    float Height;
+};
+
+using HardwareConfirmatorHost_GetPositionRect_t =
+    WinrtRect*(WINAPI*)(void* pThis, WinrtRect* retval, const WinrtRect* rect);
+HardwareConfirmatorHost_GetPositionRect_t
+    HardwareConfirmatorHost_GetPositionRect_Original;
+WinrtRect* WINAPI
+HardwareConfirmatorHost_GetPositionRect_Hook(void* pThis,
+                                             WinrtRect* retval,
+                                             const WinrtRect* rect) {
+    Wh_Log(L">");
+
+    // Shift the input rect to 0,0 since the original function assumes that.
+    WinrtRect shiftedRect = *rect;
+    float offsetX = shiftedRect.X;
+    float offsetY = shiftedRect.Y;
+    shiftedRect.X = 0;
+    shiftedRect.Y = 0;
+
+    WinrtRect* result = HardwareConfirmatorHost_GetPositionRect_Original(
+        pThis, retval, &shiftedRect);
+
+    // Shift the result back.
+    result->X += offsetX;
+    result->Y += offsetY;
+
+    return result;
 }
 
 using TrayUI__SetStuckMonitor_t = HRESULT(WINAPI*)(void* pThis,
@@ -484,6 +639,31 @@ bool HookTaskbarSymbols() {
     return true;
 }
 
+bool HookHardwareConfirmatorSymbols() {
+    HMODULE module = LoadLibraryEx(L"Windows.Internal.HardwareConfirmator.dll",
+                                   nullptr, LOAD_LIBRARY_SEARCH_SYSTEM32);
+    if (!module) {
+        Wh_Log(L"Couldn't load Windows.Internal.HardwareConfirmator.dll");
+        return false;
+    }
+
+    // Windows.Internal.HardwareConfirmator.dll
+    WindhawkUtils::SYMBOL_HOOK symbolHooks[] = {
+        {
+            {LR"(private: struct winrt::Windows::Foundation::Rect __cdecl winrt::Windows::Internal::HardwareConfirmator::implementation::HardwareConfirmatorHost::GetPositionRect(struct winrt::Windows::Foundation::Rect const &))"},
+            &HardwareConfirmatorHost_GetPositionRect_Original,
+            HardwareConfirmatorHost_GetPositionRect_Hook,
+        },
+    };
+
+    if (!HookSymbols(module, symbolHooks, ARRAYSIZE(symbolHooks))) {
+        Wh_Log(L"HookSymbols failed");
+        return false;
+    }
+
+    return true;
+}
+
 void ApplySettings() {
     HWND hTaskbarWnd = FindCurrentProcessTaskbarWnd();
     if (!hTaskbarWnd) {
@@ -492,6 +672,8 @@ void ApplySettings() {
 
     // Trigger CTray::_HandleDisplayChange.
     SendMessage(hTaskbarWnd, 0x5B8, 0, 0);
+
+    BroadcastShellHookDisplayChange();
 }
 
 void LoadSettings() {
@@ -558,13 +740,22 @@ BOOL Wh_ModInit() {
         auto pKernelBaseLoadLibraryExW =
             (decltype(&LoadLibraryExW))GetProcAddress(kernelBaseModule,
                                                       "LoadLibraryExW");
-        WindhawkUtils::Wh_SetFunctionHookT(pKernelBaseLoadLibraryExW,
-                                           LoadLibraryExW_Hook,
-                                           &LoadLibraryExW_Original);
+        WindhawkUtils::SetFunctionHook(pKernelBaseLoadLibraryExW,
+                                       LoadLibraryExW_Hook,
+                                       &LoadLibraryExW_Original);
     }
 
-    WindhawkUtils::Wh_SetFunctionHookT(MonitorFromPoint, MonitorFromPoint_Hook,
-                                       &MonitorFromPoint_Original);
+    HookHardwareConfirmatorSymbols();
+
+    WindhawkUtils::SetFunctionHook(MonitorFromPoint, MonitorFromPoint_Hook,
+                                   &MonitorFromPoint_Original);
+
+    WindhawkUtils::SetFunctionHook(MonitorFromRect, MonitorFromRect_Hook,
+                                   &MonitorFromRect_Original);
+
+    WindhawkUtils::SetFunctionHook(EnumDisplayDevicesW,
+                                   EnumDisplayDevicesW_Hook,
+                                   &EnumDisplayDevicesW_Original);
 
     g_initialized = true;
 
