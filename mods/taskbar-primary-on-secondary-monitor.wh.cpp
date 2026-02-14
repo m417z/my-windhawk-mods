@@ -94,6 +94,10 @@ number when both are configured.
   - disabled: Disabled
   - doubleClick: Double click
   - middleClick: Middle click
+- moveAdditionalElements: false
+  $name: Move additional elements
+  $description: >-
+    Move additional elements such as desktop icons to the target monitor.
 - oldTaskbarOnWin11: false
   $name: Customize the old taskbar on Windows 11
   $description: >-
@@ -126,6 +130,7 @@ struct {
     int monitor;
     WindhawkUtils::StringSetting monitorInterfaceName;
     ClickToSwitchMonitor clickToSwitchMonitor;
+    bool moveAdditionalElements;
     bool oldTaskbarOnWin11;
 } g_settings;
 
@@ -267,7 +272,12 @@ bool IsSessionLocked() {
     return locked;
 }
 
-HMONITOR GetTargetMonitor() {
+struct GetTargetMonitorParams {
+    void* retAddress = nullptr;
+    bool ignoreLockedState = false;
+};
+
+HMONITOR GetTargetMonitor(GetTargetMonitorParams params = {}) {
     if (g_unloading) {
         return nullptr;
     }
@@ -287,8 +297,24 @@ HMONITOR GetTargetMonitor() {
         BroadcastShellHookDisplayChange();
     }
 
-    if (sessionLocked) {
+    if (!params.ignoreLockedState && sessionLocked) {
         return nullptr;
+    }
+
+    if (!g_settings.moveAdditionalElements && params.retAddress) {
+        HMODULE shell32Module = GetModuleHandle(L"shell32.dll");
+        if (shell32Module) {
+            // If the caller is in shell32.dll, which mainly does things such as
+            // handling desktop icons and wallpapers.
+            HMODULE module;
+            if (GetModuleHandleEx(
+                    GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
+                        GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                    (PCWSTR)params.retAddress, &module) &&
+                module == shell32Module) {
+                return nullptr;
+            }
+        }
     }
 
     HMONITOR monitor = g_overrideMonitor;
@@ -315,7 +341,9 @@ HMONITOR WINAPI MonitorFromPoint_Hook(POINT pt, DWORD dwFlags) {
 
     Wh_Log(L">");
 
-    HMONITOR monitor = GetTargetMonitor();
+    HMONITOR monitor = GetTargetMonitor({
+        .retAddress = __builtin_return_address(0),
+    });
     if (!monitor) {
         return original();
     }
@@ -335,7 +363,9 @@ HMONITOR WINAPI MonitorFromRect_Hook(LPCRECT lprc, DWORD dwFlags) {
 
     Wh_Log(L">");
 
-    HMONITOR monitor = GetTargetMonitor();
+    HMONITOR monitor = GetTargetMonitor({
+        .retAddress = __builtin_return_address(0),
+    });
     if (!monitor) {
         return original();
     }
@@ -358,14 +388,16 @@ BOOL WINAPI EnumDisplayDevicesW_Hook(LPCWSTR lpDevice,
 
     Wh_Log(L">");
 
-    HMONITOR targetMonitor = GetTargetMonitor();
-    if (!targetMonitor) {
+    HMONITOR monitor = GetTargetMonitor({
+        .retAddress = __builtin_return_address(0),
+    });
+    if (!monitor) {
         return result;
     }
 
     MONITORINFOEX monitorInfo = {};
     monitorInfo.cbSize = sizeof(monitorInfo);
-    if (!GetMonitorInfo(targetMonitor, &monitorInfo)) {
+    if (!GetMonitorInfo(monitor, &monitorInfo)) {
         return result;
     }
 
@@ -496,9 +528,11 @@ TrayUI__SetStuckMonitor_t TrayUI__SetStuckMonitor_Original;
 HRESULT WINAPI TrayUI__SetStuckMonitor_Hook(void* pThis, HMONITOR monitor) {
     Wh_Log(L">");
 
-    monitor = GetTargetMonitor();
-    if (!monitor) {
-        monitor = MonitorFromPoint_Original({0, 0}, MONITOR_DEFAULTTONEAREST);
+    HMONITOR targetMonitor = GetTargetMonitor({
+        .ignoreLockedState = true,
+    });
+    if (targetMonitor) {
+        monitor = targetMonitor;
     }
 
     return TrayUI__SetStuckMonitor_Original(pThis, monitor);
@@ -813,6 +847,8 @@ void LoadSettings() {
     }
     Wh_FreeStringSetting(clickToSwitchMonitor);
 
+    g_settings.moveAdditionalElements =
+        Wh_GetIntSetting(L"moveAdditionalElements");
     g_settings.oldTaskbarOnWin11 = Wh_GetIntSetting(L"oldTaskbarOnWin11");
 }
 
