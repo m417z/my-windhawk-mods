@@ -216,22 +216,41 @@ MonitorFromPoint_t MonitorFromPoint_Original;
 HMONITOR WINAPI MonitorFromPoint_Hook(POINT pt, DWORD dwFlags) {
     Wh_Log(L">");
 
-    if (pt.x == 0 && pt.y == 0) {
-        HMONITOR monitor = nullptr;
+    auto original = [=] { return MonitorFromPoint_Original(pt, dwFlags); };
 
-        if (*g_settings.monitorInterfaceName.get()) {
-            monitor = GetMonitorByInterfaceNameSubstr(
-                g_settings.monitorInterfaceName.get());
-        } else if (g_settings.monitor >= 1) {
-            monitor = GetMonitorById(g_settings.monitor - 1);
-        }
+    if (pt.x != 0 || pt.y != 0) {
+        return original();
+    }
 
-        if (monitor) {
-            return monitor;
+    // Don't hook for the lock screen to avoid inconsistent display of the
+    // various lock screen elements.
+    HMODULE lockControllerModule = GetModuleHandle(L"lockcontroller.dll");
+    if (lockControllerModule) {
+        void* retAddress = __builtin_return_address(0);
+
+        HMODULE module;
+        if (GetModuleHandleEx(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
+                                  GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                              (PCWSTR)retAddress, &module) &&
+            module == lockControllerModule) {
+            return original();
         }
     }
 
-    return MonitorFromPoint_Original(pt, dwFlags);
+    HMONITOR monitor = nullptr;
+
+    if (*g_settings.monitorInterfaceName.get()) {
+        monitor = GetMonitorByInterfaceNameSubstr(
+            g_settings.monitorInterfaceName.get());
+    } else if (g_settings.monitor >= 1) {
+        monitor = GetMonitorById(g_settings.monitor - 1);
+    }
+
+    if (!monitor) {
+        return original();
+    }
+
+    return monitor;
 }
 
 using TrayUI__SetStuckMonitor_t = HRESULT(WINAPI*)(void* pThis,
