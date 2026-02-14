@@ -422,7 +422,7 @@ void ApplySettingsFromTaskbarThread() {
             }
 
             if (!ApplyStyle(xamlRoot)) {
-                Wh_Log(L"ApplyStyles failed");
+                Wh_Log(L"ApplyStyle failed");
                 return TRUE;
             }
 

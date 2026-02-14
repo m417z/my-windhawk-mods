@@ -1441,7 +1441,7 @@ void ApplySettings() {
             }
 
             if (!ApplyStyle(xamlRoot)) {
-                Wh_Log(L"ApplyStyles failed");
+                Wh_Log(L"ApplyStyle failed");
             }
         },
         &param);
