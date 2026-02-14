@@ -186,6 +186,7 @@ winrt::event_token g_visibilityChangedToken;
 
 // Classic start menu: single element for both width and height.
 std::optional<OriginalWidthParams> g_originalClassicWidth;
+std::optional<OriginalWidthParams> g_originalClassicRootGridWidth;
 std::optional<OriginalHeightParams> g_originalClassicHeight;
 
 // Redesigned start menu: mainMenu for width, frameRoot for height.
@@ -306,8 +307,10 @@ void ApplyStyleClassicStartMenu(FrameworkElement content) {
         return;
     }
 
-    // Navigate to RootContent to remove its MinWidth constraint.
+    // Navigate to RootGrid and RootContent to remove MinWidth constraints.
+    FrameworkElement rootGrid = nullptr;
     FrameworkElement rootContent = nullptr;
+    bool isNewerVersion = false;
 
     FrameworkElement child = startSizingFrame;
     if ((child = FindChildByClassName(child,
@@ -318,10 +321,15 @@ void ApplyStyleClassicStartMenu(FrameworkElement content) {
              FindChildByClassName(child, L"Windows.UI.Xaml.Controls.Frame")) &&
         (child = FindChildByClassName(
              child, L"Windows.UI.Xaml.Controls.ContentPresenter")) &&
-        (child = FindChildByClassName(child, L"StartDocked.LauncherFrame")) &&
-        (child = FindChildByName(child, L"RootGrid")) &&
-        (child = FindChildByName(child, L"RootContent"))) {
-        rootContent = child;
+        (child = FindChildByClassName(child, L"StartDocked.LauncherFrame"))) {
+        // Newer versions have RootPanel > RootGrid > RootContent, older
+        // versions have RootGrid > RootContent.
+        FrameworkElement rootPanel = FindChildByName(child, L"RootPanel");
+        isNewerVersion = !!rootPanel;
+        rootGrid = FindChildByName(rootPanel ? rootPanel : child, L"RootGrid");
+        if (rootGrid) {
+            rootContent = FindChildByName(rootGrid, L"RootContent");
+        }
     }
 
     if (!rootContent) {
@@ -338,6 +346,12 @@ void ApplyStyleClassicStartMenu(FrameworkElement content) {
             RestoreWidth(startSizingFrame, *g_originalClassicWidth);
             g_originalClassicWidth.reset();
         }
+        if (g_originalClassicRootGridWidth) {
+            if (rootGrid) {
+                RestoreWidth(rootGrid, *g_originalClassicRootGridWidth);
+            }
+            g_originalClassicRootGridWidth.reset();
+        }
         if (g_originalClassicHeight) {
             RestoreHeight(startSizingFrame, *g_originalClassicHeight);
             g_originalClassicHeight.reset();
@@ -353,6 +367,16 @@ void ApplyStyleClassicStartMenu(FrameworkElement content) {
             startSizingFrame.MinWidth(width);
             startSizingFrame.MaxWidth(width);
 
+            if (isNewerVersion && rootGrid) {
+                if (!g_originalClassicRootGridWidth) {
+                    g_originalClassicRootGridWidth.emplace();
+                    SaveWidth(rootGrid, *g_originalClassicRootGridWidth);
+                }
+                rootGrid.Width(width);
+                rootGrid.MinWidth(width);
+                rootGrid.MaxWidth(width);
+            }
+
             if (rootContent) {
                 rootContent.as<DependencyObject>().ClearValue(
                     FrameworkElement::MinWidthProperty());
@@ -360,6 +384,12 @@ void ApplyStyleClassicStartMenu(FrameworkElement content) {
         } else if (g_originalClassicWidth) {
             RestoreWidth(startSizingFrame, *g_originalClassicWidth);
             g_originalClassicWidth.reset();
+            if (g_originalClassicRootGridWidth) {
+                if (rootGrid) {
+                    RestoreWidth(rootGrid, *g_originalClassicRootGridWidth);
+                }
+                g_originalClassicRootGridWidth.reset();
+            }
         }
 
         if (g_settings.height > 0) {
