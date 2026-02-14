@@ -189,9 +189,10 @@ std::optional<OriginalWidthParams> g_originalClassicWidth;
 std::optional<OriginalWidthParams> g_originalClassicRootGridWidth;
 std::optional<OriginalHeightParams> g_originalClassicHeight;
 
-// Redesigned start menu: mainMenu for width, frameRoot for height.
+// Redesigned start menu: mainMenu for width, frameRoot for height and margin.
 std::optional<OriginalWidthParams> g_originalMainMenuWidth;
 std::optional<OriginalHeightParams> g_originalFrameRootHeight;
+std::optional<Thickness> g_originalFrameRootMargin;
 
 HWND GetCoreWnd() {
     struct ENUM_WINDOWS_PARAM {
@@ -440,6 +441,10 @@ void ApplyStyleRedesignedStartMenu(FrameworkElement content) {
             RestoreHeight(frameRoot, *g_originalFrameRootHeight);
             g_originalFrameRootHeight.reset();
         }
+        if (g_originalFrameRootMargin) {
+            frameRoot.Margin(*g_originalFrameRootMargin);
+            g_originalFrameRootMargin.reset();
+        }
     } else {
         constexpr int kMinWidth = 270;
 
@@ -467,9 +472,18 @@ void ApplyStyleRedesignedStartMenu(FrameworkElement content) {
             frameRoot.Height(height);
             frameRoot.MinHeight(height);
             frameRoot.MaxHeight(height);
+
+            if (!g_originalFrameRootMargin) {
+                g_originalFrameRootMargin = frameRoot.Margin();
+            }
+            frameRoot.Margin(Thickness{0, 0, 0, 0});
         } else if (g_originalFrameRootHeight) {
             RestoreHeight(frameRoot, *g_originalFrameRootHeight);
             g_originalFrameRootHeight.reset();
+            if (g_originalFrameRootMargin) {
+                frameRoot.Margin(*g_originalFrameRootMargin);
+                g_originalFrameRootMargin.reset();
+            }
         }
     }
 }
