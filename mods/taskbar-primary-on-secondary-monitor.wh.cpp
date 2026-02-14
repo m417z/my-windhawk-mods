@@ -10,7 +10,7 @@
 // @include         explorer.exe
 // @include         ShellHost.exe
 // @architecture    x86-64
-// @compilerOptions -lole32 -loleaut32 -lruntimeobject -lversion -lwtsapi32
+// @compilerOptions -loleaut32 -lruntimeobject -lversion -lwtsapi32
 // ==/WindhawkMod==
 
 // Source code is published under The GNU General Public License v3.0.
@@ -27,6 +27,9 @@
 
 Move the primary taskbar, including the tray icons, notifications, action
 center, etc. to another monitor.
+
+Optionally, the primary taskbar can be switched by clicking on its empty space
+(Windows 11 only).
 
 ![Demonstration](https://i.imgur.com/hFU9oyK.gif)
 
@@ -207,6 +210,9 @@ HMONITOR GetMonitorById(int monitorId) {
     return monitorResult;
 }
 
+using EnumDisplayDevicesW_t = decltype(&EnumDisplayDevicesW);
+EnumDisplayDevicesW_t EnumDisplayDevicesW_Original;
+
 HMONITOR GetMonitorByInterfaceNameSubstr(PCWSTR interfaceNameSubstr) {
     HMONITOR monitorResult = nullptr;
 
@@ -219,8 +225,9 @@ HMONITOR GetMonitorByInterfaceNameSubstr(PCWSTR interfaceNameSubstr) {
                 .cb = sizeof(displayDevice),
             };
 
-            if (EnumDisplayDevices(monitorInfo.szDevice, 0, &displayDevice,
-                                   EDD_GET_DEVICE_INTERFACE_NAME)) {
+            if (EnumDisplayDevicesW_Original(monitorInfo.szDevice, 0,
+                                             &displayDevice,
+                                             EDD_GET_DEVICE_INTERFACE_NAME)) {
                 Wh_Log(L"Found display device %s, interface name: %s",
                        monitorInfo.szDevice, displayDevice.DeviceID);
 
@@ -373,8 +380,6 @@ HMONITOR WINAPI MonitorFromRect_Hook(LPCRECT lprc, DWORD dwFlags) {
     return monitor;
 }
 
-using EnumDisplayDevicesW_t = decltype(&EnumDisplayDevicesW);
-EnumDisplayDevicesW_t EnumDisplayDevicesW_Original;
 BOOL WINAPI EnumDisplayDevicesW_Hook(LPCWSTR lpDevice,
                                      DWORD iDevNum,
                                      PDISPLAY_DEVICEW lpDisplayDevice,
@@ -991,6 +996,10 @@ BOOL Wh_ModSettingsChanged(BOOL* bReload) {
 
     bool clickToSwitchMonitorEnabled =
         g_settings.clickToSwitchMonitor != ClickToSwitchMonitor::disabled;
+
+    if (!clickToSwitchMonitorEnabled) {
+        g_overrideMonitor = nullptr;
+    }
 
     if (g_target == Target::Explorer) {
         *bReload =
