@@ -159,7 +159,12 @@ std::atomic<bool> g_explorerPatcherInitialized;
 
 std::atomic<bool> g_unloading;
 
-std::atomic<HMONITOR> g_overrideMonitor;
+// Defines data shared by all instances of the library, even across processes.
+#define SHARED_SECTION __attribute__((section(".shared")))
+asm(".section .shared,\"dws\"\n");
+
+volatile HMONITOR g_overrideMonitor SHARED_SECTION = nullptr;
+
 DWORD g_lastPressTime;
 HMONITOR g_lastPressMonitor;
 std::atomic<bool> g_lastIsSessionLocked;
@@ -997,11 +1002,11 @@ BOOL Wh_ModSettingsChanged(BOOL* bReload) {
     bool clickToSwitchMonitorEnabled =
         g_settings.clickToSwitchMonitor != ClickToSwitchMonitor::disabled;
 
-    if (!clickToSwitchMonitorEnabled) {
-        g_overrideMonitor = nullptr;
-    }
-
     if (g_target == Target::Explorer) {
+        if (!clickToSwitchMonitorEnabled) {
+            g_overrideMonitor = nullptr;
+        }
+
         *bReload =
             g_settings.oldTaskbarOnWin11 != prevOldTaskbarOnWin11 ||
             clickToSwitchMonitorEnabled != prevClickToSwitchMonitorEnabled;
