@@ -24,8 +24,8 @@
 /*
 # Volume control open location
 
-Shows the volume control on the monitor where the mouse cursor is located, or
-on a custom monitor of choice.
+Shows the volume control on the monitor where the mouse cursor is located, or on
+a custom monitor of choice.
 
 ## Selecting a monitor
 
