@@ -2,7 +2,7 @@
 // @id              taskbar-primary-on-secondary-monitor
 // @name            Primary taskbar on secondary monitor
 // @description     Move the primary taskbar, including the tray icons, notifications, action center, etc. to another monitor
-// @version         1.1
+// @version         1.2
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
@@ -273,6 +273,7 @@ bool IsSessionLocked() {
     if (!WTSQuerySessionInformation(
             WTS_CURRENT_SERVER_HANDLE, WTS_CURRENT_SESSION, WTSSessionInfoEx,
             reinterpret_cast<LPWSTR*>(&sessionInfoEx), &bytesReturned)) {
+        Wh_Log(L"WTSQuerySessionInformation failed: %d", GetLastError());
         return false;
     }
 
@@ -299,7 +300,8 @@ HMONITOR GetTargetMonitor(GetTargetMonitorParams params = {}) {
     bool sessionLockStateChanged =
         g_lastIsSessionLocked.exchange(sessionLocked) != sessionLocked;
 
-    if (sessionLockStateChanged) {
+    if (sessionLockStateChanged && g_target == Target::Explorer &&
+        FindCurrentProcessTaskbarWnd()) {
         Wh_Log(L"Session lock state changed: %s",
                sessionLocked ? L"locked" : L"unlocked");
 
