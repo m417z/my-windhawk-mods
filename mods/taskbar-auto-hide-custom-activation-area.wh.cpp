@@ -344,7 +344,7 @@ HMODULE WINAPI LoadLibraryExW_Hook(LPCWSTR lpLibFileName,
                                    HANDLE hFile,
                                    DWORD dwFlags) {
     HMODULE module = LoadLibraryExW_Original(lpLibFileName, hFile, dwFlags);
-    if (module && !((ULONG_PTR)module & 3)) {
+    if (module) {
         HandleLoadedModuleIfTaskbarView(module, lpLibFileName);
     }
 
