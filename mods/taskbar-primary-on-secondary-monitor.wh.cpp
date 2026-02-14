@@ -10,7 +10,7 @@
 // @include         explorer.exe
 // @include         ShellHost.exe
 // @architecture    x86-64
-// @compilerOptions -lversion -lwtsapi32
+// @compilerOptions -lole32 -loleaut32 -lruntimeobject -lversion -lwtsapi32
 // ==/WindhawkMod==
 
 // Source code is published under The GNU General Public License v3.0.
@@ -56,10 +56,8 @@ interface name:
 6. In the log output, look for lines containing `Found display device`. You will
    see one line per monitor, for example:
    ```
-   Found display device \\.\DISPLAY1, interface name:
-    \\?\DISPLAY#DELA1D2#5&abc123#0#{e6f07b5f-ee97-4a90-b076-33f57bf4eaa7} Found
-    display device \\.\DISPLAY2, interface name:
-    \\?\DISPLAY#GSM5B09#4&def456#0#{e6f07b5f-ee97-4a90-b076-33f57bf4eaa7}
+   Found display device \\.\DISPLAY1, interface name: \\?\DISPLAY#DELA1D2#5&abc123#0#{e6f07b5f-ee97-4a90-b076-33f57bf4eaa7}
+   Found display device \\.\DISPLAY2, interface name: \\?\DISPLAY#GSM5B09#4&def456#0#{e6f07b5f-ee97-4a90-b076-33f57bf4eaa7}
    ```
    Use the interface name that follows the "interface name:" text. You may need
    to experiment to determine which interface name corresponds to which physical
@@ -87,6 +85,15 @@ number when both are configured.
     the monitor numbers change often. To see all available interface names, set
     any interface name, enable mod logs and look for "Found display device"
     messages.
+- clickToSwitchMonitor: disabled
+  $name: Click taskbar to switch monitor
+  $description: >-
+    Choose how clicking on a taskbar's empty space switches the primary taskbar
+    to the clicked monitor (Windows 11 only).
+  $options:
+  - disabled: Disabled
+  - doubleClick: Double click
+  - middleClick: Middle click
 - oldTaskbarOnWin11: false
   $name: Customize the old taskbar on Windows 11
   $description: >-
@@ -98,13 +105,27 @@ number when both are configured.
 #include <windhawk_utils.h>
 
 #include <psapi.h>
+#include <windowsx.h>
 #include <wtsapi32.h>
 
+#undef GetCurrentTime
+
+#include <winrt/Windows.UI.Input.h>
+#include <winrt/Windows.UI.Xaml.Controls.h>
+#include <winrt/Windows.UI.Xaml.Input.h>
+
 #include <atomic>
+
+enum class ClickToSwitchMonitor {
+    disabled,
+    doubleClick,
+    middleClick,
+};
 
 struct {
     int monitor;
     WindhawkUtils::StringSetting monitorInterfaceName;
+    ClickToSwitchMonitor clickToSwitchMonitor;
     bool oldTaskbarOnWin11;
 } g_settings;
 
@@ -124,11 +145,16 @@ enum class WinVersion {
 
 WinVersion g_winVersion;
 
+std::atomic<bool> g_taskbarViewDllLoaded;
 std::atomic<bool> g_initialized;
 std::atomic<bool> g_explorerPatcherInitialized;
 
-std::atomic<bool> g_lastIsSessionLocked;
 std::atomic<bool> g_unloading;
+
+std::atomic<HMONITOR> g_overrideMonitor;
+DWORD g_lastPressTime;
+HMONITOR g_lastPressMonitor;
+std::atomic<bool> g_lastIsSessionLocked;
 
 HWND FindCurrentProcessTaskbarWnd() {
     HWND hTaskbarWnd = nullptr;
@@ -241,9 +267,9 @@ bool IsSessionLocked() {
     return locked;
 }
 
-bool ShouldReturnFakePrimaryMonitor() {
+HMONITOR GetTargetMonitor() {
     if (g_unloading) {
-        return false;
+        return nullptr;
     }
 
     bool sessionLocked = IsSessionLocked();
@@ -261,7 +287,21 @@ bool ShouldReturnFakePrimaryMonitor() {
         BroadcastShellHookDisplayChange();
     }
 
-    return !sessionLocked;
+    if (sessionLocked) {
+        return nullptr;
+    }
+
+    HMONITOR monitor = g_overrideMonitor;
+    if (!monitor) {
+        if (*g_settings.monitorInterfaceName.get()) {
+            monitor = GetMonitorByInterfaceNameSubstr(
+                g_settings.monitorInterfaceName.get());
+        } else if (g_settings.monitor >= 1) {
+            monitor = GetMonitorById(g_settings.monitor - 1);
+        }
+    }
+
+    return monitor;
 }
 
 using MonitorFromPoint_t = decltype(&MonitorFromPoint);
@@ -275,19 +315,7 @@ HMONITOR WINAPI MonitorFromPoint_Hook(POINT pt, DWORD dwFlags) {
 
     Wh_Log(L">");
 
-    if (!ShouldReturnFakePrimaryMonitor()) {
-        return original();
-    }
-
-    HMONITOR monitor = nullptr;
-
-    if (*g_settings.monitorInterfaceName.get()) {
-        monitor = GetMonitorByInterfaceNameSubstr(
-            g_settings.monitorInterfaceName.get());
-    } else if (g_settings.monitor >= 1) {
-        monitor = GetMonitorById(g_settings.monitor - 1);
-    }
-
+    HMONITOR monitor = GetTargetMonitor();
     if (!monitor) {
         return original();
     }
@@ -307,19 +335,7 @@ HMONITOR WINAPI MonitorFromRect_Hook(LPCRECT lprc, DWORD dwFlags) {
 
     Wh_Log(L">");
 
-    if (!ShouldReturnFakePrimaryMonitor()) {
-        return original();
-    }
-
-    HMONITOR monitor = nullptr;
-
-    if (*g_settings.monitorInterfaceName.get()) {
-        monitor = GetMonitorByInterfaceNameSubstr(
-            g_settings.monitorInterfaceName.get());
-    } else if (g_settings.monitor >= 1) {
-        monitor = GetMonitorById(g_settings.monitor - 1);
-    }
-
+    HMONITOR monitor = GetTargetMonitor();
     if (!monitor) {
         return original();
     }
@@ -342,19 +358,7 @@ BOOL WINAPI EnumDisplayDevicesW_Hook(LPCWSTR lpDevice,
 
     Wh_Log(L">");
 
-    if (!ShouldReturnFakePrimaryMonitor()) {
-        return result;
-    }
-
-    HMONITOR targetMonitor = nullptr;
-
-    if (*g_settings.monitorInterfaceName.get()) {
-        targetMonitor = GetMonitorByInterfaceNameSubstr(
-            g_settings.monitorInterfaceName.get());
-    } else if (g_settings.monitor >= 1) {
-        targetMonitor = GetMonitorById(g_settings.monitor - 1);
-    }
-
+    HMONITOR targetMonitor = GetTargetMonitor();
     if (!targetMonitor) {
         return result;
     }
@@ -408,23 +412,91 @@ HardwareConfirmatorHost_GetPositionRect_Hook(void* pThis,
     return result;
 }
 
+void ApplySettings();
+
+using TaskbarFrame_OnPointerPressed_t = int(WINAPI*)(void* pThis, void* pArgs);
+TaskbarFrame_OnPointerPressed_t TaskbarFrame_OnPointerPressed_Original;
+int TaskbarFrame_OnPointerPressed_Hook(void* pThis, void* pArgs) {
+    Wh_Log(L">");
+
+    auto original = [=]() {
+        return TaskbarFrame_OnPointerPressed_Original(pThis, pArgs);
+    };
+
+    winrt::Windows::UI::Xaml::UIElement taskbarFrame = nullptr;
+    ((IUnknown*)pThis)
+        ->QueryInterface(winrt::guid_of<winrt::Windows::UI::Xaml::UIElement>(),
+                         winrt::put_abi(taskbarFrame));
+
+    if (!taskbarFrame) {
+        return original();
+    }
+
+    auto className = winrt::get_class_name(taskbarFrame);
+    Wh_Log(L"%s", className.c_str());
+
+    if (className != L"Taskbar.TaskbarFrame") {
+        return original();
+    }
+
+    winrt::Windows::UI::Xaml::Input::PointerRoutedEventArgs args{nullptr};
+    winrt::copy_from_abi(args, pArgs);
+    if (!args) {
+        return original();
+    }
+
+    auto properties = args.GetCurrentPoint(taskbarFrame).Properties();
+
+    // Using GetMessagePos sometimes returns incorrect coordinates, especially
+    // in the corner of the taskbar.
+    POINT pt;
+    GetCursorPos(&pt);
+    HMONITOR pressedMonitor =
+        MonitorFromPoint_Original(pt, MONITOR_DEFAULTTONEAREST);
+
+    if (!pressedMonitor || pressedMonitor == g_overrideMonitor) {
+        return original();
+    }
+
+    bool shouldSwitch = false;
+
+    if (g_settings.clickToSwitchMonitor == ClickToSwitchMonitor::middleClick) {
+        if (properties.IsMiddleButtonPressed()) {
+            shouldSwitch = true;
+        }
+    } else if (g_settings.clickToSwitchMonitor ==
+               ClickToSwitchMonitor::doubleClick) {
+        DWORD now = GetTickCount();
+        if (g_lastPressMonitor == pressedMonitor &&
+            now - g_lastPressTime <= GetDoubleClickTime()) {
+            g_lastPressTime = 0;
+            g_lastPressMonitor = nullptr;
+            shouldSwitch = true;
+        } else {
+            g_lastPressTime = now;
+            g_lastPressMonitor = pressedMonitor;
+        }
+    }
+
+    if (!shouldSwitch) {
+        return original();
+    }
+
+    g_overrideMonitor = pressedMonitor;
+    ApplySettings();
+
+    // Mark event as handled to prevent normal click behavior.
+    args.Handled(true);
+    return 0;
+}
+
 using TrayUI__SetStuckMonitor_t = HRESULT(WINAPI*)(void* pThis,
                                                    HMONITOR monitor);
 TrayUI__SetStuckMonitor_t TrayUI__SetStuckMonitor_Original;
 HRESULT WINAPI TrayUI__SetStuckMonitor_Hook(void* pThis, HMONITOR monitor) {
     Wh_Log(L">");
 
-    monitor = nullptr;
-
-    if (!g_unloading) {
-        if (*g_settings.monitorInterfaceName.get()) {
-            monitor = GetMonitorByInterfaceNameSubstr(
-                g_settings.monitorInterfaceName.get());
-        } else if (g_settings.monitor >= 1) {
-            monitor = GetMonitorById(g_settings.monitor - 1);
-        }
-    }
-
+    monitor = GetTargetMonitor();
     if (!monitor) {
         monitor = MonitorFromPoint_Original({0, 0}, MONITOR_DEFAULTTONEAREST);
     }
@@ -588,16 +660,67 @@ bool HandleLoadedExplorerPatcher() {
     return true;
 }
 
+void HandleLoadedModuleIfExplorerPatcher(HMODULE module) {
+    if (module && !((ULONG_PTR)module & 3) && !g_explorerPatcherInitialized) {
+        if (IsExplorerPatcherModule(module)) {
+            HookExplorerPatcherSymbols(module);
+        }
+    }
+}
+
+HMODULE GetTaskbarViewModuleHandle() {
+    HMODULE module = GetModuleHandle(L"Taskbar.View.dll");
+    if (!module) {
+        module = GetModuleHandle(L"ExplorerExtensions.dll");
+    }
+
+    return module;
+}
+
+bool HookTaskbarViewDllSymbols(HMODULE module) {
+    // Taskbar.View.dll, ExplorerExtensions.dll
+    WindhawkUtils::SYMBOL_HOOK symbolHooks[] = {
+        {
+            {LR"(public: virtual int __cdecl winrt::impl::produce<struct winrt::Taskbar::implementation::TaskbarFrame,struct winrt::Windows::UI::Xaml::Controls::IControlOverrides>::OnPointerPressed(void *))"},
+            &TaskbarFrame_OnPointerPressed_Original,
+            TaskbarFrame_OnPointerPressed_Hook,
+        },
+    };
+
+    if (!HookSymbols(module, symbolHooks, ARRAYSIZE(symbolHooks))) {
+        Wh_Log(L"HookSymbols failed");
+        return false;
+    }
+
+    return true;
+}
+
+bool ShouldHookTaskbarViewDllSymbols() {
+    return g_winVersion >= WinVersion::Win11 &&
+           g_settings.clickToSwitchMonitor != ClickToSwitchMonitor::disabled;
+}
+
+void HandleLoadedModuleIfTaskbarView(HMODULE module, LPCWSTR lpLibFileName) {
+    if (ShouldHookTaskbarViewDllSymbols() && !g_taskbarViewDllLoaded &&
+        GetTaskbarViewModuleHandle() == module &&
+        !g_taskbarViewDllLoaded.exchange(true)) {
+        Wh_Log(L"Loaded %s", lpLibFileName);
+
+        if (HookTaskbarViewDllSymbols(module)) {
+            Wh_ApplyHookOperations();
+        }
+    }
+}
+
 using LoadLibraryExW_t = decltype(&LoadLibraryExW);
 LoadLibraryExW_t LoadLibraryExW_Original;
 HMODULE WINAPI LoadLibraryExW_Hook(LPCWSTR lpLibFileName,
                                    HANDLE hFile,
                                    DWORD dwFlags) {
     HMODULE module = LoadLibraryExW_Original(lpLibFileName, hFile, dwFlags);
-    if (module && !((ULONG_PTR)module & 3) && !g_explorerPatcherInitialized) {
-        if (IsExplorerPatcherModule(module)) {
-            HookExplorerPatcherSymbols(module);
-        }
+    if (module) {
+        HandleLoadedModuleIfExplorerPatcher(module);
+        HandleLoadedModuleIfTaskbarView(module, lpLibFileName);
     }
 
     return module;
@@ -680,6 +803,16 @@ void LoadSettings() {
     g_settings.monitor = Wh_GetIntSetting(L"monitor");
     g_settings.monitorInterfaceName =
         WindhawkUtils::StringSetting::make(L"monitorInterfaceName");
+
+    PCWSTR clickToSwitchMonitor = Wh_GetStringSetting(L"clickToSwitchMonitor");
+    g_settings.clickToSwitchMonitor = ClickToSwitchMonitor::disabled;
+    if (wcscmp(clickToSwitchMonitor, L"doubleClick") == 0) {
+        g_settings.clickToSwitchMonitor = ClickToSwitchMonitor::doubleClick;
+    } else if (wcscmp(clickToSwitchMonitor, L"middleClick") == 0) {
+        g_settings.clickToSwitchMonitor = ClickToSwitchMonitor::middleClick;
+    }
+    Wh_FreeStringSetting(clickToSwitchMonitor);
+
     g_settings.oldTaskbarOnWin11 = Wh_GetIntSetting(L"oldTaskbarOnWin11");
 }
 
@@ -727,8 +860,17 @@ BOOL Wh_ModInit() {
             if (hasWin10Taskbar && !HookTaskbarSymbols()) {
                 return FALSE;
             }
-        } else if (!HookTaskbarSymbols()) {
-            return FALSE;
+        } else {
+            if (ShouldHookTaskbarViewDllSymbols()) {
+                if (HMODULE taskbarViewModule = GetTaskbarViewModuleHandle()) {
+                    g_taskbarViewDllLoaded = true;
+                    HookTaskbarViewDllSymbols(taskbarViewModule);
+                }
+            }
+
+            if (!HookTaskbarSymbols()) {
+                return FALSE;
+            }
         }
 
         if (!HandleLoadedExplorerPatcher()) {
@@ -766,6 +908,18 @@ void Wh_ModAfterInit() {
     Wh_Log(L">");
 
     if (g_target == Target::Explorer) {
+        if (ShouldHookTaskbarViewDllSymbols() && !g_taskbarViewDllLoaded) {
+            if (HMODULE taskbarViewModule = GetTaskbarViewModuleHandle()) {
+                if (!g_taskbarViewDllLoaded.exchange(true)) {
+                    Wh_Log(L"Got Taskbar.View.dll");
+
+                    if (HookTaskbarViewDllSymbols(taskbarViewModule)) {
+                        Wh_ApplyHookOperations();
+                    }
+                }
+            }
+        }
+
         // Try again in case there's a race between the previous attempt and the
         // LoadLibraryExW hook.
         if (!g_explorerPatcherInitialized) {
@@ -794,11 +948,18 @@ BOOL Wh_ModSettingsChanged(BOOL* bReload) {
     Wh_Log(L">");
 
     bool prevOldTaskbarOnWin11 = g_settings.oldTaskbarOnWin11;
+    bool prevClickToSwitchMonitorEnabled =
+        g_settings.clickToSwitchMonitor != ClickToSwitchMonitor::disabled;
 
     LoadSettings();
 
+    bool clickToSwitchMonitorEnabled =
+        g_settings.clickToSwitchMonitor != ClickToSwitchMonitor::disabled;
+
     if (g_target == Target::Explorer) {
-        *bReload = g_settings.oldTaskbarOnWin11 != prevOldTaskbarOnWin11;
+        *bReload =
+            g_settings.oldTaskbarOnWin11 != prevOldTaskbarOnWin11 ||
+            clickToSwitchMonitorEnabled != prevClickToSwitchMonitorEnabled;
         if (!*bReload) {
             ApplySettings();
         }
