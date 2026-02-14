@@ -2,7 +2,7 @@
 // @id              start-menu-size
 // @name            Start Menu Size
 // @description     Set a custom size for the Start menu on Windows 11
-// @version         1.0
+// @version         1.0.1
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
