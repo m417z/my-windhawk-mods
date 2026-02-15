@@ -72,6 +72,7 @@ enum class WinVersion {
 
 WinVersion g_winVersion;
 
+std::atomic<bool> g_taskbarViewDllLoaded;
 std::atomic<bool> g_initialized;
 std::atomic<bool> g_explorerPatcherInitialized;
 
@@ -191,6 +192,100 @@ void WINAPI TrayUI_SlideWindow_Hook(void* pThis,
 
     if (!show && g_settings.fullyHide) {
         CloakWindow(hWnd, TRUE);
+    }
+}
+
+bool g_isPointerOverTaskbarFrame;
+
+using ViewCoordinator_HandleIsPointerOverTaskbarFrameChanged_t =
+    void(WINAPI*)(void* pThis,
+                  HWND hMMTaskbarWnd,
+                  bool isPointerOver,
+                  int inputDeviceKind);
+ViewCoordinator_HandleIsPointerOverTaskbarFrameChanged_t
+    ViewCoordinator_HandleIsPointerOverTaskbarFrameChanged_Original;
+void WINAPI ViewCoordinator_HandleIsPointerOverTaskbarFrameChanged_Hook(
+    void* pThis,
+    HWND hMMTaskbarWnd,
+    bool isPointerOver,
+    int inputDeviceKind) {
+    Wh_Log(L"> isPointerOver=%d", isPointerOver);
+
+    g_isPointerOverTaskbarFrame = isPointerOver;
+
+    ViewCoordinator_HandleIsPointerOverTaskbarFrameChanged_Original(
+        pThis, hMMTaskbarWnd, isPointerOver, inputDeviceKind);
+
+    g_isPointerOverTaskbarFrame = false;
+}
+
+// From ViewCoordinator::HandleIsPointerOverTaskbarFrameChanged.
+constexpr int kReasonIsPointerOverTaskbarFrameChanged = 7;
+// From TaskbarFrame::OnScreenEdgeStrokePointerEntered
+constexpr int kReasonOnScreenEdgeStrokePointerEntered = 8;
+
+using ViewCoordinator_UpdateIsExpanded_t = void(WINAPI*)(void* pThis,
+                                                         HWND hMMTaskbarWnd,
+                                                         int reason);
+ViewCoordinator_UpdateIsExpanded_t ViewCoordinator_UpdateIsExpanded_Original;
+void WINAPI ViewCoordinator_UpdateIsExpanded_Hook(void* pThis,
+                                                  HWND hMMTaskbarWnd,
+                                                  int reason) {
+    Wh_Log(L"> reason=%d", reason);
+
+    if ((reason == kReasonIsPointerOverTaskbarFrameChanged &&
+         g_isPointerOverTaskbarFrame) ||
+        reason == kReasonOnScreenEdgeStrokePointerEntered) {
+        Wh_Log(L"Blocking mouse-triggered unhide");
+        return;
+    }
+
+    ViewCoordinator_UpdateIsExpanded_Original(pThis, hMMTaskbarWnd, reason);
+}
+
+bool HookTaskbarViewDllSymbols(HMODULE module) {
+    // Taskbar.View.dll, ExplorerExtensions.dll
+    WindhawkUtils::SYMBOL_HOOK symbolHooks[] = {
+        {
+            {LR"(public: void __cdecl winrt::Taskbar::implementation::ViewCoordinator::HandleIsPointerOverTaskbarFrameChanged(unsigned __int64,bool,enum winrt::WindowsUdk::UI::Shell::InputDeviceKind))"},
+            &ViewCoordinator_HandleIsPointerOverTaskbarFrameChanged_Original,
+            ViewCoordinator_HandleIsPointerOverTaskbarFrameChanged_Hook,
+            true,
+        },
+        {
+            {LR"(public: void __cdecl winrt::Taskbar::implementation::ViewCoordinator::UpdateIsExpanded(unsigned __int64,enum TaskbarTipTest::TaskbarExpandCollapseReason))"},
+            &ViewCoordinator_UpdateIsExpanded_Original,
+            ViewCoordinator_UpdateIsExpanded_Hook,
+            true,
+        },
+    };
+
+    if (!HookSymbols(module, symbolHooks, ARRAYSIZE(symbolHooks))) {
+        Wh_Log(L"HookSymbols failed");
+        return false;
+    }
+
+    return true;
+}
+
+HMODULE GetTaskbarViewModuleHandle() {
+    HMODULE module = GetModuleHandle(L"Taskbar.View.dll");
+    if (!module) {
+        module = GetModuleHandle(L"ExplorerExtensions.dll");
+    }
+
+    return module;
+}
+
+void HandleLoadedModuleIfTaskbarView(HMODULE module, LPCWSTR lpLibFileName) {
+    if (g_winVersion >= WinVersion::Win11 && !g_taskbarViewDllLoaded &&
+        GetTaskbarViewModuleHandle() == module &&
+        !g_taskbarViewDllLoaded.exchange(true)) {
+        Wh_Log(L"Loaded %s", lpLibFileName);
+
+        if (HookTaskbarViewDllSymbols(module)) {
+            Wh_ApplyHookOperations();
+        }
     }
 }
 
@@ -380,16 +475,23 @@ bool HandleLoadedExplorerPatcher() {
     return true;
 }
 
+void HandleLoadedModuleIfExplorerPatcher(HMODULE module) {
+    if (module && !((ULONG_PTR)module & 3) && !g_explorerPatcherInitialized) {
+        if (IsExplorerPatcherModule(module)) {
+            HookExplorerPatcherSymbols(module);
+        }
+    }
+}
+
 using LoadLibraryExW_t = decltype(&LoadLibraryExW);
 LoadLibraryExW_t LoadLibraryExW_Original;
 HMODULE WINAPI LoadLibraryExW_Hook(LPCWSTR lpLibFileName,
                                    HANDLE hFile,
                                    DWORD dwFlags) {
     HMODULE module = LoadLibraryExW_Original(lpLibFileName, hFile, dwFlags);
-    if (module && !((ULONG_PTR)module & 3) && !g_explorerPatcherInitialized) {
-        if (IsExplorerPatcherModule(module)) {
-            HookExplorerPatcherSymbols(module);
-        }
+    if (module) {
+        HandleLoadedModuleIfExplorerPatcher(module);
+        HandleLoadedModuleIfTaskbarView(module, lpLibFileName);
     }
 
     return module;
@@ -421,8 +523,21 @@ BOOL Wh_ModInit() {
         if (hasWin10Taskbar && !HookTaskbarSymbols()) {
             return FALSE;
         }
-    } else if (!HookTaskbarSymbols()) {
-        return FALSE;
+    } else {
+        if (!HookTaskbarSymbols()) {
+            return FALSE;
+        }
+
+        if (g_winVersion >= WinVersion::Win11) {
+            if (HMODULE taskbarViewModule = GetTaskbarViewModuleHandle()) {
+                g_taskbarViewDllLoaded = true;
+                if (!HookTaskbarViewDllSymbols(taskbarViewModule)) {
+                    return FALSE;
+                }
+            } else {
+                Wh_Log(L"Taskbar view module not loaded yet");
+            }
+        }
     }
 
     if (!HandleLoadedExplorerPatcher()) {
@@ -456,6 +571,18 @@ void CloakAllTaskbars(BOOL cloak) {
 
 void Wh_ModAfterInit() {
     Wh_Log(L">");
+
+    if (g_winVersion >= WinVersion::Win11 && !g_taskbarViewDllLoaded) {
+        if (HMODULE taskbarViewModule = GetTaskbarViewModuleHandle()) {
+            if (!g_taskbarViewDllLoaded.exchange(true)) {
+                Wh_Log(L"Got Taskbar.View.dll");
+
+                if (HookTaskbarViewDllSymbols(taskbarViewModule)) {
+                    Wh_ApplyHookOperations();
+                }
+            }
+        }
+    }
 
     // Try again in case there's a race between the previous attempt and the
     // LoadLibraryExW hook.

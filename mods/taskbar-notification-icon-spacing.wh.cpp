@@ -969,7 +969,7 @@ void ApplySettings() {
             }
 
             if (!ApplyStyle(xamlRoot, param.rows, param.width)) {
-                Wh_Log(L"ApplyStyles failed");
+                Wh_Log(L"ApplyStyle failed");
             }
 
             if (auto overflowRootGrid = g_overflowRootGrid.get()) {
