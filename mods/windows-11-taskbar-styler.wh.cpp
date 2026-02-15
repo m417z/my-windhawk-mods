@@ -1092,8 +1092,23 @@ const Theme g_themeRosePine = {{
 }};
 
 const Theme g_themeWinVista = {{
-    ThemeTargetStyles{L"Taskbar.ExperienceToggleButton", {
-        L"CornerRadius=2"}},
+    ThemeTargetStyles{L"Taskbar.ExperienceToggleButton#LaunchListButton[AutomationProperties.AutomationId=StartButton] > Taskbar.TaskListButtonPanel > Microsoft.UI.Xaml.Controls.AnimatedVisualPlayer#Icon", {
+        L"Visibility=Collapsed"}},
+    ThemeTargetStyles{L"Taskbar.ExperienceToggleButton#LaunchListButton[AutomationProperties.AutomationId=StartButton] > Taskbar.TaskListButtonPanel@CommonStates > Border#BackgroundElement", {
+        L"Background@InactiveNormal:=<ImageBrush Stretch=\"None\" ImageSource=\"$orbNormal\" />",
+        L"Background@InactivePointerOver:=<ImageBrush Stretch=\"None\" ImageSource=\"$orbPointerOver\" />",
+        L"Background@InactivePressed:=<ImageBrush Stretch=\"None\" ImageSource=\"$orbPressed\" />",
+        L"Background@ActiveNormal:=<ImageBrush Stretch=\"None\" ImageSource=\"$orbPressed\" />",
+        L"Background@ActivePointerOver:=<ImageBrush Stretch=\"None\" ImageSource=\"$orbPointerOver\" />",
+        L"Background@ActivePressed:=<ImageBrush Stretch=\"None\" ImageSource=\"$orbPressed\" />",
+        L"BorderThickness=0",
+        L"Width=54",
+        }},
+    ThemeTargetStyles{L"Taskbar.TaskListButtonPanel#ExperienceToggleButtonRootPanel", {
+        L"Padding=0,0,0,0",
+        L"MinWidth=55",
+        L"Margin=0,0,5,0",
+        L"Width=54"}},
     ThemeTargetStyles{L"Taskbar.SearchBoxButton", {
         L"CornerRadius=2"}},
     ThemeTargetStyles{L"Taskbar.TaskListButton", {
@@ -1107,15 +1122,16 @@ const Theme g_themeWinVista = {{
     ThemeTargetStyles{L"Rectangle#BackgroundFill", {
         L"Fill:=<LinearGradientBrush StartPoint=\"0,0\" EndPoint=\"0,1\" Opacity=\"0.7\"><GradientStop Color=\"#B5B9BC\" Offset=\"0.0\" /><GradientStop Color=\"#B5B9BC\" Offset=\"0.03125\" /><GradientStop Color=\"#909296\" Offset=\"0.03125\" /><GradientStop Color=\"#464B51\" Offset=\"0.5\" /><GradientStop Color=\"#060F15\" Offset=\"0.5\" /><GradientStop Color=\"#040C11\" Offset=\"0.96875\" /><GradientStop Color=\"#000000\" Offset=\"0.96875\" /><GradientStop Color=\"#000000\" Offset=\"1.0\" /></LinearGradientBrush>"}},
     ThemeTargetStyles{L"Taskbar.TaskListLabeledButtonPanel@RunningIndicatorStates > Border", {
-        L"Background@ActiveRunningIndicator:=<LinearGradientBrush StartPoint=\"0,0\" EndPoint=\"0,1\" Opacity=\"0.2\"><GradientStop Color=\"#111111\" Offset=\"0.0\" /><GradientStop Color=\"#111111\" Offset=\"1.0\" /></LinearGradientBrush>",
+        L"Background@InactiveRunningIndicator:=<LinearGradientBrush StartPoint=\"0,0\" EndPoint=\"0,1\"><GradientStop Color=\"#44FFFFFF\" Offset=\"0.0\" /><GradientStop Color=\"#11FFFFFF\" Offset=\"0.5\" /><GradientStop Color=\"#22FFFFFF\" Offset=\"1.0\" /></LinearGradientBrush>",
+        L"Background@ActiveRunningIndicator:=<LinearGradientBrush StartPoint=\"0,0\" EndPoint=\"0,1\"><GradientStop Color=\"#77FFFFFF\" Offset=\"0.0\" /><GradientStop Color=\"#22FFFFFF\" Offset=\"0.4\" /><GradientStop Color=\"#33FFFFFF\" Offset=\"0.5\" /><GradientStop Color=\"#66FFFFFF\" Offset=\"1.0\" /></LinearGradientBrush>",
         L"CornerRadius=2",
         L"Background@RequestingAttentionRunningIndicator:=<LinearGradientBrush StartPoint=\"0,0\" EndPoint=\"0,1\" Opacity=\"0.2\"><GradientStop Color=\"#D53300\" Offset=\"0.0\" /><GradientStop Color=\"#111111\" Offset=\"1.0\" /></LinearGradientBrush>",
         L"BorderBrush=#33101010",
         L"BorderThickness=1",
         L"BorderBrush@NoRunningIndicator=Transparent",
         L"Background@NoRunningIndicator=Transparent",
-        L"Background@ActiveRunningIndicator=#55BBBBBB",
-        L"BorderBrush@ActiveRunningIndicator=#55212121"}},
+        L"Background@ActiveRunningIndicator=#C4000000",
+        L"BorderBrush@ActiveRunningIndicator=#40FFFFFF"}},
     ThemeTargetStyles{L"Taskbar.TaskListLabeledButtonPanel@CommonStates > Border#BackgroundElement", {
         L"Margin=0,0,0,2",
         L"BorderThickness=1",
@@ -1146,6 +1162,10 @@ const Theme g_themeWinVista = {{
         L"Padding=-1",
         L"Margin=0,6,0,6",
         L"CornerRadius=8"}},
+},{
+    L"orbNormal=https://raw.githubusercontent.com/ramensoftware/windows-11-taskbar-styling-guide/refs/heads/main/Themes/Windows7/ThemeResources/orbNormal.png",
+    L"orbPointerOver=https://raw.githubusercontent.com/ramensoftware/windows-11-taskbar-styling-guide/refs/heads/main/Themes/Windows7/ThemeResources/orbHover.png",
+    L"orbPressed=https://raw.githubusercontent.com/ramensoftware/windows-11-taskbar-styling-guide/refs/heads/main/Themes/Windows7/ThemeResources/orbPressed.png",
 }};
 
 const Theme g_themeCleanSlate = {{
