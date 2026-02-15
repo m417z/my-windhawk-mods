@@ -8,6 +8,7 @@
 // @twitter         https://twitter.com/m417z
 // @homepage        https://m417z.com/
 // @include         explorer.exe
+// @include         ShellExperienceHost.exe
 // @compilerOptions -DWINVER=0x0A00 -lcomctl32 -ldwmapi -lgdi32 -lole32 -lversion
 // ==/WindhawkMod==
 
@@ -71,8 +72,9 @@ issue](https://tweaker.userecho.com/topics/826-scroll-on-trackpadtouchpad-doesnt
   $name: Volume change step
   $description: >-
     Allows to configure the volume change that will occur with each notch of
-    mouse wheel movement. This option has effect only for the Windows 11, None
-    control indicators. For the Windows 11 indicator, must be a multiple of 2.
+    mouse wheel movement. This option has effect only for the Windows 11,
+    Windows 10, and None control indicators. For the Windows 11 indicator, must
+    be a multiple of 2.
 - oldTaskbarOnWin11: false
   $name: Customize the old taskbar on Windows 11
   $description: >-
@@ -116,6 +118,13 @@ struct {
     int volumeChangeStep;
     bool oldTaskbarOnWin11;
 } g_settings;
+
+enum class Target {
+    Explorer,
+    ShellExperienceHost,
+};
+
+Target g_target;
 
 std::atomic<bool> g_taskbarViewDllLoaded;
 std::atomic<bool> g_initialized;
@@ -691,7 +700,7 @@ BOOL OpenScrollSndVol(WPARAM wParam, LPARAM lMousePosParam) {
     }
 
     if (CanUseModernIndicator()) {
-        if (!AdjustVolumeLevelWithMouseWheel(GET_WHEEL_DELTA_WPARAM(wParam), 2))
+        if (!AdjustVolumeLevelWithMouseWheel(GET_WHEEL_DELTA_WPARAM(wParam), 0))
             return FALSE;
 
         ShowSndVolModernIndicator();
@@ -1598,6 +1607,17 @@ HWND WINAPI CreateWindowInBand_Hook(DWORD dwExStyle,
     return hWnd;
 }
 
+using ForceFocusBasedMouseWheelRouting_t = DWORD_PTR(WINAPI*)(BOOL);
+ForceFocusBasedMouseWheelRouting_t ForceFocusBasedMouseWheelRouting_Original;
+DWORD_PTR WINAPI ForceFocusBasedMouseWheelRouting_Hook(BOOL enabled) {
+    Wh_Log(L">");
+
+    // Always disable to prevent the volume control from stealing mouse wheel
+    // messages.
+    enabled = FALSE;
+    return ForceFocusBasedMouseWheelRouting_Original(enabled);
+}
+
 void LoadSettings() {
     PCWSTR volumeIndicator = Wh_GetStringSetting(L"volumeIndicator");
     g_settings.volumeIndicator = VolumeIndicator::Win11;
@@ -1765,6 +1785,49 @@ BOOL Wh_ModInit() {
         return FALSE;
     }
 
+    g_target = Target::Explorer;
+
+    WCHAR moduleFilePath[MAX_PATH];
+    switch (
+        GetModuleFileName(nullptr, moduleFilePath, ARRAYSIZE(moduleFilePath))) {
+        case 0:
+        case ARRAYSIZE(moduleFilePath):
+            Wh_Log(L"GetModuleFileName failed");
+            break;
+
+        default:
+            if (PCWSTR moduleFileName = wcsrchr(moduleFilePath, L'\\')) {
+                moduleFileName++;
+                if (_wcsicmp(moduleFileName, L"ShellExperienceHost.exe") == 0) {
+                    g_target = Target::ShellExperienceHost;
+                }
+            } else {
+                Wh_Log(L"GetModuleFileName returned an unsupported path");
+            }
+            break;
+    }
+
+    if (g_target == Target::ShellExperienceHost) {
+        if (!CanUseModernIndicator() ||
+            g_settings.volumeIndicator != VolumeIndicator::Modern ||
+            g_settings.volumeChangeStep == 2) {
+            return FALSE;
+        }
+
+        HMODULE user32Module = GetModuleHandle(L"user32.dll");
+        if (user32Module) {
+            auto pFunc = (ForceFocusBasedMouseWheelRouting_t)GetProcAddress(
+                user32Module, MAKEINTRESOURCEA(2575));
+            if (pFunc) {
+                WindhawkUtils::Wh_SetFunctionHookT(
+                    pFunc, ForceFocusBasedMouseWheelRouting_Hook,
+                    &ForceFocusBasedMouseWheelRouting_Original);
+            }
+        }
+
+        return TRUE;
+    }
+
     g_nExplorerVersion = g_nWinVersion;
     if (g_nExplorerVersion >= WIN_VERSION_11_21H2 &&
         g_settings.oldTaskbarOnWin11) {
@@ -1814,6 +1877,10 @@ BOOL Wh_ModInit() {
 void Wh_ModAfterInit() {
     Wh_Log(L">");
 
+    if (g_target != Target::Explorer) {
+        return;
+    }
+
     if (ShouldHookTaskbarViewDllSymbols() && !g_taskbarViewDllLoaded) {
         if (HMODULE taskbarViewModule = GetTaskbarViewModuleHandle()) {
             if (!g_taskbarViewDllLoaded.exchange(true)) {
@@ -1843,6 +1910,10 @@ void Wh_ModAfterInit() {
 void Wh_ModUninit() {
     Wh_Log(L">");
 
+    if (g_target != Target::Explorer) {
+        return;
+    }
+
     if (g_hTaskbarWnd) {
         UnsubclassTaskbarWindow(g_hTaskbarWnd);
 
@@ -1862,6 +1933,11 @@ BOOL Wh_ModSettingsChanged(BOOL* bReload) {
     bool prevMiddleClickToMute = g_settings.middleClickToMute;
 
     LoadSettings();
+
+    if (g_target == Target::ShellExperienceHost) {
+        return g_settings.volumeIndicator == VolumeIndicator::Modern &&
+               g_settings.volumeChangeStep != 2;
+    }
 
     *bReload = g_settings.oldTaskbarOnWin11 != prevOldTaskbarOnWin11 ||
                g_settings.middleClickToMute != prevMiddleClickToMute;
