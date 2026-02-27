@@ -27,9 +27,9 @@
 Control the per-app volume by scrolling over taskbar buttons on Windows 11.
 
 Scrolling over a taskbar button will adjust the volume of that specific
-application. Ctrl+clicking on a taskbar button will toggle mute for that app. A
-tooltip shows the current volume percentage, or "No audio session" if the app
-has no active audio.
+application. Ctrl+clicking or middle-clicking (clicking the mouse wheel) on a
+taskbar button will toggle mute for that app. A tooltip shows the current
+volume percentage, or "No audio session" if the app has no active audio.
 
 **Note:** Some laptop touchpads might not support scrolling over the taskbar. A
 workaround is to use the "pinch to zoom" gesture. For details, check out [a
@@ -67,6 +67,11 @@ Control mod takes precedence due to the way the mod works.
   $description: >-
     When enabled, Ctrl+clicking on a taskbar button will toggle the mute state
     of the application.
+- middleClickToMute: true
+  $name: Middle Click to mute
+  $description: >-
+    When enabled, middle-clicking (clicking the mouse wheel) on a taskbar
+    button will toggle the mute state of the application.
 - ctrlScrollVolumeChange: false
   $name: Ctrl + Scroll to change volume
   $description: >-
@@ -117,6 +122,7 @@ using namespace winrt::Windows::UI::Xaml;
 struct {
     int volumeChangeStep;
     bool ctrlClickToMute;
+    bool middleClickToMute;
     bool ctrlScrollVolumeChange;
     bool terseFormat;
     bool noAutomaticMuteToggle;
@@ -1229,12 +1235,12 @@ int WINAPI TaskListButton_OnPointerPressed_Hook(void* pThis, void* pArgs) {
         return TaskListButton_OnPointerPressed_Original(pThis, pArgs);
     };
 
-    if (!g_settings.ctrlClickToMute) {
+    if (!g_settings.ctrlClickToMute && !g_settings.middleClickToMute) {
         return original();
     }
 
-    // Check if Ctrl is pressed.
-    if (GetKeyState(VK_CONTROL) >= 0) {
+    // Skip if Ctrl is not pressed and middle click to mute is not enabled.
+    if (GetKeyState(VK_CONTROL) >= 0 && !g_settings.middleClickToMute) {
         return original();
     }
 
@@ -1255,6 +1261,16 @@ int WINAPI TaskListButton_OnPointerPressed_Hook(void* pThis, void* pArgs) {
         ->QueryInterface(winrt::guid_of<Input::PointerRoutedEventArgs>(),
                          winrt::put_abi(args));
     if (!args) {
+        return original();
+    }
+
+    // Check if Ctrl is pressed or middle button is pressed.
+    bool isCtrlPressed = GetKeyState(VK_CONTROL) < 0;
+    auto point = args.GetCurrentPoint(element);
+    bool isMiddleButton = point.Properties().IsMiddleButtonPressed();
+    
+    if (!(g_settings.ctrlClickToMute && isCtrlPressed) && 
+        !(g_settings.middleClickToMute && isMiddleButton)) {
         return original();
     }
 
@@ -1280,6 +1296,7 @@ int WINAPI TaskListButton_OnPointerPressed_Hook(void* pThis, void* pArgs) {
 void LoadSettings() {
     g_settings.volumeChangeStep = Wh_GetIntSetting(L"volumeChangeStep");
     g_settings.ctrlClickToMute = Wh_GetIntSetting(L"ctrlClickToMute");
+    g_settings.middleClickToMute = Wh_GetIntSetting(L"middleClickToMute");
     g_settings.ctrlScrollVolumeChange =
         Wh_GetIntSetting(L"ctrlScrollVolumeChange");
     g_settings.terseFormat = Wh_GetIntSetting(L"terseFormat");
