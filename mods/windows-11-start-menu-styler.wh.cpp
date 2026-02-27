@@ -5507,6 +5507,12 @@ winrt::Windows::Foundation::IInspectable ReadLocalValueWithWorkaround(
             Wh_Log(L"Using GetValue workaround for FrameRoot MaxHeight");
             getValueWorkaround = true;
         }
+    } else if (property == FrameworkElement::WidthProperty()) {
+        auto grid = elementDo.try_as<Controls::Grid>();
+        if (grid && grid.Name() == L"MainMenu") {
+            Wh_Log(L"Using GetValue workaround for MainMenu Width");
+            getValueWorkaround = true;
+        }
     }
 
     auto value = getValueWorkaround ? elementDo.GetValue(property)
