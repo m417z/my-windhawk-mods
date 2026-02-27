@@ -5501,6 +5501,12 @@ winrt::Windows::Foundation::IInspectable ReadLocalValueWithWorkaround(
             Wh_Log(L"Using GetValue workaround for AcrylicBorder background");
             getValueWorkaround = true;
         }
+    } else if (property == FrameworkElement::MaxHeightProperty()) {
+        auto grid = elementDo.try_as<Controls::Grid>();
+        if (grid && grid.Name() == L"FrameRoot") {
+            Wh_Log(L"Using GetValue workaround for FrameRoot MaxHeight");
+            getValueWorkaround = true;
+        }
     }
 
     auto value = getValueWorkaround ? elementDo.GetValue(property)
