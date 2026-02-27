@@ -5492,16 +5492,18 @@ winrt::Windows::Foundation::IInspectable ReadLocalValueWithWorkaround(
     DependencyObject elementDo,
     DependencyProperty property) {
     // Workaround for AcrylicBrushes returning an incorrect background brush.
-    // When restored, it doesn't look correct, but if cleared, it looks correct.
+    // When restored, it doesn't look correct.
+    bool getValueWorkaround = false;
     if (property == Controls::Border::BackgroundProperty()) {
         auto border = elementDo.try_as<Controls::Border>();
         if (border && border.Name() == L"AcrylicBorder") {
-            Wh_Log(L"Returning unset property value for AcrylicBorder");
-            return DependencyProperty::UnsetValue();
+            Wh_Log(L"Using GetValue workaround for AcrylicBorder background");
+            getValueWorkaround = true;
         }
     }
 
-    auto value = elementDo.ReadLocalValue(property);
+    auto value = getValueWorkaround ? elementDo.GetValue(property)
+                                    : elementDo.ReadLocalValue(property);
     if (value) {
         auto className = winrt::get_class_name(value);
         if (className == L"Windows.UI.Xaml.Data.BindingExpressionBase" ||
