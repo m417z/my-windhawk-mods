@@ -2344,6 +2344,7 @@ thread_local std::vector<ElementCustomizationRules>
 struct ElementPropertyCustomizationState {
     std::optional<winrt::Windows::Foundation::IInspectable> originalValue;
     std::optional<PropertyOverrideValue> customValue;
+    winrt::Windows::Foundation::IInspectable lastAppliedValue{nullptr};
     int64_t propertyChangedToken = 0;
 };
 
@@ -4566,6 +4567,8 @@ void ApplyCustomizationsForVisualStateGroup(
                 ReadLocalValueWithWorkaround(element, property);
             propertyCustomizationState.customValue = it->second;
             SetOrClearValue(element, property, it->second);
+            propertyCustomizationState.lastAppliedValue =
+                ReadLocalValueWithWorkaround(element, property);
         }
 
         propertyCustomizationState.propertyChangedToken =
@@ -4589,7 +4592,16 @@ void ApplyCustomizationsForVisualStateGroup(
                     auto localValue =
                         ReadLocalValueWithWorkaround(element, property);
 
-                    propertyCustomizationState.originalValue = localValue;
+                    // Only update originalValue if the local value was changed
+                    // externally (e.g. by a Setter). When an animation changes
+                    // only the effective value, the local value still matches
+                    // what we set, so updating originalValue would corrupt it
+                    // with our own brush - causing the brush to survive cleanup
+                    // and crash when the mod's DLL is unloaded.
+                    if (localValue !=
+                        propertyCustomizationState.lastAppliedValue) {
+                        propertyCustomizationState.originalValue = localValue;
+                    }
 
                     Wh_Log(L"Re-applying style for %s",
                            winrt::get_class_name(element).c_str());
@@ -4597,6 +4609,8 @@ void ApplyCustomizationsForVisualStateGroup(
                     g_elementPropertyModifying = true;
                     SetOrClearValue(element, property,
                                     *propertyCustomizationState.customValue);
+                    propertyCustomizationState.lastAppliedValue =
+                        ReadLocalValueWithWorkaround(element, property);
                     g_elementPropertyModifying = false;
                 });
     }
@@ -4655,6 +4669,9 @@ void ApplyCustomizationsForVisualStateGroup(
 
                             propertyCustomizationState.customValue = it->second;
                             SetOrClearValue(element, property, it->second);
+                            propertyCustomizationState.lastAppliedValue =
+                                ReadLocalValueWithWorkaround(element,
+                                                             property);
                         } else {
                             if (propertyCustomizationState.originalValue) {
                                 SetOrClearValue(
@@ -4663,6 +4680,8 @@ void ApplyCustomizationsForVisualStateGroup(
                                 propertyCustomizationState.originalValue
                                     .reset();
                             }
+                            propertyCustomizationState.lastAppliedValue =
+                                nullptr;
 
                             propertyCustomizationState.customValue.reset();
                         }
