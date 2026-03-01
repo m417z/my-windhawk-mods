@@ -174,7 +174,14 @@ struct {
     bool oldTaskbarOnWin11;
 } g_settings;
 
-std::unordered_map<std::wstring, int> g_appIdsUsingWindowIcons;
+struct AppIdIconInfo {
+    int count;
+    std::wstring resolvedAppIdStrUpper;
+    std::wstring resolvedWindowProcessPathUpper;
+    std::wstring programFileNameUpper;
+};
+
+std::unordered_map<std::wstring, AppIdIconInfo> g_appIdsUsingWindowIcons;
 
 enum class WinVersion {
     Unsupported,
@@ -450,7 +457,30 @@ void ProcessResolvedWindow(PVOID pThis, RESOLVEDWINDOW* resolvedWindow) {
     }
 
     if (useWindowIcon) {
-        g_appIdsUsingWindowIcons[resolvedAppIdStrUpper]++;
+        std::wstring cacheKey;
+
+        if (customGroup) {
+            WCHAR customGroupId[MAX_PATH];
+            swprintf(customGroupId, L"%s%d", kCustomGroupPrefix, customGroup);
+            
+            WCHAR customGroupIdUpper[MAX_PATH];
+            int len = (int)wcslen(customGroupId);
+            LCMapStringEx(LOCALE_NAME_USER_DEFAULT, LCMAP_UPPERCASE,
+                          customGroupId, len + 1,
+                          customGroupIdUpper, len + 1, nullptr, nullptr, 0);
+            
+            cacheKey = customGroupIdUpper;
+        } else {
+            cacheKey = resolvedAppIdStrUpper;
+        }
+
+        auto& info = g_appIdsUsingWindowIcons[cacheKey];
+        info.count++;
+        if (info.count == 1) {
+            info.resolvedAppIdStrUpper = resolvedAppIdStrUpper;
+            info.resolvedWindowProcessPathUpper = resolvedWindowProcessPathLen > 0 ? resolvedWindowProcessPathUpper : L"";
+            info.programFileNameUpper = programFileNameUpper ? programFileNameUpper : L"";
+        }
     }
 
     if (!customGroup) {
@@ -1212,9 +1242,10 @@ LONG_PTR OnTaskDestroyed(std::function<LONG_PTR()> original,
         
         auto it = g_appIdsUsingWindowIcons.find(appIdUpper);
         if (it != g_appIdsUsingWindowIcons.end()) {
-            it->second--;
-            
-            if (it->second <= 0) g_appIdsUsingWindowIcons.erase(it);
+            it->second.count--;
+            if (it->second.count <= 0) {
+                g_appIdsUsingWindowIcons.erase(it);
+            }
         }
     }
 
@@ -1927,6 +1958,24 @@ void LoadSettings() {
             break;
         }
     }
+
+    std::erase_if(g_appIdsUsingWindowIcons,
+        [](const auto& pair) {
+            const auto& info = pair.second;
+            bool useWindowIcon = g_settings.useWindowIcons;
+
+            if (!g_settings.windowIconProgramItems.empty()) {
+                bool inList = g_settings.windowIconProgramItems.contains(info.resolvedAppIdStrUpper) ||
+                            (!info.resolvedWindowProcessPathUpper.empty() &&
+                            g_settings.windowIconProgramItems.contains(info.resolvedWindowProcessPathUpper)) ||
+                            (!info.programFileNameUpper.empty() &&
+                            g_settings.windowIconProgramItems.contains(info.programFileNameUpper));
+
+                useWindowIcon = (g_settings.useWindowIcons != inList);
+            }
+
+            return !useWindowIcon;
+    });
 
     g_settings.excludedProgramItems.clear();
 
