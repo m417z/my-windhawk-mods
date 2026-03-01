@@ -2,7 +2,7 @@
 // @id              taskbar-grouping
 // @name            Disable grouping on the taskbar
 // @description     Causes a separate button to be created on the taskbar for each new window
-// @version         1.3.10
+// @version         1.3.11
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
@@ -75,6 +75,12 @@ or a similar tool), enable the relevant option in the mod's settings.
     open folder window - with application icons, the icon on the taskbar is
     always the icon of Explorer, while with window icons, the icon changes
     depending on the open folder.
+- windowIconsPrograms: [example1.exe]
+  $name: Window icon programs
+  $description: >-
+    Each entry is a name, path, or application ID that affects window icon behavior.
+    When "Use window icons" is enabled, these programs will be excluded. When "Use window icons" is disabled, only these 
+    programs will use window icons.
 - customGroups:
   - - name: Group 1
       $name: Group name
@@ -160,12 +166,15 @@ struct {
     PinnedItemsMode pinnedItemsMode;
     PlaceUngroupedItemsTogetherMode placeUngroupedItemsTogether;
     bool useWindowIcons;
+    std::unordered_set<std::wstring> windowIconProgramItems;
     std::unordered_set<std::wstring> excludedProgramItems;
     std::vector<std::wstring> customGroupNames;
     std::unordered_map<std::wstring, int> customGroupProgramItems;
     GroupingMode groupingMode;
     bool oldTaskbarOnWin11;
 } g_settings;
+
+std::unordered_map<std::wstring, int> g_appIdsUsingWindowIcons;
 
 enum class WinVersion {
     Unsupported,
@@ -423,6 +432,27 @@ void ProcessResolvedWindow(PVOID pThis, RESOLVEDWINDOW* resolvedWindow) {
         }
     }
 
+    bool useWindowIcon = g_settings.useWindowIcons;
+    if (!g_settings.windowIconProgramItems.empty()) {
+        bool inList = false;
+
+        if (g_settings.windowIconProgramItems.contains(resolvedAppIdStrUpper)) {
+            inList = true;
+        } else if (resolvedWindowProcessPathLen > 0 &&
+                g_settings.windowIconProgramItems.contains(resolvedWindowProcessPathUpper)) {
+            inList = true;
+        } else if (programFileNameUpper &&
+                g_settings.windowIconProgramItems.contains(programFileNameUpper)) {
+            inList = true;
+        }
+
+        useWindowIcon = (g_settings.useWindowIcons != inList);
+    }
+
+    if (useWindowIcon) {
+        g_appIdsUsingWindowIcons[resolvedAppIdStrUpper]++;
+    }
+
     if (!customGroup) {
         winrt::com_ptr<IUnknown> taskGroupMatched;
         winrt::com_ptr<IUnknown> taskItemMatched;
@@ -670,8 +700,22 @@ const ITEMIDLIST* WINAPI CTaskGroup_GetShortcutIDList_Hook(PVOID pThis) {
             return nullptr;
         }
 
-        if (g_settings.useWindowIcons) {
-            return nullptr;
+        PCWSTR appId = CTaskGroup_GetAppID_Original(pThis);
+        if (appId && *appId) {
+            WCHAR appIdClean[MAX_PATH];
+            wcscpy_s(appIdClean, appId);
+
+            RemoveAppIdSuffix(appIdClean, appId);
+
+            WCHAR appIdUpper[MAX_PATH];
+            int len = wcslen(appIdClean);
+            LCMapStringEx(LOCALE_NAME_USER_DEFAULT, LCMAP_UPPERCASE,
+                          appIdClean, len + 1,
+                          appIdUpper, len + 1, nullptr, nullptr, 0);
+
+            if (g_appIdsUsingWindowIcons.count(appIdUpper)) {
+                return nullptr;
+            }
         }
 
         if (taskGroupWithoutSuffix) {
@@ -1152,6 +1196,26 @@ LONG_PTR OnTaskDestroyed(std::function<LONG_PTR()> original,
     // instances on other monitors or virtual desktops.
     if (!taskItem) {
         return original();
+    }
+
+    PCWSTR appId = CTaskGroup_GetAppID_Original(taskGroup);
+    if (appId) {
+        WCHAR appIdClean[MAX_PATH];
+        wcscpy_s(appIdClean, appId);
+        RemoveAppIdSuffix(appIdClean, appId);
+        
+        WCHAR appIdUpper[MAX_PATH];
+        int len = wcslen(appIdClean);
+        LCMapStringEx(LOCALE_NAME_USER_DEFAULT, LCMAP_UPPERCASE,
+                      appIdClean, len + 1,
+                      appIdUpper, len + 1, nullptr, nullptr, 0);
+        
+        auto it = g_appIdsUsingWindowIcons.find(appIdUpper);
+        if (it != g_appIdsUsingWindowIcons.end()) {
+            it->second--;
+            
+            if (it->second <= 0) g_appIdsUsingWindowIcons.erase(it);
+        }
     }
 
     bool isPrimaryTaskbar =
@@ -1841,6 +1905,28 @@ void LoadSettings() {
     Wh_FreeStringSetting(placeUngroupedItemsTogetherMode);
 
     g_settings.useWindowIcons = Wh_GetIntSetting(L"useWindowIcons");
+
+    g_settings.windowIconProgramItems.clear();
+
+    for (int i = 0;; i++) {
+        PCWSTR program = Wh_GetStringSetting(L"windowIconsPrograms[%d]", i);
+
+        bool hasProgram = *program;
+        if (hasProgram) {
+            std::wstring programUpper = program;
+            LCMapStringEx(
+                LOCALE_NAME_USER_DEFAULT, LCMAP_UPPERCASE, &programUpper[0],
+                static_cast<int>(programUpper.length()), &programUpper[0],
+                static_cast<int>(programUpper.length()), nullptr, nullptr, 0);
+
+            g_settings.windowIconProgramItems.insert(std::move(programUpper));
+        }
+
+        Wh_FreeStringSetting(program);
+        if (!hasProgram) {
+            break;
+        }
+    }
 
     g_settings.excludedProgramItems.clear();
 
