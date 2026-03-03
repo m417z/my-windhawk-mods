@@ -3546,8 +3546,7 @@ void ApplyCustomizationsForVisualStateGroup(
                             propertyCustomizationState.customValue = it->second;
                             SetOrClearValue(element, property, it->second);
                             propertyCustomizationState.lastAppliedValue =
-                                ReadLocalValueWithWorkaround(element,
-                                                             property);
+                                ReadLocalValueWithWorkaround(element, property);
                         } else {
                             if (propertyCustomizationState.originalValue) {
                                 SetOrClearValue(
@@ -4344,7 +4343,19 @@ void InitializeForCurrentThread() {
 
     ProcessAllStylesFromSettings();
 
-    if (Application::Current()) {
+    bool hasResourceVariables = false;
+    try {
+        if (Application::Current()) {
+            hasResourceVariables = true;
+        } else {
+            Wh_Log(L"Application::Current() is null");
+        }
+    } catch (...) {
+        HRESULT hr = winrt::to_hresult();
+        Wh_Log(L"Application::Current() error %08X", hr);
+    }
+
+    if (hasResourceVariables) {
         ProcessResourceVariablesFromSettings();
         g_resourceVariablesInitializedForThread = true;
     } else {
