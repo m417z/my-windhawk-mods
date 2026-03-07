@@ -343,7 +343,6 @@ from the **TranslucentTB** project.
 #undef GetCurrentTime
 
 #include <winrt/Windows.UI.Xaml.h>
-#include <winrt/Windows.System.Power.h>
 
 struct ThemeTargetStyles {
     PCWSTR target;
@@ -5293,6 +5292,7 @@ using namespace std::string_view_literals;
 #include <winrt/Windows.Networking.Connectivity.h>
 #include <winrt/Windows.Storage.Streams.h>
 #include <winrt/Windows.System.h>
+#include <winrt/Windows.System.Power.h>
 #include <winrt/Windows.UI.Composition.h>
 #include <winrt/Windows.UI.Core.h>
 #include <winrt/Windows.UI.Text.h>
@@ -5687,7 +5687,7 @@ private:
     winrt::hstring m_fallbackThemeResourceKey;
     bool m_isUsingFallback = false;
 
-    winrt::Windows::UI::ViewManagement::UISettings m_uiSettings;
+    winrt::Windows::UI::ViewManagement::UISettings m_uiSettings{nullptr};
     winrt::event_token m_colorValuesChangedToken{};
     winrt::event_token m_advancedEffectsToken{};
     winrt::event_token m_energySaverToken{};
@@ -6490,85 +6490,127 @@ void ColorMatrixEffect::Name(winrt::hstring name)
 ////////////////////////////////////////////////////////////////////////////////
 // XamlBlurBrush.cpp
 XamlBlurBrush::XamlBlurBrush(wuc::Compositor compositor,
-                             float blurAmount, winrt::Windows::UI::Color tint, std::optional<uint8_t> tintOpacity,
-                             winrt::hstring tintThemeResourceKey, std::optional<float> tintLuminosityOpacity,
-                             std::optional<float> tintSaturation, std::optional<float> noiseOpacity,
-                             std::optional<float> noiseDensity, std::optional<winrt::Windows::UI::Color> fallbackColor,
+                             float blurAmount,
+                             winrt::Windows::UI::Color tint,
+                             std::optional<uint8_t> tintOpacity,
+                             winrt::hstring tintThemeResourceKey,
+                             std::optional<float> tintLuminosityOpacity,
+                             std::optional<float> tintSaturation,
+                             std::optional<float> noiseOpacity,
+                             std::optional<float> noiseDensity,
+                             std::optional<winrt::Windows::UI::Color> fallbackColor,
                              winrt::hstring fallbackThemeResourceKey) :
-    m_compositor(std::move(compositor)), m_blurAmount(blurAmount), m_tint(tint), m_tintOpacity(tintOpacity),
-    m_tintThemeResourceKey(std::move(tintThemeResourceKey)), m_tintLuminosityOpacity(tintLuminosityOpacity),
-    m_tintSaturation(tintSaturation), m_noiseOpacity(noiseOpacity), m_noiseDensity(noiseDensity),
-    m_fallbackColor(fallbackColor), m_fallbackThemeResourceKey(std::move(fallbackThemeResourceKey))
+    m_compositor(std::move(compositor)),
+    m_blurAmount(blurAmount),
+    m_tint(tint),
+    m_tintOpacity(tintOpacity),
+    m_tintThemeResourceKey(std::move(tintThemeResourceKey)),
+    m_tintLuminosityOpacity(tintLuminosityOpacity),
+    m_tintSaturation(tintSaturation),
+    m_noiseOpacity(noiseOpacity),
+    m_noiseDensity(noiseDensity),
+    m_fallbackColor(fallbackColor),
+    m_fallbackThemeResourceKey(std::move(fallbackThemeResourceKey))
 {
     RefreshThemeTint();
     RefreshThemeFallbackColor();
 
     auto dq = winrt::Windows::System::DispatcherQueue::GetForCurrentThread();
 
-    if (!m_tintThemeResourceKey.empty() || !m_fallbackThemeResourceKey.empty()) {
-        m_colorValuesChangedToken = m_uiSettings.ColorValuesChanged([weakThis = get_weak(), dq] (auto const&, auto const&) {
-            dq.TryEnqueue([weakThis] {
-                if (auto self = weakThis.get()) self->OnThemeRefreshed();
+    if (!m_tintThemeResourceKey.empty() || !m_fallbackThemeResourceKey.empty())
+    {
+        m_colorValuesChangedToken = m_uiSettings.ColorValuesChanged([weakThis = get_weak(), dq] (auto const&, auto const&)
+        {
+            dq.TryEnqueue([weakThis]
+            {
+                if (auto self = weakThis.get())
+                {
+                    self->OnThemeRefreshed();
+                }
             });
         });
     }
 
-    if (m_fallbackColor.has_value() || !m_fallbackThemeResourceKey.empty()) {
-        m_advancedEffectsToken = m_uiSettings.AdvancedEffectsEnabledChanged([weakThis = get_weak(), dq] (auto const&, auto const&) {
-            dq.TryEnqueue([weakThis] {
-                if (auto self = weakThis.get()) self->UpdateBrush();
+    if (m_fallbackColor.has_value() || !m_fallbackThemeResourceKey.empty())
+    {
+        m_advancedEffectsToken = m_uiSettings.AdvancedEffectsEnabledChanged([weakThis = get_weak(), dq] (auto const&, auto const&)
+        {
+            dq.TryEnqueue([weakThis]
+            {
+                if (auto self = weakThis.get())
+                {
+                    self->UpdateBrush();
+                }
             });
         });
 
-        m_energySaverToken = winrt::Windows::System::Power::PowerManager::EnergySaverStatusChanged([weakThis = get_weak(), dq] (auto const&, auto const&) {
-            dq.TryEnqueue([weakThis] {
-                if (auto self = weakThis.get()) self->UpdateBrush();
+        m_energySaverToken = winrt::Windows::System::Power::PowerManager::EnergySaverStatusChanged([weakThis = get_weak(), dq] (auto const&, auto const&)
+        {
+            dq.TryEnqueue([weakThis]
+            {
+                if (auto self = weakThis.get())
+                {
+                    self->UpdateBrush();
+                }
             });
         });
     }
 }
 
-void XamlBlurBrush::OnConnected() {
-    if (!CompositionBrush()) {
+void XamlBlurBrush::OnConnected()
+{
+    if (!CompositionBrush())
+    {
         UpdateBrush();
     }
 }
 
-void XamlBlurBrush::OnDisconnected() {
-    if (const auto brush = CompositionBrush()) {
+void XamlBlurBrush::OnDisconnected()
+{
+    if (const auto brush = CompositionBrush())
+    {
         brush.Close();
         CompositionBrush(nullptr);
     }
 }
 
-void XamlBlurBrush::UpdateBrush() {
+void XamlBlurBrush::UpdateBrush()
+{
     bool useFallback = false;
-    if (m_fallbackColor.has_value() || !m_fallbackThemeResourceKey.empty()) {
+    if (m_fallbackColor.has_value() || !m_fallbackThemeResourceKey.empty())
+    {
         useFallback = !m_uiSettings.AdvancedEffectsEnabled() ||
             (winrt::Windows::System::Power::PowerManager::EnergySaverStatus() == winrt::Windows::System::Power::EnergySaverStatus::On);
     }
 
-    if (useFallback) {
+    if (useFallback)
+    {
         CompositionBrush(CreateFallbackBrush());
         m_isUsingFallback = true;
-    } else {
+    }
+    else
+    {
         CompositionBrush(CreateEffectBrush());
         m_isUsingFallback = false;
     }
 }
 
-wuc::CompositionBrush XamlBlurBrush::CreateFallbackBrush() {
+wuc::CompositionBrush XamlBlurBrush::CreateFallbackBrush()
+{
     auto color = m_fallbackColor.value_or(m_tint);
     return m_compositor.CreateColorBrush(color);
 }
 
-wuc::CompositionBrush XamlBlurBrush::CreateEffectBrush() {
+wuc::CompositionBrush XamlBlurBrush::CreateEffectBrush()
+{
     auto backdropBrush = m_compositor.CreateBackdropBrush();
 
+    // Rec. 709 luma coefficients, used for saturation and luminosity.
     constexpr float kLumaR = 0.2126f;
     constexpr float kLumaG = 0.7152f;
     constexpr float kLumaB = 0.0722f;
 
+    // 1. Blur
     auto blurEffect = winrt::make_self<GaussianBlurEffect>();
     blurEffect->Source = wuc::CompositionEffectSourceParameter(L"backdrop");
     blurEffect->BlurAmount = m_blurAmount;
@@ -6576,53 +6618,81 @@ wuc::CompositionBrush XamlBlurBrush::CreateEffectBrush() {
 
     wge::IGraphicsEffectSource topOfStack = *blurEffect;
 
-    if (m_tintSaturation && *m_tintSaturation != 1.0f) {
+    // 2. Saturation (optional)
+    if (m_tintSaturation && *m_tintSaturation != 1.0f)
+    {
         float s = std::max(*m_tintSaturation, 0.0f);
         float invS = 1.0f - s;
+
         auto satMatrix = winrt::make_self<ColorMatrixEffect>();
         satMatrix->Source = topOfStack;
+
+        // Standard saturation matrix: lerp between luminance and identity.
         auto& m = satMatrix->Matrix;
         m[0]  = invS * kLumaR + s; m[1]  = invS * kLumaR;     m[2]  = invS * kLumaR;     m[3]  = 0.0f;
         m[4]  = invS * kLumaG;     m[5]  = invS * kLumaG + s; m[6]  = invS * kLumaG;     m[7]  = 0.0f;
         m[8]  = invS * kLumaB;     m[9]  = invS * kLumaB;     m[10] = invS * kLumaB + s; m[11] = 0.0f;
         m[12] = 0.0f;              m[13] = 0.0f;              m[14] = 0.0f;              m[15] = 1.0f;
+
         satMatrix->Name(L"SaturationEffect");
         topOfStack = *satMatrix;
     }
 
-    if (m_tintLuminosityOpacity && *m_tintLuminosityOpacity > 0.0f) {
+    // 3. Luminosity (optional) - shifts pixel luminance towards the tint's
+    // luminance, blended by the opacity factor.
+    if (m_tintLuminosityOpacity && *m_tintLuminosityOpacity > 0.0f)
+    {
         float op = std::clamp(*m_tintLuminosityOpacity, 0.0f, 1.0f);
-        float tintLum = (m_tint.R / 255.0f) * kLumaR + (m_tint.G / 255.0f) * kLumaG + (m_tint.B / 255.0f) * kLumaB;
+
+        float tintLum = (m_tint.R / 255.0f) * kLumaR +
+                        (m_tint.G / 255.0f) * kLumaG +
+                        (m_tint.B / 255.0f) * kLumaB;
+
         auto lumMatrix = winrt::make_self<ColorMatrixEffect>();
         lumMatrix->Source = topOfStack;
+
         auto& m = lumMatrix->Matrix;
         m[0]  = 1.0f - (kLumaR * op); m[1]  = -(kLumaR * op);       m[2]  = -(kLumaR * op);       m[3]  = 0.0f;
         m[4]  = -(kLumaG * op);       m[5]  = 1.0f - (kLumaG * op); m[6]  = -(kLumaG * op);       m[7]  = 0.0f;
         m[8]  = -(kLumaB * op);       m[9]  = -(kLumaB * op);       m[10] = 1.0f - (kLumaB * op); m[11] = 0.0f;
         m[12] = 0.0f;                 m[13] = 0.0f;                 m[14] = 0.0f;                 m[15] = 1.0f;
         m[16] = tintLum * op;         m[17] = tintLum * op;         m[18] = tintLum * op;         m[19] = 0.0f;
+
         lumMatrix->Name(L"LuminosityBlend");
         topOfStack = *lumMatrix;
     }
 
+    // 4. Noise overlay (optional) - procedural tiled noise with adjustable
+    // density and opacity.
     wuc::CompositionSurfaceBrush noiseBrush{nullptr};
-    if (m_noiseOpacity && *m_noiseOpacity > 0.0f) {
+    if (m_noiseOpacity && *m_noiseOpacity > 0.0f)
+    {
         float density = m_noiseDensity.value_or(1.0f);
+
         auto stream = CreateNoiseStream(density);
-        auto surface = wux::Media::LoadedImageSurface::StartLoadFromStream(stream);
+        auto surface =
+            wux::Media::LoadedImageSurface::StartLoadFromStream(stream);
         noiseBrush = m_compositor.CreateSurfaceBrush(surface);
         noiseBrush.Stretch(wuc::CompositionStretch::None);
 
+        // Tile via border effect (wrap mode).
         auto borderEffect = winrt::make_self<BorderEffect>();
-        borderEffect->Source = wuc::CompositionEffectSourceParameter(L"NoiseSource");
+        borderEffect->Source =
+            wuc::CompositionEffectSourceParameter(L"NoiseSource");
 
+        // Scale all channels by opacity for premultiplied blending.
         float nOp = std::clamp(*m_noiseOpacity, 0.0f, 1.0f);
+
         auto opacityEffect = winrt::make_self<ColorMatrixEffect>();
         opacityEffect->Source = *borderEffect;
-        opacityEffect->Matrix[0] = nOp; opacityEffect->Matrix[5] = nOp;
-        opacityEffect->Matrix[10] = nOp; opacityEffect->Matrix[15] = nOp;
+        // Matrix: Scale all channels by opacity (for premultiplied blending).
+        opacityEffect->Matrix[0] = nOp;
+        opacityEffect->Matrix[5] = nOp;
+        opacityEffect->Matrix[10] = nOp;
+        opacityEffect->Matrix[15] = nOp;
         opacityEffect->Name(L"NoiseOpacityEffect");
 
+        // Composite noise over the current stack.
         auto noiseComposite = winrt::make_self<CompositeEffect>();
         noiseComposite->Mode = D2D1_COMPOSITE_MODE_SOURCE_OVER;
         noiseComposite->Sources.push_back(topOfStack);
@@ -6631,6 +6701,7 @@ wuc::CompositionBrush XamlBlurBrush::CreateEffectBrush() {
         topOfStack = *noiseComposite;
     }
 
+    // 5. Tint (flood color composited over the stack).
     auto floodEffect = winrt::make_self<FloodEffect>();
     floodEffect->Color = m_tint;
     floodEffect->Name(L"FloodEffect");
@@ -6640,53 +6711,117 @@ wuc::CompositionBrush XamlBlurBrush::CreateEffectBrush() {
     compositeEffect->Sources.push_back(topOfStack);
     compositeEffect->Sources.push_back(*floodEffect);
 
-    auto factory = m_compositor.CreateEffectFactory(*compositeEffect, {L"FloodEffect.Color"});
+    auto factory = m_compositor.CreateEffectFactory(
+        *compositeEffect,
+        // List of animatable properties.
+        {L"FloodEffect.Color"}
+    );
     auto brush = factory.CreateBrush();
+
     brush.SetSourceParameter(L"backdrop", backdropBrush);
 
-    if (noiseBrush) brush.SetSourceParameter(L"NoiseSource", noiseBrush);
+    // Bind the noise brush if we created one.
+    if (noiseBrush)
+    {
+        brush.SetSourceParameter(L"NoiseSource", noiseBrush);
+    }
 
     return brush;
 }
 
-void XamlBlurBrush::RefreshThemeTint() {
-    if (m_tintThemeResourceKey.empty()) return;
+void XamlBlurBrush::RefreshThemeTint()
+{
+    if (m_tintThemeResourceKey.empty())
+    {
+        return;
+    }
+
     auto resources = Application::Current().Resources();
     auto resource = resources.TryLookup(winrt::box_value(m_tintThemeResourceKey));
-    if (!resource) return;
+    if (!resource)
+    {
+        Wh_Log(L"Failed to find resource");
+        return;
+    }
 
-    if (auto colorBrush = resource.try_as<wux::Media::SolidColorBrush>()) m_tint = colorBrush.Color();
-    else if (auto color = resource.try_as<winrt::Windows::UI::Color>()) m_tint = *color;
+    if (auto colorBrush = resource.try_as<wux::Media::SolidColorBrush>())
+    {
+        m_tint = colorBrush.Color();
+    }
+    else if (auto color = resource.try_as<winrt::Windows::UI::Color>())
+    {
+        m_tint = *color;
+    }
+    else
+    {
+        Wh_Log(L"Resource type is unsupported: %s",
+            winrt::get_class_name(resource).c_str());
+        return;
+    }
 
-    if (m_tintOpacity) m_tint.A = *m_tintOpacity;
+    if (m_tintOpacity)
+    {
+        m_tint.A = *m_tintOpacity;
+    }
 }
 
-void XamlBlurBrush::RefreshThemeFallbackColor() {
-    if (m_fallbackThemeResourceKey.empty()) return;
+void XamlBlurBrush::RefreshThemeFallbackColor()
+{
+    if (m_fallbackThemeResourceKey.empty())
+    {
+        return;
+    }
+
     auto resources = Application::Current().Resources();
     auto resource = resources.TryLookup(winrt::box_value(m_fallbackThemeResourceKey));
-    if (!resource) return;
+    if (!resource)
+    {
+        Wh_Log(L"Failed to find fallback resource");
+        return;
+    }
 
-    if (auto colorBrush = resource.try_as<wux::Media::SolidColorBrush>()) m_fallbackColor = colorBrush.Color();
-    else if (auto color = resource.try_as<winrt::Windows::UI::Color>()) m_fallbackColor = *color;
+    if (auto colorBrush = resource.try_as<wux::Media::SolidColorBrush>())
+    {
+        m_fallbackColor = colorBrush.Color();
+    }
+    else if (auto color = resource.try_as<winrt::Windows::UI::Color>())
+    {
+        m_fallbackColor = *color;
+    }
+    else
+    {
+        Wh_Log(L"Resource type is unsupported: %s",
+            winrt::get_class_name(resource).c_str());
+        return;
+    }
 }
 
-void XamlBlurBrush::OnThemeRefreshed() {
+void XamlBlurBrush::OnThemeRefreshed()
+{
+    Wh_Log(L"Theme refreshed");
+
     auto prevTint = m_tint;
     auto prevFallback = m_fallbackColor;
 
     RefreshThemeTint();
     RefreshThemeFallbackColor();
 
-    if (m_isUsingFallback) {
-        if (m_fallbackColor.has_value() && prevFallback != m_fallbackColor) {
-            if (auto colorBrush = CompositionBrush().try_as<wuc::CompositionColorBrush>()) {
+    if (m_isUsingFallback)
+    {
+        if (m_fallbackColor.has_value() && prevFallback != m_fallbackColor)
+        {
+            if (auto colorBrush = CompositionBrush().try_as<wuc::CompositionColorBrush>())
+            {
                 colorBrush.Color(m_fallbackColor.value());
             }
         }
-    } else {
-        if (prevTint != m_tint) {
-            if (auto effectBrush = CompositionBrush().try_as<wuc::CompositionEffectBrush>()) {
+    }
+    else
+    {
+        if (prevTint != m_tint)
+        {
+            if (auto effectBrush = CompositionBrush().try_as<wuc::CompositionEffectBrush>())
+            {
                 effectBrush.Properties().InsertColor(L"FloodEffect.Color", m_tint);
             }
         }
@@ -7046,6 +7181,9 @@ std::vector<std::wstring_view> SplitStringView(std::wstring_view s,
 
 std::optional<PropertyOverrideValue> ParseNonXamlPropertyOverrideValue(
     std::wstring_view stringValue) {
+    // Example:
+    // <WindhawkBlur BlurAmount="10" TintColor="#FFFF0000"/>
+
     auto substr = TrimStringView(stringValue);
 
     constexpr auto kWindhawkBlurPrefix = L"<WindhawkBlur "sv;
@@ -7074,10 +7212,12 @@ std::optional<PropertyOverrideValue> ParseNonXamlPropertyOverrideValue(
     float noiseDensity = std::numeric_limits<float>::quiet_NaN();
     float blurAmount = 0;
 
-    constexpr auto kTintColorThemeResourcePrefix = L"TintColor=\"{ThemeResource"sv;
+    constexpr auto kTintColorThemeResourcePrefix =
+        L"TintColor=\"{ThemeResource"sv;
     constexpr auto kTintColorThemeResourceSuffix = L"}\""sv;
     constexpr auto kTintColorPrefix = L"TintColor=\"#"sv;
-    constexpr auto kFallbackColorThemeResourcePrefix = L"FallbackColor=\"{ThemeResource"sv;
+    constexpr auto kFallbackColorThemeResourcePrefix =
+        L"FallbackColor=\"{ThemeResource"sv;
     constexpr auto kFallbackColorThemeResourceSuffix = L"}\""sv;
     constexpr auto kFallbackColorPrefix = L"FallbackColor=\"#"sv;
     constexpr auto kTintOpacityPrefix = L"TintOpacity=\""sv;
@@ -7086,26 +7226,42 @@ std::optional<PropertyOverrideValue> ParseNonXamlPropertyOverrideValue(
     constexpr auto kNoiseOpacityPrefix = L"NoiseOpacity=\""sv;
     constexpr auto kNoiseDensityPrefix = L"NoiseDensity=\""sv;
     constexpr auto kBlurAmountPrefix = L"BlurAmount=\""sv;
-
     for (const auto prop : SplitStringView(substr, L" ")) {
         const auto propSubstr = TrimStringView(prop);
-        if (propSubstr.empty()) continue;
+        if (propSubstr.empty()) {
+            continue;
+        }
+
+        Wh_Log(L"  %.*s", static_cast<int>(propSubstr.length()),
+               propSubstr.data());
 
         if (pendingTintColorThemeResource) {
             if (!propSubstr.ends_with(kTintColorThemeResourceSuffix)) {
-                throw std::runtime_error("WindhawkBlur: Invalid TintColor theme resource syntax");
+                throw std::runtime_error(
+                    "WindhawkBlur: Invalid TintColor theme resource syntax");
             }
+
             pendingTintColorThemeResource = false;
-            tintThemeResourceKey = propSubstr.substr(0, propSubstr.size() - std::size(kTintColorThemeResourceSuffix));
+
+            tintThemeResourceKey = propSubstr.substr(
+                0,
+                propSubstr.size() - std::size(kTintColorThemeResourceSuffix));
+
             continue;
         }
 
         if (pendingFallbackColorThemeResource) {
             if (!propSubstr.ends_with(kFallbackColorThemeResourceSuffix)) {
-                throw std::runtime_error("WindhawkBlur: Invalid FallbackColor theme resource syntax");
+                throw std::runtime_error(
+                    "WindhawkBlur: Invalid FallbackColor theme resource syntax");
             }
+
             pendingFallbackColorThemeResource = false;
-            fallbackThemeResourceKey = propSubstr.substr(0, propSubstr.size() - std::size(kFallbackColorThemeResourceSuffix));
+
+            fallbackThemeResourceKey = propSubstr.substr(
+                0,
+                propSubstr.size() - std::size(kFallbackColorThemeResourceSuffix));
+
             continue;
         }
 
@@ -7119,74 +7275,156 @@ std::optional<PropertyOverrideValue> ParseNonXamlPropertyOverrideValue(
             continue;
         }
 
-        auto ParseHexColor = [](std::wstring_view valStr) -> winrt::Windows::UI::Color {
-            bool hasAlpha = (valStr.size() == 8);
-            if (!hasAlpha && valStr.size() != 6) throw std::runtime_error("WindhawkBlur: Unsupported Color value");
+        if (propSubstr.starts_with(kTintColorPrefix) &&
+            propSubstr.back() == L'\"') {
+            auto valStr = propSubstr.substr(
+                std::size(kTintColorPrefix),
+                propSubstr.size() - std::size(kTintColorPrefix) - 1);
+
+            bool hasAlpha;
+            switch (valStr.size()) {
+                case 6:
+                    hasAlpha = false;
+                    break;
+                case 8:
+                    hasAlpha = true;
+                    break;
+                default:
+                    throw std::runtime_error(
+                        "WindhawkBlur: Unsupported TintColor value");
+            }
+
             auto valNum = std::stoul(std::wstring(valStr), nullptr, 16);
-            return {
-                hasAlpha ? HIBYTE(HIWORD(valNum)) : (uint8_t)255,
-                LOBYTE(HIWORD(valNum)),
-                HIBYTE(LOWORD(valNum)),
-                LOBYTE(LOWORD(valNum))
-            };
-        };
-
-        if (propSubstr.starts_with(kTintColorPrefix) && propSubstr.back() == L'\"') {
-            tint = ParseHexColor(propSubstr.substr(std::size(kTintColorPrefix), propSubstr.size() - std::size(kTintColorPrefix) - 1));
+            uint8_t a = hasAlpha ? HIBYTE(HIWORD(valNum)) : 255;
+            uint8_t r = LOBYTE(HIWORD(valNum));
+            uint8_t g = HIBYTE(LOWORD(valNum));
+            uint8_t b = LOBYTE(LOWORD(valNum));
+            tint = {a, r, g, b};
             continue;
         }
 
-        if (propSubstr.starts_with(kFallbackColorPrefix) && propSubstr.back() == L'\"') {
-            fallbackColor = ParseHexColor(propSubstr.substr(std::size(kFallbackColorPrefix), propSubstr.size() - std::size(kFallbackColorPrefix) - 1));
+        if (propSubstr.starts_with(kFallbackColorPrefix) &&
+            propSubstr.back() == L'\"') {
+            auto valStr = propSubstr.substr(
+                std::size(kFallbackColorPrefix),
+                propSubstr.size() - std::size(kFallbackColorPrefix) - 1);
+
+            bool hasAlpha;
+            switch (valStr.size()) {
+                case 6:
+                    hasAlpha = false;
+                    break;
+                case 8:
+                    hasAlpha = true;
+                    break;
+                default:
+                    throw std::runtime_error(
+                        "WindhawkBlur: Unsupported FallbackColor value");
+            }
+
+            auto valNum = std::stoul(std::wstring(valStr), nullptr, 16);
+            uint8_t a = hasAlpha ? HIBYTE(HIWORD(valNum)) : 255;
+            uint8_t r = LOBYTE(HIWORD(valNum));
+            uint8_t g = HIBYTE(LOWORD(valNum));
+            uint8_t b = LOBYTE(LOWORD(valNum));
+            fallbackColor = {a, r, g, b};
             continue;
         }
 
-        if (propSubstr.starts_with(kTintOpacityPrefix) && propSubstr.back() == L'\"') {
-            tintOpacity = std::stof(std::wstring(propSubstr.substr(std::size(kTintOpacityPrefix), propSubstr.size() - std::size(kTintOpacityPrefix) - 1)));
+        if (propSubstr.starts_with(kTintOpacityPrefix) &&
+            propSubstr.back() == L'\"') {
+            auto valStr = propSubstr.substr(
+                std::size(kTintOpacityPrefix),
+                propSubstr.size() - std::size(kTintOpacityPrefix) - 1);
+            tintOpacity = std::stof(std::wstring(valStr));
             continue;
         }
-        if (propSubstr.starts_with(kTintLuminosityOpacityPrefix) && propSubstr.back() == L'\"') {
-            tintLuminosityOpacity = std::stof(std::wstring(propSubstr.substr(std::size(kTintLuminosityOpacityPrefix), propSubstr.size() - std::size(kTintLuminosityOpacityPrefix) - 1)));
+
+        if (propSubstr.starts_with(kTintLuminosityOpacityPrefix) &&
+            propSubstr.back() == L'\"') {
+            auto valStr = propSubstr.substr(
+                std::size(kTintLuminosityOpacityPrefix),
+                propSubstr.size() - std::size(kTintLuminosityOpacityPrefix) -
+                    1);
+            tintLuminosityOpacity = std::stof(std::wstring(valStr));
             continue;
         }
-        if (propSubstr.starts_with(kTintSaturationPrefix) && propSubstr.back() == L'\"') {
-            tintSaturation = std::stof(std::wstring(propSubstr.substr(std::size(kTintSaturationPrefix), propSubstr.size() - std::size(kTintSaturationPrefix) - 1)));
+
+        if (propSubstr.starts_with(kTintSaturationPrefix) &&
+            propSubstr.back() == L'\"') {
+            auto valStr = propSubstr.substr(
+                std::size(kTintSaturationPrefix),
+                propSubstr.size() - std::size(kTintSaturationPrefix) - 1);
+            tintSaturation = std::stof(std::wstring(valStr));
             continue;
         }
-        if (propSubstr.starts_with(kNoiseOpacityPrefix) && propSubstr.back() == L'\"') {
-            noiseOpacity = std::stof(std::wstring(propSubstr.substr(std::size(kNoiseOpacityPrefix), propSubstr.size() - std::size(kNoiseOpacityPrefix) - 1)));
+
+        if (propSubstr.starts_with(kNoiseOpacityPrefix) &&
+            propSubstr.back() == L'\"') {
+            auto valStr = propSubstr.substr(
+                std::size(kNoiseOpacityPrefix),
+                propSubstr.size() - std::size(kNoiseOpacityPrefix) - 1);
+            noiseOpacity = std::stof(std::wstring(valStr));
             continue;
         }
-        if (propSubstr.starts_with(kNoiseDensityPrefix) && propSubstr.back() == L'\"') {
-            noiseDensity = std::stof(std::wstring(propSubstr.substr(std::size(kNoiseDensityPrefix), propSubstr.size() - std::size(kNoiseDensityPrefix) - 1)));
+
+        if (propSubstr.starts_with(kNoiseDensityPrefix) &&
+            propSubstr.back() == L'\"') {
+            auto valStr = propSubstr.substr(
+                std::size(kNoiseDensityPrefix),
+                propSubstr.size() - std::size(kNoiseDensityPrefix) - 1);
+            noiseDensity = std::stof(std::wstring(valStr));
             continue;
         }
-        if (propSubstr.starts_with(kBlurAmountPrefix) && propSubstr.back() == L'\"') {
-            blurAmount = std::stof(std::wstring(propSubstr.substr(std::size(kBlurAmountPrefix), propSubstr.size() - std::size(kBlurAmountPrefix) - 1)));
+
+        if (propSubstr.starts_with(kBlurAmountPrefix) &&
+            propSubstr.back() == L'\"') {
+            auto valStr = propSubstr.substr(
+                std::size(kBlurAmountPrefix),
+                propSubstr.size() - std::size(kBlurAmountPrefix) - 1);
+            blurAmount = std::stof(std::wstring(valStr));
             continue;
         }
 
         throw std::runtime_error("WindhawkBlur: Bad property");
     }
 
-    if (pendingTintColorThemeResource || pendingFallbackColorThemeResource) {
-        throw std::runtime_error("WindhawkBlur: Unterminated theme resource");
+    if (pendingTintColorThemeResource) {
+        throw std::runtime_error(
+            "WindhawkBlur: Unterminated TintColor theme resource");
+    }
+
+    if (pendingFallbackColorThemeResource) {
+        throw std::runtime_error(
+            "WindhawkBlur: Unterminated FallbackColor theme resource");
     }
 
     if (!std::isnan(tintOpacity)) {
-        tintOpacity = std::clamp(tintOpacity, 0.0f, 1.0f);
+        if (tintOpacity < 0.0f) {
+            tintOpacity = 0.0f;
+        } else if (tintOpacity > 1.0f) {
+            tintOpacity = 1.0f;
+        }
+
         tint.A = static_cast<uint8_t>(tintOpacity * 255.0f);
     }
 
     return XamlBlurBrushParams{
         .blurAmount = blurAmount,
         .tint = tint,
-        .tintOpacity = !std::isnan(tintOpacity) ? std::optional(tint.A) : std::nullopt,
+        .tintOpacity =
+            !std::isnan(tintOpacity) ? std::optional(tint.A) : std::nullopt,
         .tintThemeResourceKey = std::move(tintThemeResourceKey),
-        .tintLuminosityOpacity = !std::isnan(tintLuminosityOpacity) ? std::optional(tintLuminosityOpacity) : std::nullopt,
-        .tintSaturation = !std::isnan(tintSaturation) ? std::optional(tintSaturation) : std::nullopt,
-        .noiseOpacity = !std::isnan(noiseOpacity) ? std::optional(noiseOpacity) : std::nullopt,
-        .noiseDensity = !std::isnan(noiseDensity) ? std::optional(noiseDensity) : std::nullopt,
+        .tintLuminosityOpacity = !std::isnan(tintLuminosityOpacity)
+                                     ? std::optional(tintLuminosityOpacity)
+                                     : std::nullopt,
+        .tintSaturation = !std::isnan(tintSaturation)
+                              ? std::optional(tintSaturation)
+                              : std::nullopt,
+        .noiseOpacity = !std::isnan(noiseOpacity) ? std::optional(noiseOpacity)
+                                                  : std::nullopt,
+        .noiseDensity = !std::isnan(noiseDensity) ? std::optional(noiseDensity)
+                                                  : std::nullopt,
         .fallbackColor = fallbackColor,
         .fallbackThemeResourceKey = std::move(fallbackThemeResourceKey),
     };
