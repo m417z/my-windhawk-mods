@@ -475,8 +475,23 @@ BOOL Wh_ModInit(void)
     GetModuleFileName(nullptr, modulePath, ARRAYSIZE(modulePath));
     PathRemoveFileSpec(modulePath);
 
+    // New VSCode versions place resources under a version-ID subfolder.
+    // The ID is stored in the executable's string table.
+    WCHAR basePath[MAX_PATH];
+    wcscpy_s(basePath, modulePath);
+    WCHAR versionId[64];
+    int versionIdLen = LoadString(nullptr, 2, versionId, ARRAYSIZE(versionId));
+    if (versionIdLen > 0) {
+        WCHAR candidatePath[MAX_PATH];
+        PathCombine(candidatePath, modulePath, versionId);
+        if (GetFileAttributes(candidatePath) != INVALID_FILE_ATTRIBUTES) {
+            Wh_Log(L"Using version ID subfolder: %s", versionId);
+            wcscpy_s(basePath, candidatePath);
+        }
+    }
+
     for (size_t i = 0; i < VSCODE_FILE_COUNT; i++) {
-        PathCombine(g_vscodeFiles[i].filePath, modulePath, g_vscodeFilePaths[i]);
+        PathCombine(g_vscodeFiles[i].filePath, basePath, g_vscodeFilePaths[i]);
 
         if (i != VSCODE_FILE_PRODUCT_JSON) {
             g_vscodeFiles[i].newFileHash = CreateNewVscodeFile(
