@@ -51,10 +51,10 @@ No files are modified on disk - to revert all changes, disable the mod and resta
     - Code: >-
         setInterval(()=>{
         var t='WINDHAWK!',
-        x=document.querySelector('.window-title'),
+        x=document.querySelector('.menubar-menu-button[aria-label="File"] > div'),
         y='textContent';
-        x[y]=x[y].replace(/( \| .)?$/,
-        ' | '+t[Math.floor(Date.now()/1000)%t.length])},1000)
+        x[y]=x[y].replace(/^(. \| )?/,
+        t[Math.floor(Date.now()/1000)%t.length]+' | ')},1000)
       $name: The snippet code
       $description: For code from a file, enter the source file path
   - - Type: css
@@ -531,6 +531,8 @@ BOOL Wh_ModInit(void)
 
     Wh_SetFunctionHook((void*)CreateFileW, (void*)CreateFileWHook, (void**)&pOriginalCreateFileW);
     Wh_SetFunctionHook((void*)GetFileAttributesExW, (void*)GetFileAttributesExWHook, (void**)&pOriginalGetFileAttributesExW);
+
+    Wh_Log(L"Init done");
 
     return TRUE;
 }
