@@ -116,6 +116,10 @@ struct {
 
 bool g_useLegacyMd5Hash;
 
+thread_local bool g_creatingNewFiles;
+
+void EnsureNewFilesCreated();
+
 // https://gist.github.com/tomykaira/f0fd86b6c73063283afe550bc5d77594
 std::string Base64Encode(const BYTE* data, size_t in_len)
 {
@@ -213,6 +217,12 @@ HANDLE WINAPI CreateFileWHook(
     DWORD dwFlagsAndAttributes,
     HANDLE hTemplateFile)
 {
+    if (g_creatingNewFiles) {
+        return pOriginalCreateFileW(
+            lpFileName, dwDesiredAccess, dwShareMode, lpSecurityAttributes,
+            dwCreationDisposition, dwFlagsAndAttributes, hTemplateFile);
+    }
+
     PCWSTR compareFileName = lpFileName;
     if (compareFileName[0] == '\\' &&
         compareFileName[1] == '\\' &&
@@ -223,6 +233,7 @@ HANDLE WINAPI CreateFileWHook(
 
     for (size_t i = 0; i < VSCODE_FILE_COUNT; i++) {
         if (wcsicmp(compareFileName, g_vscodeFiles[i].filePath) == 0) {
+            EnsureNewFilesCreated();
             Wh_Log(L"lpFileName = %s", compareFileName);
             Wh_Log(L"=>");
             Wh_Log(L"lpFileName = %s", g_vscodeFiles[i].newFilePath);
@@ -246,6 +257,11 @@ using GetFileAttributesExW_t = decltype(&GetFileAttributesExW);
 GetFileAttributesExW_t pOriginalGetFileAttributesExW;
 BOOL WINAPI GetFileAttributesExWHook(LPCWSTR lpFileName, GET_FILEEX_INFO_LEVELS fInfoLevelId, LPVOID lpFileInformation)
 {
+    if (g_creatingNewFiles) {
+        return pOriginalGetFileAttributesExW(
+            lpFileName, fInfoLevelId, lpFileInformation);
+    }
+
     PCWSTR compareFileName = lpFileName;
     if (compareFileName[0] == '\\' &&
         compareFileName[1] == '\\' &&
@@ -256,6 +272,7 @@ BOOL WINAPI GetFileAttributesExWHook(LPCWSTR lpFileName, GET_FILEEX_INFO_LEVELS 
 
     for (size_t i = 0; i < VSCODE_FILE_COUNT; i++) {
         if (wcsicmp(compareFileName, g_vscodeFiles[i].filePath) == 0) {
+            EnsureNewFilesCreated();
             Wh_Log(L"lpFileName = %s", compareFileName);
             Wh_Log(L"=>");
             Wh_Log(L"lpFileName = %s", g_vscodeFiles[i].newFilePath);
@@ -472,6 +489,48 @@ std::string CreateNewProductFile(WCHAR sourceFilePath[MAX_PATH], WCHAR targetFil
     return fileHash;
 }
 
+void EnsureNewFilesCreated()
+{
+    [[maybe_unused]] static bool created = [] {
+    g_creatingNewFiles = true;
+    Wh_Log(L"Creating new VSCode files");
+
+    // Detect hash algorithm from product.json before computing any hashes.
+    // MD5 hashes are ~22 base64 chars, SHA256 hashes are ~43 base64 chars.
+    {
+        std::ifstream input(
+            g_vscodeFiles[VSCODE_FILE_PRODUCT_JSON].filePath);
+        std::string content((std::istreambuf_iterator<char>(input)),
+                            std::istreambuf_iterator<char>());
+        // Match a hash value for one of the known file paths.
+        std::regex hashRegex(
+            R"re("vs/workbench/workbench\.desktop\.main\.js"\s*:\s*"([A-Za-z0-9+/]+)")re");
+        std::smatch match;
+        if (std::regex_search(content, match, hashRegex)) {
+            std::string hash = match[1].str();
+            Wh_Log(L"Existing hash length: %zu", hash.size());
+            // base64(md5) = 22 chars, base64(sha256) = 43 chars.
+            g_useLegacyMd5Hash = hash.size() <= 30;
+        }
+    }
+
+    for (size_t i = 0; i < VSCODE_FILE_COUNT; i++) {
+        if (i != VSCODE_FILE_PRODUCT_JSON) {
+            g_vscodeFiles[i].newFileHash = CreateNewVscodeFile(
+                g_vscodeFileTypes[i], g_vscodeFiles[i].filePath,
+                g_vscodeFiles[i].newFilePath);
+        }
+    }
+
+    CreateNewProductFile(
+        g_vscodeFiles[VSCODE_FILE_PRODUCT_JSON].filePath,
+        g_vscodeFiles[VSCODE_FILE_PRODUCT_JSON].newFilePath);
+
+    g_creatingNewFiles = false;
+    return true;
+    }();
+}
+
 BOOL Wh_ModInit(void)
 {
     Wh_Log(L"Init");
@@ -495,39 +554,9 @@ BOOL Wh_ModInit(void)
         }
     }
 
-    // Detect hash algorithm from product.json before computing any hashes.
-    // MD5 hashes are ~22 base64 chars, SHA256 hashes are ~43 base64 chars.
-    {
-        WCHAR productJsonPath[MAX_PATH];
-        PathCombine(productJsonPath, basePath,
-                    g_vscodeFilePaths[VSCODE_FILE_PRODUCT_JSON]);
-        std::ifstream input(productJsonPath);
-        std::string content((std::istreambuf_iterator<char>(input)),
-                            std::istreambuf_iterator<char>());
-        // Match a hash value for one of the known file paths.
-        std::regex hashRegex(
-            R"re("vs/workbench/workbench\.desktop\.main\.js"\s*:\s*"([A-Za-z0-9+/]+)")re");
-        std::smatch match;
-        if (std::regex_search(content, match, hashRegex)) {
-            std::string hash = match[1].str();
-            Wh_Log(L"Existing hash length: %zu", hash.size());
-            // base64(md5) = 22 chars, base64(sha256) = 43 chars.
-            g_useLegacyMd5Hash = hash.size() <= 30;
-        }
-    }
-
     for (size_t i = 0; i < VSCODE_FILE_COUNT; i++) {
         PathCombine(g_vscodeFiles[i].filePath, basePath, g_vscodeFilePaths[i]);
-
-        if (i != VSCODE_FILE_PRODUCT_JSON) {
-            g_vscodeFiles[i].newFileHash = CreateNewVscodeFile(
-                g_vscodeFileTypes[i], g_vscodeFiles[i].filePath, g_vscodeFiles[i].newFilePath);
-        }
     }
-
-    CreateNewProductFile(
-        g_vscodeFiles[VSCODE_FILE_PRODUCT_JSON].filePath,
-        g_vscodeFiles[VSCODE_FILE_PRODUCT_JSON].newFilePath);
 
     Wh_SetFunctionHook((void*)CreateFileW, (void*)CreateFileWHook, (void**)&pOriginalCreateFileW);
     Wh_SetFunctionHook((void*)GetFileAttributesExW, (void*)GetFileAttributesExWHook, (void**)&pOriginalGetFileAttributesExW);
