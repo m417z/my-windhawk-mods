@@ -2,7 +2,7 @@
 // @id              vscode-tweaker
 // @name            VSCode Tweaker
 // @description     Tweak Microsoft Visual Studio Code by injecting custom JavaScript and CSS code
-// @version         1.0.1
+// @version         1.0.2
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
@@ -114,6 +114,8 @@ struct {
     std::string newFileHash;
 } g_vscodeFiles[VSCODE_FILE_COUNT];
 
+bool g_useLegacyMd5Hash;
+
 // https://gist.github.com/tomykaira/f0fd86b6c73063283afe550bc5d77594
 std::string Base64Encode(const BYTE* data, size_t in_len)
 {
@@ -154,10 +156,11 @@ std::string Base64Encode(const BYTE* data, size_t in_len)
     return ret;
 }
 
-// Calculates base64(md5(contents))
+// Calculates base64(md5(contents)) or base64(sha256(contents))
+// depending on the VSCode version (detected via g_useLegacyMd5Hash).
 // Based on: https://github.com/DownWithUp/SHA-ME
 // VSCode reference:
-// computeChecksum in build\gulpfile.vscode.js
+// computeChecksum in build\gulpfile.vscode.ts
 std::string FileHash(PCWSTR lpszFile)
 {
     HCRYPTPROV	hProv;
@@ -165,7 +168,9 @@ std::string FileHash(PCWSTR lpszFile)
     HANDLE		hFile;
     DWORD		dwBytesRead;
     BYTE		bReadFile[0x512];
-    BYTE		bHash[16];
+    ALG_ID      algId = g_useLegacyMd5Hash ? CALG_MD5 : CALG_SHA_256;
+    DWORD       hashSize = g_useLegacyMd5Hash ? 16 : 32;
+    BYTE		bHash[32];
     std::string ret;
 
     hFile = CreateFile(lpszFile, FILE_READ_ACCESS, FILE_SHARE_READ, NULL, OPEN_EXISTING, 0, NULL);
@@ -176,7 +181,7 @@ std::string FileHash(PCWSTR lpszFile)
         CloseHandle(hFile);
         return ret;
     }
-    if (!CryptCreateHash(hProv, CALG_MD5, 0, 0, &hHash)) {
+    if (!CryptCreateHash(hProv, algId, 0, 0, &hHash)) {
         CloseHandle(hFile);
         CryptReleaseContext(hProv, 0);
         return ret;
@@ -187,9 +192,9 @@ std::string FileHash(PCWSTR lpszFile)
         }
         CryptHashData(hHash, bReadFile, dwBytesRead, 0);
     }
-    dwBytesRead = sizeof(bHash); // Repurpose variable
+    dwBytesRead = hashSize;
     if (CryptGetHashParam(hHash, HP_HASHVAL, bHash, &dwBytesRead, 0)) {
-        ret = Base64Encode(bHash, sizeof(bHash));
+        ret = Base64Encode(bHash, hashSize);
     }
     CryptReleaseContext(hProv, 0);
     CryptDestroyHash(hHash);
@@ -487,6 +492,27 @@ BOOL Wh_ModInit(void)
         if (GetFileAttributes(candidatePath) != INVALID_FILE_ATTRIBUTES) {
             Wh_Log(L"Using version ID subfolder: %s", versionId);
             wcscpy_s(basePath, candidatePath);
+        }
+    }
+
+    // Detect hash algorithm from product.json before computing any hashes.
+    // MD5 hashes are ~22 base64 chars, SHA256 hashes are ~43 base64 chars.
+    {
+        WCHAR productJsonPath[MAX_PATH];
+        PathCombine(productJsonPath, basePath,
+                    g_vscodeFilePaths[VSCODE_FILE_PRODUCT_JSON]);
+        std::ifstream input(productJsonPath);
+        std::string content((std::istreambuf_iterator<char>(input)),
+                            std::istreambuf_iterator<char>());
+        // Match a hash value for one of the known file paths.
+        std::regex hashRegex(
+            R"re("vs/workbench/workbench\.desktop\.main\.js"\s*:\s*"([A-Za-z0-9+/]+)")re");
+        std::smatch match;
+        if (std::regex_search(content, match, hashRegex)) {
+            std::string hash = match[1].str();
+            Wh_Log(L"Existing hash length: %zu", hash.size());
+            // base64(md5) = 22 chars, base64(sha256) = 43 chars.
+            g_useLegacyMd5Hash = hash.size() <= 30;
         }
     }
 
