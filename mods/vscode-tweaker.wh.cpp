@@ -492,42 +492,43 @@ std::string CreateNewProductFile(WCHAR sourceFilePath[MAX_PATH], WCHAR targetFil
 void EnsureNewFilesCreated()
 {
     [[maybe_unused]] static bool created = [] {
-    g_creatingNewFiles = true;
-    Wh_Log(L"Creating new VSCode files");
+        g_creatingNewFiles = true;
+        struct Guard { ~Guard() { g_creatingNewFiles = false; } } guard;
 
-    // Detect hash algorithm from product.json before computing any hashes.
-    // MD5 hashes are ~22 base64 chars, SHA256 hashes are ~43 base64 chars.
-    {
-        std::ifstream input(
-            g_vscodeFiles[VSCODE_FILE_PRODUCT_JSON].filePath);
-        std::string content((std::istreambuf_iterator<char>(input)),
-                            std::istreambuf_iterator<char>());
-        // Match a hash value for one of the known file paths.
-        std::regex hashRegex(
-            R"re("vs/workbench/workbench\.desktop\.main\.js"\s*:\s*"([A-Za-z0-9+/]+)")re");
-        std::smatch match;
-        if (std::regex_search(content, match, hashRegex)) {
-            std::string hash = match[1].str();
-            Wh_Log(L"Existing hash length: %zu", hash.size());
-            // base64(md5) = 22 chars, base64(sha256) = 43 chars.
-            g_useLegacyMd5Hash = hash.size() <= 30;
+        Wh_Log(L"Creating new VSCode files");
+
+        // Detect hash algorithm from product.json before computing any hashes.
+        // MD5 hashes are ~22 base64 chars, SHA256 are ~43.
+        {
+            std::ifstream input(
+                g_vscodeFiles[VSCODE_FILE_PRODUCT_JSON].filePath);
+            std::string content((std::istreambuf_iterator<char>(input)),
+                                std::istreambuf_iterator<char>());
+            // Match a hash value for one of the known file paths.
+            std::regex hashRegex(
+                R"re("vs/workbench/workbench\.desktop\.main\.js"\s*:\s*"([A-Za-z0-9+/]+)")re");
+            std::smatch match;
+            if (std::regex_search(content, match, hashRegex)) {
+                std::string hash = match[1].str();
+                Wh_Log(L"Existing hash length: %zu", hash.size());
+                // base64(md5) = 22 chars, base64(sha256) = 43 chars.
+                g_useLegacyMd5Hash = hash.size() <= 30;
+            }
         }
-    }
 
-    for (size_t i = 0; i < VSCODE_FILE_COUNT; i++) {
-        if (i != VSCODE_FILE_PRODUCT_JSON) {
-            g_vscodeFiles[i].newFileHash = CreateNewVscodeFile(
-                g_vscodeFileTypes[i], g_vscodeFiles[i].filePath,
-                g_vscodeFiles[i].newFilePath);
+        for (size_t i = 0; i < VSCODE_FILE_COUNT; i++) {
+            if (i != VSCODE_FILE_PRODUCT_JSON) {
+                g_vscodeFiles[i].newFileHash = CreateNewVscodeFile(
+                    g_vscodeFileTypes[i], g_vscodeFiles[i].filePath,
+                    g_vscodeFiles[i].newFilePath);
+            }
         }
-    }
 
-    CreateNewProductFile(
-        g_vscodeFiles[VSCODE_FILE_PRODUCT_JSON].filePath,
-        g_vscodeFiles[VSCODE_FILE_PRODUCT_JSON].newFilePath);
+        CreateNewProductFile(
+            g_vscodeFiles[VSCODE_FILE_PRODUCT_JSON].filePath,
+            g_vscodeFiles[VSCODE_FILE_PRODUCT_JSON].newFilePath);
 
-    g_creatingNewFiles = false;
-    return true;
+        return true;
     }();
 }
 
