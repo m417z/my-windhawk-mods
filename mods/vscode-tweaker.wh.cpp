@@ -2,7 +2,7 @@
 // @id              vscode-tweaker
 // @name            VSCode Tweaker
 // @description     Tweak Microsoft Visual Studio Code by injecting custom JavaScript and CSS code
-// @version         1.0.2
+// @version         1.1
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
@@ -561,8 +561,6 @@ BOOL Wh_ModInit(void)
 
     Wh_SetFunctionHook((void*)CreateFileW, (void*)CreateFileWHook, (void**)&pOriginalCreateFileW);
     Wh_SetFunctionHook((void*)GetFileAttributesExW, (void*)GetFileAttributesExWHook, (void**)&pOriginalGetFileAttributesExW);
-
-    Wh_Log(L"Init done");
 
     return TRUE;
 }
