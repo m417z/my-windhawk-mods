@@ -33,9 +33,9 @@ project by Valentin Radu.
 
 ## ⚠ Important usage note ⚠
 
-In order to use this mod, you must allow Windhawk to inject into the **dwm.exe**
-system process. To do so, add it to the process inclusion list in the advanced
-settings. If you do not do this, it will silently fail to inject.
+This mod needs to hook into `dwm.exe` to work. Please navigate to Windhawk's
+Settings > Advanced settings > More advanced settings > Process inclusion list,
+and make sure that `dwm.exe` is in the list.
 
 ![Advanced settings screenshot](https://i.imgur.com/LRhREtJ.png)
 */
