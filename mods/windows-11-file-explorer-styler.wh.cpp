@@ -4464,7 +4464,7 @@ HRESULT WINAPI DwmExtendFrameIntoClientArea_Hook(HWND hWnd,
         g_settings.backgroundTranslucentEffect.value_or(
             g_themeBackgroundTranslucentEffect);
 
-    if (backgroundTranslucentEffect == BackgroundTranslucentEffect::kNone ||
+    if (backgroundTranslucentEffect == BackgroundTranslucentEffect::kDefault ||
         g_settings.backgroundTranslucentEffectRegion !=
             BackgroundTranslucentEffectRegion::kEntireWindow) {
         return original();
@@ -4486,7 +4486,7 @@ void ApplyBackgroundTranslucentEffect(
         effectToApply.value_or(g_settings.backgroundTranslucentEffect.value_or(
             g_themeBackgroundTranslucentEffect));
 
-    if (effect == BackgroundTranslucentEffect::kNone) {
+    if (effect == BackgroundTranslucentEffect::kDefault) {
         if (!RemoveProp(hWnd, kBackgroundTranslucentEffectAppliedKey)) {
             return;
         }
@@ -4497,7 +4497,7 @@ void ApplyBackgroundTranslucentEffect(
     Wh_Log(L"Applying background translucent effect %d for %08X",
            static_cast<int>(effect), (DWORD)(ULONG_PTR)hWnd);
 
-    if (effect != BackgroundTranslucentEffect::kNone &&
+    if (effect != BackgroundTranslucentEffect::kDefault &&
         g_settings.backgroundTranslucentEffectRegion ==
             BackgroundTranslucentEffectRegion::kEntireWindow) {
         MARGINS margins = {-1, -1, -1, -1};
