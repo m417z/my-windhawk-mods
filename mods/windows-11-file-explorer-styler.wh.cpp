@@ -4448,6 +4448,15 @@ HRESULT WINAPI DwmSetWindowAttribute_Hook(HWND hWnd,
                                           &backdropType, sizeof(backdropType));
 }
 
+BackgroundTranslucentEffect GetEffectiveBackgroundTranslucentEffect() {
+    if (FindAtom(L"WindhawkFileExplorerStylerNoBackgroundEffect")) {
+        return BackgroundTranslucentEffect::kDefault;
+    }
+
+    return g_settings.backgroundTranslucentEffect.value_or(
+        g_themeBackgroundTranslucentEffect);
+}
+
 using DwmExtendFrameIntoClientArea_t = decltype(&DwmExtendFrameIntoClientArea);
 DwmExtendFrameIntoClientArea_t DwmExtendFrameIntoClientArea_Original;
 HRESULT WINAPI DwmExtendFrameIntoClientArea_Hook(HWND hWnd,
@@ -4461,9 +4470,7 @@ HRESULT WINAPI DwmExtendFrameIntoClientArea_Hook(HWND hWnd,
     }
 
     auto backgroundTranslucentEffect =
-        g_settings.backgroundTranslucentEffect.value_or(
-            g_themeBackgroundTranslucentEffect);
-
+        GetEffectiveBackgroundTranslucentEffect();
     if (backgroundTranslucentEffect == BackgroundTranslucentEffect::kDefault ||
         g_settings.backgroundTranslucentEffectRegion !=
             BackgroundTranslucentEffectRegion::kEntireWindow) {
@@ -4483,9 +4490,7 @@ void ApplyBackgroundTranslucentEffect(
         L"windhawk_background_effect-" WH_MOD_ID;
 
     auto effect =
-        effectToApply.value_or(g_settings.backgroundTranslucentEffect.value_or(
-            g_themeBackgroundTranslucentEffect));
-
+        effectToApply.value_or(GetEffectiveBackgroundTranslucentEffect());
     if (effect == BackgroundTranslucentEffect::kDefault) {
         if (!RemoveProp(hWnd, kBackgroundTranslucentEffectAppliedKey)) {
             return;
