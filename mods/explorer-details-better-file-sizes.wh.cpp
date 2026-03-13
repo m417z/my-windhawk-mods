@@ -1,7 +1,7 @@
 // ==WindhawkMod==
 // @id              explorer-details-better-file-sizes
 // @name            Better file sizes in Explorer details
-// @description     Optional improvements: show folder sizes, use MB/GB for large files (by default, all sizes are shown in KBs), use IEC terms (such as KiB instead of KB)
+// @description     Enhances file size display in Explorer details with folder sizes, human-readable units (MB/GB), and optional IEC notation (KiB/MiB)
 // @version         1.5
 // @author          m417z
 // @github          https://github.com/m417z
