@@ -628,12 +628,9 @@ const Theme g_themeNoRecommendedSection_variant_ClassicStartMenu = {{
 }};
 
 const Theme g_themeSideBySide = {{
-    ThemeTargetStyles{L"StartDocked.PowerOptionsView", {
-        L"Margin=-740,0,0,0"}},
-    ThemeTargetStyles{L"StartDocked.UserTileView", {
-        L"Visibility=Collapsed"}},
     ThemeTargetStyles{L"StartMenu.PinnedList", {
-        L"MaxHeight=275"}},
+        L"MinHeight=420",
+        L"MaxHeight=420"}},
     ThemeTargetStyles{L"StartMenu.ExpandedFolderList > Grid > Border", {
         L"Margin=-40,0,40,0",
         L"Width=325"}},
@@ -651,14 +648,16 @@ const Theme g_themeSideBySide = {{
         L"Margin=0,-70,0,0"}},
     ThemeTargetStyles{L"GridView#PinnedList", {
         L"MaxWidth=480",
-        L"RenderTransform:=<TranslateTransform X=\"-145\" Y=\"800\"/>"}},
+        L"RenderTransform:=<TranslateTransform X=\"-145\" Y=\"710\"/>",
+        L"MinHeight=420",
+        L"MaxHeight=420"}},
     ThemeTargetStyles{L"GridView#AllAppsGrid > Border > ScrollViewer > Border > Grid > ScrollContentPresenter > ItemsPresenter > ItemsWrapGrid", {
         L"Width=280",
         L"Margin=55,12,-55,0"}},
     ThemeTargetStyles{L"GridView#AllAppsGrid > Border > ScrollViewer > Border > Grid > ScrollContentPresenter > ItemsPresenter", {
         L"RenderTransform:=<TranslateTransform Y=\"-795\"/>"}},
     ThemeTargetStyles{L"Microsoft.UI.Xaml.Controls.DropDownButton", {
-        L"Margin=-60,355,60,-355",
+        L"Margin=-60,170,60,-170",
         L"FontWeight=SemiBold",
         L"Height=32",
         L"Width=200",
@@ -678,7 +677,7 @@ const Theme g_themeSideBySide = {{
         L"TextLineBounds=0",
         L"HorizontalAlignment=1"}},
     ThemeTargetStyles{L"Grid#TopLevelSuggestionsRoot", {
-        L"RenderTransform:=<TranslateTransform X=\"-160\" Y=\"990\"/>",
+        L"RenderTransform:=<TranslateTransform X=\"-160\" Y=\"800\"/>",
         L"Width=450",
         L"MinHeight=129",
         L"BorderThickness=0,1,0,0",
@@ -687,8 +686,8 @@ const Theme g_themeSideBySide = {{
         L"RenderTransform:=<TranslateTransform X=\"-50\" />"}},
     ThemeTargetStyles{L"Button#ShowMoreSuggestionsButton", {
         L"RenderTransform:=<TranslateTransform X=\"50\" />"}},
-    ThemeTargetStyles{L"GridView#AllAppsGrid > Border > ScrollViewer > Border > Grid > ScrollContentPresenter > ItemsPresenter > ItemsWrapGrid ", {
-        L"Margin=485,360,0,0"}},
+    ThemeTargetStyles{L"GridView#AllAppsGrid > Border > ScrollViewer > Border > Grid > ScrollContentPresenter > ItemsPresenter > ItemsWrapGrid", {
+        L"Margin=485,175,0,0"}},
     ThemeTargetStyles{L"GridView#RecommendedList > Border > ScrollViewer > Border > Grid > ScrollContentPresenter > ItemsPresenter > ItemsWrapGrid > GridViewItem > Border", {
         L"MaxWidth=185",
         L"HorizontalAlignment=2"}},
@@ -705,7 +704,7 @@ const Theme g_themeSideBySide = {{
     ThemeTargetStyles{L"Grid#MainMenu > Grid#MainContent > Grid", {
         L"Canvas.ZIndex=1"}},
     ThemeTargetStyles{L"Windows.UI.Xaml.Controls.GridView#PinnedList > Border > Windows.UI.Xaml.Controls.ScrollViewer", {
-        L" MaxHeight=260",
+        L"MaxHeight=260",
         L"ScrollViewer.VerticalScrollMode=2"}},
 }};
 
@@ -773,10 +772,11 @@ const Theme g_themeSideBySide_variant_ClassicStartMenu = {{
 }};
 
 const Theme g_themeSideBySide2 = {{
-    ThemeTargetStyles{L"StartDocked.PowerOptionsView", {
-        L"Margin=-740,0,0,0"}},
-    ThemeTargetStyles{L"StartDocked.UserTileView", {
-        L"Visibility=Collapsed"}},
+    ThemeTargetStyles{L"StartDocked.NavigationPaneView#UserControl > Grid#RootPanel", {
+        L"FlowDirection=1"}},
+    ThemeTargetStyles{L"StartMenu.PinnedList", {
+        L"MinHeight=504",
+        L"MaxHeight=504"}},
     ThemeTargetStyles{L"StartMenu.ExpandedFolderList > Grid > Border", {
         L"Margin=-40,0,40,0",
         L"Width=325"}},
@@ -794,14 +794,16 @@ const Theme g_themeSideBySide2 = {{
         L"Margin=0,-70,0,0"}},
     ThemeTargetStyles{L"GridView#PinnedList", {
         L"MaxWidth=480",
-        L"RenderTransform:=<TranslateTransform X=\"345\" Y=\"790\"/>"}},
+        L"RenderTransform:=<TranslateTransform X=\"345\" Y=\"710\"/>",
+        L"MinHeight=420",
+        L"MaxHeight=420"}},
     ThemeTargetStyles{L"GridView#AllAppsGrid > Border > ScrollViewer > Border > Grid > ScrollContentPresenter > ItemsPresenter > ItemsWrapGrid", {
         L"Width=280",
         L"Margin=-55,12,55,0"}},
     ThemeTargetStyles{L"GridView#AllAppsGrid > Border > ScrollViewer > Border > Grid > ScrollContentPresenter > ItemsPresenter", {
         L"RenderTransform:=<TranslateTransform X=\"-200\" Y=\"-760\"/>"}},
     ThemeTargetStyles{L"Microsoft.UI.Xaml.Controls.DropDownButton", {
-        L"Margin=-440,400,400,-440",
+        L"Margin=-390,48,390,-48",
         L"FontWeight=SemiBold",
         L"Height=32",
         L"Width=200"}},
@@ -809,7 +811,7 @@ const Theme g_themeSideBySide2 = {{
         L"Margin=0,-35,0,35"}},
     ThemeTargetStyles{L"TextBlock#PinnedListHeaderText", {
         L"Visibility=Visible",
-        L"RenderTransform:=<TranslateTransform X=\"485\" Y=\"788.5\"/>",
+        L"RenderTransform:=<TranslateTransform X=\"485\" Y=\"753\"/>",
         L"FontWeight=SemiBold"}},
     ThemeTargetStyles{L"StartMenu.StartHome", {
         L"RenderTransform:=<TranslateTransform Y=\"-1\"/>"}},
@@ -820,17 +822,18 @@ const Theme g_themeSideBySide2 = {{
         L"TextLineBounds=0",
         L"HorizontalAlignment=1"}},
     ThemeTargetStyles{L"Grid#TopLevelSuggestionsRoot", {
-        L"RenderTransform:=<TranslateTransform X=\"360\" Y=\"880\"/>",
+        L"RenderTransform:=<TranslateTransform X=\"360\" Y=\"700\"/>",
         L"Width=450",
+        L"MinHeight=129",
         L"BorderThickness=0,1,0,0",
         L"BorderBrush=#22BBBBBB"}},
     ThemeTargetStyles{L"TextBlock#TopLevelSuggestionsListHeaderText", {
         L"RenderTransform:=<TranslateTransform X=\"-50\" />"}},
     ThemeTargetStyles{L"Button#ShowMoreSuggestionsButton", {
         L"RenderTransform:=<TranslateTransform X=\"50\" />"}},
-    ThemeTargetStyles{L"GridView#AllAppsGrid > Border > ScrollViewer > Border > Grid > ScrollContentPresenter > ItemsPresenter > ItemsWrapGrid ", {
+    ThemeTargetStyles{L"GridView#AllAppsGrid > Border > ScrollViewer > Border > Grid > ScrollContentPresenter > ItemsPresenter > ItemsWrapGrid", {
         L"RenderTransform:=<TranslateTransform X=\"-40\" />",
-        L"Margin=0,420,0,0"}},
+        L"Margin=0,50,0,0"}},
     ThemeTargetStyles{L"ScrollViewer", {
         L"ScrollViewer.VerticalScrollMode=2"}},
     ThemeTargetStyles{L"Windows.UI.Xaml.Controls.ItemsWrapGrid", {
@@ -974,7 +977,8 @@ const Theme g_themeSideBySideMinimal = {{
     ThemeTargetStyles{L"StartDocked.UserTileView", {
         L"Visibility=Collapsed"}},
     ThemeTargetStyles{L"StartMenu.PinnedList", {
-        L"MinHeight=504"}},
+        L"MinHeight=504",
+        L"MaxHeight=504"}},
     ThemeTargetStyles{L"StartMenu.ExpandedFolderList > Grid > Border", {
         L"Margin=-40,0,40,0",
         L"Width=325"}},
@@ -2186,7 +2190,7 @@ const Theme g_themeWindows11_Metro10 = {{
     ThemeTargetStyles{L"GridView#AllAppsGrid > Border > ScrollViewer > Border > Grid > ScrollContentPresenter > ItemsPresenter > ItemsWrapGrid", {
         L"Visibility=Visible",
         L"Width=300",
-        L"Margin=-150,-632,150,0"}},
+        L"Margin=-150,-470,150,0"}},
     ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Button#CloseAllAppsButton", {
         L"Visibility=Collapsed"}},
     ThemeTargetStyles{L"Grid#MainMenu", {
@@ -2256,7 +2260,7 @@ const Theme g_themeWindows11_Metro10 = {{
         L"Margin=165,0,-165,0",
         L"Width=300"}},
     ThemeTargetStyles{L"Grid#AllListHeading", {
-        L"RenderTransform:=<TranslateTransform X=\"-325\" Y=\"-636\"/>"}},
+        L"RenderTransform:=<TranslateTransform X=\"-334\" Y=\"-475\"/>"}},
     ThemeTargetStyles{L"Grid#TopLevelSuggestionsListHeader", {
         L"RenderTransform:=<TranslateTransform X=\"252\" Y=\"-58\" />"}},
     ThemeTargetStyles{L"Grid#TopLevelHeader > Grid > TextBlock", {
@@ -2319,7 +2323,7 @@ const Theme g_themeWindows11_Metro10 = {{
         L"Height=57",
         L"Background@PointerOver:=<RevealBorderBrush Color=\"Transparent\" TargetTheme=\"1\" Opacity=\"1\"/>",
         L"BorderBrush@PointerOver:=<RevealBorderBrush Color=\"Transparent\" TargetTheme=\"1\" Opacity=\"1\"/>"}},
-    ThemeTargetStyles{L"Button#FolderPlate ", {
+    ThemeTargetStyles{L"Button#FolderPlate", {
         L"Margin=4,-1,-4,0"}},
     ThemeTargetStyles{L"Grid#MainMenu > Grid#MainContent > Grid", {
         L"Canvas.ZIndex=1"}},
