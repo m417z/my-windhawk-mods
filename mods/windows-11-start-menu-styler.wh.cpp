@@ -321,8 +321,7 @@ from the **TranslucentTB** project.
   - LegacyFluent: LegacyFluent
   - OnlySearch: OnlySearch
   - WindowGlass: WindowGlass (for the redesigned Start menu)
-  - WindowGlass_variant_Minimal: >-
-      WindowGlass (Minimal) (for the redesigned Start menu)
+  - WindowGlass_variant_Minimal: WindowGlass (Minimal) (legacy, use WindowGlass)
   - Fluid: Fluid (for the redesigned Start menu)
   - Oversimplified&Accentuated: Oversimplified&Accentuated
   - LiquidGlass: LiquidGlass (for the redesigned Start menu)
