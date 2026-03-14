@@ -6925,7 +6925,11 @@ void SetOrClearValue(DependencyObject elementDo,
 
     if (value == DependencyProperty::UnsetValue()) {
         Wh_Log(L"Clearing property value");
-        elementDo.ClearValue(property);
+        try {
+            elementDo.ClearValue(property);
+        } catch (winrt::hresult_error const& ex) {
+            Wh_Log(L"Error %08X: %s", ex.code(), ex.message().c_str());
+        }
         return;
     }
 
@@ -7786,8 +7790,12 @@ void RestoreCustomizationsForVisualStateGroup(
         for (const auto& [property, state] :
              elementCustomizationStateForVisualStateGroup
                  .propertyCustomizationStates) {
-            element.UnregisterPropertyChangedCallback(
-                property, state.propertyChangedToken);
+            try {
+                element.UnregisterPropertyChangedCallback(
+                    property, state.propertyChangedToken);
+            } catch (winrt::hresult_error const& ex) {
+                Wh_Log(L"Error %08X: %s", ex.code(), ex.message().c_str());
+            }
 
             if (state.originalValue) {
                 SetOrClearValue(element, property, *state.originalValue);
@@ -7800,9 +7808,13 @@ void RestoreCustomizationsForVisualStateGroup(
                                     : nullptr;
     if (visualStateGroupIter && elementCustomizationStateForVisualStateGroup
                                     .visualStateGroupCurrentStateChangedToken) {
-        visualStateGroupIter.CurrentStateChanged(
-            elementCustomizationStateForVisualStateGroup
-                .visualStateGroupCurrentStateChangedToken);
+        try {
+            visualStateGroupIter.CurrentStateChanged(
+                elementCustomizationStateForVisualStateGroup
+                    .visualStateGroupCurrentStateChangedToken);
+        } catch (winrt::hresult_error const& ex) {
+            Wh_Log(L"Error %08X: %s", ex.code(), ex.message().c_str());
+        }
     }
 }
 
