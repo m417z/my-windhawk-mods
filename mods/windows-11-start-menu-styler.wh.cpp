@@ -10854,17 +10854,27 @@ BOOL Wh_ModInit() {
 
     if (g_disableNewStartMenuLayout !=
         DisableNewStartMenuLayout::windowsDefault) {
-        // Throttle to avoid exiting in a loop if something goes wrong.
-        WCHAR lastExitTickCountKey[64];
-        swprintf_s(lastExitTickCountKey, L"lastExitTickCount_%d",
-                   static_cast<int>(g_target));
-        DWORD lastTickCount = (DWORD)Wh_GetIntValue(lastExitTickCountKey, 0);
-        DWORD currentTickCount = GetTickCount();
-        if (currentTickCount - lastTickCount > 10 * 1000) {
-            Wh_SetIntValue(lastExitTickCountKey, currentTickCount);
-            // Exit to have the new setting take effect. The process will be
-            // relaunched automatically.
-            ExitProcess(0);
+#ifdef _WIN64
+        const size_t OFFSET_SAME_TEB_FLAGS = 0x17EE;
+#else
+        const size_t OFFSET_SAME_TEB_FLAGS = 0x0FCA;
+#endif
+        bool isInitialThread =
+            *(USHORT*)((BYTE*)NtCurrentTeb() + OFFSET_SAME_TEB_FLAGS) & 0x0400;
+        if (!isInitialThread) {
+            // Throttle to avoid exiting in a loop if something goes wrong.
+            WCHAR lastExitTickCountKey[64];
+            swprintf_s(lastExitTickCountKey, L"lastExitTickCount_%d",
+                       static_cast<int>(g_target));
+            DWORD lastTickCount =
+                (DWORD)Wh_GetIntValue(lastExitTickCountKey, 0);
+            DWORD currentTickCount = GetTickCount();
+            if (currentTickCount - lastTickCount > 10 * 1000) {
+                Wh_SetIntValue(lastExitTickCountKey, currentTickCount);
+                // Exit to have the new setting take effect. The process will be
+                // relaunched automatically.
+                ExitProcess(0);
+            }
         }
     }
 
