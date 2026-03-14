@@ -90,9 +90,11 @@ Everblush](https://github.com/ramensoftware/windows-11-start-menu-styling-guide/
 \
 SunValley](https://github.com/ramensoftware/windows-11-start-menu-styling-guide/blob/main/Themes/SunValley/README.md)
 
-[![21996](https://raw.githubusercontent.com/ramensoftware/windows-11-start-menu-styling-guide/main/Themes/21996/screenshot-small.png)
+[![SunValley
+(Legacy)](https://raw.githubusercontent.com/ramensoftware/windows-11-start-menu-styling-guide/main/Themes/21996/screenshot-small.png)
 \
-21996](https://github.com/ramensoftware/windows-11-start-menu-styling-guide/blob/main/Themes/21996/README.md)
+SunValley
+(Legacy)](https://github.com/ramensoftware/windows-11-start-menu-styling-guide/blob/main/Themes/21996/README.md)
 
 [![UniMenu](https://raw.githubusercontent.com/ramensoftware/windows-11-start-menu-styling-guide/main/Themes/UniMenu/screenshot-small.png)
 \
@@ -294,7 +296,7 @@ from the **TranslucentTB** project.
   - Windows11_Metro10Minimal: Windows11_Metro10Minimal
   - Everblush: Everblush
   - SunValley: SunValley
-  - 21996: "21996"
+  - 21996: SunValley (Legacy)
   - UniMenu: UniMenu
   - LegacyFluent: LegacyFluent
   - OnlySearch: OnlySearch
