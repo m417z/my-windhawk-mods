@@ -82,7 +82,8 @@ Lucent](https://github.com/ramensoftware/windows-11-taskbar-styling-guide/blob/m
 \
 SunValley](https://github.com/ramensoftware/windows-11-taskbar-styling-guide/blob/main/Themes/SunValley/README.md)
 
-[![21996Taskbar](https://raw.githubusercontent.com/ramensoftware/windows-11-taskbar-styling-guide/main/Themes/21996Taskbar/screenshot.png)
+[![SunValley
+(Legacy)](https://raw.githubusercontent.com/ramensoftware/windows-11-taskbar-styling-guide/main/Themes/21996Taskbar/screenshot.png)
 \
 SunValley
 (Legacy)](https://github.com/ramensoftware/windows-11-taskbar-styling-guide/blob/main/Themes/21996Taskbar/README.md)
