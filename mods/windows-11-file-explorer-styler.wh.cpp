@@ -4412,6 +4412,15 @@ TargetWindowType GetTargetWindowType(HWND hWnd) {
     return TargetWindowType::None;
 }
 
+BackgroundTranslucentEffect GetEffectiveBackgroundTranslucentEffect() {
+    if (FindAtom(L"WindhawkFileExplorerStylerNoBackgroundEffect")) {
+        return BackgroundTranslucentEffect::kDefault;
+    }
+
+    return g_settings.backgroundTranslucentEffect.value_or(
+        g_themeBackgroundTranslucentEffect);
+}
+
 using DwmSetWindowAttribute_t = decltype(&DwmSetWindowAttribute);
 DwmSetWindowAttribute_t DwmSetWindowAttribute_Original;
 HRESULT WINAPI DwmSetWindowAttribute_Hook(HWND hWnd,
@@ -4433,8 +4442,7 @@ HRESULT WINAPI DwmSetWindowAttribute_Hook(HWND hWnd,
     }
 
     auto backgroundTranslucentEffect =
-        g_settings.backgroundTranslucentEffect.value_or(
-            g_themeBackgroundTranslucentEffect);
+        GetEffectiveBackgroundTranslucentEffect();
 
     int backdropType;
     switch (backgroundTranslucentEffect) {
@@ -4458,15 +4466,6 @@ HRESULT WINAPI DwmSetWindowAttribute_Hook(HWND hWnd,
 
     return DwmSetWindowAttribute_Original(hWnd, DWMWA_SYSTEMBACKDROP_TYPE,
                                           &backdropType, sizeof(backdropType));
-}
-
-BackgroundTranslucentEffect GetEffectiveBackgroundTranslucentEffect() {
-    if (FindAtom(L"WindhawkFileExplorerStylerNoBackgroundEffect")) {
-        return BackgroundTranslucentEffect::kDefault;
-    }
-
-    return g_settings.backgroundTranslucentEffect.value_or(
-        g_themeBackgroundTranslucentEffect);
 }
 
 using DwmExtendFrameIntoClientArea_t = decltype(&DwmExtendFrameIntoClientArea);
