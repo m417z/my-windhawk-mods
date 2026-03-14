@@ -172,6 +172,26 @@ Background:=<SolidColorBrush Color="{ThemeResource AutoAccent}" />
 
 The value will automatically update when the system accent color changes.
 
+### Style constants
+
+Style constants allow defining a value once and referencing it in multiple
+styles. Each entry contains a name and value, separated by `=`, for example:
+
+```
+mainColor=#fafad2
+```
+
+The constant can then be used in style definitions by prepending `$`, for
+example:
+
+```
+Fill=$mainColor
+Background:=<AcrylicBrush TintColor="$mainColor" TintOpacity="0.3" />
+```
+
+Some themes use style constants to allow easy customization. Refer to the
+theme page for details on which constants are available.
+
 ## XAML diagnostics consumer handling
 
 This mod uses XAML diagnostics to inspect and customize the File Explorer.
@@ -241,27 +261,18 @@ from the **TranslucentTB** project.
   $options:
   - "": File Explorer frame only
   - entireWindow: Entire window
+- styleConstants: [""]
+  $name: Style constants
+  $description: >-
+    Some themes support style constants for customization, such as colors. Refer
+    to the theme page for available constants. For technical details, refer to
+    the mod description.
 - controlStyles:
   - - target: ""
       $name: Target
     - styles: [""]
       $name: Styles
   $name: Control styles
-- styleConstants: [""]
-  $name: Style constants
-  $description: >-
-    Constants which can be defined once and used in multiple styles.
-
-    Each entry contains a style name and value, separated by '=', for example:
-
-    mainColor=#fafad2
-
-    The constant can then be used in style definitions by prepending '$', for
-    example:
-
-    Fill=$mainColor
-
-    Background:=<AcrylicBrush TintColor="$mainColor" TintOpacity="0.3" />
 - themeResourceVariables: [""]
   $name: Resource variables
   $description: >-

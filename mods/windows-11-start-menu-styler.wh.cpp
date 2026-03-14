@@ -200,34 +200,6 @@ TintColor="{ThemeResource SystemAccentColorDark1}" TintOpacity="0.5"/>`.
 Targets and styles starting with two slashes (`//`) are ignored. This can be
 useful for temporarily disabling a target or style.
 
-### Search WebView styles
-
-While the start menu uses WinUI for its user interface, most of the search
-content (all but the top search bar) is a WebView element. To style the search
-WebView, CSS targets and styles can be used. For example, to set a red
-background, the target `body` and the style `background: red !important` can be
-used.
-
-### Search WebView custom JavaScript code
-
-Custom JavaScript code can be injected into the search content WebView. One use
-case example is loading the [DOM
-Inspector](https://github.com/janmyler/DOM-inspector) script to inspect the
-search content elements:
-
-![Screenshot](https://i.imgur.com/19PL0ss.png)
-
-The following JavaScript code can be used to load a bundled version of DOM
-Inspector:
-
-```
-const s=document.createElement('script');s.setAttribute('src','https://m417z.github.io/DOM-inspector/acid-dom/bundled.js');document.head.appendChild(s);
-```
-
-To reset all side-effects of the injected scripts, clear the custom code in the
-mod settings and then terminate the search host process. It will be relaunched
-automatically by Windows.
-
 ### Resource variables
 
 Some variables, such as size and padding for various controls, colors, and
@@ -259,6 +231,54 @@ Background:=<SolidColorBrush Color="{ThemeResource AutoAccent}" />
 ```
 
 The value will automatically update when the system accent color changes.
+
+### Style constants
+
+Style constants allow defining a value once and referencing it in multiple
+styles. Each entry contains a name and value, separated by `=`, for example:
+
+```
+mainColor=#fafad2
+```
+
+The constant can then be used in style definitions by prepending `$`, for
+example:
+
+```
+Fill=$mainColor
+Background:=<AcrylicBrush TintColor="$mainColor" TintOpacity="0.3" />
+```
+
+Some themes use style constants to allow easy customization. Refer to the
+theme page for details on which constants are available.
+
+### Search WebView styles
+
+While the start menu uses WinUI for its user interface, most of the search
+content (all but the top search bar) is a WebView element. To style the search
+WebView, CSS targets and styles can be used. For example, to set a red
+background, the target `body` and the style `background: red !important` can be
+used.
+
+### Search WebView custom JavaScript code
+
+Custom JavaScript code can be injected into the search content WebView. One use
+case example is loading the [DOM
+Inspector](https://github.com/janmyler/DOM-inspector) script to inspect the
+search content elements:
+
+![Screenshot](https://i.imgur.com/19PL0ss.png)
+
+The following JavaScript code can be used to load a bundled version of DOM
+Inspector:
+
+```
+const s=document.createElement('script');s.setAttribute('src','https://m417z.github.io/DOM-inspector/acid-dom/bundled.js');document.head.appendChild(s);
+```
+
+To reset all side-effects of the injected scripts, clear the custom code in the
+mod settings and then terminate the search host process. It will be relaunched
+automatically by Windows.
 
 ## Implementation notes
 
@@ -318,6 +338,12 @@ from the **TranslucentTB** project.
   - 1: Disable new layout and Phone Link
   - disableNewLayoutKeepPhoneLink: Disable new layout but keep Phone Link
   - forceNewLayout: Force new layout (if available)
+- styleConstants: [""]
+  $name: Style constants
+  $description: >-
+    Some themes support style constants for customization, such as colors. Refer
+    to the theme page for available constants. For technical details, refer to
+    the mod description.
 - controlStyles:
   - - target: ""
       $name: Target
@@ -332,21 +358,6 @@ from the **TranslucentTB** project.
   $name: Search WebView styles
 - webContentCustomJs: ""
   $name: Search WebView custom JavaScript code
-- styleConstants: [""]
-  $name: Style constants
-  $description: >-
-    Constants which can be defined once and used in multiple styles.
-
-    Each entry contains a style name and value, separated by '=', for example:
-
-    mainColor=#fafad2
-
-    The constant can then be used in style definitions by prepending '$', for
-    example:
-
-    Fill=$mainColor
-
-    Background:=<AcrylicBrush TintColor="$mainColor" TintOpacity="0.3" />
 - themeResourceVariables: [""]
   $name: Resource variables
   $description: >-
