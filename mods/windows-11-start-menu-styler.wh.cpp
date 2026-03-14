@@ -2,7 +2,7 @@
 // @id              windows-11-start-menu-styler
 // @name            Windows 11 Start Menu Styler
 // @description     Customize the start menu with themes contributed by others or create your own
-// @version         1.3.3
+// @version         1.4
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
@@ -704,7 +704,7 @@ const Theme g_themeSideBySide = {{
     ThemeTargetStyles{L"Grid#MainMenu > Grid#MainContent > Grid", {
         L"Canvas.ZIndex=1"}},
     ThemeTargetStyles{L"Windows.UI.Xaml.Controls.GridView#PinnedList > Border > Windows.UI.Xaml.Controls.ScrollViewer", {
-                L"ScrollViewer.VerticalScrollMode=2"}},
+        L"ScrollViewer.VerticalScrollMode=2"}},
 }};
 
 const Theme g_themeSideBySide_variant_ClassicStartMenu = {{
@@ -10458,7 +10458,7 @@ bool StartStatsTimer() {
     static constexpr WCHAR kStatsBaseUrl[] =
         L"https://github.com/ramensoftware/"
         L"windows-11-start-menu-styling-guide/"
-        L"releases/download/stats-v2/";
+        L"releases/download/stats-v3/";
 
     ULONGLONG lastStatsTime = 0;
     Wh_GetBinaryValue(L"statsTimerLastTime", &lastStatsTime,
