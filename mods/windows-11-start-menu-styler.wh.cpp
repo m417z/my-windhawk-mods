@@ -314,7 +314,7 @@ from the **TranslucentTB** project.
     Allows to disable the new start menu layout which is incompatible with some
     themes.
   $options:
-  - 0: Don't disable (use Windows default)
+  - "": Don't disable (use Windows default)
   - 1: Disable new layout and Phone Link
   - disableNewLayoutKeepPhoneLink: Disable new layout but keep Phone Link
   - forceNewLayout: Force new layout (if available)
