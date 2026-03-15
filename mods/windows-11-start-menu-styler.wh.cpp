@@ -6557,17 +6557,34 @@ winrt::Windows::Foundation::IInspectable ReadLocalValueWithWorkaround(
             Wh_Log(L"Using GetValue workaround for AcrylicBorder background");
             getValueWorkaround = true;
         }
-    } else if (property == FrameworkElement::MaxHeightProperty()) {
-        auto grid = elementDo.try_as<Controls::Grid>();
-        if (grid && grid.Name() == L"FrameRoot") {
-            Wh_Log(L"Using GetValue workaround for FrameRoot MaxHeight");
-            getValueWorkaround = true;
-        }
-    } else if (property == FrameworkElement::WidthProperty()) {
-        auto grid = elementDo.try_as<Controls::Grid>();
-        if (grid && grid.Name() == L"MainMenu") {
-            Wh_Log(L"Using GetValue workaround for MainMenu Width");
-            getValueWorkaround = true;
+    } else {
+        // The properties below return null from ReadLocalValue for some reason.
+        struct {
+            DependencyProperty property;
+            std::wstring_view elementType;
+            std::wstring_view elementName;
+        } propertiesForWorkaround[] = {
+            {FrameworkElement::MaxHeightProperty(),
+             L"Windows.UI.Xaml.Controls.Grid", L"FrameRoot"},
+            {FrameworkElement::WidthProperty(),
+             L"Windows.UI.Xaml.Controls.Grid", L"MainMenu"},
+            {FrameworkElement::WidthProperty(),
+             L"Windows.UI.Xaml.Controls.GridView", L"PinnedList"},
+        };
+
+        auto element = elementDo.try_as<FrameworkElement>();
+        if (element) {
+            auto elementName = element.Name();
+            auto elementClassName = winrt::get_class_name(element);
+            for (const auto& [prop, type, name] : propertiesForWorkaround) {
+                if (property == prop && elementName == name &&
+                    elementClassName == type) {
+                    Wh_Log(L"Using GetValue workaround for %.*s",
+                           static_cast<int>(name.length()), name.data());
+                    getValueWorkaround = true;
+                    break;
+                }
+            }
         }
     }
 
