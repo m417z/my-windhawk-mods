@@ -2,7 +2,7 @@
 // @id              windows-11-file-explorer-styler
 // @name            Windows 11 File Explorer Styler
 // @description     Customize the File Explorer with themes contributed by others or create your own
-// @version         1.3
+// @version         1.4
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
@@ -192,6 +192,19 @@ Background:=<AcrylicBrush TintColor="$mainColor" TintOpacity="0.3" />
 Some themes use style constants to allow easy customization. Refer to the
 theme page for details on which constants are available.
 
+## Command bar button hiding
+
+You can hide specific buttons from the File Explorer command bar using the
+**Command bar button hiding** settings. The following buttons can be hidden:
+
+* **Rotate left** (`windows.rotate270.svg`)
+* **Rotate right** (`windows.rotate90.svg`)
+* **Set as desktop background** (`windows.setdesktopwallpaper.svg`)
+
+Buttons are identified by their SVG icon URI, which is language-independent.
+When a button is hidden, any orphaned separators adjacent to it are also
+collapsed automatically.
+
 ## XAML diagnostics consumer handling
 
 This mod uses XAML diagnostics to inspect and customize the File Explorer.
@@ -285,6 +298,15 @@ from the **TranslucentTB** project.
   $description: >-
     The height of the explorer frame container which includes the tabs, the
     address bar, and the command bar, set to zero to use the default height.
+- hideCommandBarRotateLeft: false
+  $name: Hide "Rotate left" button
+  $description: Hides the rotate-left button from the command bar.
+- hideCommandBarRotateRight: false
+  $name: Hide "Rotate right" button
+  $description: Hides the rotate-right button from the command bar.
+- hideCommandBarSetAsDesktopBackground: false
+  $name: Hide "Set as desktop background" button
+  $description: Hides the set-as-desktop-background button from the command bar.
 - xamlDiagnosticsHandling: alert
   $name: XAML diagnostics consumer handling
   $description: >-
@@ -781,6 +803,9 @@ struct {
     BackgroundTranslucentEffectRegion backgroundTranslucentEffectRegion;
     int explorerFrameContainerHeight;
     XamlDiagnosticsHandling xamlDiagnosticsHandling;
+    bool hideCommandBarRotateLeft;
+    bool hideCommandBarRotateRight;
+    bool hideCommandBarSetAsDesktopBackground;
 } g_settings;
 
 BackgroundTranslucentEffect g_themeBackgroundTranslucentEffect;
@@ -794,6 +819,9 @@ void ApplyCustomizations(InstanceHandle handle,
                          winrt::Microsoft::UI::Xaml::FrameworkElement element,
                          PCWSTR fallbackClassName);
 void CleanupCustomizations(InstanceHandle handle);
+
+// Set after the full include block where all WinRT types are available.
+static void (*g_cbHandleElementAdded)(VisualElement, winrt::Windows::Foundation::IInspectable) = nullptr;
 
 HMODULE GetCurrentModuleHandle() {
     HMODULE module;
@@ -946,6 +974,9 @@ HRESULT VisualTreeWatcher::OnVisualTreeChange(ParentChildRelation, VisualElement
         {
             Wh_Log(L"Skipping non-FrameworkElement");
         }
+
+        if (g_cbHandleElementAdded)
+            g_cbHandleElementAdded(element, inspectable);
     }
     else if (mutationType == Remove)
     {
@@ -1219,6 +1250,230 @@ namespace wge = winrt::Windows::Graphics::Effects;
 namespace muc = winrt::Microsoft::UI::Composition;
 namespace muxh = mux::Hosting;
 namespace awge = ABI::Windows::Graphics::Effects;
+
+////////////////////////////////////////////////////////////////////////////////
+// Command bar button hiding
+//
+// Buttons are identified by their SVG icon URI, which is language-independent.
+// Separator cleanup prevents orphaned separators when buttons are hidden.
+
+namespace muxc_cb = winrt::Microsoft::UI::Xaml::Controls;
+namespace muxm_cb = winrt::Microsoft::UI::Xaml::Media;
+
+static std::wstring CbGetButtonSvgUri(FrameworkElement element) {
+    try {
+        auto abb = element.try_as<muxc_cb::AppBarButton>();
+        if (!abb)
+            return L"";
+        auto icon = abb.Icon();
+        if (!icon)
+            return L"";
+        auto imageIcon = icon.try_as<muxc_cb::ImageIcon>();
+        if (!imageIcon)
+            return L"";
+        auto source = imageIcon.Source();
+        if (!source)
+            return L"";
+        auto svg = source.try_as<muxm_cb::Imaging::SvgImageSource>();
+        if (!svg)
+            return L"";
+        auto uri = svg.UriSource();
+        if (!uri)
+            return L"";
+        return std::wstring(uri.AbsoluteUri());
+    } catch (...) {}
+    return L"";
+}
+
+static bool CbShouldHideByIcon(const std::wstring& svgUri) {
+    if (svgUri.empty())
+        return false;
+    if (g_settings.hideCommandBarRotateLeft &&
+        svgUri.find(L"windows.rotate270.svg") != std::wstring::npos)
+        return true;
+    if (g_settings.hideCommandBarRotateRight &&
+        svgUri.find(L"windows.rotate90.svg") != std::wstring::npos)
+        return true;
+    if (g_settings.hideCommandBarSetAsDesktopBackground &&
+        svgUri.find(L"windows.setdesktopwallpaper.svg") != std::wstring::npos)
+        return true;
+    return false;
+}
+
+static void CbCleanupSeparators(FrameworkElement element) {
+    auto parent = muxm_cb::VisualTreeHelper::GetParent(element);
+    if (!parent)
+        return;
+
+    int count = muxm_cb::VisualTreeHelper::GetChildrenCount(parent);
+    UIElement lastSep = nullptr;
+    bool seenNonSep = false;
+
+    for (int i = 0; i < count; i++) {
+        auto child =
+            muxm_cb::VisualTreeHelper::GetChild(parent, i)
+                .try_as<UIElement>();
+        if (!child || child.Visibility() != Visibility::Visible)
+            continue;
+
+        std::wstring cn(winrt::get_class_name(child));
+        if (cn.find(L"AppBarSeparator") != std::wstring::npos) {
+            if (!seenNonSep || lastSep) {
+                child.Visibility(Visibility::Collapsed);
+            } else {
+                lastSep = child;
+            }
+        } else {
+            lastSep = nullptr;
+            seenNonSep = true;
+        }
+    }
+
+    if (lastSep)
+        lastSep.Visibility(Visibility::Collapsed);
+}
+
+static void CbReHideCallback(DependencyObject const& sender,
+                              DependencyProperty const&) {
+    auto el = sender.try_as<FrameworkElement>();
+    if (!el || el.Visibility() == Visibility::Collapsed)
+        return;
+
+    std::wstring uri = CbGetButtonSvgUri(el);
+    if (CbShouldHideByIcon(uri)) {
+        Wh_Log(L"[CmdBarHider] Re-hiding: %s", uri.c_str());
+        el.Visibility(Visibility::Collapsed);
+        CbCleanupSeparators(el);
+    }
+}
+
+static void CbHideButton(FrameworkElement fe, const std::wstring& reason) {
+    Wh_Log(L"[CmdBarHider] Hiding button: %s", reason.c_str());
+    fe.Visibility(Visibility::Collapsed);
+    CbCleanupSeparators(fe);
+    fe.RegisterPropertyChangedCallback(UIElement::VisibilityProperty(),
+                                        CbReHideCallback);
+}
+
+static void CbProcessAppBarButton(FrameworkElement element) {
+    if (!element)
+        return;
+
+    std::wstring svgUri = CbGetButtonSvgUri(element);
+
+    if (CbShouldHideByIcon(svgUri)) {
+        CbHideButton(element, svgUri);
+        return;
+    }
+
+    // Icon not loaded yet — register a visibility callback for a deferred check.
+    if (svgUri.empty()) {
+        element.RegisterPropertyChangedCallback(
+            UIElement::VisibilityProperty(),
+            [](DependencyObject const& sender, DependencyProperty const&) {
+                auto fe = sender.try_as<FrameworkElement>();
+                if (!fe || fe.Visibility() != Visibility::Visible)
+                    return;
+
+                std::wstring uri = CbGetButtonSvgUri(fe);
+                if (CbShouldHideByIcon(uri)) {
+                    Wh_Log(L"[CmdBarHider] Deferred hiding: %s", uri.c_str());
+                    fe.Visibility(Visibility::Collapsed);
+                    CbCleanupSeparators(fe);
+                    fe.RegisterPropertyChangedCallback(
+                        UIElement::VisibilityProperty(), CbReHideCallback);
+                    return;
+                }
+
+                if (uri.empty()) {
+                    auto refFe = fe;
+                    fe.DispatcherQueue().TryEnqueue(
+                        winrt::Microsoft::UI::Dispatching::
+                            DispatcherQueuePriority::Low,
+                        [refFe]() {
+                            std::wstring u = CbGetButtonSvgUri(refFe);
+                            if (CbShouldHideByIcon(u)) {
+                                Wh_Log(
+                                    L"[CmdBarHider] Layout-deferred hide: %s",
+                                    u.c_str());
+                                const_cast<FrameworkElement&>(refFe).Visibility(
+                                    Visibility::Collapsed);
+                                CbCleanupSeparators(
+                                    const_cast<FrameworkElement&>(refFe));
+                            }
+                        });
+                }
+            });
+    }
+}
+
+// Called from OnVisualTreeChange for every newly added element.
+static void CbHandleElementAdded(VisualElement element,
+                                  wf::IInspectable inspectable) {
+    if (!element.Type)
+        return;
+
+    // Skip entirely if all button-hiding options are disabled.
+    if (!g_settings.hideCommandBarRotateLeft &&
+        !g_settings.hideCommandBarRotateRight &&
+        !g_settings.hideCommandBarSetAsDesktopBackground)
+        return;
+
+    std::wstring_view typeName(element.Type);
+
+    // Strategy 1: AppBarButton directly added.
+    if (typeName.find(L"AppBarButton") != std::wstring_view::npos) {
+        try {
+            auto fe = inspectable.try_as<FrameworkElement>();
+            if (fe)
+                CbProcessAppBarButton(fe);
+        } catch (...) {}
+        return;
+    }
+
+    // Strategy 2: AppBarSeparator added — clean up orphaned separators.
+    if (typeName.find(L"AppBarSeparator") != std::wstring_view::npos) {
+        try {
+            auto fe = inspectable.try_as<FrameworkElement>();
+            if (fe)
+                CbCleanupSeparators(fe);
+        } catch (...) {}
+        return;
+    }
+
+    // Strategy 3: TextLabel TextBlock added — walk up to find AppBarButton.
+    std::wstring_view elName(element.Name ? element.Name : L"");
+    if (elName == L"TextLabel" &&
+        typeName.find(L"TextBlock") != std::wstring_view::npos) {
+        try {
+            auto fe = inspectable.try_as<FrameworkElement>();
+            if (fe) {
+                auto current = muxm_cb::VisualTreeHelper::GetParent(fe);
+                for (int depth = 0; depth < 10 && current; depth++) {
+                    auto parentFe = current.try_as<FrameworkElement>();
+                    if (parentFe) {
+                        std::wstring cn(winrt::get_class_name(parentFe));
+                        if (cn.find(L"AppBarButton") != std::wstring::npos) {
+                            CbProcessAppBarButton(parentFe);
+                            break;
+                        }
+                    }
+                    current = muxm_cb::VisualTreeHelper::GetParent(current);
+                }
+            }
+        } catch (...) {}
+    }
+}
+
+
+// Register button-hiding handler now that the function is defined.
+static const bool g_cbHandlerRegistered = []() {
+    g_cbHandleElementAdded = CbHandleElementAdded;
+    return true;
+}();
+
+// End of command bar button hiding
+////////////////////////////////////////////////////////////////////////////////
 
 // https://stackoverflow.com/a/51274008
 template <auto fn>
@@ -5105,6 +5360,13 @@ void LoadSettings() {
         g_settings.xamlDiagnosticsHandling = XamlDiagnosticsHandling::kAllow;
     }
     Wh_FreeStringSetting(xamlDiagnosticsHandling);
+
+    g_settings.hideCommandBarRotateLeft =
+        Wh_GetIntSetting(L"hideCommandBarRotateLeft");
+    g_settings.hideCommandBarRotateRight =
+        Wh_GetIntSetting(L"hideCommandBarRotateRight");
+    g_settings.hideCommandBarSetAsDesktopBackground =
+        Wh_GetIntSetting(L"hideCommandBarSetAsDesktopBackground");
 }
 
 void LoadThemeSettings() {
