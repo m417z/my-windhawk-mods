@@ -50,9 +50,6 @@ appears.
 
 On Windows 11, you can also toggle always-show via a mouse event (middle click
 or double click) on the taskbar.
-
-**Note:** To customize the old taskbar on Windows 11 (if using ExplorerPatcher
-or a similar tool), enable the relevant option in the mod's settings.
 */
 // ==/WindhawkModReadme==
 

@@ -30,9 +30,6 @@ and colors, and more.
 
 Only Windows 10 64-bit and Windows 11 are supported.
 
-**Note:** To customize the old taskbar on Windows 11 (if using ExplorerPatcher
-or a similar tool), enable the relevant option in the mod's settings.
-
 ![News screenshot](https://i.imgur.com/p03o9l7.png) \
 _News (default mod settings)_
 
