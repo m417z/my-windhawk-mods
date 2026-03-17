@@ -85,6 +85,14 @@ or a similar tool), enable the relevant option in the mod's settings.
   - disabled: Disabled
   - middleClick: Middle click
   - doubleClick: Double click
+- winKeyAction: defaultWindowsBehavior
+  $name: Win key action
+  $description: The action to perform when the Win key is pressed.
+  $options:
+  - defaultWindowsBehavior: Default windows behavior
+  - showTaskbar: Show taskbar
+  - showTaskbarOpenStartIfShown: Show taskbar, open Start menu if already shown
+  - togglePermanentVisibility: Toggle permanent taskbar visibility
 - oldTaskbarOnWin11: false
   $name: Customize the old taskbar on Windows 11
   $description: >-
@@ -125,12 +133,20 @@ enum class ToggleAlwaysShowMouseEvent {
     DoubleClick,
 };
 
+enum class WinKeyAction {
+    DefaultWindowsBehavior,
+    ShowTaskbar,
+    ShowTaskbarOpenStartIfShown,
+    TogglePermanentVisibility,
+};
+
 struct {
     AutoHideMode mode;
-    bool oldTaskbarOnWin11;
     std::wstring showTemporarilyHotkey;
     std::wstring toggleAlwaysShowHotkey;
     ToggleAlwaysShowMouseEvent toggleAlwaysShowMouseEvent;
+    WinKeyAction winKeyAction;
+    bool oldTaskbarOnWin11;
 } g_settings;
 
 enum class WinVersion {
@@ -157,7 +173,7 @@ enum {
     kHotkeyIdToggleAlwaysShow,
 };
 
-// Message dispatched to the taskbar subclass proc for UI-thread operations.
+// Message dispatched to CTaskBand_v_WndProc_Hook for UI-thread operations.
 static UINT g_uiThreadCallbackMsg =
     RegisterWindowMessage(L"Windhawk_uiThreadCallback_" WH_MOD_ID);
 
@@ -171,10 +187,11 @@ enum {
     UI_UNREGISTER_HOTKEYS,
     UI_APPLY_SETTINGS,
     UI_BEFORE_UNINIT,
+    UI_SHOW_TASKBAR_TEMPORARILY,
+    UI_TOGGLE_ALWAYS_SHOW,
 };
 
 // Hotkey state.
-HWND g_hTaskbarWnd;
 bool g_showTempHotkeyRegistered;
 bool g_toggleAlwaysHotkeyRegistered;
 
@@ -229,6 +246,14 @@ HWND FindCurrentProcessTaskbarWnd() {
         reinterpret_cast<LPARAM>(&hTaskbarWnd));
 
     return hTaskbarWnd;
+}
+
+HWND GetTaskBandWnd() {
+    HWND hTaskbarWnd = FindCurrentProcessTaskbarWnd();
+    if (hTaskbarWnd) {
+        return (HWND)GetProp(hTaskbarWnd, L"TaskbandHWND");
+    }
+    return nullptr;
 }
 
 HWND FindTaskbarWindows(std::vector<HWND>* secondaryTaskbarWindows) {
@@ -1162,6 +1187,62 @@ void UnregisterHotkeys(HWND hWnd) {
     }
 }
 
+using XamlLauncher_ShowStartView_t =
+    HRESULT(WINAPI*)(void* pThis,
+                     int immersiveLauncherShowMethod,
+                     int immersiveLauncherShowFlags);
+XamlLauncher_ShowStartView_t XamlLauncher_ShowStartView_Original;
+HRESULT WINAPI XamlLauncher_ShowStartView_Hook(void* pThis,
+                                               int immersiveLauncherShowMethod,
+                                               int immersiveLauncherShowFlags) {
+    Wh_Log(L"> %d, %d", immersiveLauncherShowMethod,
+           immersiveLauncherShowFlags);
+
+    auto original = [=] {
+        return XamlLauncher_ShowStartView_Original(
+            pThis, immersiveLauncherShowMethod, immersiveLauncherShowFlags);
+    };
+
+    // If not keyboard hotkey.
+    if (immersiveLauncherShowMethod != 1) {
+        return original();
+    }
+
+    HWND hTaskBandWnd = GetTaskBandWnd();
+
+    switch (g_settings.winKeyAction) {
+        case WinKeyAction::ShowTaskbar:
+            if (hTaskBandWnd) {
+                PostMessage(hTaskBandWnd, g_uiThreadCallbackMsg,
+                            UI_SHOW_TASKBAR_TEMPORARILY, 0);
+            }
+            return S_OK;
+
+        case WinKeyAction::ShowTaskbarOpenStartIfShown:
+            if (g_alwaysShowMode || g_modTriggeredUnhide) {
+                break;
+            }
+            if (hTaskBandWnd) {
+                PostMessage(hTaskBandWnd, g_uiThreadCallbackMsg,
+                            UI_SHOW_TASKBAR_TEMPORARILY, 0);
+            }
+            return S_OK;
+
+        case WinKeyAction::TogglePermanentVisibility:
+            if (hTaskBandWnd) {
+                PostMessage(hTaskBandWnd, g_uiThreadCallbackMsg,
+                            UI_TOGGLE_ALWAYS_SHOW, 0);
+            }
+            return S_OK;
+
+        case WinKeyAction::DefaultWindowsBehavior:
+        default:
+            break;
+    }
+
+    return original();
+}
+
 void LoadSettings();
 
 // Called on the UI thread via SendMessage(UI_APPLY_SETTINGS).
@@ -1200,57 +1281,86 @@ void ApplySettingsOnUIThread(HWND hWnd) {
     RegisterHotkeys(hWnd);
 }
 
-// Called on the UI thread via SendMessage(UI_BEFORE_UNINIT).
-void BeforeUninitCleanupOnUIThread(HWND hWnd) {
-    if (g_alwaysShowMode) {
-        g_alwaysShowMode = false;
-        HideAllTaskbars();
+using CTaskBand_v_WndProc_t = LRESULT(
+    WINAPI*)(void* pThis, HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam);
+CTaskBand_v_WndProc_t CTaskBand_v_WndProc_Original;
+LRESULT WINAPI CTaskBand_v_WndProc_Hook(void* pThis,
+                                        HWND hWnd,
+                                        UINT Msg,
+                                        WPARAM wParam,
+                                        LPARAM lParam) {
+    LRESULT result = 0;
+
+    auto originalProc = [pThis](HWND hWnd, UINT Msg, WPARAM wParam,
+                                LPARAM lParam) {
+        return CTaskBand_v_WndProc_Original(pThis, hWnd, Msg, wParam, lParam);
+    };
+
+    switch (Msg) {
+        case WM_HOTKEY:
+            switch (wParam) {
+                case kHotkeyIdShowTemporarily:
+                    Wh_Log(L"Show-temporarily hotkey triggered");
+                    ShowTaskbarTemporarily();
+                    break;
+
+                case kHotkeyIdToggleAlwaysShow:
+                    Wh_Log(L"Toggle-always-show hotkey triggered");
+                    ToggleAlwaysShow();
+                    break;
+
+                default:
+                    result = originalProc(hWnd, Msg, wParam, lParam);
+                    break;
+            }
+            break;
+
+        case WM_CREATE:
+            result = originalProc(hWnd, Msg, wParam, lParam);
+            RegisterHotkeys(hWnd);
+            break;
+
+        case WM_DESTROY:
+            UnregisterHotkeys(hWnd);
+            result = originalProc(hWnd, Msg, wParam, lParam);
+            break;
+
+        default:
+            if (Msg == g_uiThreadCallbackMsg) {
+                switch (wParam) {
+                    case UI_REGISTER_HOTKEYS:
+                        RegisterHotkeys(hWnd);
+                        break;
+                    case UI_UNREGISTER_HOTKEYS:
+                        UnregisterHotkeys(hWnd);
+                        break;
+                    case UI_APPLY_SETTINGS:
+                        ApplySettingsOnUIThread(hWnd);
+                        break;
+                    case UI_BEFORE_UNINIT:
+                        if (g_alwaysShowMode) {
+                            g_alwaysShowMode = false;
+                            HideAllTaskbars();
+                        }
+                        if (g_settings.mode == AutoHideMode::Never) {
+                            RestoreAllSnappedFlyouts();
+                        }
+                        UnregisterHotkeys(hWnd);
+                        break;
+                    case UI_SHOW_TASKBAR_TEMPORARILY:
+                        ShowTaskbarTemporarily();
+                        break;
+                    case UI_TOGGLE_ALWAYS_SHOW:
+                        ToggleAlwaysShow();
+                        break;
+                }
+            } else {
+                result = originalProc(hWnd, Msg, wParam, lParam);
+            }
+            break;
     }
 
-    // Restore flyouts snapped to monitor bottom back to their natural position.
-    if (g_settings.mode == AutoHideMode::Never) {
-        RestoreAllSnappedFlyouts();
-    }
-
-    UnregisterHotkeys(hWnd);
-}
-
-LRESULT CALLBACK TaskbarSubclassProc(HWND hWnd,
-                                     UINT uMsg,
-                                     WPARAM wParam,
-                                     LPARAM lParam,
-                                     DWORD_PTR dwRefData) {
-    if (uMsg == WM_HOTKEY) {
-        if ((int)wParam == kHotkeyIdShowTemporarily) {
-            Wh_Log(L"Show-temporarily hotkey triggered");
-            ShowTaskbarTemporarily();
-            return 0;
-        } else if ((int)wParam == kHotkeyIdToggleAlwaysShow) {
-            Wh_Log(L"Toggle-always-show hotkey triggered");
-            ToggleAlwaysShow();
-            return 0;
-        }
-    }
-
-    if (uMsg == g_uiThreadCallbackMsg) {
-        switch (wParam) {
-            case UI_REGISTER_HOTKEYS:
-                RegisterHotkeys(hWnd);
-                break;
-            case UI_UNREGISTER_HOTKEYS:
-                UnregisterHotkeys(hWnd);
-                break;
-            case UI_APPLY_SETTINGS:
-                ApplySettingsOnUIThread(hWnd);
-                break;
-            case UI_BEFORE_UNINIT:
-                BeforeUninitCleanupOnUIThread(hWnd);
-                break;
-        }
-        return 0;
-    }
-
-    return DefSubclassProc(hWnd, uMsg, wParam, lParam);
+    return result;
 }
 
 // Double-click state for mouse toggle.
@@ -1435,6 +1545,36 @@ bool HookTaskbarSymbols() {
             &CSecondaryTray_v_WndProc_Original,
             CSecondaryTray_v_WndProc_Hook,
         },
+        {
+            {LR"(protected: virtual __int64 __cdecl CTaskBand::v_WndProc(struct HWND__ *,unsigned int,unsigned __int64,__int64))"},
+            &CTaskBand_v_WndProc_Original,
+            CTaskBand_v_WndProc_Hook,
+        },
+    };
+
+    if (!HookSymbols(module, symbolHooks, ARRAYSIZE(symbolHooks))) {
+        Wh_Log(L"HookSymbols failed");
+        return false;
+    }
+
+    return true;
+}
+
+bool HookTwinuiPcshellSymbols() {
+    HMODULE module = LoadLibraryEx(L"twinui.pcshell.dll", nullptr,
+                                   LOAD_LIBRARY_SEARCH_SYSTEM32);
+    if (!module) {
+        Wh_Log(L"Couldn't load twinui.pcshell.dll");
+        return false;
+    }
+
+    // twinui.pcshell.dll
+    WindhawkUtils::SYMBOL_HOOK symbolHooks[] = {
+        {
+            {LR"(public: virtual long __cdecl XamlLauncher::ShowStartView(enum IMMERSIVELAUNCHERSHOWMETHOD,enum IMMERSIVELAUNCHERSHOWFLAGS))"},
+            &XamlLauncher_ShowStartView_Original,
+            XamlLauncher_ShowStartView_Hook,
+        },
     };
 
     if (!HookSymbols(module, symbolHooks, ARRAYSIZE(symbolHooks))) {
@@ -1548,6 +1688,8 @@ bool HookExplorerPatcherSymbols(HMODULE explorerPatcherModule) {
          &CSecondaryTray_v_WndProc_Original, CSecondaryTray_v_WndProc_Hook,
          // Available in versions newer than 67.1.
          true},
+        {R"(?v_WndProc@CTaskBand@@MEAA_JPEAUHWND__@@I_K_J@Z)",
+         &CTaskBand_v_WndProc_Original, CTaskBand_v_WndProc_Hook},
     };
 
     bool succeeded = true;
@@ -1654,8 +1796,6 @@ void LoadSettings() {
     }
     Wh_FreeStringSetting(mode);
 
-    g_settings.oldTaskbarOnWin11 = Wh_GetIntSetting(L"oldTaskbarOnWin11");
-
     PCWSTR showTemp = Wh_GetStringSetting(L"showTemporarilyHotkey");
     g_settings.showTemporarilyHotkey = showTemp;
     Wh_FreeStringSetting(showTemp);
@@ -1676,6 +1816,20 @@ void LoadSettings() {
             ToggleAlwaysShowMouseEvent::Disabled;
     }
     Wh_FreeStringSetting(mouseEvent);
+
+    PCWSTR winKeyAction = Wh_GetStringSetting(L"winKeyAction");
+    if (wcscmp(winKeyAction, L"showTaskbar") == 0) {
+        g_settings.winKeyAction = WinKeyAction::ShowTaskbar;
+    } else if (wcscmp(winKeyAction, L"showTaskbarOpenStartIfShown") == 0) {
+        g_settings.winKeyAction = WinKeyAction::ShowTaskbarOpenStartIfShown;
+    } else if (wcscmp(winKeyAction, L"togglePermanentVisibility") == 0) {
+        g_settings.winKeyAction = WinKeyAction::TogglePermanentVisibility;
+    } else {
+        g_settings.winKeyAction = WinKeyAction::DefaultWindowsBehavior;
+    }
+    Wh_FreeStringSetting(winKeyAction);
+
+    g_settings.oldTaskbarOnWin11 = Wh_GetIntSetting(L"oldTaskbarOnWin11");
 }
 
 BOOL Wh_ModInit() {
@@ -1719,6 +1873,12 @@ BOOL Wh_ModInit() {
     if (!HandleLoadedExplorerPatcher()) {
         Wh_Log(L"HandleLoadedExplorerPatcher failed");
         return FALSE;
+    }
+
+    if (g_settings.winKeyAction != WinKeyAction::DefaultWindowsBehavior) {
+        if (!HookTwinuiPcshellSymbols()) {
+            return FALSE;
+        }
     }
 
     HMODULE kernelBaseModule = GetModuleHandle(L"kernelbase.dll");
@@ -1789,17 +1949,8 @@ void Wh_ModAfterInit() {
         }
     }
 
-    // Subclass the taskbar window and register hotkeys.
-    g_hTaskbarWnd = FindCurrentProcessTaskbarWnd();
-    if (g_hTaskbarWnd) {
-        if (WindhawkUtils::SetWindowSubclassFromAnyThread(
-                g_hTaskbarWnd, TaskbarSubclassProc, 0)) {
-            Wh_Log(L"Taskbar window %p subclassed", g_hTaskbarWnd);
-        } else {
-            Wh_Log(L"Failed to subclass taskbar window %p", g_hTaskbarWnd);
-        }
-
-        SendMessage(g_hTaskbarWnd, g_uiThreadCallbackMsg, UI_REGISTER_HOTKEYS,
+    if (HWND hTaskBandWnd = GetTaskBandWnd()) {
+        SendMessage(hTaskBandWnd, g_uiThreadCallbackMsg, UI_REGISTER_HOTKEYS,
                     0);
     }
 }
@@ -1807,19 +1958,13 @@ void Wh_ModAfterInit() {
 void Wh_ModBeforeUninit() {
     Wh_Log(L">");
 
-    if (g_hTaskbarWnd) {
-        SendMessage(g_hTaskbarWnd, g_uiThreadCallbackMsg, UI_BEFORE_UNINIT, 0);
+    if (HWND hTaskBandWnd = GetTaskBandWnd()) {
+        SendMessage(hTaskBandWnd, g_uiThreadCallbackMsg, UI_BEFORE_UNINIT, 0);
     }
 }
 
 void Wh_ModUninit() {
     Wh_Log(L">");
-
-    if (g_hTaskbarWnd) {
-        WindhawkUtils::RemoveWindowSubclassFromAnyThread(g_hTaskbarWnd,
-                                                         TaskbarSubclassProc);
-        g_hTaskbarWnd = nullptr;
-    }
 
     if (g_settings.mode == AutoHideMode::KeyboardOnlyFullyHide ||
         g_settings.mode == AutoHideMode::Never) {
@@ -1834,17 +1979,23 @@ void Wh_ModUninit() {
 BOOL Wh_ModSettingsChanged(BOOL* bReload) {
     Wh_Log(L">");
 
+    bool prevWinKeyActionCustomized =
+        g_settings.winKeyAction != WinKeyAction::DefaultWindowsBehavior;
     bool prevOldTaskbarOnWin11 = g_settings.oldTaskbarOnWin11;
 
     // All UI work (unregister old hotkeys, load settings, cloak/uncloak,
     // register new hotkeys) runs on the UI thread.
-    if (g_hTaskbarWnd) {
-        SendMessage(g_hTaskbarWnd, g_uiThreadCallbackMsg, UI_APPLY_SETTINGS, 0);
+    if (HWND hTaskBandWnd = GetTaskBandWnd()) {
+        SendMessage(hTaskBandWnd, g_uiThreadCallbackMsg, UI_APPLY_SETTINGS, 0);
     } else {
         LoadSettings();
     }
 
-    *bReload = g_settings.oldTaskbarOnWin11 != prevOldTaskbarOnWin11;
+    bool winKeyActionCustomized =
+        g_settings.winKeyAction != WinKeyAction::DefaultWindowsBehavior;
+
+    *bReload = g_settings.oldTaskbarOnWin11 != prevOldTaskbarOnWin11 ||
+               prevWinKeyActionCustomized != winKeyActionCustomized;
 
     return TRUE;
 }
