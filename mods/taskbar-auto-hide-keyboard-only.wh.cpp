@@ -2,7 +2,7 @@
 // @id              taskbar-auto-hide-keyboard-only
 // @name            Taskbar auto-hide fine tuning
 // @description     Fine-tune taskbar auto-hide: keyboard-only unhide, prevent the taskbar from showing at all, hotkeys and mouse events to show or toggle visibility
-// @version         2.0
+// @version         2.1
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
