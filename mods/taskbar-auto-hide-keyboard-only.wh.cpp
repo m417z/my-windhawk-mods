@@ -91,6 +91,11 @@ Optionally override what happens when the Win key is pressed:
   - disabled: Disabled
   - middleClick: Middle click
   - doubleClick: Double click
+- showTemporarilyDurationMs: 1000
+  $name: Show temporarily minimum duration (ms)
+  $description: >-
+    Minimum time in milliseconds the taskbar stays visible after being shown
+    temporarily. Set to 0 for default duration.
 - winKeyAction: defaultWindowsBehavior
   $name: Win key action
   $description: The action to perform when the Win key is pressed.
@@ -151,6 +156,7 @@ struct {
     std::wstring showTemporarilyHotkey;
     std::wstring toggleAlwaysShowHotkey;
     ToggleAlwaysShowMouseEvent toggleAlwaysShowMouseEvent;
+    int showTemporarilyDurationMs;
     WinKeyAction winKeyAction;
     bool oldTaskbarOnWin11;
 } g_settings;
@@ -787,7 +793,7 @@ UINT_PTR WINAPI SetTimer_Hook(HWND hWnd,
                               TIMERPROC lpTimerFunc) {
     if (g_settings.mode != AutoHideMode::WindowsDefault &&
         nIDEvent == kTrayUITimerUnhide && IsTaskbarWindow(hWnd)) {
-        Wh_Log(L">");
+        Wh_Log(L"Blocking unhide timer (non-default mode)");
         return 1;
     }
 
@@ -795,6 +801,13 @@ UINT_PTR WINAPI SetTimer_Hook(HWND hWnd,
         IsTaskbarWindow(hWnd)) {
         Wh_Log(L"Blocking hide timer (always-show mode)");
         return 1;
+    }
+
+    if (nIDEvent == kTrayUITimerHide && g_modTriggeredUnhide &&
+        g_settings.showTemporarilyDurationMs > 0 && IsTaskbarWindow(hWnd)) {
+        Wh_Log(L"Extending hide timer to %d ms",
+               g_settings.showTemporarilyDurationMs);
+        uElapse = g_settings.showTemporarilyDurationMs;
     }
 
     UINT_PTR ret = SetTimer_Original(hWnd, nIDEvent, uElapse, lpTimerFunc);
@@ -1860,6 +1873,9 @@ void LoadSettings() {
             ToggleAlwaysShowMouseEvent::Disabled;
     }
     Wh_FreeStringSetting(mouseEvent);
+
+    g_settings.showTemporarilyDurationMs =
+        Wh_GetIntSetting(L"showTemporarilyDurationMs");
 
     PCWSTR winKeyAction = Wh_GetStringSetting(L"winKeyAction");
     if (wcscmp(winKeyAction, L"showTaskbar") == 0) {
