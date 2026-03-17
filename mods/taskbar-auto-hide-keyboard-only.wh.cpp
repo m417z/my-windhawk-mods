@@ -2,7 +2,7 @@
 // @id              taskbar-auto-hide-keyboard-only
 // @name            Taskbar auto-hide fine tuning
 // @description     Fine-tune taskbar auto-hide: keyboard-only unhide, prevent the taskbar from showing at all, hotkeys and mouse events to show or toggle visibility
-// @version         2.0
+// @version         2.1
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
@@ -33,8 +33,7 @@ appears.
 - **Windows default**: Standard auto-hide behavior. Use this if you only want
   the hotkeys.
 - **Keyboard or mouse click**: The taskbar only unhides via the keyboard or by
-  clicking at the bottom edge of the screen. Mouse hover no longer shows the
-  taskbar.
+  clicking at the edge of the screen. Mouse hover no longer shows the taskbar.
 - **Keyboard only**: The taskbar is completely hidden. It can only be shown via
   the keyboard.
 - **Never**: The taskbar never shows for any reason (notifications, Win key,
@@ -50,6 +49,16 @@ appears.
 
 On Windows 11, you can also toggle always-show via a mouse event (middle click
 or double click) on the taskbar.
+
+## Win key action
+
+Optionally override what happens when the Win key is pressed:
+
+- **Show taskbar**: Shows the taskbar without opening the Start menu.
+- **Show taskbar, open Start menu if already shown**: Shows the taskbar on the
+  first press. If the taskbar is already visible, opens the Start menu instead.
+- **Toggle permanent taskbar visibility**: Toggles permanent visibility, same as
+  the toggle always-show hotkey.
 */
 // ==/WindhawkModReadme==
 
@@ -86,7 +95,7 @@ or double click) on the taskbar.
   $name: Win key action
   $description: The action to perform when the Win key is pressed.
   $options:
-  - defaultWindowsBehavior: Default windows behavior
+  - defaultWindowsBehavior: Default Windows behavior
   - showTaskbar: Show taskbar
   - showTaskbarOpenStartIfShown: Show taskbar, open Start menu if already shown
   - togglePermanentVisibility: Toggle permanent taskbar visibility
