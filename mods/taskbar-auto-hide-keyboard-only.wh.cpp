@@ -75,7 +75,7 @@ or a similar tool), enable the relevant option in the mod's settings.
   $name: Toggle always-show hotkey
   $description: >-
     Hotkey to toggle permanent taskbar visibility (e.g. Alt+` or Ctrl+Alt+Y).
-    Press again to return to keyboard-only auto-hide behavior.
+    Press again to return to the configured auto-hide behavior.
 - toggleAlwaysShowMouseEvent: disabled
   $name: Toggle always-show mouse event (Win11 only)
   $description: >-
@@ -1042,6 +1042,21 @@ void ShowTaskbarTemporarily() {
 
 void CloakAllTaskbars(BOOL cloak);
 
+void HideAllTaskbars() {
+    std::vector<HWND> secondaryTaskbarWindows;
+    HWND hTaskbarWnd = FindTaskbarWindows(&secondaryTaskbarWindows);
+    if (hTaskbarWnd) {
+        SetTimer(hTaskbarWnd, kTrayUITimerHide, 0, nullptr);
+    }
+    for (HWND hWnd : secondaryTaskbarWindows) {
+        SetTimer(hWnd, kTrayUITimerHide, 0, nullptr);
+    }
+
+    for (auto& [hWnd, pThis] : g_hwndToViewCoordinator) {
+        UpdateViewCoordinatorIsExpanded(hWnd);
+    }
+}
+
 void ToggleAlwaysShow() {
     g_alwaysShowMode = !g_alwaysShowMode;
     Wh_Log(L"Always-show mode: %d", g_alwaysShowMode);
@@ -1083,18 +1098,7 @@ void ToggleAlwaysShow() {
             UpdateViewCoordinatorIsExpanded(hWnd);
         }
     } else {
-        // Trigger hide on all taskbar HWNDs.
-        if (hTaskbarWnd) {
-            SetTimer(hTaskbarWnd, kTrayUITimerHide, 0, nullptr);
-        }
-        for (HWND hWnd : secondaryTaskbarWindows) {
-            SetTimer(hWnd, kTrayUITimerHide, 0, nullptr);
-        }
-
-        // Win11 ViewCoordinator path.
-        for (auto& [hWnd, pThis] : g_hwndToViewCoordinator) {
-            UpdateViewCoordinatorIsExpanded(hWnd);
-        }
+        HideAllTaskbars();
     }
 }
 
@@ -1159,10 +1163,13 @@ void ApplySettingsOnUIThread(HWND hWnd) {
 
     LoadSettings();
 
-    // If always-show was active and toggle hotkey was removed, disable it.
-    if (g_alwaysShowMode && g_settings.toggleAlwaysShowHotkey.empty()) {
+    // If always-show was active and all toggle methods were removed, disable it.
+    if (g_alwaysShowMode && g_settings.toggleAlwaysShowHotkey.empty() &&
+        g_settings.toggleAlwaysShowMouseEvent ==
+            ToggleAlwaysShowMouseEvent::Disabled) {
         g_alwaysShowMode = false;
-        Wh_Log(L"Always-show disabled (hotkey removed)");
+        Wh_Log(L"Always-show disabled (toggle methods removed)");
+        HideAllTaskbars();
     }
 
     bool wasCloaked = prevMode == AutoHideMode::KeyboardOnlyFullyHide ||
@@ -1187,19 +1194,7 @@ void ApplySettingsOnUIThread(HWND hWnd) {
 void BeforeUninitCleanupOnUIThread(HWND hWnd) {
     if (g_alwaysShowMode) {
         g_alwaysShowMode = false;
-
-        std::vector<HWND> secondaryTaskbarWindows;
-        HWND hTaskbarWnd = FindTaskbarWindows(&secondaryTaskbarWindows);
-        if (hTaskbarWnd) {
-            SetTimer(hTaskbarWnd, kTrayUITimerHide, 0, nullptr);
-        }
-        for (HWND hSecondary : secondaryTaskbarWindows) {
-            SetTimer(hSecondary, kTrayUITimerHide, 0, nullptr);
-        }
-
-        for (auto& [hWnd2, pThis] : g_hwndToViewCoordinator) {
-            UpdateViewCoordinatorIsExpanded(hWnd2);
-        }
+        HideAllTaskbars();
     }
 
     // Restore flyouts snapped to monitor bottom back to their natural position.
