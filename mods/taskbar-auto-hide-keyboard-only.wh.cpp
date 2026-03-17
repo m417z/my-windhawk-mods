@@ -194,6 +194,7 @@ enum {
     UI_APPLY_SETTINGS,
     UI_BEFORE_UNINIT,
     UI_SHOW_TASKBAR_TEMPORARILY,
+    UI_SHOW_MAIN_TASKBAR_TEMPORARILY_IF_HIDDEN,
     UI_TOGGLE_ALWAYS_SHOW,
 };
 
@@ -216,9 +217,9 @@ struct SnappedFlyout {
 SnappedFlyout g_snappedStartMenu{};
 SnappedFlyout g_snappedSearchMenu{};
 
-// Win10: HWND -> TrayUI WndProc pThis.
+// HWND -> TrayUI WndProc pThis.
 std::unordered_map<HWND, void*> g_hwndToWndProcPThis;
-// Win10: HWND -> CSecondaryTray WndProc pThis.
+// HWND -> CSecondaryTray WndProc pThis.
 std::unordered_map<HWND, void*> g_hwndToSecondaryPThis;
 // Win11: HWND -> ViewCoordinator pThis.
 std::unordered_map<HWND, void*> g_hwndToViewCoordinator;
@@ -836,6 +837,9 @@ void WINAPI TrayUI_SlideWindow_Hook(void* pThis,
     }
 }
 
+using TrayUI_GetAutoHideFlags_t = DWORD(WINAPI*)(void* pThis);
+TrayUI_GetAutoHideFlags_t TrayUI_GetAutoHideFlags_Original;
+
 // Vtable pointers for interface navigation.
 void* TrayUI_vftable_ITrayComponentHost;
 void* CSecondaryTray_vftable_ISecondaryTray;
@@ -1030,17 +1034,23 @@ void UpdateViewCoordinatorIsExpanded(HWND hWnd) {
     }
 }
 
-void ShowTaskbarTemporarily() {
+void ShowTaskbarTemporarily(bool mainTaskbar = false) {
     Wh_Log(L">");
 
     if (g_alwaysShowMode) {
         return;
     }
 
-    // Only unhide the taskbar on the monitor where the mouse cursor is.
-    POINT pt;
-    GetCursorPos(&pt);
-    HMONITOR cursorMonitor = MonitorFromPoint(pt, MONITOR_DEFAULTTONEAREST);
+    HMONITOR monitor;
+    if (mainTaskbar) {
+        // Unhide primary monitor's taskbar.
+        monitor = MonitorFromPoint({0, 0}, MONITOR_DEFAULTTOPRIMARY);
+    } else {
+        // Only unhide the taskbar on the monitor where the mouse cursor is.
+        POINT pt;
+        GetCursorPos(&pt);
+        monitor = MonitorFromPoint(pt, MONITOR_DEFAULTTONEAREST);
+    }
 
     // Restore any flyouts that were snapped to monitor bottom.
     RestoreAllSnappedFlyouts();
@@ -1053,7 +1063,7 @@ void ShowTaskbarTemporarily() {
 
     // Old auto-hide path.
     for (auto& [hWnd, pThis] : g_hwndToWndProcPThis) {
-        if ((HMONITOR)GetProp(hWnd, L"TaskbarMonitor") != cursorMonitor) {
+        if ((HMONITOR)GetProp(hWnd, L"TaskbarMonitor") != monitor) {
             continue;
         }
         void* pThisHost =
@@ -1062,7 +1072,7 @@ void ShowTaskbarTemporarily() {
     }
 
     for (auto& [hWnd, pThis] : g_hwndToSecondaryPThis) {
-        if ((HMONITOR)GetProp(hWnd, L"TaskbarMonitor") != cursorMonitor) {
+        if ((HMONITOR)GetProp(hWnd, L"TaskbarMonitor") != monitor) {
             continue;
         }
         CSecondaryTray__Unhide_Original(pThis, 0, 0);
@@ -1071,7 +1081,7 @@ void ShowTaskbarTemporarily() {
     // Win11 ViewCoordinator path.
     if (ViewCoordinator_HandleIsPointerOverTaskbarFrameChanged_Original) {
         for (auto& [hWnd, pThis] : g_hwndToViewCoordinator) {
-            if ((HMONITOR)GetProp(hWnd, L"TaskbarMonitor") != cursorMonitor) {
+            if ((HMONITOR)GetProp(hWnd, L"TaskbarMonitor") != monitor) {
                 continue;
             }
             ViewCoordinator_HandleIsPointerOverTaskbarFrameChanged_Original(
@@ -1229,10 +1239,14 @@ HRESULT WINAPI XamlLauncher_ShowStartView_Hook(void* pThis,
                 break;
             }
             if (hTaskBandWnd) {
-                PostMessage(hTaskBandWnd, g_uiThreadCallbackMsg,
-                            UI_SHOW_TASKBAR_TEMPORARILY, 0);
+                bool shown =
+                    SendMessage(hTaskBandWnd, g_uiThreadCallbackMsg,
+                                UI_SHOW_MAIN_TASKBAR_TEMPORARILY_IF_HIDDEN, 0);
+                if (shown) {
+                    return S_OK;
+                }
             }
-            return S_OK;
+            break;
 
         case WinKeyAction::TogglePermanentVisibility:
             if (hTaskBandWnd) {
@@ -1356,6 +1370,24 @@ LRESULT WINAPI CTaskBand_v_WndProc_Hook(void* pThis,
                     case UI_SHOW_TASKBAR_TEMPORARILY:
                         ShowTaskbarTemporarily();
                         break;
+                    case UI_SHOW_MAIN_TASKBAR_TEMPORARILY_IF_HIDDEN: {
+                        bool shown = false;
+                        for (auto& [hWnd, pThis] : g_hwndToWndProcPThis) {
+                            DWORD flags =
+                                TrayUI_GetAutoHideFlags_Original(pThis);
+                            Wh_Log(L"GetAutoHideFlags: %08X", flags);
+                            if (!(flags & 0x02)) {
+                                shown = true;
+                                break;
+                            }
+                        }
+
+                        if (!shown) {
+                            ShowTaskbarTemporarily(/*mainTaskbar=*/true);
+                            result = 1;
+                        }
+                        break;
+                    }
                     case UI_TOGGLE_ALWAYS_SHOW:
                         ToggleAlwaysShow();
                         break;
@@ -1542,6 +1574,10 @@ bool HookTaskbarSymbols() {
             CSecondaryTray__Unhide_Hook,
         },
         {
+            {LR"(public: virtual unsigned int __cdecl TrayUI::GetAutoHideFlags(void))"},
+            &TrayUI_GetAutoHideFlags_Original,
+        },
+        {
             {LR"(public: virtual __int64 __cdecl TrayUI::WndProc(struct HWND__ *,unsigned int,unsigned __int64,__int64,bool *))"},
             &TrayUI_WndProc_Original,
             TrayUI_WndProc_Hook,
@@ -1688,6 +1724,8 @@ bool HookExplorerPatcherSymbols(HMODULE explorerPatcherModule) {
          &TrayUI_Unhide_Original, TrayUI_Unhide_Hook},
         {R"(?_Unhide@CSecondaryTray@@AEAAXW4TrayUnhideFlags@TrayCommon@@W4UnhideRequest@3@@Z)",
          &CSecondaryTray__Unhide_Original, CSecondaryTray__Unhide_Hook},
+        {R"(?GetAutoHideFlags@TrayUI@@UEAAIXZ)",
+         &TrayUI_GetAutoHideFlags_Original},
         {R"(?WndProc@TrayUI@@UEAA_JPEAUHWND__@@I_K_JPEA_N@Z)",
          &TrayUI_WndProc_Original, TrayUI_WndProc_Hook},
         {R"(?v_WndProc@CSecondaryTray@@EEAA_JPEAUHWND__@@I_K_J@Z)",
