@@ -674,6 +674,15 @@ HRESULT WINAPI DwmSetWindowAttribute_Hook(HWND hwnd,
         return original();
     }
 
+    // Only act if the taskbar is on the bottom edge.
+    APPBARDATA appBarData = {
+        .cbSize = sizeof(APPBARDATA),
+    };
+    if (SHAppBarMessage(ABM_GETTASKBARPOS, &appBarData) &&
+        appBarData.uEdge != ABE_BOTTOM) {
+        return original();
+    }
+
     DWORD processId = 0;
     DWORD threadId = GetWindowThreadProcessId(hwnd, &processId);
     if (!processId || !threadId) {
@@ -1163,7 +1172,8 @@ void ApplySettingsOnUIThread(HWND hWnd) {
 
     LoadSettings();
 
-    // If always-show was active and all toggle methods were removed, disable it.
+    // If always-show was active and all toggle methods were removed, disable
+    // it.
     if (g_alwaysShowMode && g_settings.toggleAlwaysShowHotkey.empty() &&
         g_settings.toggleAlwaysShowMouseEvent ==
             ToggleAlwaysShowMouseEvent::Disabled) {
