@@ -1385,7 +1385,7 @@ LRESULT WINAPI CTaskBand_v_WndProc_Hook(void* pThis,
                         break;
                     case UI_SHOW_MAIN_TASKBAR_TEMPORARILY_IF_HIDDEN: {
                         bool shown = false;
-                        for (auto& [hWnd, pThis] : g_hwndToWndProcPThis) {
+                        for (auto& [trayHwnd, pThis] : g_hwndToWndProcPThis) {
                             DWORD flags =
                                 TrayUI_GetAutoHideFlags_Original(pThis);
                             Wh_Log(L"GetAutoHideFlags: %08X", flags);
