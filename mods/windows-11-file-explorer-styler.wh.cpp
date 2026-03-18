@@ -788,7 +788,6 @@ int g_themeExplorerFrameContainerHeight;
 
 std::atomic<bool> g_initialized;
 thread_local bool g_initializedForThread;
-thread_local bool g_resourceVariablesInitializedForThread;
 
 void ApplyCustomizations(InstanceHandle handle,
                          winrt::Microsoft::UI::Xaml::FrameworkElement element,
@@ -1358,7 +1357,6 @@ thread_local std::unordered_map<std::wstring,
 
 // Track our merged theme dictionary for cleanup (per-thread).
 thread_local ResourceDictionary g_resourceVariablesThemeDict{nullptr};
-thread_local bool g_resourceVariablesThemeDictMerged = false;
 
 // Track theme resource entries that reference {ThemeResource ...} for refresh
 // (per-thread).
@@ -3620,17 +3618,16 @@ void RestoreCustomizationsForVisualStateGroup(
     }
 }
 
+void ProcessResourceVariablesFromSettings();
+
 void ApplyCustomizations(InstanceHandle handle,
                          FrameworkElement element,
                          PCWSTR fallbackClassName) {
     // Merge resource dictionary on first element add. Merging it eariler on
     // window creation doesn't work, perhaps merged dictionaries are reset
     // during initialization.
-    if (!g_resourceVariablesThemeDictMerged &&
-        g_resourceVariablesInitializedForThread) {
-        auto resources = Application::Current().Resources();
-        resources.MergedDictionaries().Append(g_resourceVariablesThemeDict);
-        g_resourceVariablesThemeDictMerged = true;
+    if (!g_resourceVariablesThemeDict) {
+        ProcessResourceVariablesFromSettings();
     }
 
     auto overrides = FindElementPropertyOverrides(element, fallbackClassName);
@@ -4273,6 +4270,8 @@ void ProcessResourceVariablesFromSettings() {
             winrt::box_value(L"Light"), lightDict);
     }
 
+    resources.MergedDictionaries().Append(g_resourceVariablesThemeDict);
+
     // Register for color changes to refresh theme resource references.
     if (!g_themeResourceEntries.empty()) {
         g_uiSettings = winrt::Windows::UI::ViewManagement::UISettings();
@@ -4295,6 +4294,10 @@ void UninitializeResourceVariables() {
     g_uiSettings = nullptr;
     g_themeResourceEntries.clear();
 
+    if (g_originalResourceValues.empty() && !g_resourceVariablesThemeDict) {
+        return;
+    }
+
     // Restore original resource values.
     auto resources = Application::Current().Resources();
     for (const auto& [key, originalValue] : g_originalResourceValues) {
@@ -4309,13 +4312,10 @@ void UninitializeResourceVariables() {
 
     // Remove our merged theme dictionary.
     if (g_resourceVariablesThemeDict) {
-        if (g_resourceVariablesThemeDictMerged) {
-            auto merged = resources.MergedDictionaries();
-            uint32_t index;
-            if (merged.IndexOf(g_resourceVariablesThemeDict, index)) {
-                merged.RemoveAt(index);
-            }
-            g_resourceVariablesThemeDictMerged = false;
+        auto merged = resources.MergedDictionaries();
+        uint32_t index;
+        if (merged.IndexOf(g_resourceVariablesThemeDict, index)) {
+            merged.RemoveAt(index);
         }
         g_resourceVariablesThemeDict = nullptr;
     }
@@ -4342,10 +4342,7 @@ void UninitializeForCurrentThread() {
 
     g_elementsCustomizationRules.clear();
 
-    if (g_resourceVariablesInitializedForThread) {
-        UninitializeResourceVariables();
-        g_resourceVariablesInitializedForThread = false;
-    }
+    UninitializeResourceVariables();
 
     g_initializedForThread = false;
 }
@@ -4365,25 +4362,6 @@ void InitializeForCurrentThread() {
     }
 
     ProcessAllStylesFromSettings();
-
-    bool hasResourceVariables = false;
-    try {
-        if (Application::Current()) {
-            hasResourceVariables = true;
-        } else {
-            Wh_Log(L"Application::Current() is null");
-        }
-    } catch (...) {
-        HRESULT hr = winrt::to_hresult();
-        Wh_Log(L"Application::Current() error %08X", hr);
-    }
-
-    if (hasResourceVariables) {
-        ProcessResourceVariablesFromSettings();
-        g_resourceVariablesInitializedForThread = true;
-    } else {
-        Wh_Log(L"Application::Current() is null, skipping resource variables");
-    }
 
     g_initializedForThread = true;
 }
