@@ -201,6 +201,14 @@ Background:=<SolidColorBrush Color="{ThemeResource AutoAccent}" />
 
 The value will automatically update when the system accent color changes.
 
+#### Using XAML syntax
+
+The `:=` syntax can be used to set a XAML value as a resource, for example:
+`MyBrush:=<SolidColorBrush Color="Red"/>`. This can be combined with theme
+variants: `MyBrush@Dark:=<SolidColorBrush Color="#FF202020"/>`. Specifying an
+empty value with the XAML syntax will clear the resource value, for example:
+`MyBrush:=`.
+
 ### Style constants
 
 Style constants allow defining a value once and referencing it in multiple
@@ -271,6 +279,9 @@ from the **TranslucentTB** project.
 
     Use "Key@Dark=Value" or "Key@Light=Value" to define theme-aware resources
     that can be referenced with {ThemeResource Key} in styles.
+
+    The ":=" syntax can be used to set a XAML value. For details, refer to the
+    mod description.
 */
 // ==/WindhawkModSettings==
 
@@ -2412,6 +2423,7 @@ struct ResourceVariableEntry {
     std::wstring key;
     std::wstring value;
     ResourceVariableTheme theme;
+    bool isXamlValue = false;
 };
 
 // Track original resource values for restoration (per-thread since
@@ -5209,6 +5221,13 @@ std::optional<ResourceVariableEntry> ParseResourceVariable(
     auto valueRaw = TrimStringView(entry.substr(eqPos + 1));
     auto value = ApplyStyleConstants(valueRaw, styleConstants);
 
+    bool isXamlValue = false;
+    if (keyPart.size() > 0 && keyPart.back() == L':') {
+        isXamlValue = true;
+        keyPart = keyPart.substr(0, keyPart.size() - 1);
+        keyPart = TrimStringView(keyPart);
+    }
+
     ResourceVariableTheme theme = ResourceVariableTheme::None;
     std::wstring key;
 
@@ -5230,7 +5249,8 @@ std::optional<ResourceVariableEntry> ParseResourceVariable(
         key = std::wstring(keyPart);
     }
 
-    return ResourceVariableEntry{std::move(key), std::move(value), theme};
+    return ResourceVariableEntry{std::move(key), std::move(value), theme,
+                                 isXamlValue};
 }
 
 constexpr std::wstring_view kThemeResourcePrefix = L"{ThemeResource ";
@@ -5256,6 +5276,20 @@ winrt::Windows::Foundation::IInspectable ResolveResourceVariableValue(
     return winrt::box_value(winrt::hstring(value));
 }
 
+winrt::Windows::Foundation::IInspectable ParseXamlValue(
+    std::wstring_view xamlValue) {
+    std::wstring xaml;
+    xaml += L"        <Setter Property=\"Tag\">\n";
+    xaml += L"            <Setter.Value>\n";
+    xaml += xamlValue;
+    xaml += L"\n";
+    xaml += L"            </Setter.Value>\n";
+    xaml += L"        </Setter>\n";
+
+    auto style = GetStyleFromXamlSetters(L"FrameworkElement", xaml);
+    return style.Setters().GetAt(0).as<Setter>().Value();
+}
+
 // Returns true if a theme resource was added.
 bool ProcessResourceVariableFromSetting(ResourceDictionary resources,
                                         ResourceDictionary darkDict,
@@ -5265,12 +5299,19 @@ bool ProcessResourceVariableFromSetting(ResourceDictionary resources,
 
     if (entry.theme != ResourceVariableTheme::None) {
         // Key@Dark= or Key@Light= - add to theme dict.
-        auto value = ResolveResourceVariableValue(resources, entry.value);
+        winrt::Windows::Foundation::IInspectable value;
+        if (entry.isXamlValue) {
+            value = entry.value.empty() ? nullptr : ParseXamlValue(entry.value);
+        } else {
+            value = ResolveResourceVariableValue(resources, entry.value);
+        }
+
         if (entry.theme == ResourceVariableTheme::Dark) {
             darkDict.Insert(boxedKey, value);
         } else {
             lightDict.Insert(boxedKey, value);
         }
+
         return true;
     }
 
@@ -5286,20 +5327,28 @@ bool ProcessResourceVariableFromSetting(ResourceDictionary resources,
         g_originalResourceValues[entry.key] = existingResource;
     }
 
-    auto resourceClassName = winrt::get_class_name(existingResource);
+    if (entry.isXamlValue) {
+        resources.Insert(boxedKey, entry.value.empty()
+                                       ? nullptr
+                                       : ParseXamlValue(entry.value));
+    } else {
+        auto resourceClassName = winrt::get_class_name(existingResource);
 
-    // Unwrap IReference<T> to get inner type name.
-    if (resourceClassName.starts_with(L"Windows.Foundation.IReference`1<") &&
-        resourceClassName.ends_with(L'>')) {
-        size_t prefixSize = sizeof("Windows.Foundation.IReference`1<") - 1;
-        resourceClassName =
-            winrt::hstring(resourceClassName.data() + prefixSize,
-                           resourceClassName.size() - prefixSize - 1);
+        // Unwrap IReference<T> to get inner type name.
+        if (resourceClassName.starts_with(
+                L"Windows.Foundation.IReference`1<") &&
+            resourceClassName.ends_with(L'>')) {
+            size_t prefixSize = sizeof("Windows.Foundation.IReference`1<") - 1;
+            resourceClassName =
+                winrt::hstring(resourceClassName.data() + prefixSize,
+                               resourceClassName.size() - prefixSize - 1);
+        }
+
+        resources.Insert(boxedKey, Markup::XamlBindingHelper::ConvertValue(
+                                       Interop::TypeName{resourceClassName},
+                                       winrt::box_value(entry.value)));
     }
 
-    resources.Insert(boxedKey, Markup::XamlBindingHelper::ConvertValue(
-                                   Interop::TypeName{resourceClassName},
-                                   winrt::box_value(entry.value)));
     return false;
 }
 
@@ -5369,8 +5418,10 @@ void ProcessResourceVariablesFromSettings() {
                 hasThemeResources = true;
 
                 // Track entries with {ThemeResource ...} for refresh on color
-                // change.
-                if (IsThemeResourceReference(parsed->value)) {
+                // change. XAML values handle theme resources internally via the
+                // framework, so they don't need manual refresh.
+                if (!parsed->isXamlValue &&
+                    IsThemeResourceReference(parsed->value)) {
                     g_themeResourceEntries.push_back(*parsed);
                 }
             }
