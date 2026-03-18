@@ -34,9 +34,6 @@ windows.
 Only Windows 10 64-bit and Windows 11 are supported. For older Windows versions
 check out [7+ Taskbar Tweaker](https://tweaker.ramensoftware.com/).
 
-**Note:** To customize the old taskbar on Windows 11 (if using ExplorerPatcher
-or a similar tool), enable the relevant option in the mod's settings.
-
 ![Demonstration](https://i.imgur.com/ecYYtGU.gif)
 */
 // ==/WindhawkModReadme==

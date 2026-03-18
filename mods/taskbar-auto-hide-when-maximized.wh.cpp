@@ -27,9 +27,6 @@
 Makes the taskbar auto-hide only when a window is maximized or intersects the
 taskbar.
 
-**Note:** To customize the old taskbar on Windows 11 (if using ExplorerPatcher
-or a similar tool), enable the relevant option in the mod's settings.
-
 ![Demonstration](https://i.imgur.com/hEz1lhs.gif)
 */
 // ==/WindhawkModReadme==
