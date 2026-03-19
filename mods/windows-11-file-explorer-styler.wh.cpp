@@ -4178,7 +4178,19 @@ bool ProcessResourceVariableFromSetting(ResourceDictionary resources,
     auto boxedKey = winrt::box_value(entry.key);
 
     if (entry.theme != ResourceVariableTheme::None) {
-        // Key@Dark= or Key@Light= - add to theme dict.
+        ResourceDictionary& targetDict =
+            entry.theme == ResourceVariableTheme::Dark ? darkDict : lightDict;
+
+        if (targetDict.HasKey(boxedKey)) {
+            Wh_Log(
+                L"Resource variable key '%s' already exists in theme '%s', "
+                L"skipping",
+                entry.key.c_str(),
+                entry.theme == ResourceVariableTheme::Dark ? L"Dark"
+                                                           : L"Light");
+            return false;
+        }
+
         winrt::Windows::Foundation::IInspectable value;
         if (entry.isXamlValue) {
             value = entry.value.empty() ? nullptr : ParseXamlValue(entry.value);
@@ -4186,11 +4198,7 @@ bool ProcessResourceVariableFromSetting(ResourceDictionary resources,
             value = ResolveResourceVariableValue(resources, entry.value);
         }
 
-        if (entry.theme == ResourceVariableTheme::Dark) {
-            darkDict.Insert(boxedKey, value);
-        } else {
-            lightDict.Insert(boxedKey, value);
-        }
+        targetDict.Insert(boxedKey, value);
 
         return true;
     }
@@ -4203,8 +4211,12 @@ bool ProcessResourceVariableFromSetting(ResourceDictionary resources,
         return false;
     }
 
-    if (!g_originalResourceValues.contains(entry.key)) {
-        g_originalResourceValues[entry.key] = existingResource;
+    auto [it, inserted] =
+        g_originalResourceValues.try_emplace(entry.key, existingResource);
+    if (!inserted) {
+        Wh_Log(L"Resource variable key '%s' already modified, skipping",
+               entry.key.c_str());
+        return false;
     }
 
     if (entry.isXamlValue) {
@@ -4280,6 +4292,7 @@ void ProcessResourceVariablesFromSettings() {
     ResourceDictionary lightDict;
     bool hasThemeResources = false;
 
+    std::vector<string_setting_unique_ptr> settings;
     for (int i = 0;; i++) {
         string_setting_unique_ptr setting(
             Wh_GetStringSetting(L"themeResourceVariables[%d]", i));
@@ -4287,9 +4300,13 @@ void ProcessResourceVariablesFromSettings() {
             break;
         }
 
-        Wh_Log(L"Processing theme resource variable %s", setting.get());
+        settings.push_back(std::move(setting));
+    }
 
-        auto parsed = ParseResourceVariable(setting.get(), styleConstants);
+    for (auto it = settings.rbegin(); it != settings.rend(); ++it) {
+        Wh_Log(L"Processing theme resource variable %s", it->get());
+
+        auto parsed = ParseResourceVariable(it->get(), styleConstants);
         if (!parsed) {
             continue;
         }
