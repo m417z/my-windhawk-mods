@@ -394,9 +394,9 @@ struct ThemeTargetStyles {
 
 struct Theme {
     std::vector<ThemeTargetStyles> targetStyles;
-    std::vector<ThemeTargetStyles> webViewTargetStyles;
     std::vector<PCWSTR> styleConstants;
     std::vector<PCWSTR> themeResourceVariables;
+    std::vector<ThemeTargetStyles> webViewTargetStyles;
 };
 
 // clang-format off
@@ -496,7 +496,7 @@ const Theme g_themeTranslucentStartMenu = {{
         L"Background@PointerOver:=<RevealBorderBrush Color=\"Transparent\" TargetTheme=\"1\" Opacity=\"0.9\"/>",
         L"BorderThickness=1",
         L"CornerRadius=5"}},
-}, {}, {
+}, {
     L"CommonBgBrush=<WindhawkBlur BlurAmount=\"25\" TintColor=\"#25323232\"/>",
 }};
 
@@ -595,7 +595,7 @@ const Theme g_themeTranslucentStartMenu_variant_ClassicStartMenu = {{
     ThemeTargetStyles{L"StartDocked.AllAppsGridListViewItem > Grid#ContentBorder@CommonStates", {
         L"Background@PointerOver:=<WindhawkBlur BlurAmount=\"25\" TintColor=\"#15C0C0C0\"/>",
         L"CornerRadius=4"}},
-}, {}, {
+}, {
     L"CommonBgBrush=<WindhawkBlur BlurAmount=\"25\" TintColor=\"#25323232\"/>",
 }};
 
@@ -4186,7 +4186,7 @@ const Theme g_themeLegacyFluent = {{
         L"BorderBrush@PointerOver:=<RevealBorderBrush Color=\"Transparent\" TargetTheme=\"1\" Opacity=\"1\"/>",
         L"Background@Pressed:=<RevealBorderBrush Color=\"Transparent\" TargetTheme=\"1\" Opacity=\"0.7\"/>",
         L"Background@Pressed=<RevealBorderBrush Color=\"Transparent\" TargetTheme=\"1\" Opacity=\"0.7\"/>"}},
-}, {
+}, {}, {}, {
     ThemeTargetStyles{L"#chatButtonRight", {
         L"display: none !important"}},
     ThemeTargetStyles{L".groupTitle", {
@@ -4386,7 +4386,7 @@ const Theme g_themeLegacyFluent_variant_ClassicStartMenu = {{
         L"CornerRadius=0"}},
     ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Button#HideMoreSuggestionsButton > Windows.UI.Xaml.Controls.ContentPresenter#ContentPresenter > Windows.UI.Xaml.Controls.StackPanel > Windows.UI.Xaml.Controls.FontIcon > Windows.UI.Xaml.Controls.Grid > Windows.UI.Xaml.Controls.TextBlock", {
         L"FontSize=10"}},
-}, {
+}, {}, {}, {
     ThemeTargetStyles{L"#chatButtonRight", {
         L"display: none !important"}},
     ThemeTargetStyles{L".groupTitle", {
@@ -4660,7 +4660,7 @@ const Theme g_themeWindowGlass = {{
     ThemeTargetStyles{L"ToggleMenuFlyoutItem", {
         L"CornerRadius:=$HoverCornerRadius",
         L"Margin=4,0,4,0"}},
-}, {}, {
+}, {
     L"Translucent=<WindhawkBlur BlurAmount=\"15\" TintColor=\"#10808080\"/>",
     L"Glass=<WindhawkBlur BlurAmount=\"5\" TintColor=\"{ThemeResource SystemChromeMediumColor}\" TintOpacity=\"0.7\" />",
     L"Frosted=<WindhawkBlur BlurAmount=\"20\" TintColor=\"{ThemeResource SystemChromeMediumColor}\" TintOpacity=\"0.7\" />",
@@ -4800,13 +4800,13 @@ const Theme g_themeFluid = {{
         L"RenderTransform@Pressed:=<ScaleTransform ScaleX=\"0.8\" ScaleY=\"0.8\" />",
         L"RenderTransformOrigin=0.5,0.5"}},
 }, {
-    ThemeTargetStyles{L"*", {
-        L"transition: background-color 0.083s ease-in-out !important"}},
-}, {
     L"borderColor=<LinearGradientBrush x:Key=\"ShellTaskbarItemGradientStrokeColorSecondaryBrush\" MappingMode=\"Absolute\" StartPoint=\"0,0\" EndPoint=\"0,3\"><LinearGradientBrush.GradientStops><GradientStop Offset=\"0.33\" Color=\"#1AFFFFFF\" /><GradientStop Offset=\"1\" Color=\"#0FFFFFFF\" /></LinearGradientBrush.GradientStops></LinearGradientBrush>",
     L"backgroundNormal=<SolidColorBrush Color=\"{ThemeResource ControlFillColorDefault}\" />",
     L"backgroundHover=<SolidColorBrush Color=\"{ThemeResource ControlFillColorSecondary}\" />",
     L"backgroundPressed=<SolidColorBrush Color=\"{ThemeResource ControlFillColorTertiary}\" />",
+}, {}, {
+    ThemeTargetStyles{L"*", {
+        L"transition: background-color 0.083s ease-in-out !important"}},
 }};
 
 const Theme g_themeOversimplified_Accentuated = {{
@@ -4955,6 +4955,12 @@ const Theme g_themeOversimplified_Accentuated = {{
     ThemeTargetStyles{L"Microsoft.UI.Xaml.Controls.AnimatedIcon#SearchIconPlayer", {
         L"Width=20"}},
 }, {
+    L"Alt=<AcrylicBrush TintColor=\"{ThemeResource SystemAltHighColor}\" TintOpacity=\"0.6\" TintLuminosityOpacity=\"0.6\" FallbackColor=\"{ThemeResource SystemAltHighColor}\" />",
+    L"Accent=<AcrylicBrush TintColor=\"{ThemeResource SystemAccentColor}\" TintOpacity=\"0.6\" TintLuminosityOpacity=\"0.6\" FallbackColor=\"{ThemeResource SystemAccentColor}\" />",
+    L"DarkAccent=<AcrylicBrush TintColor=\"{ThemeResource SystemAccentColorDark1}\" TintOpacity=\"0.6\" TintLuminosityOpacity=\"0.3\" FallbackColor=\"{ThemeResource SystemAccentColorDark1}\" />",
+    L"SolidAccent=<SolidColorBrush Color=\"{ThemeResource SystemAccentColor}\" Opacity=\"1\"/>",
+    L"Reveal=<RevealBorderBrush Color=\"Transparent\" TargetTheme=\"1\" Opacity=\"1\" />",
+}, {}, {
     ThemeTargetStyles{L"li.rightHeaderButtons.itemTooltip.MouseHoverTooltip", {
         L"display: none"}},
     ThemeTargetStyles{L".scope-with-background__backButton", {
@@ -4988,12 +4994,6 @@ const Theme g_themeOversimplified_Accentuated = {{
         L"border-radius: 20px !important"}},
     ThemeTargetStyles{L"ul.contextMenu::before", {
         L"display: none !important"}},
-}, {
-    L"Alt=<AcrylicBrush TintColor=\"{ThemeResource SystemAltHighColor}\" TintOpacity=\"0.6\" TintLuminosityOpacity=\"0.6\" FallbackColor=\"{ThemeResource SystemAltHighColor}\" />",
-    L"Accent=<AcrylicBrush TintColor=\"{ThemeResource SystemAccentColor}\" TintOpacity=\"0.6\" TintLuminosityOpacity=\"0.6\" FallbackColor=\"{ThemeResource SystemAccentColor}\" />",
-    L"DarkAccent=<AcrylicBrush TintColor=\"{ThemeResource SystemAccentColorDark1}\" TintOpacity=\"0.6\" TintLuminosityOpacity=\"0.3\" FallbackColor=\"{ThemeResource SystemAccentColorDark1}\" />",
-    L"SolidAccent=<SolidColorBrush Color=\"{ThemeResource SystemAccentColor}\" Opacity=\"1\"/>",
-    L"Reveal=<RevealBorderBrush Color=\"Transparent\" TargetTheme=\"1\" Opacity=\"1\" />",
 }};
 
 const Theme g_themeLiquidGlass = {{
@@ -5149,9 +5149,6 @@ const Theme g_themeLiquidGlass = {{
         L"RenderTransform@Pressed:=<ScaleTransform ScaleX=\"0.8\" ScaleY=\"0.8\" />",
         L"RenderTransformOrigin=0.5,0.5"}},
 }, {
-    ThemeTargetStyles{L"*", {
-        L"transition: background-color 0.083s ease-in-out !important"}},
-}, {
     L"borderColor=<LinearGradientBrush StartPoint=\"0,0\" EndPoint=\"0,1\"><GradientStop Color=\"#50808080\" Offset=\"0.0\" /><GradientStop Color=\"#50404040\" Offset=\"0.25\" /><GradientStop Color=\"#50808080\" Offset=\"1\" /></LinearGradientBrush>\"",
     L"borderColor2=<LinearGradientBrush StartPoint=\"0,0\" EndPoint=\"0,1\"><GradientStop Color=\"#50808080\" Offset=\"1\" /><GradientStop Color=\"#50606060\" Offset=\"0.15\" /></LinearGradientBrush>",
     L"background=<WindhawkBlur BlurAmount=\"10\" TintColor=\"#25323232\" TintOpacity=\"0.2\" />",
@@ -5159,6 +5156,9 @@ const Theme g_themeLiquidGlass = {{
     L"borderThickness2=0.3,0.3,0.3,1",
     L"cornerRadius=6",
     L"cornerRadius2=4",
+}, {}, {
+    ThemeTargetStyles{L"*", {
+        L"transition: background-color 0.083s ease-in-out !important"}},
 }};
 
 const Theme g_themeWindows10X = {{
@@ -5396,6 +5396,25 @@ const Theme g_themeWindows10X = {{
         L"Height=40",
         L"Width=40"}},
 }, {
+    L"lightAccent=<SolidColorBrush Color=\"{ThemeResource SystemAccentColorDark1}\"/>",
+    L"lightAccentHover=<SolidColorBrush Color=\"{ThemeResource SystemAccentColorDark1}\" Opacity=\".9\"/>",
+    L"lightAccentPress=<SolidColorBrush Color=\"{ThemeResource SystemAccentColorDark1}\" Opacity=\".8\"/>",
+    L"darkAccent=<SolidColorBrush Color=\"{ThemeResource SystemAccentColorLight2}\"/>",
+    L"darkAccentHover=<SolidColorBrush Color=\"{ThemeResource SystemAccentColorLight2}\" Opacity=\".9\"/>",
+    L"darkAccentPress=<SolidColorBrush Color=\"{ThemeResource SystemAccentColorLight2}\" Opacity=\".8\"/>",
+    L"subtleButtonHover=<SolidColorBrush Color=\"{ThemeResource SubtleFillColorSecondary}\"/>",
+    L"subtleButtonPress=<SolidColorBrush Color=\"{ThemeResource SubtleFillColorTertiary}\"/>",
+    L"button=<SolidColorBrush Color=\"{ThemeResource ControlFillColorDefault}\"/>",
+    L"buttonHover=<SolidColorBrush Color=\"{ThemeResource ControlFillColorSecondary}\"/>",
+    L"buttonPress=<SolidColorBrush Color=\"{ThemeResource ControlFillColorTertiary}\"/>",
+    L"textPrimary=<SolidColorBrush Color=\"{ThemeResource TextFillColorPrimary}\"/>",
+    L"textSecondary=<SolidColorBrush Color=\"{ThemeResource TextFillColorSecondary}\"/>",
+    L"textDisabled=<SolidColorBrush Color=\"{ThemeResource TextFillColorDisabled}\"/>",
+    L"textInverse=<SolidColorBrush Color=\"{ThemeResource TextFillColorInverse}\"/>",
+    L"acrylic=<AcrylicBrush TintColor=\"{ThemeResource SystemChromeMediumColor}\" FallbackColor=\"{ThemeResource SystemChromeMediumColor}\" TintOpacity=\".0\" TintLuminosityOpacity=\".86\"/>",
+    L"fakeShadow=<LinearGradientBrush StartPoint=\"0,0\" EndPoint=\"0,1\"><GradientStop Color=\"#10000000\" Offset=\"0.84\" /><GradientStop Color=\"#26000000\" Offset=\"0.85\" /><GradientStop Color=\"#00000000\" Offset=\"1.0\" /></LinearGradientBrush>",
+    L"acrylicMenu=<AcrylicBrush TintColor=\"{ThemeResource LayerOnMicaBaseAltFillColorTertiary}\" FallbackColor=\"{ThemeResource SystemChromeHighColor}\" TintOpacity=\".0\" TintLuminosityOpacity=\".75\"/>",
+}, {}, {
     ThemeTargetStyles{L"#qfPreviewPane, #qfPreviewPane *, .leftPill::before, #temporaryMessages, .scope-with-background__backButton, #gr11, #pp_Share, #pp_Review, #chatButtonRight, .curatedSettingsGroup, .scope-with-background__rightCaret, #topHitHeader, .userProfileMenuIcon, .scope-tile__button, .additionalInfoText.annotation, #root:not(.zeroInput19H1):not(.fileExplorer) .topResults .openPreviewPaneBtn .iconContent, .openPreviewIcon .iconContent.cortanaFontIcon, #scopesHeader, #scopesHeader *, #gr36, div[data-region=\"TopApps\"], #gr43, .openPreviewPaneBtn, .suggContainer.largerSearchIcon14 .secondaryText", {
         L"display: none !important",
         L"visibility: hidden !important"}},
@@ -5436,25 +5455,6 @@ const Theme g_themeWindows10X = {{
         L"background: transparent !important"}},
     ThemeTargetStyles{L".topResults .suggDetailsContainer .primaryText", {
         L"margin-bottom: -2px !important"}},
-}, {
-    L"lightAccent=<SolidColorBrush Color=\"{ThemeResource SystemAccentColorDark1}\"/>",
-    L"lightAccentHover=<SolidColorBrush Color=\"{ThemeResource SystemAccentColorDark1}\" Opacity=\".9\"/>",
-    L"lightAccentPress=<SolidColorBrush Color=\"{ThemeResource SystemAccentColorDark1}\" Opacity=\".8\"/>",
-    L"darkAccent=<SolidColorBrush Color=\"{ThemeResource SystemAccentColorLight2}\"/>",
-    L"darkAccentHover=<SolidColorBrush Color=\"{ThemeResource SystemAccentColorLight2}\" Opacity=\".9\"/>",
-    L"darkAccentPress=<SolidColorBrush Color=\"{ThemeResource SystemAccentColorLight2}\" Opacity=\".8\"/>",
-    L"subtleButtonHover=<SolidColorBrush Color=\"{ThemeResource SubtleFillColorSecondary}\"/>",
-    L"subtleButtonPress=<SolidColorBrush Color=\"{ThemeResource SubtleFillColorTertiary}\"/>",
-    L"button=<SolidColorBrush Color=\"{ThemeResource ControlFillColorDefault}\"/>",
-    L"buttonHover=<SolidColorBrush Color=\"{ThemeResource ControlFillColorSecondary}\"/>",
-    L"buttonPress=<SolidColorBrush Color=\"{ThemeResource ControlFillColorTertiary}\"/>",
-    L"textPrimary=<SolidColorBrush Color=\"{ThemeResource TextFillColorPrimary}\"/>",
-    L"textSecondary=<SolidColorBrush Color=\"{ThemeResource TextFillColorSecondary}\"/>",
-    L"textDisabled=<SolidColorBrush Color=\"{ThemeResource TextFillColorDisabled}\"/>",
-    L"textInverse=<SolidColorBrush Color=\"{ThemeResource TextFillColorInverse}\"/>",
-    L"acrylic=<AcrylicBrush TintColor=\"{ThemeResource SystemChromeMediumColor}\" FallbackColor=\"{ThemeResource SystemChromeMediumColor}\" TintOpacity=\".0\" TintLuminosityOpacity=\".86\"/>",
-    L"fakeShadow=<LinearGradientBrush StartPoint=\"0,0\" EndPoint=\"0,1\"><GradientStop Color=\"#10000000\" Offset=\"0.84\" /><GradientStop Color=\"#26000000\" Offset=\"0.85\" /><GradientStop Color=\"#00000000\" Offset=\"1.0\" /></LinearGradientBrush>",
-    L"acrylicMenu=<AcrylicBrush TintColor=\"{ThemeResource LayerOnMicaBaseAltFillColorTertiary}\" FallbackColor=\"{ThemeResource SystemChromeHighColor}\" TintOpacity=\".0\" TintLuminosityOpacity=\".75\"/>",
 }};
 
 const Theme g_themeWindows10X_variant_ClassicStartMenu = {{
@@ -5700,6 +5700,23 @@ const Theme g_themeWindows10X_variant_ClassicStartMenu = {{
     ThemeTargetStyles{L"GridView#PinnedList > Border > ScrollViewer > Border#Root > Grid > ScrollContentPresenter > ItemsPresenter", {
         L"MinHeight=340"}},
 }, {
+    L"accent=<SolidColorBrush Color=\"{ThemeResource SystemAccentColor}\"/>",
+    L"accentHover=<SolidColorBrush Color=\"{ThemeResource SystemAccentColor}\" Opacity=\".9\"/>",
+    L"accentPress=<SolidColorBrush Color=\"{ThemeResource SystemAccentColor}\" Opacity=\".8\"/>",
+    L"subtleButtonHover=<SolidColorBrush Color=\"{ThemeResource SubtleFillColorSecondary}\"/>",
+    L"subtleButtonPress=<SolidColorBrush Color=\"{ThemeResource SubtleFillColorTertiary}\"/>",
+    L"button=<SolidColorBrush Color=\"{ThemeResource ControlFillColorDefault}\"/>",
+    L"buttonHover=<SolidColorBrush Color=\"{ThemeResource ControlFillColorSecondary}\"/>",
+    L"buttonPress=<SolidColorBrush Color=\"{ThemeResource ControlFillColorTertiary}\"/>",
+    L"textPrimary=<SolidColorBrush Color=\"{ThemeResource TextFillColorPrimary}\"/>",
+    L"textSecondary=<SolidColorBrush Color=\"{ThemeResource TextFillColorSecondary}\"/>",
+    L"textDisabled=<SolidColorBrush Color=\"{ThemeResource TextFillColorDisabled}\"/>",
+    L"textInverse=<SolidColorBrush Color=\"{ThemeResource TextFillColorInverse}\"/>",
+    L"acrylic=<AcrylicBrush TintColor=\"{ThemeResource SystemChromeMediumColor}\" FallbackColor=\"{ThemeResource SystemChromeMediumColor}\" TintOpacity=\"0\" TintLuminosityOpacity=\"1\"/>",
+    L"fakeShadow=<LinearGradientBrush StartPoint=\"0,0\" EndPoint=\"0,1\"><GradientStop Color=\"#10000000\" Offset=\"0.84\" /><GradientStop Color=\"#26000000\" Offset=\"0.85\" /><GradientStop Color=\"#00000000\" Offset=\"1.0\" /></LinearGradientBrush>",
+    L"inputActive=<SolidColorBrush Color=\"{ThemeResource ControlFillColorInputActive}\"/>",
+    L"separator=<SolidColorBrush Color=\"{ThemeResource SurfaceStrokeColorDefault}\" Opacity=\".5\"/>",
+}, {}, {
     ThemeTargetStyles{L"#qfPreviewPane, #qfPreviewPane *, .leftPill::before, #temporaryMessages, .scope-with-background__backButton, #gr11, #pp_Share, #pp_Review, #chatButtonRight, .curatedSettingsGroup, .scope-with-background__rightCaret, #topHitHeader, .userProfileMenuIcon, .scope-tile__button, .additionalInfoText.annotation, #root:not(.zeroInput19H1):not(.fileExplorer) .topResults .openPreviewPaneBtn .iconContent, .openPreviewIcon .iconContent.cortanaFontIcon, #scopesHeader, #scopesHeader *, #gr36, div[data-region=\"TopApps\"], #gr43, .openPreviewPaneBtn, .suggContainer.largerSearchIcon14 .secondaryText", {
         L"display: none !important",
         L"visibility: hidden !important"}},
@@ -5740,23 +5757,6 @@ const Theme g_themeWindows10X_variant_ClassicStartMenu = {{
         L"background: transparent !important"}},
     ThemeTargetStyles{L".topResults .suggDetailsContainer .primaryText", {
         L"margin-bottom: -2px !important"}},
-}, {
-    L"accent=<SolidColorBrush Color=\"{ThemeResource SystemAccentColor}\"/>",
-    L"accentHover=<SolidColorBrush Color=\"{ThemeResource SystemAccentColor}\" Opacity=\".9\"/>",
-    L"accentPress=<SolidColorBrush Color=\"{ThemeResource SystemAccentColor}\" Opacity=\".8\"/>",
-    L"subtleButtonHover=<SolidColorBrush Color=\"{ThemeResource SubtleFillColorSecondary}\"/>",
-    L"subtleButtonPress=<SolidColorBrush Color=\"{ThemeResource SubtleFillColorTertiary}\"/>",
-    L"button=<SolidColorBrush Color=\"{ThemeResource ControlFillColorDefault}\"/>",
-    L"buttonHover=<SolidColorBrush Color=\"{ThemeResource ControlFillColorSecondary}\"/>",
-    L"buttonPress=<SolidColorBrush Color=\"{ThemeResource ControlFillColorTertiary}\"/>",
-    L"textPrimary=<SolidColorBrush Color=\"{ThemeResource TextFillColorPrimary}\"/>",
-    L"textSecondary=<SolidColorBrush Color=\"{ThemeResource TextFillColorSecondary}\"/>",
-    L"textDisabled=<SolidColorBrush Color=\"{ThemeResource TextFillColorDisabled}\"/>",
-    L"textInverse=<SolidColorBrush Color=\"{ThemeResource TextFillColorInverse}\"/>",
-    L"acrylic=<AcrylicBrush TintColor=\"{ThemeResource SystemChromeMediumColor}\" FallbackColor=\"{ThemeResource SystemChromeMediumColor}\" TintOpacity=\"0\" TintLuminosityOpacity=\"1\"/>",
-    L"fakeShadow=<LinearGradientBrush StartPoint=\"0,0\" EndPoint=\"0,1\"><GradientStop Color=\"#10000000\" Offset=\"0.84\" /><GradientStop Color=\"#26000000\" Offset=\"0.85\" /><GradientStop Color=\"#00000000\" Offset=\"1.0\" /></LinearGradientBrush>",
-    L"inputActive=<SolidColorBrush Color=\"{ThemeResource ControlFillColorInputActive}\"/>",
-    L"separator=<SolidColorBrush Color=\"{ThemeResource SurfaceStrokeColorDefault}\" Opacity=\".5\"/>",
 }};
 
 const Theme g_themeTintedGlass = {{
@@ -5854,7 +5854,7 @@ const Theme g_themeTintedGlass = {{
         L"Background@PointerOver:=<RevealBorderBrush Color=\"Transparent\" TargetTheme=\"1\" Opacity=\"0.9\"/>",
         L"BorderThickness=1",
         L"CornerRadius=5"}},
-}, {}, {
+}, {
     L"CommonBgBrush=<WindhawkBlur BlurAmount=\"18\" TintColor=\"#80000000\"/>",
 }};
 
@@ -5951,7 +5951,7 @@ const Theme g_themeTintedGlass_variant_ClassicStartMenu = {{
     ThemeTargetStyles{L"StartDocked.AllAppsGridListViewItem > Grid#ContentBorder@CommonStates", {
         L"Background@PointerOver:=<WindhawkBlur BlurAmount=\"25\" TintColor=\"#15C0C0C0\"/>",
         L"CornerRadius=14"}},
-}, {}, {
+}, {
     L"CommonBgBrush=<WindhawkBlur BlurAmount=\"18\" TintColor=\"#80000000\"/>",
 }};
 
