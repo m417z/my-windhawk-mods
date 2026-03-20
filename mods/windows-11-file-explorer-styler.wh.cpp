@@ -3640,7 +3640,7 @@ void MergeResourceVariables();
 void ApplyCustomizations(InstanceHandle handle,
                          FrameworkElement element,
                          PCWSTR fallbackClassName) {
-    // Merge resource dictionary on first element add. Merging it eariler on
+    // Merge resource dictionary on first element add. Merging it earlier on
     // window creation doesn't work, perhaps merged dictionaries are reset
     // during initialization.
     if (!g_resourceVariablesThemeDict) {
@@ -4095,7 +4095,6 @@ winrt::Windows::Foundation::IInspectable ParseXamlValue(
     return style.Setters().GetAt(0).as<Setter>().Value();
 }
 
-// Returns true if a theme resource was added.
 bool ProcessResourceVariable(ResourceDictionary resources,
                              ResourceDictionary darkDict,
                              ResourceDictionary lightDict,
