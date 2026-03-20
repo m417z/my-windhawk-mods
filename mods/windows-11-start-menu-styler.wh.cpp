@@ -357,14 +357,6 @@ from the **TranslucentTB** project.
     - styles: [""]
       $name: Styles
   $name: Control styles
-- webContentStyles:
-  - - target: ""
-      $name: Target
-    - styles: [""]
-      $name: Styles
-  $name: Search WebView styles
-- webContentCustomJs: ""
-  $name: Search WebView custom JavaScript code
 - themeResourceVariables: [""]
   $name: Resource variables
   $description: >-
@@ -375,6 +367,14 @@ from the **TranslucentTB** project.
 
     The ":=" syntax can be used to set a XAML value. For details, refer to the
     mod description.
+- webContentStyles:
+  - - target: ""
+      $name: Target
+    - styles: [""]
+      $name: Styles
+  $name: Search WebView styles
+- webContentCustomJs: ""
+  $name: Search WebView custom JavaScript code
 */
 // ==/WindhawkModSettings==
 
