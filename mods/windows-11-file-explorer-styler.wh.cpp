@@ -4017,70 +4017,6 @@ bool ProcessSingleTargetStylesFromSettings(
     return true;
 }
 
-const Theme* GetSelectedTheme() {
-    PCWSTR themeName = Wh_GetStringSetting(L"theme");
-    const Theme* theme = nullptr;
-    if (wcscmp(themeName, L"Translucent Explorer11") == 0) {
-        theme = &g_themeTranslucent_Explorer11;
-    } else if (wcscmp(themeName, L"MicaBar") == 0) {
-        theme = &g_themeMicaBar;
-    } else if (wcscmp(themeName, L"NoCommandBar") == 0) {
-        theme = &g_themeNoCommandBar;
-    } else if (wcscmp(themeName, L"Minimal Explorer11") == 0) {
-        theme = &g_themeMinimal_Explorer11;
-    } else if (wcscmp(themeName, L"Tabless") == 0) {
-        theme = &g_themeTabless;
-    } else if (wcscmp(themeName, L"Matter") == 0) {
-        theme = &g_themeMatter;
-    } else if (wcscmp(themeName, L"WindowGlass") == 0) {
-        theme = &g_themeWindowGlass;
-    } else if (wcscmp(themeName, L"AddressSearchOnly") == 0) {
-        theme = &g_themeAddressSearchOnly;
-    } else if (wcscmp(themeName, L"TintedGlass") == 0) {
-        theme = &g_themeTintedGlass;
-    }
-    Wh_FreeStringSetting(themeName);
-    return theme;
-}
-
-void ProcessAllStylesFromSettings() {
-    const Theme* theme = GetSelectedTheme();
-
-    StyleConstants styleConstants = LoadStyleConstants(
-        theme ? theme->styleConstants : std::vector<PCWSTR>{});
-
-    if (theme) {
-        for (const auto& themeTargetStyle : theme->targetStyles) {
-            try {
-                std::vector<std::wstring> styles;
-                styles.reserve(themeTargetStyle.styles.size());
-                for (const auto& s : themeTargetStyle.styles) {
-                    styles.push_back(ApplyStyleConstants(s, styleConstants));
-                }
-
-                AddElementCustomizationRules(themeTargetStyle.target,
-                                             std::move(styles));
-            } catch (winrt::hresult_error const& ex) {
-                Wh_Log(L"Error %08X", ex.code());
-            } catch (std::exception const& ex) {
-                Wh_Log(L"Error: %S", ex.what());
-            }
-        }
-    }
-
-    for (int i = 0;; i++) {
-        try {
-            if (!ProcessSingleTargetStylesFromSettings(i, styleConstants)) {
-                break;
-            }
-        } catch (winrt::hresult_error const& ex) {
-            Wh_Log(L"Error %08X: %s", ex.code(), ex.message().c_str());
-        } catch (std::exception const& ex) {
-            Wh_Log(L"Error: %S", ex.what());
-        }
-    }
-}
-
 std::optional<ResourceVariableEntry> ParseResourceVariable(
     std::wstring_view entry,
     const StyleConstants& styleConstants) {
@@ -4350,6 +4286,70 @@ void ProcessResourceVariablesFromSettings() {
                 dispatcherQueue.TryEnqueue(
                     []() { RefreshThemeResourceEntries(); });
             });
+    }
+}
+
+const Theme* GetSelectedTheme() {
+    PCWSTR themeName = Wh_GetStringSetting(L"theme");
+    const Theme* theme = nullptr;
+    if (wcscmp(themeName, L"Translucent Explorer11") == 0) {
+        theme = &g_themeTranslucent_Explorer11;
+    } else if (wcscmp(themeName, L"MicaBar") == 0) {
+        theme = &g_themeMicaBar;
+    } else if (wcscmp(themeName, L"NoCommandBar") == 0) {
+        theme = &g_themeNoCommandBar;
+    } else if (wcscmp(themeName, L"Minimal Explorer11") == 0) {
+        theme = &g_themeMinimal_Explorer11;
+    } else if (wcscmp(themeName, L"Tabless") == 0) {
+        theme = &g_themeTabless;
+    } else if (wcscmp(themeName, L"Matter") == 0) {
+        theme = &g_themeMatter;
+    } else if (wcscmp(themeName, L"WindowGlass") == 0) {
+        theme = &g_themeWindowGlass;
+    } else if (wcscmp(themeName, L"AddressSearchOnly") == 0) {
+        theme = &g_themeAddressSearchOnly;
+    } else if (wcscmp(themeName, L"TintedGlass") == 0) {
+        theme = &g_themeTintedGlass;
+    }
+    Wh_FreeStringSetting(themeName);
+    return theme;
+}
+
+void ProcessAllStylesFromSettings() {
+    const Theme* theme = GetSelectedTheme();
+
+    StyleConstants styleConstants = LoadStyleConstants(
+        theme ? theme->styleConstants : std::vector<PCWSTR>{});
+
+    if (theme) {
+        for (const auto& themeTargetStyle : theme->targetStyles) {
+            try {
+                std::vector<std::wstring> styles;
+                styles.reserve(themeTargetStyle.styles.size());
+                for (const auto& s : themeTargetStyle.styles) {
+                    styles.push_back(ApplyStyleConstants(s, styleConstants));
+                }
+
+                AddElementCustomizationRules(themeTargetStyle.target,
+                                             std::move(styles));
+            } catch (winrt::hresult_error const& ex) {
+                Wh_Log(L"Error %08X", ex.code());
+            } catch (std::exception const& ex) {
+                Wh_Log(L"Error: %S", ex.what());
+            }
+        }
+    }
+
+    for (int i = 0;; i++) {
+        try {
+            if (!ProcessSingleTargetStylesFromSettings(i, styleConstants)) {
+                break;
+            }
+        } catch (winrt::hresult_error const& ex) {
+            Wh_Log(L"Error %08X: %s", ex.code(), ex.message().c_str());
+        } catch (std::exception const& ex) {
+            Wh_Log(L"Error: %S", ex.what());
+        }
     }
 }
 

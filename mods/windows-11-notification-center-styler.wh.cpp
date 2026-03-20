@@ -5142,65 +5142,6 @@ bool ProcessSingleTargetStylesFromSettings(
     return true;
 }
 
-void ProcessAllStylesFromSettings() {
-    PCWSTR themeName = Wh_GetStringSetting(L"theme");
-    const Theme* theme = nullptr;
-    if (wcscmp(themeName, L"TranslucentShell") == 0) {
-        theme = &g_themeTranslucentShell;
-    } else if (wcscmp(themeName, L"Matter") == 0) {
-        theme = &g_themeMatter;
-    } else if (wcscmp(themeName, L"Unified") == 0) {
-        theme = &g_themeUnified;
-    } else if (wcscmp(themeName, L"10JumpLists") == 0) {
-        theme = &g_theme10JumpLists;
-    } else if (wcscmp(themeName, L"WindowGlass") == 0) {
-        theme = &g_themeWindowGlass;
-    } else if (wcscmp(themeName, L"WindowGlass_variant_alternative") == 0) {
-        theme = &g_themeWindowGlass_variant_alternative;
-    } else if (wcscmp(themeName, L"Oversimplified&Accentuated") == 0) {
-        theme = &g_themeOversimplified_Accentuated;
-    } else if (wcscmp(themeName, L"TintedGlass") == 0) {
-        theme = &g_themeTintedGlass;
-    } else if (wcscmp(themeName, L"Fluid") == 0) {
-        theme = &g_themeFluid;
-    }
-    Wh_FreeStringSetting(themeName);
-
-    StyleConstants styleConstants = LoadStyleConstants(
-        theme ? theme->styleConstants : std::vector<PCWSTR>{});
-
-    if (theme) {
-        for (const auto& themeTargetStyle : theme->targetStyles) {
-            try {
-                std::vector<std::wstring> styles;
-                styles.reserve(themeTargetStyle.styles.size());
-                for (const auto& s : themeTargetStyle.styles) {
-                    styles.push_back(ApplyStyleConstants(s, styleConstants));
-                }
-
-                AddElementCustomizationRules(themeTargetStyle.target,
-                                             std::move(styles));
-            } catch (winrt::hresult_error const& ex) {
-                Wh_Log(L"Error %08X", ex.code());
-            } catch (std::exception const& ex) {
-                Wh_Log(L"Error: %S", ex.what());
-            }
-        }
-    }
-
-    for (int i = 0;; i++) {
-        try {
-            if (!ProcessSingleTargetStylesFromSettings(i, styleConstants)) {
-                break;
-            }
-        } catch (winrt::hresult_error const& ex) {
-            Wh_Log(L"Error %08X: %s", ex.code(), ex.message().c_str());
-        } catch (std::exception const& ex) {
-            Wh_Log(L"Error: %S", ex.what());
-        }
-    }
-}
-
 std::optional<ResourceVariableEntry> ParseResourceVariable(
     std::wstring_view entry,
     const StyleConstants& styleConstants) {
@@ -5468,6 +5409,65 @@ void ProcessResourceVariablesFromSettings() {
                 dispatcherQueue.TryEnqueue(
                     []() { RefreshThemeResourceEntries(); });
             });
+    }
+}
+
+void ProcessAllStylesFromSettings() {
+    PCWSTR themeName = Wh_GetStringSetting(L"theme");
+    const Theme* theme = nullptr;
+    if (wcscmp(themeName, L"TranslucentShell") == 0) {
+        theme = &g_themeTranslucentShell;
+    } else if (wcscmp(themeName, L"Matter") == 0) {
+        theme = &g_themeMatter;
+    } else if (wcscmp(themeName, L"Unified") == 0) {
+        theme = &g_themeUnified;
+    } else if (wcscmp(themeName, L"10JumpLists") == 0) {
+        theme = &g_theme10JumpLists;
+    } else if (wcscmp(themeName, L"WindowGlass") == 0) {
+        theme = &g_themeWindowGlass;
+    } else if (wcscmp(themeName, L"WindowGlass_variant_alternative") == 0) {
+        theme = &g_themeWindowGlass_variant_alternative;
+    } else if (wcscmp(themeName, L"Oversimplified&Accentuated") == 0) {
+        theme = &g_themeOversimplified_Accentuated;
+    } else if (wcscmp(themeName, L"TintedGlass") == 0) {
+        theme = &g_themeTintedGlass;
+    } else if (wcscmp(themeName, L"Fluid") == 0) {
+        theme = &g_themeFluid;
+    }
+    Wh_FreeStringSetting(themeName);
+
+    StyleConstants styleConstants = LoadStyleConstants(
+        theme ? theme->styleConstants : std::vector<PCWSTR>{});
+
+    if (theme) {
+        for (const auto& themeTargetStyle : theme->targetStyles) {
+            try {
+                std::vector<std::wstring> styles;
+                styles.reserve(themeTargetStyle.styles.size());
+                for (const auto& s : themeTargetStyle.styles) {
+                    styles.push_back(ApplyStyleConstants(s, styleConstants));
+                }
+
+                AddElementCustomizationRules(themeTargetStyle.target,
+                                             std::move(styles));
+            } catch (winrt::hresult_error const& ex) {
+                Wh_Log(L"Error %08X", ex.code());
+            } catch (std::exception const& ex) {
+                Wh_Log(L"Error: %S", ex.what());
+            }
+        }
+    }
+
+    for (int i = 0;; i++) {
+        try {
+            if (!ProcessSingleTargetStylesFromSettings(i, styleConstants)) {
+                break;
+            }
+        } catch (winrt::hresult_error const& ex) {
+            Wh_Log(L"Error %08X: %s", ex.code(), ex.message().c_str());
+        } catch (std::exception const& ex) {
+            Wh_Log(L"Error: %S", ex.what());
+        }
     }
 }
 

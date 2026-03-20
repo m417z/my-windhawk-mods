@@ -7172,167 +7172,6 @@ bool ProcessSingleTargetStylesFromSettings(
     return true;
 }
 
-std::optional<bool> IsOsFeatureEnabled(UINT32 featureId) {
-    enum FEATURE_ENABLED_STATE {
-        FEATURE_ENABLED_STATE_DEFAULT = 0,
-        FEATURE_ENABLED_STATE_DISABLED = 1,
-        FEATURE_ENABLED_STATE_ENABLED = 2,
-    };
-
-#pragma pack(push, 1)
-    struct RTL_FEATURE_CONFIGURATION {
-        unsigned int featureId;
-        unsigned __int32 group : 4;
-        FEATURE_ENABLED_STATE enabledState : 2;
-        unsigned __int32 enabledStateOptions : 1;
-        unsigned __int32 unused1 : 1;
-        unsigned __int32 variant : 6;
-        unsigned __int32 variantPayloadKind : 2;
-        unsigned __int32 unused2 : 16;
-        unsigned int payload;
-    };
-#pragma pack(pop)
-
-    using RtlQueryFeatureConfiguration_t =
-        int(NTAPI*)(UINT32, int, INT64*, RTL_FEATURE_CONFIGURATION*);
-    static RtlQueryFeatureConfiguration_t pRtlQueryFeatureConfiguration = []() {
-        HMODULE hNtDll = LoadLibraryW(L"ntdll.dll");
-        return hNtDll ? (RtlQueryFeatureConfiguration_t)GetProcAddress(
-                            hNtDll, "RtlQueryFeatureConfiguration")
-                      : nullptr;
-    }();
-
-    if (!pRtlQueryFeatureConfiguration) {
-        Wh_Log(L"RtlQueryFeatureConfiguration not found");
-        return std::nullopt;
-    }
-
-    RTL_FEATURE_CONFIGURATION feature = {0};
-    INT64 changeStamp = 0;
-    HRESULT hr =
-        pRtlQueryFeatureConfiguration(featureId, 1, &changeStamp, &feature);
-    if (SUCCEEDED(hr)) {
-        Wh_Log(L"RtlQueryFeatureConfiguration result for %u: %d", featureId,
-               feature.enabledState);
-
-        switch (feature.enabledState) {
-            case FEATURE_ENABLED_STATE_DISABLED:
-                return false;
-            case FEATURE_ENABLED_STATE_ENABLED:
-                return true;
-            case FEATURE_ENABLED_STATE_DEFAULT:
-                return std::nullopt;
-        }
-    } else {
-        Wh_Log(L"RtlQueryFeatureConfiguration error for %u: %08X", featureId,
-               hr);
-    }
-
-    return std::nullopt;
-}
-
-void ProcessAllStylesFromSettings() {
-    PCWSTR themeName = Wh_GetStringSetting(L"theme");
-    const Theme* theme = nullptr;
-    if (wcscmp(themeName, L"TranslucentTaskbar") == 0) {
-        theme = &g_themeTranslucentTaskbar;
-    } else if (wcscmp(themeName, L"DockLike") == 0) {
-        theme = &g_themeDockLike;
-    } else if (wcscmp(themeName, L"SimplyTransparent") == 0) {
-        theme = &g_themeSimplyTransparent;
-    } else if (wcscmp(themeName, L"Squircle") == 0) {
-        // Weather widget on the right.
-        // https://www.reddit.com/r/Windows11/comments/1dnew8x/my_weather_widget_is_on_the_right_side/
-        constexpr UINT32 kExtendedModeAEPForTaskbar = 48660958;
-        theme = IsOsFeatureEnabled(kExtendedModeAEPForTaskbar).value_or(false)
-                    ? &g_themeSquircle_variant_WeatherOnTheRight
-                    : &g_themeSquircle;
-    } else if (wcscmp(themeName, L"Matter") == 0) {
-        theme = &g_themeMatter;
-    } else if (wcscmp(themeName, L"WinXP") == 0) {
-        theme = &g_themeWinXP;
-    } else if (wcscmp(themeName, L"WinXP_variant_Zune") == 0) {
-        theme = &g_themeWinXP_variant_Zune;
-    } else if (wcscmp(themeName, L"Bubbles") == 0) {
-        theme = &g_themeBubbles;
-    } else if (wcscmp(themeName, L"RosePine") == 0) {
-        theme = &g_themeRosePine;
-    } else if (wcscmp(themeName, L"WinVista") == 0) {
-        theme = &g_themeWinVista;
-    } else if (wcscmp(themeName, L"CleanSlate") == 0) {
-        theme = &g_themeCleanSlate;
-    } else if (wcscmp(themeName, L"Lucent") == 0) {
-        theme = &g_themeLucent;
-    } else if (wcscmp(themeName, L"Lucent_variant_Light") == 0) {
-        theme = &g_themeLucent_variant_Light;
-    } else if (wcscmp(themeName, L"SunValley") == 0) {
-        theme = &g_themeSunValley;
-    } else if (wcscmp(themeName, L"21996Taskbar") == 0) {
-        theme = &g_theme21996Taskbar;
-    } else if (wcscmp(themeName, L"BottomDensy") == 0) {
-        theme = &g_themeBottomDensy;
-    } else if (wcscmp(themeName, L"BottomDensy_variant_NoInd") == 0) {
-        theme = &g_themeBottomDensy_variant_NoInd;
-    } else if (wcscmp(themeName, L"TaskbarXII") == 0) {
-        theme = &g_themeTaskbarXII;
-    } else if (wcscmp(themeName, L"xdark") == 0) {
-        theme = &g_themexdark;
-    } else if (wcscmp(themeName, L"Windows7") == 0) {
-        theme = &g_themeWindows7;
-    } else if (wcscmp(themeName, L"Aeris") == 0) {
-        theme = &g_themeAeris;
-    } else if (wcscmp(themeName, L"Plasma") == 0) {
-        theme = &g_themePlasma;
-    } else if (wcscmp(themeName, L"WindowGlass") == 0) {
-        theme = &g_themeWindowGlass;
-    } else if (wcscmp(themeName, L"Surface") == 0) {
-        theme = &g_themeSurface;
-    } else if (wcscmp(themeName, L"Oversimplified&Accentuated") == 0) {
-        theme = &g_themeOversimplified_Accentuated;
-    } else if (wcscmp(themeName, L"Luminosity_variant_Dock") == 0) {
-        theme = &g_themeLuminosity_variant_Dock;
-    } else if (wcscmp(themeName, L"Luminosity_variant_Classic") == 0) {
-        theme = &g_themeLuminosity_variant_Classic;
-    } else if (wcscmp(themeName, L"Luminosity_variant_Compact") == 0) {
-        theme = &g_themeLuminosity_variant_Compact;
-    }
-    Wh_FreeStringSetting(themeName);
-
-    StyleConstants styleConstants = LoadStyleConstants(
-        theme ? theme->styleConstants : std::vector<PCWSTR>{});
-
-    if (theme) {
-        for (const auto& themeTargetStyle : theme->targetStyles) {
-            try {
-                std::vector<std::wstring> styles;
-                styles.reserve(themeTargetStyle.styles.size());
-                for (const auto& s : themeTargetStyle.styles) {
-                    styles.push_back(ApplyStyleConstants(s, styleConstants));
-                }
-
-                AddElementCustomizationRules(themeTargetStyle.target,
-                                             std::move(styles));
-            } catch (winrt::hresult_error const& ex) {
-                Wh_Log(L"Error %08X", ex.code());
-            } catch (std::exception const& ex) {
-                Wh_Log(L"Error: %S", ex.what());
-            }
-        }
-    }
-
-    for (int i = 0;; i++) {
-        try {
-            if (!ProcessSingleTargetStylesFromSettings(i, styleConstants)) {
-                break;
-            }
-        } catch (winrt::hresult_error const& ex) {
-            Wh_Log(L"Error %08X: %s", ex.code(), ex.message().c_str());
-        } catch (std::exception const& ex) {
-            Wh_Log(L"Error: %S", ex.what());
-        }
-    }
-}
-
 std::optional<ResourceVariableEntry> ParseResourceVariable(
     std::wstring_view entry,
     const StyleConstants& styleConstants) {
@@ -7600,6 +7439,167 @@ void ProcessResourceVariablesFromSettings() {
                 dispatcherQueue.TryEnqueue(
                     []() { RefreshThemeResourceEntries(); });
             });
+    }
+}
+
+std::optional<bool> IsOsFeatureEnabled(UINT32 featureId) {
+    enum FEATURE_ENABLED_STATE {
+        FEATURE_ENABLED_STATE_DEFAULT = 0,
+        FEATURE_ENABLED_STATE_DISABLED = 1,
+        FEATURE_ENABLED_STATE_ENABLED = 2,
+    };
+
+#pragma pack(push, 1)
+    struct RTL_FEATURE_CONFIGURATION {
+        unsigned int featureId;
+        unsigned __int32 group : 4;
+        FEATURE_ENABLED_STATE enabledState : 2;
+        unsigned __int32 enabledStateOptions : 1;
+        unsigned __int32 unused1 : 1;
+        unsigned __int32 variant : 6;
+        unsigned __int32 variantPayloadKind : 2;
+        unsigned __int32 unused2 : 16;
+        unsigned int payload;
+    };
+#pragma pack(pop)
+
+    using RtlQueryFeatureConfiguration_t =
+        int(NTAPI*)(UINT32, int, INT64*, RTL_FEATURE_CONFIGURATION*);
+    static RtlQueryFeatureConfiguration_t pRtlQueryFeatureConfiguration = []() {
+        HMODULE hNtDll = LoadLibraryW(L"ntdll.dll");
+        return hNtDll ? (RtlQueryFeatureConfiguration_t)GetProcAddress(
+                            hNtDll, "RtlQueryFeatureConfiguration")
+                      : nullptr;
+    }();
+
+    if (!pRtlQueryFeatureConfiguration) {
+        Wh_Log(L"RtlQueryFeatureConfiguration not found");
+        return std::nullopt;
+    }
+
+    RTL_FEATURE_CONFIGURATION feature = {0};
+    INT64 changeStamp = 0;
+    HRESULT hr =
+        pRtlQueryFeatureConfiguration(featureId, 1, &changeStamp, &feature);
+    if (SUCCEEDED(hr)) {
+        Wh_Log(L"RtlQueryFeatureConfiguration result for %u: %d", featureId,
+               feature.enabledState);
+
+        switch (feature.enabledState) {
+            case FEATURE_ENABLED_STATE_DISABLED:
+                return false;
+            case FEATURE_ENABLED_STATE_ENABLED:
+                return true;
+            case FEATURE_ENABLED_STATE_DEFAULT:
+                return std::nullopt;
+        }
+    } else {
+        Wh_Log(L"RtlQueryFeatureConfiguration error for %u: %08X", featureId,
+               hr);
+    }
+
+    return std::nullopt;
+}
+
+void ProcessAllStylesFromSettings() {
+    PCWSTR themeName = Wh_GetStringSetting(L"theme");
+    const Theme* theme = nullptr;
+    if (wcscmp(themeName, L"TranslucentTaskbar") == 0) {
+        theme = &g_themeTranslucentTaskbar;
+    } else if (wcscmp(themeName, L"DockLike") == 0) {
+        theme = &g_themeDockLike;
+    } else if (wcscmp(themeName, L"SimplyTransparent") == 0) {
+        theme = &g_themeSimplyTransparent;
+    } else if (wcscmp(themeName, L"Squircle") == 0) {
+        // Weather widget on the right.
+        // https://www.reddit.com/r/Windows11/comments/1dnew8x/my_weather_widget_is_on_the_right_side/
+        constexpr UINT32 kExtendedModeAEPForTaskbar = 48660958;
+        theme = IsOsFeatureEnabled(kExtendedModeAEPForTaskbar).value_or(false)
+                    ? &g_themeSquircle_variant_WeatherOnTheRight
+                    : &g_themeSquircle;
+    } else if (wcscmp(themeName, L"Matter") == 0) {
+        theme = &g_themeMatter;
+    } else if (wcscmp(themeName, L"WinXP") == 0) {
+        theme = &g_themeWinXP;
+    } else if (wcscmp(themeName, L"WinXP_variant_Zune") == 0) {
+        theme = &g_themeWinXP_variant_Zune;
+    } else if (wcscmp(themeName, L"Bubbles") == 0) {
+        theme = &g_themeBubbles;
+    } else if (wcscmp(themeName, L"RosePine") == 0) {
+        theme = &g_themeRosePine;
+    } else if (wcscmp(themeName, L"WinVista") == 0) {
+        theme = &g_themeWinVista;
+    } else if (wcscmp(themeName, L"CleanSlate") == 0) {
+        theme = &g_themeCleanSlate;
+    } else if (wcscmp(themeName, L"Lucent") == 0) {
+        theme = &g_themeLucent;
+    } else if (wcscmp(themeName, L"Lucent_variant_Light") == 0) {
+        theme = &g_themeLucent_variant_Light;
+    } else if (wcscmp(themeName, L"SunValley") == 0) {
+        theme = &g_themeSunValley;
+    } else if (wcscmp(themeName, L"21996Taskbar") == 0) {
+        theme = &g_theme21996Taskbar;
+    } else if (wcscmp(themeName, L"BottomDensy") == 0) {
+        theme = &g_themeBottomDensy;
+    } else if (wcscmp(themeName, L"BottomDensy_variant_NoInd") == 0) {
+        theme = &g_themeBottomDensy_variant_NoInd;
+    } else if (wcscmp(themeName, L"TaskbarXII") == 0) {
+        theme = &g_themeTaskbarXII;
+    } else if (wcscmp(themeName, L"xdark") == 0) {
+        theme = &g_themexdark;
+    } else if (wcscmp(themeName, L"Windows7") == 0) {
+        theme = &g_themeWindows7;
+    } else if (wcscmp(themeName, L"Aeris") == 0) {
+        theme = &g_themeAeris;
+    } else if (wcscmp(themeName, L"Plasma") == 0) {
+        theme = &g_themePlasma;
+    } else if (wcscmp(themeName, L"WindowGlass") == 0) {
+        theme = &g_themeWindowGlass;
+    } else if (wcscmp(themeName, L"Surface") == 0) {
+        theme = &g_themeSurface;
+    } else if (wcscmp(themeName, L"Oversimplified&Accentuated") == 0) {
+        theme = &g_themeOversimplified_Accentuated;
+    } else if (wcscmp(themeName, L"Luminosity_variant_Dock") == 0) {
+        theme = &g_themeLuminosity_variant_Dock;
+    } else if (wcscmp(themeName, L"Luminosity_variant_Classic") == 0) {
+        theme = &g_themeLuminosity_variant_Classic;
+    } else if (wcscmp(themeName, L"Luminosity_variant_Compact") == 0) {
+        theme = &g_themeLuminosity_variant_Compact;
+    }
+    Wh_FreeStringSetting(themeName);
+
+    StyleConstants styleConstants = LoadStyleConstants(
+        theme ? theme->styleConstants : std::vector<PCWSTR>{});
+
+    if (theme) {
+        for (const auto& themeTargetStyle : theme->targetStyles) {
+            try {
+                std::vector<std::wstring> styles;
+                styles.reserve(themeTargetStyle.styles.size());
+                for (const auto& s : themeTargetStyle.styles) {
+                    styles.push_back(ApplyStyleConstants(s, styleConstants));
+                }
+
+                AddElementCustomizationRules(themeTargetStyle.target,
+                                             std::move(styles));
+            } catch (winrt::hresult_error const& ex) {
+                Wh_Log(L"Error %08X", ex.code());
+            } catch (std::exception const& ex) {
+                Wh_Log(L"Error: %S", ex.what());
+            }
+        }
+    }
+
+    for (int i = 0;; i++) {
+        try {
+            if (!ProcessSingleTargetStylesFromSettings(i, styleConstants)) {
+                break;
+            }
+        } catch (winrt::hresult_error const& ex) {
+            Wh_Log(L"Error %08X: %s", ex.code(), ex.message().c_str());
+        } catch (std::exception const& ex) {
+            Wh_Log(L"Error: %S", ex.what());
+        }
     }
 }
 

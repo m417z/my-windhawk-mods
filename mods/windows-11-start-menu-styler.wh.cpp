@@ -9688,142 +9688,6 @@ void ProcessWebStylesFromSettings(
             .get();
 }
 
-void ProcessAllStylesFromSettings() {
-    PCWSTR themeName = Wh_GetStringSetting(L"theme");
-    const Theme* theme = nullptr;
-    if (wcscmp(themeName, L"TranslucentStartMenu") == 0) {
-        theme = g_isRedesignedStartMenu
-                    ? &g_themeTranslucentStartMenu
-                    : &g_themeTranslucentStartMenu_variant_ClassicStartMenu;
-    } else if (wcscmp(themeName, L"NoRecommendedSection") == 0) {
-        theme = g_isRedesignedStartMenu
-                    ? &g_themeNoRecommendedSection
-                    : &g_themeNoRecommendedSection_variant_ClassicStartMenu;
-    } else if (wcscmp(themeName, L"SideBySide") == 0) {
-        theme = g_isRedesignedStartMenu
-                    ? &g_themeSideBySide
-                    : &g_themeSideBySide_variant_ClassicStartMenu;
-    } else if (wcscmp(themeName, L"SideBySide2") == 0) {
-        theme = g_isRedesignedStartMenu
-                    ? &g_themeSideBySide2
-                    : &g_themeSideBySide2_variant_ClassicStartMenu;
-    } else if (wcscmp(themeName, L"SideBySideMinimal") == 0) {
-        theme = g_isRedesignedStartMenu
-                    ? &g_themeSideBySideMinimal
-                    : &g_themeSideBySideMinimal_variant_ClassicStartMenu;
-    } else if (wcscmp(themeName, L"Down Aero") == 0) {
-        theme = g_isRedesignedStartMenu
-                    ? &g_themeDown_Aero
-                    : &g_themeDown_Aero_variant_ClassicStartMenu;
-    } else if (wcscmp(themeName, L"Windows10") == 0) {
-        theme = g_isRedesignedStartMenu
-                    ? &g_themeWindows10
-                    : &g_themeWindows10_variant_ClassicStartMenu;
-    } else if (wcscmp(themeName, L"Windows10_variant_Minimal") == 0) {
-        theme = g_isRedesignedStartMenu
-                    ? &g_themeWindows10_variant_Minimal
-                    : &g_themeWindows10_variant_Minimal_ClassicStartMenu;
-    } else if (wcscmp(themeName, L"Windows11_Metro10") == 0) {
-        theme = g_isRedesignedStartMenu
-                    ? &g_themeWindows11_Metro10
-                    : &g_themeWindows11_Metro10_variant_ClassicStartMenu;
-    } else if (wcscmp(themeName, L"Fluent2Inspired") == 0) {
-        theme = g_isRedesignedStartMenu
-                    ? &g_themeFluent2Inspired
-                    : &g_themeFluent2Inspired_variant_ClassicStartMenu;
-    } else if (wcscmp(themeName, L"RosePine") == 0) {
-        theme = g_isRedesignedStartMenu
-                    ? &g_themeRosePine
-                    : &g_themeRosePine_variant_ClassicStartMenu;
-    } else if (wcscmp(themeName, L"Windows11_Metro10Minimal") == 0) {
-        theme = g_isRedesignedStartMenu
-                    ? &g_themeWindows11_Metro10Minimal
-                    : &g_themeWindows11_Metro10Minimal_variant_ClassicStartMenu;
-    } else if (wcscmp(themeName, L"Everblush") == 0) {
-        theme = g_isRedesignedStartMenu
-                    ? &g_themeEverblush
-                    : &g_themeEverblush_variant_ClassicStartMenu;
-    } else if (wcscmp(themeName, L"SunValley") == 0) {
-        theme = &g_themeSunValley;
-    } else if (wcscmp(themeName, L"21996") == 0) {
-        theme = g_isRedesignedStartMenu
-                    ? &g_theme21996
-                    : &g_theme21996_variant_ClassicStartMenu;
-    } else if (wcscmp(themeName, L"UniMenu") == 0) {
-        theme = g_isRedesignedStartMenu
-                    ? &g_themeUniMenu
-                    : &g_themeUniMenu_variant_ClassicStartMenu;
-    } else if (wcscmp(themeName, L"LegacyFluent") == 0) {
-        theme = g_isRedesignedStartMenu
-                    ? &g_themeLegacyFluent
-                    : &g_themeLegacyFluent_variant_ClassicStartMenu;
-    } else if (wcscmp(themeName, L"OnlySearch") == 0) {
-        theme = g_isRedesignedStartMenu
-                    ? &g_themeOnlySearch
-                    : &g_themeOnlySearch_variant_ClassicStartMenu;
-    } else if (wcscmp(themeName, L"WindowGlass") == 0) {
-        theme = &g_themeWindowGlass;
-    } else if (wcscmp(themeName, L"WindowGlass_variant_Minimal") == 0) {
-        // Same as WindowGlass, kept for backward compatibility.
-        theme = &g_themeWindowGlass;
-    } else if (wcscmp(themeName, L"Fluid") == 0) {
-        theme = &g_themeFluid;
-    } else if (wcscmp(themeName, L"Oversimplified&Accentuated") == 0) {
-        theme = &g_themeOversimplified_Accentuated;
-    } else if (wcscmp(themeName, L"LiquidGlass") == 0) {
-        theme = &g_themeLiquidGlass;
-    } else if (wcscmp(themeName, L"Windows10X") == 0) {
-        theme = g_isRedesignedStartMenu
-                    ? &g_themeWindows10X
-                    : &g_themeWindows10X_variant_ClassicStartMenu;
-    } else if (wcscmp(themeName, L"TintedGlass") == 0) {
-        theme = g_isRedesignedStartMenu
-                    ? &g_themeTintedGlass
-                    : &g_themeTintedGlass_variant_ClassicStartMenu;
-    }
-    Wh_FreeStringSetting(themeName);
-
-    StyleConstants styleConstants = LoadStyleConstants(
-        theme ? theme->styleConstants : std::vector<PCWSTR>{});
-
-    if (theme) {
-        for (const auto& themeTargetStyle : theme->targetStyles) {
-            try {
-                std::vector<std::wstring> styles;
-                styles.reserve(themeTargetStyle.styles.size());
-                for (const auto& s : themeTargetStyle.styles) {
-                    styles.push_back(ApplyStyleConstants(s, styleConstants));
-                }
-
-                AddElementCustomizationRules(themeTargetStyle.target,
-                                             std::move(styles));
-            } catch (winrt::hresult_error const& ex) {
-                Wh_Log(L"Error %08X", ex.code());
-            } catch (std::exception const& ex) {
-                Wh_Log(L"Error: %S", ex.what());
-            }
-        }
-    }
-
-    for (int i = 0;; i++) {
-        try {
-            if (!ProcessSingleTargetStylesFromSettings(i, styleConstants)) {
-                break;
-            }
-        } catch (winrt::hresult_error const& ex) {
-            Wh_Log(L"Error %08X: %s", ex.code(), ex.message().c_str());
-        } catch (std::exception const& ex) {
-            Wh_Log(L"Error: %S", ex.what());
-        }
-    }
-
-    if (g_target == Target::SearchHost) {
-        ProcessWebStylesFromSettings(styleConstants,
-                                     theme ? theme->webViewTargetStyles
-                                           : std::vector<ThemeTargetStyles>{});
-    }
-}
-
 std::optional<ResourceVariableEntry> ParseResourceVariable(
     std::wstring_view entry,
     const StyleConstants& styleConstants) {
@@ -10091,6 +9955,142 @@ void ProcessResourceVariablesFromSettings() {
                 dispatcherQueue.TryEnqueue(
                     []() { RefreshThemeResourceEntries(); });
             });
+    }
+}
+
+void ProcessAllStylesFromSettings() {
+    PCWSTR themeName = Wh_GetStringSetting(L"theme");
+    const Theme* theme = nullptr;
+    if (wcscmp(themeName, L"TranslucentStartMenu") == 0) {
+        theme = g_isRedesignedStartMenu
+                    ? &g_themeTranslucentStartMenu
+                    : &g_themeTranslucentStartMenu_variant_ClassicStartMenu;
+    } else if (wcscmp(themeName, L"NoRecommendedSection") == 0) {
+        theme = g_isRedesignedStartMenu
+                    ? &g_themeNoRecommendedSection
+                    : &g_themeNoRecommendedSection_variant_ClassicStartMenu;
+    } else if (wcscmp(themeName, L"SideBySide") == 0) {
+        theme = g_isRedesignedStartMenu
+                    ? &g_themeSideBySide
+                    : &g_themeSideBySide_variant_ClassicStartMenu;
+    } else if (wcscmp(themeName, L"SideBySide2") == 0) {
+        theme = g_isRedesignedStartMenu
+                    ? &g_themeSideBySide2
+                    : &g_themeSideBySide2_variant_ClassicStartMenu;
+    } else if (wcscmp(themeName, L"SideBySideMinimal") == 0) {
+        theme = g_isRedesignedStartMenu
+                    ? &g_themeSideBySideMinimal
+                    : &g_themeSideBySideMinimal_variant_ClassicStartMenu;
+    } else if (wcscmp(themeName, L"Down Aero") == 0) {
+        theme = g_isRedesignedStartMenu
+                    ? &g_themeDown_Aero
+                    : &g_themeDown_Aero_variant_ClassicStartMenu;
+    } else if (wcscmp(themeName, L"Windows10") == 0) {
+        theme = g_isRedesignedStartMenu
+                    ? &g_themeWindows10
+                    : &g_themeWindows10_variant_ClassicStartMenu;
+    } else if (wcscmp(themeName, L"Windows10_variant_Minimal") == 0) {
+        theme = g_isRedesignedStartMenu
+                    ? &g_themeWindows10_variant_Minimal
+                    : &g_themeWindows10_variant_Minimal_ClassicStartMenu;
+    } else if (wcscmp(themeName, L"Windows11_Metro10") == 0) {
+        theme = g_isRedesignedStartMenu
+                    ? &g_themeWindows11_Metro10
+                    : &g_themeWindows11_Metro10_variant_ClassicStartMenu;
+    } else if (wcscmp(themeName, L"Fluent2Inspired") == 0) {
+        theme = g_isRedesignedStartMenu
+                    ? &g_themeFluent2Inspired
+                    : &g_themeFluent2Inspired_variant_ClassicStartMenu;
+    } else if (wcscmp(themeName, L"RosePine") == 0) {
+        theme = g_isRedesignedStartMenu
+                    ? &g_themeRosePine
+                    : &g_themeRosePine_variant_ClassicStartMenu;
+    } else if (wcscmp(themeName, L"Windows11_Metro10Minimal") == 0) {
+        theme = g_isRedesignedStartMenu
+                    ? &g_themeWindows11_Metro10Minimal
+                    : &g_themeWindows11_Metro10Minimal_variant_ClassicStartMenu;
+    } else if (wcscmp(themeName, L"Everblush") == 0) {
+        theme = g_isRedesignedStartMenu
+                    ? &g_themeEverblush
+                    : &g_themeEverblush_variant_ClassicStartMenu;
+    } else if (wcscmp(themeName, L"SunValley") == 0) {
+        theme = &g_themeSunValley;
+    } else if (wcscmp(themeName, L"21996") == 0) {
+        theme = g_isRedesignedStartMenu
+                    ? &g_theme21996
+                    : &g_theme21996_variant_ClassicStartMenu;
+    } else if (wcscmp(themeName, L"UniMenu") == 0) {
+        theme = g_isRedesignedStartMenu
+                    ? &g_themeUniMenu
+                    : &g_themeUniMenu_variant_ClassicStartMenu;
+    } else if (wcscmp(themeName, L"LegacyFluent") == 0) {
+        theme = g_isRedesignedStartMenu
+                    ? &g_themeLegacyFluent
+                    : &g_themeLegacyFluent_variant_ClassicStartMenu;
+    } else if (wcscmp(themeName, L"OnlySearch") == 0) {
+        theme = g_isRedesignedStartMenu
+                    ? &g_themeOnlySearch
+                    : &g_themeOnlySearch_variant_ClassicStartMenu;
+    } else if (wcscmp(themeName, L"WindowGlass") == 0) {
+        theme = &g_themeWindowGlass;
+    } else if (wcscmp(themeName, L"WindowGlass_variant_Minimal") == 0) {
+        // Same as WindowGlass, kept for backward compatibility.
+        theme = &g_themeWindowGlass;
+    } else if (wcscmp(themeName, L"Fluid") == 0) {
+        theme = &g_themeFluid;
+    } else if (wcscmp(themeName, L"Oversimplified&Accentuated") == 0) {
+        theme = &g_themeOversimplified_Accentuated;
+    } else if (wcscmp(themeName, L"LiquidGlass") == 0) {
+        theme = &g_themeLiquidGlass;
+    } else if (wcscmp(themeName, L"Windows10X") == 0) {
+        theme = g_isRedesignedStartMenu
+                    ? &g_themeWindows10X
+                    : &g_themeWindows10X_variant_ClassicStartMenu;
+    } else if (wcscmp(themeName, L"TintedGlass") == 0) {
+        theme = g_isRedesignedStartMenu
+                    ? &g_themeTintedGlass
+                    : &g_themeTintedGlass_variant_ClassicStartMenu;
+    }
+    Wh_FreeStringSetting(themeName);
+
+    StyleConstants styleConstants = LoadStyleConstants(
+        theme ? theme->styleConstants : std::vector<PCWSTR>{});
+
+    if (theme) {
+        for (const auto& themeTargetStyle : theme->targetStyles) {
+            try {
+                std::vector<std::wstring> styles;
+                styles.reserve(themeTargetStyle.styles.size());
+                for (const auto& s : themeTargetStyle.styles) {
+                    styles.push_back(ApplyStyleConstants(s, styleConstants));
+                }
+
+                AddElementCustomizationRules(themeTargetStyle.target,
+                                             std::move(styles));
+            } catch (winrt::hresult_error const& ex) {
+                Wh_Log(L"Error %08X", ex.code());
+            } catch (std::exception const& ex) {
+                Wh_Log(L"Error: %S", ex.what());
+            }
+        }
+    }
+
+    for (int i = 0;; i++) {
+        try {
+            if (!ProcessSingleTargetStylesFromSettings(i, styleConstants)) {
+                break;
+            }
+        } catch (winrt::hresult_error const& ex) {
+            Wh_Log(L"Error %08X: %s", ex.code(), ex.message().c_str());
+        } catch (std::exception const& ex) {
+            Wh_Log(L"Error: %S", ex.what());
+        }
+    }
+
+    if (g_target == Target::SearchHost) {
+        ProcessWebStylesFromSettings(styleConstants,
+                                     theme ? theme->webViewTargetStyles
+                                           : std::vector<ThemeTargetStyles>{});
     }
 }
 
