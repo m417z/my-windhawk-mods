@@ -769,8 +769,6 @@ const Theme g_themeTintedGlass = {{
         L"Background:=$CommonBgBrush"}},
     ThemeTargetStyles{L"StackPanel#DetailsViewThumbnail > Grid", {
         L"Background:=$CommonBgBrush"}},
-    ThemeTargetStyles{L"TextBlock", {
-        L"Fill=#FFFFFF"}},
 }, {
     L"CommonBgBrush=<WindhawkBlur BlurAmount=\"18\" TintColor=\"#80000000\"/>",
 }, {}, /*explorerFrameContainerHeight=*/0, BackgroundTranslucentEffect::kAcrylic};
