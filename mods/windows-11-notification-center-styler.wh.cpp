@@ -302,6 +302,7 @@ struct ThemeTargetStyles {
 struct Theme {
     std::vector<ThemeTargetStyles> targetStyles;
     std::vector<PCWSTR> styleConstants;
+    std::vector<PCWSTR> themeResourceVariables;
 };
 
 // clang-format off
@@ -2419,12 +2420,20 @@ enum class ResourceVariableTheme {
     Light,
 };
 
+enum class ResourceVariableType {
+    String,
+    Xaml,
+    ThemeResourceReference,
+};
+
 struct ResourceVariableEntry {
     std::wstring key;
     std::wstring value;
     ResourceVariableTheme theme;
-    bool isXamlValue = false;
+    ResourceVariableType type;
 };
+
+thread_local std::vector<ResourceVariableEntry> g_resourceVariables;
 
 // Track original resource values for restoration (per-thread since
 // Application::Current().Resources() is per-thread).
@@ -2434,10 +2443,6 @@ thread_local std::unordered_map<std::wstring,
 
 // Track our merged theme dictionary for cleanup (per-thread).
 thread_local ResourceDictionary g_resourceVariablesThemeDict{nullptr};
-
-// Track theme resource entries that reference {ThemeResource ...} for refresh
-// (per-thread).
-thread_local std::vector<ResourceVariableEntry> g_themeResourceEntries;
 
 // For listening to theme color changes (per-thread).
 thread_local winrt::Windows::UI::ViewManagement::UISettings g_uiSettings{
@@ -4755,7 +4760,7 @@ void RestoreCustomizationsForVisualStateGroup(
     }
 }
 
-void ProcessResourceVariablesFromSettings();
+void MergeResourceVariables();
 
 void ApplyCustomizations(InstanceHandle handle,
                          FrameworkElement element,
@@ -4764,7 +4769,7 @@ void ApplyCustomizations(InstanceHandle handle,
     // window creation doesn't work, perhaps merged dictionaries are reset
     // during initialization.
     if (!g_resourceVariablesThemeDict) {
-        ProcessResourceVariablesFromSettings();
+        MergeResourceVariables();
     }
 
     auto overrides = FindElementPropertyOverrides(element, fallbackClassName);
@@ -5162,11 +5167,19 @@ std::optional<ResourceVariableEntry> ParseResourceVariable(
     auto valueRaw = TrimStringView(entry.substr(eqPos + 1));
     auto value = ApplyStyleConstants(valueRaw, styleConstants);
 
-    bool isXamlValue = false;
+    constexpr std::wstring_view kThemeResourcePrefix = L"{ThemeResource ";
+
+    ResourceVariableType type = ResourceVariableType::String;
     if (keyPart.size() > 0 && keyPart.back() == L':') {
-        isXamlValue = true;
+        type = ResourceVariableType::Xaml;
         keyPart = keyPart.substr(0, keyPart.size() - 1);
         keyPart = TrimStringView(keyPart);
+    } else if (value.starts_with(kThemeResourcePrefix) &&
+               value.ends_with(L"}")) {
+        type = ResourceVariableType::ThemeResourceReference;
+        value = TrimStringView(
+            value.substr(kThemeResourcePrefix.size(),
+                         value.size() - kThemeResourcePrefix.size() - 1));
     }
 
     ResourceVariableTheme theme = ResourceVariableTheme::None;
@@ -5190,31 +5203,7 @@ std::optional<ResourceVariableEntry> ParseResourceVariable(
         key = std::wstring(keyPart);
     }
 
-    return ResourceVariableEntry{std::move(key), std::move(value), theme,
-                                 isXamlValue};
-}
-
-constexpr std::wstring_view kThemeResourcePrefix = L"{ThemeResource ";
-
-bool IsThemeResourceReference(std::wstring_view value) {
-    return value.starts_with(kThemeResourcePrefix) && value.ends_with(L"}");
-}
-
-winrt::Windows::Foundation::IInspectable ResolveResourceVariableValue(
-    ResourceDictionary resources,
-    std::wstring_view value) {
-    // Check for {ThemeResource X} syntax - look up the resource directly
-    // to preserve dynamic theme-aware behavior.
-    if (IsThemeResourceReference(value)) {
-        auto resourceKey =
-            value.substr(kThemeResourcePrefix.size(),
-                         value.size() - kThemeResourcePrefix.size() - 1);
-        return resources.Lookup(
-            winrt::box_value(winrt::hstring(TrimStringView(resourceKey))));
-    }
-
-    // For other values, use boxed string (works for colors, etc.).
-    return winrt::box_value(winrt::hstring(value));
+    return ResourceVariableEntry{std::move(key), std::move(value), theme, type};
 }
 
 winrt::Windows::Foundation::IInspectable ParseXamlValue(
@@ -5232,10 +5221,10 @@ winrt::Windows::Foundation::IInspectable ParseXamlValue(
 }
 
 // Returns true if a theme resource was added.
-bool ProcessResourceVariableFromSetting(ResourceDictionary resources,
-                                        ResourceDictionary darkDict,
-                                        ResourceDictionary lightDict,
-                                        const ResourceVariableEntry& entry) {
+bool ProcessResourceVariable(ResourceDictionary resources,
+                             ResourceDictionary darkDict,
+                             ResourceDictionary lightDict,
+                             const ResourceVariableEntry& entry) {
     auto boxedKey = winrt::box_value(entry.key);
 
     if (entry.theme != ResourceVariableTheme::None) {
@@ -5253,10 +5242,17 @@ bool ProcessResourceVariableFromSetting(ResourceDictionary resources,
         }
 
         winrt::Windows::Foundation::IInspectable value;
-        if (entry.isXamlValue) {
-            value = entry.value.empty() ? nullptr : ParseXamlValue(entry.value);
-        } else {
-            value = ResolveResourceVariableValue(resources, entry.value);
+        switch (entry.type) {
+            case ResourceVariableType::String:
+                value = winrt::box_value(entry.value);
+                break;
+            case ResourceVariableType::Xaml:
+                value =
+                    entry.value.empty() ? nullptr : ParseXamlValue(entry.value);
+                break;
+            case ResourceVariableType::ThemeResourceReference:
+                value = resources.Lookup(winrt::box_value(entry.value));
+                break;
         }
 
         targetDict.Insert(boxedKey, value);
@@ -5280,38 +5276,48 @@ bool ProcessResourceVariableFromSetting(ResourceDictionary resources,
         return false;
     }
 
-    if (entry.isXamlValue) {
-        resources.Insert(boxedKey, entry.value.empty()
-                                       ? nullptr
-                                       : ParseXamlValue(entry.value));
-    } else {
-        auto resourceClassName = winrt::get_class_name(existingResource);
+    winrt::Windows::Foundation::IInspectable value;
+    switch (entry.type) {
+        case ResourceVariableType::String: {
+            auto resourceClassName = winrt::get_class_name(existingResource);
 
-        // Unwrap IReference<T> to get inner type name.
-        if (resourceClassName.starts_with(
-                L"Windows.Foundation.IReference`1<") &&
-            resourceClassName.ends_with(L'>')) {
-            size_t prefixSize = sizeof("Windows.Foundation.IReference`1<") - 1;
-            resourceClassName =
-                winrt::hstring(resourceClassName.data() + prefixSize,
-                               resourceClassName.size() - prefixSize - 1);
+            // Unwrap IReference<T> to get inner type name.
+            if (resourceClassName.starts_with(
+                    L"Windows.Foundation.IReference`1<") &&
+                resourceClassName.ends_with(L'>')) {
+                size_t prefixSize =
+                    sizeof("Windows.Foundation.IReference`1<") - 1;
+                resourceClassName =
+                    winrt::hstring(resourceClassName.data() + prefixSize,
+                                   resourceClassName.size() - prefixSize - 1);
+            }
+
+            value = Markup::XamlBindingHelper::ConvertValue(
+                Interop::TypeName{resourceClassName},
+                winrt::box_value(entry.value));
+            break;
         }
 
-        resources.Insert(boxedKey, Markup::XamlBindingHelper::ConvertValue(
-                                       Interop::TypeName{resourceClassName},
-                                       winrt::box_value(entry.value)));
+        case ResourceVariableType::Xaml:
+            value = entry.value.empty() ? nullptr : ParseXamlValue(entry.value);
+            break;
+
+        case ResourceVariableType::ThemeResourceReference:
+            value = resources.Lookup(winrt::box_value(entry.value));
+            break;
     }
 
-    return false;
+    resources.Insert(boxedKey, value);
+
+    return true;
 }
 
 void RefreshThemeResourceEntries() {
-    if (g_themeResourceEntries.empty()) {
+    if (g_resourceVariables.empty()) {
         return;
     }
 
-    Wh_Log(L"Refreshing %zu theme resource entries",
-           g_themeResourceEntries.size());
+    Wh_Log(L"Refreshing theme resource entries");
 
     auto resources = Application::Current().Resources();
 
@@ -5322,16 +5328,22 @@ void RefreshThemeResourceEntries() {
                          .TryLookup(winrt::box_value(L"Light"))
                          .try_as<ResourceDictionary>();
 
-    for (const auto& entry : g_themeResourceEntries) {
+    for (const auto& entry : g_resourceVariables) {
+        if (entry.type != ResourceVariableType::ThemeResourceReference) {
+            continue;
+        }
+
         try {
             auto boxedKey = winrt::box_value(entry.key);
-            auto value = ResolveResourceVariableValue(resources, entry.value);
+            auto value = resources.Lookup(winrt::box_value(entry.value));
 
             if (entry.theme == ResourceVariableTheme::Dark && darkDict) {
                 darkDict.Insert(boxedKey, value);
             } else if (entry.theme == ResourceVariableTheme::Light &&
                        lightDict) {
                 lightDict.Insert(boxedKey, value);
+            } else {
+                resources.Insert(boxedKey, value);
             }
         } catch (winrt::hresult_error const& ex) {
             Wh_Log(L"Error refreshing '%s': %08X", entry.key.c_str(),
@@ -5340,18 +5352,21 @@ void RefreshThemeResourceEntries() {
     }
 }
 
-void ProcessResourceVariablesFromSettings() {
-    StyleConstants styleConstants = LoadStyleConstants(std::vector<PCWSTR>{});
+std::vector<ResourceVariableEntry> ProcessResourceVariablesFromSettings(
+    const StyleConstants& styleConstants,
+    const std::vector<PCWSTR>& themeResourceVariables) {
+    std::vector<ResourceVariableEntry> resourceVariables;
 
-    auto resources = Application::Current().Resources();
+    for (const auto& themeResourceVariable : themeResourceVariables) {
+        Wh_Log(L"Processing theme resource variable %s", themeResourceVariable);
 
-    // Create theme dictionaries for @Dark/@Light resources.
-    g_resourceVariablesThemeDict = ResourceDictionary();
-    ResourceDictionary darkDict;
-    ResourceDictionary lightDict;
-    bool hasThemeResources = false;
+        auto parsed =
+            ParseResourceVariable(themeResourceVariable, styleConstants);
+        if (parsed) {
+            resourceVariables.push_back(std::move(*parsed));
+        }
+    }
 
-    std::vector<string_setting_unique_ptr> settings;
     for (int i = 0;; i++) {
         string_setting_unique_ptr setting(
             Wh_GetStringSetting(L"themeResourceVariables[%d]", i));
@@ -5359,28 +5374,39 @@ void ProcessResourceVariablesFromSettings() {
             break;
         }
 
-        settings.push_back(std::move(setting));
+        Wh_Log(L"Processing resource variable %s", setting.get());
+
+        auto parsed = ParseResourceVariable(setting.get(), styleConstants);
+        if (parsed) {
+            resourceVariables.push_back(std::move(*parsed));
+        }
     }
 
-    for (auto it = settings.rbegin(); it != settings.rend(); ++it) {
-        Wh_Log(L"Processing theme resource variable %s", it->get());
+    return resourceVariables;
+}
 
-        auto parsed = ParseResourceVariable(it->get(), styleConstants);
-        if (!parsed) {
-            continue;
-        }
+void MergeResourceVariables() {
+    auto resources = Application::Current().Resources();
+
+    // Create theme dictionaries for @Dark/@Light resources.
+    g_resourceVariablesThemeDict = ResourceDictionary();
+    ResourceDictionary darkDict;
+    ResourceDictionary lightDict;
+    bool hasThemeResources = false;
+    bool hasThemeResourceReferences = false;
+
+    for (auto it = g_resourceVariables.rbegin();
+         it != g_resourceVariables.rend(); ++it) {
+        Wh_Log(L"Processing resource variable %s", it->key.c_str());
 
         try {
-            if (ProcessResourceVariableFromSetting(resources, darkDict,
-                                                   lightDict, *parsed)) {
-                hasThemeResources = true;
+            if (ProcessResourceVariable(resources, darkDict, lightDict, *it)) {
+                if (it->theme != ResourceVariableTheme::None) {
+                    hasThemeResources = true;
+                }
 
-                // Track entries with {ThemeResource ...} for refresh on color
-                // change. XAML values handle theme resources internally via the
-                // framework, so they don't need manual refresh.
-                if (!parsed->isXamlValue &&
-                    IsThemeResourceReference(parsed->value)) {
-                    g_themeResourceEntries.push_back(*parsed);
+                if (it->type == ResourceVariableType::ThemeResourceReference) {
+                    hasThemeResourceReferences = true;
                 }
             }
         } catch (winrt::hresult_error const& ex) {
@@ -5395,19 +5421,18 @@ void ProcessResourceVariablesFromSettings() {
             winrt::box_value(L"Dark"), darkDict);
         g_resourceVariablesThemeDict.ThemeDictionaries().Insert(
             winrt::box_value(L"Light"), lightDict);
+
+        resources.MergedDictionaries().Append(g_resourceVariablesThemeDict);
     }
 
-    resources.MergedDictionaries().Append(g_resourceVariablesThemeDict);
-
     // Register for color changes to refresh theme resource references.
-    if (!g_themeResourceEntries.empty()) {
+    if (hasThemeResourceReferences) {
         g_uiSettings = winrt::Windows::UI::ViewManagement::UISettings();
         auto dispatcherQueue =
             winrt::Windows::System::DispatcherQueue::GetForCurrentThread();
         g_colorValuesChangedToken =
             g_uiSettings.ColorValuesChanged([dispatcherQueue](auto&&, auto&&) {
-                dispatcherQueue.TryEnqueue(
-                    []() { RefreshThemeResourceEntries(); });
+                dispatcherQueue.TryEnqueue(RefreshThemeResourceEntries);
             });
     }
 }
@@ -5469,6 +5494,10 @@ void ProcessAllStylesFromSettings() {
             Wh_Log(L"Error: %S", ex.what());
         }
     }
+
+    g_resourceVariables = ProcessResourceVariablesFromSettings(
+        styleConstants,
+        theme ? theme->themeResourceVariables : std::vector<PCWSTR>{});
 }
 
 void UninitializeResourceVariables() {
@@ -5478,7 +5507,7 @@ void UninitializeResourceVariables() {
         g_colorValuesChangedToken = {};
     }
     g_uiSettings = nullptr;
-    g_themeResourceEntries.clear();
+    g_resourceVariables.clear();
 
     // Restore original resource values.
     auto resources = Application::Current().Resources();
