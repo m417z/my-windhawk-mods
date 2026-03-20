@@ -1308,6 +1308,7 @@ HRESULT InjectWindhawkTAP() noexcept
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 #include <list>
 #include <mutex>
 #include <optional>
