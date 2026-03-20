@@ -1765,8 +1765,9 @@ const Theme g_themeWindows10_variant_Minimal = {{
         L"RequestedTheme=2"}},
     ThemeTargetStyles{L"Grid#FrameRoot", {
         L"Height=754",
-        L"Margin=-3,0,220,-4",
-        L"Padding=0"}},
+        L"Margin=0,0,0,-4",
+        L"Padding=0",
+        L"MaxWidth=389"}},
     ThemeTargetStyles{L"Grid#MainMenu > Windows.UI.Xaml.Controls.Border#AcrylicBorder", {
         L"Margin=0",
         L"BorderThickness=42,2,0,0",
@@ -1977,7 +1978,7 @@ const Theme g_themeWindows10_variant_Minimal = {{
         L"Style:=<ResourceKey=\"ButtonRevealStyle\" />"}},
     ThemeTargetStyles{L"Border#AcrylicOverlay", {
         L"BorderBrush:=<RevealBorderBrush Color=\"Transparent\" TargetTheme=\"1\" Opacity=\"1\"/>",
-        L"BorderThickness=2",
+        L"BorderThickness=2,2,3,2",
         L"Margin=0,0,240,0"}},
     ThemeTargetStyles{L"Grid#CompanionRoot > Grid#MainContent > Border#AcrylicOverlay", {
         L"Margin=-1,2,1,-63",
@@ -4660,10 +4661,11 @@ const Theme g_themeWindowGlass = {{
         L"CornerRadius:=$HoverCornerRadius",
         L"Margin=4,0,4,0"}},
 }, {}, {
+    L"Translucent=<WindhawkBlur BlurAmount=\"15\" TintColor=\"#10808080\"/>",
     L"Glass=<WindhawkBlur BlurAmount=\"5\" TintColor=\"{ThemeResource SystemChromeMediumColor}\" TintOpacity=\"0.7\" />",
     L"Frosted=<WindhawkBlur BlurAmount=\"20\" TintColor=\"{ThemeResource SystemChromeMediumColor}\" TintOpacity=\"0.7\" />",
     L"Acrylic=<WindhawkBlur BlurAmount=\"30\" TintColor=\"{ThemeResource SystemChromeMediumColor}\" TintOpacity=\"0.8\" />",
-    L"Background=$Frosted",
+    L"Background=$Glass",
     L"BorderBrush=<LinearGradientBrush StartPoint=\"0,0\" EndPoint=\"0,1\"><GradientStop Color=\"#60808080\" Offset=\"0.0\" /><GradientStop Color=\"#50404040\" Offset=\"0.25\" /><GradientStop Color=\"#40808080\" Offset=\"1\" /></LinearGradientBrush>",
     L"BorderBrush2=<WindhawkBlur BlurAmount=\"10\" TintColor=\"#909090\" TintOpacity=\"0.3\"/>",
     L"ClockBG=<SolidColorBrush Color=\"{ThemeResource SystemAccentColor}\" Opacity=\"1\"/>",
