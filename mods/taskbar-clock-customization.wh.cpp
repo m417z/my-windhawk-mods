@@ -9,7 +9,7 @@
 // @homepage        https://m417z.com/
 // @include         explorer.exe
 // @architecture    x86-64
-// @compilerOptions -ldxgi -lole32 -loleaut32 -lpdh -lpowrprof -lruntimeobject -lshlwapi -lversion -lwbemuuid -lwininet
+// @compilerOptions -ldxgi -lole32 -loleaut32 -lpdh -lpowrprof -lruntimeobject -lshlwapi -lversion -lwininet
 // ==/WindhawkMod==
 
 // Source code is published under The GNU General Public License v3.0.
@@ -483,7 +483,6 @@ using namespace std::string_view_literals;
 #include <powrprof.h>
 #include <psapi.h>
 #include <shlwapi.h>
-#include <wbemidl.h>
 #include <wininet.h>
 
 #undef GetCurrentTime
@@ -1868,6 +1867,7 @@ enum class MetricType {
     kDiskWriteSpeed,
     kCpu,
     kGpuUsage,
+    kCpuTemp,
 
     kCount,
 };
@@ -1891,6 +1891,7 @@ class QueryDataCollectionSession {
     void UpdateMetric(MetricType type);
     bool SampleData();
     std::optional<double> QueryData(MetricType type);
+    std::optional<double> QueryDataAvg(MetricType type);
 
    private:
     std::vector<std::wstring> ExpandEnglishWildcard(PCWSTR wildcard_path,
@@ -1972,6 +1973,10 @@ bool QueryDataCollectionSession::AddMetric(MetricType type) {
             is_wildcard = true;
             adapter_name = g_settings.dataCollection.gpuAdapterName;
             break;
+        case MetricType::kCpuTemp:
+            counter_path = L"\\Thermal Zone Information(*)\\Temperature";
+            is_wildcard = true;
+            break;
         default:
             return false;
     }
@@ -2027,6 +2032,9 @@ void QueryDataCollectionSession::UpdateMetric(MetricType type) {
             break;
         case MetricType::kGpuUsage:
             counter_path = L"\\GPU Engine(*)\\Utilization Percentage";
+            break;
+        case MetricType::kCpuTemp:
+            counter_path = L"\\Thermal Zone Information(*)\\Temperature";
             break;
         default:
             return;
@@ -2103,6 +2111,21 @@ std::optional<double> QueryDataCollectionSession::QueryData(MetricType type) {
     }
 
     return sum;
+}
+
+std::optional<double> QueryDataCollectionSession::QueryDataAvg(
+    MetricType type) {
+    auto sum = QueryData(type);
+    if (!sum) {
+        return std::nullopt;
+    }
+
+    const auto& metric = metrics_[static_cast<int>(type)];
+    if (metric.counters.empty()) {
+        return std::nullopt;
+    }
+
+    return *sum / metric.counters.size();
 }
 
 // Implemented according to the note here:
@@ -2606,6 +2629,9 @@ void DataCollectionSessionInit() {
         IsStrInDateTimePatternSettings(L"%cpu%");
     metrics[static_cast<int>(MetricType::kGpuUsage)] =
         IsStrInDateTimePatternSettings(L"%gpu%");
+    metrics[static_cast<int>(MetricType::kCpuTemp)] =
+        IsStrInDateTimePatternSettings(L"%cpu_temp%") ||
+        IsStrInDateTimePatternSettings(L"%cpu_temp_f%");
 
     if (!std::any_of(std::begin(metrics), std::end(metrics),
                      [](bool x) { return x; })) {
@@ -3087,128 +3113,38 @@ PCWSTR GetGpuFormatted() {
     });
 }
 
-// Queries WMI for the average CPU temperature in Celsius.
-std::optional<double> QueryAvgCpuTempCelsius() {
-    Wh_Log(L"Starting WMI query for thermal zones");
-
-    winrt::com_ptr<IWbemLocator> locator;
-    HRESULT hr =
-        CoCreateInstance(CLSID_WbemLocator, nullptr, CLSCTX_INPROC_SERVER,
-                         IID_IWbemLocator, locator.put_void());
-    if (FAILED(hr)) {
-        Wh_Log(L"CoCreateInstance failed hr=0x%08X", hr);
-        return std::nullopt;
-    }
-
-    winrt::com_ptr<IWbemServices> services;
-    // ROOT\CIMV2 is accessible without elevation, unlike ROOT\WMI.
-    hr = locator->ConnectServer(_bstr_t(L"ROOT\\CIMV2"), nullptr, nullptr,
-                                nullptr, 0, nullptr, nullptr, services.put());
-    if (FAILED(hr)) {
-        Wh_Log(L"ConnectServer failed hr=0x%08X", hr);
-        return std::nullopt;
-    }
-
-    // Set security levels on the proxy (required after ConnectServer).
-    hr = CoSetProxyBlanket(services.get(), RPC_C_AUTHN_WINNT, RPC_C_AUTHZ_NONE,
-                           nullptr, RPC_C_AUTHN_LEVEL_CALL,
-                           RPC_C_IMP_LEVEL_IMPERSONATE, nullptr, EOAC_NONE);
-    if (FAILED(hr)) {
-        Wh_Log(L"CoSetProxyBlanket failed hr=0x%08X", hr);
-        return std::nullopt;
-    }
-
-    winrt::com_ptr<IEnumWbemClassObject> enumerator;
-    // Temperature field is in Kelvin (whole number, not tenths).
-    hr = services->ExecQuery(
-        _bstr_t(L"WQL"),
-        _bstr_t(L"SELECT Name, Temperature FROM "
-                L"Win32_PerfFormattedData_Counters_ThermalZoneInformation"),
-        WBEM_FLAG_FORWARD_ONLY | WBEM_FLAG_RETURN_IMMEDIATELY, nullptr,
-        enumerator.put());
-    if (FAILED(hr)) {
-        Wh_Log(L"ExecQuery failed hr=0x%08X", hr);
-        return std::nullopt;
-    }
-
-    double totalTempCelsius = 0.0;
-    int count = 0;
-
-    winrt::com_ptr<IWbemClassObject> obj;
-    ULONG returned = 0;
-
-    while (enumerator->Next(WBEM_INFINITE, 1, obj.put(), &returned) ==
-           WBEM_S_NO_ERROR) {
-        if (returned == 0) {
-            break;
-        }
-
-        Wh_Log(L"Thermal zone: %s",
-               [&]() -> std::wstring {
-                   VARIANT vtName;
-                   VariantInit(&vtName);
-                   if (SUCCEEDED(
-                           obj->Get(L"Name", 0, &vtName, nullptr, nullptr)) &&
-                       vtName.vt == VT_BSTR) {
-                       std::wstring result = vtName.bstrVal;
-                       VariantClear(&vtName);
-                       return result;
-                   }
-                   return L"<unknown>";
-               }()
-                            .c_str());
-
-        VARIANT vtProp;
-        VariantInit(&vtProp);
-
-        // Temperature here is whole Kelvin (e.g. 323 = 323 K = 49.85 C).
-        hr = obj->Get(L"Temperature", 0, &vtProp, nullptr, nullptr);
-        if (SUCCEEDED(hr) && vtProp.vt == VT_I4) {
-            // Convert: Celsius = Kelvin - 273.15
-            double tempCelsius = static_cast<double>(vtProp.lVal) - 273.15;
-            Wh_Log(L"Temperature raw=%d Kelvin, celsius=%.1f", vtProp.lVal,
-                   tempCelsius);
-            totalTempCelsius += tempCelsius;
-            count++;
-        } else {
-            Wh_Log(L"Get Temperature failed hr=0x%08X vt=%d", hr, vtProp.vt);
-        }
-
-        VariantClear(&vtProp);
-        obj = nullptr;
-    }
-
-    if (count == 0) {
-        Wh_Log(L"No thermal zones found in CIMV2");
-        return std::nullopt;
-    }
-
-    double avgTemp = totalTempCelsius / count;
-    Wh_Log(L"Success count=%d avgTemp=%.1f", count, avgTemp);
-    return avgTemp;
-}
-
 PCWSTR GetCpuTempFormatted() {
-    return GetMetricFormatted(g_cpuTempFormatted,
-                              [](PWSTR buffer, size_t bufferSize) {
-                                  auto celsius = QueryAvgCpuTempCelsius();
-                                  if (!celsius) {
-                                      return false;
-                                  }
-                                  swprintf_s(buffer, bufferSize, L"%d\u00B0C",
-                                             static_cast<int>(*celsius));
-                                  return true;
-                              });
+    DataCollectionSampleIfNeeded();
+    return GetMetricFormatted(
+        g_cpuTempFormatted, [](PWSTR buffer, size_t bufferSize) {
+            if (!g_dataCollectionSession) {
+                return false;
+            }
+            auto kelvin =
+                g_dataCollectionSession->QueryDataAvg(MetricType::kCpuTemp);
+            if (!kelvin) {
+                return false;
+            }
+            int celsius = static_cast<int>(*kelvin - 273.15);
+            swprintf_s(buffer, bufferSize, L"%d\u00B0C", celsius);
+            return true;
+        });
 }
 
 PCWSTR GetCpuTempFFormatted() {
+    DataCollectionSampleIfNeeded();
     return GetMetricFormatted(
         g_cpuTempFFormatted, [](PWSTR buffer, size_t bufferSize) {
-            auto celsius = QueryAvgCpuTempCelsius();
-            if (!celsius) {
+            if (!g_dataCollectionSession) {
                 return false;
             }
-            double fahrenheit = *celsius * 9.0 / 5.0 + 32.0;
+            auto kelvin =
+                g_dataCollectionSession->QueryDataAvg(MetricType::kCpuTemp);
+            if (!kelvin) {
+                return false;
+            }
+            double celsius = *kelvin - 273.15;
+            double fahrenheit = celsius * 9.0 / 5.0 + 32.0;
             swprintf_s(buffer, bufferSize, L"%d\u00B0F",
                        static_cast<int>(fahrenheit));
             return true;
