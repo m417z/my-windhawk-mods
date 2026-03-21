@@ -2,7 +2,7 @@
 // @id              start-menu-size
 // @name            Start Menu Size
 // @description     Set a custom size for the Start menu and search menu on Windows 11
-// @version         1.0.1
+// @version         1.1
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
@@ -43,12 +43,12 @@ _Example for making the Start menu smaller_
 // ==WindhawkModSettings==
 /*
 - width: 0
-  $name: Start Menu width
+  $name: Start menu width
   $description: >-
     A custom width for the Start menu in pixels. Set to 0 to use the default
     system value.
 - height: 0
-  $name: Start Menu height
+  $name: Start menu height
   $description: >-
     A custom height for the Start menu in pixels. Set to 0 to use the default
     system value.
@@ -56,12 +56,12 @@ _Example for making the Start menu smaller_
   $name: Search menu width
   $description: >-
     A custom width for the search menu in pixels. Set to 0 to use the Start
-    Menu width value. Set to -1 to use the system default.
+    menu width value. Set to -1 to use the system default.
 - searchHeight: 0
   $name: Search menu height
   $description: >-
     A custom height for the search menu in pixels. Set to 0 to use the Start
-    Menu height value. Set to -1 to use the system default.
+    menu height value. Set to -1 to use the system default.
 */
 // ==/WindhawkModSettings==
 
