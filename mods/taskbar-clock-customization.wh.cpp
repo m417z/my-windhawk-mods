@@ -3146,13 +3146,20 @@ PCWSTR GetCpuTempFormatted() {
                 break;
             }
 
-            VARIANT vtName;
-            VariantInit(&vtName);
-            hr = obj->Get(L"Name", 0, &vtName, nullptr, nullptr);
-            if (SUCCEEDED(hr) && vtName.vt == VT_BSTR) {
-                Wh_Log(L"Thermal zone: %s", vtName.bstrVal);
-            }
-            VariantClear(&vtName);
+            Wh_Log(L"Thermal zone: %s",
+                   [&]() -> std::wstring {
+                       VARIANT vtName;
+                       VariantInit(&vtName);
+                       if (SUCCEEDED(obj->Get(L"Name", 0, &vtName, nullptr,
+                                              nullptr)) &&
+                           vtName.vt == VT_BSTR) {
+                           std::wstring result = vtName.bstrVal;
+                           VariantClear(&vtName);
+                           return result;
+                       }
+                       return L"<unknown>";
+                   }()
+                                .c_str());
 
             VARIANT vtProp;
             VariantInit(&vtProp);
