@@ -653,6 +653,16 @@ HRESULT WINAPI RoGetActivationFactory_Hook(HSTRING activatableClassId,
 
 namespace ExplorerUI {
 
+int GetMonitorInfoDpi(const void* monitorInfo) {
+    int dpi = *reinterpret_cast<const int*>(
+        static_cast<const char*>(monitorInfo) + 0x38);
+    if (dpi < 96 || dpi > 960) {
+        Wh_Log(L"Unexpected DPI value: %d", dpi);
+        dpi = 96;
+    }
+    return dpi;
+}
+
 int GetEffectiveSearchWidth() {
     if (g_settings.searchWidth == -1) {
         return 0;  // Use system default.
@@ -684,13 +694,15 @@ int* WINAPI GetSearchPaneWidthAndHeight_Hook(void* pThis,
     Wh_Log(L"GetSearchPaneWidthAndHeight: %dx%d", out[0], out[1]);
 
     if (!g_unloading) {
+        int dpi = GetMonitorInfoDpi(monitorInfo);
+
         int w = GetEffectiveSearchWidth();
         int h = GetEffectiveSearchHeight();
         if (w > 0) {
-            out[0] = w;
+            out[0] = MulDiv(w, dpi, 96);
         }
         if (h > 0) {
-            out[1] = h;
+            out[1] = MulDiv(h, dpi, 96);
         }
     }
 
@@ -700,15 +712,15 @@ int* WINAPI GetSearchPaneWidthAndHeight_Hook(void* pThis,
 using GetDefaultStartSearchAppPopupHeight_t = int(WINAPI*)(void* pThis,
                                                            int trayStuckPlace,
                                                            const RECT* rect,
-                                                           int param4);
+                                                           int dpi);
 GetDefaultStartSearchAppPopupHeight_t
     GetDefaultStartSearchAppPopupHeight_Original;
 int WINAPI GetDefaultStartSearchAppPopupHeight_Hook(void* pThis,
                                                     int trayStuckPlace,
                                                     const RECT* rect,
-                                                    int param4) {
+                                                    int dpi) {
     int result = GetDefaultStartSearchAppPopupHeight_Original(
-        pThis, trayStuckPlace, rect, param4);
+        pThis, trayStuckPlace, rect, dpi);
 
     Wh_Log(L"GetDefaultStartSearchAppPopupHeight: %d", result);
 
