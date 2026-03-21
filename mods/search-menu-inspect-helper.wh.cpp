@@ -213,7 +213,7 @@ BOOL Wh_ModInit() {
         case 0:
         case ARRAYSIZE(moduleFilePath):
             Wh_Log(L"GetModuleFileName failed");
-            break;
+            return FALSE;
 
         default:
             if (PCWSTR moduleFileName = wcsrchr(moduleFilePath, L'\\')) {
@@ -223,6 +223,7 @@ BOOL Wh_ModInit() {
                 }
             } else {
                 Wh_Log(L"GetModuleFileName returned an unsupported path");
+                return FALSE;
             }
             break;
     }
