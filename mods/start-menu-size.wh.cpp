@@ -56,12 +56,12 @@ _Example for making the Start menu smaller_
   $name: Search menu width
   $description: >-
     A custom width for the search menu in pixels. Set to 0 to use the Start
-    Menu width value.
+    Menu width value. Set to -1 to use the system default.
 - searchHeight: 0
   $name: Search menu height
   $description: >-
     A custom height for the search menu in pixels. Set to 0 to use the Start
-    Menu height value.
+    Menu height value. Set to -1 to use the system default.
 */
 // ==/WindhawkModSettings==
 
@@ -654,11 +654,17 @@ HRESULT WINAPI RoGetActivationFactory_Hook(HSTRING activatableClassId,
 namespace ExplorerUI {
 
 int GetEffectiveSearchWidth() {
+    if (g_settings.searchWidth == -1) {
+        return 0;  // Use system default.
+    }
     return g_settings.searchWidth > 0 ? g_settings.searchWidth
                                       : g_settings.width;
 }
 
 int GetEffectiveSearchHeight() {
+    if (g_settings.searchHeight == -1) {
+        return 0;  // Use system default.
+    }
     return g_settings.searchHeight > 0 ? g_settings.searchHeight
                                        : g_settings.height;
 }
