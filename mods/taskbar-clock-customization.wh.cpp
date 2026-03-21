@@ -82,6 +82,7 @@ patterns can be used:
   * `%ram%` - RAM usage.
   * `%gpu%` - GPU usage.
   * `%cpu_temp%` - CPU temperature in °C (average of all ACPI thermal zones).
+  * `%cpu_temp_f%` - CPU temperature in °F (average of all ACPI thermal zones).
   * `%battery%` - battery level percentage.
   * `%battery_time%` - battery time remaining (charging time left / discharging
     time left, in h:mm format). If the value is always zero, you might need to
@@ -665,6 +666,7 @@ FormattedString<FORMATTED_BUFFER_SIZE> g_cpuFormatted;
 FormattedString<FORMATTED_BUFFER_SIZE> g_ramFormatted;
 FormattedString<FORMATTED_BUFFER_SIZE> g_gpuFormatted;
 FormattedString<FORMATTED_BUFFER_SIZE> g_cpuTempFormatted;
+FormattedString<FORMATTED_BUFFER_SIZE> g_cpuTempFFormatted;
 FormattedString<FORMATTED_BUFFER_SIZE> g_batteryFormatted;
 FormattedString<FORMATTED_BUFFER_SIZE> g_batteryTimeFormatted;
 FormattedString<FORMATTED_BUFFER_SIZE> g_powerFormatted;
@@ -3085,115 +3087,132 @@ PCWSTR GetGpuFormatted() {
     });
 }
 
+// Queries WMI for the average CPU temperature in Celsius.
+std::optional<double> QueryAvgCpuTempCelsius() {
+    Wh_Log(L"Starting WMI query for thermal zones");
+
+    winrt::com_ptr<IWbemLocator> locator;
+    HRESULT hr =
+        CoCreateInstance(CLSID_WbemLocator, nullptr, CLSCTX_INPROC_SERVER,
+                         IID_IWbemLocator, locator.put_void());
+    if (FAILED(hr)) {
+        Wh_Log(L"CoCreateInstance failed hr=0x%08X", hr);
+        return std::nullopt;
+    }
+
+    winrt::com_ptr<IWbemServices> services;
+    // ROOT\CIMV2 is accessible without elevation, unlike ROOT\WMI.
+    hr = locator->ConnectServer(_bstr_t(L"ROOT\\CIMV2"), nullptr, nullptr,
+                                nullptr, 0, nullptr, nullptr, services.put());
+    if (FAILED(hr)) {
+        Wh_Log(L"ConnectServer failed hr=0x%08X", hr);
+        return std::nullopt;
+    }
+
+    // Set security levels on the proxy (required after ConnectServer).
+    hr = CoSetProxyBlanket(services.get(), RPC_C_AUTHN_WINNT, RPC_C_AUTHZ_NONE,
+                           nullptr, RPC_C_AUTHN_LEVEL_CALL,
+                           RPC_C_IMP_LEVEL_IMPERSONATE, nullptr, EOAC_NONE);
+    if (FAILED(hr)) {
+        Wh_Log(L"CoSetProxyBlanket failed hr=0x%08X", hr);
+        return std::nullopt;
+    }
+
+    winrt::com_ptr<IEnumWbemClassObject> enumerator;
+    // Temperature field is in Kelvin (whole number, not tenths).
+    hr = services->ExecQuery(
+        _bstr_t(L"WQL"),
+        _bstr_t(L"SELECT Name, Temperature FROM "
+                L"Win32_PerfFormattedData_Counters_ThermalZoneInformation"),
+        WBEM_FLAG_FORWARD_ONLY | WBEM_FLAG_RETURN_IMMEDIATELY, nullptr,
+        enumerator.put());
+    if (FAILED(hr)) {
+        Wh_Log(L"ExecQuery failed hr=0x%08X", hr);
+        return std::nullopt;
+    }
+
+    double totalTempCelsius = 0.0;
+    int count = 0;
+
+    winrt::com_ptr<IWbemClassObject> obj;
+    ULONG returned = 0;
+
+    while (enumerator->Next(WBEM_INFINITE, 1, obj.put(), &returned) ==
+           WBEM_S_NO_ERROR) {
+        if (returned == 0) {
+            break;
+        }
+
+        Wh_Log(L"Thermal zone: %s",
+               [&]() -> std::wstring {
+                   VARIANT vtName;
+                   VariantInit(&vtName);
+                   if (SUCCEEDED(
+                           obj->Get(L"Name", 0, &vtName, nullptr, nullptr)) &&
+                       vtName.vt == VT_BSTR) {
+                       std::wstring result = vtName.bstrVal;
+                       VariantClear(&vtName);
+                       return result;
+                   }
+                   return L"<unknown>";
+               }()
+                            .c_str());
+
+        VARIANT vtProp;
+        VariantInit(&vtProp);
+
+        // Temperature here is whole Kelvin (e.g. 323 = 323 K = 49.85 C).
+        hr = obj->Get(L"Temperature", 0, &vtProp, nullptr, nullptr);
+        if (SUCCEEDED(hr) && vtProp.vt == VT_I4) {
+            // Convert: Celsius = Kelvin - 273.15
+            double tempCelsius = static_cast<double>(vtProp.lVal) - 273.15;
+            Wh_Log(L"Temperature raw=%d Kelvin, celsius=%.1f", vtProp.lVal,
+                   tempCelsius);
+            totalTempCelsius += tempCelsius;
+            count++;
+        } else {
+            Wh_Log(L"Get Temperature failed hr=0x%08X vt=%d", hr, vtProp.vt);
+        }
+
+        VariantClear(&vtProp);
+        obj = nullptr;
+    }
+
+    if (count == 0) {
+        Wh_Log(L"No thermal zones found in CIMV2");
+        return std::nullopt;
+    }
+
+    double avgTemp = totalTempCelsius / count;
+    Wh_Log(L"Success count=%d avgTemp=%.1f", count, avgTemp);
+    return avgTemp;
+}
+
 PCWSTR GetCpuTempFormatted() {
-    return GetMetricFormatted(g_cpuTempFormatted, [](PWSTR buffer,
-                                                     size_t bufferSize) {
-        Wh_Log(L"Starting WMI query for thermal zones");
+    return GetMetricFormatted(g_cpuTempFormatted,
+                              [](PWSTR buffer, size_t bufferSize) {
+                                  auto celsius = QueryAvgCpuTempCelsius();
+                                  if (!celsius) {
+                                      return false;
+                                  }
+                                  swprintf_s(buffer, bufferSize, L"%d\u00B0C",
+                                             static_cast<int>(*celsius));
+                                  return true;
+                              });
+}
 
-        // Query MSAcpi_ThermalZoneTemperature via WMI.
-        // Temperature is in tenths of Kelvin; convert to Celsius.
-        winrt::com_ptr<IWbemLocator> locator;
-        HRESULT hr =
-            CoCreateInstance(CLSID_WbemLocator, nullptr, CLSCTX_INPROC_SERVER,
-                             IID_IWbemLocator, locator.put_void());
-        if (FAILED(hr)) {
-            Wh_Log(L"CoCreateInstance failed hr=0x%08X", hr);
-            return false;
-        }
-
-        winrt::com_ptr<IWbemServices> services;
-        // ROOT\CIMV2 is accessible without elevation, unlike ROOT\WMI.
-        hr = locator->ConnectServer(_bstr_t(L"ROOT\\CIMV2"), nullptr, nullptr,
-                                    nullptr, 0, nullptr, nullptr,
-                                    services.put());
-        if (FAILED(hr)) {
-            Wh_Log(L"ConnectServer failed hr=0x%08X", hr);
-            return false;
-        }
-
-        // Set security levels on the proxy (required after ConnectServer).
-        hr =
-            CoSetProxyBlanket(services.get(), RPC_C_AUTHN_WINNT,
-                              RPC_C_AUTHZ_NONE, nullptr, RPC_C_AUTHN_LEVEL_CALL,
-                              RPC_C_IMP_LEVEL_IMPERSONATE, nullptr, EOAC_NONE);
-        if (FAILED(hr)) {
-            Wh_Log(L"CoSetProxyBlanket failed hr=0x%08X", hr);
-            return false;
-        }
-
-        winrt::com_ptr<IEnumWbemClassObject> enumerator;
-        // Temperature field is in Kelvin (whole number, not tenths).
-        hr = services->ExecQuery(
-            _bstr_t(L"WQL"),
-            _bstr_t(L"SELECT Name, Temperature FROM "
-                    L"Win32_PerfFormattedData_Counters_ThermalZoneInformation"),
-            WBEM_FLAG_FORWARD_ONLY | WBEM_FLAG_RETURN_IMMEDIATELY, nullptr,
-            enumerator.put());
-        if (FAILED(hr)) {
-            Wh_Log(L"ExecQuery failed hr=0x%08X", hr);
-            return false;
-        }
-
-        double totalTempCelsius = 0.0;
-        int count = 0;
-
-        winrt::com_ptr<IWbemClassObject> obj;
-        ULONG returned = 0;
-
-        while (enumerator->Next(WBEM_INFINITE, 1, obj.put(), &returned) ==
-               WBEM_S_NO_ERROR) {
-            if (returned == 0) {
-                break;
+PCWSTR GetCpuTempFFormatted() {
+    return GetMetricFormatted(
+        g_cpuTempFFormatted, [](PWSTR buffer, size_t bufferSize) {
+            auto celsius = QueryAvgCpuTempCelsius();
+            if (!celsius) {
+                return false;
             }
-
-            Wh_Log(L"Thermal zone: %s",
-                   [&]() -> std::wstring {
-                       VARIANT vtName;
-                       VariantInit(&vtName);
-                       if (SUCCEEDED(obj->Get(L"Name", 0, &vtName, nullptr,
-                                              nullptr)) &&
-                           vtName.vt == VT_BSTR) {
-                           std::wstring result = vtName.bstrVal;
-                           VariantClear(&vtName);
-                           return result;
-                       }
-                       return L"<unknown>";
-                   }()
-                                .c_str());
-
-            VARIANT vtProp;
-            VariantInit(&vtProp);
-
-            // Temperature here is whole Kelvin (e.g. 323 = 323 K = 49.85 C).
-            hr = obj->Get(L"Temperature", 0, &vtProp, nullptr, nullptr);
-            if (SUCCEEDED(hr) && vtProp.vt == VT_I4) {
-                // Convert: Celsius = Kelvin - 273.15
-                double tempCelsius = static_cast<double>(vtProp.lVal) - 273.15;
-                Wh_Log(L"Temperature raw=%d Kelvin, celsius=%.1f", vtProp.lVal,
-                       tempCelsius);
-                totalTempCelsius += tempCelsius;
-                count++;
-            } else {
-                Wh_Log(L"Get Temperature failed hr=0x%08X vt=%d", hr,
-                       vtProp.vt);
-            }
-
-            VariantClear(&vtProp);
-            obj = nullptr;
-        }
-
-        if (count == 0) {
-            Wh_Log(L"No thermal zones found in CIMV2");
-            return false;
-        }
-
-        // Format as integer Celsius value with degree symbol.
-        double avgTemp = totalTempCelsius / count;
-        Wh_Log(L"Success count=%d avgTemp=%.1f", count, avgTemp);
-
-        swprintf_s(buffer, bufferSize, L"%d\u00B0C", static_cast<int>(avgTemp));
-        return true;
-    });
+            double fahrenheit = *celsius * 9.0 / 5.0 + 32.0;
+            swprintf_s(buffer, bufferSize, L"%d\u00B0F",
+                       static_cast<int>(fahrenheit));
+            return true;
+        });
 }
 
 PCWSTR GetBatteryFormatted() {
@@ -3351,6 +3370,7 @@ size_t ResolveFormatToken(
         {L"%ram%"sv, GetRamFormatted},
         {L"%gpu%"sv, GetGpuFormatted},
         {L"%cpu_temp%"sv, GetCpuTempFormatted},
+        {L"%cpu_temp_f%"sv, GetCpuTempFFormatted},
         {L"%battery%"sv, GetBatteryFormatted},
         {L"%battery_time%"sv, GetBatteryTimeFormatted},
         {L"%power%"sv, GetPowerFormatted},
