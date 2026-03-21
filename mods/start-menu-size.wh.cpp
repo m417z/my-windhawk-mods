@@ -1,13 +1,14 @@
 // ==WindhawkMod==
 // @id              start-menu-size
 // @name            Start Menu Size
-// @description     Set a custom size for the Start menu on Windows 11
+// @description     Set a custom size for the Start menu and search menu on Windows 11
 // @version         1.0.1
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
 // @homepage        https://m417z.com/
 // @include         StartMenuExperienceHost.exe
+// @include         explorer.exe
 // @architecture    x86-64
 // @compilerOptions -lole32 -loleaut32 -lruntimeobject
 // ==/WindhawkMod==
@@ -24,14 +25,15 @@
 /*
 # Start Menu Size
 
-Set a custom size for the Start menu on Windows 11.
+Set a custom size for the Start menu and search menu on Windows 11.
 
-Allows you to override the default width and height of the Start menu.
+Allows you to override the default width and height of the Start menu and the
+search menu.
 
 The classic menu width is 642, and the height is 726. [The redesigned Start
 menu](https://microsoft.design/articles/start-fresh-redesigning-windows-start-menu/)
-width is 834, and the height occupies the full screen height. The sizes might
-vary for smaller screen sizes.
+width is 834, and the height is 890. The sizes might vary for smaller screen
+sizes.
 
 ![Screenshot](https://i.imgur.com/FoFSFOV.png) \
 _Example for making the Start menu smaller_
@@ -41,15 +43,25 @@ _Example for making the Start menu smaller_
 // ==WindhawkModSettings==
 /*
 - width: 0
-  $name: Width
+  $name: Start Menu width
   $description: >-
     A custom width for the Start menu in pixels. Set to 0 to use the default
     system value.
 - height: 0
-  $name: Height
+  $name: Start Menu height
   $description: >-
     A custom height for the Start menu in pixels. Set to 0 to use the default
     system value.
+- searchWidth: 0
+  $name: Search menu width
+  $description: >-
+    A custom width for the search menu in pixels. Set to 0 to use the Start
+    Menu width value.
+- searchHeight: 0
+  $name: Search menu height
+  $description: >-
+    A custom height for the search menu in pixels. Set to 0 to use the Start
+    Menu height value.
 */
 // ==/WindhawkModSettings==
 
@@ -73,9 +85,18 @@ _Example for making the Start menu smaller_
 
 using namespace winrt::Windows::UI::Xaml;
 
+enum class Target {
+    StartMenu,
+    Explorer,
+};
+
+Target g_target;
+
 struct {
     int width;
     int height;
+    int searchWidth;
+    int searchHeight;
 } g_settings;
 
 std::atomic<bool> g_unloading;
@@ -611,9 +632,158 @@ HRESULT WINAPI RoGetActivationFactory_Hook(HSTRING activatableClassId,
 
 }  // namespace StartMenuUI
 
+namespace ExplorerUI {
+
+int GetEffectiveSearchWidth() {
+    return g_settings.searchWidth > 0 ? g_settings.searchWidth
+                                      : g_settings.width;
+}
+
+int GetEffectiveSearchHeight() {
+    return g_settings.searchHeight > 0 ? g_settings.searchHeight
+                                       : g_settings.height;
+}
+
+using GetSearchPaneWidthAndHeight_t = int*(WINAPI*)(void* pThis,
+                                                    int out[2],
+                                                    const void* monitorInfo,
+                                                    bool flag);
+GetSearchPaneWidthAndHeight_t GetSearchPaneWidthAndHeight_Original;
+int* WINAPI GetSearchPaneWidthAndHeight_Hook(void* pThis,
+                                             int out[2],
+                                             const void* monitorInfo,
+                                             bool flag) {
+    int* ret =
+        GetSearchPaneWidthAndHeight_Original(pThis, out, monitorInfo, flag);
+
+    Wh_Log(L"GetSearchPaneWidthAndHeight: %dx%d", out[0], out[1]);
+
+    if (!g_unloading) {
+        int w = GetEffectiveSearchWidth();
+        int h = GetEffectiveSearchHeight();
+        if (w > 0) {
+            out[0] = w;
+        }
+        if (h > 0) {
+            out[1] = h;
+        }
+    }
+
+    return ret;
+}
+
+using GetDefaultStartSearchAppPopupHeight_t = int(WINAPI*)(void* pThis,
+                                                           int trayStuckPlace,
+                                                           const RECT* rect,
+                                                           int param4);
+GetDefaultStartSearchAppPopupHeight_t
+    GetDefaultStartSearchAppPopupHeight_Original;
+int WINAPI GetDefaultStartSearchAppPopupHeight_Hook(void* pThis,
+                                                    int trayStuckPlace,
+                                                    const RECT* rect,
+                                                    int param4) {
+    int result = GetDefaultStartSearchAppPopupHeight_Original(
+        pThis, trayStuckPlace, rect, param4);
+
+    Wh_Log(L"GetDefaultStartSearchAppPopupHeight: %d", result);
+
+    int h = GetEffectiveSearchHeight();
+    if (!g_unloading && h > 0) {
+        result = h;
+    }
+
+    return result;
+}
+
+using GetDefaultStartSearchAppWidth_t = int(WINAPI*)(void* pThis,
+                                                     const void* monitorInfo);
+GetDefaultStartSearchAppWidth_t GetDefaultStartSearchAppWidth_Original;
+int WINAPI GetDefaultStartSearchAppWidth_Hook(void* pThis,
+                                              const void* monitorInfo) {
+    int result = GetDefaultStartSearchAppWidth_Original(pThis, monitorInfo);
+
+    Wh_Log(L"GetDefaultStartSearchAppWidth: %d", result);
+
+    int w = GetEffectiveSearchWidth();
+    if (!g_unloading && w > 0) {
+        result = w;
+    }
+
+    return result;
+}
+
+using GetSearchSize_t = float*(WINAPI*)(float out[2],
+                                        const RECT* rect,
+                                        int dpi);
+GetSearchSize_t GetSearchSize_Original;
+float* WINAPI GetSearchSize_Hook(float out[2], const RECT* rect, int dpi) {
+    float* ret = GetSearchSize_Original(out, rect, dpi);
+
+    Wh_Log(L"GetSearchSize: %.0fx%.0f", out[0], out[1]);
+
+    if (!g_unloading) {
+        int w = GetEffectiveSearchWidth();
+        int h = GetEffectiveSearchHeight();
+        if (w > 0) {
+            out[0] = static_cast<float>(w);
+        }
+        if (h > 0) {
+            out[1] = static_cast<float>(h);
+        }
+    }
+
+    return ret;
+}
+
+bool HookTwinuiPcshellSymbols() {
+    HMODULE module = LoadLibraryEx(L"twinui.pcshell.dll", nullptr,
+                                   LOAD_LIBRARY_SEARCH_SYSTEM32);
+    if (!module) {
+        Wh_Log(L"Failed to load twinui.pcshell.dll");
+        return false;
+    }
+
+    // twinui.pcshell.dll
+    WindhawkUtils::SYMBOL_HOOK symbolHooks[] = {
+        {
+            {LR"(private: struct std::pair<int,int> __cdecl SearchBoxOnTaskbarSearchAppPositioner::GetSearchPaneWidthAndHeight(struct MonitorInfo const &,bool)const )"},
+            &GetSearchPaneWidthAndHeight_Original,
+            GetSearchPaneWidthAndHeight_Hook,
+        },
+        {
+            {LR"(private: int __cdecl SearchBoxOnTaskbarSearchAppPositioner::GetDefaultStartSearchAppPopupHeight(enum EDGEUI_TRAYSTUCKPLACE,struct tagRECT,int))"},
+            &GetDefaultStartSearchAppPopupHeight_Original,
+            GetDefaultStartSearchAppPopupHeight_Hook,
+        },
+        {
+            {LR"(private: int __cdecl SearchBoxOnTaskbarSearchAppPositioner::GetDefaultStartSearchAppWidth(struct MonitorInfo const &))"},
+            &GetDefaultStartSearchAppWidth_Original,
+            GetDefaultStartSearchAppWidth_Hook,
+            true,  // Missing in older builds (e.g. 10.0.26100.6584).
+        },
+        {
+            {LR"(struct winrt::Windows::Foundation::Size __cdecl GetSearchSize(struct tagRECT const &,int))"},
+            &GetSearchSize_Original,
+            GetSearchSize_Hook,
+            true,  // Missing in older builds (e.g. 10.0.26100.6584).
+        },
+    };
+
+    if (!HookSymbols(module, symbolHooks, ARRAYSIZE(symbolHooks))) {
+        Wh_Log(L"HookSymbols failed");
+        return false;
+    }
+
+    return true;
+}
+
+}  // namespace ExplorerUI
+
 void LoadSettings() {
     g_settings.width = Wh_GetIntSetting(L"width");
     g_settings.height = Wh_GetIntSetting(L"height");
+    g_settings.searchWidth = Wh_GetIntSetting(L"searchWidth");
+    g_settings.searchHeight = Wh_GetIntSetting(L"searchHeight");
 }
 
 BOOL Wh_ModInit() {
@@ -621,13 +791,42 @@ BOOL Wh_ModInit() {
 
     LoadSettings();
 
-    HMODULE winrtModule = GetModuleHandle(L"api-ms-win-core-winrt-l1-1-0.dll");
-    auto pRoGetActivationFactory =
-        (decltype(&RoGetActivationFactory))GetProcAddress(
-            winrtModule, "RoGetActivationFactory");
-    WindhawkUtils::SetFunctionHook(
-        pRoGetActivationFactory, StartMenuUI::RoGetActivationFactory_Hook,
-        &StartMenuUI::RoGetActivationFactory_Original);
+    g_target = Target::StartMenu;
+
+    WCHAR moduleFilePath[MAX_PATH];
+    switch (
+        GetModuleFileName(nullptr, moduleFilePath, ARRAYSIZE(moduleFilePath))) {
+        case 0:
+        case ARRAYSIZE(moduleFilePath):
+            Wh_Log(L"GetModuleFileName failed");
+            break;
+
+        default:
+            if (PCWSTR moduleFileName = wcsrchr(moduleFilePath, L'\\')) {
+                moduleFileName++;
+                if (_wcsicmp(moduleFileName, L"explorer.exe") == 0) {
+                    g_target = Target::Explorer;
+                }
+            } else {
+                Wh_Log(L"GetModuleFileName returned an unsupported path");
+            }
+            break;
+    }
+
+    if (g_target == Target::StartMenu) {
+        HMODULE winrtModule =
+            GetModuleHandle(L"api-ms-win-core-winrt-l1-1-0.dll");
+        auto pRoGetActivationFactory =
+            (decltype(&RoGetActivationFactory))GetProcAddress(
+                winrtModule, "RoGetActivationFactory");
+        WindhawkUtils::SetFunctionHook(
+            pRoGetActivationFactory, StartMenuUI::RoGetActivationFactory_Hook,
+            &StartMenuUI::RoGetActivationFactory_Original);
+    } else {
+        if (!ExplorerUI::HookTwinuiPcshellSymbols()) {
+            return FALSE;
+        }
+    }
 
     return TRUE;
 }
@@ -635,11 +834,13 @@ BOOL Wh_ModInit() {
 void Wh_ModAfterInit() {
     Wh_Log(L">");
 
-    HWND hCoreWnd = StartMenuUI::GetCoreWnd();
-    if (hCoreWnd) {
-        Wh_Log(L"Initializing - Found core window");
-        RunFromWindowThread(
-            hCoreWnd, [](PVOID) { StartMenuUI::Init(); }, nullptr);
+    if (g_target == Target::StartMenu) {
+        HWND hCoreWnd = StartMenuUI::GetCoreWnd();
+        if (hCoreWnd) {
+            Wh_Log(L"Initializing - Found core window");
+            RunFromWindowThread(
+                hCoreWnd, [](PVOID) { StartMenuUI::Init(); }, nullptr);
+        }
     }
 }
 
@@ -648,11 +849,13 @@ void Wh_ModBeforeUninit() {
 
     g_unloading = true;
 
-    HWND hCoreWnd = StartMenuUI::GetCoreWnd();
-    if (hCoreWnd) {
-        Wh_Log(L"Uninitializing - Found core window");
-        RunFromWindowThread(
-            hCoreWnd, [](PVOID) { StartMenuUI::Uninit(); }, nullptr);
+    if (g_target == Target::StartMenu) {
+        HWND hCoreWnd = StartMenuUI::GetCoreWnd();
+        if (hCoreWnd) {
+            Wh_Log(L"Uninitializing - Found core window");
+            RunFromWindowThread(
+                hCoreWnd, [](PVOID) { StartMenuUI::Uninit(); }, nullptr);
+        }
     }
 }
 
@@ -665,10 +868,13 @@ void Wh_ModSettingsChanged() {
 
     LoadSettings();
 
-    HWND hCoreWnd = StartMenuUI::GetCoreWnd();
-    if (hCoreWnd) {
-        Wh_Log(L"Applying settings - Found core window");
-        RunFromWindowThread(
-            hCoreWnd, [](PVOID) { StartMenuUI::SettingsChanged(); }, nullptr);
+    if (g_target == Target::StartMenu) {
+        HWND hCoreWnd = StartMenuUI::GetCoreWnd();
+        if (hCoreWnd) {
+            Wh_Log(L"Applying settings - Found core window");
+            RunFromWindowThread(
+                hCoreWnd, [](PVOID) { StartMenuUI::SettingsChanged(); },
+                nullptr);
+        }
     }
 }
