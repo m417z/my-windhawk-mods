@@ -30,9 +30,9 @@ Set a custom size for the Start menu and search menu on Windows 11.
 Allows you to override the default width and height of the Start menu and the
 search menu.
 
-The classic menu width is 642, and the height is 726. [The redesigned Start
+The classic menu width is 666, and the height is 750. [The redesigned Start
 menu](https://microsoft.design/articles/start-fresh-redesigning-windows-start-menu/)
-width is 834, and the height is 890. The sizes might vary for smaller screen
+width is 858, and the height is 890. The sizes might vary for smaller screen
 sizes.
 
 ![Screenshot](https://i.imgur.com/FoFSFOV.png) \
@@ -379,12 +379,18 @@ void ApplyStyleClassicStartMenu(FrameworkElement content) {
             g_originalClassicHeight.reset();
         }
     } else {
+        // The settings define the outer window size. The classic start menu has
+        // a fixed padding of 12px on each edge between the window edge and
+        // startSizingFrame (the Canvas is full-screen).
+        constexpr double kPadding = 12 * 2;
+
         if (g_settings.width > 0) {
             if (!g_originalClassicWidth) {
                 g_originalClassicWidth.emplace();
                 SaveWidth(startSizingFrame, *g_originalClassicWidth);
             }
-            double width = static_cast<double>(g_settings.width);
+            double width =
+                std::fmax(static_cast<double>(g_settings.width) - kPadding, 0);
             startSizingFrame.Width(width);
             startSizingFrame.MinWidth(width);
             startSizingFrame.MaxWidth(width);
@@ -419,7 +425,8 @@ void ApplyStyleClassicStartMenu(FrameworkElement content) {
                 g_originalClassicHeight.emplace();
                 SaveHeight(startSizingFrame, *g_originalClassicHeight);
             }
-            double height = static_cast<double>(g_settings.height);
+            double height =
+                std::fmax(static_cast<double>(g_settings.height) - kPadding, 0);
             startSizingFrame.Height(height);
             startSizingFrame.MinHeight(height);
             startSizingFrame.MaxHeight(height);
@@ -474,8 +481,20 @@ void ApplyStyleRedesignedStartMenu(FrameworkElement content) {
                 g_originalMainMenuWidth.emplace();
                 SaveWidth(mainMenu, *g_originalMainMenuWidth);
             }
+
+            // The requested width is the overall visible width. MainMenu is
+            // nested inside frameRoot > AnimationRoot, so subtract any
+            // padding/margin between them to get the correct inner width.
+            double frameRootActualWidth = frameRoot.ActualWidth();
+            double mainMenuActualWidth = mainMenu.ActualWidth();
+            double padding = 0;
+            if (frameRootActualWidth > 0 && mainMenuActualWidth > 0) {
+                padding = frameRootActualWidth - mainMenuActualWidth;
+            }
+
             double width =
                 static_cast<double>(std::fmax(g_settings.width, kMinWidth));
+            width = std::fmax(width - padding, kMinWidth);
             mainMenu.Width(width);
             mainMenu.MinWidth(width);
             mainMenu.MaxWidth(width);
