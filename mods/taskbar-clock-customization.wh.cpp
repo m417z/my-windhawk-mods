@@ -3103,9 +3103,9 @@ PCWSTR GetCpuTempFormatted() {
 
         winrt::com_ptr<IWbemServices> services;
         // ROOT\CIMV2 is accessible without elevation, unlike ROOT\WMI.
-        hr = locator->ConnectServer(
-            _bstr_t(L"ROOT\\CIMV2"), nullptr, nullptr, nullptr, 0, nullptr,
-            nullptr, reinterpret_cast<IWbemServices**>(services.put_void()));
+        hr = locator->ConnectServer(_bstr_t(L"ROOT\\CIMV2"), nullptr, nullptr,
+                                    nullptr, 0, nullptr, nullptr,
+                                    services.put());
         if (FAILED(hr)) {
             Wh_Log(L"ConnectServer failed hr=0x%08X", hr);
             return false;
@@ -3128,7 +3128,7 @@ PCWSTR GetCpuTempFormatted() {
             _bstr_t(L"SELECT Name, Temperature FROM "
                     L"Win32_PerfFormattedData_Counters_ThermalZoneInformation"),
             WBEM_FLAG_FORWARD_ONLY | WBEM_FLAG_RETURN_IMMEDIATELY, nullptr,
-            reinterpret_cast<IEnumWbemClassObject**>(enumerator.put_void()));
+            enumerator.put());
         if (FAILED(hr)) {
             Wh_Log(L"ExecQuery failed hr=0x%08X", hr);
             return false;
@@ -3140,10 +3140,8 @@ PCWSTR GetCpuTempFormatted() {
         winrt::com_ptr<IWbemClassObject> obj;
         ULONG returned = 0;
 
-        while (enumerator->Next(
-                   WBEM_INFINITE, 1,
-                   reinterpret_cast<IWbemClassObject**>(obj.put_void()),
-                   &returned) == WBEM_S_NO_ERROR) {
+        while (enumerator->Next(WBEM_INFINITE, 1, obj.put(), &returned) ==
+               WBEM_S_NO_ERROR) {
             if (returned == 0) {
                 break;
             }
