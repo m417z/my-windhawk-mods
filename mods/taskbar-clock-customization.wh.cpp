@@ -9,7 +9,7 @@
 // @homepage        https://m417z.com/
 // @include         explorer.exe
 // @architecture    x86-64
-// @compilerOptions -ldxgi -lole32 -loleaut32 -lpdh -lpowrprof -lruntimeobject -lshlwapi -lversion -lwininet
+// @compilerOptions -ldxgi -lole32 -loleaut32 -lpdh -lpowrprof -lruntimeobject -lshlwapi -lversion -lwininet -lwbemuuid
 // ==/WindhawkMod==
 
 // Source code is published under The GNU General Public License v3.0.
@@ -81,6 +81,7 @@ patterns can be used:
   * `%cpu%` - CPU usage.
   * `%ram%` - RAM usage.
   * `%gpu%` - GPU usage.
+  * `%cpu_temp%` - CPU temperature in °C (average of all ACPI thermal zones).
   * `%battery%` - battery level percentage.
   * `%battery_time%` - battery time remaining (charging time left / discharging
     time left, in h:mm format). If the value is always zero, you might need to
@@ -482,6 +483,7 @@ using namespace std::string_view_literals;
 #include <psapi.h>
 #include <shlwapi.h>
 #include <wininet.h>
+#include <wbemidl.h>
 
 #undef GetCurrentTime
 
@@ -665,6 +667,7 @@ FormattedString<FORMATTED_BUFFER_SIZE> g_gpuFormatted;
 FormattedString<FORMATTED_BUFFER_SIZE> g_batteryFormatted;
 FormattedString<FORMATTED_BUFFER_SIZE> g_batteryTimeFormatted;
 FormattedString<FORMATTED_BUFFER_SIZE> g_powerFormatted;
+FormattedString<FORMATTED_BUFFER_SIZE> g_cpuTempFormatted;
 
 FormattedString<FORMATTED_BUFFER_SIZE> g_mediaTitleFormatted;
 FormattedString<FORMATTED_BUFFER_SIZE> g_mediaArtistFormatted;
@@ -1579,8 +1582,8 @@ PCWSTR GetTimeFormattedWithExtra(std::vector<std::wstring>** extra) {
             GetTimeFormatExWithShowSeconds(nullptr, time,
                                            !timeFormatParts[i].empty()
                                                ? timeFormatParts[i].c_str()
-                                               : nullptr,
-                                           formatted, ARRAYSIZE(formatted));
+                                            : nullptr,
+                formatted, ARRAYSIZE(formatted));
             g_timeFormattedExtra[i - 1] = formatted;
         }
 
@@ -3154,6 +3157,118 @@ PCWSTR GetPowerFormatted() {
     });
 }
 
+PCWSTR GetCpuTempFormatted() {
+    return GetMetricFormatted(
+        g_cpuTempFormatted, [](PWSTR buffer, size_t bufferSize) {
+            Wh_Log(L"Starting WMI query for thermal zones");
+
+            // Query MSAcpi_ThermalZoneTemperature via WMI.
+            // Temperature is in tenths of Kelvin; convert to Celsius.
+            winrt::com_ptr<IWbemLocator> locator;
+            HRESULT hr = CoCreateInstance(
+                CLSID_WbemLocator, nullptr, CLSCTX_INPROC_SERVER,
+                IID_IWbemLocator, locator.put_void());
+            if (FAILED(hr)) {
+                Wh_Log(L"CoCreateInstance failed hr=0x%08X", hr);
+                return false;
+            }
+
+            winrt::com_ptr<IWbemServices> services;
+            // ROOT\CIMV2 is accessible without elevation, unlike ROOT\WMI.
+            hr = locator->ConnectServer(
+                _bstr_t(L"ROOT\\CIMV2"), nullptr, nullptr, nullptr, 0,
+                nullptr, nullptr,
+                reinterpret_cast<IWbemServices**>(services.put_void()));
+            if (FAILED(hr)) {
+                Wh_Log(L"ConnectServer failed hr=0x%08X", hr);
+                return false;
+            }
+
+            // Set security levels on the proxy (required after ConnectServer).
+            hr = CoSetProxyBlanket(
+                services.get(), RPC_C_AUTHN_WINNT, RPC_C_AUTHZ_NONE,
+                nullptr, RPC_C_AUTHN_LEVEL_CALL,
+                RPC_C_IMP_LEVEL_IMPERSONATE, nullptr, EOAC_NONE);
+            if (FAILED(hr)) {
+                Wh_Log(L"CoSetProxyBlanket failed hr=0x%08X", hr);
+                return false;
+            }
+
+            winrt::com_ptr<IEnumWbemClassObject> enumerator;
+            // Temperature field is in Kelvin (whole number, not tenths).
+            hr = services->ExecQuery(
+                _bstr_t(L"WQL"),
+                _bstr_t(L"SELECT Name, Temperature FROM "
+                        L"Win32_PerfFormattedData_Counters_ThermalZoneInformation"),
+                WBEM_FLAG_FORWARD_ONLY | WBEM_FLAG_RETURN_IMMEDIATELY,
+                nullptr,
+                reinterpret_cast<IEnumWbemClassObject**>(
+                    enumerator.put_void()));
+            if (FAILED(hr)) {
+                Wh_Log(L"ExecQuery failed hr=0x%08X", hr);
+                return false;
+            }
+
+            double totalTempCelsius = 0.0;
+            int count = 0;
+
+            winrt::com_ptr<IWbemClassObject> obj;
+            ULONG returned = 0;
+
+            while (enumerator->Next(WBEM_INFINITE, 1,
+                                    reinterpret_cast<IWbemClassObject**>(
+                                        obj.put_void()),
+                                    &returned) == WBEM_S_NO_ERROR) {
+                if (returned == 0) {
+                    break;
+                }
+
+                VARIANT vtName;
+                VariantInit(&vtName);
+                hr = obj->Get(L"Name", 0, &vtName, nullptr, nullptr);
+                if (SUCCEEDED(hr) && vtName.vt == VT_BSTR) {
+                    Wh_Log(L"Thermal zone: %s", vtName.bstrVal);
+                }
+                VariantClear(&vtName);
+
+                VARIANT vtProp;
+                VariantInit(&vtProp);
+
+                // Temperature here is whole Kelvin (e.g. 323 = 323 K = 49.85 C).
+                hr = obj->Get(L"Temperature", 0, &vtProp, nullptr, nullptr);
+                if (SUCCEEDED(hr) && vtProp.vt == VT_I4) {
+                    // Convert: Celsius = Kelvin - 273.15
+                    double tempCelsius =
+                        static_cast<double>(vtProp.lVal) - 273.15;
+                    Wh_Log(L"Temperature raw=%d Kelvin, celsius=%.1f",
+                           vtProp.lVal, tempCelsius);
+                    totalTempCelsius += tempCelsius;
+                    count++;
+                } else {
+                    Wh_Log(L"Get Temperature failed hr=0x%08X vt=%d", hr,
+                           vtProp.vt);
+                }
+
+                VariantClear(&vtProp);
+                obj = nullptr;
+            }
+
+            if (count == 0) {
+                Wh_Log(L"No thermal zones found in CIMV2");
+                return false;
+            }
+
+            // Format as integer Celsius value with degree symbol.
+            double avgTemp = totalTempCelsius / count;
+            Wh_Log(L"Success count=%d avgTemp=%.1f", count, avgTemp);
+
+            swprintf_s(buffer, bufferSize, L"%d\u00B0C",
+                       static_cast<int>(avgTemp));
+            return true;
+        });
+}
+
+
 void RefreshMediaDataIfDirty() {
     if (g_mediaDataDirty) {
         RefreshMediaData();
@@ -3239,6 +3354,7 @@ size_t ResolveFormatToken(
         {L"%battery%"sv, GetBatteryFormatted},
         {L"%battery_time%"sv, GetBatteryTimeFormatted},
         {L"%power%"sv, GetPowerFormatted},
+        {L"%cpu_temp%"sv, GetCpuTempFormatted},
         {L"%media_title%"sv, GetMediaTitleFormatted},
         {L"%media_artist%"sv, GetMediaArtistFormatted},
         {L"%media_album%"sv, GetMediaAlbumFormatted},
@@ -5376,14 +5492,14 @@ BOOL Wh_ModSettingsChanged(BOOL* bReload) {
         MediaSessionUninit();
         g_formattingInitialized = false;
 
-        bool prevOldTaskbarOnWin11 = g_settings.oldTaskbarOnWin11;
+    bool prevOldTaskbarOnWin11 = g_settings.oldTaskbarOnWin11;
 
-        LoadSettings();
+    LoadSettings();
 
-        *bReload = g_settings.oldTaskbarOnWin11 != prevOldTaskbarOnWin11;
-        if (*bReload) {
-            return TRUE;
-        }
+    *bReload = g_settings.oldTaskbarOnWin11 != prevOldTaskbarOnWin11;
+    if (*bReload) {
+        return TRUE;
+    }
     }
 
     ApplySettings();
