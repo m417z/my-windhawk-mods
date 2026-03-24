@@ -172,9 +172,7 @@ bool IsWindowCloaked(HWND hwnd) {
            isCloaked;
 }
 
-// Detects Win+Tab / Task View window.
-// Uses ZBID_IMMERSIVE_APPCHROME band, MultitaskingView thread description, and
-// taskbar process.
+// Detects Alt+Tab or Win+Tab.
 bool IsMultitaskingViewWindow(HWND hWnd) {
     // Must be in the current process (explorer.exe).
     DWORD dwProcessId = 0;
@@ -183,9 +181,25 @@ bool IsMultitaskingViewWindow(HWND hWnd) {
         return false;
     }
 
-    // Check window band - must be ZBID_IMMERSIVE_APPCHROME (5).
+    WCHAR className[64];
+    if (!GetClassName(hWnd, className, ARRAYSIZE(className)) ||
+        _wcsicmp(className, L"XamlExplorerHostIslandWindow") != 0) {
+        return false;
+    }
+
+    // The Win+Tab window uses band ZBID_IMMERSIVE_APPCHROME.
+    constexpr DWORD ZBID_IMMERSIVE_APPCHROME = 5;
+
+    // The Alt+Tab window uses band ZBID_SYSTEM_TOOLS. The virtual desktop
+    // switcher uses band ZBID_IMMERSIVE_EDGY.
+    constexpr DWORD ZBID_SYSTEM_TOOLS = 16;
+
     DWORD band = 0;
-    if (!pGetWindowBand || !pGetWindowBand(hWnd, &band) || band != 5) {
+    if (!pGetWindowBand || !pGetWindowBand(hWnd, &band)) {
+        return false;
+    }
+
+    if (band != ZBID_IMMERSIVE_APPCHROME && band != ZBID_SYSTEM_TOOLS) {
         return false;
     }
 
