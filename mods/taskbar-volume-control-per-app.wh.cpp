@@ -82,6 +82,11 @@ Control mod takes precedence due to the way the mod works.
   $description: >-
     When enabled, the tooltip shows a compact format with emojis instead of
     text (e.g., "🔊 64%" instead of "Volume: 64%").
+- tooltipColor: ""
+  $name: Tooltip color
+  $description: >-
+    Custom tooltip background color in #RRGGBB or #AARRGGBB format (e.g.,
+    #FF0000 for red). Leave empty to use the system accent color.
 - noAutomaticMuteToggle: false
   $name: No automatic mute toggle
   $description: >-
@@ -125,6 +130,7 @@ struct {
     bool middleClickToMute;
     bool ctrlScrollVolumeChange;
     bool terseFormat;
+    std::optional<winrt::Windows::UI::Color> tooltipColor;
     bool noAutomaticMuteToggle;
 } g_settings;
 
@@ -1002,11 +1008,16 @@ void ShowVolumeTooltip(FrameworkElement taskbarFrame,
         textBlock.Text(text);
     }
 
-    // Use system accent color for styling.
-    winrt::Windows::UI::ViewManagement::UISettings uiSettings;
-    auto accentColor = uiSettings.GetColorValue(
-        winrt::Windows::UI::ViewManagement::UIColorType::Accent);
-    border.Background(Media::SolidColorBrush(accentColor));
+    // Use custom color or system accent color for styling.
+    winrt::Windows::UI::Color bgColor;
+    if (g_settings.tooltipColor) {
+        bgColor = *g_settings.tooltipColor;
+    } else {
+        winrt::Windows::UI::ViewManagement::UISettings uiSettings;
+        bgColor = uiSettings.GetColorValue(
+            winrt::Windows::UI::ViewManagement::UIColorType::Accent);
+    }
+    border.Background(Media::SolidColorBrush(bgColor));
 
     // Set text color to white for contrast.
     if (auto textBlock = border.Child().try_as<Controls::TextBlock>()) {
@@ -1268,8 +1279,8 @@ int WINAPI TaskListButton_OnPointerPressed_Hook(void* pThis, void* pArgs) {
     bool isCtrlPressed = GetKeyState(VK_CONTROL) < 0;
     auto point = args.GetCurrentPoint(element);
     bool isMiddleButton = point.Properties().IsMiddleButtonPressed();
-    
-    if (!(g_settings.ctrlClickToMute && isCtrlPressed) && 
+
+    if (!(g_settings.ctrlClickToMute && isCtrlPressed) &&
         !(g_settings.middleClickToMute && isMiddleButton)) {
         return original();
     }
@@ -1300,6 +1311,24 @@ void LoadSettings() {
     g_settings.ctrlScrollVolumeChange =
         Wh_GetIntSetting(L"ctrlScrollVolumeChange");
     g_settings.terseFormat = Wh_GetIntSetting(L"terseFormat");
+
+    g_settings.tooltipColor.reset();
+    PCWSTR tooltipColorStr = Wh_GetStringSetting(L"tooltipColor");
+    size_t len = wcslen(tooltipColorStr);
+    if (tooltipColorStr[0] == L'#' && (len == 7 || len == 9)) {
+        unsigned long hex = wcstoul(tooltipColorStr + 1, nullptr, 16);
+        if (len == 7) {
+            hex = 0xFF000000 | hex;
+        }
+        g_settings.tooltipColor = winrt::Windows::UI::Color{
+            static_cast<uint8_t>((hex >> 24) & 0xFF),
+            static_cast<uint8_t>((hex >> 16) & 0xFF),
+            static_cast<uint8_t>((hex >> 8) & 0xFF),
+            static_cast<uint8_t>(hex & 0xFF),
+        };
+    }
+    Wh_FreeStringSetting(tooltipColorStr);
+
     g_settings.noAutomaticMuteToggle =
         Wh_GetIntSetting(L"noAutomaticMuteToggle");
 }
