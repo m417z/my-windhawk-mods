@@ -495,6 +495,11 @@ bool CanHideTaskbarForWindow(HWND hWnd,
         return false;
     }
 
+    // Exclude menus (#32768).
+    if (GetClassWord(hWnd, GCW_ATOM) == 32768) {
+        return false;
+    }
+
     // Check this after the other checks, as it's the most expensive one.
     if (IsWindowExcluded(hWnd)) {
         return false;
