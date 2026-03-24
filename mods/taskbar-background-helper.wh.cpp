@@ -860,10 +860,7 @@ bool IsWindowExcluded(HWND hWnd) {
     return false;
 }
 
-// Detects Win+Tab / Task View window.
-// Uses ZBID_IMMERSIVE_APPCHROME band, MultitaskingView thread description, and
-// taskbar process.
-bool IsMultitaskingViewWindow(HWND hWnd) {
+bool IsWinTabMultitaskingViewWindow(HWND hWnd) {
     // Must be in the current process (explorer.exe).
     DWORD dwProcessId = 0;
     DWORD dwThreadId = GetWindowThreadProcessId(hWnd, &dwProcessId);
@@ -871,9 +868,21 @@ bool IsMultitaskingViewWindow(HWND hWnd) {
         return false;
     }
 
-    // Check window band - must be ZBID_IMMERSIVE_APPCHROME (5).
+    WCHAR className[64];
+    if (!GetClassName(hWnd, className, ARRAYSIZE(className)) ||
+        _wcsicmp(className, L"XamlExplorerHostIslandWindow") != 0) {
+        return false;
+    }
+
+    // The Win+Tab window uses band ZBID_IMMERSIVE_APPCHROME.
+    constexpr DWORD ZBID_IMMERSIVE_APPCHROME = 5;
+
     DWORD band = 0;
-    if (!pGetWindowBand || !pGetWindowBand(hWnd, &band) || band != 5) {
+    if (!pGetWindowBand || !pGetWindowBand(hWnd, &band)) {
+        return false;
+    }
+
+    if (band != ZBID_IMMERSIVE_APPCHROME) {
         return false;
     }
 
@@ -1001,7 +1010,7 @@ void CALLBACK WinEventProc(HWINEVENTHOOK hWinEventHook,
 
     // Check for Multitasking View (Win+Tab) window state changes.
     if (g_specialViewMode.IsMultitaskingViewHwnd(hWnd) ||
-        IsMultitaskingViewWindow(hWnd)) {
+        IsWinTabMultitaskingViewWindow(hWnd)) {
         bool entering = event == EVENT_OBJECT_SHOW ||
                         event == EVENT_OBJECT_UNCLOAKED ||
                         event == EVENT_OBJECT_CREATE;
