@@ -1,9 +1,9 @@
 // ==WindhawkMod==
-// @id              windows-11-start-menu-styler
-// @name            Windows 11 Start Menu Styler
+// @id              windows-11-start-menu-styler-fork2
+// @name            Windows 11 Start Menu Styler - Fork2
 // @description     Customize the start menu with themes contributed by others or create your own
-// @version         1.4.1
-// @author          m417z
+// @version         1.4.1b
+// @author          m417z - volute91
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
 // @homepage        https://m417z.com/
@@ -135,6 +135,14 @@ TintedGlass](https://github.com/ramensoftware/windows-11-start-menu-styling-guid
 [![LayerMicaUI](https://raw.githubusercontent.com/ramensoftware/windows-11-start-menu-styling-guide/main/Themes/LayerMicaUI/screenshot-small.png)
 \
 LayerMicaUI](https://github.com/ramensoftware/windows-11-start-menu-styling-guide/blob/main/Themes/LayerMicaUI/README.md)
+
+[![Fullscreen]()
+\
+Fullscreen]()
+
+[![FullscreenTablet]()
+\
+FullscreenTablet]()
 
 More themes can be found in the **Themes** section of [The Windows 11 start menu
 styling
@@ -340,6 +348,8 @@ from the **TranslucentTB** project.
   - Windows10X: Windows10X
   - TintedGlass: TintedGlass
   - LayerMicaUI: LayerMicaUI (for the redesigned Start menu)
+  - Fullscreen: Fullscreen start menu
+  - FullscreenTablet: Fullscreen start menu in tablet mode only
 - disableNewStartMenuLayout: ""
   $name: Disable the new start menu layout
   $description: >-
@@ -6275,6 +6285,162 @@ const Theme g_themeLayerMicaUI = {{
         L"margin-left: 0px !important"}},
 }};
 
+const Theme g_themeFullscreen = {{
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Grid#FrameRoot", {
+        L"Width=Auto",
+        L"Height=Auto",
+        L"MinWidth=642",
+        L"MinHeight=750",
+        L"MaxWidth=Infinity",
+        L"MaxHeight=Infinity",
+        L"Margin=0,0,0,0",
+        L"Padding=0,0,0,0",
+        L"HorizontalAlignment=Center"}},
+    
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Grid#MainMenu", {
+        L"Height=Auto",
+        L"Width=Auto",
+        L"MaxWidth=monitorWidth"}},
+
+    ThemeTargetStyles{L"Border#AcrylicBorder", {
+        L"Margin=0",
+        L"CornerRadius=0",
+        L"BorderThickness=0,0,0,0",
+        L"Background:=$background"}},
+
+    ThemeTargetStyles{L"StartMenu.PinnedList", {
+        L"Height=Auto",
+        L"MinHeight=400"
+    }},
+
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.GridView#PinnedList > Windows.UI.Xaml.Controls.Border > Windows.UI.Xaml.Controls.ScrollViewer > Windows.UI.Xaml.Controls.Border > Windows.UI.Xaml.Controls.Grid > Windows.UI.Xaml.Controls.ScrollContentPresenter > Windows.UI.Xaml.Controls.ItemsPresenter > Windows.UI.Xaml.Controls.ItemsWrapGrid > Windows.UI.Xaml.Controls.GridViewItem", {
+        L"Width=(monitorWidth-120)/$columns",
+        L"Height=(monitorHeight-60)/8"
+    }},
+
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Grid#LogoContainer",{
+        L"Width=$iconSize",
+        L"Height=$iconSize"
+    }},
+
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Image#Logo",{
+        L"Width=$iconSize",
+        L"Height=$iconSize"
+    }},
+
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.ItemsControl#LogosItemsControl",{
+        L"Width=tabletMode==1?($tabletIconSize*1.16):($iconSize*1.16)",
+        L"Height=tabletMode==1?($tabletIconSize*1.16):($iconSize*1.16)"
+    }},
+
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.ItemsControl#LogosItemsControl > Windows.UI.Xaml.Controls.ItemsPresenter > Windows.UI.Xaml.Controls.ItemsWrapGrid > Windows.UI.Xaml.Controls.ContentPresenter > Windows.UI.Xaml.Controls.Grid",{
+        L"Width=($iconSize/2)",
+        L"Height=($iconSize/2)"
+    }},
+
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Image#AllAppsSuiteLogo",{
+        L"Width=$iconSize",
+        L"Height=$iconSize"
+    }},
+
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Grid#TopLevelSuggestionsListHeader",{
+        L"Visibility=Collapsed"
+    }},
+
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Grid#TopLevelSuggestionsContainer",{
+        L"Visibility=Collapsed"
+    }},
+
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Grid#TopLevelSuggestionsText",{
+        L"Visibility=Collapsed"
+    }},
+
+}, {
+    L"columns=8",
+    L"iconSize=48",
+    L"background=<AcrylicBrush TintColor=\"{ThemeResource SystemChromeMediumColor}\" FallbackColor=\"{ThemeResource SystemChromeMediumColor}\" TintOpacity=\"0\" TintLuminosityOpacity=\"1\"/>"
+},
+{}, {}};
+
+const Theme g_themeFullscreenTablet = {{
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Grid#FrameRoot", {
+        L"Width=Auto",
+        L"Height=Auto",
+        L"MinWidth=642",
+        L"MinHeight=750",
+        L"MaxWidth=Infinity",
+        L"MaxHeight=Infinity",
+        L"Margin=0,0,0,0",
+        L"Padding=0,0,0,0",
+        L"HorizontalAlignment=Center"}},
+    
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Grid#MainMenu", {
+        L"Height=tabletMode==1?Auto:730",
+        L"Width=Auto",
+        L"MaxWidth=tabletMode==1?monitorWidth:80+$columns*100"}},
+
+    ThemeTargetStyles{L"Border#AcrylicBorder", {
+        L"Margin=tabletMode==1?0:default",
+        L"CornerRadius=tabletMode==1?0:default",
+        L"BorderThickness=tabletMode==1?0,0,0,0:1,1,1,1",
+        L"Background:=$background"}},
+
+    ThemeTargetStyles{L"StartMenu.PinnedList", {
+        L"Height=Auto",
+        L"MinHeight=400"
+    }},
+
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.GridView#PinnedList > Windows.UI.Xaml.Controls.Border > Windows.UI.Xaml.Controls.ScrollViewer > Windows.UI.Xaml.Controls.Border > Windows.UI.Xaml.Controls.Grid > Windows.UI.Xaml.Controls.ScrollContentPresenter > Windows.UI.Xaml.Controls.ItemsPresenter > Windows.UI.Xaml.Controls.ItemsWrapGrid > Windows.UI.Xaml.Controls.GridViewItem", {
+        L"Width=tabletMode==1?(monitorWidth-120)/$columns:100",
+        L"Height=tabletMode==1?(monitorHeight-60)/8:Auto"
+    }},
+
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Grid#LogoContainer",{
+        L"Width=tabletMode==1?$tabletIconSize:$iconSize",
+        L"Height=tabletMode==1?$tabletIconSize:$iconSize"
+    }},
+
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Image#Logo",{
+        L"Width=tabletMode==1?$tabletIconSize:$iconSize",
+        L"Height=tabletMode==1?$tabletIconSize:$iconSize"
+    }},
+
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.ItemsControl#LogosItemsControl",{
+        L"Width=tabletMode==1?($tabletIconSize*1.16):($iconSize*1.16)",
+        L"Height=tabletMode==1?($tabletIconSize*1.16):($iconSize*1.16)"
+    }},
+
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.ItemsControl#LogosItemsControl > Windows.UI.Xaml.Controls.ItemsPresenter > Windows.UI.Xaml.Controls.ItemsWrapGrid > Windows.UI.Xaml.Controls.ContentPresenter > Windows.UI.Xaml.Controls.Grid",{
+        L"Width=tabletMode==1?($tabletIconSize/2):($iconSize/2)",
+        L"Height=tabletMode==1?($tabletIconSize/2):($iconSize/2)"
+    }},
+
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Image#AllAppsSuiteLogo",{
+        L"Width=tabletMode==1?$tabletIconSize:$iconSize",
+        L"Height=tabletMode==1?$tabletIconSize:$iconSize"
+    }},
+
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Grid#TopLevelSuggestionsListHeader",{
+        L"Visibility=Collapsed"
+    }},
+
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Grid#TopLevelSuggestionsContainer",{
+        L"Visibility=Collapsed"
+    }},
+
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Grid#TopLevelSuggestionsText",{
+        L"Visibility=Collapsed"
+    }},
+
+}, {
+    L"columns=8",
+    L"iconSize=32",
+    L"tabletIconSize=50",
+    L"background=<WindhawkBlur BlurAmount=\"20\" TintColor=\"#000000\" TintOpacity=\"0.70\" />"
+    //L"background=<AcrylicBrush TintColor=\"{ThemeResource SystemChromeMediumColor}\" FallbackColor=\"{ThemeResource SystemChromeMediumColor}\" TintOpacity=\"0\" TintLuminosityOpacity=\"1\"/>"
+},
+{}, {}};
+
 // clang-format on
 
 std::atomic<DWORD> g_targetThreadId = 0;
@@ -6294,6 +6460,14 @@ HMODULE GetCurrentModuleHandle() {
 
     return module;
 }
+
+bool IsTabletMode() {
+    return GetSystemMetrics(SM_CONVERTIBLESLATEMODE) == 0;
+}
+
+int g_tabletMode = IsTabletMode() ? 1 : 0;
+int g_monitorWidth = 0;
+int g_monitorHeight = 0;
 
 ////////////////////////////////////////////////////////////////////////////////
 // clang-format off
@@ -6654,7 +6828,6 @@ HRESULT InjectWindhawkTAP() noexcept
 
 #include <algorithm>
 #include <cmath>
-#include <limits>
 #include <list>
 #include <mutex>
 #include <optional>
@@ -8734,6 +8907,193 @@ Style GetStyleFromXamlSettersWithFallbackType(
     }
 }
 
+class ExprParser {
+    public:
+        ExprParser(const std::wstring& s) : str(s), pos(0) {}
+
+        double parse() {
+            return parseExpression();
+        }
+
+    private:
+        const std::wstring& str;
+        size_t pos;
+
+        void skipSpaces() {
+            while (pos < str.size() && iswspace(str[pos]))
+                pos++;
+        }
+
+        double parseExpression() {
+            double value = parseTerm();
+            while (true) {
+                skipSpaces();
+                if (pos >= str.size()) break;
+
+                wchar_t op = str[pos];
+                if (op != L'+' && op != L'-') break;
+                pos++;
+
+                double rhs = parseTerm();
+
+                if (op == L'+') value += rhs;
+                else value -= rhs;
+            }
+            return value;
+        }
+
+        double parseTerm() {
+            double value = parseFactor();
+            while (true) {
+                skipSpaces();
+                if (pos >= str.size()) break;
+
+                wchar_t op = str[pos];
+                if (op != L'*' && op != L'/') break;
+                pos++;
+
+                double rhs = parseFactor();
+
+                if (op == L'*') value *= rhs;
+                else value /= rhs;
+            }
+            return value;
+        }
+
+        double parseFactor() {
+            skipSpaces();
+
+            if (str[pos] == L'(') {
+                pos++;
+                double value = parseExpression();
+                skipSpaces();
+                if (pos < str.size() && str[pos] == L')')
+                    pos++;
+                return value;
+            }
+
+            size_t start = pos;
+
+            while (pos < str.size() &&
+                (iswdigit(str[pos]) || str[pos] == L'.'))
+            {
+                pos++;
+            }
+
+            return std::stod(str.substr(start, pos - start));
+        }
+};
+
+double EvaluateExpression(const std::wstring& expr)
+{
+    ExprParser parser(expr);
+    return parser.parse();
+}
+
+std::wstring ToCleanString(double v)
+{
+    int iv = (int)(v + 0.5);
+    return std::to_wstring(iv);
+}
+
+bool LooksLikeExpression(const std::wstring& s)
+{
+    return s.find_first_of(L"0123456789+-*/()?") != std::wstring::npos;
+}
+
+std::wstring EvaluateExpressionOrReturnOriginal(const std::wstring& input)
+{
+    if (!LooksLikeExpression(input))
+        return input;
+    try
+    {
+        ExprParser parser(input);
+        double result = parser.parse();
+
+        return ToCleanString(result);
+    }
+    catch (...)
+    {
+        return input;
+    }
+}
+
+bool EvaluateCondition(const std::wstring& cond)
+{
+    size_t pos;
+
+    if ((pos = cond.find(L">=")) != std::wstring::npos)
+        return EvaluateExpression(cond.substr(0,pos)) >= EvaluateExpression(cond.substr(pos+2));
+
+    if ((pos = cond.find(L"<=")) != std::wstring::npos)
+        return EvaluateExpression(cond.substr(0,pos)) <= EvaluateExpression(cond.substr(pos+2));
+
+    if ((pos = cond.find(L"==")) != std::wstring::npos)
+        return EvaluateExpression(cond.substr(0,pos)) == EvaluateExpression(cond.substr(pos+2));
+
+    if ((pos = cond.find(L">")) != std::wstring::npos)
+        return EvaluateExpression(cond.substr(0,pos)) > EvaluateExpression(cond.substr(pos+1));
+
+    if ((pos = cond.find(L"<")) != std::wstring::npos)
+        return EvaluateExpression(cond.substr(0,pos)) < EvaluateExpression(cond.substr(pos+1));
+
+    return false;
+}
+
+std::wstring EvaluateConditional(const std::wstring& expr)
+{
+    size_t q = expr.find(L'?');
+    size_t c = expr.find(L':');
+
+    if (q == std::wstring::npos || c == std::wstring::npos)
+        return expr;
+
+    std::wstring cond = expr.substr(0, q);
+    std::wstring ifTrue = expr.substr(q + 1, c - q - 1);
+    std::wstring ifFalse = expr.substr(c + 1);
+
+    if (EvaluateCondition(cond))
+        return EvaluateExpressionOrReturnOriginal(ifTrue);
+    else
+        return EvaluateExpressionOrReturnOriginal(ifFalse);
+}
+
+std::wstring expandKeywords(std::wstring value) {
+    std::wstring valueExpanded = value;
+    auto replaceAll = [](std::wstring& str,
+                                    const std::wstring& from,
+                                    const std::wstring& to)
+                {
+                    size_t pos = 0;
+                    while ((pos = str.find(from, pos)) != std::wstring::npos) {
+                        str.replace(pos, from.length(), to);
+                        pos += to.length();
+                    }
+                };
+
+    // keywords
+    replaceAll(valueExpanded, L"monitorWidth",  std::to_wstring(g_monitorWidth));
+    replaceAll(valueExpanded, L"monitorHeight", std::to_wstring(g_monitorHeight));
+    replaceAll(valueExpanded, L"tabletMode", std::to_wstring(g_tabletMode));
+
+    try
+    {
+        if (value.find(L'?') != std::wstring::npos)
+        {
+            valueExpanded = EvaluateConditional(valueExpanded);
+        }
+        else
+        {
+            valueExpanded = EvaluateExpressionOrReturnOriginal(valueExpanded);
+        }
+    }
+    catch (...)
+    {
+        // not an expression, leave unchanged
+    }
+    return valueExpanded;
+}
+
 const PropertyOverrides& GetResolvedPropertyOverrides(
     const std::wstring_view type,
     const std::wstring_view fallbackType,
@@ -8756,26 +9116,28 @@ const PropertyOverrides& GetResolvedPropertyOverrides(
             propertyOverrideValues.reserve(styleRules.size());
 
             for (const auto& rule : styleRules) {
+                std::wstring valueExpanded = expandKeywords(rule.value);
+
                 propertyOverrideValues.push_back(
                     rule.isXamlValue
-                        ? ParseNonXamlPropertyOverrideValue(rule.value)
+                        ? ParseNonXamlPropertyOverrideValue(valueExpanded)
                         : std::nullopt);
 
                 xaml += L"        <Setter Property=\"";
                 xaml += EscapeXmlAttribute(rule.name);
                 xaml += L"\"";
                 if (propertyOverrideValues.back() ||
-                    (rule.isXamlValue && rule.value.empty())) {
+                    (rule.isXamlValue && valueExpanded.empty())) {
                     xaml += L" Value=\"{x:Null}\" />\n";
                 } else if (!rule.isXamlValue) {
                     xaml += L" Value=\"";
-                    xaml += EscapeXmlAttribute(rule.value);
+                    xaml += EscapeXmlAttribute(valueExpanded);
                     xaml += L"\" />\n";
                 } else {
                     xaml +=
                         L">\n"
                         L"            <Setter.Value>\n";
-                    xaml += rule.value;
+                    xaml += valueExpanded;
                     xaml +=
                         L"\n"
                         L"            </Setter.Value>\n"
@@ -10399,6 +10761,10 @@ void ProcessAllStylesFromSettings() {
                     : &g_themeTintedGlass_variant_ClassicStartMenu;
     } else if (wcscmp(themeName, L"LayerMicaUI") == 0) {
         theme = &g_themeLayerMicaUI;
+    } else if (wcscmp(themeName, L"Fullscreen") == 0) {
+        theme = &g_themeFullscreen;
+    } else if (wcscmp(themeName, L"FullscreenTablet") == 0) {
+        theme = &g_themeFullscreenTablet;
     }
     Wh_FreeStringSetting(themeName);
 
@@ -10645,6 +11011,79 @@ bool RunFromWindowThreadViaPostMessage(HWND hWnd,
     return true;
 }
 
+static void UpdateMonitorSize(HWND hwnd);
+static void UpdateMenu(HWND hwnd);
+
+bool monitoringChangesTracked = false;
+HMONITOR g_currentMonitor = nullptr;
+WNDPROC hCoreWndProc = nullptr;
+LRESULT CALLBACK CoreWndProcHook(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam);
+
+// Definition from <shellscaling.h>
+enum MONITOR_DPI_TYPE {
+    MDT_EFFECTIVE_DPI = 0,
+    MDT_ANGULAR_DPI   = 1,
+    MDT_RAW_DPI       = 2,
+};
+using GetDpiForMonitor_t = HRESULT(WINAPI*)(HMONITOR, MONITOR_DPI_TYPE, UINT*, UINT*);
+GetDpiForMonitor_t pGetDpiForMonitor = nullptr;
+
+static void UpdateMonitorSize(HWND hwnd)
+{
+    Wh_Log(L"Get Monitor Size ****************************");
+
+    HMONITOR monitor = MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST);
+    g_currentMonitor = monitor;
+
+    MONITORINFO mi = { sizeof(mi) };
+    GetMonitorInfo(monitor, &mi);
+
+    if (pGetDpiForMonitor) {
+        UINT dpiX, dpiY;
+        if (SUCCEEDED(pGetDpiForMonitor(monitor, MDT_EFFECTIVE_DPI, &dpiX, &dpiY))) {
+            g_monitorWidth  = MulDiv(mi.rcMonitor.right  - mi.rcMonitor.left, 96, dpiX);
+            g_monitorHeight = MulDiv(mi.rcMonitor.bottom - mi.rcMonitor.top,  96, dpiY);
+            Wh_Log(L"Monitor width = %d", g_monitorWidth);
+        }
+    } else {
+        Wh_Log(L"pGetDpiForMonitor not initialized yet!");
+    }
+}
+
+static void UpdateMenu(HWND hwnd) {
+    RunFromWindowThread(
+        hwnd,
+        [](PVOID) {
+            UninitializeSettingsAndTap();
+            InitializeSettingsAndTap();
+        },
+        nullptr);
+}
+
+LRESULT CALLBACK CoreWndProcHook(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
+{
+    if (msg == WM_DISPLAYCHANGE || msg == WM_SETTINGCHANGE)
+    {
+        Wh_Log(L"Display change detected");
+        g_tabletMode = IsTabletMode() ? 1 : 0;
+        UpdateMonitorSize(hwnd);
+        UpdateMenu(hwnd);
+    }
+    if (msg == WM_WINDOWPOSCHANGED) {
+        const WINDOWPOS* wp = reinterpret_cast<const WINDOWPOS*>(lParam);
+        if (!(wp->flags & SWP_NOMOVE)) {
+            HMONITOR monitor = MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST);
+            if (monitor != g_currentMonitor) {
+                Wh_Log(L"Window position change detected");
+                UpdateMonitorSize(hwnd);
+                UpdateMenu(hwnd);
+            }
+        }
+    }
+
+    return CallWindowProc(hCoreWndProc, hwnd, msg, wParam, lParam);
+}
+
 void OnWindowCreated(HWND hWnd, LPCWSTR lpClassName, PCSTR funcName) {
     BOOL bTextualClassName = ((ULONG_PTR)lpClassName & ~(ULONG_PTR)0xffff) != 0;
 
@@ -10654,6 +11093,15 @@ void OnWindowCreated(HWND hWnd, LPCWSTR lpClassName, PCSTR funcName) {
                 _wcsicmp(lpClassName, L"Windows.UI.Core.CoreWindow") == 0) {
                 Wh_Log(L"Initializing - Created core window: %08X via %S",
                        (DWORD)(ULONG_PTR)hWnd, funcName);
+                UpdateMonitorSize(hWnd);
+                if (!monitoringChangesTracked) {
+                    hCoreWndProc = (WNDPROC)SetWindowLongPtr(
+                        hWnd,
+                        GWLP_WNDPROC,
+                        (LONG_PTR)CoreWndProcHook
+                    );
+                    monitoringChangesTracked = true;
+                }
                 InitializeSettingsAndTap();
             }
             break;
@@ -11043,7 +11491,7 @@ BOOL Wh_ModInit() {
         case 0:
         case ARRAYSIZE(moduleFilePath):
             Wh_Log(L"GetModuleFileName failed");
-            return FALSE;
+            break;
 
         default:
             if (PCWSTR moduleFileName = wcsrchr(moduleFilePath, L'\\')) {
@@ -11054,7 +11502,6 @@ BOOL Wh_ModInit() {
                 }
             } else {
                 Wh_Log(L"GetModuleFileName returned an unsupported path");
-                return FALSE;
             }
             break;
     }
@@ -11140,9 +11587,25 @@ BOOL Wh_ModInit() {
 void Wh_ModAfterInit() {
     Wh_Log(L">");
 
+    // Note: for a reliable value of DPI, we need GetDpiForMonitor from shcore.dll
+    HMODULE hShcore = LoadLibraryEx(L"shcore.dll", nullptr, LOAD_LIBRARY_SEARCH_SYSTEM32);
+    if (hShcore) {
+        pGetDpiForMonitor = reinterpret_cast<GetDpiForMonitor_t>(
+            GetProcAddress(hShcore, "GetDpiForMonitor"));
+    }
+
     HWND hCoreWnd = GetCoreWnd();
     if (hCoreWnd) {
         Wh_Log(L"Initializing - Found core window");
+        UpdateMonitorSize(hCoreWnd);
+        if (!monitoringChangesTracked) {
+            hCoreWndProc = (WNDPROC)SetWindowLongPtr(
+                hCoreWnd,
+                GWLP_WNDPROC,
+                (LONG_PTR)CoreWndProcHook
+            );
+            monitoringChangesTracked = true;
+        }
         RunFromWindowThread(
             hCoreWnd, [](PVOID) { InitializeSettingsAndTap(); }, nullptr);
     }
