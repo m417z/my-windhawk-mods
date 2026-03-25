@@ -136,14 +136,6 @@ TintedGlass](https://github.com/ramensoftware/windows-11-start-menu-styling-guid
 \
 LayerMicaUI](https://github.com/ramensoftware/windows-11-start-menu-styling-guide/blob/main/Themes/LayerMicaUI/README.md)
 
-[![Fullscreen]()
-\
-Fullscreen]()
-
-[![FullscreenTablet]()
-\
-FullscreenTablet]()
-
 More themes can be found in the **Themes** section of [The Windows 11 start menu
 styling
 guide](https://github.com/ramensoftware/windows-11-start-menu-styling-guide/blob/main/README.md#themes).
@@ -348,8 +340,6 @@ from the **TranslucentTB** project.
   - Windows10X: Windows10X
   - TintedGlass: TintedGlass
   - LayerMicaUI: LayerMicaUI (for the redesigned Start menu)
-  - Fullscreen: Fullscreen start menu
-  - FullscreenTablet: Fullscreen start menu in tablet mode only
 - disableNewStartMenuLayout: ""
   $name: Disable the new start menu layout
   $description: >-
@@ -6285,162 +6275,6 @@ const Theme g_themeLayerMicaUI = {{
         L"margin-left: 0px !important"}},
 }};
 
-const Theme g_themeFullscreen = {{
-    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Grid#FrameRoot", {
-        L"Width=Auto",
-        L"Height=Auto",
-        L"MinWidth=642",
-        L"MinHeight=750",
-        L"MaxWidth=Infinity",
-        L"MaxHeight=Infinity",
-        L"Margin=0,0,0,0",
-        L"Padding=0,0,0,0",
-        L"HorizontalAlignment=Center"}},
-    
-    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Grid#MainMenu", {
-        L"Height=Auto",
-        L"Width=Auto",
-        L"MaxWidth=monitorWidth"}},
-
-    ThemeTargetStyles{L"Border#AcrylicBorder", {
-        L"Margin=0",
-        L"CornerRadius=0",
-        L"BorderThickness=0,0,0,0",
-        L"Background:=$background"}},
-
-    ThemeTargetStyles{L"StartMenu.PinnedList", {
-        L"Height=Auto",
-        L"MinHeight=400"
-    }},
-
-    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.GridView#PinnedList > Windows.UI.Xaml.Controls.Border > Windows.UI.Xaml.Controls.ScrollViewer > Windows.UI.Xaml.Controls.Border > Windows.UI.Xaml.Controls.Grid > Windows.UI.Xaml.Controls.ScrollContentPresenter > Windows.UI.Xaml.Controls.ItemsPresenter > Windows.UI.Xaml.Controls.ItemsWrapGrid > Windows.UI.Xaml.Controls.GridViewItem", {
-        L"Width=(monitorWidth-120)/$columns",
-        L"Height=(monitorHeight-60)/8"
-    }},
-
-    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Grid#LogoContainer",{
-        L"Width=$iconSize",
-        L"Height=$iconSize"
-    }},
-
-    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Image#Logo",{
-        L"Width=$iconSize",
-        L"Height=$iconSize"
-    }},
-
-    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.ItemsControl#LogosItemsControl",{
-        L"Width=tabletMode==1?($tabletIconSize*1.16):($iconSize*1.16)",
-        L"Height=tabletMode==1?($tabletIconSize*1.16):($iconSize*1.16)"
-    }},
-
-    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.ItemsControl#LogosItemsControl > Windows.UI.Xaml.Controls.ItemsPresenter > Windows.UI.Xaml.Controls.ItemsWrapGrid > Windows.UI.Xaml.Controls.ContentPresenter > Windows.UI.Xaml.Controls.Grid",{
-        L"Width=($iconSize/2)",
-        L"Height=($iconSize/2)"
-    }},
-
-    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Image#AllAppsSuiteLogo",{
-        L"Width=$iconSize",
-        L"Height=$iconSize"
-    }},
-
-    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Grid#TopLevelSuggestionsListHeader",{
-        L"Visibility=Collapsed"
-    }},
-
-    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Grid#TopLevelSuggestionsContainer",{
-        L"Visibility=Collapsed"
-    }},
-
-    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Grid#TopLevelSuggestionsText",{
-        L"Visibility=Collapsed"
-    }},
-
-}, {
-    L"columns=8",
-    L"iconSize=48",
-    L"background=<AcrylicBrush TintColor=\"{ThemeResource SystemChromeMediumColor}\" FallbackColor=\"{ThemeResource SystemChromeMediumColor}\" TintOpacity=\"0\" TintLuminosityOpacity=\"1\"/>"
-},
-{}, {}};
-
-const Theme g_themeFullscreenTablet = {{
-    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Grid#FrameRoot", {
-        L"Width=Auto",
-        L"Height=Auto",
-        L"MinWidth=642",
-        L"MinHeight=750",
-        L"MaxWidth=Infinity",
-        L"MaxHeight=Infinity",
-        L"Margin=0,0,0,0",
-        L"Padding=0,0,0,0",
-        L"HorizontalAlignment=Center"}},
-    
-    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Grid#MainMenu", {
-        L"Height=tabletMode==1?Auto:730",
-        L"Width=Auto",
-        L"MaxWidth=tabletMode==1?monitorWidth:80+$columns*100"}},
-
-    ThemeTargetStyles{L"Border#AcrylicBorder", {
-        L"Margin=tabletMode==1?0:default",
-        L"CornerRadius=tabletMode==1?0:default",
-        L"BorderThickness=tabletMode==1?0,0,0,0:1,1,1,1",
-        L"Background:=$background"}},
-
-    ThemeTargetStyles{L"StartMenu.PinnedList", {
-        L"Height=Auto",
-        L"MinHeight=400"
-    }},
-
-    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.GridView#PinnedList > Windows.UI.Xaml.Controls.Border > Windows.UI.Xaml.Controls.ScrollViewer > Windows.UI.Xaml.Controls.Border > Windows.UI.Xaml.Controls.Grid > Windows.UI.Xaml.Controls.ScrollContentPresenter > Windows.UI.Xaml.Controls.ItemsPresenter > Windows.UI.Xaml.Controls.ItemsWrapGrid > Windows.UI.Xaml.Controls.GridViewItem", {
-        L"Width=tabletMode==1?(monitorWidth-120)/$columns:100",
-        L"Height=tabletMode==1?(monitorHeight-60)/8:Auto"
-    }},
-
-    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Grid#LogoContainer",{
-        L"Width=tabletMode==1?$tabletIconSize:$iconSize",
-        L"Height=tabletMode==1?$tabletIconSize:$iconSize"
-    }},
-
-    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Image#Logo",{
-        L"Width=tabletMode==1?$tabletIconSize:$iconSize",
-        L"Height=tabletMode==1?$tabletIconSize:$iconSize"
-    }},
-
-    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.ItemsControl#LogosItemsControl",{
-        L"Width=tabletMode==1?($tabletIconSize*1.16):($iconSize*1.16)",
-        L"Height=tabletMode==1?($tabletIconSize*1.16):($iconSize*1.16)"
-    }},
-
-    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.ItemsControl#LogosItemsControl > Windows.UI.Xaml.Controls.ItemsPresenter > Windows.UI.Xaml.Controls.ItemsWrapGrid > Windows.UI.Xaml.Controls.ContentPresenter > Windows.UI.Xaml.Controls.Grid",{
-        L"Width=tabletMode==1?($tabletIconSize/2):($iconSize/2)",
-        L"Height=tabletMode==1?($tabletIconSize/2):($iconSize/2)"
-    }},
-
-    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Image#AllAppsSuiteLogo",{
-        L"Width=tabletMode==1?$tabletIconSize:$iconSize",
-        L"Height=tabletMode==1?$tabletIconSize:$iconSize"
-    }},
-
-    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Grid#TopLevelSuggestionsListHeader",{
-        L"Visibility=Collapsed"
-    }},
-
-    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Grid#TopLevelSuggestionsContainer",{
-        L"Visibility=Collapsed"
-    }},
-
-    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Grid#TopLevelSuggestionsText",{
-        L"Visibility=Collapsed"
-    }},
-
-}, {
-    L"columns=8",
-    L"iconSize=32",
-    L"tabletIconSize=50",
-    L"background=<WindhawkBlur BlurAmount=\"20\" TintColor=\"#000000\" TintOpacity=\"0.70\" />"
-    //L"background=<AcrylicBrush TintColor=\"{ThemeResource SystemChromeMediumColor}\" FallbackColor=\"{ThemeResource SystemChromeMediumColor}\" TintOpacity=\"0\" TintLuminosityOpacity=\"1\"/>"
-},
-{}, {}};
-
 // clang-format on
 
 std::atomic<DWORD> g_targetThreadId = 0;
@@ -10761,10 +10595,6 @@ void ProcessAllStylesFromSettings() {
                     : &g_themeTintedGlass_variant_ClassicStartMenu;
     } else if (wcscmp(themeName, L"LayerMicaUI") == 0) {
         theme = &g_themeLayerMicaUI;
-    } else if (wcscmp(themeName, L"Fullscreen") == 0) {
-        theme = &g_themeFullscreen;
-    } else if (wcscmp(themeName, L"FullscreenTablet") == 0) {
-        theme = &g_themeFullscreenTablet;
     }
     Wh_FreeStringSetting(themeName);
 
