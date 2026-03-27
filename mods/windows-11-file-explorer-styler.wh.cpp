@@ -1663,7 +1663,7 @@ typedef enum MY_D2D1_GAUSSIANBLUR_OPTIMIZATION
 class XamlBlurBrush : public mux::Media::XamlCompositionBrushBaseT<XamlBlurBrush>
 {
 public:
-    XamlBlurBrush(muc::Compositor compositor,
+    XamlBlurBrush(mux::UIElement element,
                   float blurAmount,
                   winrt::Windows::UI::Color tint,
                   std::optional<uint8_t> tintOpacity,
@@ -1690,6 +1690,8 @@ private:
     std::optional<float> m_noiseOpacity;
     std::optional<float> m_noiseDensity;
     winrt::Windows::UI::ViewManagement::UISettings m_uiSettings;
+    winrt::weak_ref<mux::FrameworkElement> m_weakProxyElement;
+    winrt::hstring m_proxyKey;
 };
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -2488,7 +2490,7 @@ void ColorMatrixEffect::Name(winrt::hstring name)
 
 ////////////////////////////////////////////////////////////////////////////////
 // XamlBlurBrush.cpp
-XamlBlurBrush::XamlBlurBrush(muc::Compositor compositor,
+XamlBlurBrush::XamlBlurBrush(mux::UIElement element,
                              float blurAmount,
                              winrt::Windows::UI::Color tint,
                              std::optional<uint8_t> tintOpacity,
@@ -2497,7 +2499,8 @@ XamlBlurBrush::XamlBlurBrush(muc::Compositor compositor,
                              std::optional<float> tintSaturation,
                              std::optional<float> noiseOpacity,
                              std::optional<float> noiseDensity) :
-    m_compositor(std::move(compositor)),
+    m_compositor(muxh::ElementCompositionPreview::GetElementVisual(element)
+                     .Compositor()),
     m_blurAmount(blurAmount),
     m_tint(tint),
     m_tintOpacity(tintOpacity),
@@ -2509,6 +2512,38 @@ XamlBlurBrush::XamlBlurBrush(muc::Compositor compositor,
 {
     if (!m_tintThemeResourceKey.empty())
     {
+        if (auto fe = element.try_as<mux::FrameworkElement>())
+        {
+            std::wstring xaml =
+                L"<SolidColorBrush"
+                L" xmlns=\"http://schemas.microsoft.com/winfx/2006/xaml/"
+                L"presentation\""
+                L" Color=\"{ThemeResource " +
+                std::wstring(m_tintThemeResourceKey) + L"}\"/>";
+            try
+            {
+                if (auto proxyBrush =
+                        mux::Markup::XamlReader::Load(winrt::hstring(xaml))
+                            .try_as<mux::Media::SolidColorBrush>())
+                {
+                    static std::atomic<uint64_t> s_proxyCounter{0};
+                    m_proxyKey = winrt::hstring(
+                        L"__WhBlurProxy_" +
+                        std::to_wstring(++s_proxyCounter));
+                    fe.Resources().Insert(
+                        winrt::box_value(m_proxyKey), proxyBrush);
+                    m_weakProxyElement = winrt::make_weak(fe);
+                    Wh_Log(L"Proxy brush for %s inserted with key %s",
+                           m_tintThemeResourceKey.c_str(),
+                           m_proxyKey.c_str());
+                }
+            }
+            catch (winrt::hresult_error const& ex)
+            {
+                Wh_Log(L"Failed to create proxy brush: %08X", ex.code());
+            }
+        }
+
         RefreshThemeTint();
 
         auto dq = winrt::Microsoft::UI::Dispatching::DispatcherQueue::GetForCurrentThread();
@@ -2659,6 +2694,22 @@ void XamlBlurBrush::OnConnected()
 
 void XamlBlurBrush::OnDisconnected()
 {
+    if (!m_proxyKey.empty())
+    {
+        if (auto element = m_weakProxyElement.get())
+        {
+            try
+            {
+                element.Resources().Remove(winrt::box_value(m_proxyKey));
+            }
+            catch (...)
+            {
+                HRESULT hr = winrt::to_hresult();
+                Wh_Log(L"Error %08X", hr);
+            }
+        }
+    }
+
     if (const auto brush = CompositionBrush())
     {
         brush.Close();
@@ -2668,37 +2719,38 @@ void XamlBlurBrush::OnDisconnected()
 
 void XamlBlurBrush::RefreshThemeTint()
 {
-    if (m_tintThemeResourceKey.empty())
+    if (m_proxyKey.empty())
     {
         return;
     }
 
-    auto resources = Application::Current().Resources();
-    auto resource = resources.TryLookup(winrt::box_value(m_tintThemeResourceKey));
-    if (!resource)
+    auto element = m_weakProxyElement.get();
+    if (!element)
     {
-        Wh_Log(L"Failed to find resource");
         return;
     }
 
-    if (auto colorBrush = resource.try_as<mux::Media::SolidColorBrush>())
+    try
     {
-        m_tint = colorBrush.Color();
-    }
-    else if (auto color = resource.try_as<winrt::Windows::UI::Color>())
-    {
-        m_tint = *color;
-    }
-    else
-    {
-        Wh_Log(L"Resource type is unsupported: %s",
-            winrt::get_class_name(resource).c_str());
-        return;
-    }
+        auto proxy = element.Resources()
+                         .TryLookup(winrt::box_value(m_proxyKey))
+                         .try_as<mux::Media::SolidColorBrush>();
+        if (!proxy)
+        {
+            Wh_Log(L"Proxy brush not found for %s",
+                   m_tintThemeResourceKey.c_str());
+            return;
+        }
 
-    if (m_tintOpacity)
+        m_tint = proxy.Color();
+        if (m_tintOpacity)
+        {
+            m_tint.A = *m_tintOpacity;
+        }
+    }
+    catch (winrt::hresult_error const& ex)
     {
-        m_tint.A = *m_tintOpacity;
+        Wh_Log(L"Proxy lookup failed: %08X", ex.code());
     }
 }
 
@@ -2882,13 +2934,9 @@ void SetOrClearValue(DependencyObject elementDo,
     } else if (auto* blurBrushParams =
                    std::get_if<XamlBlurBrushParams>(&overrideValue)) {
         if (auto uiElement = elementDo.try_as<UIElement>()) {
-            auto compositor =
-                muxh::ElementCompositionPreview::GetElementVisual(uiElement)
-                    .Compositor();
-
             value = winrt::make<XamlBlurBrush>(
-                std::move(compositor), blurBrushParams->blurAmount,
-                blurBrushParams->tint, blurBrushParams->tintOpacity,
+                uiElement, blurBrushParams->blurAmount, blurBrushParams->tint,
+                blurBrushParams->tintOpacity,
                 winrt::hstring(blurBrushParams->tintThemeResourceKey),
                 blurBrushParams->tintLuminosityOpacity,
                 blurBrushParams->tintSaturation, blurBrushParams->noiseOpacity,
