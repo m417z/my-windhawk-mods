@@ -7056,10 +7056,10 @@ typedef enum MY_D2D1_GAUSSIANBLUR_OPTIMIZATION
 
 ////////////////////////////////////////////////////////////////////////////////
 // XamlBlurBrush.h
-class XamlBlurBrush : public wux::Media::XamlCompositionBrushBaseT<XamlBlurBrush>
+class XamlBlurBrush : public Media::XamlCompositionBrushBaseT<XamlBlurBrush>
 {
 public:
-    XamlBlurBrush(wux::UIElement element,
+    XamlBlurBrush(UIElement element,
                   float blurAmount,
                   winrt::Windows::UI::Color tint,
                   std::optional<uint8_t> tintOpacity,
@@ -7086,7 +7086,7 @@ private:
     std::optional<float> m_noiseOpacity;
     std::optional<float> m_noiseDensity;
     winrt::Windows::UI::ViewManagement::UISettings m_uiSettings;
-    winrt::weak_ref<wux::FrameworkElement> m_weakProxyElement;
+    winrt::weak_ref<FrameworkElement> m_weakProxyElement;
     winrt::hstring m_proxyKey;
 };
 
@@ -7886,7 +7886,7 @@ void ColorMatrixEffect::Name(winrt::hstring name)
 
 ////////////////////////////////////////////////////////////////////////////////
 // XamlBlurBrush.cpp
-XamlBlurBrush::XamlBlurBrush(wux::UIElement element,
+XamlBlurBrush::XamlBlurBrush(UIElement element,
                              float blurAmount,
                              winrt::Windows::UI::Color tint,
                              std::optional<uint8_t> tintOpacity,
@@ -7908,7 +7908,7 @@ XamlBlurBrush::XamlBlurBrush(wux::UIElement element,
 {
     if (!m_tintThemeResourceKey.empty())
     {
-        if (auto fe = element.try_as<wux::FrameworkElement>())
+        if (auto fe = element.try_as<FrameworkElement>())
         {
             std::wstring xaml =
                 L"<SolidColorBrush"
@@ -7920,7 +7920,7 @@ XamlBlurBrush::XamlBlurBrush(wux::UIElement element,
             {
                 if (auto proxyBrush =
                         Markup::XamlReader::Load(winrt::hstring(xaml))
-                            .try_as<wux::Media::SolidColorBrush>())
+                            .try_as<Media::SolidColorBrush>())
                 {
                     static std::atomic<uint64_t> s_proxyCounter{0};
                     m_proxyKey = winrt::hstring(
@@ -8029,7 +8029,7 @@ void XamlBlurBrush::OnConnected()
 
             auto stream = CreateNoiseStream(density);
             auto surface =
-                wux::Media::LoadedImageSurface::StartLoadFromStream(stream);
+                Media::LoadedImageSurface::StartLoadFromStream(stream);
             noiseBrush = m_compositor.CreateSurfaceBrush(surface);
             noiseBrush.Stretch(wuc::CompositionStretch::None);
 
@@ -8130,7 +8130,7 @@ void XamlBlurBrush::RefreshThemeTint()
     {
         auto proxy = element.Resources()
                          .TryLookup(winrt::box_value(m_proxyKey))
-                         .try_as<wux::Media::SolidColorBrush>();
+                         .try_as<Media::SolidColorBrush>();
         if (!proxy)
         {
             Wh_Log(L"Proxy brush not found for %s",
