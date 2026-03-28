@@ -1689,7 +1689,8 @@ private:
     std::optional<float> m_tintSaturation;
     std::optional<float> m_noiseOpacity;
     std::optional<float> m_noiseDensity;
-    winrt::Windows::UI::ViewManagement::UISettings m_uiSettings;
+    Media::SolidColorBrush m_proxyBrush{nullptr};
+    int64_t m_proxyColorChangedToken{};
     winrt::weak_ref<FrameworkElement> m_weakProxyElement;
     winrt::hstring m_proxyKey;
 };
@@ -2532,6 +2533,7 @@ XamlBlurBrush::XamlBlurBrush(UIElement element,
                         std::to_wstring(++s_proxyCounter));
                     fe.Resources().Insert(
                         winrt::box_value(m_proxyKey), proxyBrush);
+                    m_proxyBrush = proxyBrush;
                     m_weakProxyElement = winrt::make_weak(fe);
                     Wh_Log(L"Proxy brush for %s inserted with key %s",
                            m_tintThemeResourceKey.c_str(),
@@ -2546,18 +2548,18 @@ XamlBlurBrush::XamlBlurBrush(UIElement element,
 
         RefreshThemeTint();
 
-        auto dq = winrt::Microsoft::UI::Dispatching::DispatcherQueue::GetForCurrentThread();
-
-        m_uiSettings.ColorValuesChanged([weakThis = get_weak(), dq] (auto const&, auto const&)
+        if (m_proxyBrush)
         {
-            dq.TryEnqueue([weakThis]
-            {
-                if (auto self = weakThis.get())
+            m_proxyColorChangedToken = m_proxyBrush.RegisterPropertyChangedCallback(
+                Media::SolidColorBrush::ColorProperty(),
+                [weakThis = get_weak()](auto&&, auto&&)
                 {
-                    self->OnThemeRefreshed();
-                }
-            });
-        });
+                    if (auto self = weakThis.get())
+                    {
+                        self->OnThemeRefreshed();
+                    }
+                });
+        }
     }
 }
 
@@ -2694,8 +2696,12 @@ void XamlBlurBrush::OnConnected()
 
 void XamlBlurBrush::OnDisconnected()
 {
-    if (!m_proxyKey.empty())
+    if (m_proxyBrush)
     {
+        m_proxyBrush.UnregisterPropertyChangedCallback(
+            Media::SolidColorBrush::ColorProperty(),
+            m_proxyColorChangedToken);
+
         if (auto element = m_weakProxyElement.get())
         {
             try
@@ -2708,6 +2714,8 @@ void XamlBlurBrush::OnDisconnected()
                 Wh_Log(L"Error %08X", hr);
             }
         }
+
+        m_proxyBrush = nullptr;
     }
 
     if (const auto brush = CompositionBrush())
@@ -2719,38 +2727,15 @@ void XamlBlurBrush::OnDisconnected()
 
 void XamlBlurBrush::RefreshThemeTint()
 {
-    if (m_proxyKey.empty())
+    if (!m_proxyBrush)
     {
         return;
     }
 
-    auto element = m_weakProxyElement.get();
-    if (!element)
+    m_tint = m_proxyBrush.Color();
+    if (m_tintOpacity)
     {
-        return;
-    }
-
-    try
-    {
-        auto proxy = element.Resources()
-                         .TryLookup(winrt::box_value(m_proxyKey))
-                         .try_as<Media::SolidColorBrush>();
-        if (!proxy)
-        {
-            Wh_Log(L"Proxy brush not found for %s",
-                   m_tintThemeResourceKey.c_str());
-            return;
-        }
-
-        m_tint = proxy.Color();
-        if (m_tintOpacity)
-        {
-            m_tint.A = *m_tintOpacity;
-        }
-    }
-    catch (winrt::hresult_error const& ex)
-    {
-        Wh_Log(L"Proxy lookup failed: %08X", ex.code());
+        m_tint.A = *m_tintOpacity;
     }
 }
 
