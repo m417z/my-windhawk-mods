@@ -7068,6 +7068,7 @@ public:
                   std::optional<float> tintSaturation,
                   std::optional<float> noiseOpacity,
                   std::optional<float> noiseDensity);
+    ~XamlBlurBrush();
 
     void OnConnected();
     void OnDisconnected();
@@ -7085,6 +7086,8 @@ private:
     std::optional<float> m_noiseOpacity;
     std::optional<float> m_noiseDensity;
     Media::SolidColorBrush m_proxyBrush{nullptr};
+    winrt::weak_ref<FrameworkElement> m_weakProxyElement;
+    winrt::hstring m_proxyKey;
 };
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -7926,6 +7929,8 @@ XamlBlurBrush::XamlBlurBrush(UIElement element,
                     fe.Resources().Insert(
                         winrt::box_value(proxyKey), proxyBrush);
                     m_proxyBrush = proxyBrush;
+                    m_weakProxyElement = winrt::make_weak(fe);
+                    m_proxyKey = proxyKey;
                     Wh_Log(L"Proxy brush for %s inserted with key %s",
                            m_tintThemeResourceKey.c_str(),
                            proxyKey.c_str());
@@ -7955,6 +7960,22 @@ XamlBlurBrush::XamlBlurBrush(UIElement element,
                         }
                     }
                 });
+        }
+    }
+}
+
+XamlBlurBrush::~XamlBlurBrush()
+{
+    if (auto element = m_weakProxyElement.get())
+    {
+        try
+        {
+            element.Resources().Remove(winrt::box_value(m_proxyKey));
+        }
+        catch (...)
+        {
+            HRESULT hr = winrt::to_hresult();
+            Wh_Log(L"Error %08X", hr);
         }
     }
 }
