@@ -1046,10 +1046,6 @@ HRESULT VisualTreeWatcher::OnVisualTreeChange(ParentChildRelation, VisualElement
 {
     Wh_Log(L"========================================");
 
-    if (!g_initializedForThread) {
-        Wh_Log(L"NOTE: Not initialized for thread %u", GetCurrentThreadId());
-    }
-
     switch (mutationType)
     {
     case Add:
@@ -1066,6 +1062,11 @@ HRESULT VisualTreeWatcher::OnVisualTreeChange(ParentChildRelation, VisualElement
     }
 
     Wh_Log(L"Element type: %s", element.Type);
+
+    if (!g_initializedForThread) {
+        Wh_Log(L"Not initialized for thread %u", GetCurrentThreadId());
+        return S_OK;
+    }
 
     if (mutationType == Add)
     {
