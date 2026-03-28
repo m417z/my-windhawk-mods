@@ -1054,6 +1054,9 @@ bool UpdateWeatherWebContent() {
     // https://github.com/chubin/wttr.in/issues/705#issuecomment-3109898903
     weatherUrl += L"&lang=_nocache_";
     weatherUrl += GetWeatherCacheKey();
+
+    Wh_Log(L"Fetching weather from URL: %s", weatherUrl.c_str());
+
     std::optional<std::wstring> urlContent = GetUrlContent(weatherUrl.c_str());
     if (!urlContent) {
         return false;

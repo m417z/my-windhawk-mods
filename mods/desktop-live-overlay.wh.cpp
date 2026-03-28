@@ -756,6 +756,8 @@ bool UpdateWeatherContent() {
     weatherUrl += L"&lang=_nocache_";
     weatherUrl += GetWeatherCacheKey();
 
+    Wh_Log(L"Fetching weather from URL: %s", weatherUrl.c_str());
+
     std::optional<std::wstring> urlContent = GetUrlContent(weatherUrl.c_str());
     if (!urlContent) {
         return false;
