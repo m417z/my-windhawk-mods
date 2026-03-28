@@ -4591,7 +4591,6 @@ public:
 
 private:
     void RefreshThemeTint();
-    void OnThemeRefreshed();
 
     wuc::Compositor m_compositor;
     float m_blurAmount;
@@ -4603,9 +4602,6 @@ private:
     std::optional<float> m_noiseOpacity;
     std::optional<float> m_noiseDensity;
     Media::SolidColorBrush m_proxyBrush{nullptr};
-    int64_t m_proxyColorChangedToken{};
-    winrt::weak_ref<FrameworkElement> m_weakProxyElement;
-    winrt::hstring m_proxyKey;
 };
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -5441,16 +5437,15 @@ XamlBlurBrush::XamlBlurBrush(UIElement element,
                             .try_as<Media::SolidColorBrush>())
                 {
                     static std::atomic<uint64_t> s_proxyCounter{0};
-                    m_proxyKey = winrt::hstring(
+                    auto proxyKey = winrt::hstring(
                         L"__WhBlurProxy_" +
                         std::to_wstring(++s_proxyCounter));
                     fe.Resources().Insert(
-                        winrt::box_value(m_proxyKey), proxyBrush);
+                        winrt::box_value(proxyKey), proxyBrush);
                     m_proxyBrush = proxyBrush;
-                    m_weakProxyElement = winrt::make_weak(fe);
                     Wh_Log(L"Proxy brush for %s inserted with key %s",
                            m_tintThemeResourceKey.c_str(),
-                           m_proxyKey.c_str());
+                           proxyKey.c_str());
                 }
             }
             catch (winrt::hresult_error const& ex)
@@ -5459,17 +5454,30 @@ XamlBlurBrush::XamlBlurBrush(UIElement element,
             }
         }
 
-        RefreshThemeTint();
-
         if (m_proxyBrush)
         {
-            m_proxyColorChangedToken = m_proxyBrush.RegisterPropertyChangedCallback(
+            m_proxyBrush.RegisterPropertyChangedCallback(
                 Media::SolidColorBrush::ColorProperty(),
                 [weakThis = get_weak()](auto&&, auto&&)
                 {
                     if (auto self = weakThis.get())
                     {
-                        self->OnThemeRefreshed();
+                        Wh_Log(L"Proxy brush color changed, refreshing tint");
+
+                        auto prevTint = self->m_tint;
+
+                        self->RefreshThemeTint();
+
+                        if (prevTint != self->m_tint)
+                        {
+                            if (auto effectBrush =
+                                    self->CompositionBrush()
+                                        .try_as<wuc::CompositionEffectBrush>())
+                            {
+                                effectBrush.Properties().InsertColor(
+                                    L"FloodEffect.Color", self->m_tint);
+                            }
+                        }
                     }
                 });
         }
@@ -5480,6 +5488,8 @@ void XamlBlurBrush::OnConnected()
 {
     if (!CompositionBrush())
     {
+        RefreshThemeTint();
+
         auto backdropBrush = m_compositor.CreateBackdropBrush();
 
         // Rec. 709 luma coefficients, used for saturation and luminosity.
@@ -5609,28 +5619,6 @@ void XamlBlurBrush::OnConnected()
 
 void XamlBlurBrush::OnDisconnected()
 {
-    if (m_proxyBrush)
-    {
-        m_proxyBrush.UnregisterPropertyChangedCallback(
-            Media::SolidColorBrush::ColorProperty(),
-            m_proxyColorChangedToken);
-
-        if (auto element = m_weakProxyElement.get())
-        {
-            try
-            {
-                element.Resources().Remove(winrt::box_value(m_proxyKey));
-            }
-            catch (...)
-            {
-                HRESULT hr = winrt::to_hresult();
-                Wh_Log(L"Error %08X", hr);
-            }
-        }
-
-        m_proxyBrush = nullptr;
-    }
-
     if (const auto brush = CompositionBrush())
     {
         brush.Close();
@@ -5652,22 +5640,6 @@ void XamlBlurBrush::RefreshThemeTint()
     }
 }
 
-void XamlBlurBrush::OnThemeRefreshed()
-{
-    Wh_Log(L"Theme refreshed");
-
-    auto prevTint = m_tint;
-
-    RefreshThemeTint();
-
-    if (prevTint != m_tint)
-    {
-        if (auto effectBrush = CompositionBrush().try_as<wuc::CompositionEffectBrush>())
-        {
-            effectBrush.Properties().InsertColor(L"FloodEffect.Color", m_tint);
-        }
-    }
-}
 
 // clang-format on
 ////////////////////////////////////////////////////////////////////////////////
