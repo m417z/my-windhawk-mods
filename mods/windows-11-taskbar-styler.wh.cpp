@@ -517,8 +517,6 @@ const Theme g_themeSimplyTransparent = {{
         L"Fill=Transparent"}},
     ThemeTargetStyles{L"Rectangle#BackgroundStroke", {
         L"Fill=Transparent"}},
-    ThemeTargetStyles{L"Border#OverflowFlyoutBackgroundBorder", {
-        L"Background=Transparent"}},
 }};
 
 const Theme g_themeSquircle = {{
@@ -691,7 +689,7 @@ const Theme g_themeMatter = {{
     ThemeTargetStyles{L"Taskbar.TaskbarBackground#HoverFlyoutBackgroundControl", {
         L"Fill:=$base",
         L"CornerRadius = $mainRadius"}},
-    ThemeTargetStyles{L" Taskbar.AugmentedEntryPointButton#AugmentedEntryPointButton", {
+    ThemeTargetStyles{L"Taskbar.AugmentedEntryPointButton#AugmentedEntryPointButton", {
         L"Margin=-1,1,1,1"}},
     ThemeTargetStyles{L"Taskbar.TaskListButtonPanel@CommonStates > Border#BackgroundElement", {
         L"CornerRadius = $mainRadius",
@@ -770,11 +768,11 @@ const Theme g_themeMatter = {{
         L"Margin = 0,-1,12,0"}},
     ThemeTargetStyles{L"Microsoft.UI.Xaml.Controls.ProgressBar#ProgressIndicator", {
         L"Margin = 0,0,0,1"}},
-    ThemeTargetStyles{L" Windows.UI.Xaml.Shapes.Rectangle#ProgressBarTrack", {
+    ThemeTargetStyles{L"Windows.UI.Xaml.Shapes.Rectangle#ProgressBarTrack", {
         L"Fill := $inverseBW",
         L"RadiusX = 1.5",
         L"RadiusY = 1.5"}},
-    ThemeTargetStyles{L" Windows.UI.Xaml.Shapes.Rectangle#DeterminateProgressBarIndicator", {
+    ThemeTargetStyles{L"Windows.UI.Xaml.Shapes.Rectangle#DeterminateProgressBarIndicator", {
         L"Fill :=$accentColor"}},
     ThemeTargetStyles{L"Taskbar.TaskListButton#TaskListButton > Taskbar.TaskListLabeledButtonPanel#IconPanel > Microsoft.UI.Xaml.Controls.ProgressBar#ProgressIndicator", {
         L"MinHeight = 4",
@@ -817,13 +815,14 @@ const Theme g_themeWinXP = {{
     ThemeTargetStyles{L"Taskbar.TaskbarBackground#HoverFlyoutBackgroundControl > Grid > Rectangle#BackgroundFill", {
         L"Fill:=<LinearGradientBrush StartPoint=\"0.5,0\" EndPoint=\"0.5,1\"> <GradientStop Color=\"#3168d5\" Offset=\"0.0\" /> <GradientStop Color=\"#4993E6\" Offset=\"0.1\" /> <GradientStop Color=\"#2157D7\" Offset=\"0.35\" /> <GradientStop Color=\"#2663E0\" Offset=\"0.8\" /> <GradientStop Color=\"#1941A5\" Offset=\"1.0\" /></LinearGradientBrush>"}},
     ThemeTargetStyles{L"Taskbar.ExperienceToggleButton#LaunchListButton[AutomationProperties.AutomationId=StartButton]", {
-        L"CornerRadius=0",
-        L"Margin=0,0,4,0",
-        L"MaxWidth=48"}},
+        L"Margin=-9,0,10,0"}},
     ThemeTargetStyles{L"Taskbar.ExperienceToggleButton#LaunchListButton[AutomationProperties.AutomationId=StartButton] > Taskbar.TaskListButtonPanel", {
         L"Padding=0",
-        L"Background:=<LinearGradientBrush StartPoint=\"0.5,0\" EndPoint=\"0.5,1\"> <GradientStop Color=\"#388238\" Offset=\"0.0\" /> <GradientStop Color=\"#71B571\" Offset=\"0.1\" /> <GradientStop Color=\"#71B571\" Offset=\"0.35\" /> <GradientStop Color=\"#47AA47\" Offset=\"0.8\" /> <GradientStop Color=\"#307443\" Offset=\"1.0\" /></LinearGradientBrush>",
-        L"MaxWidth=48"}},
+        L"Width=60",
+        L"CornerRadius=9",
+        L"Background:=<LinearGradientBrush StartPoint=\"0.5,0\" EndPoint=\"0.5,1\"> <GradientStop Color=\"#2D6B2D\" Offset=\"0.0\" /> <GradientStop Color=\"#7ED57E\" Offset=\"0.08\" /> <GradientStop Color=\"#3DB43D\" Offset=\"0.35\" /> <GradientStop Color=\"#2A752E\" Offset=\"0.85\" /> <GradientStop Color=\"#144818\" Offset=\"1.0\" /></LinearGradientBrush>",
+        L"BorderThickness=0,0,2,0",
+        L"BorderBrush:=<LinearGradientBrush StartPoint=\"0.5,0\" EndPoint=\"0.5,1\"> <GradientStop Color=\"#400D330D\" Offset=\"0.0\" /> <GradientStop Color=\"#800D330D\" Offset=\"0.4\" /> <GradientStop Color=\"#FF0D330D\" Offset=\"1.0\" /></LinearGradientBrush>"}},
     ThemeTargetStyles{L"Taskbar.ExperienceToggleButton#LaunchListButton[AutomationProperties.AutomationId=StartButton] > Taskbar.TaskListButtonPanel > Border#BackgroundElement", {
         L"Background:=<ImageBrush Stretch=\"None\" ImageSource=\"https://raw.githubusercontent.com/ramensoftware/windows-11-taskbar-styling-guide/refs/heads/main/Themes/WinXP/Assets/orb.png\" />"}},
     ThemeTargetStyles{L"Taskbar.ExperienceToggleButton#LaunchListButton[AutomationProperties.AutomationId=StartButton] > Taskbar.TaskListButtonPanel > Microsoft.UI.Xaml.Controls.AnimatedVisualPlayer#Icon", {
@@ -838,21 +837,22 @@ const Theme g_themeWinXP = {{
         L"Foreground=White"}},
     ThemeTargetStyles{L"SystemTray.TextIconContent > Grid > SystemTray.AdaptiveTextBlock#Base > TextBlock", {
         L"Foreground=White"}},
+    ThemeTargetStyles{L"SystemTray.BatteryIconContent > Grid#ContainerGrid > StackPanel > Grid > TextBlock[1]", {
+        L"Foreground=White"}},
     ThemeTargetStyles{L"Taskbar.TaskListLabeledButtonPanel@RunningIndicatorStates > Border#BackgroundElement", {
         L"Background@NoRunningIndicator=Transparent",
-        L"Background@ActiveRunningIndicator:=<LinearGradientBrush StartPoint=\"0.5,0\" EndPoint=\"0.5,1\"> <GradientStop Color=\"#1B67D7\" Offset=\"0.0\" /> <GradientStop Color=\"#1542A8\" Offset=\"0.1\" /> <GradientStop Color=\"#1951BA\" Offset=\"0.15\" /> <GradientStop Color=\"#1951BA\" Offset=\"0.95\" /> <GradientStop Color=\"#1542A8\" Offset=\"1.0\" /></LinearGradientBrush>",
-        L"Background:=<LinearGradientBrush StartPoint=\"0.5,0\" EndPoint=\"0.5,1\"> <GradientStop Color=\"#3358B5\" Offset=\"0.0\" /> <GradientStop Color=\"#8AC4FD\" Offset=\"0.1\" /> <GradientStop Color=\"#56A3FF\" Offset=\"0.2\" /> <GradientStop Color=\"#56A3FF\" Offset=\"0.85\" /> <GradientStop Color=\"#378DF6\" Offset=\"0.9\" /> <GradientStop Color=\"#163E95\" Offset=\"1.0\" /></LinearGradientBrush>",
-        L"BorderThickness@ActiveRunningIndicator=1",
+        L"Background@ActiveRunningIndicator:=<LinearGradientBrush StartPoint=\"0.5,0\" EndPoint=\"0.5,1\"> <GradientStop Color=\"#1542A8\" Offset=\"0.0\" /> <GradientStop Color=\"#245DD4\" Offset=\"0.2\" /> <GradientStop Color=\"#1542A8\" Offset=\"1.0\" /></LinearGradientBrush>",
+        L"Background:=<LinearGradientBrush StartPoint=\"0.5,0\" EndPoint=\"0.5,1\"> <GradientStop Color=\"#6599E6\" Offset=\"0.0\" /> <GradientStop Color=\"#4A88E0\" Offset=\"0.1\" /> <GradientStop Color=\"#4282D9\" Offset=\"0.9\" /> <GradientStop Color=\"#2A62B5\" Offset=\"1.0\" /></LinearGradientBrush>",
         L"BorderBrush@NoRunningIndicator=Transparent",
-        L"BorderBrush@ActiveRunningIndicator=#1B67D7",
-        L"BorderBrush=#3358B5"}},
+        L"BorderBrush@ActiveRunningIndicator=#083192",
+        L"BorderBrush=#1A4DBF"}},
     ThemeTargetStyles{L"Taskbar.TaskListButton", {
-        L"Margin=-1.5"}},
+        L"Margin=-2"}},
     ThemeTargetStyles{L"Grid#SystemTrayFrameGrid", {
         L"Background:=<LinearGradientBrush StartPoint=\"0.5,0\" EndPoint=\"0.5,1\"> <GradientStop Color=\"#16ADF0\" Offset=\"0.0\" /> <GradientStop Color=\"#19B9F3\" Offset=\"0.1\" /> <GradientStop Color=\"#118FE9\" Offset=\"0.35\" /> <GradientStop Color=\"#0E9EF0\" Offset=\"0.8\" /> <GradientStop Color=\"#1580D9\" Offset=\"1.0\" /></LinearGradientBrush>",
         L"BorderThickness=1,1,0,1",
         L"BorderBrush=#095BC9",
-        L"Padding=4,0,0,0"}},
+        L"Padding=4,-1,0,-1"}},
     ThemeTargetStyles{L"Grid#OverflowRootGrid > Border", {
         L"Background:=<LinearGradientBrush StartPoint=\"0.5,0\" EndPoint=\"0.5,1\"> <GradientStop Color=\"#3168d5\" Offset=\"0.0\" /> <GradientStop Color=\"#4993E6\" Offset=\"0.1\" /> <GradientStop Color=\"#2157D7\" Offset=\"0.35\" /> <GradientStop Color=\"#2663E0\" Offset=\"0.8\" /> <GradientStop Color=\"#1941A5\" Offset=\"1.0\" /></LinearGradientBrush>"}},
 }};
@@ -884,12 +884,6 @@ const Theme g_themeWinXP_variant_Zune = {{
         L"Foreground=White"}},
     ThemeTargetStyles{L"SystemTray.TextIconContent > Grid > SystemTray.AdaptiveTextBlock#Base > TextBlock", {
         L"Foreground=White"}},
-    ThemeTargetStyles{L"Taskbar.TaskListLabeledButtonPanel@RunningIndicatorStates > Border#BackgroundElement", {
-        L"Background@ActiveRunningIndicator:=<LinearGradientBrush StartPoint=\"0.5,0.5\" EndPoint=\"0.5,1\"> <GradientStop Color=\"#6B6B6B\" Offset=\"0.0\" /> <GradientStop Color=\"#434343\" Offset=\"0.1\" /> <GradientStop Color=\"#434343\" Offset=\"0.35\" /> <GradientStop Color=#434343\" Offset=\"0.8\" /> <GradientStop Color=\"#434343\" Offset=\"1.0\" /></LinearGradientBrush>",
-        L"Background:=<LinearGradientBrush StartPoint=\"0.5,0.5\" EndPoint=\"0.5,1\"> <GradientStop Color=\"#6B6B6B\" Offset=\"0.0\" /> <GradientStop Color=\"#434343\" Offset=\"0.1\" /> <GradientStop Color=\"#434343\" Offset=\"0.35\" /> <GradientStop Color=#434343\" Offset=\"0.8\" /> <GradientStop Color=\"#434343\" Offset=\"1.0\" /></LinearGradientBrush>",
-        L"BorderThickness=1",
-        L"BorderBrush@NoRunningIndicator=Transparent",
-        L"CornerRadius=3"}},
     ThemeTargetStyles{L"Taskbar.TaskListLabeledButtonPanel@RunningIndicatorStates > Border", {
         L"BorderThickness=1",
         L"CornerRadius=2",
@@ -900,6 +894,7 @@ const Theme g_themeWinXP_variant_Zune = {{
         L"Margin=1",
         L"BorderThickness=1",
         L"Background:=<LinearGradientBrush StartPoint=\"0.5,0.42\" EndPoint=\"0.5,0.75\"> <GradientStop Color=\"#6B6B6B\" Offset=\"0.0\" /> <GradientStop Color=\"#363636\" Offset=\"0.5\" /> <GradientStop Color=\"#363636\" Offset=\"0.35\" /> <GradientStop Color=\"#363636\" Offset=\"0.8\" /> <GradientStop Color=\"#363636\" Offset=\"1.0\" /></LinearGradientBrush>",
+        L"Background@ActiveRunningIndicator:=<LinearGradientBrush StartPoint=\"0.5,0.5\" EndPoint=\"0.5,1\"> <GradientStop Color=\"#6B6B6B\" Offset=\"0.0\" /> <GradientStop Color=\"#434343\" Offset=\"0.1\" /> <GradientStop Color=\"#434343\" Offset=\"0.35\" /> <GradientStop Color=\"#434343\" Offset=\"0.8\" /> <GradientStop Color=\"#434343\" Offset=\"1.0\" /></LinearGradientBrush>",
         L"BorderBrush@NoRunningIndicator=Transparent",
         L"Background@NoRunningIndicator=Transparent"}},
     ThemeTargetStyles{L"Rectangle#BackgroundStroke", {
@@ -1243,7 +1238,7 @@ const Theme g_themeCleanSlate = {{
     ThemeTargetStyles{L"Border#ProgressBarRoot > Border > Grid > Rectangle", {
         L"Fill:=<SolidColorBrush Color=\"{ThemeResource SystemAccentColorLight1}\" />"}},
     ThemeTargetStyles{L"Border#ProgressBarRoot > Border > Grid > Rectangle#ProgressBarTrack", {
-        L"Fill:=<SolidColorBrush Color=\"{ThemeResource SystemAccentColorDark3} />"}},
+        L"Fill:=<SolidColorBrush Color=\"{ThemeResource SystemAccentColorDark3}\" />"}},
     ThemeTargetStyles{L"Taskbar.TaskListLabeledButtonPanel@CommonStates > Border#BackgroundElement", {
         L"BorderBrush@InactivePointerOver:=<SolidColorBrush Color=\"{ThemeResource SystemAccentColorLight1}\"  />",
         L"BorderBrush@ActiveNormal:=<SolidColorBrush Color=\"{ThemeResource SystemAccentColorLight2}\" />",
@@ -3003,37 +2998,43 @@ const Theme g_themePlasma = {{
 
 const Theme g_themeWindowGlass = {{
     ThemeTargetStyles{L"Taskbar.TaskbarFrame#TaskbarFrame", {
-        L"MaxWidth:=900",
-        L"HorizontalAlignment=Auto",
+        L"MaxWidth:=$TaskbarFrameMaxWidth",
         L"Width=Auto",
-        L"MinWidth:=500"}},
+        L"MinWidth:=100"}},
     ThemeTargetStyles{L"Taskbar.TaskbarFrame#TaskbarFrame > Grid#RootGrid", {
-        L"Margin=30,0,30,5",
+        L"Margin=10,2,10,2",
         L"BorderThickness=$BorderThickness",
         L"BorderBrush:=$BorderBrush",
         L"CornerRadius=$CornerRadius",
-        L"Background:=Transparent"}},
-    ThemeTargetStyles{L"Rectangle#BackgroundFill", {
-        L"Visibility=Visible",
-        L"Fill:=$Background"}},
-    ThemeTargetStyles{L"Rectangle#BackgroundStroke", {
+        L"Background:=$Background",
+        L"Padding=10,0,235,0"}},
+    ThemeTargetStyles{L"Taskbar.TaskbarBackground#BackgroundControl > Windows.UI.Xaml.Controls.Grid > Windows.UI.Xaml.Shapes.Rectangle#BackgroundFill", {
+        L"Visibility=Collapsed"}},
+    ThemeTargetStyles{L"Taskbar.TaskbarBackground#BackgroundControl > Windows.UI.Xaml.Controls.Grid > Windows.UI.Xaml.Shapes.Rectangle#BackgroundStroke", {
         L"Visibility=Collapsed"}},
     ThemeTargetStyles{L"Taskbar.AugmentedEntryPointButton#AugmentedEntryPointButton > Taskbar.TaskListButtonPanel#ExperienceToggleButtonRootPanel", {
-        L"Margin=4",
-        L"Background:=$ElementBG",
-        L"CornerRadius=12"}},
+        L"Margin=0,8,0,8",
+        L"Background:=Transparent",
+        L"CornerRadius=0",
+        L"BorderThickness=0,0,1,0",
+        L"BorderBrush:=#20808080",
+        L"Padding=2,0,5,0",
+        L"MaxWidth:=200"}},
     ThemeTargetStyles{L"Grid#SystemTrayFrameGrid", {
-        L"Margin=0,7,20,7",
-        L"RenderTransform:=<TranslateTransform X=\"-105\" Y=\"-2\"/>",
-        L"Padding=0",
-        L"Background:=$ElementBG",
-        L"CornerRadius=12"}},
+        L"Margin=-240,10,0,10",
+        L"Background:=Transparent",
+        L"BorderBrush:=#20808080",
+        L"BorderThickness=1,0,0,0",
+        L"CornerRadius=0",
+        L"Padding=0,0,10,0"}},
     ThemeTargetStyles{L"SystemTray.ChevronIconView", {
         L"Padding=$TrayPadding",
-        L"CornerRadius=10"}},
+        L"CornerRadius=10",
+        L"Margin=5,0,0,0"}},
     ThemeTargetStyles{L"SystemTray.NotifyIconView#NotifyItemIcon", {
         L"Padding=$TrayPadding",
-        L"CornerRadius=10"}},
+        L"CornerRadius=10",
+        L"Margin=5,0,0,0"}},
     ThemeTargetStyles{L"SystemTray.OmniButton", {
         L"Padding=$TrayPadding",
         L"CornerRadius=10"}},
@@ -3051,12 +3052,8 @@ const Theme g_themeWindowGlass = {{
     ThemeTargetStyles{L"Taskbar.Gripper#GripperControl", {
         L"Width=Auto",
         L"MinWidth=24"}},
-    ThemeTargetStyles{L"SystemTray.SystemTrayFrame", {
-        L"HorizontalAlignment=1",
-        L"RenderTransform:=<TranslateTransform X=\"399\" />"}},
     ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Grid#AugmentedEntryPointContentGrid", {
-        L"Margin=4,0,0,0",
-        L"HorizontalAlignment=Left"}},
+        L"Margin=4,0,0,0"}},
     ThemeTargetStyles{L"TextBlock#TimeInnerTextBlock", {
         L"FontSize=13",
         L"FontFamily=vivo Sans EN VF",
@@ -3076,28 +3073,31 @@ const Theme g_themeWindowGlass = {{
         L"BorderBrush:=$BorderBrush",
         L"Background:=$Background"}},
     ThemeTargetStyles{L"TextBlock#SearchBoxTextBlock", {
-        L"Text=Search This Precision",
+        L"Text=Search",
         L"FontSize=10",
         L"FontFamily=vivo Sans EN VF"}},
     ThemeTargetStyles{L"SystemTray.OmniButton#NotificationCenterButton > Grid > ContentPresenter > ItemsPresenter > StackPanel > ContentPresenter > SystemTray.IconView#SystemTrayIcon > Grid > Grid > SystemTray.TextIconContent", {
         L"Visibility=Collapsed"}},
     ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Button", {
         L"BorderThickness=$BorderThickness"}},
-    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Border#OverflowFlyoutBackgroundBorder", {
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Grid#ModalRootGrid > Windows.UI.Xaml.Controls.Border#BackgroundElement", {
+        L"BorderThickness=$BorderThickness",
+        L"BorderBrush:=$BorderBrush",
+        L"Background:=Transparent",
+        L"CornerRadius=$CornerRadius"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Grid#ModalRootGrid > Windows.UI.Xaml.Controls.Border#BackgroundElement > WindowsInternal.ComposableShell.Experiences.Switcher.SwitchItemList", {
+        L"Background:=$Background"}},
+    ThemeTargetStyles{L"WindowsInternal.ComposableShell.Experiences.Switcher.VirtualDesktopBarElement#VirtualDesktopBar > Grid > Border", {
         L"BorderThickness=$BorderThickness",
         L"BorderBrush:=$BorderBrush",
         L"Background:=$Background",
         L"CornerRadius=$CornerRadius"}},
-    ThemeTargetStyles{L"WindowsInternal.ComposableShell.Experiences.Switcher.AltTab > Windows.UI.Xaml.Controls.Grid#ModalRootGrid > Border", {
-        L"BorderThickness=$BorderThickness",
-        L"BorderBrush:=$BorderBrush",
-        L"Background:=<AcrylicBrush TintColor=\"#10000020\"/>",
-        L"CornerRadius=20"}},
     ThemeTargetStyles{L"WindowsInternal.ComposableShell.Experiences.Switcher.VirtualDesktopBarElement#VirtualDesktopBar", {
-        L"CornerRadius=$CornerRadius",
-        L"Background:=$Background"}},
+        L"Width=Auto",
+        L"Visibility=Visible",
+        L"HorizontalAlignment=1"}},
     ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Border#BackgroundDimmingLayer", {
-        L"Background:=$Background"}},
+        L"Background:=Transparent"}},
     ThemeTargetStyles{L"Taskbar.TaskListButtonPanel#ExperienceToggleButtonRootPanel > Windows.UI.Xaml.Controls.Border#BackgroundElement", {
         L"CornerRadius=10"}},
     ThemeTargetStyles{L"Taskbar.TaskListButton#TaskListButton", {
@@ -3118,7 +3118,8 @@ const Theme g_themeWindowGlass = {{
         L"BorderBrush:=$ElementBorderBrush",
         L"CornerRadius=$ElementCornerRadius",
         L"BorderThickness=$ElementBorderThickness",
-        L"Margin=0"}},
+        L"MaxWidth:=100",
+        L"Width=Auto"}},
     ThemeTargetStyles{L"Taskbar.TaskbarExtensionElement", {
         L"RenderTransform:=<TranslateTransform X=\"0\" Y=\"0\" />"}},
     ThemeTargetStyles{L"Taskbar.TaskListButtonPanel#ExperienceToggleButtonRootPanel", {
@@ -3129,32 +3130,61 @@ const Theme g_themeWindowGlass = {{
         L"BorderThickness:=$BorderThickness",
         L"CornerRadius=12"}},
     ThemeTargetStyles{L"SearchUx.SearchUI.SearchButtonControl", {
-        L"MaxWidth=130",
-        L"Margin=-1,0,-1,0"}},
+        L"MaxWidth:=300",
+        L"MinWidth:=10",
+        L"Width=Auto",
+        L"Margin=0"}},
     ThemeTargetStyles{L"WindowsInternal.ComposableShell.Experiences.Switcher.VirtualDesktopBarElement > Windows.UI.Xaml.Controls.Grid#GridElement > Windows.UI.Xaml.Controls.Border#VirtualDesktopSwitcherBackground", {
-        L"BorderBrush:=$BorderBrush",
-        L"BorderThickness=$BorderThickness",
-        L"CornerRadius=$CornerRadius",
-        L"Background=Transparent"}},
-    ThemeTargetStyles{L"WindowsInternal.ComposableShell.Experiences.Switcher.SwitchItemListViewItem > Grid > Border", {
-        L"Background:=<AcrylicBrush TintColor=\"#10000020\"/>"}},
-    ThemeTargetStyles{L"Border#VirtualDesktopBarBackground", {
-        L"Background:=<AcrylicBrush TintColor=\"#10000020\"/>",
+        L"Background:=$Background",
         L"BorderBrush:=$BorderBrush",
         L"BorderThickness=$BorderThickness",
         L"CornerRadius=$CornerRadius"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Shapes.Rectangle#BackgroundFill", {
+        L"Fill:=$Background"}},
+    ThemeTargetStyles{L"SystemTray.SystemTrayFrame", {
+        L"Grid.Column=2"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Border#OverflowFlyoutBackgroundBorder", {
+        L"Background:=$Background",
+        L"BorderBrush:=$BorderBrush",
+        L"BorderThickness=$BorderThickness",
+        L"CornerRadius=$CornerRadius"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.MenuFlyoutPresenter > Windows.UI.Xaml.Controls.Border", {
+        L"Background:=$Background",
+        L"BorderBrush:=$BorderBrush",
+        L"BorderThickness=$BorderThickness",
+        L"CornerRadius=$CornerRadius"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Grid#HoverFlyoutGrid > Windows.UI.Xaml.Controls.Border#HoverFlyoutBackground", {
+        L"Background:=Transparent",
+        L"BorderBrush:=$BorderBrush",
+        L"BorderThickness=$BorderThickness",
+        L"CornerRadius=$CornerRadius"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.ScrollContentPresenter > Windows.UI.Xaml.Controls.Border > Windows.UI.Xaml.Controls.Grid", {
+        L"ColumnDefinitions:=<ColumnDefinitionCollection><ColumnDefinition Width=\"*\"/><ColumnDefinition Width=\"Auto\"/><ColumnDefinition Width=\"Auto\"/><ColumnDefinition Width=\"*\"/></ColumnDefinitionCollection>"}},
+    ThemeTargetStyles{L"Taskbar.TaskbarFrame", {
+        L"Grid.Column=1",
+        L"Width=Auto",
+        L"MaxWidth=$TaskbarFrameMaxWidth"}},
 }, {
-    L"Background=<WindhawkBlur BlurAmount=\"15\" TintColor=\"#10808080\"/>",
-    L"BorderBrush2=<LinearGradientBrush StartPoint=\"0,0\" EndPoint=\"0,1\"><GradientStop Color=\"{ThemeResource SystemChromeHighColor}\" Offset=\"0.0\" /><GradientStop Color=\"{ThemeResource SystemChromeLowColor}\" Offset=\"0.25\" /><GradientStop Color=\"{ThemeResource SystemChromeHighColor}\" Offset=\"1\" /></LinearGradientBrush>",
-    L"BorderThickness=0.3,1,0.3,0.3",
-    L"CornerRadius=15",
-    L"BorderBrush=<LinearGradientBrush StartPoint=\"0,0\" EndPoint=\"0,1\"><GradientStop Color=\"#50808080\" Offset=\"0.0\" /><GradientStop Color=\"#50404040\" Offset=\"0.25\" /><GradientStop Color=\"#50808080\" Offset=\"1\" /></LinearGradientBrush>",
-    L"Background2=<AcrylicBrush TintColor=\"{ThemeResource SystemChromeAltHighColor}\" TintOpacity=\"0.3\" FallbackColor=\"{ThemeResource SystemChromeAltHighColor}\" />",
-    L"TrayPadding=2",
-    L"ElementBG=<SolidColorBrush Color=\"{ThemeResource SystemChromeAltHighColor}\" Opacity=\"0.3\" />",
+    L"Translucent=<WindhawkBlur BlurAmount=\"15\" TintColor=\"#10808080\"/>",
+    L"Glass=<WindhawkBlur BlurAmount=\"5\" TintColor=\"{ThemeResource SystemChromeMediumColor}\" TintOpacity=\"0.7\" />",
+    L"Frosted=<WindhawkBlur BlurAmount=\"20\" TintColor=\"{ThemeResource SystemChromeMediumColor}\" TintOpacity=\"0.7\" />",
+    L"Acrylic=<WindhawkBlur BlurAmount=\"30\" TintColor=\"{ThemeResource SystemChromeMediumColor}\" TintOpacity=\"0.8\" />",
+    L"Background=$Glass",
+    L"BorderBrush=<LinearGradientBrush StartPoint=\"0,0\" EndPoint=\"0,1\"><GradientStop Color=\"#50808080\" Offset=\"0.0\" /><GradientStop Color=\"#30404040\" Offset=\"0.25\" /><GradientStop Color=\"#40808080\" Offset=\"1\" /></LinearGradientBrush>",
+    L"BorderBrush2=<WindhawkBlur BlurAmount=\"10\" TintColor=\"#909090\" TintOpacity=\"0.2\"/>",
+    L"ElementBG=<SolidColorBrush Color=\"{ThemeResource SystemChromeLowColor}\" Opacity=\"0.3\" />",
     L"ElementBorderThickness=0.3,0.3,0.3,1",
     L"ElementBorderBrush=<LinearGradientBrush StartPoint=\"0,0\" EndPoint=\"0,1\"><GradientStop Color=\"#50808080\" Offset=\"1\" /><GradientStop Color=\"#50606060\" Offset=\"0.15\" /></LinearGradientBrush>",
     L"ElementCornerRadius=12",
+    L"ElementSysColor=<SolidColorBrush Color=\"{ThemeResource SystemAccentColorLight1}\" Opacity=\"1\" />",
+    L"ElementSysColor2=<SolidColorBrush Color=\"{ThemeResource SystemAccentColorLight2}\" Opacity=\"1\" />",
+    L"ElementSysColor3=<SolidColorBrush Color=\"{ThemeResource SystemAccentColorLight3}\" Opacity=\"1\" />",
+    L"ElementSysColor4=<SolidColorBrush Color=\"{ThemeResource SystemAccentColorDark1}\" Opacity=\"1\" />",
+    L"BorderThickness=0.5,1,0.5,1",
+    L"CornerRadius=25",
+    L"TrayPadding=2,4,2,4",
+    L"Height=70",
+    L"TaskbarFrameMaxWidth=1895",
 }};
 
 const Theme g_themeSurface = {{
@@ -3184,21 +3214,26 @@ const Theme g_themeSurface = {{
     ThemeTargetStyles{L"Taskbar.TaskbarFrame > Grid#RootGrid > Taskbar.TaskbarBackground > Grid > Rectangle#BackgroundFill", {
         L"Fill:=<WindhawkBlur BlurAmount=\"5\" TintColor=\"#12FFFFFF\"/>"}},
     ThemeTargetStyles{L"Taskbar.TaskListLabeledButtonPanel@RunningIndicatorStates > Border#BackgroundElement", {
-        L"Background:=<AcrylicBrush TintColor=\"{ThemeResource SystemChromeAltHighColor}\" TintOpacity=\"0.9\" FallbackColor=\"{ThemeResource SystemChromeMediumColor}\" />",
+        L"Background:=$TaskItemBackground",
         L"Margin=-1,5.5,1,4",
         L"CornerRadius=12",
         L"BorderThickness=2,1,0.5,2",
-        L"BorderBrush:=<LinearGradientBrush StartPoint=\"0,0\" EndPoint=\"0.5,1\"><GradientStop Color=\"#00000000\" Offset=\"0\" /><GradientStop Color=\"#33000000\" Offset=\"1.5\" /></LinearGradientBrush>"}},
+        L"BorderBrush:=$TaskItemBorder"}},
     ThemeTargetStyles{L"Taskbar.TaskListButtonPanel#ExperienceToggleButtonRootPanel > Border#BackgroundElement", {
-        L"Background:=<AcrylicBrush TintColor=\"{ThemeResource SystemChromeAltHighColor}\" TintOpacity=\"0.8\" FallbackColor=\"{ThemeResource SystemChromeLowColor}\" />",
+        L"Background:=$SystemItemBackground",
         L"CornerRadius=12",
         L"Margin=-1,5.5,2.5,4",
         L"BorderThickness=2,1,0.5,2",
-        L"BorderBrush:=<LinearGradientBrush StartPoint=\"0,0\" EndPoint=\"0.5,1\"><GradientStop Color=\"#00000000\" Offset=\"0\" /><GradientStop Color=\"#33000000\" Offset=\"1.5\" /></LinearGradientBrush>"}},
+        L"BorderBrush:=$SystemItemBorder"}},
     ThemeTargetStyles{L"Taskbar.TaskListLabeledButtonPanel@CommonStates > Rectangle#RunningIndicator", {
         L"Margin=0,0,0,8"}},
     ThemeTargetStyles{L"Border#MultiWindowElement", {
         L"Height=0"}},
+}, {
+    L"TaskItemBackground=<AcrylicBrush TintColor=\"{ThemeResource SystemChromeAltHighColor}\" TintOpacity=\"0.9\" FallbackColor=\"{ThemeResource SystemChromeMediumColor}\" />",
+    L"TaskItemBorder=<LinearGradientBrush StartPoint=\"0,0\" EndPoint=\"0.5,1\"><GradientStop Color=\"#00000000\" Offset=\"0\" /><GradientStop Color=\"#33000000\" Offset=\"1.5\" /></LinearGradientBrush>",
+    L"SystemItemBackground=<AcrylicBrush TintColor=\"{ThemeResource SystemChromeAltHighColor}\" TintOpacity=\"0.8\" FallbackColor=\"{ThemeResource SystemChromeLowColor}\" />",
+    L"SystemItemBorder=<LinearGradientBrush StartPoint=\"0,0\" EndPoint=\"0.5,1\"><GradientStop Color=\"#00000000\" Offset=\"0\" /><GradientStop Color=\"#33000000\" Offset=\"1.5\" /></LinearGradientBrush>",
 }};
 
 const Theme g_themeOversimplified_Accentuated = {{
@@ -3312,8 +3347,7 @@ const Theme g_themeLuminosity_variant_Dock = {{
     ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Border#SearchPillBackgroundElement", {
         L"CornerRadius=$bcr"}},
     ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Border#MultiWindowElement", {
-        L"CornerRadius=$bcr",
-        L"Margin=0,1,0,1"}},
+        L"CornerRadius=$bcr"}},
     ThemeTargetStyles{L"SystemTray.ChevronIconView", {
         L"CornerRadius=$bcr",
         L"Margin=0,0,2,0"}},
@@ -3357,7 +3391,7 @@ const Theme g_themeLuminosity_variant_Dock = {{
         L"BorderThickness@Normal=0",
         L"BorderBrush@Normal=$t",
         L"BorderThickness@PointerOver=0.05,0,0.05,2",
-        L"BorderBrush@PointerOver:=<SolidColorBrush Color=\"{StaticResource SystemAccentColor}\" Opacity=\"0.8\" />"}},
+        L"BorderBrush@PointerOver:=<SolidColorBrush Color=\"{ThemeResource SystemAccentColorLight2}\" Opacity=\"1.0\" />"}},
     ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Button#CloseButton", {
         L"CornerRadius=$mcr"}},
     ThemeTargetStyles{L"Windows.UI.Xaml.Controls.ContentPresenter#BorderElement", {
@@ -3379,15 +3413,23 @@ const Theme g_themeLuminosity_variant_Dock = {{
     ThemeTargetStyles{L"WindowsInternal.ComposableShell.Experiences.Switcher.VirtualDesktopBarElement#VirtualDesktopBar", {
         L"MaxWidth:=900",
         L"Shadow:="}},
-    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Grid#MainGrid", {
-        L"CornerRadius=$mcr",
+    ThemeTargetStyles{L"WindowsInternal.ComposableShell.Experiences.Switcher.VirtualDesktopBarElement > Windows.UI.Xaml.Controls.Grid#GridElement > Windows.UI.Xaml.Controls.Border#VirtualDesktopSwitcherBackground", {
         L"BorderThickness=$bt",
-        L"BorderBrush=$bb"}},
+        L"BorderBrush=$bb",
+        L"CornerRadius=$mcr",
+        L"Margin=0,0,1,0"}},
+    ThemeTargetStyles{L"WindowsInternal.ComposableShell.Experiences.Switcher.VirtualDesktopBarElement > Grid > Border", {
+        L"Background:=<WindhawkBlur BlurAmount=\"30\" TintColor=\"{ThemeResource SystemChromeLowColor}\" TintOpacity=\"0.8\" />",
+        L"Shadow:="}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Grid#MainGrid", {
+        L"CornerRadius=13"}},
     ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Button#VirtualDesktopElementCloseButton", {
         L"CornerRadius=$bcr"}},
     ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Border#SnapBarBorder", {
         L"Background:=$mbg",
         L"CornerRadius=$mcr",
+        L"BorderThickness=$bt",
+        L"BorderBrush=$bb",
         L"RenderTransform:=<TranslateTransform X=\"0\" Y=\"-20\" />",
         L"Margin=0,0,0,-10",
         L"Shadow:="}},
@@ -3435,6 +3477,10 @@ const Theme g_themeLuminosity_variant_Dock = {{
         L"Margin=0,0,500,5"}},
     ThemeTargetStyles{L"Taskbar.TaskbarBackground#BackgroundControl > Windows.UI.Xaml.Controls.Grid > Windows.UI.Xaml.Shapes.Rectangle#BackgroundStroke", {
         L"Visibility=Collapsed"}},
+    ThemeTargetStyles{L"Taskbar.TaskListButtonPanel#ExperienceToggleButtonRootPanel > Windows.UI.Xaml.Controls.Grid#AugmentedEntryPointContentGrid", {
+        L"RenderTransform:=<TranslateTransform X=\"0\" Y=\"-1\" />"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Border#LargeTicker1", {
+        L"Margin=0,0,0,-4"}},
     ThemeTargetStyles{L"Grid#SystemTrayFrameGrid", {
         L"Margin=-307,-2,250,4",
         L"HorizontalAlignment=Right"}},
@@ -3463,8 +3509,7 @@ const Theme g_themeLuminosity_variant_Classic = {{
     ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Border#SearchPillBackgroundElement", {
         L"CornerRadius=$bcr"}},
     ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Border#MultiWindowElement", {
-        L"CornerRadius=$bcr",
-        L"Margin=0,1,0,1"}},
+        L"CornerRadius=$bcr"}},
     ThemeTargetStyles{L"SystemTray.ChevronIconView", {
         L"CornerRadius=$bcr",
         L"Margin=0,0,2,0"}},
@@ -3508,7 +3553,7 @@ const Theme g_themeLuminosity_variant_Classic = {{
         L"BorderThickness@Normal=0",
         L"BorderBrush@Normal=$t",
         L"BorderThickness@PointerOver=0.05,0,0.05,2",
-        L"BorderBrush@PointerOver:=<SolidColorBrush Color=\"{StaticResource SystemAccentColor}\" Opacity=\"0.8\" />"}},
+        L"BorderBrush@PointerOver:=<SolidColorBrush Color=\"{ThemeResource SystemAccentColorLight2}\" Opacity=\"1.0\" />"}},
     ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Button#CloseButton", {
         L"CornerRadius=$mcr"}},
     ThemeTargetStyles{L"Windows.UI.Xaml.Controls.ContentPresenter#BorderElement", {
@@ -3530,15 +3575,23 @@ const Theme g_themeLuminosity_variant_Classic = {{
     ThemeTargetStyles{L"WindowsInternal.ComposableShell.Experiences.Switcher.VirtualDesktopBarElement#VirtualDesktopBar", {
         L"MaxWidth:=900",
         L"Shadow:="}},
-    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Grid#MainGrid", {
-        L"CornerRadius=$mcr",
+    ThemeTargetStyles{L"WindowsInternal.ComposableShell.Experiences.Switcher.VirtualDesktopBarElement > Windows.UI.Xaml.Controls.Grid#GridElement > Windows.UI.Xaml.Controls.Border#VirtualDesktopSwitcherBackground", {
         L"BorderThickness=$bt",
-        L"BorderBrush=$bb"}},
+        L"BorderBrush=$bb",
+        L"CornerRadius=$mcr",
+        L"Margin=0,0,1,0"}},
+    ThemeTargetStyles{L"WindowsInternal.ComposableShell.Experiences.Switcher.VirtualDesktopBarElement > Grid > Border", {
+        L"Background:=<WindhawkBlur BlurAmount=\"30\" TintColor=\"{ThemeResource SystemChromeLowColor}\" TintOpacity=\"0.8\" />",
+        L"Shadow:="}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Grid#MainGrid", {
+        L"CornerRadius=13"}},
     ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Button#VirtualDesktopElementCloseButton", {
         L"CornerRadius=$bcr"}},
     ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Border#SnapBarBorder", {
         L"Background:=$mbg",
         L"CornerRadius=$mcr",
+        L"BorderThickness=$bt",
+        L"BorderBrush=$bb",
         L"RenderTransform:=<TranslateTransform X=\"0\" Y=\"-20\" />",
         L"Margin=0,0,0,-10",
         L"Shadow:="}},
@@ -3610,8 +3663,7 @@ const Theme g_themeLuminosity_variant_Compact = {{
     ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Border#SearchPillBackgroundElement", {
         L"CornerRadius=$bcr"}},
     ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Border#MultiWindowElement", {
-        L"CornerRadius=$bcr",
-        L"Margin=0,1,0,1"}},
+        L"CornerRadius=$bcr"}},
     ThemeTargetStyles{L"SystemTray.ChevronIconView", {
         L"CornerRadius=$bcr",
         L"Margin=0,0,2,0"}},
@@ -3655,7 +3707,7 @@ const Theme g_themeLuminosity_variant_Compact = {{
         L"BorderThickness@Normal=0",
         L"BorderBrush@Normal=$t",
         L"BorderThickness@PointerOver=0.05,0,0.05,2",
-        L"BorderBrush@PointerOver:=<SolidColorBrush Color=\"{StaticResource SystemAccentColor}\" Opacity=\"0.8\" />"}},
+        L"BorderBrush@PointerOver:=<SolidColorBrush Color=\"{ThemeResource SystemAccentColorLight2}\" Opacity=\"1.0\" />"}},
     ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Button#CloseButton", {
         L"CornerRadius=$mcr"}},
     ThemeTargetStyles{L"Windows.UI.Xaml.Controls.ContentPresenter#BorderElement", {
@@ -3677,15 +3729,23 @@ const Theme g_themeLuminosity_variant_Compact = {{
     ThemeTargetStyles{L"WindowsInternal.ComposableShell.Experiences.Switcher.VirtualDesktopBarElement#VirtualDesktopBar", {
         L"MaxWidth:=900",
         L"Shadow:="}},
-    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Grid#MainGrid", {
-        L"CornerRadius=$mcr",
+    ThemeTargetStyles{L"WindowsInternal.ComposableShell.Experiences.Switcher.VirtualDesktopBarElement > Windows.UI.Xaml.Controls.Grid#GridElement > Windows.UI.Xaml.Controls.Border#VirtualDesktopSwitcherBackground", {
         L"BorderThickness=$bt",
-        L"BorderBrush=$bb"}},
+        L"BorderBrush=$bb",
+        L"CornerRadius=$mcr",
+        L"Margin=0,0,1,0"}},
+    ThemeTargetStyles{L"WindowsInternal.ComposableShell.Experiences.Switcher.VirtualDesktopBarElement > Grid > Border", {
+        L"Background:=<WindhawkBlur BlurAmount=\"30\" TintColor=\"{ThemeResource SystemChromeLowColor}\" TintOpacity=\"0.8\" />",
+        L"Shadow:="}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Grid#MainGrid", {
+        L"CornerRadius=13"}},
     ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Button#VirtualDesktopElementCloseButton", {
         L"CornerRadius=$bcr"}},
     ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Border#SnapBarBorder", {
         L"Background:=$mbg",
         L"CornerRadius=$mcr",
+        L"BorderThickness=$bt",
+        L"BorderBrush=$bb",
         L"RenderTransform:=<TranslateTransform X=\"0\" Y=\"-20\" />",
         L"Margin=0,0,0,-10",
         L"Shadow:="}},
@@ -3722,8 +3782,10 @@ const Theme g_themeLuminosity_variant_Compact = {{
         L"BackgroundTransition:=<BrushTransition Duration=\"0:0:0.100\" />"}},
     ThemeTargetStyles{L"Taskbar.TaskbarFrame#TaskbarFrame", {
         L"Height=30"}},
+    ThemeTargetStyles{L"Taskbar.TaskListButtonPanel#ExperienceToggleButtonRootPanel > Windows.UI.Xaml.Controls.Grid#AugmentedEntryPointContentGrid", {
+        L"RenderTransform:=<TranslateTransform X=\"0\" Y=\"-1\" />"}},
     ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Border#LargeTicker1", {
-        L"Margin=1,-7,0,0",
+        L"Margin=1,-5,0,0",
         L"RenderTransform:=<ScaleTransform ScaleX=\"0.75\" ScaleY=\"0.75\" />"}},
     ThemeTargetStyles{L"SearchUx.SearchUI.SearchButtonRootGrid#SearchBoxButtonRootPanel > Windows.UI.Xaml.Controls.Border#BackgroundElement", {
         L"Margin=0,4,0,4"}},
@@ -3735,6 +3797,8 @@ const Theme g_themeLuminosity_variant_Compact = {{
     ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Image#Icon", {
         L"Width=16",
         L"Height=16"}},
+    ThemeTargetStyles{L"Taskbar.TaskListButton#TaskListButton > Taskbar.TaskListLabeledButtonPanel#IconPanel > Windows.UI.Xaml.Controls.TextBlock#LabelControl", {
+        L"RenderTransform:=<TranslateTransform X=\"0\" Y=\"-1\" />"}},
     ThemeTargetStyles{L"Grid#SystemTrayFrameGrid", {
         L"Margin=0,0,0,18"}},
     ThemeTargetStyles{L"SystemTray.TextIconContent > Grid#ContainerGrid > SystemTray.AdaptiveTextBlock#Base > TextBlock#InnerTextBlock", {
