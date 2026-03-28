@@ -7945,21 +7945,13 @@ XamlBlurBrush::XamlBlurBrush(UIElement element,
                 {
                     if (auto self = weakThis.get())
                     {
-                        Wh_Log(L"Proxy brush color changed, refreshing tint");
-
-                        auto prevTint = self->m_tint;
-
-                        self->RefreshThemeTint();
-
-                        if (prevTint != self->m_tint)
+                        if (const auto brush = self->CompositionBrush())
                         {
-                            if (auto effectBrush =
-                                    self->CompositionBrush()
-                                        .try_as<wuc::CompositionEffectBrush>())
-                            {
-                                effectBrush.Properties().InsertColor(
-                                    L"FloodEffect.Color", self->m_tint);
-                            }
+                            Wh_Log(L"Theme color changed");
+
+                            brush.Close();
+                            self->CompositionBrush(nullptr);
+                            self->OnConnected();
                         }
                     }
                 });
@@ -8081,11 +8073,7 @@ void XamlBlurBrush::OnConnected()
         compositeEffect->Sources.push_back(topOfStack);
         compositeEffect->Sources.push_back(*floodEffect);
 
-        auto factory = m_compositor.CreateEffectFactory(
-            *compositeEffect,
-            // List of animatable properties.
-            {L"FloodEffect.Color"}
-        );
+        auto factory = m_compositor.CreateEffectFactory(*compositeEffect);
         auto brush = factory.CreateBrush();
 
         brush.SetSourceParameter(L"backdrop", backdropBrush);
