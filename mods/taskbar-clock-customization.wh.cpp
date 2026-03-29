@@ -1897,6 +1897,12 @@ class QueryDataCollectionSession {
     std::optional<double> QueryDataAvg(MetricType type);
 
    private:
+    struct QueryDataResult {
+        double sum;
+        size_t count;
+    };
+    std::optional<QueryDataResult> QueryDataWithCount(MetricType type);
+
     std::vector<std::wstring> ExpandEnglishWildcard(PCWSTR wildcard_path,
                                                     bool quiet);
     static std::wstring_view ExtractInstanceName(std::wstring_view path);
@@ -2092,7 +2098,8 @@ bool QueryDataCollectionSession::SampleData() {
     return true;
 }
 
-std::optional<double> QueryDataCollectionSession::QueryData(MetricType type) {
+std::optional<QueryDataCollectionSession::QueryDataResult>
+QueryDataCollectionSession::QueryDataWithCount(MetricType type) {
     UpdateMetric(type);
 
     const auto& metric = metrics_[static_cast<int>(type)];
@@ -2102,33 +2109,41 @@ std::optional<double> QueryDataCollectionSession::QueryData(MetricType type) {
     }
 
     double sum = 0.0;
+    size_t count = 0;
     for (const auto& entry : metric.counters) {
         PDH_FMT_COUNTERVALUE val;
         PDH_STATUS hr = PdhGetFormattedCounterValue(
             entry.counter, PDH_FMT_DOUBLE, nullptr, &val);
         if (SUCCEEDED(hr)) {
             sum += val.doubleValue;
+            count++;
         } else {
             Wh_Log(L"PdhGetFormattedCounterValue error %08X", hr);
         }
     }
 
-    return sum;
+    if (count == 0) {
+        return std::nullopt;
+    }
+
+    return QueryDataResult{sum, count};
+}
+
+std::optional<double> QueryDataCollectionSession::QueryData(MetricType type) {
+    auto result = QueryDataWithCount(type);
+    if (!result) {
+        return std::nullopt;
+    }
+    return result->sum;
 }
 
 std::optional<double> QueryDataCollectionSession::QueryDataAvg(
     MetricType type) {
-    auto sum = QueryData(type);
-    if (!sum) {
+    auto result = QueryDataWithCount(type);
+    if (!result) {
         return std::nullopt;
     }
-
-    const auto& metric = metrics_[static_cast<int>(type)];
-    if (metric.counters.empty()) {
-        return std::nullopt;
-    }
-
-    return *sum / metric.counters.size();
+    return result->sum / result->count;
 }
 
 // Implemented according to the note here:
