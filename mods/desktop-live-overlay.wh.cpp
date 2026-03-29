@@ -2,7 +2,7 @@
 // @id              desktop-live-overlay
 // @name            Desktop Live Overlay
 // @description     Display live, customizable content on the desktop behind icons. Perfect for showing time, date, system metrics, weather, and more.
-// @version         1.0.3
+// @version         1.1
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
@@ -377,6 +377,9 @@ std::optional<std::wstring> g_weatherContent;
 // Cached result of whether system metrics/weather are used (set during init).
 bool g_systemMetricsUsed = false;
 bool g_weatherUsed = false;
+
+// Last known wallpaper file time for change detection.
+FILETIME g_lastWallpaperTime = {};
 
 // DirectX device objects (shared).
 ComPtr<ID3D11Device> g_d3dDevice;
@@ -1909,12 +1912,27 @@ bool CreateSwapChainResources(UINT width, UINT height) {
     return true;
 }
 
+FILETIME GetWallpaperFileTime() {
+    WCHAR path[MAX_PATH] = {};
+    SystemParametersInfo(SPI_GETDESKWALLPAPER, MAX_PATH, path, 0);
+    FILETIME ft = {};
+    HANDLE hFile = CreateFile(path, GENERIC_READ, FILE_SHARE_READ, nullptr,
+                              OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (hFile != INVALID_HANDLE_VALUE) {
+        GetFileTime(hFile, nullptr, nullptr, &ft);
+        CloseHandle(hFile);
+    }
+    return ft;
+}
+
 void CaptureWallpaperBitmap() {
     g_wallpaperBitmap.Reset();
 
     if (!g_overlayWnd || !g_dc || !g_swapChain) {
         return;
     }
+
+    g_lastWallpaperTime = GetWallpaperFileTime();
 
     // Clear the overlay to transparent so the capture doesn't include
     // our own previously rendered content.
@@ -1976,7 +1994,14 @@ void CaptureWallpaperBitmap() {
 
     // PW_RENDERFULLCONTENT (0x02) asks the window to render directly,
     // bypassing the DWM redirect bitmap.
-    PrintWindow(hSource, hdcMem, 0x02 /*PW_RENDERFULLCONTENT*/);
+    if (!PrintWindow(hSource, hdcMem, 0x02 /*PW_RENDERFULLCONTENT*/)) {
+        Wh_Log(L"PrintWindow failed: %u", GetLastError());
+        SelectObject(hdcMem, hOldBmp);
+        DeleteObject(hBmp);
+        DeleteDC(hdcMem);
+        ReleaseDC(nullptr, hdcScreen);
+        return;
+    }
     GdiFlush();
 
     // PrintWindow may produce alpha=0; set to 255 for premultiplied alpha.
@@ -1988,8 +2013,11 @@ void CaptureWallpaperBitmap() {
     D2D1_BITMAP_PROPERTIES bitmapProps =
         D2D1::BitmapProperties(D2D1::PixelFormat(
             DXGI_FORMAT_B8G8R8A8_UNORM, D2D1_ALPHA_MODE_PREMULTIPLIED));
-    g_dc->CreateBitmap(D2D1::SizeU(w, h), pvBits, w * 4, bitmapProps,
-                       &g_wallpaperBitmap);
+    HRESULT hr = g_dc->CreateBitmap(D2D1::SizeU(w, h), pvBits, w * 4,
+                                    bitmapProps, &g_wallpaperBitmap);
+    if (FAILED(hr)) {
+        Wh_Log(L"CreateBitmap (wallpaper) failed: 0x%08X", hr);
+    }
 
     SelectObject(hdcMem, hOldBmp);
     DeleteObject(hBmp);
@@ -2318,8 +2346,9 @@ void RenderOverlay() {
                 // ring (outer minus inner rounded rect) so corners
                 // match the fill exactly.
                 if (g_borderBrush) {
-                    float bw =
-                        (float)g_settings.backgroundBorderSize * g_dpiScale;
+                    float bw = std::min(
+                        (float)g_settings.backgroundBorderSize * g_dpiScale,
+                        std::min(bgWidth, bgHeight) / 2.0f);
                     float innerRadius = std::max(0.0f, radius - bw);
                     D2D1_ROUNDED_RECT innerRect = D2D1::RoundedRect(
                         D2D1::RectF(backgroundRect.rect.left + bw,
@@ -2456,7 +2485,8 @@ void HandleDisplayChange() {
 
     // Schedule a delayed wallpaper recapture so the system has time to
     // repaint the wallpaper at the new resolution.
-    if (g_messageWnd && g_settings.backgroundBlur > 0) {
+    if (g_messageWnd && g_settings.backgroundEnabled &&
+        g_settings.backgroundBlur > 0) {
         SetTimer(g_messageWnd, TIMER_ID_MSG_WALLPAPER_REFRESH, 500, nullptr);
     }
 }
@@ -2523,14 +2553,17 @@ LRESULT CALLBACK MessageWndProc(HWND hWnd,
             }
             return 0;
 
-        case WM_SETTINGCHANGE:
-            // Wallpaper changes may use various wParam values depending on
-            // the method (Settings app, Spotlight, slideshow, etc.).
-            // Refresh on any setting change; the timer debounces.
-            if (g_overlayWnd && !g_unloading && g_settings.backgroundBlur > 0) {
-                SetTimer(hWnd, TIMER_ID_MSG_WALLPAPER_REFRESH, 2000, nullptr);
+        case WM_SETTINGCHANGE: {
+            if (g_overlayWnd && !g_unloading && g_settings.backgroundEnabled &&
+                g_settings.backgroundBlur > 0) {
+                FILETIME ft = GetWallpaperFileTime();
+                if (CompareFileTime(&ft, &g_lastWallpaperTime) != 0) {
+                    SetTimer(hWnd, TIMER_ID_MSG_WALLPAPER_REFRESH, 2000,
+                             nullptr);
+                }
             }
             return 0;
+        }
 
         case WM_TIMER:
             if (g_unloading) {
@@ -2545,7 +2578,8 @@ LRESULT CALLBACK MessageWndProc(HWND hWnd,
                 CreateOverlayWindow();
             } else if (wParam == TIMER_ID_MSG_WALLPAPER_REFRESH) {
                 KillTimer(hWnd, TIMER_ID_MSG_WALLPAPER_REFRESH);
-                if (g_overlayWnd && g_settings.backgroundBlur > 0) {
+                if (g_overlayWnd && g_settings.backgroundEnabled &&
+                    g_settings.backgroundBlur > 0) {
                     ReleaseTextResources();
                     RecreateTextResources();
                     RenderOverlay();
