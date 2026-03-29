@@ -191,7 +191,7 @@ bool IsMultitaskingViewWindow(HWND hWnd) {
     constexpr DWORD ZBID_IMMERSIVE_APPCHROME = 5;
 
     // The Alt+Tab window uses band ZBID_SYSTEM_TOOLS. The virtual desktop
-    // switcher uses band ZBID_IMMERSIVE_EDGY.
+    // switcher (which we don't want) uses band ZBID_IMMERSIVE_EDGY.
     constexpr DWORD ZBID_SYSTEM_TOOLS = 16;
 
     DWORD band = 0;

@@ -3407,7 +3407,7 @@ BOOL WINAPI MoveWindow_Hook(HWND hWnd,
         }
 
         // The Alt+Tab window uses band ZBID_SYSTEM_TOOLS. The virtual desktop
-        // switcher uses band ZBID_IMMERSIVE_EDGY.
+        // switcher (which we don't want) uses band ZBID_IMMERSIVE_EDGY.
         DWORD band = 0;
         bool isAltTabWindow = pGetWindowBand && pGetWindowBand(hWnd, &band) &&
                               band == ZBID_SYSTEM_TOOLS;
