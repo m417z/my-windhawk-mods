@@ -2287,13 +2287,13 @@ const Theme g_themeBottomDensy_variant_NoInd = {{
 const Theme g_themeTaskbarXII = {{
     ThemeTargetStyles{L"ScrollViewer > ScrollContentPresenter > Border > Grid", {
         L"Background:=<AcrylicBrush TintColor=\"{ThemeResource SystemListLowColor}\" TintOpacity=\"0.1\" FallbackColor=\"{ThemeResource SystemChromeHighColor}\" />"}},
-    ThemeTargetStyles{L"Taskbar.TaskbarFrame#TaskbarFrame", {
+    ThemeTargetStyles{L"Taskbar.TaskbarFrame", {
         L"HorizontalAlignment=Right",
         L"Width=Auto",
         L"Height=56",
         L"Grid.Column=0",
         L"Margin=0,0,2,0"}},
-    ThemeTargetStyles{L"Taskbar.TaskbarFrame#TaskbarFrame > Grid", {
+    ThemeTargetStyles{L"Taskbar.TaskbarFrame > Grid", {
         L"Height=48",
         L"CornerRadius=4"}},
     ThemeTargetStyles{L"Taskbar.TaskbarBackground#BackgroundControl", {
@@ -3034,11 +3034,11 @@ const Theme g_themePlasma = {{
 }};
 
 const Theme g_themeWindowGlass = {{
-    ThemeTargetStyles{L"Taskbar.TaskbarFrame#TaskbarFrame", {
+    ThemeTargetStyles{L"Taskbar.TaskbarFrame", {
         L"MaxWidth:=$TaskbarFrameMaxWidth",
         L"Width=Auto",
         L"MinWidth:=100"}},
-    ThemeTargetStyles{L"Taskbar.TaskbarFrame#TaskbarFrame > Grid#RootGrid", {
+    ThemeTargetStyles{L"Taskbar.TaskbarFrame > Grid#RootGrid", {
         L"Margin=10,2,10,2",
         L"BorderThickness=$BorderThickness",
         L"BorderBrush:=$BorderBrush",
@@ -3225,11 +3225,11 @@ const Theme g_themeWindowGlass = {{
 }};
 
 const Theme g_themeWindowGlass_variant_Split = {{
-    ThemeTargetStyles{L"Taskbar.TaskbarFrame#TaskbarFrame", {
+    ThemeTargetStyles{L"Taskbar.TaskbarFrame", {
         L"MaxWidth:=$TaskbarFrameMaxWidth",
         L"Width=Auto",
         L"MinWidth:=100"}},
-    ThemeTargetStyles{L"Taskbar.TaskbarFrame#TaskbarFrame > Grid#RootGrid", {
+    ThemeTargetStyles{L"Taskbar.TaskbarFrame > Grid#RootGrid", {
         L"Margin=10,2,3,2",
         L"BorderThickness=$BorderThickness",
         L"BorderBrush:=$BorderBrush",
@@ -3416,10 +3416,10 @@ const Theme g_themeWindowGlass_variant_Split = {{
 }};
 
 const Theme g_themeWindowGlass_variant_FullLength = {{
-    ThemeTargetStyles{L"Taskbar.TaskbarFrame#TaskbarFrame", {
+    ThemeTargetStyles{L"Taskbar.TaskbarFrame", {
         L"Width=Auto",
         L"MinWidth:=100"}},
-    ThemeTargetStyles{L"Taskbar.TaskbarFrame#TaskbarFrame > Grid#RootGrid", {
+    ThemeTargetStyles{L"Taskbar.TaskbarFrame > Grid#RootGrid", {
         L"Margin=10,2,10,2",
         L"BorderThickness=$BorderThickness",
         L"BorderBrush:=$BorderBrush",
@@ -3559,10 +3559,6 @@ const Theme g_themeWindowGlass_variant_FullLength = {{
         L"CornerRadius=$CornerRadius"}},
     ThemeTargetStyles{L"Windows.UI.Xaml.Shapes.Rectangle#BackgroundFill", {
         L"Fill:=$Background"}},
-    ThemeTargetStyles{L"SystemTray.SystemTrayFrame", {
-        L"Width=Auto",
-        L"MaxWidth:=250",
-        L"MinWidth:=150"}},
     ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Border#OverflowFlyoutBackgroundBorder", {
         L"Background:=$Background",
         L"BorderBrush:=$BorderBrush",
@@ -3879,10 +3875,10 @@ const Theme g_themeLuminosity_variant_Dock = {{
         L"BackgroundTransition:=<BrushTransition Duration=\"0:0:0.100\" />"}},
     ThemeTargetStyles{L"Taskbar.TaskbarFrame > Grid#RootGrid > Taskbar.TaskbarBackground > Grid > Rectangle#BackgroundFill", {
         L"Visibility=Collapsed"}},
-    ThemeTargetStyles{L"Taskbar.TaskbarFrame#TaskbarFrame", {
+    ThemeTargetStyles{L"Taskbar.TaskbarFrame", {
         L"Height=53",
         L"Margin=250,0,250,0"}},
-    ThemeTargetStyles{L"Taskbar.TaskbarFrame#TaskbarFrame > Grid#RootGrid", {
+    ThemeTargetStyles{L"Taskbar.TaskbarFrame > Grid#RootGrid", {
         L"Background:=$mbg",
         L"BorderThickness=$bt",
         L"BorderBrush:=$bb",
@@ -4193,7 +4189,7 @@ const Theme g_themeLuminosity_variant_Compact = {{
         L"BackgroundTransition:=<BrushTransition Duration=\"0:0:0.100\" />"}},
     ThemeTargetStyles{L"Border#BackgroundBorder", {
         L"BackgroundTransition:=<BrushTransition Duration=\"0:0:0.100\" />"}},
-    ThemeTargetStyles{L"Taskbar.TaskbarFrame#TaskbarFrame", {
+    ThemeTargetStyles{L"Taskbar.TaskbarFrame", {
         L"Height=30"}},
     ThemeTargetStyles{L"Taskbar.TaskListButtonPanel#ExperienceToggleButtonRootPanel > Windows.UI.Xaml.Controls.Grid#AugmentedEntryPointContentGrid", {
         L"RenderTransform:=<TranslateTransform X=\"0\" Y=\"-1\" />"}},
@@ -4336,9 +4332,9 @@ const Theme g_themeLayerMicaUI = {{
         L"CornerRadius=$OuterRadius"}},
     ThemeTargetStyles{L"Taskbar.TaskbarBackground#HoverFlyoutBackgroundControl", {
         L"FontFamily=$ThFnt"}},
-    ThemeTargetStyles{L"Taskbar.TaskbarFrame#TaskbarFrame", {
+    ThemeTargetStyles{L"Taskbar.TaskbarFrame", {
         L"Width=Auto"}},
-    ThemeTargetStyles{L"Taskbar.TaskbarFrame#TaskbarFrame > Grid#RootGrid", {
+    ThemeTargetStyles{L"Taskbar.TaskbarFrame > Grid#RootGrid", {
         L"Margin=8,3,0,3",
         L"CornerRadius=$OuterRadius",
         L"Padding=-8,0,0,0",
@@ -4685,13 +4681,13 @@ const Theme g_themeUltraWideFriendly = {{
         L"ColumnDefinitions:=<ColumnDefinitionCollection><ColumnDefinition Width=\"*\"/><ColumnDefinition Width=\"Auto\"/><ColumnDefinition Width=\"Auto\"/><ColumnDefinition Width=\"*\"/></ColumnDefinitionCollection>",
         L"HorizontalAlignment=Stretch",
         L"Background:=<SolidColorBrush Color=\"$GhostBarBackgroundColor\"/>"}},
-    ThemeTargetStyles{L"Taskbar.TaskbarFrame#TaskbarFrame", {
+    ThemeTargetStyles{L"Taskbar.TaskbarFrame", {
         L"Grid.Column=1",
         L"Width=Auto",
         L"HorizontalAlignment=Right",
         L"Margin=0,0,$IslandHorizontalMargin,0",
         L"MaxWidth=$TaskbarFrameMaxWidth"}},
-    ThemeTargetStyles{L"Taskbar.TaskbarFrame#TaskbarFrame > Grid", {
+    ThemeTargetStyles{L"Taskbar.TaskbarFrame > Grid", {
         L"Background:=<SolidColorBrush Color=\"$IslandBackgroundColor\"/>",
         L"CornerRadius=10",
         L"Padding=25,0,25,0",
@@ -4719,13 +4715,9 @@ const Theme g_themeUltraWideFriendly = {{
 }};
 
 const Theme g_themeLiquidGlass = {{
-    ThemeTargetStyles{L"Taskbar.TaskbarFrame#TaskbarFrame", {
-        L"CornerRadius=$CornerRadius",
-        L"HorizontalAlignment=Stretch"}},
-    ThemeTargetStyles{L"Taskbar.TaskbarFrame#TaskbarFrame > Grid#RootGrid", {
+    ThemeTargetStyles{L"Taskbar.TaskbarFrame > Grid#RootGrid", {
         L"BorderThickness=$BorderThickness",
         L"BorderBrush:=$BorderBrush",
-        L"CornerRadius=$CornerRadius",
         L"Background:=$Background"}},
     ThemeTargetStyles{L"Rectangle#BackgroundFill", {
         L"Visibility=1"}},
@@ -4899,7 +4891,7 @@ const Theme g_themeBorderless = {{
     ThemeTargetStyles{L"ScrollViewer > ScrollContentPresenter > Border > Grid", {
         L"ColumnDefinitions:=<ColumnDefinitionCollection><ColumnDefinition Width=\"*\"/><ColumnDefinition Width=\"Auto\"/><ColumnDefinition Width=\"Auto\"/><ColumnDefinition Width=\"*\"/></ColumnDefinitionCollection>",
         L"HorizontalAlignment=Stretch"}},
-    ThemeTargetStyles{L"Taskbar.TaskbarFrame#TaskbarFrame", {
+    ThemeTargetStyles{L"Taskbar.TaskbarFrame", {
         L"Grid.Column=1",
         L"Width=$TaskbarFrameWidth",
         L"Margin=0",
@@ -4910,7 +4902,7 @@ const Theme g_themeBorderless = {{
         L"HorizontalAlignment=Right",
         L"Height=42",
         L"VerticalAlignment=Center"}},
-    ThemeTargetStyles{L"Taskbar.TaskbarFrame#TaskbarFrame > Windows.UI.Xaml.Controls.Grid#RootGrid > Taskbar.TaskbarBackground#BackgroundControl", {
+    ThemeTargetStyles{L"Taskbar.TaskbarFrame > Windows.UI.Xaml.Controls.Grid#RootGrid > Taskbar.TaskbarBackground#BackgroundControl", {
         L"CornerRadius=8",
         L"Margin=0,2,0,2"}},
     ThemeTargetStyles{L"Windows.UI.Xaml.Shapes.Rectangle#BackgroundStroke", {
