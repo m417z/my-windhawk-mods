@@ -246,6 +246,7 @@ showing time, date, system metrics, weather, and more.
 #include <optional>
 #include <string>
 #include <string_view>
+#include <unordered_set>
 
 using namespace std::literals;
 using Microsoft::WRL::ComPtr;
@@ -361,11 +362,22 @@ FormattedString<INTEGER_BUFFER_SIZE> g_gpuFormatted;
 // Performance metrics.
 PDH_HQUERY g_metricsQuery = nullptr;
 PDH_HCOUNTER g_cpuCounter = nullptr;
-std::vector<PDH_HCOUNTER> g_uploadCounters;
-std::vector<PDH_HCOUNTER> g_downloadCounters;
 PDH_HCOUNTER g_diskReadCounter = nullptr;
 PDH_HCOUNTER g_diskWriteCounter = nullptr;
-std::vector<PDH_HCOUNTER> g_gpuCounters;
+
+struct CounterEntry {
+    std::wstring path;
+    PDH_HCOUNTER counter;
+};
+
+struct WildcardMetric {
+    std::vector<CounterEntry> counters;
+    std::wstring wildcardPath;  // Localized wildcard path for re-expansion.
+};
+
+WildcardMetric g_uploadMetric;
+WildcardMetric g_downloadMetric;
+WildcardMetric g_gpuMetric;
 
 // Weather web content.
 HANDLE g_weatherUpdateThread = nullptr;
@@ -612,25 +624,62 @@ int StringCopyTruncated(PWSTR dest,
 ////////////////////////////////////////////////////////////////////////////////
 // Pattern formatting
 
-std::vector<std::wstring> ExpandPdhWildcard(PCWSTR wildcardPath) {
-    std::vector<std::wstring> result;
+// Expand an English wildcard counter path into localized paths.
+// Implemented according to the note here:
+// https://learn.microsoft.com/en-us/windows/win32/api/pdh/nf-pdh-pdhaddenglishcounterw
+std::vector<std::wstring> ExpandEnglishWildcard(PCWSTR wildcardPath,
+                                                std::wstring* localizedOut) {
+    // Step 1: Add English counter with wildcards to get localized path.
+    PDH_HCOUNTER tempCounter;
+    PDH_STATUS status =
+        PdhAddEnglishCounter(g_metricsQuery, wildcardPath, 0, &tempCounter);
+    if (status != ERROR_SUCCESS) {
+        Wh_Log(L"PdhAddEnglishCounter error %08X", status);
+        return {};
+    }
 
+    // Step 2: Get counter info to obtain localized full path.
+    DWORD required = 0;
+    status = PdhGetCounterInfo(tempCounter, FALSE, &required, nullptr);
+    if (status != static_cast<PDH_STATUS>(PDH_MORE_DATA) || required == 0) {
+        Wh_Log(L"PdhGetCounterInfo (size) error %08X", status);
+        PdhRemoveCounter(tempCounter);
+        return {};
+    }
+
+    std::vector<BYTE> counterInfoBuffer(required);
+    PDH_COUNTER_INFO* counterInfo =
+        reinterpret_cast<PDH_COUNTER_INFO*>(counterInfoBuffer.data());
+
+    status = PdhGetCounterInfo(tempCounter, FALSE, &required, counterInfo);
+    PdhRemoveCounter(tempCounter);
+    if (status != ERROR_SUCCESS) {
+        Wh_Log(L"PdhGetCounterInfo error %08X", status);
+        return {};
+    }
+
+    std::wstring localizedPath = counterInfo->szFullPath;
+    if (localizedOut) {
+        *localizedOut = localizedPath;
+    }
+
+    // Step 3: Expand wildcards using the localized path.
     DWORD pathListLength = 0;
-    PDH_STATUS status = PdhExpandWildCardPathW(nullptr, wildcardPath, nullptr,
-                                               &pathListLength, 0);
+    status = PdhExpandWildCardPathW(nullptr, localizedPath.c_str(), nullptr,
+                                    &pathListLength, 0);
     if (status != static_cast<PDH_STATUS>(PDH_MORE_DATA) ||
         pathListLength == 0) {
-        return result;
+        return {};
     }
 
     std::wstring pathList(pathListLength, L'\0');
-    status = PdhExpandWildCardPathW(nullptr, wildcardPath, pathList.data(),
-                                    &pathListLength, 0);
-    if (status != static_cast<PDH_STATUS>(ERROR_SUCCESS)) {
-        return result;
+    status = PdhExpandWildCardPathW(nullptr, localizedPath.c_str(),
+                                    pathList.data(), &pathListLength, 0);
+    if (status != ERROR_SUCCESS) {
+        return {};
     }
 
-    // Parse null-terminated list of paths.
+    std::vector<std::wstring> result;
     PCWSTR p = pathList.c_str();
     while (*p) {
         result.push_back(p);
@@ -638,6 +687,75 @@ std::vector<std::wstring> ExpandPdhWildcard(PCWSTR wildcardPath) {
     }
 
     return result;
+}
+
+// Re-expand a previously obtained localized wildcard path.
+std::vector<std::wstring> ExpandLocalizedWildcard(
+    const std::wstring& localizedPath) {
+    DWORD pathListLength = 0;
+    PDH_STATUS status = PdhExpandWildCardPathW(
+        nullptr, localizedPath.c_str(), nullptr, &pathListLength, 0);
+    if (status != static_cast<PDH_STATUS>(PDH_MORE_DATA) ||
+        pathListLength == 0) {
+        return {};
+    }
+
+    std::wstring pathList(pathListLength, L'\0');
+    status = PdhExpandWildCardPathW(nullptr, localizedPath.c_str(),
+                                    pathList.data(), &pathListLength, 0);
+    if (status != ERROR_SUCCESS) {
+        return {};
+    }
+
+    std::vector<std::wstring> result;
+    PCWSTR p = pathList.c_str();
+    while (*p) {
+        result.push_back(p);
+        p += wcslen(p) + 1;
+    }
+
+    return result;
+}
+
+void UpdateWildcardMetric(WildcardMetric& metric) {
+    if (metric.wildcardPath.empty()) {
+        return;
+    }
+
+    auto currentPaths = ExpandLocalizedWildcard(metric.wildcardPath);
+
+    std::unordered_set<std::wstring> currentPathSet(currentPaths.begin(),
+                                                    currentPaths.end());
+
+    // Remove counters that are no longer valid.
+    for (auto it = metric.counters.begin(); it != metric.counters.end();) {
+        if (currentPathSet.find(it->path) == currentPathSet.end()) {
+            Wh_Log(L"Removing outdated counter: %s", it->path.c_str());
+            PdhRemoveCounter(it->counter);
+            it = metric.counters.erase(it);
+        } else {
+            ++it;
+        }
+    }
+
+    // Build a set of existing paths.
+    std::unordered_set<std::wstring> existingPaths;
+    for (const auto& entry : metric.counters) {
+        existingPaths.insert(entry.path);
+    }
+
+    // Add new counters.
+    for (const auto& path : currentPaths) {
+        if (existingPaths.find(path) == existingPaths.end()) {
+            PDH_HCOUNTER counter;
+            PDH_STATUS status =
+                PdhAddCounter(g_metricsQuery, path.c_str(), 0, &counter);
+            if (status == ERROR_SUCCESS) {
+                Wh_Log(L"Adding new counter: %s", path.c_str());
+                metric.counters.push_back({path, counter});
+            }
+        }
+    }
 }
 
 std::optional<std::wstring> GetUrlContent(PCWSTR lpUrl) {
@@ -935,26 +1053,28 @@ bool InitMetrics() {
 
     // Network upload counters (wildcard expansion).
     if (needUpload) {
-        auto uploadPaths =
-            ExpandPdhWildcard(L"\\Network Interface(*)\\Bytes Sent/sec");
+        auto uploadPaths = ExpandEnglishWildcard(
+            L"\\Network Interface(*)\\Bytes Sent/sec",
+            &g_uploadMetric.wildcardPath);
         for (const auto& path : uploadPaths) {
             PDH_HCOUNTER counter;
             if (PdhAddCounter(g_metricsQuery, path.c_str(), 0, &counter) ==
                 ERROR_SUCCESS) {
-                g_uploadCounters.push_back(counter);
+                g_uploadMetric.counters.push_back({path, counter});
             }
         }
     }
 
     // Network download counters (wildcard expansion).
     if (needDownload) {
-        auto downloadPaths =
-            ExpandPdhWildcard(L"\\Network Interface(*)\\Bytes Received/sec");
+        auto downloadPaths = ExpandEnglishWildcard(
+            L"\\Network Interface(*)\\Bytes Received/sec",
+            &g_downloadMetric.wildcardPath);
         for (const auto& path : downloadPaths) {
             PDH_HCOUNTER counter;
             if (PdhAddCounter(g_metricsQuery, path.c_str(), 0, &counter) ==
                 ERROR_SUCCESS) {
-                g_downloadCounters.push_back(counter);
+                g_downloadMetric.counters.push_back({path, counter});
             }
         }
     }
@@ -973,13 +1093,14 @@ bool InitMetrics() {
 
     // GPU engine counters (wildcard expansion).
     if (needGpu) {
-        auto gpuPaths =
-            ExpandPdhWildcard(L"\\GPU Engine(*)\\Utilization Percentage");
+        auto gpuPaths = ExpandEnglishWildcard(
+            L"\\GPU Engine(*)\\Utilization Percentage",
+            &g_gpuMetric.wildcardPath);
         for (const auto& path : gpuPaths) {
             PDH_HCOUNTER counter;
             if (PdhAddCounter(g_metricsQuery, path.c_str(), 0, &counter) ==
                 ERROR_SUCCESS) {
-                g_gpuCounters.push_back(counter);
+                g_gpuMetric.counters.push_back({path, counter});
             }
         }
     }
@@ -994,11 +1115,11 @@ void UninitMetrics() {
         PdhCloseQuery(g_metricsQuery);
         g_metricsQuery = nullptr;
         g_cpuCounter = nullptr;
-        g_uploadCounters.clear();
-        g_downloadCounters.clear();
         g_diskReadCounter = nullptr;
         g_diskWriteCounter = nullptr;
-        g_gpuCounters.clear();
+        g_uploadMetric = {};
+        g_downloadMetric = {};
+        g_gpuMetric = {};
     }
 
     g_metricsLastFormatIndex = 0;
@@ -1208,11 +1329,12 @@ void FormatTransferSpeed(double bytesPerSec, PWSTR buffer, size_t bufferSize) {
     }
 }
 
-double QueryNetworkSpeed(const std::vector<PDH_HCOUNTER>& counters) {
+double QueryWildcardMetricSum(WildcardMetric& metric) {
+    UpdateWildcardMetric(metric);
     double total = 0.0;
-    for (PDH_HCOUNTER counter : counters) {
+    for (const auto& entry : metric.counters) {
         PDH_FMT_COUNTERVALUE val;
-        if (PdhGetFormattedCounterValue(counter, PDH_FMT_DOUBLE, nullptr,
+        if (PdhGetFormattedCounterValue(entry.counter, PDH_FMT_DOUBLE, nullptr,
                                         &val) == ERROR_SUCCESS) {
             total += val.doubleValue;
         }
@@ -1223,8 +1345,8 @@ double QueryNetworkSpeed(const std::vector<PDH_HCOUNTER>& counters) {
 PCWSTR GetUploadSpeedFormatted() {
     CollectMetricsDataIfNeeded();
     if (g_uploadSpeedFormatted.formatIndex != g_metricsFormatIndex) {
-        if (!g_uploadCounters.empty()) {
-            double speed = QueryNetworkSpeed(g_uploadCounters);
+        if (!g_uploadMetric.counters.empty()) {
+            double speed = QueryWildcardMetricSum(g_uploadMetric);
             FormatTransferSpeed(speed, g_uploadSpeedFormatted.buffer,
                                 ARRAYSIZE(g_uploadSpeedFormatted.buffer));
         } else {
@@ -1238,8 +1360,8 @@ PCWSTR GetUploadSpeedFormatted() {
 PCWSTR GetDownloadSpeedFormatted() {
     CollectMetricsDataIfNeeded();
     if (g_downloadSpeedFormatted.formatIndex != g_metricsFormatIndex) {
-        if (!g_downloadCounters.empty()) {
-            double speed = QueryNetworkSpeed(g_downloadCounters);
+        if (!g_downloadMetric.counters.empty()) {
+            double speed = QueryWildcardMetricSum(g_downloadMetric);
             FormatTransferSpeed(speed, g_downloadSpeedFormatted.buffer,
                                 ARRAYSIZE(g_downloadSpeedFormatted.buffer));
         } else {
@@ -1253,9 +1375,10 @@ PCWSTR GetDownloadSpeedFormatted() {
 PCWSTR GetTotalSpeedFormatted() {
     CollectMetricsDataIfNeeded();
     if (g_totalSpeedFormatted.formatIndex != g_metricsFormatIndex) {
-        if (!g_uploadCounters.empty() || !g_downloadCounters.empty()) {
-            double uploadSpeed = QueryNetworkSpeed(g_uploadCounters);
-            double downloadSpeed = QueryNetworkSpeed(g_downloadCounters);
+        if (!g_uploadMetric.counters.empty() ||
+            !g_downloadMetric.counters.empty()) {
+            double uploadSpeed = QueryWildcardMetricSum(g_uploadMetric);
+            double downloadSpeed = QueryWildcardMetricSum(g_downloadMetric);
             FormatTransferSpeed(uploadSpeed + downloadSpeed,
                                 g_totalSpeedFormatted.buffer,
                                 ARRAYSIZE(g_totalSpeedFormatted.buffer));
@@ -1327,23 +1450,11 @@ PCWSTR GetDiskTotalSpeedFormatted() {
     return g_diskTotalSpeedFormatted.buffer;
 }
 
-double QueryGpuUsage() {
-    double sum = 0.0;
-    for (const auto& counter : g_gpuCounters) {
-        PDH_FMT_COUNTERVALUE counterVal;
-        if (PdhGetFormattedCounterValue(counter, PDH_FMT_DOUBLE, nullptr,
-                                        &counterVal) == ERROR_SUCCESS) {
-            sum += counterVal.doubleValue;
-        }
-    }
-    return sum;
-}
-
 PCWSTR GetGpuFormatted() {
     CollectMetricsDataIfNeeded();
     if (g_gpuFormatted.formatIndex != g_metricsFormatIndex) {
-        if (!g_gpuCounters.empty()) {
-            double usage = QueryGpuUsage();
+        if (!g_gpuMetric.counters.empty()) {
+            double usage = QueryWildcardMetricSum(g_gpuMetric);
             swprintf_s(g_gpuFormatted.buffer, L"%d", (int)usage);
         } else {
             wcscpy_s(g_gpuFormatted.buffer, L"-");
