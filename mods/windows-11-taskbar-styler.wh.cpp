@@ -417,6 +417,7 @@ from the **TranslucentTB** project.
   - TaskbarToStatusbar: TaskbarToStatusbar
   - UltraWideFriendly: UltraWideFriendly
   - LiquidGlass: LiquidGlass
+  - LiquidGlass_variant_Alternate: LiquidGlass (Alternate)
   - Borderless: Borderless
 - styleConstants: [""]
   $name: Style constants
@@ -4887,6 +4888,186 @@ const Theme g_themeLiquidGlass = {{
     L"CornerRadius=4",
 }};
 
+const Theme g_themeLiquidGlass_variant_Alternate = {{
+    ThemeTargetStyles{L"Taskbar.TaskbarFrame", {
+        L"CornerRadius=$CornerRadius",
+        L"MaxWidth=1400",
+        L"HorizontalAlignment=Center"}},
+    ThemeTargetStyles{L"Taskbar.TaskbarFrame > Grid#RootGrid", {
+        L"BorderThickness=$BorderThickness",
+        L"BorderBrush:=$BorderBrush",
+        L"CornerRadius=$CornerRadius",
+        L"Background:=$Background",
+        L"Margin=0,0,0,2"}},
+    ThemeTargetStyles{L"Rectangle#BackgroundFill", {
+        L"Visibility=1"}},
+    ThemeTargetStyles{L"Rectangle#BackgroundStroke", {
+        L"Visibility=1"}},
+    ThemeTargetStyles{L"Taskbar.AugmentedEntryPointButton#AugmentedEntryPointButton > Taskbar.TaskListButtonPanel#ExperienceToggleButtonRootPanel", {
+        L"Margin=-3,0"}},
+    ThemeTargetStyles{L"Grid#SystemTrayFrameGrid", {
+        L"Background:=$ElementBG",
+        L"BorderBrush:=$ElementBorderBrush",
+        L"BorderThickness=$ElementBorderThickness",
+        L"CornerRadius=$CornerRadius",
+        L"Margin=6",
+        L"RenderTransform:=<TranslateTransform X=\"563\" />"}},
+    ThemeTargetStyles{L"SystemTray.ChevronIconView", {
+        L"CornerRadius=$CornerRadius"}},
+    ThemeTargetStyles{L"SystemTray.NotifyIconView#NotifyItemIcon", {
+        L"CornerRadius=$CornerRadius"}},
+    ThemeTargetStyles{L"SystemTray.OmniButton", {
+        L"CornerRadius=$CornerRadius"}},
+    ThemeTargetStyles{L"SystemTray.IconView#SystemTrayIcon > Grid#ContainerGrid > ContentPresenter#ContentPresenter > Grid#ContentGrid > SystemTray.TextIconContent > Grid#ContainerGrid", {
+        L"CornerRadius=$CornerRadius"}},
+    ThemeTargetStyles{L"Taskbar.Gripper#GripperControl", {
+        L"Width=Auto",
+        L"MinWidth=24",
+        L"HorizontalAlignment=Left"}},
+    ThemeTargetStyles{L"TextBlock#TimeInnerTextBlock", {
+        L"FontSize=13",
+        L"FontFamily=vivo Sans EN VF",
+        L"Margin=0",
+        L"Padding=0",
+        L"RenderTransform:=<TranslateTransform X=\"0\" Y=\"0\" />"}},
+    ThemeTargetStyles{L"TextBlock#DateInnerTextBlock", {
+        L"Visibility=1"}},
+    ThemeTargetStyles{L"TextBlock#InnerTextBlock[Text=\uE971]", {
+        L"Text=\uED14"}},
+    ThemeTargetStyles{L"TextBlock#SearchBoxTextBlock", {
+        L"Text=Search This PC",
+        L"FontSize=10",
+        L"FontFamily=vivo Sans EN VF"}},
+    ThemeTargetStyles{L"SystemTray.OmniButton#NotificationCenterButton > Grid > ContentPresenter > ItemsPresenter > StackPanel > ContentPresenter > SystemTray.IconView#SystemTrayIcon > Grid > Grid > SystemTray.TextIconContent", {
+        L"Visibility=1"}},
+    ThemeTargetStyles{L"Border#OverflowFlyoutBackgroundBorder", {
+        L"BorderThickness=$BorderThickness",
+        L"BorderBrush:=$BorderBrush",
+        L"Background:=$Background",
+        L"CornerRadius=$CornerRadius"}},
+    ThemeTargetStyles{L"WindowsInternal.ComposableShell.Experiences.Switcher.AltTab > Grid#ModalRootGrid > Border", {
+        L"BorderThickness=$BorderThickness",
+        L"BorderBrush:=$BorderBrush",
+        L"Background:=$Background",
+        L"CornerRadius=$CornerRadius"}},
+    ThemeTargetStyles{L"WindowsInternal.ComposableShell.Experiences.Switcher.VirtualDesktopBarElement#VirtualDesktopBar", {
+        L"CornerRadius=$CornerRadius",
+        L"Background:=$Background"}},
+    ThemeTargetStyles{L"Border#BackgroundDimmingLayer", {
+        L"Background:=$Background",
+        L"CornerRadius=$CornerRadius"}},
+    ThemeTargetStyles{L"Taskbar.TaskListButtonPanel#ExperienceToggleButtonRootPanel > Border#BackgroundElement", {
+        L"CornerRadius=$CornerRadius",
+        L"BorderThickness=$ElementBorderThickness"}},
+    ThemeTargetStyles{L"Taskbar.TaskListButton#TaskListButton", {
+        L"CornerRadius=$CornerRadius",
+        L"BorderThickness=$ElementBorderThickness"}},
+    ThemeTargetStyles{L"Border#SnapBarBorder", {
+        L"Background:=$Background",
+        L"BorderBrush:=$BorderBrush",
+        L"CornerRadius=$CornerRadius",
+        L"BorderThickness=$BorderThickness",
+        L"Margin=2"}},
+    ThemeTargetStyles{L"Taskbar.TaskListLabeledButtonPanel@CommonStates > Border#BackgroundElement", {
+        L"CornerRadius=$CornerRadius",
+        L"BorderThickness=$ElementBorderThickness",
+        L"Background@ActiveNormal:=$ActiveBG",
+        L"Background@ActivePointerOver:=$HoverBG",
+        L"Background@ActivePressed:=$PressedBG",
+        L"Background@InactivePointerOver:=$HoverBG",
+        L"Background@InactivePressed:=$PressedBG",
+        L"BorderBrush@ActiveNormal:=$ElementBorderBrush",
+        L"BorderBrush@ActivePointerOver:=$ElementBorderBrush",
+        L"BorderBrush@ActivePressed:=$ElementBorderBrush",
+        L"BorderBrush@InactivePointerOver:=$ElementBorderBrush",
+        L"BorderBrush@InactivePressed:=$ElementBorderBrush",
+        L"Margin=1"}},
+    ThemeTargetStyles{L"ContentPresenter#ContentPresenter@CommonStates", {
+        L"CornerRadius=$CornerRadius",
+        L"BorderThickness=$ElementBorderThickness",
+        L"Background@ActiveNormal:=$ActiveBG",
+        L"Background@ActivePointerOver:=$HoverBG",
+        L"Background@ActivePressed:=$PressedBG",
+        L"Background@InactivePointerOver:=$HoverBG",
+        L"Background@InactivePressed:=$PressedBG",
+        L"BorderBrush@ActiveNormal:=$ElementBorderBrush",
+        L"BorderBrush@ActivePointerOver:=$ElementBorderBrush",
+        L"BorderBrush@ActivePressed:=$ElementBorderBrush",
+        L"BorderBrush@InactivePointerOver:=$ElementBorderBrush",
+        L"BorderBrush@InactivePressed:=$ElementBorderBrush",
+        L"Margin=1"}},
+    ThemeTargetStyles{L"Border#SnapPickerBorder", {
+        L"Background:=$Background",
+        L"BorderBrush:=$BorderBrush",
+        L"CornerRadius=$CornerRadius",
+        L"BorderThickness=$BorderThickness",
+        L"Margin=2"}},
+    ThemeTargetStyles{L"Taskbar.TaskListButtonPanel#ExperienceToggleButtonRootPanel", {
+        L"Background:=Transparent"}},
+    ThemeTargetStyles{L"ToolTip > ContentPresenter#LayoutRoot", {
+        L"Background:=$Background",
+        L"BorderBrush:=$BorderBrush",
+        L"BorderThickness:=$BorderThickness",
+        L"CornerRadius=$CornerRadius"}},
+    ThemeTargetStyles{L"WindowsInternal.ComposableShell.Experiences.Switcher.VirtualDesktopBarElement > Grid#GridElement > Border#VirtualDesktopSwitcherBackground", {
+        L"BorderBrush:=$BorderBrush",
+        L"BorderThickness=$BorderThickness",
+        L"CornerRadius=$CornerRadius",
+        L"Background=$Background"}},
+    ThemeTargetStyles{L"WindowsInternal.ComposableShell.Experiences.Switcher.SwitchItemListViewItem > Grid > Border", {
+        L"CornerRadius=$CornerRadius"}},
+    ThemeTargetStyles{L"Border#VirtualDesktopBarBackground", {
+        L"Background:=$Background",
+        L"BorderBrush:=$BorderBrush",
+        L"BorderThickness=$BorderThickness",
+        L"CornerRadius=$CornerRadius"}},
+    ThemeTargetStyles{L"Rectangle#RunningIndicator", {
+        L"Fill:=<AcrylicBrush TintColor=\"{ThemeResource SystemAccentColor}\" TintOpacity=\"0.4\" />",
+        L"Width=14"}},
+    ThemeTargetStyles{L"Rectangle#ShowDesktopPipe", {
+        L"Visibility=1"}},
+    ThemeTargetStyles{L"Rectangle#RightOverflowButtonDivider", {
+        L"Visibility=1"}},
+    ThemeTargetStyles{L"SearchUx.SearchUI.SearchIconButton > SearchUx.SearchUI.SearchButtonRootGrid@CommonStates > Border#BackgroundElement", {
+        L"Background:=Transparent",
+        L"BorderBrush:=Transparent"}},
+    ThemeTargetStyles{L"SearchUx.SearchUI.SearchButtonRootGrid", {
+        L"Background:=Transparent",
+        L"BorderBrush:=Transparent"}},
+    ThemeTargetStyles{L"Border#SearchPillBackgroundElement", {
+        L"BorderBrush:=$ElementBorderBrush",
+        L"BorderThickness=$ElementBorderThickness",
+        L"CornerRadius=$CornerRadius",
+        L"Margin=0,1"}},
+    ThemeTargetStyles{L"SearchUx.SearchUI.SearchBoxButton > SearchUx.SearchUI.SearchButtonRootGrid@CommonStates > Border#BackgroundElement", {
+        L"CornerRadius=$CornerRadius",
+        L"BorderThickness=$ElementBorderThickness",
+        L"BorderBrush:=$ElementBorderBrush",
+        L"Background:=$ElementBG",
+        L"Margin=0,-4"}},
+    ThemeTargetStyles{L"Canvas#HoverFlyoutCanvas > Grid#HoverFlyoutGrid > Border#HoverFlyoutBackground", {
+        L"Shadow:=",
+        L"Background:=$Background",
+        L"BorderBrush:=$BorderBrush",
+        L"BorderThickness=$BorderThickness",
+        L"CornerRadius=$CornerRadius"}},
+    ThemeTargetStyles{L"SystemTray.SystemTrayFrame", {
+        L"HorizontalAlignment=Center"}},
+    ThemeTargetStyles{L"Grid#AugmentedEntryPointContentGrid", {
+        L"HorizontalAlignment=Left"}},
+}, {
+    L"BorderThickness=0.3,1,0.3,0.3",
+    L"ElementBorderThickness=0.3,0.3,0.3,1",
+    L"BorderBrush=<LinearGradientBrush StartPoint=\"0,0\" EndPoint=\"0,1\"><GradientStop Color=\"#50808080\" Offset=\"0.0\" /><GradientStop Color=\"#50404040\" Offset=\"0.25\" /><GradientStop Color=\"#50808080\" Offset=\"1\" /></LinearGradientBrush>",
+    L"Background=<WindhawkBlur BlurAmount=\"15\" TintColor=\"{ThemeResource SystemChromeAltHighColor}\" TintOpacity=\"0.2\" />",
+    L"ElementBG=<WindhawkBlur BlurAmount=\"20\" TintColor=\"#202020\" TintOpacity=\"0.2\" />",
+    L"ElementBorderBrush=<LinearGradientBrush StartPoint=\"0,0\" EndPoint=\"0,1\"><GradientStop Color=\"#50808080\" Offset=\"1\" /><GradientStop Color=\"#50606060\" Offset=\"0.15\" /></LinearGradientBrush>",
+    L"HoverBG=<WindhawkBlur BlurAmount=\"20\" TintColor=\"{ThemeResource SystemChromeHighColor}\" TintOpacity=\"0.2\" />",
+    L"PressedBG=<WindhawkBlur BlurAmount=\"20\" TintColor=\"{ThemeResource SystemChromeAltHighColor}\" TintOpacity=\"0.2\" />",
+    L"ActiveBG=<WindhawkBlur BlurAmount=\"20\" TintColor=\"{ThemeResource SystemChromeAltHighColor}\" TintOpacity=\"0.2\" />",
+    L"CornerRadius=4",
+}};
+
 const Theme g_themeBorderless = {{
     ThemeTargetStyles{L"ScrollViewer > ScrollContentPresenter > Border > Grid", {
         L"ColumnDefinitions:=<ColumnDefinitionCollection><ColumnDefinition Width=\"*\"/><ColumnDefinition Width=\"Auto\"/><ColumnDefinition Width=\"Auto\"/><ColumnDefinition Width=\"*\"/></ColumnDefinitionCollection>",
@@ -8805,6 +8986,8 @@ void ProcessAllStylesFromSettings() {
         theme = &g_themeUltraWideFriendly;
     } else if (wcscmp(themeName, L"LiquidGlass") == 0) {
         theme = &g_themeLiquidGlass;
+    } else if (wcscmp(themeName, L"LiquidGlass_variant_Alternate") == 0) {
+        theme = &g_themeLiquidGlass_variant_Alternate;
     } else if (wcscmp(themeName, L"Borderless") == 0) {
         theme = &g_themeBorderless;
     }
