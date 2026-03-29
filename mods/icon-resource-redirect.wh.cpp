@@ -2708,6 +2708,12 @@ void LoadSettings() {
     }
 
     // Reverse the order to allow later entries override earlier ones.
+    for (auto& [key, vec] : paths) {
+        std::reverse(vec.begin(), vec.end());
+    }
+    for (auto& [key, vec] : pathsA) {
+        std::reverse(vec.begin(), vec.end());
+    }
     std::reverse(pathPatterns.begin(), pathPatterns.end());
     std::reverse(pathPatternsA.begin(), pathPatternsA.end());
 
