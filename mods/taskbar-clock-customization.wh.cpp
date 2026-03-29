@@ -1817,7 +1817,7 @@ PCWSTR GetWeeknumFormatted() {
 
         DWORD startDayOfWeek = GetStartDayOfWeek(time);
 
-        swprintf_s(g_weeknumFormatted.buffer, L"%d",
+        swprintf_s(g_weeknumFormatted.buffer, L"%02d",
                    CalculateWeeknum(time, startDayOfWeek));
 
         g_weeknumFormatted.formatIndex = g_formatIndex;
@@ -1830,7 +1830,7 @@ PCWSTR GetWeeknumIsoFormatted() {
     if (g_weeknumIsoFormatted.formatIndex != g_formatIndex) {
         const SYSTEMTIME* time = &g_formatTime;
 
-        swprintf_s(g_weeknumIsoFormatted.buffer, L"%d",
+        swprintf_s(g_weeknumIsoFormatted.buffer, L"%02d",
                    CalculateWeeknumIso(time));
 
         g_weeknumIsoFormatted.formatIndex = g_formatIndex;
