@@ -2,7 +2,7 @@
 // @id              icon-resource-redirect
 // @name            Resource Redirect
 // @description     Define alternative files for loading various resources (e.g. icons in imageres.dll) for simple theming without having to modify system files
-// @version         1.2.4
+// @version         1.2.5
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
@@ -937,7 +937,10 @@ UINT WINAPI PrivateExtractIconsW_Hook(LPCWSTR szFileName,
                             // that important and the first icon will do.
                             Wh_Log(L"[%u] Using icon index 0 as fallback", c);
                         } else {
-                            Wh_Log(L"[%u] Failed to get icon group name", c);
+                            Wh_Log(
+                                L"[%u] Failed to resolve icon group from "
+                                L"original index",
+                                c);
                             return false;
                         }
                     }
