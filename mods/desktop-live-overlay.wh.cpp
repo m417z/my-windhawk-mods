@@ -1182,10 +1182,17 @@ DWORD GetMetricsFormatIndex() {
     return static_cast<DWORD>(formatTimeInt.QuadPart / intervalIn100Ns);
 }
 
+void UpdateAllWildcardMetrics() {
+    UpdateWildcardMetric(g_uploadMetric);
+    UpdateWildcardMetric(g_downloadMetric);
+    UpdateWildcardMetric(g_gpuMetric);
+}
+
 void CollectMetricsDataIfNeeded() {
     g_metricsFormatIndex = GetMetricsFormatIndex();
     if (g_metricsLastFormatIndex != g_metricsFormatIndex) {
         if (g_metricsQuery) {
+            UpdateAllWildcardMetrics();
             PdhCollectQueryData(g_metricsQuery);
         }
         g_metricsLastFormatIndex = g_metricsFormatIndex;
@@ -1329,8 +1336,7 @@ void FormatTransferSpeed(double bytesPerSec, PWSTR buffer, size_t bufferSize) {
     }
 }
 
-double QueryWildcardMetricSum(WildcardMetric& metric) {
-    UpdateWildcardMetric(metric);
+double QueryWildcardMetricSum(const WildcardMetric& metric) {
     double total = 0.0;
     for (const auto& entry : metric.counters) {
         PDH_FMT_COUNTERVALUE val;
