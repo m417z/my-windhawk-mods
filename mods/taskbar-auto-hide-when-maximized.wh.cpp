@@ -128,6 +128,12 @@ enum {
     kTrayPrivateSettingAutoHideSet = 4,
 };
 
+constexpr WCHAR kCanHideTaskbarEligibilityProp[] =
+    L"Windhawk_CanHideTaskbar_" WH_MOD_ID;
+
+const HANDLE kCanHideTaskbarNotEligible = (HANDLE)1;
+const HANDLE kCanHideTaskbarEligible = (HANDLE)2;
+
 constexpr WCHAR kUpdateTaskbarStatePendingTickCount[] =
     L"Windhawk_UpdateTaskbarStatePendingTickCount_" WH_MOD_ID;
 
@@ -494,10 +500,7 @@ bool IsWindowExcluded(HWND hWnd) {
     return false;
 }
 
-bool CanHideTaskbarForWindow(HWND hWnd,
-                             HMONITOR monitor,
-                             const MONITORINFO* monitorInfo,
-                             const RECT* taskbarRect) {
+bool IsWindowEligibleForHidingTaskbar(HWND hWnd) {
     if (!IsWindowVisible(hWnd) || IsWindowCloaked(hWnd) || IsIconic(hWnd) ||
         (GetWindowLong(hWnd, GWL_EXSTYLE) & WS_EX_NOACTIVATE)) {
         return false;
@@ -519,6 +522,25 @@ bool CanHideTaskbarForWindow(HWND hWnd,
 
     // Check this after the other checks, as it's the most expensive one.
     if (IsWindowExcluded(hWnd)) {
+        return false;
+    }
+
+    return true;
+}
+
+bool CanHideTaskbarForWindow(HWND hWnd,
+                             HMONITOR monitor,
+                             const MONITORINFO* monitorInfo,
+                             const RECT* taskbarRect) {
+    HANDLE prop = GetProp(hWnd, kCanHideTaskbarEligibilityProp);
+    if (!prop) {
+        prop = IsWindowEligibleForHidingTaskbar(hWnd)
+                   ? kCanHideTaskbarEligible
+                   : kCanHideTaskbarNotEligible;
+        SetProp(hWnd, kCanHideTaskbarEligibilityProp, prop);
+    }
+
+    if (prop == kCanHideTaskbarNotEligible) {
         return false;
     }
 
@@ -1049,6 +1071,15 @@ void CALLBACK WinEventProc(HWINEVENTHOOK hWinEventHook,
             }
         }(event),
         GetWindowLogInfo(hWnd).c_str());
+
+    if (event == EVENT_OBJECT_LOCATIONCHANGE) {
+        if (GetProp(hWnd, kCanHideTaskbarEligibilityProp) ==
+            kCanHideTaskbarNotEligible) {
+            return;  // not eligible, position change irrelevant
+        }
+    } else {
+        RemoveProp(hWnd, kCanHideTaskbarEligibilityProp);
+    }
 
     if (g_pendingEventsTimer) {
         return;
@@ -1609,8 +1640,19 @@ void Wh_ModAfterInit() {
     }
 }
 
+void ClearCanHideTaskbarForWindowProps() {
+    EnumWindows(
+        [](HWND hWnd, LPARAM) -> BOOL {
+            RemoveProp(hWnd, kCanHideTaskbarEligibilityProp);
+            return TRUE;
+        },
+        0);
+}
+
 void Wh_ModUninit() {
     Wh_Log(L">");
+
+    ClearCanHideTaskbarForWindowProps();
 
     if (g_winEventHookThread) {
         PostThreadMessage(GetThreadId(g_winEventHookThread), WM_APP, 0, 0);
@@ -1652,6 +1694,8 @@ BOOL Wh_ModSettingsChanged(BOOL* bReload) {
             g_winEventHookThread = nullptr;
         }
     }
+
+    ClearCanHideTaskbarForWindowProps();
 
     AdjustAllTaskbars();
 
