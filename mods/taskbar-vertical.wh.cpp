@@ -2320,6 +2320,18 @@ void UpdateTaskListButton(FrameworkElement taskListButtonElement) {
         }
     }
 
+    // Fix rotation for number overlays (from the Taskbar Numberer mod).
+    if (auto numberOverlay =
+            FindChildByName(iconPanelElement, L"WindhawkNumberOverlay")) {
+        double angle = g_unloading ? 0 : -90;
+        Media::RotateTransform transform;
+        transform.Angle(angle);
+        numberOverlay.RenderTransform(transform);
+
+        float origin = g_unloading ? 0 : 0.5;
+        numberOverlay.RenderTransformOrigin({origin, origin});
+    }
+
     bool indicatorsOnTop = false;
     if (!g_unloading) {
         auto taskbarFrameRepeaterElement =
