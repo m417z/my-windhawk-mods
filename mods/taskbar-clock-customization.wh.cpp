@@ -1875,7 +1875,7 @@ class QueryDataCollectionSession {
     ~QueryDataCollectionSession() { PdhCloseQuery(query_); }
 
     bool AddMetric(MetricType type);
-    void UpdateMetric(MetricType type);
+    void UpdateAllMetrics();
     bool SampleData();
     std::optional<double> QueryData(MetricType type);
     std::optional<double> QueryDataAvg(MetricType type);
@@ -1886,6 +1886,7 @@ class QueryDataCollectionSession {
         size_t count;
     };
     std::optional<QueryDataResult> QueryDataWithCount(MetricType type);
+    void UpdateMetric(MetricType type);
 
     std::vector<std::wstring> ExpandEnglishWildcard(PCWSTR wildcard_path,
                                                     bool quiet);
@@ -1927,7 +1928,7 @@ class QueryDataCollectionSession {
 
     struct MetricData {
         std::vector<CounterEntry> counters;
-        bool is_wildcard = false;
+        PCWSTR wildcard_path = nullptr;
         PCWSTR adapter_name = nullptr;
     };
 
@@ -1979,7 +1980,7 @@ bool QueryDataCollectionSession::AddMetric(MetricType type) {
         return false;
     }
 
-    metric.is_wildcard = is_wildcard;
+    metric.wildcard_path = is_wildcard ? counter_path : nullptr;
     metric.adapter_name = adapter_name;
 
     if (is_wildcard) {
@@ -2011,30 +2012,12 @@ bool QueryDataCollectionSession::AddMetric(MetricType type) {
 void QueryDataCollectionSession::UpdateMetric(MetricType type) {
     auto& metric = metrics_[static_cast<int>(type)];
 
-    if (!metric.is_wildcard) {
+    if (!metric.wildcard_path) {
         return;
     }
 
-    PCWSTR counter_path;
-    switch (type) {
-        case MetricType::kDownloadSpeed:
-            counter_path = L"\\Network Interface(*)\\Bytes Received/sec";
-            break;
-        case MetricType::kUploadSpeed:
-            counter_path = L"\\Network Interface(*)\\Bytes Sent/sec";
-            break;
-        case MetricType::kGpuUsage:
-            counter_path = L"\\GPU Engine(*)\\Utilization Percentage";
-            break;
-        case MetricType::kCpuTemp:
-            counter_path = L"\\Thermal Zone Information(*)\\Temperature";
-            break;
-        default:
-            return;
-    }
-
     auto current_paths = ExpandAndFilterWildcardPaths(
-        type, counter_path, metric.adapter_name, /*quiet=*/true);
+        type, metric.wildcard_path, metric.adapter_name, /*quiet=*/true);
 
     // Build a set of current paths for quick lookup.
     std::unordered_set<std::wstring> current_path_set(current_paths.begin(),
@@ -2072,6 +2055,14 @@ void QueryDataCollectionSession::UpdateMetric(MetricType type) {
     }
 }
 
+void QueryDataCollectionSession::UpdateAllMetrics() {
+    for (int i = 0; i < static_cast<int>(MetricType::kCount); i++) {
+        if (metrics_[i].wildcard_path) {
+            UpdateMetric(static_cast<MetricType>(i));
+        }
+    }
+}
+
 bool QueryDataCollectionSession::SampleData() {
     PDH_STATUS hr = PdhCollectQueryData(query_);
     if (FAILED(hr)) {
@@ -2084,8 +2075,6 @@ bool QueryDataCollectionSession::SampleData() {
 
 std::optional<QueryDataCollectionSession::QueryDataResult>
 QueryDataCollectionSession::QueryDataWithCount(MetricType type) {
-    UpdateMetric(type);
-
     const auto& metric = metrics_[static_cast<int>(type)];
 
     if (metric.counters.empty()) {
@@ -2777,6 +2766,7 @@ void DataCollectionSampleIfNeeded() {
     DWORD dataCollectionFormatIndex = GetDataCollectionFormatIndex();
     if (g_dataCollectionLastFormatIndex != dataCollectionFormatIndex) {
         if (g_dataCollectionSession) {
+            g_dataCollectionSession->UpdateAllMetrics();
             g_dataCollectionSession->SampleData();
         }
 
