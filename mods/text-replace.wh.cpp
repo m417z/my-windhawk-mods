@@ -314,6 +314,42 @@ BOOL WINAPI ExtTextOutWHook(HDC hdc,int x,int y,UINT options,CONST RECT *lprect,
     return pOriginalExtTextOutW(hdc,x,y,options,lprect,lpString,c,lpDx);
 }
 
+using PolyTextOutA_t = decltype(&PolyTextOutA);
+PolyTextOutA_t pOriginalPolyTextOutA;
+BOOL WINAPI PolyTextOutAHook(HDC hdc,CONST POLYTEXTA *pptxt,int cStrings)
+{
+    std::vector<POLYTEXTA> items(pptxt, pptxt + cStrings);
+    std::vector<std::string> strs(cStrings);
+
+    for (int i = 0; i < cStrings; i++) {
+        if (!(items[i].uiFlags & ETO_GLYPH_INDEX) && items[i].lpstr) {
+            strs[i] = ReplaceStringA(items[i].lpstr, items[i].n);
+            items[i].lpstr = strs[i].c_str();
+            items[i].n = strs[i].length();
+        }
+    }
+
+    return pOriginalPolyTextOutA(hdc,items.data(),cStrings);
+}
+
+using PolyTextOutW_t = decltype(&PolyTextOutW);
+PolyTextOutW_t pOriginalPolyTextOutW;
+BOOL WINAPI PolyTextOutWHook(HDC hdc,CONST POLYTEXTW *pptxt,int cStrings)
+{
+    std::vector<POLYTEXTW> items(pptxt, pptxt + cStrings);
+    std::vector<std::wstring> strs(cStrings);
+
+    for (int i = 0; i < cStrings; i++) {
+        if (!(items[i].uiFlags & ETO_GLYPH_INDEX) && items[i].lpstr) {
+            strs[i] = ReplaceStringW(items[i].lpstr, items[i].n);
+            items[i].lpstr = strs[i].c_str();
+            items[i].n = strs[i].length();
+        }
+    }
+
+    return pOriginalPolyTextOutW(hdc,items.data(),cStrings);
+}
+
 using DrawTextA_t = decltype(&DrawTextA);
 DrawTextA_t pOriginalDrawTextA;
 int WINAPI DrawTextAHook(HDC hdc,LPCSTR lpchText,int cchText,LPRECT lprc,UINT format)
@@ -562,6 +598,45 @@ void HookD2DAndDWrite()
     }
 }
 
+// GDI+ flat API: GdipDrawString.
+using GdipDrawString_t = int (WINAPI *)(
+    void *graphics,
+    const WCHAR *string,
+    INT length,
+    const void *font,
+    const void *layoutRect,
+    const void *stringFormat,
+    const void *brush);
+GdipDrawString_t pOriginalGdipDrawString;
+int WINAPI GdipDrawStringHook(
+    void *graphics,
+    const WCHAR *string,
+    INT length,
+    const void *font,
+    const void *layoutRect,
+    const void *stringFormat,
+    const void *brush)
+{
+    if (string) {
+        std::wstring str = ReplaceStringW(string, length);
+        return pOriginalGdipDrawString(graphics,str.c_str(),str.length(),font,layoutRect,stringFormat,brush);
+    }
+
+    return pOriginalGdipDrawString(graphics,string,length,font,layoutRect,stringFormat,brush);
+}
+
+void HookGdiplus()
+{
+    HMODULE hGdiplus = LoadLibraryEx(L"gdiplus.dll", nullptr, LOAD_LIBRARY_SEARCH_SYSTEM32);
+    if (hGdiplus) {
+        void *pGdipDrawString = (void *)GetProcAddress(hGdiplus, "GdipDrawString");
+        if (pGdipDrawString) {
+            Wh_SetFunctionHook(pGdipDrawString, (void *)GdipDrawStringHook,
+                (void **)&pOriginalGdipDrawString);
+        }
+    }
+}
+
 void LoadSettings()
 {
     g_replacementItems.clear();
@@ -649,6 +724,9 @@ BOOL Wh_ModInit(void)
     Wh_SetFunctionHook((void*)ExtTextOutA, (void*)ExtTextOutAHook, (void**)&pOriginalExtTextOutA);
     Wh_SetFunctionHook((void*)ExtTextOutW, (void*)ExtTextOutWHook, (void**)&pOriginalExtTextOutW);
 
+    Wh_SetFunctionHook((void*)PolyTextOutA, (void*)PolyTextOutAHook, (void**)&pOriginalPolyTextOutA);
+    Wh_SetFunctionHook((void*)PolyTextOutW, (void*)PolyTextOutWHook, (void**)&pOriginalPolyTextOutW);
+
     Wh_SetFunctionHook((void*)DrawTextA, (void*)DrawTextAHook, (void**)&pOriginalDrawTextA);
     Wh_SetFunctionHook((void*)DrawTextW, (void*)DrawTextWHook, (void**)&pOriginalDrawTextW);
 
@@ -662,6 +740,7 @@ BOOL Wh_ModInit(void)
     Wh_SetFunctionHook((void*)SendMessageW, (void*)SendMessageWHook, (void**)&pOriginalSendMessageW);
 
     HookD2DAndDWrite();
+    HookGdiplus();
 
     return TRUE;
 }
