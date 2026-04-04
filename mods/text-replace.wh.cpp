@@ -34,7 +34,10 @@ and usually doesn't work in custom ones.
 /*
 - PerProgramConfig:
   - - Name: notepad.exe
-      $name: Program name or path
+      $name: Program name
+      $description: >-
+        Can be the full path or just the file name. * and ? wildcards are
+        supported.
     - Search: Notepad
       $name: The text to be replaced
     - Replace: WindPad
@@ -51,6 +54,49 @@ and usually doesn't work in custom ones.
 
 #include <d2d1.h>
 #include <dwrite.h>
+
+// https://github.com/tidwall/match.c
+//
+// match returns true if str matches pattern. This is a very
+// simple wildcard match where '*' matches on any number characters
+// and '?' matches on any one character.
+//
+// pattern:
+//   { term }
+// term:
+// 	 '*'         matches any sequence of non-Separator characters
+// 	 '?'         matches any single non-Separator character
+// 	 c           matches character c (c != '*', '?')
+template <typename T>
+bool strmatch(const T* pat, size_t plen, const T* str, size_t slen) {
+    while (plen > 0) {
+        if (pat[0] == '*') {
+            if (plen == 1)
+                return true;
+            if (pat[1] == '*') {
+                pat++;
+                plen--;
+                continue;
+            }
+            if (strmatch(pat + 1, plen - 1, str, slen))
+                return true;
+            if (slen == 0)
+                return false;
+            str++;
+            slen--;
+            continue;
+        }
+        if (slen == 0)
+            return false;
+        if (pat[0] != '?' && str[0] != pat[0])
+            return false;
+        pat++;
+        plen--;
+        str++;
+        slen--;
+    }
+    return slen == 0 && plen == 0;
+}
 
 struct ReplacementItem {
     std::string searchA;
@@ -645,12 +691,20 @@ void LoadSettings()
     DWORD dwSize = ARRAYSIZE(programPath);
     if (!QueryFullProcessImageName(GetCurrentProcess(), 0, programPath, &dwSize)) {
         *programPath = L'\0';
+        dwSize = 0;
     }
 
+    LCMapStringEx(LOCALE_NAME_USER_DEFAULT, LCMAP_UPPERCASE, programPath,
+                  dwSize, programPath, dwSize, nullptr, nullptr, 0);
+
+    size_t programPathLen = dwSize;
+
     PCWSTR programFileName = wcsrchr(programPath, L'\\');
+    size_t programFileNameLen = 0;
     if (programFileName) {
         programFileName++;
-        if (!*programFileName) {
+        programFileNameLen = programPath + programPathLen - programFileName;
+        if (!programFileNameLen) {
             programFileName = nullptr;
         }
     }
@@ -661,10 +715,19 @@ void LoadSettings()
         PCWSTR name = Wh_GetStringSetting(L"PerProgramConfig[%d].Name", i);
         bool hasName = *name;
         if (hasName) {
-            if (programFileName && wcsicmp(programFileName, name) == 0) {
+            std::wstring pattern(name);
+            LCMapStringEx(LOCALE_NAME_USER_DEFAULT, LCMAP_UPPERCASE,
+                          pattern.data(), static_cast<int>(pattern.length()),
+                          pattern.data(), static_cast<int>(pattern.length()),
+                          nullptr, nullptr, 0);
+
+            if (programFileName &&
+                strmatch(pattern.c_str(), pattern.length(),
+                         programFileName, programFileNameLen)) {
                 matched = true;
             }
-            else if (wcsicmp(programPath, name) == 0) {
+            else if (strmatch(pattern.c_str(), pattern.length(),
+                              programPath, programPathLen)) {
                 matched = true;
             }
         }
