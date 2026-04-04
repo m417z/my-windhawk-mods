@@ -2,7 +2,7 @@
 // @id              text-replace
 // @name            Text Replace
 // @description     Replace any text with any other text in any program
-// @version         1.0
+// @version         1.1
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
@@ -36,8 +36,8 @@ and usually doesn't work in custom ones.
   - - Name: notepad.exe
       $name: Program name
       $description: >-
-        Can be the full path or just the file name. * and ? wildcards are
-        supported.
+        Can be the full path or just the file name. Can be a pattern where '*'
+        matches any number of characters and '?' matches any single character.
     - Search: Notepad
       $name: The text to be replaced
     - Replace: WindPad
@@ -700,8 +700,10 @@ void LoadSettings()
         dwSize = 0;
     }
 
-    LCMapStringEx(LOCALE_NAME_USER_DEFAULT, LCMAP_UPPERCASE, programPath,
-                  dwSize, programPath, dwSize, nullptr, nullptr, 0);
+    if (dwSize > 0) {
+        LCMapStringEx(LOCALE_NAME_USER_DEFAULT, LCMAP_UPPERCASE, programPath,
+                      dwSize, programPath, dwSize, nullptr, nullptr, 0);
+    }
 
     size_t programPathLen = dwSize;
 
