@@ -756,11 +756,16 @@ void LoadSettings()
     }
 }
 
-BOOL Wh_ModInit(void)
+BOOL Wh_ModInit()
 {
     Wh_Log(L"Init");
 
     LoadSettings();
+
+    if (g_replacementItems.empty()) {
+        Wh_Log(L"No replacements configured");
+        return FALSE;
+    }
 
     // Covers SetDlgItemText and SetDlgItemInt.
     Wh_SetFunctionHook((void*)SetWindowTextA, (void*)SetWindowTextAHook, (void**)&pOriginalSetWindowTextA);
@@ -808,14 +813,21 @@ BOOL Wh_ModInit(void)
     return TRUE;
 }
 
-void Wh_ModUninit(void)
+void Wh_ModUninit()
 {
     Wh_Log(L"Uninit");
 }
 
-void Wh_ModSettingsChanged(void)
+BOOL Wh_ModSettingsChanged(BOOL* bReload)
 {
     Wh_Log(L"SettingsChanged");
 
     LoadSettings();
+
+    if (g_replacementItems.empty()) {
+        Wh_Log(L"No replacements configured");
+        return FALSE;
+    }
+
+    return TRUE;
 }
