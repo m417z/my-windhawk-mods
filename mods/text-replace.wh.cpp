@@ -71,7 +71,7 @@ T ReplaceAll(T str, const T& from, const T& to)
 
 std::string ReplaceStringA(PCSTR string, size_t len = -1)
 {
-    if (len == -1) {
+    if (len == (size_t)-1) {
         len = strlen(string);
     }
 
@@ -86,7 +86,7 @@ std::string ReplaceStringA(PCSTR string, size_t len = -1)
 
 std::wstring ReplaceStringW(PCWSTR string, size_t len = -1)
 {
-    if (len == -1) {
+    if (len == (size_t)-1) {
         len = wcslen(string);
     }
 
