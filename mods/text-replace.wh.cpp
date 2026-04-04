@@ -342,7 +342,7 @@ BOOL WINAPI ExtTextOutAHook(HDC hdc,int x,int y,UINT options,CONST RECT *lprect,
 {
     if (!(options & ETO_GLYPH_INDEX) && lpString) {
         std::string str = ReplaceStringA(lpString, c);
-        return pOriginalExtTextOutA(hdc,x,y,options,lprect,str.c_str(),str.length(),lpDx);
+        return pOriginalExtTextOutA(hdc,x,y,options,lprect,str.c_str(),str.length(),str.length() != c ? nullptr : lpDx);
     }
 
     return pOriginalExtTextOutA(hdc,x,y,options,lprect,lpString,c,lpDx);
@@ -354,7 +354,7 @@ BOOL WINAPI ExtTextOutWHook(HDC hdc,int x,int y,UINT options,CONST RECT *lprect,
 {
     if (!(options & ETO_GLYPH_INDEX) && lpString) {
         std::wstring str = ReplaceStringW(lpString, c);
-        return pOriginalExtTextOutW(hdc,x,y,options,lprect,str.c_str(),str.length(),lpDx);
+        return pOriginalExtTextOutW(hdc,x,y,options,lprect,str.c_str(),str.length(),str.length() != c ? nullptr : lpDx);
     }
 
     return pOriginalExtTextOutW(hdc,x,y,options,lprect,lpString,c,lpDx);
@@ -370,6 +370,9 @@ BOOL WINAPI PolyTextOutAHook(HDC hdc,CONST POLYTEXTA *pptxt,int cStrings)
     for (int i = 0; i < cStrings; i++) {
         if (!(items[i].uiFlags & ETO_GLYPH_INDEX) && items[i].lpstr) {
             strs[i] = ReplaceStringA(items[i].lpstr, items[i].n);
+            if (strs[i].length() != items[i].n) {
+                items[i].pdx = nullptr;
+            }
             items[i].lpstr = strs[i].c_str();
             items[i].n = strs[i].length();
         }
@@ -388,6 +391,9 @@ BOOL WINAPI PolyTextOutWHook(HDC hdc,CONST POLYTEXTW *pptxt,int cStrings)
     for (int i = 0; i < cStrings; i++) {
         if (!(items[i].uiFlags & ETO_GLYPH_INDEX) && items[i].lpstr) {
             strs[i] = ReplaceStringW(items[i].lpstr, items[i].n);
+            if (strs[i].length() != items[i].n) {
+                items[i].pdx = nullptr;
+            }
             items[i].lpstr = strs[i].c_str();
             items[i].n = strs[i].length();
         }
