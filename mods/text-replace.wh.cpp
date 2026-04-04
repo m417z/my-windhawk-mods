@@ -49,6 +49,9 @@ and usually doesn't work in custom ones.
 #include <string>
 #include <vector>
 
+#include <d2d1.h>
+#include <dwrite.h>
+
 struct ReplacementItem {
     std::string searchA;
     std::string replaceA;
@@ -423,6 +426,142 @@ LRESULT WINAPI SendMessageWHook(HWND hWnd,UINT Msg,WPARAM wParam,LPARAM lParam)
     return pOriginalSendMessageW(hWnd,Msg,wParam,lParam);
 }
 
+// ID2D1RenderTarget::DrawText hook (vtable index 27).
+using ID2D1RenderTarget_DrawText_t = void (STDMETHODCALLTYPE *)(
+    ID2D1RenderTarget *pThis,
+    const WCHAR *string,
+    UINT32 stringLength,
+    IDWriteTextFormat *textFormat,
+    const D2D1_RECT_F *layoutRect,
+    ID2D1Brush *defaultFillBrush,
+    D2D1_DRAW_TEXT_OPTIONS options,
+    DWRITE_MEASURING_MODE measuringMode);
+ID2D1RenderTarget_DrawText_t pOriginalID2D1RenderTarget_DrawText;
+void STDMETHODCALLTYPE ID2D1RenderTarget_DrawTextHook(
+    ID2D1RenderTarget *pThis,
+    const WCHAR *string,
+    UINT32 stringLength,
+    IDWriteTextFormat *textFormat,
+    const D2D1_RECT_F *layoutRect,
+    ID2D1Brush *defaultFillBrush,
+    D2D1_DRAW_TEXT_OPTIONS options,
+    DWRITE_MEASURING_MODE measuringMode)
+{
+    if (string) {
+        std::wstring str = ReplaceStringW(string, stringLength);
+        pOriginalID2D1RenderTarget_DrawText(pThis,str.c_str(),str.length(),textFormat,layoutRect,defaultFillBrush,options,measuringMode);
+        return;
+    }
+
+    pOriginalID2D1RenderTarget_DrawText(pThis,string,stringLength,textFormat,layoutRect,defaultFillBrush,options,measuringMode);
+}
+
+// IDWriteFactory::CreateTextLayout hook (vtable index 18).
+using IDWriteFactory_CreateTextLayout_t = HRESULT (STDMETHODCALLTYPE *)(
+    IDWriteFactory *pThis,
+    const WCHAR *string,
+    UINT32 stringLength,
+    IDWriteTextFormat *textFormat,
+    FLOAT maxWidth,
+    FLOAT maxHeight,
+    IDWriteTextLayout **textLayout);
+IDWriteFactory_CreateTextLayout_t pOriginalIDWriteFactory_CreateTextLayout;
+HRESULT STDMETHODCALLTYPE IDWriteFactory_CreateTextLayoutHook(
+    IDWriteFactory *pThis,
+    const WCHAR *string,
+    UINT32 stringLength,
+    IDWriteTextFormat *textFormat,
+    FLOAT maxWidth,
+    FLOAT maxHeight,
+    IDWriteTextLayout **textLayout)
+{
+    if (string) {
+        std::wstring str = ReplaceStringW(string, stringLength);
+        return pOriginalIDWriteFactory_CreateTextLayout(pThis,str.c_str(),str.length(),textFormat,maxWidth,maxHeight,textLayout);
+    }
+
+    return pOriginalIDWriteFactory_CreateTextLayout(pThis,string,stringLength,textFormat,maxWidth,maxHeight,textLayout);
+}
+
+// IDWriteFactory::CreateGdiCompatibleTextLayout hook (vtable index 19).
+using IDWriteFactory_CreateGdiCompatibleTextLayout_t = HRESULT (STDMETHODCALLTYPE *)(
+    IDWriteFactory *pThis,
+    const WCHAR *string,
+    UINT32 stringLength,
+    IDWriteTextFormat *textFormat,
+    FLOAT layoutWidth,
+    FLOAT layoutHeight,
+    FLOAT pixelsPerDip,
+    const DWRITE_MATRIX *transform,
+    BOOL useGdiNatural,
+    IDWriteTextLayout **textLayout);
+IDWriteFactory_CreateGdiCompatibleTextLayout_t pOriginalIDWriteFactory_CreateGdiCompatibleTextLayout;
+HRESULT STDMETHODCALLTYPE IDWriteFactory_CreateGdiCompatibleTextLayoutHook(
+    IDWriteFactory *pThis,
+    const WCHAR *string,
+    UINT32 stringLength,
+    IDWriteTextFormat *textFormat,
+    FLOAT layoutWidth,
+    FLOAT layoutHeight,
+    FLOAT pixelsPerDip,
+    const DWRITE_MATRIX *transform,
+    BOOL useGdiNatural,
+    IDWriteTextLayout **textLayout)
+{
+    if (string) {
+        std::wstring str = ReplaceStringW(string, stringLength);
+        return pOriginalIDWriteFactory_CreateGdiCompatibleTextLayout(pThis,str.c_str(),str.length(),textFormat,layoutWidth,layoutHeight,pixelsPerDip,transform,useGdiNatural,textLayout);
+    }
+
+    return pOriginalIDWriteFactory_CreateGdiCompatibleTextLayout(pThis,string,stringLength,textFormat,layoutWidth,layoutHeight,pixelsPerDip,transform,useGdiNatural,textLayout);
+}
+
+void HookD2DAndDWrite()
+{
+    HMODULE hD2D1 = LoadLibraryEx(L"d2d1.dll", nullptr, LOAD_LIBRARY_SEARCH_SYSTEM32);
+    if (hD2D1) {
+        using D2D1CreateFactory_t = HRESULT (WINAPI *)(D2D1_FACTORY_TYPE, REFIID, const D2D1_FACTORY_OPTIONS *, void **);
+        auto pD2D1CreateFactory = (D2D1CreateFactory_t)GetProcAddress(hD2D1, "D2D1CreateFactory");
+        if (pD2D1CreateFactory) {
+            ID2D1Factory *pFactory = nullptr;
+            if (SUCCEEDED(pD2D1CreateFactory(D2D1_FACTORY_TYPE_SINGLE_THREADED,
+                    __uuidof(ID2D1Factory), nullptr, (void **)&pFactory))) {
+                D2D1_RENDER_TARGET_PROPERTIES rtProps = {};
+                rtProps.pixelFormat.format = DXGI_FORMAT_B8G8R8A8_UNORM;
+                rtProps.pixelFormat.alphaMode = D2D1_ALPHA_MODE_PREMULTIPLIED;
+
+                ID2D1DCRenderTarget *pDCRT = nullptr;
+                if (SUCCEEDED(pFactory->CreateDCRenderTarget(&rtProps, &pDCRT))) {
+                    void **vtable = *(void ***)pDCRT;
+                    Wh_SetFunctionHook(vtable[27], (void *)ID2D1RenderTarget_DrawTextHook,
+                        (void **)&pOriginalID2D1RenderTarget_DrawText);
+                    pDCRT->Release();
+                }
+
+                pFactory->Release();
+            }
+        }
+    }
+
+    HMODULE hDWrite = LoadLibraryEx(L"dwrite.dll", nullptr, LOAD_LIBRARY_SEARCH_SYSTEM32);
+    if (hDWrite) {
+        using DWriteCreateFactory_t = HRESULT (WINAPI *)(DWRITE_FACTORY_TYPE, REFIID, IUnknown **);
+        auto pDWriteCreateFactory = (DWriteCreateFactory_t)GetProcAddress(hDWrite, "DWriteCreateFactory");
+        if (pDWriteCreateFactory) {
+            IDWriteFactory *pFactory = nullptr;
+            if (SUCCEEDED(pDWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED,
+                    __uuidof(IDWriteFactory), (IUnknown **)&pFactory))) {
+                void **vtable = *(void ***)pFactory;
+                Wh_SetFunctionHook(vtable[18], (void *)IDWriteFactory_CreateTextLayoutHook,
+                    (void **)&pOriginalIDWriteFactory_CreateTextLayout);
+                Wh_SetFunctionHook(vtable[19], (void *)IDWriteFactory_CreateGdiCompatibleTextLayoutHook,
+                    (void **)&pOriginalIDWriteFactory_CreateGdiCompatibleTextLayout);
+                pFactory->Release();
+            }
+        }
+    }
+}
+
 void LoadSettings()
 {
     g_replacementItems.clear();
@@ -521,6 +660,8 @@ BOOL Wh_ModInit(void)
 
     Wh_SetFunctionHook((void*)SendMessageA, (void*)SendMessageAHook, (void**)&pOriginalSendMessageA);
     Wh_SetFunctionHook((void*)SendMessageW, (void*)SendMessageWHook, (void**)&pOriginalSendMessageW);
+
+    HookD2DAndDWrite();
 
     return TRUE;
 }
