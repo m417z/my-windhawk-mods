@@ -86,6 +86,7 @@ taskbar.
 enum class Mode {
     intersected,
     maximized,
+    fullscreen,
     never,
 };
 
@@ -598,6 +599,17 @@ bool ShouldKeepTaskbarShown(HWND hTaskbarWnd, HMONITOR monitor) {
 
     // Always show taskbar when MultitaskingView (Win+Tab) is active.
     if (g_multitaskingViewHwnd) {
+        return true;
+    }
+
+    if (g_settings.mode == Mode::fullscreen) {
+        QUERY_USER_NOTIFICATION_STATE state;
+        if (SHQueryUserNotificationState(&state) == S_OK) {
+            return !(state == QUNS_BUSY ||
+                     state == QUNS_RUNNING_D3D_FULL_SCREEN ||
+                     state == QUNS_PRESENTATION_MODE);
+        }
+
         return true;
     }
 
@@ -1513,6 +1525,8 @@ void LoadSettings() {
     g_settings.mode = Mode::intersected;
     if (wcscmp(mode, L"maximized") == 0) {
         g_settings.mode = Mode::maximized;
+    } else if (wcscmp(mode, L"fullscreen") == 0) {
+        g_settings.mode = Mode::fullscreen;
     } else if (wcscmp(mode, L"never") == 0) {
         g_settings.mode = Mode::never;
     }
