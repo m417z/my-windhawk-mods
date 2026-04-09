@@ -280,6 +280,7 @@ The resource lookup order then becomes:
   - Windows 11 New Folders Slate|themes/icons/niivu/Windows%2011%20New%20Folders%20Slate.zip: Windows 11 New Folders Slate (by niivu)
   - Windows 11 New Folders Yellow|themes/icons/niivu/Windows%2011%20New%20Folders%20Yellow.zip: Windows 11 New Folders Yellow (by niivu)
   - Pane7|themes/icons/ImSwordQueen/Pane7.zip: Pane7 (by ImSwordQueen)
+  - Pane8.1|themes/icons/NicSonic/Pane8.1.zip: Pane8.1 (by NicSonic)
 - themePaths: [""]
   $name: Theme paths
   $description: >-
