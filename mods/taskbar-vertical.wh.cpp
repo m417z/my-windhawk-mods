@@ -1243,9 +1243,6 @@ void WINAPI SystemTrayController_UpdateFrameSize_Hook(void* pThis) {
 
 void* TaskbarController_OnGroupingModeChanged;
 
-using TaskbarController_GetHostWindowId_t = HWND(WINAPI*)(void* pThis);
-TaskbarController_GetHostWindowId_t TaskbarController_GetHostWindowId_Original;
-
 using TaskbarController_UpdateFrameHeight_t = void(WINAPI*)(void* pThis);
 TaskbarController_UpdateFrameHeight_t
     TaskbarController_UpdateFrameHeight_Original;
@@ -1335,17 +1332,9 @@ void WINAPI TaskbarController_UpdateFrameHeight_Hook(void* pThis) {
 
     taskbarFrameElement.MaxHeight(std::numeric_limits<double>::infinity());
 
-    // Set the width to NaN (Auto) to always match the parent.
+    // Set the width to NaN (Auto) to always match the parent. Height will be
+    // set in TaskbarFrame_MeasureOverride_Hook.
     taskbarFrameElement.Width(std::numeric_limits<double>::quiet_NaN());
-
-    // Set the height to the monitor height.
-    HWND hMMTaskbarWnd = TaskbarController_GetHostWindowId_Original(pThis);
-    HMONITOR taskbarMonitor =
-        MonitorFromWindow(hMMTaskbarWnd, MONITOR_DEFAULTTONEAREST);
-    RECT taskbarMonitorRect{};
-    GetMonitorRectDpiUnscaled(taskbarMonitor, &taskbarMonitorRect);
-    taskbarFrameElement.Height(taskbarMonitorRect.bottom -
-                               taskbarMonitorRect.top);
 
     // Adjust parent grid height too, for compatibility with some tablet or
     // touch-optimized mode.
@@ -1430,6 +1419,8 @@ bool ApplyStyle(XamlRoot xamlRoot) {
     double borderHeight = border.Height();
     Thickness margin{};
     if (!g_unloading && borderHeight > 0) {
+        taskbarFrame.Height(borderHeight);
+
         double marginValue = borderHeight - g_settings.taskbarWidth;
         if (marginValue > 0) {
             margin.Top = marginValue;
@@ -4562,10 +4553,6 @@ bool HookTaskbarViewDllSymbols(HMODULE module) {
             {
                 {LR"(private: void __cdecl winrt::Taskbar::implementation::TaskbarController::OnGroupingModeChanged(void))"},
                 &TaskbarController_OnGroupingModeChanged,
-            },
-            {
-                {LR"(private: unsigned __int64 __cdecl winrt::Taskbar::implementation::TaskbarController::GetHostWindowId(void)const )"},
-                &TaskbarController_GetHostWindowId_Original,
             },
             {
                 {LR"(private: void __cdecl winrt::Taskbar::implementation::TaskbarController::UpdateFrameHeight(void))"},
