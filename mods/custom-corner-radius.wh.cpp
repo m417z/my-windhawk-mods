@@ -2,7 +2,7 @@
 // @id              custom-corner-radius
 // @name            Custom Window Corner Radius
 // @description     Customizes window corner radius in Windows 11, making corners more or less rounded
-// @version         1.0
+// @version         1.1
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
