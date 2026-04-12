@@ -80,9 +80,6 @@ float WINAPI GetRadiusFromCornerStyle_Hook(void* pThis) {
     return orig;
 }
 
-// GetFloatCornerRadiusForCurrentStyle and GetDpiAdjustedFloatCornerRadius both
-// call GetRadiusFromCornerStyle. This hook is kept as an optional fallback in
-// case a future build inlines the call.
 using GetFloatCornerRadiusForCurrentStyle_t = float(WINAPI*)(void* pThis);
 GetFloatCornerRadiusForCurrentStyle_t
     GetFloatCornerRadiusForCurrentStyle_Original;
@@ -93,6 +90,29 @@ float WINAPI GetFloatCornerRadiusForCurrentStyle_Hook(void* pThis) {
         return (float)g_settings.radius;
     }
     return orig;
+}
+
+using SetBorderParameters_t = long(WINAPI*)(void* pThis,
+                                            const RECT& borderRect,
+                                            float cornerRadius,
+                                            int dpi,
+                                            const void* color,
+                                            int borderStyle,
+                                            int shadowStyle);
+SetBorderParameters_t SetBorderParameters_Original;
+long WINAPI SetBorderParameters_Hook(void* pThis,
+                                     const RECT& borderRect,
+                                     float cornerRadius,
+                                     int dpi,
+                                     const void* color,
+                                     int borderStyle,
+                                     int shadowStyle) {
+    if (cornerRadius > 0) {
+        Wh_Log(L"> %f", cornerRadius);
+        cornerRadius = (float)g_settings.radius;
+    }
+    return SetBorderParameters_Original(pThis, borderRect, cornerRadius, dpi,
+                                        color, borderStyle, shadowStyle);
 }
 
 void LoadSettings() {
@@ -115,17 +135,49 @@ BOOL Wh_ModInit() {
         return FALSE;
     }
 
+    // Call tree for corner radius in each version:
+    //
+    // Old builds (e.g. 10.0.22621.6199):
+    //   UpdateWindowVisuals
+    //     -> GetEffectiveCornerStyle (inlined radius mapping, 8.0/4.0)
+    //     -> SetBorderParameters (receives radius as param)
+    //   CTopLevelWindow3D::UpdateAnimatedResources
+    //     -> GetRadiusFromCornerStyle (DPI scaling inlined)
+    //     -> ResourceHelper::CreateRectangleGeometry
+    //
+    // New builds (e.g. 10.0.26100.7920):
+    //   UpdateWindowVisuals
+    //     -> GetFloatCornerRadiusForCurrentStyle
+    //       -> GetRadiusFromCornerStyle
+    //     -> SetBorderParameters (receives radius as param)
+    //   CTopLevelWindow3D::UpdateAnimatedResources
+    //     -> GetDpiAdjustedFloatCornerRadius
+    //       -> GetRadiusFromCornerStyle
+    //     -> ResourceHelper::CreateRectangleGeometry
+
     WindhawkUtils::SYMBOL_HOOK udwmDllHooks[] = {
+        // Covers the 3D animation path in both old and new builds.
         {
             {LR"(private: float __cdecl CTopLevelWindow::GetRadiusFromCornerStyle(void))"},
             &GetRadiusFromCornerStyle_Original,
             GetRadiusFromCornerStyle_Hook,
         },
+        // Covers UpdateWindowVisuals in new builds (calls
+        // GetRadiusFromCornerStyle, but hooked separately in case a future
+        // build inlines that call).
         {
             {LR"(private: float __cdecl CTopLevelWindow::GetFloatCornerRadiusForCurrentStyle(void))"},
             &GetFloatCornerRadiusForCurrentStyle_Original,
             GetFloatCornerRadiusForCurrentStyle_Hook,
             true,  // Missing in earlier builds (e.g. 10.0.22621.6199).
+        },
+        // Covers UpdateWindowVisuals in old builds where the radius is
+        // computed inline (no call to GetRadiusFromCornerStyle) and passed
+        // directly to this function.
+        {
+            {LR"(public: long __cdecl CWindowBorder::SetBorderParameters(struct tagRECT const &,float,int,struct _D3DCOLORVALUE const &,enum CWindowBorder::BorderStyle,enum CWindowBorder::ShadowStyle))"},
+            &SetBorderParameters_Original,
+            SetBorderParameters_Hook,
         },
     };
 
