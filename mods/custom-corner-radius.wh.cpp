@@ -125,6 +125,7 @@ BOOL Wh_ModInit() {
             {LR"(private: float __cdecl CTopLevelWindow::GetFloatCornerRadiusForCurrentStyle(void))"},
             &GetFloatCornerRadiusForCurrentStyle_Original,
             GetFloatCornerRadiusForCurrentStyle_Hook,
+            true,  // Missing in earlier builds (e.g. 10.0.22621.6199).
         },
     };
 
