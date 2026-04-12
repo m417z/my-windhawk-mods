@@ -50,6 +50,11 @@ and make sure that `dwm.exe` is in the list.
   mods, such as Windows 11 Taskbar Styler.
 - Disabling the mod instantly restores default behavior — no system files are
   modified.
+
+## Compatibility
+
+- When using this mod alongside Translucent Flyouts, set its `CornerType` option
+  to `0` ("Don't Change") to prevent conflicts between the two.
 */
 // ==/WindhawkModReadme==
 
@@ -88,11 +93,13 @@ float RadiusForOriginal(float orig) {
     }
 
     // Win11 defaults: 4.0 for smaller radius, 8.0 for larger radius. Use middle
-    // point as a threshold.
-    if (orig <= 6.0f) {
-        return g_settings.smallRadius;
+    // point as a threshold. Don't override if new value is negative.
+    float newValue = orig < 6.0f ? g_settings.smallRadius : g_settings.radius;
+    if (newValue < 0.0f) {
+        return orig;
     }
-    return g_settings.radius;
+
+    return newValue;
 }
 
 using GetRadiusFromCornerStyle_t = float(WINAPI*)(void* pThis);
@@ -143,15 +150,8 @@ long WINAPI SetBorderParameters_Hook(void* pThis,
 
 void LoadSettings() {
     g_settings.radius = static_cast<float>(Wh_GetIntSetting(L"radius"));
-    if (g_settings.radius < 0) {
-        g_settings.radius = 0;
-    }
-
     g_settings.smallRadius =
         static_cast<float>(Wh_GetIntSetting(L"smallRadius"));
-    if (g_settings.smallRadius < 0) {
-        g_settings.smallRadius = 0;
-    }
 }
 
 BOOL Wh_ModInit() {
