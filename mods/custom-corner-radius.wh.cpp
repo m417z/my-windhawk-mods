@@ -43,9 +43,11 @@ and make sure that `dwm.exe` is in the list.
 
 ## Additional notes
 
-- Popups and flyouts (taskbar, wifi, volume, context menus) use a smaller radius
-  (4px) and are unaffected by this mod. Some of them can be customized using
-  other mods, such as Windows 11 Taskbar Styler.
+- Some elements, such as context menus, use a smaller radius (4px by default).
+  This can be customized separately with the "Small corner radius" option.
+- Some elements, such as the taskbar, the Start menu, and the notification
+  center, are unaffected by this mod. Some of them can be customized using other
+  mods, such as Windows 11 Taskbar Styler.
 - Disabling the mod instantly restores default behavior — no system files are
   modified.
 */
@@ -60,14 +62,38 @@ and make sure that `dwm.exe` is in the list.
     0) for less rounded or sharp corners, or larger values (e.g. 10-20) for more
     rounded corners. Values above 20 may cause visual artifacts depending on
     your DPI scaling.
+- smallRadius: 6
+  $name: Small corner radius
+  $description: >-
+    Corner radius for elements that use a smaller radius, such as context menus.
+    Default Win11 is 4.
 */
 // ==/WindhawkModSettings==
 
 #include <windhawk_utils.h>
 
 struct {
-    int radius;
+    float radius;
+    float smallRadius;
 } g_settings;
+
+float RadiusForOriginal(float orig) {
+    // In new builds, multiple hooks fire in sequence (GetRadiusFromCornerStyle
+    // -> GetFloatCornerRadiusForCurrentStyle -> SetBorderParameters), so a
+    // downstream hook may see a value already replaced by an upstream hook.
+    // Skip replacement if the value already matches a configured radius to keep
+    // the function idempotent.
+    if (orig == g_settings.radius || orig == g_settings.smallRadius) {
+        return orig;
+    }
+
+    // Win11 defaults: 4.0 for smaller radius, 8.0 for larger radius. Use middle
+    // point as a threshold.
+    if (orig <= 6.0f) {
+        return g_settings.smallRadius;
+    }
+    return g_settings.radius;
+}
 
 using GetRadiusFromCornerStyle_t = float(WINAPI*)(void* pThis);
 GetRadiusFromCornerStyle_t GetRadiusFromCornerStyle_Original;
@@ -75,7 +101,7 @@ float WINAPI GetRadiusFromCornerStyle_Hook(void* pThis) {
     float orig = GetRadiusFromCornerStyle_Original(pThis);
     if (orig > 0) {
         Wh_Log(L"> %f", orig);
-        return (float)g_settings.radius;
+        return RadiusForOriginal(orig);
     }
     return orig;
 }
@@ -87,7 +113,7 @@ float WINAPI GetFloatCornerRadiusForCurrentStyle_Hook(void* pThis) {
     float orig = GetFloatCornerRadiusForCurrentStyle_Original(pThis);
     if (orig > 0) {
         Wh_Log(L"> %f", orig);
-        return (float)g_settings.radius;
+        return RadiusForOriginal(orig);
     }
     return orig;
 }
@@ -109,18 +135,22 @@ long WINAPI SetBorderParameters_Hook(void* pThis,
                                      int shadowStyle) {
     if (cornerRadius > 0) {
         Wh_Log(L"> %f", cornerRadius);
-        cornerRadius = (float)g_settings.radius;
+        cornerRadius = RadiusForOriginal(cornerRadius);
     }
     return SetBorderParameters_Original(pThis, borderRect, cornerRadius, dpi,
                                         color, borderStyle, shadowStyle);
 }
 
 void LoadSettings() {
-    g_settings.radius = Wh_GetIntSetting(L"radius");
+    g_settings.radius = static_cast<float>(Wh_GetIntSetting(L"radius"));
     if (g_settings.radius < 0) {
         g_settings.radius = 0;
-    } else if (g_settings.radius > 60) {
-        g_settings.radius = 60;
+    }
+
+    g_settings.smallRadius =
+        static_cast<float>(Wh_GetIntSetting(L"smallRadius"));
+    if (g_settings.smallRadius < 0) {
+        g_settings.smallRadius = 0;
     }
 }
 
