@@ -2088,6 +2088,12 @@ QueryDataCollectionSession::QueryDataWithCount(MetricType type) {
         PDH_STATUS hr = PdhGetFormattedCounterValue(
             entry.counter, PDH_FMT_DOUBLE, nullptr, &val);
         if (SUCCEEDED(hr)) {
+            // Skip dead thermal zones that report implausible values (below 200
+            // Kelvin / -73°C), which would skew the average.
+            if (type == MetricType::kCpuTemp && val.doubleValue < 200) {
+                continue;
+            }
+
             sum += val.doubleValue;
             count++;
         } else {
