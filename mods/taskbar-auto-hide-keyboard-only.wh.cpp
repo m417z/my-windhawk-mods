@@ -712,15 +712,6 @@ HRESULT WINAPI DwmSetWindowAttribute_Hook(HWND hwnd,
         return original();
     }
 
-    // Only act if the taskbar is on the bottom edge.
-    APPBARDATA appBarData = {
-        .cbSize = sizeof(APPBARDATA),
-    };
-    if (SHAppBarMessage(ABM_GETTASKBARPOS, &appBarData) &&
-        appBarData.uEdge != ABE_BOTTOM) {
-        return original();
-    }
-
     DWORD processId = 0;
     DWORD threadId = GetWindowThreadProcessId(hwnd, &processId);
     if (!processId || !threadId) {
@@ -739,6 +730,19 @@ HRESULT WINAPI DwmSetWindowAttribute_Hook(HWND hwnd,
     }
 
     if (kind == FlyoutKind::None) {
+        return original();
+    }
+
+    // Only act if the taskbar is on the bottom edge.
+    //
+    // Important: This sends a message to the taskbar thread, and may cause a
+    // deadlock in some cases. Calling it only after making sure that the window
+    // is the Start menu or the search menu seems to avoid the deadlock.
+    APPBARDATA appBarData = {
+        .cbSize = sizeof(APPBARDATA),
+    };
+    if (SHAppBarMessage(ABM_GETTASKBARPOS, &appBarData) &&
+        appBarData.uEdge != ABE_BOTTOM) {
         return original();
     }
 
