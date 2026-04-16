@@ -230,6 +230,11 @@ std::unordered_map<HWND, void*> g_hwndToSecondaryPThis;
 // Win11: HWND -> ViewCoordinator pThis.
 std::unordered_map<HWND, void*> g_hwndToViewCoordinator;
 
+// Win11: taskbars unhidden by ShowTaskbarTemporarily awaiting synthetic
+// pointer-leave to trigger auto-hide.
+std::vector<HWND> g_pendingRehides;
+UINT_PTR g_rehideTimerId;
+
 bool IsTaskbarWindow(HWND hWnd) {
     WCHAR szClassName[32];
     if (!GetClassName(hWnd, szClassName, ARRAYSIZE(szClassName))) {
@@ -1062,6 +1067,54 @@ void UpdateViewCoordinatorIsExpanded(HWND hWnd) {
     }
 }
 
+bool IsCursorOverPendingRehideTaskbar() {
+    POINT pt;
+    if (!GetCursorPos(&pt)) {
+        return false;
+    }
+    for (HWND hWnd : g_pendingRehides) {
+        RECT rc;
+        if (GetWindowRect(hWnd, &rc) && PtInRect(&rc, pt)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+// Fires showTemporarilyDurationMs after ShowTaskbarTemporarily to simulate
+// pointer-leave on the Win11 taskbar, triggering auto-hide. The new Win11
+// auto-hide implementation only hides on pointer-leave events. Without this,
+// the taskbar stays expanded indefinitely.
+VOID CALLBACK RehideTaskbarsTimerProc(HWND hwnd,
+                                      UINT msg,
+                                      UINT_PTR idEvent,
+                                      DWORD time) {
+    KillTimer(nullptr, idEvent);
+    g_rehideTimerId = 0;
+
+    // Defer rehide while the user is actively interacting, e.g. with a mouse
+    // over the taskbar. Poll until clear.
+    if (IsCursorOverPendingRehideTaskbar()) {
+        Wh_Log(L"Deferring rehide, cursor is over taskbar");
+        g_rehideTimerId = SetTimer(nullptr, 0, 200, RehideTaskbarsTimerProc);
+        return;
+    }
+
+    Wh_Log(L"Rehiding %zu Win11 taskbar(s)", g_pendingRehides.size());
+
+    for (HWND hWnd : g_pendingRehides) {
+        auto it = g_hwndToViewCoordinator.find(hWnd);
+        if (it == g_hwndToViewCoordinator.end()) {
+            continue;
+        }
+        ViewCoordinator_HandleIsPointerOverTaskbarFrameChanged_Original(
+            it->second, hWnd, false, 0);
+    }
+
+    g_pendingRehides.clear();
+    g_modTriggeredUnhide = false;
+}
+
 void ShowTaskbarTemporarily(bool mainTaskbar = false) {
     Wh_Log(L">");
 
@@ -1114,6 +1167,18 @@ void ShowTaskbarTemporarily(bool mainTaskbar = false) {
             }
             ViewCoordinator_HandleIsPointerOverTaskbarFrameChanged_Original(
                 pThis, hWnd, true, 0);
+            if (std::find(g_pendingRehides.begin(), g_pendingRehides.end(),
+                          hWnd) == g_pendingRehides.end()) {
+                g_pendingRehides.push_back(hWnd);
+            }
+        }
+
+        if (!g_pendingRehides.empty()) {
+            int delayMs = g_settings.showTemporarilyDurationMs > 0
+                              ? g_settings.showTemporarilyDurationMs
+                              : 500;
+            g_rehideTimerId = SetTimer(nullptr, g_rehideTimerId, delayMs,
+                                       RehideTaskbarsTimerProc);
         }
     }
 }
@@ -1386,6 +1451,11 @@ LRESULT WINAPI CTaskBand_v_WndProc_Hook(void* pThis,
                         ApplySettingsOnUIThread(hWnd);
                         break;
                     case UI_BEFORE_UNINIT:
+                        if (g_rehideTimerId) {
+                            KillTimer(nullptr, g_rehideTimerId);
+                            g_rehideTimerId = 0;
+                        }
+                        g_pendingRehides.clear();
                         if (g_alwaysShowMode) {
                             g_alwaysShowMode = false;
                             HideAllTaskbars();
