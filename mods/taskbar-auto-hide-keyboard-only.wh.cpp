@@ -2,7 +2,7 @@
 // @id              taskbar-auto-hide-keyboard-only
 // @name            Taskbar auto-hide fine tuning
 // @description     Fine-tune taskbar auto-hide: keyboard-only unhide, prevent the taskbar from showing at all, hotkeys and mouse events to show or toggle visibility
-// @version         2.2
+// @version         2.3
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
@@ -1697,9 +1697,10 @@ bool HookTaskbarViewDllSymbols(HMODULE module) {
         },
     };
 
-    WindhawkUtils::SYMBOL_HOOK
-        symbolHooks[ARRAYSIZE(symbolHooksForViewCoordinator) +
-                    ARRAYSIZE(symbolHooksRest)];
+    // Alias for the extract_mod_symbols.py script.
+    using COMBINED_SH = WindhawkUtils::SYMBOL_HOOK;
+    COMBINED_SH symbolHooks[ARRAYSIZE(symbolHooksForViewCoordinator) +
+                            ARRAYSIZE(symbolHooksRest)];
     int index = 0;
 
     if (hasNewTaskbarAutoHideAnimation) {
