@@ -934,6 +934,17 @@ LRESULT WINAPI TrayUI_WndProc_Hook(void* pThis,
                                    bool* flag) {
     if (Msg == WM_NCCREATE || Msg == g_captureThisMsg) {
         g_hwndToWndProcPThis[hWnd] = pThis;
+        Wh_Log(L"%s", [] {
+            APPBARDATA appBarData = {
+                .cbSize = sizeof(APPBARDATA),
+            };
+            if (SHAppBarMessage(ABM_GETSTATE, &appBarData) & ABS_AUTOHIDE) {
+                return L"Taskbar auto-hide is enabled";
+            } else {
+                return L"WARNING: Taskbar auto-hide is disabled in Windows "
+                       L"taskbar settings; the mod expects it to be enabled";
+            }
+        }());
     } else if (Msg == WM_NCDESTROY) {
         g_hwndToWndProcPThis.erase(hWnd);
         g_hwndToViewCoordinator.erase(hWnd);
