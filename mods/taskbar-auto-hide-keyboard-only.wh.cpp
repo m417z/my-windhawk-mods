@@ -771,10 +771,10 @@ HRESULT WINAPI DwmSetWindowAttribute_Hook(HWND hwnd,
     Wh_Log(L"Taskbar shown: %d", taskbarShown);
 
     if (taskbarShown) {
-        // Taskbar is visible — the system positioned the flyout correctly
+        // Taskbar is visible - the system positioned the flyout correctly
         // relative to the visible taskbar. Nothing to adjust.
     } else {
-        // Taskbar is hidden — snap flyout to monitor bottom and save the
+        // Taskbar is hidden - snap flyout to monitor bottom and save the
         // original gap (DPI-neutral) so we can restore it later.
         int gap = mi.rcMonitor.bottom - rcWindow.bottom;
         if (gap > 0) {
@@ -866,7 +866,7 @@ TrayUI_GetAutoHideFlags_t TrayUI_GetAutoHideFlags_Original;
 void* TrayUI_vftable_ITrayComponentHost;
 void* CSecondaryTray_vftable_ISecondaryTray;
 
-// TrayUI::_Hide hook — block hide in always-show mode.
+// TrayUI::_Hide hook - block hide in always-show mode.
 using TrayUI__Hide_t = void(WINAPI*)(void* pThis);
 TrayUI__Hide_t TrayUI__Hide_Original;
 void WINAPI TrayUI__Hide_Hook(void* pThis) {
@@ -878,7 +878,7 @@ void WINAPI TrayUI__Hide_Hook(void* pThis) {
     TrayUI__Hide_Original(pThis);
 }
 
-// CSecondaryTray::_AutoHide hook — block hide in always-show mode.
+// CSecondaryTray::_AutoHide hook - block hide in always-show mode.
 using CSecondaryTray__AutoHide_t = void(WINAPI*)(void* pThis, bool param1);
 CSecondaryTray__AutoHide_t CSecondaryTray__AutoHide_Original;
 void WINAPI CSecondaryTray__AutoHide_Hook(void* pThis, bool param1) {
@@ -890,7 +890,7 @@ void WINAPI CSecondaryTray__AutoHide_Hook(void* pThis, bool param1) {
     CSecondaryTray__AutoHide_Original(pThis, param1);
 }
 
-// TrayUI::Unhide — block in Never mode (mod calls _Original to bypass).
+// TrayUI::Unhide - block in Never mode (mod calls _Original to bypass).
 using TrayUI_Unhide_t = void(WINAPI*)(void* pThis,
                                       int trayUnhideFlags,
                                       int unhideRequest);
@@ -906,7 +906,7 @@ void WINAPI TrayUI_Unhide_Hook(void* pThis,
     TrayUI_Unhide_Original(pThis, trayUnhideFlags, unhideRequest);
 }
 
-// CSecondaryTray::_Unhide — block in Never mode (mod calls _Original to
+// CSecondaryTray::_Unhide - block in Never mode (mod calls _Original to
 // bypass).
 using CSecondaryTray__Unhide_t = void(WINAPI*)(void* pThis,
                                                int trayUnhideFlags,
@@ -923,7 +923,7 @@ void WINAPI CSecondaryTray__Unhide_Hook(void* pThis,
     CSecondaryTray__Unhide_Original(pThis, trayUnhideFlags, unhideRequest);
 }
 
-// TrayUI::WndProc hook — capture pThis-to-HWND mapping.
+// TrayUI::WndProc hook - capture pThis-to-HWND mapping.
 using TrayUI_WndProc_t = LRESULT(WINAPI*)(void* pThis,
                                           HWND hWnd,
                                           UINT Msg,
@@ -958,7 +958,7 @@ LRESULT WINAPI TrayUI_WndProc_Hook(void* pThis,
     return TrayUI_WndProc_Original(pThis, hWnd, Msg, wParam, lParam, flag);
 }
 
-// CSecondaryTray::v_WndProc hook — capture pThis-to-HWND mapping.
+// CSecondaryTray::v_WndProc hook - capture pThis-to-HWND mapping.
 using CSecondaryTray_v_WndProc_t = LRESULT(
     WINAPI*)(void* pThis, HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam);
 CSecondaryTray_v_WndProc_t CSecondaryTray_v_WndProc_Original;
