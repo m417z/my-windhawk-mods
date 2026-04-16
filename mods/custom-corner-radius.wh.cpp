@@ -48,7 +48,7 @@ and make sure that `dwm.exe` is in the list.
 - Some elements, such as the taskbar, the Start menu, and the notification
   center, are unaffected by this mod. Some of them can be customized using other
   mods, such as Windows 11 Taskbar Styler.
-- Disabling the mod instantly restores default behavior — no system files are
+- Disabling the mod instantly restores default behavior - no system files are
   modified.
 
 ## Compatibility

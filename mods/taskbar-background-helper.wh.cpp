@@ -419,7 +419,7 @@ class SpecialViewModeState {
         return m_mode.compare_exchange_strong(expected, Mode::None);
     }
 
-    // MultitaskingView — tracks HWND so the window can be identified on DESTROY
+    // MultitaskingView - tracks HWND so the window can be identified on DESTROY
     // events when properties can no longer be queried.
     bool IsMultitaskingViewHwnd(HWND hWnd) const {
         return m_multitaskingViewHwnd == hWnd;
