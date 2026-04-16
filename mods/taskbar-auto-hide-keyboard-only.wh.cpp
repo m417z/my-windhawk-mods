@@ -1067,6 +1067,10 @@ void UpdateViewCoordinatorIsExpanded(HWND hWnd) {
     }
 }
 
+using ViewCoordinator_IsExpanded_t = bool(WINAPI*)(void* pThis,
+                                                   HWND hMMTaskbarWnd);
+ViewCoordinator_IsExpanded_t ViewCoordinator_IsExpanded_Original;
+
 bool IsCursorOverPendingRehideTaskbar() {
     POINT pt;
     if (!GetCursorPos(&pt)) {
@@ -1470,13 +1474,29 @@ LRESULT WINAPI CTaskBand_v_WndProc_Hook(void* pThis,
                         break;
                     case UI_SHOW_MAIN_TASKBAR_TEMPORARILY_IF_HIDDEN: {
                         bool shown = false;
-                        for (auto& [trayHwnd, pThis] : g_hwndToWndProcPThis) {
+                        if (ViewCoordinator_IsExpanded_Original &&
+                            !g_hwndToViewCoordinator.empty()) {
+                            for (auto& [trayHwnd, pThis] :
+                                 g_hwndToViewCoordinator) {
+                                bool expanded =
+                                    ViewCoordinator_IsExpanded_Original(
+                                        pThis, trayHwnd);
+                                Wh_Log(L"IsExpanded: %d", expanded);
+                                if (expanded) {
+                                    shown = true;
+                                    break;
+                                }
+                            }
+                        } else {
+                            for (auto& [trayHwnd, pThis] :
+                                 g_hwndToWndProcPThis) {
                             DWORD flags =
                                 TrayUI_GetAutoHideFlags_Original(pThis);
                             Wh_Log(L"GetAutoHideFlags: %08X", flags);
                             if (!(flags & 0x02)) {
                                 shown = true;
                                 break;
+                                }
                             }
                         }
 
@@ -1584,6 +1604,12 @@ bool HookTaskbarViewDllSymbols(HMODULE module) {
             {LR"(public: void __cdecl winrt::Taskbar::implementation::ViewCoordinator::UpdateIsExpanded(unsigned __int64,enum TaskbarTipTest::TaskbarExpandCollapseReason))"},
             &ViewCoordinator_UpdateIsExpanded_Original,
             ViewCoordinator_UpdateIsExpanded_Hook,
+            true,
+        },
+        {
+            {LR"(public: bool __cdecl winrt::Taskbar::implementation::ViewCoordinator::IsExpanded(unsigned __int64))"},
+            &ViewCoordinator_IsExpanded_Original,
+            nullptr,
             true,
         },
         {
