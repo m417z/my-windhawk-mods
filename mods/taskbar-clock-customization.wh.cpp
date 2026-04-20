@@ -3561,9 +3561,9 @@ void ClockSystemTrayIconDataModel_RefreshIcon_Hook_Impl(
     LPVOID param1,
     ClockSystemTrayIconDataModel_RefreshIcon_t original) {
     g_refreshIconThreadId = GetCurrentThreadId();
-    g_refreshIconNeedToAdjustTimer = g_settings.showSeconds ||
-                                     g_dataCollectionSession ||
-                                     !g_webContentLoaded;
+    bool webContentPending = g_webContentUpdateThread && !g_webContentLoaded;
+    g_refreshIconNeedToAdjustTimer =
+        g_settings.showSeconds || g_dataCollectionSession || webContentPending;
 
     original(pThis, param1);
 
@@ -4376,8 +4376,9 @@ ClockButton_UpdateTextStringsIfNecessary_Hook(LPVOID pThis, bool* param1) {
 
     g_updateTextStringThreadId = 0;
 
+    bool webContentPending = g_webContentUpdateThread && !g_webContentLoaded;
     if (g_settings.showSeconds || g_dataCollectionSession ||
-        !g_webContentLoaded) {
+        webContentPending) {
         // Return the time-out value for the time of the next update.
         SYSTEMTIME time;
         GetLocalTime(&time);
