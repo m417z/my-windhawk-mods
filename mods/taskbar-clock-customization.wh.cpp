@@ -50,16 +50,19 @@ patterns can be used:
     the time format string with `;`. `<n>` is the additional time format number,
     starting with 2.
   * `%time_tz<n>%` - the time with a custom time zone. `<n>` is the time zone
-    number in the list of time zones configured in settings.
+    number in the list of time zones configured in the mod settings (not Windows
+    settings).
 * `%date%` - the date as configured by the date format in settings.
   * `%date<n>%` - additional date formats which can be specified by separating
     the date format string with `;`. `<n>` is the additional date format number,
     starting with 2.
   * `%date_tz<n>%` - the date with a custom time zone. `<n>` is the time zone
-    number in the list of time zones configured in settings.
+    number in the list of time zones configured in the mod settings (not Windows
+    settings).
 * `%weekday%` - the week day as configured in settings.
   * `%weekday_tz<n>%` - the week day with a custom time zone. `<n>` is the time
-    zone number in the list of time zones configured in settings.
+    zone number in the list of time zones configured in the mod settings (not
+    Windows settings).
 * `%weekday_num%` - the week day number according to the [first day of
    week](https://superuser.com/q/61002) system configuration. For example, if
    first day of week is Sunday, then the week day number is 1 for Sunday, 2 for
