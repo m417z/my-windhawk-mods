@@ -2,7 +2,7 @@
 // @id              taskbar-icon-size
 // @name            Taskbar height and icon size
 // @description     Control the taskbar height and icon size, improve icon quality (Windows 11 only)
-// @version         1.3.6
+// @version         1.3.7
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
@@ -880,7 +880,8 @@ LONG GetLastHeightOffset() {
         for (const BYTE* p = start; p != end; p++) {
             if (p[0] == 0x66 && p[1] == 0x0F && p[2] == 0x2E &&
                 (p[3] & 0xC0) == 0x80 && p[8] == 0x7A &&
-                (p[10] == 0x75 || (p[10] == 0x0F && p[11] == 0x84))) {
+                (p[10] == 0x74 || p[10] == 0x75 ||
+                 (p[10] == 0x0F && (p[11] == 0x84 || p[11] == 0x85)))) {
                 LONG offset = *(LONG*)(p + 4);
                 Wh_Log(L"lastHeightOffset=0x%X", offset);
                 return (offset < 0 || offset > 0xFFFF) ? 0 : offset;
@@ -1969,7 +1970,7 @@ void ApplySettings(int taskbarHeight) {
 }
 
 bool HookSystemTraySymbols(HMODULE module) {
-    // SystemTray.dll, Taskbar.View.dll
+    // SystemTray.dll
     WindhawkUtils::SYMBOL_HOOK symbolHooks[] = {
         {
             {LR"(private: double __cdecl winrt::SystemTray::implementation::SystemTrayController::GetFrameSize(enum winrt::WindowsUdk::UI::Shell::TaskbarSize))"},
