@@ -2,7 +2,7 @@
 // @id              taskbar-notification-icon-spacing
 // @name            Taskbar tray icon spacing and grid
 // @description     Reduce or increase the spacing between tray icons on the taskbar, optionally have a grid of tray icons (Windows 11 only)
-// @version         1.3
+// @version         1.3.1
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
@@ -106,6 +106,7 @@ versions check out [7+ Taskbar Tweaker](https://tweaker.ramensoftware.com/).
 #include <windhawk_utils.h>
 
 #include <atomic>
+#include <cmath>
 #include <functional>
 #include <list>
 
@@ -1044,11 +1045,14 @@ HMODULE GetSystemTrayModuleHandle() {
     if (!module) {
         module = GetModuleHandle(L"Taskbar.View.dll");
         if (module) {
+            // First known module version without SystemTray is Taskbar.View.dll
+            // 2604.8002.200.6000.
             VS_FIXEDFILEINFO* fixedFileInfo =
                 GetModuleVersionInfo(module, nullptr);
             WORD moduleMajor =
                 fixedFileInfo ? HIWORD(fixedFileInfo->dwFileVersionMS) : 0;
             if (!moduleMajor || moduleMajor >= 2604) {
+                Wh_Log(L"Skipping Taskbar.View.dll version %d", moduleMajor);
                 module = nullptr;
             }
         }
