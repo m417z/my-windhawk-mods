@@ -1,8 +1,8 @@
 // ==WindhawkMod==
-// @id              pinned-items-double-click
-// @name            Open pinned items with double click
-// @description     Only open pinned items when double clicking on them to avoid accidental clicks
-// @version         1.0.2
+// @id              taskbar-no-minimize
+// @name            Taskbar: no minimize on click
+// @description     Disable the minimize window function when clicking an already active window on the taskbar
+// @version         1.0
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
@@ -22,14 +22,11 @@
 
 // ==WindhawkModReadme==
 /*
-# Open pinned items with double click
+# Taskbar: no minimize on click
 
-Only open pinned items when double clicking on them to avoid accidental clicks.
-
-![Demonstration](https://i.imgur.com/Si3siPm.gif)
-
-Only Windows 10 64-bit and Windows 11 are supported. For older Windows versions
-check out [7+ Taskbar Tweaker](https://tweaker.ramensoftware.com/).
+Disable the "minimize window" function when clicking an already active window on
+the taskbar. When you click a taskbar button for a window that is already in the
+foreground, the window will stay in place instead of being minimized.
 */
 // ==/WindhawkModReadme==
 
@@ -46,7 +43,6 @@ check out [7+ Taskbar Tweaker](https://tweaker.ramensoftware.com/).
 #include <windhawk_utils.h>
 
 #include <psapi.h>
-#include <windowsx.h>
 
 #include <atomic>
 
@@ -66,129 +62,15 @@ WinVersion g_winVersion;
 std::atomic<bool> g_initialized;
 std::atomic<bool> g_explorerPatcherInitialized;
 
-bool IsDoubleClickDistance(DWORD pos1, DWORD pos2) {
-    return abs(GET_X_LPARAM(pos1) - GET_X_LPARAM(pos2)) <=
-               GetSystemMetrics(SM_CXDOUBLECLK) &&
-           abs(GET_Y_LPARAM(pos1) - GET_Y_LPARAM(pos2)) <=
-               GetSystemMetrics(SM_CYDOUBLECLK);
-}
-
-using CTaskBtnGroup_GetGroupType_t = int(WINAPI*)(PVOID pThis);
-CTaskBtnGroup_GetGroupType_t CTaskBtnGroup_GetGroupType_Original;
-
-using CTaskListWnd__HandleClick_t = void(WINAPI*)(PVOID pThis,
-                                                  PVOID taskBtnGroup,
-                                                  int taskItemIndex,
-                                                  int clickAction,
-                                                  int param4,
-                                                  int param5);
-CTaskListWnd__HandleClick_t CTaskListWnd__HandleClick_Original;
-void WINAPI CTaskListWnd__HandleClick_Hook(PVOID pThis,
-                                           PVOID taskBtnGroup,
-                                           int taskItemIndex,
-                                           int clickAction,
-                                           int param4,
-                                           int param5) {
-    Wh_Log(L"> %d", clickAction);
-
-    auto original = [&]() {
-        CTaskListWnd__HandleClick_Original(pThis, taskBtnGroup, taskItemIndex,
-                                           clickAction, param4, param5);
-    };
-
-    if (clickAction != 0) {
-        return original();
-    }
-
-    // Group types:
-    // 1 - Single item or multiple uncombined items
-    // 2 - Pinned item
-    // 3 - Multiple combined items
-    int groupType = CTaskBtnGroup_GetGroupType_Original(taskBtnGroup);
-    if (groupType != 2) {
-        return original();
-    }
-
-    static ULONGLONG firstClickTickCount = 0;
-    static DWORD firstClickMessagePos;
-    static PVOID firstClickTaskBtnGroup;
-
-    ULONGLONG tickCount = GetTickCount64();
-    DWORD messagePos = GetMessagePos();
-
-    if (firstClickTickCount &&
-        IsDoubleClickDistance(firstClickMessagePos, messagePos) &&
-        firstClickTaskBtnGroup == taskBtnGroup &&
-        tickCount - firstClickTickCount <= GetDoubleClickTime()) {
-        // Double click detected, proceed.
-        firstClickTickCount = 0;
-        return original();
-    }
-
-    firstClickTickCount = tickCount;
-    firstClickMessagePos = messagePos;
-    firstClickTaskBtnGroup = taskBtnGroup;
-}
-
-using CTaskListWnd__HandleMouseButtonDown_t = void(WINAPI*)(PVOID pThis,
-                                                            ULONGLONG param1,
-                                                            const POINT* point,
-                                                            bool isDoubleClick);
-CTaskListWnd__HandleMouseButtonDown_t
-    CTaskListWnd__HandleMouseButtonDown_Original;
-void WINAPI CTaskListWnd__HandleMouseButtonDown_Hook(PVOID pThis,
-                                                     ULONGLONG param1,
-                                                     const POINT* point,
-                                                     bool isDoubleClick) {
+using CTaskBand_SwitchTo_t = HRESULT(WINAPI*)(void* pThis,
+                                              void* taskItem,
+                                              BOOL noMinimize);
+CTaskBand_SwitchTo_t CTaskBand_SwitchTo_Original;
+HRESULT WINAPI CTaskBand_SwitchTo_Hook(void* pThis,
+                                       void* taskItem,
+                                       BOOL noMinimize) {
     Wh_Log(L">");
-
-    // In Windows 10, double clicks on pinned items are ignored. Make all clicks
-    // seem like single clicks.
-    isDoubleClick = false;
-
-    CTaskListWnd__HandleMouseButtonDown_Original(pThis, param1, point,
-                                                 isDoubleClick);
-}
-
-bool HookTaskbarSymbols() {
-    HMODULE module;
-    if (g_winVersion <= WinVersion::Win10) {
-        module = GetModuleHandle(nullptr);
-    } else {
-        module = LoadLibraryEx(L"taskbar.dll", nullptr,
-                               LOAD_LIBRARY_SEARCH_SYSTEM32);
-        if (!module) {
-            Wh_Log(L"Couldn't load taskbar.dll");
-            return false;
-        }
-    }
-
-    // Taskbar.dll, explorer.exe
-    WindhawkUtils::SYMBOL_HOOK symbolHooks[] = {
-        {
-            {LR"(public: virtual enum eTBGROUPTYPE __cdecl CTaskBtnGroup::GetGroupType(void))"},
-            &CTaskBtnGroup_GetGroupType_Original,
-        },
-        {
-            {LR"(protected: void __cdecl CTaskListWnd::_HandleClick(struct ITaskBtnGroup *,int,enum CTaskListWnd::eCLICKACTION,int,int))"},
-            &CTaskListWnd__HandleClick_Original,
-            CTaskListWnd__HandleClick_Hook,
-        },
-        {
-            // Windows 10 only.
-            {LR"(protected: void __cdecl CTaskListWnd::_HandleMouseButtonDown(unsigned __int64,struct tagPOINT const &,bool))"},
-            &CTaskListWnd__HandleMouseButtonDown_Original,
-            CTaskListWnd__HandleMouseButtonDown_Hook,
-            true,
-        },
-    };
-
-    if (!HookSymbols(module, symbolHooks, ARRAYSIZE(symbolHooks))) {
-        Wh_Log(L"HookSymbols failed");
-        return false;
-    }
-
-    return true;
+    return CTaskBand_SwitchTo_Original(pThis, taskItem, TRUE);
 }
 
 VS_FIXEDFILEINFO* GetModuleVersionInfo(HMODULE hModule, UINT* puPtrLen) {
@@ -274,13 +156,8 @@ bool HookExplorerPatcherSymbols(HMODULE explorerPatcherModule) {
     }
 
     EXPLORER_PATCHER_HOOK hooks[] = {
-        {R"(?GetGroupType@CTaskBtnGroup@@UEAA?AW4eTBGROUPTYPE@@XZ)",
-         &CTaskBtnGroup_GetGroupType_Original},
-        {R"(?_HandleClick@CTaskListWnd@@IEAAXPEAUITaskBtnGroup@@HW4eCLICKACTION@1@HH@Z)",
-         &CTaskListWnd__HandleClick_Original, CTaskListWnd__HandleClick_Hook},
-        {R"(?_HandleMouseButtonDown@CTaskListWnd@@IEAAX_KAEBUtagPOINT@@_N@Z)",
-         &CTaskListWnd__HandleMouseButtonDown_Original,
-         CTaskListWnd__HandleMouseButtonDown_Hook},
+        {R"(?SwitchTo@CTaskBand@@UEAAJPEAUITaskItem@@H@Z)",
+         &CTaskBand_SwitchTo_Original, CTaskBand_SwitchTo_Hook},
     };
 
     bool succeeded = true;
@@ -367,6 +244,31 @@ HMODULE WINAPI LoadLibraryExW_Hook(LPCWSTR lpLibFileName,
     return module;
 }
 
+bool HookTaskbarSymbols() {
+    HMODULE module;
+    if (g_winVersion <= WinVersion::Win10) {
+        module = GetModuleHandle(nullptr);
+    } else {
+        module = LoadLibraryEx(L"taskbar.dll", nullptr,
+                               LOAD_LIBRARY_SEARCH_SYSTEM32);
+        if (!module) {
+            Wh_Log(L"Couldn't load taskbar.dll");
+            return false;
+        }
+    }
+
+    // Taskbar.dll, explorer.exe
+    WindhawkUtils::SYMBOL_HOOK symbolHooks[] = {
+        {
+            {LR"(public: virtual long __cdecl CTaskBand::SwitchTo(struct ITaskItem *,int))"},
+            &CTaskBand_SwitchTo_Original,
+            CTaskBand_SwitchTo_Hook,
+        },
+    };
+
+    return HookSymbols(module, symbolHooks, ARRAYSIZE(symbolHooks));
+}
+
 void LoadSettings() {
     g_settings.oldTaskbarOnWin11 = Wh_GetIntSetting(L"oldTaskbarOnWin11");
 }
@@ -404,9 +306,9 @@ BOOL Wh_ModInit() {
     HMODULE kernelBaseModule = GetModuleHandle(L"kernelbase.dll");
     auto pKernelBaseLoadLibraryExW = (decltype(&LoadLibraryExW))GetProcAddress(
         kernelBaseModule, "LoadLibraryExW");
-    WindhawkUtils::Wh_SetFunctionHookT(pKernelBaseLoadLibraryExW,
-                                       LoadLibraryExW_Hook,
-                                       &LoadLibraryExW_Original);
+    WindhawkUtils::SetFunctionHook(pKernelBaseLoadLibraryExW,
+                                   LoadLibraryExW_Hook,
+                                   &LoadLibraryExW_Original);
 
     g_initialized = true;
 

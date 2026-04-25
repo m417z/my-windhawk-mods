@@ -119,6 +119,7 @@ issue](https://tweaker.userecho.com/topics/826-scroll-on-trackpadtouchpad-doesnt
 #include <atomic>
 #include <optional>
 #include <string_view>
+#include <thread>
 #include <unordered_set>
 #include <vector>
 
@@ -624,28 +625,13 @@ int GetBrightnessWmi() {
         goto cleanup;
     }
 
-    // Initialize COM and connect up to CIMOM
+    // Initialize COM as MTA so WMI calls are direct (no cross-apartment
+    // proxy). This function is meant to be called from a worker thread.
 
-    hr = CoInitialize(0);
+    hr = CoInitializeEx(0, COINIT_MULTITHREADED);
     if (FAILED(hr)) {
         goto cleanup;
     }
-
-    //  NOTE:
-    //  When using asynchronous WMI API's remotely in an environment where the
-    //  "Local System" account has no network identity (such as non-Kerberos
-    //  domains), the authentication level of RPC_C_AUTHN_LEVEL_NONE is needed.
-    //  However, lowering the authentication level to RPC_C_AUTHN_LEVEL_NONE
-    //  makes your application less secure. It is wise to
-    // use semi-synchronous API's for accessing WMI data and events instead of
-    // the asynchronous ones.
-
-    hr = CoInitializeSecurity(
-        NULL, -1, NULL, NULL, RPC_C_AUTHN_LEVEL_PKT_PRIVACY,
-        RPC_C_IMP_LEVEL_IMPERSONATE, NULL,
-        EOAC_SECURE_REFS,  // change to EOAC_NONE if you change dwAuthnLevel to
-                           // RPC_C_AUTHN_LEVEL_NONE
-        NULL);
 
     hr = CoCreateInstance(CLSID_WbemLocator, 0, CLSCTX_INPROC_SERVER,
                           IID_IWbemLocator, (LPVOID*)&pLocator);
@@ -749,29 +735,14 @@ bool SetBrightnessWmi(int val) {
         goto cleanup;
     }
 
-    // Initialize COM and connect up to CIMOM
+    // Initialize COM as MTA so WMI calls are direct (no cross-apartment
+    // proxy). This function is meant to be called from a worker thread.
 
-    hr = CoInitialize(0);
+    hr = CoInitializeEx(0, COINIT_MULTITHREADED);
     if (FAILED(hr)) {
         bRet = false;
         goto cleanup;
     }
-
-    //  NOTE:
-    //  When using asynchronous WMI API's remotely in an environment where the
-    //  "Local System" account has no network identity (such as non-Kerberos
-    //  domains), the authentication level of RPC_C_AUTHN_LEVEL_NONE is needed.
-    //  However, lowering the authentication level to RPC_C_AUTHN_LEVEL_NONE
-    //  makes your application less secure. It is wise to
-    // use semi-synchronous API's for accessing WMI data and events instead of
-    // the asynchronous ones.
-
-    hr = CoInitializeSecurity(
-        NULL, -1, NULL, NULL, RPC_C_AUTHN_LEVEL_PKT_PRIVACY,
-        RPC_C_IMP_LEVEL_IMPERSONATE, NULL,
-        EOAC_SECURE_REFS,  // change to EOAC_NONE if you change dwAuthnLevel to
-                           // RPC_C_AUTHN_LEVEL_NONE
-        NULL);
 
     hr = CoCreateInstance(CLSID_WbemLocator, 0, CLSCTX_INPROC_SERVER,
                           IID_IWbemLocator, (LPVOID*)&pLocator);
@@ -977,25 +948,20 @@ bool AdjustBrightnessDdcCi(HMONITOR hMonitor, int delta) {
     return anySuccess;
 }
 
-bool AdjustBrightness(HWND hTaskbarWnd, int delta) {
-    // Try DDC/CI first (works for external monitors, targets the specific
-    // monitor the taskbar is on, and is faster than WMI).
-    HMONITOR hMonitor =
-        MonitorFromWindow(hTaskbarWnd, MONITOR_DEFAULTTONEAREST);
-    if (hMonitor && AdjustBrightnessDdcCi(hMonitor, delta)) {
-        return true;
+void AdjustBrightnessThread(HMONITOR hMonitor, int delta) {
+    if (!hMonitor || !AdjustBrightnessDdcCi(hMonitor, delta)) {
+        int brightness = GetBrightnessWmi();
+        if (brightness >= 0) {
+            int newBrightness = std::clamp(brightness + delta, 0, 100);
+            Wh_Log(L"WMI: Changing brightness from %d to %d", brightness,
+                   newBrightness);
+            if (!SetBrightnessWmi(newBrightness)) {
+                Wh_Log(L"Error setting brightness via WMI");
+            }
+        } else {
+            Wh_Log(L"Error getting brightness via WMI");
+        }
     }
-
-    // Fall back to WMI (works for laptop internal displays).
-    int brightness = GetBrightnessWmi();
-    if (brightness >= 0) {
-        int newBrightness = std::clamp(brightness + delta, 0, 100);
-        Wh_Log(L"WMI: Changing brightness from %d to %d", brightness,
-               newBrightness);
-        return SetBrightnessWmi(newBrightness);
-    }
-
-    return false;
 }
 
 #pragma endregion  // brightness
@@ -1192,11 +1158,15 @@ void InvokeScrollAction(HWND hWnd,
                 SwitchDesktopViaKeyboardShortcut(clicks);
                 break;
 
-            case ScrollAction::brightnessChange:
-                if (!AdjustBrightness(hWnd, clicks)) {
-                    Wh_Log(L"Error adjusting brightness");
-                }
+            case ScrollAction::brightnessChange: {
+                // Resolve the monitor on the UI thread (fast), then do the
+                // actual brightness work on a background MTA thread to avoid
+                // blocking the taskbar message loop with slow WMI/DDC-CI calls.
+                HMONITOR hMonitor =
+                    MonitorFromWindow(hWnd, MONITOR_DEFAULTTONEAREST);
+                std::thread(AdjustBrightnessThread, hMonitor, clicks).detach();
                 break;
+            }
 
             case ScrollAction::micVolumeChange:
                 if (AddMicMasterVolumeLevelScalar(clicks * 0.01f)) {

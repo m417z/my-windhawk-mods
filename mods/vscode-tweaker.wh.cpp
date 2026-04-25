@@ -167,14 +167,14 @@ std::string Base64Encode(const BYTE* data, size_t in_len)
 // computeChecksum in build\gulpfile.vscode.ts
 std::string FileHash(PCWSTR lpszFile)
 {
-    HCRYPTPROV	hProv;
-    HCRYPTHASH	hHash;
-    HANDLE		hFile;
-    DWORD		dwBytesRead;
-    BYTE		bReadFile[0x512];
-    ALG_ID      algId = g_useLegacyMd5Hash ? CALG_MD5 : CALG_SHA_256;
-    DWORD       hashSize = g_useLegacyMd5Hash ? 16 : 32;
-    BYTE		bHash[32];
+    HCRYPTPROV hProv;
+    HCRYPTHASH hHash;
+    HANDLE hFile;
+    DWORD dwBytesRead;
+    BYTE bReadFile[0x512];
+    ALG_ID algId = g_useLegacyMd5Hash ? CALG_MD5 : CALG_SHA_256;
+    DWORD hashSize = g_useLegacyMd5Hash ? 16 : 32;
+    BYTE bHash[32];
     std::string ret;
 
     hFile = CreateFile(lpszFile, FILE_READ_ACCESS, FILE_SHARE_READ, NULL, OPEN_EXISTING, 0, NULL);

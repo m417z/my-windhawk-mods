@@ -2,7 +2,7 @@
 // @id              icon-resource-redirect
 // @name            Resource Redirect
 // @description     Define alternative files for loading various resources (e.g. icons in imageres.dll) for simple theming without having to modify system files
-// @version         1.2.4
+// @version         1.2.5
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
@@ -280,6 +280,7 @@ The resource lookup order then becomes:
   - Windows 11 New Folders Slate|themes/icons/niivu/Windows%2011%20New%20Folders%20Slate.zip: Windows 11 New Folders Slate (by niivu)
   - Windows 11 New Folders Yellow|themes/icons/niivu/Windows%2011%20New%20Folders%20Yellow.zip: Windows 11 New Folders Yellow (by niivu)
   - Pane7|themes/icons/ImSwordQueen/Pane7.zip: Pane7 (by ImSwordQueen)
+  - Pane8.1|themes/icons/NicSonic/Pane8.1.zip: Pane8.1 (by NicSonic)
 - themePaths: [""]
   $name: Theme paths
   $description: >-
@@ -937,7 +938,10 @@ UINT WINAPI PrivateExtractIconsW_Hook(LPCWSTR szFileName,
                             // that important and the first icon will do.
                             Wh_Log(L"[%u] Using icon index 0 as fallback", c);
                         } else {
-                            Wh_Log(L"[%u] Failed to get icon group name", c);
+                            Wh_Log(
+                                L"[%u] Failed to resolve icon group from "
+                                L"original index",
+                                c);
                             return false;
                         }
                     }
@@ -2708,6 +2712,12 @@ void LoadSettings() {
     }
 
     // Reverse the order to allow later entries override earlier ones.
+    for (auto& [key, vec] : paths) {
+        std::reverse(vec.begin(), vec.end());
+    }
+    for (auto& [key, vec] : pathsA) {
+        std::reverse(vec.begin(), vec.end());
+    }
     std::reverse(pathPatterns.begin(), pathPatterns.end());
     std::reverse(pathPatternsA.begin(), pathPatternsA.end());
 

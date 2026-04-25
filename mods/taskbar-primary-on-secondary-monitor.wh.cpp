@@ -169,6 +169,15 @@ DWORD g_lastPressTime;
 HMONITOR g_lastPressMonitor;
 std::atomic<bool> g_lastIsSessionLocked;
 
+using MonitorFromPoint_t = decltype(&MonitorFromPoint);
+MonitorFromPoint_t MonitorFromPoint_Original;
+
+using MonitorFromRect_t = decltype(&MonitorFromRect);
+MonitorFromRect_t MonitorFromRect_Original;
+
+using EnumDisplayDevicesW_t = decltype(&EnumDisplayDevicesW);
+EnumDisplayDevicesW_t EnumDisplayDevicesW_Original;
+
 HWND FindCurrentProcessTaskbarWnd() {
     HWND hTaskbarWnd = nullptr;
 
@@ -214,9 +223,6 @@ HMONITOR GetMonitorById(int monitorId) {
 
     return monitorResult;
 }
-
-using EnumDisplayDevicesW_t = decltype(&EnumDisplayDevicesW);
-EnumDisplayDevicesW_t EnumDisplayDevicesW_Original;
 
 HMONITOR GetMonitorByInterfaceNameSubstr(PCWSTR interfaceNameSubstr) {
     HMONITOR monitorResult = nullptr;
@@ -291,10 +297,6 @@ struct GetTargetMonitorParams {
 };
 
 HMONITOR GetTargetMonitor(GetTargetMonitorParams params = {}) {
-    if (g_unloading) {
-        return nullptr;
-    }
-
     bool sessionLocked = IsSessionLocked();
 
     bool sessionLockStateChanged =
@@ -331,6 +333,12 @@ HMONITOR GetTargetMonitor(GetTargetMonitorParams params = {}) {
         }
     }
 
+    if (g_unloading) {
+        // Note: Returning nullptr doesn't restore the taskbar to the primary
+        // monitor on unload.
+        return MonitorFromPoint_Original({0, 0}, MONITOR_DEFAULTTONEAREST);
+    }
+
     HMONITOR monitor = g_overrideMonitor;
     if (!monitor) {
         if (*g_settings.monitorInterfaceName.get()) {
@@ -344,8 +352,6 @@ HMONITOR GetTargetMonitor(GetTargetMonitorParams params = {}) {
     return monitor;
 }
 
-using MonitorFromPoint_t = decltype(&MonitorFromPoint);
-MonitorFromPoint_t MonitorFromPoint_Original;
 HMONITOR WINAPI MonitorFromPoint_Hook(POINT pt, DWORD dwFlags) {
     auto original = [=] { return MonitorFromPoint_Original(pt, dwFlags); };
 
@@ -365,8 +371,6 @@ HMONITOR WINAPI MonitorFromPoint_Hook(POINT pt, DWORD dwFlags) {
     return monitor;
 }
 
-using MonitorFromRect_t = decltype(&MonitorFromRect);
-MonitorFromRect_t MonitorFromRect_Original;
 HMONITOR WINAPI MonitorFromRect_Hook(LPCRECT lprc, DWORD dwFlags) {
     auto original = [=] { return MonitorFromRect_Original(lprc, dwFlags); };
 
@@ -877,7 +881,7 @@ BOOL Wh_ModInit() {
         case 0:
         case ARRAYSIZE(moduleFilePath):
             Wh_Log(L"GetModuleFileName failed");
-            break;
+            return FALSE;
 
         default:
             if (PCWSTR moduleFileName = wcsrchr(moduleFilePath, L'\\')) {
@@ -887,6 +891,7 @@ BOOL Wh_ModInit() {
                 }
             } else {
                 Wh_Log(L"GetModuleFileName returned an unsupported path");
+                return FALSE;
             }
             break;
     }

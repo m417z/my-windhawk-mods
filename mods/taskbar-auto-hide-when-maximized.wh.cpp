@@ -2,7 +2,7 @@
 // @id              taskbar-auto-hide-when-maximized
 // @name            Taskbar auto-hide when maximized
 // @description     Makes the taskbar auto-hide only when a window is maximized or intersects the taskbar
-// @version         1.2.4
+// @version         1.2.6
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
@@ -26,9 +26,6 @@
 
 Makes the taskbar auto-hide only when a window is maximized or intersects the
 taskbar.
-
-**Note:** To customize the old taskbar on Windows 11 (if using ExplorerPatcher
-or a similar tool), enable the relevant option in the mod's settings.
 
 ![Demonstration](https://i.imgur.com/hEz1lhs.gif)
 */
@@ -89,6 +86,7 @@ or a similar tool), enable the relevant option in the mod's settings.
 enum class Mode {
     intersected,
     maximized,
+    fullscreen,
     never,
 };
 
@@ -121,6 +119,7 @@ std::unordered_map<void*, HWND> g_taskbarsKeptShown;
 std::unordered_map<HWND, void*> g_taskbarToViewCoordinator;
 UINT_PTR g_pendingEventsTimer;
 std::atomic<HWND> g_multitaskingViewHwnd;
+std::atomic<HWND> g_altTabViewHwnd;
 
 // TrayUI::_HandleTrayPrivateSettingMessage
 constexpr UINT kHandleTrayPrivateSettingMessage = WM_USER + 0x1CA;
@@ -129,6 +128,12 @@ enum {
     kTrayPrivateSettingAutoHideGet = 3,
     kTrayPrivateSettingAutoHideSet = 4,
 };
+
+constexpr WCHAR kCanHideTaskbarEligibilityProp[] =
+    L"Windhawk_CanHideTaskbar_" WH_MOD_ID;
+
+const HANDLE kCanHideTaskbarNotEligible = (HANDLE)1;
+const HANDLE kCanHideTaskbarEligible = (HANDLE)2;
 
 constexpr WCHAR kUpdateTaskbarStatePendingTickCount[] =
     L"Windhawk_UpdateTaskbarStatePendingTickCount_" WH_MOD_ID;
@@ -175,28 +180,53 @@ bool IsWindowCloaked(HWND hwnd) {
            isCloaked;
 }
 
-// Detects Win+Tab / Task View window.
-// Uses ZBID_IMMERSIVE_APPCHROME band, MultitaskingView thread description, and
-// taskbar process.
-bool IsMultitaskingViewWindow(HWND hWnd) {
+enum class MultitaskingViewType {
+    None,
+    WinTab,
+    AltTab,
+};
+
+// Detects Alt+Tab or Win+Tab and returns the type.
+MultitaskingViewType GetMultitaskingViewType(HWND hWnd) {
     // Must be in the current process (explorer.exe).
     DWORD dwProcessId = 0;
     DWORD dwThreadId = GetWindowThreadProcessId(hWnd, &dwProcessId);
     if (!dwThreadId || dwProcessId != GetCurrentProcessId()) {
-        return false;
+        return MultitaskingViewType::None;
     }
 
-    // Check window band - must be ZBID_IMMERSIVE_APPCHROME (5).
+    WCHAR className[64];
+    if (!GetClassName(hWnd, className, ARRAYSIZE(className)) ||
+        _wcsicmp(className, L"XamlExplorerHostIslandWindow") != 0) {
+        return MultitaskingViewType::None;
+    }
+
+    // The Win+Tab window uses band ZBID_IMMERSIVE_APPCHROME.
+    constexpr DWORD ZBID_IMMERSIVE_APPCHROME = 5;
+
+    // The Alt+Tab window uses band ZBID_SYSTEM_TOOLS. The virtual desktop
+    // switcher (which we don't want) uses band ZBID_IMMERSIVE_EDGY.
+    constexpr DWORD ZBID_SYSTEM_TOOLS = 16;
+
     DWORD band = 0;
-    if (!pGetWindowBand || !pGetWindowBand(hWnd, &band) || band != 5) {
-        return false;
+    if (!pGetWindowBand || !pGetWindowBand(hWnd, &band)) {
+        return MultitaskingViewType::None;
+    }
+
+    MultitaskingViewType type;
+    if (band == ZBID_IMMERSIVE_APPCHROME) {
+        type = MultitaskingViewType::WinTab;
+    } else if (band == ZBID_SYSTEM_TOOLS) {
+        type = MultitaskingViewType::AltTab;
+    } else {
+        return MultitaskingViewType::None;
     }
 
     // Check thread description for "MultitaskingView".
     HANDLE hThread =
         OpenThread(THREAD_QUERY_LIMITED_INFORMATION, FALSE, dwThreadId);
     if (!hThread) {
-        return false;
+        return MultitaskingViewType::None;
     }
 
     bool isMultitaskingView = false;
@@ -207,7 +237,7 @@ bool IsMultitaskingViewWindow(HWND hWnd) {
     }
 
     CloseHandle(hThread);
-    return isMultitaskingView;
+    return isMultitaskingView ? type : MultitaskingViewType::None;
 }
 
 HWND FindCurrentProcessTaskbarWnd() {
@@ -471,12 +501,14 @@ bool IsWindowExcluded(HWND hWnd) {
     return false;
 }
 
-bool CanHideTaskbarForWindow(HWND hWnd,
-                             HMONITOR monitor,
-                             const MONITORINFO* monitorInfo,
-                             const RECT* taskbarRect) {
+bool IsWindowEligibleForHidingTaskbar(HWND hWnd) {
     if (!IsWindowVisible(hWnd) || IsWindowCloaked(hWnd) || IsIconic(hWnd) ||
         (GetWindowLong(hWnd, GWL_EXSTYLE) & WS_EX_NOACTIVATE)) {
+        return false;
+    }
+
+    // Ignore the Alt+Tab overlay so it doesn't affect taskbar state.
+    if (hWnd == g_altTabViewHwnd) {
         return false;
     }
 
@@ -484,8 +516,32 @@ bool CanHideTaskbarForWindow(HWND hWnd,
         return false;
     }
 
+    // Exclude menus (#32768).
+    if (GetClassWord(hWnd, GCW_ATOM) == 32768) {
+        return false;
+    }
+
     // Check this after the other checks, as it's the most expensive one.
     if (IsWindowExcluded(hWnd)) {
+        return false;
+    }
+
+    return true;
+}
+
+bool CanHideTaskbarForWindow(HWND hWnd,
+                             HMONITOR monitor,
+                             const MONITORINFO* monitorInfo,
+                             const RECT* taskbarRect) {
+    HANDLE prop = GetProp(hWnd, kCanHideTaskbarEligibilityProp);
+    if (!prop) {
+        prop = IsWindowEligibleForHidingTaskbar(hWnd)
+                   ? kCanHideTaskbarEligible
+                   : kCanHideTaskbarNotEligible;
+        SetProp(hWnd, kCanHideTaskbarEligibilityProp, prop);
+    }
+
+    if (prop == kCanHideTaskbarNotEligible) {
         return false;
     }
 
@@ -543,6 +599,17 @@ bool ShouldKeepTaskbarShown(HWND hTaskbarWnd, HMONITOR monitor) {
 
     // Always show taskbar when MultitaskingView (Win+Tab) is active.
     if (g_multitaskingViewHwnd) {
+        return true;
+    }
+
+    if (g_settings.mode == Mode::fullscreen) {
+        QUERY_USER_NOTIFICATION_STATE state;
+        if (SHQueryUserNotificationState(&state) == S_OK) {
+            return !(state == QUNS_BUSY ||
+                     state == QUNS_RUNNING_D3D_FULL_SCREEN ||
+                     state == QUNS_PRESENTATION_MODE);
+        }
+
         return true;
     }
 
@@ -800,7 +867,8 @@ LRESULT WINAPI TrayUI_WndProc_Hook(void* pThis,
         AdjustTaskbar(hWnd);
     } else if (Msg == WM_NCDESTROY) {
         Wh_Log(L"WM_NCDESTROY: %08X", (DWORD)(ULONG_PTR)hWnd);
-        g_taskbarsKeptShown.erase(pThis);
+        g_taskbarsKeptShown.erase(
+            QueryViaVtableBackwards(pThis, TrayUI_vftable_IInspectable));
         g_taskbarToViewCoordinator.erase(hWnd);
     } else if (Msg == kHandleTrayPrivateSettingMessage) {
         // Prevent auto-hide from being disabled while the mod is loaded.
@@ -945,34 +1013,49 @@ void CALLBACK WinEventProc(HWINEVENTHOOK hWinEventHook,
         return;
     }
 
-    // Check for Multitasking View (Win+Tab) window state changes.
-    if (hWnd == g_multitaskingViewHwnd || IsMultitaskingViewWindow(hWnd)) {
-        bool entering = event == EVENT_OBJECT_SHOW ||
-                        event == EVENT_OBJECT_UNCLOAKED ||
-                        event == EVENT_OBJECT_CREATE;
-        bool leaving = event == EVENT_OBJECT_HIDE ||
-                       event == EVENT_OBJECT_CLOAKED ||
-                       event == EVENT_OBJECT_DESTROY;
+    // Check for Multitasking View window state changes.
+    {
+        auto multitaskingViewType = GetMultitaskingViewType(hWnd);
+        bool isTrackedWinTab = hWnd == g_multitaskingViewHwnd;
+        bool isTrackedAltTab = hWnd == g_altTabViewHwnd;
 
-        if (entering) {
-            HWND expected = nullptr;
-            if (!g_multitaskingViewHwnd.compare_exchange_strong(expected,
-                                                                hWnd)) {
+        if (multitaskingViewType != MultitaskingViewType::None ||
+            isTrackedWinTab || isTrackedAltTab) {
+            auto& targetHwnd =
+                (multitaskingViewType == MultitaskingViewType::AltTab ||
+                 isTrackedAltTab)
+                    ? g_altTabViewHwnd
+                    : g_multitaskingViewHwnd;
+
+            bool entering = event == EVENT_OBJECT_SHOW ||
+                            event == EVENT_OBJECT_UNCLOAKED ||
+                            event == EVENT_OBJECT_CREATE;
+            bool leaving = event == EVENT_OBJECT_HIDE ||
+                           event == EVENT_OBJECT_CLOAKED ||
+                           event == EVENT_OBJECT_DESTROY;
+
+            if (entering) {
+                HWND expected = nullptr;
+                if (!targetHwnd.compare_exchange_strong(expected, hWnd)) {
+                    return;
+                }
+                Wh_Log(
+                    L"MultitaskingView entering (%s)",
+                    &targetHwnd == &g_altTabViewHwnd ? L"Alt+Tab" : L"Win+Tab");
+            } else if (leaving) {
+                HWND expected = hWnd;
+                if (!targetHwnd.compare_exchange_strong(expected, nullptr)) {
+                    return;
+                }
+                Wh_Log(
+                    L"MultitaskingView leaving (%s)",
+                    &targetHwnd == &g_altTabViewHwnd ? L"Alt+Tab" : L"Win+Tab");
+            } else {
                 return;
             }
-            Wh_Log(L"MultitaskingView entering");
-        } else if (leaving) {
-            HWND expected = hWnd;
-            if (!g_multitaskingViewHwnd.compare_exchange_strong(expected,
-                                                                nullptr)) {
-                return;
-            }
-            Wh_Log(L"MultitaskingView leaving");
-        } else {
-            return;
+
+            // Fall through to trigger timer for all taskbars.
         }
-
-        // Fall through to trigger timer for all taskbars.
     }
 
     Wh_Log(
@@ -1000,6 +1083,15 @@ void CALLBACK WinEventProc(HWINEVENTHOOK hWinEventHook,
             }
         }(event),
         GetWindowLogInfo(hWnd).c_str());
+
+    if (event == EVENT_OBJECT_LOCATIONCHANGE) {
+        if (GetProp(hWnd, kCanHideTaskbarEligibilityProp) ==
+            kCanHideTaskbarNotEligible) {
+            return;  // not eligible, position change irrelevant
+        }
+    } else {
+        RemoveProp(hWnd, kCanHideTaskbarEligibilityProp);
+    }
 
     if (g_pendingEventsTimer) {
         return;
@@ -1090,6 +1182,7 @@ DWORD WINAPI WinEventHookThread(LPVOID lpThreadParameter) {
     }
 
     g_multitaskingViewHwnd = nullptr;
+    g_altTabViewHwnd = nullptr;
 
     return 0;
 }
@@ -1432,6 +1525,8 @@ void LoadSettings() {
     g_settings.mode = Mode::intersected;
     if (wcscmp(mode, L"maximized") == 0) {
         g_settings.mode = Mode::maximized;
+    } else if (wcscmp(mode, L"fullscreen") == 0) {
+        g_settings.mode = Mode::fullscreen;
     } else if (wcscmp(mode, L"never") == 0) {
         g_settings.mode = Mode::never;
     }
@@ -1559,8 +1654,19 @@ void Wh_ModAfterInit() {
     }
 }
 
+void ClearCanHideTaskbarForWindowProps() {
+    EnumWindows(
+        [](HWND hWnd, LPARAM) -> BOOL {
+            RemoveProp(hWnd, kCanHideTaskbarEligibilityProp);
+            return TRUE;
+        },
+        0);
+}
+
 void Wh_ModUninit() {
     Wh_Log(L">");
+
+    ClearCanHideTaskbarForWindowProps();
 
     if (g_winEventHookThread) {
         PostThreadMessage(GetThreadId(g_winEventHookThread), WM_APP, 0, 0);
@@ -1602,6 +1708,8 @@ BOOL Wh_ModSettingsChanged(BOOL* bReload) {
             g_winEventHookThread = nullptr;
         }
     }
+
+    ClearCanHideTaskbarForWindowProps();
 
     AdjustAllTaskbars();
 
