@@ -2,7 +2,7 @@
 // @id              taskbar-notification-icon-spacing
 // @name            Taskbar tray icon spacing and grid
 // @description     Reduce or increase the spacing between tray icons on the taskbar, optionally have a grid of tray icons (Windows 11 only)
-// @version         1.3
+// @version         1.3.1
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
@@ -85,6 +85,7 @@ versions check out [7+ Taskbar Tweaker](https://tweaker.ramensoftware.com/).
   - columnFirstTopToBottom: Column-first, top-to-bottom
   - rowFirstBottomRowFirst: Row-first, bottom row first
   - columnFirstBottomToTop: Column-first, bottom-to-top
+  - columnFirstBottomToTopRightToLeft: Column-first, bottom-to-top, right-to-left
 - overflowIconWidth: 32
   $name: Tray overflow icon width
   $description: >-
@@ -132,7 +133,7 @@ struct {
     int overflowIconsPerRow;
 } g_settings;
 
-std::atomic<bool> g_taskbarViewDllLoaded;
+std::atomic<bool> g_systemTrayModuleHooked;
 std::atomic<bool> g_unloading;
 
 using FrameworkElementLoadedEventRevoker = winrt::impl::event_revoker<
@@ -305,7 +306,7 @@ void ApplyNotifyIconsStackPanelGridStyle(FrameworkElement stackPanel,
     if (rows > 1) {
         double stackPanelHeight = stackPanel.ActualHeight();
         double gap = stackPanelHeight - 16 * rows;
-        double gapPerItem = std::fmax(gap, 0.0) / (rows + 1);
+        double gapPerItem = std::max(gap, 0.0) / (rows + 1);
         // Force the gap to be an even number to prevent blurry icons.
         int gapPerItemEven = static_cast<int>(gapPerItem) / 2 * 2;
         itemHeight = 16 + gapPerItemEven;
@@ -921,8 +922,7 @@ void LoadSettings() {
         g_settings.gridArrangement = GridArrangement::rowFirstBottomRowFirst;
     } else if (wcscmp(gridArrangement, L"columnFirstBottomToTop") == 0) {
         g_settings.gridArrangement = GridArrangement::columnFirstBottomToTop;
-    } else if (wcscmp(gridArrangement, L"columnFirstBottomToTopRightToLeft") ==
-               0) {
+    } else if (wcscmp(gridArrangement, L"columnFirstBottomToTopRightToLeft") == 0) {
         g_settings.gridArrangement =
             GridArrangement::columnFirstBottomToTopRightToLeft;
     }
@@ -969,7 +969,7 @@ void ApplySettings() {
             }
 
             if (!ApplyStyle(xamlRoot, param.rows, param.width)) {
-                Wh_Log(L"ApplyStyle failed");
+                Wh_Log(L"ApplyStyles failed");
             }
 
             if (auto overflowRootGrid = g_overflowRootGrid.get()) {
@@ -979,8 +979,10 @@ void ApplySettings() {
         &param);
 }
 
-bool HookTaskbarViewDllSymbols(HMODULE module) {
-    // Taskbar.View.dll
+bool HookSystemTraySymbols(HMODULE module) {
+    // Symbols live in SystemTray.dll on Win11 26200+, in Taskbar.View.dll
+    // (or ExplorerExtensions.dll) on older builds. Names are identical in
+    // both DLLs, so the same SYMBOL_HOOK array works for either module.
     WindhawkUtils::SYMBOL_HOOK symbolHooks[] = {
         {
             {LR"(public: __cdecl winrt::SystemTray::implementation::IconView::IconView(void))"},
@@ -1002,21 +1004,27 @@ bool HookTaskbarViewDllSymbols(HMODULE module) {
     return HookSymbols(module, symbolHooks, ARRAYSIZE(symbolHooks));
 }
 
-HMODULE GetTaskbarViewModuleHandle() {
-    HMODULE module = GetModuleHandle(L"Taskbar.View.dll");
+// Returns the module that hosts winrt::SystemTray::* in the current build.
+// Order matters: SystemTray.dll is the new home (Win11 Insider 26200+);
+// Taskbar.View.dll and ExplorerExtensions.dll are kept as fallbacks so this
+// fork still works on older builds.
+HMODULE GetSystemTrayModuleHandle() {
+    HMODULE module = GetModuleHandle(L"SystemTray.dll");
+    if (!module) {
+        module = GetModuleHandle(L"Taskbar.View.dll");
+    }
     if (!module) {
         module = GetModuleHandle(L"ExplorerExtensions.dll");
     }
-
     return module;
 }
 
-void HandleLoadedModuleIfTaskbarView(HMODULE module, LPCWSTR lpLibFileName) {
-    if (!g_taskbarViewDllLoaded && GetTaskbarViewModuleHandle() == module &&
-        !g_taskbarViewDllLoaded.exchange(true)) {
+void HandleLoadedModuleIfSystemTray(HMODULE module, LPCWSTR lpLibFileName) {
+    if (!g_systemTrayModuleHooked && GetSystemTrayModuleHandle() == module &&
+        !g_systemTrayModuleHooked.exchange(true)) {
         Wh_Log(L"Loaded %s", lpLibFileName);
 
-        if (HookTaskbarViewDllSymbols(module)) {
+        if (HookSystemTraySymbols(module)) {
             Wh_ApplyHookOperations();
         }
     }
@@ -1029,7 +1037,7 @@ HMODULE WINAPI LoadLibraryExW_Hook(LPCWSTR lpLibFileName,
                                    DWORD dwFlags) {
     HMODULE module = LoadLibraryExW_Original(lpLibFileName, hFile, dwFlags);
     if (module) {
-        HandleLoadedModuleIfTaskbarView(module, lpLibFileName);
+        HandleLoadedModuleIfSystemTray(module, lpLibFileName);
     }
 
     return module;
@@ -1070,13 +1078,13 @@ BOOL Wh_ModInit() {
 
     LoadSettings();
 
-    if (HMODULE taskbarViewModule = GetTaskbarViewModuleHandle()) {
-        g_taskbarViewDllLoaded = true;
-        if (!HookTaskbarViewDllSymbols(taskbarViewModule)) {
+    if (HMODULE systemTrayModule = GetSystemTrayModuleHandle()) {
+        g_systemTrayModuleHooked = true;
+        if (!HookSystemTraySymbols(systemTrayModule)) {
             return FALSE;
         }
     } else {
-        Wh_Log(L"Taskbar view module not loaded yet");
+        Wh_Log(L"System tray module not loaded yet");
 
         HMODULE kernelBaseModule = GetModuleHandle(L"kernelbase.dll");
         auto pKernelBaseLoadLibraryExW =
@@ -1097,12 +1105,12 @@ BOOL Wh_ModInit() {
 void Wh_ModAfterInit() {
     Wh_Log(L">");
 
-    if (!g_taskbarViewDllLoaded) {
-        if (HMODULE taskbarViewModule = GetTaskbarViewModuleHandle()) {
-            if (!g_taskbarViewDllLoaded.exchange(true)) {
-                Wh_Log(L"Got Taskbar.View.dll");
+    if (!g_systemTrayModuleHooked) {
+        if (HMODULE systemTrayModule = GetSystemTrayModuleHandle()) {
+            if (!g_systemTrayModuleHooked.exchange(true)) {
+                Wh_Log(L"Got system tray module");
 
-                if (HookTaskbarViewDllSymbols(taskbarViewModule)) {
+                if (HookSystemTraySymbols(systemTrayModule)) {
                     Wh_ApplyHookOperations();
                 }
             }
