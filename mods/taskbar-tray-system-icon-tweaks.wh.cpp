@@ -26,7 +26,8 @@
 
 Allows hiding system icons: volume, network, battery, microphone, location/GPS,
 Studio Effects, Recall, language bar, bell (always or when there are no new
-notifications), and the "Show desktop" button (hide or set width).
+notifications), and the "Show desktop" button (hide or set width). Also allows
+showing the battery icon in grayscale instead of its colored variant.
 
 Only Windows 11 is supported.
 
@@ -42,6 +43,11 @@ Only Windows 11 is supported.
   $name: Hide network icon
 - hideBatteryIcon: false
   $name: Hide battery icon
+- grayscaleBatteryIcon: false
+  $name: Grayscale battery icon
+  $description: >-
+    Show the battery icon using the standard text color instead of its colored
+    (e.g. green/yellow) variant.
 - hideMicrophoneIcon: false
   $name: Hide microphone icon
 - hideGeolocationIcon: false
@@ -73,6 +79,7 @@ Only Windows 11 is supported.
 #include <functional>
 #include <list>
 #include <string>
+#include <vector>
 
 #undef GetCurrentTime
 
@@ -96,6 +103,7 @@ struct {
     bool hideVolumeIcon;
     bool hideNetworkIcon;
     bool hideBatteryIcon;
+    bool grayscaleBatteryIcon;
     bool hideMicrophoneIcon;
     bool hideGeolocationIcon;
     bool hideStudioEffectsIcon;
@@ -120,6 +128,14 @@ int64_t g_mainStackTextChangedToken;
 
 winrt::weak_ref<FrameworkElement> g_bellSystemTrayIconElement;
 int64_t g_bellAutomationNameChangedToken;
+
+struct BatteryTextBlockState {
+    winrt::weak_ref<Controls::TextBlock> textBlock;
+    Media::Brush savedForeground{nullptr};
+    int64_t foregroundChangedToken{0};
+};
+
+std::vector<BatteryTextBlockState> g_batteryTextBlockStates;
 
 HWND FindCurrentProcessTaskbarWnd() {
     HWND hTaskbarWnd = nullptr;
@@ -629,6 +645,110 @@ void ApplyNonActivatableStackIconViewStyle(
                                           : Visibility::Visible);
 }
 
+// Path inside SystemTray.BatteryIconContent:
+// Grid#ContainerGrid > StackPanel > Grid > TextBlock.
+//
+// The system sets a colored Foreground brush on each battery TextBlock.
+// Clearing the local Foreground value lets the inherited TextFillColorPrimary
+// take over, giving a grayscale look. The system re-applies the colored brush
+// on theme changes (and similar updates), so we listen for ForegroundProperty
+// changes, save the latest value (so we can restore it on disable), and clear
+// it again.
+void ApplyBatteryIconGrayscaleStyle(FrameworkElement batteryIconContent) {
+    bool grayscale = !g_unloading && g_settings.grayscaleBatteryIcon;
+
+    // Drop any state for TextBlocks that no longer exist.
+    std::erase_if(g_batteryTextBlockStates, [](const BatteryTextBlockState& s) {
+        return !s.textBlock.get();
+    });
+
+    FrameworkElement stackPanel = nullptr;
+
+    FrameworkElement child = batteryIconContent;
+    if ((child = FindChildByName(child, L"ContainerGrid")) &&
+        (child = FindChildByClassName(
+             child, L"Windows.UI.Xaml.Controls.StackPanel"))) {
+        stackPanel = child;
+    } else {
+        Wh_Log(L"Failed to navigate to battery StackPanel");
+        return;
+    }
+
+    EnumChildElements(stackPanel, [grayscale](FrameworkElement gridChild) {
+        if (winrt::get_class_name(gridChild) !=
+            L"Windows.UI.Xaml.Controls.Grid") {
+            return false;
+        }
+
+        EnumChildElements(gridChild, [grayscale](FrameworkElement textChild) {
+            auto textBlock = textChild.try_as<Controls::TextBlock>();
+            if (!textBlock) {
+                return false;
+            }
+
+            auto it = g_batteryTextBlockStates.begin();
+            for (; it != g_batteryTextBlockStates.end(); ++it) {
+                if (it->textBlock.get() == textBlock) {
+                    break;
+                }
+            }
+            bool managed = (it != g_batteryTextBlockStates.end());
+
+            if (grayscale && !managed) {
+                auto localForeground =
+                    textBlock
+                        .ReadLocalValue(
+                            Controls::TextBlock::ForegroundProperty())
+                        .try_as<Media::Brush>();
+                if (!localForeground) {
+                    // No local Foreground set, so clearing would be a no-op and
+                    // there'd be nothing meaningful to restore later.
+                    return false;
+                }
+
+                BatteryTextBlockState state;
+                state.textBlock = textBlock;
+                state.savedForeground = localForeground;
+                state.foregroundChangedToken =
+                    textBlock.RegisterPropertyChangedCallback(
+                        Controls::TextBlock::ForegroundProperty(),
+                        [](DependencyObject sender, DependencyProperty) {
+                            auto tb = sender.try_as<Controls::TextBlock>();
+                            if (!tb) {
+                                return;
+                            }
+                            auto fg =
+                                tb.ReadLocalValue(
+                                      Controls::TextBlock::ForegroundProperty())
+                                    .try_as<Media::Brush>();
+                            if (!fg) {
+                                return;
+                            }
+                            for (auto& s : g_batteryTextBlockStates) {
+                                if (s.textBlock.get() == tb) {
+                                    s.savedForeground = fg;
+                                    break;
+                                }
+                            }
+                            tb.as<DependencyObject>().ClearValue(
+                                Controls::TextBlock::ForegroundProperty());
+                        });
+                g_batteryTextBlockStates.push_back(std::move(state));
+                textBlock.as<DependencyObject>().ClearValue(
+                    Controls::TextBlock::ForegroundProperty());
+            } else if (!grayscale && managed) {
+                textBlock.UnregisterPropertyChangedCallback(
+                    Controls::TextBlock::ForegroundProperty(),
+                    it->foregroundChangedToken);
+                textBlock.Foreground(it->savedForeground);
+                g_batteryTextBlockStates.erase(it);
+            }
+            return false;
+        });
+        return false;
+    });
+}
+
 void ApplyControlCenterButtonIconStyle(FrameworkElement systemTrayIconElement) {
     FrameworkElement contentGrid = nullptr;
 
@@ -650,6 +770,8 @@ void ApplyControlCenterButtonIconStyle(FrameworkElement systemTrayIconElement) {
         }
 
         Wh_Log(L"System battery tray icon, hide=%d", hide);
+
+        ApplyBatteryIconGrayscaleStyle(systemTrayTextIconContent);
     } else {
         systemTrayTextIconContent =
             FindChildByClassName(contentGrid, L"SystemTray.TextIconContent");
@@ -1368,6 +1490,7 @@ void LoadSettings() {
     g_settings.hideVolumeIcon = Wh_GetIntSetting(L"hideVolumeIcon");
     g_settings.hideNetworkIcon = Wh_GetIntSetting(L"hideNetworkIcon");
     g_settings.hideBatteryIcon = Wh_GetIntSetting(L"hideBatteryIcon");
+    g_settings.grayscaleBatteryIcon = Wh_GetIntSetting(L"grayscaleBatteryIcon");
     g_settings.hideMicrophoneIcon = Wh_GetIntSetting(L"hideMicrophoneIcon");
     g_settings.hideGeolocationIcon = Wh_GetIntSetting(L"hideGeolocationIcon");
     g_settings.hideStudioEffectsIcon =
@@ -1433,6 +1556,21 @@ void ApplySettings() {
                 g_mainStackInnerTextBlock = nullptr;
                 g_mainStackTextChangedToken = 0;
             }
+
+            // Unregister and restore battery TextBlock foregrounds. ApplyStyle
+            // below will re-register if grayscale is still enabled. This also
+            // covers stale entries whose icon view was destroyed.
+            for (auto& state : g_batteryTextBlockStates) {
+                auto textBlock = state.textBlock.get();
+                if (!textBlock) {
+                    continue;
+                }
+                textBlock.UnregisterPropertyChangedCallback(
+                    Controls::TextBlock::ForegroundProperty(),
+                    state.foregroundChangedToken);
+                textBlock.Foreground(state.savedForeground);
+            }
+            g_batteryTextBlockStates.clear();
 
             auto xamlRoot = GetTaskbarXamlRoot(param.hTaskbarWnd);
             if (!xamlRoot) {
@@ -1587,9 +1725,9 @@ BOOL Wh_ModInit() {
         auto pKernelBaseLoadLibraryExW =
             (decltype(&LoadLibraryExW))GetProcAddress(kernelBaseModule,
                                                       "LoadLibraryExW");
-        WindhawkUtils::Wh_SetFunctionHookT(pKernelBaseLoadLibraryExW,
-                                           LoadLibraryExW_Hook,
-                                           &LoadLibraryExW_Original);
+        WindhawkUtils::SetFunctionHook(pKernelBaseLoadLibraryExW,
+                                       LoadLibraryExW_Hook,
+                                       &LoadLibraryExW_Original);
     }
 
     if (!HookTaskbarDllSymbols()) {
