@@ -97,6 +97,8 @@ Also check out the **Taskbar tray icon spacing and grid** mod.
 #include <limits>
 #include <optional>
 #include <regex>
+#include <string>
+#include <string_view>
 
 using namespace winrt::Windows::UI::Xaml;
 
@@ -1265,31 +1267,45 @@ void* TaskListButton_UpdateIconColumnDefinition_Original;
 LONG GetMediumTaskbarButtonExtentOffset() {
     static LONG mediumTaskbarButtonExtentOffset = []() -> LONG {
 #if defined(_M_X64)
-        // 40:53              | push rbx
-        // 48:83EC 60         | sub rsp,60
-        // 0F297424 50        | movaps xmmword ptr ss:[rsp+50],xmm6
-        // 48:8B05 B2EB1F00   | mov rax,qword ptr ds:[<__security_cookie>]
-        // 48:33C4            | xor rax,rsp
-        // 48:894424 48       | mov qword ptr ss:[rsp+48],rax
-        // F2:0F10B1 38030000 | movsd xmm6,qword ptr ds:[rcx+338]
+        // Search for movsd followed by subsd. In newer builds with vertical
+        // taskbar support, there may be an additional movsd without a matching
+        // subsd above.
+        //
+        // f20f10b648030000 movsd   xmm6,mmword ptr [rsi+348h]
+        // f20f5cb680030000 subsd   xmm6,mmword ptr [rsi+380h]
+        // f20f5cb690030000 subsd   xmm6,mmword ptr [rsi+390h]
+
         const BYTE* start =
             (const BYTE*)TaskListButton_UpdateIconColumnDefinition_Original;
         const BYTE* end = start + 0x200;
+        LONG offsetCandidate = 0;
+        LONG offset = 0;
         for (const BYTE* p = start; p != end; p++) {
             if (p[0] == 0xF2 && p[1] == 0x0F && p[2] == 0x10 &&
-                (p[3] & 0x81) == 0x81) {
-                LONG offset = *(LONG*)(p + 4);
-                Wh_Log(L"mediumTaskbarButtonExtentOffset=0x%X", offset);
-                return (offset < 0 || offset > 0xFFFF) ? 0 : offset;
+                (p[3] & 0xC0) == 0x80) {
+                offsetCandidate = *(LONG*)(p + 4);
             }
 
             if (p[0] == 0xF2 && p[1] == 0x44 && p[2] == 0x0F && p[3] == 0x10 &&
-                (p[4] & 0x81) == 0x81) {
-                LONG offset = *(LONG*)(p + 5);
-                Wh_Log(L"mediumTaskbarButtonExtentOffset=0x%X", offset);
-                return (offset < 0 || offset > 0xFFFF) ? 0 : offset;
+                (p[4] & 0xC0) == 0x80) {
+                offsetCandidate = *(LONG*)(p + 5);
+            }
+
+            if (p[0] == 0xF2 && p[1] == 0x0F && p[2] == 0x5C &&
+                (p[3] & 0xC0) == 0x80) {
+                offset = offsetCandidate;
+                break;
+            }
+
+            if (p[0] == 0xF2 && p[1] == 0x44 && p[2] == 0x0F && p[3] == 0x5C &&
+                (p[4] & 0xC0) == 0x80) {
+                offset = offsetCandidate;
+                break;
             }
         }
+
+        Wh_Log(L"mediumTaskbarButtonExtentOffset=0x%X", offset);
+        return (offset < 0 || offset > 0xFFFF) ? 0 : offset;
 #elif defined(_M_ARM64)
         // ...
         // fd41b670 ldr  d16,[x19,#0x368]
@@ -1300,52 +1316,75 @@ LONG GetMediumTaskbarButtonExtentOffset() {
         const DWORD* start =
             (const DWORD*)TaskListButton_UpdateIconColumnDefinition_Original;
         const DWORD* end = start + 0x80;
-        std::regex regex1(R"(fsub\s+d\d+, (d\d+), d\d+)");
-        const DWORD* cmdWithReg1 = nullptr;
-        std::string reg1;
+        std::regex regexLdr(R"(ldr\s+(d\d+), \[(x\d+), #0x([0-9a-f]+)\])");
+        std::regex regexLdrOther(R"(ldr\s+(d\d+),.*)");
+        std::regex regexFsub(R"(fsub\s+d\d+, (d\d+), (d\d+))");
+        struct {
+            std::string reg;
+            std::string regSrc;
+            LONG offset;
+        } ldrs[32];
+        size_t ldrCount = 0;
         for (const DWORD* p = start; p != end; p++) {
-            WH_DISASM_RESULT result1;
-            if (!Wh_Disasm((void*)p, &result1)) {
+            WH_DISASM_RESULT result;
+            if (!Wh_Disasm((void*)p, &result)) {
                 break;
             }
 
-            std::string_view s1 = result1.text;
-            if (s1 == "ret") {
+            std::string_view s = result.text;
+            if (s == "ret") {
                 break;
             }
 
-            std::match_results<std::string_view::const_iterator> match1;
-            if (std::regex_match(s1.begin(), s1.end(), match1, regex1)) {
-                // Wh_Log(L"%S", result1.text);
-                cmdWithReg1 = p;
-                reg1 = match1[1];
+            if (ldrCount == ARRAYSIZE(ldrs)) {
+                Wh_Log(L"Too many ldr instructions");
                 break;
             }
-        }
 
-        if (cmdWithReg1) {
-            std::regex regex2(R"(ldr\s+(d\d+), \[x\d+, #0x([0-9a-f]+)\])");
-            for (const DWORD* p = start; p != cmdWithReg1; p++) {
-                WH_DISASM_RESULT result1;
-                if (!Wh_Disasm((void*)p, &result1)) {
-                    break;
+            std::match_results<std::string_view::const_iterator> matchLdr;
+            if (std::regex_match(s.begin(), s.end(), matchLdr, regexLdr)) {
+                // Wh_Log(L"%S", result.text);
+                std::string reg = matchLdr[1];
+                std::string regSrc = matchLdr[2];
+                LONG offset = std::stoull(matchLdr[3], nullptr, 16);
+                ldrs[ldrCount++] = {std::move(reg), std::move(regSrc), offset};
+                continue;
+            }
+
+            std::match_results<std::string_view::const_iterator> matchLdrOther;
+            if (std::regex_match(s.begin(), s.end(), matchLdrOther,
+                                 regexLdrOther)) {
+                // Wh_Log(L"%S", result.text);
+                std::string reg = matchLdrOther[1];
+                ldrs[ldrCount++] = {std::move(reg), std::string(), 0};
+                continue;
+            }
+
+            std::match_results<std::string_view::const_iterator> matchFsub;
+            if (std::regex_match(s.begin(), s.end(), matchFsub, regexFsub)) {
+                // Wh_Log(L"%S", result.text);
+                std::string regA = matchFsub[1];
+                std::string regB = matchFsub[2];
+
+                std::remove_reference_t<decltype(ldrs[0])>* ldrA = nullptr;
+                std::remove_reference_t<decltype(ldrs[0])>* ldrB = nullptr;
+
+                for (size_t i = 0; i < ldrCount; i++) {
+                    const auto& [ldrReg, ldrRegSrc, ldrOffset] =
+                        ldrs[ldrCount - 1 - i];
+                    if (!ldrA && ldrReg == regA) {
+                        ldrA = &ldrs[ldrCount - 1 - i];
+                    }
+                    if (!ldrB && ldrReg == regB) {
+                        ldrB = &ldrs[ldrCount - 1 - i];
+                    }
                 }
 
-                std::string_view s1 = result1.text;
-                if (s1 == "ret") {
-                    break;
+                if (ldrA && ldrB && ldrA->regSrc == ldrB->regSrc) {
+                    LONG offset = ldrA->offset;
+                    Wh_Log(L"mediumTaskbarButtonExtentOffset=0x%X", offset);
+                    return (offset < 0 || offset > 0xFFFF) ? 0 : offset;
                 }
-
-                std::match_results<std::string_view::const_iterator> match1;
-                if (!std::regex_match(s1.begin(), s1.end(), match1, regex2) ||
-                    match1[1] != reg1) {
-                    continue;
-                }
-
-                // Wh_Log(L"%S", result1.text);
-                LONG offset = std::stoull(match1[2], nullptr, 16);
-                Wh_Log(L"mediumTaskbarButtonExtentOffset=0x%X", offset);
-                return (offset < 0 || offset > 0xFFFF) ? 0 : offset;
             }
         }
 #else
