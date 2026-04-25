@@ -2,7 +2,7 @@
 // @id              taskbar-notification-icon-spacing
 // @name            Taskbar tray icon spacing and grid
 // @description     Reduce or increase the spacing between tray icons on the taskbar, optionally have a grid of tray icons (Windows 11 only)
-// @version         1.3.1
+// @version         1.3
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
@@ -77,7 +77,7 @@ versions check out [7+ Taskbar Tweaker](https://tweaker.ramensoftware.com/).
         B D F
         A C E G
 
-      Column-first, bottom-to-top right-to-left:
+      Column-first, bottom-to-top, right-to-left:
         _ F D B
         G E C A
   $options:
@@ -85,7 +85,8 @@ versions check out [7+ Taskbar Tweaker](https://tweaker.ramensoftware.com/).
   - columnFirstTopToBottom: Column-first, top-to-bottom
   - rowFirstBottomRowFirst: Row-first, bottom row first
   - columnFirstBottomToTop: Column-first, bottom-to-top
-  - columnFirstBottomToTopRightToLeft: Column-first, bottom-to-top, right-to-left
+  - columnFirstBottomToTopRightToLeft: >-
+      Column-first, bottom-to-top, right-to-left
 - overflowIconWidth: 32
   $name: Tray overflow icon width
   $description: >-
@@ -306,7 +307,7 @@ void ApplyNotifyIconsStackPanelGridStyle(FrameworkElement stackPanel,
     if (rows > 1) {
         double stackPanelHeight = stackPanel.ActualHeight();
         double gap = stackPanelHeight - 16 * rows;
-        double gapPerItem = std::max(gap, 0.0) / (rows + 1);
+        double gapPerItem = std::fmax(gap, 0.0) / (rows + 1);
         // Force the gap to be an even number to prevent blurry icons.
         int gapPerItemEven = static_cast<int>(gapPerItem) / 2 * 2;
         itemHeight = 16 + gapPerItemEven;
@@ -922,7 +923,8 @@ void LoadSettings() {
         g_settings.gridArrangement = GridArrangement::rowFirstBottomRowFirst;
     } else if (wcscmp(gridArrangement, L"columnFirstBottomToTop") == 0) {
         g_settings.gridArrangement = GridArrangement::columnFirstBottomToTop;
-    } else if (wcscmp(gridArrangement, L"columnFirstBottomToTopRightToLeft") == 0) {
+    } else if (wcscmp(gridArrangement, L"columnFirstBottomToTopRightToLeft") ==
+               0) {
         g_settings.gridArrangement =
             GridArrangement::columnFirstBottomToTopRightToLeft;
     }
@@ -969,7 +971,7 @@ void ApplySettings() {
             }
 
             if (!ApplyStyle(xamlRoot, param.rows, param.width)) {
-                Wh_Log(L"ApplyStyles failed");
+                Wh_Log(L"ApplyStyle failed");
             }
 
             if (auto overflowRootGrid = g_overflowRootGrid.get()) {
@@ -980,9 +982,7 @@ void ApplySettings() {
 }
 
 bool HookSystemTraySymbols(HMODULE module) {
-    // Symbols live in SystemTray.dll on Win11 26200+, in Taskbar.View.dll
-    // (or ExplorerExtensions.dll) on older builds. Names are identical in
-    // both DLLs, so the same SYMBOL_HOOK array works for either module.
+    // SystemTray.dll, Taskbar.View.dll
     WindhawkUtils::SYMBOL_HOOK symbolHooks[] = {
         {
             {LR"(public: __cdecl winrt::SystemTray::implementation::IconView::IconView(void))"},
@@ -1007,7 +1007,7 @@ bool HookSystemTraySymbols(HMODULE module) {
 // Returns the module that hosts winrt::SystemTray::* in the current build.
 // Order matters: SystemTray.dll is the new home (Win11 Insider 26200+);
 // Taskbar.View.dll and ExplorerExtensions.dll are kept as fallbacks so this
-// fork still works on older builds.
+// still works on older builds.
 HMODULE GetSystemTrayModuleHandle() {
     HMODULE module = GetModuleHandle(L"SystemTray.dll");
     if (!module) {
@@ -1016,6 +1016,7 @@ HMODULE GetSystemTrayModuleHandle() {
     if (!module) {
         module = GetModuleHandle(L"ExplorerExtensions.dll");
     }
+
     return module;
 }
 
