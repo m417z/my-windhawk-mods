@@ -380,16 +380,19 @@ bool HookTaskbarSymbols() {
             {LR"(protected: long __cdecl CTaskListWnd::_DisplayExtendedUI(struct ITaskBtnGroup *,int,unsigned long,int))"},
             &CTaskListWnd__DisplayExtendedUI_Original,
             CTaskListWnd__DisplayExtendedUI_Hook,
+            true,  // Removed in 10.0.26100.8313.
         },
         {
             {LR"(private: int __cdecl CTaskListThumbnailWnd::_CanShowThumbnails(class CDPA<struct ITaskThumbnail,class CTContainer_PolicyUnOwned<struct ITaskThumbnail> > const *,int,int))"},
             &CTaskListThumbnailWnd__CanShowThumbnails_Original,
             CTaskListThumbnailWnd__CanShowThumbnails_Hook,
+            true,  // In case it's removed in the future.
         },
         {
             {LR"(protected: void __cdecl CTaskListWnd::_ShowToolTip(enum ShowToolTipFlags))"},
             &CTaskListWnd__ShowToolTip_Original,
             CTaskListWnd__ShowToolTip_Hook,
+            true,  // Removed in 10.0.26100.8313.
         },
     };
 
