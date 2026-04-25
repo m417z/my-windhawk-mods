@@ -2,7 +2,7 @@
 // @id              taskbar-tray-system-icon-tweaks
 // @name            Taskbar tray system icon tweaks
 // @description     Allows hiding system icons: volume, network, battery, microphone, location/GPS, Studio Effects, Recall, language bar, bell (always or when there are no new notifications), and the "Show desktop" button (hide or set width)
-// @version         1.2.3
+// @version         1.3
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
@@ -662,89 +662,87 @@ void ApplyBatteryIconGrayscaleStyle(FrameworkElement batteryIconContent) {
         return !s.textBlock.get();
     });
 
-    FrameworkElement stackPanel = nullptr;
+    // Nothing to apply and nothing to restore - skip the tree traversal.
+    if (!grayscale && g_batteryTextBlockStates.empty()) {
+        return;
+    }
+
+    FrameworkElement grid = nullptr;
 
     FrameworkElement child = batteryIconContent;
     if ((child = FindChildByName(child, L"ContainerGrid")) &&
         (child = FindChildByClassName(
-             child, L"Windows.UI.Xaml.Controls.StackPanel"))) {
-        stackPanel = child;
+             child, L"Windows.UI.Xaml.Controls.StackPanel")) &&
+        (child =
+             FindChildByClassName(child, L"Windows.UI.Xaml.Controls.Grid"))) {
+        grid = child;
     } else {
-        Wh_Log(L"Failed to navigate to battery StackPanel");
+        Wh_Log(L"Failed to navigate to battery Grid");
         return;
     }
 
-    EnumChildElements(stackPanel, [grayscale](FrameworkElement gridChild) {
-        if (winrt::get_class_name(gridChild) !=
-            L"Windows.UI.Xaml.Controls.Grid") {
+    EnumChildElements(grid, [grayscale](FrameworkElement textChild) {
+        auto textBlock = textChild.try_as<Controls::TextBlock>();
+        if (!textBlock) {
             return false;
         }
 
-        EnumChildElements(gridChild, [grayscale](FrameworkElement textChild) {
-            auto textBlock = textChild.try_as<Controls::TextBlock>();
-            if (!textBlock) {
+        auto it = g_batteryTextBlockStates.begin();
+        for (; it != g_batteryTextBlockStates.end(); ++it) {
+            if (it->textBlock.get() == textBlock) {
+                break;
+            }
+        }
+        bool managed = (it != g_batteryTextBlockStates.end());
+
+        if (grayscale && !managed) {
+            auto localForeground =
+                textBlock
+                    .ReadLocalValue(Controls::TextBlock::ForegroundProperty())
+                    .try_as<Media::Brush>();
+            if (!localForeground) {
+                // No local Foreground set, so clearing would be a no-op and
+                // there'd be nothing meaningful to restore later.
                 return false;
             }
 
-            auto it = g_batteryTextBlockStates.begin();
-            for (; it != g_batteryTextBlockStates.end(); ++it) {
-                if (it->textBlock.get() == textBlock) {
-                    break;
-                }
-            }
-            bool managed = (it != g_batteryTextBlockStates.end());
-
-            if (grayscale && !managed) {
-                auto localForeground =
-                    textBlock
-                        .ReadLocalValue(
-                            Controls::TextBlock::ForegroundProperty())
-                        .try_as<Media::Brush>();
-                if (!localForeground) {
-                    // No local Foreground set, so clearing would be a no-op and
-                    // there'd be nothing meaningful to restore later.
-                    return false;
-                }
-
-                BatteryTextBlockState state;
-                state.textBlock = textBlock;
-                state.savedForeground = localForeground;
-                state.foregroundChangedToken =
-                    textBlock.RegisterPropertyChangedCallback(
-                        Controls::TextBlock::ForegroundProperty(),
-                        [](DependencyObject sender, DependencyProperty) {
-                            auto tb = sender.try_as<Controls::TextBlock>();
-                            if (!tb) {
-                                return;
-                            }
-                            auto fg =
-                                tb.ReadLocalValue(
-                                      Controls::TextBlock::ForegroundProperty())
-                                    .try_as<Media::Brush>();
-                            if (!fg) {
-                                return;
-                            }
-                            for (auto& s : g_batteryTextBlockStates) {
-                                if (s.textBlock.get() == tb) {
-                                    s.savedForeground = fg;
-                                    break;
-                                }
-                            }
-                            tb.as<DependencyObject>().ClearValue(
-                                Controls::TextBlock::ForegroundProperty());
-                        });
-                g_batteryTextBlockStates.push_back(std::move(state));
-                textBlock.as<DependencyObject>().ClearValue(
-                    Controls::TextBlock::ForegroundProperty());
-            } else if (!grayscale && managed) {
-                textBlock.UnregisterPropertyChangedCallback(
+            BatteryTextBlockState state;
+            state.textBlock = textBlock;
+            state.savedForeground = localForeground;
+            state.foregroundChangedToken =
+                textBlock.RegisterPropertyChangedCallback(
                     Controls::TextBlock::ForegroundProperty(),
-                    it->foregroundChangedToken);
-                textBlock.Foreground(it->savedForeground);
-                g_batteryTextBlockStates.erase(it);
-            }
-            return false;
-        });
+                    [](DependencyObject sender, DependencyProperty) {
+                        auto tb = sender.try_as<Controls::TextBlock>();
+                        if (!tb) {
+                            return;
+                        }
+                        auto fg =
+                            tb.ReadLocalValue(
+                                  Controls::TextBlock::ForegroundProperty())
+                                .try_as<Media::Brush>();
+                        if (!fg) {
+                            return;
+                        }
+                        for (auto& s : g_batteryTextBlockStates) {
+                            if (s.textBlock.get() == tb) {
+                                s.savedForeground = fg;
+                                break;
+                            }
+                        }
+                        tb.as<DependencyObject>().ClearValue(
+                            Controls::TextBlock::ForegroundProperty());
+                    });
+            g_batteryTextBlockStates.push_back(std::move(state));
+            textBlock.as<DependencyObject>().ClearValue(
+                Controls::TextBlock::ForegroundProperty());
+        } else if (!grayscale && managed) {
+            textBlock.UnregisterPropertyChangedCallback(
+                Controls::TextBlock::ForegroundProperty(),
+                it->foregroundChangedToken);
+            textBlock.Foreground(it->savedForeground);
+            g_batteryTextBlockStates.erase(it);
+        }
         return false;
     });
 }
