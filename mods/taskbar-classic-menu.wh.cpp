@@ -447,6 +447,7 @@ bool HookWin11TaskbarSymbols() {
             {LR"(protected: long __cdecl CTaskListWnd::_DisplayExtendedUI(struct ITaskBtnGroup *,int,unsigned long,int))"},
             &CTaskListWnd__DisplayExtendedUI_Original,
             CTaskListWnd__DisplayExtendedUI_Hook,
+            true,  // Removed in 10.0.26100.8313.
         },
         {
             {LR"(public: virtual struct HWND__ * __cdecl CTaskListWnd::GetWindow(void))"},
