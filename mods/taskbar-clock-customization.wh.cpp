@@ -4827,17 +4827,14 @@ bool HookSystemTraySymbols(HMODULE module) {
     return true;
 }
 
-// Returns the module that hosts winrt::SystemTray::* in the current build.
-// Order matters: SystemTray.dll is the new home (Win11 Insider 26200+);
-// Taskbar.View.dll and ExplorerExtensions.dll are kept as fallbacks so this
-// still works on older builds.
 HMODULE GetSystemTrayModuleHandle() {
     HMODULE module = GetModuleHandle(L"SystemTray.dll");
     if (!module) {
         module = GetModuleHandle(L"Taskbar.View.dll");
         if (module) {
-            // First known module version without SystemTray is Taskbar.View.dll
-            // 2604.8002.200.6000.
+            // Starting with Taskbar.View.dll 2604.8002.200.6000, the SystemTray
+            // types moved out of Taskbar.View.dll into SystemTray.dll, so don't
+            // hook Taskbar.View.dll at this version and above.
             VS_FIXEDFILEINFO* fixedFileInfo =
                 GetModuleVersionInfo(module, nullptr);
             WORD moduleMajor =
