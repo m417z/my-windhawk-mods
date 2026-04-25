@@ -9,7 +9,7 @@
 // @homepage        https://m417z.com/
 // @include         explorer.exe
 // @architecture    x86-64
-// @compilerOptions -lole32 -loleaut32 -lruntimeobject
+// @compilerOptions -lole32 -loleaut32 -lruntimeobject -lversion
 // ==/WindhawkMod==
 
 // Source code is published under The GNU General Public License v3.0.
@@ -1001,20 +1001,57 @@ bool HookSystemTraySymbols(HMODULE module) {
         },
     };
 
-    return HookSymbols(module, symbolHooks, ARRAYSIZE(symbolHooks));
+    if (!HookSymbols(module, symbolHooks, ARRAYSIZE(symbolHooks))) {
+        Wh_Log(L"HookSymbols failed");
+        return false;
+    }
+
+    return true;
+}
+
+VS_FIXEDFILEINFO* GetModuleVersionInfo(HMODULE hModule, UINT* puPtrLen) {
+    void* pFixedFileInfo = nullptr;
+    UINT uPtrLen = 0;
+
+    HRSRC hResource =
+        FindResource(hModule, MAKEINTRESOURCE(VS_VERSION_INFO), RT_VERSION);
+    if (hResource) {
+        HGLOBAL hGlobal = LoadResource(hModule, hResource);
+        if (hGlobal) {
+            void* pData = LockResource(hGlobal);
+            if (pData) {
+                if (!VerQueryValue(pData, L"\\", &pFixedFileInfo, &uPtrLen) ||
+                    uPtrLen == 0) {
+                    pFixedFileInfo = nullptr;
+                    uPtrLen = 0;
+                }
+            }
+        }
+    }
+
+    if (puPtrLen) {
+        *puPtrLen = uPtrLen;
+    }
+
+    return (VS_FIXEDFILEINFO*)pFixedFileInfo;
 }
 
 // Returns the module that hosts winrt::SystemTray::* in the current build.
 // Order matters: SystemTray.dll is the new home (Win11 Insider 26200+);
-// Taskbar.View.dll and ExplorerExtensions.dll are kept as fallbacks so this
-// still works on older builds.
+// Taskbar.View.dll is kept as fallbacks so this still works on older builds.
 HMODULE GetSystemTrayModuleHandle() {
     HMODULE module = GetModuleHandle(L"SystemTray.dll");
     if (!module) {
         module = GetModuleHandle(L"Taskbar.View.dll");
-    }
-    if (!module) {
-        module = GetModuleHandle(L"ExplorerExtensions.dll");
+        if (module) {
+            VS_FIXEDFILEINFO* fixedFileInfo =
+                GetModuleVersionInfo(module, nullptr);
+            WORD moduleMajor =
+                fixedFileInfo ? HIWORD(fixedFileInfo->dwFileVersionMS) : 0;
+            if (!moduleMajor || moduleMajor >= 2604) {
+                module = nullptr;
+            }
+        }
     }
 
     return module;
