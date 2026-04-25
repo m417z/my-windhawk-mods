@@ -2,7 +2,7 @@
 // @id              taskbar-show-desktop-button-aero-peek
 // @name            Aero Peek on "Show desktop" button hover
 // @description     Enable Aero Peek when hovering over the "Show Desktop" button, like it was possible before Windows 11
-// @version         1.0.1
+// @version         1.0.2
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
