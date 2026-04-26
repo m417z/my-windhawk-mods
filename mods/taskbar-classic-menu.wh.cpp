@@ -2,7 +2,7 @@
 // @id              taskbar-classic-menu
 // @name            Taskbar classic context menu
 // @description     Show the classic context menu when right-clicking on taskbar items
-// @version         1.0.2
+// @version         1.0.3
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
