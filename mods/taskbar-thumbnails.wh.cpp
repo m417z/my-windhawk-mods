@@ -36,9 +36,10 @@ check out [7+ Taskbar Tweaker](https://tweaker.ramensoftware.com/).
 // ==WindhawkModSettings==
 /*
 - mode: disabled
-  $name: Preview on hover
+  $name: Preview on hover or click
   $options:
-  - disabled: Disabled
+  - disabled: Disable on hover, thumbnails on click
+  - listOnClick: Disable on hover, list on click
   - list: List
   - thumbnails: Thumbnails
 - noTooltips: false
@@ -62,6 +63,7 @@ check out [7+ Taskbar Tweaker](https://tweaker.ramensoftware.com/).
 
 enum class Mode {
     disabled,
+    listOnClick,
     list,
     thumbnails,
 };
@@ -151,7 +153,8 @@ HoverFlyoutModel_TransitionToFlyoutVisibleStickyState_Hook(void* pThis,
                                                            void* param1) {
     Wh_Log(L">");
 
-    if (g_settings.mode != Mode::disabled) {
+    if (g_settings.mode != Mode::disabled &&
+        g_settings.mode != Mode::listOnClick) {
         HoverFlyoutModel_TransitionToFlyoutVisibleStickyState_Original(pThis,
                                                                        param1);
         return;
@@ -190,7 +193,8 @@ HoverFlyoutController_ShowTaskListButtonHoverFlyout_Hook(void* pThis,
                                                          int param4) {
     Wh_Log(L">");
 
-    if (g_settings.mode != Mode::disabled) {
+    if (g_settings.mode != Mode::disabled &&
+        g_settings.mode != Mode::listOnClick) {
         HoverFlyoutController_ShowTaskListButtonHoverFlyout_Original(
             pThis, param1, param2, param3, param4);
         return;
@@ -215,7 +219,8 @@ HoverFlyoutController_ShowTaskListButtonHoverFlyout_Old1_Hook(void* pThis,
                                                               int param3) {
     Wh_Log(L">");
 
-    if (g_settings.mode != Mode::disabled) {
+    if (g_settings.mode != Mode::disabled &&
+        g_settings.mode != Mode::listOnClick) {
         HoverFlyoutController_ShowTaskListButtonHoverFlyout_Old1_Original(
             pThis, param1, param2, param3);
         return;
@@ -237,7 +242,7 @@ bool WINAPI FlyoutFrame_CanFitAndUpdateScaleFactor_Hook(void* pThis,
                                                         void* param1) {
     Wh_Log(L">");
 
-    if (g_settings.mode == Mode::list) {
+    if (g_settings.mode == Mode::list || g_settings.mode == Mode::listOnClick) {
         return false;
     }
 
@@ -258,7 +263,8 @@ HRESULT WINAPI CTaskListWnd__DisplayExtendedUI_Hook(void* pThis,
     Wh_Log(L"> %x", flags);
 
     bool persistent = flags & 2;
-    if (!persistent && g_settings.mode == Mode::disabled) {
+    if (!persistent && (g_settings.mode == Mode::disabled ||
+                        g_settings.mode == Mode::listOnClick)) {
         return S_OK;
     }
 
@@ -280,7 +286,7 @@ BOOL WINAPI CTaskListThumbnailWnd__CanShowThumbnails_Hook(void* pThis,
                                                           int param3) {
     Wh_Log(L">");
 
-    if (g_settings.mode == Mode::list) {
+    if (g_settings.mode == Mode::list || g_settings.mode == Mode::listOnClick) {
         return FALSE;
     }
 
@@ -591,7 +597,9 @@ HMODULE WINAPI LoadLibraryExW_Hook(LPCWSTR lpLibFileName,
 void LoadSettings() {
     PCWSTR mode = Wh_GetStringSetting(L"mode");
     g_settings.mode = Mode::disabled;
-    if (wcscmp(mode, L"list") == 0) {
+    if (wcscmp(mode, L"listOnClick") == 0) {
+        g_settings.mode = Mode::listOnClick;
+    } else if (wcscmp(mode, L"list") == 0) {
         g_settings.mode = Mode::list;
     } else if (wcscmp(mode, L"thumbnails") == 0) {
         g_settings.mode = Mode::thumbnails;
