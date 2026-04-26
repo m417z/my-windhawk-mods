@@ -1,8 +1,8 @@
 // ==WindhawkMod==
 // @id              taskbar-thumbnails
 // @name            Disable Taskbar Thumbnails
-// @description     Disable taskbar thumbnails on hover, or replace them with a list
-// @version         1.1.4
+// @description     Disable taskbar thumbnail and virtual desktop switcher hover flyouts, or replace thumbnails with a list
+// @version         1.2
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
@@ -52,7 +52,7 @@ check out [7+ Taskbar Tweaker](https://tweaker.ramensoftware.com/).
   $name: Disable tooltips on hover
   $description: >-
     Only works for classic thumbnail previews, not for the new Windows 11
-    implementation of thumbnail previews
+    implementation of thumbnail previews.
 - oldTaskbarOnWin11: false
   $name: Customize the old taskbar on Windows 11
   $description: >-
