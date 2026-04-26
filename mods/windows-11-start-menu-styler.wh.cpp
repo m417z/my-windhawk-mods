@@ -1,9 +1,9 @@
 // ==WindhawkMod==
-// @id              windows-11-start-menu-styler
-// @name            Windows 11 Start Menu Styler
+// @id              windows-11-start-menu-styler-fork2
+// @name            Windows 11 Start Menu Styler - Fork2
 // @description     Customize the start menu with themes contributed by others or create your own
-// @version         1.4.1
-// @author          m417z
+// @version         1.4.1b
+// @author          m417z - volute91
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
 // @homepage        https://m417z.com/
@@ -6295,6 +6295,14 @@ HMODULE GetCurrentModuleHandle() {
     return module;
 }
 
+bool IsTabletMode() {
+    return GetSystemMetrics(SM_CONVERTIBLESLATEMODE) == 0;
+}
+
+int g_tabletMode = IsTabletMode() ? 1 : 0;
+int g_monitorWidth = 0;
+int g_monitorHeight = 0;
+
 ////////////////////////////////////////////////////////////////////////////////
 // clang-format off
 
@@ -6654,7 +6662,6 @@ HRESULT InjectWindhawkTAP() noexcept
 
 #include <algorithm>
 #include <cmath>
-#include <limits>
 #include <list>
 #include <mutex>
 #include <optional>
@@ -8747,6 +8754,193 @@ Style GetStyleFromXamlSettersWithFallbackType(
     }
 }
 
+class ExprParser {
+    public:
+        ExprParser(const std::wstring& s) : str(s), pos(0) {}
+
+        double parse() {
+            return parseExpression();
+        }
+
+    private:
+        const std::wstring& str;
+        size_t pos;
+
+        void skipSpaces() {
+            while (pos < str.size() && iswspace(str[pos]))
+                pos++;
+        }
+
+        double parseExpression() {
+            double value = parseTerm();
+            while (true) {
+                skipSpaces();
+                if (pos >= str.size()) break;
+
+                wchar_t op = str[pos];
+                if (op != L'+' && op != L'-') break;
+                pos++;
+
+                double rhs = parseTerm();
+
+                if (op == L'+') value += rhs;
+                else value -= rhs;
+            }
+            return value;
+        }
+
+        double parseTerm() {
+            double value = parseFactor();
+            while (true) {
+                skipSpaces();
+                if (pos >= str.size()) break;
+
+                wchar_t op = str[pos];
+                if (op != L'*' && op != L'/') break;
+                pos++;
+
+                double rhs = parseFactor();
+
+                if (op == L'*') value *= rhs;
+                else value /= rhs;
+            }
+            return value;
+        }
+
+        double parseFactor() {
+            skipSpaces();
+
+            if (str[pos] == L'(') {
+                pos++;
+                double value = parseExpression();
+                skipSpaces();
+                if (pos < str.size() && str[pos] == L')')
+                    pos++;
+                return value;
+            }
+
+            size_t start = pos;
+
+            while (pos < str.size() &&
+                (iswdigit(str[pos]) || str[pos] == L'.'))
+            {
+                pos++;
+            }
+
+            return std::stod(str.substr(start, pos - start));
+        }
+};
+
+double EvaluateExpression(const std::wstring& expr)
+{
+    ExprParser parser(expr);
+    return parser.parse();
+}
+
+std::wstring ToCleanString(double v)
+{
+    int iv = (int)(v + 0.5);
+    return std::to_wstring(iv);
+}
+
+bool LooksLikeExpression(const std::wstring& s)
+{
+    return s.find_first_of(L"0123456789+-*/()?") != std::wstring::npos;
+}
+
+std::wstring EvaluateExpressionOrReturnOriginal(const std::wstring& input)
+{
+    if (!LooksLikeExpression(input))
+        return input;
+    try
+    {
+        ExprParser parser(input);
+        double result = parser.parse();
+
+        return ToCleanString(result);
+    }
+    catch (...)
+    {
+        return input;
+    }
+}
+
+bool EvaluateCondition(const std::wstring& cond)
+{
+    size_t pos;
+
+    if ((pos = cond.find(L">=")) != std::wstring::npos)
+        return EvaluateExpression(cond.substr(0,pos)) >= EvaluateExpression(cond.substr(pos+2));
+
+    if ((pos = cond.find(L"<=")) != std::wstring::npos)
+        return EvaluateExpression(cond.substr(0,pos)) <= EvaluateExpression(cond.substr(pos+2));
+
+    if ((pos = cond.find(L"==")) != std::wstring::npos)
+        return EvaluateExpression(cond.substr(0,pos)) == EvaluateExpression(cond.substr(pos+2));
+
+    if ((pos = cond.find(L">")) != std::wstring::npos)
+        return EvaluateExpression(cond.substr(0,pos)) > EvaluateExpression(cond.substr(pos+1));
+
+    if ((pos = cond.find(L"<")) != std::wstring::npos)
+        return EvaluateExpression(cond.substr(0,pos)) < EvaluateExpression(cond.substr(pos+1));
+
+    return false;
+}
+
+std::wstring EvaluateConditional(const std::wstring& expr)
+{
+    size_t q = expr.find(L'?');
+    size_t c = expr.find(L':');
+
+    if (q == std::wstring::npos || c == std::wstring::npos)
+        return expr;
+
+    std::wstring cond = expr.substr(0, q);
+    std::wstring ifTrue = expr.substr(q + 1, c - q - 1);
+    std::wstring ifFalse = expr.substr(c + 1);
+
+    if (EvaluateCondition(cond))
+        return EvaluateExpressionOrReturnOriginal(ifTrue);
+    else
+        return EvaluateExpressionOrReturnOriginal(ifFalse);
+}
+
+std::wstring expandKeywords(std::wstring value) {
+    std::wstring valueExpanded = value;
+    auto replaceAll = [](std::wstring& str,
+                                    const std::wstring& from,
+                                    const std::wstring& to)
+                {
+                    size_t pos = 0;
+                    while ((pos = str.find(from, pos)) != std::wstring::npos) {
+                        str.replace(pos, from.length(), to);
+                        pos += to.length();
+                    }
+                };
+
+    // keywords
+    replaceAll(valueExpanded, L"monitorWidth",  std::to_wstring(g_monitorWidth));
+    replaceAll(valueExpanded, L"monitorHeight", std::to_wstring(g_monitorHeight));
+    replaceAll(valueExpanded, L"tabletMode", std::to_wstring(g_tabletMode));
+
+    try
+    {
+        if (value.find(L'?') != std::wstring::npos)
+        {
+            valueExpanded = EvaluateConditional(valueExpanded);
+        }
+        else
+        {
+            valueExpanded = EvaluateExpressionOrReturnOriginal(valueExpanded);
+        }
+    }
+    catch (...)
+    {
+        // not an expression, leave unchanged
+    }
+    return valueExpanded;
+}
+
 const PropertyOverrides& GetResolvedPropertyOverrides(
     const std::wstring_view type,
     const std::wstring_view fallbackType,
@@ -8769,26 +8963,28 @@ const PropertyOverrides& GetResolvedPropertyOverrides(
             propertyOverrideValues.reserve(styleRules.size());
 
             for (const auto& rule : styleRules) {
+                std::wstring valueExpanded = expandKeywords(rule.value);
+
                 propertyOverrideValues.push_back(
                     rule.isXamlValue
-                        ? ParseNonXamlPropertyOverrideValue(rule.value)
+                        ? ParseNonXamlPropertyOverrideValue(valueExpanded)
                         : std::nullopt);
 
                 xaml += L"        <Setter Property=\"";
                 xaml += EscapeXmlAttribute(rule.name);
                 xaml += L"\"";
                 if (propertyOverrideValues.back() ||
-                    (rule.isXamlValue && rule.value.empty())) {
+                    (rule.isXamlValue && valueExpanded.empty())) {
                     xaml += L" Value=\"{x:Null}\" />\n";
                 } else if (!rule.isXamlValue) {
                     xaml += L" Value=\"";
-                    xaml += EscapeXmlAttribute(rule.value);
+                    xaml += EscapeXmlAttribute(valueExpanded);
                     xaml += L"\" />\n";
                 } else {
                     xaml +=
                         L">\n"
                         L"            <Setter.Value>\n";
-                    xaml += rule.value;
+                    xaml += valueExpanded;
                     xaml +=
                         L"\n"
                         L"            </Setter.Value>\n"
@@ -10658,6 +10854,79 @@ bool RunFromWindowThreadViaPostMessage(HWND hWnd,
     return true;
 }
 
+static void UpdateMonitorSize(HWND hwnd);
+static void UpdateMenu(HWND hwnd);
+
+bool monitoringChangesTracked = false;
+HMONITOR g_currentMonitor = nullptr;
+WNDPROC hCoreWndProc = nullptr;
+LRESULT CALLBACK CoreWndProcHook(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam);
+
+// Definition from <shellscaling.h>
+enum MONITOR_DPI_TYPE {
+    MDT_EFFECTIVE_DPI = 0,
+    MDT_ANGULAR_DPI   = 1,
+    MDT_RAW_DPI       = 2,
+};
+using GetDpiForMonitor_t = HRESULT(WINAPI*)(HMONITOR, MONITOR_DPI_TYPE, UINT*, UINT*);
+GetDpiForMonitor_t pGetDpiForMonitor = nullptr;
+
+static void UpdateMonitorSize(HWND hwnd)
+{
+    Wh_Log(L"Get Monitor Size ****************************");
+
+    HMONITOR monitor = MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST);
+    g_currentMonitor = monitor;
+
+    MONITORINFO mi = { sizeof(mi) };
+    GetMonitorInfo(monitor, &mi);
+
+    if (pGetDpiForMonitor) {
+        UINT dpiX, dpiY;
+        if (SUCCEEDED(pGetDpiForMonitor(monitor, MDT_EFFECTIVE_DPI, &dpiX, &dpiY))) {
+            g_monitorWidth  = MulDiv(mi.rcMonitor.right  - mi.rcMonitor.left, 96, dpiX);
+            g_monitorHeight = MulDiv(mi.rcMonitor.bottom - mi.rcMonitor.top,  96, dpiY);
+            Wh_Log(L"Monitor width = %d", g_monitorWidth);
+        }
+    } else {
+        Wh_Log(L"pGetDpiForMonitor not initialized yet!");
+    }
+}
+
+static void UpdateMenu(HWND hwnd) {
+    RunFromWindowThread(
+        hwnd,
+        [](PVOID) {
+            UninitializeSettingsAndTap();
+            InitializeSettingsAndTap();
+        },
+        nullptr);
+}
+
+LRESULT CALLBACK CoreWndProcHook(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
+{
+    if (msg == WM_DISPLAYCHANGE || msg == WM_SETTINGCHANGE)
+    {
+        Wh_Log(L"Display change detected");
+        g_tabletMode = IsTabletMode() ? 1 : 0;
+        UpdateMonitorSize(hwnd);
+        UpdateMenu(hwnd);
+    }
+    if (msg == WM_WINDOWPOSCHANGED) {
+        const WINDOWPOS* wp = reinterpret_cast<const WINDOWPOS*>(lParam);
+        if (!(wp->flags & SWP_NOMOVE)) {
+            HMONITOR monitor = MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST);
+            if (monitor != g_currentMonitor) {
+                Wh_Log(L"Window position change detected");
+                UpdateMonitorSize(hwnd);
+                UpdateMenu(hwnd);
+            }
+        }
+    }
+
+    return CallWindowProc(hCoreWndProc, hwnd, msg, wParam, lParam);
+}
+
 void OnWindowCreated(HWND hWnd, LPCWSTR lpClassName, PCSTR funcName) {
     BOOL bTextualClassName = ((ULONG_PTR)lpClassName & ~(ULONG_PTR)0xffff) != 0;
 
@@ -10667,6 +10936,15 @@ void OnWindowCreated(HWND hWnd, LPCWSTR lpClassName, PCSTR funcName) {
                 _wcsicmp(lpClassName, L"Windows.UI.Core.CoreWindow") == 0) {
                 Wh_Log(L"Initializing - Created core window: %08X via %S",
                        (DWORD)(ULONG_PTR)hWnd, funcName);
+                UpdateMonitorSize(hWnd);
+                if (!monitoringChangesTracked) {
+                    hCoreWndProc = (WNDPROC)SetWindowLongPtr(
+                        hWnd,
+                        GWLP_WNDPROC,
+                        (LONG_PTR)CoreWndProcHook
+                    );
+                    monitoringChangesTracked = true;
+                }
                 InitializeSettingsAndTap();
             }
             break;
@@ -11056,7 +11334,7 @@ BOOL Wh_ModInit() {
         case 0:
         case ARRAYSIZE(moduleFilePath):
             Wh_Log(L"GetModuleFileName failed");
-            return FALSE;
+            break;
 
         default:
             if (PCWSTR moduleFileName = wcsrchr(moduleFilePath, L'\\')) {
@@ -11067,7 +11345,6 @@ BOOL Wh_ModInit() {
                 }
             } else {
                 Wh_Log(L"GetModuleFileName returned an unsupported path");
-                return FALSE;
             }
             break;
     }
@@ -11153,9 +11430,25 @@ BOOL Wh_ModInit() {
 void Wh_ModAfterInit() {
     Wh_Log(L">");
 
+    // Note: for a reliable value of DPI, we need GetDpiForMonitor from shcore.dll
+    HMODULE hShcore = LoadLibraryEx(L"shcore.dll", nullptr, LOAD_LIBRARY_SEARCH_SYSTEM32);
+    if (hShcore) {
+        pGetDpiForMonitor = reinterpret_cast<GetDpiForMonitor_t>(
+            GetProcAddress(hShcore, "GetDpiForMonitor"));
+    }
+
     HWND hCoreWnd = GetCoreWnd();
     if (hCoreWnd) {
         Wh_Log(L"Initializing - Found core window");
+        UpdateMonitorSize(hCoreWnd);
+        if (!monitoringChangesTracked) {
+            hCoreWndProc = (WNDPROC)SetWindowLongPtr(
+                hCoreWnd,
+                GWLP_WNDPROC,
+                (LONG_PTR)CoreWndProcHook
+            );
+            monitoringChangesTracked = true;
+        }
         RunFromWindowThread(
             hCoreWnd, [](PVOID) { InitializeSettingsAndTap(); }, nullptr);
     }
