@@ -42,6 +42,12 @@ check out [7+ Taskbar Tweaker](https://tweaker.ramensoftware.com/).
   - listOnClick: Disable on hover, list on click
   - list: List
   - thumbnails: Thumbnails
+- noVirtualDesktopSwitcherHover: false
+  $name: Disable virtual desktop switcher on hover
+  $description: >-
+    Disables the virtual desktop switcher flyout that appears when hovering
+    over the Task View button on the taskbar. Only works on Windows 11 with
+    the new taskbar.
 - noTooltips: false
   $name: Disable tooltips on hover
   $description: >-
@@ -70,6 +76,7 @@ enum class Mode {
 
 struct {
     Mode mode;
+    bool noVirtualDesktopSwitcherHover;
     bool noTooltips;
     bool oldTaskbarOnWin11;
 } g_settings;
@@ -98,9 +105,64 @@ struct HoverFlyoutWindowState {
 
 HoverFlyoutWindowState g_hoverFlyoutWindow;
 
+using GetWindowBand_t = BOOL(WINAPI*)(HWND hWnd, PDWORD pdwBand);
+GetWindowBand_t pGetWindowBand;
+
+// Detects the virtual desktop switcher flyout shown when hovering over the Task
+// View button on the taskbar.
+bool IsVirtualDesktopSwitcherHoverWindow(HWND hWnd) {
+    // Must be in the current process (explorer.exe).
+    DWORD dwProcessId = 0;
+    DWORD dwThreadId = GetWindowThreadProcessId(hWnd, &dwProcessId);
+    if (!dwThreadId || dwProcessId != GetCurrentProcessId()) {
+        return false;
+    }
+
+    WCHAR className[64];
+    if (!GetClassName(hWnd, className, ARRAYSIZE(className)) ||
+        _wcsicmp(className, L"XamlExplorerHostIslandWindow") != 0) {
+        return false;
+    }
+
+    // The Alt+Tab window uses band ZBID_SYSTEM_TOOLS, the Win+Tab window uses
+    // band ZBID_IMMERSIVE_APPCHROME, the virtual desktop switcher uses band
+    // ZBID_IMMERSIVE_EDGY.
+    constexpr DWORD ZBID_IMMERSIVE_EDGY = 7;
+
+    DWORD band = 0;
+    if (!pGetWindowBand || !pGetWindowBand(hWnd, &band) ||
+        band != ZBID_IMMERSIVE_EDGY) {
+        return false;
+    }
+
+    // Check thread description for "MultitaskingView".
+    HANDLE hThread =
+        OpenThread(THREAD_QUERY_LIMITED_INFORMATION, FALSE, dwThreadId);
+    if (!hThread) {
+        return false;
+    }
+
+    bool isMultitaskingView = false;
+    PWSTR description = nullptr;
+    if (SUCCEEDED(GetThreadDescription(hThread, &description)) && description) {
+        isMultitaskingView = wcscmp(description, L"MultitaskingView") == 0;
+        LocalFree(description);
+    }
+
+    CloseHandle(hThread);
+    return isMultitaskingView;
+}
+
 using ShowWindow_t = decltype(&ShowWindow);
 ShowWindow_t ShowWindow_Original;
 BOOL WINAPI ShowWindow_Hook(HWND hWnd, int nCmdShow) {
+    if (g_settings.noVirtualDesktopSwitcherHover && nCmdShow != SW_HIDE &&
+        IsVirtualDesktopSwitcherHoverWindow(hWnd)) {
+        Wh_Log(L"> %08X - %d (virtual desktop switcher)",
+               (DWORD)(DWORD_PTR)hWnd, nCmdShow);
+        return TRUE;
+    }
+
     if (g_showTaskListButtonHoverFlyoutThreadId == GetCurrentThreadId() &&
         !g_inTransitionToFlyoutVisibleStickyState) {
         Wh_Log(L"> %08X - %d", (DWORD)(DWORD_PTR)hWnd, nCmdShow);
@@ -606,6 +668,9 @@ void LoadSettings() {
     }
     Wh_FreeStringSetting(mode);
 
+    g_settings.noVirtualDesktopSwitcherHover =
+        Wh_GetIntSetting(L"noVirtualDesktopSwitcherHover");
+
     g_settings.noTooltips = Wh_GetIntSetting(L"noTooltips");
 
     g_settings.oldTaskbarOnWin11 = Wh_GetIntSetting(L"oldTaskbarOnWin11");
@@ -659,6 +724,11 @@ BOOL Wh_ModInit() {
         WindhawkUtils::Wh_SetFunctionHookT(
             (EnableWindow_t)GetProcAddress(win32u, "NtUserEnableWindow"),
             EnableWindow_Hook, &EnableWindow_Original);
+
+        if (HMODULE user32 = GetModuleHandle(L"user32.dll")) {
+            pGetWindowBand =
+                (GetWindowBand_t)GetProcAddress(user32, "GetWindowBand");
+        }
     } else {
         if (!HookTaskbarSymbols()) {
             return FALSE;
