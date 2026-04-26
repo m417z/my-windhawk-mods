@@ -957,15 +957,18 @@ void UpdateTaskListButtonWithLabelStyle(
         FindChildByName(iconPanelElement, L"LabelControl")
             .as<Controls::TextBlock>();
 
-    if (secondColumnWidthPixels > 0 && labelControlElement) {
-        // In labelsWithCombining mode, pinned items have labels too. Hide them.
-        if (g_settings.mode == Mode::labelsWithCombining &&
-            !TaskListButton_IsRunning(taskListButtonElement)) {
-            secondColumnWidthPixels = 0;
-            labelControlElement.Visibility(Visibility::Collapsed);
-            labelControlElement = nullptr;
-        }
+    // In labelsWithCombining mode, pinned items have labels too. Hide them.
+    if (g_settings.mode == Mode::labelsWithCombining && labelControlElement &&
+        !TaskListButton_IsRunning(taskListButtonElement)) {
+        secondColumnWidthPixels = 0;
+        labelControlElement.Visibility(Visibility::Collapsed);
+        labelControlElement = nullptr;
 
+        columnDefinitions.GetAt(1).Width(GridLength({
+            .Value = 0,
+            .GridUnitType = GridUnitType::Pixel,
+        }));
+    } else if (secondColumnWidthPixels > 0 && labelControlElement) {
         columnDefinitions.GetAt(1).Width(GridLength({
             .Value = secondColumnWidthPixels,
             .GridUnitType = GridUnitType::Pixel,
