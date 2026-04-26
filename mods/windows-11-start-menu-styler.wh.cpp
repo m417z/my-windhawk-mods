@@ -9589,15 +9589,16 @@ void ApplyCustomizations(InstanceHandle handle,
         return;
     }
 
-    Wh_Log(L"Applying styles");
-
-    auto& elementCustomizationState = g_elementsCustomizationState[handle];
-
-    for (const auto& [visualStateGroupOptionalWeakPtrIter, stateIter] :
-         elementCustomizationState.perVisualStateGroup) {
-        RestoreCustomizationsForVisualStateGroup(
-            element, visualStateGroupOptionalWeakPtrIter, stateIter);
+    auto [elementCustomizationStateIter, inserted] =
+        g_elementsCustomizationState.insert({handle, {}});
+    if (!inserted) {
+        Wh_Log(L"Customization state already exists for handle %zu", handle);
+        return;
     }
+
+    auto& elementCustomizationState = elementCustomizationStateIter->second;
+
+    Wh_Log(L"Applying styles");
 
     elementCustomizationState.element = element;
     elementCustomizationState.perVisualStateGroup.clear();
