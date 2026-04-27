@@ -1,6 +1,6 @@
 // ==WindhawkMod==
-// @id              taskbar-auto-hide-per-monitor-fork
-// @name            Taskbar auto-hide per monitor - Fork
+// @id              taskbar-auto-hide-per-monitor
+// @name            Taskbar auto-hide per monitor
 // @description     By default, Windows uses the same auto-hide setting for all monitors. This mod allows setting different auto-hide settings for each monitor.
 // @version         1.1.3
 // @author          m417z
