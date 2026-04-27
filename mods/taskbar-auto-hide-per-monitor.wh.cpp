@@ -1,8 +1,8 @@
 // ==WindhawkMod==
-// @id              taskbar-auto-hide-per-monitor
-// @name            Taskbar auto-hide per monitor
+// @id              taskbar-auto-hide-per-monitor-fork
+// @name            Taskbar auto-hide per monitor - Fork
 // @description     By default, Windows uses the same auto-hide setting for all monitors. This mod allows setting different auto-hide settings for each monitor.
-// @version         1.0.3
+// @version         1.1.3
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
@@ -74,6 +74,15 @@ number when both are configured.
 
 // ==WindhawkModSettings==
 /*
+- mode: blocklist
+  $name: Mode
+  $description: >-
+    Blocklist: auto-hide is enabled globally, and you disable it for specific
+    monitors (original behavior). Allowlist: auto-hide is disabled on all
+    monitors except the ones you explicitly allow.
+  $options:
+  - blocklist: Blocklist (disable auto-hide for listed monitors)
+  - allowlist: Allowlist (only allow auto-hide for listed monitors)
 - monitors:
   - - monitor: 1
       $name: Monitor
@@ -88,10 +97,12 @@ number when both are configured.
         useful if the monitor numbers change often. To see all available
         interface names, set this field to any non-empty string, enable mod
         logs, and look for "Found display device" messages.
-    - autoHideDisabled: false
-      $name: Auto-hide disabled
+    - enabled: true
+      $name: Enabled
       $description: >-
-        Whether auto-hide should be disabled for this monitor.
+        Whether this monitor entry is active. In blocklist mode, enabled
+        entries have auto-hide disabled. In allowlist mode, enabled entries
+        have auto-hide enabled.
   $name: Monitors
 */
 // ==/WindhawkModSettings==
@@ -104,13 +115,19 @@ number when both are configured.
 #include <atomic>
 #include <vector>
 
+enum class Mode {
+    Blocklist,
+    Allowlist,
+};
+
 struct MonitorConfig {
     int monitor;
     WindhawkUtils::StringSetting monitorInterfaceName;
-    bool autoHideDisabled;
+    bool enabled;
 };
 
 struct {
+    Mode mode;
     std::vector<MonitorConfig> monitors;
 } g_settings;
 
@@ -220,27 +237,41 @@ HMONITOR GetMonitorByInterfaceNameSubstr(PCWSTR interfaceNameSubstr) {
     return monitorResult;
 }
 
+HMONITOR ResolveConfigMonitor(const MonitorConfig& config) {
+    if (*config.monitorInterfaceName.get()) {
+        return GetMonitorByInterfaceNameSubstr(
+            config.monitorInterfaceName.get());
+    } else if (config.monitor >= 1) {
+        return GetMonitorById(config.monitor - 1);
+    }
+    return nullptr;
+}
+
 bool GetAutoHideDisabledForMonitor(HMONITOR monitor) {
     if (g_pauseCustomizations) {
         return false;
     }
 
-    for (const auto& config : g_settings.monitors) {
-        HMONITOR configMonitor = nullptr;
-
-        if (*config.monitorInterfaceName.get()) {
-            configMonitor = GetMonitorByInterfaceNameSubstr(
-                config.monitorInterfaceName.get());
-        } else if (config.monitor >= 1) {
-            configMonitor = GetMonitorById(config.monitor - 1);
+    if (g_settings.mode == Mode::Blocklist) {
+        // Original behavior: auto-hide is on for all monitors,
+        // disable it for specifically listed ones.
+        for (const auto& config : g_settings.monitors) {
+            if (config.enabled && ResolveConfigMonitor(config) == monitor) {
+                return true;
+            }
         }
-
-        if (configMonitor == monitor) {
-            return config.autoHideDisabled;
+        return false;
+    } else {
+        // Allowlist: auto-hide is off for all monitors by default,
+        // enable it only for specifically listed ones.
+        for (const auto& config : g_settings.monitors) {
+            if (config.enabled && ResolveConfigMonitor(config) == monitor) {
+                return false;
+            }
         }
+        // Not listed or not enabled — disable auto-hide.
+        return true;
     }
-
-    return false;
 }
 
 using ViewCoordinator_ShouldTaskbarBeExpanded_t =
@@ -781,6 +812,13 @@ bool HookExplorerExeSymbols() {
 void LoadSettings() {
     g_settings.monitors.clear();
 
+    auto modeSetting = WindhawkUtils::StringSetting::make(L"mode");
+    if (wcscmp(modeSetting.get(), L"allowlist") == 0) {
+        g_settings.mode = Mode::Allowlist;
+    } else {
+        g_settings.mode = Mode::Blocklist;
+    }
+
     for (int i = 0;; i++) {
         auto monitorInterfaceName = WindhawkUtils::StringSetting::make(
             L"monitors[%d].monitorInterfaceName", i);
@@ -794,8 +832,8 @@ void LoadSettings() {
         g_settings.monitors.push_back(MonitorConfig{
             .monitor = monitor,
             .monitorInterfaceName = std::move(monitorInterfaceName),
-            .autoHideDisabled =
-                !!Wh_GetIntSetting(L"monitors[%d].autoHideDisabled", i),
+            .enabled =
+                !!Wh_GetIntSetting(L"monitors[%d].enabled", i),
         });
     }
 }
@@ -857,7 +895,6 @@ void Wh_ModAfterInit() {
         if (HMODULE taskbarViewModule = GetTaskbarViewModuleHandle()) {
             if (!g_taskbarViewDllLoaded.exchange(true)) {
                 Wh_Log(L"Got Taskbar.View.dll");
-
                 if (HookTaskbarViewDllSymbols(taskbarViewModule)) {
                     Wh_ApplyHookOperations();
                 }
