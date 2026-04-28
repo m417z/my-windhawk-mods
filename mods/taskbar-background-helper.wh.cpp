@@ -671,6 +671,19 @@ void UpdateTaskbarStyleForMonitor(HMONITOR monitor, bool hasMaximized) {
 }
 
 BOOL ApplyTaskbarStyleForWindow(HWND hWnd) {
+    // Determine the active style to check if monitor state is needed at all.
+    TaskbarStyle& style =
+        (g_settings.darkModeStyle && IsWindowsDarkModeEnabled())
+            ? *g_settings.darkModeStyle
+            : g_settings.style;
+
+    // Skip the mutex-guarded monitor state lookup when neither
+    // onlyWhenMaximized nor useMaximizedTransparency is active, as hasMaximized
+    // cannot affect the outcome in that case.
+    if (!g_settings.onlyWhenMaximized && !style.useMaximizedTransparency) {
+        return SetTaskbarStyle(hWnd, false);
+    }
+
     HMONITOR monitor = MonitorFromWindow(hWnd, MONITOR_DEFAULTTONEAREST);
     bool hasMaximized = !g_specialViewMode.IsActive() &&
                         g_monitorState.HasMaximizedWindow(monitor);
@@ -1234,7 +1247,12 @@ bool NeedsMonitoringThread() {
 }
 
 void EnsureMonitoringThreadStarted() {
-    if (!NeedsMonitoringThread() || g_winEventHookThread) {
+    // Check the cheap pointer first to avoid the registry read inside
+    // NeedsMonitoringThread() when the thread is already running.
+    if (g_winEventHookThread) {
+        return;
+    }
+    if (!NeedsMonitoringThread()) {
         return;
     }
 
