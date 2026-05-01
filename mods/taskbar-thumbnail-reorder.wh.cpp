@@ -29,14 +29,6 @@ Reorder taskbar thumbnails with the left mouse button.
 Only Windows 10 64-bit and Windows 11 are supported. For older Windows versions
 check out [7+ Taskbar Tweaker](https://tweaker.ramensoftware.com/).
 
-## Known limitations
-
-* When the new thumbnail previews implementation in Windows 11 is used, and when
-  labels are shown, each reordering operation causes the thumbnail previews to
-  be closed. This seems to be a bug in Windows 11, it also happens when closing
-  items with the x button or via middle click. I couldn't find a workaround,
-  hopefully it will be fixed by Microsoft in one of the next updates.
-
 ![demonstration](https://i.imgur.com/wGGe2RS.gif)
 */
 // ==/WindhawkModReadme==
@@ -930,6 +922,23 @@ int WINAPI TaskItemThumbnailList_OnPointerMoved_Hook(void* pThis, void* pArgs) {
     return original();
 }
 
+using FlyoutFrame_UpdateFlyoutPosition_t = void(WINAPI*)(void* pThis);
+FlyoutFrame_UpdateFlyoutPosition_t FlyoutFrame_UpdateFlyoutPosition_Original;
+void WINAPI FlyoutFrame_UpdateFlyoutPosition_Hook(void* pThis) {
+    // Skip the call entirely until the reorder completes. Otherwise, if labels
+    // are shown, the thumbnail flyout moves off-screen and disappears. That
+    // seems to be a Windows bug, happens with middle-click too.
+    if (g_reorderingXamlThumbnails) {
+        if (GetCapture()) {
+            return;
+        }
+
+        g_reorderingXamlThumbnails = false;
+    }
+
+    FlyoutFrame_UpdateFlyoutPosition_Original(pThis);
+}
+
 using DPA_GetPtr_t = decltype(&DPA_GetPtr);
 DPA_GetPtr_t DPA_GetPtr_Original;
 PVOID WINAPI DPA_GetPtr_Hook(HDPA hdpa, INT_PTR i) {
@@ -1073,6 +1082,12 @@ bool HookTaskbarViewDllSymbols(HMODULE module) {
             {LR"(public: virtual int __cdecl winrt::impl::produce<struct winrt::Taskbar::implementation::TaskItemThumbnailList,struct winrt::Windows::UI::Xaml::Controls::IControlOverrides>::OnPointerMoved(void *))"},
             &TaskItemThumbnailList_OnPointerMoved_Original,
             TaskItemThumbnailList_OnPointerMoved_Hook,
+            true,  // New XAML thumbnails, enabled in late Windows 11 24H2.
+        },
+        {
+            {LR"(private: void __cdecl winrt::Taskbar::implementation::FlyoutFrame::UpdateFlyoutPosition(void))"},
+            &FlyoutFrame_UpdateFlyoutPosition_Original,
+            FlyoutFrame_UpdateFlyoutPosition_Hook,
             true,  // New XAML thumbnails, enabled in late Windows 11 24H2.
         },
     };
