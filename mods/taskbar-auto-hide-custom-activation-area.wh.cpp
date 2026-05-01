@@ -108,7 +108,11 @@ bool SvToInt(std::wstring_view s, int* result) {
         if (c < L'0' || c > L'9') {
             return false;
         }
-        value = value * 10 + (c - L'0');
+        int digit = c - L'0';
+        if (value > (INT_MAX - digit) / 10) {
+            return false;
+        }
+        value = value * 10 + digit;
     }
 
     *result = value;
@@ -194,7 +198,7 @@ bool IsCursorInActivationRegion(HWND hWnd, POINT pt) {
     if (isHorizontal) {
         taskbarLength = rc.right - rc.left;
         if (GetWindowLong(hWnd, GWL_EXSTYLE) & WS_EX_LAYOUTRTL) {
-            cursorOffset = rc.right - pt.x;
+            cursorOffset = rc.right - 1 - pt.x;
         } else {
             cursorOffset = pt.x - rc.left;
         }
