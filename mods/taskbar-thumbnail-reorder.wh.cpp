@@ -609,6 +609,39 @@ void* WINAPI TaskItemThumbnail_TaskItemThumbnail_Hook(void* param1,
     return result;
 }
 
+using TaskItemThumbnail_TaskItemThumbnail_2_t = void*(WINAPI*)(void* param1,
+                                                               void* param2,
+                                                               void* taskGroup,
+                                                               void* taskItem,
+                                                               void* taskListUi,
+                                                               void* param6,
+                                                               bool param7);
+TaskItemThumbnail_TaskItemThumbnail_2_t
+    TaskItemThumbnail_TaskItemThumbnail_2_Original;
+void* WINAPI TaskItemThumbnail_TaskItemThumbnail_2_Hook(void* param1,
+                                                        void* param2,
+                                                        void* taskGroup,
+                                                        void* taskItem,
+                                                        void* taskListUi,
+                                                        void* param6,
+                                                        bool param7) {
+    Wh_Log(L">");
+
+    void* result = TaskItemThumbnail_TaskItemThumbnail_2_Original(
+        param1, param2, taskGroup, taskItem, taskListUi, param6, param7);
+
+    winrt::Windows::Foundation::IInspectable obj = nullptr;
+    ((IUnknown*)result + 2)
+        ->QueryInterface(
+            winrt::guid_of<winrt::Windows::Foundation::IInspectable>(),
+            winrt::put_abi(obj));
+
+    g_thumbnailTaskItemMapping.push_back(
+        ThumbnailTaskItemMapping{obj, taskGroup, taskItem});
+
+    return result;
+}
+
 using TaskGroup_Thumbnails_t = void*(WINAPI*)(void* pThis, void* param1);
 TaskGroup_Thumbnails_t TaskGroup_Thumbnails_Original;
 void* WINAPI TaskGroup_Thumbnails_Hook(void* pThis, void* param1) {
@@ -980,9 +1013,17 @@ bool HookTaskbarSymbols() {
                 CTaskListThumbnailWnd_v_WndProc_Hook,
             },
             {
+                // An older variant, see the newer variant below.
                 {LR"(public: __cdecl winrt::WindowsUdk::UI::Shell::implementation::TaskItemThumbnail::TaskItemThumbnail(struct winrt::WindowsUdk::UI::Shell::TaskItem const &,struct ITaskGroup *,struct ITaskItem *,struct ITaskListUI *,struct IWICImagingFactory *,struct ITaskListAcc *,bool))"},
                 &TaskItemThumbnail_TaskItemThumbnail_Original,
                 TaskItemThumbnail_TaskItemThumbnail_Hook,
+                true,  // New XAML thumbnails, enabled in late Windows 11 24H2.
+            },
+            {
+                // A newer variant seen in Windows 11 version 10.0.26100.8328.
+                {LR"(public: __cdecl winrt::WindowsUdk::UI::Shell::implementation::TaskItemThumbnail::TaskItemThumbnail(struct winrt::WindowsUdk::UI::Shell::TaskItem const &,struct ITaskGroup *,struct ITaskItem *,struct ITaskListUI *,struct IWICImagingFactory *,bool))"},
+                &TaskItemThumbnail_TaskItemThumbnail_2_Original,
+                TaskItemThumbnail_TaskItemThumbnail_2_Hook,
                 true,  // New XAML thumbnails, enabled in late Windows 11 24H2.
             },
             {
