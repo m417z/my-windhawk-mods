@@ -10833,7 +10833,7 @@ int NTAPI RtlQueryFeatureConfiguration_Hook(UINT32 featureId,
     switch (featureId) {
         // Disable the Start Menu Phone Link layout feature.
         // https://winaero.com/enable-phone-link-flyout-start-menu/
-        case 48697323:
+        case 48697323:  // Removed in StartDocked.dll 10.0.26100.8328
             Wh_Log(L"%u", featureId);
             if (g_disableNewStartMenuLayout ==
                 DisableNewStartMenuLayout::forceNewLayout) {
