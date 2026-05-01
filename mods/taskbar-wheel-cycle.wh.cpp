@@ -157,7 +157,6 @@ HWND GetTaskBandWnd() {
 
 void* CTaskListWnd_vftable_ITaskListUI;
 void* CTaskListWnd_vftable_ITaskListSite;
-void* CTaskListWnd_vftable_ITaskListAcc;
 void* CImmersiveTaskItem_vftable;
 
 using CTaskListWnd_GetButtonGroupCount_t = int(WINAPI*)(void* pThis);
@@ -1245,10 +1244,6 @@ bool HookTaskbarSymbols() {
             &CTaskListWnd_vftable_ITaskListSite,
         },
         {
-            {LR"(const CTaskListWnd::`vftable'{for `ITaskListAcc'})"},
-            &CTaskListWnd_vftable_ITaskListAcc,
-        },
-        {
             {LR"(const CImmersiveTaskItem::`vftable'{for `ITaskItem'})"},
             &CImmersiveTaskItem_vftable,
         },
@@ -1401,8 +1396,6 @@ bool HookExplorerPatcherSymbols(HMODULE explorerPatcherModule) {
          &CTaskListWnd_vftable_ITaskListUI},
         {R"(??_7CTaskListWnd@@6BITaskListSite@@@)",
          &CTaskListWnd_vftable_ITaskListSite},
-        {R"(??_7CTaskListWnd@@6BITaskListAcc@@@)",
-         &CTaskListWnd_vftable_ITaskListAcc},
         {R"(??_7CImmersiveTaskItem@@6BITaskItem@@@)",
          &CImmersiveTaskItem_vftable},
         {R"(?GetButtonGroupCount@CTaskListWnd@@UEAAHXZ)",
