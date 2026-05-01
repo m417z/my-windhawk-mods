@@ -9,7 +9,7 @@
 // @homepage        https://m417z.com/
 // @include         explorer.exe
 // @architecture    x86-64
-// @compilerOptions -lcomctl32 -lole32 -loleaut32 -lruntimeobject -lversion
+// @compilerOptions -lcomctl32 -lgdi32 -lole32 -loleaut32 -lruntimeobject -lversion
 // ==/WindhawkMod==
 
 // Source code is published under The GNU General Public License v3.0.
@@ -49,6 +49,13 @@ check out [7+ Taskbar Tweaker](https://tweaker.ramensoftware.com/).
   $name: Enable mouse wheel cycling
   $description: >-
     Disable to only use keyboard shortcuts for cycling between taskbar buttons.
+- customScrollRegions: ""
+  $name: Custom scroll regions
+  $description: >-
+    A comma-separated list of custom regions along the taskbar where scrolling
+    will cycle between taskbar buttons. If set, it will override the default
+    behavior of using the task list area for scrolling. Each region is a range
+    like "100-200" (pixels) or "20%-50%" (percentage of taskbar length).
 - cycleLeftKeyboardShortcut: Alt+VK_OEM_4
   $name: Cycle left keyboard shortcut
   $description: >-
@@ -81,6 +88,7 @@ check out [7+ Taskbar Tweaker](https://tweaker.ramensoftware.com/).
 
 #include <algorithm>
 #include <atomic>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <unordered_map>
@@ -88,11 +96,18 @@ check out [7+ Taskbar Tweaker](https://tweaker.ramensoftware.com/).
 
 using namespace winrt::Windows::UI::Xaml;
 
+struct Region {
+    bool isPercentage;
+    int start;
+    int end;
+};
+
 struct {
     bool skipMinimizedWindows;
     bool wrapAround;
     bool reverseScrollingDirection;
     bool enableMouseWheelCycling;
+    std::vector<Region> customScrollRegions;
     WindhawkUtils::StringSetting cycleLeftKeyboardShortcut;
     WindhawkUtils::StringSetting cycleRightKeyboardShortcut;
     bool oldTaskbarOnWin11;
@@ -544,6 +559,166 @@ HWND TaskListFromPoint(POINT pt) {
 
     return TaskListFromMMTaskbarWnd(hRootWnd);
 }
+
+#pragma region regions
+
+UINT GetDpiForWindowWithFallback(HWND hWnd) {
+    using GetDpiForWindow_t = UINT(WINAPI*)(HWND hwnd);
+    static GetDpiForWindow_t pGetDpiForWindow = []() {
+        HMODULE hUser32 = GetModuleHandle(L"user32.dll");
+        if (hUser32) {
+            return (GetDpiForWindow_t)GetProcAddress(hUser32,
+                                                     "GetDpiForWindow");
+        }
+
+        return (GetDpiForWindow_t) nullptr;
+    }();
+
+    int iDpi = 96;
+    if (pGetDpiForWindow) {
+        iDpi = pGetDpiForWindow(hWnd);
+    } else {
+        HDC hdc = GetDC(NULL);
+        if (hdc) {
+            iDpi = GetDeviceCaps(hdc, LOGPIXELSX);
+            ReleaseDC(NULL, hdc);
+        }
+    }
+
+    return iDpi;
+}
+
+// https://stackoverflow.com/a/54364173
+std::wstring_view TrimStringView(std::wstring_view s) {
+    s.remove_prefix(std::min(s.find_first_not_of(L" \t\r\v\n"), s.size()));
+    s.remove_suffix(
+        std::min(s.size() - s.find_last_not_of(L" \t\r\v\n") - 1, s.size()));
+    return s;
+}
+
+// https://stackoverflow.com/a/46931770
+std::vector<std::wstring_view> SplitStringView(std::wstring_view s,
+                                               std::wstring_view delimiter) {
+    size_t pos_start = 0, pos_end, delim_len = delimiter.length();
+    std::wstring_view token;
+    std::vector<std::wstring_view> res;
+
+    while ((pos_end = s.find(delimiter, pos_start)) !=
+           std::wstring_view::npos) {
+        token = s.substr(pos_start, pos_end - pos_start);
+        pos_start = pos_end + delim_len;
+        res.push_back(token);
+    }
+
+    res.push_back(s.substr(pos_start));
+    return res;
+}
+
+bool SvToInt(std::wstring_view s, int* result) {
+    if (s.empty()) {
+        return false;
+    }
+
+    int value = 0;
+    for (WCHAR c : s) {
+        if (c < L'0' || c > L'9') {
+            return false;
+        }
+        value = value * 10 + (c - L'0');
+    }
+
+    *result = value;
+    return true;
+}
+
+std::optional<Region> ParseRegion(std::wstring_view regionStr) {
+    auto parts = SplitStringView(regionStr, L"-");
+    if (parts.size() != 2) {
+        Wh_Log(L"Invalid region (expected start-end): %.*s",
+               (int)regionStr.size(), regionStr.data());
+        return std::nullopt;
+    }
+
+    auto startStr = TrimStringView(parts[0]);
+    auto endStr = TrimStringView(parts[1]);
+
+    bool startIsPercentage = !startStr.empty() && startStr.back() == L'%';
+    bool endIsPercentage = !endStr.empty() && endStr.back() == L'%';
+    if (startIsPercentage != endIsPercentage) {
+        Wh_Log(L"Invalid region (mixed percent and pixel): %.*s",
+               (int)regionStr.size(), regionStr.data());
+        return std::nullopt;
+    }
+
+    bool isPercentage = startIsPercentage;
+    if (isPercentage) {
+        startStr.remove_suffix(1);
+        endStr.remove_suffix(1);
+    }
+
+    int start;
+    int end;
+    if (!SvToInt(startStr, &start) || !SvToInt(endStr, &end)) {
+        Wh_Log(L"Invalid region (non-numeric values): %.*s",
+               (int)regionStr.size(), regionStr.data());
+        return std::nullopt;
+    }
+
+    if (start >= end) {
+        Wh_Log(L"Invalid region (start must be less than end): %.*s",
+               (int)regionStr.size(), regionStr.data());
+        return std::nullopt;
+    }
+
+    return Region{isPercentage, start, end};
+}
+
+bool HasCustomScrollRegions() {
+    return !g_settings.customScrollRegions.empty();
+}
+
+bool IsPointInsideCustomRegion(HWND hMMTaskbarWnd, POINT pt) {
+    RECT rc;
+    if (!GetWindowRect(hMMTaskbarWnd, &rc) || !PtInRect(&rc, pt)) {
+        return false;
+    }
+
+    bool isHorizontal = (rc.right - rc.left) >= (rc.bottom - rc.top);
+    int taskbarLength;
+    int cursorOffset;
+    if (isHorizontal) {
+        taskbarLength = rc.right - rc.left;
+        if (GetWindowLong(hMMTaskbarWnd, GWL_EXSTYLE) & WS_EX_LAYOUTRTL) {
+            cursorOffset = rc.right - pt.x;
+        } else {
+            cursorOffset = pt.x - rc.left;
+        }
+    } else {
+        taskbarLength = rc.bottom - rc.top;
+        cursorOffset = pt.y - rc.top;
+    }
+
+    UINT dpi = GetDpiForWindowWithFallback(hMMTaskbarWnd);
+
+    for (const auto& region : g_settings.customScrollRegions) {
+        int start, end;
+        if (region.isPercentage) {
+            start = MulDiv(taskbarLength, region.start, 100);
+            end = MulDiv(taskbarLength, region.end, 100);
+        } else {
+            start = MulDiv(region.start, dpi, 96);
+            end = MulDiv(region.end, dpi, 96);
+        }
+
+        if (cursorOffset >= start && cursorOffset <= end) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+#pragma endregion  // regions
 
 HWND GetTaskbarForMonitor(HWND hTaskbarWnd, HMONITOR monitor) {
     DWORD taskbarThreadId = 0;
@@ -1043,7 +1218,8 @@ LRESULT WINAPI TrayUI_WndProc_Hook(void* pThis,
             .y = GET_Y_LPARAM(lParam),
         };
 
-        if (PtInRect(&rc, pt)) {
+        if (HasCustomScrollRegions() ? IsPointInsideCustomRegion(hWnd, pt)
+                                     : PtInRect(&rc, pt)) {
             short delta = GET_WHEEL_DELTA_WPARAM(wParam);
 
             // Allows to steal focus.
@@ -1082,7 +1258,8 @@ LRESULT WINAPI CSecondaryTray_v_WndProc_Hook(void* pThis,
             .y = GET_Y_LPARAM(lParam),
         };
 
-        if (PtInRect(&rc, pt)) {
+        if (HasCustomScrollRegions() ? IsPointInsideCustomRegion(hWnd, pt)
+                                     : PtInRect(&rc, pt)) {
             short delta = GET_WHEEL_DELTA_WPARAM(wParam);
 
             // Allows to steal focus.
@@ -1150,6 +1327,11 @@ int TaskbarFrame_OnPointerWheelChanged_Hook(PVOID pThis, PVOID pArgs) {
         return original();
     }
 
+    if (HasCustomScrollRegions() &&
+        !IsPointInsideCustomRegion(GetAncestor(hMMTaskListWnd, GA_ROOT), pt)) {
+        return original();
+    }
+
     auto currentPoint = args.GetCurrentPoint(taskbarFrameElement);
     double delta = currentPoint.Properties().MouseWheelDelta();
     if (!delta) {
@@ -1174,6 +1356,20 @@ void LoadSettings() {
         Wh_GetIntSetting(L"reverseScrollingDirection");
     g_settings.enableMouseWheelCycling =
         Wh_GetIntSetting(L"enableMouseWheelCycling");
+
+    g_settings.customScrollRegions.clear();
+    PCWSTR customScrollRegions = Wh_GetStringSetting(L"customScrollRegions");
+    for (auto regionStr : SplitStringView(customScrollRegions, L",")) {
+        regionStr = TrimStringView(regionStr);
+        if (regionStr.empty()) {
+            continue;
+        }
+        if (auto region = ParseRegion(regionStr)) {
+            g_settings.customScrollRegions.push_back(*region);
+        }
+    }
+    Wh_FreeStringSetting(customScrollRegions);
+
     g_settings.cycleLeftKeyboardShortcut =
         WindhawkUtils::StringSetting::make(L"cycleLeftKeyboardShortcut");
     g_settings.cycleRightKeyboardShortcut =
