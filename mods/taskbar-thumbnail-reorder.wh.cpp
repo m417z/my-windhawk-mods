@@ -2,7 +2,7 @@
 // @id              taskbar-thumbnail-reorder
 // @name            Taskbar Thumbnail Reorder
 // @description     Reorder taskbar thumbnails with the left mouse button
-// @version         1.1.3
+// @version         1.1.4
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
