@@ -340,14 +340,14 @@ from the **TranslucentTB** project.
   - TintedGlass: TintedGlass
   - LayerMicaUI: LayerMicaUI (for the redesigned Start menu)
 - disableNewStartMenuLayout: ""
-  $name: Disable the new start menu layout
+  $name: Start menu layout
   $description: >-
-    Allows to disable the new start menu layout which is incompatible with some
+    Allows to disable the new Start menu layout which is incompatible with some
     themes.
   $options:
-  - "": Don't disable (use Windows default)
-  - 1: Disable new layout and Phone Link
-  - disableNewLayoutKeepPhoneLink: Disable new layout but keep Phone Link
+  - "": Windows default
+  - disableNewLayoutKeepPhoneLink: Classic layout
+  - 1: Legacy classic layout (removed in 26100.8328)
   - forceNewLayout: Force new layout (if available)
 - styleConstants: [""]
   $name: Style constants
