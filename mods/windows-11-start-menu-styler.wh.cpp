@@ -359,7 +359,7 @@ from the **TranslucentTB** project.
   $options:
   - "": Windows default
   - disableNewLayoutKeepPhoneLink: Classic layout
-  - 1: Legacy classic layout (removed in 26100.8328)
+  - legacyClassicLayout: Legacy classic layout (removed in 26100.8328)
   - forceNewLayout: Force new layout (if available)
 - styleConstants: [""]
   $name: Style constants
@@ -11588,15 +11588,24 @@ DisableNewStartMenuLayout GetDisableNewStartMenuLayout() {
         Wh_GetStringSetting(L"disableNewStartMenuLayout");
     DisableNewStartMenuLayout disableNewStartMenuLayout =
         DisableNewStartMenuLayout::windowsDefault;
-    if (wcscmp(disableNewStartMenuLayoutStr, L"1") == 0) {
-        disableNewStartMenuLayout =
-            DisableNewStartMenuLayout::disableNewLayoutAndPhoneLink;
-    } else if (wcscmp(disableNewStartMenuLayoutStr,
+    if (wcscmp(disableNewStartMenuLayoutStr,
                       L"disableNewLayoutKeepPhoneLink") == 0) {
         disableNewStartMenuLayout =
             DisableNewStartMenuLayout::disableNewLayoutKeepPhoneLink;
+    } else if (wcscmp(disableNewStartMenuLayoutStr, L"legacyClassicLayout") ==
+               0) {
+        disableNewStartMenuLayout =
+            DisableNewStartMenuLayout::disableNewLayoutAndPhoneLink;
     } else if (wcscmp(disableNewStartMenuLayoutStr, L"forceNewLayout") == 0) {
         disableNewStartMenuLayout = DisableNewStartMenuLayout::forceNewLayout;
+    } else if (wcscmp(disableNewStartMenuLayoutStr, L"1") == 0) {
+        // "1" is kept for backward compatibility, previously it meant
+        // disableNewLayoutAndPhoneLink, but now it means
+        // disableNewLayoutKeepPhoneLink because disableNewLayoutAndPhoneLink is
+        // removed in newer builds, and some themes were updated to only support
+        // disableNewLayoutKeepPhoneLink.
+        disableNewStartMenuLayout =
+            DisableNewStartMenuLayout::disableNewLayoutKeepPhoneLink;
     }
     Wh_FreeStringSetting(disableNewStartMenuLayoutStr);
     return disableNewStartMenuLayout;
