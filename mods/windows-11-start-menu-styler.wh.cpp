@@ -6840,6 +6840,8 @@ bool g_elementPropertyModifying;
 winrt::Windows::Foundation::IAsyncOperation<bool>
     g_delayedAllAppsRootVisibilitySet;
 
+DispatcherTimer g_delayedAllAppsRootRenderTransformTimer{nullptr};
+
 enum class DisableNewStartMenuLayout {
     windowsDefault,
     disableNewLayoutAndPhoneLink,
@@ -8696,6 +8698,47 @@ void SetOrClearValue(DependencyObject elementDo,
             g_delayedAllAppsRootVisibilitySet.Cancel();
             g_delayedAllAppsRootVisibilitySet = nullptr;
         }
+    }
+
+    // A workaround similar to the above, but for the RenderTransform property
+    // of the AllAppsRoot Grid. Setting it too early causes a crash. Unlike the
+    // Visibility case above, dispatching via TryRunAsync, the Loaded event,
+    // LayoutUpdated, and CompositionTarget::Rendering all crash here. Use a
+    // DispatcherTimer with a delay. Apply the workaround for both initial apply
+    // and subsequent changes, as it's applied more than once on initial load.
+    if (winrt::get_class_name(elementDo) == L"Windows.UI.Xaml.Controls.Grid" &&
+        elementDo.as<FrameworkElement>().Name() == L"AllAppsRoot" &&
+        property == UIElement::RenderTransformProperty()) {
+        if (g_delayedAllAppsRootRenderTransformTimer) {
+            Wh_Log(
+                L"Canceling delayed SetValue for AllAppsRoot RenderTransform");
+            g_delayedAllAppsRootRenderTransformTimer.Stop();
+            g_delayedAllAppsRootRenderTransformTimer = nullptr;
+        }
+
+        Wh_Log(
+            L"Delaying SetValue for AllAppsRoot RenderTransform via "
+            L"DispatcherTimer");
+        g_delayedAllAppsRootRenderTransformTimer = DispatcherTimer();
+        g_delayedAllAppsRootRenderTransformTimer.Interval(
+            std::chrono::milliseconds(200));
+        g_delayedAllAppsRootRenderTransformTimer.Tick([elementDo, property,
+                                                       value](auto&&, auto&&) {
+            Wh_Log(L"Running delayed SetValue for AllAppsRoot RenderTransform");
+            if (g_delayedAllAppsRootRenderTransformTimer) {
+                g_delayedAllAppsRootRenderTransformTimer.Stop();
+                g_delayedAllAppsRootRenderTransformTimer = nullptr;
+            }
+            g_elementPropertyModifying = true;
+            try {
+                elementDo.SetValue(property, value);
+            } catch (winrt::hresult_error const& ex) {
+                Wh_Log(L"Error %08X: %s", ex.code(), ex.message().c_str());
+            }
+            g_elementPropertyModifying = false;
+        });
+        g_delayedAllAppsRootRenderTransformTimer.Start();
+        return;
     }
 
     if (value == DependencyProperty::UnsetValue()) {
@@ -11010,6 +11053,11 @@ void UninitializeSettingsAndTap() {
     if (g_delayedAllAppsRootVisibilitySet) {
         g_delayedAllAppsRootVisibilitySet.Cancel();
         g_delayedAllAppsRootVisibilitySet = nullptr;
+    }
+
+    if (g_delayedAllAppsRootRenderTransformTimer) {
+        g_delayedAllAppsRootRenderTransformTimer.Stop();
+        g_delayedAllAppsRootRenderTransformTimer = nullptr;
     }
 
     for (const auto& [handle, elementCustomizationState] :
