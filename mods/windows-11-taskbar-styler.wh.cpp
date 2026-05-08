@@ -202,10 +202,10 @@ control can also include:
   when `ParentClass` is any of its ancestors (with zero or more controls in
   between). `*` must be in the middle of the target (not the leftmost or
   rightmost part), and consecutive `*` are not allowed.
-* `&` as the leftmost target part to require that the next part has no parent,
-  i.e., it's a root element. For example: `& > Class#Name` matches `Class#Name`
-  only when it has no parent control. `&` must be followed by a non-`*` target
-  part.
+* `:root` as the leftmost target part to require that the next part has no
+  parent, i.e., it's a root element. For example: `:root > Class#Name` matches
+  `Class#Name` only when it has no parent control. `:root` must be followed by a
+  non-`*` target part.
 * Visual state group name, for example: `Class#Name@VisualStateGroupName`. It
   can be specified for the target control or for a parent control, but can be
   specified only once per target. The visual state group can be used in styles
@@ -278,8 +278,8 @@ A couple of practical examples:
 #### Hide the network notification icon
 
 * Target: `SystemTray.OmniButton#ControlCenterButton > Grid > ContentPresenter >
-  ItemsPresenter > StackPanel > ContentPresenter[1] > SystemTray.IconView >
-  Grid > Grid`
+  ItemsPresenter > StackPanel > ContentPresenter[1] > SystemTray.IconView > Grid
+  > Grid`
 * Style: `Visibility=Collapsed`
 
 **Note**: To hide the volume notification icon instead, use `[2]` instead of
@@ -5688,7 +5688,7 @@ struct ElementMatcher {
     enum class Kind {
         Element,   // Normal element matcher.
         Wildcard,  // '*': matches zero or more intermediate ancestors.
-        Root,      // '&': asserts the next element has no parent.
+        Root,      // ':root': asserts the next element has no parent.
     };
     Kind kind = Kind::Element;
     std::wstring type;
@@ -8791,7 +8791,7 @@ ElementMatcher ElementMatcherFromString(std::wstring_view str) {
         result.kind = ElementMatcher::Kind::Wildcard;
         return result;
     }
-    if (trimmed == L"&") {
+    if (trimmed == L":root") {
         result.kind = ElementMatcher::Kind::Root;
         return result;
     }
@@ -8982,16 +8982,17 @@ void AddElementCustomizationRules(std::wstring_view target,
             case ElementMatcher::Kind::Root:
                 if (first) {
                     throw std::runtime_error(
-                        "Bad target syntax, '&' can't be the matched element");
+                        "Bad target syntax, ':root' can't be the matched "
+                        "element");
                 }
                 if (!isLeftmost) {
                     throw std::runtime_error(
-                        "Bad target syntax, '&' must be the leftmost target "
-                        "part");
+                        "Bad target syntax, ':root' must be the leftmost "
+                        "target part");
                 }
                 if (prevIsWildcard) {
                     throw std::runtime_error(
-                        "Bad target syntax, '&' must be followed by a "
+                        "Bad target syntax, ':root' must be followed by a "
                         "non-wildcard target part");
                 }
                 break;
