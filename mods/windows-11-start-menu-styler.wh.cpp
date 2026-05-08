@@ -9444,6 +9444,16 @@ FindElementPropertyOverrides(FrameworkElement element,
 
         VisualStateGroup visualStateGroup = nullptr;
 
+        if (fallbackClassName &&
+            wcscmp(fallbackClassName, L"Windows.UI.Xaml.PopupRoot") == 0 &&
+            !override.elementMatcher.type.empty() &&
+            override.elementMatcher.type != L"Windows.UI.Xaml.PopupRoot") {
+            // PopupRoot is expected to be the root element. Its class name is
+            // Canvas, but its fallback class name is PopupRoot. Only match
+            // PopupRoot to prevent colliding with Canvas rules.
+            continue;
+        }
+
         if (!TestElementMatcher(element, override.elementMatcher,
                                 &visualStateGroup, fallbackClassName)) {
             continue;
