@@ -8269,9 +8269,7 @@ const ResolvedRules& GetResolvedPropertyOverrides(
                 const bool isDynamic = rule.isDynamic();
 
                 propertyOverrideValues.push_back(
-                    // Allow to use WindhawkBlur without ":=" for compatibility,
-                    // as it was always allowed in v1.5.
-                    !isDynamic && true  // rule.isXamlValue
+                    !isDynamic && rule.isXamlValue
                         ? ParseNonXamlPropertyOverrideValue(rule.value)
                         : std::nullopt);
 
