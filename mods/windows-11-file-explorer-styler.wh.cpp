@@ -1382,6 +1382,7 @@ HRESULT InjectWindhawkTAP() noexcept
 #include <sstream>
 #include <string>
 #include <string_view>
+#include <type_traits>
 #include <unordered_map>
 #include <unordered_set>
 #include <variant>
@@ -4094,6 +4095,142 @@ VisualStateGroup GetVisualStateGroup(FrameworkElement element,
     return nullptr;
 }
 
+// Locale-independent double formatter. Uses `std::to_chars` shortest round-trip
+// representation so XAML always sees `.` as the decimal separator.
+std::wstring FormatDoubleInvariant(double d) {
+    char buf[64];
+    auto [end, ec] = std::to_chars(buf, buf + std::size(buf), d);
+    if (ec != std::errc{}) {
+        return L"0";
+    }
+    return std::wstring(buf, end);
+}
+
+// Locale-independent double parser. Accepts an optional leading sign followed
+// by a decimal fraction or exponent. Returns std::nullopt on partial / bad
+// input.
+std::optional<double> ParseDoubleInvariant(std::wstring_view sv) {
+    std::string narrow;
+    narrow.reserve(sv.size());
+    for (auto c : sv) {
+        if (c > 127) {
+            return std::nullopt;
+        }
+        narrow.push_back(static_cast<char>(c));
+    }
+    double result = 0;
+    auto* first = narrow.data();
+    auto* last = first + narrow.size();
+    auto [ptr, ec] = std::from_chars(first, last, result);
+    if (ec != std::errc{} || ptr != last) {
+        return std::nullopt;
+    }
+    return result;
+}
+
+using UnboxedPropertyValue = std::variant<std::wstring,
+                                          bool,
+                                          char16_t,
+                                          uint8_t,
+                                          int16_t,
+                                          uint16_t,
+                                          int32_t,
+                                          uint32_t,
+                                          int64_t,
+                                          uint64_t,
+                                          float,
+                                          double>;
+
+// Unwraps a boxed primitive into a typed primitive variant. Dispatches on
+// IPropertyValue::Type(). Returns std::nullopt for non-primitive (opaque)
+// values such as brushes or thicknesses.
+std::optional<UnboxedPropertyValue> TryUnboxPropertyValue(
+    winrt::Windows::Foundation::IInspectable const& value) {
+    using winrt::Windows::Foundation::IPropertyValue;
+    using winrt::Windows::Foundation::PropertyType;
+
+    auto pv = value.try_as<IPropertyValue>();
+    if (!pv) {
+        return std::nullopt;
+    }
+
+    switch (pv.Type()) {
+        case PropertyType::String:
+            return UnboxedPropertyValue{std::wstring(pv.GetString())};
+        case PropertyType::Boolean:
+            return UnboxedPropertyValue{pv.GetBoolean()};
+        case PropertyType::Char16:
+            return UnboxedPropertyValue{pv.GetChar16()};
+        case PropertyType::Double:
+            return UnboxedPropertyValue{pv.GetDouble()};
+        case PropertyType::Single:
+            return UnboxedPropertyValue{pv.GetSingle()};
+        case PropertyType::UInt8:
+            return UnboxedPropertyValue{pv.GetUInt8()};
+        case PropertyType::Int16:
+            return UnboxedPropertyValue{pv.GetInt16()};
+        case PropertyType::UInt16:
+            return UnboxedPropertyValue{pv.GetUInt16()};
+        case PropertyType::Int32:
+            return UnboxedPropertyValue{pv.GetInt32()};
+        case PropertyType::UInt32:
+            return UnboxedPropertyValue{pv.GetUInt32()};
+        case PropertyType::Int64:
+            return UnboxedPropertyValue{pv.GetInt64()};
+        case PropertyType::UInt64:
+            return UnboxedPropertyValue{pv.GetUInt64()};
+        case PropertyType::OtherType: {
+            // Common for enums.
+            if (auto intVal = value.try_as<int32_t>()) {
+                return UnboxedPropertyValue{*intVal};
+            }
+            return std::nullopt;
+        }
+        default: {
+            return std::nullopt;
+        }
+    }
+}
+
+// Invariant-formatted text form, suitable for XAML attribute use or diagnostic
+// logs.
+std::wstring FormatUnboxedPropertyValue(UnboxedPropertyValue const& v) {
+    return std::visit(
+        [](auto const& x) -> std::wstring {
+            using T = std::decay_t<decltype(x)>;
+            if constexpr (std::is_same_v<T, std::wstring>) {
+                return x;
+            } else if constexpr (std::is_same_v<T, bool>) {
+                return x ? L"True" : L"False";
+            } else if constexpr (std::is_same_v<T, char16_t>) {
+                // Single-character text form so substitution emits the
+                // character itself.
+                return std::wstring(1, static_cast<wchar_t>(x));
+            } else if constexpr (std::is_floating_point_v<T>) {
+                return FormatDoubleInvariant(static_cast<double>(x));
+            } else {
+                return std::to_wstring(x);
+            }
+        },
+        v);
+}
+
+// Numeric-as-double form, or std::nullopt if the value isn't numeric (i.e.
+// holds a string).
+std::optional<double> UnboxedPropertyValueAsNumeric(
+    UnboxedPropertyValue const& v) {
+    return std::visit(
+        [](auto const& x) -> std::optional<double> {
+            using T = std::decay_t<decltype(x)>;
+            if constexpr (std::is_same_v<T, std::wstring>) {
+                return std::nullopt;
+            } else {
+                return static_cast<double>(x);
+            }
+        },
+        v);
+}
+
 bool TestElementMatcher(FrameworkElement element,
                         ElementMatcher& matcher,
                         VisualStateGroup* visualStateGroup,
@@ -4131,46 +4268,21 @@ bool TestElementMatcher(FrameworkElement element,
         if (!value) {
             Wh_Log(L"Null property value");
             return false;
-        }
-
-        const auto className = winrt::get_class_name(value);
-        const auto expectedClassName =
-            winrt::get_class_name(propertyValue.second);
-        if (className != expectedClassName) {
-            Wh_Log(L"Different property class: %s vs. %s", className.c_str(),
-                   expectedClassName.c_str());
+        } else if (value == DependencyProperty::UnsetValue()) {
             return false;
         }
 
-        if (className == L"Windows.Foundation.IReference`1<String>") {
-            if (winrt::unbox_value<winrt::hstring>(propertyValue.second) ==
-                winrt::unbox_value<winrt::hstring>(value)) {
-                continue;
-            }
-
+        auto expectedUnboxed = TryUnboxPropertyValue(propertyValue.second);
+        auto valueUnboxed = TryUnboxPropertyValue(value);
+        if (!expectedUnboxed || !valueUnboxed) {
+            Wh_Log(L"Unsupported property class: %s",
+                   winrt::get_class_name(value).c_str());
             return false;
         }
 
-        if (className == L"Windows.Foundation.IReference`1<Double>") {
-            if (winrt::unbox_value<double>(propertyValue.second) ==
-                winrt::unbox_value<double>(value)) {
-                continue;
-            }
-
+        if (*expectedUnboxed != *valueUnboxed) {
             return false;
         }
-
-        if (className == L"Windows.Foundation.IReference`1<Boolean>") {
-            if (winrt::unbox_value<bool>(propertyValue.second) ==
-                winrt::unbox_value<bool>(value)) {
-                continue;
-            }
-
-            return false;
-        }
-
-        Wh_Log(L"Unsupported property class: %s", className.c_str());
-        return false;
     }
 
     if (matcher.visualStateGroupName && visualStateGroup) {
@@ -4300,39 +4412,6 @@ ElementResolvedRules FindElementPropertyOverrides(FrameworkElement element,
     std::erase_if(result.overridesPerVSG,
                   [](const auto& item) { return item.second.empty(); });
 
-    return result;
-}
-
-// Locale-independent double formatter. Uses `std::to_chars` shortest round-trip
-// representation so XAML always sees `.` as the decimal separator.
-std::wstring FormatDoubleInvariant(double d) {
-    char buf[64];
-    auto [end, ec] = std::to_chars(buf, buf + std::size(buf), d);
-    if (ec != std::errc{}) {
-        return L"0";
-    }
-    return std::wstring(buf, end);
-}
-
-// Locale-independent double parser. Accepts an optional leading sign followed
-// by a decimal fraction or exponent. Returns std::nullopt on partial / bad
-// input.
-std::optional<double> ParseDoubleInvariant(std::wstring_view sv) {
-    std::string narrow;
-    narrow.reserve(sv.size());
-    for (auto c : sv) {
-        if (c > 127) {
-            return std::nullopt;
-        }
-        narrow.push_back(static_cast<char>(c));
-    }
-    double result = 0;
-    auto* first = narrow.data();
-    auto* last = first + narrow.size();
-    auto [ptr, ec] = std::from_chars(first, last, result);
-    if (ec != std::errc{} || ptr != last) {
-        return std::nullopt;
-    }
     return result;
 }
 
@@ -4724,52 +4803,9 @@ StyleVariableValue ReadCapturedStyleVariableValue(FrameworkElement element,
     }
 
     try {
-        const auto className = winrt::get_class_name(value);
-        if (className == L"Windows.Foundation.IReference`1<Double>") {
-            double d = winrt::unbox_value<double>(value);
-            out.numeric = d;
-            out.stringForm = FormatDoubleInvariant(d);
-            out.substitutable = true;
-            return out;
-        }
-        if (className == L"Windows.Foundation.IReference`1<Single>") {
-            float f = winrt::unbox_value<float>(value);
-            out.numeric = static_cast<double>(f);
-            out.stringForm = FormatDoubleInvariant(*out.numeric);
-            out.substitutable = true;
-            return out;
-        }
-        if (className == L"Windows.Foundation.IReference`1<Int32>") {
-            int32_t i = winrt::unbox_value<int32_t>(value);
-            out.numeric = static_cast<double>(i);
-            out.stringForm = std::to_wstring(i);
-            out.substitutable = true;
-            return out;
-        }
-        if (className == L"Windows.Foundation.IReference`1<Int64>") {
-            int64_t i = winrt::unbox_value<int64_t>(value);
-            out.numeric = static_cast<double>(i);
-            out.stringForm = std::to_wstring(i);
-            out.substitutable = true;
-            return out;
-        }
-        if (className == L"Windows.Foundation.IReference`1<UInt32>") {
-            uint32_t u = winrt::unbox_value<uint32_t>(value);
-            out.numeric = static_cast<double>(u);
-            out.stringForm = std::to_wstring(u);
-            out.substitutable = true;
-            return out;
-        }
-        if (className == L"Windows.Foundation.IReference`1<Boolean>") {
-            bool b = winrt::unbox_value<bool>(value);
-            out.stringForm = b ? L"True" : L"False";
-            out.substitutable = true;
-            return out;
-        }
-        if (className == L"Windows.Foundation.IReference`1<String>" ||
-            className == L"Windows.Foundation.IReference`1<HString>") {
-            out.stringForm =
-                std::wstring(winrt::unbox_value<winrt::hstring>(value));
+        if (auto unboxed = TryUnboxPropertyValue(value)) {
+            out.stringForm = FormatUnboxedPropertyValue(*unboxed);
+            out.numeric = UnboxedPropertyValueAsNumeric(*unboxed);
             out.substitutable = true;
             return out;
         }
@@ -4778,7 +4814,7 @@ StyleVariableValue ReadCapturedStyleVariableValue(FrameworkElement element,
         // not flagged substitutable, so bare `{{Var}}` skips the consuming
         // style with a clear log message rather than emitting `className` into
         // the XAML.
-        out.stringForm = std::wstring(className);
+        out.stringForm = std::wstring(winrt::get_class_name(value));
     } catch (winrt::hresult_error const& ex) {
         Wh_Log(L"Error %08X: %s", ex.code(), ex.message().c_str());
         out.stringForm = L"";
