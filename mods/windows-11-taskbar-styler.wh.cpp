@@ -9886,16 +9886,15 @@ void ApplyCustomizations(InstanceHandle handle,
         return;
     }
 
-    auto [elementCustomizationStateIter, inserted] =
-        g_elementsCustomizationState.insert({handle, {}});
-    if (!inserted) {
-        Wh_Log(L"Customization state already exists for handle %zu", handle);
-        return;
-    }
-
-    auto& elementCustomizationState = elementCustomizationStateIter->second;
-
     Wh_Log(L"Applying styles to %s", winrt::get_class_name(element).c_str());
+
+    auto& elementCustomizationState = g_elementsCustomizationState[handle];
+
+    for (const auto& [visualStateGroupOptionalWeakPtrIter, stateIter] :
+         elementCustomizationState.perVisualStateGroup) {
+        RestoreCustomizationsForVisualStateGroup(
+            handle, element, visualStateGroupOptionalWeakPtrIter, stateIter);
+    }
 
     elementCustomizationState.element = element;
     elementCustomizationState.perVisualStateGroup.clear();
