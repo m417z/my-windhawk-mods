@@ -2,7 +2,7 @@
 // @id              windows-11-start-menu-styler
 // @name            Windows 11 Start Menu Styler
 // @description     Customize the start menu with themes contributed by others or create your own
-// @version         1.4.1
+// @version         1.5
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
@@ -13168,7 +13168,7 @@ bool StartStatsTimer() {
     static constexpr WCHAR kStatsBaseUrl[] =
         L"https://github.com/ramensoftware/"
         L"windows-11-start-menu-styling-guide/"
-        L"releases/download/stats-v3/";
+        L"releases/download/stats-v4/";
 
     ULONGLONG lastStatsTime = 0;
     Wh_GetBinaryValue(L"statsTimerLastTime", &lastStatsTime,
@@ -13375,9 +13375,9 @@ BOOL Wh_ModInit() {
                                   DisableNewStartMenuLayout::forceNewLayout ||
                               (g_disableNewStartMenuLayout ==
                                    DisableNewStartMenuLayout::windowsDefault &&
-                               IsOsFeatureEnabled(47205210).value_or(false) &&
-                               IsOsFeatureEnabled(49221331).value_or(false) &&
-                               IsOsFeatureEnabled(49402389).value_or(false));
+                               IsOsFeatureEnabled(47205210).value_or(true) &&
+                               IsOsFeatureEnabled(49221331).value_or(true) &&
+                               IsOsFeatureEnabled(49402389).value_or(true));
 
     HMODULE user32Module =
         LoadLibraryEx(L"user32.dll", nullptr, LOAD_LIBRARY_SEARCH_SYSTEM32);
