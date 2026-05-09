@@ -6004,6 +6004,9 @@ thread_local winrt::Windows::UI::ViewManagement::UISettings g_uiSettings{
     nullptr};
 thread_local winrt::event_token g_colorValuesChangedToken;
 
+thread_local winrt::Windows::UI::Xaml::FrameworkElement::SizeChanged_revoker
+    g_workaroundSizeChangedRevoker;
+
 winrt::Windows::Foundation::IInspectable ReadLocalValueWithWorkaround(
     DependencyObject elementDo,
     DependencyProperty property) {
@@ -9866,6 +9869,108 @@ void RestoreCustomizationsForVisualStateGroup(
     }
 }
 
+// Workaround to the breaking layout with custom column definitions on multiple
+// taskbars:
+// https://github.com/ramensoftware/windows-11-taskbar-styling-guide/issues/507
+void HookFirstTaskbarFrameLayoutWorkaround(
+    winrt::Windows::UI::Xaml::FrameworkElement element) {
+    if (g_workaroundSizeChangedRevoker) {
+        return;
+    }
+
+    if (winrt::get_class_name(element) != L"Taskbar.TaskbarFrame") {
+        return;
+    }
+
+    auto parent = Media::VisualTreeHelper::GetParent(element)
+                      .try_as<winrt::Windows::UI::Xaml::FrameworkElement>();
+    if (!parent) {
+        return;
+    }
+
+    // cppwinrt doesn't expose Grid::ColumnDefinitionsProperty() as a static, so
+    // resolve it the same way GetResolvedPropertyOverrides does - parse a
+    // synthetic Setter and pull the DP out. The DP identity is stable, so the
+    // result matches the key used in propertyCustomizationStates.
+    DependencyProperty colDefsProp{nullptr};
+    try {
+        auto style = GetStyleFromXamlSettersWithFallbackType(
+            L"Windows.UI.Xaml.Controls.Grid", L"Windows.UI.Xaml.Controls.Grid",
+            L"        <Setter Property=\"ColumnDefinitions\" "
+            L"Value=\"{x:Null}\" />\n");
+        colDefsProp = style.Setters().GetAt(0).as<Setter>().Property();
+    } catch (...) {
+        Wh_Log(L"Error %08X: %s", winrt::to_hresult(),
+               winrt::to_message().c_str());
+        return;
+    }
+
+    if (!colDefsProp) {
+        return;
+    }
+
+    // Find the parent's already-applied customization for ColumnDefinitions
+    // (set when ApplyCustomizations ran on the parent moments earlier). If it's
+    // not customized, there's nothing for us to restore.
+    auto stateIt =
+        std::find_if(g_elementsCustomizationState.begin(),
+                     g_elementsCustomizationState.end(), [&](const auto& kv) {
+                         auto el = kv.second.element.get();
+                         return el && el == parent;
+                     });
+    if (stateIt == g_elementsCustomizationState.end()) {
+        return;
+    }
+
+    // Only consider the no-visual-state entry: the layout Grid has no visual
+    // states.
+    auto vsgIt = std::find_if(stateIt->second.perVisualStateGroup.begin(),
+                              stateIt->second.perVisualStateGroup.end(),
+                              [](const auto& entry) { return !entry.first; });
+    if (vsgIt == stateIt->second.perVisualStateGroup.end()) {
+        return;
+    }
+
+    auto propIt = vsgIt->second.propertyCustomizationStates.find(colDefsProp);
+    if (propIt == vsgIt->second.propertyCustomizationStates.end() ||
+        !propIt->second.customValue) {
+        return;
+    }
+
+    auto savedValue = *propIt->second.customValue;
+
+    auto weakParent = winrt::make_weak(parent);
+    g_workaroundSizeChangedRevoker = element.SizeChanged(
+        winrt::auto_revoke, [weakParent, savedValue = std::move(savedValue),
+                             colDefsProp](auto&&, auto&&) {
+            auto parent = weakParent.get();
+            if (!parent) {
+                return;
+            }
+
+            // Suppress the per-DP property-changed callback installed by the
+            // customization machinery so re-setting doesn't cascade.
+            g_elementPropertyModifying = true;
+            try {
+                // Clear first, then set, otherwise the workaround doesn't work.
+                SetOrClearValue(
+                    parent, colDefsProp,
+                    PropertyOverrideValue{DependencyProperty::UnsetValue()});
+                SetOrClearValue(parent, colDefsProp, savedValue);
+            } catch (...) {
+                Wh_Log(L"Error %08X: %s", winrt::to_hresult(),
+                       winrt::to_message().c_str());
+            }
+            g_elementPropertyModifying = false;
+        });
+
+    Wh_Log(L"Hooked TaskbarFrame SizeChanged for ColumnDefinitions workaround");
+}
+
+void UnhookFirstTaskbarFrameLayoutWorkaround() {
+    g_workaroundSizeChangedRevoker = {};
+}
+
 void MergeResourceVariables();
 
 void ApplyCustomizations(InstanceHandle handle,
@@ -9921,6 +10026,8 @@ void ApplyCustomizations(InstanceHandle handle,
             std::move(overridesForVisualStateGroup),
             elementCustomizationStateForVisualStateGroup);
     }
+
+    HookFirstTaskbarFrameLayoutWorkaround(element);
 }
 
 void CleanupCustomizations(InstanceHandle handle) {
@@ -10879,6 +10986,8 @@ void UninitializeResourceVariables() {
 }
 
 void UninitializeForCurrentThread() {
+    UnhookFirstTaskbarFrameLayoutWorkaround();
+
     // Clear failed image brushes list for this thread (revokers will
     // automatically unregister).
     g_failedImageBrushesForThread.failedImageBrushes.clear();
