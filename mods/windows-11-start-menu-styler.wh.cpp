@@ -1,7 +1,7 @@
 // ==WindhawkMod==
 // @id              windows-11-start-menu-styler
 // @name            Windows 11 Start Menu Styler
-// @description     Customize the start menu with themes contributed by others or create your own
+// @description     Customize the Start menu with themes contributed by others or create your own
 // @version         1.5
 // @author          m417z
 // @github          https://github.com/m417z
@@ -26,7 +26,7 @@
 /*
 # Windows 11 Start Menu Styler
 
-Customize the start menu with themes contributed by others or create your own.
+Customize the Start menu with themes contributed by others or create your own.
 
 Also check out the **Windows 11 Taskbar Styler**, **Windows 11 Notification
 Center Styler** mods.
@@ -146,7 +146,7 @@ Center](https://raw.githubusercontent.com/ramensoftware/windows-11-start-menu-st
 Command
 Center](https://github.com/ramensoftware/windows-11-start-menu-styling-guide/blob/main/Themes/Command%20Center/README.md)
 
-More themes can be found in the **Themes** section of [The Windows 11 start menu
+More themes can be found in the **Themes** section of [The Windows 11 Start menu
 styling
 guide](https://github.com/ramensoftware/windows-11-start-menu-styling-guide/blob/main/README.md#themes).
 Contributions of new themes are welcome!
@@ -158,7 +158,7 @@ variables. Control styles allow to override styles, such as size and color, for
 the target elements. Resource variables allow to override predefined variables.
 For a more detailed explanation and examples, refer to the sections below.
 
-The start menu's XAML resources can help find out which elements and resource
+The Start menu's XAML resources can help find out which elements and resource
 variables can be customized. To the best of my knowledge, there are no public
 tools that are able to decode the resource files of recent Windows versions, but
 here are XAML resources which were obtained via other means for your
@@ -166,10 +166,10 @@ convenience:
 [StartResources.xbf](https://gist.github.com/m417z/a7e4e2c7b451ee79c62c51ca2dba7349).
 
 The [UWPSpy](https://ramensoftware.com/uwpspy) tool can be used to inspect the
-start menu control elements in real time, and experiment with various styles.
+Start menu control elements in real time, and experiment with various styles.
 
-For a collection of commonly requested start menu styling customizations, check
-out [The Windows 11 start menu styling
+For a collection of commonly requested Start menu styling customizations, check
+out [The Windows 11 Start menu styling
 guide](https://github.com/ramensoftware/windows-11-start-menu-styling-guide/blob/main/README.md).
 
 ### Control styles
@@ -339,7 +339,7 @@ page for details on which constants are available.
 
 ### Search WebView styles
 
-While the start menu uses WinUI for its user interface, most of the search
+While the Start menu uses WinUI for its user interface, most of the search
 content (all but the top search bar) is a WebView element. To style the search
 WebView, CSS targets and styles can be used. For example, to set a red
 background, the target `body` and the style `background: red !important` can be
