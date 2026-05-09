@@ -1645,7 +1645,8 @@ const Theme g_themeWindows10_variant_ClassicStartMenu = {{
     ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Grid#AllAppsRoot", {
         L"Width=360",
         L"Visibility=Visible",
-        L"Margin=-785,-18,785,0"}},
+        L"Margin=0,-18,0,0",
+        L"RenderTransform:=<TranslateTransform X=\"-143\"/>"}},
     ThemeTargetStyles{L"Border#AcrylicBorder", {
         L"BorderBrush:=<RevealBorderBrush Color=\"Transparent\" TargetTheme=\"1\" Opacity=\"1\"/>",
         L"BorderThickness=2.5,1,1.5,1"}},
@@ -2085,16 +2086,18 @@ const Theme g_themeWindows10_variant_Minimal_ClassicStartMenu = {{
     ThemeTargetStyles{L"Rectangle[4]", {
         L"Margin=0,-20,0,0"}},
     ThemeTargetStyles{L"StartDocked.StartSizingFrame", {
-        L"Margin=-15,24,450,0",
+        L"Margin=-15,24,450,0"}},
+    ThemeTargetStyles{L"StartDocked.LauncherFrame > Grid#RootPanel > Grid#RootGrid", {
         L"MinWidth=400",
-        L"Width=400"}},
+        L"MaxWidth=400"}},
     ThemeTargetStyles{L"StartDocked.SearchBoxToggleButton", {
         L"Visibility=Collapsed"}},
     ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Grid#AllAppsRoot", {
         L"Width=425",
         L"Visibility=Visible",
-        L"Margin=-750,-18,750,0"}},
-    ThemeTargetStyles{L"Border#AcrylicBorder", {
+        L"Margin=0,-18,0,0",
+        L"RenderTransform:=<TranslateTransform X=\"-108\"/>"}},
+    ThemeTargetStyles{L"Grid#RootContent > Border#AcrylicBorder", {
         L"BorderBrush:=<RevealBorderBrush Color=\"Transparent\" TargetTheme=\"1\" Opacity=\"1\"/>",
         L"BorderThickness=2.5,1,1.5,1",
         L"MaxWidth=400",
@@ -2415,13 +2418,10 @@ const Theme g_themeWindows11_Metro10_variant_ClassicStartMenu = {{
     ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Grid#AllAppsRoot", {
         L"Visibility=Visible",
         L"Width=360",
-        L"Transform3D:=<CompositeTransform3D TranslateX=\"-1059\" />",
-        L"Margin=180,0,-220,0"}},
+        L"RenderTransform:=<TranslateTransform X=\"-217\"/>"}},
     ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Button#CloseAllAppsButton", {
         L"Visibility=Collapsed"}},
     ThemeTargetStyles{L"StartDocked.StartSizingFrame", {
-        L"MinWidth=650",
-        L"MaxWidth=650",
         L"MaxHeight=670"}},
     ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Grid#ShowMoreSuggestions", {
         L"Visibility=Collapsed"}},
