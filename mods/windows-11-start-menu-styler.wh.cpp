@@ -776,8 +776,6 @@ const Theme g_themeSideBySide = {{
         L"Margin=-50,0,0,0"}},
     ThemeTargetStyles{L"GridView#RecommendedList > Border > ScrollViewer > Border > Grid > ScrollContentPresenter > ItemsPresenter > ItemsWrapGrid > GridViewItem", {
         L"Margin=-25,0,-25,0"}},
-    ThemeTargetStyles{L"StartDocked.AppListView", {
-        L"Margin=15,0,-15,0"}},
     ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Primitives.ScrollBar", {
         L"Height=650",
         L"RenderTransform:=<TranslateTransform Y=\"-50\" />"}},
@@ -793,19 +791,14 @@ const Theme g_themeSideBySide_variant_ClassicStartMenu = {{
         L"Margin=0,0,300,0"}},
     ThemeTargetStyles{L"Grid#AllAppsRoot", {
         L"Visibility=Visible",
-        L"MinWidth=390",
-        L"Padding=-40,0,110,0",
+        L"Width=320",
         L"Background:=<AcrylicBrush TintColor=\"{ThemeResource CardStrokeColorDefaultSolid}\" FallbackColor=\"{ThemeResource CardStrokeColorDefaultSolid}\" TintOpacity=\"0\" TintLuminosityOpacity=\"1\" Opacity=\"1\"/>",
-        L"Margin=-300,0,745,1"}},
-    ThemeTargetStyles{L"StartDocked.LauncherFrame > Grid#RootPanel > Grid#RootGrid > Grid#RootContent > Grid#MainContent > Grid#InnerContent > Grid#AllAppsRoot", {
-        L"Margin=-516,0,745,1"}},
+        L"RenderTransform:=<TranslateTransform X=\"269\"/>"}},
     ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Button#CloseAllAppsButton", {
         L"Visibility=Collapsed"}},
-    ThemeTargetStyles{L"StartDocked.StartSizingFrame", {
-        L"MaxWidth=860",
-        L"Width=860"}},
     ThemeTargetStyles{L"StartDocked.LauncherFrame > Grid#RootPanel > Grid#RootGrid", {
-        L"Width=644"}},
+        L"MinWidth=860",
+        L"MaxWidth=860"}},
     ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Button#ShowAllAppsButton", {
         L"Visibility=Collapsed"}},
     ThemeTargetStyles{L"Windows.UI.Xaml.Controls.TextBlock#PinnedListHeaderText", {
@@ -925,8 +918,6 @@ const Theme g_themeSideBySide2 = {{
         L"Margin=-50,0,0,0"}},
     ThemeTargetStyles{L"GridView#RecommendedList > Border > ScrollViewer > Border > Grid > ScrollContentPresenter > ItemsPresenter > ItemsWrapGrid > GridViewItem", {
         L"Margin=-25,0,-25,0"}},
-    ThemeTargetStyles{L"StartDocked.AppListView", {
-        L"Margin=15,0,-15,0"}},
     ThemeTargetStyles{L"Grid#MainMenu > Grid#MainContent > Grid", {
         L"Canvas.ZIndex=1"}},
     ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Primitives.ScrollBar", {
@@ -940,24 +931,15 @@ const Theme g_themeSideBySide2_variant_ClassicStartMenu = {{
         L"Width=510",
         L"MinHeight=585",
         L"Margin=264,0,0,0"}},
-    ThemeTargetStyles{L"StartDocked.LauncherFrame > Grid#RootPanel > Grid#RootGrid > Grid#RootContent > Grid#MainContent > Grid#InnerContent > Grid#UndockedRoot", {
-        L"Width=320"}},
     ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Grid#AllAppsRoot", {
         L"Visibility=Visible",
         L"Width=320",
-        L"Transform3D:=<CompositeTransform3D TranslateX=\"-1060\" />"}},
-    ThemeTargetStyles{L"StartDocked.LauncherFrame > Grid#RootPanel > Grid#RootGrid > Grid#RootContent > Grid#MainContent > Grid#InnerContent > Grid#AllAppsRoot", {
-        L"Transform3D:=<CompositeTransform3D TranslateX=\"-833\" />",
-        L"HorizontalAlignment=Left"}},
+        L"RenderTransform:=<TranslateTransform X=\"-284\"/>"}},
     ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Button#CloseAllAppsButton", {
         L"Visibility=1"}},
-    ThemeTargetStyles{L"StartDocked.StartSizingFrame", {
+    ThemeTargetStyles{L"StartDocked.LauncherFrame > Grid#RootPanel > Grid#RootGrid", {
         L"MinWidth=776",
         L"MaxWidth=776"}},
-    ThemeTargetStyles{L"StartDocked.LauncherFrame > Grid#RootPanel > Grid#RootGrid", {
-        L"Width=560"}},
-    ThemeTargetStyles{L"StartDocked.LauncherFrame > Grid#RootPanel > Grid#RootGrid > Grid#RootContent", {
-        L"MinWidth=560"}},
     ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Grid#ShowMoreSuggestions", {
         L"Visibility=0"}},
     ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Button#ShowAllAppsButton", {
@@ -1110,6 +1092,8 @@ const Theme g_themeSideBySideMinimal = {{
         L"Margin=20,20,-20,-20"}},
     ThemeTargetStyles{L"Grid#MainMenu > Grid#MainContent > Grid", {
         L"Canvas.ZIndex=1"}},
+    ThemeTargetStyles{L"StartDocked.AppListView", {
+        L"Margin=25,0,-25,0"}},
 }};
 
 const Theme g_themeSideBySideMinimal_variant_ClassicStartMenu = {{
@@ -1120,9 +1104,8 @@ const Theme g_themeSideBySideMinimal_variant_ClassicStartMenu = {{
     ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Grid#AllAppsRoot", {
         L"Visibility=Visible",
         L"Width=320",
-        L"Margin=-830,-42,830,0"}},
-    ThemeTargetStyles{L"StartDocked.LauncherFrame > Grid#RootPanel > Grid#RootGrid > Grid#RootContent > Grid#MainContent > Grid#InnerContent > Grid#AllAppsRoot", {
-        L"Margin=-1046,-42,1046,0"}},
+        L"Margin=0,-42,0,0",
+        L"RenderTransform:=<TranslateTransform X=\"-188\"/>"}},
     ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Grid#ShowMoreSuggestions", {
         L"Visibility=Collapsed"}},
     ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Grid#SuggestionsParentContainer", {
@@ -2877,6 +2860,8 @@ const Theme g_themeFluent2Inspired_variant_ClassicStartMenu = {{
         L"Margin=-250,50,0,0"}},
     ThemeTargetStyles{L"StartDocked.LauncherFrame > Grid#RootGrid > Grid#RootContent > Grid#MainContent > Grid#InnerContent > Rectangle", {
         L"Visibility=1"}},
+    ThemeTargetStyles{L"StartDocked.LauncherFrame > Grid#RootPanel > Grid#RootGrid > Grid#RootContent > Grid#MainContent > Grid#InnerContent > Rectangle", {
+        L"Visibility=1"}},
     ThemeTargetStyles{L"Windows.UI.Xaml.Controls.FlyoutPresenter", {
         L"Margin=-250,0,0,0"}},
     ThemeTargetStyles{L"StartDocked.SearchBoxToggleButton > Grid > FontIcon#SearchGlyph", {
@@ -3042,8 +3027,14 @@ const Theme g_themeRosePine_variant_ClassicStartMenu = {{
         L"CornerRadius=25",
         L"BorderBrush=#ebbcba",
         L"Background=#191724"}},
-    ThemeTargetStyles{L"StartDocked.StartSizingFramePanel", {
-        L"CornerRadius=25"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Border#DropShadow", {
+        L"Visibility=Collapsed"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Border#StartDropShadow", {
+        L"Visibility=Collapsed"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Border#RootGridDropShadow", {
+        L"Visibility=Collapsed"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Border#RightCompanionDropShadow", {
+        L"Visibility=Collapsed"}},
     ThemeTargetStyles{L"Windows.UI.Xaml.Controls.FontIcon > Windows.UI.Xaml.Controls.Grid > Windows.UI.Xaml.Controls.TextBlock", {
         L"Foreground=#eb6f92"}},
     ThemeTargetStyles{L"Windows.UI.Xaml.Controls.TextBlock#AppDisplayName", {
@@ -3104,20 +3095,13 @@ const Theme g_themeRosePine_variant_ClassicStartMenu = {{
         L"BorderThickness=1.5",
         L"BorderBrush=#ebbcba"}},
     ThemeTargetStyles{L"StartDocked.LauncherFrame > Grid#RootGrid > Grid#RootContent", {
-        L"MaxWidth=500",
-        L"Width=500",
-        L"MinWidth=500"}},
-    ThemeTargetStyles{L"StartDocked.StartSizingFramePanel", {
-        L"MaxWidth=500",
-        L"Width=500",
-        L"MinWidth=500"}},
-    ThemeTargetStyles{L"StartDocked.LauncherFrame > Grid#RootGrid > Grid#RootContent", {
-        L"MaxWidth=500",
-        L"Width=500",
-        L"MinWidth=500"}},
-    ThemeTargetStyles{L"StartDocked.StartSizingFrame", {
         L"MinWidth=500",
-        L"Width=500",
+        L"MaxWidth=500"}},
+    ThemeTargetStyles{L"StartDocked.LauncherFrame > Grid#RootPanel > Grid#RootGrid", {
+        L"MinWidth=500",
+        L"MaxWidth=500"}},
+    ThemeTargetStyles{L"StartDocked.LauncherFrame > Grid#RootPanel > Grid#RootGrid > Grid#RootContent", {
+        L"MinWidth=500",
         L"MaxWidth=500"}},
     ThemeTargetStyles{L"StartMenu:ExpandedFolderList", {
         L"Margin=-50,0,-50,0"}},
@@ -3199,11 +3183,7 @@ const Theme g_themeWindows11_Metro10Minimal_variant_ClassicStartMenu = {{
     ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Grid#AllAppsRoot", {
         L"Visibility=Visible",
         L"Width=540",
-        L"Margin=-1000,0,0,0"}},
-    ThemeTargetStyles{L"StartDocked.StartSizingFrame", {
-        L"MinWidth=460",
-        L"MaxWidth=460",
-        L"MaxHeight=670"}},
+        L"RenderTransform:=<TranslateTransform X=\"-81\"/>"}},
     ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Grid#ShowMoreSuggestions", {
         L"Visibility=Collapsed"}},
     ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Button#ShowAllAppsButton", {
@@ -3226,8 +3206,17 @@ const Theme g_themeWindows11_Metro10Minimal_variant_ClassicStartMenu = {{
         L"Margin=-20,0,20,0"}},
     ThemeTargetStyles{L"StartMenu.StartInnerFrame", {
         L"Visibility=Collapsed"}},
-    ThemeTargetStyles{L"Grid#RootContent", {
-        L"MinWidth=460"}},
+    ThemeTargetStyles{L"StartDocked.StartSizingFrame", {
+        L"MaxHeight=670"}},
+    ThemeTargetStyles{L"StartDocked.LauncherFrame > Grid#RootGrid > Grid#RootContent", {
+        L"MinWidth=460",
+        L"MaxWidth=460"}},
+    ThemeTargetStyles{L"StartDocked.LauncherFrame > Grid#RootPanel > Grid#RootGrid", {
+        L"MinWidth=460",
+        L"MaxWidth=460"}},
+    ThemeTargetStyles{L"StartDocked.LauncherFrame > Grid#RootPanel > Grid#RootGrid > Grid#RootContent", {
+        L"MinWidth=460",
+        L"MaxWidth=460"}},
     ThemeTargetStyles{L"Grid#InnerContent", {
         L"Margin=0,12,0,0"}},
     ThemeTargetStyles{L"Border#AcrylicBorder", {
@@ -4713,10 +4702,10 @@ const Theme g_themeWindowGlass = {{
     ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Grid#TopLevelHeader > Windows.UI.Xaml.Controls.Grid > Windows.UI.Xaml.Controls.Button", {
         L"Visibility=1"}},
     ThemeTargetStyles{L"Windows.UI.Xaml.Controls.FlyoutPresenter", {
-        L"Background:=$Background",
         L"BorderBrush:=$BorderBrush",
         L"BorderThickness:=$BorderThickness",
-        L"CornerRadius:=$ElementCornerRadius"}},
+        L"CornerRadius:=$ElementCornerRadius",
+        L"Padding=-1"}},
     ThemeTargetStyles{L"Windows.UI.Xaml.Controls.MenuFlyoutPresenter", {
         L"CornerRadius:=$ElementCornerRadius"}},
     ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Grid#AllListHeading > Microsoft.UI.Xaml.Controls.DropDownButton#ViewSelectionButton > Grid#RootGrid", {
@@ -5068,147 +5057,147 @@ const Theme g_themeLiquidGlass = {{
     ThemeTargetStyles{L"Border#AcrylicOverlay", {
         L"Visibility=1"}},
     ThemeTargetStyles{L"Border#AcrylicBorder", {
-        L"Background:=$background",
-        L"BorderBrush:=$borderColor",
-        L"BorderThickness=$borderThickness",
-        L"CornerRadius=$cornerRadius"}},
-    ThemeTargetStyles{L"Border#AccentAppBorder", {
-        L"Background:=$background",
-        L"BorderBrush:=$borderColor",
-        L"BorderThickness=$borderThickness",
-        L"CornerRadius=$cornerRadius"}},
+        L"Background:=$Background",
+        L"BorderBrush:=$BorderBrush",
+        L"BorderThickness=$BorderThickness",
+        L"CornerRadius=$CornerRadius"}},
+    ThemeTargetStyles{L"Border#AppBorder", {
+        L"Background:=$Background",
+        L"BorderBrush:=$BorderBrush",
+        L"BorderThickness=$BorderThickness",
+        L"CornerRadius=$CornerRadius"}},
     ThemeTargetStyles{L"Border#ContentBorder@CommonStates > Grid > Border#BackgroundBorder", {
-        L"BorderThickness=$borderThickness2",
-        L"BorderBrush@PointerOver:=$borderColor2",
-        L"BorderBrush@Pressed:=$borderColor2",
-        L"CornerRadius=$cornerRadius2"}},
+        L"BorderThickness=$ElementBorderThickness",
+        L"BorderBrush@PointerOver:=$ElementBorderBrush",
+        L"BorderBrush@Pressed:=$ElementBorderBrush",
+        L"CornerRadius=$ElementCornerRadius"}},
     ThemeTargetStyles{L"Button > Grid@CommonStates > Border#BackgroundBorder", {
-        L"BorderThickness=$borderThickness2",
-        L"BorderBrush@PointerOver:=$borderColor2",
-        L"BorderBrush@Pressed:=$borderColor2",
+        L"BorderThickness=$ElementBorderThickness",
+        L"BorderBrush@PointerOver:=$ElementBorderBrush",
+        L"BorderBrush@Pressed:=$ElementBorderBrush",
         L"BackgroundSizing=InnerBorderEdge",
-        L"CornerRadius=$cornerRadius2"}},
+        L"CornerRadius=$ElementCornerRadius"}},
     ThemeTargetStyles{L"StartMenu.CategoryControl > Grid > Border", {
-        L"BorderThickness=$borderThickness2",
-        L"BorderBrush:=$borderColor2",
+        L"BorderThickness=$ElementBorderThickness",
+        L"BorderBrush:=$ElementBorderBrush",
         L"BackgroundSizing=InnerBorderEdge",
-        L"Background:=$background",
+        L"Background:=$ElementBackground",
         L"Opacity=0.8",
-        L"CornerRadius=$cornerRadius2"}},
+        L"CornerRadius=$ElementCornerRadius"}},
     ThemeTargetStyles{L"Grid#LayoutRoot", {
         L"BackgroundTransition:=<BrushTransition Duration=\"0:0:0.083\" />"}},
     ThemeTargetStyles{L"Border#BackgroundBorder", {
         L"BackgroundTransition:=<BrushTransition Duration=\"0:0:0.083\" />"}},
     ThemeTargetStyles{L"Button#Header > Border@CommonStates", {
-        L"BorderThickness=$borderThickness2",
-        L"BorderBrush@PointerOver:=$borderColor2",
-        L"BorderBrush@Pressed:=$borderColor2",
+        L"BorderThickness=$ElementBorderThickness",
+        L"BorderBrush@PointerOver:=$ElementBorderBrush",
+        L"BorderBrush@Pressed:=$ElementBorderBrush",
         L"BackgroundSizing=InnerBorderEdge",
-        L"CornerRadius=$cornerRadius2"}},
+        L"CornerRadius=$ElementCornerRadius"}},
     ThemeTargetStyles{L"ListViewItem > Grid@CommonStates > Border#BorderBackground", {
-        L"BorderThickness=$borderThickness2",
-        L"BorderBrush@PointerOver:=$borderColor2",
-        L"BorderBrush@Pressed:=$borderColor2",
+        L"BorderThickness=$ElementBorderThickness",
+        L"BorderBrush@PointerOver:=$ElementBorderBrush",
+        L"BorderBrush@Pressed:=$ElementBorderBrush",
         L"BackgroundSizing=InnerBorderEdge",
-        L"CornerRadius=$cornerRadius2"}},
+        L"CornerRadius=$ElementCornerRadius"}},
     ThemeTargetStyles{L"StartMenu.SearchBoxToggleButton > Grid@CommonStates > Border#BorderElement", {
-        L"CornerRadius=$cornerRadius2",
-        L"BorderThickness=$borderThickness2",
-        L"BorderBrush:=$borderColor2",
-        L"Background@Checked:=$background",
-        L"Background@CheckedPointerOver:=$background",
-        L"Background@CheckedPressed:=$background",
+        L"CornerRadius=$ElementCornerRadius",
+        L"BorderThickness=$ElementBorderThickness",
+        L"BorderBrush:=$ElementBorderBrush",
+        L"Background@Checked:=$ElementBackground",
+        L"Background@CheckedPointerOver:=$AccentBackground",
+        L"Background@CheckedPressed:=$ElementBackground2",
         L"BackgroundTransition:=<BrushTransition Duration=\"0:0:0.083\" />"}},
     ThemeTargetStyles{L"Button#HideMoreSuggestionsButton > Grid@CommonStates > Border#BackgroundBorder", {
-        L"Background@Normal:=$background",
-        L"BorderBrush@Normal:=$borderColor2",
-        L"BorderBrush@PointerOver:=$borderColor2",
-        L"BorderBrush@Pressed:=$borderColor2",
-        L"Background@PointerOver:=$background",
-        L"Background@Pressed:=$background",
-        L"BorderThickness=1",
+        L"Background@Normal:=$ElementBackground",
+        L"BorderBrush@Normal:=$ElementBorderBrush",
+        L"BorderBrush@PointerOver:=$ElementBorderBrush",
+        L"BorderBrush@Pressed:=$ElementBorderBrush",
+        L"Background@PointerOver:=$AccentBackground",
+        L"Background@Pressed:=$ElementBackground2",
+        L"BorderThickness=$ElementBorderThickness",
         L"Margin=2",
-        L"CornerRadius=$cornerRadius2"}},
+        L"CornerRadius=$ElementCornerRadius"}},
     ThemeTargetStyles{L"Button#ShowMoreSuggestionsButton > Grid@CommonStates > Border#BackgroundBorder", {
-        L"Background@Normal:=$background",
-        L"BorderBrush@Normal:=$borderColor2",
-        L"BorderBrush@PointerOver:=$borderColor2",
-        L"BorderBrush@Pressed:=$borderColor2",
-        L"Background@PointerOver:=$background",
-        L"Background@Pressed:=$background",
-        L"BorderThickness=$borderThickness2",
+        L"Background@Normal:=$ElementBackground",
+        L"BorderBrush@Normal:=$ElementBorderBrush",
+        L"BorderBrush@PointerOver:=$ElementBorderBrush",
+        L"BorderBrush@Pressed:=$ElementBorderBrush",
+        L"Background@PointerOver:=$AccentBackground",
+        L"Background@Pressed:=$ElementBackground2",
+        L"BorderThickness=$ElementBorderThickness",
         L"Margin=2",
-        L"CornerRadius=$cornerRadius2"}},
+        L"CornerRadius=$ElementCornerRadius"}},
     ThemeTargetStyles{L"StartMenu.FolderModal > Grid#Root > Border", {
-        L"BorderThickness=$borderThickness",
-        L"BorderBrush:=$borderColor",
-        L"CornerRadius=$cornerRadius"}},
+        L"BorderThickness=$BorderThickness",
+        L"BorderBrush:=$BorderBrush",
+        L"CornerRadius=$CornerRadius"}},
     ThemeTargetStyles{L"MenuFlyoutPresenter > Border", {
-        L"BorderThickness=$borderThickness",
-        L"BorderBrush:=$borderColor",
-        L"CornerRadius=$cornerRadius"}},
+        L"BorderThickness=$BorderThickness",
+        L"BorderBrush:=$BorderBrush",
+        L"CornerRadius=$CornerRadius"}},
     ThemeTargetStyles{L"Border#ContentBorder@CommonStates > Grid#DroppedFlickerWorkaroundWrapper > ContentPresenter#ContentPresenter > ContentControl > Grid#RootGrid > Border#LogoBackgroundPlate > Image#AllAppsItemLogo", {
         L"RenderTransform@Pressed:=<ScaleTransform ScaleX=\"0.8\" ScaleY=\"0.8\" />",
         L"RenderTransformOrigin=0.5,0.5",
-        L"CornerRadius=$cornerRadius2"}},
+        L"CornerRadius=$ElementCornerRadius"}},
     ThemeTargetStyles{L"StartDocked.NavigationPaneButton > Grid@CommonStates > Border#BackgroundBorder", {
-        L"BorderThickness=$borderThickness2",
-        L"BorderBrush@PointerOver:=$borderColor2",
-        L"BorderBrush@Pressed:=$borderColor2",
+        L"BorderThickness=$ElementBorderThickness",
+        L"BorderBrush@PointerOver:=$ElementBorderBrush",
+        L"BorderBrush@Pressed:=$ElementBorderBrush",
         L"BackgroundSizing=InnerBorderEdge",
-        L"CornerRadius=$cornerRadius2"}},
+        L"CornerRadius=$ElementCornerRadius"}},
     ThemeTargetStyles{L"StartDocked.AppListViewItem > Grid@CommonStates > Border#BackgroundBorder", {
-        L"BorderThickness=$borderThickness",
-        L"BorderBrush@PointerOver:=$borderColor",
-        L"BorderBrush@Pressed:=$borderColor",
+        L"BorderThickness=$BorderThickness",
+        L"BorderBrush@PointerOver:=$BorderBrush",
+        L"BorderBrush@Pressed:=$BorderBrush",
         L"BackgroundSizing=InnerBorderEdge",
-        L"CornerRadius=$cornerRadius2"}},
+        L"CornerRadius=$ElementCornerRadius"}},
     ThemeTargetStyles{L"Microsoft.UI.Xaml.Controls.DropDownButton > Grid@CommonStates", {
-        L"Background@PointerOver:=$background",
-        L"Background@Pressed:=$background",
-        L"BorderBrush@PointerOver:=$borderColor2",
-        L"BorderBrush@Pressed:=$borderColor2",
+        L"Background@PointerOver:=$AccentBackground",
+        L"Background@Pressed:=$ElementBackground2",
+        L"BorderBrush@PointerOver:=$ElementBorderBrush",
+        L"BorderBrush@Pressed:=$ElementBorderBrush",
         L"BackgroundSizing=InnerBorderEdge",
-        L"Background@Normal:=$background",
-        L"BorderBrush@Normal:=$borderColor2",
+        L"Background@Normal:=$ElementBackground",
+        L"BorderBrush@Normal:=$ElementBorderBrush",
         L"Padding=9,3,7,4",
-        L"CornerRadius=$cornerRadius2",
-        L"BorderThickness@Normal=$borderThickness2",
-        L"BorderThickness@PointerOver=$borderThickness2",
-        L"BorderThickness@Pressed=$borderThickness2"}},
+        L"CornerRadius=$ElementCornerRadius",
+        L"BorderThickness@Normal=$ElementBorderThickness",
+        L"BorderThickness@PointerOver=$ElementBorderThickness",
+        L"BorderThickness@Pressed=$ElementBorderThickness"}},
     ThemeTargetStyles{L"Border#ContentBorder@CommonStates > Grid#DroppedFlickerWorkaroundWrapper > ContentPresenter#ContentPresenter > ContentControl > Grid#RootGrid > Grid#LogoContainer > Image#AllAppsTileLogo", {
         L"RenderTransform@Pressed:=<ScaleTransform ScaleX=\"0.8\" ScaleY=\"0.8\" />",
         L"RenderTransformOrigin=0.5,0.5",
-        L"CornerRadius=$cornerRadius2"}},
+        L"CornerRadius=$ElementCornerRadius"}},
     ThemeTargetStyles{L"Border#ContentBorder@CommonStates > Grid#DroppedFlickerWorkaroundWrapper > ContentPresenter > Grid > Grid#LogoContainer > Grid", {
         L"RenderTransform@Pressed:=<ScaleTransform ScaleX=\"0.8\" ScaleY=\"0.8\" />",
         L"RenderTransformOrigin=0.5,0.5",
-        L"CornerRadius=$cornerRadius2"}},
+        L"CornerRadius=$ElementCornerRadius"}},
     ThemeTargetStyles{L"Grid#ContentBorder@CommonStates > Grid#DroppedFlickerWorkaroundWrapper > ContentPresenter > Grid > Grid#LogoContainer > Grid", {
         L"RenderTransform@Pressed:=<ScaleTransform ScaleX=\"0.8\" ScaleY=\"0.8\" />",
         L"RenderTransformOrigin=0.5,0.5",
-        L"CornerRadius=$cornerRadius2"}},
+        L"CornerRadius=$ElementCornerRadius"}},
     ThemeTargetStyles{L"ScrollViewer#MenuFlyoutPresenterScrollViewer > Border > Grid > ScrollContentPresenter > ItemsPresenter > StackPanel", {
         L"ChildrenTransitions:=<TransitionCollection><EntranceThemeTransition IsStaggeringEnabled=\"False\" FromHorizontalOffset=\"-25\" FromVerticalOffset=\"0\" /></TransitionCollection>"}},
     ThemeTargetStyles{L"FlyoutPresenter > Border > ScrollViewer > Border > Grid > ScrollContentPresenter > ContentPresenter > Border", {
-        L"BorderBrush:=$borderColor",
-        L"BorderThickness=$borderThickness",
-        L"CornerRadius=$cornerRadius"}},
+        L"BorderBrush:=$BorderBrush",
+        L"BorderThickness=$BorderThickness",
+        L"CornerRadius=$CornerRadius"}},
     ThemeTargetStyles{L"Button > ContentPresenter#ContentPresenter@CommonStates", {
-        L"Background@PointerOver:=$background",
-        L"Background@Pressed:=$background",
-        L"BorderBrush@PointerOver:=$borderColor2",
-        L"BorderBrush@Pressed:=$borderColor2",
-        L"BorderThickness=$borderThickness2",
-        L"Background@Normal=$background",
-        L"CornerRadius=$cornerRadius2"}},
+        L"Background@PointerOver:=$AccentBackground",
+        L"Background@Pressed:=$ElementBackground2",
+        L"BorderBrush@PointerOver:=$ElementBorderBrush",
+        L"BorderBrush@Pressed:=$ElementBorderBrush",
+        L"BorderThickness=$ElementBorderThickness",
+        L"Background@Normal=$ElementBackground",
+        L"CornerRadius=$ElementCornerRadius"}},
     ThemeTargetStyles{L"Grid@SearchBoxInputStates > Border#TaskbarSearchBackground", {
-        L"CornerRadius=$cornerRadius2",
-        L"Background@ActiveInput:=$background",
-        L"BorderBrush:=$borderColor2",
-        L"BorderThickness=$borderThickness2",
-        L"Background@SearchBoxHover:=$background",
-        L"Background@NoFocus:=$background",
+        L"CornerRadius=$ElementCornerRadius",
+        L"Background@ActiveInput:=$ElementBackground2",
+        L"BorderBrush:=$ElementBorderBrush",
+        L"BorderThickness=$ElementBorderThickness",
+        L"Background@SearchBoxHover:=$AccentBackground",
+        L"Background@NoFocus:=$ElementBackground",
         L"BackgroundTransition:=<BrushTransition Duration=\"0:0:0.083\" />"}},
     ThemeTargetStyles{L"Border@CommonStates > Grid#DroppedFlickerWorkaroundWrapper > ContentPresenter > Grid > Grid#LogoContainer > Image", {
         L"RenderTransform@Pressed:=<ScaleTransform ScaleX=\"0.8\" ScaleY=\"0.8\" />",
@@ -5217,13 +5206,16 @@ const Theme g_themeLiquidGlass = {{
         L"RenderTransform@Pressed:=<ScaleTransform ScaleX=\"0.8\" ScaleY=\"0.8\" />",
         L"RenderTransformOrigin=0.5,0.5"}},
 }, {
-    L"borderColor=<LinearGradientBrush StartPoint=\"0,0\" EndPoint=\"0,1\"><GradientStop Color=\"#50808080\" Offset=\"0.0\" /><GradientStop Color=\"#50404040\" Offset=\"0.25\" /><GradientStop Color=\"#50808080\" Offset=\"1\" /></LinearGradientBrush>\"",
-    L"borderColor2=<LinearGradientBrush StartPoint=\"0,0\" EndPoint=\"0,1\"><GradientStop Color=\"#50808080\" Offset=\"1\" /><GradientStop Color=\"#50606060\" Offset=\"0.15\" /></LinearGradientBrush>",
-    L"background=<WindhawkBlur BlurAmount=\"10\" TintColor=\"#25323232\" TintOpacity=\"0.2\" />",
-    L"borderThickness=0.3,1,0.3,0.3",
-    L"borderThickness2=0.3,0.3,0.3,1",
-    L"cornerRadius=6",
-    L"cornerRadius2=4",
+    L"BorderThickness=0.3,1,0.3,0.3",
+    L"ElementBorderThickness=0.3,0.3,0.3,1",
+    L"CornerRadius=12",
+    L"ElementCornerRadius=8",
+    L"Background=<WindhawkBlur BlurAmount=\"15\" TintColor=\"{ThemeResource SystemAltLowColor}\" TintOpacity=\"0.2\" />",
+    L"ElementBackground=<WindhawkBlur BlurAmount=\"15\" TintColor=\"{ThemeResource SystemAltLowColor}\" TintOpacity=\"0.4\" />",
+    L"ElementBackground2 = <WindhawkBlur BlurAmount=\"15\" TintColor=\"{ThemeResource SystemAltLowColor}\" TintOpacity=\"0.2\"  />",
+    L"AccentBackground=<WindhawkBlur BlurAmount=\"15\" TintColor=\"{ThemeResource SystemAccentColorLight1}\" TintOpacity=\"0.2\"  />",
+    L"BorderBrush=<LinearGradientBrush StartPoint=\"0,0\" EndPoint=\"0,1\"><GradientStop Color=\"#50808080\" Offset=\"0.0\" /><GradientStop Color=\"#50404040\" Offset=\"0.25\" /><GradientStop Color=\"#50808080\" Offset=\"1\" /></LinearGradientBrush>\"",
+    L"ElementBorderBrush=<LinearGradientBrush StartPoint=\"0,0\" EndPoint=\"0,1\"><GradientStop Color=\"#50808080\" Offset=\"1\" /><GradientStop Color=\"#50606060\" Offset=\"0.15\" /></LinearGradientBrush>",
 }, {}, {
     ThemeTargetStyles{L"*", {
         L"transition: background-color 0.083s ease-in-out !important"}},
@@ -6173,7 +6165,8 @@ const Theme g_themeLayerMicaUI = {{
         L"CornerRadius=$InnerRadius",
         L"Margin=2,0,0,0"}},
     ThemeTargetStyles{L"Grid#NavPanePlaceholder", {
-        L"Margin=52,-577,52,576"}},
+        L"Margin=310,-577,-17,576",
+        L"Width=96"}},
     ThemeTargetStyles{L"Grid#AllListHeading", {
         L"Margin=0,80,-5,0"}},
     ThemeTargetStyles{L"Grid#NoTopLevelSuggestionsText", {
@@ -6195,7 +6188,7 @@ const Theme g_themeLayerMicaUI = {{
     ThemeTargetStyles{L"Microsoft.UI.Xaml.Controls.PipsPager#PipsPager", {
         L"Margin=-30,-10,0,10"}},
     ThemeTargetStyles{L"StartDocked.PowerOptionsView", {
-        L"Margin=0,0,-44,0"}},
+        L"Margin=-3,0,3,0"}},
     ThemeTargetStyles{L"Cortana.UI.Views.TaskbarSearchPage > Grid#RootGrid > Grid#QueryFormulationRoot", {
         L"Margin=0,-4,0,10"}},
     ThemeTargetStyles{L"StartMenu.SearchBoxToggleButton#SearchBoxToggleButton", {
@@ -6223,7 +6216,7 @@ const Theme g_themeLayerMicaUI = {{
         L"FontFamily=$ThFnt",
         L"FontSize=14",
         L"FontWeight=$ThFntWt",
-        L"RenderTransform:=<TranslateTransform Y=\"1.5\" />"}},
+        L"RenderTransform:=<TranslateTransform Y=\"1\" />"}},
     ThemeTargetStyles{L"TextBlock#AppDisplayName", {
         L"FontFamily=$ThFnt",
         L"FontSize=12.5",
@@ -6300,12 +6293,13 @@ const Theme g_themeLayerMicaUI = {{
         L"BorderBrush:=$ThemeOutBorder",
         L"Background:=$ThemeFlyout"}},
     ThemeTargetStyles{L"StartDocked.UserTileView", {
-        L"Margin=286,0,-23,0"}},
+        L"Margin=0,0,-23,0"}},
     ThemeTargetStyles{L"TextBlock#SubFolderNameTextBlock", {
         L"FontFamily=$ThFnt",
         L"FontWeight=$ThHdnWt"}},
-    ThemeTargetStyles{L"Grid#TopLevelHeader > Grid > Button", {
-        L"RenderTransform:=<TranslateTransform X=\"5\" />"}},
+    ThemeTargetStyles{L"Grid#TopLevelHeader > Grid > Button > Grid", {
+        L"RenderTransform:=<TranslateTransform X=\"5\" />",
+        L"CornerRadius=$InnerRadius"}},
 }, {
     L"ThemeBorder=<SolidColorBrush Color=\"{ThemeResource Border}\" />",
     L"OuterRadius=10",
