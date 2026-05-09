@@ -266,13 +266,12 @@ literal `}` - producing `{<value-of-x>}`.
 
 A bare-identifier substitution (`{{VarName}}` with no operators) inserts the
 variable's captured string form verbatim. This is meaningful only for primitive
-captured types: numeric (`Double`, `Single`, `Int32`, `Int64`, `UInt32`),
-boolean, and string. Other captured types (brushes, thicknesses, etc.) are
-currently unsupported - substitution of such a variable is treated as a failure
-and the style is skipped. Substitutions that involve arithmetic require numeric
-source values; using a non-numeric variable in an expression also skips the
-style and logs a warning. Referencing a variable that has never been captured
-likewise skips the style.
+captured types: numeric, boolean, and string. Other captured types (brushes,
+thicknesses, etc.) are currently unsupported - substitution of such a variable
+is treated as a failure and the style is skipped. Substitutions that involve
+arithmetic require numeric source values; using a non-numeric variable in an
+expression also skips the style and logs a warning. Referencing a variable that
+has never been captured likewise skips the style.
 
 Variables are global - a capture from any matched element overwrites the same
 name. Capture rules cannot be combined with `:=` or with the per-rule
