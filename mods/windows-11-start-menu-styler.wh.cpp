@@ -9274,7 +9274,7 @@ void SetOrClearValue(DependencyObject elementDo,
             L"DispatcherTimer");
         g_delayedAllAppsRootRenderTransformTimer = DispatcherTimer();
         g_delayedAllAppsRootRenderTransformTimer.Interval(
-            std::chrono::milliseconds(200));
+            std::chrono::milliseconds(1000));
         g_delayedAllAppsRootRenderTransformTimer.Tick([elementDo, property,
                                                        value](auto&&, auto&&) {
             Wh_Log(L"Running delayed SetValue for AllAppsRoot RenderTransform");
