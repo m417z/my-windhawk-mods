@@ -807,6 +807,11 @@ const Theme g_themeSideBySide_variant_ClassicStartMenu = {{
         L"RenderTransform:=<TranslateTransform X=\"269\"/>"}},
     ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Button#CloseAllAppsButton", {
         L"Visibility=Collapsed"}},
+    ThemeTargetStyles{L"StartDocked.StartSizingFrame", {
+        L"MaxWidth=1874"}},
+    ThemeTargetStyles{L"StartDocked.LauncherFrame > Grid#RootGrid", {
+        L"MinWidth=860",
+        L"MaxWidth=860"}},
     ThemeTargetStyles{L"StartDocked.LauncherFrame > Grid#RootPanel > Grid#RootGrid", {
         L"MinWidth=860",
         L"MaxWidth=860"}},
@@ -948,6 +953,11 @@ const Theme g_themeSideBySide2_variant_ClassicStartMenu = {{
         L"RenderTransform:=<TranslateTransform X=\"-284\"/>"}},
     ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Button#CloseAllAppsButton", {
         L"Visibility=1"}},
+    ThemeTargetStyles{L"StartDocked.StartSizingFrame", {
+        L"MaxWidth=1874"}},
+    ThemeTargetStyles{L"StartDocked.LauncherFrame > Grid#RootGrid", {
+        L"MinWidth=776",
+        L"MaxWidth=776"}},
     ThemeTargetStyles{L"StartDocked.LauncherFrame > Grid#RootPanel > Grid#RootGrid", {
         L"MinWidth=776",
         L"MaxWidth=776"}},
@@ -973,9 +983,13 @@ const Theme g_themeSideBySide2_variant_ClassicStartMenu = {{
         L"FlowDirection=0"}},
     ThemeTargetStyles{L"StartDocked.LauncherFrame > Grid#RootGrid > Grid#RootContent > Grid#MainContent > Grid#InnerContent > StartDocked.SearchBoxToggleButton#StartMenuSearchBox", {
         L"Margin=23,1,23,14"}},
+    ThemeTargetStyles{L"StartDocked.LauncherFrame > Grid#RootPanel > Grid#RootGrid > Grid#RootContent > Grid#MainContent > Grid#InnerContent > StartDocked.SearchBoxToggleButton#StartMenuSearchBox", {
+        L"Margin=23,1,23,14"}},
     ThemeTargetStyles{L"Windows.UI.Xaml.Controls.TextBlock#NoSuggestionsWithoutSettingsLink", {
         L"Margin=11,0,48,0"}},
-    ThemeTargetStyles{L"StartDocked.LauncherFrame > Windows.UI.Xaml.Controls.Grid#RootGrid > Windows.UI.Xaml.Controls.Grid#RootContent > Windows.UI.Xaml.Controls.Grid#MainContent > Windows.UI.Xaml.Controls.Grid#InnerContent > Windows.UI.Xaml.Shapes.Rectangle", {
+    ThemeTargetStyles{L"StartDocked.LauncherFrame > Grid#RootGrid > Grid#RootContent > Grid#MainContent > Grid#InnerContent > Rectangle", {
+        L"Margin=67,7,0,21"}},
+    ThemeTargetStyles{L"StartDocked.LauncherFrame > Grid#RootPanel > Grid#RootGrid > Grid#RootContent > Grid#MainContent > Grid#InnerContent > Rectangle", {
         L"Margin=67,7,0,21"}},
     ThemeTargetStyles{L"Windows.UI.Xaml.Controls.SemanticZoom#ZoomControl", {
         L"IsZoomOutButtonEnabled=true"}},
@@ -2085,7 +2099,11 @@ const Theme g_themeWindows10_variant_Minimal_ClassicStartMenu = {{
     ThemeTargetStyles{L"Rectangle[4]", {
         L"Margin=0,-20,0,0"}},
     ThemeTargetStyles{L"StartDocked.StartSizingFrame", {
-        L"Margin=-15,24,450,0"}},
+        L"Margin=-15,24,450,0",
+        L"MinWidth=400"}},
+    ThemeTargetStyles{L"StartDocked.LauncherFrame > Grid#RootGrid", {
+        L"MinWidth=400",
+        L"MaxWidth=400"}},
     ThemeTargetStyles{L"StartDocked.LauncherFrame > Grid#RootPanel > Grid#RootGrid", {
         L"MinWidth=400",
         L"MaxWidth=400"}},
@@ -2421,7 +2439,17 @@ const Theme g_themeWindows11_Metro10_variant_ClassicStartMenu = {{
     ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Button#CloseAllAppsButton", {
         L"Visibility=Collapsed"}},
     ThemeTargetStyles{L"StartDocked.StartSizingFrame", {
-        L"MaxHeight=670"}},
+        L"MaxHeight=670",
+        L"MaxWidth=1874"}},
+    ThemeTargetStyles{L"StartDocked.LauncherFrame > Grid#RootGrid > Grid#RootContent", {
+        L"MinWidth=650",
+        L"MaxWidth=650"}},
+    ThemeTargetStyles{L"StartDocked.LauncherFrame > Grid#RootPanel > Grid#RootGrid", {
+        L"MinWidth=650",
+        L"MaxWidth=650"}},
+    ThemeTargetStyles{L"StartDocked.LauncherFrame > Grid#RootPanel > Grid#RootGrid > Grid#RootContent", {
+        L"MinWidth=650",
+        L"MaxWidth=650"}},
     ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Grid#ShowMoreSuggestions", {
         L"Visibility=Collapsed"}},
     ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Button#ShowAllAppsButton", {
@@ -2451,7 +2479,9 @@ const Theme g_themeWindows11_Metro10_variant_ClassicStartMenu = {{
         L"Margin=23,-101,23,14"}},
     ThemeTargetStyles{L"Windows.UI.Xaml.Controls.TextBlock#NoSuggestionsWithoutSettingsLink", {
         L"Margin=11,0,48,0"}},
-    ThemeTargetStyles{L"StartDocked.LauncherFrame > Windows.UI.Xaml.Controls.Grid#RootGrid > Windows.UI.Xaml.Controls.Grid#RootContent > Windows.UI.Xaml.Controls.Grid#MainContent > Windows.UI.Xaml.Controls.Grid#InnerContent > Windows.UI.Xaml.Shapes.Rectangle", {
+    ThemeTargetStyles{L"StartDocked.LauncherFrame > Grid#RootGrid > Grid#RootContent > Grid#MainContent > Grid#InnerContent > Rectangle", {
+        L"Margin=67,7,0,21"}},
+    ThemeTargetStyles{L"StartDocked.LauncherFrame > Grid#RootPanel > Grid#RootGrid > Grid#RootContent > Grid#MainContent > Grid#InnerContent > Rectangle", {
         L"Margin=67,7,0,21"}},
     ThemeTargetStyles{L"Windows.UI.Xaml.Controls.SemanticZoom#ZoomControl", {
         L"IsZoomOutButtonEnabled=true",
@@ -3056,8 +3086,6 @@ const Theme g_themeRosePine_variant_ClassicStartMenu = {{
         L"Visibility=Collapsed"}},
     ThemeTargetStyles{L"Windows.UI.Xaml.Controls.TextBlock#AllAppsHeading", {
         L"Visibility=Collapsed"}},
-    ThemeTargetStyles{L"StartDocked.StartSizingFrame", {
-        L"MaxHeight=580"}},
     ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Grid#UserTileIcon", {
         L"Visibility=Collapsed"}},
     ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Border#AcrylicOverlay", {
@@ -3105,6 +3133,9 @@ const Theme g_themeRosePine_variant_ClassicStartMenu = {{
     ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Border#TaskbarSearchBackground", {
         L"BorderThickness=1.5",
         L"BorderBrush=#ebbcba"}},
+    ThemeTargetStyles{L"StartDocked.StartSizingFrame", {
+        L"MaxHeight=580",
+        L"MinWidth=500"}},
     ThemeTargetStyles{L"StartDocked.LauncherFrame > Grid#RootGrid > Grid#RootContent", {
         L"MinWidth=500",
         L"MaxWidth=500"}},
@@ -3218,7 +3249,7 @@ const Theme g_themeWindows11_Metro10Minimal_variant_ClassicStartMenu = {{
     ThemeTargetStyles{L"StartMenu.StartInnerFrame", {
         L"Visibility=Collapsed"}},
     ThemeTargetStyles{L"StartDocked.StartSizingFrame", {
-        L"MaxHeight=670"}},
+        L"MinWidth=460"}},
     ThemeTargetStyles{L"StartDocked.LauncherFrame > Grid#RootGrid > Grid#RootContent", {
         L"MinWidth=460",
         L"MaxWidth=460"}},
@@ -4480,9 +4511,8 @@ const Theme g_themeOnlySearch = {{
 
 const Theme g_themeOnlySearch_variant_ClassicStartMenu = {{
     ThemeTargetStyles{L"StartDocked.StartSizingFrame", {
+        L"MinHeight=100",
         L"MaxHeight=160"}},
-    ThemeTargetStyles{L"StartDocked.StartSizingFrame", {
-        L"MinHeight=100"}},
     ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Grid#UndockedRoot", {
         L"Visibility=Collapsed"}},
 }};
