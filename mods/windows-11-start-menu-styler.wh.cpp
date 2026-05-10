@@ -7393,7 +7393,8 @@ bool g_elementPropertyModifying;
 winrt::Windows::Foundation::IAsyncOperation<bool>
     g_delayedAllAppsRootVisibilitySet;
 
-DispatcherTimer g_delayedAllAppsRootRenderTransformTimer{nullptr};
+VisualStateGroup g_allAppsRootRenderTransformVsg{nullptr};
+winrt::event_token g_allAppsRootRenderTransformToken{};
 
 enum class DisableNewStartMenuLayout {
     windowsDefault,
@@ -9254,43 +9255,114 @@ void SetOrClearValue(DependencyObject elementDo,
     }
 
     // A workaround similar to the above, but for the RenderTransform property
-    // of the AllAppsRoot Grid. Setting it too early causes a crash. Unlike the
-    // Visibility case above, dispatching via TryRunAsync, the Loaded event,
-    // LayoutUpdated, and CompositionTarget::Rendering all crash here. Use a
-    // DispatcherTimer with a delay. Apply the workaround for both initial apply
-    // and subsequent changes, as it's applied more than once on initial load.
+    // of the AllAppsRoot Grid. Setting it too early causes a crash. The safe
+    // moment is when the StartDocked.LauncherFrame's child Grid (named either
+    // RootPanel or RootGrid depending on the build) enters the ContentStates
+    // "FlipToUndocked" visual state. Walk up to that Grid and either apply now
+    // (if already there) or subscribe and apply when the state changes. Apply
+    // the workaround for both initial apply and subsequent changes, as it's
+    // applied more than once on initial load.
     if (winrt::get_class_name(elementDo) == L"Windows.UI.Xaml.Controls.Grid" &&
         elementDo.as<FrameworkElement>().Name() == L"AllAppsRoot" &&
         property == UIElement::RenderTransformProperty()) {
-        if (g_delayedAllAppsRootRenderTransformTimer) {
+        // Cancel any previous pending subscription, since this code path may
+        // run multiple times for the same property during initial load.
+        if (g_allAppsRootRenderTransformVsg) {
             Wh_Log(
-                L"Canceling delayed SetValue for AllAppsRoot RenderTransform");
-            g_delayedAllAppsRootRenderTransformTimer.Stop();
-            g_delayedAllAppsRootRenderTransformTimer = nullptr;
+                L"Canceling pending VSG subscription for AllAppsRoot "
+                L"RenderTransform");
+            g_allAppsRootRenderTransformVsg.CurrentStateChanged(
+                g_allAppsRootRenderTransformToken);
+            g_allAppsRootRenderTransformToken = {};
+            g_allAppsRootRenderTransformVsg = nullptr;
         }
 
-        Wh_Log(
-            L"Delaying SetValue for AllAppsRoot RenderTransform via "
-            L"DispatcherTimer");
-        g_delayedAllAppsRootRenderTransformTimer = DispatcherTimer();
-        g_delayedAllAppsRootRenderTransformTimer.Interval(
-            std::chrono::milliseconds(1000));
-        g_delayedAllAppsRootRenderTransformTimer.Tick([elementDo, property,
-                                                       value](auto&&, auto&&) {
-            Wh_Log(L"Running delayed SetValue for AllAppsRoot RenderTransform");
-            if (g_delayedAllAppsRootRenderTransformTimer) {
-                g_delayedAllAppsRootRenderTransformTimer.Stop();
-                g_delayedAllAppsRootRenderTransformTimer = nullptr;
+        // Walk up to find StartDocked.LauncherFrame, then use its direct child
+        // (an ancestor of elementDo) which holds the ContentStates VSG. The
+        // child is named either Grid#RootPanel or Grid#RootGrid depending on
+        // the build.
+        FrameworkElement launcherGrid = nullptr;
+        DependencyObject iter = elementDo;
+        while (auto parent = Media::VisualTreeHelper::GetParent(iter)) {
+            auto parentFe = parent.try_as<FrameworkElement>();
+            if (parentFe && winrt::get_class_name(parentFe) ==
+                                L"StartDocked.LauncherFrame") {
+                launcherGrid = iter.try_as<FrameworkElement>();
+                break;
             }
-            g_elementPropertyModifying = true;
-            try {
-                elementDo.SetValue(property, value);
-            } catch (winrt::hresult_error const& ex) {
-                Wh_Log(L"Error %08X: %s", ex.code(), ex.message().c_str());
+            iter = parent;
+        }
+
+        VisualStateGroup contentStates = nullptr;
+        if (launcherGrid) {
+            for (const auto& vsg :
+                 VisualStateManager::GetVisualStateGroups(launcherGrid)) {
+                if (vsg.Name() == L"ContentStates") {
+                    contentStates = vsg;
+                    break;
+                }
             }
-            g_elementPropertyModifying = false;
-        });
-        g_delayedAllAppsRootRenderTransformTimer.Start();
+        }
+
+        auto currentState =
+            contentStates ? contentStates.CurrentState() : nullptr;
+        std::wstring currentStateName(currentState ? currentState.Name() : L"");
+
+        if (contentStates && currentStateName != L"FlipToUndocked") {
+            Wh_Log(
+                L"Deferring SetValue for AllAppsRoot RenderTransform "
+                L"(ContentStates=%s, waiting for FlipToUndocked)",
+                currentStateName.empty() ? L"(none)"
+                                         : currentStateName.c_str());
+            g_allAppsRootRenderTransformVsg = contentStates;
+            g_allAppsRootRenderTransformToken =
+                contentStates.CurrentStateChanged(
+                    [elementDo, property, value](
+                        winrt::Windows::Foundation::IInspectable const&,
+                        VisualStateChangedEventArgs const& e) {
+                        auto newState = e.NewState();
+                        if (!newState || newState.Name() != L"FlipToUndocked") {
+                            return;
+                        }
+                        Wh_Log(
+                            L"Running deferred SetValue for AllAppsRoot "
+                            L"RenderTransform (state=FlipToUndocked)");
+                        if (g_allAppsRootRenderTransformVsg) {
+                            g_allAppsRootRenderTransformVsg.CurrentStateChanged(
+                                g_allAppsRootRenderTransformToken);
+                            g_allAppsRootRenderTransformToken = {};
+                            g_allAppsRootRenderTransformVsg = nullptr;
+                        }
+                        g_elementPropertyModifying = true;
+                        try {
+                            elementDo.SetValue(property, value);
+                        } catch (winrt::hresult_error const& ex) {
+                            Wh_Log(L"Error %08X: %s", ex.code(),
+                                   ex.message().c_str());
+                        }
+                        g_elementPropertyModifying = false;
+                    });
+            return;
+        }
+
+        if (!contentStates) {
+            Wh_Log(
+                L"AllAppsRoot RenderTransform: ContentStates VSG not found%s, "
+                L"applying immediately",
+                launcherGrid ? L"" : L" (LauncherFrame ancestor not found)");
+        } else {
+            Wh_Log(
+                L"AllAppsRoot RenderTransform: state already FlipToUndocked, "
+                L"applying immediately");
+        }
+
+        g_elementPropertyModifying = true;
+        try {
+            elementDo.SetValue(property, value);
+        } catch (winrt::hresult_error const& ex) {
+            Wh_Log(L"Error %08X: %s", ex.code(), ex.message().c_str());
+        }
+        g_elementPropertyModifying = false;
         return;
     }
 
@@ -12754,9 +12826,11 @@ void UninitializeSettingsAndTap() {
         g_delayedAllAppsRootVisibilitySet = nullptr;
     }
 
-    if (g_delayedAllAppsRootRenderTransformTimer) {
-        g_delayedAllAppsRootRenderTransformTimer.Stop();
-        g_delayedAllAppsRootRenderTransformTimer = nullptr;
+    if (g_allAppsRootRenderTransformVsg) {
+        g_allAppsRootRenderTransformVsg.CurrentStateChanged(
+            g_allAppsRootRenderTransformToken);
+        g_allAppsRootRenderTransformToken = {};
+        g_allAppsRootRenderTransformVsg = nullptr;
     }
 
     for (const auto& [handle, elementCustomizationState] :
