@@ -2,7 +2,7 @@
 // @id              virtual-desktop-taskbar-order
 // @name            Virtual Desktop Preserve Taskbar Order
 // @description     The order on the taskbar isn't preserved between virtual desktop switches, this mod fixes it
-// @version         1.0.4
+// @version         1.0.5
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
@@ -282,6 +282,9 @@ ULONG WINAPI TaskItemReleaseHook(LONG_PTR this_ptr) {
 void OnButtonGroupInserted(LONG_PTR lpTaskSwLongPtr,
                            HDPA hButtonGroupsDpa,
                            int nButtonGroupIndex) {
+    Wh_Log(L"> lpTaskSwLongPtr=%p, hButtonGroupsDpa=%p, nButtonGroupIndex=%d",
+           (void*)lpTaskSwLongPtr, (void*)hButtonGroupsDpa, nButtonGroupIndex);
+
     LONG_PTR* plp = (LONG_PTR*)hButtonGroupsDpa;
     int button_groups_count = (int)plp[0];
     LONG_PTR** button_groups = (LONG_PTR**)plp[1];
@@ -429,15 +432,19 @@ void OnButtonGroupInserted(LONG_PTR lpTaskSwLongPtr,
 }
 
 void ComFuncVirtualDesktopFixAfterDPA_InsertPtr(HDPA pdpa, int index, void* p) {
+    Wh_Log(L"> index=%d, p=%p", index, p);
+
     if (index == INT_MAX) {
         return;
     }
 
     if (!g_tryMoveGroup_taskListLongPtr) {
+        Wh_Log(L"Not in TryMoveGroup, skipping");
         return;
     }
 
     if (!p || *(void**)p != CTaskBtnGroup_ITaskBtnGroup_vftable) {
+        Wh_Log(L"Invalid pointer or vftable mismatch, skipping");
         return;
     }
 
@@ -490,8 +497,6 @@ void InitializeTaskbarVariables(HWND hTaskbarWnd) {
 using DPA_InsertPtr_t = decltype(&DPA_InsertPtr);
 DPA_InsertPtr_t DPA_InsertPtr_Original;
 auto WINAPI DPA_InsertPtr_Hook(HDPA hdpa, int i, void* p) {
-    Wh_Log(L">");
-
     auto ret = DPA_InsertPtr_Original(hdpa, i, p);
 
     if (GetCurrentThreadId() == g_taskbarThreadId) {
