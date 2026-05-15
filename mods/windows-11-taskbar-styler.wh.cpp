@@ -2,7 +2,7 @@
 // @id              windows-11-taskbar-styler
 // @name            Windows 11 Taskbar Styler
 // @description     Customize the taskbar with themes contributed by others or create your own
-// @version         1.6.1
+// @version         1.7
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
@@ -278,8 +278,8 @@ A couple of practical examples:
 #### Hide the network notification icon
 
 * Target: `SystemTray.OmniButton#ControlCenterButton > Grid > ContentPresenter >
-  ItemsPresenter > StackPanel > ContentPresenter[1] > SystemTray.IconView > Grid
-  > Grid`
+  ItemsPresenter > StackPanel > ContentPresenter[1] > SystemTray.IconView >
+  Grid > Grid`
 * Style: `Visibility=Collapsed`
 
 **Note**: To hide the volume notification icon instead, use `[2]` instead of
