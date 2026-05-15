@@ -27,8 +27,9 @@
 The order on the taskbar isn't preserved between virtual desktop switches, this
 mod fixes it.
 
-Only Windows 11 is currently supported. For older Windows versions check out [7+
-Taskbar Tweaker](https://tweaker.ramensoftware.com/).
+Only Windows 11 x64 is currently supported. ARM64 is unsupported. For older
+Windows versions check out [7+ Taskbar
+Tweaker](https://tweaker.ramensoftware.com/).
 
 ![Demonstration](https://i.imgur.com/ie8Q9cl.gif)
 */
@@ -54,7 +55,6 @@ HWND g_hTaskbarWnd;
 
 #pragma region offsets
 
-void* CTaskListWnd_GetFocusedBtn;
 void* CTaskBand__EnumExistingImmersiveApps;
 void* CApplicationViewManager__GetViewInFocus;
 
@@ -92,12 +92,6 @@ size_t OffsetFromAssembly(void* func,
     return defValue;
 }
 
-HDPA* EV_MM_TASKLIST_BUTTON_GROUPS_HDPA(LONG_PTR lp) {
-    static size_t offset = OffsetFromAssembly(CTaskListWnd_GetFocusedBtn, 0xE0);
-
-    return (HDPA*)(lp + offset);
-}
-
 LONG_PTR* EV_TASK_SW_APP_VIEW_MGR(LONG_PTR lp) {
     static size_t offset =
         OffsetFromAssembly(CTaskBand__EnumExistingImmersiveApps, 0x220);
@@ -125,6 +119,8 @@ size_t* EV_APP_VIEW_MGR_APP_ARRAY_SIZE(LONG_PTR lp) {
 }
 
 #pragma endregion  // offsets
+
+void* CTaskBtnGroup_ITaskBtnGroup_vftable;
 
 using CTaskBtnGroup_GetGroup_t = void*(WINAPI*)(void* pThis);
 CTaskBtnGroup_GetGroup_t CTaskBtnGroup_GetGroup;
@@ -441,9 +437,13 @@ void ComFuncVirtualDesktopFixAfterDPA_InsertPtr(HDPA pdpa, int index, void* p) {
         return;
     }
 
-    HDPA hButtonGroupsDpa =
-        *EV_MM_TASKLIST_BUTTON_GROUPS_HDPA(g_tryMoveGroup_taskListLongPtr);
-    if (!hButtonGroupsDpa || pdpa != hButtonGroupsDpa) {
+    if (!p || *(void**)p != CTaskBtnGroup_ITaskBtnGroup_vftable) {
+        return;
+    }
+
+    LONG_PTR* button_group = (LONG_PTR*)p;
+    LONG_PTR* task_group = (LONG_PTR*)CTaskBtnGroup_GetGroup(button_group);
+    if (!task_group || task_group != g_tryMoveGroup_taskGroup) {
         return;
     }
 
@@ -552,16 +552,18 @@ VS_FIXEDFILEINFO* GetModuleVersionInfo(HMODULE hModule, UINT* puPtrLen) {
         }
     }
 
-    if (puPtrLen)
+    if (puPtrLen) {
         *puPtrLen = uPtrLen;
+    }
 
     return (VS_FIXEDFILEINFO*)pFixedFileInfo;
 }
 
 WinVersion GetExplorerVersion() {
     VS_FIXEDFILEINFO* fixedFileInfo = GetModuleVersionInfo(nullptr, nullptr);
-    if (!fixedFileInfo)
+    if (!fixedFileInfo) {
         return WinVersion::Unsupported;
+    }
 
     WORD major = HIWORD(fixedFileInfo->dwFileVersionMS);
     WORD minor = LOWORD(fixedFileInfo->dwFileVersionMS);
@@ -572,10 +574,11 @@ WinVersion GetExplorerVersion() {
 
     switch (major) {
         case 10:
-            if (build < 22000)
+            if (build < 22000) {
                 return WinVersion::Win10;
-            else
+            } else {
                 return WinVersion::Win11;
+            }
             break;
     }
 
@@ -591,41 +594,46 @@ BOOL Wh_ModInit() {
         return FALSE;
     }
 
+#ifdef _M_ARM64
+    Wh_Log(L"Unsupported architecture");
+    return FALSE;
+#endif
+
     WindhawkUtils::SYMBOL_HOOK taskbarDllHooks[] = {
         {
+            {LR"(const CTaskBtnGroup::`vftable'{for `ITaskBtnGroup'})"},
+            &CTaskBtnGroup_ITaskBtnGroup_vftable,
+        },
+        {
             {LR"(public: virtual struct ITaskGroup * __cdecl CTaskBtnGroup::GetGroup(void))"},
-            (void**)&CTaskBtnGroup_GetGroup,
+            &CTaskBtnGroup_GetGroup,
         },
         {
             {LR"(public: virtual int __cdecl CTaskBtnGroup::GetNumItems(void))"},
-            (void**)&CTaskBtnGroup_GetNumItems,
+            &CTaskBtnGroup_GetNumItems,
         },
         {
             {LR"(public: virtual struct ITaskItem * __cdecl CTaskBtnGroup::GetTaskItem(int))"},
-            (void**)&CTaskBtnGroup_GetTaskItem,
+            &CTaskBtnGroup_GetTaskItem,
         },
         {
             {LR"(public: virtual long __cdecl CTaskGroup::DoesWindowMatch(struct HWND__ *,struct _ITEMIDLIST_ABSOLUTE const *,unsigned short const *,enum WINDOWMATCHCONFIDENCE *,struct ITaskItem * *))"},
-            (void**)&CTaskGroup_DoesWindowMatch_Original,
-            (void*)CTaskGroup_DoesWindowMatch_Hook,
+            &CTaskGroup_DoesWindowMatch_Original,
+            CTaskGroup_DoesWindowMatch_Hook,
         },
         {
             {LR"(public: virtual bool __cdecl CTaskListWnd::TryMoveGroup(struct ITaskGroup *,unsigned int))"},
-            (void**)&CTaskListWnd_TryMoveGroup_Original,
-            (void*)CTaskListWnd_TryMoveGroup_Hook,
+            &CTaskListWnd_TryMoveGroup_Original,
+            CTaskListWnd_TryMoveGroup_Hook,
         },
         {
             {LR"(public: virtual long __cdecl CTaskBand::ViewVirtualDesktopChanged(struct IApplicationView *))"},
-            (void**)&CTaskBand_ViewVirtualDesktopChanged_Original,
+            &CTaskBand_ViewVirtualDesktopChanged_Original,
         },
         // For offsets:
         {
-            {LR"(public: virtual long __cdecl CTaskListWnd::GetFocusedBtn(struct ITaskGroup * *,int *))"},
-            (void**)&CTaskListWnd_GetFocusedBtn,
-        },
-        {
             {LR"(protected: void __cdecl CTaskBand::_EnumExistingImmersiveApps(void))"},
-            (void**)&CTaskBand__EnumExistingImmersiveApps,
+            &CTaskBand__EnumExistingImmersiveApps,
         },
     };
 
@@ -647,7 +655,7 @@ BOOL Wh_ModInit() {
         // For offsets:
         {
             {LR"(public: virtual long __cdecl CApplicationViewManager::GetViewInFocus(struct IApplicationView * *))"},
-            (void**)&CApplicationViewManager__GetViewInFocus,
+            &CApplicationViewManager__GetViewInFocus,
         },
     };
 
@@ -664,11 +672,11 @@ BOOL Wh_ModInit() {
         return FALSE;
     }
 
-    Wh_SetFunctionHook((void*)DPA_InsertPtr, (void*)DPA_InsertPtr_Hook,
-                       (void**)&DPA_InsertPtr_Original);
+    WindhawkUtils::SetFunctionHook(DPA_InsertPtr, DPA_InsertPtr_Hook,
+                                   &DPA_InsertPtr_Original);
 
-    Wh_SetFunctionHook((void*)CreateWindowExW, (void*)CreateWindowExW_Hook,
-                       (void**)&CreateWindowExW_Original);
+    WindhawkUtils::SetFunctionHook(CreateWindowExW, CreateWindowExW_Hook,
+                                   &CreateWindowExW_Original);
 
     return TRUE;
 }
