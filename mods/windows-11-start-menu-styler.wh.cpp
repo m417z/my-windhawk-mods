@@ -9269,14 +9269,16 @@ void SetOrClearValue(DependencyObject elementDo,
         property == UIElement::VisibilityProperty()) {
         if (value != DependencyProperty::UnsetValue() && initialApply &&
             !g_delayedAllAppsRootVisibilitySet) {
-            Wh_Log(L"Delaying SetValue for AllAppsRoot");
+            Wh_Log(L"Delaying SetValue for AllAppsRoot Visibility");
             g_delayedAllAppsRootVisibilitySet =
                 elementDo.Dispatcher().TryRunAsync(
                     winrt::Windows::UI::Core::CoreDispatcherPriority::High,
                     [elementDo = std::move(elementDo),
                      property = std::move(property),
                      value = std::move(value)]() {
-                        Wh_Log(L"Running delayed SetValue for AllAppsRoot");
+                        Wh_Log(
+                            L"Running delayed SetValue for AllAppsRoot "
+                            L"Visibility");
                         g_elementPropertyModifying = true;
                         try {
                             elementDo.SetValue(property, value);
@@ -9289,7 +9291,7 @@ void SetOrClearValue(DependencyObject elementDo,
                     });
             return;
         } else if (g_delayedAllAppsRootVisibilitySet) {
-            Wh_Log(L"Canceling delayed SetValue for AllAppsRoot");
+            Wh_Log(L"Canceling delayed SetValue for AllAppsRoot Visibility");
             g_delayedAllAppsRootVisibilitySet.Cancel();
             g_delayedAllAppsRootVisibilitySet = nullptr;
         }
