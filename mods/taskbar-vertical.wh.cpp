@@ -220,65 +220,6 @@ GetWindowBand_t pGetWindowBand;
 
 constexpr DWORD ZBID_SYSTEM_TOOLS = 16;
 
-std::optional<bool> IsOsFeatureEnabled(UINT32 featureId) {
-    enum FEATURE_ENABLED_STATE {
-        FEATURE_ENABLED_STATE_DEFAULT = 0,
-        FEATURE_ENABLED_STATE_DISABLED = 1,
-        FEATURE_ENABLED_STATE_ENABLED = 2,
-    };
-
-#pragma pack(push, 1)
-    struct RTL_FEATURE_CONFIGURATION {
-        unsigned int featureId;
-        unsigned __int32 group : 4;
-        FEATURE_ENABLED_STATE enabledState : 2;
-        unsigned __int32 enabledStateOptions : 1;
-        unsigned __int32 unused1 : 1;
-        unsigned __int32 variant : 6;
-        unsigned __int32 variantPayloadKind : 2;
-        unsigned __int32 unused2 : 16;
-        unsigned int payload;
-    };
-#pragma pack(pop)
-
-    using RtlQueryFeatureConfiguration_t =
-        int(NTAPI*)(UINT32, int, INT64*, RTL_FEATURE_CONFIGURATION*);
-    static RtlQueryFeatureConfiguration_t pRtlQueryFeatureConfiguration = []() {
-        HMODULE hNtDll = LoadLibraryW(L"ntdll.dll");
-        return hNtDll ? (RtlQueryFeatureConfiguration_t)GetProcAddress(
-                            hNtDll, "RtlQueryFeatureConfiguration")
-                      : nullptr;
-    }();
-
-    if (!pRtlQueryFeatureConfiguration) {
-        Wh_Log(L"RtlQueryFeatureConfiguration not found");
-        return std::nullopt;
-    }
-
-    RTL_FEATURE_CONFIGURATION feature = {0};
-    INT64 changeStamp = 0;
-    HRESULT hr =
-        pRtlQueryFeatureConfiguration(featureId, 1, &changeStamp, &feature);
-    if (SUCCEEDED(hr)) {
-        Wh_Log(L"RtlQueryFeatureConfiguration result for %u: %d", featureId,
-               feature.enabledState);
-
-        switch (feature.enabledState) {
-            case FEATURE_ENABLED_STATE_DISABLED:
-                return false;
-            case FEATURE_ENABLED_STATE_ENABLED:
-                return true;
-            case FEATURE_ENABLED_STATE_DEFAULT:
-                return std::nullopt;
-        }
-    } else {
-        Wh_Log(L"RtlQueryFeatureConfiguration error for %u: %08X", featureId,
-               hr);
-    }
-
-    return std::nullopt;
-}
-
 std::wstring GetThreadDescriptionAsString(HANDLE thread) {
     std::wstring result;
 
