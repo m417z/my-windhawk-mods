@@ -9,7 +9,7 @@
 // @homepage        https://m417z.com/
 // @include         dwm.exe
 // @architecture    x86-64
-// @compilerOptions -lgdi32
+// @compilerOptions -lgdi32 -lwevtapi
 // ==/WindhawkMod==
 
 // Source code is published under The GNU General Public License v3.0.
@@ -93,6 +93,7 @@ and make sure that `dwm.exe` is in the list.
 #include <windhawk_utils.h>
 
 #include <dwmapi.h>
+#include <winevt.h>
 
 #include <cmath>
 #include <regex>
@@ -317,8 +318,48 @@ void LoadSettings() {
                        std::numeric_limits<float>::max());
 }
 
+// Returns true if at least two Dwminit warnings (Level=3) were logged in the
+// Application event log within the last 60 seconds. DWM logs warnings here when
+// it crashes and is restarted by the session manager, so repeated warnings are
+// a strong signal that something in the desktop pipeline is unstable.
+bool HasMultipleDwminitWarningsInLastMinute() {
+    const WCHAR* queryPath = L"Application";
+    const WCHAR* query =
+        L"*[System[Provider[@Name='Dwminit'] and (Level=3) and "
+        L"TimeCreated[timediff(@SystemTime) <= 60000]]]";
+
+    EVT_HANDLE queryHandle = EvtQuery(nullptr,    // Local machine
+                                      queryPath,  // Application log
+                                      query, EvtQueryChannelPath);
+    if (!queryHandle) {
+        Wh_Log(L"EvtQuery failed with error: %u", GetLastError());
+        return false;
+    }
+
+    EVT_HANDLE events[2] = {};
+    DWORD returned = 0;
+    constexpr DWORD kTimeout = 1000;
+    bool foundAtLeastTwo = EvtNext(queryHandle, ARRAYSIZE(events), events,
+                                   kTimeout, 0, &returned) &&
+                           returned >= ARRAYSIZE(events);
+    if (!foundAtLeastTwo && GetLastError() != ERROR_NO_MORE_ITEMS) {
+        Wh_Log(L"EvtNext failed with error: %u", GetLastError());
+    }
+    for (DWORD i = 0; i < returned; i++) {
+        EvtClose(events[i]);
+    }
+
+    EvtClose(queryHandle);
+    return foundAtLeastTwo;
+}
+
 BOOL Wh_ModInit() {
     Wh_Log(L">");
+
+    if (HasMultipleDwminitWarningsInLastMinute()) {
+        Wh_Log(L"Refusing to load: multiple recent Dwminit warnings");
+        return FALSE;
+    }
 
     LoadSettings();
 
