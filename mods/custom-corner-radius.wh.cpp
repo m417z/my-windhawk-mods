@@ -2,7 +2,7 @@
 // @id              custom-corner-radius
 // @name            Custom Window Corner Radius
 // @description     Customizes window corner radius in Windows 11, making corners more or less rounded
-// @version         1.1
+// @version         1.2
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
@@ -96,7 +96,9 @@ and make sure that `dwm.exe` is in the list.
 #include <winevt.h>
 
 #include <cmath>
+#include <limits>
 #include <regex>
+#include <string_view>
 
 struct {
     float radius;
@@ -339,10 +341,9 @@ bool HasMultipleDwminitWarningsInLastMinute() {
     EVT_HANDLE events[2] = {};
     DWORD returned = 0;
     constexpr DWORD kTimeout = 1000;
-    bool foundAtLeastTwo = EvtNext(queryHandle, ARRAYSIZE(events), events,
-                                   kTimeout, 0, &returned) &&
-                           returned >= ARRAYSIZE(events);
-    if (!foundAtLeastTwo && GetLastError() != ERROR_NO_MORE_ITEMS) {
+    BOOL ok =
+        EvtNext(queryHandle, ARRAYSIZE(events), events, kTimeout, 0, &returned);
+    if (!ok && GetLastError() != ERROR_NO_MORE_ITEMS) {
         Wh_Log(L"EvtNext failed with error: %u", GetLastError());
     }
     for (DWORD i = 0; i < returned; i++) {
@@ -350,7 +351,7 @@ bool HasMultipleDwminitWarningsInLastMinute() {
     }
 
     EvtClose(queryHandle);
-    return foundAtLeastTwo;
+    return ok && returned >= ARRAYSIZE(events);
 }
 
 BOOL Wh_ModInit() {
@@ -450,6 +451,7 @@ BOOL Wh_ModInit() {
     };
 
     if (!HookSymbols(udwm, udwmDllHooks, ARRAYSIZE(udwmDllHooks))) {
+        Wh_Log(L"HookSymbols failed");
         return FALSE;
     }
 
