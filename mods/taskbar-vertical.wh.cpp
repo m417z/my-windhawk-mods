@@ -4956,16 +4956,19 @@ bool HookTaskbarDllSymbols() {
             {LR"(public: virtual int __cdecl CTaskListThumbnailWnd::DisplayUI(struct ITaskBtnGroup *,struct ITaskItem *,struct ITaskItem *,unsigned long))"},
             &CTaskListThumbnailWnd_DisplayUI_Original,
             CTaskListThumbnailWnd_DisplayUI_Hook,
+            true,  // Classic thumbnails, removed in or near 10.0.26100.8491.
         },
         {
             {LR"(public: virtual void __cdecl CTaskListThumbnailWnd::LayoutThumbnails(void))"},
             &CTaskListThumbnailWnd_LayoutThumbnails_Original,
             CTaskListThumbnailWnd_LayoutThumbnails_Hook,
+            true,  // Classic thumbnails, removed in or near 10.0.26100.8491.
         },
         {
             {LR"(public: __cdecl winrt::Windows::Internal::Shell::XamlExplorerHost::XamlExplorerHostWindow::XamlExplorerHostWindow(unsigned int,struct winrt::Windows::Foundation::Rect const &,unsigned int))"},
             &XamlExplorerHostWindow_XamlExplorerHostWindow_Original,
             XamlExplorerHostWindow_XamlExplorerHostWindow_Hook,
+            true,  // Inlined and no longer needed in or near 10.0.26100.8491.
         },
     };
 

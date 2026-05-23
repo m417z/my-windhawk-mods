@@ -779,6 +779,8 @@ void WINAPI CTaskListThumbnailWnd_LayoutThumbnails_Hook(void* pThis) {
     g_inCTaskListThumbnailWnd_LayoutThumbnails = false;
 }
 
+// This hook is unnecessary with XAML refresh (new thumbnails and other UI
+// updates).
 using XamlExplorerHostWindow_XamlExplorerHostWindow_t =
     void*(WINAPI*)(void* pThis,
                    unsigned int param1,
@@ -2537,8 +2539,7 @@ bool HookTaskbarDllSymbols() {
             {LR"(public: __cdecl winrt::Windows::Internal::Shell::XamlExplorerHost::XamlExplorerHostWindow::XamlExplorerHostWindow(unsigned int,struct winrt::Windows::Foundation::Rect const &,unsigned int))"},
             &XamlExplorerHostWindow_XamlExplorerHostWindow_Original,
             XamlExplorerHostWindow_XamlExplorerHostWindow_Hook,
-            true,  // Inlined in or near 10.0.26100.8491.
-            // TODO: Figure out if an alternative hook is needed.
+            true,  // Inlined and no longer needed in or near 10.0.26100.8491.
         },
         {
             {LR"(public: virtual int __cdecl winrt::impl::produce<struct winrt::WindowsUdk::UI::Shell::implementation::TaskbarSettings,struct winrt::WindowsUdk::UI::Shell::ITaskbarSettings>::get_Alignment(int *))"},

@@ -2045,6 +2045,7 @@ bool HookTaskbarDllSymbols() {
             {LR"(public: virtual int __cdecl CTaskListThumbnailWnd::DisplayUI(struct ITaskBtnGroup *,struct ITaskItem *,struct ITaskItem *,unsigned long))"},
             &CTaskListThumbnailWnd_DisplayUI_Original,
             CTaskListThumbnailWnd_DisplayUI_Hook,
+            true,  // Classic thumbnails, removed in or near 10.0.26100.8491.
         },
     };
 
