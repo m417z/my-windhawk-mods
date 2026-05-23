@@ -67,15 +67,21 @@ and make sure that `dwm.exe` is in the list.
     0) for less rounded or sharp corners, or larger values (e.g. 10-20) for more
     rounded corners. Values above 20 may cause visual artifacts depending on
     your DPI scaling.
+
+    Set to -1 to keep the original radius.
 - smallRadius: 6
   $name: Small corner radius
   $description: >-
     Corner radius for elements that use a smaller radius, such as context menus.
     Default Win11 is 4.
+
+    Set to -1 to keep the original radius.
 */
 // ==/WindhawkModSettings==
 
 #include <windhawk_utils.h>
+
+#include <cmath>
 
 struct {
     float radius;
@@ -149,9 +155,20 @@ long WINAPI SetBorderParameters_Hook(void* pThis,
 }
 
 void LoadSettings() {
-    g_settings.radius = static_cast<float>(Wh_GetIntSetting(L"radius"));
+    // Use `std::nextafter` to get a value that's just slightly above the
+    // integer, for two reasons:
+    // 1. The original radius values are integer-based, so if the new value is
+    //    exactly the same as the original value, it's impossible to determine
+    //    whether the mod should override it or not if the custom value is
+    //    identical to one of the original values (see RadiusForOriginal).
+    // 2. If the zero value is used, some functions may treat it as a special
+    //    case, for example dark mode menus will have a white border.
+    g_settings.radius =
+        std::nextafter(static_cast<float>(Wh_GetIntSetting(L"radius")),
+                       std::numeric_limits<float>::max());
     g_settings.smallRadius =
-        static_cast<float>(Wh_GetIntSetting(L"smallRadius"));
+        std::nextafter(static_cast<float>(Wh_GetIntSetting(L"smallRadius")),
+                       std::numeric_limits<float>::max());
 }
 
 BOOL Wh_ModInit() {
