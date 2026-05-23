@@ -1053,7 +1053,7 @@ HWND WINAPI CreateWindowExWHook(
     return hWnd;
 }
 
-BOOL Wh_ModInit(void)
+BOOL Wh_ModInit()
 {
     Wh_Log(L"Init");
 
@@ -1083,7 +1083,7 @@ BOOL Wh_ModInit(void)
     return TRUE;
 }
 
-void Wh_ModUninit(void)
+void Wh_ModUninit()
 {
     Wh_Log(L"Uninit");
 
@@ -1093,7 +1093,7 @@ void Wh_ModUninit(void)
     UnsetDarkModeNotepadWindow();
 }
 
-void Wh_ModSettingsChanged(void)
+void Wh_ModSettingsChanged()
 {
     Wh_Log(L"SettingsChanged");
 }

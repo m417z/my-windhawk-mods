@@ -532,7 +532,7 @@ void EnsureNewFilesCreated()
     }();
 }
 
-BOOL Wh_ModInit(void)
+BOOL Wh_ModInit()
 {
     Wh_Log(L"Init");
 
