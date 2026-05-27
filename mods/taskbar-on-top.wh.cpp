@@ -193,7 +193,7 @@ VS_FIXEDFILEINFO* GetModuleVersionInfo(HMODULE hModule, UINT* puPtrLen) {
     return (VS_FIXEDFILEINFO*)pFixedFileInfo;
 }
 
-bool IsVersionAtLeast(WORD major, WORD minor, WORD build, WORD qfe) {
+bool IsMainModuleVersionAtLeast(WORD major, WORD minor, WORD build, WORD qfe) {
     static VS_FIXEDFILEINFO* fixedFileInfo =
         GetModuleVersionInfo(nullptr, nullptr);
     if (!fixedFileInfo) {
@@ -508,7 +508,7 @@ void TaskbarWndProcPreProcess(HWND hWnd,
             // the icons are aligned to left, not centered. The drawback is that
             // the jump list animations won't be correct in this case.
             if (g_lastTaskbarAlignment == 1 &&
-                !IsVersionAtLeast(10, 0, 26100, 0)) {
+                !IsMainModuleVersionAtLeast(10, 0, 26100, 0)) {
                 break;
             }
 
