@@ -11,7 +11,7 @@
 // @include         SearchHost.exe
 // @include         SearchApp.exe
 // @architecture    x86-64
-// @compilerOptions -lcomctl32 -lole32 -loleaut32 -lruntimeobject
+// @compilerOptions -lcomctl32 -lole32 -loleaut32 -lruntimeobject -lversion
 // ==/WindhawkMod==
 
 // Source code is published under The GNU General Public License v3.0.
@@ -421,7 +421,7 @@ from the **TranslucentTB** project.
     themes.
   $options:
   - "": Windows default
-  - disableNewLayoutKeepPhoneLink: Classic layout
+  - disableNewLayoutKeepPhoneLink: Classic layout (removed in 26100.8524)
   - legacyClassicLayout: Legacy classic layout (removed in 26100.8328)
   - forceNewLayout: Force new layout (if available)
 - styleConstants: [""]
@@ -7501,6 +7501,60 @@ ResourceDictionary g_resourceVariablesThemeDict{nullptr};
 winrt::Windows::UI::ViewManagement::UISettings g_uiSettings{nullptr};
 thread_local winrt::event_token g_colorValuesChangedToken;
 
+VS_FIXEDFILEINFO* GetModuleVersionInfo(HMODULE hModule, UINT* puPtrLen) {
+    void* pFixedFileInfo = nullptr;
+    UINT uPtrLen = 0;
+
+    HRSRC hResource =
+        FindResource(hModule, MAKEINTRESOURCE(VS_VERSION_INFO), RT_VERSION);
+    if (hResource) {
+        HGLOBAL hGlobal = LoadResource(hModule, hResource);
+        if (hGlobal) {
+            void* pData = LockResource(hGlobal);
+            if (pData) {
+                if (!VerQueryValue(pData, L"\\", &pFixedFileInfo, &uPtrLen) ||
+                    uPtrLen == 0) {
+                    pFixedFileInfo = nullptr;
+                    uPtrLen = 0;
+                }
+            }
+        }
+    }
+
+    if (puPtrLen) {
+        *puPtrLen = uPtrLen;
+    }
+
+    return (VS_FIXEDFILEINFO*)pFixedFileInfo;
+}
+
+bool IsMainModuleVersionAtLeast(WORD major, WORD minor, WORD build, WORD qfe) {
+    static VS_FIXEDFILEINFO* fixedFileInfo =
+        GetModuleVersionInfo(nullptr, nullptr);
+    if (!fixedFileInfo) {
+        return false;
+    }
+
+    WORD moduleMajor = HIWORD(fixedFileInfo->dwFileVersionMS);
+    WORD moduleMinor = LOWORD(fixedFileInfo->dwFileVersionMS);
+    WORD moduleBuild = HIWORD(fixedFileInfo->dwFileVersionLS);
+    WORD moduleQfe = LOWORD(fixedFileInfo->dwFileVersionLS);
+
+    if (moduleMajor != major) {
+        return moduleMajor > major;
+    }
+
+    if (moduleMinor != minor) {
+        return moduleMinor > minor;
+    }
+
+    if (moduleBuild != build) {
+        return moduleBuild > build;
+    }
+
+    return moduleQfe >= qfe;
+}
+
 winrt::Windows::Foundation::IInspectable ReadLocalValueWithWorkaround(
     DependencyObject elementDo,
     DependencyProperty property) {
@@ -13461,6 +13515,24 @@ DisableNewStartMenuLayout GetDisableNewStartMenuLayout() {
             DisableNewStartMenuLayout::disableNewLayoutKeepPhoneLink;
     }
     Wh_FreeStringSetting(disableNewStartMenuLayoutStr);
+
+    switch (disableNewStartMenuLayout) {
+        case DisableNewStartMenuLayout::windowsDefault:
+        case DisableNewStartMenuLayout::forceNewLayout:
+            break;
+
+        case DisableNewStartMenuLayout::disableNewLayoutKeepPhoneLink:
+        case DisableNewStartMenuLayout::disableNewLayoutAndPhoneLink:
+            if (IsMainModuleVersionAtLeast(10, 0, 26100, 8521)) {
+                // Classic Start Menu layout causes a crash in StartDocked.dll
+                // in newer builds, and as a result, the Start menu fails to
+                // launch. Disable the option in this case.
+                disableNewStartMenuLayout =
+                    DisableNewStartMenuLayout::windowsDefault;
+            }
+            break;
+    }
+
     return disableNewStartMenuLayout;
 }
 
