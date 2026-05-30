@@ -85,14 +85,14 @@ patterns can be used:
   * `%ram%` - RAM usage.
   * `%ram_used%` - Used RAM amount in GB.
   * `%ram_total%` - Total RAM amount in GB.
-  * `%ram_commited%` - Committed RAM usage.
-  * `%ram_commited_used%` - Used committed RAM amount in GB.
-  * `%ram_commited_total%` - Total committed RAM amount in GB.
+  * `%ram_committed%` - Committed RAM usage (% of memory reserved by apps, backed by RAM or swap)
+  * `%ram_committed_used%` - Used committed RAM amount in GB.
+  * `%ram_committed_total%` - Total committed RAM amount in GB.
   * `%gpu%` - GPU usage.
   * `%vram%` - VRAM usage as a percentage of total dedicated VRAM.
   * `%vram_used%` - Used dedicated VRAM amount in GB.
   * `%vram_total%` - Total dedicated VRAM amount in GB.
-  * `%vram_shared%` - Shared VRAM usage percentage (RAM borrowed by GPU).
+  * `%vram_shared%` - Shared VRAM (system RAM used as extra GPU memory)
   * `%vram_shared_used%` - Used shared VRAM amount in GB.
   * `%vram_shared_total%` - Total shared VRAM pool size in GB.
   * `%cpu_temp%` - CPU temperature in °C (average of all ACPI thermal zones).
@@ -199,8 +199,7 @@ styles, such as the font color and size.
   $name: GPU adapter name
   $description: >-
     The GPU adapter to use for GPU usage and VRAM metrics. Leave empty to
-    auto-detect (uses the adapter with the most dedicated VRAM for VRAM
-    metrics, sums all adapters for GPU usage). Partial match is supported.
+    auto-detect (uses the adapter with the most dedicated VRAM). Partial match is supported.
     To list adapters, run:
 
     wmic path win32_videocontroller get Name
@@ -3735,9 +3734,9 @@ size_t ResolveFormatToken(
         {L"%ram%"sv, GetRamFormatted},
         {L"%ram_used%"sv, GetRamUsedFormatted},
         {L"%ram_total%"sv, GetRamTotalFormatted},
-        {L"%ram_commited%"sv, GetRamCommitedFormatted},
-        {L"%ram_commited_used%"sv, GetRamCommitedUsedFormatted},
-        {L"%ram_commited_total%"sv, GetRamCommitedTotalFormatted},
+        {L"%ram_committed%"sv, GetRamCommitedFormatted},
+        {L"%ram_committed_used%"sv, GetRamCommitedUsedFormatted},
+        {L"%ram_committed_total%"sv, GetRamCommitedTotalFormatted},
         {L"%gpu%"sv, GetGpuFormatted},
         {L"%vram%"sv, GetVramFormatted},
         {L"%vram_used%"sv, GetVramUsedFormatted},
