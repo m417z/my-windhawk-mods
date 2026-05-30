@@ -2,7 +2,7 @@
 // @id              taskbar-clock-customization
 // @name            Taskbar Clock Customization
 // @description     Custom date/time format, news feed, weather, performance metrics (upload/download speed, CPU, RAM, GPU, battery), media player info, custom fonts and colors, and more
-// @version         1.7.4
+// @version         1.7.5
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
@@ -83,7 +83,12 @@ patterns can be used:
   * `%disk_total%` - combined disk read and write speed.
   * `%cpu%` - CPU usage.
   * `%ram%` - RAM usage.
+  * `%ram_used%` - Used RAM amount in GB.
+  * `%ram_total%` - Total RAM amount in GB.
   * `%gpu%` - GPU usage.
+  * `%vram%` - VRAM usage as a percentage of total dedicated VRAM.
+  * `%vram_used%` - Used dedicated VRAM amount in GB.
+  * `%vram_total%` - Total dedicated VRAM amount in GB.
   * `%cpu_temp%` - CPU temperature in °C (average of all ACPI thermal zones).
   * `%cpu_temp_f%` - CPU temperature in °F (average of all ACPI thermal zones).
   * `%battery%` - battery level percentage.
@@ -184,6 +189,15 @@ styles, such as the font color and size.
   $description: >-
     Set to zero for the default system value. A negative value can be used for
     negative spacing.
+- GpuAdapterName: ""
+  $name: GPU adapter name
+  $description: >-
+    The GPU adapter to use for GPU usage and VRAM metrics. Leave empty to
+    auto-detect (uses the adapter with the most dedicated VRAM for VRAM
+    metrics, sums all adapters for GPU usage). Partial match is supported.
+    To list adapters, run:
+
+    wmic path win32_videocontroller get Name
 - DataCollection:
   - NetworkMetricsFormat: mbs
     $name: Network metrics format
@@ -225,13 +239,7 @@ styles, such as the font color and size.
       sum all adapters. Partial match is supported. To list adapters, run:
 
       typeperf -qx "Network Interface"
-  - GpuAdapterName: ""
-    $name: GPU adapter name
-    $description: >-
-      The GPU adapter to use for GPU usage metrics. Leave empty to sum all
-      adapters. Partial match is supported. To list adapters, run:
 
-      wmic path win32_videocontroller get Name
   $name: System performance metrics
 - MediaPlayer:
   - IgnoredPlayers: [""]
@@ -506,6 +514,9 @@ using namespace winrt::Windows::UI::Xaml;
 #define URL_ESCAPE_ASCII_URI_COMPONENT 0x00080000
 #endif
 
+// fd
+DWORD GetDataCollectionFormatIndex();
+
 enum class TooltipLineMode {
     append,
     replace,
@@ -666,7 +677,15 @@ FormattedString<FORMATTED_BUFFER_SIZE> g_diskWriteSpeedFormatted;
 FormattedString<FORMATTED_BUFFER_SIZE> g_diskTotalSpeedFormatted;
 FormattedString<FORMATTED_BUFFER_SIZE> g_cpuFormatted;
 FormattedString<FORMATTED_BUFFER_SIZE> g_ramFormatted;
+FormattedString<FORMATTED_BUFFER_SIZE> g_ramUsedFormatted;
+FormattedString<FORMATTED_BUFFER_SIZE> g_ramTotalFormatted;
+MEMORYSTATUSEX g_ramStatus;
+bool g_ramStatusValid = false;
+DWORD g_ramLastFormatIndex = 0xFFFFFFFF;
 FormattedString<FORMATTED_BUFFER_SIZE> g_gpuFormatted;
+FormattedString<FORMATTED_BUFFER_SIZE> g_vramFormatted;
+FormattedString<FORMATTED_BUFFER_SIZE> g_vramUsedFormatted;
+FormattedString<FORMATTED_BUFFER_SIZE> g_vramTotalFormatted;
 FormattedString<FORMATTED_BUFFER_SIZE> g_cpuTempFormatted;
 FormattedString<FORMATTED_BUFFER_SIZE> g_cpuTempFFormatted;
 FormattedString<FORMATTED_BUFFER_SIZE> g_batteryFormatted;
@@ -1857,6 +1876,9 @@ enum class MetricType {
     kDiskWriteSpeed,
     kCpu,
     kGpuUsage,
+    kVramUsage,
+    kVramUsed,
+    kVramTotal,
     kCpuTemp,
 
     kCount,
@@ -1882,6 +1904,9 @@ class QueryDataCollectionSession {
     bool SampleData();
     std::optional<double> QueryData(MetricType type);
     std::optional<double> QueryDataAvg(MetricType type);
+    std::optional<double> QueryVramUsage();
+    std::optional<double> QueryVramUsed();
+    std::optional<double> QueryVramTotal();
 
    private:
     struct QueryDataResult {
@@ -1904,6 +1929,7 @@ class QueryDataCollectionSession {
         const std::vector<std::wstring>& paths,
         PCWSTR gpu_name,
         bool quiet);
+    static SIZE_T GetDxgiDedicatedVideoMemory(PCWSTR gpu_name);
 
     std::vector<std::wstring> ExpandAndFilterWildcardPaths(MetricType type,
                                                            PCWSTR counter_path,
@@ -1913,7 +1939,8 @@ class QueryDataCollectionSession {
 
         // Filter paths by adapter name if specified.
         if (adapter_name && *adapter_name && !paths.empty()) {
-            if (type == MetricType::kGpuUsage) {
+            if (type == MetricType::kGpuUsage ||
+                type == MetricType::kVramUsed) {
                 paths = FilterGpuPathsByAdapterName(paths, adapter_name, quiet);
             } else {
                 paths =
@@ -1934,6 +1961,10 @@ class QueryDataCollectionSession {
         PCWSTR wildcard_path = nullptr;
         PCWSTR adapter_name = nullptr;
     };
+
+    // Cached total VRAM from DXGI (queried once).
+    SIZE_T vram_total_bytes_ = 0;
+    bool vram_total_queried_ = false;
 
     PDH_HQUERY query_;
     MetricData metrics_[static_cast<int>(MetricType::kCount)];
@@ -1969,6 +2000,15 @@ bool QueryDataCollectionSession::AddMetric(MetricType type) {
             counter_path = L"\\GPU Engine(*)\\Utilization Percentage";
             is_wildcard = true;
             adapter_name = g_settings.dataCollection.gpuAdapterName;
+            break;
+        case MetricType::kVramUsed:
+        case MetricType::kVramUsage:  // computed from kVramUsed + DXGI total
+            counter_path = L"\\GPU Adapter Memory(*)\\Dedicated Usage";
+            is_wildcard = true;
+            adapter_name = g_settings.dataCollection.gpuAdapterName;
+            break;
+        case MetricType::kVramTotal:
+            // Total VRAM queried from DXGI, not a PDH counter.
             break;
         case MetricType::kCpuTemp:
             counter_path = L"\\Thermal Zone Information(*)\\Temperature";
@@ -2112,11 +2152,87 @@ QueryDataCollectionSession::QueryDataWithCount(MetricType type) {
 }
 
 std::optional<double> QueryDataCollectionSession::QueryData(MetricType type) {
+    if (type == MetricType::kVramUsage) {
+        return QueryVramUsage();
+    }
+    if (type == MetricType::kVramUsed) {
+        return QueryVramUsed();
+    }
+    if (type == MetricType::kVramTotal) {
+        return QueryVramTotal();
+    }
     auto result = QueryDataWithCount(type);
     if (!result) {
         return std::nullopt;
     }
     return result->sum;
+}
+
+std::optional<double> QueryDataCollectionSession::QueryVramUsage() {
+    auto used = QueryVramUsed();
+    auto total = QueryVramTotal();
+    if (used && total && *total > 0) {
+        return (*used / *total) * 100.0;
+    }
+    return std::nullopt;
+}
+
+std::optional<double> QueryDataCollectionSession::QueryVramUsed() {
+    auto result = QueryDataWithCount(MetricType::kVramUsed);
+    if (result) {
+        return result->sum / (1024.0 * 1024.0 * 1024.0);
+    }
+    return std::nullopt;
+}
+
+std::optional<double> QueryDataCollectionSession::QueryVramTotal() {
+    if (!vram_total_queried_) {
+        vram_total_bytes_ = GetDxgiDedicatedVideoMemory(
+            g_settings.dataCollection.gpuAdapterName);
+        vram_total_queried_ = true;
+    }
+
+    if (vram_total_bytes_ > 0) {
+        return (double)vram_total_bytes_ / (1024.0 * 1024.0 * 1024.0);
+    }
+
+    return std::nullopt;
+}
+
+SIZE_T QueryDataCollectionSession::GetDxgiDedicatedVideoMemory(
+    PCWSTR gpu_name) {
+    winrt::com_ptr<IDXGIFactory> factory;
+    if (FAILED(CreateDXGIFactory(IID_PPV_ARGS(factory.put())))) {
+        return 0;
+    }
+
+    SIZE_T best_vram = 0;
+    for (UINT i = 0;; i++) {
+        winrt::com_ptr<IDXGIAdapter> adapter;
+        if (factory->EnumAdapters(i, adapter.put()) == DXGI_ERROR_NOT_FOUND) {
+            break;
+        }
+
+        DXGI_ADAPTER_DESC desc{};
+        if (FAILED(adapter->GetDesc(&desc))) {
+            continue;
+        }
+
+        // If a name is specified, check for a match.
+        if (gpu_name && *gpu_name) {
+            if (wcsstr(desc.Description, gpu_name)) {
+                return desc.DedicatedVideoMemory;
+            }
+            continue;
+        }
+
+        // If no name is specified, pick the adapter with the most VRAM.
+        if (desc.DedicatedVideoMemory > best_vram) {
+            best_vram = desc.DedicatedVideoMemory;
+        }
+    }
+
+    return best_vram;
 }
 
 std::optional<double> QueryDataCollectionSession::QueryDataAvg(
@@ -2629,6 +2745,12 @@ void DataCollectionSessionInit() {
         IsStrInDateTimePatternSettings(L"%cpu%");
     metrics[static_cast<int>(MetricType::kGpuUsage)] =
         IsStrInDateTimePatternSettings(L"%gpu%");
+    metrics[static_cast<int>(MetricType::kVramUsage)] =
+        IsStrInDateTimePatternSettings(L"%vram%");
+    metrics[static_cast<int>(MetricType::kVramUsed)] =
+        IsStrInDateTimePatternSettings(L"%vram_used%");
+    metrics[static_cast<int>(MetricType::kVramTotal)] =
+        IsStrInDateTimePatternSettings(L"%vram_total%");
     metrics[static_cast<int>(MetricType::kCpuTemp)] =
         IsStrInDateTimePatternSettings(L"%cpu_temp%") ||
         IsStrInDateTimePatternSettings(L"%cpu_temp_f%");
@@ -2780,6 +2902,15 @@ void DataCollectionSampleIfNeeded() {
         }
 
         g_dataCollectionLastFormatIndex = dataCollectionFormatIndex;
+    }
+}
+
+void RamSampleIfNeeded() {
+    DWORD formatIndex = GetDataCollectionFormatIndex();
+    if (g_ramLastFormatIndex != formatIndex) {
+        g_ramStatus.dwLength = sizeof(g_ramStatus);
+        g_ramStatusValid = GlobalMemoryStatusEx(&g_ramStatus);
+        g_ramLastFormatIndex = formatIndex;
     }
 }
 
@@ -3082,15 +3213,43 @@ PCWSTR GetCpuFormatted() {
 PCWSTR GetRamFormatted() {
     return GetMetricFormatted(
         g_ramFormatted, [](PWSTR buffer, size_t bufferSize) {
-            MEMORYSTATUSEX status{
-                .dwLength = sizeof(status),
-            };
-            if (!GlobalMemoryStatusEx(&status)) {
+            RamSampleIfNeeded();
+            if (!g_ramStatusValid) {
                 return false;
             }
             // Cap to 99 to keep identical width in all cases.
             int maxVal = 99;
-            FormatPercentValue(status.dwMemoryLoad, buffer, bufferSize, maxVal);
+            FormatPercentValue(g_ramStatus.dwMemoryLoad, buffer, bufferSize,
+                               maxVal);
+            return true;
+        });
+}
+
+PCWSTR GetRamUsedFormatted() {
+    return GetMetricFormatted(
+        g_ramUsedFormatted, [](PWSTR buffer, size_t bufferSize) {
+            RamSampleIfNeeded();
+            if (!g_ramStatusValid) {
+                return false;
+            }
+            double usedGb =
+                (double)(g_ramStatus.ullTotalPhys - g_ramStatus.ullAvailPhys) /
+                (1024.0 * 1024.0 * 1024.0);
+            swprintf_s(buffer, bufferSize, L"%.1f", usedGb);
+            return true;
+        });
+}
+
+PCWSTR GetRamTotalFormatted() {
+    return GetMetricFormatted(
+        g_ramTotalFormatted, [](PWSTR buffer, size_t bufferSize) {
+            RamSampleIfNeeded();
+            if (!g_ramStatusValid) {
+                return false;
+            }
+            double totalGb =
+                (double)g_ramStatus.ullTotalPhys / (1024.0 * 1024.0 * 1024.0);
+            swprintf_s(buffer, bufferSize, L"%.1f", totalGb);
             return true;
         });
 }
@@ -3112,6 +3271,59 @@ PCWSTR GetGpuFormatted() {
         FormatPercentValue(static_cast<int>(*val), buffer, bufferSize, maxVal);
         return true;
     });
+}
+
+PCWSTR GetVramFormatted() {
+    DataCollectionSampleIfNeeded();
+    return GetMetricFormatted(g_vramFormatted, [](PWSTR buffer,
+                                                  size_t bufferSize) {
+        if (!g_dataCollectionSession) {
+            return false;
+        }
+        std::optional<double> val =
+            g_dataCollectionSession->QueryData(MetricType::kVramUsage);
+        if (!val) {
+            return false;
+        }
+        // Cap to 99 to keep identical width in all cases.
+        int maxVal = 99;
+        FormatPercentValue(static_cast<int>(*val), buffer, bufferSize, maxVal);
+        return true;
+    });
+}
+
+PCWSTR GetVramUsedFormatted() {
+    DataCollectionSampleIfNeeded();
+    return GetMetricFormatted(
+        g_vramUsedFormatted, [](PWSTR buffer, size_t bufferSize) {
+            if (!g_dataCollectionSession) {
+                return false;
+            }
+            std::optional<double> val =
+                g_dataCollectionSession->QueryData(MetricType::kVramUsed);
+            if (!val) {
+                return false;
+            }
+            swprintf_s(buffer, bufferSize, L"%.1f", *val);
+            return true;
+        });
+}
+
+PCWSTR GetVramTotalFormatted() {
+    DataCollectionSampleIfNeeded();
+    return GetMetricFormatted(
+        g_vramTotalFormatted, [](PWSTR buffer, size_t bufferSize) {
+            if (!g_dataCollectionSession) {
+                return false;
+            }
+            std::optional<double> val =
+                g_dataCollectionSession->QueryData(MetricType::kVramTotal);
+            if (!val) {
+                return false;
+            }
+            swprintf_s(buffer, bufferSize, L"%.1f", *val);
+            return true;
+        });
 }
 
 PCWSTR GetCpuTempFormatted() {
@@ -3305,7 +3517,12 @@ size_t ResolveFormatToken(
         {L"%disk_total%"sv, GetDiskTotalSpeedFormatted},
         {L"%cpu%"sv, GetCpuFormatted},
         {L"%ram%"sv, GetRamFormatted},
+        {L"%ram_used%"sv, GetRamUsedFormatted},
+        {L"%ram_total%"sv, GetRamTotalFormatted},
         {L"%gpu%"sv, GetGpuFormatted},
+        {L"%vram%"sv, GetVramFormatted},
+        {L"%vram_used%"sv, GetVramUsedFormatted},
+        {L"%vram_total%"sv, GetVramTotalFormatted},
         {L"%cpu_temp%"sv, GetCpuTempFormatted},
         {L"%cpu_temp_f%"sv, GetCpuTempFFormatted},
         {L"%battery%"sv, GetBatteryFormatted},
