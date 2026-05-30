@@ -85,6 +85,9 @@ patterns can be used:
   * `%ram%` - RAM usage.
   * `%ram_used%` - Used RAM amount in GB.
   * `%ram_total%` - Total RAM amount in GB.
+  * `%ram_commited%` - Committed RAM usage.
+  * `%ram_commited_used%` - Used committed RAM amount in GB.
+  * `%ram_commited_total%` - Total committed RAM amount in GB.
   * `%gpu%` - GPU usage.
   * `%vram%` - VRAM usage as a percentage of total dedicated VRAM.
   * `%vram_used%` - Used dedicated VRAM amount in GB.
@@ -682,6 +685,9 @@ FormattedString<FORMATTED_BUFFER_SIZE> g_cpuFormatted;
 FormattedString<FORMATTED_BUFFER_SIZE> g_ramFormatted;
 FormattedString<FORMATTED_BUFFER_SIZE> g_ramUsedFormatted;
 FormattedString<FORMATTED_BUFFER_SIZE> g_ramTotalFormatted;
+FormattedString<FORMATTED_BUFFER_SIZE> g_ramCommitedFormatted;
+FormattedString<FORMATTED_BUFFER_SIZE> g_ramCommitedUsedFormatted;
+FormattedString<FORMATTED_BUFFER_SIZE> g_ramCommitedTotalFormatted;
 MEMORYSTATUSEX g_ramStatus;
 bool g_ramStatusValid = false;
 DWORD g_ramLastFormatIndex = 0xFFFFFFFF;
@@ -3364,6 +3370,53 @@ PCWSTR GetRamTotalFormatted() {
         });
 }
 
+PCWSTR GetRamCommitedFormatted() {
+    return GetMetricFormatted(
+        g_ramCommitedFormatted, [](PWSTR buffer, size_t bufferSize) {
+            RamSampleIfNeeded();
+            if (!g_ramStatusValid || g_ramStatus.ullTotalPageFile == 0) {
+                return false;
+            }
+            int committed = static_cast<int>(
+                ((g_ramStatus.ullTotalPageFile - g_ramStatus.ullAvailPageFile) *
+                 100) /
+                g_ramStatus.ullTotalPageFile);
+            // Cap to 99 to keep identical width in all cases.
+            int maxVal = 99;
+            FormatPercentValue(committed, buffer, bufferSize, maxVal);
+            return true;
+        });
+}
+
+PCWSTR GetRamCommitedUsedFormatted() {
+    return GetMetricFormatted(
+        g_ramCommitedUsedFormatted, [](PWSTR buffer, size_t bufferSize) {
+            RamSampleIfNeeded();
+            if (!g_ramStatusValid) {
+                return false;
+            }
+            double usedGb = (double)(g_ramStatus.ullTotalPageFile -
+                                     g_ramStatus.ullAvailPageFile) /
+                            (1024.0 * 1024.0 * 1024.0);
+            swprintf_s(buffer, bufferSize, L"%.1f", usedGb);
+            return true;
+        });
+}
+
+PCWSTR GetRamCommitedTotalFormatted() {
+    return GetMetricFormatted(
+        g_ramCommitedTotalFormatted, [](PWSTR buffer, size_t bufferSize) {
+            RamSampleIfNeeded();
+            if (!g_ramStatusValid) {
+                return false;
+            }
+            double totalGb =
+                (double)g_ramStatus.ullTotalPageFile / (1024.0 * 1024.0 * 1024.0);
+            swprintf_s(buffer, bufferSize, L"%.1f", totalGb);
+            return true;
+        });
+}
+
 PCWSTR GetGpuFormatted() {
     DataCollectionSampleIfNeeded();
     return GetMetricFormatted(g_gpuFormatted, [](PWSTR buffer,
@@ -3682,6 +3735,9 @@ size_t ResolveFormatToken(
         {L"%ram%"sv, GetRamFormatted},
         {L"%ram_used%"sv, GetRamUsedFormatted},
         {L"%ram_total%"sv, GetRamTotalFormatted},
+        {L"%ram_commited%"sv, GetRamCommitedFormatted},
+        {L"%ram_commited_used%"sv, GetRamCommitedUsedFormatted},
+        {L"%ram_commited_total%"sv, GetRamCommitedTotalFormatted},
         {L"%gpu%"sv, GetGpuFormatted},
         {L"%vram%"sv, GetVramFormatted},
         {L"%vram_used%"sv, GetVramUsedFormatted},
