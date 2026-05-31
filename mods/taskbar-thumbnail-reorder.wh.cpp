@@ -79,6 +79,8 @@ std::atomic<bool> g_taskbarViewDllLoaded;
 std::atomic<bool> g_initialized;
 std::atomic<bool> g_explorerPatcherInitialized;
 
+bool g_noClassicThumbnails;
+
 int g_thumbDraggedIndex = -1;
 bool g_thumbDragDone;
 bool g_taskItemFilterDisallowAll;
@@ -480,14 +482,18 @@ LRESULT WINAPI CTaskListThumbnailWnd_v_WndProc_Hook(void* pThis,
                                                     UINT Msg,
                                                     WPARAM wParam,
                                                     LPARAM lParam) {
-    LRESULT result = 0;
-    bool processed = false;
-
     auto OriginalProc = [pThis](HWND hWnd, UINT Msg, WPARAM wParam,
                                 LPARAM lParam) {
         return CTaskListThumbnailWnd_v_WndProc_Original(pThis, hWnd, Msg,
                                                         wParam, lParam);
     };
+
+    if (g_noClassicThumbnails) {
+        return OriginalProc(hWnd, Msg, wParam, lParam);
+    }
+
+    LRESULT result = 0;
+    bool processed = false;
 
     switch (Msg) {
         case WM_LBUTTONDOWN:
@@ -972,6 +978,8 @@ bool HookTaskbarSymbols() {
             {
                 {LR"(public: virtual int __cdecl CTaskListThumbnailWnd::GetHoverIndex(void)const )"},
                 &CTaskListThumbnailWnd_GetHoverIndex,
+                nullptr,
+                true,  // Classic thumbs, removed in or near 10.0.26100.8544.
             },
             {
                 {
@@ -982,14 +990,20 @@ bool HookTaskbarSymbols() {
                     LR"(private: struct ITaskItem * __cdecl CTaskListThumbnailWnd::_GetTaskItem(int))",
                 },
                 &CTaskListThumbnailWnd__GetTaskItem,
+                nullptr,
+                true,  // Classic thumbs, removed in or near 10.0.26100.8544.
             },
             {
                 {LR"(public: virtual struct ITaskGroup * __cdecl CTaskListThumbnailWnd::GetTaskGroup(void)const )"},
                 &CTaskListThumbnailWnd_GetTaskGroup,
+                nullptr,
+                true,  // Classic thumbs, removed in or near 10.0.26100.8544.
             },
             {
                 {LR"(public: virtual void __cdecl CTaskListThumbnailWnd::TaskReordered(struct ITaskItem *))"},
                 &CTaskListThumbnailWnd_TaskReordered,
+                nullptr,
+                true,  // Classic thumbs, removed in or near 10.0.26100.8544.
             },
             {
                 {LR"(public: virtual int __cdecl CTaskGroup::GetNumItems(void))"},
@@ -1020,6 +1034,7 @@ bool HookTaskbarSymbols() {
                 {LR"(private: virtual __int64 __cdecl CTaskListThumbnailWnd::v_WndProc(struct HWND__ *,unsigned int,unsigned __int64,__int64))"},
                 &CTaskListThumbnailWnd_v_WndProc_Original,
                 CTaskListThumbnailWnd_v_WndProc_Hook,
+                true,  // Classic thumbs, removed in or near 10.0.26100.8544.
             },
             {
                 // An older variant, see the newer variant below.
@@ -1064,6 +1079,14 @@ bool HookTaskbarSymbols() {
     if (!HookSymbols(module, symbolHooks, ARRAYSIZE(symbolHooks))) {
         Wh_Log(L"HookSymbols failed");
         return false;
+    }
+
+    if (!CTaskListThumbnailWnd_GetHoverIndex ||
+        !CTaskListThumbnailWnd__GetTaskItem ||
+        !CTaskListThumbnailWnd_GetTaskGroup ||
+        !CTaskListThumbnailWnd_TaskReordered ||
+        !CTaskListThumbnailWnd_v_WndProc_Original) {
+        g_noClassicThumbnails = true;
     }
 
     return true;
