@@ -10177,10 +10177,10 @@ void RestoreCustomizationsForVisualStateGroup(
 // https://github.com/ramensoftware/windows-11-taskbar-styling-guide/issues/507
 void HookFirstTaskbarFrameLayoutWorkaround(
     winrt::Windows::UI::Xaml::FrameworkElement element) {
-            if (g_workaroundSizeChangedRevoker) {
-            return;
-        }
-        
+    if (g_workaroundSizeChangedRevoker) {
+        return;
+    }
+
     if (winrt::get_class_name(element) != L"Taskbar.TaskbarFrame") {
         return;
     }
@@ -11631,26 +11631,26 @@ InitializeXamlDiagnosticsEx_Hook(_In_ PCWSTR endPointName,
         wszInitializationData);
 }
 
-void HookInitializeXamlDiagnosticsExIfNeeded() {
+bool HookInitializeXamlDiagnosticsExIfNeeded() {
     if (InitializeXamlDiagnosticsEx_Original) {
-        return;  // Already hooked
+        return false;  // Already hooked
     }
 
     const HMODULE wux = GetModuleHandle(L"Windows.UI.Xaml.dll");
     if (!wux) {
-        return;  // DLL not loaded yet
+        return false;  // DLL not loaded yet
     }
 
     const auto ixde = reinterpret_cast<PFN_INITIALIZE_XAML_DIAGNOSTICS_EX>(
         GetProcAddress(wux, "InitializeXamlDiagnosticsEx"));
     if (!ixde) {
-        return;
+        return false;
     }
 
     Wh_Log(L"Hooking InitializeXamlDiagnosticsEx to handle other consumers");
-    WindhawkUtils::SetFunctionHook(ixde, InitializeXamlDiagnosticsEx_Hook,
-                                   &InitializeXamlDiagnosticsEx_Original);
-    Wh_ApplyHookOperations();
+    return WindhawkUtils::SetFunctionHook(
+        ixde, InitializeXamlDiagnosticsEx_Hook,
+        &InitializeXamlDiagnosticsEx_Original);
 }
 
 using LoadLibraryExW_t = decltype(&LoadLibraryExW);
@@ -11663,8 +11663,9 @@ HMODULE WINAPI LoadLibraryExW_Hook(LPCWSTR lpLibFileName,
     if (module && !InitializeXamlDiagnosticsEx_Original && lpLibFileName) {
         PCWSTR fileName = wcsrchr(lpLibFileName, L'\\');
         fileName = fileName ? fileName + 1 : lpLibFileName;
-        if (_wcsicmp(fileName, L"Windows.UI.Xaml.dll") == 0) {
-            HookInitializeXamlDiagnosticsExIfNeeded();
+        if (_wcsicmp(fileName, L"Windows.UI.Xaml.dll") == 0 &&
+            HookInitializeXamlDiagnosticsExIfNeeded()) {
+            Wh_ApplyHookOperations();
         }
     }
 

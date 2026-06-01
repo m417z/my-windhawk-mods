@@ -6831,26 +6831,26 @@ InitializeXamlDiagnosticsEx_Hook(_In_ PCWSTR endPointName,
         wszInitializationData);
 }
 
-void HookInitializeXamlDiagnosticsExIfNeeded() {
+bool HookInitializeXamlDiagnosticsExIfNeeded() {
     if (InitializeXamlDiagnosticsEx_Original) {
-        return;  // Already hooked
+        return false;  // Already hooked
     }
 
     const HMODULE wux = GetModuleHandle(L"Microsoft.Internal.FrameworkUdk.dll");
     if (!wux) {
-        return;  // DLL not loaded yet
+        return false;  // DLL not loaded yet
     }
 
     const auto ixde = reinterpret_cast<PFN_INITIALIZE_XAML_DIAGNOSTICS_EX>(
         GetProcAddress(wux, "InitializeXamlDiagnosticsEx"));
     if (!ixde) {
-        return;
+        return false;
     }
 
     Wh_Log(L"Hooking InitializeXamlDiagnosticsEx to handle other consumers");
-    WindhawkUtils::SetFunctionHook(ixde, InitializeXamlDiagnosticsEx_Hook,
-                                   &InitializeXamlDiagnosticsEx_Original);
-    Wh_ApplyHookOperations();
+    return WindhawkUtils::SetFunctionHook(
+        ixde, InitializeXamlDiagnosticsEx_Hook,
+        &InitializeXamlDiagnosticsEx_Original);
 }
 
 using LoadLibraryExW_t = decltype(&LoadLibraryExW);
@@ -6865,8 +6865,9 @@ HMODULE WINAPI LoadLibraryExW_Hook(LPCWSTR lpLibFileName,
         fileName = fileName ? fileName + 1 : lpLibFileName;
         // CoreMessagingXP.dll loads Microsoft.Internal.FrameworkUdk.dll via the
         // import table.
-        if (_wcsicmp(fileName, L"CoreMessagingXP.dll") == 0) {
-            HookInitializeXamlDiagnosticsExIfNeeded();
+        if (_wcsicmp(fileName, L"CoreMessagingXP.dll") == 0 &&
+            HookInitializeXamlDiagnosticsExIfNeeded()) {
+            Wh_ApplyHookOperations();
         }
     }
 
