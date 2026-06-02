@@ -466,7 +466,7 @@ bool FromStringHotKey(std::wstring_view hotkeyString,
         {L"F22", 0x85},
         {L"F23", 0x86},
         {L"F24", 0x87},
-        // Common keys (friendly names)
+        // Common keys
         {L"BACKSPACE", 0x08},
         {L"TAB", 0x09},
         {L"ENTER", 0x0D},
@@ -539,7 +539,7 @@ bool FromStringHotKey(std::wstring_view hotkeyString,
         {L"BROWSERSEARCH", 0xAA},
         {L"BROWSERFAVORITES", 0xAB},
         {L"BROWSERHOME", 0xAC},
-        // Modifier keys (for use in Virtual key press action)
+        // Modifier keys (for use as the key itself)
         {L"LWIN", 0x5B},
         {L"RWIN", 0x5C},
         {L"LSHIFT", 0xA0},
@@ -548,7 +548,7 @@ bool FromStringHotKey(std::wstring_view hotkeyString,
         {L"RCTRL", 0xA3},
         {L"LALT", 0xA4},
         {L"RALT", 0xA5},
-        // VK_ prefixed versions (only keys without friendly aliases)
+        // VK_ prefixed versions
         {L"VK_LBUTTON", 0x01},
         {L"VK_RBUTTON", 0x02},
         {L"VK_CANCEL", 0x03},
@@ -603,6 +603,29 @@ bool FromStringHotKey(std::wstring_view hotkeyString,
         {L"VK_NONAME", 0xFC},
         {L"VK_PA1", 0xFD},
         {L"VK_OEM_CLEAR", 0xFE},
+        // US keyboard character aliases for OEM keys.
+        {L";", 0xBA},   // VK_OEM_1
+        {L":", 0xBA},   // VK_OEM_1
+        {L"=", 0xBB},   // VK_OEM_PLUS
+        {L"+", 0xBB},   // VK_OEM_PLUS
+        {L",", 0xBC},   // VK_OEM_COMMA
+        {L"<", 0xBC},   // VK_OEM_COMMA
+        {L"-", 0xBD},   // VK_OEM_MINUS
+        {L"_", 0xBD},   // VK_OEM_MINUS
+        {L".", 0xBE},   // VK_OEM_PERIOD
+        {L">", 0xBE},   // VK_OEM_PERIOD
+        {L"/", 0xBF},   // VK_OEM_2
+        {L"?", 0xBF},   // VK_OEM_2
+        {L"`", 0xC0},   // VK_OEM_3
+        {L"~", 0xC0},   // VK_OEM_3
+        {L"[", 0xDB},   // VK_OEM_4
+        {L"{", 0xDB},   // VK_OEM_4
+        {L"\\", 0xDC},  // VK_OEM_5
+        {L"|", 0xDC},   // VK_OEM_5
+        {L"]", 0xDD},   // VK_OEM_6
+        {L"}", 0xDD},   // VK_OEM_6
+        {L"'", 0xDE},   // VK_OEM_7
+        {L"\"", 0xDE},  // VK_OEM_7
     };
 
     auto splitStringView = [](std::wstring_view s, WCHAR delimiter) {
