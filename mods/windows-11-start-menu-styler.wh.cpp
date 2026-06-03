@@ -417,13 +417,15 @@ from the **TranslucentTB** project.
 - disableNewStartMenuLayout: ""
   $name: Start menu layout
   $description: >-
-    Allows to disable the new Start menu layout which is incompatible with some
-    themes.
+    Allows to revert to the classic Start menu layout on supported Windows
+    versions, or to select an alternative layout.
   $options:
-  - "": Windows default
+  - "": Default for the selected theme
+  - default: Windows default
   - disableNewLayoutKeepPhoneLink: Classic layout (removed in 26100.8524)
   - legacyClassicLayout: Legacy classic layout (removed in 26100.8328)
   - forceNewLayout: Force new layout (if available)
+  - newLayoutSideBySide: New layout + side by side
 - styleConstants: [""]
   $name: Style constants
   $description: >-
@@ -471,11 +473,21 @@ struct ThemeTargetStyles {
     std::vector<PCWSTR> styles;
 };
 
+enum class DisableNewStartMenuLayout {
+    windowsDefault,
+    disableNewLayoutAndPhoneLink,
+    disableNewLayoutKeepPhoneLink,
+    forceNewLayout,
+    newLayoutSideBySide,
+};
+
 struct Theme {
     std::vector<ThemeTargetStyles> targetStyles;
     std::vector<PCWSTR> styleConstants;
     std::vector<PCWSTR> themeResourceVariables;
     std::vector<ThemeTargetStyles> webViewTargetStyles;
+    DisableNewStartMenuLayout startMenuLayout =
+        DisableNewStartMenuLayout::windowsDefault;
 };
 
 // clang-format off
@@ -7437,14 +7449,27 @@ winrt::Windows::Foundation::IAsyncOperation<bool>
 VisualStateGroup g_allAppsRootRenderTransformVsg{nullptr};
 winrt::event_token g_allAppsRootRenderTransformToken{};
 
-enum class DisableNewStartMenuLayout {
-    windowsDefault,
-    disableNewLayoutAndPhoneLink,
-    disableNewLayoutKeepPhoneLink,
-    forceNewLayout,
-};
-
 DisableNewStartMenuLayout g_disableNewStartMenuLayout;
+
+bool g_windowsDefaultIsNewLayout = false;
+
+// Returns true if the override's effect on the OS feature flags matches the
+// Windows default behavior, i.e. installing/removing this override doesn't
+// require the process to restart for the layout to come out right. Always
+// returns false for the classic layout regardless of the Windows default.
+bool DoesLayoutOverrideMatchWindowsDefault(DisableNewStartMenuLayout layout) {
+    switch (layout) {
+        case DisableNewStartMenuLayout::windowsDefault:
+            return true;
+        case DisableNewStartMenuLayout::forceNewLayout:
+        case DisableNewStartMenuLayout::newLayoutSideBySide:
+            return g_windowsDefaultIsNewLayout;
+        case DisableNewStartMenuLayout::disableNewLayoutAndPhoneLink:
+        case DisableNewStartMenuLayout::disableNewLayoutKeepPhoneLink:
+            return false;
+    }
+    return false;
+}
 
 // Global list to track ImageBrushes with failed loads for retry on network
 // reconnection.
@@ -7600,6 +7625,23 @@ winrt::Windows::Foundation::IInspectable ReadLocalValueWithWorkaround(
 
     auto value = getValueWorkaround ? elementDo.GetValue(property)
                                     : elementDo.ReadLocalValue(property);
+
+    // Workaround for ColumnDefinitions on our SideBySidePinnedWrapper Grid.
+    if (!getValueWorkaround && value == DependencyProperty::UnsetValue()) {
+        auto grid = elementDo.try_as<Controls::Grid>();
+        if (grid && grid.Name() == L"SideBySidePinnedWrapper") {
+            auto value2 = elementDo.GetValue(property);
+            if (value2 &&
+                winrt::get_class_name(value2) ==
+                    L"Windows.UI.Xaml.Controls.ColumnDefinitionCollection") {
+                Wh_Log(
+                    L"Using GetValue workaround for SideBySidePinnedWrapper "
+                    L"ColumnDefinitions");
+                value = std::move(value2);
+            }
+        }
+    }
+
     if (value) {
         auto className = winrt::get_class_name(value);
         if (className == L"Windows.UI.Xaml.Data.BindingExpressionBase" ||
@@ -11889,6 +11931,429 @@ void ClearWebViewCustomizations(
 
 void MergeResourceVariables();
 
+// === Separate pinned items scroll ===
+//
+// When the user selects the `newLayoutSideBySide` variant of
+// `disableNewStartMenuLayout`, the pinned items header, the show-more-pinned
+// button, the pinned tiles, and the recommended panel are reparented from
+// the apps list's ScrollViewer into a new ScrollViewer that lives as a
+// sibling of the apps ScrollViewer. Final structure under
+// `GridView#AllAppsGrid > Border`:
+//
+//   Border > Grid#SideBySidePinnedWrapper
+//              > ScrollViewer (original, scrolls the apps list)
+//              > ScrollViewer#SideBySidePinnedScrollViewer
+//                  > Grid#SideBySidePinnedContent
+//                      > Grid#PinnedListHeaderGrid (moved)
+//                      > Grid#ShowMorePinnedGrid (moved)
+//                      > StartMenu.PinnedList#StartMenuPinnedList (moved)
+//                      > Grid#TopLevelSuggestionsRoot (moved)
+//
+// The wrapper and the new ScrollViewer/content grid are named so users can
+// target them from yaml to position and size the pinned panel. The
+// reparenting is idempotent and deferred to the next dispatcher tick to
+// avoid re-entering the visual tree watcher mid-mutation.
+
+constexpr WCHAR kSeparatePinnedWrapperName[] = L"SideBySidePinnedWrapper";
+constexpr WCHAR kSeparatePinnedScrollName[] = L"SideBySidePinnedScrollViewer";
+constexpr WCHAR kSeparatePinnedContentName[] = L"SideBySidePinnedContent";
+
+// Tracking for dynamic enable/disable. We remember each restructured Border
+// (so we can revert it on toggle-off) and a weak ref to the source
+// TopLevelHeader (so revert can move the children back without re-walking
+// the visual tree to find it). Entries survive across Initialize/Uninitialize
+// cycles and are only cleared by `RevertAllSeparatePinnedScroll`. The
+// Wh_ModSettingsChanged path uses this to undo the tree mutation when the
+// user disables the setting at runtime.
+struct SeparatePinnedScrollEntry {
+    winrt::weak_ref<Controls::Border> border;
+    winrt::weak_ref<Controls::Grid> sourceTopLevelHeader;
+};
+std::vector<SeparatePinnedScrollEntry> g_separatePinnedScrollEntries;
+
+std::vector<winrt::Windows::Foundation::IAsyncOperation<bool>>
+    g_separatePinnedScrollPendingActions;
+
+bool IsSeparatePinnedScrollTargetName(winrt::hstring const& name) {
+    return name == L"PinnedListHeaderGrid" || name == L"ShowMorePinnedGrid" ||
+           name == L"StartMenuPinnedList" || name == L"TopLevelSuggestionsRoot";
+}
+
+// Walk the visual tree below `root` and return the first FrameworkElement
+// whose Name matches `name` and that casts to Grid. Used to (re-)locate the
+// original Grid#TopLevelHeader inside a restructured wrapper when we don't
+// have a live weak_ref for it (e.g. after re-init).
+Controls::Grid FindFirstGridDescendantNamed(DependencyObject root,
+                                            PCWSTR name) {
+    if (!root) {
+        return nullptr;
+    }
+    std::vector<DependencyObject> stack;
+    stack.push_back(root);
+    while (!stack.empty()) {
+        auto current = stack.back();
+        stack.pop_back();
+        if (auto fe = current.try_as<FrameworkElement>()) {
+            if (fe.Name() == name) {
+                if (auto grid = fe.try_as<Controls::Grid>()) {
+                    return grid;
+                }
+            }
+        }
+        int n = Media::VisualTreeHelper::GetChildrenCount(current);
+        for (int i = 0; i < n; i++) {
+            stack.push_back(Media::VisualTreeHelper::GetChild(current, i));
+        }
+    }
+    return nullptr;
+}
+
+// Copy the column/row definitions from the original Grid#TopLevelHeader to the
+// new content Grid so that each moved child's Grid.Row/Grid.Column/
+// Grid.ColumnSpan attached properties still resolve to the same logical layout
+// slot. Width is intentionally not set: the new ScrollViewer has
+// HorizontalScrollMode=Disabled, so its ScrollContentPresenter measures content
+// against its own viewport - meaning the content Grid stretches to the
+// ScrollViewer's actual width (which in turn is whatever yaml chose, e.g. via
+// Grid.Column placement in a star-sized wrapper). Forcing a width derived from
+// the original TopLevelHeader would tie the pinned content to the apps column's
+// width when both live inside the new column-split wrapper, breaking the
+// layout.
+void ConfigurePinnedContentFromSource(Controls::Grid target,
+                                      Controls::Grid source) {
+    target.ColumnDefinitions().Clear();
+    for (auto const& def : source.ColumnDefinitions()) {
+        Controls::ColumnDefinition newDef;
+        newDef.Width(def.Width());
+        newDef.MinWidth(def.MinWidth());
+        newDef.MaxWidth(def.MaxWidth());
+        target.ColumnDefinitions().Append(newDef);
+    }
+
+    target.RowDefinitions().Clear();
+    for (auto const& def : source.RowDefinitions()) {
+        Controls::RowDefinition newDef;
+        newDef.Height(def.Height());
+        newDef.MinHeight(def.MinHeight());
+        newDef.MaxHeight(def.MaxHeight());
+        target.RowDefinitions().Append(newDef);
+    }
+}
+
+// Undo `EnsureSeparatePinnedScrollViewer` for a single Border:
+// 1. Move each child back from SideBySidePinnedContent into TopLevelHeader.
+// 2. Detach the original ScrollViewer from the wrapper and reset Border.Child
+//    to it, releasing the wrapper for GC.
+//
+// Best-effort: silently skips parts that have already been disposed.
+void RevertSeparatePinnedScrollForBorder(Controls::Border border,
+                                         Controls::Grid sourceTopLevelHeader) {
+    if (!border) {
+        return;
+    }
+
+    auto wrapper = border.Child().try_as<Controls::Grid>();
+    if (!wrapper || wrapper.Name() != kSeparatePinnedWrapperName) {
+        return;
+    }
+
+    UIElement originalScrollViewer{nullptr};
+    Controls::Grid contentGrid{nullptr};
+    for (uint32_t i = 0; i < wrapper.Children().Size(); i++) {
+        auto child = wrapper.Children().GetAt(i);
+        auto sv = child.try_as<Controls::ScrollViewer>();
+        if (sv && sv.Name() == kSeparatePinnedScrollName) {
+            contentGrid = sv.Content().try_as<Controls::Grid>();
+        } else if (!originalScrollViewer) {
+            originalScrollViewer = child.try_as<UIElement>();
+        }
+    }
+
+    // If we lost the source ref (e.g. after a re-init), try to (re)find it
+    // by walking the original ScrollViewer's subtree.
+    if (!sourceTopLevelHeader && originalScrollViewer) {
+        sourceTopLevelHeader = FindFirstGridDescendantNamed(
+            originalScrollViewer.as<DependencyObject>(), L"TopLevelHeader");
+    }
+
+    if (sourceTopLevelHeader && contentGrid) {
+        while (contentGrid.Children().Size() > 0) {
+            auto child = contentGrid.Children().GetAt(0).try_as<UIElement>();
+            contentGrid.Children().RemoveAt(0);
+            if (child) {
+                sourceTopLevelHeader.Children().Append(child);
+            }
+        }
+    }
+
+    if (originalScrollViewer) {
+        uint32_t idx = 0;
+        if (wrapper.Children().IndexOf(originalScrollViewer, idx)) {
+            wrapper.Children().RemoveAt(idx);
+        }
+        border.Child(nullptr);
+        border.Child(originalScrollViewer);
+
+        // Note: the HorizontalScrollMode / HorizontalScrollBarVisibility that
+        // EnsureSeparatePinnedScrollViewer forced to Disabled on the original
+        // apps ScrollViewer are intentionally not restored here. The apps list
+        // never scrolls horizontally, so the values match the effective default
+        // anyway, and we don't capture the pre-override values to restore them.
+        // A toggle-off only happens when the override matches the Windows
+        // default (no process restart); otherwise the process restarts and the
+        // ScrollViewer is recreated fresh.
+    }
+}
+
+// Walk every tracked entry and revert the tree mutation. Called when the
+// user toggles the setting off at runtime and on Wh_ModUninit.
+void RevertAllSeparatePinnedScroll() {
+    for (auto const& entry : g_separatePinnedScrollEntries) {
+        try {
+            RevertSeparatePinnedScrollForBorder(
+                entry.border.get(), entry.sourceTopLevelHeader.get());
+        } catch (winrt::hresult_error const& ex) {
+            Wh_Log(L"Error reverting separate pinned scroll %08X: %s",
+                   ex.code(), ex.message().c_str());
+        }
+    }
+    g_separatePinnedScrollEntries.clear();
+}
+
+// Wrap the inner ScrollViewer in a sibling-capable Grid the first time we see
+// the AllAppsGrid's Border, and create the new ScrollViewer + content Grid
+// for the moved elements. Idempotent: returns the existing content Grid if
+// the Border has already been restructured. `*outCreated` is set to true on
+// the call that performs the wrapping (so the caller can do one-time
+// configuration like copying layout definitions from the source Grid).
+Controls::Grid EnsureSeparatePinnedScrollViewer(Controls::Border border,
+                                                bool* outCreated) {
+    if (outCreated) {
+        *outCreated = false;
+    }
+
+    auto currentChild = border.Child();
+    if (!currentChild) {
+        return nullptr;
+    }
+
+    if (auto wrapper = currentChild.try_as<Controls::Grid>()) {
+        if (wrapper.Name() == kSeparatePinnedWrapperName) {
+            for (uint32_t i = 0; i < wrapper.Children().Size(); i++) {
+                auto sv = wrapper.Children()
+                              .GetAt(i)
+                              .try_as<Controls::ScrollViewer>();
+                if (sv && sv.Name() == kSeparatePinnedScrollName) {
+                    return sv.Content().try_as<Controls::Grid>();
+                }
+            }
+            return nullptr;
+        }
+    }
+
+    auto originalScrollViewer = currentChild.try_as<FrameworkElement>();
+    if (!originalScrollViewer) {
+        return nullptr;
+    }
+
+    Wh_Log(L"Restructuring AllAppsGrid Border for separate pinned scroll");
+
+    // Apply the same horizontal-no-scroll configuration to the original apps
+    // ScrollViewer that we use for the new pinned ScrollViewer below. Without
+    // this, once the apps ScrollViewer is placed inside a star-sized column
+    // of the wrapper Grid, its ScrollContentPresenter measures content with
+    // infinity width and the inner ItemsPresenter / ItemsWrapGrid grows
+    // unbounded instead of fitting the column.
+    if (auto originalSv =
+            originalScrollViewer.try_as<Controls::ScrollViewer>()) {
+        originalSv.HorizontalScrollMode(Controls::ScrollMode::Disabled);
+        originalSv.HorizontalScrollBarVisibility(
+            Controls::ScrollBarVisibility::Disabled);
+    }
+
+    Controls::ScrollViewer newScroll;
+    newScroll.Name(kSeparatePinnedScrollName);
+    newScroll.VerticalScrollMode(Controls::ScrollMode::Enabled);
+    newScroll.VerticalScrollBarVisibility(Controls::ScrollBarVisibility::Auto);
+    // Use ScrollBarVisibility::Disabled (not Hidden) for the horizontal axis
+    // so the ScrollContentPresenter's CanHorizontallyScroll evaluates to
+    // false and the content is measured against the ScrollViewer's viewport
+    // width instead of with infinity. Without this, a content Grid with
+    // star-sized column definitions cannot resolve its column widths and
+    // either collapses or grows unbounded.
+    newScroll.HorizontalScrollMode(Controls::ScrollMode::Disabled);
+    newScroll.HorizontalScrollBarVisibility(
+        Controls::ScrollBarVisibility::Disabled);
+    newScroll.Background(nullptr);
+
+    Controls::Grid contentGrid;
+    contentGrid.Name(kSeparatePinnedContentName);
+    newScroll.Content(contentGrid);
+
+    Controls::Grid wrapper;
+    wrapper.Name(kSeparatePinnedWrapperName);
+
+    // Default layout: pinned ScrollViewer pinned to the left at 540px wide,
+    // apps ScrollViewer filling the remaining width on the right.
+    auto cols = wrapper.ColumnDefinitions();
+    Controls::ColumnDefinition pinnedCol;
+    pinnedCol.Width(GridLength{540, GridUnitType::Pixel});
+    cols.Append(pinnedCol);
+    Controls::ColumnDefinition appsCol;
+    appsCol.Width(GridLength{1, GridUnitType::Star});
+    cols.Append(appsCol);
+
+    Controls::Grid::SetColumn(newScroll, 0);
+    Controls::Grid::SetColumn(originalScrollViewer, 1);
+
+    border.Child(nullptr);
+    wrapper.Children().Append(originalScrollViewer);
+    wrapper.Children().Append(newScroll);
+    border.Child(wrapper);
+
+    if (outCreated) {
+        *outCreated = true;
+    }
+    return contentGrid;
+}
+
+// Reparent `element` from its current Panel parent to `target`. No-op if it
+// is already there or if the current parent is not a Panel (e.g. a
+// ContentControl/ContentPresenter, which shouldn't happen for any of the
+// four target elements since they are direct children of Grid#TopLevelHeader).
+void MoveElementToPinnedContent(FrameworkElement element,
+                                Controls::Grid target) {
+    auto currentParent = Media::VisualTreeHelper::GetParent(element);
+    if (!currentParent) {
+        return;
+    }
+
+    if (currentParent == target.as<DependencyObject>()) {
+        return;
+    }
+
+    auto parentPanel = currentParent.try_as<Controls::Panel>();
+    if (!parentPanel) {
+        Wh_Log(L"SeparatePinnedScroll: parent of %s is not a Panel, skipping",
+               element.Name().c_str());
+        return;
+    }
+
+    auto uiElement = element.try_as<UIElement>();
+    if (!uiElement) {
+        return;
+    }
+
+    uint32_t index = 0;
+    if (!parentPanel.Children().IndexOf(uiElement, index)) {
+        Wh_Log(L"SeparatePinnedScroll: %s not found in its parent's children",
+               element.Name().c_str());
+        return;
+    }
+
+    parentPanel.Children().RemoveAt(index);
+    target.Children().Append(uiElement);
+}
+
+void HandleSeparatePinnedScroll(FrameworkElement element) {
+    if (g_disableNewStartMenuLayout !=
+        DisableNewStartMenuLayout::newLayoutSideBySide) {
+        return;
+    }
+
+    if (!IsSeparatePinnedScrollTargetName(element.Name())) {
+        return;
+    }
+
+    // Defer to the next dispatcher tick so we don't mutate the visual tree
+    // while the tree watcher is still delivering the Add event for `element`.
+    auto action = element.Dispatcher().TryRunAsync(
+        winrt::Windows::UI::Core::CoreDispatcherPriority::Normal,
+        [weakElement = winrt::make_weak(element)]() {
+            auto element = weakElement.get();
+            if (!element) {
+                return;
+            }
+
+            try {
+                FrameworkElement allAppsGrid{nullptr};
+                Controls::Grid topLevelHeader{nullptr};
+                DependencyObject iter = element;
+                while (auto parent = Media::VisualTreeHelper::GetParent(iter)) {
+                    iter = parent;
+                    auto fe = iter.try_as<FrameworkElement>();
+                    if (!fe) {
+                        continue;
+                    }
+                    if (!topLevelHeader && fe.Name() == L"TopLevelHeader") {
+                        topLevelHeader = fe.try_as<Controls::Grid>();
+                    }
+                    if (fe.Name() == L"AllAppsGrid" &&
+                        winrt::get_class_name(fe) ==
+                            L"Windows.UI.Xaml.Controls.GridView") {
+                        allAppsGrid = fe;
+                        break;
+                    }
+                }
+                if (!allAppsGrid) {
+                    return;
+                }
+
+                if (Media::VisualTreeHelper::GetChildrenCount(allAppsGrid) ==
+                    0) {
+                    return;
+                }
+                auto firstChild =
+                    Media::VisualTreeHelper::GetChild(allAppsGrid, 0);
+                auto border = firstChild.try_as<Controls::Border>();
+                if (!border) {
+                    return;
+                }
+
+                bool created = false;
+                auto contentGrid =
+                    EnsureSeparatePinnedScrollViewer(border, &created);
+                if (!contentGrid) {
+                    return;
+                }
+
+                if (created && topLevelHeader) {
+                    ConfigurePinnedContentFromSource(contentGrid,
+                                                     topLevelHeader);
+                    // Prune entries whose Border has been destroyed (e.g.
+                    // Start menu instances opened in previous sessions of
+                    // the host process) before pushing the new one.
+                    std::erase_if(g_separatePinnedScrollEntries,
+                                  [](SeparatePinnedScrollEntry const& e) {
+                                      return !e.border.get();
+                                  });
+                    g_separatePinnedScrollEntries.push_back(
+                        {winrt::make_weak(border),
+                         winrt::make_weak(topLevelHeader)});
+                }
+
+                MoveElementToPinnedContent(element, contentGrid);
+            } catch (winrt::hresult_error const& ex) {
+                Wh_Log(L"SeparatePinnedScroll error %08X: %s", ex.code(),
+                       ex.message().c_str());
+            }
+        });
+
+    // Track the pending callback so UninitializeSettingsAndTap can cancel it on
+    // teardown. Prune already-finished actions first to keep the list bounded
+    // (at most a handful are ever in flight - one per target element per Start
+    // menu instance).
+    std::erase_if(
+        g_separatePinnedScrollPendingActions,
+        [](winrt::Windows::Foundation::IAsyncOperation<bool> const& a) {
+            return !a || a.Status() !=
+                             winrt::Windows::Foundation::AsyncStatus::Started;
+        });
+    if (action) {
+        g_separatePinnedScrollPendingActions.push_back(std::move(action));
+    }
+}
+
 void ApplyCustomizations(InstanceHandle handle,
                          FrameworkElement element,
                          PCWSTR fallbackClassName) {
@@ -11898,6 +12363,8 @@ void ApplyCustomizations(InstanceHandle handle,
     if (!g_resourceVariablesThemeDict) {
         MergeResourceVariables();
     }
+
+    HandleSeparatePinnedScroll(element);
 
     if (!g_webContentCss.empty() || !g_webContentJs.empty()) {
         try {
@@ -12766,77 +13233,74 @@ void MergeResourceVariables() {
     }
 }
 
-void ProcessAllStylesFromSettings() {
+const Theme* GetSelectedTheme(bool useNewLayoutVariant) {
     PCWSTR themeName = Wh_GetStringSetting(L"theme");
     const Theme* theme = nullptr;
     if (wcscmp(themeName, L"TranslucentStartMenu") == 0) {
-        theme = g_isRedesignedStartMenu
+        theme = useNewLayoutVariant
                     ? &g_themeTranslucentStartMenu
                     : &g_themeTranslucentStartMenu_variant_ClassicStartMenu;
     } else if (wcscmp(themeName, L"NoRecommendedSection") == 0) {
-        theme = g_isRedesignedStartMenu
+        theme = useNewLayoutVariant
                     ? &g_themeNoRecommendedSection
                     : &g_themeNoRecommendedSection_variant_ClassicStartMenu;
     } else if (wcscmp(themeName, L"SideBySide") == 0) {
-        theme = g_isRedesignedStartMenu
+        theme = useNewLayoutVariant
                     ? &g_themeSideBySide
                     : &g_themeSideBySide_variant_ClassicStartMenu;
     } else if (wcscmp(themeName, L"SideBySide2") == 0) {
-        theme = g_isRedesignedStartMenu
+        theme = useNewLayoutVariant
                     ? &g_themeSideBySide2
                     : &g_themeSideBySide2_variant_ClassicStartMenu;
     } else if (wcscmp(themeName, L"SideBySideMinimal") == 0) {
-        theme = g_isRedesignedStartMenu
+        theme = useNewLayoutVariant
                     ? &g_themeSideBySideMinimal
                     : &g_themeSideBySideMinimal_variant_ClassicStartMenu;
     } else if (wcscmp(themeName, L"Down Aero") == 0) {
-        theme = g_isRedesignedStartMenu
+        theme = useNewLayoutVariant
                     ? &g_themeDown_Aero
                     : &g_themeDown_Aero_variant_ClassicStartMenu;
     } else if (wcscmp(themeName, L"Windows10") == 0) {
-        theme = g_isRedesignedStartMenu
+        theme = useNewLayoutVariant
                     ? &g_themeWindows10
                     : &g_themeWindows10_variant_ClassicStartMenu;
     } else if (wcscmp(themeName, L"Windows10_variant_Minimal") == 0) {
-        theme = g_isRedesignedStartMenu
+        theme = useNewLayoutVariant
                     ? &g_themeWindows10_variant_Minimal
                     : &g_themeWindows10_variant_Minimal_ClassicStartMenu;
     } else if (wcscmp(themeName, L"Windows11_Metro10") == 0) {
-        theme = g_isRedesignedStartMenu
+        theme = useNewLayoutVariant
                     ? &g_themeWindows11_Metro10
                     : &g_themeWindows11_Metro10_variant_ClassicStartMenu;
     } else if (wcscmp(themeName, L"Fluent2Inspired") == 0) {
-        theme = g_isRedesignedStartMenu
+        theme = useNewLayoutVariant
                     ? &g_themeFluent2Inspired
                     : &g_themeFluent2Inspired_variant_ClassicStartMenu;
     } else if (wcscmp(themeName, L"RosePine") == 0) {
-        theme = g_isRedesignedStartMenu
-                    ? &g_themeRosePine
-                    : &g_themeRosePine_variant_ClassicStartMenu;
+        theme = useNewLayoutVariant ? &g_themeRosePine
+                                    : &g_themeRosePine_variant_ClassicStartMenu;
     } else if (wcscmp(themeName, L"Windows11_Metro10Minimal") == 0) {
-        theme = g_isRedesignedStartMenu
+        theme = useNewLayoutVariant
                     ? &g_themeWindows11_Metro10Minimal
                     : &g_themeWindows11_Metro10Minimal_variant_ClassicStartMenu;
     } else if (wcscmp(themeName, L"Everblush") == 0) {
-        theme = g_isRedesignedStartMenu
+        theme = useNewLayoutVariant
                     ? &g_themeEverblush
                     : &g_themeEverblush_variant_ClassicStartMenu;
     } else if (wcscmp(themeName, L"SunValley") == 0) {
         theme = &g_themeSunValley;
     } else if (wcscmp(themeName, L"21996") == 0) {
-        theme = g_isRedesignedStartMenu
-                    ? &g_theme21996
-                    : &g_theme21996_variant_ClassicStartMenu;
+        theme = useNewLayoutVariant ? &g_theme21996
+                                    : &g_theme21996_variant_ClassicStartMenu;
     } else if (wcscmp(themeName, L"UniMenu") == 0) {
-        theme = g_isRedesignedStartMenu
-                    ? &g_themeUniMenu
-                    : &g_themeUniMenu_variant_ClassicStartMenu;
+        theme = useNewLayoutVariant ? &g_themeUniMenu
+                                    : &g_themeUniMenu_variant_ClassicStartMenu;
     } else if (wcscmp(themeName, L"LegacyFluent") == 0) {
-        theme = g_isRedesignedStartMenu
+        theme = useNewLayoutVariant
                     ? &g_themeLegacyFluent
                     : &g_themeLegacyFluent_variant_ClassicStartMenu;
     } else if (wcscmp(themeName, L"OnlySearch") == 0) {
-        theme = g_isRedesignedStartMenu
+        theme = useNewLayoutVariant
                     ? &g_themeOnlySearch
                     : &g_themeOnlySearch_variant_ClassicStartMenu;
     } else if (wcscmp(themeName, L"WindowGlass") == 0) {
@@ -12851,11 +13315,11 @@ void ProcessAllStylesFromSettings() {
     } else if (wcscmp(themeName, L"LiquidGlass") == 0) {
         theme = &g_themeLiquidGlass;
     } else if (wcscmp(themeName, L"Windows10X") == 0) {
-        theme = g_isRedesignedStartMenu
+        theme = useNewLayoutVariant
                     ? &g_themeWindows10X
                     : &g_themeWindows10X_variant_ClassicStartMenu;
     } else if (wcscmp(themeName, L"TintedGlass") == 0) {
-        theme = g_isRedesignedStartMenu
+        theme = useNewLayoutVariant
                     ? &g_themeTintedGlass
                     : &g_themeTintedGlass_variant_ClassicStartMenu;
     } else if (wcscmp(themeName, L"LayerMicaUI") == 0) {
@@ -12866,6 +13330,11 @@ void ProcessAllStylesFromSettings() {
         theme = &g_themeCommand_Center;
     }
     Wh_FreeStringSetting(themeName);
+    return theme;
+}
+
+void ProcessAllStylesFromSettings() {
+    const Theme* theme = GetSelectedTheme(g_isRedesignedStartMenu);
 
     StyleConstants styleConstants = LoadStyleConstants(
         theme ? theme->styleConstants : std::vector<PCWSTR>{});
@@ -12954,6 +13423,14 @@ void UninitializeSettingsAndTap() {
         g_delayedAllAppsRootVisibilitySet.Cancel();
         g_delayedAllAppsRootVisibilitySet = nullptr;
     }
+
+    for (auto const& action : g_separatePinnedScrollPendingActions) {
+        if (action && action.Status() ==
+                          winrt::Windows::Foundation::AsyncStatus::Started) {
+            action.Cancel();
+        }
+    }
+    g_separatePinnedScrollPendingActions.clear();
 
     if (g_allAppsRootRenderTransformVsg) {
         g_allAppsRootRenderTransformVsg.CurrentStateChanged(
@@ -13300,7 +13777,9 @@ int NTAPI RtlQueryFeatureConfiguration_Hook(UINT32 featureId,
         case 48697323:  // Removed in StartDocked.dll 10.0.26100.8328
             Wh_Log(L"%u", featureId);
             if (g_disableNewStartMenuLayout ==
-                DisableNewStartMenuLayout::forceNewLayout) {
+                    DisableNewStartMenuLayout::forceNewLayout ||
+                g_disableNewStartMenuLayout ==
+                    DisableNewStartMenuLayout::newLayoutSideBySide) {
                 config->enabledState = FEATURE_ENABLED_STATE_ENABLED;
             } else if (g_disableNewStartMenuLayout ==
                        DisableNewStartMenuLayout::
@@ -13316,9 +13795,15 @@ int NTAPI RtlQueryFeatureConfiguration_Hook(UINT32 featureId,
         case 49402389:
             Wh_Log(L"%u", featureId);
             if (g_disableNewStartMenuLayout ==
-                DisableNewStartMenuLayout::forceNewLayout) {
+                    DisableNewStartMenuLayout::forceNewLayout ||
+                g_disableNewStartMenuLayout ==
+                    DisableNewStartMenuLayout::newLayoutSideBySide) {
                 config->enabledState = FEATURE_ENABLED_STATE_ENABLED;
-            } else {
+            } else if (
+                g_disableNewStartMenuLayout ==
+                    DisableNewStartMenuLayout::disableNewLayoutKeepPhoneLink ||
+                g_disableNewStartMenuLayout ==
+                    DisableNewStartMenuLayout::disableNewLayoutAndPhoneLink) {
                 config->enabledState = FEATURE_ENABLED_STATE_DISABLED;
             }
             break;
@@ -13493,32 +13978,47 @@ void StopStatsTimer() {
 DisableNewStartMenuLayout GetDisableNewStartMenuLayout() {
     PCWSTR disableNewStartMenuLayoutStr =
         Wh_GetStringSetting(L"disableNewStartMenuLayout");
-    DisableNewStartMenuLayout disableNewStartMenuLayout =
-        DisableNewStartMenuLayout::windowsDefault;
-    if (wcscmp(disableNewStartMenuLayoutStr,
-               L"disableNewLayoutKeepPhoneLink") == 0) {
-        disableNewStartMenuLayout =
+    std::optional<DisableNewStartMenuLayout> explicitLayout;
+    if (wcscmp(disableNewStartMenuLayoutStr, L"default") == 0) {
+        explicitLayout = DisableNewStartMenuLayout::windowsDefault;
+    } else if (wcscmp(disableNewStartMenuLayoutStr,
+                      L"disableNewLayoutKeepPhoneLink") == 0) {
+        explicitLayout =
             DisableNewStartMenuLayout::disableNewLayoutKeepPhoneLink;
     } else if (wcscmp(disableNewStartMenuLayoutStr, L"legacyClassicLayout") ==
                0) {
-        disableNewStartMenuLayout =
+        explicitLayout =
             DisableNewStartMenuLayout::disableNewLayoutAndPhoneLink;
     } else if (wcscmp(disableNewStartMenuLayoutStr, L"forceNewLayout") == 0) {
-        disableNewStartMenuLayout = DisableNewStartMenuLayout::forceNewLayout;
+        explicitLayout = DisableNewStartMenuLayout::forceNewLayout;
+    } else if (wcscmp(disableNewStartMenuLayoutStr, L"newLayoutSideBySide") ==
+               0) {
+        explicitLayout = DisableNewStartMenuLayout::newLayoutSideBySide;
     } else if (wcscmp(disableNewStartMenuLayoutStr, L"1") == 0) {
         // "1" is kept for backward compatibility, previously it meant
         // disableNewLayoutAndPhoneLink, but now it means
         // disableNewLayoutKeepPhoneLink because disableNewLayoutAndPhoneLink is
         // removed in newer builds, and some themes were updated to only support
         // disableNewLayoutKeepPhoneLink.
-        disableNewStartMenuLayout =
+        explicitLayout =
             DisableNewStartMenuLayout::disableNewLayoutKeepPhoneLink;
     }
     Wh_FreeStringSetting(disableNewStartMenuLayoutStr);
 
+    DisableNewStartMenuLayout disableNewStartMenuLayout =
+        explicitLayout.value_or(DisableNewStartMenuLayout::windowsDefault);
+
+    if (!explicitLayout) {
+        if (const Theme* theme =
+                GetSelectedTheme(/*useNewLayoutVariant=*/true)) {
+            disableNewStartMenuLayout = theme->startMenuLayout;
+        }
+    }
+
     switch (disableNewStartMenuLayout) {
         case DisableNewStartMenuLayout::windowsDefault:
         case DisableNewStartMenuLayout::forceNewLayout:
+        case DisableNewStartMenuLayout::newLayoutSideBySide:
             break;
 
         case DisableNewStartMenuLayout::disableNewLayoutKeepPhoneLink:
@@ -13565,8 +14065,11 @@ BOOL Wh_ModInit() {
 
     g_disableNewStartMenuLayout = GetDisableNewStartMenuLayout();
 
-    if (g_disableNewStartMenuLayout !=
-        DisableNewStartMenuLayout::windowsDefault) {
+    g_windowsDefaultIsNewLayout = IsOsFeatureEnabled(47205210).value_or(true) &&
+                                  IsOsFeatureEnabled(49221331).value_or(true) &&
+                                  IsOsFeatureEnabled(49402389).value_or(true);
+
+    if (!DoesLayoutOverrideMatchWindowsDefault(g_disableNewStartMenuLayout)) {
 #ifdef _WIN64
         const size_t OFFSET_SAME_TEB_FLAGS = 0x17EE;
 #else
@@ -13591,13 +14094,14 @@ BOOL Wh_ModInit() {
         }
     }
 
-    g_isRedesignedStartMenu = g_disableNewStartMenuLayout ==
-                                  DisableNewStartMenuLayout::forceNewLayout ||
-                              (g_disableNewStartMenuLayout ==
-                                   DisableNewStartMenuLayout::windowsDefault &&
-                               IsOsFeatureEnabled(47205210).value_or(true) &&
-                               IsOsFeatureEnabled(49221331).value_or(true) &&
-                               IsOsFeatureEnabled(49402389).value_or(true));
+    g_isRedesignedStartMenu =
+        g_disableNewStartMenuLayout ==
+            DisableNewStartMenuLayout::forceNewLayout ||
+        g_disableNewStartMenuLayout ==
+            DisableNewStartMenuLayout::newLayoutSideBySide ||
+        (g_disableNewStartMenuLayout ==
+             DisableNewStartMenuLayout::windowsDefault &&
+         g_windowsDefaultIsNewLayout);
 
     HMODULE user32Module =
         LoadLibraryEx(L"user32.dll", nullptr, LOAD_LIBRARY_SEARCH_SYSTEM32);
@@ -13619,8 +14123,7 @@ BOOL Wh_ModInit() {
         }
     }
 
-    if (g_disableNewStartMenuLayout !=
-        DisableNewStartMenuLayout::windowsDefault) {
+    if (!DoesLayoutOverrideMatchWindowsDefault(g_disableNewStartMenuLayout)) {
         HMODULE hNtDll = LoadLibraryW(L"ntdll.dll");
         RtlQueryFeatureConfiguration_t pRtlQueryFeatureConfiguration =
             (RtlQueryFeatureConfiguration_t)GetProcAddress(
@@ -13655,8 +14158,7 @@ void Wh_ModAfterInit() {
 void Wh_ModUninit() {
     Wh_Log(L">");
 
-    if (g_disableNewStartMenuLayout !=
-        DisableNewStartMenuLayout::windowsDefault) {
+    if (!DoesLayoutOverrideMatchWindowsDefault(g_disableNewStartMenuLayout)) {
         // Exit to have the new setting take effect. The process will be
         // relaunched automatically.
         ExitProcess(0);
@@ -13675,7 +14177,12 @@ void Wh_ModUninit() {
     if (hCoreWnd) {
         Wh_Log(L"Uninitializing - Found core window");
         RunFromWindowThread(
-            hCoreWnd, [](PVOID) { UninitializeSettingsAndTap(); }, nullptr);
+            hCoreWnd,
+            [](PVOID) {
+                RevertAllSeparatePinnedScroll();
+                UninitializeSettingsAndTap();
+            },
+            nullptr);
     }
 
     // Unregister global network status change handler.
@@ -13701,11 +14208,30 @@ void Wh_ModUninit() {
 void Wh_ModSettingsChanged() {
     Wh_Log(L">");
 
-    if (GetDisableNewStartMenuLayout() != g_disableNewStartMenuLayout) {
-        // Exit to have the new setting take effect. The process will be
-        // relaunched automatically.
-        ExitProcess(0);
+    auto oldLayout = g_disableNewStartMenuLayout;
+    auto newLayout = GetDisableNewStartMenuLayout();
+
+    if (oldLayout != newLayout) {
+        bool oldIsNoOp = DoesLayoutOverrideMatchWindowsDefault(oldLayout);
+        bool newIsNoOp = DoesLayoutOverrideMatchWindowsDefault(newLayout);
+        if (!oldIsNoOp || !newIsNoOp) {
+            // Exit to have the new setting take effect. The process will be
+            // relaunched automatically.
+            ExitProcess(0);
+        }
+
+        // No restart - apply the new setting in-process.
+        g_disableNewStartMenuLayout = newLayout;
     }
+
+    // The tree-mutation side of newLayoutSideBySide needs to be undone when
+    // transitioning away from it; the toggle-on direction is covered by the
+    // post-init watcher re-Advise, which re-delivers Add events for the
+    // already-live target elements and routes them through
+    // HandleSeparatePinnedScroll.
+    bool needsRevert =
+        oldLayout == DisableNewStartMenuLayout::newLayoutSideBySide &&
+        newLayout != DisableNewStartMenuLayout::newLayoutSideBySide;
 
     if (g_visualTreeWatcher) {
         g_visualTreeWatcher->UnadviseVisualTreeChange();
@@ -13717,10 +14243,14 @@ void Wh_ModSettingsChanged() {
         Wh_Log(L"Reinitializing - Found core window");
         RunFromWindowThread(
             hCoreWnd,
-            [](PVOID) {
+            [](PVOID p) {
+                bool needsRevert = *(bool*)p;
+                if (needsRevert) {
+                    RevertAllSeparatePinnedScroll();
+                }
                 UninitializeSettingsAndTap();
                 InitializeSettingsAndTap();
             },
-            nullptr);
+            &needsRevert);
     }
 }
