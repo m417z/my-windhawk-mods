@@ -256,6 +256,11 @@ Inside `{{ ... }}`, the supported expression syntax is:
 * Variable references (a previously captured `VarName`).
 * Binary operators `+`, `-`, `*`, `/`, with standard precedence.
 * Unary `+` and `-`.
+* Comparison operators `<`, `<=`, `==`, `>=`, `>`, `!=`, which evaluate to `1`
+  (true) or `0` (false).
+* The conditional operator `cond ? a : b`: evaluates to `a` when `cond` is
+  non-zero, otherwise `b`. For example, `{{x > 8 ? 1 : 3}}` gives `1` when `x`
+  is greater than `8`, else `3`.
 * Parentheses for grouping.
 * The two-argument functions `min(a, b)` and `max(a, b)`.
 
@@ -10603,7 +10608,85 @@ class StyleVariableExpressionEvaluator {
         return false;
     }
 
-    double ParseExpression() {
+    // Tries to consume the multi-char operator `op` at the current position
+    // (after skipping leading whitespace). The operator must match exactly with
+    // no embedded whitespace; advances past it and returns true on success.
+    bool ConsumeOperator(std::wstring_view op) {
+        SkipWhitespace();
+        if (m_text.size() - m_pos >= op.size() &&
+            m_text.compare(m_pos, op.size(), op) == 0) {
+            m_pos += op.size();
+            return true;
+        }
+        return false;
+    }
+
+    double ParseExpression() { return ParseTernary(); }
+
+    // Conditional operator `cond ? thenVal : elseVal`, right-associative.
+    // Short-circuit: only the taken branch is evaluated. The untaken branch is
+    // still parsed (to advance the position and enforce syntax) with m_live
+    // cleared, which suppresses value-level errors (division by zero, a
+    // non-numeric / undefined variable, an unknown function) and dependency
+    // capture for that branch.
+    double ParseTernary() {
+        double cond = ParseEquality();
+        if (!ConsumeChar(L'?')) {
+            return cond;
+        }
+        bool condTrue = cond != 0.0;
+        bool prevLive = m_live;
+
+        m_live = prevLive && condTrue;
+        double thenVal = ParseExpression();
+        m_live = prevLive;
+
+        if (!ConsumeChar(L':')) {
+            throw std::runtime_error(
+                "Missing ':' for '?' in style variable expression");
+        }
+
+        m_live = prevLive && !condTrue;
+        double elseVal = ParseTernary();
+        m_live = prevLive;
+
+        return condTrue ? thenVal : elseVal;
+    }
+
+    double ParseEquality() {
+        double v = ParseRelational();
+        while (true) {
+            if (ConsumeOperator(L"==")) {
+                v = (v == ParseRelational()) ? 1.0 : 0.0;
+            } else if (ConsumeOperator(L"!=")) {
+                v = (v != ParseRelational()) ? 1.0 : 0.0;
+            } else {
+                break;
+            }
+        }
+        return v;
+    }
+
+    double ParseRelational() {
+        double v = ParseAdditive();
+        while (true) {
+            // Match the two-char operators before their single-char prefixes.
+            if (ConsumeOperator(L"<=")) {
+                v = (v <= ParseAdditive()) ? 1.0 : 0.0;
+            } else if (ConsumeOperator(L">=")) {
+                v = (v >= ParseAdditive()) ? 1.0 : 0.0;
+            } else if (ConsumeOperator(L"<")) {
+                v = (v < ParseAdditive()) ? 1.0 : 0.0;
+            } else if (ConsumeOperator(L">")) {
+                v = (v > ParseAdditive()) ? 1.0 : 0.0;
+            } else {
+                break;
+            }
+        }
+        return v;
+    }
+
+    double ParseAdditive() {
         double v = ParseTerm();
         while (true) {
             SkipWhitespace();
@@ -10627,10 +10710,15 @@ class StyleVariableExpressionEvaluator {
             } else if (ConsumeChar(L'/')) {
                 double rhs = ParseFactor();
                 if (rhs == 0.0) {
-                    throw std::runtime_error(
-                        "Division by zero in style variable expression");
+                    if (m_live) {
+                        throw std::runtime_error(
+                            "Division by zero in style variable expression");
+                    }
+                    // Dead ternary branch: the result is discarded, so skip the
+                    // divide instead of throwing or producing inf/nan.
+                } else {
+                    v /= rhs;
                 }
-                v /= rhs;
             } else {
                 break;
             }
@@ -10751,25 +10839,37 @@ class StyleVariableExpressionEvaluator {
             if (ident == L"max") {
                 return (a > b) ? a : b;
             }
-            throw std::runtime_error(
-                "Unknown function in style variable expression");
+            if (m_live) {
+                throw std::runtime_error(
+                    "Unknown function in style variable expression");
+            }
+            // Dead ternary branch: value discarded, don't fail on the name.
+            return 0.0;
         }
         return LookupVariableNumeric(std::wstring(ident));
     }
 
     double LookupVariableNumeric(const std::wstring& name) {
-        if (m_outDeps) {
+        // In a dead ternary branch (m_live == false) the value is discarded, so
+        // suppress dependency capture and the value-level errors below; the
+        // branch must not abort the whole expression.
+        if (m_live && m_outDeps) {
             m_outDeps->push_back(name);
         }
         auto it = m_state->variables.find(name);
         if (it == m_state->variables.end()) {
-            Wh_Log(L"Style variable '%s' not yet defined; treating as 0",
-                   name.c_str());
+            if (m_live) {
+                Wh_Log(L"Style variable '%s' not yet defined; treating as 0",
+                       name.c_str());
+            }
             return 0.0;
         }
         if (!it->second.numeric) {
-            throw std::runtime_error(
-                "Style variable used in arithmetic is not numeric");
+            if (m_live) {
+                throw std::runtime_error(
+                    "Style variable used in arithmetic is not numeric");
+            }
+            return 0.0;
         }
         return *it->second.numeric;
     }
@@ -10778,6 +10878,9 @@ class StyleVariableExpressionEvaluator {
     std::vector<std::wstring>* m_outDeps;
     StyleVariableState* m_state;
     size_t m_pos = 0;
+    // When false, we're parsing (but discarding) the untaken branch of a
+    // ternary; value-level errors and dependency capture are suppressed.
+    bool m_live = true;
 };
 
 // Evaluate a single expression body (the text between `{{` and `}}`). If the
