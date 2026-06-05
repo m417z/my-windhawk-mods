@@ -713,7 +713,7 @@ const Theme g_themeNoRecommendedSection = {{
         L"Margin=0"}},
     ThemeTargetStyles{L"Button#ShowMoreSuggestionsButton > Grid > ContentPresenter > StackPanel > TextBlock", {
         L"Text=Recommended"}},
-    ThemeTargetStyles{L"Grid#TopLevelHeader > Grid#ShowMorePinnedGrid > Button", {
+    ThemeTargetStyles{L"Grid#TopLevelHeader > Grid[2] > Button", {
         L"RenderTransform:=<TranslateTransform X=\"{{(1-showMoreSuggestionsVisible)*-135}}\"/>"}},
 }};
 
@@ -3659,7 +3659,8 @@ const Theme g_themeUniMenu = {{
     ThemeTargetStyles{L"StartMenu.PinnedList > Grid#Root", {
         L"Padding=0"}},
     ThemeTargetStyles{L"TextBlock#PinnedListHeaderText", {
-        L"Visibility=Collapsed"}},
+        L"Height=27",
+        L"Text="}},
     ThemeTargetStyles{L"Windows.UI.Xaml.Controls.TextBlock[Text=\uE76C]", {
         L"Text=\uEA37",
         L"FontSize=16"}},
