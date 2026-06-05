@@ -146,6 +146,10 @@ Center](https://raw.githubusercontent.com/ramensoftware/windows-11-start-menu-st
 Command
 Center](https://github.com/ramensoftware/windows-11-start-menu-styling-guide/blob/main/Themes/Command%20Center/README.md)
 
+[![FullScreen](https://raw.githubusercontent.com/ramensoftware/windows-11-start-menu-styling-guide/main/Themes/FullScreen/screenshot-small.png)
+\
+FullScreen](https://github.com/ramensoftware/windows-11-start-menu-styling-guide/blob/main/Themes/FullScreen/README.md)
+
 More themes can be found in the **Themes** section of [The Windows 11 Start menu
 styling
 guide](https://github.com/ramensoftware/windows-11-start-menu-styling-guide/blob/main/README.md#themes).
@@ -419,6 +423,7 @@ from the **TranslucentTB** project.
   - LayerMicaUI: LayerMicaUI (for the redesigned Start menu)
   - Borderless: Borderless
   - Command Center: Command Center (for the redesigned Start menu)
+  - FullScreen: FullScreen
 - disableNewStartMenuLayout: ""
   $name: Start menu layout
   $description: >-
@@ -6599,6 +6604,38 @@ const Theme g_themeCommand_Center = {{
 }, {}, {
     ThemeTargetStyles{L"*", {
         L"transition: background-color 0.083s ease-in-out !important"}},
+}};
+
+const Theme g_themeFullScreen = {{
+    ThemeTargetStyles{L"StartMenu.StartBlendedFlexFrame", {
+        L"ActualWidth=>frameWidth",
+        L"ActualHeight=>frameHeight"}},
+    ThemeTargetStyles{L"StartMenu.StartBlendedFlexFrame > Grid#FrameRoot", {
+        L"MinHeight={{frameHeight}}",
+        L"MaxHeight={{frameHeight}}",
+        L"Margin=0",
+        L"Padding=0"}},
+    ThemeTargetStyles{L"Grid#MainMenu", {
+        L"MinWidth={{frameWidth}}"}},
+    ThemeTargetStyles{L"Border#AcrylicBorder", {
+        L"CornerRadius=0"}},
+    ThemeTargetStyles{L"GridView#AllAppsGrid > Border > ScrollViewer#ScrollViewer > Border#Root > Grid > ScrollContentPresenter#ScrollContentPresenter > ItemsPresenter > ItemsWrapGrid", {
+        L"MaximumRowsOrColumns:="}},
+}};
+
+const Theme g_themeFullScreen_variant_1 = {{
+    ThemeTargetStyles{L":root > Canvas", {
+        L"ActualWidth=>canvasWidth",
+        L"ActualHeight=>canvasHeight"}},
+    ThemeTargetStyles{L"StartDocked.StartSizingFrame", {
+        L"Canvas.Top=0",
+        L"Canvas.Left=0",
+        L"MinWidth={{canvasWidth}}",
+        L"MinHeight={{canvasHeight}}"}},
+    ThemeTargetStyles{L"Grid#RootGrid", {
+        L"MinWidth={{canvasWidth}}"}},
+    ThemeTargetStyles{L"Border#AcrylicBorder", {
+        L"CornerRadius=0"}},
 }};
 
 // clang-format on
@@ -13267,6 +13304,9 @@ const Theme* GetSelectedTheme(bool useNewLayoutVariant) {
         theme = &g_themeBorderless;
     } else if (wcscmp(themeName, L"Command Center") == 0) {
         theme = &g_themeCommand_Center;
+    } else if (wcscmp(themeName, L"FullScreen") == 0) {
+        theme = useNewLayoutVariant ? &g_themeFullScreen
+                                    : &g_themeFullScreen_variant_1;
     }
     Wh_FreeStringSetting(themeName);
     return theme;
