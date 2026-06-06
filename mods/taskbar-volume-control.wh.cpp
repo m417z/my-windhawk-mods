@@ -2029,6 +2029,94 @@ bool AreScrollAnywhereModifiersHeld() {
            g_settings.scrollAnywhereKeys.win == winKeyState;
 }
 
+// Using the Win or Alt key as a scroll-anywhere modifier would trigger a menu
+// on release: a lone Win tap opens the Start menu, and a lone Alt tap activates
+// the window's menu bar. To prevent this, the mouse hook flags the key as used
+// for scrolling, and the keyboard hook below masks its release: it suppresses
+// the real key-up and re-injects a dummy key (0xE8, unassigned) before it, so
+// Windows sees a non-modifier key and skips the menu. 0xE8 is the masking key
+// recommended by AutoHotkey for exactly this, both for Win and Alt:
+// https://www.autohotkey.com/docs/v2/lib/A_MenuMaskKey.htm
+//
+// Masking must happen at release time, not during the scroll, since holding the
+// key auto-repeats key-down events that would re-arm the lone-tap detection.
+struct ModifierMaskState {
+    bool down;
+    bool usedForScroll;
+};
+
+ModifierMaskState g_winMaskState;
+ModifierMaskState g_altMaskState;
+
+// Returns true if the original key-up was suppressed and re-sent masked, in
+// which case the caller should swallow it.
+bool MaskModifierKeyEvent(ModifierMaskState* state,
+                          WPARAM wParam,
+                          KBDLLHOOKSTRUCT* pKbdStruct) {
+    if (wParam == WM_KEYDOWN || wParam == WM_SYSKEYDOWN) {
+        // Reset the flag on the initial press, but not on auto-repeat events
+        // (which keep firing while the key is held).
+        if (!state->down) {
+            state->down = true;
+            state->usedForScroll = false;
+        }
+    } else if (wParam == WM_KEYUP || wParam == WM_SYSKEYUP) {
+        state->down = false;
+
+        // Ignore injected key-ups (such as the one we re-send below) to avoid
+        // masking them again.
+        if (state->usedForScroll && !(pKbdStruct->flags & LLKHF_INJECTED)) {
+            state->usedForScroll = false;
+
+            INPUT input[3] = {};
+            input[0].type = INPUT_KEYBOARD;
+            input[0].ki.wVk = 0xE8;
+            input[1].type = INPUT_KEYBOARD;
+            input[1].ki.wVk = 0xE8;
+            input[1].ki.dwFlags = KEYEVENTF_KEYUP;
+            input[2].type = INPUT_KEYBOARD;
+            input[2].ki.wVk = (WORD)pKbdStruct->vkCode;
+            input[2].ki.dwFlags = KEYEVENTF_KEYUP;
+
+            // Only suppress the original key-up if we managed to re-send the
+            // whole sequence, otherwise the key would get stuck down (e.g. when
+            // SendInput is blocked by an elevated foreground window).
+            if (SendInput(ARRAYSIZE(input), input, sizeof(INPUT)) ==
+                ARRAYSIZE(input)) {
+                return true;
+            }
+        }
+    }
+
+    return false;
+}
+
+LRESULT CALLBACK LowLevelKeyboardProc(int nCode, WPARAM wParam, LPARAM lParam) {
+    if (nCode != HC_ACTION) {
+        return CallNextHookEx(nullptr, nCode, wParam, lParam);
+    }
+
+    KBDLLHOOKSTRUCT* pKbdStruct = (KBDLLHOOKSTRUCT*)lParam;
+
+    ModifierMaskState* state = nullptr;
+    switch (pKbdStruct->vkCode) {
+        case VK_LWIN:
+        case VK_RWIN:
+            state = &g_winMaskState;
+            break;
+        case VK_LMENU:
+        case VK_RMENU:
+            state = &g_altMaskState;
+            break;
+    }
+
+    if (state && MaskModifierKeyEvent(state, wParam, pKbdStruct)) {
+        return 1;
+    }
+
+    return CallNextHookEx(nullptr, nCode, wParam, lParam);
+}
+
 LRESULT CALLBACK LowLevelMouseProc(int nCode, WPARAM wParam, LPARAM lParam) {
     if (nCode != HC_ACTION || wParam != WM_MOUSEWHEEL) {
         return CallNextHookEx(nullptr, nCode, wParam, lParam);
@@ -2043,6 +2131,14 @@ LRESULT CALLBACK LowLevelMouseProc(int nCode, WPARAM wParam, LPARAM lParam) {
 
     // Scroll anywhere: modifier keys held.
     if (IsScrollAnywhereEnabled() && AreScrollAnywhereModifiersHeld()) {
+        // Mark the Win/Alt keys as used so that the keyboard hook masks their
+        // release and no menu (Start menu / menu bar) opens.
+        if (g_settings.scrollAnywhereKeys.win) {
+            g_winMaskState.usedForScroll = true;
+        }
+        if (g_settings.scrollAnywhereKeys.alt) {
+            g_altMaskState.usedForScroll = true;
+        }
         PostMessage(hTaskbarWnd, g_scrollAnywhereMsg,
                     MAKEWPARAM(0, HIWORD(pMouseStruct->mouseData)),
                     MAKELPARAM(pMouseStruct->pt.x, pMouseStruct->pt.y));
@@ -2112,12 +2208,26 @@ LRESULT CALLBACK LowLevelMouseProc(int nCode, WPARAM wParam, LPARAM lParam) {
 DWORD WINAPI ScrollAnywhereThread(LPVOID lpParameter) {
     HANDLE hReadyEvent = (HANDLE)lpParameter;
 
-    HHOOK hook = SetWindowsHookEx(WH_MOUSE_LL, LowLevelMouseProc, nullptr, 0);
+    g_winMaskState = {};
+    g_altMaskState = {};
+
+    HHOOK mouseHook =
+        SetWindowsHookEx(WH_MOUSE_LL, LowLevelMouseProc, nullptr, 0);
+
+    // Only needed to mask the Win/Alt key release, see LowLevelKeyboardProc.
+    HHOOK keyboardHook = nullptr;
+    if (g_settings.scrollAnywhereKeys.win || g_settings.scrollAnywhereKeys.alt) {
+        keyboardHook =
+            SetWindowsHookEx(WH_KEYBOARD_LL, LowLevelKeyboardProc, nullptr, 0);
+    }
 
     SetEvent(hReadyEvent);
 
-    if (!hook) {
+    if (!mouseHook) {
         Wh_Log(L"SetWindowsHookEx failed: %u", GetLastError());
+        if (keyboardHook) {
+            UnhookWindowsHookEx(keyboardHook);
+        }
         return 1;
     }
 
@@ -2137,7 +2247,10 @@ DWORD WINAPI ScrollAnywhereThread(LPVOID lpParameter) {
         DispatchMessage(&msg);
     }
 
-    UnhookWindowsHookEx(hook);
+    if (keyboardHook) {
+        UnhookWindowsHookEx(keyboardHook);
+    }
+    UnhookWindowsHookEx(mouseHook);
     return 0;
 }
 
@@ -2382,10 +2495,9 @@ BOOL Wh_ModSettingsChanged(BOOL* bReload) {
     *bReload = g_settings.oldTaskbarOnWin11 != prevOldTaskbarOnWin11 ||
                g_settings.middleClickToMute != prevMiddleClickToMute;
     if (!*bReload) {
+        ScrollAnywhereThreadUninit();
         if (IsMouseHookNeeded()) {
             ScrollAnywhereThreadInit();
-        } else {
-            ScrollAnywhereThreadUninit();
         }
     }
 
