@@ -2,7 +2,7 @@
 // @id              taskbar-volume-control
 // @name            Taskbar Volume Control
 // @description     Control the system volume by scrolling over the taskbar or anywhere with modifier keys
-// @version         1.3
+// @version         1.3.1
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
@@ -10,7 +10,7 @@
 // @include         explorer.exe
 // @include         ShellExperienceHost.exe
 // @include         SndVol.exe
-// @compilerOptions -DWINVER=0x0A00 -lcomctl32 -ldwmapi -lgdi32 -lole32 -lversion
+// @compilerOptions -lcomctl32 -ldwmapi -lgdi32 -lole32 -lversion
 // ==/WindhawkMod==
 
 // Source code is published under The GNU General Public License v3.0.
@@ -1598,8 +1598,8 @@ void HandleIdentifiedInputSiteWindow(HWND hWnd) {
     // but the inputsite.dll code checks that the value wasn't changed, and
     // crashes otherwise.
     auto wndProc = (WNDPROC)GetWindowLongPtr(hWnd, GWLP_WNDPROC);
-    WindhawkUtils::Wh_SetFunctionHookT(wndProc, InputSiteWindowProc_Hook,
-                                       &InputSiteWindowProc_Original);
+    WindhawkUtils::SetFunctionHook(wndProc, InputSiteWindowProc_Hook,
+                                   &InputSiteWindowProc_Original);
 
     if (g_initialized) {
         Wh_ApplyHookOperations();
@@ -2074,9 +2074,17 @@ bool MaskModifierKeyEvent(ModifierMaskState* state,
             input[1].type = INPUT_KEYBOARD;
             input[1].ki.wVk = 0xE8;
             input[1].ki.dwFlags = KEYEVENTF_KEYUP;
+            // Faithfully replay the original key-up. The extended-key flag must
+            // be preserved, otherwise extended modifiers (right Alt/AltGr and
+            // the Win keys) may not be released correctly and could get stuck
+            // down.
             input[2].type = INPUT_KEYBOARD;
             input[2].ki.wVk = (WORD)pKbdStruct->vkCode;
+            input[2].ki.wScan = (WORD)pKbdStruct->scanCode;
             input[2].ki.dwFlags = KEYEVENTF_KEYUP;
+            if (pKbdStruct->flags & LLKHF_EXTENDED) {
+                input[2].ki.dwFlags |= KEYEVENTF_EXTENDEDKEY;
+            }
 
             // Only suppress the original key-up if we managed to re-send the
             // whole sequence, otherwise the key would get stuck down (e.g. when
@@ -2345,7 +2353,7 @@ BOOL Wh_ModInit() {
             auto pFunc = (ForceFocusBasedMouseWheelRouting_t)GetProcAddress(
                 user32Module, MAKEINTRESOURCEA(2575));
             if (pFunc) {
-                WindhawkUtils::Wh_SetFunctionHookT(
+                WindhawkUtils::SetFunctionHook(
                     pFunc, ForceFocusBasedMouseWheelRouting_Hook,
                     &ForceFocusBasedMouseWheelRouting_Original);
             }
@@ -2371,8 +2379,8 @@ BOOL Wh_ModInit() {
         }
     }
 
-    WindhawkUtils::Wh_SetFunctionHookT(CreateWindowExW, CreateWindowExW_Hook,
-                                       &CreateWindowExW_Original);
+    WindhawkUtils::SetFunctionHook(CreateWindowExW, CreateWindowExW_Hook,
+                                   &CreateWindowExW_Original);
 
     HMODULE user32Module =
         LoadLibraryEx(L"user32.dll", nullptr, LOAD_LIBRARY_SEARCH_SYSTEM32);
@@ -2380,9 +2388,9 @@ BOOL Wh_ModInit() {
         auto pCreateWindowInBand = (CreateWindowInBand_t)GetProcAddress(
             user32Module, "CreateWindowInBand");
         if (pCreateWindowInBand) {
-            WindhawkUtils::Wh_SetFunctionHookT(pCreateWindowInBand,
-                                               CreateWindowInBand_Hook,
-                                               &CreateWindowInBand_Original);
+            WindhawkUtils::SetFunctionHook(pCreateWindowInBand,
+                                           CreateWindowInBand_Hook,
+                                           &CreateWindowInBand_Original);
         }
     }
 
@@ -2391,9 +2399,9 @@ BOOL Wh_ModInit() {
     HMODULE kernelBaseModule = GetModuleHandle(L"kernelbase.dll");
     auto pKernelBaseLoadLibraryExW = (decltype(&LoadLibraryExW))GetProcAddress(
         kernelBaseModule, "LoadLibraryExW");
-    WindhawkUtils::Wh_SetFunctionHookT(pKernelBaseLoadLibraryExW,
-                                       LoadLibraryExW_Hook,
-                                       &LoadLibraryExW_Original);
+    WindhawkUtils::SetFunctionHook(pKernelBaseLoadLibraryExW,
+                                   LoadLibraryExW_Hook,
+                                   &LoadLibraryExW_Original);
 
     g_initialized = true;
 
