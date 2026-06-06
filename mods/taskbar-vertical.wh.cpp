@@ -1112,7 +1112,7 @@ void WINAPI SystemTrayController_UpdateFrameSize_Hook(void* pThis) {
             return 0;
         }
 
-    // Find the last height offset to reset the height value.
+        // Find the last height offset to reset the height value.
 #if defined(_M_X64)
         // 66 0f 2e b3 b0 00 00 00 UCOMISD    uVar4,qword ptr [RBX + 0xb0]
         // 7a 4c                   JP         LAB_180075641
