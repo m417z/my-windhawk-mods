@@ -598,7 +598,6 @@ void ApplyNonActivatableStackIconViewStyle(
                 if (systemTrayIconIdent == SystemTrayIconIdent::kLanguage) {
                     Wh_Log(L"Language supplementary icon %d (%s)",
                            (int)systemTrayIconIdent, StringToHex(text).c_str());
-
                     hide = g_settings.hideLanguageSupplementaryIcons;
                     return true;
                 } else {
@@ -607,6 +606,7 @@ void ApplyNonActivatableStackIconViewStyle(
                     return false;
                 }
             } else if (className == L"SystemTray.ImageIconContent") {
+                Wh_Log(L"Language supplementary icon (image)");
                 hide = g_settings.hideLanguageSupplementaryIcons;
                 return true;
             } else if (className == L"SystemTray.LanguageTextIconContent" ||
