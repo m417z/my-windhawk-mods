@@ -1854,29 +1854,23 @@ void ApplySystemTrayIconStyle(FrameworkElement systemTrayIconElement) {
         }
     }
 
+    static const struct {
+        PCWSTR className;
+        SystemTrayIconType iconType;
+    } iconContentTypes[] = {
+        {L"SystemTray.TextIconContent", SystemTrayIconType::Other},
+        {L"SystemTray.BatteryIconContent", SystemTrayIconType::Battery},
+        {L"SystemTray.LanguageTextIconContent", SystemTrayIconType::Other},
+        {L"SystemTray.DateTimeIconContent", SystemTrayIconType::DateTime},
+    };
+
+    FrameworkElement iconContent = nullptr;
     SystemTrayIconType iconType = SystemTrayIconType::Other;
-
-    auto iconContent =
-        FindChildByClassName(contentGrid, L"SystemTray.TextIconContent");
-
-    if (!iconContent) {
-        iconContent =
-            FindChildByClassName(contentGrid, L"SystemTray.BatteryIconContent");
+    for (const auto& [className, type] : iconContentTypes) {
+        iconContent = FindChildByClassName(contentGrid, className);
         if (iconContent) {
-            iconType = SystemTrayIconType::Battery;
-        }
-    }
-
-    if (!iconContent) {
-        iconContent = FindChildByClassName(
-            contentGrid, L"SystemTray.LanguageTextIconContent");
-    }
-
-    if (!iconContent) {
-        iconContent = FindChildByClassName(contentGrid,
-                                           L"SystemTray.DateTimeIconContent");
-        if (iconContent) {
-            iconType = SystemTrayIconType::DateTime;
+            iconType = type;
+            break;
         }
     }
 
