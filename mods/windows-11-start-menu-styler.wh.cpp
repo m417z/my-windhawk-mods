@@ -2,7 +2,7 @@
 // @id              windows-11-start-menu-styler
 // @name            Windows 11 Start Menu Styler
 // @description     Customize the Start menu with themes contributed by others or create your own
-// @version         1.5.2
+// @version         1.6
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
@@ -7328,9 +7328,9 @@ winrt::Windows::Foundation::IAsyncOperation<bool>
 VisualStateGroup g_allAppsRootRenderTransformVsg{nullptr};
 winrt::event_token g_allAppsRootRenderTransformToken{};
 
-DisableNewStartMenuLayout g_disableNewStartMenuLayout;
-
 bool g_windowsDefaultIsNewLayout = false;
+
+DisableNewStartMenuLayout g_disableNewStartMenuLayout;
 
 // Returns true if the override's effect on the OS feature flags matches the
 // Windows default behavior, i.e. installing/removing this override doesn't
@@ -13955,7 +13955,8 @@ void StopStatsTimer() {
     }
 }
 
-DisableNewStartMenuLayout GetDisableNewStartMenuLayout() {
+DisableNewStartMenuLayout GetDisableNewStartMenuLayout(
+    bool useNewLayoutVariant) {
     PCWSTR disableNewStartMenuLayoutStr =
         Wh_GetStringSetting(L"disableNewStartMenuLayout");
     std::optional<DisableNewStartMenuLayout> explicitLayout;
@@ -13989,8 +13990,7 @@ DisableNewStartMenuLayout GetDisableNewStartMenuLayout() {
         explicitLayout.value_or(DisableNewStartMenuLayout::windowsDefault);
 
     if (!explicitLayout) {
-        if (const Theme* theme =
-                GetSelectedTheme(/*useNewLayoutVariant=*/true)) {
+        if (const Theme* theme = GetSelectedTheme(useNewLayoutVariant)) {
             disableNewStartMenuLayout = theme->startMenuLayout;
         }
     }
@@ -14003,6 +14003,8 @@ DisableNewStartMenuLayout GetDisableNewStartMenuLayout() {
 
         case DisableNewStartMenuLayout::disableNewLayoutKeepPhoneLink:
         case DisableNewStartMenuLayout::disableNewLayoutAndPhoneLink:
+            // StartMenuExperienceHost.exe 10.0.26100.8521 is part of Windows 11
+            // 26200.8524 and 26100.8524.
             if (IsMainModuleVersionAtLeast(10, 0, 26100, 8521)) {
                 // Classic Start Menu layout causes a crash in StartDocked.dll
                 // in newer builds, and as a result, the Start menu fails to
@@ -14043,11 +14045,12 @@ BOOL Wh_ModInit() {
             break;
     }
 
-    g_disableNewStartMenuLayout = GetDisableNewStartMenuLayout();
-
     g_windowsDefaultIsNewLayout = IsOsFeatureEnabled(47205210).value_or(true) &&
                                   IsOsFeatureEnabled(49221331).value_or(true) &&
                                   IsOsFeatureEnabled(49402389).value_or(true);
+
+    g_disableNewStartMenuLayout =
+        GetDisableNewStartMenuLayout(g_windowsDefaultIsNewLayout);
 
     if (!DoesLayoutOverrideMatchWindowsDefault(g_disableNewStartMenuLayout)) {
 #ifdef _WIN64
@@ -14189,7 +14192,7 @@ void Wh_ModSettingsChanged() {
     Wh_Log(L">");
 
     auto oldLayout = g_disableNewStartMenuLayout;
-    auto newLayout = GetDisableNewStartMenuLayout();
+    auto newLayout = GetDisableNewStartMenuLayout(g_windowsDefaultIsNewLayout);
 
     if (oldLayout != newLayout) {
         bool oldIsNoOp = DoesLayoutOverrideMatchWindowsDefault(oldLayout);
