@@ -1853,29 +1853,37 @@ void LoadSettings() {
     Wh_FreeStringSetting(additionalScrollRegions);
 }
 
+// The return type is int to match the produce<> COM thunk variant below, which
+// returns an HRESULT. For the standalone implementation variant (which returns
+// void), its caller is a thin thunk that overwrites the return value, so the
+// returned value is harmlessly discarded.
 using VolumeSystemTrayIconDataModel_OnIconClicked_t =
-    void(WINAPI*)(void* pThis, void* iconClickedEventArgs);
+    int(WINAPI*)(void* pThis, void* param1);
 VolumeSystemTrayIconDataModel_OnIconClicked_t
     VolumeSystemTrayIconDataModel_OnIconClicked_Original;
-void WINAPI
-VolumeSystemTrayIconDataModel_OnIconClicked_Hook(void* pThis,
-                                                 void* iconClickedEventArgs) {
+int WINAPI VolumeSystemTrayIconDataModel_OnIconClicked_Hook(void* pThis,
+                                                            void* param1) {
     Wh_Log(L">");
 
     if (g_settings.middleClickToMute && GetKeyState(VK_MBUTTON) < 0) {
         ToggleVolMuted();
-        return;
+        return 0;  // S_OK
     }
 
-    VolumeSystemTrayIconDataModel_OnIconClicked_Original(pThis,
-                                                         iconClickedEventArgs);
+    return VolumeSystemTrayIconDataModel_OnIconClicked_Original(pThis, param1);
 }
 
 bool HookSystemTraySymbols(HMODULE module) {
+    // In SystemTray.dll, the implementation function was inlined into the
+    // produce<> COM thunk, so hook that.
+    bool isSystemTrayDll = module == GetModuleHandle(L"SystemTray.dll");
+
     // SystemTray.dll, Taskbar.View.dll
     WindhawkUtils::SYMBOL_HOOK symbolHooks[] = {
         {
-            {LR"(public: void __cdecl winrt::SystemTray::implementation::VolumeSystemTrayIconDataModel::OnIconClicked(struct winrt::SystemTray::IconClickedEventArgs const &))"},
+            {isSystemTrayDll
+                 ? LR"(public: virtual int __cdecl winrt::impl::produce<struct winrt::SystemTray::implementation::VolumeSystemTrayIconDataModel,struct winrt::SystemTray::IIconDataModel>::OnIconClicked(void *))"
+                 : LR"(public: void __cdecl winrt::SystemTray::implementation::VolumeSystemTrayIconDataModel::OnIconClicked(struct winrt::SystemTray::IconClickedEventArgs const &))"},
             &VolumeSystemTrayIconDataModel_OnIconClicked_Original,
             VolumeSystemTrayIconDataModel_OnIconClicked_Hook,
             true,
