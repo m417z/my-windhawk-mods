@@ -1873,6 +1873,11 @@ void ApplySystemTrayIconStyle(FrameworkElement systemTrayIconElement) {
     }
 
     if (!iconContent) {
+        iconContent = FindChildByClassName(
+            contentGrid, L"SystemTray.InputIndicatorIconContent");
+    }
+
+    if (!iconContent) {
         iconContent = FindChildByClassName(contentGrid,
                                            L"SystemTray.DateTimeIconContent");
         if (iconContent) {
