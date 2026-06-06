@@ -10,7 +10,7 @@
 // @include         explorer.exe
 // @include         ShellExperienceHost.exe
 // @architecture    x86-64
-// @compilerOptions -DWINVER=0x0A00 -lole32 -loleaut32 -lruntimeobject -lshcore
+// @compilerOptions -lole32 -loleaut32 -lruntimeobject -lshcore
 // ==/WindhawkMod==
 
 // Source code is published under The GNU General Public License v3.0.
@@ -950,9 +950,8 @@ BOOL Wh_ModInit() {
             return FALSE;
         }
 
-        WindhawkUtils::Wh_SetFunctionHookT(MonitorFromPoint,
-                                           MonitorFromPoint_Hook,
-                                           &MonitorFromPoint_Original);
+        WindhawkUtils::SetFunctionHook(MonitorFromPoint, MonitorFromPoint_Hook,
+                                       &MonitorFromPoint_Original);
     }
 
     return TRUE;
