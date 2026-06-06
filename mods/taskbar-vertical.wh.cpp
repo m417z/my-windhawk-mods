@@ -1860,8 +1860,12 @@ void ApplySystemTrayIconStyle(FrameworkElement systemTrayIconElement) {
     } iconContentTypes[] = {
         {L"SystemTray.TextIconContent", SystemTrayIconType::Other},
         {L"SystemTray.BatteryIconContent", SystemTrayIconType::Battery},
-        {L"SystemTray.LanguageTextIconContent", SystemTrayIconType::Other},
         {L"SystemTray.DateTimeIconContent", SystemTrayIconType::DateTime},
+        // Language bar main icon.
+        {L"SystemTray.LanguageTextIconContent", SystemTrayIconType::Other},
+        {L"SystemTray.LanguageImageIconContent", SystemTrayIconType::Other},
+        // Language bar supplementary icon.
+        {L"SystemTray.ImageIconContent", SystemTrayIconType::Other},
     };
 
     FrameworkElement iconContent = nullptr;
