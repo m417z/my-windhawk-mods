@@ -1131,7 +1131,8 @@ HRESULT VisualTreeWatcher::OnVisualTreeChange(ParentChildRelation, VisualElement
 
     Wh_Log(L"Element type: %s", element.Type);
 
-    if (!g_initializedForThread) {
+    if (!g_initializedForThread)
+    {
         Wh_Log(L"Not initialized for thread %u", GetCurrentThreadId());
         return S_OK;
     }
@@ -3429,7 +3430,8 @@ void SetupImageBrushTracking(Media::ImageBrush const& brush,
 
 void SetOrClearValue(DependencyObject elementDo,
                      DependencyProperty property,
-                     const PropertyOverrideValue& overrideValue) {
+                     const PropertyOverrideValue& overrideValue,
+                     bool initialApply = false) {
     winrt::Windows::Foundation::IInspectable value;
     if (auto* inspectable =
             std::get_if<winrt::Windows::Foundation::IInspectable>(
@@ -5364,7 +5366,8 @@ void ApplyCustomizationsForVisualStateGroup(
                 propertyCustomizationState.originalValue =
                     ReadLocalValueWithWorkaround(element, property);
                 propertyCustomizationState.customValue = *resolved;
-                SetOrClearValue(element, property, *resolved);
+                SetOrClearValue(element, property, *resolved,
+                                /*initialApply=*/true);
                 propertyCustomizationState.lastAppliedValue =
                     ReadLocalValueWithWorkaround(element, property);
             }
