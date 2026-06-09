@@ -2028,11 +2028,6 @@ void WINAPI DateTimeIconContent_OnApplyTemplate_Hook(void* pThis) {
 }
 
 bool ApplyStyleIfNeeded(XamlRoot xamlRoot) {
-    // Calling this when unloading causes a crash with a secondary taskbar.
-    if (g_unloading) {
-        return true;
-    }
-
     FrameworkElement contentGrid =
         xamlRoot.Content().try_as<FrameworkElement>();
 
