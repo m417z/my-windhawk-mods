@@ -201,6 +201,10 @@ HWND g_notificationCenterWnd;
 
 std::vector<winrt::weak_ref<XamlRoot>> g_notifyIconsUpdated;
 
+// XamlRoots (taskbars) that already have a deferred ApplyStyle queued, used to
+// coalesce redundant applies.
+std::vector<XamlRoot> g_applyStyleQueued;
+
 using FrameworkElementLoadedEventRevoker = winrt::impl::event_revoker<
     IFrameworkElement,
     &winrt::impl::abi<IFrameworkElement>::type::remove_Loaded>;
@@ -577,6 +581,7 @@ bool IsTaskbarWindow(HWND hWnd) {
 
 bool UpdateNotifyIcons(XamlRoot xamlRoot);
 bool UpdateNotifyIconsIfNeeded(XamlRoot xamlRoot);
+bool ApplyStyleIfNeeded(XamlRoot xamlRoot);
 
 HWND FindCurrentProcessTaskbarWnd() {
     HWND hTaskbarWnd = nullptr;
@@ -1469,6 +1474,40 @@ bool ApplyStyle(XamlRoot xamlRoot) {
     return true;
 }
 
+// Applies the style asynchronously, outside the measure pass that triggered it.
+// Mutating layout properties from within MeasureOverride can cause an
+// AG_E_LAYOUT_CYCLE fail-fast on some Taskbar.View.dll builds. At most one
+// apply is queued per XamlRoot (taskbar) at a time, otherwise every measure
+// pass of the taskbar and system tray frames would queue a redundant one.
+void QueueApplyStyle(FrameworkElement element) {
+    auto xamlRoot = element.XamlRoot();
+    if (!xamlRoot) {
+        return;
+    }
+
+    if (std::find(g_applyStyleQueued.begin(), g_applyStyleQueued.end(),
+                  xamlRoot) != g_applyStyleQueued.end()) {
+        return;
+    }
+
+    g_applyStyleQueued.push_back(xamlRoot);
+
+    element.Dispatcher().TryRunAsync(
+        winrt::Windows::UI::Core::CoreDispatcherPriority::Normal, [xamlRoot]() {
+            g_applyStyleQueued.erase(
+                std::remove(g_applyStyleQueued.begin(),
+                            g_applyStyleQueued.end(), xamlRoot),
+                g_applyStyleQueued.end());
+
+            try {
+                ApplyStyleIfNeeded(xamlRoot);
+            } catch (...) {
+                HRESULT hr = winrt::to_hresult();
+                Wh_Log(L"Error %08X", hr);
+            }
+        });
+}
+
 using TaskbarFrame_MeasureOverride_t =
     int(WINAPI*)(void* pThis,
                  winrt::Windows::Foundation::Size size,
@@ -1487,12 +1526,7 @@ int WINAPI TaskbarFrame_MeasureOverride_Hook(
         ->QueryInterface(winrt::guid_of<FrameworkElement>(),
                          winrt::put_abi(taskbarFrame));
     if (taskbarFrame) {
-        try {
-            ApplyStyle(taskbarFrame.XamlRoot());
-        } catch (...) {
-            HRESULT hr = winrt::to_hresult();
-            Wh_Log(L"Error %08X", hr);
-        }
+        QueueApplyStyle(taskbarFrame);
     }
 
     int ret = TaskbarFrame_MeasureOverride_Original(pThis, size, resultSize);
@@ -1522,12 +1556,7 @@ int WINAPI SystemTrayFrame_MeasureOverride_Hook(
         ->QueryInterface(winrt::guid_of<FrameworkElement>(),
                          winrt::put_abi(systemTrayFrame));
     if (systemTrayFrame) {
-        try {
-            ApplyStyle(systemTrayFrame.XamlRoot());
-        } catch (...) {
-            HRESULT hr = winrt::to_hresult();
-            Wh_Log(L"Error %08X", hr);
-        }
+        QueueApplyStyle(systemTrayFrame);
     }
 
     int ret = SystemTrayFrame_MeasureOverride_Original(pThis, size, resultSize);
