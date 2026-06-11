@@ -68,7 +68,7 @@ To show folder sizes via "Everything" integration:
 
 * "Everything" must be running for the integration to work.
 * Both "Everything" 1.4 and [1.5
-  Alpha](https://www.voidtools.com/forum/viewtopic.php?t=9787) are supported.
+  Beta](https://www.voidtools.com/forum/viewtopic.php?t=9787) are supported.
   With version 1.5.0.1384a or newer, the mod uses the new [Everything
   SDK3](https://www.voidtools.com/forum/viewtopic.php?t=15853), which results in
   a much faster folder size query (can be around 20x faster).
