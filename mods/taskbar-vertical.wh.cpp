@@ -2,7 +2,7 @@
 // @id              taskbar-vertical
 // @name            Vertical Taskbar for Windows 11
 // @description     Finally, the missing vertical taskbar option for Windows 11! Move the taskbar to the left or right side of the screen.
-// @version         1.3.11
+// @version         1.3.12
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
@@ -203,7 +203,7 @@ std::vector<winrt::weak_ref<XamlRoot>> g_notifyIconsUpdated;
 
 // XamlRoots (taskbars) that already have a deferred ApplyStyle queued, used to
 // coalesce redundant applies.
-std::vector<XamlRoot> g_applyStyleQueued;
+std::vector<winrt::weak_ref<XamlRoot>> g_applyStyleQueued;
 
 using FrameworkElementLoadedEventRevoker = winrt::impl::event_revoker<
     IFrameworkElement,
@@ -1474,6 +1474,24 @@ bool ApplyStyle(XamlRoot xamlRoot) {
     return true;
 }
 
+void RemoveExpiredQueuedApplyStyles() {
+    g_applyStyleQueued.erase(
+        std::remove_if(
+            g_applyStyleQueued.begin(), g_applyStyleQueued.end(),
+            [](const auto& xamlRootRef) { return !xamlRootRef.get(); }),
+        g_applyStyleQueued.end());
+}
+
+void RemoveQueuedApplyStyle(XamlRoot xamlRoot) {
+    g_applyStyleQueued.erase(
+        std::remove_if(g_applyStyleQueued.begin(), g_applyStyleQueued.end(),
+                       [&xamlRoot](const auto& queuedXamlRootRef) {
+                           auto queuedXamlRoot = queuedXamlRootRef.get();
+                           return !queuedXamlRoot || queuedXamlRoot == xamlRoot;
+                       }),
+        g_applyStyleQueued.end());
+}
+
 // Applies the style asynchronously, outside the measure pass that triggered it.
 // Mutating layout properties from within MeasureOverride can cause an
 // AG_E_LAYOUT_CYCLE fail-fast on some Taskbar.View.dll builds. At most one
@@ -1485,27 +1503,53 @@ void QueueApplyStyle(FrameworkElement element) {
         return;
     }
 
-    if (std::find(g_applyStyleQueued.begin(), g_applyStyleQueued.end(),
-                  xamlRoot) != g_applyStyleQueued.end()) {
+    RemoveExpiredQueuedApplyStyles();
+
+    if (std::find_if(g_applyStyleQueued.begin(), g_applyStyleQueued.end(),
+                     [&xamlRoot](const auto& queuedXamlRootRef) {
+                         auto queuedXamlRoot = queuedXamlRootRef.get();
+                         return queuedXamlRoot && queuedXamlRoot == xamlRoot;
+                     }) != g_applyStyleQueued.end()) {
         return;
     }
 
-    g_applyStyleQueued.push_back(xamlRoot);
+    auto xamlRootWeak = winrt::make_weak(xamlRoot);
+    g_applyStyleQueued.push_back(xamlRootWeak);
 
-    element.Dispatcher().TryRunAsync(
-        winrt::Windows::UI::Core::CoreDispatcherPriority::Normal, [xamlRoot]() {
-            g_applyStyleQueued.erase(
-                std::remove(g_applyStyleQueued.begin(),
-                            g_applyStyleQueued.end(), xamlRoot),
-                g_applyStyleQueued.end());
+    try {
+        auto asyncOperation = element.Dispatcher().TryRunAsync(
+            winrt::Windows::UI::Core::CoreDispatcherPriority::Normal,
+            [xamlRootWeak]() {
+                auto xamlRoot = xamlRootWeak.get();
+                if (!xamlRoot) {
+                    RemoveExpiredQueuedApplyStyles();
+                    return;
+                }
 
-            try {
-                ApplyStyleIfNeeded(xamlRoot);
-            } catch (...) {
-                HRESULT hr = winrt::to_hresult();
-                Wh_Log(L"Error %08X", hr);
+                RemoveQueuedApplyStyle(xamlRoot);
+
+                try {
+                    ApplyStyleIfNeeded(xamlRoot);
+                } catch (...) {
+                    HRESULT hr = winrt::to_hresult();
+                    Wh_Log(L"Error %08X", hr);
+                }
+            });
+
+        if (asyncOperation.Status() ==
+                winrt::Windows::Foundation::AsyncStatus::Completed &&
+            !asyncOperation.GetResults()) {
+            if (auto queuedXamlRoot = xamlRootWeak.get()) {
+                RemoveQueuedApplyStyle(queuedXamlRoot);
+            } else {
+                RemoveExpiredQueuedApplyStyles();
             }
-        });
+        }
+    } catch (...) {
+        RemoveQueuedApplyStyle(xamlRoot);
+        HRESULT hr = winrt::to_hresult();
+        Wh_Log(L"Error %08X", hr);
+    }
 }
 
 using TaskbarFrame_MeasureOverride_t =
