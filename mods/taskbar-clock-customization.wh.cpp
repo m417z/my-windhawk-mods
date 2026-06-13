@@ -4001,21 +4001,16 @@ void WINAPI DateTimeIconContent_OnApplyTemplate_Hook(LPVOID pThis) {
 
     DateTimeIconContent_OnApplyTemplate_Original(pThis);
 
-    IUnknown* dateTimeIconContentElementIUnknownPtr = *((IUnknown**)pThis + 1);
-    if (!dateTimeIconContentElementIUnknownPtr) {
-        return;
-    }
-
-    FrameworkElement dateTimeIconContentElement = nullptr;
-    dateTimeIconContentElementIUnknownPtr->QueryInterface(
-        winrt::guid_of<FrameworkElement>(),
-        winrt::put_abi(dateTimeIconContentElement));
-    if (!dateTimeIconContentElement) {
+    FrameworkElement dateTimeIconContent = nullptr;
+    ((IUnknown*)pThis)
+        ->QueryInterface(winrt::guid_of<FrameworkElement>(),
+                         winrt::put_abi(dateTimeIconContent));
+    if (!dateTimeIconContent) {
         return;
     }
 
     try {
-        ApplyDateTimeIconContentStyles(dateTimeIconContentElement);
+        ApplyDateTimeIconContentStyles(dateTimeIconContent);
     } catch (...) {
         HRESULT hr = winrt::to_hresult();
         Wh_Log(L"Error %08X", hr);
@@ -4774,7 +4769,7 @@ bool HookSystemTraySymbols(HMODULE module) {
                 true,  // Added with feature flag 38762814
             },
             {
-                {LR"(public: void __cdecl winrt::SystemTray::implementation::DateTimeIconContent::OnApplyTemplate(void))"},
+                {LR"(public: virtual int __cdecl winrt::impl::produce<struct winrt::SystemTray::implementation::DateTimeIconContent,struct winrt::Windows::UI::Xaml::IFrameworkElementOverrides>::OnApplyTemplate(void))"},
                 &DateTimeIconContent_OnApplyTemplate_Original,
                 DateTimeIconContent_OnApplyTemplate_Hook,
                 true,
