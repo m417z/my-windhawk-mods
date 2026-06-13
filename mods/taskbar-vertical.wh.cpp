@@ -2057,8 +2057,9 @@ void WINAPI DateTimeIconContent_OnApplyTemplate_Hook(void* pThis) {
     DateTimeIconContent_OnApplyTemplate_Original(pThis);
 
     FrameworkElement dateTimeIconContent = nullptr;
-    ((IUnknown**)pThis)[1]->QueryInterface(winrt::guid_of<FrameworkElement>(),
-                                           winrt::put_abi(dateTimeIconContent));
+    ((IUnknown*)pThis)
+        ->QueryInterface(winrt::guid_of<FrameworkElement>(),
+                         winrt::put_abi(dateTimeIconContent));
     if (!dateTimeIconContent) {
         return;
     }
@@ -4589,7 +4590,7 @@ bool HookSystemTraySymbols(HMODULE module) {
             IconView_IconView_Hook,
         },
         {
-            {LR"(public: void __cdecl winrt::SystemTray::implementation::DateTimeIconContent::OnApplyTemplate(void))"},
+            {LR"(public: virtual int __cdecl winrt::impl::produce<struct winrt::SystemTray::implementation::DateTimeIconContent,struct winrt::Windows::UI::Xaml::IFrameworkElementOverrides>::OnApplyTemplate(void))"},
             &DateTimeIconContent_OnApplyTemplate_Original,
             DateTimeIconContent_OnApplyTemplate_Hook,
         },
@@ -4781,7 +4782,7 @@ bool HookTaskbarViewDllSymbols(HMODULE module,
             IconView_IconView_Hook,
         },
         {
-            {LR"(public: void __cdecl winrt::SystemTray::implementation::DateTimeIconContent::OnApplyTemplate(void))"},
+            {LR"(public: virtual int __cdecl winrt::impl::produce<struct winrt::SystemTray::implementation::DateTimeIconContent,struct winrt::Windows::UI::Xaml::IFrameworkElementOverrides>::OnApplyTemplate(void))"},
             &DateTimeIconContent_OnApplyTemplate_Original,
             DateTimeIconContent_OnApplyTemplate_Hook,
         },
