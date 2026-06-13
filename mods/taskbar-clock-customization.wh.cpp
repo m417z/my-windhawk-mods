@@ -249,9 +249,14 @@ styles, such as the font color and size.
     $description: >-
       Text that will be shown for %media_info% when no media is playing.
   - RemoveBrackets: false
-    $name: Remove brackets from info
+    $name: Remove brackets from media info
     $description: >-
-      Remove text in brackets from media info. E.g., "Song (feat. Artist)"
+      Remove text in brackets from %media_info%. E.g., "Song (feat. Artist)"
+      becomes "Song".
+  - RemoveBracketsTitle: false
+    $name: Remove brackets from media title
+    $description: >-
+      Remove text in brackets from %media_title%. E.g., "Song (feat. Artist)"
       becomes "Song".
   $name: Media player info
 - WebContentWeatherLocation: ""
@@ -542,6 +547,7 @@ struct MediaPlayerSettings {
     int maxLength;
     StringSetting noMediaText;
     bool removeBrackets;
+    bool removeBracketsTitle;
 };
 
 enum class WebContentWeatherUnits {
@@ -2436,6 +2442,24 @@ std::wstring RemoveBracketsFromString(std::wstring_view input) {
     return result.substr(startPos, endPos - startPos + 1);
 }
 
+std::wstring RemoveBracketsFromTitleString(std::wstring_view input) {
+    if (!g_settings.mediaPlayer.removeBracketsTitle) {
+        return std::wstring(input);
+    }
+
+    std::wstring result(input);
+    RemoveBracketedContent(result, L'(', L')');
+    RemoveBracketedContent(result, L'[', L']');
+
+    // Trim leading and trailing spaces
+    size_t startPos = result.find_first_not_of(L' ');
+    if (startPos == std::wstring::npos) {
+        return std::wstring();
+    }
+    size_t endPos = result.find_last_not_of(L' ');
+    return result.substr(startPos, endPos - startPos + 1);
+}
+
 void ClearMediaFormattedStrings() {
     wcscpy_s(g_mediaTitleFormatted.buffer, L"");
     wcscpy_s(g_mediaArtistFormatted.buffer, L"");
@@ -2563,12 +2587,15 @@ void RefreshMediaData() {
         auto artist = mediaProperties.Artist();
         auto album = mediaProperties.AlbumTitle();
 
+        // Create %media_title% with bracket removal
+        std::wstring processedTitleOnly = RemoveBracketsFromTitleString(title);
+
         StringCopyTruncatedWithEllipsis(g_mediaTitleFormatted.buffer,
                                         ARRAYSIZE(g_mediaTitleFormatted.buffer),
-                                        title.c_str());
-        StringCopyTruncatedWithEllipsis(
-            g_mediaArtistFormatted.buffer,
-            ARRAYSIZE(g_mediaArtistFormatted.buffer), artist.c_str());
+                                        processedTitleOnly.c_str());
+        StringCopyTruncatedWithEllipsis(g_mediaArtistFormatted.buffer,
+                                        ARRAYSIZE(g_mediaArtistFormatted.buffer),
+                                        artist.c_str());
         StringCopyTruncatedWithEllipsis(g_mediaAlbumFormatted.buffer,
                                         ARRAYSIZE(g_mediaAlbumFormatted.buffer),
                                         album.c_str());
@@ -4968,6 +4995,8 @@ void LoadSettings() {
         StringSetting::make(L"MediaPlayer.NoMediaText");
     g_settings.mediaPlayer.removeBrackets =
         Wh_GetIntSetting(L"MediaPlayer.RemoveBrackets");
+    g_settings.mediaPlayer.removeBracketsTitle =
+        Wh_GetIntSetting(L"MediaPlayer.RemoveBracketsTitle");
 
     g_settings.mediaPlayer.ignoredPlayers.clear();
     for (int i = 0;; i++) {
