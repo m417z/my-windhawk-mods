@@ -5328,9 +5328,9 @@ BOOL Wh_ModInit() {
     HMODULE kernelBaseModule = GetModuleHandle(L"kernelbase.dll");
     auto pKernelBaseLoadLibraryExW = (decltype(&LoadLibraryExW))GetProcAddress(
         kernelBaseModule, "LoadLibraryExW");
-    WindhawkUtils::Wh_SetFunctionHookT(pKernelBaseLoadLibraryExW,
-                                       LoadLibraryExW_Hook,
-                                       &LoadLibraryExW_Original);
+    WindhawkUtils::SetFunctionHook(pKernelBaseLoadLibraryExW,
+                                   LoadLibraryExW_Hook,
+                                   &LoadLibraryExW_Original);
 
     // Must use GetProcAddress for the functions below, otherwise the stubs in
     // kernel32.dll are being hooked.
@@ -5347,19 +5347,19 @@ BOOL Wh_ModInit() {
     }
 
     if (g_winVersion <= WinVersion::Win10) {
-        WindhawkUtils::Wh_SetFunctionHookT(pGetTimeFormatEx,
-                                           GetTimeFormatEx_Hook_Win10,
-                                           &GetTimeFormatEx_Original);
-        WindhawkUtils::Wh_SetFunctionHookT(pGetDateFormatEx,
-                                           GetDateFormatEx_Hook_Win10,
-                                           &GetDateFormatEx_Original);
+        WindhawkUtils::SetFunctionHook(pGetTimeFormatEx,
+                                       GetTimeFormatEx_Hook_Win10,
+                                       &GetTimeFormatEx_Original);
+        WindhawkUtils::SetFunctionHook(pGetDateFormatEx,
+                                       GetDateFormatEx_Hook_Win10,
+                                       &GetDateFormatEx_Original);
 
         auto pGetDateFormatW = (decltype(&GetDateFormatW))GetProcAddress(
             kernelBaseModule, "GetDateFormatW");
         if (pGetDateFormatW) {
-            WindhawkUtils::Wh_SetFunctionHookT(pGetDateFormatW,
-                                               GetDateFormatW_Hook_Win10,
-                                               &GetDateFormatW_Original);
+            WindhawkUtils::SetFunctionHook(pGetDateFormatW,
+                                           GetDateFormatW_Hook_Win10,
+                                           &GetDateFormatW_Original);
         }
     } else {
         if (g_winVersion >= WinVersion::Win11_22H2) {
@@ -5369,18 +5369,18 @@ BOOL Wh_ModInit() {
                 return FALSE;
             }
 
-            WindhawkUtils::Wh_SetFunctionHookT(
+            WindhawkUtils::SetFunctionHook(
                 pGetLocalTime, GetLocalTime_Hook_Win11, &GetLocalTime_Original);
         }
 
-        WindhawkUtils::Wh_SetFunctionHookT(pGetTimeFormatEx,
-                                           GetTimeFormatEx_Hook_Win11,
-                                           &GetTimeFormatEx_Original);
-        WindhawkUtils::Wh_SetFunctionHookT(pGetDateFormatEx,
-                                           GetDateFormatEx_Hook_Win11,
-                                           &GetDateFormatEx_Original);
-        WindhawkUtils::Wh_SetFunctionHookT(SendMessageW, SendMessageW_Hook,
-                                           &SendMessageW_Original);
+        WindhawkUtils::SetFunctionHook(pGetTimeFormatEx,
+                                       GetTimeFormatEx_Hook_Win11,
+                                       &GetTimeFormatEx_Original);
+        WindhawkUtils::SetFunctionHook(pGetDateFormatEx,
+                                       GetDateFormatEx_Hook_Win11,
+                                       &GetDateFormatEx_Original);
+        WindhawkUtils::SetFunctionHook(SendMessageW, SendMessageW_Hook,
+                                       &SendMessageW_Original);
     }
 
     g_initialized = true;
