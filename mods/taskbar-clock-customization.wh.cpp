@@ -476,14 +476,11 @@ using WindhawkUtils::StringSetting;
 
 using namespace std::string_view_literals;
 
-#define NOMINMAX
-
 #include <initguid.h>  // Must come before mshtml.h
 
 #include <comutil.h>
 #include <dxgi.h>
 #include <mshtml.h>
-#include <ntdef.h>
 #include <pdh.h>
 #include <pdhmsg.h>
 #include <powrprof.h>
