@@ -119,7 +119,6 @@ With labels:
 
 #include <dwmapi.h>
 #include <roapi.h>
-#include <shellapi.h>
 #include <shellscalingapi.h>
 #include <uiautomation.h>
 #include <windowsx.h>
