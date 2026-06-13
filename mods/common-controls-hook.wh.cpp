@@ -58,12 +58,16 @@ bool InitActCtx() {
 }
 
 class ActCtxGuard {
-    ULONG_PTR cookie;
-    BOOL activated;
+    ULONG_PTR cookie = 0;
+    BOOL activated = FALSE;
+
+    ActCtxGuard(const ActCtxGuard&) = delete;
+    ActCtxGuard& operator=(const ActCtxGuard&) = delete;
+    ActCtxGuard(ActCtxGuard&&) = delete;
+    ActCtxGuard& operator=(ActCtxGuard&&) = delete;
 
    public:
     ActCtxGuard() {
-        activated = FALSE;
         if (g_hActCtx != INVALID_HANDLE_VALUE) {
             activated = ActivateActCtx(g_hActCtx, &cookie);
         }
@@ -159,12 +163,15 @@ BOOL Wh_ModInit() {
         return FALSE;
     }
 
-#define INSTALL_HOOK(name)                                                   \
-    do {                                                                     \
-        auto addr = (name##_t)GetProcAddress(hUser32, #name);                \
-        if (addr) {                                                          \
-            WindhawkUtils::SetFunctionHook(addr, name##_hook, &name##_orig); \
-        }                                                                    \
+#define INSTALL_HOOK(name)                                         \
+    do {                                                           \
+        auto addr = (name##_t)GetProcAddress(hUser32, #name);      \
+        if (addr) {                                                \
+            if (!WindhawkUtils::SetFunctionHook(addr, name##_hook, \
+                                                &name##_orig)) {   \
+                Wh_Log(L"Failed to set hook for " L#name);         \
+            }                                                      \
+        }                                                          \
     } while (0)
 
     INSTALL_HOOK(CreateWindowExW);
@@ -185,6 +192,8 @@ BOOL Wh_ModInit() {
     INSTALL_HOOK(MessageBoxIndirectA);
     INSTALL_HOOK(MessageBoxTimeoutW);
     INSTALL_HOOK(MessageBoxTimeoutA);
+
+#undef INSTALL_HOOK
 
     return TRUE;
 }
