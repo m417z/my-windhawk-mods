@@ -148,6 +148,11 @@ static ULONGLONG g_lastInputTick;
 static BYTE g_rawInputBuffer[1024];
 static bool g_rawInputRegistered;
 
+// While the button is visible, re-check this often so navigation under a
+// stationary cursor (double-click / keyboard Enter) is noticed without a move.
+static const UINT kWatchdogIntervalMs = 500;
+static const UINT_PTR kWatchdogTimerId = 1;
+
 // One visible item in the active view: its rectangle (screen coords) and name.
 struct CachedItem {
     RECT rect;
@@ -1265,6 +1270,7 @@ static void HideChevron() {
     if (g_chevronVisible) {
         ShowWindow(g_chevronWnd, SW_HIDE);
         g_chevronVisible = false;
+        KillTimer(g_sinkWnd, kWatchdogTimerId);
     }
     SetRectEmpty(&g_hoverItemRect);
     SetRectEmpty(&g_chevronRect);
@@ -1272,6 +1278,16 @@ static void HideChevron() {
 
 // Takes ownership of childAbs.
 static void ShowChevronForItem(PIDLIST_ABSOLUTE childAbs, RECT itemRect) {
+    // No change since last time: keep the existing button. This makes the
+    // re-checks (mouse moves, refreshes, the watchdog) cheap - they only repaint
+    // when the hovered folder or its rect actually changes.
+    if (g_chevronVisible && g_targetPidl &&
+        EqualRect(&g_hoverItemRect, &itemRect) &&
+        ILIsEqual(g_targetPidl, childAbs)) {
+        ILFree(childAbs);
+        return;
+    }
+
     if (g_targetPidl) {
         ILFree(g_targetPidl);
     }
@@ -1297,6 +1313,7 @@ static void ShowChevronForItem(PIDLIST_ABSOLUTE childAbs, RECT itemRect) {
     SetWindowPos(g_chevronWnd, HWND_TOPMOST, 0, 0, 0, 0,
                  SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_SHOWWINDOW);
     g_chevronVisible = true;
+    SetTimer(g_sinkWnd, kWatchdogTimerId, kWatchdogIntervalMs, nullptr);
 }
 
 static LRESULT CALLBACK ChevronWndProc(HWND hwnd,
@@ -1365,7 +1382,7 @@ static bool IsWithinClass(HWND hwnd, PCWSTR className, int maxDepth) {
 // thread; this only ever does a local scan + render, so it never blocks. Called
 // from raw input (mouse move / wheel), foreground changes, and worker
 // refresh-done messages.
-static void Evaluate(bool wheel) {
+static void Evaluate(bool forceRefresh) {
     if (g_menuActive || !g_active) {
         return;
     }
@@ -1375,10 +1392,12 @@ static void Evaluate(bool wheel) {
         return;
     }
 
-    // Keep the button while the cursor rests on it or on the hovered item. A
-    // wheel scroll bypasses this so the (now moved) item is re-evaluated.
-    if (!wheel && g_chevronVisible &&
-        (PtInRect(&g_chevronRect, pt) || PtInRect(&g_hoverItemRect, pt))) {
+    // The button is our own window, not the file view, so while the cursor is on
+    // it keep it as-is (so it stays clickable and the gate below does not hide
+    // it). We intentionally do NOT keep based on the hovered item rect: the
+    // content there can change under a stationary cursor (navigation), so we
+    // always re-hit-test the item area.
+    if (g_chevronVisible && PtInRect(&g_chevronRect, pt)) {
         return;
     }
 
@@ -1415,7 +1434,7 @@ static void Evaluate(bool wheel) {
                 break;
             }
         }
-        if (wheel || (GetTickCount64() - g_snapBuiltTick) > kRefreshTtlMs) {
+        if (forceRefresh || (GetTickCount64() - g_snapBuiltTick) > kRefreshTtlMs) {
             requestRefresh = true;
         }
     } else {
@@ -1432,6 +1451,16 @@ static void Evaluate(bool wheel) {
 
     if (requestRefresh && g_workerThreadId) {
         PostThreadMessageW(g_workerThreadId, WM_APP_DO_REFRESH, 0, 0);
+    }
+
+    // When forcing a refresh, the snapshot just hit-tested may be stale (a scroll
+    // or navigation prompted the force), so don't update the button from it -
+    // leave it as-is and let the refresh-done re-evaluation apply fresh data.
+    if (forceRefresh) {
+        if (childAbs) {
+            ILFree(childAbs);
+        }
+        return;
     }
 
     if (childAbs) {
@@ -1504,6 +1533,13 @@ static LRESULT CALLBACK SinkWndProc(HWND hwnd,
         return 0;
     }
 
+    if (msg == WM_TIMER && wParam == kWatchdogTimerId) {
+        // Periodic re-check while the button is shown, to catch navigation that
+        // moved no mouse (double-click / keyboard Enter).
+        Evaluate(true);
+        return 0;
+    }
+
     if (msg == WM_INPUT) {
         UINT size = 0;
         if (GetRawInputData((HRAWINPUT)lParam, RID_INPUT, nullptr, &size,
@@ -1513,12 +1549,20 @@ static LRESULT CALLBACK SinkWndProc(HWND hwnd,
                             &size, sizeof(RAWINPUTHEADER)) == size) {
             RAWINPUT* raw = (RAWINPUT*)g_rawInputBuffer;
             if (raw->header.dwType == RIM_TYPEMOUSE) {
-                bool wheel = (raw->data.mouse.usButtonFlags &
-                              (RI_MOUSE_WHEEL | RI_MOUSE_HWHEEL)) != 0;
+                USHORT flags = raw->data.mouse.usButtonFlags;
+                // A wheel or button event may scroll or navigate, so force a
+                // refresh; plain moves only refresh once the cache goes stale.
+                bool force =
+                    (flags & (RI_MOUSE_WHEEL | RI_MOUSE_HWHEEL |
+                              RI_MOUSE_LEFT_BUTTON_DOWN | RI_MOUSE_LEFT_BUTTON_UP |
+                              RI_MOUSE_RIGHT_BUTTON_DOWN |
+                              RI_MOUSE_RIGHT_BUTTON_UP |
+                              RI_MOUSE_MIDDLE_BUTTON_DOWN |
+                              RI_MOUSE_MIDDLE_BUTTON_UP)) != 0;
                 ULONGLONG now = GetTickCount64();
-                if (wheel || now - g_lastInputTick >= kInputCoalesceMs) {
+                if (force || now - g_lastInputTick >= kInputCoalesceMs) {
                     g_lastInputTick = now;
-                    Evaluate(wheel);
+                    Evaluate(force);
                 }
             }
         }
