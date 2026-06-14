@@ -473,6 +473,11 @@ const Theme g_themeTranslucentShell = {{
         L"TextAlignment=Center"}},
     ThemeTargetStyles{L"Windows.UI.Xaml.Controls.StackPanel#PrimaryAndSecondaryTextContainer > Windows.UI.Xaml.Controls.TextBlock#SubtitleText", {
         L"TextAlignment=Center"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Primitives.Thumb#HorizontalThumb > Windows.UI.Xaml.Controls.Border", {
+        L"BorderBrush=Transparent",
+        L"BorderThickness=0,0,0,0"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Primitives.Thumb#HorizontalThumb > Windows.UI.Xaml.Controls.Border > Windows.UI.Xaml.Shapes.Ellipse#SliderInnerThumb", {
+        L"Stroke=Transparent"}},
 }, {
     L"CommonBgBrush=<WindhawkBlur BlurAmount=\"25\" TintColor=\"#25323232\"/>",
     L"thumbnailImageSize=300",
