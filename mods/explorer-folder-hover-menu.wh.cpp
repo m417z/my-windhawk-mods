@@ -39,6 +39,7 @@ Inspired by [QTTabBar](https://qttabbar.wikidot.com/).
 
 #include <initguid.h>  // Must come first so the shell GUIDs we use get storage.
 
+#include <comutil.h>
 #include <docobj.h>
 #include <exdisp.h>
 #include <gdiplus.h>
@@ -457,12 +458,8 @@ static void WorkerBuildItems(std::vector<CachedItem>& items,
     cache->AddProperty(UIA_NamePropertyId);
     cache->put_TreeScope((TreeScope)(TreeScope_Element | TreeScope_Children));
 
-    VARIANT vListItem;
-    vListItem.vt = VT_I4;
-    vListItem.lVal = UIA_ListItemControlTypeId;
-    VARIANT vDataItem;
-    vDataItem.vt = VT_I4;
-    vDataItem.lVal = UIA_DataItemControlTypeId;
+    _variant_t vListItem((long)UIA_ListItemControlTypeId);
+    _variant_t vDataItem((long)UIA_DataItemControlTypeId);
 
     winrt::com_ptr<IUIAutomationCondition> condList;
     winrt::com_ptr<IUIAutomationCondition> condData;
@@ -493,17 +490,15 @@ static void WorkerBuildItems(std::vector<CachedItem>& items,
                 }
 
                 RECT r;
-                BSTR name = nullptr;
+                _bstr_t name;
                 if (SUCCEEDED(row->get_CachedBoundingRectangle(&r)) &&
-                    SUCCEEDED(row->get_CachedName(&name)) && name && *name) {
-                    items.push_back({r, std::wstring(name)});
+                    SUCCEEDED(row->get_CachedName(name.GetAddress())) &&
+                    name.length() > 0) {
+                    items.push_back({r, std::wstring(name, name.length())});
                     if (!firstDone) {
                         ComputeNameColumn(row.get(), r, &nameColumnRight);
                         firstDone = true;
                     }
-                }
-                if (name) {
-                    SysFreeString(name);
                 }
             }
         }
@@ -534,15 +529,9 @@ static bool GetFolderForExplorerWindow(HWND root,
 
     bool result = false;
     for (long i = 0; i < count && !result; i++) {
-        VARIANT v;
-        VariantInit(&v);
-        v.vt = VT_I4;
-        v.lVal = i;
-
+        _variant_t v(i);
         winrt::com_ptr<IDispatch> dispatch;
-        HRESULT hr = shellWindows->Item(v, dispatch.put());
-        VariantClear(&v);
-        if (FAILED(hr) || !dispatch) {
+        if (FAILED(shellWindows->Item(v, dispatch.put())) || !dispatch) {
             continue;
         }
 
