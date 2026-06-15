@@ -2,7 +2,7 @@
 // @id              explorer-folder-hover-menu
 // @name            Folder Hover Menu
 // @description     Hover a folder in File Explorer to get an expand button that opens a cascading menu of the folder's contents
-// @version         1.0
+// @version         1.0.1
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
@@ -34,7 +34,6 @@ Inspired by [QTTabBar](https://qttabbar.wikidot.com/).
 */
 // ==/WindhawkModSettings==
 
-#include <windhawk_api.h>
 #include <windhawk_utils.h>
 
 #include <initguid.h>  // Must come first so the shell GUIDs we use get storage.
@@ -49,7 +48,6 @@ Inspired by [QTTabBar](https://qttabbar.wikidot.com/).
 #include <shlwapi.h>
 #include <shobjidl.h>
 #include <uiautomation.h>
-#include <windows.h>
 
 #include <winrt/base.h>
 
@@ -1365,23 +1363,28 @@ static void Evaluate(bool forceRefresh) {
         return;
     }
 
-    // The button is our own window, not the file view, so while the cursor is
-    // on it keep it as-is (so it stays clickable and the gate below does not
-    // hide it). We intentionally do NOT keep based on the hovered item rect:
-    // the content there can change under a stationary cursor (navigation), so
-    // we always re-hit-test the item area.
-    if (g_chevronVisible && PtInRect(&g_chevronRect, pt)) {
-        return;
-    }
-
-    // Cheap window-level gate: only consider the file list area.
-    HWND under = WindowFromPoint(pt);
-    HWND root = under ? GetAncestor(under, GA_ROOT) : nullptr;
+    bool onButton = g_chevronVisible && PtInRect(&g_chevronRect, pt);
+    HWND root = nullptr;
     bool isDesktop = false;
-    if (!under || !root || !IsExplorerOrDesktopRoot(root, &isDesktop) ||
-        !IsWithinClass(under, L"SHELLDLL_DefView", 8)) {
-        HideChevron();
-        return;
+
+    if (onButton) {
+        // The cursor is on our own button; the button still follows the item
+        // under it. Hit-test the item rect's center against the view the
+        // snapshot already represents (adopted under the lock below). We
+        // deliberately do not use WindowFromPoint here: for a small item the
+        // item center can sit under our button window, and WindowFromPoint
+        // would then return our window and wrongly hide the button.
+        pt.x = (g_hoverItemRect.left + g_hoverItemRect.right) / 2;
+        pt.y = (g_hoverItemRect.top + g_hoverItemRect.bottom) / 2;
+    } else {
+        // Cheap window-level gate: only consider the file list area.
+        HWND under = WindowFromPoint(pt);
+        root = under ? GetAncestor(under, GA_ROOT) : nullptr;
+        if (!under || !root || !IsExplorerOrDesktopRoot(root, &isDesktop) ||
+            !IsWithinClass(under, L"SHELLDLL_DefView", 8)) {
+            HideChevron();
+            return;
+        }
     }
 
     PIDLIST_ABSOLUTE childAbs = nullptr;
@@ -1389,6 +1392,15 @@ static void Evaluate(bool forceRefresh) {
     bool requestRefresh = false;
 
     EnterCriticalSection(&g_snapshotLock);
+    if (onButton) {
+        if (!g_snapValid) {
+            // No view to validate against; leave the button as-is.
+            LeaveCriticalSection(&g_snapshotLock);
+            return;
+        }
+        root = g_snapRoot;
+        isDesktop = g_snapIsDesktop;
+    }
     bool snapMatches =
         g_snapValid && g_snapRoot == root && g_snapIsDesktop == isDesktop;
     if (snapMatches) {
@@ -1516,9 +1528,9 @@ static LRESULT CALLBACK SinkWndProc(HWND hwnd,
     }
 
     if (msg == WM_SETTINGCHANGE) {
-        // System light/dark theme changed: re-apply the app mode and menu theme
-        // now (not when a menu is opening), so the menu never flashes the old
-        // theme on its first paint.
+        // System light/dark theme changed: re-sync the cached immersive/menu
+        // theme state and our dark flag now (not when a menu is opening), so
+        // the menu never flashes the old theme on its first paint.
         if (lParam && wcscmp((LPCWSTR)lParam, L"ImmersiveColorSet") == 0) {
             RefreshDarkMode();
         }
@@ -1710,7 +1722,9 @@ BOOL WhTool_ModInit() {
         return FALSE;
     }
 
-    WaitForSingleObject(g_readyEvent, 5000);
+    if (WaitForSingleObject(g_readyEvent, 5000) != WAIT_OBJECT_0) {
+        Wh_Log(L"UI thread did not signal ready in time");
+    }
     CloseHandle(g_readyEvent);
     g_readyEvent = nullptr;
     return TRUE;
@@ -1727,7 +1741,10 @@ void WhTool_ModUninit() {
         PostThreadMessageW(g_uiThreadId, WM_APP_QUIT, 0, 0);
     }
     if (g_uiThread) {
-        WaitForSingleObject(g_uiThread, 5000);
+        if (WaitForSingleObject(g_uiThread, 5000) != WAIT_OBJECT_0) {
+            Wh_Log(L"UI thread did not exit in time");
+            ExitProcess(1);
+        }
         CloseHandle(g_uiThread);
         g_uiThread = nullptr;
         g_uiThreadId = 0;
@@ -1735,6 +1752,7 @@ void WhTool_ModUninit() {
 
     DeleteCriticalSection(&g_snapshotLock);
 }
+
 ////////////////////////////////////////////////////////////////////////////////
 // Windhawk tool mod implementation for mods which don't need to inject to other
 // processes or hook other functions. Context:
