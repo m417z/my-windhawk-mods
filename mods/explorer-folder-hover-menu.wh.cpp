@@ -126,8 +126,8 @@ static DWORD g_workerThreadId;
 static HANDLE g_workerReadyEvent;
 static winrt::com_ptr<IUIAutomation> g_workerUia;  // Worker thread only.
 static winrt::com_ptr<IUIAutomationElement>
-    g_workerContainer;                // Worker thread only.
-static HWND g_workerContainerRoot;    // Worker thread only.
+    g_workerContainer;                      // Worker thread only.
+static HWND g_workerContainerRoot;          // Worker thread only.
 static PIDLIST_ABSOLUTE g_workerFolderAbs;  // Worker thread only: the folder
 static bool g_workerFolderIsDesktop;        // the shared children map holds.
 static bool g_workerChildrenValid;
@@ -184,8 +184,8 @@ static bool g_reqIsDesktop;
 static POINT g_reqPoint;
 
 // Non-owning observer of the live menu band, valid only while the modal loop in
-// ShowFolderMenuModal is running (UI thread only). The owning reference lives in
-// that function's local com_ptr.
+// ShowFolderMenuModal is running (UI thread only). The owning reference lives
+// in that function's local com_ptr.
 static IMenuBand* g_pActiveMenuBand;
 
 static std::wstring ToLower(const std::wstring& s) {
@@ -231,9 +231,10 @@ static bool(WINAPI* g_pAllowDarkModeForWindow)(HWND, bool);
 // GetSysColor overrides below so they only apply when our menu should be dark.
 static bool g_menuDark;
 
-// Re-syncs the immersive color state with the current system theme. The app mode
-// is set to "allow dark" once at startup; each menu window then opts in per-window
-// at creation (see CreateWindowExW_Hook), so the band follows the system theme.
+// Re-syncs the immersive color state with the current system theme. The app
+// mode is set to "allow dark" once at startup; each menu window then opts in
+// per-window at creation (see CreateWindowExW_Hook), so the band follows the
+// system theme.
 static void RefreshDarkMode() {
     g_menuDark = !IsLightTheme();
     if (g_pRefreshImmersiveColorPolicyState) {
@@ -261,8 +262,8 @@ static void InitDarkMode() {
         (void(WINAPI*)())GetProcAddress(uxtheme, MAKEINTRESOURCEA(104));
     g_pFlushMenuThemes =
         (void(WINAPI*)())GetProcAddress(uxtheme, MAKEINTRESOURCEA(136));
-    g_pAllowDarkModeForWindow =
-        (bool(WINAPI*)(HWND, bool))GetProcAddress(uxtheme, MAKEINTRESOURCEA(133));
+    g_pAllowDarkModeForWindow = (bool(WINAPI*)(HWND, bool))GetProcAddress(
+        uxtheme, MAKEINTRESOURCEA(133));
 
     if (g_pSetPreferredAppMode) {
         g_pSetPreferredAppMode(PAM_AllowDark);
@@ -335,16 +336,25 @@ HBRUSH WINAPI GetSysColorBrush_Hook(int index) {
 
 // While our dark menu is being built, the only windows this process creates are
 // the menu band's. Dark-allowing each one at creation (before its first paint)
-// makes it render dark from the first frame instead of flashing light then dark.
+// makes it render dark from the first frame instead of flashing light then
+// dark.
 using CreateWindowExW_t = decltype(&CreateWindowExW);
 CreateWindowExW_t CreateWindowExW_Orig;
-HWND WINAPI CreateWindowExW_Hook(DWORD exStyle, LPCWSTR className,
-                                 LPCWSTR windowName, DWORD style, int x, int y,
-                                 int width, int height, HWND parent, HMENU menu,
-                                 HINSTANCE instance, LPVOID param) {
-    HWND hwnd = CreateWindowExW_Orig(exStyle, className, windowName, style, x, y,
-                                     width, height, parent, menu, instance,
-                                     param);
+HWND WINAPI CreateWindowExW_Hook(DWORD exStyle,
+                                 LPCWSTR className,
+                                 LPCWSTR windowName,
+                                 DWORD style,
+                                 int x,
+                                 int y,
+                                 int width,
+                                 int height,
+                                 HWND parent,
+                                 HMENU menu,
+                                 HINSTANCE instance,
+                                 LPVOID param) {
+    HWND hwnd =
+        CreateWindowExW_Orig(exStyle, className, windowName, style, x, y, width,
+                             height, parent, menu, instance, param);
     if (hwnd && g_menuActive && g_menuDark && g_pAllowDarkModeForWindow) {
         g_pAllowDarkModeForWindow(hwnd, true);
     }
@@ -536,8 +546,8 @@ static bool GetFolderForExplorerWindow(HWND root,
         }
 
         winrt::com_ptr<IServiceProvider> serviceProvider;
-        if (FAILED(
-                dispatch->QueryInterface(IID_PPV_ARGS(serviceProvider.put()))) ||
+        if (FAILED(dispatch->QueryInterface(
+                IID_PPV_ARGS(serviceProvider.put()))) ||
             !serviceProvider) {
             continue;
         }
@@ -983,7 +993,8 @@ static winrt::com_ptr<IMenuBand> PopupFolderMenu(PCIDLIST_ABSOLUTE pidlAbs,
                     folder.get(), pidlAbs, nullptr,
                     SMSET_BOTTOM | SMSET_USEBKICONEXTRACTION);
                 if (SUCCEEDED(hr)) {
-                    hr = shellMenu->QueryInterface(IID_PPV_ARGS(deskBand.put()));
+                    hr =
+                        shellMenu->QueryInterface(IID_PPV_ARGS(deskBand.put()));
                 }
             }
         }
@@ -1241,8 +1252,8 @@ static void HideChevron() {
 // Takes ownership of childAbs.
 static void ShowChevronForItem(PIDLIST_ABSOLUTE childAbs, RECT itemRect) {
     // No change since last time: keep the existing button. This makes the
-    // re-checks (mouse moves, refreshes, the watchdog) cheap - they only repaint
-    // when the hovered folder or its rect actually changes.
+    // re-checks (mouse moves, refreshes, the watchdog) cheap - they only
+    // repaint when the hovered folder or its rect actually changes.
     if (g_chevronVisible && g_targetPidl &&
         EqualRect(&g_hoverItemRect, &itemRect) &&
         ILIsEqual(g_targetPidl, childAbs)) {
@@ -1354,11 +1365,11 @@ static void Evaluate(bool forceRefresh) {
         return;
     }
 
-    // The button is our own window, not the file view, so while the cursor is on
-    // it keep it as-is (so it stays clickable and the gate below does not hide
-    // it). We intentionally do NOT keep based on the hovered item rect: the
-    // content there can change under a stationary cursor (navigation), so we
-    // always re-hit-test the item area.
+    // The button is our own window, not the file view, so while the cursor is
+    // on it keep it as-is (so it stays clickable and the gate below does not
+    // hide it). We intentionally do NOT keep based on the hovered item rect:
+    // the content there can change under a stationary cursor (navigation), so
+    // we always re-hit-test the item area.
     if (g_chevronVisible && PtInRect(&g_chevronRect, pt)) {
         return;
     }
@@ -1396,7 +1407,8 @@ static void Evaluate(bool forceRefresh) {
                 break;
             }
         }
-        if (forceRefresh || (GetTickCount64() - g_snapBuiltTick) > kRefreshTtlMs) {
+        if (forceRefresh ||
+            (GetTickCount64() - g_snapBuiltTick) > kRefreshTtlMs) {
             requestRefresh = true;
         }
     } else {
@@ -1415,9 +1427,10 @@ static void Evaluate(bool forceRefresh) {
         PostThreadMessageW(g_workerThreadId, WM_APP_DO_REFRESH, 0, 0);
     }
 
-    // When forcing a refresh, the snapshot just hit-tested may be stale (a scroll
-    // or navigation prompted the force), so don't update the button from it -
-    // leave it as-is and let the refresh-done re-evaluation apply fresh data.
+    // When forcing a refresh, the snapshot just hit-tested may be stale (a
+    // scroll or navigation prompted the force), so don't update the button from
+    // it - leave it as-is and let the refresh-done re-evaluation apply fresh
+    // data.
     if (forceRefresh) {
         if (childAbs) {
             ILFree(childAbs);
@@ -1525,12 +1538,12 @@ static LRESULT CALLBACK SinkWndProc(HWND hwnd,
                 // A wheel or button event may scroll or navigate, so force a
                 // refresh; plain moves only refresh once the cache goes stale.
                 bool force =
-                    (flags & (RI_MOUSE_WHEEL | RI_MOUSE_HWHEEL |
-                              RI_MOUSE_LEFT_BUTTON_DOWN | RI_MOUSE_LEFT_BUTTON_UP |
-                              RI_MOUSE_RIGHT_BUTTON_DOWN |
-                              RI_MOUSE_RIGHT_BUTTON_UP |
-                              RI_MOUSE_MIDDLE_BUTTON_DOWN |
-                              RI_MOUSE_MIDDLE_BUTTON_UP)) != 0;
+                    (flags &
+                     (RI_MOUSE_WHEEL | RI_MOUSE_HWHEEL |
+                      RI_MOUSE_LEFT_BUTTON_DOWN | RI_MOUSE_LEFT_BUTTON_UP |
+                      RI_MOUSE_RIGHT_BUTTON_DOWN | RI_MOUSE_RIGHT_BUTTON_UP |
+                      RI_MOUSE_MIDDLE_BUTTON_DOWN |
+                      RI_MOUSE_MIDDLE_BUTTON_UP)) != 0;
                 ULONGLONG now = GetTickCount64();
                 if (force || now - g_lastInputTick >= kInputCoalesceMs) {
                     g_lastInputTick = now;
