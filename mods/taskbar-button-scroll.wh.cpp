@@ -1214,11 +1214,13 @@ bool HookTaskbarSymbols() {
             {LR"(public: virtual long __cdecl CTaskListWnd::DismissHoverUI(int))"},
             &CTaskListWnd_DismissHoverUI_Original,
             CTaskListWnd_DismissHoverUI_Hook,
+            true,  // Classic thumbs, removed in or near 10.0.26100.8544.
         },
         {
             {LR"(public: virtual int __cdecl CTaskListThumbnailWnd::ThumbIndexFromPoint(struct tagPOINT const &)const )"},
             &CTaskListThumbnailWnd_ThumbIndexFromPoint_Original,
             CTaskListThumbnailWnd_ThumbIndexFromPoint_Hook,
+            true,  // Classic thumbs, removed in or near 10.0.26100.8544.
         },
         {
             {LR"(protected: virtual __int64 __cdecl CTaskListWnd::v_WndProc(struct HWND__ *,unsigned int,unsigned __int64,__int64))"},
@@ -1228,15 +1230,20 @@ bool HookTaskbarSymbols() {
         {
             {LR"(private: void __cdecl CTaskListThumbnailWnd::_HandleContextMenu(struct tagPOINT,int))"},
             &CTaskListThumbnailWnd__HandleContextMenu_Original,
+            nullptr,
+            true,  // Classic thumbs, removed in or near 10.0.26100.8544.
         },
         {
             {LR"(private: void __cdecl CTaskListThumbnailWnd::_RefreshThumbnail(int))"},
             &CTaskListThumbnailWnd__RefreshThumbnail_Original,
+            nullptr,
+            true,  // Classic thumbs, removed in or near 10.0.26100.8544.
         },
         {
             {LR"(private: virtual __int64 __cdecl CTaskListThumbnailWnd::v_WndProc(struct HWND__ *,unsigned int,unsigned __int64,__int64))"},
             &CTaskListThumbnailWnd_v_WndProc_Original,
             CTaskListThumbnailWnd_v_WndProc_Hook,
+            true,  // Classic thumbs, removed in or near 10.0.26100.8544.
         },
         // For offsets:
         {
