@@ -2,7 +2,7 @@
 // @id              explorer-folder-hover-menu
 // @name            Folder Hover Menu
 // @description     Hover a folder in File Explorer to get an expand button that opens a cascading menu of the folder's contents
-// @version         1.0.1
+// @version         1.0.2
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
@@ -543,9 +543,9 @@ static HWND GetExplorerTabWindow(HWND hwnd) {
 // Finds the shell view that belongs to the given Explorer tab and returns its
 // current folder as an IShellFolder plus the folder's absolute pidl (the caller
 // frees the pidl with ILFree; the folder is owned by the com_ptr).
-static bool GetFolderForExplorerWindow(HWND tab,
-                                       winrt::com_ptr<IShellFolder>& outFolder,
-                                       PIDLIST_ABSOLUTE* outFolderAbs) {
+static bool GetFolderForExplorerTab(HWND tab,
+                                    winrt::com_ptr<IShellFolder>& outFolder,
+                                    PIDLIST_ABSOLUTE* outFolderAbs) {
     outFolder = nullptr;
     *outFolderAbs = nullptr;
 
@@ -804,7 +804,7 @@ static void WorkerBuildSnapshot(HWND tab, bool isDesktop, POINT pt) {
     if (isDesktop) {
         SHGetDesktopFolder(folder.put());
     } else {
-        GetFolderForExplorerWindow(tab, folder, &folderAbs);
+        GetFolderForExplorerTab(tab, folder, &folderAbs);
     }
 
     if (!folder) {
