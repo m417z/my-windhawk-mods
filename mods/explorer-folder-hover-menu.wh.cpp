@@ -226,20 +226,17 @@ enum PreferredAppMode {
 static PreferredAppMode(WINAPI* g_pSetPreferredAppMode)(PreferredAppMode);
 static void(WINAPI* g_pFlushMenuThemes)();
 static void(WINAPI* g_pRefreshImmersiveColorPolicyState)();
+static bool(WINAPI* g_pAllowDarkModeForWindow)(HWND, bool);
 
-// True while a menu should render dark (set when a menu is about to be shown);
-// gates the GetSysColor overrides below so they only affect our dark menu.
+// Tracks the system theme (updated at startup and on theme changes); gates the
+// GetSysColor overrides below so they only apply when our menu should be dark.
 static bool g_menuDark;
 
-// Forces the process's app mode to match the current system theme. The menu
-// band is DirectUI (a separate path from the immersive context menus), so it
-// only follows when the whole app is forced, not merely "allowed", dark.
+// Re-syncs the immersive color state with the current system theme. The app mode
+// is set to "allow dark" once at startup; each menu window then opts in per-window
+// at creation (see CreateWindowExW_Hook), so the band follows the system theme.
 static void RefreshDarkMode() {
-    bool light = IsLightTheme();
-    g_menuDark = !light;
-    if (g_pSetPreferredAppMode) {
-        g_pSetPreferredAppMode(light ? PAM_ForceLight : PAM_ForceDark);
-    }
+    g_menuDark = !IsLightTheme();
     if (g_pRefreshImmersiveColorPolicyState) {
         g_pRefreshImmersiveColorPolicyState();
     }
@@ -256,7 +253,8 @@ static void InitDarkMode() {
     }
 
     // Ordinals: 135 SetPreferredAppMode (AllowDarkModeForApp on 1809), 104
-    // RefreshImmersiveColorPolicyState, 136 FlushMenuThemes.
+    // RefreshImmersiveColorPolicyState, 136 FlushMenuThemes, 133
+    // AllowDarkModeForWindow.
     g_pSetPreferredAppMode =
         (PreferredAppMode(WINAPI*)(PreferredAppMode))GetProcAddress(
             uxtheme, MAKEINTRESOURCEA(135));
@@ -264,7 +262,12 @@ static void InitDarkMode() {
         (void(WINAPI*)())GetProcAddress(uxtheme, MAKEINTRESOURCEA(104));
     g_pFlushMenuThemes =
         (void(WINAPI*)())GetProcAddress(uxtheme, MAKEINTRESOURCEA(136));
+    g_pAllowDarkModeForWindow =
+        (bool(WINAPI*)(HWND, bool))GetProcAddress(uxtheme, MAKEINTRESOURCEA(133));
 
+    if (g_pSetPreferredAppMode) {
+        g_pSetPreferredAppMode(PAM_AllowDark);
+    }
     RefreshDarkMode();
 }
 
@@ -331,6 +334,24 @@ HBRUSH WINAPI GetSysColorBrush_Hook(int index) {
     return GetSysColorBrush_Orig(index);
 }
 
+// While our dark menu is being built, the only windows this process creates are
+// the menu band's. Dark-allowing each one at creation (before its first paint)
+// makes it render dark from the first frame instead of flashing light then dark.
+using CreateWindowExW_t = decltype(&CreateWindowExW);
+CreateWindowExW_t CreateWindowExW_Orig;
+HWND WINAPI CreateWindowExW_Hook(DWORD exStyle, LPCWSTR className,
+                                 LPCWSTR windowName, DWORD style, int x, int y,
+                                 int width, int height, HWND parent, HMENU menu,
+                                 HINSTANCE instance, LPVOID param) {
+    HWND hwnd = CreateWindowExW_Orig(exStyle, className, windowName, style, x, y,
+                                     width, height, parent, menu, instance,
+                                     param);
+    if (hwnd && g_menuActive && g_menuDark && g_pAllowDarkModeForWindow) {
+        g_pAllowDarkModeForWindow(hwnd, true);
+    }
+    return hwnd;
+}
+
 static void InitMenuColorHooks() {
     for (int i = 0; i < (int)ARRAYSIZE(kDarkColors); i++) {
         g_darkBrushes[i] = CreateSolidBrush(kDarkColors[i].color);
@@ -339,6 +360,8 @@ static void InitMenuColorHooks() {
                                    &GetSysColor_Orig);
     WindhawkUtils::SetFunctionHook(GetSysColorBrush, GetSysColorBrush_Hook,
                                    &GetSysColorBrush_Orig);
+    WindhawkUtils::SetFunctionHook(CreateWindowExW, CreateWindowExW_Hook,
+                                   &CreateWindowExW_Orig);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -1074,9 +1097,6 @@ static IMenuBand* PopupFolderMenu(PCIDLIST_ABSOLUTE pidlAbs, RECT anchorRect) {
 static void ShowFolderMenuModal(PCIDLIST_ABSOLUTE pidlAbs, RECT anchorRect) {
     g_menuActive = true;
 
-    // Pick up the current system theme in case it changed since startup.
-    RefreshDarkMode();
-
     IMenuBand* band = PopupFolderMenu(pidlAbs, anchorRect);
     if (band) {
         // The popup belongs to our background tool process, so the menu band's
@@ -1537,6 +1557,16 @@ static LRESULT CALLBACK SinkWndProc(HWND hwnd,
         // Periodic re-check while the button is shown, to catch navigation that
         // moved no mouse (double-click / keyboard Enter).
         Evaluate(true);
+        return 0;
+    }
+
+    if (msg == WM_SETTINGCHANGE) {
+        // System light/dark theme changed: re-apply the app mode and menu theme
+        // now (not when a menu is opening), so the menu never flashes the old
+        // theme on its first paint.
+        if (lParam && wcscmp((LPCWSTR)lParam, L"ImmersiveColorSet") == 0) {
+            RefreshDarkMode();
+        }
         return 0;
     }
 
