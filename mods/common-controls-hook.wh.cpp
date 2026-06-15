@@ -169,7 +169,7 @@ BOOL Wh_ModInit() {
         if (addr) {                                                \
             if (!WindhawkUtils::SetFunctionHook(addr, name##_hook, \
                                                 &name##_orig)) {   \
-                Wh_Log(L"Failed to set hook for " L#name);         \
+                Wh_Log(L"Failed to set hook for " TEXT(#name));    \
             }                                                      \
         }                                                          \
     } while (0)
