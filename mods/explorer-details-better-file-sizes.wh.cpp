@@ -1204,8 +1204,24 @@ std::mutex g_everything4Wh_ThreadMutex;
 std::atomic<HANDLE> g_everything4Wh_Thread;
 HANDLE g_everything4Wh_ThreadReadyEvent;
 
-bool IsUncPath(PCWSTR folderPath) {
-    return folderPath[0] == L'\\' && folderPath[1] == L'\\';
+bool IsNetworkPath(PCWSTR folderPath) {
+    // UNC path, e.g. \\server\share.
+    if (folderPath[0] == L'\\' && folderPath[1] == L'\\') {
+        return true;
+    }
+
+    // Mapped network drive, e.g. Z:\. GetDriveType reads the drive type from
+    // the local mount table without hitting the network, so it's cheap.
+    if (((folderPath[0] >= L'A' && folderPath[0] <= L'Z') ||
+         (folderPath[0] >= L'a' && folderPath[0] <= L'z')) &&
+        folderPath[1] == L':' && folderPath[2] == L'\\') {
+        WCHAR root[] = {folderPath[0], L':', L'\\', L'\0'};
+        if (GetDriveType(root) == DRIVE_REMOTE) {
+            return true;
+        }
+    }
+
+    return false;
 }
 
 bool IsReparse(PCWSTR folderPath) {
@@ -1773,11 +1789,12 @@ HRESULT WINAPI CFSFolder__GetSize_Hook(void* pCFSFolder,
                 // the link itself. Subfolders of reparse points aren't indexed,
                 // so ES_QUERY_NO_INDEX is returned in this case.
                 //
-                // Avoid resolving UNC folders which are not indexed as it can
-                // be slow, and will be done for all folders if the UNC host
-                // isn't indexed.
+                // Avoid resolving network folders (UNC paths and mapped network
+                // drives) which are not indexed as it can be slow, and will be
+                // done for all folders if the network host isn't indexed.
                 if (result == ES_QUERY_ZERO_SIZE_REPARSE_POINT ||
-                    (result == ES_QUERY_NO_INDEX && !IsUncPath(path.c_str()))) {
+                    (result == ES_QUERY_NO_INDEX &&
+                     !IsNetworkPath(path.c_str()))) {
                     Wh_Log(L"Resolving path due to status: %s",
                            g_gsQueryStatus[result]);
 
