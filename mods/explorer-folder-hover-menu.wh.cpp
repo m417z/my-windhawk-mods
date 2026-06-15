@@ -50,6 +50,8 @@ Inspired by [QTTabBar](https://qttabbar.wikidot.com/).
 #include <uiautomation.h>
 #include <windows.h>
 
+#include <winrt/base.h>
+
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -121,9 +123,10 @@ static HWINEVENTHOOK g_foregroundHook;
 static HANDLE g_workerThread;
 static DWORD g_workerThreadId;
 static HANDLE g_workerReadyEvent;
-static IUIAutomation* g_workerUia;               // Worker thread only.
-static IUIAutomationElement* g_workerContainer;  // Worker thread only.
-static HWND g_workerContainerRoot;               // Worker thread only.
+static winrt::com_ptr<IUIAutomation> g_workerUia;  // Worker thread only.
+static winrt::com_ptr<IUIAutomationElement>
+    g_workerContainer;                // Worker thread only.
+static HWND g_workerContainerRoot;    // Worker thread only.
 static PIDLIST_ABSOLUTE g_workerFolderAbs;  // Worker thread only: the folder
 static bool g_workerFolderIsDesktop;        // the shared children map holds.
 static bool g_workerChildrenValid;
@@ -179,15 +182,10 @@ static HWND g_reqRoot;
 static bool g_reqIsDesktop;
 static POINT g_reqPoint;
 
+// Non-owning observer of the live menu band, valid only while the modal loop in
+// ShowFolderMenuModal is running (UI thread only). The owning reference lives in
+// that function's local com_ptr.
 static IMenuBand* g_pActiveMenuBand;
-
-template <typename T>
-static void SafeRelease(T** pp) {
-    if (*pp) {
-        (*pp)->Release();
-        *pp = nullptr;
-    }
-}
 
 static std::wstring ToLower(const std::wstring& s) {
     std::wstring r = s;
@@ -368,47 +366,40 @@ static void InitMenuColorHooks() {
 // UI Automation (worker thread only): enumerate the visible file-list items.
 
 // Walks up from the element under the point to the file list / grid container
-// (List, DataGrid or Table). Returns it (caller releases) or nullptr.
-static IUIAutomationElement* FindContainerFromPoint(POINT pt) {
+// (List, DataGrid or Table). Returns it, or nullptr.
+static winrt::com_ptr<IUIAutomationElement> FindContainerFromPoint(POINT pt) {
     if (!g_workerUia) {
         return nullptr;
     }
 
-    IUIAutomationElement* element = nullptr;
-    if (FAILED(g_workerUia->ElementFromPoint(pt, &element)) || !element) {
+    winrt::com_ptr<IUIAutomationElement> element;
+    if (FAILED(g_workerUia->ElementFromPoint(pt, element.put())) || !element) {
         return nullptr;
     }
 
-    IUIAutomationTreeWalker* walker = nullptr;
-    g_workerUia->get_ControlViewWalker(&walker);
+    winrt::com_ptr<IUIAutomationTreeWalker> walker;
+    g_workerUia->get_ControlViewWalker(walker.put());
 
-    IUIAutomationElement* container = nullptr;
-    IUIAutomationElement* current = element;
-    current->AddRef();
+    winrt::com_ptr<IUIAutomationElement> current = element;
     for (int depth = 0; current && depth < 16; depth++) {
         CONTROLTYPEID controlType = 0;
         current->get_CurrentControlType(&controlType);
         if (controlType == UIA_ListControlTypeId ||
             controlType == UIA_DataGridControlTypeId ||
             controlType == UIA_TableControlTypeId) {
-            container = current;
-            container->AddRef();
-            break;
+            return current;
         }
 
-        IUIAutomationElement* parent = nullptr;
-        if (!walker || FAILED(walker->GetParentElement(current, &parent)) ||
+        winrt::com_ptr<IUIAutomationElement> parent;
+        if (!walker ||
+            FAILED(walker->GetParentElement(current.get(), parent.put())) ||
             !parent) {
             break;
         }
-        current->Release();
-        current = parent;
+        current = std::move(parent);
     }
 
-    SafeRelease(&current);
-    SafeRelease(&walker);
-    SafeRelease(&element);
-    return container;
+    return nullptr;
 }
 
 // In a columned view (Details or List) the row's children are the cells laid
@@ -418,18 +409,18 @@ static IUIAutomationElement* FindContainerFromPoint(POINT pt) {
 static void ComputeNameColumn(IUIAutomationElement* row,
                               const RECT& rowRect,
                               LONG* outNameColumnRight) {
-    IUIAutomationElementArray* cells = nullptr;
-    if (FAILED(row->GetCachedChildren(&cells)) || !cells) {
+    winrt::com_ptr<IUIAutomationElementArray> cells;
+    if (FAILED(row->GetCachedChildren(cells.put())) || !cells) {
         return;
     }
 
     int count = 0;
     cells->get_Length(&count);
     if (count >= 2) {
-        IUIAutomationElement* c0 = nullptr;
-        IUIAutomationElement* c1 = nullptr;
-        cells->GetElement(0, &c0);
-        cells->GetElement(1, &c1);
+        winrt::com_ptr<IUIAutomationElement> c0;
+        winrt::com_ptr<IUIAutomationElement> c1;
+        cells->GetElement(0, c0.put());
+        cells->GetElement(1, c1.put());
 
         RECT r0;
         RECT r1;
@@ -444,12 +435,7 @@ static void ComputeNameColumn(IUIAutomationElement* row,
             r1.left >= r0.right - 8) {
             *outNameColumnRight = r0.right;
         }
-
-        SafeRelease(&c0);
-        SafeRelease(&c1);
     }
-
-    cells->Release();
 }
 
 // Enumerates the active container's visible items (rect + name) in a single UI
@@ -463,8 +449,8 @@ static void WorkerBuildItems(std::vector<CachedItem>& items,
         return;
     }
 
-    IUIAutomationCacheRequest* cache = nullptr;
-    if (FAILED(g_workerUia->CreateCacheRequest(&cache)) || !cache) {
+    winrt::com_ptr<IUIAutomationCacheRequest> cache;
+    if (FAILED(g_workerUia->CreateCacheRequest(cache.put())) || !cache) {
         return;
     }
     cache->AddProperty(UIA_BoundingRectanglePropertyId);
@@ -478,30 +464,31 @@ static void WorkerBuildItems(std::vector<CachedItem>& items,
     vDataItem.vt = VT_I4;
     vDataItem.lVal = UIA_DataItemControlTypeId;
 
-    IUIAutomationCondition* condList = nullptr;
-    IUIAutomationCondition* condData = nullptr;
-    IUIAutomationCondition* cond = nullptr;
+    winrt::com_ptr<IUIAutomationCondition> condList;
+    winrt::com_ptr<IUIAutomationCondition> condData;
+    winrt::com_ptr<IUIAutomationCondition> cond;
     g_workerUia->CreatePropertyCondition(UIA_ControlTypePropertyId, vListItem,
-                                         &condList);
+                                         condList.put());
     g_workerUia->CreatePropertyCondition(UIA_ControlTypePropertyId, vDataItem,
-                                         &condData);
+                                         condData.put());
     if (condList && condData) {
-        g_workerUia->CreateOrCondition(condList, condData, &cond);
+        g_workerUia->CreateOrCondition(condList.get(), condData.get(),
+                                       cond.put());
     }
 
     if (cond) {
         // Descendants (not just children) so grouped views, where items sit
         // under group headers, are still found.
-        IUIAutomationElementArray* rows = nullptr;
+        winrt::com_ptr<IUIAutomationElementArray> rows;
         if (SUCCEEDED(g_workerContainer->FindAllBuildCache(
-                TreeScope_Descendants, cond, cache, &rows)) &&
+                TreeScope_Descendants, cond.get(), cache.get(), rows.put())) &&
             rows) {
             int length = 0;
             rows->get_Length(&length);
             bool firstDone = false;
             for (int i = 0; i < length; i++) {
-                IUIAutomationElement* row = nullptr;
-                if (FAILED(rows->GetElement(i, &row)) || !row) {
+                winrt::com_ptr<IUIAutomationElement> row;
+                if (FAILED(rows->GetElement(i, row.put())) || !row) {
                     continue;
                 }
 
@@ -511,23 +498,16 @@ static void WorkerBuildItems(std::vector<CachedItem>& items,
                     SUCCEEDED(row->get_CachedName(&name)) && name && *name) {
                     items.push_back({r, std::wstring(name)});
                     if (!firstDone) {
-                        ComputeNameColumn(row, r, &nameColumnRight);
+                        ComputeNameColumn(row.get(), r, &nameColumnRight);
                         firstDone = true;
                     }
                 }
                 if (name) {
                     SysFreeString(name);
                 }
-                row->Release();
             }
-            rows->Release();
         }
     }
-
-    SafeRelease(&cond);
-    SafeRelease(&condData);
-    SafeRelease(&condList);
-    cache->Release();
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -535,16 +515,16 @@ static void WorkerBuildItems(std::vector<CachedItem>& items,
 
 // Finds the active shell view of the given top-level Explorer window and
 // returns its current folder as an IShellFolder plus the folder's absolute pidl
-// (the caller owns both).
+// (the caller frees the pidl with ILFree; the folder is owned by the com_ptr).
 static bool GetFolderForExplorerWindow(HWND root,
-                                       IShellFolder** outFolder,
+                                       winrt::com_ptr<IShellFolder>& outFolder,
                                        PIDLIST_ABSOLUTE* outFolderAbs) {
-    *outFolder = nullptr;
+    outFolder = nullptr;
     *outFolderAbs = nullptr;
 
-    IShellWindows* shellWindows = nullptr;
+    winrt::com_ptr<IShellWindows> shellWindows;
     if (FAILED(CoCreateInstance(CLSID_ShellWindows, nullptr, CLSCTX_ALL,
-                                IID_PPV_ARGS(&shellWindows))) ||
+                                IID_PPV_ARGS(shellWindows.put()))) ||
         !shellWindows) {
         return false;
     }
@@ -559,91 +539,85 @@ static bool GetFolderForExplorerWindow(HWND root,
         v.vt = VT_I4;
         v.lVal = i;
 
-        IDispatch* dispatch = nullptr;
-        if (FAILED(shellWindows->Item(v, &dispatch)) || !dispatch) {
-            VariantClear(&v);
-            continue;
-        }
+        winrt::com_ptr<IDispatch> dispatch;
+        HRESULT hr = shellWindows->Item(v, dispatch.put());
         VariantClear(&v);
-
-        IServiceProvider* serviceProvider = nullptr;
-        HRESULT hr = dispatch->QueryInterface(IID_PPV_ARGS(&serviceProvider));
-        SafeRelease(&dispatch);
-        if (FAILED(hr) || !serviceProvider) {
+        if (FAILED(hr) || !dispatch) {
             continue;
         }
 
-        IShellBrowser* browser = nullptr;
-        hr = serviceProvider->QueryService(SID_STopLevelBrowser,
-                                           IID_PPV_ARGS(&browser));
-        SafeRelease(&serviceProvider);
-        if (FAILED(hr) || !browser) {
+        winrt::com_ptr<IServiceProvider> serviceProvider;
+        if (FAILED(
+                dispatch->QueryInterface(IID_PPV_ARGS(serviceProvider.put()))) ||
+            !serviceProvider) {
             continue;
         }
 
-        IShellView* view = nullptr;
-        hr = browser->QueryActiveShellView(&view);
-        SafeRelease(&browser);
-        if (FAILED(hr) || !view) {
+        winrt::com_ptr<IShellBrowser> browser;
+        if (FAILED(serviceProvider->QueryService(
+                SID_STopLevelBrowser, IID_PPV_ARGS(browser.put()))) ||
+            !browser) {
+            continue;
+        }
+
+        winrt::com_ptr<IShellView> view;
+        if (FAILED(browser->QueryActiveShellView(view.put())) || !view) {
             continue;
         }
 
         HWND viewHwnd = nullptr;
         if (FAILED(view->GetWindow(&viewHwnd)) || !viewHwnd ||
             GetAncestor(viewHwnd, GA_ROOT) != root) {
-            SafeRelease(&view);
             continue;
         }
 
-        IFolderView* folderView = nullptr;
-        if (SUCCEEDED(view->QueryInterface(IID_PPV_ARGS(&folderView))) &&
-            folderView) {
-            IPersistFolder2* persistFolder = nullptr;
-            if (SUCCEEDED(
-                    folderView->GetFolder(IID_PPV_ARGS(&persistFolder))) &&
-                persistFolder) {
-                PIDLIST_ABSOLUTE folderAbs = nullptr;
-                if (SUCCEEDED(persistFolder->GetCurFolder(&folderAbs)) &&
-                    folderAbs) {
-                    IShellFolder* desktop = nullptr;
-                    if (SUCCEEDED(SHGetDesktopFolder(&desktop)) && desktop) {
-                        IShellFolder* folder = nullptr;
-                        if (SUCCEEDED(desktop->BindToObject(
-                                folderAbs, nullptr, IID_PPV_ARGS(&folder))) &&
-                            folder) {
-                            *outFolder = folder;
-                            *outFolderAbs = folderAbs;
-                            folderAbs = nullptr;
-                            result = true;
-                        }
-                        desktop->Release();
-                    }
-                    if (folderAbs) {
-                        ILFree(folderAbs);
-                    }
-                }
-                persistFolder->Release();
-            }
-            folderView->Release();
+        winrt::com_ptr<IFolderView> folderView;
+        if (FAILED(view->QueryInterface(IID_PPV_ARGS(folderView.put()))) ||
+            !folderView) {
+            continue;
         }
 
-        SafeRelease(&view);
+        winrt::com_ptr<IPersistFolder2> persistFolder;
+        if (FAILED(folderView->GetFolder(IID_PPV_ARGS(persistFolder.put()))) ||
+            !persistFolder) {
+            continue;
+        }
+
+        PIDLIST_ABSOLUTE folderAbs = nullptr;
+        if (FAILED(persistFolder->GetCurFolder(&folderAbs)) || !folderAbs) {
+            continue;
+        }
+
+        winrt::com_ptr<IShellFolder> desktop;
+        if (SUCCEEDED(SHGetDesktopFolder(desktop.put())) && desktop) {
+            winrt::com_ptr<IShellFolder> folder;
+            if (SUCCEEDED(desktop->BindToObject(folderAbs, nullptr,
+                                                IID_PPV_ARGS(folder.put()))) &&
+                folder) {
+                outFolder = std::move(folder);
+                *outFolderAbs = folderAbs;
+                folderAbs = nullptr;
+                result = true;
+            }
+        }
+        if (folderAbs) {
+            ILFree(folderAbs);
+        }
     }
 
-    shellWindows->Release();
     return result;
 }
 
 static bool IsFolderPidl(PCIDLIST_ABSOLUTE pidl) {
-    IShellItem* item = nullptr;
+    winrt::com_ptr<IShellItem> item;
     bool isFolder = false;
-    if (SUCCEEDED(SHCreateItemFromIDList(pidl, IID_PPV_ARGS(&item))) && item) {
+    if (SUCCEEDED(SHCreateItemFromIDList(pidl, IID_PPV_ARGS(item.put()))) &&
+        item) {
         SFGAOF attrs = 0;
         if (SUCCEEDED(item->GetAttributes(SFGAO_FOLDER, &attrs)) &&
             (attrs & SFGAO_FOLDER)) {
             isFolder = true;
         }
-        item->Release();
     }
     return isFolder;
 }
@@ -653,9 +627,9 @@ static bool IsFolderPidl(PCIDLIST_ABSOLUTE pidl) {
 // data is read (no link resolution / network access), so it cannot stall.
 static PIDLIST_ABSOLUTE ResolveFolderShortcut(IShellFolder* folder,
                                               LPCITEMIDLIST child) {
-    IShellLinkW* link = nullptr;
+    winrt::com_ptr<IShellLinkW> link;
     if (FAILED(folder->GetUIObjectOf(nullptr, 1, &child, IID_IShellLinkW,
-                                     nullptr, (void**)&link)) ||
+                                     nullptr, link.put_void())) ||
         !link) {
         return nullptr;
     }
@@ -689,7 +663,6 @@ static PIDLIST_ABSOLUTE ResolveFolderShortcut(IShellFolder* folder,
     if (target) {
         ILFree(target);
     }
-    link->Release();
     return result;
 }
 
@@ -703,11 +676,11 @@ static void WorkerBuildChildren(
     std::unordered_map<std::wstring, PIDLIST_ABSOLUTE>& out) {
     // Non-folders are enumerated too, so shortcuts (.lnk files) that point to a
     // folder can be picked up.
-    IEnumIDList* enumerator = nullptr;
+    winrt::com_ptr<IEnumIDList> enumerator;
     if (FAILED(folder->EnumObjects(
             nullptr,
             SHCONTF_FOLDERS | SHCONTF_NONFOLDERS | SHCONTF_INCLUDEHIDDEN,
-            &enumerator)) ||
+            enumerator.put())) ||
         !enumerator) {
         return;
     }
@@ -779,8 +752,6 @@ static void WorkerBuildChildren(
         CoTaskMemFree(child);
         child = nullptr;
     }
-
-    enumerator->Release();
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -792,7 +763,7 @@ static bool EnsureWorkerUia() {
     }
     HRESULT hr =
         CoCreateInstance(CLSID_CUIAutomation, nullptr, CLSCTX_INPROC_SERVER,
-                         IID_PPV_ARGS(&g_workerUia));
+                         IID_PPV_ARGS(g_workerUia.put()));
     if (FAILED(hr) || !g_workerUia) {
         g_workerUia = nullptr;
         Wh_Log(L"worker CoCreateInstance(CUIAutomation) failed, hr=0x%08X", hr);
@@ -807,14 +778,12 @@ static bool EnsureWorkerUia() {
 static void WorkerBuildSnapshot(HWND root, bool isDesktop, POINT pt) {
     ULONGLONG tick = GetTickCount64();
 
-    IShellFolder* folder = nullptr;
+    winrt::com_ptr<IShellFolder> folder;
     PIDLIST_ABSOLUTE folderAbs = nullptr;
     if (isDesktop) {
-        if (FAILED(SHGetDesktopFolder(&folder))) {
-            folder = nullptr;
-        }
-    } else if (!GetFolderForExplorerWindow(root, &folder, &folderAbs)) {
-        folder = nullptr;
+        SHGetDesktopFolder(folder.put());
+    } else {
+        GetFolderForExplorerWindow(root, folder, &folderAbs);
     }
 
     if (!folder) {
@@ -839,10 +808,8 @@ static void WorkerBuildSnapshot(HWND root, bool isDesktop, POINT pt) {
 
     // (Re)acquire the list element when the window changed.
     if (root != g_workerContainerRoot || !g_workerContainer) {
-        IUIAutomationElement* container = FindContainerFromPoint(pt);
-        SafeRelease(&g_workerContainer);
-        g_workerContainer = container;
-        g_workerContainerRoot = container ? root : nullptr;
+        g_workerContainer = FindContainerFromPoint(pt);
+        g_workerContainerRoot = g_workerContainer ? root : nullptr;
     }
 
     std::vector<CachedItem> items;
@@ -852,10 +819,9 @@ static void WorkerBuildSnapshot(HWND root, bool isDesktop, POINT pt) {
     // An empty rebuild over a populated view means the element went stale
     // (navigation, re-sort, view-mode change): re-acquire it and try once more.
     if (items.empty()) {
-        IUIAutomationElement* container = FindContainerFromPoint(pt);
+        auto container = FindContainerFromPoint(pt);
         if (container) {
-            SafeRelease(&g_workerContainer);
-            g_workerContainer = container;
+            g_workerContainer = std::move(container);
             g_workerContainerRoot = root;
             WorkerBuildItems(items, nameColumnRight);
         }
@@ -864,11 +830,9 @@ static void WorkerBuildSnapshot(HWND root, bool isDesktop, POINT pt) {
     std::unordered_map<std::wstring, PIDLIST_ABSOLUTE> children;
     bool rebuiltChildren = false;
     if (folderChanged) {
-        WorkerBuildChildren(folder, folderAbs, isDesktop, children);
+        WorkerBuildChildren(folder.get(), folderAbs, isDesktop, children);
         rebuiltChildren = true;
     }
-
-    folder->Release();
 
     // Swap the new data in under the lock (O(1)); the old data ends up in the
     // local temporaries and is destroyed/freed below, outside the lock.
@@ -955,8 +919,8 @@ static DWORD WINAPI WorkerThreadProc(LPVOID param) {
         DispatchMessage(&msg);
     }
 
-    SafeRelease(&g_workerContainer);
-    SafeRelease(&g_workerUia);
+    g_workerContainer = nullptr;
+    g_workerUia = nullptr;
     if (g_workerFolderAbs) {
         ILFree(g_workerFolderAbs);
         g_workerFolderAbs = nullptr;
@@ -971,22 +935,20 @@ static DWORD WINAPI WorkerThreadProc(LPVOID param) {
 // Tears the menu band down. Used both when another window takes the foreground
 // and when we cannot bring the popup to the foreground ourselves.
 static void CloseMenuBand(IMenuBand* band) {
-    IOleCommandTarget* commandTarget = nullptr;
-    if (SUCCEEDED(band->QueryInterface(IID_PPV_ARGS(&commandTarget)))) {
+    winrt::com_ptr<IOleCommandTarget> commandTarget;
+    if (SUCCEEDED(band->QueryInterface(IID_PPV_ARGS(commandTarget.put())))) {
         commandTarget->Exec(&CLSID_MenuBand, MBAND_CMDID_CLOSE, 0, nullptr,
                             nullptr);
-        commandTarget->Release();
     }
 }
 
 // The top-level window hosting the menu band, or nullptr.
 static HWND GetMenuBandWindow(IMenuBand* band) {
-    IOleWindow* oleWindow = nullptr;
+    winrt::com_ptr<IOleWindow> oleWindow;
     HWND hwnd = nullptr;
-    if (SUCCEEDED(band->QueryInterface(IID_PPV_ARGS(&oleWindow))) &&
+    if (SUCCEEDED(band->QueryInterface(IID_PPV_ARGS(oleWindow.put()))) &&
         oleWindow) {
         oleWindow->GetWindow(&hwnd);
-        oleWindow->Release();
     }
     return hwnd ? GetAncestor(hwnd, GA_ROOT) : nullptr;
 }
@@ -1005,57 +967,55 @@ static VOID CALLBACK ForegroundChangedProc(HWINEVENTHOOK hook,
 }
 
 // Hosts the folder's contents in a menu band inside a menu desk bar and pops it
-// up next to the anchor rect (the expand button). Returns the live IMenuBand
-// (caller releases) or nullptr on failure.
-static IMenuBand* PopupFolderMenu(PCIDLIST_ABSOLUTE pidlAbs, RECT anchorRect) {
-    IShellMenu* shellMenu = nullptr;
-    IDeskBand* deskBand = nullptr;
-    IMenuBand* menuBand = nullptr;
+// up next to the anchor rect (the expand button). Returns the live IMenuBand or
+// nullptr on failure.
+static winrt::com_ptr<IMenuBand> PopupFolderMenu(PCIDLIST_ABSOLUTE pidlAbs,
+                                                 RECT anchorRect) {
+    winrt::com_ptr<IShellMenu> shellMenu;
+    winrt::com_ptr<IDeskBand> deskBand;
+    winrt::com_ptr<IMenuBand> menuBand;
     HRESULT hr = CoCreateInstance(CLSID_MenuBand, nullptr, CLSCTX_INPROC_SERVER,
-                                  IID_PPV_ARGS(&shellMenu));
+                                  IID_PPV_ARGS(shellMenu.put()));
     if (SUCCEEDED(hr)) {
         hr = shellMenu->Initialize(nullptr, -1, ANCESTORDEFAULT,
                                    SMINIT_TOPLEVEL | SMINIT_VERTICAL);
 
-        IShellFolder* desktop = nullptr;
+        winrt::com_ptr<IShellFolder> desktop;
         if (SUCCEEDED(hr)) {
-            hr = SHGetDesktopFolder(&desktop);
+            hr = SHGetDesktopFolder(desktop.put());
         }
 
         if (SUCCEEDED(hr)) {
-            IShellFolder* folder = nullptr;
-            hr = desktop->BindToObject(pidlAbs, nullptr, IID_PPV_ARGS(&folder));
+            winrt::com_ptr<IShellFolder> folder;
+            hr = desktop->BindToObject(pidlAbs, nullptr,
+                                       IID_PPV_ARGS(folder.put()));
             if (SUCCEEDED(hr)) {
                 hr = shellMenu->SetShellFolder(
-                    folder, pidlAbs, nullptr,
+                    folder.get(), pidlAbs, nullptr,
                     SMSET_BOTTOM | SMSET_USEBKICONEXTRACTION);
                 if (SUCCEEDED(hr)) {
-                    hr = shellMenu->QueryInterface(IID_PPV_ARGS(&deskBand));
+                    hr = shellMenu->QueryInterface(IID_PPV_ARGS(deskBand.put()));
                 }
-                folder->Release();
             }
-            desktop->Release();
         }
-
-        shellMenu->Release();
     }
 
     if (deskBand) {
-        IUnknown* deskBarUnk = nullptr;
+        winrt::com_ptr<IUnknown> deskBarUnk;
         hr = CoCreateInstance(CLSID_MenuDeskBar, nullptr, CLSCTX_INPROC_SERVER,
-                              IID_PPV_ARGS(&deskBarUnk));
+                              IID_PPV_ARGS(deskBarUnk.put()));
         if (SUCCEEDED(hr)) {
-            IMenuPopup* menuPopup = nullptr;
-            hr = deskBarUnk->QueryInterface(IID_PPV_ARGS(&menuPopup));
+            winrt::com_ptr<IMenuPopup> menuPopup;
+            hr = deskBarUnk->QueryInterface(IID_PPV_ARGS(menuPopup.put()));
             if (SUCCEEDED(hr)) {
-                IBandSite* bandSite = nullptr;
+                winrt::com_ptr<IBandSite> bandSite;
                 hr = CoCreateInstance(CLSID_MenuBandSite, nullptr,
                                       CLSCTX_INPROC_SERVER,
-                                      IID_PPV_ARGS(&bandSite));
+                                      IID_PPV_ARGS(bandSite.put()));
                 if (SUCCEEDED(hr)) {
-                    hr = menuPopup->SetClient(bandSite);
+                    hr = menuPopup->SetClient(bandSite.get());
                     if (SUCCEEDED(hr)) {
-                        hr = bandSite->AddBand(deskBand);
+                        hr = bandSite->AddBand(deskBand.get());
                     }
 
                     if (SUCCEEDED(hr)) {
@@ -1069,27 +1029,21 @@ static IMenuBand* PopupFolderMenu(PCIDLIST_ABSOLUTE pidlAbs, RECT anchorRect) {
                         hr = menuPopup->Popup(&pt, &exclude, MPPF_SETFOCUS);
                         if (SUCCEEDED(hr)) {
                             hr = deskBand->QueryInterface(
-                                IID_PPV_ARGS(&menuBand));
+                                IID_PPV_ARGS(menuBand.put()));
                         }
                     }
-
-                    bandSite->Release();
                 }
-                menuPopup->Release();
             }
-            deskBarUnk->Release();
         }
-
-        // The desk bar's window holds an internal self-reference while the
-        // popup is shown, so the menu stays alive after we drop this reference.
-        deskBand->Release();
     }
 
+    // The desk bar's window holds an internal self-reference while the popup is
+    // shown, so the menu stays alive after the local com_ptrs (the desk bar and
+    // band site) are released here; the returned menu band keeps it reachable.
     if (SUCCEEDED(hr) && menuBand) {
         return menuBand;
     }
 
-    SafeRelease(&menuBand);
     return nullptr;
 }
 
@@ -1097,21 +1051,20 @@ static IMenuBand* PopupFolderMenu(PCIDLIST_ABSOLUTE pidlAbs, RECT anchorRect) {
 static void ShowFolderMenuModal(PCIDLIST_ABSOLUTE pidlAbs, RECT anchorRect) {
     g_menuActive = true;
 
-    IMenuBand* band = PopupFolderMenu(pidlAbs, anchorRect);
+    winrt::com_ptr<IMenuBand> band = PopupFolderMenu(pidlAbs, anchorRect);
     if (band) {
         // The popup belongs to our background tool process, so the menu band's
         // own focus attempt can lose to the foreground lock and leave the menu
         // on screen with no way to dismiss it. Claim the foreground explicitly;
         // if that fails, tear the popup down instead of letting it linger.
-        HWND hwndMenu = GetMenuBandWindow(band);
+        HWND hwndMenu = GetMenuBandWindow(band.get());
         if (!hwndMenu || !SetForegroundWindow(hwndMenu)) {
-            CloseMenuBand(band);
-            band->Release();
+            CloseMenuBand(band.get());
             g_menuActive = false;
             return;
         }
 
-        g_pActiveMenuBand = band;
+        g_pActiveMenuBand = band.get();
 
         HWINEVENTHOOK hook =
             SetWinEventHook(EVENT_SYSTEM_FOREGROUND, EVENT_SYSTEM_FOREGROUND,
@@ -1162,8 +1115,8 @@ static void ShowFolderMenuModal(PCIDLIST_ABSOLUTE pidlAbs, RECT anchorRect) {
             UnhookWinEvent(hook);
         }
 
+        // Clear the observer before the owning com_ptr releases the band below.
         g_pActiveMenuBand = nullptr;
-        band->Release();
     }
 
     // Deferred work posted by the menu band (e.g. launching an item) runs once
