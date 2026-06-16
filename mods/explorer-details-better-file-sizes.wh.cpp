@@ -2,7 +2,7 @@
 // @id              explorer-details-better-file-sizes
 // @name            Better file sizes in Explorer details
 // @description     Enhances file size display in Explorer details with folder sizes, human-readable units (MB/GB), and optional IEC notation (KiB/MiB)
-// @version         1.5
+// @version         1.5.1
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
