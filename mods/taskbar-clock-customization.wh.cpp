@@ -2,7 +2,7 @@
 // @id              taskbar-clock-customization
 // @name            Taskbar Clock Customization
 // @description     Custom date/time format, news feed, weather, performance metrics (upload/download speed, CPU, RAM, GPU, battery), media player info, custom fonts and colors, and more
-// @version         1.7.4
+// @version         1.7.5
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
@@ -104,12 +104,17 @@ patterns can be used:
     ellipsis. It's recommended to use this field on the taskbar, and other
     fields in the tooltip.
 * `%weather%` - Weather information, powered by [wttr.in](https://wttr.in/),
-  using the location and format configured in settings.
+  using the location and format configured in settings. The weather format can
+  use `{spacer}` to insert an elastic spacer between weather items.
 * `%web<n>%` - the web contents as configured in settings, truncated with
   ellipsis, where `<n>` is the web contents number.
 * `%web<n>_full%` - the full web contents as configured in settings, where `<n>`
   is the web contents number.
 * `%newline%` or `%n%` - a newline.
+* `%s%` - an elastic spacer for Windows 11 version 22H2 and newer. Use it in
+  the top or bottom line to distribute leftover clock width between items, for
+  example `%time%%s%%date%`. Set Clock max width to a non-zero value to give the
+  spacer room to expand.
 
 ## Text styles
 
@@ -178,7 +183,9 @@ styles, such as the font color and size.
   $name: Clock height (Windows 10 only)
 - MaxWidth: 0
   $name: Clock max width (Windows 11 only)
-  $description: Set to zero to have no max width.
+  $description: >-
+    Set to zero to have no max width. A non-zero value is recommended when using
+    the %s% elastic spacer pattern.
 - TextSpacing: 0
   $name: Line spacing
   $description: >-
@@ -262,8 +269,8 @@ styles, such as the font color and size.
 - WebContentWeatherFormat: "%c \uD83C\uDF21\uFE0F%t \uD83C\uDF2C\uFE0F%w"
   $name: Weather format
   $description: >-
-    The weather information format. For details, refer to the documentation of
-    wttr.in.
+    The weather information format. Use {spacer} to insert an elastic spacer
+    between weather items. For details, refer to the documentation of wttr.in.
 - WebContentWeatherUnits: autoDetect
   $name: Weather units
   $description: >-
@@ -987,6 +994,21 @@ bool IsStrInDateTimePatternSettings(PCWSTR str) {
            wcsstr(g_settings.tooltipLine, str);
 }
 
+bool IsStrInClockLineSettings(PCWSTR str) {
+    return wcsstr(g_settings.topLine, str) ||
+           wcsstr(g_settings.bottomLine, str);
+}
+
+constexpr PCWSTR kSpacerToken = L"%s%";
+constexpr PCWSTR kWeatherSpacerToken = L"{spacer}";
+constexpr PCWSTR kWeatherSpacerMarker = L"\uE001";
+
+bool ClockLineUsesSpacer(PCWSTR line) {
+    return wcsstr(line, kSpacerToken) ||
+           (wcsstr(line, L"%weather%") &&
+            wcsstr(g_settings.webContentWeatherFormat, kWeatherSpacerToken));
+}
+
 std::wstring EscapeUrlComponent(PCWSTR input,
                                 DWORD flags = URL_ESCAPE_ASCII_URI_COMPONENT |
                                               URL_ESCAPE_AS_UTF8) {
@@ -1017,6 +1039,8 @@ bool UpdateWeatherWebContent() {
     if (format.empty()) {
         format = L"%c \U0001F321\uFE0F%t \U0001F32C\uFE0F%w";
     }
+
+    format = ReplaceAll(format, kWeatherSpacerToken, kWeatherSpacerMarker);
 
     // Spaces are added after the weather emoji by the server. Add a marker
     // character after it to be able to remove the spaces. See:
@@ -1075,6 +1099,8 @@ bool UpdateWeatherWebContent() {
 
     // Care for the rest after last occurrence.
     weatherContent += urlContent->substr(lastPos);
+    weatherContent = ReplaceAll(weatherContent, kWeatherSpacerMarker,
+                                kSpacerToken);
 
     std::lock_guard<std::mutex> guard(g_webContentMutex);
     g_webContentWeather = weatherContent;
@@ -3455,6 +3481,53 @@ void EnsureFormattingInitialized() {
     MediaSessionInit();
 }
 
+std::wstring PrepareSpacerJustifiedText(std::wstring text) {
+    if (text.find(kSpacerToken) == std::wstring::npos) {
+        return text;
+    }
+
+    constexpr WCHAR kNonJustifyingSpace = L'\u2005';
+    std::wstring justifiedText;
+    justifiedText.reserve(text.size());
+
+    size_t pos = 0;
+    while (pos < text.size()) {
+        if (text.compare(pos, wcslen(kSpacerToken), kSpacerToken) == 0) {
+            justifiedText += L' ';
+            pos += wcslen(kSpacerToken);
+            continue;
+        }
+
+        justifiedText += text[pos] == L' ' ? kNonJustifyingSpace : text[pos];
+        pos++;
+    }
+
+    return justifiedText;
+}
+
+std::wstring FormatLineToString(std::wstring_view format) {
+    std::wstring formatted;
+    std::wstring_view formatSuffix = format;
+
+    while (!formatSuffix.empty()) {
+        if (formatSuffix[0] == L'%') {
+            size_t formatTokenLen = ResolveFormatToken(
+                formatSuffix, [&formatted](PCWSTR resolvedStr) {
+                    formatted += resolvedStr;
+                });
+            if (formatTokenLen > 0) {
+                formatSuffix = formatSuffix.substr(formatTokenLen);
+                continue;
+            }
+        }
+
+        formatted += formatSuffix[0];
+        formatSuffix = formatSuffix.substr(1);
+    }
+
+    return PrepareSpacerJustifiedText(std::move(formatted));
+}
+
 int FormatLine(PWSTR buffer, size_t bufferSize, std::wstring_view format) {
     if (bufferSize == 0) {
         return 0;
@@ -3464,44 +3537,20 @@ int FormatLine(PWSTR buffer, size_t bufferSize, std::wstring_view format) {
 
     EnsureFormattingInitialized();
 
-    std::wstring_view formatSuffix = format;
+    std::wstring formatted = FormatLineToString(format);
 
-    PWSTR bufferStart = buffer;
-    PWSTR bufferEnd = bufferStart + bufferSize;
-    while (!formatSuffix.empty() && bufferEnd - buffer > 1) {
-        if (formatSuffix[0] == L'%') {
-            bool truncated = false;
-            size_t formatTokenLen = ResolveFormatToken(
-                formatSuffix,
-                [&buffer, bufferEnd, &truncated](PCWSTR resolvedStr) {
-                    buffer += StringCopyTruncated(buffer, bufferEnd - buffer,
-                                                  resolvedStr, &truncated);
-                });
-            if (formatTokenLen > 0) {
-                if (truncated) {
-                    break;
-                }
-
-                formatSuffix = formatSuffix.substr(formatTokenLen);
-                continue;
-            }
-        }
-
-        *buffer++ = formatSuffix[0];
-        formatSuffix = formatSuffix.substr(1);
+    bool truncated = false;
+    int copied = StringCopyTruncated(buffer, bufferSize, formatted.c_str(),
+                                     &truncated);
+    if (truncated && bufferSize >= 4) {
+        buffer[bufferSize - 4] = L'.';
+        buffer[bufferSize - 3] = L'.';
+        buffer[bufferSize - 2] = L'.';
+        buffer[bufferSize - 1] = L'\0';
     }
 
-    if (!formatSuffix.empty() && bufferSize >= 4) {
-        buffer[-1] = L'.';
-        buffer[-2] = L'.';
-        buffer[-3] = L'.';
-    }
-
-    *buffer = L'\0';
-
-    return buffer - bufferStart;
+    return copied;
 }
-
 #pragma region Win11Hooks
 
 DWORD g_refreshIconThreadId;
@@ -3785,6 +3834,7 @@ void ApplyTextBlockStyles(
     Controls::TextBlock textBlock,
     const TextStyleSettings* textStyleSettings,
     bool noWrap,
+    bool justifySpacer,
     std::optional<int64_t>* visibilityPropertyChangedToken) {
     if (visibilityPropertyChangedToken->has_value()) {
         textBlock.UnregisterPropertyChangedCallback(
@@ -3831,7 +3881,9 @@ void ApplyTextBlockStyles(
             Controls::TextBlock::ForegroundProperty());
     }
 
-    if (textStyleSettings && *textStyleSettings->textAlignment) {
+    if (justifySpacer) {
+        textBlock.TextAlignment(TextAlignment::Justify);
+    } else if (textStyleSettings && *textStyleSettings->textAlignment) {
         auto textAlignment =
             Markup::XamlBindingHelper::ConvertValue(
                 winrt::xaml_typename<TextAlignment>(),
@@ -3841,7 +3893,6 @@ void ApplyTextBlockStyles(
     } else {
         textBlock.TextAlignment(TextAlignment::End);
     }
-
     if (textStyleSettings && textStyleSettings->fontSize) {
         textBlock.FontSize(textStyleSettings->fontSize);
     } else {
@@ -3987,12 +4038,13 @@ void ApplyDateTimeIconContentStyles(
     ApplyTextBlockStyles(
         dateInnerTextBlock,
         clockElementStyleEnabled ? &g_settings.dateStyle : nullptr, noWrap,
+        ClockLineUsesSpacer(g_settings.bottomLine),
         &clockElementStyleData->dateVisibilityPropertyChangedToken);
     ApplyTextBlockStyles(
         timeInnerTextBlock,
         clockElementStyleEnabled ? &g_settings.timeStyle : nullptr, noWrap,
+        ClockLineUsesSpacer(g_settings.topLine),
         &clockElementStyleData->timeVisibilityPropertyChangedToken);
-
     clockElementStyleData->styleIndex = clockElementStyleIndex;
 }
 
@@ -5107,7 +5159,9 @@ void LoadSettings() {
          *g_settings.dateStyle.textAlignment || g_settings.dateStyle.fontSize ||
          *g_settings.dateStyle.fontFamily || *g_settings.dateStyle.fontWeight ||
          *g_settings.dateStyle.fontStyle || *g_settings.dateStyle.fontStretch ||
-         g_settings.dateStyle.characterSpacing);
+         g_settings.dateStyle.characterSpacing ||
+         ClockLineUsesSpacer(g_settings.topLine) ||
+         ClockLineUsesSpacer(g_settings.bottomLine));
     g_clockElementStyleIndex++;
 
     g_settings.oldTaskbarOnWin11 = Wh_GetIntSetting(L"oldTaskbarOnWin11");
