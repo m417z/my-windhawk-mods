@@ -26,14 +26,13 @@
 Define alternative files for loading various resources (e.g. icons in
 imageres.dll) for simple theming without having to modify system files.
 
-**Note**: This mod requires Windhawk v1.6 or newer.
-
 ## Icon themes
 
-A collection of community contributed icon theme packs can be found in the
-[Resource Redirect icon
-themes](https://github.com/ramensoftware/resource-redirect-icon-themes)
-repository. An icon theme can be selected in the mod's settings.
+An icon theme from the collection of community contributed icon theme packs can
+be selected in the mod's settings. Screenshots of some of the icon themes can be
+found in the [Resource Redirect icon
+themes](https://github.com/ramensoftware/resource-redirect-icon-themes#themes)
+repository. 
 
 An icon theme can also be installed manually by downloading it and specifying
 its path in the mod's settings. For details, refer to the guide in the
@@ -41,6 +40,21 @@ repository.
 
 A short demonstration can be found [here on
 YouTube](https://youtu.be/irzVmKHB83E).
+
+## Disable folder thumbnails
+
+The mod has an option to disable thumbnails in Explorer folders, making folders
+use a generic folder icon instead of showing a preview of their contents. Some
+icon themes may look better with this option enabled, while other themes have
+proper support for styling folder thumbnails. Folder thumbnails are only
+replaced when then "Redirect all loaded resources" option is enabled (see
+below).
+
+## Redirect all loaded resources (experimental)
+
+The option to redirect all resources can be enabled in the settings. In this
+case, redirection won't be limited to the resource types and loading methods
+listed above. This option might become the default in the future.
 
 ## Theme paths
 
@@ -75,24 +89,6 @@ The mod supports the following resource types and loading methods:
   function.
 * DirectUI resources (usually `UIFILE` and `XML`) loaded with the
   `SetXMLFromResource` function.
-
-## Redirect all loaded resources (experimental)
-
-The option to redirect all resources can be enabled in the settings. In this
-case, redirection won't be limited to the resource types and loading methods
-listed above. This option might become the default in the future.
-
-## Disable folder thumbnails
-
-The mod has an option to disable thumbnails in Explorer folders, making folders
-use a generic folder icon instead of showing a preview of their contents. It's
-equivalent to setting the following registry value, but is applied dynamically
-by the mod (no registry modifications are actually made):
-
-```
-HKCU\Software\Classes\Local Settings\Software\Microsoft\Windows\Shell\Bags\AllFolders\Shell
-Logo = imageres.dll,-3
-```
 
 ## Choosing the redirected resource file
 
