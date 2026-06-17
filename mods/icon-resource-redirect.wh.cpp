@@ -291,8 +291,17 @@ The resource lookup order then becomes:
   - Windows 11 New Folders Purple|themes/icons/niivu/Windows%2011%20New%20Folders%20Purple.zip: Windows 11 New Folders Purple (by niivu)
   - Windows 11 New Folders Slate|themes/icons/niivu/Windows%2011%20New%20Folders%20Slate.zip: Windows 11 New Folders Slate (by niivu)
   - Windows 11 New Folders Yellow|themes/icons/niivu/Windows%2011%20New%20Folders%20Yellow.zip: Windows 11 New Folders Yellow (by niivu)
+  - PaneVista|themes/icons/SoftwareType/PaneVista.zip: 'PaneVista (by SoftwareType, credit: ImSwordQueen)'
   - Pane7|themes/icons/ImSwordQueen/Pane7.zip: Pane7 (by ImSwordQueen)
   - Pane8.1|themes/icons/NicSonic/Pane8.1.zip: Pane8.1 (by NicSonic)
+  - Minecraft Axolotle|themes/icons/Wasiabbas4pk/Minecraft%20Axolotle: 'Minecraft Axolotle (by WasiXGamer, credit: dalps/minecraft11)'
+  - Minecraft Fox|themes/icons/Wasiabbas4pk/Minecraft%20Fox.zip: 'Minecraft Fox (by WasiXGamer, credit: dalps/minecraft11)'
+  - Minecraft TNT|themes/icons/Wasiabbas4pk/Minecraft%20TNT.zip: 'Minecraft TNT (by WasiXGamer, credit: dalps/minecraft11)'
+  - Minecraft Panda|themes/icons/Wasiabbas4pk/Minecraft%20Panda.zip: 'Minecraft Panda (by WasiXGamer, credit: dalps/minecraft11)'
+  - Minecraft Creeper|themes/icons/Wasiabbas4pk/Minecraft%20Creeper.zip: 'Minecraft Creeper (by WasiXGamer, credit: dalps/minecraft11)'
+  - Minecraft Ender Dragon|themes/icons/Wasiabbas4pk/Minecraft%20Ender%20Dragon.zip: 'Minecraft Ender Dragon (by WasiXGamer, credit: dalps/minecraft11)'
+  - Minecraft Shulker (Blue)|themes/icons/Wasiabbas4pk/Minecraft%20Shulker%28Blue%29.zip: 'Minecraft Shulker (Blue) (by WasiXGamer, credit: dalps/minecraft11)'
+  - Minecraft Shulker (Black)|themes/icons/Wasiabbas4pk/Minecraft%20Shulker%28Black%29.zip: 'Minecraft Shulker (Black) (by WasiXGamer, credit: dalps/minecraft11)'
 - disableThumbnails: false
   $name: Disable folder thumbnails
   $description: >-
