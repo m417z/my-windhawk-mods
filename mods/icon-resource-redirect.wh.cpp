@@ -2,7 +2,7 @@
 // @id              icon-resource-redirect
 // @name            Resource Redirect
 // @description     Define alternative files for loading various resources (e.g. icons in imageres.dll) for simple theming without having to modify system files
-// @version         1.2.5
+// @version         1.3
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
@@ -28,11 +28,11 @@ imageres.dll) for simple theming without having to modify system files.
 
 ## Icon themes
 
-An icon theme from the collection of community contributed icon theme packs can
+An icon theme from the collection of community-contributed icon theme packs can
 be selected in the mod's settings. Screenshots of some of the icon themes can be
 found in the [Resource Redirect icon
 themes](https://github.com/ramensoftware/resource-redirect-icon-themes#themes)
-repository. 
+repository.
 
 An icon theme can also be installed manually by downloading it and specifying
 its path in the mod's settings. For details, refer to the guide in the
@@ -47,8 +47,7 @@ The mod has an option to disable thumbnails in Explorer folders, making folders
 use a generic folder icon instead of showing a preview of their contents. Some
 icon themes may look better with this option enabled, while other themes have
 proper support for styling folder thumbnails. Folder thumbnails are only
-replaced when then "Redirect all loaded resources" option is enabled (see
-below).
+replaced when the "Redirect all loaded resources" option is enabled (see below).
 
 ## Redirect all loaded resources (experimental)
 
@@ -59,7 +58,7 @@ listed above. This option might become the default in the future.
 ## Theme paths
 
 Theme paths can be set in the settings. A theme path is a folder with
-alternative resource files, and the `theme.ini` file that contains redirection
+alternative resource files and a `theme.ini` file that contains redirection
 rules. For example, the `theme.ini` file may contain the following:
 
 ```
@@ -68,8 +67,8 @@ rules. For example, the `theme.ini` file may contain the following:
 %SystemRoot%\System32\imageres.dll=imageres.dll
 ```
 
-In this case, the folder must also contain the `explorer.exe`, `imageres.dll`
-files which will be used as the redirection resource files.
+In this case, the folder must also contain the `explorer.exe` and `imageres.dll`
+files, which will be used as the redirection resource files.
 
 Alternatively, the theme path can be the `.ini` file itself.
 
@@ -83,7 +82,7 @@ The mod supports the following resource types and loading methods:
 * Cursors loaded with the `LoadCursorW` function.
 * Bitmaps loaded with the `LoadBitmapW` function.
 * Menus loaded with the `LoadMenuW` function.
-* Dialogs loaded with the `DialogBoxParamW`, `CreateDialogParamW` functions.
+* Dialogs loaded with the `DialogBoxParamW` and `CreateDialogParamW` functions.
 * Strings loaded with the `LoadStringW` function.
 * GDI+ images (e.g. PNGs) loaded with the `SHCreateStreamOnModuleResourceW`
   function.
@@ -329,7 +328,7 @@ The resource lookup order then becomes:
   $description: >-
     A folder with alternative resource files and theme.ini.
 
-    This option will be removed in the future, please use the new "Theme paths"
+    This option will be removed in the future. Please use the new "Theme paths"
     option above.
 */
 // ==/WindhawkModSettings==
