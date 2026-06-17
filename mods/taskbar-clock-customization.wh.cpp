@@ -717,6 +717,15 @@ struct ClockElementStyleData {
     DWORD styleIndex;
     std::optional<int64_t> dateVisibilityPropertyChangedToken;
     std::optional<int64_t> timeVisibilityPropertyChangedToken;
+    struct SpacerLineData {
+        winrt::weak_ref<Controls::TextBlock> textBlock;
+        winrt::weak_ref<Controls::StackPanel> parentStackPanel;
+        winrt::weak_ref<Controls::StackPanel> generatedPanel;
+        std::optional<int64_t> textPropertyChangedToken;
+        bool hidden = false;
+    };
+    SpacerLineData dateSpacerLine;
+    SpacerLineData timeSpacerLine;
 };
 
 std::atomic<bool> g_clockElementStyleEnabled;
@@ -994,12 +1003,8 @@ bool IsStrInDateTimePatternSettings(PCWSTR str) {
            wcsstr(g_settings.tooltipLine, str);
 }
 
-bool IsStrInClockLineSettings(PCWSTR str) {
-    return wcsstr(g_settings.topLine, str) ||
-           wcsstr(g_settings.bottomLine, str);
-}
-
 constexpr PCWSTR kSpacerToken = L"%s%";
+constexpr size_t kSpacerTokenLen = 3;
 constexpr PCWSTR kWeatherSpacerToken = L"{spacer}";
 constexpr PCWSTR kWeatherSpacerMarker = L"\uE001";
 
@@ -3481,30 +3486,6 @@ void EnsureFormattingInitialized() {
     MediaSessionInit();
 }
 
-std::wstring PrepareSpacerJustifiedText(std::wstring text) {
-    if (text.find(kSpacerToken) == std::wstring::npos) {
-        return text;
-    }
-
-    constexpr WCHAR kNonJustifyingSpace = L'\u2005';
-    std::wstring justifiedText;
-    justifiedText.reserve(text.size());
-
-    size_t pos = 0;
-    while (pos < text.size()) {
-        if (text.compare(pos, wcslen(kSpacerToken), kSpacerToken) == 0) {
-            justifiedText += L' ';
-            pos += wcslen(kSpacerToken);
-            continue;
-        }
-
-        justifiedText += text[pos] == L' ' ? kNonJustifyingSpace : text[pos];
-        pos++;
-    }
-
-    return justifiedText;
-}
-
 std::wstring FormatLineToString(std::wstring_view format) {
     std::wstring formatted;
     std::wstring_view formatSuffix = format;
@@ -3525,10 +3506,12 @@ std::wstring FormatLineToString(std::wstring_view format) {
         formatSuffix = formatSuffix.substr(1);
     }
 
-    return PrepareSpacerJustifiedText(std::move(formatted));
+    return formatted;
 }
 
-int FormatLine(PWSTR buffer, size_t bufferSize, std::wstring_view format) {
+int FormatLine(PWSTR buffer,
+               size_t bufferSize,
+               std::wstring_view format) {
     if (bufferSize == 0) {
         return 0;
     }
@@ -3551,6 +3534,7 @@ int FormatLine(PWSTR buffer, size_t bufferSize, std::wstring_view format) {
 
     return copied;
 }
+
 #pragma region Win11Hooks
 
 DWORD g_refreshIconThreadId;
@@ -3834,7 +3818,6 @@ void ApplyTextBlockStyles(
     Controls::TextBlock textBlock,
     const TextStyleSettings* textStyleSettings,
     bool noWrap,
-    bool justifySpacer,
     std::optional<int64_t>* visibilityPropertyChangedToken) {
     if (visibilityPropertyChangedToken->has_value()) {
         textBlock.UnregisterPropertyChangedCallback(
@@ -3881,9 +3864,7 @@ void ApplyTextBlockStyles(
             Controls::TextBlock::ForegroundProperty());
     }
 
-    if (justifySpacer) {
-        textBlock.TextAlignment(TextAlignment::Justify);
-    } else if (textStyleSettings && *textStyleSettings->textAlignment) {
+    if (textStyleSettings && *textStyleSettings->textAlignment) {
         auto textAlignment =
             Markup::XamlBindingHelper::ConvertValue(
                 winrt::xaml_typename<TextAlignment>(),
@@ -3893,6 +3874,7 @@ void ApplyTextBlockStyles(
     } else {
         textBlock.TextAlignment(TextAlignment::End);
     }
+
     if (textStyleSettings && textStyleSettings->fontSize) {
         textBlock.FontSize(textStyleSettings->fontSize);
     } else {
@@ -3956,6 +3938,310 @@ void ApplyTextBlockStyles(
     }
 }
 
+std::vector<std::wstring> SplitOnSpacer(std::wstring_view text) {
+    std::vector<std::wstring> segments;
+    size_t pos = 0;
+
+    while (true) {
+        size_t found = text.find(kSpacerToken, pos);
+        if (found == std::wstring_view::npos) {
+            segments.emplace_back(text.substr(pos));
+            break;
+        }
+
+        segments.emplace_back(text.substr(pos, found - pos));
+        pos = found + kSpacerTokenLen;
+    }
+
+    return segments;
+}
+
+std::vector<std::wstring> SplitLines(std::wstring_view text) {
+    std::vector<std::wstring> lines;
+    size_t pos = 0;
+
+    while (pos <= text.size()) {
+        size_t found = text.find(L'\n', pos);
+        if (found == std::wstring_view::npos) {
+            lines.emplace_back(text.substr(pos));
+            break;
+        }
+
+        lines.emplace_back(text.substr(pos, found - pos));
+        pos = found + 1;
+    }
+
+    return lines;
+}
+
+void CopyTextBlockStyle(Controls::TextBlock source,
+                        Controls::TextBlock target) {
+    target.FontSize(source.FontSize());
+    target.FontFamily(source.FontFamily());
+    target.FontWeight(source.FontWeight());
+    target.FontStyle(source.FontStyle());
+    target.FontStretch(source.FontStretch());
+    target.CharacterSpacing(source.CharacterSpacing());
+    target.Foreground(source.Foreground());
+    target.TextAlignment(source.TextAlignment());
+    target.TextWrapping(TextWrapping::NoWrap);
+}
+
+double GetSpacerLineWidth(Controls::TextBlock textBlock,
+                          Controls::StackPanel parentStackPanel,
+                          int maxWidth) {
+    if (maxWidth > 0) {
+        return maxWidth;
+    }
+
+    if (parentStackPanel && parentStackPanel.ActualWidth() > 1.0) {
+        return parentStackPanel.ActualWidth();
+    }
+
+    if (textBlock && textBlock.ActualWidth() > 1.0) {
+        return textBlock.ActualWidth();
+    }
+
+    return 0.0;
+}
+
+void ApplySpacerWidthConstraint(FrameworkElement element,
+                                int maxWidth,
+                                double width) {
+    if (maxWidth > 0) {
+        element.MaxWidth(maxWidth);
+    } else {
+        element.as<DependencyObject>().ClearValue(
+            FrameworkElement::MaxWidthProperty());
+    }
+
+    if (width > 1.0) {
+        element.Width(width);
+    } else {
+        element.as<DependencyObject>().ClearValue(
+            FrameworkElement::WidthProperty());
+    }
+}
+
+Controls::Grid BuildSpacerGrid(winrt::hstring const& name,
+                               const std::vector<std::wstring>& segments,
+                               Controls::TextBlock styleSource,
+                               int maxWidth,
+                               double width) {
+    Controls::Grid grid;
+    grid.Name(name + L"_Spacer");
+    grid.HorizontalAlignment(HorizontalAlignment::Stretch);
+    grid.VerticalAlignment(VerticalAlignment::Center);
+    ApplySpacerWidthConstraint(grid, maxWidth, width);
+
+    int segmentCount = static_cast<int>(segments.size());
+    for (int i = 0; i < segmentCount; i++) {
+        Controls::ColumnDefinition textColumn;
+        textColumn.Width({1.0, GridUnitType::Auto});
+        grid.ColumnDefinitions().Append(textColumn);
+
+        if (i + 1 < segmentCount) {
+            Controls::ColumnDefinition spacerColumn;
+            spacerColumn.Width({1.0, GridUnitType::Star});
+            grid.ColumnDefinitions().Append(spacerColumn);
+        }
+    }
+
+    int gridColumn = 0;
+    for (int i = 0; i < segmentCount; i++) {
+        Controls::TextBlock textBlock;
+        textBlock.Text(segments[i]);
+        textBlock.VerticalAlignment(VerticalAlignment::Center);
+        CopyTextBlockStyle(styleSource, textBlock);
+        Controls::Grid::SetColumn(textBlock, gridColumn);
+        grid.Children().Append(textBlock);
+        gridColumn += 2;
+    }
+
+    return grid;
+}
+
+FrameworkElement BuildSpacerLineElement(winrt::hstring const& baseName,
+                                        std::wstring const& line,
+                                        Controls::TextBlock styleSource,
+                                        Controls::StackPanel parentStackPanel,
+                                        int maxWidth,
+                                        int lineIndex) {
+    auto segments = SplitOnSpacer(line);
+    double width = GetSpacerLineWidth(styleSource, parentStackPanel, maxWidth);
+
+    if (segments.size() > 1) {
+        return BuildSpacerGrid(baseName + L"_Line" +
+                                   winrt::to_hstring(lineIndex),
+                               segments, styleSource, maxWidth, width);
+    }
+
+    Controls::TextBlock textBlock;
+    textBlock.Name(baseName + L"_Line" + winrt::to_hstring(lineIndex));
+    textBlock.Text(line);
+    textBlock.VerticalAlignment(VerticalAlignment::Center);
+    CopyTextBlockStyle(styleSource, textBlock);
+    ApplySpacerWidthConstraint(textBlock, maxWidth, width);
+    return textBlock;
+}
+
+void CollapseSpacerSourceTextBlock(Controls::TextBlock textBlock) {
+    textBlock.Height(0.0);
+    textBlock.MinHeight(0.0);
+    textBlock.MaxHeight(0.0);
+    textBlock.Visibility(Visibility::Collapsed);
+}
+
+void RestoreSpacerSourceTextBlock(Controls::TextBlock textBlock, bool hidden) {
+    textBlock.as<DependencyObject>().ClearValue(
+        FrameworkElement::HeightProperty());
+    textBlock.as<DependencyObject>().ClearValue(
+        FrameworkElement::MinHeightProperty());
+    textBlock.as<DependencyObject>().ClearValue(
+        FrameworkElement::MaxHeightProperty());
+    textBlock.Visibility(hidden ? Visibility::Collapsed : Visibility::Visible);
+}
+
+void RemoveGeneratedSpacerPanel(ClockElementStyleData::SpacerLineData& lineData) {
+    auto parentStackPanel = lineData.parentStackPanel.get();
+    auto generatedPanel = lineData.generatedPanel.get();
+    if (parentStackPanel && generatedPanel) {
+        uint32_t index;
+        if (parentStackPanel.Children().IndexOf(generatedPanel, index)) {
+            parentStackPanel.Children().RemoveAt(index);
+        }
+    }
+
+    lineData.generatedPanel = {};
+}
+
+void UpdateSpacerLine(ClockElementStyleData::SpacerLineData& lineData,
+                      int maxWidth) {
+    auto textBlock = lineData.textBlock.get();
+    auto parentStackPanel = lineData.parentStackPanel.get();
+    if (!textBlock || !parentStackPanel) {
+        return;
+    }
+
+    if (lineData.hidden) {
+        RemoveGeneratedSpacerPanel(lineData);
+        CollapseSpacerSourceTextBlock(textBlock);
+        return;
+    }
+
+    winrt::hstring fullTextHString = textBlock.Text();
+    std::wstring_view fullText{fullTextHString.c_str(),
+                               fullTextHString.size()};
+    if (fullText.find(kSpacerToken) == std::wstring_view::npos) {
+        RemoveGeneratedSpacerPanel(lineData);
+        RestoreSpacerSourceTextBlock(textBlock, false);
+        return;
+    }
+
+    RemoveGeneratedSpacerPanel(lineData);
+
+    Controls::StackPanel generatedPanel;
+    generatedPanel.Name(textBlock.Name() + L"_SpacerPanel");
+    generatedPanel.Orientation(Controls::Orientation::Vertical);
+    generatedPanel.HorizontalAlignment(HorizontalAlignment::Stretch);
+    generatedPanel.VerticalAlignment(VerticalAlignment::Center);
+
+    double width = GetSpacerLineWidth(textBlock, parentStackPanel, maxWidth);
+    ApplySpacerWidthConstraint(generatedPanel, maxWidth, width);
+
+    auto lines = SplitLines(fullText);
+    for (int i = 0; i < static_cast<int>(lines.size()); i++) {
+        auto lineElement =
+            BuildSpacerLineElement(textBlock.Name(), lines[i], textBlock,
+                                   parentStackPanel, maxWidth, i);
+        generatedPanel.Children().Append(lineElement);
+    }
+
+    uint32_t originalIndex = 0;
+    if (parentStackPanel.Children().IndexOf(textBlock, originalIndex)) {
+        parentStackPanel.Children().InsertAt(originalIndex + 1, generatedPanel);
+    } else {
+        parentStackPanel.Children().Append(generatedPanel);
+    }
+
+    lineData.generatedPanel = winrt::make_weak(generatedPanel);
+    CollapseSpacerSourceTextBlock(textBlock);
+    generatedPanel.Visibility(Visibility::Visible);
+}
+
+void UnregisterSpacerLine(ClockElementStyleData::SpacerLineData& lineData) {
+    if (lineData.textPropertyChangedToken) {
+        if (auto textBlock = lineData.textBlock.get()) {
+            textBlock.UnregisterPropertyChangedCallback(
+                Controls::TextBlock::TextProperty(),
+                lineData.textPropertyChangedToken.value());
+        }
+
+        lineData.textPropertyChangedToken.reset();
+    }
+}
+
+void ClearSpacerLine(ClockElementStyleData::SpacerLineData& lineData) {
+    RemoveGeneratedSpacerPanel(lineData);
+
+    if (auto textBlock = lineData.textBlock.get()) {
+        RestoreSpacerSourceTextBlock(textBlock, lineData.hidden);
+    }
+
+    UnregisterSpacerLine(lineData);
+    lineData.textBlock = {};
+    lineData.parentStackPanel = {};
+    lineData.hidden = false;
+}
+
+void RegisterSpacerTextCallback(
+    ClockElementStyleData::SpacerLineData& lineData,
+    Controls::TextBlock textBlock) {
+    if (lineData.textPropertyChangedToken &&
+        lineData.textBlock.get() == textBlock) {
+        return;
+    }
+
+    UnregisterSpacerLine(lineData);
+
+    lineData.textPropertyChangedToken =
+        textBlock.RegisterPropertyChangedCallback(
+            Controls::TextBlock::TextProperty(),
+            [](DependencyObject sender, DependencyProperty) {
+                auto textBlock = sender.try_as<Controls::TextBlock>();
+                if (!textBlock) {
+                    return;
+                }
+
+                for (auto& data : g_clockElementStyleData) {
+                    if (data.dateSpacerLine.textBlock.get() == textBlock) {
+                        UpdateSpacerLine(data.dateSpacerLine,
+                                         g_settings.maxWidth);
+                        return;
+                    }
+
+                    if (data.timeSpacerLine.textBlock.get() == textBlock) {
+                        UpdateSpacerLine(data.timeSpacerLine,
+                                         g_settings.maxWidth);
+                        return;
+                    }
+                }
+            });
+}
+
+void ApplySpacerLine(ClockElementStyleData::SpacerLineData& lineData,
+                     Controls::StackPanel parentStackPanel,
+                     Controls::TextBlock textBlock,
+                     bool hidden,
+                     int maxWidth) {
+    lineData.textBlock = winrt::make_weak(textBlock);
+    lineData.parentStackPanel = winrt::make_weak(parentStackPanel);
+    lineData.hidden = hidden;
+
+    RegisterSpacerTextCallback(lineData, textBlock);
+    UpdateSpacerLine(lineData, maxWidth);
+}
+
 void ApplyDateTimeIconContentStyles(
     FrameworkElement dateTimeIconContentElement) {
     ClockElementStyleData* clockElementStyleData = nullptr;
@@ -3965,6 +4251,8 @@ void ApplyDateTimeIconContentStyles(
         auto& data = *it;
         auto element = data.dateTimeIconContentElement.get();
         if (!element) {
+            ClearSpacerLine(data.dateSpacerLine);
+            ClearSpacerLine(data.timeSpacerLine);
             it = g_clockElementStyleData.erase(it);
             continue;
         }
@@ -4038,13 +4326,23 @@ void ApplyDateTimeIconContentStyles(
     ApplyTextBlockStyles(
         dateInnerTextBlock,
         clockElementStyleEnabled ? &g_settings.dateStyle : nullptr, noWrap,
-        ClockLineUsesSpacer(g_settings.bottomLine),
         &clockElementStyleData->dateVisibilityPropertyChangedToken);
     ApplyTextBlockStyles(
         timeInnerTextBlock,
         clockElementStyleEnabled ? &g_settings.timeStyle : nullptr, noWrap,
-        ClockLineUsesSpacer(g_settings.topLine),
         &clockElementStyleData->timeVisibilityPropertyChangedToken);
+    if (clockElementStyleEnabled) {
+        ApplySpacerLine(clockElementStyleData->dateSpacerLine, stackPanel,
+                        dateInnerTextBlock, g_settings.dateStyle.hidden,
+                        maxWidth);
+        ApplySpacerLine(clockElementStyleData->timeSpacerLine, stackPanel,
+                        timeInnerTextBlock, g_settings.timeStyle.hidden,
+                        maxWidth);
+    } else {
+        ClearSpacerLine(clockElementStyleData->dateSpacerLine);
+        ClearSpacerLine(clockElementStyleData->timeSpacerLine);
+    }
+
     clockElementStyleData->styleIndex = clockElementStyleIndex;
 }
 
