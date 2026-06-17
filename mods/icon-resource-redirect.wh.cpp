@@ -293,6 +293,16 @@ The resource lookup order then becomes:
   - Windows 11 New Folders Yellow|themes/icons/niivu/Windows%2011%20New%20Folders%20Yellow.zip: Windows 11 New Folders Yellow (by niivu)
   - Pane7|themes/icons/ImSwordQueen/Pane7.zip: Pane7 (by ImSwordQueen)
   - Pane8.1|themes/icons/NicSonic/Pane8.1.zip: Pane8.1 (by NicSonic)
+- disableThumbnails: false
+  $name: Disable folder thumbnails
+  $description: >-
+    Make Explorer folders use a generic folder icon instead of showing
+    thumbnails of their contents. This works better with some icon themes.
+- allResourceRedirect: false
+  $name: Redirect all loaded resources (experimental)
+  $description: >-
+    Try to redirect all loaded resources, not only the supported resources
+    that are listed in the description.
 - themePaths: [""]
   $name: Theme paths
   $description: >-
@@ -309,16 +319,6 @@ The resource lookup order then becomes:
       $name: The redirection resource file
       $description: The custom resource file that will be used instead.
   $name: Redirection resource paths
-- allResourceRedirect: false
-  $name: Redirect all loaded resources (experimental)
-  $description: >-
-    Try to redirect all loaded resources, not only the supported resources
-    that are listed in the description.
-- disableThumbnails: false
-  $name: Disable folder thumbnails
-  $description: >-
-    Make Explorer folders use a generic folder icon instead of showing
-    thumbnails of their contents. This works better with some icon themes.
 - themeFolder: ""
   $name: Theme folder (deprecated)
   $description: >-
@@ -366,8 +366,8 @@ using namespace std::string_view_literals;
 
 struct {
     WindhawkUtils::StringSetting iconTheme;
-    bool allResourceRedirect;
     std::atomic<bool> disableThumbnails;
+    bool allResourceRedirect;
 } g_settings;
 
 std::shared_mutex g_redirectionResourcePathsMutex;
@@ -2755,8 +2755,8 @@ LSTATUS WINAPI RegQueryValueExW_Hook(HKEY hKey,
 
 void LoadSettings() {
     g_settings.iconTheme = WindhawkUtils::StringSetting::make(L"iconTheme");
-    g_settings.allResourceRedirect = Wh_GetIntSetting(L"allResourceRedirect");
     g_settings.disableThumbnails = Wh_GetIntSetting(L"disableThumbnails");
+    g_settings.allResourceRedirect = Wh_GetIntSetting(L"allResourceRedirect");
 
     std::unordered_map<std::wstring, std::vector<std::wstring>> paths;
     std::unordered_map<std::string, std::vector<std::string>> pathsA;
@@ -3136,8 +3136,8 @@ BOOL Wh_ModSettingsChanged(BOOL* bReload) {
     Wh_Log(L">");
 
     auto prevIconTheme = std::move(g_settings.iconTheme);
-    int prevAllResourceRedirect = g_settings.allResourceRedirect;
     bool prevDisableThumbnails = g_settings.disableThumbnails;
+    int prevAllResourceRedirect = g_settings.allResourceRedirect;
 
     LoadSettings();
 
