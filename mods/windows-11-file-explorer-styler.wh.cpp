@@ -30,8 +30,6 @@ own.
 Also check out the **Windows 11 Taskbar Styler**, **Windows 11 Start Menu
 Styler** and **Windows 11 Notification Center Styler** mods.
 
-**Note**: This mod requires Windhawk v1.6 or newer.
-
 ## Themes
 
 Themes are collections of styles. The following themes are integrated into the
