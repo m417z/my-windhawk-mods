@@ -54,9 +54,12 @@ std::wstring GetActiveVersionedClassName(PCWSTR className) {
     }
 
     // data.lpData points to an undocumented record whose name_offset field
-    // locates the (null-terminated) versioned class name. This layout has been
-    // stable since Windows XP and is what the Wine and ReactOS comctl32 tests
-    // rely on to read the redirected class name. Struct definition from:
+    // locates the versioned class name. The name is null-terminated: the
+    // side-by-side section reserves terminators for it, and user32 itself reads
+    // it this way (ClassNameToVersion uses name_offset as a null-terminated
+    // string and never consults name_len). This layout has been stable since
+    // Windows XP and is what the Wine and ReactOS comctl32 tests rely on.
+    // Struct definition from:
     // https://doxygen.reactos.org/d4/d6e/modules_2rostests_2winetests_2comctl32_2button_8c_source.html
     struct wndclass_redirect_data {
         ULONG size;
