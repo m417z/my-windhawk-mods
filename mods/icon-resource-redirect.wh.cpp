@@ -82,6 +82,18 @@ The option to redirect all resources can be enabled in the settings. In this
 case, redirection won't be limited to the resource types and loading methods
 listed above. This option might become the default in the future.
 
+## Disable folder thumbnails
+
+The mod has an option to disable thumbnails in Explorer folders, making folders
+use a generic folder icon instead of showing a preview of their contents. It's
+equivalent to setting the following registry value, but is applied dynamically
+by the mod (no registry modifications are actually made):
+
+```
+HKCU\Software\Classes\Local Settings\Software\Microsoft\Windows\Shell\Bags\AllFolders\Shell
+Logo = imageres.dll,-3
+```
+
 ## Choosing the redirected resource file
 
 For some files, Windows has additional .mui and/or .mun resource files. For
@@ -302,6 +314,11 @@ The resource lookup order then becomes:
   $description: >-
     Try to redirect all loaded resources, not only the supported resources
     that are listed in the description.
+- disableThumbnails: false
+  $name: Disable folder thumbnails
+  $description: >-
+    Make Explorer folders use a generic folder icon instead of showing
+    thumbnails of their contents. This works better with some icon themes.
 - themeFolder: ""
   $name: Theme folder (deprecated)
   $description: >-
@@ -333,13 +350,24 @@ The resource lookup order then becomes:
 #include <unordered_map>
 #include <vector>
 
+using namespace std::string_view_literals;
+
 #ifndef LR_EXACTSIZEONLY
 #define LR_EXACTSIZEONLY 0x10000
+#endif
+
+#ifndef STATUS_SUCCESS
+#define STATUS_SUCCESS ((NTSTATUS)0x00000000L)
+#endif
+
+#ifndef STATUS_BUFFER_TOO_SMALL
+#define STATUS_BUFFER_TOO_SMALL ((NTSTATUS)0xC0000023L)
 #endif
 
 struct {
     WindhawkUtils::StringSetting iconTheme;
     bool allResourceRedirect;
+    std::atomic<bool> disableThumbnails;
 } g_settings;
 
 std::shared_mutex g_redirectionResourcePathsMutex;
@@ -2554,9 +2582,181 @@ std::wstring GetIconThemePath(std::wstring_view iconTheme) {
     return targetPath;
 }
 
+bool StartsWithCaseInsensitive(std::wstring_view str,
+                               std::wstring_view prefix) {
+    return str.size() >= prefix.size() &&
+           _wcsnicmp(str.data(), prefix.data(), prefix.size()) == 0;
+}
+
+// https://github.com/valinet/wh-mods/blob/61319815c7e018e392a08077dc364559548ade02/mods/valinet-unserver.wh.cpp#L95
+// https://stackoverflow.com/questions/937044/determine-path-to-registry-key-from-hkey-handle-in-c
+std::wstring GetPathFromHKEY(HKEY key) {
+    if (!key) {
+        return {};
+    }
+
+    using NtQueryKey_t = NTSTATUS(NTAPI*)(
+        HANDLE KeyHandle, int KeyInformationClass, PVOID KeyInformation,
+        ULONG Length, PULONG ResultLength);
+    static NtQueryKey_t pNtQueryKey = []() {
+        HMODULE hNtdll = GetModuleHandle(L"ntdll.dll");
+        if (hNtdll) {
+            return (NtQueryKey_t)GetProcAddress(hNtdll, "NtQueryKey");
+        }
+        return (NtQueryKey_t) nullptr;
+    }();
+
+    if (!pNtQueryKey) {
+        return {};
+    }
+
+    constexpr int kKeyNameInformation = 3;
+
+    ULONG size = 0;
+    NTSTATUS result = pNtQueryKey(key, kKeyNameInformation, nullptr, 0, &size);
+    if (result != STATUS_BUFFER_TOO_SMALL) {
+        return {};
+    }
+
+    std::vector<BYTE> buffer(size);
+    result = pNtQueryKey(key, kKeyNameInformation, buffer.data(), size, &size);
+    if (result != STATUS_SUCCESS || size < sizeof(ULONG)) {
+        return {};
+    }
+
+    // The buffer contains a KEY_NAME_INFORMATION structure:
+    // ULONG NameLength (4 bytes) + WCHAR Name[1].
+    ULONG nameLength = *reinterpret_cast<ULONG*>(buffer.data());
+    if (size < sizeof(ULONG) + nameLength) {
+        return {};
+    }
+
+    PCWSTR name = reinterpret_cast<PCWSTR>(buffer.data() + sizeof(ULONG));
+    return std::wstring(name, nameLength / sizeof(WCHAR));
+}
+
+bool MatchesClassSubkey(HKEY hKey, std::wstring_view classSubKey) {
+    std::wstring keyPath = GetPathFromHKEY(hKey);
+    std::wstring_view keyPathSuffix = keyPath;
+
+    constexpr std::wstring_view kRegistryMachinePrefix =
+        L"\\REGISTRY\\MACHINE\\SOFTWARE\\Classes\\"sv;
+    constexpr std::wstring_view kRegistryUserPrefix = L"\\REGISTRY\\USER\\"sv;
+
+    if (StartsWithCaseInsensitive(keyPathSuffix, kRegistryMachinePrefix)) {
+        // Remove "\REGISTRY\MACHINE\SOFTWARE\Classes\" prefix.
+        keyPathSuffix.remove_prefix(kRegistryMachinePrefix.size());
+    } else if (StartsWithCaseInsensitive(keyPathSuffix, kRegistryUserPrefix)) {
+        // Remove "\REGISTRY\USER\" prefix.
+        keyPathSuffix.remove_prefix(kRegistryUserPrefix.size());
+
+        // Remove "<SID>_Classes\" prefix for non-empty SID.
+        size_t firstBackslash = keyPathSuffix.find(L'\\');
+        if (firstBackslash == std::wstring_view::npos) {
+            return false;
+        }
+
+        constexpr std::wstring_view kClassesSuffix = L"_Classes"sv;
+        if (firstBackslash > kClassesSuffix.size() &&
+            _wcsnicmp(
+                keyPathSuffix.data() + firstBackslash - kClassesSuffix.size(),
+                kClassesSuffix.data(), kClassesSuffix.size()) == 0) {
+            keyPathSuffix.remove_prefix(firstBackslash + 1);
+        } else {
+            return false;
+        }
+    } else {
+        return false;
+    }
+
+    return keyPathSuffix.size() == classSubKey.size() &&
+           _wcsnicmp(keyPathSuffix.data(), classSubKey.data(),
+                     classSubKey.size()) == 0;
+}
+
+using RegQueryValueExW_t = decltype(&RegQueryValueExW);
+RegQueryValueExW_t RegQueryValueExW_Original;
+LSTATUS WINAPI RegQueryValueExW_Hook(HKEY hKey,
+                                     LPCWSTR lpValueName,
+                                     LPDWORD lpReserved,
+                                     LPDWORD lpType,
+                                     LPBYTE lpData,
+                                     LPDWORD lpcbData) {
+    // Disable thumbnails in Explorer folders by providing the "Logo" value for
+    // the "AllFolders\Shell" key. When this value is present, Explorer uses a
+    // generic folder icon instead of showing thumbnails of the folder contents.
+    // This is equivalent to setting the "Logo" value below to "imageres.dll,-3"
+    // (REG_SZ), but is applied dynamically by the mod:
+    //
+    // HKCU\Software\Classes\Local
+    // Settings\Software\Microsoft\Windows\Shell\Bags\AllFolders\Shell
+    if (!g_settings.disableThumbnails) {
+        return RegQueryValueExW_Original(hKey, lpValueName, lpReserved, lpType,
+                                         lpData, lpcbData);
+    }
+
+    constexpr WCHAR kValueName[] = L"Logo";
+    constexpr std::wstring_view kClassSubkey =
+        L"Local Settings\\Software\\Microsoft\\Windows\\Shell\\Bags\\AllFolders\\Shell"sv;
+    constexpr std::wstring_view kReplacementData = L"imageres.dll,-3"sv;
+
+    // Save the original buffer size before calling the original function, as
+    // lpcbData is overwritten with the actual data size on output.
+    DWORD dataBufferSize = (lpData && lpcbData) ? *lpcbData : 0;
+
+    LSTATUS ret = RegQueryValueExW_Original(hKey, lpValueName, lpReserved,
+                                            lpType, lpData, lpcbData);
+    if (ret != ERROR_SUCCESS && ret != ERROR_MORE_DATA &&
+        ret != ERROR_FILE_NOT_FOUND) {
+        return ret;
+    }
+
+    if (!lpValueName || _wcsicmp(lpValueName, kValueName) != 0) {
+        return ret;
+    }
+
+    if (!MatchesClassSubkey(hKey, kClassSubkey)) {
+        return ret;
+    }
+
+    Wh_Log(L"Providing %s value to disable folder thumbnails", kValueName);
+
+    DWORD requiredSize = (kReplacementData.size() + 1) * sizeof(WCHAR);
+
+    if (lpType) {
+        *lpType = REG_SZ;
+    }
+
+    if (!lpData || !lpcbData) {
+        if (lpData && !lpcbData) {
+            // Shouldn't happen per documentation.
+            return ret;
+        }
+        if (lpcbData) {
+            *lpcbData = requiredSize;
+        }
+        return ERROR_SUCCESS;
+    }
+
+    if (dataBufferSize < requiredSize) {
+        Wh_Log(L"Not enough space for %s, available=%u", kValueName,
+               dataBufferSize);
+        *lpcbData = requiredSize;
+        return ERROR_MORE_DATA;
+    }
+
+    memcpy(lpData, kReplacementData.data(),
+           kReplacementData.size() * sizeof(WCHAR));
+    reinterpret_cast<PWSTR>(lpData)[kReplacementData.size()] = L'\0';
+    *lpcbData = requiredSize;
+
+    return ERROR_SUCCESS;
+}
+
 void LoadSettings() {
     g_settings.iconTheme = WindhawkUtils::StringSetting::make(L"iconTheme");
     g_settings.allResourceRedirect = Wh_GetIntSetting(L"allResourceRedirect");
+    g_settings.disableThumbnails = Wh_GetIntSetting(L"disableThumbnails");
 
     std::unordered_map<std::wstring, std::vector<std::wstring>> paths;
     std::unordered_map<std::string, std::vector<std::string>> pathsA;
@@ -2832,6 +3032,16 @@ BOOL Wh_ModInit() {
         }
     }
 
+    if (kernelBaseModule) {
+        auto pRegQueryValueExW = (RegQueryValueExW_t)GetProcAddress(
+            kernelBaseModule, "RegQueryValueExW");
+        if (pRegQueryValueExW) {
+            WindhawkUtils::SetFunctionHook(pRegQueryValueExW,
+                                           RegQueryValueExW_Hook,
+                                           &RegQueryValueExW_Original);
+        }
+    }
+
     // The functions below use FindResourceEx, LoadResource, SizeofResource.
     HMODULE shcoreModule =
         LoadLibraryEx(L"shcore.dll", nullptr, LOAD_LIBRARY_SEARCH_SYSTEM32);
@@ -2927,6 +3137,7 @@ BOOL Wh_ModSettingsChanged(BOOL* bReload) {
 
     auto prevIconTheme = std::move(g_settings.iconTheme);
     int prevAllResourceRedirect = g_settings.allResourceRedirect;
+    bool prevDisableThumbnails = g_settings.disableThumbnails;
 
     LoadSettings();
 
@@ -2938,7 +3149,8 @@ BOOL Wh_ModSettingsChanged(BOOL* bReload) {
     FreeAndClearRedirectedModules();
 
     if (DoesCurrentProcessOwnTaskbar()) {
-        if (wcscmp(g_settings.iconTheme, prevIconTheme) != 0) {
+        if (wcscmp(g_settings.iconTheme, prevIconTheme) != 0 ||
+            g_settings.disableThumbnails != prevDisableThumbnails) {
             PromptToClearCache();
         }
 
