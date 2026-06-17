@@ -2,7 +2,7 @@
 // @id              common-controls-hook
 // @name            Common Controls Hook
 // @description     Force-enable Common Controls v6 visual styles for legacy Win32 applications
-// @version         1.0.1
+// @version         1.0.2
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
