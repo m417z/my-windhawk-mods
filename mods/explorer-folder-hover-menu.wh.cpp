@@ -28,7 +28,7 @@ Inspired by [QTTabBar](https://qttabbar.wikidot.com/).
 
 // ==WindhawkModSettings==
 /*
-- roundedCorners: false
+- roundedCorners: true
   $name: Rounded menu corners
   $description: >-
     Round the corners of the pop-up menu. This option requires Windows 11.
