@@ -28,7 +28,7 @@ Inspired by [QTTabBar](https://qttabbar.wikidot.com/).
 
 // ==WindhawkModSettings==
 /*
-- iconSize: 18
+- iconSize: 20
   $name: Button size
   $description: The size of the expand button shown on hover.
 - roundedCorners: false
