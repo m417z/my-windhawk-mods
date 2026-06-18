@@ -77,6 +77,7 @@ Inspired by [QTTabBar](https://qttabbar.wikidot.com/).
 
 #include <initguid.h>  // Must come first so the shell GUIDs we use get storage.
 
+#include <commctrl.h>
 #include <comutil.h>
 #include <docobj.h>
 #include <dwmapi.h>
@@ -88,6 +89,7 @@ Inspired by [QTTabBar](https://qttabbar.wikidot.com/).
 #include <shlwapi.h>
 #include <shobjidl.h>
 #include <uiautomation.h>
+#include <windowsx.h>
 
 #include <winrt/base.h>
 
@@ -1425,6 +1427,106 @@ static HWND GetMenuBandWindow(IMenuBand* band) {
     return hwnd ? GetAncestor(hwnd, GA_ROOT) : nullptr;
 }
 
+// The shell menu band hosts its item toolbar inside a standard Pager control
+// (WC_PAGESCROLLER, class "SysPager"); this is its window class name.
+static constexpr WCHAR kPagerClass[] = L"SysPager";
+
+// Walks up from `hwnd` (inclusive) to the menu's Pager control, or nullptr.
+static HWND FindMenuPagerFromWindow(HWND hwnd) {
+    for (; hwnd; hwnd = GetParent(hwnd)) {
+        WCHAR cls[64];
+        if (GetClassNameW(hwnd, cls, ARRAYSIZE(cls)) &&
+            wcscmp(cls, kPagerClass) == 0) {
+            return hwnd;
+        }
+    }
+    return nullptr;
+}
+
+// Depth-first search for the first descendant of `parent` with the given class.
+static HWND FindDescendantOfClass(HWND parent, PCWSTR className) {
+    for (HWND child = GetWindow(parent, GW_CHILD); child;
+         child = GetWindow(child, GW_HWNDNEXT)) {
+        WCHAR cls[64];
+        if (GetClassNameW(child, cls, ARRAYSIZE(cls)) &&
+            wcscmp(cls, className) == 0) {
+            return child;
+        }
+        if (HWND found = FindDescendantOfClass(child, className)) {
+            return found;
+        }
+    }
+    return nullptr;
+}
+
+// Scrolls a long folder menu with the mouse wheel. The menu band has no native
+// wheel support: it parks its (taller-than-screen) item toolbar in a Pager
+// control whose top and bottom arrows are the only built-in way to scroll, and
+// neither the toolbar nor the pager reacts to the wheel. Translate wheel
+// notches into Pager scroll-position changes (PGM_SETPOS), scaled by the
+// toolbar's row height so a notch moves a few items.
+static void ScrollMenuWithWheel(HWND pager, WPARAM wheelWParam) {
+    UINT linesPerNotch = 3;
+    SystemParametersInfoW(SPI_GETWHEELSCROLLLINES, 0, &linesPerNotch, 0);
+    if (linesPerNotch == 0) {
+        return;  // Wheel scrolling is turned off system-wide.
+    }
+    if (linesPerNotch == WHEEL_PAGESCROLL) {
+        linesPerNotch = 5;  // "One screen" per notch; approximate for a menu.
+    }
+
+    HWND toolbar = GetWindow(pager, GW_CHILD);
+    if (!toolbar) {
+        return;
+    }
+
+    // Nothing to scroll unless the toolbar is taller than the pager's viewport.
+    // maxPos matches the pager's own internal clamp (child height minus pager
+    // client height). Poking PGM_SETPOS when the menu already fits makes the
+    // pager flash a scroll arrow, so bail out (without consuming the delta) when
+    // it is not scrollable.
+    RECT pagerRc = {};
+    RECT toolbarRc = {};
+    GetClientRect(pager, &pagerRc);
+    GetWindowRect(toolbar, &toolbarRc);
+    int maxPos = (toolbarRc.bottom - toolbarRc.top) - pagerRc.bottom;
+    if (maxPos <= 0) {
+        return;
+    }
+
+    // Accumulate sub-notch deltas so high-resolution wheels and touchpads still
+    // step smoothly.
+    static int s_accumulatedDelta;
+    s_accumulatedDelta += GET_WHEEL_DELTA_WPARAM(wheelWParam);
+    int notches = s_accumulatedDelta / WHEEL_DELTA;
+    s_accumulatedDelta -= notches * WHEEL_DELTA;
+    if (notches == 0) {
+        return;
+    }
+
+    // Step by the toolbar's row height; fall back to a sane default.
+    int itemHeight = 20;
+    if (SendMessageW(toolbar, TB_BUTTONCOUNT, 0, 0) > 0) {
+        RECT br = {};
+        if (SendMessageW(toolbar, TB_GETITEMRECT, 0, (LPARAM)&br) &&
+            br.bottom > br.top) {
+            itemHeight = br.bottom - br.top;
+        }
+    }
+
+    // Positive delta (wheel up) scrolls toward the top, i.e. a smaller pos.
+    int pos = (int)SendMessageW(pager, PGM_GETPOS, 0, 0);
+    int newPos = pos - notches * (int)linesPerNotch * itemHeight;
+    if (newPos < 0) {
+        newPos = 0;
+    } else if (newPos > maxPos) {
+        newPos = maxPos;
+    }
+    if (newPos != pos) {
+        SendMessageW(pager, PGM_SETPOS, 0, newPos);
+    }
+}
+
 static VOID CALLBACK ForegroundChangedProc(HWINEVENTHOOK hook,
                                            DWORD event,
                                            HWND hwnd,
@@ -1566,6 +1668,31 @@ static void ShowFolderMenuModal(PCIDLIST_ABSOLUTE pidlAbs, RECT anchorRect) {
                 // The outer loop won't see this null-hwnd thread message once
                 // it is consumed here, so apply it now.
                 LoadSettings();
+                continue;
+            }
+            if (msg.message == WM_MOUSEWHEEL) {
+                // The shell menu band ignores the wheel; scroll the menu under
+                // the pointer (or, failing that, the focused menu) ourselves by
+                // driving its Pager control. Prefer the menu under the pointer
+                // so a hovered submenu scrolls rather than its parent.
+                // WM_MOUSEWHEEL carries the pointer position (screen coords) at
+                // the moment of the event; use it rather than the current,
+                // possibly-moved, cursor position.
+                POINT pt = {GET_X_LPARAM(msg.lParam), GET_Y_LPARAM(msg.lParam)};
+                HWND under = WindowFromPoint(pt);
+                HWND pager = FindMenuPagerFromWindow(under);
+                if (!pager) {
+                    pager = FindMenuPagerFromWindow(msg.hwnd);
+                }
+                if (!pager) {
+                    HWND root = under ? GetAncestor(under, GA_ROOT) : nullptr;
+                    if (root) {
+                        pager = FindDescendantOfClass(root, kPagerClass);
+                    }
+                }
+                if (pager) {
+                    ScrollMenuWithWheel(pager, msg.wParam);
+                }
                 continue;
             }
 
