@@ -259,7 +259,7 @@ styles, such as the font color and size.
   $description: >-
     Get weather information for a specific location. Keep empty to use the
     current location. For details, refer to the documentation of wttr.in.
-- WebContentWeatherFormat: "%c \uD83C\uDF21\uFE0F%t \uD83C\uDF2C\uFE0F%w"
+- WebContentWeatherFormat: "%c \U0001F321\uFE0F%t \U0001F32C\uFE0F%w"
   $name: Weather format
   $description: >-
     The weather information format. For details, refer to the documentation of
