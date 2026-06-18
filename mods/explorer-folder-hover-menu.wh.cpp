@@ -2,7 +2,7 @@
 // @id              explorer-folder-hover-menu
 // @name            Folder Hover Menu
 // @description     Hover a folder in File Explorer to get an expand button that opens a cascading menu of the folder's contents
-// @version         1.0.2
+// @version         1.1
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
@@ -53,23 +53,17 @@ Inspired by [QTTabBar](https://qttabbar.wikidot.com/).
   $description: >-
     Shifts the button vertically from the selected corner, in pixels. Positive
     values move it down, negative values move it up.
-- timeout:
-  - maxItems: 500
-    $name: Maximum items
-    $description: >-
-      The most items to load into a single folder's menu. When a folder has
-      more, the list is truncated and a notice item is shown instead. This keeps
-      the menu quick to open for folders that contain a very large number of
-      items.
-  - timeoutSeconds: 5
-    $name: Timeout (seconds)
-    $description: >-
-      Stop loading a folder's contents into the menu after this many seconds. A
-      safety net for folders whose contents are slow to enumerate.
-  $name: Timeout
+- maxItems: 500
+  $name: Maximum items
   $description: >-
-    Limits that keep the menu quick to open when a folder contains a very large
-    number of items.
+    The most items to load into a single folder's menu. When a folder has more,
+    the list is truncated and a notice item is shown instead. This keeps the
+    menu quick to open for folders that contain a very large number of items.
+- timeoutSeconds: 5
+  $name: Timeout (seconds)
+  $description: >-
+    Stop loading a folder's contents into the menu after this many seconds. A
+    safety net for folders whose contents are slow to enumerate.
 */
 // ==/WindhawkModSettings==
 
@@ -93,6 +87,7 @@ Inspired by [QTTabBar](https://qttabbar.wikidot.com/).
 
 #include <winrt/base.h>
 
+#include <climits>
 #include <new>
 #include <string>
 #include <unordered_map>
@@ -149,8 +144,8 @@ struct {
     ButtonPosition position;
     int offsetX;
     int offsetY;
-    int enumTimeoutMs;
     int maxEnumItems;
+    int enumTimeoutMs;
 } g_settings;
 
 static void LoadSettings() {
@@ -178,17 +173,24 @@ static void LoadSettings() {
     g_settings.offsetX = Wh_GetIntSetting(L"offsetX");
     g_settings.offsetY = Wh_GetIntSetting(L"offsetY");
 
-    int maxItems = Wh_GetIntSetting(L"timeout.maxItems");
+    int maxItems = Wh_GetIntSetting(L"maxItems");
     if (maxItems < 1) {
         maxItems = 1;
     }
     g_settings.maxEnumItems = maxItems;
 
-    int timeoutSeconds = Wh_GetIntSetting(L"timeout.timeoutSeconds");
+    int timeoutSeconds = Wh_GetIntSetting(L"timeoutSeconds");
     if (timeoutSeconds < 1) {
         timeoutSeconds = 1;
     }
-    g_settings.enumTimeoutMs = timeoutSeconds * 1000;
+    // Multiply in 64-bit and clamp so a large setting can't overflow the int
+    // millisecond field (which would wrap to a tiny/negative timeout and cap
+    // every enumeration immediately).
+    LONGLONG timeoutMs = (LONGLONG)timeoutSeconds * 1000;
+    if (timeoutMs > INT_MAX) {
+        timeoutMs = INT_MAX;
+    }
+    g_settings.enumTimeoutMs = (int)timeoutMs;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -230,18 +232,18 @@ static PIDLIST_ABSOLUTE g_targetPidl;
 
 // How long (ms) a snapshot is trusted before a mouse move triggers a background
 // rebuild. This is not a timer; it only gates work done on actual input events.
-static const ULONGLONG kRefreshTtlMs = 500;
+static constexpr ULONGLONG kRefreshTtlMs = 500;
 
 // Raw input is high frequency; coalesce moves to roughly this interval (ms).
-static const ULONGLONG kInputCoalesceMs = 10;
+static constexpr ULONGLONG kInputCoalesceMs = 10;
 static ULONGLONG g_lastInputTick;
 static BYTE g_rawInputBuffer[1024];
 static bool g_rawInputRegistered;
 
 // While the button is visible, re-check this often so navigation under a
 // stationary cursor (double-click / keyboard Enter) is noticed without a move.
-static const UINT kWatchdogIntervalMs = 500;
-static const UINT_PTR kWatchdogTimerId = 1;
+static constexpr UINT kWatchdogIntervalMs = 500;
+static constexpr UINT_PTR kWatchdogTimerId = 1;
 
 // One visible item in the active view: its rectangle (screen coords) and name.
 struct CachedItem {
@@ -368,7 +370,7 @@ struct DarkColorEntry {
     COLORREF color;
 };
 
-static const DarkColorEntry kDarkColors[] = {
+static constexpr DarkColorEntry kDarkColors[] = {
     {COLOR_MENU, RGB(43, 43, 43)},
     {COLOR_WINDOW, RGB(43, 43, 43)},
     {COLOR_BTNFACE, RGB(43, 43, 43)},
@@ -421,6 +423,13 @@ HBRUSH WINAPI GetSysColorBrush_Hook(int index) {
     return GetSysColorBrush_Orig(index);
 }
 
+// The menu band hosts each menu surface (the top-level popup and every
+// cascading submenu) in a top-level window of this shell class (registered by
+// CMenuDeskBar / CBaseBar). We match it so only the menu's own windows are
+// rounded, not other top-level windows that merely happen to be created while
+// the menu is up (item tooltips, the desktop's WorkerW, etc.).
+static constexpr WCHAR kMenuHostClass[] = L"BaseBar";
+
 // While our dark menu is being built, the only windows this process creates are
 // the menu band's. Dark-allowing each one at creation (before its first paint)
 // makes it render dark from the first frame instead of flashing light then
@@ -445,16 +454,20 @@ HWND WINAPI CreateWindowExW_Hook(DWORD exStyle,
     if (hwnd && g_menuActive && g_menuDark && g_pAllowDarkModeForWindow) {
         g_pAllowDarkModeForWindow(hwnd, true);
     }
-    // Same reasoning as the dark-mode opt-in above: while the menu is up, the
-    // only top-level windows this process creates are the menu band's (the
-    // top-level popup and each cascading submenu), so round each one at
-    // creation. DWM keeps the preference across resizes; it is a no-op on
-    // Windows 10 and on the menu band's child windows.
+    // Round the menu's own surfaces (the top-level popup and each cascading
+    // submenu). Match the host class explicitly rather than rounding every
+    // top-level window created while the menu is up, so other windows the band
+    // spins up meanwhile - notably item tooltips - keep their normal corners.
+    // DWM keeps the preference across resizes; it is a no-op on Windows 10.
     if (hwnd && g_menuActive && g_settings.roundedCorners &&
         !(style & WS_CHILD)) {
-        DWM_WINDOW_CORNER_PREFERENCE pref = DWMWCP_ROUNDSMALL;
-        DwmSetWindowAttribute(hwnd, DWMWA_WINDOW_CORNER_PREFERENCE, &pref,
-                              sizeof(pref));
+        WCHAR cls[64];
+        if (GetClassNameW(hwnd, cls, ARRAYSIZE(cls)) &&
+            wcscmp(cls, kMenuHostClass) == 0) {
+            DWM_WINDOW_CORNER_PREFERENCE pref = DWMWCP_ROUNDSMALL;
+            DwmSetWindowAttribute(hwnd, DWMWA_WINDOW_CORNER_PREFERENCE, &pref,
+                                  sizeof(pref));
+        }
     }
     return hwnd;
 }
@@ -1060,7 +1073,7 @@ static DWORD WINAPI WorkerThreadProc(LPVOID param) {
 // are exposed in the "Timeout" settings group.
 
 // Magic stored in the synthetic child pidl so we can recognize it later.
-static const DWORD kTimeoutPidlMagic = 0x544D4F45;  // 'EOMT'.
+static constexpr DWORD kTimeoutPidlMagic = 0x544D4F45;  // 'EOMT'.
 
 // Builds the synthetic one-item pidl the bounded enumerator returns when it
 // stops early. Caller frees it with CoTaskMemFree / ILFree (the menu band does
@@ -1334,7 +1347,10 @@ HRESULT STDMETHODCALLTYPE GetDisplayNameOf_Hook(IShellFolder* pThis,
                                                 SHGDNF uFlags,
                                                 STRRET* pName) {
     if (IsTimeoutPidl(pidl)) {
-        static const WCHAR text[] = L"(too many items, list truncated)";
+        if (!pName) {
+            return E_POINTER;
+        }
+        static constexpr WCHAR text[] = L"(too many items, list truncated)";
         LPWSTR copy = (LPWSTR)CoTaskMemAlloc(sizeof(text));
         if (!copy) {
             return E_OUTOFMEMORY;
@@ -1363,11 +1379,19 @@ static void InitEnumTimeoutHooks() {
     bool comInited =
         SUCCEEDED(CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED));
 
+    // Bind any real file-system folder to reach the shared CFSFolder vtable.
+    // Use the Windows directory rather than a hard-coded "C:\\" so this still
+    // works when Windows lives on another drive.
+    WCHAR fsPath[MAX_PATH];
+    if (!GetWindowsDirectoryW(fsPath, ARRAYSIZE(fsPath))) {
+        fsPath[0] = L'\0';
+    }
+
     winrt::com_ptr<IShellFolder> desktop;
     PIDLIST_ABSOLUTE pidl = nullptr;
     winrt::com_ptr<IShellFolder> fsFolder;
-    if (SUCCEEDED(SHGetDesktopFolder(desktop.put())) && desktop &&
-        SUCCEEDED(SHParseDisplayName(L"C:\\", nullptr, &pidl, 0, nullptr)) &&
+    if (fsPath[0] && SUCCEEDED(SHGetDesktopFolder(desktop.put())) && desktop &&
+        SUCCEEDED(SHParseDisplayName(fsPath, nullptr, &pidl, 0, nullptr)) &&
         pidl &&
         SUCCEEDED(desktop->BindToObject(pidl, nullptr,
                                         IID_PPV_ARGS(fsFolder.put()))) &&
@@ -1483,8 +1507,8 @@ static void ScrollMenuWithWheel(HWND pager, WPARAM wheelWParam) {
     // Nothing to scroll unless the toolbar is taller than the pager's viewport.
     // maxPos matches the pager's own internal clamp (child height minus pager
     // client height). Poking PGM_SETPOS when the menu already fits makes the
-    // pager flash a scroll arrow, so bail out (without consuming the delta) when
-    // it is not scrollable.
+    // pager flash a scroll arrow, so bail out (without consuming the delta)
+    // when it is not scrollable.
     RECT pagerRc = {};
     RECT toolbarRc = {};
     GetClientRect(pager, &pagerRc);
@@ -1692,8 +1716,10 @@ static void ShowFolderMenuModal(PCIDLIST_ABSOLUTE pidlAbs, RECT anchorRect) {
                 }
                 if (pager) {
                     ScrollMenuWithWheel(pager, msg.wParam);
+                    continue;
                 }
-                continue;
+                // No menu pager to drive; fall through and let the message go
+                // through normal menu handling rather than swallowing it.
             }
 
             LRESULT lr;
