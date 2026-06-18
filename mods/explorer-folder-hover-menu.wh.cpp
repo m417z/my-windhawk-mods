@@ -53,6 +53,23 @@ Inspired by [QTTabBar](https://qttabbar.wikidot.com/).
   $description: >-
     Shifts the button vertically from the selected corner, in pixels. Positive
     values move it down, negative values move it up.
+- timeout:
+  - maxItems: 500
+    $name: Maximum items
+    $description: >-
+      The most items to load into a single folder's menu. When a folder has
+      more, the list is truncated and a notice item is shown instead. This keeps
+      the menu quick to open for folders that contain a very large number of
+      items.
+  - timeoutSeconds: 5
+    $name: Timeout (seconds)
+    $description: >-
+      Stop loading a folder's contents into the menu after this many seconds. A
+      safety net for folders whose contents are slow to enumerate.
+  $name: Timeout
+  $description: >-
+    Limits that keep the menu quick to open when a folder contains a very large
+    number of items.
 */
 // ==/WindhawkModSettings==
 
@@ -74,6 +91,7 @@ Inspired by [QTTabBar](https://qttabbar.wikidot.com/).
 
 #include <winrt/base.h>
 
+#include <new>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -129,6 +147,8 @@ struct {
     ButtonPosition position;
     int offsetX;
     int offsetY;
+    int enumTimeoutMs;
+    int maxEnumItems;
 } g_settings;
 
 static void LoadSettings() {
@@ -155,6 +175,18 @@ static void LoadSettings() {
 
     g_settings.offsetX = Wh_GetIntSetting(L"offsetX");
     g_settings.offsetY = Wh_GetIntSetting(L"offsetY");
+
+    int maxItems = Wh_GetIntSetting(L"timeout.maxItems");
+    if (maxItems < 1) {
+        maxItems = 1;
+    }
+    g_settings.maxEnumItems = maxItems;
+
+    int timeoutSeconds = Wh_GetIntSetting(L"timeout.timeoutSeconds");
+    if (timeoutSeconds < 1) {
+        timeoutSeconds = 1;
+    }
+    g_settings.enumTimeoutMs = timeoutSeconds * 1000;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -1015,6 +1047,361 @@ static DWORD WINAPI WorkerThreadProc(LPVOID param) {
 }
 
 ////////////////////////////////////////////////////////////////////////////////
+// Enumeration bound. A folder with a very large number of items makes the menu
+// band take a long time to open: the enumeration is fast, but the band builds
+// one menu entry per item, so a few thousand items cost several seconds. We
+// bound that by wrapping the folder's enumerator (see the EnumObjects hook
+// below): it returns at most g_settings.maxEnumItems real items and then a
+// single synthetic notice entry, after which the menu opens promptly with a
+// truncated list. A time budget (g_settings.enumTimeoutMs) is also enforced as
+// a safety net for folders where the enumeration itself is slow. Both limits
+// are exposed in the "Timeout" settings group.
+
+// Magic stored in the synthetic child pidl so we can recognize it later.
+static const DWORD kTimeoutPidlMagic = 0x544D4F45;  // 'EOMT'.
+
+// Builds the synthetic one-item pidl the bounded enumerator returns when it
+// stops early. Caller frees it with CoTaskMemFree / ILFree (the menu band does
+// so for us).
+static LPITEMIDLIST CreateTimeoutPidl() {
+    // A single SHITEMID carrying our magic, followed by the null terminator.
+    const SIZE_T size = sizeof(USHORT) + sizeof(DWORD) + sizeof(USHORT);
+    BYTE* p = (BYTE*)CoTaskMemAlloc(size);
+    if (!p) {
+        return nullptr;
+    }
+    USHORT cb = (USHORT)(sizeof(USHORT) + sizeof(DWORD));
+    memcpy(p, &cb, sizeof(cb));
+    memcpy(p + sizeof(USHORT), &kTimeoutPidlMagic, sizeof(kTimeoutPidlMagic));
+    USHORT terminator = 0;
+    memcpy(p + sizeof(USHORT) + sizeof(DWORD), &terminator, sizeof(terminator));
+    return (LPITEMIDLIST)p;
+}
+
+static bool IsTimeoutPidl(LPCITEMIDLIST pidl) {
+    if (!pidl || pidl->mkid.cb != sizeof(USHORT) + sizeof(DWORD)) {
+        return false;
+    }
+    DWORD magic;
+    memcpy(&magic, pidl->mkid.abID, sizeof(magic));
+    if (magic != kTimeoutPidlMagic) {
+        return false;
+    }
+    LPCITEMIDLIST next = (LPCITEMIDLIST)((const BYTE*)pidl + pidl->mkid.cb);
+    return next->mkid.cb == 0;
+}
+
+// Wraps the folder's real enumerator and bounds it. While inside the item-count
+// and time budgets it forwards to the inner enumerator; once either is exceeded
+// it returns one synthetic notice item and then reports end-of-enumeration, so
+// the menu band stops asking for more (and ignores the remaining items).
+class CTimeoutEnumIDList final : public IEnumIDList {
+   public:
+    CTimeoutEnumIDList(IEnumIDList* inner) : m_inner(inner) {
+        m_inner->AddRef();
+        m_deadline = GetTickCount64() + g_settings.enumTimeoutMs;
+    }
+
+    // IUnknown.
+    IFACEMETHODIMP QueryInterface(REFIID riid, void** ppv) override {
+        if (!ppv) {
+            return E_POINTER;
+        }
+        if (IsEqualIID(riid, IID_IUnknown) ||
+            IsEqualIID(riid, IID_IEnumIDList)) {
+            *ppv = static_cast<IEnumIDList*>(this);
+            AddRef();
+            return S_OK;
+        }
+        *ppv = nullptr;
+        return E_NOINTERFACE;
+    }
+
+    IFACEMETHODIMP_(ULONG) AddRef() override {
+        return InterlockedIncrement(&m_ref);
+    }
+
+    IFACEMETHODIMP_(ULONG) Release() override {
+        LONG ref = InterlockedDecrement(&m_ref);
+        if (ref == 0) {
+            delete this;
+        }
+        return ref;
+    }
+
+    // IEnumIDList.
+    IFACEMETHODIMP Next(ULONG celt,
+                        LPITEMIDLIST* rgelt,
+                        ULONG* pceltFetched) override {
+        if (pceltFetched) {
+            *pceltFetched = 0;
+        }
+        if (celt == 0) {
+            return S_OK;
+        }
+        if (!rgelt) {
+            return E_INVALIDARG;
+        }
+
+        // Stop and emit the notice once either budget is exceeded: the item
+        // count (the band's cost is dominated by building one entry per item,
+        // so a huge folder must be truncated) or, as a safety net, the time
+        // budget (in case the enumeration itself is slow). Checked here,
+        // between items.
+        if (m_count >= (UINT)g_settings.maxEnumItems ||
+            GetTickCount64() >= m_deadline) {
+            if (m_timedOutEmitted) {
+                return S_FALSE;  // Notice already returned; nothing more.
+            }
+            LPITEMIDLIST pidl = CreateTimeoutPidl();
+            if (!pidl) {
+                return E_OUTOFMEMORY;
+            }
+            rgelt[0] = pidl;
+            m_timedOutEmitted = true;
+            if (pceltFetched) {
+                *pceltFetched = 1;
+            }
+            Wh_Log(
+                L"Enumeration capped after %u items (timedOut=%d), emitting "
+                L"notice",
+                m_count, (int)(GetTickCount64() >= m_deadline));
+            return celt == 1 ? S_OK : S_FALSE;
+        }
+
+        HRESULT hr = m_inner->Next(celt, rgelt, pceltFetched);
+        m_count += pceltFetched ? *pceltFetched : (hr == S_OK ? celt : 0);
+        return hr;
+    }
+
+    IFACEMETHODIMP Skip(ULONG celt) override { return m_inner->Skip(celt); }
+
+    IFACEMETHODIMP Reset() override {
+        m_timedOutEmitted = false;
+        m_count = 0;
+        m_deadline = GetTickCount64() + g_settings.enumTimeoutMs;
+        return m_inner->Reset();
+    }
+
+    IFACEMETHODIMP Clone(IEnumIDList** ppenum) override {
+        if (!ppenum) {
+            return E_POINTER;
+        }
+        *ppenum = nullptr;
+        winrt::com_ptr<IEnumIDList> innerClone;
+        HRESULT hr = m_inner->Clone(innerClone.put());
+        if (FAILED(hr)) {
+            return hr;
+        }
+        auto* clone = new (std::nothrow) CTimeoutEnumIDList(innerClone.get());
+        if (!clone) {
+            return E_OUTOFMEMORY;
+        }
+        clone->m_deadline = m_deadline;
+        clone->m_timedOutEmitted = m_timedOutEmitted;
+        clone->m_count = m_count;
+        *ppenum = clone;
+        return S_OK;
+    }
+
+   private:
+    ~CTimeoutEnumIDList() { m_inner->Release(); }
+
+    LONG m_ref = 1;
+    IEnumIDList* m_inner;
+    ULONGLONG m_deadline;
+    bool m_timedOutEmitted = false;
+    UINT m_count = 0;  // Real items returned so far (for the item-count cap).
+};
+
+// The menu band does not enumerate through the IShellFolder we hand it (it uses
+// the real folder it binds from the pidl), so wrapping that folder has no
+// effect. Instead we inline-hook the file-system folder's IShellFolder methods
+// directly. Every CFSFolder instance in this process shares a single vtable, so
+// one hook on EnumObjects bounds every enumeration the menu band drives,
+// cascading sub-folders included. The pidl-handling methods are hooked too so
+// the synthetic "timed out" item the bounded enumerator returns renders cleanly
+// and stays inert - the band calls those on the real folder, not on us.
+
+using EnumObjects_t = HRESULT(STDMETHODCALLTYPE*)(IShellFolder*,
+                                                  HWND,
+                                                  SHCONTF,
+                                                  IEnumIDList**);
+using CompareIDs_t = HRESULT(STDMETHODCALLTYPE*)(IShellFolder*,
+                                                 LPARAM,
+                                                 PCUIDLIST_RELATIVE,
+                                                 PCUIDLIST_RELATIVE);
+using GetAttributesOf_t = HRESULT(STDMETHODCALLTYPE*)(IShellFolder*,
+                                                      UINT,
+                                                      PCUITEMID_CHILD_ARRAY,
+                                                      SFGAOF*);
+using GetUIObjectOf_t = HRESULT(STDMETHODCALLTYPE*)(IShellFolder*,
+                                                    HWND,
+                                                    UINT,
+                                                    PCUITEMID_CHILD_ARRAY,
+                                                    REFIID,
+                                                    UINT*,
+                                                    void**);
+using GetDisplayNameOf_t = HRESULT(STDMETHODCALLTYPE*)(IShellFolder*,
+                                                       PCUITEMID_CHILD,
+                                                       SHGDNF,
+                                                       STRRET*);
+
+EnumObjects_t EnumObjects_Orig;
+CompareIDs_t CompareIDs_Orig;
+GetAttributesOf_t GetAttributesOf_Orig;
+GetUIObjectOf_t GetUIObjectOf_Orig;
+GetDisplayNameOf_t GetDisplayNameOf_Orig;
+
+HRESULT STDMETHODCALLTYPE EnumObjects_Hook(IShellFolder* pThis,
+                                           HWND hwnd,
+                                           SHCONTF grfFlags,
+                                           IEnumIDList** ppenumIDList) {
+    HRESULT hr = EnumObjects_Orig(pThis, hwnd, grfFlags, ppenumIDList);
+
+    // Only the menu band's enumeration is bounded. The background worker also
+    // enumerates folders (to build its hover map) and must see the complete
+    // list, so its own enumeration - and only its - is left untouched.
+    if (hr != S_OK || !ppenumIDList || !*ppenumIDList ||
+        GetCurrentThreadId() == g_workerThreadId) {
+        return hr;
+    }
+
+    IEnumIDList* inner = *ppenumIDList;
+    auto* wrapper = new (std::nothrow) CTimeoutEnumIDList(inner);
+    if (wrapper) {
+        inner->Release();  // The wrapper holds its own reference now.
+        *ppenumIDList = wrapper;
+    }
+    return hr;
+}
+
+HRESULT STDMETHODCALLTYPE CompareIDs_Hook(IShellFolder* pThis,
+                                          LPARAM lParam,
+                                          PCUIDLIST_RELATIVE pidl1,
+                                          PCUIDLIST_RELATIVE pidl2) {
+    bool t1 = IsTimeoutPidl(pidl1);
+    bool t2 = IsTimeoutPidl(pidl2);
+    if (t1 || t2) {
+        // Keep the synthetic item at the bottom of the list (and away from the
+        // real folder's comparer, which would choke on our fake pidl).
+        int order = (t1 == t2) ? 0 : (t1 ? 1 : -1);
+        return MAKE_HRESULT(SEVERITY_SUCCESS, 0, (USHORT)(SHORT)order);
+    }
+    return CompareIDs_Orig(pThis, lParam, pidl1, pidl2);
+}
+
+HRESULT STDMETHODCALLTYPE GetAttributesOf_Hook(IShellFolder* pThis,
+                                               UINT cidl,
+                                               PCUITEMID_CHILD_ARRAY apidl,
+                                               SFGAOF* rgfInOut) {
+    for (UINT i = 0; i < cidl; i++) {
+        if (IsTimeoutPidl(apidl[i])) {
+            // Inert, non-folder entry: no expand arrow, nothing to launch.
+            if (rgfInOut) {
+                *rgfInOut = 0;
+            }
+            return S_OK;
+        }
+    }
+    return GetAttributesOf_Orig(pThis, cidl, apidl, rgfInOut);
+}
+
+HRESULT STDMETHODCALLTYPE GetUIObjectOf_Hook(IShellFolder* pThis,
+                                             HWND hwndOwner,
+                                             UINT cidl,
+                                             PCUITEMID_CHILD_ARRAY apidl,
+                                             REFIID riid,
+                                             UINT* rgfReserved,
+                                             void** ppv) {
+    for (UINT i = 0; i < cidl; i++) {
+        if (IsTimeoutPidl(apidl[i])) {
+            // No icon, context menu or launch object for the notice item.
+            if (ppv) {
+                *ppv = nullptr;
+            }
+            return E_NOINTERFACE;
+        }
+    }
+    return GetUIObjectOf_Orig(pThis, hwndOwner, cidl, apidl, riid, rgfReserved,
+                              ppv);
+}
+
+HRESULT STDMETHODCALLTYPE GetDisplayNameOf_Hook(IShellFolder* pThis,
+                                                PCUITEMID_CHILD pidl,
+                                                SHGDNF uFlags,
+                                                STRRET* pName) {
+    if (IsTimeoutPidl(pidl)) {
+        static const WCHAR text[] = L"(too many items, list truncated)";
+        LPWSTR copy = (LPWSTR)CoTaskMemAlloc(sizeof(text));
+        if (!copy) {
+            return E_OUTOFMEMORY;
+        }
+        memcpy(copy, text, sizeof(text));
+        pName->uType = STRRET_WSTR;
+        pName->pOleStr = copy;
+        return S_OK;
+    }
+    return GetDisplayNameOf_Orig(pThis, pidl, uFlags, pName);
+}
+
+// IShellFolder vtable slot indices (after the three IUnknown slots).
+enum {
+    kVtblEnumObjects = 4,
+    kVtblCompareIDs = 7,
+    kVtblGetAttributesOf = 9,
+    kVtblGetUIObjectOf = 10,
+    kVtblGetDisplayNameOf = 11,
+};
+
+// Resolves the file-system folder vtable (shared by every CFSFolder instance)
+// and inline-hooks the methods we need. Called once at init; needs a COM
+// apartment to bind the sample folder, so it sets one up temporarily.
+static void InitEnumTimeoutHooks() {
+    bool comInited =
+        SUCCEEDED(CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED));
+
+    winrt::com_ptr<IShellFolder> desktop;
+    PIDLIST_ABSOLUTE pidl = nullptr;
+    winrt::com_ptr<IShellFolder> fsFolder;
+    if (SUCCEEDED(SHGetDesktopFolder(desktop.put())) && desktop &&
+        SUCCEEDED(SHParseDisplayName(L"C:\\", nullptr, &pidl, 0, nullptr)) &&
+        pidl &&
+        SUCCEEDED(desktop->BindToObject(pidl, nullptr,
+                                        IID_PPV_ARGS(fsFolder.put()))) &&
+        fsFolder) {
+        void** vtable = *(void***)fsFolder.get();
+        WindhawkUtils::SetFunctionHook((EnumObjects_t)vtable[kVtblEnumObjects],
+                                       EnumObjects_Hook, &EnumObjects_Orig);
+        WindhawkUtils::SetFunctionHook((CompareIDs_t)vtable[kVtblCompareIDs],
+                                       CompareIDs_Hook, &CompareIDs_Orig);
+        WindhawkUtils::SetFunctionHook(
+            (GetAttributesOf_t)vtable[kVtblGetAttributesOf],
+            GetAttributesOf_Hook, &GetAttributesOf_Orig);
+        WindhawkUtils::SetFunctionHook(
+            (GetUIObjectOf_t)vtable[kVtblGetUIObjectOf], GetUIObjectOf_Hook,
+            &GetUIObjectOf_Orig);
+        WindhawkUtils::SetFunctionHook(
+            (GetDisplayNameOf_t)vtable[kVtblGetDisplayNameOf],
+            GetDisplayNameOf_Hook, &GetDisplayNameOf_Orig);
+        Wh_Log(L"Enumeration timeout hooks installed on CFSFolder vtable %p",
+               vtable);
+    } else {
+        Wh_Log(L"InitEnumTimeoutHooks: failed to resolve CFSFolder vtable");
+    }
+
+    if (pidl) {
+        ILFree(pidl);
+    }
+    fsFolder = nullptr;
+    desktop = nullptr;
+
+    if (comInited) {
+        CoUninitialize();
+    }
+}
+
+////////////////////////////////////////////////////////////////////////////////
 // The cascading folder menu (adapted from folder_menu.c / "Quick Folder Menu").
 
 // Tears the menu band down. Used both when another window takes the foreground
@@ -1833,6 +2220,7 @@ BOOL WhTool_ModInit() {
     LoadSettings();
 
     InitMenuColorHooks();
+    InitEnumTimeoutHooks();
 
     InitializeCriticalSection(&g_snapshotLock);
 
