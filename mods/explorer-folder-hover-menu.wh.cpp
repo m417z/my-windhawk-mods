@@ -8,7 +8,7 @@
 // @twitter         https://twitter.com/m417z
 // @homepage        https://m417z.com/
 // @include         windhawk.exe
-// @compilerOptions -lole32 -loleaut32 -luuid -lshlwapi -lshell32 -lgdi32 -lgdiplus -ladvapi32 -luiautomationcore
+// @compilerOptions -lole32 -loleaut32 -luuid -lshlwapi -lshell32 -lgdi32 -lgdiplus -ladvapi32 -luiautomationcore -ldwmapi
 // ==/WindhawkMod==
 
 // ==WindhawkModReadme==
@@ -31,6 +31,10 @@ Inspired by [QTTabBar](https://qttabbar.wikidot.com/).
 - iconSize: 18
   $name: Button size
   $description: The size of the expand button shown on hover.
+- roundedCorners: false
+  $name: Rounded menu corners
+  $description: >-
+    Round the corners of the pop-up menu. This option requires Windows 11.
 */
 // ==/WindhawkModSettings==
 
@@ -40,6 +44,7 @@ Inspired by [QTTabBar](https://qttabbar.wikidot.com/).
 
 #include <comutil.h>
 #include <docobj.h>
+#include <dwmapi.h>
 #include <exdisp.h>
 #include <gdiplus.h>
 #include <servprov.h>
@@ -93,6 +98,7 @@ DEFINE_GUID(CLSID_MenuDeskBar,
 // Settings.
 
 static int g_iconSize = 18;
+static bool g_roundedCorners = false;
 
 static void LoadSettings() {
     int iconSize = Wh_GetIntSetting(L"iconSize");
@@ -102,6 +108,8 @@ static void LoadSettings() {
         iconSize = 64;
     }
     g_iconSize = iconSize;
+
+    g_roundedCorners = Wh_GetIntSetting(L"roundedCorners");
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -357,6 +365,16 @@ HWND WINAPI CreateWindowExW_Hook(DWORD exStyle,
                              height, parent, menu, instance, param);
     if (hwnd && g_menuActive && g_menuDark && g_pAllowDarkModeForWindow) {
         g_pAllowDarkModeForWindow(hwnd, true);
+    }
+    // Same reasoning as the dark-mode opt-in above: while the menu is up, the
+    // only top-level windows this process creates are the menu band's (the
+    // top-level popup and each cascading submenu), so round each one at
+    // creation. DWM keeps the preference across resizes; it is a no-op on
+    // Windows 10 and on the menu band's child windows.
+    if (hwnd && g_menuActive && g_roundedCorners && !(style & WS_CHILD)) {
+        DWM_WINDOW_CORNER_PREFERENCE pref = DWMWCP_ROUNDSMALL;
+        DwmSetWindowAttribute(hwnd, DWMWA_WINDOW_CORNER_PREFERENCE, &pref,
+                              sizeof(pref));
     }
     return hwnd;
 }
