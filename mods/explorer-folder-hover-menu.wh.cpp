@@ -1532,17 +1532,34 @@ static VOID CALLBACK ActivationChangedProc(HWINEVENTHOOK hook,
         return;
     }
 
-    // Ignore our own windows (the button or the popup) taking the foreground;
-    // they are part of the mod's UI, so a failed/closing popup must not look
-    // like a switch away from Explorer and deactivate the mod.
-    DWORD processId = 0;
-    GetWindowThreadProcessId(hwnd, &processId);
-    if (processId == GetCurrentProcessId()) {
+    // The EVENT_SYSTEM_FOREGROUND hwnd is only a trigger, not a reliable answer
+    // to "what is the foreground now". It is delivered asynchronously
+    // (WINEVENT_OUTOFCONTEXT), and the shell's foreground-transition windows -
+    // the alt+tab / Task View host (XamlExplorerHostIslandWindow) and the
+    // ForegroundStaging helper - briefly become the foreground window during a
+    // switch, so the event can carry a window that is already superseded by the
+    // time we run, with no later event to correct it. Trusting the event hwnd
+    // then latches the mod off (it stops working after alt+tab). Classify the
+    // *actual* current foreground instead, so the handler is self-correcting
+    // against stale or out-of-order events.
+    HWND fg = GetForegroundWindow();
+    if (!fg) {
+        // Nobody owns the foreground for an instant mid-transition; a later
+        // event reports the settled window. Leave the current state untouched.
+        return;
+    }
+
+    // Ignore our own windows (the button or a closing popup) being foreground;
+    // they are part of the mod's UI, so they must not look like a switch away
+    // from Explorer and deactivate the mod.
+    DWORD fgProcessId = 0;
+    GetWindowThreadProcessId(fg, &fgProcessId);
+    if (fgProcessId == GetCurrentProcessId()) {
         return;
     }
 
     bool isDesktop = false;
-    g_active = hwnd && IsExplorerOrDesktopRoot(hwnd, &isDesktop);
+    g_active = IsExplorerOrDesktopRoot(fg, &isDesktop);
     SetRawInputActive(g_active);
     if (!g_active) {
         HideChevron();
