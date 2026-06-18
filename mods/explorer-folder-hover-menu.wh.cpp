@@ -28,13 +28,31 @@ Inspired by [QTTabBar](https://qttabbar.wikidot.com/).
 
 // ==WindhawkModSettings==
 /*
-- iconSize: 20
-  $name: Button size
-  $description: The size of the expand button shown on hover.
 - roundedCorners: false
   $name: Rounded menu corners
   $description: >-
     Round the corners of the pop-up menu. This option requires Windows 11.
+- iconSize: 20
+  $name: Button size
+  $description: The size of the expand button shown on hover.
+- position: rightBottom
+  $name: Button position
+  $description: The corner of the folder item where the expand button is shown.
+  $options:
+  - rightBottom: Bottom-right corner
+  - leftBottom: Bottom-left corner
+  - leftTop: Top-left corner
+  - rightTop: Top-right corner
+- offsetX: 0
+  $name: Horizontal offset
+  $description: >-
+    Shifts the button horizontally from the selected corner, in pixels. Positive
+    values move it right, negative values move it left.
+- offsetY: 0
+  $name: Vertical offset
+  $description: >-
+    Shifts the button vertically from the selected corner, in pixels. Positive
+    values move it down, negative values move it up.
 */
 // ==/WindhawkModSettings==
 
@@ -97,19 +115,46 @@ DEFINE_GUID(CLSID_MenuDeskBar,
 ////////////////////////////////////////////////////////////////////////////////
 // Settings.
 
-static int g_iconSize = 18;
-static bool g_roundedCorners = false;
+// Which corner of the folder item the button is anchored to.
+enum class ButtonPosition {
+    rightBottom,
+    leftBottom,
+    leftTop,
+    rightTop,
+};
+
+struct {
+    bool roundedCorners;
+    int iconSize;
+    ButtonPosition position;
+    int offsetX;
+    int offsetY;
+} g_settings;
 
 static void LoadSettings() {
+    g_settings.roundedCorners = Wh_GetIntSetting(L"roundedCorners");
+
     int iconSize = Wh_GetIntSetting(L"iconSize");
     if (iconSize < 10) {
         iconSize = 10;
     } else if (iconSize > 64) {
         iconSize = 64;
     }
-    g_iconSize = iconSize;
+    g_settings.iconSize = iconSize;
 
-    g_roundedCorners = Wh_GetIntSetting(L"roundedCorners");
+    PCWSTR position = Wh_GetStringSetting(L"position");
+    g_settings.position = ButtonPosition::rightBottom;
+    if (wcscmp(position, L"leftBottom") == 0) {
+        g_settings.position = ButtonPosition::leftBottom;
+    } else if (wcscmp(position, L"leftTop") == 0) {
+        g_settings.position = ButtonPosition::leftTop;
+    } else if (wcscmp(position, L"rightTop") == 0) {
+        g_settings.position = ButtonPosition::rightTop;
+    }
+    Wh_FreeStringSetting(position);
+
+    g_settings.offsetX = Wh_GetIntSetting(L"offsetX");
+    g_settings.offsetY = Wh_GetIntSetting(L"offsetY");
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -371,7 +416,8 @@ HWND WINAPI CreateWindowExW_Hook(DWORD exStyle,
     // top-level popup and each cascading submenu), so round each one at
     // creation. DWM keeps the preference across resizes; it is a no-op on
     // Windows 10 and on the menu band's child windows.
-    if (hwnd && g_menuActive && g_roundedCorners && !(style & WS_CHILD)) {
+    if (hwnd && g_menuActive && g_settings.roundedCorners &&
+        !(style & WS_CHILD)) {
         DWM_WINDOW_CORNER_PREFERENCE pref = DWMWCP_ROUNDSMALL;
         DwmSetWindowAttribute(hwnd, DWMWA_WINDOW_CORNER_PREFERENCE, &pref,
                               sizeof(pref));
@@ -1308,16 +1354,38 @@ static void ShowChevronForItem(PIDLIST_ABSOLUTE childAbs, RECT itemRect) {
     g_hoverItemRect = itemRect;
 
     UINT dpi = GetDpiForRect(itemRect);
-    int size = MulDiv(g_iconSize, dpi, 96);
+    int size = MulDiv(g_settings.iconSize, dpi, 96);
     int margin = MulDiv(2, dpi, 96);
-    int x = itemRect.right - size - margin;
-    int y = itemRect.bottom - size - margin;
-    if (x < itemRect.left) {
-        x = itemRect.left;
+
+    bool left = g_settings.position == ButtonPosition::leftBottom ||
+                g_settings.position == ButtonPosition::leftTop;
+    bool top = g_settings.position == ButtonPosition::leftTop ||
+               g_settings.position == ButtonPosition::rightTop;
+
+    int x;
+    if (left) {
+        x = itemRect.left + margin;
+    } else {
+        x = itemRect.right - size - margin;
+        if (x < itemRect.left) {
+            x = itemRect.left;
+        }
     }
-    if (y < itemRect.top) {
-        y = itemRect.top;
+
+    int y;
+    if (top) {
+        y = itemRect.top + margin;
+    } else {
+        y = itemRect.bottom - size - margin;
+        if (y < itemRect.top) {
+            y = itemRect.top;
+        }
     }
+
+    // Apply the user-configured offset (DPI-scaled). Positive moves right/down.
+    x += MulDiv(g_settings.offsetX, dpi, 96);
+    y += MulDiv(g_settings.offsetY, dpi, 96);
+
     SetRect(&g_chevronRect, x, y, x + size, y + size);
 
     // UpdateLayeredWindow (inside RenderChevron) sets the position, size, and
@@ -1670,8 +1738,8 @@ static DWORD WINAPI UiThreadProc(LPVOID param) {
     // rounded button; content is supplied by RenderChevron.
     g_chevronWnd = CreateWindowExW(
         WS_EX_TOOLWINDOW | WS_EX_TOPMOST | WS_EX_NOACTIVATE | WS_EX_LAYERED,
-        wcChevron.lpszClassName, L"", WS_POPUP, 0, 0, g_iconSize, g_iconSize,
-        nullptr, nullptr, g_hInst, nullptr);
+        wcChevron.lpszClassName, L"", WS_POPUP, 0, 0, g_settings.iconSize,
+        g_settings.iconSize, nullptr, nullptr, g_hInst, nullptr);
 
     // Hidden window that receives raw mouse input (movement + wheel) even when
     // in the background, replacing any polling. Raw input is only registered
