@@ -1,5 +1,5 @@
 // ==WindhawkMod==
-// @id              explorer-folder-hover-menu-fork
+// @id              explorer-folder-hover-menu
 // @name            Folder Hover Menu
 // @description     Hover a folder in File Explorer to get an expand button that opens a cascading menu of the folder's contents
 // @version         1.1.1
