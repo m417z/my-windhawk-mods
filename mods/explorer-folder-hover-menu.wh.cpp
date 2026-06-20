@@ -1,8 +1,8 @@
 // ==WindhawkMod==
-// @id              explorer-folder-hover-menu
+// @id              explorer-folder-hover-menu-fork
 // @name            Folder Hover Menu
 // @description     Hover a folder in File Explorer to get an expand button that opens a cascading menu of the folder's contents
-// @version         1.1
+// @version         1.1.1
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
@@ -35,6 +35,11 @@ Inspired by [QTTabBar](https://qttabbar.wikidot.com/).
 - iconSize: 20
   $name: Button size
   $description: The size of the expand button shown on hover.
+- opacity: 100
+  $name: Button opacity
+  $description: >-
+    Opacity of the expand button, as a percentage from 1 (nearly transparent)
+    to 100 (fully opaque).
 - position: rightBottom
   $name: Button position
   $description: The corner of the folder item where the expand button is shown.
@@ -141,6 +146,7 @@ enum class ButtonPosition {
 struct {
     bool roundedCorners;
     int iconSize;
+    int opacity;
     ButtonPosition position;
     int offsetX;
     int offsetY;
@@ -158,6 +164,14 @@ static void LoadSettings() {
         iconSize = 64;
     }
     g_settings.iconSize = iconSize;
+
+    int opacity = Wh_GetIntSetting(L"opacity");
+    if (opacity < 1) {
+        opacity = 1;
+    } else if (opacity > 100) {
+        opacity = 100;
+    }
+    g_settings.opacity = opacity;
 
     PCWSTR position = Wh_GetStringSetting(L"position");
     g_settings.position = ButtonPosition::rightBottom;
@@ -1855,7 +1869,10 @@ static void RenderChevron(HWND hwnd, int x, int y, int size) {
     POINT dst = {x, y};
     SIZE sz = {size, size};
     POINT src = {0, 0};
-    BLENDFUNCTION blend = {AC_SRC_OVER, 0, 255, AC_SRC_ALPHA};
+    // SourceConstantAlpha scales the per-pixel alpha uniformly, fading the
+    // whole button (fill, border and glyph) by the configured opacity.
+    BYTE constAlpha = (BYTE)((g_settings.opacity * 255 + 50) / 100);
+    BLENDFUNCTION blend = {AC_SRC_OVER, 0, constAlpha, AC_SRC_ALPHA};
     UpdateLayeredWindow(hwnd, screenDC, &dst, &sz, memDC, &src, 0, &blend,
                         ULW_ALPHA);
 
