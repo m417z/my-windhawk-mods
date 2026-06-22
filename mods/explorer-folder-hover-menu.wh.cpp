@@ -53,7 +53,7 @@ Inspired by [QTTabBar](https://qttabbar.wikidot.com/).
   $description: >-
     Shifts the button vertically from the selected corner, in pixels. Positive
     values move it down, negative values move it up.
-- maxItems: 500
+- maxItems: 100
   $name: Maximum items
   $description: >-
     The most items to load into a single folder's menu. When a folder has more,
