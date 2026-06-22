@@ -20,6 +20,10 @@ expand button appears in the bottom-right corner of that folder. Click it to pop
 up a cascading menu of the folder's contents. You can navigate into sub-folders
 and launch items straight from the menu, without opening the folder first.
 
+Inside the menu, a folder opens its submenu on hover and opens in File Explorer
+on a double click. There's an option to open folders with a single click
+instead.
+
 Inspired by [QTTabBar](https://qttabbar.wikidot.com/).
 
 ![Screenshot](https://i.imgur.com/ZPceXoZ.png)
@@ -53,6 +57,12 @@ Inspired by [QTTabBar](https://qttabbar.wikidot.com/).
   $description: >-
     Shifts the button vertically from the selected corner, in pixels. Positive
     values move it down, negative values move it up.
+- openFolderOnClick: false
+  $name: Open folders with a single click
+  $description: >-
+    In the pop-up menu, open a folder in File Explorer with a single click. By
+    default a single click only opens the folder's submenu and a double click
+    opens the folder. The submenu still opens when hovering the folder.
 - maxItems: 100
   $name: Maximum items
   $description: >-
@@ -144,6 +154,7 @@ struct {
     ButtonPosition position;
     int offsetX;
     int offsetY;
+    bool openFolderOnClick;
     int maxEnumItems;
     int enumTimeoutMs;
 } g_settings;
@@ -172,6 +183,8 @@ void LoadSettings() {
 
     g_settings.offsetX = Wh_GetIntSetting(L"offsetX");
     g_settings.offsetY = Wh_GetIntSetting(L"offsetY");
+
+    g_settings.openFolderOnClick = Wh_GetIntSetting(L"openFolderOnClick");
 
     int maxItems = Wh_GetIntSetting(L"maxItems");
     if (maxItems < 1) {
@@ -288,6 +301,14 @@ POINT g_reqPoint;
 // ShowFolderMenuModal is running (UI thread only). The owning reference lives
 // in that function's local com_ptr.
 IMenuBand* g_pActiveMenuBand;
+
+// Absolute pidl of the menu item the band currently has selected (the item
+// under the cursor as the mouse hovers), captured from the menu band's callback
+// (see CMenuCallback). Owned here; replaced on each selection and freed when
+// the menu closes. UI thread only. This is how a single click knows which
+// folder to open: the toolbar button's dwData is an internal band object, not a
+// pidl, so the callback is the reliable pidl source at every cascade level.
+PIDLIST_ABSOLUTE g_selectedMenuItemPidl;
 
 std::wstring ToLower(const std::wstring& s) {
     std::wstring r = s;
@@ -1799,6 +1820,87 @@ void ScrollMenuAtPoint(POINT pt, int wheelDelta) {
     }
 }
 
+// With the openFolderOnClick option, a single click on a folder item in the
+// pop-up menu opens that folder in File Explorer, instead of only cascading its
+// submenu (which still opens on hover). The menu band already opens a folder on
+// a double click; rather than resolve the clicked item's pidl ourselves, we let
+// the genuine click through and then replay it as the second half of a double
+// click, so the band runs its own open path. Driven from raw input (like the
+// wheel) so it works regardless of how the band routes mouse messages. Leaf
+// items (files) already open on a single click and are left untouched.
+//
+// `pt` is the screen point of the click (the cursor position at button-up).
+void OpenFolderOnClickAtPoint(POINT pt) {
+    HWND under = WindowFromPoint(pt);
+    DWORD underPid = 0;
+    if (under) {
+        GetWindowThreadProcessId(under, &underPid);
+    }
+    if (!under || underPid != GetCurrentProcessId()) {
+        return;
+    }
+
+    // The menu's items live in a toolbar that is the SysPager's child (the same
+    // toolbar the wheel code scrolls). Reach it through the pager rather than
+    // by class name - the band may register the toolbar under its own class, so
+    // a class-name match would miss it. Walk up from the window under the
+    // cursor to the pager; if that fails (the cursor is not under the pager
+    // subtree), fall back to the pager anywhere under the menu's root window.
+    HWND pager = FindMenuPagerFromWindow(under);
+    if (!pager) {
+        if (HWND root = GetAncestor(under, GA_ROOT)) {
+            pager = FindDescendantOfClass(root, kPagerClass);
+        }
+    }
+    HWND toolbar = pager ? GetWindow(pager, GW_CHILD) : nullptr;
+    if (!toolbar) {
+        return;
+    }
+
+    POINT client = pt;
+    if (!ScreenToClient(toolbar, &client)) {
+        return;
+    }
+
+    int index = (int)SendMessageW(toolbar, TB_HITTEST, 0, (LPARAM)&client);
+    if (index < 0) {
+        return;  // Not on an item (a gap, or a scroll arrow).
+    }
+
+    // A folder (cascade) item carries the dropdown style in a vertical menu; a
+    // leaf (file) item does not. Only folders are turned into an open - files
+    // already open on a single click, and clicking empty menu chrome must do
+    // nothing.
+    TBBUTTON button = {};
+    if (!SendMessageW(toolbar, TB_GETBUTTON, index, (LPARAM)&button) ||
+        !(button.fsStyle & (BTNS_DROPDOWN | BTNS_WHOLEDROPDOWN))) {
+        return;
+    }
+
+    // The toolbar button's dwData is an internal band object, not a pidl, so we
+    // open the pidl the band's callback captured for the item the selection
+    // currently sits on - the hovered item, which is the one being clicked (see
+    // CMenuCallback). Open it directly, with no synthesized input.
+    if (!g_selectedMenuItemPidl || !IsFolderPidl(g_selectedMenuItemPidl)) {
+        return;
+    }
+
+    SHELLEXECUTEINFOW sei = {sizeof(sei)};
+    sei.fMask = SEE_MASK_IDLIST | SEE_MASK_FLAG_NO_UI;
+    sei.lpIDList = (void*)g_selectedMenuItemPidl;
+    sei.lpVerb = L"open";
+    sei.nShow = SW_SHOWNORMAL;
+    if (!ShellExecuteExW(&sei)) {
+        Wh_Log(L"Failed to open folder on click, le=%lu", GetLastError());
+        return;
+    }
+
+    // Opened; dismiss the menu the way finishing a double click would.
+    if (g_pActiveMenuBand) {
+        CloseMenuBand(g_pActiveMenuBand);
+    }
+}
+
 VOID CALLBACK ForegroundChangedProc(HWINEVENTHOOK hook,
                                     DWORD event,
                                     HWND hwnd,
@@ -1812,6 +1914,68 @@ VOID CALLBACK ForegroundChangedProc(HWINEVENTHOOK hook,
     }
 }
 
+// Receives notifications from the menu band. We use it only to learn the pidl
+// of the item currently under the cursor: as the selection follows the mouse,
+// the band sends SMC_SFSELECTITEM with the item's folder and relative pidl,
+// from which we build and remember the absolute pidl (g_selectedMenuItemPidl).
+// Everything is passed through (S_FALSE) so the band keeps its default
+// behavior; we only observe. The toolbar button's dwData is an internal band
+// object, not a pidl, so this callback is the reliable way to get the real pidl
+// - at every cascade level, since each submenu band reports its own folder
+// here.
+class CMenuCallback : public IShellMenuCallback {
+   public:
+    IFACEMETHODIMP QueryInterface(REFIID riid, void** ppv) override {
+        if (!ppv) {
+            return E_POINTER;
+        }
+        if (IsEqualIID(riid, IID_IUnknown) ||
+            IsEqualIID(riid, __uuidof(IShellMenuCallback))) {
+            *ppv = static_cast<IShellMenuCallback*>(this);
+            AddRef();
+            return S_OK;
+        }
+        *ppv = nullptr;
+        return E_NOINTERFACE;
+    }
+
+    IFACEMETHODIMP_(ULONG) AddRef() override {
+        return InterlockedIncrement(&m_ref);
+    }
+
+    IFACEMETHODIMP_(ULONG) Release() override {
+        LONG ref = InterlockedDecrement(&m_ref);
+        if (ref == 0) {
+            delete this;
+        }
+        return ref;
+    }
+
+    IFACEMETHODIMP CallbackSM(LPSMDATA psmd,
+                              UINT uMsg,
+                              WPARAM wParam,
+                              LPARAM lParam) override {
+        // Remember the absolute pidl of the item the selection moves onto, so a
+        // single click can open it (see OpenFolderOnClickAtPoint).
+        if (uMsg == SMC_SFSELECTITEM && psmd &&
+            (psmd->dwMask & SMDM_SHELLFOLDER) && psmd->pidlFolder &&
+            psmd->pidlItem) {
+            if (PIDLIST_ABSOLUTE itemAbs =
+                    ILCombine(psmd->pidlFolder, psmd->pidlItem)) {
+                if (g_selectedMenuItemPidl) {
+                    ILFree(g_selectedMenuItemPidl);
+                }
+                g_selectedMenuItemPidl = itemAbs;
+            }
+        }
+        // Observe only; let the band do its default for everything.
+        return S_FALSE;
+    }
+
+   private:
+    LONG m_ref = 1;
+};
+
 // Hosts the folder's contents in a menu band inside a menu desk bar and pops it
 // up next to the anchor rect (the expand button). Returns the live IMenuBand or
 // nullptr on failure.
@@ -1823,7 +1987,14 @@ winrt::com_ptr<IMenuBand> PopupFolderMenu(PCIDLIST_ABSOLUTE pidlAbs,
     HRESULT hr = CoCreateInstance(CLSID_MenuBand, nullptr, CLSCTX_INPROC_SERVER,
                                   IID_PPV_ARGS(shellMenu.put()));
     if (SUCCEEDED(hr)) {
-        hr = shellMenu->Initialize(nullptr, -1, ANCESTORDEFAULT,
+        // Pass a callback so we can learn each item's pidl as the selection
+        // follows the cursor (used by the open-folder-on-click option). The
+        // band keeps its default behavior; the callback only observes. A null
+        // callback (allocation failure) just restores the default no-callback
+        // behavior.
+        winrt::com_ptr<IShellMenuCallback> callback;
+        callback.attach(new (std::nothrow) CMenuCallback());
+        hr = shellMenu->Initialize(callback.get(), -1, ANCESTORDEFAULT,
                                    SMINIT_TOPLEVEL | SMINIT_VERTICAL);
 
         winrt::com_ptr<IShellFolder> desktop;
@@ -1983,6 +2154,10 @@ void ShowFolderMenuModal(PCIDLIST_ABSOLUTE pidlAbs, RECT anchorRect) {
 
     // Deferred work posted by the menu band (e.g. launching an item) runs once
     // we return to the outer message loop, which keeps pumping.
+    if (g_selectedMenuItemPidl) {
+        ILFree(g_selectedMenuItemPidl);
+        g_selectedMenuItemPidl = nullptr;
+    }
     g_menuActive = false;
 }
 
@@ -2499,6 +2674,16 @@ LRESULT CALLBACK SinkWndProc(HWND hwnd,
                     POINT cur = {};
                     GetCursorPos(&cur);
                     ScrollMenuAtPoint(cur, (SHORT)raw->data.mouse.usButtonData);
+                }
+                // With the option on, turn a single click on a folder item in
+                // the open menu into the double click the band opens on. Like
+                // the wheel, this is driven from raw input so it is seen no
+                // matter which loop is pumping the menu's messages.
+                if ((flags & RI_MOUSE_LEFT_BUTTON_UP) && g_menuActive &&
+                    g_settings.openFolderOnClick) {
+                    POINT cur = {};
+                    GetCursorPos(&cur);
+                    OpenFolderOnClickAtPoint(cur);
                 }
                 // A wheel or button event may scroll or navigate, so force a
                 // refresh; plain moves only refresh once the cache goes stale.
