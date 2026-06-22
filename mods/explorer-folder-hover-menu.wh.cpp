@@ -1295,9 +1295,17 @@ constexpr size_t kMaxFolderClasses = 32;
 // this bounds whatever the user actually opens rather than a hard-coded list.
 // Entries are never removed and unordered_map keeps element references stable,
 // so the trampoline storage handed to SetFunctionHook stays valid for the life
-// of the process. Guarded by g_folderHookLock: written on the UI thread (menu
-// opens), read on the UI and worker threads (the hooks dispatch through it).
-CRITICAL_SECTION g_folderHookLock;
+// of the process. Guarded by g_folderHookLock: written (exclusive) on the UI
+// thread when a class is first seen, read (shared) on the UI and worker threads
+// by the hooks that dispatch through it.
+//
+// An SRW lock (not a CRITICAL_SECTION) on purpose: it needs no init/cleanup, so
+// the inline hooks - which acquire it on every call and stay installed until
+// Windhawk removes them, past WhTool_ModUninit - can never touch a destroyed
+// lock. It is NOT recursive, so nothing inside a locked region may round-trip
+// through a hooked IShellFolder method on the same thread (that self-deadlocks);
+// none does.
+SRWLOCK g_folderHookLock = SRWLOCK_INIT;
 std::unordered_map<void**, FolderOrigs> g_folderOrigs;
 
 // Originals for the class `pThis` belongs to, or nullptr if that class is not
@@ -1306,11 +1314,11 @@ std::unordered_map<void**, FolderOrigs> g_folderOrigs;
 // distinct shell folders) case of two classes sharing a method implementation.
 const FolderOrigs* OrigsForFolder(IShellFolder* pThis) {
     void** vtable = *(void***)pThis;
-    EnterCriticalSection(&g_folderHookLock);
+    AcquireSRWLockShared(&g_folderHookLock);
     auto it = g_folderOrigs.find(vtable);
     const FolderOrigs* origs =
         it != g_folderOrigs.end() ? &it->second : nullptr;
-    LeaveCriticalSection(&g_folderHookLock);
+    ReleaseSRWLockShared(&g_folderHookLock);
     return origs;
 }
 
@@ -1517,12 +1525,12 @@ void HookFolderVtable(IShellFolder* folder, FolderOrigs& origs) {
 }
 
 // Registers `folder`'s class (its vtable) and queues its method hooks. Must be
-// called with g_folderHookLock held (or single-threaded, as at init). Returns
-// true if the class was newly added (hooks queued and still need applying),
-// false if it was already known or the class limit was reached. `source` tags
-// the log with what triggered the hook (init / menu / cascade). Does NOT apply
-// the queued hooks - init relies on Windhawk's auto-apply after Wh_ModInit;
-// runtime callers apply via Wh_ApplyHookOperations.
+// called with g_folderHookLock held exclusively (or single-threaded, as at
+// init). Returns true if the class was newly added (hooks queued and still need
+// applying), false if it was already known or the class limit was reached.
+// `source` tags the log with what triggered the hook (init / menu / cascade).
+// Does NOT apply the queued hooks - init relies on Windhawk's auto-apply after
+// Wh_ModInit; runtime callers apply via Wh_ApplyHookOperations.
 bool AddFolderClassLocked(IShellFolder* folder, PCWSTR source) {
     void** vtable = *(void***)folder;
     if (g_folderOrigs.find(vtable) != g_folderOrigs.end()) {
@@ -1547,13 +1555,13 @@ void EnsureFolderHooked(IShellFolder* folder, PCWSTR source) {
     if (!folder) {
         return;
     }
-    EnterCriticalSection(&g_folderHookLock);
+    AcquireSRWLockExclusive(&g_folderHookLock);
     if (AddFolderClassLocked(folder, source)) {
         if (!Wh_ApplyHookOperations()) {
             Wh_Log(L"Wh_ApplyHookOperations failed (%s)", source);
         }
     }
-    LeaveCriticalSection(&g_folderHookLock);
+    ReleaseSRWLockExclusive(&g_folderHookLock);
 }
 
 // Initializes the folder-hook table and pre-hooks the dominant folder class
@@ -1566,8 +1574,6 @@ void EnsureFolderHooked(IShellFolder* folder, PCWSTR source) {
 // temporarily. The pre-hook is queued during Wh_ModInit and so is applied
 // automatically when init returns - no Wh_ApplyHookOperations here.
 void InitEnumTimeoutHooks() {
-    InitializeCriticalSection(&g_folderHookLock);
-
     bool comInited =
         SUCCEEDED(CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED));
 
@@ -2572,6 +2578,7 @@ BOOL WhTool_ModInit() {
     g_readyEvent = CreateEventW(nullptr, TRUE, FALSE, nullptr);
     if (!g_readyEvent) {
         Wh_Log(L"CreateEvent failed");
+        DeleteCriticalSection(&g_snapshotLock);
         return FALSE;
     }
 
@@ -2582,7 +2589,6 @@ BOOL WhTool_ModInit() {
         CloseHandle(g_readyEvent);
         g_readyEvent = nullptr;
         DeleteCriticalSection(&g_snapshotLock);
-        DeleteCriticalSection(&g_folderHookLock);
         return FALSE;
     }
 
@@ -2615,7 +2621,6 @@ void WhTool_ModUninit() {
     }
 
     DeleteCriticalSection(&g_snapshotLock);
-    DeleteCriticalSection(&g_folderHookLock);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
