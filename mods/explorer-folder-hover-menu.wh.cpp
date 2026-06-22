@@ -1671,29 +1671,39 @@ HWND FindMenuPagerFromWindow(HWND hwnd) {
     return nullptr;
 }
 
-// Depth-first search for the first descendant of `parent` with the given class.
-HWND FindDescendantOfClass(HWND parent, PCWSTR className) {
-    for (HWND child = GetWindow(parent, GW_CHILD); child;
-         child = GetWindow(child, GW_HWNDNEXT)) {
-        WCHAR cls[64];
-        if (GetClassNameW(child, cls, ARRAYSIZE(cls)) &&
-            wcscmp(cls, className) == 0) {
-            return child;
-        }
-        if (HWND found = FindDescendantOfClass(child, className)) {
-            return found;
-        }
+// Finds the first descendant of `parent` with the given class, or nullptr.
+// Uses EnumChildWindows rather than walking the tree with GetWindow: it is
+// snapshot-based, so it can't loop or trip over a stale handle if a window is
+// destroyed mid-search.
+struct FindDescendantParams {
+    PCWSTR className;
+    HWND result;
+};
+
+BOOL CALLBACK FindDescendantProc(HWND hwnd, LPARAM lParam) {
+    auto* params = (FindDescendantParams*)lParam;
+    WCHAR cls[64];
+    if (GetClassNameW(hwnd, cls, ARRAYSIZE(cls)) &&
+        wcscmp(cls, params->className) == 0) {
+        params->result = hwnd;
+        return FALSE;  // Found it; stop enumerating.
     }
-    return nullptr;
+    return TRUE;
+}
+
+HWND FindDescendantOfClass(HWND parent, PCWSTR className) {
+    FindDescendantParams params = {className, nullptr};
+    EnumChildWindows(parent, FindDescendantProc, (LPARAM)&params);
+    return params.result;
 }
 
 // Scrolls a long folder menu with the mouse wheel. The menu band has no native
 // wheel support: it parks its (taller-than-screen) item toolbar in a Pager
 // control whose top and bottom arrows are the only built-in way to scroll, and
-// neither the toolbar nor the pager reacts to the wheel. Translate wheel
-// notches into Pager scroll-position changes (PGM_SETPOS), scaled by the
+// neither the toolbar nor the pager reacts to the wheel. Translate the wheel
+// delta into a Pager scroll-position change (PGM_SETPOS), scaled by the
 // toolbar's row height so a notch moves a few items.
-void ScrollMenuWithWheel(HWND pager, WPARAM wheelWParam) {
+void ScrollMenuWithWheel(HWND pager, int wheelDelta) {
     UINT linesPerNotch = 3;
     SystemParametersInfoW(SPI_GETWHEELSCROLLLINES, 0, &linesPerNotch, 0);
     if (linesPerNotch == 0) {
@@ -1725,7 +1735,7 @@ void ScrollMenuWithWheel(HWND pager, WPARAM wheelWParam) {
     // Accumulate sub-notch deltas so high-resolution wheels and touchpads still
     // step smoothly.
     static int s_accumulatedDelta;
-    s_accumulatedDelta += GET_WHEEL_DELTA_WPARAM(wheelWParam);
+    s_accumulatedDelta += wheelDelta;
     int notches = s_accumulatedDelta / WHEEL_DELTA;
     s_accumulatedDelta -= notches * WHEEL_DELTA;
     if (notches == 0) {
@@ -1752,6 +1762,40 @@ void ScrollMenuWithWheel(HWND pager, WPARAM wheelWParam) {
     }
     if (newPos != pos) {
         SendMessageW(pager, PGM_SETPOS, 0, newPos);
+    }
+}
+
+// Finds the menu Pager to scroll for a wheel event at screen point `pt` and
+// drives it. Scrolls the menu directly under the pointer (so a hovered submenu
+// scrolls rather than its parent), and only that menu.
+//
+// Scrolling is driven from global raw input (see SinkWndProc), so the wheel can
+// turn while the cursor is over any window, in any process. We act only when
+// the cursor is over one of our own menu windows: this both scopes scrolling to
+// the thing under the pointer (matching normal wheel behavior, and avoiding
+// fighting a scrollable window behind the menu) and guards the pager lookup -
+// "SysPager" is a stock common control hosted elsewhere too (notably the
+// taskbar notification area), so a class-name match alone could otherwise drive
+// an unrelated process's control.
+void ScrollMenuAtPoint(POINT pt, int wheelDelta) {
+    HWND under = WindowFromPoint(pt);
+    DWORD underPid = 0;
+    if (under) {
+        GetWindowThreadProcessId(under, &underPid);
+    }
+    if (!under || underPid != GetCurrentProcessId()) {
+        return;
+    }
+
+    HWND pager = FindMenuPagerFromWindow(under);
+    if (!pager) {
+        if (HWND root = GetAncestor(under, GA_ROOT)) {
+            pager = FindDescendantOfClass(root, kPagerClass);
+        }
+    }
+
+    if (pager) {
+        ScrollMenuWithWheel(pager, wheelDelta);
     }
 }
 
@@ -1906,33 +1950,13 @@ void ShowFolderMenuModal(PCIDLIST_ABSOLUTE pidlAbs, RECT anchorRect) {
                 LoadSettings();
                 continue;
             }
-            if (msg.message == WM_MOUSEWHEEL) {
-                // The shell menu band ignores the wheel; scroll the menu under
-                // the pointer (or, failing that, the focused menu) ourselves by
-                // driving its Pager control. Prefer the menu under the pointer
-                // so a hovered submenu scrolls rather than its parent.
-                // WM_MOUSEWHEEL carries the pointer position (screen coords) at
-                // the moment of the event; use it rather than the current,
-                // possibly-moved, cursor position.
-                POINT pt = {GET_X_LPARAM(msg.lParam), GET_Y_LPARAM(msg.lParam)};
-                HWND under = WindowFromPoint(pt);
-                HWND pager = FindMenuPagerFromWindow(under);
-                if (!pager) {
-                    pager = FindMenuPagerFromWindow(msg.hwnd);
-                }
-                if (!pager) {
-                    HWND root = under ? GetAncestor(under, GA_ROOT) : nullptr;
-                    if (root) {
-                        pager = FindDescendantOfClass(root, kPagerClass);
-                    }
-                }
-                if (pager) {
-                    ScrollMenuWithWheel(pager, msg.wParam);
-                    continue;
-                }
-                // No menu pager to drive; fall through and let the message go
-                // through normal menu handling rather than swallowing it.
-            }
+            // The mouse wheel is handled from raw input in SinkWndProc, not
+            // here: for some folders (notably the recycle bin) the cooked
+            // WM_MOUSEWHEEL is dequeued and dispatched by a nested message pump
+            // the shell runs while populating the menu, so it never reaches
+            // this loop. Raw input is delivered to our sink window regardless
+            // of which loop is pumping, so scrolling is driven from there
+            // instead.
 
             LRESULT lr;
             switch (band->IsMenuMessage(&msg)) {
@@ -2461,6 +2485,21 @@ LRESULT CALLBACK SinkWndProc(HWND hwnd,
             RAWINPUT* raw = (RAWINPUT*)g_rawInputBuffer;
             if (raw->header.dwType == RIM_TYPEMOUSE) {
                 USHORT flags = raw->data.mouse.usButtonFlags;
+                // The shell menu band has no native wheel support, and we
+                // cannot reliably intercept the cooked WM_MOUSEWHEEL in the
+                // menu's modal loop: for some folders (notably the recycle bin)
+                // a nested message pump the shell runs while the menu is
+                // populating dequeues and dispatches the wheel before our loop
+                // sees it, so it bubbles up to the band, which ignores it. Raw
+                // input is delivered to this sink window regardless of which
+                // loop is pumping, so drive the scroll from here instead.
+                // usButtonData carries the signed wheel delta in WHEEL_DELTA
+                // units.
+                if ((flags & RI_MOUSE_WHEEL) && g_menuActive) {
+                    POINT cur = {};
+                    GetCursorPos(&cur);
+                    ScrollMenuAtPoint(cur, (SHORT)raw->data.mouse.usButtonData);
+                }
                 // A wheel or button event may scroll or navigate, so force a
                 // refresh; plain moves only refresh once the cache goes stale.
                 bool force =
