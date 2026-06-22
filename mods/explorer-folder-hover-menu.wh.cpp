@@ -608,16 +608,11 @@ void InitMenuColorHooks() {
 // (List, DataGrid or Table). Returns it, or nullptr.
 winrt::com_ptr<IUIAutomationElement> FindContainerFromPoint(POINT pt) {
     if (!g_workerUia) {
-        Wh_Log(L"[diag] FindContainerFromPoint: no UIA");  // TEMP diag - remove
         return nullptr;
     }
 
     winrt::com_ptr<IUIAutomationElement> element;
-    HRESULT hr = g_workerUia->ElementFromPoint(pt, element.put());
-    if (FAILED(hr) || !element) {
-        Wh_Log(L"[diag] FindContainerFromPoint: ElementFromPoint pt=(%ld,%ld) "
-               L"failed hr=0x%08X",
-               pt.x, pt.y, hr);  // TEMP diag - remove
+    if (FAILED(g_workerUia->ElementFromPoint(pt, element.put())) || !element) {
         return nullptr;
     }
 
@@ -628,16 +623,9 @@ winrt::com_ptr<IUIAutomationElement> FindContainerFromPoint(POINT pt) {
     for (int depth = 0; current && depth < 16; depth++) {
         CONTROLTYPEID controlType = 0;
         current->get_CurrentControlType(&controlType);
-        // TEMP diag - remove. Trace each control type walked up from the point
-        // so we can see whether the desktop's list is reached and what it is.
-        Wh_Log(L"[diag] FindContainerFromPoint: depth=%d controlType=%d", depth,
-               (int)controlType);
         if (controlType == UIA_ListControlTypeId ||
             controlType == UIA_DataGridControlTypeId ||
             controlType == UIA_TableControlTypeId) {
-            Wh_Log(L"[diag] FindContainerFromPoint: container found controlType=%d "
-                   L"depth=%d",
-                   (int)controlType, depth);  // TEMP diag - remove
             return current;
         }
 
@@ -650,8 +638,6 @@ winrt::com_ptr<IUIAutomationElement> FindContainerFromPoint(POINT pt) {
         current = std::move(parent);
     }
 
-    Wh_Log(L"[diag] FindContainerFromPoint: no List/DataGrid/Table container "
-           L"found");  // TEMP diag - remove
     return nullptr;
 }
 
@@ -698,9 +684,6 @@ void WorkerBuildItems(std::vector<CachedItem>& items, LONG& nameColumnRight) {
     nameColumnRight = 0;
 
     if (!g_workerUia || !g_workerContainer) {
-        Wh_Log(L"[diag] WorkerBuildItems: no UIA(%d) or container(%d)",
-               (int)(bool)g_workerUia,
-               (int)(bool)g_workerContainer);  // TEMP diag - remove
         return;
     }
 
@@ -736,8 +719,6 @@ void WorkerBuildItems(std::vector<CachedItem>& items, LONG& nameColumnRight) {
             rows) {
             int length = 0;
             rows->get_Length(&length);
-            Wh_Log(L"[diag] WorkerBuildItems: FindAllBuildCache returned %d row(s)",
-                   length);  // TEMP diag - remove
             bool firstDone = false;
             for (int i = 0; i < length; i++) {
                 winrt::com_ptr<IUIAutomationElement> row;
@@ -759,10 +740,6 @@ void WorkerBuildItems(std::vector<CachedItem>& items, LONG& nameColumnRight) {
             }
         }
     }
-
-    Wh_Log(L"[diag] WorkerBuildItems: kept %u item(s), nameColumnRight=%ld",
-           (unsigned)items.size(),
-           (long)nameColumnRight);  // TEMP diag - remove
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -1074,10 +1051,6 @@ void WorkerBuildSnapshot(HWND tab, bool isDesktop, POINT pt) {
         GetFolderForExplorerTab(tab, folder, &folderAbs);
     }
 
-    Wh_Log(L"[diag] WorkerBuildSnapshot: tab=%p isDesktop=%d pt=(%ld,%ld) folder=%d",
-           (void*)tab, (int)isDesktop, pt.x, pt.y,
-           (int)(bool)folder);  // TEMP diag - remove
-
     if (!folder) {
         // Install an empty snapshot so the UI throttles instead of
         // re-requesting on every move.
@@ -1124,8 +1097,6 @@ void WorkerBuildSnapshot(HWND tab, bool isDesktop, POINT pt) {
     if (folderChanged) {
         WorkerBuildChildren(folder.get(), folderAbs, isDesktop, children);
         rebuiltChildren = true;
-        Wh_Log(L"[diag] WorkerBuildSnapshot: rebuilt children, count=%u",
-               (unsigned)children.size());  // TEMP diag - remove
     }
 
     // Swap the new data in under the lock (O(1)); the old data ends up in the
@@ -2684,36 +2655,21 @@ LRESULT CALLBACK ChevronWndProc(HWND hwnd,
 bool IsExplorerOrDesktopRoot(HWND root, bool* outIsDesktop) {
     WCHAR className[64];
     if (!GetClassNameW(root, className, ARRAYSIZE(className))) {
-        Wh_Log(L"[diag] IsExplorerOrDesktopRoot: GetClassNameW failed root=%p le=%lu",
-               (void*)root, GetLastError());  // TEMP diag - remove
         return false;
     }
 
-    bool matched = false;
-    bool isDesktop = false;
     if (wcscmp(className, L"CabinetWClass") == 0 ||
         wcscmp(className, L"ExploreWClass") == 0) {
-        matched = true;
-        isDesktop = false;
-    } else if (wcscmp(className, L"Progman") == 0 ||
-               wcscmp(className, L"WorkerW") == 0) {
-        matched = true;
-        isDesktop = true;
-    }
-
-    // TEMP diag - remove. One line per distinct root so per-mouse-move calls
-    // from Evaluate do not flood the log.
-    static HWND s_lastLoggedRoot;
-    if (root != s_lastLoggedRoot) {
-        s_lastLoggedRoot = root;
-        Wh_Log(L"[diag] IsExplorerOrDesktopRoot: root=%p class='%s' matched=%d isDesktop=%d",
-               (void*)root, className, (int)matched, (int)isDesktop);
-    }
-
-    if (matched) {
-        *outIsDesktop = isDesktop;
+        *outIsDesktop = false;
         return true;
     }
+
+    if (wcscmp(className, L"Progman") == 0 ||
+        wcscmp(className, L"WorkerW") == 0) {
+        *outIsDesktop = true;
+        return true;
+    }
+
     return false;
 }
 
@@ -2761,30 +2717,8 @@ void Evaluate(bool forceRefresh) {
         // Cheap window-level gate: only consider the file list area.
         HWND under = WindowFromPoint(pt);
         HWND root = under ? GetAncestor(under, GA_ROOT) : nullptr;
-        bool rootOk = root && IsExplorerOrDesktopRoot(root, &isDesktop);
-        bool defViewOk = rootOk && IsWithinClass(under, L"SHELLDLL_DefView", 8);
-        bool gateOk = under && root && rootOk && defViewOk;
-
-        // TEMP diag - remove. Deduped by `under` so steady hovering over the
-        // same window logs once instead of on every coalesced mouse move.
-        static HWND s_lastLoggedUnder;
-        if (under != s_lastLoggedUnder) {
-            s_lastLoggedUnder = under;
-            WCHAR uc[64] = L"";
-            WCHAR rc[64] = L"";
-            if (under) {
-                GetClassNameW(under, uc, ARRAYSIZE(uc));
-            }
-            if (root) {
-                GetClassNameW(root, rc, ARRAYSIZE(rc));
-            }
-            Wh_Log(L"[diag] Evaluate gate: pt=(%ld,%ld) under=%p('%s') root=%p('%s') "
-                   L"rootOk=%d isDesktop=%d defViewWithin8=%d -> %s",
-                   pt.x, pt.y, (void*)under, uc, (void*)root, rc, (int)rootOk,
-                   (int)isDesktop, (int)defViewOk, gateOk ? L"PROCEED" : L"HIDE");
-        }
-
-        if (!gateOk) {
+        if (!under || !root || !IsExplorerOrDesktopRoot(root, &isDesktop) ||
+            !IsWithinClass(under, L"SHELLDLL_DefView", 8)) {
             HideChevron();
             return;
         }
@@ -2923,18 +2857,6 @@ bool SyncActiveState() {
     // A null foreground (nobody owns it, seen mid-transition and right after an
     // Explorer restart) is treated as the desktop being the active surface.
     bool active = !fg || IsExplorerOrDesktopRoot(fg, &isDesktop);
-
-    // TEMP diag - remove. Called on foreground/focus changes and the bounded
-    // re-check burst, not per mouse move, so logging every call is safe.
-    {
-        WCHAR fc[64] = L"<null>";
-        if (fg) {
-            GetClassNameW(fg, fc, ARRAYSIZE(fc));
-        }
-        Wh_Log(L"[diag] SyncActiveState: fg=%p('%s') -> active=%d isDesktop=%d (prev g_active=%d)",
-               (void*)fg, fc, (int)active, (int)isDesktop, (int)g_active);
-    }
-
     if (active == g_active) {
         return active;
     }
