@@ -20,10 +20,6 @@ expand button appears in the bottom-right corner of that folder. Click it to pop
 up a cascading menu of the folder's contents. You can navigate into sub-folders
 and launch items straight from the menu, without opening the folder first.
 
-Inside the menu, a folder opens its submenu on hover and opens in File Explorer
-on a double click. There's an option to open folders with a single click
-instead.
-
 Inspired by [QTTabBar](https://qttabbar.wikidot.com/).
 
 ![Screenshot](https://i.imgur.com/ZPceXoZ.png)
@@ -57,12 +53,22 @@ Inspired by [QTTabBar](https://qttabbar.wikidot.com/).
   $description: >-
     Shifts the button vertically from the selected corner, in pixels. Positive
     values move it down, negative values move it up.
-- openFolderOnClick: false
-  $name: Open folders with a single click
-  $description: >-
-    In the pop-up menu, open a folder in File Explorer with a single click. By
-    default a single click only opens the folder's submenu and a double click
-    opens the folder. The submenu still opens when hovering the folder.
+- clickAction: currentWindow
+  $name: Folder left click action
+  $description: What left-clicking a folder in the pop-up menu does.
+  $options:
+  - nothing: Nothing
+  - currentWindow: Open in the current window
+  - newWindow: Open in a new window
+  - newTab: Open in a new tab
+- middleClickAction: newTab
+  $name: Folder middle click action
+  $description: What middle-clicking a folder in the pop-up menu does.
+  $options:
+  - nothing: Nothing
+  - currentWindow: Open in the current window
+  - newWindow: Open in a new window
+  - newTab: Open in a new tab
 - maxItems: 100
   $name: Maximum items
   $description: >-
@@ -136,6 +142,10 @@ DEFINE_GUID(CLSID_MenuDeskBar,
 #define WM_APP_REFRESH_DONE (WM_APP + 3)
 // UI -> worker thread: build a snapshot for the pending request.
 #define WM_APP_DO_REFRESH (WM_APP + 4)
+// UI -> worker thread: open a clicked folder (wParam is a FolderActionRequest*,
+// which the worker takes ownership of). Done off the UI thread because some
+// actions (notably opening a new tab) wait on Explorer.
+#define WM_APP_DO_ACTION (WM_APP + 5)
 
 ////////////////////////////////////////////////////////////////////////////////
 // Settings.
@@ -148,16 +158,38 @@ enum class ButtonPosition {
     rightTop,
 };
 
+// What clicking a folder in the pop-up menu does.
+enum class FolderAction {
+    nothing,
+    currentWindow,
+    newWindow,
+    newTab,
+};
+
 struct {
     bool roundedCorners;
     int iconSize;
     ButtonPosition position;
     int offsetX;
     int offsetY;
-    bool openFolderOnClick;
+    FolderAction clickAction;
+    FolderAction middleClickAction;
     int maxEnumItems;
     int enumTimeoutMs;
 } g_settings;
+
+FolderAction ParseFolderAction(PCWSTR value) {
+    if (wcscmp(value, L"nothing") == 0) {
+        return FolderAction::nothing;
+    }
+    if (wcscmp(value, L"currentWindow") == 0) {
+        return FolderAction::currentWindow;
+    }
+    if (wcscmp(value, L"newTab") == 0) {
+        return FolderAction::newTab;
+    }
+    return FolderAction::newWindow;
+}
 
 void LoadSettings() {
     g_settings.roundedCorners = Wh_GetIntSetting(L"roundedCorners");
@@ -184,7 +216,13 @@ void LoadSettings() {
     g_settings.offsetX = Wh_GetIntSetting(L"offsetX");
     g_settings.offsetY = Wh_GetIntSetting(L"offsetY");
 
-    g_settings.openFolderOnClick = Wh_GetIntSetting(L"openFolderOnClick");
+    PCWSTR clickAction = Wh_GetStringSetting(L"clickAction");
+    g_settings.clickAction = ParseFolderAction(clickAction);
+    Wh_FreeStringSetting(clickAction);
+
+    PCWSTR middleClickAction = Wh_GetStringSetting(L"middleClickAction");
+    g_settings.middleClickAction = ParseFolderAction(middleClickAction);
+    Wh_FreeStringSetting(middleClickAction);
 
     int maxItems = Wh_GetIntSetting(L"maxItems");
     if (maxItems < 1) {
@@ -256,6 +294,12 @@ RECT g_hoverItemRect;
 RECT g_chevronRect;
 PIDLIST_ABSOLUTE g_targetPidl;
 
+// The Explorer tab (see GetExplorerTabWindow) the hovered folder lives in, and
+// whether that is the desktop. Captured when the button is shown and used as
+// the "current window" when a folder is opened from the menu. UI thread only.
+HWND g_targetTab;
+bool g_targetIsDesktop;
+
 // How long (ms) a snapshot is trusted before a mouse move triggers a background
 // rebuild. This is not a timer; it only gates work done on actual input events.
 constexpr ULONGLONG kRefreshTtlMs = 500;
@@ -302,13 +346,25 @@ POINT g_reqPoint;
 // in that function's local com_ptr.
 IMenuBand* g_pActiveMenuBand;
 
-// Absolute pidl of the menu item the band currently has selected (the item
-// under the cursor as the mouse hovers), captured from the menu band's callback
-// (see CMenuCallback). Owned here; replaced on each selection and freed when
-// the menu closes. UI thread only. This is how a single click knows which
-// folder to open: the toolbar button's dwData is an internal band object, not a
-// pidl, so the callback is the reliable pidl source at every cascade level.
-PIDLIST_ABSOLUTE g_selectedMenuItemPidl;
+// "CMBExecute": the menu band's own registered message for "execute item N".
+// Posting it to an item toolbar (with the command id as wParam) makes the band
+// open the item under the cursor exactly as a double-click does - it resolves
+// the pidl itself, so we don't have to. Registered once on the UI thread.
+UINT g_cmbExecuteMsg;
+
+// When we post CMBExecute for a folder click, this holds the action to run; the
+// band then fires SMC_SFEXEC back into our callback, which performs it. nothing
+// when no click of ours is pending, so the band's own executes (a leaf item, a
+// real double-click) fall through to its default. UI thread only.
+FolderAction g_pendingExecAction;
+
+// The folder item a left-button press landed on in the open menu (its toolbar
+// and command id; a null toolbar means none). A left-click runs its action only
+// when the matching release is on the same item, so the press that opened the
+// menu (on the chevron) or a drag that ends elsewhere does not fire. UI thread
+// only.
+HWND g_leftDownToolbar;
+int g_leftDownIdCmd;
 
 std::wstring ToLower(const std::wstring& s) {
     std::wstring r = s;
@@ -683,27 +739,21 @@ HWND GetExplorerTabWindow(HWND hwnd) {
     return parent == root ? child : root;
 }
 
-// Finds the shell view that belongs to the given Explorer tab and returns its
-// current folder as an IShellFolder plus the folder's absolute pidl (the caller
-// frees the pidl with ILFree; the folder is owned by the com_ptr).
-bool GetFolderForExplorerTab(HWND tab,
-                             winrt::com_ptr<IShellFolder>& outFolder,
-                             PIDLIST_ABSOLUTE* outFolderAbs) {
-    outFolder = nullptr;
-    *outFolderAbs = nullptr;
-
+// Finds the top-level IShellBrowser of the Explorer view that belongs to the
+// given tab (see GetExplorerTabWindow), by matching it among all open shell
+// views. Returns nullptr if no live view maps to that tab.
+winrt::com_ptr<IShellBrowser> GetShellBrowserForTab(HWND tab) {
     winrt::com_ptr<IShellWindows> shellWindows;
     if (FAILED(CoCreateInstance(CLSID_ShellWindows, nullptr, CLSCTX_ALL,
                                 IID_PPV_ARGS(shellWindows.put()))) ||
         !shellWindows) {
-        return false;
+        return nullptr;
     }
 
     long count = 0;
     shellWindows->get_Count(&count);
 
-    bool result = false;
-    for (long i = 0; i < count && !result; i++) {
+    for (long i = 0; i < count; i++) {
         _variant_t v(i);
         winrt::com_ptr<IDispatch> dispatch;
         if (FAILED(shellWindows->Item(v, dispatch.put())) || !dispatch) {
@@ -730,43 +780,66 @@ bool GetFolderForExplorerTab(HWND tab,
         }
 
         HWND viewHwnd = nullptr;
-        if (FAILED(view->GetWindow(&viewHwnd)) || !viewHwnd ||
-            GetExplorerTabWindow(viewHwnd) != tab) {
-            continue;
+        if (SUCCEEDED(view->GetWindow(&viewHwnd)) && viewHwnd &&
+            GetExplorerTabWindow(viewHwnd) == tab) {
+            return browser;
         }
+    }
 
-        winrt::com_ptr<IFolderView> folderView;
-        if (FAILED(view->QueryInterface(IID_PPV_ARGS(folderView.put()))) ||
-            !folderView) {
-            continue;
-        }
+    return nullptr;
+}
 
-        winrt::com_ptr<IPersistFolder2> persistFolder;
-        if (FAILED(folderView->GetFolder(IID_PPV_ARGS(persistFolder.put()))) ||
-            !persistFolder) {
-            continue;
-        }
+// Finds the shell view that belongs to the given Explorer tab and returns its
+// current folder as an IShellFolder plus the folder's absolute pidl (the caller
+// frees the pidl with ILFree; the folder is owned by the com_ptr).
+bool GetFolderForExplorerTab(HWND tab,
+                             winrt::com_ptr<IShellFolder>& outFolder,
+                             PIDLIST_ABSOLUTE* outFolderAbs) {
+    outFolder = nullptr;
+    *outFolderAbs = nullptr;
 
-        PIDLIST_ABSOLUTE folderAbs = nullptr;
-        if (FAILED(persistFolder->GetCurFolder(&folderAbs)) || !folderAbs) {
-            continue;
-        }
+    winrt::com_ptr<IShellBrowser> browser = GetShellBrowserForTab(tab);
+    if (!browser) {
+        return false;
+    }
 
-        winrt::com_ptr<IShellFolder> desktop;
-        if (SUCCEEDED(SHGetDesktopFolder(desktop.put())) && desktop) {
-            winrt::com_ptr<IShellFolder> folder;
-            if (SUCCEEDED(desktop->BindToObject(folderAbs, nullptr,
-                                                IID_PPV_ARGS(folder.put()))) &&
-                folder) {
-                outFolder = std::move(folder);
-                *outFolderAbs = folderAbs;
-                folderAbs = nullptr;
-                result = true;
-            }
+    winrt::com_ptr<IShellView> view;
+    if (FAILED(browser->QueryActiveShellView(view.put())) || !view) {
+        return false;
+    }
+
+    winrt::com_ptr<IFolderView> folderView;
+    if (FAILED(view->QueryInterface(IID_PPV_ARGS(folderView.put()))) ||
+        !folderView) {
+        return false;
+    }
+
+    winrt::com_ptr<IPersistFolder2> persistFolder;
+    if (FAILED(folderView->GetFolder(IID_PPV_ARGS(persistFolder.put()))) ||
+        !persistFolder) {
+        return false;
+    }
+
+    PIDLIST_ABSOLUTE folderAbs = nullptr;
+    if (FAILED(persistFolder->GetCurFolder(&folderAbs)) || !folderAbs) {
+        return false;
+    }
+
+    bool result = false;
+    winrt::com_ptr<IShellFolder> desktop;
+    if (SUCCEEDED(SHGetDesktopFolder(desktop.put())) && desktop) {
+        winrt::com_ptr<IShellFolder> folder;
+        if (SUCCEEDED(desktop->BindToObject(folderAbs, nullptr,
+                                            IID_PPV_ARGS(folder.put()))) &&
+            folder) {
+            outFolder = std::move(folder);
+            *outFolderAbs = folderAbs;
+            folderAbs = nullptr;
+            result = true;
         }
-        if (folderAbs) {
-            ILFree(folderAbs);
-        }
+    }
+    if (folderAbs) {
+        ILFree(folderAbs);
     }
 
     return result;
@@ -1031,6 +1104,140 @@ void WorkerBuildSnapshot(HWND tab, bool isDesktop, POINT pt) {
     }
 }
 
+////////////////////////////////////////////////////////////////////////////////
+// Opening a clicked folder. Runs on the worker thread (off the UI thread)
+// because opening a new tab waits for Explorer to spin one up.
+
+// Internal File Explorer WM_COMMAND id for "new tab" (the Ctrl+T accelerator),
+// posted to a tab window to open a new tab. This is the same value File
+// Explorer itself uses; it is undocumented and could change in a future Windows
+// build, in which case the new-tab action falls back to a new window.
+constexpr WPARAM kExplorerNewTabCommand = 0xA21B;
+
+// A pending open request, handed from the UI thread to the worker via
+// WM_APP_DO_ACTION. The worker owns it and frees pidl + the struct.
+struct FolderActionRequest {
+    PIDLIST_ABSOLUTE pidl;  // The folder to open (absolute).
+    FolderAction action;
+    HWND sourceTab;  // The view the menu was opened from (current window).
+    bool sourceIsDesktop;  // If true there is no current window/tab to use.
+};
+
+// Opens the folder in a new Explorer window.
+void OpenInNewWindow(PCIDLIST_ABSOLUTE pidl) {
+    SHELLEXECUTEINFOW sei = {sizeof(sei)};
+    sei.fMask = SEE_MASK_IDLIST | SEE_MASK_FLAG_NO_UI;
+    sei.lpIDList = const_cast<void*>(static_cast<const void*>(pidl));
+    sei.lpVerb = L"open";
+    sei.nShow = SW_SHOWNORMAL;
+    if (!ShellExecuteExW(&sei)) {
+        Wh_Log(L"OpenInNewWindow: ShellExecuteEx failed, le=%lu",
+               GetLastError());
+    }
+}
+
+// Navigates the existing view of `tab` to the folder (the "current window").
+// Returns false if that tab no longer has a live browser.
+bool OpenInCurrentWindow(HWND tab, PCIDLIST_ABSOLUTE pidl) {
+    winrt::com_ptr<IShellBrowser> browser = GetShellBrowserForTab(tab);
+    if (!browser) {
+        return false;
+    }
+    return SUCCEEDED(browser->BrowseObject((PCUIDLIST_RELATIVE)pidl,
+                                           SBSP_SAMEBROWSER | SBSP_ABSOLUTE));
+}
+
+// Opens the folder in a new tab of the window `tab` belongs to. Asks Explorer
+// to open a new (blank) tab via its own new-tab command, waits for that tab to
+// appear, then navigates it. Returns false if the window has no tabs (older
+// Explorer) or the new tab never showed up, so the caller can fall back.
+bool OpenInNewTab(HWND tab, PCIDLIST_ABSOLUTE pidl) {
+    HWND frame = GetAncestor(tab, GA_ROOT);
+    if (!frame) {
+        return false;
+    }
+
+    // The active tab is the topmost ShellTabWindowClass child; post the command
+    // there. No tab child means this is not a tabbed Explorer build.
+    HWND prevActive =
+        FindWindowExW(frame, nullptr, L"ShellTabWindowClass", nullptr);
+    if (!prevActive) {
+        return false;
+    }
+
+    PostMessageW(prevActive, WM_COMMAND, kExplorerNewTabCommand, 0);
+
+    // The new tab becomes the active (topmost) one; wait for it to differ from
+    // the previous active tab.
+    HWND newTab = nullptr;
+    for (int i = 0; i < 100 && !newTab; i++) {
+        Sleep(20);
+        HWND active =
+            FindWindowExW(frame, nullptr, L"ShellTabWindowClass", nullptr);
+        if (active && active != prevActive) {
+            newTab = active;
+        }
+    }
+    if (!newTab) {
+        return false;
+    }
+
+    // Its browser registers a moment after the tab window appears.
+    winrt::com_ptr<IShellBrowser> browser;
+    for (int i = 0; i < 100 && !browser; i++) {
+        browser = GetShellBrowserForTab(newTab);
+        if (!browser) {
+            Sleep(20);
+        }
+    }
+    if (!browser) {
+        return false;
+    }
+
+    return SUCCEEDED(browser->BrowseObject((PCUIDLIST_RELATIVE)pidl,
+                                           SBSP_SAMEBROWSER | SBSP_ABSOLUTE));
+}
+
+// Carries out one open request. The current-window and new-tab actions need a
+// source view; without one (the menu was opened from the desktop, or the view
+// went away) they fall back to opening a new window.
+void PerformFolderAction(const FolderActionRequest& req) {
+    bool haveSource =
+        !req.sourceIsDesktop && req.sourceTab && IsWindow(req.sourceTab);
+
+    // Our menu process held the foreground, so the Explorer window the open
+    // activates would be blocked from taking focus and flash in the taskbar
+    // instead. Grant Explorer the right to set the foreground. We are still
+    // eligible to do so because our window received the click that started
+    // this.
+    DWORD explorerPid = 0;
+    if (req.sourceTab) {
+        GetWindowThreadProcessId(req.sourceTab, &explorerPid);
+    }
+    AllowSetForegroundWindow(explorerPid ? explorerPid : ASFW_ANY);
+
+    switch (req.action) {
+        case FolderAction::currentWindow:
+            if (haveSource && OpenInCurrentWindow(req.sourceTab, req.pidl)) {
+                return;
+            }
+            OpenInNewWindow(req.pidl);
+            return;
+
+        case FolderAction::newTab:
+            if (haveSource && OpenInNewTab(req.sourceTab, req.pidl)) {
+                return;
+            }
+            OpenInNewWindow(req.pidl);
+            return;
+
+        case FolderAction::newWindow:
+        case FolderAction::nothing:  // Never posted, but keep the open safe.
+            OpenInNewWindow(req.pidl);
+            return;
+    }
+}
+
 DWORD WINAPI WorkerThreadProc(LPVOID param) {
     // Match the UI thread's physical-pixel coordinate space.
     if (HMODULE user32 = GetModuleHandleW(L"user32.dll")) {
@@ -1076,6 +1283,17 @@ DWORD WINAPI WorkerThreadProc(LPVOID param) {
                 if (g_sinkWnd) {
                     PostMessageW(g_sinkWnd, WM_APP_REFRESH_DONE, 0, 0);
                 }
+            }
+            continue;
+        }
+        if (msg.hwnd == nullptr && msg.message == WM_APP_DO_ACTION) {
+            auto* req = reinterpret_cast<FolderActionRequest*>(msg.wParam);
+            if (req) {
+                PerformFolderAction(*req);
+                if (req->pidl) {
+                    ILFree(req->pidl);
+                }
+                delete req;
             }
             continue;
         }
@@ -1820,24 +2038,18 @@ void ScrollMenuAtPoint(POINT pt, int wheelDelta) {
     }
 }
 
-// With the openFolderOnClick option, a single click on a folder item in the
-// pop-up menu opens that folder in File Explorer, instead of only cascading its
-// submenu (which still opens on hover). The menu band already opens a folder on
-// a double click; rather than resolve the clicked item's pidl ourselves, we let
-// the genuine click through and then replay it as the second half of a double
-// click, so the band runs its own open path. Driven from raw input (like the
-// wheel) so it works regardless of how the band routes mouse messages. Leaf
-// items (files) already open on a single click and are left untouched.
-//
-// `pt` is the screen point of the click (the cursor position at button-up).
-void OpenFolderOnClickAtPoint(POINT pt) {
+// Returns the item toolbar under the cursor and, via outIdCmd, the command id
+// of the folder item there - or nullptr if the cursor is not over a folder
+// item. Files and empty menu chrome return nullptr (the band already opens a
+// file on a click). `pt` is a screen point.
+HWND GetMenuFolderItemUnderCursor(POINT pt, int* outIdCmd) {
     HWND under = WindowFromPoint(pt);
     DWORD underPid = 0;
     if (under) {
         GetWindowThreadProcessId(under, &underPid);
     }
     if (!under || underPid != GetCurrentProcessId()) {
-        return;
+        return nullptr;
     }
 
     // The menu's items live in a toolbar that is the SysPager's child (the same
@@ -1854,51 +2066,72 @@ void OpenFolderOnClickAtPoint(POINT pt) {
     }
     HWND toolbar = pager ? GetWindow(pager, GW_CHILD) : nullptr;
     if (!toolbar) {
-        return;
+        return nullptr;
     }
 
     POINT client = pt;
     if (!ScreenToClient(toolbar, &client)) {
-        return;
+        return nullptr;
     }
 
     int index = (int)SendMessageW(toolbar, TB_HITTEST, 0, (LPARAM)&client);
     if (index < 0) {
-        return;  // Not on an item (a gap, or a scroll arrow).
+        return nullptr;  // Not on an item (a gap, or a scroll arrow).
     }
 
     // A folder (cascade) item carries the dropdown style in a vertical menu; a
-    // leaf (file) item does not. Only folders are turned into an open - files
-    // already open on a single click, and clicking empty menu chrome must do
-    // nothing.
+    // leaf (file) item does not.
     TBBUTTON button = {};
     if (!SendMessageW(toolbar, TB_GETBUTTON, index, (LPARAM)&button) ||
         !(button.fsStyle & (BTNS_DROPDOWN | BTNS_WHOLEDROPDOWN))) {
+        return nullptr;
+    }
+
+    *outIdCmd = button.idCommand;
+    return toolbar;
+}
+
+// Hands `pidl` (a folder, borrowed) off to the worker thread to open. A null or
+// non-folder pidl is ignored. Does not dismiss the menu - the band does that
+// itself once the execute completes.
+void PostFolderActionToWorker(FolderAction action, PCIDLIST_ABSOLUTE pidl) {
+    if (action == FolderAction::nothing || !pidl || !IsFolderPidl(pidl)) {
         return;
     }
 
-    // The toolbar button's dwData is an internal band object, not a pidl, so we
-    // open the pidl the band's callback captured for the item the selection
-    // currently sits on - the hovered item, which is the one being clicked (see
-    // CMenuCallback). Open it directly, with no synthesized input.
-    if (!g_selectedMenuItemPidl || !IsFolderPidl(g_selectedMenuItemPidl)) {
+    // The worker may wait on Explorer (a new tab); it owns the request and
+    // frees it.
+    auto* req = new (std::nothrow) FolderActionRequest{};
+    if (!req) {
         return;
     }
+    req->pidl = ILClone(pidl);
+    req->action = action;
+    req->sourceTab = g_targetTab;
+    req->sourceIsDesktop = g_targetIsDesktop;
+    if (!req->pidl || !g_workerThreadId ||
+        !PostThreadMessageW(g_workerThreadId, WM_APP_DO_ACTION, (WPARAM)req,
+                            0)) {
+        if (req->pidl) {
+            ILFree(req->pidl);
+        }
+        delete req;
+    }
+}
 
-    SHELLEXECUTEINFOW sei = {sizeof(sei)};
-    sei.fMask = SEE_MASK_IDLIST | SEE_MASK_FLAG_NO_UI;
-    sei.lpIDList = (void*)g_selectedMenuItemPidl;
-    sei.lpVerb = L"open";
-    sei.nShow = SW_SHOWNORMAL;
-    if (!ShellExecuteExW(&sei)) {
-        Wh_Log(L"Failed to open folder on click, le=%lu", GetLastError());
+// Runs `action` on a clicked folder item (the toolbar + command id a click was
+// hit-tested to). We don't resolve the pidl ourselves: we post the band's own
+// "execute" message for that command id, exactly as a double-click does. The
+// band resolves the pidl and calls us back via SMC_SFEXEC (see CMenuCallback),
+// where the action runs - so it always acts on the item the cursor is over,
+// even after navigating back out of a submenu. A null toolbar (not on a folder
+// item) is ignored.
+void ExecMenuFolderItem(HWND toolbar, int idCmd, FolderAction action) {
+    if (!toolbar || action == FolderAction::nothing || !g_cmbExecuteMsg) {
         return;
     }
-
-    // Opened; dismiss the menu the way finishing a double click would.
-    if (g_pActiveMenuBand) {
-        CloseMenuBand(g_pActiveMenuBand);
-    }
+    g_pendingExecAction = action;
+    PostMessageW(toolbar, g_cmbExecuteMsg, idCmd, 0);
 }
 
 VOID CALLBACK ForegroundChangedProc(HWINEVENTHOOK hook,
@@ -1914,15 +2147,13 @@ VOID CALLBACK ForegroundChangedProc(HWINEVENTHOOK hook,
     }
 }
 
-// Receives notifications from the menu band. We use it only to learn the pidl
-// of the item currently under the cursor: as the selection follows the mouse,
-// the band sends SMC_SFSELECTITEM with the item's folder and relative pidl,
-// from which we build and remember the absolute pidl (g_selectedMenuItemPidl).
-// Everything is passed through (S_FALSE) so the band keeps its default
-// behavior; we only observe. The toolbar button's dwData is an internal band
-// object, not a pidl, so this callback is the reliable way to get the real pidl
-// - at every cascade level, since each submenu band reports its own folder
-// here.
+// Receives notifications from the menu band. We use SMC_SFEXEC: when the band
+// executes an item it hands us that item's folder and relative pidl, which it
+// resolved itself - so we never map a toolbar button to a pidl. When the
+// execute is one we triggered for a folder click (g_pendingExecAction set), we
+// run the configured action on that pidl and return S_OK so the band does not
+// also open it. Everything else (a leaf item, a real double-click) passes
+// through (S_FALSE) to the band's default.
 class CMenuCallback : public IShellMenuCallback {
    public:
     IFACEMETHODIMP QueryInterface(REFIID riid, void** ppv) override {
@@ -1955,20 +2186,20 @@ class CMenuCallback : public IShellMenuCallback {
                               UINT uMsg,
                               WPARAM wParam,
                               LPARAM lParam) override {
-        // Remember the absolute pidl of the item the selection moves onto, so a
-        // single click can open it (see OpenFolderOnClickAtPoint).
-        if (uMsg == SMC_SFSELECTITEM && psmd &&
+        if (uMsg == SMC_SFEXEC &&
+            g_pendingExecAction != FolderAction::nothing && psmd &&
             (psmd->dwMask & SMDM_SHELLFOLDER) && psmd->pidlFolder &&
             psmd->pidlItem) {
+            FolderAction action = g_pendingExecAction;
+            g_pendingExecAction = FolderAction::nothing;
             if (PIDLIST_ABSOLUTE itemAbs =
                     ILCombine(psmd->pidlFolder, psmd->pidlItem)) {
-                if (g_selectedMenuItemPidl) {
-                    ILFree(g_selectedMenuItemPidl);
-                }
-                g_selectedMenuItemPidl = itemAbs;
+                PostFolderActionToWorker(action, itemAbs);
+                ILFree(itemAbs);
             }
+            return S_OK;  // Handled; the band must not open it itself.
         }
-        // Observe only; let the band do its default for everything.
+        // Everything else takes the band's default.
         return S_FALSE;
     }
 
@@ -1988,10 +2219,9 @@ winrt::com_ptr<IMenuBand> PopupFolderMenu(PCIDLIST_ABSOLUTE pidlAbs,
                                   IID_PPV_ARGS(shellMenu.put()));
     if (SUCCEEDED(hr)) {
         // Pass a callback so we can learn each item's pidl as the selection
-        // follows the cursor (used by the open-folder-on-click option). The
-        // band keeps its default behavior; the callback only observes. A null
-        // callback (allocation failure) just restores the default no-callback
-        // behavior.
+        // follows the cursor (used by the folder click actions). The band keeps
+        // its default behavior; the callback only observes. A null callback
+        // (allocation failure) just restores the default no-callback behavior.
         winrt::com_ptr<IShellMenuCallback> callback;
         callback.attach(new (std::nothrow) CMenuCallback());
         hr = shellMenu->Initialize(callback.get(), -1, ANCESTORDEFAULT,
@@ -2075,6 +2305,7 @@ winrt::com_ptr<IMenuBand> PopupFolderMenu(PCIDLIST_ABSOLUTE pidlAbs,
 // Shows the folder menu and pumps a nested message loop until it is dismissed.
 void ShowFolderMenuModal(PCIDLIST_ABSOLUTE pidlAbs, RECT anchorRect) {
     g_menuActive = true;
+    g_leftDownToolbar = nullptr;
 
     winrt::com_ptr<IMenuBand> band = PopupFolderMenu(pidlAbs, anchorRect);
     if (band) {
@@ -2154,10 +2385,7 @@ void ShowFolderMenuModal(PCIDLIST_ABSOLUTE pidlAbs, RECT anchorRect) {
 
     // Deferred work posted by the menu band (e.g. launching an item) runs once
     // we return to the outer message loop, which keeps pumping.
-    if (g_selectedMenuItemPidl) {
-        ILFree(g_selectedMenuItemPidl);
-        g_selectedMenuItemPidl = nullptr;
-    }
+    g_pendingExecAction = FolderAction::nothing;
     g_menuActive = false;
 }
 
@@ -2515,6 +2743,11 @@ void Evaluate(bool forceRefresh) {
     }
 
     if (childAbs) {
+        // Remember which view the hovered folder belongs to, so a folder opened
+        // from the menu can navigate "the current window" (the snapshot's tab,
+        // adopted under the lock above when on the button).
+        g_targetTab = tab;
+        g_targetIsDesktop = isDesktop;
         ShowChevronForItem(childAbs, hitRect);
     } else {
         HideChevron();
@@ -2675,15 +2908,44 @@ LRESULT CALLBACK SinkWndProc(HWND hwnd,
                     GetCursorPos(&cur);
                     ScrollMenuAtPoint(cur, (SHORT)raw->data.mouse.usButtonData);
                 }
-                // With the option on, turn a single click on a folder item in
-                // the open menu into the double click the band opens on. Like
-                // the wheel, this is driven from raw input so it is seen no
-                // matter which loop is pumping the menu's messages.
-                if ((flags & RI_MOUSE_LEFT_BUTTON_UP) && g_menuActive &&
-                    g_settings.openFolderOnClick) {
+                // Left click: remember which folder item the press landed on,
+                // so only a release on the same item runs the action (a real
+                // click, not the press that opened the menu or a drag). The
+                // band keeps the menu open for a left-click, so the toolbar is
+                // alive to hit-test on both the down and the up. Driven from
+                // raw input so it is seen no matter which loop is pumping the
+                // menu.
+                if (g_menuActive && (flags & RI_MOUSE_LEFT_BUTTON_DOWN) &&
+                    g_settings.clickAction != FolderAction::nothing) {
                     POINT cur = {};
                     GetCursorPos(&cur);
-                    OpenFolderOnClickAtPoint(cur);
+                    g_leftDownToolbar =
+                        GetMenuFolderItemUnderCursor(cur, &g_leftDownIdCmd);
+                }
+                if (g_menuActive && (flags & RI_MOUSE_LEFT_BUTTON_UP) &&
+                    g_settings.clickAction != FolderAction::nothing) {
+                    POINT cur = {};
+                    GetCursorPos(&cur);
+                    int idCmd = 0;
+                    HWND toolbar = GetMenuFolderItemUnderCursor(cur, &idCmd);
+                    if (toolbar && toolbar == g_leftDownToolbar &&
+                        idCmd == g_leftDownIdCmd) {
+                        ExecMenuFolderItem(toolbar, idCmd,
+                                           g_settings.clickAction);
+                    }
+                    g_leftDownToolbar = nullptr;
+                }
+                // Middle click: the band dismisses the menu on a middle press,
+                // so act on the raw button-DOWN, while the menu is still alive
+                // (by the button-up it is already gone).
+                if (g_menuActive && (flags & RI_MOUSE_MIDDLE_BUTTON_DOWN) &&
+                    g_settings.middleClickAction != FolderAction::nothing) {
+                    POINT cur = {};
+                    GetCursorPos(&cur);
+                    int idCmd = 0;
+                    HWND toolbar = GetMenuFolderItemUnderCursor(cur, &idCmd);
+                    ExecMenuFolderItem(toolbar, idCmd,
+                                       g_settings.middleClickAction);
                 }
                 // A wheel or button event may scroll or navigate, so force a
                 // refresh; plain moves only refresh once the cache goes stale.
@@ -2786,6 +3048,10 @@ DWORD WINAPI UiThreadProc(LPVOID param) {
         ChangeWindowMessageFilterEx(g_sinkWnd, g_taskbarCreatedMsg,
                                     MSGFLT_ALLOW, nullptr);
     }
+
+    // The menu band's own "execute item" message. Posting it to an item toolbar
+    // is how a folder click opens the item (see ExecMenuFolderItem).
+    g_cmbExecuteMsg = RegisterWindowMessageW(L"CMBExecute");
 
     SetEvent(g_readyEvent);
 
