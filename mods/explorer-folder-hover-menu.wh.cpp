@@ -148,7 +148,7 @@ struct {
     int enumTimeoutMs;
 } g_settings;
 
-static void LoadSettings() {
+void LoadSettings() {
     g_settings.roundedCorners = Wh_GetIntSetting(L"roundedCorners");
 
     int iconSize = Wh_GetIntSetting(L"iconSize");
@@ -196,54 +196,53 @@ static void LoadSettings() {
 ////////////////////////////////////////////////////////////////////////////////
 // Tool process state (everything below runs on the UI thread).
 
-static HINSTANCE g_hInst;
-static HANDLE g_uiThread;
-static DWORD g_uiThreadId;
-static HANDLE g_readyEvent;
+HINSTANCE g_hInst;
+HANDLE g_uiThread;
+DWORD g_uiThreadId;
+HANDLE g_readyEvent;
 
-static ULONG_PTR g_gdiplusToken;
-static HWND g_chevronWnd;  // The visible expand button.
-static HWND g_sinkWnd;  // Hidden window: raw input + app messages (UI thread).
-static HWINEVENTHOOK g_foregroundHook;
+ULONG_PTR g_gdiplusToken;
+HWND g_chevronWnd;  // The visible expand button.
+HWND g_sinkWnd;     // Hidden window: raw input + app messages (UI thread).
+HWINEVENTHOOK g_foregroundHook;
 
 // Background worker (its own STA) that does all UI Automation + shell work, so
 // the UI thread only ever hit-tests a cached snapshot and renders the button.
-static HANDLE g_workerThread;
-static DWORD g_workerThreadId;
-static HANDLE g_workerReadyEvent;
-static winrt::com_ptr<IUIAutomation> g_workerUia;  // Worker thread only.
-static winrt::com_ptr<IUIAutomationElement>
-    g_workerContainer;                      // Worker thread only.
-static HWND g_workerContainerTab;           // Worker thread only: the tab the
-                                            // cached container belongs to.
-static PIDLIST_ABSOLUTE g_workerFolderAbs;  // Worker thread only: the folder
-static bool g_workerFolderIsDesktop;        // the shared children map holds.
-static bool g_workerChildrenValid;
+HANDLE g_workerThread;
+DWORD g_workerThreadId;
+HANDLE g_workerReadyEvent;
+winrt::com_ptr<IUIAutomation> g_workerUia;               // Worker thread only.
+winrt::com_ptr<IUIAutomationElement> g_workerContainer;  // Worker thread only.
+HWND g_workerContainerTab;           // Worker thread only: the tab the
+                                     // cached container belongs to.
+PIDLIST_ABSOLUTE g_workerFolderAbs;  // Worker thread only: the folder
+bool g_workerFolderIsDesktop;        // the shared children map holds.
+bool g_workerChildrenValid;
 
 // True while a File Explorer window or the desktop is the foreground window.
 // Raw input is ignored otherwise, so the mod does no work for other apps.
-static bool g_active;
+bool g_active;
 
-static bool g_chevronVisible;
-static bool g_menuActive;
-static RECT g_hoverItemRect;
-static RECT g_chevronRect;
-static PIDLIST_ABSOLUTE g_targetPidl;
+bool g_chevronVisible;
+bool g_menuActive;
+RECT g_hoverItemRect;
+RECT g_chevronRect;
+PIDLIST_ABSOLUTE g_targetPidl;
 
 // How long (ms) a snapshot is trusted before a mouse move triggers a background
 // rebuild. This is not a timer; it only gates work done on actual input events.
-static constexpr ULONGLONG kRefreshTtlMs = 500;
+constexpr ULONGLONG kRefreshTtlMs = 500;
 
 // Raw input is high frequency; coalesce moves to roughly this interval (ms).
-static constexpr ULONGLONG kInputCoalesceMs = 10;
-static ULONGLONG g_lastInputTick;
-static BYTE g_rawInputBuffer[1024];
-static bool g_rawInputRegistered;
+constexpr ULONGLONG kInputCoalesceMs = 10;
+ULONGLONG g_lastInputTick;
+BYTE g_rawInputBuffer[1024];
+bool g_rawInputRegistered;
 
 // While the button is visible, re-check this often so navigation under a
 // stationary cursor (double-click / keyboard Enter) is noticed without a move.
-static constexpr UINT kWatchdogIntervalMs = 500;
-static constexpr UINT_PTR kWatchdogTimerId = 1;
+constexpr UINT kWatchdogIntervalMs = 500;
+constexpr UINT_PTR kWatchdogTimerId = 1;
 
 // One visible item in the active view: its rectangle (screen coords) and name.
 struct CachedItem {
@@ -254,30 +253,29 @@ struct CachedItem {
 // Snapshot shared between the worker (producer) and the UI thread (consumer),
 // guarded by g_snapshotLock. The UI thread hit-tests it locally; the worker
 // rebuilds it off-thread on request.
-static CRITICAL_SECTION g_snapshotLock;
-static bool g_snapValid;
-static HWND
-    g_snapTab;  // The tab (see GetExplorerTabWindow) the snapshot holds.
-static bool g_snapIsDesktop;
-static std::vector<CachedItem> g_snapItems;
-static LONG g_snapNameColumnRight;  // Right edge of the name column, 0 if none.
-static ULONGLONG g_snapBuiltTick;
+CRITICAL_SECTION g_snapshotLock;
+bool g_snapValid;
+HWND g_snapTab;  // The tab (see GetExplorerTabWindow) the snapshot holds.
+bool g_snapIsDesktop;
+std::vector<CachedItem> g_snapItems;
+LONG g_snapNameColumnRight;  // Right edge of the name column, 0 if none.
+ULONGLONG g_snapBuiltTick;
 // Child folder display name (lowercased) -> target absolute pidl. Rebuilt only
 // when the folder changes; owned here (freed on rebuild and shutdown).
-static std::unordered_map<std::wstring, PIDLIST_ABSOLUTE> g_snapChildren;
+std::unordered_map<std::wstring, PIDLIST_ABSOLUTE> g_snapChildren;
 
 // Refresh request, UI thread -> worker (guarded by g_snapshotLock).
-static bool g_refreshRequested;
-static HWND g_reqTab;
-static bool g_reqIsDesktop;
-static POINT g_reqPoint;
+bool g_refreshRequested;
+HWND g_reqTab;
+bool g_reqIsDesktop;
+POINT g_reqPoint;
 
 // Non-owning observer of the live menu band, valid only while the modal loop in
 // ShowFolderMenuModal is running (UI thread only). The owning reference lives
 // in that function's local com_ptr.
-static IMenuBand* g_pActiveMenuBand;
+IMenuBand* g_pActiveMenuBand;
 
-static std::wstring ToLower(const std::wstring& s) {
+std::wstring ToLower(const std::wstring& s) {
     std::wstring r = s;
     if (!r.empty()) {
         CharLowerBuffW(&r[0], (DWORD)r.size());
@@ -285,7 +283,7 @@ static std::wstring ToLower(const std::wstring& s) {
     return r;
 }
 
-static bool IsLightTheme() {
+bool IsLightTheme() {
     DWORD value = 1;
     DWORD size = sizeof(value);
     if (RegGetValueW(HKEY_CURRENT_USER,
@@ -311,20 +309,20 @@ enum PreferredAppMode {
     PAM_Max,
 };
 
-static PreferredAppMode(WINAPI* g_pSetPreferredAppMode)(PreferredAppMode);
-static void(WINAPI* g_pFlushMenuThemes)();
-static void(WINAPI* g_pRefreshImmersiveColorPolicyState)();
-static bool(WINAPI* g_pAllowDarkModeForWindow)(HWND, bool);
+PreferredAppMode(WINAPI* g_pSetPreferredAppMode)(PreferredAppMode);
+void(WINAPI* g_pFlushMenuThemes)();
+void(WINAPI* g_pRefreshImmersiveColorPolicyState)();
+bool(WINAPI* g_pAllowDarkModeForWindow)(HWND, bool);
 
 // Tracks the system theme (updated at startup and on theme changes); gates the
 // GetSysColor overrides below so they only apply when our menu should be dark.
-static bool g_menuDark;
+bool g_menuDark;
 
 // Re-syncs the immersive color state with the current system theme. The app
 // mode is set to "allow dark" once at startup; each menu window then opts in
 // per-window at creation (see CreateWindowExW_Hook), so the band follows the
 // system theme.
-static void RefreshDarkMode() {
+void RefreshDarkMode() {
     g_menuDark = !IsLightTheme();
     if (g_pRefreshImmersiveColorPolicyState) {
         g_pRefreshImmersiveColorPolicyState();
@@ -334,7 +332,7 @@ static void RefreshDarkMode() {
     }
 }
 
-static void InitDarkMode() {
+void InitDarkMode() {
     HMODULE uxtheme =
         LoadLibraryExW(L"uxtheme.dll", nullptr, LOAD_LIBRARY_SEARCH_SYSTEM32);
     if (!uxtheme) {
@@ -370,7 +368,7 @@ struct DarkColorEntry {
     COLORREF color;
 };
 
-static constexpr DarkColorEntry kDarkColors[] = {
+constexpr DarkColorEntry kDarkColors[] = {
     {COLOR_MENU, RGB(43, 43, 43)},
     {COLOR_WINDOW, RGB(43, 43, 43)},
     {COLOR_BTNFACE, RGB(43, 43, 43)},
@@ -388,9 +386,9 @@ static constexpr DarkColorEntry kDarkColors[] = {
     {COLOR_3DHILIGHT, RGB(80, 80, 80)},
     {COLOR_3DLIGHT, RGB(80, 80, 80)},
 };
-static HBRUSH g_darkBrushes[ARRAYSIZE(kDarkColors)];
+HBRUSH g_darkBrushes[ARRAYSIZE(kDarkColors)];
 
-static int FindDarkColor(int index) {
+int FindDarkColor(int index) {
     for (int i = 0; i < (int)ARRAYSIZE(kDarkColors); i++) {
         if (kDarkColors[i].index == index) {
             return i;
@@ -428,7 +426,7 @@ HBRUSH WINAPI GetSysColorBrush_Hook(int index) {
 // CMenuDeskBar / CBaseBar). We match it so only the menu's own windows are
 // rounded, not other top-level windows that merely happen to be created while
 // the menu is up (item tooltips, the desktop's WorkerW, etc.).
-static constexpr WCHAR kMenuHostClass[] = L"BaseBar";
+constexpr WCHAR kMenuHostClass[] = L"BaseBar";
 
 // While our dark menu is being built, the only windows this process creates are
 // the menu band's. Dark-allowing each one at creation (before its first paint)
@@ -472,7 +470,7 @@ HWND WINAPI CreateWindowExW_Hook(DWORD exStyle,
     return hwnd;
 }
 
-static void InitMenuColorHooks() {
+void InitMenuColorHooks() {
     for (int i = 0; i < (int)ARRAYSIZE(kDarkColors); i++) {
         g_darkBrushes[i] = CreateSolidBrush(kDarkColors[i].color);
     }
@@ -489,7 +487,7 @@ static void InitMenuColorHooks() {
 
 // Walks up from the element under the point to the file list / grid container
 // (List, DataGrid or Table). Returns it, or nullptr.
-static winrt::com_ptr<IUIAutomationElement> FindContainerFromPoint(POINT pt) {
+winrt::com_ptr<IUIAutomationElement> FindContainerFromPoint(POINT pt) {
     if (!g_workerUia) {
         return nullptr;
     }
@@ -528,9 +526,9 @@ static winrt::com_ptr<IUIAutomationElement> FindContainerFromPoint(POINT pt) {
 // out side by side. From the first row's cached cells, work out the right edge
 // of the name column so the button can be placed next to the file name. Leaves
 // *outNameColumnRight at 0 for non-columned views (icons, tiles, content).
-static void ComputeNameColumn(IUIAutomationElement* row,
-                              const RECT& rowRect,
-                              LONG* outNameColumnRight) {
+void ComputeNameColumn(IUIAutomationElement* row,
+                       const RECT& rowRect,
+                       LONG* outNameColumnRight) {
     winrt::com_ptr<IUIAutomationElementArray> cells;
     if (FAILED(row->GetCachedChildren(cells.put())) || !cells) {
         return;
@@ -562,8 +560,7 @@ static void ComputeNameColumn(IUIAutomationElement* row,
 
 // Enumerates the active container's visible items (rect + name) in a single UI
 // Automation round trip, into the given output vector. Worker thread only.
-static void WorkerBuildItems(std::vector<CachedItem>& items,
-                             LONG& nameColumnRight) {
+void WorkerBuildItems(std::vector<CachedItem>& items, LONG& nameColumnRight) {
     items.clear();
     nameColumnRight = 0;
 
@@ -637,7 +634,7 @@ static void WorkerBuildItems(std::vector<CachedItem>& items,
 // still a stable per-view identity, so the same matching works everywhere. Used
 // to tell tabs apart so the hover button and its menu act on the tab actually
 // under the cursor, not on whichever tab enumerates first.
-static HWND GetExplorerTabWindow(HWND hwnd) {
+HWND GetExplorerTabWindow(HWND hwnd) {
     HWND root = GetAncestor(hwnd, GA_ROOT);
     if (!root || hwnd == root) {
         return root;
@@ -654,9 +651,9 @@ static HWND GetExplorerTabWindow(HWND hwnd) {
 // Finds the shell view that belongs to the given Explorer tab and returns its
 // current folder as an IShellFolder plus the folder's absolute pidl (the caller
 // frees the pidl with ILFree; the folder is owned by the com_ptr).
-static bool GetFolderForExplorerTab(HWND tab,
-                                    winrt::com_ptr<IShellFolder>& outFolder,
-                                    PIDLIST_ABSOLUTE* outFolderAbs) {
+bool GetFolderForExplorerTab(HWND tab,
+                             winrt::com_ptr<IShellFolder>& outFolder,
+                             PIDLIST_ABSOLUTE* outFolderAbs) {
     outFolder = nullptr;
     *outFolderAbs = nullptr;
 
@@ -740,7 +737,7 @@ static bool GetFolderForExplorerTab(HWND tab,
     return result;
 }
 
-static bool IsFolderPidl(PCIDLIST_ABSOLUTE pidl) {
+bool IsFolderPidl(PCIDLIST_ABSOLUTE pidl) {
     winrt::com_ptr<IShellItem> item;
     bool isFolder = false;
     if (SUCCEEDED(SHCreateItemFromIDList(pidl, IID_PPV_ARGS(item.put()))) &&
@@ -757,8 +754,8 @@ static bool IsFolderPidl(PCIDLIST_ABSOLUTE pidl) {
 // If `child` (a shortcut item in `folder`) points to a folder, returns the
 // target's absolute pidl (caller frees); otherwise nullptr. Only stored target
 // data is read (no link resolution / network access), so it cannot stall.
-static PIDLIST_ABSOLUTE ResolveFolderShortcut(IShellFolder* folder,
-                                              LPCITEMIDLIST child) {
+PIDLIST_ABSOLUTE ResolveFolderShortcut(IShellFolder* folder,
+                                       LPCITEMIDLIST child) {
     winrt::com_ptr<IShellLinkW> link;
     if (FAILED(folder->GetUIObjectOf(nullptr, 1, &child, IID_IShellLinkW,
                                      nullptr, link.put_void())) ||
@@ -801,7 +798,7 @@ static PIDLIST_ABSOLUTE ResolveFolderShortcut(IShellFolder* folder,
 // Enumerates the folder's children into a name -> target-pidl map. Real
 // sub-folders map to their own pidl; shortcuts to a folder map to the target's.
 // The map owns its pidls. Worker thread only.
-static void WorkerBuildChildren(
+void WorkerBuildChildren(
     IShellFolder* folder,
     PCIDLIST_ABSOLUTE folderAbs,
     bool isDesktop,
@@ -889,7 +886,7 @@ static void WorkerBuildChildren(
 ////////////////////////////////////////////////////////////////////////////////
 // Worker thread: produces snapshots off the UI thread.
 
-static bool EnsureWorkerUia() {
+bool EnsureWorkerUia() {
     if (g_workerUia) {
         return true;
     }
@@ -907,7 +904,7 @@ static bool EnsureWorkerUia() {
 // Builds a fresh snapshot for the given window/point and installs it for the UI
 // thread to hit-test. The expensive UIA + shell work happens here, off the UI
 // thread; only the brief install is done under the lock.
-static void WorkerBuildSnapshot(HWND tab, bool isDesktop, POINT pt) {
+void WorkerBuildSnapshot(HWND tab, bool isDesktop, POINT pt) {
     ULONGLONG tick = GetTickCount64();
 
     winrt::com_ptr<IShellFolder> folder;
@@ -999,7 +996,7 @@ static void WorkerBuildSnapshot(HWND tab, bool isDesktop, POINT pt) {
     }
 }
 
-static DWORD WINAPI WorkerThreadProc(LPVOID param) {
+DWORD WINAPI WorkerThreadProc(LPVOID param) {
     // Match the UI thread's physical-pixel coordinate space.
     if (HMODULE user32 = GetModuleHandleW(L"user32.dll")) {
         auto pSetThreadDpiAwarenessContext =
@@ -1073,12 +1070,12 @@ static DWORD WINAPI WorkerThreadProc(LPVOID param) {
 // are exposed in the "Timeout" settings group.
 
 // Magic stored in the synthetic child pidl so we can recognize it later.
-static constexpr DWORD kTimeoutPidlMagic = 0x544D4F45;  // 'EOMT'.
+constexpr DWORD kTimeoutPidlMagic = 0x544D4F45;  // 'EOMT'.
 
 // Builds the synthetic one-item pidl the bounded enumerator returns when it
 // stops early. Caller frees it with CoTaskMemFree / ILFree (the menu band does
 // so for us).
-static LPITEMIDLIST CreateTimeoutPidl() {
+LPITEMIDLIST CreateTimeoutPidl() {
     // A single SHITEMID carrying our magic, followed by the null terminator.
     const SIZE_T size = sizeof(USHORT) + sizeof(DWORD) + sizeof(USHORT);
     BYTE* p = (BYTE*)CoTaskMemAlloc(size);
@@ -1093,7 +1090,7 @@ static LPITEMIDLIST CreateTimeoutPidl() {
     return (LPITEMIDLIST)p;
 }
 
-static bool IsTimeoutPidl(LPCITEMIDLIST pidl) {
+bool IsTimeoutPidl(LPCITEMIDLIST pidl) {
     if (!pidl || pidl->mkid.cb != sizeof(USHORT) + sizeof(DWORD)) {
         return false;
     }
@@ -1291,7 +1288,7 @@ struct FolderOrigs {
 // Cap on distinct folder classes we hook (CFSFolder, Recycle Bin, Network, This
 // PC, Control Panel, compressed folders, ...). Far above any realistic count; a
 // backstop so we can't end up hooking without limit.
-static constexpr size_t kMaxFolderClasses = 32;
+constexpr size_t kMaxFolderClasses = 32;
 
 // vtable -> originals for every folder class we have hooked. Classes are added
 // lazily the first time a menu is opened for one (see EnsureFolderHooked), so
@@ -1300,14 +1297,14 @@ static constexpr size_t kMaxFolderClasses = 32;
 // so the trampoline storage handed to SetFunctionHook stays valid for the life
 // of the process. Guarded by g_folderHookLock: written on the UI thread (menu
 // opens), read on the UI and worker threads (the hooks dispatch through it).
-static CRITICAL_SECTION g_folderHookLock;
-static std::unordered_map<void**, FolderOrigs> g_folderOrigs;
+CRITICAL_SECTION g_folderHookLock;
+std::unordered_map<void**, FolderOrigs> g_folderOrigs;
 
 // Originals for the class `pThis` belongs to, or nullptr if that class is not
 // hooked. A hook only fires for a class we hooked, so this effectively always
 // finds a match; the nullptr path is a guard against the (not expected for
 // distinct shell folders) case of two classes sharing a method implementation.
-static const FolderOrigs* OrigsForFolder(IShellFolder* pThis) {
+const FolderOrigs* OrigsForFolder(IShellFolder* pThis) {
     void** vtable = *(void***)pThis;
     EnterCriticalSection(&g_folderHookLock);
     auto it = g_folderOrigs.find(vtable);
@@ -1319,7 +1316,7 @@ static const FolderOrigs* OrigsForFolder(IShellFolder* pThis) {
 
 // Defined below; forward-declared because BindToObject_Hook propagates hooking
 // to bound sub-folders through it.
-static void EnsureFolderHooked(IShellFolder* folder, PCWSTR source);
+void EnsureFolderHooked(IShellFolder* folder, PCWSTR source);
 
 HRESULT STDMETHODCALLTYPE EnumObjects_Hook(IShellFolder* pThis,
                                            HWND hwnd,
@@ -1469,7 +1466,7 @@ enum {
 // then go straight to the real method (so that one method is not bounded), but
 // nothing crashes, because OrigsForFolder is only consulted from a hook that
 // did install.
-static void HookFolderVtable(IShellFolder* folder, FolderOrigs& origs) {
+void HookFolderVtable(IShellFolder* folder, FolderOrigs& origs) {
     void** vtable = *(void***)folder;
     origs.vtable = vtable;
 
@@ -1480,7 +1477,8 @@ static void HookFolderVtable(IShellFolder* folder, FolderOrigs& origs) {
     // trampolines and the stale g_folderOrigs entry dangling. Pinning resolves
     // the module from a hooked function address; one pin per class covers all
     // six methods, which belong to the same DLL. It is a no-op for shell32 (the
-    // file-system / Recycle Bin / Network / This PC classes), already permanent.
+    // file-system / Recycle Bin / Network / This PC classes), already
+    // permanent.
     HMODULE pinned = nullptr;
     if (!GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_PIN |
                                 GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS,
@@ -1525,7 +1523,7 @@ static void HookFolderVtable(IShellFolder* folder, FolderOrigs& origs) {
 // the log with what triggered the hook (init / menu / cascade). Does NOT apply
 // the queued hooks - init relies on Windhawk's auto-apply after Wh_ModInit;
 // runtime callers apply via Wh_ApplyHookOperations.
-static bool AddFolderClassLocked(IShellFolder* folder, PCWSTR source) {
+bool AddFolderClassLocked(IShellFolder* folder, PCWSTR source) {
     void** vtable = *(void***)folder;
     if (g_folderOrigs.find(vtable) != g_folderOrigs.end()) {
         return false;
@@ -1545,7 +1543,7 @@ static bool AddFolderClassLocked(IShellFolder* folder, PCWSTR source) {
 // before the band enumerates the folder. Safe to call repeatedly; it no-ops
 // once the class is known. A newly hooked class is applied here (runtime),
 // unlike the init pre-hooks.
-static void EnsureFolderHooked(IShellFolder* folder, PCWSTR source) {
+void EnsureFolderHooked(IShellFolder* folder, PCWSTR source) {
     if (!folder) {
         return;
     }
@@ -1567,7 +1565,7 @@ static void EnsureFolderHooked(IShellFolder* folder, PCWSTR source) {
 // needs a COM apartment to bind the sample folder, so it sets one up
 // temporarily. The pre-hook is queued during Wh_ModInit and so is applied
 // automatically when init returns - no Wh_ApplyHookOperations here.
-static void InitEnumTimeoutHooks() {
+void InitEnumTimeoutHooks() {
     InitializeCriticalSection(&g_folderHookLock);
 
     bool comInited =
@@ -1618,7 +1616,7 @@ static void InitEnumTimeoutHooks() {
 
 // Tears the menu band down. Used both when another window takes the foreground
 // and when we cannot bring the popup to the foreground ourselves.
-static void CloseMenuBand(IMenuBand* band) {
+void CloseMenuBand(IMenuBand* band) {
     winrt::com_ptr<IOleCommandTarget> commandTarget;
     if (SUCCEEDED(band->QueryInterface(IID_PPV_ARGS(commandTarget.put())))) {
         commandTarget->Exec(&CLSID_MenuBand, MBAND_CMDID_CLOSE, 0, nullptr,
@@ -1627,7 +1625,7 @@ static void CloseMenuBand(IMenuBand* band) {
 }
 
 // The top-level window hosting the menu band, or nullptr.
-static HWND GetMenuBandWindow(IMenuBand* band) {
+HWND GetMenuBandWindow(IMenuBand* band) {
     winrt::com_ptr<IOleWindow> oleWindow;
     HWND hwnd = nullptr;
     if (SUCCEEDED(band->QueryInterface(IID_PPV_ARGS(oleWindow.put()))) &&
@@ -1639,10 +1637,10 @@ static HWND GetMenuBandWindow(IMenuBand* band) {
 
 // The shell menu band hosts its item toolbar inside a standard Pager control
 // (WC_PAGESCROLLER, class "SysPager"); this is its window class name.
-static constexpr WCHAR kPagerClass[] = L"SysPager";
+constexpr WCHAR kPagerClass[] = L"SysPager";
 
 // Walks up from `hwnd` (inclusive) to the menu's Pager control, or nullptr.
-static HWND FindMenuPagerFromWindow(HWND hwnd) {
+HWND FindMenuPagerFromWindow(HWND hwnd) {
     for (; hwnd; hwnd = GetParent(hwnd)) {
         WCHAR cls[64];
         if (GetClassNameW(hwnd, cls, ARRAYSIZE(cls)) &&
@@ -1654,7 +1652,7 @@ static HWND FindMenuPagerFromWindow(HWND hwnd) {
 }
 
 // Depth-first search for the first descendant of `parent` with the given class.
-static HWND FindDescendantOfClass(HWND parent, PCWSTR className) {
+HWND FindDescendantOfClass(HWND parent, PCWSTR className) {
     for (HWND child = GetWindow(parent, GW_CHILD); child;
          child = GetWindow(child, GW_HWNDNEXT)) {
         WCHAR cls[64];
@@ -1675,7 +1673,7 @@ static HWND FindDescendantOfClass(HWND parent, PCWSTR className) {
 // neither the toolbar nor the pager reacts to the wheel. Translate wheel
 // notches into Pager scroll-position changes (PGM_SETPOS), scaled by the
 // toolbar's row height so a notch moves a few items.
-static void ScrollMenuWithWheel(HWND pager, WPARAM wheelWParam) {
+void ScrollMenuWithWheel(HWND pager, WPARAM wheelWParam) {
     UINT linesPerNotch = 3;
     SystemParametersInfoW(SPI_GETWHEELSCROLLLINES, 0, &linesPerNotch, 0);
     if (linesPerNotch == 0) {
@@ -1737,13 +1735,13 @@ static void ScrollMenuWithWheel(HWND pager, WPARAM wheelWParam) {
     }
 }
 
-static VOID CALLBACK ForegroundChangedProc(HWINEVENTHOOK hook,
-                                           DWORD event,
-                                           HWND hwnd,
-                                           LONG idObject,
-                                           LONG idChild,
-                                           DWORD idEventThread,
-                                           DWORD dwmsEventTime) {
+VOID CALLBACK ForegroundChangedProc(HWINEVENTHOOK hook,
+                                    DWORD event,
+                                    HWND hwnd,
+                                    LONG idObject,
+                                    LONG idChild,
+                                    DWORD idEventThread,
+                                    DWORD dwmsEventTime) {
     IMenuBand* band = g_pActiveMenuBand;
     if (band) {
         CloseMenuBand(band);
@@ -1753,8 +1751,8 @@ static VOID CALLBACK ForegroundChangedProc(HWINEVENTHOOK hook,
 // Hosts the folder's contents in a menu band inside a menu desk bar and pops it
 // up next to the anchor rect (the expand button). Returns the live IMenuBand or
 // nullptr on failure.
-static winrt::com_ptr<IMenuBand> PopupFolderMenu(PCIDLIST_ABSOLUTE pidlAbs,
-                                                 RECT anchorRect) {
+winrt::com_ptr<IMenuBand> PopupFolderMenu(PCIDLIST_ABSOLUTE pidlAbs,
+                                          RECT anchorRect) {
     winrt::com_ptr<IShellMenu> shellMenu;
     winrt::com_ptr<IDeskBand> deskBand;
     winrt::com_ptr<IMenuBand> menuBand;
@@ -1840,7 +1838,7 @@ static winrt::com_ptr<IMenuBand> PopupFolderMenu(PCIDLIST_ABSOLUTE pidlAbs,
 }
 
 // Shows the folder menu and pumps a nested message loop until it is dismissed.
-static void ShowFolderMenuModal(PCIDLIST_ABSOLUTE pidlAbs, RECT anchorRect) {
+void ShowFolderMenuModal(PCIDLIST_ABSOLUTE pidlAbs, RECT anchorRect) {
     g_menuActive = true;
 
     winrt::com_ptr<IMenuBand> band = PopupFolderMenu(pidlAbs, anchorRect);
@@ -1948,7 +1946,7 @@ static void ShowFolderMenuModal(PCIDLIST_ABSOLUTE pidlAbs, RECT anchorRect) {
 // The expand-button overlay window.
 
 // Effective DPI of the monitor that contains the given rectangle.
-static UINT GetDpiForRect(const RECT& rc) {
+UINT GetDpiForRect(const RECT& rc) {
     using GetDpiForMonitor_t = HRESULT(WINAPI*)(HMONITOR, int, UINT*, UINT*);
     static GetDpiForMonitor_t pGetDpiForMonitor = []() -> GetDpiForMonitor_t {
         HMODULE shcore = LoadLibraryExW(L"shcore.dll", nullptr,
@@ -1970,9 +1968,9 @@ static UINT GetDpiForRect(const RECT& rc) {
     return 96;
 }
 
-static void AddRoundedRectPath(Gdiplus::GraphicsPath& path,
-                               const Gdiplus::RectF& rc,
-                               float radius) {
+void AddRoundedRectPath(Gdiplus::GraphicsPath& path,
+                        const Gdiplus::RectF& rc,
+                        float radius) {
     float d = radius * 2.0f;
     path.AddArc(rc.X, rc.Y, d, d, 180.0f, 90.0f);
     path.AddArc(rc.GetRight() - d, rc.Y, d, d, 270.0f, 90.0f);
@@ -1983,7 +1981,7 @@ static void AddRoundedRectPath(Gdiplus::GraphicsPath& path,
 
 // Renders the WinUI3-style button into a per-pixel-alpha layered window: an
 // antialiased rounded surface with a subtle border and a smooth chevron glyph.
-static void RenderChevron(HWND hwnd, int x, int y, int size) {
+void RenderChevron(HWND hwnd, int x, int y, int size) {
     HDC screenDC = GetDC(nullptr);
     HDC memDC = CreateCompatibleDC(screenDC);
 
@@ -2059,7 +2057,7 @@ static void RenderChevron(HWND hwnd, int x, int y, int size) {
     ReleaseDC(nullptr, screenDC);
 }
 
-static void HideChevron() {
+void HideChevron() {
     if (g_chevronVisible) {
         ShowWindow(g_chevronWnd, SW_HIDE);
         g_chevronVisible = false;
@@ -2070,7 +2068,7 @@ static void HideChevron() {
 }
 
 // Takes ownership of childAbs.
-static void ShowChevronForItem(PIDLIST_ABSOLUTE childAbs, RECT itemRect) {
+void ShowChevronForItem(PIDLIST_ABSOLUTE childAbs, RECT itemRect) {
     // No change since last time: keep the existing button. This makes the
     // re-checks (mouse moves, refreshes, the watchdog) cheap - they only
     // repaint when the hovered folder or its rect actually changes.
@@ -2131,10 +2129,10 @@ static void ShowChevronForItem(PIDLIST_ABSOLUTE childAbs, RECT itemRect) {
     SetTimer(g_sinkWnd, kWatchdogTimerId, kWatchdogIntervalMs, nullptr);
 }
 
-static LRESULT CALLBACK ChevronWndProc(HWND hwnd,
-                                       UINT msg,
-                                       WPARAM wParam,
-                                       LPARAM lParam) {
+LRESULT CALLBACK ChevronWndProc(HWND hwnd,
+                                UINT msg,
+                                WPARAM wParam,
+                                LPARAM lParam) {
     switch (msg) {
         case WM_LBUTTONDOWN: {
             if (g_targetPidl && !g_menuActive) {
@@ -2159,7 +2157,7 @@ static LRESULT CALLBACK ChevronWndProc(HWND hwnd,
 ////////////////////////////////////////////////////////////////////////////////
 // Hover engine: raw input driven, hit-testing against the cached item rects.
 
-static bool IsExplorerOrDesktopRoot(HWND root, bool* outIsDesktop) {
+bool IsExplorerOrDesktopRoot(HWND root, bool* outIsDesktop) {
     WCHAR className[64];
     if (!GetClassNameW(root, className, ARRAYSIZE(className))) {
         return false;
@@ -2181,7 +2179,7 @@ static bool IsExplorerOrDesktopRoot(HWND root, bool* outIsDesktop) {
 }
 
 // True if hwnd or one of its ancestors (up to maxDepth) has the given class.
-static bool IsWithinClass(HWND hwnd, PCWSTR className, int maxDepth) {
+bool IsWithinClass(HWND hwnd, PCWSTR className, int maxDepth) {
     for (int i = 0; hwnd && i < maxDepth; i++) {
         WCHAR c[64];
         if (GetClassNameW(hwnd, c, ARRAYSIZE(c)) && wcscmp(c, className) == 0) {
@@ -2197,7 +2195,7 @@ static bool IsWithinClass(HWND hwnd, PCWSTR className, int maxDepth) {
 // thread; this only ever does a local scan + render, so it never blocks. Called
 // from raw input (mouse move / wheel), foreground changes, and worker
 // refresh-done messages.
-static void Evaluate(bool forceRefresh) {
+void Evaluate(bool forceRefresh) {
     if (g_menuActive || !g_active) {
         return;
     }
@@ -2307,7 +2305,7 @@ static void Evaluate(bool forceRefresh) {
 // Subscribes to or unsubscribes from raw mouse input. While Explorer is not in
 // the foreground we unregister entirely, so no WM_INPUT is delivered and the
 // mod does no input handling at all.
-static void SetRawInputActive(bool enable) {
+void SetRawInputActive(bool enable) {
     if (enable == g_rawInputRegistered || !g_sinkWnd) {
         return;
     }
@@ -2323,13 +2321,13 @@ static void SetRawInputActive(bool enable) {
 
 // Tracks whether Explorer / the desktop is the foreground window, so raw input
 // is only acted on then. Also re-checks the hover when Explorer is activated.
-static VOID CALLBACK ActivationChangedProc(HWINEVENTHOOK hook,
-                                           DWORD event,
-                                           HWND hwnd,
-                                           LONG idObject,
-                                           LONG idChild,
-                                           DWORD idEventThread,
-                                           DWORD dwmsEventTime) {
+VOID CALLBACK ActivationChangedProc(HWINEVENTHOOK hook,
+                                    DWORD event,
+                                    HWND hwnd,
+                                    LONG idObject,
+                                    LONG idChild,
+                                    DWORD idEventThread,
+                                    DWORD dwmsEventTime) {
     if (g_menuActive) {
         return;
     }
@@ -2374,10 +2372,10 @@ static VOID CALLBACK ActivationChangedProc(HWINEVENTHOOK hook,
     }
 }
 
-static LRESULT CALLBACK SinkWndProc(HWND hwnd,
-                                    UINT msg,
-                                    WPARAM wParam,
-                                    LPARAM lParam) {
+LRESULT CALLBACK SinkWndProc(HWND hwnd,
+                             UINT msg,
+                             WPARAM wParam,
+                             LPARAM lParam) {
     if (msg == WM_APP_REFRESH_DONE) {
         // The worker installed a fresh snapshot; re-evaluate at the cursor.
         Evaluate(false);
@@ -2436,7 +2434,7 @@ static LRESULT CALLBACK SinkWndProc(HWND hwnd,
 ////////////////////////////////////////////////////////////////////////////////
 // UI thread and tool-mod lifecycle.
 
-static DWORD WINAPI UiThreadProc(LPVOID param) {
+DWORD WINAPI UiThreadProc(LPVOID param) {
     // Match Explorer's physical-pixel coordinate space so UI Automation
     // rectangles, the cursor, and our window all line up under mixed DPI.
     if (HMODULE user32 = GetModuleHandleW(L"user32.dll")) {
