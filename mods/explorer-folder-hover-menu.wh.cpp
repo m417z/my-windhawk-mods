@@ -1123,8 +1123,22 @@ struct FolderActionRequest {
     bool sourceIsDesktop;  // If true there is no current window/tab to use.
 };
 
-// Opens the folder in a new Explorer window.
-void OpenInNewWindow(PCIDLIST_ABSOLUTE pidl) {
+// Opens the folder in a new Explorer window. When the menu was opened from an
+// Explorer view, spin the new window up through that view's existing
+// IShellBrowser (BrowseObject with SBSP_NEWBROWSER) - the same path the other
+// actions use, and more direct than ShellExecuteEx, which would resolve and
+// invoke the folder's default verb. Falls back to ShellExecuteEx when there is
+// no live source browser (opened from the desktop, or the view went away).
+void OpenInNewWindow(HWND tab, PCIDLIST_ABSOLUTE pidl) {
+    if (tab) {
+        winrt::com_ptr<IShellBrowser> browser = GetShellBrowserForTab(tab);
+        if (browser &&
+            SUCCEEDED(browser->BrowseObject((PCUIDLIST_RELATIVE)pidl,
+                                            SBSP_NEWBROWSER | SBSP_ABSOLUTE))) {
+            return;
+        }
+    }
+
     SHELLEXECUTEINFOW sei = {sizeof(sei)};
     sei.fMask = SEE_MASK_IDLIST | SEE_MASK_FLAG_NO_UI;
     sei.lpIDList = const_cast<void*>(static_cast<const void*>(pidl));
@@ -1204,6 +1218,9 @@ bool OpenInNewTab(HWND tab, PCIDLIST_ABSOLUTE pidl) {
 void PerformFolderAction(const FolderActionRequest& req) {
     bool haveSource =
         !req.sourceIsDesktop && req.sourceTab && IsWindow(req.sourceTab);
+    // The source tab to open a new window from, or null to fall back to
+    // ShellExecuteEx (no live source view).
+    HWND sourceTab = haveSource ? req.sourceTab : nullptr;
 
     // Our menu process held the foreground, so the Explorer window the open
     // activates would be blocked from taking focus and flash in the taskbar
@@ -1221,19 +1238,19 @@ void PerformFolderAction(const FolderActionRequest& req) {
             if (haveSource && OpenInCurrentWindow(req.sourceTab, req.pidl)) {
                 return;
             }
-            OpenInNewWindow(req.pidl);
+            OpenInNewWindow(sourceTab, req.pidl);
             return;
 
         case FolderAction::newTab:
             if (haveSource && OpenInNewTab(req.sourceTab, req.pidl)) {
                 return;
             }
-            OpenInNewWindow(req.pidl);
+            OpenInNewWindow(sourceTab, req.pidl);
             return;
 
         case FolderAction::newWindow:
         case FolderAction::nothing:  // Never posted, but keep the open safe.
-            OpenInNewWindow(req.pidl);
+            OpenInNewWindow(sourceTab, req.pidl);
             return;
     }
 }
