@@ -211,8 +211,17 @@ HWINEVENTHOOK g_foregroundHook;
 HANDLE g_workerThread;
 DWORD g_workerThreadId;
 HANDLE g_workerReadyEvent;
-winrt::com_ptr<IUIAutomation> g_workerUia;               // Worker thread only.
-winrt::com_ptr<IUIAutomationElement> g_workerContainer;  // Worker thread only.
+// Worker thread only. Heap-allocated and intentionally never freed. The worker
+// releases these on its own STA at clean shutdown (see WorkerThreadProc). If
+// the UI thread hangs, WhTool_ModUninit falls back to ExitProcess, which kills
+// the worker first, then runs C++ static destructors on another thread -
+// letting a com_ptr destructor Release these here would marshal into the dead
+// worker STA and crash. Leaking the holder avoids that; the OS reclaims it on
+// exit anyway.
+winrt::com_ptr<IUIAutomation>& g_workerUia =
+    *new winrt::com_ptr<IUIAutomation>();
+winrt::com_ptr<IUIAutomationElement>& g_workerContainer =
+    *new winrt::com_ptr<IUIAutomationElement>();
 HWND g_workerContainerTab;           // Worker thread only: the tab the
                                      // cached container belongs to.
 PIDLIST_ABSOLUTE g_workerFolderAbs;  // Worker thread only: the folder
@@ -1303,8 +1312,8 @@ constexpr size_t kMaxFolderClasses = 32;
 // the inline hooks - which acquire it on every call and stay installed until
 // Windhawk removes them, past WhTool_ModUninit - can never touch a destroyed
 // lock. It is NOT recursive, so nothing inside a locked region may round-trip
-// through a hooked IShellFolder method on the same thread (that self-deadlocks);
-// none does.
+// through a hooked IShellFolder method on the same thread (that
+// self-deadlocks); none does.
 SRWLOCK g_folderHookLock = SRWLOCK_INIT;
 std::unordered_map<void**, FolderOrigs> g_folderOrigs;
 
