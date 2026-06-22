@@ -2171,7 +2171,7 @@ VOID CALLBACK ForegroundChangedProc(HWINEVENTHOOK hook,
 // run the configured action on that pidl and return S_OK so the band does not
 // also open it. Everything else (a leaf item, a real double-click) passes
 // through (S_FALSE) to the band's default.
-class CMenuCallback : public IShellMenuCallback {
+class CMenuCallback final : public IShellMenuCallback {
    public:
     IFACEMETHODIMP QueryInterface(REFIID riid, void** ppv) override {
         if (!ppv) {
