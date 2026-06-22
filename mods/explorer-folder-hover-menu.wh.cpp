@@ -1231,17 +1231,31 @@ class CTimeoutEnumIDList final : public IEnumIDList {
 
 // The menu band does not enumerate through the IShellFolder we hand it (it uses
 // the real folder it binds from the pidl), so wrapping that folder has no
-// effect. Instead we inline-hook the file-system folder's IShellFolder methods
-// directly. Every CFSFolder instance in this process shares a single vtable, so
-// one hook on EnumObjects bounds every enumeration the menu band drives,
-// cascading sub-folders included. The pidl-handling methods are hooked too so
-// the synthetic "timed out" item the bounded enumerator returns renders cleanly
-// and stays inert - the band calls those on the real folder, not on us.
+// effect. Instead we inline-hook the IShellFolder methods directly. Every
+// instance of a given shell folder class in this process shares a single
+// vtable, so one hook on EnumObjects bounds every enumeration the menu band
+// drives, cascading sub-folders included. The pidl-handling methods are hooked
+// too so the synthetic "timed out" item the bounded enumerator returns renders
+// cleanly and stays inert - the band calls those on the real folder, not on us.
+//
+// Different shell folder classes (file-system folders, the Recycle Bin,
+// Network, This PC, compressed folders, ...) are distinct C++ classes with
+// distinct vtables and method implementations, so a hook on one class' methods
+// does not cover another. We therefore hook each class we encounter and keep a
+// per-class set of original pointers, picking the right one in the shared hooks
+// by the instance's vtable. CFSFolder (almost every menu) is hooked up front;
+// the rest are hooked lazily the first time a menu is opened for them (see
+// EnsureFolderHooked / InitEnumTimeoutHooks).
 
 using EnumObjects_t = HRESULT(STDMETHODCALLTYPE*)(IShellFolder*,
                                                   HWND,
                                                   SHCONTF,
                                                   IEnumIDList**);
+using BindToObject_t = HRESULT(STDMETHODCALLTYPE*)(IShellFolder*,
+                                                   PCUIDLIST_RELATIVE,
+                                                   IBindCtx*,
+                                                   REFIID,
+                                                   void**);
 using CompareIDs_t = HRESULT(STDMETHODCALLTYPE*)(IShellFolder*,
                                                  LPARAM,
                                                  PCUIDLIST_RELATIVE,
@@ -1262,17 +1276,62 @@ using GetDisplayNameOf_t = HRESULT(STDMETHODCALLTYPE*)(IShellFolder*,
                                                        SHGDNF,
                                                        STRRET*);
 
-EnumObjects_t EnumObjects_Orig;
-CompareIDs_t CompareIDs_Orig;
-GetAttributesOf_t GetAttributesOf_Orig;
-GetUIObjectOf_t GetUIObjectOf_Orig;
-GetDisplayNameOf_t GetDisplayNameOf_Orig;
+// Original IShellFolder methods for one folder class, plus its vtable (the map
+// key below).
+struct FolderOrigs {
+    void** vtable;
+    EnumObjects_t enumObjects;
+    BindToObject_t bindToObject;
+    CompareIDs_t compareIDs;
+    GetAttributesOf_t getAttributesOf;
+    GetUIObjectOf_t getUIObjectOf;
+    GetDisplayNameOf_t getDisplayNameOf;
+};
+
+// Cap on distinct folder classes we hook (CFSFolder, Recycle Bin, Network, This
+// PC, Control Panel, compressed folders, ...). Far above any realistic count; a
+// backstop so we can't end up hooking without limit.
+static constexpr size_t kMaxFolderClasses = 32;
+
+// vtable -> originals for every folder class we have hooked. Classes are added
+// lazily the first time a menu is opened for one (see EnsureFolderHooked), so
+// this bounds whatever the user actually opens rather than a hard-coded list.
+// Entries are never removed and unordered_map keeps element references stable,
+// so the trampoline storage handed to SetFunctionHook stays valid for the life
+// of the process. Guarded by g_folderHookLock: written on the UI thread (menu
+// opens), read on the UI and worker threads (the hooks dispatch through it).
+static CRITICAL_SECTION g_folderHookLock;
+static std::unordered_map<void**, FolderOrigs> g_folderOrigs;
+
+// Originals for the class `pThis` belongs to, or nullptr if that class is not
+// hooked. A hook only fires for a class we hooked, so this effectively always
+// finds a match; the nullptr path is a guard against the (not expected for
+// distinct shell folders) case of two classes sharing a method implementation.
+static const FolderOrigs* OrigsForFolder(IShellFolder* pThis) {
+    void** vtable = *(void***)pThis;
+    EnterCriticalSection(&g_folderHookLock);
+    auto it = g_folderOrigs.find(vtable);
+    const FolderOrigs* origs =
+        it != g_folderOrigs.end() ? &it->second : nullptr;
+    LeaveCriticalSection(&g_folderHookLock);
+    return origs;
+}
+
+// Defined below; forward-declared because BindToObject_Hook propagates hooking
+// to bound sub-folders through it.
+static void EnsureFolderHooked(IShellFolder* folder, PCWSTR source);
 
 HRESULT STDMETHODCALLTYPE EnumObjects_Hook(IShellFolder* pThis,
                                            HWND hwnd,
                                            SHCONTF grfFlags,
                                            IEnumIDList** ppenumIDList) {
-    HRESULT hr = EnumObjects_Orig(pThis, hwnd, grfFlags, ppenumIDList);
+    const FolderOrigs* origs = OrigsForFolder(pThis);
+    if (!origs) {
+        // No original to forward to; fail rather than recurse into ourselves.
+        return E_FAIL;
+    }
+
+    HRESULT hr = origs->enumObjects(pThis, hwnd, grfFlags, ppenumIDList);
 
     // Only the menu band's enumeration is bounded. The background worker also
     // enumerates folders (to build its hover map) and must see the complete
@@ -1291,6 +1350,30 @@ HRESULT STDMETHODCALLTYPE EnumObjects_Hook(IShellFolder* pThis,
     return hr;
 }
 
+// The menu band binds each cascade sub-folder through its parent's
+// BindToObject. Hooking it (on every class we hook) lets us hook the bound
+// sub-folder's own class right here - before the band enumerates it - so a
+// cascade into a different folder class (e.g. a compressed folder inside a
+// normal one) is bounded on first expansion. Because the opened root folder is
+// always hooked, this propagates coverage down the whole cascade tree.
+HRESULT STDMETHODCALLTYPE BindToObject_Hook(IShellFolder* pThis,
+                                            PCUIDLIST_RELATIVE pidl,
+                                            IBindCtx* pbc,
+                                            REFIID riid,
+                                            void** ppv) {
+    const FolderOrigs* origs = OrigsForFolder(pThis);
+    HRESULT hr =
+        origs ? origs->bindToObject(pThis, pidl, pbc, riid, ppv) : E_FAIL;
+    if (SUCCEEDED(hr) && ppv && *ppv &&
+        (IsEqualIID(riid, IID_IShellFolder) ||
+         IsEqualIID(riid, IID_IShellFolder2))) {
+        // IShellFolder2 derives from IShellFolder, so the pointer is a valid
+        // IShellFolder either way.
+        EnsureFolderHooked(reinterpret_cast<IShellFolder*>(*ppv), L"cascade");
+    }
+    return hr;
+}
+
 HRESULT STDMETHODCALLTYPE CompareIDs_Hook(IShellFolder* pThis,
                                           LPARAM lParam,
                                           PCUIDLIST_RELATIVE pidl1,
@@ -1303,7 +1386,9 @@ HRESULT STDMETHODCALLTYPE CompareIDs_Hook(IShellFolder* pThis,
         int order = (t1 == t2) ? 0 : (t1 ? 1 : -1);
         return MAKE_HRESULT(SEVERITY_SUCCESS, 0, (USHORT)(SHORT)order);
     }
-    return CompareIDs_Orig(pThis, lParam, pidl1, pidl2);
+    const FolderOrigs* origs = OrigsForFolder(pThis);
+    return origs ? origs->compareIDs(pThis, lParam, pidl1, pidl2)
+                 : MAKE_HRESULT(SEVERITY_SUCCESS, 0, 0);
 }
 
 HRESULT STDMETHODCALLTYPE GetAttributesOf_Hook(IShellFolder* pThis,
@@ -1319,7 +1404,9 @@ HRESULT STDMETHODCALLTYPE GetAttributesOf_Hook(IShellFolder* pThis,
             return S_OK;
         }
     }
-    return GetAttributesOf_Orig(pThis, cidl, apidl, rgfInOut);
+    const FolderOrigs* origs = OrigsForFolder(pThis);
+    return origs ? origs->getAttributesOf(pThis, cidl, apidl, rgfInOut)
+                 : E_FAIL;
 }
 
 HRESULT STDMETHODCALLTYPE GetUIObjectOf_Hook(IShellFolder* pThis,
@@ -1338,8 +1425,10 @@ HRESULT STDMETHODCALLTYPE GetUIObjectOf_Hook(IShellFolder* pThis,
             return E_NOINTERFACE;
         }
     }
-    return GetUIObjectOf_Orig(pThis, hwndOwner, cidl, apidl, riid, rgfReserved,
-                              ppv);
+    const FolderOrigs* origs = OrigsForFolder(pThis);
+    return origs ? origs->getUIObjectOf(pThis, hwndOwner, cidl, apidl, riid,
+                                        rgfReserved, ppv)
+                 : E_NOINTERFACE;
 }
 
 HRESULT STDMETHODCALLTYPE GetDisplayNameOf_Hook(IShellFolder* pThis,
@@ -1360,64 +1449,161 @@ HRESULT STDMETHODCALLTYPE GetDisplayNameOf_Hook(IShellFolder* pThis,
         pName->pOleStr = copy;
         return S_OK;
     }
-    return GetDisplayNameOf_Orig(pThis, pidl, uFlags, pName);
+    const FolderOrigs* origs = OrigsForFolder(pThis);
+    return origs ? origs->getDisplayNameOf(pThis, pidl, uFlags, pName) : E_FAIL;
 }
 
 // IShellFolder vtable slot indices (after the three IUnknown slots).
 enum {
     kVtblEnumObjects = 4,
+    kVtblBindToObject = 5,
     kVtblCompareIDs = 7,
     kVtblGetAttributesOf = 9,
     kVtblGetUIObjectOf = 10,
     kVtblGetDisplayNameOf = 11,
 };
 
-// Resolves the file-system folder vtable (shared by every CFSFolder instance)
-// and inline-hooks the methods we need. Called once at init; needs a COM
-// apartment to bind the sample folder, so it sets one up temporarily.
+// Installs all six method hooks on `folder`'s vtable and records its originals
+// (and the vtable itself, used to match instances to this class). A method
+// whose hook fails to install is logged and simply left unhooked - its calls
+// then go straight to the real method (so that one method is not bounded), but
+// nothing crashes, because OrigsForFolder is only consulted from a hook that
+// did install.
+static void HookFolderVtable(IShellFolder* folder, FolderOrigs& origs) {
+    void** vtable = *(void***)folder;
+    origs.vtable = vtable;
+
+    // The inline hooks live in the class' DLL and are never removed, so keep
+    // that DLL loaded for the rest of the process. Otherwise an on-demand
+    // shell-extension DLL (zipfldr, wpdshext, third-party folder providers)
+    // could be unloaded out from under our still-installed hooks, leaving the
+    // trampolines and the stale g_folderOrigs entry dangling. Pinning resolves
+    // the module from a hooked function address; one pin per class covers all
+    // six methods, which belong to the same DLL. It is a no-op for shell32 (the
+    // file-system / Recycle Bin / Network / This PC classes), already permanent.
+    HMODULE pinned = nullptr;
+    if (!GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_PIN |
+                                GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS,
+                            reinterpret_cast<LPCWSTR>(vtable[kVtblEnumObjects]),
+                            &pinned)) {
+        Wh_Log(L"Failed to pin module for folder vtable %p", vtable);
+    }
+
+    auto check = [vtable](PCWSTR label, BOOL hooked) {
+        if (!hooked) {
+            Wh_Log(L"SetFunctionHook(%s) failed for folder vtable %p", label,
+                   vtable);
+        }
+    };
+
+    check(L"EnumObjects", WindhawkUtils::SetFunctionHook(
+                              (EnumObjects_t)vtable[kVtblEnumObjects],
+                              EnumObjects_Hook, &origs.enumObjects));
+    check(L"BindToObject", WindhawkUtils::SetFunctionHook(
+                               (BindToObject_t)vtable[kVtblBindToObject],
+                               BindToObject_Hook, &origs.bindToObject));
+    check(L"CompareIDs",
+          WindhawkUtils::SetFunctionHook((CompareIDs_t)vtable[kVtblCompareIDs],
+                                         CompareIDs_Hook, &origs.compareIDs));
+    check(L"GetAttributesOf",
+          WindhawkUtils::SetFunctionHook(
+              (GetAttributesOf_t)vtable[kVtblGetAttributesOf],
+              GetAttributesOf_Hook, &origs.getAttributesOf));
+    check(L"GetUIObjectOf", WindhawkUtils::SetFunctionHook(
+                                (GetUIObjectOf_t)vtable[kVtblGetUIObjectOf],
+                                GetUIObjectOf_Hook, &origs.getUIObjectOf));
+    check(L"GetDisplayNameOf",
+          WindhawkUtils::SetFunctionHook(
+              (GetDisplayNameOf_t)vtable[kVtblGetDisplayNameOf],
+              GetDisplayNameOf_Hook, &origs.getDisplayNameOf));
+}
+
+// Registers `folder`'s class (its vtable) and queues its method hooks. Must be
+// called with g_folderHookLock held (or single-threaded, as at init). Returns
+// true if the class was newly added (hooks queued and still need applying),
+// false if it was already known or the class limit was reached. `source` tags
+// the log with what triggered the hook (init / menu / cascade). Does NOT apply
+// the queued hooks - init relies on Windhawk's auto-apply after Wh_ModInit;
+// runtime callers apply via Wh_ApplyHookOperations.
+static bool AddFolderClassLocked(IShellFolder* folder, PCWSTR source) {
+    void** vtable = *(void***)folder;
+    if (g_folderOrigs.find(vtable) != g_folderOrigs.end()) {
+        return false;
+    }
+    if (g_folderOrigs.size() >= kMaxFolderClasses) {
+        Wh_Log(L"Folder class limit reached; vtable %p left unbounded", vtable);
+        return false;
+    }
+    HookFolderVtable(folder, g_folderOrigs[vtable]);
+    Wh_Log(L"Hooking enumeration on folder vtable %p (%s)", vtable, source);
+    return true;
+}
+
+// Ensures the class of `folder` is hooked so the menu band's enumeration of it
+// is bounded. Called just before a menu is shown (source "menu") and when a
+// cascade sub-folder is bound (source "cascade"), so the hook is in place
+// before the band enumerates the folder. Safe to call repeatedly; it no-ops
+// once the class is known. A newly hooked class is applied here (runtime),
+// unlike the init pre-hooks.
+static void EnsureFolderHooked(IShellFolder* folder, PCWSTR source) {
+    if (!folder) {
+        return;
+    }
+    EnterCriticalSection(&g_folderHookLock);
+    if (AddFolderClassLocked(folder, source)) {
+        if (!Wh_ApplyHookOperations()) {
+            Wh_Log(L"Wh_ApplyHookOperations failed (%s)", source);
+        }
+    }
+    LeaveCriticalSection(&g_folderHookLock);
+}
+
+// Initializes the folder-hook table and pre-hooks the dominant folder class
+// (CFSFolder - the file-system folders that make up almost every menu) so it is
+// bounded from the first menu, before any thread that reads the table exists,
+// and without runtime patching. Every other folder class (the Recycle Bin,
+// Network, This PC, compressed folders, ...) is hooked lazily by
+// EnsureFolderHooked the first time its menu is opened. Called once at init;
+// needs a COM apartment to bind the sample folder, so it sets one up
+// temporarily. The pre-hook is queued during Wh_ModInit and so is applied
+// automatically when init returns - no Wh_ApplyHookOperations here.
 static void InitEnumTimeoutHooks() {
+    InitializeCriticalSection(&g_folderHookLock);
+
     bool comInited =
         SUCCEEDED(CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED));
 
-    // Bind any real file-system folder to reach the shared CFSFolder vtable.
+    winrt::com_ptr<IShellFolder> desktop;
+    if (FAILED(SHGetDesktopFolder(desktop.put())) || !desktop) {
+        Wh_Log(L"InitEnumTimeoutHooks: SHGetDesktopFolder failed");
+        if (comInited) {
+            CoUninitialize();
+        }
+        return;
+    }
+
+    // CFSFolder: bind any real file-system folder to reach its shared vtable.
     // Use the Windows directory rather than a hard-coded "C:\\" so this still
     // works when Windows lives on another drive.
     WCHAR fsPath[MAX_PATH];
     if (!GetWindowsDirectoryW(fsPath, ARRAYSIZE(fsPath))) {
         fsPath[0] = L'\0';
     }
-
-    winrt::com_ptr<IShellFolder> desktop;
-    PIDLIST_ABSOLUTE pidl = nullptr;
+    PIDLIST_ABSOLUTE fsPidl = nullptr;
     winrt::com_ptr<IShellFolder> fsFolder;
-    if (fsPath[0] && SUCCEEDED(SHGetDesktopFolder(desktop.put())) && desktop &&
-        SUCCEEDED(SHParseDisplayName(fsPath, nullptr, &pidl, 0, nullptr)) &&
-        pidl &&
-        SUCCEEDED(desktop->BindToObject(pidl, nullptr,
+    if (fsPath[0] &&
+        SUCCEEDED(SHParseDisplayName(fsPath, nullptr, &fsPidl, 0, nullptr)) &&
+        fsPidl &&
+        SUCCEEDED(desktop->BindToObject(fsPidl, nullptr,
                                         IID_PPV_ARGS(fsFolder.put()))) &&
         fsFolder) {
-        void** vtable = *(void***)fsFolder.get();
-        WindhawkUtils::SetFunctionHook((EnumObjects_t)vtable[kVtblEnumObjects],
-                                       EnumObjects_Hook, &EnumObjects_Orig);
-        WindhawkUtils::SetFunctionHook((CompareIDs_t)vtable[kVtblCompareIDs],
-                                       CompareIDs_Hook, &CompareIDs_Orig);
-        WindhawkUtils::SetFunctionHook(
-            (GetAttributesOf_t)vtable[kVtblGetAttributesOf],
-            GetAttributesOf_Hook, &GetAttributesOf_Orig);
-        WindhawkUtils::SetFunctionHook(
-            (GetUIObjectOf_t)vtable[kVtblGetUIObjectOf], GetUIObjectOf_Hook,
-            &GetUIObjectOf_Orig);
-        WindhawkUtils::SetFunctionHook(
-            (GetDisplayNameOf_t)vtable[kVtblGetDisplayNameOf],
-            GetDisplayNameOf_Hook, &GetDisplayNameOf_Orig);
-        Wh_Log(L"Enumeration timeout hooks installed on CFSFolder vtable %p",
-               vtable);
+        AddFolderClassLocked(fsFolder.get(), L"init");
     } else {
         Wh_Log(L"InitEnumTimeoutHooks: failed to resolve CFSFolder vtable");
     }
 
-    if (pidl) {
-        ILFree(pidl);
+    if (fsPidl) {
+        ILFree(fsPidl);
     }
     fsFolder = nullptr;
     desktop = nullptr;
@@ -1588,6 +1774,13 @@ static winrt::com_ptr<IMenuBand> PopupFolderMenu(PCIDLIST_ABSOLUTE pidlAbs,
             hr = desktop->BindToObject(pidlAbs, nullptr,
                                        IID_PPV_ARGS(folder.put()));
             if (SUCCEEDED(hr)) {
+                // Make sure this folder's class is bounded before the menu band
+                // enumerates it below. Covers any folder class the user opens
+                // (Network, This PC, compressed folders, ...), not just the
+                // one pre-hooked at init. Cascades into sub-folders of other
+                // classes are then hooked as they are bound (see
+                // BindToObject_Hook), so they are bounded too.
+                EnsureFolderHooked(folder.get(), L"menu");
                 hr = shellMenu->SetShellFolder(
                     folder.get(), pidlAbs, nullptr,
                     SMSET_BOTTOM | SMSET_USEBKICONEXTRACTION);
@@ -1658,6 +1851,7 @@ static void ShowFolderMenuModal(PCIDLIST_ABSOLUTE pidlAbs, RECT anchorRect) {
         // if that fails, tear the popup down instead of letting it linger.
         HWND hwndMenu = GetMenuBandWindow(band.get());
         if (!hwndMenu || !SetForegroundWindow(hwndMenu)) {
+            Wh_Log(L"Could not bring menu window to foreground, closing");
             CloseMenuBand(band.get());
             g_menuActive = false;
             return;
@@ -2390,6 +2584,7 @@ BOOL WhTool_ModInit() {
         CloseHandle(g_readyEvent);
         g_readyEvent = nullptr;
         DeleteCriticalSection(&g_snapshotLock);
+        DeleteCriticalSection(&g_folderHookLock);
         return FALSE;
     }
 
@@ -2422,6 +2617,7 @@ void WhTool_ModUninit() {
     }
 
     DeleteCriticalSection(&g_snapshotLock);
+    DeleteCriticalSection(&g_folderHookLock);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
