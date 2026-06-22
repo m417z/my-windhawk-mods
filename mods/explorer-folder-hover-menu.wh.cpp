@@ -205,6 +205,11 @@ ULONG_PTR g_gdiplusToken;
 HWND g_chevronWnd;  // The visible expand button.
 HWND g_sinkWnd;     // Hidden window: raw input + app messages (UI thread).
 HWINEVENTHOOK g_foregroundHook;
+// "TaskbarCreated" broadcast id; Explorer broadcasts it when the shell
+// (re)starts, so the sink window re-checks the active state then (see
+// SinkWndProc), recovering the desktop after an Explorer restart without
+// polling - the tool process keeps running and never re-inits.
+UINT g_taskbarCreatedMsg;
 
 // Background worker (its own STA) that does all UI Automation + shell work, so
 // the UI thread only ever hit-tests a cached snapshot and renders the button.
@@ -2334,6 +2339,57 @@ void SetRawInputActive(bool enable) {
     }
 }
 
+// Re-derives whether Explorer or the desktop is the active foreground window
+// and syncs raw-input registration to match. Returns the new active state. On a
+// transition into the active state the hover button is hidden/shown as needed;
+// the snapshot is dropped when going inactive so re-activation rebuilds it.
+//
+// Shared by the foreground-change hook, the periodic re-check timer, and
+// startup. Classifying the *actual* current foreground (not an event hwnd) is
+// what makes this self-correcting: EVENT_SYSTEM_FOREGROUND is delivered
+// asynchronously (WINEVENT_OUTOFCONTEXT), and the shell's transition windows -
+// the alt+tab / Task View host (XamlExplorerHostIslandWindow), the
+// ForegroundStaging helper, and the windows churned during an Explorer restart
+// - briefly hold the foreground, so an event can carry an already-superseded
+// window. The periodic caller additionally covers the case where the settling
+// event is missed entirely (notably the desktop returning after an Explorer
+// restart, when the tool process keeps running and never re-inits).
+bool SyncActiveState() {
+    HWND fg = GetForegroundWindow();
+
+    // Ignore our own windows (the button or a closing popup) being foreground;
+    // they are part of the mod's UI, so they must not look like a switch away
+    // from Explorer and deactivate the mod.
+    if (fg) {
+        DWORD fgProcessId = 0;
+        GetWindowThreadProcessId(fg, &fgProcessId);
+        if (fgProcessId == GetCurrentProcessId()) {
+            return g_active;
+        }
+    }
+
+    bool isDesktop = false;
+    // A null foreground (nobody owns it, seen mid-transition and right after an
+    // Explorer restart) is treated as the desktop being the active surface.
+    bool active = !fg || IsExplorerOrDesktopRoot(fg, &isDesktop);
+    if (active == g_active) {
+        return active;
+    }
+
+    g_active = active;
+    SetRawInputActive(active);
+    if (active) {
+        Evaluate(false);
+    } else {
+        HideChevron();
+        // Invalidate the snapshot so re-activation rebuilds from scratch.
+        EnterCriticalSection(&g_snapshotLock);
+        g_snapValid = false;
+        LeaveCriticalSection(&g_snapshotLock);
+    }
+    return active;
+}
+
 // Tracks whether Explorer / the desktop is the foreground window, so raw input
 // is only acted on then. Also re-checks the hover when Explorer is activated.
 VOID CALLBACK ActivationChangedProc(HWINEVENTHOOK hook,
@@ -2347,42 +2403,12 @@ VOID CALLBACK ActivationChangedProc(HWINEVENTHOOK hook,
         return;
     }
 
-    // The EVENT_SYSTEM_FOREGROUND hwnd is only a trigger, not a reliable answer
-    // to "what is the foreground now". It is delivered asynchronously
-    // (WINEVENT_OUTOFCONTEXT), and the shell's foreground-transition windows -
-    // the alt+tab / Task View host (XamlExplorerHostIslandWindow) and the
-    // ForegroundStaging helper - briefly become the foreground window during a
-    // switch, so the event can carry a window that is already superseded by the
-    // time we run, with no later event to correct it. Trusting the event hwnd
-    // then latches the mod off (it stops working after alt+tab). Classify the
-    // *actual* current foreground instead, so the handler is self-correcting
-    // against stale or out-of-order events.
-    HWND fg = GetForegroundWindow();
-    if (!fg) {
-        // Nobody owns the foreground for an instant mid-transition; a later
-        // event reports the settled window. Leave the current state untouched.
-        return;
-    }
-
-    // Ignore our own windows (the button or a closing popup) being foreground;
-    // they are part of the mod's UI, so they must not look like a switch away
-    // from Explorer and deactivate the mod.
-    DWORD fgProcessId = 0;
-    GetWindowThreadProcessId(fg, &fgProcessId);
-    if (fgProcessId == GetCurrentProcessId()) {
-        return;
-    }
-
-    bool isDesktop = false;
-    g_active = IsExplorerOrDesktopRoot(fg, &isDesktop);
-    SetRawInputActive(g_active);
-    if (!g_active) {
-        HideChevron();
-        // Invalidate the snapshot so re-activation rebuilds from scratch.
-        EnterCriticalSection(&g_snapshotLock);
-        g_snapValid = false;
-        LeaveCriticalSection(&g_snapshotLock);
-    } else {
+    // Re-evaluate the hover whenever Explorer/the desktop is (still) active,
+    // including when staying active across a switch between Explorer windows.
+    // SyncActiveState already re-evaluates on the inactive->active transition,
+    // so only the stay-active case is handled here, avoiding a double refresh.
+    bool wasActive = g_active;
+    if (SyncActiveState() && wasActive) {
         Evaluate(false);
     }
 }
@@ -2401,6 +2427,17 @@ LRESULT CALLBACK SinkWndProc(HWND hwnd,
         // Periodic re-check while the button is shown, to catch navigation that
         // moved no mouse (double-click / keyboard Enter).
         Evaluate(true);
+        return 0;
+    }
+
+    if (g_taskbarCreatedMsg && msg == g_taskbarCreatedMsg) {
+        // Explorer (re)started: the foreground hook can miss the desktop coming
+        // back (its activating event is delivered already superseded), so
+        // re-derive the active state here instead. This event fires once per
+        // restart, so no polling is needed.
+        if (!g_menuActive) {
+            SyncActiveState();
+        }
         return 0;
     }
 
@@ -2508,12 +2545,23 @@ DWORD WINAPI UiThreadProc(LPVOID param) {
         g_workerReadyEvent = nullptr;
     }
 
-    bool isDesktop = false;
-    g_active = IsExplorerOrDesktopRoot(GetForegroundWindow(), &isDesktop);
-    SetRawInputActive(g_active);
+    // Start active if Explorer or the desktop is already in the foreground,
+    // instead of waiting for the next foreground change.
+    SyncActiveState();
     g_foregroundHook = SetWinEventHook(
         EVENT_SYSTEM_FOREGROUND, EVENT_SYSTEM_FOREGROUND, nullptr,
         ActivationChangedProc, 0, 0, WINEVENT_OUTOFCONTEXT);
+
+    // Listen for the shell's "TaskbarCreated" broadcast so an Explorer restart
+    // re-derives the active state (see SinkWndProc), recovering the desktop
+    // without polling.
+    g_taskbarCreatedMsg = RegisterWindowMessageW(L"TaskbarCreated");
+    if (g_taskbarCreatedMsg) {
+        // Let the broadcast through UIPI in case this process runs at a higher
+        // integrity level than Explorer (which sends it).
+        ChangeWindowMessageFilterEx(g_sinkWnd, g_taskbarCreatedMsg,
+                                    MSGFLT_ALLOW, nullptr);
+    }
 
     SetEvent(g_readyEvent);
 
