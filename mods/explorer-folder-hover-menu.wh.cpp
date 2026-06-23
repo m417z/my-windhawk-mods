@@ -288,6 +288,12 @@ HWINEVENTHOOK g_foregroundHook;
 // SinkWndProc), recovering the desktop after an Explorer restart without
 // polling - the tool process keeps running and never re-inits.
 UINT g_taskbarCreatedMsg;
+// "SHELLHOOK" message id; the sink window is registered with
+// RegisterShellHookWindow so it receives HSHELL_* notifications. Used as an
+// additional activation signal (see SinkWndProc) - the shell hook is driven by
+// different machinery than EVENT_SYSTEM_FOREGROUND, so it may fire on a return
+// to Explorer that emits no foreground or focus event.
+UINT g_shellHookMsg;
 
 // Background worker (its own STA) that does all UI Automation + shell work, so
 // the UI thread only ever hit-tests a cached snapshot and renders the button.
@@ -930,10 +936,10 @@ BOOL CALLBACK FindAddressToolbarProc(HWND hwnd, LPARAM lParam) {
         wcscmp(cls, L"ToolbarWindow32") != 0) {
         return TRUE;
     }
-    // The address breadcrumb is a list-style toolbar (TBSTYLE_LIST) that carries
-    // window text ("Address: <path or name>"); the command bar and the other
-    // toolbars are not, so this pair of traits identifies it without depending
-    // on the text content.
+    // The address breadcrumb is a list-style toolbar (TBSTYLE_LIST) that
+    // carries window text ("Address: <path or name>"); the command bar and the
+    // other toolbars are not, so this pair of traits identifies it without
+    // depending on the text content.
     if (!(GetWindowLongPtrW(hwnd, GWL_STYLE) & TBSTYLE_LIST)) {
         return TRUE;
     }
@@ -1017,8 +1023,8 @@ void BuildSpecialFolderMap(
     AddNamespaceChildren(desktop.get(), nullptr, out);
 
     PIDLIST_ABSOLUTE thisPcAbs = nullptr;
-    if (SUCCEEDED(SHGetSpecialFolderLocation(nullptr, CSIDL_DRIVES,
-                                             &thisPcAbs)) &&
+    if (SUCCEEDED(
+            SHGetSpecialFolderLocation(nullptr, CSIDL_DRIVES, &thisPcAbs)) &&
         thisPcAbs) {
         winrt::com_ptr<IShellFolder> thisPc;
         if (SUCCEEDED(desktop->BindToObject(thisPcAbs, nullptr,
@@ -1101,7 +1107,8 @@ bool GetFolderForFileDialog(HWND tab,
         folderAbs = ResolveSpecialFolderPidl(address.c_str());
     }
     if (!folderAbs) {
-        Wh_Log(L"GetFolderForFileDialog: could not resolve address to a folder");
+        Wh_Log(
+            L"GetFolderForFileDialog: could not resolve address to a folder");
         return false;
     }
 
@@ -1554,9 +1561,11 @@ BOOL CALLBACK DumpControlsProc(HWND hwnd, LPARAM lParam) {
     LONG style = (LONG)GetWindowLongPtrW(hwnd, GWL_STYLE);
     RECT rc = {};
     GetWindowRect(hwnd, &rc);
-    Wh_Log(L"  hwnd=%p id=0x%04X class=%s style=0x%08X vis=%d rc=(%ld,%ld) text=\"%s\"",
-           hwnd, GetDlgCtrlID(hwnd), cls, (DWORD)style,
-           (style & WS_VISIBLE) ? 1 : 0, rc.left, rc.top, text);
+    Wh_Log(
+        L"  hwnd=%p id=0x%04X class=%s style=0x%08X vis=%d rc=(%ld,%ld) "
+        L"text=\"%s\"",
+        hwnd, GetDlgCtrlID(hwnd), cls, (DWORD)style,
+        (style & WS_VISIBLE) ? 1 : 0, rc.left, rc.top, text);
     return TRUE;
 }
 
@@ -1581,9 +1590,9 @@ BOOL CALLBACK FindFilenameComboProc(HWND hwnd, LPARAM lParam) {
         wcscmp(cls, L"ComboBox") != 0 || !IsWindowVisible(hwnd)) {
         return TRUE;
     }
-    // The file name field is an editable combo (CBS_SIMPLE or CBS_DROPDOWN); the
-    // file-type combo is a non-editable CBS_DROPDOWNLIST, and the address bar
-    // (a ComboBoxEx32 inside the address band) is excluded explicitly.
+    // The file name field is an editable combo (CBS_SIMPLE or CBS_DROPDOWN);
+    // the file-type combo is a non-editable CBS_DROPDOWNLIST, and the address
+    // bar (a ComboBoxEx32 inside the address band) is excluded explicitly.
     LONG type = (LONG)GetWindowLongPtrW(hwnd, GWL_STYLE) & 0x3;
     if (type != CBS_SIMPLE && type != CBS_DROPDOWN) {
         return TRUE;
@@ -1615,10 +1624,10 @@ BOOL CALLBACK FindFilenameComboProc(HWND hwnd, LPARAM lParam) {
 
 // Finds the file dialog's file name field (the combo/edit where a name or path
 // is typed). The classic common dialog uses control ids cmb13 (editable combo)
-// and edt1 (plain edit); the Vista+ common item dialog (used by mspaint and most
-// modern apps) gives it no usable id, so we fall back to the editable combo, not
-// in the address bar, nearest the default button's row. Searched among all
-// descendants, not just direct children.
+// and edt1 (plain edit); the Vista+ common item dialog (used by mspaint and
+// most modern apps) gives it no usable id, so we fall back to the editable
+// combo, not in the address bar, nearest the default button's row. Searched
+// among all descendants, not just direct children.
 HWND FindDialogFilenameField(HWND dlg) {
     constexpr int kIdFilenameCombo = 0x047C;  // cmb13
     constexpr int kIdFilenameEdit = 0x0480;   // edt1
@@ -3342,6 +3351,11 @@ void SetRawInputActive(bool enable) {
     rid.hwndTarget = enable ? g_sinkWnd : nullptr;
     if (RegisterRawInputDevices(&rid, 1, sizeof(rid))) {
         g_rawInputRegistered = enable;
+    } else {
+        Wh_Log(
+            L"SetRawInputActive: RegisterRawInputDevices(enable=%d) failed, "
+            L"le=%lu",
+            (int)enable, GetLastError());
     }
 }
 
@@ -3448,6 +3462,23 @@ LRESULT CALLBACK SinkWndProc(HWND hwnd,
         // restart, so no polling is needed.
         if (!g_menuActive) {
             SyncActiveState();
+        }
+        return 0;
+    }
+
+    if (g_shellHookMsg && msg == g_shellHookMsg) {
+        // Shell hook notification. HSHELL_WINDOWACTIVATED (optionally with the
+        // HSHELL_RUDEAPPACTIVATED high bit) means the activated window changed;
+        // re-derive the active state as the foreground hook does. This is the
+        // signal that fires on a return to Explorer when the foreground event
+        // is dropped (the disappearing-button case), since it runs through
+        // different machinery and is delivered as a posted message, by which
+        // point GetForegroundWindow has settled. Other codes are ignored.
+        if ((int)(wParam & 0x7FFF) == HSHELL_WINDOWACTIVATED && !g_menuActive) {
+            bool wasActive = g_active;
+            if (SyncActiveState() && wasActive) {
+                Evaluate(false);
+            }
         }
         return 0;
     }
@@ -3628,6 +3659,21 @@ DWORD WINAPI UiThreadProc(LPVOID param) {
                                     MSGFLT_ALLOW, nullptr);
     }
 
+    // Register for shell hook notifications (HSHELL_WINDOWACTIVATED etc.) as an
+    // additional activation signal. The genuine return to Explorer after the
+    // modern context menu emits no foreground or focus event (see SinkWndProc),
+    // and the shell hook runs through different machinery, so it may fire
+    // there.
+    g_shellHookMsg = RegisterWindowMessageW(L"SHELLHOOK");
+    if (g_shellHookMsg) {
+        // Allow it through UIPI, like TaskbarCreated above.
+        ChangeWindowMessageFilterEx(g_sinkWnd, g_shellHookMsg, MSGFLT_ALLOW,
+                                    nullptr);
+    }
+    if (!RegisterShellHookWindow(g_sinkWnd)) {
+        Wh_Log(L"RegisterShellHookWindow failed, le=%lu", GetLastError());
+    }
+
     // The menu band's own "execute item" message. Posting it to an item toolbar
     // is how a folder click opens the item (see ExecMenuFolderItem).
     g_cmbExecuteMsg = RegisterWindowMessageW(L"CMBExecute");
@@ -3672,6 +3718,7 @@ DWORD WINAPI UiThreadProc(LPVOID param) {
     g_snapChildren.clear();
 
     if (g_sinkWnd) {
+        DeregisterShellHookWindow(g_sinkWnd);
         DestroyWindow(g_sinkWnd);
         g_sinkWnd = nullptr;
     }
