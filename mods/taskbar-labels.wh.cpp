@@ -2,7 +2,7 @@
 // @id              taskbar-labels
 // @name            Taskbar Labels for Windows 11
 // @description     Customize text labels and combining for running programs on the taskbar (Windows 11 only)
-// @version         1.4.2
+// @version         1.4.3
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
@@ -189,6 +189,7 @@ Labels can also be shown or hidden per-program in the settings.
 
 #include <algorithm>
 #include <atomic>
+#include <cmath>
 #include <limits>
 #include <string>
 #include <unordered_set>
