@@ -283,7 +283,6 @@ ULONG_PTR g_gdiplusToken;
 HWND g_chevronWnd;  // The visible expand button.
 HWND g_sinkWnd;     // Hidden window: raw input + app messages (UI thread).
 HWINEVENTHOOK g_foregroundHook;
-HWINEVENTHOOK g_focusHook;
 // "TaskbarCreated" broadcast id; Explorer broadcasts it when the shell
 // (re)starts, so the sink window re-checks the active state then (see
 // SinkWndProc), recovering the desktop after an Explorer restart without
@@ -345,19 +344,6 @@ bool g_rawInputRegistered;
 // stationary cursor (double-click / keyboard Enter) is noticed without a move.
 constexpr UINT kWatchdogIntervalMs = 500;
 constexpr UINT_PTR kWatchdogTimerId = 1;
-
-// Short re-check burst after a foreground change. EVENT_SYSTEM_FOREGROUND is
-// delivered asynchronously and GetForegroundWindow can briefly lag it (notably
-// right after dismissing the modern XAML context menu, where the event already
-// names Explorer but the live foreground still reports the previous app), so
-// SyncActiveState can read a stale foreground and latch inactive. After a
-// change that resolves to inactive we re-derive the state a few times so a
-// lagging foreground can settle, then stop. Bounded, so it is not steady-state
-// polling.
-constexpr UINT kForegroundRecheckIntervalMs = 200;
-constexpr UINT_PTR kForegroundRecheckTimerId = 2;
-constexpr int kForegroundRecheckMaxAttempts = 8;
-int g_foregroundRecheckAttempts;
 
 // One visible item in the active view: its rectangle (screen coords) and name.
 struct CachedItem {
@@ -3356,11 +3342,6 @@ void SetRawInputActive(bool enable) {
     rid.hwndTarget = enable ? g_sinkWnd : nullptr;
     if (RegisterRawInputDevices(&rid, 1, sizeof(rid))) {
         g_rawInputRegistered = enable;
-    } else {
-        Wh_Log(
-            L"SetRawInputActive: RegisterRawInputDevices(enable=%d) failed, "
-            L"le=%lu",
-            (int)enable, GetLastError());
     }
 }
 
@@ -3420,20 +3401,6 @@ bool SyncActiveState() {
     return active;
 }
 
-// Re-derives the active state and, if we stayed active across the change,
-// re-evaluates the hover. (SyncActiveState already re-evaluates on an
-// inactive->active transition, so only the stay-active case is handled here,
-// avoiding a double refresh.) Returns the resulting active state. Shared by the
-// foreground hook and the lagging-foreground re-check timer.
-bool ReSyncActiveAndEvaluate() {
-    bool wasActive = g_active;
-    bool active = SyncActiveState();
-    if (active && wasActive) {
-        Evaluate(false);
-    }
-    return active;
-}
-
 // Tracks whether Explorer / the desktop is the foreground window, so raw input
 // is only acted on then. Also re-checks the hover when Explorer is activated.
 VOID CALLBACK ActivationChangedProc(HWINEVENTHOOK hook,
@@ -3447,64 +3414,13 @@ VOID CALLBACK ActivationChangedProc(HWINEVENTHOOK hook,
         return;
     }
 
-    if (ReSyncActiveAndEvaluate()) {
-        // Confirmed active; cancel any pending re-check burst from an earlier
-        // (then-inactive) change.
-        KillTimer(g_sinkWnd, kForegroundRecheckTimerId);
-    } else {
-        // Resolved to inactive, but GetForegroundWindow may just be lagging the
-        // event (see kForegroundRecheckTimerId). Re-derive the state a few more
-        // times so a lagging foreground is noticed instead of latching inactive
-        // forever. The timer stops itself once we become active or the attempt
-        // budget runs out.
-        g_foregroundRecheckAttempts = kForegroundRecheckMaxAttempts;
-        SetTimer(g_sinkWnd, kForegroundRecheckTimerId,
-                 kForegroundRecheckIntervalMs, nullptr);
-    }
-}
-
-// Backup re-activation signal. EVENT_SYSTEM_FOREGROUND is best-effort:
-// returning to Explorer after the modern (XAML) context menu, it can arrive
-// with a lagging GetForegroundWindow or - as observed - not fire at all,
-// leaving us latched inactive with no recovery and the button gone for good.
-// EVENT_OBJECT_FOCUS is driven by the focus machinery (a separate path from
-// foreground) and fires reliably when the user clicks back into a window, so we
-// use it as a backup: when focus lands in an Explorer/desktop window while we
-// think we are inactive, that surface is active again even if the foreground
-// event was dropped. We then re-derive the state (and arm the
-// lagging-foreground re-check, since GetForegroundWindow may still be catching
-// up).
-//
-// This is not polling: the handler does nothing while active (foreground events
-// + raw input + the watchdog already cover that, and focus churn is high
-// frequency), and while inactive it ignores focus changes in every window
-// except Explorer's / the desktop's.
-VOID CALLBACK FocusChangedProc(HWINEVENTHOOK hook,
-                               DWORD event,
-                               HWND hwnd,
-                               LONG idObject,
-                               LONG idChild,
-                               DWORD idEventThread,
-                               DWORD dwmsEventTime) {
-    if (g_menuActive || g_active) {
-        return;
-    }
-
-    HWND root = hwnd ? GetAncestor(hwnd, GA_ROOT) : nullptr;
-    bool isDesktop = false;
-    bool isDialog = false;
-    if (!root || !ClassifyRoot(root, &isDesktop, &isDialog) ||
-        (isDialog && !HasShellView(root))) {
-        return;  // Focus moved within some other app; not our cue.
-    }
-
-    if (!ReSyncActiveAndEvaluate()) {
-        // Focus is in Explorer/the desktop but GetForegroundWindow hasn't
-        // caught up yet; re-check a few times so it can settle (self-stops once
-        // active, see kForegroundRecheckTimerId).
-        g_foregroundRecheckAttempts = kForegroundRecheckMaxAttempts;
-        SetTimer(g_sinkWnd, kForegroundRecheckTimerId,
-                 kForegroundRecheckIntervalMs, nullptr);
+    // Re-evaluate the hover whenever Explorer/the desktop is (still) active,
+    // including when staying active across a switch between Explorer windows.
+    // SyncActiveState already re-evaluates on the inactive->active transition,
+    // so only the stay-active case is handled here, avoiding a double refresh.
+    bool wasActive = g_active;
+    if (SyncActiveState() && wasActive) {
+        Evaluate(false);
     }
 }
 
@@ -3522,18 +3438,6 @@ LRESULT CALLBACK SinkWndProc(HWND hwnd,
         // Periodic re-check while the button is shown, to catch navigation that
         // moved no mouse (double-click / keyboard Enter).
         Evaluate(true);
-        return 0;
-    }
-
-    if (msg == WM_TIMER && wParam == kForegroundRecheckTimerId) {
-        // After a foreground change resolved to inactive, re-derive the active
-        // state a few times in case GetForegroundWindow was lagging the event
-        // (see kForegroundRecheckTimerId). Stop once we become active, our own
-        // menu opens, or the attempt budget runs out.
-        bool active = !g_menuActive && ReSyncActiveAndEvaluate();
-        if (active || g_menuActive || --g_foregroundRecheckAttempts <= 0) {
-            KillTimer(g_sinkWnd, kForegroundRecheckTimerId);
-        }
         return 0;
     }
 
@@ -3713,13 +3617,6 @@ DWORD WINAPI UiThreadProc(LPVOID param) {
         EVENT_SYSTEM_FOREGROUND, EVENT_SYSTEM_FOREGROUND, nullptr,
         ActivationChangedProc, 0, 0, WINEVENT_OUTOFCONTEXT);
 
-    // Backup re-activation signal for when the foreground event is unreliable
-    // (see FocusChangedProc). Global and out-of-context, but the handler no-ops
-    // while active and ignores non-Explorer focus changes, so it is cheap.
-    g_focusHook = SetWinEventHook(
-        EVENT_OBJECT_FOCUS, EVENT_OBJECT_FOCUS, nullptr, FocusChangedProc, 0, 0,
-        WINEVENT_OUTOFCONTEXT | WINEVENT_SKIPOWNPROCESS);
-
     // Listen for the shell's "TaskbarCreated" broadcast so an Explorer restart
     // re-derives the active state (see SinkWndProc), recovering the desktop
     // without polling.
@@ -3754,10 +3651,6 @@ DWORD WINAPI UiThreadProc(LPVOID param) {
     if (g_foregroundHook) {
         UnhookWinEvent(g_foregroundHook);
         g_foregroundHook = nullptr;
-    }
-    if (g_focusHook) {
-        UnhookWinEvent(g_focusHook);
-        g_focusHook = nullptr;
     }
     SetRawInputActive(false);
 
