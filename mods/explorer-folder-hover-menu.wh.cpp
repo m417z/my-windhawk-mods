@@ -84,7 +84,7 @@ Inspired by [QTTabBar](https://qttabbar.wikidot.com/).
     Also show the expand button in open and save file dialogs. The folder click
     actions above apply there too. Clicking a file in the menu puts it into the
     dialog's file name box (it is not launched).
-- maxItems: 100
+- maxItems: 200
   $name: Maximum items
   $description: >-
     The most items to load into a single folder's menu. When a folder has more,
