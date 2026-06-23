@@ -612,41 +612,78 @@ void InitMenuColorHooks() {
 ////////////////////////////////////////////////////////////////////////////////
 // UI Automation (worker thread only): enumerate the visible file-list items.
 
-// Walks up from the element under the point to the file list / grid container
-// (List, DataGrid or Table). Returns it, or nullptr.
+// True if the element is one of the file-list containers we enumerate items
+// from (a List, DataGrid or Table).
+bool IsListContainer(IUIAutomationElement* element) {
+    CONTROLTYPEID controlType = 0;
+    element->get_CurrentControlType(&controlType);
+    return controlType == UIA_ListControlTypeId ||
+           controlType == UIA_DataGridControlTypeId ||
+           controlType == UIA_TableControlTypeId;
+}
+
+// Binds UI Automation directly to the list window `hwnd` and returns its
+// element to use as the items container. Used as a fallback when hit-testing
+// (ElementFromPoint, below) does not land on the list. A transparent, topmost,
+// click-through overlay - notably the NVIDIA GeForce overlay (window class
+// "CEF-OSC-WIDGET"), and likewise the Steam and Discord game overlays - sits
+// above the desktop and steals UIA's ElementFromPoint, which (unlike
+// WindowFromPoint) ignores WS_EX_TRANSPARENT and so returns the overlay's own
+// Chromium element tree instead of the file list under the cursor. Binding
+// straight to a window handle does no hit-testing, so the overlay cannot
+// intercept it and the real list provider is reached. The returned element need
+// not be a List itself - WorkerBuildItems looks for ListItem / DataItem
+// descendants under it - so the bound window element is returned as-is.
+winrt::com_ptr<IUIAutomationElement> FindContainerFromWindow(HWND hwnd) {
+    if (!g_workerUia || !hwnd) {
+        return nullptr;
+    }
+
+    winrt::com_ptr<IUIAutomationElement> element;
+    if (FAILED(g_workerUia->ElementFromHandle(hwnd, element.put())) ||
+        !element) {
+        return nullptr;
+    }
+    return element;
+}
+
+// Finds the file list / grid container for the given point. First hit-tests the
+// point with ElementFromPoint and walks up to a List, DataGrid or Table
+// container (the fast path, used for Explorer views). When that does not reach
+// one - e.g. a transparent topmost overlay hijacked the UIA hit-test (see
+// FindContainerFromWindow) - falls back to binding directly to the window under
+// the point, which recovers the desktop. Returns the container, or nullptr.
 winrt::com_ptr<IUIAutomationElement> FindContainerFromPoint(POINT pt) {
     if (!g_workerUia) {
         return nullptr;
     }
 
     winrt::com_ptr<IUIAutomationElement> element;
-    if (FAILED(g_workerUia->ElementFromPoint(pt, element.put())) || !element) {
-        return nullptr;
+    if (SUCCEEDED(g_workerUia->ElementFromPoint(pt, element.put())) &&
+        element) {
+        winrt::com_ptr<IUIAutomationTreeWalker> walker;
+        g_workerUia->get_ControlViewWalker(walker.put());
+
+        winrt::com_ptr<IUIAutomationElement> current = element;
+        for (int depth = 0; current && depth < 16; depth++) {
+            if (IsListContainer(current.get())) {
+                return current;
+            }
+
+            winrt::com_ptr<IUIAutomationElement> parent;
+            if (!walker ||
+                FAILED(walker->GetParentElement(current.get(), parent.put())) ||
+                !parent) {
+                break;
+            }
+            current = std::move(parent);
+        }
     }
 
-    winrt::com_ptr<IUIAutomationTreeWalker> walker;
-    g_workerUia->get_ControlViewWalker(walker.put());
-
-    winrt::com_ptr<IUIAutomationElement> current = element;
-    for (int depth = 0; current && depth < 16; depth++) {
-        CONTROLTYPEID controlType = 0;
-        current->get_CurrentControlType(&controlType);
-        if (controlType == UIA_ListControlTypeId ||
-            controlType == UIA_DataGridControlTypeId ||
-            controlType == UIA_TableControlTypeId) {
-            return current;
-        }
-
-        winrt::com_ptr<IUIAutomationElement> parent;
-        if (!walker ||
-            FAILED(walker->GetParentElement(current.get(), parent.put())) ||
-            !parent) {
-            break;
-        }
-        current = std::move(parent);
-    }
-
-    return nullptr;
+    // Hit-testing did not reach a list container. The click-through overlay
+    // (WS_EX_TRANSPARENT) that hijacked it is ignored by WindowFromPoint, which
+    // still returns the real list window; bind to that directly to bypass it.
+    return FindContainerFromWindow(WindowFromPoint(pt));
 }
 
 // In a columned view (Details or List) the row's children are the cells laid
