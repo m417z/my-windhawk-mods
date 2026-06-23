@@ -20,6 +20,10 @@ expand button appears in the bottom-right corner of that folder. Click it to pop
 up a cascading menu of the folder's contents. You can navigate into sub-folders
 and launch items straight from the menu, without opening the folder first.
 
+It also works in open and save file dialogs. There, "Open in the current window"
+navigates the dialog into the folder, and clicking a file in the menu puts it
+into the dialog's file name box.
+
 Inspired by [QTTabBar](https://qttabbar.wikidot.com/).
 
 ![Screenshot](https://i.imgur.com/ZPceXoZ.png)
@@ -74,6 +78,12 @@ Inspired by [QTTabBar](https://qttabbar.wikidot.com/).
   - currentWindow: Open in the current window
   - newWindow: Open in a new window
   - newTab: Open in a new tab
+- fileDialogs: true
+  $name: Enable in file dialogs
+  $description: >-
+    Also show the expand button in open and save file dialogs. The folder click
+    actions above apply there too. Clicking a file in the menu puts it into the
+    dialog's file name box (it is not launched).
 - maxItems: 100
   $name: Maximum items
   $description: >-
@@ -180,6 +190,7 @@ struct {
     int offsetY;
     FolderAction clickAction;
     FolderAction middleClickAction;
+    bool fileDialogs;
     int maxEnumItems;
     int enumTimeoutMs;
 } g_settings;
@@ -237,6 +248,8 @@ void LoadSettings() {
     PCWSTR middleClickAction = Wh_GetStringSetting(L"middleClickAction");
     g_settings.middleClickAction = ParseFolderAction(middleClickAction);
     Wh_FreeStringSetting(middleClickAction);
+
+    g_settings.fileDialogs = Wh_GetIntSetting(L"fileDialogs");
 
     int maxItems = Wh_GetIntSetting(L"maxItems");
     if (maxItems < 1) {
@@ -314,6 +327,9 @@ PIDLIST_ABSOLUTE g_targetPidl;
 // the "current window" when a folder is opened from the menu. UI thread only.
 HWND g_targetTab;
 bool g_targetIsDesktop;
+// Whether the hovered view is an open/save file dialog (its menu clicks drive
+// the dialog instead of Explorer). UI thread only.
+bool g_targetIsDialog;
 
 // How long (ms) a snapshot is trusted before a mouse move triggers a background
 // rebuild. This is not a timer; it only gates work done on actual input events.
@@ -873,6 +889,256 @@ bool GetFolderForExplorerTab(HWND tab,
     return result;
 }
 
+////////////////////////////////////////////////////////////////////////////////
+// Shell: resolve the current folder of an open/save file dialog.
+//
+// A common file dialog is hosted in the application's own process (not
+// Explorer) and is not registered with IShellWindows, so the cross-process
+// IShellBrowser path used for Explorer tabs does not reach it. Instead we read
+// the current folder from the dialog's address bar (the breadcrumb
+// ToolbarWindow32 inside the "Address Band Root" control) and turn it into a
+// pidl with the local shell. The breadcrumb's window text is the full path for
+// a file-system folder ("Address: C:\...") but only a localized display name
+// for a special folder ("Address: Desktop"), so both are handled. GetWindowText
+// does not cross process boundaries for a control owned by another process, so
+// the text is fetched with an explicit WM_GETTEXT.
+
+// Defined below (window-tree helpers section); used here to locate the address
+// bar inside a file dialog.
+HWND FindDescendantOfClass(HWND parent, PCWSTR className);
+
+// The common item dialog top-level window class (a standard Win32 dialog).
+constexpr WCHAR kFileDialogClass[] = L"#32770";
+
+bool IsFileDialogWindow(HWND root) {
+    WCHAR cls[64];
+    return root && GetClassNameW(root, cls, ARRAYSIZE(cls)) &&
+           wcscmp(cls, kFileDialogClass) == 0;
+}
+
+// Returns the substring of `text` starting at the first file-system path it
+// contains (a drive path like "C:\..." or a UNC path "\\..."), or empty. This
+// skips the address bar's localized "Address: " prefix without depending on its
+// exact wording.
+std::wstring ExtractFsPath(PCWSTR text) {
+    for (PCWSTR p = text; *p; p++) {
+        if (((p[0] >= L'A' && p[0] <= L'Z') ||
+             (p[0] >= L'a' && p[0] <= L'z')) &&
+            p[1] == L':' && (p[2] == L'\\' || p[2] == L'/')) {
+            return p;
+        }
+        if (p[0] == L'\\' && p[1] == L'\\') {
+            return p;
+        }
+    }
+    return std::wstring();
+}
+
+struct FindAddressToolbarParams {
+    std::wstring text;
+};
+
+BOOL CALLBACK FindAddressToolbarProc(HWND hwnd, LPARAM lParam) {
+    WCHAR cls[64];
+    if (!GetClassNameW(hwnd, cls, ARRAYSIZE(cls)) ||
+        wcscmp(cls, L"ToolbarWindow32") != 0) {
+        return TRUE;
+    }
+    // The address breadcrumb is a list-style toolbar (TBSTYLE_LIST) that carries
+    // window text ("Address: <path or name>"); the command bar and the other
+    // toolbars are not, so this pair of traits identifies it without depending
+    // on the text content.
+    if (!(GetWindowLongPtrW(hwnd, GWL_STYLE) & TBSTYLE_LIST)) {
+        return TRUE;
+    }
+    WCHAR text[4096];
+    text[0] = L'\0';
+    DWORD_PTR copied = 0;
+    if (SendMessageTimeoutW(hwnd, WM_GETTEXT, ARRAYSIZE(text), (LPARAM)text,
+                            SMTO_ABORTIFHUNG, 1000, &copied) &&
+        copied > 0) {
+        reinterpret_cast<FindAddressToolbarParams*>(lParam)->text = text;
+        return FALSE;  // Found the address breadcrumb; stop.
+    }
+    return TRUE;
+}
+
+std::wstring FindAddressToolbarText(HWND root) {
+    FindAddressToolbarParams params;
+    EnumChildWindows(root, FindAddressToolbarProc, (LPARAM)&params);
+    return params.text;
+}
+
+// Reads the address bar's raw text (e.g. "Address: C:\Users" or "Address:
+// Desktop"). The breadcrumb is found by its toolbar style and window text (see
+// FindAddressToolbarProc), so a special folder, whose text is just a display
+// name, is read just like a path. Scoped to the "Address Band Root" control to
+// avoid any other list toolbar, falling back to the whole dialog if absent.
+std::wstring GetFileDialogAddressText(HWND dlg) {
+    HWND band = FindDescendantOfClass(dlg, L"Address Band Root");
+    std::wstring text = band ? FindAddressToolbarText(band) : std::wstring();
+    if (text.empty()) {
+        text = FindAddressToolbarText(dlg);
+    }
+    return text;
+}
+
+// Adds {lowercased display name -> owned absolute pidl} for every immediate
+// child folder of `parent` (whose absolute pidl is `parentAbs`, or nullptr for
+// the desktop root) that is not already present.
+void AddNamespaceChildren(
+    IShellFolder* parent,
+    PCIDLIST_ABSOLUTE parentAbs,
+    std::unordered_map<std::wstring, PIDLIST_ABSOLUTE>& out) {
+    winrt::com_ptr<IEnumIDList> enumerator;
+    if (FAILED(parent->EnumObjects(
+            nullptr, SHCONTF_FOLDERS | SHCONTF_NONFOLDERS, enumerator.put())) ||
+        !enumerator) {
+        return;
+    }
+
+    LPITEMIDLIST child = nullptr;
+    ULONG fetched = 0;
+    while (enumerator->Next(1, &child, &fetched) == S_OK && fetched == 1) {
+        STRRET strret;
+        WCHAR name[MAX_PATH];
+        if (SUCCEEDED(parent->GetDisplayNameOf(child, SHGDN_NORMAL, &strret)) &&
+            SUCCEEDED(StrRetToBufW(&strret, child, name, ARRAYSIZE(name))) &&
+            *name) {
+            std::wstring key = ToLower(name);
+            if (out.find(key) == out.end()) {
+                if (PIDLIST_ABSOLUTE abs = ILCombine(parentAbs, child)) {
+                    out[key] = abs;
+                }
+            }
+        }
+        CoTaskMemFree(child);
+        child = nullptr;
+    }
+}
+
+// Builds a map of the display names the address bar shows instead of a path -
+// the namespace roots (This PC, Network, Libraries, ...) and the user's known
+// folders under This PC (Desktop, Documents, Downloads, drives, ...) - to their
+// absolute pidls. The map owns its pidls.
+void BuildSpecialFolderMap(
+    std::unordered_map<std::wstring, PIDLIST_ABSOLUTE>& out) {
+    winrt::com_ptr<IShellFolder> desktop;
+    if (FAILED(SHGetDesktopFolder(desktop.put())) || !desktop) {
+        return;
+    }
+
+    AddNamespaceChildren(desktop.get(), nullptr, out);
+
+    PIDLIST_ABSOLUTE thisPcAbs = nullptr;
+    if (SUCCEEDED(SHGetSpecialFolderLocation(nullptr, CSIDL_DRIVES,
+                                             &thisPcAbs)) &&
+        thisPcAbs) {
+        winrt::com_ptr<IShellFolder> thisPc;
+        if (SUCCEEDED(desktop->BindToObject(thisPcAbs, nullptr,
+                                            IID_PPV_ARGS(thisPc.put()))) &&
+            thisPc) {
+            AddNamespaceChildren(thisPc.get(), thisPcAbs, out);
+        }
+        ILFree(thisPcAbs);
+    }
+}
+
+// Resolves the address bar text of a special folder (a display name, not a
+// path) to its absolute pidl, or nullptr. Matches the longest known display
+// name that the text ends with, at a word boundary - this both ignores the
+// localized "Address: " prefix and works in any UI language, since the names
+// are read from the same shell. Caller frees the pidl.
+PIDLIST_ABSOLUTE ResolveSpecialFolderPidl(PCWSTR addressText) {
+    std::unordered_map<std::wstring, PIDLIST_ABSOLUTE> map;
+    BuildSpecialFolderMap(map);
+
+    std::wstring text = ToLower(addressText);
+    PIDLIST_ABSOLUTE best = nullptr;
+    size_t bestLen = 0;
+    for (const auto& entry : map) {
+        const std::wstring& name = entry.first;
+        if (name.size() <= bestLen || name.size() > text.size()) {
+            continue;
+        }
+        size_t at = text.size() - name.size();
+        if (text.compare(at, name.size(), name) != 0) {
+            continue;
+        }
+        // Require a separator (not a letter or digit) before the match, so
+        // "...: Desktop" matches but a folder ending in "...Desktop" does not.
+        WCHAR before = at > 0 ? text[at - 1] : L' ';
+        if ((before >= L'a' && before <= L'z') ||
+            (before >= L'0' && before <= L'9')) {
+            continue;
+        }
+        best = entry.second;
+        bestLen = name.size();
+    }
+
+    PIDLIST_ABSOLUTE result = best ? ILClone(best) : nullptr;
+    for (const auto& entry : map) {
+        ILFree(entry.second);
+    }
+    return result;
+}
+
+// Resolves the current folder of the file dialog `tab` belongs to (read from
+// its address bar) into an IShellFolder plus its absolute pidl. Mirrors
+// GetFolderForExplorerTab's output contract (the caller frees the pidl).
+bool GetFolderForFileDialog(HWND tab,
+                            winrt::com_ptr<IShellFolder>& outFolder,
+                            PIDLIST_ABSOLUTE* outFolderAbs) {
+    outFolder = nullptr;
+    *outFolderAbs = nullptr;
+
+    HWND dlg = GetAncestor(tab, GA_ROOT);
+    if (!dlg) {
+        return false;
+    }
+
+    std::wstring address = GetFileDialogAddressText(dlg);
+    if (address.empty()) {
+        return false;
+    }
+
+    // A file-system folder shows its full path; a special folder shows only a
+    // display name, which we map back to a pidl through the namespace.
+    PIDLIST_ABSOLUTE folderAbs = nullptr;
+    std::wstring fsPath = ExtractFsPath(address.c_str());
+    if (!fsPath.empty()) {
+        if (FAILED(SHParseDisplayName(fsPath.c_str(), nullptr, &folderAbs, 0,
+                                      nullptr))) {
+            folderAbs = nullptr;
+        }
+    } else {
+        folderAbs = ResolveSpecialFolderPidl(address.c_str());
+    }
+    if (!folderAbs) {
+        Wh_Log(L"GetFolderForFileDialog: could not resolve address to a folder");
+        return false;
+    }
+
+    bool result = false;
+    winrt::com_ptr<IShellFolder> desktop;
+    if (SUCCEEDED(SHGetDesktopFolder(desktop.put())) && desktop) {
+        winrt::com_ptr<IShellFolder> folder;
+        if (SUCCEEDED(desktop->BindToObject(folderAbs, nullptr,
+                                            IID_PPV_ARGS(folder.put()))) &&
+            folder) {
+            outFolder = std::move(folder);
+            *outFolderAbs = folderAbs;
+            folderAbs = nullptr;
+            result = true;
+        }
+    }
+    if (folderAbs) {
+        ILFree(folderAbs);
+    }
+
+    return result;
+}
+
 bool IsFolderPidl(PCIDLIST_ABSOLUTE pidl) {
     winrt::com_ptr<IShellItem> item;
     bool isFolder = false;
@@ -1047,6 +1313,8 @@ void WorkerBuildSnapshot(HWND tab, bool isDesktop, POINT pt) {
     PIDLIST_ABSOLUTE folderAbs = nullptr;
     if (isDesktop) {
         SHGetDesktopFolder(folder.put());
+    } else if (IsFileDialogWindow(GetAncestor(tab, GA_ROOT))) {
+        GetFolderForFileDialog(tab, folder, &folderAbs);
     } else {
         GetFolderForExplorerTab(tab, folder, &folderAbs);
     }
@@ -1145,8 +1413,11 @@ constexpr WPARAM kExplorerNewTabCommand = 0xA21B;
 // A pending open request, handed from the UI thread to the worker via
 // WM_APP_DO_ACTION. The worker owns it and frees pidl + the struct.
 struct FolderActionRequest {
-    PIDLIST_ABSOLUTE pidl;  // The folder to open (absolute).
+    PIDLIST_ABSOLUTE pidl;  // The folder (or, for selectFile, the file) pidl.
     FolderAction action;
+    // File dialog only: instead of opening a folder, put the file `pidl` into
+    // the dialog's file name box. `action` is ignored when this is set.
+    bool selectFile;
     HWND sourceTab;  // The view the menu was opened from (current window).
     bool sourceIsDesktop;  // If true there is no current window/tab to use.
 };
@@ -1240,10 +1511,208 @@ bool OpenInNewTab(HWND tab, PCIDLIST_ABSOLUTE pidl) {
                                            SBSP_SAMEBROWSER | SBSP_ABSOLUTE));
 }
 
+// The file-system path of an absolute pidl, or empty for a non-file-system
+// item (which a file dialog cannot navigate to or select anyway).
+std::wstring PathFromPidl(PCIDLIST_ABSOLUTE pidl) {
+    std::wstring out;
+    PWSTR str = nullptr;
+    if (SUCCEEDED(SHGetNameFromIDList(pidl, SIGDN_FILESYSPATH, &str)) && str) {
+        out = str;
+    }
+    if (str) {
+        CoTaskMemFree(str);
+    }
+    return out;
+}
+
+struct FindCtrlByIdParams {
+    int id;
+    HWND result;
+};
+
+BOOL CALLBACK FindCtrlByIdProc(HWND hwnd, LPARAM lParam) {
+    auto* params = reinterpret_cast<FindCtrlByIdParams*>(lParam);
+    if (GetDlgCtrlID(hwnd) == params->id) {
+        params->result = hwnd;
+        return FALSE;
+    }
+    return TRUE;
+}
+
+HWND FindDescendantById(HWND parent, int id) {
+    FindCtrlByIdParams params = {id, nullptr};
+    EnumChildWindows(parent, FindCtrlByIdProc, (LPARAM)&params);
+    return params.result;
+}
+
+bool IsDescendantOf(HWND child, HWND ancestor) {
+    for (HWND h = child; h; h = GetParent(h)) {
+        if (h == ancestor) {
+            return true;
+        }
+    }
+    return false;
+}
+
+// Diagnostic: logs every child control of the dialog (id, class, style,
+// visibility, rect, text) so the file name field can be identified in dialogs
+// that do not use the classic control ids.
+BOOL CALLBACK DumpControlsProc(HWND hwnd, LPARAM lParam) {
+    WCHAR cls[64] = L"";
+    GetClassNameW(hwnd, cls, ARRAYSIZE(cls));
+    WCHAR text[96];
+    text[0] = L'\0';
+    DWORD_PTR copied = 0;
+    SendMessageTimeoutW(hwnd, WM_GETTEXT, ARRAYSIZE(text), (LPARAM)text,
+                        SMTO_ABORTIFHUNG, 200, &copied);
+    LONG style = (LONG)GetWindowLongPtrW(hwnd, GWL_STYLE);
+    RECT rc = {};
+    GetWindowRect(hwnd, &rc);
+    Wh_Log(L"  hwnd=%p id=0x%04X class=%s style=0x%08X vis=%d rc=(%ld,%ld) text=\"%s\"",
+           hwnd, GetDlgCtrlID(hwnd), cls, (DWORD)style,
+           (style & WS_VISIBLE) ? 1 : 0, rc.left, rc.top, text);
+    return TRUE;
+}
+
+void DumpDialogControls(HWND dlg) {
+    Wh_Log(L"--- file dialog controls, dlg=%p ---", dlg);
+    EnumChildWindows(dlg, DumpControlsProc, 0);
+    Wh_Log(L"--- end file dialog controls ---");
+}
+
+struct FindFilenameComboParams {
+    HWND addressBand;
+    bool haveButtonRow;
+    LONG buttonCenterY;
+    HWND best;
+    LONG bestScore;
+};
+
+BOOL CALLBACK FindFilenameComboProc(HWND hwnd, LPARAM lParam) {
+    auto* params = reinterpret_cast<FindFilenameComboParams*>(lParam);
+    WCHAR cls[64];
+    if (!GetClassNameW(hwnd, cls, ARRAYSIZE(cls)) ||
+        wcscmp(cls, L"ComboBox") != 0 || !IsWindowVisible(hwnd)) {
+        return TRUE;
+    }
+    // The file name field is an editable combo (CBS_SIMPLE or CBS_DROPDOWN); the
+    // file-type combo is a non-editable CBS_DROPDOWNLIST, and the address bar
+    // (a ComboBoxEx32 inside the address band) is excluded explicitly.
+    LONG type = (LONG)GetWindowLongPtrW(hwnd, GWL_STYLE) & 0x3;
+    if (type != CBS_SIMPLE && type != CBS_DROPDOWN) {
+        return TRUE;
+    }
+    if (params->addressBand && IsDescendantOf(hwnd, params->addressBand)) {
+        return TRUE;
+    }
+    RECT rc;
+    if (!GetWindowRect(hwnd, &rc)) {
+        return TRUE;
+    }
+    // The file name combo shares the default button's row, so when several
+    // editable combos exist (an app can add its own) prefer the one closest to
+    // that row; otherwise prefer the lowest one.
+    LONG centerY = (rc.top + rc.bottom) / 2;
+    LONG score;
+    if (params->haveButtonRow) {
+        LONG dy = centerY - params->buttonCenterY;
+        score = dy < 0 ? -dy : dy;
+    } else {
+        score = -rc.top;
+    }
+    if (!params->best || score < params->bestScore) {
+        params->best = hwnd;
+        params->bestScore = score;
+    }
+    return TRUE;
+}
+
+// Finds the file dialog's file name field (the combo/edit where a name or path
+// is typed). The classic common dialog uses control ids cmb13 (editable combo)
+// and edt1 (plain edit); the Vista+ common item dialog (used by mspaint and most
+// modern apps) gives it no usable id, so we fall back to the editable combo, not
+// in the address bar, nearest the default button's row. Searched among all
+// descendants, not just direct children.
+HWND FindDialogFilenameField(HWND dlg) {
+    constexpr int kIdFilenameCombo = 0x047C;  // cmb13
+    constexpr int kIdFilenameEdit = 0x0480;   // edt1
+    if (HWND h = FindDescendantById(dlg, kIdFilenameCombo)) {
+        return h;
+    }
+    if (HWND h = FindDescendantById(dlg, kIdFilenameEdit)) {
+        return h;
+    }
+
+    HWND ok = GetDlgItem(dlg, IDOK);
+    RECT okRc = {};
+    bool haveButtonRow = ok && GetWindowRect(ok, &okRc);
+    FindFilenameComboParams params = {
+        FindDescendantOfClass(dlg, L"Address Band Root"),
+        haveButtonRow,
+        haveButtonRow ? (okRc.top + okRc.bottom) / 2 : 0,
+        nullptr,
+        0,
+    };
+    EnumChildWindows(dlg, FindFilenameComboProc, (LPARAM)&params);
+    return params.best;
+}
+
+// Drives a common file dialog by putting `path` into its file name field. When
+// `submit` is set it then presses the default button, which makes the dialog
+// navigate into a folder path (it does not close on a folder). Without submit
+// the path is only selected, so the user still confirms the dialog. All the
+// window messages used cross process boundaries. Returns false if the field
+// could not be found.
+bool DriveFileDialog(HWND dlg, PCWSTR path, bool submit) {
+    HWND field = FindDialogFilenameField(dlg);
+    if (!field) {
+        Wh_Log(L"DriveFileDialog: file name field not found");
+        DumpDialogControls(dlg);
+        return false;
+    }
+
+    DWORD_PTR result = 0;
+    SendMessageTimeoutW(field, WM_SETTEXT, 0, (LPARAM)path, SMTO_ABORTIFHUNG,
+                        5000, &result);
+
+    if (submit) {
+        HWND ok = GetDlgItem(dlg, IDOK);
+        SendMessageTimeoutW(dlg, WM_COMMAND, MAKEWPARAM(IDOK, BN_CLICKED),
+                            (LPARAM)ok, SMTO_ABORTIFHUNG, 5000, &result);
+    }
+    return true;
+}
+
 // Carries out one open request. The current-window and new-tab actions need a
 // source view; without one (the menu was opened from the desktop, or the view
-// went away) they fall back to opening a new window.
+// went away) they fall back to opening a new window. When the source is a file
+// dialog, "current window" navigates the dialog itself and a file selection
+// fills its file name box; the new-window / new-tab actions still open
+// Explorer.
 void PerformFolderAction(const FolderActionRequest& req) {
+    HWND dlg = req.sourceTab ? GetAncestor(req.sourceTab, GA_ROOT) : nullptr;
+    bool isDialog = IsFileDialogWindow(dlg);
+
+    if (isDialog &&
+        (req.selectFile || req.action == FolderAction::currentWindow)) {
+        // Let the dialog reclaim the foreground from our (closing) menu.
+        DWORD dialogPid = 0;
+        GetWindowThreadProcessId(dlg, &dialogPid);
+        AllowSetForegroundWindow(dialogPid ? dialogPid : ASFW_ANY);
+
+        std::wstring path = PathFromPidl(req.pidl);
+        if (!path.empty()) {
+            // A folder (current window) is submitted to navigate into it; a
+            // file selection only fills the box, leaving the user to confirm.
+            DriveFileDialog(dlg, path.c_str(), !req.selectFile);
+        }
+        return;
+    }
+
+    if (req.selectFile) {
+        return;  // Only meaningful for a file dialog source.
+    }
+
     bool haveSource =
         !req.sourceIsDesktop && req.sourceTab && IsWindow(req.sourceTab);
     // The source tab to open a new window from, or null to fall back to
@@ -1254,9 +1723,10 @@ void PerformFolderAction(const FolderActionRequest& req) {
     // activates would be blocked from taking focus and flash in the taskbar
     // instead. Grant Explorer the right to set the foreground. We are still
     // eligible to do so because our window received the click that started
-    // this.
+    // this. From a file dialog the opened Explorer is a different process, so
+    // allow any.
     DWORD explorerPid = 0;
-    if (req.sourceTab) {
+    if (!isDialog && req.sourceTab) {
         GetWindowThreadProcessId(req.sourceTab, &explorerPid);
     }
     AllowSetForegroundWindow(explorerPid ? explorerPid : ASFW_ANY);
@@ -2164,6 +2634,33 @@ void PostFolderActionToWorker(FolderAction action, PCIDLIST_ABSOLUTE pidl) {
     }
 }
 
+// Hands `pidl` (a clicked file in a file dialog's menu, borrowed) off to the
+// worker thread to select into the dialog's file name box. The worker owns the
+// request and frees it.
+void PostFileSelectToWorker(PCIDLIST_ABSOLUTE pidl) {
+    if (!pidl) {
+        return;
+    }
+
+    auto* req = new (std::nothrow) FolderActionRequest{};
+    if (!req) {
+        return;
+    }
+    req->pidl = ILClone(pidl);
+    req->action = FolderAction::nothing;
+    req->selectFile = true;
+    req->sourceTab = g_targetTab;
+    req->sourceIsDesktop = g_targetIsDesktop;
+    if (!req->pidl || !g_workerThreadId ||
+        !PostThreadMessageW(g_workerThreadId, WM_APP_DO_ACTION, (WPARAM)req,
+                            0)) {
+        if (req->pidl) {
+            ILFree(req->pidl);
+        }
+        delete req;
+    }
+}
+
 // Runs `action` on a clicked folder item (the toolbar + command id a click was
 // hit-tested to). We don't resolve the pidl ourselves: we post the band's own
 // "execute" message for that command id, exactly as a double-click does. The
@@ -2243,6 +2740,25 @@ class CMenuCallback final : public IShellMenuCallback {
                 ILFree(itemAbs);
             }
             return S_OK;  // Handled; the band must not open it itself.
+        }
+        // In a file dialog, clicking a file would otherwise launch it.
+        // Intercept the band's own execute (no forced action pending) and
+        // select the file into the dialog instead. Folders are left to the
+        // band's default (cascade); our folder click actions go through the
+        // branch above.
+        if (uMsg == SMC_SFEXEC && g_targetIsDialog && psmd &&
+            (psmd->dwMask & SMDM_SHELLFOLDER) && psmd->pidlFolder &&
+            psmd->pidlItem) {
+            if (PIDLIST_ABSOLUTE itemAbs =
+                    ILCombine(psmd->pidlFolder, psmd->pidlItem)) {
+                bool isFolder = IsFolderPidl(itemAbs);
+                if (!isFolder) {
+                    PostFileSelectToWorker(itemAbs);
+                    ILFree(itemAbs);
+                    return S_OK;  // Handled; the band must not launch it.
+                }
+                ILFree(itemAbs);
+            }
         }
         // Everything else takes the band's default.
         return S_FALSE;
@@ -2652,7 +3168,15 @@ LRESULT CALLBACK ChevronWndProc(HWND hwnd,
 ////////////////////////////////////////////////////////////////////////////////
 // Hover engine: raw input driven, hit-testing against the cached item rects.
 
-bool IsExplorerOrDesktopRoot(HWND root, bool* outIsDesktop) {
+// Classifies a top-level window as one of the surfaces the mod operates on: an
+// Explorer window, the desktop, or (when enabled) an open/save file dialog.
+// Returns false for anything else. Cheap (a class-name check); callers that
+// gate activation additionally require a file dialog to host a shell view (see
+// HasShellView) so the mod does not wake for ordinary dialogs.
+bool ClassifyRoot(HWND root, bool* outIsDesktop, bool* outIsDialog) {
+    *outIsDesktop = false;
+    *outIsDialog = false;
+
     WCHAR className[64];
     if (!GetClassNameW(root, className, ARRAYSIZE(className))) {
         return false;
@@ -2660,7 +3184,6 @@ bool IsExplorerOrDesktopRoot(HWND root, bool* outIsDesktop) {
 
     if (wcscmp(className, L"CabinetWClass") == 0 ||
         wcscmp(className, L"ExploreWClass") == 0) {
-        *outIsDesktop = false;
         return true;
     }
 
@@ -2670,7 +3193,18 @@ bool IsExplorerOrDesktopRoot(HWND root, bool* outIsDesktop) {
         return true;
     }
 
+    if (g_settings.fileDialogs && wcscmp(className, kFileDialogClass) == 0) {
+        *outIsDialog = true;
+        return true;
+    }
+
     return false;
+}
+
+// True if the window hosts a shell file-list view. Used to tell an actual file
+// dialog from any other dialog of the same window class.
+bool HasShellView(HWND root) {
+    return FindDescendantOfClass(root, L"SHELLDLL_DefView") != nullptr;
 }
 
 // True if hwnd or one of its ancestors (up to maxDepth) has the given class.
@@ -2714,10 +3248,13 @@ void Evaluate(bool forceRefresh) {
         pt.x = (g_hoverItemRect.left + g_hoverItemRect.right) / 2;
         pt.y = (g_hoverItemRect.top + g_hoverItemRect.bottom) / 2;
     } else {
-        // Cheap window-level gate: only consider the file list area.
+        // Cheap window-level gate: only consider the file list area. The shell
+        // view check (below) also confirms a #32770 is an actual file dialog,
+        // so the cheap class check in ClassifyRoot is enough here.
         HWND under = WindowFromPoint(pt);
         HWND root = under ? GetAncestor(under, GA_ROOT) : nullptr;
-        if (!under || !root || !IsExplorerOrDesktopRoot(root, &isDesktop) ||
+        bool isDialog = false;
+        if (!under || !root || !ClassifyRoot(root, &isDesktop, &isDialog) ||
             !IsWithinClass(under, L"SHELLDLL_DefView", 8)) {
             HideChevron();
             return;
@@ -2793,9 +3330,12 @@ void Evaluate(bool forceRefresh) {
     if (childAbs) {
         // Remember which view the hovered folder belongs to, so a folder opened
         // from the menu can navigate "the current window" (the snapshot's tab,
-        // adopted under the lock above when on the button).
+        // adopted under the lock above when on the button), and whether that
+        // view is a file dialog (so its menu clicks drive the dialog).
         g_targetTab = tab;
         g_targetIsDesktop = isDesktop;
+        g_targetIsDialog =
+            !isDesktop && IsFileDialogWindow(GetAncestor(tab, GA_ROOT));
         ShowChevronForItem(childAbs, hitRect);
     } else {
         HideChevron();
@@ -2854,9 +3394,14 @@ bool SyncActiveState() {
     }
 
     bool isDesktop = false;
+    bool isDialog = false;
     // A null foreground (nobody owns it, seen mid-transition and right after an
     // Explorer restart) is treated as the desktop being the active surface.
-    bool active = !fg || IsExplorerOrDesktopRoot(fg, &isDesktop);
+    bool active = !fg || ClassifyRoot(fg, &isDesktop, &isDialog);
+    // Don't wake for every #32770 dialog; only ones that host a file list.
+    if (active && isDialog && !HasShellView(fg)) {
+        active = false;
+    }
     if (active == g_active) {
         return active;
     }
@@ -2947,7 +3492,9 @@ VOID CALLBACK FocusChangedProc(HWINEVENTHOOK hook,
 
     HWND root = hwnd ? GetAncestor(hwnd, GA_ROOT) : nullptr;
     bool isDesktop = false;
-    if (!root || !IsExplorerOrDesktopRoot(root, &isDesktop)) {
+    bool isDialog = false;
+    if (!root || !ClassifyRoot(root, &isDesktop, &isDialog) ||
+        (isDialog && !HasShellView(root))) {
         return;  // Focus moved within some other app; not our cue.
     }
 
