@@ -93,6 +93,18 @@ issue](https://tweaker.userecho.com/topics/826-scroll-on-trackpadtouchpad-doesnt
         single scroll wheel 'flick' from switching multiple desktops.
     - reverseScrollingDirection: false
       $name: Reverse scrolling direction
+    - monitorNum: 0
+      $name: Monitor number
+      $description: >-
+        0 for all monitors, 1 for primary monitor, 2 for secondary, etc.
+    - modifierKey: none
+      $name: Modifier key
+      $options:
+      - none: None
+      - ctrl: Ctrl
+      - shift: Shift
+      - alt: Alt
+      - win: Win
   $name: Scroll actions
   $description: >-
     Define one or more scroll actions for different regions of the taskbar.
@@ -170,6 +182,8 @@ struct ScrollActionEntry {
     int scrollStep;
     int throttleMs;
     bool reverseScrollingDirection;
+    int monitorNum;
+    int modifierKey;
 };
 
 struct {
@@ -289,24 +303,28 @@ bool GetNotificationAreaRect(HWND hMMTaskbarWnd, RECT* rcResult) {
             HWND hBridgeWnd = FindWindowEx(
                 hMMTaskbarWnd, NULL,
                 L"Windows.UI.Composition.DesktopWindowContentBridge", NULL);
+            bool found = false;
+            RECT rcUnion = {0};
             while (hBridgeWnd) {
                 RECT rcBridge;
-                if (!GetWindowRect(hBridgeWnd, &rcBridge)) {
-                    break;
-                }
-
-                if (!EqualRect(&rcBridge, &rcTaskbar)) {
-                    if (IsRectEmpty(&rcBridge)) {
-                        break;
+                if (GetWindowRect(hBridgeWnd, &rcBridge) &&
+                    !EqualRect(&rcBridge, &rcTaskbar) &&
+                    !IsRectEmpty(&rcBridge)) {
+                    if (!found) {
+                        rcUnion = rcBridge;
+                        found = true;
+                    } else {
+                        UnionRect(&rcUnion, &rcUnion, &rcBridge);
                     }
-
-                    CopyRect(rcResult, &rcBridge);
-                    return true;
                 }
 
                 hBridgeWnd = FindWindowEx(
                     hMMTaskbarWnd, hBridgeWnd,
                     L"Windows.UI.Composition.DesktopWindowContentBridge", NULL);
+            }
+            if (found) {
+                CopyRect(rcResult, &rcUnion);
+                return true;
             }
         }
 
@@ -332,7 +350,7 @@ bool GetNotificationAreaRect(HWND hMMTaskbarWnd, RECT* rcResult) {
 
     // Just consider the last pixels as a fallback, not accurate, but better
     // than nothing.
-    int lastPixels = MulDiv(50, GetDpiForWindowWithFallback(hMMTaskbarWnd), 96);
+    int lastPixels = MulDiv(150, GetDpiForWindowWithFallback(hMMTaskbarWnd), 96);
     CopyRect(rcResult, &rcTaskbar);
     if (rcResult->right - rcResult->left > lastPixels) {
         if (GetWindowLong(hMMTaskbarWnd, GWL_EXSTYLE) & WS_EX_LAYOUTRTL) {
@@ -1507,6 +1525,28 @@ void InvokeScrollAction(HWND hWnd,
 
 ////////////////////////////////////////////////////////////
 
+int GetMonitorIndexForMonitor(HMONITOR hMon) {
+    if (!hMon) return 0;
+    struct EnumContext {
+        HMONITOR target;
+        int index;
+        int count;
+    } context = {hMon, 0, 0};
+
+    EnumDisplayMonitors(
+        NULL, NULL,
+        [](HMONITOR hMonitor, HDC, LPRECT, LPARAM lParam) -> BOOL {
+            EnumContext* ctx = (EnumContext*)lParam;
+            ctx->count++;
+            if (hMonitor == ctx->target) {
+                ctx->index = ctx->count;
+            }
+            return TRUE;
+        },
+        (LPARAM)&context);
+    return context.index;
+}
+
 bool OnMouseWheel(HWND hWnd, WPARAM wParam, LPARAM lParam) {
     if (GetCapture()) {
         return false;
@@ -1517,8 +1557,22 @@ bool OnMouseWheel(HWND hWnd, WPARAM wParam, LPARAM lParam) {
     pt.y = GET_Y_LPARAM(lParam);
 
     for (int i = 0; i < (int)g_settings.scrollActions.size(); i++) {
-        if (IsPointInsideEntryScrollArea(hWnd, pt,
-                                         g_settings.scrollActions[i])) {
+        const auto& entry = g_settings.scrollActions[i];
+
+        if (entry.monitorNum > 0) {
+            HMONITOR hMonitor = MonitorFromWindow(hWnd, MONITOR_DEFAULTTONULL);
+            if (!hMonitor || GetMonitorIndexForMonitor(hMonitor) != entry.monitorNum) {
+                continue;
+            }
+        }
+
+        if (entry.modifierKey != 0) {
+            if (!(GetAsyncKeyState(entry.modifierKey) & 0x8000)) {
+                continue;
+            }
+        }
+
+        if (IsPointInsideEntryScrollArea(hWnd, pt, entry)) {
             // Allows to steal focus.
             INPUT input;
             ZeroMemory(&input, sizeof(INPUT));
@@ -1850,6 +1904,21 @@ void LoadSettings() {
         entry.throttleMs = Wh_GetIntSetting(L"ScrollActions[%d].throttleMs", i);
         entry.reverseScrollingDirection =
             Wh_GetIntSetting(L"ScrollActions[%d].reverseScrollingDirection", i);
+
+        entry.monitorNum = Wh_GetIntSetting(L"ScrollActions[%d].monitorNum", i);
+
+        PCWSTR modifierKey = Wh_GetStringSetting(L"ScrollActions[%d].modifierKey", i);
+        entry.modifierKey = 0;
+        if (wcscmp(modifierKey, L"ctrl") == 0) {
+            entry.modifierKey = VK_CONTROL;
+        } else if (wcscmp(modifierKey, L"shift") == 0) {
+            entry.modifierKey = VK_SHIFT;
+        } else if (wcscmp(modifierKey, L"alt") == 0) {
+            entry.modifierKey = VK_MENU;
+        } else if (wcscmp(modifierKey, L"win") == 0) {
+            entry.modifierKey = VK_LWIN;
+        }
+        Wh_FreeStringSetting(modifierKey);
 
         g_settings.scrollActions.push_back(std::move(entry));
     }
