@@ -1082,13 +1082,13 @@ bool HookTaskbarViewDllSymbols(HMODULE module) {
         FlyoutFrame_OnPointerWheelChanged_Original !=
             TaskListButton_OnPointerWheelChanged_Original;
 
-    WindhawkUtils::Wh_SetFunctionHookT(
+    WindhawkUtils::SetFunctionHook(
         TaskListButton_OnPointerWheelChanged_Original,
         TaskListButton_OnPointerWheelChanged_Hook,
         &TaskListButton_OnPointerWheelChanged_Original);
 
     if (hookFlyoutFrame_OnPointerWheelChanged_Original) {
-        WindhawkUtils::Wh_SetFunctionHookT(
+        WindhawkUtils::SetFunctionHook(
             FlyoutFrame_OnPointerWheelChanged_Original,
             FlyoutFrame_OnPointerWheelChanged_Hook,
             &FlyoutFrame_OnPointerWheelChanged_Original);
@@ -1557,9 +1557,9 @@ BOOL Wh_ModInit() {
     HMODULE kernelBaseModule = GetModuleHandle(L"kernelbase.dll");
     auto pKernelBaseLoadLibraryExW = (decltype(&LoadLibraryExW))GetProcAddress(
         kernelBaseModule, "LoadLibraryExW");
-    WindhawkUtils::Wh_SetFunctionHookT(pKernelBaseLoadLibraryExW,
-                                       LoadLibraryExW_Hook,
-                                       &LoadLibraryExW_Original);
+    WindhawkUtils::SetFunctionHook(pKernelBaseLoadLibraryExW,
+                                   LoadLibraryExW_Hook,
+                                   &LoadLibraryExW_Original);
 
     HMODULE dwmapiModule =
         LoadLibraryEx(L"dwmapi.dll", nullptr, LOAD_LIBRARY_SEARCH_SYSTEM32);
