@@ -2,7 +2,7 @@
 // @id              taskbar-thumbnail-reorder
 // @name            Taskbar Thumbnail Reorder
 // @description     Reorder taskbar thumbnails with the left mouse button
-// @version         1.1.4
+// @version         1.1.5
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
@@ -49,7 +49,9 @@ check out [7+ Taskbar Tweaker](https://tweaker.ramensoftware.com/).
 #include <psapi.h>
 
 #include <atomic>
+#include <cmath>
 #include <functional>
+#include <optional>
 #include <vector>
 
 #undef GetCurrentTime
@@ -86,6 +88,7 @@ std::atomic<bool> g_initialized;
 std::atomic<bool> g_explorerPatcherInitialized;
 
 bool g_noClassicThumbnails;
+bool g_hasThumbnailAnimations;
 
 int g_thumbDraggedIndex = -1;
 bool g_thumbDragDone;
@@ -1003,9 +1006,9 @@ int WINAPI TaskItemThumbnailList_OnPointerMoved_Hook(void* pThis, void* pArgs) {
 using FlyoutFrame_UpdateFlyoutPosition_t = void(WINAPI*)(void* pThis);
 FlyoutFrame_UpdateFlyoutPosition_t FlyoutFrame_UpdateFlyoutPosition_Original;
 void WINAPI FlyoutFrame_UpdateFlyoutPosition_Hook(void* pThis) {
-    // Newer builds where classic thumbnails are removed don't need this
+    // Newer builds where thumbnail animations are enabled don't need this
     // workaround.
-    if (g_noClassicThumbnails) {
+    if (g_hasThumbnailAnimations) {
         FlyoutFrame_UpdateFlyoutPosition_Original(pThis);
         return;
     }
@@ -1428,6 +1431,65 @@ void LoadSettings() {
     g_settings.oldTaskbarOnWin11 = Wh_GetIntSetting(L"oldTaskbarOnWin11");
 }
 
+std::optional<bool> IsOsFeatureEnabled(UINT32 featureId) {
+    enum FEATURE_ENABLED_STATE {
+        FEATURE_ENABLED_STATE_DEFAULT = 0,
+        FEATURE_ENABLED_STATE_DISABLED = 1,
+        FEATURE_ENABLED_STATE_ENABLED = 2,
+    };
+
+#pragma pack(push, 1)
+    struct RTL_FEATURE_CONFIGURATION {
+        unsigned int featureId;
+        unsigned __int32 group : 4;
+        FEATURE_ENABLED_STATE enabledState : 2;
+        unsigned __int32 enabledStateOptions : 1;
+        unsigned __int32 unused1 : 1;
+        unsigned __int32 variant : 6;
+        unsigned __int32 variantPayloadKind : 2;
+        unsigned __int32 unused2 : 16;
+        unsigned int payload;
+    };
+#pragma pack(pop)
+
+    using RtlQueryFeatureConfiguration_t =
+        int(NTAPI*)(UINT32, int, INT64*, RTL_FEATURE_CONFIGURATION*);
+    static RtlQueryFeatureConfiguration_t pRtlQueryFeatureConfiguration = []() {
+        HMODULE hNtDll = GetModuleHandle(L"ntdll.dll");
+        return hNtDll ? (RtlQueryFeatureConfiguration_t)GetProcAddress(
+                            hNtDll, "RtlQueryFeatureConfiguration")
+                      : nullptr;
+    }();
+
+    if (!pRtlQueryFeatureConfiguration) {
+        Wh_Log(L"RtlQueryFeatureConfiguration not found");
+        return std::nullopt;
+    }
+
+    RTL_FEATURE_CONFIGURATION feature = {0};
+    INT64 changeStamp = 0;
+    HRESULT hr =
+        pRtlQueryFeatureConfiguration(featureId, 1, &changeStamp, &feature);
+    if (SUCCEEDED(hr)) {
+        Wh_Log(L"RtlQueryFeatureConfiguration result for %u: %d", featureId,
+               feature.enabledState);
+
+        switch (feature.enabledState) {
+            case FEATURE_ENABLED_STATE_DISABLED:
+                return false;
+            case FEATURE_ENABLED_STATE_ENABLED:
+                return true;
+            case FEATURE_ENABLED_STATE_DEFAULT:
+                return std::nullopt;
+        }
+    } else {
+        Wh_Log(L"RtlQueryFeatureConfiguration error for %u: %08X", featureId,
+               hr);
+    }
+
+    return std::nullopt;
+}
+
 BOOL Wh_ModInit() {
     Wh_Log(L">");
 
@@ -1461,6 +1523,13 @@ BOOL Wh_ModInit() {
             }
         } else {
             Wh_Log(L"Taskbar view module not loaded yet");
+        }
+
+        constexpr UINT kThumbnailAnimations = 60511437;
+        if (g_noClassicThumbnails &&
+            IsOsFeatureEnabled(kThumbnailAnimations).value_or(true)) {
+            g_hasThumbnailAnimations = true;
+            Wh_Log(L"Thumbnail animations are enabled");
         }
     } else {
         if (!HookTaskbarSymbols()) {
