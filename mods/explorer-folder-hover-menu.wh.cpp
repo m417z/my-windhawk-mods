@@ -2483,6 +2483,13 @@ HWND FindDescendantOfClass(HWND parent, PCWSTR className) {
     return params.result;
 }
 
+// Accumulated sub-notch wheel delta for menu scrolling, plus the tick of the
+// last scroll step. The remainder is dropped when the menu is reopened (see
+// ResetMenuScrollAccumulator) and after a spell of inactivity, so a stale
+// fraction from an earlier gesture never nudges a fresh one.
+int g_menuScrollAccumulatedDelta;
+ULONGLONG g_menuScrollLastTick;
+
 // Scrolls a long folder menu with the mouse wheel. The menu band has no native
 // wheel support: it parks its (taller-than-screen) item toolbar in a Pager
 // control whose top and bottom arrows are the only built-in way to scroll, and
@@ -2519,11 +2526,18 @@ void ScrollMenuWithWheel(HWND pager, int wheelDelta) {
     }
 
     // Accumulate sub-notch deltas so high-resolution wheels and touchpads still
-    // step smoothly.
-    static int s_accumulatedDelta;
-    s_accumulatedDelta += wheelDelta;
-    int notches = s_accumulatedDelta / WHEEL_DELTA;
-    s_accumulatedDelta -= notches * WHEEL_DELTA;
+    // step smoothly. Drop the leftover fraction after a spell of inactivity so
+    // a stale remainder from an old gesture never nudges a fresh one.
+    constexpr ULONGLONG kAccumIdleResetMs = 5000;
+    ULONGLONG now = GetTickCount64();
+    if (now - g_menuScrollLastTick >= kAccumIdleResetMs) {
+        g_menuScrollAccumulatedDelta = 0;
+    }
+    g_menuScrollLastTick = now;
+
+    g_menuScrollAccumulatedDelta += wheelDelta;
+    int notches = g_menuScrollAccumulatedDelta / WHEEL_DELTA;
+    g_menuScrollAccumulatedDelta -= notches * WHEEL_DELTA;
     if (notches == 0) {
         return;
     }
@@ -2899,6 +2913,7 @@ winrt::com_ptr<IMenuBand> PopupFolderMenu(PCIDLIST_ABSOLUTE pidlAbs,
 void ShowFolderMenuModal(PCIDLIST_ABSOLUTE pidlAbs, RECT anchorRect) {
     g_menuActive = true;
     g_leftDownToolbar = nullptr;
+    g_menuScrollAccumulatedDelta = 0;
 
     winrt::com_ptr<IMenuBand> band = PopupFolderMenu(pidlAbs, anchorRect);
     if (band) {
