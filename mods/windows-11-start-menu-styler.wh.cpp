@@ -13795,7 +13795,7 @@ int NTAPI RtlQueryFeatureConfiguration_Hook(UINT32 featureId,
 
 std::optional<bool> IsOsFeatureEnabled(UINT32 featureId) {
     static RtlQueryFeatureConfiguration_t pRtlQueryFeatureConfiguration = []() {
-        HMODULE hNtDll = LoadLibraryW(L"ntdll.dll");
+        HMODULE hNtDll = GetModuleHandle(L"ntdll.dll");
         return hNtDll ? (RtlQueryFeatureConfiguration_t)GetProcAddress(
                             hNtDll, "RtlQueryFeatureConfiguration")
                       : nullptr;
@@ -14108,7 +14108,7 @@ BOOL Wh_ModInit() {
     }
 
     if (!DoesLayoutOverrideMatchWindowsDefault(g_disableNewStartMenuLayout)) {
-        HMODULE hNtDll = LoadLibraryW(L"ntdll.dll");
+        HMODULE hNtDll = GetModuleHandle(L"ntdll.dll");
         RtlQueryFeatureConfiguration_t pRtlQueryFeatureConfiguration =
             (RtlQueryFeatureConfiguration_t)GetProcAddress(
                 hNtDll, "RtlQueryFeatureConfiguration");

@@ -535,7 +535,7 @@ std::optional<bool> IsOsFeatureEnabled(UINT32 featureId) {
     using RtlQueryFeatureConfiguration_t =
         int(NTAPI*)(UINT32, int, INT64*, RTL_FEATURE_CONFIGURATION*);
     static RtlQueryFeatureConfiguration_t pRtlQueryFeatureConfiguration = []() {
-        HMODULE hNtDll = LoadLibraryW(L"ntdll.dll");
+        HMODULE hNtDll = GetModuleHandle(L"ntdll.dll");
         return hNtDll ? (RtlQueryFeatureConfiguration_t)GetProcAddress(
                             hNtDll, "RtlQueryFeatureConfiguration")
                       : nullptr;
