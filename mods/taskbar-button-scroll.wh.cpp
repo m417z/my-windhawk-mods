@@ -2,7 +2,7 @@
 // @id              taskbar-button-scroll
 // @name            Taskbar minimize/restore on scroll
 // @description     Minimize/restore by scrolling the mouse wheel over taskbar buttons and thumbnail previews
-// @version         1.1.3
+// @version         1.1.4
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
@@ -1273,6 +1273,30 @@ bool HookTaskbarSymbols() {
 
     if (!HookSymbols(module, symbolHooks, ARRAYSIZE(symbolHooks))) {
         Wh_Log(L"HookSymbols failed");
+        return false;
+    }
+
+    bool hasAllClassicThumbnailsHooks =
+        CTaskListWnd_DismissHoverUI_Original &&
+        CTaskListThumbnailWnd_ThumbIndexFromPoint_Original &&
+        CTaskListThumbnailWnd__HandleContextMenu_Original &&
+        CTaskListThumbnailWnd__RefreshThumbnail_Original &&
+        CTaskListThumbnailWnd_v_WndProc_Original;
+
+    bool hasNoClassicThumbnailsHooks =
+        !CTaskListWnd_DismissHoverUI_Original &&
+        !CTaskListThumbnailWnd_ThumbIndexFromPoint_Original &&
+        !CTaskListThumbnailWnd__HandleContextMenu_Original &&
+        !CTaskListThumbnailWnd__RefreshThumbnail_Original &&
+        !CTaskListThumbnailWnd_v_WndProc_Original;
+
+    if (!hasAllClassicThumbnailsHooks && !hasNoClassicThumbnailsHooks) {
+        Wh_Log(L"Some classic thumbnail hooks are missing (%p, %p, %p, %p, %p)",
+               CTaskListWnd_DismissHoverUI_Original,
+               CTaskListThumbnailWnd_ThumbIndexFromPoint_Original,
+               CTaskListThumbnailWnd__HandleContextMenu_Original,
+               CTaskListThumbnailWnd__RefreshThumbnail_Original,
+               CTaskListThumbnailWnd_v_WndProc_Original);
         return false;
     }
 
