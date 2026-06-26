@@ -6290,8 +6290,14 @@ thread_local winrt::Windows::UI::ViewManagement::UISettings g_uiSettings{
     nullptr};
 thread_local winrt::event_token g_colorValuesChangedToken;
 
-thread_local winrt::Windows::UI::Xaml::FrameworkElement::SizeChanged_revoker
-    g_workaroundSizeChangedRevoker;
+thread_local winrt::Windows::UI::Xaml::FrameworkElement::LayoutUpdated_revoker
+    g_workaroundLayoutUpdatedRevoker;
+
+// Signature (quantized grid width + child sizes) of the broken layout the
+// ColumnDefinitions workaround last tried to fix. Empty means no attempt is
+// outstanding. Used to apply the fix once per broken state instead of on every
+// LayoutUpdated, and to stop retrying a state the fix doesn't resolve.
+thread_local std::vector<long long> g_workaroundLastFixSignature;
 
 winrt::Windows::Foundation::IInspectable ReadLocalValueWithWorkaround(
     DependencyObject elementDo,
@@ -10276,12 +10282,97 @@ void RestoreCustomizationsForVisualStateGroup(
     }
 }
 
+// Quantize a size to the nearest 0.5px so signatures and comparisons aren't
+// thrown off by sub-pixel jitter.
+long long QuantizeLayoutSize(double value) {
+    if (value < 0 || std::isnan(value)) {
+        return 0;
+    }
+    return static_cast<long long>(value * 2 + 0.5);
+}
+
+// Detect the broken star/Auto layout the workaround targets: in a correct
+// arrange the columns tile the Grid, and star columns are proportional to their
+// star values. A shortfall (columns don't fill the Grid) or disproportionate
+// star columns means the Grid arranged with stale widths.
+bool IsColumnLayoutBroken(const Controls::Grid& grid) {
+    auto colDefs = grid.ColumnDefinitions();
+    uint32_t count = colDefs.Size();
+    if (count == 0) {
+        return false;
+    }
+
+    double gridWidth = grid.ActualWidth();
+    if (gridWidth <= 0) {
+        // Not measured yet; nothing meaningful to validate.
+        return false;
+    }
+
+    constexpr double kEpsilon = 0.5;
+
+    double sum = 0;
+    bool hasStar = false;
+    bool starUnitSet = false;
+    double starUnit =
+        0;  // ActualWidth per star value, equal for all star cols.
+    for (uint32_t i = 0; i < count; i++) {
+        auto colDef = colDefs.GetAt(i);
+        double actual = colDef.ActualWidth();
+        sum += actual;
+
+        auto width = colDef.Width();
+        if (width.GridUnitType == GridUnitType::Star && width.Value > 0) {
+            hasStar = true;
+            double unit = actual / width.Value;
+            if (!starUnitSet) {
+                starUnit = unit;
+                starUnitSet = true;
+            } else {
+                double diff = unit - starUnit;
+                if (diff < 0) {
+                    diff = -diff;
+                }
+                if (diff > kEpsilon) {
+                    return true;
+                }
+            }
+        }
+    }
+
+    // Star columns absorb the leftover space, so the columns must fill the
+    // Grid. A shortfall means the layout didn't redistribute.
+    if (hasStar && gridWidth - sum > kEpsilon) {
+        return true;
+    }
+
+    return false;
+}
+
+// Signature of the layout inputs (Grid width + child content sizes) that, when
+// unchanged, mean we're looking at the same situation we already tried to fix.
+// Built from children rather than column actual widths, since the columns are
+// the broken output the workaround rewrites.
+std::vector<long long> ComputeColumnLayoutSignature(
+    const winrt::Windows::UI::Xaml::FrameworkElement& parent) {
+    std::vector<long long> signature;
+    signature.push_back(QuantizeLayoutSize(parent.ActualWidth()));
+
+    int count = Media::VisualTreeHelper::GetChildrenCount(parent);
+    for (int i = 0; i < count; i++) {
+        auto child = Media::VisualTreeHelper::GetChild(parent, i)
+                         .try_as<winrt::Windows::UI::Xaml::FrameworkElement>();
+        signature.push_back(child ? QuantizeLayoutSize(child.ActualWidth())
+                                  : -1);
+    }
+    return signature;
+}
+
 // Workaround to the breaking layout with custom column definitions on multiple
 // taskbars:
 // https://github.com/ramensoftware/windows-11-taskbar-styling-guide/issues/507
 void HookFirstTaskbarFrameLayoutWorkaround(
     winrt::Windows::UI::Xaml::FrameworkElement element) {
-    if (g_workaroundSizeChangedRevoker) {
+    if (g_workaroundLayoutUpdatedRevoker) {
         return;
     }
 
@@ -10346,14 +10437,50 @@ void HookFirstTaskbarFrameLayoutWorkaround(
 
     auto savedValue = *propIt->second.customValue;
 
+    g_workaroundLastFixSignature.clear();
+
+    // LayoutUpdated is global and frequent, so the handler does only a cheap
+    // check per pass and acts solely when the layout is actually broken.
     auto weakParent = winrt::make_weak(parent);
-    g_workaroundSizeChangedRevoker = element.SizeChanged(
-        winrt::auto_revoke, [weakParent, savedValue = std::move(savedValue),
-                             colDefsProp](auto&&, auto&&) {
+    g_workaroundLayoutUpdatedRevoker = parent.LayoutUpdated(
+        winrt::auto_revoke,
+        [weakParent, savedValue = std::move(savedValue), colDefsProp](
+            winrt::Windows::Foundation::IInspectable const&,
+            winrt::Windows::Foundation::IInspectable const&) {
+            // Re-entrancy: our own clear+reset triggers another layout pass.
+            if (g_elementPropertyModifying) {
+                return;
+            }
+
             auto parent = weakParent.get();
             if (!parent) {
                 return;
             }
+
+            auto grid = parent.try_as<Controls::Grid>();
+            if (!grid) {
+                return;
+            }
+
+            if (!IsColumnLayoutBroken(grid)) {
+                // Healthy pass; forget any outstanding attempt so the same
+                // broken state can be fixed again if it recurs.
+                g_workaroundLastFixSignature.clear();
+                return;
+            }
+
+            // Broken. Apply the fix once per distinct broken state: if the
+            // inputs match the state we just tried to fix, the reset either
+            // hasn't taken effect yet or doesn't help on this machine - either
+            // way, re-applying every pass would only spin.
+            auto signature = ComputeColumnLayoutSignature(parent);
+            if (signature == g_workaroundLastFixSignature) {
+                return;
+            }
+            g_workaroundLastFixSignature = signature;
+
+            Wh_Log(
+                L"ColumnDefinitions workaround: re-applying on broken layout");
 
             // Suppress the per-DP property-changed callback installed by the
             // customization machinery so re-setting doesn't cascade.
@@ -10371,11 +10498,14 @@ void HookFirstTaskbarFrameLayoutWorkaround(
             g_elementPropertyModifying = false;
         });
 
-    Wh_Log(L"Hooked TaskbarFrame SizeChanged for ColumnDefinitions workaround");
+    Wh_Log(
+        L"Hooked TaskbarFrame parent LayoutUpdated for ColumnDefinitions "
+        L"workaround");
 }
 
 void UnhookFirstTaskbarFrameLayoutWorkaround() {
-    g_workaroundSizeChangedRevoker = {};
+    g_workaroundLayoutUpdatedRevoker = {};
+    g_workaroundLastFixSignature.clear();
 }
 
 void MergeResourceVariables();
