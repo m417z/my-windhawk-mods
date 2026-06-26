@@ -285,6 +285,43 @@ std::wstring GetProcessFileName(DWORD dwProcessId) {
     return processFileName;
 }
 
+bool IsStartMenuOpen() {
+    bool open = false;
+    EnumWindows(
+        [](HWND hWnd, LPARAM lParam) -> BOOL {
+            WCHAR szClassName[32];
+            if (GetClassName(hWnd, szClassName, ARRAYSIZE(szClassName)) == 0 ||
+                _wcsicmp(szClassName, L"Windows.UI.Core.CoreWindow") != 0) {
+                return TRUE;
+            }
+
+            DWORD dwProcessId = 0;
+            if (!GetWindowThreadProcessId(hWnd, &dwProcessId)) {
+                return TRUE;
+            }
+
+            std::wstring processFileName = GetProcessFileName(dwProcessId);
+            if (_wcsicmp(processFileName.c_str(),
+                         L"StartMenuExperienceHost.exe") != 0) {
+                return TRUE;
+            }
+
+            // The start menu window stays cloaked while hidden and is uncloaked
+            // while shown.
+            BOOL cloaked = FALSE;
+            if (SUCCEEDED(DwmGetWindowAttribute(hWnd, DWMWA_CLOAKED, &cloaked,
+                                                sizeof(cloaked))) &&
+                !cloaked) {
+                *(bool*)lParam = true;
+            }
+
+            return FALSE;
+        },
+        (LPARAM)&open);
+
+    return open;
+}
+
 HWND GetTaskbarForMonitor(HMONITOR monitor) {
     HWND hTaskbarWnd = FindWindow(L"Shell_TrayWnd", nullptr);
     if (!hTaskbarWnd) {
@@ -653,6 +690,15 @@ HRESULT WINAPI DwmSetWindowAttribute_Hook(HWND hwnd,
     int cy = targetRect.bottom - targetRect.top;
 
     if (target == DwmTarget::SearchHost) {
+        if (!IsStartMenuOpen()) {
+            // Win+S or the search bar on the taskbar cause the search menu to
+            // be repositioned. Don't customize it and restore the original
+            // position.
+            g_searchMenuWnd = nullptr;
+            g_searchMenuCustomPos = {LONG_MAX, LONG_MAX};
+            return original();
+        }
+
         int xNew;
         switch (g_settings.startMenu.horizontalAlignment) {
             case StartMenuHorizontalAlignment::windowsDefault:
