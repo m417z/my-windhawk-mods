@@ -1,9 +1,9 @@
 // ==WindhawkMod==
-// @id              taskbar-volume-control-phyck-mod
-// @name            Taskbar Volume Control [phyck]
+// @id              taskbar-volume-control
+// @name            Taskbar Volume Control
 // @description     Control the system volume by scrolling over the taskbar or anywhere with modifier keys
-// @version         1.3.6
-// @author          m417z modded by phyck
+// @version         1.3.2
+// @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
 // @homepage        https://m417z.com/
@@ -37,9 +37,9 @@ Features:
   control the volume by scrolling anywhere on screen.
 * **Full screen scrolling**: Scroll at the taskbar position to control the
   volume even when a full screen window covers the taskbar.
-* **Middle click to mute**: Middle click the volume tray icon to toggle mute.
 * **Keyboard volume hotkeys**: Use AltGr+Up/Down and/or configurable single-key
   hotkeys to control the volume from anywhere.
+* **Middle click to mute**: Middle click the volume tray icon to toggle mute.
 * **Mute behavior**: Optionally disable automatic muting at zero volume and
   automatic unmuting when the volume is changed.
 
@@ -162,16 +162,9 @@ issue](https://tweaker.userecho.com/topics/826-scroll-on-trackpadtouchpad-doesnt
 
 // ==WindhawkModChanges==
 /*
-Local/proposed changes on top of Taskbar Volume Control 1.3:
+Proposed changes:
 
-Version 1.3.6:
-* When a keyboard hotkey opens the Windows 10/modern volume indicator, restore
-  focus to the previously active window so follow-up Up/Down keys are delivered
-  to the app instead of changing the flyout volume.
-* Documented the fork-added keyboard hotkey and mute-behavior options in the
-  Windhawk readme section.
-
-Version 1.3.1:
+Version 1.3.2:
 * Added an optional "AltGr + Up/Down volume hotkeys" setting from anywhere,
   independent of scroll-anywhere. This was added in response to a user request
   for keyboard shortcuts to change the volume with the same step and indicator
@@ -184,36 +177,33 @@ Version 1.3.1:
   step, indicator style, and SndVol behavior stay consistent.
 * Allows external tools or mouse buttons to trigger the same path by sending
   AltGr+Up/Down.
-
-Version 1.3.2:
 * Added a dedicated HotkeyWithIndicator internal mode for keyboard-triggered
   volume changes.
 * Before opening the Windows 10/legacy indicator from the hotkey path, sends
   the same small SendInput foreground-allowance nudge used by the original
   taskbar-wheel path. This makes the indicator show more reliably in apps such
   as Firefox while keeping the actual volume change behavior unchanged.
-
-Version 1.3.3:
 * Added an optional "F12/F13 volume hotkeys" setting.
 * Handles F13 as volume up and F12 as volume down directly in the Windhawk
   low-level keyboard hook. This avoids slow AHK replay of AltGr+Up/Down when
   holding a mouse button that repeatedly emits F12/F13.
-
-Version 1.3.4:
 * Generalized the F12/F13 option into configurable single-key volume hotkeys.
 * Added Volume up key and Volume down key settings, defaulting to F13 and F12.
 * Supports common names such as F13, Insert, PageUp, Delete, PageDown, Up,
   Down, and hexadecimal virtual-key values such as 0x7C.
 * Allows injected keyboard events so intentional AHK remaps such as
   Insert::F13 can trigger the configured volume-up key.
-
-Version 1.3.5:
 * Merged the upstream Taskbar Volume Control 1.3.1 changes.
 * Added compatibility with the new SystemTray.dll used by newer Windows 11
   builds for middle-click mute.
 * Prevents the Start menu or menu bar from opening after Win/Alt is used as a
   scroll-anywhere modifier.
 * Added right-to-left taskbar region handling and stricter region parsing.
+* When a keyboard hotkey opens the Windows 10/modern volume indicator, restore
+  focus to the previously active window so follow-up Up/Down keys are delivered
+  to the app instead of changing the flyout volume.
+* Documented the fork-added keyboard hotkey and mute-behavior options in the
+  Windhawk readme section.
 */
 // ==/WindhawkModChanges==
 
