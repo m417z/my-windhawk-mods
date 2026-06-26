@@ -3824,14 +3824,14 @@ bool RunFromWindowThread(HWND hWnd,
 
 namespace StartMenuUI {
 
-bool g_applyStylePending;
 bool g_inApplyStyle;
 bool g_startMenuAnimationAdjusted;
 winrt::weak_ref<DependencyObject> g_startSizingFrameWeakRef;
 int64_t g_canvasTopPropertyChangedToken;
 int64_t g_canvasLeftPropertyChangedToken;
 std::optional<HorizontalAlignment> g_previousHorizontalAlignment;
-winrt::event_token g_layoutUpdatedToken;
+winrt::weak_ref<DependencyObject> g_frameRootWeakRef;
+int64_t g_verticalAlignmentPropertyChangedToken;
 winrt::event_token g_visibilityChangedToken;
 
 HWND GetCoreWnd() {
@@ -4094,6 +4094,25 @@ void ApplyStyleRedesignedStartMenu(FrameworkElement content,
     }
 
     frameRoot.Margin(margin);
+
+    if (!g_unloading && !g_frameRootWeakRef.get()) {
+        auto frameRootDo = frameRoot.as<DependencyObject>();
+
+        g_frameRootWeakRef = frameRootDo;
+
+        g_verticalAlignmentPropertyChangedToken =
+            frameRootDo.RegisterPropertyChangedCallback(
+                FrameworkElement::VerticalAlignmentProperty(),
+                [](DependencyObject sender, DependencyProperty property) {
+                    auto alignment =
+                        sender.as<FrameworkElement>().VerticalAlignment();
+                    Wh_Log(L"FrameRoot VerticalAlignment changed to %d",
+                           static_cast<int>(alignment));
+                    if (!g_inApplyStyle) {
+                        ApplyStyle();
+                    }
+                });
+    }
 }
 
 void ApplyStyle() {
@@ -4124,7 +4143,7 @@ void ApplyStyle() {
 }
 
 void Init() {
-    if (g_layoutUpdatedToken) {
+    if (g_visibilityChangedToken) {
         return;
     }
 
@@ -4133,29 +4152,11 @@ void Init() {
         return;
     }
 
-    if (!g_visibilityChangedToken) {
-        g_visibilityChangedToken = window.VisibilityChanged(
-            [](winrt::Windows::Foundation::IInspectable const& sender,
-               winrt::Windows::UI::Core::VisibilityChangedEventArgs const&
-                   args) {
-                Wh_Log(L"Window visibility changed: %d", args.Visible());
-                if (args.Visible()) {
-                    g_applyStylePending = true;
-                }
-            });
-    }
-
-    auto contentUI = window.Content();
-    if (!contentUI) {
-        return;
-    }
-
-    auto content = contentUI.as<FrameworkElement>();
-    g_layoutUpdatedToken = content.LayoutUpdated(
-        [](winrt::Windows::Foundation::IInspectable const&,
-           winrt::Windows::Foundation::IInspectable const&) {
-            if (g_applyStylePending) {
-                g_applyStylePending = false;
+    g_visibilityChangedToken = window.VisibilityChanged(
+        [](winrt::Windows::Foundation::IInspectable const& sender,
+           winrt::Windows::UI::Core::VisibilityChangedEventArgs const& args) {
+            Wh_Log(L"Window visibility changed: %d", args.Visible());
+            if (args.Visible()) {
                 ApplyStyle();
             }
         });
@@ -4164,7 +4165,7 @@ void Init() {
 }
 
 void Uninit() {
-    if (!g_layoutUpdatedToken) {
+    if (!g_visibilityChangedToken) {
         return;
     }
 
@@ -4173,19 +4174,8 @@ void Uninit() {
         return;
     }
 
-    if (g_visibilityChangedToken) {
-        window.VisibilityChanged(g_visibilityChangedToken);
-        g_visibilityChangedToken = {};
-    }
-
-    auto contentUI = window.Content();
-    if (!contentUI) {
-        return;
-    }
-
-    auto content = contentUI.as<FrameworkElement>();
-    content.LayoutUpdated(g_layoutUpdatedToken);
-    g_layoutUpdatedToken = {};
+    window.VisibilityChanged(g_visibilityChangedToken);
+    g_visibilityChangedToken = {};
 
     auto startSizingFrameDo = g_startSizingFrameWeakRef.get();
     if (startSizingFrameDo) {
@@ -4205,6 +4195,18 @@ void Uninit() {
     }
 
     g_startSizingFrameWeakRef = nullptr;
+
+    auto frameRootDo = g_frameRootWeakRef.get();
+    if (frameRootDo) {
+        if (g_verticalAlignmentPropertyChangedToken) {
+            frameRootDo.UnregisterPropertyChangedCallback(
+                FrameworkElement::VerticalAlignmentProperty(),
+                g_verticalAlignmentPropertyChangedToken);
+            g_verticalAlignmentPropertyChangedToken = 0;
+        }
+    }
+
+    g_frameRootWeakRef = nullptr;
 
     ApplyStyle();
 }
