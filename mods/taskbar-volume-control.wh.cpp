@@ -1,9 +1,9 @@
 // ==WindhawkMod==
-// @id              taskbar-volume-control
-// @name            Taskbar Volume Control
+// @id              taskbar-volume-control-phyck-mod
+// @name            Taskbar Volume Control [phyck]
 // @description     Control the system volume by scrolling over the taskbar or anywhere with modifier keys
-// @version         1.3.1
-// @author          m417z
+// @version         1.3.6
+// @author          m417z modded by phyck
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
 // @homepage        https://m417z.com/
@@ -38,6 +38,10 @@ Features:
 * **Full screen scrolling**: Scroll at the taskbar position to control the
   volume even when a full screen window covers the taskbar.
 * **Middle click to mute**: Middle click the volume tray icon to toggle mute.
+* **Keyboard volume hotkeys**: Use AltGr+Up/Down and/or configurable single-key
+  hotkeys to control the volume from anywhere.
+* **Mute behavior**: Optionally disable automatic muting at zero volume and
+  automatic unmuting when the volume is changed.
 
 **Note:** Some laptop touchpads might not support scrolling over the taskbar. A
 workaround is to use the "pinch to zoom" gesture. For details, check out [a
@@ -102,6 +106,29 @@ issue](https://tweaker.userecho.com/topics/826-scroll-on-trackpadtouchpad-doesnt
     volume by scrolling the mouse wheel anywhere on the screen. Note that
     scrolling won't work when the foreground window is of an elevated process
     (such as Windhawk or Task Manager).
+- altGrArrowVolumeHotkeys: false
+  $name: AltGr + Up/Down volume hotkeys
+  $description: >-
+    Use AltGr+Up and AltGr+Down to change the system volume from anywhere.
+    The hotkeys use the same volume step and indicator settings as mouse-wheel
+    volume control. Like scroll-anywhere, they won't work when the foreground
+    window is of an elevated process.
+- singleKeyVolumeHotkeys: false
+  $name: Single-key volume hotkeys
+  $description: >-
+    Use configurable single keys for volume up and volume down from anywhere.
+    This is useful for keyboard layouts, extra function keys, or mouse software
+    that can emit keyboard events.
+- volumeUpKey: F13
+  $name: Volume up key
+  $description: >-
+    Key used by single-key volume hotkeys for volume up. Examples: F13, F14,
+    Insert, PageUp, 0x7C.
+- volumeDownKey: F12
+  $name: Volume down key
+  $description: >-
+    Key used by single-key volume hotkeys for volume down. Examples: F12, F14,
+    Delete, PageDown, 0x7B.
 - fullScreenScrolling: disabled
   $name: Full screen scrolling
   $description: >-
@@ -132,6 +159,63 @@ issue](https://tweaker.userecho.com/topics/826-scroll-on-trackpadtouchpad-doesnt
     ExplorerPatcher or a similar tool).
 */
 // ==/WindhawkModSettings==
+
+// ==WindhawkModChanges==
+/*
+Local/proposed changes on top of Taskbar Volume Control 1.3:
+
+Version 1.3.6:
+* When a keyboard hotkey opens the Windows 10/modern volume indicator, restore
+  focus to the previously active window so follow-up Up/Down keys are delivered
+  to the app instead of changing the flyout volume.
+* Documented the fork-added keyboard hotkey and mute-behavior options in the
+  Windhawk readme section.
+
+Version 1.3.1:
+* Added an optional "AltGr + Up/Down volume hotkeys" setting from anywhere,
+  independent of scroll-anywhere. This was added in response to a user request
+  for keyboard shortcuts to change the volume with the same step and indicator
+  as the mouse wheel, without needing to configure separate hotkeys in an
+  external tool while still allowing the same external tools to trigger volume
+  changes by sending the same AltGr+Up/Down key combination.
+* Uses a low-level keyboard hook to detect the physical AltGr pattern
+  (left Ctrl + right Alt) together with Up/Down.
+* Reuses the existing mouse-wheel volume pipeline so the configured volume
+  step, indicator style, and SndVol behavior stay consistent.
+* Allows external tools or mouse buttons to trigger the same path by sending
+  AltGr+Up/Down.
+
+Version 1.3.2:
+* Added a dedicated HotkeyWithIndicator internal mode for keyboard-triggered
+  volume changes.
+* Before opening the Windows 10/legacy indicator from the hotkey path, sends
+  the same small SendInput foreground-allowance nudge used by the original
+  taskbar-wheel path. This makes the indicator show more reliably in apps such
+  as Firefox while keeping the actual volume change behavior unchanged.
+
+Version 1.3.3:
+* Added an optional "F12/F13 volume hotkeys" setting.
+* Handles F13 as volume up and F12 as volume down directly in the Windhawk
+  low-level keyboard hook. This avoids slow AHK replay of AltGr+Up/Down when
+  holding a mouse button that repeatedly emits F12/F13.
+
+Version 1.3.4:
+* Generalized the F12/F13 option into configurable single-key volume hotkeys.
+* Added Volume up key and Volume down key settings, defaulting to F13 and F12.
+* Supports common names such as F13, Insert, PageUp, Delete, PageDown, Up,
+  Down, and hexadecimal virtual-key values such as 0x7C.
+* Allows injected keyboard events so intentional AHK remaps such as
+  Insert::F13 can trigger the configured volume-up key.
+
+Version 1.3.5:
+* Merged the upstream Taskbar Volume Control 1.3.1 changes.
+* Added compatibility with the new SystemTray.dll used by newer Windows 11
+  builds for middle-click mute.
+* Prevents the Start menu or menu bar from opening after Win/Alt is used as a
+  scroll-anywhere modifier.
+* Added right-to-left taskbar region handling and stricter region parsing.
+*/
+// ==/WindhawkModChanges==
 
 #include <windhawk_utils.h>
 
@@ -188,6 +272,10 @@ struct {
         bool alt;
         bool win;
     } scrollAnywhereKeys;
+    bool altGrArrowVolumeHotkeys;
+    bool singleKeyVolumeHotkeys;
+    UINT singleKeyVolumeUpVk;
+    UINT singleKeyVolumeDownVk;
     FullScreenScrolling fullScreenScrolling;
     bool noAutomaticMuteToggle;
     int volumeChangeStep;
@@ -210,6 +298,12 @@ std::unordered_set<HWND> g_secondaryTaskbarWindows;
 UINT g_scrollAnywhereMsg =
     RegisterWindowMessage(L"Windhawk_ScrollAnywhere_" WH_MOD_ID);
 HANDLE g_scrollAnywhereThread;
+
+enum class VolumeControlMode : WORD {
+    WithIndicator = 0,
+    WithoutIndicator = 1,
+    HotkeyWithIndicator = 2,
+};
 
 enum {
     WIN_VERSION_UNSUPPORTED = 0,
@@ -874,7 +968,9 @@ bool Win11IndicatorAdjustVolumeLevelWithMouseWheel(short delta) {
 
 #pragma region sndvol
 
-BOOL OpenScrollSndVol(WPARAM wParam, LPARAM lMousePosParam);
+BOOL OpenScrollSndVol(WPARAM wParam,
+                      LPARAM lMousePosParam,
+                      BOOL bHotkeyTriggered = FALSE);
 void SetSndVolTimer();
 void KillSndVolTimer();
 void CleanupSndVol();
@@ -897,9 +993,11 @@ static BOOL MoveSndVolCenterMouse(HWND hWnd);
 
 // Modern indicator functions
 static BOOL CanUseModernIndicator();
-static BOOL ShowSndVolModernIndicator();
+static BOOL ShowSndVolModernIndicator(BOOL bHotkeyTriggered);
 static BOOL HideSndVolModernIndicator();
 static void EndSndVolModernIndicatorSession();
+static BOOL RestoreSndVolModernPreviousForeground();
+static BOOL IsSndVolModernIndicatorWnd(HWND hWnd);
 static HWND GetOpenSndVolModernIndicatorWnd();
 static HWND GetSndVolTrayControlWnd();
 static BOOL CALLBACK EnumThreadFindSndVolTrayControlWnd(HWND hWnd,
@@ -912,8 +1010,11 @@ static int nCloseSndVolTimerCount;
 static HWND hSndVolModernPreviousForegroundWnd;
 static BOOL bSndVolModernLaunched;
 static BOOL bSndVolModernAppeared;
+static BOOL bSndVolModernHotkeySession;
 
-BOOL OpenScrollSndVol(WPARAM wParam, LPARAM lMousePosParam) {
+BOOL OpenScrollSndVol(WPARAM wParam,
+                      LPARAM lMousePosParam,
+                      BOOL bHotkeyTriggered) {
     HANDLE hMutex;
     HWND hVolumeAppWnd;
     DWORD dwProcessId;
@@ -936,7 +1037,7 @@ BOOL OpenScrollSndVol(WPARAM wParam, LPARAM lMousePosParam) {
         if (!AdjustVolumeLevelWithMouseWheel(GET_WHEEL_DELTA_WPARAM(wParam), 0))
             return FALSE;
 
-        ShowSndVolModernIndicator();
+        ShowSndVolModernIndicator(bHotkeyTriggered);
         SetSndVolTimer();
         return TRUE;
     }
@@ -1167,6 +1268,17 @@ static void CALLBACK CloseSndVolTimerProc(HWND hWnd,
                                 MAKEWPARAM(WA_INACTIVE, FALSE), 0);
                 }
 
+                if (bSndVolModernHotkeySession) {
+                    RestoreSndVolModernPreviousForeground();
+
+                    // Make sure the flyout doesn't keep keyboard focus after a
+                    // hotkey-triggered volume change. Otherwise, a quick
+                    // follow-up Up/Down key can change the volume again instead
+                    // of reaching the previously active app.
+                    PostMessage(hSndVolModernIndicatorWnd, WM_ACTIVATE,
+                                MAKEWPARAM(WA_INACTIVE, FALSE), 0);
+                }
+
                 return;
             } else {
                 nCloseSndVolTimerCount++;
@@ -1336,13 +1448,21 @@ static BOOL CanUseModernIndicator() {
     return dwEnabled != 0;
 }
 
-static BOOL ShowSndVolModernIndicator() {
+static BOOL ShowSndVolModernIndicator(BOOL bHotkeyTriggered) {
+    if (bHotkeyTriggered) {
+        bSndVolModernHotkeySession = TRUE;
+    }
+
     if (bSndVolModernLaunched)
         return TRUE;  // already launched
 
     HWND hSndVolModernIndicatorWnd = GetOpenSndVolModernIndicatorWnd();
-    if (hSndVolModernIndicatorWnd)
+    if (hSndVolModernIndicatorWnd) {
+        if (bHotkeyTriggered) {
+            RestoreSndVolModernPreviousForeground();
+        }
         return TRUE;  // already shown
+    }
 
     HWND hForegroundWnd = GetForegroundWindow();
     if (hForegroundWnd && hForegroundWnd != g_hTaskbarWnd)
@@ -1363,8 +1483,7 @@ static BOOL ShowSndVolModernIndicator() {
 static BOOL HideSndVolModernIndicator() {
     HWND hSndVolModernIndicatorWnd = GetOpenSndVolModernIndicatorWnd();
     if (hSndVolModernIndicatorWnd) {
-        if (!hSndVolModernPreviousForegroundWnd ||
-            !SetForegroundWindow(hSndVolModernPreviousForegroundWnd))
+        if (!RestoreSndVolModernPreviousForeground())
             SetForegroundWindow(g_hTaskbarWnd);
     }
 
@@ -1375,28 +1494,51 @@ static void EndSndVolModernIndicatorSession() {
     hSndVolModernPreviousForegroundWnd = NULL;
     bSndVolModernLaunched = FALSE;
     bSndVolModernAppeared = FALSE;
+    bSndVolModernHotkeySession = FALSE;
 }
 
-static HWND GetOpenSndVolModernIndicatorWnd() {
+static BOOL RestoreSndVolModernPreviousForeground() {
     HWND hForegroundWnd = GetForegroundWindow();
-    if (!hForegroundWnd)
-        return NULL;
+    if (!IsSndVolModernIndicatorWnd(hForegroundWnd)) {
+        return FALSE;
+    }
+
+    if (hSndVolModernPreviousForegroundWnd &&
+        IsWindow(hSndVolModernPreviousForegroundWnd) &&
+        hSndVolModernPreviousForegroundWnd != hForegroundWnd) {
+        return SetForegroundWindow(hSndVolModernPreviousForegroundWnd);
+    }
+
+    return FALSE;
+}
+
+static BOOL IsSndVolModernIndicatorWnd(HWND hWnd) {
+    if (!hWnd)
+        return FALSE;
 
     // Check class name
     WCHAR szBuffer[32];
-    if (!GetClassName(hForegroundWnd, szBuffer, 32) ||
+    if (!GetClassName(hWnd, szBuffer, 32) ||
         wcscmp(szBuffer, L"Windows.UI.Core.CoreWindow") != 0)
-        return NULL;
+        return FALSE;
 
     // Check that the MtcUvc prop exists
     WCHAR szVerifyPropName[sizeof(
         "ApplicationView_CustomWindowTitle#1234567890#MtcUvc")];
     wsprintf(szVerifyPropName, L"ApplicationView_CustomWindowTitle#%u#MtcUvc",
-             (DWORD)(DWORD_PTR)hForegroundWnd);
+             (DWORD)(DWORD_PTR)hWnd);
 
     SetLastError(0);
-    GetProp(hForegroundWnd, szVerifyPropName);
+    GetProp(hWnd, szVerifyPropName);
     if (GetLastError() != 0)
+        return FALSE;
+
+    return TRUE;
+}
+
+static HWND GetOpenSndVolModernIndicatorWnd() {
+    HWND hForegroundWnd = GetForegroundWindow();
+    if (!IsSndVolModernIndicatorWnd(hForegroundWnd))
         return NULL;
 
     return hForegroundWnd;
@@ -1530,11 +1672,20 @@ LRESULT CALLBACK TaskbarWindowSubclassProc(_In_ HWND hWnd,
 
         default:
             if (uMsg == g_scrollAnywhereMsg) {
-                if (LOWORD(wParam) == 1) {
+                auto mode = static_cast<VolumeControlMode>(LOWORD(wParam));
+                if (mode == VolumeControlMode::WithoutIndicator) {
                     AdjustVolumeLevelWithMouseWheel(
                         GET_WHEEL_DELTA_WPARAM(wParam), 0);
                 } else {
-                    OpenScrollSndVol(wParam, lParam);
+                    if (mode == VolumeControlMode::HotkeyWithIndicator) {
+                        INPUT input;
+                        ZeroMemory(&input, sizeof(INPUT));
+                        SendInput(1, &input, sizeof(INPUT));
+                    }
+
+                    OpenScrollSndVol(
+                        wParam, lParam,
+                        mode == VolumeControlMode::HotkeyWithIndicator);
                 }
                 result = 0;
             } else {
@@ -1784,6 +1935,53 @@ DWORD_PTR WINAPI ForceFocusBasedMouseWheelRouting_Hook(BOOL enabled) {
     return ForceFocusBasedMouseWheelRouting_Original(FALSE);
 }
 
+UINT ParseSingleKeySetting(PCWSTR keyName, UINT fallbackVk) {
+    if (!keyName || !*keyName) {
+        return fallbackVk;
+    }
+
+    if ((_wcsnicmp(keyName, L"0x", 2) == 0 && keyName[2]) ||
+        (keyName[0] >= L'0' && keyName[0] <= L'9')) {
+        wchar_t* end = nullptr;
+        unsigned long vk = wcstoul(keyName, &end, 0);
+        if (end && *end == L'\0' && vk > 0 && vk <= 0xFF) {
+            return static_cast<UINT>(vk);
+        }
+    }
+
+    if ((keyName[0] == L'F' || keyName[0] == L'f') && keyName[1]) {
+        wchar_t* end = nullptr;
+        unsigned long number = wcstoul(keyName + 1, &end, 10);
+        if (end && *end == L'\0' && number >= 1 && number <= 24) {
+            return VK_F1 + static_cast<UINT>(number) - 1;
+        }
+    }
+
+    struct NamedKey {
+        PCWSTR name;
+        UINT vk;
+    };
+
+    static const NamedKey namedKeys[] = {
+        {L"Insert", VK_INSERT}, {L"Ins", VK_INSERT},
+        {L"Delete", VK_DELETE}, {L"Del", VK_DELETE},
+        {L"PageUp", VK_PRIOR},  {L"PgUp", VK_PRIOR},
+        {L"PageDown", VK_NEXT}, {L"PgDn", VK_NEXT},
+        {L"Home", VK_HOME},     {L"End", VK_END},
+        {L"Up", VK_UP},         {L"Down", VK_DOWN},
+        {L"Left", VK_LEFT},     {L"Right", VK_RIGHT},
+        {L"None", 0},           {L"Disabled", 0},
+    };
+
+    for (const auto& namedKey : namedKeys) {
+        if (_wcsicmp(keyName, namedKey.name) == 0) {
+            return namedKey.vk;
+        }
+    }
+
+    return fallbackVk;
+}
+
 void LoadSettings() {
     PCWSTR volumeIndicator = Wh_GetStringSetting(L"volumeIndicator");
     g_settings.volumeIndicator = VolumeIndicator::Win11;
@@ -1823,6 +2021,21 @@ void LoadSettings() {
         Wh_GetIntSetting(L"scrollAnywhereKeys.alt");
     g_settings.scrollAnywhereKeys.win =
         Wh_GetIntSetting(L"scrollAnywhereKeys.win");
+    g_settings.altGrArrowVolumeHotkeys =
+        Wh_GetIntSetting(L"altGrArrowVolumeHotkeys");
+    g_settings.singleKeyVolumeHotkeys =
+        Wh_GetIntSetting(L"singleKeyVolumeHotkeys") ||
+        Wh_GetIntSetting(L"f12F13VolumeHotkeys");
+
+    PCWSTR volumeUpKey = Wh_GetStringSetting(L"volumeUpKey");
+    g_settings.singleKeyVolumeUpVk =
+        ParseSingleKeySetting(volumeUpKey, VK_F13);
+    Wh_FreeStringSetting(volumeUpKey);
+
+    PCWSTR volumeDownKey = Wh_GetStringSetting(L"volumeDownKey");
+    g_settings.singleKeyVolumeDownVk =
+        ParseSingleKeySetting(volumeDownKey, VK_F12);
+    Wh_FreeStringSetting(volumeDownKey);
 
     PCWSTR fullScreenScrolling = Wh_GetStringSetting(L"fullScreenScrolling");
     g_settings.fullScreenScrolling = FullScreenScrolling::disabled;
@@ -2011,9 +2224,20 @@ bool IsScrollAnywhereEnabled() {
            g_settings.scrollAnywhereKeys.win;
 }
 
+bool IsKeyboardHookNeeded() {
+    return g_settings.altGrArrowVolumeHotkeys ||
+           (g_settings.singleKeyVolumeHotkeys &&
+            (g_settings.singleKeyVolumeUpVk ||
+             g_settings.singleKeyVolumeDownVk));
+}
+
 bool IsMouseHookNeeded() {
     return IsScrollAnywhereEnabled() ||
            g_settings.fullScreenScrolling != FullScreenScrolling::disabled;
+}
+
+bool IsInputHookThreadNeeded() {
+    return IsMouseHookNeeded() || IsKeyboardHookNeeded();
 }
 
 bool AreScrollAnywhereModifiersHeld() {
@@ -2031,15 +2255,7 @@ bool AreScrollAnywhereModifiersHeld() {
 
 // Using the Win or Alt key as a scroll-anywhere modifier would trigger a menu
 // on release: a lone Win tap opens the Start menu, and a lone Alt tap activates
-// the window's menu bar. To prevent this, the mouse hook flags the key as used
-// for scrolling, and the keyboard hook below masks its release: it suppresses
-// the real key-up and re-injects a dummy key (0xE8, unassigned) before it, so
-// Windows sees a non-modifier key and skips the menu. 0xE8 is the masking key
-// recommended by AutoHotkey for exactly this, both for Win and Alt:
-// https://www.autohotkey.com/docs/v2/lib/A_MenuMaskKey.htm
-//
-// Masking must happen at release time, not during the scroll, since holding the
-// key auto-repeats key-down events that would re-arm the lone-tap detection.
+// the window's menu bar. Mask the release after either key was used to scroll.
 struct ModifierMaskState {
     bool down;
     bool usedForScroll;
@@ -2048,14 +2264,10 @@ struct ModifierMaskState {
 ModifierMaskState g_winMaskState;
 ModifierMaskState g_altMaskState;
 
-// Returns true if the original key-up was suppressed and re-sent masked, in
-// which case the caller should swallow it.
 bool MaskModifierKeyEvent(ModifierMaskState* state,
                           WPARAM wParam,
                           KBDLLHOOKSTRUCT* pKbdStruct) {
     if (wParam == WM_KEYDOWN || wParam == WM_SYSKEYDOWN) {
-        // Reset the flag on the initial press, but not on auto-repeat events
-        // (which keep firing while the key is held).
         if (!state->down) {
             state->down = true;
             state->usedForScroll = false;
@@ -2063,8 +2275,6 @@ bool MaskModifierKeyEvent(ModifierMaskState* state,
     } else if (wParam == WM_KEYUP || wParam == WM_SYSKEYUP) {
         state->down = false;
 
-        // Ignore injected key-ups (such as the one we re-send below) to avoid
-        // masking them again.
         if (state->usedForScroll && !(pKbdStruct->flags & LLKHF_INJECTED)) {
             state->usedForScroll = false;
 
@@ -2074,10 +2284,6 @@ bool MaskModifierKeyEvent(ModifierMaskState* state,
             input[1].type = INPUT_KEYBOARD;
             input[1].ki.wVk = 0xE8;
             input[1].ki.dwFlags = KEYEVENTF_KEYUP;
-            // Faithfully replay the original key-up. The extended-key flag must
-            // be preserved, otherwise extended modifiers (right Alt/AltGr and
-            // the Win keys) may not be released correctly and could get stuck
-            // down.
             input[2].type = INPUT_KEYBOARD;
             input[2].ki.wVk = (WORD)pKbdStruct->vkCode;
             input[2].ki.wScan = (WORD)pKbdStruct->scanCode;
@@ -2086,9 +2292,6 @@ bool MaskModifierKeyEvent(ModifierMaskState* state,
                 input[2].ki.dwFlags |= KEYEVENTF_EXTENDEDKEY;
             }
 
-            // Only suppress the original key-up if we managed to re-send the
-            // whole sequence, otherwise the key would get stuck down (e.g. when
-            // SendInput is blocked by an elevated foreground window).
             if (SendInput(ARRAYSIZE(input), input, sizeof(INPUT)) ==
                 ARRAYSIZE(input)) {
                 return true;
@@ -2097,32 +2300,6 @@ bool MaskModifierKeyEvent(ModifierMaskState* state,
     }
 
     return false;
-}
-
-LRESULT CALLBACK LowLevelKeyboardProc(int nCode, WPARAM wParam, LPARAM lParam) {
-    if (nCode != HC_ACTION) {
-        return CallNextHookEx(nullptr, nCode, wParam, lParam);
-    }
-
-    KBDLLHOOKSTRUCT* pKbdStruct = (KBDLLHOOKSTRUCT*)lParam;
-
-    ModifierMaskState* state = nullptr;
-    switch (pKbdStruct->vkCode) {
-        case VK_LWIN:
-        case VK_RWIN:
-            state = &g_winMaskState;
-            break;
-        case VK_LMENU:
-        case VK_RMENU:
-            state = &g_altMaskState;
-            break;
-    }
-
-    if (state && MaskModifierKeyEvent(state, wParam, pKbdStruct)) {
-        return 1;
-    }
-
-    return CallNextHookEx(nullptr, nCode, wParam, lParam);
 }
 
 LRESULT CALLBACK LowLevelMouseProc(int nCode, WPARAM wParam, LPARAM lParam) {
@@ -2139,8 +2316,6 @@ LRESULT CALLBACK LowLevelMouseProc(int nCode, WPARAM wParam, LPARAM lParam) {
 
     // Scroll anywhere: modifier keys held.
     if (IsScrollAnywhereEnabled() && AreScrollAnywhereModifiersHeld()) {
-        // Mark the Win/Alt keys as used so that the keyboard hook masks their
-        // release and no menu (Start menu / menu bar) opens.
         if (g_settings.scrollAnywhereKeys.win) {
             g_winMaskState.usedForScroll = true;
         }
@@ -2199,10 +2374,11 @@ LRESULT CALLBACK LowLevelMouseProc(int nCode, WPARAM wParam, LPARAM lParam) {
         }
 
         if (isInScrollArea) {
-            WORD mode = (g_settings.fullScreenScrolling ==
-                         FullScreenScrolling::withoutIndicator)
-                            ? 1
-                            : 0;
+            WORD mode =
+                static_cast<WORD>(g_settings.fullScreenScrolling ==
+                                          FullScreenScrolling::withoutIndicator
+                                      ? VolumeControlMode::WithoutIndicator
+                                      : VolumeControlMode::WithIndicator);
             PostMessage(hTaskbarWnd, g_scrollAnywhereMsg,
                         MAKEWPARAM(mode, HIWORD(pMouseStruct->mouseData)),
                         MAKELPARAM(pt.x, pt.y));
@@ -2213,26 +2389,140 @@ LRESULT CALLBACK LowLevelMouseProc(int nCode, WPARAM wParam, LPARAM lParam) {
     return CallNextHookEx(nullptr, nCode, wParam, lParam);
 }
 
+bool IsAltGrHeld() {
+    return GetAsyncKeyState(VK_LCONTROL) < 0 && GetAsyncKeyState(VK_RMENU) < 0;
+}
+
+void PostVolumeWheelDelta(short wheelDelta) {
+    HWND hTaskbarWnd = g_hTaskbarWnd;
+    if (!hTaskbarWnd) {
+        return;
+    }
+
+    POINT pt;
+    if (!GetCursorPos(&pt)) {
+        pt = {};
+    }
+
+    PostMessage(hTaskbarWnd, g_scrollAnywhereMsg,
+                MAKEWPARAM(
+                    static_cast<WORD>(VolumeControlMode::HotkeyWithIndicator),
+                    static_cast<WORD>(wheelDelta)),
+                MAKELPARAM(pt.x, pt.y));
+}
+
+LRESULT CALLBACK LowLevelKeyboardProc(int nCode,
+                                      WPARAM wParam,
+                                      LPARAM lParam) {
+    static bool swallowUpUntilRelease = false;
+    static bool swallowDownUntilRelease = false;
+    static bool swallowSingleKeyUpUntilRelease = false;
+    static bool swallowSingleKeyDownUntilRelease = false;
+
+    if (nCode != HC_ACTION) {
+        return CallNextHookEx(nullptr, nCode, wParam, lParam);
+    }
+
+    KBDLLHOOKSTRUCT* pKeyboardStruct = (KBDLLHOOKSTRUCT*)lParam;
+
+    ModifierMaskState* modifierMaskState = nullptr;
+    switch (pKeyboardStruct->vkCode) {
+        case VK_LWIN:
+        case VK_RWIN:
+            modifierMaskState = &g_winMaskState;
+            break;
+        case VK_LMENU:
+        case VK_RMENU:
+            modifierMaskState = &g_altMaskState;
+            break;
+    }
+
+    if (modifierMaskState &&
+        MaskModifierKeyEvent(modifierMaskState, wParam, pKeyboardStruct)) {
+        return 1;
+    }
+
+    DWORD vkCode = pKeyboardStruct->vkCode;
+    bool isArrowVolumeKey = vkCode == VK_UP || vkCode == VK_DOWN;
+    bool isSingleKeyVolumeUp =
+        g_settings.singleKeyVolumeUpVk &&
+        vkCode == g_settings.singleKeyVolumeUpVk;
+    bool isSingleKeyVolumeDown =
+        g_settings.singleKeyVolumeDownVk &&
+        vkCode == g_settings.singleKeyVolumeDownVk;
+    bool isSingleKeyVolumeKey = isSingleKeyVolumeUp || isSingleKeyVolumeDown;
+    bool isTargetKey = isArrowVolumeKey || isSingleKeyVolumeKey;
+    bool isKeyDown = wParam == WM_KEYDOWN || wParam == WM_SYSKEYDOWN;
+    bool isKeyUp = wParam == WM_KEYUP || wParam == WM_SYSKEYUP;
+
+    if (isArrowVolumeKey && (isKeyDown || isKeyUp) &&
+        bSndVolModernHotkeySession &&
+        IsSndVolModernIndicatorWnd(GetForegroundWindow())) {
+        RestoreSndVolModernPreviousForeground();
+    }
+
+    if (!isTargetKey || (!isKeyDown && !isKeyUp)) {
+        return CallNextHookEx(nullptr, nCode, wParam, lParam);
+    }
+
+    bool& swallowUntilRelease = vkCode == VK_UP     ? swallowUpUntilRelease
+                                : vkCode == VK_DOWN ? swallowDownUntilRelease
+                                : isSingleKeyVolumeUp
+                                    ? swallowSingleKeyUpUntilRelease
+                                    : swallowSingleKeyDownUntilRelease;
+
+    if (isKeyUp && swallowUntilRelease) {
+        swallowUntilRelease = false;
+        return 1;
+    }
+
+    short wheelDelta = 0;
+    if (isKeyDown && isArrowVolumeKey && g_settings.altGrArrowVolumeHotkeys &&
+        IsAltGrHeld()) {
+        wheelDelta = vkCode == VK_UP ? WHEEL_DELTA : -WHEEL_DELTA;
+    } else if (isKeyDown && isSingleKeyVolumeKey &&
+               g_settings.singleKeyVolumeHotkeys) {
+        wheelDelta = isSingleKeyVolumeUp ? WHEEL_DELTA : -WHEEL_DELTA;
+    } else {
+        return CallNextHookEx(nullptr, nCode, wParam, lParam);
+    }
+
+    swallowUntilRelease = true;
+    PostVolumeWheelDelta(wheelDelta);
+    return 1;
+}
+
 DWORD WINAPI ScrollAnywhereThread(LPVOID lpParameter) {
     HANDLE hReadyEvent = (HANDLE)lpParameter;
 
     g_winMaskState = {};
     g_altMaskState = {};
 
-    HHOOK mouseHook =
-        SetWindowsHookEx(WH_MOUSE_LL, LowLevelMouseProc, nullptr, 0);
+    bool mouseHookNeeded = IsMouseHookNeeded();
+    bool keyboardHookNeeded =
+        IsKeyboardHookNeeded() || g_settings.scrollAnywhereKeys.win ||
+        g_settings.scrollAnywhereKeys.alt;
 
-    // Only needed to mask the Win/Alt key release, see LowLevelKeyboardProc.
+    HHOOK mouseHook = nullptr;
     HHOOK keyboardHook = nullptr;
-    if (g_settings.scrollAnywhereKeys.win || g_settings.scrollAnywhereKeys.alt) {
+
+    if (mouseHookNeeded) {
+        mouseHook = SetWindowsHookEx(WH_MOUSE_LL, LowLevelMouseProc, nullptr, 0);
+    }
+
+    if (keyboardHookNeeded) {
         keyboardHook =
             SetWindowsHookEx(WH_KEYBOARD_LL, LowLevelKeyboardProc, nullptr, 0);
     }
 
     SetEvent(hReadyEvent);
 
-    if (!mouseHook) {
+    if ((mouseHookNeeded && !mouseHook) ||
+        (keyboardHookNeeded && !keyboardHook)) {
         Wh_Log(L"SetWindowsHookEx failed: %u", GetLastError());
+        if (mouseHook) {
+            UnhookWindowsHookEx(mouseHook);
+        }
         if (keyboardHook) {
             UnhookWindowsHookEx(keyboardHook);
         }
@@ -2255,10 +2545,12 @@ DWORD WINAPI ScrollAnywhereThread(LPVOID lpParameter) {
         DispatchMessage(&msg);
     }
 
+    if (mouseHook) {
+        UnhookWindowsHookEx(mouseHook);
+    }
     if (keyboardHook) {
         UnhookWindowsHookEx(keyboardHook);
     }
-    UnhookWindowsHookEx(mouseHook);
     return 0;
 }
 
@@ -2440,7 +2732,7 @@ void Wh_ModAfterInit() {
         }
     }
 
-    if (IsMouseHookNeeded()) {
+    if (IsInputHookThreadNeeded()) {
         ScrollAnywhereThreadInit();
     }
 }
@@ -2504,7 +2796,8 @@ BOOL Wh_ModSettingsChanged(BOOL* bReload) {
                g_settings.middleClickToMute != prevMiddleClickToMute;
     if (!*bReload) {
         ScrollAnywhereThreadUninit();
-        if (IsMouseHookNeeded()) {
+
+        if (IsInputHookThreadNeeded()) {
             ScrollAnywhereThreadInit();
         }
     }
