@@ -140,6 +140,7 @@ shift options allow fine-tuning in both directions.
 #include <winrt/Windows.UI.Core.h>
 #include <winrt/Windows.UI.Xaml.Controls.h>
 #include <winrt/Windows.UI.Xaml.Media.h>
+#include <winrt/Windows.UI.Xaml.h>
 
 #include <algorithm>
 #include <atomic>
@@ -990,6 +991,7 @@ std::optional<HorizontalAlignment> g_previousHorizontalAlignment;
 winrt::weak_ref<DependencyObject> g_frameRootWeakRef;
 int64_t g_verticalAlignmentPropertyChangedToken;
 int64_t g_horizontalAlignmentPropertyChangedToken;
+winrt::event_token g_frameRootSizeChangedToken;
 winrt::event_token g_visibilityChangedToken;
 
 HWND GetCoreWnd() {
@@ -1139,11 +1141,22 @@ void ApplyStyleClassicStartMenu(FrameworkElement content, HMONITOR monitor) {
         }
 
         // Keep the start menu within the monitor work area, which the canvas
-        // spans.
-        double maxTop = canvasHeight - startSizingFrame.ActualHeight();
+        // spans. Use the monitor geometry rather than the canvas size, which
+        // may be stale right after the menu moves to a monitor with a different
+        // resolution.
+        UINT clampDpiX = 96;
+        UINT clampDpiY = 96;
+        GetDpiForMonitor(monitor, MDT_DEFAULT, &clampDpiX, &clampDpiY);
+        double clampScale = clampDpiX / 96.0;
+        double workWidth =
+            (monitorInfo.rcWork.right - monitorInfo.rcWork.left) / clampScale;
+        double workHeight =
+            (monitorInfo.rcWork.bottom - monitorInfo.rcWork.top) / clampScale;
+
+        double maxTop = workHeight - startSizingFrame.ActualHeight();
         newTop = std::clamp(newTop, 0.0, maxTop < 0 ? 0.0 : maxTop);
         if (!std::isnan(newLeft)) {
-            double maxLeft = canvasWidth - startSizingFrame.ActualWidth();
+            double maxLeft = workWidth - startSizingFrame.ActualWidth();
             newLeft = std::clamp(newLeft, 0.0, maxLeft < 0 ? 0.0 : maxLeft);
         }
 
@@ -1257,107 +1270,128 @@ void ApplyStyleRedesignedStartMenu(FrameworkElement content, HMONITOR monitor) {
                 break;
 
             case StartMenuHorizontalAlignment::startButtonLeft:
-                frameRoot.HorizontalAlignment(HorizontalAlignment::Left);
-                break;
-
             case StartMenuHorizontalAlignment::startButtonCenter:
-                frameRoot.HorizontalAlignment(HorizontalAlignment::Center);
-                break;
-
             case StartMenuHorizontalAlignment::startButtonRight:
-                frameRoot.HorizontalAlignment(HorizontalAlignment::Right);
+                // Left alignment anchors the frame's base position to the
+                // monitor's left edge, which doesn't depend on the container
+                // width. The exact placement is done below via an absolute
+                // offset, so it stays correct even when the menu opens on a
+                // monitor whose width the container hasn't picked up yet.
+                frameRoot.HorizontalAlignment(HorizontalAlignment::Left);
                 break;
         }
     }
 
     frameRoot.Margin(margin);
 
-    // The start button alignment options offset the frame, whose horizontal
-    // alignment is set to match above, from the matching edge/center of the
-    // monitor to the same edge/center of the start button.
-    double horizontalBaseOffset = 0;
+    double horizontalOffset = g_settings.startMenu.horizontalShift;
     if (!g_unloading) {
-        std::optional<RECT> startButtonBounds;
         switch (g_settings.startMenu.horizontalAlignment) {
             case StartMenuHorizontalAlignment::startButtonLeft:
             case StartMenuHorizontalAlignment::startButtonCenter:
-            case StartMenuHorizontalAlignment::startButtonRight:
-                startButtonBounds = GetStartButtonBoundsForMonitor(monitor);
+            case StartMenuHorizontalAlignment::startButtonRight: {
+                // The frame uses Left alignment, so its base position is the
+                // monitor's left edge. Place the frame's matching edge/center
+                // at the start button's, using an absolute offset derived from
+                // the monitor geometry and the frame's own width. Nothing here
+                // depends on the container width, which may be stale right
+                // after the menu moves to a monitor with a different
+                // resolution.
+                std::optional<RECT> startButtonBounds =
+                    GetStartButtonBoundsForMonitor(monitor);
+                if (!startButtonBounds) {
+                    break;
+                }
+
+                MONITORINFO monitorInfo{
+                    .cbSize = sizeof(MONITORINFO),
+                };
+                GetMonitorInfo(monitor, &monitorInfo);
+
+                UINT monitorDpiX = 96;
+                UINT monitorDpiY = 96;
+                GetDpiForMonitor(monitor, MDT_DEFAULT, &monitorDpiX,
+                                 &monitorDpiY);
+
+                double scale = monitorDpiX / 96.0;
+                double frameWidth = frameRoot.ActualWidth();
+                double startButtonLeft =
+                    (startButtonBounds->left - monitorInfo.rcMonitor.left) /
+                    scale;
+                double startButtonRight =
+                    (startButtonBounds->right - monitorInfo.rcMonitor.left) /
+                    scale;
+
+                double newLeft;
+                switch (g_settings.startMenu.horizontalAlignment) {
+                    case StartMenuHorizontalAlignment::startButtonCenter:
+                        newLeft = (startButtonLeft + startButtonRight) / 2 -
+                                  frameWidth / 2;
+                        break;
+
+                    case StartMenuHorizontalAlignment::startButtonRight:
+                        newLeft = startButtonRight - frameWidth;
+                        break;
+
+                    default:  // startButtonLeft
+                        newLeft = startButtonLeft;
+                        break;
+                }
+
+                newLeft += g_settings.startMenu.horizontalShift;
+
+                // Keep the start menu within the monitor work area, which spans
+                // the monitor horizontally.
+                double workLeft =
+                    (monitorInfo.rcWork.left - monitorInfo.rcMonitor.left) /
+                    scale;
+                double workRight =
+                    (monitorInfo.rcWork.right - monitorInfo.rcMonitor.left) /
+                    scale;
+                double maxLeft = workRight - frameWidth;
+                if (maxLeft < workLeft) {
+                    maxLeft = workLeft;
+                }
+                if (frameWidth > 0) {
+                    newLeft = std::clamp(newLeft, workLeft, maxLeft);
+                }
+
+                horizontalOffset = newLeft;
                 break;
+            }
 
             default:
+                // Screen alignment keeps the frame within the container; only a
+                // shift can move it out, so clamp the shifted position to the
+                // work area, which the container spans.
+                if (g_settings.startMenu.horizontalAlignment !=
+                    StartMenuHorizontalAlignment::windowsDefault) {
+                    double containerWidth = content.ActualWidth();
+                    double frameWidth = frameRoot.ActualWidth();
+                    if (frameWidth > 0 && frameWidth <= containerWidth) {
+                        double alignmentLeft = 0;
+                        switch (g_settings.startMenu.horizontalAlignment) {
+                            case StartMenuHorizontalAlignment::center:
+                                alignmentLeft =
+                                    (containerWidth - frameWidth) / 2;
+                                break;
+
+                            case StartMenuHorizontalAlignment::right:
+                                alignmentLeft = containerWidth - frameWidth;
+                                break;
+
+                            default:  // left
+                                alignmentLeft = 0;
+                                break;
+                        }
+
+                        double clampedLeft =
+                            std::clamp(alignmentLeft + horizontalOffset, 0.0,
+                                       containerWidth - frameWidth);
+                        horizontalOffset = clampedLeft - alignmentLeft;
+                    }
+                }
                 break;
-        }
-
-        if (startButtonBounds) {
-            MONITORINFO monitorInfo{
-                .cbSize = sizeof(MONITORINFO),
-            };
-            GetMonitorInfo(monitor, &monitorInfo);
-
-            UINT monitorDpiX = 96;
-            UINT monitorDpiY = 96;
-            GetDpiForMonitor(monitor, MDT_DEFAULT, &monitorDpiX, &monitorDpiY);
-
-            double scale = monitorDpiX / 96.0;
-            double containerWidth = content.ActualWidth();
-            double startButtonLeft =
-                (startButtonBounds->left - monitorInfo.rcMonitor.left) / scale;
-            double startButtonRight =
-                (startButtonBounds->right - monitorInfo.rcMonitor.left) / scale;
-
-            switch (g_settings.startMenu.horizontalAlignment) {
-                case StartMenuHorizontalAlignment::startButtonLeft:
-                    horizontalBaseOffset = startButtonLeft;
-                    break;
-
-                case StartMenuHorizontalAlignment::startButtonCenter:
-                    horizontalBaseOffset =
-                        (startButtonLeft + startButtonRight) / 2 -
-                        containerWidth / 2;
-                    break;
-
-                case StartMenuHorizontalAlignment::startButtonRight:
-                    horizontalBaseOffset = startButtonRight - containerWidth;
-                    break;
-
-                default:
-                    break;
-            }
-        }
-    }
-
-    double horizontalOffset =
-        horizontalBaseOffset + g_settings.startMenu.horizontalShift;
-
-    // Keep the start menu within the monitor work area, which the container
-    // spans, by clamping the frame's left edge for the alignment modes we
-    // position. Windows controls the position for the default alignment.
-    if (!g_unloading && g_settings.startMenu.horizontalAlignment !=
-                            StartMenuHorizontalAlignment::windowsDefault) {
-        double containerWidth = content.ActualWidth();
-        double frameWidth = frameRoot.ActualWidth();
-        if (frameWidth > 0 && frameWidth <= containerWidth) {
-            double alignmentLeft = 0;
-            switch (g_settings.startMenu.horizontalAlignment) {
-                case StartMenuHorizontalAlignment::center:
-                case StartMenuHorizontalAlignment::startButtonCenter:
-                    alignmentLeft = (containerWidth - frameWidth) / 2;
-                    break;
-
-                case StartMenuHorizontalAlignment::right:
-                case StartMenuHorizontalAlignment::startButtonRight:
-                    alignmentLeft = containerWidth - frameWidth;
-                    break;
-
-                default:
-                    alignmentLeft = 0;
-                    break;
-            }
-
-            double clampedLeft = std::clamp(alignmentLeft + horizontalOffset,
-                                            0.0, containerWidth - frameWidth);
-            horizontalOffset = clampedLeft - alignmentLeft;
         }
     }
 
@@ -1399,6 +1433,20 @@ void ApplyStyleRedesignedStartMenu(FrameworkElement content, HMONITOR monitor) {
                         ApplyStyle();
                     }
                 });
+
+        // Re-apply when the frame is resized. When the menu opens on a monitor
+        // with a different DPI, its rasterization scale (and therefore the
+        // frame and container sizes) updates after the first apply, which would
+        // otherwise leave the start button alignment offset by a stale amount.
+        g_frameRootSizeChangedToken = frameRoot.SizeChanged(
+            [](winrt::Windows::Foundation::IInspectable const& sender,
+               SizeChangedEventArgs const& args) {
+                Wh_Log(L"FrameRoot size changed to %fx%f", args.NewSize().Width,
+                       args.NewSize().Height);
+                if (!g_inApplyStyle) {
+                    ApplyStyle();
+                }
+            });
     }
 }
 
@@ -1495,6 +1543,13 @@ void Uninit() {
                 FrameworkElement::HorizontalAlignmentProperty(),
                 g_horizontalAlignmentPropertyChangedToken);
             g_horizontalAlignmentPropertyChangedToken = 0;
+        }
+
+        if (g_frameRootSizeChangedToken) {
+            if (auto frameRoot = frameRootDo.try_as<FrameworkElement>()) {
+                frameRoot.SizeChanged(g_frameRootSizeChangedToken);
+            }
+            g_frameRootSizeChangedToken = {};
         }
     }
 
