@@ -10276,6 +10276,68 @@ void RestoreCustomizationsForVisualStateGroup(
     }
 }
 
+// Diagnostics for the ColumnDefinitions layout workaround below. The workaround
+// doesn't fix the layout on all machines, so log the sizes of the relevant
+// elements at each step to compare working and non-working configurations.
+void LogLayoutElementSize(PCWSTR label,
+                          const winrt::Windows::UI::Xaml::FrameworkElement&
+                              element) {
+    if (!element) {
+        Wh_Log(L"  %s: (null)", label);
+        return;
+    }
+
+    Wh_Log(
+        L"  %s: class=%s name=%s actual=%.1fx%.1f size=%.1fx%.1f "
+        L"min=%.1fx%.1f max=%.1fx%.1f visibility=%d",
+        label, winrt::get_class_name(element).c_str(), element.Name().c_str(),
+        element.ActualWidth(), element.ActualHeight(), element.Width(),
+        element.Height(), element.MinWidth(), element.MinHeight(),
+        element.MaxWidth(), element.MaxHeight(),
+        static_cast<int>(element.Visibility()));
+}
+
+void LogLayoutGridColumns(PCWSTR label,
+                          const winrt::Windows::UI::Xaml::FrameworkElement&
+                              element) {
+    auto grid = element.try_as<Controls::Grid>();
+    if (!grid) {
+        Wh_Log(L"  %s: not a Grid", label);
+        return;
+    }
+
+    auto colDefs = grid.ColumnDefinitions();
+    Wh_Log(L"  %s: %u column definition(s)", label, colDefs.Size());
+    for (uint32_t i = 0; i < colDefs.Size(); i++) {
+        auto colDef = colDefs.GetAt(i);
+        auto width = colDef.Width();
+        // GridUnitType: 0=Auto, 1=Pixel, 2=Star.
+        Wh_Log(L"    col[%u]: unit=%d value=%.2f actual=%.1f min=%.1f max=%.1f",
+               i, static_cast<int>(width.GridUnitType), width.Value,
+               colDef.ActualWidth(), colDef.MinWidth(), colDef.MaxWidth());
+    }
+}
+
+void LogLayoutGridChildren(PCWSTR label,
+                           const winrt::Windows::UI::Xaml::FrameworkElement&
+                               element) {
+    int count = Media::VisualTreeHelper::GetChildrenCount(element);
+    Wh_Log(L"  %s: %d child(ren)", label, count);
+    for (int i = 0; i < count; i++) {
+        auto child = Media::VisualTreeHelper::GetChild(element, i)
+                         .try_as<winrt::Windows::UI::Xaml::FrameworkElement>();
+        if (!child) {
+            continue;
+        }
+
+        Wh_Log(L"    child[%d]: class=%s name=%s col=%d actual=%.1fx%.1f "
+               L"visibility=%d",
+               i, winrt::get_class_name(child).c_str(), child.Name().c_str(),
+               Controls::Grid::GetColumn(child), child.ActualWidth(),
+               child.ActualHeight(), static_cast<int>(child.Visibility()));
+    }
+}
+
 // Workaround to the breaking layout with custom column definitions on multiple
 // taskbars:
 // https://github.com/ramensoftware/windows-11-taskbar-styling-guide/issues/507
@@ -10346,14 +10408,45 @@ void HookFirstTaskbarFrameLayoutWorkaround(
 
     auto savedValue = *propIt->second.customValue;
 
+    std::wstring savedValueClass = L"(non-inspectable)";
+    if (auto* inspectable =
+            std::get_if<winrt::Windows::Foundation::IInspectable>(&savedValue)) {
+        savedValueClass =
+            *inspectable ? winrt::get_class_name(*inspectable).c_str()
+                         : L"(null)";
+    }
+
+    Wh_Log(L"ColumnDefinitions workaround: hooking, saved value class=%s",
+           savedValueClass.c_str());
+    LogLayoutElementSize(L"element (at hook)", element);
+    LogLayoutElementSize(L"parent (at hook)", parent);
+    LogLayoutGridColumns(L"parent cols (at hook)", parent);
+    LogLayoutGridChildren(L"parent children (at hook)", parent);
+
     auto weakParent = winrt::make_weak(parent);
     g_workaroundSizeChangedRevoker = element.SizeChanged(
-        winrt::auto_revoke, [weakParent, savedValue = std::move(savedValue),
-                             colDefsProp](auto&&, auto&&) {
+        winrt::auto_revoke,
+        [weakParent, savedValue = std::move(savedValue), colDefsProp](
+            winrt::Windows::Foundation::IInspectable const& sender,
+            winrt::Windows::UI::Xaml::SizeChangedEventArgs const& args) {
             auto parent = weakParent.get();
             if (!parent) {
                 return;
             }
+
+            auto element =
+                sender.try_as<winrt::Windows::UI::Xaml::FrameworkElement>();
+
+            auto previousSize = args.PreviousSize();
+            auto newSize = args.NewSize();
+            Wh_Log(L"ColumnDefinitions workaround: SizeChanged %.1fx%.1f -> "
+                   L"%.1fx%.1f",
+                   previousSize.Width, previousSize.Height, newSize.Width,
+                   newSize.Height);
+            LogLayoutElementSize(L"element (before)", element);
+            LogLayoutElementSize(L"parent (before)", parent);
+            LogLayoutGridColumns(L"parent cols (before)", parent);
+            LogLayoutGridChildren(L"parent children (before)", parent);
 
             // Suppress the per-DP property-changed callback installed by the
             // customization machinery so re-setting doesn't cascade.
@@ -10363,12 +10456,42 @@ void HookFirstTaskbarFrameLayoutWorkaround(
                 SetOrClearValue(
                     parent, colDefsProp,
                     PropertyOverrideValue{DependencyProperty::UnsetValue()});
+                LogLayoutElementSize(L"parent (after clear)", parent);
+                LogLayoutGridColumns(L"parent cols (after clear)", parent);
+
                 SetOrClearValue(parent, colDefsProp, savedValue);
+                LogLayoutElementSize(L"parent (after set)", parent);
+                LogLayoutGridColumns(L"parent cols (after set)", parent);
             } catch (...) {
                 Wh_Log(L"Error %08X: %s", winrt::to_hresult(),
                        winrt::to_message().c_str());
             }
             g_elementPropertyModifying = false;
+
+            // Layout is recomputed asynchronously, so the actual sizes above
+            // still reflect the pre-workaround layout pass. Log again after the
+            // next layout completes to capture the result the workaround
+            // produced.
+            try {
+                parent.Dispatcher().TryRunAsync(
+                    winrt::Windows::UI::Core::CoreDispatcherPriority::Low,
+                    [weakParent]() {
+                        auto parent = weakParent.get();
+                        if (!parent) {
+                            return;
+                        }
+
+                        Wh_Log(L"ColumnDefinitions workaround: after layout");
+                        LogLayoutElementSize(L"parent (after layout)", parent);
+                        LogLayoutGridColumns(L"parent cols (after layout)",
+                                             parent);
+                        LogLayoutGridChildren(L"parent children (after layout)",
+                                              parent);
+                    });
+            } catch (...) {
+                Wh_Log(L"Error %08X: %s", winrt::to_hresult(),
+                       winrt::to_message().c_str());
+            }
         });
 
     Wh_Log(L"Hooked TaskbarFrame SizeChanged for ColumnDefinitions workaround");
