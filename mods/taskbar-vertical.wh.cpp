@@ -3832,6 +3832,7 @@ int64_t g_canvasLeftPropertyChangedToken;
 std::optional<HorizontalAlignment> g_previousHorizontalAlignment;
 winrt::weak_ref<DependencyObject> g_frameRootWeakRef;
 int64_t g_verticalAlignmentPropertyChangedToken;
+int64_t g_horizontalAlignmentPropertyChangedToken;
 winrt::event_token g_visibilityChangedToken;
 
 HWND GetCoreWnd() {
@@ -4112,6 +4113,19 @@ void ApplyStyleRedesignedStartMenu(FrameworkElement content,
                         ApplyStyle();
                     }
                 });
+
+        g_horizontalAlignmentPropertyChangedToken =
+            frameRootDo.RegisterPropertyChangedCallback(
+                FrameworkElement::HorizontalAlignmentProperty(),
+                [](DependencyObject sender, DependencyProperty property) {
+                    auto alignment =
+                        sender.as<FrameworkElement>().HorizontalAlignment();
+                    Wh_Log(L"FrameRoot HorizontalAlignment changed to %d",
+                           static_cast<int>(alignment));
+                    if (!g_inApplyStyle) {
+                        ApplyStyle();
+                    }
+                });
     }
 }
 
@@ -4203,6 +4217,13 @@ void Uninit() {
                 FrameworkElement::VerticalAlignmentProperty(),
                 g_verticalAlignmentPropertyChangedToken);
             g_verticalAlignmentPropertyChangedToken = 0;
+        }
+
+        if (g_horizontalAlignmentPropertyChangedToken) {
+            frameRootDo.UnregisterPropertyChangedCallback(
+                FrameworkElement::HorizontalAlignmentProperty(),
+                g_horizontalAlignmentPropertyChangedToken);
+            g_horizontalAlignmentPropertyChangedToken = 0;
         }
     }
 
