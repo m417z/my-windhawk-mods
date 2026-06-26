@@ -52,8 +52,9 @@ GitHub](https://github.com/ramensoftware/windhawk-mods/issues/1053#issuecomment-
 ## Start menu
 
 The Start menu can be repositioned both horizontally and vertically. You can
-align it to the left, center, or right of the screen, and to the top, center, or
-bottom. Pixel shift options allow fine-tuning in both directions.
+align it to the left, center, or right of the screen, or to the left, center, or
+right of the Start button, and vertically to the top, center, or bottom. Pixel
+shift options allow fine-tuning in both directions.
 */
 // ==/WindhawkModReadme==
 
@@ -99,6 +100,9 @@ bottom. Pixel shift options allow fine-tuning in both directions.
     - left: Left
     - center: Center
     - right: Right
+    - startButtonLeft: Left-aligned to the Start button
+    - startButtonCenter: Center-aligned to the Start button
+    - startButtonRight: Right-aligned to the Start button
   - horizontalShift: 0
     $name: Horizontal shift
     $description: >-
@@ -137,6 +141,7 @@ bottom. Pixel shift options allow fine-tuning in both directions.
 #include <winrt/Windows.UI.Xaml.Controls.h>
 #include <winrt/Windows.UI.Xaml.Media.h>
 
+#include <algorithm>
 #include <atomic>
 #include <functional>
 #include <future>
@@ -163,6 +168,9 @@ enum class StartMenuHorizontalAlignment {
     left,
     center,
     right,
+    startButtonLeft,
+    startButtonCenter,
+    startButtonRight,
 };
 
 enum class StartMenuVerticalAlignment {
@@ -562,6 +570,119 @@ std::optional<RECT> GetShowDesktopButtonBounds(HWND hTaskbarWnd) {
     return future.get();
 }
 
+// Must run on a worker thread to avoid COM deadlock when called from the
+// taskbar thread.
+std::optional<RECT> GetStartButtonBoundsWorker(HWND hTaskbarWnd) {
+    HRESULT hrInit = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
+    if (FAILED(hrInit) && hrInit != RPC_E_CHANGED_MODE) {
+        Wh_Log(L"Failed to initialize COM: 0x%08X", hrInit);
+        return std::nullopt;
+    }
+
+    struct ComUninit {
+        HRESULT hr;
+        ~ComUninit() {
+            if (SUCCEEDED(hr)) {
+                CoUninitialize();
+            }
+        }
+    } comUninit{hrInit};
+
+    winrt::com_ptr<IUIAutomation> automation =
+        winrt::try_create_instance<IUIAutomation>(CLSID_CUIAutomation);
+    if (!automation) {
+        Wh_Log(L"Failed to create IUIAutomation instance");
+        return std::nullopt;
+    }
+
+    _bstr_t automationIdBstr(L"StartButton");
+    VARIANT automationIdVariant{};
+    automationIdVariant.vt = VT_BSTR;
+    automationIdVariant.bstrVal = automationIdBstr.GetBSTR();
+
+    winrt::com_ptr<IUIAutomationCondition> condition;
+    HRESULT hr = automation->CreatePropertyCondition(
+        UIA_AutomationIdPropertyId, automationIdVariant, condition.put());
+    if (FAILED(hr) || !condition) {
+        Wh_Log(L"Failed to create condition");
+        return std::nullopt;
+    }
+
+    // The taskbar content is hosted in DesktopWindowContentBridge child
+    // windows, which are HWND hosts rather than UI Automation children, so each
+    // one is queried directly until the start button is found.
+    HWND hBridgeWnd = nullptr;
+    while ((hBridgeWnd = FindWindowEx(
+                hTaskbarWnd, hBridgeWnd,
+                L"Windows.UI.Composition.DesktopWindowContentBridge",
+                nullptr)) != nullptr) {
+        winrt::com_ptr<IUIAutomationElement> element;
+        hr = automation->ElementFromHandle(hBridgeWnd, element.put());
+        if (FAILED(hr) || !element) {
+            continue;
+        }
+
+        winrt::com_ptr<IUIAutomationElement> startButton;
+        hr = element->FindFirst(TreeScope_Descendants, condition.get(),
+                                startButton.put());
+        if (FAILED(hr) || !startButton) {
+            continue;
+        }
+
+        RECT boundingRect;
+        hr = startButton->get_CurrentBoundingRectangle(&boundingRect);
+        if (FAILED(hr)) {
+            Wh_Log(L"Failed to get bounding rectangle");
+            return std::nullopt;
+        }
+
+        Wh_Log(L"StartButton bounds: %d,%d,%d,%d", boundingRect.left,
+               boundingRect.top, boundingRect.right, boundingRect.bottom);
+
+        return boundingRect;
+    }
+
+    Wh_Log(L"Failed to find StartButton");
+    return std::nullopt;
+}
+
+std::optional<RECT> GetStartButtonBounds(HWND hTaskbarWnd) {
+    // Run on a separate thread to avoid COM deadlock when called from the
+    // taskbar thread.
+    auto future =
+        std::async(std::launch::async, GetStartButtonBoundsWorker, hTaskbarWnd);
+
+    // Wait with timeout.
+    if (future.wait_for(std::chrono::milliseconds(1000)) ==
+        std::future_status::timeout) {
+        Wh_Log(L"GetStartButtonBounds timed out");
+        return std::nullopt;
+    }
+
+    return future.get();
+}
+
+std::optional<RECT> GetStartButtonBoundsForMonitor(HMONITOR monitor) {
+    HWND hTaskbarWnd = GetTaskbarForMonitor(monitor);
+    if (!hTaskbarWnd) {
+        return std::nullopt;
+    }
+
+    auto boundingRect = GetStartButtonBounds(hTaskbarWnd);
+    if (!boundingRect) {
+        return std::nullopt;
+    }
+
+    UINT monitorDpiX = 96;
+    UINT monitorDpiY = 96;
+    GetDpiForMonitor(monitor, MDT_DEFAULT, &monitorDpiX, &monitorDpiY);
+
+    // Extend the bounding rectangle to account for the Start menu shadows.
+    boundingRect->left -= MulDiv(10, monitorDpiX, 96);
+    boundingRect->right += MulDiv(10, monitorDpiX, 96);
+    return boundingRect;
+}
+
 int CalculateAlignedX(
     const RECT& rcWork,
     int width,
@@ -719,6 +840,32 @@ HRESULT WINAPI DwmSetWindowAttribute_Hook(HWND hwnd,
             case StartMenuHorizontalAlignment::right:
                 xNew = monitorInfo.rcWork.right - cx;
                 break;
+
+            case StartMenuHorizontalAlignment::startButtonLeft: {
+                std::optional<RECT> startButtonBounds =
+                    GetStartButtonBoundsForMonitor(monitor);
+                xNew = startButtonBounds ? startButtonBounds->left : x;
+                break;
+            }
+
+            case StartMenuHorizontalAlignment::startButtonCenter: {
+                std::optional<RECT> startButtonBounds =
+                    GetStartButtonBoundsForMonitor(monitor);
+                xNew =
+                    startButtonBounds
+                        ? (startButtonBounds->left + startButtonBounds->right) /
+                                  2 -
+                              cx / 2
+                        : x;
+                break;
+            }
+
+            case StartMenuHorizontalAlignment::startButtonRight: {
+                std::optional<RECT> startButtonBounds =
+                    GetStartButtonBoundsForMonitor(monitor);
+                xNew = startButtonBounds ? startButtonBounds->right - cx : x;
+                break;
+            }
         }
 
         xNew += MulDiv(g_settings.startMenu.horizontalShift, monitorDpiX, 96);
@@ -741,6 +888,12 @@ HRESULT WINAPI DwmSetWindowAttribute_Hook(HWND hwnd,
         }
 
         yNew += MulDiv(g_settings.startMenu.verticalShift, monitorDpiY, 96);
+
+        // Keep the search menu within the monitor work area.
+        xNew = std::min(xNew, static_cast<int>(monitorInfo.rcWork.right - cx));
+        xNew = std::max(xNew, static_cast<int>(monitorInfo.rcWork.left));
+        yNew = std::min(yNew, static_cast<int>(monitorInfo.rcWork.bottom - cy));
+        yNew = std::max(yNew, static_cast<int>(monitorInfo.rcWork.top));
 
         if (xNew == x && yNew == y) {
             return original();
@@ -930,6 +1083,49 @@ void ApplyStyleClassicStartMenu(FrameworkElement content, HMONITOR monitor) {
                 newLeft = canvasWidth - startSizingFrame.ActualWidth() -
                           kStartMenuMargin;
                 break;
+
+            case StartMenuHorizontalAlignment::startButtonLeft:
+            case StartMenuHorizontalAlignment::startButtonCenter:
+            case StartMenuHorizontalAlignment::startButtonRight: {
+                newLeft = std::numeric_limits<double>::quiet_NaN();
+
+                std::optional<RECT> startButtonBounds =
+                    GetStartButtonBoundsForMonitor(monitor);
+                if (startButtonBounds) {
+                    UINT monitorDpiX = 96;
+                    UINT monitorDpiY = 96;
+                    GetDpiForMonitor(monitor, MDT_DEFAULT, &monitorDpiX,
+                                     &monitorDpiY);
+
+                    double scale = monitorDpiX / 96.0;
+                    double startButtonLeft =
+                        (startButtonBounds->left - monitorInfo.rcMonitor.left) /
+                        scale;
+                    double startButtonRight = (startButtonBounds->right -
+                                               monitorInfo.rcMonitor.left) /
+                                              scale;
+
+                    switch (g_settings.startMenu.horizontalAlignment) {
+                        case StartMenuHorizontalAlignment::startButtonLeft:
+                            newLeft = startButtonLeft;
+                            break;
+
+                        case StartMenuHorizontalAlignment::startButtonCenter:
+                            newLeft = (startButtonLeft + startButtonRight) / 2 -
+                                      startSizingFrame.ActualWidth() / 2;
+                            break;
+
+                        case StartMenuHorizontalAlignment::startButtonRight:
+                            newLeft = startButtonRight -
+                                      startSizingFrame.ActualWidth();
+                            break;
+
+                        default:
+                            break;
+                    }
+                }
+                break;
+            }
         }
 
         newTop += g_settings.startMenu.verticalShift;
@@ -939,6 +1135,15 @@ void ApplyStyleClassicStartMenu(FrameworkElement content, HMONITOR monitor) {
             }
 
             newLeft += g_settings.startMenu.horizontalShift;
+        }
+
+        // Keep the start menu within the monitor work area, which the canvas
+        // spans.
+        double maxTop = canvasHeight - startSizingFrame.ActualHeight();
+        newTop = std::clamp(newTop, 0.0, maxTop < 0 ? 0.0 : maxTop);
+        if (!std::isnan(newLeft)) {
+            double maxLeft = canvasWidth - startSizingFrame.ActualWidth();
+            newLeft = std::clamp(newLeft, 0.0, maxLeft < 0 ? 0.0 : maxLeft);
         }
 
         Wh_Log(L"Setting Canvas.Top to %f, Canvas.Left to %f", newTop, newLeft);
@@ -984,7 +1189,7 @@ void ApplyStyleClassicStartMenu(FrameworkElement content, HMONITOR monitor) {
     }
 }
 
-void ApplyStyleRedesignedStartMenu(FrameworkElement content) {
+void ApplyStyleRedesignedStartMenu(FrameworkElement content, HMONITOR monitor) {
     FrameworkElement frameRoot = FindChildByName(content, L"FrameRoot");
     if (!frameRoot) {
         Wh_Log(L"Failed to find Start menu frame root");
@@ -1049,14 +1254,115 @@ void ApplyStyleRedesignedStartMenu(FrameworkElement content) {
             case StartMenuHorizontalAlignment::right:
                 frameRoot.HorizontalAlignment(HorizontalAlignment::Right);
                 break;
+
+            case StartMenuHorizontalAlignment::startButtonLeft:
+                frameRoot.HorizontalAlignment(HorizontalAlignment::Left);
+                break;
+
+            case StartMenuHorizontalAlignment::startButtonCenter:
+                frameRoot.HorizontalAlignment(HorizontalAlignment::Center);
+                break;
+
+            case StartMenuHorizontalAlignment::startButtonRight:
+                frameRoot.HorizontalAlignment(HorizontalAlignment::Right);
+                break;
         }
     }
 
     frameRoot.Margin(margin);
 
+    // The start button alignment options offset the frame, whose horizontal
+    // alignment is set to match above, from the matching edge/center of the
+    // monitor to the same edge/center of the start button.
+    double horizontalBaseOffset = 0;
+    if (!g_unloading) {
+        std::optional<RECT> startButtonBounds;
+        switch (g_settings.startMenu.horizontalAlignment) {
+            case StartMenuHorizontalAlignment::startButtonLeft:
+            case StartMenuHorizontalAlignment::startButtonCenter:
+            case StartMenuHorizontalAlignment::startButtonRight:
+                startButtonBounds = GetStartButtonBoundsForMonitor(monitor);
+                break;
+
+            default:
+                break;
+        }
+
+        if (startButtonBounds) {
+            MONITORINFO monitorInfo{
+                .cbSize = sizeof(MONITORINFO),
+            };
+            GetMonitorInfo(monitor, &monitorInfo);
+
+            UINT monitorDpiX = 96;
+            UINT monitorDpiY = 96;
+            GetDpiForMonitor(monitor, MDT_DEFAULT, &monitorDpiX, &monitorDpiY);
+
+            double scale = monitorDpiX / 96.0;
+            double containerWidth = content.ActualWidth();
+            double startButtonLeft =
+                (startButtonBounds->left - monitorInfo.rcMonitor.left) / scale;
+            double startButtonRight =
+                (startButtonBounds->right - monitorInfo.rcMonitor.left) / scale;
+
+            switch (g_settings.startMenu.horizontalAlignment) {
+                case StartMenuHorizontalAlignment::startButtonLeft:
+                    horizontalBaseOffset = startButtonLeft;
+                    break;
+
+                case StartMenuHorizontalAlignment::startButtonCenter:
+                    horizontalBaseOffset =
+                        (startButtonLeft + startButtonRight) / 2 -
+                        containerWidth / 2;
+                    break;
+
+                case StartMenuHorizontalAlignment::startButtonRight:
+                    horizontalBaseOffset = startButtonRight - containerWidth;
+                    break;
+
+                default:
+                    break;
+            }
+        }
+    }
+
+    double horizontalOffset =
+        horizontalBaseOffset + g_settings.startMenu.horizontalShift;
+
+    // Keep the start menu within the monitor work area, which the container
+    // spans, by clamping the frame's left edge for the alignment modes we
+    // position. Windows controls the position for the default alignment.
+    if (!g_unloading && g_settings.startMenu.horizontalAlignment !=
+                            StartMenuHorizontalAlignment::windowsDefault) {
+        double containerWidth = content.ActualWidth();
+        double frameWidth = frameRoot.ActualWidth();
+        if (frameWidth > 0 && frameWidth <= containerWidth) {
+            double alignmentLeft = 0;
+            switch (g_settings.startMenu.horizontalAlignment) {
+                case StartMenuHorizontalAlignment::center:
+                case StartMenuHorizontalAlignment::startButtonCenter:
+                    alignmentLeft = (containerWidth - frameWidth) / 2;
+                    break;
+
+                case StartMenuHorizontalAlignment::right:
+                case StartMenuHorizontalAlignment::startButtonRight:
+                    alignmentLeft = containerWidth - frameWidth;
+                    break;
+
+                default:
+                    alignmentLeft = 0;
+                    break;
+            }
+
+            double clampedLeft = std::clamp(alignmentLeft + horizontalOffset,
+                                            0.0, containerWidth - frameWidth);
+            horizontalOffset = clampedLeft - alignmentLeft;
+        }
+    }
+
     Media::TranslateTransform offsetTransform;
     if (!g_unloading) {
-        offsetTransform.X(g_settings.startMenu.horizontalShift);
+        offsetTransform.X(horizontalOffset);
         offsetTransform.Y(g_settings.startMenu.verticalShift);
     }
 
@@ -1099,7 +1405,7 @@ void ApplyStyle() {
     if (contentClassName == L"Windows.UI.Xaml.Controls.Canvas") {
         ApplyStyleClassicStartMenu(content, monitor);
     } else if (contentClassName == L"StartMenu.StartBlendedFlexFrame") {
-        ApplyStyleRedesignedStartMenu(content);
+        ApplyStyleRedesignedStartMenu(content, monitor);
     } else {
         Wh_Log(L"Error: Unsupported Start menu content class name");
     }
@@ -1434,6 +1740,16 @@ void LoadSettings() {
     } else if (wcscmp(startMenuHorizontalAlignment, L"right") == 0) {
         g_settings.startMenu.horizontalAlignment =
             StartMenuHorizontalAlignment::right;
+    } else if (wcscmp(startMenuHorizontalAlignment, L"startButtonLeft") == 0) {
+        g_settings.startMenu.horizontalAlignment =
+            StartMenuHorizontalAlignment::startButtonLeft;
+    } else if (wcscmp(startMenuHorizontalAlignment, L"startButtonCenter") ==
+               0) {
+        g_settings.startMenu.horizontalAlignment =
+            StartMenuHorizontalAlignment::startButtonCenter;
+    } else if (wcscmp(startMenuHorizontalAlignment, L"startButtonRight") == 0) {
+        g_settings.startMenu.horizontalAlignment =
+            StartMenuHorizontalAlignment::startButtonRight;
     }
     Wh_FreeStringSetting(startMenuHorizontalAlignment);
 
