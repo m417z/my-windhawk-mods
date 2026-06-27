@@ -2,7 +2,7 @@
 // @id              shell-flyout-positions
 // @name            Shell Flyout Positions
 // @description     Customize the position of the Notification Center, Action Center, and Start menu on Windows 11
-// @version         1.2
+// @version         1.3
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
@@ -83,6 +83,7 @@ shift options allow fine-tuning in both directions.
       ignored and Notification Center settings are used
     $options:
     - same: Same as Notification Center
+    - windowsDefault: Windows default
     - right: Right
     - center: Center
     - left: Left
@@ -148,6 +149,7 @@ shift options allow fine-tuning in both directions.
 #include <atomic>
 #include <functional>
 #include <future>
+#include <limits>
 #include <optional>
 #include <string>
 #include <vector>
@@ -210,6 +212,7 @@ std::atomic<bool> g_unloading;
 HWND g_notificationCenterWnd;
 LONG g_notificationCenterOriginalX;
 LONG g_notificationCenterCustomX = LONG_MAX;
+HMONITOR g_notificationCenterMonitor;
 HWND g_searchMenuWnd;
 LONG g_searchMenuOriginalX;
 LONG g_searchMenuOriginalY;
@@ -395,22 +398,30 @@ void RestoreNotificationCenterToDefault() {
 
     // On a settings change only restore when switched back to the Windows
     // default; on unload always restore.
-    if (!g_unloading && g_settings.notificationCenter.horizontalAlignment !=
-                            TrayHorizontalAlignment::windowsDefault) {
+    bool xIsDefault = g_settings.notificationCenter.horizontalAlignment ==
+                          TrayHorizontalAlignment::windowsDefault &&
+                      g_settings.notificationCenter.horizontalShift == 0;
+
+    if (!g_unloading && !xIsDefault) {
         return;
     }
 
-    RECT rc;
-    if (!GetWindowRect(g_notificationCenterWnd, &rc)) {
-        return;
-    }
+    HMONITOR currentMonitor =
+        MonitorFromWindow(g_notificationCenterWnd, MONITOR_DEFAULTTONEAREST);
+    if (!currentMonitor || currentMonitor == g_notificationCenterMonitor) {
+        RECT rc;
+        if (!GetWindowRect(g_notificationCenterWnd, &rc)) {
+            return;
+        }
 
-    SetWindowPos(g_notificationCenterWnd, nullptr,
-                 g_notificationCenterOriginalX, rc.top, 0, 0,
-                 SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
+        SetWindowPos(g_notificationCenterWnd, nullptr,
+                     g_notificationCenterOriginalX, rc.top, 0, 0,
+                     SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
+    }
 
     g_notificationCenterWnd = nullptr;
     g_notificationCenterCustomX = LONG_MAX;
+    g_notificationCenterMonitor = nullptr;
 }
 
 void RestoreSearchMenuToDefault() {
@@ -651,42 +662,32 @@ std::optional<RECT> GetStartButtonBoundsWorker(HWND hTaskbarWnd) {
         return std::nullopt;
     }
 
-    // The taskbar content is hosted in DesktopWindowContentBridge child
-    // windows, which are HWND hosts rather than UI Automation children, so each
-    // one is queried directly until the start button is found.
-    HWND hBridgeWnd = nullptr;
-    while ((hBridgeWnd = FindWindowEx(
-                hTaskbarWnd, hBridgeWnd,
-                L"Windows.UI.Composition.DesktopWindowContentBridge",
-                nullptr)) != nullptr) {
-        winrt::com_ptr<IUIAutomationElement> element;
-        hr = automation->ElementFromHandle(hBridgeWnd, element.put());
-        if (FAILED(hr) || !element) {
-            continue;
-        }
-
-        winrt::com_ptr<IUIAutomationElement> startButton;
-        hr = element->FindFirst(TreeScope_Descendants, condition.get(),
-                                startButton.put());
-        if (FAILED(hr) || !startButton) {
-            continue;
-        }
-
-        RECT boundingRect;
-        hr = startButton->get_CurrentBoundingRectangle(&boundingRect);
-        if (FAILED(hr)) {
-            Wh_Log(L"Failed to get bounding rectangle");
-            return std::nullopt;
-        }
-
-        Wh_Log(L"StartButton bounds: %d,%d,%d,%d", boundingRect.left,
-               boundingRect.top, boundingRect.right, boundingRect.bottom);
-
-        return boundingRect;
+    winrt::com_ptr<IUIAutomationElement> taskbarElement;
+    hr = automation->ElementFromHandle(hTaskbarWnd, taskbarElement.put());
+    if (FAILED(hr) || !taskbarElement) {
+        Wh_Log(L"Failed to get element from taskbar handle");
+        return std::nullopt;
     }
 
-    Wh_Log(L"Failed to find StartButton");
-    return std::nullopt;
+    winrt::com_ptr<IUIAutomationElement> startButton;
+    hr = taskbarElement->FindFirst(TreeScope_Descendants, condition.get(),
+                                   startButton.put());
+    if (FAILED(hr) || !startButton) {
+        Wh_Log(L"Failed to find StartButton");
+        return std::nullopt;
+    }
+
+    RECT boundingRect;
+    hr = startButton->get_CurrentBoundingRectangle(&boundingRect);
+    if (FAILED(hr)) {
+        Wh_Log(L"Failed to get bounding rectangle");
+        return std::nullopt;
+    }
+
+    Wh_Log(L"StartButton bounds: %d,%d,%d,%d", boundingRect.left,
+           boundingRect.top, boundingRect.right, boundingRect.bottom);
+
+    return boundingRect;
 }
 
 std::optional<RECT> GetStartButtonBounds(HWND hTaskbarWnd) {
@@ -1002,14 +1003,29 @@ HRESULT WINAPI DwmSetWindowAttribute_Hook(HWND hwnd,
         x = xNew;
         y = yNew;
     } else if (target == DwmTarget::ShellExperienceHost) {
-        if (g_settings.notificationCenter.horizontalAlignment ==
-            TrayHorizontalAlignment::windowsDefault) {
+        bool xIsDefault = g_settings.notificationCenter.horizontalAlignment ==
+                              TrayHorizontalAlignment::windowsDefault &&
+                          g_settings.notificationCenter.horizontalShift == 0;
+
+        if (xIsDefault) {
             // Restoring to the default is handled in Wh_ModSettingsChanged.
+            g_notificationCenterCustomX = LONG_MAX;
             return original();
         }
 
-        int xNew = CalculateAlignedXForMonitor(monitor, monitorInfo, cx,
+        int xNew;
+        if (g_settings.notificationCenter.horizontalAlignment ==
+            TrayHorizontalAlignment::windowsDefault) {
+            xNew = (g_notificationCenterCustomX != LONG_MAX &&
+                    monitor == g_notificationCenterMonitor)
+                       ? g_notificationCenterOriginalX
+                       : x;
+            xNew += MulDiv(g_settings.notificationCenter.horizontalShift,
+                           monitorDpiX, 96);
+        } else {
+            xNew = CalculateAlignedXForMonitor(monitor, monitorInfo, cx,
                                                g_settings.notificationCenter);
+        }
 
         if (xNew == x) {
             return original();
@@ -1020,6 +1036,7 @@ HRESULT WINAPI DwmSetWindowAttribute_Hook(HWND hwnd,
         g_notificationCenterWnd = hwnd;
         if (x != g_notificationCenterCustomX) {
             g_notificationCenterOriginalX = x;
+            g_notificationCenterMonitor = monitor;
         }
         x = xNew;
         g_notificationCenterCustomX = x;
@@ -1209,11 +1226,11 @@ void ApplyStyleClassicStartMenu(FrameworkElement content, HMONITOR monitor) {
 
                     double scale = monitorDpiX / 96.0;
                     double startButtonLeft =
-                        (startButtonBounds->left - monitorInfo.rcMonitor.left) /
+                        (startButtonBounds->left - monitorInfo.rcWork.left) /
                         scale;
-                    double startButtonRight = (startButtonBounds->right -
-                                               monitorInfo.rcMonitor.left) /
-                                              scale;
+                    double startButtonRight =
+                        (startButtonBounds->right - monitorInfo.rcWork.left) /
+                        scale;
 
                     switch (g_settings.startMenu.horizontalAlignment) {
                         case StartMenuHorizontalAlignment::startButtonLeft:
@@ -1796,9 +1813,12 @@ std::vector<HWND> GetCoreWindows() {
 }
 
 void AdjustCoreWindowPos(int* x, int* y, int width, int height) {
+    bool xIsDefault = g_settings.actionCenter.horizontalAlignment ==
+                          TrayHorizontalAlignment::windowsDefault &&
+                      g_settings.actionCenter.horizontalShift == 0;
+
     // The system will reposition it on its own.
-    if (g_unloading || g_settings.actionCenter.horizontalAlignment ==
-        TrayHorizontalAlignment::windowsDefault) {
+    if (g_unloading || xIsDefault) {
         return;
     }
 
@@ -1815,8 +1835,16 @@ void AdjustCoreWindowPos(int* x, int* y, int width, int height) {
     };
     GetMonitorInfo(monitor, &monitorInfo);
 
-    *x = CalculateAlignedXForMonitor(monitor, monitorInfo, width,
-                                     g_settings.actionCenter);
+    if (g_settings.actionCenter.horizontalAlignment ==
+        TrayHorizontalAlignment::windowsDefault) {
+        UINT monitorDpiX = 96;
+        UINT monitorDpiY = 96;
+        GetDpiForMonitor(monitor, MDT_DEFAULT, &monitorDpiX, &monitorDpiY);
+        *x += MulDiv(g_settings.actionCenter.horizontalShift, monitorDpiX, 96);
+    } else {
+        *x = CalculateAlignedXForMonitor(monitor, monitorInfo, width,
+                                         g_settings.actionCenter);
+    }
 }
 
 void ApplySettings() {
@@ -1924,8 +1952,11 @@ void LoadSettings() {
         g_settings.actionCenter = g_settings.notificationCenter;
     } else {
         g_settings.actionCenter.horizontalAlignment =
-            TrayHorizontalAlignment::right;
-        if (wcscmp(actionCenterHorizontalAlignment, L"center") == 0) {
+            TrayHorizontalAlignment::windowsDefault;
+        if (wcscmp(actionCenterHorizontalAlignment, L"right") == 0) {
+            g_settings.actionCenter.horizontalAlignment =
+                TrayHorizontalAlignment::right;
+        } else if (wcscmp(actionCenterHorizontalAlignment, L"center") == 0) {
             g_settings.actionCenter.horizontalAlignment =
                 TrayHorizontalAlignment::center;
         } else if (wcscmp(actionCenterHorizontalAlignment, L"left") == 0) {
