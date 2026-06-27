@@ -1,8 +1,8 @@
 // ==WindhawkMod==
 // @id              taskbar-start-button-position
 // @name            Start button always on the left
-// @description     Forces the start button to be on the left of the taskbar, even when taskbar icons are centered (Windows 11 only)
-// @version         1.2.4
+// @description     Forces the Start button to be on the left of the taskbar, even when taskbar icons are centered, with an option to also move the search and task view buttons (Windows 11 only)
+// @version         1.3
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
@@ -25,7 +25,7 @@
 /*
 # Start button always on the left
 
-Forces the start button to be on the left of the taskbar, even when taskbar
+Forces the Start button to be on the left of the taskbar, even when taskbar
 icons are centered.
 
 There's also an option to move the search and task view buttons to the left,
@@ -34,6 +34,10 @@ keeping only the app icons centered.
 Only Windows 11 is supported.
 
 ![Screenshot](https://i.imgur.com/MSKYKbE.png)
+_Start button on the left_
+
+![Screenshot](https://i.imgur.com/SOdWH1P.png)
+_Start button, search and task view buttons on the left_
 */
 // ==/WindhawkModReadme==
 
@@ -42,12 +46,12 @@ Only Windows 11 is supported.
 - startMenuOnTheLeft: true
   $name: Start menu on the left
   $description: >-
-    Make the start menu open on the left even if taskbar icons are centered
+    Make the start menu open on the left even if taskbar icons are centered.
 - otherSystemButtonsOnTheLeft: false
   $name: Move other system buttons to the left
   $description: >-
     In addition to the start button, also move the search and task view buttons
-    to the left, keeping only the app icons centered
+    to the left, keeping only the app icons centered.
 */
 // ==/WindhawkModSettings==
 
@@ -96,20 +100,10 @@ std::atomic<bool> g_taskbarViewDllLoaded;
 std::atomic<bool> g_unloading;
 
 thread_local bool g_TaskbarCollapsibleLayoutXamlTraits_ArrangeOverride;
+thread_local bool g_inShowStartButtonContextMenu;
 
 HWND g_searchMenuWnd;
 int g_searchMenuOriginalX;
-
-typedef enum MONITOR_DPI_TYPE {
-    MDT_EFFECTIVE_DPI = 0,
-    MDT_ANGULAR_DPI = 1,
-    MDT_RAW_DPI = 2,
-    MDT_DEFAULT = MDT_EFFECTIVE_DPI
-} MONITOR_DPI_TYPE;
-STDAPI GetDpiForMonitor(HMONITOR hmonitor,
-                        MONITOR_DPI_TYPE dpiType,
-                        UINT* dpiX,
-                        UINT* dpiY);
 
 HWND FindCurrentProcessTaskbarWnd() {
     HWND hTaskbarWnd = nullptr;
@@ -349,15 +343,18 @@ void UpdatePinnedSystemButtonMargin(FrameworkElement element) {
             return false;
         });
 
+    Thickness margin = element.Margin();
+
     double newRight;
     if (centeredLeftX < pinnedWidth) {
         newRight = 0;  // expand: reserve this button's width
     } else if (margin.Right != 0 || centeredLeftX > pinnedWidth + 44) {
         newRight =
             -GetClusterButtonWidth(element);  // collapse out of the group
+    } else {
+        return;  // already collapsed and not crowded
     }
 
-    Thickness margin = element.Margin();
     if (margin.Right == newRight) {
         return;
     }
@@ -881,6 +878,39 @@ void WINAPI ExperienceToggleButton_UpdateButtonPadding_Hook(void* pThis) {
     }
 }
 
+// The start button context menu is centered over the start button or aligned
+// to its leading edge depending on the taskbar alignment (TaskbarFrame's
+// Alignment, where Left=0 and Center=1). Both the placement mode and the anchor
+// position are derived from it. With the start button forced to the left, the
+// menu should align to the button's leading edge, so report left alignment
+// while the menu is being shown, letting the taskbar's own left-alignment code
+// position the menu.
+using TaskbarFrame_Alignment_t = int(WINAPI*)(void* pThis);
+TaskbarFrame_Alignment_t TaskbarFrame_Alignment_Original;
+int WINAPI TaskbarFrame_Alignment_Hook(void* pThis) {
+    if (!g_unloading && g_settings.startMenuOnTheLeft &&
+        g_inShowStartButtonContextMenu) {
+        return 0;  // TaskbarAlignment::Left
+    }
+
+    return TaskbarFrame_Alignment_Original(pThis);
+}
+
+// The alignment above is read while the context menu coroutine resumes (after
+// the menu items are fetched asynchronously), not during the initial call, so
+// bracket the override around the whole resume.
+using ShowStartButtonContextMenuResumeCoro_t = void(WINAPI*)(void* coroFrame);
+ShowStartButtonContextMenuResumeCoro_t
+    ShowStartButtonContextMenuResumeCoro_Original;
+void WINAPI ShowStartButtonContextMenuResumeCoro_Hook(void* coroFrame) {
+    Wh_Log(L">");
+
+    bool prev = g_inShowStartButtonContextMenu;
+    g_inShowStartButtonContextMenu = true;
+    ShowStartButtonContextMenuResumeCoro_Original(coroFrame);
+    g_inShowStartButtonContextMenu = prev;
+}
+
 bool HookTaskbarDllSymbols() {
     HMODULE module =
         LoadLibraryEx(L"taskbar.dll", nullptr, LOAD_LIBRARY_SEARCH_SYSTEM32);
@@ -931,6 +961,16 @@ bool HookTaskbarViewDllSymbols(HMODULE module) {
             {LR"(protected: virtual void __cdecl winrt::Taskbar::implementation::ExperienceToggleButton::UpdateButtonPadding(void))"},
             &ExperienceToggleButton_UpdateButtonPadding_Original,
             ExperienceToggleButton_UpdateButtonPadding_Hook,
+        },
+        {
+            {LR"(public: enum winrt::WindowsUdk::UI::Shell::TaskbarAlignment __cdecl winrt::Taskbar::implementation::TaskbarFrame::Alignment(void)const )"},
+            &TaskbarFrame_Alignment_Original,
+            TaskbarFrame_Alignment_Hook,
+        },
+        {
+            {LR"(static  winrt::Taskbar::implementation::ContextMenus::ShowStartButtonContextMenuAsync$_ResumeCoro$1())"},
+            &ShowStartButtonContextMenuResumeCoro_Original,
+            ShowStartButtonContextMenuResumeCoro_Hook,
         },
     };
 
@@ -1074,10 +1114,6 @@ HRESULT WINAPI DwmSetWindowAttribute_Hook(HWND hwnd,
     }
 
     HMONITOR monitor = MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST);
-
-    UINT monitorDpiX = 96;
-    UINT monitorDpiY = 96;
-    GetDpiForMonitor(monitor, MDT_DEFAULT, &monitorDpiX, &monitorDpiY);
 
     MONITORINFO monitorInfo{
         .cbSize = sizeof(MONITORINFO),
