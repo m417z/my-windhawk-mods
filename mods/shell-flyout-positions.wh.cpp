@@ -61,9 +61,10 @@ shift options allow fine-tuning in both directions.
 // ==WindhawkModSettings==
 /*
 - notificationCenter:
-  - horizontalAlignment: right
+  - horizontalAlignment: windowsDefault
     $name: Horizontal alignment
     $options:
+    - windowsDefault: Windows default
     - right: Right
     - center: Center
     - left: Left
@@ -108,9 +109,10 @@ shift options allow fine-tuning in both directions.
     $description: >-
       A positive value moves the element to the right, a negative value moves it
       to the left
-  - verticalAlignment: bottom
+  - verticalAlignment: windowsDefault
     $name: Vertical alignment
     $options:
+    - windowsDefault: Windows default
     - bottom: Bottom
     - center: Center
     - top: Top
@@ -153,6 +155,7 @@ shift options allow fine-tuning in both directions.
 using namespace winrt::Windows::UI::Xaml;
 
 enum class TrayHorizontalAlignment {
+    windowsDefault,
     right,
     center,
     left,
@@ -175,6 +178,7 @@ enum class StartMenuHorizontalAlignment {
 };
 
 enum class StartMenuVerticalAlignment {
+    windowsDefault,
     bottom,
     center,
     top,
@@ -204,9 +208,13 @@ Target g_target;
 
 std::atomic<bool> g_unloading;
 HWND g_notificationCenterWnd;
+LONG g_notificationCenterOriginalX;
+LONG g_notificationCenterCustomX = LONG_MAX;
 HWND g_searchMenuWnd;
-POINT g_searchMenuOriginalPos;
-POINT g_searchMenuCustomPos = {LONG_MAX, LONG_MAX};
+LONG g_searchMenuOriginalX;
+LONG g_searchMenuOriginalY;
+LONG g_searchMenuCustomX = LONG_MAX;
+LONG g_searchMenuCustomY = LONG_MAX;
 
 FrameworkElement EnumChildElements(
     FrameworkElement element,
@@ -380,29 +388,29 @@ HWND GetTaskbarForMonitor(HMONITOR monitor) {
     return enumData.result;
 }
 
-void RestoreWindowToDefault(HWND hWnd) {
-    if (!hWnd || !IsWindow(hWnd)) {
+void RestoreNotificationCenterToDefault() {
+    if (!g_notificationCenterWnd || !IsWindow(g_notificationCenterWnd)) {
         return;
     }
 
-    HMONITOR monitor = MonitorFromWindow(hWnd, MONITOR_DEFAULTTONEAREST);
-
-    MONITORINFO monitorInfo{
-        .cbSize = sizeof(MONITORINFO),
-    };
-    if (!GetMonitorInfo(monitor, &monitorInfo)) {
+    // On a settings change only restore when switched back to the Windows
+    // default; on unload always restore.
+    if (!g_unloading && g_settings.notificationCenter.horizontalAlignment !=
+                            TrayHorizontalAlignment::windowsDefault) {
         return;
     }
 
     RECT rc;
-    if (!GetWindowRect(hWnd, &rc)) {
+    if (!GetWindowRect(g_notificationCenterWnd, &rc)) {
         return;
     }
 
-    int x = monitorInfo.rcWork.right - (rc.right - rc.left);
+    SetWindowPos(g_notificationCenterWnd, nullptr,
+                 g_notificationCenterOriginalX, rc.top, 0, 0,
+                 SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
 
-    SetWindowPos(hWnd, nullptr, x, rc.top, rc.right - rc.left,
-                 rc.bottom - rc.top, SWP_NOZORDER | SWP_NOACTIVATE);
+    g_notificationCenterWnd = nullptr;
+    g_notificationCenterCustomX = LONG_MAX;
 }
 
 void RestoreSearchMenuToDefault() {
@@ -410,9 +418,43 @@ void RestoreSearchMenuToDefault() {
         return;
     }
 
-    SetWindowPos(g_searchMenuWnd, nullptr, g_searchMenuOriginalPos.x,
-                 g_searchMenuOriginalPos.y, 0, 0,
+    // On a settings change only restore the axes switched back to the Windows
+    // default; on unload restore every customized axis.
+    bool restoreX =
+        g_searchMenuCustomX != LONG_MAX &&
+        (g_unloading || (g_settings.startMenu.horizontalAlignment ==
+                             StartMenuHorizontalAlignment::windowsDefault &&
+                         g_settings.startMenu.horizontalShift == 0));
+    bool restoreY =
+        g_searchMenuCustomY != LONG_MAX &&
+        (g_unloading || (g_settings.startMenu.verticalAlignment ==
+                             StartMenuVerticalAlignment::windowsDefault &&
+                         g_settings.startMenu.verticalShift == 0));
+
+    if (!restoreX && !restoreY) {
+        return;
+    }
+
+    RECT rc;
+    if (!GetWindowRect(g_searchMenuWnd, &rc)) {
+        return;
+    }
+
+    int x = restoreX ? g_searchMenuOriginalX : rc.left;
+    int y = restoreY ? g_searchMenuOriginalY : rc.top;
+
+    SetWindowPos(g_searchMenuWnd, nullptr, x, y, 0, 0,
                  SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
+
+    if (restoreX) {
+        g_searchMenuCustomX = LONG_MAX;
+    }
+    if (restoreY) {
+        g_searchMenuCustomY = LONG_MAX;
+    }
+    if (g_searchMenuCustomX == LONG_MAX && g_searchMenuCustomY == LONG_MAX) {
+        g_searchMenuWnd = nullptr;
+    }
 }
 
 // Must run on a worker thread to avoid COM deadlock when called from the
@@ -692,6 +734,10 @@ int CalculateAlignedX(
     std::optional<RECT> showDesktopButtonBounds = std::nullopt) {
     int x;
     switch (settings.horizontalAlignment) {
+        case TrayHorizontalAlignment::windowsDefault:
+            Wh_Log(L"Error: Called with windowsDefault alignment");
+            return 0;
+
         case TrayHorizontalAlignment::right:
             x = rcWork.right - width;
             break;
@@ -817,14 +863,16 @@ HRESULT WINAPI DwmSetWindowAttribute_Hook(HWND hwnd,
             // be repositioned. Don't customize it and restore the original
             // position.
             g_searchMenuWnd = nullptr;
-            g_searchMenuCustomPos = {LONG_MAX, LONG_MAX};
+            g_searchMenuCustomX = LONG_MAX;
+            g_searchMenuCustomY = LONG_MAX;
             return original();
         }
 
         int xNew;
         switch (g_settings.startMenu.horizontalAlignment) {
             case StartMenuHorizontalAlignment::windowsDefault:
-                xNew = g_searchMenuWnd ? g_searchMenuOriginalPos.x : x;
+                xNew =
+                    g_searchMenuCustomX != LONG_MAX ? g_searchMenuOriginalX : x;
                 break;
 
             case StartMenuHorizontalAlignment::left:
@@ -871,10 +919,30 @@ HRESULT WINAPI DwmSetWindowAttribute_Hook(HWND hwnd,
 
         xNew += MulDiv(g_settings.startMenu.horizontalShift, monitorDpiX, 96);
 
+        switch (g_settings.startMenu.horizontalAlignment) {
+            case StartMenuHorizontalAlignment::startButtonLeft:
+            case StartMenuHorizontalAlignment::startButtonCenter:
+            case StartMenuHorizontalAlignment::startButtonRight:
+                // Keep the search menu within the monitor work area.
+                xNew = std::min(
+                    xNew, static_cast<int>(monitorInfo.rcWork.right - cx));
+                xNew =
+                    std::max(xNew, static_cast<int>(monitorInfo.rcWork.left));
+                break;
+
+            default:
+                break;
+        }
+
         int yNew;
         switch (g_settings.startMenu.verticalAlignment) {
+            case StartMenuVerticalAlignment::windowsDefault:
+                yNew =
+                    g_searchMenuCustomY != LONG_MAX ? g_searchMenuOriginalY : y;
+                break;
+
             case StartMenuVerticalAlignment::bottom:
-                yNew = g_searchMenuWnd ? monitorInfo.rcWork.bottom - cy : y;
+                yNew = monitorInfo.rcWork.bottom - cy;
                 break;
 
             case StartMenuVerticalAlignment::center:
@@ -890,12 +958,6 @@ HRESULT WINAPI DwmSetWindowAttribute_Hook(HWND hwnd,
 
         yNew += MulDiv(g_settings.startMenu.verticalShift, monitorDpiY, 96);
 
-        // Keep the search menu within the monitor work area.
-        xNew = std::min(xNew, static_cast<int>(monitorInfo.rcWork.right - cx));
-        xNew = std::max(xNew, static_cast<int>(monitorInfo.rcWork.left));
-        yNew = std::min(yNew, static_cast<int>(monitorInfo.rcWork.bottom - cy));
-        yNew = std::max(yNew, static_cast<int>(monitorInfo.rcWork.top));
-
         if (xNew == x && yNew == y) {
             return original();
         }
@@ -903,14 +965,49 @@ HRESULT WINAPI DwmSetWindowAttribute_Hook(HWND hwnd,
         Wh_Log(L"Adjusting search menu: (%d, %d) -> (%d, %d)", x, y, xNew,
                yNew);
 
-        g_searchMenuWnd = hwnd;
-        if (x != g_searchMenuCustomPos.x || y != g_searchMenuCustomPos.y) {
-            g_searchMenuOriginalPos = {x, y};
+        // Track each axis independently. An axis is at its default only when
+        // its alignment is windowsDefault and its shift is zero; otherwise
+        // remember the original position so it can be restored later, and once
+        // back to default, forget it.
+        bool xIsDefault = g_settings.startMenu.horizontalAlignment ==
+                              StartMenuHorizontalAlignment::windowsDefault &&
+                          g_settings.startMenu.horizontalShift == 0;
+        bool yIsDefault = g_settings.startMenu.verticalAlignment ==
+                              StartMenuVerticalAlignment::windowsDefault &&
+                          g_settings.startMenu.verticalShift == 0;
+
+        if (xIsDefault) {
+            g_searchMenuCustomX = LONG_MAX;
+        } else {
+            if (x != g_searchMenuCustomX) {
+                g_searchMenuOriginalX = x;
+            }
+            g_searchMenuCustomX = xNew;
         }
+
+        if (yIsDefault) {
+            g_searchMenuCustomY = LONG_MAX;
+        } else {
+            if (y != g_searchMenuCustomY) {
+                g_searchMenuOriginalY = y;
+            }
+            g_searchMenuCustomY = yNew;
+        }
+
+        g_searchMenuWnd =
+            (g_searchMenuCustomX != LONG_MAX || g_searchMenuCustomY != LONG_MAX)
+                ? hwnd
+                : nullptr;
+
         x = xNew;
         y = yNew;
-        g_searchMenuCustomPos = {x, y};
     } else if (target == DwmTarget::ShellExperienceHost) {
+        if (g_settings.notificationCenter.horizontalAlignment ==
+            TrayHorizontalAlignment::windowsDefault) {
+            // Restoring to the default is handled in Wh_ModSettingsChanged.
+            return original();
+        }
+
         int xNew = CalculateAlignedXForMonitor(monitor, monitorInfo, cx,
                                                g_settings.notificationCenter);
 
@@ -920,8 +1017,12 @@ HRESULT WINAPI DwmSetWindowAttribute_Hook(HWND hwnd,
 
         Wh_Log(L"Adjusting notification center: %d -> %d", x, xNew);
 
-        x = xNew;
         g_notificationCenterWnd = hwnd;
+        if (x != g_notificationCenterCustomX) {
+            g_notificationCenterOriginalX = x;
+        }
+        x = xNew;
+        g_notificationCenterCustomX = x;
     }
 
     SetWindowPos(hwnd, nullptr, x, y, cx, cy, SWP_NOZORDER | SWP_NOACTIVATE);
@@ -988,6 +1089,8 @@ winrt::weak_ref<DependencyObject> g_startSizingFrameWeakRef;
 int64_t g_canvasTopPropertyChangedToken;
 int64_t g_canvasLeftPropertyChangedToken;
 std::optional<HorizontalAlignment> g_previousHorizontalAlignment;
+std::optional<VerticalAlignment> g_previousVerticalAlignment;
+std::optional<Thickness> g_previousMargin;
 winrt::weak_ref<DependencyObject> g_frameRootWeakRef;
 int64_t g_verticalAlignmentPropertyChangedToken;
 int64_t g_horizontalAlignmentPropertyChangedToken;
@@ -1054,6 +1157,10 @@ void ApplyStyleClassicStartMenu(FrameworkElement content, HMONITOR monitor) {
 
         double newTop;
         switch (g_settings.startMenu.verticalAlignment) {
+            case StartMenuVerticalAlignment::windowsDefault:
+                newTop = std::numeric_limits<double>::quiet_NaN();
+                break;
+
             case StartMenuVerticalAlignment::top:
                 newTop = kStartMenuMargin;
                 break;
@@ -1131,7 +1238,13 @@ void ApplyStyleClassicStartMenu(FrameworkElement content, HMONITOR monitor) {
             }
         }
 
-        newTop += g_settings.startMenu.verticalShift;
+        if (g_settings.startMenu.verticalShift) {
+            if (std::isnan(newTop)) {
+                newTop = Controls::Canvas::GetTop(startSizingFrame);
+            }
+
+            newTop += g_settings.startMenu.verticalShift;
+        }
         if (g_settings.startMenu.horizontalShift) {
             if (std::isnan(newLeft)) {
                 newLeft = Controls::Canvas::GetLeft(startSizingFrame);
@@ -1153,15 +1266,19 @@ void ApplyStyleClassicStartMenu(FrameworkElement content, HMONITOR monitor) {
         double workHeight =
             (monitorInfo.rcWork.bottom - monitorInfo.rcWork.top) / clampScale;
 
-        double maxTop = workHeight - startSizingFrame.ActualHeight();
-        newTop = std::clamp(newTop, 0.0, maxTop < 0 ? 0.0 : maxTop);
+        if (!std::isnan(newTop)) {
+            double maxTop = workHeight - startSizingFrame.ActualHeight();
+            newTop = std::clamp(newTop, 0.0, maxTop < 0 ? 0.0 : maxTop);
+        }
         if (!std::isnan(newLeft)) {
             double maxLeft = workWidth - startSizingFrame.ActualWidth();
             newLeft = std::clamp(newLeft, 0.0, maxLeft < 0 ? 0.0 : maxLeft);
         }
 
         Wh_Log(L"Setting Canvas.Top to %f, Canvas.Left to %f", newTop, newLeft);
-        Controls::Canvas::SetTop(startSizingFrame, newTop);
+        if (!std::isnan(newTop)) {
+            Controls::Canvas::SetTop(startSizingFrame, newTop);
+        }
         if (!std::isnan(newLeft)) {
             Controls::Canvas::SetLeft(startSizingFrame, newLeft);
         }
@@ -1213,50 +1330,65 @@ void ApplyStyleRedesignedStartMenu(FrameworkElement content, HMONITOR monitor) {
     auto margin = frameRoot.Margin();
     auto marginVertical = margin.Top + margin.Bottom;
 
-    auto startMenuAlignment = g_unloading
-                                  ? StartMenuVerticalAlignment::bottom
-                                  : g_settings.startMenu.verticalAlignment;
-    switch (startMenuAlignment) {
-        case StartMenuVerticalAlignment::top:
-            frameRoot.VerticalAlignment(VerticalAlignment::Top);
-            margin.Top = 0;
-            margin.Bottom = marginVertical;
-            break;
-
-        case StartMenuVerticalAlignment::center:
-            frameRoot.VerticalAlignment(VerticalAlignment::Center);
-            margin.Top = marginVertical / 2;
-            margin.Bottom = marginVertical / 2;
-            break;
-
-        case StartMenuVerticalAlignment::bottom:
-            frameRoot.VerticalAlignment(VerticalAlignment::Bottom);
-            margin.Top = marginVertical;
-            margin.Bottom = 0;
-            break;
-    }
-
-    if (g_unloading) {
-        frameRoot.HorizontalAlignment(g_previousHorizontalAlignment.value_or(
-            HorizontalAlignment::Center));
+    if (g_unloading || g_settings.startMenu.verticalAlignment ==
+                           StartMenuVerticalAlignment::windowsDefault) {
+        // Restore the alignment and margin saved before the first change, then
+        // forget them. If they were never changed, leave them untouched.
+        if (g_previousVerticalAlignment) {
+            frameRoot.VerticalAlignment(g_previousVerticalAlignment.value());
+            g_previousVerticalAlignment = std::nullopt;
+        }
+        if (g_previousMargin) {
+            margin = g_previousMargin.value();
+            g_previousMargin = std::nullopt;
+        }
     } else {
-        if (g_settings.startMenu.horizontalAlignment ==
-                StartMenuHorizontalAlignment::windowsDefault &&
-            g_previousHorizontalAlignment) {
-            frameRoot.HorizontalAlignment(
-                g_previousHorizontalAlignment.value());
+        if (!g_previousVerticalAlignment) {
+            g_previousVerticalAlignment = frameRoot.VerticalAlignment();
+        }
+        if (!g_previousMargin) {
+            g_previousMargin = margin;
         }
 
-        if (g_settings.startMenu.horizontalAlignment !=
-                StartMenuHorizontalAlignment::windowsDefault &&
-            !g_previousHorizontalAlignment) {
+        switch (g_settings.startMenu.verticalAlignment) {
+            case StartMenuVerticalAlignment::top:
+                frameRoot.VerticalAlignment(VerticalAlignment::Top);
+                margin.Top = 0;
+                margin.Bottom = marginVertical;
+                break;
+
+            case StartMenuVerticalAlignment::center:
+                frameRoot.VerticalAlignment(VerticalAlignment::Center);
+                margin.Top = marginVertical / 2;
+                margin.Bottom = marginVertical / 2;
+                break;
+
+            case StartMenuVerticalAlignment::bottom:
+                frameRoot.VerticalAlignment(VerticalAlignment::Bottom);
+                margin.Top = marginVertical;
+                margin.Bottom = 0;
+                break;
+
+            case StartMenuVerticalAlignment::windowsDefault:
+                break;
+        }
+    }
+
+    if (g_unloading || g_settings.startMenu.horizontalAlignment ==
+                           StartMenuHorizontalAlignment::windowsDefault) {
+        // Restore the alignment saved before the first change, then forget it.
+        // If it was never changed, leave it untouched.
+        if (g_previousHorizontalAlignment) {
+            frameRoot.HorizontalAlignment(
+                g_previousHorizontalAlignment.value());
+            g_previousHorizontalAlignment = std::nullopt;
+        }
+    } else {
+        if (!g_previousHorizontalAlignment) {
             g_previousHorizontalAlignment = frameRoot.HorizontalAlignment();
         }
 
         switch (g_settings.startMenu.horizontalAlignment) {
-            case StartMenuHorizontalAlignment::windowsDefault:
-                break;
-
             case StartMenuHorizontalAlignment::left:
                 frameRoot.HorizontalAlignment(HorizontalAlignment::Left);
                 break;
@@ -1278,6 +1410,9 @@ void ApplyStyleRedesignedStartMenu(FrameworkElement content, HMONITOR monitor) {
                 // offset, so it stays correct even when the menu opens on a
                 // monitor whose width the container hasn't picked up yet.
                 frameRoot.HorizontalAlignment(HorizontalAlignment::Left);
+                break;
+
+            case StartMenuHorizontalAlignment::windowsDefault:
                 break;
         }
     }
@@ -1661,6 +1796,12 @@ std::vector<HWND> GetCoreWindows() {
 }
 
 void AdjustCoreWindowPos(int* x, int* y, int width, int height) {
+    // The system will reposition it on its own.
+    if (g_unloading || g_settings.actionCenter.horizontalAlignment ==
+        TrayHorizontalAlignment::windowsDefault) {
+        return;
+    }
+
     RECT rc{
         .left = *x,
         .top = *y,
@@ -1673,11 +1814,6 @@ void AdjustCoreWindowPos(int* x, int* y, int width, int height) {
         .cbSize = sizeof(MONITORINFO),
     };
     GetMonitorInfo(monitor, &monitorInfo);
-
-    if (g_unloading) {
-        *x = monitorInfo.rcWork.right - width;
-        return;
-    }
 
     *x = CalculateAlignedXForMonitor(monitor, monitorInfo, width,
                                      g_settings.actionCenter);
@@ -1761,8 +1897,11 @@ void LoadSettings() {
     PCWSTR notificationCenterHorizontalAlignment =
         Wh_GetStringSetting(L"notificationCenter.horizontalAlignment");
     g_settings.notificationCenter.horizontalAlignment =
-        TrayHorizontalAlignment::right;
-    if (wcscmp(notificationCenterHorizontalAlignment, L"center") == 0) {
+        TrayHorizontalAlignment::windowsDefault;
+    if (wcscmp(notificationCenterHorizontalAlignment, L"right") == 0) {
+        g_settings.notificationCenter.horizontalAlignment =
+            TrayHorizontalAlignment::right;
+    } else if (wcscmp(notificationCenterHorizontalAlignment, L"center") == 0) {
         g_settings.notificationCenter.horizontalAlignment =
             TrayHorizontalAlignment::center;
     } else if (wcscmp(notificationCenterHorizontalAlignment, L"left") == 0) {
@@ -1834,8 +1973,12 @@ void LoadSettings() {
 
     PCWSTR startMenuVerticalAlignment =
         Wh_GetStringSetting(L"startMenu.verticalAlignment");
-    g_settings.startMenu.verticalAlignment = StartMenuVerticalAlignment::bottom;
-    if (wcscmp(startMenuVerticalAlignment, L"center") == 0) {
+    g_settings.startMenu.verticalAlignment =
+        StartMenuVerticalAlignment::windowsDefault;
+    if (wcscmp(startMenuVerticalAlignment, L"bottom") == 0) {
+        g_settings.startMenu.verticalAlignment =
+            StartMenuVerticalAlignment::bottom;
+    } else if (wcscmp(startMenuVerticalAlignment, L"center") == 0) {
         g_settings.startMenu.verticalAlignment =
             StartMenuVerticalAlignment::center;
     } else if (wcscmp(startMenuVerticalAlignment, L"top") == 0) {
@@ -1858,16 +2001,16 @@ bool NeedsToBeLoaded() {
                        StartMenuHorizontalAlignment::windowsDefault ||
                    g_settings.startMenu.horizontalShift != 0 ||
                    g_settings.startMenu.verticalAlignment !=
-                       StartMenuVerticalAlignment::bottom ||
+                       StartMenuVerticalAlignment::windowsDefault ||
                    g_settings.startMenu.verticalShift != 0;
 
         case Target::ShellExperienceHost:
         case Target::ShellHost:
             return g_settings.notificationCenter.horizontalAlignment !=
-                       TrayHorizontalAlignment::right ||
+                       TrayHorizontalAlignment::windowsDefault ||
                    g_settings.notificationCenter.horizontalShift != 0 ||
                    g_settings.actionCenter.horizontalAlignment !=
-                       TrayHorizontalAlignment::right ||
+                       TrayHorizontalAlignment::windowsDefault ||
                    g_settings.actionCenter.horizontalShift != 0;
     }
 }
@@ -1970,7 +2113,7 @@ void Wh_ModBeforeUninit() {
     g_unloading = true;
 
     if (g_target == Target::Explorer) {
-        RestoreWindowToDefault(g_notificationCenterWnd);
+        RestoreNotificationCenterToDefault();
         RestoreSearchMenuToDefault();
     } else if (g_target == Target::StartMenuExperienceHost) {
         HWND hCoreWnd = StartMenuUI::GetCoreWnd();
@@ -1999,7 +2142,12 @@ BOOL Wh_ModSettingsChanged(BOOL* bReload) {
         return FALSE;
     }
 
-    if (g_target == Target::StartMenuExperienceHost) {
+    if (g_target == Target::Explorer) {
+        // Restore right away instead of waiting for the next time the flyouts
+        // are shown.
+        RestoreNotificationCenterToDefault();
+        RestoreSearchMenuToDefault();
+    } else if (g_target == Target::StartMenuExperienceHost) {
         HWND hCoreWnd = StartMenuUI::GetCoreWnd();
         if (hCoreWnd) {
             Wh_Log(L"Applying settings - Found core window");
