@@ -28,6 +28,9 @@
 Forces the start button to be on the left of the taskbar, even when taskbar
 icons are centered.
 
+There's also an option to move the search and task view buttons to the left,
+keeping only the app icons centered.
+
 Only Windows 11 is supported.
 
 ![Screenshot](https://i.imgur.com/MSKYKbE.png)
@@ -40,6 +43,11 @@ Only Windows 11 is supported.
   $name: Start menu on the left
   $description: >-
     Make the start menu open on the left even if taskbar icons are centered
+- otherSystemButtonsOnTheLeft: false
+  $name: Move other system buttons to the left
+  $description: >-
+    In addition to the start button, also move the search and task view buttons
+    to the left, keeping only the app icons centered
 */
 // ==/WindhawkModSettings==
 
@@ -64,10 +72,17 @@ Only Windows 11 is supported.
 #include <winrt/Windows.UI.Xaml.h>
 #include <winrt/base.h>
 
+// The taskbar items live in a WinUI 2 (MUX) ItemsRepeater built on top of
+// system XAML. Pull in its projection to enumerate only the realized items
+// (ItemsSourceView / TryGetElement), excluding virtualized cache items.
+#define WH_WINRT_WINUI2
+#include <winrt/Microsoft.UI.Xaml.Controls.h>
+
 using namespace winrt::Windows::UI::Xaml;
 
 struct {
     bool startMenuOnTheLeft;
+    bool otherSystemButtonsOnTheLeft;
 } g_settings;
 
 enum class Target {
@@ -151,6 +166,229 @@ FrameworkElement FindChildByClassName(FrameworkElement element,
     });
 }
 
+// Enumerates the realized children of an ItemsRepeater by index. Unlike walking
+// the visual tree (EnumChildElements), this excludes virtualized cache items,
+// which aren't part of the live layout. Returns the first child for which the
+// callback returns true, or nullptr.
+FrameworkElement EnumRepeaterChildElements(
+    FrameworkElement repeaterElement,
+    std::function<bool(FrameworkElement)> enumCallback) {
+    auto repeater =
+        repeaterElement
+            .try_as<winrt::Microsoft::UI::Xaml::Controls::ItemsRepeater>();
+    if (!repeater) {
+        Wh_Log(L"Not an ItemsRepeater");
+        return nullptr;
+    }
+
+    auto itemsSourceView = repeater.ItemsSourceView();
+    int count = itemsSourceView ? itemsSourceView.Count() : 0;
+
+    for (int index = 0; index < count; index++) {
+        auto element = repeater.TryGetElement(index);
+        if (!element) {
+            // Not realized (virtualized away).
+            continue;
+        }
+
+        auto child = element.try_as<FrameworkElement>();
+        if (!child) {
+            continue;
+        }
+
+        if (enumCallback(child)) {
+            return child;
+        }
+    }
+
+    return nullptr;
+}
+
+// The taskbar system buttons that the mod can pin to the left.
+enum class SystemButton {
+    None,
+    Start,
+    Widgets,
+    Search,
+    TaskView,
+};
+
+// The left-to-right order of the pinned cluster: start, search, task view,
+// widgets. Returns -1 for items that aren't part of the cluster.
+int SystemButtonClusterRank(SystemButton button) {
+    switch (button) {
+        case SystemButton::None:
+            return -1;
+        case SystemButton::Start:
+            return 0;
+        case SystemButton::Search:
+            return 1;
+        case SystemButton::TaskView:
+            return 2;
+        case SystemButton::Widgets:
+            return 3;
+    }
+}
+
+SystemButton IdentifySystemButton(FrameworkElement element) {
+    auto className = winrt::get_class_name(element);
+
+    if (className == L"Taskbar.ExperienceToggleButton") {
+        auto automationId =
+            Automation::AutomationProperties::GetAutomationId(element);
+        if (automationId == L"StartButton") {
+            return SystemButton::Start;
+        }
+        if (automationId == L"TaskViewButton") {
+            return SystemButton::TaskView;
+        }
+    } else if (className == L"Taskbar.AugmentedEntryPointButton") {
+        if (element.Name() == L"AugmentedEntryPointButton") {
+            return SystemButton::Widgets;
+        }
+    } else if (className == L"Taskbar.TaskbarExtensionElement") {
+        return SystemButton::Search;
+    }
+
+    return SystemButton::None;
+}
+
+// Returns the width to use for a cluster button when packing or collapsing it.
+// The search button is dynamic and stretches to fill its collapsed slot, so its
+// own ActualWidth gets reinforced by the negative right margin and won't shrink
+// when, for example, the search box turns into a search icon. Its content child
+// is measured independently of this element's margin, so use the child's
+// DesiredSize. The start and task view buttons are fixed-width, so their
+// ActualWidth is reliable.
+double GetClusterButtonWidth(FrameworkElement element) {
+    if (IdentifySystemButton(element) == SystemButton::Search) {
+        if (Media::VisualTreeHelper::GetChildrenCount(element) > 0) {
+            auto child = Media::VisualTreeHelper::GetChild(element, 0)
+                             .try_as<FrameworkElement>();
+            if (child) {
+                return child.DesiredSize().Width;
+            }
+        }
+    }
+
+    return element.ActualWidth();
+}
+
+// Computes the X at which a pinned cluster button should be placed so that the
+// cluster packs tightly on the left in order (start at X = 0, then search, task
+// view, widgets). It's the sum of the widths of the buttons that come before
+// the target in that order, so it doesn't depend on the order in which the
+// layout happens to arrange its children.
+double ComputePinnedSystemButtonX(FrameworkElement taskbarFrameRepeater,
+                                  SystemButton target) {
+    int targetRank = SystemButtonClusterRank(target);
+    if (targetRank <= 0) {
+        return 0;
+    }
+
+    double x = 0;
+    EnumRepeaterChildElements(
+        taskbarFrameRepeater, [&x, targetRank](FrameworkElement child) {
+            int childRank =
+                SystemButtonClusterRank(IdentifySystemButton(child));
+            if (childRank >= 0 && childRank < targetRank) {
+                x += GetClusterButtonWidth(child);
+            }
+            return false;
+        });
+
+    return x;
+}
+
+// Toggles the right margin of a left-pinned system button (start, search or
+// task view) to keep the centered group from overlapping the pinned cluster.
+// While there's room, the buttons are collapsed (their width is removed from
+// the layout) so the centered group can use the full width; once the leftmost
+// centered item would reach into the cluster, they're expanded to reserve their
+// width, which pushes the centered group to the right. A dead zone avoids
+// oscillation. This mirrors the start button's standalone behavior, but
+// measured against the whole cluster. Runs on the taskbar thread.
+void UpdatePinnedSystemButtonMargin(FrameworkElement element) {
+    if (!g_settings.otherSystemButtonsOnTheLeft || g_unloading) {
+        // The option was turned off (or the mod is unloading) after this was
+        // scheduled. ApplyStyle restores the margins; don't fight it.
+        return;
+    }
+
+    auto taskbarFrameRepeater =
+        Media::VisualTreeHelper::GetParent(element).as<FrameworkElement>();
+    if (!taskbarFrameRepeater) {
+        return;
+    }
+
+    double clusterWidth = 0;
+    double centeredLeftX = std::numeric_limits<double>::infinity();
+    EnumRepeaterChildElements(
+        taskbarFrameRepeater, [&](FrameworkElement child) {
+            switch (IdentifySystemButton(child)) {
+                case SystemButton::Start:
+                case SystemButton::Search:
+                case SystemButton::TaskView:
+                    clusterWidth += GetClusterButtonWidth(child);
+                    break;
+                case SystemButton::Widgets:
+                    // Pinned to the left independently, not part of the
+                    // centered group.
+                    break;
+                default: {
+                    auto offset = child.ActualOffset();
+                    if (offset.x >= 0 && offset.x < centeredLeftX) {
+                        centeredLeftX = offset.x;
+                    }
+                    break;
+                }
+            }
+            return false;
+        });
+
+    double newRight;
+    if (centeredLeftX < clusterWidth) {
+        newRight = 0;
+    } else if (centeredLeftX > clusterWidth + 44) {
+        newRight = -GetClusterButtonWidth(element);
+    } else {
+        return;
+    }
+
+    Thickness margin = element.Margin();
+    if (margin.Right != newRight) {
+        margin.Right = newRight;
+        element.Margin(margin);
+    }
+}
+
+// Keeps the widgets button pinned at the end of the cluster (after the task
+// view button) by updating its left margin. The widgets button is left-pinned
+// by Windows, so its left margin directly controls its position. Runs on the
+// taskbar thread.
+void UpdateWidgetLeftMargin(FrameworkElement element) {
+    if (!g_settings.otherSystemButtonsOnTheLeft || g_unloading) {
+        // The option was turned off (or the mod is unloading) after this was
+        // scheduled. ApplyStyle restores the margin; don't fight it.
+        return;
+    }
+
+    auto taskbarFrameRepeater =
+        Media::VisualTreeHelper::GetParent(element).as<FrameworkElement>();
+    if (!taskbarFrameRepeater) {
+        return;
+    }
+
+    double left =
+        ComputePinnedSystemButtonX(taskbarFrameRepeater, SystemButton::Widgets);
+
+    Thickness margin = element.Margin();
+    if (margin.Left != left) {
+        margin.Left = left;
+        element.Margin(margin);
+    }
+}
+
 bool ApplyStyle(XamlRoot xamlRoot) {
     FrameworkElement xamlRootContent =
         xamlRoot.Content().try_as<FrameworkElement>();
@@ -169,8 +407,8 @@ bool ApplyStyle(XamlRoot xamlRoot) {
         return false;
     }
 
-    auto startButton =
-        EnumChildElements(taskbarFrameRepeater, [](FrameworkElement child) {
+    auto startButton = EnumRepeaterChildElements(
+        taskbarFrameRepeater, [](FrameworkElement child) {
             auto childClassName = winrt::get_class_name(child);
             if (childClassName != L"Taskbar.ExperienceToggleButton") {
                 return false;
@@ -188,8 +426,8 @@ bool ApplyStyle(XamlRoot xamlRoot) {
         startButton.Margin(startButtonMargin);
     }
 
-    auto widgetElement =
-        EnumChildElements(taskbarFrameRepeater, [](FrameworkElement child) {
+    auto widgetElement = EnumRepeaterChildElements(
+        taskbarFrameRepeater, [](FrameworkElement child) {
             auto childClassName = winrt::get_class_name(child);
             if (childClassName != L"Taskbar.AugmentedEntryPointButton") {
                 return false;
@@ -210,9 +448,56 @@ bool ApplyStyle(XamlRoot xamlRoot) {
         });
     if (widgetElement) {
         auto margin = widgetElement.Margin();
-        margin.Left = g_unloading ? 0 : 44;
+        if (g_unloading) {
+            margin.Left = 0;
+        } else if (g_settings.otherSystemButtonsOnTheLeft) {
+            // Pin the widgets button at the end of the cluster, after the task
+            // view button, instead of right after the start button.
+            margin.Left = ComputePinnedSystemButtonX(taskbarFrameRepeater,
+                                                     SystemButton::Widgets);
+        } else {
+            margin.Left = 44;
+        }
         widgetElement.Margin(margin);
     }
+
+    // Collapse the search and task view buttons so that they are excluded from
+    // the centered group and can be pinned to the left next to the start
+    // button. The actual left positioning happens in IUIElement_Arrange_Hook.
+    // When the option is off (or while unloading), restore them to the centered
+    // group.
+    bool collapseOtherSystemButtons =
+        g_settings.otherSystemButtonsOnTheLeft && !g_unloading;
+    EnumRepeaterChildElements(
+        taskbarFrameRepeater,
+        [collapseOtherSystemButtons](FrameworkElement child) {
+            SystemButton systemButton = IdentifySystemButton(child);
+            switch (systemButton) {
+                case SystemButton::Search:
+                case SystemButton::TaskView: {
+                    Thickness margin = child.Margin();
+                    double width = GetClusterButtonWidth(child);
+                    if (collapseOtherSystemButtons) {
+                        margin.Right = -width;
+                    } else if (margin.Right < 0) {
+                        // Restore only the collapse applied by the mod.
+                        margin.Right = 0;
+                    } else {
+                        break;
+                    }
+                    Wh_Log(
+                        L"Collapsing system button %d: width=%.1f, "
+                        L"margin.Right=%.1f",
+                        (int)systemButton, width, margin.Right);
+                    child.Margin(margin);
+                    break;
+                }
+                default:
+                    break;
+            }
+
+            return false;
+        });
 
     return true;
 }
@@ -449,21 +734,55 @@ HRESULT WINAPI IUIElement_Arrange_Hook(void* pThis,
         return original();
     }
 
-    auto className = winrt::get_class_name(element);
-    if (className != L"Taskbar.ExperienceToggleButton") {
+    SystemButton systemButton = IdentifySystemButton(element);
+
+    if (g_settings.otherSystemButtonsOnTheLeft &&
+        (systemButton == SystemButton::Start ||
+         systemButton == SystemButton::Search ||
+         systemButton == SystemButton::TaskView)) {
+        auto taskbarFrameRepeater =
+            Media::VisualTreeHelper::GetParent(element).as<FrameworkElement>();
+
+        // Keep the cluster from overlapping the centered group (collapse when
+        // there's room, reserve its width when crowded).
+        element.Dispatcher().TryRunAsync(
+            winrt::Windows::UI::Core::CoreDispatcherPriority::High,
+            [element]() { UpdatePinnedSystemButtonMargin(element); });
+
+        // Pin it to the left in cluster order: the start button gets X = 0,
+        // then the search button, then the task view button.
+        double x =
+            ComputePinnedSystemButtonX(taskbarFrameRepeater, systemButton);
+
+        Wh_Log(L"Pinning system button %d to x=%.1f", (int)systemButton, x);
+
+        winrt::Windows::Foundation::Rect newRect = rect;
+        newRect.X = x;
+        return IUIElement_Arrange_Original(pThis, newRect);
+    }
+
+    if (g_settings.otherSystemButtonsOnTheLeft &&
+        systemButton == SystemButton::Widgets) {
+        // The widgets button is left-pinned by Windows; keep it pinned at the
+        // end of the cluster via its left margin (no X override needed).
+        element.Dispatcher().TryRunAsync(
+            winrt::Windows::UI::Core::CoreDispatcherPriority::High,
+            [element]() { UpdateWidgetLeftMargin(element); });
         return original();
     }
 
-    auto automationId =
-        Automation::AutomationProperties::GetAutomationId(element);
-    if (automationId != L"StartButton") {
+    if (systemButton != SystemButton::Start) {
         return original();
     }
 
+    // The option is off here; when it's on, the start button is pinned together
+    // with the rest of the cluster above. What follows keeps the standalone
+    // start button from overlapping the centered group.
     auto taskbarFrameRepeater =
         Media::VisualTreeHelper::GetParent(element).as<FrameworkElement>();
-    auto widgetElement =
-        EnumChildElements(taskbarFrameRepeater, [](FrameworkElement child) {
+
+    auto widgetElement = EnumRepeaterChildElements(
+        taskbarFrameRepeater, [](FrameworkElement child) {
             auto childClassName = winrt::get_class_name(child);
             if (childClassName != L"Taskbar.AugmentedEntryPointButton") {
                 return false;
@@ -483,6 +802,9 @@ HRESULT WINAPI IUIElement_Arrange_Hook(void* pThis,
             return true;
         });
 
+    // The dynamic margin adjustment below keeps the start button from
+    // overlapping the centered group when there's no widgets button pinned to
+    // its right to act as that anchor.
     if (!widgetElement) {
         element.Dispatcher().TryRunAsync(
             winrt::Windows::UI::Core::CoreDispatcherPriority::High,
@@ -493,25 +815,26 @@ HRESULT WINAPI IUIElement_Arrange_Hook(void* pThis,
                 auto taskbarFrameRepeater =
                     Media::VisualTreeHelper::GetParent(element)
                         .as<FrameworkElement>();
-                EnumChildElements(taskbarFrameRepeater,
-                                  [&element, &minX](FrameworkElement child) {
-                                      if (child == element) {
-                                          return false;
-                                      }
+                EnumRepeaterChildElements(
+                    taskbarFrameRepeater,
+                    [&element, &minX](FrameworkElement child) {
+                        if (child == element) {
+                            return false;
+                        }
 
-                                      auto offset = child.ActualOffset();
-                                      if (offset.x >= 0 && offset.x < minX) {
-                                          minX = offset.x;
-                                      }
+                        auto offset = child.ActualOffset();
+                        if (offset.x >= 0 && offset.x < minX) {
+                            minX = offset.x;
+                        }
 
-                                      return false;
-                                  });
+                        return false;
+                    });
 
                 if (minX < width) {
                     Thickness margin = element.Margin();
                     margin.Right = 0;
                     element.Margin(margin);
-                } else if (minX > width * 2) {
+                } else if (minX > width + 44) {
                     Thickness margin = element.Margin();
                     margin.Right = -width;
                     element.Margin(margin);
@@ -615,39 +938,6 @@ void WINAPI ExperienceToggleButton_UpdateButtonPadding_Hook(void* pThis) {
     }
 }
 
-using AugmentedEntryPointButton_UpdateButtonPadding_t =
-    void(WINAPI*)(void* pThis);
-AugmentedEntryPointButton_UpdateButtonPadding_t
-    AugmentedEntryPointButton_UpdateButtonPadding_Original;
-void WINAPI AugmentedEntryPointButton_UpdateButtonPadding_Hook(void* pThis) {
-    Wh_Log(L">");
-
-    AugmentedEntryPointButton_UpdateButtonPadding_Original(pThis);
-
-    if (g_unloading) {
-        return;
-    }
-
-    FrameworkElement button = nullptr;
-    ((IUnknown**)pThis)[1]->QueryInterface(winrt::guid_of<FrameworkElement>(),
-                                           winrt::put_abi(button));
-    if (!button) {
-        return;
-    }
-
-    button.Dispatcher().TryRunAsync(
-        winrt::Windows::UI::Core::CoreDispatcherPriority::High, [button]() {
-            auto offset = button.ActualOffset();
-            if (offset.x != 0 || offset.y != 0) {
-                return;
-            }
-
-            auto margin = button.Margin();
-            margin.Left = 44;
-            button.Margin(margin);
-        });
-}
-
 bool HookTaskbarDllSymbols() {
     HMODULE module =
         LoadLibraryEx(L"taskbar.dll", nullptr, LOAD_LIBRARY_SEARCH_SYSTEM32);
@@ -698,11 +988,6 @@ bool HookTaskbarViewDllSymbols(HMODULE module) {
             {LR"(protected: virtual void __cdecl winrt::Taskbar::implementation::ExperienceToggleButton::UpdateButtonPadding(void))"},
             &ExperienceToggleButton_UpdateButtonPadding_Original,
             ExperienceToggleButton_UpdateButtonPadding_Hook,
-        },
-        {
-            {LR"(protected: virtual void __cdecl winrt::Taskbar::implementation::AugmentedEntryPointButton::UpdateButtonPadding(void))"},
-            &AugmentedEntryPointButton_UpdateButtonPadding_Original,
-            AugmentedEntryPointButton_UpdateButtonPadding_Hook,
         },
     };
 
@@ -1219,6 +1504,8 @@ void RestoreMenuPositions() {
 
 void LoadSettings() {
     g_settings.startMenuOnTheLeft = Wh_GetIntSetting(L"startMenuOnTheLeft");
+    g_settings.otherSystemButtonsOnTheLeft =
+        Wh_GetIntSetting(L"otherSystemButtonsOnTheLeft");
 }
 
 BOOL Wh_ModInit() {
@@ -1371,7 +1658,12 @@ BOOL Wh_ModSettingsChanged(BOOL* bReload) {
 
     LoadSettings();
 
-    if (g_target == Target::StartMenuExperienceHost) {
+    if (g_target == Target::Explorer) {
+        HWND hTaskbarWnd = FindCurrentProcessTaskbarWnd();
+        if (hTaskbarWnd) {
+            ApplySettings(hTaskbarWnd);
+        }
+    } else if (g_target == Target::StartMenuExperienceHost) {
         if (!g_settings.startMenuOnTheLeft) {
             return FALSE;
         }
