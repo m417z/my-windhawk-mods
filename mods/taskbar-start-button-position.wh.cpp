@@ -2,7 +2,7 @@
 // @id              taskbar-start-button-position
 // @name            Start button always on the left
 // @description     Forces the Start button to be on the left of the taskbar, even when taskbar icons are centered, with an option to also move the search and task view buttons (Windows 11 only)
-// @version         1.3
+// @version         1.3.1
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
