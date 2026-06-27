@@ -218,6 +218,7 @@ LONG g_searchMenuOriginalX;
 LONG g_searchMenuOriginalY;
 LONG g_searchMenuCustomX = LONG_MAX;
 LONG g_searchMenuCustomY = LONG_MAX;
+HMONITOR g_searchMenuMonitor;
 
 FrameworkElement EnumChildElements(
     FrameworkElement element,
@@ -446,16 +447,17 @@ void RestoreSearchMenuToDefault() {
         return;
     }
 
+    HMONITOR monitor =
+        MonitorFromWindow(g_searchMenuWnd, MONITOR_DEFAULTTONEAREST);
+
     RECT rc;
-    if (!GetWindowRect(g_searchMenuWnd, &rc)) {
-        return;
+    if (monitor == g_searchMenuMonitor && GetWindowRect(g_searchMenuWnd, &rc)) {
+        int x = restoreX ? g_searchMenuOriginalX : rc.left;
+        int y = restoreY ? g_searchMenuOriginalY : rc.top;
+
+        SetWindowPos(g_searchMenuWnd, nullptr, x, y, 0, 0,
+                     SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
     }
-
-    int x = restoreX ? g_searchMenuOriginalX : rc.left;
-    int y = restoreY ? g_searchMenuOriginalY : rc.top;
-
-    SetWindowPos(g_searchMenuWnd, nullptr, x, y, 0, 0,
-                 SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
 
     if (restoreX) {
         g_searchMenuCustomX = LONG_MAX;
@@ -465,6 +467,7 @@ void RestoreSearchMenuToDefault() {
     }
     if (g_searchMenuCustomX == LONG_MAX && g_searchMenuCustomY == LONG_MAX) {
         g_searchMenuWnd = nullptr;
+        g_searchMenuMonitor = nullptr;
     }
 }
 
@@ -802,11 +805,8 @@ HRESULT WINAPI DwmSetWindowAttribute_Hook(HWND hwnd,
     }
 
     BOOL cloak = *(BOOL*)pvAttribute;
-    if (cloak) {
-        return original();
-    }
 
-    Wh_Log(L"> %08X", (DWORD)(DWORD_PTR)hwnd);
+    Wh_Log(L"> %08X %s", (DWORD)(DWORD_PTR)hwnd, cloak ? L"cloak" : L"uncloak");
 
     DWORD processId = 0;
     DWORD threadId = GetWindowThreadProcessId(hwnd, &processId);
@@ -859,13 +859,38 @@ HRESULT WINAPI DwmSetWindowAttribute_Hook(HWND hwnd,
     int cy = targetRect.bottom - targetRect.top;
 
     if (target == DwmTarget::SearchHost) {
-        if (!IsStartMenuOpen()) {
-            // Win+S or the search bar on the taskbar cause the search menu to
-            // be repositioned. Don't customize it and restore the original
-            // position.
+        if (cloak || !IsStartMenuOpen()) {
+            // The search menu is shown without the start menu (Win+S or the
+            // taskbar search bar) or is being hidden (cloaked). Don't align it
+            // to the start menu; restore the saved position and stop tracking
+            // it, since the same window is reused and would otherwise reappear
+            // where it was last aligned to the start menu.
+            int xNew = x;
+            int yNew = y;
+
+            // The saved positions are absolute coordinates, valid only on the
+            // monitor where they were recorded.
+            if (monitor == g_searchMenuMonitor) {
+                if (g_searchMenuCustomX != LONG_MAX) {
+                    xNew = g_searchMenuOriginalX;
+                }
+                if (g_searchMenuCustomY != LONG_MAX) {
+                    yNew = g_searchMenuOriginalY;
+                }
+            }
+
             g_searchMenuWnd = nullptr;
             g_searchMenuCustomX = LONG_MAX;
             g_searchMenuCustomY = LONG_MAX;
+            g_searchMenuMonitor = nullptr;
+
+            if (xNew != x || yNew != y) {
+                Wh_Log(L"Restoring search menu: (%d, %d) -> (%d, %d)", x, y,
+                       xNew, yNew);
+                SetWindowPos(hwnd, nullptr, xNew, yNew, cx, cy,
+                             SWP_NOZORDER | SWP_NOACTIVATE);
+            }
+
             return original();
         }
 
@@ -999,10 +1024,15 @@ HRESULT WINAPI DwmSetWindowAttribute_Hook(HWND hwnd,
             (g_searchMenuCustomX != LONG_MAX || g_searchMenuCustomY != LONG_MAX)
                 ? hwnd
                 : nullptr;
+        g_searchMenuMonitor = g_searchMenuWnd ? monitor : nullptr;
 
         x = xNew;
         y = yNew;
     } else if (target == DwmTarget::ShellExperienceHost) {
+        if (cloak) {
+            return original();
+        }
+
         bool xIsDefault = g_settings.notificationCenter.horizontalAlignment ==
                               TrayHorizontalAlignment::windowsDefault &&
                           g_settings.notificationCenter.horizontalShift == 0;
