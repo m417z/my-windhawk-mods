@@ -43,15 +43,22 @@ _Start button, search and task view buttons on the left_
 
 // ==WindhawkModSettings==
 /*
+- otherSystemButtonsOnTheLeft: false
+  $name: Move other system buttons to the left
+  $description: >-
+    In addition to the Start button, also move the search and task view buttons
+    to the left, keeping only the app icons centered.
 - startMenuOnTheLeft: true
   $name: Start menu on the left
   $description: >-
     Make the start menu open on the left even if taskbar icons are centered.
-- otherSystemButtonsOnTheLeft: false
-  $name: Move other system buttons to the left
+- searchMenuPositionInAllCases: false
+  $name: Position the search menu in all cases
   $description: >-
-    In addition to the start button, also move the search and task view buttons
-    to the left, keeping only the app icons centered.
+    By default, the search menu is only repositioned when it's opened from the
+    Start menu, not when it's opened in other ways, such as with the Win+S
+    shortcut or the taskbar search icon. Enable this option to reposition it in
+    all cases.
 */
 // ==/WindhawkModSettings==
 
@@ -85,8 +92,9 @@ _Start button, search and task view buttons on the left_
 using namespace winrt::Windows::UI::Xaml;
 
 struct {
-    bool startMenuOnTheLeft;
     bool otherSystemButtonsOnTheLeft;
+    bool startMenuOnTheLeft;
+    bool searchMenuPositionInAllCases;
 } g_settings;
 
 enum class Target {
@@ -1132,7 +1140,8 @@ HRESULT WINAPI DwmSetWindowAttribute_Hook(HWND hwnd,
         // Only change x.
         int xNew;
 
-        if (g_settings.startMenuOnTheLeft && !cloak && IsStartMenuOpen()) {
+        if (g_settings.startMenuOnTheLeft && !cloak &&
+            (g_settings.searchMenuPositionInAllCases || IsStartMenuOpen())) {
             // Not centered or already changed.
             if (x == monitorInfo.rcWork.left) {
                 return original();
@@ -1488,9 +1497,11 @@ void RestoreMenuPositions() {
 }
 
 void LoadSettings() {
-    g_settings.startMenuOnTheLeft = Wh_GetIntSetting(L"startMenuOnTheLeft");
     g_settings.otherSystemButtonsOnTheLeft =
         Wh_GetIntSetting(L"otherSystemButtonsOnTheLeft");
+    g_settings.startMenuOnTheLeft = Wh_GetIntSetting(L"startMenuOnTheLeft");
+    g_settings.searchMenuPositionInAllCases =
+        Wh_GetIntSetting(L"searchMenuPositionInAllCases");
 }
 
 BOOL Wh_ModInit() {
