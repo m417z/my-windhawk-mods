@@ -33,10 +33,10 @@ keeping only the app icons centered.
 
 Only Windows 11 is supported.
 
-![Screenshot](https://i.imgur.com/MSKYKbE.png)
+![Screenshot](https://i.imgur.com/MSKYKbE.png) \
 _Start button on the left_
 
-![Screenshot](https://i.imgur.com/SOdWH1P.png)
+![Screenshot](https://i.imgur.com/SOdWH1P.png) \
 _Start button, search and task view buttons on the left_
 */
 // ==/WindhawkModReadme==
