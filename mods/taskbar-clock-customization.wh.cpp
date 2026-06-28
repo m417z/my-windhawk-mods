@@ -684,9 +684,9 @@ FormattedString<FORMATTED_BUFFER_SIZE> g_cpuFormatted;
 FormattedString<FORMATTED_BUFFER_SIZE> g_ramFormatted;
 FormattedString<FORMATTED_BUFFER_SIZE> g_ramUsedFormatted;
 FormattedString<FORMATTED_BUFFER_SIZE> g_ramTotalFormatted;
-FormattedString<FORMATTED_BUFFER_SIZE> g_ramCommitedFormatted;
-FormattedString<FORMATTED_BUFFER_SIZE> g_ramCommitedUsedFormatted;
-FormattedString<FORMATTED_BUFFER_SIZE> g_ramCommitedTotalFormatted;
+FormattedString<FORMATTED_BUFFER_SIZE> g_ramCommittedFormatted;
+FormattedString<FORMATTED_BUFFER_SIZE> g_ramCommittedUsedFormatted;
+FormattedString<FORMATTED_BUFFER_SIZE> g_ramCommittedTotalFormatted;
 MEMORYSTATUSEX g_ramStatus;
 bool g_ramStatusValid = false;
 DWORD g_ramLastFormatIndex = 0xFFFFFFFF;
@@ -3344,9 +3344,9 @@ PCWSTR GetRamTotalFormatted() {
         });
 }
 
-PCWSTR GetRamCommitedFormatted() {
+PCWSTR GetRamCommittedFormatted() {
     return GetMetricFormatted(
-        g_ramCommitedFormatted, [](PWSTR buffer, size_t bufferSize) {
+        g_ramCommittedFormatted, [](PWSTR buffer, size_t bufferSize) {
             RamSampleIfNeeded();
             if (!g_ramStatusValid || g_ramStatus.ullTotalPageFile == 0) {
                 return false;
@@ -3362,9 +3362,9 @@ PCWSTR GetRamCommitedFormatted() {
         });
 }
 
-PCWSTR GetRamCommitedUsedFormatted() {
+PCWSTR GetRamCommittedUsedFormatted() {
     return GetMetricFormatted(
-        g_ramCommitedUsedFormatted, [](PWSTR buffer, size_t bufferSize) {
+        g_ramCommittedUsedFormatted, [](PWSTR buffer, size_t bufferSize) {
             RamSampleIfNeeded();
             if (!g_ramStatusValid) {
                 return false;
@@ -3377,9 +3377,9 @@ PCWSTR GetRamCommitedUsedFormatted() {
         });
 }
 
-PCWSTR GetRamCommitedTotalFormatted() {
+PCWSTR GetRamCommittedTotalFormatted() {
     return GetMetricFormatted(
-        g_ramCommitedTotalFormatted, [](PWSTR buffer, size_t bufferSize) {
+        g_ramCommittedTotalFormatted, [](PWSTR buffer, size_t bufferSize) {
             RamSampleIfNeeded();
             if (!g_ramStatusValid) {
                 return false;
@@ -3709,9 +3709,9 @@ size_t ResolveFormatToken(
         {L"%ram%"sv, GetRamFormatted},
         {L"%ram_used%"sv, GetRamUsedFormatted},
         {L"%ram_total%"sv, GetRamTotalFormatted},
-        {L"%ram_committed%"sv, GetRamCommitedFormatted},
-        {L"%ram_committed_used%"sv, GetRamCommitedUsedFormatted},
-        {L"%ram_committed_total%"sv, GetRamCommitedTotalFormatted},
+        {L"%ram_committed%"sv, GetRamCommittedFormatted},
+        {L"%ram_committed_used%"sv, GetRamCommittedUsedFormatted},
+        {L"%ram_committed_total%"sv, GetRamCommittedTotalFormatted},
         {L"%gpu%"sv, GetGpuFormatted},
         {L"%vram%"sv, GetVramFormatted},
         {L"%vram_used%"sv, GetVramUsedFormatted},
