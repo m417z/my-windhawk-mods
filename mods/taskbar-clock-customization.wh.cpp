@@ -3563,6 +3563,16 @@ void ClockSystemTrayIconDataModel_RefreshIcon_Hook_Impl(
     LPVOID pThis,
     LPVOID param1,
     ClockSystemTrayIconDataModel_RefreshIcon_t original) {
+    // FormatLine creates the data collection session and the web content thread
+    // on demand, but it only runs while calling the original function below,
+    // after g_refreshIconNeedToAdjustTimer is set. Create them beforehand so
+    // the flag accounts for them, otherwise the first refresh keeps the default
+    // one-minute timer instead of shortening it to one second.
+    {
+        std::lock_guard<std::mutex> guard(g_formatLineMutex);
+        EnsureFormattingInitialized();
+    }
+
     g_refreshIconThreadId = GetCurrentThreadId();
     bool webContentPending = g_webContentUpdateThread && !g_webContentLoaded;
     g_refreshIconNeedToAdjustTimer =
