@@ -1930,6 +1930,12 @@ class QueryDataCollectionSession {
         double sum;
         size_t count;
     };
+    struct DxgiAdapterInfo {
+        std::wstring description;
+        std::wstring luid;
+        SIZE_T dedicated_video_memory;
+        SIZE_T shared_system_memory;
+    };
     std::optional<QueryDataResult> QueryDataWithCount(MetricType type);
     void UpdateMetric(MetricType type);
 
@@ -1941,14 +1947,12 @@ class QueryDataCollectionSession {
         const std::vector<std::wstring>& paths,
         PCWSTR adapter_name,
         bool quiet);
-    static std::wstring GetGpuLuidByName(PCWSTR gpu_name, bool quiet);
-    static std::vector<std::wstring> FilterGpuPathsByAdapterName(
+    std::optional<DxgiAdapterInfo> GetDxgiAdapterInfo(PCWSTR gpu_name,
+                                                      bool quiet);
+    std::vector<std::wstring> FilterGpuPathsByAdapterName(
         const std::vector<std::wstring>& paths,
         PCWSTR gpu_name,
         bool quiet);
-    static void GetDxgiVideoMemory(PCWSTR gpu_name,
-                                   SIZE_T* dedicated,
-                                   SIZE_T* shared);
 
     std::vector<std::wstring> ExpandAndFilterWildcardPaths(MetricType type,
                                                            PCWSTR counter_path,
@@ -1988,6 +1992,11 @@ class QueryDataCollectionSession {
     SIZE_T vram_total_bytes_ = 0;
     SIZE_T vram_shared_total_bytes_ = 0;
     bool vram_total_queried_ = false;
+
+    // Cached DXGI adapter info (queried once per GPU name).
+    std::wstring dxgi_adapter_info_gpu_name_;
+    std::optional<DxgiAdapterInfo> dxgi_adapter_info_;
+    bool dxgi_adapter_info_queried_ = false;
 
     PDH_HQUERY query_;
     MetricData metrics_[static_cast<int>(MetricType::kCount)];
@@ -2225,8 +2234,11 @@ std::optional<double> QueryDataCollectionSession::QueryVramUsed() {
 
 std::optional<double> QueryDataCollectionSession::QueryVramTotal() {
     if (!vram_total_queried_) {
-        GetDxgiVideoMemory(g_settings.dataCollection.gpuAdapterName,
-                           &vram_total_bytes_, &vram_shared_total_bytes_);
+        auto info = GetDxgiAdapterInfo(g_settings.dataCollection.gpuAdapterName, true);
+        if (info) {
+            vram_total_bytes_ = info->dedicated_video_memory;
+            vram_shared_total_bytes_ = info->shared_system_memory;
+        }
         vram_total_queried_ = true;
     }
 
@@ -2256,8 +2268,11 @@ std::optional<double> QueryDataCollectionSession::QueryVramSharedUsed() {
 
 std::optional<double> QueryDataCollectionSession::QueryVramSharedTotal() {
     if (!vram_total_queried_) {
-        GetDxgiVideoMemory(g_settings.dataCollection.gpuAdapterName,
-                           &vram_total_bytes_, &vram_shared_total_bytes_);
+        auto info = GetDxgiAdapterInfo(g_settings.dataCollection.gpuAdapterName, true);
+        if (info) {
+            vram_total_bytes_ = info->dedicated_video_memory;
+            vram_shared_total_bytes_ = info->shared_system_memory;
+        }
         vram_total_queried_ = true;
     }
 
@@ -2268,19 +2283,21 @@ std::optional<double> QueryDataCollectionSession::QueryVramSharedTotal() {
     return std::nullopt;
 }
 
-void QueryDataCollectionSession::GetDxgiVideoMemory(PCWSTR gpu_name,
-                                                    SIZE_T* dedicated,
-                                                    SIZE_T* shared) {
-    if (dedicated) {
-        *dedicated = 0;
+std::optional<QueryDataCollectionSession::DxgiAdapterInfo>
+QueryDataCollectionSession::GetDxgiAdapterInfo(PCWSTR gpu_name, bool quiet) {
+    std::wstring gpu_name_key = gpu_name ? gpu_name : L"";
+    if (dxgi_adapter_info_queried_ &&
+        dxgi_adapter_info_gpu_name_ == gpu_name_key) {
+        return dxgi_adapter_info_;
     }
-    if (shared) {
-        *shared = 0;
-    }
+
+    dxgi_adapter_info_gpu_name_ = gpu_name_key;
+    dxgi_adapter_info_.reset();
+    dxgi_adapter_info_queried_ = true;
 
     winrt::com_ptr<IDXGIFactory> factory;
     if (FAILED(CreateDXGIFactory(IID_PPV_ARGS(factory.put())))) {
-        return;
+        return std::nullopt;
     }
 
     DXGI_ADAPTER_DESC best_desc{};
@@ -2295,6 +2312,12 @@ void QueryDataCollectionSession::GetDxgiVideoMemory(PCWSTR gpu_name,
         DXGI_ADAPTER_DESC desc{};
         if (FAILED(adapter->GetDesc(&desc))) {
             continue;
+        }
+
+        if (!quiet) {
+            Wh_Log(L"DXGI adapter %u: %s (LUID: 0x%08X_0x%08X, VRAM: %zu)", i,
+                   desc.Description, desc.AdapterLuid.HighPart,
+                   desc.AdapterLuid.LowPart, desc.DedicatedVideoMemory);
         }
 
         // If a name is specified, check for a match.
@@ -2314,14 +2337,22 @@ void QueryDataCollectionSession::GetDxgiVideoMemory(PCWSTR gpu_name,
         }
     }
 
-    if (found) {
-        if (dedicated) {
-            *dedicated = best_desc.DedicatedVideoMemory;
-        }
-        if (shared) {
-            *shared = best_desc.SharedSystemMemory;
-        }
+    if (!found) {
+        return std::nullopt;
     }
+
+    WCHAR luid_str[32];
+    swprintf_s(luid_str, L"0x%08X_0x%08X", best_desc.AdapterLuid.HighPart,
+               best_desc.AdapterLuid.LowPart);
+
+    dxgi_adapter_info_ = DxgiAdapterInfo{
+        best_desc.Description,
+        luid_str,
+        best_desc.DedicatedVideoMemory,
+        best_desc.SharedSystemMemory,
+    };
+
+    return dxgi_adapter_info_;
 }
 
 std::optional<double> QueryDataCollectionSession::QueryDataAvg(
@@ -2473,66 +2504,6 @@ QueryDataCollectionSession::FilterNetworkPathsByAdapterName(
     return filtered;
 }
 
-// Get the LUID for a GPU adapter by name using DXGI.
-// If gpu_name is empty, returns the LUID of the adapter with the most VRAM.
-std::wstring QueryDataCollectionSession::GetGpuLuidByName(PCWSTR gpu_name,
-                                                          bool quiet) {
-    winrt::com_ptr<IDXGIFactory> factory;
-    if (FAILED(CreateDXGIFactory(IID_PPV_ARGS(factory.put())))) {
-        return {};
-    }
-
-    DXGI_ADAPTER_DESC best_desc{};
-    bool found = false;
-
-    for (UINT i = 0;; i++) {
-        winrt::com_ptr<IDXGIAdapter> adapter;
-        if (factory->EnumAdapters(i, adapter.put()) == DXGI_ERROR_NOT_FOUND) {
-            break;
-        }
-
-        DXGI_ADAPTER_DESC desc{};
-        if (FAILED(adapter->GetDesc(&desc))) {
-            continue;
-        }
-
-        if (!quiet) {
-            Wh_Log(L"DXGI adapter %u: %s (LUID: 0x%08X_0x%08X, VRAM: %zu)", i,
-                   desc.Description, desc.AdapterLuid.HighPart,
-                   desc.AdapterLuid.LowPart, desc.DedicatedVideoMemory);
-        }
-
-        // If a name is specified, check for a match.
-        if (gpu_name && *gpu_name) {
-            if (wcsstr(desc.Description, gpu_name)) {
-                best_desc = desc;
-                found = true;
-                break;
-            }
-        } else {
-            // Auto-select the one with most VRAM.
-            if (!found ||
-                desc.DedicatedVideoMemory > best_desc.DedicatedVideoMemory) {
-                best_desc = desc;
-                found = true;
-            }
-        }
-    }
-
-    if (found) {
-        WCHAR luid_str[32];
-        swprintf_s(luid_str, L"0x%08X_0x%08X", best_desc.AdapterLuid.HighPart,
-                   best_desc.AdapterLuid.LowPart);
-        if (!quiet) {
-            Wh_Log(L"Selected GPU: %s -> LUID %s", best_desc.Description,
-                   luid_str);
-        }
-        return luid_str;
-    }
-
-    return {};
-}
-
 // Filter GPU paths by adapter name (uses DXGI to map name to LUID).
 std::vector<std::wstring>
 QueryDataCollectionSession::FilterGpuPathsByAdapterName(
@@ -2543,13 +2514,17 @@ QueryDataCollectionSession::FilterGpuPathsByAdapterName(
         Wh_Log(L"Filtering GPU adapters by name: %s", gpu_name);
     }
 
-    // Get the LUID for the GPU name.
-    std::wstring target_luid = GetGpuLuidByName(gpu_name, quiet);
-    if (target_luid.empty()) {
+    auto info = GetDxgiAdapterInfo(gpu_name, quiet);
+    if (!info) {
         if (!quiet) {
             Wh_Log(L"GPU not found by name");
         }
         return {};
+    }
+
+    if (!quiet) {
+        Wh_Log(L"Selected GPU: %s -> LUID %s", info->description.c_str(),
+               info->luid.c_str());
     }
 
     std::vector<std::wstring> filtered;
@@ -2564,14 +2539,14 @@ QueryDataCollectionSession::FilterGpuPathsByAdapterName(
             continue;
         }
 
-        if (_wcsicmp(std::wstring(luid).c_str(), target_luid.c_str()) == 0) {
+        if (_wcsicmp(std::wstring(luid).c_str(), info->luid.c_str()) == 0) {
             filtered.push_back(path);
         }
     }
 
     if (filtered.empty()) {
         if (!quiet) {
-            Wh_Log(L"No GPU paths matched LUID %s", target_luid.c_str());
+            Wh_Log(L"No GPU paths matched LUID %s", info->luid.c_str());
         }
         return {};
     }
