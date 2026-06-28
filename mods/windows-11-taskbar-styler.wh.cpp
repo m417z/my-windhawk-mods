@@ -9,7 +9,7 @@
 // @homepage        https://m417z.com/
 // @include         explorer.exe
 // @architecture    x86-64
-// @compilerOptions -lcomctl32 -lole32 -loleaut32 -lruntimeobject
+// @compilerOptions -lcomctl32 -lgdi32 -lole32 -loleaut32 -lruntimeobject
 // ==/WindhawkMod==
 
 // Source code is published under The GNU General Public License v3.0.
@@ -509,6 +509,12 @@ from the **TranslucentTB** project.
 
     The ":=" syntax can be used to set a XAML value. For details, refer to the
     mod description.
+- clickThroughTaskbar: false
+  $name: Click-through taskbar
+  $description: >-
+    Make the empty parts of the taskbar click-through. Only the area with the
+    taskbar buttons and the system tray stays visible and clickable. Mainly
+    useful for dock themes such as DockLike.
 - xamlDiagnosticsHandling: alert
   $name: XAML diagnostics consumer handling
   $description: >-
@@ -5497,6 +5503,9 @@ void ApplyCustomizations(InstanceHandle handle,
                          PCWSTR fallbackClassName);
 void CleanupCustomizations(InstanceHandle handle);
 
+void HandleClickThroughIslandRoot(
+    winrt::Windows::Foundation::IInspectable const& inspectable);
+
 HMODULE GetCurrentModuleHandle() {
     HMODULE module;
     if (!GetModuleHandleEx(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
@@ -5648,6 +5657,7 @@ HRESULT VisualTreeWatcher::OnVisualTreeChange(ParentChildRelation, VisualElement
         else
         {
             Wh_Log(L"Skipping non-FrameworkElement");
+            HandleClickThroughIslandRoot(inspectable);
         }
     }
     else if (mutationType == Remove)
@@ -5900,6 +5910,7 @@ using namespace std::string_view_literals;
 #include <d2d1_1.h>
 #include <roapi.h>
 #include <windows.graphics.effects.h>
+#include <windows.ui.xaml.hosting.desktopwindowxamlsource.h>
 #include <winstring.h>
 
 #include <winrt/Windows.Foundation.Collections.h>
@@ -5935,6 +5946,7 @@ enum class XamlDiagnosticsHandling {
 };
 
 struct {
+    bool clickThroughTaskbar;
     XamlDiagnosticsHandling xamlDiagnosticsHandling;
 } g_settings;
 
@@ -6298,6 +6310,91 @@ thread_local winrt::Windows::UI::Xaml::FrameworkElement::LayoutUpdated_revoker
 // outstanding. Used to apply the fix once per broken state instead of on every
 // LayoutUpdated, and to stop retrying a state the fix doesn't resolve.
 thread_local std::vector<long long> g_workaroundLastFixSignature;
+
+// Per-XamlRoot state for the click-through taskbar option. Each taskbar
+// (primary and per secondary monitor) has its own XamlRoot on the shared UI
+// thread, and is clipped independently via SetWindowRgn. Identity is tracked
+// via weak_ref so a destroyed XamlRoot's slot cannot be confused with a new one
+// at the same address. std::list is used because the LayoutUpdated lambda
+// captures a pointer to its entry, which must stay valid as other entries are
+// added or reaped.
+struct ClickThroughTaskbarState {
+    winrt::weak_ref<XamlRoot> xamlRoot;
+    // The XAML island's native window, from IDesktopWindowXamlSourceNative. Its
+    // GA_ROOT ancestor is the top-level taskbar window the region is applied
+    // to.
+    HWND islandHwnd = nullptr;
+    winrt::weak_ref<FrameworkElement> taskbarFrame;
+    winrt::weak_ref<FrameworkElement> systemTrayFrame;
+    FrameworkElement::LayoutUpdated_revoker layoutUpdatedRevoker;
+    // Quantized signature of the last applied region, to skip redundant work on
+    // the frequent LayoutUpdated event.
+    std::vector<long long> lastRegionSignature;
+};
+
+thread_local std::list<ClickThroughTaskbarState> g_clickThroughTaskbarState;
+
+// Look up (or create) the entry for a live XamlRoot. Reaps any entries whose
+// XamlRoot has been destroyed before searching, so a recycled address cannot
+// collide with a stale entry.
+ClickThroughTaskbarState* GetClickThroughState(XamlRoot const& xamlRoot) {
+    if (!xamlRoot) {
+        return nullptr;
+    }
+    g_clickThroughTaskbarState.remove_if(
+        [](ClickThroughTaskbarState const& entry) {
+            return !entry.xamlRoot.get();
+        });
+    for (auto& entry : g_clickThroughTaskbarState) {
+        if (entry.xamlRoot.get() == xamlRoot) {
+            return &entry;
+        }
+    }
+    auto& fresh = g_clickThroughTaskbarState.emplace_back();
+    fresh.xamlRoot = xamlRoot;
+    return &fresh;
+}
+
+// Tracks XAML island roots (DesktopWindowXamlSource) seen for click-through, so
+// the island's native window can be matched to a taskbar's XamlRoot. Needed
+// because a freshly created island (e.g. a secondary taskbar attached after the
+// mod loaded) reports its root before the content/XamlRoot is ready, so the
+// association has to be resolved lazily once the frames lay out.
+struct ClickThroughIslandRoot {
+    winrt::weak_ref<wuxh::DesktopWindowXamlSource> source;
+    HWND islandHwnd = nullptr;
+};
+
+thread_local std::list<ClickThroughIslandRoot> g_clickThroughIslandRoots;
+
+// Find the island native window whose root content shares the given XamlRoot.
+// Reaps entries whose source has been destroyed. Returns nullptr if not found
+// yet (the island's content may not be attached at the time of the call).
+HWND ResolveClickThroughIslandHwnd(XamlRoot const& xamlRoot) {
+    g_clickThroughIslandRoots.remove_if(
+        [](ClickThroughIslandRoot const& entry) {
+            return !entry.source.get();
+        });
+    for (auto& entry : g_clickThroughIslandRoots) {
+        auto source = entry.source.get();
+        if (!source) {
+            continue;
+        }
+        auto content = source.Content();
+        if (!content) {
+            continue;
+        }
+        XamlRoot contentXamlRoot = nullptr;
+        try {
+            contentXamlRoot = content.XamlRoot();
+        } catch (...) {
+        }
+        if (contentXamlRoot && contentXamlRoot == xamlRoot) {
+            return entry.islandHwnd;
+        }
+    }
+    return nullptr;
+}
 
 winrt::Windows::Foundation::IInspectable ReadLocalValueWithWorkaround(
     DependencyObject elementDo,
@@ -10508,6 +10605,282 @@ void UnhookFirstTaskbarFrameLayoutWorkaround() {
     g_workaroundLastFixSignature.clear();
 }
 
+bool IsTaskbarTopLevelWindow(HWND hWnd) {
+    WCHAR className[32];
+    if (!GetClassName(hWnd, className, ARRAYSIZE(className))) {
+        return false;
+    }
+
+    return _wcsicmp(className, L"Shell_TrayWnd") == 0 ||
+           _wcsicmp(className, L"Shell_SecondaryTrayWnd") == 0;
+}
+
+// Click-through taskbar: clip the top-level taskbar window to the union of the
+// TaskbarFrame and SystemTrayFrame rects so the empty areas become both
+// invisible and click-through.
+void UpdateClickThroughRegion(ClickThroughTaskbarState& state) {
+    auto taskbarFrame = state.taskbarFrame.get();
+    if (!taskbarFrame) {
+        Wh_Log(L"No live TaskbarFrame");
+        return;
+    }
+
+    XamlRoot xamlRoot = nullptr;
+    try {
+        xamlRoot = taskbarFrame.XamlRoot();
+    } catch (...) {
+        Wh_Log(L"Error %08X: %s", winrt::to_hresult(),
+               winrt::to_message().c_str());
+    }
+    if (!xamlRoot) {
+        Wh_Log(L"No XamlRoot for TaskbarFrame");
+        return;
+    }
+
+    // Resolve the island native window lazily. A freshly created island reports
+    // its root before its content/XamlRoot is ready, so the association can't
+    // be made at island-add time; by the time the frames lay out it can.
+    if (!state.islandHwnd) {
+        state.islandHwnd = ResolveClickThroughIslandHwnd(xamlRoot);
+    }
+    if (!state.islandHwnd) {
+        Wh_Log(L"Island window not resolved yet");
+        return;
+    }
+
+    double scale = xamlRoot.RasterizationScale();
+    if (scale <= 0) {
+        Wh_Log(L"Invalid RasterizationScale %f", scale);
+        return;
+    }
+
+    auto content = xamlRoot.Content();
+    if (!content) {
+        Wh_Log(L"No XamlRoot content");
+        return;
+    }
+
+    HWND topLevelWnd = GetAncestor(state.islandHwnd, GA_ROOT);
+    if (!topLevelWnd || !IsTaskbarTopLevelWindow(topLevelWnd)) {
+        Wh_Log(L"Island %08X is not under a taskbar window",
+               (DWORD)(ULONG_PTR)state.islandHwnd);
+        return;
+    }
+
+    // Bounds of a frame relative to the island root, in DIPs.
+    auto frameRect = [&content](FrameworkElement const& frame)
+        -> std::optional<winrt::Windows::Foundation::Rect> {
+        if (!frame) {
+            return std::nullopt;
+        }
+        auto rect = frame.TransformToVisual(content).TransformBounds(
+            {0, 0, static_cast<float>(frame.ActualWidth()),
+             static_cast<float>(frame.ActualHeight())});
+        if (rect.Width <= 0 || rect.Height <= 0) {
+            return std::nullopt;
+        }
+        return rect;
+    };
+
+    auto taskbarFrameRect = frameRect(taskbarFrame);
+    if (!taskbarFrameRect) {
+        // Without the taskbar frame there's nothing meaningful to keep, and an
+        // empty region would hide the whole taskbar. Retry on the next pass.
+        Wh_Log(L"TaskbarFrame not laid out yet");
+        return;
+    }
+
+    auto systemTrayFrameRect = frameRect(state.systemTrayFrame.get());
+
+    // LayoutUpdated is frequent; only re-apply when the result actually
+    // changes.
+    auto appendRect =
+        [](std::vector<long long>& sig,
+           std::optional<winrt::Windows::Foundation::Rect> const& rect) {
+            if (rect) {
+                sig.push_back(QuantizeLayoutSize(rect->X));
+                sig.push_back(QuantizeLayoutSize(rect->Y));
+                sig.push_back(QuantizeLayoutSize(rect->Width));
+                sig.push_back(QuantizeLayoutSize(rect->Height));
+            } else {
+                sig.push_back(-1);
+            }
+        };
+
+    std::vector<long long> signature;
+    signature.push_back(reinterpret_cast<long long>(topLevelWnd));
+    signature.push_back(QuantizeLayoutSize(scale * 100));
+    appendRect(signature, taskbarFrameRect);
+    appendRect(signature, systemTrayFrameRect);
+    if (signature == state.lastRegionSignature) {
+        return;
+    }
+    state.lastRegionSignature = signature;
+
+    // Convert DIP rects to physical pixels in top-level window coordinates. The
+    // island client origin and the window rect are both physical/screen pixels,
+    // so multiplying DIPs by the rasterization scale keeps everything
+    // DPI-consistent.
+    POINT islandOrigin = {0, 0};
+    ClientToScreen(state.islandHwnd, &islandOrigin);
+
+    RECT tlRect;
+    if (!GetWindowRect(topLevelWnd, &tlRect)) {
+        Wh_Log(L"GetWindowRect failed for %08X", (DWORD)(ULONG_PTR)topLevelWnd);
+        return;
+    }
+
+    int tlWidth = tlRect.right - tlRect.left;
+    int tlHeight = tlRect.bottom - tlRect.top;
+
+    auto toWindowRect =
+        [&](winrt::Windows::Foundation::Rect const& dip) -> RECT {
+        int left = (islandOrigin.x - tlRect.left) + std::lround(dip.X * scale);
+        int top = (islandOrigin.y - tlRect.top) + std::lround(dip.Y * scale);
+        int right = left + std::lround(dip.Width * scale);
+        int bottom = top + std::lround(dip.Height * scale);
+        return RECT{std::clamp(left, 0, tlWidth), std::clamp(top, 0, tlHeight),
+                    std::clamp(right, 0, tlWidth),
+                    std::clamp(bottom, 0, tlHeight)};
+    };
+
+    RECT tf = toWindowRect(*taskbarFrameRect);
+    HRGN rgn = CreateRectRgn(tf.left, tf.top, tf.right, tf.bottom);
+    if (!rgn) {
+        Wh_Log(L"CreateRectRgn failed");
+        return;
+    }
+
+    if (systemTrayFrameRect) {
+        RECT st = toWindowRect(*systemTrayFrameRect);
+        if (HRGN trayRgn =
+                CreateRectRgn(st.left, st.top, st.right, st.bottom)) {
+            CombineRgn(rgn, rgn, trayRgn, RGN_OR);
+            DeleteObject(trayRgn);
+        }
+    }
+
+    Wh_Log(L"Applying region to %08X", (DWORD)(ULONG_PTR)topLevelWnd);
+
+    // SetWindowRgn takes ownership of the region on success.
+    if (!SetWindowRgn(topLevelWnd, rgn, TRUE)) {
+        Wh_Log(L"SetWindowRgn failed for %08X", (DWORD)(ULONG_PTR)topLevelWnd);
+        DeleteObject(rgn);
+    }
+}
+
+void HandleClickThroughElement(FrameworkElement element) {
+    auto className = winrt::get_class_name(element);
+
+    bool isTaskbarFrame = className == L"Taskbar.TaskbarFrame";
+    bool isSystemTrayFrame = className == L"SystemTray.SystemTrayFrame";
+    if (!isTaskbarFrame && !isSystemTrayFrame) {
+        return;
+    }
+
+    XamlRoot xamlRoot = nullptr;
+    try {
+        xamlRoot = element.XamlRoot();
+    } catch (...) {
+        Wh_Log(L"Error %08X: %s", winrt::to_hresult(),
+               winrt::to_message().c_str());
+    }
+    if (!xamlRoot) {
+        Wh_Log(L"No XamlRoot for %s", className.c_str());
+        return;
+    }
+
+    auto* state = GetClickThroughState(xamlRoot);
+    if (!state) {
+        Wh_Log(L"No state for %s", className.c_str());
+        return;
+    }
+
+    if (isTaskbarFrame) {
+        state->taskbarFrame = element;
+    } else {
+        state->systemTrayFrame = element;
+    }
+
+    // Hook LayoutUpdated once per XamlRoot, on the taskbar frame (always
+    // present; its layout passes also cover system tray changes in the same
+    // tree).
+    if (isTaskbarFrame && !state->layoutUpdatedRevoker) {
+        auto weakXamlRoot = winrt::make_weak(xamlRoot);
+        state->layoutUpdatedRevoker = element.LayoutUpdated(
+            winrt::auto_revoke,
+            [weakXamlRoot](winrt::Windows::Foundation::IInspectable const&,
+                           winrt::Windows::Foundation::IInspectable const&) {
+                auto strongXamlRoot = weakXamlRoot.get();
+                if (!strongXamlRoot) {
+                    return;
+                }
+                if (auto* state = GetClickThroughState(strongXamlRoot)) {
+                    UpdateClickThroughRegion(*state);
+                }
+            });
+    }
+
+    UpdateClickThroughRegion(*state);
+}
+
+// The XAML island root reports as a DesktopWindowXamlSource (not a
+// FrameworkElement), so it bypasses ApplyCustomizations. Track it here so its
+// native window can be matched to a taskbar's XamlRoot once the frames lay out
+// (see ResolveClickThroughIslandHwnd). Resolving the HWND from the root is how
+// UWPSpy handles system XAML islands.
+void HandleClickThroughIslandRoot(
+    winrt::Windows::Foundation::IInspectable const& inspectable) {
+    if (!g_settings.clickThroughTaskbar) {
+        return;
+    }
+
+    auto source = inspectable.try_as<wuxh::DesktopWindowXamlSource>();
+    if (!source) {
+        return;
+    }
+
+    HWND islandHwnd = nullptr;
+    if (auto native = inspectable.try_as<IDesktopWindowXamlSourceNative>()) {
+        native->get_WindowHandle(&islandHwnd);
+    }
+    if (!islandHwnd) {
+        Wh_Log(L"Failed to get window handle for island root");
+        return;
+    }
+
+    // Reap dead entries and replace any with this same window, then track the
+    // island.
+    g_clickThroughIslandRoots.remove_if(
+        [&](ClickThroughIslandRoot const& entry) {
+            return !entry.source.get() || entry.islandHwnd == islandHwnd;
+        });
+    try {
+        auto weakSource = winrt::make_weak(source);
+        auto& entry = g_clickThroughIslandRoots.emplace_back();
+        entry.source = std::move(weakSource);
+        entry.islandHwnd = islandHwnd;
+    } catch (...) {
+        Wh_Log(L"Error %08X: %s", winrt::to_hresult(),
+               winrt::to_message().c_str());
+    }
+}
+
+// Remove click-through regions from every taskbar window on the current thread,
+// restoring the normal rectangular windows. Unconditional, so it cleans up even
+// if per-XamlRoot tracking is stale.
+void ClearClickThroughRegions() {
+    EnumThreadWindows(
+        GetCurrentThreadId(),
+        [](HWND hWnd, LPARAM) -> BOOL {
+            if (IsTaskbarTopLevelWindow(hWnd)) {
+                SetWindowRgn(hWnd, nullptr, TRUE);
+            }
+            return TRUE;
+        },
+        0);
+}
+
 void MergeResourceVariables();
 
 void ApplyCustomizations(InstanceHandle handle,
@@ -10518,6 +10891,13 @@ void ApplyCustomizations(InstanceHandle handle,
     // during initialization.
     if (!g_resourceVariablesThemeDict) {
         MergeResourceVariables();
+    }
+
+    // Handle click-through before the no-customizations early return below,
+    // since it must run for the taskbar elements even with no styles
+    // configured.
+    if (g_settings.clickThroughTaskbar) {
+        HandleClickThroughElement(element);
     }
 
     auto* state = GetStyleVariableState(element);
@@ -11535,6 +11915,16 @@ void UninitializeResourceVariables() {
 void UninitializeForCurrentThread() {
     UnhookFirstTaskbarFrameLayoutWorkaround();
 
+    // Restore taskbars clipped for click-through, then drop tracking (revokers
+    // auto-unhook LayoutUpdated). Skip the region reset when nothing was
+    // tracked, to avoid an unnecessary taskbar redraw on unrelated settings
+    // changes.
+    if (!g_clickThroughTaskbarState.empty()) {
+        ClearClickThroughRegions();
+        g_clickThroughTaskbarState.clear();
+    }
+    g_clickThroughIslandRoots.clear();
+
     // Clear failed image brushes list for this thread (revokers will
     // automatically unregister).
     g_failedImageBrushesForThread.failedImageBrushes.clear();
@@ -12100,6 +12490,8 @@ void StopStatsTimer() {
 }
 
 void LoadSettings() {
+    g_settings.clickThroughTaskbar = Wh_GetIntSetting(L"clickThroughTaskbar");
+
     PCWSTR xamlDiagnosticsHandling =
         Wh_GetStringSetting(L"xamlDiagnosticsHandling");
     g_settings.xamlDiagnosticsHandling = XamlDiagnosticsHandling::kAlert;
