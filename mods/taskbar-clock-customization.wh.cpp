@@ -2,7 +2,7 @@
 // @id              taskbar-clock-customization
 // @name            Taskbar Clock Customization
 // @description     Custom date/time format, news feed, weather, performance metrics (upload/download speed, CPU, RAM, GPU, battery), media player info, custom fonts and colors, and more
-// @version         1.7.5
+// @version         1.7.4
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
@@ -195,14 +195,7 @@ styles, such as the font color and size.
   $description: >-
     Set to zero for the default system value. A negative value can be used for
     negative spacing.
-- GpuAdapterName: ""
-  $name: GPU adapter name
-  $description: >-
-    The GPU adapter to use for GPU usage and VRAM metrics. Leave empty to
-    auto-detect (uses the adapter with the most dedicated VRAM). Partial match is supported.
-    To list adapters, run:
 
-    wmic path win32_videocontroller get Name
 - DataCollection:
   - NetworkMetricsFormat: mbs
     $name: Network metrics format
@@ -244,7 +237,14 @@ styles, such as the font color and size.
       sum all adapters. Partial match is supported. To list adapters, run:
 
       typeperf -qx "Network Interface"
+  - GpuAdapterName: ""
+    $name: GPU adapter name
+    $description: >-
+      The GPU adapter to use for GPU usage and VRAM metrics. Leave empty to
+      auto-detect (uses the adapter with the most dedicated VRAM). Partial match is supported.
+      To list adapters, run:
 
+      wmic path win32_videocontroller get Name
   $name: System performance metrics
 - MediaPlayer:
   - IgnoredPlayers: [""]
