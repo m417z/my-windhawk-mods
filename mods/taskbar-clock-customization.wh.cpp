@@ -400,6 +400,11 @@ styles, such as the font color and size.
   - CharacterSpacing: 0
     $name: Character spacing
     $description: Can be a positive or a negative number.
+  - LineHeight: 0
+    $name: Line height
+    $description: >-
+      The line height in pixels, useful when the line contains multiple lines of
+      text (using the %newline% pattern). Set to zero for the default value.
   $name: Top line style (Windows 11 version 22H2 and newer)
 - DateStyle:
   - Hidden: false
@@ -466,6 +471,11 @@ styles, such as the font color and size.
   - CharacterSpacing: 0
     $name: Character spacing
     $description: Can be a positive or a negative number.
+  - LineHeight: 0
+    $name: Line height
+    $description: >-
+      The line height in pixels, useful when the line contains multiple lines of
+      text (using the %newline% pattern). Set to zero for the default value.
   $name: Bottom line style (Windows 11 version 22H2 and newer)
 - oldTaskbarOnWin11: false
   $name: Customize the old taskbar on Windows 11
@@ -594,6 +604,7 @@ struct TextStyleSettings {
     StringSetting fontStyle;
     StringSetting fontStretch;
     int characterSpacing;
+    int lineHeight;
 };
 
 struct {
@@ -4231,6 +4242,19 @@ void ApplyTextBlockStyles(
         textBlock.as<DependencyObject>().ClearValue(
             Controls::TextBlock::CharacterSpacingProperty());
     }
+
+    if (textStyleSettings && textStyleSettings->lineHeight) {
+        textBlock.LineHeight(textStyleSettings->lineHeight);
+        // Honor the line height exactly, even when it's smaller than the
+        // natural line height. Without this, lines never shrink below the
+        // font's default height.
+        textBlock.LineStackingStrategy(LineStackingStrategy::BlockLineHeight);
+    } else {
+        textBlock.as<DependencyObject>().ClearValue(
+            Controls::TextBlock::LineHeightProperty());
+        textBlock.as<DependencyObject>().ClearValue(
+            Controls::TextBlock::LineStackingStrategyProperty());
+    }
 }
 
 void ApplyDateTimeIconContentStyles(
@@ -5406,6 +5430,7 @@ void LoadSettings() {
         StringSetting::make(L"TimeStyle.FontStretch");
     g_settings.timeStyle.characterSpacing =
         Wh_GetIntSetting(L"TimeStyle.CharacterSpacing");
+    g_settings.timeStyle.lineHeight = Wh_GetIntSetting(L"TimeStyle.LineHeight");
 
     g_settings.dateStyle.hidden = Wh_GetIntSetting(L"DateStyle.Hidden");
     g_settings.dateStyle.textColor =
@@ -5423,6 +5448,7 @@ void LoadSettings() {
         StringSetting::make(L"DateStyle.FontStretch");
     g_settings.dateStyle.characterSpacing =
         Wh_GetIntSetting(L"DateStyle.CharacterSpacing");
+    g_settings.dateStyle.lineHeight = Wh_GetIntSetting(L"DateStyle.LineHeight");
 
     g_clockElementStyleEnabled =
         (g_settings.maxWidth || g_settings.textSpacing ||
@@ -5430,12 +5456,14 @@ void LoadSettings() {
          *g_settings.timeStyle.textAlignment || g_settings.timeStyle.fontSize ||
          *g_settings.timeStyle.fontFamily || *g_settings.timeStyle.fontWeight ||
          *g_settings.timeStyle.fontStyle || *g_settings.timeStyle.fontStretch ||
-         g_settings.timeStyle.characterSpacing || g_settings.dateStyle.hidden ||
+         g_settings.timeStyle.characterSpacing ||
+         g_settings.timeStyle.lineHeight || g_settings.dateStyle.hidden ||
          *g_settings.dateStyle.textColor ||
          *g_settings.dateStyle.textAlignment || g_settings.dateStyle.fontSize ||
          *g_settings.dateStyle.fontFamily || *g_settings.dateStyle.fontWeight ||
          *g_settings.dateStyle.fontStyle || *g_settings.dateStyle.fontStretch ||
-         g_settings.dateStyle.characterSpacing);
+         g_settings.dateStyle.characterSpacing ||
+         g_settings.dateStyle.lineHeight);
     g_clockElementStyleIndex++;
 
     g_settings.oldTaskbarOnWin11 = Wh_GetIntSetting(L"oldTaskbarOnWin11");
