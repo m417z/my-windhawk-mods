@@ -201,8 +201,7 @@ styles, such as the font color and size.
   - NetworkMetricsFormat: mbs
     $name: Network metrics format
     $description: >-
-      The format to use for displaying the upload/download transfer rate. Also
-      used for the disk read/write speed.
+      The format to use for displaying the upload/download transfer rate.
     $options:
     - mbs: MB/s
     - mbsNumberOnly: MB/s, number only
@@ -214,7 +213,25 @@ styles, such as the font color and size.
     $name: Network metrics fixed decimal places
     $description: >-
       Always use this amount of decimal places for the upload/download transfer
-      rate (-1 means auto/same width). Also used for the disk read/write speed.
+      rate (-1 means auto/same width).
+  - DiskMetricsFormat: sameAsNetwork
+    $name: Disk metrics format
+    $description: >-
+      The format to use for displaying the disk read/write speed.
+    $options:
+    - sameAsNetwork: Same as network metrics format
+    - mbs: MB/s
+    - mbsNumberOnly: MB/s, number only
+    - mbsDynamic: MB/s or KB/s (dynamic)
+    - mbits: MBit/s
+    - mbitsNumberOnly: MBit/s, number only
+    - mbitsDynamic: MBit/s or KBit/s (dynamic)
+  - DiskMetricsFixedDecimals: -1
+    $name: Disk metrics fixed decimal places
+    $description: >-
+      Always use this amount of decimal places for the disk read/write speed
+      (-1 means auto/same width). Ignored when the disk metrics format is set to
+      be the same as network metrics.
   - PercentageFormat: spacePaddingAndSymbol
     $name: Percentage format
     $description: >-
@@ -557,6 +574,8 @@ enum class PercentageFormat {
 struct DataCollectionSettings {
     NetworkMetricsFormat networkMetricsFormat;
     int networkMetricsFixedDecimals;
+    NetworkMetricsFormat diskMetricsFormat;
+    int diskMetricsFixedDecimals;
     PercentageFormat percentageFormat;
     int updateInterval;
     StringSetting networkAdapterName;
@@ -2972,7 +2991,11 @@ std::wstring FormatLocaleNum(double val, unsigned int digitsAfterDecimal) {
     return out;
 }
 
-void FormatTransferSpeed(double val, PWSTR buffer, size_t bufferSize) {
+void FormatTransferSpeed(double val,
+                         NetworkMetricsFormat format,
+                         int fixedDecimals,
+                         PWSTR buffer,
+                         size_t bufferSize) {
     constexpr int kKBInBytes = 1024;
     constexpr int kMBInBytes = 1024 * kKBInBytes;
     constexpr int kKbitInBytes = 1000 / 8;
@@ -2981,7 +3004,7 @@ void FormatTransferSpeed(double val, PWSTR buffer, size_t bufferSize) {
     double valUnit;
     PCWSTR unit = L"";
 
-    switch (g_settings.dataCollection.networkMetricsFormat) {
+    switch (format) {
         case NetworkMetricsFormat::mbs:
             valUnit = val / kMBInBytes;
             unit = L" MB/s";
@@ -3024,7 +3047,7 @@ void FormatTransferSpeed(double val, PWSTR buffer, size_t bufferSize) {
     int digitsAfterDecimal = 0;
     PCWSTR prefix = L"";
 
-    if (g_settings.dataCollection.networkMetricsFixedDecimals == -1) {
+    if (fixedDecimals == -1) {
         // Keep identical width for <1000 values.
         if (valUnit < 10) {
             digitsAfterDecimal = 2;
@@ -3035,8 +3058,7 @@ void FormatTransferSpeed(double val, PWSTR buffer, size_t bufferSize) {
             prefix = L"\u2008";
         }
     } else {
-        digitsAfterDecimal =
-            g_settings.dataCollection.networkMetricsFixedDecimals;
+        digitsAfterDecimal = fixedDecimals;
     }
 
     std::wstring valUnitFormatted =
@@ -3044,6 +3066,18 @@ void FormatTransferSpeed(double val, PWSTR buffer, size_t bufferSize) {
 
     swprintf_s(buffer, bufferSize, L"%s%s%s", prefix, valUnitFormatted.c_str(),
                unit);
+}
+
+void FormatNetworkTransferSpeed(double val, PWSTR buffer, size_t bufferSize) {
+    FormatTransferSpeed(val, g_settings.dataCollection.networkMetricsFormat,
+                        g_settings.dataCollection.networkMetricsFixedDecimals,
+                        buffer, bufferSize);
+}
+
+void FormatDiskTransferSpeed(double val, PWSTR buffer, size_t bufferSize) {
+    FormatTransferSpeed(val, g_settings.dataCollection.diskMetricsFormat,
+                        g_settings.dataCollection.diskMetricsFixedDecimals,
+                        buffer, bufferSize);
 }
 
 void FormatPercentValue(int val, PWSTR buffer, size_t bufferSize, int maxVal) {
@@ -3110,7 +3144,7 @@ PCWSTR GetUploadSpeedFormatted() {
             if (!val) {
                 return false;
             }
-            FormatTransferSpeed(*val, buffer, bufferSize);
+            FormatNetworkTransferSpeed(*val, buffer, bufferSize);
             return true;
         });
 }
@@ -3127,7 +3161,7 @@ PCWSTR GetDownloadSpeedFormatted() {
             if (!val) {
                 return false;
             }
-            FormatTransferSpeed(*val, buffer, bufferSize);
+            FormatNetworkTransferSpeed(*val, buffer, bufferSize);
             return true;
         });
 }
@@ -3147,7 +3181,7 @@ PCWSTR GetTotalSpeedFormatted() {
                 return false;
             }
             double totalSpeed = *uploadSpeed + *downloadSpeed;
-            FormatTransferSpeed(totalSpeed, buffer, bufferSize);
+            FormatNetworkTransferSpeed(totalSpeed, buffer, bufferSize);
             return true;
         });
 }
@@ -3164,7 +3198,7 @@ PCWSTR GetDiskReadSpeedFormatted() {
             if (!val) {
                 return false;
             }
-            FormatTransferSpeed(*val, buffer, bufferSize);
+            FormatDiskTransferSpeed(*val, buffer, bufferSize);
             return true;
         });
 }
@@ -3181,7 +3215,7 @@ PCWSTR GetDiskWriteSpeedFormatted() {
             if (!val) {
                 return false;
             }
-            FormatTransferSpeed(*val, buffer, bufferSize);
+            FormatDiskTransferSpeed(*val, buffer, bufferSize);
             return true;
         });
 }
@@ -3201,7 +3235,7 @@ PCWSTR GetDiskTotalSpeedFormatted() {
                 return false;
             }
             double totalSpeed = *readSpeed + *writeSpeed;
-            FormatTransferSpeed(totalSpeed, buffer, bufferSize);
+            FormatDiskTransferSpeed(totalSpeed, buffer, bufferSize);
             return true;
         });
 }
@@ -5225,6 +5259,22 @@ HMODULE WINAPI LoadLibraryExW_Hook(LPCWSTR lpLibFileName,
     return module;
 }
 
+NetworkMetricsFormat ParseNetworkMetricsFormat(PCWSTR value) {
+    if (wcscmp(value, L"mbsNumberOnly") == 0) {
+        return NetworkMetricsFormat::mbsNumberOnly;
+    } else if (wcscmp(value, L"mbsDynamic") == 0) {
+        return NetworkMetricsFormat::mbsDynamic;
+    } else if (wcscmp(value, L"mbits") == 0) {
+        return NetworkMetricsFormat::mbits;
+    } else if (wcscmp(value, L"mbitsNumberOnly") == 0) {
+        return NetworkMetricsFormat::mbitsNumberOnly;
+    } else if (wcscmp(value, L"mbitsDynamic") == 0) {
+        return NetworkMetricsFormat::mbitsDynamic;
+    }
+
+    return NetworkMetricsFormat::mbs;
+}
+
 void LoadSettings() {
     g_settings.showSeconds = Wh_GetIntSetting(L"ShowSeconds");
     g_settings.timeFormat = StringSetting::make(L"TimeFormat");
@@ -5259,28 +5309,25 @@ void LoadSettings() {
     g_settings.maxWidth = Wh_GetIntSetting(L"MaxWidth");
     g_settings.textSpacing = Wh_GetIntSetting(L"TextSpacing");
 
-    g_settings.dataCollection.networkMetricsFormat = NetworkMetricsFormat::mbs;
-    StringSetting networkMetricsFormat =
-        StringSetting::make(L"DataCollection.NetworkMetricsFormat");
-    if (wcscmp(networkMetricsFormat, L"mbsNumberOnly") == 0) {
-        g_settings.dataCollection.networkMetricsFormat =
-            NetworkMetricsFormat::mbsNumberOnly;
-    } else if (wcscmp(networkMetricsFormat, L"mbsDynamic") == 0) {
-        g_settings.dataCollection.networkMetricsFormat =
-            NetworkMetricsFormat::mbsDynamic;
-    } else if (wcscmp(networkMetricsFormat, L"mbits") == 0) {
-        g_settings.dataCollection.networkMetricsFormat =
-            NetworkMetricsFormat::mbits;
-    } else if (wcscmp(networkMetricsFormat, L"mbitsNumberOnly") == 0) {
-        g_settings.dataCollection.networkMetricsFormat =
-            NetworkMetricsFormat::mbitsNumberOnly;
-    } else if (wcscmp(networkMetricsFormat, L"mbitsDynamic") == 0) {
-        g_settings.dataCollection.networkMetricsFormat =
-            NetworkMetricsFormat::mbitsDynamic;
-    }
+    g_settings.dataCollection.networkMetricsFormat = ParseNetworkMetricsFormat(
+        StringSetting::make(L"DataCollection.NetworkMetricsFormat"));
 
     g_settings.dataCollection.networkMetricsFixedDecimals =
         Wh_GetIntSetting(L"DataCollection.NetworkMetricsFixedDecimals");
+
+    StringSetting diskMetricsFormat =
+        StringSetting::make(L"DataCollection.DiskMetricsFormat");
+    if (wcscmp(diskMetricsFormat, L"sameAsNetwork") == 0) {
+        g_settings.dataCollection.diskMetricsFormat =
+            g_settings.dataCollection.networkMetricsFormat;
+        g_settings.dataCollection.diskMetricsFixedDecimals =
+            g_settings.dataCollection.networkMetricsFixedDecimals;
+    } else {
+        g_settings.dataCollection.diskMetricsFormat =
+            ParseNetworkMetricsFormat(diskMetricsFormat);
+        g_settings.dataCollection.diskMetricsFixedDecimals =
+            Wh_GetIntSetting(L"DataCollection.DiskMetricsFixedDecimals");
+    }
 
     g_settings.dataCollection.percentageFormat =
         PercentageFormat::spacePaddingAndSymbol;
