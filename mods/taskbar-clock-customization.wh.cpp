@@ -2539,7 +2539,19 @@ bool IsMediaPlayerIgnored(const winrt::hstring& appId) {
 void RemoveBracketedContent(std::wstring& str, wchar_t open, wchar_t close) {
     size_t start = 0;
     while ((start = str.find(open, start)) != std::wstring::npos) {
-        size_t end = str.find(close, start);
+        // Find the matching close bracket, tracking depth so that nested
+        // brackets of the same type, e.g. "(a (b))", are removed as a whole
+        // instead of leaving a dangling close bracket behind.
+        size_t end = std::wstring::npos;
+        int depth = 0;
+        for (size_t i = start; i < str.size(); i++) {
+            if (str[i] == open) {
+                depth++;
+            } else if (str[i] == close && --depth == 0) {
+                end = i;
+                break;
+            }
+        }
         if (end == std::wstring::npos) {
             break;
         }
