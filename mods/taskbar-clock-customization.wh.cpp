@@ -335,6 +335,7 @@ styles, such as the font color and size.
     - Right: Right
     - Center: Center
     - Left: Left
+    - Justify: Justified
   - FontSize: 0
     $name: Font size
     $description: Set to zero for the default size.
@@ -400,6 +401,7 @@ styles, such as the font color and size.
     - Right: Right
     - Center: Center
     - Left: Left
+    - Justify: Justified
   - FontSize: 0
     $name: Font size
     $description: Set to zero for the default size.
