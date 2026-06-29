@@ -85,7 +85,8 @@ patterns can be used:
   * `%ram%` - RAM usage.
   * `%ram_used%` - Used RAM amount in GB.
   * `%ram_total%` - Total RAM amount in GB.
-  * `%ram_committed%` - Committed RAM usage (% of memory reserved by apps, backed by RAM or swap)
+  * `%ram_committed%` - Committed RAM usage (% of memory reserved by apps,
+    backed by RAM or swap)
   * `%ram_committed_used%` - Used committed RAM amount in GB.
   * `%ram_committed_total%` - Total committed RAM amount in GB.
   * `%gpu%` - GPU usage.
@@ -241,8 +242,8 @@ styles, such as the font color and size.
     $name: GPU adapter name
     $description: >-
       The GPU adapter to use for GPU usage and VRAM metrics. Leave empty to
-      auto-detect (uses the adapter with the most dedicated VRAM). Partial match is supported.
-      To list adapters, run:
+      auto-detect (uses the adapter with the most dedicated VRAM). Partial match
+      is supported. To list adapters, run:
 
       wmic path win32_videocontroller get Name
   $name: System performance metrics
@@ -2236,7 +2237,8 @@ std::optional<double> QueryDataCollectionSession::QueryVramUsed() {
 
 std::optional<double> QueryDataCollectionSession::QueryVramTotal() {
     if (!vram_total_queried_) {
-        auto info = GetDxgiAdapterInfo(g_settings.dataCollection.gpuAdapterName, true);
+        auto info =
+            GetDxgiAdapterInfo(g_settings.dataCollection.gpuAdapterName, true);
         if (info) {
             vram_total_bytes_ = info->dedicated_video_memory;
             vram_shared_total_bytes_ = info->shared_system_memory;
@@ -2270,7 +2272,8 @@ std::optional<double> QueryDataCollectionSession::QueryVramSharedUsed() {
 
 std::optional<double> QueryDataCollectionSession::QueryVramSharedTotal() {
     if (!vram_total_queried_) {
-        auto info = GetDxgiAdapterInfo(g_settings.dataCollection.gpuAdapterName, true);
+        auto info =
+            GetDxgiAdapterInfo(g_settings.dataCollection.gpuAdapterName, true);
         if (info) {
             vram_total_bytes_ = info->dedicated_video_memory;
             vram_shared_total_bytes_ = info->shared_system_memory;
@@ -3386,8 +3389,8 @@ PCWSTR GetRamCommittedTotalFormatted() {
             if (!g_ramStatusValid) {
                 return false;
             }
-            double totalGb =
-                (double)g_ramStatus.ullTotalPageFile / (1024.0 * 1024.0 * 1024.0);
+            double totalGb = (double)g_ramStatus.ullTotalPageFile /
+                             (1024.0 * 1024.0 * 1024.0);
             swprintf_s(buffer, bufferSize, L"%.1f", totalGb);
             return true;
         });
