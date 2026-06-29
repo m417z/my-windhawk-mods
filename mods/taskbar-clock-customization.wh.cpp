@@ -153,6 +153,14 @@ styles, such as the font color and size.
     syntax refer to the following page:
 
     https://docs.microsoft.com/en-us/windows/win32/intl/day--month--year--and-era-format-pictures
+- DateLocale: ""
+  $name: Date locale
+  $description: >-
+    The locale used for formatting the date and the week day. Leave empty for
+    the default locale. For the list of locale names, listed as "Language tag",
+    refer to the following page:
+
+    https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-lcid/a9eac961-e77d-41a6-90a5-ce1a8b0cdb9c
 - WeekdayFormat: dddd
   $name: Week day format
   $description: The format for the %weekday% pattern.
@@ -630,6 +638,7 @@ struct {
     bool showSeconds;
     StringSetting timeFormat;
     StringSetting dateFormat;
+    StringSetting dateLocale;
     StringSetting weekdayFormat;
     std::vector<std::wstring> weekdayFormatCustom;
     StringSetting topLine;
@@ -1693,22 +1702,30 @@ PCWSTR GetTimeFormattedTz(size_t index) {
     return timeFormattedTz.buffer;
 }
 
+// GetDateFormatEx treats an empty locale name as the invariant locale, so pass
+// nullptr (the user's default locale) when no locale is configured.
+PCWSTR GetDateLocaleName() {
+    return *g_settings.dateLocale ? g_settings.dateLocale.get() : nullptr;
+}
+
 PCWSTR GetDateFormattedWithExtra(std::vector<std::wstring>** extra) {
     if (g_dateFormatted.formatIndex != g_formatIndex) {
         const SYSTEMTIME* time = &g_formatTime;
+
+        PCWSTR dateLocale = GetDateLocaleName();
 
         auto dateFormatParts =
             SplitTimeFormatString(g_settings.dateFormat.get());
 
         GetDateFormatEx_Original(
-            nullptr, DATE_AUTOLAYOUT, time,
+            dateLocale, DATE_AUTOLAYOUT, time,
             !dateFormatParts[0].empty() ? dateFormatParts[0].c_str() : nullptr,
             g_dateFormatted.buffer, ARRAYSIZE(g_dateFormatted.buffer), nullptr);
 
         g_dateFormattedExtra.resize(dateFormatParts.size() - 1);
         for (size_t i = 1; i < dateFormatParts.size(); i++) {
             WCHAR formatted[FORMATTED_BUFFER_SIZE];
-            GetDateFormatEx_Original(nullptr, DATE_AUTOLAYOUT, time,
+            GetDateFormatEx_Original(dateLocale, DATE_AUTOLAYOUT, time,
                                      !dateFormatParts[i].empty()
                                          ? dateFormatParts[i].c_str()
                                          : nullptr,
@@ -1760,7 +1777,7 @@ PCWSTR GetDateFormattedTz(size_t index) {
                 SplitTimeFormatString(g_settings.dateFormat.get());
 
             GetDateFormatEx_Original(
-                nullptr, DATE_AUTOLAYOUT, time,
+                GetDateLocaleName(), DATE_AUTOLAYOUT, time,
                 !dateFormatParts[0].empty() ? dateFormatParts[0].c_str()
                                             : nullptr,
                 dateFormattedTz.buffer, ARRAYSIZE(dateFormattedTz.buffer),
@@ -1777,7 +1794,7 @@ PCWSTR GetDateFormattedTz(size_t index) {
 
 void FormatWeekday(const SYSTEMTIME* time, PWSTR buffer, size_t bufferSize) {
     if (g_settings.weekdayFormatCustom.empty()) {
-        GetDateFormatEx_Original(nullptr, DATE_AUTOLAYOUT, time,
+        GetDateFormatEx_Original(GetDateLocaleName(), DATE_AUTOLAYOUT, time,
                                  *g_settings.weekdayFormat
                                      ? g_settings.weekdayFormat.get()
                                      : L"dddd",
@@ -5279,6 +5296,7 @@ void LoadSettings() {
     g_settings.showSeconds = Wh_GetIntSetting(L"ShowSeconds");
     g_settings.timeFormat = StringSetting::make(L"TimeFormat");
     g_settings.dateFormat = StringSetting::make(L"DateFormat");
+    g_settings.dateLocale = StringSetting::make(L"DateLocale");
     g_settings.weekdayFormat = StringSetting::make(L"WeekdayFormat");
 
     g_settings.weekdayFormatCustom.clear();
