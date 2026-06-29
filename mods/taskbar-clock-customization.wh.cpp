@@ -113,9 +113,11 @@ patterns can be used:
   * `%media_artist%` - currently playing media artist.
   * `%media_album%` - currently playing media album.
   * `%media_status%` - media playback status icon (⏯, ⏸, ⏹).
-  * `%media_info%` - combined media info (Artist - Title), truncated with
-    ellipsis. It's recommended to use this field on the taskbar, and other
-    fields in the tooltip.
+  * `%media_info%` - combined media info, truncated with ellipsis. Defaults to
+    "Artist - Title" while media is playing, but the format for both the playing
+    and the not playing state can be customized in the media player settings.
+    It's recommended to use this field on the taskbar, and other fields in the
+    tooltip.
 * `%weather%` - Weather information, powered by [wttr.in](https://wttr.in/),
   using the location and format configured in settings.
 * `%web<n>%` - the web contents as configured in settings, truncated with
@@ -283,10 +285,16 @@ styles, such as the font color and size.
     $description: >-
       Maximum characters for %media_info%. Longer strings are truncated with
       ellipsis. Set to 0 for no limit.
-  - NoMediaText: No media
-    $name: No media text
+  - MediaInfoFormat: "%media_artist% - %media_title%"
+    $name: Format when media is playing
     $description: >-
-      Text that will be shown for %media_info% when no media is playing.
+      The format of %media_info% while media is playing. Can contain any tags,
+      such as %media_artist%, %media_title%, %media_album%, and %media_status%.
+  - NoMediaText: No media
+    $name: Format when media is not playing
+    $description: >-
+      The text shown for %media_info% when no media is playing. Can contain any
+      tags, such as %date% or %time%.
   - RemoveBrackets: false
     $name: Remove brackets from info
     $description: >-
@@ -593,6 +601,7 @@ struct DataCollectionSettings {
 struct MediaPlayerSettings {
     std::vector<StringSetting> ignoredPlayers;
     int maxLength;
+    StringSetting mediaInfoFormat;
     StringSetting noMediaText;
     bool removeBrackets;
 };
@@ -743,7 +752,6 @@ FormattedString<FORMATTED_BUFFER_SIZE> g_mediaTitleFormatted;
 FormattedString<FORMATTED_BUFFER_SIZE> g_mediaArtistFormatted;
 FormattedString<FORMATTED_BUFFER_SIZE> g_mediaAlbumFormatted;
 FormattedString<FORMATTED_BUFFER_SIZE> g_mediaStatusFormatted;
-FormattedString<FORMATTED_BUFFER_SIZE> g_mediaInfoFormatted;
 
 winrt::Windows::Media::Control::GlobalSystemMediaTransportControlsSessionManager
     g_mediaSessionManager{nullptr};
@@ -754,6 +762,12 @@ std::atomic<bool> g_mediaDataDirty{true};
 winrt::event_token g_mediaSessionsChangedToken;
 winrt::event_token g_mediaPropertiesChangedToken;
 winrt::event_token g_mediaPlaybackChangedToken;
+
+bool g_mediaActive = false;
+
+// Set while %media_info% expands its format string, to keep a stray
+// %media_info% tag inside that format from recursing into itself.
+bool g_inMediaInfoFormat = false;
 
 std::vector<std::optional<DYNAMIC_TIME_ZONE_INFORMATION>> g_timeZoneInformation;
 
@@ -1047,10 +1061,26 @@ std::wstring ExtractTextFromXml(std::wstring xml) {
 }
 
 bool IsStrInDateTimePatternSettings(PCWSTR str) {
-    return wcsstr(g_settings.topLine, str) ||
-           wcsstr(g_settings.bottomLine, str) ||
-           wcsstr(g_settings.middleLine, str) ||
-           wcsstr(g_settings.tooltipLine, str);
+    if (wcsstr(g_settings.topLine, str) || wcsstr(g_settings.bottomLine, str) ||
+        wcsstr(g_settings.middleLine, str) ||
+        wcsstr(g_settings.tooltipLine, str)) {
+        return true;
+    }
+
+    // The media info format strings are expanded as part of %media_info%, so
+    // tags they contain (e.g. %cpu%) need their data collected too. Only search
+    // them when %media_info% itself appears in a configured line.
+    if (wcsstr(g_settings.topLine, L"%media_info%") ||
+        wcsstr(g_settings.bottomLine, L"%media_info%") ||
+        wcsstr(g_settings.middleLine, L"%media_info%") ||
+        wcsstr(g_settings.tooltipLine, L"%media_info%")) {
+        if (wcsstr(g_settings.mediaPlayer.mediaInfoFormat.get(), str) ||
+            wcsstr(g_settings.mediaPlayer.noMediaText.get(), str)) {
+            return true;
+        }
+    }
+
+    return false;
 }
 
 std::wstring EscapeUrlComponent(PCWSTR input,
@@ -2604,13 +2634,11 @@ std::wstring RemoveBracketsFromString(std::wstring_view input) {
 }
 
 void ClearMediaFormattedStrings() {
+    g_mediaActive = false;
     wcscpy_s(g_mediaTitleFormatted.buffer, L"");
     wcscpy_s(g_mediaArtistFormatted.buffer, L"");
     wcscpy_s(g_mediaAlbumFormatted.buffer, L"");
     wcscpy_s(g_mediaStatusFormatted.buffer, L"");
-    StringCopyTruncatedWithEllipsis(g_mediaInfoFormatted.buffer,
-                                    ARRAYSIZE(g_mediaInfoFormatted.buffer),
-                                    g_settings.mediaPlayer.noMediaText);
 }
 
 winrt::Windows::Media::Control::GlobalSystemMediaTransportControlsSession
@@ -2706,6 +2734,8 @@ void RefreshMediaData() {
             return;
         }
 
+        g_mediaActive = true;
+
         // Get playback status as emoji
         auto status = playbackInfo.PlaybackStatus();
         using Status = winrt::Windows::Media::Control::
@@ -2726,8 +2756,9 @@ void RefreshMediaData() {
                 break;
         }
 
-        auto title = mediaProperties.Title();
-        auto artist = mediaProperties.Artist();
+        std::wstring title = RemoveBracketsFromString(mediaProperties.Title());
+        std::wstring artist =
+            RemoveBracketsFromString(mediaProperties.Artist());
         auto album = mediaProperties.AlbumTitle();
 
         StringCopyTruncatedWithEllipsis(g_mediaTitleFormatted.buffer,
@@ -2739,26 +2770,6 @@ void RefreshMediaData() {
         StringCopyTruncatedWithEllipsis(g_mediaAlbumFormatted.buffer,
                                         ARRAYSIZE(g_mediaAlbumFormatted.buffer),
                                         album.c_str());
-
-        // Create combined info with bracket removal
-        std::wstring processedArtist = RemoveBracketsFromString(artist);
-        std::wstring processedTitle = RemoveBracketsFromString(title);
-
-        std::wstring combinedInfo;
-        if (!processedArtist.empty() && !processedTitle.empty()) {
-            combinedInfo = processedArtist + L" - " + processedTitle;
-        } else if (!processedTitle.empty()) {
-            combinedInfo = processedTitle;
-        }
-
-        int maxLen = ARRAYSIZE(g_mediaInfoFormatted.buffer) - 1;
-        if (g_settings.mediaPlayer.maxLength > 0 &&
-            g_settings.mediaPlayer.maxLength < maxLen) {
-            maxLen = g_settings.mediaPlayer.maxLength;
-        }
-
-        StringCopyTruncatedWithEllipsis(g_mediaInfoFormatted.buffer, maxLen + 1,
-                                        combinedInfo.c_str());
     } catch (...) {
         HRESULT hr = winrt::to_hresult();
         Wh_Log(L"RefreshMediaData error: %08X", hr);
@@ -3631,9 +3642,36 @@ PCWSTR GetMediaStatusFormatted() {
     return g_mediaStatusFormatted.buffer;
 }
 
+int FormatLineNoLock(PWSTR buffer, size_t bufferSize, std::wstring_view format);
+
 PCWSTR GetMediaInfoFormatted() {
     RefreshMediaDataIfDirty();
-    return g_mediaInfoFormatted.buffer;
+
+    static WCHAR result[FORMATTED_BUFFER_SIZE];
+
+    // A %media_info% tag nested within a media info format expands to nothing.
+    if (g_inMediaInfoFormat) {
+        return L"";
+    }
+
+    // The format strings may contain any tags, including media tags such as
+    // %media_artist% and %media_title%.
+    PCWSTR format = g_mediaActive ? g_settings.mediaPlayer.mediaInfoFormat.get()
+                                  : g_settings.mediaPlayer.noMediaText.get();
+
+    int maxLen = ARRAYSIZE(result) - 1;
+    if (g_settings.mediaPlayer.maxLength > 0 &&
+        g_settings.mediaPlayer.maxLength < maxLen) {
+        maxLen = g_settings.mediaPlayer.maxLength;
+    }
+
+    // Format directly into the result buffer, capped at maxLen characters.
+    // FormatLineNoLock truncates with a trailing ellipsis.
+    g_inMediaInfoFormat = true;
+    FormatLineNoLock(result, maxLen + 1, format);
+    g_inMediaInfoFormat = false;
+
+    return result;
 }
 
 int ResolveFormatTokenWithDigit(std::wstring_view format,
@@ -3847,14 +3885,12 @@ void EnsureFormattingInitialized() {
     MediaSessionInit();
 }
 
-int FormatLine(PWSTR buffer, size_t bufferSize, std::wstring_view format) {
+int FormatLineNoLock(PWSTR buffer,
+                     size_t bufferSize,
+                     std::wstring_view format) {
     if (bufferSize == 0) {
         return 0;
     }
-
-    std::lock_guard<std::mutex> guard(g_formatLineMutex);
-
-    EnsureFormattingInitialized();
 
     std::wstring_view formatSuffix = format;
 
@@ -3892,6 +3928,18 @@ int FormatLine(PWSTR buffer, size_t bufferSize, std::wstring_view format) {
     *buffer = L'\0';
 
     return buffer - bufferStart;
+}
+
+int FormatLine(PWSTR buffer, size_t bufferSize, std::wstring_view format) {
+    if (bufferSize == 0) {
+        return 0;
+    }
+
+    std::lock_guard<std::mutex> guard(g_formatLineMutex);
+
+    EnsureFormattingInitialized();
+
+    return FormatLineNoLock(buffer, bufferSize, format);
 }
 
 #pragma region Win11Hooks
@@ -5388,6 +5436,8 @@ void LoadSettings() {
 
     g_settings.mediaPlayer.maxLength =
         Wh_GetIntSetting(L"MediaPlayer.MaxLength");
+    g_settings.mediaPlayer.mediaInfoFormat =
+        StringSetting::make(L"MediaPlayer.MediaInfoFormat");
     g_settings.mediaPlayer.noMediaText =
         StringSetting::make(L"MediaPlayer.NoMediaText");
     g_settings.mediaPlayer.removeBrackets =
