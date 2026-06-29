@@ -769,6 +769,9 @@ bool IsPointerInsideElement(const UIElement& container,
     auto topLeft = transform.TransformPoint({0, 0});
     auto bottomRight = transform.TransformPoint({width, height});
 
+    Wh_Log(L"Element box (%.1f, %.1f)-(%.1f, %.1f), size (%.1f, %.1f)",
+           topLeft.X, topLeft.Y, bottomRight.X, bottomRight.Y, width, height);
+
     return pointerPos.X >= topLeft.X && pointerPos.X < bottomRight.X &&
            pointerPos.Y >= topLeft.Y && pointerPos.Y < bottomRight.Y;
 }
@@ -948,6 +951,9 @@ int WINAPI TaskItemThumbnailList_OnPointerMoved_Hook(void* pThis, void* pArgs) {
 
     auto pointerPos =
         args.GetCurrentPoint(taskItemThumbnailListRepeater).Position();
+
+    Wh_Log(L"Pointer at (%.1f, %.1f), %d item(s)", pointerPos.X, pointerPos.Y,
+           count);
 
     for (int index = 0; index < count; index++) {
         auto element = repeater.TryGetElement(index);
