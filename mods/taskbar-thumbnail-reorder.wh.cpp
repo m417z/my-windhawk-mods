@@ -944,20 +944,34 @@ int WINAPI TaskItemThumbnailList_OnPointerMoved_Hook(void* pThis, void* pArgs) {
     auto itemsSourceView = repeater.ItemsSourceView();
     int count = itemsSourceView ? itemsSourceView.Count() : 0;
 
-    // Hit-test in the XAML root's coordinate space. While the pointer is
-    // captured during a drag, coordinates taken relative to inner elements
-    // (e.g. the repeater) don't line up with those elements' own bounds, so the
-    // pointer is measured and each child is projected into the shared root frame
-    // instead.
-    auto rootElement = taskItemThumbnailListRepeater.XamlRoot().Content();
+    // The XAML pointer position isn't usable while the pointer is captured
+    // during a drag: it comes back in the capture window's coordinate space, not
+    // the thumbnails' XAML space. Read the cursor from Win32 and map it into the
+    // capture window's client area, which matches the XAML content coordinates
+    // the thumbnails are laid out in.
+    HWND captureWnd = GetCapture();
+    POINT screenPos;
+    GetCursorPos(&screenPos);
+    POINT clientPos = screenPos;
+    ScreenToClient(captureWnd, &clientPos);
 
-    auto pointerPos = args.GetCurrentPoint(rootElement).Position();
-    auto pointerPosRepeater =
-        args.GetCurrentPoint(taskItemThumbnailListRepeater).Position();
+    auto xamlRoot = taskItemThumbnailListRepeater.XamlRoot();
+    auto rootElement = xamlRoot.Content();
 
-    Wh_Log(L"Pointer: root (%.1f, %.1f), repeater (%.1f, %.1f), %d item(s)",
-           pointerPos.X, pointerPos.Y, pointerPosRepeater.X,
-           pointerPosRepeater.Y, count);
+    // Win32 reports physical pixels; the thumbnails are laid out in DIPs.
+    double rasterizationScale = xamlRoot.RasterizationScale();
+    winrt::Windows::Foundation::Point pointerPos{
+        static_cast<float>(clientPos.x / rasterizationScale),
+        static_cast<float>(clientPos.y / rasterizationScale)};
+
+    WCHAR captureClass[64] = L"";
+    GetClassName(captureWnd, captureClass, ARRAYSIZE(captureClass));
+    auto xamlPointer = args.GetCurrentPoint(rootElement).Position();
+    Wh_Log(L"Cursor: screen (%ld, %ld), client (%ld, %ld), scale %.2f, mapped "
+           L"(%.1f, %.1f), xaml (%.1f, %.1f), capture '%s', %d item(s)",
+           screenPos.x, screenPos.y, clientPos.x, clientPos.y,
+           rasterizationScale, pointerPos.X, pointerPos.Y, xamlPointer.X,
+           xamlPointer.Y, captureClass, count);
 
     for (int index = 0; index < count; index++) {
         auto element = repeater.TryGetElement(index);
@@ -1006,12 +1020,6 @@ int WINAPI TaskItemThumbnailList_OnPointerMoved_Hook(void* pThis, void* pArgs) {
                 }
             }
         }
-
-        auto repeaterTopLeft =
-            child.TransformToVisual(taskItemThumbnailListRepeater)
-                .TransformPoint({0, 0});
-        Wh_Log(L"Index %d repeater-frame top-left (%.1f, %.1f)", index,
-               repeaterTopLeft.X, repeaterTopLeft.Y);
 
         if (indexHovered == -1 &&
             IsPointerInsideElement(rootElement, child, pointerPos)) {
