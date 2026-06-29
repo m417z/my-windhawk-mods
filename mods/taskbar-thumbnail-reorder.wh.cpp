@@ -754,13 +754,8 @@ void WINAPI HoverFlyoutModel_TargetItemKey_Hook(void* pThis, void* param1) {
 bool IsPointerInsideElement(const UIElement& container,
                             const UIElement& element,
                             const winrt::Windows::Foundation::Point& pointerPos) {
-    // Hit-test in the container's (repeater's) coordinate space: the pointer
-    // position is taken relative to the container once, and each child's bounds
-    // are projected into the same space with TransformToVisual. Querying the
-    // pointer relative to each child and comparing against its RenderSize is
-    // unreliable in the taskbar's XAML host - the returned coordinates don't
-    // line up with the child's local box, so every thumbnail tests as outside
-    // and reordering does nothing.
+    // Project the element into the container's coordinate space and test the
+    // (already container-relative) pointer against the resulting bounds.
     auto transform = element.TransformToVisual(container);
 
     float width = element.RenderSize().Width;
@@ -949,11 +944,20 @@ int WINAPI TaskItemThumbnailList_OnPointerMoved_Hook(void* pThis, void* pArgs) {
     auto itemsSourceView = repeater.ItemsSourceView();
     int count = itemsSourceView ? itemsSourceView.Count() : 0;
 
-    auto pointerPos =
+    // Hit-test in the XAML root's coordinate space. While the pointer is
+    // captured during a drag, coordinates taken relative to inner elements
+    // (e.g. the repeater) don't line up with those elements' own bounds, so the
+    // pointer is measured and each child is projected into the shared root frame
+    // instead.
+    auto rootElement = taskItemThumbnailListRepeater.XamlRoot().Content();
+
+    auto pointerPos = args.GetCurrentPoint(rootElement).Position();
+    auto pointerPosRepeater =
         args.GetCurrentPoint(taskItemThumbnailListRepeater).Position();
 
-    Wh_Log(L"Pointer at (%.1f, %.1f), %d item(s)", pointerPos.X, pointerPos.Y,
-           count);
+    Wh_Log(L"Pointer: root (%.1f, %.1f), repeater (%.1f, %.1f), %d item(s)",
+           pointerPos.X, pointerPos.Y, pointerPosRepeater.X,
+           pointerPosRepeater.Y, count);
 
     for (int index = 0; index < count; index++) {
         auto element = repeater.TryGetElement(index);
@@ -1003,9 +1007,14 @@ int WINAPI TaskItemThumbnailList_OnPointerMoved_Hook(void* pThis, void* pArgs) {
             }
         }
 
+        auto repeaterTopLeft =
+            child.TransformToVisual(taskItemThumbnailListRepeater)
+                .TransformPoint({0, 0});
+        Wh_Log(L"Index %d repeater-frame top-left (%.1f, %.1f)", index,
+               repeaterTopLeft.X, repeaterTopLeft.Y);
+
         if (indexHovered == -1 &&
-            IsPointerInsideElement(taskItemThumbnailListRepeater, child,
-                                   pointerPos)) {
+            IsPointerInsideElement(rootElement, child, pointerPos)) {
             indexHovered = index;
             Wh_Log(L"Hovered thumbnail at index %d: %s", indexHovered,
                    Automation::AutomationProperties::GetName(child).c_str());
