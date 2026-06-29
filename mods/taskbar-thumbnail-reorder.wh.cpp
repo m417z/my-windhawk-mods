@@ -751,24 +751,15 @@ void WINAPI HoverFlyoutModel_TargetItemKey_Hook(void* pThis, void* param1) {
     g_inHoverFlyoutModel_TargetItemKey = false;
 }
 
-bool IsPointerInsideElement(const UIElement& container,
-                            const UIElement& element,
-                            const winrt::Windows::Foundation::Point& pointerPos) {
-    // Project the element into the container's coordinate space and test the
-    // (already container-relative) pointer against the resulting bounds.
-    auto transform = element.TransformToVisual(container);
+bool IsPointerInsideElement(const UIElement& element,
+                            const Input::PointerRoutedEventArgs& args) {
+    auto pointerPos = args.GetCurrentPoint(element).Position();
 
     float width = element.RenderSize().Width;
     float height = element.RenderSize().Height;
 
-    auto topLeft = transform.TransformPoint({0, 0});
-    auto bottomRight = transform.TransformPoint({width, height});
-
-    Wh_Log(L"Element box (%.1f, %.1f)-(%.1f, %.1f), size (%.1f, %.1f)",
-           topLeft.X, topLeft.Y, bottomRight.X, bottomRight.Y, width, height);
-
-    return pointerPos.X >= topLeft.X && pointerPos.X < bottomRight.X &&
-           pointerPos.Y >= topLeft.Y && pointerPos.Y < bottomRight.Y;
+    return pointerPos.X >= 0 && pointerPos.X < width && pointerPos.Y >= 0 &&
+           pointerPos.Y < height;
 }
 
 void MoveItemsFromXAMLThumbnail(int indexFrom, int indexTo) {
@@ -944,35 +935,6 @@ int WINAPI TaskItemThumbnailList_OnPointerMoved_Hook(void* pThis, void* pArgs) {
     auto itemsSourceView = repeater.ItemsSourceView();
     int count = itemsSourceView ? itemsSourceView.Count() : 0;
 
-    // The XAML pointer position isn't usable while the pointer is captured
-    // during a drag: it comes back in the capture window's coordinate space, not
-    // the thumbnails' XAML space. Read the cursor from Win32 and map it into the
-    // capture window's client area, which matches the XAML content coordinates
-    // the thumbnails are laid out in.
-    HWND captureWnd = GetCapture();
-    POINT screenPos;
-    GetCursorPos(&screenPos);
-    POINT clientPos = screenPos;
-    ScreenToClient(captureWnd, &clientPos);
-
-    auto xamlRoot = taskItemThumbnailListRepeater.XamlRoot();
-    auto rootElement = xamlRoot.Content();
-
-    // Win32 reports physical pixels; the thumbnails are laid out in DIPs.
-    double rasterizationScale = xamlRoot.RasterizationScale();
-    winrt::Windows::Foundation::Point pointerPos{
-        static_cast<float>(clientPos.x / rasterizationScale),
-        static_cast<float>(clientPos.y / rasterizationScale)};
-
-    WCHAR captureClass[64] = L"";
-    GetClassName(captureWnd, captureClass, ARRAYSIZE(captureClass));
-    auto xamlPointer = args.GetCurrentPoint(rootElement).Position();
-    Wh_Log(L"Cursor: screen (%ld, %ld), client (%ld, %ld), scale %.2f, mapped "
-           L"(%.1f, %.1f), xaml (%.1f, %.1f), capture '%s', %d item(s)",
-           screenPos.x, screenPos.y, clientPos.x, clientPos.y,
-           rasterizationScale, pointerPos.X, pointerPos.Y, xamlPointer.X,
-           xamlPointer.Y, captureClass, count);
-
     for (int index = 0; index < count; index++) {
         auto element = repeater.TryGetElement(index);
         if (!element) {
@@ -1021,8 +983,7 @@ int WINAPI TaskItemThumbnailList_OnPointerMoved_Hook(void* pThis, void* pArgs) {
             }
         }
 
-        if (indexHovered == -1 &&
-            IsPointerInsideElement(rootElement, child, pointerPos)) {
+        if (indexHovered == -1 && IsPointerInsideElement(child, args)) {
             indexHovered = index;
             Wh_Log(L"Hovered thumbnail at index %d: %s", indexHovered,
                    Automation::AutomationProperties::GetName(child).c_str());
