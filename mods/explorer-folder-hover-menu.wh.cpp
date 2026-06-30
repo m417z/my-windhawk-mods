@@ -357,6 +357,22 @@ bool g_rawInputRegistered;
 constexpr UINT kWatchdogIntervalMs = 500;
 constexpr UINT_PTR kWatchdogTimerId = 1;
 
+// The modern common file dialog shows its frame (file name box, buttons) first
+// and attaches the shell view (the file list) and address bar asynchronously a
+// few hundred ms later, with no activation or focus event to announce it. So
+// the activation check sees no shell view when the dialog becomes foreground
+// and, without this, would leave the mod inactive until the dialog is
+// refocused. After such a dialog appears, poll for the shell view at this
+// interval for at most this many ticks, so the mod activates on its own once
+// the view is built.
+constexpr UINT kDialogActivatePollMs = 100;
+constexpr UINT_PTR kDialogActivateTimerId = 2;
+constexpr int kDialogActivateMaxPolls = 30;
+// The file dialog being polled for a shell view, and the number of polls left
+// before giving up. UI thread only.
+HWND g_dialogActivatePending;
+int g_dialogActivatePollsLeft;
+
 // One visible item in the active view: its rectangle (screen coords) and name.
 struct CachedItem {
     RECT rect;
@@ -3426,6 +3442,35 @@ void SetRawInputActive(bool enable) {
     }
 }
 
+// Stops polling for a file dialog's shell view (see StartDialogActivatePolling).
+void StopDialogActivatePolling() {
+    if (!g_dialogActivatePending) {
+        return;
+    }
+    g_dialogActivatePending = nullptr;
+    g_dialogActivatePollsLeft = 0;
+    if (g_sinkWnd) {
+        KillTimer(g_sinkWnd, kDialogActivateTimerId);
+    }
+}
+
+// Begins polling for the shell view of a file dialog that just became
+// foreground without one yet (see kDialogActivatePollMs). The poll handler in
+// SinkWndProc activates once the file list appears; without this the mod stays
+// inactive for the dialog until it is refocused. No-ops if already polling this
+// dialog, so repeated foreground events don't extend the budget.
+void StartDialogActivatePolling(HWND dlg) {
+    if (g_dialogActivatePending == dlg) {
+        return;
+    }
+    g_dialogActivatePending = dlg;
+    g_dialogActivatePollsLeft = kDialogActivateMaxPolls;
+    if (g_sinkWnd) {
+        SetTimer(g_sinkWnd, kDialogActivateTimerId, kDialogActivatePollMs,
+                 nullptr);
+    }
+}
+
 // Re-derives whether Explorer or the desktop is the active foreground window
 // and syncs raw-input registration to match. Returns the new active state. On a
 // transition into the active state the hover button is hidden/shown as needed;
@@ -3460,9 +3505,14 @@ bool SyncActiveState() {
     // A null foreground (nobody owns it, seen mid-transition and right after an
     // Explorer restart) is treated as the desktop being the active surface.
     bool active = !fg || ClassifyRoot(fg, &isDesktop, &isDialog);
-    // Don't wake for every #32770 dialog; only ones that host a file list.
+    // Don't wake for every #32770 dialog; only ones that host a file list. A
+    // file dialog that just opened may not have built its shell view yet, so
+    // poll for it instead of staying inactive until the dialog is refocused.
     if (active && isDialog && !HasShellView(fg)) {
         active = false;
+        StartDialogActivatePolling(fg);
+    } else {
+        StopDialogActivatePolling();
     }
     if (active == g_active) {
         return active;
@@ -3519,6 +3569,23 @@ LRESULT CALLBACK SinkWndProc(HWND hwnd,
         // Periodic re-check while the button is shown, to catch navigation that
         // moved no mouse (double-click / keyboard Enter).
         Evaluate(true);
+        return 0;
+    }
+
+    if (msg == WM_TIMER && wParam == kDialogActivateTimerId) {
+        // Waiting for a just-opened file dialog to build its shell view.
+        // Re-derive the active state, which activates and stops this poll once
+        // the file list exists. Give up if the dialog lost the foreground, a
+        // menu opened, or the poll budget ran out.
+        HWND fg = GetForegroundWindow();
+        if (g_menuActive || fg != g_dialogActivatePending ||
+            --g_dialogActivatePollsLeft <= 0) {
+            StopDialogActivatePolling();
+            return 0;
+        }
+        // SyncActiveState activates and stops this poll once the shell view
+        // exists; until then it re-arms the same poll (a no-op extend).
+        SyncActiveState();
         return 0;
     }
 
