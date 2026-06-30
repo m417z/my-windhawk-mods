@@ -84,6 +84,9 @@ Inspired by [QTTabBar](https://qttabbar.wikidot.com/).
     Also show the expand button in open and save file dialogs. The folder click
     actions above apply there too. Clicking a file in the menu puts it into the
     dialog's file name box (it is not launched).
+- showHidden: false
+  $name: Show hidden files and folders
+  $description: Include hidden files and folders in the pop-up menu.
 - maxItems: 200
   $name: Maximum items
   $description: >-
@@ -191,6 +194,7 @@ struct {
     FolderAction clickAction;
     FolderAction middleClickAction;
     bool fileDialogs;
+    bool showHidden;
     int maxEnumItems;
     int enumTimeoutMs;
 } g_settings;
@@ -250,6 +254,8 @@ void LoadSettings() {
     Wh_FreeStringSetting(middleClickAction);
 
     g_settings.fileDialogs = Wh_GetIntSetting(L"fileDialogs");
+
+    g_settings.showHidden = Wh_GetIntSetting(L"showHidden");
 
     int maxItems = Wh_GetIntSetting(L"maxItems");
     if (maxItems < 1) {
@@ -2136,13 +2142,22 @@ HRESULT STDMETHODCALLTYPE EnumObjects_Hook(IShellFolder* pThis,
         return E_FAIL;
     }
 
+    // The background worker also enumerates folders (to build its hover map)
+    // and must see the complete, unbounded list, so only the menu band's
+    // enumeration is adjusted below.
+    bool bandEnumeration = GetCurrentThreadId() != g_workerThreadId;
+
+    // Show hidden (but not protected operating system) items in the menu when
+    // enabled, regardless of the global Explorer setting. The worker already
+    // enumerates hidden items when building its resolution map.
+    if (bandEnumeration && g_settings.showHidden) {
+        grfFlags |= SHCONTF_INCLUDEHIDDEN;
+    }
+
     HRESULT hr = origs->enumObjects(pThis, hwnd, grfFlags, ppenumIDList);
 
-    // Only the menu band's enumeration is bounded. The background worker also
-    // enumerates folders (to build its hover map) and must see the complete
-    // list, so its own enumeration - and only its - is left untouched.
-    if (hr != S_OK || !ppenumIDList || !*ppenumIDList ||
-        GetCurrentThreadId() == g_workerThreadId) {
+    // Only the menu band's enumeration is bounded.
+    if (hr != S_OK || !ppenumIDList || !*ppenumIDList || !bandEnumeration) {
         return hr;
     }
 
