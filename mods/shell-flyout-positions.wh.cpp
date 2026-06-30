@@ -2053,27 +2053,41 @@ void LoadSettings() {
 }
 
 bool NeedsToBeLoaded() {
+    bool startMenuNeedsAdjustment =
+        g_settings.startMenu.horizontalAlignment !=
+            StartMenuHorizontalAlignment::windowsDefault ||
+        g_settings.startMenu.horizontalShift != 0 ||
+        g_settings.startMenu.verticalAlignment !=
+            StartMenuVerticalAlignment::windowsDefault ||
+        g_settings.startMenu.verticalShift != 0;
+
+    bool notificationCenterNeedsAdjustment =
+        g_settings.notificationCenter.horizontalAlignment !=
+            TrayHorizontalAlignment::windowsDefault ||
+        g_settings.notificationCenter.horizontalShift != 0;
+
+    bool actionCenterNeedsAdjustment =
+        g_settings.actionCenter.horizontalAlignment !=
+            TrayHorizontalAlignment::windowsDefault ||
+        g_settings.actionCenter.horizontalShift != 0;
+
     switch (g_target) {
         case Target::Explorer:
-            return true;
+            // The search menu is aligned to the start menu and the notification
+            // center flyout is positioned from this process.
+            return startMenuNeedsAdjustment ||
+                   notificationCenterNeedsAdjustment;
 
         case Target::StartMenuExperienceHost:
-            return g_settings.startMenu.horizontalAlignment !=
-                       StartMenuHorizontalAlignment::windowsDefault ||
-                   g_settings.startMenu.horizontalShift != 0 ||
-                   g_settings.startMenu.verticalAlignment !=
-                       StartMenuVerticalAlignment::windowsDefault ||
-                   g_settings.startMenu.verticalShift != 0;
+            return startMenuNeedsAdjustment;
 
         case Target::ShellExperienceHost:
         case Target::ShellHost:
-            return g_settings.notificationCenter.horizontalAlignment !=
-                       TrayHorizontalAlignment::windowsDefault ||
-                   g_settings.notificationCenter.horizontalShift != 0 ||
-                   g_settings.actionCenter.horizontalAlignment !=
-                       TrayHorizontalAlignment::windowsDefault ||
-                   g_settings.actionCenter.horizontalShift != 0;
+            return notificationCenterNeedsAdjustment ||
+                   actionCenterNeedsAdjustment;
     }
+
+    return false;
 }
 
 BOOL Wh_ModInit() {
