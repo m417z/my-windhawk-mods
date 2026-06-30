@@ -2,7 +2,7 @@
 // @id              taskbar-clock-customization
 // @name            Taskbar Clock Customization
 // @description     Custom date/time format, news feed, weather, performance metrics (upload/download speed, CPU, RAM, GPU, battery), media player info, custom fonts and colors, and more
-// @version         1.7.4
+// @version         1.8
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
@@ -752,6 +752,7 @@ FormattedString<FORMATTED_BUFFER_SIZE> g_mediaTitleFormatted;
 FormattedString<FORMATTED_BUFFER_SIZE> g_mediaArtistFormatted;
 FormattedString<FORMATTED_BUFFER_SIZE> g_mediaAlbumFormatted;
 FormattedString<FORMATTED_BUFFER_SIZE> g_mediaStatusFormatted;
+FormattedString<FORMATTED_BUFFER_SIZE> g_mediaInfoFormatted;
 
 winrt::Windows::Media::Control::GlobalSystemMediaTransportControlsSessionManager
     g_mediaSessionManager{nullptr};
@@ -3647,31 +3648,34 @@ int FormatLineNoLock(PWSTR buffer, size_t bufferSize, std::wstring_view format);
 PCWSTR GetMediaInfoFormatted() {
     RefreshMediaDataIfDirty();
 
-    static WCHAR result[FORMATTED_BUFFER_SIZE];
-
     // A %media_info% tag nested within a media info format expands to nothing.
     if (g_inMediaInfoFormat) {
         return L"";
     }
 
-    // The format strings may contain any tags, including media tags such as
-    // %media_artist% and %media_title%.
-    PCWSTR format = g_mediaActive ? g_settings.mediaPlayer.mediaInfoFormat.get()
-                                  : g_settings.mediaPlayer.noMediaText.get();
+    if (g_mediaInfoFormatted.formatIndex != g_formatIndex) {
+        // The format strings may contain any tags, including media tags such as
+        // %media_artist% and %media_title%.
+        PCWSTR format = g_mediaActive
+                            ? g_settings.mediaPlayer.mediaInfoFormat.get()
+                            : g_settings.mediaPlayer.noMediaText.get();
 
-    int maxLen = ARRAYSIZE(result) - 1;
-    if (g_settings.mediaPlayer.maxLength > 0 &&
-        g_settings.mediaPlayer.maxLength < maxLen) {
-        maxLen = g_settings.mediaPlayer.maxLength;
+        int maxLen = ARRAYSIZE(g_mediaInfoFormatted.buffer) - 1;
+        if (g_settings.mediaPlayer.maxLength > 0 &&
+            g_settings.mediaPlayer.maxLength < maxLen) {
+            maxLen = g_settings.mediaPlayer.maxLength;
+        }
+
+        // Format directly into the buffer, capped at maxLen characters.
+        // FormatLineNoLock truncates with a trailing ellipsis.
+        g_inMediaInfoFormat = true;
+        FormatLineNoLock(g_mediaInfoFormatted.buffer, maxLen + 1, format);
+        g_inMediaInfoFormat = false;
+
+        g_mediaInfoFormatted.formatIndex = g_formatIndex;
     }
 
-    // Format directly into the result buffer, capped at maxLen characters.
-    // FormatLineNoLock truncates with a trailing ellipsis.
-    g_inMediaInfoFormat = true;
-    FormatLineNoLock(result, maxLen + 1, format);
-    g_inMediaInfoFormat = false;
-
-    return result;
+    return g_mediaInfoFormatted.buffer;
 }
 
 int ResolveFormatTokenWithDigit(std::wstring_view format,
@@ -3971,7 +3975,7 @@ ClockSystemTrayIconDataModel_GetTimeToolTipString2_t
 ClockSystemTrayIconDataModel_GetTimeToolTipString2_t
     ClockSystemTrayIconDataModel2_GetTimeToolTipString2_Original;
 
-using DateTimeIconContent_OnApplyTemplate_t = void(WINAPI*)(LPVOID pThis);
+using DateTimeIconContent_OnApplyTemplate_t = HRESULT(WINAPI*)(LPVOID pThis);
 DateTimeIconContent_OnApplyTemplate_t
     DateTimeIconContent_OnApplyTemplate_Original;
 
@@ -4459,17 +4463,17 @@ void ApplyDateTimeIconContentStyles(
     clockElementStyleData->styleIndex = clockElementStyleIndex;
 }
 
-void WINAPI DateTimeIconContent_OnApplyTemplate_Hook(LPVOID pThis) {
+HRESULT WINAPI DateTimeIconContent_OnApplyTemplate_Hook(LPVOID pThis) {
     Wh_Log(L">");
 
-    DateTimeIconContent_OnApplyTemplate_Original(pThis);
+    HRESULT ret = DateTimeIconContent_OnApplyTemplate_Original(pThis);
 
     FrameworkElement dateTimeIconContent = nullptr;
     ((IUnknown*)pThis)
         ->QueryInterface(winrt::guid_of<FrameworkElement>(),
                          winrt::put_abi(dateTimeIconContent));
     if (!dateTimeIconContent) {
-        return;
+        return ret;
     }
 
     try {
@@ -4478,6 +4482,8 @@ void WINAPI DateTimeIconContent_OnApplyTemplate_Hook(LPVOID pThis) {
         HRESULT hr = winrt::to_hresult();
         Wh_Log(L"Error %08X", hr);
     }
+
+    return ret;
 }
 
 HRESULT WINAPI BadgeIconContent_get_ViewModel_Hook(LPVOID pThis, LPVOID pArgs) {
