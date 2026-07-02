@@ -10453,6 +10453,14 @@ bool IsColumnLayoutBroken(const Controls::Grid& grid) {
     }
     double tolerance = 2.0 / scale + 1.0;
 
+    // The Auto/Pixel columns alone must fit within the Grid. If they exceed it,
+    // the star columns have collapsed to zero and content (e.g. the tray) is
+    // spilling past the edge - a broken arrange the proportional check below
+    // can't see, since ideal and actual star widths are then both zero.
+    if (nonStarSum - gridWidth > tolerance) {
+        return true;
+    }
+
     // Leftover space the star columns must share.
     double starSpace = gridWidth - nonStarSum;
     if (starSpace < 0) {
