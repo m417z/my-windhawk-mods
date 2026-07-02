@@ -10388,10 +10388,13 @@ long long QuantizeLayoutSize(double value) {
     return static_cast<long long>(value * 2 + 0.5);
 }
 
-// Detect the broken star/Auto layout the workaround targets: in a correct
-// arrange the columns tile the Grid, and star columns are proportional to their
-// star values. A shortfall (columns don't fill the Grid) or disproportionate
-// star columns means the Grid arranged with stale widths.
+// Detect the broken star/Auto layout the workaround targets. A correct arrange
+// gives each star column its ideal share of the leftover space (the grid width
+// minus the Auto/Pixel columns), proportional to the star values. Each star
+// column is compared against that recomputed ideal with a tolerance a few
+// pixels wide: integer layout rounding moves a correct column by at most about
+// one physical pixel, while a stale arrange (widths carried over from another
+// monitor, or from before a maximize/restore) is off by far more.
 bool IsColumnLayoutBroken(const Controls::Grid& grid) {
     auto colDefs = grid.ColumnDefinitions();
     uint32_t count = colDefs.Size();
@@ -10405,41 +10408,72 @@ bool IsColumnLayoutBroken(const Controls::Grid& grid) {
         return false;
     }
 
-    constexpr double kEpsilon = 0.5;
-
-    double sum = 0;
+    // Sum the non-star (Auto/Pixel) column widths and the total star weight.
+    double nonStarSum = 0;
+    double totalStar = 0;
+    double starActualSum = 0;
     bool hasStar = false;
-    bool starUnitSet = false;
-    double starUnit =
-        0;  // ActualWidth per star value, equal for all star cols.
     for (uint32_t i = 0; i < count; i++) {
         auto colDef = colDefs.GetAt(i);
         double actual = colDef.ActualWidth();
-        sum += actual;
-
         auto width = colDef.Width();
         if (width.GridUnitType == GridUnitType::Star && width.Value > 0) {
             hasStar = true;
-            double unit = actual / width.Value;
-            if (!starUnitSet) {
-                starUnit = unit;
-                starUnitSet = true;
-            } else {
-                double diff = unit - starUnit;
-                if (diff < 0) {
-                    diff = -diff;
-                }
-                if (diff > kEpsilon) {
-                    return true;
-                }
-            }
+            totalStar += width.Value;
+            starActualSum += actual;
+        } else {
+            nonStarSum += actual;
         }
     }
 
-    // Star columns absorb the leftover space, so the columns must fill the
-    // Grid. A shortfall means the layout didn't redistribute.
-    if (hasStar && gridWidth - sum > kEpsilon) {
-        return true;
+    // Only star layouts redistribute leftover space, so there's nothing to
+    // validate (or repair) without a star column.
+    if (!hasStar) {
+        return false;
+    }
+
+    // All widths still zero means the Grid hasn't been arranged yet.
+    if (starActualSum <= 0 && nonStarSum <= 0) {
+        return false;
+    }
+
+    // Tolerance from the rounding model: each column edge is snapped to a
+    // physical pixel, so a correct column is within ~1 physical pixel (1 / scale
+    // DIPs) of its ideal. A few pixels of slack keeps rounding from tripping
+    // this, while real breakage is off by tens to hundreds of pixels.
+    double scale = 1.0;
+    try {
+        if (auto xamlRoot = grid.XamlRoot()) {
+            scale = xamlRoot.RasterizationScale();
+        }
+    } catch (...) {
+    }
+    if (scale <= 0) {
+        scale = 1.0;
+    }
+    double tolerance = 2.0 / scale + 1.0;
+
+    // Leftover space the star columns must share.
+    double starSpace = gridWidth - nonStarSum;
+    if (starSpace < 0) {
+        starSpace = 0;
+    }
+
+    for (uint32_t i = 0; i < count; i++) {
+        auto colDef = colDefs.GetAt(i);
+        auto width = colDef.Width();
+        if (width.GridUnitType != GridUnitType::Star || width.Value <= 0) {
+            continue;
+        }
+
+        double ideal = starSpace * (width.Value / totalStar);
+        double diff = colDef.ActualWidth() - ideal;
+        if (diff < 0) {
+            diff = -diff;
+        }
+        if (diff > tolerance) {
+            return true;
+        }
     }
 
     return false;
@@ -10464,15 +10498,205 @@ std::vector<long long> ComputeColumnLayoutSignature(
     return signature;
 }
 
-// Workaround to the breaking layout with custom column definitions on multiple
-// taskbars:
-// https://github.com/ramensoftware/windows-11-taskbar-styling-guide/issues/507
-void HookFirstTaskbarFrameLayoutWorkaround(
-    winrt::Windows::UI::Xaml::FrameworkElement element) {
-    if (g_workaroundLayoutUpdatedRevoker) {
+// ==========================================================================
+// TEMPORARY diagnostics for the ColumnDefinitions layout workaround
+// (issue #574). The workaround fixes the broken taskbar layout on some setups
+// but only intermittently on multi-monitor. These logs capture, for EVERY
+// taskbar on the thread (not just the one the workaround hooks), the exact
+// column/child geometry at each distinct layout state, plus every hook
+// decision, so a working capture and a broken one can be compared. Remove once
+// the cause is confirmed.
+// ==========================================================================
+
+bool IsTaskbarTopLevelWindow(HWND hWnd);
+
+void LogLayoutElementSize(
+    PCWSTR label,
+    const winrt::Windows::UI::Xaml::FrameworkElement& element) {
+    if (!element) {
+        Wh_Log(L"  %s: (null)", label);
         return;
     }
 
+    Wh_Log(L"  %s: class=%s name=%s actual=%.1fx%.1f size=%.1fx%.1f "
+           L"min=%.1fx%.1f max=%.1fx%.1f visibility=%d opacity=%.2f",
+           label, winrt::get_class_name(element).c_str(),
+           element.Name().c_str(), element.ActualWidth(),
+           element.ActualHeight(), element.Width(), element.Height(),
+           element.MinWidth(), element.MinHeight(), element.MaxWidth(),
+           element.MaxHeight(), static_cast<int>(element.Visibility()),
+           element.Opacity());
+}
+
+void LogLayoutGridColumns(
+    PCWSTR label,
+    const winrt::Windows::UI::Xaml::FrameworkElement& element) {
+    auto grid = element.try_as<Controls::Grid>();
+    if (!grid) {
+        Wh_Log(L"  %s: not a Grid", label);
+        return;
+    }
+
+    auto colDefs = grid.ColumnDefinitions();
+    double gridWidth = grid.ActualWidth();
+    double sum = 0;
+    for (uint32_t i = 0; i < colDefs.Size(); i++) {
+        sum += colDefs.GetAt(i).ActualWidth();
+    }
+    Wh_Log(L"  %s: %u col(s) gridWidth=%.1f colsSum=%.1f delta=%.1f broken=%d",
+           label, colDefs.Size(), gridWidth, sum, gridWidth - sum,
+           IsColumnLayoutBroken(grid) ? 1 : 0);
+    for (uint32_t i = 0; i < colDefs.Size(); i++) {
+        auto colDef = colDefs.GetAt(i);
+        auto width = colDef.Width();
+        // GridUnitType: 0=Auto, 1=Pixel, 2=Star.
+        Wh_Log(L"    col[%u]: unit=%d value=%.2f actual=%.1f min=%.1f max=%.1f",
+               i, static_cast<int>(width.GridUnitType), width.Value,
+               colDef.ActualWidth(), colDef.MinWidth(), colDef.MaxWidth());
+    }
+}
+
+void LogLayoutGridChildren(
+    PCWSTR label,
+    const winrt::Windows::UI::Xaml::FrameworkElement& element) {
+    int count = Media::VisualTreeHelper::GetChildrenCount(element);
+    Wh_Log(L"  %s: %d child(ren)", label, count);
+    for (int i = 0; i < count; i++) {
+        auto child = Media::VisualTreeHelper::GetChild(element, i)
+                         .try_as<winrt::Windows::UI::Xaml::FrameworkElement>();
+        if (!child) {
+            Wh_Log(L"    child[%d]: (not a FrameworkElement)", i);
+            continue;
+        }
+
+        Wh_Log(L"    child[%d]: class=%s name=%s col=%d actual=%.1fx%.1f "
+               L"visibility=%d opacity=%.2f",
+               i, winrt::get_class_name(child).c_str(), child.Name().c_str(),
+               Controls::Grid::GetColumn(child), child.ActualWidth(),
+               child.ActualHeight(), static_cast<int>(child.Visibility()),
+               child.Opacity());
+    }
+}
+
+// Log every taskbar top-level window on the thread with its monitor, so the
+// per-taskbar diag ids can be mapped to a physical monitor.
+void LogTaskbarWindowsOnThread() {
+    Wh_Log(L"Taskbar top-level windows on thread %u:", GetCurrentThreadId());
+    EnumThreadWindows(
+        GetCurrentThreadId(),
+        [](HWND hWnd, LPARAM) -> BOOL {
+            if (!IsTaskbarTopLevelWindow(hWnd)) {
+                return TRUE;
+            }
+            WCHAR className[64] = L"";
+            GetClassName(hWnd, className, ARRAYSIZE(className));
+            RECT rc{};
+            GetWindowRect(hWnd, &rc);
+            MONITORINFO mi{sizeof(mi)};
+            if (HMONITOR mon = MonitorFromWindow(hWnd, MONITOR_DEFAULTTONULL)) {
+                GetMonitorInfo(mon, &mi);
+            }
+            Wh_Log(L"  hwnd=%08X class=%s rect=(%ld,%ld,%ld,%ld) "
+                   L"monitor=(%ld,%ld,%ld,%ld) primary=%d",
+                   (DWORD)(ULONG_PTR)hWnd, className, rc.left, rc.top, rc.right,
+                   rc.bottom, mi.rcMonitor.left, mi.rcMonitor.top,
+                   mi.rcMonitor.right, mi.rcMonitor.bottom,
+                   (mi.dwFlags & MONITORINFOF_PRIMARY) ? 1 : 0);
+            return TRUE;
+        },
+        0);
+}
+
+// One diagnostic observer per taskbar frame's parent grid. Unlike the
+// workaround, this hooks EVERY taskbar (no single-instance guard), so the
+// broken layout is captured even on taskbars the workaround never fixes.
+struct DiagTaskbarLayoutObserver {
+    int id;
+    winrt::weak_ref<winrt::Windows::UI::Xaml::FrameworkElement> grid;
+    winrt::Windows::UI::Xaml::FrameworkElement::LayoutUpdated_revoker revoker;
+    std::wstring lastDigest;
+};
+
+thread_local std::list<DiagTaskbarLayoutObserver> g_diagLayoutObservers;
+thread_local int g_diagLayoutObserverNextId;
+
+// Sub-pixel-stable digest of a grid's layout: grid width, each column's actual
+// width, and each child's column/width/visibility. Used to log a snapshot only
+// when the geometry actually changes, since LayoutUpdated fires constantly.
+std::wstring ComputeDiagLayoutDigest(
+    const winrt::Windows::UI::Xaml::FrameworkElement& grid) {
+    std::wstring digest =
+        L"g" + std::to_wstring(QuantizeLayoutSize(grid.ActualWidth())) + L";";
+
+    if (auto gridControl = grid.try_as<Controls::Grid>()) {
+        auto colDefs = gridControl.ColumnDefinitions();
+        for (uint32_t i = 0; i < colDefs.Size(); i++) {
+            digest += L"c" +
+                      std::to_wstring(
+                          QuantizeLayoutSize(colDefs.GetAt(i).ActualWidth())) +
+                      L",";
+        }
+    }
+
+    int count = Media::VisualTreeHelper::GetChildrenCount(grid);
+    for (int i = 0; i < count; i++) {
+        auto child = Media::VisualTreeHelper::GetChild(grid, i)
+                         .try_as<winrt::Windows::UI::Xaml::FrameworkElement>();
+        if (!child) {
+            digest += L"x;";
+            continue;
+        }
+        digest += L"k" + std::to_wstring(Controls::Grid::GetColumn(child)) +
+                  L":" +
+                  std::to_wstring(QuantizeLayoutSize(child.ActualWidth())) +
+                  L":" + std::to_wstring(static_cast<int>(child.Visibility())) +
+                  L";";
+    }
+    return digest;
+}
+
+void LogDiagLayoutSnapshot(
+    int id,
+    PCWSTR reason,
+    const winrt::Windows::UI::Xaml::FrameworkElement& grid) {
+    Wh_Log(L"[diag taskbar #%d] %s", id, reason);
+    LogLayoutElementSize(L"grid", grid);
+    LogLayoutGridColumns(L"grid cols", grid);
+    LogLayoutGridChildren(L"grid children", grid);
+}
+
+// Match a TaskbarFrame to the diag observer watching its parent grid, by
+// shared XamlRoot. Returns -1 if none (should not happen, since the observer is
+// installed just before the workaround for the same element).
+int FindDiagObserverIdForElement(
+    const winrt::Windows::UI::Xaml::FrameworkElement& element) {
+    XamlRoot xamlRoot = nullptr;
+    try {
+        xamlRoot = element.XamlRoot();
+    } catch (...) {
+    }
+    if (!xamlRoot) {
+        return -1;
+    }
+    for (auto& observer : g_diagLayoutObservers) {
+        auto grid = observer.grid.get();
+        if (!grid) {
+            continue;
+        }
+        XamlRoot gridXamlRoot = nullptr;
+        try {
+            gridXamlRoot = grid.XamlRoot();
+        } catch (...) {
+        }
+        if (gridXamlRoot && gridXamlRoot == xamlRoot) {
+            return observer.id;
+        }
+    }
+    return -1;
+}
+
+void InstallDiagLayoutObserver(
+    const winrt::Windows::UI::Xaml::FrameworkElement& element) {
     if (winrt::get_class_name(element) != L"Taskbar.TaskbarFrame") {
         return;
     }
@@ -10480,6 +10704,85 @@ void HookFirstTaskbarFrameLayoutWorkaround(
     auto parent = Media::VisualTreeHelper::GetParent(element)
                       .try_as<winrt::Windows::UI::Xaml::FrameworkElement>();
     if (!parent) {
+        return;
+    }
+
+    g_diagLayoutObservers.remove_if(
+        [](const DiagTaskbarLayoutObserver& o) { return !o.grid.get(); });
+    for (const auto& observer : g_diagLayoutObservers) {
+        if (observer.grid.get() == parent) {
+            return;
+        }
+    }
+
+    int id = ++g_diagLayoutObserverNextId;
+
+    Wh_Log(L"[diag taskbar #%d] installing layout observer on TaskbarFrame "
+           L"parent grid",
+           id);
+    LogTaskbarWindowsOnThread();
+    LogDiagLayoutSnapshot(id, L"at install", parent);
+
+    auto& observer = g_diagLayoutObservers.emplace_back();
+    observer.id = id;
+    observer.grid = parent;
+    observer.lastDigest = ComputeDiagLayoutDigest(parent);
+
+    DiagTaskbarLayoutObserver* observerPtr = &observer;
+    auto weakParent = winrt::make_weak(parent);
+    observer.revoker = parent.LayoutUpdated(
+        winrt::auto_revoke,
+        [weakParent, observerPtr, id](
+            winrt::Windows::Foundation::IInspectable const&,
+            winrt::Windows::Foundation::IInspectable const&) {
+            auto grid = weakParent.get();
+            if (!grid) {
+                return;
+            }
+
+            auto digest = ComputeDiagLayoutDigest(grid);
+            if (digest == observerPtr->lastDigest) {
+                return;
+            }
+            observerPtr->lastDigest = digest;
+
+            LogDiagLayoutSnapshot(id, L"layout changed", grid);
+        });
+}
+
+void ClearDiagLayoutObservers() {
+    g_diagLayoutObservers.clear();
+    g_diagLayoutObserverNextId = 0;
+}
+
+// Workaround to the breaking layout with custom column definitions on multiple
+// taskbars:
+// https://github.com/ramensoftware/windows-11-taskbar-styling-guide/issues/507
+void HookFirstTaskbarFrameLayoutWorkaround(
+    winrt::Windows::UI::Xaml::FrameworkElement element) {
+    if (winrt::get_class_name(element) != L"Taskbar.TaskbarFrame") {
+        return;
+    }
+
+    // DIAGNOSTIC (issue #574): match this taskbar to its diag observer id and
+    // log the hook decision, including the multi-monitor case where a taskbar
+    // is skipped because another is already hooked.
+    int diagId = FindDiagObserverIdForElement(element);
+
+    if (g_workaroundLayoutUpdatedRevoker) {
+        Wh_Log(L"ColumnDefinitions workaround: TaskbarFrame (diag #%d) seen, "
+               L"but a taskbar is already hooked -- SKIPPING. Only one taskbar "
+               L"per thread is covered.",
+               diagId);
+        return;
+    }
+
+    auto parent = Media::VisualTreeHelper::GetParent(element)
+                      .try_as<winrt::Windows::UI::Xaml::FrameworkElement>();
+    if (!parent) {
+        Wh_Log(L"ColumnDefinitions workaround: TaskbarFrame (diag #%d) has no "
+               L"parent -- skipping",
+               diagId);
         return;
     }
 
@@ -10514,6 +10817,9 @@ void HookFirstTaskbarFrameLayoutWorkaround(
                          return el && el == parent;
                      });
     if (stateIt == g_elementsCustomizationState.end()) {
+        Wh_Log(L"ColumnDefinitions workaround: TaskbarFrame (diag #%d) parent "
+               L"has no tracked customization -- skipping",
+               diagId);
         return;
     }
 
@@ -10523,12 +10829,18 @@ void HookFirstTaskbarFrameLayoutWorkaround(
                               stateIt->second.perVisualStateGroup.end(),
                               [](const auto& entry) { return !entry.first; });
     if (vsgIt == stateIt->second.perVisualStateGroup.end()) {
+        Wh_Log(L"ColumnDefinitions workaround: TaskbarFrame (diag #%d) parent "
+               L"has no no-visual-state customization -- skipping",
+               diagId);
         return;
     }
 
     auto propIt = vsgIt->second.propertyCustomizationStates.find(colDefsProp);
     if (propIt == vsgIt->second.propertyCustomizationStates.end() ||
         !propIt->second.customValue) {
+        Wh_Log(L"ColumnDefinitions workaround: TaskbarFrame (diag #%d) parent "
+               L"has no ColumnDefinitions customization -- skipping",
+               diagId);
         return;
     }
 
@@ -10536,12 +10848,19 @@ void HookFirstTaskbarFrameLayoutWorkaround(
 
     g_workaroundLastFixSignature.clear();
 
+    Wh_Log(L"ColumnDefinitions workaround: hooking TaskbarFrame (diag #%d)",
+           diagId);
+    LogLayoutElementSize(L"element (at hook)", element);
+    LogLayoutElementSize(L"parent (at hook)", parent);
+    LogLayoutGridColumns(L"parent cols (at hook)", parent);
+    LogLayoutGridChildren(L"parent children (at hook)", parent);
+
     // LayoutUpdated is global and frequent, so the handler does only a cheap
     // check per pass and acts solely when the layout is actually broken.
     auto weakParent = winrt::make_weak(parent);
     g_workaroundLayoutUpdatedRevoker = parent.LayoutUpdated(
         winrt::auto_revoke,
-        [weakParent, savedValue = std::move(savedValue), colDefsProp](
+        [weakParent, savedValue = std::move(savedValue), colDefsProp, diagId](
             winrt::Windows::Foundation::IInspectable const&,
             winrt::Windows::Foundation::IInspectable const&) {
             // Re-entrancy: our own clear+reset triggers another layout pass.
@@ -10572,12 +10891,22 @@ void HookFirstTaskbarFrameLayoutWorkaround(
             // way, re-applying every pass would only spin.
             auto signature = ComputeColumnLayoutSignature(parent);
             if (signature == g_workaroundLastFixSignature) {
+                // DIAGNOSTIC: broken, but inputs match the last attempt, so the
+                // give-up guard suppresses a retry. If the clock is still broken
+                // here, this guard is why the workaround stopped.
+                Wh_Log(L"ColumnDefinitions workaround (diag #%d): layout BROKEN "
+                       L"but signature unchanged -- NOT retrying (give-up "
+                       L"guard)",
+                       diagId);
                 return;
             }
             g_workaroundLastFixSignature = signature;
 
-            Wh_Log(
-                L"ColumnDefinitions workaround: re-applying on broken layout");
+            Wh_Log(L"ColumnDefinitions workaround (diag #%d): re-applying on "
+                   L"broken layout",
+                   diagId);
+            LogLayoutGridColumns(L"parent cols (before fix)", parent);
+            LogLayoutGridChildren(L"parent children (before fix)", parent);
 
             // Suppress the per-DP property-changed callback installed by the
             // customization machinery so re-setting doesn't cascade.
@@ -10593,11 +10922,38 @@ void HookFirstTaskbarFrameLayoutWorkaround(
                        winrt::to_message().c_str());
             }
             g_elementPropertyModifying = false;
+
+            // Layout is recomputed asynchronously, so log again after the next
+            // layout pass to capture whether the fix actually resolved it.
+            try {
+                parent.Dispatcher().TryRunAsync(
+                    winrt::Windows::UI::Core::CoreDispatcherPriority::Low,
+                    [weakParent, diagId]() {
+                        auto parent = weakParent.get();
+                        if (!parent) {
+                            return;
+                        }
+                        auto grid = parent.try_as<Controls::Grid>();
+                        Wh_Log(
+                            L"ColumnDefinitions workaround (diag #%d): after "
+                            L"layout, broken=%d",
+                            diagId,
+                            (grid && IsColumnLayoutBroken(grid)) ? 1 : 0);
+                        LogLayoutGridColumns(L"parent cols (after layout)",
+                                             parent);
+                        LogLayoutGridChildren(L"parent children (after layout)",
+                                              parent);
+                    });
+            } catch (...) {
+                Wh_Log(L"Error %08X: %s", winrt::to_hresult(),
+                       winrt::to_message().c_str());
+            }
         });
 
     Wh_Log(
-        L"Hooked TaskbarFrame parent LayoutUpdated for ColumnDefinitions "
-        L"workaround");
+        L"Hooked TaskbarFrame parent LayoutUpdated (diag #%d) for "
+        L"ColumnDefinitions workaround",
+        diagId);
 }
 
 void UnhookFirstTaskbarFrameLayoutWorkaround() {
@@ -10953,6 +11309,7 @@ void ApplyCustomizations(InstanceHandle handle,
             elementCustomizationStateForVisualStateGroup);
     }
 
+    InstallDiagLayoutObserver(element);
     HookFirstTaskbarFrameLayoutWorkaround(element);
 }
 
@@ -11914,6 +12271,7 @@ void UninitializeResourceVariables() {
 
 void UninitializeForCurrentThread() {
     UnhookFirstTaskbarFrameLayoutWorkaround();
+    ClearDiagLayoutObservers();
 
     // Restore taskbars clipped for click-through, then drop tracking (revokers
     // auto-unhook LayoutUpdated). Skip the region reset when nothing was
