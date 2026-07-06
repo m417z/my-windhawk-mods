@@ -180,6 +180,7 @@ Labels can also be shown or hidden per-program in the settings.
 #undef GetCurrentTime
 
 #include <winrt/Windows.Foundation.Collections.h>
+#include <winrt/Windows.Foundation.Numerics.h>
 #include <winrt/Windows.UI.Core.h>
 #include <winrt/Windows.UI.Xaml.Controls.h>
 #include <winrt/Windows.UI.Xaml.Interop.h>
@@ -1170,9 +1171,9 @@ void UpdateTaskListButtonWithLabelStyle(
 
         int verticalOffset =
             g_unloading ? 0 : g_settings.runningIndicatorVerticalOffset;
-        Media::TranslateTransform verticalOffsetTransform;
-        verticalOffsetTransform.Y(verticalOffset);
-        indicatorElement.RenderTransform(verticalOffsetTransform);
+        indicatorElement.Translation(
+            winrt::Windows::Foundation::Numerics::float3{
+                0.0f, static_cast<float>(verticalOffset), 0.0f});
 
         if (isProgressIndicator) {
             auto element = indicatorElement;
