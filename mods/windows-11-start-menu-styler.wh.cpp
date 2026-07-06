@@ -9456,6 +9456,42 @@ void SetOrClearValue(DependencyObject elementDo,
             }
         }
 
+        // Grid ColumnDefinitions/RowDefinitions hold DependencyObjects
+        // (ColumnDefinition/RowDefinition) that the layout engine writes
+        // ActualWidth/ActualHeight back into. The resolved value is parsed once
+        // and cached, so applying it to more than one grid - e.g. a taskbar per
+        // monitor, all sharing one UI thread - would set the same collection on
+        // each, and one monitor's column sizes would then leak onto another's.
+        // Give each element a private copy. The scratch Grid owns the fresh
+        // collection until SetValue reassigns ownership to the target, so it's
+        // kept alive through the SetValue call below.
+        Controls::Grid definitionsCloneOwner{nullptr};
+        if (auto sourceColumns =
+                value.try_as<Controls::ColumnDefinitionCollection>()) {
+            definitionsCloneOwner = Controls::Grid{};
+            auto clonedColumns = definitionsCloneOwner.ColumnDefinitions();
+            for (auto const& column : sourceColumns) {
+                Controls::ColumnDefinition clonedColumn;
+                clonedColumn.Width(column.Width());
+                clonedColumn.MinWidth(column.MinWidth());
+                clonedColumn.MaxWidth(column.MaxWidth());
+                clonedColumns.Append(clonedColumn);
+            }
+            value = clonedColumns;
+        } else if (auto sourceRows =
+                       value.try_as<Controls::RowDefinitionCollection>()) {
+            definitionsCloneOwner = Controls::Grid{};
+            auto clonedRows = definitionsCloneOwner.RowDefinitions();
+            for (auto const& row : sourceRows) {
+                Controls::RowDefinition clonedRow;
+                clonedRow.Height(row.Height());
+                clonedRow.MinHeight(row.MinHeight());
+                clonedRow.MaxHeight(row.MaxHeight());
+                clonedRows.Append(clonedRow);
+            }
+            value = clonedRows;
+        }
+
         elementDo.SetValue(property, value);
     } catch (winrt::hresult_error const& ex) {
         Wh_Log(L"Error %08X: %s", ex.code(), ex.message().c_str());
