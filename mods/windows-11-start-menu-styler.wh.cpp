@@ -257,16 +257,28 @@ Margin=0,{{x1}},0,{{x2 + 10}}
 Inside `{{ ... }}`, the supported expression syntax is:
 
 * Numbers (e.g. `42`, `3.14`).
+* Backtick-delimited string literals (e.g. `` `Auto` ``, `` `*` ``). A doubled
+  backtick encodes one literal backtick. Backtick is used rather than a quote so
+  that literals don't clash with the string quoting of YAML settings or the
+  double quotes of XAML attributes.
 * Variable references (a previously captured `VarName`).
 * Binary operators `+`, `-`, `*`, `/`, with standard precedence.
 * Unary `+` and `-`.
 * Comparison operators `<`, `<=`, `==`, `>=`, `>`, `!=`, which evaluate to `1`
-  (true) or `0` (false).
+  (true) or `0` (false). The relational operators (`<`, `<=`, `>=`, `>`) require
+  numbers; `==` and `!=` compare either two numbers or two strings.
 * The conditional operator `cond ? a : b`: evaluates to `a` when `cond` is
-  non-zero, otherwise `b`. For example, `{{x > 8 ? 1 : 3}}` gives `1` when `x`
-  is greater than `8`, else `3`.
+  non-zero, otherwise `b`. The condition must be numeric, but the two branches
+  may each be a number or a string. For example, `{{x > 8 ? 1 : 3}}` gives `1`
+  when `x` is greater than `8`, else `3`, and `` {{width > 0 ? `*` : `Auto`}} ``
+  selects a `GridLength` keyword.
 * Parentheses for grouping.
 * The two-argument functions `min(a, b)` and `max(a, b)`.
+
+Arithmetic (`+`, `-`, `*`, `/`), the unary sign, the relational comparisons, and
+`min` / `max` require numeric operands. String values can only be produced (by a
+literal or a string-typed variable), compared with `==` / `!=`, and selected by
+the conditional operator.
 
 Expressions can be nested (`{{min(a, b + 1) * 2}}`), and `{{ ... }}` markers can
 appear inside larger expressions. Brace pairs match innermost-first, so
@@ -10465,10 +10477,31 @@ bool IsValidStyleVariableIdentifier(std::wstring_view sv) {
     return true;
 }
 
-// Recursive-descent evaluator for `{{ ... }}` expressions. Supports number
-// literal, identifier (style variable reference), parenthesized subexpression,
-// the binary ops + - * /, unary - / +, and the two-arg functions min(a, b) and
-// max(a, b). Standard math precedence.
+// Value produced while evaluating a `{{ ... }}` expression: either a number or
+// a string. Number literals and numeric variables produce numbers; backtick-
+// delimited string literals and string-typed variables produce strings.
+struct StyleExpressionValue {
+    // Engaged => numeric value; otherwise `text` holds the string value.
+    std::optional<double> number;
+    std::wstring text;
+
+    static StyleExpressionValue Number(double d) { return {d, std::wstring()}; }
+    static StyleExpressionValue String(std::wstring s) {
+        return {std::nullopt, std::move(s)};
+    }
+
+    bool IsNumber() const { return number.has_value(); }
+};
+
+// Recursive-descent evaluator for `{{ ... }}` expressions. Operands: number
+// literals, backtick-delimited string literals, style variable references, and
+// parenthesized subexpressions. Operators: binary + - * /, unary - / +, the
+// comparisons < <= == >= > !=, the conditional operator cond ? a : b, and the
+// two-arg functions min(a, b) and max(a, b). Standard math precedence.
+// Arithmetic, relational, unary-sign, and min/max operators require numeric
+// operands; == and != compare two numbers or two strings; the conditional
+// selects one of its (possibly string) branches. Evaluate() formats the result
+// to text.
 //
 // Variable references pushed into outDeps so the dependent style can be
 // re-evaluated when those variables change.
@@ -10479,26 +10512,30 @@ class StyleVariableExpressionEvaluator {
                                      StyleVariableState* state)
         : m_text(text), m_outDeps(outDeps), m_state(state) {}
 
-    // Returns the numeric result of the expression. Throws std::runtime_error
-    // on parse / evaluation failure (including when an identifier resolves to a
-    // non-numeric variable, or when the expression produces a non-finite result
-    // -- NaN/Inf can't be formatted into XAML attributes meaningfully and would
-    // also break the consumer-equality check in
+    // Returns the text form of the result: numeric results are formatted with
+    // FormatDoubleInvariant, string results are returned verbatim. Throws
+    // std::runtime_error on parse / evaluation failure (including when a value
+    // is used where the grammar requires a number, or when a numeric result is
+    // non-finite -- NaN/Inf can't be formatted into XAML attributes
+    // meaningfully and would also break the consumer-equality check in
     // SetStyleVariableIfChangedAndPropagate, since NaN != NaN).
-    double Evaluate() {
+    std::wstring Evaluate() {
         m_pos = 0;
         SkipWhitespace();
-        double v = ParseExpression();
+        StyleExpressionValue v = ParseExpression();
         SkipWhitespace();
         if (m_pos != m_text.size()) {
             throw std::runtime_error(
                 "Unexpected trailing characters in style variable expression");
         }
-        if (!std::isfinite(v)) {
-            throw std::runtime_error(
-                "Style variable expression produced a non-finite result");
+        if (v.IsNumber()) {
+            if (!std::isfinite(*v.number)) {
+                throw std::runtime_error(
+                    "Style variable expression produced a non-finite result");
+            }
+            return FormatDoubleInvariant(*v.number);
         }
-        return v;
+        return v.text;
     }
 
    private:
@@ -10532,7 +10569,41 @@ class StyleVariableExpressionEvaluator {
         return false;
     }
 
-    double ParseExpression() { return ParseTernary(); }
+    // Unwraps a numeric operand. In a dead ternary branch (m_live == false) the
+    // value is discarded, so a string operand is tolerated (reported as 0)
+    // rather than aborting the whole expression.
+    double RequireNumber(const StyleExpressionValue& v) {
+        if (v.IsNumber()) {
+            return *v.number;
+        }
+        if (m_live) {
+            throw std::runtime_error(
+                "Non-numeric value used where a number is required in style "
+                "variable expression");
+        }
+        return 0.0;
+    }
+
+    // Equality test for == / !=. Two numbers compare numerically, two strings
+    // compare by content. A number/string mismatch is a type error in a live
+    // branch; in a dead branch it's harmlessly reported as not-equal.
+    bool ValuesEqual(const StyleExpressionValue& a,
+                     const StyleExpressionValue& b) {
+        if (a.IsNumber() && b.IsNumber()) {
+            return *a.number == *b.number;
+        }
+        if (!a.IsNumber() && !b.IsNumber()) {
+            return a.text == b.text;
+        }
+        if (m_live) {
+            throw std::runtime_error(
+                "Cannot compare a number with a string in style variable "
+                "expression");
+        }
+        return false;
+    }
+
+    StyleExpressionValue ParseExpression() { return ParseTernary(); }
 
     // Conditional operator `cond ? thenVal : elseVal`, right-associative.
     // Short-circuit: only the taken branch is evaluated. The untaken branch is
@@ -10540,16 +10611,16 @@ class StyleVariableExpressionEvaluator {
     // cleared, which suppresses value-level errors (division by zero, a
     // non-numeric / undefined variable, an unknown function) and dependency
     // capture for that branch.
-    double ParseTernary() {
-        double cond = ParseEquality();
+    StyleExpressionValue ParseTernary() {
+        StyleExpressionValue cond = ParseEquality();
         if (!ConsumeChar(L'?')) {
             return cond;
         }
-        bool condTrue = cond != 0.0;
+        bool condTrue = RequireNumber(cond) != 0.0;
         bool prevLive = m_live;
 
         m_live = prevLive && condTrue;
-        double thenVal = ParseExpression();
+        StyleExpressionValue thenVal = ParseExpression();
         m_live = prevLive;
 
         if (!ConsumeChar(L':')) {
@@ -10558,19 +10629,21 @@ class StyleVariableExpressionEvaluator {
         }
 
         m_live = prevLive && !condTrue;
-        double elseVal = ParseTernary();
+        StyleExpressionValue elseVal = ParseTernary();
         m_live = prevLive;
 
         return condTrue ? thenVal : elseVal;
     }
 
-    double ParseEquality() {
-        double v = ParseRelational();
+    StyleExpressionValue ParseEquality() {
+        StyleExpressionValue v = ParseRelational();
         while (true) {
             if (ConsumeOperator(L"==")) {
-                v = (v == ParseRelational()) ? 1.0 : 0.0;
+                v = StyleExpressionValue::Number(
+                    ValuesEqual(v, ParseRelational()) ? 1.0 : 0.0);
             } else if (ConsumeOperator(L"!=")) {
-                v = (v != ParseRelational()) ? 1.0 : 0.0;
+                v = StyleExpressionValue::Number(
+                    ValuesEqual(v, ParseRelational()) ? 0.0 : 1.0);
             } else {
                 break;
             }
@@ -10578,18 +10651,26 @@ class StyleVariableExpressionEvaluator {
         return v;
     }
 
-    double ParseRelational() {
-        double v = ParseAdditive();
+    StyleExpressionValue ParseRelational() {
+        StyleExpressionValue v = ParseAdditive();
         while (true) {
             // Match the two-char operators before their single-char prefixes.
             if (ConsumeOperator(L"<=")) {
-                v = (v <= ParseAdditive()) ? 1.0 : 0.0;
+                double lhs = RequireNumber(v);
+                v = StyleExpressionValue::Number(
+                    lhs <= RequireNumber(ParseAdditive()) ? 1.0 : 0.0);
             } else if (ConsumeOperator(L">=")) {
-                v = (v >= ParseAdditive()) ? 1.0 : 0.0;
+                double lhs = RequireNumber(v);
+                v = StyleExpressionValue::Number(
+                    lhs >= RequireNumber(ParseAdditive()) ? 1.0 : 0.0);
             } else if (ConsumeOperator(L"<")) {
-                v = (v < ParseAdditive()) ? 1.0 : 0.0;
+                double lhs = RequireNumber(v);
+                v = StyleExpressionValue::Number(
+                    lhs < RequireNumber(ParseAdditive()) ? 1.0 : 0.0);
             } else if (ConsumeOperator(L">")) {
-                v = (v > ParseAdditive()) ? 1.0 : 0.0;
+                double lhs = RequireNumber(v);
+                v = StyleExpressionValue::Number(
+                    lhs > RequireNumber(ParseAdditive()) ? 1.0 : 0.0);
             } else {
                 break;
             }
@@ -10597,14 +10678,18 @@ class StyleVariableExpressionEvaluator {
         return v;
     }
 
-    double ParseAdditive() {
-        double v = ParseTerm();
+    StyleExpressionValue ParseAdditive() {
+        StyleExpressionValue v = ParseTerm();
         while (true) {
             SkipWhitespace();
             if (ConsumeChar(L'+')) {
-                v += ParseTerm();
+                double lhs = RequireNumber(v);
+                v = StyleExpressionValue::Number(lhs +
+                                                 RequireNumber(ParseTerm()));
             } else if (ConsumeChar(L'-')) {
-                v -= ParseTerm();
+                double lhs = RequireNumber(v);
+                v = StyleExpressionValue::Number(lhs -
+                                                 RequireNumber(ParseTerm()));
             } else {
                 break;
             }
@@ -10612,14 +10697,17 @@ class StyleVariableExpressionEvaluator {
         return v;
     }
 
-    double ParseTerm() {
-        double v = ParseFactor();
+    StyleExpressionValue ParseTerm() {
+        StyleExpressionValue v = ParseFactor();
         while (true) {
             SkipWhitespace();
             if (ConsumeChar(L'*')) {
-                v *= ParseFactor();
+                double lhs = RequireNumber(v);
+                v = StyleExpressionValue::Number(lhs *
+                                                 RequireNumber(ParseFactor()));
             } else if (ConsumeChar(L'/')) {
-                double rhs = ParseFactor();
+                double lhs = RequireNumber(v);
+                double rhs = RequireNumber(ParseFactor());
                 if (rhs == 0.0) {
                     if (m_live) {
                         throw std::runtime_error(
@@ -10627,8 +10715,9 @@ class StyleVariableExpressionEvaluator {
                     }
                     // Dead ternary branch: the result is discarded, so skip the
                     // divide instead of throwing or producing inf/nan.
+                    v = StyleExpressionValue::Number(lhs);
                 } else {
-                    v /= rhs;
+                    v = StyleExpressionValue::Number(lhs / rhs);
                 }
             } else {
                 break;
@@ -10637,18 +10726,18 @@ class StyleVariableExpressionEvaluator {
         return v;
     }
 
-    double ParseFactor() {
+    StyleExpressionValue ParseFactor() {
         SkipWhitespace();
         if (ConsumeChar(L'+')) {
-            return ParseFactor();
+            return StyleExpressionValue::Number(RequireNumber(ParseFactor()));
         }
         if (ConsumeChar(L'-')) {
-            return -ParseFactor();
+            return StyleExpressionValue::Number(-RequireNumber(ParseFactor()));
         }
         return ParsePrimary();
     }
 
-    double ParsePrimary() {
+    StyleExpressionValue ParsePrimary() {
         SkipWhitespace();
         if (m_pos >= m_text.size()) {
             throw std::runtime_error(
@@ -10658,7 +10747,7 @@ class StyleVariableExpressionEvaluator {
         wchar_t c = m_text[m_pos];
         if (c == L'(') {
             m_pos++;
-            double v = ParseExpression();
+            StyleExpressionValue v = ParseExpression();
             SkipWhitespace();
             if (!ConsumeChar(L')')) {
                 throw std::runtime_error(
@@ -10667,8 +10756,12 @@ class StyleVariableExpressionEvaluator {
             return v;
         }
 
+        if (c == L'`') {
+            return ParseStringLiteral();
+        }
+
         if ((c >= L'0' && c <= L'9') || c == L'.') {
-            return ParseNumberLiteral();
+            return StyleExpressionValue::Number(ParseNumberLiteral());
         }
 
         if ((c >= L'A' && c <= L'Z') || (c >= L'a' && c <= L'z') || c == L'_') {
@@ -10677,6 +10770,33 @@ class StyleVariableExpressionEvaluator {
 
         throw std::runtime_error(
             "Unexpected character in style variable expression");
+    }
+
+    // Backtick-delimited string literal. A doubled backtick encodes one literal
+    // backtick character; every other character is taken verbatim. Backtick is
+    // used (rather than a quote) so that literals don't clash with the string
+    // quoting of YAML settings or with the double quotes of XAML attributes,
+    // inside which these expressions often appear. The literal must be closed
+    // before the end of the expression.
+    StyleExpressionValue ParseStringLiteral() {
+        m_pos++;  // Skip the opening backtick.
+        std::wstring out;
+        while (m_pos < m_text.size()) {
+            wchar_t c = m_text[m_pos];
+            if (c == L'`') {
+                if (m_pos + 1 < m_text.size() && m_text[m_pos + 1] == L'`') {
+                    out.push_back(L'`');
+                    m_pos += 2;
+                    continue;
+                }
+                m_pos++;
+                return StyleExpressionValue::String(std::move(out));
+            }
+            out.push_back(c);
+            m_pos++;
+        }
+        throw std::runtime_error(
+            "Unterminated string literal in style variable expression");
     }
 
     double ParseNumberLiteral() {
@@ -10719,7 +10839,7 @@ class StyleVariableExpressionEvaluator {
         return *parsed;
     }
 
-    double ParseIdentifierOrCall() {
+    StyleExpressionValue ParseIdentifierOrCall() {
         size_t start = m_pos;
         while (m_pos < m_text.size()) {
             wchar_t c = m_text[m_pos];
@@ -10734,33 +10854,33 @@ class StyleVariableExpressionEvaluator {
         SkipWhitespace();
         if (m_pos < m_text.size() && m_text[m_pos] == L'(') {
             m_pos++;
-            double a = ParseExpression();
+            double a = RequireNumber(ParseExpression());
             if (!ConsumeChar(L',')) {
                 throw std::runtime_error(
                     "Expected ',' in min/max style variable call");
             }
-            double b = ParseExpression();
+            double b = RequireNumber(ParseExpression());
             if (!ConsumeChar(L')')) {
                 throw std::runtime_error(
                     "Missing ')' after min/max style variable call");
             }
             if (ident == L"min") {
-                return (a < b) ? a : b;
+                return StyleExpressionValue::Number((a < b) ? a : b);
             }
             if (ident == L"max") {
-                return (a > b) ? a : b;
+                return StyleExpressionValue::Number((a > b) ? a : b);
             }
             if (m_live) {
                 throw std::runtime_error(
                     "Unknown function in style variable expression");
             }
             // Dead ternary branch: value discarded, don't fail on the name.
-            return 0.0;
+            return StyleExpressionValue::Number(0.0);
         }
-        return LookupVariableNumeric(std::wstring(ident));
+        return LookupVariable(std::wstring(ident));
     }
 
-    double LookupVariableNumeric(const std::wstring& name) {
+    StyleExpressionValue LookupVariable(const std::wstring& name) {
         // In a dead ternary branch (m_live == false) the value is discarded, so
         // suppress dependency capture and the value-level errors below; the
         // branch must not abort the whole expression.
@@ -10773,16 +10893,23 @@ class StyleVariableExpressionEvaluator {
                 Wh_Log(L"Style variable '%s' not yet defined; treating as 0",
                        name.c_str());
             }
-            return 0.0;
+            return StyleExpressionValue::Number(0.0);
         }
-        if (!it->second.numeric) {
-            if (m_live) {
-                throw std::runtime_error(
-                    "Style variable used in arithmetic is not numeric");
-            }
-            return 0.0;
+        if (it->second.numeric) {
+            return StyleExpressionValue::Number(*it->second.numeric);
         }
-        return *it->second.numeric;
+        // Non-numeric primitive (e.g. a captured string property): usable as a
+        // string operand.
+        if (it->second.substitutable) {
+            return StyleExpressionValue::String(it->second.stringForm);
+        }
+        // Opaque capture (brush, thickness, etc.): no value form usable in an
+        // expression.
+        if (m_live) {
+            throw std::runtime_error(
+                "Style variable used in expression is not a primitive value");
+        }
+        return StyleExpressionValue::Number(0.0);
     }
 
     std::wstring_view m_text;
@@ -10835,8 +10962,7 @@ std::optional<std::wstring> EvaluateStyleVariableExpression(
 
     try {
         StyleVariableExpressionEvaluator eval(trimmed, outDeps, state);
-        double v = eval.Evaluate();
-        return FormatDoubleInvariant(v);
+        return eval.Evaluate();
     } catch (std::exception const& ex) {
         Wh_Log(L"Style variable expression failed: %S (in '%.*s')", ex.what(),
                static_cast<int>(trimmed.size()), trimmed.data());
