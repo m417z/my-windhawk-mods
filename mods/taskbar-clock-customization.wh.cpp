@@ -754,10 +754,11 @@ FormattedString<FORMATTED_BUFFER_SIZE> g_mediaAlbumFormatted;
 FormattedString<FORMATTED_BUFFER_SIZE> g_mediaStatusFormatted;
 FormattedString<FORMATTED_BUFFER_SIZE> g_mediaInfoFormatted;
 
-winrt::Windows::Media::Control::GlobalSystemMediaTransportControlsSessionManager
-    g_mediaSessionManager{nullptr};
-winrt::Windows::Media::Control::GlobalSystemMediaTransportControlsSession
-    g_mediaCurrentSession{nullptr};
+[[clang::no_destroy]] winrt::Windows::Media::Control::
+    GlobalSystemMediaTransportControlsSessionManager g_mediaSessionManager{
+        nullptr};
+[[clang::no_destroy]] winrt::Windows::Media::Control::
+    GlobalSystemMediaTransportControlsSession g_mediaCurrentSession{nullptr};
 std::mutex g_mediaMutex;
 std::atomic<bool> g_mediaDataDirty{true};
 winrt::event_token g_mediaSessionsChangedToken;
@@ -5960,26 +5961,6 @@ BOOL Wh_ModSettingsChanged(BOOL* bReload) {
     }
 
     ApplySettings();
-
-    return TRUE;
-}
-
-BOOL WINAPI DllMain(HINSTANCE hinstDLL, DWORD fdwReason, LPVOID lpReserved) {
-    switch (fdwReason) {
-        case DLL_PROCESS_ATTACH:
-        case DLL_THREAD_ATTACH:
-        case DLL_THREAD_DETACH:
-            break;
-
-        case DLL_PROCESS_DETACH:
-            // Do not release media-related objects if process termination
-            // scenario, as it can lead to hangs.
-            if (lpReserved) {
-                winrt::detach_abi(g_mediaSessionManager);
-                winrt::detach_abi(g_mediaCurrentSession);
-            }
-            break;
-    }
 
     return TRUE;
 }
