@@ -458,7 +458,7 @@ const Theme g_themeMicaBar = {{
         L"BorderThickness=0,0,0,1"}},
     ThemeTargetStyles{L"CommandBar#FileExplorerCommandBar", {
         L"Background=Transparent"}},
-}, {}, {}, /*explorerFrameContainerHeight=*/0};
+}};
 
 const Theme g_themeNoCommandBar = {{
     ThemeTargetStyles{L"FileExplorerExtensions.CommandBarControl", {
@@ -587,10 +587,10 @@ const Theme g_themeTabless = {{
 }, {
     L"NavigationBarGrid=2",
     L"CommandBarGrid=1",
-}, {}, /*explorerFrameContainerHeight=*/0};
+}};
 
 const Theme g_themeMatter = {{
-    ThemeTargetStyles{L"CommandBar#FileExplorerCommandBar ", {
+    ThemeTargetStyles{L"CommandBar#FileExplorerCommandBar", {
         L"Background=Transparent",
         L"HorizontalAlignment  = 1"}},
     ThemeTargetStyles{L"CommandBar#FileExplorerSecondaryCommandBar", {
@@ -609,7 +609,7 @@ const Theme g_themeMatter = {{
     ThemeTargetStyles{L"TabViewItem > Grid#LayoutRoot > Canvas", {
         L"Visibility=Collapsed"}},
     ThemeTargetStyles{L"TabViewItem > Grid#LayoutRoot > Grid#TabContainer", {
-        L"Background = Transparent ",
+        L"Background = Transparent",
         L"BorderThickness = 0"}},
     ThemeTargetStyles{L"TabViewItem > Grid#LayoutRoot@CommonStates", {
         L"Background@Selected:= $accentColor2",
@@ -622,10 +622,10 @@ const Theme g_themeMatter = {{
         L"Visibility  = 0",
         L"Margin = 0,0,0,3"}},
     ThemeTargetStyles{L"Grid#CommandBarControlRootGrid", {
-        L"Background=Transparent ",
+        L"Background=Transparent",
         L"BorderThickness = 0"}},
     ThemeTargetStyles{L"Grid#NavigationBarControlGrid", {
-        L"Background=Transparent "}},
+        L"Background=Transparent"}},
     ThemeTargetStyles{L"Grid#PART_LayoutRoot", {
         L"Background :=<SolidColorBrush Color=\"{ThemeResource SystemAccentColorLight1}\" Opacity=\"0.4\" />",
         L"CornerRadius = 6",
@@ -665,7 +665,7 @@ const Theme g_themeMatter = {{
 }, {
     L"accentColor=<SolidColorBrush Color=\"{ThemeResource SystemAccentColorLight1}\" />",
     L"accentColor2=<SolidColorBrush Color=\"{ThemeResource SystemAccentColorLight1}\" Opacity=\"0.5\" />",
-}, {}, /*explorerFrameContainerHeight=*/0};
+}};
 
 const Theme g_themeWindowGlass = {{
     ThemeTargetStyles{L"Microsoft.UI.Xaml.Controls.Grid#PART_LayoutRoot", {
@@ -714,7 +714,7 @@ const Theme g_themeWindowGlass = {{
         L"BorderThickness=0",
         L"Margin=0,0,8,8",
         L"Background:=$MainContentBG"}},
-    ThemeTargetStyles{L"FileExplorerExtensions.GalleryViewControl#GalleryViewControl > Grid  ", {
+    ThemeTargetStyles{L"FileExplorerExtensions.GalleryViewControl#GalleryViewControl > Grid", {
         L"BorderBrush:=$MainContentBG",
         L"CornerRadius=8",
         L"BorderThickness=0",
@@ -865,9 +865,10 @@ const Theme g_themeLiquidGlass = {{
     ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Grid#RootCommandSearchGrid > Windows.UI.Xaml.Controls.Border#BorderElement", {
         L"Visibility=1"}},
     ThemeTargetStyles{L"Microsoft.UI.Xaml.Controls.Primitives.NavigationViewItemPresenter#NavigationViewItemPresenter > Microsoft.UI.Xaml.Controls.Grid#LayoutRoot", {
-        L"BorderThickness=$BorderThickness",
-        L"Background:=$ButtonBackground",
-        L"BorderBrush:=$ButtonBorder"}},
+        L"BorderThickness=$ElementBorderThickness",
+        L"Background:=$ElementBackground",
+        L"BorderBrush:=$ElementBorder",
+        L"CornerRadius=$ElementCornerRadius"}},
     ThemeTargetStyles{L"Microsoft.UI.Xaml.Controls.Grid#NavigationBarControlGrid", {
         L"Background:=Transparent",
         L"BorderBrush:=Transparent"}},
@@ -876,7 +877,7 @@ const Theme g_themeLiquidGlass = {{
         L"CornerRadius=$ElementCornerRadius",
         L"BorderThickness=$ElementBorderThickness",
         L"Margin=4,0"}},
-    ThemeTargetStyles{L"FileExplorerExtensions.GalleryViewControl#GalleryViewControl > Grid  ", {
+    ThemeTargetStyles{L"FileExplorerExtensions.GalleryViewControl#GalleryViewControl > Grid", {
         L"BorderBrush:=$ElementBorderBrush",
         L"CornerRadius=$ElementCornerRadius",
         L"BorderThickness=$ElementBorderThickness",
@@ -884,7 +885,6 @@ const Theme g_themeLiquidGlass = {{
     ThemeTargetStyles{L"FileExplorerExtensions.GalleryViewControl#GalleryViewControl > Grid > Grid#GalleryRootGrid", {
         L"Background:=Transparent"}},
     ThemeTargetStyles{L"ToolTip", {
-        L"Background:=$ElementBG",
         L"BorderBrush:=$ElementBorderBrush",
         L"BorderThickness=$ElementBorderThickness",
         L"CornerRadius=$ElementCornerRadius"}},
@@ -904,11 +904,11 @@ const Theme g_themeLiquidGlass = {{
         L"Background=Transparent",
         L"BorderBrush=Transparent"}},
     ThemeTargetStyles{L"TabViewItem > Grid#LayoutRoot@CommonStates", {
-        L"Background@Selected:=$ElementBG",
-        L"Background@PointerOverSelected:=$ButtonBackground",
-        L"Background@PointerOver:=$ButtonBackground",
-        L"Background@Normal:=$ElementBG",
-        L"Background@PressedSelected:=$ButtonBackground"}},
+        L"Background@Selected:=$ElementBackground",
+        L"Background@PointerOverSelected:=$AccentBackground",
+        L"Background@PointerOver:=$AccentBackground",
+        L"Background@Normal:=$ElementBackground",
+        L"Background@PressedSelected:=$ButtonBackground2"}},
     ThemeTargetStyles{L"Grid#TabContainerGrid > Border#LeftBottomBorderLine", {
         L"Visibility=1"}},
     ThemeTargetStyles{L"Grid#TabContainerGrid > Border#RightBottomBorderLine", {
@@ -924,18 +924,18 @@ const Theme g_themeLiquidGlass = {{
     ThemeTargetStyles{L"Microsoft.UI.Xaml.Controls.Viewbox#IconBox", {
         L"Visibility=1"}},
     ThemeTargetStyles{L"CommandBarOverflowPresenter#SecondaryItemsControl > Grid#LayoutRoot", {
-        L"Background:=$ElementBG",
+        L"Background:=$ElementBackground",
         L"BorderThickness=$ElementBorderThickness",
         L"BorderBrush:=$ElementBorderBrush",
         L"CornerRadius=$ElementCornerRadius"}},
     ThemeTargetStyles{L"Microsoft.UI.Xaml.Controls.AutoSuggestBox#FileExplorerSearchBox > Microsoft.UI.Xaml.Controls.Grid#LayoutRoot > Microsoft.UI.Xaml.Controls.TextBox#TextBox", {
         L"CornerRadius=$ElementCornerRadius",
-        L"Background:=$ElementBG",
+        L"Background:=$ElementBackground",
         L"BorderBrush:=$ElementBorderBrush",
         L"BorderThickness=$ElementBorderThickness"}},
     ThemeTargetStyles{L"Microsoft.UI.Xaml.Controls.Grid#FileExplorerAddressBarGrid", {
         L"CornerRadius=$ElementCornerRadius",
-        L"Background:=$ElementBG",
+        L"Background:=$ElementBackground",
         L"BorderBrush:=$ElementBorderBrush",
         L"BorderThickness=$ElementBorderThickness"}},
     ThemeTargetStyles{L"Microsoft.UI.Xaml.Controls.AutoSuggestBox#PART_AutoSuggestBox > Microsoft.UI.Xaml.Controls.Grid#LayoutRoot > Microsoft.UI.Xaml.Controls.TextBox#TextBox", {
@@ -962,19 +962,18 @@ const Theme g_themeLiquidGlass = {{
     ThemeTargetStyles{L"StackPanel#DetailsViewThumbnail", {
         L"Background:=Transparent"}},
 }, {
-    L"Background=<WindhawkBlur BlurAmount=\"15\" TintColor=\"#25323232\" TintOpacity=\"0.2\" />",
-    L"MainContentBG=<SolidColorBrush Color=\"{ThemeResource SystemChromeAltHighColor}\" Opacity=\"1\" />",
-    L"ButtonBackground=<SolidColorBrush Color=\"{ThemeResource SystemAccentColor}\" Opacity=\"1\" />",
-    L"BorderThickness=0.3,1,0.3,0.3",
-    L"ClockBG=<WindhawkBlur BlurAmount=\"20\" TintColor=\"{ThemeResource SystemAccentColorLight2}\" TintOpacity=\"0.3\" />",
-    L"ElementBG=<WindhawkBlur BlurAmount=\"20\" TintColor=\"#202020\" TintOpacity=\"0.2\" />",
-    L"ElementBorderThickness=0.3,0.3,0.3,1",
-    L"ElementBorderBrush=<LinearGradientBrush StartPoint=\"0,0\" EndPoint=\"0,1\"><GradientStop Color=\"#50808080\" Offset=\"1\" /><GradientStop Color=\"#50606060\" Offset=\"0.15\" /></LinearGradientBrush>",
+    L"ContentBG=<SolidColorBrush Color=\"{ThemeResource SystemChromeAltHighColor}\" Opacity=\"1\" />",
+    L"Background=<WindhawkBlur BlurAmount=\"15\" TintColor=\"{ThemeResource SystemAltLowColor}\" TintOpacity=\"0.2\" />",
+    L"ElementBackground=<WindhawkBlur BlurAmount=\"20\" TintColor=\"{ThemeResource SystemAltLowColor}\" TintOpacity=\"0.4\" />",
+    L"ElementBackground2=<WindhawkBlur BlurAmount=\"20\" TintColor=\"{ThemeResource SystemAltLowColor}\" TintOpacity=\"0.2\" />",
+    L"AccentBackground=<WindhawkBlur BlurAmount=\"15\" TintColor=\"{ThemeResource SystemAccentColorLight1}\" TintOpacity=\"0.2\" />",
     L"BorderBrush=<LinearGradientBrush StartPoint=\"0,0\" EndPoint=\"0,1\"><GradientStop Color=\"#50808080\" Offset=\"0.0\" /><GradientStop Color=\"#50404040\" Offset=\"0.25\" /><GradientStop Color=\"#50808080\" Offset=\"1\" /></LinearGradientBrush>",
-    L"ButtonBorder=<SolidColorBrush Color=\"{ThemeResource SystemAccentColorLight3}\" Opacity=\"1\" />",
-    L"CornerRadius=6",
-    L"ElementCornerRadius=4",
-}, {}, /*explorerFrameContainerHeight=*/87, BackgroundTranslucentEffect::kAcrylic};
+    L"ElementBorderBrush=<LinearGradientBrush StartPoint=\"0,0\" EndPoint=\"0,1\"><GradientStop Color=\"#50808080\" Offset=\"1\" /><GradientStop Color=\"#50606060\" Offset=\"0.15\" /></LinearGradientBrush>",
+    L"BorderThickness=0.3,1,0.3,0.3",
+    L"ElementBorderThickness=0.3,0.3,0.3,1",
+    L"CornerRadius=12",
+    L"ElementCornerRadius=8",
+}, {}, /*explorerFrameContainerHeight=*/87};
 
 // clang-format on
 
