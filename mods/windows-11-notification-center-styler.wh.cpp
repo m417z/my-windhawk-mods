@@ -4460,7 +4460,23 @@ thread_local winrt::event_token g_colorValuesChangedToken;
 winrt::Windows::Foundation::IInspectable ReadLocalValueWithWorkaround(
     DependencyObject elementDo,
     DependencyProperty property) {
-    auto value = elementDo.ReadLocalValue(property);
+    // Workaround for AcrylicBrushes returning an incorrect background brush.
+    // When restored, it doesn't look correct.
+    bool getValueWorkaround = false;
+    if (property == Controls::Panel::BackgroundProperty()) {
+        if (auto grid = elementDo.try_as<Controls::Grid>()) {
+            auto name = grid.Name();
+            if (name == L"CalendarCenterGrid" ||
+                name == L"ControlCenterRegion") {
+                Wh_Log(L"Using GetValue workaround for %s background",
+                       name.c_str());
+                getValueWorkaround = true;
+            }
+        }
+    }
+
+    auto value = getValueWorkaround ? elementDo.GetValue(property)
+                                    : elementDo.ReadLocalValue(property);
     if (value) {
         // A workaround for RowDefinitionCollection of RootContent which can't
         // be read by ReadLocalValue for some reason, even though it seems to be
