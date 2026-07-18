@@ -79,6 +79,26 @@ TintedGlass](https://github.com/ramensoftware/windows-11-file-explorer-styling-g
 \
 LiquidGlass](https://github.com/ramensoftware/windows-11-file-explorer-styling-guide/blob/main/Themes/LiquidGlass/README.md)
 
+[![MicaTabless](https://raw.githubusercontent.com/ramensoftware/windows-11-file-explorer-styling-guide/main/Themes/MicaTabless/screenshot-small.png)
+\
+MicaTabless](https://github.com/ramensoftware/windows-11-file-explorer-styling-guide/blob/main/Themes/MicaTabless/README.md)
+
+[![OS26 Liquid
+Glass](https://raw.githubusercontent.com/ramensoftware/windows-11-file-explorer-styling-guide/main/Themes/OS26%20Liquid%20Glass/screenshot-small.png)
+\
+OS26 Liquid
+Glass](https://github.com/ramensoftware/windows-11-file-explorer-styling-guide/blob/main/Themes/OS26%20Liquid%20Glass/README.md)
+
+[![ZEUSosX_044](https://raw.githubusercontent.com/ramensoftware/windows-11-file-explorer-styling-guide/main/Themes/ZEUSosX_044/screenshot-small.png)
+\
+ZEUSosX_044](https://github.com/ramensoftware/windows-11-file-explorer-styling-guide/blob/main/Themes/ZEUSosX_044/README.md)
+
+[![Compact
+Explorer11](https://raw.githubusercontent.com/ramensoftware/windows-11-file-explorer-styling-guide/main/Themes/Compact%20Explorer11/screenshot-small.png)
+\
+Compact
+Explorer11](https://github.com/ramensoftware/windows-11-file-explorer-styling-guide/blob/main/Themes/Compact%20Explorer11/README.md)
+
 More themes can be found in the **Themes** section of [The Windows 11 file
 explorer styling
 guide](https://github.com/ramensoftware/windows-11-file-explorer-styling-guide/blob/main/README.md#themes).
@@ -332,6 +352,11 @@ from the **TranslucentTB** project.
   - AddressSearchOnly: AddressSearchOnly
   - TintedGlass: TintedGlass
   - LiquidGlass: LiquidGlass
+  - MicaTabless: MicaTabless
+  - OS26 Liquid Glass: OS26 Liquid Glass
+  - OS26 Liquid Glass_variant_Compact: OS26 Liquid Glass (Compact)
+  - ZEUSosX_044: ZEUSosX_044
+  - Compact Explorer11: Compact Explorer11
 - backgroundTranslucentEffect: ""
   $name: Translucent background effect
   $description: >-
@@ -974,6 +999,622 @@ const Theme g_themeLiquidGlass = {{
     L"CornerRadius=12",
     L"ElementCornerRadius=8",
 }, {}, /*explorerFrameContainerHeight=*/87};
+
+const Theme g_themeMicaTabless = {{
+    ThemeTargetStyles{L"Microsoft.UI.Xaml.Controls.Grid#CommandBarControlRootGrid", {
+        L"Background=Transparent"}},
+    ThemeTargetStyles{L"Microsoft.UI.Xaml.Controls.Grid#ContentRoot", {
+        L"Background=Transparent"}},
+    ThemeTargetStyles{L"FileExplorerExtensions.NavigationBarControl", {
+        L"Grid.Row=$NavigationBarGrid"}},
+    ThemeTargetStyles{L"FileExplorerExtensions.CommandBarControl", {
+        L"Grid.Row=$CommandBarGrid"}},
+    ThemeTargetStyles{L"Microsoft.UI.Xaml.Controls.Grid#TabContainerGrid > Border", {
+        L"Visibility=Collapsed"}},
+    ThemeTargetStyles{L"Microsoft.UI.Xaml.Controls.Grid#TabContainer > Microsoft.UI.Xaml.Controls.Button#CloseButton", {
+        L"Visibility=Collapsed"}},
+    ThemeTargetStyles{L"Microsoft.UI.Xaml.Controls.TabViewItem > Microsoft.UI.Xaml.Controls.Grid#LayoutRoot > Microsoft.UI.Xaml.Controls.Canvas", {
+        L"Opacity=0"}},
+    ThemeTargetStyles{L"Grid#NavigationBarControlGrid", {
+        L"Background:=<SolidColorBrush Color=\"{ThemeResource SystemChromeLowColor}\" />"}},
+    ThemeTargetStyles{L"Microsoft.UI.Xaml.Controls.Grid#TabContainer", {
+        L"BorderThickness=0"}},
+    ThemeTargetStyles{L"Microsoft.UI.Xaml.Controls.ContentPresenter > Microsoft.UI.Xaml.Controls.StackPanel > Microsoft.UI.Xaml.Controls.TextBlock", {
+        L"FontFamily=Segoe UI, Segoe Fluent Icons",
+        L"FontWeight=Normal"}},
+    ThemeTargetStyles{L"Microsoft.UI.Xaml.Controls.Grid#CommandBarControlRootGrid", {
+        L"BorderThickness=0,0,0,1"}},
+    ThemeTargetStyles{L"FileExplorerExtensions.FileExplorerTabControl", {
+        L"Height=36"}},
+    ThemeTargetStyles{L"Microsoft.UI.Xaml.Controls.Grid#TabContainer", {
+        L"Padding=1,0,0,1"}},
+    ThemeTargetStyles{L"Microsoft.UI.Xaml.Controls.Viewbox#IconBox", {
+        L"Margin=0,0,4,0"}},
+    ThemeTargetStyles{L"Microsoft.UI.Xaml.Controls.TabViewItem", {
+        L"Margin=0,-8,0,0"}},
+    ThemeTargetStyles{L"Microsoft.UI.Xaml.Controls.Grid#NavigationBarControlGrid", {
+        L"Background=Transparent"}},
+    ThemeTargetStyles{L"Microsoft.UI.Xaml.Controls.Grid#DetailsViewControlRootGrid", {
+        L"Background=Transparent"}},
+}, {
+    L"NavigationBarGrid=1",
+    L"CommandBarGrid=2",
+}};
+
+const Theme g_themeOS26_Liquid_Glass = {{
+    ThemeTargetStyles{L"Grid#DetailsViewControlRootGrid", {
+        L"Margin=20,20,20,1",
+        L"Background:=<WindhawkBlur BlurAmount=\"30\" TintColor=\"#2D101010\" TintOpacity=\"0.4\"/>",
+        L"CornerRadius=15"}},
+    ThemeTargetStyles{L"StackPanel#DetailsViewThumbnail > Grid", {
+        L"Background=Transparent"}},
+    ThemeTargetStyles{L"Grid#HomeViewRootGrid", {
+        L"Margin=20,20,20,0",
+        L"Background:=<WindhawkBlur BlurAmount=\"30\" TintColor=\"#2D101010\" TintOpacity=\"0.4\"/>",
+        L"CornerRadius=15"}},
+    ThemeTargetStyles{L"FileExplorerExtensions.GalleryViewControl#GalleryViewControl > Grid", {
+        L"Margin=20,20,20,0",
+        L"Background:=<WindhawkBlur BlurAmount=\"30\" TintColor=\"#2D101010\" TintOpacity=\"0.4\"/>",
+        L"CornerRadius=15"}},
+    ThemeTargetStyles{L"Microsoft.UI.Xaml.Controls.Grid#GalleryRootGrid", {
+        L"Margin=10",
+        L"Background:=transparent",
+        L"CornerRadius=15"}},
+    ThemeTargetStyles{L"Microsoft.UI.Xaml.Controls.AppBarButton > Grid@CommonStates", {
+        L"Background@Disabled:=<WindhawkBlur BlurAmount=\"8\" TintColor=\"#25ffffff\"/>",
+        L"CornerRadius@Disabled=12",
+        L"BorderThickness@Disabled=1",
+        L"Margin@Disabled=2,6,2,6",
+        L"Padding@Disabled=0,-7",
+        L"BorderBrush:=<LinearGradientBrush StartPoint=\"0,0\" EndPoint=\"1,1\"><GradientStop Color=\"#80ffffff\" Offset=\"0.0\" /><GradientStop Color=\"{ThemeResource SurfaceStrokeColorDefault}\" Offset=\"0.55\" /><GradientStop Color=\"#80ffffff\" Offset=\"1\" /></LinearGradientBrush>"}},
+    ThemeTargetStyles{L"Microsoft.UI.Xaml.Controls.AppBarButton#backButton > Grid@CommonStates", {
+        L"Background@Disabled:=<WindhawkBlur BlurAmount=\"8\" TintColor=\"#25ffffff\"/>",
+        L"CornerRadius@Disabled=11",
+        L"BorderThickness@Disabled=1",
+        L"BorderBrush:=<LinearGradientBrush StartPoint=\"0,0\" EndPoint=\"1,1\"><GradientStop Color=\"#80ffffff\" Offset=\"0.0\" /><GradientStop Color=\"{ThemeResource SurfaceStrokeColorDefault}\" Offset=\"0.55\" /><GradientStop Color=\"#80ffffff\" Offset=\"1\" /></LinearGradientBrush>",
+        L"Margin@Disabled=0,0,0,0",
+        L"Height@Disabled=32",
+        L"Width@Disabled=20",
+        L"Padding@Disabled=0,-2,0,2"}},
+    ThemeTargetStyles{L"Microsoft.UI.Xaml.Controls.AppBarButton#forwardButton > Grid@CommonStates", {
+        L"Background@Disabled:=<WindhawkBlur BlurAmount=\"8\" TintColor=\"#25ffffff\"/>",
+        L"CornerRadius@Disabled=11",
+        L"BorderThickness@Disabled=1",
+        L"BorderBrush:=<LinearGradientBrush StartPoint=\"0,0\" EndPoint=\"1,1\"><GradientStop Color=\"#80ffffff\" Offset=\"0.0\" /><GradientStop Color=\"{ThemeResource SurfaceStrokeColorDefault}\" Offset=\"0.55\" /><GradientStop Color=\"#80ffffff\" Offset=\"1\" /></LinearGradientBrush>",
+        L"Margin@Disabled=0,0,0,0",
+        L"Height@Disabled=32",
+        L"Width@Disabled=20",
+        L"Padding@Disabled=0,-2,0,2"}},
+    ThemeTargetStyles{L"Microsoft.UI.Xaml.Controls.AppBarButton#upButton > Grid@CommonStates", {
+        L"Background@Disabled:=<WindhawkBlur BlurAmount=\"8\" TintColor=\"#25ffffff\"/>",
+        L"CornerRadius@Disabled=11",
+        L"BorderThickness@Disabled=1",
+        L"BorderBrush:=<LinearGradientBrush StartPoint=\"0,0\" EndPoint=\"1,1\"><GradientStop Color=\"#80ffffff\" Offset=\"0.0\" /><GradientStop Color=\"{ThemeResource SurfaceStrokeColorDefault}\" Offset=\"0.55\" /><GradientStop Color=\"#80ffffff\" Offset=\"1\" /></LinearGradientBrush>",
+        L"Margin@Disabled=0,0,0,0",
+        L"Height@Disabled=32",
+        L"Width@Disabled=20",
+        L"Padding@Disabled=0,-2,0,2"}},
+    ThemeTargetStyles{L"CommandBar#FileExplorerCommandBar", {
+        L"Background=Transparent",
+        L"HorizontalAlignment=1"}},
+    ThemeTargetStyles{L"CommandBar#FileExplorerSecondaryCommandBar", {
+        L"Background=Transparent",
+        L"MinHeight=0"}},
+    ThemeTargetStyles{L"Grid#TabContainerGrid > Border#LeftBottomBorderLine", {
+        L"Visibility=Collapsed"}},
+    ThemeTargetStyles{L"Grid#TabContainerGrid > Border#RightBottomBorderLine", {
+        L"Visibility=Collapsed"}},
+    ThemeTargetStyles{L"TabViewItem", {
+        L"Margin=0,0,8,0"}},
+    ThemeTargetStyles{L"TabViewItem > Grid#LayoutRoot", {
+        L"CornerRadius=12",
+        L"Margin=2,4,0,4",
+        L"Height=27",
+        L"BorderThickness=1",
+        L"BorderBrush:=<LinearGradientBrush StartPoint=\"0,0\" EndPoint=\"1,1\"><GradientStop Color=\"#80ffffff\" Offset=\"0.0\" /><GradientStop Color=\"{ThemeResource SurfaceStrokeColorDefault}\" Offset=\"0.55\" /><GradientStop Color=\"#80ffffff\" Offset=\"1\" /></LinearGradientBrush>"}},
+    ThemeTargetStyles{L"TabViewItem > Grid#LayoutRoot > Canvas", {
+        L"Visibility=Collapsed"}},
+    ThemeTargetStyles{L"TabViewItem > Grid#LayoutRoot > Grid#TabContainer", {
+        L"Background=Transparent",
+        L"BorderThickness=0"}},
+    ThemeTargetStyles{L"TabViewItem > Grid#LayoutRoot@CommonStates", {
+        L"Background@Selected:=<WindhawkBlur BlurAmount=\"15\" TintColor=\"#25ffffff\" />",
+        L"Background@PointerOverSelected:=<WindhawkBlur BlurAmount=\"15\" TintColor=\"#35ffffff\" />",
+        L"Background@Normal:=<WindhawkBlur BlurAmount=\"15\" TintColor=\"#15ffffff\" />"}},
+    ThemeTargetStyles{L"Grid#TabContainerGrid > Border > Button#AddButton", {
+        L"Visibility=Visible",
+        L"Margin=0,0,0,2",
+        L"Background:=<WindhawkBlur BlurAmount=\"15\" TintColor=\"#25ffffff\"/>",
+        L"CornerRadius=10",
+        L"BorderThickness=1",
+        L"BorderBrush:=<LinearGradientBrush EndPoint=\"1,1\" StartPoint=\"0,0\"><GradientStop Color=\"#80ffffff\" Offset=\"0.0\"/><GradientStop Color=\"{ThemeResource SurfaceStrokeColorDefault}\" Offset=\"0.55\"/><GradientStop Color=\"#80ffffff\" Offset=\"1\"/></LinearGradientBrush>",
+        L"Width=24",
+        L"Height=24"}},
+    ThemeTargetStyles{L"Grid#CommandBarControlRootGrid", {
+        L"Background=Transparent"}},
+    ThemeTargetStyles{L"Grid#NavigationBarControlGrid", {
+        L"Background=Transparent"}},
+    ThemeTargetStyles{L"Microsoft.UI.Xaml.Controls.Grid#FileExplorerAddressBarGrid", {
+        L"Margin=-6,0,0,0"}},
+    ThemeTargetStyles{L"Grid#PART_LayoutRoot", {
+        L"Background:=<WindhawkBlur BlurAmount=\"15\" TintColor=\"#25ffffff\" />",
+        L"CornerRadius=14",
+        L"BorderThickness=1",
+        L"Margin=2",
+        L"BorderBrush:=<LinearGradientBrush StartPoint=\"0,0\" EndPoint=\"1,1\"><GradientStop Color=\"#80ffffff\" Offset=\"0.0\" /><GradientStop Color=\"{ThemeResource SurfaceStrokeColorDefault}\" Offset=\"0.55\" /><GradientStop Color=\"#80ffffff\" Offset=\"1\" /></LinearGradientBrush>"}},
+    ThemeTargetStyles{L"FileExplorerExtensions.CommandBarControl", {
+        L"Margin=0,0,0,0"}},
+    ThemeTargetStyles{L"AutoSuggestBox#FileExplorerSearchBox > Grid#LayoutRoot > TextBox > Grid@CommonStates > Border#BorderElement", {
+        L"Background:=<WindhawkBlur BlurAmount=\"15\" TintColor=\"#25ffffff\" />",
+        L"CornerRadius=14",
+        L"BorderThickness=1",
+        L"BorderBrush:=<LinearGradientBrush StartPoint=\"0,0\" EndPoint=\"1,1\"><GradientStop Color=\"#80ffffff\" Offset=\"0.0\" /><GradientStop Color=\"{ThemeResource SurfaceStrokeColorDefault}\" Offset=\"0.55\" /><GradientStop Color=\"#80ffffff\" Offset=\"1\" /></LinearGradientBrush>"}},
+    ThemeTargetStyles{L"Microsoft.UI.Xaml.Controls.AppBarButton", {
+        L"Background:=<WindhawkBlur BlurAmount=\"15\" TintColor=\"#25ffffff\" />",
+        L"CornerRadius=12",
+        L"BorderThickness=1",
+        L"Margin=3,0,3,1",
+        L"BorderBrush:=<LinearGradientBrush StartPoint=\"0,0\" EndPoint=\"1,1\"><GradientStop Color=\"#80ffffff\" Offset=\"0.0\" /><GradientStop Color=\"{ThemeResource SurfaceStrokeColorDefault}\" Offset=\"0.55\" /><GradientStop Color=\"#80ffffff\" Offset=\"1\" /></LinearGradientBrush>"}},
+    ThemeTargetStyles{L"Microsoft.UI.Xaml.Controls.AppBarToggleButton", {
+        L"Background:=<WindhawkBlur BlurAmount=\"15\" TintColor=\"#25ffffff\" />",
+        L"CornerRadius=12",
+        L"BorderThickness=1",
+        L"Margin=3,0,3,1",
+        L"BorderBrush:=<LinearGradientBrush StartPoint=\"0,0\" EndPoint=\"1,1\"><GradientStop Color=\"#80ffffff\" Offset=\"0.0\" /><GradientStop Color=\"{ThemeResource SurfaceStrokeColorDefault}\" Offset=\"0.55\" /><GradientStop Color=\"#80ffffff\" Offset=\"1\" /></LinearGradientBrush>"}},
+    ThemeTargetStyles{L"Microsoft.UI.Xaml.Controls.Grid#OuterOverflowContentRootV2", {
+        L"CornerRadius=20"}},
+    ThemeTargetStyles{L"Button#MoreButton", {
+        L"Visibility=Collapsed"}},
+    ThemeTargetStyles{L"Microsoft.UI.Xaml.Controls.AppBarSeparator", {
+        L"Visibility=Collapsed"}},
+    ThemeTargetStyles{L"Microsoft.UI.Xaml.Controls.AppBarButton#backButton", {
+        L"Margin=0,9,9,0"}},
+    ThemeTargetStyles{L"Microsoft.UI.Xaml.Controls.AppBarButton#forwardButton", {
+        L"Margin=0,9,9,0"}},
+    ThemeTargetStyles{L"Microsoft.UI.Xaml.Controls.AppBarButton#upButton", {
+        L"Margin=0,9,9,0"}},
+    ThemeTargetStyles{L"Microsoft.UI.Xaml.Controls.AppBarButton#refreshButton", {
+        L"Margin=0,9,9,0"}},
+}};
+
+const Theme g_themeOS26_Liquid_Glass_variant_Compact = {{
+    ThemeTargetStyles{L"Microsoft.UI.Xaml.Controls.Primitives.SuggestionsPopup", {
+        L"Margin=0,0,0,900"}},
+    ThemeTargetStyles{L"Microsoft.UI.Xaml.Controls.AppBarButton > Grid@CommonStates", {
+        L"Background@Disabled:=<LinearGradientBrush StartPoint=\"-0.3,-0.3\" EndPoint=\"1.3,1.3\"><GradientStop Color=\"#55f0f07d\" Offset=\"0.0\"/><GradientStop Color=\"#2AF0F0F0\" Offset=\"0.3\"/><GradientStop Color=\"#00F0F0F0\" Offset=\"0.6\"/></LinearGradientBrush>",
+        L"BorderBrush:=<LinearGradientBrush StartPoint=\"0,0\" EndPoint=\"1,1\"><GradientStop Color=\"#80ffffff\" Offset=\"0.0\" /><GradientStop Color=\"{ThemeResource SurfaceStrokeColorDefault}\" Offset=\"0.55\" /><GradientStop Color=\"#80ffffff\" Offset=\"1\" /></LinearGradientBrush>",
+        L"CornerRadius@Disabled=12",
+        L"BorderThickness@Disabled=1",
+        L"Margin@Disabled=2,6,2,6",
+        L"Padding@Disabled=0,-7"}},
+    ThemeTargetStyles{L"CommandBar#FileExplorerCommandBar > Grid#LayoutRoot > Grid#ContentRoot > Button#MoreButton", {
+        L"Background:=<LinearGradientBrush StartPoint=\"-0.3,-0.3\" EndPoint=\"1.3,1.3\"><GradientStop Color=\"#55f0f07d\" Offset=\"0.0\"/><GradientStop Color=\"#2AF0F0F0\" Offset=\"0.3\"/><GradientStop Color=\"#00F0F0F0\" Offset=\"0.6\"/></LinearGradientBrush>",
+        L"BorderBrush:=<LinearGradientBrush StartPoint=\"0,0\" EndPoint=\"1,1\"><GradientStop Color=\"#80ffffff\" Offset=\"0.0\" /><GradientStop Color=\"{ThemeResource SurfaceStrokeColorDefault}\" Offset=\"0.55\" /><GradientStop Color=\"#80ffffff\" Offset=\"1\" /></LinearGradientBrush>",
+        L"CornerRadius=12",
+        L"BorderThickness=1",
+        L"Margin=3,2,3,2",
+        L"Width=45",
+        L"Height=32"}},
+    ThemeTargetStyles{L"Microsoft.UI.Xaml.Controls.AppBarButton#backButton > Grid@CommonStates", {
+        L"Background@Disabled:=<LinearGradientBrush StartPoint=\"-0.3,-0.3\" EndPoint=\"1.3,1.3\"><GradientStop Color=\"#55f0f07d\" Offset=\"0.0\"/><GradientStop Color=\"#2AF0F0F0\" Offset=\"0.3\"/><GradientStop Color=\"#00F0F0F0\" Offset=\"0.6\"/></LinearGradientBrush>",
+        L"BorderBrush:=<LinearGradientBrush StartPoint=\"0,0\" EndPoint=\"1,1\"><GradientStop Color=\"#80ffffff\" Offset=\"0.0\" /><GradientStop Color=\"{ThemeResource SurfaceStrokeColorDefault}\" Offset=\"0.55\" /><GradientStop Color=\"#80ffffff\" Offset=\"1\" /></LinearGradientBrush>",
+        L"CornerRadius@Disabled=11",
+        L"BorderThickness@Disabled=1",
+        L"Margin@Disabled=0,0,0,0",
+        L"Height@Disabled=32",
+        L"Width@Disabled=20",
+        L"Padding@Disabled=0,-2,0,2"}},
+    ThemeTargetStyles{L"Microsoft.UI.Xaml.Controls.AppBarButton#forwardButton > Grid@CommonStates", {
+        L"Background@Disabled:=<LinearGradientBrush StartPoint=\"-0.3,-0.3\" EndPoint=\"1.3,1.3\"><GradientStop Color=\"#55f0f07d\" Offset=\"0.0\"/><GradientStop Color=\"#2AF0F0F0\" Offset=\"0.3\"/><GradientStop Color=\"#00F0F0F0\" Offset=\"0.6\"/></LinearGradientBrush>",
+        L"BorderBrush:=<LinearGradientBrush StartPoint=\"0,0\" EndPoint=\"1,1\"><GradientStop Color=\"#80ffffff\" Offset=\"0.0\" /><GradientStop Color=\"{ThemeResource SurfaceStrokeColorDefault}\" Offset=\"0.55\" /><GradientStop Color=\"#80ffffff\" Offset=\"1\" /></LinearGradientBrush>",
+        L"CornerRadius@Disabled=11",
+        L"BorderThickness@Disabled=1",
+        L"Margin@Disabled=0,0,0,0",
+        L"Height@Disabled=32",
+        L"Width@Disabled=20",
+        L"Padding@Disabled=0,-2,0,2"}},
+    ThemeTargetStyles{L"Microsoft.UI.Xaml.Controls.AppBarButton#refreshButton > Grid@CommonStates", {
+        L"Background@Disabled:=<LinearGradientBrush StartPoint=\"-0.3,-0.3\" EndPoint=\"1.3,1.3\"><GradientStop Color=\"#55f0f07d\" Offset=\"0.0\"/><GradientStop Color=\"#2AF0F0F0\" Offset=\"0.3\"/><GradientStop Color=\"#00F0F0F0\" Offset=\"0.6\"/></LinearGradientBrush>",
+        L"BorderBrush:=<LinearGradientBrush StartPoint=\"0,0\" EndPoint=\"1,1\"><GradientStop Color=\"#80ffffff\" Offset=\"0.0\" /><GradientStop Color=\"{ThemeResource SurfaceStrokeColorDefault}\" Offset=\"0.55\" /><GradientStop Color=\"#80ffffff\" Offset=\"1\" /></LinearGradientBrush>",
+        L"CornerRadius@Disabled=11",
+        L"BorderThickness@Disabled=1",
+        L"Margin@Disabled=0,0,0,0",
+        L"Height@Disabled=32",
+        L"Width@Disabled=20",
+        L"Padding@Disabled=0,-2,0,2"}},
+    ThemeTargetStyles{L"Microsoft.UI.Xaml.Controls.AppBarToggleButton > Grid@CommonStates", {
+        L"Background@Disabled:=<WindhawkBlur BlurAmount=\"8\" TintColor=\"#2D101010\"/>"}},
+    ThemeTargetStyles{L"Grid#DetailsViewControlRootGrid", {
+        L"Margin=20,20,20,1",
+        L"Background:=<WindhawkBlur BlurAmount=\"30\" TintColor=\"#2D101010\" TintOpacity=\"0.4\"/>",
+        L"CornerRadius=15"}},
+    ThemeTargetStyles{L"StackPanel#DetailsViewThumbnail > Grid", {
+        L"Background=Transparent"}},
+    ThemeTargetStyles{L"Microsoft.UI.Xaml.Controls.Grid > OuterOverflowContentRootV2", {
+        L"CornerRadius=250"}},
+    ThemeTargetStyles{L"Microsoft.UI.Xaml.Controls.CommandBarOverflowPresenter > Microsoft.UI.Xaml.Controls.CommandBarOverflowPresenter", {
+        L"Background=transparent"}},
+    ThemeTargetStyles{L"AppBarButton[7]", {
+        L"Visibility=Collapsed",
+        L"Width=0",
+        L"MinWidth=0",
+        L"Margin=0,0,0,0",
+        L"Padding=0,0,0,0"}},
+    ThemeTargetStyles{L"Microsoft.UI.Xaml.Controls.Viewbox > ContentViewB", {
+        L"Visibility=Collapsed"}},
+    ThemeTargetStyles{L"Grid#HomeViewRootGrid", {
+        L"Margin=20,20,20,0",
+        L"Background:=<WindhawkBlur BlurAmount=\"30\" TintColor=\"#2D101010\" TintOpacity=\"0.4\"/>",
+        L"CornerRadius=15"}},
+    ThemeTargetStyles{L"FileExplorerExtensions.GalleryViewControl#GalleryViewControl > Grid", {
+        L"Margin=20,20,20,0",
+        L"Background:=<WindhawkBlur BlurAmount=\"30\" TintColor=\"#2D101010\" TintOpacity=\"0.4\"/>",
+        L"CornerRadius=15"}},
+    ThemeTargetStyles{L"Microsoft.UI.Xaml.Controls.Grid#GalleryRootGrid", {
+        L"Margin=10",
+        L"Background:=transparent",
+        L"CornerRadius=15"}},
+    ThemeTargetStyles{L"CommandBar#FileExplorerCommandBar", {
+        L"Grid.Row=0",
+        L"Grid.RowSpan=1",
+        L"CornerRadius:=15",
+        L"Width=400",
+        L"HorizontalAlignment=Left",
+        L"Background:=transparent",
+        L"Padding=0,0,0,0"}},
+    ThemeTargetStyles{L"CommandBar#FileExplorerCommandBar > Grid#LayoutRoot > Grid#ContentRoot > Grid#OverflowSeparator", {
+        L"Visibility=Collapsed",
+        L"Width=0",
+        L"MinWidth=0"}},
+    ThemeTargetStyles{L"CommandBar#FileExplorerCommandBar > Grid#LayoutRoot > Grid#ContentRoot", {
+        L"HorizontalAlignment=Left"}},
+    ThemeTargetStyles{L"CommandBar#FileExplorerCommandBar > Grid#LayoutRoot > Grid#ContentRoot > ItemsControl#PrimaryItemsControl", {
+        L"HorizontalAlignment=Left"}},
+    ThemeTargetStyles{L"CommandBar#FileExplorerSecondaryCommandBar", {
+        L"Visibility=Visible",
+        L"Margin=0,40,0,-20"}},
+    ThemeTargetStyles{L"Grid#TabContainerGrid", {
+        L"Margin=370,1,0,1"}},
+    ThemeTargetStyles{L"Grid#TabContainerGrid > Border#LeftBottomBorderLine", {
+        L"Visibility=Collapsed"}},
+    ThemeTargetStyles{L"Grid#TabContainerGrid > Border#RightBottomBorderLine", {
+        L"Visibility=Collapsed"}},
+    ThemeTargetStyles{L"TabViewItem", {
+        L"Width=150",
+        L"Height=40",
+        L"Margin=0,0,8,0"}},
+    ThemeTargetStyles{L"TabViewItem > Grid#LayoutRoot", {
+        L"Background:=<WindhawkBlur BlurAmount=\"8\" TintColor=\"#25ffffff\"/>",
+        L"CornerRadius=10",
+        L"BorderThickness=1",
+        L"Margin=2,2,0,2",
+        L"Height=35"}},
+    ThemeTargetStyles{L"TabViewItem > Grid#LayoutRoot > Canvas", {
+        L"Visibility=Collapsed"}},
+    ThemeTargetStyles{L"TabViewItem > Grid#LayoutRoot > Grid#TabContainer", {
+        L"Background=Transparent",
+        L"BorderThickness=0"}},
+    ThemeTargetStyles{L"TabViewItem > Grid#LayoutRoot@CommonStates", {
+        L"Background@Selected:=<WindhawkBlur BlurAmount=\"15\" TintColor=\"#20ffffff\"/>",
+        L"Background@PointerOverSelected:=<WindhawkBlur BlurAmount=\"15\" TintColor=\"#25ffffff\"/>",
+        L"Background@Normal:=<WindhawkBlur BlurAmount=\"15\" TintColor=\"#15ffffff\"/>",
+        L"BorderBrush:=<LinearGradientBrush StartPoint=\"0,0\" EndPoint=\"1,1\"><GradientStop Color=\"#80ffffff\" Offset=\"0.0\" /><GradientStop Color=\"{ThemeResource SurfaceStrokeColorDefault}\" Offset=\"0.55\" /><GradientStop Color=\"#80ffffff\" Offset=\"1\" /></LinearGradientBrush>"}},
+    ThemeTargetStyles{L"Grid#TabContainerGrid > Border > Button#AddButton", {
+        L"Visibility=Visible",
+        L"Margin=0,0,0,4",
+        L"Background:=<LinearGradientBrush StartPoint=\"-0.3,-0.3\" EndPoint=\"1.3,1.3\"><GradientStop Color=\"#55f0f07d\" Offset=\"0.0\"/><GradientStop Color=\"#2AF0F0F0\" Offset=\"0.3\"/><GradientStop Color=\"#00F0F0F0\" Offset=\"0.6\"/></LinearGradientBrush>",
+        L"BorderBrush:=<LinearGradientBrush StartPoint=\"0,0\" EndPoint=\"1,1\"><GradientStop Color=\"#80ffffff\" Offset=\"0.0\" /><GradientStop Color=\"{ThemeResource SurfaceStrokeColorDefault}\" Offset=\"0.55\" /><GradientStop Color=\"#80ffffff\" Offset=\"1\" /></LinearGradientBrush>",
+        L"CornerRadius=8",
+        L"BorderThickness=1",
+        L"BorderBrush:=<LinearGradientBrush EndPoint=\"1,1\" StartPoint=\"0,0\"><GradientStop Color=\"#80ffffff\" Offset=\"0.0\"/><GradientStop Color=\"{ThemeResource SurfaceStrokeColorDefault}\" Offset=\"0.55\"/><GradientStop Color=\"#80ffffff\" Offset=\"1\"/></LinearGradientBrush>",
+        L"Width=24",
+        L"Height=24"}},
+    ThemeTargetStyles{L"Grid#CommandBarControlRootGrid", {
+        L"Background:=",
+        L"BorderBrush:="}},
+    ThemeTargetStyles{L"Grid#NavigationBarControlGrid", {
+        L"Background=Transparent"}},
+    ThemeTargetStyles{L"Grid#PART_LayoutRoot", {
+        L"Background:=<WindhawkBlur BlurAmount=\"8\" TintColor=\"#15ffffff\"/>",
+        L"BorderBrush:=<LinearGradientBrush StartPoint=\"0,0\" EndPoint=\"1,1\"><GradientStop Color=\"#80ffffff\" Offset=\"0.0\" /><GradientStop Color=\"{ThemeResource SurfaceStrokeColorDefault}\" Offset=\"0.55\" /><GradientStop Color=\"#80ffffff\" Offset=\"1\" /></LinearGradientBrush>",
+        L"CornerRadius=10",
+        L"BorderThickness=1",
+        L"Margin=2"}},
+    ThemeTargetStyles{L"FileExplorerExtensions.CommandBarControl", {
+        L"Grid.Row=0",
+        L"Grid.RowSpan=2",
+        L"Margin=0,0,0,0"}},
+    ThemeTargetStyles{L"AutoSuggestBox#FileExplorerSearchBox > Grid#LayoutRoot > TextBox > Grid@CommonStates", {
+        L"BorderThickness=1",
+        L"Background:=<WindhawkBlur BlurAmount=\"8\" TintColor=\"#15ffffff\"/>",
+        L"BorderBrush:=<LinearGradientBrush StartPoint=\"0,0\" EndPoint=\"1,1\"><GradientStop Color=\"#80ffffff\" Offset=\"0.0\" /><GradientStop Color=\"{ThemeResource SurfaceStrokeColorDefault}\" Offset=\"0.55\" /><GradientStop Color=\"#80ffffff\" Offset=\"1\" /></LinearGradientBrush>",
+        L"CornerRadius=10",
+        L"Margin=-90,0,90,0",
+        L"Height=32"}},
+    ThemeTargetStyles{L"Microsoft.UI.Xaml.Controls.Grid#FileExplorerAddressBarGrid", {
+        L"Margin=-8,0,90,0"}},
+    ThemeTargetStyles{L"CommandBarOverflowPresenter Microsoft.UI.Xaml.Controls.AppBarButton", {
+        L"Background=Transparent",
+        L"CornerRadius=8",
+        L"Margin=2,1,2,1"}},
+    ThemeTargetStyles{L"Microsoft.UI.Xaml.Controls.AppBarButton", {
+        L"Background:=<LinearGradientBrush StartPoint=\"-0.3,-0.3\" EndPoint=\"1.3,1.3\"><GradientStop Color=\"#55f0f07d\" Offset=\"0.0\"/><GradientStop Color=\"#2AF0F0F0\" Offset=\"0.3\"/><GradientStop Color=\"#00F0F0F0\" Offset=\"0.6\"/></LinearGradientBrush>",
+        L"BorderBrush:=<LinearGradientBrush StartPoint=\"0,0\" EndPoint=\"1,1\"><GradientStop Color=\"#80ffffff\" Offset=\"0.0\" /><GradientStop Color=\"{ThemeResource SurfaceStrokeColorDefault}\" Offset=\"0.55\" /><GradientStop Color=\"#80ffffff\" Offset=\"1\" /></LinearGradientBrush>",
+        L"CornerRadius=12",
+        L"BorderThickness=1",
+        L"Margin=3,2,3,2"}},
+    ThemeTargetStyles{L"Microsoft.UI.Xaml.Controls.Grid#OuterOverflowContentRootV2", {
+        L"CornerRadius=20"}},
+    ThemeTargetStyles{L"Microsoft.UI.Xaml.Controls.AppBarToggleButton", {
+        L"Background:=<WindhawkBlur BlurAmount=\"8\" TintColor=\"#2D101010\"/>",
+        L"CornerRadius=8",
+        L"BorderThickness=1",
+        L"Margin=3,0,3,1",
+        L"BorderBrush:=<LinearGradientBrush EndPoint=\"1,1\" StartPoint=\"0,0\"><GradientStop Color=\"#80ffffff\" Offset=\"0.0\"/><GradientStop Color=\"{ThemeResource SurfaceStrokeColorDefault}\" Offset=\"0.55\"/><GradientStop Color=\"#80ffffff\" Offset=\"1\"/></LinearGradientBrush>"}},
+    ThemeTargetStyles{L"Microsoft.UI.Xaml.Controls.AppBarSeparator", {
+        L"Visibility=Collapsed"}},
+    ThemeTargetStyles{L"Microsoft.UI.Xaml.Controls.AppBarButton#backButton", {
+        L"Margin=0,9,9,0",
+        L"Visibility=Visible"}},
+    ThemeTargetStyles{L"Microsoft.UI.Xaml.Controls.AppBarButton#forwardButton", {
+        L"Margin=0,9,9,0",
+        L"Visibility=Visible"}},
+    ThemeTargetStyles{L"Microsoft.UI.Xaml.Controls.AppBarButton#upButton", {
+        L"Margin=0,9,9,0",
+        L"Visibility=Collapsed"}},
+    ThemeTargetStyles{L"Microsoft.UI.Xaml.Controls.AppBarButton#refreshButton", {
+        L"Visibility=Visible",
+        L"Margin=0,9,9,0"}},
+    ThemeTargetStyles{L"Microsoft.UI.Xaml.Controls.AppBarButton#stopButton", {
+        L"Visibility=Collapsed",
+        L"Margin=0,9,9,0"}},
+    ThemeTargetStyles{L"FileExplorerExtensions.NavigationBarControl", {
+        L"Grid.RowSpan=2"}},
+}, {}, {}, /*explorerFrameContainerHeight=*/87};
+
+const Theme g_themeZEUSosX_044 = {{
+    ThemeTargetStyles{L"Microsoft.UI.Xaml.Controls.Grid#CommandBarControlRootGrid", {
+        L"Background=Transparent",
+        L"BorderThickness=0",
+        L"Grid.Row=0",
+        L"Grid.RowSpan=2",
+        L"HorizontalAlignment=Left",
+        L"VerticalAlignment=Top",
+        L"Width=155",
+        L"Margin=197,-30,0,0"}},
+    ThemeTargetStyles{L"Microsoft.UI.Xaml.Controls.CommandBar#FileExplorerCommandBar", {
+        L"Background=Transparent",
+        L"HorizontalAlignment=Left",
+        L"VerticalAlignment=Top"}},
+    ThemeTargetStyles{L"Microsoft.UI.Xaml.Controls.Border#BottomBorderLine", {
+        L"Visibility=Collapsed"}},
+    ThemeTargetStyles{L"Microsoft.UI.Xaml.Controls.Grid#NavigationBarControlGrid", {
+        L"Background=Transparent",
+        L"BorderBrush=Transparent",
+        L"ColumnDefinitions:=<ColumnDefinitionCollection><ColumnDefinition Width=\"Auto\"/><ColumnDefinition Width=\"*\"/><ColumnDefinition Width=\"380\"/></ColumnDefinitionCollection>",
+        L"Margin=0,-16,0,-21"}},
+    ThemeTargetStyles{L"Grid#TabContainerGrid", {
+        L"Grid.Row=0",
+        L"HorizontalAlignment=Left",
+        L"Margin=100,0,0,0",
+        L"Width=1",
+        L"MaxWidth=1"}},
+    ThemeTargetStyles{L"FileExplorerExtensions.FileExplorerTabControl", {
+        L"HorizontalAlignment=Left",
+        L"Margin=100,0,0,0",
+        L"Width=1",
+        L"MaxWidth=1"}},
+    ThemeTargetStyles{L"TabViewItem", {
+        L"Width=0",
+        L"Visibility=Collapsed"}},
+    ThemeTargetStyles{L"Grid#TabContainerGrid > Border > Button#AddButton", {
+        L"Visibility=Collapsed"}},
+    ThemeTargetStyles{L"AutoSuggestBox#FileExplorerSearchBox > Grid#LayoutRoot > TextBox > Grid@CommonStates > Border#BorderElement", {
+        L"Background=Transparent",
+        L"BorderThickness=0"}},
+    ThemeTargetStyles{L"Microsoft.UI.Xaml.Controls.Grid#FileExplorerAddressBarGrid > Grid#LayoutRoot > TextBox > Grid@CommonStates > Border#BorderElement", {
+        L"Background=Transparent",
+        L"BorderThickness=0"}},
+    ThemeTargetStyles{L"Microsoft.UI.Xaml.Controls.AutoSuggestBox#FileExplorerSearchBox > Microsoft.UI.Xaml.Controls.Grid#LayoutRoot > Microsoft.UI.Xaml.Controls.TextBox#TextBox", {
+        L"Margin=0,0,140,0",
+        L"Background=Transparent",
+        L"BorderBrush=Transparent",
+        L"TextAlignment=Center",
+        L"HorizontalContentAlignment=Center"}},
+    ThemeTargetStyles{L"Microsoft.UI.Xaml.Controls.Grid#FileExplorerAddressBarGrid", {
+        L"HorizontalAlignment=Stretch",
+        L"Height=28",
+        L"Margin=155,0,0,0"}},
+    ThemeTargetStyles{L"AutoSuggestBox#FileExplorerSearchBox", {
+        L"HorizontalAlignment=Stretch",
+        L"Height=28",
+        L"Margin=-7,-1,7,0"}},
+    ThemeTargetStyles{L"Microsoft.UI.Xaml.Controls.CommandBar#FileExplorerCommandBar Button", {
+        L"FontSize=14"}},
+}, {}, {}, /*explorerFrameContainerHeight=*/44, BackgroundTranslucentEffect::kMica};
+
+const Theme g_themeCompact_Explorer11 = {{
+    ThemeTargetStyles{L"Microsoft.UI.Xaml.Controls.Primitives.SuggestionsPopup", {
+        L"Margin=0,0,0,900"}},
+    ThemeTargetStyles{L"Microsoft.UI.Xaml.Controls.AppBarButton > Grid@CommonStates", {
+        L"Background@Disabled:=<WindhawkBlur BlurAmount=\"8\" TintColor=\"#25ffffff\"/>",
+        L"CornerRadius@Disabled=10",
+        L"BorderThickness@Disabled=1",
+        L"Margin@Disabled=2,6,2,6",
+        L"Padding@Disabled=0,-7"}},
+    ThemeTargetStyles{L"CommandBar#FileExplorerCommandBar > Grid#LayoutRoot > Grid#ContentRoot > Button#MoreButton", {
+        L"Background:=<WindhawkBlur BlurAmount=\"8\" TintColor=\"#25ffffff\"/>",
+        L"CornerRadius=10",
+        L"BorderThickness=1",
+        L"Margin=3,2,3,2",
+        L"Width=45",
+        L"Height=32"}},
+    ThemeTargetStyles{L"Microsoft.UI.Xaml.Controls.AppBarButton#backButton > Grid@CommonStates", {
+        L"Background@Disabled:=<WindhawkBlur BlurAmount=\"8\" TintColor=\"#25ffffff\"/>",
+        L"CornerRadius@Disabled=11",
+        L"BorderThickness@Disabled=1",
+        L"Margin@Disabled=0,0,0,0",
+        L"Height@Disabled=32",
+        L"Width@Disabled=20",
+        L"Padding@Disabled=0,-2,0,2"}},
+    ThemeTargetStyles{L"Microsoft.UI.Xaml.Controls.AppBarButton#forwardButton > Grid@CommonStates", {
+        L"Background@Disabled:=<WindhawkBlur BlurAmount=\"8\" TintColor=\"#25ffffff\"/>",
+        L"CornerRadius@Disabled=11",
+        L"BorderThickness@Disabled=1",
+        L"Margin@Disabled=0,0,0,0",
+        L"Height@Disabled=32",
+        L"Width@Disabled=20",
+        L"Padding@Disabled=0,-2,0,2"}},
+    ThemeTargetStyles{L"Microsoft.UI.Xaml.Controls.AppBarButton#refreshButton > Grid@CommonStates", {
+        L"Background@Disabled:=<WindhawkBlur BlurAmount=\"8\" TintColor=\"#25ffffff\"/>",
+        L"CornerRadius@Disabled=11",
+        L"BorderThickness@Disabled=1",
+        L"Margin@Disabled=0,0,0,0",
+        L"Height@Disabled=32",
+        L"Width@Disabled=20",
+        L"Padding@Disabled=0,-2,0,2"}},
+    ThemeTargetStyles{L"Microsoft.UI.Xaml.Controls.AppBarToggleButton > Grid@CommonStates", {
+        L"Background@Disabled:=<WindhawkBlur BlurAmount=\"8\" TintColor=\"#2D101010\"/>"}},
+    ThemeTargetStyles{L"Grid#DetailsViewControlRootGrid", {
+        L"Margin=20,20,20,1",
+        L"Background:=<WindhawkBlur BlurAmount=\"30\" TintColor=\"#2D101010\" TintOpacity=\"0.4\"/>",
+        L"CornerRadius=15"}},
+    ThemeTargetStyles{L"StackPanel#DetailsViewThumbnail > Grid", {
+        L"Background=Transparent"}},
+    ThemeTargetStyles{L"Microsoft.UI.Xaml.Controls.Grid > OuterOverflowContentRootV2", {
+        L"CornerRadius=250"}},
+    ThemeTargetStyles{L"Microsoft.UI.Xaml.Controls.CommandBarOverflowPresenter > Microsoft.UI.Xaml.Controls.CommandBarOverflowPresenter", {
+        L"Background=transparent"}},
+    ThemeTargetStyles{L"AppBarButton[7]", {
+        L"Visibility=Collapsed",
+        L"Width=0",
+        L"MinWidth=0",
+        L"Margin=0,0,0,0",
+        L"Padding=0,0,0,0"}},
+    ThemeTargetStyles{L"Microsoft.UI.Xaml.Controls.Viewbox > ContentViewB", {
+        L"Visibility=Collapsed"}},
+    ThemeTargetStyles{L"Grid#HomeViewRootGrid", {
+        L"Margin=20,20,20,0",
+        L"Background:=<WindhawkBlur BlurAmount=\"30\" TintColor=\"#2D101010\" TintOpacity=\"0.4\"/>",
+        L"CornerRadius=15"}},
+    ThemeTargetStyles{L"FileExplorerExtensions.GalleryViewControl#GalleryViewControl > Grid", {
+        L"Margin=20,20,20,0",
+        L"Background:=<WindhawkBlur BlurAmount=\"30\" TintColor=\"#2D101010\" TintOpacity=\"0.4\"/>",
+        L"CornerRadius=15"}},
+    ThemeTargetStyles{L"Microsoft.UI.Xaml.Controls.Grid#GalleryRootGrid", {
+        L"Margin=10",
+        L"Background:=transparent",
+        L"CornerRadius=15"}},
+    ThemeTargetStyles{L"CommandBar#FileExplorerCommandBar", {
+        L"Grid.Row=0",
+        L"Grid.RowSpan=1",
+        L"CornerRadius:=15",
+        L"Width=400",
+        L"HorizontalAlignment=Left",
+        L"Background:=transparent",
+        L"Padding=0,0,0,0"}},
+    ThemeTargetStyles{L"CommandBar#FileExplorerCommandBar > Grid#LayoutRoot > Grid#ContentRoot > Grid#OverflowSeparator", {
+        L"Visibility=Collapsed",
+        L"Width=0",
+        L"MinWidth=0"}},
+    ThemeTargetStyles{L"CommandBar#FileExplorerCommandBar > Grid#LayoutRoot > Grid#ContentRoot", {
+        L"HorizontalAlignment=Left"}},
+    ThemeTargetStyles{L"CommandBar#FileExplorerCommandBar > Grid#LayoutRoot > Grid#ContentRoot > ItemsControl#PrimaryItemsControl", {
+        L"HorizontalAlignment=Left"}},
+    ThemeTargetStyles{L"CommandBar#FileExplorerSecondaryCommandBar", {
+        L"Visibility=Visible",
+        L"Margin=0,40,0,-20"}},
+    ThemeTargetStyles{L"Grid#TabContainerGrid", {
+        L"Margin=370,1,0,1"}},
+    ThemeTargetStyles{L"Grid#TabContainerGrid > Border#LeftBottomBorderLine", {
+        L"Visibility=Collapsed"}},
+    ThemeTargetStyles{L"Grid#TabContainerGrid > Border#RightBottomBorderLine", {
+        L"Visibility=Collapsed"}},
+    ThemeTargetStyles{L"TabViewItem", {
+        L"Width=150",
+        L"Height=40",
+        L"Margin=0,0,8,0"}},
+    ThemeTargetStyles{L"TabViewItem > Grid#LayoutRoot", {
+        L"Background:=<WindhawkBlur BlurAmount=\"8\" TintColor=\"#25ffffff\"/>",
+        L"CornerRadius=10",
+        L"BorderThickness=1",
+        L"Margin=2,2,0,2",
+        L"Height=35"}},
+    ThemeTargetStyles{L"TabViewItem > Grid#LayoutRoot > Canvas", {
+        L"Visibility=Collapsed"}},
+    ThemeTargetStyles{L"TabViewItem > Grid#LayoutRoot > Grid#TabContainer", {
+        L"Background=Transparent",
+        L"BorderThickness=0"}},
+    ThemeTargetStyles{L"TabViewItem > Grid#LayoutRoot@CommonStates", {
+        L"Background@Selected:=<WindhawkBlur BlurAmount=\"15\" TintColor=\"#30ffffff\"/>",
+        L"Background@PointerOverSelected:=<WindhawkBlur BlurAmount=\"15\" TintColor=\"#40ffffff\"/>",
+        L"Background@Normal:=<WindhawkBlur BlurAmount=\"15\" TintColor=\"#20ffffff\"/>"}},
+    ThemeTargetStyles{L"Grid#TabContainerGrid > Border > Button#AddButton", {
+        L"Visibility=Visible",
+        L"Margin=0,0,0,4",
+        L"Background:=<WindhawkBlur BlurAmount=\"15\" TintColor=\"#25ffffff\"/>",
+        L"CornerRadius=10",
+        L"BorderThickness=0",
+        L"BorderBrush:=<LinearGradientBrush EndPoint=\"1,1\" StartPoint=\"0,0\"><GradientStop Color=\"#80ffffff\" Offset=\"0.0\"/><GradientStop Color=\"{ThemeResource SurfaceStrokeColorDefault}\" Offset=\"0.55\"/><GradientStop Color=\"#80ffffff\" Offset=\"1\"/></LinearGradientBrush>",
+        L"Width=24",
+        L"Height=24"}},
+    ThemeTargetStyles{L"Grid#CommandBarControlRootGrid", {
+        L"Background:=",
+        L"BorderBrush:="}},
+    ThemeTargetStyles{L"Grid#NavigationBarControlGrid", {
+        L"Background=Transparent"}},
+    ThemeTargetStyles{L"Grid#PART_LayoutRoot", {
+        L"Background:=<WindhawkBlur BlurAmount=\"8\" TintColor=\"#25ffffff\"/>",
+        L"CornerRadius=10",
+        L"BorderThickness=1",
+        L"Margin=1"}},
+    ThemeTargetStyles{L"FileExplorerExtensions.CommandBarControl", {
+        L"Grid.Row=0",
+        L"Grid.RowSpan=2",
+        L"Margin=0,0,0,0"}},
+    ThemeTargetStyles{L"AutoSuggestBox#FileExplorerSearchBox > Grid#LayoutRoot > TextBox > Grid@CommonStates", {
+        L"Background:=<WindhawkBlur BlurAmount=\"8\" TintColor=\"#25ffffff\"/>",
+        L"CornerRadius=10",
+        L"Margin=-90,0,90,0",
+        L"Height=30"}},
+    ThemeTargetStyles{L"Microsoft.UI.Xaml.Controls.Grid#FileExplorerAddressBarGrid", {
+        L"Margin=-8,0,90,0"}},
+    ThemeTargetStyles{L"CommandBarOverflowPresenter#SecondaryItemsControl > Microsoft.UI.Xaml.Controls.AppBarButton", {
+        L"Background=Transparent",
+        L"CornerRadius=4",
+        L"BorderThickness=0",
+        L"Margin=0,0,0,0"}},
+    ThemeTargetStyles{L"Microsoft.UI.Xaml.Controls.AppBarButton", {
+        L"Background:=<WindhawkBlur BlurAmount=\"8\" TintColor=\"#25ffffff\"/>",
+        L"CornerRadius=10",
+        L"BorderThickness=1",
+        L"Margin=3,2,3,2"}},
+    ThemeTargetStyles{L"Microsoft.UI.Xaml.Controls.AppBarToggleButton", {
+        L"Background:=<WindhawkBlur BlurAmount=\"8\" TintColor=\"#2D101010\"/>",
+        L"CornerRadius=8",
+        L"BorderThickness=1",
+        L"Margin=3,0,3,1",
+        L"BorderBrush:=<LinearGradientBrush EndPoint=\"1,1\" StartPoint=\"0,0\"><GradientStop Color=\"#80ffffff\" Offset=\"0.0\"/><GradientStop Color=\"{ThemeResource SurfaceStrokeColorDefault}\" Offset=\"0.55\"/><GradientStop Color=\"#80ffffff\" Offset=\"1\"/></LinearGradientBrush>"}},
+    ThemeTargetStyles{L"Microsoft.UI.Xaml.Controls.AppBarSeparator", {
+        L"Visibility=Collapsed"}},
+    ThemeTargetStyles{L"Microsoft.UI.Xaml.Controls.AppBarButton#backButton", {
+        L"Margin=0,9,9,0",
+        L"Visibility=Visible"}},
+    ThemeTargetStyles{L"Microsoft.UI.Xaml.Controls.AppBarButton#forwardButton", {
+        L"Margin=0,9,9,0",
+        L"Visibility=Visible"}},
+    ThemeTargetStyles{L"Microsoft.UI.Xaml.Controls.AppBarButton#upButton", {
+        L"Margin=0,9,9,0",
+        L"Visibility=Collapsed"}},
+    ThemeTargetStyles{L"Microsoft.UI.Xaml.Controls.AppBarButton#refreshButton", {
+        L"Visibility=Visible",
+        L"Margin=0,9,9,0"}},
+    ThemeTargetStyles{L"Microsoft.UI.Xaml.Controls.AppBarButton#stopButton", {
+        L"Visibility=Collapsed",
+        L"Margin=0,9,9,0"}},
+    ThemeTargetStyles{L"FileExplorerExtensions.NavigationBarControl", {
+        L"Grid.RowSpan=2"}},
+}, {}, {}, /*explorerFrameContainerHeight=*/87};
 
 // clang-format on
 
@@ -6594,6 +7235,16 @@ const Theme* GetSelectedTheme() {
         theme = &g_themeTintedGlass;
     } else if (wcscmp(themeName, L"LiquidGlass") == 0) {
         theme = &g_themeLiquidGlass;
+    } else if (wcscmp(themeName, L"MicaTabless") == 0) {
+        theme = &g_themeMicaTabless;
+    } else if (wcscmp(themeName, L"OS26 Liquid Glass") == 0) {
+        theme = &g_themeOS26_Liquid_Glass;
+    } else if (wcscmp(themeName, L"OS26 Liquid Glass_variant_Compact") == 0) {
+        theme = &g_themeOS26_Liquid_Glass_variant_Compact;
+    } else if (wcscmp(themeName, L"ZEUSosX_044") == 0) {
+        theme = &g_themeZEUSosX_044;
+    } else if (wcscmp(themeName, L"Compact Explorer11") == 0) {
+        theme = &g_themeCompact_Explorer11;
     }
     Wh_FreeStringSetting(themeName);
     return theme;
