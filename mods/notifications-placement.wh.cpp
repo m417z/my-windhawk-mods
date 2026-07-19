@@ -2,7 +2,7 @@
 // @id              notifications-placement
 // @name            Customize Windows notifications placement
 // @description     Move notifications to another monitor or another corner of the screen
-// @version         1.2.2
+// @version         1.2.3
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
@@ -366,7 +366,7 @@ bool IsTargetCoreWindow(HWND hWnd) {
         L"Ný tilkynning", // IS-IS
         L"ახალი შეტყობინება", // KA-GE
         L"Жаңа хабарландыру", // KK-KZ
-        L"ការ​ជូន​ដំណឹង​ថ្មី", // KM-KH
+        L"ការ\u200bជូន\u200bដំណឹង\u200bថ្មី", // KM-KH
         L"ಹೊಸ ಪ್ರಕಟಣೆ", // KN-IN
         L"नवी अधिसुचोवणी", // KOK-IN
         L"Nei Notifikatioun", // LB-LU
