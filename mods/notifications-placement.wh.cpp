@@ -736,18 +736,21 @@ void UpdateAnimationDirectionStyle() {
             return false;  // continue enumeration
         }
 
-        FrameworkElement revealGrid2 =
-            FindChildByName(mainGrid, L"RevealGrid2");
-        if (!revealGrid2) {
-            return false;  // continue enumeration
+        FrameworkElement revealGrid = FindChildByName(mainGrid, L"RevealGrid");
+        if (!revealGrid) {
+            // Older Windows 11 versions use this name (before ~Jul 2026).
+            revealGrid = FindChildByName(mainGrid, L"RevealGrid2");
+            if (!revealGrid) {
+                return false;  // continue enumeration
+            }
         }
 
         Wh_Log(L"Applying transform to toast view %s", name.c_str());
 
         Media::RotateTransform transform;
         transform.Angle(-angle);
-        revealGrid2.RenderTransform(transform);
-        revealGrid2.RenderTransformOrigin(origin);
+        revealGrid.RenderTransform(transform);
+        revealGrid.RenderTransformOrigin(origin);
 
         foundAnyRootGridContent = true;
         return false;  // continue enumeration to find all matching children
