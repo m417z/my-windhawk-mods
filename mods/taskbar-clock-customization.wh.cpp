@@ -3691,18 +3691,37 @@ int ResolveFormatTokenWithDigit(std::wstring_view format,
         return 0;
     }
 
-    WCHAR digitChar = format[formatTokenPrefix.size()];
-    if (digitChar < L'1' || digitChar > L'9') {
+    // Slice after prefix
+    std::wstring_view afterPrefix = format.substr(formatTokenPrefix.size());
+
+    // Find where suffix begins
+    size_t suffixPos = afterPrefix.find(formatTokenSuffix);
+    if (suffixPos == std::wstring_view::npos) {
         return 0;
     }
 
-    if (!format.substr(formatTokenPrefix.size() + 1)
-             .starts_with(formatTokenSuffix)) {
+    // Extract the numeric portion between prefix and suffix
+    std::wstring_view numberPart = afterPrefix.substr(0, suffixPos);
+
+    // Must be all digits
+    if (numberPart.empty()) {
         return 0;
     }
+    for (wchar_t c : numberPart) {
+        if (c < L'0' || c > L'9') {
+            return 0;
+        }
+    }
 
-    return digitChar - L'0';
+    // Convert to integer
+    int value = 0;
+    for (wchar_t c : numberPart) {
+        value = value * 10 + (c - L'0');
 }
+
+    return value;
+}
+
 
 size_t ResolveFormatToken(
     std::wstring_view format,
@@ -3786,7 +3805,9 @@ size_t ResolveFormatToken(
         }
 
         resolvedCallback(value);
-        return formatTzToken.prefix.size() + 2;
+        //return formatTzToken.prefix.size() + 2;
+        int string_size = formatTzToken.prefix.size() + std::to_wstring(digit).size() +1;
+        return string_size;       
     }
 
     if (auto token = L"%web%"sv; format.starts_with(token)) {
@@ -3846,12 +3867,15 @@ size_t ResolveFormatToken(
         }
 
         resolvedCallback(value);
-        return "%web1%"sv.size();
+        //return "%web1%"sv.size();
+        int string_size = 4 + std::to_wstring(digit).size();
+        return string_size;
     }
 
     if (int digit =
             ResolveFormatTokenWithDigit(format, L"%web"sv, L"_full%"sv)) {
-        size_t index = digit - 1;
+        //size_t index = digit - 1;
+        size_t index = static_cast<size_t>(digit - 1);
 
         std::lock_guard<std::mutex> guard(g_webContentMutex);
 
@@ -3865,7 +3889,9 @@ size_t ResolveFormatToken(
         }
 
         resolvedCallback(value);
-        return "%web1_full%"sv.size();
+        //return "%web1_full%"sv.size();
+        int string_size = 4 + std::to_wstring(digit).size() + 6;
+        return string_size;       
     }
 
     if (auto token = L"%weather%"sv; format.starts_with(token)) {
