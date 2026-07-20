@@ -2,7 +2,7 @@
 // @id              notifications-placement
 // @name            Customize Windows notifications placement
 // @description     Move notifications to another monitor or another corner of the screen
-// @version         1.2.3
+// @version         1.2.4
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
@@ -750,14 +750,14 @@ void UpdateAnimationDirectionStyle() {
 
         // Older Windows 11 versions have both RevealGrid and RevealGrid2
         // (before ~Jul 2026). Newer builds only have RevealGrid.
-        if (FrameworkElement revealGrid =
+        if (FrameworkElement revealGrid2 =
                 FindChildByName(mainGrid, L"RevealGrid2")) {
             Wh_Log(L"Applying transform to toast view %s", name.c_str());
 
             Media::RotateTransform transform;
             transform.Angle(-angle);
-            revealGrid.RenderTransform(transform);
-            revealGrid.RenderTransformOrigin(origin);
+            revealGrid2.RenderTransform(transform);
+            revealGrid2.RenderTransformOrigin(origin);
 
             foundAnyRootGridContent = true;
         }
