@@ -1312,7 +1312,10 @@ std::unordered_map<InstanceHandle, ElementCustomizationState>
 
 // Mod-global style variable registry. Populated by `Property=>VarName` capture
 // rules and consumed by `{{VarName}}` substitutions in other styles. Last
-// writer wins -- a new capture from any element overwrites the value.
+// writer wins -- a new capture from any element overwrites the value, and
+// removing a capturing element erases its entry (making the variable undefined
+// again). No ownership tracking: a single capture target per variable is
+// assumed.
 struct StyleVariableValue {
     std::wstring stringForm;        // invariant-formatted text representation
     std::optional<double> numeric;  // only present when source was numeric
@@ -4322,8 +4325,10 @@ class StyleVariableExpressionEvaluator {
     }
 
     // Equality test for == / !=. Two numbers compare numerically, two strings
-    // compare by content. A number/string mismatch is a type error in a live
-    // branch; in a dead branch it's harmlessly reported as not-equal.
+    // compare by content. A number/string mismatch is always unequal rather
+    // than an error, so `{{var == `` ? default : var}}` can supply a fallback
+    // for an undefined variable (which reads as the empty string) without
+    // failing when the variable is instead a captured number.
     bool ValuesEqual(const StyleExpressionValue& a,
                      const StyleExpressionValue& b) {
         if (a.IsNumber() && b.IsNumber()) {
@@ -4331,11 +4336,6 @@ class StyleVariableExpressionEvaluator {
         }
         if (!a.IsNumber() && !b.IsNumber()) {
             return a.text == b.text;
-        }
-        if (m_live) {
-            throw std::runtime_error(
-                "Cannot compare a number with a string in style variable "
-                "expression");
         }
         return false;
     }
@@ -4627,10 +4627,16 @@ class StyleVariableExpressionEvaluator {
         auto it = m_state->variables.find(name);
         if (it == m_state->variables.end()) {
             if (m_live) {
-                Wh_Log(L"Style variable '%s' not yet defined; treating as 0",
-                       name.c_str());
+                Wh_Log(
+                    L"Style variable '%s' not defined; treating as empty "
+                    L"string",
+                    name.c_str());
             }
-            return StyleExpressionValue::Number(0.0);
+            // Undefined reads as the empty string sentinel, so `{{var == `` ?
+            // default : var}}` can detect the undefined state and substitute a
+            // fallback. Arithmetic on an undefined variable then fails
+            // RequireNumber and skips the style, rather than silently using 0.
+            return StyleExpressionValue::String(L"");
         }
         if (it->second.numeric) {
             return StyleExpressionValue::Number(*it->second.numeric);
@@ -5559,6 +5565,25 @@ void CleanupCustomizations(InstanceHandle handle) {
         auto* state = GetStyleVariableState();
 
         RestoreCapturesForElement(element, elementCustomizationState);
+
+        // Drop this element's captured variables from the registry so `{{Var}}`
+        // consumers see them as undefined again, then re-evaluate the
+        // dependents. Global last-writer-wins: the value is erased regardless
+        // of whether another element also captures the same name -- it is the
+        // user's responsibility to keep a single capture target per variable.
+        // Runs after RestoreCapturesForElement so the just-unregistered capture
+        // callbacks can't re-seed the variable mid-teardown.
+        if (state) {
+            for (const auto& [property, captureState] :
+                 elementCustomizationState.captureCustomizationStates) {
+                if (captureState.varName.empty()) {
+                    continue;
+                }
+                if (state->variables.erase(captureState.varName)) {
+                    PropagateStyleVariableChange(state, captureState.varName);
+                }
+            }
+        }
 
         for (const auto& [visualStateGroupOptionalWeakPtrIter, stateIter] :
              elementCustomizationState.perVisualStateGroup) {

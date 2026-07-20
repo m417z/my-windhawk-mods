@@ -176,23 +176,27 @@ useful for temporarily disabling a target or style.
 
 #### Style variables
 
-In addition to literal values, XAML values, and style constants, styles can
-reference live property values via global *style variables*. A capture rule of
-the form `Property=>VarName` observes a control's property and publishes its
-value to a variable. Other styles can then substitute that variable with
-`{{VarName}}`. When the source property changes, every style that uses the
-variable is recomputed and reapplied.
+Beyond literal values, XAML values, and style constants, styles can reference
+live property values via global *style variables*. A capture rule of the form
+`Property=>VarName` observes a control's property and publishes its value to
+`VarName`; other styles then substitute it with `{{VarName}}`. Whenever the
+captured value changes or the variable becomes undefined, every dependent style
+is recomputed and reapplied.
 
-For example, the following two styles on the same target make it square - the
-height tracks the width:
+Variables are global: a capture from any matched element overwrites the same
+name, and removing the capturing element makes the variable undefined again.
+Capture rules cannot be combined with `:=` or with the per-rule `@VisualState`
+qualifier.
+
+For example, these two styles on the same target keep it square, with the height
+tracking the width:
 
 ```
 ActualWidth=>width1
 Height={{width1}}
 ```
 
-Substitution can appear anywhere in a style's value, including alongside literal
-text:
+A substitution can appear anywhere in a value, including alongside literal text:
 
 ```
 Margin=0,{{x1}},0,{{x2 + 10}}
@@ -201,46 +205,39 @@ Margin=0,{{x1}},0,{{x2 + 10}}
 Inside `{{ ... }}`, the supported expression syntax is:
 
 * Numbers (e.g. `42`, `3.14`).
-* Backtick-delimited string literals (e.g. `` `Auto` ``, `` `*` ``). A doubled
-  backtick encodes one literal backtick. Backtick is used rather than a quote so
-  that literals don't clash with the string quoting of YAML settings or the
-  double quotes of XAML attributes.
+* Backtick-delimited string literals (e.g. `` `Auto` ``, `` `*` ``), where a
+  doubled backtick encodes one literal backtick. Backtick is used rather than a
+  quote so literals don't clash with YAML or XAML quoting.
 * Variable references (a previously captured `VarName`).
-* Binary operators `+`, `-`, `*`, `/`, with standard precedence.
-* Unary `+` and `-`.
-* Comparison operators `<`, `<=`, `==`, `>=`, `>`, `!=`, which evaluate to `1`
-  (true) or `0` (false). The relational operators (`<`, `<=`, `>=`, `>`) require
-  numbers; `==` and `!=` compare either two numbers or two strings.
-* The conditional operator `cond ? a : b`: evaluates to `a` when `cond` is
-  non-zero, otherwise `b`. The condition must be numeric, but the two branches
-  may each be a number or a string. For example, `{{x > 8 ? 1 : 3}}` gives `1`
-  when `x` is greater than `8`, else `3`, and `` {{width > 0 ? `*` : `Auto`}} ``
-  selects a `GridLength` keyword.
-* Parentheses for grouping.
-* The two-argument functions `min(a, b)` and `max(a, b)`.
+* Arithmetic `+`, `-`, `*`, `/` with standard precedence, and unary `+`, `-`.
+* Comparisons `<`, `<=`, `==`, `>=`, `>`, `!=`, evaluating to `1` or `0`. The
+  relational operators require numbers; `==` and `!=` compare two numbers or two
+  strings by value and treat a number-versus-string mismatch as unequal.
+* The conditional `cond ? a : b`: `a` when `cond` is non-zero, otherwise `b`.
+  The condition must be numeric, but each branch may be a number or a string,
+  e.g. `` {{width > 0 ? `*` : `Auto`}} `` selects a `GridLength` keyword.
+* `min(a, b)` and `max(a, b)`.
+* Parentheses for grouping, and nesting such as `{{min(a, b + 1) * 2}}`.
 
-Arithmetic (`+`, `-`, `*`, `/`), the unary sign, the relational comparisons, and
-`min` / `max` require numeric operands. String values can only be produced (by a
-literal or a string-typed variable), compared with `==` / `!=`, and selected by
-the conditional operator.
+Arithmetic, the unary sign, the relational comparisons, and `min` / `max`
+require numeric operands. A string can only be produced by a literal or a
+string-typed variable, compared with `==` / `!=`, and selected by the
+conditional.
 
-Expressions can be nested (`{{min(a, b + 1) * 2}}`), and `{{ ... }}` markers can
-appear inside larger expressions. Brace pairs match innermost-first, so
-`{{{x}}}` is parsed as a literal `{`, the variable substitution `{{x}}`, and a
-literal `}` - producing `{<value-of-x>}`.
+Brace pairs match innermost-first, so `{{{x}}}` is parsed as a literal `{`, the
+substitution `{{x}}`, and a literal `}`, producing `{<value-of-x>}`.
 
-A bare-identifier substitution (`{{VarName}}` with no operators) inserts the
-variable's captured string form verbatim. This is meaningful only for primitive
-captured types: numeric, boolean, and string. Other captured types (brushes,
-thicknesses, etc.) are currently unsupported - substitution of such a variable
-is treated as a failure and the style is skipped. Substitutions that involve
-arithmetic require numeric source values; using a non-numeric variable in an
-expression also skips the style and logs a warning. Referencing a variable that
-has never been captured likewise skips the style.
+A bare substitution `{{VarName}}` (with no operators) inserts the variable's
+captured value verbatim. This works only for primitive captured types (numeric,
+boolean, string); other types (brushes, thicknesses, etc.) are unsupported, and
+substituting one skips the style, as does a bare reference to an undefined
+variable.
 
-Variables are global - a capture from any matched element overwrites the same
-name. Capture rules cannot be combined with `:=` or with the per-rule
-`@VisualState` qualifier.
+Inside an expression, an undefined variable instead evaluates to the empty
+string, letting a style supply its own default via the conditional, e.g. ``
+{{width == `` ? 80 : width}} `` yields `80` until `width` is captured. The
+numeric operators above then fail on such a variable, skipping the style rather
+than treating it as `0`.
 
 ### Resource variables
 
@@ -2275,7 +2272,10 @@ thread_local std::unordered_map<InstanceHandle, ElementCustomizationState>
 
 // Mod-global style variable registry. Populated by `Property=>VarName` capture
 // rules and consumed by `{{VarName}}` substitutions in other styles. Last
-// writer wins -- a new capture from any element overwrites the value.
+// writer wins -- a new capture from any element overwrites the value, and
+// removing a capturing element erases its entry (making the variable undefined
+// again). No ownership tracking: a single capture target per variable is
+// assumed.
 struct StyleVariableValue {
     std::wstring stringForm;        // invariant-formatted text representation
     std::optional<double> numeric;  // only present when source was numeric
@@ -5250,8 +5250,10 @@ class StyleVariableExpressionEvaluator {
     }
 
     // Equality test for == / !=. Two numbers compare numerically, two strings
-    // compare by content. A number/string mismatch is a type error in a live
-    // branch; in a dead branch it's harmlessly reported as not-equal.
+    // compare by content. A number/string mismatch is always unequal rather
+    // than an error, so `{{var == `` ? default : var}}` can supply a fallback
+    // for an undefined variable (which reads as the empty string) without
+    // failing when the variable is instead a captured number.
     bool ValuesEqual(const StyleExpressionValue& a,
                      const StyleExpressionValue& b) {
         if (a.IsNumber() && b.IsNumber()) {
@@ -5259,11 +5261,6 @@ class StyleVariableExpressionEvaluator {
         }
         if (!a.IsNumber() && !b.IsNumber()) {
             return a.text == b.text;
-        }
-        if (m_live) {
-            throw std::runtime_error(
-                "Cannot compare a number with a string in style variable "
-                "expression");
         }
         return false;
     }
@@ -5555,10 +5552,16 @@ class StyleVariableExpressionEvaluator {
         auto it = m_state->variables.find(name);
         if (it == m_state->variables.end()) {
             if (m_live) {
-                Wh_Log(L"Style variable '%s' not yet defined; treating as 0",
-                       name.c_str());
+                Wh_Log(
+                    L"Style variable '%s' not defined; treating as empty "
+                    L"string",
+                    name.c_str());
             }
-            return StyleExpressionValue::Number(0.0);
+            // Undefined reads as the empty string sentinel, so `{{var == `` ?
+            // default : var}}` can detect the undefined state and substitute a
+            // fallback. Arithmetic on an undefined variable then fails
+            // RequireNumber and skips the style, rather than silently using 0.
+            return StyleExpressionValue::String(L"");
         }
         if (it->second.numeric) {
             return StyleExpressionValue::Number(*it->second.numeric);
@@ -6485,6 +6488,25 @@ void CleanupCustomizations(InstanceHandle handle) {
         auto* state = GetStyleVariableState();
 
         RestoreCapturesForElement(element, elementCustomizationState);
+
+        // Drop this element's captured variables from the registry so `{{Var}}`
+        // consumers see them as undefined again, then re-evaluate the
+        // dependents. Global last-writer-wins: the value is erased regardless
+        // of whether another element also captures the same name -- it is the
+        // user's responsibility to keep a single capture target per variable.
+        // Runs after RestoreCapturesForElement so the just-unregistered capture
+        // callbacks can't re-seed the variable mid-teardown.
+        if (state) {
+            for (const auto& [property, captureState] :
+                 elementCustomizationState.captureCustomizationStates) {
+                if (captureState.varName.empty()) {
+                    continue;
+                }
+                if (state->variables.erase(captureState.varName)) {
+                    PropagateStyleVariableChange(state, captureState.varName);
+                }
+            }
+        }
 
         for (const auto& [visualStateGroupOptionalWeakPtrIter, stateIter] :
              elementCustomizationState.perVisualStateGroup) {
