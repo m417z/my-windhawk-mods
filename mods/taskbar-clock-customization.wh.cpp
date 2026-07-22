@@ -99,6 +99,8 @@ patterns can be used:
   * `%vram_shared_total%` - total shared VRAM pool size in GB.
   * `%cpu_temp%` - CPU temperature in °C (average of all ACPI thermal zones).
   * `%cpu_temp_f%` - CPU temperature in °F (average of all ACPI thermal zones).
+  * `%gpu_temp%` - GPU temperature in °C.
+  * `%gpu_temp_f%` - GPU temperature in °F.
   * `%battery%` - battery level percentage.
   * `%battery_time%` - battery time remaining (charging time left / discharging
     time left, in h:mm format). If the value is always zero, you might need to
@@ -268,9 +270,9 @@ styles, such as the font color and size.
   - GpuAdapterName: ""
     $name: GPU adapter name
     $description: >-
-      The GPU adapter to use for GPU usage and VRAM metrics. Leave empty to
-      auto-detect (uses the adapter with the most dedicated VRAM). Partial match
-      is supported. To list adapters, run:
+      The GPU adapter to use for GPU usage, VRAM, and temperature metrics. Leave
+      empty to auto-detect (uses the adapter with the most dedicated VRAM).
+      Partial match is supported. To list adapters, run:
 
       wmic path win32_videocontroller get Name
   $name: System performance metrics
@@ -744,6 +746,8 @@ FormattedString<FORMATTED_BUFFER_SIZE> g_vramSharedUsedFormatted;
 FormattedString<FORMATTED_BUFFER_SIZE> g_vramSharedTotalFormatted;
 FormattedString<FORMATTED_BUFFER_SIZE> g_cpuTempFormatted;
 FormattedString<FORMATTED_BUFFER_SIZE> g_cpuTempFFormatted;
+FormattedString<FORMATTED_BUFFER_SIZE> g_gpuTempFormatted;
+FormattedString<FORMATTED_BUFFER_SIZE> g_gpuTempFFormatted;
 FormattedString<FORMATTED_BUFFER_SIZE> g_batteryFormatted;
 FormattedString<FORMATTED_BUFFER_SIZE> g_batteryTimeFormatted;
 FormattedString<FORMATTED_BUFFER_SIZE> g_powerFormatted;
@@ -1972,12 +1976,60 @@ enum class MetricType {
     kCount,
 };
 
+// D3DKMT is used to read the GPU temperature, which has no PDH counter. The
+// types and gdi32 exports below are declared directly to avoid depending on the
+// d3dkmthk.h header, which isn't available in all build environments.
+using D3DKMT_HANDLE = UINT32;
+
+typedef struct _D3DKMT_OPENADAPTERFROMLUID {
+    LUID AdapterLuid;
+    D3DKMT_HANDLE hAdapter;
+} D3DKMT_OPENADAPTERFROMLUID;
+
+typedef struct _D3DKMT_CLOSEADAPTER {
+    D3DKMT_HANDLE hAdapter;
+} D3DKMT_CLOSEADAPTER;
+
+typedef struct _D3DKMT_QUERYADAPTERINFO {
+    D3DKMT_HANDLE hAdapter;
+    UINT Type;  // KMTQUERYADAPTERINFOTYPE
+    VOID* pPrivateDriverData;
+    UINT PrivateDriverDataSize;
+} D3DKMT_QUERYADAPTERINFO;
+
+typedef struct _D3DKMT_ADAPTER_PERFDATA {
+    UINT PhysicalAdapterIndex;
+    ULONGLONG MemoryFrequency;
+    ULONGLONG MaxMemoryFrequency;
+    ULONGLONG MaxMemoryFrequencyOC;
+    ULONGLONG MemoryBandwidth;
+    ULONGLONG PCIEBandwidth;
+    ULONG FanRPM;
+    ULONG Power;
+    ULONG Temperature;
+    UCHAR PowerStateOverride;
+} D3DKMT_ADAPTER_PERFDATA;
+
+// KMTQAITYPE_ADAPTERPERFDATA.
+constexpr UINT kAdapterPerfDataQueryType = 62;
+
+using D3DKMTOpenAdapterFromLuid_t =
+    NTSTATUS(WINAPI*)(D3DKMT_OPENADAPTERFROMLUID*);
+D3DKMTOpenAdapterFromLuid_t pD3DKMTOpenAdapterFromLuid;
+
+using D3DKMTQueryAdapterInfo_t = NTSTATUS(WINAPI*)(D3DKMT_QUERYADAPTERINFO*);
+D3DKMTQueryAdapterInfo_t pD3DKMTQueryAdapterInfo;
+
+using D3DKMTCloseAdapter_t = NTSTATUS(WINAPI*)(const D3DKMT_CLOSEADAPTER*);
+D3DKMTCloseAdapter_t pD3DKMTCloseAdapter;
+
 // GPU adapter info from DXGI. This is static hardware capacity, independent of
 // the PDH sampling session: it is queried lazily and cached, keyed by the
 // configured adapter name so that changing the selection re-queries.
 struct DxgiAdapterInfo {
     std::wstring description;
     std::wstring luid;
+    LUID luidValue;
     SIZE_T dedicated_video_memory;
     SIZE_T shared_system_memory;
 };
@@ -2045,9 +2097,8 @@ std::optional<DxgiAdapterInfo> GetDxgiAdapterInfo(PCWSTR gpu_name, bool quiet) {
                best_desc.AdapterLuid.LowPart);
 
     s_info = DxgiAdapterInfo{
-        best_desc.Description,
-        luid_str,
-        best_desc.DedicatedVideoMemory,
+        best_desc.Description,        luid_str,
+        best_desc.AdapterLuid,        best_desc.DedicatedVideoMemory,
         best_desc.SharedSystemMemory,
     };
 
@@ -2070,6 +2121,54 @@ std::optional<double> GetSharedVramTotalGb() {
         return (double)info->shared_system_memory / kGBInBytes;
     }
     return std::nullopt;
+}
+
+// Queries the GPU temperature via D3DKMT. The selected DXGI adapter provides
+// the LUID that identifies the adapter to D3DKMT. Returns nullopt if the driver
+// doesn't report a temperature.
+std::optional<double> GetGpuTemperatureCelsius() {
+    if (!pD3DKMTOpenAdapterFromLuid || !pD3DKMTQueryAdapterInfo ||
+        !pD3DKMTCloseAdapter) {
+        return std::nullopt;
+    }
+
+    auto info =
+        GetDxgiAdapterInfo(g_settings.dataCollection.gpuAdapterName, true);
+    if (!info) {
+        return std::nullopt;
+    }
+
+    D3DKMT_OPENADAPTERFROMLUID openAdapter{};
+    openAdapter.AdapterLuid = info->luidValue;
+    if (pD3DKMTOpenAdapterFromLuid(&openAdapter) != 0) {
+        return std::nullopt;
+    }
+
+    D3DKMT_ADAPTER_PERFDATA perfData{};
+    D3DKMT_QUERYADAPTERINFO queryInfo{};
+    queryInfo.hAdapter = openAdapter.hAdapter;
+    queryInfo.Type = kAdapterPerfDataQueryType;
+    queryInfo.pPrivateDriverData = &perfData;
+    queryInfo.PrivateDriverDataSize = sizeof(perfData);
+
+    NTSTATUS status = pD3DKMTQueryAdapterInfo(&queryInfo);
+
+    D3DKMT_CLOSEADAPTER closeAdapter{};
+    closeAdapter.hAdapter = openAdapter.hAdapter;
+    pD3DKMTCloseAdapter(&closeAdapter);
+
+    if (status != 0) {
+        return std::nullopt;
+    }
+
+    // A zero reading means the driver doesn't expose a temperature; treat it as
+    // unavailable rather than showing an implausible 0 degrees.
+    if (perfData.Temperature == 0) {
+        return std::nullopt;
+    }
+
+    // Temperature is reported in tenths of a degree Celsius.
+    return perfData.Temperature / 10.0;
 }
 
 class QueryDataCollectionSession {
@@ -3546,6 +3645,33 @@ PCWSTR GetCpuTempFFormatted() {
         });
 }
 
+PCWSTR GetGpuTempFormatted() {
+    return GetMetricFormatted(g_gpuTempFormatted,
+                              [](PWSTR buffer, size_t bufferSize) {
+                                  auto celsius = GetGpuTemperatureCelsius();
+                                  if (!celsius) {
+                                      return false;
+                                  }
+                                  swprintf_s(buffer, bufferSize, L"%d\u00B0C",
+                                             static_cast<int>(*celsius));
+                                  return true;
+                              });
+}
+
+PCWSTR GetGpuTempFFormatted() {
+    return GetMetricFormatted(
+        g_gpuTempFFormatted, [](PWSTR buffer, size_t bufferSize) {
+            auto celsius = GetGpuTemperatureCelsius();
+            if (!celsius) {
+                return false;
+            }
+            double fahrenheit = *celsius * 9.0 / 5.0 + 32.0;
+            swprintf_s(buffer, bufferSize, L"%d\u00B0F",
+                       static_cast<int>(fahrenheit));
+            return true;
+        });
+}
+
 PCWSTR GetBatteryFormatted() {
     return GetMetricFormatted(
         g_batteryFormatted, [](PWSTR buffer, size_t bufferSize) {
@@ -3743,6 +3869,8 @@ size_t ResolveFormatToken(
         {L"%vram_shared_total%"sv, GetVramSharedTotalFormatted},
         {L"%cpu_temp%"sv, GetCpuTempFormatted},
         {L"%cpu_temp_f%"sv, GetCpuTempFFormatted},
+        {L"%gpu_temp%"sv, GetGpuTempFormatted},
+        {L"%gpu_temp_f%"sv, GetGpuTempFFormatted},
         {L"%battery%"sv, GetBatteryFormatted},
         {L"%battery_time%"sv, GetBatteryTimeFormatted},
         {L"%power%"sv, GetPowerFormatted},
@@ -5772,6 +5900,17 @@ BOOL Wh_ModInit() {
         pEnumDynamicTimeZoneInformation =
             (EnumDynamicTimeZoneInformation_t)GetProcAddress(
                 hAdvapi32, "EnumDynamicTimeZoneInformation");
+    }
+
+    if (HMODULE hGdi32 = LoadLibraryEx(L"gdi32.dll", nullptr,
+                                       LOAD_LIBRARY_SEARCH_SYSTEM32)) {
+        pD3DKMTOpenAdapterFromLuid =
+            (D3DKMTOpenAdapterFromLuid_t)GetProcAddress(
+                hGdi32, "D3DKMTOpenAdapterFromLuid");
+        pD3DKMTQueryAdapterInfo = (D3DKMTQueryAdapterInfo_t)GetProcAddress(
+            hGdi32, "D3DKMTQueryAdapterInfo");
+        pD3DKMTCloseAdapter =
+            (D3DKMTCloseAdapter_t)GetProcAddress(hGdi32, "D3DKMTCloseAdapter");
     }
 
     LoadSettings();
