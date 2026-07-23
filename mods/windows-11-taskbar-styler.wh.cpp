@@ -9228,9 +9228,9 @@ thread_local winrt::event_token g_colorValuesChangedToken;
 // (primary and per secondary monitor) has its own XamlRoot on the shared UI
 // thread, and is clipped independently via SetWindowRgn. Identity is tracked
 // via weak_ref so a destroyed XamlRoot's slot cannot be confused with a new one
-// at the same address. std::list is used because the LayoutUpdated lambda
-// captures a pointer to its entry, which must stay valid as other entries are
-// added or reaped.
+// at the same address. std::list is used so the ClickThroughTaskbarState*
+// returned by GetClickThroughState stays valid even if a reentrant XAML call
+// adds or reaps entries while the pointer is in use.
 struct ClickThroughTaskbarState {
     winrt::weak_ref<XamlRoot> xamlRoot;
     // The XAML island's native window, from IDesktopWindowXamlSourceNative. Its
