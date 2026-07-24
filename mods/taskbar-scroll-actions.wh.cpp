@@ -2,7 +2,7 @@
 // @id              taskbar-scroll-actions
 // @name            Taskbar Scroll Actions
 // @description     Assign actions for scrolling over the taskbar, including virtual desktop switching, brightness control, and microphone volume control
-// @version         1.2
+// @version         1.3
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
@@ -36,6 +36,10 @@ Currently, the following actions are supported:
 Brightness control works with both external monitors (via DDC/CI) and laptop
 internal displays (via WMI). For external monitors, DDC/CI must be enabled in
 the monitor's OSD settings.
+
+If your monitor does not support hardware brightness commands over DDC/CI or
+WMI, you can enable **Software Dimming** in the settings. This applies a dark
+overlay on top of the screen to simulate brightness reduction.
 
 **Note:** Some laptop touchpads might not support scrolling over the taskbar. A
 workaround is to use the "pinch to zoom" gesture. For details, check out [a
@@ -89,6 +93,18 @@ issue](https://tweaker.userecho.com/topics/826-scroll-on-trackpadtouchpad-doesnt
         single scroll wheel 'flick' from switching multiple desktops.
     - reverseScrollingDirection: false
       $name: Reverse scrolling direction
+    - monitorNum: 0
+      $name: Monitor number
+      $description: >-
+        0 for all monitors, 1 for primary monitor, 2 for secondary, etc.
+    - modifierKey: none
+      $name: Modifier key
+      $options:
+      - none: None
+      - ctrl: Ctrl
+      - shift: Shift
+      - alt: Alt
+      - win: Win
   $name: Scroll actions
   $description: >-
     Define one or more scroll actions for different regions of the taskbar.
@@ -97,6 +113,21 @@ issue](https://tweaker.userecho.com/topics/826-scroll-on-trackpadtouchpad-doesnt
   $description: >-
     Enable this option to customize the old taskbar on Windows 11 (if using
     ExplorerPatcher or a similar tool).
+- softwareDimming: false
+  $name: Software dimming fallback
+  $description: >-
+    When enabled, if hardware brightness control (DDC/CI) and WMI both fail,
+    a dark overlay is applied on screen to simulate brightness reduction.
+    Useful for external monitors that do not support DDC/CI.
+- brightnessOsd: true
+  $name: Show brightness tooltip
+  $description: >-
+    Show a small tooltip near the cursor displaying the current brightness
+    percentage when scrolling.
+- brightnessOsdDelay: 1500
+  $name: Brightness tooltip delay (ms)
+  $description: >-
+    How long the brightness tooltip stays visible on screen before hiding.
 */
 // ==/WindhawkModSettings==
 
@@ -117,6 +148,8 @@ issue](https://tweaker.userecho.com/topics/826-scroll-on-trackpadtouchpad-doesnt
 
 #include <algorithm>
 #include <atomic>
+#include <map>
+#include <mutex>
 #include <optional>
 #include <string_view>
 #include <thread>
@@ -149,11 +182,16 @@ struct ScrollActionEntry {
     int scrollStep;
     int throttleMs;
     bool reverseScrollingDirection;
+    int monitorNum;
+    int modifierKey;
 };
 
 struct {
     std::vector<ScrollActionEntry> scrollActions;
     bool oldTaskbarOnWin11;
+    bool softwareDimming;
+    bool brightnessOsd;
+    int brightnessOsdDelay;
 } g_settings;
 
 std::atomic<bool> g_initialized;
@@ -265,24 +303,28 @@ bool GetNotificationAreaRect(HWND hMMTaskbarWnd, RECT* rcResult) {
             HWND hBridgeWnd = FindWindowEx(
                 hMMTaskbarWnd, NULL,
                 L"Windows.UI.Composition.DesktopWindowContentBridge", NULL);
+            bool found = false;
+            RECT rcUnion = {0};
             while (hBridgeWnd) {
                 RECT rcBridge;
-                if (!GetWindowRect(hBridgeWnd, &rcBridge)) {
-                    break;
-                }
-
-                if (!EqualRect(&rcBridge, &rcTaskbar)) {
-                    if (IsRectEmpty(&rcBridge)) {
-                        break;
+                if (GetWindowRect(hBridgeWnd, &rcBridge) &&
+                    !EqualRect(&rcBridge, &rcTaskbar) &&
+                    !IsRectEmpty(&rcBridge)) {
+                    if (!found) {
+                        rcUnion = rcBridge;
+                        found = true;
+                    } else {
+                        UnionRect(&rcUnion, &rcUnion, &rcBridge);
                     }
-
-                    CopyRect(rcResult, &rcBridge);
-                    return true;
                 }
 
                 hBridgeWnd = FindWindowEx(
                     hMMTaskbarWnd, hBridgeWnd,
                     L"Windows.UI.Composition.DesktopWindowContentBridge", NULL);
+            }
+            if (found) {
+                CopyRect(rcResult, &rcUnion);
+                return true;
             }
         }
 
@@ -308,7 +350,7 @@ bool GetNotificationAreaRect(HWND hMMTaskbarWnd, RECT* rcResult) {
 
     // Just consider the last pixels as a fallback, not accurate, but better
     // than nothing.
-    int lastPixels = MulDiv(50, GetDpiForWindowWithFallback(hMMTaskbarWnd), 96);
+    int lastPixels = MulDiv(150, GetDpiForWindowWithFallback(hMMTaskbarWnd), 96);
     CopyRect(rcResult, &rcTaskbar);
     if (rcResult->right - rcResult->left > lastPixels) {
         if (GetWindowLong(hMMTaskbarWnd, GWL_EXSTYLE) & WS_EX_LAYOUTRTL) {
@@ -607,6 +649,220 @@ bool IsPointInsideEntryScrollArea(HWND hMMTaskbarWnd,
 }
 
 #pragma endregion  // regions
+
+#pragma region software_dimming
+
+struct SoftwareDimOverlay {
+    HWND hOverlay = NULL;
+};
+std::map<HMONITOR, SoftwareDimOverlay> g_swDimOverlays;
+HWND g_hSwDimHiddenWnd = NULL;
+DWORD g_dwSwDimThreadId = 0;
+std::thread* g_pSwDimThread = nullptr;
+
+struct SwDimMonitorState {
+    bool initialized = false;
+    int currentCombined = 100;
+    DWORD minB = 0;
+    DWORD maxB = 100;
+};
+std::map<HMONITOR, SwDimMonitorState> g_swDimMonitorStates;
+std::mutex g_swDimMutex;
+
+#define WM_USER_SW_DIM (WM_USER + 200)
+#define WM_USER_SHOW_OSD (WM_USER + 201)
+void ShowBrightnessOsd(int percentage);
+extern HWND g_hBrightnessOsdWnd;
+
+LRESULT CALLBACK SwDimHiddenWndProc(HWND hWnd, UINT uMsg, WPARAM wParam,
+                                     LPARAM lParam) {
+    if (uMsg == WM_USER_SHOW_OSD) {
+        ShowBrightnessOsd((int)wParam);
+        return 0;
+    }
+    if (uMsg == WM_USER_SW_DIM) {
+        HMONITOR hMonitor = (HMONITOR)lParam;
+        int combinedBrightness = (int)(short)LOWORD(wParam);
+
+        auto& state = g_swDimOverlays[hMonitor];
+
+        int alpha = 0;
+        if (combinedBrightness < 0) {
+            alpha = (abs(combinedBrightness) * 230) / 100;
+        }
+
+        if (alpha == 0) {
+            if (state.hOverlay) {
+                DestroyWindow(state.hOverlay);
+                state.hOverlay = NULL;
+            }
+        } else {
+            if (!state.hOverlay) {
+                WNDCLASSEX wc = {sizeof(WNDCLASSEX)};
+                wc.lpfnWndProc = DefWindowProc;
+                wc.hInstance = GetModuleHandle(NULL);
+                wc.lpszClassName = L"WindhawkScrollActionsDimOverlay";
+                wc.hbrBackground = (HBRUSH)GetStockObject(BLACK_BRUSH);
+                RegisterClassEx(&wc);
+
+                MONITORINFO mi = {sizeof(MONITORINFO)};
+                GetMonitorInfo(hMonitor, &mi);
+
+                state.hOverlay = CreateWindowEx(
+                    WS_EX_LAYERED | WS_EX_TRANSPARENT | WS_EX_TOOLWINDOW |
+                        WS_EX_TOPMOST | WS_EX_NOACTIVATE,
+                    L"WindhawkScrollActionsDimOverlay", L"", WS_POPUP,
+                    mi.rcMonitor.left, mi.rcMonitor.top,
+                    mi.rcMonitor.right - mi.rcMonitor.left,
+                    mi.rcMonitor.bottom - mi.rcMonitor.top, NULL, NULL,
+                    wc.hInstance, NULL);
+            }
+            if (state.hOverlay) {
+                SetWindowPos(state.hOverlay, HWND_TOPMOST, 0, 0, 0, 0,
+                             SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE |
+                                 SWP_SHOWWINDOW);
+                SetLayeredWindowAttributes(state.hOverlay, 0, alpha, LWA_ALPHA);
+            }
+        }
+
+        return 0;
+    }
+    return DefWindowProc(hWnd, uMsg, wParam, lParam);
+}
+
+void SwDimMessageThread() {
+    g_dwSwDimThreadId = GetCurrentThreadId();
+
+    WNDCLASSEX wc = {sizeof(WNDCLASSEX)};
+    wc.lpfnWndProc = SwDimHiddenWndProc;
+    wc.hInstance = GetModuleHandle(NULL);
+    wc.lpszClassName = L"WindhawkScrollActionsDimHidden";
+    RegisterClassEx(&wc);
+    g_hSwDimHiddenWnd = CreateWindowEx(0, wc.lpszClassName, L"", 0, 0, 0, 0, 0,
+                                       HWND_MESSAGE, NULL, wc.hInstance, NULL);
+
+    MSG msg;
+    while (GetMessage(&msg, NULL, 0, 0)) {
+        TranslateMessage(&msg);
+        DispatchMessage(&msg);
+    }
+
+    if (g_hSwDimHiddenWnd)
+        DestroyWindow(g_hSwDimHiddenWnd);
+    if (g_hBrightnessOsdWnd)
+        DestroyWindow(g_hBrightnessOsdWnd);
+    for (auto& pair : g_swDimOverlays) {
+        if (pair.second.hOverlay)
+            DestroyWindow(pair.second.hOverlay);
+    }
+}
+
+void SetSoftwareDimBrightness(HMONITOR hMonitor, int combinedBrightness) {
+    if (g_hSwDimHiddenWnd) {
+        PostMessage(g_hSwDimHiddenWnd, WM_USER_SW_DIM,
+                    MAKEWPARAM((short)combinedBrightness, 0),
+                    (LPARAM)hMonitor);
+    }
+}
+
+#pragma endregion  // software_dimming
+
+#pragma region brightness_osd
+
+HWND g_hBrightnessOsdWnd = NULL;
+UINT_PTR g_brightnessOsdTimer = 0;
+std::wstring g_brightnessOsdText;
+
+LRESULT CALLBACK BrightnessOsdWndProc(HWND hWnd, UINT uMsg, WPARAM wParam,
+                                       LPARAM lParam) {
+    if (uMsg == WM_PAINT) {
+        PAINTSTRUCT ps;
+        HDC hdc = BeginPaint(hWnd, &ps);
+        RECT rc;
+        GetClientRect(hWnd, &rc);
+
+        HBRUSH bgBrush = CreateSolidBrush(RGB(25, 25, 25));
+        FillRect(hdc, &rc, bgBrush);
+        DeleteObject(bgBrush);
+
+        SetBkMode(hdc, TRANSPARENT);
+        SetTextColor(hdc, RGB(255, 255, 255));
+
+        HFONT hFont =
+            CreateFont(22, 0, 0, 0, FW_BOLD, FALSE, FALSE, FALSE,
+                       DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
+                       CLEARTYPE_QUALITY, DEFAULT_PITCH, L"Segoe UI");
+        HFONT hOldFont = (HFONT)SelectObject(hdc, hFont);
+
+        DrawText(hdc, g_brightnessOsdText.c_str(), -1, &rc,
+                 DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+
+        SelectObject(hdc, hOldFont);
+        DeleteObject(hFont);
+        EndPaint(hWnd, &ps);
+        return 0;
+    }
+    return DefWindowProc(hWnd, uMsg, wParam, lParam);
+}
+
+VOID CALLBACK BrightnessOsdTimerProc(HWND hwnd, UINT uMsg, UINT_PTR idEvent,
+                                      DWORD dwTime) {
+    KillTimer(NULL, idEvent);
+    g_brightnessOsdTimer = 0;
+    if (g_hBrightnessOsdWnd)
+        ShowWindow(g_hBrightnessOsdWnd, SW_HIDE);
+}
+
+void ShowBrightnessOsd(int percentage) {
+    if (!g_settings.brightnessOsd)
+        return;
+
+    if (!g_hBrightnessOsdWnd) {
+        WNDCLASSEX wc = {sizeof(WNDCLASSEX)};
+        wc.lpfnWndProc = BrightnessOsdWndProc;
+        wc.hInstance = GetModuleHandle(NULL);
+        wc.lpszClassName = L"WindhawkScrollActionsBrightnessOSD";
+        RegisterClassEx(&wc);
+
+        g_hBrightnessOsdWnd = CreateWindowEx(
+            WS_EX_TOOLWINDOW | WS_EX_TOPMOST | WS_EX_NOACTIVATE |
+                WS_EX_LAYERED,
+            L"WindhawkScrollActionsBrightnessOSD", L"", WS_POPUP, 0, 0, 80, 36,
+            NULL, NULL, wc.hInstance, NULL);
+        SetLayeredWindowAttributes(g_hBrightnessOsdWnd, 0, 230, LWA_ALPHA);
+    }
+
+    g_brightnessOsdText = L"%" + std::to_wstring(percentage);
+
+    HFONT hFont =
+        CreateFont(22, 0, 0, 0, FW_BOLD, FALSE, FALSE, FALSE, DEFAULT_CHARSET,
+                   OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY,
+                   DEFAULT_PITCH, L"Segoe UI");
+
+    HDC hdc = GetDC(g_hBrightnessOsdWnd);
+    HFONT hOldFont = (HFONT)SelectObject(hdc, hFont);
+    SIZE size;
+    GetTextExtentPoint32(hdc, g_brightnessOsdText.c_str(),
+                         (int)g_brightnessOsdText.length(), &size);
+    SelectObject(hdc, hOldFont);
+    ReleaseDC(g_hBrightnessOsdWnd, hdc);
+    DeleteObject(hFont);
+
+    int width = size.cx + 24;
+
+    POINT pt;
+    GetCursorPos(&pt);
+    SetWindowPos(g_hBrightnessOsdWnd, HWND_TOPMOST, pt.x - width / 2,
+                 pt.y - 60, width, 36, SWP_NOACTIVATE | SWP_SHOWWINDOW);
+    InvalidateRect(g_hBrightnessOsdWnd, NULL, TRUE);
+
+    if (g_brightnessOsdTimer)
+        KillTimer(NULL, g_brightnessOsdTimer);
+    g_brightnessOsdTimer =
+        SetTimer(NULL, 1, g_settings.brightnessOsdDelay, BrightnessOsdTimerProc);
+}
+
+#pragma endregion  // brightness_osd
 
 #pragma region brightness
 
@@ -908,6 +1164,72 @@ cleanup:
 // VCP code 0x10 = Luminance (Brightness) per MCCS standard.
 
 bool AdjustBrightnessDdcCi(HMONITOR hMonitor, int delta) {
+    if (g_settings.softwareDimming) {
+        std::lock_guard<std::mutex> lock(g_swDimMutex);
+        auto& dimState = g_swDimMonitorStates[hMonitor];
+
+        DWORD numPhysical = 0;
+        if (!GetNumberOfPhysicalMonitorsFromHMONITOR(hMonitor, &numPhysical) ||
+            numPhysical == 0) {
+            return false;
+        }
+
+        std::vector<PHYSICAL_MONITOR> physical(numPhysical);
+        if (!GetPhysicalMonitorsFromHMONITOR(hMonitor, numPhysical,
+                                             physical.data())) {
+            return false;
+        }
+
+        bool anySuccess = false;
+
+        for (DWORD i = 0; i < numPhysical; i++) {
+            if (!dimState.initialized) {
+                DWORD dwMin = 0;
+                DWORD dwCurrent = 0;
+                DWORD dwMax = 0;
+                if (!GetMonitorBrightness(physical[i].hPhysicalMonitor, &dwMin,
+                                          &dwCurrent, &dwMax)) {
+                    continue;
+                }
+                dimState.currentCombined = static_cast<int>(dwCurrent);
+                dimState.minB = dwMin;
+                dimState.maxB = dwMax;
+                dimState.initialized = true;
+            }
+
+            int newCombined = dimState.currentCombined + delta;
+            if (newCombined > static_cast<int>(dimState.maxB))
+                newCombined = static_cast<int>(dimState.maxB);
+            if (newCombined < -100)
+                newCombined = -100;
+
+            if (newCombined != dimState.currentCombined) {
+                if (newCombined >= 0) {
+                    SetMonitorBrightness(physical[i].hPhysicalMonitor,
+                                         static_cast<DWORD>(newCombined));
+                } else if (dimState.currentCombined > 0) {
+                    SetMonitorBrightness(physical[i].hPhysicalMonitor,
+                                         dimState.minB);
+                }
+                dimState.currentCombined = newCombined;
+            }
+
+            SetSoftwareDimBrightness(hMonitor, newCombined);
+
+            if (g_hSwDimHiddenWnd) {
+                PostMessage(g_hSwDimHiddenWnd, WM_USER_SHOW_OSD,
+                            (WPARAM)newCombined, 0);
+            }
+
+            Wh_Log(L"DDC/CI+SwDim: combined %d (hw min %lu, max %lu)",
+                   newCombined, dimState.minB, dimState.maxB);
+            anySuccess = true;
+        }
+
+        DestroyPhysicalMonitors(numPhysical, physical.data());
+        return anySuccess;
+    }
+
     DWORD numPhysical = 0;
     if (!GetNumberOfPhysicalMonitorsFromHMONITOR(hMonitor, &numPhysical) ||
         numPhysical == 0) {
@@ -962,6 +1284,19 @@ void AdjustBrightnessThread(HMONITOR hMonitor, int delta) {
             if (!SetBrightnessWmi(newBrightness)) {
                 Wh_Log(L"Error setting brightness via WMI");
             }
+        } else if (g_settings.softwareDimming && hMonitor) {
+            Wh_Log(L"Hardware brightness unavailable, using software dimming");
+            std::lock_guard<std::mutex> lock(g_swDimMutex);
+            auto& dimState = g_swDimMonitorStates[hMonitor];
+            if (!dimState.initialized) {
+                dimState.currentCombined = 100;
+                dimState.initialized = true;
+            }
+            int newCombined = dimState.currentCombined + delta;
+            if (newCombined > 100) newCombined = 100;
+            if (newCombined < 0) newCombined = 0;
+            dimState.currentCombined = newCombined;
+            SetSoftwareDimBrightness(hMonitor, newCombined - 100);
         } else {
             Wh_Log(L"Error getting brightness via WMI");
         }
@@ -1190,6 +1525,28 @@ void InvokeScrollAction(HWND hWnd,
 
 ////////////////////////////////////////////////////////////
 
+int GetMonitorIndexForMonitor(HMONITOR hMon) {
+    if (!hMon) return 0;
+    struct EnumContext {
+        HMONITOR target;
+        int index;
+        int count;
+    } context = {hMon, 0, 0};
+
+    EnumDisplayMonitors(
+        NULL, NULL,
+        [](HMONITOR hMonitor, HDC, LPRECT, LPARAM lParam) -> BOOL {
+            EnumContext* ctx = (EnumContext*)lParam;
+            ctx->count++;
+            if (hMonitor == ctx->target) {
+                ctx->index = ctx->count;
+            }
+            return TRUE;
+        },
+        (LPARAM)&context);
+    return context.index;
+}
+
 bool OnMouseWheel(HWND hWnd, WPARAM wParam, LPARAM lParam) {
     if (GetCapture()) {
         return false;
@@ -1200,8 +1557,22 @@ bool OnMouseWheel(HWND hWnd, WPARAM wParam, LPARAM lParam) {
     pt.y = GET_Y_LPARAM(lParam);
 
     for (int i = 0; i < (int)g_settings.scrollActions.size(); i++) {
-        if (IsPointInsideEntryScrollArea(hWnd, pt,
-                                         g_settings.scrollActions[i])) {
+        const auto& entry = g_settings.scrollActions[i];
+
+        if (entry.monitorNum > 0) {
+            HMONITOR hMonitor = MonitorFromWindow(hWnd, MONITOR_DEFAULTTONULL);
+            if (!hMonitor || GetMonitorIndexForMonitor(hMonitor) != entry.monitorNum) {
+                continue;
+            }
+        }
+
+        if (entry.modifierKey != 0) {
+            if (!(GetAsyncKeyState(entry.modifierKey) & 0x8000)) {
+                continue;
+            }
+        }
+
+        if (IsPointInsideEntryScrollArea(hWnd, pt, entry)) {
             // Allows to steal focus.
             INPUT input;
             ZeroMemory(&input, sizeof(INPUT));
@@ -1534,10 +1905,30 @@ void LoadSettings() {
         entry.reverseScrollingDirection =
             Wh_GetIntSetting(L"ScrollActions[%d].reverseScrollingDirection", i);
 
+        entry.monitorNum = Wh_GetIntSetting(L"ScrollActions[%d].monitorNum", i);
+
+        PCWSTR modifierKey = Wh_GetStringSetting(L"ScrollActions[%d].modifierKey", i);
+        entry.modifierKey = 0;
+        if (wcscmp(modifierKey, L"ctrl") == 0) {
+            entry.modifierKey = VK_CONTROL;
+        } else if (wcscmp(modifierKey, L"shift") == 0) {
+            entry.modifierKey = VK_SHIFT;
+        } else if (wcscmp(modifierKey, L"alt") == 0) {
+            entry.modifierKey = VK_MENU;
+        } else if (wcscmp(modifierKey, L"win") == 0) {
+            entry.modifierKey = VK_LWIN;
+        }
+        Wh_FreeStringSetting(modifierKey);
+
         g_settings.scrollActions.push_back(std::move(entry));
     }
 
     g_settings.oldTaskbarOnWin11 = Wh_GetIntSetting(L"oldTaskbarOnWin11");
+    g_settings.softwareDimming = Wh_GetIntSetting(L"softwareDimming");
+    g_settings.brightnessOsd = Wh_GetIntSetting(L"brightnessOsd") != 0;
+    g_settings.brightnessOsdDelay = Wh_GetIntSetting(L"brightnessOsdDelay");
+    if (g_settings.brightnessOsdDelay <= 0)
+        g_settings.brightnessOsdDelay = 1500;
 }
 
 bool IsExplorerPatcherModule(HMODULE module) {
@@ -1644,6 +2035,8 @@ BOOL Wh_ModInit() {
                                        LoadLibraryExW_Hook,
                                        &LoadLibraryExW_Original);
 
+    g_pSwDimThread = new std::thread(SwDimMessageThread);
+
     g_initialized = true;
 
     return TRUE;
@@ -1675,6 +2068,16 @@ void Wh_ModUninit() {
         for (HWND hSecondaryWnd : g_secondaryTaskbarWindows) {
             UnsubclassTaskbarWindow(hSecondaryWnd);
         }
+    }
+
+    if (g_dwSwDimThreadId) {
+        PostThreadMessage(g_dwSwDimThreadId, WM_QUIT, 0, 0);
+    }
+    if (g_pSwDimThread) {
+        if (g_pSwDimThread->joinable())
+            g_pSwDimThread->join();
+        delete g_pSwDimThread;
+        g_pSwDimThread = nullptr;
     }
 
     MicVolUninit();
