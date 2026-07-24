@@ -9243,6 +9243,13 @@ struct ClickThroughTaskbarState {
     // Quantized signature of the last applied region, to skip redundant work on
     // the frequent LayoutUpdated event.
     std::vector<long long> lastRegionSignature;
+    // Bounding box (in window coordinates) of the region last applied via
+    // SetWindowRgn. The signature captures only XAML-derived inputs, so it can't
+    // tell that the region was reset out from under us: toggling auto-hide makes
+    // Explorer clear the taskbar window region (and later set a full-window one)
+    // with no XAML layout change. Comparing the window's current region box
+    // against this detects that and forces a reapply.
+    RECT lastAppliedRgnBox = {};
 };
 
 thread_local std::list<ClickThroughTaskbarState> g_clickThroughTaskbarState;
@@ -9279,6 +9286,13 @@ struct ClickThroughIslandRoot {
 };
 
 thread_local std::list<ClickThroughIslandRoot> g_clickThroughIslandRoots;
+
+// Top-level taskbar windows subclassed for click-through, tracked so each is
+// subclassed once and released on cleanup. The subclass reapplies the clip
+// region as soon as the window moves or is shown (e.g. an auto-hidden taskbar
+// sliding into view), since Explorer resets the region across auto-hide state
+// changes and the XAML LayoutUpdated event can lag well behind that.
+thread_local std::unordered_set<HWND> g_clickThroughSubclassedWindows;
 
 // Find the island native window whose root content shares the given XamlRoot.
 // Reaps entries whose source has been destroyed. Returns nullptr if not found
@@ -13565,10 +13579,19 @@ void UpdateClickThroughRegion(ClickThroughTaskbarState& state) {
     signature.push_back(QuantizeLayoutSize(scale * 100));
     appendRect(signature, taskbarFrameRect);
     appendRect(signature, systemTrayFrameRect);
+
+    // Skip the redundant SetWindowRgn (and the redraw it forces) only when the
+    // desired region is unchanged AND the window still carries the region we
+    // applied. Toggling auto-hide makes Explorer reset the taskbar window region
+    // without any XAML layout change, so a matching signature alone doesn't
+    // prove our region is still in effect.
     if (signature == state.lastRegionSignature) {
-        return;
+        RECT currentRgnBox;
+        if (GetWindowRgnBox(topLevelWnd, &currentRgnBox) != ERROR &&
+            EqualRect(&currentRgnBox, &state.lastAppliedRgnBox)) {
+            return;
+        }
     }
-    state.lastRegionSignature = signature;
 
     // Convert DIP rects to physical pixels in top-level window coordinates. The
     // island client origin and the window rect are both physical/screen pixels,
@@ -13604,21 +13627,88 @@ void UpdateClickThroughRegion(ClickThroughTaskbarState& state) {
         return;
     }
 
+    RECT rgnBox = tf;
+
     if (systemTrayFrameRect) {
         RECT st = toWindowRect(*systemTrayFrameRect);
         if (HRGN trayRgn =
                 CreateRectRgn(st.left, st.top, st.right, st.bottom)) {
             CombineRgn(rgn, rgn, trayRgn, RGN_OR);
             DeleteObject(trayRgn);
+            UnionRect(&rgnBox, &rgnBox, &st);
         }
     }
 
     Wh_Log(L"Applying region to %08X", (DWORD)(ULONG_PTR)topLevelWnd);
 
-    // SetWindowRgn takes ownership of the region on success.
-    if (!SetWindowRgn(topLevelWnd, rgn, TRUE)) {
+    // SetWindowRgn takes ownership of the region on success. Record what was
+    // applied only then, so a failed apply is retried on the next pass.
+    if (SetWindowRgn(topLevelWnd, rgn, TRUE)) {
+        state.lastRegionSignature = std::move(signature);
+        state.lastAppliedRgnBox = rgnBox;
+    } else {
         Wh_Log(L"SetWindowRgn failed for %08X", (DWORD)(ULONG_PTR)topLevelWnd);
         DeleteObject(rgn);
+    }
+}
+
+// Reapply the click-through clip for the taskbar window rooted at topLevelWnd.
+// UpdateClickThroughRegion is a no-op when the clip is already correct, so this
+// is cheap to call on every window move.
+void ReapplyClickThroughForTopLevel(HWND topLevelWnd) {
+    for (auto& entry : g_clickThroughTaskbarState) {
+        if (entry.islandHwnd &&
+            GetAncestor(entry.islandHwnd, GA_ROOT) == topLevelWnd) {
+            UpdateClickThroughRegion(entry);
+        }
+    }
+}
+
+LRESULT CALLBACK ClickThroughTaskbarSubclassProc(HWND hWnd,
+                                                 UINT uMsg,
+                                                 WPARAM wParam,
+                                                 LPARAM lParam,
+                                                 DWORD_PTR) {
+    switch (uMsg) {
+        case WM_WINDOWPOSCHANGED: {
+            // The taskbar moved or was shown - e.g. an auto-hidden taskbar
+            // sliding into view, or auto-hide being toggled. Explorer resets
+            // the window region across these transitions, so reapply the clip
+            // now rather than waiting for the next XAML layout pass.
+            LRESULT result = DefSubclassProc(hWnd, uMsg, wParam, lParam);
+            ReapplyClickThroughForTopLevel(hWnd);
+            return result;
+        }
+
+        case WM_NCDESTROY:
+            g_clickThroughSubclassedWindows.erase(hWnd);
+            break;
+    }
+
+    return DefSubclassProc(hWnd, uMsg, wParam, lParam);
+}
+
+// Subclass the taskbar's top-level window so the clip is reapplied as soon as
+// the window moves or is shown (e.g. an auto-hidden taskbar sliding into view),
+// which Explorer accompanies by resetting the window region. Idempotent; the
+// top-level window is resolved from the island once it is known.
+void EnsureClickThroughSubclass(ClickThroughTaskbarState& state) {
+    if (!state.islandHwnd) {
+        return;
+    }
+
+    HWND topLevelWnd = GetAncestor(state.islandHwnd, GA_ROOT);
+    if (!topLevelWnd || !IsTaskbarTopLevelWindow(topLevelWnd)) {
+        return;
+    }
+
+    if (g_clickThroughSubclassedWindows.contains(topLevelWnd)) {
+        return;
+    }
+
+    if (WindhawkUtils::SetWindowSubclassFromAnyThread(
+            topLevelWnd, ClickThroughTaskbarSubclassProc, 0)) {
+        g_clickThroughSubclassedWindows.insert(topLevelWnd);
     }
 }
 
@@ -13670,11 +13760,13 @@ void HandleClickThroughElement(FrameworkElement element) {
                 }
                 if (auto* state = GetClickThroughState(strongXamlRoot)) {
                     UpdateClickThroughRegion(*state);
+                    EnsureClickThroughSubclass(*state);
                 }
             });
     }
 
     UpdateClickThroughRegion(*state);
+    EnsureClickThroughSubclass(*state);
 }
 
 // The XAML island root reports as a DesktopWindowXamlSource (not a
@@ -14816,6 +14908,12 @@ void UninitializeForCurrentThread() {
         g_clickThroughTaskbarState.clear();
     }
     g_clickThroughIslandRoots.clear();
+
+    for (HWND hWnd : g_clickThroughSubclassedWindows) {
+        WindhawkUtils::RemoveWindowSubclassFromAnyThread(
+            hWnd, ClickThroughTaskbarSubclassProc);
+    }
+    g_clickThroughSubclassedWindows.clear();
 
     // Clear failed image brushes list for this thread (revokers will
     // automatically unregister).
