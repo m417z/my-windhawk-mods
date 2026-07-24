@@ -9294,6 +9294,8 @@ thread_local std::list<ClickThroughIslandRoot> g_clickThroughIslandRoots;
 // changes and the XAML LayoutUpdated event can lag well behind that.
 thread_local std::unordered_set<HWND> g_clickThroughSubclassedWindows;
 
+thread_local bool g_applyingClickThroughRegion = false;
+
 // Find the island native window whose root content shares the given XamlRoot.
 // Reaps entries whose source has been destroyed. Returns nullptr if not found
 // yet (the island's content may not be attached at the time of the call).
@@ -13642,8 +13644,13 @@ void UpdateClickThroughRegion(ClickThroughTaskbarState& state) {
     Wh_Log(L"Applying region to %08X", (DWORD)(ULONG_PTR)topLevelWnd);
 
     // SetWindowRgn takes ownership of the region on success. Record what was
-    // applied only then, so a failed apply is retried on the next pass.
-    if (SetWindowRgn(topLevelWnd, rgn, TRUE)) {
+    // applied only then, so a failed apply is retried on the next pass. The call
+    // sends WM_WINDOWPOSCHANGED synchronously; the guard stops the subclass from
+    // reentering and reapplying mid-call.
+    g_applyingClickThroughRegion = true;
+    BOOL applied = SetWindowRgn(topLevelWnd, rgn, TRUE);
+    g_applyingClickThroughRegion = false;
+    if (applied) {
         state.lastRegionSignature = std::move(signature);
         state.lastAppliedRgnBox = rgnBox;
     } else {
@@ -13674,9 +13681,13 @@ LRESULT CALLBACK ClickThroughTaskbarSubclassProc(HWND hWnd,
             // The taskbar moved or was shown - e.g. an auto-hidden taskbar
             // sliding into view, or auto-hide being toggled. Explorer resets
             // the window region across these transitions, so reapply the clip
-            // now rather than waiting for the next XAML layout pass.
+            // now rather than waiting for the next XAML layout pass. Ignore the
+            // notification our own SetWindowRgn raises, to avoid reentering the
+            // region update.
             LRESULT result = DefSubclassProc(hWnd, uMsg, wParam, lParam);
-            ReapplyClickThroughForTopLevel(hWnd);
+            if (!g_applyingClickThroughRegion) {
+                ReapplyClickThroughForTopLevel(hWnd);
+            }
             return result;
         }
 
@@ -14899,6 +14910,16 @@ void UninitializeResourceVariables() {
 }
 
 void UninitializeForCurrentThread() {
+    // Drop the click-through subclasses before restoring the windows below.
+    // ClearClickThroughRegions calls SetWindowRgn, which sends
+    // WM_WINDOWPOSCHANGED synchronously, and a still-attached subclass would
+    // reapply the very region being cleared.
+    for (HWND hWnd : g_clickThroughSubclassedWindows) {
+        WindhawkUtils::RemoveWindowSubclassFromAnyThread(
+            hWnd, ClickThroughTaskbarSubclassProc);
+    }
+    g_clickThroughSubclassedWindows.clear();
+
     // Restore taskbars clipped for click-through, then drop tracking (revokers
     // auto-unhook LayoutUpdated). Skip the region reset when nothing was
     // tracked, to avoid an unnecessary taskbar redraw on unrelated settings
@@ -14908,12 +14929,6 @@ void UninitializeForCurrentThread() {
         g_clickThroughTaskbarState.clear();
     }
     g_clickThroughIslandRoots.clear();
-
-    for (HWND hWnd : g_clickThroughSubclassedWindows) {
-        WindhawkUtils::RemoveWindowSubclassFromAnyThread(
-            hWnd, ClickThroughTaskbarSubclassProc);
-    }
-    g_clickThroughSubclassedWindows.clear();
 
     // Clear failed image brushes list for this thread (revokers will
     // automatically unregister).
