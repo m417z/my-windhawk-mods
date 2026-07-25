@@ -17,6 +17,7 @@
 // @exclude         StartMenuExperienceHost.exe
 // @exclude         msedgewebview2.exe
 // @exclude         windhawk.exe
+// @exclude         windhawk-ui.exe
 // @exclude         *\UI\VSCodium.exe
 // @compilerOptions -lole32 -loleaut32 -lpropsys
 // ==/WindhawkMod==
