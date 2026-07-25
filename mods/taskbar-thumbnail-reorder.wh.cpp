@@ -49,7 +49,6 @@ check out [7+ Taskbar Tweaker](https://tweaker.ramensoftware.com/).
 #include <psapi.h>
 
 #include <atomic>
-#include <cmath>
 #include <functional>
 #include <optional>
 #include <vector>
@@ -233,7 +232,8 @@ bool MoveTaskInTaskList(HWND hMMTaskListWnd,
                         void* lpMMTaskListLongPtr,
                         void* taskGroup,
                         void* taskItemFrom,
-                        void* taskItemTo) {
+                        void* taskItemTo,
+                        const std::vector<void*>& taskItemsToReposition) {
     void* taskBtnGroup = CTaskListWnd__GetTBGroupFromGroup(lpMMTaskListLongPtr,
                                                            taskGroup, nullptr);
     if (!taskBtnGroup) {
@@ -300,18 +300,26 @@ bool MoveTaskInTaskList(HWND hMMTaskListWnd,
             SendMessage(hThumbnailWnd, WM_SETREDRAW, FALSE, 0);
         }
 
-        g_taskItemFilterDisallowAll = true;
-
         void* pThis_ITaskListUI = QueryViaVtable(
             lpMMTaskListLongPtr, CTaskListWnd_vftable_ITaskListUI);
 
-        CTaskListWnd_TaskInclusionChanged(pThis_ITaskListUI, taskGroup,
-                                          taskItemTo);
+        // Reposition every task item that shifted because of the move. Each
+        // item is first removed from its old slot, with the filter disallowing
+        // all items, and then re-added at its new slot. The dragged item is not
+        // part of this set, so its "Pressed" visual state is preserved.
+        g_taskItemFilterDisallowAll = true;
+
+        for (void* taskItem : taskItemsToReposition) {
+            CTaskListWnd_TaskInclusionChanged(pThis_ITaskListUI, taskGroup,
+                                              taskItem);
+        }
 
         g_taskItemFilterDisallowAll = false;
 
-        CTaskListWnd_TaskInclusionChanged(pThis_ITaskListUI, taskGroup,
-                                          taskItemTo);
+        for (void* taskItem : taskItemsToReposition) {
+            CTaskListWnd_TaskInclusionChanged(pThis_ITaskListUI, taskGroup,
+                                              taskItem);
+        }
 
         if (hThumbnailWnd) {
             SendMessage(hThumbnailWnd, WM_SETREDRAW, TRUE, 0);
@@ -354,7 +362,10 @@ HDPA GetTaskItemsArray(void* taskGroup) {
     return (HDPA)((void**)taskGroup)[offset];
 }
 
-bool MoveTaskInGroup(void* taskGroup, void* taskItemFrom, void* taskItemTo) {
+bool MoveTaskInGroup(void* taskGroup,
+                     void* taskItemFrom,
+                     void* taskItemTo,
+                     const std::vector<void*>& taskItemsToReposition) {
     HDPA taskItemsArray = GetTaskItemsArray(taskGroup);
     if (!taskItemsArray) {
         return false;
@@ -397,8 +408,9 @@ bool MoveTaskInGroup(void* taskGroup, void* taskItemFrom, void* taskItemTo) {
     }
     taskItems[indexTo] = taskItemTemp;
 
-    auto taskbarEnumProc = [taskGroup, taskItemFrom, taskItemTo](
-                               HWND hMMTaskbarWnd, bool secondary) {
+    auto taskbarEnumProc = [taskGroup, taskItemFrom, taskItemTo,
+                            &taskItemsToReposition](HWND hMMTaskbarWnd,
+                                                    bool secondary) {
         HWND hMMTaskSwWnd;
         if (!secondary) {
             hMMTaskSwWnd = (HWND)GetProp(hMMTaskbarWnd, L"TaskbandHWND");
@@ -420,7 +432,8 @@ bool MoveTaskInGroup(void* taskGroup, void* taskItemFrom, void* taskItemTo) {
         void* lpMMTaskListLongPtr = (void*)GetWindowLongPtr(hMMTaskListWnd, 0);
 
         if (!MoveTaskInTaskList(hMMTaskListWnd, lpMMTaskListLongPtr, taskGroup,
-                                taskItemFrom, taskItemTo)) {
+                                taskItemFrom, taskItemTo,
+                                taskItemsToReposition)) {
             Wh_Log(L"Failed to move task item in taskbar %08X",
                    (DWORD)(DWORD_PTR)hMMTaskListWnd);
         }
@@ -471,9 +484,26 @@ bool MoveItemsFromThumbnail(void* lpMMThumbnailLongPtr,
         return false;
     }
 
+    // Collect, in thumbnail order, the task items that shift because of the
+    // move: from the thumbnail past the source up to and including the target.
+    // The dragged source thumbnail is excluded so its drag state is preserved
+    // (see MoveTaskInTaskList).
+    std::vector<void*> taskItemsToReposition;
+    int step = indexFrom < indexTo ? 1 : -1;
+    for (int i = indexFrom + step; i != indexTo + step; i += step) {
+        void* taskItem =
+            CTaskListThumbnailWnd__GetTaskItem(lpMMThumbnailLongPtr, i);
+        if (!taskItem) {
+            Wh_Log(L"Failed to get task item");
+            return false;
+        }
+
+        taskItemsToReposition.push_back(taskItem);
+    }
+
     if (!MoveTaskInGroup(
             CTaskListThumbnailWnd_GetTaskGroup(lpMMThumbnailLongPtr),
-            taskItemFrom, taskItemTo)) {
+            taskItemFrom, taskItemTo, taskItemsToReposition)) {
         Wh_Log(L"Failed to move task item");
         return false;
     }
@@ -763,24 +793,6 @@ bool IsPointerInsideElement(const UIElement& element,
 }
 
 void MoveItemsFromXAMLThumbnail(int indexFrom, int indexTo) {
-    // New builds (around 10.0.26100.8544) added animations to thumbnails. One
-    // side effect is that the previous method of calling
-    // CTaskListWnd_TaskInclusionChanged(taskItemFrom) now clears the "Pressed"
-    // visual state of the source thumbnail, which breaks the dragging after a
-    // single reorder.
-    //
-    // As a workaround, we now use CTaskListWnd_TaskInclusionChanged(taskItemTo)
-    // instead, which repositions the target thumbnail instead of the source
-    // thumbnail. This only works if the target thumbnail is adjacent to the
-    // source thumbnail, because otherwise all the items between the source and
-    // target have to be repositioned, and it's probably not worth the effort.
-    int indexDistance = std::abs(indexFrom - indexTo);
-    if (indexDistance != 1) {
-        Wh_Log(L"Only adjacent thumbnail moves are supported (distance %d)",
-               indexDistance);
-        return;
-    }
-
     Wh_Log(L"Moving from %d to %d", indexFrom, indexTo);
 
     auto thumbnails = g_TaskGroup_Thumbnails.get();
@@ -803,38 +815,42 @@ void MoveItemsFromXAMLThumbnail(int indexFrom, int indexTo) {
         return;
     }
 
+    // Maps a thumbnail's ABI pointer to its task item and task group.
+    auto lookupTaskItem = [](void* thumbnailPtr, void** taskItem,
+                             void** taskGroup) -> bool {
+        for (const auto& iter : g_thumbnailTaskItemMapping) {
+            auto thumbnail = iter.thumbnail.get();
+            if (!thumbnail) {
+                continue;
+            }
+
+            if (winrt::get_abi(thumbnail) == thumbnailPtr) {
+                *taskItem = iter.taskItem;
+                *taskGroup = iter.taskGroup;
+                return true;
+            }
+        }
+
+        return false;
+    };
+
     winrt::com_ptr<IUnknown> from;
     TaskItemThumbnail_GetAt_Original(&thumbnailsPtr, from.put_void(),
                                      indexFrom);
 
+    void* taskItemFrom = nullptr;
+    void* taskGroupFrom = nullptr;
+    if (!lookupTaskItem(from.get(), &taskItemFrom, &taskGroupFrom)) {
+        Wh_Log(L"Task item/group not found");
+        return;
+    }
+
     winrt::com_ptr<IUnknown> to;
     TaskItemThumbnail_GetAt_Original(&thumbnailsPtr, to.put_void(), indexTo);
 
-    void* taskItemFrom = nullptr;
-    void* taskGroupFrom = nullptr;
     void* taskItemTo = nullptr;
     void* taskGroupTo = nullptr;
-
-    for (const auto& iter : g_thumbnailTaskItemMapping) {
-        auto thumbnail = iter.thumbnail.get();
-        if (!thumbnail) {
-            continue;
-        }
-
-        void* thumbnailPtr = winrt::get_abi(thumbnail);
-
-        if (thumbnailPtr == from.get()) {
-            taskItemFrom = iter.taskItem;
-            taskGroupFrom = iter.taskGroup;
-        }
-
-        if (thumbnailPtr == to.get()) {
-            taskItemTo = iter.taskItem;
-            taskGroupTo = iter.taskGroup;
-        }
-    }
-
-    if (!taskItemFrom || !taskGroupFrom || !taskItemTo || !taskGroupTo) {
+    if (!lookupTaskItem(to.get(), &taskItemTo, &taskGroupTo)) {
         Wh_Log(L"Task item/group not found");
         return;
     }
@@ -844,7 +860,34 @@ void MoveItemsFromXAMLThumbnail(int indexFrom, int indexTo) {
         return;
     }
 
-    if (!MoveTaskInGroup(taskGroupFrom, taskItemFrom, taskItemTo)) {
+    // Collect, in thumbnail order, the task items that shift because of the
+    // move: from the thumbnail past the source up to and including the target.
+    // The dragged source thumbnail is excluded so its "Pressed" state is
+    // preserved (see MoveTaskInTaskList).
+    std::vector<void*> taskItemsToReposition;
+    int step = indexFrom < indexTo ? 1 : -1;
+    for (int i = indexFrom + step; i != indexTo + step; i += step) {
+        winrt::com_ptr<IUnknown> thumbnail;
+        TaskItemThumbnail_GetAt_Original(&thumbnailsPtr, thumbnail.put_void(),
+                                         i);
+
+        void* taskItem = nullptr;
+        void* taskGroup = nullptr;
+        if (!lookupTaskItem(thumbnail.get(), &taskItem, &taskGroup)) {
+            Wh_Log(L"Task item/group not found");
+            return;
+        }
+
+        if (taskGroup != taskGroupFrom) {
+            Wh_Log(L"Task group differs");
+            return;
+        }
+
+        taskItemsToReposition.push_back(taskItem);
+    }
+
+    if (!MoveTaskInGroup(taskGroupFrom, taskItemFrom, taskItemTo,
+                         taskItemsToReposition)) {
         Wh_Log(L"Failed to move task item");
         return;
     }
