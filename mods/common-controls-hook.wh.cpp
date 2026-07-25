@@ -8,6 +8,13 @@
 // @twitter         https://twitter.com/m417z
 // @homepage        https://m417z.com/
 // @include         *
+// @exclude         conhost.exe
+// @exclude         backgroundTaskHost.exe
+// @exclude         LockApp.exe
+// @exclude         SearchHost.exe
+// @exclude         ShellExperienceHost.exe
+// @exclude         StartMenuExperienceHost.exe
+// @exclude         msedgewebview2.exe
 // @license         MIT
 // ==/WindhawkMod==
 
