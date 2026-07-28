@@ -272,13 +272,12 @@ bool IsPinnedClusterButton(SystemButton button) {
            (button == SystemButton::Search || button == SystemButton::TaskView);
 }
 
-// The width of a cluster button. The search button's own ActualWidth is
-// unreliable while collapsed (the negative right margin reinforces its old
-// width), so use its content child's DesiredSize. Start and task view are
-// fixed-width, so ActualWidth is fine.
+// The width a cluster button takes up when it's not collapsed. ActualWidth
+// can't be used: it includes the collapse margin (-width), so it never drops
+// below it and grows on every layout pass. The content child's DesiredSize
+// doesn't depend on the button's own margin.
 double GetClusterButtonWidth(FrameworkElement element) {
-    if (IdentifySystemButton(element) == SystemButton::Search &&
-        Media::VisualTreeHelper::GetChildrenCount(element) > 0) {
+    if (Media::VisualTreeHelper::GetChildrenCount(element) > 0) {
         auto child = Media::VisualTreeHelper::GetChild(element, 0)
                          .try_as<FrameworkElement>();
         if (child) {
