@@ -9244,11 +9244,11 @@ struct ClickThroughTaskbarState {
     // the frequent LayoutUpdated event.
     std::vector<long long> lastRegionSignature;
     // Bounding box (in window coordinates) of the region last applied via
-    // SetWindowRgn. The signature captures only XAML-derived inputs, so it can't
-    // tell that the region was reset out from under us: toggling auto-hide makes
-    // Explorer clear the taskbar window region (and later set a full-window one)
-    // with no XAML layout change. Comparing the window's current region box
-    // against this detects that and forces a reapply.
+    // SetWindowRgn. The signature captures only XAML-derived inputs, so it
+    // can't tell that the region was reset out from under us: toggling
+    // auto-hide makes Explorer clear the taskbar window region (and later set a
+    // full-window one) with no XAML layout change. Comparing the window's
+    // current region box against this detects that and forces a reapply.
     RECT lastAppliedRgnBox = {};
 };
 
@@ -13584,9 +13584,9 @@ void UpdateClickThroughRegion(ClickThroughTaskbarState& state) {
 
     // Skip the redundant SetWindowRgn (and the redraw it forces) only when the
     // desired region is unchanged AND the window still carries the region we
-    // applied. Toggling auto-hide makes Explorer reset the taskbar window region
-    // without any XAML layout change, so a matching signature alone doesn't
-    // prove our region is still in effect.
+    // applied. Toggling auto-hide makes Explorer reset the taskbar window
+    // region without any XAML layout change, so a matching signature alone
+    // doesn't prove our region is still in effect.
     if (signature == state.lastRegionSignature) {
         RECT currentRgnBox;
         if (GetWindowRgnBox(topLevelWnd, &currentRgnBox) != ERROR &&
@@ -13644,9 +13644,9 @@ void UpdateClickThroughRegion(ClickThroughTaskbarState& state) {
     Wh_Log(L"Applying region to %08X", (DWORD)(ULONG_PTR)topLevelWnd);
 
     // SetWindowRgn takes ownership of the region on success. Record what was
-    // applied only then, so a failed apply is retried on the next pass. The call
-    // sends WM_WINDOWPOSCHANGED synchronously; the guard stops the subclass from
-    // reentering and reapplying mid-call.
+    // applied only then, so a failed apply is retried on the next pass. The
+    // call sends WM_WINDOWPOSCHANGED synchronously; the guard stops the
+    // subclass from reentering and reapplying mid-call.
     g_applyingClickThroughRegion = true;
     BOOL applied = SetWindowRgn(topLevelWnd, rgn, TRUE);
     g_applyingClickThroughRegion = false;
