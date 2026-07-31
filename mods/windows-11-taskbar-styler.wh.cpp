@@ -9168,7 +9168,7 @@ thread_local std::list<
               winrt::Windows::Foundation::IAsyncOperation<bool>>>
     g_delayedBackgroundFillSet;
 
-// An ImageBrush with a remote source fails to load when the taskbar starts
+// An ImageBrush with a remote source fails to load when the process starts
 // before the network is up. Such brushes are tracked so that the load can be
 // retried once there's internet access. Only a brush which has no image is
 // retried, so replacing its source has nothing to hide, and the source is never
