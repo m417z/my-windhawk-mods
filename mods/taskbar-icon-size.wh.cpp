@@ -129,7 +129,6 @@ bool g_inAugmentedEntryPointButton_UpdateButtonPadding;
 
 double* double_48_value_Original;
 
-WINUSERAPI UINT WINAPI GetDpiForWindow(HWND hwnd);
 typedef enum MONITOR_DPI_TYPE {
     MDT_EFFECTIVE_DPI = 0,
     MDT_ANGULAR_DPI = 1,
@@ -1806,9 +1805,29 @@ auto WINAPI SHAppBarMessage_Hook(DWORD dwMessage, PAPPBARDATA pData) {
     if (dwMessage == ABM_QUERYPOS && ret && !IsVerticalTaskbar() &&
         g_taskbarHeight) {
         Wh_Log(L">");
-        pData->rc.top =
-            pData->rc.bottom -
-            MulDiv(g_taskbarHeight, GetDpiForWindow(pData->hWnd), 96);
+
+        HMONITOR monitor = (HMONITOR)GetProp(pData->hWnd, L"TaskbarMonitor");
+        UINT dpiX = 0;
+        UINT dpiY = 0;
+
+        if (monitor) {
+            GetDpiForMonitor(monitor, MDT_DEFAULT, &dpiX, &dpiY);
+        }
+
+        if (dpiY) {
+            pData->rc.top =
+                pData->rc.bottom - MulDiv(g_taskbarHeight, dpiY, 96);
+        } else {
+            Wh_Log(
+                L"Error: Can't get monitor DPI: monitor=%p, window=%08X (%s)",
+                monitor, (DWORD)(DWORD_PTR)pData->hWnd,
+                [pData] {
+                    WCHAR className[64] = L"";
+                    GetClassName(pData->hWnd, className, ARRAYSIZE(className));
+                    return std::wstring(className);
+                }()
+                    .c_str());
+        }
     }
 
     return ret;
@@ -1895,10 +1914,29 @@ void ApplySettings(int taskbarHeight) {
            (DWORD)(DWORD_PTR)hTaskbarWnd);
 
     if (!g_taskbarHeight) {
+        g_taskbarHeight = g_originalTaskbarHeight;
+    }
+
+    if (!g_taskbarHeight) {
         RECT taskbarRect{};
         GetWindowRect(hTaskbarWnd, &taskbarRect);
-        g_taskbarHeight = MulDiv(taskbarRect.bottom - taskbarRect.top, 96,
-                                 GetDpiForWindow(hTaskbarWnd));
+
+        HMONITOR monitor = (HMONITOR)GetProp(hTaskbarWnd, L"TaskbarMonitor");
+        UINT dpiX = 0;
+        UINT dpiY = 0;
+
+        if (monitor) {
+            GetDpiForMonitor(monitor, MDT_DEFAULT, &dpiX, &dpiY);
+        }
+
+        if (!dpiY) {
+            Wh_Log(L"Error: Can't get monitor DPI: monitor=%p, window=%08X",
+                   monitor, (DWORD)(DWORD_PTR)hTaskbarWnd);
+            dpiY = 96;
+        }
+
+        g_taskbarHeight =
+            MulDiv(taskbarRect.bottom - taskbarRect.top, 96, dpiY);
     }
 
     g_applyingSettings = true;
