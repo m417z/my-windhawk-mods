@@ -886,22 +886,24 @@ void WINAPI ExperienceToggleButton_UpdateButtonPadding_Hook(void* pThis) {
     }
 }
 
-// The start button context menu is centered over the start button or aligned
-// to its leading edge depending on the taskbar alignment (TaskbarFrame's
+// The start button context menu is centered over the start button or aligned to
+// its leading edge depending on the taskbar alignment (TaskbarFrame's
 // Alignment, where Left=0 and Center=1). Both the placement mode and the anchor
 // position are derived from it. With the start button forced to the left, the
 // menu should align to the button's leading edge, so report left alignment
 // while the menu is being shown, letting the taskbar's own left-alignment code
 // position the menu.
-using TaskbarFrame_Alignment_t = int(WINAPI*)(void* pThis);
-TaskbarFrame_Alignment_t TaskbarFrame_Alignment_Original;
-int WINAPI TaskbarFrame_Alignment_Hook(void* pThis) {
-    if (!g_unloading && g_settings.startMenuOnTheLeft &&
+using TaskbarFrame_get_Alignment_t = HRESULT(WINAPI*)(void* pThis,
+                                                      int* alignment);
+TaskbarFrame_get_Alignment_t TaskbarFrame_get_Alignment_Original;
+HRESULT WINAPI TaskbarFrame_get_Alignment_Hook(void* pThis, int* alignment) {
+    HRESULT hr = TaskbarFrame_get_Alignment_Original(pThis, alignment);
+    if (SUCCEEDED(hr) && !g_unloading && g_settings.startMenuOnTheLeft &&
         g_inShowStartButtonContextMenu) {
-        return 0;  // TaskbarAlignment::Left
+        *alignment = 0;  // TaskbarAlignment::Left
     }
 
-    return TaskbarFrame_Alignment_Original(pThis);
+    return hr;
 }
 
 // The alignment above is read while the context menu coroutine resumes (after
@@ -971,9 +973,9 @@ bool HookTaskbarViewDllSymbols(HMODULE module) {
             ExperienceToggleButton_UpdateButtonPadding_Hook,
         },
         {
-            {LR"(public: enum winrt::WindowsUdk::UI::Shell::TaskbarAlignment __cdecl winrt::Taskbar::implementation::TaskbarFrame::Alignment(void)const )"},
-            &TaskbarFrame_Alignment_Original,
-            TaskbarFrame_Alignment_Hook,
+            {LR"(public: virtual int __cdecl winrt::impl::produce<struct winrt::Taskbar::implementation::TaskbarFrame,struct winrt::Taskbar::ITaskbarFrame>::get_Alignment(int *))"},
+            &TaskbarFrame_get_Alignment_Original,
+            TaskbarFrame_get_Alignment_Hook,
         },
         {
             {LR"(static  winrt::Taskbar::implementation::ContextMenus::ShowStartButtonContextMenuAsync$_ResumeCoro$1())"},
