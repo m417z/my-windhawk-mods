@@ -414,6 +414,13 @@ auto resourceOperationCountScope() {
         [](auto resourceOperationCount) { (*resourceOperationCount)--; }};
 }
 
+using RtlDllShutdownInProgress_t = BOOLEAN(NTAPI*)();
+RtlDllShutdownInProgress_t pRtlDllShutdownInProgress;
+
+bool IsShutdownInProgress() {
+    return pRtlDllShutdownInProgress && pRtlDllShutdownInProgress();
+}
+
 constexpr WCHAR kClearCachePromptTitle[] = L"Resource Redirect - Windhawk";
 constexpr WCHAR kClearCachePromptText[] =
     L"For some icons to be updated, the icon cache must be cleared. Do you "
@@ -887,6 +894,12 @@ UINT WINAPI PrivateExtractIconsW_Hook(LPCWSTR szFileName,
                                       UINT* piconid,
                                       UINT nIcons,
                                       UINT flags) {
+    if (IsShutdownInProgress()) {
+        return PrivateExtractIconsW_Original(szFileName, nIconIndex, cxIcon,
+                                             cyIcon, phicon, piconid, nIcons,
+                                             flags);
+    }
+
     auto resOp = resourceOperationCountScope();
     DWORD c = ++g_operationCounter;
 
@@ -1090,6 +1103,10 @@ HANDLE LoadImageAW_Hook(HINSTANCE hInst,
                         int cx,
                         int cy,
                         UINT fuLoad) {
+    if (IsShutdownInProgress()) {
+        return (*Original)(hInst, name, type, cx, cy, fuLoad);
+    }
+
     auto resOp = resourceOperationCountScope();
     DWORD c = ++g_operationCounter;
 
@@ -1250,6 +1267,10 @@ HANDLE WINAPI LoadImageW_Hook(HINSTANCE hInst,
 
 template <auto* Original, typename T>
 HICON LoadIconAW_Hook(HINSTANCE hInstance, const T* lpIconName) {
+    if (IsShutdownInProgress()) {
+        return (*Original)(hInstance, lpIconName);
+    }
+
     auto resOp = resourceOperationCountScope();
     DWORD c = ++g_operationCounter;
 
@@ -1301,6 +1322,10 @@ HICON WINAPI LoadIconW_Hook(HINSTANCE hInstance, LPCWSTR lpIconName) {
 
 template <auto* Original, typename T>
 HCURSOR LoadCursorAW_Hook(HINSTANCE hInstance, const T* lpCursorName) {
+    if (IsShutdownInProgress()) {
+        return (*Original)(hInstance, lpCursorName);
+    }
+
     auto resOp = resourceOperationCountScope();
     DWORD c = ++g_operationCounter;
 
@@ -1353,6 +1378,10 @@ HCURSOR WINAPI LoadCursorW_Hook(HINSTANCE hInstance, LPCWSTR lpCursorName) {
 
 template <auto* Original, typename T>
 HBITMAP LoadBitmapAW_Hook(HINSTANCE hInstance, const T* lpBitmapName) {
+    if (IsShutdownInProgress()) {
+        return (*Original)(hInstance, lpBitmapName);
+    }
+
     auto resOp = resourceOperationCountScope();
     DWORD c = ++g_operationCounter;
 
@@ -1405,6 +1434,10 @@ HBITMAP WINAPI LoadBitmapW_Hook(HINSTANCE hInstance, LPCWSTR lpBitmapName) {
 
 template <auto* Original, typename T>
 HMENU LoadMenuAW_Hook(HINSTANCE hInstance, const T* lpMenuName) {
+    if (IsShutdownInProgress()) {
+        return (*Original)(hInstance, lpMenuName);
+    }
+
     auto resOp = resourceOperationCountScope();
     DWORD c = ++g_operationCounter;
 
@@ -1458,6 +1491,11 @@ INT_PTR DialogBoxParamAW_Hook(HINSTANCE hInstance,
                               HWND hWndParent,
                               DLGPROC lpDialogFunc,
                               LPARAM dwInitParam) {
+    if (IsShutdownInProgress()) {
+        return (*Original)(hInstance, lpTemplateName, hWndParent, lpDialogFunc,
+                           dwInitParam);
+    }
+
     auto resOp = resourceOperationCountScope();
     DWORD c = ++g_operationCounter;
 
@@ -1530,6 +1568,11 @@ HWND CreateDialogParamAW_Hook(HINSTANCE hInstance,
                               HWND hWndParent,
                               DLGPROC lpDialogFunc,
                               LPARAM dwInitParam) {
+    if (IsShutdownInProgress()) {
+        return (*Original)(hInstance, lpTemplateName, hWndParent, lpDialogFunc,
+                           dwInitParam);
+    }
+
     auto resOp = resourceOperationCountScope();
     DWORD c = ++g_operationCounter;
 
@@ -1594,6 +1637,10 @@ int LoadStringAW_Hook(HINSTANCE hInstance,
                       UINT uID,
                       T* lpBuffer,
                       int cchBufferMax) {
+    if (IsShutdownInProgress()) {
+        return (*Original)(hInstance, uID, lpBuffer, cchBufferMax);
+    }
+
     auto resOp = resourceOperationCountScope();
     DWORD c = ++g_operationCounter;
 
@@ -1668,6 +1715,10 @@ HRSRC FindResourceExAW_Hook(HMODULE hModule,
                             const T* lpType,
                             const T* lpName,
                             WORD wLanguage) {
+    if (IsShutdownInProgress()) {
+        return (*Original)(hModule, lpType, lpName, wLanguage);
+    }
+
     DWORD c = ++g_operationCounter;
 
     WCHAR prefix[64];
@@ -1764,6 +1815,10 @@ bool IsResourceHandlePartOfModule(HMODULE hModule, HRSRC hResInfo) {
 using LoadResource_t = decltype(&LoadResource);
 LoadResource_t LoadResource_Original;
 HGLOBAL WINAPI LoadResource_Hook(HMODULE hModule, HRSRC hResInfo) {
+    if (IsShutdownInProgress()) {
+        return LoadResource_Original(hModule, hResInfo);
+    }
+
     if (g_resourceOperationCount > 0) {
         return LoadResource_Original(hModule, hResInfo);
     }
@@ -1804,6 +1859,10 @@ HGLOBAL WINAPI LoadResource_Hook(HMODULE hModule, HRSRC hResInfo) {
 using SizeofResource_t = decltype(&SizeofResource);
 SizeofResource_t SizeofResource_Original;
 DWORD WINAPI SizeofResource_Hook(HMODULE hModule, HRSRC hResInfo) {
+    if (IsShutdownInProgress()) {
+        return SizeofResource_Original(hModule, hResInfo);
+    }
+
     if (g_resourceOperationCount > 0) {
         return SizeofResource_Original(hModule, hResInfo);
     }
@@ -1864,6 +1923,12 @@ HRESULT NTAPI RtlLoadString_Hook(_In_ PVOID DllHandle,
                                  _Out_writes_(ReturnLanguageLen)
                                      PWSTR ReturnLanguageName,
                                  _Inout_opt_ PULONG ReturnLanguageLen) {
+    if (IsShutdownInProgress()) {
+        return RtlLoadString_Original(DllHandle, StringId, StringLanguage,
+                                      Flags, ReturnString, ReturnStringLen,
+                                      ReturnLanguageName, ReturnLanguageLen);
+    }
+
     if (g_resourceOperationCount > 0) {
         return RtlLoadString_Original(DllHandle, StringId, StringLanguage,
                                       Flags, ReturnString, ReturnStringLen,
@@ -1914,6 +1979,11 @@ HRESULT WINAPI SHCreateStreamOnModuleResourceW_Hook(HMODULE hModule,
                                                     LPCWSTR pwszName,
                                                     LPCWSTR pwszType,
                                                     IStream** ppStream) {
+    if (IsShutdownInProgress()) {
+        return SHCreateStreamOnModuleResourceW_Original(hModule, pwszName,
+                                                        pwszType, ppStream);
+    }
+
     auto resOp = resourceOperationCountScope();
     DWORD c = ++g_operationCounter;
 
@@ -2003,6 +2073,11 @@ HRESULT __thiscall SetXMLFromResource_Hook(void* pThis,
                                            HMODULE hModule,
                                            HINSTANCE param4,
                                            HINSTANCE param5) {
+    if (IsShutdownInProgress()) {
+        return SetXMLFromResource_Original(pThis, lpName, lpType, hModule,
+                                           param4, param5);
+    }
+
     auto resOp = resourceOperationCountScope();
     DWORD c = ++g_operationCounter;
 
@@ -2077,6 +2152,10 @@ using DirectUI_CreateString_t = void*(WINAPI*)(PCWSTR name,
                                                HINSTANCE hInstance);
 DirectUI_CreateString_t DirectUI_CreateString_Original;
 void* WINAPI DirectUI_CreateString_Hook(PCWSTR name, HINSTANCE hInstance) {
+    if (IsShutdownInProgress()) {
+        return DirectUI_CreateString_Original(name, hInstance);
+    }
+
     if (!hInstance) {
         return DirectUI_CreateString_Original(name, hInstance);
     }
@@ -2686,6 +2765,11 @@ LSTATUS WINAPI RegQueryValueExW_Hook(HKEY hKey,
                                      LPDWORD lpType,
                                      LPBYTE lpData,
                                      LPDWORD lpcbData) {
+    if (IsShutdownInProgress()) {
+        return RegQueryValueExW_Original(hKey, lpValueName, lpReserved, lpType,
+                                         lpData, lpcbData);
+    }
+
     // Disable thumbnails in Explorer folders by providing the "Logo" value for
     // the "AllFolders\Shell" key. When this value is present, Explorer uses a
     // generic folder icon instead of showing thumbnails of the folder contents.
@@ -2936,6 +3020,12 @@ BOOL Wh_ModInit() {
     Wh_Log(L">");
 
     LoadSettings();
+
+    pRtlDllShutdownInProgress = (RtlDllShutdownInProgress_t)GetProcAddress(
+        GetModuleHandle(L"ntdll.dll"), "RtlDllShutdownInProgress");
+    if (!pRtlDllShutdownInProgress) {
+        Wh_Log(L"Couldn't find RtlDllShutdownInProgress");
+    }
 
     HMODULE kernelBaseModule = GetModuleHandle(L"kernelbase.dll");
     HMODULE kernel32Module = GetModuleHandle(L"kernel32.dll");
