@@ -670,11 +670,11 @@ void UpdateAnimationDirectionStyle() {
             break;
 
         case AnimationDirection::fromTop:
-            angle = 90;
+            angle = -90;
             break;
 
         case AnimationDirection::fromBottom:
-            angle = -90;
+            angle = 90;
             break;
     }
 
