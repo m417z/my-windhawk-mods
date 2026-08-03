@@ -8,7 +8,8 @@
 // @twitter         https://twitter.com/m417z
 // @homepage        https://m417z.com/
 // @include         dwm.exe
-// @include         *
+// @include         explorer.exe
+// @include         Taskmgr.exe
 // @architecture    x86-64
 // @compilerOptions -lgdi32 -lwevtapi -ld2d1 -luxtheme -ldwmapi
 // ==/WindhawkMod==
