@@ -8,8 +8,7 @@
 // @twitter         https://twitter.com/m417z
 // @homepage        https://m417z.com/
 // @include         dwm.exe
-// @include         explorer.exe
-// @include         Taskmgr.exe
+// @include         *
 // @architecture    x86-64
 // @compilerOptions -lgdi32 -lwevtapi -ld2d1 -luxtheme -ldwmapi
 // ==/WindhawkMod==
@@ -527,6 +526,11 @@ bool HasMultipleDwminitWarningsInLastMinute() {
 
 BOOL Wh_ModInit() {
     Wh_Log(L">");
+
+    // Skip non-GUI background processes that don't load user32.dll
+    if (!GetModuleHandle(L"user32.dll")) {
+        return FALSE;
+    }
 
     if (HasMultipleDwminitWarningsInLastMinute()) {
         Wh_Log(L"Refusing to load: multiple recent Dwminit warnings");
