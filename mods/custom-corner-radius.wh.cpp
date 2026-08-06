@@ -49,8 +49,9 @@ and make sure that `dwm.exe` is in the list.
   This can be customized separately with the "Small corner radius" option.
 - Standard tooltips can be customized separately with the "Tooltip corner
   radius" option.
-- Highlight background corner radius for menu and control items can be customized
-  separately with the "Highlight context background corner radius" option.
+- Highlight background corner radius for menu and control items can be
+customized separately with the "Highlight context background corner radius"
+option.
 - Some elements, such as the taskbar, the Start menu, and the notification
   center, are unaffected by this mod. Some of them can be customized using other
   mods, such as Windows 11 Taskbar Styler.
@@ -93,18 +94,18 @@ and make sure that `dwm.exe` is in the list.
 - highlightContextRadius: 4
   $name: Highlight context background corner radius
   $description: >-
-    Corner radius in pixels for menu item selection and control highlight backgrounds.
-    Default Win11 is 4. Set to -1 to leave unchanged.
+    Corner radius in pixels for menu item selection and control highlight
+backgrounds. Default Win11 is 4. Set to -1 to leave unchanged.
 */
 // ==/WindhawkModSettings==
 
 #include <windhawk_utils.h>
 
-#include <dwmapi.h>
-#include <winevt.h>
 #include <d2d1.h>
+#include <dwmapi.h>
 #include <uxtheme.h>
 #include <vssym32.h>
+#include <winevt.h>
 #include <wrl/client.h>
 
 #include <algorithm>
@@ -189,7 +190,9 @@ bool HwndHasClass(HWND hwnd, PCWSTR className) {
 }
 
 bool IsTopLevelWindowTooltip(void* pThis) {
-    return HwndHasClass(HwndFromTopLevelWindow(pThis), L"tooltips_class32");
+    HWND hwnd = HwndFromTopLevelWindow(pThis);
+    return HwndHasClass(hwnd, L"tooltips_class32") ||
+           HwndHasClass(hwnd, L"MicrosoftWindowsTooltip");
 }
 
 float RadiusForOriginal(float orig, bool isTooltip) {
@@ -199,12 +202,17 @@ float RadiusForOriginal(float orig, bool isTooltip) {
     // Skip replacement if the value already matches a configured radius to keep
     // the function idempotent.
     if (orig == g_settings.radius || orig == g_settings.smallRadius ||
-        orig == g_settings.tooltipRadius) {
+        orig == g_settings.tooltipRadius || orig == 14.0f) {
         return orig;
     }
 
-    if (isTooltip && g_settings.tooltipRadius >= 0.0f) {
-        return g_settings.tooltipRadius;
+    if (isTooltip) {
+        if (g_settings.tooltipRadius >= 0.0f) {
+            return g_settings.tooltipRadius;
+        }
+        float effectiveRadius =
+            g_settings.radius < 0.0f ? orig : g_settings.radius;
+        return (std::min)(effectiveRadius, 14.0f);
     }
 
     // Win11 defaults: 4.0 for smaller radius, 8.0 for larger radius. Use middle
@@ -234,7 +242,7 @@ void HideSysShadowWindow(HWND hwnd) {
 using UpdateWindowVisuals_t = long(WINAPI*)(void* pThis);
 UpdateWindowVisuals_t UpdateWindowVisuals_Original;
 long WINAPI UpdateWindowVisuals_Hook(void* pThis) {
-    if (g_settings.tooltipRadius >= 0.0f) {
+    if (g_settings.tooltipRadius >= 0.0f || g_settings.radius > 14.0f) {
         HWND hwnd = HwndFromTopLevelWindow(pThis);
         if (HwndHasClass(hwnd, L"SysShadow")) {
             Wh_Log(L"> hiding SysShadow hwnd=%p", hwnd);
@@ -254,8 +262,7 @@ int WINAPI GetEffectiveCornerStyle_Hook(void* pThis) {
     // GetShadowStyle returns a rounded-shadow style, and
     // GetRadiusFromCornerStyle returns a non-zero radius that our hooks
     // override to the configured tooltipRadius via RadiusForOriginal.
-    if (orig == DWMWCP_DONOTROUND && g_settings.tooltipRadius >= 0.0f &&
-        IsTopLevelWindowTooltip(pThis)) {
+    if (orig == DWMWCP_DONOTROUND && IsTopLevelWindowTooltip(pThis)) {
         Wh_Log(L"> cornerStyle DONOTROUND -> ROUNDSMALL (tooltip)");
         return DWMWCP_ROUNDSMALL;
     }
@@ -267,8 +274,7 @@ GetRadiusFromCornerStyle_t GetRadiusFromCornerStyle_Original;
 float WINAPI GetRadiusFromCornerStyle_Hook(void* pThis) {
     float orig = GetRadiusFromCornerStyle_Original(pThis);
     if (orig > 0) {
-        bool isTooltip =
-            g_settings.tooltipRadius >= 0.0f && IsTopLevelWindowTooltip(pThis);
+        bool isTooltip = IsTopLevelWindowTooltip(pThis);
         Wh_Log(L"> %f isTooltip=%d", orig, isTooltip);
         return RadiusForOriginal(orig, isTooltip);
     }
@@ -281,8 +287,7 @@ GetFloatCornerRadiusForCurrentStyle_t
 float WINAPI GetFloatCornerRadiusForCurrentStyle_Hook(void* pThis) {
     float orig = GetFloatCornerRadiusForCurrentStyle_Original(pThis);
     if (orig > 0) {
-        bool isTooltip =
-            g_settings.tooltipRadius >= 0.0f && IsTopLevelWindowTooltip(pThis);
+        bool isTooltip = IsTopLevelWindowTooltip(pThis);
         Wh_Log(L"> %f isTooltip=%d", orig, isTooltip);
         return RadiusForOriginal(orig, isTooltip);
     }
@@ -321,34 +326,49 @@ ID2D1Factory* g_d2dFactory = nullptr;
 void InitDirect2D() {
     if (!g_d2dFactory) {
         D2D1_FACTORY_OPTIONS options = {};
-        D2D1CreateFactory(D2D1_FACTORY_TYPE_MULTI_THREADED, options, &g_d2dFactory);
+        D2D1CreateFactory(D2D1_FACTORY_TYPE_MULTI_THREADED, options,
+                          &g_d2dFactory);
     }
 }
 
-HRESULT CreateBoundD2DRenderTarget(HDC hdc, LPCRECT pRect, ID2D1Factory* pFactory, ID2D1DCRenderTarget** ppRenderTarget) {
-    if (!pFactory || !ppRenderTarget) return E_INVALIDARG;
+HRESULT CreateBoundD2DRenderTarget(HDC hdc,
+                                   LPCRECT pRect,
+                                   ID2D1Factory* pFactory,
+                                   ID2D1DCRenderTarget** ppRenderTarget) {
+    if (!pFactory || !ppRenderTarget) {
+        return E_INVALIDARG;
+    }
     D2D1_RENDER_TARGET_PROPERTIES rtProps = D2D1::RenderTargetProperties(
         D2D1_RENDER_TARGET_TYPE_SOFTWARE,
-        D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM, D2D1_ALPHA_MODE_PREMULTIPLIED),
-        0, 0, D2D1_RENDER_TARGET_USAGE_GDI_COMPATIBLE, D2D1_FEATURE_LEVEL_DEFAULT
-    );
+        D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM,
+                          D2D1_ALPHA_MODE_PREMULTIPLIED),
+        0, 0, D2D1_RENDER_TARGET_USAGE_GDI_COMPATIBLE,
+        D2D1_FEATURE_LEVEL_DEFAULT);
     Microsoft::WRL::ComPtr<ID2D1DCRenderTarget> renderTarget;
     HRESULT hr = pFactory->CreateDCRenderTarget(&rtProps, &renderTarget);
-    if (FAILED(hr)) return hr;
+    if (FAILED(hr)) {
+        return hr;
+    }
     hr = renderTarget->BindDC(hdc, pRect);
-    if (FAILED(hr)) return hr;
+    if (FAILED(hr)) {
+        return hr;
+    }
     *ppRenderTarget = renderTarget.Detach();
     return S_OK;
 }
 
 std::wstring GetThemeClassStr(HTHEME hTheme) {
-    if (!hTheme) return L"";
-    typedef HRESULT(WINAPI* pGetThemeClass)(HTHEME, LPCTSTR, INT);
-    static auto GetClassNameFunc = (pGetThemeClass)GetProcAddress(GetModuleHandleW(L"uxtheme.dll"), MAKEINTRESOURCEA(74));
+    if (!hTheme) {
+        return L"";
+    }
+    typedef HRESULT(WINAPI * pGetThemeClass)(HTHEME, LPCTSTR, INT);
+    static auto GetClassNameFunc = (pGetThemeClass)GetProcAddress(
+        GetModuleHandleW(L"uxtheme.dll"), MAKEINTRESOURCEA(74));
     if (GetClassNameFunc) {
-        WCHAR buffer[255] = { 0 };
-        if (SUCCEEDED(GetClassNameFunc(hTheme, buffer, 255)))
+        WCHAR buffer[255] = {0};
+        if (SUCCEEDED(GetClassNameFunc(hTheme, buffer, 255))) {
             return buffer;
+        }
     }
     return L"";
 }
@@ -359,64 +379,77 @@ COLORREF GetTranslucentWindowsAccentColor() {
         clr = GetSysColor(COLOR_HIGHLIGHT);
     }
     if (clr == 0 || clr == RGB(0, 0, 0)) {
-        clr = RGB(0, 120, 215); // Exact COLOR_HIGHLIGHT / COLOR_MENUHILIGHT from translucent-windows (GetCustomSysColor)
+        clr = RGB(0, 120, 215);  // Exact COLOR_HIGHLIGHT / COLOR_MENUHILIGHT
+                                 // from translucent-windows (GetCustomSysColor)
     }
     return clr;
 }
 
-bool PaintHighlightContextBackground(HTHEME hTheme, HDC hdc, INT iPartId, INT iStateId, LPCRECT pRect) {
-    if (g_settings.highlightContextRadius < 0.0f || !hdc || !pRect)
+bool PaintHighlightContextBackground(HTHEME hTheme,
+                                     HDC hdc,
+                                     INT iPartId,
+                                     INT iStateId,
+                                     LPCRECT pRect) {
+    if (g_settings.highlightContextRadius < 0.0f || !hdc || !pRect) {
         return false;
+    }
 
     // Check Win11 (27) or Win10 (14) popup menu item hover state (2)
     bool isMenuHighlight = (iPartId == 27 || iPartId == 14) && (iStateId == 2);
     if (!isMenuHighlight) {
         std::wstring cls = GetThemeClassStr(hTheme);
-        if (cls != L"Menu" && cls != L"PopupMenu")
+        if (cls != L"Menu" && cls != L"PopupMenu") {
             return false;
-        if (iStateId != 2)
+        }
+        if (iStateId != 2) {
             return false;
+        }
     }
 
     InitDirect2D();
-    if (!g_d2dFactory)
+    if (!g_d2dFactory) {
         return false;
+    }
 
     FLOAT scale = 1.0f;
     HWND hwnd = WindowFromDC(hdc);
     if (hwnd && IsWindow(hwnd)) {
         UINT dpi = GetDpiForWindow(hwnd);
-        if (dpi > 0) scale = (FLOAT)dpi / 96.0f;
+        if (dpi > 0) {
+            scale = (FLOAT)dpi / 96.0f;
+        }
     }
 
     FLOAT cornerRadius = g_settings.highlightContextRadius * scale;
     FLOAT w = static_cast<FLOAT>(pRect->right - pRect->left);
     FLOAT h = static_cast<FLOAT>(pRect->bottom - pRect->top);
 
-    if (w <= 0 || h <= 0) return false;
+    if (w <= 0 || h <= 0) {
+        return false;
+    }
 
     Microsoft::WRL::ComPtr<ID2D1DCRenderTarget> pRenderTarget;
-    if (FAILED(CreateBoundD2DRenderTarget(hdc, pRect, g_d2dFactory, &pRenderTarget)))
+    if (FAILED(CreateBoundD2DRenderTarget(hdc, pRect, g_d2dFactory,
+                                          &pRenderTarget))) {
         return false;
+    }
 
     COLORREF clr = GetTranslucentWindowsAccentColor();
 
-    // Exact accent color from translucent-windows GetCustomSysColor (RGB(0, 120, 215))
-    D2D1_COLOR_F fillClr = D2D1::ColorF(
-        GetRValue(clr) / 255.0f,
-        GetGValue(clr) / 255.0f,
-        GetBValue(clr) / 255.0f,
-        1.0f
-    );
+    // Exact accent color from translucent-windows GetCustomSysColor (RGB(0,
+    // 120, 215))
+    D2D1_COLOR_F fillClr =
+        D2D1::ColorF(GetRValue(clr) / 255.0f, GetGValue(clr) / 255.0f,
+                     GetBValue(clr) / 255.0f, 1.0f);
 
     Microsoft::WRL::ComPtr<ID2D1SolidColorBrush> brush;
-    if (FAILED(pRenderTarget->CreateSolidColorBrush(fillClr, &brush)))
+    if (FAILED(pRenderTarget->CreateSolidColorBrush(fillClr, &brush))) {
         return false;
+    }
 
-    D2D1_ROUNDED_RECT roundedRect = D2D1::RoundedRect(
-        D2D1::RectF(0.5f, 0.5f, w - 0.5f, h - 0.5f),
-        cornerRadius, cornerRadius
-    );
+    D2D1_ROUNDED_RECT roundedRect =
+        D2D1::RoundedRect(D2D1::RectF(0.5f, 0.5f, w - 0.5f, h - 0.5f),
+                          cornerRadius, cornerRadius);
 
     pRenderTarget->BeginDraw();
     pRenderTarget->FillRoundedRectangle(&roundedRect, brush.Get());
@@ -424,22 +457,52 @@ bool PaintHighlightContextBackground(HTHEME hTheme, HDC hdc, INT iPartId, INT iS
     return SUCCEEDED(hr);
 }
 
-typedef HRESULT(WINAPI* DrawThemeBackgroundEx_t)(HTHEME hTheme, HDC hdc, int iPartId, int iStateId, const RECT *pRect, const DTBGOPTS *pOptions);
+typedef HRESULT(WINAPI* DrawThemeBackgroundEx_t)(HTHEME hTheme,
+                                                 HDC hdc,
+                                                 int iPartId,
+                                                 int iStateId,
+                                                 const RECT* pRect,
+                                                 const DTBGOPTS* pOptions);
 DrawThemeBackgroundEx_t DrawThemeBackgroundEx_Original = nullptr;
 
-typedef HRESULT(WINAPI* DrawThemeBackground_t)(HTHEME hTheme, HDC hdc, int iPartId, int iStateId, const RECT *pRect, const RECT *pClipRect);
+typedef HRESULT(WINAPI* DrawThemeBackground_t)(HTHEME hTheme,
+                                               HDC hdc,
+                                               int iPartId,
+                                               int iStateId,
+                                               const RECT* pRect,
+                                               const RECT* pClipRect);
 DrawThemeBackground_t DrawThemeBackground_Original = nullptr;
 
-HRESULT WINAPI DrawThemeBackgroundEx_Hook(HTHEME hTheme, HDC hdc, int iPartId, int iStateId, const RECT *pRect, const DTBGOPTS *pOptions) {
-    if (PaintHighlightContextBackground(hTheme, hdc, iPartId, iStateId, pRect))
+HRESULT WINAPI DrawThemeBackgroundEx_Hook(HTHEME hTheme,
+                                          HDC hdc,
+                                          int iPartId,
+                                          int iStateId,
+                                          const RECT* pRect,
+                                          const DTBGOPTS* pOptions) {
+    if (PaintHighlightContextBackground(hTheme, hdc, iPartId, iStateId,
+                                        pRect)) {
         return S_OK;
-    return DrawThemeBackgroundEx_Original ? DrawThemeBackgroundEx_Original(hTheme, hdc, iPartId, iStateId, pRect, pOptions) : E_FAIL;
+    }
+    return DrawThemeBackgroundEx_Original
+               ? DrawThemeBackgroundEx_Original(hTheme, hdc, iPartId, iStateId,
+                                                pRect, pOptions)
+               : E_FAIL;
 }
 
-HRESULT WINAPI DrawThemeBackground_Hook(HTHEME hTheme, HDC hdc, int iPartId, int iStateId, const RECT *pRect, const RECT *pClipRect) {
-    if (PaintHighlightContextBackground(hTheme, hdc, iPartId, iStateId, pRect))
+HRESULT WINAPI DrawThemeBackground_Hook(HTHEME hTheme,
+                                        HDC hdc,
+                                        int iPartId,
+                                        int iStateId,
+                                        const RECT* pRect,
+                                        const RECT* pClipRect) {
+    if (PaintHighlightContextBackground(hTheme, hdc, iPartId, iStateId,
+                                        pRect)) {
         return S_OK;
-    return DrawThemeBackground_Original ? DrawThemeBackground_Original(hTheme, hdc, iPartId, iStateId, pRect, pClipRect) : E_FAIL;
+    }
+    return DrawThemeBackground_Original
+               ? DrawThemeBackground_Original(hTheme, hdc, iPartId, iStateId,
+                                              pRect, pClipRect)
+               : E_FAIL;
 }
 
 void EnsureUxThemeHooksInstalled() {
@@ -447,11 +510,13 @@ void EnsureUxThemeHooksInstalled() {
     if (uxtheme) {
         void* pDrawEx = (void*)GetProcAddress(uxtheme, "DrawThemeBackgroundEx");
         if (pDrawEx) {
-            Wh_SetFunctionHook(pDrawEx, (void*)DrawThemeBackgroundEx_Hook, (void**)&DrawThemeBackgroundEx_Original);
+            Wh_SetFunctionHook(pDrawEx, (void*)DrawThemeBackgroundEx_Hook,
+                               (void**)&DrawThemeBackgroundEx_Original);
         }
         void* pDraw = (void*)GetProcAddress(uxtheme, "DrawThemeBackground");
         if (pDraw) {
-            Wh_SetFunctionHook(pDraw, (void*)DrawThemeBackground_Hook, (void**)&DrawThemeBackground_Original);
+            Wh_SetFunctionHook(pDraw, (void*)DrawThemeBackground_Hook,
+                               (void**)&DrawThemeBackground_Original);
         }
     }
 }
@@ -460,7 +525,8 @@ HHOOK g_hWndProcHook = nullptr;
 LRESULT CALLBACK CallWndProc_Hook(int nCode, WPARAM wParam, LPARAM lParam) {
     if (nCode >= 0 && lParam) {
         CWPSTRUCT* pCwp = (CWPSTRUCT*)lParam;
-        if (pCwp->message == WM_INITMENUPOPUP || pCwp->message == WM_ENTERMENULOOP) {
+        if (pCwp->message == WM_INITMENUPOPUP ||
+            pCwp->message == WM_ENTERMENULOOP) {
             EnsureUxThemeHooksInstalled();
         }
     }
@@ -485,9 +551,9 @@ void LoadSettings() {
     g_settings.tooltipRadius =
         std::nextafter(static_cast<float>(Wh_GetIntSetting(L"tooltipRadius")),
                        std::numeric_limits<float>::max());
-    g_settings.highlightContextRadius =
-        std::nextafter(static_cast<float>(Wh_GetIntSetting(L"highlightContextRadius")),
-                       std::numeric_limits<float>::max());
+    g_settings.highlightContextRadius = std::nextafter(
+        static_cast<float>(Wh_GetIntSetting(L"highlightContextRadius")),
+        std::numeric_limits<float>::max());
 }
 
 // Returns true if at least two Dwminit warnings (Level=3) were logged in the
@@ -543,7 +609,8 @@ BOOL Wh_ModInit() {
     EnsureUxThemeHooksInstalled();
 
     // Set message hook to re-assert uxtheme hooks whenever context menus open
-    g_hWndProcHook = SetWindowsHookExW(WH_CALLWNDPROC, CallWndProc_Hook, nullptr, GetCurrentThreadId());
+    g_hWndProcHook = SetWindowsHookExW(WH_CALLWNDPROC, CallWndProc_Hook,
+                                       nullptr, GetCurrentThreadId());
 
     HMODULE udwm = GetModuleHandle(L"udwm.dll");
     if (!udwm) {
