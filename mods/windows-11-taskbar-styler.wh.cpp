@@ -562,6 +562,12 @@ from the **TranslucentTB** project.
 
     The ":=" syntax can be used to set a XAML value. For details, refer to the
     mod description.
+- searchBoxText: ""
+  $name: Search box text
+  $description: >-
+    Override the placeholder text shown in the taskbar search box (e.g. "Type
+    here to search"). Leave empty to keep the default text, or the text set by
+    the selected theme.
 - clickThroughTaskbar: false
   $name: Click-through taskbar
   $description: >-
@@ -15059,6 +15065,37 @@ void ProcessAllStylesFromSettings() {
             }
         } catch (winrt::hresult_error const& ex) {
             Wh_Log(L"Error %08X: %s", ex.code(), ex.message().c_str());
+        } catch (std::exception const& ex) {
+            Wh_Log(L"Error: %S", ex.what());
+        }
+    }
+
+    string_setting_unique_ptr searchBoxTextSetting(
+        Wh_GetStringSetting(L"searchBoxText"));
+    if (*searchBoxTextSetting.get()) {
+        std::wstring searchBoxText =
+            ApplyStyleConstants(searchBoxTextSetting.get(), styleConstants);
+        std::wstring searchBoxTextStyle = L"Text=" + searchBoxText;
+
+        // Covers both the classic named search box text element and the
+        // unnamed one used by the newer "pill" search box UI.
+        try {
+            AddElementCustomizationRules(L"TextBlock#SearchBoxTextBlock",
+                                         {searchBoxTextStyle});
+        } catch (winrt::hresult_error const& ex) {
+            Wh_Log(L"Error %08X", ex.code());
+        } catch (std::exception const& ex) {
+            Wh_Log(L"Error: %S", ex.what());
+        }
+
+        try {
+            AddElementCustomizationRules(
+                L"SearchUx.SearchUI.SearchPillButton > "
+                L"SearchUx.SearchUI.SearchButtonRootGrid > "
+                L"Grid#SearchBoxContentGrid > TextBlock",
+                {searchBoxTextStyle});
+        } catch (winrt::hresult_error const& ex) {
+            Wh_Log(L"Error %08X", ex.code());
         } catch (std::exception const& ex) {
             Wh_Log(L"Error: %S", ex.what());
         }
