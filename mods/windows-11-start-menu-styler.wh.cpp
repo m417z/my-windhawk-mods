@@ -233,14 +233,12 @@ useful for temporarily disabling a target or style.
 #### Style variables
 
 Beyond literal values, XAML values, and style constants, styles can reference
-live property values via global *style variables*. A capture rule of the form
-`Property=>VarName` observes a control's property and publishes its value to
+live property values via *style variables*. A capture rule of the form
+`Property=>VarName` observes a control's property and publishes its value as
 `VarName`; other styles then substitute it with `{{VarName}}`. Whenever the
 captured value changes or the variable becomes undefined, every dependent style
 is recomputed and reapplied.
 
-Variables are global: a capture from any matched element overwrites the same
-name, and removing the capturing element makes the variable undefined again.
 Capture rules cannot be combined with `:=` or with the per-rule `@VisualState`
 qualifier.
 
@@ -251,6 +249,11 @@ tracking the width:
 ActualWidth=>width1
 Height={{width1}}
 ```
+
+A capture rule may match several controls at once. A style reading `{{VarName}}`
+gets the value from whichever capturing control is closest to it in the control
+tree, i.e. the one it shares the deepest common parent with. The variable only
+becomes undefined once the last capturing control is gone.
 
 A substitution can appear anywhere in a value, including alongside literal text:
 
@@ -7209,10 +7212,152 @@ struct CaptureSpec {
 struct ResolvedRules {
     PropertyOverrides propertyOverrides;
     std::vector<CaptureSpec> captures;
+    // Whether this target consumes style variables. Lets ApplyCustomizations
+    // skip the visual-tree bookkeeping that only variable users need.
+    bool hasDynamicValues = false;
 };
 
 using PropertyOverridesMaybeUnresolved =
     std::variant<UnresolvedRules, ResolvedRules>;
+
+// A `{{Var}}` reference resolved for one consuming property. The owner lets a
+// value change on some other capture of the same name be skipped.
+struct StyleVariableDependency {
+    std::wstring name;
+    InstanceHandle owner = 0;  // 0 when the variable was undefined
+};
+
+// Interned node of an element's visual-tree spine. Nodes are shared by every
+// tracked element under the same ancestor, so the pool holds one node per
+// distinct ancestor rather than a full path per element. Once a node exists its
+// `parent` and `depth` are final; an element that is later reparented keeps the
+// spine it was first seen with, and only a node interned as a root before its
+// object was attached (see GetOrCreateElementTreeNode) is ever replaced.
+struct ElementTreeNode {
+    // A node can outlive the object it describes -- descendant nodes and
+    // not-yet-cleaned-up ElementCustomizationState entries keep it alive -- so
+    // this is what proves a pool hit isn't a recycled address.
+    winrt::weak_ref<DependencyObject> ref;
+    std::shared_ptr<ElementTreeNode> parent;
+    uint32_t depth = 0;
+};
+
+// Keyed by the object's IUnknown pointer: COM only guarantees a stable pointer
+// for that interface, and the same element is reached both as a
+// FrameworkElement and as a VisualTreeHelper::GetParent result.
+std::unordered_map<void*, std::weak_ptr<ElementTreeNode>> g_elementTreeNodes;
+
+// Expired pool entries are reaped once the map grows past this, which is then
+// set to twice the surviving size, making the sweep amortized O(1).
+size_t g_elementTreeNodesReapThreshold = 64;
+
+void* ElementIdentityKey(DependencyObject const& object) {
+    return winrt::get_abi(object.as<winrt::Windows::Foundation::IUnknown>());
+}
+
+// Fetch (or build) the spine node for `object`. Uses
+// VisualTreeHelper::GetParent rather than Parent(), same reason as in
+// FindElementPropertyOverrides. Returns nullptr if a node can't be built,
+// leaving callers with no proximity information rather than a wrong answer.
+std::shared_ptr<ElementTreeNode> GetOrCreateElementTreeNode(
+    DependencyObject object) {
+    if (!object) {
+        return nullptr;
+    }
+
+    std::shared_ptr<ElementTreeNode> node;
+
+    // Ancestors still lacking a node, innermost first. The walk stops at the
+    // first ancestor that is already interned, so a new sibling of an
+    // already-seen element costs one GetParent call.
+    std::vector<DependencyObject> missing;
+
+    try {
+        for (auto iter = object; iter;
+             iter = Media::VisualTreeHelper::GetParent(iter)) {
+            auto key = ElementIdentityKey(iter);
+
+            if (auto it = g_elementTreeNodes.find(key);
+                it != g_elementTreeNodes.end()) {
+                auto existing = it->second.lock();
+                // A weak_ref never resolves to an object other than its own, so
+                // a live ref proves this address hasn't been recycled since.
+                if (!existing || !existing->ref.get()) {
+                    Wh_Log(L"Replacing stale tree node for a reused address");
+                    g_elementTreeNodes.erase(it);
+                } else if (existing->depth > 0 ||
+                           !Media::VisualTreeHelper::GetParent(iter)) {
+                    node = std::move(existing);
+                    break;
+                } else {
+                    // A depth-0 node was interned as a root. Having a parent
+                    // now means the object was only partly attached back then
+                    // and the node stops short of the real root, so drop it and
+                    // let the walk rebuild the full spine. Elements interned
+                    // through the old node keep it and stay unrankable against
+                    // the rest of the tree, which is the same answer they got
+                    // before the repair.
+                    Wh_Log(L"Rebuilding tree node interned before attachment");
+                    g_elementTreeNodes.erase(it);
+                }
+            }
+
+            missing.push_back(iter);
+        }
+
+        for (auto it = missing.rbegin(); it != missing.rend(); ++it) {
+            auto fresh = std::make_shared<ElementTreeNode>();
+            fresh->ref = *it;
+            fresh->depth = node ? node->depth + 1 : 0;
+            fresh->parent = std::move(node);
+            g_elementTreeNodes[ElementIdentityKey(*it)] = fresh;
+            node = std::move(fresh);
+        }
+    } catch (winrt::hresult_error const& ex) {
+        Wh_Log(L"Error %08X: %s", ex.code(), ex.message().c_str());
+        return nullptr;
+    }
+
+    return node;
+}
+
+void ReapElementTreeNodesIfNeeded() {
+    if (g_elementTreeNodes.size() < g_elementTreeNodesReapThreshold) {
+        return;
+    }
+
+    std::erase_if(g_elementTreeNodes,
+                  [](const auto& item) { return item.second.expired(); });
+    g_elementTreeNodesReapThreshold =
+        std::max<size_t>(64, g_elementTreeNodes.size() * 2);
+}
+
+// Depth of the lowest common ancestor of two spine nodes, or -1 when they have
+// none (separate visual trees, or a node that couldn't be built). A node counts
+// as its own ancestor, so an element on the other's parent chain scores its own
+// depth -- the deepest score that element can reach.
+int ElementTreeLcaDepth(ElementTreeNode const* a, ElementTreeNode const* b) {
+    if (!a || !b) {
+        return -1;
+    }
+
+    while (a->depth > b->depth) {
+        a = a->parent.get();
+    }
+    while (b->depth > a->depth) {
+        b = b->parent.get();
+    }
+
+    while (a != b) {
+        a = a->parent.get();
+        b = b->parent.get();
+        if (!a || !b) {
+            return -1;
+        }
+    }
+
+    return static_cast<int>(a->depth);
+}
 
 struct ElementCustomizationRules {
     ElementMatcher elementMatcher;
@@ -7239,9 +7384,14 @@ struct ElementPropertyCustomizationState {
     // the resolved result written back into `customValue`. Empty for static
     // styles.
     std::optional<DynamicStyleTemplate> dynamicTemplate;
-    // Names of style variables this property's value depends on. Populated
-    // alongside `dynamicTemplate`; empty for static styles.
-    std::vector<std::wstring> variableDependencies;
+    // Style variables this property's value depends on, each with the capture
+    // that supplied it. Populated alongside `dynamicTemplate`; empty for static
+    // styles.
+    std::vector<StyleVariableDependency> variableDependencies;
+    // Makes this property re-resolve on any change to any of its variables:
+    // expansion aborts at the first failure, so the names past that point have
+    // no recorded owner and a targeted propagation would never reach them.
+    bool lastResolveFailed = false;
 };
 
 struct CapturePropertyCustomizationState {
@@ -7257,6 +7407,10 @@ struct ElementCustomizationStateForVisualStateGroup {
 
 struct ElementCustomizationState {
     winrt::weak_ref<FrameworkElement> element;
+
+    // Scores how close each capture of a style variable is to this element.
+    // Only built for elements that capture or consume a variable.
+    std::shared_ptr<ElementTreeNode> treeNode;
 
     // Capture state lives at the element level: capture rules (`Prop=>Var`) are
     // intentionally not visual-state-aware (the parser rejects `@VisualState`
@@ -7282,12 +7436,27 @@ struct ElementCustomizationState {
 std::unordered_map<InstanceHandle, ElementCustomizationState>
     g_elementsCustomizationState;
 
+// The element's spine node, built on first use if the eager attempt in
+// ApplyCustomizations came up empty. An element can be matched before it is
+// attached, and a spine built then would stop short of the real root; retrying
+// on use picks up the real one once the element is in the tree.
+ElementTreeNode* EnsureElementTreeNode(
+    ElementCustomizationState& elementCustomizationState) {
+    if (!elementCustomizationState.treeNode) {
+        if (auto element = elementCustomizationState.element.get()) {
+            elementCustomizationState.treeNode =
+                GetOrCreateElementTreeNode(element);
+        }
+    }
+
+    return elementCustomizationState.treeNode.get();
+}
+
 // Mod-global style variable registry. Populated by `Property=>VarName` capture
-// rules and consumed by `{{VarName}}` substitutions in other styles. Last
-// writer wins -- a new capture from any element overwrites the value, and
-// removing a capturing element erases its entry (making the variable undefined
-// again). No ownership tracking: a single capture target per variable is
-// assumed.
+// rules and consumed by `{{VarName}}` substitutions in other styles. Every
+// capturing element gets its own entry, so a name stays defined until its last
+// capture goes away, and a consumer reading the name resolves to whichever
+// capture is closest to it in the visual tree.
 struct StyleVariableValue {
     std::wstring stringForm;        // invariant-formatted text representation
     std::optional<double> numeric;  // only present when source was numeric
@@ -7296,6 +7465,13 @@ struct StyleVariableValue {
     // opaque types -- their stringForm is the captured class name, kept only
     // for diagnostics; bare-identifier substitution skips such variables.
     bool substitutable = false;
+};
+
+// One element's capture of a variable. FindElementPropertyOverrides dedupes
+// captures by name, so (name, elementHandle) identifies an entry.
+struct StyleVariableCapture {
+    InstanceHandle elementHandle;
+    StyleVariableValue value;
 };
 
 struct StyleVariableConsumer {
@@ -7311,12 +7487,29 @@ struct StyleVariableConsumer {
 // used by the taskbar styler so the variable-resolution call paths stay aligned
 // across the styler mods, but here all elements share one registry.
 struct StyleVariableState {
-    std::unordered_map<std::wstring, StyleVariableValue> variables;
+    std::unordered_map<std::wstring, std::vector<StyleVariableCapture>>
+        variables;
     std::unordered_map<std::wstring, std::vector<StyleVariableConsumer>>
         consumers;
 };
 
 StyleVariableState g_styleVariableState;
+
+// Non-zero while PropagateStyleVariableChange is running, so nested calls queue
+// instead of recursing.
+int g_styleVariablePropagationDepth;
+
+struct PendingStyleVariablePropagation {
+    StyleVariableState* state;
+    std::wstring varName;
+    std::optional<InstanceHandle> changedOwner;
+
+    bool operator==(const PendingStyleVariablePropagation&) const = default;
+};
+
+// Propagations queued while another one is running, drained by the outermost
+// PropagateStyleVariableChange frame.
+std::vector<PendingStyleVariablePropagation> g_pendingStyleVariablePropagations;
 
 StyleVariableState* GetStyleVariableState() {
     return &g_styleVariableState;
@@ -10170,6 +10363,7 @@ const ResolvedRules& GetResolvedPropertyOverrides(
                     resolved.propertyOverrides[property][rule.visualState] =
                         DynamicStyleTemplate{rule.propertyName, rule.value,
                                              rule.isXamlValue};
+                    resolved.hasDynamicValues = true;
                 } else {
                     resolved.propertyOverrides[property][rule.visualState] =
                         propertyOverrideValues[i].value_or(
@@ -10523,6 +10717,7 @@ bool TestElementMatcher(FrameworkElement element,
 struct ElementResolvedRules {
     std::unordered_map<VisualStateGroup, PropertyOverrides> overridesPerVSG;
     std::vector<CaptureSpec> captures;
+    bool hasDynamicValues = false;
 };
 
 ElementResolvedRules FindElementPropertyOverrides(FrameworkElement element,
@@ -10621,6 +10816,8 @@ ElementResolvedRules FindElementPropertyOverrides(FrameworkElement element,
                               : winrt::name_of<FrameworkElement>(),
             &override.propertyOverrides);
 
+        result.hasDynamicValues |= resolvedRules.hasDynamicValues;
+
         auto& propertyOverridesForVSG =
             result.overridesPerVSG[visualStateGroup];
         for (const auto& [property, valuesPerVisualState] :
@@ -10650,6 +10847,140 @@ ElementResolvedRules FindElementPropertyOverrides(FrameworkElement element,
 
     return result;
 }
+
+struct StyleVariableResolution {
+    // Points into state->variables; only valid until that map is next touched,
+    // so read it out before doing anything that could apply a style.
+    const StyleVariableValue* value = nullptr;
+    InstanceHandle owner = 0;
+};
+
+// How well a capture serves a consumer, as a sort key -- smaller is better.
+// Captures are ranked by, in order:
+//
+//  1. Deepest common ancestor with the consumer.
+//  2. Shallowest capture element. On a tie the capture that lies on the
+//     consumer's own parent chain *is* the common ancestor, so this is what
+//     makes a capture on an ancestor beat one on a cousin below it.
+//  3. Registration order, applied by the callers below keeping the first of
+//     equal keys. Only a last resort: it follows the order XamlDiagnostics
+//     reports elements in, which is not stable across boots or across taskbar
+//     item recycling.
+//
+// The closest capture wins even when its value is opaque, in which case the
+// consuming style is skipped rather than falling through to a farther capture
+// that happens to be usable.
+std::pair<int, int> StyleVariableCaptureRank(
+    ElementTreeNode const* consumerNode,
+    ElementTreeNode const* captureNode) {
+    int lcaDepth = ElementTreeLcaDepth(consumerNode, captureNode);
+    int captureDepth = captureNode ? static_cast<int>(captureNode->depth)
+                                   : std::numeric_limits<int>::max();
+    return {-lcaDepth, captureDepth};
+}
+
+// Pick the capture of `varName` that `consumerNode` should read.
+StyleVariableResolution FindWinningCapture(
+    StyleVariableState* state,
+    const std::wstring& varName,
+    ElementTreeNode const* consumerNode) {
+    StyleVariableResolution result;
+
+    auto it = state->variables.find(varName);
+    if (it == state->variables.end() || it->second.empty()) {
+        return result;
+    }
+
+    const auto& captures = it->second;
+    if (captures.size() == 1) {
+        // The common case by far: nothing to rank, and the owner's spine node
+        // never has to be resolved.
+        return {&captures.front().value, captures.front().elementHandle};
+    }
+
+    std::pair<int, int> bestRank;
+    for (const auto& capture : captures) {
+        ElementTreeNode const* captureNode = nullptr;
+        if (auto elementIt =
+                g_elementsCustomizationState.find(capture.elementHandle);
+            elementIt != g_elementsCustomizationState.end()) {
+            captureNode = EnsureElementTreeNode(elementIt->second);
+        }
+
+        auto rank = StyleVariableCaptureRank(consumerNode, captureNode);
+        if (!result.value || rank < bestRank) {
+            bestRank = rank;
+            result = {&capture.value, capture.elementHandle};
+        }
+    }
+
+    return result;
+}
+
+// A capture reduced to what ranking needs. The node is held by strong ref so a
+// snapshot stays usable even after re-entrant work tears the owning element
+// down.
+struct StyleVariableCandidate {
+    InstanceHandle owner = 0;
+    std::shared_ptr<ElementTreeNode> node;
+};
+
+// Resolve every capture's spine node once. A pass that ranks one variable
+// against many consumers would otherwise repeat the same lookups per consumer,
+// and only the ranking actually varies between them.
+std::vector<StyleVariableCandidate> SnapshotStyleVariableCaptures(
+    const std::vector<StyleVariableCapture>& captures) {
+    std::vector<StyleVariableCandidate> candidates;
+    candidates.reserve(captures.size());
+
+    for (const auto& capture : captures) {
+        StyleVariableCandidate candidate;
+        candidate.owner = capture.elementHandle;
+        if (auto elementIt =
+                g_elementsCustomizationState.find(capture.elementHandle);
+            elementIt != g_elementsCustomizationState.end()) {
+            auto& elementCustomizationState = elementIt->second;
+            EnsureElementTreeNode(elementCustomizationState);
+            candidate.node = elementCustomizationState.treeNode;
+        }
+
+        candidates.push_back(std::move(candidate));
+    }
+
+    return candidates;
+}
+
+// The owner FindWinningCapture would pick, ranked from a snapshot. A snapshot
+// taken before a re-entrant capture change can go stale, which at worst skips a
+// consumer that needed redoing -- the change that invalidated it queues its own
+// propagation, and that pass re-snapshots and picks the consumer up.
+InstanceHandle PickWinningCaptureOwner(
+    const std::vector<StyleVariableCandidate>& candidates,
+    ElementTreeNode const* consumerNode) {
+    InstanceHandle owner = 0;
+    bool haveBest = false;
+    std::pair<int, int> bestRank;
+
+    for (const auto& candidate : candidates) {
+        auto rank =
+            StyleVariableCaptureRank(consumerNode, candidate.node.get());
+        if (!haveBest || rank < bestRank) {
+            haveBest = true;
+            bestRank = rank;
+            owner = candidate.owner;
+        }
+    }
+
+    return owner;
+}
+
+// What a `{{...}}` expansion needs. `consumerNode` is the consuming element's
+// position in the tree, used to pick the closest capture of each name.
+struct StyleVariableLookupContext {
+    StyleVariableState* state;
+    ElementTreeNode const* consumerNode;
+    std::vector<StyleVariableDependency>* outDeps;
+};
 
 bool IsValidStyleVariableIdentifier(std::wstring_view sv) {
     if (sv.empty()) {
@@ -10704,9 +11035,8 @@ struct StyleExpressionValue {
 class StyleVariableExpressionEvaluator {
    public:
     StyleVariableExpressionEvaluator(std::wstring_view text,
-                                     std::vector<std::wstring>* outDeps,
-                                     StyleVariableState* state)
-        : m_text(text), m_outDeps(outDeps), m_state(state) {}
+                                     const StyleVariableLookupContext* context)
+        : m_text(text), m_context(context) {}
 
     // Returns the text form of the result: numeric results are formatted with
     // FormatDoubleInvariant, string results are returned verbatim. Throws
@@ -11075,45 +11405,44 @@ class StyleVariableExpressionEvaluator {
 
     StyleExpressionValue LookupVariable(const std::wstring& name) {
         // In a dead ternary branch (m_live == false) the value is discarded, so
-        // suppress dependency capture and the value-level errors below; the
-        // branch must not abort the whole expression.
-        if (m_live && m_outDeps) {
-            m_outDeps->push_back(name);
+        // skip the lookup along with dependency capture and the value-level
+        // errors below; the branch must not abort the whole expression, and
+        // every operator tolerates a string operand while not live.
+        if (!m_live) {
+            return StyleExpressionValue::String(L"");
         }
-        auto it = m_state->variables.find(name);
-        if (it == m_state->variables.end()) {
-            if (m_live) {
-                Wh_Log(
-                    L"Style variable '%s' not defined; treating as empty "
-                    L"string",
-                    name.c_str());
-            }
+
+        auto resolution =
+            FindWinningCapture(m_context->state, name, m_context->consumerNode);
+
+        if (m_context->outDeps) {
+            m_context->outDeps->push_back({name, resolution.owner});
+        }
+        if (!resolution.value) {
+            Wh_Log(L"Style variable '%s' not defined; treating as empty string",
+                   name.c_str());
             // Undefined reads as the empty string sentinel, so `{{var == `` ?
             // default : var}}` can detect the undefined state and substitute a
             // fallback. Arithmetic on an undefined variable then fails
             // RequireNumber and skips the style, rather than silently using 0.
             return StyleExpressionValue::String(L"");
         }
-        if (it->second.numeric) {
-            return StyleExpressionValue::Number(*it->second.numeric);
+        if (resolution.value->numeric) {
+            return StyleExpressionValue::Number(*resolution.value->numeric);
         }
         // Non-numeric primitive (e.g. a captured string property): usable as a
         // string operand.
-        if (it->second.substitutable) {
-            return StyleExpressionValue::String(it->second.stringForm);
+        if (resolution.value->substitutable) {
+            return StyleExpressionValue::String(resolution.value->stringForm);
         }
         // Opaque capture (brush, thickness, etc.): no value form usable in an
         // expression.
-        if (m_live) {
-            throw std::runtime_error(
-                "Style variable used in expression is not a primitive value");
-        }
-        return StyleExpressionValue::Number(0.0);
+        throw std::runtime_error(
+            "Style variable used in expression is not a primitive value");
     }
 
     std::wstring_view m_text;
-    std::vector<std::wstring>* m_outDeps;
-    StyleVariableState* m_state;
+    const StyleVariableLookupContext* m_context;
     size_t m_pos = 0;
     // When false, we're parsing (but discarding) the untaken branch of a
     // ternary; value-level errors and dependency capture are suppressed.
@@ -11130,8 +11459,7 @@ class StyleVariableExpressionEvaluator {
 // rather than substituting a value that won't parse.
 std::optional<std::wstring> EvaluateStyleVariableExpression(
     std::wstring_view exprText,
-    std::vector<std::wstring>* outDeps,
-    StyleVariableState* state) {
+    const StyleVariableLookupContext* context) {
     auto trimmed = TrimStringView(exprText);
     if (trimmed.empty()) {
         Wh_Log(L"Empty style variable expression");
@@ -11140,27 +11468,28 @@ std::optional<std::wstring> EvaluateStyleVariableExpression(
 
     if (IsValidStyleVariableIdentifier(trimmed)) {
         std::wstring name(trimmed);
-        if (outDeps) {
-            outDeps->push_back(name);
+        auto resolution =
+            FindWinningCapture(context->state, name, context->consumerNode);
+        if (context->outDeps) {
+            context->outDeps->push_back({name, resolution.owner});
         }
-        auto it = state->variables.find(name);
-        if (it == state->variables.end()) {
+        if (!resolution.value) {
             Wh_Log(L"Style variable '%s' not yet defined; skipping style",
                    name.c_str());
             return std::nullopt;
         }
-        if (!it->second.substitutable) {
+        if (!resolution.value->substitutable) {
             Wh_Log(
                 L"Style variable '%s' is not substitutable (captured type "
                 L"'%s'); skipping style",
-                name.c_str(), it->second.stringForm.c_str());
+                name.c_str(), resolution.value->stringForm.c_str());
             return std::nullopt;
         }
-        return it->second.stringForm;
+        return resolution.value->stringForm;
     }
 
     try {
-        StyleVariableExpressionEvaluator eval(trimmed, outDeps, state);
+        StyleVariableExpressionEvaluator eval(trimmed, context);
         return eval.Evaluate();
     } catch (std::exception const& ex) {
         Wh_Log(L"Style variable expression failed: %S (in '%.*s')", ex.what(),
@@ -11179,8 +11508,7 @@ std::optional<std::wstring> EvaluateStyleVariableExpression(
 // substituted output) to keep behavior predictable.
 std::optional<std::wstring> ExpandStyleVariables(
     std::wstring_view input,
-    std::vector<std::wstring>* outDeps,
-    StyleVariableState* state) {
+    const StyleVariableLookupContext* context) {
     std::wstring result(input);
     size_t scanFrom = 0;
 
@@ -11218,8 +11546,7 @@ std::optional<std::wstring> ExpandStyleVariables(
 
         std::wstring_view exprText(result.data() + openPos + 2,
                                    closePos - openPos - 2);
-        auto expanded =
-            EvaluateStyleVariableExpression(exprText, outDeps, state);
+        auto expanded = EvaluateStyleVariableExpression(exprText, context);
         if (!expanded) {
             return std::nullopt;
         }
@@ -11283,12 +11610,13 @@ StyleVariableValue ReadCapturedStyleVariableValue(FrameworkElement element,
 // `fallbackClassName` is stored on each newly-added consumer entry so the
 // per-consumer context is preserved across propagations; it is irrelevant when
 // newDeps is empty (pure-removal calls from the cleanup paths).
-void UpdateStyleVariableConsumers(StyleVariableState* state,
-                                  InstanceHandle handle,
-                                  DependencyProperty property,
-                                  PCWSTR fallbackClassName,
-                                  const std::vector<std::wstring>& oldDeps,
-                                  const std::vector<std::wstring>& newDeps) {
+void UpdateStyleVariableConsumers(
+    StyleVariableState* state,
+    InstanceHandle handle,
+    DependencyProperty property,
+    PCWSTR fallbackClassName,
+    const std::vector<StyleVariableDependency>& oldDeps,
+    const std::vector<StyleVariableDependency>& newDeps) {
     if (!state) {
         // The element's XamlRoot has already been destroyed (or was never
         // available); the StyleVariableState entry has been or will be reaped,
@@ -11299,7 +11627,7 @@ void UpdateStyleVariableConsumers(StyleVariableState* state,
     }
 
     for (const auto& dep : oldDeps) {
-        auto it = state->consumers.find(dep);
+        auto it = state->consumers.find(dep.name);
         if (it == state->consumers.end()) {
             continue;
         }
@@ -11315,7 +11643,7 @@ void UpdateStyleVariableConsumers(StyleVariableState* state,
     std::wstring fallbackClassNameStr =
         fallbackClassName ? fallbackClassName : L"";
     for (const auto& dep : newDeps) {
-        auto& consumers = state->consumers[dep];
+        auto& consumers = state->consumers[dep.name];
         bool already = std::any_of(consumers.begin(), consumers.end(),
                                    [&](const StyleVariableConsumer& c) {
                                        return c.elementHandle == handle &&
@@ -11347,6 +11675,10 @@ void UpdateStyleVariableConsumers(StyleVariableState* state,
 // StyleVariableConsumer entry so subsequent propagations route through this
 // same context.
 //
+// `elementCustomizationState` is the consumer's own entry when the caller
+// already has it, saving the lookup needed to rank captures by proximity; pass
+// nullptr to have it looked up from `handle`.
+//
 // Returns std::nullopt if the state has no template, expansion failed, or XAML
 // resolution failed.
 std::optional<PropertyOverrideValue> ResolveDynamicStyleValue(
@@ -11355,15 +11687,29 @@ std::optional<PropertyOverrideValue> ResolveDynamicStyleValue(
     FrameworkElement element,
     DependencyProperty property,
     PCWSTR fallbackClassName,
-    ElementPropertyCustomizationState* propertyCustomizationState) {
+    ElementPropertyCustomizationState* propertyCustomizationState,
+    ElementCustomizationState* elementCustomizationState) {
     if (!propertyCustomizationState->dynamicTemplate) {
         return std::nullopt;
     }
 
     const auto& tmpl = *propertyCustomizationState->dynamicTemplate;
 
-    std::vector<std::wstring> newDeps;
-    auto expanded = ExpandStyleVariables(tmpl.rawValue, &newDeps, state);
+    if (!elementCustomizationState) {
+        if (auto it = g_elementsCustomizationState.find(handle);
+            it != g_elementsCustomizationState.end()) {
+            elementCustomizationState = &it->second;
+        }
+    }
+
+    ElementTreeNode const* consumerNode =
+        elementCustomizationState
+            ? EnsureElementTreeNode(*elementCustomizationState)
+            : nullptr;
+
+    std::vector<StyleVariableDependency> newDeps;
+    StyleVariableLookupContext context{state, consumerNode, &newDeps};
+    auto expanded = ExpandStyleVariables(tmpl.rawValue, &context);
 
     UpdateStyleVariableConsumers(
         state, handle, property, fallbackClassName,
@@ -11371,6 +11717,7 @@ std::optional<PropertyOverrideValue> ResolveDynamicStyleValue(
     propertyCustomizationState->variableDependencies = std::move(newDeps);
 
     if (!expanded) {
+        propertyCustomizationState->lastResolveFailed = true;
         return std::nullopt;
     }
 
@@ -11386,20 +11733,60 @@ std::optional<PropertyOverrideValue> ResolveDynamicStyleValue(
             L"previously applied value",
             tmpl.propertyName.c_str(), typeName.c_str());
     }
+    propertyCustomizationState->lastResolveFailed = !resolved;
     return resolved;
 }
 
-// Re-evaluate every dependent style for the named variable. Driven by capture
-// callbacks when the source property changes, and by the initial capture when a
-// target is first matched. Each consumer carries its own fallbackClassName
-// (recorded when the consumer was registered), so propagation correctly uses
-// the consumer's own match-site context to re-parse the rule body, even when
-// the capturer was matched against a different type/fallback class.
-void PropagateStyleVariableChange(StyleVariableState* state,
-                                  const std::wstring& varName) {
+// Whether a change to `varName` can alter this property's resolved value.
+// `changedOwner` is set when one capture's value changed: only consumers that
+// read from that capture are affected. It is empty when the set of captures
+// changed instead, in which case `winningOwner` is the capture the consumer
+// would read now, and only a consumer whose recorded owner differs needs
+// redoing.
+bool StyleVariableChangeAffectsConsumer(
+    const ElementPropertyCustomizationState& propertyCustomizationState,
+    const std::wstring& varName,
+    std::optional<InstanceHandle> changedOwner,
+    InstanceHandle winningOwner) {
+    if (propertyCustomizationState.lastResolveFailed) {
+        return true;
+    }
+
+    for (const auto& dep : propertyCustomizationState.variableDependencies) {
+        if (dep.name != varName) {
+            continue;
+        }
+
+        return changedOwner ? dep.owner == *changedOwner
+                            : dep.owner != winningOwner;
+    }
+
+    return false;
+}
+
+// Re-evaluate the dependent styles a change to `varName` can actually reach.
+// Each consumer carries its own fallbackClassName (recorded when the consumer
+// was registered), so propagation uses the consumer's own match-site context to
+// re-parse the rule body, even when the capturer was matched against a
+// different type/fallback class.
+void PropagateStyleVariableChangeCore(
+    StyleVariableState* state,
+    const std::wstring& varName,
+    std::optional<InstanceHandle> changedOwner) {
     auto consumersIt = state->consumers.find(varName);
     if (consumersIt == state->consumers.end()) {
         return;
+    }
+
+    // Only the ranking varies per consumer, so the captures' spine nodes are
+    // resolved once for the whole pass. Needed only when the set of captures
+    // changed; a value change routes by the recorded owner instead.
+    std::vector<StyleVariableCandidate> candidates;
+    if (!changedOwner) {
+        if (auto varIt = state->variables.find(varName);
+            varIt != state->variables.end()) {
+            candidates = SnapshotStyleVariableCaptures(varIt->second);
+        }
     }
 
     auto consumersCopy = consumersIt->second;
@@ -11409,17 +11796,30 @@ void PropagateStyleVariableChange(StyleVariableState* state,
         if (stateIt == g_elementsCustomizationState.end()) {
             continue;
         }
-        auto element = stateIt->second.element.get();
+        // A reference rather than the iterator: applying a style below can
+        // realize children, which re-enters ApplyCustomizations and may rehash
+        // g_elementsCustomizationState. Rehashing invalidates iterators but not
+        // references to the mapped values.
+        auto& elementState = stateIt->second;
+
+        auto element = elementState.element.get();
         if (!element) {
             continue;
         }
+
+        // A handful of pointer comparisons against the snapshot above, far
+        // cheaper than the re-parse it avoids.
+        InstanceHandle winningOwner =
+            changedOwner ? 0
+                         : PickWinningCaptureOwner(
+                               candidates, EnsureElementTreeNode(elementState));
 
         PCWSTR consumerFallbackClassName =
             consumer.fallbackClassName.empty()
                 ? nullptr
                 : consumer.fallbackClassName.c_str();
 
-        for (auto& [vsgWeak, vsgState] : stateIt->second.perVisualStateGroup) {
+        for (auto& [vsgWeak, vsgState] : elementState.perVisualStateGroup) {
             auto propIt =
                 vsgState.propertyCustomizationStates.find(consumer.property);
             if (propIt == vsgState.propertyCustomizationStates.end()) {
@@ -11430,9 +11830,14 @@ void PropagateStyleVariableChange(StyleVariableState* state,
                 continue;
             }
 
+            if (!StyleVariableChangeAffectsConsumer(
+                    propState, varName, changedOwner, winningOwner)) {
+                continue;
+            }
+
             auto resolved = ResolveDynamicStyleValue(
                 state, consumer.elementHandle, element, consumer.property,
-                consumerFallbackClassName, &propState);
+                consumerFallbackClassName, &propState, &elementState);
             if (!resolved) {
                 continue;
             }
@@ -11452,32 +11857,98 @@ void PropagateStyleVariableChange(StyleVariableState* state,
     }
 }
 
-// Compare a captured value to whatever's currently in state->variables for the
-// same name; if different, store and notify dependents. Each consumer's own
-// fallbackClassName lives on the consumer entry, so this function does not need
-// to be told the capturer's context. Used by every path that wants to publish a
-// captured value -- the per-property capture callback, the SizeChanged
-// catch-all, and the initial seeding loop -- so the no-op fast path applies
-// uniformly.
+// Notify the styles that depend on `varName`. `changedOwner` names the capture
+// whose value changed, or is empty when captures were added or removed.
+//
+// Applying a style can realize children (running ApplyCustomizations, which
+// adds captures) or write a captured property (running a capture callback,
+// which g_elementPropertyModifying deliberately does not suppress), so this
+// re-enters. Nested calls queue instead of running, and the outermost frame
+// drains the queue, which also coalesces a burst into one pass.
+void PropagateStyleVariableChange(StyleVariableState* state,
+                                  const std::wstring& varName,
+                                  std::optional<InstanceHandle> changedOwner) {
+    PendingStyleVariablePropagation propagation{state, varName, changedOwner};
+
+    if (g_styleVariablePropagationDepth > 0) {
+        auto& pending = g_pendingStyleVariablePropagations;
+        if (std::find(pending.begin(), pending.end(), propagation) ==
+            pending.end()) {
+            pending.push_back(std::move(propagation));
+        }
+        return;
+    }
+
+    struct DepthScope {
+        DepthScope() { g_styleVariablePropagationDepth++; }
+        ~DepthScope() { g_styleVariablePropagationDepth--; }
+    } depthScope;
+
+    PropagateStyleVariableChangeCore(state, varName, changedOwner);
+
+    // A style that writes a property some rule captures keeps refilling the
+    // queue. The unchanged-value fast path settles most such loops within a
+    // round or two; a value that oscillates never settles, so give up loudly
+    // instead of hanging the UI thread.
+    constexpr int kMaxDrainRounds = 32;
+
+    for (int round = 0; !g_pendingStyleVariablePropagations.empty(); round++) {
+        if (round >= kMaxDrainRounds) {
+            Wh_Log(
+                L"Style variables did not settle after %d rounds; dropping %zu "
+                L"queued update(s)",
+                kMaxDrainRounds, g_pendingStyleVariablePropagations.size());
+            g_pendingStyleVariablePropagations.clear();
+            break;
+        }
+
+        auto pending = std::move(g_pendingStyleVariablePropagations);
+        g_pendingStyleVariablePropagations.clear();
+        for (const auto& pendingPropagation : pending) {
+            PropagateStyleVariableChangeCore(pendingPropagation.state,
+                                             pendingPropagation.varName,
+                                             pendingPropagation.changedOwner);
+        }
+    }
+}
+
+// Store a capture's freshly read value and notify dependents if it changed.
+// The comparison is against this capture's own previous value: comparing
+// against whichever capture currently wins would silently drop a second
+// capturer's change whenever it happened to match. Used by every path that
+// publishes a captured value -- the per-property capture callback and the
+// SizeChanged catch-all -- so the no-op fast path applies uniformly.
 void SetStyleVariableIfChangedAndPropagate(StyleVariableState* state,
                                            const std::wstring& varName,
+                                           InstanceHandle owner,
                                            StyleVariableValue value) {
-    auto it = state->variables.find(varName);
-    if (it != state->variables.end() &&
-        it->second.stringForm == value.stringForm &&
-        it->second.numeric == value.numeric &&
-        it->second.substitutable == value.substitutable) {
+    auto varIt = state->variables.find(varName);
+    if (varIt == state->variables.end()) {
+        return;
+    }
+
+    auto& captures = varIt->second;
+    auto it = std::find_if(captures.begin(), captures.end(),
+                           [owner](const StyleVariableCapture& capture) {
+                               return capture.elementHandle == owner;
+                           });
+    if (it == captures.end()) {
+        // The capture was torn down between the notification and here.
+        return;
+    }
+
+    if (it->value.stringForm == value.stringForm &&
+        it->value.numeric == value.numeric &&
+        it->value.substitutable == value.substitutable) {
         Wh_Log(L"Style variable '%s' unchanged at '%s'", varName.c_str(),
                value.stringForm.c_str());
         return;
     }
 
     Wh_Log(L"Style variable '%s' changed: '%s' -> '%s'", varName.c_str(),
-           it != state->variables.end() ? it->second.stringForm.c_str()
-                                        : L"(unset)",
-           value.stringForm.c_str());
-    state->variables[varName] = std::move(value);
-    PropagateStyleVariableChange(state, varName);
+           it->value.stringForm.c_str(), value.stringForm.c_str());
+    it->value = std::move(value);
+    PropagateStyleVariableChange(state, varName, owner);
 }
 
 // True for layout-driven DPs whose updates do not fire
@@ -11497,12 +11968,13 @@ bool IsLayoutDrivenSizeProperty(DependencyProperty property) {
 //
 // Seeding writes the captured values into state->variables in a single batch
 // (to avoid intermediate inconsistent states for consumers that depend on
-// multiple variables from this element) and then propagates only the variables
-// whose values actually changed -- the no-op fast path matches the one used by
-// the change-driven callbacks below. The function does not need the capturer's
-// fallbackClassName: each StyleVariableConsumer entry already carries its own
-// consumer-side fallback, so propagation routes through the right context per
-// consumer.
+// multiple variables from this element) and only then propagates. Every seeded
+// name propagates, even one whose value matches an existing capture's: adding a
+// capture changes which captures a consumer chooses between, so the consumers
+// have to be re-scored regardless of the value. The function does not need the
+// capturer's fallbackClassName: each StyleVariableConsumer entry already
+// carries its own consumer-side fallback, so propagation routes through the
+// right context per consumer.
 void SetUpCapturesForElement(StyleVariableState* state,
                              InstanceHandle handle,
                              FrameworkElement element,
@@ -11515,10 +11987,9 @@ void SetUpCapturesForElement(StyleVariableState* state,
     auto elementDo = element.as<DependencyObject>();
     winrt::weak_ref<FrameworkElement> elementWeakRef = element;
 
-    // Names of variables whose seeded value differs from whatever's already in
-    // state->variables. Only these need a propagation pass at the end.
-    std::vector<std::wstring> changedVarNames;
-    changedVarNames.reserve(captures.size());
+    // Names seeded below, propagated once the whole batch is in place.
+    std::vector<std::wstring> seededVarNames;
+    seededVarNames.reserve(captures.size());
 
     // Captures whose source DP is layout-driven (ActualWidth/ActualHeight) need
     // a SizeChanged subscription as their notification source. Collect them so
@@ -11547,30 +12018,18 @@ void SetUpCapturesForElement(StyleVariableState* state,
 
         auto value = ReadCapturedStyleVariableValue(element, capture.property);
 
-        auto existingIt = state->variables.find(capture.varName);
-        const bool changed =
-            existingIt == state->variables.end() ||
-            existingIt->second.stringForm != value.stringForm ||
-            existingIt->second.numeric != value.numeric ||
-            existingIt->second.substitutable != value.substitutable;
+        // No entry for this element can exist yet: the insert above rejects a
+        // second capture of the same DP, and FindElementPropertyOverrides
+        // rejects a second capture of the same name.
+        auto& capturesForVar = state->variables[capture.varName];
+        Wh_Log(
+            L"Seeding capture variable '%s' from %s with value '%s' "
+            L"(%zu other capture(s))",
+            capture.varName.c_str(), winrt::get_class_name(element).c_str(),
+            value.stringForm.c_str(), capturesForVar.size());
+        capturesForVar.push_back({handle, std::move(value)});
 
-        if (changed) {
-            Wh_Log(
-                L"Seeding capture variable '%s' from %s with value '%s' "
-                L"(was: '%s')",
-                capture.varName.c_str(), winrt::get_class_name(element).c_str(),
-                value.stringForm.c_str(),
-                existingIt != state->variables.end()
-                    ? existingIt->second.stringForm.c_str()
-                    : L"(unset)");
-            state->variables[capture.varName] = std::move(value);
-            changedVarNames.push_back(capture.varName);
-        } else {
-            Wh_Log(L"Capture variable '%s' from %s already at '%s'",
-                   capture.varName.c_str(),
-                   winrt::get_class_name(element).c_str(),
-                   value.stringForm.c_str());
-        }
+        seededVarNames.push_back(capture.varName);
 
         if (IsLayoutDrivenSizeProperty(capture.property)) {
             sizeChangedCaptures.push_back({capture.property, capture.varName});
@@ -11583,22 +12042,22 @@ void SetUpCapturesForElement(StyleVariableState* state,
         captureState.propertyChangedToken =
             elementDo.RegisterPropertyChangedCallback(
                 capture.property,
-                [state, varName, elementWeakRef](DependencyObject sender,
-                                                 DependencyProperty property) {
+                [state, varName, handle, elementWeakRef](
+                    DependencyObject sender, DependencyProperty property) {
                     auto element = elementWeakRef.get();
                     if (!element) {
                         return;
                     }
                     auto value =
                         ReadCapturedStyleVariableValue(element, property);
-                    SetStyleVariableIfChangedAndPropagate(state, varName,
-                                                          std::move(value));
+                    SetStyleVariableIfChangedAndPropagate(
+                        state, varName, handle, std::move(value));
                 });
     }
 
     if (!sizeChangedCaptures.empty()) {
         elementState->captureSizeChangedToken = element.SizeChanged(
-            [state, elementWeakRef,
+            [state, handle, elementWeakRef,
              sizeChangedCaptures = std::move(sizeChangedCaptures)](
                 winrt::Windows::Foundation::IInspectable const& sender,
                 SizeChangedEventArgs const& e) {
@@ -11612,17 +12071,16 @@ void SetUpCapturesForElement(StyleVariableState* state,
                 for (const auto& [property, varName] : sizeChangedCaptures) {
                     auto value =
                         ReadCapturedStyleVariableValue(element, property);
-                    SetStyleVariableIfChangedAndPropagate(state, varName,
-                                                          std::move(value));
+                    SetStyleVariableIfChangedAndPropagate(
+                        state, varName, handle, std::move(value));
                 }
             });
     }
 
-    // Propagate the freshly seeded values to any consumers that were already
-    // registered before this element was matched. Variables whose value did not
-    // actually change are skipped, matching the per-callback fast path.
-    for (const auto& varName : changedVarNames) {
-        PropagateStyleVariableChange(state, varName);
+    // The new captures may be closer to consumers registered before this
+    // element was matched than whatever they were reading.
+    for (const auto& varName : seededVarNames) {
+        PropagateStyleVariableChange(state, varName, std::nullopt);
     }
 }
 
@@ -11697,7 +12155,8 @@ void ApplyCustomizationsForVisualStateGroup(
                 propertyCustomizationState.dynamicTemplate = *tmpl;
                 resolved = ResolveDynamicStyleValue(
                     state, handle, element, property, fallbackClassName,
-                    &propertyCustomizationState);
+                    &propertyCustomizationState,
+                    /*elementCustomizationState=*/nullptr);
             } else {
                 resolved = it->second;
             }
@@ -11819,7 +12278,8 @@ void ApplyCustomizationsForVisualStateGroup(
                                 resolved = ResolveDynamicStyleValue(
                                     state, handle, element, property,
                                     fallbackClassNamePtr,
-                                    &propertyCustomizationState);
+                                    &propertyCustomizationState,
+                                    /*elementCustomizationState=*/nullptr);
                             } else {
                                 // Transitioning from dynamic to static for this
                                 // visual state: clear template metadata and
@@ -12739,6 +13199,17 @@ void ApplyCustomizations(InstanceHandle handle,
     elementCustomizationState.element = element;
     elementCustomizationState.perVisualStateGroup.clear();
 
+    // Elements that neither capture nor consume a variable pay nothing. The
+    // rest get their spine now that the element has been matched; if it isn't
+    // attached yet the walk yields nothing and EnsureElementTreeNode retries on
+    // first use. Cleared unconditionally so a re-apply that drops all variable
+    // use cannot leave a stale node behind.
+    elementCustomizationState.treeNode = nullptr;
+    if (!resolved.captures.empty() || resolved.hasDynamicValues) {
+        elementCustomizationState.treeNode =
+            GetOrCreateElementTreeNode(element);
+    }
+
     // Wire up captures first so any variables they define are visible to
     // dynamic value-rules applied below. Note: SetUpCapturesForElement does not
     // need this element's fallbackClassName -- propagation routes through each
@@ -12769,6 +13240,10 @@ void ApplyCustomizations(InstanceHandle handle,
 void CleanupCustomizations(InstanceHandle handle) {
     if (auto it = g_elementsCustomizationState.find(handle);
         it != g_elementsCustomizationState.end()) {
+        // A reference rather than the iterator: restoring a style below runs
+        // arbitrary XAML work that can re-enter ApplyCustomizations and rehash
+        // g_elementsCustomizationState, which invalidates iterators but not
+        // references to the mapped values.
         auto& elementCustomizationState = it->second;
 
         auto element = elementCustomizationState.element.get();
@@ -12776,21 +13251,35 @@ void CleanupCustomizations(InstanceHandle handle) {
 
         RestoreCapturesForElement(element, elementCustomizationState);
 
-        // Drop this element's captured variables from the registry so `{{Var}}`
-        // consumers see them as undefined again, then re-evaluate the
-        // dependents. Global last-writer-wins: the value is erased regardless
-        // of whether another element also captures the same name -- it is the
-        // user's responsibility to keep a single capture target per variable.
-        // Runs after RestoreCapturesForElement so the just-unregistered capture
-        // callbacks can't re-seed the variable mid-teardown.
+        // Drop this element's captures from the registry. Other elements may
+        // still capture the same names, so a name only becomes undefined once
+        // its last capture is gone. Runs after RestoreCapturesForElement so the
+        // just-unregistered capture callbacks can't re-seed a variable
+        // mid-teardown.
+        std::vector<std::wstring> removedVarNames;
         if (state) {
             for (const auto& [property, captureState] :
                  elementCustomizationState.captureCustomizationStates) {
                 if (captureState.varName.empty()) {
                     continue;
                 }
-                if (state->variables.erase(captureState.varName)) {
-                    PropagateStyleVariableChange(state, captureState.varName);
+
+                auto varIt = state->variables.find(captureState.varName);
+                if (varIt == state->variables.end()) {
+                    continue;
+                }
+
+                if (!std::erase_if(
+                        varIt->second,
+                        [handle](const StyleVariableCapture& capture) {
+                            return capture.elementHandle == handle;
+                        })) {
+                    continue;
+                }
+
+                removedVarNames.push_back(captureState.varName);
+                if (varIt->second.empty()) {
+                    state->variables.erase(varIt);
                 }
             }
         }
@@ -12802,7 +13291,21 @@ void CleanupCustomizations(InstanceHandle handle) {
                 stateIter);
         }
 
-        g_elementsCustomizationState.erase(it);
+        // By handle, not by `it`: a re-entrant apply above may have rehashed
+        // the map since the lookup.
+        g_elementsCustomizationState.erase(handle);
+
+        ReapElementTreeNodesIfNeeded();
+
+        // Deferred until this element is out of g_elementsCustomizationState,
+        // both so it can't be scored as a winning capture while being torn down
+        // and so the loops above don't walk state that re-entrant style applies
+        // could invalidate. Every removal propagates, not just the one that
+        // left a name undefined: dropping one of several captures still changes
+        // which one wins for the consumers that were closest to it.
+        for (const auto& varName : removedVarNames) {
+            PropagateStyleVariableChange(state, varName, std::nullopt);
+        }
     }
 
     if (auto it = g_webViewsCustomizationState.find(handle);
@@ -13824,7 +14327,12 @@ void UninitializeSettingsAndTap() {
         }
     }
 
+    // Before g_elementTreeNodes, since the states hold the last strong refs to
+    // the spine nodes.
     g_elementsCustomizationState.clear();
+    g_elementTreeNodes.clear();
+    g_elementTreeNodesReapThreshold = 64;
+    g_pendingStyleVariablePropagations.clear();
     g_styleVariableState = {};
 
     g_elementsCustomizationRules.clear();
