@@ -30,7 +30,10 @@ corners.
 
 The mod was [originally
 submitted](https://github.com/ramensoftware/windhawk-mods/pull/3587) by
-[Kanak415](https://github.com/kanak-buet19).
+[Kanak415](https://github.com/kanak-buet19). The option for maximized and
+snapped windows is based on a
+[mod](https://github.com/ramensoftware/windhawk-mods/pull/5022) by [Alexey
+Lavrinenko](https://github.com/leshaalexey).
 
 ![Screenshot](https://i.imgur.com/mMGkBwc.png)
 
@@ -48,6 +51,9 @@ and make sure that `dwm.exe` is in the list.
   This can be customized separately with the "Small corner radius" option.
 - Standard tooltips can be customized separately with the "Tooltip corner
   radius" option.
+- Windows 11 squares off the corners of maximized and snapped windows. The
+  "Rounded corners for maximized and snapped windows" option enables rounding
+  for them.
 - Some elements, such as the taskbar, the Start menu, and the notification
   center, are unaffected by this mod. Some of them can be customized using other
   mods, such as Windows 11 Taskbar Styler.
@@ -87,6 +93,15 @@ and make sure that `dwm.exe` is in the list.
     your DPI scaling.
 
     Set to -1 to leave tooltips unchanged.
+- roundMaximizedAndSnapped: none
+  $name: Rounded corners for maximized and snapped windows
+  $description: >-
+    Windows 11 squares off the corners of maximized and snapped windows. This
+    option enables rounding for them using the "Corner radius" value above.
+  $options:
+  - none: Leave them square
+  - snapped: Round snapped windows
+  - snappedAndMaximized: Round snapped and maximized windows
 */
 // ==/WindhawkModSettings==
 
@@ -100,14 +115,24 @@ and make sure that `dwm.exe` is in the list.
 #include <regex>
 #include <string_view>
 
+enum class RoundMaximizedAndSnapped {
+    none,
+    snapped,
+    snappedAndMaximized,
+};
+
 struct {
     float radius;
     float smallRadius;
     float tooltipRadius;
+    RoundMaximizedAndSnapped roundMaximizedAndSnapped;
 } g_settings;
 
 using GetWindowData_t = void*(WINAPI*)(void* pThis);
 GetWindowData_t GetWindowData_Original;
+
+using IsMaximizedOrSnapped_t = bool(WINAPI*)(void* pThis);
+IsMaximizedOrSnapped_t IsMaximizedOrSnapped_Original;
 
 // Captured (not hooked) address of CWindowData::IsGhostWindow. We disassemble
 // its first few instructions at init time to recover the HWND member offset.
@@ -247,31 +272,53 @@ int WINAPI GetEffectiveCornerStyle_Hook(void* pThis) {
     return orig;
 }
 
-using GetRadiusFromCornerStyle_t = float(WINAPI*)(void* pThis);
-GetRadiusFromCornerStyle_t GetRadiusFromCornerStyle_Original;
-float WINAPI GetRadiusFromCornerStyle_Hook(void* pThis) {
-    float orig = GetRadiusFromCornerStyle_Original(pThis);
+bool ShouldRoundMaximizedOrSnapped(void* pThis) {
+    if (g_settings.roundMaximizedAndSnapped == RoundMaximizedAndSnapped::none ||
+        !IsMaximizedOrSnapped_Original ||
+        !IsMaximizedOrSnapped_Original(pThis)) {
+        return false;
+    }
+
+    if (g_settings.roundMaximizedAndSnapped ==
+        RoundMaximizedAndSnapped::snappedAndMaximized) {
+        return true;
+    }
+
+    // Snapped windows only: a maximized window is zoomed, a snapped one isn't.
+    // Without an HWND there's no way to tell the two apart, so leave the window
+    // alone.
+    HWND hwnd = HwndFromTopLevelWindow(pThis);
+    return hwnd && !IsZoomed(hwnd);
+}
+
+float AdjustCornerRadius(void* pThis, float orig) {
     if (orig > 0) {
         bool isTooltip =
             g_settings.tooltipRadius >= 0.0f && IsTopLevelWindowTooltip(pThis);
         Wh_Log(L"> %f isTooltip=%d", orig, isTooltip);
         return RadiusForOriginal(orig, isTooltip);
     }
+
+    if (ShouldRoundMaximizedOrSnapped(pThis)) {
+        Wh_Log(L"> %f -> %f (maximized or snapped)", orig, g_settings.radius);
+        return g_settings.radius;
+    }
+
     return orig;
+}
+
+using GetRadiusFromCornerStyle_t = float(WINAPI*)(void* pThis);
+GetRadiusFromCornerStyle_t GetRadiusFromCornerStyle_Original;
+float WINAPI GetRadiusFromCornerStyle_Hook(void* pThis) {
+    return AdjustCornerRadius(pThis, GetRadiusFromCornerStyle_Original(pThis));
 }
 
 using GetFloatCornerRadiusForCurrentStyle_t = float(WINAPI*)(void* pThis);
 GetFloatCornerRadiusForCurrentStyle_t
     GetFloatCornerRadiusForCurrentStyle_Original;
 float WINAPI GetFloatCornerRadiusForCurrentStyle_Hook(void* pThis) {
-    float orig = GetFloatCornerRadiusForCurrentStyle_Original(pThis);
-    if (orig > 0) {
-        bool isTooltip =
-            g_settings.tooltipRadius >= 0.0f && IsTopLevelWindowTooltip(pThis);
-        Wh_Log(L"> %f isTooltip=%d", orig, isTooltip);
-        return RadiusForOriginal(orig, isTooltip);
-    }
-    return orig;
+    return AdjustCornerRadius(
+        pThis, GetFloatCornerRadiusForCurrentStyle_Original(pThis));
 }
 
 using SetBorderParameters_t = long(WINAPI*)(void* pThis,
@@ -318,6 +365,17 @@ void LoadSettings() {
     g_settings.tooltipRadius =
         std::nextafter(static_cast<float>(Wh_GetIntSetting(L"tooltipRadius")),
                        std::numeric_limits<float>::max());
+
+    PCWSTR roundMaximizedAndSnapped =
+        Wh_GetStringSetting(L"roundMaximizedAndSnapped");
+    g_settings.roundMaximizedAndSnapped = RoundMaximizedAndSnapped::none;
+    if (wcscmp(roundMaximizedAndSnapped, L"snapped") == 0) {
+        g_settings.roundMaximizedAndSnapped = RoundMaximizedAndSnapped::snapped;
+    } else if (wcscmp(roundMaximizedAndSnapped, L"snappedAndMaximized") == 0) {
+        g_settings.roundMaximizedAndSnapped =
+            RoundMaximizedAndSnapped::snappedAndMaximized;
+    }
+    Wh_FreeStringSetting(roundMaximizedAndSnapped);
 }
 
 // Returns true if at least two Dwminit warnings (Level=3) were logged in the
@@ -389,6 +447,12 @@ BOOL Wh_ModInit() {
     //     -> GetDpiAdjustedFloatCornerRadius
     //       -> GetRadiusFromCornerStyle
     //     -> ResourceHelper::CreateRectangleGeometry
+    //
+    // In new builds, the squaring of maximized and snapped windows sits in
+    // GetFloatCornerRadiusForCurrentStyle, which returns zero under the same
+    // condition IsMaximizedOrSnapped tests, without consulting the corner style
+    // at all. The animation path isn't squared, so restoring the rounding only
+    // takes replacing that zero.
 
     WindhawkUtils::SYMBOL_HOOK udwmDllHooks[] = {
         // Used to recover the HWND for tooltip detection. Returns the
@@ -407,6 +471,15 @@ BOOL Wh_ModInit() {
             &IsGhostWindow_Func,
             nullptr,
             true,  // Optional - tooltip detection is skipped if missing.
+        },
+        // DWM's own answer about whether the surface being composed is a
+        // maximized or snapped window. Every replacement made for such windows
+        // is gated on it. Capture only, no hook.
+        {
+            {LR"(public: bool __cdecl CTopLevelWindow::IsMaximizedOrSnapped(void)const )"},
+            &IsMaximizedOrSnapped_Original,
+            nullptr,
+            true,  // Optional - maximized/snapped rounding is skipped.
         },
         // Skips visual updates for SysShadow companion windows so the legacy
         // rectangular drop shadow doesn't poke out beside the rounded tooltip.
@@ -431,11 +504,18 @@ BOOL Wh_ModInit() {
             &GetRadiusFromCornerStyle_Original,
             GetRadiusFromCornerStyle_Hook,
         },
-        // Covers UpdateWindowVisuals in new builds (calls
-        // GetRadiusFromCornerStyle, but hooked separately in case a future
-        // build inlines that call).
+        // Covers UpdateWindowVisuals in new builds, and with it the squaring of
+        // maximized and snapped windows. Calls GetRadiusFromCornerStyle, but is
+        // hooked separately since it zeroes the radius of its own accord and in
+        // case a future build inlines that call. The access specifier differs
+        // between builds, so both are listed.
         {
-            {LR"(private: float __cdecl CTopLevelWindow::GetFloatCornerRadiusForCurrentStyle(void))"},
+            {
+                LR"(public: float __cdecl CTopLevelWindow::GetFloatCornerRadiusForCurrentStyle(void))",
+
+                // Older Windows 11 builds:
+                LR"(private: float __cdecl CTopLevelWindow::GetFloatCornerRadiusForCurrentStyle(void))",
+            },
             &GetFloatCornerRadiusForCurrentStyle_Original,
             GetFloatCornerRadiusForCurrentStyle_Hook,
             true,  // Missing in earlier builds (e.g. 10.0.22621.6199).
