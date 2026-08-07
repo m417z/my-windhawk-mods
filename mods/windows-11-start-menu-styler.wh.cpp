@@ -205,6 +205,10 @@ control can also include:
   specified only once per target. The visual state group can be used in styles
   as specified below.
 
+Several target controls can be specified for the same styles by separating them
+with commas, for example: `ParentClass > Class#Name1, ParentClass >
+Class#Name2`.
+
 **Note**: The target is evaluated only once. If, for example, the index or the
 properties of a control change, the target conditions aren't evaluated again.
 
@@ -13609,8 +13613,40 @@ std::wstring AdjustTypeName(std::wstring_view type) {
     return std::wstring{type};
 }
 
-void AddElementCustomizationRules(std::wstring_view target,
-                                  std::vector<std::wstring> styles) {
+// Splits a target string on the commas which separate targets, ignoring commas
+// which are part of a `[Property=Value]` clause.
+std::vector<std::wstring_view> SplitTargetString(std::wstring_view target) {
+    std::vector<std::wstring_view> result;
+
+    size_t partBegin = 0;
+    bool inProperty = false;
+    for (size_t i = 0; i < target.size(); i++) {
+        switch (target[i]) {
+            case L'[':
+                inProperty = true;
+                break;
+
+            case L']':
+                inProperty = false;
+                break;
+
+            case L',':
+                if (!inProperty) {
+                    result.push_back(target.substr(partBegin, i - partBegin));
+                    partBegin = i + 1;
+                }
+                break;
+        }
+    }
+
+    result.push_back(target.substr(partBegin));
+
+    return result;
+}
+
+void AddElementCustomizationRulesForSingleTarget(
+    std::wstring_view target,
+    std::vector<std::wstring> styles) {
     ElementCustomizationRules elementCustomizationRules;
 
     auto targetParts = SplitStringView(target, L" > ");
@@ -13704,6 +13740,18 @@ void AddElementCustomizationRules(std::wstring_view target,
 
     g_elementsCustomizationRules.push_back(
         std::move(elementCustomizationRules));
+}
+
+void AddElementCustomizationRules(std::wstring_view target,
+                                  std::vector<std::wstring> styles) {
+    auto targets = SplitTargetString(target);
+
+    for (size_t i = 0; i + 1 < targets.size(); i++) {
+        AddElementCustomizationRulesForSingleTarget(targets[i], styles);
+    }
+
+    AddElementCustomizationRulesForSingleTarget(targets.back(),
+                                                std::move(styles));
 }
 
 bool ProcessSingleTargetStylesFromSettings(
