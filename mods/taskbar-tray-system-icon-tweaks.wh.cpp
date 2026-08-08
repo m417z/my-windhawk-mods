@@ -77,6 +77,7 @@ Only Windows 11 is supported.
 
 #include <atomic>
 #include <functional>
+#include <limits>
 #include <list>
 #include <string>
 #include <vector>
@@ -1052,6 +1053,17 @@ void ApplyShowDesktopStyle(FrameworkElement systemTrayIconElement) {
         systemTrayIconElement.MaxWidth(width);
         showDesktopStack.MinWidth(width);
         showDesktopStack.MaxWidth(width);
+
+        auto containerGrid =
+            FindChildByName(systemTrayIconElement, L"ContainerGrid");
+        if (containerGrid) {
+            // The container grid has an explicit width, which keeps its content
+            // at the default size regardless of the width of the icon view. Set
+            // it to Auto to have it fill the icon view.
+            containerGrid.Width(std::numeric_limits<double>::quiet_NaN());
+        } else {
+            Wh_Log(L"Failed to get ContainerGrid");
+        }
     }
 }
 
