@@ -3786,12 +3786,6 @@ DWORD WINAPI UiThreadProc(LPVOID param) {
     // re-derives the active state (see SinkWndProc), recovering the desktop
     // without polling.
     g_taskbarCreatedMsg = RegisterWindowMessageW(L"TaskbarCreated");
-    if (g_taskbarCreatedMsg) {
-        // Let the broadcast through UIPI in case this process runs at a higher
-        // integrity level than Explorer (which sends it).
-        ChangeWindowMessageFilterEx(g_sinkWnd, g_taskbarCreatedMsg,
-                                    MSGFLT_ALLOW, nullptr);
-    }
 
     // Register for shell hook notifications (HSHELL_WINDOWACTIVATED etc.) as an
     // additional activation signal. The genuine return to Explorer after the
@@ -3799,11 +3793,6 @@ DWORD WINAPI UiThreadProc(LPVOID param) {
     // and the shell hook runs through different machinery, so it may fire
     // there.
     g_shellHookMsg = RegisterWindowMessageW(L"SHELLHOOK");
-    if (g_shellHookMsg) {
-        // Allow it through UIPI, like TaskbarCreated above.
-        ChangeWindowMessageFilterEx(g_sinkWnd, g_shellHookMsg, MSGFLT_ALLOW,
-                                    nullptr);
-    }
     if (!RegisterShellHookWindow(g_sinkWnd)) {
         Wh_Log(L"RegisterShellHookWindow failed, le=%lu", GetLastError());
     }
