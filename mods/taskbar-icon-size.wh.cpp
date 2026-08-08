@@ -1141,9 +1141,9 @@ void WINAPI SystemTrayFrame_Height_Hook(void* pThis, double value) {
 
     if (!IsVerticalTaskbar() && g_inSystemTrayController_UpdateFrameSize) {
         Wh_Log(L">");
-        // Set the system tray height to NaN, otherwise it may not match the
+        // Set the system tray height explicitly, otherwise it may not match the
         // custom taskbar height.
-        value = std::numeric_limits<double>::quiet_NaN();
+        value = g_taskbarHeight;
     }
 
     SystemTrayFrame_Height_Original(pThis, value);
