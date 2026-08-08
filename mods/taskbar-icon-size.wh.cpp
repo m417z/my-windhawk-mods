@@ -1139,7 +1139,8 @@ SystemTrayFrame_Height_t SystemTrayFrame_Height_Original;
 void WINAPI SystemTrayFrame_Height_Hook(void* pThis, double value) {
     // Wh_Log(L">");
 
-    if (!IsVerticalTaskbar() && g_inSystemTrayController_UpdateFrameSize) {
+    if (!IsVerticalTaskbar() && g_inSystemTrayController_UpdateFrameSize &&
+        g_taskbarHeight) {
         Wh_Log(L">");
         // Set the system tray height explicitly, otherwise it may not match the
         // custom taskbar height.
