@@ -14196,9 +14196,16 @@ void UpdateClickThroughRegion(ClickThroughTaskbarState& state) {
         return;
     }
 
-    double scale = xamlRoot.RasterizationScale();
+    // XamlRoot.RasterizationScale reports a scale factor snapped to one of the
+    // standard values, so with a custom display scaling level (e.g. 110%) it
+    // doesn't match the DIP-to-pixel ratio the island is laid out with, and the
+    // region comes out too small. The island window's DPI gives the actual
+    // ratio; RasterizationScale is only a fallback.
+    double rasterizationScale = xamlRoot.RasterizationScale();
+    UINT islandDpi = GetDpiForWindow(state.islandHwnd);
+    double scale = islandDpi ? islandDpi / 96.0 : rasterizationScale;
     if (scale <= 0) {
-        Wh_Log(L"Invalid RasterizationScale %f", scale);
+        Wh_Log(L"Invalid scale %f", scale);
         return;
     }
 
@@ -14320,7 +14327,8 @@ void UpdateClickThroughRegion(ClickThroughTaskbarState& state) {
         }
     }
 
-    Wh_Log(L"Applying region to %08X", (DWORD)(ULONG_PTR)topLevelWnd);
+    Wh_Log(L"Applying region to %08X, dpi=%u, rasterization scale=%f",
+           (DWORD)(ULONG_PTR)topLevelWnd, islandDpi, rasterizationScale);
 
     // SetWindowRgn takes ownership of the region on success. Record what was
     // applied only then, so a failed apply is retried on the next pass. The
