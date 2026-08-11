@@ -2,7 +2,7 @@
 // @id              custom-corner-radius
 // @name            Custom Window Corner Radius
 // @description     Customizes window corner radius in Windows 11, making corners more or less rounded
-// @version         1.2
+// @version         1.3
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
@@ -274,8 +274,16 @@ int WINAPI GetEffectiveCornerStyle_Hook(void* pThis) {
 
 bool ShouldRoundMaximizedOrSnapped(void* pThis) {
     if (g_settings.roundMaximizedAndSnapped == RoundMaximizedAndSnapped::none ||
-        !IsMaximizedOrSnapped_Original ||
+        g_settings.radius < 0.0f || !IsMaximizedOrSnapped_Original ||
         !IsMaximizedOrSnapped_Original(pThis)) {
+        return false;
+    }
+
+    // A zero radius can also come from an app asking for DWMWCP_DONOTROUND.
+    // Only the squaring should be undone, so consult the corner style, which
+    // the squaring doesn't touch.
+    if (GetEffectiveCornerStyle_Original &&
+        GetEffectiveCornerStyle_Original(pThis) == DWMWCP_DONOTROUND) {
         return false;
     }
 
@@ -291,7 +299,12 @@ bool ShouldRoundMaximizedOrSnapped(void* pThis) {
     return hwnd && !IsZoomed(hwnd);
 }
 
-float AdjustCornerRadius(void* pThis, float orig) {
+// Only GetFloatCornerRadiusForCurrentStyle squares maximized and snapped
+// windows, so only it passes canRoundMaximizedOrSnapped. Elsewhere a zero
+// radius comes from the corner style and is left alone.
+float AdjustCornerRadius(void* pThis,
+                         float orig,
+                         bool canRoundMaximizedOrSnapped) {
     if (orig > 0) {
         bool isTooltip =
             g_settings.tooltipRadius >= 0.0f && IsTopLevelWindowTooltip(pThis);
@@ -299,7 +312,7 @@ float AdjustCornerRadius(void* pThis, float orig) {
         return RadiusForOriginal(orig, isTooltip);
     }
 
-    if (ShouldRoundMaximizedOrSnapped(pThis)) {
+    if (canRoundMaximizedOrSnapped && ShouldRoundMaximizedOrSnapped(pThis)) {
         Wh_Log(L"> %f -> %f (maximized or snapped)", orig, g_settings.radius);
         return g_settings.radius;
     }
@@ -310,7 +323,8 @@ float AdjustCornerRadius(void* pThis, float orig) {
 using GetRadiusFromCornerStyle_t = float(WINAPI*)(void* pThis);
 GetRadiusFromCornerStyle_t GetRadiusFromCornerStyle_Original;
 float WINAPI GetRadiusFromCornerStyle_Hook(void* pThis) {
-    return AdjustCornerRadius(pThis, GetRadiusFromCornerStyle_Original(pThis));
+    return AdjustCornerRadius(pThis, GetRadiusFromCornerStyle_Original(pThis),
+                              /*canRoundMaximizedOrSnapped=*/false);
 }
 
 using GetFloatCornerRadiusForCurrentStyle_t = float(WINAPI*)(void* pThis);
@@ -318,7 +332,8 @@ GetFloatCornerRadiusForCurrentStyle_t
     GetFloatCornerRadiusForCurrentStyle_Original;
 float WINAPI GetFloatCornerRadiusForCurrentStyle_Hook(void* pThis) {
     return AdjustCornerRadius(
-        pThis, GetFloatCornerRadiusForCurrentStyle_Original(pThis));
+        pThis, GetFloatCornerRadiusForCurrentStyle_Original(pThis),
+        /*canRoundMaximizedOrSnapped=*/true);
 }
 
 using SetBorderParameters_t = long(WINAPI*)(void* pThis,
@@ -492,6 +507,7 @@ BOOL Wh_ModInit() {
         // Used to promote tooltips from "no rounding" to "round small" so the
         // full DWM rounding pipeline kicks in (border + shadow + clip), instead
         // of us trying to force a radius onto a window DWM thinks is square.
+        // Also consulted by ShouldRoundMaximizedOrSnapped.
         {
             {LR"(private: enum CORNER_STYLE __cdecl CTopLevelWindow::GetEffectiveCornerStyle(void))"},
             &GetEffectiveCornerStyle_Original,
