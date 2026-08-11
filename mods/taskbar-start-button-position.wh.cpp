@@ -2,7 +2,7 @@
 // @id              taskbar-start-button-position
 // @name            Start button always on the left
 // @description     Forces the Start button to be on the left of the taskbar, even when taskbar icons are centered, with an option to also move the search and task view buttons (Windows 11 only)
-// @version         1.3.1
+// @version         1.3.2
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
@@ -10,7 +10,7 @@
 // @include         StartMenuExperienceHost.exe
 // @include         explorer.exe
 // @architecture    x86-64
-// @compilerOptions -ldwmapi -lole32 -loleaut32 -lruntimeobject -lshcore
+// @compilerOptions -ldwmapi -lole32 -loleaut32 -lruntimeobject
 // ==/WindhawkMod==
 
 // Source code is published under The GNU General Public License v3.0.
@@ -59,6 +59,8 @@ _Start button, search and task view buttons on the left_
     Start menu, not when it's opened in other ways, such as with the Win+S
     shortcut or the taskbar search icon. Enable this option to reposition it in
     all cases.
+
+    Only applies when the "Start menu on the left" option is enabled.
 */
 // ==/WindhawkModSettings==
 
@@ -66,6 +68,8 @@ _Start button, search and task view buttons on the left_
 
 #include <atomic>
 #include <functional>
+#include <limits>
+#include <optional>
 #include <string>
 
 #include <dwmapi.h>
@@ -329,7 +333,7 @@ void UpdatePinnedSystemButtonMargin(FrameworkElement element) {
     }
 
     auto taskbarFrameRepeater =
-        Media::VisualTreeHelper::GetParent(element).as<FrameworkElement>();
+        Media::VisualTreeHelper::GetParent(element).try_as<FrameworkElement>();
     if (!taskbarFrameRepeater) {
         return;
     }
@@ -397,7 +401,7 @@ void UpdateWidgetLeftMargin(FrameworkElement element) {
     }
 
     auto taskbarFrameRepeater =
-        Media::VisualTreeHelper::GetParent(element).as<FrameworkElement>();
+        Media::VisualTreeHelper::GetParent(element).try_as<FrameworkElement>();
     if (!taskbarFrameRepeater) {
         return;
     }
@@ -763,7 +767,10 @@ HRESULT WINAPI IUIElement_Arrange_Hook(void* pThis,
     }
 
     auto taskbarFrameRepeater =
-        Media::VisualTreeHelper::GetParent(element).as<FrameworkElement>();
+        Media::VisualTreeHelper::GetParent(element).try_as<FrameworkElement>();
+    if (!taskbarFrameRepeater) {
+        return original();
+    }
 
     // Find the widgets button at its left-pinned position (offset matches its
     // margin). When present, it sits right of the start button (or cluster) and
