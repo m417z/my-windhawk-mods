@@ -368,31 +368,32 @@ void ProcessResolvedWindow(PVOID pThis, RESOLVEDWINDOW* resolvedWindow) {
         }
     }
 
-    bool excluded = false;
+    bool matchedExcludedItem = false;
 
     if (g_settings.excludedProgramItems.contains(resolvedAppIdStrUpper)) {
-        Wh_Log(L"Excluding %s", resolvedWindow->szAppIdStr);
-        excluded = true;
+        Wh_Log(L"Excluded item match: %s", resolvedWindow->szAppIdStr);
+        matchedExcludedItem = true;
     }
 
-    if (!excluded && resolvedWindowProcessPathLen > 0 &&
+    if (!matchedExcludedItem && resolvedWindowProcessPathLen > 0 &&
         g_settings.excludedProgramItems.contains(
             resolvedWindowProcessPathUpper)) {
-        Wh_Log(L"Excluding %s", resolvedWindowProcessPath);
-        excluded = true;
+        Wh_Log(L"Excluded item match: %s", resolvedWindowProcessPath);
+        matchedExcludedItem = true;
     }
 
-    if (!excluded && programFileNameUpper &&
+    if (!matchedExcludedItem && programFileNameUpper &&
         g_settings.excludedProgramItems.contains(programFileNameUpper)) {
-        Wh_Log(L"Excluding %s", resolvedWindowProcessPath);
-        excluded = true;
+        Wh_Log(L"Excluded item match: %s", resolvedWindowProcessPath);
+        matchedExcludedItem = true;
     }
 
-    if (g_settings.groupingMode == GroupingMode::inverse) {
-        excluded = !excluded;
-    }
+    bool excluded = g_settings.groupingMode == GroupingMode::inverse
+                        ? !matchedExcludedItem
+                        : matchedExcludedItem;
 
     if (excluded) {
+        Wh_Log(L"Excluded, keeping the default grouping");
         return;
     }
 
