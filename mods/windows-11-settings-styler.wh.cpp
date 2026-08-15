@@ -2,7 +2,7 @@
 // @id              windows-11-settings-styler
 // @name            Windows 11 Settings Styler
 // @description     Customize the Windows Settings app with themes contributed by others or create your own
-// @version         1.0.1
+// @version         1.1
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
@@ -102,7 +102,7 @@ from the **TranslucentTB** project.
   - Blue: Blue
   - Translucent_Settings11: Translucent Settings11
   - WindowGlass: WindowGlass
-  - OLED_variant_ModirinthGreen: OLED (Modirinth Green)
+  - OLED_variant_ModrinthGreen: OLED (Modrinth Green)
   - OLED_variant_SystemAscent: OLED (System Ascent)
 - styleConstants: [""]
   $name: Style constants
@@ -1202,7 +1202,7 @@ const Theme g_themeWindowGlass = {{
     L"Backdrop=<AcrylicBrush BackgroundSource=\"HostBackdrop\" TintColor=\"{ThemeResource SystemChromeAltHighColor}\" TintOpacity=\"0.3\" FallbackColor=\"{ThemeResource SystemChromeAltHighColor}\" />",
 }};
 
-const Theme g_themeOLED = {{
+const Theme g_themeOLED_variant_ModrinthGreen = {{
     ThemeTargetStyles{L"ContentControl#GridViewItemContentControl > ContentPresenter > Grid", {
         L"Background=#101013"}},
     ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Primitives.ListViewItemPresenter > Border", {
@@ -1892,7 +1892,7 @@ const Theme g_themeOLED = {{
         L"Background=Transparent"}},
 }};
 
-const Theme g_themeOLED_variant_1 = {{
+const Theme g_themeOLED_variant_SystemAscent = {{
     ThemeTargetStyles{L"ContentControl#GridViewItemContentControl > ContentPresenter > Grid", {
         L"Background=#101013"}},
     ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Primitives.ListViewItemPresenter > Border", {
@@ -9148,10 +9148,10 @@ void ProcessAllStylesFromSettings() {
         theme = &g_themeTranslucent_Settings11;
     } else if (wcscmp(themeName, L"WindowGlass") == 0) {
         theme = &g_themeWindowGlass;
-    } else if (wcscmp(themeName, L"OLED_variant_ModirinthGreen") == 0) {
-        theme = &g_themeOLED;
+    } else if (wcscmp(themeName, L"OLED_variant_ModrinthGreen") == 0) {
+        theme = &g_themeOLED_variant_ModrinthGreen;
     } else if (wcscmp(themeName, L"OLED_variant_SystemAscent") == 0) {
-        theme = &g_themeOLED_variant_1;
+        theme = &g_themeOLED_variant_SystemAscent;
     }
     Wh_FreeStringSetting(themeName);
 
