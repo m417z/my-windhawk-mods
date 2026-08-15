@@ -9571,8 +9571,9 @@ bool StartStatsTimer() {
 
     constexpr ULONGLONG k10Minutes = 10 * 60 * 10000000LL;
     constexpr ULONGLONG k24Hours = 24 * 60 * 60 * 10000000LL;
+    constexpr ULONGLONG k10Seconds = 10 * 10000000LL;
 
-    ULONGLONG minDueTime = currentTime + k10Minutes;
+    ULONGLONG minDueTime = currentTime + k10Seconds;
     ULONGLONG maxDueTime = currentTime + k24Hours;
 
     ULONGLONG dueTime = lastStatsTime + k24Hours;
@@ -9654,12 +9655,12 @@ bool StartStatsTimer() {
     }
 
     constexpr DWORD k24HoursInMs = 24 * 60 * 60 * 1000;
-    constexpr ULONGLONG k10MinutesInMs = 10 * 60 * 1000;
+    constexpr DWORD k1SecondInMs = 1000;
 
     FILETIME dueTimeFt;
     dueTimeFt.dwLowDateTime = (DWORD)(dueTime & 0xFFFFFFFF);
     dueTimeFt.dwHighDateTime = (DWORD)(dueTime >> 32);
-    SetThreadpoolTimer(g_statsTimer, &dueTimeFt, k24HoursInMs, k10MinutesInMs);
+    SetThreadpoolTimer(g_statsTimer, &dueTimeFt, k24HoursInMs, k1SecondInMs);
     return true;
 }
 
