@@ -1206,7 +1206,7 @@ const Theme g_themeOLED = {{
     ThemeTargetStyles{L"ContentControl#GridViewItemContentControl > ContentPresenter > Grid", {
         L"Background=#101013"}},
     ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Primitives.ListViewItemPresenter > Border", {
-        L"CornerRadius=25",
+        L"CornerRadius=15",
         L"Background=transparent"}},
     ThemeTargetStyles{L"Microsoft.ReactNative.ReactRootView > Microsoft.ReactNative.ViewPanel > Microsoft.ReactNative.ViewPanel > Microsoft.ReactNative.ViewPanel > Microsoft.ReactNative.ViewPanel > Border", {
         L"Background=#101013"}},
@@ -1888,38 +1888,15 @@ const Theme g_themeOLED = {{
         L"CornerRadius=12",
         L"Foreground=White",
         L"BorderThickness=0"}},
+    ThemeTargetStyles{L"ScrollViewer > ScrollContentPresenter > Border > Frame > ContentPresenter > SystemSettings.View.RootPage > Grid#RootPageGrid > Microsoft.UI.Xaml.Controls.NavigationView#PermanentNavigationView > Grid#RootGrid > Grid > SplitView#RootSplitView > Grid > Grid#PaneRoot", {
+        L"Background=Transparent"}},
 }};
 
 const Theme g_themeOLED_variant_1 = {{
     ThemeTargetStyles{L"ContentControl#GridViewItemContentControl > ContentPresenter > Grid", {
         L"Background=#101013"}},
     ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Primitives.ListViewItemPresenter > Border", {
-        L"CornerRadius=25",
-        L"Background=transparent"}},
-    ThemeTargetStyles{L"Microsoft.ReactNative.ReactRootView > Microsoft.ReactNative.ViewPanel > Microsoft.ReactNative.ViewPanel > Microsoft.ReactNative.ViewPanel > Microsoft.ReactNative.ViewPanel > Border", {
-        L"Background=#101013"}},
-    ThemeTargetStyles{L"SystemSettings.View.ButtonEntityItem > Button#ContainerButton > ContentPresenter#ContentPresenter", {
-        L"Background=#101013"}},
-    ThemeTargetStyles{L"ContentPresenter#ContentPresenter > Grid > Grid > TextBlock", {
-        L"Foreground=white"}},
-    ThemeTargetStyles{L"SystemSettings.View.ReservedWidthReflowingPanel > StackPanel > ContentPresenter#SubtitleContent > TextBlock", {
-        L"Foreground=#ADADAE"}},
-    ThemeTargetStyles{L"Microsoft.ReactNative.ViewPanel > TextBlock", {
-        L"Foreground=#ADADAE"}},
-    ThemeTargetStyles{L"ContentPresenter#SubtitleContent > TextBlock", {
-        L"Foreground=#ADADAE"}},
-    ThemeTargetStyles{L"ContentPresenter#SubtitleContent > StackPanel > StackPanel > TextBlock", {
-        L"Foreground=#ADADAE"}},
-    ThemeTargetStyles{L"ContentPresenter#SubtitleContent > Grid > TextBlock", {
-        L"Foreground=#ADADAE"}},
-    ThemeTargetStyles{L"ContentPresenter#InlineContentPresenter > StackPanel > ContentControl > ContentPresenter > StackPanel > TextBlock", {
-        L"Foreground=white"}},
-    ThemeTargetStyles{L"Button#DeviceOptionsButton > Grid > Grid > ContentPresenter#ContentPresenter > TextBlock", {
-        L"Foreground=white"}},
-    ThemeTargetStyles{L"ContentPresenter#TitleContent > TextBlock", {
-        L"Foreground=white"}},
-    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Primitives.ListViewItemPresenter > Border", {
-        L"CornerRadius=25",
+        L"CornerRadius=15",
         L"Background=transparent"}},
     ThemeTargetStyles{L"Microsoft.ReactNative.ReactRootView > Microsoft.ReactNative.ViewPanel > Microsoft.ReactNative.ViewPanel > Microsoft.ReactNative.ViewPanel > Microsoft.ReactNative.ViewPanel > Border", {
         L"Background=#101013"}},
@@ -2601,6 +2578,8 @@ const Theme g_themeOLED_variant_1 = {{
         L"CornerRadius=12",
         L"Foreground=White",
         L"BorderThickness=0"}},
+    ThemeTargetStyles{L"ScrollViewer > ScrollContentPresenter > Border > Frame > ContentPresenter > SystemSettings.View.RootPage > Grid#RootPageGrid > Microsoft.UI.Xaml.Controls.NavigationView#PermanentNavigationView > Grid#RootGrid > Grid > SplitView#RootSplitView > Grid > Grid#PaneRoot", {
+        L"Background=Transparent"}},
 }};
 
 // clang-format on
