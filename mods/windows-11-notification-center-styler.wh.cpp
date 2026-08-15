@@ -9884,15 +9884,17 @@ void AddElementCustomizationRules(std::wstring_view target,
                                   const std::vector<std::wstring>& styles) {
     auto targets = SplitTargetString(target);
 
-    for (const auto& target : targets) {
+    for (const auto& singleTarget : targets) {
         try {
-            AddElementCustomizationRulesForSingleTarget(target, styles);
+            AddElementCustomizationRulesForSingleTarget(singleTarget, styles);
         } catch (winrt::hresult_error const& ex) {
             Wh_Log(L"Error %08X for target %.*s", ex.code(),
-                   static_cast<int>(target.length()), target.data());
+                   static_cast<int>(singleTarget.length()),
+                   singleTarget.data());
         } catch (std::exception const& ex) {
             Wh_Log(L"Error for target %.*s: %S",
-                   static_cast<int>(target.length()), target.data(), ex.what());
+                   static_cast<int>(singleTarget.length()), singleTarget.data(),
+                   ex.what());
         }
     }
 }
