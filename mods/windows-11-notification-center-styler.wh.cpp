@@ -272,8 +272,8 @@ substituting one skips the style, as does a bare reference to an undefined
 variable.
 
 Inside an expression, an undefined variable instead evaluates to the empty
-string, letting a style supply its own default via the conditional, e.g. ``
-{{width == `` ? 80 : width}} `` yields `80` until `width` is captured. The
+string, letting a style supply its own default via the conditional, e.g. ```
+{{width == `` ? 80 : width}} ``` yields `80` until `width` is captured. The
 numeric operators above then fail on such a variable, skipping the style rather
 than treating it as `0`.
 
