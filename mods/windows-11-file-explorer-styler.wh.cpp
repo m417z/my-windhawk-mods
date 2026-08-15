@@ -7617,7 +7617,7 @@ std::vector<std::wstring_view> SplitTargetString(std::wstring_view target) {
 
 void AddElementCustomizationRulesForSingleTarget(
     std::wstring_view target,
-    std::vector<std::wstring> styles) {
+    const std::vector<std::wstring>& styles) {
     ElementCustomizationRules elementCustomizationRules;
 
     auto targetParts = SplitStringView(target, L" > ");
@@ -7714,15 +7714,20 @@ void AddElementCustomizationRulesForSingleTarget(
 }
 
 void AddElementCustomizationRules(std::wstring_view target,
-                                  std::vector<std::wstring> styles) {
+                                  const std::vector<std::wstring>& styles) {
     auto targets = SplitTargetString(target);
 
-    for (size_t i = 0; i + 1 < targets.size(); i++) {
-        AddElementCustomizationRulesForSingleTarget(targets[i], styles);
+    for (const auto& target : targets) {
+        try {
+            AddElementCustomizationRulesForSingleTarget(target, styles);
+        } catch (winrt::hresult_error const& ex) {
+            Wh_Log(L"Error %08X for target %.*s", ex.code(),
+                   static_cast<int>(target.length()), target.data());
+        } catch (std::exception const& ex) {
+            Wh_Log(L"Error for target %.*s: %S",
+                   static_cast<int>(target.length()), target.data(), ex.what());
+        }
     }
-
-    AddElementCustomizationRulesForSingleTarget(targets.back(),
-                                                std::move(styles));
 }
 
 bool ProcessSingleTargetStylesFromSettings(
@@ -7760,8 +7765,7 @@ bool ProcessSingleTargetStylesFromSettings(
     }
 
     if (styles.size() > 0) {
-        AddElementCustomizationRules(targetStringSetting.get(),
-                                     std::move(styles));
+        AddElementCustomizationRules(targetStringSetting.get(), styles);
     }
 
     return true;
@@ -8109,8 +8113,7 @@ void ProcessAllStylesFromSettings() {
                     styles.push_back(ApplyStyleConstants(s, styleConstants));
                 }
 
-                AddElementCustomizationRules(themeTargetStyle.target,
-                                             std::move(styles));
+                AddElementCustomizationRules(themeTargetStyle.target, styles);
             } catch (winrt::hresult_error const& ex) {
                 Wh_Log(L"Error %08X", ex.code());
             } catch (std::exception const& ex) {
