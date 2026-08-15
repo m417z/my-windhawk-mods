@@ -4113,6 +4113,7 @@ HRESULT InjectWindhawkTAP() noexcept
 
 #include <algorithm>
 #include <charconv>
+#include <chrono>
 #include <cmath>
 #include <limits>
 #include <list>
