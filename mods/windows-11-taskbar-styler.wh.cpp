@@ -9437,6 +9437,12 @@ constexpr DWORD kNetworkChangeDebounceMs = 2000;
 // previous one is still loading.
 constexpr ULONGLONG kImageRetryBaseDelayMs = 5000;
 constexpr int kImageRetryMaxBackoffShift = 6;
+constexpr ULONGLONG kImageRetryMaxDelayMs = kImageRetryBaseDelayMs
+                                            << kImageRetryMaxBackoffShift;
+
+// Caps the attempts of a brush so that an event storm doesn't retry it
+// endlessly. The count starts over once the brush has been idle for the maximum
+// delay, so connectivity which returns much later can still recover the image.
 constexpr int kImageRetryMaxCount = 20;
 
 // Guards the globals below it. The network status handler acquires it, so it
@@ -11201,17 +11207,26 @@ void RetryFailedImageLoadsOnCurrentThread() {
     ULONGLONG tick = GetTickCount64();
 
     for (const auto& tracked : snapshot) {
-        if (tracked->loaded || tracked->retryCount >= kImageRetryMaxCount) {
+        if (tracked->loaded) {
             continue;
         }
 
         if (tracked->lastRetryTick) {
-            ULONGLONG delay = kImageRetryBaseDelayMs
-                              << std::clamp(tracked->retryCount - 1, 0,
-                                            kImageRetryMaxBackoffShift);
-            if (tick - tracked->lastRetryTick < delay) {
-                continue;
+            ULONGLONG sinceLastRetry = tick - tracked->lastRetryTick;
+            if (sinceLastRetry >= kImageRetryMaxDelayMs) {
+                tracked->retryCount = 0;
+            } else {
+                ULONGLONG delay = kImageRetryBaseDelayMs
+                                  << std::clamp(tracked->retryCount - 1, 0,
+                                                kImageRetryMaxBackoffShift);
+                if (sinceLastRetry < delay) {
+                    continue;
+                }
             }
+        }
+
+        if (tracked->retryCount >= kImageRetryMaxCount) {
+            continue;
         }
 
         StartImageBrushRetry(tracked);
