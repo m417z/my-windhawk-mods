@@ -51,6 +51,20 @@ StoreFrame11](https://github.com/ramensoftware/windows-11-settings-styling-guide
 \
 Blue](https://github.com/ramensoftware/windows-11-settings-styling-guide/blob/main/Themes/Blue/README.md)
 
+[![Translucent
+Settings11](https://raw.githubusercontent.com/ramensoftware/windows-11-settings-styling-guide/refs/heads/main/Themes/Translucent%20Settings11/screenshot-small.png)
+\
+Translucent
+Settings11](https://github.com/ramensoftware/windows-11-settings-styling-guide/blob/main/Themes/Translucent%20Settings11/README.md)
+
+[![WindowGlass](https://raw.githubusercontent.com/ramensoftware/windows-11-settings-styling-guide/refs/heads/main/Themes/WindowGlass/screenshot-small.png)
+\
+WindowGlass](https://github.com/ramensoftware/windows-11-settings-styling-guide/blob/main/Themes/WindowGlass/README.md)
+
+[![OLED](https://raw.githubusercontent.com/ramensoftware/windows-11-settings-styling-guide/refs/heads/main/Themes/OLED/screenshot-small.png)
+\
+OLED](https://github.com/ramensoftware/windows-11-settings-styling-guide/blob/main/Themes/OLED/README.md)
+
 More themes can be found in the **Themes** section of [The Windows 11 Settings
 styling
 guide](https://github.com/ramensoftware/windows-11-settings-styling-guide/blob/main/README.md#themes)
@@ -86,6 +100,10 @@ from the **TranslucentTB** project.
   - ClassicSearchBar: ClassicSearchBar
   - StoreFrame11: StoreFrame11
   - Blue: Blue
+  - Translucent_Settings11: Translucent Settings11
+  - WindowGlass: WindowGlass
+  - OLED_variant_ModirinthGreen: OLED (Modirinth Green)
+  - OLED_variant_SystemAscent: OLED (System Ascent)
 - styleConstants: [""]
   $name: Style constants
   $description: >-
@@ -694,6 +712,1895 @@ const Theme g_themeBlue = {{
         L"Background=DeepSkyBlue"}},
     ThemeTargetStyles{L"SystemSettings.View.SettingsNavigationViewItem > Grid#NVIRootGrid > NavigationViewItemPresenter > Grid#LayoutRoot > Grid#PresenterContentRootGrid > Grid#ContentGrid > ContentPresenter > TextBlock", {
         L"Foreground=White"}},
+}};
+
+const Theme g_themeTranslucent_Settings11 = {{
+    ThemeTargetStyles{L"ContentPresenter#IconContentPresenter", {
+        L"Foreground:=<SolidColorBrush Color=\"{ThemeResource SystemAccentColor}\" />"}},
+    ThemeTargetStyles{L"SystemSettings.View.SettingsExpander > Grid > SystemSettings.View.ExpanderToggleButton#ContainerButton > ContentPresenter#ContentPresenter", {
+        L"CornerRadius:=12,12,12,12"}},
+    ThemeTargetStyles{L"SystemSettings.View.SpacingStackPanel > ContentPresenter > SystemSettings.View.EntityItem > Grid", {
+        L"CornerRadius:=12"}},
+    ThemeTargetStyles{L"SystemSettings.View.EntityItem#BluetoothRadioToggleEntityItem > Grid", {
+        L"CornerRadius:=12"}},
+    ThemeTargetStyles{L"SystemSettings.View.TwoSegmentsHeroUserControl#DefaultOneSegmentHeroUserControl > Grid#LayoutRoot > Grid#LeftLayout > ContentPresenter > ItemsControl > ItemsPresenter > StackPanel > ContentPresenter > StackPanel > Button > ContentPresenter#ContentPresenter", {
+        L"CornerRadius:=12",
+        L"Width=250"}},
+    ThemeTargetStyles{L"SystemSettings.View.SettingsExpander > Grid > ContentPresenter#RevealedContent", {
+        L"CornerRadius:=12"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Primitives.ListViewItemPresenter > SystemSettings.View.EntityItem > Grid", {
+        L"CornerRadius:=$InRadius"}},
+    ThemeTargetStyles{L"SystemSettings.View.SettingsListViewItem > Windows.UI.Xaml.Controls.Primitives.ListViewItemPresenter > Border", {
+        L"CornerRadius:=$InRadius"}},
+    ThemeTargetStyles{L"SystemSettings.View.ButtonEntityItem > Button#ContainerButton > ContentPresenter#ContentPresenter", {
+        L"CornerRadius:=$InRadius"}},
+    ThemeTargetStyles{L"Border > Frame > ContentPresenter > SystemSettings.View.RootPage > Grid#RootPageGrid > Microsoft.UI.Xaml.Controls.NavigationView#PermanentNavigationView > Grid#RootGrid > Grid > SplitView#RootSplitView > Grid > Grid#ContentRoot > Border > Grid#ContentGrid > ContentPresenter#ContentPresenter", {
+        L"Margin=2"}},
+    ThemeTargetStyles{L"Grid#ContentRoot > Border > Grid#ContentGrid > ContentControl#HeaderContent", {
+        L"Margin=10,-38,0,5"}},
+    ThemeTargetStyles{L"SplitView#RootSplitView > Grid > Grid#PaneRoot > Border > Grid#PaneContentGrid > Grid#ItemsContainerGrid > Microsoft.UI.Xaml.Controls.ItemsRepeaterScrollHost > ScrollViewer#MenuItemsScrollViewer > Border#Root > Grid > ScrollContentPresenter#ScrollContentPresenter", {
+        L"Margin=-12,8,0,0"}},
+    ThemeTargetStyles{L"TextBox#CommandSearchTextBox > Grid > Button#DeleteButton > Grid#ButtonLayoutGrid", {
+        L"CornerRadius=$InRadius",
+        L"MinHeight=32"}},
+    ThemeTargetStyles{L"TextBox#CommandSearchTextBox", {
+        L"CornerRadius=$InRadius",
+        L"MinHeight=32"}},
+    ThemeTargetStyles{L"StackPanel#SettingsCommandSearchBoxBackground", {
+        L"CornerRadius=$InRadius",
+        L"MinHeight=32"}},
+    ThemeTargetStyles{L"SplitView#RootSplitView > Grid > Grid#PaneRoot > Border > Grid#PaneContentGrid > Grid#ItemsContainerGrid > Microsoft.UI.Xaml.Controls.ItemsRepeaterScrollHost > ScrollViewer#MenuItemsScrollViewer > Border#Root > Grid > ScrollContentPresenter#ScrollContentPresenter > Microsoft.UI.Xaml.Controls.ItemsRepeater#MenuItemsHost > SystemSettings.View.SettingsNavigationViewItem > Grid#NVIRootGrid > Microsoft.UI.Xaml.Controls.Primitives.NavigationViewItemPresenter#NavigationViewItemPresenter > Grid#LayoutRoot > Grid#PresenterContentRootGrid > Grid#ContentGrid > ContentPresenter#ContentPresenter > TextBlock", {
+        L"Grid.Column=0",
+        L"Visibility=Hidden"}},
+    ThemeTargetStyles{L"SplitView#RootSplitView > Grid > Grid#PaneRoot > Border > Grid#PaneContentGrid > Grid#ItemsContainerGrid > Microsoft.UI.Xaml.Controls.ItemsRepeaterScrollHost > ScrollViewer#MenuItemsScrollViewer > Border#Root > Grid > ScrollContentPresenter#ScrollContentPresenter > Microsoft.UI.Xaml.Controls.ItemsRepeater#MenuItemsHost > SystemSettings.View.SettingsNavigationViewItem", {
+        L"MinHeight=48",
+        L"MinWidth=65",
+        L"ToolTipService.Placement=5",
+        L"MaxWidth=65"}},
+    ThemeTargetStyles{L"Microsoft.UI.Xaml.Controls.NavigationView#PermanentNavigationView > Grid#RootGrid > Grid > SplitView#RootSplitView > Grid@DisplayModeStates > Grid#PaneRoot", {
+        L"MaxWidth@OpenInlineLeft=65",
+        L"Grid.ColumnSpan@OpenInlineLeft=1",
+        L"Grid.ColumnSpan=>Span"}},
+    ThemeTargetStyles{L"SplitView#RootSplitView > Grid > Grid#ContentRoot > Border > Grid#ContentGrid", {
+        L"Background:=<AcrylicBrush BackgroundSource=\"HostBackdrop\" TintColor=\"#00000000\" FallbackColor=\"#00000000\" TintOpacity=\"0.4\" TintLuminosityOpacity=\"0.4\" Opacity=\"0.4\"/>",
+        L"CornerRadius={{Span > 1 ? 0 : $OutRadius}},0,0,0",
+        L"Margin={{Span > 1 ? 0 : 65}},48,0,0",
+        L"BorderBrush:=$BgBorder",
+        L"BorderThickness={{Span > 1 ? 0 : 1}},1,0,0"}},
+    ThemeTargetStyles{L"Microsoft.UI.Xaml.Controls.NavigationView#PermanentNavigationView > Grid#RootGrid > Grid > SplitView#RootSplitView > Grid@DisplayModeStates > Grid#ContentRoot", {
+        L"Grid.Column@OpenInlineLeft=0",
+        L"Grid.ColumnSpan@OpenInlineLeft=3"}},
+    ThemeTargetStyles{L"Microsoft.UI.Xaml.Controls.NavigationView#PermanentNavigationView > Grid#RootGrid > Grid > Grid#ShadowCaster", {
+        L"Grid.ColumnSpan=1",
+        L"MaxWidth=65"}},
+    ThemeTargetStyles{L"SystemSettings.View.SettingsNavigationViewItem > Grid#NVIRootGrid > Microsoft.UI.Xaml.Controls.Primitives.NavigationViewItemPresenter#NavigationViewItemPresenter > Grid#LayoutRoot > Grid#PresenterContentRootGrid > Grid#ContentGrid > ContentPresenter#ContentPresenter > TextBlock", {
+        L"Padding=3,0,0,0"}},
+    ThemeTargetStyles{L"SystemSettings.View.SettingsNavigationViewItem > Grid#NVIRootGrid > Microsoft.UI.Xaml.Controls.Primitives.NavigationViewItemPresenter#NavigationViewItemPresenter > Grid#LayoutRoot@PointerStates > Grid#PresenterContentRootGrid > Grid#ContentGrid > Border#IconColumn > Viewbox#IconBox > Border > ContentPresenter#Icon", {
+        L"FontFamily=Segoe Fluent Icons",
+        L"Foreground@Normal:=<SolidColorBrush Color=\"{ThemeResource TextFillColorSecondary}\" />",
+        L"Foreground@PointerOver:=<SolidColorBrush Color=\"{ThemeResource TextFillColorPrimary}\" />",
+        L"Foreground@Pressed:=<SolidColorBrush Color=\"{ThemeResource TextFillColorPrimary}\" />",
+        L"Foreground@Selected:=<SolidColorBrush Color=\"{ThemeResource Accent}\" />",
+        L"Foreground@PointerOverSelected:=<SolidColorBrush Color=\"{ThemeResource Accent}\" />",
+        L"Foreground@PressedSelected:=<SolidColorBrush Color=\"{ThemeResource Accent}\" />",
+        L"FontSize=20",
+        L"Margin=15,0,-2,0"}},
+    ThemeTargetStyles{L"SystemSettings.View.SettingsNavigationViewItem[Content=Home] > Grid#NVIRootGrid > Microsoft.UI.Xaml.Controls.Primitives.NavigationViewItemPresenter#NavigationViewItemPresenter > Grid#LayoutRoot@PointerStates > Grid#PresenterContentRootGrid > Grid#ContentGrid > Border#IconColumn > Viewbox#IconBox > Border > ContentPresenter#Icon", {
+        L"Content@Normal:=\uE80F",
+        L"Content@PointerOver:=\uE80F",
+        L"Content@Pressed:=\uE80F",
+        L"Content@Selected:=\uEA8A",
+        L"Content@PointerOverSelected:=\uEA8A",
+        L"Content@PressedSelected:=\uEA8A",
+        L"Foreground@Selected:=<SolidColorBrush Color=\"{ThemeResource SystemAccentColor}\" />",
+        L"Foreground@PointerOverSelected:=<SolidColorBrush Color=\"{ThemeResource SystemAccentColor}\" />",
+        L"Foreground@PressedSelected:=<SolidColorBrush Color=\"{ThemeResource SystemAccentColor}\" />",
+        L"Foreground=#FFFFFF"}},
+    ThemeTargetStyles{L"SystemSettings.View.SettingsNavigationViewItem[Content=System] > Grid#NVIRootGrid > Microsoft.UI.Xaml.Controls.Primitives.NavigationViewItemPresenter#NavigationViewItemPresenter > Grid#LayoutRoot@PointerStates > Grid#PresenterContentRootGrid > Grid#ContentGrid > Border#IconColumn > Viewbox#IconBox > Border > ContentPresenter#Icon", {
+        L"Content@Normal:=\uE75B",
+        L"Content@PointerOver:=\uE75B",
+        L"Content@Pressed:=\uE75B",
+        L"Content@Selected:=\uE75B",
+        L"Content@PointerOverSelected:=\uE75B",
+        L"Content@PressedSelected:=\uE75B",
+        L"Foreground@Selected:=<SolidColorBrush Color=\"{ThemeResource SystemAccentColor}\" />",
+        L"Foreground@PointerOverSelected:=<SolidColorBrush Color=\"{ThemeResource SystemAccentColor}\" />",
+        L"Foreground@PressedSelected:=<SolidColorBrush Color=\"{ThemeResource SystemAccentColor}\" />",
+        L"Foreground=#FFFFFF"}},
+    ThemeTargetStyles{L"SystemSettings.View.SettingsNavigationViewItem[Content=Bluetooth & devices] > Grid#NVIRootGrid > Microsoft.UI.Xaml.Controls.Primitives.NavigationViewItemPresenter#NavigationViewItemPresenter > Grid#LayoutRoot@PointerStates > Grid#PresenterContentRootGrid > Grid#ContentGrid > Border#IconColumn > Viewbox#IconBox > Border > ContentPresenter#Icon", {
+        L"Content@Normal:=\uE702",
+        L"Content@PointerOver:=\uE702",
+        L"Content@Pressed:=\uE702",
+        L"Content@Selected:=\uE702",
+        L"Content@PointerOverSelected:=\uE702",
+        L"Content@PressedSelected:=\uE702",
+        L"Foreground@Selected:=<SolidColorBrush Color=\"{ThemeResource SystemAccentColor}\" />",
+        L"Foreground@PointerOverSelected:=<SolidColorBrush Color=\"{ThemeResource SystemAccentColor}\" />",
+        L"Foreground@PressedSelected:=<SolidColorBrush Color=\"{ThemeResource SystemAccentColor}\" />",
+        L"Foreground=#FFFFFF"}},
+    ThemeTargetStyles{L"SystemSettings.View.SettingsNavigationViewItem[3] > Grid#NVIRootGrid > Microsoft.UI.Xaml.Controls.Primitives.NavigationViewItemPresenter#NavigationViewItemPresenter > Grid#LayoutRoot@PointerStates > Grid#PresenterContentRootGrid > Grid#ContentGrid > Border#IconColumn > Viewbox#IconBox > Border > ContentPresenter#Icon", {
+        L"Content@Normal:=\uF0C5",
+        L"Content@PointerOver:=\uF0C5",
+        L"Content@Pressed:=\uF0C5",
+        L"Content@Selected:=\uF0C5",
+        L"Content@PointerOverSelected:=\uF0C5",
+        L"Content@PressedSelected:=\uF0C5",
+        L"Foreground@Selected:=<SolidColorBrush Color=\"{ThemeResource SystemAccentColor}\" />",
+        L"Foreground@PointerOverSelected:=<SolidColorBrush Color=\"{ThemeResource SystemAccentColor}\" />",
+        L"Foreground@PressedSelected:=<SolidColorBrush Color=\"{ThemeResource SystemAccentColor}\" />",
+        L"Foreground=#FFFFFF"}},
+    ThemeTargetStyles{L"SystemSettings.View.SettingsNavigationViewItem[4] > Grid#NVIRootGrid > Microsoft.UI.Xaml.Controls.Primitives.NavigationViewItemPresenter#NavigationViewItemPresenter > Grid#LayoutRoot@PointerStates > Grid#PresenterContentRootGrid > Grid#ContentGrid > Border#IconColumn > Viewbox#IconBox > Border > ContentPresenter#Icon", {
+        L"Content@Normal:=\uEA18",
+        L"Content@PointerOver:=\uEA18",
+        L"Content@Pressed:=\uEA18",
+        L"Content@Selected:=\uE83D",
+        L"Content@PointerOverSelected:=\uE83D",
+        L"Content@PressedSelected:=\uE83D",
+        L"Foreground@Selected:=<SolidColorBrush Color=\"{ThemeResource SystemAccentColor}\" />",
+        L"Foreground@PointerOverSelected:=<SolidColorBrush Color=\"{ThemeResource SystemAccentColor}\" />",
+        L"Foreground@PressedSelected:=<SolidColorBrush Color=\"{ThemeResource SystemAccentColor}\" />",
+        L"Foreground=#FFFFFF"}},
+    ThemeTargetStyles{L"SystemSettings.View.SettingsNavigationViewItem[5] > Grid#NVIRootGrid > Microsoft.UI.Xaml.Controls.Primitives.NavigationViewItemPresenter#NavigationViewItemPresenter > Grid#LayoutRoot@PointerStates > Grid#PresenterContentRootGrid > Grid#ContentGrid > Border#IconColumn > Viewbox#IconBox > Border > ContentPresenter#Icon", {
+        L"Content@Normal:=\uE776",
+        L"Content@PointerOver:=\uE776",
+        L"Content@Pressed:=\uE776",
+        L"Content@Selected:=\uE776",
+        L"Content@PointerOverSelected:=\uE776",
+        L"Content@PressedSelected:=\uE776",
+        L"Foreground@Selected:=<SolidColorBrush Color=\"{ThemeResource SystemAccentColor}\" />",
+        L"Foreground@PointerOverSelected:=<SolidColorBrush Color=\"{ThemeResource SystemAccentColor}\" />",
+        L"Foreground@PressedSelected:=<SolidColorBrush Color=\"{ThemeResource SystemAccentColor}\" />",
+        L"Foreground=#FFFFFF"}},
+    ThemeTargetStyles{L"SystemSettings.View.SettingsNavigationViewItem[6] > Grid#NVIRootGrid > Microsoft.UI.Xaml.Controls.Primitives.NavigationViewItemPresenter#NavigationViewItemPresenter > Grid#LayoutRoot@PointerStates > Grid#PresenterContentRootGrid > Grid#ContentGrid > Border#IconColumn > Viewbox#IconBox > Border > ContentPresenter#Icon", {
+        L"Content@Normal:=\uE7FC",
+        L"Content@PointerOver:=\uE7FC",
+        L"Content@Pressed:=\uE7FC",
+        L"Content@Selected:=\uE7FC",
+        L"Content@PointerOverSelected:=\uE7FC",
+        L"Content@PressedSelected:=\uE7FC",
+        L"Foreground@Selected:=<SolidColorBrush Color=\"{ThemeResource SystemAccentColor}\" />",
+        L"Foreground@PointerOverSelected:=<SolidColorBrush Color=\"{ThemeResource SystemAccentColor}\" />",
+        L"Foreground@PressedSelected:=<SolidColorBrush Color=\"{ThemeResource SystemAccentColor}\" />",
+        L"Foreground=#FFFFFF"}},
+    ThemeTargetStyles{L"SystemSettings.View.SettingsNavigationViewItem[7] > Grid#NVIRootGrid > Microsoft.UI.Xaml.Controls.Primitives.NavigationViewItemPresenter#NavigationViewItemPresenter > Grid#LayoutRoot@PointerStates > Grid#PresenterContentRootGrid > Grid#ContentGrid > Border#IconColumn > Viewbox#IconBox > Border > ContentPresenter#Icon", {
+        L"Content@Normal:=\uE775",
+        L"Content@PointerOver:=\uE775",
+        L"Content@Pressed:=\uE775",
+        L"Content@Selected:=\uE775",
+        L"Content@PointerOverSelected:=\uE775",
+        L"Content@PressedSelected:=\uE775",
+        L"Foreground@Selected:=<SolidColorBrush Color=\"{ThemeResource SystemAccentColor}\" />",
+        L"Foreground@PointerOverSelected:=<SolidColorBrush Color=\"{ThemeResource SystemAccentColor}\" />",
+        L"Foreground@PressedSelected:=<SolidColorBrush Color=\"{ThemeResource SystemAccentColor}\" />",
+        L"Foreground=#FFFFFF"}},
+    ThemeTargetStyles{L"SystemSettings.View.SettingsNavigationViewItem[8] > Grid#NVIRootGrid > Microsoft.UI.Xaml.Controls.Primitives.NavigationViewItemPresenter#NavigationViewItemPresenter > Grid#LayoutRoot@PointerStates > Grid#PresenterContentRootGrid > Grid#ContentGrid > Border#IconColumn > Viewbox#IconBox > Border > ContentPresenter#Icon", {
+        L"Content@Normal:=\uE77B",
+        L"Content@PointerOver:=\uE77B",
+        L"Content@Pressed:=\uE77B",
+        L"Content@Selected:=\uEA8C",
+        L"Content@PointerOverSelected:=\uEA8C",
+        L"Content@PressedSelected:=\uEA8C",
+        L"Foreground@Selected:=<SolidColorBrush Color=\"{ThemeResource SystemAccentColor}\" />",
+        L"Foreground@PointerOverSelected:=<SolidColorBrush Color=\"{ThemeResource SystemAccentColor}\" />",
+        L"Foreground@PressedSelected:=<SolidColorBrush Color=\"{ThemeResource SystemAccentColor}\" />",
+        L"Foreground=#FFFFFF"}},
+    ThemeTargetStyles{L"SystemSettings.View.SettingsNavigationViewItem[9] > Grid#NVIRootGrid > Microsoft.UI.Xaml.Controls.Primitives.NavigationViewItemPresenter#NavigationViewItemPresenter > Grid#LayoutRoot@PointerStates > Grid#PresenterContentRootGrid > Grid#ContentGrid > Border#IconColumn > Viewbox#IconBox > Border > ContentPresenter#Icon", {
+        L"Content@Normal:=\uE74C",
+        L"Content@PointerOver:=\uE74C",
+        L"Content@Pressed:=\uE74C",
+        L"Content@Selected:=\uE74C",
+        L"Content@PointerOverSelected:=\uE74C",
+        L"Content@PressedSelected:=\uE74C",
+        L"Foreground@Selected:=<SolidColorBrush Color=\"{ThemeResource SystemAccentColor}\" />",
+        L"Foreground@PointerOverSelected:=<SolidColorBrush Color=\"{ThemeResource SystemAccentColor}\" />",
+        L"Foreground@PressedSelected:=<SolidColorBrush Color=\"{ThemeResource SystemAccentColor}\" />",
+        L"Foreground=#FFFFFF"}},
+    ThemeTargetStyles{L"SystemSettings.View.SettingsNavigationViewItem[10] > Grid#NVIRootGrid > Microsoft.UI.Xaml.Controls.Primitives.NavigationViewItemPresenter#NavigationViewItemPresenter > Grid#LayoutRoot@PointerStates > Grid#PresenterContentRootGrid > Grid#ContentGrid > Border#IconColumn > Viewbox#IconBox > Border > ContentPresenter#Icon", {
+        L"Content@Normal:=\uE771",
+        L"Content@PointerOver:=\uE771",
+        L"Content@Pressed:=\uE771",
+        L"Content@Selected:=\uE771",
+        L"Content@PointerOverSelected:=\uE771",
+        L"Content@PressedSelected:=\uE771",
+        L"Foreground@Selected:=<SolidColorBrush Color=\"{ThemeResource SystemAccentColor}\" />",
+        L"Foreground@PointerOverSelected:=<SolidColorBrush Color=\"{ThemeResource SystemAccentColor}\" />",
+        L"Foreground@PressedSelected:=<SolidColorBrush Color=\"{ThemeResource SystemAccentColor}\" />",
+        L"Foreground=#FFFFFF"}},
+    ThemeTargetStyles{L"SystemSettings.View.SettingsNavigationViewItem[11] > Grid#NVIRootGrid > Microsoft.UI.Xaml.Controls.Primitives.NavigationViewItemPresenter#NavigationViewItemPresenter > Grid#LayoutRoot@PointerStates > Grid#PresenterContentRootGrid > Grid#ContentGrid > Border#IconColumn > Viewbox#IconBox > Border > ContentPresenter#Icon", {
+        L"Content@Normal:=\uE701",
+        L"Content@PointerOver:=\uE701",
+        L"Content@Pressed:=\uE701",
+        L"Content@Selected:=\uE701",
+        L"Content@PointerOverSelected:=\uE701",
+        L"Content@PressedSelected:=\uE701",
+        L"Foreground@Selected:=<SolidColorBrush Color=\"{ThemeResource SystemAccentColor}\" />",
+        L"Foreground@PointerOverSelected:=<SolidColorBrush Color=\"{ThemeResource SystemAccentColor}\" />",
+        L"Foreground@PressedSelected:=<SolidColorBrush Color=\"{ThemeResource SystemAccentColor}\" />",
+        L"Foreground=#FFFFFF"}},
+    ThemeTargetStyles{L"SystemSettings.View.SettingsNavigationViewItem[12] > Grid#NVIRootGrid > Microsoft.UI.Xaml.Controls.Primitives.NavigationViewItemPresenter#NavigationViewItemPresenter > Grid#LayoutRoot@PointerStates > Grid#PresenterContentRootGrid > Grid#ContentGrid > Border#IconColumn > Viewbox#IconBox > Border > ContentPresenter#Icon", {
+        L"Content@Normal:=\uE702",
+        L"Content@PointerOver:=\uE702",
+        L"Content@Pressed:=\uE702",
+        L"Content@Selected:=\uE702",
+        L"Content@PointerOverSelected:=\uE702",
+        L"Content@PressedSelected:=\uE702",
+        L"Foreground@Selected:=<SolidColorBrush Color=\"{ThemeResource SystemAccentColor}\" />",
+        L"Foreground@PointerOverSelected:=<SolidColorBrush Color=\"{ThemeResource SystemAccentColor}\" />",
+        L"Foreground@PressedSelected:=<SolidColorBrush Color=\"{ThemeResource SystemAccentColor}\" />",
+        L"Foreground=#FFFFFF"}},
+    ThemeTargetStyles{L"SystemSettings.View.SettingsNavigationViewItem[1]", {
+        L"Content=>t1",
+        L"ToolTipService.ToolTip={{t1}}"}},
+    ThemeTargetStyles{L"SystemSettings.View.SettingsNavigationViewItem[2]", {
+        L"Content=>t2",
+        L"ToolTipService.ToolTip={{t2}}"}},
+    ThemeTargetStyles{L"SystemSettings.View.SettingsNavigationViewItem[3]", {
+        L"Content=>t3",
+        L"ToolTipService.ToolTip={{t3}}"}},
+    ThemeTargetStyles{L"SystemSettings.View.SettingsNavigationViewItem[4]", {
+        L"Content=>t4",
+        L"ToolTipService.ToolTip={{t4}}"}},
+    ThemeTargetStyles{L"SystemSettings.View.SettingsNavigationViewItem[5]", {
+        L"Content=>t5",
+        L"ToolTipService.ToolTip={{t5}}"}},
+    ThemeTargetStyles{L"SystemSettings.View.SettingsNavigationViewItem[6]", {
+        L"Content=>t6",
+        L"ToolTipService.ToolTip={{t6}}"}},
+    ThemeTargetStyles{L"SystemSettings.View.SettingsNavigationViewItem[7]", {
+        L"Content=>t7",
+        L"ToolTipService.ToolTip={{t7}}"}},
+    ThemeTargetStyles{L"SystemSettings.View.SettingsNavigationViewItem[8]", {
+        L"Content=>t8",
+        L"ToolTipService.ToolTip={{t8}}"}},
+    ThemeTargetStyles{L"SystemSettings.View.SettingsNavigationViewItem[9]", {
+        L"Content=>t9",
+        L"ToolTipService.ToolTip={{t9}}"}},
+    ThemeTargetStyles{L"SystemSettings.View.SettingsNavigationViewItem[10]", {
+        L"Content=>t10",
+        L"ToolTipService.ToolTip={{t10}}"}},
+    ThemeTargetStyles{L"SystemSettings.View.SettingsNavigationViewItem[11]", {
+        L"Content=>t11",
+        L"ToolTipService.ToolTip={{t11}}"}},
+    ThemeTargetStyles{L"SystemSettings.View.SettingsNavigationViewItem[12]", {
+        L"Content=>t12",
+        L"ToolTipService.ToolTip={{t12}}"}},
+    ThemeTargetStyles{L"SplitView#RootSplitView > Grid > Grid#PaneRoot > Border > Grid#PaneContentGrid > ContentControl#PaneCustomContentBorder > ContentPresenter > SystemSettings.View.SpacingStackPanel > SystemSettings.View.UserProfileControl#UserProfileControl > Button#UserProfileButton > ContentPresenter#ContentPresenter > Grid#UserProfileLayout > Grid[2]", {
+        L"Visibility=1",
+        L"Grid.Column=0"}},
+    ThemeTargetStyles{L"ContentControl#PaneCustomContentBorder > ContentPresenter > SystemSettings.View.SpacingStackPanel > SystemSettings.View.UserProfileControl#UserProfileControl > Button#UserProfileButton > ContentPresenter#ContentPresenter > Grid#UserProfileLayout > Grid[2] > TextBlock#UserName", {
+        L"Text=>UserName"}},
+    ThemeTargetStyles{L"ContentControl#PaneCustomContentBorder > ContentPresenter > SystemSettings.View.SpacingStackPanel > SystemSettings.View.UserProfileControl#UserProfileControl > Button#UserProfileButton", {
+        L"ToolTipService.ToolTip={{UserName}}",
+        L"ToolTipService.Placement=10",
+        L"Visibility=1"}},
+    ThemeTargetStyles{L"ContentControl#PaneCustomContentBorder > ContentPresenter > SystemSettings.View.SpacingStackPanel > SystemSettings.View.UserProfileControl#UserProfileControl > Button#UserProfileButton > ContentPresenter#ContentPresenter > Grid#UserProfileLayout > Grid#UserImageGrid > Image", {
+        L"Width=30",
+        L"Height=30"}},
+    ThemeTargetStyles{L"SplitView#RootSplitView > Grid > Grid#PaneRoot > Border > Grid#PaneContentGrid > ContentControl#PaneCustomContentBorder > ContentPresenter > SystemSettings.View.SpacingStackPanel", {
+        L"MaxHeight=48",
+        L"MaxWidth=65",
+        L"MinHeight=48",
+        L"MinWidth=65",
+        L"Visibility=1"}},
+    ThemeTargetStyles{L"SplitView#RootSplitView > Grid > Grid#PaneRoot > Border > Grid#PaneContentGrid > ContentControl#PaneCustomContentBorder > ContentPresenter > SystemSettings.View.SpacingStackPanel > SystemSettings.View.UserProfileControl#UserProfileControl > Button#UserProfileButton", {
+        L"MinHeight=48",
+        L"MaxHeight=48",
+        L"Margin=3,3,3,-3"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Shapes.Rectangle#ProgressBarIndicator", {
+        L"RadiusX=3",
+        L"RadiusY=3",
+        L"Height=6",
+        L"Fill:=<SolidColorBrush Color=\"{ThemeResource Accent}\"/>"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Border#DeterminateRoot", {
+        L"CornerRadius=3",
+        L"Height=6"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.ProgressBar", {
+        L"Height=6"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.StackPanel#TopBreakdownBar > Windows.UI.Xaml.Controls.ProgressBar > Windows.UI.Xaml.Controls.Grid > Windows.UI.Xaml.Controls.Border#DeterminateRoot > Windows.UI.Xaml.Shapes.Rectangle#ProgressBarIndicator", {
+        L"Height=16"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.StackPanel#TopBreakdownBar > Windows.UI.Xaml.Controls.ProgressBar > Windows.UI.Xaml.Controls.Grid > Windows.UI.Xaml.Controls.Border#DeterminateRoot", {
+        L"Height=16"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.StackPanel#TopBreakdownBar > Windows.UI.Xaml.Controls.ProgressBar", {
+        L"Height=16"}},
+    ThemeTargetStyles{L"Microsoft.UI.Xaml.Controls.NavigationView#PermanentNavigationView > Grid#RootGrid > Grid > SplitView#RootSplitView > Grid@DisplayModeStates > Grid#PaneRoot", {
+        L"Background:=<AcrylicBrush BackgroundSource=\"HostBackdrop\" TintColor=\"#761E1E1E\" FallbackColor=\"#00000000\" TintOpacity=\"0.4\" TintLuminosityOpacity=\"0.4\" Opacity=\"0.4\"/>"}},
+    ThemeTargetStyles{L"Grid#ContentRoot > Border > Grid#ContentGrid > ContentControl#HeaderContent", {
+        L"Background:=<AcrylicBrush BackgroundSource=\"HostBackdrop\" TintColor=\"#761E1E1E\" FallbackColor=\"#00000000\" TintOpacity=\"0.4\" TintLuminosityOpacity=\"0.4\" Opacity=\"0.4\"/>"}},
+    ThemeTargetStyles{L"Frame#PermanentNavRootFrame", {
+        L"Background:=<AcrylicBrush BackgroundSource=\"HostBackdrop\" TintColor=\"#761E1E1E\" FallbackColor=\"#00000000\" TintOpacity=\"0.4\" TintLuminosityOpacity=\"0.4\" Opacity=\"0.4\"/>"}},
+    ThemeTargetStyles{L"Border > Frame > ContentPresenter > SystemSettings.View.RootPage > Grid#RootPageGrid", {
+        L"Background:=<AcrylicBrush BackgroundSource=\"HostBackdrop\" TintColor=\"#761E1E1E\" FallbackColor=\"#00000000\" TintOpacity=\"0.4\" TintLuminosityOpacity=\"0.4\" Opacity=\"0.4\"/>"}},
+    ThemeTargetStyles{L"SystemSettings.View.RootPage > Grid#RootPageGrid", {
+        L"Background:=<AcrylicBrush BackgroundSource=\"HostBackdrop\" TintColor=\"#761E1E1E\" FallbackColor=\"#00000000\" TintOpacity=\"0.4\" TintLuminosityOpacity=\"0.4\" Opacity=\"0.4\"/>"}},
+    ThemeTargetStyles{L"Microsoft.UI.Xaml.Controls.NavigationView#PermanentNavigationView > Grid#RootGrid", {
+        L"Background:=<AcrylicBrush BackgroundSource=\"HostBackdrop\" TintColor=\"#761E1E1E\" FallbackColor=\"#00000000\" TintOpacity=\"0.4\" TintLuminosityOpacity=\"0.4\" Opacity=\"0.4\"/>"}},
+    ThemeTargetStyles{L"Microsoft.UI.Xaml.Controls.NavigationView#PermanentNavigationView > Grid#RootGrid > Grid", {
+        L"Background:=<AcrylicBrush BackgroundSource=\"HostBackdrop\" TintColor=\"#761E1E1E\" FallbackColor=\"#00000000\" TintOpacity=\"0.4\" TintLuminosityOpacity=\"0.4\" Opacity=\"0.4\"/>"}},
+    ThemeTargetStyles{L"Grid#ContentRoot", {
+        L"Background:=<AcrylicBrush BackgroundSource=\"HostBackdrop\" TintColor=\"#761E1E1E\" FallbackColor=\"#00000000\" TintOpacity=\"0.4\" TintLuminosityOpacity=\"0.4\" Opacity=\"0.4\"/>"}},
+    ThemeTargetStyles{L"SplitView#RootSplitView > Grid > Grid#ContentRoot", {
+        L"Background:=<AcrylicBrush BackgroundSource=\"HostBackdrop\" TintColor=\"#761E1E1E\" FallbackColor=\"#00000000\" TintOpacity=\"0.4\" TintLuminosityOpacity=\"0.4\" Opacity=\"0.4\"/>"}},
+    ThemeTargetStyles{L"Grid#RootGrid", {
+        L"Background:=<AcrylicBrush BackgroundSource=\"HostBackdrop\" TintColor=\"#761E1E1E\" FallbackColor=\"#00000000\" TintOpacity=\"0.4\" TintLuminosityOpacity=\"0.4\" Opacity=\"0.4\"/>"}},
+    ThemeTargetStyles{L"Grid#AppTitleBar", {
+        L"Background:=<AcrylicBrush BackgroundSource=\"HostBackdrop\" TintColor=\"#761E1E1E\" FallbackColor=\"#00000000\" TintOpacity=\"0.4\" TintLuminosityOpacity=\"0.4\" Opacity=\"0.4\"/>"}},
+    ThemeTargetStyles{L"Border#AppTitleBarBackground", {
+        L"Background:=<AcrylicBrush BackgroundSource=\"HostBackdrop\" TintColor=\"#761E1E1E\" FallbackColor=\"#00000000\" TintOpacity=\"0.4\" TintLuminosityOpacity=\"0.4\" Opacity=\"0.4\"/>"}},
+    ThemeTargetStyles{L"Grid#TitleBar", {
+        L"Background:=<AcrylicBrush BackgroundSource=\"HostBackdrop\" TintColor=\"#761E1E1E\" FallbackColor=\"#00000000\" TintOpacity=\"0.4\" TintLuminosityOpacity=\"0.4\" Opacity=\"0.4\"/>"}},
+    ThemeTargetStyles{L"Border#TitleBarBackground", {
+        L"Background:=<AcrylicBrush BackgroundSource=\"HostBackdrop\" TintColor=\"#761E1E1E\" FallbackColor=\"#00000000\" TintOpacity=\"0.4\" TintLuminosityOpacity=\"0.4\" Opacity=\"0.4\"/>"}},
+    ThemeTargetStyles{L"TextBox#CommandSearchTextBox", {
+        L"CornerRadius=$InRadius",
+        L"MinHeight=32",
+        L"Background:=<AcrylicBrush BackgroundSource=\"HostBackdrop\" TintColor=\"#761E1E1E\" FallbackColor=\"#00000000\" TintOpacity=\"0.4\" TintLuminosityOpacity=\"0.4\" Opacity=\"0.4\"/>",
+        L"BorderBrush:=<SolidColorBrush Color=\"#22FFFFFF\"/>",
+        L"BorderThickness=1"}},
+}, {
+    L"OutRadius=8",
+    L"InRadius=12",
+}, {
+    L"Overlay@Light=#55FFFFFF",
+    L"Overlay@Dark=#09FFFFFF",
+    L"Border@Light=#0F000000",
+    L"Border@Dark=#19000000",
+    L"Accent@Dark={ThemeResource SystemAccentColorLight2}",
+    L"Accent@Light={ThemeResource SystemAccentColorDark1}",
+    L"WindowCaptionBackground@Dark=#00000000",
+    L"WindowCaptionBackground@Light=#00000000",
+    L"WindowCaptionBackgroundDisabled@Dark=#00000000",
+    L"WindowCaptionBackgroundDisabled@Light=#00000000",
+    L"SolidBackgroundFillColorBase@Dark=#00000000",
+    L"SolidBackgroundFillColorBase@Light=#00000000",
+    L"SolidBackgroundFillColorSecondary@Dark=#00000000",
+    L"SolidBackgroundFillColorSecondary@Light=#00000000",
+    L"LayerFillColorDefault@Dark=#00000000",
+    L"LayerFillColorDefault@Light=#00000000",
+    L"ApplicationPageBackgroundThemeBrush@Dark=#00000000",
+    L"ApplicationPageBackgroundThemeBrush@Light=#00000000",
+}};
+
+const Theme g_themeWindowGlass = {{
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Grid#ContentRoot > Windows.UI.Xaml.Controls.Border > Windows.UI.Xaml.Controls.Grid#ContentGrid", {
+        L"Background:=$ElementBG",
+        L"BorderBrush:=$ElementBorderBrush",
+        L"CornerRadius=13",
+        L"BorderThickness=$ElementBorderThickness",
+        L"Margin=8,50,8,8"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.RelativePanel#PaneContentGrid > Windows.UI.Xaml.Controls.ContentPresenter", {
+        L"Background:=$ElementBG"}},
+    ThemeTargetStyles{L"WinStore.UX.Controls.SearchAutoSuggestBox#SearchBox > Windows.UI.Xaml.Controls.AutoSuggestBox#SearchTextBox > Windows.UI.Xaml.Controls.Grid#LayoutRoot > Windows.UI.Xaml.Controls.TextBox#TextBox > Windows.UI.Xaml.Controls.Grid > Windows.UI.Xaml.Controls.Border#BorderElement", {
+        L"CornerRadius=20"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Grid#ControlPanelGrid", {
+        L"CornerRadius=$CornerRadius",
+        L"BorderBrush:=$BorderBrush",
+        L"Background:=$Glass",
+        L"BorderThickness=$BorderThickness",
+        L"Width=Auto",
+        L"Margin=100,0,100,-150",
+        L"Height=Auto",
+        L"MaxWidth:=700",
+        L"MinWidth:=15",
+        L"MinHeight:=15",
+        L"MaxHeight:=300",
+        L"HorizontalAlignment=1",
+        L"RenderTransform:=<TranslateTransform X=\"0\" Y=\"-170\"/>"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Primitives.ToggleButton#mtcMediaInformationButton", {
+        L"CornerRadius=$CornerRadius",
+        L"Padding=10",
+        L"Margin=20,0,0,0"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Border#MediaTransportControls_Timeline_Border", {
+        L"RenderTransform:=<TranslateTransform Y=\"25\"/>"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Primitives.ToggleButton#mtcMediaInformationButton > Windows.UI.Xaml.Controls.ContentPresenter#ContentPresenter", {
+        L"RenderTransform:=<TranslateTransform Y=\"25\"/>"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.StackPanel#MediaControlsCommandBar_Center_Container", {
+        L"RenderTransform:=<TranslateTransform Y=\"25\"/>"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Border#MediaControlsCommandBar_Right", {
+        L"RenderTransform:=<TranslateTransform Y=\"25\"/>",
+        L"Margin=0,0,20,0"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Grid#ContentRoot > Windows.UI.Xaml.Controls.Border > Windows.UI.Xaml.Controls.Grid#ContentGrid", {
+        L"Background:=$MainContentBG",
+        L"CornerRadius=0",
+        L"Margin=0",
+        L"BorderBrush:=$ElementBorderBrush"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Primitives.Thumb#HorizontalThumb > Windows.UI.Xaml.Controls.Border", {
+        L"Background:=$$Frosted",
+        L"BorderBrush=$BorderBrush",
+        L"BorderThickness=$BorderThickness"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Primitives.Thumb#HorizontalThumb > Windows.UI.Xaml.Controls.Border > Windows.UI.Xaml.Shapes.Ellipse#SliderInnerThumb", {
+        L"Visibility=1"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Grid#SliderContainer > Windows.UI.Xaml.Controls.Grid#HorizontalTemplate > Windows.UI.Xaml.Controls.Primitives.Thumb#HorizontalThumb", {
+        L"Height=20",
+        L"Width=30"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Primitives.Thumb#VerticalThumb > Windows.UI.Xaml.Controls.Border", {
+        L"Background:=$Frosted",
+        L"BorderBrush=$BorderBrush",
+        L"BorderThickness=$BorderThickness"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Primitives.Thumb#VerticalThumb > Windows.UI.Xaml.Controls.Border > Windows.UI.Xaml.Shapes.Ellipse#SliderInnerThumb", {
+        L"Visibility=1"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Grid#SliderContainer > Windows.UI.Xaml.Controls.Grid#VerticalTemplate > Windows.UI.Xaml.Controls.Primitives.Thumb#VerticalThumb", {
+        L"Height=30",
+        L"Width=20"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Border#BackgroundElement", {
+        L"Background:=Transparent",
+        L"BorderBrush:=Transparent",
+        L"BorderThickness:=0",
+        L"CornerRadius:=$CornerRadius"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Border#BackgroundElement > Windows.UI.Xaml.Controls.Grid#DialogSpace", {
+        L"Background:=$Frosted",
+        L"BorderBrush:=$BorderBrush",
+        L"BorderThickness:=$BorderThickness",
+        L"CornerRadius:=$CornerRadius"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Border#BackgroundElement > Windows.UI.Xaml.Controls.Grid#DialogSpace > Windows.UI.Xaml.Controls.Grid#CommandSpace", {
+        L"Background:=Transparent",
+        L"BorderBrush:=Transparent"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.ToggleSwitch > Windows.UI.Xaml.Controls.Grid > Windows.UI.Xaml.Controls.Grid > Windows.UI.Xaml.Shapes.Rectangle#OuterBorder", {
+        L"Height=22",
+        L"Width=50",
+        L"RadiusX=10",
+        L"RadiusY=10",
+        L"Stroke:=$ElementSysColor2"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.ToggleSwitch > Windows.UI.Xaml.Controls.Grid > Windows.UI.Xaml.Controls.Grid > Windows.UI.Xaml.Shapes.Rectangle#SwitchKnobBounds", {
+        L"Height=22",
+        L"Width=50",
+        L"RadiusX=10",
+        L"RadiusY=10"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Grid#SwitchKnob", {
+        L"Height=20",
+        L"Width=32"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Grid#SwitchKnob > Windows.UI.Xaml.Controls.Border#SwitchKnobOn", {
+        L"Height=19",
+        L"Width=26",
+        L"CornerRadius=8",
+        L"Background:=$ElementSysColor"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Grid#SwitchKnob > Windows.UI.Xaml.Shapes.Rectangle#SwitchKnobOff", {
+        L"Height=17",
+        L"Width=25",
+        L"RadiusX=8",
+        L"RadiusY=8",
+        L"Fill:=$ElementSysColor"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.FlyoutPresenter", {
+        L"Background:=$Frosted",
+        L"BorderBrush:=$BorderBrush",
+        L"CornerRadius=$CornerRadius",
+        L"BorderThickness=$BorderThickness"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.MenuFlyoutPresenter > Windows.UI.Xaml.Controls.Border", {
+        L"Background:=$Frosted",
+        L"BorderBrush:=$BorderBrush",
+        L"CornerRadius=$CornerRadius",
+        L"BorderThickness=$BorderThickness"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.ToolTip > Windows.UI.Xaml.Controls.ContentPresenter#LayoutRoot", {
+        L"Background:=$Frosted",
+        L"BorderBrush:=$BorderBrush",
+        L"CornerRadius=$CornerRadius",
+        L"BorderThickness=$BorderThickness"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Canvas > Windows.UI.Xaml.Controls.Border#PopupBorder", {
+        L"Background:=$Frosted",
+        L"BorderBrush:=$BorderBrush",
+        L"BorderThickness=$BorderThickness",
+        L"CornerRadius=$CornerRadius"}},
+}, {
+    L"Glass=<WindhawkBlur BlurAmount=\"3\" TintColor=\"{ThemeResource SystemChromeMediumColor}\" TintOpacity=\"0.7\" />",
+    L"Frosted=<WindhawkBlur BlurAmount=\"20\" TintColor=\"{ThemeResource SystemChromeMediumColor}\" TintOpacity=\"0.7\" />",
+    L"Acrylic=<AcrylicBrush TintColor=\"{ThemeResource SystemChromeAltHighColor}\" TintOpacity=\"0.3\" FallbackColor=\"{ThemeResource SystemChromeAltHighColor}\" />",
+    L"BorderBrush=<LinearGradientBrush StartPoint=\"0,0\" EndPoint=\"0,1\"><GradientStop Color=\"#50808080\" Offset=\"0.0\" /><GradientStop Color=\"#50404040\" Offset=\"0.25\" /><GradientStop Color=\"#50808080\" Offset=\"1\" /></LinearGradientBrush>",
+    L"BorderBrush2=<LinearGradientBrush StartPoint=\"0,0\" EndPoint=\"0,1\"><GradientStop Color=\"{ThemeResource SystemChromeHighColor}\" Offset=\"0.0\" /><GradientStop Color=\"{ThemeResource SystemChromeLowColor}\" Offset=\"0.15\" /><GradientStop Color=\"{ThemeResource SystemChromeHighColor}\" Offset=\"0.95\" /></LinearGradientBrush>",
+    L"overlay=<SolidColorBrush Color=\"{ThemeResource SystemChromeAltHighColor}\" Opacity=\"0.1\" />",
+    L"overlay2=<WindhawkBlur BlurAmount=\"20\" TintColor=\"#60353535\"/>",
+    L"CornerRadius=30",
+    L"CR2=14",
+    L"CR3=12",
+    L"BorderThickness=0.3,1,0.3,0.3",
+    L"ElementBG=<SolidColorBrush Color=\"{ThemeResource SystemChromeAltHighColor}\" Opacity=\"1\" />",
+    L"ElementBorderBrush=<LinearGradientBrush StartPoint=\"0,0\" EndPoint=\"0,1\"><GradientStop Color=\"#50808080\" Offset=\"1\" /><GradientStop Color=\"#50606060\" Offset=\"0.15\" /></LinearGradientBrush>",
+    L"ElementCornerRadius=30",
+    L"ElementBorderThickness=0.3,0.3,0.3,1",
+    L"ElementSysColor=<SolidColorBrush Color=\"{ThemeResource SystemAccentColorLight1}\" Opacity=\"1\" />",
+    L"ElementSysColor2=<SolidColorBrush Color=\"{ThemeResource SystemAccentColorLight2}\" Opacity=\"1\" />",
+    L"ElementSysColor3=<SolidColorBrush Color=\"{ThemeResource SystemAccentColorLight3}\" Opacity=\"1\" />",
+    L"ElementSysColor4=<SolidColorBrush Color=\"{ThemeResource SystemAccentColorDark1}\" Opacity=\"1\" />",
+    L"Backdrop=<AcrylicBrush BackgroundSource=\"HostBackdrop\" TintColor=\"{ThemeResource SystemChromeAltHighColor}\" TintOpacity=\"0.3\" FallbackColor=\"{ThemeResource SystemChromeAltHighColor}\" />",
+}};
+
+const Theme g_themeOLED = {{
+    ThemeTargetStyles{L"ContentControl#GridViewItemContentControl > ContentPresenter > Grid", {
+        L"Background=#101013"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Primitives.ListViewItemPresenter > Border", {
+        L"CornerRadius=25",
+        L"Background=transparent"}},
+    ThemeTargetStyles{L"Microsoft.ReactNative.ReactRootView > Microsoft.ReactNative.ViewPanel > Microsoft.ReactNative.ViewPanel > Microsoft.ReactNative.ViewPanel > Microsoft.ReactNative.ViewPanel > Border", {
+        L"Background=#101013"}},
+    ThemeTargetStyles{L"SystemSettings.View.ButtonEntityItem > Button#ContainerButton > ContentPresenter#ContentPresenter", {
+        L"Background=#101013"}},
+    ThemeTargetStyles{L"ContentPresenter#ContentPresenter > Grid > Grid > TextBlock", {
+        L"Foreground=white"}},
+    ThemeTargetStyles{L"SystemSettings.View.ReservedWidthReflowingPanel > StackPanel > ContentPresenter#SubtitleContent > TextBlock", {
+        L"Foreground=#ADADAE"}},
+    ThemeTargetStyles{L"Microsoft.ReactNative.ViewPanel > TextBlock", {
+        L"Foreground=#ADADAE"}},
+    ThemeTargetStyles{L"ContentPresenter#SubtitleContent > TextBlock", {
+        L"Foreground=#ADADAE"}},
+    ThemeTargetStyles{L"ContentPresenter#SubtitleContent > StackPanel > StackPanel > TextBlock", {
+        L"Foreground=#ADADAE"}},
+    ThemeTargetStyles{L"ContentPresenter#SubtitleContent > Grid > TextBlock", {
+        L"Foreground=#ADADAE"}},
+    ThemeTargetStyles{L"ContentPresenter#InlineContentPresenter > StackPanel > ContentControl > ContentPresenter > StackPanel > TextBlock", {
+        L"Foreground=white"}},
+    ThemeTargetStyles{L"Button#DeviceOptionsButton > Grid > Grid > ContentPresenter#ContentPresenter > TextBlock", {
+        L"Foreground=white"}},
+    ThemeTargetStyles{L"ContentPresenter#TitleContent > TextBlock", {
+        L"Foreground=white"}},
+    ThemeTargetStyles{L"SystemSettings.View.CategoryPage > Grid > ScrollViewer > Border#Root > Grid > ScrollContentPresenter#ScrollContentPresenter > Grid > SystemSettings.View.AlignableContentControl > ContentPresenter > SystemSettings.View.SettingsListView#settingPagesList > ItemsPresenter > ItemsStackPanel > SystemSettings.View.SettingsListViewItem > Windows.UI.Xaml.Controls.Primitives.ListViewItemPresenter", {
+        L"CornerRadius=12"}},
+    ThemeTargetStyles{L"Border > Frame > ContentPresenter > SystemSettings.View.RootPage > Grid#RootPageGrid > Microsoft.UI.Xaml.Controls.NavigationView#PermanentNavigationView > Grid#RootGrid > Grid > SplitView#RootSplitView > Grid > Grid#ContentRoot > Border > Grid#ContentGrid > ContentPresenter#ContentPresenter", {
+        L"Margin=2"}},
+    ThemeTargetStyles{L"Grid#ContentRoot > Border > Grid#ContentGrid > ContentControl#HeaderContent", {
+        L"Margin=10,-38,0,5"}},
+    ThemeTargetStyles{L"SplitView#RootSplitView > Grid > Grid#PaneRoot > Border > Grid#PaneContentGrid > Grid#ItemsContainerGrid > Microsoft.UI.Xaml.Controls.ItemsRepeaterScrollHost > ScrollViewer#MenuItemsScrollViewer > Border#Root > Grid > ScrollContentPresenter#ScrollContentPresenter", {
+        L"Margin=-12,8,0,0"}},
+    ThemeTargetStyles{L"TextBox#CommandSearchTextBox > Grid > Button#DeleteButton > Grid#ButtonLayoutGrid", {
+        L"CornerRadius=$InRadius",
+        L"MinHeight=32"}},
+    ThemeTargetStyles{L"SplitView#RootSplitView > Grid > Grid#PaneRoot > Border > Grid#PaneContentGrid > Grid#ItemsContainerGrid > Microsoft.UI.Xaml.Controls.ItemsRepeaterScrollHost > ScrollViewer#MenuItemsScrollViewer > Border#Root > Grid > ScrollContentPresenter#ScrollContentPresenter > Microsoft.UI.Xaml.Controls.ItemsRepeater#MenuItemsHost > SystemSettings.View.SettingsNavigationViewItem > Grid#NVIRootGrid > Microsoft.UI.Xaml.Controls.Primitives.NavigationViewItemPresenter#NavigationViewItemPresenter > Grid#LayoutRoot > Grid#PresenterContentRootGrid > Grid#ContentGrid > ContentPresenter#ContentPresenter > TextBlock", {
+        L"Grid.Column=0",
+        L"Visibility=Hidden"}},
+    ThemeTargetStyles{L"SplitView#RootSplitView > Grid > Grid#PaneRoot > Border > Grid#PaneContentGrid > Grid#ItemsContainerGrid > Microsoft.UI.Xaml.Controls.ItemsRepeaterScrollHost > ScrollViewer#MenuItemsScrollViewer > Border#Root > Grid > ScrollContentPresenter#ScrollContentPresenter > Microsoft.UI.Xaml.Controls.ItemsRepeater#MenuItemsHost > SystemSettings.View.SettingsNavigationViewItem", {
+        L"MinHeight=48",
+        L"MinWidth=65",
+        L"ToolTipService.Placement=5",
+        L"MaxWidth=65"}},
+    ThemeTargetStyles{L"Microsoft.UI.Xaml.Controls.NavigationView#PermanentNavigationView > Grid#RootGrid > Grid > SplitView#RootSplitView > Grid@DisplayModeStates > Grid#PaneRoot", {
+        L"MaxWidth@OpenInlineLeft=65",
+        L"Grid.ColumnSpan@OpenInlineLeft=1",
+        L"Grid.ColumnSpan=>Span"}},
+    ThemeTargetStyles{L"SplitView#RootSplitView > Grid > Grid#ContentRoot > Border > Grid#ContentGrid", {
+        L"CornerRadius={{Span > 1 ? 0 : $OutRadius}},0,0,0",
+        L"Margin={{Span > 1 ? 0 : 65}},48,0,0",
+        L"BorderThickness={{Span > 1 ? 0 : 1}},1,0,0"}},
+    ThemeTargetStyles{L"Microsoft.UI.Xaml.Controls.NavigationView#PermanentNavigationView > Grid#RootGrid > Grid > SplitView#RootSplitView > Grid@DisplayModeStates > Grid#ContentRoot", {
+        L"Grid.Column@OpenInlineLeft=0",
+        L"Grid.ColumnSpan@OpenInlineLeft=3"}},
+    ThemeTargetStyles{L"Microsoft.UI.Xaml.Controls.NavigationView#PermanentNavigationView > Grid#RootGrid > Grid > Grid#ShadowCaster", {
+        L"Grid.ColumnSpan=1",
+        L"MaxWidth=65"}},
+    ThemeTargetStyles{L"SystemSettings.View.SettingsNavigationViewItem[1]", {
+        L"Content=>t1",
+        L"ToolTipService.ToolTip={{t1}}"}},
+    ThemeTargetStyles{L"SystemSettings.View.SettingsNavigationViewItem[2]", {
+        L"Content=>t2",
+        L"ToolTipService.ToolTip={{t2}}"}},
+    ThemeTargetStyles{L"SystemSettings.View.SettingsNavigationViewItem[3]", {
+        L"Content=>t3",
+        L"ToolTipService.ToolTip={{t3}}"}},
+    ThemeTargetStyles{L"SystemSettings.View.SettingsNavigationViewItem[4]", {
+        L"Content=>t4",
+        L"ToolTipService.ToolTip={{t4}}"}},
+    ThemeTargetStyles{L"SystemSettings.View.SettingsNavigationViewItem[5]", {
+        L"Content=>t5",
+        L"ToolTipService.ToolTip={{t5}}"}},
+    ThemeTargetStyles{L"SystemSettings.View.SettingsNavigationViewItem[6]", {
+        L"Content=>t6",
+        L"ToolTipService.ToolTip={{t6}}"}},
+    ThemeTargetStyles{L"SystemSettings.View.SettingsNavigationViewItem[7]", {
+        L"Content=>t7",
+        L"ToolTipService.ToolTip={{t7}}"}},
+    ThemeTargetStyles{L"SystemSettings.View.SettingsNavigationViewItem[8]", {
+        L"Content=>t8",
+        L"ToolTipService.ToolTip={{t8}}"}},
+    ThemeTargetStyles{L"SystemSettings.View.SettingsNavigationViewItem[9]", {
+        L"Content=>t9",
+        L"ToolTipService.ToolTip={{t9}}"}},
+    ThemeTargetStyles{L"SystemSettings.View.SettingsNavigationViewItem[10]", {
+        L"Content=>t10",
+        L"ToolTipService.ToolTip={{t10}}"}},
+    ThemeTargetStyles{L"SystemSettings.View.SettingsNavigationViewItem[11]", {
+        L"Content=>t11",
+        L"ToolTipService.ToolTip={{t11}}"}},
+    ThemeTargetStyles{L"SystemSettings.View.SettingsNavigationViewItem[12]", {
+        L"Content=>t12",
+        L"ToolTipService.ToolTip={{t12}}"}},
+    ThemeTargetStyles{L"SplitView#RootSplitView > Grid > Grid#PaneRoot > Border > Grid#PaneContentGrid > ContentControl#PaneCustomContentBorder > ContentPresenter > SystemSettings.View.SpacingStackPanel > SystemSettings.View.UserProfileControl#UserProfileControl > Button#UserProfileButton > ContentPresenter#ContentPresenter > Grid#UserProfileLayout > Grid[2]", {
+        L"Visibility=1",
+        L"Grid.Column=0"}},
+    ThemeTargetStyles{L"ContentControl#PaneCustomContentBorder > ContentPresenter > SystemSettings.View.SpacingStackPanel > SystemSettings.View.UserProfileControl#UserProfileControl > Button#UserProfileButton > ContentPresenter#ContentPresenter > Grid#UserProfileLayout > Grid[2] > TextBlock#UserName", {
+        L"Text=>UserName"}},
+    ThemeTargetStyles{L"ContentControl#PaneCustomContentBorder > ContentPresenter > SystemSettings.View.SpacingStackPanel > SystemSettings.View.UserProfileControl#UserProfileControl > Button#UserProfileButton", {
+        L"ToolTipService.ToolTip={{UserName}}",
+        L"ToolTipService.Placement=10",
+        L"Visibility=1"}},
+    ThemeTargetStyles{L"ContentControl#PaneCustomContentBorder > ContentPresenter > SystemSettings.View.SpacingStackPanel > SystemSettings.View.UserProfileControl#UserProfileControl > Button#UserProfileButton > ContentPresenter#ContentPresenter > Grid#UserProfileLayout > Grid#UserImageGrid > Image", {
+        L"Width=30",
+        L"Height=30"}},
+    ThemeTargetStyles{L"SplitView#RootSplitView > Grid > Grid#PaneRoot > Border > Grid#PaneContentGrid > ContentControl#PaneCustomContentBorder > ContentPresenter > SystemSettings.View.SpacingStackPanel", {
+        L"MaxHeight=48",
+        L"MaxWidth=65",
+        L"MinHeight=48",
+        L"MinWidth=65",
+        L"Visibility=1"}},
+    ThemeTargetStyles{L"SplitView#RootSplitView > Grid > Grid#PaneRoot > Border > Grid#PaneContentGrid > ContentControl#PaneCustomContentBorder > ContentPresenter > SystemSettings.View.SpacingStackPanel > SystemSettings.View.UserProfileControl#UserProfileControl > Button#UserProfileButton", {
+        L"MinHeight=48",
+        L"MaxHeight=48",
+        L"Margin=3,3,3,-3"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Shapes.Rectangle#ProgressBarIndicator", {
+        L"RadiusX=3",
+        L"RadiusY=3",
+        L"Height=6",
+        L"Fill:=<SolidColorBrush Color=\"{ThemeResource Accent}\"/>"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Border#DeterminateRoot", {
+        L"CornerRadius=3",
+        L"Height=6"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.ProgressBar", {
+        L"Height=6"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.StackPanel#TopBreakdownBar > Windows.UI.Xaml.Controls.ProgressBar > Windows.UI.Xaml.Controls.Grid > Windows.UI.Xaml.Controls.Border#DeterminateRoot > Windows.UI.Xaml.Shapes.Rectangle#ProgressBarIndicator", {
+        L"Height=16"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.StackPanel#TopBreakdownBar > Windows.UI.Xaml.Controls.ProgressBar > Windows.UI.Xaml.Controls.Grid > Windows.UI.Xaml.Controls.Border#DeterminateRoot", {
+        L"Height=16"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.StackPanel#TopBreakdownBar > Windows.UI.Xaml.Controls.ProgressBar", {
+        L"Height=16"}},
+    ThemeTargetStyles{L"CheckBox > Grid#RootGrid@CombinedStates > Grid > Rectangle#NormalRectangle", {
+        L"StrokeThickness=1",
+        L"Stroke=#27292E",
+        L"Fill@UncheckedNormal=black",
+        L"Fill@UncheckedPointerOver=black",
+        L"Fill@UncheckedPointerOverSelected=black",
+        L"Fill@CheckedNormal=#1BD96A",
+        L"Fill@CheckedPointerOver=#1BD96A",
+        L"Fill@CheckedPointerOverSelected=#1BD96A",
+        L"RadiusX=6",
+        L"RadiusY=6"}},
+    ThemeTargetStyles{L"SystemSettings.View.AlignableContentControl > ContentPresenter > Grid > SystemSettings.View.AlignableContentControl > ContentPresenter > SystemSettings.View.WatermarkTextBox > Grid > Border#BorderElement", {
+        L"Background=#101013",
+        L"CornerRadius=12",
+        L"BorderThickness=0"}},
+    ThemeTargetStyles{L"SystemSettings.View.ReservedWidthReflowingPanel > ContentPresenter#InlineContentPresenter > SystemSettings.View.HighContrastThemesCombobox", {
+        L"BorderBrush=#1BD96A",
+        L"BorderThickness=3",
+        L"Background=Black",
+        L"Foreground=#1BD96A",
+        L"CornerRadius=12"}},
+    ThemeTargetStyles{L"SystemSettings.View.ReservedWidthReflowingPanel > ContentPresenter#InlineContentPresenter > SystemSettings.View.HighContrastThemesCombobox > Grid#LayoutRoot > ContentPresenter#ContentPresenter > TextBlock", {
+        L"FontWeight=Bold",
+        L"FontSize=14",
+        L"FontFamily=Segoe UI"}},
+    ThemeTargetStyles{L"HyperlinkButton > ContentPresenter#ContentPresenter", {
+        L"Foreground=#1BD96A"}},
+    ThemeTargetStyles{L"ProgressBar > Grid > Border#DeterminateRoot > Rectangle#ProgressBarIndicator", {
+        L"Fill=#1BD96A"}},
+    ThemeTargetStyles{L"SystemSettings.View.ReservedWidthReflowingPanel > ContentPresenter#InlineContentPresenter > Button > ContentPresenter#ContentPresenter", {
+        L"BorderBrush=#1BD96A",
+        L"BorderThickness=3",
+        L"Background=Black",
+        L"Foreground=#1BD96A",
+        L"CornerRadius=12"}},
+    ThemeTargetStyles{L"ContentPresenter#InlineContentPresenter > Button > ContentPresenter#ContentPresenter", {
+        L"BorderBrush=#1BD96A",
+        L"BorderThickness=3",
+        L"Background=Black",
+        L"Foreground=#1BD96A",
+        L"CornerRadius=12"}},
+    ThemeTargetStyles{L"SystemSettings.View.ReservedWidthReflowingPanel#ReflowingPanel > StackPanel > ContentPresenter#TitleContent > StackPanel > RadioButton > Grid#RootGrid > Grid > Windows.UI.Xaml.Shapes.Ellipse#CheckOuterEllipse", {
+        L"Fill=#1BD96A",
+        L"StrokeThickness=0"}},
+    ThemeTargetStyles{L"SystemSettings.View.ReservedWidthReflowingPanel > ContentPresenter#InlineContentPresenter > Grid > Slider > Grid > Grid#SliderContainer > Grid#HorizontalTemplate > Rectangle#HorizontalTrackRect", {
+        L"Fill=black",
+        L"Margin=0,0,5,0",
+        L"StrokeThickness=0"}},
+    ThemeTargetStyles{L"SystemSettings.View.ReservedWidthReflowingPanel > ContentPresenter#InlineContentPresenter > Grid > Slider > Grid > Grid#SliderContainer > Grid#HorizontalTemplate > Rectangle#HorizontalDecreaseRect", {
+        L"Fill=#1BD96A",
+        L"StrokeThickness=0"}},
+    ThemeTargetStyles{L"SystemSettings.View.ReservedWidthReflowingPanel > ContentPresenter#InlineContentPresenter > Grid > Slider > Grid > Grid#SliderContainer > Grid#HorizontalTemplate > Windows.UI.Xaml.Controls.Primitives.Thumb#HorizontalThumb > Border > Windows.UI.Xaml.Shapes.Ellipse#SliderInnerThumb", {
+        L"Fill=#1BD96A",
+        L"Height=0",
+        L"Width=0"}},
+    ThemeTargetStyles{L"SystemSettings.View.ReservedWidthReflowingPanel > ContentPresenter#InlineContentPresenter > Grid > Slider > Grid > Grid#SliderContainer > Grid#HorizontalTemplate > Windows.UI.Xaml.Controls.Primitives.Thumb#HorizontalThumb > Border", {
+        L"Width=17",
+        L"Height=17",
+        L"Margin=-5,0,0,0",
+        L"Background=#1BD96A"}},
+    ThemeTargetStyles{L"CheckBox > Grid#RootGrid@CombinedStates > Grid > Microsoft.UI.Xaml.Controls.AnimatedIcon#CheckGlyph", {
+        L"Width=25",
+        L"Height=25",
+        L"Margin=-2,-1,0,0"}},
+    ThemeTargetStyles{L"Button#focusStartButton > Windows.UI.Xaml.Controls.ContentPresenter#ContentPresenter", {
+        L"Background=#1BD96A",
+        L"Foreground=Black",
+        L"CornerRadius=12"}},
+    ThemeTargetStyles{L"SystemSettings.View.FocusEnableControl#FocusEnableControl > StackPanel > Button#focusStartButton > ContentPresenter#ContentPresenter > Grid > TextBlock#StartButtonText", {
+        L"FontWeight=Bold",
+        L"FontSize=14",
+        L"FontFamily=Segoe UI"}},
+    ThemeTargetStyles{L"SystemSettings.View.FocusEnableControl#FocusEnableControl > StackPanel > Button#focusStopButton > ContentPresenter#ContentPresenter", {
+        L"BorderBrush=#1BD96A",
+        L"BorderThickness=3",
+        L"Background=Black",
+        L"Foreground=#1BD96A",
+        L"CornerRadius=12"}},
+    ThemeTargetStyles{L"SystemSettings.View.FocusSessionControl > StackPanel > Grid > Button#focusSessionDecreaseButton > Grid > ContentPresenter#ContentPresenter", {
+        L"BorderBrush=#1BD96A",
+        L"BorderThickness=4",
+        L"Background=Black",
+        L"Foreground=#1BD96A",
+        L"CornerRadius=8"}},
+    ThemeTargetStyles{L"SystemSettings.View.FocusSessionControl > StackPanel > Grid > Button#focusSessionIncreaseButton > Grid > ContentPresenter#ContentPresenter > FontIcon > Grid > TextBlock", {
+        L"Padding=2,0,0,0"}},
+    ThemeTargetStyles{L"SystemSettings.View.FocusSessionControl > StackPanel > Grid > Button#focusSessionDecreaseButton > Grid > ContentPresenter#ContentPresenter > FontIcon > Grid > TextBlock", {
+        L"Padding=2,0,0,0"}},
+    ThemeTargetStyles{L"SystemSettings.View.FocusSessionControl > StackPanel > Grid > Grid > TextBlock#focusSessionDurationTextBlock", {
+        L"FontWeight=Bold",
+        L"FontSize=14",
+        L"FontFamily=Segoe UI",
+        L"Background=#1BD96A"}},
+    ThemeTargetStyles{L"SystemSettings.View.FocusSessionControl > StackPanel > Grid > Button#focusSessionIncreaseButton > Grid > ContentPresenter#ContentPresenter", {
+        L"BorderBrush=#1BD96A",
+        L"BorderThickness=4",
+        L"Background=Black",
+        L"Foreground=#1BD96A",
+        L"CornerRadius=8"}},
+    ThemeTargetStyles{L"SystemSettings.View.FocusEnableControl#FocusEnableControl > StackPanel > Button#focusStopButton > ContentPresenter#ContentPresenter > Grid > TextBlock#StopButtonText", {
+        L"FontWeight=Bold",
+        L"FontSize=14",
+        L"FontFamily=Segoe UI"}},
+    ThemeTargetStyles{L"ScrollViewer > ScrollContentPresenter > Border > Frame > ContentPresenter > SystemSettings.View.RootPage > Grid#RootPageGrid > Microsoft.UI.Xaml.Controls.NavigationView#PermanentNavigationView > Grid#RootGrid > Grid > SplitView#RootSplitView > Grid > Grid#ContentRoot > Border > Grid#ContentGrid > ContentPresenter#ContentPresenter > Frame#PermanentNavRootFrame > ContentPresenter > SystemSettings.View.CategoryPage > Grid > ScrollViewer > Border#Root > Grid > ScrollContentPresenter#ScrollContentPresenter > Grid > SystemSettings.View.AlignableContentControl#heroContent > ContentPresenter > SystemSettings.View.AlignableContentControl > ItemsControl > ItemsPresenter > StackPanel > ContentPresenter > SystemSettings.View.AlignableContentControl > ContentPresenter > SystemSettings.View.TwoSegmentsHeroUserControl#DefaultOneSegmentHeroUserControl > Grid#LayoutRoot > Grid#LeftLayout > ContentPresenter > ItemsControl > ItemsPresenter > StackPanel > ContentPresenter > StackPanel > Button > ContentPresenter#ContentPresenter > TextBlock", {
+        L"Foreground=#1BD96A",
+        L"FontWeight=Bold",
+        L"FontFamily=Segoe UI"}},
+    ThemeTargetStyles{L"ScrollViewer > ScrollContentPresenter > Border > Frame > ContentPresenter > SystemSettings.View.RootPage > Grid#RootPageGrid > Microsoft.UI.Xaml.Controls.NavigationView#PermanentNavigationView > Grid#RootGrid > Grid > SplitView#RootSplitView > Grid > Grid#ContentRoot > Border > Grid#ContentGrid > ContentPresenter#ContentPresenter > Frame#PermanentNavRootFrame > ContentPresenter > SystemSettings.View.L2Page#L2Page > Grid > Grid > SystemSettings.View.AlignableContentControl > ContentPresenter > Grid > SystemSettings.View.SettingsPageHost#pageContent > ScrollViewer#SettingsPageHostPanel > Border#Root > Grid > ScrollContentPresenter#ScrollContentPresenter > Grid#RootScrollableGrid > Grid > Grid > ContentControl > ContentPresenter > ItemsControl > ItemsPresenter > SystemSettings.View.SpacingStackPanel > ContentPresenter > SystemSettings.View.AlignableContentControl > SystemSettings.View.SpacingStackPanel > SystemSettings.View.ExpandItemsControl > ItemsPresenter > SystemSettings.View.SpacingStackPanel > ContentPresenter > StackPanel > SystemSettings.View.EntityItem > Grid > SystemSettings.View.ReservedWidthReflowingPanel > ContentPresenter#InlineContentPresenter > UserControl > StackPanel > Button#WindowsProtectedPrintButton > ContentPresenter#ContentPresenter > TextBlock", {
+        L"Foreground=#1BD96A",
+        L"FontSize=14",
+        L"FontWeight=Bold",
+        L"FontFamily=Segoe UI"}},
+    ThemeTargetStyles{L"ScrollViewer > ScrollContentPresenter > Border > Frame > ContentPresenter > SystemSettings.View.RootPage > Grid#RootPageGrid > Microsoft.UI.Xaml.Controls.NavigationView#PermanentNavigationView > Grid#RootGrid > Grid > SplitView#RootSplitView > Grid > Grid#ContentRoot > Border > Grid#ContentGrid > ContentPresenter#ContentPresenter > Frame#PermanentNavRootFrame > ContentPresenter > SystemSettings.View.L2Page#L2Page > Grid > Grid > SystemSettings.View.AlignableContentControl > ContentPresenter > Grid > SystemSettings.View.SettingsPageHost#pageContent > ScrollViewer#SettingsPageHostPanel > Border#Root > Grid > ScrollContentPresenter#ScrollContentPresenter > Grid#RootScrollableGrid > Grid > Grid > ContentControl > ContentPresenter > ItemsControl > ItemsPresenter > SystemSettings.View.SpacingStackPanel > ContentPresenter > SystemSettings.View.AlignableContentControl > SystemSettings.View.SpacingStackPanel > SystemSettings.View.ExpandItemsControl > ItemsPresenter > SystemSettings.View.SpacingStackPanel > ContentPresenter > StackPanel > SystemSettings.View.EntityItem > Grid > SystemSettings.View.ReservedWidthReflowingPanel > ContentPresenter#InlineContentPresenter > UserControl > StackPanel > Button#WindowsProtectedPrintButton > ContentPresenter#ContentPresenter", {
+        L"Background=Black",
+        L"BorderBrush=#1BD96A",
+        L"BorderThickness=2",
+        L"CornerRadius=12"}},
+    ThemeTargetStyles{L"SystemSettings.View.ReservedWidthReflowingPanel > ContentPresenter#InlineContentPresenter > Button > ContentPresenter#ContentPresenter", {
+        L"Foreground=black",
+        L"Background=#1BD96A",
+        L"CornerRadius=12"}},
+    ThemeTargetStyles{L"SystemSettings.View.ReservedWidthReflowingPanel > ContentPresenter#InlineContentPresenter > Button > ContentPresenter#ContentPresenter > TextBlock", {
+        L"Foreground=black",
+        L"FontSize=14",
+        L"FontWeight=Bold",
+        L"FontFamily=Segoe UI"}},
+    ThemeTargetStyles{L"SystemSettings.View.StableComboBox > Grid#LayoutRoot > Border#Background", {
+        L"Background=Black",
+        L"BorderBrush=#1BD96A",
+        L"BorderThickness=2",
+        L"CornerRadius=12"}},
+    ThemeTargetStyles{L"SystemSettings.View.StableComboBox > Grid#LayoutRoot > ContentPresenter#ContentPresenter > TextBlock", {
+        L"Foreground=#1BD96A",
+        L"FontWeight=Bold",
+        L"FontSize=14",
+        L"FontFamily=Segoe UI"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Grid#RootPageGrid", {
+        L"Background=#101013"}},
+    ThemeTargetStyles{L"SystemSettings.View.RootPage", {
+        L"Background=Transparent"}},
+    ThemeTargetStyles{L"ScrollViewer > ScrollContentPresenter > Border > Frame > ContentPresenter > SystemSettings.View.RootPage > Grid#RootPageGrid > Microsoft.UI.Xaml.Controls.NavigationView#PermanentNavigationView > Grid#RootGrid > Grid > SplitView#RootSplitView > Grid > Grid#ContentRoot > Border > Grid#ContentGrid > ContentPresenter#ContentPresenter > Frame#PermanentNavRootFrame > ContentPresenter > SystemSettings.View.FullScreenPage#FullScreenPage > Grid#MainGrid > SystemSettings.View.AlignableContentControl > ContentPresenter > Grid > SystemSettings.View.SettingsPageHost#pageContent > ScrollViewer#SettingsPageHostPanel > Border#Root > Grid > ScrollContentPresenter#ScrollContentPresenter > Grid#RootScrollableGrid > Grid > Grid > ContentControl > ContentPresenter > ItemsControl > ItemsPresenter > SystemSettings.View.SpacingStackPanel > ContentPresenter > SystemSettings.View.AlignableContentControl > SystemSettings.View.SpacingStackPanel > SystemSettings.View.ExpandItemsControl > ItemsPresenter > SystemSettings.View.SpacingStackPanel > ContentPresenter > StackPanel > SystemSettings.View.EntityItem > Grid > SystemSettings.View.ReservedWidthReflowingPanel > ContentPresenter#InlineContentPresenter > StackPanel > Microsoft.UI.Xaml.Controls.DropDownButton", {
+        L"Background=Black",
+        L"BorderBrush=#1BD96A",
+        L"BorderThickness=2",
+        L"CornerRadius=12"}},
+    ThemeTargetStyles{L"ScrollViewer > ScrollContentPresenter > Border > Frame > ContentPresenter > SystemSettings.View.RootPage > Grid#RootPageGrid > Microsoft.UI.Xaml.Controls.NavigationView#PermanentNavigationView > Grid#RootGrid > Grid > SplitView#RootSplitView > Grid > Grid#ContentRoot > Border > Grid#ContentGrid > ContentPresenter#ContentPresenter > Frame#PermanentNavRootFrame > ContentPresenter > SystemSettings.View.FullScreenPage#FullScreenPage > Grid#MainGrid > SystemSettings.View.AlignableContentControl > ContentPresenter > Grid > SystemSettings.View.SettingsPageHost#pageContent > ScrollViewer#SettingsPageHostPanel > Border#Root > Grid > ScrollContentPresenter#ScrollContentPresenter > Grid#RootScrollableGrid > Grid > Grid > ContentControl > ContentPresenter > ItemsControl > ItemsPresenter > SystemSettings.View.SpacingStackPanel > ContentPresenter > SystemSettings.View.AlignableContentControl > SystemSettings.View.SpacingStackPanel > SystemSettings.View.ExpandItemsControl > ItemsPresenter > SystemSettings.View.SpacingStackPanel > ContentPresenter > SystemSettings.View.EntityItem > Grid > SystemSettings.View.ReservedWidthReflowingPanel > ContentPresenter#InlineContentPresenter > Button > ContentPresenter#ContentPresenter > TextBlock", {
+        L"Foreground=#1BD96A",
+        L"FontWeight=Bold",
+        L"FontSize=14",
+        L"FontFamily=Segoe UI"}},
+    ThemeTargetStyles{L"ScrollViewer > ScrollContentPresenter > Border > Frame > ContentPresenter > SystemSettings.View.RootPage > Grid#RootPageGrid > Microsoft.UI.Xaml.Controls.NavigationView#PermanentNavigationView > Grid#RootGrid > Grid > SplitView#RootSplitView > Grid > Grid#ContentRoot > Border > Grid#ContentGrid > ContentPresenter#ContentPresenter > Frame#PermanentNavRootFrame > ContentPresenter > SystemSettings.View.FullScreenPage#FullScreenPage > Grid#MainGrid > SystemSettings.View.AlignableContentControl > ContentPresenter > Grid > SystemSettings.View.SettingsPageHost#pageContent > ScrollViewer#SettingsPageHostPanel > Border#Root > Grid > ScrollContentPresenter#ScrollContentPresenter > Grid#RootScrollableGrid > Grid > Grid > ContentControl > ContentPresenter > ItemsControl > ItemsPresenter > SystemSettings.View.SpacingStackPanel > ContentPresenter > SystemSettings.View.AlignableContentControl > SystemSettings.View.SpacingStackPanel > SystemSettings.View.ExpandItemsControl > ItemsPresenter > SystemSettings.View.SpacingStackPanel > ContentPresenter > StackPanel > SystemSettings.View.EntityItem > Grid > SystemSettings.View.ReservedWidthReflowingPanel > ContentPresenter#InlineContentPresenter > StackPanel > Microsoft.UI.Xaml.Controls.DropDownButton > Grid#RootGrid > ContentPresenter#ContentPresenter > TextBlock", {
+        L"Foreground=#1BD96A",
+        L"FontWeight=Bold",
+        L"FontSize=14",
+        L"FontFamily=Segoe UI"}},
+    ThemeTargetStyles{L"ScrollViewer > ScrollContentPresenter > Border > Frame > ContentPresenter > SystemSettings.View.RootPage > Grid#RootPageGrid > Microsoft.UI.Xaml.Controls.NavigationView#PermanentNavigationView > Grid#RootGrid > Grid > SplitView#RootSplitView > Grid > Grid#ContentRoot > Border > Grid#ContentGrid > ContentPresenter#ContentPresenter > Frame#PermanentNavRootFrame > ContentPresenter > SystemSettings.View.FullScreenPage#FullScreenPage > Grid#MainGrid > SystemSettings.View.AlignableContentControl > ContentPresenter > Grid > SystemSettings.View.SettingsPageHost#pageContent > ScrollViewer#SettingsPageHostPanel > Border#Root > Grid > ScrollContentPresenter#ScrollContentPresenter > Grid#RootScrollableGrid > Grid > Grid > ContentControl > ContentPresenter > ItemsControl > ItemsPresenter > SystemSettings.View.SpacingStackPanel > ContentPresenter > SystemSettings.View.AlignableContentControl > SystemSettings.View.SpacingStackPanel > SystemSettings.View.ExpandItemsControl > ItemsPresenter > SystemSettings.View.SpacingStackPanel > ContentPresenter > SystemSettings.View.EntityItem > Grid > SystemSettings.View.ReservedWidthReflowingPanel > ContentPresenter#InlineContentPresenter > Button > ContentPresenter#ContentPresenter", {
+        L"Background=Black",
+        L"BorderBrush=#1BD96A",
+        L"BorderThickness=2",
+        L"CornerRadius=12"}},
+    ThemeTargetStyles{L"ScrollViewer > ScrollContentPresenter > Border > Frame > ContentPresenter > SystemSettings.View.RootPage > Grid#RootPageGrid > Microsoft.UI.Xaml.Controls.NavigationView#PermanentNavigationView > Grid#RootGrid > Grid > SplitView#RootSplitView > Grid > Grid#ContentRoot > Border > Grid#ContentGrid > ContentPresenter#ContentPresenter > Frame#PermanentNavRootFrame > ContentPresenter > SystemSettings.View.FullScreenPage#FullScreenPage > Grid#MainGrid > SystemSettings.View.AlignableContentControl > ContentPresenter > Grid > SystemSettings.View.SettingsPageHost#pageContent > ScrollViewer#SettingsPageHostPanel > Border#Root > Grid > ScrollContentPresenter#ScrollContentPresenter > Grid#RootScrollableGrid > Grid > Grid > ContentControl > ContentPresenter > ItemsControl > ItemsPresenter > SystemSettings.View.SpacingStackPanel > ContentPresenter > SystemSettings.View.AlignableContentControl > SystemSettings.View.SpacingStackPanel > SystemSettings.View.ExpandItemsControl > ItemsPresenter > SystemSettings.View.SpacingStackPanel > ContentPresenter > StackPanel > SystemSettings.View.EntityItem > Grid > SystemSettings.View.ReservedWidthReflowingPanel > ContentPresenter#InlineContentPresenter > SystemSettings.View.StableComboBox > Grid#LayoutRoot > Border#Background", {
+        L"Background=Black",
+        L"BorderBrush=#1BD96A",
+        L"BorderThickness=2",
+        L"CornerRadius=12"}},
+    ThemeTargetStyles{L"ScrollViewer > ScrollContentPresenter > Border > Frame > ContentPresenter > SystemSettings.View.RootPage > Grid#RootPageGrid > Microsoft.UI.Xaml.Controls.NavigationView#PermanentNavigationView > Grid#RootGrid > Grid > SplitView#RootSplitView > Grid > Grid#ContentRoot > Border > Grid#ContentGrid > ContentPresenter#ContentPresenter > Frame#PermanentNavRootFrame > ContentPresenter > SystemSettings.View.FullScreenPage#FullScreenPage > Grid#MainGrid > SystemSettings.View.AlignableContentControl > ContentPresenter > Grid > SystemSettings.View.SettingsPageHost#pageContent > ScrollViewer#SettingsPageHostPanel > Border#Root > Grid > ScrollContentPresenter#ScrollContentPresenter > Grid#RootScrollableGrid > Grid > Grid > ContentControl > ContentPresenter > ItemsControl > ItemsPresenter > SystemSettings.View.SpacingStackPanel > ContentPresenter > SystemSettings.View.AlignableContentControl > SystemSettings.View.SpacingStackPanel > SystemSettings.View.ExpandItemsControl > ItemsPresenter > SystemSettings.View.SpacingStackPanel > ContentPresenter > StackPanel > SystemSettings.View.EntityItem > Grid > SystemSettings.View.ReservedWidthReflowingPanel > ContentPresenter#InlineContentPresenter > SystemSettings.View.StableComboBox > Grid#LayoutRoot > ContentPresenter#ContentPresenter > TextBlock", {
+        L"Foreground=#1BD96A",
+        L"FontWeight=Bold",
+        L"FontSize=14",
+        L"FontFamily=Segoe UI"}},
+    ThemeTargetStyles{L"ScrollViewer > ScrollContentPresenter > Border > Frame > ContentPresenter > SystemSettings.View.RootPage > Grid#RootPageGrid > Microsoft.UI.Xaml.Controls.NavigationView#PermanentNavigationView > Grid#RootGrid > Grid > SplitView#RootSplitView > Grid > Grid#ContentRoot > Border > Grid#ContentGrid > ContentPresenter#ContentPresenter > Frame#PermanentNavRootFrame > ContentPresenter > SystemSettings.View.L2Page#L2Page > Grid > Grid > SystemSettings.View.AlignableContentControl > ContentPresenter > Grid > SystemSettings.View.SettingsPageHost#pageContent > ScrollViewer#SettingsPageHostPanel > Border#Root > Grid > ScrollContentPresenter#ScrollContentPresenter > Grid#RootScrollableGrid > Grid > Grid > ContentControl > ContentPresenter > ItemsControl > ItemsPresenter > SystemSettings.View.SpacingStackPanel > ContentPresenter > SystemSettings.View.AlignableContentControl > SystemSettings.View.SpacingStackPanel > SystemSettings.View.ExpandItemsControl > ItemsPresenter > SystemSettings.View.SpacingStackPanel > ContentPresenter > SystemSettings.View.AlignableContentControl > SystemSettings.View.SpacingStackPanel > SystemSettings.View.ExpandItemsControl > ItemsPresenter > SystemSettings.View.SpacingStackPanel > ContentPresenter > SystemSettings.View.ButtonEntityItem > Button#ContainerButton > ContentPresenter#ContentPresenter > Grid > SystemSettings.View.ReservedWidthReflowingPanel#ReflowingPanel > ContentPresenter#InlineContentPresenter > SystemSettings.View.StableComboBox > Grid#LayoutRoot > Border#Background", {
+        L"Background=Black",
+        L"BorderBrush=#1BD96A",
+        L"BorderThickness=2",
+        L"CornerRadius=12"}},
+    ThemeTargetStyles{L"ScrollViewer > ScrollContentPresenter > Border > Frame > ContentPresenter > SystemSettings.View.RootPage > Grid#RootPageGrid > Microsoft.UI.Xaml.Controls.NavigationView#PermanentNavigationView > Grid#RootGrid > Grid > SplitView#RootSplitView > Grid > Grid#ContentRoot > Border > Grid#ContentGrid > ContentPresenter#ContentPresenter > Frame#PermanentNavRootFrame > ContentPresenter > SystemSettings.View.L2Page#L2Page > Grid > Grid > SystemSettings.View.AlignableContentControl > ContentPresenter > Grid > SystemSettings.View.SettingsPageHost#pageContent > ScrollViewer#SettingsPageHostPanel > Border#Root > Grid > ScrollContentPresenter#ScrollContentPresenter > Grid#RootScrollableGrid > Grid > Grid > ContentControl > ContentPresenter > ItemsControl > ItemsPresenter > SystemSettings.View.SpacingStackPanel > ContentPresenter > SystemSettings.View.AlignableContentControl > SystemSettings.View.SpacingStackPanel > SystemSettings.View.ExpandItemsControl > ItemsPresenter > SystemSettings.View.SpacingStackPanel > ContentPresenter > SystemSettings.View.EntityItem > Grid > SystemSettings.View.ReservedWidthReflowingPanel > ContentPresenter#InlineContentPresenter > SystemSettings.View.StableComboBox > Grid#LayoutRoot > ContentPresenter#ContentPresenter > TextBlock", {
+        L"Foreground=#1BD96A",
+        L"FontWeight=Bold",
+        L"FontSize=14",
+        L"FontFamily=Segoe UI"}},
+    ThemeTargetStyles{L"ScrollViewer > ScrollContentPresenter > Border > Frame > ContentPresenter > SystemSettings.View.RootPage > Grid#RootPageGrid > Microsoft.UI.Xaml.Controls.NavigationView#PermanentNavigationView > Grid#RootGrid > Grid > SplitView#RootSplitView > Grid > Grid#ContentRoot > Border > Grid#ContentGrid > ContentPresenter#ContentPresenter > Frame#PermanentNavRootFrame > ContentPresenter > SystemSettings.View.L2Page#L2Page > Grid > Grid > SystemSettings.View.AlignableContentControl > ContentPresenter > Grid > SystemSettings.View.SettingsPageHost#pageContent > ScrollViewer#SettingsPageHostPanel > Border#Root > Grid > ScrollContentPresenter#ScrollContentPresenter > Grid#RootScrollableGrid > Grid > Grid > ContentControl > ContentPresenter > ItemsControl > ItemsPresenter > SystemSettings.View.SpacingStackPanel > ContentPresenter > SystemSettings.View.AlignableContentControl > SystemSettings.View.SpacingStackPanel > SystemSettings.View.ExpandItemsControl > ItemsPresenter > SystemSettings.View.SpacingStackPanel > ContentPresenter > SystemSettings.View.ButtonEntityItem > Button#ContainerButton > ContentPresenter#ContentPresenter > Grid > SystemSettings.View.ReservedWidthReflowingPanel#ReflowingPanel > ContentPresenter#InlineContentPresenter > SystemSettings.View.StableComboBox > Grid#LayoutRoot > ContentPresenter#ContentPresenter > TextBlock", {
+        L"Foreground=#1BD96A",
+        L"FontWeight=Bold",
+        L"FontSize=14",
+        L"FontFamily=Segoe UI"}},
+    ThemeTargetStyles{L"ScrollViewer > ScrollContentPresenter > Border > Frame > ContentPresenter > SystemSettings.View.RootPage > Grid#RootPageGrid > Microsoft.UI.Xaml.Controls.NavigationView#PermanentNavigationView > Grid#RootGrid > Grid > SplitView#RootSplitView > Grid > Grid#ContentRoot > Border > Grid#ContentGrid > ContentPresenter#ContentPresenter > Frame#PermanentNavRootFrame > ContentPresenter > SystemSettings.View.L2Page#L2Page > Grid > Grid > SystemSettings.View.AlignableContentControl > ContentPresenter > Grid > SystemSettings.View.SettingsPageHost#pageContent > ScrollViewer#SettingsPageHostPanel > Border#Root > Grid > ScrollContentPresenter#ScrollContentPresenter > Grid#RootScrollableGrid > Grid > Grid > ContentControl > ContentPresenter > ItemsControl > ItemsPresenter > SystemSettings.View.SpacingStackPanel > ContentPresenter > SystemSettings.View.AlignableContentControl > SystemSettings.View.SpacingStackPanel > SystemSettings.View.ExpandItemsControl > ItemsPresenter > SystemSettings.View.SpacingStackPanel > ContentPresenter > SystemSettings.View.AlignableContentControl > SystemSettings.View.SpacingStackPanel > SystemSettings.View.ExpandItemsControl > ItemsPresenter > SystemSettings.View.SpacingStackPanel > ContentPresenter > SystemSettings.View.ButtonEntityItem > Button#ContainerButton > ContentPresenter#ContentPresenter > Grid > SystemSettings.View.ReservedWidthReflowingPanel#ReflowingPanel > ContentPresenter#InlineContentPresenter > SystemSettings.View.StableComboBox > Grid#LayoutRoot > ContentPresenter#ContentPresenter > TextBlock", {
+        L"Foreground=#1BD96A",
+        L"FontWeight=Bold",
+        L"FontSize=14",
+        L"FontFamily=Segoe UI"}},
+    ThemeTargetStyles{L"ScrollViewer > ScrollContentPresenter > Border > Frame > ContentPresenter > SystemSettings.View.RootPage > Grid#RootPageGrid > Microsoft.UI.Xaml.Controls.NavigationView#PermanentNavigationView > Grid#RootGrid > Grid > SplitView#RootSplitView > Grid > Grid#ContentRoot > Border > Grid#ContentGrid > ContentPresenter#ContentPresenter > Frame#PermanentNavRootFrame > ContentPresenter > SystemSettings.View.FullScreenPage#FullScreenPage > Grid#MainGrid > SystemSettings.View.AlignableContentControl > ContentPresenter > Grid > SystemSettings.View.SettingsPageHost#pageContent > ScrollViewer#SettingsPageHostPanel > Border#Root > Grid > ScrollContentPresenter#ScrollContentPresenter > Grid#RootScrollableGrid > Grid > Grid > ContentControl > ContentPresenter > ItemsControl > ItemsPresenter > SystemSettings.View.SpacingStackPanel > ContentPresenter > SystemSettings.View.AlignableContentControl > SystemSettings.View.SpacingStackPanel > SystemSettings.View.ExpandItemsControl > ItemsPresenter > SystemSettings.View.SpacingStackPanel > ContentPresenter > SystemSettings.View.AlignableContentControl > SystemSettings.View.SpacingStackPanel > SystemSettings.View.ExpandItemsControl > ItemsPresenter > SystemSettings.View.SpacingStackPanel > ContentPresenter > SystemSettings.View.EntityItem > Grid > SystemSettings.View.ReservedWidthReflowingPanel > ContentPresenter#InlineContentPresenter > StackPanel > Button#ClassicAppButton > ContentPresenter#ContentPresenter", {
+        L"Foreground=#1BD96A",
+        L"Background=Black",
+        L"BorderBrush=#1BD96A",
+        L"BorderThickness=2",
+        L"CornerRadius=12"}},
+    ThemeTargetStyles{L"ScrollViewer > ScrollContentPresenter > Border > Frame > ContentPresenter > SystemSettings.View.RootPage > Grid#RootPageGrid > Microsoft.UI.Xaml.Controls.NavigationView#PermanentNavigationView > Grid#RootGrid > Grid > SplitView#RootSplitView > Grid > Grid#ContentRoot > Border > Grid#ContentGrid > ContentPresenter#ContentPresenter > Frame#PermanentNavRootFrame > ContentPresenter > SystemSettings.View.FullScreenPage#FullScreenPage > Grid#MainGrid > SystemSettings.View.AlignableContentControl > ContentPresenter > Grid > SystemSettings.View.SettingsPageHost#pageContent > ScrollViewer#SettingsPageHostPanel > Border#Root > Grid > ScrollContentPresenter#ScrollContentPresenter > Grid#RootScrollableGrid > Grid > Grid > ContentControl > ContentPresenter > ItemsControl > ItemsPresenter > SystemSettings.View.SpacingStackPanel > ContentPresenter > SystemSettings.View.AlignableContentControl > SystemSettings.View.SpacingStackPanel > SystemSettings.View.ExpandItemsControl > ItemsPresenter > SystemSettings.View.SpacingStackPanel > ContentPresenter > SystemSettings.View.AlignableContentControl > SystemSettings.View.SpacingStackPanel > SystemSettings.View.ExpandItemsControl > ItemsPresenter > SystemSettings.View.SpacingStackPanel > ContentPresenter > SystemSettings.View.EntityItem > Grid > SystemSettings.View.ReservedWidthReflowingPanel > ContentPresenter#InlineContentPresenter > StackPanel > Button#ClassicAppButton > ContentPresenter#ContentPresenter > TextBlock", {
+        L"FontWeight=bold"}},
+    ThemeTargetStyles{L"SystemSettings.View.SettingsListView#DevicesHeroControlList > Border > ScrollViewer#ScrollViewer > Border#Root > Grid > ScrollContentPresenter#ScrollContentPresenter > ItemsPresenter > StackPanel > SystemSettings.View.SettingsListViewItem > Windows.UI.Xaml.Controls.Primitives.ListViewItemPresenter#Root > ContentControl > ContentPresenter > UserControl > Button#DevicesHeroControlButton > ContentPresenter#ContentPresenter@CommonStates", {
+        L"Background@Normal:=#040b07",
+        L"Background@PointerOver:=#06150d",
+        L"Background@Pressed:=#04150c",
+        L"Background@Disabled:=#010b04",
+        L"BorderThickness=2",
+        L"BorderBrush@Normal:=#0c190f",
+        L"BorderBrush@PointerOver:=#0c190f",
+        L"BorderBrush@Pressed:=#0c190f",
+        L"BorderBrush@Disabled:=#000000",
+        L"CornerRadius=14",
+        L"Margin=3"}},
+    ThemeTargetStyles{L"ScrollViewer > ScrollContentPresenter > Border > Frame > ContentPresenter > SystemSettings.View.RootPage > Grid#RootPageGrid > Microsoft.UI.Xaml.Controls.NavigationView#PermanentNavigationView > Grid#RootGrid > Grid > SplitView#RootSplitView > Grid > Grid#ContentRoot > Border > Grid#ContentGrid > ContentPresenter#ContentPresenter > Frame#PermanentNavRootFrame > ContentPresenter > SystemSettings.View.CategoryPage > Grid > ScrollViewer > Border#Root > Grid > ScrollContentPresenter#ScrollContentPresenter > Grid > SystemSettings.View.AlignableContentControl#heroContent > ContentPresenter > SystemSettings.View.AlignableContentControl > ItemsControl > ItemsPresenter > StackPanel > ContentPresenter > SystemSettings.View.AlignableContentControl > ContentPresenter > SystemSettings.View.TwoSegmentsHeroUserControl#DefaultOneSegmentHeroUserControl > Grid#LayoutRoot > Grid#LeftLayout > ContentPresenter > ItemsControl > ItemsPresenter > StackPanel > ContentPresenter > StackPanel > SystemSettings.View.DevicesHeroControl > Grid > Button > ContentPresenter#ContentPresenter", {
+        L"Background:=#040b07",
+        L"Margin=3",
+        L"CornerRadius=14",
+        L"BorderBrush:=#0c190f",
+        L"BorderThickness=2"}},
+    ThemeTargetStyles{L"ScrollViewer > ScrollContentPresenter > Border > Frame > ContentPresenter > SystemSettings.View.RootPage > Grid#RootPageGrid > Microsoft.UI.Xaml.Controls.NavigationView#PermanentNavigationView > Grid#RootGrid > Grid > SplitView#RootSplitView > Grid > Grid#ContentRoot > Border > Grid#ContentGrid > ContentPresenter#ContentPresenter > Frame#PermanentNavRootFrame > ContentPresenter > SystemSettings.View.FullScreenPage#FullScreenPage > Grid#MainGrid > SystemSettings.View.AlignableContentControl > ContentPresenter > Grid > SystemSettings.View.SettingsPageHost#pageContent > ScrollViewer#SettingsPageHostPanel > Border#Root > Grid > ScrollContentPresenter#ScrollContentPresenter > Grid#RootScrollableGrid > Grid > Grid > ContentControl > ContentPresenter > ItemsControl > ItemsPresenter > SystemSettings.View.SpacingStackPanel > ContentPresenter > SystemSettings.View.AlignableContentControl > SystemSettings.View.SpacingStackPanel > SystemSettings.View.ExpandItemsControl > ItemsPresenter > SystemSettings.View.SpacingStackPanel > ContentPresenter > SystemSettings.View.AlignableContentControl > SystemSettings.View.SpacingStackPanel > SystemSettings.View.ExpandItemsControl > ItemsPresenter > SystemSettings.View.SpacingStackPanel > ContentPresenter > SystemSettings.View.EntityItem > Grid > SystemSettings.View.ReservedWidthReflowingPanel > ContentPresenter#InlineContentPresenter > StackPanel > Button#ModernAppButton > ContentPresenter#ContentPresenter", {
+        L"Foreground=#1BD96A",
+        L"Background=Black",
+        L"BorderBrush=#1BD96A",
+        L"BorderThickness=2",
+        L"CornerRadius=12"}},
+    ThemeTargetStyles{L"ScrollViewer > ScrollContentPresenter > Border > Frame > ContentPresenter > SystemSettings.View.RootPage > Grid#RootPageGrid > Microsoft.UI.Xaml.Controls.NavigationView#PermanentNavigationView > Grid#RootGrid > Grid > SplitView#RootSplitView > Grid > Grid#ContentRoot > Border > Grid#ContentGrid > ContentPresenter#ContentPresenter > Frame#PermanentNavRootFrame > ContentPresenter > SystemSettings.View.FullScreenPage#FullScreenPage > Grid#MainGrid > SystemSettings.View.AlignableContentControl > ContentPresenter > Grid > SystemSettings.View.SettingsPageHost#pageContent > ScrollViewer#SettingsPageHostPanel > Border#Root > Grid > ScrollContentPresenter#ScrollContentPresenter > Grid#RootScrollableGrid > Grid > Grid > ContentControl > ContentPresenter > ItemsControl > ItemsPresenter > SystemSettings.View.SpacingStackPanel > ContentPresenter > SystemSettings.View.AlignableContentControl > SystemSettings.View.SpacingStackPanel > SystemSettings.View.ExpandItemsControl > ItemsPresenter > SystemSettings.View.SpacingStackPanel > ContentPresenter > SystemSettings.View.AlignableContentControl > SystemSettings.View.SpacingStackPanel > SystemSettings.View.ExpandItemsControl > ItemsPresenter > SystemSettings.View.SpacingStackPanel > ContentPresenter > SystemSettings.View.EntityItem > Grid > SystemSettings.View.ReservedWidthReflowingPanel > ContentPresenter#InlineContentPresenter > StackPanel > Button#ModernAppButton > ContentPresenter#ContentPresenter > TextBlock", {
+        L"FontWeight=bold"}},
+    ThemeTargetStyles{L"ScrollViewer > ScrollContentPresenter > Border > Frame > ContentPresenter > SystemSettings.View.RootPage > Grid#RootPageGrid > Microsoft.UI.Xaml.Controls.NavigationView#PermanentNavigationView > Grid#RootGrid > Grid > SplitView#RootSplitView > Grid > Grid#ContentRoot > Border > Grid#ContentGrid > ContentPresenter#ContentPresenter > Frame#PermanentNavRootFrame > ContentPresenter > SystemSettings.View.L2Page#L2Page > Grid > Grid > SystemSettings.View.AlignableContentControl > ContentPresenter > Grid > SystemSettings.View.SettingsPageHost#pageContent > ScrollViewer#SettingsPageHostPanel > Border#Root > Grid > ScrollContentPresenter#ScrollContentPresenter > Grid#RootScrollableGrid > Grid > Grid > ContentControl > ContentPresenter > ItemsControl > ItemsPresenter > SystemSettings.View.SpacingStackPanel > ContentPresenter > SystemSettings.View.AlignableContentControl > SystemSettings.View.SpacingStackPanel > SystemSettings.View.ExpandItemsControl > ItemsPresenter > SystemSettings.View.SpacingStackPanel > ContentPresenter > SystemSettings.View.SettingsListItemsRepeater > ScrollViewer#SettingsListScrollViewer > Border#Root > Grid > ScrollContentPresenter#ScrollContentPresenter > Microsoft.UI.Xaml.Controls.ItemsRepeater#ItemsRepeater > SystemSettings.View.SettingsExpander > Grid > ContentPresenter#RevealedContent > ContentControl > ContentPresenter > SystemSettings.View.SpacingStackPanel > SystemSettings.View.EntityItem#DeviceRemoveButtonContent > Grid > SystemSettings.View.ReservedWidthReflowingPanel > ContentPresenter#InlineContentPresenter > Button > ContentPresenter#ContentPresenter", {
+        L"Foreground=#1BD96A",
+        L"BorderBrush=#1BD96A",
+        L"BorderThickness=2",
+        L"CornerRadius=12"}},
+    ThemeTargetStyles{L"ScrollViewer > ScrollContentPresenter > Border > Frame > ContentPresenter > SystemSettings.View.RootPage > Grid#RootPageGrid > Microsoft.UI.Xaml.Controls.NavigationView#PermanentNavigationView > Grid#RootGrid > Grid > SplitView#RootSplitView > Grid > Grid#ContentRoot > Border > Grid#ContentGrid > ContentPresenter#ContentPresenter > Frame#PermanentNavRootFrame > ContentPresenter > SystemSettings.View.L2Page#L2Page > Grid > Grid > SystemSettings.View.AlignableContentControl > ContentPresenter > Grid > SystemSettings.View.SettingsPageHost#pageContent > ScrollViewer#SettingsPageHostPanel > Border#Root > Grid > ScrollContentPresenter#ScrollContentPresenter > Grid#RootScrollableGrid > Grid > Grid > ContentControl > ContentPresenter > ItemsControl > ItemsPresenter > SystemSettings.View.SpacingStackPanel > ContentPresenter > SystemSettings.View.AlignableContentControl > SystemSettings.View.SpacingStackPanel > SystemSettings.View.ExpandItemsControl > ItemsPresenter > SystemSettings.View.SpacingStackPanel > ContentPresenter > SystemSettings.View.ButtonEntityItem > Button#ContainerButton > ContentPresenter#ContentPresenter > Grid > SystemSettings.View.ReservedWidthReflowingPanel#ReflowingPanel > ContentPresenter#InlineContentPresenter > SystemSettings.View.StableComboBox > Grid#LayoutRoot", {
+        L"BorderBrush=#1BD96A",
+        L"BorderThickness=1",
+        L"CornerRadius=12"}},
+    ThemeTargetStyles{L"ScrollViewer > ScrollContentPresenter > Border > Frame > ContentPresenter > SystemSettings.View.RootPage > Grid#RootPageGrid > Microsoft.UI.Xaml.Controls.NavigationView#PermanentNavigationView > Grid#RootGrid > Grid > SplitView#RootSplitView > Grid > Grid#ContentRoot > Border > Grid#ContentGrid > ContentPresenter#ContentPresenter > Frame#PermanentNavRootFrame > ContentPresenter > SystemSettings.View.L2Page#L2Page > Grid > Grid > SystemSettings.View.AlignableContentControl > ContentPresenter > Grid > SystemSettings.View.SettingsPageHost#pageContent > ScrollViewer#SettingsPageHostPanel > Border#Root > Grid > ScrollContentPresenter#ScrollContentPresenter > Grid#RootScrollableGrid > Grid > Grid > ContentControl > ContentPresenter > ItemsControl > ItemsPresenter > SystemSettings.View.SpacingStackPanel > ContentPresenter > SystemSettings.View.AlignableContentControl > SystemSettings.View.SpacingStackPanel > SystemSettings.View.ExpandItemsControl > ItemsPresenter > SystemSettings.View.SpacingStackPanel > ContentPresenter > SystemSettings.View.ButtonEntityItem > Button#ContainerButton > ContentPresenter#ContentPresenter > Grid > SystemSettings.View.ReservedWidthReflowingPanel#ReflowingPanel > ContentPresenter#InlineContentPresenter > SystemSettings.View.StableComboBox > Grid#LayoutRoot > TextBlock", {
+        L"FontWeight=bold"}},
+    ThemeTargetStyles{L"ScrollViewer > ScrollContentPresenter > Border > Frame > ContentPresenter > SystemSettings.View.RootPage > Grid#RootPageGrid > Microsoft.UI.Xaml.Controls.NavigationView#PermanentNavigationView > Grid#RootGrid > Grid > SplitView#RootSplitView > Grid > Grid#ContentRoot > Border > Grid#ContentGrid > ContentPresenter#ContentPresenter > Frame#PermanentNavRootFrame > ContentPresenter > SystemSettings.View.L2Page#L2Page > Grid > Grid > SystemSettings.View.AlignableContentControl > ContentPresenter > Grid > SystemSettings.View.SettingsPageHost#pageContent > ScrollViewer#SettingsPageHostPanel > Border#Root > Grid > ScrollContentPresenter#ScrollContentPresenter > Grid#RootScrollableGrid > Grid > Grid > ContentControl > ContentPresenter > ItemsControl > ItemsPresenter > SystemSettings.View.SpacingStackPanel > ContentPresenter > SystemSettings.View.AlignableContentControl > SystemSettings.View.SpacingStackPanel > SystemSettings.View.ExpandItemsControl > ItemsPresenter > SystemSettings.View.SpacingStackPanel > ContentPresenter > SystemSettings.View.EntityItem > Grid > SystemSettings.View.ReservedWidthReflowingPanel > ContentPresenter#InlineContentPresenter > SystemSettings.View.StableComboBox > Grid#LayoutRoot", {
+        L"BorderBrush=#1BD96A",
+        L"BorderThickness=2",
+        L"CornerRadius=12"}},
+    ThemeTargetStyles{L"ScrollViewer > ScrollContentPresenter > Border > Frame > ContentPresenter > SystemSettings.View.RootPage > Grid#RootPageGrid > Microsoft.UI.Xaml.Controls.NavigationView#PermanentNavigationView > Grid#RootGrid > Grid > SplitView#RootSplitView > Grid > Grid#ContentRoot > Border > Grid#ContentGrid > ContentPresenter#ContentPresenter > Frame#PermanentNavRootFrame > ContentPresenter > SystemSettings.View.L2Page#L2Page > Grid > Grid > SystemSettings.View.AlignableContentControl > ContentPresenter > Grid > SystemSettings.View.SettingsPageHost#pageContent > ScrollViewer#SettingsPageHostPanel > Border#Root > Grid > ScrollContentPresenter#ScrollContentPresenter > Grid#RootScrollableGrid > Grid > Grid > ContentControl > ContentPresenter > ItemsControl > ItemsPresenter > SystemSettings.View.SpacingStackPanel > ContentPresenter > SystemSettings.View.AlignableContentControl > SystemSettings.View.SpacingStackPanel > SystemSettings.View.ExpandItemsControl > ItemsPresenter > SystemSettings.View.SpacingStackPanel > ContentPresenter > SystemSettings.View.EntityItem > Grid > SystemSettings.View.ReservedWidthReflowingPanel > ContentPresenter#InlineContentPresenter > SystemSettings.View.StableComboBox > Grid#LayoutRoot > TextBlock", {
+        L"FontWeight=bold"}},
+    ThemeTargetStyles{L"ScrollViewer > ScrollContentPresenter > Border > Frame > ContentPresenter > SystemSettings.View.RootPage > Grid#RootPageGrid > Microsoft.UI.Xaml.Controls.NavigationView#PermanentNavigationView > Grid#RootGrid > Grid > SplitView#RootSplitView > Grid > Grid#ContentRoot > Border > Grid#ContentGrid > ContentPresenter#ContentPresenter > Frame#PermanentNavRootFrame > ContentPresenter > SystemSettings.View.L2Page#L2Page > Grid > Grid > SystemSettings.View.AlignableContentControl > ContentPresenter > Grid > SystemSettings.View.SettingsPageHost#pageContent > ScrollViewer#SettingsPageHostPanel > Border#Root > Grid > ScrollContentPresenter#ScrollContentPresenter > Grid#RootScrollableGrid > Grid > Grid > ContentControl > ContentPresenter > ItemsControl > ItemsPresenter > SystemSettings.View.SpacingStackPanel > ContentPresenter > SystemSettings.View.AlignableContentControl > SystemSettings.View.SpacingStackPanel > SystemSettings.View.ExpandItemsControl > ItemsPresenter > SystemSettings.View.SpacingStackPanel > ContentPresenter > SystemSettings.View.EntityItem > Grid > SystemSettings.View.ReservedWidthReflowingPanel > ContentPresenter#InlineContentPresenter > SystemSettings.View.StableComboBox > Grid#LayoutRoot", {
+        L"BorderBrush=#1BD96A",
+        L"BorderThickness=1",
+        L"CornerRadius=12"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Shapes.Rectangle#OuterBorder", {
+        L"Fill=#1B1B20",
+        L"Height=33",
+        L"Width=55",
+        L"RadiusX=15",
+        L"RadiusY=20"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Shapes.Rectangle#SwitchKnobOff", {
+        L"Height=18",
+        L"Width=18",
+        L"RadiusX=25",
+        L"RadiusY=25",
+        L"Margin=5,0,-5,0"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Border#SwitchKnobOn", {
+        L"Height=20",
+        L"Width=20",
+        L"CornerRadius=25",
+        L"Margin=10,0,-10,0"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Shapes.Rectangle#SwitchKnobBounds", {
+        L"Fill=#1BD96A",
+        L"Height=35",
+        L"Width=55",
+        L"RadiusX=15",
+        L"RadiusY=20"}},
+    ThemeTargetStyles{L"SplitView#RootSplitView > Grid > Grid#ContentRoot > Border > Grid#ContentGrid", {
+        L"Background=#000000",
+        L"CornerRadius=14,0,0,0",
+        L"BorderBrush=#25262B",
+        L"BorderThickness=1"}},
+    ThemeTargetStyles{L"Microsoft.UI.Xaml.Controls.NavigationView#PermanentNavigationView", {
+        L"Background=#000000",
+        L"Foreground=White"}},
+    ThemeTargetStyles{L"SystemSettings.View.EntityItem", {
+        L"Background=#101013",
+        L"Foreground=White",
+        L"CornerRadius=12"}},
+    ThemeTargetStyles{L"SystemSettings.View.L2Page#L2Page > Grid > Grid > SystemSettings.View.AlignableContentControl > ContentPresenter > Grid > SystemSettings.View.SettingsPageHost#pageContent > ScrollViewer#SettingsPageHostPanel > Border#Root > Grid > ScrollContentPresenter#ScrollContentPresenter > Grid#RootScrollableGrid > Grid > Grid > ContentControl > ContentPresenter > ItemsControl > ItemsPresenter > SystemSettings.View.SpacingStackPanel > ContentPresenter > SystemSettings.View.AlignableContentControl > SystemSettings.View.SpacingStackPanel > SystemSettings.View.ExpandItemsControl > ItemsPresenter > SystemSettings.View.SpacingStackPanel > ContentPresenter > SystemSettings.View.SettingsListItemsRepeater > ScrollViewer#SettingsListScrollViewer > Border#Root > Grid > ScrollContentPresenter#ScrollContentPresenter > Microsoft.UI.Xaml.Controls.ItemsRepeater#ItemsRepeater > SystemSettings.View.SettingsExpander > Grid > SystemSettings.View.ExpanderToggleButton#ContainerButton > ContentPresenter#ContentPresenter > Grid > ContentPresenter > SystemSettings.View.EntityItem#EntityExpandableListItem > Grid > SystemSettings.View.ReservedWidthReflowingPanel > ContentPresenter#InlineContentPresenter > StackPanel > Button > ContentPresenter#ContentPresenter", {
+        L"BorderBrush=#1BD96A",
+        L"Width=150",
+        L"Foreground=#1BD96A",
+        L"BorderThickness=2",
+        L"CornerRadius=10"}},
+    ThemeTargetStyles{L"ScrollViewer > ScrollContentPresenter > Border > Frame > ContentPresenter > SystemSettings.View.RootPage > Grid#RootPageGrid > Microsoft.UI.Xaml.Controls.NavigationView#PermanentNavigationView > Grid#RootGrid > Grid > SplitView#RootSplitView > Grid > Grid#ContentRoot > Border > Grid#ContentGrid > ContentPresenter#ContentPresenter > Frame#PermanentNavRootFrame > ContentPresenter > SystemSettings.View.CategoryPage > Grid > ScrollViewer > Border#Root > Grid > ScrollContentPresenter#ScrollContentPresenter > Grid > SystemSettings.View.AlignableContentControl#heroContent > ContentPresenter > SystemSettings.View.AlignableContentControl > ItemsControl > ItemsPresenter > StackPanel > ContentPresenter > SystemSettings.View.AlignableContentControl > ContentPresenter > SystemSettings.View.TwoSegmentsHeroUserControl#DefaultOneSegmentHeroUserControl > Grid#LayoutRoot > Grid#LeftLayout > ContentPresenter > ItemsControl > ItemsPresenter > StackPanel > ContentPresenter > StackPanel > Button > ContentPresenter#ContentPresenter", {
+        L"Background=#141417",
+        L"Width=150",
+        L"BorderBrush=#1BD96A",
+        L"BorderThickness=2",
+        L"CornerRadius=10"}},
+    ThemeTargetStyles{L"SystemSettings.View.L2Page#L2Page > Grid > Grid > SystemSettings.View.AlignableContentControl > ContentPresenter > Grid > SystemSettings.View.SettingsPageHost#pageContent > ScrollViewer#SettingsPageHostPanel > Border#Root > Grid > ScrollContentPresenter#ScrollContentPresenter > Grid#RootScrollableGrid > Grid > Grid > ContentControl > ContentPresenter > ItemsControl > ItemsPresenter > SystemSettings.View.SpacingStackPanel > ContentPresenter > SystemSettings.View.AlignableContentControl > SystemSettings.View.SpacingStackPanel > SystemSettings.View.ExpandItemsControl > ItemsPresenter > SystemSettings.View.SpacingStackPanel > ContentPresenter > SystemSettings.View.ButtonEntityItem > Button#ContainerButton > ContentPresenter#ContentPresenter", {
+        L"Background=#101013",
+        L"Background@PointerOver=#101013",
+        L"CornerRadius=12"}},
+    ThemeTargetStyles{L"SystemSettings.View.L2Page#L2Page > Grid > Grid > SystemSettings.View.AlignableContentControl > ContentPresenter > Grid > SystemSettings.View.SettingsPageHost#pageContent > ScrollViewer#SettingsPageHostPanel > Border#Root > Grid > ScrollContentPresenter#ScrollContentPresenter > Grid#RootScrollableGrid > Grid > Grid > ContentControl > ContentPresenter > ItemsControl > ItemsPresenter > SystemSettings.View.SpacingStackPanel > ContentPresenter > SystemSettings.View.AlignableContentControl > SystemSettings.View.SpacingStackPanel > SystemSettings.View.ExpandItemsControl > ItemsPresenter > SystemSettings.View.SpacingStackPanel > ContentPresenter > SystemSettings.View.AlignableContentControl > SystemSettings.View.SpacingStackPanel > SystemSettings.View.ExpandItemsControl > ItemsPresenter > SystemSettings.View.SpacingStackPanel > ContentPresenter > SystemSettings.View.ButtonEntityItem > Button#ContainerButton > ContentPresenter#ContentPresenter", {
+        L"Background=#101013",
+        L"Background@PointerOver=#101013",
+        L"CornerRadius=12"}},
+    ThemeTargetStyles{L"SystemSettings.View.L2Page#L2Page > Grid > Grid > SystemSettings.View.AlignableContentControl > ContentPresenter > Grid > SystemSettings.View.SettingsPageHost#pageContent > ScrollViewer#SettingsPageHostPanel > Border#Root > Grid > ScrollContentPresenter#ScrollContentPresenter > Grid#RootScrollableGrid > Grid > Grid > ContentControl > ContentPresenter > ItemsControl > ItemsPresenter > SystemSettings.View.SpacingStackPanel > ContentPresenter > SystemSettings.View.AlignableContentControl > SystemSettings.View.SpacingStackPanel > SystemSettings.View.ExpandItemsControl > ItemsPresenter > SystemSettings.View.SpacingStackPanel > ContentPresenter > StackPanel > ContentPresenter > SystemSettings.View.ButtonEntityItem > Button#ContainerButton > ContentPresenter#ContentPresenter", {
+        L"Background=#101013",
+        L"Background@PointerOver=#101013",
+        L"CornerRadius=12"}},
+    ThemeTargetStyles{L"StackPanel#BackgroundStackPanel", {
+        L"Background=#101013",
+        L"CornerRadius=12"}},
+    ThemeTargetStyles{L"Rectangle#SelectionIndicator", {
+        L"Height=0"}},
+    ThemeTargetStyles{L"SystemSettings.View.SettingsNavigationViewItem[Content=Home] > Grid#NVIRootGrid > Microsoft.UI.Xaml.Controls.Primitives.NavigationViewItemPresenter#NavigationViewItemPresenter > Grid#LayoutRoot@PointerStates > Grid#PresenterContentRootGrid > Grid#ContentGrid > Border#IconColumn > Viewbox#IconBox > Border > ContentPresenter#Icon", {
+        L"Content@Normal:=\uE80F",
+        L"Content@PointerOver:=\uE80F",
+        L"Content@Pressed:=\uE80F",
+        L"Content@Selected:=\uEA8A",
+        L"Content@PointerOverSelected:=\uEA8A",
+        L"Content@PressedSelected:=\uEA8A",
+        L"Foreground@Selected=#1BD96A",
+        L"Foreground@PointerOverSelected=#1BD96A",
+        L"Foreground@PressedSelected=#1BD96A",
+        L"Foreground=#FFFFFF"}},
+    ThemeTargetStyles{L"SystemSettings.View.SettingsNavigationViewItem[Content=System] > Grid#NVIRootGrid > Microsoft.UI.Xaml.Controls.Primitives.NavigationViewItemPresenter#NavigationViewItemPresenter > Grid#LayoutRoot@PointerStates > Grid#PresenterContentRootGrid > Grid#ContentGrid > Border#IconColumn > Viewbox#IconBox > Border > ContentPresenter#Icon", {
+        L"Content@Normal:=\uE75B",
+        L"Content@PointerOver:=\uE75B",
+        L"Content@Pressed:=\uE75B",
+        L"Content@Selected:=\uE75B",
+        L"Content@PointerOverSelected:=\uE75B",
+        L"Content@PressedSelected:=\uE75B",
+        L"Foreground@Selected=#1BD96A",
+        L"Foreground@PointerOverSelected=#1BD96A",
+        L"Foreground@PressedSelected=#1BD96A",
+        L"Foreground=#FFFFFF"}},
+    ThemeTargetStyles{L"SystemSettings.View.SettingsNavigationViewItem[Content=Bluetooth & devices] > Grid#NVIRootGrid > Microsoft.UI.Xaml.Controls.Primitives.NavigationViewItemPresenter#NavigationViewItemPresenter > Grid#LayoutRoot@PointerStates > Grid#PresenterContentRootGrid > Grid#ContentGrid > Border#IconColumn > Viewbox#IconBox > Border > ContentPresenter#Icon", {
+        L"Content@Normal:=\uE702",
+        L"Content@PointerOver:=\uE702",
+        L"Content@Pressed:=\uE702",
+        L"Content@Selected:=\uE702",
+        L"Content@PointerOverSelected:=\uE702",
+        L"Content@PressedSelected:=\uE702",
+        L"Foreground@Selected=#1BD96A",
+        L"Foreground@PointerOverSelected=#1BD96A",
+        L"Foreground@PressedSelected=#1BD96A",
+        L"Foreground=#FFFFFF"}},
+    ThemeTargetStyles{L"SystemSettings.View.SettingsNavigationViewItem[3] > Grid#NVIRootGrid > Microsoft.UI.Xaml.Controls.Primitives.NavigationViewItemPresenter#NavigationViewItemPresenter > Grid#LayoutRoot@PointerStates > Grid#PresenterContentRootGrid > Grid#ContentGrid > Border#IconColumn > Viewbox#IconBox > Border > ContentPresenter#Icon", {
+        L"Content@Normal:=\uF0C5",
+        L"Content@PointerOver:=\uF0C5",
+        L"Content@Pressed:=\uF0C5",
+        L"Content@Selected:=\uF0C5",
+        L"Content@PointerOverSelected:=\uF0C5",
+        L"Content@PressedSelected:=\uF0C5",
+        L"Foreground@Selected=#1BD96A",
+        L"Foreground@PointerOverSelected=#1BD96A",
+        L"Foreground@PressedSelected=#1BD96A",
+        L"Foreground=#FFFFFF"}},
+    ThemeTargetStyles{L"SystemSettings.View.SettingsNavigationViewItem[4] > Grid#NVIRootGrid > Microsoft.UI.Xaml.Controls.Primitives.NavigationViewItemPresenter#NavigationViewItemPresenter > Grid#LayoutRoot@PointerStates > Grid#PresenterContentRootGrid > Grid#ContentGrid > Border#IconColumn > Viewbox#IconBox > Border > ContentPresenter#Icon", {
+        L"Content@Normal:=\uEA18",
+        L"Content@PointerOver:=\uEA18",
+        L"Content@Pressed:=\uEA18",
+        L"Content@Selected:=\uE83D",
+        L"Content@PointerOverSelected:=\uE83D",
+        L"Content@PressedSelected:=\uE83D",
+        L"Foreground@Selected=#1BD96A",
+        L"Foreground@PointerOverSelected=#1BD96A",
+        L"Foreground@PressedSelected=#1BD96A",
+        L"Foreground=#FFFFFF"}},
+    ThemeTargetStyles{L"SystemSettings.View.SettingsNavigationViewItem[5] > Grid#NVIRootGrid > Microsoft.UI.Xaml.Controls.Primitives.NavigationViewItemPresenter#NavigationViewItemPresenter > Grid#LayoutRoot@PointerStates > Grid#PresenterContentRootGrid > Grid#ContentGrid > Border#IconColumn > Viewbox#IconBox > Border > ContentPresenter#Icon", {
+        L"Content@Normal:=\uE776",
+        L"Content@PointerOver:=\uE776",
+        L"Content@Pressed:=\uE776",
+        L"Content@Selected:=\uE776",
+        L"Content@PointerOverSelected:=\uE776",
+        L"Content@PressedSelected:=\uE776",
+        L"Foreground@Selected=#1BD96A",
+        L"Foreground@PointerOverSelected=#1BD96A",
+        L"Foreground@PressedSelected=#1BD96A",
+        L"Foreground=#FFFFFF"}},
+    ThemeTargetStyles{L"SystemSettings.View.SettingsNavigationViewItem[6] > Grid#NVIRootGrid > Microsoft.UI.Xaml.Controls.Primitives.NavigationViewItemPresenter#NavigationViewItemPresenter > Grid#LayoutRoot@PointerStates > Grid#PresenterContentRootGrid > Grid#ContentGrid > Border#IconColumn > Viewbox#IconBox > Border > ContentPresenter#Icon", {
+        L"Content@Normal:=\uE7FC",
+        L"Content@PointerOver:=\uE7FC",
+        L"Content@Pressed:=\uE7FC",
+        L"Content@Selected:=\uE7FC",
+        L"Content@PointerOverSelected:=\uE7FC",
+        L"Content@PressedSelected:=\uE7FC",
+        L"Foreground@Selected=#1BD96A",
+        L"Foreground@PointerOverSelected=#1BD96A",
+        L"Foreground@PressedSelected=#1BD96A",
+        L"Foreground=#FFFFFF"}},
+    ThemeTargetStyles{L"SystemSettings.View.SettingsNavigationViewItem[7] > Grid#NVIRootGrid > Microsoft.UI.Xaml.Controls.Primitives.NavigationViewItemPresenter#NavigationViewItemPresenter > Grid#LayoutRoot@PointerStates > Grid#PresenterContentRootGrid > Grid#ContentGrid > Border#IconColumn > Viewbox#IconBox > Border > ContentPresenter#Icon", {
+        L"Content@Normal:=\uE775",
+        L"Content@PointerOver:=\uE775",
+        L"Content@Pressed:=\uE775",
+        L"Content@Selected:=\uE775",
+        L"Content@PointerOverSelected:=\uE775",
+        L"Content@PressedSelected:=\uE775",
+        L"Foreground@Selected=#1BD96A",
+        L"Foreground@PointerOverSelected=#1BD96A",
+        L"Foreground@PressedSelected=#1BD96A",
+        L"Foreground=#FFFFFF"}},
+    ThemeTargetStyles{L"SystemSettings.View.SettingsNavigationViewItem[8] > Grid#NVIRootGrid > Microsoft.UI.Xaml.Controls.Primitives.NavigationViewItemPresenter#NavigationViewItemPresenter > Grid#LayoutRoot@PointerStates > Grid#PresenterContentRootGrid > Grid#ContentGrid > Border#IconColumn > Viewbox#IconBox > Border > ContentPresenter#Icon", {
+        L"Content@Normal:=\uE77B",
+        L"Content@PointerOver:=\uE77B",
+        L"Content@Pressed:=\uE77B",
+        L"Content@Selected:=\uEA8C",
+        L"Content@PointerOverSelected:=\uEA8C",
+        L"Content@PressedSelected:=\uEA8C",
+        L"Foreground@Selected=#1BD96A",
+        L"Foreground@PointerOverSelected=#1BD96A",
+        L"Foreground@PressedSelected=#1BD96A",
+        L"Foreground=#FFFFFF"}},
+    ThemeTargetStyles{L"SystemSettings.View.SettingsNavigationViewItem[9] > Grid#NVIRootGrid > Microsoft.UI.Xaml.Controls.Primitives.NavigationViewItemPresenter#NavigationViewItemPresenter > Grid#LayoutRoot@PointerStates > Grid#PresenterContentRootGrid > Grid#ContentGrid > Border#IconColumn > Viewbox#IconBox > Border > ContentPresenter#Icon", {
+        L"Content@Normal:=\uE74C",
+        L"Content@PointerOver:=\uE74C",
+        L"Content@Pressed:=\uE74C",
+        L"Content@Selected:=\uE74C",
+        L"Content@PointerOverSelected:=\uE74C",
+        L"Content@PressedSelected:=\uE74C",
+        L"Foreground@Selected=#1BD96A",
+        L"Foreground@PointerOverSelected=#1BD96A",
+        L"Foreground@PressedSelected=#1BD96A",
+        L"Foreground=#FFFFFF"}},
+    ThemeTargetStyles{L"SystemSettings.View.SettingsNavigationViewItem[10] > Grid#NVIRootGrid > Microsoft.UI.Xaml.Controls.Primitives.NavigationViewItemPresenter#NavigationViewItemPresenter > Grid#LayoutRoot@PointerStates > Grid#PresenterContentRootGrid > Grid#ContentGrid > Border#IconColumn > Viewbox#IconBox > Border > ContentPresenter#Icon", {
+        L"Content@Normal:=\uE771",
+        L"Content@PointerOver:=\uE771",
+        L"Content@Pressed:=\uE771",
+        L"Content@Selected:=\uE771",
+        L"Content@PointerOverSelected:=\uE771",
+        L"Content@PressedSelected:=\uE771",
+        L"Foreground@Selected=#1BD96A",
+        L"Foreground@PointerOverSelected=#1BD96A",
+        L"Foreground@PressedSelected=#1BD96A",
+        L"Foreground=#FFFFFF"}},
+    ThemeTargetStyles{L"SystemSettings.View.SettingsNavigationViewItem[11] > Grid#NVIRootGrid > Microsoft.UI.Xaml.Controls.Primitives.NavigationViewItemPresenter#NavigationViewItemPresenter > Grid#LayoutRoot@PointerStates > Grid#PresenterContentRootGrid > Grid#ContentGrid > Border#IconColumn > Viewbox#IconBox > Border > ContentPresenter#Icon", {
+        L"Content@Normal:=\uE701",
+        L"Content@PointerOver:=\uE701",
+        L"Content@Pressed:=\uE701",
+        L"Content@Selected:=\uE701",
+        L"Content@PointerOverSelected:=\uE701",
+        L"Content@PressedSelected:=\uE701",
+        L"Foreground@Selected=#1BD96A",
+        L"Foreground@PointerOverSelected=#1BD96A",
+        L"Foreground@PressedSelected=#1BD96A",
+        L"Foreground=#FFFFFF"}},
+    ThemeTargetStyles{L"SystemSettings.View.SettingsNavigationViewItem[12] > Grid#NVIRootGrid > Microsoft.UI.Xaml.Controls.Primitives.NavigationViewItemPresenter#NavigationViewItemPresenter > Grid#LayoutRoot@PointerStates > Grid#PresenterContentRootGrid > Grid#ContentGrid > Border#IconColumn > Viewbox#IconBox > Border > ContentPresenter#Icon", {
+        L"Content@Normal:=\uE702",
+        L"Content@PointerOver:=\uE702",
+        L"Content@Pressed:=\uE702",
+        L"Content@Selected:=\uE702",
+        L"Content@PointerOverSelected:=\uE702",
+        L"Content@PressedSelected:=\uE702",
+        L"Foreground@Selected=#1BD96A",
+        L"Foreground@PointerOverSelected=#1BD96A",
+        L"Foreground@PressedSelected=#1BD96A",
+        L"Foreground=#FFFFFF"}},
+    ThemeTargetStyles{L"SystemSettings.View.SettingsNavigationViewItem > Grid#NVIRootGrid > Microsoft.UI.Xaml.Controls.Primitives.NavigationViewItemPresenter#NavigationViewItemPresenter > Grid#LayoutRoot > Grid#PresenterContentRootGrid > Grid#ContentGrid > ContentPresenter#ContentPresenter > TextBlock", {
+        L"Padding=10,0,0,0"}},
+    ThemeTargetStyles{L"SystemSettings.View.SettingsNavigationViewItem > Grid#NVIRootGrid > Microsoft.UI.Xaml.Controls.Primitives.NavigationViewItemPresenter#NavigationViewItemPresenter > Grid#LayoutRoot@PointerStates > Grid#PresenterContentRootGrid > Grid#ContentGrid > Border#IconColumn > Viewbox#IconBox > Border > ContentPresenter#Icon", {
+        L"FontFamily=Segoe Fluent Icons",
+        L"FontSize=20",
+        L"Margin=15,0,-2,0"}},
+    ThemeTargetStyles{L"ContentPresenter#IconContentPresenter", {
+        L"Foreground:=#1BD96A"}},
+    ThemeTargetStyles{L"SystemSettings.View.SettingsNavigationViewItem > Grid#NVIRootGrid > Microsoft.UI.Xaml.Controls.Primitives.NavigationViewItemPresenter#NavigationViewItemPresenter > Grid#LayoutRoot@PointerStates", {
+        L"Background@Normal=Transparent",
+        L"Height=48",
+        L"Margin=8,0,8,0",
+        L"Padding= -4",
+        L"Background@PointerOver=#101013",
+        L"Background@Pressed:=#134229",
+        L"Background@Selected:=#134229",
+        L"Background@PointerOverSelected:=#134229",
+        L"Background@PressedSelected:=#134229",
+        L"CornerRadius@Normal=10",
+        L"CornerRadius=30"}},
+    ThemeTargetStyles{L"SystemSettings.View.SettingsNavigationViewItem > Grid#NVIRootGrid > Microsoft.UI.Xaml.Controls.Primitives.NavigationViewItemPresenter#NavigationViewItemPresenter > Grid#LayoutRoot@PointerStates > Grid#PresenterContentRootGrid > Grid#ContentGrid > ContentPresenter#ContentPresenter > TextBlock", {
+        L"Foreground@Normal=White",
+        L"Foreground@PointerOver=White",
+        L"Foreground@Pressed=White",
+        L"Foreground@Selected:=#1BD96A",
+        L"Foreground@PointerOverSelected:=#1BD96A",
+        L"Foreground@PressedSelected:=#1BD96A",
+        L"FontWeight=Bold",
+        L"FontSize@Selected=16",
+        L"FontSize@PointerOverSelected=16"}},
+    ThemeTargetStyles{L"SystemSettings.View.UserProfileControl#UserProfileControl", {
+        L"Background=Transparent"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Button#UserProfileButton", {
+        L"Background=Transparent"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Shapes.Rectangle#ThumbVisual", {
+        L"Fill=#1E1E1E"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Button#NavigationViewBackButton > Windows.UI.Xaml.Controls.Grid#RootGrid", {
+        L"Background=#1A1A1F",
+        L"CornerRadius=25",
+        L"Height=30",
+        L"Width=30"}},
+    ThemeTargetStyles{L"SystemSettings.View.AlignableContentControl#PermanentNavViewHeaderAlignControl > ContentPresenter", {
+        L"Background=#101013",
+        L"CornerRadius=25",
+        L"Padding=25,5"}},
+    ThemeTargetStyles{L"SystemSettings.View.AlignableContentControl#PermanentNavViewHeaderAlignControl > ContentPresenter > Microsoft.UI.Xaml.Controls.BreadcrumbBar#PermanentNavigationViewBreadcrumbBar > Microsoft.UI.Xaml.Controls.ItemsRepeater#PART_ItemsRepeater > Microsoft.UI.Xaml.Controls.BreadcrumbBarItem > Grid#PART_LayoutRoot > ContentPresenter#PART_LastItemContentPresenter", {
+        L"Padding=20,0,20,0",
+        L"Height=45",
+        L"Background:=#134229",
+        L"Foreground:=#1BD96A",
+        L"CornerRadius=25"}},
+    ThemeTargetStyles{L"SystemSettings.View.SettingsExpander > Grid > SystemSettings.View.ExpanderToggleButton#ContainerButton > ContentPresenter#ContentPresenter", {
+        L"Background=#101013",
+        L"CornerRadius=12,12,12,12",
+        L"Margin=0,2,0,0"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.StackPanel#SettingsCommandSearchBoxBackground", {
+        L"Height=30",
+        L"Background=#18181B",
+        L"CornerRadius=6"}},
+    ThemeTargetStyles{L"Microsoft.UI.Xaml.Controls.NavigationView#PermanentNavigationView", {
+        L"Background=#101013"}},
+    ThemeTargetStyles{L"ScrollViewer > ScrollContentPresenter > Border > Frame > ContentPresenter > SystemSettings.View.RootPage > Grid#RootPageGrid > Microsoft.UI.Xaml.Controls.NavigationView#PermanentNavigationView > Grid#RootGrid > Grid > SplitView#RootSplitView > Grid > Grid#ContentRoot > Border > Grid#ContentGrid > ContentPresenter#ContentPresenter > Frame#PermanentNavRootFrame > ContentPresenter > SystemSettings.View.L2Page#L2Page > Grid > Grid > SystemSettings.View.AlignableContentControl > ContentPresenter > Grid > SystemSettings.View.SettingsPageHost#pageContent > ScrollViewer#SettingsPageHostPanel > Border#Root > Grid > ScrollContentPresenter#ScrollContentPresenter > Grid#RootScrollableGrid > Grid > Grid > ContentControl > ContentPresenter > ItemsControl > ItemsPresenter > SystemSettings.View.SpacingStackPanel > ContentPresenter > SystemSettings.View.AlignableContentControl > SystemSettings.View.SpacingStackPanel > SystemSettings.View.ExpandItemsControl > ItemsPresenter > SystemSettings.View.SpacingStackPanel > ContentPresenter > SystemSettings.View.EntityItem > Grid > SystemSettings.View.ReservedWidthReflowingPanel > ContentPresenter#InlineContentPresenter > Button > ContentPresenter#ContentPresenter", {
+        L"Foreground=Black",
+        L"Background=#1BD96A",
+        L"CornerRadius=12"}},
+    ThemeTargetStyles{L"ScrollViewer > ScrollContentPresenter > Border > Frame > ContentPresenter > SystemSettings.View.RootPage > Grid#RootPageGrid > Microsoft.UI.Xaml.Controls.NavigationView#PermanentNavigationView > Grid#RootGrid > Grid > SplitView#RootSplitView > Grid > Grid#ContentRoot > Border > Grid#ContentGrid > ContentPresenter#ContentPresenter > Frame#PermanentNavRootFrame > ContentPresenter > SystemSettings.View.L2Page#L2Page > Grid > Grid > SystemSettings.View.AlignableContentControl > ContentPresenter > Grid > SystemSettings.View.SettingsPageHost#pageContent > ScrollViewer#SettingsPageHostPanel > Border#Root > Grid > ScrollContentPresenter#ScrollContentPresenter > Grid#RootScrollableGrid > Grid > Grid > ContentControl > ContentPresenter > ItemsControl > ItemsPresenter > SystemSettings.View.SpacingStackPanel > ContentPresenter > SystemSettings.View.AlignableContentControl > SystemSettings.View.SpacingStackPanel > SystemSettings.View.ExpandItemsControl > ItemsPresenter > SystemSettings.View.SpacingStackPanel > ContentPresenter > SystemSettings.View.EntityItem > Grid > SystemSettings.View.ReservedWidthReflowingPanel > ContentPresenter#InlineContentPresenter > Button > ContentPresenter#ContentPresenter > TextBlock", {
+        L"FontWeight=Bold",
+        L"FontSize=14",
+        L"FontFamily=Segoe UI"}},
+    ThemeTargetStyles{L"ScrollViewer > ScrollContentPresenter > Border > Frame > ContentPresenter > SystemSettings.View.RootPage > Grid#RootPageGrid > Microsoft.UI.Xaml.Controls.NavigationView#PermanentNavigationView > Grid#RootGrid > Grid > SplitView#RootSplitView > Grid > Grid#ContentRoot > Border > Grid#ContentGrid > ContentPresenter#ContentPresenter > Frame#PermanentNavRootFrame > ContentPresenter > SystemSettings.View.CategoryPage > Grid > ScrollViewer > Border#Root > Grid > ScrollContentPresenter#ScrollContentPresenter > Grid > SystemSettings.View.AlignableContentControl > ContentPresenter > SystemSettings.View.SettingsListView#settingPagesList > ItemsPresenter > ItemsStackPanel > SystemSettings.View.SettingsListViewItem > Windows.UI.Xaml.Controls.Primitives.ListViewItemPresenter > SystemSettings.View.EntityItem > Grid > SystemSettings.View.ReservedWidthReflowingPanel > ContentPresenter#InlineContentPresenter > Button > ContentPresenter#ContentPresenter", {
+        L"Foreground=Black",
+        L"Background=#1BD96A",
+        L"CornerRadius=12"}},
+    ThemeTargetStyles{L"ScrollViewer > ScrollContentPresenter > Border > Frame > ContentPresenter > SystemSettings.View.RootPage > Grid#RootPageGrid > Microsoft.UI.Xaml.Controls.NavigationView#PermanentNavigationView > Grid#RootGrid > Grid > SplitView#RootSplitView > Grid > Grid#ContentRoot > Border > Grid#ContentGrid > ContentPresenter#ContentPresenter > Frame#PermanentNavRootFrame > ContentPresenter > SystemSettings.View.CategoryPage > Grid > ScrollViewer > Border#Root > Grid > ScrollContentPresenter#ScrollContentPresenter > Grid > SystemSettings.View.AlignableContentControl > ContentPresenter > SystemSettings.View.SettingsListView#settingPagesList > ItemsPresenter > ItemsStackPanel > SystemSettings.View.SettingsListViewItem > Windows.UI.Xaml.Controls.Primitives.ListViewItemPresenter > SystemSettings.View.EntityItem > Grid > SystemSettings.View.ReservedWidthReflowingPanel > ContentPresenter#InlineContentPresenter > Button > ContentPresenter#ContentPresenter > TextBlock", {
+        L"FontWeight=Bold",
+        L"FontSize=14",
+        L"FontFamily=Segoe UI"}},
+    ThemeTargetStyles{L"ScrollViewer > ScrollContentPresenter > Border > Frame > ContentPresenter > SystemSettings.View.RootPage > Grid#RootPageGrid > Microsoft.UI.Xaml.Controls.NavigationView#PermanentNavigationView > Grid#RootGrid > Grid > SplitView#RootSplitView > Grid > Grid#ContentRoot > Border > Grid#ContentGrid > ContentPresenter#ContentPresenter > Frame#PermanentNavRootFrame > ContentPresenter > SystemSettings.View.L2Page#L2Page > Grid > Grid > SystemSettings.View.AlignableContentControl > ContentPresenter > Grid > SystemSettings.View.SettingsPageHost#pageContent > ScrollViewer#SettingsPageHostPanel > Border#Root > Grid > ScrollContentPresenter#ScrollContentPresenter > Grid#RootScrollableGrid > Grid > Grid > ContentControl > ContentPresenter > ItemsControl > SystemSettings.View.SpacingStackPanel > ContentPresenter > SystemSettings.View.AlignableContentControl > ContentPresenter > SystemSettings.View.TwoSegmentsHeroUserControl#OneSegmentHeroEntityItemUserControl > Grid#LayoutRoot > Grid#LeftLayout > ContentPresenter > SystemSettings.View.EntityItem > Grid > SystemSettings.View.ReservedWidthReflowingPanel > ContentPresenter#InlineContentPresenter > StackPanel > StackPanel > Button > ContentPresenter#ContentPresenter", {
+        L"Foreground=Black",
+        L"Background=#1BD96A",
+        L"CornerRadius=12"}},
+    ThemeTargetStyles{L"ScrollViewer > ScrollContentPresenter > Border > Frame > ContentPresenter > SystemSettings.View.RootPage > Grid#RootPageGrid > Microsoft.UI.Xaml.Controls.NavigationView#PermanentNavigationView > Grid#RootGrid > Grid > SplitView#RootSplitView > Grid > Grid#ContentRoot > Border > Grid#ContentGrid > ContentPresenter#ContentPresenter > Frame#PermanentNavRootFrame > ContentPresenter > SystemSettings.View.L2Page#L2Page > Grid > Grid > SystemSettings.View.AlignableContentControl > ContentPresenter > Grid > SystemSettings.View.SettingsPageHost#pageContent > ScrollViewer#SettingsPageHostPanel > Border#Root > Grid > ScrollContentPresenter#ScrollContentPresenter > Grid#RootScrollableGrid > Grid > Grid > ContentControl > ContentPresenter > ItemsControl > ItemsPresenter > SystemSettings.View.SpacingStackPanel > ContentPresenter > SystemSettings.View.AlignableContentControl > ContentPresenter > SystemSettings.View.TwoSegmentsHeroUserControl#OneSegmentHeroEntityItemUserControl > Grid#LayoutRoot > Grid#LeftLayout > ContentPresenter > SystemSettings.View.EntityItem > Grid > SystemSettings.View.ReservedWidthReflowingPanel > ContentPresenter#InlineContentPresenter > StackPanel > StackPanel > Button", {
+        L"Foreground=black",
+        L"Background=#1BD96A",
+        L"CornerRadius=12",
+        L"FontSize=14",
+        L"FontWeight=Bold"}},
+    ThemeTargetStyles{L"ToolTip", {
+        L"Foreground=Black",
+        L"Background=#1BD96A",
+        L"CornerRadius=12",
+        L"FontWeight=Bold",
+        L"FontSize=14",
+        L"FontFamily=Segoe UI"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.TextBox#CommandSearchTextBox", {
+        L"Background=#1A1A1F",
+        L"CornerRadius=12",
+        L"Foreground=White",
+        L"BorderThickness=0"}},
+}};
+
+const Theme g_themeOLED_variant_1 = {{
+    ThemeTargetStyles{L"ContentControl#GridViewItemContentControl > ContentPresenter > Grid", {
+        L"Background=#101013"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Primitives.ListViewItemPresenter > Border", {
+        L"CornerRadius=25",
+        L"Background=transparent"}},
+    ThemeTargetStyles{L"Microsoft.ReactNative.ReactRootView > Microsoft.ReactNative.ViewPanel > Microsoft.ReactNative.ViewPanel > Microsoft.ReactNative.ViewPanel > Microsoft.ReactNative.ViewPanel > Border", {
+        L"Background=#101013"}},
+    ThemeTargetStyles{L"SystemSettings.View.ButtonEntityItem > Button#ContainerButton > ContentPresenter#ContentPresenter", {
+        L"Background=#101013"}},
+    ThemeTargetStyles{L"ContentPresenter#ContentPresenter > Grid > Grid > TextBlock", {
+        L"Foreground=white"}},
+    ThemeTargetStyles{L"SystemSettings.View.ReservedWidthReflowingPanel > StackPanel > ContentPresenter#SubtitleContent > TextBlock", {
+        L"Foreground=#ADADAE"}},
+    ThemeTargetStyles{L"Microsoft.ReactNative.ViewPanel > TextBlock", {
+        L"Foreground=#ADADAE"}},
+    ThemeTargetStyles{L"ContentPresenter#SubtitleContent > TextBlock", {
+        L"Foreground=#ADADAE"}},
+    ThemeTargetStyles{L"ContentPresenter#SubtitleContent > StackPanel > StackPanel > TextBlock", {
+        L"Foreground=#ADADAE"}},
+    ThemeTargetStyles{L"ContentPresenter#SubtitleContent > Grid > TextBlock", {
+        L"Foreground=#ADADAE"}},
+    ThemeTargetStyles{L"ContentPresenter#InlineContentPresenter > StackPanel > ContentControl > ContentPresenter > StackPanel > TextBlock", {
+        L"Foreground=white"}},
+    ThemeTargetStyles{L"Button#DeviceOptionsButton > Grid > Grid > ContentPresenter#ContentPresenter > TextBlock", {
+        L"Foreground=white"}},
+    ThemeTargetStyles{L"ContentPresenter#TitleContent > TextBlock", {
+        L"Foreground=white"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Primitives.ListViewItemPresenter > Border", {
+        L"CornerRadius=25",
+        L"Background=transparent"}},
+    ThemeTargetStyles{L"Microsoft.ReactNative.ReactRootView > Microsoft.ReactNative.ViewPanel > Microsoft.ReactNative.ViewPanel > Microsoft.ReactNative.ViewPanel > Microsoft.ReactNative.ViewPanel > Border", {
+        L"Background=#101013"}},
+    ThemeTargetStyles{L"SystemSettings.View.ButtonEntityItem > Button#ContainerButton > ContentPresenter#ContentPresenter", {
+        L"Background=#101013"}},
+    ThemeTargetStyles{L"ContentPresenter#ContentPresenter > Grid > Grid > TextBlock", {
+        L"Foreground=white"}},
+    ThemeTargetStyles{L"SystemSettings.View.ReservedWidthReflowingPanel > StackPanel > ContentPresenter#SubtitleContent > TextBlock", {
+        L"Foreground=#ADADAE"}},
+    ThemeTargetStyles{L"Microsoft.ReactNative.ViewPanel > TextBlock", {
+        L"Foreground=#ADADAE"}},
+    ThemeTargetStyles{L"ContentPresenter#SubtitleContent > TextBlock", {
+        L"Foreground=#ADADAE"}},
+    ThemeTargetStyles{L"ContentPresenter#SubtitleContent > StackPanel > StackPanel > TextBlock", {
+        L"Foreground=#ADADAE"}},
+    ThemeTargetStyles{L"ContentPresenter#SubtitleContent > Grid > TextBlock", {
+        L"Foreground=#ADADAE"}},
+    ThemeTargetStyles{L"ContentPresenter#InlineContentPresenter > StackPanel > ContentControl > ContentPresenter > StackPanel > TextBlock", {
+        L"Foreground=white"}},
+    ThemeTargetStyles{L"Button#DeviceOptionsButton > Grid > Grid > ContentPresenter#ContentPresenter > TextBlock", {
+        L"Foreground=white"}},
+    ThemeTargetStyles{L"ContentPresenter#TitleContent > TextBlock", {
+        L"Foreground=white"}},
+    ThemeTargetStyles{L"ScrollViewer > ScrollContentPresenter > Border > Frame > ContentPresenter > SystemSettings.View.RootPage > Grid#RootPageGrid > Microsoft.UI.Xaml.Controls.NavigationView#PermanentNavigationView > Grid#RootGrid > Grid > SplitView#RootSplitView > Grid > Grid#ContentRoot > Border > Grid#ContentGrid > ContentPresenter#ContentPresenter > Frame#PermanentNavRootFrame > ContentPresenter > SystemSettings.View.CategoryPage > Grid > ScrollViewer > Border#Root > Grid > ScrollContentPresenter#ScrollContentPresenter > Grid > SystemSettings.View.AlignableContentControl > ContentPresenter > SystemSettings.View.SettingsListView#settingPagesList > ItemsPresenter > ItemsStackPanel > SystemSettings.View.SettingsListViewItem > Windows.UI.Xaml.Controls.Primitives.ListViewItemPresenter", {
+        L"CornerRadius=12"}},
+    ThemeTargetStyles{L"Border > Frame > ContentPresenter > SystemSettings.View.RootPage > Grid#RootPageGrid > Microsoft.UI.Xaml.Controls.NavigationView#PermanentNavigationView > Grid#RootGrid > Grid > SplitView#RootSplitView > Grid > Grid#ContentRoot > Border > Grid#ContentGrid > ContentPresenter#ContentPresenter", {
+        L"Margin=2"}},
+    ThemeTargetStyles{L"Grid#ContentRoot > Border > Grid#ContentGrid > ContentControl#HeaderContent", {
+        L"Margin=10,-38,0,5"}},
+    ThemeTargetStyles{L"SplitView#RootSplitView > Grid > Grid#PaneRoot > Border > Grid#PaneContentGrid > Grid#ItemsContainerGrid > Microsoft.UI.Xaml.Controls.ItemsRepeaterScrollHost > ScrollViewer#MenuItemsScrollViewer > Border#Root > Grid > ScrollContentPresenter#ScrollContentPresenter", {
+        L"Margin=-12,8,0,0"}},
+    ThemeTargetStyles{L"TextBox#CommandSearchTextBox > Grid > Button#DeleteButton > Grid#ButtonLayoutGrid", {
+        L"CornerRadius=$InRadius",
+        L"MinHeight=32"}},
+    ThemeTargetStyles{L"SplitView#RootSplitView > Grid > Grid#PaneRoot > Border > Grid#PaneContentGrid > Grid#ItemsContainerGrid > Microsoft.UI.Xaml.Controls.ItemsRepeaterScrollHost > ScrollViewer#MenuItemsScrollViewer > Border#Root > Grid > ScrollContentPresenter#ScrollContentPresenter > Microsoft.UI.Xaml.Controls.ItemsRepeater#MenuItemsHost > SystemSettings.View.SettingsNavigationViewItem > Grid#NVIRootGrid > Microsoft.UI.Xaml.Controls.Primitives.NavigationViewItemPresenter#NavigationViewItemPresenter > Grid#LayoutRoot > Grid#PresenterContentRootGrid > Grid#ContentGrid > ContentPresenter#ContentPresenter > TextBlock", {
+        L"Grid.Column=0",
+        L"Visibility=Hidden"}},
+    ThemeTargetStyles{L"SplitView#RootSplitView > Grid > Grid#PaneRoot > Border > Grid#PaneContentGrid > Grid#ItemsContainerGrid > Microsoft.UI.Xaml.Controls.ItemsRepeaterScrollHost > ScrollViewer#MenuItemsScrollViewer > Border#Root > Grid > ScrollContentPresenter#ScrollContentPresenter > Microsoft.UI.Xaml.Controls.ItemsRepeater#MenuItemsHost > SystemSettings.View.SettingsNavigationViewItem", {
+        L"MinHeight=48",
+        L"MinWidth=65",
+        L"ToolTipService.Placement=5",
+        L"MaxWidth=65"}},
+    ThemeTargetStyles{L"Microsoft.UI.Xaml.Controls.NavigationView#PermanentNavigationView > Grid#RootGrid > Grid > SplitView#RootSplitView > Grid@DisplayModeStates > Grid#PaneRoot", {
+        L"MaxWidth@OpenInlineLeft=65",
+        L"Grid.ColumnSpan@OpenInlineLeft=1",
+        L"Grid.ColumnSpan=>Span"}},
+    ThemeTargetStyles{L"SplitView#RootSplitView > Grid > Grid#ContentRoot > Border > Grid#ContentGrid", {
+        L"CornerRadius={{Span > 1 ? 0 : $OutRadius}},0,0,0",
+        L"Margin={{Span > 1 ? 0 : 65}},48,0,0",
+        L"BorderThickness={{Span > 1 ? 0 : 1}},1,0,0"}},
+    ThemeTargetStyles{L"Microsoft.UI.Xaml.Controls.NavigationView#PermanentNavigationView > Grid#RootGrid > Grid > SplitView#RootSplitView > Grid@DisplayModeStates > Grid#ContentRoot", {
+        L"Grid.Column@OpenInlineLeft=0",
+        L"Grid.ColumnSpan@OpenInlineLeft=3"}},
+    ThemeTargetStyles{L"Microsoft.UI.Xaml.Controls.NavigationView#PermanentNavigationView > Grid#RootGrid > Grid > Grid#ShadowCaster", {
+        L"Grid.ColumnSpan=1",
+        L"MaxWidth=65"}},
+    ThemeTargetStyles{L"SystemSettings.View.SettingsNavigationViewItem[1]", {
+        L"Content=>t1",
+        L"ToolTipService.ToolTip={{t1}}"}},
+    ThemeTargetStyles{L"SystemSettings.View.SettingsNavigationViewItem[2]", {
+        L"Content=>t2",
+        L"ToolTipService.ToolTip={{t2}}"}},
+    ThemeTargetStyles{L"SystemSettings.View.SettingsNavigationViewItem[3]", {
+        L"Content=>t3",
+        L"ToolTipService.ToolTip={{t3}}"}},
+    ThemeTargetStyles{L"SystemSettings.View.SettingsNavigationViewItem[4]", {
+        L"Content=>t4",
+        L"ToolTipService.ToolTip={{t4}}"}},
+    ThemeTargetStyles{L"SystemSettings.View.SettingsNavigationViewItem[5]", {
+        L"Content=>t5",
+        L"ToolTipService.ToolTip={{t5}}"}},
+    ThemeTargetStyles{L"SystemSettings.View.SettingsNavigationViewItem[6]", {
+        L"Content=>t6",
+        L"ToolTipService.ToolTip={{t6}}"}},
+    ThemeTargetStyles{L"SystemSettings.View.SettingsNavigationViewItem[7]", {
+        L"Content=>t7",
+        L"ToolTipService.ToolTip={{t7}}"}},
+    ThemeTargetStyles{L"SystemSettings.View.SettingsNavigationViewItem[8]", {
+        L"Content=>t8",
+        L"ToolTipService.ToolTip={{t8}}"}},
+    ThemeTargetStyles{L"SystemSettings.View.SettingsNavigationViewItem[9]", {
+        L"Content=>t9",
+        L"ToolTipService.ToolTip={{t9}}"}},
+    ThemeTargetStyles{L"SystemSettings.View.SettingsNavigationViewItem[10]", {
+        L"Content=>t10",
+        L"ToolTipService.ToolTip={{t10}}"}},
+    ThemeTargetStyles{L"SystemSettings.View.SettingsNavigationViewItem[11]", {
+        L"Content=>t11",
+        L"ToolTipService.ToolTip={{t11}}"}},
+    ThemeTargetStyles{L"SystemSettings.View.SettingsNavigationViewItem[12]", {
+        L"Content=>t12",
+        L"ToolTipService.ToolTip={{t12}}"}},
+    ThemeTargetStyles{L"SplitView#RootSplitView > Grid > Grid#PaneRoot > Border > Grid#PaneContentGrid > ContentControl#PaneCustomContentBorder > ContentPresenter > SystemSettings.View.SpacingStackPanel > SystemSettings.View.UserProfileControl#UserProfileControl > Button#UserProfileButton > ContentPresenter#ContentPresenter > Grid#UserProfileLayout > Grid[2]", {
+        L"Visibility=1",
+        L"Grid.Column=0"}},
+    ThemeTargetStyles{L"ContentControl#PaneCustomContentBorder > ContentPresenter > SystemSettings.View.SpacingStackPanel > SystemSettings.View.UserProfileControl#UserProfileControl > Button#UserProfileButton > ContentPresenter#ContentPresenter > Grid#UserProfileLayout > Grid[2] > TextBlock#UserName", {
+        L"Text=>UserName"}},
+    ThemeTargetStyles{L"ContentControl#PaneCustomContentBorder > ContentPresenter > SystemSettings.View.SpacingStackPanel > SystemSettings.View.UserProfileControl#UserProfileControl > Button#UserProfileButton", {
+        L"ToolTipService.ToolTip={{UserName}}",
+        L"ToolTipService.Placement=10",
+        L"Visibility=1"}},
+    ThemeTargetStyles{L"ContentControl#PaneCustomContentBorder > ContentPresenter > SystemSettings.View.SpacingStackPanel > SystemSettings.View.UserProfileControl#UserProfileControl > Button#UserProfileButton > ContentPresenter#ContentPresenter > Grid#UserProfileLayout > Grid#UserImageGrid > Image", {
+        L"Width=30",
+        L"Height=30"}},
+    ThemeTargetStyles{L"SplitView#RootSplitView > Grid > Grid#PaneRoot > Border > Grid#PaneContentGrid > ContentControl#PaneCustomContentBorder > ContentPresenter > SystemSettings.View.SpacingStackPanel", {
+        L"MaxHeight=48",
+        L"MaxWidth=65",
+        L"MinHeight=48",
+        L"MinWidth=65",
+        L"Visibility=1"}},
+    ThemeTargetStyles{L"SplitView#RootSplitView > Grid > Grid#PaneRoot > Border > Grid#PaneContentGrid > ContentControl#PaneCustomContentBorder > ContentPresenter > SystemSettings.View.SpacingStackPanel > SystemSettings.View.UserProfileControl#UserProfileControl > Button#UserProfileButton", {
+        L"MinHeight=48",
+        L"MaxHeight=48",
+        L"Margin=3,3,3,-3"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Shapes.Rectangle#ProgressBarIndicator", {
+        L"RadiusX=3",
+        L"RadiusY=3",
+        L"Height=6",
+        L"Fill:=<SolidColorBrush Color=\"{ThemeResource Accent}\"/>"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Border#DeterminateRoot", {
+        L"CornerRadius=3",
+        L"Height=6"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.ProgressBar", {
+        L"Height=6"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.StackPanel#TopBreakdownBar > Windows.UI.Xaml.Controls.ProgressBar > Windows.UI.Xaml.Controls.Grid > Windows.UI.Xaml.Controls.Border#DeterminateRoot > Windows.UI.Xaml.Shapes.Rectangle#ProgressBarIndicator", {
+        L"Height=16"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.StackPanel#TopBreakdownBar > Windows.UI.Xaml.Controls.ProgressBar > Windows.UI.Xaml.Controls.Grid > Windows.UI.Xaml.Controls.Border#DeterminateRoot", {
+        L"Height=16"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.StackPanel#TopBreakdownBar > Windows.UI.Xaml.Controls.ProgressBar", {
+        L"Height=16"}},
+    ThemeTargetStyles{L"CheckBox > Grid#RootGrid@CombinedStates > Grid > Rectangle#NormalRectangle", {
+        L"StrokeThickness=1",
+        L"Stroke=#27292E",
+        L"Fill@UncheckedNormal=black",
+        L"Fill@UncheckedPointerOver=black",
+        L"Fill@UncheckedPointerOverSelected=black",
+        L"Fill@CheckedNormal=<SolidColorBrush Color=\"{ThemeResource Accent}\"/>",
+        L"Fill@CheckedPointerOver=<SolidColorBrush Color=\"{ThemeResource Accent}\"/>",
+        L"Fill@CheckedPointerOverSelected=<SolidColorBrush Color=\"{ThemeResource Accent}\"/>",
+        L"RadiusX=6",
+        L"RadiusY=6"}},
+    ThemeTargetStyles{L"SystemSettings.View.AlignableContentControl > ContentPresenter > Grid > SystemSettings.View.AlignableContentControl > ContentPresenter > SystemSettings.View.WatermarkTextBox > Grid > Border#BorderElement", {
+        L"Background=#101013",
+        L"CornerRadius=12",
+        L"BorderThickness=0"}},
+    ThemeTargetStyles{L"SystemSettings.View.ReservedWidthReflowingPanel > ContentPresenter#InlineContentPresenter > SystemSettings.View.HighContrastThemesCombobox", {
+        L"BorderBrush:=<SolidColorBrush Color=\"{ThemeResource SystemAccentColor}\" />",
+        L"BorderThickness=3",
+        L"Background=Black",
+        L"Foreground:=<SolidColorBrush Color=\"{ThemeResource SystemAccentColor}\" />",
+        L"CornerRadius=12"}},
+    ThemeTargetStyles{L"SystemSettings.View.ReservedWidthReflowingPanel > ContentPresenter#InlineContentPresenter > SystemSettings.View.HighContrastThemesCombobox > Grid#LayoutRoot > ContentPresenter#ContentPresenter > TextBlock", {
+        L"FontWeight=Bold",
+        L"FontSize=14",
+        L"FontFamily=Segoe UI"}},
+    ThemeTargetStyles{L"HyperlinkButton > ContentPresenter#ContentPresenter", {
+        L"Foreground:=<SolidColorBrush Color=\"{ThemeResource SystemAccentColor}\" />"}},
+    ThemeTargetStyles{L"ProgressBar > Grid > Border#DeterminateRoot > Rectangle#ProgressBarIndicator", {
+        L"Fill:=<SolidColorBrush Color=\"{ThemeResource SystemAccentColor}\" />"}},
+    ThemeTargetStyles{L"SystemSettings.View.ReservedWidthReflowingPanel > ContentPresenter#InlineContentPresenter > Button > ContentPresenter#ContentPresenter", {
+        L"BorderBrush:=<SolidColorBrush Color=\"{ThemeResource SystemAccentColor}\" />",
+        L"BorderThickness=3",
+        L"Background=Black",
+        L"Foreground:=<SolidColorBrush Color=\"{ThemeResource SystemAccentColor}\" />",
+        L"CornerRadius=12"}},
+    ThemeTargetStyles{L"ContentPresenter#InlineContentPresenter > Button > ContentPresenter#ContentPresenter", {
+        L"BorderBrush:=<SolidColorBrush Color=\"{ThemeResource SystemAccentColor}\" />",
+        L"BorderThickness=3",
+        L"Background=Black",
+        L"Foreground:=<SolidColorBrush Color=\"{ThemeResource SystemAccentColor}\" />",
+        L"CornerRadius=12"}},
+    ThemeTargetStyles{L"SystemSettings.View.ReservedWidthReflowingPanel#ReflowingPanel > StackPanel > ContentPresenter#TitleContent > StackPanel > RadioButton > Grid#RootGrid > Grid > Windows.UI.Xaml.Shapes.Ellipse#CheckOuterEllipse", {
+        L"Fill:=<SolidColorBrush Color=\"{ThemeResource SystemAccentColor}\" />",
+        L"StrokeThickness=0"}},
+    ThemeTargetStyles{L"SystemSettings.View.ReservedWidthReflowingPanel > ContentPresenter#InlineContentPresenter > Grid > Slider > Grid > Grid#SliderContainer > Grid#HorizontalTemplate > Rectangle#HorizontalTrackRect", {
+        L"Fill=black",
+        L"Margin=0,0,5,0",
+        L"StrokeThickness=0"}},
+    ThemeTargetStyles{L"SystemSettings.View.ReservedWidthReflowingPanel > ContentPresenter#InlineContentPresenter > Grid > Slider > Grid > Grid#SliderContainer > Grid#HorizontalTemplate > Rectangle#HorizontalDecreaseRect", {
+        L"Fill:=<SolidColorBrush Color=\"{ThemeResource SystemAccentColor}\" />",
+        L"StrokeThickness=0"}},
+    ThemeTargetStyles{L"SystemSettings.View.ReservedWidthReflowingPanel > ContentPresenter#InlineContentPresenter > Grid > Slider > Grid > Grid#SliderContainer > Grid#HorizontalTemplate > Windows.UI.Xaml.Controls.Primitives.Thumb#HorizontalThumb > Border > Windows.UI.Xaml.Shapes.Ellipse#SliderInnerThumb", {
+        L"Fill:=<SolidColorBrush Color=\"{ThemeResource SystemAccentColor}\" />",
+        L"Height=0",
+        L"Width=0"}},
+    ThemeTargetStyles{L"SystemSettings.View.ReservedWidthReflowingPanel > ContentPresenter#InlineContentPresenter > Grid > Slider > Grid > Grid#SliderContainer > Grid#HorizontalTemplate > Windows.UI.Xaml.Controls.Primitives.Thumb#HorizontalThumb > Border", {
+        L"Width=17",
+        L"Height=17",
+        L"Margin=-5,0,0,0",
+        L"Background:=<SolidColorBrush Color=\"{ThemeResource SystemAccentColor}\" />"}},
+    ThemeTargetStyles{L"CheckBox > Grid#RootGrid@CombinedStates > Grid > Microsoft.UI.Xaml.Controls.AnimatedIcon#CheckGlyph", {
+        L"Width=25",
+        L"Height=25",
+        L"Margin=-2,-1,0,0"}},
+    ThemeTargetStyles{L"Button#focusStartButton > Windows.UI.Xaml.Controls.ContentPresenter#ContentPresenter", {
+        L"Background:=<SolidColorBrush Color=\"{ThemeResource SystemAccentColor}\" />",
+        L"Foreground=Black",
+        L"CornerRadius=12"}},
+    ThemeTargetStyles{L"SystemSettings.View.FocusEnableControl#FocusEnableControl > StackPanel > Button#focusStartButton > ContentPresenter#ContentPresenter > Grid > TextBlock#StartButtonText", {
+        L"FontWeight=Bold",
+        L"FontSize=14",
+        L"FontFamily=Segoe UI"}},
+    ThemeTargetStyles{L"SystemSettings.View.FocusEnableControl#FocusEnableControl > StackPanel > Button#focusStopButton > ContentPresenter#ContentPresenter", {
+        L"BorderBrush:=<SolidColorBrush Color=\"{ThemeResource SystemAccentColor}\" />",
+        L"BorderThickness=3",
+        L"Background=Black",
+        L"Foreground:=<SolidColorBrush Color=\"{ThemeResource SystemAccentColor}\" />",
+        L"CornerRadius=12"}},
+    ThemeTargetStyles{L"SystemSettings.View.FocusSessionControl > StackPanel > Grid > Button#focusSessionDecreaseButton > Grid > ContentPresenter#ContentPresenter", {
+        L"BorderBrush:=<SolidColorBrush Color=\"{ThemeResource SystemAccentColor}\" />",
+        L"BorderThickness=4",
+        L"Background=Black",
+        L"Foreground:=<SolidColorBrush Color=\"{ThemeResource SystemAccentColor}\" />",
+        L"CornerRadius=8"}},
+    ThemeTargetStyles{L"SystemSettings.View.FocusSessionControl > StackPanel > Grid > Button#focusSessionIncreaseButton > Grid > ContentPresenter#ContentPresenter > FontIcon > Grid > TextBlock", {
+        L"Padding=2,0,0,0"}},
+    ThemeTargetStyles{L"SystemSettings.View.FocusSessionControl > StackPanel > Grid > Button#focusSessionDecreaseButton > Grid > ContentPresenter#ContentPresenter > FontIcon > Grid > TextBlock", {
+        L"Padding=2,0,0,0"}},
+    ThemeTargetStyles{L"SystemSettings.View.FocusSessionControl > StackPanel > Grid > Grid > TextBlock#focusSessionDurationTextBlock", {
+        L"FontWeight=Bold",
+        L"FontSize=14",
+        L"FontFamily=Segoe UI",
+        L"Background:=<SolidColorBrush Color=\"{ThemeResource SystemAccentColor}\" />"}},
+    ThemeTargetStyles{L"SystemSettings.View.FocusSessionControl > StackPanel > Grid > Button#focusSessionIncreaseButton > Grid > ContentPresenter#ContentPresenter", {
+        L"BorderBrush:=<SolidColorBrush Color=\"{ThemeResource SystemAccentColor}\" />",
+        L"BorderThickness=4",
+        L"Background=Black",
+        L"Foreground:=<SolidColorBrush Color=\"{ThemeResource SystemAccentColor}\" />",
+        L"CornerRadius=8"}},
+    ThemeTargetStyles{L"SystemSettings.View.FocusEnableControl#FocusEnableControl > StackPanel > Button#focusStopButton > ContentPresenter#ContentPresenter > Grid > TextBlock#StopButtonText", {
+        L"FontWeight=Bold",
+        L"FontSize=14",
+        L"FontFamily=Segoe UI"}},
+    ThemeTargetStyles{L"ScrollViewer > ScrollContentPresenter > Border > Frame > ContentPresenter > SystemSettings.View.RootPage > Grid#RootPageGrid > Microsoft.UI.Xaml.Controls.NavigationView#PermanentNavigationView > Grid#RootGrid > Grid > SplitView#RootSplitView > Grid > Grid#ContentRoot > Border > Grid#ContentGrid > ContentPresenter#ContentPresenter > Frame#PermanentNavRootFrame > ContentPresenter > SystemSettings.View.CategoryPage > Grid > ScrollViewer > Border#Root > Grid > ScrollContentPresenter#ScrollContentPresenter > Grid > SystemSettings.View.AlignableContentControl#heroContent > ContentPresenter > SystemSettings.View.AlignableContentControl > ItemsControl > ItemsPresenter > StackPanel > ContentPresenter > SystemSettings.View.AlignableContentControl > ContentPresenter > SystemSettings.View.TwoSegmentsHeroUserControl#DefaultOneSegmentHeroUserControl > Grid#LayoutRoot > Grid#LeftLayout > ContentPresenter > ItemsControl > ItemsPresenter > StackPanel > ContentPresenter > StackPanel > Button > ContentPresenter#ContentPresenter > TextBlock", {
+        L"Foreground:=<SolidColorBrush Color=\"{ThemeResource SystemAccentColor}\" />",
+        L"FontWeight=Bold",
+        L"FontFamily=Segoe UI"}},
+    ThemeTargetStyles{L"ScrollViewer > ScrollContentPresenter > Border > Frame > ContentPresenter > SystemSettings.View.RootPage > Grid#RootPageGrid > Microsoft.UI.Xaml.Controls.NavigationView#PermanentNavigationView > Grid#RootGrid > Grid > SplitView#RootSplitView > Grid > Grid#ContentRoot > Border > Grid#ContentGrid > ContentPresenter#ContentPresenter > Frame#PermanentNavRootFrame > ContentPresenter > SystemSettings.View.L2Page#L2Page > Grid > Grid > SystemSettings.View.AlignableContentControl > ContentPresenter > Grid > SystemSettings.View.SettingsPageHost#pageContent > ScrollViewer#SettingsPageHostPanel > Border#Root > Grid > ScrollContentPresenter#ScrollContentPresenter > Grid#RootScrollableGrid > Grid > Grid > ContentControl > ContentPresenter > ItemsControl > ItemsPresenter > SystemSettings.View.SpacingStackPanel > ContentPresenter > SystemSettings.View.AlignableContentControl > SystemSettings.View.SpacingStackPanel > SystemSettings.View.ExpandItemsControl > ItemsPresenter > SystemSettings.View.SpacingStackPanel > ContentPresenter > StackPanel > SystemSettings.View.EntityItem > Grid > SystemSettings.View.ReservedWidthReflowingPanel > ContentPresenter#InlineContentPresenter > UserControl > StackPanel > Button#WindowsProtectedPrintButton > ContentPresenter#ContentPresenter > TextBlock", {
+        L"Foreground:=<SolidColorBrush Color=\"{ThemeResource SystemAccentColor}\" />",
+        L"FontSize=14",
+        L"FontWeight=Bold",
+        L"FontFamily=Segoe UI"}},
+    ThemeTargetStyles{L"ScrollViewer > ScrollContentPresenter > Border > Frame > ContentPresenter > SystemSettings.View.RootPage > Grid#RootPageGrid > Microsoft.UI.Xaml.Controls.NavigationView#PermanentNavigationView > Grid#RootGrid > Grid > SplitView#RootSplitView > Grid > Grid#ContentRoot > Border > Grid#ContentGrid > ContentPresenter#ContentPresenter > Frame#PermanentNavRootFrame > ContentPresenter > SystemSettings.View.L2Page#L2Page > Grid > Grid > SystemSettings.View.AlignableContentControl > ContentPresenter > Grid > SystemSettings.View.SettingsPageHost#pageContent > ScrollViewer#SettingsPageHostPanel > Border#Root > Grid > ScrollContentPresenter#ScrollContentPresenter > Grid#RootScrollableGrid > Grid > Grid > ContentControl > ContentPresenter > ItemsControl > ItemsPresenter > SystemSettings.View.SpacingStackPanel > ContentPresenter > SystemSettings.View.AlignableContentControl > SystemSettings.View.SpacingStackPanel > SystemSettings.View.ExpandItemsControl > ItemsPresenter > SystemSettings.View.SpacingStackPanel > ContentPresenter > StackPanel > SystemSettings.View.EntityItem > Grid > SystemSettings.View.ReservedWidthReflowingPanel > ContentPresenter#InlineContentPresenter > UserControl > StackPanel > Button#WindowsProtectedPrintButton > ContentPresenter#ContentPresenter", {
+        L"Background=Black",
+        L"BorderBrush:=<SolidColorBrush Color=\"{ThemeResource SystemAccentColor}\" />",
+        L"BorderThickness=2",
+        L"CornerRadius=12"}},
+    ThemeTargetStyles{L"SystemSettings.View.ReservedWidthReflowingPanel > ContentPresenter#InlineContentPresenter > Button > ContentPresenter#ContentPresenter", {
+        L"Foreground=black",
+        L"Background:=<SolidColorBrush Color=\"{ThemeResource SystemAccentColor}\" />",
+        L"CornerRadius=12"}},
+    ThemeTargetStyles{L"SystemSettings.View.ReservedWidthReflowingPanel > ContentPresenter#InlineContentPresenter > Button > ContentPresenter#ContentPresenter > TextBlock", {
+        L"Foreground=black",
+        L"FontSize=14",
+        L"FontWeight=Bold",
+        L"FontFamily=Segoe UI"}},
+    ThemeTargetStyles{L"SystemSettings.View.StableComboBox > Grid#LayoutRoot > Border#Background", {
+        L"Background=Black",
+        L"BorderBrush:=<SolidColorBrush Color=\"{ThemeResource SystemAccentColor}\" />",
+        L"BorderThickness=2",
+        L"CornerRadius=12"}},
+    ThemeTargetStyles{L"SystemSettings.View.StableComboBox > Grid#LayoutRoot > ContentPresenter#ContentPresenter > TextBlock", {
+        L"Foreground:=<SolidColorBrush Color=\"{ThemeResource SystemAccentColor}\" />",
+        L"FontWeight=Bold",
+        L"FontSize=14",
+        L"FontFamily=Segoe UI"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Grid#RootPageGrid", {
+        L"Background=#101013"}},
+    ThemeTargetStyles{L"SystemSettings.View.RootPage", {
+        L"Background=Transparent"}},
+    ThemeTargetStyles{L"ScrollViewer > ScrollContentPresenter > Border > Frame > ContentPresenter > SystemSettings.View.RootPage > Grid#RootPageGrid > Microsoft.UI.Xaml.Controls.NavigationView#PermanentNavigationView > Grid#RootGrid > Grid > SplitView#RootSplitView > Grid > Grid#ContentRoot > Border > Grid#ContentGrid > ContentPresenter#ContentPresenter > Frame#PermanentNavRootFrame > ContentPresenter > SystemSettings.View.FullScreenPage#FullScreenPage > Grid#MainGrid > SystemSettings.View.AlignableContentControl > ContentPresenter > Grid > SystemSettings.View.SettingsPageHost#pageContent > ScrollViewer#SettingsPageHostPanel > Border#Root > Grid > ScrollContentPresenter#ScrollContentPresenter > Grid#RootScrollableGrid > Grid > Grid > ContentControl > ContentPresenter > ItemsControl > ItemsPresenter > SystemSettings.View.SpacingStackPanel > ContentPresenter > SystemSettings.View.AlignableContentControl > SystemSettings.View.SpacingStackPanel > SystemSettings.View.ExpandItemsControl > ItemsPresenter > SystemSettings.View.SpacingStackPanel > ContentPresenter > StackPanel > SystemSettings.View.EntityItem > Grid > SystemSettings.View.ReservedWidthReflowingPanel > ContentPresenter#InlineContentPresenter > StackPanel > Microsoft.UI.Xaml.Controls.DropDownButton", {
+        L"Background=Black",
+        L"BorderBrush:=<SolidColorBrush Color=\"{ThemeResource SystemAccentColor}\" />",
+        L"BorderThickness=2",
+        L"CornerRadius=12"}},
+    ThemeTargetStyles{L"ScrollViewer > ScrollContentPresenter > Border > Frame > ContentPresenter > SystemSettings.View.RootPage > Grid#RootPageGrid > Microsoft.UI.Xaml.Controls.NavigationView#PermanentNavigationView > Grid#RootGrid > Grid > SplitView#RootSplitView > Grid > Grid#ContentRoot > Border > Grid#ContentGrid > ContentPresenter#ContentPresenter > Frame#PermanentNavRootFrame > ContentPresenter > SystemSettings.View.FullScreenPage#FullScreenPage > Grid#MainGrid > SystemSettings.View.AlignableContentControl > ContentPresenter > Grid > SystemSettings.View.SettingsPageHost#pageContent > ScrollViewer#SettingsPageHostPanel > Border#Root > Grid > ScrollContentPresenter#ScrollContentPresenter > Grid#RootScrollableGrid > Grid > Grid > ContentControl > ContentPresenter > ItemsControl > ItemsPresenter > SystemSettings.View.SpacingStackPanel > ContentPresenter > SystemSettings.View.AlignableContentControl > SystemSettings.View.SpacingStackPanel > SystemSettings.View.ExpandItemsControl > ItemsPresenter > SystemSettings.View.SpacingStackPanel > ContentPresenter > SystemSettings.View.EntityItem > Grid > SystemSettings.View.ReservedWidthReflowingPanel > ContentPresenter#InlineContentPresenter > Button > ContentPresenter#ContentPresenter > TextBlock", {
+        L"Foreground:=<SolidColorBrush Color=\"{ThemeResource SystemAccentColor}\" />",
+        L"FontWeight=Bold",
+        L"FontSize=14",
+        L"FontFamily=Segoe UI"}},
+    ThemeTargetStyles{L"ScrollViewer > ScrollContentPresenter > Border > Frame > ContentPresenter > SystemSettings.View.RootPage > Grid#RootPageGrid > Microsoft.UI.Xaml.Controls.NavigationView#PermanentNavigationView > Grid#RootGrid > Grid > SplitView#RootSplitView > Grid > Grid#ContentRoot > Border > Grid#ContentGrid > ContentPresenter#ContentPresenter > Frame#PermanentNavRootFrame > ContentPresenter > SystemSettings.View.FullScreenPage#FullScreenPage > Grid#MainGrid > SystemSettings.View.AlignableContentControl > ContentPresenter > Grid > SystemSettings.View.SettingsPageHost#pageContent > ScrollViewer#SettingsPageHostPanel > Border#Root > Grid > ScrollContentPresenter#ScrollContentPresenter > Grid#RootScrollableGrid > Grid > Grid > ContentControl > ContentPresenter > ItemsControl > ItemsPresenter > SystemSettings.View.SpacingStackPanel > ContentPresenter > SystemSettings.View.AlignableContentControl > SystemSettings.View.SpacingStackPanel > SystemSettings.View.ExpandItemsControl > ItemsPresenter > SystemSettings.View.SpacingStackPanel > ContentPresenter > StackPanel > SystemSettings.View.EntityItem > Grid > SystemSettings.View.ReservedWidthReflowingPanel > ContentPresenter#InlineContentPresenter > StackPanel > Microsoft.UI.Xaml.Controls.DropDownButton > Grid#RootGrid > ContentPresenter#ContentPresenter > TextBlock", {
+        L"Foreground:=<SolidColorBrush Color=\"{ThemeResource SystemAccentColor}\" />",
+        L"FontWeight=Bold",
+        L"FontSize=14",
+        L"FontFamily=Segoe UI"}},
+    ThemeTargetStyles{L"ScrollViewer > ScrollContentPresenter > Border > Frame > ContentPresenter > SystemSettings.View.RootPage > Grid#RootPageGrid > Microsoft.UI.Xaml.Controls.NavigationView#PermanentNavigationView > Grid#RootGrid > Grid > SplitView#RootSplitView > Grid > Grid#ContentRoot > Border > Grid#ContentGrid > ContentPresenter#ContentPresenter > Frame#PermanentNavRootFrame > ContentPresenter > SystemSettings.View.FullScreenPage#FullScreenPage > Grid#MainGrid > SystemSettings.View.AlignableContentControl > ContentPresenter > Grid > SystemSettings.View.SettingsPageHost#pageContent > ScrollViewer#SettingsPageHostPanel > Border#Root > Grid > ScrollContentPresenter#ScrollContentPresenter > Grid#RootScrollableGrid > Grid > Grid > ContentControl > ContentPresenter > ItemsControl > ItemsPresenter > SystemSettings.View.SpacingStackPanel > ContentPresenter > SystemSettings.View.AlignableContentControl > SystemSettings.View.SpacingStackPanel > SystemSettings.View.ExpandItemsControl > ItemsPresenter > SystemSettings.View.SpacingStackPanel > ContentPresenter > SystemSettings.View.EntityItem > Grid > SystemSettings.View.ReservedWidthReflowingPanel > ContentPresenter#InlineContentPresenter > Button > ContentPresenter#ContentPresenter", {
+        L"Background=Black",
+        L"BorderBrush:=<SolidColorBrush Color=\"{ThemeResource SystemAccentColor}\" />",
+        L"BorderThickness=2",
+        L"CornerRadius=12"}},
+    ThemeTargetStyles{L"ScrollViewer > ScrollContentPresenter > Border > Frame > ContentPresenter > SystemSettings.View.RootPage > Grid#RootPageGrid > Microsoft.UI.Xaml.Controls.NavigationView#PermanentNavigationView > Grid#RootGrid > Grid > SplitView#RootSplitView > Grid > Grid#ContentRoot > Border > Grid#ContentGrid > ContentPresenter#ContentPresenter > Frame#PermanentNavRootFrame > ContentPresenter > SystemSettings.View.FullScreenPage#FullScreenPage > Grid#MainGrid > SystemSettings.View.AlignableContentControl > ContentPresenter > Grid > SystemSettings.View.SettingsPageHost#pageContent > ScrollViewer#SettingsPageHostPanel > Border#Root > Grid > ScrollContentPresenter#ScrollContentPresenter > Grid#RootScrollableGrid > Grid > Grid > ContentControl > ContentPresenter > ItemsControl > ItemsPresenter > SystemSettings.View.SpacingStackPanel > ContentPresenter > SystemSettings.View.AlignableContentControl > SystemSettings.View.SpacingStackPanel > SystemSettings.View.ExpandItemsControl > ItemsPresenter > SystemSettings.View.SpacingStackPanel > ContentPresenter > StackPanel > SystemSettings.View.EntityItem > Grid > SystemSettings.View.ReservedWidthReflowingPanel > ContentPresenter#InlineContentPresenter > SystemSettings.View.StableComboBox > Grid#LayoutRoot > Border#Background", {
+        L"Background=Black",
+        L"BorderBrush:=<SolidColorBrush Color=\"{ThemeResource SystemAccentColor}\" />",
+        L"BorderThickness=2",
+        L"CornerRadius=12"}},
+    ThemeTargetStyles{L"ScrollViewer > ScrollContentPresenter > Border > Frame > ContentPresenter > SystemSettings.View.RootPage > Grid#RootPageGrid > Microsoft.UI.Xaml.Controls.NavigationView#PermanentNavigationView > Grid#RootGrid > Grid > SplitView#RootSplitView > Grid > Grid#ContentRoot > Border > Grid#ContentGrid > ContentPresenter#ContentPresenter > Frame#PermanentNavRootFrame > ContentPresenter > SystemSettings.View.FullScreenPage#FullScreenPage > Grid#MainGrid > SystemSettings.View.AlignableContentControl > ContentPresenter > Grid > SystemSettings.View.SettingsPageHost#pageContent > ScrollViewer#SettingsPageHostPanel > Border#Root > Grid > ScrollContentPresenter#ScrollContentPresenter > Grid#RootScrollableGrid > Grid > Grid > ContentControl > ContentPresenter > ItemsControl > ItemsPresenter > SystemSettings.View.SpacingStackPanel > ContentPresenter > SystemSettings.View.AlignableContentControl > SystemSettings.View.SpacingStackPanel > SystemSettings.View.ExpandItemsControl > ItemsPresenter > SystemSettings.View.SpacingStackPanel > ContentPresenter > StackPanel > SystemSettings.View.EntityItem > Grid > SystemSettings.View.ReservedWidthReflowingPanel > ContentPresenter#InlineContentPresenter > SystemSettings.View.StableComboBox > Grid#LayoutRoot > ContentPresenter#ContentPresenter > TextBlock", {
+        L"Foreground:=<SolidColorBrush Color=\"{ThemeResource SystemAccentColor}\" />",
+        L"FontWeight=Bold",
+        L"FontSize=14",
+        L"FontFamily=Segoe UI"}},
+    ThemeTargetStyles{L"ScrollViewer > ScrollContentPresenter > Border > Frame > ContentPresenter > SystemSettings.View.RootPage > Grid#RootPageGrid > Microsoft.UI.Xaml.Controls.NavigationView#PermanentNavigationView > Grid#RootGrid > Grid > SplitView#RootSplitView > Grid > Grid#ContentRoot > Border > Grid#ContentGrid > ContentPresenter#ContentPresenter > Frame#PermanentNavRootFrame > ContentPresenter > SystemSettings.View.L2Page#L2Page > Grid > Grid > SystemSettings.View.AlignableContentControl > ContentPresenter > Grid > SystemSettings.View.SettingsPageHost#pageContent > ScrollViewer#SettingsPageHostPanel > Border#Root > Grid > ScrollContentPresenter#ScrollContentPresenter > Grid#RootScrollableGrid > Grid > Grid > ContentControl > ContentPresenter > ItemsControl > ItemsPresenter > SystemSettings.View.SpacingStackPanel > ContentPresenter > SystemSettings.View.AlignableContentControl > SystemSettings.View.SpacingStackPanel > SystemSettings.View.ExpandItemsControl > ItemsPresenter > SystemSettings.View.SpacingStackPanel > ContentPresenter > SystemSettings.View.AlignableContentControl > SystemSettings.View.SpacingStackPanel > SystemSettings.View.ExpandItemsControl > ItemsPresenter > SystemSettings.View.SpacingStackPanel > ContentPresenter > SystemSettings.View.ButtonEntityItem > Button#ContainerButton > ContentPresenter#ContentPresenter > Grid > SystemSettings.View.ReservedWidthReflowingPanel#ReflowingPanel > ContentPresenter#InlineContentPresenter > SystemSettings.View.StableComboBox > Grid#LayoutRoot > Border#Background", {
+        L"Background=Black",
+        L"BorderBrush:=<SolidColorBrush Color=\"{ThemeResource SystemAccentColor}\" />",
+        L"BorderThickness=2",
+        L"CornerRadius=12"}},
+    ThemeTargetStyles{L"ScrollViewer > ScrollContentPresenter > Border > Frame > ContentPresenter > SystemSettings.View.RootPage > Grid#RootPageGrid > Microsoft.UI.Xaml.Controls.NavigationView#PermanentNavigationView > Grid#RootGrid > Grid > SplitView#RootSplitView > Grid > Grid#ContentRoot > Border > Grid#ContentGrid > ContentPresenter#ContentPresenter > Frame#PermanentNavRootFrame > ContentPresenter > SystemSettings.View.L2Page#L2Page > Grid > Grid > SystemSettings.View.AlignableContentControl > ContentPresenter > Grid > SystemSettings.View.SettingsPageHost#pageContent > ScrollViewer#SettingsPageHostPanel > Border#Root > Grid > ScrollContentPresenter#ScrollContentPresenter > Grid#RootScrollableGrid > Grid > Grid > ContentControl > ContentPresenter > ItemsControl > ItemsPresenter > SystemSettings.View.SpacingStackPanel > ContentPresenter > SystemSettings.View.AlignableContentControl > SystemSettings.View.SpacingStackPanel > SystemSettings.View.ExpandItemsControl > ItemsPresenter > SystemSettings.View.SpacingStackPanel > ContentPresenter > SystemSettings.View.EntityItem > Grid > SystemSettings.View.ReservedWidthReflowingPanel > ContentPresenter#InlineContentPresenter > SystemSettings.View.StableComboBox > Grid#LayoutRoot > ContentPresenter#ContentPresenter > TextBlock", {
+        L"Foreground:=<SolidColorBrush Color=\"{ThemeResource SystemAccentColor}\" />",
+        L"FontWeight=Bold",
+        L"FontSize=14",
+        L"FontFamily=Segoe UI"}},
+    ThemeTargetStyles{L"ScrollViewer > ScrollContentPresenter > Border > Frame > ContentPresenter > SystemSettings.View.RootPage > Grid#RootPageGrid > Microsoft.UI.Xaml.Controls.NavigationView#PermanentNavigationView > Grid#RootGrid > Grid > SplitView#RootSplitView > Grid > Grid#ContentRoot > Border > Grid#ContentGrid > ContentPresenter#ContentPresenter > Frame#PermanentNavRootFrame > ContentPresenter > SystemSettings.View.L2Page#L2Page > Grid > Grid > SystemSettings.View.AlignableContentControl > ContentPresenter > Grid > SystemSettings.View.SettingsPageHost#pageContent > ScrollViewer#SettingsPageHostPanel > Border#Root > Grid > ScrollContentPresenter#ScrollContentPresenter > Grid#RootScrollableGrid > Grid > Grid > ContentControl > ContentPresenter > ItemsControl > ItemsPresenter > SystemSettings.View.SpacingStackPanel > ContentPresenter > SystemSettings.View.AlignableContentControl > SystemSettings.View.SpacingStackPanel > SystemSettings.View.ExpandItemsControl > ItemsPresenter > SystemSettings.View.SpacingStackPanel > ContentPresenter > SystemSettings.View.ButtonEntityItem > Button#ContainerButton > ContentPresenter#ContentPresenter > Grid > SystemSettings.View.ReservedWidthReflowingPanel#ReflowingPanel > ContentPresenter#InlineContentPresenter > SystemSettings.View.StableComboBox > Grid#LayoutRoot > ContentPresenter#ContentPresenter > TextBlock", {
+        L"Foreground:=<SolidColorBrush Color=\"{ThemeResource SystemAccentColor}\" />",
+        L"FontWeight=Bold",
+        L"FontSize=14",
+        L"FontFamily=Segoe UI"}},
+    ThemeTargetStyles{L"ScrollViewer > ScrollContentPresenter > Border > Frame > ContentPresenter > SystemSettings.View.RootPage > Grid#RootPageGrid > Microsoft.UI.Xaml.Controls.NavigationView#PermanentNavigationView > Grid#RootGrid > Grid > SplitView#RootSplitView > Grid > Grid#ContentRoot > Border > Grid#ContentGrid > ContentPresenter#ContentPresenter > Frame#PermanentNavRootFrame > ContentPresenter > SystemSettings.View.L2Page#L2Page > Grid > Grid > SystemSettings.View.AlignableContentControl > ContentPresenter > Grid > SystemSettings.View.SettingsPageHost#pageContent > ScrollViewer#SettingsPageHostPanel > Border#Root > Grid > ScrollContentPresenter#ScrollContentPresenter > Grid#RootScrollableGrid > Grid > Grid > ContentControl > ContentPresenter > ItemsControl > ItemsPresenter > SystemSettings.View.SpacingStackPanel > ContentPresenter > SystemSettings.View.AlignableContentControl > SystemSettings.View.SpacingStackPanel > SystemSettings.View.ExpandItemsControl > ItemsPresenter > SystemSettings.View.SpacingStackPanel > ContentPresenter > SystemSettings.View.AlignableContentControl > SystemSettings.View.SpacingStackPanel > SystemSettings.View.ExpandItemsControl > ItemsPresenter > SystemSettings.View.SpacingStackPanel > ContentPresenter > SystemSettings.View.ButtonEntityItem > Button#ContainerButton > ContentPresenter#ContentPresenter > Grid > SystemSettings.View.ReservedWidthReflowingPanel#ReflowingPanel > ContentPresenter#InlineContentPresenter > SystemSettings.View.StableComboBox > Grid#LayoutRoot > ContentPresenter#ContentPresenter > TextBlock", {
+        L"Foreground:=<SolidColorBrush Color=\"{ThemeResource SystemAccentColor}\" />",
+        L"FontWeight=Bold",
+        L"FontSize=14",
+        L"FontFamily=Segoe UI"}},
+    ThemeTargetStyles{L"ScrollViewer > ScrollContentPresenter > Border > Frame > ContentPresenter > SystemSettings.View.RootPage > Grid#RootPageGrid > Microsoft.UI.Xaml.Controls.NavigationView#PermanentNavigationView > Grid#RootGrid > Grid > SplitView#RootSplitView > Grid > Grid#ContentRoot > Border > Grid#ContentGrid > ContentPresenter#ContentPresenter > Frame#PermanentNavRootFrame > ContentPresenter > SystemSettings.View.FullScreenPage#FullScreenPage > Grid#MainGrid > SystemSettings.View.AlignableContentControl > ContentPresenter > Grid > SystemSettings.View.SettingsPageHost#pageContent > ScrollViewer#SettingsPageHostPanel > Border#Root > Grid > ScrollContentPresenter#ScrollContentPresenter > Grid#RootScrollableGrid > Grid > Grid > ContentControl > ContentPresenter > ItemsControl > ItemsPresenter > SystemSettings.View.SpacingStackPanel > ContentPresenter > SystemSettings.View.AlignableContentControl > SystemSettings.View.SpacingStackPanel > SystemSettings.View.ExpandItemsControl > ItemsPresenter > SystemSettings.View.SpacingStackPanel > ContentPresenter > SystemSettings.View.AlignableContentControl > SystemSettings.View.SpacingStackPanel > SystemSettings.View.ExpandItemsControl > ItemsPresenter > SystemSettings.View.SpacingStackPanel > ContentPresenter > SystemSettings.View.EntityItem > Grid > SystemSettings.View.ReservedWidthReflowingPanel > ContentPresenter#InlineContentPresenter > StackPanel > Button#ClassicAppButton > ContentPresenter#ContentPresenter", {
+        L"Foreground:=<SolidColorBrush Color=\"{ThemeResource SystemAccentColor}\" />",
+        L"Background=Black",
+        L"BorderBrush:=<SolidColorBrush Color=\"{ThemeResource SystemAccentColor}\" />",
+        L"BorderThickness=2",
+        L"CornerRadius=12"}},
+    ThemeTargetStyles{L"ScrollViewer > ScrollContentPresenter > Border > Frame > ContentPresenter > SystemSettings.View.RootPage > Grid#RootPageGrid > Microsoft.UI.Xaml.Controls.NavigationView#PermanentNavigationView > Grid#RootGrid > Grid > SplitView#RootSplitView > Grid > Grid#ContentRoot > Border > Grid#ContentGrid > ContentPresenter#ContentPresenter > Frame#PermanentNavRootFrame > ContentPresenter > SystemSettings.View.FullScreenPage#FullScreenPage > Grid#MainGrid > SystemSettings.View.AlignableContentControl > ContentPresenter > Grid > SystemSettings.View.SettingsPageHost#pageContent > ScrollViewer#SettingsPageHostPanel > Border#Root > Grid > ScrollContentPresenter#ScrollContentPresenter > Grid#RootScrollableGrid > Grid > Grid > ContentControl > ContentPresenter > ItemsControl > ItemsPresenter > SystemSettings.View.SpacingStackPanel > ContentPresenter > SystemSettings.View.AlignableContentControl > SystemSettings.View.SpacingStackPanel > SystemSettings.View.ExpandItemsControl > ItemsPresenter > SystemSettings.View.SpacingStackPanel > ContentPresenter > SystemSettings.View.AlignableContentControl > SystemSettings.View.SpacingStackPanel > SystemSettings.View.ExpandItemsControl > ItemsPresenter > SystemSettings.View.SpacingStackPanel > ContentPresenter > SystemSettings.View.EntityItem > Grid > SystemSettings.View.ReservedWidthReflowingPanel > ContentPresenter#InlineContentPresenter > StackPanel > Button#ClassicAppButton > ContentPresenter#ContentPresenter > TextBlock", {
+        L"FontWeight=bold"}},
+    ThemeTargetStyles{L"SystemSettings.View.SettingsListView#DevicesHeroControlList > Border > ScrollViewer#ScrollViewer > Border#Root > Grid > ScrollContentPresenter#ScrollContentPresenter > ItemsPresenter > StackPanel > SystemSettings.View.SettingsListViewItem > Windows.UI.Xaml.Controls.Primitives.ListViewItemPresenter#Root > ContentControl > ContentPresenter > UserControl > Button#DevicesHeroControlButton > ContentPresenter#ContentPresenter@CommonStates", {
+        L"Background@Normal:=#040b07",
+        L"Background@PointerOver:=#06150d",
+        L"Background@Pressed:=#04150c",
+        L"Background@Disabled:=#010b04",
+        L"BorderThickness=2",
+        L"BorderBrush@Normal:=#0c190f",
+        L"BorderBrush@PointerOver:=#0c190f",
+        L"BorderBrush@Pressed:=#0c190f",
+        L"BorderBrush@Disabled:=#000000",
+        L"CornerRadius=14",
+        L"Margin=3"}},
+    ThemeTargetStyles{L"ScrollViewer > ScrollContentPresenter > Border > Frame > ContentPresenter > SystemSettings.View.RootPage > Grid#RootPageGrid > Microsoft.UI.Xaml.Controls.NavigationView#PermanentNavigationView > Grid#RootGrid > Grid > SplitView#RootSplitView > Grid > Grid#ContentRoot > Border > Grid#ContentGrid > ContentPresenter#ContentPresenter > Frame#PermanentNavRootFrame > ContentPresenter > SystemSettings.View.CategoryPage > Grid > ScrollViewer > Border#Root > Grid > ScrollContentPresenter#ScrollContentPresenter > Grid > SystemSettings.View.AlignableContentControl#heroContent > ContentPresenter > SystemSettings.View.AlignableContentControl > ItemsControl > ItemsPresenter > StackPanel > ContentPresenter > SystemSettings.View.AlignableContentControl > ContentPresenter > SystemSettings.View.TwoSegmentsHeroUserControl#DefaultOneSegmentHeroUserControl > Grid#LayoutRoot > Grid#LeftLayout > ContentPresenter > ItemsControl > ItemsPresenter > StackPanel > ContentPresenter > StackPanel > SystemSettings.View.DevicesHeroControl > Grid > Button > ContentPresenter#ContentPresenter", {
+        L"Background:=#040b07",
+        L"Margin=3",
+        L"CornerRadius=14",
+        L"BorderBrush:=#0c190f",
+        L"BorderThickness=2"}},
+    ThemeTargetStyles{L"ScrollViewer > ScrollContentPresenter > Border > Frame > ContentPresenter > SystemSettings.View.RootPage > Grid#RootPageGrid > Microsoft.UI.Xaml.Controls.NavigationView#PermanentNavigationView > Grid#RootGrid > Grid > SplitView#RootSplitView > Grid > Grid#ContentRoot > Border > Grid#ContentGrid > ContentPresenter#ContentPresenter > Frame#PermanentNavRootFrame > ContentPresenter > SystemSettings.View.FullScreenPage#FullScreenPage > Grid#MainGrid > SystemSettings.View.AlignableContentControl > ContentPresenter > Grid > SystemSettings.View.SettingsPageHost#pageContent > ScrollViewer#SettingsPageHostPanel > Border#Root > Grid > ScrollContentPresenter#ScrollContentPresenter > Grid#RootScrollableGrid > Grid > Grid > ContentControl > ContentPresenter > ItemsControl > ItemsPresenter > SystemSettings.View.SpacingStackPanel > ContentPresenter > SystemSettings.View.AlignableContentControl > SystemSettings.View.SpacingStackPanel > SystemSettings.View.ExpandItemsControl > ItemsPresenter > SystemSettings.View.SpacingStackPanel > ContentPresenter > SystemSettings.View.AlignableContentControl > SystemSettings.View.SpacingStackPanel > SystemSettings.View.ExpandItemsControl > ItemsPresenter > SystemSettings.View.SpacingStackPanel > ContentPresenter > SystemSettings.View.EntityItem > Grid > SystemSettings.View.ReservedWidthReflowingPanel > ContentPresenter#InlineContentPresenter > StackPanel > Button#ModernAppButton > ContentPresenter#ContentPresenter", {
+        L"Foreground:=<SolidColorBrush Color=\"{ThemeResource SystemAccentColor}\" />",
+        L"Background=Black",
+        L"BorderBrush:=<SolidColorBrush Color=\"{ThemeResource SystemAccentColor}\" />",
+        L"BorderThickness=2",
+        L"CornerRadius=12"}},
+    ThemeTargetStyles{L"ScrollViewer > ScrollContentPresenter > Border > Frame > ContentPresenter > SystemSettings.View.RootPage > Grid#RootPageGrid > Microsoft.UI.Xaml.Controls.NavigationView#PermanentNavigationView > Grid#RootGrid > Grid > SplitView#RootSplitView > Grid > Grid#ContentRoot > Border > Grid#ContentGrid > ContentPresenter#ContentPresenter > Frame#PermanentNavRootFrame > ContentPresenter > SystemSettings.View.FullScreenPage#FullScreenPage > Grid#MainGrid > SystemSettings.View.AlignableContentControl > ContentPresenter > Grid > SystemSettings.View.SettingsPageHost#pageContent > ScrollViewer#SettingsPageHostPanel > Border#Root > Grid > ScrollContentPresenter#ScrollContentPresenter > Grid#RootScrollableGrid > Grid > Grid > ContentControl > ContentPresenter > ItemsControl > ItemsPresenter > SystemSettings.View.SpacingStackPanel > ContentPresenter > SystemSettings.View.AlignableContentControl > SystemSettings.View.SpacingStackPanel > SystemSettings.View.ExpandItemsControl > ItemsPresenter > SystemSettings.View.SpacingStackPanel > ContentPresenter > SystemSettings.View.AlignableContentControl > SystemSettings.View.SpacingStackPanel > SystemSettings.View.ExpandItemsControl > ItemsPresenter > SystemSettings.View.SpacingStackPanel > ContentPresenter > SystemSettings.View.EntityItem > Grid > SystemSettings.View.ReservedWidthReflowingPanel > ContentPresenter#InlineContentPresenter > StackPanel > Button#ModernAppButton > ContentPresenter#ContentPresenter > TextBlock", {
+        L"FontWeight=bold"}},
+    ThemeTargetStyles{L"ScrollViewer > ScrollContentPresenter > Border > Frame > ContentPresenter > SystemSettings.View.RootPage > Grid#RootPageGrid > Microsoft.UI.Xaml.Controls.NavigationView#PermanentNavigationView > Grid#RootGrid > Grid > SplitView#RootSplitView > Grid > Grid#ContentRoot > Border > Grid#ContentGrid > ContentPresenter#ContentPresenter > Frame#PermanentNavRootFrame > ContentPresenter > SystemSettings.View.L2Page#L2Page > Grid > Grid > SystemSettings.View.AlignableContentControl > ContentPresenter > Grid > SystemSettings.View.SettingsPageHost#pageContent > ScrollViewer#SettingsPageHostPanel > Border#Root > Grid > ScrollContentPresenter#ScrollContentPresenter > Grid#RootScrollableGrid > Grid > Grid > ContentControl > ContentPresenter > ItemsControl > ItemsPresenter > SystemSettings.View.SpacingStackPanel > ContentPresenter > SystemSettings.View.AlignableContentControl > SystemSettings.View.SpacingStackPanel > SystemSettings.View.ExpandItemsControl > ItemsPresenter > SystemSettings.View.SpacingStackPanel > ContentPresenter > SystemSettings.View.SettingsListItemsRepeater > ScrollViewer#SettingsListScrollViewer > Border#Root > Grid > ScrollContentPresenter#ScrollContentPresenter > Microsoft.UI.Xaml.Controls.ItemsRepeater#ItemsRepeater > SystemSettings.View.SettingsExpander > Grid > ContentPresenter#RevealedContent > ContentControl > ContentPresenter > SystemSettings.View.SpacingStackPanel > SystemSettings.View.EntityItem#DeviceRemoveButtonContent > Grid > SystemSettings.View.ReservedWidthReflowingPanel > ContentPresenter#InlineContentPresenter > Button > ContentPresenter#ContentPresenter", {
+        L"Foreground:=<SolidColorBrush Color=\"{ThemeResource SystemAccentColor}\" />",
+        L"BorderBrush:=<SolidColorBrush Color=\"{ThemeResource SystemAccentColor}\" />",
+        L"BorderThickness=2",
+        L"CornerRadius=12"}},
+    ThemeTargetStyles{L"ScrollViewer > ScrollContentPresenter > Border > Frame > ContentPresenter > SystemSettings.View.RootPage > Grid#RootPageGrid > Microsoft.UI.Xaml.Controls.NavigationView#PermanentNavigationView > Grid#RootGrid > Grid > SplitView#RootSplitView > Grid > Grid#ContentRoot > Border > Grid#ContentGrid > ContentPresenter#ContentPresenter > Frame#PermanentNavRootFrame > ContentPresenter > SystemSettings.View.L2Page#L2Page > Grid > Grid > SystemSettings.View.AlignableContentControl > ContentPresenter > Grid > SystemSettings.View.SettingsPageHost#pageContent > ScrollViewer#SettingsPageHostPanel > Border#Root > Grid > ScrollContentPresenter#ScrollContentPresenter > Grid#RootScrollableGrid > Grid > Grid > ContentControl > ContentPresenter > ItemsControl > ItemsPresenter > SystemSettings.View.SpacingStackPanel > ContentPresenter > SystemSettings.View.AlignableContentControl > SystemSettings.View.SpacingStackPanel > SystemSettings.View.ExpandItemsControl > ItemsPresenter > SystemSettings.View.SpacingStackPanel > ContentPresenter > SystemSettings.View.ButtonEntityItem > Button#ContainerButton > ContentPresenter#ContentPresenter > Grid > SystemSettings.View.ReservedWidthReflowingPanel#ReflowingPanel > ContentPresenter#InlineContentPresenter > SystemSettings.View.StableComboBox > Grid#LayoutRoot", {
+        L"BorderBrush:=<SolidColorBrush Color=\"{ThemeResource SystemAccentColor}\" />",
+        L"BorderThickness=1",
+        L"CornerRadius=12"}},
+    ThemeTargetStyles{L"ScrollViewer > ScrollContentPresenter > Border > Frame > ContentPresenter > SystemSettings.View.RootPage > Grid#RootPageGrid > Microsoft.UI.Xaml.Controls.NavigationView#PermanentNavigationView > Grid#RootGrid > Grid > SplitView#RootSplitView > Grid > Grid#ContentRoot > Border > Grid#ContentGrid > ContentPresenter#ContentPresenter > Frame#PermanentNavRootFrame > ContentPresenter > SystemSettings.View.L2Page#L2Page > Grid > Grid > SystemSettings.View.AlignableContentControl > ContentPresenter > Grid > SystemSettings.View.SettingsPageHost#pageContent > ScrollViewer#SettingsPageHostPanel > Border#Root > Grid > ScrollContentPresenter#ScrollContentPresenter > Grid#RootScrollableGrid > Grid > Grid > ContentControl > ContentPresenter > ItemsControl > ItemsPresenter > SystemSettings.View.SpacingStackPanel > ContentPresenter > SystemSettings.View.AlignableContentControl > SystemSettings.View.SpacingStackPanel > SystemSettings.View.ExpandItemsControl > ItemsPresenter > SystemSettings.View.SpacingStackPanel > ContentPresenter > SystemSettings.View.ButtonEntityItem > Button#ContainerButton > ContentPresenter#ContentPresenter > Grid > SystemSettings.View.ReservedWidthReflowingPanel#ReflowingPanel > ContentPresenter#InlineContentPresenter > SystemSettings.View.StableComboBox > Grid#LayoutRoot > TextBlock", {
+        L"FontWeight=bold"}},
+    ThemeTargetStyles{L"ScrollViewer > ScrollContentPresenter > Border > Frame > ContentPresenter > SystemSettings.View.RootPage > Grid#RootPageGrid > Microsoft.UI.Xaml.Controls.NavigationView#PermanentNavigationView > Grid#RootGrid > Grid > SplitView#RootSplitView > Grid > Grid#ContentRoot > Border > Grid#ContentGrid > ContentPresenter#ContentPresenter > Frame#PermanentNavRootFrame > ContentPresenter > SystemSettings.View.L2Page#L2Page > Grid > Grid > SystemSettings.View.AlignableContentControl > ContentPresenter > Grid > SystemSettings.View.SettingsPageHost#pageContent > ScrollViewer#SettingsPageHostPanel > Border#Root > Grid > ScrollContentPresenter#ScrollContentPresenter > Grid#RootScrollableGrid > Grid > Grid > ContentControl > ContentPresenter > ItemsControl > ItemsPresenter > SystemSettings.View.SpacingStackPanel > ContentPresenter > SystemSettings.View.AlignableContentControl > SystemSettings.View.SpacingStackPanel > SystemSettings.View.ExpandItemsControl > ItemsPresenter > SystemSettings.View.SpacingStackPanel > ContentPresenter > SystemSettings.View.EntityItem > Grid > SystemSettings.View.ReservedWidthReflowingPanel > ContentPresenter#InlineContentPresenter > SystemSettings.View.StableComboBox > Grid#LayoutRoot", {
+        L"BorderBrush:=<SolidColorBrush Color=\"{ThemeResource SystemAccentColor}\" />",
+        L"BorderThickness=2",
+        L"CornerRadius=12"}},
+    ThemeTargetStyles{L"ScrollViewer > ScrollContentPresenter > Border > Frame > ContentPresenter > SystemSettings.View.RootPage > Grid#RootPageGrid > Microsoft.UI.Xaml.Controls.NavigationView#PermanentNavigationView > Grid#RootGrid > Grid > SplitView#RootSplitView > Grid > Grid#ContentRoot > Border > Grid#ContentGrid > ContentPresenter#ContentPresenter > Frame#PermanentNavRootFrame > ContentPresenter > SystemSettings.View.L2Page#L2Page > Grid > Grid > SystemSettings.View.AlignableContentControl > ContentPresenter > Grid > SystemSettings.View.SettingsPageHost#pageContent > ScrollViewer#SettingsPageHostPanel > Border#Root > Grid > ScrollContentPresenter#ScrollContentPresenter > Grid#RootScrollableGrid > Grid > Grid > ContentControl > ContentPresenter > ItemsControl > ItemsPresenter > SystemSettings.View.SpacingStackPanel > ContentPresenter > SystemSettings.View.AlignableContentControl > SystemSettings.View.SpacingStackPanel > SystemSettings.View.ExpandItemsControl > ItemsPresenter > SystemSettings.View.SpacingStackPanel > ContentPresenter > SystemSettings.View.EntityItem > Grid > SystemSettings.View.ReservedWidthReflowingPanel > ContentPresenter#InlineContentPresenter > SystemSettings.View.StableComboBox > Grid#LayoutRoot > TextBlock", {
+        L"FontWeight=bold"}},
+    ThemeTargetStyles{L"ScrollViewer > ScrollContentPresenter > Border > Frame > ContentPresenter > SystemSettings.View.RootPage > Grid#RootPageGrid > Microsoft.UI.Xaml.Controls.NavigationView#PermanentNavigationView > Grid#RootGrid > Grid > SplitView#RootSplitView > Grid > Grid#ContentRoot > Border > Grid#ContentGrid > ContentPresenter#ContentPresenter > Frame#PermanentNavRootFrame > ContentPresenter > SystemSettings.View.L2Page#L2Page > Grid > Grid > SystemSettings.View.AlignableContentControl > ContentPresenter > Grid > SystemSettings.View.SettingsPageHost#pageContent > ScrollViewer#SettingsPageHostPanel > Border#Root > Grid > ScrollContentPresenter#ScrollContentPresenter > Grid#RootScrollableGrid > Grid > Grid > ContentControl > ContentPresenter > ItemsControl > ItemsPresenter > SystemSettings.View.SpacingStackPanel > ContentPresenter > SystemSettings.View.AlignableContentControl > SystemSettings.View.SpacingStackPanel > SystemSettings.View.ExpandItemsControl > ItemsPresenter > SystemSettings.View.SpacingStackPanel > ContentPresenter > SystemSettings.View.EntityItem > Grid > SystemSettings.View.ReservedWidthReflowingPanel > ContentPresenter#InlineContentPresenter > SystemSettings.View.StableComboBox > Grid#LayoutRoot", {
+        L"BorderBrush:=<SolidColorBrush Color=\"{ThemeResource SystemAccentColor}\" />",
+        L"BorderThickness=1",
+        L"CornerRadius=12"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Shapes.Rectangle#OuterBorder", {
+        L"Fill=#1B1B20",
+        L"Height=33",
+        L"Width=55",
+        L"RadiusX=15",
+        L"RadiusY=20"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Shapes.Rectangle#SwitchKnobOff", {
+        L"Height=18",
+        L"Width=18",
+        L"RadiusX=25",
+        L"RadiusY=25",
+        L"Margin=5,0,-5,0"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Border#SwitchKnobOn", {
+        L"Height=20",
+        L"Width=20",
+        L"CornerRadius=25",
+        L"Margin=10,0,-10,0"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Shapes.Rectangle#SwitchKnobBounds", {
+        L"Fill:=<SolidColorBrush Color=\"{ThemeResource SystemAccentColor}\" />",
+        L"Height=35",
+        L"Width=55",
+        L"RadiusX=15",
+        L"RadiusY=20"}},
+    ThemeTargetStyles{L"SplitView#RootSplitView > Grid > Grid#ContentRoot > Border > Grid#ContentGrid", {
+        L"Background=#000000",
+        L"CornerRadius=14,0,0,0",
+        L"BorderBrush=#25262B",
+        L"BorderThickness=1"}},
+    ThemeTargetStyles{L"Microsoft.UI.Xaml.Controls.NavigationView#PermanentNavigationView", {
+        L"Background=#000000",
+        L"Foreground=White"}},
+    ThemeTargetStyles{L"SystemSettings.View.EntityItem", {
+        L"Background=#101013",
+        L"Foreground=White",
+        L"CornerRadius=12"}},
+    ThemeTargetStyles{L"SystemSettings.View.L2Page#L2Page > Grid > Grid > SystemSettings.View.AlignableContentControl > ContentPresenter > Grid > SystemSettings.View.SettingsPageHost#pageContent > ScrollViewer#SettingsPageHostPanel > Border#Root > Grid > ScrollContentPresenter#ScrollContentPresenter > Grid#RootScrollableGrid > Grid > Grid > ContentControl > ContentPresenter > ItemsControl > ItemsPresenter > SystemSettings.View.SpacingStackPanel > ContentPresenter > SystemSettings.View.AlignableContentControl > SystemSettings.View.SpacingStackPanel > SystemSettings.View.ExpandItemsControl > ItemsPresenter > SystemSettings.View.SpacingStackPanel > ContentPresenter > SystemSettings.View.SettingsListItemsRepeater > ScrollViewer#SettingsListScrollViewer > Border#Root > Grid > ScrollContentPresenter#ScrollContentPresenter > Microsoft.UI.Xaml.Controls.ItemsRepeater#ItemsRepeater > SystemSettings.View.SettingsExpander > Grid > SystemSettings.View.ExpanderToggleButton#ContainerButton > ContentPresenter#ContentPresenter > Grid > ContentPresenter > SystemSettings.View.EntityItem#EntityExpandableListItem > Grid > SystemSettings.View.ReservedWidthReflowingPanel > ContentPresenter#InlineContentPresenter > StackPanel > Button > ContentPresenter#ContentPresenter", {
+        L"BorderBrush:=<SolidColorBrush Color=\"{ThemeResource SystemAccentColor}\" />",
+        L"Width=150",
+        L"Foreground:=<SolidColorBrush Color=\"{ThemeResource SystemAccentColor}\" />",
+        L"BorderThickness=2",
+        L"CornerRadius=10"}},
+    ThemeTargetStyles{L"ScrollViewer > ScrollContentPresenter > Border > Frame > ContentPresenter > SystemSettings.View.RootPage > Grid#RootPageGrid > Microsoft.UI.Xaml.Controls.NavigationView#PermanentNavigationView > Grid#RootGrid > Grid > SplitView#RootSplitView > Grid > Grid#ContentRoot > Border > Grid#ContentGrid > ContentPresenter#ContentPresenter > Frame#PermanentNavRootFrame > ContentPresenter > SystemSettings.View.CategoryPage > Grid > ScrollViewer > Border#Root > Grid > ScrollContentPresenter#ScrollContentPresenter > Grid > SystemSettings.View.AlignableContentControl#heroContent > ContentPresenter > SystemSettings.View.AlignableContentControl > ItemsControl > ItemsPresenter > StackPanel > ContentPresenter > SystemSettings.View.AlignableContentControl > ContentPresenter > SystemSettings.View.TwoSegmentsHeroUserControl#DefaultOneSegmentHeroUserControl > Grid#LayoutRoot > Grid#LeftLayout > ContentPresenter > ItemsControl > ItemsPresenter > StackPanel > ContentPresenter > StackPanel > Button > ContentPresenter#ContentPresenter", {
+        L"Background=#141417",
+        L"Width=150",
+        L"BorderBrush:=<SolidColorBrush Color=\"{ThemeResource SystemAccentColor}\" />",
+        L"BorderThickness=2",
+        L"CornerRadius=10"}},
+    ThemeTargetStyles{L"SystemSettings.View.L2Page#L2Page > Grid > Grid > SystemSettings.View.AlignableContentControl > ContentPresenter > Grid > SystemSettings.View.SettingsPageHost#pageContent > ScrollViewer#SettingsPageHostPanel > Border#Root > Grid > ScrollContentPresenter#ScrollContentPresenter > Grid#RootScrollableGrid > Grid > Grid > ContentControl > ContentPresenter > ItemsControl > ItemsPresenter > SystemSettings.View.SpacingStackPanel > ContentPresenter > SystemSettings.View.AlignableContentControl > SystemSettings.View.SpacingStackPanel > SystemSettings.View.ExpandItemsControl > ItemsPresenter > SystemSettings.View.SpacingStackPanel > ContentPresenter > SystemSettings.View.ButtonEntityItem > Button#ContainerButton > ContentPresenter#ContentPresenter", {
+        L"Background=#101013",
+        L"Background@PointerOver=#101013",
+        L"CornerRadius=12"}},
+    ThemeTargetStyles{L"SystemSettings.View.L2Page#L2Page > Grid > Grid > SystemSettings.View.AlignableContentControl > ContentPresenter > Grid > SystemSettings.View.SettingsPageHost#pageContent > ScrollViewer#SettingsPageHostPanel > Border#Root > Grid > ScrollContentPresenter#ScrollContentPresenter > Grid#RootScrollableGrid > Grid > Grid > ContentControl > ContentPresenter > ItemsControl > ItemsPresenter > SystemSettings.View.SpacingStackPanel > ContentPresenter > SystemSettings.View.AlignableContentControl > SystemSettings.View.SpacingStackPanel > SystemSettings.View.ExpandItemsControl > ItemsPresenter > SystemSettings.View.SpacingStackPanel > ContentPresenter > SystemSettings.View.AlignableContentControl > SystemSettings.View.SpacingStackPanel > SystemSettings.View.ExpandItemsControl > ItemsPresenter > SystemSettings.View.SpacingStackPanel > ContentPresenter > SystemSettings.View.ButtonEntityItem > Button#ContainerButton > ContentPresenter#ContentPresenter", {
+        L"Background=#101013",
+        L"Background@PointerOver=#101013",
+        L"CornerRadius=12"}},
+    ThemeTargetStyles{L"SystemSettings.View.L2Page#L2Page > Grid > Grid > SystemSettings.View.AlignableContentControl > ContentPresenter > Grid > SystemSettings.View.SettingsPageHost#pageContent > ScrollViewer#SettingsPageHostPanel > Border#Root > Grid > ScrollContentPresenter#ScrollContentPresenter > Grid#RootScrollableGrid > Grid > Grid > ContentControl > ContentPresenter > ItemsControl > ItemsPresenter > SystemSettings.View.SpacingStackPanel > ContentPresenter > SystemSettings.View.AlignableContentControl > SystemSettings.View.SpacingStackPanel > SystemSettings.View.ExpandItemsControl > ItemsPresenter > SystemSettings.View.SpacingStackPanel > ContentPresenter > StackPanel > ContentPresenter > SystemSettings.View.ButtonEntityItem > Button#ContainerButton > ContentPresenter#ContentPresenter", {
+        L"Background=#101013",
+        L"Background@PointerOver=#101013",
+        L"CornerRadius=12"}},
+    ThemeTargetStyles{L"StackPanel#BackgroundStackPanel", {
+        L"Background=#101013",
+        L"CornerRadius=12"}},
+    ThemeTargetStyles{L"Rectangle#SelectionIndicator", {
+        L"Height=0"}},
+    ThemeTargetStyles{L"SystemSettings.View.SettingsNavigationViewItem[Content=Home] > Grid#NVIRootGrid > Microsoft.UI.Xaml.Controls.Primitives.NavigationViewItemPresenter#NavigationViewItemPresenter > Grid#LayoutRoot@PointerStates > Grid#PresenterContentRootGrid > Grid#ContentGrid > Border#IconColumn > Viewbox#IconBox > Border > ContentPresenter#Icon", {
+        L"Content@Normal:=\uE80F",
+        L"Content@PointerOver:=\uE80F",
+        L"Content@Pressed:=\uE80F",
+        L"Content@Selected:=\uEA8A",
+        L"Content@PointerOverSelected:=\uEA8A",
+        L"Content@PressedSelected:=\uEA8A",
+        L"Foreground@Selected:=<SolidColorBrush Color=\"{ThemeResource SystemAccentColor}\" />",
+        L"Foreground@PointerOverSelected:=<SolidColorBrush Color=\"{ThemeResource SystemAccentColor}\" />",
+        L"Foreground@PressedSelected:=<SolidColorBrush Color=\"{ThemeResource SystemAccentColor}\" />",
+        L"Foreground=#FFFFFF"}},
+    ThemeTargetStyles{L"SystemSettings.View.SettingsNavigationViewItem[Content=System] > Grid#NVIRootGrid > Microsoft.UI.Xaml.Controls.Primitives.NavigationViewItemPresenter#NavigationViewItemPresenter > Grid#LayoutRoot@PointerStates > Grid#PresenterContentRootGrid > Grid#ContentGrid > Border#IconColumn > Viewbox#IconBox > Border > ContentPresenter#Icon", {
+        L"Content@Normal:=\uE75B",
+        L"Content@PointerOver:=\uE75B",
+        L"Content@Pressed:=\uE75B",
+        L"Content@Selected:=\uE75B",
+        L"Content@PointerOverSelected:=\uE75B",
+        L"Content@PressedSelected:=\uE75B",
+        L"Foreground@Selected:=<SolidColorBrush Color=\"{ThemeResource SystemAccentColor}\" />",
+        L"Foreground@PointerOverSelected:=<SolidColorBrush Color=\"{ThemeResource SystemAccentColor}\" />",
+        L"Foreground@PressedSelected:=<SolidColorBrush Color=\"{ThemeResource SystemAccentColor}\" />",
+        L"Foreground=#FFFFFF"}},
+    ThemeTargetStyles{L"SystemSettings.View.SettingsNavigationViewItem[Content=Bluetooth & devices] > Grid#NVIRootGrid > Microsoft.UI.Xaml.Controls.Primitives.NavigationViewItemPresenter#NavigationViewItemPresenter > Grid#LayoutRoot@PointerStates > Grid#PresenterContentRootGrid > Grid#ContentGrid > Border#IconColumn > Viewbox#IconBox > Border > ContentPresenter#Icon", {
+        L"Content@Normal:=\uE702",
+        L"Content@PointerOver:=\uE702",
+        L"Content@Pressed:=\uE702",
+        L"Content@Selected:=\uE702",
+        L"Content@PointerOverSelected:=\uE702",
+        L"Content@PressedSelected:=\uE702",
+        L"Foreground@Selected:=<SolidColorBrush Color=\"{ThemeResource SystemAccentColor}\" />",
+        L"Foreground@PointerOverSelected:=<SolidColorBrush Color=\"{ThemeResource SystemAccentColor}\" />",
+        L"Foreground@PressedSelected:=<SolidColorBrush Color=\"{ThemeResource SystemAccentColor}\" />",
+        L"Foreground=#FFFFFF"}},
+    ThemeTargetStyles{L"SystemSettings.View.SettingsNavigationViewItem[3] > Grid#NVIRootGrid > Microsoft.UI.Xaml.Controls.Primitives.NavigationViewItemPresenter#NavigationViewItemPresenter > Grid#LayoutRoot@PointerStates > Grid#PresenterContentRootGrid > Grid#ContentGrid > Border#IconColumn > Viewbox#IconBox > Border > ContentPresenter#Icon", {
+        L"Content@Normal:=\uF0C5",
+        L"Content@PointerOver:=\uF0C5",
+        L"Content@Pressed:=\uF0C5",
+        L"Content@Selected:=\uF0C5",
+        L"Content@PointerOverSelected:=\uF0C5",
+        L"Content@PressedSelected:=\uF0C5",
+        L"Foreground@Selected:=<SolidColorBrush Color=\"{ThemeResource SystemAccentColor}\" />",
+        L"Foreground@PointerOverSelected:=<SolidColorBrush Color=\"{ThemeResource SystemAccentColor}\" />",
+        L"Foreground@PressedSelected:=<SolidColorBrush Color=\"{ThemeResource SystemAccentColor}\" />",
+        L"Foreground=#FFFFFF"}},
+    ThemeTargetStyles{L"SystemSettings.View.SettingsNavigationViewItem[4] > Grid#NVIRootGrid > Microsoft.UI.Xaml.Controls.Primitives.NavigationViewItemPresenter#NavigationViewItemPresenter > Grid#LayoutRoot@PointerStates > Grid#PresenterContentRootGrid > Grid#ContentGrid > Border#IconColumn > Viewbox#IconBox > Border > ContentPresenter#Icon", {
+        L"Content@Normal:=\uEA18",
+        L"Content@PointerOver:=\uEA18",
+        L"Content@Pressed:=\uEA18",
+        L"Content@Selected:=\uE83D",
+        L"Content@PointerOverSelected:=\uE83D",
+        L"Content@PressedSelected:=\uE83D",
+        L"Foreground@Selected:=<SolidColorBrush Color=\"{ThemeResource SystemAccentColor}\" />",
+        L"Foreground@PointerOverSelected:=<SolidColorBrush Color=\"{ThemeResource SystemAccentColor}\" />",
+        L"Foreground@PressedSelected:=<SolidColorBrush Color=\"{ThemeResource SystemAccentColor}\" />",
+        L"Foreground=#FFFFFF"}},
+    ThemeTargetStyles{L"SystemSettings.View.SettingsNavigationViewItem[5] > Grid#NVIRootGrid > Microsoft.UI.Xaml.Controls.Primitives.NavigationViewItemPresenter#NavigationViewItemPresenter > Grid#LayoutRoot@PointerStates > Grid#PresenterContentRootGrid > Grid#ContentGrid > Border#IconColumn > Viewbox#IconBox > Border > ContentPresenter#Icon", {
+        L"Content@Normal:=\uE776",
+        L"Content@PointerOver:=\uE776",
+        L"Content@Pressed:=\uE776",
+        L"Content@Selected:=\uE776",
+        L"Content@PointerOverSelected:=\uE776",
+        L"Content@PressedSelected:=\uE776",
+        L"Foreground@Selected:=<SolidColorBrush Color=\"{ThemeResource SystemAccentColor}\" />",
+        L"Foreground@PointerOverSelected:=<SolidColorBrush Color=\"{ThemeResource SystemAccentColor}\" />",
+        L"Foreground@PressedSelected:=<SolidColorBrush Color=\"{ThemeResource SystemAccentColor}\" />",
+        L"Foreground=#FFFFFF"}},
+    ThemeTargetStyles{L"SystemSettings.View.SettingsNavigationViewItem[6] > Grid#NVIRootGrid > Microsoft.UI.Xaml.Controls.Primitives.NavigationViewItemPresenter#NavigationViewItemPresenter > Grid#LayoutRoot@PointerStates > Grid#PresenterContentRootGrid > Grid#ContentGrid > Border#IconColumn > Viewbox#IconBox > Border > ContentPresenter#Icon", {
+        L"Content@Normal:=\uE7FC",
+        L"Content@PointerOver:=\uE7FC",
+        L"Content@Pressed:=\uE7FC",
+        L"Content@Selected:=\uE7FC",
+        L"Content@PointerOverSelected:=\uE7FC",
+        L"Content@PressedSelected:=\uE7FC",
+        L"Foreground@Selected:=<SolidColorBrush Color=\"{ThemeResource SystemAccentColor}\" />",
+        L"Foreground@PointerOverSelected:=<SolidColorBrush Color=\"{ThemeResource SystemAccentColor}\" />",
+        L"Foreground@PressedSelected:=<SolidColorBrush Color=\"{ThemeResource SystemAccentColor}\" />",
+        L"Foreground=#FFFFFF"}},
+    ThemeTargetStyles{L"SystemSettings.View.SettingsNavigationViewItem[7] > Grid#NVIRootGrid > Microsoft.UI.Xaml.Controls.Primitives.NavigationViewItemPresenter#NavigationViewItemPresenter > Grid#LayoutRoot@PointerStates > Grid#PresenterContentRootGrid > Grid#ContentGrid > Border#IconColumn > Viewbox#IconBox > Border > ContentPresenter#Icon", {
+        L"Content@Normal:=\uE775",
+        L"Content@PointerOver:=\uE775",
+        L"Content@Pressed:=\uE775",
+        L"Content@Selected:=\uE775",
+        L"Content@PointerOverSelected:=\uE775",
+        L"Content@PressedSelected:=\uE775",
+        L"Foreground@Selected:=<SolidColorBrush Color=\"{ThemeResource SystemAccentColor}\" />",
+        L"Foreground@PointerOverSelected:=<SolidColorBrush Color=\"{ThemeResource SystemAccentColor}\" />",
+        L"Foreground@PressedSelected:=<SolidColorBrush Color=\"{ThemeResource SystemAccentColor}\" />",
+        L"Foreground=#FFFFFF"}},
+    ThemeTargetStyles{L"SystemSettings.View.SettingsNavigationViewItem[8] > Grid#NVIRootGrid > Microsoft.UI.Xaml.Controls.Primitives.NavigationViewItemPresenter#NavigationViewItemPresenter > Grid#LayoutRoot@PointerStates > Grid#PresenterContentRootGrid > Grid#ContentGrid > Border#IconColumn > Viewbox#IconBox > Border > ContentPresenter#Icon", {
+        L"Content@Normal:=\uE77B",
+        L"Content@PointerOver:=\uE77B",
+        L"Content@Pressed:=\uE77B",
+        L"Content@Selected:=\uEA8C",
+        L"Content@PointerOverSelected:=\uEA8C",
+        L"Content@PressedSelected:=\uEA8C",
+        L"Foreground@Selected:=<SolidColorBrush Color=\"{ThemeResource SystemAccentColor}\" />",
+        L"Foreground@PointerOverSelected:=<SolidColorBrush Color=\"{ThemeResource SystemAccentColor}\" />",
+        L"Foreground@PressedSelected:=<SolidColorBrush Color=\"{ThemeResource SystemAccentColor}\" />",
+        L"Foreground=#FFFFFF"}},
+    ThemeTargetStyles{L"SystemSettings.View.SettingsNavigationViewItem[9] > Grid#NVIRootGrid > Microsoft.UI.Xaml.Controls.Primitives.NavigationViewItemPresenter#NavigationViewItemPresenter > Grid#LayoutRoot@PointerStates > Grid#PresenterContentRootGrid > Grid#ContentGrid > Border#IconColumn > Viewbox#IconBox > Border > ContentPresenter#Icon", {
+        L"Content@Normal:=\uE74C",
+        L"Content@PointerOver:=\uE74C",
+        L"Content@Pressed:=\uE74C",
+        L"Content@Selected:=\uE74C",
+        L"Content@PointerOverSelected:=\uE74C",
+        L"Content@PressedSelected:=\uE74C",
+        L"Foreground@Selected:=<SolidColorBrush Color=\"{ThemeResource SystemAccentColor}\" />",
+        L"Foreground@PointerOverSelected:=<SolidColorBrush Color=\"{ThemeResource SystemAccentColor}\" />",
+        L"Foreground@PressedSelected:=<SolidColorBrush Color=\"{ThemeResource SystemAccentColor}\" />",
+        L"Foreground=#FFFFFF"}},
+    ThemeTargetStyles{L"SystemSettings.View.SettingsNavigationViewItem[10] > Grid#NVIRootGrid > Microsoft.UI.Xaml.Controls.Primitives.NavigationViewItemPresenter#NavigationViewItemPresenter > Grid#LayoutRoot@PointerStates > Grid#PresenterContentRootGrid > Grid#ContentGrid > Border#IconColumn > Viewbox#IconBox > Border > ContentPresenter#Icon", {
+        L"Content@Normal:=\uE771",
+        L"Content@PointerOver:=\uE771",
+        L"Content@Pressed:=\uE771",
+        L"Content@Selected:=\uE771",
+        L"Content@PointerOverSelected:=\uE771",
+        L"Content@PressedSelected:=\uE771",
+        L"Foreground@Selected:=<SolidColorBrush Color=\"{ThemeResource SystemAccentColor}\" />",
+        L"Foreground@PointerOverSelected:=<SolidColorBrush Color=\"{ThemeResource SystemAccentColor}\" />",
+        L"Foreground@PressedSelected:=<SolidColorBrush Color=\"{ThemeResource SystemAccentColor}\" />",
+        L"Foreground=#FFFFFF"}},
+    ThemeTargetStyles{L"SystemSettings.View.SettingsNavigationViewItem[11] > Grid#NVIRootGrid > Microsoft.UI.Xaml.Controls.Primitives.NavigationViewItemPresenter#NavigationViewItemPresenter > Grid#LayoutRoot@PointerStates > Grid#PresenterContentRootGrid > Grid#ContentGrid > Border#IconColumn > Viewbox#IconBox > Border > ContentPresenter#Icon", {
+        L"Content@Normal:=\uE701",
+        L"Content@PointerOver:=\uE701",
+        L"Content@Pressed:=\uE701",
+        L"Content@Selected:=\uE701",
+        L"Content@PointerOverSelected:=\uE701",
+        L"Content@PressedSelected:=\uE701",
+        L"Foreground@Selected:=<SolidColorBrush Color=\"{ThemeResource SystemAccentColor}\" />",
+        L"Foreground@PointerOverSelected:=<SolidColorBrush Color=\"{ThemeResource SystemAccentColor}\" />",
+        L"Foreground@PressedSelected:=<SolidColorBrush Color=\"{ThemeResource SystemAccentColor}\" />",
+        L"Foreground=#FFFFFF"}},
+    ThemeTargetStyles{L"SystemSettings.View.SettingsNavigationViewItem[12] > Grid#NVIRootGrid > Microsoft.UI.Xaml.Controls.Primitives.NavigationViewItemPresenter#NavigationViewItemPresenter > Grid#LayoutRoot@PointerStates > Grid#PresenterContentRootGrid > Grid#ContentGrid > Border#IconColumn > Viewbox#IconBox > Border > ContentPresenter#Icon", {
+        L"Content@Normal:=\uE702",
+        L"Content@PointerOver:=\uE702",
+        L"Content@Pressed:=\uE702",
+        L"Content@Selected:=\uE702",
+        L"Content@PointerOverSelected:=\uE702",
+        L"Content@PressedSelected:=\uE702",
+        L"Foreground@Selected:=<SolidColorBrush Color=\"{ThemeResource SystemAccentColor}\" />",
+        L"Foreground@PointerOverSelected:=<SolidColorBrush Color=\"{ThemeResource SystemAccentColor}\" />",
+        L"Foreground@PressedSelected:=<SolidColorBrush Color=\"{ThemeResource SystemAccentColor}\" />",
+        L"Foreground=#FFFFFF"}},
+    ThemeTargetStyles{L"SystemSettings.View.SettingsNavigationViewItem > Grid#NVIRootGrid > Microsoft.UI.Xaml.Controls.Primitives.NavigationViewItemPresenter#NavigationViewItemPresenter > Grid#LayoutRoot > Grid#PresenterContentRootGrid > Grid#ContentGrid > ContentPresenter#ContentPresenter > TextBlock", {
+        L"Padding=10,0,0,0"}},
+    ThemeTargetStyles{L"SystemSettings.View.SettingsNavigationViewItem > Grid#NVIRootGrid > Microsoft.UI.Xaml.Controls.Primitives.NavigationViewItemPresenter#NavigationViewItemPresenter > Grid#LayoutRoot@PointerStates > Grid#PresenterContentRootGrid > Grid#ContentGrid > Border#IconColumn > Viewbox#IconBox > Border > ContentPresenter#Icon", {
+        L"FontFamily=Segoe Fluent Icons",
+        L"FontSize=20",
+        L"Margin=15,0,-2,0"}},
+    ThemeTargetStyles{L"ContentPresenter#IconContentPresenter", {
+        L"Foreground:=<SolidColorBrush Color=\"{ThemeResource SystemAccentColor}\" />"}},
+    ThemeTargetStyles{L"SystemSettings.View.SettingsNavigationViewItem > Grid#NVIRootGrid > Microsoft.UI.Xaml.Controls.Primitives.NavigationViewItemPresenter#NavigationViewItemPresenter > Grid#LayoutRoot@PointerStates", {
+        L"Background@Normal=Transparent",
+        L"Height=48",
+        L"Margin=8,0,8,0",
+        L"Padding= -4",
+        L"Background@PointerOver=#101013",
+        L"Background@Pressed:=<SolidColorBrush Color=\"{ThemeResource SystemAccentColorDark3}\" />",
+        L"Background@Selected:=<SolidColorBrush Color=\"{ThemeResource SystemAccentColorDark3}\" />",
+        L"Background@PointerOverSelected:=<SolidColorBrush Color=\"{ThemeResource SystemAccentColorDark3}\" />",
+        L"Background@PressedSelected:=<SolidColorBrush Color=\"{ThemeResource SystemAccentColorDark3}\" />",
+        L"CornerRadius@Normal=10",
+        L"CornerRadius=30"}},
+    ThemeTargetStyles{L"SystemSettings.View.SettingsNavigationViewItem > Grid#NVIRootGrid > Microsoft.UI.Xaml.Controls.Primitives.NavigationViewItemPresenter#NavigationViewItemPresenter > Grid#LayoutRoot@PointerStates > Grid#PresenterContentRootGrid > Grid#ContentGrid > ContentPresenter#ContentPresenter > TextBlock", {
+        L"Foreground@Normal=White",
+        L"Foreground@PointerOver=White",
+        L"Foreground@Pressed=White",
+        L"Foreground@Selected:=<SolidColorBrush Color=\"{ThemeResource SystemAccentColor}\" />",
+        L"Foreground@PointerOverSelected:=<SolidColorBrush Color=\"{ThemeResource SystemAccentColor}\" />",
+        L"Foreground@PressedSelected:=<SolidColorBrush Color=\"{ThemeResource SystemAccentColor}\" />",
+        L"FontWeight=Bold",
+        L"FontSize@Selected=16",
+        L"FontSize@PointerOverSelected=16"}},
+    ThemeTargetStyles{L"SystemSettings.View.UserProfileControl#UserProfileControl", {
+        L"Background=Transparent"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Button#UserProfileButton", {
+        L"Background=Transparent"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Shapes.Rectangle#ThumbVisual", {
+        L"Fill=#1E1E1E"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Button#NavigationViewBackButton > Windows.UI.Xaml.Controls.Grid#RootGrid", {
+        L"Background=#1A1A1F",
+        L"CornerRadius=25",
+        L"Height=30",
+        L"Width=30"}},
+    ThemeTargetStyles{L"SystemSettings.View.AlignableContentControl#PermanentNavViewHeaderAlignControl > ContentPresenter", {
+        L"Background=#101013",
+        L"CornerRadius=25",
+        L"Padding=25,5"}},
+    ThemeTargetStyles{L"SystemSettings.View.AlignableContentControl#PermanentNavViewHeaderAlignControl > ContentPresenter > Microsoft.UI.Xaml.Controls.BreadcrumbBar#PermanentNavigationViewBreadcrumbBar > Microsoft.UI.Xaml.Controls.ItemsRepeater#PART_ItemsRepeater > Microsoft.UI.Xaml.Controls.BreadcrumbBarItem > Grid#PART_LayoutRoot > ContentPresenter#PART_LastItemContentPresenter", {
+        L"Padding=20,0,20,0",
+        L"Height=45",
+        L"Background:=<SolidColorBrush Color=\"{ThemeResource SystemAccentColorDark3}\" />",
+        L"Foreground:=<SolidColorBrush Color=\"{ThemeResource SystemAccentColor}\" />",
+        L"CornerRadius=25"}},
+    ThemeTargetStyles{L"SystemSettings.View.SettingsExpander > Grid > SystemSettings.View.ExpanderToggleButton#ContainerButton > ContentPresenter#ContentPresenter", {
+        L"Background=#101013",
+        L"CornerRadius=12,12,12,12",
+        L"Margin=0,2,0,0"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.StackPanel#SettingsCommandSearchBoxBackground", {
+        L"Height=30",
+        L"Background=#18181B",
+        L"CornerRadius=6"}},
+    ThemeTargetStyles{L"Microsoft.UI.Xaml.Controls.NavigationView#PermanentNavigationView", {
+        L"Background=#101013"}},
+    ThemeTargetStyles{L"ScrollViewer > ScrollContentPresenter > Border > Frame > ContentPresenter > SystemSettings.View.RootPage > Grid#RootPageGrid > Microsoft.UI.Xaml.Controls.NavigationView#PermanentNavigationView > Grid#RootGrid > Grid > SplitView#RootSplitView > Grid > Grid#ContentRoot > Border > Grid#ContentGrid > ContentPresenter#ContentPresenter > Frame#PermanentNavRootFrame > ContentPresenter > SystemSettings.View.L2Page#L2Page > Grid > Grid > SystemSettings.View.AlignableContentControl > ContentPresenter > Grid > SystemSettings.View.SettingsPageHost#pageContent > ScrollViewer#SettingsPageHostPanel > Border#Root > Grid > ScrollContentPresenter#ScrollContentPresenter > Grid#RootScrollableGrid > Grid > Grid > ContentControl > ContentPresenter > ItemsControl > ItemsPresenter > SystemSettings.View.SpacingStackPanel > ContentPresenter > SystemSettings.View.AlignableContentControl > SystemSettings.View.SpacingStackPanel > SystemSettings.View.ExpandItemsControl > ItemsPresenter > SystemSettings.View.SpacingStackPanel > ContentPresenter > SystemSettings.View.EntityItem > Grid > SystemSettings.View.ReservedWidthReflowingPanel > ContentPresenter#InlineContentPresenter > Button > ContentPresenter#ContentPresenter", {
+        L"Foreground=Black",
+        L"Background:=<SolidColorBrush Color=\"{ThemeResource SystemAccentColor}\" />",
+        L"CornerRadius=12"}},
+    ThemeTargetStyles{L"ScrollViewer > ScrollContentPresenter > Border > Frame > ContentPresenter > SystemSettings.View.RootPage > Grid#RootPageGrid > Microsoft.UI.Xaml.Controls.NavigationView#PermanentNavigationView > Grid#RootGrid > Grid > SplitView#RootSplitView > Grid > Grid#ContentRoot > Border > Grid#ContentGrid > ContentPresenter#ContentPresenter > Frame#PermanentNavRootFrame > ContentPresenter > SystemSettings.View.L2Page#L2Page > Grid > Grid > SystemSettings.View.AlignableContentControl > ContentPresenter > Grid > SystemSettings.View.SettingsPageHost#pageContent > ScrollViewer#SettingsPageHostPanel > Border#Root > Grid > ScrollContentPresenter#ScrollContentPresenter > Grid#RootScrollableGrid > Grid > Grid > ContentControl > ContentPresenter > ItemsControl > ItemsPresenter > SystemSettings.View.SpacingStackPanel > ContentPresenter > SystemSettings.View.AlignableContentControl > SystemSettings.View.SpacingStackPanel > SystemSettings.View.ExpandItemsControl > ItemsPresenter > SystemSettings.View.SpacingStackPanel > ContentPresenter > SystemSettings.View.EntityItem > Grid > SystemSettings.View.ReservedWidthReflowingPanel > ContentPresenter#InlineContentPresenter > Button > ContentPresenter#ContentPresenter > TextBlock", {
+        L"FontWeight=Bold",
+        L"FontSize=14",
+        L"FontFamily=Segoe UI"}},
+    ThemeTargetStyles{L"ScrollViewer > ScrollContentPresenter > Border > Frame > ContentPresenter > SystemSettings.View.RootPage > Grid#RootPageGrid > Microsoft.UI.Xaml.Controls.NavigationView#PermanentNavigationView > Grid#RootGrid > Grid > SplitView#RootSplitView > Grid > Grid#ContentRoot > Border > Grid#ContentGrid > ContentPresenter#ContentPresenter > Frame#PermanentNavRootFrame > ContentPresenter > SystemSettings.View.CategoryPage > Grid > ScrollViewer > Border#Root > Grid > ScrollContentPresenter#ScrollContentPresenter > Grid > SystemSettings.View.AlignableContentControl > ContentPresenter > SystemSettings.View.SettingsListView#settingPagesList > ItemsPresenter > ItemsStackPanel > SystemSettings.View.SettingsListViewItem > Windows.UI.Xaml.Controls.Primitives.ListViewItemPresenter > SystemSettings.View.EntityItem > Grid > SystemSettings.View.ReservedWidthReflowingPanel > ContentPresenter#InlineContentPresenter > Button > ContentPresenter#ContentPresenter", {
+        L"Foreground=Black",
+        L"Background:=<SolidColorBrush Color=\"{ThemeResource SystemAccentColor}\" />",
+        L"CornerRadius=12"}},
+    ThemeTargetStyles{L"ScrollViewer > ScrollContentPresenter > Border > Frame > ContentPresenter > SystemSettings.View.RootPage > Grid#RootPageGrid > Microsoft.UI.Xaml.Controls.NavigationView#PermanentNavigationView > Grid#RootGrid > Grid > SplitView#RootSplitView > Grid > Grid#ContentRoot > Border > Grid#ContentGrid > ContentPresenter#ContentPresenter > Frame#PermanentNavRootFrame > ContentPresenter > SystemSettings.View.CategoryPage > Grid > ScrollViewer > Border#Root > Grid > ScrollContentPresenter#ScrollContentPresenter > Grid > SystemSettings.View.AlignableContentControl > ContentPresenter > SystemSettings.View.SettingsListView#settingPagesList > ItemsPresenter > ItemsStackPanel > SystemSettings.View.SettingsListViewItem > Windows.UI.Xaml.Controls.Primitives.ListViewItemPresenter > SystemSettings.View.EntityItem > Grid > SystemSettings.View.ReservedWidthReflowingPanel > ContentPresenter#InlineContentPresenter > Button > ContentPresenter#ContentPresenter > TextBlock", {
+        L"FontWeight=Bold",
+        L"FontSize=14",
+        L"FontFamily=Segoe UI"}},
+    ThemeTargetStyles{L"ScrollViewer > ScrollContentPresenter > Border > Frame > ContentPresenter > SystemSettings.View.RootPage > Grid#RootPageGrid > Microsoft.UI.Xaml.Controls.NavigationView#PermanentNavigationView > Grid#RootGrid > Grid > SplitView#RootSplitView > Grid > Grid#ContentRoot > Border > Grid#ContentGrid > ContentPresenter#ContentPresenter > Frame#PermanentNavRootFrame > ContentPresenter > SystemSettings.View.L2Page#L2Page > Grid > Grid > SystemSettings.View.AlignableContentControl > ContentPresenter > Grid > SystemSettings.View.SettingsPageHost#pageContent > ScrollViewer#SettingsPageHostPanel > Border#Root > Grid > ScrollContentPresenter#ScrollContentPresenter > Grid#RootScrollableGrid > Grid > Grid > ContentControl > ContentPresenter > ItemsControl > SystemSettings.View.SpacingStackPanel > ContentPresenter > SystemSettings.View.AlignableContentControl > ContentPresenter > SystemSettings.View.TwoSegmentsHeroUserControl#OneSegmentHeroEntityItemUserControl > Grid#LayoutRoot > Grid#LeftLayout > ContentPresenter > SystemSettings.View.EntityItem > Grid > SystemSettings.View.ReservedWidthReflowingPanel > ContentPresenter#InlineContentPresenter > StackPanel > StackPanel > Button > ContentPresenter#ContentPresenter", {
+        L"Foreground=Black",
+        L"Background:=<SolidColorBrush Color=\"{ThemeResource SystemAccentColor}\" />",
+        L"CornerRadius=12"}},
+    ThemeTargetStyles{L"ScrollViewer > ScrollContentPresenter > Border > Frame > ContentPresenter > SystemSettings.View.RootPage > Grid#RootPageGrid > Microsoft.UI.Xaml.Controls.NavigationView#PermanentNavigationView > Grid#RootGrid > Grid > SplitView#RootSplitView > Grid > Grid#ContentRoot > Border > Grid#ContentGrid > ContentPresenter#ContentPresenter > Frame#PermanentNavRootFrame > ContentPresenter > SystemSettings.View.L2Page#L2Page > Grid > Grid > SystemSettings.View.AlignableContentControl > ContentPresenter > Grid > SystemSettings.View.SettingsPageHost#pageContent > ScrollViewer#SettingsPageHostPanel > Border#Root > Grid > ScrollContentPresenter#ScrollContentPresenter > Grid#RootScrollableGrid > Grid > Grid > ContentControl > ContentPresenter > ItemsControl > ItemsPresenter > SystemSettings.View.SpacingStackPanel > ContentPresenter > SystemSettings.View.AlignableContentControl > ContentPresenter > SystemSettings.View.TwoSegmentsHeroUserControl#OneSegmentHeroEntityItemUserControl > Grid#LayoutRoot > Grid#LeftLayout > ContentPresenter > SystemSettings.View.EntityItem > Grid > SystemSettings.View.ReservedWidthReflowingPanel > ContentPresenter#InlineContentPresenter > StackPanel > StackPanel > Button", {
+        L"Foreground=black",
+        L"Background:=<SolidColorBrush Color=\"{ThemeResource SystemAccentColor}\" />",
+        L"CornerRadius=12",
+        L"FontSize=14",
+        L"FontWeight=Bold"}},
+    ThemeTargetStyles{L"ToolTip", {
+        L"Foreground=Black",
+        L"Background:=<SolidColorBrush Color=\"{ThemeResource SystemAccentColor}\" />",
+        L"CornerRadius=12",
+        L"FontWeight=Bold",
+        L"FontSize=14",
+        L"FontFamily=Segoe UI"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.TextBox#CommandSearchTextBox", {
+        L"Background=#1A1A1F",
+        L"CornerRadius=12",
+        L"Foreground=White",
+        L"BorderThickness=0"}},
 }};
 
 // clang-format on
@@ -7258,6 +9165,14 @@ void ProcessAllStylesFromSettings() {
         theme = &g_themeStoreFrame11;
     } else if (wcscmp(themeName, L"Blue") == 0) {
         theme = &g_themeBlue;
+    } else if (wcscmp(themeName, L"Translucent_Settings11") == 0) {
+        theme = &g_themeTranslucent_Settings11;
+    } else if (wcscmp(themeName, L"WindowGlass") == 0) {
+        theme = &g_themeWindowGlass;
+    } else if (wcscmp(themeName, L"OLED_variant_ModirinthGreen") == 0) {
+        theme = &g_themeOLED;
+    } else if (wcscmp(themeName, L"OLED_variant_SystemAscent") == 0) {
+        theme = &g_themeOLED_variant_1;
     }
     Wh_FreeStringSetting(themeName);
 
