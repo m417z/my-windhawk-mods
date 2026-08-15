@@ -9,7 +9,7 @@
 // @homepage        https://m417z.com/
 // @include         dwm.exe
 // @architecture    x86-64
-// @compilerOptions -lgdi32 -lwevtapi
+// @compilerOptions -lgdi32 -lole32 -lwevtapi
 // ==/WindhawkMod==
 
 // Source code is published under The GNU General Public License v3.0.
@@ -102,18 +102,37 @@ and make sure that `dwm.exe` is in the list.
   - none: Leave them square
   - snapped: Round snapped windows
   - snappedAndMaximized: Round snapped and maximized windows
+- excludedPrograms: [""]
+  $name: Excluded programs
+  $description: >-
+    Windows of these programs keep their original corner radius.
+
+    Entries can be process names, paths or application IDs, for example:
+
+    mspaint.exe
+
+    C:\Windows\System32\notepad.exe
+
+    Microsoft.WindowsCalculator_8wekyb3d8bbwe!App
 */
 // ==/WindhawkModSettings==
 
 #include <windhawk_utils.h>
 
+#include <initguid.h>  // Must appear before propkey.h
+
 #include <dwmapi.h>
+#include <propkey.h>
+#include <propsys.h>
 #include <winevt.h>
+#include <winternl.h>
 
 #include <cmath>
 #include <limits>
 #include <regex>
+#include <string>
 #include <string_view>
+#include <unordered_set>
 
 enum class RoundMaximizedAndSnapped {
     none,
@@ -126,6 +145,7 @@ struct {
     float smallRadius;
     float tooltipRadius;
     RoundMaximizedAndSnapped roundMaximizedAndSnapped;
+    std::unordered_set<std::wstring> excludedPrograms;
 } g_settings;
 
 using GetWindowData_t = void*(WINAPI*)(void* pThis);
@@ -202,6 +222,232 @@ bool IsTopLevelWindowTooltip(void* pThis) {
     return HwndHasClass(HwndFromTopLevelWindow(pThis), L"tooltips_class32");
 }
 
+typedef struct _SYSTEM_PROCESS_ID_INFORMATION {
+    HANDLE ProcessId;
+    UNICODE_STRING ImageName;
+} SYSTEM_PROCESS_ID_INFORMATION;
+
+// The image path of a process in NT form, e.g.
+// \Device\HarddiskVolume3\Windows\System32\notepad.exe. Unlike
+// QueryFullProcessImageName, this needs no handle to the process, which dwm.exe
+// can't get: it runs under a virtual account that isn't in the DACL of the
+// processes owning the windows it composes.
+std::wstring GetProcessImageNtPath(DWORD processId) {
+    using NtQuerySystemInformation_t =
+        LONG(NTAPI*)(ULONG systemInformationClass, PVOID systemInformation,
+                     ULONG systemInformationLength, PULONG returnLength);
+    static NtQuerySystemInformation_t pNtQuerySystemInformation = []() {
+        HMODULE ntdll = GetModuleHandle(L"ntdll.dll");
+        return ntdll ? (NtQuerySystemInformation_t)GetProcAddress(
+                           ntdll, "NtQuerySystemInformation")
+                     : nullptr;
+    }();
+    if (!pNtQuerySystemInformation) {
+        return std::wstring{};
+    }
+
+    constexpr ULONG kSystemProcessIdInformation = 88;
+    constexpr LONG kStatusInfoLengthMismatch = 0xC0000004;
+
+    SYSTEM_PROCESS_ID_INFORMATION info{
+        .ProcessId = (HANDLE)(ULONG_PTR)processId,
+    };
+
+    // An empty ImageName makes the call report the size it needs.
+    LONG status = pNtQuerySystemInformation(kSystemProcessIdInformation, &info,
+                                            sizeof(info), nullptr);
+    if (status != kStatusInfoLengthMismatch) {
+        Wh_Log(L"Size query failed for pid=%u: %08X", processId, status);
+        return std::wstring{};
+    }
+
+    std::wstring path(info.ImageName.MaximumLength / sizeof(WCHAR), L'\0');
+    info.ImageName.Buffer = path.data();
+    info.ImageName.Length = 0;
+
+    status = pNtQuerySystemInformation(kSystemProcessIdInformation, &info,
+                                       sizeof(info), nullptr);
+    if (status < 0) {
+        Wh_Log(L"Query failed for pid=%u: %08X", processId, status);
+        return std::wstring{};
+    }
+
+    path.resize(info.ImageName.Length / sizeof(WCHAR));
+    return path;
+}
+
+// Turns \Device\HarddiskVolume3\Windows\... into C:\Windows\..., or returns an
+// empty string if no drive letter maps to the device.
+std::wstring NtPathToDosPath(const std::wstring& ntPath) {
+    WCHAR drives[512];
+    DWORD len = GetLogicalDriveStrings(ARRAYSIZE(drives), drives);
+    if (!len || len > ARRAYSIZE(drives)) {
+        return std::wstring{};
+    }
+
+    for (PCWSTR drive = drives; *drive; drive += wcslen(drive) + 1) {
+        WCHAR driveName[] = {drive[0], L':', L'\0'};
+        WCHAR target[MAX_PATH];
+        if (!QueryDosDevice(driveName, target, ARRAYSIZE(target))) {
+            continue;
+        }
+
+        size_t targetLen = wcslen(target);
+        if (ntPath.length() > targetLen && ntPath[targetLen] == L'\\' &&
+            _wcsnicmp(ntPath.c_str(), target, targetLen) == 0) {
+            return driveName + ntPath.substr(targetLen);
+        }
+    }
+
+    return std::wstring{};
+}
+
+// The AppUserModelID explicitly set on a window. It's what identifies packaged
+// apps, whose windows belong to a shared host process. shell32 is resolved on
+// demand to keep it out of dwm.exe unless exclusions are actually used.
+std::wstring GetWindowAppId(HWND hWnd) {
+    using SHGetPropertyStoreForWindow_t =
+        HRESULT(WINAPI*)(HWND hwnd, REFIID riid, void** ppv);
+    static SHGetPropertyStoreForWindow_t pSHGetPropertyStoreForWindow = []() {
+        HMODULE shell32 = LoadLibraryEx(L"shell32.dll", nullptr,
+                                        LOAD_LIBRARY_SEARCH_SYSTEM32);
+        return shell32 ? (SHGetPropertyStoreForWindow_t)GetProcAddress(
+                             shell32, "SHGetPropertyStoreForWindow")
+                       : nullptr;
+    }();
+
+    std::wstring result;
+
+    if (!pSHGetPropertyStoreForWindow) {
+        Wh_Log(L"SHGetPropertyStoreForWindow isn't available");
+        return result;
+    }
+
+    IPropertyStore* propertyStore;
+    HRESULT hr =
+        pSHGetPropertyStoreForWindow(hWnd, IID_PPV_ARGS(&propertyStore));
+    if (FAILED(hr)) {
+        Wh_Log(L"SHGetPropertyStoreForWindow failed for hwnd=%p: %08X", hWnd,
+               hr);
+        return result;
+    }
+
+    PROPVARIANT pv;
+    PropVariantInit(&pv);
+    hr = propertyStore->GetValue(PKEY_AppUserModel_ID, &pv);
+    if (SUCCEEDED(hr)) {
+        if (pv.vt == VT_LPWSTR && pv.pwszVal) {
+            result = pv.pwszVal;
+        }
+        PropVariantClear(&pv);
+    } else {
+        Wh_Log(L"GetValue failed for hwnd=%p: %08X", hWnd, hr);
+    }
+
+    propertyStore->Release();
+    return result;
+}
+
+void MakeUpper(std::wstring* str) {
+    LCMapStringEx(LOCALE_NAME_USER_DEFAULT, LCMAP_UPPERCASE, str->data(),
+                  static_cast<int>(str->length()), str->data(),
+                  static_cast<int>(str->length()), nullptr, nullptr, 0);
+}
+
+bool IsWindowExcluded(HWND hWnd) {
+    DWORD dwProcessId = 0;
+    GetWindowThreadProcessId(hWnd, &dwProcessId);
+
+    std::wstring processPathUpper;
+    if (dwProcessId) {
+        std::wstring ntPath = GetProcessImageNtPath(dwProcessId);
+        processPathUpper = NtPathToDosPath(ntPath);
+        if (processPathUpper.empty()) {
+            // Without a drive letter no configured path can match, but the
+            // last component is still the file name.
+            processPathUpper = std::move(ntPath);
+        }
+        MakeUpper(&processPathUpper);
+    }
+
+    if (!processPathUpper.empty()) {
+        if (g_settings.excludedPrograms.contains(processPathUpper)) {
+            Wh_Log(L"hwnd=%p excluded by path: %s", hWnd,
+                   processPathUpper.c_str());
+            return true;
+        }
+
+        size_t fileNamePos = processPathUpper.rfind(L'\\');
+        if (fileNamePos != std::wstring::npos) {
+            std::wstring fileNameUpper =
+                processPathUpper.substr(fileNamePos + 1);
+            if (!fileNameUpper.empty() &&
+                g_settings.excludedPrograms.contains(fileNameUpper)) {
+                Wh_Log(L"hwnd=%p excluded by file name: %s", hWnd,
+                       fileNameUpper.c_str());
+                return true;
+            }
+        }
+    }
+
+    std::wstring appIdUpper = GetWindowAppId(hWnd);
+    MakeUpper(&appIdUpper);
+    if (!appIdUpper.empty() &&
+        g_settings.excludedPrograms.contains(appIdUpper)) {
+        Wh_Log(L"hwnd=%p excluded by app id: %s", hWnd, appIdUpper.c_str());
+        return true;
+    }
+
+    Wh_Log(L"hwnd=%p not excluded, path=[%s], appId=[%s]", hWnd,
+           processPathUpper.c_str(), appIdUpper.c_str());
+    return false;
+}
+
+constexpr WCHAR kWindowExclusionProp[] = L"Windhawk_Excluded_" WH_MOD_ID;
+
+const HANDLE kWindowNotExcluded = (HANDLE)1;
+const HANDLE kWindowExcluded = (HANDLE)2;
+
+// Resolving the program of a window is expensive, and the hooks run as part of
+// composing every frame, so the verdict is cached in a window property. The
+// properties are dropped when the settings change and when the mod is unloaded.
+bool IsWindowExcludedCached(HWND hWnd) {
+    HANDLE prop = GetProp(hWnd, kWindowExclusionProp);
+    if (!prop) {
+        prop = IsWindowExcluded(hWnd) ? kWindowExcluded : kWindowNotExcluded;
+        if (!SetProp(hWnd, kWindowExclusionProp, prop)) {
+            Wh_Log(L"SetProp failed for hwnd=%p: %u", hWnd, GetLastError());
+        }
+    }
+
+    return prop == kWindowExcluded;
+}
+
+// Windows whose HWND can't be recovered are never excluded, same as the other
+// HWND-based checks.
+bool IsTopLevelWindowExcluded(void* pThis) {
+    if (g_settings.excludedPrograms.empty()) {
+        return false;
+    }
+
+    HWND hwnd = HwndFromTopLevelWindow(pThis);
+    if (!hwnd) {
+        Wh_Log(L"No hwnd for %p, can't check exclusions", pThis);
+        return false;
+    }
+
+    return IsWindowExcludedCached(hwnd);
+}
+
+void ClearWindowExclusionProps() {
+    EnumWindows(
+        [](HWND hWnd, LPARAM) -> BOOL {
+            RemoveProp(hWnd, kWindowExclusionProp);
+            return TRUE;
+        },
+        0);
+}
+
 float RadiusForOriginal(float orig, bool isTooltip) {
     // In new builds, multiple hooks fire in sequence (GetRadiusFromCornerStyle
     // -> GetFloatCornerRadiusForCurrentStyle -> SetBorderParameters), so a
@@ -241,10 +487,15 @@ void HideSysShadowWindow(HWND hwnd) {
     // SetWindowRgn takes ownership of the region on success.
 }
 
+// The CTopLevelWindow whose UpdateWindowVisuals call is currently running, or
+// null outside of one. SetBorderParameters gets a CWindowBorder, which offers
+// no way back to the window it belongs to.
+thread_local void* g_updateWindowVisualsTarget;
+
 using UpdateWindowVisuals_t = long(WINAPI*)(void* pThis);
 UpdateWindowVisuals_t UpdateWindowVisuals_Original;
 long WINAPI UpdateWindowVisuals_Hook(void* pThis) {
-    if (g_settings.tooltipRadius >= 0.0f) {
+    if (g_settings.tooltipRadius >= 0.0f && !IsTopLevelWindowExcluded(pThis)) {
         HWND hwnd = HwndFromTopLevelWindow(pThis);
         if (HwndHasClass(hwnd, L"SysShadow")) {
             Wh_Log(L"> hiding SysShadow hwnd=%p", hwnd);
@@ -252,7 +503,12 @@ long WINAPI UpdateWindowVisuals_Hook(void* pThis) {
             return 0;
         }
     }
-    return UpdateWindowVisuals_Original(pThis);
+
+    void* prevTarget = g_updateWindowVisualsTarget;
+    g_updateWindowVisualsTarget = pThis;
+    long ret = UpdateWindowVisuals_Original(pThis);
+    g_updateWindowVisualsTarget = prevTarget;
+    return ret;
 }
 
 using GetEffectiveCornerStyle_t = int(WINAPI*)(void* pThis);
@@ -265,7 +521,7 @@ int WINAPI GetEffectiveCornerStyle_Hook(void* pThis) {
     // GetRadiusFromCornerStyle returns a non-zero radius that our hooks
     // override to the configured tooltipRadius via RadiusForOriginal.
     if (orig == DWMWCP_DONOTROUND && g_settings.tooltipRadius >= 0.0f &&
-        IsTopLevelWindowTooltip(pThis)) {
+        !IsTopLevelWindowExcluded(pThis) && IsTopLevelWindowTooltip(pThis)) {
         Wh_Log(L"> cornerStyle DONOTROUND -> ROUNDSMALL (tooltip)");
         return DWMWCP_ROUNDSMALL;
     }
@@ -305,6 +561,10 @@ bool ShouldRoundMaximizedOrSnapped(void* pThis) {
 float AdjustCornerRadius(void* pThis,
                          float orig,
                          bool canRoundMaximizedOrSnapped) {
+    if (IsTopLevelWindowExcluded(pThis)) {
+        return orig;
+    }
+
     if (orig > 0) {
         bool isTooltip =
             g_settings.tooltipRadius >= 0.0f && IsTopLevelWindowTooltip(pThis);
@@ -352,11 +612,17 @@ long WINAPI SetBorderParameters_Hook(void* pThis,
                                      int borderStyle,
                                      int shadowStyle) {
     if (cornerRadius > 0) {
-        Wh_Log(L"> %f", cornerRadius);
         // pThis here is a CWindowBorder, not a CTopLevelWindow, so there's no
         // straightforward way to recover the HWND for tooltip detection. This
         // path is only used by old builds where the radius is computed inline.
-        cornerRadius = RadiusForOriginal(cornerRadius, false);
+        // The enclosing UpdateWindowVisuals call is what identifies the window
+        // for the exclusion check.
+        bool excluded = g_updateWindowVisualsTarget &&
+                        IsTopLevelWindowExcluded(g_updateWindowVisualsTarget);
+        if (!excluded) {
+            Wh_Log(L"> %f", cornerRadius);
+            cornerRadius = RadiusForOriginal(cornerRadius, false);
+        }
     }
     return SetBorderParameters_Original(pThis, borderRect, cornerRadius, dpi,
                                         color, borderStyle, shadowStyle);
@@ -391,6 +657,31 @@ void LoadSettings() {
             RoundMaximizedAndSnapped::snappedAndMaximized;
     }
     Wh_FreeStringSetting(roundMaximizedAndSnapped);
+
+    g_settings.excludedPrograms.clear();
+
+    for (int i = 0;; i++) {
+        PCWSTR program = Wh_GetStringSetting(L"excludedPrograms[%d]", i);
+
+        bool hasProgram = *program;
+        if (hasProgram) {
+            std::wstring programUpper = program;
+            LCMapStringEx(
+                LOCALE_NAME_USER_DEFAULT, LCMAP_UPPERCASE, &programUpper[0],
+                static_cast<int>(programUpper.length()), &programUpper[0],
+                static_cast<int>(programUpper.length()), nullptr, nullptr, 0);
+
+            Wh_Log(L"Excluded program: [%s]", programUpper.c_str());
+
+            g_settings.excludedPrograms.insert(std::move(programUpper));
+        }
+
+        Wh_FreeStringSetting(program);
+
+        if (!hasProgram) {
+            break;
+        }
+    }
 }
 
 // Returns true if at least two Dwminit warnings (Level=3) were logged in the
@@ -572,6 +863,8 @@ BOOL Wh_ModInit() {
 #endif
             10);
         Wh_Log(L"windowDataHwndOffset=0x%zx", g_windowDataHwndOffset);
+    } else {
+        Wh_Log(L"IsGhostWindow wasn't found, HWND lookup is disabled");
     }
 
     return TRUE;
@@ -581,8 +874,12 @@ void Wh_ModSettingsChanged() {
     Wh_Log(L">");
 
     LoadSettings();
+
+    ClearWindowExclusionProps();
 }
 
 void Wh_ModUninit() {
     Wh_Log(L">");
+
+    ClearWindowExclusionProps();
 }
