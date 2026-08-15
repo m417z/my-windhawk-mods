@@ -695,6 +695,9 @@ void ApplyCustomizations(InstanceHandle handle,
                          winrt::Windows::UI::Xaml::FrameworkElement element,
                          PCWSTR fallbackClassName);
 void CleanupCustomizations(InstanceHandle handle);
+void TrackSplitView(winrt::Windows::UI::Xaml::FrameworkElement element);
+void ReleaseDiscardedSplitViewChild(
+    winrt::Windows::Foundation::IInspectable removedElement);
 
 HMODULE GetCurrentModuleHandle() {
     HMODULE module;
@@ -841,6 +844,7 @@ HRESULT VisualTreeWatcher::OnVisualTreeChange(ParentChildRelation, VisualElement
         if (frameworkElement)
         {
             Wh_Log(L"FrameworkElement name: %s", frameworkElement.Name().c_str());
+            TrackSplitView(frameworkElement);
             ApplyCustomizations(element.Handle, frameworkElement, element.Type);
         }
         else
@@ -851,6 +855,7 @@ HRESULT VisualTreeWatcher::OnVisualTreeChange(ParentChildRelation, VisualElement
     else if (mutationType == Remove)
     {
         CleanupCustomizations(element.Handle);
+        ReleaseDiscardedSplitViewChild(FromHandle(element.Handle));
     }
 
     return S_OK;
@@ -6330,6 +6335,84 @@ void ApplyCustomizations(InstanceHandle handle,
     }
 }
 
+// XAML diagnostics, which the mod relies on to observe the visual tree, holds a
+// strong reference to every element it reports. Template content that a control
+// discarded therefore stays alive, still owning the children the control handed
+// to it. When the control instantiates its template again, taking those
+// children back fails the association check with E_INVALIDARG, and XAML turns
+// that into an unhandled error which terminates the app. The Settings app hits
+// this with the SplitView inside its NavigationView: `PaneRoot` binds
+// `Border.Child` to `SplitView.Pane`. Hand the children back while the content
+// holding them is torn down, which happens before the replacement is built.
+//
+// The owner is found from the Border rather than from the child: once content
+// leaves the tree, neither VisualTreeHelper::GetParent nor
+// FrameworkElement.Parent reports an owner for the child anymore, while
+// Border.Child keeps reading fine.
+std::vector<winrt::weak_ref<Controls::SplitView>> g_trackedSplitViews;
+
+void TrackSplitView(FrameworkElement element) {
+    auto splitView = element.try_as<Controls::SplitView>();
+    if (!splitView) {
+        return;
+    }
+
+    // An element is reported again every time it re-enters the tree, so without
+    // this the same SplitView piles up.
+    std::erase_if(g_trackedSplitViews,
+                  [&splitView](const auto& trackedWeakPtr) {
+                      auto tracked = trackedWeakPtr.get();
+                      return !tracked || tracked == splitView;
+                  });
+
+    g_trackedSplitViews.push_back(winrt::make_weak(splitView));
+}
+
+void ReleaseDiscardedSplitViewChild(
+    winrt::Windows::Foundation::IInspectable removedElement) {
+    auto border = removedElement.try_as<Controls::Border>();
+    if (!border) {
+        return;
+    }
+
+    auto child = border.Child();
+    if (!child) {
+        return;
+    }
+
+    bool discarded = false;
+    std::erase_if(g_trackedSplitViews, [&](const auto& splitViewWeakPtr) {
+        auto splitView = splitViewWeakPtr.get();
+        if (!splitView) {
+            return true;
+        }
+
+        // A SplitView on its way out of the tree takes its content with it and
+        // keeps using it once it's back, so only a SplitView that stays needs
+        // its children handed back.
+        if (!Media::VisualTreeHelper::GetParent(splitView)) {
+            return false;
+        }
+
+        if (child == splitView.Pane() || child == splitView.Content()) {
+            discarded = true;
+        }
+
+        return false;
+    });
+
+    if (!discarded) {
+        return;
+    }
+
+    Wh_Log(L"Detaching %s from discarded SplitView template content",
+           winrt::get_class_name(child).c_str());
+
+    // Detaching reports the child as removed, which re-enters this function, so
+    // it has to happen once the tracked SplitViews are no longer being walked.
+    border.Child(nullptr);
+}
+
 void CleanupCustomizations(InstanceHandle handle) {
     auto it = g_elementsCustomizationState.find(handle);
     if (it == g_elementsCustomizationState.end()) {
@@ -7278,6 +7361,7 @@ void UninitializeSettingsAndTap() {
     g_styleVariableState = {};
 
     g_elementsCustomizationRules.clear();
+    g_trackedSplitViews.clear();
 
     UninitializeResourceVariables();
 
