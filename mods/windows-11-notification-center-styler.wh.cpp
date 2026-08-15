@@ -6536,6 +6536,46 @@ void StopImageLoadRetries() {
     }
 }
 
+// Drops the calling thread from the dispatcher registry, and stops the retries
+// altogether once the last thread is out of it.
+void StopImageLoadRetriesForCurrentThread() {
+    auto dispatcher = g_trackedImageBrushesForThread.dispatcher;
+    if (!dispatcher) {
+        return;
+    }
+
+    g_trackedImageBrushesForThread.dispatcher = nullptr;
+
+    winrt::event_token token;
+
+    {
+        std::lock_guard<std::mutex> lock(g_imageRetryMutex);
+
+        std::erase_if(g_imageRetryDispatchers,
+                      [&dispatcher](const auto& weakDispatcher) {
+                          auto registeredDispatcher = weakDispatcher.get();
+                          return !registeredDispatcher ||
+                                 registeredDispatcher == dispatcher;
+                      });
+
+        if (!g_imageRetryDispatchers.empty()) {
+            return;
+        }
+
+        // What StopImageLoadRetries does, kept under the lock which found the
+        // registry empty so that a thread which registers in between isn't
+        // stopped as well.
+        g_imageRetryActive = false;
+
+        token = g_networkStatusChangedToken;
+        g_networkStatusChangedToken = {};
+    }
+
+    if (token) {
+        UnregisterNetworkStatusChangedHandler(token);
+    }
+}
+
 void SetupImageBrushTracking(Media::ImageBrush const& brush,
                              Media::Imaging::BitmapImage const& bitmapImage,
                              winrt::Windows::Foundation::Uri const& uri) {
@@ -10348,7 +10388,7 @@ void UninitializeForCurrentThread() {
     g_trackedImageBrushesForThread.retryDebounceTimerTickRevoker.revoke();
     g_trackedImageBrushesForThread.retryDebounceTimer = nullptr;
     g_trackedImageBrushesForThread.brushes.clear();
-    g_trackedImageBrushesForThread.dispatcher = nullptr;
+    StopImageLoadRetriesForCurrentThread();
 
     for (const auto& [handle, elementCustomizationState] :
          g_elementsCustomizationState) {
