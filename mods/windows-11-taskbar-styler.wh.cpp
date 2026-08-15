@@ -11378,12 +11378,11 @@ void StopImageLoadRetriesForCurrentThread() {
     {
         std::lock_guard<std::mutex> lock(g_imageRetryMutex);
 
-        std::erase_if(g_imageRetryDispatchers,
-                      [&dispatcher](const auto& weakDispatcher) {
-                          auto registeredDispatcher = weakDispatcher.get();
-                          return !registeredDispatcher ||
-                                 registeredDispatcher == dispatcher;
-                      });
+        std::erase_if(g_imageRetryDispatchers, [&dispatcher](
+                                                   const auto& weakDispatcher) {
+            auto registeredDispatcher = weakDispatcher.get();
+            return !registeredDispatcher || registeredDispatcher == dispatcher;
+        });
 
         if (!g_imageRetryDispatchers.empty()) {
             return;
