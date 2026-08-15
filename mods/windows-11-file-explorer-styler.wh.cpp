@@ -2565,7 +2565,10 @@ constexpr ULONGLONG kImageRetryBaseDelayMs = 5000;
 constexpr int kImageRetryMaxBackoffShift = 6;
 constexpr int kImageRetryMaxCount = 20;
 
-// Guards the globals below it.
+// Guards the globals below it. The network status handler acquires it, so it
+// must never be held while adding or removing that handler: the event source
+// can wait for an invocation which is already in flight, and registering from a
+// UI thread pumps messages, which can re-enter this code on the same thread.
 std::mutex g_imageRetryMutex;
 bool g_imageRetryActive;
 // The dispatcher of each UI thread which has tracked brushes, used to run a
@@ -2573,6 +2576,9 @@ bool g_imageRetryActive;
 std::vector<winrt::weak_ref<winrt::Microsoft::UI::Dispatching::DispatcherQueue>>
     g_imageRetryDispatchers;
 winrt::event_token g_networkStatusChangedToken;
+// Set while a thread is registering the handler outside the mutex, so that a
+// concurrent or re-entrant call doesn't register a second one.
+bool g_networkStatusChangedRegistering;
 
 enum class ResourceVariableTheme {
     None,
@@ -4340,24 +4346,52 @@ void OnNetworkStatusChanged(
     ScheduleImageLoadRetryOnAllUiThreads();
 }
 
+// Must not be called with g_imageRetryMutex held.
+winrt::event_token RegisterNetworkStatusChangedHandler() {
+    try {
+        auto token = winrt::Windows::Networking::Connectivity::
+            NetworkInformation::NetworkStatusChanged(OnNetworkStatusChanged);
+        Wh_Log(L"Registered global network status change handler");
+        return token;
+    } catch (winrt::hresult_error const& ex) {
+        Wh_Log(L"Error registering network status handler %08X: %s", ex.code(),
+               ex.message().c_str());
+        return {};
+    }
+}
+
+// Must not be called with g_imageRetryMutex held.
+void UnregisterNetworkStatusChangedHandler(winrt::event_token token) {
+    try {
+        winrt::Windows::Networking::Connectivity::NetworkInformation::
+            NetworkStatusChanged(token);
+        Wh_Log(L"Unregistered global network status change handler");
+    } catch (winrt::hresult_error const& ex) {
+        Wh_Log(L"Error unregistering network status handler %08X: %s",
+               ex.code(), ex.message().c_str());
+    }
+}
+
 void StopImageLoadRetries() {
-    std::lock_guard<std::mutex> lock(g_imageRetryMutex);
+    winrt::event_token token;
 
-    g_imageRetryActive = false;
+    {
+        std::lock_guard<std::mutex> lock(g_imageRetryMutex);
 
-    if (g_networkStatusChangedToken) {
-        try {
-            winrt::Windows::Networking::Connectivity::NetworkInformation::
-                NetworkStatusChanged(g_networkStatusChangedToken);
-            Wh_Log(L"Unregistered global network status change handler");
-        } catch (winrt::hresult_error const& ex) {
-            Wh_Log(L"Error unregistering network status handler %08X: %s",
-                   ex.code(), ex.message().c_str());
-        }
+        // Makes any handler which acquires the mutex from here on return
+        // early, which is what stops the retries. Removing the handler only
+        // stops further invocations.
+        g_imageRetryActive = false;
+
+        token = g_networkStatusChangedToken;
         g_networkStatusChangedToken = {};
+
+        g_imageRetryDispatchers.clear();
     }
 
-    g_imageRetryDispatchers.clear();
+    if (token) {
+        UnregisterNetworkStatusChangedHandler(token);
+    }
 }
 
 void SetupImageBrushTracking(Media::ImageBrush const& brush,
@@ -4443,35 +4477,60 @@ void SetupImageBrushTracking(Media::ImageBrush const& brush,
 
     brushes.push_back(std::move(tracked));
 
-    std::lock_guard<std::mutex> lock(g_imageRetryMutex);
+    bool registerHandler = false;
 
-    g_imageRetryActive = true;
+    {
+        std::lock_guard<std::mutex> lock(g_imageRetryMutex);
 
-    if (!g_trackedImageBrushesForThread.dispatcher) {
-        try {
-            auto dispatcher = winrt::Microsoft::UI::Dispatching::
-                DispatcherQueue::GetForCurrentThread();
-            if (dispatcher) {
-                g_trackedImageBrushesForThread.dispatcher = dispatcher;
-                g_imageRetryDispatchers.push_back(winrt::make_weak(dispatcher));
-                Wh_Log(L"Registered UI thread dispatcher for network retry");
+        g_imageRetryActive = true;
+
+        if (!g_trackedImageBrushesForThread.dispatcher) {
+            try {
+                auto dispatcher = winrt::Microsoft::UI::Dispatching::
+                    DispatcherQueue::GetForCurrentThread();
+                if (dispatcher) {
+                    g_trackedImageBrushesForThread.dispatcher = dispatcher;
+                    g_imageRetryDispatchers.push_back(
+                        winrt::make_weak(dispatcher));
+                    Wh_Log(
+                        L"Registered UI thread dispatcher for network retry");
+                }
+            } catch (winrt::hresult_error const& ex) {
+                Wh_Log(L"Error getting dispatcher for current thread %08X: %s",
+                       ex.code(), ex.message().c_str());
             }
-        } catch (winrt::hresult_error const& ex) {
-            Wh_Log(L"Error getting dispatcher for current thread %08X: %s",
-                   ex.code(), ex.message().c_str());
+        }
+
+        if (!g_networkStatusChangedToken &&
+            !g_networkStatusChangedRegistering) {
+            g_networkStatusChangedRegistering = true;
+            registerHandler = true;
         }
     }
 
-    if (!g_networkStatusChangedToken) {
-        try {
-            g_networkStatusChangedToken =
-                winrt::Windows::Networking::Connectivity::NetworkInformation::
-                    NetworkStatusChanged(OnNetworkStatusChanged);
-            Wh_Log(L"Registered global network status change handler");
-        } catch (winrt::hresult_error const& ex) {
-            Wh_Log(L"Error registering network status handler %08X: %s",
-                   ex.code(), ex.message().c_str());
+    if (!registerHandler) {
+        return;
+    }
+
+    winrt::event_token token = RegisterNetworkStatusChangedHandler();
+
+    bool stopped;
+
+    {
+        std::lock_guard<std::mutex> lock(g_imageRetryMutex);
+
+        g_networkStatusChangedRegistering = false;
+
+        stopped = !g_imageRetryActive;
+        if (!stopped) {
+            g_networkStatusChangedToken = token;
         }
+    }
+
+    // StopImageLoadRetries ran while the handler was being registered, so it
+    // found no token to remove.
+    if (stopped && token) {
+        UnregisterNetworkStatusChangedHandler(token);
     }
 }
 
