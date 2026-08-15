@@ -16253,7 +16253,7 @@ bool StartStatsTimer() {
     ULONGLONG minDueTime = currentTime + k10Minutes;
     ULONGLONG maxDueTime = currentTime + k24Hours;
 
-    ULONGLONG dueTime = k24Hours - (currentTime - lastStatsTime);
+    ULONGLONG dueTime = lastStatsTime + k24Hours;
     if (dueTime < minDueTime) {
         dueTime = minDueTime;
     } else if (dueTime > maxDueTime) {
