@@ -340,6 +340,22 @@ HMONITOR GetTargetMonitor(GetTargetMonitorParams params = {}) {
     }
 
     HMONITOR monitor = g_overrideMonitor;
+    if (monitor) {
+        // The override monitor handle becomes invalid when the display
+        // configuration changes, e.g. when a remote desktop session adds or
+        // removes a virtual display. Since it takes priority over the
+        // configured monitor and is never revalidated, a stale handle would
+        // keep winning and the primary taskbar would end up stuck to a monitor
+        // that no longer exists. Drop it and fall back to the settings.
+        MONITORINFO monitorInfo = {};
+        monitorInfo.cbSize = sizeof(monitorInfo);
+        if (!GetMonitorInfo(monitor, &monitorInfo)) {
+            Wh_Log(L"Override monitor is stale, falling back to settings");
+            g_overrideMonitor = nullptr;
+            monitor = nullptr;
+        }
+    }
+
     if (!monitor) {
         if (*g_settings.monitorInterfaceName.get()) {
             monitor = GetMonitorByInterfaceNameSubstr(
