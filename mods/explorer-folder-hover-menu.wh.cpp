@@ -632,6 +632,139 @@ void InitMenuColorHooks() {
 }
 
 ////////////////////////////////////////////////////////////////////////////////
+// Per-monitor DPI for the pop-up menu. The menu band lays itself out from
+// GetSystemMetrics and SystemParametersInfo, which in a per-monitor-aware
+// thread report values for the system DPI, not for the monitor the window ends
+// up on. Left alone, the menu is sized for the system DPI everywhere, so it
+// comes out too small or too large on every other monitor. While our menu is
+// up, the hooks below answer these queries for the monitor it was opened on.
+
+// Effective DPI of the monitor that contains the given rectangle.
+UINT GetDpiForRect(const RECT& rc) {
+    using GetDpiForMonitor_t = HRESULT(WINAPI*)(HMONITOR, int, UINT*, UINT*);
+    static GetDpiForMonitor_t pGetDpiForMonitor = []() -> GetDpiForMonitor_t {
+        HMODULE shcore = LoadLibraryExW(L"shcore.dll", nullptr,
+                                        LOAD_LIBRARY_SEARCH_SYSTEM32);
+        return shcore ? (GetDpiForMonitor_t)GetProcAddress(shcore,
+                                                           "GetDpiForMonitor")
+                      : nullptr;
+    }();
+
+    POINT center = {(rc.left + rc.right) / 2, (rc.top + rc.bottom) / 2};
+    HMONITOR monitor = MonitorFromPoint(center, MONITOR_DEFAULTTONEAREST);
+    UINT dpiX = 96;
+    UINT dpiY = 96;
+    if (pGetDpiForMonitor &&
+        SUCCEEDED(pGetDpiForMonitor(monitor, 0 /* MDT_EFFECTIVE_DPI */, &dpiX,
+                                    &dpiY))) {
+        return dpiX;
+    }
+    return 96;
+}
+
+// The DPI the open menu is laid out for, 0 when no menu is up.
+UINT g_menuDpi;
+
+int(WINAPI* g_pGetSystemMetricsForDpi)(int, UINT);
+BOOL(WINAPI* g_pSystemParametersInfoForDpi)(UINT, UINT, PVOID, UINT, UINT);
+UINT(WINAPI* g_pGetDpiForSystem)();
+
+// The hooks are process-wide, so they also have to stay out of the way of the
+// worker thread, which runs shell code of its own while the menu is up and must
+// keep seeing the real system metrics.
+bool UseMenuDpi() {
+    return g_menuDpi && GetCurrentThreadId() == g_uiThreadId;
+}
+
+// The metrics the menu band sizes itself with. A whitelist rather than a
+// blanket redirect, so the metrics it fits itself on screen with (SM_CXSCREEN
+// and friends) keep coming from the real system.
+constexpr int kMenuDpiMetrics[] = {
+    SM_CXSMICON,    SM_CYSMICON,      SM_CXICON,        SM_CYICON,
+    SM_CXMENUCHECK, SM_CYMENUCHECK,   SM_CXMENUSIZE,    SM_CYMENUSIZE,
+    SM_CYMENU,      SM_CXBORDER,      SM_CYBORDER,      SM_CXEDGE,
+    SM_CYEDGE,      SM_CXVSCROLL,     SM_CYVSCROLL,     SM_CXHSCROLL,
+    SM_CYHSCROLL,   SM_CXFOCUSBORDER, SM_CYFOCUSBORDER,
+};
+
+bool IsMenuDpiMetric(int index) {
+    for (int i = 0; i < (int)ARRAYSIZE(kMenuDpiMetrics); i++) {
+        if (kMenuDpiMetrics[i] == index) {
+            return true;
+        }
+    }
+    return false;
+}
+
+using GetSystemMetrics_t = decltype(&GetSystemMetrics);
+GetSystemMetrics_t GetSystemMetrics_Orig;
+int WINAPI GetSystemMetrics_Hook(int index) {
+    if (UseMenuDpi() && IsMenuDpiMetric(index)) {
+        return g_pGetSystemMetricsForDpi(index, g_menuDpi);
+    }
+    return GetSystemMetrics_Orig(index);
+}
+
+using SystemParametersInfoW_t = decltype(&SystemParametersInfoW);
+SystemParametersInfoW_t SystemParametersInfoW_Orig;
+BOOL WINAPI SystemParametersInfoW_Hook(UINT uiAction,
+                                       UINT uiParam,
+                                       PVOID pvParam,
+                                       UINT fWinIni) {
+    // The menu font comes from SPI_GETNONCLIENTMETRICS. The three actions here
+    // are the only ones SystemParametersInfoForDpi accepts.
+    if (UseMenuDpi() && (uiAction == SPI_GETNONCLIENTMETRICS ||
+                         uiAction == SPI_GETICONMETRICS ||
+                         uiAction == SPI_GETICONTITLELOGFONT)) {
+        return g_pSystemParametersInfoForDpi(uiAction, uiParam, pvParam,
+                                             fWinIni, g_menuDpi);
+    }
+    return SystemParametersInfoW_Orig(uiAction, uiParam, pvParam, fWinIni);
+}
+
+// The modern spelling of the same question, answered the same way so a newer
+// code path stays consistent with the metrics above.
+using GetDpiForSystem_t = UINT(WINAPI*)();
+GetDpiForSystem_t GetDpiForSystem_Orig;
+UINT WINAPI GetDpiForSystem_Hook() {
+    if (UseMenuDpi()) {
+        return g_menuDpi;
+    }
+    return GetDpiForSystem_Orig();
+}
+
+void InitMenuDpiHooks() {
+    HMODULE user32 = GetModuleHandleW(L"user32.dll");
+    if (!user32) {
+        return;
+    }
+
+    g_pGetSystemMetricsForDpi = (int(WINAPI*)(int, UINT))GetProcAddress(
+        user32, "GetSystemMetricsForDpi");
+    g_pSystemParametersInfoForDpi =
+        (BOOL(WINAPI*)(UINT, UINT, PVOID, UINT, UINT))GetProcAddress(
+            user32, "SystemParametersInfoForDpi");
+    g_pGetDpiForSystem =
+        (UINT(WINAPI*)())GetProcAddress(user32, "GetDpiForSystem");
+
+    // Windows 10 1607 and newer. Without them there is no way to ask for
+    // another monitor's metrics, so leave the menu at the system DPI.
+    if (!g_pGetSystemMetricsForDpi || !g_pSystemParametersInfoForDpi) {
+        return;
+    }
+
+    WindhawkUtils::SetFunctionHook(GetSystemMetrics, GetSystemMetrics_Hook,
+                                   &GetSystemMetrics_Orig);
+    WindhawkUtils::SetFunctionHook(SystemParametersInfoW,
+                                   SystemParametersInfoW_Hook,
+                                   &SystemParametersInfoW_Orig);
+    if (g_pGetDpiForSystem) {
+        WindhawkUtils::SetFunctionHook(g_pGetDpiForSystem, GetDpiForSystem_Hook,
+                                       &GetDpiForSystem_Orig);
+    }
+}
+
+////////////////////////////////////////////////////////////////////////////////
 // UI Automation (worker thread only): enumerate the visible file-list items.
 
 // True if the element is one of the file-list containers we enumerate items
@@ -2943,6 +3076,9 @@ winrt::com_ptr<IMenuBand> PopupFolderMenu(PCIDLIST_ABSOLUTE pidlAbs,
 // Shows the folder menu and pumps a nested message loop until it is dismissed.
 void ShowFolderMenuModal(PCIDLIST_ABSOLUTE pidlAbs, RECT anchorRect) {
     g_menuActive = true;
+    // The button sits on the monitor the menu opens on, so its rect picks the
+    // DPI the band should lay itself out for (see InitMenuDpiHooks).
+    g_menuDpi = GetDpiForRect(anchorRect);
     g_leftDownToolbar = nullptr;
     g_menuScrollAccumulatedDelta = 0;
 
@@ -2957,6 +3093,7 @@ void ShowFolderMenuModal(PCIDLIST_ABSOLUTE pidlAbs, RECT anchorRect) {
             Wh_Log(L"Could not bring menu window to foreground, closing");
             CloseMenuBand(band.get());
             g_menuActive = false;
+            g_menuDpi = 0;
             return;
         }
 
@@ -3026,33 +3163,11 @@ void ShowFolderMenuModal(PCIDLIST_ABSOLUTE pidlAbs, RECT anchorRect) {
     // we return to the outer message loop, which keeps pumping.
     g_pendingExecAction = FolderAction::nothing;
     g_menuActive = false;
+    g_menuDpi = 0;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 // The expand-button overlay window.
-
-// Effective DPI of the monitor that contains the given rectangle.
-UINT GetDpiForRect(const RECT& rc) {
-    using GetDpiForMonitor_t = HRESULT(WINAPI*)(HMONITOR, int, UINT*, UINT*);
-    static GetDpiForMonitor_t pGetDpiForMonitor = []() -> GetDpiForMonitor_t {
-        HMODULE shcore = LoadLibraryExW(L"shcore.dll", nullptr,
-                                        LOAD_LIBRARY_SEARCH_SYSTEM32);
-        return shcore ? (GetDpiForMonitor_t)GetProcAddress(shcore,
-                                                           "GetDpiForMonitor")
-                      : nullptr;
-    }();
-
-    POINT center = {(rc.left + rc.right) / 2, (rc.top + rc.bottom) / 2};
-    HMONITOR monitor = MonitorFromPoint(center, MONITOR_DEFAULTTONEAREST);
-    UINT dpiX = 96;
-    UINT dpiY = 96;
-    if (pGetDpiForMonitor &&
-        SUCCEEDED(pGetDpiForMonitor(monitor, 0 /* MDT_EFFECTIVE_DPI */, &dpiX,
-                                    &dpiY))) {
-        return dpiX;
-    }
-    return 96;
-}
 
 void AddRoundedRectPath(Gdiplus::GraphicsPath& path,
                         const Gdiplus::RectF& rc,
@@ -3868,6 +3983,7 @@ BOOL WhTool_ModInit() {
     LoadSettings();
 
     InitMenuColorHooks();
+    InitMenuDpiHooks();
     InitEnumTimeoutHooks();
 
     InitializeCriticalSection(&g_snapshotLock);
