@@ -3442,7 +3442,8 @@ void SetRawInputActive(bool enable) {
     }
 }
 
-// Stops polling for a file dialog's shell view (see StartDialogActivatePolling).
+// Stops polling for a file dialog's shell view (see
+// StartDialogActivatePolling).
 void StopDialogActivatePolling() {
     if (!g_dialogActivatePending) {
         return;
