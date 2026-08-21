@@ -2511,6 +2511,12 @@ bool DownloadAndExtractIconTheme(std::wstring_view relativeUrl,
     return SUCCEEDED(hr);
 }
 
+bool IsIconThemeFolderValid(const std::filesystem::path& folderPath) {
+    std::error_code ec;
+    return std::filesystem::is_directory(folderPath, ec) &&
+           std::filesystem::is_regular_file(folderPath / L"theme.ini", ec);
+}
+
 std::filesystem::path EnsureIconThemeAvailable(
     const std::filesystem::path& storagePath,
     std::wstring_view themeName,
@@ -2524,7 +2530,7 @@ std::filesystem::path EnsureIconThemeAvailable(
                       ARRAYSIZE(storedFolderName));
     if (*storedFolderName) {
         auto storedPath = storagePath / storedFolderName;
-        if (std::filesystem::is_directory(storedPath, ec)) {
+        if (IsIconThemeFolderValid(storedPath)) {
             return storedPath;
         }
     }
@@ -2598,7 +2604,7 @@ std::filesystem::path EnsureIconThemeAvailable(
     if (DownloadAndExtractIconTheme(relativeUrl, tempZip, tempFolder,
                                     targetPath)) {
         DeleteFile(tempZip.c_str());
-        downloaded = std::filesystem::is_directory(targetPath, ec);
+        downloaded = IsIconThemeFolderValid(targetPath);
     }
 
     if (!downloaded) {
@@ -2642,8 +2648,7 @@ std::wstring GetIconThemePath(std::wstring_view iconTheme) {
                       ARRAYSIZE(storedFolderName));
     if (*storedFolderName) {
         auto storedPath = storagePath / storedFolderName;
-        std::error_code ec;
-        if (std::filesystem::is_directory(storedPath, ec)) {
+        if (IsIconThemeFolderValid(storedPath)) {
             return storedPath;
         }
     }
