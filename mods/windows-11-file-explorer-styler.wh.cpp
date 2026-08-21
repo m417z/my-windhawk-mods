@@ -155,7 +155,8 @@ resource files). The target control can also include:
 
 Several target controls can be specified for the same styles by separating them
 with commas, for example: `ParentClass > Class#Name1, ParentClass >
-Class#Name2`.
+Class#Name2`. Commas inside `[...]` are part of the property value and don't
+separate targets, for example: `Class[Margin=0,0,0,1]` is a single target.
 
 **Note**: The target is evaluated only once. If, for example, the index or the
 properties of a control change, the target conditions aren't evaluated again.
