@@ -938,9 +938,9 @@ BOOL Wh_ModInit() {
         WindhawkUtils::SetFunctionHook(pKernelBaseLoadLibraryExW,
                                        LoadLibraryExW_Hook,
                                        &LoadLibraryExW_Original);
-    }
 
-    HookHardwareConfirmatorSymbols();
+        HookHardwareConfirmatorSymbols();
+    }
 
     WindhawkUtils::SetFunctionHook(MonitorFromPoint, MonitorFromPoint_Hook,
                                    &MonitorFromPoint_Original);
