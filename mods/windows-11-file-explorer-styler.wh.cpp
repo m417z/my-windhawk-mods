@@ -457,7 +457,7 @@ struct Theme {
 // clang-format off
 
 const Theme g_themeTranslucent_Explorer11 = {{
-    ThemeTargetStyles{L"Grid#CommandBarControlRootGrid", {
+    ThemeTargetStyles{L"FileExplorerExtensions.CommandBarControl_Wave1 > Grid, Grid#CommandBarControlRootGrid", {
         L"Background=Transparent",
         L"BorderThickness=0,0,0,1",
         L"BorderBrush=#40A0A0A0"}},
@@ -482,7 +482,7 @@ const Theme g_themeTranslucent_Explorer11 = {{
 }, {}, {}, /*explorerFrameContainerHeight=*/0, BackgroundTranslucentEffect::kAcrylic};
 
 const Theme g_themeMicaBar = {{
-    ThemeTargetStyles{L"Grid#CommandBarControlRootGrid", {
+    ThemeTargetStyles{L"FileExplorerExtensions.CommandBarControl_Wave1 > Grid, Grid#CommandBarControlRootGrid", {
         L"Background:=<SolidColorBrush Color=\"{ThemeResource LayerOnMicaBaseAltFillColorDefault}\"/>",
         L"BorderThickness=0,0,0,1"}},
     ThemeTargetStyles{L"CommandBar#FileExplorerCommandBar", {
@@ -490,7 +490,7 @@ const Theme g_themeMicaBar = {{
 }};
 
 const Theme g_themeNoCommandBar = {{
-    ThemeTargetStyles{L"FileExplorerExtensions.CommandBarControl", {
+    ThemeTargetStyles{L"FileExplorerExtensions.CommandBarControl_Wave1, FileExplorerExtensions.CommandBarControl", {
         L"Visibility=Collapsed"}},
     ThemeTargetStyles{L"FileExplorerExtensions.NavigationBarControl", {
         L"Grid.RowSpan=2",
@@ -514,7 +514,7 @@ const Theme g_themeMinimal_Explorer11 = {{
         L"Visibility=Collapsed"}},
     ThemeTargetStyles{L"Border#BottomBorderLine", {
         L"Visibility=Collapsed"}},
-    ThemeTargetStyles{L"FileExplorerExtensions.CommandBarControl", {
+    ThemeTargetStyles{L"FileExplorerExtensions.CommandBarControl_Wave1, FileExplorerExtensions.CommandBarControl", {
         L"Visibility=Collapsed"}},
     ThemeTargetStyles{L"FileExplorerExtensions.AddressBarControl > Grid#PART_LayoutRoot > Grid#NormalModeGrid", {
         L"BorderThickness=0,0,0,1",
@@ -582,13 +582,13 @@ const Theme g_themeMinimal_Explorer11 = {{
 }, {}, {}, /*explorerFrameContainerHeight=*/42};
 
 const Theme g_themeTabless = {{
-    ThemeTargetStyles{L"Microsoft.UI.Xaml.Controls.Grid#CommandBarControlRootGrid", {
+    ThemeTargetStyles{L"FileExplorerExtensions.CommandBarControl_Wave1 > Grid, Grid#CommandBarControlRootGrid", {
         L"Background=Transparent"}},
     ThemeTargetStyles{L"Microsoft.UI.Xaml.Controls.Grid#ContentRoot", {
         L"Background=Transparent"}},
     ThemeTargetStyles{L"FileExplorerExtensions.NavigationBarControl", {
         L"Grid.Row=$NavigationBarGrid"}},
-    ThemeTargetStyles{L"FileExplorerExtensions.CommandBarControl", {
+    ThemeTargetStyles{L"FileExplorerExtensions.CommandBarControl_Wave1, FileExplorerExtensions.CommandBarControl", {
         L"Grid.Row=$CommandBarGrid"}},
     ThemeTargetStyles{L"Microsoft.UI.Xaml.Controls.Grid#TabContainerGrid > Border", {
         L"Visibility=Collapsed"}},
@@ -603,7 +603,7 @@ const Theme g_themeTabless = {{
     ThemeTargetStyles{L"Microsoft.UI.Xaml.Controls.ContentPresenter > Microsoft.UI.Xaml.Controls.StackPanel > Microsoft.UI.Xaml.Controls.TextBlock", {
         L"FontFamily=Segoe UI, Segoe Fluent Icons",
         L"FontWeight=Normal"}},
-    ThemeTargetStyles{L"Microsoft.UI.Xaml.Controls.Grid#CommandBarControlRootGrid", {
+    ThemeTargetStyles{L"FileExplorerExtensions.CommandBarControl_Wave1 > Grid, Grid#CommandBarControlRootGrid", {
         L"BorderThickness=0,0,0,1"}},
     ThemeTargetStyles{L"FileExplorerExtensions.FileExplorerTabControl", {
         L"Height=36"}},
@@ -650,7 +650,7 @@ const Theme g_themeMatter = {{
     ThemeTargetStyles{L"Grid#TabContainerGrid > Border > Button#AddButton", {
         L"Visibility  = 0",
         L"Margin = 0,0,0,3"}},
-    ThemeTargetStyles{L"Grid#CommandBarControlRootGrid", {
+    ThemeTargetStyles{L"FileExplorerExtensions.CommandBarControl_Wave1 > Grid, Grid#CommandBarControlRootGrid", {
         L"Background=Transparent",
         L"BorderThickness = 0"}},
     ThemeTargetStyles{L"Grid#NavigationBarControlGrid", {
@@ -659,7 +659,7 @@ const Theme g_themeMatter = {{
         L"Background :=<SolidColorBrush Color=\"{ThemeResource SystemAccentColorLight1}\" Opacity=\"0.4\" />",
         L"CornerRadius = 6",
         L"BorderThickness = 0"}},
-    ThemeTargetStyles{L"FileExplorerExtensions.CommandBarControl", {
+    ThemeTargetStyles{L"FileExplorerExtensions.CommandBarControl_Wave1, FileExplorerExtensions.CommandBarControl", {
         L"Margin = 0,-5,0,0"}},
     ThemeTargetStyles{L"AutoSuggestBox#FileExplorerSearchBox > Grid#LayoutRoot > TextBox > Grid@CommonStates > Border#BorderElement", {
         L"Background :=<SolidColorBrush Color=\"{ThemeResource SystemAccentColorLight1}\" Opacity=\"0.4\" />",
@@ -708,7 +708,7 @@ const Theme g_themeWindowGlass = {{
         L"BorderThickness=$BorderThickness",
         L"Background:=$ButtonBackground",
         L"BorderBrush:=$ButtonBorder"}},
-    ThemeTargetStyles{L"Microsoft.UI.Xaml.Controls.Grid#CommandBarControlRootGrid", {
+    ThemeTargetStyles{L"FileExplorerExtensions.CommandBarControl_Wave1 > Grid, Grid#CommandBarControlRootGrid", {
         L"Background=Transparent",
         L"BorderBrush=Transparent"}},
     ThemeTargetStyles{L"Microsoft.UI.Xaml.Controls.CommandBar#FileExplorerCommandBar", {
@@ -859,7 +859,7 @@ const Theme g_themeAddressSearchOnly = {{
 }, {}, {}, /*explorerFrameContainerHeight=*/80};
 
 const Theme g_themeTintedGlass = {{
-    ThemeTargetStyles{L"Grid#CommandBarControlRootGrid", {
+    ThemeTargetStyles{L"FileExplorerExtensions.CommandBarControl_Wave1 > Grid, Grid#CommandBarControlRootGrid", {
         L"Background:=$CommonBgBrush",
         L"BorderThickness=0,0,0,0",
         L"BorderBrush=$CommonBgBrush"}},
@@ -981,7 +981,7 @@ const Theme g_themeLiquidGlass = {{
         L"Height = 28"}},
     ThemeTargetStyles{L"TabViewItem > Grid#LayoutRoot > Canvas", {
         L"Visibility=1"}},
-    ThemeTargetStyles{L"FileExplorerExtensions.CommandBarControl", {
+    ThemeTargetStyles{L"FileExplorerExtensions.CommandBarControl_Wave1, FileExplorerExtensions.CommandBarControl", {
         L"Visibility=1"}},
     ThemeTargetStyles{L"FileExplorerExtensions.NavigationBarControl", {
         L"Grid.RowSpan=2",
@@ -1005,13 +1005,13 @@ const Theme g_themeLiquidGlass = {{
 }, {}, /*explorerFrameContainerHeight=*/87};
 
 const Theme g_themeMicaTabless = {{
-    ThemeTargetStyles{L"Microsoft.UI.Xaml.Controls.Grid#CommandBarControlRootGrid", {
+    ThemeTargetStyles{L"FileExplorerExtensions.CommandBarControl_Wave1 > Grid, Grid#CommandBarControlRootGrid", {
         L"Background=Transparent"}},
     ThemeTargetStyles{L"Microsoft.UI.Xaml.Controls.Grid#ContentRoot", {
         L"Background=Transparent"}},
     ThemeTargetStyles{L"FileExplorerExtensions.NavigationBarControl", {
         L"Grid.Row=$NavigationBarGrid"}},
-    ThemeTargetStyles{L"FileExplorerExtensions.CommandBarControl", {
+    ThemeTargetStyles{L"FileExplorerExtensions.CommandBarControl_Wave1, FileExplorerExtensions.CommandBarControl", {
         L"Grid.Row=$CommandBarGrid"}},
     ThemeTargetStyles{L"Microsoft.UI.Xaml.Controls.Grid#TabContainerGrid > Border", {
         L"Visibility=Collapsed"}},
@@ -1026,7 +1026,7 @@ const Theme g_themeMicaTabless = {{
     ThemeTargetStyles{L"Microsoft.UI.Xaml.Controls.ContentPresenter > Microsoft.UI.Xaml.Controls.StackPanel > Microsoft.UI.Xaml.Controls.TextBlock", {
         L"FontFamily=Segoe UI, Segoe Fluent Icons",
         L"FontWeight=Normal"}},
-    ThemeTargetStyles{L"Microsoft.UI.Xaml.Controls.Grid#CommandBarControlRootGrid", {
+    ThemeTargetStyles{L"FileExplorerExtensions.CommandBarControl_Wave1 > Grid, Grid#CommandBarControlRootGrid", {
         L"BorderThickness=0,0,0,1"}},
     ThemeTargetStyles{L"FileExplorerExtensions.FileExplorerTabControl", {
         L"Height=36"}},
@@ -1134,7 +1134,7 @@ const Theme g_themeOS26_Liquid_Glass = {{
         L"BorderBrush:=<LinearGradientBrush EndPoint=\"1,1\" StartPoint=\"0,0\"><GradientStop Color=\"#80ffffff\" Offset=\"0.0\"/><GradientStop Color=\"{ThemeResource SurfaceStrokeColorDefault}\" Offset=\"0.55\"/><GradientStop Color=\"#80ffffff\" Offset=\"1\"/></LinearGradientBrush>",
         L"Width=24",
         L"Height=24"}},
-    ThemeTargetStyles{L"Grid#CommandBarControlRootGrid", {
+    ThemeTargetStyles{L"FileExplorerExtensions.CommandBarControl_Wave1 > Grid, Grid#CommandBarControlRootGrid", {
         L"Background=Transparent"}},
     ThemeTargetStyles{L"Grid#NavigationBarControlGrid", {
         L"Background=Transparent"}},
@@ -1146,7 +1146,7 @@ const Theme g_themeOS26_Liquid_Glass = {{
         L"BorderThickness=1",
         L"Margin=2",
         L"BorderBrush:=<LinearGradientBrush StartPoint=\"0,0\" EndPoint=\"1,1\"><GradientStop Color=\"#80ffffff\" Offset=\"0.0\" /><GradientStop Color=\"{ThemeResource SurfaceStrokeColorDefault}\" Offset=\"0.55\" /><GradientStop Color=\"#80ffffff\" Offset=\"1\" /></LinearGradientBrush>"}},
-    ThemeTargetStyles{L"FileExplorerExtensions.CommandBarControl", {
+    ThemeTargetStyles{L"FileExplorerExtensions.CommandBarControl_Wave1, FileExplorerExtensions.CommandBarControl", {
         L"Margin=0,0,0,0"}},
     ThemeTargetStyles{L"AutoSuggestBox#FileExplorerSearchBox > Grid#LayoutRoot > TextBox > Grid@CommonStates > Border#BorderElement", {
         L"Background:=<WindhawkBlur BlurAmount=\"15\" TintColor=\"#25ffffff\" />",
@@ -1313,7 +1313,7 @@ const Theme g_themeOS26_Liquid_Glass_variant_Compact = {{
         L"BorderBrush:=<LinearGradientBrush EndPoint=\"1,1\" StartPoint=\"0,0\"><GradientStop Color=\"#80ffffff\" Offset=\"0.0\"/><GradientStop Color=\"{ThemeResource SurfaceStrokeColorDefault}\" Offset=\"0.55\"/><GradientStop Color=\"#80ffffff\" Offset=\"1\"/></LinearGradientBrush>",
         L"Width=24",
         L"Height=24"}},
-    ThemeTargetStyles{L"Grid#CommandBarControlRootGrid", {
+    ThemeTargetStyles{L"FileExplorerExtensions.CommandBarControl_Wave1 > Grid, Grid#CommandBarControlRootGrid", {
         L"Background:=",
         L"BorderBrush:="}},
     ThemeTargetStyles{L"Grid#NavigationBarControlGrid", {
@@ -1324,7 +1324,7 @@ const Theme g_themeOS26_Liquid_Glass_variant_Compact = {{
         L"CornerRadius=10",
         L"BorderThickness=1",
         L"Margin=2"}},
-    ThemeTargetStyles{L"FileExplorerExtensions.CommandBarControl", {
+    ThemeTargetStyles{L"FileExplorerExtensions.CommandBarControl_Wave1, FileExplorerExtensions.CommandBarControl", {
         L"Grid.Row=0",
         L"Grid.RowSpan=2",
         L"Margin=0,0,0,0"}},
@@ -1377,7 +1377,7 @@ const Theme g_themeOS26_Liquid_Glass_variant_Compact = {{
 }, {}, {}, /*explorerFrameContainerHeight=*/87};
 
 const Theme g_themeZEUSosX_044 = {{
-    ThemeTargetStyles{L"Microsoft.UI.Xaml.Controls.Grid#CommandBarControlRootGrid", {
+    ThemeTargetStyles{L"FileExplorerExtensions.CommandBarControl_Wave1 > Grid, Grid#CommandBarControlRootGrid", {
         L"Background=Transparent",
         L"BorderThickness=0",
         L"Grid.Row=0",
@@ -1562,7 +1562,7 @@ const Theme g_themeCompact_Explorer11 = {{
         L"BorderBrush:=<LinearGradientBrush EndPoint=\"1,1\" StartPoint=\"0,0\"><GradientStop Color=\"#80ffffff\" Offset=\"0.0\"/><GradientStop Color=\"{ThemeResource SurfaceStrokeColorDefault}\" Offset=\"0.55\"/><GradientStop Color=\"#80ffffff\" Offset=\"1\"/></LinearGradientBrush>",
         L"Width=24",
         L"Height=24"}},
-    ThemeTargetStyles{L"Grid#CommandBarControlRootGrid", {
+    ThemeTargetStyles{L"FileExplorerExtensions.CommandBarControl_Wave1 > Grid, Grid#CommandBarControlRootGrid", {
         L"Background:=",
         L"BorderBrush:="}},
     ThemeTargetStyles{L"Grid#NavigationBarControlGrid", {
@@ -1572,7 +1572,7 @@ const Theme g_themeCompact_Explorer11 = {{
         L"CornerRadius=10",
         L"BorderThickness=1",
         L"Margin=1"}},
-    ThemeTargetStyles{L"FileExplorerExtensions.CommandBarControl", {
+    ThemeTargetStyles{L"FileExplorerExtensions.CommandBarControl_Wave1, FileExplorerExtensions.CommandBarControl", {
         L"Grid.Row=0",
         L"Grid.RowSpan=2",
         L"Margin=0,0,0,0"}},
