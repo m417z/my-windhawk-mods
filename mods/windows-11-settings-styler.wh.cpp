@@ -7554,7 +7554,9 @@ void PropagateStyleVariableChangeCore(
         // A reference rather than the iterator: applying a style below can
         // realize children, which re-enters ApplyCustomizations and may rehash
         // g_elementsCustomizationState. Rehashing invalidates iterators but not
-        // references to the mapped values.
+        // references to the mapped values. A re-entrant cleanup or re-apply of
+        // this same handle would invalidate both the reference and the loop
+        // below, but the re-entrancy is for the newly realized children.
         auto& elementState = stateIt->second;
 
         auto element = elementState.element.get();
@@ -8326,7 +8328,9 @@ void CleanupCustomizations(InstanceHandle handle) {
     // A reference rather than the iterator: restoring a style below runs
     // arbitrary XAML work that can re-enter ApplyCustomizations and rehash
     // g_elementsCustomizationState, which invalidates iterators but not
-    // references to the mapped values.
+    // references to the mapped values. A re-entrant cleanup or re-apply of this
+    // same handle would invalidate both the reference and the loop below, but
+    // the re-entrancy is for other elements, not the one being torn down here.
     auto& elementCustomizationState = it->second;
 
     auto element = elementCustomizationState.element.get();
