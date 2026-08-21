@@ -2,7 +2,7 @@
 // @id              explorer-folder-hover-menu
 // @name            Folder Hover Menu
 // @description     Hover a folder in File Explorer to get an expand button that opens a cascading menu of the folder's contents
-// @version         1.2
+// @version         1.3
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
@@ -84,9 +84,14 @@ Inspired by [QTTabBar](https://qttabbar.wikidot.com/).
     Also show the expand button in open and save file dialogs. The folder click
     actions above apply there too. Clicking a file in the menu puts it into the
     dialog's file name box (it is not launched).
-- showHidden: false
-  $name: Show hidden files and folders
-  $description: Include hidden files and folders in the pop-up menu.
+- showHidden: systemDefault
+  $name: Hidden files and folders
+  $description: >-
+    Whether hidden files and folders are included in the pop-up menu.
+  $options:
+  - systemDefault: Use the File Explorer settings
+  - hide: Never show
+  - show: Always show
 - maxItems: 200
   $name: Maximum items
   $description: >-
@@ -184,6 +189,13 @@ enum class FolderAction {
     newTab,
 };
 
+// Whether hidden items are included in the pop-up menu.
+enum class ShowHidden {
+    systemDefault,
+    hide,
+    show,
+};
+
 struct {
     bool roundedCorners;
     int iconSize;
@@ -194,7 +206,7 @@ struct {
     FolderAction clickAction;
     FolderAction middleClickAction;
     bool fileDialogs;
-    bool showHidden;
+    ShowHidden showHidden;
     int maxEnumItems;
     int enumTimeoutMs;
 } g_settings;
@@ -255,7 +267,14 @@ void LoadSettings() {
 
     g_settings.fileDialogs = Wh_GetIntSetting(L"fileDialogs");
 
-    g_settings.showHidden = Wh_GetIntSetting(L"showHidden");
+    PCWSTR showHidden = Wh_GetStringSetting(L"showHidden");
+    g_settings.showHidden = ShowHidden::systemDefault;
+    if (wcscmp(showHidden, L"hide") == 0) {
+        g_settings.showHidden = ShowHidden::hide;
+    } else if (wcscmp(showHidden, L"show") == 0) {
+        g_settings.showHidden = ShowHidden::show;
+    }
+    Wh_FreeStringSetting(showHidden);
 
     int maxItems = Wh_GetIntSetting(L"maxItems");
     if (maxItems < 1) {
@@ -306,17 +325,14 @@ UINT g_shellHookMsg;
 HANDLE g_workerThread;
 DWORD g_workerThreadId;
 HANDLE g_workerReadyEvent;
-// Worker thread only. Heap-allocated and intentionally never freed. The worker
-// releases these on its own STA at clean shutdown (see WorkerThreadProc). If
-// the UI thread hangs, WhTool_ModUninit falls back to ExitProcess, which kills
-// the worker first, then runs C++ static destructors on another thread -
-// letting a com_ptr destructor Release these here would marshal into the dead
-// worker STA and crash. Leaking the holder avoids that; the OS reclaims it on
-// exit anyway.
-winrt::com_ptr<IUIAutomation>& g_workerUia =
-    *new winrt::com_ptr<IUIAutomation>();
-winrt::com_ptr<IUIAutomationElement>& g_workerContainer =
-    *new winrt::com_ptr<IUIAutomationElement>();
+// Worker thread only. The worker releases these on its own STA at clean
+// shutdown (see WorkerThreadProc). If the UI thread hangs, WhTool_ModUninit
+// falls back to ExitProcess, which kills the worker first, then runs C++ static
+// destructors on another thread - letting a com_ptr destructor Release these
+// here would marshal into the dead worker STA and crash, so suppress the
+// destructors.
+[[clang::no_destroy]] winrt::com_ptr<IUIAutomation> g_workerUia;
+[[clang::no_destroy]] winrt::com_ptr<IUIAutomationElement> g_workerContainer;
 HWND g_workerContainerTab;           // Worker thread only: the tab the
                                      // cached container belongs to.
 PIDLIST_ABSOLUTE g_workerFolderAbs;  // Worker thread only: the folder
@@ -673,7 +689,7 @@ UINT(WINAPI* g_pGetDpiForSystem)();
 // worker thread, which runs shell code of its own while the menu is up and must
 // keep seeing the real system metrics.
 bool UseMenuDpi() {
-    return g_menuDpi && GetCurrentThreadId() == g_uiThreadId;
+    return GetCurrentThreadId() == g_uiThreadId && g_menuDpi;
 }
 
 // The metrics the menu band sizes itself with. A whitelist rather than a
@@ -2296,11 +2312,40 @@ HRESULT STDMETHODCALLTYPE EnumObjects_Hook(IShellFolder* pThis,
     // enumeration is adjusted below.
     bool bandEnumeration = GetCurrentThreadId() != g_workerThreadId;
 
-    // Show hidden (but not protected operating system) items in the menu when
-    // enabled, regardless of the global Explorer setting. The worker already
-    // enumerates hidden items when building its resolution map.
-    if (bandEnumeration && g_settings.showHidden) {
-        grfFlags |= SHCONTF_INCLUDEHIDDEN;
+    // The band's own enumeration doesn't follow Explorer's "Hidden files and
+    // folders" setting, so hidden item visibility is decided here.
+    // SHCONTF_INCLUDEHIDDEN adds the items carrying the hidden attribute;
+    // hidden+system ("protected operating system") items come along with them
+    // only when Explorer's separate "Hide protected operating system files"
+    // setting is off. SHCONTF_INCLUDESUPERHIDDEN forces those in even when it
+    // is on, and does nothing without SHCONTF_INCLUDEHIDDEN; leaving it out
+    // keeps them tracking that setting, like the file list does. The worker
+    // always enumerates hidden items when building its resolution map.
+    if (bandEnumeration) {
+        bool includeHidden;
+        switch (g_settings.showHidden) {
+            case ShowHidden::hide:
+                includeHidden = false;
+                break;
+
+            case ShowHidden::show:
+                includeHidden = true;
+                break;
+
+            case ShowHidden::systemDefault:
+            default: {
+                SHELLFLAGSTATE shellFlagState{};
+                SHGetSettings(&shellFlagState, SSF_SHOWALLOBJECTS);
+                includeHidden = shellFlagState.fShowAllObjects;
+                break;
+            }
+        }
+
+        if (includeHidden) {
+            grfFlags |= SHCONTF_INCLUDEHIDDEN;
+        } else {
+            grfFlags &= ~SHCONTF_INCLUDEHIDDEN;
+        }
     }
 
     HRESULT hr = origs->enumObjects(pThis, hwnd, grfFlags, ppenumIDList);
@@ -2648,9 +2693,7 @@ HWND FindDescendantOfClass(HWND parent, PCWSTR className) {
 }
 
 // Accumulated sub-notch wheel delta for menu scrolling, plus the tick of the
-// last scroll step. The remainder is dropped when the menu is reopened (see
-// ResetMenuScrollAccumulator) and after a spell of inactivity, so a stale
-// fraction from an earlier gesture never nudges a fresh one.
+// last scroll step.
 int g_menuScrollAccumulatedDelta;
 ULONGLONG g_menuScrollLastTick;
 
