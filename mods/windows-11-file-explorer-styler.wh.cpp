@@ -99,6 +99,10 @@ Explorer11](https://raw.githubusercontent.com/ramensoftware/windows-11-file-expl
 Compact
 Explorer11](https://github.com/ramensoftware/windows-11-file-explorer-styling-guide/blob/main/Themes/Compact%20Explorer11/README.md)
 
+[![Float](https://raw.githubusercontent.com/ramensoftware/windows-11-file-explorer-styling-guide/main/Themes/Float/screenshot-small.png)
+\
+Float](https://github.com/ramensoftware/windows-11-file-explorer-styling-guide/blob/main/Themes/Float/README.md)
+
 More themes can be found in the **Themes** section of [The Windows 11 file
 explorer styling
 guide](https://github.com/ramensoftware/windows-11-file-explorer-styling-guide/blob/main/README.md#themes).
@@ -361,6 +365,7 @@ from the **TranslucentTB** project.
   - OS26 Liquid Glass_variant_Compact: OS26 Liquid Glass (Compact)
   - ZEUSosX_044: ZEUSosX_044
   - Compact Explorer11: Compact Explorer11
+  - Float: Float
 - backgroundTranslucentEffect: ""
   $name: Translucent background effect
   $description: >-
@@ -1619,6 +1624,62 @@ const Theme g_themeCompact_Explorer11 = {{
     ThemeTargetStyles{L"FileExplorerExtensions.NavigationBarControl", {
         L"Grid.RowSpan=2"}},
 }, {}, {}, /*explorerFrameContainerHeight=*/87};
+
+const Theme g_themeFloat = {{
+    ThemeTargetStyles{L"TabViewItem > Grid#LayoutRoot@CommonStates", {
+        L"Background@Selected:=<AcrylicBrush TintColor=\"{ThemeResource Tab}\" TintOpacity=\"0.9\" Opacity=\"0.6\"/>",
+        L"Background@PointerOverSelected:=<AcrylicBrush TintColor=\"{ThemeResource Tab}\" TintOpacity=\"0.9\" Opacity=\"0.7\"/>",
+        L"Background@PointerOver:=<AcrylicBrush TintColor=\"{ThemeResource Tab}\" TintOpacity=\"0.9\" Opacity=\"0.3\"/>",
+        L"Background@Normal:=<AcrylicBrush TintColor=\"{ThemeResource Tab}\" TintOpacity=\"0.9\" Opacity=\"0\"/>",
+        L"Background@PressedSelected:=<AcrylicBrush TintColor=\"{ThemeResource Tab}\" TintOpacity=\"0.9\" Opacity=\"0.9\"/>",
+        L"CornerRadius=6"}},
+    ThemeTargetStyles{L"TabViewItem > Grid#LayoutRoot > Grid#TabContainer", {
+        L"Background=Transparent",
+        L"BorderThickness=0"}},
+    ThemeTargetStyles{L"TabViewItem > Grid#LayoutRoot > Canvas", {
+        L"Visibility=Collapsed"}},
+    ThemeTargetStyles{L"TabViewItem > Grid#LayoutRoot", {
+        L"BorderThickness=1",
+        L"Margin=2,0,0,0",
+        L"Height=35"}},
+    ThemeTargetStyles{L"Microsoft.UI.Xaml.Controls.Border#BottomBorderLine", {
+        L"Visibility=Collapsed"}},
+    ThemeTargetStyles{L"Grid#TabContainerGrid > Border#LeftBottomBorderLine", {
+        L"Visibility=Collapsed"}},
+    ThemeTargetStyles{L"Grid#TabContainerGrid > Border#RightBottomBorderLine", {
+        L"Visibility=Collapsed"}},
+    ThemeTargetStyles{L"TabViewItem", {
+        L"CornerRadius=4"}},
+    ThemeTargetStyles{L"Grid#TabContainerGrid > Border > Button#AddButton", {
+        L"Visibility=Visible",
+        L"Margin=0,0,0,3",
+        L"CornerRadius=10",
+        L"BorderThickness=0",
+        L"Width=24",
+        L"Height=24"}},
+    ThemeTargetStyles{L"Microsoft.UI.Xaml.Controls.Grid#TabContainerGrid", {
+        L"Height=44"}},
+    ThemeTargetStyles{L"Microsoft.UI.Xaml.Controls.Border#RightBottomBorderLine", {
+        L"Visibility=Collapsed"}},
+    ThemeTargetStyles{L"Microsoft.UI.Xaml.Controls.Border#LeftBottomBorderLine", {
+        L"Visibility=Collapsed"}},
+    ThemeTargetStyles{L"Microsoft.UI.Xaml.Controls.Grid#NavigationBarControlGrid", {
+        L"CornerRadius=6",
+        L"Margin=8,4,8,0",
+        L"Height=54"}},
+    ThemeTargetStyles{L"FileExplorerExtensions.CommandBarControl_Wave1 > Grid, Grid#CommandBarControlRootGrid", {
+        L"Margin=0,8,0,0",
+        L"BorderThickness=0,1,0,1"}},
+    ThemeTargetStyles{L"Microsoft.UI.Xaml.Controls.Primitives.TabViewListView#TabListView", {
+        L"Margin=-3,0,0,0"}},
+    ThemeTargetStyles{L"Microsoft.UI.Xaml.Shapes.Path#RightRadiusRenderArc", {
+        L"Visibility=Collapsed"}},
+    ThemeTargetStyles{L"Microsoft.UI.Xaml.Shapes.Path#LeftRadiusRenderArc", {
+        L"Visibility=Collapsed"}},
+}, {}, {
+    L"Tab@Light=#ffffffff",
+    L"Tab@Dark=#000000",
+}, /*explorerFrameContainerHeight=*/160};
 
 // clang-format on
 
@@ -8134,6 +8195,8 @@ const Theme* GetSelectedTheme() {
         theme = &g_themeZEUSosX_044;
     } else if (wcscmp(themeName, L"Compact Explorer11") == 0) {
         theme = &g_themeCompact_Explorer11;
+    } else if (wcscmp(themeName, L"Float") == 0) {
+        theme = &g_themeFloat;
     }
     Wh_FreeStringSetting(themeName);
     return theme;
