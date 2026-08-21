@@ -8141,8 +8141,9 @@ struct StyleVariableDependency {
 // tracked element under the same ancestor, so the pool holds one node per
 // distinct ancestor rather than a full path per element. Once a node exists its
 // `parent` and `depth` are final; an element that is later reparented keeps the
-// spine it was first seen with, and only a node interned as a root before its
-// object was attached (see GetOrCreateElementTreeNode) is ever replaced.
+// spine it was first seen with, and only the nodes of a spine interned before
+// its root object was attached (see GetOrCreateElementTreeNode) are ever
+// replaced.
 struct ElementTreeNode {
     // A node can outlive the object it describes -- descendant nodes and
     // not-yet-cleaned-up ElementCustomizationState entries keep it alive -- so
@@ -8150,6 +8151,9 @@ struct ElementTreeNode {
     winrt::weak_ref<DependencyObject> ref;
     std::shared_ptr<ElementTreeNode> parent;
     uint32_t depth = 0;
+    // The depth-0 node this spine hangs from, `this` for a root itself. The
+    // parent chain keeps it alive, so a raw pointer is enough.
+    ElementTreeNode* root = nullptr;
 };
 
 // Keyed by the object's IUnknown pointer: COM only guarantees a stable pointer
@@ -8166,13 +8170,12 @@ void* ElementIdentityKey(DependencyObject const& object) {
 }
 
 // A depth-0 node is a placeholder root until proven otherwise: if its object
-// has since gained a parent, it was interned before the object was attached
-// and the node stops short of the real root.
-bool IsStaleRootNode(ElementTreeNode const& node) {
-    if (node.depth != 0) {
-        return false;
-    }
-    auto object = node.ref.get();
+// has since gained a parent, the spine was interned before that object was
+// attached and stops short of the real root. Asked of any node on the spine,
+// not just of the root itself, so that a descendant interned through a
+// placeholder root is repaired too.
+bool IsStaleSpine(ElementTreeNode const& node) {
+    auto object = node.root->ref.get();
     return object && Media::VisualTreeHelper::GetParent(object);
 }
 
@@ -8206,14 +8209,16 @@ std::shared_ptr<ElementTreeNode> GetOrCreateElementTreeNode(
                 if (!existing || !existing->ref.get()) {
                     Wh_Log(L"Replacing stale tree node for a reused address");
                     g_elementTreeNodes.erase(it);
-                } else if (!IsStaleRootNode(*existing)) {
+                } else if (!IsStaleSpine(*existing)) {
                     node = std::move(existing);
                     break;
                 } else {
-                    // Drop the placeholder root and let the walk rebuild the
-                    // full spine. A stale shared_ptr already cached elsewhere
-                    // (see EnsureElementTreeNode) is refreshed the same way on
-                    // its own next use, so no element is stuck unrankable.
+                    // Drop the node and keep walking: the ancestors above it
+                    // are stale for the same reason, up to the placeholder
+                    // root, above which the real spine gets built. A stale
+                    // shared_ptr already cached elsewhere (see
+                    // EnsureElementTreeNode) is refreshed the same way on its
+                    // own next use, so no element is stuck unrankable.
                     Wh_Log(L"Rebuilding tree node interned before attachment");
                     g_elementTreeNodes.erase(it);
                 }
@@ -8226,6 +8231,7 @@ std::shared_ptr<ElementTreeNode> GetOrCreateElementTreeNode(
             auto fresh = std::make_shared<ElementTreeNode>();
             fresh->ref = *it;
             fresh->depth = node ? node->depth + 1 : 0;
+            fresh->root = node ? node->root : fresh.get();
             fresh->parent = std::move(node);
             g_elementTreeNodes[ElementIdentityKey(*it)] = fresh;
             node = std::move(fresh);
@@ -8353,14 +8359,14 @@ struct ElementCustomizationState {
 std::unordered_map<InstanceHandle, ElementCustomizationState>
     g_elementsCustomizationState;
 
-// The element's spine node. An element can be matched before it is attached,
-// in which case the eager build in ApplyCustomizations interns it as a
-// placeholder root; re-checked on every use so it's rebuilt once the element
-// is actually in the tree.
+// The element's spine node. An element can be matched before its subtree is
+// attached, in which case the eager build in ApplyCustomizations interns a
+// spine that stops at a placeholder root; re-checked on every use so it's
+// rebuilt once the subtree is actually in the tree.
 ElementTreeNode* EnsureElementTreeNode(
     ElementCustomizationState& elementCustomizationState) {
     if (!elementCustomizationState.treeNode ||
-        IsStaleRootNode(*elementCustomizationState.treeNode)) {
+        IsStaleSpine(*elementCustomizationState.treeNode)) {
         if (auto element = elementCustomizationState.element.get()) {
             elementCustomizationState.treeNode =
                 GetOrCreateElementTreeNode(element);
@@ -14234,10 +14240,10 @@ void ApplyCustomizations(InstanceHandle handle,
 
     // Elements that neither capture nor consume a variable pay nothing. The
     // rest get their spine now that the element has been matched; if it isn't
-    // attached yet this interns a placeholder root that EnsureElementTreeNode
-    // rebuilds on first use once the element is actually in the tree. Cleared
-    // unconditionally so a re-apply that drops all variable use cannot leave a
-    // stale node behind.
+    // attached yet the spine stops at a placeholder root, which
+    // EnsureElementTreeNode rebuilds on first use once the element is actually
+    // in the tree. Cleared unconditionally so a re-apply that drops all
+    // variable use cannot leave a stale node behind.
     elementCustomizationState.treeNode = nullptr;
     if (!resolved.captures.empty() || resolved.hasDynamicValues) {
         elementCustomizationState.treeNode =
