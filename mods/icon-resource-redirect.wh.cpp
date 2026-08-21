@@ -3238,6 +3238,14 @@ BOOL Wh_ModSettingsChanged(BOOL* bReload) {
     bool prevDisableThumbnails = g_settings.disableThumbnails;
     int prevAllResourceRedirect = g_settings.allResourceRedirect;
 
+    // A settings change is an explicit user action, allow retrying a failed
+    // download instead of waiting for the backoff to expire.
+    if (DoesCurrentProcessOwnTaskbar()) {
+        Wh_DeleteValue(L"lastErrorThemeName");
+        Wh_DeleteValue(L"lastErrorTimeHigh");
+        Wh_DeleteValue(L"lastErrorTimeLow");
+    }
+
     LoadSettings();
 
     if (g_settings.allResourceRedirect != prevAllResourceRedirect) {
