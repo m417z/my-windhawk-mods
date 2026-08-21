@@ -8164,6 +8164,17 @@ void* ElementIdentityKey(DependencyObject const& object) {
     return winrt::get_abi(object.as<winrt::Windows::Foundation::IUnknown>());
 }
 
+// A depth-0 node is a placeholder root until proven otherwise: if its object
+// has since gained a parent, it was interned before the object was attached
+// and the node stops short of the real root.
+bool IsStaleRootNode(ElementTreeNode const& node) {
+    if (node.depth != 0) {
+        return false;
+    }
+    auto object = node.ref.get();
+    return object && Media::VisualTreeHelper::GetParent(object);
+}
+
 // Fetch (or build) the spine node for `object`. Uses
 // VisualTreeHelper::GetParent rather than Parent(), same reason as in
 // FindElementPropertyOverrides. Returns nullptr if a node can't be built,
@@ -8194,18 +8205,14 @@ std::shared_ptr<ElementTreeNode> GetOrCreateElementTreeNode(
                 if (!existing || !existing->ref.get()) {
                     Wh_Log(L"Replacing stale tree node for a reused address");
                     g_elementTreeNodes.erase(it);
-                } else if (existing->depth > 0 ||
-                           !Media::VisualTreeHelper::GetParent(iter)) {
+                } else if (!IsStaleRootNode(*existing)) {
                     node = std::move(existing);
                     break;
                 } else {
-                    // A depth-0 node was interned as a root. Having a parent
-                    // now means the object was only partly attached back then
-                    // and the node stops short of the real root, so drop it and
-                    // let the walk rebuild the full spine. Elements interned
-                    // through the old node keep it and stay unrankable against
-                    // the rest of the tree, which is the same answer they got
-                    // before the repair.
+                    // Drop the placeholder root and let the walk rebuild the
+                    // full spine. A stale shared_ptr already cached elsewhere
+                    // (see EnsureElementTreeNode) is refreshed the same way on
+                    // its own next use, so no element is stuck unrankable.
                     Wh_Log(L"Rebuilding tree node interned before attachment");
                     g_elementTreeNodes.erase(it);
                 }
@@ -8345,13 +8352,14 @@ struct ElementCustomizationState {
 std::unordered_map<InstanceHandle, ElementCustomizationState>
     g_elementsCustomizationState;
 
-// The element's spine node, built on first use if the eager attempt in
-// ApplyCustomizations came up empty. An element can be matched before it is
-// attached, and a spine built then would stop short of the real root; retrying
-// on use picks up the real one once the element is in the tree.
+// The element's spine node. An element can be matched before it is attached,
+// in which case the eager build in ApplyCustomizations interns it as a
+// placeholder root; re-checked on every use so it's rebuilt once the element
+// is actually in the tree.
 ElementTreeNode* EnsureElementTreeNode(
     ElementCustomizationState& elementCustomizationState) {
-    if (!elementCustomizationState.treeNode) {
+    if (!elementCustomizationState.treeNode ||
+        IsStaleRootNode(*elementCustomizationState.treeNode)) {
         if (auto element = elementCustomizationState.element.get()) {
             elementCustomizationState.treeNode =
                 GetOrCreateElementTreeNode(element);
@@ -14223,9 +14231,10 @@ void ApplyCustomizations(InstanceHandle handle,
 
     // Elements that neither capture nor consume a variable pay nothing. The
     // rest get their spine now that the element has been matched; if it isn't
-    // attached yet the walk yields nothing and EnsureElementTreeNode retries on
-    // first use. Cleared unconditionally so a re-apply that drops all variable
-    // use cannot leave a stale node behind.
+    // attached yet this interns a placeholder root that EnsureElementTreeNode
+    // rebuilds on first use once the element is actually in the tree. Cleared
+    // unconditionally so a re-apply that drops all variable use cannot leave a
+    // stale node behind.
     elementCustomizationState.treeNode = nullptr;
     if (!resolved.captures.empty() || resolved.hasDynamicValues) {
         elementCustomizationState.treeNode =
