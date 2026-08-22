@@ -1767,6 +1767,15 @@ public:
 
     void UnadviseVisualTreeChange();
 
+    // The handle a mutation callback would report for an element, for elements
+    // which were reached some other way, e.g. by walking the visual tree.
+    InstanceHandle HandleFromInspectable(wf::IInspectable const& instance)
+    {
+        InstanceHandle handle = 0;
+        winrt::check_hresult(m_XamlDiagnostics->GetHandleFromIInspectable(reinterpret_cast<::IInspectable*>(winrt::get_abi(instance)), &handle));
+        return handle;
+    }
+
 private:
     HRESULT STDMETHODCALLTYPE OnVisualTreeChange(ParentChildRelation relation, VisualElement element, VisualMutationType mutationType) override;
     HRESULT STDMETHODCALLTYPE OnElementStateChanged(InstanceHandle element, VisualElementState elementState, LPCWSTR context) noexcept override;
@@ -2141,6 +2150,7 @@ using namespace std::string_view_literals;
 
 using namespace winrt::Microsoft::UI::Xaml;
 
+namespace muxc = winrt::Microsoft::UI::Xaml::Controls;
 namespace wge = winrt::Windows::Graphics::Effects;
 namespace muc = winrt::Microsoft::UI::Composition;
 namespace muxh = mux::Hosting;
@@ -7265,6 +7275,133 @@ void RestoreCustomizationsForVisualStateGroup(
     }
 }
 
+// Item elements the current virtualization pass tore down, consumed by the
+// matching ElementPrepared. A freshly created element is prepared without ever
+// having been cleared, and its Add mutation already applied the styles, so
+// re-matching it would restore and re-push every value for nothing.
+thread_local std::unordered_set<InstanceHandle> g_recycledElements;
+
+struct VirtualizingRepeaterState {
+    muxc::ItemsRepeater::ElementClearing_revoker elementClearingRevoker;
+    muxc::ItemsRepeater::ElementPrepared_revoker elementPreparedRevoker;
+};
+
+thread_local std::unordered_map<InstanceHandle, VirtualizingRepeaterState>
+    g_virtualizingRepeaters;
+
+// The handle the mutation callbacks would report for an element, i.e. the key
+// g_elementsCustomizationState uses. Returns 0 if it can't be resolved, leaving
+// callers to skip the element rather than key it by something made up.
+InstanceHandle HandleFromElement(FrameworkElement const& element) {
+    if (!element || !g_visualTreeWatcher) {
+        return 0;
+    }
+
+    try {
+        return g_visualTreeWatcher->HandleFromInspectable(element);
+    } catch (winrt::hresult_error const& ex) {
+        Wh_Log(L"Error %08X: %s", ex.code(), ex.message().c_str());
+        return 0;
+    }
+}
+
+// Tear down and, when `applying`, re-match every element of a subtree. The
+// whole subtree is revisited rather than only its root, since a rule can match
+// a descendant through a condition on an ancestor, and descendants of a reused
+// element get no mutation of their own.
+void ReapplyCustomizationsForSubtree(FrameworkElement element, bool applying) {
+    // Caught per element, both because these run from a layout pass the caller
+    // can't fail, and so that one element's failure doesn't skip the rest of
+    // the subtree.
+    try {
+        if (auto handle = HandleFromElement(element)) {
+            CleanupCustomizations(handle);
+            if (applying) {
+                auto className = winrt::get_class_name(element);
+                ApplyCustomizations(handle, element, className.c_str());
+            }
+        }
+    } catch (winrt::hresult_error const& ex) {
+        Wh_Log(L"Error %08X: %s", ex.code(), ex.message().c_str());
+    }
+
+    // Snapshotted because applying a style runs arbitrary XAML work which can
+    // change the children collection mid-walk.
+    std::vector<FrameworkElement> children;
+    try {
+        int count = Media::VisualTreeHelper::GetChildrenCount(element);
+        for (int i = 0; i < count; i++) {
+            if (auto child = Media::VisualTreeHelper::GetChild(element, i)
+                                 .try_as<FrameworkElement>()) {
+                children.push_back(std::move(child));
+            }
+        }
+    } catch (winrt::hresult_error const& ex) {
+        Wh_Log(L"Error %08X: %s", ex.code(), ex.message().c_str());
+        return;
+    }
+
+    for (const auto& child : children) {
+        ReapplyCustomizationsForSubtree(child, applying);
+    }
+}
+
+// A virtualizing container recycles its item elements instead of destroying
+// them: the recycle pool collapses the element and leaves it parented, so XAML
+// diagnostics reports no Remove/Add mutation and the styles matched for the
+// previous item would stay on the element once it's reused for another one.
+// Treat a cleared element as removed and a prepared one as newly added.
+void HandleVirtualizingRepeater(InstanceHandle handle,
+                                FrameworkElement element) {
+    auto repeater = element.try_as<muxc::ItemsRepeater>();
+    if (!repeater || g_virtualizingRepeaters.contains(handle)) {
+        return;
+    }
+
+    Wh_Log(L"Tracking recycling of %s", winrt::get_class_name(element).c_str());
+
+    auto& state = g_virtualizingRepeaters[handle];
+
+    state.elementClearingRevoker = repeater.ElementClearing(
+        winrt::auto_revoke,
+        [](muxc::ItemsRepeater const&,
+           muxc::ItemsRepeaterElementClearingEventArgs const& args) {
+            auto element = args.Element().try_as<FrameworkElement>();
+            if (!element) {
+                return;
+            }
+
+            auto elementHandle = HandleFromElement(element);
+            Wh_Log(L"Element cleared: %llu", elementHandle);
+
+            ReapplyCustomizationsForSubtree(element, /*applying=*/false);
+
+            // After the walk, which erases the handle as part of the teardown.
+            if (elementHandle) {
+                g_recycledElements.insert(elementHandle);
+            }
+        });
+
+    state.elementPreparedRevoker = repeater.ElementPrepared(
+        winrt::auto_revoke,
+        [](muxc::ItemsRepeater const&,
+           muxc::ItemsRepeaterElementPreparedEventArgs const& args) {
+            auto element = args.Element().try_as<FrameworkElement>();
+            if (!element) {
+                return;
+            }
+
+            auto elementHandle = HandleFromElement(element);
+            if (!elementHandle || !g_recycledElements.erase(elementHandle)) {
+                return;
+            }
+
+            Wh_Log(L"Element reused: %llu", elementHandle);
+
+            ReapplyCustomizationsForSubtree(element, /*applying=*/true);
+        });
+}
+
 void MergeResourceVariables();
 
 void ApplyCustomizations(InstanceHandle handle,
@@ -7276,6 +7413,10 @@ void ApplyCustomizations(InstanceHandle handle,
     if (!g_resourceVariablesThemeDict) {
         MergeResourceVariables();
     }
+
+    // Before the early return below: a repeater rarely has styles of its own,
+    // but its item elements do.
+    HandleVirtualizingRepeater(handle, element);
 
     auto* state = GetStyleVariableState();
     if (!state) {
@@ -7343,6 +7484,11 @@ void ApplyCustomizations(InstanceHandle handle,
 }
 
 void CleanupCustomizations(InstanceHandle handle) {
+    // Unconditional: a repeater, or an item element which matched no rule, has
+    // no customization state but can still have virtualization bookkeeping.
+    g_virtualizingRepeaters.erase(handle);
+    g_recycledElements.erase(handle);
+
     auto it = g_elementsCustomizationState.find(handle);
     if (it == g_elementsCustomizationState.end()) {
         return;
@@ -8313,6 +8459,11 @@ void UninitializeForCurrentThread() {
     g_trackedImageBrushesForThread.retryDebounceTimer = nullptr;
     g_trackedImageBrushesForThread.brushes.clear();
     StopImageLoadRetriesForCurrentThread();
+
+    // Before the teardown below, so that no recycling callback can fire into
+    // half-cleared state.
+    g_virtualizingRepeaters.clear();
+    g_recycledElements.clear();
 
     for (const auto& [handle, elementCustomizationState] :
          g_elementsCustomizationState) {
