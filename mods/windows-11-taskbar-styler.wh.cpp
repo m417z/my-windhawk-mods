@@ -14814,8 +14814,8 @@ void ApplyCustomizations(InstanceHandle handle,
         HandleClickThroughElement(element);
     }
 
-    // Likewise before the early return: a repeater rarely has styles of its
-    // own, but its item elements do.
+    // Before the early return below: a repeater rarely has styles of its own,
+    // but its item elements do.
     HandleVirtualizingRepeater(handle, element);
 
     // Everything below holds `state` across calls that run arbitrary XAML work
@@ -14889,9 +14889,8 @@ void ApplyCustomizations(InstanceHandle handle,
 }
 
 void CleanupCustomizations(InstanceHandle handle) {
-    // Before the early return below: a repeater, or an item element which
-    // matched no rule, has no customization state but can still have
-    // virtualization bookkeeping.
+    // Unconditional: a repeater, or an item element which matched no rule, has
+    // no customization state but can still have virtualization bookkeeping.
     g_virtualizingRepeaters.erase(handle);
     g_recycledElements.erase(handle);
 
