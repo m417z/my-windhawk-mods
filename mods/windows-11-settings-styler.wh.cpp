@@ -6636,10 +6636,11 @@ struct StyleVariableResolution {
 //  2. Shallowest capture element. On a tie the capture that lies on the
 //     consumer's own parent chain *is* the common ancestor, so this is what
 //     makes a capture on an ancestor beat one on a cousin below it.
-//  3. Registration order, applied by the callers below keeping the first of
-//     equal keys. Only a last resort: it follows the order XamlDiagnostics
-//     reports elements in, which is not stable across boots or across taskbar
-//     item recycling.
+//  3. Registration order, applied by the callers below keeping the last of
+//     equal keys. Only a last resort, but latest-wins is the useful direction:
+//     a host that rebuilds a subtree often leaves the previous copy in the tree
+//     beside the new one, and a consumer above both ties on the keys above.
+//     The newer capture is the live one.
 //
 // The closest capture wins even when its value is opaque, in which case the
 // consuming style is skipped rather than falling through to a farther capture
@@ -6682,7 +6683,7 @@ StyleVariableResolution FindWinningCapture(
         }
 
         auto rank = StyleVariableCaptureRank(consumerNode, captureNode);
-        if (!result.value || rank < bestRank) {
+        if (!result.value || rank <= bestRank) {
             bestRank = rank;
             result = {&capture.value, capture.elementHandle};
         }
@@ -6738,7 +6739,7 @@ InstanceHandle PickWinningCaptureOwner(
     for (const auto& candidate : candidates) {
         auto rank =
             StyleVariableCaptureRank(consumerNode, candidate.node.get());
-        if (!haveBest || rank < bestRank) {
+        if (!haveBest || rank <= bestRank) {
             haveBest = true;
             bestRank = rank;
             owner = candidate.owner;
