@@ -443,18 +443,18 @@ from the **TranslucentTB** project.
   - LegacyFluent: LegacyFluent
   - OnlySearch: OnlySearch
   - OnlySearch_variant_Minimal: OnlySearch (Minimal)
-  - WindowGlass: WindowGlass (for the redesigned Start menu)
-  - Fluid: Fluid (for the redesigned Start menu)
+  - WindowGlass: WindowGlass
+  - Fluid: Fluid
   - Oversimplified&Accentuated: Oversimplified&Accentuated
-  - LiquidGlass2: LiquidGlass (for the redesigned Start menu)
-  - LiquidGlass: LiquidGlass (Legacy) (for the redesigned Start menu)
+  - LiquidGlass2: LiquidGlass
+  - LiquidGlass: LiquidGlass (Legacy)
   - Windows10X: Windows10X
   - TintedGlass: TintedGlass
-  - LayerMicaUI: LayerMicaUI (for the redesigned Start menu)
+  - LayerMicaUI: LayerMicaUI
   - Borderless: Borderless
-  - Command Center: Command Center (for the redesigned Start menu)
+  - Command Center: Command Center
   - FullScreen: FullScreen
-  - FrostyGlass: FrostyGlass (for the redesigned Start menu)
+  - FrostyGlass: FrostyGlass
 - disableNewStartMenuLayout: ""
   $name: Start menu layout
   $description: >-
