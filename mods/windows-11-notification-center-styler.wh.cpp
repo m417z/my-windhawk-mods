@@ -3739,10 +3739,25 @@ const Theme g_themeFrostyGlass = {{
 std::atomic<bool> g_initialized;
 thread_local bool g_initializedForThread;
 
-void ApplyCustomizations(InstanceHandle handle,
+// An InstanceHandle is the address of an interface on the element, so it names
+// an element only for as long as that element lives: an element allocated over
+// a destroyed one is reported under the same handle. Everything the mod records
+// is therefore keyed by an id minted per reported element, which is never
+// reused, rather than by the handle itself.
+enum class ElementId : uint64_t { None = 0 };
+
+ElementId GetOrCreateElementId(
+    InstanceHandle handle,
+    winrt::Windows::Foundation::IInspectable const& element);
+ElementId FindElementId(InstanceHandle handle);
+void ForgetElementId(InstanceHandle handle);
+
+void ApplyCustomizations(ElementId elementId,
                          winrt::Windows::UI::Xaml::FrameworkElement element,
                          PCWSTR fallbackClassName);
-void CleanupCustomizations(InstanceHandle handle);
+void CleanupCustomizations(ElementId elementId);
+void QueueDiagnosticsRelease(InstanceHandle handle);
+void FlushDiagnosticsReleasesIfQuiet();
 
 HMODULE GetCurrentModuleHandle() {
     HMODULE module;
@@ -3781,6 +3796,31 @@ namespace wux = winrt::Windows::UI::Xaml;
 
 #include <winrt/Windows.UI.Xaml.h>
 
+// XamlDiagnostics implements this interface too, and xamlom.h does not declare
+// it. UnregisterInstance closes the runtime object cached for a handle, the
+// only reference the diagnostics keep to an element once it was reported.
+static constexpr GUID IID_IXamlDiagnosticsTestHooks =
+    {0x735941a2, 0x3ee3, 0x495a, {0x8d, 0xa9, 0x97, 0x26, 0x27, 0x00, 0x30, 0x75}};
+
+struct IXamlDiagnosticsTestHooks : IUnknown
+{
+    virtual HRESULT STDMETHODCALLTYPE UnregisterInstance(InstanceHandle handle) = 0;
+    virtual HRESULT STDMETHODCALLTYPE TryGetDispatcherQueueForObject(InstanceHandle handle, void** dispatcherQueue) = 0;
+};
+
+// The handle a mutation callback would report for an element, for elements
+// which were reached some other way, e.g. by walking the visual tree. Derived
+// the way the diagnostics derive it, by querying IInspectable and taking the
+// pointer, and not through GetHandleFromIInspectable: that one creates the
+// runtime object when none is cached, so asking it about an element whose
+// reference was released would take a new reference and pin it again.
+InstanceHandle HandleFromInspectable(wf::IInspectable const& instance)
+{
+    winrt::com_ptr<::IInspectable> inspectable;
+    winrt::check_hresult(reinterpret_cast<::IUnknown*>(winrt::get_abi(instance))->QueryInterface(winrt::guid_of<wf::IInspectable>(), inspectable.put_void()));
+    return reinterpret_cast<InstanceHandle>(inspectable.get());
+}
+
 class VisualTreeWatcher : public winrt::implements<VisualTreeWatcher, IVisualTreeServiceCallback2, winrt::non_agile>
 {
 public:
@@ -3796,14 +3836,7 @@ public:
 
     void UnadviseVisualTreeChange();
 
-    // The handle a mutation callback would report for an element, for elements
-    // which were reached some other way, e.g. by walking the visual tree.
-    InstanceHandle HandleFromInspectable(wf::IInspectable const& instance)
-    {
-        InstanceHandle handle = 0;
-        winrt::check_hresult(m_XamlDiagnostics->GetHandleFromIInspectable(reinterpret_cast<::IInspectable*>(winrt::get_abi(instance)), &handle));
-        return handle;
-    }
+    bool ReleaseDiagnosticsReference(InstanceHandle handle);
 
 private:
     HRESULT STDMETHODCALLTYPE OnVisualTreeChange(ParentChildRelation relation, VisualElement element, VisualMutationType mutationType) override;
@@ -3817,6 +3850,7 @@ private:
     }
 
     winrt::com_ptr<IXamlDiagnostics> m_XamlDiagnostics = nullptr;
+    winrt::com_ptr<IXamlDiagnosticsTestHooks> m_XamlDiagnosticsTestHooks = nullptr;
 };
 
 #pragma endregion  // visualtreewatcher_hpp
@@ -3827,6 +3861,12 @@ VisualTreeWatcher::VisualTreeWatcher(winrt::com_ptr<IUnknown> site) :
     m_XamlDiagnostics(site.as<IXamlDiagnostics>())
 {
     Wh_Log(L"Constructing VisualTreeWatcher");
+
+    HRESULT hr = m_XamlDiagnostics->QueryInterface(IID_IXamlDiagnosticsTestHooks, m_XamlDiagnosticsTestHooks.put_void());
+    if (FAILED(hr)) {
+        Wh_Log(L"IXamlDiagnosticsTestHooks is unavailable, elements will be leaked: %08X", hr);
+    }
+
     // winrt::check_hresult(m_XamlDiagnostics.as<IVisualTreeService3>()->AdviseVisualTreeChange(this));
 
     // Calling AdviseVisualTreeChange from the current thread causes the app to
@@ -3864,7 +3904,37 @@ void VisualTreeWatcher::UnadviseVisualTreeChange()
     }
 }
 
-HRESULT VisualTreeWatcher::OnVisualTreeChange(ParentChildRelation, VisualElement element, VisualMutationType mutationType) try
+// Reports whether dropping the reference destroyed the element, which is what
+// tells the caller that the handle is free to name a different element from now
+// on and that the id recorded for this one has to go.
+bool VisualTreeWatcher::ReleaseDiagnosticsReference(InstanceHandle handle)
+{
+    if (!m_XamlDiagnosticsTestHooks) {
+        return false;
+    }
+
+    winrt::weak_ref<wf::IInspectable> weakElement;
+    try {
+        wf::IInspectable element = FromHandle(handle);
+        if (element) {
+            weakElement = winrt::make_weak(element);
+        }
+    } catch (...) {
+        // Not every reported object resolves or supports weak references, and
+        // then the release just proceeds unobserved.
+        Wh_Log(L"Error %08X", winrt::to_hresult());
+    }
+
+    HRESULT hr = m_XamlDiagnosticsTestHooks->UnregisterInstance(handle);
+    if (FAILED(hr)) {
+        Wh_Log(L"UnregisterInstance failed with error %08X", hr);
+        return false;
+    }
+
+    return weakElement && !weakElement.get();
+}
+
+HRESULT VisualTreeWatcher::OnVisualTreeChange(ParentChildRelation relation, VisualElement element, VisualMutationType mutationType) try
 {
     Wh_Log(L"========================================");
 
@@ -3891,23 +3961,56 @@ HRESULT VisualTreeWatcher::OnVisualTreeChange(ParentChildRelation, VisualElement
         return S_OK;
     }
 
+    // Caught here rather than by the handler below, so that the bookkeeping
+    // which hands the element's reference back still runs when the styling work
+    // throws. Otherwise a single failed element would be held for good.
+    try
+    {
+        if (mutationType == Add)
+        {
+            const auto inspectable = FromHandle(element.Handle);
+            auto elementId = GetOrCreateElementId(element.Handle, inspectable);
+            auto frameworkElement = inspectable.try_as<wux::FrameworkElement>();
+            if (frameworkElement)
+            {
+                Wh_Log(L"FrameworkElement name: %s", frameworkElement.Name().c_str());
+                if (elementId == ElementId::None)
+                {
+                    Wh_Log(L"Skipping element which can't be given an id");
+                }
+                else
+                {
+                    ApplyCustomizations(elementId, frameworkElement, element.Type);
+                }
+            }
+            else
+            {
+                Wh_Log(L"Skipping non-FrameworkElement");
+            }
+        }
+        else if (mutationType == Remove)
+        {
+            CleanupCustomizations(FindElementId(element.Handle));
+        }
+    }
+    catch (...)
+    {
+        Wh_Log(L"Error %08X", winrt::to_hresult());
+    }
+
+    // A tree discarded whole is never dismantled, so it reports no removals to
+    // be released by.
+    FlushDiagnosticsReleasesIfQuiet();
+
     if (mutationType == Add)
     {
-        const auto inspectable = FromHandle(element.Handle);
-        auto frameworkElement = inspectable.try_as<wux::FrameworkElement>();
-        if (frameworkElement)
-        {
-            Wh_Log(L"FrameworkElement name: %s", frameworkElement.Name().c_str());
-            ApplyCustomizations(element.Handle, frameworkElement, element.Type);
-        }
-        else
-        {
-            Wh_Log(L"Skipping non-FrameworkElement");
-        }
+        QueueDiagnosticsRelease(element.Handle);
+        QueueDiagnosticsRelease(relation.Parent);
     }
     else if (mutationType == Remove)
     {
-        CleanupCustomizations(element.Handle);
+        ReleaseDiagnosticsReference(element.Handle);
+        ForgetElementId(element.Handle);
     }
 
     return S_OK;
@@ -4320,7 +4423,7 @@ using PropertyOverridesMaybeUnresolved =
 // value change on some other capture of the same name be skipped.
 struct StyleVariableDependency {
     std::wstring name;
-    InstanceHandle owner = 0;  // 0 when the variable was undefined
+    ElementId owner = ElementId::None;  // None when the variable was undefined
 };
 
 // Interned node of an element's visual-tree spine. Nodes are shared by every
@@ -4544,8 +4647,60 @@ struct ElementCustomizationState {
         perVisualStateGroup;
 };
 
-thread_local std::unordered_map<InstanceHandle, ElementCustomizationState>
+thread_local std::unordered_map<ElementId, ElementCustomizationState>
     g_elementsCustomizationState;
+
+// The weak reference is what keeps an id honest. A handle is an address, so a
+// destroyed element can be replaced by one reporting the same handle, and an
+// entry whose element is gone, or is no longer the element being asked about,
+// belongs to that destroyed predecessor and must not name the new one.
+struct ElementIdEntry {
+    ElementId id = ElementId::None;
+    winrt::weak_ref<wf::IInspectable> element;
+};
+
+thread_local std::unordered_map<InstanceHandle, ElementIdEntry> g_elementIds;
+thread_local uint64_t g_lastElementId;
+
+ElementId GetOrCreateElementId(InstanceHandle handle,
+                               wf::IInspectable const& element) {
+    if (!handle || !element) {
+        return ElementId::None;
+    }
+
+    auto& entry = g_elementIds[handle];
+    if (entry.id != ElementId::None && entry.element.get() == element) {
+        return entry.id;
+    }
+
+    entry.id = static_cast<ElementId>(++g_lastElementId);
+    try {
+        entry.element = winrt::make_weak(element);
+    } catch (winrt::hresult_error const& ex) {
+        // Without a weak reference the entry cannot be told apart from one for
+        // a successor at the same address, so neither it nor the id it names is
+        // kept: an id no lookup can reach again would key state that nothing
+        // could ever tear down, on an element nothing would then hold back from
+        // being released.
+        Wh_Log(L"Error %08X: %s", ex.code(), ex.message().c_str());
+        g_elementIds.erase(handle);
+        return ElementId::None;
+    }
+
+    return entry.id;
+}
+
+// By handle alone, for the element which is being reported as removed: it is
+// the element the entry was made for, and a stale entry names something already
+// destroyed, whose state is due for teardown either way.
+ElementId FindElementId(InstanceHandle handle) {
+    auto it = g_elementIds.find(handle);
+    return it != g_elementIds.end() ? it->second.id : ElementId::None;
+}
+
+void ForgetElementId(InstanceHandle handle) {
+    g_elementIds.erase(handle);
+}
 
 // The element's spine node. An element can be matched before its subtree is
 // attached, in which case the eager build in ApplyCustomizations interns a
@@ -4580,14 +4735,14 @@ struct StyleVariableValue {
 };
 
 // One element's capture of a variable. FindElementPropertyOverrides dedupes
-// captures by name, so (name, elementHandle) identifies an entry.
+// captures by name, so (name, elementId) identifies an entry.
 struct StyleVariableCapture {
-    InstanceHandle elementHandle;
+    ElementId elementId;
     StyleVariableValue value;
 };
 
 struct StyleVariableConsumer {
-    InstanceHandle elementHandle;
+    ElementId elementId;
     DependencyProperty property{nullptr};
     // Each consumer remembers its own fallbackClassName so that propagation can
     // re-resolve dynamic styles using the consumer's match-site context, not
@@ -4614,7 +4769,7 @@ thread_local int g_styleVariablePropagationDepth;
 struct PendingStyleVariablePropagation {
     StyleVariableState* state;
     std::wstring varName;
-    std::optional<InstanceHandle> changedOwner;
+    std::optional<ElementId> changedOwner;
 
     bool operator==(const PendingStyleVariablePropagation&) const = default;
 };
@@ -7828,7 +7983,7 @@ struct StyleVariableResolution {
     // Points into state->variables; only valid until that map is next touched,
     // so read it out before doing anything that could apply a style.
     const StyleVariableValue* value = nullptr;
-    InstanceHandle owner = 0;
+    ElementId owner = ElementId::None;
 };
 
 // How well a capture serves a consumer, as a sort key -- smaller is better.
@@ -7872,14 +8027,14 @@ StyleVariableResolution FindWinningCapture(
     if (captures.size() == 1) {
         // The common case by far: nothing to rank, and the owner's spine node
         // never has to be resolved.
-        return {&captures.front().value, captures.front().elementHandle};
+        return {&captures.front().value, captures.front().elementId};
     }
 
     std::pair<int, int> bestRank;
     for (const auto& capture : captures) {
         ElementTreeNode const* captureNode = nullptr;
         if (auto elementIt =
-                g_elementsCustomizationState.find(capture.elementHandle);
+                g_elementsCustomizationState.find(capture.elementId);
             elementIt != g_elementsCustomizationState.end()) {
             captureNode = EnsureElementTreeNode(elementIt->second);
         }
@@ -7887,7 +8042,7 @@ StyleVariableResolution FindWinningCapture(
         auto rank = StyleVariableCaptureRank(consumerNode, captureNode);
         if (!result.value || rank <= bestRank) {
             bestRank = rank;
-            result = {&capture.value, capture.elementHandle};
+            result = {&capture.value, capture.elementId};
         }
     }
 
@@ -7898,7 +8053,7 @@ StyleVariableResolution FindWinningCapture(
 // snapshot stays usable even after re-entrant work tears the owning element
 // down.
 struct StyleVariableCandidate {
-    InstanceHandle owner = 0;
+    ElementId owner = ElementId::None;
     std::shared_ptr<ElementTreeNode> node;
 };
 
@@ -7912,9 +8067,9 @@ std::vector<StyleVariableCandidate> SnapshotStyleVariableCaptures(
 
     for (const auto& capture : captures) {
         StyleVariableCandidate candidate;
-        candidate.owner = capture.elementHandle;
+        candidate.owner = capture.elementId;
         if (auto elementIt =
-                g_elementsCustomizationState.find(capture.elementHandle);
+                g_elementsCustomizationState.find(capture.elementId);
             elementIt != g_elementsCustomizationState.end()) {
             auto& elementCustomizationState = elementIt->second;
             EnsureElementTreeNode(elementCustomizationState);
@@ -7931,10 +8086,10 @@ std::vector<StyleVariableCandidate> SnapshotStyleVariableCaptures(
 // taken before a re-entrant capture change can go stale, which at worst skips a
 // consumer that needed redoing -- the change that invalidated it queues its own
 // propagation, and that pass re-snapshots and picks the consumer up.
-InstanceHandle PickWinningCaptureOwner(
+ElementId PickWinningCaptureOwner(
     const std::vector<StyleVariableCandidate>& candidates,
     ElementTreeNode const* consumerNode) {
-    InstanceHandle owner = 0;
+    ElementId owner = ElementId::None;
     bool haveBest = false;
     std::pair<int, int> bestRank;
 
@@ -8582,14 +8737,14 @@ StyleVariableValue ReadCapturedStyleVariableValue(FrameworkElement element,
     return out;
 }
 
-// Remove this (handle, property) entry from the consumer lists of every
+// Remove this (elementId, property) entry from the consumer lists of every
 // variable named in oldDeps, then add it for every variable named in newDeps.
 // `fallbackClassName` is stored on each newly-added consumer entry so the
 // per-consumer context is preserved across propagations; it is irrelevant when
 // newDeps is empty (pure-removal calls from the cleanup paths).
 void UpdateStyleVariableConsumers(
     StyleVariableState* state,
-    InstanceHandle handle,
+    ElementId elementId,
     DependencyProperty property,
     PCWSTR fallbackClassName,
     const std::vector<StyleVariableDependency>& oldDeps,
@@ -8610,7 +8765,7 @@ void UpdateStyleVariableConsumers(
         }
         auto& consumers = it->second;
         std::erase_if(consumers, [&](const StyleVariableConsumer& c) {
-            return c.elementHandle == handle && c.property == property;
+            return c.elementId == elementId && c.property == property;
         });
         if (consumers.empty()) {
             state->consumers.erase(it);
@@ -8623,18 +8778,18 @@ void UpdateStyleVariableConsumers(
         auto& consumers = state->consumers[dep.name];
         bool already = std::any_of(consumers.begin(), consumers.end(),
                                    [&](const StyleVariableConsumer& c) {
-                                       return c.elementHandle == handle &&
+                                       return c.elementId == elementId &&
                                               c.property == property;
                                    });
         if (!already) {
-            consumers.push_back({handle, property, fallbackClassNameStr});
+            consumers.push_back({elementId, property, fallbackClassNameStr});
         }
     }
 }
 
 // Re-evaluate the dynamic template stored on `propertyCustomizationState` and
 // return the resolved IInspectable / XamlBlurBrushParams ready to be applied.
-// Updates the (handle, property) -> state->consumers registry to match the
+// Updates the (elementId, property) -> state->consumers registry to match the
 // freshly computed dependency set so future variable changes route to this
 // property. The dependency registry is committed *before* the final XAML
 // resolution attempt: ExpandStyleVariables records every variable name it scans
@@ -8654,13 +8809,13 @@ void UpdateStyleVariableConsumers(
 //
 // `elementCustomizationState` is the consumer's own entry when the caller
 // already has it, saving the lookup needed to rank captures by proximity; pass
-// nullptr to have it looked up from `handle`.
+// nullptr to have it looked up from `elementId`.
 //
 // Returns std::nullopt if the state has no template, expansion failed, or XAML
 // resolution failed.
 std::optional<PropertyOverrideValue> ResolveDynamicStyleValue(
     StyleVariableState* state,
-    InstanceHandle handle,
+    ElementId elementId,
     FrameworkElement element,
     DependencyProperty property,
     PCWSTR fallbackClassName,
@@ -8673,7 +8828,7 @@ std::optional<PropertyOverrideValue> ResolveDynamicStyleValue(
     const auto& tmpl = *propertyCustomizationState->dynamicTemplate;
 
     if (!elementCustomizationState) {
-        if (auto it = g_elementsCustomizationState.find(handle);
+        if (auto it = g_elementsCustomizationState.find(elementId);
             it != g_elementsCustomizationState.end()) {
             elementCustomizationState = &it->second;
         }
@@ -8689,7 +8844,7 @@ std::optional<PropertyOverrideValue> ResolveDynamicStyleValue(
     auto expanded = ExpandStyleVariables(tmpl.rawValue, &context);
 
     UpdateStyleVariableConsumers(
-        state, handle, property, fallbackClassName,
+        state, elementId, property, fallbackClassName,
         propertyCustomizationState->variableDependencies, newDeps);
     propertyCustomizationState->variableDependencies = std::move(newDeps);
 
@@ -8723,8 +8878,8 @@ std::optional<PropertyOverrideValue> ResolveDynamicStyleValue(
 bool StyleVariableChangeAffectsConsumer(
     const ElementPropertyCustomizationState& propertyCustomizationState,
     const std::wstring& varName,
-    std::optional<InstanceHandle> changedOwner,
-    InstanceHandle winningOwner) {
+    std::optional<ElementId> changedOwner,
+    ElementId winningOwner) {
     if (propertyCustomizationState.lastResolveFailed) {
         return true;
     }
@@ -8746,10 +8901,9 @@ bool StyleVariableChangeAffectsConsumer(
 // was registered), so propagation uses the consumer's own match-site context to
 // re-parse the rule body, even when the capturer was matched against a
 // different type/fallback class.
-void PropagateStyleVariableChangeCore(
-    StyleVariableState* state,
-    const std::wstring& varName,
-    std::optional<InstanceHandle> changedOwner) {
+void PropagateStyleVariableChangeCore(StyleVariableState* state,
+                                      const std::wstring& varName,
+                                      std::optional<ElementId> changedOwner) {
     auto consumersIt = state->consumers.find(varName);
     if (consumersIt == state->consumers.end()) {
         return;
@@ -8768,8 +8922,7 @@ void PropagateStyleVariableChangeCore(
 
     auto consumersCopy = consumersIt->second;
     for (const auto& consumer : consumersCopy) {
-        auto stateIt =
-            g_elementsCustomizationState.find(consumer.elementHandle);
+        auto stateIt = g_elementsCustomizationState.find(consumer.elementId);
         if (stateIt == g_elementsCustomizationState.end()) {
             continue;
         }
@@ -8777,7 +8930,7 @@ void PropagateStyleVariableChangeCore(
         // realize children, which re-enters ApplyCustomizations and may rehash
         // g_elementsCustomizationState. Rehashing invalidates iterators but not
         // references to the mapped values. A re-entrant cleanup or re-apply of
-        // this same handle would invalidate both the reference and the loop
+        // this same elementId would invalidate both the reference and the loop
         // below, but the re-entrancy is for the newly realized children.
         auto& elementState = stateIt->second;
 
@@ -8788,8 +8941,8 @@ void PropagateStyleVariableChangeCore(
 
         // A handful of pointer comparisons against the snapshot above, far
         // cheaper than the re-parse it avoids.
-        InstanceHandle winningOwner =
-            changedOwner ? 0
+        ElementId winningOwner =
+            changedOwner ? ElementId::None
                          : PickWinningCaptureOwner(
                                candidates, EnsureElementTreeNode(elementState));
 
@@ -8815,7 +8968,7 @@ void PropagateStyleVariableChangeCore(
             }
 
             auto resolved = ResolveDynamicStyleValue(
-                state, consumer.elementHandle, element, consumer.property,
+                state, consumer.elementId, element, consumer.property,
                 consumerFallbackClassName, &propState, &elementState);
             if (!resolved) {
                 continue;
@@ -8846,7 +8999,7 @@ void PropagateStyleVariableChangeCore(
 // drains the queue, which also coalesces a burst into one pass.
 void PropagateStyleVariableChange(StyleVariableState* state,
                                   const std::wstring& varName,
-                                  std::optional<InstanceHandle> changedOwner) {
+                                  std::optional<ElementId> changedOwner) {
     PendingStyleVariablePropagation propagation{state, varName, changedOwner};
 
     if (g_styleVariablePropagationDepth > 0) {
@@ -8899,7 +9052,7 @@ void PropagateStyleVariableChange(StyleVariableState* state,
 // SizeChanged catch-all -- so the no-op fast path applies uniformly.
 void SetStyleVariableIfChangedAndPropagate(StyleVariableState* state,
                                            const std::wstring& varName,
-                                           InstanceHandle owner,
+                                           ElementId owner,
                                            StyleVariableValue value) {
     auto varIt = state->variables.find(varName);
     if (varIt == state->variables.end()) {
@@ -8909,7 +9062,7 @@ void SetStyleVariableIfChangedAndPropagate(StyleVariableState* state,
     auto& captures = varIt->second;
     auto it = std::find_if(captures.begin(), captures.end(),
                            [owner](const StyleVariableCapture& capture) {
-                               return capture.elementHandle == owner;
+                               return capture.elementId == owner;
                            });
     if (it == captures.end()) {
         // The capture was torn down between the notification and here.
@@ -8955,7 +9108,7 @@ bool IsLayoutDrivenSizeProperty(DependencyProperty property) {
 // carries its own consumer-side fallback, so propagation routes through the
 // right context per consumer.
 void SetUpCapturesForElement(StyleVariableState* state,
-                             InstanceHandle handle,
+                             ElementId elementId,
                              FrameworkElement element,
                              const std::vector<CaptureSpec>& captures,
                              ElementCustomizationState* elementState) {
@@ -9006,7 +9159,7 @@ void SetUpCapturesForElement(StyleVariableState* state,
             L"(%zu other capture(s))",
             capture.varName.c_str(), winrt::get_class_name(element).c_str(),
             value.stringForm.c_str(), capturesForVar.size());
-        capturesForVar.push_back({handle, std::move(value)});
+        capturesForVar.push_back({elementId, std::move(value)});
 
         seededVarNames.push_back(capture.varName);
 
@@ -9021,7 +9174,7 @@ void SetUpCapturesForElement(StyleVariableState* state,
         captureState.propertyChangedToken =
             elementDo.RegisterPropertyChangedCallback(
                 capture.property,
-                [state, varName, handle, elementWeakRef](
+                [state, varName, elementId, elementWeakRef](
                     DependencyObject sender, DependencyProperty property) {
                     auto element = elementWeakRef.get();
                     if (!element) {
@@ -9030,13 +9183,13 @@ void SetUpCapturesForElement(StyleVariableState* state,
                     auto value =
                         ReadCapturedStyleVariableValue(element, property);
                     SetStyleVariableIfChangedAndPropagate(
-                        state, varName, handle, std::move(value));
+                        state, varName, elementId, std::move(value));
                 });
     }
 
     if (!sizeChangedCaptures.empty()) {
         elementState->captureSizeChangedToken = element.SizeChanged(
-            [state, handle, elementWeakRef,
+            [state, elementId, elementWeakRef,
              sizeChangedCaptures = std::move(sizeChangedCaptures)](
                 winrt::Windows::Foundation::IInspectable const& sender,
                 SizeChangedEventArgs const& e) {
@@ -9051,7 +9204,7 @@ void SetUpCapturesForElement(StyleVariableState* state,
                     auto value =
                         ReadCapturedStyleVariableValue(element, property);
                     SetStyleVariableIfChangedAndPropagate(
-                        state, varName, handle, std::move(value));
+                        state, varName, elementId, std::move(value));
                 }
             });
     }
@@ -9096,7 +9249,7 @@ void RestoreCapturesForElement(FrameworkElement element,
 
 void ApplyCustomizationsForVisualStateGroup(
     StyleVariableState* state,
-    InstanceHandle handle,
+    ElementId elementId,
     FrameworkElement element,
     VisualStateGroup visualStateGroup,
     PCWSTR fallbackClassName,
@@ -9133,7 +9286,7 @@ void ApplyCustomizationsForVisualStateGroup(
             if (auto* tmpl = std::get_if<DynamicStyleTemplate>(&it->second)) {
                 propertyCustomizationState.dynamicTemplate = *tmpl;
                 resolved = ResolveDynamicStyleValue(
-                    state, handle, element, property, fallbackClassName,
+                    state, elementId, element, property, fallbackClassName,
                     &propertyCustomizationState,
                     /*elementCustomizationState=*/nullptr);
             } else {
@@ -9202,7 +9355,7 @@ void ApplyCustomizationsForVisualStateGroup(
         elementCustomizationStateForVisualStateGroup
             ->visualStateGroupCurrentStateChangedToken =
             visualStateGroup.CurrentStateChanged(
-                [state, elementWeakRef, propertyOverrides, handle,
+                [state, elementWeakRef, propertyOverrides, elementId,
                  fallbackClassNameStr,
                  elementCustomizationStateForVisualStateGroup](
                     winrt::Windows::Foundation::IInspectable const& sender,
@@ -9255,7 +9408,7 @@ void ApplyCustomizationsForVisualStateGroup(
                                 propertyCustomizationState.dynamicTemplate =
                                     *tmpl;
                                 resolved = ResolveDynamicStyleValue(
-                                    state, handle, element, property,
+                                    state, elementId, element, property,
                                     fallbackClassNamePtr,
                                     &propertyCustomizationState,
                                     /*elementCustomizationState=*/nullptr);
@@ -9266,7 +9419,7 @@ void ApplyCustomizationsForVisualStateGroup(
                                 if (propertyCustomizationState
                                         .dynamicTemplate) {
                                     UpdateStyleVariableConsumers(
-                                        state, handle, property,
+                                        state, elementId, property,
                                         /*fallbackClassName=*/nullptr,
                                         propertyCustomizationState
                                             .variableDependencies,
@@ -9297,7 +9450,7 @@ void ApplyCustomizationsForVisualStateGroup(
                         } else {
                             if (propertyCustomizationState.dynamicTemplate) {
                                 UpdateStyleVariableConsumers(
-                                    state, handle, property,
+                                    state, elementId, property,
                                     /*fallbackClassName=*/nullptr,
                                     propertyCustomizationState
                                         .variableDependencies,
@@ -9328,7 +9481,7 @@ void ApplyCustomizationsForVisualStateGroup(
 
 void RestoreCustomizationsForVisualStateGroup(
     StyleVariableState* state,
-    InstanceHandle handle,
+    ElementId elementId,
     FrameworkElement element,
     std::optional<winrt::weak_ref<VisualStateGroup>>
         visualStateGroupOptionalWeakPtr,
@@ -9346,7 +9499,7 @@ void RestoreCustomizationsForVisualStateGroup(
             }
 
             if (!propState.variableDependencies.empty()) {
-                UpdateStyleVariableConsumers(state, handle, property,
+                UpdateStyleVariableConsumers(state, elementId, property,
                                              /*fallbackClassName=*/nullptr,
                                              propState.variableDependencies,
                                              {});
@@ -9357,13 +9510,13 @@ void RestoreCustomizationsForVisualStateGroup(
             }
         }
     } else {
-        // Element is gone; still clear consumer entries so a stale (handle,
+        // Element is gone; still clear consumer entries so a stale (elementId,
         // property) pair isn't visited during PropagateStyleVariableChange.
         for (const auto& [property, propState] :
              elementCustomizationStateForVisualStateGroup
                  .propertyCustomizationStates) {
             if (!propState.variableDependencies.empty()) {
-                UpdateStyleVariableConsumers(state, handle, property,
+                UpdateStyleVariableConsumers(state, elementId, property,
                                              /*fallbackClassName=*/nullptr,
                                              propState.variableDependencies,
                                              {});
@@ -9390,29 +9543,34 @@ void RestoreCustomizationsForVisualStateGroup(
 // matching ElementPrepared. A freshly created element is prepared without ever
 // having been cleared, and its Add mutation already applied the styles, so
 // re-matching it would restore and re-push every value for nothing.
-thread_local std::unordered_set<InstanceHandle> g_recycledElements;
+thread_local std::unordered_set<ElementId> g_recycledElements;
 
 struct VirtualizingRepeaterState {
     muxc::ItemsRepeater::ElementClearing_revoker elementClearingRevoker;
     muxc::ItemsRepeater::ElementPrepared_revoker elementPreparedRevoker;
 };
 
-thread_local std::unordered_map<InstanceHandle, VirtualizingRepeaterState>
+thread_local std::unordered_map<ElementId, VirtualizingRepeaterState>
     g_virtualizingRepeaters;
 
-// The handle the mutation callbacks would report for an element, i.e. the key
-// g_elementsCustomizationState uses. Returns 0 if it can't be resolved, leaving
-// callers to skip the element rather than key it by something made up.
-InstanceHandle HandleFromElement(FrameworkElement const& element) {
-    if (!element || !g_visualTreeWatcher) {
-        return 0;
+// The id of an element which was reached some other way, e.g. by walking the
+// visual tree. None for an element the mutation callbacks never reported, which
+// leaves callers to skip it rather than key it by something made up.
+ElementId ElementIdFromElement(FrameworkElement const& element) {
+    if (!element) {
+        return ElementId::None;
     }
 
     try {
-        return g_visualTreeWatcher->HandleFromInspectable(element);
+        auto it = g_elementIds.find(HandleFromInspectable(element));
+        if (it == g_elementIds.end() || it->second.element.get() != element) {
+            return ElementId::None;
+        }
+
+        return it->second.id;
     } catch (winrt::hresult_error const& ex) {
         Wh_Log(L"Error %08X: %s", ex.code(), ex.message().c_str());
-        return 0;
+        return ElementId::None;
     }
 }
 
@@ -9425,11 +9583,12 @@ void ReapplyCustomizationsForSubtree(FrameworkElement element, bool applying) {
     // can't fail, and so that one element's failure doesn't skip the rest of
     // the subtree.
     try {
-        if (auto handle = HandleFromElement(element)) {
-            CleanupCustomizations(handle);
+        if (auto elementId = ElementIdFromElement(element);
+            elementId != ElementId::None) {
+            CleanupCustomizations(elementId);
             if (applying) {
                 auto className = winrt::get_class_name(element);
-                ApplyCustomizations(handle, element, className.c_str());
+                ApplyCustomizations(elementId, element, className.c_str());
             }
         }
     } catch (winrt::hresult_error const& ex) {
@@ -9462,16 +9621,15 @@ void ReapplyCustomizationsForSubtree(FrameworkElement element, bool applying) {
 // diagnostics reports no Remove/Add mutation and the styles matched for the
 // previous item would stay on the element once it's reused for another one.
 // Treat a cleared element as removed and a prepared one as newly added.
-void HandleVirtualizingRepeater(InstanceHandle handle,
-                                FrameworkElement element) {
+void HandleVirtualizingRepeater(ElementId elementId, FrameworkElement element) {
     auto repeater = element.try_as<muxc::ItemsRepeater>();
-    if (!repeater || g_virtualizingRepeaters.contains(handle)) {
+    if (!repeater || g_virtualizingRepeaters.contains(elementId)) {
         return;
     }
 
     Wh_Log(L"Tracking recycling of %s", winrt::get_class_name(element).c_str());
 
-    auto& state = g_virtualizingRepeaters[handle];
+    auto& state = g_virtualizingRepeaters[elementId];
 
     state.elementClearingRevoker = repeater.ElementClearing(
         winrt::auto_revoke,
@@ -9482,14 +9640,17 @@ void HandleVirtualizingRepeater(InstanceHandle handle,
                 return;
             }
 
-            auto elementHandle = HandleFromElement(element);
-            Wh_Log(L"Element cleared: %llu", elementHandle);
+            auto elementId = ElementIdFromElement(element);
+            if (elementId != ElementId::None) {
+                Wh_Log(L"Element cleared: %llu",
+                       static_cast<uint64_t>(elementId));
+            }
 
             ReapplyCustomizationsForSubtree(element, /*applying=*/false);
 
-            // After the walk, which erases the handle as part of the teardown.
-            if (elementHandle) {
-                g_recycledElements.insert(elementHandle);
+            // After the walk, which erases the id as part of the teardown.
+            if (elementId != ElementId::None) {
+                g_recycledElements.insert(elementId);
             }
         });
 
@@ -9502,12 +9663,13 @@ void HandleVirtualizingRepeater(InstanceHandle handle,
                 return;
             }
 
-            auto elementHandle = HandleFromElement(element);
-            if (!elementHandle || !g_recycledElements.erase(elementHandle)) {
+            auto elementId = ElementIdFromElement(element);
+            if (elementId == ElementId::None ||
+                !g_recycledElements.erase(elementId)) {
                 return;
             }
 
-            Wh_Log(L"Element reused: %llu", elementHandle);
+            Wh_Log(L"Element reused: %llu", static_cast<uint64_t>(elementId));
 
             ReapplyCustomizationsForSubtree(element, /*applying=*/true);
         });
@@ -9515,7 +9677,7 @@ void HandleVirtualizingRepeater(InstanceHandle handle,
 
 void MergeResourceVariables();
 
-void ApplyCustomizations(InstanceHandle handle,
+void ApplyCustomizations(ElementId elementId,
                          FrameworkElement element,
                          PCWSTR fallbackClassName) {
     // Merge resource dictionary on first element add. Merging it earlier on
@@ -9527,7 +9689,7 @@ void ApplyCustomizations(InstanceHandle handle,
 
     // Before the early return below: a repeater rarely has styles of its own,
     // but its item elements do.
-    HandleVirtualizingRepeater(handle, element);
+    HandleVirtualizingRepeater(elementId, element);
 
     auto* state = GetStyleVariableState();
     if (!state) {
@@ -9543,12 +9705,12 @@ void ApplyCustomizations(InstanceHandle handle,
 
     Wh_Log(L"Applying styles to %s", winrt::get_class_name(element).c_str());
 
-    auto& elementCustomizationState = g_elementsCustomizationState[handle];
+    auto& elementCustomizationState = g_elementsCustomizationState[elementId];
 
     for (const auto& [visualStateGroupOptionalWeakPtrIter, stateIter] :
          elementCustomizationState.perVisualStateGroup) {
         RestoreCustomizationsForVisualStateGroup(
-            state, handle, element, visualStateGroupOptionalWeakPtrIter,
+            state, elementId, element, visualStateGroupOptionalWeakPtrIter,
             stateIter);
     }
 
@@ -9571,7 +9733,7 @@ void ApplyCustomizations(InstanceHandle handle,
     // dynamic value-rules applied below. Note: SetUpCapturesForElement does not
     // need this element's fallbackClassName -- propagation routes through each
     // consumer's own stored fallback.
-    SetUpCapturesForElement(state, handle, element, resolved.captures,
+    SetUpCapturesForElement(state, elementId, element, resolved.captures,
                             &elementCustomizationState);
 
     for (auto& [visualStateGroup, overridesForVisualStateGroup] :
@@ -9588,19 +9750,135 @@ void ApplyCustomizations(InstanceHandle handle,
             &elementCustomizationState.perVisualStateGroup.back().second;
 
         ApplyCustomizationsForVisualStateGroup(
-            state, handle, element, visualStateGroup, fallbackClassName,
+            state, elementId, element, visualStateGroup, fallbackClassName,
             std::move(overridesForVisualStateGroup),
             elementCustomizationStateForVisualStateGroup);
     }
 }
 
-void CleanupCustomizations(InstanceHandle handle) {
+// The diagnostics create a runtime object which holds every element they
+// report, and drop it only once the element is reported as removed. Removals
+// are reported for elements taken out of their parent, which is how a recycled
+// list item is released, but a tree which is discarded whole is never taken
+// apart that way: dropping its root would destroy it. Holding every element is
+// what stops that destruction, so nothing is ever removed and nothing is ever
+// reported. Elements nothing is keyed by are handed back from here so the
+// teardown can happen.
+//
+// Reporting an element recreates the runtime object of its parent, which is why
+// each report queues the parent as well, and why the queue is drained only once
+// the burst of reports has stopped: releasing mid-burst would just be undone by
+// the next child of whatever was released.
+thread_local std::vector<InstanceHandle> g_pendingDiagnosticsRelease;
+thread_local ULONGLONG g_lastDiagnosticsReleaseQueueTick;
+
+// Long enough to sit out a tree being built.
+constexpr ULONGLONG kDiagnosticsReleaseDelay = 200;
+
+// Releasing an element the mod still records something for would strand that
+// recording, since no removal is reported for a handle whose runtime object is
+// gone. Such an element stays held, and its own removal releases it.
+//
+// Which leaves a styled element of a tree discarded whole held for good, and
+// with it everything below it, since a parent holds its children. Rules that
+// match the notification center match almost nothing of such a tree, so what
+// this retains is small, but a rule written against a bare type would retain
+// much more.
+bool ElementHasState(ElementId elementId) {
+    if (elementId == ElementId::None) {
+        return false;
+    }
+
+    if (g_elementsCustomizationState.contains(elementId) ||
+        g_virtualizingRepeaters.contains(elementId) ||
+        g_recycledElements.contains(elementId)) {
+        return true;
+    }
+
+    for (const auto& [varName, captures] : g_styleVariableState.variables) {
+        for (const auto& capture : captures) {
+            if (capture.elementId == elementId) {
+                return true;
+            }
+        }
+    }
+
+    for (const auto& [varName, consumers] : g_styleVariableState.consumers) {
+        for (const auto& consumer : consumers) {
+            if (consumer.elementId == elementId) {
+                return true;
+            }
+        }
+    }
+
+    for (const auto& propagation : g_pendingStyleVariablePropagations) {
+        if (propagation.changedOwner == elementId) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+void FlushDiagnosticsReleases() {
+    auto pending = std::move(g_pendingDiagnosticsRelease);
+    g_pendingDiagnosticsRelease.clear();
+
+    if (!g_visualTreeWatcher) {
+        return;
+    }
+
+    // A handle is queued once per report naming it, so a parent appears once
+    // per child, and each repeat would pay for another ElementHasState scan.
+    std::sort(pending.begin(), pending.end());
+    pending.erase(std::unique(pending.begin(), pending.end()), pending.end());
+
+    for (InstanceHandle handle : pending) {
+        if (ElementHasState(FindElementId(handle))) {
+            continue;
+        }
+
+        if (g_visualTreeWatcher->ReleaseDiagnosticsReference(handle)) {
+            ForgetElementId(handle);
+        }
+    }
+}
+
+void QueueDiagnosticsRelease(InstanceHandle handle) {
+    if (!handle) {
+        return;
+    }
+
+    g_pendingDiagnosticsRelease.push_back(handle);
+    g_lastDiagnosticsReleaseQueueTick = GetTickCount64();
+}
+
+// Draining is driven by the next report rather than by a timer, so that nothing
+// of the mod is left scheduled on a thread it does not tear down: the release
+// has to run on the thread which owns the elements, and reports arrive on that
+// thread already. A thread which goes quiet therefore holds its last burst
+// until it is used again.
+void FlushDiagnosticsReleasesIfQuiet() {
+    if (g_pendingDiagnosticsRelease.empty() ||
+        GetTickCount64() - g_lastDiagnosticsReleaseQueueTick <
+            kDiagnosticsReleaseDelay) {
+        return;
+    }
+
+    FlushDiagnosticsReleases();
+}
+
+void StopDiagnosticsReleases() {
+    g_pendingDiagnosticsRelease.clear();
+}
+
+void CleanupCustomizations(ElementId elementId) {
     // Unconditional: a repeater, or an item element which matched no rule, has
     // no customization state but can still have virtualization bookkeeping.
-    g_virtualizingRepeaters.erase(handle);
-    g_recycledElements.erase(handle);
+    g_virtualizingRepeaters.erase(elementId);
+    g_recycledElements.erase(elementId);
 
-    auto it = g_elementsCustomizationState.find(handle);
+    auto it = g_elementsCustomizationState.find(elementId);
     if (it == g_elementsCustomizationState.end()) {
         return;
     }
@@ -9609,8 +9887,9 @@ void CleanupCustomizations(InstanceHandle handle) {
     // arbitrary XAML work that can re-enter ApplyCustomizations and rehash
     // g_elementsCustomizationState, which invalidates iterators but not
     // references to the mapped values. A re-entrant cleanup or re-apply of this
-    // same handle would invalidate both the reference and the loop below, but
-    // the re-entrancy is for other elements, not the one being torn down here.
+    // same elementId would invalidate both the reference and the loop below,
+    // but the re-entrancy is for other elements, not the one being torn down
+    // here.
     auto& elementCustomizationState = it->second;
 
     auto element = elementCustomizationState.element.get();
@@ -9636,10 +9915,11 @@ void CleanupCustomizations(InstanceHandle handle) {
                 continue;
             }
 
-            if (!std::erase_if(varIt->second,
-                               [handle](const StyleVariableCapture& capture) {
-                                   return capture.elementHandle == handle;
-                               })) {
+            if (!std::erase_if(
+                    varIt->second,
+                    [elementId](const StyleVariableCapture& capture) {
+                        return capture.elementId == elementId;
+                    })) {
                 continue;
             }
 
@@ -9653,13 +9933,13 @@ void CleanupCustomizations(InstanceHandle handle) {
     for (const auto& [visualStateGroupOptionalWeakPtrIter, stateIter] :
          elementCustomizationState.perVisualStateGroup) {
         RestoreCustomizationsForVisualStateGroup(
-            state, handle, element, visualStateGroupOptionalWeakPtrIter,
+            state, elementId, element, visualStateGroupOptionalWeakPtrIter,
             stateIter);
     }
 
-    // By handle, not by `it`: a re-entrant apply above may have rehashed the
+    // By elementId, not by `it`: a re-entrant apply above may have rehashed the
     // map since the lookup.
-    g_elementsCustomizationState.erase(handle);
+    g_elementsCustomizationState.erase(elementId);
 
     ReapElementTreeNodesIfNeeded();
 
@@ -10561,11 +10841,13 @@ void UninitializeForCurrentThread() {
     StopImageLoadRetriesForCurrentThread();
 
     // Before the teardown below, so that no recycling callback can fire into
-    // half-cleared state.
+    // half-cleared state, and no pending release can consult state which is
+    // being cleared.
+    StopDiagnosticsReleases();
     g_virtualizingRepeaters.clear();
     g_recycledElements.clear();
 
-    for (const auto& [handle, elementCustomizationState] :
+    for (const auto& [elementId, elementCustomizationState] :
          g_elementsCustomizationState) {
         auto element = elementCustomizationState.element.get();
         auto* state = GetStyleVariableState();
@@ -10575,7 +10857,7 @@ void UninitializeForCurrentThread() {
         for (const auto& [visualStateGroupOptionalWeakPtrIter, stateIter] :
              elementCustomizationState.perVisualStateGroup) {
             RestoreCustomizationsForVisualStateGroup(
-                state, handle, element, visualStateGroupOptionalWeakPtrIter,
+                state, elementId, element, visualStateGroupOptionalWeakPtrIter,
                 stateIter);
         }
     }
@@ -10587,6 +10869,10 @@ void UninitializeForCurrentThread() {
     g_elementTreeNodesReapThreshold = 64;
     g_pendingStyleVariablePropagations.clear();
     g_styleVariableState = {};
+
+    // After everything keyed by an id. g_lastElementId keeps counting, since an
+    // id must never name two elements.
+    g_elementIds.clear();
 
     g_elementsCustomizationRules.clear();
 
