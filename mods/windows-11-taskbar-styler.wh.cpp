@@ -6331,7 +6331,7 @@ const Theme g_themeFluentGlass = {{
     L"LiquidBorder=<LinearGradientBrush StartPoint=\"0,0\" EndPoint=\"0,1\"><GradientStop Color=\"#50808080\" Offset=\"0.0\" /><GradientStop Color=\"#50404040\" Offset=\"1\" /></LinearGradientBrush>",
 }};
 
-const Theme g_themeOS26_Liquid_Glass = {{
+const Theme g_themeOS26_Liquid_Glass_variant_ClearMacDock = {{
     ThemeTargetStyles{L"Taskbar.TaskbarFrame", {
         L"Width=auto",
         L"MinWidth:=100",
@@ -6711,7 +6711,7 @@ const Theme g_themeOS26_Liquid_Glass = {{
     L"IconBorder= <LinearGradientBrush EndPoint=\"1,1\" StartPoint=\"0,0\"><GradientStop Color=\"#F5ffffff\" Offset=\"0.0\"/><GradientStop Color=\"#40ffffff\" Offset=\"0.4\"/><GradientStop Color=\"#20ffffff\" Offset=\"0.6\"/><GradientStop Color=\"#90ffffff\" Offset=\"1.0\"/></LinearGradientBrush>",
 }};
 
-const Theme g_themeOS26_Liquid_Glass_variant_1 = {{
+const Theme g_themeOS26_Liquid_Glass_variant_ClearTaskbar = {{
     ThemeTargetStyles{L"Taskbar.TaskbarFrame", {
         L"Height=80",
         L"MaxHeight=80",
@@ -6976,7 +6976,7 @@ const Theme g_themeOS26_Liquid_Glass_variant_1 = {{
     L"IconBorder= <LinearGradientBrush EndPoint=\"1,1\" StartPoint=\"0,0\"><GradientStop Color=\"#F5ffffff\" Offset=\"0.0\"/><GradientStop Color=\"#40ffffff\" Offset=\"0.4\"/><GradientStop Color=\"#20ffffff\" Offset=\"0.6\"/><GradientStop Color=\"#90ffffff\" Offset=\"1.0\"/></LinearGradientBrush>",
 }};
 
-const Theme g_themeOS26_Liquid_Glass_variant_2 = {{
+const Theme g_themeOS26_Liquid_Glass_variant_DarkMacDock = {{
     ThemeTargetStyles{L"Taskbar.TaskbarFrame", {
         L"Width=auto",
         L"MinWidth:=100",
@@ -7356,7 +7356,7 @@ const Theme g_themeOS26_Liquid_Glass_variant_2 = {{
     L"IconBorder=<LinearGradientBrush StartPoint=\"0.04,-0.14\" EndPoint=\"1.22,1.10\"><GradientStop Offset=\"0.18\" Color=\"#4FFFFFFF\"/><GradientStop Offset=\"0.34\" Color=\"#661D1D1D\"/><GradientStop Offset=\"0.63\" Color=\"#00000000\"/><GradientStop Offset=\"0.72\" Color=\"#662D2D2D\"/><GradientStop Offset=\"0.84\" Color=\"#4FFFFFFF\"/></LinearGradientBrush>",
 }};
 
-const Theme g_themeOS26_Liquid_Glass_variant_3 = {{
+const Theme g_themeOS26_Liquid_Glass_variant_DarkTaskbar = {{
     ThemeTargetStyles{L"Taskbar.TaskbarFrame", {
         L"Height=80",
         L"MaxHeight=80",
@@ -16328,16 +16328,16 @@ void ProcessAllStylesFromSettings() {
         theme = &g_themeFluentGlass;
     } else if (wcscmp(themeName, L"OS26_Liquid_Glass_variant_ClearMacDock") ==
                0) {
-        theme = &g_themeOS26_Liquid_Glass;
+        theme = &g_themeOS26_Liquid_Glass_variant_ClearMacDock;
     } else if (wcscmp(themeName, L"OS26_Liquid_Glass_variant_ClearTaskbar") ==
                0) {
-        theme = &g_themeOS26_Liquid_Glass_variant_1;
+        theme = &g_themeOS26_Liquid_Glass_variant_ClearTaskbar;
     } else if (wcscmp(themeName, L"OS26_Liquid_Glass_variant_DarkMacDock") ==
                0) {
-        theme = &g_themeOS26_Liquid_Glass_variant_2;
+        theme = &g_themeOS26_Liquid_Glass_variant_DarkMacDock;
     } else if (wcscmp(themeName, L"OS26_Liquid_Glass_variant_DarkTaskbar") ==
                0) {
-        theme = &g_themeOS26_Liquid_Glass_variant_3;
+        theme = &g_themeOS26_Liquid_Glass_variant_DarkTaskbar;
     } else if (wcscmp(themeName, L"FrostyGlass") == 0) {
         theme = &g_themeFrostyGlass;
     } else if (wcscmp(themeName, L"FrostedAcrylic") == 0) {
