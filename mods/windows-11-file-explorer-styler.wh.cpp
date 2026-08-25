@@ -2755,13 +2755,18 @@ StyleVariableState* GetStyleVariableState() {
 
 thread_local bool g_elementPropertyModifying;
 
-// An ImageBrush with a remote source fails to load when the process starts
-// before the network is up. Such brushes are tracked so that the load can be
-// retried once there's internet access. Only a brush which has no image is
-// retried, so replacing its source has nothing to hide, and the source is never
-// cleared, so an image that's currently displayed can't be blanked out.
-struct TrackedImageBrush {
-    winrt::weak_ref<Media::ImageBrush> brush;
+// An image with a remote source fails to load when the process starts before
+// the network is up. Such images are tracked so that the load can be retried
+// once there's internet access. Only a target which has no image is retried, so
+// replacing its source has nothing to hide, and the source is never cleared, so
+// an image that's currently displayed can't be blanked out.
+struct TrackedImage {
+    // An ImageBrush or an Image element. Both hold an image source which can
+    // fail to load and both report the outcome, but through unrelated types, so
+    // the source is addressed by DependencyProperty and each type gets its own
+    // revoker pair.
+    winrt::weak_ref<DependencyObject> target;
+    DependencyProperty sourceProperty{nullptr};
     winrt::Windows::Foundation::Uri uri{nullptr};
 
     // Decode properties of the BitmapImage the style declared, reapplied to the
@@ -2774,20 +2779,22 @@ struct TrackedImageBrush {
         Media::Imaging::BitmapCreateOptions::None;
     bool autoPlay = true;
 
-    Media::ImageBrush::ImageFailed_revoker imageFailedRevoker;
-    Media::ImageBrush::ImageOpened_revoker imageOpenedRevoker;
+    Media::ImageBrush::ImageFailed_revoker brushImageFailedRevoker;
+    Media::ImageBrush::ImageOpened_revoker brushImageOpenedRevoker;
+    Controls::Image::ImageFailed_revoker elementImageFailedRevoker;
+    Controls::Image::ImageOpened_revoker elementImageOpenedRevoker;
 
-    // Whether the brush has an image. Retries target the brushes which don't.
+    // Whether the target has an image. Retries target the ones which don't.
     bool loaded = false;
 
     ULONGLONG lastRetryTick = 0;
     int retryCount = 0;
 };
 
-struct TrackedImageBrushesForThread {
+struct TrackedImagesForThread {
     // Entries are held by shared_ptr so that event handlers can reference them
     // via a weak_ptr and do nothing once an entry is gone.
-    std::list<std::shared_ptr<TrackedImageBrush>> brushes;
+    std::list<std::shared_ptr<TrackedImage>> images;
     winrt::Microsoft::UI::Dispatching::DispatcherQueue dispatcher{nullptr};
     winrt::Microsoft::UI::Dispatching::DispatcherQueueTimer retryDebounceTimer{
         nullptr};
@@ -2795,13 +2802,13 @@ struct TrackedImageBrushesForThread {
         retryDebounceTimerTickRevoker;
 };
 
-thread_local TrackedImageBrushesForThread g_trackedImageBrushesForThread;
+thread_local TrackedImagesForThread g_trackedImagesForThread;
 
 // A single connectivity transition raises several network status events, and
 // the state right after the first one isn't final yet.
 constexpr DWORD kNetworkChangeDebounceMs = 2000;
 
-// Minimum delay between the retries of a brush, doubling with each attempt up
+// Minimum delay between the retries of an image, doubling with each attempt up
 // to about five minutes. Also keeps a retry from being started while the
 // previous one is still loading.
 constexpr ULONGLONG kImageRetryBaseDelayMs = 5000;
@@ -2809,9 +2816,9 @@ constexpr int kImageRetryMaxBackoffShift = 6;
 constexpr ULONGLONG kImageRetryMaxDelayMs = kImageRetryBaseDelayMs
                                             << kImageRetryMaxBackoffShift;
 
-// Caps the attempts of a brush so that an event storm doesn't retry it
-// endlessly. The count starts over once the brush has been idle for the maximum
-// delay, so connectivity which returns much later can still recover the image.
+// Caps the attempts of an image so that an event storm doesn't retry it
+// endlessly. The count starts over once the image has been idle for the maximum
+// delay, so connectivity which returns much later can still recover it.
 constexpr int kImageRetryMaxCount = 20;
 
 // Guards the globals below it. The network status handler acquires it, so it
@@ -2820,8 +2827,8 @@ constexpr int kImageRetryMaxCount = 20;
 // UI thread pumps messages, which can re-enter this code on the same thread.
 std::mutex g_imageRetryMutex;
 bool g_imageRetryActive;
-// The dispatcher of each UI thread which has tracked brushes, used to run a
-// retry on the thread that owns the brush.
+// The dispatcher of each UI thread which has tracked images, used to run a
+// retry on the thread that owns the image.
 std::vector<winrt::weak_ref<winrt::Microsoft::UI::Dispatching::DispatcherQueue>>
     g_imageRetryDispatchers;
 winrt::event_token g_networkStatusChangedToken;
@@ -4424,7 +4431,7 @@ void XamlBlurBrush::RefreshBrush()
 // clang-format on
 ////////////////////////////////////////////////////////////////////////////////
 
-// Helper functions for tracking and retrying failed ImageBrush loads.
+// Helper functions for tracking and retrying failed image loads.
 
 // Reports true if the query itself fails, as a retry which turns out to be
 // pointless is harmless, while skipping a necessary one leaves images missing.
@@ -4441,9 +4448,9 @@ bool HasInternetAccess() {
     }
 }
 
-void StartImageBrushRetry(const std::shared_ptr<TrackedImageBrush>& tracked) {
-    auto brush = tracked->brush.get();
-    if (!brush) {
+void StartImageRetry(const std::shared_ptr<TrackedImage>& tracked) {
+    auto target = tracked->target.get();
+    if (!target) {
         return;
     }
 
@@ -4451,6 +4458,11 @@ void StartImageBrushRetry(const std::shared_ptr<TrackedImageBrush>& tracked) {
 
     tracked->lastRetryTick = GetTickCount64();
     tracked->retryCount++;
+
+    // An Image element's source is a property the mod customizes, and writing
+    // to it would otherwise be seen as an external change and reverted to the
+    // failed source the style declared.
+    g_elementPropertyModifying = true;
 
     try {
         Media::Imaging::BitmapImage retryImage;
@@ -4466,14 +4478,16 @@ void StartImageBrushRetry(const std::shared_ptr<TrackedImageBrush>& tracked) {
         retryImage.UriSource(tracked->uri);
 
         // A BitmapImage is loaded by the framework as part of the tree it's
-        // used in, so it has to be assigned to the brush for anything to
+        // used in, so it has to be assigned to the target for anything to
         // happen. A new object rather than the failed one, since reassigning
-        // the same URI to a BitmapImage doesn't reload it. The brush's own
+        // the same URI to a BitmapImage doesn't reload it. The target's own
         // ImageOpened and ImageFailed report how this attempt went.
-        brush.ImageSource(retryImage);
+        target.SetValue(tracked->sourceProperty, retryImage);
     } catch (winrt::hresult_error const& ex) {
         Wh_Log(L"Error %08X: %s", ex.code(), ex.message().c_str());
     }
+
+    g_elementPropertyModifying = false;
 }
 
 void RetryFailedImageLoadsOnCurrentThread() {
@@ -4483,15 +4497,15 @@ void RetryFailedImageLoadsOnCurrentThread() {
 
     Wh_Log(L"Retrying failed image loads on current thread");
 
-    auto& brushes = g_trackedImageBrushesForThread.brushes;
+    auto& images = g_trackedImagesForThread.images;
 
-    std::erase_if(brushes,
-                  [](const auto& tracked) { return !tracked->brush.get(); });
+    std::erase_if(images,
+                  [](const auto& tracked) { return !tracked->target.get(); });
 
-    // Copy the entries before iterating: a retry can raise ImageBrush events,
-    // and their handlers modify the entries.
-    std::vector<std::shared_ptr<TrackedImageBrush>> snapshot(brushes.begin(),
-                                                             brushes.end());
+    // Copy the entries before iterating: a retry can raise image events, and
+    // their handlers modify the entries.
+    std::vector<std::shared_ptr<TrackedImage>> snapshot(images.begin(),
+                                                        images.end());
 
     ULONGLONG tick = GetTickCount64();
 
@@ -4518,7 +4532,7 @@ void RetryFailedImageLoadsOnCurrentThread() {
             continue;
         }
 
-        StartImageBrushRetry(tracked);
+        StartImageRetry(tracked);
     }
 }
 
@@ -4529,11 +4543,11 @@ void ScheduleImageLoadRetryOnCurrentThread() {
         return;
     }
 
-    auto& timer = g_trackedImageBrushesForThread.retryDebounceTimer;
+    auto& timer = g_trackedImagesForThread.retryDebounceTimer;
 
     try {
         if (!timer) {
-            auto dispatcher = g_trackedImageBrushesForThread.dispatcher;
+            auto dispatcher = g_trackedImagesForThread.dispatcher;
             if (!dispatcher) {
                 return;
             }
@@ -4541,7 +4555,7 @@ void ScheduleImageLoadRetryOnCurrentThread() {
             timer = dispatcher.CreateTimer();
             timer.Interval(std::chrono::milliseconds{kNetworkChangeDebounceMs});
             timer.IsRepeating(false);
-            g_trackedImageBrushesForThread.retryDebounceTimerTickRevoker =
+            g_trackedImagesForThread.retryDebounceTimerTickRevoker =
                 timer.Tick(winrt::auto_revoke,
                            [](winrt::Microsoft::UI::Dispatching::
                                   DispatcherQueueTimer const&,
@@ -4655,12 +4669,12 @@ void StopImageLoadRetries() {
 // Drops the calling thread from the dispatcher registry, and stops the retries
 // altogether once the last thread is out of it.
 void StopImageLoadRetriesForCurrentThread() {
-    auto dispatcher = g_trackedImageBrushesForThread.dispatcher;
+    auto dispatcher = g_trackedImagesForThread.dispatcher;
     if (!dispatcher) {
         return;
     }
 
-    g_trackedImageBrushesForThread.dispatcher = nullptr;
+    g_trackedImagesForThread.dispatcher = nullptr;
 
     winrt::event_token token;
 
@@ -4691,37 +4705,41 @@ void StopImageLoadRetriesForCurrentThread() {
     }
 }
 
-void SetupImageBrushTracking(Media::ImageBrush const& brush,
-                             Media::Imaging::BitmapImage const& bitmapImage,
-                             winrt::Windows::Foundation::Uri const& uri) {
-    auto& brushes = g_trackedImageBrushesForThread.brushes;
+void SetupImageTracking(DependencyObject const& target,
+                        DependencyProperty const& sourceProperty,
+                        Media::Imaging::BitmapImage const& bitmapImage,
+                        winrt::Windows::Foundation::Uri const& uri) {
+    auto& images = g_trackedImagesForThread.images;
 
-    std::erase_if(brushes,
-                  [](const auto& tracked) { return !tracked->brush.get(); });
+    std::erase_if(images,
+                  [](const auto& tracked) { return !tracked->target.get(); });
 
-    auto it = std::find_if(brushes.begin(), brushes.end(),
-                           [&brush](const auto& tracked) {
-                               if (auto trackedBrush = tracked->brush.get()) {
-                                   return trackedBrush == brush;
+    auto it = std::find_if(images.begin(), images.end(),
+                           [&target](const auto& tracked) {
+                               if (auto trackedTarget = tracked->target.get()) {
+                                   return trackedTarget == target;
                                }
                                return false;
                            });
 
-    if (it != brushes.end()) {
-        // Resolved style values are cached, so the same brush object is applied
-        // to many elements and reapplied on every visual state change. Keep the
-        // load state which was collected so far unless the source changed.
+    if (it != images.end()) {
+        // Resolved style values are cached, so the same source object is
+        // applied to many targets and reapplied on every visual state change.
+        // Keep the load state which was collected so far unless the source
+        // changed.
         if ((*it)->uri.Equals(uri)) {
             return;
         }
 
-        brushes.erase(it);
+        images.erase(it);
     }
 
-    Wh_Log(L"Tracking ImageBrush with remote source: %s", uri.RawUri().c_str());
+    Wh_Log(L"Tracking %s with remote image source: %s",
+           winrt::get_class_name(target).c_str(), uri.RawUri().c_str());
 
-    auto tracked = std::make_shared<TrackedImageBrush>();
-    tracked->brush = winrt::make_weak(brush);
+    auto tracked = std::make_shared<TrackedImage>();
+    tracked->target = winrt::make_weak(target);
+    tracked->sourceProperty = sourceProperty;
     tracked->uri = uri;
 
     try {
@@ -4739,40 +4757,50 @@ void SetupImageBrushTracking(Media::ImageBrush const& brush,
         Wh_Log(L"Error %08X: %s", ex.code(), ex.message().c_str());
     }
 
-    std::weak_ptr<TrackedImageBrush> trackedWeak = tracked;
+    std::weak_ptr<TrackedImage> trackedWeak = tracked;
 
-    tracked->imageFailedRevoker = brush.ImageFailed(
-        winrt::auto_revoke,
-        [trackedWeak](winrt::Windows::Foundation::IInspectable const&,
-                      ExceptionRoutedEventArgs const& e) {
-            auto tracked = trackedWeak.lock();
-            if (!tracked) {
-                return;
-            }
+    auto onImageFailed = [trackedWeak](
+                             winrt::Windows::Foundation::IInspectable const&,
+                             ExceptionRoutedEventArgs const& e) {
+        auto tracked = trackedWeak.lock();
+        if (!tracked) {
+            return;
+        }
 
-            Wh_Log(L"ImageBrush load failed for: %s, error: %s",
-                   tracked->uri.RawUri().c_str(), e.ErrorMessage().c_str());
+        Wh_Log(L"Image load failed for: %s, error: %s",
+               tracked->uri.RawUri().c_str(), e.ErrorMessage().c_str());
 
-            tracked->loaded = false;
-        });
+        tracked->loaded = false;
+    };
 
-    tracked->imageOpenedRevoker = brush.ImageOpened(
-        winrt::auto_revoke,
-        [trackedWeak](winrt::Windows::Foundation::IInspectable const&,
-                      RoutedEventArgs const&) {
-            auto tracked = trackedWeak.lock();
-            if (!tracked) {
-                return;
-            }
+    auto onImageOpened = [trackedWeak](
+                             winrt::Windows::Foundation::IInspectable const&,
+                             RoutedEventArgs const&) {
+        auto tracked = trackedWeak.lock();
+        if (!tracked) {
+            return;
+        }
 
-            Wh_Log(L"ImageBrush loaded for: %s", tracked->uri.RawUri().c_str());
+        Wh_Log(L"Image loaded for: %s", tracked->uri.RawUri().c_str());
 
-            tracked->loaded = true;
-            tracked->retryCount = 0;
-            tracked->lastRetryTick = 0;
-        });
+        tracked->loaded = true;
+        tracked->retryCount = 0;
+        tracked->lastRetryTick = 0;
+    };
 
-    brushes.push_back(std::move(tracked));
+    if (auto brush = target.try_as<Media::ImageBrush>()) {
+        tracked->brushImageFailedRevoker =
+            brush.ImageFailed(winrt::auto_revoke, onImageFailed);
+        tracked->brushImageOpenedRevoker =
+            brush.ImageOpened(winrt::auto_revoke, onImageOpened);
+    } else if (auto image = target.try_as<Controls::Image>()) {
+        tracked->elementImageFailedRevoker =
+            image.ImageFailed(winrt::auto_revoke, onImageFailed);
+        tracked->elementImageOpenedRevoker =
+            image.ImageOpened(winrt::auto_revoke, onImageOpened);
+    }
+
+    images.push_back(std::move(tracked));
 
     bool registerHandler = false;
 
@@ -4781,12 +4809,12 @@ void SetupImageBrushTracking(Media::ImageBrush const& brush,
 
         g_imageRetryActive = true;
 
-        if (!g_trackedImageBrushesForThread.dispatcher) {
+        if (!g_trackedImagesForThread.dispatcher) {
             try {
                 auto dispatcher = winrt::Microsoft::UI::Dispatching::
                     DispatcherQueue::GetForCurrentThread();
                 if (dispatcher) {
-                    g_trackedImageBrushesForThread.dispatcher = dispatcher;
+                    g_trackedImagesForThread.dispatcher = dispatcher;
                     g_imageRetryDispatchers.push_back(
                         winrt::make_weak(dispatcher));
                     Wh_Log(
@@ -4831,10 +4859,11 @@ void SetupImageBrushTracking(Media::ImageBrush const& brush,
     }
 }
 
-// Tracks the brush if the image source is a remote URL, which can fail to load
-// and be worth retrying.
-void TrackImageBrushIfRemoteSource(
-    Media::ImageBrush const& brush,
+// Tracks the target if the image source is a remote URL, which can fail to
+// load and be worth retrying.
+void TrackIfRemoteImageSource(
+    DependencyObject const& target,
+    DependencyProperty const& sourceProperty,
     winrt::Windows::Foundation::IInspectable const& imageSource) {
     auto bitmapImage = imageSource.try_as<Media::Imaging::BitmapImage>();
     if (!bitmapImage) {
@@ -4851,7 +4880,7 @@ void TrackImageBrushIfRemoteSource(
         return;
     }
 
-    SetupImageBrushTracking(brush, bitmapImage, uri);
+    SetupImageTracking(target, sourceProperty, bitmapImage, uri);
 }
 
 void SetOrClearValue(DependencyObject elementDo,
@@ -4896,16 +4925,21 @@ void SetOrClearValue(DependencyObject elementDo,
     Wh_Log(L"Setting property value %s",
            value ? winrt::get_class_name(value).c_str() : L"(null)");
 
-    // Track ImageBrush with remote ImageSource for retry on network
-    // reconnection. This handles cases where an ImageBrush is set as a property
-    // value (e.g., Background).
+    // Track a remote image source for retry on network reconnection. A style
+    // can declare one as the ImageBrush a property is set to (e.g. Background),
+    // as the ImageSource of an ImageBrush it targets, or as the Source of an
+    // Image element.
     if (auto imageBrush = value.try_as<Media::ImageBrush>()) {
-        TrackImageBrushIfRemoteSource(imageBrush, imageBrush.ImageSource());
-    }
-    // Also handle direct ImageSource property being set on an ImageBrush.
-    else if (auto imageBrush = elementDo.try_as<Media::ImageBrush>()) {
+        TrackIfRemoteImageSource(imageBrush,
+                                 Media::ImageBrush::ImageSourceProperty(),
+                                 imageBrush.ImageSource());
+    } else if (auto imageBrush = elementDo.try_as<Media::ImageBrush>()) {
         if (property == Media::ImageBrush::ImageSourceProperty()) {
-            TrackImageBrushIfRemoteSource(imageBrush, value);
+            TrackIfRemoteImageSource(imageBrush, property, value);
+        }
+    } else if (auto image = elementDo.try_as<Controls::Image>()) {
+        if (property == Controls::Image::SourceProperty()) {
+            TrackIfRemoteImageSource(image, property, value);
         }
     }
 
@@ -8727,18 +8761,18 @@ void UninitializeResourceVariables() {
 }
 
 void UninitializeForCurrentThread() {
-    // Clear tracked image brushes for this thread (revokers will automatically
+    // Clear tracked images for this thread (revokers will automatically
     // unregister).
-    if (auto& timer = g_trackedImageBrushesForThread.retryDebounceTimer) {
+    if (auto& timer = g_trackedImagesForThread.retryDebounceTimer) {
         try {
             timer.Stop();
         } catch (winrt::hresult_error const& ex) {
             Wh_Log(L"Error %08X: %s", ex.code(), ex.message().c_str());
         }
     }
-    g_trackedImageBrushesForThread.retryDebounceTimerTickRevoker.revoke();
-    g_trackedImageBrushesForThread.retryDebounceTimer = nullptr;
-    g_trackedImageBrushesForThread.brushes.clear();
+    g_trackedImagesForThread.retryDebounceTimerTickRevoker.revoke();
+    g_trackedImagesForThread.retryDebounceTimer = nullptr;
+    g_trackedImagesForThread.images.clear();
     StopImageLoadRetriesForCurrentThread();
 
     // Before the teardown below, so that no recycling callback can fire into
