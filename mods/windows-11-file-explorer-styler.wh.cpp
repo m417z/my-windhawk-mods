@@ -4475,7 +4475,6 @@ void StartImageRetry(const std::shared_ptr<TrackedImage>& tracked) {
         retryImage.DecodePixelWidth(tracked->decodePixelWidth);
         retryImage.DecodePixelHeight(tracked->decodePixelHeight);
         retryImage.AutoPlay(tracked->autoPlay);
-        retryImage.UriSource(tracked->uri);
 
         // A BitmapImage is loaded by the framework as part of the tree it's
         // used in, so it has to be assigned to the target for anything to
@@ -4483,6 +4482,13 @@ void StartImageRetry(const std::shared_ptr<TrackedImage>& tracked) {
         // the same URI to a BitmapImage doesn't reload it. The target's own
         // ImageOpened and ImageFailed report how this attempt went.
         target.SetValue(tracked->sourceProperty, retryImage);
+
+        // The URI goes last: XAML decodes an image to the size it's displayed
+        // at only when the BitmapImage is already connected to the live tree by
+        // the time its source is set. Setting the URI first decodes at the
+        // image's natural size, which is then scaled at render time and looks
+        // poor.
+        retryImage.UriSource(tracked->uri);
     } catch (winrt::hresult_error const& ex) {
         Wh_Log(L"Error %08X: %s", ex.code(), ex.message().c_str());
     }
