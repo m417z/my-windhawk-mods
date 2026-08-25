@@ -6344,7 +6344,7 @@ const Theme g_themeOS26_Liquid_Glass_variant_ClearMacDock = {{
     ThemeTargetStyles{L"Grid#IconPanel > Image#Icon, Taskbar.TaskListLabeledButtonPanel#IconPanel > Image#Icon", {
         L"Height=24",
         L"Width=24",
-        L"Margin=10,0,0,0"}},
+        L"Margin=5,0,-5,0"}},
     ThemeTargetStyles{L"Grid#IconPanel, Taskbar.TaskListButtonPanel", {
         L"Width=55",
         L"Height=70"}},
@@ -6719,7 +6719,7 @@ const Theme g_themeOS26_Liquid_Glass_variant_ClearTaskbar = {{
     ThemeTargetStyles{L"Grid#IconPanel > Image#Icon, Taskbar.TaskListLabeledButtonPanel#IconPanel > Image#Icon", {
         L"Height=24",
         L"Width=24",
-        L"Margin=10,0,0,0"}},
+        L"Margin=5,0,-5,0"}},
     ThemeTargetStyles{L"Grid#IconPanel, Taskbar.TaskListButtonPanel", {
         L"Width=55",
         L"Height=70"}},
@@ -6989,7 +6989,7 @@ const Theme g_themeOS26_Liquid_Glass_variant_DarkMacDock = {{
     ThemeTargetStyles{L"Grid#IconPanel > Image#Icon, Taskbar.TaskListLabeledButtonPanel#IconPanel > Image#Icon", {
         L"Height=24",
         L"Width=24",
-        L"Margin=10,0,0,0"}},
+        L"Margin=5,0,-5,0"}},
     ThemeTargetStyles{L"Grid#IconPanel, Taskbar.TaskListButtonPanel", {
         L"Width=55",
         L"Height=70"}},
@@ -7364,7 +7364,7 @@ const Theme g_themeOS26_Liquid_Glass_variant_DarkTaskbar = {{
     ThemeTargetStyles{L"Grid#IconPanel > Image#Icon, Taskbar.TaskListLabeledButtonPanel#IconPanel > Image#Icon", {
         L"Height=24",
         L"Width=24",
-        L"Margin=10,0,0,0"}},
+        L"Margin=5,0,-5,0"}},
     ThemeTargetStyles{L"Grid#IconPanel, Taskbar.TaskListButtonPanel", {
         L"Width=55",
         L"Height=70"}},
@@ -8174,6 +8174,7 @@ const Theme g_themePills = {{
         L"Margin := {{($buttonSpacing-6)/2}},0,{{($buttonSpacing-6)/2}},0"}},
     ThemeTargetStyles{L"Taskbar.TaskListButton#TaskListButton > Grid#IconPanel@CommonStates > Image#Icon, Taskbar.TaskListButton#TaskListButton > Taskbar.TaskListLabeledButtonPanel#IconPanel@CommonStates > Image#Icon", {
         L"ActualWidth => ImageIconWidth",
+        L"Margin := 0,{{$taskbarTopOffset}},0,{{$taskbarBottomOffset}}",
         L"HorizontalAlignment = 0",
         L"Canvas.ZIndex = 3",
         L"RenderTransformOrigin = 1,0.5",
@@ -8380,8 +8381,8 @@ const Theme g_themePills = {{
     L"taskbarSidesRounded = 1",
     L"buttonFill = <WindhawkBlur BlurAmount=\"7\" TintColor=\"{ThemeResource AdaptiveFill}\" TintOpacity=\"0.2\" TintLuminosityOpacity=\"0.2\"/>",
     L"buttonBorderColor = <SolidColorBrush Color=\"{ThemeResource AdaptiveBorder}\" Opacity=\"1\"/>",
-    L"taskbarFill = ''",
-    L"taskbarStrokeColor = ''",
+    L"taskbarFill = {{__unset}}",
+    L"taskbarStrokeColor = {{__unset}}",
     L"progressColor = <SolidColorBrush Color=\"{ThemeResource SystemAccentColor}\" Opacity=\"0.2\"/>",
     L"showDesktopIndicatorColor = <SolidColorBrush Color=\"{ThemeResource SystemAccentColor}\" Opacity=\"0.7\"/>",
     L"multiWinIndicatorColor = <SolidColorBrush Color=\"{ThemeResource AdaptiveIndicator}\" Opacity=\"0.7\"/>",
