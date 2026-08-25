@@ -11281,6 +11281,8 @@ bool StartStatsTimer() {
                              L' ', L'_');
                 std::replace(themeNameEscaped.begin(), themeNameEscaped.end(),
                              L'&', L'_');
+                std::replace(themeNameEscaped.begin(), themeNameEscaped.end(),
+                             L'.', L'_');
 
                 std::wstring statsUrl = kStatsBaseUrl;
                 statsUrl += themeNameEscaped;
