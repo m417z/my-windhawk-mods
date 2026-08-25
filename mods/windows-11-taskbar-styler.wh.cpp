@@ -8445,6 +8445,7 @@ void ApplyCustomizations(ElementId elementId,
 void CleanupCustomizations(ElementId elementId);
 void QueueDiagnosticsRelease(InstanceHandle handle);
 void FlushDiagnosticsReleasesIfQuiet();
+void ResetTaskbarSurfacesIfQuiet();
 
 void HandleClickThroughIslandRoot(
     winrt::Windows::Foundation::IInspectable const& inspectable);
@@ -8708,6 +8709,8 @@ HRESULT VisualTreeWatcher::OnVisualTreeChange(ParentChildRelation relation, Visu
     // A tree discarded whole is never dismantled, so it reports no removals to
     // be released by.
     FlushDiagnosticsReleasesIfQuiet();
+
+    ResetTaskbarSurfacesIfQuiet();
 
     if (mutationType == Add)
     {
@@ -14836,6 +14839,51 @@ void ClearClickThroughRegions() {
             return TRUE;
         },
         0);
+}
+
+// Explorer never erases the taskbar window: Shell_TrayWnd,
+// Shell_SecondaryTrayWnd and their legacy children all use a NULL class brush,
+// so whatever is drawn into the window's redirection surface stays there for
+// the window's lifetime. An opaque taskbar background hides it, a see-through
+// style doesn't, and it shows as solid boxes behind the taskbar.
+// RDW_ALLCHILDREN is what makes the invalidation reach the area under the XAML
+// island, which is where the leftovers sit; with a NULL brush nothing is drawn
+// back, so the surface lands at fully transparent again.
+void ResetTaskbarWindowSurfaces() {
+    EnumThreadWindows(
+        GetCurrentThreadId(),
+        [](HWND hWnd, LPARAM) -> BOOL {
+            if (IsTaskbarTopLevelWindow(hWnd)) {
+                RedrawWindow(hWnd, nullptr, nullptr,
+                             RDW_INVALIDATE | RDW_ALLCHILDREN);
+            }
+            return TRUE;
+        },
+        0);
+}
+
+thread_local ULONGLONG g_lastTaskbarSurfaceResetQueueTick;
+thread_local bool g_taskbarSurfaceResetPending;
+
+// Long enough to sit out a tree being built.
+constexpr ULONGLONG kTaskbarSurfaceResetDelay = 2000;
+
+// Driven by the next report rather than by a timer, like the diagnostics
+// releases: a thread which goes quiet holds its last reset until it is used
+// again. The redraw is left asynchronous so that it rides the next paint cycle
+// instead of painting from inside a tree report.
+void ResetTaskbarSurfacesIfQuiet() {
+    ULONGLONG tick = GetTickCount64();
+
+    if (g_taskbarSurfaceResetPending &&
+        tick - g_lastTaskbarSurfaceResetQueueTick >=
+            kTaskbarSurfaceResetDelay) {
+        g_taskbarSurfaceResetPending = false;
+        ResetTaskbarWindowSurfaces();
+    }
+
+    g_taskbarSurfaceResetPending = true;
+    g_lastTaskbarSurfaceResetQueueTick = tick;
 }
 
 // Item elements the current virtualization pass tore down, consumed by the
