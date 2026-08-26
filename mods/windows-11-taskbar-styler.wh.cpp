@@ -697,9 +697,9 @@ const Theme g_themeDockLike = {{
         L"Padding=0"}},
     ThemeTargetStyles{L"SystemTray.CopilotIcon", {
         L"Padding=0"}},
-    ThemeTargetStyles{L"SystemTray.OmniButton#NotificationCenterButton > Grid > ContentPresenter > ItemsPresenter > StackPanel > ContentPresenter > systemtray:IconView#SystemTrayIcon > Grid", {
+    ThemeTargetStyles{L"SystemTray.OmniButton#NotificationCenterButton > Grid > ContentPresenter > ItemsPresenter > StackPanel > ContentPresenter > SystemTray.IconView#SystemTrayIcon > Grid", {
         L"Padding=4,0,4,0"}},
-    ThemeTargetStyles{L"SystemTray.IconView#SystemTrayIcon > Grid#ContainerGrid > Grid#ContentGrid > SystemTray.TextIconContent > Grid#ContainerGrid, SystemTray.IconView#SystemTrayIcon > Grid#ContainerGrid > ContentPresenter#ContentPresenter > Grid#ContentGrid > SystemTray.TextIconContent > Grid#ContainerGrid", {
+    ThemeTargetStyles{L"SystemTray.IconView#SystemTrayIcon > Grid#ContainerGrid > ContentPresenter#ContentPresenter > Grid#ContentGrid > SystemTray.TextIconContent > Grid#ContainerGrid", {
         L"Padding=0"}},
     ThemeTargetStyles{L"SystemTray.StackListView#IconStack > ItemsPresenter > StackPanel > ContentPresenter > SystemTray.IconView#SystemTrayIcon", {
         L"Padding=0"}},
@@ -722,7 +722,7 @@ const Theme g_themeSquircle = {{
         L"Fill=Transparent"}},
     ThemeTargetStyles{L"Taskbar.TaskbarBackground#HoverFlyoutBackgroundControl > Grid > Rectangle#BackgroundFill", {
         L"Fill=#CC222222"}},
-    ThemeTargetStyles{L"Grid#IconPanel@CommonStates > Border#BackgroundElement, Taskbar.TaskListButtonPanel@CommonStates > Grid > Border#BackgroundElement, Taskbar.TaskListButtonPanel@CommonStates > Border#BackgroundElement", {
+    ThemeTargetStyles{L"Grid#IconPanel@CommonStates > Border#BackgroundElement, Taskbar.TaskListButtonPanel@CommonStates > Grid > Border#BackgroundElement, Taskbar.TaskListButtonPanel@CommonStates > Border#BackgroundElement, SearchUx.SearchUI.SearchButtonRootGrid#SearchBoxButtonRootPanel@CommonStates > Grid > Border#BackgroundElement, SearchUx.SearchUI.SearchButtonRootGrid#SearchBoxButtonRootPanel@CommonStates > Border#BackgroundElement", {
         L"CornerRadius=5",
         L"Background:=<AcrylicBrush TintColor=\"Black\" TintOpacity=\"0.8\" FallbackColor=\"#BB222222\" />",
         L"Background@InactivePointerOver:=<AcrylicBrush TintColor=\"Black\" TintOpacity=\"0.8\" FallbackColor=\"#CC222222\" />",
@@ -777,7 +777,7 @@ const Theme g_themeSquircle = {{
         L"Margin=-11,0,0,0"}},
     ThemeTargetStyles{L"Taskbar.ExperienceToggleButton#LaunchListButton[AutomationProperties.Name=Task View]", {
         L"Margin=-12,0,0,0"}},
-    ThemeTargetStyles{L"Grid#IconPanel@RunningIndicatorStates > Border, taskbar:TaskListLabeledButtonPanel@RunningIndicatorStates > Border", {
+    ThemeTargetStyles{L"Grid#IconPanel@RunningIndicatorStates > Border, Taskbar.TaskListLabeledButtonPanel@RunningIndicatorStates > Border", {
         L"Background@ActiveRunningIndicator:=<AcrylicBrush TintOpacity=\"0.8\" TintColor=\"Black\" />",
         L"Background@InactiveRunningIndicator:=<AcrylicBrush TintOpacity=\"0.8\" TintColor=\"Black\" />",
         L"Background@InactiveRunningIndicatorPointerOver:=<AcrylicBrush TintOpacity=\"0.8\" TintColor=\"Black\" />"}},
@@ -901,6 +901,8 @@ const Theme g_themeMatter = {{
         L"Visibility = 1"}},
     ThemeTargetStyles{L"Taskbar.SearchBoxButton", {
         L"Margin=0,0,2,0"}},
+    ThemeTargetStyles{L"SearchUx.SearchUI.SearchButtonControl", {
+        L"Margin=0,0,2,0"}},
     ThemeTargetStyles{L"Border#BackgroundElement", {
         L"BorderThickness=0"}},
     ThemeTargetStyles{L"Grid#IconPanel@CommonStates > Border#BackgroundElement, Taskbar.TaskListLabeledButtonPanel@CommonStates > Border#BackgroundElement", {
@@ -993,7 +995,11 @@ const Theme g_themeMatter = {{
         L"CornerRadius = 8"}},
     ThemeTargetStyles{L"SearchUx.SearchUI.SearchButtonRootGrid@CommonStates > Grid > Border#BackgroundElement, SearchUx.SearchUI.SearchButtonRootGrid@CommonStates > Border#BackgroundElement", {
         L"Background@InactiveNormal :=$base",
-        L"CornerRadius = 8"}},
+        L"CornerRadius = $mainRadius",
+        L"Background :=$base",
+        L"Background@InactivePointerOver :=$overlay2",
+        L"Background@ActivePointerOver:=$overlay",
+        L"Background@ActiveNormal :=$active"}},
 }, {
     L"mainRadius = 8",
     L"transparent = <SolidColorBrush Color=\"Transparent\"/>",
@@ -1136,7 +1142,7 @@ const Theme g_themeBubbles = {{
         L"BorderThickness@NoRunningIndicator=1",
         L"BorderBrush@NoRunningIndicator:=<SolidColorBrush x:Name=\"SearchBoxTextBlock\" Opacity=\"0.15\" Color=\"{ThemeResource SearchPillButtonForeground}\" />",
         L"Margin=1"}},
-    ThemeTargetStyles{L"Grid#IconPanel@CommonStates > Border#BackgroundElement, Taskbar.TaskListButtonPanel@CommonStates > Grid > Border#BackgroundElement, Taskbar.TaskListButtonPanel@CommonStates > Border#BackgroundElement", {
+    ThemeTargetStyles{L"Grid#IconPanel@CommonStates > Border#BackgroundElement, Taskbar.TaskListButtonPanel@CommonStates > Grid > Border#BackgroundElement, Taskbar.TaskListButtonPanel@CommonStates > Border#BackgroundElement, SearchUx.SearchUI.SearchButtonRootGrid#SearchBoxButtonRootPanel@CommonStates > Grid > Border#BackgroundElement, SearchUx.SearchUI.SearchButtonRootGrid#SearchBoxButtonRootPanel@CommonStates > Border#BackgroundElement", {
         L"Background:=<SolidColorBrush x:Name=\"SystemChromeHigh\" Opacity=\"0.3\" Color=\"{ThemeResource SystemChromeHighColor}\" />",
         L"BorderBrush:=<SolidColorBrush x:Name=\"SystemChromeHigh\" Opacity=\"0.6\" Color=\"{ThemeResource SystemChromeHighColor}\" />",
         L"Background@ActivePointerOver:=<SolidColorBrush x:Name=\"SystemChromeHigh\" Opacity=\"0.8\" Color=\"{ThemeResource SystemChromeHighColor}\" />",
@@ -1185,6 +1191,10 @@ const Theme g_themeBubbles = {{
     ThemeTargetStyles{L"Taskbar.SearchBoxButton", {
         L"Height=48",
         L"Margin=0,-2,0,0"}},
+    ThemeTargetStyles{L"SearchUx.SearchUI.SearchButtonRootGrid#SearchBoxButtonRootPanel > Grid > Border#BackgroundElement, SearchUx.SearchUI.SearchButtonRootGrid#SearchBoxButtonRootPanel > Border#BackgroundElement", {
+        L"CornerRadius=20",
+        L"Background:=<SolidColorBrush x:Name=\"SearchBoxTextBlock\" Opacity=\"0.15\" Color=\"{ThemeResource SearchPillButtonForeground}\" />",
+        L"BorderBrush:=<SolidColorBrush x:Name=\"SearchBoxTextBlock\" Opacity=\"0.25\" Color=\"{ThemeResource SearchPillButtonForeground}\" />"}},
     ThemeTargetStyles{L"Border#MultiWindowElement", {
         L"Height=0"}},
     ThemeTargetStyles{L"Grid#OverflowRootGrid > Border", {
@@ -1317,7 +1327,7 @@ const Theme g_themeRosePine = {{
         L"Fill=#302d47"}},
     ThemeTargetStyles{L"Rectangle#BackgroundStroke", {
         L"Fill=Transparent"}},
-    ThemeTargetStyles{L"Taskbar.TaskListButtonPanel#ExperienceToggleButtonRootPanel > Grid > Border#BackgroundElement, Taskbar.TaskListButtonPanel#ExperienceToggleButtonRootPanel > Border#BackgroundElement", {
+    ThemeTargetStyles{L"Taskbar.TaskListButtonPanel#ExperienceToggleButtonRootPanel > Grid > Border#BackgroundElement, Taskbar.TaskListButtonPanel#ExperienceToggleButtonRootPanel > Border#BackgroundElement, SearchUx.SearchUI.SearchButtonRootGrid#SearchBoxButtonRootPanel > Grid > Border#BackgroundElement, SearchUx.SearchUI.SearchButtonRootGrid#SearchBoxButtonRootPanel > Border#BackgroundElement", {
         L"Background=#302d47"}},
     ThemeTargetStyles{L"TextBlock#DateInnerTextBlock", {
         L"Margin=0,0,0,-2"}},
@@ -1329,6 +1339,8 @@ const Theme g_themeWinVista = {{
     ThemeTargetStyles{L"Taskbar.ExperienceToggleButton", {
         L"CornerRadius=2"}},
     ThemeTargetStyles{L"Taskbar.SearchBoxButton", {
+        L"CornerRadius=2"}},
+    ThemeTargetStyles{L"SearchUx.SearchUI.SearchButtonRootGrid > Grid > Border, SearchUx.SearchUI.SearchButtonRootGrid > Border", {
         L"CornerRadius=2"}},
     ThemeTargetStyles{L"Taskbar.TaskListButton", {
         L"CornerRadius=2"}},
@@ -1635,6 +1647,16 @@ const Theme g_themeLucent = {{
         L"Background@ActiveNormal_SearchIcon=#BEBEBE",
         L"Background@ActivePointerOver_SearchIcon=#DDDDDD",
         L"Background@ActivePressed_SearchIcon=#EEEEEE"}},
+    ThemeTargetStyles{L"SearchUx.SearchUI.SearchButtonRootGrid#SearchBoxButtonRootPanel@CommonStates", {
+        L"Background@InactivePointerOver=#BEBEBE",
+        L"Background@InactivePressed=#DDDDDD",
+        L"Background@ActiveNormal=#BEBEBE",
+        L"Background@ActivePointerOver=#DDDDDD",
+        L"Background@ActivePressed=#EEEEEE"}},
+    ThemeTargetStyles{L"SearchUx.SearchUI.SearchButtonRootGrid#SearchBoxButtonRootPanel > Grid > Border, SearchUx.SearchUI.SearchButtonRootGrid#SearchBoxButtonRootPanel > Border", {
+        L"CornerRadius=0",
+        L"Margin=-3,-10,-3,-10",
+        L"BorderThickness=0"}},
 }};
 
 const Theme g_themeLucent_variant_Light = {{
@@ -1753,6 +1775,14 @@ const Theme g_themeLucent_variant_Light = {{
         L"Background@InactivePointerOver_SearchIcon=#BEBEBE",
         L"Background@ActiveNormal_SearchIcon=#BEBEBE",
         L"Background@ActivePointerOver_SearchIcon=#EBEBEB"}},
+    ThemeTargetStyles{L"SearchUx.SearchUI.SearchButtonRootGrid#SearchBoxButtonRootPanel@CommonStates", {
+        L"Background@InactivePointerOver=#BEBEBE",
+        L"Background@ActiveNormal=#BEBEBE",
+        L"Background@ActivePointerOver=#EBEBEB"}},
+    ThemeTargetStyles{L"SearchUx.SearchUI.SearchButtonRootGrid#SearchBoxButtonRootPanel > Grid > Border, SearchUx.SearchUI.SearchButtonRootGrid#SearchBoxButtonRootPanel > Border", {
+        L"CornerRadius=0",
+        L"Margin=-3,-10,-3,-10",
+        L"BorderThickness=0"}},
 }};
 
 const Theme g_themeSunValley = {{
@@ -2403,7 +2433,7 @@ const Theme g_themeBottomDensy = {{
         L"Height=2",
         L"Margin=0,-2,0,0",
         L"Width@ActiveRunningIndicator=32"}},
-    ThemeTargetStyles{L"Grid#IconPanel@RunningIndicatorStates > muxc:ProgressBar#ProgressIndicator, Taskbar.TaskListLabeledButtonPanel@RunningIndicatorStates > muxc:ProgressBar#ProgressIndicator", {
+    ThemeTargetStyles{L"Grid#IconPanel@RunningIndicatorStates > Microsoft.UI.Xaml.Controls.ProgressBar#ProgressIndicator, Taskbar.TaskListLabeledButtonPanel@RunningIndicatorStates > Microsoft.UI.Xaml.Controls.ProgressBar#ProgressIndicator", {
         L"VerticalAlignment=0"}},
     ThemeTargetStyles{L"Rectangle#RunningIndicator", {
         L"VerticalAlignment=0"}},
@@ -2487,7 +2517,7 @@ const Theme g_themeBottomDensy_variant_NoInd = {{
         L"Width@ActiveRunningIndicator=32",
         L"Height@ActiveRunningIndicator=2",
         L"Margin@ActiveRunningIndicator=0,-2,0,0"}},
-    ThemeTargetStyles{L"Grid#IconPanel@RunningIndicatorStates > muxc:ProgressBar#ProgressIndicator, Taskbar.TaskListLabeledButtonPanel@RunningIndicatorStates > muxc:ProgressBar#ProgressIndicator", {
+    ThemeTargetStyles{L"Grid#IconPanel@RunningIndicatorStates > Microsoft.UI.Xaml.Controls.ProgressBar#ProgressIndicator, Taskbar.TaskListLabeledButtonPanel@RunningIndicatorStates > Microsoft.UI.Xaml.Controls.ProgressBar#ProgressIndicator", {
         L"VerticalAlignment=0"}},
     ThemeTargetStyles{L"Rectangle#RunningIndicator", {
         L"VerticalAlignment=0"}},
@@ -2583,7 +2613,7 @@ const Theme g_themeTaskbarXII = {{
         L"Opacity=1"}},
     ThemeTargetStyles{L"Microsoft.UI.Xaml.Controls.ItemsRepeater#TaskbarFrameRepeater", {
         L"Margin=0,0,3,0"}},
-    ThemeTargetStyles{L"Taskbar.SearchBoxButton > Taskbar.TaskListButtonPanel", {
+    ThemeTargetStyles{L"Taskbar.SearchBoxButton > Taskbar.TaskListButtonPanel, SearchUx.SearchUI.SearchButtonRootGrid#SearchBoxButtonRootPanel", {
         L"Margin=2,0,6,0"}},
     ThemeTargetStyles{L"TextBlock#SearchBoxTextBlock", {
         L"Text=\u2726 Meow"}},
@@ -2599,6 +2629,7 @@ const Theme g_themeTaskbarXII = {{
         L"MaxWidth=27"}},
     ThemeTargetStyles{L"SystemTray.SystemTrayFrame", {
         L"HorizontalAlignment=Left",
+        L"VerticalAlignment=Center",
         L"Grid.Column=1",
         L"Margin=2,0,0,0"}},
     ThemeTargetStyles{L"StackPanel#SystemTrayFrameGrid, Grid#SystemTrayFrameGrid", {
@@ -2825,7 +2856,7 @@ const Theme g_themeWindows7 = {{
         L"Width=$desktopWidth"}},
     ThemeTargetStyles{L"SystemTray.Stack#ShowDesktopStack > Windows.UI.Xaml.Controls.Grid > SystemTray.StackListView > Windows.UI.Xaml.Controls.ItemsPresenter > Windows.UI.Xaml.Controls.StackPanel > Windows.UI.Xaml.Controls.ContentPresenter", {
         L"Width=$desktopWidth"}},
-    ThemeTargetStyles{L"SystemTray.Stack#ShowDesktopStack > Windows.UI.Xaml.Controls.Grid > SystemTray.StackListView > Windows.UI.Xaml.Controls.ItemsPresenter > Windows.UI.Xaml.Controls.StackPanel > Windows.UI.Xaml.Controls.ContentPresenter > SystemTray.IconView", {
+    ThemeTargetStyles{L"SystemTray.Stack#ShowDesktopStack > Windows.UI.Xaml.Controls.Grid > SystemTray.StackListView > Windows.UI.Xaml.Controls.ItemsPresenter > Windows.UI.Xaml.Controls.StackPanel > Windows.UI.Xaml.Controls.ContentPresenter > SystemTray.IconView > Windows.UI.Xaml.Controls.Grid#ContainerGrid, SystemTray.Stack#ShowDesktopStack > Windows.UI.Xaml.Controls.Grid > SystemTray.StackListView > Windows.UI.Xaml.Controls.ItemsPresenter > Windows.UI.Xaml.Controls.StackPanel > Windows.UI.Xaml.Controls.ContentPresenter > SystemTray.IconView", {
         L"Width=$desktopWidth"}},
     ThemeTargetStyles{L"SystemTray.OmniButton#ControlCenterButton > Windows.UI.Xaml.Controls.Grid > Windows.UI.Xaml.Controls.ContentPresenter > Windows.UI.Xaml.Controls.ItemsPresenter > Windows.UI.Xaml.Controls.StackPanel > Windows.UI.Xaml.Controls.ContentPresenter > SystemTray.IconView#SystemTrayIcon > Windows.UI.Xaml.Controls.Grid#ContainerGrid", {
         L"Padding=0"}},
@@ -2890,6 +2921,29 @@ const Theme g_themeWindows7 = {{
         L"Height@ActivePressed_SearchIcon=Auto",
         L"Height@ActivePointerOver_SearchIcon=Auto",
         L"Height@InactiveNormal_SearchIcon=Auto"}},
+    ThemeTargetStyles{L"SearchUx.SearchUI.SearchIconButton > SearchUx.SearchUI.SearchButtonRootGrid#SearchBoxButtonRootPanel@CommonStates > Windows.UI.Xaml.Controls.Grid > Windows.UI.Xaml.Controls.Border#BackgroundElement, SearchUx.SearchUI.SearchIconButton > SearchUx.SearchUI.SearchButtonRootGrid#SearchBoxButtonRootPanel@CommonStates > Windows.UI.Xaml.Controls.Border#BackgroundElement", {
+        L"BorderBrush@InactivePointerOver:=<ImageBrush Stretch=\"Uniform\" ImageSource=\"$taskbandNotRunningPointerOver\" />",
+        L"BorderBrush@InactivePressed:=<ImageBrush Stretch=\"Uniform\" ImageSource=\"$taskbandNotRunningPressed\" />",
+        L"BorderBrush@ActivePressed:=<ImageBrush Stretch=\"Uniform\" ImageSource=\"$taskbandNotRunningPressed\" />",
+        L"BorderBrush@ActivePointerOver:=<ImageBrush Stretch=\"Uniform\" ImageSource=\"$taskbandNotRunningPointerOver\" />",
+        L"BorderBrush@ActiveNormal=Transparent",
+        L"BorderThickness@InactivePointerOver=2",
+        L"BorderThickness@InactivePressed=2",
+        L"BorderThickness@ActivePressed=2",
+        L"BorderThickness@ActivePointerOver=2",
+        L"Background@ActiveNormal:=<ImageBrush Stretch=\"None\" ImageSource=\"$searchIcon\" />",
+        L"Background@InactivePointerOver:=<ImageBrush Stretch=\"None\" ImageSource=\"$searchIcon\" />",
+        L"Background@InactivePressed:=<ImageBrush Stretch=\"None\" ImageSource=\"$searchIcon\" />",
+        L"Background@ActivePressed:=<ImageBrush Stretch=\"None\" ImageSource=\"$searchIcon\" />",
+        L"Background@ActivePointerOver:=<ImageBrush Stretch=\"None\" ImageSource=\"$searchIcon\" />",
+        L"Background@InactiveNormal:=<ImageBrush Stretch=\"None\" ImageSource=\"$searchIcon\" />",
+        L"Height=30",
+        L"Height@ActiveNormal=Auto",
+        L"Height@InactivePointerOver=Auto",
+        L"Height@InactivePressed=Auto",
+        L"Height@ActivePressed=Auto",
+        L"Height@ActivePointerOver=Auto",
+        L"Height@InactiveNormal=Auto"}},
     ThemeTargetStyles{L"Taskbar.SearchBoxButton#SearchBoxButton[AutomationProperties.AutomationId=SearchButton] > Taskbar.TaskListButtonPanel@CommonStates > Grid > Microsoft.UI.Xaml.Controls.AnimatedVisualPlayer, Taskbar.SearchBoxButton#SearchBoxButton[AutomationProperties.AutomationId=SearchButton] > Taskbar.TaskListButtonPanel@CommonStates > Microsoft.UI.Xaml.Controls.AnimatedVisualPlayer", {
         L"Visibility@ActiveNormal_SearchIcon=Collapsed",
         L"Visibility@InactivePointerOver_SearchIcon=Collapsed",
@@ -2897,6 +2951,13 @@ const Theme g_themeWindows7 = {{
         L"Visibility@ActivePressed_SearchIcon=Collapsed",
         L"Visibility@ActivePointerOver_SearchIcon=Collapsed",
         L"Visibility@InactiveNormal_SearchIcon=Collapsed"}},
+    ThemeTargetStyles{L"SearchUx.SearchUI.SearchIconButton > SearchUx.SearchUI.SearchButtonRootGrid#SearchBoxButtonRootPanel@CommonStates > Grid > Microsoft.UI.Xaml.Controls.AnimatedVisualPlayer, SearchUx.SearchUI.SearchIconButton > SearchUx.SearchUI.SearchButtonRootGrid#SearchBoxButtonRootPanel@CommonStates > Microsoft.UI.Xaml.Controls.AnimatedVisualPlayer", {
+        L"Visibility@ActiveNormal=Collapsed",
+        L"Visibility@InactivePointerOver=Collapsed",
+        L"Visibility@InactivePressed=Collapsed",
+        L"Visibility@ActivePressed=Collapsed",
+        L"Visibility@ActivePointerOver=Collapsed",
+        L"Visibility@InactiveNormal=Collapsed"}},
     ThemeTargetStyles{L"Windows.UI.Xaml.Controls.StackPanel > Windows.UI.Xaml.Controls.ContentPresenter > SystemTray.IconView > Windows.UI.Xaml.Controls.Grid@ > Windows.UI.Xaml.Controls.Border#BackgroundBorder", {
         L"Background@CheckedPressed:=<ImageBrush Stretch=\"Fill\" ImageSource=\"$clockPressed\" />",
         L"Background@CheckedPointerOver:=<ImageBrush Stretch=\"Fill\" ImageSource=\"$clockPointerOver\" />",
@@ -3052,7 +3113,7 @@ const Theme g_themeAeris = {{
         L"Transform3D:=<CompositeTransform3D TranslateX=\"2\" TranslateY=\"1\" />"}},
     ThemeTargetStyles{L"Grid#IconPanel > Rectangle#DefaultIcon, Taskbar.TaskListLabeledButtonPanel > Rectangle#DefaultIcon", {
         L"Visibility=Collapsed"}},
-    ThemeTargetStyles{L"Taskbar.TaskListButtonPanel > Grid > AnimatedVisualPlayer, Taskbar.TaskListButtonPanel > AnimatedVisualPlayer", {
+    ThemeTargetStyles{L"Taskbar.TaskListButtonPanel > Grid > AnimatedVisualPlayer, Taskbar.TaskListButtonPanel > AnimatedVisualPlayer, SearchUx.SearchUI.SearchButtonRootGrid > Grid > AnimatedVisualPlayer, SearchUx.SearchUI.SearchButtonRootGrid > AnimatedVisualPlayer", {
         L"Transform3D:=<CompositeTransform3D TranslateX=\"0\" TranslateY=\"1\" />"}},
     ThemeTargetStyles{L"Taskbar.ExperienceToggleButton#LaunchListButton[AutomationProperties.AutomationId=StartButton] > Taskbar.TaskListButtonPanel", {
         L"MinWidth=60",
@@ -3115,7 +3176,7 @@ const Theme g_themeAeris = {{
     ThemeTargetStyles{L"SystemTray.Stack#ShowDesktopStack", {
         L"MinWidth=$showDesktopWidth",
         L"MaxWidth=$showDesktopWidth"}},
-    ThemeTargetStyles{L"SystemTray.Stack#ShowDesktopStack > Grid > SystemTray.StackListView > Windows.UI.Xaml.Controls.ItemsPresenter > Windows.UI.Xaml.Controls.StackPanel > Windows.UI.Xaml.Controls.ContentPresenter > SystemTray.IconView", {
+    ThemeTargetStyles{L"SystemTray.Stack#ShowDesktopStack > Grid > SystemTray.StackListView > Windows.UI.Xaml.Controls.ItemsPresenter > Windows.UI.Xaml.Controls.StackPanel > Windows.UI.Xaml.Controls.ContentPresenter > SystemTray.IconView > Grid#ContainerGrid, SystemTray.Stack#ShowDesktopStack > Grid > SystemTray.StackListView > Windows.UI.Xaml.Controls.ItemsPresenter > Windows.UI.Xaml.Controls.StackPanel > Windows.UI.Xaml.Controls.ContentPresenter > SystemTray.IconView", {
         L"MinWidth=$showDesktopWidth",
         L"MaxWidth=$showDesktopWidth"}},
     ThemeTargetStyles{L"SystemTray.IconView#SystemTrayIcon > Grid#ContainerGrid@ > Rectangle#ShowDesktopPipe", {
@@ -3218,17 +3279,17 @@ const Theme g_themePlasma = {{
         L"HorizontalAlignment=Center",
         L"Visibility@MultiWindowPressed=Visible",
         L"Visibility=Collapsed"}},
-    ThemeTargetStyles{L"Taskbar.TaskListButtonPanel#ExperienceToggleButtonRootPanel", {
+    ThemeTargetStyles{L"Taskbar.TaskListButtonPanel#ExperienceToggleButtonRootPanel, SearchUx.SearchUI.SearchButtonRootGrid#SearchBoxButtonRootPanel", {
         L"Padding=0",
         L"Width=50"}},
-    ThemeTargetStyles{L"Taskbar.TaskListButtonPanel#ExperienceToggleButtonRootPanel@CommonStates > Windows.UI.Xaml.Controls.Grid > Windows.UI.Xaml.Controls.Border#BackgroundElement, Taskbar.TaskListButtonPanel#ExperienceToggleButtonRootPanel@CommonStates > Windows.UI.Xaml.Controls.Border#BackgroundElement", {
+    ThemeTargetStyles{L"SearchUx.SearchUI.SearchButtonRootGrid#SearchBoxButtonRootPanel@CommonStates > Windows.UI.Xaml.Controls.Grid > Windows.UI.Xaml.Controls.Border#BackgroundElement, SearchUx.SearchUI.SearchButtonRootGrid#SearchBoxButtonRootPanel@CommonStates > Windows.UI.Xaml.Controls.Border#BackgroundElement, Taskbar.TaskListButtonPanel#ExperienceToggleButtonRootPanel@CommonStates > Windows.UI.Xaml.Controls.Grid > Windows.UI.Xaml.Controls.Border#BackgroundElement, Taskbar.TaskListButtonPanel#ExperienceToggleButtonRootPanel@CommonStates > Windows.UI.Xaml.Controls.Border#BackgroundElement", {
         L"CornerRadius=0",
         L"BorderThickness=0",
         L"Width=32",
         L"Background=Transparent"}},
     ThemeTargetStyles{L"Taskbar.ExperienceToggleButton#LaunchListButton[AutomationProperties.AutomationId=StartButton] > Taskbar.TaskListButtonPanel > Grid > Microsoft.UI.Xaml.Controls.AnimatedVisualPlayer#Icon, Taskbar.ExperienceToggleButton#LaunchListButton[AutomationProperties.AutomationId=StartButton] > Taskbar.TaskListButtonPanel > Microsoft.UI.Xaml.Controls.AnimatedVisualPlayer#Icon", {
         L"Visibility=Collapsed"}},
-    ThemeTargetStyles{L"Taskbar.TaskListButtonPanel#ExperienceToggleButtonRootPanel@CommonStates", {
+    ThemeTargetStyles{L"Taskbar.TaskListButtonPanel#ExperienceToggleButtonRootPanel@CommonStates, SearchUx.SearchUI.SearchButtonRootGrid#SearchBoxButtonRootPanel@CommonStates", {
         L"BorderThickness@ActiveNormal=0,3,0,0",
         L"Width=50",
         L"BorderBrush:=$selectionBorder",
@@ -3287,7 +3348,7 @@ const Theme g_themePlasma = {{
     ThemeTargetStyles{L"SystemTray.Stack#ShowDesktopStack", {
         L"Width=48",
         L"Height=Auto"}},
-    ThemeTargetStyles{L"SystemTray.Stack#ShowDesktopStack > Grid#Content > SystemTray.StackListView#IconStack > ItemsPresenter > StackPanel > ContentPresenter > SystemTray.IconView#SystemTrayIcon > Grid#ContainerGrid", {
+    ThemeTargetStyles{L"SystemTray.Stack#ShowDesktopStack > Grid#Content > SystemTray.StackListView#IconStack > ItemsPresenter > StackPanel > ContentPresenter > SystemTray.IconView#SystemTrayIcon > Grid#ContainerGrid, SystemTray.Stack#ShowDesktopStack > Grid#Content > SystemTray.StackListView#IconStack > ItemsPresenter > StackPanel > ContentPresenter > SystemTray.IconView#SystemTrayIcon", {
         L"Width=48"}},
     ThemeTargetStyles{L"Windows.UI.Xaml.Shapes.Rectangle#ShowDesktopPipe", {
         L"Grid.Row=0",
@@ -3386,9 +3447,9 @@ const Theme g_themeWindowGlass = {{
     ThemeTargetStyles{L"SystemTray.CopilotIcon", {
         L"Padding=6,0,6,0",
         L"Margin=2,0,0,0"}},
-    ThemeTargetStyles{L"SystemTray.OmniButton#NotificationCenterButton > Grid > ContentPresenter > ItemsPresenter > StackPanel > ContentPresenter > systemtray:IconView#SystemTrayIcon > Grid", {
+    ThemeTargetStyles{L"SystemTray.OmniButton#NotificationCenterButton > Grid > ContentPresenter > ItemsPresenter > StackPanel > ContentPresenter > SystemTray.IconView#SystemTrayIcon > Grid", {
         L"Padding=$TrayPadding"}},
-    ThemeTargetStyles{L"SystemTray.IconView#SystemTrayIcon > Grid#ContainerGrid > Grid#ContentGrid > SystemTray.TextIconContent > Grid#ContainerGrid, SystemTray.IconView#SystemTrayIcon > Grid#ContainerGrid > ContentPresenter#ContentPresenter > Grid#ContentGrid > SystemTray.TextIconContent > Grid#ContainerGrid", {
+    ThemeTargetStyles{L"SystemTray.IconView#SystemTrayIcon > Grid#ContainerGrid > ContentPresenter#ContentPresenter > Grid#ContentGrid > SystemTray.TextIconContent > Grid#ContainerGrid", {
         L"Padding=10",
         L"CornerRadius=10"}},
     ThemeTargetStyles{L"SystemTray.StackListView#IconStack > ItemsPresenter > StackPanel > ContentPresenter > SystemTray.IconView#SystemTrayIcon", {
@@ -3567,9 +3628,9 @@ const Theme g_themeWindowGlass_variant_Split = {{
         L"CornerRadius=10"}},
     ThemeTargetStyles{L"SystemTray.CopilotIcon", {
         L"Padding=$TrayPadding"}},
-    ThemeTargetStyles{L"SystemTray.OmniButton#NotificationCenterButton > Grid > ContentPresenter > ItemsPresenter > StackPanel > ContentPresenter > systemtray:IconView#SystemTrayIcon > Grid", {
+    ThemeTargetStyles{L"SystemTray.OmniButton#NotificationCenterButton > Grid > ContentPresenter > ItemsPresenter > StackPanel > ContentPresenter > SystemTray.IconView#SystemTrayIcon > Grid", {
         L"Padding=$TrayPadding"}},
-    ThemeTargetStyles{L"SystemTray.IconView#SystemTrayIcon > Grid#ContainerGrid > Grid#ContentGrid > SystemTray.TextIconContent > Grid#ContainerGrid, SystemTray.IconView#SystemTrayIcon > Grid#ContainerGrid > ContentPresenter#ContentPresenter > Grid#ContentGrid > SystemTray.TextIconContent > Grid#ContainerGrid", {
+    ThemeTargetStyles{L"SystemTray.IconView#SystemTrayIcon > Grid#ContainerGrid > ContentPresenter#ContentPresenter > Grid#ContentGrid > SystemTray.TextIconContent > Grid#ContainerGrid", {
         L"Padding=10",
         L"CornerRadius=10"}},
     ThemeTargetStyles{L"SystemTray.StackListView#IconStack > ItemsPresenter > StackPanel > ContentPresenter > SystemTray.IconView#SystemTrayIcon", {
@@ -3625,7 +3686,7 @@ const Theme g_themeWindowGlass_variant_Split = {{
         L"HorizontalAlignment=1"}},
     ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Border#BackgroundDimmingLayer", {
         L"Background:=Transparent"}},
-    ThemeTargetStyles{L"Taskbar.TaskListButtonPanel#ExperienceToggleButtonRootPanel > Windows.UI.Xaml.Controls.Grid > Windows.UI.Xaml.Controls.Border#BackgroundElement, Taskbar.TaskListButtonPanel#ExperienceToggleButtonRootPanel > Windows.UI.Xaml.Controls.Border#BackgroundElement", {
+    ThemeTargetStyles{L"Taskbar.TaskListButtonPanel#ExperienceToggleButtonRootPanel > Windows.UI.Xaml.Controls.Grid > Windows.UI.Xaml.Controls.Border#BackgroundElement, Taskbar.TaskListButtonPanel#ExperienceToggleButtonRootPanel > Windows.UI.Xaml.Controls.Border#BackgroundElement, SearchUx.SearchUI.SearchButtonRootGrid#SearchBoxButtonRootPanel > Windows.UI.Xaml.Controls.Grid > Windows.UI.Xaml.Controls.Border#BackgroundElement, SearchUx.SearchUI.SearchButtonRootGrid#SearchBoxButtonRootPanel > Windows.UI.Xaml.Controls.Border#BackgroundElement", {
         L"CornerRadius=10"}},
     ThemeTargetStyles{L"Taskbar.TaskListButton#TaskListButton", {
         L"CornerRadius=10"}},
@@ -3750,11 +3811,13 @@ const Theme g_themeWindowGlass_variant_FullLength = {{
     ThemeTargetStyles{L"SystemTray.OmniButton", {
         L"Padding=$TrayPadding",
         L"CornerRadius=10"}},
+    ThemeTargetStyles{L"SystemTray.OmniButton#ControlCenterButton > StackPanel", {
+        L"Padding=0,-4,0,-4"}},
     ThemeTargetStyles{L"SystemTray.CopilotIcon", {
         L"Padding=$TrayPadding"}},
-    ThemeTargetStyles{L"SystemTray.OmniButton#NotificationCenterButton > Grid > ContentPresenter > ItemsPresenter > StackPanel > ContentPresenter > systemtray:IconView#SystemTrayIcon > Grid", {
+    ThemeTargetStyles{L"SystemTray.OmniButton#NotificationCenterButton > Grid > ContentPresenter > ItemsPresenter > StackPanel > ContentPresenter > SystemTray.IconView#SystemTrayIcon > Grid", {
         L"Padding=$TrayPadding"}},
-    ThemeTargetStyles{L"SystemTray.IconView#SystemTrayIcon > Grid#ContainerGrid > Grid#ContentGrid > SystemTray.TextIconContent > Grid#ContainerGrid, SystemTray.IconView#SystemTrayIcon > Grid#ContainerGrid > ContentPresenter#ContentPresenter > Grid#ContentGrid > SystemTray.TextIconContent > Grid#ContainerGrid", {
+    ThemeTargetStyles{L"SystemTray.IconView#SystemTrayIcon > Grid#ContainerGrid > ContentPresenter#ContentPresenter > Grid#ContentGrid > SystemTray.TextIconContent > Grid#ContainerGrid", {
         L"Padding=10",
         L"CornerRadius=10"}},
     ThemeTargetStyles{L"SystemTray.StackListView#IconStack > ItemsPresenter > StackPanel > ContentPresenter > SystemTray.IconView#SystemTrayIcon", {
@@ -3811,7 +3874,7 @@ const Theme g_themeWindowGlass_variant_FullLength = {{
         L"HorizontalAlignment=1"}},
     ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Border#BackgroundDimmingLayer", {
         L"Background:=Transparent"}},
-    ThemeTargetStyles{L"Taskbar.TaskListButtonPanel#ExperienceToggleButtonRootPanel > Windows.UI.Xaml.Controls.Grid > Windows.UI.Xaml.Controls.Border#BackgroundElement, Taskbar.TaskListButtonPanel#ExperienceToggleButtonRootPanel > Windows.UI.Xaml.Controls.Border#BackgroundElement", {
+    ThemeTargetStyles{L"Taskbar.TaskListButtonPanel#ExperienceToggleButtonRootPanel > Windows.UI.Xaml.Controls.Grid > Windows.UI.Xaml.Controls.Border#BackgroundElement, Taskbar.TaskListButtonPanel#ExperienceToggleButtonRootPanel > Windows.UI.Xaml.Controls.Border#BackgroundElement, SearchUx.SearchUI.SearchButtonRootGrid#SearchBoxButtonRootPanel > Windows.UI.Xaml.Controls.Grid > Windows.UI.Xaml.Controls.Border#BackgroundElement, SearchUx.SearchUI.SearchButtonRootGrid#SearchBoxButtonRootPanel > Windows.UI.Xaml.Controls.Border#BackgroundElement", {
         L"CornerRadius=10"}},
     ThemeTargetStyles{L"Taskbar.TaskListButton#TaskListButton", {
         L"CornerRadius=10"}},
@@ -3892,10 +3955,11 @@ const Theme g_themeWindowGlass_variant_FullLength = {{
 }};
 
 const Theme g_themeSurface = {{
+    ThemeTargetStyles{L"Grid#RootGrid > Taskbar.TaskbarBackground", {
+        L"Margin=-20,0,-20,0"}},
     ThemeTargetStyles{L"Grid#RootGrid > Taskbar.TaskbarBackground > Grid", {
         L"CornerRadius=20",
         L"BorderThickness=1",
-        L"Margin=-20,0,-20,0",
         L"BorderBrush=#40FFFFFF",
         L"Padding=-1"}},
     ThemeTargetStyles{L"Rectangle#BackgroundStroke", {
@@ -3923,7 +3987,7 @@ const Theme g_themeSurface = {{
         L"CornerRadius=12",
         L"BorderThickness=2,1,0.5,2",
         L"BorderBrush:=$TaskItemBorder"}},
-    ThemeTargetStyles{L"Taskbar.TaskListButtonPanel#ExperienceToggleButtonRootPanel > Grid > Border#BackgroundElement, Taskbar.TaskListButtonPanel#ExperienceToggleButtonRootPanel > Border#BackgroundElement", {
+    ThemeTargetStyles{L"Taskbar.TaskListButtonPanel#ExperienceToggleButtonRootPanel > Grid > Border#BackgroundElement, Taskbar.TaskListButtonPanel#ExperienceToggleButtonRootPanel > Border#BackgroundElement, SearchUx.SearchUI.SearchButtonRootGrid#SearchBoxButtonRootPanel > Grid > Border#BackgroundElement, SearchUx.SearchUI.SearchButtonRootGrid#SearchBoxButtonRootPanel > Border#BackgroundElement", {
         L"Background:=$SystemItemBackground",
         L"CornerRadius=12",
         L"Margin=-1,5.5,2.5,4",
@@ -4236,13 +4300,15 @@ const Theme g_themeLuminosity_variant_Dock = {{
     ThemeTargetStyles{L"Taskbar.TaskbarFrame > Grid#RootGrid > Taskbar.TaskbarBackground > Grid > Rectangle#BackgroundFill", {
         L"Visibility=Collapsed"}},
     ThemeTargetStyles{L"Taskbar.TaskbarFrame", {
+        L"Width=Auto",
+        L"HorizontalAlignment=Stretch",
         L"Margin=$DockMargin,0,$DockMargin,0"}},
     ThemeTargetStyles{L"Taskbar.TaskbarFrame > Grid#RootGrid", {
         L"Background:=$mbg",
         L"BorderThickness=$bt",
         L"BorderBrush=$bb",
         L"CornerRadius=$mcr",
-        L"Margin=0,$DockTopGap,$DockMarginFix,5"}},
+        L"Margin=0,$DockTopGap,0,$DockBottomGap"}},
     ThemeTargetStyles{L"Taskbar.TaskbarBackground#BackgroundControl > Windows.UI.Xaml.Controls.Grid > Windows.UI.Xaml.Shapes.Rectangle#BackgroundStroke", {
         L"Visibility=Collapsed"}},
     ThemeTargetStyles{L"Taskbar.TaskListButtonPanel#ExperienceToggleButtonRootPanel > Windows.UI.Xaml.Controls.Grid > Windows.UI.Xaml.Controls.Grid#AugmentedEntryPointContentGrid, Taskbar.TaskListButtonPanel#ExperienceToggleButtonRootPanel > Windows.UI.Xaml.Controls.Grid#AugmentedEntryPointContentGrid", {
@@ -4251,18 +4317,16 @@ const Theme g_themeLuminosity_variant_Dock = {{
         L"Margin=0,0,0,-2"}},
     ThemeTargetStyles{L"Taskbar.AugmentedEntryPointButton#AugmentedEntryPointButton", {
         L"Margin=0,0,$WidgetGap57,0"}},
-    ThemeTargetStyles{L"StackPanel#SystemTrayFrameGrid, Grid#SystemTrayFrameGrid", {
-        L"Margin=-$DockMargin,$DockTrayMarginUp,$DockMargin,$DockTrayMarginDown",
-        L"HorizontalAlignment=Right"}},
+    ThemeTargetStyles{L"SystemTray.SystemTrayFrame", {
+        L"VerticalAlignment=Center",
+        L"Margin=0,$DockTopGap,$DockMargin,$DockBottomGap"}},
     ThemeTargetStyles{L"Taskbar.TaskbarFrame", {
         L"Height=$DockHeight"}},
 }, {
     L"DockMargin=250",
-    L"DockMarginFix=500",
     L"DockHeight=58",
     L"DockTopGap=5",
-    L"DockTrayMarginUp=1",
-    L"DockTrayMarginDown=1",
+    L"DockBottomGap=5",
     L"WidgetGap=-",
     L"AccentColor=<SolidColorBrush Color=\"{ThemeResource SystemAccentColorLight2}\" Opacity=\"1.0\" />",
     L"AnimationSettings=IsStaggeringEnabled=\"True\" FromHorizontalOffset=\"-50\" FromVerticalOffset=\"50\"",
@@ -4706,8 +4770,8 @@ const Theme g_themeLuminosity_variant_Compact = {{
         L"RenderTransform:=<TranslateTransform X=\"0\" Y=\"-1\" />"}},
     ThemeTargetStyles{L"Taskbar.AugmentedEntryPointButton#AugmentedEntryPointButton", {
         L"Margin=0,0,$WidgetGap57,0"}},
-    ThemeTargetStyles{L"StackPanel#SystemTrayFrameGrid, Grid#SystemTrayFrameGrid", {
-        L"Margin=0,0,0,18"}},
+    ThemeTargetStyles{L"SystemTray.SystemTrayFrame", {
+        L"Height=30"}},
     ThemeTargetStyles{L"SystemTray.TextIconContent > Grid#ContainerGrid > SystemTray.AdaptiveTextBlock#Base > TextBlock#InnerTextBlock", {
         L"FontSize=14"}},
     ThemeTargetStyles{L"SystemTray.ImageIconContent > Grid#ContainerGrid > Image", {
@@ -5106,7 +5170,7 @@ const Theme g_themeTintedGlass = {{
         L"Width=32"}},
     ThemeTargetStyles{L"Grid#IconPanel, Taskbar.TaskListLabeledButtonPanel#IconPanel", {
         L"Padding=2,2,2,2"}},
-    ThemeTargetStyles{L"Taskbar.TaskListButtonPanel#ExperienceToggleButtonRootPanel", {
+    ThemeTargetStyles{L"Taskbar.TaskListButtonPanel#ExperienceToggleButtonRootPanel, SearchUx.SearchUI.SearchButtonRootGrid#SearchBoxButtonRootPanel", {
         L"Padding=2,2,2,2"}},
     ThemeTargetStyles{L"Grid#ContainerGrid", {
         L"Padding=2,2,2,2"}},
@@ -5156,7 +5220,7 @@ const Theme g_themeTaskbarToStatusbar = {{
     ThemeTargetStyles{L"SystemTray.Stack#ShowDesktopStack", {
         L"Width=1920",
         L"Margin=0,0,-1920,0"}},
-    ThemeTargetStyles{L"SystemTray.StackListView#IconStack[AutomationProperties.AutomationId=ShowDesktop] > ItemsPresenter > StackPanel > ContentPresenter > SystemTray.IconView#SystemTrayIcon", {
+    ThemeTargetStyles{L"SystemTray.StackListView#IconStack[AutomationProperties.AutomationId=ShowDesktop] > ItemsPresenter > StackPanel > ContentPresenter > SystemTray.IconView#SystemTrayIcon > Grid#ContainerGrid, SystemTray.StackListView#IconStack[AutomationProperties.AutomationId=ShowDesktop] > ItemsPresenter > StackPanel > ContentPresenter > SystemTray.IconView#SystemTrayIcon", {
         L"Width=1920"}},
     ThemeTargetStyles{L"SystemTray.IconView#SystemTrayIcon > Grid#ContainerGrid@ > Rectangle#ShowDesktopPipe", {
         L"Fill=Transparent"}},
@@ -5267,13 +5331,14 @@ const Theme g_themeLiquidGlass2 = {{
         L"Background:=Transparent",
         L"HorizontalAlignment=Center",
         L"Width=Auto"}},
+    ThemeTargetStyles{L"Taskbar.TaskbarFrame > Grid#RootGrid > Taskbar.TaskbarBackground", {
+        L"Margin=-40,0,-40,0"}},
     ThemeTargetStyles{L"Taskbar.TaskbarFrame > Grid#RootGrid > Taskbar.TaskbarBackground > Grid > Rectangle#BackgroundFill", {
         L"Fill:=<WindhawkBlur BlurAmount=\"3\" TintColor=\"#14090909\" TintSaturation=\"1.2\"/>",
         L"RadiusX={{(TaskHeight/4.1)*2}}",
         L"RadiusY={{(TaskHeight/4.1)*2}}",
         L"StrokeThickness=1",
         L"Canvas.ZIndex=1",
-        L"Margin=-40,0,-40,0",
         L"Stroke:=<LinearGradientBrush StartPoint=\"0,0\" EndPoint=\"0,1\"><GradientStop Color=\"#69E0E0E0\" Offset=\"0.0\" /><GradientStop Color=\"#70707070\" Offset=\"0.1\" /><GradientStop Color=\"#70505050\" Offset=\"0.25\" /><GradientStop Color=\"#70292929\" Offset=\"0.5\" /><GradientStop Color=\"#70505050\" Offset=\"0.75\" /><GradientStop Color=\"#70707070\" Offset=\"0.9\" /><GradientStop Color=\"#65D0D0D0\" Offset=\"1\" /></LinearGradientBrush>"}},
     ThemeTargetStyles{L"Taskbar.TaskbarFrame > Grid#RootGrid > Taskbar.TaskbarBackground > Grid > Rectangle#BackgroundStroke", {
         L"Visibility=Visible",
@@ -5285,7 +5350,6 @@ const Theme g_themeLiquidGlass2 = {{
         L"VerticalAlignment=Stretch",
         L"HorizontalAlignment=Stretch",
         L"Height=NaN",
-        L"Margin=-40,0,-40,0",
         L"Fill:=<WindhawkBlur BlurAmount=\"0\" TintColor=\"#00101010\"/>"}},
     ThemeTargetStyles{L"StackPanel#SystemTrayFrameGrid, Grid#SystemTrayFrameGrid", {
         L"Background:=<WindhawkBlur BlurAmount=\"5\" TintColor=\"#39101010\" TintSaturation=\"1.5\"/>",
@@ -5636,7 +5700,7 @@ const Theme g_themeLiquidGlass = {{
         L"CornerRadius=$ElementCornerRadius"}},
     ThemeTargetStyles{L"SystemTray.OmniButton", {
         L"CornerRadius=$ElementCornerRadius"}},
-    ThemeTargetStyles{L"SystemTray.IconView#SystemTrayIcon > Grid#ContainerGrid > Grid#ContentGrid > SystemTray.TextIconContent > Grid#ContainerGrid, SystemTray.IconView#SystemTrayIcon > Grid#ContainerGrid > ContentPresenter#ContentPresenter > Grid#ContentGrid > SystemTray.TextIconContent > Grid#ContainerGrid", {
+    ThemeTargetStyles{L"SystemTray.IconView#SystemTrayIcon > Grid#ContainerGrid > ContentPresenter#ContentPresenter > Grid#ContentGrid > SystemTray.TextIconContent > Grid#ContainerGrid", {
         L"CornerRadius=$ElementCornerRadius"}},
     ThemeTargetStyles{L"Taskbar.Gripper#GripperControl", {
         L"Width=Auto",
@@ -5817,7 +5881,7 @@ const Theme g_themeLiquidGlass_variant_Alternate = {{
         L"CornerRadius=$ElementCornerRadius"}},
     ThemeTargetStyles{L"SystemTray.OmniButton", {
         L"CornerRadius=$ElementCornerRadius"}},
-    ThemeTargetStyles{L"SystemTray.IconView#SystemTrayIcon > Grid#ContainerGrid > Grid#ContentGrid > SystemTray.TextIconContent > Grid#ContainerGrid, SystemTray.IconView#SystemTrayIcon > Grid#ContainerGrid > ContentPresenter#ContentPresenter > Grid#ContentGrid > SystemTray.TextIconContent > Grid#ContainerGrid", {
+    ThemeTargetStyles{L"SystemTray.IconView#SystemTrayIcon > Grid#ContainerGrid > ContentPresenter#ContentPresenter > Grid#ContentGrid > SystemTray.TextIconContent > Grid#ContainerGrid", {
         L"CornerRadius=$ElementCornerRadius"}},
     ThemeTargetStyles{L"Taskbar.Gripper#GripperControl", {
         L"Width=Auto",
@@ -6315,12 +6379,17 @@ const Theme g_themeFluentGlass = {{
         L"Padding=$ItemPadding",
         L"VerticalAlignment=Center",
         L"Height=$IconHeight"}},
+    ThemeTargetStyles{L"SearchUx.SearchUI.SearchButtonControl", {
+        L"Margin=$ItemMargin",
+        L"Padding=$ItemPadding",
+        L"VerticalAlignment=Center",
+        L"Height=$IconHeight"}},
     ThemeTargetStyles{L"Taskbar.TaskViewButton", {
         L"Margin=$ItemMargin",
         L"Padding=$ItemPadding",
         L"VerticalAlignment=Center",
         L"Height=$IconHeight"}},
-    ThemeTargetStyles{L"Grid#IconPanel, Taskbar.TaskListButtonPanel", {
+    ThemeTargetStyles{L"Taskbar.TaskListButtonPanel, SearchUx.SearchUI.SearchButtonRootGrid#SearchBoxButtonRootPanel", {
         L"VerticalAlignment=Center"}},
     ThemeTargetStyles{L"Grid#IconPanel@CommonStates > Border#BackgroundElement, Taskbar.TaskListLabeledButtonPanel@CommonStates > Border#BackgroundElement", {
         L"CornerRadius=$GlobalRadius",
@@ -6382,12 +6451,13 @@ const Theme g_themeOS26_Liquid_Glass_variant_ClearMacDock = {{
         L"Margin=0,8,0,2",
         L"Padding=20,0,20,0",
         L"BorderBrush=#40FFFFFF"}},
+    ThemeTargetStyles{L"Grid#RootGrid > Taskbar.TaskbarBackground", {
+        L"Margin=-20,0,-20,0"}},
     ThemeTargetStyles{L"Grid#RootGrid > Taskbar.TaskbarBackground > Grid", {
         L"Background:=<WindhawkBlur BlurAmount=\"8\" TintColor=\"#2D101010\"/>",
         L"CornerRadius=20,0,0,20",
         L"BorderThickness=1,1,0,1",
         L"Width=Auto",
-        L"Margin=-20,0,-20,0",
         L"BorderBrush=#40FFFFFF",
         L"Padding=-1"}},
     ThemeTargetStyles{L"Rectangle#BackgroundStroke", {
@@ -6685,7 +6755,7 @@ const Theme g_themeOS26_Liquid_Glass_variant_ClearMacDock = {{
         L"CornerRadius=20",
         L"BorderBrush:=<LinearGradientBrush EndPoint=\"1,1\" StartPoint=\"0,0\"><GradientStop Color=\"#E0ffffff\" Offset=\"0.0\"/><GradientStop Color=\"#20ffffff\" Offset=\"0.5\"/><GradientStop Color=\"#A0ffffff\" Offset=\"1.0\"/></LinearGradientBrush>",
         L"BorderThickness=1.2"}},
-    ThemeTargetStyles{L"Grid#IconPanel@RunningIndicatorStates > Border, taskbar:TaskListLabeledButtonPanel@RunningIndicatorStates > Border", {
+    ThemeTargetStyles{L"Grid#IconPanel@RunningIndicatorStates > Border, Taskbar.TaskListLabeledButtonPanel@RunningIndicatorStates > Border", {
         L"Background@InactiveRunningIndicatorPointerOver:=<WindhawkBlur BlurAmount=\"40\" TintColor=\"#10ffffff\"/>",
         L"CornerRadius=12",
         L"BorderBrush@InactiveRunningIndicatorPointerOver:=<LinearGradientBrush EndPoint=\"1,0\" StartPoint=\"0,0\"><GradientStop Color=\"#80ffffff\" Offset=\"0.0\"/><GradientStop Color=\"{ThemeResource SurfaceStrokeColorDefault}\" Offset=\"0.55\"/><GradientStop Color=\"#80ffffff\" Offset=\"1\"/></LinearGradientBrush>",
@@ -6765,12 +6835,13 @@ const Theme g_themeOS26_Liquid_Glass_variant_ClearMacDockCompact = {{
         L"Margin=0,8,0,2",
         L"Padding=20,0,20,0",
         L"BorderBrush=#40FFFFFF"}},
+    ThemeTargetStyles{L"Grid#RootGrid > Taskbar.TaskbarBackground", {
+        L"Margin=-20,0,-20,0"}},
     ThemeTargetStyles{L"Grid#RootGrid > Taskbar.TaskbarBackground > Grid", {
         L"Background:=<WindhawkBlur BlurAmount=\"8\" TintColor=\"#2D101010\"/>",
         L"CornerRadius=20,0,0,20",
         L"BorderThickness=1,1,0,1",
         L"Width=Auto",
-        L"Margin=-20,0,-20,0",
         L"BorderBrush=#40FFFFFF",
         L"Padding=-1"}},
     ThemeTargetStyles{L"Rectangle#BackgroundStroke", {
@@ -7069,7 +7140,7 @@ const Theme g_themeOS26_Liquid_Glass_variant_ClearMacDockCompact = {{
         L"CornerRadius=20",
         L"BorderBrush:=<LinearGradientBrush EndPoint=\"1,1\" StartPoint=\"0,0\"><GradientStop Color=\"#E0ffffff\" Offset=\"0.0\"/><GradientStop Color=\"#20ffffff\" Offset=\"0.5\"/><GradientStop Color=\"#A0ffffff\" Offset=\"1.0\"/></LinearGradientBrush>",
         L"BorderThickness=1.2"}},
-    ThemeTargetStyles{L"Grid#IconPanel@RunningIndicatorStates > Border, taskbar:TaskListLabeledButtonPanel@RunningIndicatorStates > Border", {
+    ThemeTargetStyles{L"Grid#IconPanel@RunningIndicatorStates > Border, Taskbar.TaskListLabeledButtonPanel@RunningIndicatorStates > Border", {
         L"Background@InactiveRunningIndicatorPointerOver:=<WindhawkBlur BlurAmount=\"40\" TintColor=\"#10ffffff\"/>",
         L"CornerRadius=12",
         L"BorderBrush@InactiveRunningIndicatorPointerOver:=<LinearGradientBrush EndPoint=\"1,0\" StartPoint=\"0,0\"><GradientStop Color=\"#80ffffff\" Offset=\"0.0\"/><GradientStop Color=\"{ThemeResource SurfaceStrokeColorDefault}\" Offset=\"0.55\"/><GradientStop Color=\"#80ffffff\" Offset=\"1\"/></LinearGradientBrush>",
@@ -7123,7 +7194,9 @@ const Theme g_themeOS26_Liquid_Glass_variant_ClearTaskbar = {{
     ThemeTargetStyles{L"Taskbar.TaskbarFrame", {
         L"Height=80",
         L"MaxHeight=80",
-        L"HorizontalAlignment=Center"}},
+        L"HorizontalAlignment=Stretch"}},
+    ThemeTargetStyles{L"SystemTray.SystemTrayFrame", {
+        L"VerticalAlignment=Center"}},
     ThemeTargetStyles{L"Grid#IconPanel > Image#Icon, Taskbar.TaskListLabeledButtonPanel#IconPanel > Image#Icon", {
         L"Height=24",
         L"Width=24",
@@ -7137,11 +7210,12 @@ const Theme g_themeOS26_Liquid_Glass_variant_ClearTaskbar = {{
     ThemeTargetStyles{L"SearchUx.SearchUI.SearchButtonControl > Grid > SearchUx.SearchUI.SearchIconButton > SearchUx.SearchUI.SearchButtonRootGrid#SearchBoxButtonRootPanel", {
         L"Width=55",
         L"Height=70"}},
+    ThemeTargetStyles{L"Grid#RootGrid > Taskbar.TaskbarBackground", {
+        L"Margin=-15,0,-15,0"}},
     ThemeTargetStyles{L"Grid#RootGrid > Taskbar.TaskbarBackground > Grid", {
         L"CornerRadius=20",
         L"Background:=<WindhawkBlur BlurAmount=\"8\" TintColor=\"#2D101010\"/>",
         L"BorderThickness=1",
-        L"Margin=-15,0,-15,0",
         L"BorderBrush=#40FFFFFF",
         L"Padding=-1"}},
     ThemeTargetStyles{L"Rectangle#BackgroundStroke", {
@@ -7332,7 +7406,7 @@ const Theme g_themeOS26_Liquid_Glass_variant_ClearTaskbar = {{
         L"CornerRadius=20",
         L"BorderBrush:=<LinearGradientBrush EndPoint=\"1,1\" StartPoint=\"0,0\"><GradientStop Color=\"#E0ffffff\" Offset=\"0.0\"/><GradientStop Color=\"#20ffffff\" Offset=\"0.5\"/><GradientStop Color=\"#A0ffffff\" Offset=\"1.0\"/></LinearGradientBrush>",
         L"BorderThickness=1.2"}},
-    ThemeTargetStyles{L"Grid#IconPanel@RunningIndicatorStates > Border, taskbar:TaskListLabeledButtonPanel@RunningIndicatorStates > Border", {
+    ThemeTargetStyles{L"Grid#IconPanel@RunningIndicatorStates > Border, Taskbar.TaskListLabeledButtonPanel@RunningIndicatorStates > Border", {
         L"Background@InactiveRunningIndicatorPointerOver:=<WindhawkBlur BlurAmount=\"40\" TintColor=\"#10ffffff\"/>",
         L"CornerRadius=12",
         L"BorderBrush@InactiveRunningIndicatorPointerOver:=<LinearGradientBrush EndPoint=\"1,0\" StartPoint=\"0,0\"><GradientStop Color=\"#80ffffff\" Offset=\"0.0\"/><GradientStop Color=\"{ThemeResource SurfaceStrokeColorDefault}\" Offset=\"0.55\"/><GradientStop Color=\"#80ffffff\" Offset=\"1\"/></LinearGradientBrush>",
@@ -7411,12 +7485,13 @@ const Theme g_themeOS26_Liquid_Glass_variant_DarkMacDock = {{
         L"Margin=0,8,0,2",
         L"Padding=20,0,20,0",
         L"BorderBrush=#40FFFFFF"}},
+    ThemeTargetStyles{L"Grid#RootGrid > Taskbar.TaskbarBackground", {
+        L"Margin=-20,0,-20,0"}},
     ThemeTargetStyles{L"Grid#RootGrid > Taskbar.TaskbarBackground > Grid", {
         L"Background:=<WindhawkBlur BlurAmount=\"8\" TintColor=\"#2D101010\"/>",
         L"CornerRadius=20,0,0,20",
         L"BorderThickness=1,1,0,1",
         L"Width=Auto",
-        L"Margin=-20,0,-20,0",
         L"BorderBrush=#40FFFFFF",
         L"Padding=-1"}},
     ThemeTargetStyles{L"Rectangle#BackgroundStroke", {
@@ -7714,7 +7789,7 @@ const Theme g_themeOS26_Liquid_Glass_variant_DarkMacDock = {{
         L"CornerRadius=20",
         L"BorderBrush:=<LinearGradientBrush EndPoint=\"1,1\" StartPoint=\"0,0\"><GradientStop Color=\"#E0ffffff\" Offset=\"0.0\"/><GradientStop Color=\"#20ffffff\" Offset=\"0.5\"/><GradientStop Color=\"#A0ffffff\" Offset=\"1.0\"/></LinearGradientBrush>",
         L"BorderThickness=1.2"}},
-    ThemeTargetStyles{L"Grid#IconPanel@RunningIndicatorStates > Border, taskbar:TaskListLabeledButtonPanel@RunningIndicatorStates > Border", {
+    ThemeTargetStyles{L"Grid#IconPanel@RunningIndicatorStates > Border, Taskbar.TaskListLabeledButtonPanel@RunningIndicatorStates > Border", {
         L"Background@InactiveRunningIndicatorPointerOver:=<WindhawkBlur BlurAmount=\"40\" TintColor=\"#10ffffff\"/>",
         L"CornerRadius=12",
         L"BorderBrush@InactiveRunningIndicatorPointerOver:=<LinearGradientBrush EndPoint=\"1,0\" StartPoint=\"0,0\"><GradientStop Color=\"#80ffffff\" Offset=\"0.0\"/><GradientStop Color=\"{ThemeResource SurfaceStrokeColorDefault}\" Offset=\"0.55\"/><GradientStop Color=\"#80ffffff\" Offset=\"1\"/></LinearGradientBrush>",
@@ -7794,12 +7869,13 @@ const Theme g_themeOS26_Liquid_Glass_variant_DarkMacDockCompact = {{
         L"Margin=0,8,0,2",
         L"Padding=20,0,20,0",
         L"BorderBrush=#40FFFFFF"}},
+    ThemeTargetStyles{L"Grid#RootGrid > Taskbar.TaskbarBackground", {
+        L"Margin=-20,0,-20,0"}},
     ThemeTargetStyles{L"Grid#RootGrid > Taskbar.TaskbarBackground > Grid", {
         L"Background:=<WindhawkBlur BlurAmount=\"8\" TintColor=\"#2D101010\"/>",
         L"CornerRadius=20,0,0,20",
         L"BorderThickness=1,1,0,1",
         L"Width=Auto",
-        L"Margin=-20,0,-20,0",
         L"BorderBrush=#40FFFFFF",
         L"Padding=-1"}},
     ThemeTargetStyles{L"Rectangle#BackgroundStroke", {
@@ -8098,7 +8174,7 @@ const Theme g_themeOS26_Liquid_Glass_variant_DarkMacDockCompact = {{
         L"CornerRadius=20",
         L"BorderBrush:=<LinearGradientBrush EndPoint=\"1,1\" StartPoint=\"0,0\"><GradientStop Color=\"#E0ffffff\" Offset=\"0.0\"/><GradientStop Color=\"#20ffffff\" Offset=\"0.5\"/><GradientStop Color=\"#A0ffffff\" Offset=\"1.0\"/></LinearGradientBrush>",
         L"BorderThickness=1.2"}},
-    ThemeTargetStyles{L"Grid#IconPanel@RunningIndicatorStates > Border, taskbar:TaskListLabeledButtonPanel@RunningIndicatorStates > Border", {
+    ThemeTargetStyles{L"Grid#IconPanel@RunningIndicatorStates > Border, Taskbar.TaskListLabeledButtonPanel@RunningIndicatorStates > Border", {
         L"Background@InactiveRunningIndicatorPointerOver:=<WindhawkBlur BlurAmount=\"40\" TintColor=\"#10ffffff\"/>",
         L"CornerRadius=13",
         L"BorderBrush@InactiveRunningIndicatorPointerOver:=<LinearGradientBrush EndPoint=\"1,0\" StartPoint=\"0,0\"><GradientStop Color=\"#80ffffff\" Offset=\"0.0\"/><GradientStop Color=\"{ThemeResource SurfaceStrokeColorDefault}\" Offset=\"0.55\"/><GradientStop Color=\"#80ffffff\" Offset=\"1\"/></LinearGradientBrush>",
@@ -8152,7 +8228,9 @@ const Theme g_themeOS26_Liquid_Glass_variant_DarkTaskbar = {{
     ThemeTargetStyles{L"Taskbar.TaskbarFrame", {
         L"Height=80",
         L"MaxHeight=80",
-        L"HorizontalAlignment=Center"}},
+        L"HorizontalAlignment=Stretch"}},
+    ThemeTargetStyles{L"SystemTray.SystemTrayFrame", {
+        L"VerticalAlignment=Center"}},
     ThemeTargetStyles{L"Grid#IconPanel > Image#Icon, Taskbar.TaskListLabeledButtonPanel#IconPanel > Image#Icon", {
         L"Height=24",
         L"Width=24",
@@ -8166,11 +8244,12 @@ const Theme g_themeOS26_Liquid_Glass_variant_DarkTaskbar = {{
     ThemeTargetStyles{L"SearchUx.SearchUI.SearchButtonControl > Grid > SearchUx.SearchUI.SearchIconButton > SearchUx.SearchUI.SearchButtonRootGrid#SearchBoxButtonRootPanel", {
         L"Width=55",
         L"Height=70"}},
+    ThemeTargetStyles{L"Grid#RootGrid > Taskbar.TaskbarBackground", {
+        L"Margin=-15,0,-15,0"}},
     ThemeTargetStyles{L"Grid#RootGrid > Taskbar.TaskbarBackground > Grid", {
         L"CornerRadius=20",
         L"Background:=<WindhawkBlur BlurAmount=\"8\" TintColor=\"#2D101010\"/>",
         L"BorderThickness=1",
-        L"Margin=-15,0,-15,0",
         L"BorderBrush=#40FFFFFF",
         L"Padding=-1"}},
     ThemeTargetStyles{L"Rectangle#BackgroundStroke", {
@@ -8361,7 +8440,7 @@ const Theme g_themeOS26_Liquid_Glass_variant_DarkTaskbar = {{
         L"CornerRadius=20",
         L"BorderBrush:=<LinearGradientBrush EndPoint=\"1,1\" StartPoint=\"0,0\"><GradientStop Color=\"#E0ffffff\" Offset=\"0.0\"/><GradientStop Color=\"#20ffffff\" Offset=\"0.5\"/><GradientStop Color=\"#A0ffffff\" Offset=\"1.0\"/></LinearGradientBrush>",
         L"BorderThickness=1.2"}},
-    ThemeTargetStyles{L"Grid#IconPanel@RunningIndicatorStates > Border, taskbar:TaskListLabeledButtonPanel@RunningIndicatorStates > Border", {
+    ThemeTargetStyles{L"Grid#IconPanel@RunningIndicatorStates > Border, Taskbar.TaskListLabeledButtonPanel@RunningIndicatorStates > Border", {
         L"Background@InactiveRunningIndicatorPointerOver:=<WindhawkBlur BlurAmount=\"40\" TintColor=\"#10ffffff\"/>",
         L"CornerRadius=12",
         L"BorderBrush@InactiveRunningIndicatorPointerOver:=<LinearGradientBrush EndPoint=\"1,0\" StartPoint=\"0,0\"><GradientStop Color=\"#80ffffff\" Offset=\"0.0\"/><GradientStop Color=\"{ThemeResource SurfaceStrokeColorDefault}\" Offset=\"0.55\"/><GradientStop Color=\"#80ffffff\" Offset=\"1\"/></LinearGradientBrush>",
@@ -8445,11 +8524,11 @@ const Theme g_themeFrostyGlass = {{
     ThemeTargetStyles{L"SystemTray.OmniButton#NotificationCenterButton", {
         L"Padding=2,4,4.5,4",
         L"CornerRadius=7"}},
-    ThemeTargetStyles{L"SystemTray.OmniButton#NotificationCenterButton > Grid > ContentPresenter > ItemsPresenter > StackPanel > ContentPresenter > systemtray:IconView#SystemTrayIcon > Grid", {
+    ThemeTargetStyles{L"SystemTray.OmniButton#NotificationCenterButton > Grid > ContentPresenter > ItemsPresenter > StackPanel > ContentPresenter > SystemTray.IconView#SystemTrayIcon > Grid", {
         L"Padding=2,2,5,4",
         L"CornerRadius=7",
         L"HorizontalAlignment=Center"}},
-    ThemeTargetStyles{L"SystemTray.IconView#SystemTrayIcon > Grid#ContainerGrid > Grid#ContentGrid > SystemTray.TextIconContent > Grid#ContainerGrid, SystemTray.IconView#SystemTrayIcon > Grid#ContainerGrid > ContentPresenter#ContentPresenter > Grid#ContentGrid > SystemTray.TextIconContent > Grid#ContainerGrid", {
+    ThemeTargetStyles{L"SystemTray.IconView#SystemTrayIcon > Grid#ContainerGrid > ContentPresenter#ContentPresenter > Grid#ContentGrid > SystemTray.TextIconContent > Grid#ContainerGrid", {
         L"Padding=$TrayPadding",
         L"CornerRadius=7"}},
     ThemeTargetStyles{L"SystemTray.StackListView#IconStack > ItemsPresenter > StackPanel > ContentPresenter > SystemTray.IconView#SystemTrayIcon", {
@@ -8728,28 +8807,14 @@ const Theme g_themeFrostedAcrylic = {{
         L"HorizontalAlignment=Center",
         L"VerticalAlignment=Center"}},
     ThemeTargetStyles{L"Taskbar.TaskListButton > Grid#IconPanel, Taskbar.TaskListButton > Taskbar.TaskListButtonPanel", {
-        L"Width=48",
-        L"MinWidth=48",
-        L"MaxWidth=48",
         L"Height=60",
         L"MinHeight=60",
         L"MaxHeight=60",
-        L"Padding=0",
+        L"Padding=2,4,2,4",
         L"Margin=0",
         L"HorizontalAlignment=Center",
         L"VerticalAlignment=Center"}},
-    ThemeTargetStyles{L"Taskbar.TaskListButton > Taskbar.TaskListButtonPanel > Grid", {
-        L"Width=48",
-        L"MinWidth=48",
-        L"MaxWidth=48",
-        L"Height=60",
-        L"MinHeight=60",
-        L"MaxHeight=60",
-        L"Padding=0",
-        L"Margin=0",
-        L"VerticalAlignment=Center",
-        L"HorizontalAlignment=Center"}},
-    ThemeTargetStyles{L"Grid#IconPanel > TextBlock, Taskbar.TaskListButtonPanel > Grid > TextBlock, Taskbar.TaskListButtonPanel > TextBlock", {
+    ThemeTargetStyles{L"Grid#IconPanel > TextBlock, Taskbar.TaskListButtonPanel > Grid > TextBlock, Taskbar.TaskListButtonPanel > TextBlock, SearchUx.SearchUI.SearchButtonRootGrid > Grid > TextBlock, SearchUx.SearchUI.SearchButtonRootGrid > TextBlock", {
         L"Visibility=Collapsed",
         L"Margin=0"}},
     ThemeTargetStyles{L"Taskbar.TaskListButtonPanel > Grid > TextBlock", {
@@ -9594,7 +9659,7 @@ const Theme g_themeMinecraft_Hotbar = {{
         L"Canvas.ZIndex=0",
         L"Width@InactivePointerOver=59",
         L"Margin@InactivePointerOver=0,-5,0,-5"}},
-    ThemeTargetStyles{L"SearchUx.SearchUI.SearchButtonControl > Grid > SearchUx.SearchUI.SearchIconButton > SearchUx.SearchUI.SearchButtonRootGrid#SearchBoxButtonRootPanel@CommonStates  > Border#BackgroundElement", {
+    ThemeTargetStyles{L"SearchUx.SearchUI.SearchButtonControl > Grid > SearchUx.SearchUI.SearchIconButton > SearchUx.SearchUI.SearchButtonRootGrid#SearchBoxButtonRootPanel@CommonStates > Grid > Border#BackgroundElement, SearchUx.SearchUI.SearchButtonControl > Grid > SearchUx.SearchUI.SearchIconButton > SearchUx.SearchUI.SearchButtonRootGrid#SearchBoxButtonRootPanel@CommonStates > Border#BackgroundElement", {
         L"CornerRadius=0",
         L"Margin=-3,3.5,-3,3.5",
         L"Background:=$IconBackground",
@@ -9779,229 +9844,229 @@ const Theme g_themeMinecraft_Hotbar = {{
 }};
 
 const Theme g_themeOne_UI_8_5_variant_Dock = {{
-    ThemeTargetStyles{L"taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.GamingApp_8wekyb3d8bbwe!Microsoft.Xbox.AppL] > Grid#IconPanel > Image#Icon, taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.GamingApp_8wekyb3d8bbwe!Microsoft.Xbox.App] > Grid#IconPanel > Image#Icon, taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.GamingApp_8wekyb3d8bbwe!App] > Grid#IconPanel > Image#Icon, taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.GamingApp_8wekyb3d8bbwe!Microsoft.Xbox.AppL] > taskbar:TaskListLabeledButtonPanel#IconPanel > Image#Icon, taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.GamingApp_8wekyb3d8bbwe!Microsoft.Xbox.App] > taskbar:TaskListLabeledButtonPanel#IconPanel > Image#Icon, taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.GamingApp_8wekyb3d8bbwe!App] > taskbar:TaskListLabeledButtonPanel#IconPanel > Image#Icon", {
+    ThemeTargetStyles{L"Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.GamingApp_8wekyb3d8bbwe!Microsoft.Xbox.AppL] > Grid#IconPanel > Image#Icon, Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.GamingApp_8wekyb3d8bbwe!Microsoft.Xbox.App] > Grid#IconPanel > Image#Icon, Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.GamingApp_8wekyb3d8bbwe!App] > Grid#IconPanel > Image#Icon, Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.GamingApp_8wekyb3d8bbwe!Microsoft.Xbox.AppL] > Taskbar.TaskListLabeledButtonPanel#IconPanel > Image#Icon, Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.GamingApp_8wekyb3d8bbwe!Microsoft.Xbox.App] > Taskbar.TaskListLabeledButtonPanel#IconPanel > Image#Icon, Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.GamingApp_8wekyb3d8bbwe!App] > Taskbar.TaskListLabeledButtonPanel#IconPanel > Image#Icon", {
         L"Source=https://raw.githubusercontent.com/ramensoftware/windows-11-taskbar-styling-guide/refs/heads/main/Themes/One%20UI%208.5/Assets/xbox.png",
         L"Height=40",
         L"Width=40",
         L"Margin=0,0,0,0"}},
-    ThemeTargetStyles{L"taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.GamingApp_8wekyb3d8bbwe!Microsoft.Xbox.AppL] > Grid#IconPanel > Border, taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.GamingApp_8wekyb3d8bbwe!Microsoft.Xbox.App] > Grid#IconPanel > Border, taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.GamingApp_8wekyb3d8bbwe!App] > Grid#IconPanel > Border, taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.GamingApp_8wekyb3d8bbwe!Microsoft.Xbox.AppL] > taskbar:TaskListLabeledButtonPanel#IconPanel > Border, taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.GamingApp_8wekyb3d8bbwe!Microsoft.Xbox.App] > taskbar:TaskListLabeledButtonPanel#IconPanel > Border, taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.GamingApp_8wekyb3d8bbwe!App] > taskbar:TaskListLabeledButtonPanel#IconPanel > Border", {
+    ThemeTargetStyles{L"Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.GamingApp_8wekyb3d8bbwe!Microsoft.Xbox.AppL] > Grid#IconPanel > Border, Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.GamingApp_8wekyb3d8bbwe!Microsoft.Xbox.App] > Grid#IconPanel > Border, Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.GamingApp_8wekyb3d8bbwe!App] > Grid#IconPanel > Border, Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.GamingApp_8wekyb3d8bbwe!Microsoft.Xbox.AppL] > Taskbar.TaskListLabeledButtonPanel#IconPanel > Border, Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.GamingApp_8wekyb3d8bbwe!Microsoft.Xbox.App] > Taskbar.TaskListLabeledButtonPanel#IconPanel > Border, Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.GamingApp_8wekyb3d8bbwe!App] > Taskbar.TaskListLabeledButtonPanel#IconPanel > Border", {
         L"Visibility=Collapsed"}},
-    ThemeTargetStyles{L"taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.WindowsCamera_8wekyb3d8bbwe!App] > Grid#IconPanel > Image#Icon, taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.WindowsCamera_8wekyb3d8bbwe!App] > taskbar:TaskListLabeledButtonPanel#IconPanel > Image#Icon", {
+    ThemeTargetStyles{L"Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.WindowsCamera_8wekyb3d8bbwe!App] > Grid#IconPanel > Image#Icon, Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.WindowsCamera_8wekyb3d8bbwe!App] > Taskbar.TaskListLabeledButtonPanel#IconPanel > Image#Icon", {
         L"Source=https://raw.githubusercontent.com/ramensoftware/windows-11-taskbar-styling-guide/refs/heads/main/Themes/One%20UI%208.5/Assets/windowscamera.png",
         L"Height=40",
         L"Width=40",
         L"Margin=0,0,0,0"}},
-    ThemeTargetStyles{L"taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.WindowsCamera_8wekyb3d8bbwe!App] > Grid#IconPanel > Border, taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.WindowsCamera_8wekyb3d8bbwe!App] > taskbar:TaskListLabeledButtonPanel#IconPanel > Border", {
+    ThemeTargetStyles{L"Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.WindowsCamera_8wekyb3d8bbwe!App] > Grid#IconPanel > Border, Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.WindowsCamera_8wekyb3d8bbwe!App] > Taskbar.TaskListLabeledButtonPanel#IconPanel > Border", {
         L"Visibility=Collapsed"}},
-    ThemeTargetStyles{L"taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: {1AC14E77-02E7-4E5D-B744-2EB1AE5198B7}\\cmd.exe] > Grid#IconPanel > Image#Icon, taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: C:\\Windows\\System32\\cmd.exe] > Grid#IconPanel > Image#Icon, taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: {1AC14E77-02E7-4E5D-B744-2EB1AE5198B7}\\cmd.exe] > taskbar:TaskListLabeledButtonPanel#IconPanel > Image#Icon, taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: C:\\Windows\\System32\\cmd.exe] > taskbar:TaskListLabeledButtonPanel#IconPanel > Image#Icon", {
+    ThemeTargetStyles{L"Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: {1AC14E77-02E7-4E5D-B744-2EB1AE5198B7}\\cmd.exe] > Grid#IconPanel > Image#Icon, Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: C:\\Windows\\System32\\cmd.exe] > Grid#IconPanel > Image#Icon, Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: {1AC14E77-02E7-4E5D-B744-2EB1AE5198B7}\\cmd.exe] > Taskbar.TaskListLabeledButtonPanel#IconPanel > Image#Icon, Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: C:\\Windows\\System32\\cmd.exe] > Taskbar.TaskListLabeledButtonPanel#IconPanel > Image#Icon", {
         L"Source=https://raw.githubusercontent.com/ramensoftware/windows-11-taskbar-styling-guide/refs/heads/main/Themes/One%20UI%208.5/Assets/cmd.png",
         L"Height=40",
         L"Width=40",
         L"Margin=0,0,0,0"}},
-    ThemeTargetStyles{L"taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: {1AC14E77-02E7-4E5D-B744-2EB1AE5198B7}\\cmd.exe] > Grid#IconPanel > Border, taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: C:\\Windows\\System32\\cmd.exe] > Grid#IconPanel > Border, taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: {1AC14E77-02E7-4E5D-B744-2EB1AE5198B7}\\cmd.exe] > taskbar:TaskListLabeledButtonPanel#IconPanel > Border, taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: C:\\Windows\\System32\\cmd.exe] > taskbar:TaskListLabeledButtonPanel#IconPanel > Border", {
+    ThemeTargetStyles{L"Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: {1AC14E77-02E7-4E5D-B744-2EB1AE5198B7}\\cmd.exe] > Grid#IconPanel > Border, Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: C:\\Windows\\System32\\cmd.exe] > Grid#IconPanel > Border, Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: {1AC14E77-02E7-4E5D-B744-2EB1AE5198B7}\\cmd.exe] > Taskbar.TaskListLabeledButtonPanel#IconPanel > Border, Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: C:\\Windows\\System32\\cmd.exe] > Taskbar.TaskListLabeledButtonPanel#IconPanel > Border", {
         L"Visibility=Collapsed"}},
-    ThemeTargetStyles{L"taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: {1AC14E77-02E7-4E5D-B744-2EB1AE5198B7}\\WindowsPowerShell\\v1.0\\powershell.exe] > Grid#IconPanel > Image#Icon, taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: {A7CC3F66-580E-49E6-913B-556111443D24}\\Windows PowerShell\\Windows PowerShell.lnk] > Grid#IconPanel > Image#Icon, taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: {1AC14E77-02E7-4E5D-B744-2EB1AE5198B7}\\WindowsPowerShell\\v1.0\\powershell.exe] > taskbar:TaskListLabeledButtonPanel#IconPanel > Image#Icon, taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: {A7CC3F66-580E-49E6-913B-556111443D24}\\Windows PowerShell\\Windows PowerShell.lnk] > taskbar:TaskListLabeledButtonPanel#IconPanel > Image#Icon", {
+    ThemeTargetStyles{L"Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: {1AC14E77-02E7-4E5D-B744-2EB1AE5198B7}\\WindowsPowerShell\\v1.0\\powershell.exe] > Grid#IconPanel > Image#Icon, Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: {A7CC3F66-580E-49E6-913B-556111443D24}\\Windows PowerShell\\Windows PowerShell.lnk] > Grid#IconPanel > Image#Icon, Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: {1AC14E77-02E7-4E5D-B744-2EB1AE5198B7}\\WindowsPowerShell\\v1.0\\powershell.exe] > Taskbar.TaskListLabeledButtonPanel#IconPanel > Image#Icon, Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: {A7CC3F66-580E-49E6-913B-556111443D24}\\Windows PowerShell\\Windows PowerShell.lnk] > Taskbar.TaskListLabeledButtonPanel#IconPanel > Image#Icon", {
         L"Source=https://raw.githubusercontent.com/ramensoftware/windows-11-taskbar-styling-guide/refs/heads/main/Themes/One%20UI%208.5/Assets/powershell.png",
         L"Height=40",
         L"Width=40",
         L"Margin=0,0,0,0"}},
-    ThemeTargetStyles{L"taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: {1AC14E77-02E7-4E5D-B744-2EB1AE5198B7}\\WindowsPowerShell\\v1.0\\powershell.exe] > Grid#IconPanel > Border, taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: {A7CC3F66-580E-49E6-913B-556111443D24}\\Windows PowerShell\\Windows PowerShell.lnk] > Grid#IconPanel > Border, taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: {1AC14E77-02E7-4E5D-B744-2EB1AE5198B7}\\WindowsPowerShell\\v1.0\\powershell.exe] > taskbar:TaskListLabeledButtonPanel#IconPanel > Border, taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: {A7CC3F66-580E-49E6-913B-556111443D24}\\Windows PowerShell\\Windows PowerShell.lnk] > taskbar:TaskListLabeledButtonPanel#IconPanel > Border", {
+    ThemeTargetStyles{L"Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: {1AC14E77-02E7-4E5D-B744-2EB1AE5198B7}\\WindowsPowerShell\\v1.0\\powershell.exe] > Grid#IconPanel > Border, Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: {A7CC3F66-580E-49E6-913B-556111443D24}\\Windows PowerShell\\Windows PowerShell.lnk] > Grid#IconPanel > Border, Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: {1AC14E77-02E7-4E5D-B744-2EB1AE5198B7}\\WindowsPowerShell\\v1.0\\powershell.exe] > Taskbar.TaskListLabeledButtonPanel#IconPanel > Border, Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: {A7CC3F66-580E-49E6-913B-556111443D24}\\Windows PowerShell\\Windows PowerShell.lnk] > Taskbar.TaskListLabeledButtonPanel#IconPanel > Border", {
         L"Visibility=Collapsed"}},
-    ThemeTargetStyles{L"taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: {1AC14E77-02E7-4E5D-B744-2EB1AE5198B7}\\osk.exe] > Grid#IconPanel > Image#Icon, taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: {1AC14E77-02E7-4E5D-B744-2EB1AE5198B7}\\osk.exe] > taskbar:TaskListLabeledButtonPanel#IconPanel > Image#Icon", {
+    ThemeTargetStyles{L"Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: {1AC14E77-02E7-4E5D-B744-2EB1AE5198B7}\\osk.exe] > Grid#IconPanel > Image#Icon, Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: {1AC14E77-02E7-4E5D-B744-2EB1AE5198B7}\\osk.exe] > Taskbar.TaskListLabeledButtonPanel#IconPanel > Image#Icon", {
         L"Source=https://raw.githubusercontent.com/ramensoftware/windows-11-taskbar-styling-guide/refs/heads/main/Themes/One%20UI%208.5/Assets/osk.png",
         L"Height=40",
         L"Width=40",
         L"Margin=0,0,0,0"}},
-    ThemeTargetStyles{L"taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: {1AC14E77-02E7-4E5D-B744-2EB1AE5198B7}\\osk.exe] > Grid#IconPanel > Border, taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: {1AC14E77-02E7-4E5D-B744-2EB1AE5198B7}\\osk.exe] > taskbar:TaskListLabeledButtonPanel#IconPanel > Border", {
+    ThemeTargetStyles{L"Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: {1AC14E77-02E7-4E5D-B744-2EB1AE5198B7}\\osk.exe] > Grid#IconPanel > Border, Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: {1AC14E77-02E7-4E5D-B744-2EB1AE5198B7}\\osk.exe] > Taskbar.TaskListLabeledButtonPanel#IconPanel > Border", {
         L"Visibility=Collapsed"}},
-    ThemeTargetStyles{L"taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.Paint_8wekyb3d8bbwe!App] > Grid#IconPanel > Image#Icon, taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.Paint_8wekyb3d8bbwe!App] > taskbar:TaskListLabeledButtonPanel#IconPanel > Image#Icon", {
+    ThemeTargetStyles{L"Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.Paint_8wekyb3d8bbwe!App] > Grid#IconPanel > Image#Icon, Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.Paint_8wekyb3d8bbwe!App] > Taskbar.TaskListLabeledButtonPanel#IconPanel > Image#Icon", {
         L"Source=https://raw.githubusercontent.com/ramensoftware/windows-11-taskbar-styling-guide/refs/heads/main/Themes/One%20UI%208.5/Assets/paint.png",
         L"Height=40",
         L"Width=40",
         L"Margin=0,0,0,0"}},
-    ThemeTargetStyles{L"taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.Paint_8wekyb3d8bbwe!App] > Grid#IconPanel > Border, taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.Paint_8wekyb3d8bbwe!App] > taskbar:TaskListLabeledButtonPanel#IconPanel > Border", {
+    ThemeTargetStyles{L"Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.Paint_8wekyb3d8bbwe!App] > Grid#IconPanel > Border, Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.Paint_8wekyb3d8bbwe!App] > Taskbar.TaskListLabeledButtonPanel#IconPanel > Border", {
         L"Visibility=Collapsed"}},
-    ThemeTargetStyles{L"taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.ScreenSketch_8wekyb3d8bbwe!App] > Grid#IconPanel > Image#Icon, taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.ScreenSketch_8wekyb3d8bbwe!App] > taskbar:TaskListLabeledButtonPanel#IconPanel > Image#Icon", {
+    ThemeTargetStyles{L"Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.ScreenSketch_8wekyb3d8bbwe!App] > Grid#IconPanel > Image#Icon, Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.ScreenSketch_8wekyb3d8bbwe!App] > Taskbar.TaskListLabeledButtonPanel#IconPanel > Image#Icon", {
         L"Source=https://raw.githubusercontent.com/ramensoftware/windows-11-taskbar-styling-guide/refs/heads/main/Themes/One%20UI%208.5/Assets/snippingtool.png",
         L"Height=40",
         L"Width=40",
         L"Margin=0,0,0,0"}},
-    ThemeTargetStyles{L"taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.ScreenSketch_8wekyb3d8bbwe!App] > Grid#IconPanel > Border, taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.ScreenSketch_8wekyb3d8bbwe!App] > taskbar:TaskListLabeledButtonPanel#IconPanel > Border", {
+    ThemeTargetStyles{L"Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.ScreenSketch_8wekyb3d8bbwe!App] > Grid#IconPanel > Border, Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.ScreenSketch_8wekyb3d8bbwe!App] > Taskbar.TaskListLabeledButtonPanel#IconPanel > Border", {
         L"Visibility=Collapsed"}},
-    ThemeTargetStyles{L"taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: SpotifyAB.SpotifyMusic_zpdnekdrzrea0!Spotify] > Grid#IconPanel > Image#Icon, taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: SpotifyAB.SpotifyMusic_zpdnekdrzrea0!Spotify] > taskbar:TaskListLabeledButtonPanel#IconPanel > Image#Icon", {
+    ThemeTargetStyles{L"Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: SpotifyAB.SpotifyMusic_zpdnekdrzrea0!Spotify] > Grid#IconPanel > Image#Icon, Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: SpotifyAB.SpotifyMusic_zpdnekdrzrea0!Spotify] > Taskbar.TaskListLabeledButtonPanel#IconPanel > Image#Icon", {
         L"Source=https://raw.githubusercontent.com/ramensoftware/windows-11-taskbar-styling-guide/refs/heads/main/Themes/One%20UI%208.5/Assets/Spotify.png",
         L"Height=40",
         L"Width=40",
         L"Margin=0,0,0,0"}},
-    ThemeTargetStyles{L"taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: SpotifyAB.SpotifyMusic_zpdnekdrzrea0!Spotify] > Grid#IconPanel > Border, taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: SpotifyAB.SpotifyMusic_zpdnekdrzrea0!Spotify] > taskbar:TaskListLabeledButtonPanel#IconPanel > Border", {
+    ThemeTargetStyles{L"Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: SpotifyAB.SpotifyMusic_zpdnekdrzrea0!Spotify] > Grid#IconPanel > Border, Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: SpotifyAB.SpotifyMusic_zpdnekdrzrea0!Spotify] > Taskbar.TaskListLabeledButtonPanel#IconPanel > Border", {
         L"Visibility=Collapsed"}},
-    ThemeTargetStyles{L"taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.Windows.Photos_8wekyb3d8bbwe!App] > Grid#IconPanel > Image#Icon, taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.Windows.Photos_8wekyb3d8bbwe!App] > taskbar:TaskListLabeledButtonPanel#IconPanel > Image#Icon", {
+    ThemeTargetStyles{L"Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.Windows.Photos_8wekyb3d8bbwe!App] > Grid#IconPanel > Image#Icon, Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.Windows.Photos_8wekyb3d8bbwe!App] > Taskbar.TaskListLabeledButtonPanel#IconPanel > Image#Icon", {
         L"Source=https://raw.githubusercontent.com/ramensoftware/windows-11-taskbar-styling-guide/refs/heads/main/Themes/One%20UI%208.5/Assets/photos.png",
         L"Height=40",
         L"Width=40",
         L"Margin=0,0,0,0"}},
-    ThemeTargetStyles{L"taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.Windows.Photos_8wekyb3d8bbwe!App] > Grid#IconPanel > Border, taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.Windows.Photos_8wekyb3d8bbwe!App] > taskbar:TaskListLabeledButtonPanel#IconPanel > Border", {
+    ThemeTargetStyles{L"Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.Windows.Photos_8wekyb3d8bbwe!App] > Grid#IconPanel > Border, Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.Windows.Photos_8wekyb3d8bbwe!App] > Taskbar.TaskListLabeledButtonPanel#IconPanel > Border", {
         L"Visibility=Collapsed"}},
-    ThemeTargetStyles{L"taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.ZuneMusic_8wekyb3d8bbwe!Microsoft.ZuneMusic] > Grid#IconPanel > Image#Icon, taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.ZuneMusic_8wekyb3d8bbwe!Microsoft.ZuneMusic] > taskbar:TaskListLabeledButtonPanel#IconPanel > Image#Icon", {
+    ThemeTargetStyles{L"Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.ZuneMusic_8wekyb3d8bbwe!Microsoft.ZuneMusic] > Grid#IconPanel > Image#Icon, Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.ZuneMusic_8wekyb3d8bbwe!Microsoft.ZuneMusic] > Taskbar.TaskListLabeledButtonPanel#IconPanel > Image#Icon", {
         L"Source=https://raw.githubusercontent.com/ramensoftware/windows-11-taskbar-styling-guide/refs/heads/main/Themes/One%20UI%208.5/Assets/mediaplayer.png",
         L"Height=40",
         L"Width=40",
         L"Margin=0,0,0,0"}},
-    ThemeTargetStyles{L"taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.ZuneMusic_8wekyb3d8bbwe!Microsoft.ZuneMusic] > Grid#IconPanel > Border, taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.ZuneMusic_8wekyb3d8bbwe!Microsoft.ZuneMusic] > taskbar:TaskListLabeledButtonPanel#IconPanel > Border", {
+    ThemeTargetStyles{L"Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.ZuneMusic_8wekyb3d8bbwe!Microsoft.ZuneMusic] > Grid#IconPanel > Border, Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.ZuneMusic_8wekyb3d8bbwe!Microsoft.ZuneMusic] > Taskbar.TaskListLabeledButtonPanel#IconPanel > Border", {
         L"Visibility=Collapsed"}},
-    ThemeTargetStyles{L"taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: Valve.Steam.Client] > Grid#IconPanel > Image#Icon, taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: Valve.Steam.Client] > taskbar:TaskListLabeledButtonPanel#IconPanel > Image#Icon", {
+    ThemeTargetStyles{L"Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: Valve.Steam.Client] > Grid#IconPanel > Image#Icon, Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: Valve.Steam.Client] > Taskbar.TaskListLabeledButtonPanel#IconPanel > Image#Icon", {
         L"Source=https://raw.githubusercontent.com/ramensoftware/windows-11-taskbar-styling-guide/refs/heads/main/Themes/One%20UI%208.5/Assets/steam.png",
         L"Height=40",
         L"Width=40",
         L"Margin=0,0,0,0"}},
-    ThemeTargetStyles{L"taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: Valve.Steam.Client] > Grid#IconPanel > Border, taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: Valve.Steam.Client] > taskbar:TaskListLabeledButtonPanel#IconPanel > Border", {
+    ThemeTargetStyles{L"Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: Valve.Steam.Client] > Grid#IconPanel > Border, Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: Valve.Steam.Client] > Taskbar.TaskListLabeledButtonPanel#IconPanel > Border", {
         L"Visibility=Collapsed"}},
-    ThemeTargetStyles{L"taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.WindowsCalculator_8wekyb3d8bbwe!App] > Grid#IconPanel > Image#Icon, taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.WindowsCalculator_8wekyb3d8bbwe!App] > taskbar:TaskListLabeledButtonPanel#IconPanel > Image#Icon", {
+    ThemeTargetStyles{L"Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.WindowsCalculator_8wekyb3d8bbwe!App] > Grid#IconPanel > Image#Icon, Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.WindowsCalculator_8wekyb3d8bbwe!App] > Taskbar.TaskListLabeledButtonPanel#IconPanel > Image#Icon", {
         L"Source=https://raw.githubusercontent.com/ramensoftware/windows-11-taskbar-styling-guide/refs/heads/main/Themes/One%20UI%208.5/Assets/calculator.png",
         L"Height=40",
         L"Width=40",
         L"Margin=0,0,0,0"}},
-    ThemeTargetStyles{L"taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.WindowsCalculator_8wekyb3d8bbwe!App] > Grid#IconPanel > Border, taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.WindowsCalculator_8wekyb3d8bbwe!App] > taskbar:TaskListLabeledButtonPanel#IconPanel > Border", {
+    ThemeTargetStyles{L"Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.WindowsCalculator_8wekyb3d8bbwe!App] > Grid#IconPanel > Border, Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.WindowsCalculator_8wekyb3d8bbwe!App] > Taskbar.TaskListLabeledButtonPanel#IconPanel > Border", {
         L"Visibility=Collapsed"}},
-    ThemeTargetStyles{L"taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.WindowsAlarms_8wekyb3d8bbwe!App] > Grid#IconPanel > Image#Icon, taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.WindowsAlarms_8wekyb3d8bbwe!App] > taskbar:TaskListLabeledButtonPanel#IconPanel > Image#Icon", {
+    ThemeTargetStyles{L"Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.WindowsAlarms_8wekyb3d8bbwe!App] > Grid#IconPanel > Image#Icon, Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.WindowsAlarms_8wekyb3d8bbwe!App] > Taskbar.TaskListLabeledButtonPanel#IconPanel > Image#Icon", {
         L"Source=https://raw.githubusercontent.com/ramensoftware/windows-11-taskbar-styling-guide/refs/heads/main/Themes/One%20UI%208.5/Assets/time.png",
         L"Height=40",
         L"Width=40",
         L"Margin=0,0,0,0"}},
-    ThemeTargetStyles{L"taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.WindowsAlarms_8wekyb3d8bbwe!App] > Grid#IconPanel > Border, taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.WindowsAlarms_8wekyb3d8bbwe!App] > taskbar:TaskListLabeledButtonPanel#IconPanel > Border", {
+    ThemeTargetStyles{L"Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.WindowsAlarms_8wekyb3d8bbwe!App] > Grid#IconPanel > Border, Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.WindowsAlarms_8wekyb3d8bbwe!App] > Taskbar.TaskListLabeledButtonPanel#IconPanel > Border", {
         L"Visibility=Collapsed"}},
-    ThemeTargetStyles{L"taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.SecHealthUI_8wekyb3d8bbwe!SecHealthUI] > Grid#IconPanel > Image#Icon, taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.SecHealthUI_8wekyb3d8bbwe!SecHealthUI] > taskbar:TaskListLabeledButtonPanel#IconPanel > Image#Icon", {
+    ThemeTargetStyles{L"Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.SecHealthUI_8wekyb3d8bbwe!SecHealthUI] > Grid#IconPanel > Image#Icon, Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.SecHealthUI_8wekyb3d8bbwe!SecHealthUI] > Taskbar.TaskListLabeledButtonPanel#IconPanel > Image#Icon", {
         L"Source=https://raw.githubusercontent.com/ramensoftware/windows-11-taskbar-styling-guide/refs/heads/main/Themes/One%20UI%208.5/Assets/security.png",
         L"Height=40",
         L"Width=40",
         L"Margin=0,0,0,0"}},
-    ThemeTargetStyles{L"taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.SecHealthUI_8wekyb3d8bbwe!SecHealthUI] > Grid#IconPanel > Border, taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.SecHealthUI_8wekyb3d8bbwe!SecHealthUI] > taskbar:TaskListLabeledButtonPanel#IconPanel > Border", {
+    ThemeTargetStyles{L"Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.SecHealthUI_8wekyb3d8bbwe!SecHealthUI] > Grid#IconPanel > Border, Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.SecHealthUI_8wekyb3d8bbwe!SecHealthUI] > Taskbar.TaskListLabeledButtonPanel#IconPanel > Border", {
         L"Visibility=Collapsed"}},
-    ThemeTargetStyles{L"taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.WindowsStore_8wekyb3d8bbwe!App] > Grid#IconPanel > Image#Icon, taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.WindowsStore_8wekyb3d8bbwe!App] > taskbar:TaskListLabeledButtonPanel#IconPanel > Image#Icon", {
+    ThemeTargetStyles{L"Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.WindowsStore_8wekyb3d8bbwe!App] > Grid#IconPanel > Image#Icon, Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.WindowsStore_8wekyb3d8bbwe!App] > Taskbar.TaskListLabeledButtonPanel#IconPanel > Image#Icon", {
         L"Source=https://raw.githubusercontent.com/ramensoftware/windows-11-taskbar-styling-guide/refs/heads/main/Themes/One%20UI%208.5/Assets/store.png",
         L"Height=40",
         L"Width=40",
         L"Margin=0,0,0,0"}},
-    ThemeTargetStyles{L"taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.WindowsStore_8wekyb3d8bbwe!App] > Grid#IconPanel > Border, taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.WindowsStore_8wekyb3d8bbwe!App] > taskbar:TaskListLabeledButtonPanel#IconPanel > Border", {
+    ThemeTargetStyles{L"Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.WindowsStore_8wekyb3d8bbwe!App] > Grid#IconPanel > Border, Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.WindowsStore_8wekyb3d8bbwe!App] > Taskbar.TaskListLabeledButtonPanel#IconPanel > Border", {
         L"Visibility=Collapsed"}},
-    ThemeTargetStyles{L"taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: 5319275A.WhatsAppDesktop_cv1g1gvanyjgm!App] > Grid#IconPanel > Image#Icon, taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: 5319275A.WhatsAppDesktop_cv1g1gvanyjgm!App] > taskbar:TaskListLabeledButtonPanel#IconPanel > Image#Icon", {
+    ThemeTargetStyles{L"Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: 5319275A.WhatsAppDesktop_cv1g1gvanyjgm!App] > Grid#IconPanel > Image#Icon, Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: 5319275A.WhatsAppDesktop_cv1g1gvanyjgm!App] > Taskbar.TaskListLabeledButtonPanel#IconPanel > Image#Icon", {
         L"Source=https://raw.githubusercontent.com/ramensoftware/windows-11-taskbar-styling-guide/refs/heads/main/Themes/One%20UI%208.5/Assets/whatsapp.png",
         L"Height=40",
         L"Width=40",
         L"Margin=0,0,0,0"}},
-    ThemeTargetStyles{L"taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: 5319275A.WhatsAppDesktop_cv1g1gvanyjgm!App] > Grid#IconPanel > Border, taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: 5319275A.WhatsAppDesktop_cv1g1gvanyjgm!App] > taskbar:TaskListLabeledButtonPanel#IconPanel > Border", {
+    ThemeTargetStyles{L"Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: 5319275A.WhatsAppDesktop_cv1g1gvanyjgm!App] > Grid#IconPanel > Border, Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: 5319275A.WhatsAppDesktop_cv1g1gvanyjgm!App] > Taskbar.TaskListLabeledButtonPanel#IconPanel > Border", {
         L"Visibility=Collapsed"}},
-    ThemeTargetStyles{L"taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.Office.WINWORD.EXE.15] > Grid#IconPanel > Image#Icon, taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.Office.WINWORD.EXE.15] > taskbar:TaskListLabeledButtonPanel#IconPanel > Image#Icon", {
+    ThemeTargetStyles{L"Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.Office.WINWORD.EXE.15] > Grid#IconPanel > Image#Icon, Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.Office.WINWORD.EXE.15] > Taskbar.TaskListLabeledButtonPanel#IconPanel > Image#Icon", {
         L"Source=https://raw.githubusercontent.com/ramensoftware/windows-11-taskbar-styling-guide/refs/heads/main/Themes/One%20UI%208.5/Assets/word.png",
         L"Height=40",
         L"Width=40",
         L"Margin=0,0,0,0"}},
-    ThemeTargetStyles{L"taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.Office.WINWORD.EXE.15] > Grid#IconPanel > Border, taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.Office.WINWORD.EXE.15] > taskbar:TaskListLabeledButtonPanel#IconPanel > Border", {
+    ThemeTargetStyles{L"Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.Office.WINWORD.EXE.15] > Grid#IconPanel > Border, Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.Office.WINWORD.EXE.15] > Taskbar.TaskListLabeledButtonPanel#IconPanel > Border", {
         L"Visibility=Collapsed"}},
-    ThemeTargetStyles{L"taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.Office.POWERPNT.EXE.15] > Grid#IconPanel > Image#Icon, taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.Office.POWERPNT.EXE.15] > taskbar:TaskListLabeledButtonPanel#IconPanel > Image#Icon", {
+    ThemeTargetStyles{L"Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.Office.POWERPNT.EXE.15] > Grid#IconPanel > Image#Icon, Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.Office.POWERPNT.EXE.15] > Taskbar.TaskListLabeledButtonPanel#IconPanel > Image#Icon", {
         L"Source=https://raw.githubusercontent.com/ramensoftware/windows-11-taskbar-styling-guide/refs/heads/main/Themes/One%20UI%208.5/Assets/powerpoint.png",
         L"Height=40",
         L"Width=40",
         L"Margin=0,0,0,0"}},
-    ThemeTargetStyles{L"taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.Office.POWERPNT.EXE.15] > Grid#IconPanel > Border, taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.Office.POWERPNT.EXE.15] > taskbar:TaskListLabeledButtonPanel#IconPanel > Border", {
+    ThemeTargetStyles{L"Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.Office.POWERPNT.EXE.15] > Grid#IconPanel > Border, Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.Office.POWERPNT.EXE.15] > Taskbar.TaskListLabeledButtonPanel#IconPanel > Border", {
         L"Visibility=Collapsed"}},
-    ThemeTargetStyles{L"taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.Office.ONENOTE.EXE.15] > Grid#IconPanel > Image#Icon, taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.Office.ONENOTE.EXE.15] > taskbar:TaskListLabeledButtonPanel#IconPanel > Image#Icon", {
+    ThemeTargetStyles{L"Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.Office.ONENOTE.EXE.15] > Grid#IconPanel > Image#Icon, Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.Office.ONENOTE.EXE.15] > Taskbar.TaskListLabeledButtonPanel#IconPanel > Image#Icon", {
         L"Source=https://raw.githubusercontent.com/ramensoftware/windows-11-taskbar-styling-guide/refs/heads/main/Themes/One%20UI%208.5/Assets/onenote.png",
         L"Height=40",
         L"Width=40",
         L"Margin=0,0,0,0"}},
-    ThemeTargetStyles{L"taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.Office.ONENOTE.EXE.15] > Grid#IconPanel > Border, taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.Office.ONENOTE.EXE.15] > taskbar:TaskListLabeledButtonPanel#IconPanel > Border", {
+    ThemeTargetStyles{L"Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.Office.ONENOTE.EXE.15] > Grid#IconPanel > Border, Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.Office.ONENOTE.EXE.15] > Taskbar.TaskListLabeledButtonPanel#IconPanel > Border", {
         L"Visibility=Collapsed"}},
-    ThemeTargetStyles{L"taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.OneDrive] > Grid#IconPanel > Image#Icon, taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.OneDrive] > taskbar:TaskListLabeledButtonPanel#IconPanel > Image#Icon", {
+    ThemeTargetStyles{L"Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.OneDrive] > Grid#IconPanel > Image#Icon, Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.OneDrive] > Taskbar.TaskListLabeledButtonPanel#IconPanel > Image#Icon", {
         L"Source=https://raw.githubusercontent.com/ramensoftware/windows-11-taskbar-styling-guide/refs/heads/main/Themes/One%20UI%208.5/Assets/OneDrive.png",
         L"Height=40",
         L"Width=40",
         L"Margin=0,0,0,0"}},
-    ThemeTargetStyles{L"taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.OneDrive] > Grid#IconPanel > Border, taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.OneDrive] > taskbar:TaskListLabeledButtonPanel#IconPanel > Border", {
+    ThemeTargetStyles{L"Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.OneDrive] > Grid#IconPanel > Border, Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.OneDrive] > Taskbar.TaskListLabeledButtonPanel#IconPanel > Border", {
         L"Visibility=Collapsed"}},
-    ThemeTargetStyles{L"taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: MSTeams_8wekyb3d8bbwe!MSTeams] > Grid#IconPanel > Image#Icon, taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: MSTeams_8wekyb3d8bbwe!MSTeams] > taskbar:TaskListLabeledButtonPanel#IconPanel > Image#Icon", {
+    ThemeTargetStyles{L"Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: MSTeams_8wekyb3d8bbwe!MSTeams] > Grid#IconPanel > Image#Icon, Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: MSTeams_8wekyb3d8bbwe!MSTeams] > Taskbar.TaskListLabeledButtonPanel#IconPanel > Image#Icon", {
         L"Source=https://raw.githubusercontent.com/ramensoftware/windows-11-taskbar-styling-guide/refs/heads/main/Themes/One%20UI%208.5/Assets/ms-teams.png",
         L"Height=40",
         L"Width=40",
         L"Margin=0,0,0,0"}},
-    ThemeTargetStyles{L"taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: MSTeams_8wekyb3d8bbwe!MSTeams] > Grid#IconPanel > Border, taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: MSTeams_8wekyb3d8bbwe!MSTeams] > taskbar:TaskListLabeledButtonPanel#IconPanel > Border", {
+    ThemeTargetStyles{L"Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: MSTeams_8wekyb3d8bbwe!MSTeams] > Grid#IconPanel > Border, Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: MSTeams_8wekyb3d8bbwe!MSTeams] > Taskbar.TaskListLabeledButtonPanel#IconPanel > Border", {
         L"Visibility=Collapsed"}},
-    ThemeTargetStyles{L"taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.OutlookForWindows_8wekyb3d8bbwe!Microsoft.OutlookForWindows] > Grid#IconPanel > Image#Icon, taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.OutlookForWindows_8wekyb3d8bbwe!Microsoft.OutlookForWindows] > taskbar:TaskListLabeledButtonPanel#IconPanel > Image#Icon", {
+    ThemeTargetStyles{L"Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.OutlookForWindows_8wekyb3d8bbwe!Microsoft.OutlookForWindows] > Grid#IconPanel > Image#Icon, Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.OutlookForWindows_8wekyb3d8bbwe!Microsoft.OutlookForWindows] > Taskbar.TaskListLabeledButtonPanel#IconPanel > Image#Icon", {
         L"Source=https://raw.githubusercontent.com/ramensoftware/windows-11-taskbar-styling-guide/refs/heads/main/Themes/One%20UI%208.5/Assets/outlook.png",
         L"Height=40",
         L"Width=40",
         L"Margin=0,0,0,0"}},
-    ThemeTargetStyles{L"taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.OutlookForWindows_8wekyb3d8bbwe!Microsoft.OutlookForWindows] > Grid#IconPanel > Border, taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.OutlookForWindows_8wekyb3d8bbwe!Microsoft.OutlookForWindows] > taskbar:TaskListLabeledButtonPanel#IconPanel > Border", {
+    ThemeTargetStyles{L"Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.OutlookForWindows_8wekyb3d8bbwe!Microsoft.OutlookForWindows] > Grid#IconPanel > Border, Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.OutlookForWindows_8wekyb3d8bbwe!Microsoft.OutlookForWindows] > Taskbar.TaskListLabeledButtonPanel#IconPanel > Border", {
         L"Visibility=Collapsed"}},
-    ThemeTargetStyles{L"taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.Windows.ControlPanel] > Grid#IconPanel > Image#Icon, taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.Windows.ControlPanel] > taskbar:TaskListLabeledButtonPanel#IconPanel > Image#Icon", {
+    ThemeTargetStyles{L"Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.Windows.ControlPanel] > Grid#IconPanel > Image#Icon, Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.Windows.ControlPanel] > Taskbar.TaskListLabeledButtonPanel#IconPanel > Image#Icon", {
         L"Source=https://raw.githubusercontent.com/ramensoftware/windows-11-taskbar-styling-guide/refs/heads/main/Themes/One%20UI%208.5/Assets/ControlPanel.png",
         L"Height=40",
         L"Width=40",
         L"Margin=0,0,0,0"}},
-    ThemeTargetStyles{L"taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.Windows.ControlPanel] > Grid#IconPanel > Border, taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.Windows.ControlPanel] > taskbar:TaskListLabeledButtonPanel#IconPanel > Border", {
+    ThemeTargetStyles{L"Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.Windows.ControlPanel] > Grid#IconPanel > Border, Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.Windows.ControlPanel] > Taskbar.TaskListLabeledButtonPanel#IconPanel > Border", {
         L"Visibility=Collapsed"}},
-    ThemeTargetStyles{L"taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.Windows.Explorer] > Grid#IconPanel > Image#Icon, taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.Windows.Explorer] > taskbar:TaskListLabeledButtonPanel#IconPanel > Image#Icon", {
+    ThemeTargetStyles{L"Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.Windows.Explorer] > Grid#IconPanel > Image#Icon, Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.Windows.Explorer] > Taskbar.TaskListLabeledButtonPanel#IconPanel > Image#Icon", {
         L"Source=https://raw.githubusercontent.com/ramensoftware/windows-11-taskbar-styling-guide/refs/heads/main/Themes/One%20UI%208.5/Assets/explorer.png",
         L"Height=40",
         L"Width=40",
         L"Margin=0,0,0,0"}},
-    ThemeTargetStyles{L"taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.Windows.Explorer] > Grid#IconPanel > Border, taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.Windows.Explorer] > taskbar:TaskListLabeledButtonPanel#IconPanel > Border", {
+    ThemeTargetStyles{L"Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.Windows.Explorer] > Grid#IconPanel > Border, Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.Windows.Explorer] > Taskbar.TaskListLabeledButtonPanel#IconPanel > Border", {
         L"Visibility=Collapsed"}},
-    ThemeTargetStyles{L"taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: com.squirrel.Discord.Discord] > Grid#IconPanel > Image#Icon, taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: com.squirrel.Discord.Discord] > taskbar:TaskListLabeledButtonPanel#IconPanel > Image#Icon", {
+    ThemeTargetStyles{L"Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: com.squirrel.Discord.Discord] > Grid#IconPanel > Image#Icon, Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: com.squirrel.Discord.Discord] > Taskbar.TaskListLabeledButtonPanel#IconPanel > Image#Icon", {
         L"Source=https://raw.githubusercontent.com/ramensoftware/windows-11-taskbar-styling-guide/refs/heads/main/Themes/One%20UI%208.5/Assets/discord.png",
         L"Height=40",
         L"Width=40",
         L"Margin=0,0,0,0"}},
-    ThemeTargetStyles{L"taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: com.squirrel.Discord.Discord] > Grid#IconPanel > Border, taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: com.squirrel.Discord.Discord] > taskbar:TaskListLabeledButtonPanel#IconPanel > Border", {
+    ThemeTargetStyles{L"Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: com.squirrel.Discord.Discord] > Grid#IconPanel > Border, Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: com.squirrel.Discord.Discord] > Taskbar.TaskListLabeledButtonPanel#IconPanel > Border", {
         L"Visibility=Collapsed"}},
-    ThemeTargetStyles{L"taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: windows.immersivecontrolpanel_cw5n1h2txyewy!microsoft.windows.immersivecontrolpanel] > Grid#IconPanel > Image#Icon, taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: windows.immersivecontrolpanel_cw5n1h2txyewy!microsoft.windows.immersivecontrolpanel] > taskbar:TaskListLabeledButtonPanel#IconPanel > Image#Icon", {
+    ThemeTargetStyles{L"Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: windows.immersivecontrolpanel_cw5n1h2txyewy!microsoft.windows.immersivecontrolpanel] > Grid#IconPanel > Image#Icon, Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: windows.immersivecontrolpanel_cw5n1h2txyewy!microsoft.windows.immersivecontrolpanel] > Taskbar.TaskListLabeledButtonPanel#IconPanel > Image#Icon", {
         L"Source=https://raw.githubusercontent.com/ramensoftware/windows-11-taskbar-styling-guide/refs/heads/main/Themes/One%20UI%208.5/Assets/systemsettings.png",
         L"Height=40",
         L"Width=40",
         L"Margin=0,0,0,0"}},
-    ThemeTargetStyles{L"taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: windows.immersivecontrolpanel_cw5n1h2txyewy!microsoft.windows.immersivecontrolpanel] > Grid#IconPanel > Border, taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: windows.immersivecontrolpanel_cw5n1h2txyewy!microsoft.windows.immersivecontrolpanel] > taskbar:TaskListLabeledButtonPanel#IconPanel > Border", {
+    ThemeTargetStyles{L"Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: windows.immersivecontrolpanel_cw5n1h2txyewy!microsoft.windows.immersivecontrolpanel] > Grid#IconPanel > Border, Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: windows.immersivecontrolpanel_cw5n1h2txyewy!microsoft.windows.immersivecontrolpanel] > Taskbar.TaskListLabeledButtonPanel#IconPanel > Border", {
         L"Visibility=Collapsed"}},
-    ThemeTargetStyles{L"taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.WindowsNotepad_8wekyb3d8bbwe!App] > Grid#IconPanel > Image#Icon, taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.WindowsNotepad_8wekyb3d8bbwe!App] > taskbar:TaskListLabeledButtonPanel#IconPanel > Image#Icon", {
+    ThemeTargetStyles{L"Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.WindowsNotepad_8wekyb3d8bbwe!App] > Grid#IconPanel > Image#Icon, Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.WindowsNotepad_8wekyb3d8bbwe!App] > Taskbar.TaskListLabeledButtonPanel#IconPanel > Image#Icon", {
         L"Source=https://raw.githubusercontent.com/ramensoftware/windows-11-taskbar-styling-guide/refs/heads/main/Themes/One%20UI%208.5/Assets/notepad.png",
         L"Height=40",
         L"Width=40",
         L"Margin=0,0,0,0"}},
-    ThemeTargetStyles{L"taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.WindowsNotepad_8wekyb3d8bbwe!App] > Grid#IconPanel > Border, taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.WindowsNotepad_8wekyb3d8bbwe!App] > taskbar:TaskListLabeledButtonPanel#IconPanel > Border", {
+    ThemeTargetStyles{L"Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.WindowsNotepad_8wekyb3d8bbwe!App] > Grid#IconPanel > Border, Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.WindowsNotepad_8wekyb3d8bbwe!App] > Taskbar.TaskListLabeledButtonPanel#IconPanel > Border", {
         L"Visibility=Collapsed"}},
-    ThemeTargetStyles{L"taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: com.github.th-ch.youtube-music] > Grid#IconPanel > Image#Icon, taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: com.github.th-ch.youtube-music] > taskbar:TaskListLabeledButtonPanel#IconPanel > Image#Icon", {
+    ThemeTargetStyles{L"Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: com.github.th-ch.youtube-music] > Grid#IconPanel > Image#Icon, Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: com.github.th-ch.youtube-music] > Taskbar.TaskListLabeledButtonPanel#IconPanel > Image#Icon", {
         L"Source=https://raw.githubusercontent.com/ramensoftware/windows-11-taskbar-styling-guide/refs/heads/main/Themes/One%20UI%208.5/Assets/YouTubeMusic.png",
         L"Height=40",
         L"Width=40",
         L"Margin=0,0,0,0"}},
-    ThemeTargetStyles{L"taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: com.github.th-ch.youtube-music] > Grid#IconPanel > Border, taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: com.github.th-ch.youtube-music] > taskbar:TaskListLabeledButtonPanel#IconPanel > Border", {
+    ThemeTargetStyles{L"Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: com.github.th-ch.youtube-music] > Grid#IconPanel > Border, Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: com.github.th-ch.youtube-music] > Taskbar.TaskListLabeledButtonPanel#IconPanel > Border", {
         L"Visibility=Collapsed"}},
-    ThemeTargetStyles{L"taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: BlueStacks_nxt] > Grid#IconPanel > Image#Icon, taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: BlueStacks_nxt] > taskbar:TaskListLabeledButtonPanel#IconPanel > Image#Icon", {
+    ThemeTargetStyles{L"Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: BlueStacks_nxt] > Grid#IconPanel > Image#Icon, Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: BlueStacks_nxt] > Taskbar.TaskListLabeledButtonPanel#IconPanel > Image#Icon", {
         L"Source=https://raw.githubusercontent.com/ramensoftware/windows-11-taskbar-styling-guide/refs/heads/main/Themes/One%20UI%208.5/Assets/Bluestacks.png",
         L"Height=40",
         L"Width=40",
         L"Margin=0,0,0,0"}},
-    ThemeTargetStyles{L"taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: BlueStacks_nxt] > Grid#IconPanel > Border, taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: BlueStacks_nxt] > taskbar:TaskListLabeledButtonPanel#IconPanel > Border", {
+    ThemeTargetStyles{L"Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: BlueStacks_nxt] > Grid#IconPanel > Border, Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: BlueStacks_nxt] > Taskbar.TaskListLabeledButtonPanel#IconPanel > Border", {
         L"Visibility=Collapsed"}},
-    ThemeTargetStyles{L"taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: {7C5A40EF-A0FB-4BFC-874A-C0F2E0B9FA8E}\\NCH Software\\DeskFX\\deskfx.exe] > Grid#IconPanel > Image#Icon, taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: {7C5A40EF-A0FB-4BFC-874A-C0F2E0B9FA8E}\\NCH Software\\DeskFX\\deskfx.exe] > taskbar:TaskListLabeledButtonPanel#IconPanel > Image#Icon", {
+    ThemeTargetStyles{L"Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: {7C5A40EF-A0FB-4BFC-874A-C0F2E0B9FA8E}\\NCH Software\\DeskFX\\deskfx.exe] > Grid#IconPanel > Image#Icon, Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: {7C5A40EF-A0FB-4BFC-874A-C0F2E0B9FA8E}\\NCH Software\\DeskFX\\deskfx.exe] > Taskbar.TaskListLabeledButtonPanel#IconPanel > Image#Icon", {
         L"Source=https://raw.githubusercontent.com/ramensoftware/windows-11-taskbar-styling-guide/refs/heads/main/Themes/One%20UI%208.5/Assets/DeskFX.png",
         L"Height=40",
         L"Width=40",
         L"Margin=0,0,0,0"}},
-    ThemeTargetStyles{L"taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: {7C5A40EF-A0FB-4BFC-874A-C0F2E0B9FA8E}\\NCH Software\\DeskFX\\deskfx.exe] > Grid#IconPanel > Border, taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: {7C5A40EF-A0FB-4BFC-874A-C0F2E0B9FA8E}\\NCH Software\\DeskFX\\deskfx.exe] > taskbar:TaskListLabeledButtonPanel#IconPanel > Border", {
+    ThemeTargetStyles{L"Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: {7C5A40EF-A0FB-4BFC-874A-C0F2E0B9FA8E}\\NCH Software\\DeskFX\\deskfx.exe] > Grid#IconPanel > Border, Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: {7C5A40EF-A0FB-4BFC-874A-C0F2E0B9FA8E}\\NCH Software\\DeskFX\\deskfx.exe] > Taskbar.TaskListLabeledButtonPanel#IconPanel > Border", {
         L"Visibility=Collapsed"}},
-    ThemeTargetStyles{L"taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: RamenSoftware.Windhawk] > Grid#IconPanel > Image#Icon, taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: RamenSoftware.Windhawk] > taskbar:TaskListLabeledButtonPanel#IconPanel > Image#Icon", {
+    ThemeTargetStyles{L"Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: RamenSoftware.Windhawk] > Grid#IconPanel > Image#Icon, Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: RamenSoftware.Windhawk] > Taskbar.TaskListLabeledButtonPanel#IconPanel > Image#Icon", {
         L"Source=https://raw.githubusercontent.com/ramensoftware/windows-11-taskbar-styling-guide/refs/heads/main/Themes/One%20UI%208.5/Assets/windhawk.png",
         L"Height=40",
         L"Width=40",
         L"Margin=0,0,0,0"}},
-    ThemeTargetStyles{L"taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: RamenSoftware.Windhawk] > Grid#IconPanel > Border, taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: RamenSoftware.Windhawk] > taskbar:TaskListLabeledButtonPanel#IconPanel > Border", {
+    ThemeTargetStyles{L"Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: RamenSoftware.Windhawk] > Grid#IconPanel > Border, Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: RamenSoftware.Windhawk] > Taskbar.TaskListLabeledButtonPanel#IconPanel > Border", {
         L"Visibility=Collapsed"}},
-    ThemeTargetStyles{L"taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: 5319275A.51895FA4EA97F_cv1g1gvanyjgm!App] > Grid#IconPanel > Image#Icon, taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: 5319275A.51895FA4EA97F_cv1g1gvanyjgm!App] > taskbar:TaskListLabeledButtonPanel#IconPanel > Image#Icon", {
+    ThemeTargetStyles{L"Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: 5319275A.51895FA4EA97F_cv1g1gvanyjgm!App] > Grid#IconPanel > Image#Icon, Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: 5319275A.51895FA4EA97F_cv1g1gvanyjgm!App] > Taskbar.TaskListLabeledButtonPanel#IconPanel > Image#Icon", {
         L"Source=https://raw.githubusercontent.com/ramensoftware/windows-11-taskbar-styling-guide/refs/heads/main/Themes/One%20UI%208.5/Assets/whatsapp.png",
         L"Height=40",
         L"Width=40",
         L"Margin=0,0,0,0"}},
-    ThemeTargetStyles{L"taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: 5319275A.51895FA4EA97F_cv1g1gvanyjgm!App] > Grid#IconPanel > Border, taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: 5319275A.51895FA4EA97F_cv1g1gvanyjgm!App] > taskbar:TaskListLabeledButtonPanel#IconPanel > Border", {
+    ThemeTargetStyles{L"Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: 5319275A.51895FA4EA97F_cv1g1gvanyjgm!App] > Grid#IconPanel > Border, Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: 5319275A.51895FA4EA97F_cv1g1gvanyjgm!App] > Taskbar.TaskListLabeledButtonPanel#IconPanel > Border", {
         L"Visibility=Collapsed"}},
     ThemeTargetStyles{L"Grid#IconPanel, Taskbar.TaskListButtonPanel", {
         L"Width=45",
@@ -10050,12 +10115,13 @@ const Theme g_themeOne_UI_8_5_variant_Dock = {{
         L"Margin=0,8,0,2",
         L"Padding=20,0,20,0",
         L"BorderBrush=#40FFFFFF"}},
+    ThemeTargetStyles{L"Grid#RootGrid > Taskbar.TaskbarBackground", {
+        L"Margin=-20,0,-20,0"}},
     ThemeTargetStyles{L"Grid#RootGrid > Taskbar.TaskbarBackground > Grid", {
         L"Background:=<WindhawkBlur BlurAmount=\"8\" TintColor=\"#2D101010\"/>",
         L"CornerRadius=25,0,0,25",
         L"BorderThickness=1,1,0,1",
         L"Width=Auto",
-        L"Margin=-20,0,-20,0",
         L"BorderBrush=#40FFFFFF",
         L"Padding=-1"}},
     ThemeTargetStyles{L"Taskbar.TaskbarFrame > Grid#RootGrid > Taskbar.TaskbarBackground > Grid > Rectangle#BackgroundFill", {
@@ -10310,225 +10376,225 @@ const Theme g_themeOne_UI_8_5_variant_Dock = {{
 }};
 
 const Theme g_themeOne_UI_8_5_variant_Taskbar = {{
-    ThemeTargetStyles{L"taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.GamingApp_8wekyb3d8bbwe!Microsoft.Xbox.AppL] > Grid#IconPanel > Image#Icon, taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.GamingApp_8wekyb3d8bbwe!Microsoft.Xbox.App] > Grid#IconPanel > Image#Icon, taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.GamingApp_8wekyb3d8bbwe!App] > Grid#IconPanel > Image#Icon, taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.GamingApp_8wekyb3d8bbwe!Microsoft.Xbox.AppL] > taskbar:TaskListLabeledButtonPanel#IconPanel > Image#Icon, taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.GamingApp_8wekyb3d8bbwe!Microsoft.Xbox.App] > taskbar:TaskListLabeledButtonPanel#IconPanel > Image#Icon, taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.GamingApp_8wekyb3d8bbwe!App] > taskbar:TaskListLabeledButtonPanel#IconPanel > Image#Icon", {
+    ThemeTargetStyles{L"Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.GamingApp_8wekyb3d8bbwe!Microsoft.Xbox.AppL] > Grid#IconPanel > Image#Icon, Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.GamingApp_8wekyb3d8bbwe!Microsoft.Xbox.App] > Grid#IconPanel > Image#Icon, Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.GamingApp_8wekyb3d8bbwe!App] > Grid#IconPanel > Image#Icon, Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.GamingApp_8wekyb3d8bbwe!Microsoft.Xbox.AppL] > Taskbar.TaskListLabeledButtonPanel#IconPanel > Image#Icon, Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.GamingApp_8wekyb3d8bbwe!Microsoft.Xbox.App] > Taskbar.TaskListLabeledButtonPanel#IconPanel > Image#Icon, Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.GamingApp_8wekyb3d8bbwe!App] > Taskbar.TaskListLabeledButtonPanel#IconPanel > Image#Icon", {
         L"Source=https://raw.githubusercontent.com/ramensoftware/windows-11-taskbar-styling-guide/refs/heads/main/Themes/One%20UI%208.5/Assets/xbox.png",
         L"Height=40",
         L"Width=40",
         L"Margin=0,0,0,0"}},
-    ThemeTargetStyles{L"taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.GamingApp_8wekyb3d8bbwe!Microsoft.Xbox.AppL] > Grid#IconPanel > Border, taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.GamingApp_8wekyb3d8bbwe!Microsoft.Xbox.App] > Grid#IconPanel > Border, taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.GamingApp_8wekyb3d8bbwe!App] > Grid#IconPanel > Border, taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.GamingApp_8wekyb3d8bbwe!Microsoft.Xbox.AppL] > taskbar:TaskListLabeledButtonPanel#IconPanel > Border, taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.GamingApp_8wekyb3d8bbwe!Microsoft.Xbox.App] > taskbar:TaskListLabeledButtonPanel#IconPanel > Border, taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.GamingApp_8wekyb3d8bbwe!App] > taskbar:TaskListLabeledButtonPanel#IconPanel > Border", {
+    ThemeTargetStyles{L"Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.GamingApp_8wekyb3d8bbwe!Microsoft.Xbox.AppL] > Grid#IconPanel > Border, Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.GamingApp_8wekyb3d8bbwe!Microsoft.Xbox.App] > Grid#IconPanel > Border, Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.GamingApp_8wekyb3d8bbwe!App] > Grid#IconPanel > Border, Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.GamingApp_8wekyb3d8bbwe!Microsoft.Xbox.AppL] > Taskbar.TaskListLabeledButtonPanel#IconPanel > Border, Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.GamingApp_8wekyb3d8bbwe!Microsoft.Xbox.App] > Taskbar.TaskListLabeledButtonPanel#IconPanel > Border, Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.GamingApp_8wekyb3d8bbwe!App] > Taskbar.TaskListLabeledButtonPanel#IconPanel > Border", {
         L"Visibility=Collapsed"}},
-    ThemeTargetStyles{L"taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.WindowsCamera_8wekyb3d8bbwe!App] > Grid#IconPanel > Image#Icon, taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.WindowsCamera_8wekyb3d8bbwe!App] > taskbar:TaskListLabeledButtonPanel#IconPanel > Image#Icon", {
+    ThemeTargetStyles{L"Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.WindowsCamera_8wekyb3d8bbwe!App] > Grid#IconPanel > Image#Icon, Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.WindowsCamera_8wekyb3d8bbwe!App] > Taskbar.TaskListLabeledButtonPanel#IconPanel > Image#Icon", {
         L"Source=https://raw.githubusercontent.com/ramensoftware/windows-11-taskbar-styling-guide/refs/heads/main/Themes/One%20UI%208.5/Assets/windowscamera.png",
         L"Height=40",
         L"Width=40",
         L"Margin=0,0,0,0"}},
-    ThemeTargetStyles{L"taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: {1AC14E77-02E7-4E5D-B744-2EB1AE5198B7}\\cmd.exe] > Grid#IconPanel > Image#Icon, taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: C:\\Windows\\System32\\cmd.exe] > Grid#IconPanel > Image#Icon, taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: {1AC14E77-02E7-4E5D-B744-2EB1AE5198B7}\\cmd.exe] > taskbar:TaskListLabeledButtonPanel#IconPanel > Image#Icon, taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: C:\\Windows\\System32\\cmd.exe] > taskbar:TaskListLabeledButtonPanel#IconPanel > Image#Icon", {
+    ThemeTargetStyles{L"Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: {1AC14E77-02E7-4E5D-B744-2EB1AE5198B7}\\cmd.exe] > Grid#IconPanel > Image#Icon, Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: C:\\Windows\\System32\\cmd.exe] > Grid#IconPanel > Image#Icon, Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: {1AC14E77-02E7-4E5D-B744-2EB1AE5198B7}\\cmd.exe] > Taskbar.TaskListLabeledButtonPanel#IconPanel > Image#Icon, Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: C:\\Windows\\System32\\cmd.exe] > Taskbar.TaskListLabeledButtonPanel#IconPanel > Image#Icon", {
         L"Source=https://raw.githubusercontent.com/ramensoftware/windows-11-taskbar-styling-guide/refs/heads/main/Themes/One%20UI%208.5/Assets/cmd.png",
         L"Height=40",
         L"Width=40",
         L"Margin=0,0,0,0"}},
-    ThemeTargetStyles{L"taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: {1AC14E77-02E7-4E5D-B744-2EB1AE5198B7}\\cmd.exe] > Grid#IconPanel > Border, taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: C:\\Windows\\System32\\cmd.exe] > Grid#IconPanel > Border, taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: {1AC14E77-02E7-4E5D-B744-2EB1AE5198B7}\\cmd.exe] > taskbar:TaskListLabeledButtonPanel#IconPanel > Border, taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: C:\\Windows\\System32\\cmd.exe] > taskbar:TaskListLabeledButtonPanel#IconPanel > Border", {
+    ThemeTargetStyles{L"Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: {1AC14E77-02E7-4E5D-B744-2EB1AE5198B7}\\cmd.exe] > Grid#IconPanel > Border, Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: C:\\Windows\\System32\\cmd.exe] > Grid#IconPanel > Border, Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: {1AC14E77-02E7-4E5D-B744-2EB1AE5198B7}\\cmd.exe] > Taskbar.TaskListLabeledButtonPanel#IconPanel > Border, Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: C:\\Windows\\System32\\cmd.exe] > Taskbar.TaskListLabeledButtonPanel#IconPanel > Border", {
         L"Visibility=Collapsed"}},
-    ThemeTargetStyles{L"taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: {1AC14E77-02E7-4E5D-B744-2EB1AE5198B7}\\WindowsPowerShell\\v1.0\\powershell.exe] > Grid#IconPanel > Image#Icon, taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: {A7CC3F66-580E-49E6-913B-556111443D24}\\Windows PowerShell\\Windows PowerShell.lnk] > Grid#IconPanel > Image#Icon, taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: {1AC14E77-02E7-4E5D-B744-2EB1AE5198B7}\\WindowsPowerShell\\v1.0\\powershell.exe] > taskbar:TaskListLabeledButtonPanel#IconPanel > Image#Icon, taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: {A7CC3F66-580E-49E6-913B-556111443D24}\\Windows PowerShell\\Windows PowerShell.lnk] > taskbar:TaskListLabeledButtonPanel#IconPanel > Image#Icon", {
+    ThemeTargetStyles{L"Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: {1AC14E77-02E7-4E5D-B744-2EB1AE5198B7}\\WindowsPowerShell\\v1.0\\powershell.exe] > Grid#IconPanel > Image#Icon, Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: {A7CC3F66-580E-49E6-913B-556111443D24}\\Windows PowerShell\\Windows PowerShell.lnk] > Grid#IconPanel > Image#Icon, Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: {1AC14E77-02E7-4E5D-B744-2EB1AE5198B7}\\WindowsPowerShell\\v1.0\\powershell.exe] > Taskbar.TaskListLabeledButtonPanel#IconPanel > Image#Icon, Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: {A7CC3F66-580E-49E6-913B-556111443D24}\\Windows PowerShell\\Windows PowerShell.lnk] > Taskbar.TaskListLabeledButtonPanel#IconPanel > Image#Icon", {
         L"Source=https://raw.githubusercontent.com/ramensoftware/windows-11-taskbar-styling-guide/refs/heads/main/Themes/One%20UI%208.5/Assets/powershell.png",
         L"Height=40",
         L"Width=40",
         L"Margin=0,0,0,0"}},
-    ThemeTargetStyles{L"taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: {1AC14E77-02E7-4E5D-B744-2EB1AE5198B7}\\WindowsPowerShell\\v1.0\\powershell.exe] > Grid#IconPanel > Border, taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: {A7CC3F66-580E-49E6-913B-556111443D24}\\Windows PowerShell\\Windows PowerShell.lnk] > Grid#IconPanel > Border, taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: {1AC14E77-02E7-4E5D-B744-2EB1AE5198B7}\\WindowsPowerShell\\v1.0\\powershell.exe] > taskbar:TaskListLabeledButtonPanel#IconPanel > Border, taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: {A7CC3F66-580E-49E6-913B-556111443D24}\\Windows PowerShell\\Windows PowerShell.lnk] > taskbar:TaskListLabeledButtonPanel#IconPanel > Border", {
+    ThemeTargetStyles{L"Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: {1AC14E77-02E7-4E5D-B744-2EB1AE5198B7}\\WindowsPowerShell\\v1.0\\powershell.exe] > Grid#IconPanel > Border, Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: {A7CC3F66-580E-49E6-913B-556111443D24}\\Windows PowerShell\\Windows PowerShell.lnk] > Grid#IconPanel > Border, Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: {1AC14E77-02E7-4E5D-B744-2EB1AE5198B7}\\WindowsPowerShell\\v1.0\\powershell.exe] > Taskbar.TaskListLabeledButtonPanel#IconPanel > Border, Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: {A7CC3F66-580E-49E6-913B-556111443D24}\\Windows PowerShell\\Windows PowerShell.lnk] > Taskbar.TaskListLabeledButtonPanel#IconPanel > Border", {
         L"Visibility=Collapsed"}},
-    ThemeTargetStyles{L"taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: {1AC14E77-02E7-4E5D-B744-2EB1AE5198B7}\\osk.exe] > Grid#IconPanel > Image#Icon, taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: {1AC14E77-02E7-4E5D-B744-2EB1AE5198B7}\\osk.exe] > taskbar:TaskListLabeledButtonPanel#IconPanel > Image#Icon", {
+    ThemeTargetStyles{L"Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: {1AC14E77-02E7-4E5D-B744-2EB1AE5198B7}\\osk.exe] > Grid#IconPanel > Image#Icon, Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: {1AC14E77-02E7-4E5D-B744-2EB1AE5198B7}\\osk.exe] > Taskbar.TaskListLabeledButtonPanel#IconPanel > Image#Icon", {
         L"Source=https://raw.githubusercontent.com/ramensoftware/windows-11-taskbar-styling-guide/refs/heads/main/Themes/One%20UI%208.5/Assets/osk.png",
         L"Height=40",
         L"Width=40",
         L"Margin=0,0,0,0"}},
-    ThemeTargetStyles{L"taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.Paint_8wekyb3d8bbwe!App] > Grid#IconPanel > Image#Icon, taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.Paint_8wekyb3d8bbwe!App] > taskbar:TaskListLabeledButtonPanel#IconPanel > Image#Icon", {
+    ThemeTargetStyles{L"Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.Paint_8wekyb3d8bbwe!App] > Grid#IconPanel > Image#Icon, Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.Paint_8wekyb3d8bbwe!App] > Taskbar.TaskListLabeledButtonPanel#IconPanel > Image#Icon", {
         L"Source=https://raw.githubusercontent.com/ramensoftware/windows-11-taskbar-styling-guide/refs/heads/main/Themes/One%20UI%208.5/Assets/paint.png",
         L"Height=40",
         L"Width=40",
         L"Margin=0,0,0,0"}},
-    ThemeTargetStyles{L"taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.Paint_8wekyb3d8bbwe!App] > Grid#IconPanel > Border, taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.Paint_8wekyb3d8bbwe!App] > taskbar:TaskListLabeledButtonPanel#IconPanel > Border", {
+    ThemeTargetStyles{L"Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.Paint_8wekyb3d8bbwe!App] > Grid#IconPanel > Border, Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.Paint_8wekyb3d8bbwe!App] > Taskbar.TaskListLabeledButtonPanel#IconPanel > Border", {
         L"Visibility=Collapsed"}},
-    ThemeTargetStyles{L"taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.ScreenSketch_8wekyb3d8bbwe!App] > Grid#IconPanel > Image#Icon, taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.ScreenSketch_8wekyb3d8bbwe!App] > taskbar:TaskListLabeledButtonPanel#IconPanel > Image#Icon", {
+    ThemeTargetStyles{L"Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.ScreenSketch_8wekyb3d8bbwe!App] > Grid#IconPanel > Image#Icon, Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.ScreenSketch_8wekyb3d8bbwe!App] > Taskbar.TaskListLabeledButtonPanel#IconPanel > Image#Icon", {
         L"Source=https://raw.githubusercontent.com/ramensoftware/windows-11-taskbar-styling-guide/refs/heads/main/Themes/One%20UI%208.5/Assets/snippingtool.png",
         L"Height=40",
         L"Width=40",
         L"Margin=0,0,0,0"}},
-    ThemeTargetStyles{L"taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.ScreenSketch_8wekyb3d8bbwe!App] > Grid#IconPanel > Border, taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.ScreenSketch_8wekyb3d8bbwe!App] > taskbar:TaskListLabeledButtonPanel#IconPanel > Border", {
+    ThemeTargetStyles{L"Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.ScreenSketch_8wekyb3d8bbwe!App] > Grid#IconPanel > Border, Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.ScreenSketch_8wekyb3d8bbwe!App] > Taskbar.TaskListLabeledButtonPanel#IconPanel > Border", {
         L"Visibility=Collapsed"}},
-    ThemeTargetStyles{L"taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: SpotifyAB.SpotifyMusic_zpdnekdrzrea0!Spotify] > Grid#IconPanel > Image#Icon, taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: SpotifyAB.SpotifyMusic_zpdnekdrzrea0!Spotify] > taskbar:TaskListLabeledButtonPanel#IconPanel > Image#Icon", {
+    ThemeTargetStyles{L"Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: SpotifyAB.SpotifyMusic_zpdnekdrzrea0!Spotify] > Grid#IconPanel > Image#Icon, Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: SpotifyAB.SpotifyMusic_zpdnekdrzrea0!Spotify] > Taskbar.TaskListLabeledButtonPanel#IconPanel > Image#Icon", {
         L"Source=https://raw.githubusercontent.com/ramensoftware/windows-11-taskbar-styling-guide/refs/heads/main/Themes/One%20UI%208.5/Assets/Spotify.png",
         L"Height=40",
         L"Width=40",
         L"Margin=0,0,0,0"}},
-    ThemeTargetStyles{L"taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: SpotifyAB.SpotifyMusic_zpdnekdrzrea0!Spotify] > Grid#IconPanel > Border, taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: SpotifyAB.SpotifyMusic_zpdnekdrzrea0!Spotify] > taskbar:TaskListLabeledButtonPanel#IconPanel > Border", {
+    ThemeTargetStyles{L"Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: SpotifyAB.SpotifyMusic_zpdnekdrzrea0!Spotify] > Grid#IconPanel > Border, Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: SpotifyAB.SpotifyMusic_zpdnekdrzrea0!Spotify] > Taskbar.TaskListLabeledButtonPanel#IconPanel > Border", {
         L"Visibility=Collapsed"}},
-    ThemeTargetStyles{L"taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.Windows.Photos_8wekyb3d8bbwe!App] > Grid#IconPanel > Image#Icon, taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.Windows.Photos_8wekyb3d8bbwe!App] > taskbar:TaskListLabeledButtonPanel#IconPanel > Image#Icon", {
+    ThemeTargetStyles{L"Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.Windows.Photos_8wekyb3d8bbwe!App] > Grid#IconPanel > Image#Icon, Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.Windows.Photos_8wekyb3d8bbwe!App] > Taskbar.TaskListLabeledButtonPanel#IconPanel > Image#Icon", {
         L"Source=https://raw.githubusercontent.com/ramensoftware/windows-11-taskbar-styling-guide/refs/heads/main/Themes/One%20UI%208.5/Assets/photos.png",
         L"Height=40",
         L"Width=40",
         L"Margin=0,0,0,0"}},
-    ThemeTargetStyles{L"taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.Windows.Photos_8wekyb3d8bbwe!App] > Grid#IconPanel > Border, taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.Windows.Photos_8wekyb3d8bbwe!App] > taskbar:TaskListLabeledButtonPanel#IconPanel > Border", {
+    ThemeTargetStyles{L"Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.Windows.Photos_8wekyb3d8bbwe!App] > Grid#IconPanel > Border, Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.Windows.Photos_8wekyb3d8bbwe!App] > Taskbar.TaskListLabeledButtonPanel#IconPanel > Border", {
         L"Visibility=Collapsed"}},
-    ThemeTargetStyles{L"taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.ZuneMusic_8wekyb3d8bbwe!Microsoft.ZuneMusic] > Grid#IconPanel > Image#Icon, taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.ZuneMusic_8wekyb3d8bbwe!Microsoft.ZuneMusic] > taskbar:TaskListLabeledButtonPanel#IconPanel > Image#Icon", {
+    ThemeTargetStyles{L"Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.ZuneMusic_8wekyb3d8bbwe!Microsoft.ZuneMusic] > Grid#IconPanel > Image#Icon, Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.ZuneMusic_8wekyb3d8bbwe!Microsoft.ZuneMusic] > Taskbar.TaskListLabeledButtonPanel#IconPanel > Image#Icon", {
         L"Source=https://raw.githubusercontent.com/ramensoftware/windows-11-taskbar-styling-guide/refs/heads/main/Themes/One%20UI%208.5/Assets/mediaplayer.png",
         L"Height=40",
         L"Width=40",
         L"Margin=0,0,0,0"}},
-    ThemeTargetStyles{L"taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.ZuneMusic_8wekyb3d8bbwe!Microsoft.ZuneMusic] > Grid#IconPanel > Border, taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.ZuneMusic_8wekyb3d8bbwe!Microsoft.ZuneMusic] > taskbar:TaskListLabeledButtonPanel#IconPanel > Border", {
+    ThemeTargetStyles{L"Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.ZuneMusic_8wekyb3d8bbwe!Microsoft.ZuneMusic] > Grid#IconPanel > Border, Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.ZuneMusic_8wekyb3d8bbwe!Microsoft.ZuneMusic] > Taskbar.TaskListLabeledButtonPanel#IconPanel > Border", {
         L"Visibility=Collapsed"}},
-    ThemeTargetStyles{L"taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: Valve.Steam.Client] > Grid#IconPanel > Image#Icon, taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: Valve.Steam.Client] > taskbar:TaskListLabeledButtonPanel#IconPanel > Image#Icon", {
+    ThemeTargetStyles{L"Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: Valve.Steam.Client] > Grid#IconPanel > Image#Icon, Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: Valve.Steam.Client] > Taskbar.TaskListLabeledButtonPanel#IconPanel > Image#Icon", {
         L"Source=https://raw.githubusercontent.com/ramensoftware/windows-11-taskbar-styling-guide/refs/heads/main/Themes/One%20UI%208.5/Assets/steam.png",
         L"Height=40",
         L"Width=40",
         L"Margin=0,0,0,0"}},
-    ThemeTargetStyles{L"taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: Valve.Steam.Client] > Grid#IconPanel > Border, taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: Valve.Steam.Client] > taskbar:TaskListLabeledButtonPanel#IconPanel > Border", {
+    ThemeTargetStyles{L"Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: Valve.Steam.Client] > Grid#IconPanel > Border, Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: Valve.Steam.Client] > Taskbar.TaskListLabeledButtonPanel#IconPanel > Border", {
         L"Visibility=Collapsed"}},
-    ThemeTargetStyles{L"taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.WindowsCalculator_8wekyb3d8bbwe!App] > Grid#IconPanel > Image#Icon, taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.WindowsCalculator_8wekyb3d8bbwe!App] > taskbar:TaskListLabeledButtonPanel#IconPanel > Image#Icon", {
+    ThemeTargetStyles{L"Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.WindowsCalculator_8wekyb3d8bbwe!App] > Grid#IconPanel > Image#Icon, Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.WindowsCalculator_8wekyb3d8bbwe!App] > Taskbar.TaskListLabeledButtonPanel#IconPanel > Image#Icon", {
         L"Source=https://raw.githubusercontent.com/ramensoftware/windows-11-taskbar-styling-guide/refs/heads/main/Themes/One%20UI%208.5/Assets/calculator.png",
         L"Height=40",
         L"Width=40",
         L"Margin=0,0,0,0"}},
-    ThemeTargetStyles{L"taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.WindowsCalculator_8wekyb3d8bbwe!App] > Grid#IconPanel > Border, taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.WindowsCalculator_8wekyb3d8bbwe!App] > taskbar:TaskListLabeledButtonPanel#IconPanel > Border", {
+    ThemeTargetStyles{L"Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.WindowsCalculator_8wekyb3d8bbwe!App] > Grid#IconPanel > Border, Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.WindowsCalculator_8wekyb3d8bbwe!App] > Taskbar.TaskListLabeledButtonPanel#IconPanel > Border", {
         L"Visibility=Collapsed"}},
-    ThemeTargetStyles{L"taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.WindowsAlarms_8wekyb3d8bbwe!App] > Grid#IconPanel > Image#Icon, taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.WindowsAlarms_8wekyb3d8bbwe!App] > taskbar:TaskListLabeledButtonPanel#IconPanel > Image#Icon", {
+    ThemeTargetStyles{L"Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.WindowsAlarms_8wekyb3d8bbwe!App] > Grid#IconPanel > Image#Icon, Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.WindowsAlarms_8wekyb3d8bbwe!App] > Taskbar.TaskListLabeledButtonPanel#IconPanel > Image#Icon", {
         L"Source=https://raw.githubusercontent.com/ramensoftware/windows-11-taskbar-styling-guide/refs/heads/main/Themes/One%20UI%208.5/Assets/time.png",
         L"Height=40",
         L"Width=40",
         L"Margin=0,0,0,0"}},
-    ThemeTargetStyles{L"taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.WindowsAlarms_8wekyb3d8bbwe!App] > Grid#IconPanel > Border, taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.WindowsAlarms_8wekyb3d8bbwe!App] > taskbar:TaskListLabeledButtonPanel#IconPanel > Border", {
+    ThemeTargetStyles{L"Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.WindowsAlarms_8wekyb3d8bbwe!App] > Grid#IconPanel > Border, Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.WindowsAlarms_8wekyb3d8bbwe!App] > Taskbar.TaskListLabeledButtonPanel#IconPanel > Border", {
         L"Visibility=Collapsed"}},
-    ThemeTargetStyles{L"taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.SecHealthUI_8wekyb3d8bbwe!SecHealthUI] > Grid#IconPanel > Image#Icon, taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.SecHealthUI_8wekyb3d8bbwe!SecHealthUI] > taskbar:TaskListLabeledButtonPanel#IconPanel > Image#Icon", {
+    ThemeTargetStyles{L"Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.SecHealthUI_8wekyb3d8bbwe!SecHealthUI] > Grid#IconPanel > Image#Icon, Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.SecHealthUI_8wekyb3d8bbwe!SecHealthUI] > Taskbar.TaskListLabeledButtonPanel#IconPanel > Image#Icon", {
         L"Source=https://raw.githubusercontent.com/ramensoftware/windows-11-taskbar-styling-guide/refs/heads/main/Themes/One%20UI%208.5/Assets/security.png",
         L"Height=40",
         L"Width=40",
         L"Margin=0,0,0,0"}},
-    ThemeTargetStyles{L"taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.SecHealthUI_8wekyb3d8bbwe!SecHealthUI] > Grid#IconPanel > Border, taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.SecHealthUI_8wekyb3d8bbwe!SecHealthUI] > taskbar:TaskListLabeledButtonPanel#IconPanel > Border", {
+    ThemeTargetStyles{L"Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.SecHealthUI_8wekyb3d8bbwe!SecHealthUI] > Grid#IconPanel > Border, Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.SecHealthUI_8wekyb3d8bbwe!SecHealthUI] > Taskbar.TaskListLabeledButtonPanel#IconPanel > Border", {
         L"Visibility=Collapsed"}},
-    ThemeTargetStyles{L"taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.WindowsStore_8wekyb3d8bbwe!App] > Grid#IconPanel > Image#Icon, taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.WindowsStore_8wekyb3d8bbwe!App] > taskbar:TaskListLabeledButtonPanel#IconPanel > Image#Icon", {
+    ThemeTargetStyles{L"Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.WindowsStore_8wekyb3d8bbwe!App] > Grid#IconPanel > Image#Icon, Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.WindowsStore_8wekyb3d8bbwe!App] > Taskbar.TaskListLabeledButtonPanel#IconPanel > Image#Icon", {
         L"Source=https://raw.githubusercontent.com/ramensoftware/windows-11-taskbar-styling-guide/refs/heads/main/Themes/One%20UI%208.5/Assets/store.png",
         L"Height=40",
         L"Width=40",
         L"Margin=0,0,0,0"}},
-    ThemeTargetStyles{L"taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.WindowsStore_8wekyb3d8bbwe!App] > Grid#IconPanel > Border, taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.WindowsStore_8wekyb3d8bbwe!App] > taskbar:TaskListLabeledButtonPanel#IconPanel > Border", {
+    ThemeTargetStyles{L"Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.WindowsStore_8wekyb3d8bbwe!App] > Grid#IconPanel > Border, Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.WindowsStore_8wekyb3d8bbwe!App] > Taskbar.TaskListLabeledButtonPanel#IconPanel > Border", {
         L"Visibility=Collapsed"}},
-    ThemeTargetStyles{L"taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: 5319275A.WhatsAppDesktop_cv1g1gvanyjgm!App] > Grid#IconPanel > Image#Icon, taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: 5319275A.WhatsAppDesktop_cv1g1gvanyjgm!App] > taskbar:TaskListLabeledButtonPanel#IconPanel > Image#Icon", {
+    ThemeTargetStyles{L"Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: 5319275A.WhatsAppDesktop_cv1g1gvanyjgm!App] > Grid#IconPanel > Image#Icon, Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: 5319275A.WhatsAppDesktop_cv1g1gvanyjgm!App] > Taskbar.TaskListLabeledButtonPanel#IconPanel > Image#Icon", {
         L"Source=https://raw.githubusercontent.com/ramensoftware/windows-11-taskbar-styling-guide/refs/heads/main/Themes/One%20UI%208.5/Assets/whatsapp.png",
         L"Height=40",
         L"Width=40",
         L"Margin=0,0,0,0"}},
-    ThemeTargetStyles{L"taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: 5319275A.WhatsAppDesktop_cv1g1gvanyjgm!App] > Grid#IconPanel > Border, taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: 5319275A.WhatsAppDesktop_cv1g1gvanyjgm!App] > taskbar:TaskListLabeledButtonPanel#IconPanel > Border", {
+    ThemeTargetStyles{L"Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: 5319275A.WhatsAppDesktop_cv1g1gvanyjgm!App] > Grid#IconPanel > Border, Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: 5319275A.WhatsAppDesktop_cv1g1gvanyjgm!App] > Taskbar.TaskListLabeledButtonPanel#IconPanel > Border", {
         L"Visibility=Collapsed"}},
-    ThemeTargetStyles{L"taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.Office.WINWORD.EXE.15] > Grid#IconPanel > Image#Icon, taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.Office.WINWORD.EXE.15] > taskbar:TaskListLabeledButtonPanel#IconPanel > Image#Icon", {
+    ThemeTargetStyles{L"Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.Office.WINWORD.EXE.15] > Grid#IconPanel > Image#Icon, Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.Office.WINWORD.EXE.15] > Taskbar.TaskListLabeledButtonPanel#IconPanel > Image#Icon", {
         L"Source=https://raw.githubusercontent.com/ramensoftware/windows-11-taskbar-styling-guide/refs/heads/main/Themes/One%20UI%208.5/Assets/word.png",
         L"Height=40",
         L"Width=40",
         L"Margin=0,0,0,0"}},
-    ThemeTargetStyles{L"taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.Office.WINWORD.EXE.15] > Grid#IconPanel > Border, taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.Office.WINWORD.EXE.15] > taskbar:TaskListLabeledButtonPanel#IconPanel > Border", {
+    ThemeTargetStyles{L"Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.Office.WINWORD.EXE.15] > Grid#IconPanel > Border, Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.Office.WINWORD.EXE.15] > Taskbar.TaskListLabeledButtonPanel#IconPanel > Border", {
         L"Visibility=Collapsed"}},
-    ThemeTargetStyles{L"taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.Office.POWERPNT.EXE.15] > Grid#IconPanel > Image#Icon, taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.Office.POWERPNT.EXE.15] > taskbar:TaskListLabeledButtonPanel#IconPanel > Image#Icon", {
+    ThemeTargetStyles{L"Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.Office.POWERPNT.EXE.15] > Grid#IconPanel > Image#Icon, Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.Office.POWERPNT.EXE.15] > Taskbar.TaskListLabeledButtonPanel#IconPanel > Image#Icon", {
         L"Source=https://raw.githubusercontent.com/ramensoftware/windows-11-taskbar-styling-guide/refs/heads/main/Themes/One%20UI%208.5/Assets/powerpoint.png",
         L"Height=40",
         L"Width=40",
         L"Margin=0,0,0,0"}},
-    ThemeTargetStyles{L"taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.Office.POWERPNT.EXE.15] > Grid#IconPanel > Border, taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.Office.POWERPNT.EXE.15] > taskbar:TaskListLabeledButtonPanel#IconPanel > Border", {
+    ThemeTargetStyles{L"Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.Office.POWERPNT.EXE.15] > Grid#IconPanel > Border, Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.Office.POWERPNT.EXE.15] > Taskbar.TaskListLabeledButtonPanel#IconPanel > Border", {
         L"Visibility=Collapsed"}},
-    ThemeTargetStyles{L"taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.Office.ONENOTE.EXE.15] > Grid#IconPanel > Image#Icon, taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.Office.ONENOTE.EXE.15] > taskbar:TaskListLabeledButtonPanel#IconPanel > Image#Icon", {
+    ThemeTargetStyles{L"Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.Office.ONENOTE.EXE.15] > Grid#IconPanel > Image#Icon, Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.Office.ONENOTE.EXE.15] > Taskbar.TaskListLabeledButtonPanel#IconPanel > Image#Icon", {
         L"Source=https://raw.githubusercontent.com/ramensoftware/windows-11-taskbar-styling-guide/refs/heads/main/Themes/One%20UI%208.5/Assets/onenote.png",
         L"Height=40",
         L"Width=40",
         L"Margin=0,0,0,0"}},
-    ThemeTargetStyles{L"taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.Office.ONENOTE.EXE.15] > Grid#IconPanel > Border, taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.Office.ONENOTE.EXE.15] > taskbar:TaskListLabeledButtonPanel#IconPanel > Border", {
+    ThemeTargetStyles{L"Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.Office.ONENOTE.EXE.15] > Grid#IconPanel > Border, Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.Office.ONENOTE.EXE.15] > Taskbar.TaskListLabeledButtonPanel#IconPanel > Border", {
         L"Visibility=Collapsed"}},
-    ThemeTargetStyles{L"taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.OneDrive] > Grid#IconPanel > Image#Icon, taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.OneDrive] > taskbar:TaskListLabeledButtonPanel#IconPanel > Image#Icon", {
+    ThemeTargetStyles{L"Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.OneDrive] > Grid#IconPanel > Image#Icon, Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.OneDrive] > Taskbar.TaskListLabeledButtonPanel#IconPanel > Image#Icon", {
         L"Source=https://raw.githubusercontent.com/ramensoftware/windows-11-taskbar-styling-guide/refs/heads/main/Themes/One%20UI%208.5/Assets/OneDrive.png",
         L"Height=40",
         L"Width=40",
         L"Margin=0,0,0,0"}},
-    ThemeTargetStyles{L"taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.OneDrive] > Grid#IconPanel > Border, taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.OneDrive] > taskbar:TaskListLabeledButtonPanel#IconPanel > Border", {
+    ThemeTargetStyles{L"Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.OneDrive] > Grid#IconPanel > Border, Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.OneDrive] > Taskbar.TaskListLabeledButtonPanel#IconPanel > Border", {
         L"Visibility=Collapsed"}},
-    ThemeTargetStyles{L"taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: MSTeams_8wekyb3d8bbwe!MSTeams] > Grid#IconPanel > Image#Icon, taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: MSTeams_8wekyb3d8bbwe!MSTeams] > taskbar:TaskListLabeledButtonPanel#IconPanel > Image#Icon", {
+    ThemeTargetStyles{L"Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: MSTeams_8wekyb3d8bbwe!MSTeams] > Grid#IconPanel > Image#Icon, Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: MSTeams_8wekyb3d8bbwe!MSTeams] > Taskbar.TaskListLabeledButtonPanel#IconPanel > Image#Icon", {
         L"Source=https://raw.githubusercontent.com/ramensoftware/windows-11-taskbar-styling-guide/refs/heads/main/Themes/One%20UI%208.5/Assets/ms-teams.png",
         L"Height=40",
         L"Width=40",
         L"Margin=0,0,0,0"}},
-    ThemeTargetStyles{L"taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: MSTeams_8wekyb3d8bbwe!MSTeams] > Grid#IconPanel > Border, taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: MSTeams_8wekyb3d8bbwe!MSTeams] > taskbar:TaskListLabeledButtonPanel#IconPanel > Border", {
+    ThemeTargetStyles{L"Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: MSTeams_8wekyb3d8bbwe!MSTeams] > Grid#IconPanel > Border, Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: MSTeams_8wekyb3d8bbwe!MSTeams] > Taskbar.TaskListLabeledButtonPanel#IconPanel > Border", {
         L"Visibility=Collapsed"}},
-    ThemeTargetStyles{L"taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.OutlookForWindows_8wekyb3d8bbwe!Microsoft.OutlookForWindows] > Grid#IconPanel > Image#Icon, taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.OutlookForWindows_8wekyb3d8bbwe!Microsoft.OutlookForWindows] > taskbar:TaskListLabeledButtonPanel#IconPanel > Image#Icon", {
+    ThemeTargetStyles{L"Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.OutlookForWindows_8wekyb3d8bbwe!Microsoft.OutlookForWindows] > Grid#IconPanel > Image#Icon, Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.OutlookForWindows_8wekyb3d8bbwe!Microsoft.OutlookForWindows] > Taskbar.TaskListLabeledButtonPanel#IconPanel > Image#Icon", {
         L"Source=https://raw.githubusercontent.com/ramensoftware/windows-11-taskbar-styling-guide/refs/heads/main/Themes/One%20UI%208.5/Assets/outlook.png",
         L"Height=40",
         L"Width=40",
         L"Margin=0,0,0,0"}},
-    ThemeTargetStyles{L"taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.OutlookForWindows_8wekyb3d8bbwe!Microsoft.OutlookForWindows] > Grid#IconPanel > Border, taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.OutlookForWindows_8wekyb3d8bbwe!Microsoft.OutlookForWindows] > taskbar:TaskListLabeledButtonPanel#IconPanel > Border", {
+    ThemeTargetStyles{L"Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.OutlookForWindows_8wekyb3d8bbwe!Microsoft.OutlookForWindows] > Grid#IconPanel > Border, Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.OutlookForWindows_8wekyb3d8bbwe!Microsoft.OutlookForWindows] > Taskbar.TaskListLabeledButtonPanel#IconPanel > Border", {
         L"Visibility=Collapsed"}},
-    ThemeTargetStyles{L"taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.Windows.ControlPanel] > Grid#IconPanel > Image#Icon, taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.Windows.ControlPanel] > taskbar:TaskListLabeledButtonPanel#IconPanel > Image#Icon", {
+    ThemeTargetStyles{L"Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.Windows.ControlPanel] > Grid#IconPanel > Image#Icon, Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.Windows.ControlPanel] > Taskbar.TaskListLabeledButtonPanel#IconPanel > Image#Icon", {
         L"Source=https://raw.githubusercontent.com/ramensoftware/windows-11-taskbar-styling-guide/refs/heads/main/Themes/One%20UI%208.5/Assets/ControlPanel.png",
         L"Height=40",
         L"Width=40",
         L"Margin=0,0,0,0"}},
-    ThemeTargetStyles{L"taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.Windows.ControlPanel] > Grid#IconPanel > Border, taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.Windows.ControlPanel] > taskbar:TaskListLabeledButtonPanel#IconPanel > Border", {
+    ThemeTargetStyles{L"Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.Windows.ControlPanel] > Grid#IconPanel > Border, Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.Windows.ControlPanel] > Taskbar.TaskListLabeledButtonPanel#IconPanel > Border", {
         L"Visibility=Collapsed"}},
-    ThemeTargetStyles{L"taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.Windows.Explorer] > Grid#IconPanel > Image#Icon, taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.Windows.Explorer] > taskbar:TaskListLabeledButtonPanel#IconPanel > Image#Icon", {
+    ThemeTargetStyles{L"Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.Windows.Explorer] > Grid#IconPanel > Image#Icon, Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.Windows.Explorer] > Taskbar.TaskListLabeledButtonPanel#IconPanel > Image#Icon", {
         L"Source=https://raw.githubusercontent.com/ramensoftware/windows-11-taskbar-styling-guide/refs/heads/main/Themes/One%20UI%208.5/Assets/explorer.png",
         L"Height=40",
         L"Width=40",
         L"Margin=0,0,0,0"}},
-    ThemeTargetStyles{L"taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.Windows.Explorer] > Grid#IconPanel > Border, taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.Windows.Explorer] > taskbar:TaskListLabeledButtonPanel#IconPanel > Border", {
+    ThemeTargetStyles{L"Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.Windows.Explorer] > Grid#IconPanel > Border, Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.Windows.Explorer] > Taskbar.TaskListLabeledButtonPanel#IconPanel > Border", {
         L"Visibility=Collapsed"}},
-    ThemeTargetStyles{L"taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: com.squirrel.Discord.Discord] > Grid#IconPanel > Image#Icon, taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: com.squirrel.Discord.Discord] > taskbar:TaskListLabeledButtonPanel#IconPanel > Image#Icon", {
+    ThemeTargetStyles{L"Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: com.squirrel.Discord.Discord] > Grid#IconPanel > Image#Icon, Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: com.squirrel.Discord.Discord] > Taskbar.TaskListLabeledButtonPanel#IconPanel > Image#Icon", {
         L"Source=https://raw.githubusercontent.com/ramensoftware/windows-11-taskbar-styling-guide/refs/heads/main/Themes/One%20UI%208.5/Assets/discord.png",
         L"Height=40",
         L"Width=40",
         L"Margin=0,0,0,0"}},
-    ThemeTargetStyles{L"taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: com.squirrel.Discord.Discord] > Grid#IconPanel > Border, taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: com.squirrel.Discord.Discord] > taskbar:TaskListLabeledButtonPanel#IconPanel > Border", {
+    ThemeTargetStyles{L"Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: com.squirrel.Discord.Discord] > Grid#IconPanel > Border, Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: com.squirrel.Discord.Discord] > Taskbar.TaskListLabeledButtonPanel#IconPanel > Border", {
         L"Visibility=Collapsed"}},
-    ThemeTargetStyles{L"taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: windows.immersivecontrolpanel_cw5n1h2txyewy!microsoft.windows.immersivecontrolpanel] > Grid#IconPanel > Image#Icon, taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: windows.immersivecontrolpanel_cw5n1h2txyewy!microsoft.windows.immersivecontrolpanel] > taskbar:TaskListLabeledButtonPanel#IconPanel > Image#Icon", {
+    ThemeTargetStyles{L"Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: windows.immersivecontrolpanel_cw5n1h2txyewy!microsoft.windows.immersivecontrolpanel] > Grid#IconPanel > Image#Icon, Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: windows.immersivecontrolpanel_cw5n1h2txyewy!microsoft.windows.immersivecontrolpanel] > Taskbar.TaskListLabeledButtonPanel#IconPanel > Image#Icon", {
         L"Source=https://raw.githubusercontent.com/ramensoftware/windows-11-taskbar-styling-guide/refs/heads/main/Themes/One%20UI%208.5/Assets/systemsettings.png",
         L"Height=40",
         L"Width=40",
         L"Margin=0,0,0,0"}},
-    ThemeTargetStyles{L"taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: windows.immersivecontrolpanel_cw5n1h2txyewy!microsoft.windows.immersivecontrolpanel] > Grid#IconPanel > Border, taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: windows.immersivecontrolpanel_cw5n1h2txyewy!microsoft.windows.immersivecontrolpanel] > taskbar:TaskListLabeledButtonPanel#IconPanel > Border", {
+    ThemeTargetStyles{L"Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: windows.immersivecontrolpanel_cw5n1h2txyewy!microsoft.windows.immersivecontrolpanel] > Grid#IconPanel > Border, Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: windows.immersivecontrolpanel_cw5n1h2txyewy!microsoft.windows.immersivecontrolpanel] > Taskbar.TaskListLabeledButtonPanel#IconPanel > Border", {
         L"Visibility=Collapsed"}},
-    ThemeTargetStyles{L"taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.WindowsNotepad_8wekyb3d8bbwe!App] > Grid#IconPanel > Image#Icon, taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.WindowsNotepad_8wekyb3d8bbwe!App] > taskbar:TaskListLabeledButtonPanel#IconPanel > Image#Icon", {
+    ThemeTargetStyles{L"Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.WindowsNotepad_8wekyb3d8bbwe!App] > Grid#IconPanel > Image#Icon, Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.WindowsNotepad_8wekyb3d8bbwe!App] > Taskbar.TaskListLabeledButtonPanel#IconPanel > Image#Icon", {
         L"Source=https://raw.githubusercontent.com/ramensoftware/windows-11-taskbar-styling-guide/refs/heads/main/Themes/One%20UI%208.5/Assets/notepad.png",
         L"Height=40",
         L"Width=40",
         L"Margin=0,0,0,0"}},
-    ThemeTargetStyles{L"taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.WindowsNotepad_8wekyb3d8bbwe!App] > Grid#IconPanel > Border, taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.WindowsNotepad_8wekyb3d8bbwe!App] > taskbar:TaskListLabeledButtonPanel#IconPanel > Border", {
+    ThemeTargetStyles{L"Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.WindowsNotepad_8wekyb3d8bbwe!App] > Grid#IconPanel > Border, Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: Microsoft.WindowsNotepad_8wekyb3d8bbwe!App] > Taskbar.TaskListLabeledButtonPanel#IconPanel > Border", {
         L"Visibility=Collapsed"}},
-    ThemeTargetStyles{L"taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: com.github.th-ch.youtube-music] > Grid#IconPanel > Image#Icon, taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: com.github.th-ch.youtube-music] > taskbar:TaskListLabeledButtonPanel#IconPanel > Image#Icon", {
+    ThemeTargetStyles{L"Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: com.github.th-ch.youtube-music] > Grid#IconPanel > Image#Icon, Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: com.github.th-ch.youtube-music] > Taskbar.TaskListLabeledButtonPanel#IconPanel > Image#Icon", {
         L"Source=https://raw.githubusercontent.com/ramensoftware/windows-11-taskbar-styling-guide/refs/heads/main/Themes/One%20UI%208.5/Assets/YouTubeMusic.png",
         L"Height=40",
         L"Width=40",
         L"Margin=0,0,0,0"}},
-    ThemeTargetStyles{L"taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: com.github.th-ch.youtube-music] > Grid#IconPanel > Border, taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: com.github.th-ch.youtube-music] > taskbar:TaskListLabeledButtonPanel#IconPanel > Border", {
+    ThemeTargetStyles{L"Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: com.github.th-ch.youtube-music] > Grid#IconPanel > Border, Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: com.github.th-ch.youtube-music] > Taskbar.TaskListLabeledButtonPanel#IconPanel > Border", {
         L"Visibility=Collapsed"}},
-    ThemeTargetStyles{L"taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: BlueStacks_nxt] > Grid#IconPanel > Image#Icon, taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: BlueStacks_nxt] > taskbar:TaskListLabeledButtonPanel#IconPanel > Image#Icon", {
+    ThemeTargetStyles{L"Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: BlueStacks_nxt] > Grid#IconPanel > Image#Icon, Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: BlueStacks_nxt] > Taskbar.TaskListLabeledButtonPanel#IconPanel > Image#Icon", {
         L"Source=https://raw.githubusercontent.com/ramensoftware/windows-11-taskbar-styling-guide/refs/heads/main/Themes/One%20UI%208.5/Assets/Bluestacks.png",
         L"Height=40",
         L"Width=40",
         L"Margin=0,0,0,0"}},
-    ThemeTargetStyles{L"taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: BlueStacks_nxt] > Grid#IconPanel > Border, taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: BlueStacks_nxt] > taskbar:TaskListLabeledButtonPanel#IconPanel > Border", {
+    ThemeTargetStyles{L"Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: BlueStacks_nxt] > Grid#IconPanel > Border, Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: BlueStacks_nxt] > Taskbar.TaskListLabeledButtonPanel#IconPanel > Border", {
         L"Visibility=Collapsed"}},
-    ThemeTargetStyles{L"taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: {7C5A40EF-A0FB-4BFC-874A-C0F2E0B9FA8E}\\NCH Software\\DeskFX\\deskfx.exe] > Grid#IconPanel > Image#Icon, taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: {7C5A40EF-A0FB-4BFC-874A-C0F2E0B9FA8E}\\NCH Software\\DeskFX\\deskfx.exe] > taskbar:TaskListLabeledButtonPanel#IconPanel > Image#Icon", {
+    ThemeTargetStyles{L"Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: {7C5A40EF-A0FB-4BFC-874A-C0F2E0B9FA8E}\\NCH Software\\DeskFX\\deskfx.exe] > Grid#IconPanel > Image#Icon, Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: {7C5A40EF-A0FB-4BFC-874A-C0F2E0B9FA8E}\\NCH Software\\DeskFX\\deskfx.exe] > Taskbar.TaskListLabeledButtonPanel#IconPanel > Image#Icon", {
         L"Source=https://raw.githubusercontent.com/ramensoftware/windows-11-taskbar-styling-guide/refs/heads/main/Themes/One%20UI%208.5/Assets/DeskFX.png",
         L"Height=40",
         L"Width=40",
         L"Margin=0,0,0,0"}},
-    ThemeTargetStyles{L"taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: {7C5A40EF-A0FB-4BFC-874A-C0F2E0B9FA8E}\\NCH Software\\DeskFX\\deskfx.exe] > Grid#IconPanel > Border, taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: {7C5A40EF-A0FB-4BFC-874A-C0F2E0B9FA8E}\\NCH Software\\DeskFX\\deskfx.exe] > taskbar:TaskListLabeledButtonPanel#IconPanel > Border", {
+    ThemeTargetStyles{L"Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: {7C5A40EF-A0FB-4BFC-874A-C0F2E0B9FA8E}\\NCH Software\\DeskFX\\deskfx.exe] > Grid#IconPanel > Border, Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: {7C5A40EF-A0FB-4BFC-874A-C0F2E0B9FA8E}\\NCH Software\\DeskFX\\deskfx.exe] > Taskbar.TaskListLabeledButtonPanel#IconPanel > Border", {
         L"Visibility=Collapsed"}},
-    ThemeTargetStyles{L"taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: RamenSoftware.Windhawk] > Grid#IconPanel > Image#Icon, taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: RamenSoftware.Windhawk] > taskbar:TaskListLabeledButtonPanel#IconPanel > Image#Icon", {
+    ThemeTargetStyles{L"Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: RamenSoftware.Windhawk] > Grid#IconPanel > Image#Icon, Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: RamenSoftware.Windhawk] > Taskbar.TaskListLabeledButtonPanel#IconPanel > Image#Icon", {
         L"Source=https://raw.githubusercontent.com/ramensoftware/windows-11-taskbar-styling-guide/refs/heads/main/Themes/One%20UI%208.5/Assets/windhawk.png",
         L"Height=40",
         L"Width=40",
         L"Margin=0,0,0,0"}},
-    ThemeTargetStyles{L"taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: RamenSoftware.Windhawk] > Grid#IconPanel > Border, taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: RamenSoftware.Windhawk] > taskbar:TaskListLabeledButtonPanel#IconPanel > Border", {
+    ThemeTargetStyles{L"Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: RamenSoftware.Windhawk] > Grid#IconPanel > Border, Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: RamenSoftware.Windhawk] > Taskbar.TaskListLabeledButtonPanel#IconPanel > Border", {
         L"Visibility=Collapsed"}},
-    ThemeTargetStyles{L"taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: 5319275A.51895FA4EA97F_cv1g1gvanyjgm!App] > Grid#IconPanel > Image#Icon, taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: 5319275A.51895FA4EA97F_cv1g1gvanyjgm!App] > taskbar:TaskListLabeledButtonPanel#IconPanel > Image#Icon", {
+    ThemeTargetStyles{L"Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: 5319275A.51895FA4EA97F_cv1g1gvanyjgm!App] > Grid#IconPanel > Image#Icon, Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: 5319275A.51895FA4EA97F_cv1g1gvanyjgm!App] > Taskbar.TaskListLabeledButtonPanel#IconPanel > Image#Icon", {
         L"Source=https://raw.githubusercontent.com/ramensoftware/windows-11-taskbar-styling-guide/refs/heads/main/Themes/One%20UI%208.5/Assets/whatsapp.png",
         L"Height=40",
         L"Width=40",
         L"Margin=0,0,0,0"}},
-    ThemeTargetStyles{L"taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: 5319275A.51895FA4EA97F_cv1g1gvanyjgm!App] > Grid#IconPanel > Border, taskbar:TaskListButton[AutomationProperties.AutomationId=Appid: 5319275A.51895FA4EA97F_cv1g1gvanyjgm!App] > taskbar:TaskListLabeledButtonPanel#IconPanel > Border", {
+    ThemeTargetStyles{L"Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: 5319275A.51895FA4EA97F_cv1g1gvanyjgm!App] > Grid#IconPanel > Border, Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: 5319275A.51895FA4EA97F_cv1g1gvanyjgm!App] > Taskbar.TaskListLabeledButtonPanel#IconPanel > Border", {
         L"Visibility=Collapsed"}},
     ThemeTargetStyles{L"Grid#IconPanel, Taskbar.TaskListButtonPanel", {
         L"Width=45",
@@ -10567,13 +10633,14 @@ const Theme g_themeOne_UI_8_5_variant_Taskbar = {{
         L"Transitions:=<TransitionCollection><RepositionThemeTransition IsStaggeringEnabled=\"False\"/></TransitionCollection>",
         L"Height=70",
         L"MaxHeight=70",
-        L"HorizontalAlignment=Center"}},
+        L"HorizontalAlignment=Stretch"}},
     ThemeTargetStyles{L"Taskbar.TaskbarFrame > Grid#RootGrid", {
         L"Margin=0,8,0,2",
         L"BorderBrush=#40FFFFFF"}},
+    ThemeTargetStyles{L"Grid#RootGrid > Taskbar.TaskbarBackground", {
+        L"Margin=5,0,5,0"}},
     ThemeTargetStyles{L"Grid#RootGrid > Taskbar.TaskbarBackground > Grid", {
         L"Background:=<WindhawkBlur BlurAmount=\"8\" TintColor=\"#761E1E1E\"/>",
-        L"Margin=5,0,5,0",
         L"CornerRadius=10",
         L"BorderThickness=1",
         L"BorderBrush=#40FFFFFF",
