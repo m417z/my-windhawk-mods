@@ -12076,9 +12076,11 @@ struct TrackedImagesForThread {
     // via a weak_ptr and do nothing once an entry is gone.
     std::list<std::shared_ptr<TrackedImage>> images;
     winrt::Windows::System::DispatcherQueue dispatcher{nullptr};
-    winrt::Windows::System::DispatcherQueueTimer retryDebounceTimer{nullptr};
+    winrt::Windows::System::DispatcherQueueTimer retryTimer{nullptr};
     winrt::Windows::System::DispatcherQueueTimer::Tick_revoker
-        retryDebounceTimerTickRevoker;
+        retryTimerTickRevoker;
+    // Tick the scheduled retry round is due at, zero if none is scheduled.
+    ULONGLONG retryDueTick = 0;
 };
 
 thread_local TrackedImagesForThread g_trackedImagesForThread;
@@ -12095,8 +12097,8 @@ constexpr int kImageRetryMaxBackoffShift = 6;
 constexpr ULONGLONG kImageRetryMaxDelayMs = kImageRetryBaseDelayMs
                                             << kImageRetryMaxBackoffShift;
 
-// Caps the attempts of an image so that an event storm doesn't retry it
-// endlessly. The count starts over once the image has been idle for the maximum
+// Caps the attempts of an image, bounding the series of retries which a failure
+// starts. The count starts over once the image has been idle for the maximum
 // delay, so connectivity which returns much later can still recover it.
 constexpr int kImageRetryMaxCount = 20;
 
@@ -13855,6 +13857,18 @@ void StartImageRetry(const std::shared_ptr<TrackedImage>& tracked) {
     g_elementPropertyModifying = false;
 }
 
+// The wait before the next attempt of an image which has been retried
+// `retryCount` times.
+ULONGLONG ImageRetryDelayMs(int retryCount) {
+    return kImageRetryBaseDelayMs
+           << std::clamp(retryCount - 1, 0, kImageRetryMaxBackoffShift);
+}
+
+void ScheduleImageLoadRetryOnCurrentThread(ULONGLONG delayMs, bool reschedule);
+
+// Retries every image which is due, and arms the next round for the earliest
+// image which isn't, so that a failed image recovers on its own instead of
+// waiting for something external to start a round.
 void RetryFailedImageLoadsOnCurrentThread() {
     if (!g_initializedForThread) {
         return;
@@ -13874,62 +13888,92 @@ void RetryFailedImageLoadsOnCurrentThread() {
 
     ULONGLONG tick = GetTickCount64();
 
+    ULONGLONG nextRoundDelay = 0;
+    auto armNextRoundIn = [&nextRoundDelay](ULONGLONG delay) {
+        if (!nextRoundDelay || delay < nextRoundDelay) {
+            nextRoundDelay = delay;
+        }
+    };
+
     for (const auto& tracked : snapshot) {
         if (tracked->loaded) {
             continue;
         }
+
+        ULONGLONG remaining = 0;
 
         if (tracked->lastRetryTick) {
             ULONGLONG sinceLastRetry = tick - tracked->lastRetryTick;
             if (sinceLastRetry >= kImageRetryMaxDelayMs) {
                 tracked->retryCount = 0;
             } else {
-                ULONGLONG delay = kImageRetryBaseDelayMs
-                                  << std::clamp(tracked->retryCount - 1, 0,
-                                                kImageRetryMaxBackoffShift);
+                ULONGLONG delay = ImageRetryDelayMs(tracked->retryCount);
                 if (sinceLastRetry < delay) {
-                    continue;
+                    remaining = delay - sinceLastRetry;
                 }
             }
         }
 
+        // An image which ran out of attempts is left to a network status
+        // change, which is what the count starting over is for.
         if (tracked->retryCount >= kImageRetryMaxCount) {
             continue;
         }
 
+        if (remaining) {
+            armNextRoundIn(remaining);
+            continue;
+        }
+
         StartImageRetry(tracked);
+
+        if (tracked->retryCount < kImageRetryMaxCount) {
+            armNextRoundIn(ImageRetryDelayMs(tracked->retryCount));
+        }
+    }
+
+    if (nextRoundDelay) {
+        ScheduleImageLoadRetryOnCurrentThread(nextRoundDelay,
+                                              /*reschedule=*/false);
     }
 }
 
-// Retries once the network status events stop coming, since the connectivity a
-// single transition ends up at isn't there yet when the first of them arrives.
-void ScheduleImageLoadRetryOnCurrentThread() {
+// Runs a retry round in `delayMs`. A round which is already scheduled is kept
+// if it's due sooner, unless `reschedule` moves it to the new time.
+void ScheduleImageLoadRetryOnCurrentThread(ULONGLONG delayMs, bool reschedule) {
     if (!g_initializedForThread) {
         return;
     }
 
-    auto& timer = g_trackedImagesForThread.retryDebounceTimer;
+    auto& state = g_trackedImagesForThread;
+
+    ULONGLONG dueTick = GetTickCount64() + delayMs;
+
+    if (!reschedule && state.retryDueTick && state.retryDueTick <= dueTick) {
+        return;
+    }
 
     try {
-        if (!timer) {
-            auto dispatcher = g_trackedImagesForThread.dispatcher;
-            if (!dispatcher) {
+        if (!state.retryTimer) {
+            if (!state.dispatcher) {
                 return;
             }
 
-            timer = dispatcher.CreateTimer();
-            timer.Interval(std::chrono::milliseconds{kNetworkChangeDebounceMs});
-            timer.IsRepeating(false);
-            g_trackedImagesForThread.retryDebounceTimerTickRevoker = timer.Tick(
+            state.retryTimer = state.dispatcher.CreateTimer();
+            state.retryTimer.IsRepeating(false);
+            state.retryTimerTickRevoker = state.retryTimer.Tick(
                 winrt::auto_revoke,
                 [](winrt::Windows::System::DispatcherQueueTimer const&,
                    winrt::Windows::Foundation::IInspectable const&) {
+                    g_trackedImagesForThread.retryDueTick = 0;
                     RetryFailedImageLoadsOnCurrentThread();
                 });
         }
 
-        timer.Stop();
-        timer.Start();
+        state.retryTimer.Stop();
+        state.retryTimer.Interval(std::chrono::milliseconds{delayMs});
+        state.retryTimer.Start();
+        state.retryDueTick = dueTick;
     } catch (winrt::hresult_error const& ex) {
         Wh_Log(L"Error %08X: %s", ex.code(), ex.message().c_str());
     }
@@ -13964,8 +14008,10 @@ void ScheduleImageLoadRetryOnAllUiThreads() {
 
     for (auto& dispatcher : dispatchers) {
         try {
-            dispatcher.TryEnqueue(
-                []() { ScheduleImageLoadRetryOnCurrentThread(); });
+            dispatcher.TryEnqueue([]() {
+                ScheduleImageLoadRetryOnCurrentThread(kNetworkChangeDebounceMs,
+                                                      /*reschedule=*/true);
+            });
         } catch (winrt::hresult_error const& ex) {
             Wh_Log(L"Error dispatching retry to UI thread %08X: %s", ex.code(),
                    ex.message().c_str());
@@ -14135,6 +14181,12 @@ void SetupImageTracking(DependencyObject const& target,
                tracked->uri.RawUri().c_str(), e.ErrorMessage().c_str());
 
         tracked->loaded = false;
+
+        // Waiting for the base delay coalesces the failures of a batch of
+        // images into a single round, and keeps the retries off the burst of
+        // requests the failures came from.
+        ScheduleImageLoadRetryOnCurrentThread(kImageRetryBaseDelayMs,
+                                              /*reschedule=*/false);
     };
 
     auto onImageOpened = [trackedWeak](
@@ -18882,15 +18934,16 @@ void UninitializeForCurrentThread() {
 
     // Clear tracked images for this thread (revokers will automatically
     // unregister).
-    if (auto& timer = g_trackedImagesForThread.retryDebounceTimer) {
+    if (auto& timer = g_trackedImagesForThread.retryTimer) {
         try {
             timer.Stop();
         } catch (winrt::hresult_error const& ex) {
             Wh_Log(L"Error %08X: %s", ex.code(), ex.message().c_str());
         }
     }
-    g_trackedImagesForThread.retryDebounceTimerTickRevoker.revoke();
-    g_trackedImagesForThread.retryDebounceTimer = nullptr;
+    g_trackedImagesForThread.retryTimerTickRevoker.revoke();
+    g_trackedImagesForThread.retryTimer = nullptr;
+    g_trackedImagesForThread.retryDueTick = 0;
     g_trackedImagesForThread.images.clear();
     StopImageLoadRetriesForCurrentThread();
 
