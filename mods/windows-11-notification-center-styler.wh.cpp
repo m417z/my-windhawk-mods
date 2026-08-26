@@ -3914,15 +3914,22 @@ bool VisualTreeWatcher::ReleaseDiagnosticsReference(InstanceHandle handle)
     }
 
     winrt::weak_ref<wf::IInspectable> weakElement;
-    try {
-        wf::IInspectable element = FromHandle(handle);
-        if (element) {
-            weakElement = winrt::make_weak(element);
+    {
+        // Not through FromHandle: a handle whose runtime object is already gone
+        // fails to resolve routinely, and throwing for it would pay for an
+        // originate with a stack capture every time. The strong reference has
+        // to be gone again before the release below, hence the scope.
+        wf::IInspectable element;
+        HRESULT hr = m_XamlDiagnostics->GetIInspectableFromHandle(handle, reinterpret_cast<::IInspectable**>(winrt::put_abi(element)));
+        if (SUCCEEDED(hr) && element) {
+            try {
+                weakElement = winrt::make_weak(element);
+            } catch (...) {
+                // Not every reported object supports weak references, and then
+                // the release just proceeds unobserved.
+                Wh_Log(L"Error %08X", winrt::to_hresult());
+            }
         }
-    } catch (...) {
-        // Not every reported object resolves or supports weak references, and
-        // then the release just proceeds unobserved.
-        Wh_Log(L"Error %08X", winrt::to_hresult());
     }
 
     HRESULT hr = m_XamlDiagnosticsTestHooks->UnregisterInstance(handle);
@@ -4009,7 +4016,9 @@ HRESULT VisualTreeWatcher::OnVisualTreeChange(ParentChildRelation relation, Visu
     }
     else if (mutationType == Remove)
     {
-        ReleaseDiagnosticsReference(element.Handle);
+        // Queued rather than released outright: this report arrives from inside
+        // the Leave walk which is still visiting the subtree being removed.
+        QueueDiagnosticsRelease(element.Handle);
         ForgetElementId(element.Handle);
     }
 
@@ -9810,6 +9819,7 @@ void ApplyCustomizations(ElementId elementId,
 // the next child of whatever was released.
 thread_local std::vector<InstanceHandle> g_pendingDiagnosticsRelease;
 thread_local ULONGLONG g_lastDiagnosticsReleaseQueueTick;
+thread_local bool g_diagnosticsReleaseDrainQueued;
 
 // Long enough to sit out a tree being built.
 constexpr ULONGLONG kDiagnosticsReleaseDelay = 200;
@@ -9892,23 +9902,56 @@ void QueueDiagnosticsRelease(InstanceHandle handle) {
     g_lastDiagnosticsReleaseQueueTick = GetTickCount64();
 }
 
-// Draining is driven by the next report rather than by a timer, so that nothing
-// of the mod is left scheduled on a thread it does not tear down: the release
-// has to run on the thread which owns the elements, and reports arrive on that
-// thread already. A thread which goes quiet therefore holds its last burst
-// until it is used again.
-void FlushDiagnosticsReleasesIfQuiet() {
-    if (g_pendingDiagnosticsRelease.empty() ||
-        GetTickCount64() - g_lastDiagnosticsReleaseQueueTick <
-            kDiagnosticsReleaseDelay) {
+void DrainDiagnosticsReleases() {
+    g_diagnosticsReleaseDrainQueued = false;
+
+    // Reports kept arriving while this sat on the queue, so the burst this was
+    // meant to sit out is still going. The report which queued them schedules
+    // the next drain.
+    if (GetTickCount64() - g_lastDiagnosticsReleaseQueueTick <
+        kDiagnosticsReleaseDelay) {
         return;
     }
 
     FlushDiagnosticsReleases();
 }
 
+// Reports arrive from inside XAML's own Enter and Leave walks, and a release
+// there re-enters the diagnostics while the tree is being mutated: dropping the
+// last reference to an element the walk is still visiting destroys it mid-walk.
+// The drain is therefore handed to the thread's dispatcher, which runs it once
+// the walk has finished.
+//
+// Scheduling is still driven by the next report rather than by a timer, so that
+// nothing of the mod is left waiting on a thread it does not tear down. A
+// thread which goes quiet therefore holds its last burst until it is used
+// again.
+void FlushDiagnosticsReleasesIfQuiet() {
+    if (g_pendingDiagnosticsRelease.empty() ||
+        g_diagnosticsReleaseDrainQueued ||
+        GetTickCount64() - g_lastDiagnosticsReleaseQueueTick <
+            kDiagnosticsReleaseDelay) {
+        return;
+    }
+
+    auto dispatcherQueue =
+        winrt::Windows::System::DispatcherQueue::GetForCurrentThread();
+    if (!dispatcherQueue) {
+        // Releasing from here is the one thing that isn't safe, so the elements
+        // stay held instead.
+        Wh_Log(L"No dispatcher queue, elements will be held");
+        return;
+    }
+
+    g_diagnosticsReleaseDrainQueued =
+        dispatcherQueue.TryEnqueue(DrainDiagnosticsReleases);
+}
+
 void StopDiagnosticsReleases() {
     g_pendingDiagnosticsRelease.clear();
+
+    // A drain already on the dispatcher still runs, and finds nothing to do.
+    g_diagnosticsReleaseDrainQueued = false;
 }
 
 void CleanupCustomizations(ElementId elementId) {
