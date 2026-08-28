@@ -2,7 +2,7 @@
 // @id              windows-11-taskbar-styler
 // @name            Windows 11 Taskbar Styler
 // @description     Customize the taskbar with themes contributed by others or create your own
-// @version         1.8
+// @version         1.9
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
@@ -11396,6 +11396,7 @@ HRESULT InjectWindhawkTAP() noexcept
 #include <charconv>
 #include <chrono>
 #include <cmath>
+#include <condition_variable>
 #include <filesystem>
 #include <limits>
 #include <list>
@@ -11884,6 +11885,41 @@ void ForgetElementId(InstanceHandle handle) {
     g_elementIds.erase(handle);
 }
 
+// Dead entries are reaped once the map grows past this, which is then set to
+// twice the surviving size, making the sweep amortized O(1).
+thread_local size_t g_elementIdsReapThreshold = 64;
+
+// An element whose diagnostics reference was handed back is destroyed without a
+// removal being reported for it, so what the mod keys by that element has to be
+// found rather than told. An entry whose weak reference no longer resolves
+// names such an element, and is torn down the way its removal would have.
+void ReapDeadElementIdsIfNeeded() {
+    if (g_elementIds.size() < g_elementIdsReapThreshold) {
+        return;
+    }
+
+    // Collected before anything is torn down: CleanupCustomizations runs XAML
+    // work which can re-enter ApplyCustomizations and rehash the map.
+    std::vector<std::pair<InstanceHandle, ElementId>> dead;
+    for (const auto& [handle, entry] : g_elementIds) {
+        if (!entry.element.get()) {
+            dead.push_back({handle, entry.id});
+        }
+    }
+
+    if (!dead.empty()) {
+        Wh_Log(L"Reaping %zu of %zu element ids", dead.size(),
+               g_elementIds.size());
+    }
+
+    for (const auto& [handle, elementId] : dead) {
+        CleanupCustomizations(elementId);
+        g_elementIds.erase(handle);
+    }
+
+    g_elementIdsReapThreshold = std::max<size_t>(64, g_elementIds.size() * 2);
+}
+
 // The element's spine node. An element can be matched before its subtree is
 // attached, in which case the eager build in ApplyCustomizations interns a
 // spine that stops at a placeholder root; re-checked on every use so it's
@@ -11947,7 +11983,35 @@ struct StyleVariableState {
         variables;
     std::unordered_map<std::wstring, std::vector<StyleVariableConsumer>>
         consumers;
+    // How many entries the two maps above hold for each element. They're keyed
+    // by variable name, so without this, asking whether an element appears in
+    // either of them means walking every name.
+    std::unordered_map<ElementId, size_t> elementRefs;
 };
+
+void AddStyleVariableElementRef(StyleVariableState* state,
+                                ElementId elementId) {
+    state->elementRefs[elementId]++;
+}
+
+void ReleaseStyleVariableElementRefs(StyleVariableState* state,
+                                     ElementId elementId,
+                                     size_t count) {
+    if (!count) {
+        return;
+    }
+
+    auto it = state->elementRefs.find(elementId);
+    if (it == state->elementRefs.end()) {
+        return;
+    }
+
+    if (it->second > count) {
+        it->second -= count;
+    } else {
+        state->elementRefs.erase(it);
+    }
+}
 
 thread_local std::list<StyleVariableState> g_styleVariableState;
 
@@ -12139,6 +12203,10 @@ winrt::event_token g_networkStatusChangedToken;
 // Set while a thread is registering the handler outside the mutex, so that a
 // concurrent or re-entrant call doesn't register a second one.
 bool g_networkStatusChangedRegistering;
+// Callbacks which are on their way into mod code, counted so that the module
+// isn't freed out from under them.
+size_t g_imageRetryPendingCallbacks;
+std::condition_variable g_imageRetryPendingCallbacksCv;
 
 // A cached file is fetched again once it's this old, and its write time is
 // stamped whether or not the fetch gets through, so that the write time doubles
@@ -14242,6 +14310,7 @@ void StartImageRetry(const std::shared_ptr<TrackedImage>& tracked) {
     // An Image element's source is a property the mod customizes, and writing
     // to it would otherwise be seen as an external change and reverted to the
     // failed source the style declared.
+    bool wasModifying = g_elementPropertyModifying;
     g_elementPropertyModifying = true;
 
     try {
@@ -14277,7 +14346,7 @@ void StartImageRetry(const std::shared_ptr<TrackedImage>& tracked) {
         Wh_Log(L"Error %08X: %s", ex.code(), ex.message().c_str());
     }
 
-    g_elementPropertyModifying = false;
+    g_elementPropertyModifying = wasModifying;
 }
 
 // The wait before the next attempt of an image which has been retried
@@ -14402,6 +14471,35 @@ void ScheduleImageLoadRetryOnCurrentThread(ULONGLONG delayMs, bool reschedule) {
     }
 }
 
+// Counts a callback which is about to be handed to code outside the mod for as
+// long as the returned reference is alive, so that StopImageLoadRetries waits
+// for it whether it ends up running or being dropped. Null once the retries
+// have been stopped, which is the caller's cue not to hand it over at all.
+std::shared_ptr<void> TrackImageRetryCallback() {
+    {
+        std::lock_guard<std::mutex> lock(g_imageRetryMutex);
+
+        if (!g_imageRetryActive) {
+            return nullptr;
+        }
+
+        g_imageRetryPendingCallbacks++;
+    }
+
+    // The pointer is only a non-null tag; the deleter is what the reference is
+    // for, and it runs whether the shared_ptr is destroyed or its construction
+    // throws.
+    return std::shared_ptr<void>(&g_imageRetryPendingCallbacks, [](void*) {
+        {
+            std::lock_guard<std::mutex> lock(g_imageRetryMutex);
+
+            g_imageRetryPendingCallbacks--;
+        }
+
+        g_imageRetryPendingCallbacksCv.notify_all();
+    });
+}
+
 void ScheduleImageLoadRetryOnAllUiThreads() {
     // Losing connectivity raises a network status event just like gaining it
     // does, and there's nothing to retry with no internet access.
@@ -14430,8 +14528,13 @@ void ScheduleImageLoadRetryOnAllUiThreads() {
     }
 
     for (auto& dispatcher : dispatchers) {
+        auto callbackRef = TrackImageRetryCallback();
+        if (!callbackRef) {
+            return;
+        }
+
         try {
-            dispatcher.TryEnqueue([]() {
+            dispatcher.TryEnqueue([callbackRef]() {
                 ScheduleImageLoadRetryOnCurrentThread(kNetworkChangeDebounceMs,
                                                       /*reschedule=*/true);
             });
@@ -14445,6 +14548,13 @@ void ScheduleImageLoadRetryOnAllUiThreads() {
 void OnNetworkStatusChanged(
     winrt::Windows::Foundation::IInspectable const& sender) {
     Wh_Log(L">");
+
+    // Removing the handler doesn't wait for an invocation which is already in
+    // flight, so this one counts itself instead.
+    auto callbackRef = TrackImageRetryCallback();
+    if (!callbackRef) {
+        return;
+    }
 
     // Runs on a Windows Runtime thread pool thread, where the connectivity
     // query is allowed and doesn't hold up a UI thread.
@@ -14497,6 +14607,14 @@ void StopImageLoadRetries() {
     if (token) {
         UnregisterNetworkStatusChangedHandler(token);
     }
+
+    // The module is freed once the mod is uninitialized, so the callbacks which
+    // are already on their way into it are let through first. What they wait on
+    // is a connectivity query and a dispatcher pass of a UI thread, and the
+    // uninitialization which follows depends on those threads running anyway.
+    std::unique_lock<std::mutex> lock(g_imageRetryMutex);
+    g_imageRetryPendingCallbacksCv.wait(
+        lock, [] { return g_imageRetryPendingCallbacks == 0; });
 }
 
 // Drops the calling thread from the dispatcher registry, and stops the retries
@@ -16712,9 +16830,11 @@ void UpdateStyleVariableConsumers(
             continue;
         }
         auto& consumers = it->second;
-        std::erase_if(consumers, [&](const StyleVariableConsumer& c) {
-            return c.elementId == elementId && c.property == property;
-        });
+        ReleaseStyleVariableElementRefs(
+            state, elementId,
+            std::erase_if(consumers, [&](const StyleVariableConsumer& c) {
+                return c.elementId == elementId && c.property == property;
+            }));
         if (consumers.empty()) {
             state->consumers.erase(it);
         }
@@ -16731,6 +16851,7 @@ void UpdateStyleVariableConsumers(
                                    });
         if (!already) {
             consumers.push_back({elementId, property, fallbackClassNameStr});
+            AddStyleVariableElementRef(state, elementId);
         }
     }
 }
@@ -17110,6 +17231,7 @@ void SetUpCapturesForElement(StyleVariableState* state,
             capture.varName.c_str(), winrt::get_class_name(element).c_str(),
             value.stringForm.c_str(), capturesForVar.size());
         capturesForVar.push_back({elementId, std::move(value)});
+        AddStyleVariableElementRef(state, elementId);
 
         seededVarNames.push_back(capture.varName);
 
@@ -18159,9 +18281,19 @@ void ApplyCustomizations(ElementId elementId,
 thread_local std::vector<InstanceHandle> g_pendingDiagnosticsRelease;
 thread_local ULONGLONG g_lastDiagnosticsReleaseQueueTick;
 thread_local bool g_diagnosticsReleaseDrainQueued;
+thread_local winrt::Windows::System::DispatcherQueueTimer
+    g_diagnosticsReleaseDrainTimer{nullptr};
+thread_local winrt::Windows::System::DispatcherQueueTimer::Tick_revoker
+    g_diagnosticsReleaseDrainTimerTickRevoker;
 
 // Long enough to sit out a tree being built.
 constexpr ULONGLONG kDiagnosticsReleaseDelay = 200;
+
+// The drain waits on a one-shot timer, which the thread teardown can stop,
+// rather than on a dispatcher item, which it cannot: the module is freed once
+// the mod is uninitialized, and an item still on the dispatcher would call into
+// it. The interval only has to carry the drain out of the report which arms it.
+constexpr ULONGLONG kDiagnosticsReleaseDrainDelay = 1;
 
 // Releasing an element the mod still records something for would strand that
 // recording, since no removal is reported for a handle whose runtime object is
@@ -18183,20 +18315,8 @@ bool ElementHasState(ElementId elementId) {
     }
 
     for (const auto& state : g_styleVariableState) {
-        for (const auto& [varName, captures] : state.variables) {
-            for (const auto& capture : captures) {
-                if (capture.elementId == elementId) {
-                    return true;
-                }
-            }
-        }
-
-        for (const auto& [varName, consumers] : state.consumers) {
-            for (const auto& consumer : consumers) {
-                if (consumer.elementId == elementId) {
-                    return true;
-                }
-            }
+        if (state.elementRefs.contains(elementId)) {
+            return true;
         }
     }
 
@@ -18231,6 +18351,12 @@ void FlushDiagnosticsReleases() {
             ForgetElementId(handle);
         }
     }
+
+    // Here rather than anywhere else on the report path: the releases above are
+    // what let elements be destroyed unreported, and this runs from the
+    // dispatcher, so the teardown of what they were keyed by is outside the
+    // walk the reports came from.
+    ReapDeadElementIdsIfNeeded();
 }
 
 void QueueDiagnosticsRelease(InstanceHandle handle) {
@@ -18242,30 +18368,24 @@ void QueueDiagnosticsRelease(InstanceHandle handle) {
     g_lastDiagnosticsReleaseQueueTick = GetTickCount64();
 }
 
+// Whether the burst has stopped is decided when this is scheduled: the report
+// which schedules it queues its own handles right afterwards, so the time since
+// the last queue is short again by the time this runs.
 void DrainDiagnosticsReleases() {
     g_diagnosticsReleaseDrainQueued = false;
-
-    // Reports kept arriving while this sat on the queue, so the burst this was
-    // meant to sit out is still going. The report which queued them schedules
-    // the next drain.
-    if (GetTickCount64() - g_lastDiagnosticsReleaseQueueTick <
-        kDiagnosticsReleaseDelay) {
-        return;
-    }
-
     FlushDiagnosticsReleases();
 }
 
 // Reports arrive from inside XAML's own Enter and Leave walks, and a release
 // there re-enters the diagnostics while the tree is being mutated: dropping the
 // last reference to an element the walk is still visiting destroys it mid-walk.
-// The drain is therefore handed to the thread's dispatcher, which runs it once
+// The drain is therefore armed on the thread's dispatcher, which runs it once
 // the walk has finished.
 //
-// Scheduling is still driven by the next report rather than by a timer, so that
-// nothing of the mod is left waiting on a thread it does not tear down. A
-// thread which goes quiet therefore holds its last burst until it is used
-// again.
+// Whether to arm it is decided by the next report rather than by a recurring
+// timer, so that nothing of the mod is left waiting on a thread it does not
+// tear down. A thread which goes quiet therefore holds its last burst until it
+// is used again.
 void FlushDiagnosticsReleasesIfQuiet() {
     if (g_pendingDiagnosticsRelease.empty() ||
         g_diagnosticsReleaseDrainQueued ||
@@ -18274,23 +18394,50 @@ void FlushDiagnosticsReleasesIfQuiet() {
         return;
     }
 
-    auto dispatcherQueue =
-        winrt::Windows::System::DispatcherQueue::GetForCurrentThread();
-    if (!dispatcherQueue) {
-        // Releasing from here is the one thing that isn't safe, so the elements
-        // stay held instead.
-        Wh_Log(L"No dispatcher queue, elements will be held");
-        return;
-    }
+    try {
+        if (!g_diagnosticsReleaseDrainTimer) {
+            auto dispatcherQueue =
+                winrt::Windows::System::DispatcherQueue::GetForCurrentThread();
+            if (!dispatcherQueue) {
+                // Releasing from here is the one thing that isn't safe, so the
+                // elements stay held instead.
+                Wh_Log(L"No dispatcher queue, elements will be held");
+                return;
+            }
 
-    g_diagnosticsReleaseDrainQueued =
-        dispatcherQueue.TryEnqueue(DrainDiagnosticsReleases);
+            g_diagnosticsReleaseDrainTimer = dispatcherQueue.CreateTimer();
+            g_diagnosticsReleaseDrainTimer.IsRepeating(false);
+            g_diagnosticsReleaseDrainTimer.Interval(
+                std::chrono::milliseconds{kDiagnosticsReleaseDrainDelay});
+            g_diagnosticsReleaseDrainTimerTickRevoker =
+                g_diagnosticsReleaseDrainTimer.Tick(
+                    winrt::auto_revoke,
+                    [](winrt::Windows::System::DispatcherQueueTimer const&,
+                       winrt::Windows::Foundation::IInspectable const&) {
+                        DrainDiagnosticsReleases();
+                    });
+        }
+
+        g_diagnosticsReleaseDrainTimer.Start();
+        g_diagnosticsReleaseDrainQueued = true;
+    } catch (winrt::hresult_error const& ex) {
+        Wh_Log(L"Error %08X: %s", ex.code(), ex.message().c_str());
+    }
 }
 
 void StopDiagnosticsReleases() {
     g_pendingDiagnosticsRelease.clear();
 
-    // A drain already on the dispatcher still runs, and finds nothing to do.
+    if (g_diagnosticsReleaseDrainTimer) {
+        try {
+            g_diagnosticsReleaseDrainTimer.Stop();
+        } catch (winrt::hresult_error const& ex) {
+            Wh_Log(L"Error %08X: %s", ex.code(), ex.message().c_str());
+        }
+    }
+
+    g_diagnosticsReleaseDrainTimerTickRevoker.revoke();
+    g_diagnosticsReleaseDrainTimer = nullptr;
     g_diagnosticsReleaseDrainQueued = false;
 }
 
@@ -18340,13 +18487,16 @@ void CleanupCustomizations(ElementId elementId) {
                 continue;
             }
 
-            if (!std::erase_if(
-                    varIt->second,
-                    [elementId](const StyleVariableCapture& capture) {
-                        return capture.elementId == elementId;
-                    })) {
+            size_t removed =
+                std::erase_if(varIt->second,
+                              [elementId](const StyleVariableCapture& capture) {
+                                  return capture.elementId == elementId;
+                              });
+            if (!removed) {
                 continue;
             }
+
+            ReleaseStyleVariableElementRefs(state, elementId, removed);
 
             removedVarNames.push_back(captureState.varName);
             if (varIt->second.empty()) {
@@ -19452,8 +19602,16 @@ void UninitializeForCurrentThread() {
     g_virtualizingRepeaters.clear();
     g_recycledElements.clear();
 
+    // Detached from the global before being walked: restoring a value runs
+    // arbitrary XAML work, and whatever it re-enters looks its elements up in
+    // g_elementsCustomizationState. Walking a map nothing else can reach keeps
+    // a re-entrant insert or erase from invalidating this loop, and leaving the
+    // global empty makes those lookups miss, which is what teardown wants.
+    auto elementsCustomizationState = std::move(g_elementsCustomizationState);
+    g_elementsCustomizationState.clear();
+
     for (const auto& [elementId, elementCustomizationState] :
-         g_elementsCustomizationState) {
+         elementsCustomizationState) {
         auto element = elementCustomizationState.element.get();
         auto* state = GetStyleVariableState(elementCustomizationState.xamlRoot);
 
@@ -19469,7 +19627,7 @@ void UninitializeForCurrentThread() {
 
     // Before g_elementTreeNodes, since the states hold the last strong refs to
     // the spine nodes.
-    g_elementsCustomizationState.clear();
+    elementsCustomizationState.clear();
     g_elementTreeNodes.clear();
     g_elementTreeNodesReapThreshold = 64;
     g_pendingStyleVariablePropagations.clear();
@@ -19478,6 +19636,7 @@ void UninitializeForCurrentThread() {
     // After everything keyed by an id. g_lastElementId keeps counting, since an
     // id must never name two elements.
     g_elementIds.clear();
+    g_elementIdsReapThreshold = 64;
 
     g_elementsCustomizationRules.clear();
 
@@ -19954,7 +20113,7 @@ bool StartStatsTimer() {
     static constexpr WCHAR kStatsBaseUrl[] =
         L"https://github.com/ramensoftware/"
         L"windows-11-taskbar-styling-guide/"
-        L"releases/download/stats-v5/";
+        L"releases/download/stats-v6/";
 
     ULONGLONG lastStatsTime = 0;
     Wh_GetBinaryValue(L"statsTimerLastTime", &lastStatsTime,
