@@ -661,6 +661,11 @@ TaskbarConfiguration_GetIconHeightInViewPixels_method_Hook(void* pThis) {
     double iconSize =
         TaskbarConfiguration_GetIconHeightInViewPixels_method_Original(pThis);
 
+    // The stock height tells the postures apart: 16 is the small posture, 24
+    // the medium one, 32 the tablet one. The customized height can't, since the
+    // small and the regular icon size settings may be equal.
+    g_smallIconSize = iconSize <= 16;
+
     if (g_inTaskbarFrame_GetMetrics) {
         g_TaskbarFrame_GetMetrics_iconHeight = iconSize;
         return iconSize;
@@ -1420,6 +1425,71 @@ void WINAPI TaskListButton_UpdateBadge_Hook(void* pThis) {
     }
 }
 
+using TaskListButton_UpdateMultiWindowClip_t = void(WINAPI*)(void* pThis);
+TaskListButton_UpdateMultiWindowClip_t
+    TaskListButton_UpdateMultiWindowClip_Original;
+void WINAPI TaskListButton_UpdateMultiWindowClip_Hook(void* pThis) {
+    Wh_Log(L"> hasDynamicIconScaling=%d", g_hasDynamicIconScaling);
+
+    if (!g_hasDynamicIconScaling || g_unloading) {
+        TaskListButton_UpdateMultiWindowClip_Original(pThis);
+        return;
+    }
+
+    // The size which decides whether the clip has to be recreated is
+    // calculated by comparing the icon height against 16, so an icon size of 16
+    // gets the small posture size while the button has the medium posture
+    // extent.
+    double* iconHeight = nullptr;
+    double prevIconHeight;
+    if (size_t iconHeightOffset = GetIconHeightOffset()) {
+        iconHeight = (double*)((BYTE*)pThis + iconHeightOffset);
+        prevIconHeight = *iconHeight;
+        double newIconHeight = g_smallIconSize ? 16 : 24;
+        Wh_Log(L"Setting iconHeight: %f->%f", prevIconHeight, newIconHeight);
+        *iconHeight = newIconHeight;
+    }
+
+    TaskListButton_UpdateMultiWindowClip_Original(pThis);
+
+    if (iconHeight) {
+        *iconHeight = prevIconHeight;
+    }
+}
+
+using TaskListButton_CreateMultiWindowClip_t = void(WINAPI*)(void* pThis);
+TaskListButton_CreateMultiWindowClip_t
+    TaskListButton_CreateMultiWindowClip_Original;
+void WINAPI TaskListButton_CreateMultiWindowClip_Hook(void* pThis) {
+    Wh_Log(L"> hasDynamicIconScaling=%d", g_hasDynamicIconScaling);
+
+    if (!g_hasDynamicIconScaling || g_unloading) {
+        TaskListButton_CreateMultiWindowClip_Original(pThis);
+        return;
+    }
+
+    // The clip of the strip which marks a group of windows picks the button
+    // extent and the strip size by comparing the icon height against 16, so an
+    // icon size of 16 gets the small posture clip while the button has the
+    // medium posture extent. UpdateVisualStates calls this directly, without
+    // going through UpdateMultiWindowClip.
+    double* iconHeight = nullptr;
+    double prevIconHeight;
+    if (size_t iconHeightOffset = GetIconHeightOffset()) {
+        iconHeight = (double*)((BYTE*)pThis + iconHeightOffset);
+        prevIconHeight = *iconHeight;
+        double newIconHeight = g_smallIconSize ? 16 : 24;
+        Wh_Log(L"Setting iconHeight: %f->%f", prevIconHeight, newIconHeight);
+        *iconHeight = newIconHeight;
+    }
+
+    TaskListButton_CreateMultiWindowClip_Original(pThis);
+
+    if (iconHeight) {
+        *iconHeight = prevIconHeight;
+    }
+}
+
 void* TaskListButton_UpdateIconColumnDefinition_Original;
 
 LONG GetMediumTaskbarButtonExtentOffset() {
@@ -1560,6 +1630,14 @@ void TaskListButton_UpdateIconColumnDefinition_InitOffsets() {
     GetMediumTaskbarButtonExtentOffset();
 }
 
+// UpdateVisualStates reads the icon height for two unrelated purposes: as the
+// marker which picks the multi window margin visual state and the width of the
+// strip next to it, where 16 means the small posture, and as the size of
+// elements which follow the icon, such as the progress indicator. It gets the
+// posture height, and whatever is sized by it gets the customized height back.
+thread_local double g_taskListButtonPostureIconHeight;
+thread_local double g_taskListButtonCustomIconHeight;
+
 using TaskListButton_UpdateVisualStates_t = void(WINAPI*)(void* pThis);
 TaskListButton_UpdateVisualStates_t TaskListButton_UpdateVisualStates_Original;
 void WINAPI TaskListButton_UpdateVisualStates_Hook(void* pThis) {
@@ -1614,7 +1692,26 @@ void WINAPI TaskListButton_UpdateVisualStates_Hook(void* pThis) {
         }
     }
 
+    double* iconHeight = nullptr;
+    double prevIconHeight;
+    if (g_hasDynamicIconScaling && !g_unloading) {
+        if (size_t iconHeightOffset = GetIconHeightOffset()) {
+            iconHeight = (double*)((BYTE*)pThis + iconHeightOffset);
+            prevIconHeight = *iconHeight;
+            double newIconHeight = g_smallIconSize ? 16 : 24;
+            Wh_Log(L"Setting iconHeight: %f->%f", prevIconHeight, newIconHeight);
+            *iconHeight = newIconHeight;
+            g_taskListButtonPostureIconHeight = newIconHeight;
+            g_taskListButtonCustomIconHeight = prevIconHeight;
+        }
+    }
+
     TaskListButton_UpdateVisualStates_Original(pThis);
+
+    if (iconHeight) {
+        g_taskListButtonPostureIconHeight = 0;
+        *iconHeight = prevIconHeight;
+    }
 
     if (g_applyingSettings && !g_hasDynamicIconScaling) {
         FrameworkElement taskListButtonElement = nullptr;
@@ -1633,20 +1730,6 @@ void WINAPI TaskListButton_UpdateVisualStates_Hook(void* pThis) {
             }
         }
     }
-}
-
-using LaunchListItemViewModel_IconHeight_t = void(WINAPI*)(void* pThis,
-                                                           double iconHeight);
-LaunchListItemViewModel_IconHeight_t
-    LaunchListItemViewModel_IconHeight_Original;
-void WINAPI LaunchListItemViewModel_IconHeight_Hook(void* pThis,
-                                                    double iconHeight) {
-    Wh_Log(L"> iconHeight=%f", iconHeight);
-
-    g_smallIconSize = iconHeight == g_settings.iconSizeSmall &&
-                      iconHeight != g_settings.iconSize;
-
-    LaunchListItemViewModel_IconHeight_Original(pThis, iconHeight);
 }
 
 using ExperienceToggleButton_UpdateButtonPadding_t = void(WINAPI*)(void* pThis);
@@ -1788,6 +1871,13 @@ using RepeatButton_Width_t = void(WINAPI*)(void* pThis, double width);
 RepeatButton_Width_t RepeatButton_Width_Original;
 void WINAPI RepeatButton_Width_Hook(void* pThis, double width) {
     Wh_Log(L"> width=%f", width);
+
+    if (g_taskListButtonPostureIconHeight &&
+        width == g_taskListButtonPostureIconHeight) {
+        width = g_taskListButtonCustomIconHeight;
+        Wh_Log(L"Setting width: %f->%f", g_taskListButtonPostureIconHeight,
+               width);
+    }
 
     RepeatButton_Width_Original(pThis, width);
 
@@ -2366,6 +2456,18 @@ bool HookTaskbarViewDllSymbols(HMODULE module,
                 TaskListButton_UpdateBadge_Hook,
             },
             {
+                {LR"(private: void __cdecl winrt::Taskbar::implementation::TaskListButton::UpdateMultiWindowClip(void))"},
+                &TaskListButton_UpdateMultiWindowClip_Original,
+                TaskListButton_UpdateMultiWindowClip_Hook,
+                true,  // Missing in older Windows 11 versions.
+            },
+            {
+                {LR"(private: void __cdecl winrt::Taskbar::implementation::TaskListButton::CreateMultiWindowClip(void))"},
+                &TaskListButton_CreateMultiWindowClip_Original,
+                TaskListButton_CreateMultiWindowClip_Hook,
+                true,  // Missing in older Windows 11 versions.
+            },
+            {
                 {LR"(private: void __cdecl winrt::Taskbar::implementation::TaskListButton::UpdateIconColumnDefinition(void))"},
                 &TaskListButton_UpdateIconColumnDefinition_Original,
                 nullptr,
@@ -2375,12 +2477,6 @@ bool HookTaskbarViewDllSymbols(HMODULE module,
                 {LR"(private: void __cdecl winrt::Taskbar::implementation::TaskListButton::UpdateVisualStates(void))"},
                 &TaskListButton_UpdateVisualStates_Original,
                 TaskListButton_UpdateVisualStates_Hook,
-            },
-            {
-                {LR"(public: virtual void __cdecl winrt::Taskbar::implementation::LaunchListItemViewModel::IconHeight(double))"},
-                &LaunchListItemViewModel_IconHeight_Original,
-                LaunchListItemViewModel_IconHeight_Hook,
-                true,
             },
             {
                 {LR"(protected: virtual void __cdecl winrt::Taskbar::implementation::ExperienceToggleButton::UpdateButtonPadding(void))"},
