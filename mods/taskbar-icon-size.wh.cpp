@@ -1147,6 +1147,14 @@ void WINAPI SystemTraySecondaryController_UpdateFrameSize_Hook(void* pThis) {
     g_inSystemTrayController_UpdateFrameSize = false;
 }
 
+// The system tray tells the taskbar modes apart by comparing the frame height
+// with the heights Windows uses for them: 24 for the collapsed taskbar, 32 for
+// the small one, 72 for the tablet posture. A custom height landing on one of
+// them switches the tray to a mode the taskbar isn't in, giving it a single
+// line clock and a different tray icon spacing, so let those checks see the
+// height Windows calculated.
+double g_originalSystemTrayFrameHeight;
+
 using SystemTrayFrame_Height_t = void(WINAPI*)(void* pThis, double value);
 SystemTrayFrame_Height_t SystemTrayFrame_Height_Original;
 void WINAPI SystemTrayFrame_Height_Hook(void* pThis, double value) {
@@ -1156,11 +1164,91 @@ void WINAPI SystemTrayFrame_Height_Hook(void* pThis, double value) {
         g_taskbarHeight) {
         Wh_Log(L">");
         // Set the system tray height explicitly, otherwise it may not match the
-        // custom taskbar height.
+        // custom taskbar height. The height is also set to NaN to size to
+        // content, which isn't a height the mode checks can be fed.
+        if (value >= 1 && value < 10000) {
+            g_originalSystemTrayFrameHeight = value;
+        }
         value = g_taskbarHeight;
     }
 
     SystemTrayFrame_Height_Original(pThis, value);
+}
+
+// Only the mode checks, for the omni button style and the show desktop button
+// column width, read the height through this getter.
+using SystemTrayFrame_Height_get_t = double(WINAPI*)(void* pThis);
+SystemTrayFrame_Height_get_t SystemTrayFrame_Height_get_Original;
+double WINAPI SystemTrayFrame_Height_get_Hook(void* pThis) {
+    // Wh_Log(L">");
+
+    if (g_originalSystemTrayFrameHeight) {
+        return g_originalSystemTrayFrameHeight;
+    }
+
+    return SystemTrayFrame_Height_get_Original(pThis);
+}
+
+// The system tray keeps the extent it was measured with and uses it as the
+// taskbar mode marker for everything it lays out: the tray icon spacing, the
+// tablet posture checks, and the compact layout that the tray icons and the
+// clock follow. Hand it the extent Windows calculated, while the measure itself
+// keeps using the custom one.
+thread_local winrt::Windows::Foundation::Size*
+    g_systemTrayFrameMeasureOverrideSize;
+
+using FrameworkElementOverrides_MeasureOverride_t =
+    winrt::Windows::Foundation::Size*(
+        WINAPI*)(void* pThis,
+                 winrt::Windows::Foundation::Size* result,
+                 winrt::Windows::Foundation::Size* availableSize);
+FrameworkElementOverrides_MeasureOverride_t
+    FrameworkElementOverrides_MeasureOverride_Original;
+winrt::Windows::Foundation::Size* WINAPI
+FrameworkElementOverrides_MeasureOverride_Hook(
+    void* pThis,
+    winrt::Windows::Foundation::Size* result,
+    winrt::Windows::Foundation::Size* availableSize) {
+    // Wh_Log(L">");
+
+    // The system tray frame calls this once, right away, so consume the size to
+    // keep it from reaching the elements measured further down.
+    if (g_systemTrayFrameMeasureOverrideSize) {
+        availableSize = g_systemTrayFrameMeasureOverrideSize;
+        g_systemTrayFrameMeasureOverrideSize = nullptr;
+    }
+
+    return FrameworkElementOverrides_MeasureOverride_Original(pThis, result,
+                                                              availableSize);
+}
+
+using SystemTrayFrame_MeasureOverride_t =
+    int(WINAPI*)(void* pThis,
+                 winrt::Windows::Foundation::Size size,
+                 winrt::Windows::Foundation::Size* resultSize);
+SystemTrayFrame_MeasureOverride_t SystemTrayFrame_MeasureOverride_Original;
+int WINAPI SystemTrayFrame_MeasureOverride_Hook(
+    void* pThis,
+    winrt::Windows::Foundation::Size size,
+    winrt::Windows::Foundation::Size* resultSize) {
+    Wh_Log(L">");
+
+    if (!g_originalSystemTrayFrameHeight) {
+        return SystemTrayFrame_MeasureOverride_Original(pThis, size,
+                                                        resultSize);
+    }
+
+    // A vertical taskbar marks the mode with the width, which isn't customized.
+    winrt::Windows::Foundation::Size availableSize = size;
+    size.Height = static_cast<float>(g_originalSystemTrayFrameHeight);
+
+    g_systemTrayFrameMeasureOverrideSize = &availableSize;
+
+    int ret = SystemTrayFrame_MeasureOverride_Original(pThis, size, resultSize);
+
+    g_systemTrayFrameMeasureOverrideSize = nullptr;
+
+    return ret;
 }
 
 using TaskbarFrame_MeasureOverride_t =
@@ -2103,6 +2191,24 @@ bool HookSystemTraySymbols(HMODULE module) {
             SystemTrayFrame_Height_Hook,
             true,  // From Windows 11 version 22H2.
         },
+        {
+            {LR"(public: __cdecl winrt::impl::consume_Windows_UI_Xaml_IFrameworkElement<struct winrt::SystemTray::implementation::SystemTrayFrame>::Height(void)const )"},
+            &SystemTrayFrame_Height_get_Original,
+            SystemTrayFrame_Height_get_Hook,
+            true,  // Missing in older Windows 11 versions.
+        },
+        {
+            {LR"(public: virtual int __cdecl winrt::impl::produce<struct winrt::SystemTray::implementation::SystemTrayFrame,struct winrt::Windows::UI::Xaml::IFrameworkElementOverrides>::MeasureOverride(struct winrt::Windows::Foundation::Size,struct winrt::Windows::Foundation::Size *))"},
+            &SystemTrayFrame_MeasureOverride_Original,
+            SystemTrayFrame_MeasureOverride_Hook,
+            true,  // Missing in older Windows 11 versions.
+        },
+        {
+            {LR"(public: __cdecl winrt::impl::consume_Windows_UI_Xaml_IFrameworkElementOverrides<struct winrt::Windows::UI::Xaml::IFrameworkElementOverrides>::MeasureOverride(struct winrt::Windows::Foundation::Size const &)const )"},
+            &FrameworkElementOverrides_MeasureOverride_Original,
+            FrameworkElementOverrides_MeasureOverride_Hook,
+            true,  // Missing in older Windows 11 versions.
+        },
     };
 
     if (!HookSymbols(module, symbolHooks, ARRAYSIZE(symbolHooks))) {
@@ -2330,6 +2436,24 @@ bool HookTaskbarViewDllSymbols(HMODULE module,
             &SystemTrayFrame_Height_Original,
             SystemTrayFrame_Height_Hook,
             true,  // From Windows 11 version 22H2.
+        },
+        {
+            {LR"(public: __cdecl winrt::impl::consume_Windows_UI_Xaml_IFrameworkElement<struct winrt::SystemTray::implementation::SystemTrayFrame>::Height(void)const )"},
+            &SystemTrayFrame_Height_get_Original,
+            SystemTrayFrame_Height_get_Hook,
+            true,  // Missing in older Windows 11 versions.
+        },
+        {
+            {LR"(public: virtual int __cdecl winrt::impl::produce<struct winrt::SystemTray::implementation::SystemTrayFrame,struct winrt::Windows::UI::Xaml::IFrameworkElementOverrides>::MeasureOverride(struct winrt::Windows::Foundation::Size,struct winrt::Windows::Foundation::Size *))"},
+            &SystemTrayFrame_MeasureOverride_Original,
+            SystemTrayFrame_MeasureOverride_Hook,
+            true,  // Missing in older Windows 11 versions.
+        },
+        {
+            {LR"(public: __cdecl winrt::impl::consume_Windows_UI_Xaml_IFrameworkElementOverrides<struct winrt::Windows::UI::Xaml::IFrameworkElementOverrides>::MeasureOverride(struct winrt::Windows::Foundation::Size const &)const )"},
+            &FrameworkElementOverrides_MeasureOverride_Original,
+            FrameworkElementOverrides_MeasureOverride_Hook,
+            true,  // Missing in older Windows 11 versions.
         },
     };
 
