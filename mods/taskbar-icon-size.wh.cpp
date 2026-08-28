@@ -1699,7 +1699,8 @@ void WINAPI TaskListButton_UpdateVisualStates_Hook(void* pThis) {
             iconHeight = (double*)((BYTE*)pThis + iconHeightOffset);
             prevIconHeight = *iconHeight;
             double newIconHeight = g_smallIconSize ? 16 : 24;
-            Wh_Log(L"Setting iconHeight: %f->%f", prevIconHeight, newIconHeight);
+            Wh_Log(L"Setting iconHeight: %f->%f", prevIconHeight,
+                   newIconHeight);
             *iconHeight = newIconHeight;
             g_taskListButtonPostureIconHeight = newIconHeight;
             g_taskListButtonCustomIconHeight = prevIconHeight;
