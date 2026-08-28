@@ -51,6 +51,7 @@ Windows 11.
 #include <windhawk_utils.h>
 
 #include <atomic>
+#include <cmath>
 #include <functional>
 #include <unordered_map>
 #include <vector>
@@ -140,6 +141,13 @@ FrameworkElement FindChildByClassName(FrameworkElement element,
     });
 }
 
+// The taskbar frame doesn't always have an explicit width, in which case
+// Width() is NaN and the laid out width has to be used.
+double GetTaskbarFrameWidth(FrameworkElement taskbarFrameElement) {
+    double width = taskbarFrameElement.Width();
+    return std::isnan(width) ? taskbarFrameElement.ActualWidth() : width;
+}
+
 TaskbarState* GetTaskbarState(XamlRoot xamlRoot) {
     void* xamlRootAbi = winrt::get_abi(xamlRoot);
 
@@ -168,6 +176,12 @@ void UpdateTaskbarFrameRepeaterMargin(FrameworkElement taskbarFrameRepeater,
     double desiredMargin = 0;
 
     if (!g_unloading) {
+        // Also catches NaN.
+        if (!(widthWithoutExtent > 0)) {
+            Wh_Log(L"Skipping, widthWithoutExtent=%f", widthWithoutExtent);
+            return;
+        }
+
         desiredMargin = -widthWithoutExtent * (g_settings.rows - 1);
 
         for (const auto f : taskbarState->rowOffsetAdjustment) {
@@ -229,7 +243,7 @@ bool ApplyStyle(XamlRoot xamlRoot) {
     double systemTrayFrameWidth = systemTrayFrame.ActualWidth();
 
     double widthWithoutExtent =
-        taskbarFrameElement.Width() - systemTrayFrameWidth;
+        GetTaskbarFrameWidth(taskbarFrameElement) - systemTrayFrameWidth;
 
     UpdateTaskbarFrameRepeaterMargin(taskbarFrameRepeater, taskbarState,
                                      widthWithoutExtent, /*forceUpdate=*/true);
@@ -572,7 +586,11 @@ HRESULT WINAPI IUIElement_Arrange_Hook(void* pThis,
     double systemTrayFrameWidth = systemTrayFrame.ActualWidth();
 
     double widthWithoutExtent =
-        taskbarFrameElement.Width() - systemTrayFrameWidth;
+        GetTaskbarFrameWidth(taskbarFrameElement) - systemTrayFrameWidth;
+    if (!(widthWithoutExtent > 0)) {
+        Wh_Log(L"Skipping, widthWithoutExtent=%f", widthWithoutExtent);
+        return original();
+    }
 
     winrt::Windows::Foundation::Rect newRect = rect;
     newRect.Height /= g_settings.rows;
@@ -667,7 +685,8 @@ void WINAPI TaskbarFrame_SystemTrayExtent_Hook(void* pThis, double value) {
 
     TaskbarState* taskbarState = GetTaskbarState(xamlRoot);
 
-    double widthWithoutExtent = taskbarFrameElement.Width() - value;
+    double widthWithoutExtent =
+        GetTaskbarFrameWidth(taskbarFrameElement) - value;
 
     UpdateTaskbarFrameRepeaterMargin(taskbarFrameRepeater, taskbarState,
                                      widthWithoutExtent);
