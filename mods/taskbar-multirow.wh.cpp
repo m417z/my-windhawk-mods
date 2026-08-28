@@ -2,7 +2,7 @@
 // @id              taskbar-multirow
 // @name            Multirow taskbar for Windows 11
 // @description     Span taskbar items across multiple rows, just like it was possible before Windows 11
-// @version         1.1.2
+// @version         1.1.3
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
@@ -50,6 +50,7 @@ Windows 11.
 
 #include <windhawk_utils.h>
 
+#include <algorithm>
 #include <atomic>
 #include <cmath>
 #include <functional>
@@ -77,6 +78,20 @@ struct {
 
 std::atomic<bool> g_taskbarViewDllLoaded;
 std::atomic<bool> g_unloading;
+
+// Holds a flag for the duration of a scope, so that it's also cleared if the
+// function it wraps throws.
+class ScopedFlag {
+   public:
+    ScopedFlag(bool* flag) : m_flag(flag) { *m_flag = true; }
+    ~ScopedFlag() { *m_flag = false; }
+
+    ScopedFlag(const ScopedFlag&) = delete;
+    ScopedFlag& operator=(const ScopedFlag&) = delete;
+
+   private:
+    bool* m_flag;
+};
 
 thread_local bool g_inTaskbarCollapsibleLayoutXamlTraits_ArrangeOverride;
 
@@ -209,7 +224,11 @@ TaskbarState* GetTaskbarState(XamlRoot xamlRoot) {
 float RowOffsetSum(TaskbarState* taskbarState, int row) {
     float sum = 0;
 
-    for (int i = 0; i < row; i++) {
+    // The vector is sized from a separate read of the row count setting, which
+    // can change while the taskbar thread is using it.
+    size_t count = std::min(static_cast<size_t>(row),
+                            taskbarState->rowOffsetAdjustment.size());
+    for (size_t i = 0; i < count; i++) {
         sum += taskbarState->rowOffsetAdjustment[i];
     }
 
@@ -585,8 +604,12 @@ HRESULT WINAPI IUIElement_Arrange_Hook(void* pThis,
         return original();
     }
 
-    auto taskbarFrameRepeater =
-        Media::VisualTreeHelper::GetParent(element).as<FrameworkElement>();
+    auto parent = Media::VisualTreeHelper::GetParent(element);
+    if (!parent) {
+        return original();
+    }
+
+    auto taskbarFrameRepeater = parent.try_as<FrameworkElement>();
     if (!taskbarFrameRepeater ||
         taskbarFrameRepeater.Name() != L"TaskbarFrameRepeater") {
         return original();
@@ -613,10 +636,16 @@ HRESULT WINAPI IUIElement_Arrange_Hook(void* pThis,
     double startButtonWidth = startButton ? startButton.ActualWidth() : 0;
 
     auto xamlRoot = taskbarFrameRepeater.XamlRoot();
+    if (!xamlRoot) {
+        return original();
+    }
+
+    auto xamlRootContent = xamlRoot.Content().try_as<FrameworkElement>();
+    if (!xamlRootContent) {
+        return original();
+    }
 
     TaskbarState* taskbarState = GetTaskbarState(xamlRoot);
-
-    auto xamlRootContent = xamlRoot.Content().as<FrameworkElement>();
 
     double widthWithoutExtent;
     if (!GetWidthWithoutExtent(xamlRootContent, &widthWithoutExtent)) {
@@ -674,20 +703,17 @@ HRESULT WINAPI TaskbarCollapsibleLayoutXamlTraits_ArrangeOverride_Hook(
         void** vtable = *(void***)winrt::get_abi(element);
         auto arrange = (IUIElement_Arrange_t)vtable[92];
 
-        WindhawkUtils::Wh_SetFunctionHookT(arrange, IUIElement_Arrange_Hook,
-                                           &IUIElement_Arrange_Original);
+        WindhawkUtils::SetFunctionHook(arrange, IUIElement_Arrange_Hook,
+                                       &IUIElement_Arrange_Original);
         Wh_ApplyHookOperations();
         return true;
     }();
 
-    g_inTaskbarCollapsibleLayoutXamlTraits_ArrangeOverride = true;
+    ScopedFlag scopedFlag(
+        &g_inTaskbarCollapsibleLayoutXamlTraits_ArrangeOverride);
 
-    HRESULT ret = TaskbarCollapsibleLayoutXamlTraits_ArrangeOverride_Original(
+    return TaskbarCollapsibleLayoutXamlTraits_ArrangeOverride_Original(
         pThis, context, size, resultSize);
-
-    g_inTaskbarCollapsibleLayoutXamlTraits_ArrangeOverride = false;
-
-    return ret;
 }
 
 // The taskbar keeps laying items out in a single row and tracks a drag in that
@@ -818,11 +844,9 @@ TaskListButton_UpdateDrag_Hook(void* pThis,
     g_dropPlaceholderOffset = (row - startRow) * metrics.widthWithoutExtent -
                               (RowOffsetSum(metrics.taskbarState, row) -
                                RowOffsetSum(metrics.taskbarState, startRow));
-    g_hasDropPlaceholderOffset = true;
+    ScopedFlag scopedFlag(&g_hasDropPlaceholderOffset);
 
-    original();
-
-    g_hasDropPlaceholderOffset = false;
+    return original();
 }
 
 using TaskListDragOperation_GetDropPlaceholder_t =
@@ -853,7 +877,7 @@ void* WINAPI TaskListDragOperation_GetDropPlaceholder_Hook(
         // The caller derives the direction from the pointer position, which
         // moves backwards whenever the drop position moves forward into the
         // next row. 1 means forward, 0 means backwards.
-        if (g_dragState.hasLastDropX) {
+        if (g_dragState.hasLastDropX && dragBounds.X != g_dragState.lastDropX) {
             rearrangeDirection = dragBounds.X > g_dragState.lastDropX ? 1 : 0;
         }
 
@@ -1069,7 +1093,7 @@ HMODULE WINAPI LoadLibraryExW_Hook(LPCWSTR lpLibFileName,
 }
 
 void LoadSettings() {
-    g_settings.rows = Wh_GetIntSetting(L"rows");
+    g_settings.rows = std::max(Wh_GetIntSetting(L"rows"), 1);
     g_settings.fullHeightStartButton =
         Wh_GetIntSetting(L"fullHeightStartButton");
 }
@@ -1095,16 +1119,16 @@ BOOL Wh_ModInit() {
         auto pKernelBaseLoadLibraryExW =
             (decltype(&LoadLibraryExW))GetProcAddress(kernelBaseModule,
                                                       "LoadLibraryExW");
-        WindhawkUtils::Wh_SetFunctionHookT(pKernelBaseLoadLibraryExW,
-                                           LoadLibraryExW_Hook,
-                                           &LoadLibraryExW_Original);
+        WindhawkUtils::SetFunctionHook(pKernelBaseLoadLibraryExW,
+                                       LoadLibraryExW_Hook,
+                                       &LoadLibraryExW_Original);
     }
 
     HMODULE kernelBaseModule = GetModuleHandle(L"kernelbase.dll");
     auto pKernelBaseRegGetValueW = (decltype(&RegGetValueW))GetProcAddress(
         kernelBaseModule, "RegGetValueW");
-    WindhawkUtils::Wh_SetFunctionHookT(
-        pKernelBaseRegGetValueW, RegGetValueW_Hook, &RegGetValueW_Original);
+    WindhawkUtils::SetFunctionHook(pKernelBaseRegGetValueW, RegGetValueW_Hook,
+                                   &RegGetValueW_Original);
 
     return TRUE;
 }
