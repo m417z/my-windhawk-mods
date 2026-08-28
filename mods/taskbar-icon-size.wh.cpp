@@ -638,6 +638,14 @@ TaskbarConfiguration_GetIconHeightInViewPixels_double_Hook(double baseHeight) {
         baseHeight);
 }
 
+// TaskbarFrame::GetMetrics uses the icon height only to pick between the small,
+// medium and tablet posture button extents, comparing it against the stock
+// heights, so the override has to be suppressed there for the right extent to
+// be picked. The stock height is passed to the TaskbarFrame::GetMetrics hook to
+// tell which extent that is.
+thread_local bool g_inTaskbarFrame_GetMetrics;
+thread_local std::optional<double> g_TaskbarFrame_GetMetrics_iconHeight;
+
 using TaskbarConfiguration_GetIconHeightInViewPixels_method_t =
     double(WINAPI*)(void* pThis);
 TaskbarConfiguration_GetIconHeightInViewPixels_method_t
@@ -652,6 +660,11 @@ TaskbarConfiguration_GetIconHeightInViewPixels_method_Hook(void* pThis) {
 
     double iconSize =
         TaskbarConfiguration_GetIconHeightInViewPixels_method_Original(pThis);
+
+    if (g_inTaskbarFrame_GetMetrics) {
+        g_TaskbarFrame_GetMetrics_iconHeight = iconSize;
+        return iconSize;
+    }
 
     if (!g_unloading) {
         return iconSize <= 16 ? g_settings.iconSizeSmall : g_settings.iconSize;
@@ -1168,6 +1181,55 @@ int WINAPI TaskbarFrame_MeasureOverride_Hook(
     g_pendingMeasureOverride = false;
 
     g_hookCallCounter--;
+
+    return ret;
+}
+
+// TaskbarFrame looks the taskbar button extents up in the resource dictionary
+// once, in OnApplyTemplate, and never refreshes them, so they keep the values
+// from the time the taskbar was created. The overflow flyout looks the extents
+// up again and fail-fasts unless the extent in the metrics is one of them,
+// which crashes explorer whenever the customized width changed in between, for
+// example when the mod was enabled or its settings were changed. Return the
+// extent that matches the current lookups.
+using TaskbarFrame_GetMetrics_t = void*(WINAPI*)(void* pThis, void* metrics);
+TaskbarFrame_GetMetrics_t TaskbarFrame_GetMetrics_Original;
+void* WINAPI TaskbarFrame_GetMetrics_Hook(void* pThis, void* metrics) {
+    Wh_Log(L">");
+
+    g_inTaskbarFrame_GetMetrics = true;
+    g_TaskbarFrame_GetMetrics_iconHeight.reset();
+
+    void* ret = TaskbarFrame_GetMetrics_Original(pThis, metrics);
+
+    g_inTaskbarFrame_GetMetrics = false;
+    std::optional<double> iconHeight = g_TaskbarFrame_GetMetrics_iconHeight;
+
+    // Without dynamic icon scaling, the icon height isn't consulted and there's
+    // no way to tell which extent was picked. An icon height of 32 means the
+    // tablet posture extent, which isn't customized.
+    if (!iconHeight || *iconHeight == 32) {
+        return ret;
+    }
+
+    double newValue;
+    if (*iconHeight == 16) {
+        // Either the small extent or the small frame extent. The latter isn't
+        // customized, but the small button width is one of the values the
+        // overflow flyout accepts, so it's safe to use for it as well.
+        newValue = g_unloading ? 32 : g_settings.taskbarButtonWidthSmall;
+    } else {
+        newValue = g_unloading ? 44 : g_settings.taskbarButtonWidth;
+    }
+
+    // The button extent is the second member of TaskbarFrameMetrics.
+    double* buttonExtent = (double*)((BYTE*)metrics + sizeof(double));
+    if (*buttonExtent >= 1 && *buttonExtent < 10000 &&
+        *buttonExtent != newValue) {
+        Wh_Log(L"Updating button extent for TaskbarFrame metrics: %f->%f",
+               *buttonExtent, newValue);
+        *buttonExtent = newValue;
+    }
 
     return ret;
 }
@@ -2175,6 +2237,12 @@ bool HookTaskbarViewDllSymbols(HMODULE module,
                 {LR"(public: virtual int __cdecl winrt::impl::produce<struct winrt::Taskbar::implementation::TaskbarFrame,struct winrt::Windows::UI::Xaml::IFrameworkElementOverrides>::MeasureOverride(struct winrt::Windows::Foundation::Size,struct winrt::Windows::Foundation::Size *))"},
                 &TaskbarFrame_MeasureOverride_Original,
                 TaskbarFrame_MeasureOverride_Hook,
+            },
+            {
+                {LR"(public: struct winrt::Taskbar::implementation::TaskbarFrameMetrics __cdecl winrt::Taskbar::implementation::TaskbarFrame::GetMetrics(void)const )"},
+                &TaskbarFrame_GetMetrics_Original,
+                TaskbarFrame_GetMetrics_Hook,
+                true,  // Missing in older Windows 11 versions.
             },
             {
                 {LR"(private: void __cdecl winrt::Taskbar::implementation::TaskListButton::UpdateButtonPadding(void))"},
