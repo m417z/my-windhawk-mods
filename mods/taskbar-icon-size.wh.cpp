@@ -1198,8 +1198,12 @@ SystemTrayFrame_Height_t SystemTrayFrame_Height_Original;
 void WINAPI SystemTrayFrame_Height_Hook(void* pThis, double value) {
     // Wh_Log(L">");
 
-    if (!IsVerticalTaskbar() && g_inSystemTrayController_UpdateFrameSize &&
-        g_taskbarHeight) {
+    if (IsVerticalTaskbar()) {
+        // The height isn't customized for a vertical taskbar, so nothing has to
+        // be restored for the mode checks. Forget a height that was captured
+        // while the taskbar was horizontal, it no longer describes the frame.
+        g_originalSystemTrayFrameHeight = 0;
+    } else if (g_inSystemTrayController_UpdateFrameSize && g_taskbarHeight) {
         Wh_Log(L">");
         // Set the system tray height explicitly, otherwise it may not match the
         // custom taskbar height. The height is also set to NaN to size to
@@ -1766,13 +1770,138 @@ void WINAPI TaskListButton_UpdateVisualStates_Hook(void* pThis) {
     }
 }
 
+// The height the host keeps is what the taskbar extensions, such as the
+// search button, size their icons with, and changing it is what makes the
+// host notify them, so it stays the customized one. UpdateDefaultWidth is
+// the only place it serves another purpose, picking the default button width
+// out of the small, medium and tablet extents by comparing it against the
+// stock heights, which a customized icon size matches by coincidence, so only
+// that calculation gets the stock height of the current posture.
+using TaskbarComponentHost_IconHeight_t = void(WINAPI*)(void* pThis,
+                                                        double height);
+TaskbarComponentHost_IconHeight_t TaskbarComponentHost_IconHeight_Original;
+
+size_t GetTaskbarComponentHostIconHeightOffset() {
+    static size_t iconHeightOffset = []() -> size_t {
+        if (!TaskbarComponentHost_IconHeight_Original) {
+            Wh_Log(L"Error: TaskbarComponentHost_IconHeight_Original is null");
+            return 0;
+        }
+
+        // The setter compares the member before assigning it, so the offset
+        // is taken from that load.
+        size_t offset =
+#if defined(_M_X64)
+            OffsetFromAssemblyRegex(
+                (void*)TaskbarComponentHost_IconHeight_Original, 0,
+                std::regex(R"(movsd xmm\d+, qword ptr \[rcx\+0x([0-9a-f]+)\])",
+                           std::regex_constants::icase),
+                30);
+#elif defined(_M_ARM64)
+            OffsetFromAssemblyRegex(
+                (void*)TaskbarComponentHost_IconHeight_Original, 0,
+                std::regex(R"(ldr\s+d\d+, \[x\d+, #0x([0-9a-f]+)\])",
+                           std::regex_constants::icase),
+                30);
+#else
+#error "Unsupported architecture"
+#endif
+        Wh_Log(L"taskbarComponentHostIconHeightOffset=0x%X", offset);
+        return offset > 0xFFFF ? 0 : offset;
+    }();
+
+    return iconHeightOffset;
+}
+
+void TaskbarComponentHost_IconHeight_InitOffsets() {
+    GetTaskbarComponentHostIconHeightOffset();
+}
+
+using TaskbarComponentHost_UpdateDefaultWidth_t = void(WINAPI*)(void* pThis);
+TaskbarComponentHost_UpdateDefaultWidth_t
+    TaskbarComponentHost_UpdateDefaultWidth_Original;
+void WINAPI TaskbarComponentHost_UpdateDefaultWidth_Hook(void* pThis) {
+    Wh_Log(L"> hasDynamicIconScaling=%d", g_hasDynamicIconScaling);
+
+    double* iconHeight = nullptr;
+    double prevIconHeight;
+    if (g_hasDynamicIconScaling && !g_unloading) {
+        if (size_t iconHeightOffset =
+                GetTaskbarComponentHostIconHeightOffset()) {
+            iconHeight = (double*)((BYTE*)pThis + iconHeightOffset);
+            prevIconHeight = *iconHeight;
+            double newIconHeight = g_smallIconSize ? 16 : 24;
+            Wh_Log(L"Setting iconHeight: %f->%f", prevIconHeight,
+                   newIconHeight);
+            *iconHeight = newIconHeight;
+        }
+    }
+
+    TaskbarComponentHost_UpdateDefaultWidth_Original(pThis);
+
+    if (iconHeight) {
+        *iconHeight = prevIconHeight;
+    }
+}
+
+using ExperienceToggleButton_IconHeight_get_t = double(WINAPI*)(void* pThis);
+ExperienceToggleButton_IconHeight_get_t
+    ExperienceToggleButton_IconHeight_get_Original;
+
+using ExperienceToggleButton_IconHeight_set_t = void(WINAPI*)(void* pThis,
+                                                              double height);
+ExperienceToggleButton_IconHeight_set_t
+    ExperienceToggleButton_IconHeight_set_Original;
+
+// The icon height property setter ends with a virtual call to
+// UpdateButtonPadding, so setting it reenters the hook below. The padding is
+// calculated there with the posture height anyway, and the nested run of the
+// restoring call would only put the customized height back in its place.
+thread_local bool g_inExperienceToggleButton_IconHeight;
+
+void SetExperienceToggleButtonIconHeight(void* pThis, double height) {
+    g_inExperienceToggleButton_IconHeight = true;
+    ExperienceToggleButton_IconHeight_set_Original(pThis, height);
+    g_inExperienceToggleButton_IconHeight = false;
+}
+
 using ExperienceToggleButton_UpdateButtonPadding_t = void(WINAPI*)(void* pThis);
 ExperienceToggleButton_UpdateButtonPadding_t
     ExperienceToggleButton_UpdateButtonPadding_Original;
 void WINAPI ExperienceToggleButton_UpdateButtonPadding_Hook(void* pThis) {
     Wh_Log(L">");
 
+    if (g_inExperienceToggleButton_IconHeight) {
+        return;
+    }
+
+    // The button extent and the padding are picked by comparing the icon height
+    // against the stock 16 and 32, which a customized icon size matches by
+    // coincidence, so the button gets laid out for a posture the rest of the
+    // taskbar isn't in, with the vertical taskbar having an extent of its own
+    // for the small posture. Hand it the stock height of the current posture,
+    // which the property setter also applies to the icon element, so restore it
+    // right after and let the layout pass see the customized size.
+    std::optional<double> prevIconHeight;
+    if (g_hasDynamicIconScaling && !g_unloading &&
+        ExperienceToggleButton_IconHeight_get_Original &&
+        ExperienceToggleButton_IconHeight_set_Original) {
+        double postureIconHeight = g_smallIconSize ? 16 : 24;
+        double iconHeight =
+            ExperienceToggleButton_IconHeight_get_Original(pThis);
+        if (iconHeight != postureIconHeight) {
+            Wh_Log(L"Setting iconHeight: %f->%f", iconHeight,
+                   postureIconHeight);
+            prevIconHeight = iconHeight;
+            SetExperienceToggleButtonIconHeight(pThis, postureIconHeight);
+        }
+    }
+
     ExperienceToggleButton_UpdateButtonPadding_Original(pThis);
+
+    if (prevIconHeight) {
+        SetExperienceToggleButtonIconHeight(pThis, *prevIconHeight);
+    }
 
     if (g_hasDynamicIconScaling && g_unloading) {
         return;
@@ -1834,37 +1963,23 @@ void WINAPI ExperienceToggleButton_UpdateButtonPadding_Hook(void* pThis) {
     }
 }
 
-using SearchButtonBase_UpdateButtonPadding_t = void(WINAPI*)(void* pThis);
-SearchButtonBase_UpdateButtonPadding_t
-    SearchButtonBase_UpdateButtonPadding_Original;
-void WINAPI SearchButtonBase_UpdateButtonPadding_Hook(void* pThis) {
-    Wh_Log(L">");
-
-    SearchButtonBase_UpdateButtonPadding_Original(pThis);
-
-    if (g_hasDynamicIconScaling && g_unloading) {
-        return;
-    }
-
-    FrameworkElement toggleButtonElement = nullptr;
-    ((IUnknown**)pThis)[1]->QueryInterface(winrt::guid_of<FrameworkElement>(),
-                                           winrt::put_abi(toggleButtonElement));
-    if (!toggleButtonElement) {
-        return;
-    }
-
+Controls::Grid GetSearchButtonRootPanel(FrameworkElement buttonElement) {
     auto panelElement =
-        FindChildByName(toggleButtonElement, L"SearchBoxButtonRootPanel")
+        FindChildByName(buttonElement, L"SearchBoxButtonRootPanel")
             .try_as<Controls::Grid>();
     if (!panelElement) {
-        return;
+        return nullptr;
     }
 
     // Only if search icon and not a search box.
     if (FindChildByName(panelElement, L"SearchBoxTextBlock")) {
-        return;
+        return nullptr;
     }
 
+    return panelElement;
+}
+
+void SetSearchButtonRootPanelWidth(Controls::Grid panelElement) {
     double buttonWidth = panelElement.Width();
     if (!(buttonWidth > 0)) {
         return;
@@ -1885,6 +2000,80 @@ void WINAPI SearchButtonBase_UpdateButtonPadding_Hook(void* pThis) {
                newWidth);
         panelElement.Width(newWidth);
     }
+}
+
+// The search button applies the taskbar button extent to its root panel when
+// its template is applied and when the icon height changes, neither of which a
+// settings change has to go through, so the width is applied again on the way
+// into the measure pass, which a settings change always ends up in.
+using SearchButtonBase_MeasureOverride_t =
+    int(WINAPI*)(void* pThis,
+                 winrt::Windows::Foundation::Size size,
+                 winrt::Windows::Foundation::Size* resultSize);
+SearchButtonBase_MeasureOverride_t SearchButtonBase_MeasureOverride_Original;
+int WINAPI SearchButtonBase_MeasureOverride_Hook(
+    void* pThis,
+    winrt::Windows::Foundation::Size size,
+    winrt::Windows::Foundation::Size* resultSize) {
+    Wh_Log(L">");
+
+    FrameworkElement buttonElement = nullptr;
+    ((IUnknown*)pThis)
+        ->QueryInterface(winrt::guid_of<FrameworkElement>(),
+                         winrt::put_abi(buttonElement));
+    if (buttonElement) {
+        if (auto panelElement = GetSearchButtonRootPanel(buttonElement)) {
+            SetSearchButtonRootPanelWidth(panelElement);
+        }
+    }
+
+    return SearchButtonBase_MeasureOverride_Original(pThis, size, resultSize);
+}
+
+using SearchButtonBase_UpdateButtonPadding_t = void(WINAPI*)(void* pThis);
+SearchButtonBase_UpdateButtonPadding_t
+    SearchButtonBase_UpdateButtonPadding_Original;
+void WINAPI SearchButtonBase_UpdateButtonPadding_Hook(void* pThis) {
+    Wh_Log(L">");
+
+    SearchButtonBase_UpdateButtonPadding_Original(pThis);
+
+    if (g_hasDynamicIconScaling && g_unloading) {
+        return;
+    }
+
+    FrameworkElement toggleButtonElement = nullptr;
+    ((IUnknown**)pThis)[1]->QueryInterface(winrt::guid_of<FrameworkElement>(),
+                                           winrt::put_abi(toggleButtonElement));
+    if (!toggleButtonElement) {
+        return;
+    }
+
+    auto panelElement = GetSearchButtonRootPanel(toggleButtonElement);
+    if (!panelElement) {
+        return;
+    }
+
+    SetSearchButtonRootPanelWidth(panelElement);
+}
+
+// The search button sizes its icon with the icon height it's bound to, which
+// the taskbar hands over as the stock height of the current posture.
+using SearchButtonBase_IconHeight_t = void(WINAPI*)(void* pThis, double height);
+SearchButtonBase_IconHeight_t SearchButtonBase_IconHeight_Original;
+void WINAPI SearchButtonBase_IconHeight_Hook(void* pThis, double height) {
+    Wh_Log(L"> height=%f", height);
+
+    if (!g_unloading) {
+        double iconSize =
+            g_smallIconSize ? g_settings.iconSizeSmall : g_settings.iconSize;
+        if (height != iconSize) {
+            Wh_Log(L"Setting height: %f->%f", height, iconSize);
+            height = iconSize;
+        }
+    }
+
+    SearchButtonBase_IconHeight_Original(pThis, height);
 }
 
 using AugmentedEntryPointButton_UpdateButtonPadding_t =
@@ -2525,6 +2714,30 @@ bool HookTaskbarViewDllSymbols(HMODULE module,
                 TaskListButton_UpdateVisualStates_Hook,
             },
             {
+                {LR"(public: void __cdecl winrt::Microsoft::Windows::Taskbar::implementation::TaskbarComponentHost::IconHeight(double))"},
+                &TaskbarComponentHost_IconHeight_Original,
+                nullptr,
+                true,  // Missing in older Windows 11 versions.
+            },
+            {
+                {LR"(private: void __cdecl winrt::Microsoft::Windows::Taskbar::implementation::TaskbarComponentHost::UpdateDefaultWidth(void))"},
+                &TaskbarComponentHost_UpdateDefaultWidth_Original,
+                TaskbarComponentHost_UpdateDefaultWidth_Hook,
+                true,  // Missing in older Windows 11 versions.
+            },
+            {
+                {LR"(public: double __cdecl winrt::Taskbar::implementation::ExperienceToggleButton::IconHeight(void)const )"},
+                &ExperienceToggleButton_IconHeight_get_Original,
+                nullptr,
+                true,  // Missing in older Windows 11 versions.
+            },
+            {
+                {LR"(public: void __cdecl winrt::Taskbar::implementation::ExperienceToggleButton::IconHeight(double))"},
+                &ExperienceToggleButton_IconHeight_set_Original,
+                nullptr,
+                true,  // Missing in older Windows 11 versions.
+            },
+            {
                 {LR"(protected: virtual void __cdecl winrt::Taskbar::implementation::ExperienceToggleButton::UpdateButtonPadding(void))"},
                 &ExperienceToggleButton_UpdateButtonPadding_Original,
                 ExperienceToggleButton_UpdateButtonPadding_Hook,
@@ -2623,6 +2836,9 @@ bool HookTaskbarViewDllSymbols(HMODULE module,
     if (TaskListButton_IconHeight_Original) {
         TaskListButton_IconHeight_InitOffsets();
     }
+    if (TaskbarComponentHost_IconHeight_Original) {
+        TaskbarComponentHost_IconHeight_InitOffsets();
+    }
 
 #ifdef _M_ARM64
     if (TaskbarConfiguration_UpdateFrameSize_SymbolAddress) {
@@ -2670,9 +2886,21 @@ bool HookSearchUxUiDllSymbols(HMODULE module) {
             ResourceDictionary_Lookup_SearchUxUi_Hook,
         },
         {
+            {LR"(public: void __cdecl winrt::SearchUx::SearchUI::implementation::SearchButtonBase::IconHeight(double))"},
+            &SearchButtonBase_IconHeight_Original,
+            SearchButtonBase_IconHeight_Hook,
+            true,  // Missing in older Windows 11 versions.
+        },
+        {
             {LR"(protected: virtual void __cdecl winrt::SearchUx::SearchUI::implementation::SearchButtonBase::UpdateButtonPadding(void))"},
             &SearchButtonBase_UpdateButtonPadding_Original,
             SearchButtonBase_UpdateButtonPadding_Hook,
+        },
+        {
+            {LR"(public: virtual int __cdecl winrt::impl::produce<struct winrt::SearchUx::SearchUI::implementation::SearchButtonBase,struct winrt::Windows::UI::Xaml::IFrameworkElementOverrides>::MeasureOverride(struct winrt::Windows::Foundation::Size,struct winrt::Windows::Foundation::Size *))"},
+            &SearchButtonBase_MeasureOverride_Original,
+            SearchButtonBase_MeasureOverride_Hook,
+            true,  // Missing in older Windows 11 versions.
         },
     };
 
