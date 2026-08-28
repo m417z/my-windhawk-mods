@@ -9021,6 +9021,7 @@ const Theme g_themePills = {{
     ThemeTargetStyles{L"Border#MultiWindowElement", {
         L"Visibility = 1"}},
     ThemeTargetStyles{L"Grid#IconPanel > TextBlock#LabelControl, Taskbar.TaskListLabeledButtonPanel > TextBlock#LabelControl", {
+        L"ActualWidth => LabelWidth",
         L"Margin := {{$iconLabelSpacing-12}},{{$taskbarTopOffset}},6,{{$taskbarBottomOffset}}",
         L"Padding := {{$leftRightPadding}},0",
         L"HorizontalAlignment = 1",
@@ -9056,7 +9057,8 @@ const Theme g_themePills = {{
         L"RadiusX = 2",
         L"RadiusY = 2",
         L"StrokeThickness = 0",
-        L"Margin = 0,0,{{ImageIconWidth+8}},0",
+        L"HorizontalAlignment = 0",
+        L"Margin = 4,0,0,0",
         L"Canvas.ZIndex = 4"}},
     ThemeTargetStyles{L"Taskbar.TaskbarExtensionElement", {
         L"Visibility = 1"}},
@@ -9067,6 +9069,7 @@ const Theme g_themePills = {{
         L"Width := $badgeSize",
         L"Height := $badgeSize",
         L"Margin := $badgeNudge",
+        L"RenderTransform := <TranslateTransform X=\"{{LabelWidth>0?6:0}}\" Y=\"0\" />",
         L"Canvas.ZIndex = 3"}},
     ThemeTargetStyles{L"Grid#IconPanel > Taskbar.Badge#BadgeControl > Grid > TextBlock#BadgeText, Taskbar.TaskListLabeledButtonPanel#IconPanel > Taskbar.Badge#BadgeControl > Grid > TextBlock#BadgeText", {
         L"FontSize = 8",
@@ -9233,7 +9236,7 @@ const Theme g_themePills = {{
     L"iconLabelSpacing = 10",
     L"leftRightPadding = 8",
     L"badgeSize = 12",
-    L"badgeNudge = 12,4,0,0",
+    L"badgeNudge = 0,4,2,0",
     L"sysTrayIconSize = 16",
     L"taskbarSidesRounded = 1",
     L"buttonFill = <WindhawkBlur BlurAmount=\"7\" TintColor=\"{ThemeResource AdaptiveFill}\" TintOpacity=\"0.2\" TintLuminosityOpacity=\"0.2\"/>",
