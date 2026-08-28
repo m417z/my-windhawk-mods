@@ -2,7 +2,7 @@
 // @id              taskbar-icon-size
 // @name            Taskbar height and icon size
 // @description     Control the taskbar height and icon size, improve icon quality (Windows 11 only)
-// @version         1.3.7
+// @version         1.3.8
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
@@ -119,7 +119,7 @@ std::atomic<bool> g_unloading;
 std::atomic<int> g_hookCallCounter;
 
 bool g_hasDynamicIconScaling;
-bool g_smallIconSize;
+std::atomic<bool> g_smallIconSize;
 int g_originalTaskbarHeight;
 int g_taskbarHeight;
 std::atomic<DWORD> g_shellIconLoaderV2_LoadAsyncIcon__ResumeCoro_ThreadId;
@@ -748,6 +748,12 @@ int WINAPI TaskbarSettings_Size_TaskbarView_Hook(void* pThis) {
         __FUNCTION__, TaskbarSettings_Size_TaskbarView_Original(pThis));
 }
 
+// The frame height Windows calculated for the current taskbar size. The system
+// tray Height setter can't recover it on its own: on builds where the hooks
+// below are active, the value that reaches the setter is already the custom
+// height.
+double g_stockSystemTrayFrameHeight;
+
 using SystemTrayController_GetFrameSize_t =
     double(WINAPI*)(void* pThis, int enumTaskbarSize);
 SystemTrayController_GetFrameSize_t SystemTrayController_GetFrameSize_Original;
@@ -755,12 +761,16 @@ double WINAPI SystemTrayController_GetFrameSize_Hook(void* pThis,
                                                      int enumTaskbarSize) {
     Wh_Log(L"> %d", enumTaskbarSize);
 
+    double frameSize =
+        SystemTrayController_GetFrameSize_Original(pThis, enumTaskbarSize);
+
     if (!IsVerticalTaskbar() && g_taskbarHeight &&
         (enumTaskbarSize == 1 || enumTaskbarSize == 2)) {
+        g_stockSystemTrayFrameHeight = frameSize;
         return g_taskbarHeight;
     }
 
-    return SystemTrayController_GetFrameSize_Original(pThis, enumTaskbarSize);
+    return frameSize;
 }
 
 using SystemTraySecondaryController_GetFrameSize_t =
@@ -772,13 +782,16 @@ SystemTraySecondaryController_GetFrameSize_Hook(void* pThis,
                                                 int enumTaskbarSize) {
     Wh_Log(L"> %d", enumTaskbarSize);
 
+    double frameSize = SystemTraySecondaryController_GetFrameSize_Original(
+        pThis, enumTaskbarSize);
+
     if (!IsVerticalTaskbar() && g_taskbarHeight &&
         (enumTaskbarSize == 1 || enumTaskbarSize == 2)) {
+        g_stockSystemTrayFrameHeight = frameSize;
         return g_taskbarHeight;
     }
 
-    return SystemTraySecondaryController_GetFrameSize_Original(pThis,
-                                                               enumTaskbarSize);
+    return frameSize;
 }
 
 using TaskbarConfiguration_GetFrameSize_t =
@@ -1208,8 +1221,10 @@ void WINAPI SystemTrayFrame_Height_Hook(void* pThis, double value) {
         // Set the system tray height explicitly, otherwise it may not match the
         // custom taskbar height. The height is also set to NaN to size to
         // content, which isn't a height the mode checks can be fed.
-        if (value >= 1 && value < 10000) {
-            g_originalSystemTrayFrameHeight = value;
+        double stockHeight =
+            g_stockSystemTrayFrameHeight ? g_stockSystemTrayFrameHeight : value;
+        if (stockHeight >= 1 && stockHeight < 10000) {
+            g_originalSystemTrayFrameHeight = stockHeight;
         }
         value = g_taskbarHeight;
     }
@@ -1275,7 +1290,10 @@ int WINAPI SystemTrayFrame_MeasureOverride_Hook(
     winrt::Windows::Foundation::Size* resultSize) {
     Wh_Log(L">");
 
-    if (!g_originalSystemTrayFrameHeight) {
+    // Without the hook that hands the real available size back to the measure,
+    // the substitution below would shrink it to the stock height.
+    if (!g_originalSystemTrayFrameHeight ||
+        !FrameworkElementOverrides_MeasureOverride_Original) {
         return SystemTrayFrame_MeasureOverride_Original(pThis, size,
                                                         resultSize);
     }
