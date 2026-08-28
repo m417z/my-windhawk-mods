@@ -715,6 +715,39 @@ void TaskListButton_IconHeight_InitOffsets() {
     GetIconHeightOffset();
 }
 
+// The taskbar size which is configured in the settings, an
+// enum winrt::WindowsUdk::UI::Shell::TaskbarSize value: 0 is the small size, 1
+// the regular size, 2 the large size. The mod isn't compatible with the small
+// size, so the taskbar is made to see the regular size instead.
+int OverrideTaskbarSettingsSize(PCSTR sourceFunctionName, int enumTaskbarSize) {
+    if (g_unloading || enumTaskbarSize != 0) {
+        return enumTaskbarSize;
+    }
+
+    Wh_Log(L"[%S] Overriding the small taskbar size", sourceFunctionName);
+    return 1;
+}
+
+using TaskbarSettings_Size_t = int(WINAPI*)(void* pThis);
+
+TaskbarSettings_Size_t TaskbarSettings_Size_TaskbarDll_Original;
+int WINAPI TaskbarSettings_Size_TaskbarDll_Hook(void* pThis) {
+    return OverrideTaskbarSettingsSize(
+        __FUNCTION__, TaskbarSettings_Size_TaskbarDll_Original(pThis));
+}
+
+TaskbarSettings_Size_t TaskbarSettings_Size_SystemTray_Original;
+int WINAPI TaskbarSettings_Size_SystemTray_Hook(void* pThis) {
+    return OverrideTaskbarSettingsSize(
+        __FUNCTION__, TaskbarSettings_Size_SystemTray_Original(pThis));
+}
+
+TaskbarSettings_Size_t TaskbarSettings_Size_TaskbarView_Original;
+int WINAPI TaskbarSettings_Size_TaskbarView_Hook(void* pThis) {
+    return OverrideTaskbarSettingsSize(
+        __FUNCTION__, TaskbarSettings_Size_TaskbarView_Original(pThis));
+}
+
 using SystemTrayController_GetFrameSize_t =
     double(WINAPI*)(void* pThis, int enumTaskbarSize);
 SystemTrayController_GetFrameSize_t SystemTrayController_GetFrameSize_Original;
@@ -2253,6 +2286,12 @@ bool HookSystemTraySymbols(HMODULE module) {
     // SystemTray.dll
     WindhawkUtils::SYMBOL_HOOK symbolHooks[] = {
         {
+            {LR"(public: __cdecl winrt::impl::consume_WindowsUdk_UI_Shell_ITaskbarSettings<struct winrt::WindowsUdk::UI::Shell::ITaskbarSettings>::Size(void)const )"},
+            &TaskbarSettings_Size_SystemTray_Original,
+            TaskbarSettings_Size_SystemTray_Hook,
+            true,  // Missing in older Windows 11 versions.
+        },
+        {
             {LR"(private: double __cdecl winrt::SystemTray::implementation::SystemTrayController::GetFrameSize(enum winrt::WindowsUdk::UI::Shell::TaskbarSize))"},
             &SystemTrayController_GetFrameSize_Original,
             SystemTrayController_GetFrameSize_Hook,
@@ -2378,6 +2417,12 @@ bool HookTaskbarViewDllSymbols(HMODULE module,
                 &TaskListButton_IconHeight_Original,
                 nullptr,
                 true,  // From KB5058499 (May 2025).
+            },
+            {
+                {LR"(public: __cdecl winrt::impl::consume_WindowsUdk_UI_Shell_ITaskbarSettings<struct winrt::WindowsUdk::UI::Shell::ITaskbarSettings>::Size(void)const )"},
+                &TaskbarSettings_Size_TaskbarView_Original,
+                TaskbarSettings_Size_TaskbarView_Hook,
+                true,  // Missing in older Windows 11 versions.
             },
             {
                 {LR"(public: static double __cdecl winrt::Taskbar::implementation::TaskbarConfiguration::GetFrameSize(enum winrt::WindowsUdk::UI::Shell::TaskbarSize))"},
@@ -2665,6 +2710,12 @@ bool HookTaskbarDllSymbols() {
             &TrayUI_GetMinSize_Original,
             TrayUI_GetMinSize_Hook,
             true,
+        },
+        {
+            {LR"(public: __cdecl winrt::impl::consume_WindowsUdk_UI_Shell_ITaskbarSettings<struct winrt::WindowsUdk::UI::Shell::ITaskbarSettings>::Size(void)const )"},
+            &TaskbarSettings_Size_TaskbarDll_Original,
+            TaskbarSettings_Size_TaskbarDll_Hook,
+            true,  // Missing in older Windows 11 versions.
         },
         {
             // Pre-DynamicIconScaling.
