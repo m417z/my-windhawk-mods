@@ -2,7 +2,7 @@
 // @id              taskbar-primary-on-secondary-monitor
 // @name            Primary taskbar on secondary monitor
 // @description     Move the primary taskbar, including the tray icons, notifications, action center, etc. to another monitor
-// @version         1.2
+// @version         1.2.1
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
