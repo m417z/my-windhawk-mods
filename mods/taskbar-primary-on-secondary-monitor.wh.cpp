@@ -9,6 +9,7 @@
 // @homepage        https://m417z.com/
 // @include         explorer.exe
 // @include         ShellHost.exe
+// @include         StartMenuExperienceHost.exe
 // @architecture    x86-64
 // @compilerOptions -loleaut32 -lruntimeobject -lversion -lwtsapi32
 // ==/WindhawkMod==
@@ -140,6 +141,8 @@ struct {
 enum class Target {
     Explorer,
     ShellHost,  // Win11 24H2.
+    // Only for the start menu alignment, see MonitorFromWindow_Hook.
+    StartMenuExperienceHost,
 };
 
 Target g_target;
@@ -169,14 +172,20 @@ DWORD g_lastPressTime;
 HMONITOR g_lastPressMonitor;
 std::atomic<bool> g_lastIsSessionLocked;
 
+// Each target only hooks the functions it needs, while some of the code calling
+// the originals runs in all of them, so they start out as the unhooked
+// functions and are replaced by the trampolines of the hooks that are set.
 using MonitorFromPoint_t = decltype(&MonitorFromPoint);
-MonitorFromPoint_t MonitorFromPoint_Original;
+MonitorFromPoint_t MonitorFromPoint_Original = MonitorFromPoint;
 
 using MonitorFromRect_t = decltype(&MonitorFromRect);
-MonitorFromRect_t MonitorFromRect_Original;
+MonitorFromRect_t MonitorFromRect_Original = MonitorFromRect;
+
+using MonitorFromWindow_t = decltype(&MonitorFromWindow);
+MonitorFromWindow_t MonitorFromWindow_Original = MonitorFromWindow;
 
 using EnumDisplayDevicesW_t = decltype(&EnumDisplayDevicesW);
-EnumDisplayDevicesW_t EnumDisplayDevicesW_Original;
+EnumDisplayDevicesW_t EnumDisplayDevicesW_Original = EnumDisplayDevicesW;
 
 HWND FindCurrentProcessTaskbarWnd() {
     HWND hTaskbarWnd = nullptr;
@@ -399,6 +408,54 @@ HMONITOR WINAPI MonitorFromRect_Hook(LPCRECT lprc, DWORD dwFlags) {
 
     HMONITOR monitor = GetTargetMonitor({
         .retAddress = __builtin_return_address(0),
+    });
+    if (!monitor) {
+        return original();
+    }
+
+    return monitor;
+}
+
+// Returns whether the address belongs to the start menu UI, which asks for the
+// monitor to read the taskbar alignment for. StartMenu.dll is the redesigned
+// start menu, StartDocked.dll the older one.
+bool IsStartMenuUIAddress(void* address) {
+    HMODULE module;
+    if (!address ||
+        !GetModuleHandleEx(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
+                               GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                           (PCWSTR)address, &module)) {
+        return false;
+    }
+
+    return module == GetModuleHandle(L"StartMenu.dll") ||
+           module == GetModuleHandle(L"StartDocked.dll");
+}
+
+// The start menu reads the taskbar alignment from
+// WindowsUdk.UI.Shell.TaskbarLayout for the monitor its core window is on,
+// resolved with MONITOR_DEFAULTTOPRIMARY, and keeps its centered default if the
+// layout has no alignment for that monitor. On startup it reads it while the
+// window is still on the real primary monitor, which has no taskbar once the
+// primary taskbar is moved away, and it isn't read again when the window moves
+// to the taskbar's monitor. Point it at the taskbar's monitor instead, which is
+// the one whose alignment the start menu follows.
+HMONITOR WINAPI MonitorFromWindow_Hook(HWND hWnd, DWORD dwFlags) {
+    auto original = [=] { return MonitorFromWindow_Original(hWnd, dwFlags); };
+
+    if (dwFlags != MONITOR_DEFAULTTOPRIMARY) {
+        return original();
+    }
+
+    void* retAddress = __builtin_return_address(0);
+    if (!IsStartMenuUIAddress(retAddress)) {
+        return original();
+    }
+
+    Wh_Log(L">");
+
+    HMONITOR monitor = GetTargetMonitor({
+        .retAddress = retAddress,
     });
     if (!monitor) {
         return original();
@@ -904,6 +961,9 @@ BOOL Wh_ModInit() {
                 moduleFileName++;
                 if (_wcsicmp(moduleFileName, L"ShellHost.exe") == 0) {
                     g_target = Target::ShellHost;
+                } else if (_wcsicmp(moduleFileName,
+                                    L"StartMenuExperienceHost.exe") == 0) {
+                    g_target = Target::StartMenuExperienceHost;
                 }
             } else {
                 Wh_Log(L"GetModuleFileName returned an unsupported path");
@@ -958,15 +1018,21 @@ BOOL Wh_ModInit() {
         HookHardwareConfirmatorSymbols();
     }
 
-    WindhawkUtils::SetFunctionHook(MonitorFromPoint, MonitorFromPoint_Hook,
-                                   &MonitorFromPoint_Original);
+    if (g_target == Target::StartMenuExperienceHost) {
+        WindhawkUtils::SetFunctionHook(MonitorFromWindow,
+                                       MonitorFromWindow_Hook,
+                                       &MonitorFromWindow_Original);
+    } else {
+        WindhawkUtils::SetFunctionHook(MonitorFromPoint, MonitorFromPoint_Hook,
+                                       &MonitorFromPoint_Original);
 
-    WindhawkUtils::SetFunctionHook(MonitorFromRect, MonitorFromRect_Hook,
-                                   &MonitorFromRect_Original);
+        WindhawkUtils::SetFunctionHook(MonitorFromRect, MonitorFromRect_Hook,
+                                       &MonitorFromRect_Original);
 
-    WindhawkUtils::SetFunctionHook(EnumDisplayDevicesW,
-                                   EnumDisplayDevicesW_Hook,
-                                   &EnumDisplayDevicesW_Original);
+        WindhawkUtils::SetFunctionHook(EnumDisplayDevicesW,
+                                       EnumDisplayDevicesW_Hook,
+                                       &EnumDisplayDevicesW_Original);
+    }
 
     g_initialized = true;
 
