@@ -18034,20 +18034,39 @@ void ClearClickThroughRegions() {
 
 // Explorer never erases the taskbar window: Shell_TrayWnd,
 // Shell_SecondaryTrayWnd and their legacy children all use a NULL class brush,
-// so whatever is drawn into the window's redirection surface stays there for
-// the window's lifetime. An opaque taskbar background hides it, a see-through
-// style doesn't, and it shows as solid boxes behind the taskbar.
-// RDW_ALLCHILDREN is what makes the invalidation reach the area under the XAML
-// island, which is where the leftovers sit; with a NULL brush nothing is drawn
-// back, so the surface lands at fully transparent again.
+// and nothing paints into them, so whatever DWM leaves in the window's
+// redirection surface stays there for the window's lifetime. The surface is
+// normally all zeros, which composites as fully transparent, but a
+// reallocation - a mode or display change, a fullscreen transition - can leave
+// opaque white in it. An opaque taskbar background hides that, a see-through
+// style doesn't, and it shows as white boxes behind the taskbar.
+//
+// Filling the window black puts the surface back to zeros: GDI leaves the
+// alpha channel at zero, so the fill composites as transparent rather than as
+// an opaque black bar. Invalidating instead does nothing, since the NULL brush
+// means the erase draws nothing over the leftovers. The DC must come from
+// GetDCEx without DCX_CLIPCHILDREN, or the fill is clipped away entirely - the
+// XAML island covers the whole window, and the leftovers sit underneath it.
 void ResetTaskbarWindowSurfaces() {
     EnumThreadWindows(
         GetCurrentThreadId(),
         [](HWND hWnd, LPARAM) -> BOOL {
-            if (IsTaskbarTopLevelWindow(hWnd)) {
-                RedrawWindow(hWnd, nullptr, nullptr,
-                             RDW_INVALIDATE | RDW_ALLCHILDREN);
+            RECT rect;
+            if (!IsTaskbarTopLevelWindow(hWnd) || !GetWindowRect(hWnd, &rect)) {
+                return TRUE;
             }
+
+            HDC hdc = GetDCEx(hWnd, nullptr, DCX_WINDOW | DCX_CACHE);
+            if (!hdc) {
+                Wh_Log(L"GetDCEx failed for %08X", (DWORD)(ULONG_PTR)hWnd);
+                return TRUE;
+            }
+
+            RECT fillRect = {0, 0, rect.right - rect.left,
+                             rect.bottom - rect.top};
+            FillRect(hdc, &fillRect, (HBRUSH)GetStockObject(BLACK_BRUSH));
+
+            ReleaseDC(hWnd, hdc);
             return TRUE;
         },
         0);
