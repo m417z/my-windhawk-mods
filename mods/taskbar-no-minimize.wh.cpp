@@ -2,7 +2,7 @@
 // @id              taskbar-no-minimize
 // @name            Taskbar: no minimize on click
 // @description     Disable the minimize window function when clicking an already active window on the taskbar
-// @version         1.0
+// @version         1.1
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
