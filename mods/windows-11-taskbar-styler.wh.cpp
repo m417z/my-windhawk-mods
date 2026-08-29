@@ -12295,7 +12295,9 @@ struct ClickThroughTaskbarState {
     // can't tell that the region was reset out from under us: toggling
     // auto-hide makes Explorer clear the taskbar window region (and later set a
     // full-window one) with no XAML layout change. Comparing the window's
-    // current region box against this detects that and forces a reapply.
+    // current region box against this detects that and forces a reapply, and
+    // tells our own region apart from one Explorer is using to clip the window
+    // for its own purposes.
     RECT lastAppliedRgnBox = {};
 };
 
@@ -17735,26 +17737,6 @@ void UpdateClickThroughRegion(ClickThroughTaskbarState& state) {
     appendRect(signature, taskbarFrameRect);
     appendRect(signature, systemTrayFrameRect);
 
-    // Skip the redundant SetWindowRgn (and the redraw it forces) only when the
-    // desired region is unchanged AND the window still carries the region we
-    // applied. Toggling auto-hide makes Explorer reset the taskbar window
-    // region without any XAML layout change, so a matching signature alone
-    // doesn't prove our region is still in effect.
-    if (signature == state.lastRegionSignature) {
-        RECT currentRgnBox;
-        if (GetWindowRgnBox(topLevelWnd, &currentRgnBox) != ERROR &&
-            EqualRect(&currentRgnBox, &state.lastAppliedRgnBox)) {
-            return;
-        }
-    }
-
-    // Convert DIP rects to physical pixels in top-level window coordinates. The
-    // island client origin and the window rect are both physical/screen pixels,
-    // so multiplying DIPs by the rasterization scale keeps everything
-    // DPI-consistent.
-    POINT islandOrigin = {0, 0};
-    ClientToScreen(state.islandHwnd, &islandOrigin);
-
     RECT tlRect;
     if (!GetWindowRect(topLevelWnd, &tlRect)) {
         Wh_Log(L"GetWindowRect failed for %08X", (DWORD)(ULONG_PTR)topLevelWnd);
@@ -17763,6 +17745,45 @@ void UpdateClickThroughRegion(ClickThroughTaskbarState& state) {
 
     int tlWidth = tlRect.right - tlRect.left;
     int tlHeight = tlRect.bottom - tlRect.top;
+
+    RECT currentRgnBox;
+    bool hasRgn = GetWindowRgnBox(topLevelWnd, &currentRgnBox) != ERROR;
+    bool rgnIsOurs =
+        hasRgn && EqualRect(&currentRgnBox, &state.lastAppliedRgnBox);
+
+    // Explorer clips the taskbar window through the very same window region:
+    // TaskbarController::UpdateHostWindowClip narrows it to the collapsed
+    // extent while the tablet taskbar is folded, and that narrowed window is
+    // what keeps the fold from being expanded by a pointer anywhere along the
+    // taskbar. Our region can't stand in for it, since the frames stay laid out
+    // at the expanded size (the fold is a composition transform), so replacing
+    // it would widen the hover area rather than narrow it. Only take the window
+    // over when nothing else is clipping it: no region, or the full-window one
+    // Explorer sets when it isn't narrowing anything.
+    if (hasRgn && !rgnIsOurs) {
+        RECT fullRgnBox = {0, 0, tlWidth, tlHeight};
+        if (!EqualRect(&currentRgnBox, &fullRgnBox)) {
+            Wh_Log(L"Leaving the region of %08X to its owner",
+                   (DWORD)(ULONG_PTR)topLevelWnd);
+            return;
+        }
+    }
+
+    // Skip the redundant SetWindowRgn (and the redraw it forces) only when the
+    // desired region is unchanged AND the window still carries the region we
+    // applied. Toggling auto-hide makes Explorer reset the taskbar window
+    // region without any XAML layout change, so a matching signature alone
+    // doesn't prove our region is still in effect.
+    if (signature == state.lastRegionSignature && rgnIsOurs) {
+        return;
+    }
+
+    // Convert DIP rects to physical pixels in top-level window coordinates. The
+    // island client origin and the window rect are both physical/screen pixels,
+    // so multiplying DIPs by the rasterization scale keeps everything
+    // DPI-consistent.
+    POINT islandOrigin = {0, 0};
+    ClientToScreen(state.islandHwnd, &islandOrigin);
 
     auto toWindowRect =
         [&](winrt::Windows::Foundation::Rect const& dip) -> RECT {
