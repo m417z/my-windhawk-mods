@@ -10933,6 +10933,20 @@ namespace winrt {
 namespace wf = winrt::Windows::Foundation;
 namespace wux = winrt::Windows::UI::Xaml;
 
+// A weak reference for the object, or an empty one when the object doesn't
+// support weak references: cppwinrt's make_weak dereferences a null pointer for
+// such an object instead of reporting it. Throws, as make_weak does, when the
+// object supports weak references but one can't be made.
+winrt::weak_ref<wf::IInspectable> TryMakeWeak(wf::IInspectable const& object)
+{
+    if (!object.try_as<winrt::impl::IWeakReferenceSource>())
+    {
+        return nullptr;
+    }
+
+    return winrt::make_weak(object);
+}
+
 #pragma endregion  // winrt_hpp
 
 #pragma region visualtreewatcher_hpp
@@ -11070,10 +11084,10 @@ bool VisualTreeWatcher::ReleaseDiagnosticsReference(InstanceHandle handle)
         HRESULT hr = m_XamlDiagnostics->GetIInspectableFromHandle(handle, reinterpret_cast<::IInspectable**>(winrt::put_abi(element)));
         if (SUCCEEDED(hr) && element) {
             try {
-                weakElement = winrt::make_weak(element);
-            } catch (...) {
                 // Not every reported object supports weak references, and then
                 // the release just proceeds unobserved.
+                weakElement = TryMakeWeak(element);
+            } catch (...) {
                 Wh_Log(L"Error %08X", winrt::to_hresult());
             }
         }
@@ -11857,19 +11871,25 @@ ElementId GetOrCreateElementId(InstanceHandle handle,
     }
 
     entry.id = static_cast<ElementId>(++g_lastElementId);
+
+    winrt::weak_ref<wf::IInspectable> weakElement;
     try {
-        entry.element = winrt::make_weak(element);
+        weakElement = TryMakeWeak(element);
     } catch (winrt::hresult_error const& ex) {
+        Wh_Log(L"Error %08X: %s", ex.code(), ex.message().c_str());
+    }
+
+    if (!weakElement) {
         // Without a weak reference the entry cannot be told apart from one for
         // a successor at the same address, so neither it nor the id it names is
         // kept: an id no lookup can reach again would key state that nothing
         // could ever tear down, on an element nothing would then hold back from
         // being released.
-        Wh_Log(L"Error %08X: %s", ex.code(), ex.message().c_str());
         g_elementIds.erase(handle);
         return ElementId::None;
     }
 
+    entry.element = std::move(weakElement);
     return entry.id;
 }
 
