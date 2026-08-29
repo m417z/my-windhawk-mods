@@ -18057,11 +18057,22 @@ void ResetTaskbarSurfacesIfQuiet() {
     g_lastTaskbarSurfaceResetQueueTick = tick;
 }
 
-// Item elements the current virtualization pass tore down, consumed by the
+// Item elements the current virtualization pass recycled, consumed by the
 // matching ElementPrepared. A freshly created element is prepared without ever
 // having been cleared, and its Add mutation already applied the styles, so
 // re-matching it would restore and re-push every value for nothing.
 thread_local std::unordered_set<ElementId> g_recycledElements;
+
+// The item each element was last matched against, which lets a reuse for that
+// same item be left alone. A collapsible layout realizes elements during
+// measure only to ask for their size and recycles them again during arrange, so
+// an element is cleared and handed straight back for the same item on every
+// layout pass. Re-matching there sets dependency properties from inside the
+// pass, which dirties layout and schedules another one, and the taskbar never
+// settles: XAML gives up after enough passes and fails the process with a
+// layout cycle.
+thread_local std::unordered_map<ElementId, winrt::weak_ref<wf::IInspectable>>
+    g_elementMatchedItems;
 
 struct VirtualizingRepeaterState {
     muxc::ItemsRepeater::ElementClearing_revoker elementClearingRevoker;
@@ -18092,11 +18103,11 @@ ElementId ElementIdFromElement(FrameworkElement const& element) {
     }
 }
 
-// Tear down and, when `applying`, re-match every element of a subtree. The
-// whole subtree is revisited rather than only its root, since a rule can match
-// a descendant through a condition on an ancestor, and descendants of a reused
-// element get no mutation of their own.
-void ReapplyCustomizationsForSubtree(FrameworkElement element, bool applying) {
+// Tear down and re-match every element of a subtree. The whole subtree is
+// revisited rather than only its root, since a rule can match a descendant
+// through a condition on an ancestor, and descendants of a reused element get
+// no mutation of their own.
+void ReapplyCustomizationsForSubtree(FrameworkElement element) {
     // Caught per element, both because these run from a layout pass the caller
     // can't fail, and so that one element's failure doesn't skip the rest of
     // the subtree.
@@ -18104,10 +18115,8 @@ void ReapplyCustomizationsForSubtree(FrameworkElement element, bool applying) {
         if (auto elementId = ElementIdFromElement(element);
             elementId != ElementId::None) {
             CleanupCustomizations(elementId);
-            if (applying) {
-                auto className = winrt::get_class_name(element);
-                ApplyCustomizations(elementId, element, className.c_str());
-            }
+            auto className = winrt::get_class_name(element);
+            ApplyCustomizations(elementId, element, className.c_str());
         }
     } catch (winrt::hresult_error const& ex) {
         Wh_Log(L"Error %08X: %s", ex.code(), ex.message().c_str());
@@ -18130,7 +18139,27 @@ void ReapplyCustomizationsForSubtree(FrameworkElement element, bool applying) {
     }
 
     for (const auto& child : children) {
-        ReapplyCustomizationsForSubtree(child, applying);
+        ReapplyCustomizationsForSubtree(child);
+    }
+}
+
+// A weak reference to the item a repeater realized an element for, empty when
+// there is no such item or it supports no weak reference. Weak so that a
+// destroyed item can't be mistaken for a successor at the same address, which
+// would leave an element wearing the styles matched for its predecessor.
+winrt::weak_ref<wf::IInspectable> RepeaterItemAt(
+    muxc::ItemsRepeater const& repeater,
+    int index) {
+    try {
+        auto itemsSourceView = repeater.ItemsSourceView();
+        if (!itemsSourceView || index < 0 || index >= itemsSourceView.Count()) {
+            return nullptr;
+        }
+
+        return winrt::make_weak(itemsSourceView.GetAt(index));
+    } catch (winrt::hresult_error const& ex) {
+        Wh_Log(L"Error %08X: %s", ex.code(), ex.message().c_str());
+        return nullptr;
     }
 }
 
@@ -18159,22 +18188,22 @@ void HandleVirtualizingRepeater(ElementId elementId, FrameworkElement element) {
             }
 
             auto elementId = ElementIdFromElement(element);
-            if (elementId != ElementId::None) {
-                Wh_Log(L"Element cleared: %llu",
-                       static_cast<uint64_t>(elementId));
+            if (elementId == ElementId::None) {
+                return;
             }
 
-            ReapplyCustomizationsForSubtree(element, /*applying=*/false);
+            Wh_Log(L"Element cleared: %llu", static_cast<uint64_t>(elementId));
 
-            // After the walk, which erases the id as part of the teardown.
-            if (elementId != ElementId::None) {
-                g_recycledElements.insert(elementId);
-            }
+            // Nothing is restored here. Whether the styles still apply depends
+            // on the item the element is handed back for, which only the
+            // matching ElementPrepared knows, and until then they sit on an
+            // element the recycle pool keeps out of sight.
+            g_recycledElements.insert(elementId);
         });
 
     state.elementPreparedRevoker = repeater.ElementPrepared(
         winrt::auto_revoke,
-        [](muxc::ItemsRepeater const&,
+        [](muxc::ItemsRepeater const& sender,
            muxc::ItemsRepeaterElementPreparedEventArgs const& args) {
             auto element = args.Element().try_as<FrameworkElement>();
             if (!element) {
@@ -18187,9 +18216,31 @@ void HandleVirtualizingRepeater(ElementId elementId, FrameworkElement element) {
                 return;
             }
 
+            auto item = RepeaterItemAt(sender, args.Index());
+
+            // Held across the walk below, so that an item which no weak
+            // reference can get back, such as one a source boxes anew on every
+            // read, is never recorded: an entry which could match nothing would
+            // keep the element held for good.
+            auto strongItem = item.get();
+            if (strongItem) {
+                auto it = g_elementMatchedItems.find(elementId);
+                if (it != g_elementMatchedItems.end() &&
+                    it->second.get() == strongItem) {
+                    Wh_Log(L"Element reused for the same item: %llu",
+                           static_cast<uint64_t>(elementId));
+                    return;
+                }
+            }
+
             Wh_Log(L"Element reused: %llu", static_cast<uint64_t>(elementId));
 
-            ReapplyCustomizationsForSubtree(element, /*applying=*/true);
+            ReapplyCustomizationsForSubtree(element);
+
+            // After the walk, which erases the entry as part of the teardown.
+            if (strongItem) {
+                g_elementMatchedItems[elementId] = std::move(item);
+            }
         });
 }
 
@@ -18331,7 +18382,8 @@ bool ElementHasState(ElementId elementId) {
 
     if (g_elementsCustomizationState.contains(elementId) ||
         g_virtualizingRepeaters.contains(elementId) ||
-        g_recycledElements.contains(elementId)) {
+        g_recycledElements.contains(elementId) ||
+        g_elementMatchedItems.contains(elementId)) {
         return true;
     }
 
@@ -18467,6 +18519,7 @@ void CleanupCustomizations(ElementId elementId) {
     // no customization state but can still have virtualization bookkeeping.
     g_virtualizingRepeaters.erase(elementId);
     g_recycledElements.erase(elementId);
+    g_elementMatchedItems.erase(elementId);
 
     auto it = g_elementsCustomizationState.find(elementId);
     if (it == g_elementsCustomizationState.end()) {
@@ -19622,6 +19675,7 @@ void UninitializeForCurrentThread() {
     StopDiagnosticsReleases();
     g_virtualizingRepeaters.clear();
     g_recycledElements.clear();
+    g_elementMatchedItems.clear();
 
     // Detached from the global before being walked: restoring a value runs
     // arbitrary XAML work, and whatever it re-enters looks its elements up in
