@@ -3716,7 +3716,7 @@ const Theme g_themeFrostyGlass = {{
         L"Margin=-4.5,-2,-4.5,-2",
         L"Height=Auto"}},
     ThemeTargetStyles{L"Windows.UI.Xaml.Controls.ScrollViewer#JumpListScroller", {
-        L"Margin=-2"}},
+        L"Margin=0"}},
     ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Grid#SystemItemsContainer > Windows.UI.Xaml.Controls.Border > JumpViewUI.SystemItemListView#SystemItemList", {
         L"Margin:=0,3,0,0"}},
 }, {
