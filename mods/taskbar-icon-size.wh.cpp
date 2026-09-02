@@ -95,10 +95,12 @@ Also check out the **Taskbar tray icon spacing and grid** mod.
 #include <atomic>
 #include <functional>
 #include <limits>
+#include <mutex>
 #include <optional>
 #include <regex>
 #include <string>
 #include <string_view>
+#include <unordered_map>
 
 using namespace winrt::Windows::UI::Xaml;
 
@@ -712,11 +714,47 @@ void TaskListButton_IconHeight_InitOffsets() {
     GetIconHeightOffset();
 }
 
+// The TaskbarSettings::Size getter is a generic "read an int32 property from a
+// fixed vtable slot" thunk, which the linker folds with the identical getters
+// of unrelated interfaces, such as TaskListGroupViewModel::ViewModelCount and
+// Badge::Glyph. The hook therefore has to confirm what it was called on. pThis
+// is a C++/WinRT wrapper, so it points at the ABI interface pointer, and all of
+// the folded getters take WinRT interfaces, which are IInspectable derived.
+bool IsTaskbarSettings(void* pThis) {
+    void* abi = pThis ? *(void**)pThis : nullptr;
+    if (!abi) {
+        return false;
+    }
+
+    // Keyed by vtable, so the class name is queried once per interface.
+    static std::mutex mutex;
+    static std::unordered_map<void*, bool> cache;
+
+    std::lock_guard<std::mutex> guard(mutex);
+
+    auto [it, inserted] = cache.try_emplace(*(void**)abi, false);
+    if (inserted) {
+        try {
+            auto className = winrt::get_class_name(
+                *reinterpret_cast<winrt::Windows::Foundation::IInspectable*>(
+                    pThis));
+            it->second = className == L"WindowsUdk.UI.Shell.TaskbarSettings";
+            Wh_Log(L"%s -> %d", className.c_str(), (int)it->second);
+        } catch (const winrt::hresult_error& ex) {
+            Wh_Log(L"Error %08X: %s", ex.code().value, ex.message().c_str());
+        }
+    }
+
+    return it->second;
+}
+
 // enumTaskbarSize is a winrt::WindowsUdk::UI::Shell::TaskbarSize: 0 small, 1
 // regular, 2 large. The mod isn't compatible with the small size, so the
 // taskbar is made to see the regular size instead.
-int OverrideTaskbarSettingsSize(PCSTR sourceFunctionName, int enumTaskbarSize) {
-    if (g_unloading || enumTaskbarSize != 0) {
+int OverrideTaskbarSettingsSize(PCSTR sourceFunctionName,
+                                void* pThis,
+                                int enumTaskbarSize) {
+    if (g_unloading || enumTaskbarSize != 0 || !IsTaskbarSettings(pThis)) {
         return enumTaskbarSize;
     }
 
@@ -729,19 +767,19 @@ using TaskbarSettings_Size_t = int(WINAPI*)(void* pThis);
 TaskbarSettings_Size_t TaskbarSettings_Size_TaskbarDll_Original;
 int WINAPI TaskbarSettings_Size_TaskbarDll_Hook(void* pThis) {
     return OverrideTaskbarSettingsSize(
-        __FUNCTION__, TaskbarSettings_Size_TaskbarDll_Original(pThis));
+        __FUNCTION__, pThis, TaskbarSettings_Size_TaskbarDll_Original(pThis));
 }
 
 TaskbarSettings_Size_t TaskbarSettings_Size_SystemTray_Original;
 int WINAPI TaskbarSettings_Size_SystemTray_Hook(void* pThis) {
     return OverrideTaskbarSettingsSize(
-        __FUNCTION__, TaskbarSettings_Size_SystemTray_Original(pThis));
+        __FUNCTION__, pThis, TaskbarSettings_Size_SystemTray_Original(pThis));
 }
 
 TaskbarSettings_Size_t TaskbarSettings_Size_TaskbarView_Original;
 int WINAPI TaskbarSettings_Size_TaskbarView_Hook(void* pThis) {
     return OverrideTaskbarSettingsSize(
-        __FUNCTION__, TaskbarSettings_Size_TaskbarView_Original(pThis));
+        __FUNCTION__, pThis, TaskbarSettings_Size_TaskbarView_Original(pThis));
 }
 
 using SystemTrayController_GetFrameSize_t =
