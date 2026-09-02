@@ -638,11 +638,9 @@ TaskbarConfiguration_GetIconHeightInViewPixels_double_Hook(double baseHeight) {
         baseHeight);
 }
 
-// TaskbarFrame::GetMetrics uses the icon height only to pick between the small,
-// medium and tablet posture button extents, comparing it against the stock
-// heights, so the override has to be suppressed there for the right extent to
-// be picked. The stock height is passed to the TaskbarFrame::GetMetrics hook to
-// tell which extent that is.
+// TaskbarFrame::GetMetrics uses the icon height only to pick a posture button
+// extent, so it gets the stock height, which also tells the GetMetrics hook
+// which extent was picked.
 thread_local bool g_inTaskbarFrame_GetMetrics;
 thread_local std::optional<double> g_TaskbarFrame_GetMetrics_iconHeight;
 
@@ -661,9 +659,8 @@ TaskbarConfiguration_GetIconHeightInViewPixels_method_Hook(void* pThis) {
     double iconSize =
         TaskbarConfiguration_GetIconHeightInViewPixels_method_Original(pThis);
 
-    // The stock height tells the postures apart: 16 is the small posture, 24
-    // the medium one, 32 the tablet one. The customized height can't, since the
-    // small and the regular icon size settings may be equal.
+    // Stock heights tell the postures apart: 16 small, 24 medium, 32 tablet.
+    // The customized heights can't, they may be equal.
     g_smallIconSize = iconSize <= 16;
 
     if (g_inTaskbarFrame_GetMetrics) {
@@ -715,10 +712,9 @@ void TaskListButton_IconHeight_InitOffsets() {
     GetIconHeightOffset();
 }
 
-// The taskbar size which is configured in the settings, an
-// enum winrt::WindowsUdk::UI::Shell::TaskbarSize value: 0 is the small size, 1
-// the regular size, 2 the large size. The mod isn't compatible with the small
-// size, so the taskbar is made to see the regular size instead.
+// enumTaskbarSize is a winrt::WindowsUdk::UI::Shell::TaskbarSize: 0 small, 1
+// regular, 2 large. The mod isn't compatible with the small size, so the
+// taskbar is made to see the regular size instead.
 int OverrideTaskbarSettingsSize(PCSTR sourceFunctionName, int enumTaskbarSize) {
     if (g_unloading || enumTaskbarSize != 0) {
         return enumTaskbarSize;
@@ -748,9 +744,8 @@ int WINAPI TaskbarSettings_Size_TaskbarView_Hook(void* pThis) {
         __FUNCTION__, TaskbarSettings_Size_TaskbarView_Original(pThis));
 }
 
-// The frame height Windows calculated for the current taskbar size. The system
-// tray Height setter can't recover it on its own: on builds where the hooks
-// below are active, the value that reaches the setter is already the custom
+// The stock frame height for the current taskbar size. It's captured here since
+// the value which reaches the system tray Height setter is already the custom
 // height.
 double g_stockSystemTrayFrameHeight;
 
@@ -1198,12 +1193,9 @@ void WINAPI SystemTraySecondaryController_UpdateFrameSize_Hook(void* pThis) {
     g_inSystemTrayController_UpdateFrameSize = false;
 }
 
-// The system tray tells the taskbar modes apart by comparing the frame height
-// with the heights Windows uses for them: 24 for the collapsed taskbar, 32 for
-// the small one, 72 for the tablet posture. A custom height landing on one of
-// them switches the tray to a mode the taskbar isn't in, giving it a single
-// line clock and a different tray icon spacing, so let those checks see the
-// height Windows calculated.
+// The system tray mode checks compare the frame height against the stock 24
+// (collapsed), 32 (small) and 72 (tablet posture), which a custom height may
+// match by coincidence, so they get the stock height.
 double g_originalSystemTrayFrameHeight;
 
 using SystemTrayFrame_Height_t = void(WINAPI*)(void* pThis, double value);
@@ -1212,15 +1204,13 @@ void WINAPI SystemTrayFrame_Height_Hook(void* pThis, double value) {
     // Wh_Log(L">");
 
     if (IsVerticalTaskbar()) {
-        // The height isn't customized for a vertical taskbar, so nothing has to
-        // be restored for the mode checks. Forget a height that was captured
-        // while the taskbar was horizontal, it no longer describes the frame.
+        // The height isn't customized for a vertical taskbar, and a height
+        // captured while it was horizontal no longer describes the frame.
         g_originalSystemTrayFrameHeight = 0;
     } else if (g_inSystemTrayController_UpdateFrameSize && g_taskbarHeight) {
         Wh_Log(L">");
         // Set the system tray height explicitly, otherwise it may not match the
-        // custom taskbar height. The height is also set to NaN to size to
-        // content, which isn't a height the mode checks can be fed.
+        // custom taskbar height.
         double stockHeight =
             g_stockSystemTrayFrameHeight ? g_stockSystemTrayFrameHeight : value;
         if (stockHeight >= 1 && stockHeight < 10000) {
@@ -1246,11 +1236,9 @@ double WINAPI SystemTrayFrame_Height_get_Hook(void* pThis) {
     return SystemTrayFrame_Height_get_Original(pThis);
 }
 
-// The system tray keeps the extent it was measured with and uses it as the
-// taskbar mode marker for everything it lays out: the tray icon spacing, the
-// tablet posture checks, and the compact layout that the tray icons and the
-// clock follow. Hand it the extent Windows calculated, while the measure itself
-// keeps using the custom one.
+// The extent the system tray is measured with marks the taskbar mode for
+// everything it lays out, such as the tray icon spacing and the compact clock,
+// so it gets the stock extent while the measure itself uses the custom one.
 thread_local winrt::Windows::Foundation::Size*
     g_systemTrayFrameMeasureOverrideSize;
 
@@ -1333,13 +1321,10 @@ int WINAPI TaskbarFrame_MeasureOverride_Hook(
     return ret;
 }
 
-// TaskbarFrame looks the taskbar button extents up in the resource dictionary
-// once, in OnApplyTemplate, and never refreshes them, so they keep the values
-// from the time the taskbar was created. The overflow flyout looks the extents
-// up again and fail-fasts unless the extent in the metrics is one of them,
-// which crashes explorer whenever the customized width changed in between, for
-// example when the mod was enabled or its settings were changed. Return the
-// extent that matches the current lookups.
+// TaskbarFrame looks the button extents up in the resource dictionary once, in
+// OnApplyTemplate, and keeps them. The overflow flyout looks them up again and
+// fail-fasts unless the metrics extent is one of them, crashing explorer if the
+// customized width changed in between, so the metrics get the current extent.
 using TaskbarFrame_GetMetrics_t = void*(WINAPI*)(void* pThis, void* metrics);
 TaskbarFrame_GetMetrics_t TaskbarFrame_GetMetrics_Original;
 void* WINAPI TaskbarFrame_GetMetrics_Hook(void* pThis, void* metrics) {
@@ -1353,18 +1338,18 @@ void* WINAPI TaskbarFrame_GetMetrics_Hook(void* pThis, void* metrics) {
     g_inTaskbarFrame_GetMetrics = false;
     std::optional<double> iconHeight = g_TaskbarFrame_GetMetrics_iconHeight;
 
-    // Without dynamic icon scaling, the icon height isn't consulted and there's
-    // no way to tell which extent was picked. An icon height of 32 means the
-    // tablet posture extent, which isn't customized.
+    // Without dynamic icon scaling, the icon height isn't consulted and the
+    // extent can't be told. 32 is the tablet posture extent, which isn't
+    // customized.
     if (!iconHeight || *iconHeight == 32) {
         return ret;
     }
 
     double newValue;
     if (*iconHeight == 16) {
-        // Either the small extent or the small frame extent. The latter isn't
-        // customized, but the small button width is one of the values the
-        // overflow flyout accepts, so it's safe to use for it as well.
+        // Either the small extent or the uncustomized small frame extent, but
+        // the small button width is a value the overflow flyout accepts, so it
+        // fits both.
         newValue = g_unloading ? 32 : g_settings.taskbarButtonWidthSmall;
     } else {
         newValue = g_unloading ? 44 : g_settings.taskbarButtonWidth;
@@ -1491,10 +1476,9 @@ void WINAPI TaskListButton_UpdateMultiWindowClip_Hook(void* pThis) {
         return;
     }
 
-    // The size which decides whether the clip has to be recreated is
-    // calculated by comparing the icon height against 16, so an icon size of 16
-    // gets the small posture size while the button has the medium posture
-    // extent.
+    // The size which decides whether the clip has to be recreated is picked by
+    // comparing the icon height against 16, which a customized icon size may
+    // match by coincidence, so it gets the posture height.
     double* iconHeight = nullptr;
     double prevIconHeight;
     if (size_t iconHeightOffset = GetIconHeightOffset()) {
@@ -1523,11 +1507,9 @@ void WINAPI TaskListButton_CreateMultiWindowClip_Hook(void* pThis) {
         return;
     }
 
-    // The clip of the strip which marks a group of windows picks the button
-    // extent and the strip size by comparing the icon height against 16, so an
-    // icon size of 16 gets the small posture clip while the button has the
-    // medium posture extent. UpdateVisualStates calls this directly, without
-    // going through UpdateMultiWindowClip.
+    // The clip of the strip which marks a group of windows is picked the same
+    // way. UpdateVisualStates calls this directly, without going through
+    // UpdateMultiWindowClip.
     double* iconHeight = nullptr;
     double prevIconHeight;
     if (size_t iconHeightOffset = GetIconHeightOffset()) {
@@ -1685,11 +1667,9 @@ void TaskListButton_UpdateIconColumnDefinition_InitOffsets() {
     GetMediumTaskbarButtonExtentOffset();
 }
 
-// UpdateVisualStates reads the icon height for two unrelated purposes: as the
-// marker which picks the multi window margin visual state and the width of the
-// strip next to it, where 16 means the small posture, and as the size of
-// elements which follow the icon, such as the progress indicator. It gets the
-// posture height, and whatever is sized by it gets the customized height back.
+// UpdateVisualStates reads the icon height both as the posture marker and as an
+// element size, such as the progress indicator. It gets the posture height, and
+// the sized elements get the customized height back.
 thread_local double g_taskListButtonPostureIconHeight;
 thread_local double g_taskListButtonCustomIconHeight;
 
@@ -1788,13 +1768,9 @@ void WINAPI TaskListButton_UpdateVisualStates_Hook(void* pThis) {
     }
 }
 
-// The height the host keeps is what the taskbar extensions, such as the
-// search button, size their icons with, and changing it is what makes the
-// host notify them, so it stays the customized one. UpdateDefaultWidth is
-// the only place it serves another purpose, picking the default button width
-// out of the small, medium and tablet extents by comparing it against the
-// stock heights, which a customized icon size matches by coincidence, so only
-// that calculation gets the stock height of the current posture.
+// Taskbar extensions, such as the search button, size their icons with the
+// height the host keeps, so it stays customized. UpdateDefaultWidth is the only
+// place which uses it as a posture marker, so only it gets the stock height.
 using TaskbarComponentHost_IconHeight_t = void(WINAPI*)(void* pThis,
                                                         double height);
 TaskbarComponentHost_IconHeight_t TaskbarComponentHost_IconHeight_Original;
@@ -1871,10 +1847,9 @@ using ExperienceToggleButton_IconHeight_set_t = void(WINAPI*)(void* pThis,
 ExperienceToggleButton_IconHeight_set_t
     ExperienceToggleButton_IconHeight_set_Original;
 
-// The icon height property setter ends with a virtual call to
-// UpdateButtonPadding, so setting it reenters the hook below. The padding is
-// calculated there with the posture height anyway, and the nested run of the
-// restoring call would only put the customized height back in its place.
+// The icon height setter calls UpdateButtonPadding, reentering the hook below,
+// where the flag suppresses it: the padding is calculated with the posture
+// height anyway.
 thread_local bool g_inExperienceToggleButton_IconHeight;
 
 void SetExperienceToggleButtonIconHeight(void* pThis, double height) {
@@ -1895,11 +1870,8 @@ void WINAPI ExperienceToggleButton_UpdateButtonPadding_Hook(void* pThis) {
 
     // The button extent and the padding are picked by comparing the icon height
     // against the stock 16 and 32, which a customized icon size matches by
-    // coincidence, so the button gets laid out for a posture the rest of the
-    // taskbar isn't in, with the vertical taskbar having an extent of its own
-    // for the small posture. Hand it the stock height of the current posture,
-    // which the property setter also applies to the icon element, so restore it
-    // right after and let the layout pass see the customized size.
+    // coincidence, so it gets the posture height. The setter applies the height
+    // to the icon element as well, hence the restore right after.
     std::optional<double> prevIconHeight;
     if (g_hasDynamicIconScaling && !g_unloading &&
         ExperienceToggleButton_IconHeight_get_Original &&
@@ -2020,10 +1992,9 @@ void SetSearchButtonRootPanelWidth(Controls::Grid panelElement) {
     }
 }
 
-// The search button applies the taskbar button extent to its root panel when
-// its template is applied and when the icon height changes, neither of which a
-// settings change has to go through, so the width is applied again on the way
-// into the measure pass, which a settings change always ends up in.
+// The search button applies the button extent to its root panel on template
+// apply and on icon height changes, neither of which a settings change has to
+// go through, so the width is applied again in the measure pass.
 using SearchButtonBase_MeasureOverride_t =
     int(WINAPI*)(void* pThis,
                  winrt::Windows::Foundation::Size size,
