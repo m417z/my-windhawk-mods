@@ -188,6 +188,12 @@ Labels can also be shown or hidden per-program in the settings.
 #include <winrt/Windows.UI.Xaml.Media.h>
 #include <winrt/base.h>
 
+// The taskbar items live in a WinUI 2 (MUX) ItemsRepeater built on top of
+// system XAML. Pull in its projection to enumerate the realized items
+// (ItemsSourceView / TryGetElement).
+#define WH_WINRT_WINUI2
+#include <winrt/Microsoft.UI.Xaml.Controls.h>
+
 #include <algorithm>
 #include <atomic>
 #include <cmath>
@@ -416,49 +422,6 @@ bool TaskListButton_IsRunning(FrameworkElement taskListButtonElement) {
     return isRunning;
 }
 
-// {0BD894F2-EDFC-5DDF-A166-2DB14BBFDF35}
-constexpr winrt::guid IItemsRepeater{
-    0x0BD894F2,
-    0xEDFC,
-    0x5DDF,
-    {0xA1, 0x66, 0x2D, 0xB1, 0x4B, 0xBF, 0xDF, 0x35}};
-
-int ItemsRepeater_GetElementIndex(FrameworkElement taskbarFrameRepeaterElement,
-                                  UIElement element) {
-    winrt::Windows::Foundation::IUnknown pThis = nullptr;
-    taskbarFrameRepeaterElement.as(IItemsRepeater, winrt::put_abi(pThis));
-
-    using GetElementIndex_t =
-        HRESULT(WINAPI*)(void* pThis, void* element, void* index);
-
-    void** vtable = *(void***)winrt::get_abi(pThis);
-    auto GetElementIndex = (GetElementIndex_t)vtable[19];
-
-    int index = -1;
-    GetElementIndex(winrt::get_abi(pThis), winrt::get_abi(element), &index);
-
-    return index;
-}
-
-FrameworkElement ItemsRepeater_TryGetElement(
-    FrameworkElement taskbarFrameRepeaterElement,
-    int index) {
-    winrt::Windows::Foundation::IUnknown pThis = nullptr;
-    taskbarFrameRepeaterElement.as(IItemsRepeater, winrt::put_abi(pThis));
-
-    using TryGetElement_t =
-        HRESULT(WINAPI*)(void* pThis, int index, void** uiElement);
-
-    void** vtable = *(void***)winrt::get_abi(pThis);
-    auto TryGetElement = (TryGetElement_t)vtable[20];
-
-    void* uiElement = nullptr;
-    TryGetElement(winrt::get_abi(pThis), index, &uiElement);
-
-    return UIElement{uiElement, winrt::take_ownership_from_abi}
-        .try_as<FrameworkElement>();
-}
-
 double CalculateTaskbarItemWidth(FrameworkElement taskbarFrameRepeaterElement,
                                  double minWidth,
                                  double maxWidth) {
@@ -514,20 +477,29 @@ double CalculateTaskbarItemWidth(FrameworkElement taskbarFrameRepeaterElement,
             MulDiv(rcTrayNotify.left, 96, GetDpiForWindow(hTrayNotifyWnd));
     }
 
+    auto repeater =
+        taskbarFrameRepeaterElement
+            .try_as<winrt::Microsoft::UI::Xaml::Controls::ItemsRepeater>();
+    if (!repeater) {
+        Wh_Log(L"Not an ItemsRepeater");
+        return minWidth;
+    }
+
     bool hasOverflowButton = false;
     int taskListRunningButtonsCount = 0;
     double otherElementsWidth = 0;
 
-    for (auto panelChild :
-         taskbarFrameRepeaterElement.as<Controls::Panel>().Children()) {
-        int index = ItemsRepeater_GetElementIndex(taskbarFrameRepeaterElement,
-                                                  panelChild);
-        if (index < 0) {
+    auto itemsSourceView = repeater.ItemsSourceView();
+    int count = itemsSourceView ? itemsSourceView.Count() : 0;
+
+    for (int index = 0; index < count; index++) {
+        auto element = repeater.TryGetElement(index);
+        if (!element) {
+            // Not realized (virtualized away).
             continue;
         }
 
-        auto child =
-            ItemsRepeater_TryGetElement(taskbarFrameRepeaterElement, index);
+        auto child = element.try_as<FrameworkElement>();
         if (!child) {
             continue;
         }
@@ -1450,11 +1422,27 @@ void WINAPI TaskbarFrame_OnTaskbarLayoutChildBoundsChanged_Hook(void* pThis) {
         return;
     }
 
-    for (int i = 0;; i++) {
-        auto child =
-            ItemsRepeater_TryGetElement(taskbarFrameRepeaterElement, i);
+    auto repeater =
+        taskbarFrameRepeaterElement
+            .try_as<winrt::Microsoft::UI::Xaml::Controls::ItemsRepeater>();
+    if (!repeater) {
+        Wh_Log(L"Not an ItemsRepeater");
+        return;
+    }
+
+    auto itemsSourceView = repeater.ItemsSourceView();
+    int count = itemsSourceView ? itemsSourceView.Count() : 0;
+
+    for (int index = 0; index < count; index++) {
+        auto element = repeater.TryGetElement(index);
+        if (!element) {
+            // Not realized (virtualized away).
+            continue;
+        }
+
+        auto child = element.try_as<FrameworkElement>();
         if (!child) {
-            break;
+            continue;
         }
 
         if (child.Name() == L"TaskListButton") {
