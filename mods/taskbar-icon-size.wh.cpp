@@ -744,11 +744,6 @@ int WINAPI TaskbarSettings_Size_TaskbarView_Hook(void* pThis) {
         __FUNCTION__, TaskbarSettings_Size_TaskbarView_Original(pThis));
 }
 
-// The stock frame height for the current taskbar size. It's captured here since
-// the value which reaches the system tray Height setter is already the custom
-// height.
-double g_stockSystemTrayFrameHeight;
-
 using SystemTrayController_GetFrameSize_t =
     double(WINAPI*)(void* pThis, int enumTaskbarSize);
 SystemTrayController_GetFrameSize_t SystemTrayController_GetFrameSize_Original;
@@ -756,16 +751,12 @@ double WINAPI SystemTrayController_GetFrameSize_Hook(void* pThis,
                                                      int enumTaskbarSize) {
     Wh_Log(L"> %d", enumTaskbarSize);
 
-    double frameSize =
-        SystemTrayController_GetFrameSize_Original(pThis, enumTaskbarSize);
-
     if (!IsVerticalTaskbar() && g_taskbarHeight &&
         (enumTaskbarSize == 1 || enumTaskbarSize == 2)) {
-        g_stockSystemTrayFrameHeight = frameSize;
         return g_taskbarHeight;
     }
 
-    return frameSize;
+    return SystemTrayController_GetFrameSize_Original(pThis, enumTaskbarSize);
 }
 
 using SystemTraySecondaryController_GetFrameSize_t =
@@ -1190,29 +1181,16 @@ void WINAPI SystemTraySecondaryController_UpdateFrameSize_Hook(void* pThis) {
     g_inSystemTrayController_UpdateFrameSize = false;
 }
 
-// The system tray mode checks compare the frame height against the stock 24
-// (collapsed), 32 (small) and 72 (tablet posture), which a custom height may
-// match by coincidence, so they get the stock height.
-double g_originalSystemTrayFrameHeight;
-
 using SystemTrayFrame_Height_t = void(WINAPI*)(void* pThis, double value);
 SystemTrayFrame_Height_t SystemTrayFrame_Height_Original;
 void WINAPI SystemTrayFrame_Height_Hook(void* pThis, double value) {
     // Wh_Log(L">");
 
-    if (IsVerticalTaskbar()) {
-        // The height isn't customized for a vertical taskbar, and a height
-        // captured while it was horizontal no longer describes the frame.
-        g_originalSystemTrayFrameHeight = 0;
-    } else if (g_inSystemTrayController_UpdateFrameSize && g_taskbarHeight) {
+    if (!IsVerticalTaskbar() && g_inSystemTrayController_UpdateFrameSize &&
+        g_taskbarHeight) {
         Wh_Log(L">");
         // Set the system tray height explicitly, otherwise it may not match the
         // custom taskbar height.
-        double stockHeight =
-            g_stockSystemTrayFrameHeight ? g_stockSystemTrayFrameHeight : value;
-        if (stockHeight >= 1 && stockHeight < 10000) {
-            g_originalSystemTrayFrameHeight = stockHeight;
-        }
         value = g_taskbarHeight;
     }
 
@@ -1226,8 +1204,8 @@ SystemTrayFrame_Height_get_t SystemTrayFrame_Height_get_Original;
 double WINAPI SystemTrayFrame_Height_get_Hook(void* pThis) {
     // Wh_Log(L">");
 
-    if (g_originalSystemTrayFrameHeight) {
-        return g_originalSystemTrayFrameHeight;
+    if (g_originalTaskbarHeight) {
+        return g_originalTaskbarHeight;
     }
 
     return SystemTrayFrame_Height_get_Original(pThis);
@@ -1277,7 +1255,7 @@ int WINAPI SystemTrayFrame_MeasureOverride_Hook(
 
     // Without the hook that hands the real available size back to the measure,
     // the substitution below would shrink it to the stock height.
-    if (!g_originalSystemTrayFrameHeight ||
+    if (!g_originalTaskbarHeight ||
         !FrameworkElementOverrides_MeasureOverride_Original) {
         return SystemTrayFrame_MeasureOverride_Original(pThis, size,
                                                         resultSize);
@@ -1285,7 +1263,7 @@ int WINAPI SystemTrayFrame_MeasureOverride_Hook(
 
     // A vertical taskbar marks the mode with the width, which isn't customized.
     winrt::Windows::Foundation::Size availableSize = size;
-    size.Height = static_cast<float>(g_originalSystemTrayFrameHeight);
+    size.Height = static_cast<float>(g_originalTaskbarHeight);
 
     g_systemTrayFrameMeasureOverrideSize = &availableSize;
 
