@@ -923,8 +923,8 @@ void UpdateTaskListButtonWidth(FrameworkElement taskListButtonElement,
 
 void UpdateTaskListButtonWithLabelStyle(
     FrameworkElement taskListButtonElement) {
-    auto iconPanelElement =
-        FindChildByName(taskListButtonElement, L"IconPanel");
+    auto iconPanelElement = FindChildByName(taskListButtonElement, L"IconPanel")
+                                .try_as<Controls::Grid>();
     if (!iconPanelElement) {
         return;
     }
@@ -937,8 +937,7 @@ void UpdateTaskListButtonWithLabelStyle(
     double taskListButtonWidth = taskListButtonElement.ActualWidth();
     double iconWidth = iconElement.ActualWidth();
 
-    auto columnDefinitions =
-        iconPanelElement.as<Controls::Grid>().ColumnDefinitions();
+    auto columnDefinitions = iconPanelElement.ColumnDefinitions();
 
     auto firstColumnWidth = columnDefinitions.GetAt(0).Width();
     auto firstColumnWidthPixels =
@@ -946,10 +945,14 @@ void UpdateTaskListButtonWithLabelStyle(
             ? firstColumnWidth.Value
             : 0.0;
 
+    auto iconPanelPadding = iconPanelElement.Padding();
+
     double secondColumnWidthPixels =
         g_unloading ? 0 : g_settings.taskbarItemWidth;
     if (secondColumnWidthPixels > 0) {
-        secondColumnWidthPixels -= firstColumnWidthPixels;
+        secondColumnWidthPixels -= firstColumnWidthPixels +
+                                   iconPanelPadding.Left +
+                                   iconPanelPadding.Right;
         if (secondColumnWidthPixels < 1) {
             secondColumnWidthPixels = 1;
         }
@@ -965,21 +968,6 @@ void UpdateTaskListButtonWithLabelStyle(
         secondColumnWidthPixels = 0;
         labelControlElement.Visibility(Visibility::Collapsed);
         labelControlElement = nullptr;
-
-        columnDefinitions.GetAt(1).Width(GridLength({
-            .Value = 0,
-            .GridUnitType = GridUnitType::Pixel,
-        }));
-    } else if (secondColumnWidthPixels > 0 && labelControlElement) {
-        columnDefinitions.GetAt(1).Width(GridLength({
-            .Value = secondColumnWidthPixels,
-            .GridUnitType = GridUnitType::Pixel,
-        }));
-    } else {
-        columnDefinitions.GetAt(1).Width(GridLength({
-            .Value = 1,
-            .GridUnitType = GridUnitType::Auto,
-        }));
     }
 
     if (labelControlElement) {
@@ -991,16 +979,38 @@ void UpdateTaskListButtonWithLabelStyle(
             labelControlElement.HorizontalAlignment(horizontalAlignment);
         }
 
-        if (g_unloading) {
-            labelControlElement.MaxWidth(
-                std::fmax(0.0, 176 - firstColumnWidthPixels));
-        } else if (g_settings.taskbarItemWidth == 0) {
-            labelControlElement.MaxWidth(std::fmax(
-                0.0,
-                g_settings.maximumTaskbarItemWidth - firstColumnWidthPixels));
+        double maxWidth;
+        auto spacerElement =
+            FindChildByName(iconPanelElement, L"WindhawkLabelSpacer");
+        if (g_unloading || g_settings.taskbarItemWidth == 0) {
+            maxWidth = std::fmax(
+                0.0, (g_unloading ? 176 : g_settings.maximumTaskbarItemWidth) -
+                         firstColumnWidthPixels);
+            if (spacerElement) {
+                // Don't remove, for some reason it causes a bug - the running
+                // indicator ends up being behind the semi-transparent rectangle
+                // of the active button. Hide it instead.
+                spacerElement.Width(0);
+            }
         } else {
-            labelControlElement.MaxWidth(
-                std::numeric_limits<double>::infinity());
+            maxWidth = secondColumnWidthPixels;
+
+            if (!spacerElement) {
+                Controls::Border spacer;
+                spacer.Name(L"WindhawkLabelSpacer");
+                spacer.Height(0);
+                Controls::Grid::SetColumn(spacer, 1);
+                iconPanelElement.as<Controls::Panel>().Children().Append(
+                    spacer);
+                spacerElement = spacer;
+            }
+
+            spacerElement.Width(maxWidth);
+        }
+
+        if (labelControlElement.MaxWidth() != maxWidth) {
+            labelControlElement.MaxWidth(maxWidth);
+            taskListButtonElement.InvalidateMeasure();
         }
 
         auto labelControlMargin = labelControlElement.Margin();
@@ -1041,6 +1051,15 @@ void UpdateTaskListButtonWithLabelStyle(
             g_unloading ? TextTrimming::Clip : g_settings.textTrimming;
         if (labelControlElement.TextTrimming() != textTrimming) {
             labelControlElement.TextTrimming(textTrimming);
+        }
+    } else {
+        auto spacerElement =
+            FindChildByName(iconPanelElement, L"WindhawkLabelSpacer");
+        if (spacerElement) {
+            // Don't remove, for some reason it causes a bug - the running
+            // indicator ends up being behind the semi-transparent rectangle of
+            // the active button. Hide it instead.
+            spacerElement.Width(0);
         }
     }
 
