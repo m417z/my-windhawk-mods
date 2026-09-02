@@ -777,16 +777,13 @@ SystemTraySecondaryController_GetFrameSize_Hook(void* pThis,
                                                 int enumTaskbarSize) {
     Wh_Log(L"> %d", enumTaskbarSize);
 
-    double frameSize = SystemTraySecondaryController_GetFrameSize_Original(
-        pThis, enumTaskbarSize);
-
     if (!IsVerticalTaskbar() && g_taskbarHeight &&
         (enumTaskbarSize == 1 || enumTaskbarSize == 2)) {
-        g_stockSystemTrayFrameHeight = frameSize;
         return g_taskbarHeight;
     }
 
-    return frameSize;
+    return SystemTraySecondaryController_GetFrameSize_Original(pThis,
+                                                               enumTaskbarSize);
 }
 
 using TaskbarConfiguration_GetFrameSize_t =
