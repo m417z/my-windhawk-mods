@@ -30,7 +30,7 @@ The mod improves the native Windows taskbar labels implementation by making all
 taskbar items have the same width (optional), adding ellipsis for long labels,
 and providing other customization options.
 
-The mod allows to choose one of the four available modes:
+The mod allows to choose one of the five available modes:
 
 ![Show labels, don't combine taskbar buttons](https://i.imgur.com/v8Idmjy.png) \
 *Show labels, don't combine taskbar buttons (default)*
@@ -43,6 +43,11 @@ The mod allows to choose one of the four available modes:
 
 ![Hide labels, don't combine taskbar buttons](https://i.imgur.com/Buh8KnZ.png) \
 *Hide labels, don't combine taskbar buttons*
+
+*Show labels for multiple windows*
+
+The last mode keeps taskbar buttons uncombined and is available only when the
+native Windows 11 taskbar labels implementation is present.
 
 Only the first two modes are available natively in Windows.
 
@@ -75,13 +80,16 @@ Labels can also be shown or hidden per-program in the settings.
 - mode: labelsWithoutCombining
   $name: Mode
   $description: >-
-    Note: When switching to or from the last two modes, restarting explorer
-    might be required to fully apply the new configuration
+    Note: When switching to or from a mode that changes grouping, restarting explorer
+    might be required to fully apply the new configuration. The multiWindowOnly
+    mode requires the native Windows 11 taskbar labels implementation and keeps
+    taskbar buttons uncombined
   $options:
   - labelsWithoutCombining: Show labels, don't combine taskbar buttons
   - noLabelsWithCombining: Hide labels, combine taskbar buttons
   - labelsWithCombining: Show labels, combine taskbar buttons
   - noLabelsWithoutCombining: Hide labels, don't combine taskbar buttons
+  - multiWindowOnly: Show labels for multiple windows
 - taskbarItemWidth: 160
   $name: Taskbar item width
   $description: >-
@@ -179,21 +187,30 @@ Labels can also be shown or hidden per-program in the settings.
 
 #undef GetCurrentTime
 
+#include <winrt/Windows.Foundation.h>
 #include <winrt/Windows.Foundation.Collections.h>
-#include <winrt/Windows.Foundation.Numerics.h>
 #include <winrt/Windows.UI.Core.h>
 #include <winrt/Windows.UI.Xaml.Controls.h>
 #include <winrt/Windows.UI.Xaml.Interop.h>
 #include <winrt/Windows.UI.Xaml.Markup.h>
 #include <winrt/Windows.UI.Xaml.Media.h>
+#define WH_WINRT_WINUI2
+#include <winrt/Microsoft.UI.Xaml.Controls.h>
+#undef WH_WINRT_WINUI2
 #include <winrt/base.h>
 
 #include <algorithm>
 #include <atomic>
+#include <cstddef>
 #include <cmath>
+#include <cstdint>
 #include <limits>
+#include <mutex>
+#include <optional>
 #include <string>
 #include <unordered_set>
+#include <utility>
+#include <vector>
 
 using namespace winrt::Windows::UI::Xaml;
 
@@ -202,6 +219,7 @@ enum class Mode {
     noLabelsWithCombining,
     labelsWithCombining,
     noLabelsWithoutCombining,
+    multiWindowOnly,
 };
 
 enum class IndicatorStyle {
@@ -242,6 +260,19 @@ double g_initialTaskbarItemWidth;
 
 UINT_PTR g_invalidateTaskListButtonTimer;
 std::unordered_set<FrameworkElement> g_taskListButtonsWithLabelMissing;
+
+namespace MultiWindowLabels {
+
+bool IsAvailable();
+bool IsActive();
+std::optional<bool> GetIsMultiWindow(void* pThis);
+void SynchronizeTaskListButtonElement(FrameworkElement const& element);
+void SynchronizeTaskbarFrame(void* pThis);
+void RefreshTrackedTaskListButtons();
+void RestoreAndClearTrackedTaskListButtons();
+void LogUnavailableIfRequested();
+
+}  // namespace MultiWindowLabels
 
 #if __cplusplus < 202302L
 // Missing in older MinGW headers.
@@ -1190,9 +1221,9 @@ void UpdateTaskListButtonWithLabelStyle(
 
         int verticalOffset =
             g_unloading ? 0 : g_settings.runningIndicatorVerticalOffset;
-        indicatorElement.Translation(
-            winrt::Windows::Foundation::Numerics::float3{
-                0.0f, static_cast<float>(verticalOffset), 0.0f});
+        Media::TranslateTransform verticalOffsetTransform;
+        verticalOffsetTransform.Y(verticalOffset);
+        indicatorElement.RenderTransform(verticalOffsetTransform);
 
         if (isProgressIndicator) {
             auto element = indicatorElement;
@@ -1370,6 +1401,12 @@ void WINAPI TaskListButton_UpdateVisualStates_Hook(void* pThis) {
     auto taskListButtonElement = taskListButtonIUnknown.as<FrameworkElement>();
 
     UpdateTaskListButtonCustomizations(taskListButtonElement);
+
+    if (g_hasNativeLabelsImplementation &&
+        MultiWindowLabels::IsActive()) {
+        MultiWindowLabels::SynchronizeTaskListButtonElement(
+            taskListButtonElement);
+    }
 }
 
 using TaskListButton_UpdateButtonPadding_t = void(WINAPI*)(void* pThis);
@@ -1423,6 +1460,9 @@ void WINAPI TaskbarFrame_OnTaskbarLayoutChildBoundsChanged_Hook(void* pThis) {
     TaskbarFrame_OnTaskbarLayoutChildBoundsChanged_Original(pThis);
 
     if (g_hasNativeLabelsImplementation) {
+        if (MultiWindowLabels::IsActive()) {
+            MultiWindowLabels::SynchronizeTaskbarFrame(pThis);
+        }
         return;
     }
 
@@ -1566,6 +1606,18 @@ TaskListWindowViewModel_ITaskbarAppItemViewModel_get_HasLabel_Hook(
     HRESULT ret =
         TaskListWindowViewModel_ITaskbarAppItemViewModel_get_HasLabel_Original(
             pThis, hasLabels);
+
+    if (g_hasNativeLabelsImplementation &&
+        g_settings.mode == Mode::multiWindowOnly &&
+        g_inITaskbarAppItemViewModel_HasLabels && !g_unloading &&
+        SUCCEEDED(ret) && hasLabels) {
+        if (auto isMultiWindow = MultiWindowLabels::GetIsMultiWindow(pThis);
+            isMultiWindow.has_value()) {
+            *hasLabels = *isMultiWindow;
+        }
+        return ret;
+    }
+
     if (g_unloading || !g_inITaskbarAppItemViewModel_HasLabels || FAILED(ret) ||
         !*hasLabels) {
         return ret;
@@ -1736,7 +1788,11 @@ LONG WINAPI RegGetValueW_Hook(HKEY hkey,
             // 0 - Always
             // 1 - When taskbar is full
             // 2 - Never
-            if (g_settings.mode == Mode::noLabelsWithCombining ||
+            if (g_settings.mode == Mode::multiWindowOnly &&
+                g_hasNativeLabelsImplementation &&
+                MultiWindowLabels::IsAvailable()) {
+                taskbarGlomLevel = 2;
+            } else if (g_settings.mode == Mode::noLabelsWithCombining ||
                 g_settings.mode == Mode::labelsWithCombining) {
                 taskbarGlomLevel = 0;
             } else if (taskbarGlomLevel == 0) {
@@ -1744,7 +1800,10 @@ LONG WINAPI RegGetValueW_Hook(HKEY hkey,
             }
         }
 
-        if (g_overrideGroupingMode) {
+        if (g_overrideGroupingMode &&
+            !(g_settings.mode == Mode::multiWindowOnly &&
+              g_hasNativeLabelsImplementation &&
+              MultiWindowLabels::IsAvailable())) {
             if (taskbarGlomLevel == 0) {
                 taskbarGlomLevel = 2;
             } else {
@@ -1766,6 +1825,659 @@ LONG WINAPI RegGetValueW_Hook(HKEY hkey,
     return ret;
 }
 
+namespace MultiWindowLabels {
+
+namespace Controls = winrt::Windows::UI::Xaml::Controls;
+namespace Muxc = winrt::Microsoft::UI::Xaml::Controls;
+
+using TaskListButton_put_HasLabel_t =
+    HRESULT(WINAPI*)(void*, bool);
+TaskListButton_put_HasLabel_t TaskListButton_put_HasLabel_Original;
+
+void* TaskListWindowViewModel_ITaskbarAppItemViewModel_vftable;
+
+using ReportClicked_t = int(WINAPI*)(void*, void*);
+ReportClicked_t TaskItem_ReportClicked_Original;
+
+using HandleClick_t = HRESULT(WINAPI*)(void*, void*, void*, void*);
+HandleClick_t CTaskListWnd_HandleClick_Original;
+
+using EnumTaskItems_t = HRESULT(WINAPI*)(void*, void**);
+EnumTaskItems_t CTaskGroup_EnumTaskItems_Original;
+
+using EnumTaskItemsNext_t = HRESULT(WINAPI*)(void*, void**);
+EnumTaskItemsNext_t CEnumTaskItems_Next_Original;
+
+using IsVisibleOnCurrentVirtualDesktop_t = bool(WINAPI*)(void*);
+IsVisibleOnCurrentVirtualDesktop_t
+    CTaskItem_IsVisibleOnCurrentVirtualDesktop_Original;
+IsVisibleOnCurrentVirtualDesktop_t
+    CTaskGroupTaskItem_IsVisibleOnCurrentVirtualDesktop_Original;
+
+using GroupChanged_t = void(WINAPI*)(void*, void*, int);
+GroupChanged_t CTaskListWnd_GroupChanged_Original;
+
+using UpdateVirtualDesktopInclusion_t = HRESULT(WINAPI*)(void*);
+UpdateVirtualDesktopInclusion_t
+    CTaskBand_UpdateVirtualDesktopInclusion_Original;
+
+WCHAR g_taskGroupSentinel[] = L"taskbar-labels-multi-window-sentinel";
+thread_local bool g_captureTaskGroup;
+thread_local void* g_capturedTaskGroup;
+thread_local bool g_synchronizingButton;
+thread_local bool g_refreshingVirtualDesktop;
+
+constexpr GUID kIUnknownGuid{
+    0x00000000,
+    0x0000,
+    0x0000,
+    {0xC0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x46},
+};
+
+struct TrackedTaskListButton {
+    winrt::weak_ref<FrameworkElement> element;
+    uintptr_t identityValue;
+};
+
+std::mutex g_trackedTaskListButtonsMutex;
+std::vector<TrackedTaskListButton> g_trackedTaskListButtons;
+
+struct ScopedFlag {
+    bool& value;
+
+    explicit ScopedFlag(bool& value) : value(value) {
+        value = true;
+    }
+
+    ~ScopedFlag() {
+        value = false;
+    }
+
+    ScopedFlag(ScopedFlag const&) = delete;
+    ScopedFlag& operator=(ScopedFlag const&) = delete;
+};
+
+struct ScopedTaskGroupCapture {
+    bool previousCapture;
+    void* previousTaskGroup;
+
+    ScopedTaskGroupCapture()
+        : previousCapture(g_captureTaskGroup),
+          previousTaskGroup(g_capturedTaskGroup) {
+        g_captureTaskGroup = true;
+        g_capturedTaskGroup = nullptr;
+    }
+
+    ~ScopedTaskGroupCapture() {
+        g_captureTaskGroup = previousCapture;
+        g_capturedTaskGroup = previousTaskGroup;
+    }
+
+    ScopedTaskGroupCapture(ScopedTaskGroupCapture const&) = delete;
+    ScopedTaskGroupCapture& operator=(ScopedTaskGroupCapture const&) = delete;
+};
+
+bool IsAvailable() {
+    return TaskListButton_put_HasLabel_Original &&
+           TaskListWindowViewModel_ITaskbarAppItemViewModel_vftable &&
+           TaskListWindowViewModel_ITaskbarAppItemViewModel_get_HasLabel_Original &&
+           ITaskListWindowViewModel_vftable &&
+           ITaskListWindowViewModel_get_TaskItem &&
+           TaskItem_ReportClicked_Original &&
+           CTaskListWnd_HandleClick_Original &&
+           CTaskGroup_EnumTaskItems_Original &&
+           CEnumTaskItems_Next_Original &&
+           (CTaskItem_IsVisibleOnCurrentVirtualDesktop_Original ||
+            CTaskGroupTaskItem_IsVisibleOnCurrentVirtualDesktop_Original) &&
+           CTaskListWnd_GroupChanged_Original &&
+           CTaskBand_UpdateVirtualDesktopInclusion_Original;
+}
+
+bool IsActive() {
+    return g_hasNativeLabelsImplementation &&
+           g_settings.mode == Mode::multiWindowOnly && !g_unloading &&
+           IsAvailable();
+}
+
+void LogUnavailableIfRequested() {
+    if (g_hasNativeLabelsImplementation &&
+        g_settings.mode == Mode::multiWindowOnly && !IsAvailable()) {
+        Wh_Log(L"multiWindowOnly is unavailable because required symbols "
+               L"were not resolved; using the reference behavior");
+    }
+}
+
+HRESULT WINAPI CTaskListWnd_HandleClick_Hook(void* pThis,
+                                             void* taskGroup,
+                                             void* taskItem,
+                                             void* launcherOptions) {
+    if (g_captureTaskGroup && launcherOptions &&
+        (launcherOptions == &g_taskGroupSentinel ||
+         *reinterpret_cast<void**>(launcherOptions) == &g_taskGroupSentinel)) {
+        g_capturedTaskGroup = taskGroup;
+        return S_OK;
+    }
+
+    return CTaskListWnd_HandleClick_Original(
+        pThis, taskGroup, taskItem, launcherOptions);
+}
+
+void* FindTaskListWindowViewModel(void* pThis) {
+    constexpr int kMaximumVtableSearch = 16;
+    for (int i = 0; i < kMaximumVtableSearch; ++i) {
+        if (*reinterpret_cast<void**>(pThis) == ITaskListWindowViewModel_vftable) {
+            return pThis;
+        }
+
+        pThis = reinterpret_cast<void**>(pThis) - 1;
+    }
+
+    return nullptr;
+}
+
+void* FindTaskListWindowAppItemViewModel(void* interfacePointer) {
+    if (!interfacePointer ||
+        !TaskListWindowViewModel_ITaskbarAppItemViewModel_vftable) {
+        return nullptr;
+    }
+
+    IUnknown* identity = nullptr;
+    HRESULT result =
+        reinterpret_cast<IUnknown*>(interfacePointer)->QueryInterface(
+            kIUnknownGuid, reinterpret_cast<void**>(&identity));
+    if (FAILED(result) || !identity) {
+        return nullptr;
+    }
+
+    constexpr int kMaximumInterfaceSearch = 16;
+    void* appItemViewModel = nullptr;
+    for (int i = 0; i < kMaximumInterfaceSearch; ++i) {
+        void* candidate = reinterpret_cast<void**>(identity) + i;
+        if (*reinterpret_cast<void**>(candidate) ==
+            TaskListWindowViewModel_ITaskbarAppItemViewModel_vftable) {
+            appItemViewModel = candidate;
+            break;
+        }
+    }
+
+    identity->Release();
+    return appItemViewModel;
+}
+
+template <typename Function>
+Function FindResolvedVirtualMethod(void* object,
+                                   Function resolvedMethod,
+                                   size_t maximumVtableSearch) {
+    if (!object || !resolvedMethod) {
+        return nullptr;
+    }
+
+    void** vtable = *reinterpret_cast<void***>(object);
+    if (!vtable) {
+        return nullptr;
+    }
+
+    void* resolvedAddress = reinterpret_cast<void*>(resolvedMethod);
+    for (size_t i = 0; i < maximumVtableSearch; ++i) {
+        if (vtable[i] == resolvedAddress) {
+            return reinterpret_cast<Function>(vtable[i]);
+        }
+    }
+
+    return nullptr;
+}
+
+std::optional<bool> IsTaskItemVisibleOnCurrentVirtualDesktop(
+    void* taskItem) {
+    constexpr size_t kMaximumVtableSearch = 96;
+    auto isVisible = FindResolvedVirtualMethod(
+        taskItem, CTaskItem_IsVisibleOnCurrentVirtualDesktop_Original,
+        kMaximumVtableSearch);
+    if (!isVisible) {
+        isVisible = FindResolvedVirtualMethod(
+            taskItem, CTaskGroupTaskItem_IsVisibleOnCurrentVirtualDesktop_Original,
+            kMaximumVtableSearch);
+    }
+
+    return isVisible ? std::optional<bool>(isVisible(taskItem)) : std::nullopt;
+}
+
+std::optional<int> GetCurrentDesktopTaskGroupItemCount(void* taskGroup) {
+    if (!taskGroup || !CTaskGroup_EnumTaskItems_Original ||
+        !CEnumTaskItems_Next_Original ||
+        (!CTaskItem_IsVisibleOnCurrentVirtualDesktop_Original &&
+         !CTaskGroupTaskItem_IsVisibleOnCurrentVirtualDesktop_Original)) {
+        return std::nullopt;
+    }
+
+    auto enumTaskItems = FindResolvedVirtualMethod(
+        taskGroup, CTaskGroup_EnumTaskItems_Original, 16);
+    if (!enumTaskItems) {
+        return std::nullopt;
+    }
+
+    winrt::com_ptr<IUnknown> taskItems;
+    HRESULT result = enumTaskItems(taskGroup, taskItems.put_void());
+    if (FAILED(result) || !taskItems) {
+        return std::nullopt;
+    }
+
+    auto next = FindResolvedVirtualMethod(
+        taskItems.get(), CEnumTaskItems_Next_Original, 16);
+    if (!next) {
+        return std::nullopt;
+    }
+
+    int visibleItemCount = 0;
+    while (true) {
+        winrt::com_ptr<IUnknown> taskItem;
+        result = next(taskItems.get(), taskItem.put_void());
+        if (result == S_FALSE) {
+            break;
+        }
+        if (FAILED(result) || !taskItem) {
+            return std::nullopt;
+        }
+
+        auto isVisible = IsTaskItemVisibleOnCurrentVirtualDesktop(taskItem.get());
+        if (!isVisible.has_value()) {
+            return std::nullopt;
+        }
+
+        if (*isVisible && ++visibleItemCount > 1) {
+            break;
+        }
+    }
+
+    return visibleItemCount;
+}
+
+std::optional<bool> GetIsMultiWindow(void* pThis) {
+    if (!IsAvailable()) {
+        return std::nullopt;
+    }
+
+    void* viewModel = FindTaskListWindowViewModel(pThis);
+    if (!viewModel) {
+        return std::nullopt;
+    }
+
+    winrt::com_ptr<IUnknown> taskItem;
+    HRESULT result =
+        ITaskListWindowViewModel_get_TaskItem(viewModel, taskItem.put_void());
+    if (FAILED(result) || !taskItem) {
+        return std::nullopt;
+    }
+
+    ScopedTaskGroupCapture capture;
+    TaskItem_ReportClicked_Original(taskItem.get(), &g_taskGroupSentinel);
+
+    if (!g_capturedTaskGroup) {
+        return std::nullopt;
+    }
+
+    auto itemCount = GetCurrentDesktopTaskGroupItemCount(g_capturedTaskGroup);
+    return itemCount ? std::optional<bool>(*itemCount > 1) : std::nullopt;
+}
+
+bool IsTaskbarAppItemViewModel(
+    winrt::Windows::Foundation::IInspectable const& candidate) {
+    if (!candidate) {
+        return false;
+    }
+
+    auto runtimeClassName = winrt::get_class_name(candidate);
+    return runtimeClassName == L"Taskbar.TaskListWindowViewModel" ||
+           runtimeClassName == L"Taskbar.TaskListGroupViewModel";
+}
+
+winrt::Windows::Foundation::IInspectable FindTaskbarAppItemViewModel(
+    FrameworkElement const& taskListButton) {
+    constexpr int kMaximumAncestorSearch = 12;
+    FrameworkElement current = taskListButton;
+
+    for (int i = 0; i < kMaximumAncestorSearch && current; ++i) {
+        if (auto repeater = current.try_as<Muxc::ItemsRepeater>()) {
+            int index = repeater.GetElementIndex(taskListButton);
+            if (index >= 0) {
+                auto itemsSourceView = repeater.ItemsSourceView();
+                if (itemsSourceView) {
+                    auto item = itemsSourceView.GetAt(index);
+                    if (IsTaskbarAppItemViewModel(item)) {
+                        return item;
+                    }
+                }
+            }
+        }
+
+        auto dataContext = current.DataContext();
+        if (IsTaskbarAppItemViewModel(dataContext)) {
+            return dataContext;
+        }
+
+        if (auto presenter = current.try_as<Controls::ContentPresenter>()) {
+            auto content = presenter.Content();
+            if (IsTaskbarAppItemViewModel(content)) {
+                return content;
+            }
+        }
+
+        if (auto contentControl = current.try_as<Controls::ContentControl>()) {
+            auto content = contentControl.Content();
+            if (IsTaskbarAppItemViewModel(content)) {
+                return content;
+            }
+        }
+
+        current = current.Parent().try_as<FrameworkElement>();
+    }
+
+    return nullptr;
+}
+
+bool IsTaskListWindowViewModel(
+    winrt::Windows::Foundation::IInspectable const& viewModel) {
+    return viewModel &&
+           winrt::get_class_name(viewModel) ==
+               L"Taskbar.TaskListWindowViewModel";
+}
+
+uintptr_t GetXamlElementIdentityValue(FrameworkElement const& element) {
+    auto identity = element.as<winrt::Windows::Foundation::IUnknown>();
+    return reinterpret_cast<uintptr_t>(winrt::get_abi(identity));
+}
+
+void RegisterTaskListButton(FrameworkElement const& element) {
+    if (!element || element.Name() != L"TaskListButton") {
+        return;
+    }
+
+    uintptr_t identityValue = GetXamlElementIdentityValue(element);
+    std::lock_guard lock(g_trackedTaskListButtonsMutex);
+
+    for (auto it = g_trackedTaskListButtons.begin();
+         it != g_trackedTaskListButtons.end();) {
+        if (!it->element.get()) {
+            it = g_trackedTaskListButtons.erase(it);
+        } else {
+            ++it;
+        }
+    }
+
+    for (auto& tracked : g_trackedTaskListButtons) {
+        if (tracked.identityValue == identityValue) {
+            tracked.element = winrt::make_weak(element);
+            return;
+        }
+    }
+
+    g_trackedTaskListButtons.push_back({
+        .element = winrt::make_weak(element),
+        .identityValue = identityValue,
+    });
+}
+
+void RestoreTaskListButtonElement(FrameworkElement const& element) {
+    if (!element || !TaskListButton_put_HasLabel_Original ||
+        !TaskListWindowViewModel_ITaskbarAppItemViewModel_get_HasLabel_Original) {
+        return;
+    }
+
+    auto viewModel = FindTaskbarAppItemViewModel(element);
+    if (!IsTaskListWindowViewModel(viewModel)) {
+        return;
+    }
+
+    void* appItemViewModel =
+        FindTaskListWindowAppItemViewModel(winrt::get_abi(viewModel));
+    if (!appItemViewModel) {
+        return;
+    }
+
+    bool windowsHasLabel = false;
+    HRESULT result =
+        TaskListWindowViewModel_ITaskbarAppItemViewModel_get_HasLabel_Original(
+            appItemViewModel, &windowsHasLabel);
+    if (FAILED(result)) {
+        Wh_Log(L"multiWindowOnly restore query failed: 0x%08X", result);
+        return;
+    }
+
+    auto button = element.as<winrt::Windows::Foundation::IUnknown>();
+    result = TaskListButton_put_HasLabel_Original(
+        winrt::get_abi(button), windowsHasLabel);
+    if (FAILED(result)) {
+        Wh_Log(L"multiWindowOnly restore failed: 0x%08X", result);
+    }
+}
+
+void SynchronizeTaskListButtonElement(FrameworkElement const& element) {
+    if (!IsActive() || g_synchronizingButton || !element) {
+        return;
+    }
+
+    try {
+        RegisterTaskListButton(element);
+
+        auto viewModel = FindTaskbarAppItemViewModel(element);
+        if (!IsTaskListWindowViewModel(viewModel)) {
+            return;
+        }
+
+        auto isMultiWindow = GetIsMultiWindow(winrt::get_abi(viewModel));
+        if (!isMultiWindow.has_value()) {
+            return;
+        }
+
+        auto button = element.as<winrt::Windows::Foundation::IUnknown>();
+        ScopedFlag synchronizing(g_synchronizingButton);
+        HRESULT result = TaskListButton_put_HasLabel_Original(
+            winrt::get_abi(button), *isMultiWindow);
+        if (FAILED(result)) {
+            Wh_Log(L"multiWindowOnly button update failed: 0x%08X", result);
+        }
+    } catch (...) {
+        Wh_Log(L"multiWindowOnly button synchronization failed: 0x%08X",
+               winrt::to_hresult());
+    }
+}
+
+void SynchronizeTaskbarFrame(void* pThis) {
+    if (!IsActive()) {
+        return;
+    }
+
+    try {
+        void* taskbarFrameIUnknownPtr = (void**)pThis + 3;
+        winrt::Windows::Foundation::IUnknown taskbarFrameIUnknown;
+        winrt::copy_from_abi(taskbarFrameIUnknown, taskbarFrameIUnknownPtr);
+        auto taskbarFrameElement = taskbarFrameIUnknown.as<FrameworkElement>();
+
+        auto container = FindChildByName(taskbarFrameElement, L"RootGrid");
+        if (!container) {
+            container = FindChildByName(
+                taskbarFrameElement, L"TaskbarFrameBorder");
+        }
+        if (!container) {
+            return;
+        }
+
+        auto repeater = FindChildByName(container, L"TaskbarFrameRepeater");
+        if (!repeater) {
+            return;
+        }
+
+        for (int i = 0;; ++i) {
+            auto child = ItemsRepeater_TryGetElement(repeater, i);
+            if (!child) {
+                break;
+            }
+
+            if (child.Name() == L"TaskListButton") {
+                SynchronizeTaskListButtonElement(child);
+            }
+        }
+    } catch (...) {
+        Wh_Log(L"multiWindowOnly taskbar frame synchronization failed: 0x%08X",
+               winrt::to_hresult());
+    }
+}
+
+HWND GetTaskbarUiWnd() {
+    HWND taskbar = FindCurrentProcessTaskbarWnd();
+    return taskbar
+               ? FindWindowExW(
+                     taskbar,
+                     nullptr,
+                     L"Windows.UI.Composition.DesktopWindowContentBridge",
+                     nullptr)
+               : nullptr;
+}
+
+using RunFromWindowThreadProc_t = void(WINAPI*)(void*);
+
+bool RunFromWindowThread(HWND window,
+                         RunFromWindowThreadProc_t procedure,
+                         void* parameter) {
+    static const UINT message = RegisterWindowMessageW(
+        L"Windhawk_RunFromWindowThread_" WH_MOD_ID);
+
+    DWORD threadId = GetWindowThreadProcessId(window, nullptr);
+    if (!threadId) {
+        return false;
+    }
+
+    if (threadId == GetCurrentThreadId()) {
+        procedure(parameter);
+        return true;
+    }
+
+    struct Callback {
+        RunFromWindowThreadProc_t procedure;
+        void* parameter;
+    } callback{procedure, parameter};
+
+    HHOOK hook = SetWindowsHookExW(
+        WH_CALLWNDPROC,
+        [](int code, WPARAM wParam, LPARAM lParam) -> LRESULT {
+            if (code == HC_ACTION) {
+                auto messageData = reinterpret_cast<CWPSTRUCT*>(lParam);
+                if (messageData->message == message) {
+                    auto callback = reinterpret_cast<Callback*>(
+                        messageData->lParam);
+                    callback->procedure(callback->parameter);
+                }
+            }
+            return CallNextHookEx(nullptr, code, wParam, lParam);
+        },
+        nullptr,
+        threadId);
+    if (!hook) {
+        return false;
+    }
+
+    SendMessageW(window, message, 0, reinterpret_cast<LPARAM>(&callback));
+    UnhookWindowsHookEx(hook);
+    return true;
+}
+
+void ProcessTrackedTaskListButtonsOnCurrentThread(bool restore) {
+    std::vector<TrackedTaskListButton> buttons;
+    {
+        std::lock_guard lock(g_trackedTaskListButtonsMutex);
+        for (auto it = g_trackedTaskListButtons.begin();
+             it != g_trackedTaskListButtons.end();) {
+            if (!it->element.get()) {
+                it = g_trackedTaskListButtons.erase(it);
+            } else {
+                ++it;
+            }
+        }
+        buttons = g_trackedTaskListButtons;
+    }
+
+    for (auto const& tracked : buttons) {
+        auto element = tracked.element.get();
+        if (!element) {
+            continue;
+        }
+
+        if (restore) {
+            RestoreTaskListButtonElement(element);
+        } else {
+            SynchronizeTaskListButtonElement(element);
+        }
+    }
+
+    if (restore) {
+        std::lock_guard lock(g_trackedTaskListButtonsMutex);
+        g_trackedTaskListButtons.clear();
+    }
+}
+
+void RefreshTrackedTaskListButtons() {
+    if (!IsActive()) {
+        return;
+    }
+
+    HWND taskbarUi = GetTaskbarUiWnd();
+    if (!taskbarUi ||
+        !RunFromWindowThread(
+            taskbarUi,
+            [](void* parameter) {
+                (void)parameter;
+                ProcessTrackedTaskListButtonsOnCurrentThread(false);
+            },
+            nullptr)) {
+        Wh_Log(L"multiWindowOnly taskbar UI thread unavailable for refresh");
+    }
+}
+
+void RestoreAndClearTrackedTaskListButtons() {
+    {
+        std::lock_guard lock(g_trackedTaskListButtonsMutex);
+        if (g_trackedTaskListButtons.empty()) {
+            return;
+        }
+    }
+
+    HWND taskbarUi = GetTaskbarUiWnd();
+    if (taskbarUi &&
+        RunFromWindowThread(
+            taskbarUi,
+            [](void* parameter) {
+                (void)parameter;
+                ProcessTrackedTaskListButtonsOnCurrentThread(true);
+            },
+            nullptr)) {
+        return;
+    }
+
+    Wh_Log(L"multiWindowOnly taskbar UI thread unavailable during restore");
+    std::lock_guard lock(g_trackedTaskListButtonsMutex);
+    g_trackedTaskListButtons.clear();
+}
+
+void WINAPI CTaskListWnd_GroupChanged_Hook(void* pThis,
+                                           void* taskGroup,
+                                           int property) {
+    CTaskListWnd_GroupChanged_Original(pThis, taskGroup, property);
+    if (IsActive()) {
+        RefreshTrackedTaskListButtons();
+    }
+}
+
+HRESULT WINAPI CTaskBand_UpdateVirtualDesktopInclusion_Hook(void* pThis) {
+    HRESULT result = CTaskBand_UpdateVirtualDesktopInclusion_Original(pThis);
+    if (SUCCEEDED(result) && IsActive() && !g_refreshingVirtualDesktop) {
+        ScopedFlag refreshing(g_refreshingVirtualDesktop);
+        RefreshTrackedTaskListButtons();
+    }
+    return result;
+}
+
+}  // namespace MultiWindowLabels
+
 void* wil_Feature_GetImpl_Original;
 
 using WilFeatureTraits_Feature_29785186_IsEnabled_t =
@@ -1782,6 +2494,8 @@ void LoadSettings() {
         g_settings.mode = Mode::labelsWithCombining;
     } else if (wcscmp(mode, L"noLabelsWithoutCombining") == 0) {
         g_settings.mode = Mode::noLabelsWithoutCombining;
+    } else if (wcscmp(mode, L"multiWindowOnly") == 0) {
+        g_settings.mode = Mode::multiWindowOnly;
     }
     Wh_FreeStringSetting(mode);
 
@@ -1801,6 +2515,7 @@ void LoadSettings() {
 
             case Mode::noLabelsWithCombining:
             case Mode::noLabelsWithoutCombining:
+            case Mode::multiWindowOnly:
                 break;
         }
 
@@ -1967,6 +2682,12 @@ bool HookTaskbarViewDllSymbols(HMODULE module) {
                 true,
             },
             {
+                {LR"(const winrt::impl::produce<struct winrt::Taskbar::implementation::TaskListWindowViewModel,struct winrt::Taskbar::ITaskbarAppItemViewModel>::`vftable')"},
+                &MultiWindowLabels::TaskListWindowViewModel_ITaskbarAppItemViewModel_vftable,
+                nullptr,
+                true,
+            },
+            {
                 {LR"(public: virtual int __cdecl winrt::impl::produce<struct winrt::Taskbar::implementation::TaskListWindowViewModel,struct winrt::Taskbar::ITaskListWindowViewModel>::get_TaskItem(void * *))"},
                 &ITaskListWindowViewModel_get_TaskItem,
                 nullptr,
@@ -1977,6 +2698,12 @@ bool HookTaskbarViewDllSymbols(HMODULE module) {
                 &TaskListWindowViewModel_ITaskbarAppItemViewModel_get_HasLabel_Original,
 
                 TaskListWindowViewModel_ITaskbarAppItemViewModel_get_HasLabel_Hook,
+                true,
+            },
+            {
+                {LR"(public: virtual int __cdecl winrt::impl::produce<struct winrt::Taskbar::implementation::TaskListButton,struct winrt::Taskbar::ITaskListButton>::put_HasLabel(bool))"},
+                &MultiWindowLabels::TaskListButton_put_HasLabel_Original,
+                nullptr,
                 true,
             },
             {
@@ -2036,6 +2763,12 @@ void HandleLoadedModuleIfTaskbarView(HMODULE module, LPCWSTR lpLibFileName) {
 
         if (ModInitWithTaskbarView(module)) {
             Wh_ApplyHookOperations();
+            if (g_hasNativeLabelsImplementation &&
+                g_settings.mode == Mode::multiWindowOnly) {
+                MultiWindowLabels::LogUnavailableIfRequested();
+                ApplySettings();
+                MultiWindowLabels::RefreshTrackedTaskListButtons();
+            }
         }
     }
 }
@@ -2067,6 +2800,54 @@ bool HookTaskbarDllSymbols() {
             &CTaskListThumbnailWnd_DisplayUI_Original,
             CTaskListThumbnailWnd_DisplayUI_Hook,
             true,  // Classic thumbnails, removed in or near 10.0.26100.8491.
+        },
+        {
+            {LR"(public: virtual long __cdecl CTaskListWnd::HandleClick(struct ITaskGroup *,struct ITaskItem *,struct winrt::Windows::System::LauncherOptions const &))"},
+            &MultiWindowLabels::CTaskListWnd_HandleClick_Original,
+            MultiWindowLabels::CTaskListWnd_HandleClick_Hook,
+            true,
+        },
+        {
+            {LR"(public: virtual int __cdecl winrt::impl::produce<struct winrt::WindowsUdk::UI::Shell::implementation::TaskItem,struct winrt::WindowsUdk::UI::Shell::ITaskItem>::ReportClicked(void *))"},
+            &MultiWindowLabels::TaskItem_ReportClicked_Original,
+            nullptr,
+            true,
+        },
+        {
+            {LR"(public: virtual long __cdecl CTaskGroup::EnumTaskItems(struct IEnumTaskItems * *))"},
+            &MultiWindowLabels::CTaskGroup_EnumTaskItems_Original,
+            nullptr,
+            true,
+        },
+        {
+            {LR"(public: virtual long __cdecl CEnumTaskItems::Next(struct ITaskItem * *))"},
+            &MultiWindowLabels::CEnumTaskItems_Next_Original,
+            nullptr,
+            true,
+        },
+        {
+            {LR"(public: virtual bool __cdecl CTaskItem::IsVisibleOnCurrentVirtualDesktop(void))"},
+            &MultiWindowLabels::CTaskItem_IsVisibleOnCurrentVirtualDesktop_Original,
+            nullptr,
+            true,
+        },
+        {
+            {LR"(public: virtual bool __cdecl CTaskGroupTaskItem::IsVisibleOnCurrentVirtualDesktop(void))"},
+            &MultiWindowLabels::CTaskGroupTaskItem_IsVisibleOnCurrentVirtualDesktop_Original,
+            nullptr,
+            true,
+        },
+        {
+            {LR"(public: virtual void __cdecl CTaskListWnd::GroupChanged(struct ITaskGroup *,enum winrt::WindowsUdk::UI::Shell::TaskGroupProperty))"},
+            &MultiWindowLabels::CTaskListWnd_GroupChanged_Original,
+            MultiWindowLabels::CTaskListWnd_GroupChanged_Hook,
+            true,
+        },
+        {
+            {LR"(protected: long __cdecl CTaskBand::_UpdateVirtualDesktopInclusion(void))"},
+            &MultiWindowLabels::CTaskBand_UpdateVirtualDesktopInclusion_Original,
+            MultiWindowLabels::CTaskBand_UpdateVirtualDesktopInclusion_Hook,
+            true,
         },
     };
 
@@ -2212,7 +2993,9 @@ void Wh_ModAfterInit() {
     }
 
     if (g_taskbarViewDllLoaded) {
+        MultiWindowLabels::LogUnavailableIfRequested();
         ApplySettings();
+        MultiWindowLabels::RefreshTrackedTaskListButtons();
     }
 }
 
@@ -2220,6 +3003,7 @@ void Wh_ModBeforeUninit() {
     Wh_Log(L">");
 
     g_unloading = true;
+    MultiWindowLabels::RestoreAndClearTrackedTaskListButtons();
 
     if (g_taskbarViewDllLoaded) {
         ApplySettings();
@@ -2237,9 +3021,18 @@ void Wh_ModUninit() {
 void Wh_ModSettingsChanged() {
     Wh_Log(L">");
 
+    bool wasMultiWindowOnly =
+        g_hasNativeLabelsImplementation &&
+        g_settings.mode == Mode::multiWindowOnly;
     LoadSettings();
+
+    if (wasMultiWindowOnly && g_settings.mode != Mode::multiWindowOnly) {
+        MultiWindowLabels::RestoreAndClearTrackedTaskListButtons();
+    }
 
     if (g_taskbarViewDllLoaded) {
         ApplySettings();
+        MultiWindowLabels::LogUnavailableIfRequested();
+        MultiWindowLabels::RefreshTrackedTaskListButtons();
     }
 }
