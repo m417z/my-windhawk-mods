@@ -2108,6 +2108,38 @@ void WINAPI ExperienceToggleButton_UpdateButtonPadding_Hook(void* pThis) {
     }
 }
 
+// The search button sizes its icon with the icon height it's bound to, which
+// the taskbar hands over as the stock height of the current posture.
+using SearchButtonBase_IconHeight_t = void(WINAPI*)(void* pThis, double height);
+SearchButtonBase_IconHeight_t SearchButtonBase_IconHeight_Original;
+
+// The icon height property setter ends with a virtual call to
+// UpdateButtonPadding, so setting it reenters the hook below. The padding is
+// calculated there with the posture height anyway, and the nested run of the
+// restoring call would only put the customized height back in its place.
+thread_local bool g_inSearchButtonBase_IconHeight;
+
+void SetSearchButtonIconHeight(void* pThis, double height) {
+    g_inSearchButtonBase_IconHeight = true;
+    SearchButtonBase_IconHeight_Original(pThis, height);
+    g_inSearchButtonBase_IconHeight = false;
+}
+
+void WINAPI SearchButtonBase_IconHeight_Hook(void* pThis, double height) {
+    Wh_Log(L"> height=%f", height);
+
+    if (!g_unloading) {
+        double iconSize =
+            g_smallIconSize ? g_settings.iconSizeSmall : g_settings.iconSize;
+        if (height != iconSize) {
+            Wh_Log(L"Setting height: %f->%f", height, iconSize);
+            height = iconSize;
+        }
+    }
+
+    SearchButtonBase_IconHeight_Original(pThis, height);
+}
+
 Controls::Grid GetSearchButtonRootPanel(FrameworkElement buttonElement) {
     auto panelElement =
         FindChildByName(buttonElement, L"SearchBoxButtonRootPanel")
@@ -2180,7 +2212,37 @@ SearchButtonBase_UpdateButtonPadding_t
 void WINAPI SearchButtonBase_UpdateButtonPadding_Hook(void* pThis) {
     Wh_Log(L">");
 
+    if (g_inSearchButtonBase_IconHeight) {
+        return;
+    }
+
+    // The button extent and the padding are picked by comparing the icon height
+    // against the stock 32, which a customized icon size matches by
+    // coincidence, so the button is laid out for a posture the rest of the
+    // taskbar isn't in, most visibly on a vertical taskbar, which takes the
+    // extent for its height. Hand it the stock height of the current posture,
+    // which the property setter also applies to the icon element, so restore it
+    // right after.
+    std::optional<double> prevIconHeight;
+    if (!g_unloading && SearchButtonBase_IconHeight_Original) {
+        double postureIconHeight = g_smallIconSize ? 16 : 24;
+        // Every write of the property goes through the hook above, so the
+        // customized icon size is the height the button has.
+        double iconHeight =
+            g_smallIconSize ? g_settings.iconSizeSmall : g_settings.iconSize;
+        if (iconHeight != postureIconHeight) {
+            Wh_Log(L"Setting iconHeight: %f->%f", iconHeight,
+                   postureIconHeight);
+            prevIconHeight = iconHeight;
+            SetSearchButtonIconHeight(pThis, postureIconHeight);
+        }
+    }
+
     SearchButtonBase_UpdateButtonPadding_Original(pThis);
+
+    if (prevIconHeight) {
+        SetSearchButtonIconHeight(pThis, *prevIconHeight);
+    }
 
     if (g_hasDynamicIconScaling && g_unloading) {
         return;
@@ -2199,25 +2261,6 @@ void WINAPI SearchButtonBase_UpdateButtonPadding_Hook(void* pThis) {
     }
 
     SetSearchButtonRootPanelWidth(panelElement);
-}
-
-// The search button sizes its icon with the icon height it's bound to, which
-// the taskbar hands over as the stock height of the current posture.
-using SearchButtonBase_IconHeight_t = void(WINAPI*)(void* pThis, double height);
-SearchButtonBase_IconHeight_t SearchButtonBase_IconHeight_Original;
-void WINAPI SearchButtonBase_IconHeight_Hook(void* pThis, double height) {
-    Wh_Log(L"> height=%f", height);
-
-    if (!g_unloading) {
-        double iconSize =
-            g_smallIconSize ? g_settings.iconSizeSmall : g_settings.iconSize;
-        if (height != iconSize) {
-            Wh_Log(L"Setting height: %f->%f", height, iconSize);
-            height = iconSize;
-        }
-    }
-
-    SearchButtonBase_IconHeight_Original(pThis, height);
 }
 
 using ProgressBar_Width_t = void(WINAPI*)(void* pThis, double width);
