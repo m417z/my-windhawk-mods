@@ -2,7 +2,7 @@
 // @id              taskbar-icon-size
 // @name            Taskbar height and icon size
 // @description     Control the taskbar height and icon size, improve icon quality (Windows 11 only)
-// @version         1.3.8
+// @version         1.3.9
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
@@ -1278,15 +1278,16 @@ int WINAPI SystemTrayFrame_MeasureOverride_Hook(
     winrt::Windows::Foundation::Size* resultSize) {
     Wh_Log(L">");
 
-    // Without the hook that hands the real available size back to the measure,
-    // the substitution below would shrink it to the stock height.
+    // The substitution needs the hook that hands the real available size back
+    // to the measure, and has nothing to fix for a vertical taskbar, which
+    // marks the mode with the width, not the customized height.
     if (!g_originalTaskbarHeight ||
-        !FrameworkElementOverrides_MeasureOverride_Original) {
+        !FrameworkElementOverrides_MeasureOverride_Original ||
+        IsVerticalTaskbar()) {
         return SystemTrayFrame_MeasureOverride_Original(pThis, size,
                                                         resultSize);
     }
 
-    // A vertical taskbar marks the mode with the width, which isn't customized.
     winrt::Windows::Foundation::Size availableSize = size;
     size.Height = static_cast<float>(g_originalTaskbarHeight);
 
