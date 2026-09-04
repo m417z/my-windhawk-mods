@@ -127,7 +127,6 @@ int g_taskbarHeight;
 std::atomic<DWORD> g_shellIconLoaderV2_LoadAsyncIcon__ResumeCoro_ThreadId;
 bool g_inSystemTrayController_UpdateFrameSize;
 bool g_taskbarButtonWidthCustomized;
-bool g_inAugmentedEntryPointButton_UpdateButtonPadding;
 
 double* double_48_value_Original;
 
@@ -1859,6 +1858,153 @@ void SetExperienceToggleButtonIconHeight(void* pThis, double height) {
     g_inExperienceToggleButton_IconHeight = false;
 }
 
+// The widget content is laid out for the stock icon size, so its margins are
+// scaled to the customized one.
+void UpdateAugmentedEntryPointContent(FrameworkElement panelElement) {
+    FrameworkElement augmentedEntryPointContentGrid =
+        FindChildByName(panelElement, L"AugmentedEntryPointContentGrid");
+    if (!augmentedEntryPointContentGrid) {
+        return;
+    }
+
+    double marginValue = static_cast<double>(40 - g_settings.iconSize) / 2;
+    if (marginValue < 0) {
+        marginValue = 0;
+    }
+
+    EnumChildElements(augmentedEntryPointContentGrid, [marginValue](
+                                                          FrameworkElement
+                                                              child) {
+        if (winrt::get_class_name(child) != L"Windows.UI.Xaml.Controls.Grid") {
+            return false;
+        }
+
+        FrameworkElement panelGrid =
+            FindChildByClassName(child, L"Windows.UI.Xaml.Controls.Grid");
+        if (!panelGrid) {
+            return false;
+        }
+
+        FrameworkElement panel = FindChildByClassName(
+            panelGrid, L"AdaptiveCards.Rendering.Uwp.WholeItemsPanel");
+        if (!panel) {
+            return false;
+        }
+
+        Wh_Log(L"Processing %f x %f widget", panelGrid.Width(),
+               panelGrid.Height());
+
+        double labelsTopBorderExtraMargin = 0;
+
+        bool widePanel = panelGrid.Width() > panelGrid.Height();
+        if (widePanel) {
+            auto margin = Thickness{3, 3, 3, 3};
+
+            if (!g_unloading && marginValue <= 3) {
+                labelsTopBorderExtraMargin = 3 - marginValue;
+                margin.Left = marginValue;
+                margin.Top = marginValue;
+
+                // Logically these should be marginValue too, but having no
+                // right/bottom margin doesn't seem to matter, while having
+                // values which are too tight sometimes cause the icon to
+                // disappear for some reason. Relevant issue:
+                // https://github.com/ramensoftware/windhawk-mods/issues/726
+                margin.Right = 0;
+                margin.Bottom = 0;
+            }
+
+            Wh_Log(L"Setting Margin=%f,%f,%f,%f for panel", margin.Left,
+                   margin.Top, margin.Right, margin.Bottom);
+
+            panel.Margin(margin);
+
+            panelGrid.VerticalAlignment(g_unloading
+                                            ? VerticalAlignment::Stretch
+                                            : VerticalAlignment::Center);
+        } else {
+            auto margin = Thickness{8, 8, 8, 8};
+
+            if (!g_unloading) {
+                margin.Left = marginValue;
+                margin.Top = marginValue;
+
+                // Logically these should be marginValue too, but having no
+                // right/bottom margin doesn't seem to matter, while having
+                // values which are too tight sometimes cause the icon to
+                // disappear for some reason. Relevant issue:
+                // https://github.com/ramensoftware/windhawk-mods/issues/726
+                margin.Right = 0;
+                margin.Bottom = 0;
+
+                if (g_taskbarHeight < 48) {
+                    margin.Top -= static_cast<double>(48 - g_taskbarHeight) / 2;
+                    if (margin.Top < 0) {
+                        margin.Top = 0;
+                    }
+                }
+            }
+
+            Wh_Log(L"Setting Margin=%f,%f,%f,%f for panel", margin.Left,
+                   margin.Top, margin.Right, margin.Bottom);
+
+            panel.Margin(margin);
+        }
+
+        FrameworkElement tickerGrid = panel;
+        if ((tickerGrid = FindChildByClassName(
+                 tickerGrid, L"Windows.UI.Xaml.Controls.Border")) &&
+            (tickerGrid = FindChildByClassName(
+                 tickerGrid, L"AdaptiveCards.Rendering.Uwp.WholeItemsPanel")) &&
+            (tickerGrid = FindChildByClassName(
+                 tickerGrid, L"Windows.UI.Xaml.Controls.Grid"))) {
+            // OK.
+        } else {
+            return false;
+        }
+
+        double badgeMaxValue = g_unloading ? 24 : 40 - marginValue * 2;
+
+        FrameworkElement badgeSmall = tickerGrid;
+        if ((badgeSmall = FindChildByName(badgeSmall, L"SmallTicker1")) &&
+            (badgeSmall = FindChildByClassName(
+                 badgeSmall, L"AdaptiveCards.Rendering.Uwp.WholeItemsPanel")) &&
+            (badgeSmall =
+                 FindChildByName(badgeSmall, L"BadgeAnchorSmallTicker"))) {
+            Wh_Log(L"Setting MaxWidth=%f, MaxHeight=%f for small badge",
+                   badgeMaxValue, badgeMaxValue);
+
+            badgeSmall.MaxWidth(badgeMaxValue);
+            badgeSmall.MaxHeight(badgeMaxValue);
+        }
+
+        FrameworkElement badgeLarge = tickerGrid;
+        if ((badgeLarge = FindChildByName(badgeLarge, L"LargeTicker1")) &&
+            (badgeLarge = FindChildByClassName(
+                 badgeLarge, L"AdaptiveCards.Rendering.Uwp.WholeItemsPanel")) &&
+            (badgeLarge =
+                 FindChildByName(badgeLarge, L"BadgeAnchorLargeTicker"))) {
+            Wh_Log(L"Setting MaxWidth=%f, MaxHeight=%f for large badge",
+                   badgeMaxValue, badgeMaxValue);
+
+            badgeLarge.MaxWidth(badgeMaxValue);
+            badgeLarge.MaxHeight(badgeMaxValue);
+        }
+
+        FrameworkElement labelsBorder = tickerGrid;
+        if ((labelsBorder = FindChildByName(labelsBorder, L"LargeTicker2"))) {
+            auto margin = Thickness{0, labelsTopBorderExtraMargin, 0, 0};
+
+            Wh_Log(L"Setting Margin=%f,%f,%f,%f for labels border", margin.Left,
+                   margin.Top, margin.Right, margin.Bottom);
+
+            labelsBorder.Margin(margin);
+        }
+
+        return false;
+    });
+}
+
 using ExperienceToggleButton_UpdateButtonPadding_t = void(WINAPI*)(void* pThis);
 ExperienceToggleButton_UpdateButtonPadding_t
     ExperienceToggleButton_UpdateButtonPadding_Original;
@@ -1894,10 +2040,6 @@ void WINAPI ExperienceToggleButton_UpdateButtonPadding_Hook(void* pThis) {
         SetExperienceToggleButtonIconHeight(pThis, *prevIconHeight);
     }
 
-    if (g_hasDynamicIconScaling && g_unloading) {
-        return;
-    }
-
     FrameworkElement toggleButtonElement = nullptr;
     ((IUnknown**)pThis)[1]->QueryInterface(winrt::guid_of<FrameworkElement>(),
                                            winrt::put_abi(toggleButtonElement));
@@ -1912,9 +2054,21 @@ void WINAPI ExperienceToggleButton_UpdateButtonPadding_Hook(void* pThis) {
         return;
     }
 
+    auto className = winrt::get_class_name(toggleButtonElement);
+
+    // AugmentedEntryPointButton::UpdateButtonPadding has no exit of its own,
+    // it tail calls this one, so the widgets button arrives here as well.
+    if (className == L"Taskbar.AugmentedEntryPointButton") {
+        UpdateAugmentedEntryPointContent(panelElement);
+        return;
+    }
+
+    if (g_hasDynamicIconScaling && g_unloading) {
+        return;
+    }
+
     double defaultWidthExtra = -4;
 
-    auto className = winrt::get_class_name(toggleButtonElement);
     if (className == L"Taskbar.ExperienceToggleButton") {
         auto automationId = Automation::AutomationProperties::GetAutomationId(
             toggleButtonElement);
@@ -2066,30 +2220,9 @@ void WINAPI SearchButtonBase_IconHeight_Hook(void* pThis, double height) {
     SearchButtonBase_IconHeight_Original(pThis, height);
 }
 
-using AugmentedEntryPointButton_UpdateButtonPadding_t =
-    void(WINAPI*)(void* pThis);
-AugmentedEntryPointButton_UpdateButtonPadding_t
-    AugmentedEntryPointButton_UpdateButtonPadding_Original;
-void WINAPI AugmentedEntryPointButton_UpdateButtonPadding_Hook(void* pThis) {
-    Wh_Log(L">");
-
-    g_inAugmentedEntryPointButton_UpdateButtonPadding = true;
-
-    AugmentedEntryPointButton_UpdateButtonPadding_Original(pThis);
-
-    g_inAugmentedEntryPointButton_UpdateButtonPadding = false;
-}
-
-using FrameworkElement_Width_t = void(WINAPI*)(void* pThis, double width);
-FrameworkElement_Width_t ProgressBar_Width_Original;
-FrameworkElement_Width_t Grid_Width_Original;
-
-// The two setters are identical thunks which the linker may fold into a single
-// function, so one handler serves both and is given the original of the setter
-// it was called through.
-void ProgressBar_Grid_Width_Hook(void* pThis,
-                                 double width,
-                                 FrameworkElement_Width_t originalFunctionPtr) {
+using ProgressBar_Width_t = void(WINAPI*)(void* pThis, double width);
+ProgressBar_Width_t ProgressBar_Width_Original;
+void WINAPI ProgressBar_Width_Hook(void* pThis, double width) {
     Wh_Log(L"> width=%f", width);
 
     // The setter is folded with the ones of other element types, and other
@@ -2103,170 +2236,7 @@ void ProgressBar_Grid_Width_Hook(void* pThis,
                width);
     }
 
-    originalFunctionPtr(pThis, width);
-
-    if (!g_inAugmentedEntryPointButton_UpdateButtonPadding) {
-        return;
-    }
-
-    FrameworkElement button = nullptr;
-    (*(IUnknown**)pThis)
-        ->QueryInterface(winrt::guid_of<FrameworkElement>(),
-                         winrt::put_abi(button));
-    if (!button) {
-        return;
-    }
-
-    FrameworkElement augmentedEntryPointContentGrid =
-        FindChildByName(button, L"AugmentedEntryPointContentGrid");
-    if (!augmentedEntryPointContentGrid) {
-        return;
-    }
-
-    double marginValue = static_cast<double>(40 - g_settings.iconSize) / 2;
-    if (marginValue < 0) {
-        marginValue = 0;
-    }
-
-    EnumChildElements(augmentedEntryPointContentGrid, [marginValue](
-                                                          FrameworkElement
-                                                              child) {
-        if (winrt::get_class_name(child) != L"Windows.UI.Xaml.Controls.Grid") {
-            return false;
-        }
-
-        FrameworkElement panelGrid =
-            FindChildByClassName(child, L"Windows.UI.Xaml.Controls.Grid");
-        if (!panelGrid) {
-            return false;
-        }
-
-        FrameworkElement panel = FindChildByClassName(
-            panelGrid, L"AdaptiveCards.Rendering.Uwp.WholeItemsPanel");
-        if (!panel) {
-            return false;
-        }
-
-        Wh_Log(L"Processing %f x %f widget", panelGrid.Width(),
-               panelGrid.Height());
-
-        double labelsTopBorderExtraMargin = 0;
-
-        bool widePanel = panelGrid.Width() > panelGrid.Height();
-        if (widePanel) {
-            auto margin = Thickness{3, 3, 3, 3};
-
-            if (!g_unloading && marginValue <= 3) {
-                labelsTopBorderExtraMargin = 3 - marginValue;
-                margin.Left = marginValue;
-                margin.Top = marginValue;
-
-                // Logically these should be marginValue too, but having no
-                // right/bottom margin doesn't seem to matter, while having
-                // values which are too tight sometimes cause the icon to
-                // disappear for some reason. Relevant issue:
-                // https://github.com/ramensoftware/windhawk-mods/issues/726
-                margin.Right = 0;
-                margin.Bottom = 0;
-            }
-
-            Wh_Log(L"Setting Margin=%f,%f,%f,%f for panel", margin.Left,
-                   margin.Top, margin.Right, margin.Bottom);
-
-            panel.Margin(margin);
-
-            panelGrid.VerticalAlignment(g_unloading
-                                            ? VerticalAlignment::Stretch
-                                            : VerticalAlignment::Center);
-        } else {
-            auto margin = Thickness{8, 8, 8, 8};
-
-            if (!g_unloading) {
-                margin.Left = marginValue;
-                margin.Top = marginValue;
-
-                // Logically these should be marginValue too, but having no
-                // right/bottom margin doesn't seem to matter, while having
-                // values which are too tight sometimes cause the icon to
-                // disappear for some reason. Relevant issue:
-                // https://github.com/ramensoftware/windhawk-mods/issues/726
-                margin.Right = 0;
-                margin.Bottom = 0;
-
-                if (g_taskbarHeight < 48) {
-                    margin.Top -= static_cast<double>(48 - g_taskbarHeight) / 2;
-                    if (margin.Top < 0) {
-                        margin.Top = 0;
-                    }
-                }
-            }
-
-            Wh_Log(L"Setting Margin=%f,%f,%f,%f for panel", margin.Left,
-                   margin.Top, margin.Right, margin.Bottom);
-
-            panel.Margin(margin);
-        }
-
-        FrameworkElement tickerGrid = panel;
-        if ((tickerGrid = FindChildByClassName(
-                 tickerGrid, L"Windows.UI.Xaml.Controls.Border")) &&
-            (tickerGrid = FindChildByClassName(
-                 tickerGrid, L"AdaptiveCards.Rendering.Uwp.WholeItemsPanel")) &&
-            (tickerGrid = FindChildByClassName(
-                 tickerGrid, L"Windows.UI.Xaml.Controls.Grid"))) {
-            // OK.
-        } else {
-            return false;
-        }
-
-        double badgeMaxValue = g_unloading ? 24 : 40 - marginValue * 2;
-
-        FrameworkElement badgeSmall = tickerGrid;
-        if ((badgeSmall = FindChildByName(badgeSmall, L"SmallTicker1")) &&
-            (badgeSmall = FindChildByClassName(
-                 badgeSmall, L"AdaptiveCards.Rendering.Uwp.WholeItemsPanel")) &&
-            (badgeSmall =
-                 FindChildByName(badgeSmall, L"BadgeAnchorSmallTicker"))) {
-            Wh_Log(L"Setting MaxWidth=%f, MaxHeight=%f for small badge",
-                   badgeMaxValue, badgeMaxValue);
-
-            badgeSmall.MaxWidth(badgeMaxValue);
-            badgeSmall.MaxHeight(badgeMaxValue);
-        }
-
-        FrameworkElement badgeLarge = tickerGrid;
-        if ((badgeLarge = FindChildByName(badgeLarge, L"LargeTicker1")) &&
-            (badgeLarge = FindChildByClassName(
-                 badgeLarge, L"AdaptiveCards.Rendering.Uwp.WholeItemsPanel")) &&
-            (badgeLarge =
-                 FindChildByName(badgeLarge, L"BadgeAnchorLargeTicker"))) {
-            Wh_Log(L"Setting MaxWidth=%f, MaxHeight=%f for large badge",
-                   badgeMaxValue, badgeMaxValue);
-
-            badgeLarge.MaxWidth(badgeMaxValue);
-            badgeLarge.MaxHeight(badgeMaxValue);
-        }
-
-        FrameworkElement labelsBorder = tickerGrid;
-        if ((labelsBorder = FindChildByName(labelsBorder, L"LargeTicker2"))) {
-            auto margin = Thickness{0, labelsTopBorderExtraMargin, 0, 0};
-
-            Wh_Log(L"Setting Margin=%f,%f,%f,%f for labels border", margin.Left,
-                   margin.Top, margin.Right, margin.Bottom);
-
-            labelsBorder.Margin(margin);
-        }
-
-        return false;
-    });
-}
-
-void WINAPI ProgressBar_Width_Hook(void* pThis, double width) {
-    ProgressBar_Grid_Width_Hook(pThis, width, ProgressBar_Width_Original);
-}
-
-void WINAPI Grid_Width_Hook(void* pThis, double width) {
-    ProgressBar_Grid_Width_Hook(pThis, width, Grid_Width_Original);
+    ProgressBar_Width_Original(pThis, width);
 }
 
 using SHAppBarMessage_t = decltype(&SHAppBarMessage);
@@ -2746,23 +2716,11 @@ bool HookTaskbarViewDllSymbols(HMODULE module,
                 ExperienceToggleButton_UpdateButtonPadding_Hook,
             },
             {
-                {LR"(protected: virtual void __cdecl winrt::Taskbar::implementation::AugmentedEntryPointButton::UpdateButtonPadding(void))"},
-                &AugmentedEntryPointButton_UpdateButtonPadding_Original,
-                AugmentedEntryPointButton_UpdateButtonPadding_Hook,
-            },
-            {
                 // Sizes the progress indicator of a taskbar button.
                 {LR"(public: __cdecl winrt::impl::consume_Windows_UI_Xaml_IFrameworkElement<struct winrt::Microsoft::UI::Xaml::Controls::ProgressBar>::Width(double)const )"},
                 &ProgressBar_Width_Original,
-                nullptr,  // Both setters can have the same address.
-                true,     // From Windows 11 version 22H2.
-            },
-            {
-                // Sizes the root panel of an experience toggle button.
-                {LR"(public: __cdecl winrt::impl::consume_Windows_UI_Xaml_IFrameworkElement<struct winrt::Windows::UI::Xaml::Controls::Grid>::Width(double)const )"},
-                &Grid_Width_Original,
-                nullptr,  // Both setters can have the same address.
-                true,     // From Windows 11 version 22H2.
+                ProgressBar_Width_Hook,
+                true,  // From Windows 11 version 22H2.
             },
         };
 
@@ -2862,21 +2820,6 @@ bool HookTaskbarViewDllSymbols(HMODULE module,
             SystemTrayController_UpdateFrameSize_SymbolAddress,
             SystemTrayController_UpdateFrameSize_Hook,
             &SystemTrayController_UpdateFrameSize_Original);
-    }
-
-    // Only hook the second setter if it wasn't folded with the first one.
-    bool hookGridWidth = Grid_Width_Original &&
-                         Grid_Width_Original != ProgressBar_Width_Original;
-
-    if (ProgressBar_Width_Original) {
-        WindhawkUtils::SetFunctionHook(ProgressBar_Width_Original,
-                                       ProgressBar_Width_Hook,
-                                       &ProgressBar_Width_Original);
-    }
-
-    if (hookGridWidth) {
-        WindhawkUtils::SetFunctionHook(Grid_Width_Original, Grid_Width_Hook,
-                                       &Grid_Width_Original);
     }
 
     if (TaskbarController_OnGroupingModeChanged_Original) {
