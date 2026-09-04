@@ -714,13 +714,12 @@ void TaskListButton_IconHeight_InitOffsets() {
     GetIconHeightOffset();
 }
 
-// The TaskbarSettings::Size getter is a generic "read an int32 property from a
-// fixed vtable slot" thunk, which the linker folds with the identical getters
-// of unrelated interfaces, such as TaskListGroupViewModel::ViewModelCount and
-// Badge::Glyph. The hook therefore has to confirm what it was called on. pThis
-// is a C++/WinRT wrapper, so it points at the ABI interface pointer, and all of
-// the folded getters take WinRT interfaces, which are IInspectable derived.
-bool IsTaskbarSettings(void* pThis) {
+// A property accessor of a C++/WinRT interface is a generic "use a fixed vtable
+// slot" thunk, which the linker folds with the identical accessors of unrelated
+// interfaces, so a hook on one of them is called for all of them and has to
+// confirm what it was called on. pThis is a C++/WinRT wrapper, so it points at
+// the ABI interface pointer, and WinRT interfaces are IInspectable derived.
+bool IsRuntimeClass(void* pThis, std::wstring_view className) {
     void* abi = pThis ? *(void**)pThis : nullptr;
     if (!abi) {
         return false;
@@ -728,24 +727,23 @@ bool IsTaskbarSettings(void* pThis) {
 
     // Keyed by vtable, so the class name is queried once per interface.
     static std::mutex mutex;
-    static std::unordered_map<void*, bool> cache;
+    static std::unordered_map<void*, winrt::hstring> cache;
 
     std::lock_guard<std::mutex> guard(mutex);
 
-    auto [it, inserted] = cache.try_emplace(*(void**)abi, false);
+    auto [it, inserted] = cache.try_emplace(*(void**)abi);
     if (inserted) {
         try {
-            auto className = winrt::get_class_name(
+            it->second = winrt::get_class_name(
                 *reinterpret_cast<winrt::Windows::Foundation::IInspectable*>(
                     pThis));
-            it->second = className == L"WindowsUdk.UI.Shell.TaskbarSettings";
-            Wh_Log(L"%s -> %d", className.c_str(), (int)it->second);
+            Wh_Log(L"%s", it->second.c_str());
         } catch (const winrt::hresult_error& ex) {
             Wh_Log(L"Error %08X: %s", ex.code().value, ex.message().c_str());
         }
     }
 
-    return it->second;
+    return it->second == className;
 }
 
 // enumTaskbarSize is a winrt::WindowsUdk::UI::Shell::TaskbarSize: 0 small, 1
@@ -754,7 +752,10 @@ bool IsTaskbarSettings(void* pThis) {
 int OverrideTaskbarSettingsSize(PCSTR sourceFunctionName,
                                 void* pThis,
                                 int enumTaskbarSize) {
-    if (g_unloading || enumTaskbarSize != 0 || !IsTaskbarSettings(pThis)) {
+    // The getter is folded with the ones of unrelated interfaces, such as
+    // TaskListGroupViewModel::ViewModelCount and Badge::Glyph.
+    if (g_unloading || enumTaskbarSize != 0 ||
+        !IsRuntimeClass(pThis, L"WindowsUdk.UI.Shell.TaskbarSettings")) {
         return enumTaskbarSize;
     }
 
@@ -1667,9 +1668,9 @@ void TaskListButton_UpdateIconColumnDefinition_InitOffsets() {
     GetMediumTaskbarButtonExtentOffset();
 }
 
-// UpdateVisualStates reads the icon height both as the posture marker and as an
-// element size, such as the progress indicator. It gets the posture height, and
-// the sized elements get the customized height back.
+// UpdateVisualStates reads the icon height both as the posture marker and as
+// the progress indicator size. It gets the posture height, and the progress
+// indicator gets the customized height back.
 thread_local double g_taskListButtonPostureIconHeight;
 thread_local double g_taskListButtonCustomIconHeight;
 
@@ -2079,19 +2080,30 @@ void WINAPI AugmentedEntryPointButton_UpdateButtonPadding_Hook(void* pThis) {
     g_inAugmentedEntryPointButton_UpdateButtonPadding = false;
 }
 
-using RepeatButton_Width_t = void(WINAPI*)(void* pThis, double width);
-RepeatButton_Width_t RepeatButton_Width_Original;
-void WINAPI RepeatButton_Width_Hook(void* pThis, double width) {
+using FrameworkElement_Width_t = void(WINAPI*)(void* pThis, double width);
+FrameworkElement_Width_t ProgressBar_Width_Original;
+FrameworkElement_Width_t Grid_Width_Original;
+
+// The two setters are identical thunks which the linker may fold into a single
+// function, so one handler serves both and is given the original of the setter
+// it was called through.
+void ProgressBar_Grid_Width_Hook(void* pThis,
+                                 double width,
+                                 FrameworkElement_Width_t originalFunctionPtr) {
     Wh_Log(L"> width=%f", width);
 
+    // The setter is folded with the ones of other element types, and other
+    // elements are given the posture height as well, such as the running
+    // indicator, whose small posture extent is 16.
     if (g_taskListButtonPostureIconHeight &&
-        width == g_taskListButtonPostureIconHeight) {
+        width == g_taskListButtonPostureIconHeight &&
+        IsRuntimeClass(pThis, L"Microsoft.UI.Xaml.Controls.ProgressBar")) {
         width = g_taskListButtonCustomIconHeight;
         Wh_Log(L"Setting width: %f->%f", g_taskListButtonPostureIconHeight,
                width);
     }
 
-    RepeatButton_Width_Original(pThis, width);
+    originalFunctionPtr(pThis, width);
 
     if (!g_inAugmentedEntryPointButton_UpdateButtonPadding) {
         return;
@@ -2247,6 +2259,14 @@ void WINAPI RepeatButton_Width_Hook(void* pThis, double width) {
 
         return false;
     });
+}
+
+void WINAPI ProgressBar_Width_Hook(void* pThis, double width) {
+    ProgressBar_Grid_Width_Hook(pThis, width, ProgressBar_Width_Original);
+}
+
+void WINAPI Grid_Width_Hook(void* pThis, double width) {
+    ProgressBar_Grid_Width_Hook(pThis, width, Grid_Width_Original);
 }
 
 using SHAppBarMessage_t = decltype(&SHAppBarMessage);
@@ -2731,10 +2751,18 @@ bool HookTaskbarViewDllSymbols(HMODULE module,
                 AugmentedEntryPointButton_UpdateButtonPadding_Hook,
             },
             {
-                {LR"(public: __cdecl winrt::impl::consume_Windows_UI_Xaml_IFrameworkElement<struct winrt::Windows::UI::Xaml::Controls::Primitives::RepeatButton>::Width(double)const )"},
-                &RepeatButton_Width_Original,
-                RepeatButton_Width_Hook,
-                true,  // From Windows 11 version 22H2.
+                // Sizes the progress indicator of a taskbar button.
+                {LR"(public: __cdecl winrt::impl::consume_Windows_UI_Xaml_IFrameworkElement<struct winrt::Microsoft::UI::Xaml::Controls::ProgressBar>::Width(double)const )"},
+                &ProgressBar_Width_Original,
+                nullptr,  // Both setters can have the same address.
+                true,     // From Windows 11 version 22H2.
+            },
+            {
+                // Sizes the root panel of an experience toggle button.
+                {LR"(public: __cdecl winrt::impl::consume_Windows_UI_Xaml_IFrameworkElement<struct winrt::Windows::UI::Xaml::Controls::Grid>::Width(double)const )"},
+                &Grid_Width_Original,
+                nullptr,  // Both setters can have the same address.
+                true,     // From Windows 11 version 22H2.
             },
         };
 
@@ -2834,6 +2862,21 @@ bool HookTaskbarViewDllSymbols(HMODULE module,
             SystemTrayController_UpdateFrameSize_SymbolAddress,
             SystemTrayController_UpdateFrameSize_Hook,
             &SystemTrayController_UpdateFrameSize_Original);
+    }
+
+    // Only hook the second setter if it wasn't folded with the first one.
+    bool hookGridWidth = Grid_Width_Original &&
+                         Grid_Width_Original != ProgressBar_Width_Original;
+
+    if (ProgressBar_Width_Original) {
+        WindhawkUtils::SetFunctionHook(ProgressBar_Width_Original,
+                                       ProgressBar_Width_Hook,
+                                       &ProgressBar_Width_Original);
+    }
+
+    if (hookGridWidth) {
+        WindhawkUtils::SetFunctionHook(Grid_Width_Original, Grid_Width_Hook,
+                                       &Grid_Width_Original);
     }
 
     if (TaskbarController_OnGroupingModeChanged_Original) {
