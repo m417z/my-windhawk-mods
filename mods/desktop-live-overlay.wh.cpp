@@ -373,6 +373,8 @@ struct CounterEntry {
 struct WildcardMetric {
     std::vector<CounterEntry> counters;
     std::wstring wildcardPath;  // Localized wildcard path for re-expansion.
+    // Substring the expanded paths must contain, empty to accept all.
+    std::wstring pathFilter;
 };
 
 WildcardMetric g_uploadMetric;
@@ -717,12 +719,29 @@ std::vector<std::wstring> ExpandLocalizedWildcard(
     return result;
 }
 
+std::vector<std::wstring> FilterMetricPaths(const WildcardMetric& metric,
+                                            std::vector<std::wstring> paths) {
+    if (metric.pathFilter.empty()) {
+        return paths;
+    }
+
+    std::vector<std::wstring> filtered;
+    for (const auto& path : paths) {
+        if (StrStrIW(path.c_str(), metric.pathFilter.c_str())) {
+            filtered.push_back(path);
+        }
+    }
+
+    return filtered;
+}
+
 void UpdateWildcardMetric(WildcardMetric& metric) {
     if (metric.wildcardPath.empty()) {
         return;
     }
 
-    auto currentPaths = ExpandLocalizedWildcard(metric.wildcardPath);
+    auto currentPaths =
+        FilterMetricPaths(metric, ExpandLocalizedWildcard(metric.wildcardPath));
 
     std::unordered_set<std::wstring> currentPathSet(currentPaths.begin(),
                                                     currentPaths.end());
@@ -1012,6 +1031,49 @@ void WeatherUpdateThreadUninit() {
     g_weatherContent.reset();
 }
 
+// The LUID substring of the adapter with the most dedicated video memory, as it
+// appears in GPU Engine counter instances, e.g. "luid_0x00000000_0x0000C40C_".
+std::wstring GetPrimaryGpuPathFilter() {
+    ComPtr<IDXGIFactory1> factory;
+    HRESULT hr = CreateDXGIFactory1(IID_PPV_ARGS(&factory));
+    if (FAILED(hr)) {
+        Wh_Log(L"CreateDXGIFactory1 failed: 0x%08X", hr);
+        return {};
+    }
+
+    DXGI_ADAPTER_DESC bestDesc{};
+    bool found = false;
+
+    for (UINT i = 0;; i++) {
+        ComPtr<IDXGIAdapter> adapter;
+        if (factory->EnumAdapters(i, &adapter) == DXGI_ERROR_NOT_FOUND) {
+            break;
+        }
+
+        DXGI_ADAPTER_DESC desc;
+        if (FAILED(adapter->GetDesc(&desc))) {
+            continue;
+        }
+
+        if (!found ||
+            desc.DedicatedVideoMemory > bestDesc.DedicatedVideoMemory) {
+            bestDesc = desc;
+            found = true;
+        }
+    }
+
+    if (!found) {
+        return {};
+    }
+
+    Wh_Log(L"Using GPU adapter %s", bestDesc.Description);
+
+    WCHAR pathFilter[32];
+    swprintf_s(pathFilter, L"luid_0x%08X_0x%08X_",
+               bestDesc.AdapterLuid.HighPart, bestDesc.AdapterLuid.LowPart);
+    return pathFilter;
+}
+
 bool InitMetrics() {
     // Determine which metrics are needed based on patterns used.
     bool needCpu = IsPatternUsed(L"%cpu%");
@@ -1093,10 +1155,14 @@ bool InitMetrics() {
 
     // GPU engine counters (wildcard expansion).
     if (needGpu) {
+        // The counter has an instance per engine per process for every adapter
+        // in the system, so only one adapter is summed.
+        g_gpuMetric.pathFilter = GetPrimaryGpuPathFilter();
+
         auto gpuPaths =
             ExpandEnglishWildcard(L"\\GPU Engine(*)\\Utilization Percentage",
                                   &g_gpuMetric.wildcardPath);
-        for (const auto& path : gpuPaths) {
+        for (const auto& path : FilterMetricPaths(g_gpuMetric, gpuPaths)) {
             PDH_HCOUNTER counter;
             if (PdhAddCounter(g_metricsQuery, path.c_str(), 0, &counter) ==
                 ERROR_SUCCESS) {
@@ -1199,6 +1265,12 @@ void CollectMetricsDataIfNeeded() {
     }
 }
 
+// Counters can report more than 100%: the CPU utility counter exceeds 100 with
+// turbo boost, and the GPU value is a sum over all engines.
+int CapPercent(double value) {
+    return (int)(std::min)(value, 100.0);
+}
+
 PCWSTR GetCpuFormatted() {
     CollectMetricsDataIfNeeded();
     if (g_cpuFormatted.formatIndex != g_metricsFormatIndex) {
@@ -1207,7 +1279,7 @@ PCWSTR GetCpuFormatted() {
             if (PdhGetFormattedCounterValue(g_cpuCounter, PDH_FMT_DOUBLE,
                                             nullptr, &val) == ERROR_SUCCESS) {
                 swprintf_s(g_cpuFormatted.buffer, L"%d%%",
-                           (int)val.doubleValue);
+                           CapPercent(val.doubleValue));
             } else {
                 wcscpy_s(g_cpuFormatted.buffer, L"-");
             }
@@ -1461,7 +1533,7 @@ PCWSTR GetGpuFormatted() {
     if (g_gpuFormatted.formatIndex != g_metricsFormatIndex) {
         if (!g_gpuMetric.counters.empty()) {
             double usage = QueryWildcardMetricSum(g_gpuMetric);
-            swprintf_s(g_gpuFormatted.buffer, L"%d%%", (int)usage);
+            swprintf_s(g_gpuFormatted.buffer, L"%d%%", CapPercent(usage));
         } else {
             wcscpy_s(g_gpuFormatted.buffer, L"-");
         }
