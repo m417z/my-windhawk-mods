@@ -374,7 +374,7 @@ struct CounterEntry {
 
 struct WildcardMetric {
     std::vector<CounterEntry> counters;
-    std::wstring wildcardPath;  // Localized wildcard path for re-expansion.
+    PCWSTR wildcardPath = nullptr;  // English wildcard path for re-expansion.
     // Substring the expanded paths must contain, empty to accept all.
     std::wstring pathFilter;
 };
@@ -631,13 +631,12 @@ int StringCopyTruncated(PWSTR dest,
 // Expand an English wildcard counter path into localized paths.
 // Implemented according to the note here:
 // https://learn.microsoft.com/en-us/windows/win32/api/pdh/nf-pdh-pdhaddenglishcounterw
-std::vector<std::wstring> ExpandEnglishWildcard(PCWSTR wildcardPath,
-                                                std::wstring* localizedOut) {
+std::vector<std::wstring> ExpandEnglishWildcard(PCWSTR wildcardPath) {
     // Step 1: Add English counter with wildcards to get localized path.
     PDH_HCOUNTER tempCounter;
     PDH_STATUS status =
         PdhAddEnglishCounter(g_metricsQuery, wildcardPath, 0, &tempCounter);
-    if (status != ERROR_SUCCESS) {
+    if (FAILED(status)) {
         Wh_Log(L"PdhAddEnglishCounter error %08X", status);
         return {};
     }
@@ -645,8 +644,13 @@ std::vector<std::wstring> ExpandEnglishWildcard(PCWSTR wildcardPath,
     // Step 2: Get counter info to obtain localized full path.
     DWORD required = 0;
     status = PdhGetCounterInfo(tempCounter, FALSE, &required, nullptr);
-    if (status != static_cast<PDH_STATUS>(PDH_MORE_DATA) || required == 0) {
+    if (FAILED(status) && status != static_cast<PDH_STATUS>(PDH_MORE_DATA)) {
         Wh_Log(L"PdhGetCounterInfo (size) error %08X", status);
+        PdhRemoveCounter(tempCounter);
+        return {};
+    }
+
+    if (required == 0) {
         PdhRemoveCounter(tempCounter);
         return {};
     }
@@ -657,62 +661,34 @@ std::vector<std::wstring> ExpandEnglishWildcard(PCWSTR wildcardPath,
 
     status = PdhGetCounterInfo(tempCounter, FALSE, &required, counterInfo);
     PdhRemoveCounter(tempCounter);
-    if (status != ERROR_SUCCESS) {
+    if (FAILED(status)) {
         Wh_Log(L"PdhGetCounterInfo error %08X", status);
         return {};
     }
 
-    std::wstring localizedPath = counterInfo->szFullPath;
-    if (localizedOut) {
-        *localizedOut = localizedPath;
-    }
-
     // Step 3: Expand wildcards using the localized path.
-    DWORD pathListLength = 0;
-    status = PdhExpandWildCardPathW(nullptr, localizedPath.c_str(), nullptr,
-                                    &pathListLength, 0);
-    if (status != static_cast<PDH_STATUS>(PDH_MORE_DATA) ||
-        pathListLength == 0) {
+    required = 0;
+    status = PdhExpandWildCardPathW(nullptr, counterInfo->szFullPath, nullptr,
+                                    &required, 0);
+    if (FAILED(status) && status != static_cast<PDH_STATUS>(PDH_MORE_DATA)) {
+        Wh_Log(L"PdhExpandWildCardPath (localized, size) error %08X", status);
         return {};
     }
 
-    std::wstring pathList(pathListLength, L'\0');
-    status = PdhExpandWildCardPathW(nullptr, localizedPath.c_str(),
-                                    pathList.data(), &pathListLength, 0);
-    if (status != ERROR_SUCCESS) {
+    if (required == 0) {
         return {};
     }
 
-    std::vector<std::wstring> result;
-    PCWSTR p = pathList.c_str();
-    while (*p) {
-        result.push_back(p);
-        p += wcslen(p) + 1;
-    }
-
-    return result;
-}
-
-// Re-expand a previously obtained localized wildcard path.
-std::vector<std::wstring> ExpandLocalizedWildcard(
-    const std::wstring& localizedPath) {
-    DWORD pathListLength = 0;
-    PDH_STATUS status = PdhExpandWildCardPathW(nullptr, localizedPath.c_str(),
-                                               nullptr, &pathListLength, 0);
-    if (status != static_cast<PDH_STATUS>(PDH_MORE_DATA) ||
-        pathListLength == 0) {
-        return {};
-    }
-
-    std::wstring pathList(pathListLength, L'\0');
-    status = PdhExpandWildCardPathW(nullptr, localizedPath.c_str(),
-                                    pathList.data(), &pathListLength, 0);
-    if (status != ERROR_SUCCESS) {
+    std::vector<WCHAR> pathList(required);
+    status = PdhExpandWildCardPathW(nullptr, counterInfo->szFullPath,
+                                    pathList.data(), &required, 0);
+    if (FAILED(status)) {
+        Wh_Log(L"PdhExpandWildCardPath (localized) error %08X", status);
         return {};
     }
 
     std::vector<std::wstring> result;
-    PCWSTR p = pathList.c_str();
+    PCWSTR p = pathList.data();
     while (*p) {
         result.push_back(p);
         p += wcslen(p) + 1;
@@ -738,12 +714,12 @@ std::vector<std::wstring> FilterMetricPaths(const WildcardMetric& metric,
 }
 
 void UpdateWildcardMetric(WildcardMetric& metric) {
-    if (metric.wildcardPath.empty()) {
+    if (!metric.wildcardPath) {
         return;
     }
 
     auto currentPaths =
-        FilterMetricPaths(metric, ExpandLocalizedWildcard(metric.wildcardPath));
+        FilterMetricPaths(metric, ExpandEnglishWildcard(metric.wildcardPath));
 
     std::unordered_set<std::wstring> currentPathSet(currentPaths.begin(),
                                                     currentPaths.end());
@@ -1117,30 +1093,15 @@ bool InitMetrics() {
 
     // Network upload counters (wildcard expansion).
     if (needUpload) {
-        auto uploadPaths =
-            ExpandEnglishWildcard(L"\\Network Interface(*)\\Bytes Sent/sec",
-                                  &g_uploadMetric.wildcardPath);
-        for (const auto& path : uploadPaths) {
-            PDH_HCOUNTER counter;
-            if (PdhAddCounter(g_metricsQuery, path.c_str(), 0, &counter) ==
-                ERROR_SUCCESS) {
-                g_uploadMetric.counters.push_back({path, counter});
-            }
-        }
+        g_uploadMetric.wildcardPath = L"\\Network Interface(*)\\Bytes Sent/sec";
+        UpdateWildcardMetric(g_uploadMetric);
     }
 
     // Network download counters (wildcard expansion).
     if (needDownload) {
-        auto downloadPaths =
-            ExpandEnglishWildcard(L"\\Network Interface(*)\\Bytes Received/sec",
-                                  &g_downloadMetric.wildcardPath);
-        for (const auto& path : downloadPaths) {
-            PDH_HCOUNTER counter;
-            if (PdhAddCounter(g_metricsQuery, path.c_str(), 0, &counter) ==
-                ERROR_SUCCESS) {
-                g_downloadMetric.counters.push_back({path, counter});
-            }
-        }
+        g_downloadMetric.wildcardPath =
+            L"\\Network Interface(*)\\Bytes Received/sec";
+        UpdateWildcardMetric(g_downloadMetric);
     }
 
     // Disk read/write counters.
@@ -1161,16 +1122,8 @@ bool InitMetrics() {
         // in the system, so only one adapter is summed.
         g_gpuMetric.pathFilter = GetPrimaryGpuPathFilter();
 
-        auto gpuPaths =
-            ExpandEnglishWildcard(L"\\GPU Engine(*)\\Utilization Percentage",
-                                  &g_gpuMetric.wildcardPath);
-        for (const auto& path : FilterMetricPaths(g_gpuMetric, gpuPaths)) {
-            PDH_HCOUNTER counter;
-            if (PdhAddCounter(g_metricsQuery, path.c_str(), 0, &counter) ==
-                ERROR_SUCCESS) {
-                g_gpuMetric.counters.push_back({path, counter});
-            }
-        }
+        g_gpuMetric.wildcardPath = L"\\GPU Engine(*)\\Utilization Percentage";
+        UpdateWildcardMetric(g_gpuMetric);
     }
 
     // First call initializes the counters.
