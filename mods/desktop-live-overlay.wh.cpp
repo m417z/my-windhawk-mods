@@ -1581,7 +1581,7 @@ PCWSTR GetWeekdayNumFormatted() {
 PCWSTR GetWeeknumFormatted() {
     if (g_weeknumFormatted.formatIndex != g_formatIndex) {
         DWORD startDayOfWeek = GetStartDayOfWeek();
-        swprintf_s(g_weeknumFormatted.buffer, L"%d",
+        swprintf_s(g_weeknumFormatted.buffer, L"%02d",
                    CalculateWeeknum(&g_formatTime, startDayOfWeek));
         g_weeknumFormatted.formatIndex = g_formatIndex;
     }
