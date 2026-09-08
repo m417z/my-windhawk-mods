@@ -334,6 +334,8 @@ std::atomic<bool> g_initSucceeded{false};
 std::atomic<bool> g_unloading{false};
 
 // Format state.
+std::mutex g_formatLineMutex;
+bool g_formattingInitialized = false;
 SYSTEMTIME g_formatTime;
 DWORD g_formatIndex = 0;
 DWORD g_metricsFormatIndex = 0;
@@ -388,7 +390,7 @@ std::mutex g_weatherMutex;
 std::atomic<bool> g_weatherLoaded{false};
 std::optional<std::wstring> g_weatherContent;
 
-// Cached result of whether system metrics/weather are used (set during init).
+// Whether system metrics/weather are used, derived from the line settings.
 bool g_systemMetricsUsed = false;
 bool g_weatherUsed = false;
 
@@ -1007,7 +1009,7 @@ bool IsWeatherUsed() {
 }
 
 void WeatherUpdateThreadInit() {
-    if (!g_weatherUsed) {
+    if (!g_weatherUsed || g_weatherUpdateThread) {
         return;
     }
 
@@ -1291,13 +1293,30 @@ PCWSTR GetCpuFormatted() {
     return g_cpuFormatted.buffer;
 }
 
+// System memory status, sampled at most once per refresh interval. Empty if
+// the query failed.
+std::optional<MEMORYSTATUSEX> GetRamStatus() {
+    static MEMORYSTATUSEX status{};
+    static bool valid = false;
+    static DWORD lastFormatIndex = 0xFFFFFFFF;
+
+    DWORD formatIndex = GetMetricsFormatIndex();
+    if (lastFormatIndex != formatIndex) {
+        status.dwLength = sizeof(status);
+        valid = GlobalMemoryStatusEx(&status);
+        lastFormatIndex = formatIndex;
+    }
+
+    return valid ? std::optional<MEMORYSTATUSEX>(status) : std::nullopt;
+}
+
 PCWSTR GetRamFormatted() {
     CollectMetricsDataIfNeeded();
     if (g_ramFormatted.formatIndex != g_metricsFormatIndex) {
-        MEMORYSTATUSEX status{.dwLength = sizeof(status)};
-        if (GlobalMemoryStatusEx(&status)) {
+        auto status = GetRamStatus();
+        if (status) {
             swprintf_s(g_ramFormatted.buffer, L"%d%%",
-                       (int)status.dwMemoryLoad);
+                       (int)status->dwMemoryLoad);
         } else {
             wcscpy_s(g_ramFormatted.buffer, L"-");
         }
@@ -1382,30 +1401,74 @@ PCWSTR GetPowerFormatted() {
     return g_powerFormatted.buffer;
 }
 
+std::wstring FormatLocaleNum(double val, unsigned int digitsAfterDecimal) {
+    int valStrLen = _scwprintf(L"%.17f", val);
+    if (valStrLen < 0) {
+        return std::wstring();
+    }
+
+    std::wstring valStr(valStrLen + 1, L'\0');
+    if (swprintf_s(valStr.data(), valStr.size(), L"%.17f", val) < 0) {
+        return std::wstring();
+    }
+
+    WCHAR decSep[4];
+    if (!GetLocaleInfoEx(LOCALE_NAME_USER_DEFAULT, LOCALE_SDECIMAL, decSep,
+                         ARRAYSIZE(decSep))) {
+        // Fallback.
+        decSep[0] = L'.';
+        decSep[1] = L'\0';
+    }
+
+    NUMBERFMTW fmt{
+        .NumDigits = digitsAfterDecimal,
+        .LeadingZero = 1,
+        .lpDecimalSep = const_cast<LPWSTR>(decSep),
+        .lpThousandSep = const_cast<LPWSTR>(L""),
+    };
+
+    // Query required size.
+    int needed = GetNumberFormatEx(LOCALE_NAME_USER_DEFAULT, 0, valStr.c_str(),
+                                   &fmt, nullptr, 0);
+    if (needed == 0) {
+        return std::wstring();
+    }
+
+    // Format.
+    std::wstring out(needed - 1, L'\0');
+    if (GetNumberFormatEx(LOCALE_NAME_USER_DEFAULT, 0, valStr.c_str(), &fmt,
+                          out.data(), needed) == 0) {
+        return std::wstring();
+    }
+
+    return out;
+}
+
 void FormatTransferSpeed(double bytesPerSec, PWSTR buffer, size_t bufferSize) {
-    constexpr double KB = 1024.0;
-    constexpr double MB = 1024.0 * KB;
+    constexpr double kKBInBytes = 1024.0;
+    constexpr double kMBInBytes = 1024.0 * kKBInBytes;
 
     // Use KB/s for values < 1 MB/s, otherwise MB/s.
-    if (bytesPerSec < MB) {
-        double kbps = bytesPerSec / KB;
-        if (kbps < 10) {
-            swprintf_s(buffer, bufferSize, L"%.2f KB/s", kbps);
-        } else if (kbps < 100) {
-            swprintf_s(buffer, bufferSize, L"%.1f KB/s", kbps);
-        } else {
-            swprintf_s(buffer, bufferSize, L"%.0f KB/s", kbps);
-        }
+    double valUnit;
+    PCWSTR unit;
+    if (bytesPerSec < kMBInBytes) {
+        valUnit = bytesPerSec / kKBInBytes;
+        unit = L" KB/s";
     } else {
-        double mbps = bytesPerSec / MB;
-        if (mbps < 10) {
-            swprintf_s(buffer, bufferSize, L"%.2f MB/s", mbps);
-        } else if (mbps < 100) {
-            swprintf_s(buffer, bufferSize, L"%.1f MB/s", mbps);
-        } else {
-            swprintf_s(buffer, bufferSize, L"%.0f MB/s", mbps);
-        }
+        valUnit = bytesPerSec / kMBInBytes;
+        unit = L" MB/s";
     }
+
+    // Keep identical width for values below 1000.
+    unsigned int digitsAfterDecimal = 0;
+    if (valUnit < 10) {
+        digitsAfterDecimal = 2;
+    } else if (valUnit < 100) {
+        digitsAfterDecimal = 1;
+    }
+
+    swprintf_s(buffer, bufferSize, L"%s%s",
+               FormatLocaleNum(valUnit, digitsAfterDecimal).c_str(), unit);
 }
 
 double QueryWildcardMetricSum(const WildcardMetric& metric) {
@@ -1708,16 +1771,15 @@ size_t ResolveFormatToken(
         {L"%disk_write%"sv, GetDiskWriteSpeedFormatted},
         {L"%disk_total%"sv, GetDiskTotalSpeedFormatted},
         {L"%gpu%"sv, GetGpuFormatted},
+        {L"%newline%"sv, []() { return L"\n"; }},
+        {L"%n%"sv, []() { return L"\n"; }},
     };
 
-    // Check for newline patterns first.
-    if (format.starts_with(L"%newline%"sv)) {
-        resolvedCallback(L"\n");
-        return 9;  // length of "%newline%"
-    }
-    if (format.starts_with(L"%n%"sv)) {
-        resolvedCallback(L"\n");
-        return 3;  // length of "%n%"
+    for (const auto& t : tokens) {
+        if (format.starts_with(t.token)) {
+            resolvedCallback(t.getter());
+            return t.token.size();
+        }
     }
 
     // Check for weather pattern (requires mutex).
@@ -1728,21 +1790,28 @@ size_t ResolveFormatToken(
         return token.size();
     }
 
-    // Check other tokens.
-    for (const auto& t : tokens) {
-        if (format.starts_with(t.token)) {
-            resolvedCallback(t.getter());
-            return t.token.size();
-        }
+    return 0;  // Not a recognized token
+}
+
+void EnsureFormattingInitialized() {
+    if (g_formattingInitialized) {
+        return;
     }
 
-    return 0;  // Not a recognized token
+    g_formattingInitialized = true;
+
+    InitMetrics();
+    WeatherUpdateThreadInit();
 }
 
 int FormatLine(PWSTR buffer, size_t bufferSize, std::wstring_view format) {
     if (bufferSize == 0) {
         return 0;
     }
+
+    std::lock_guard<std::mutex> guard(g_formatLineMutex);
+
+    EnsureFormattingInitialized();
 
     std::wstring_view formatSuffix = format;
     PWSTR bufferStart = buffer;
@@ -2822,21 +2891,12 @@ bool EnsureLazyInitialized() {
         return g_initSucceeded;
     }
 
-    g_systemMetricsUsed = IsSystemMetricsUsed();
-    g_weatherUsed = IsWeatherUsed();
-
     RunDxgiWorkaroundForExplorerPatcher();
 
     if (!InitDirectX()) {
         Wh_Log(L"InitDirectX failed");
         return false;
     }
-
-    if (g_systemMetricsUsed) {
-        InitMetrics();
-    }
-
-    WeatherUpdateThreadInit();
 
     g_initSucceeded = true;
     return true;
@@ -3113,6 +3173,9 @@ void LoadSettings() {
         g_settings.weatherUnits = WeatherUnits::metricMsWind;
     }
     Wh_FreeStringSetting(weatherUnits);
+
+    g_systemMetricsUsed = IsSystemMetricsUsed();
+    g_weatherUsed = IsWeatherUsed();
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -3161,8 +3224,12 @@ void Wh_ModUninit() {
     UnregisterOverlayWindowClass();
     UnregisterMessageWindowClass();
 
-    WeatherUpdateThreadUninit();
-    UninitMetrics();
+    {
+        std::lock_guard<std::mutex> guard(g_formatLineMutex);
+        WeatherUpdateThreadUninit();
+        UninitMetrics();
+    }
+
     UninitDirectX();
 }
 
@@ -3184,26 +3251,24 @@ void ApplySettingsChanged() {
         return;
     }
 
-    // Reinitialize metrics to match new settings.
-    UninitMetrics();
-    g_systemMetricsUsed = IsSystemMetricsUsed();
-    if (g_systemMetricsUsed) {
-        InitMetrics();
-    }
+    // The metrics and the weather thread are recreated by the next FormatLine.
+    {
+        std::lock_guard<std::mutex> guard(g_formatLineMutex);
 
-    // Check if weather usage or settings changed.
-    bool newWeatherUsed = IsWeatherUsed();
-    bool weatherSettingsChanged =
-        oldWeatherLocation != g_settings.weatherLocation.get() ||
-        oldWeatherFormat != g_settings.weatherFormat.get() ||
-        oldWeatherUnits != g_settings.weatherUnits;
-    if (oldWeatherUsed != newWeatherUsed ||
-        (newWeatherUsed && weatherSettingsChanged)) {
-        WeatherUpdateThreadUninit();
-        g_weatherUsed = newWeatherUsed;
-        if (g_weatherUsed) {
-            WeatherUpdateThreadInit();
+        UninitMetrics();
+
+        // Restarting the weather thread makes a new request, so keep it running
+        // unless the weather settings changed.
+        bool weatherSettingsChanged =
+            oldWeatherLocation != g_settings.weatherLocation.get() ||
+            oldWeatherFormat != g_settings.weatherFormat.get() ||
+            oldWeatherUnits != g_settings.weatherUnits;
+        if (oldWeatherUsed != g_weatherUsed ||
+            (g_weatherUsed && weatherSettingsChanged)) {
+            WeatherUpdateThreadUninit();
         }
+
+        g_formattingInitialized = false;
     }
 
     // If overlay not created yet, skip visual updates.
