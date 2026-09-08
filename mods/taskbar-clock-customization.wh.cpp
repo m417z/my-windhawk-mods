@@ -1878,9 +1878,6 @@ PCWSTR GetWeekdayFormattedTz(size_t index) {
 
             const SYSTEMTIME* time = &timeTz;
 
-            auto weekdayFormatParts =
-                SplitTimeFormatString(g_settings.weekdayFormat.get());
-
             FormatWeekday(time, weekdayFormattedTz.buffer,
                           ARRAYSIZE(weekdayFormattedTz.buffer));
         } else {
