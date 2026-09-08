@@ -3221,6 +3221,10 @@ void FormatDiskTransferSpeed(double val, PWSTR buffer, size_t bufferSize) {
                         buffer, bufferSize);
 }
 
+void FormatGbValue(double val, PWSTR buffer, size_t bufferSize) {
+    wcscpy_s(buffer, bufferSize, FormatLocaleNum(val, 1).c_str());
+}
+
 void FormatPercentValue(int val, PWSTR buffer, size_t bufferSize, int maxVal) {
     if (val > maxVal) {
         val = maxVal;
@@ -3423,7 +3427,7 @@ PCWSTR GetRamUsedFormatted() {
         }
         double usedGb =
             (double)(status->ullTotalPhys - status->ullAvailPhys) / kGBInBytes;
-        swprintf_s(buffer, bufferSize, L"%.1f", usedGb);
+        FormatGbValue(usedGb, buffer, bufferSize);
         return true;
     });
 }
@@ -3436,7 +3440,7 @@ PCWSTR GetRamTotalFormatted() {
                 return false;
             }
             double totalGb = (double)status->ullTotalPhys / kGBInBytes;
-            swprintf_s(buffer, bufferSize, L"%.1f", totalGb);
+            FormatGbValue(totalGb, buffer, bufferSize);
             return true;
         });
 }
@@ -3468,7 +3472,7 @@ PCWSTR GetRamCommittedUsedFormatted() {
             double usedGb =
                 (double)(status->ullTotalPageFile - status->ullAvailPageFile) /
                 kGBInBytes;
-            swprintf_s(buffer, bufferSize, L"%.1f", usedGb);
+            FormatGbValue(usedGb, buffer, bufferSize);
             return true;
         });
 }
@@ -3481,7 +3485,7 @@ PCWSTR GetRamCommittedTotalFormatted() {
                 return false;
             }
             double totalGb = (double)status->ullTotalPageFile / kGBInBytes;
-            swprintf_s(buffer, bufferSize, L"%.1f", totalGb);
+            FormatGbValue(totalGb, buffer, bufferSize);
             return true;
         });
 }
@@ -3539,7 +3543,7 @@ PCWSTR GetVramUsedFormatted() {
             if (!val) {
                 return false;
             }
-            swprintf_s(buffer, bufferSize, L"%.1f", *val / kGBInBytes);
+            FormatGbValue(*val / kGBInBytes, buffer, bufferSize);
             return true;
         });
 }
@@ -3551,7 +3555,7 @@ PCWSTR GetVramTotalFormatted() {
             if (!val) {
                 return false;
             }
-            swprintf_s(buffer, bufferSize, L"%.1f", *val);
+            FormatGbValue(*val, buffer, bufferSize);
             return true;
         });
 }
@@ -3590,7 +3594,7 @@ PCWSTR GetVramSharedUsedFormatted() {
             if (!val) {
                 return false;
             }
-            swprintf_s(buffer, bufferSize, L"%.1f", *val / kGBInBytes);
+            FormatGbValue(*val / kGBInBytes, buffer, bufferSize);
             return true;
         });
 }
@@ -3602,7 +3606,7 @@ PCWSTR GetVramSharedTotalFormatted() {
             if (!val) {
                 return false;
             }
-            swprintf_s(buffer, bufferSize, L"%.1f", *val);
+            FormatGbValue(*val, buffer, bufferSize);
             return true;
         });
 }
