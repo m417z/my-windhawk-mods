@@ -1461,7 +1461,7 @@ PCWSTR GetGpuFormatted() {
     if (g_gpuFormatted.formatIndex != g_metricsFormatIndex) {
         if (!g_gpuMetric.counters.empty()) {
             double usage = QueryWildcardMetricSum(g_gpuMetric);
-            swprintf_s(g_gpuFormatted.buffer, L"%d", (int)usage);
+            swprintf_s(g_gpuFormatted.buffer, L"%d%%", (int)usage);
         } else {
             wcscpy_s(g_gpuFormatted.buffer, L"-");
         }
