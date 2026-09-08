@@ -3676,7 +3676,9 @@ PCWSTR GetBatteryFormatted() {
     return GetMetricFormatted(
         g_batteryFormatted, [](PWSTR buffer, size_t bufferSize) {
             SYSTEM_POWER_STATUS powerStatus;
-            if (!GetSystemPowerStatus(&powerStatus)) {
+            // A level of 255 means unknown.
+            if (!GetSystemPowerStatus(&powerStatus) ||
+                powerStatus.BatteryLifePercent == 255) {
                 return false;
             }
             int maxVal = 100;
