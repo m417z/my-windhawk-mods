@@ -693,8 +693,8 @@ std::vector<std::wstring> ExpandEnglishWildcard(PCWSTR wildcardPath,
 std::vector<std::wstring> ExpandLocalizedWildcard(
     const std::wstring& localizedPath) {
     DWORD pathListLength = 0;
-    PDH_STATUS status = PdhExpandWildCardPathW(
-        nullptr, localizedPath.c_str(), nullptr, &pathListLength, 0);
+    PDH_STATUS status = PdhExpandWildCardPathW(nullptr, localizedPath.c_str(),
+                                               nullptr, &pathListLength, 0);
     if (status != static_cast<PDH_STATUS>(PDH_MORE_DATA) ||
         pathListLength == 0) {
         return {};
@@ -1053,9 +1053,9 @@ bool InitMetrics() {
 
     // Network upload counters (wildcard expansion).
     if (needUpload) {
-        auto uploadPaths = ExpandEnglishWildcard(
-            L"\\Network Interface(*)\\Bytes Sent/sec",
-            &g_uploadMetric.wildcardPath);
+        auto uploadPaths =
+            ExpandEnglishWildcard(L"\\Network Interface(*)\\Bytes Sent/sec",
+                                  &g_uploadMetric.wildcardPath);
         for (const auto& path : uploadPaths) {
             PDH_HCOUNTER counter;
             if (PdhAddCounter(g_metricsQuery, path.c_str(), 0, &counter) ==
@@ -1067,9 +1067,9 @@ bool InitMetrics() {
 
     // Network download counters (wildcard expansion).
     if (needDownload) {
-        auto downloadPaths = ExpandEnglishWildcard(
-            L"\\Network Interface(*)\\Bytes Received/sec",
-            &g_downloadMetric.wildcardPath);
+        auto downloadPaths =
+            ExpandEnglishWildcard(L"\\Network Interface(*)\\Bytes Received/sec",
+                                  &g_downloadMetric.wildcardPath);
         for (const auto& path : downloadPaths) {
             PDH_HCOUNTER counter;
             if (PdhAddCounter(g_metricsQuery, path.c_str(), 0, &counter) ==
@@ -1093,9 +1093,9 @@ bool InitMetrics() {
 
     // GPU engine counters (wildcard expansion).
     if (needGpu) {
-        auto gpuPaths = ExpandEnglishWildcard(
-            L"\\GPU Engine(*)\\Utilization Percentage",
-            &g_gpuMetric.wildcardPath);
+        auto gpuPaths =
+            ExpandEnglishWildcard(L"\\GPU Engine(*)\\Utilization Percentage",
+                                  &g_gpuMetric.wildcardPath);
         for (const auto& path : gpuPaths) {
             PDH_HCOUNTER counter;
             if (PdhAddCounter(g_metricsQuery, path.c_str(), 0, &counter) ==
