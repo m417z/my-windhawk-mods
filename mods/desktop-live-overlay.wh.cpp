@@ -418,6 +418,8 @@ struct WildcardMetric {
     PCWSTR wildcardPath = nullptr;  // English wildcard path for re-expansion.
     // Substring the expanded paths must contain, empty to accept all.
     std::wstring pathFilter;
+    // Counter values below this are ignored.
+    double minValue = 0;
 };
 
 WildcardMetric g_uploadMetric;
@@ -430,6 +432,7 @@ WildcardMetric g_cpuTempMetric;
 // Weather web content.
 HANDLE g_weatherUpdateThread = nullptr;
 HANDLE g_weatherUpdateStopEvent = nullptr;
+HANDLE g_weatherUpdateRefreshEvent = nullptr;
 std::mutex g_weatherMutex;
 std::atomic<bool> g_weatherLoaded{false};
 std::optional<std::wstring> g_weatherContent;
@@ -989,6 +992,11 @@ DWORD WINAPI WeatherUpdateThread(LPVOID lpThreadParameter) {
     constexpr DWORD kSecondsForQuickRetry = 30;
     constexpr DWORD kSecondsForNormalUpdate = 600;  // 10 minutes
 
+    HANDLE handles[] = {
+        g_weatherUpdateStopEvent,
+        g_weatherUpdateRefreshEvent,
+    };
+
     while (true) {
         UpdateWeatherContent();
 
@@ -997,8 +1005,13 @@ DWORD WINAPI WeatherUpdateThread(LPVOID lpThreadParameter) {
             seconds = kSecondsForQuickRetry;
         }
 
-        DWORD dwWaitResult =
-            WaitForSingleObject(g_weatherUpdateStopEvent, seconds * 1000);
+        DWORD dwWaitResult = WaitForMultipleObjects(ARRAYSIZE(handles), handles,
+                                                    FALSE, seconds * 1000);
+        if (dwWaitResult == WAIT_FAILED) {
+            Wh_Log(L"WAIT_FAILED");
+            break;
+        }
+
         if (dwWaitResult == WAIT_OBJECT_0) {
             break;  // Stop event signaled
         }
@@ -1040,8 +1053,22 @@ void WeatherUpdateThreadInit() {
     }
 
     g_weatherUpdateStopEvent = CreateEvent(nullptr, TRUE, FALSE, nullptr);
+    g_weatherUpdateRefreshEvent = CreateEvent(nullptr, FALSE, FALSE, nullptr);
     g_weatherUpdateThread =
         CreateThread(nullptr, 0, WeatherUpdateThread, nullptr, 0, nullptr);
+}
+
+// Requires g_formatLineMutex to be held, like the other weather thread
+// functions.
+void WeatherUpdateThreadRefresh() {
+    if (!g_weatherUpdateRefreshEvent) {
+        return;
+    }
+
+    // Fall back to the quick retry interval if the request fails, which it may
+    // well do while the network is still coming up.
+    g_weatherLoaded = false;
+    SetEvent(g_weatherUpdateRefreshEvent);
 }
 
 void WeatherUpdateThreadUninit() {
@@ -1050,6 +1077,8 @@ void WeatherUpdateThreadUninit() {
         WaitForSingleObject(g_weatherUpdateThread, INFINITE);
         CloseHandle(g_weatherUpdateThread);
         g_weatherUpdateThread = nullptr;
+        CloseHandle(g_weatherUpdateRefreshEvent);
+        g_weatherUpdateRefreshEvent = nullptr;
         CloseHandle(g_weatherUpdateStopEvent);
         g_weatherUpdateStopEvent = nullptr;
     }
@@ -1351,8 +1380,11 @@ bool InitMetrics() {
         }
     }
 
-    // CPU temperature counters (wildcard expansion).
+    // CPU temperature counters (wildcard expansion). Thermal zones that are
+    // present but not functional report implausibly low values that would skew
+    // the average, so require at least 200 Kelvin.
     if (needCpuTemp) {
+        g_cpuTempMetric.minValue = 200;
         g_cpuTempMetric.wildcardPath =
             L"\\Thermal Zone Information(*)\\Temperature";
         UpdateWildcardMetric(g_cpuTempMetric);
@@ -1582,7 +1614,8 @@ std::optional<WildcardMetricValue> QueryWildcardMetric(
     for (const auto& entry : metric.counters) {
         PDH_FMT_COUNTERVALUE val;
         if (PdhGetFormattedCounterValue(entry.counter, PDH_FMT_DOUBLE, nullptr,
-                                        &val) == ERROR_SUCCESS) {
+                                        &val) == ERROR_SUCCESS &&
+            val.doubleValue >= metric.minValue) {
             sum += val.doubleValue;
             count++;
         }
@@ -3259,6 +3292,20 @@ LRESULT CALLBACK MessageWndProc(HWND hWnd,
             }
             return 0;
         }
+
+        case WM_POWERBROADCAST:
+            switch (wParam) {
+                case PBT_APMRESUMECRITICAL:
+                case PBT_APMRESUMESUSPEND:
+                case PBT_APMRESUMEAUTOMATIC:
+                    if (!g_unloading) {
+                        Wh_Log(L"Resumed, refreshing weather");
+                        std::lock_guard<std::mutex> guard(g_formatLineMutex);
+                        WeatherUpdateThreadRefresh();
+                    }
+                    break;
+            }
+            break;
 
         case WM_TIMER:
             if (g_unloading) {
