@@ -702,6 +702,12 @@ bool g_formattingInitialized;
 
 DWORD g_formatIndex;
 SYSTEMTIME g_formatTime;
+
+// Guards g_settings and the formatting state derived from it: the format
+// time/index, the cached formatted strings, the data collection session and
+// the web content/media initialization flags. Settings are replaced wholesale
+// by LoadSettings, which frees the previous string buffers, so a hook must
+// hold this lock for as long as it uses anything from g_settings.
 std::mutex g_formatLineMutex;
 
 template <size_t N>
@@ -763,11 +769,19 @@ FormattedString<FORMATTED_BUFFER_SIZE> g_mediaInfoFormatted;
         nullptr};
 [[clang::no_destroy]] winrt::Windows::Media::Control::
     GlobalSystemMediaTransportControlsSession g_mediaCurrentSession{nullptr};
+// Guards the media session objects, their event tokens and the formatted
+// media strings. The session events fire on arbitrary thread pool threads, so
+// this covers the subscribe/unsubscribe paths as well as the refresh. When
+// both are taken, g_formatLineMutex comes first.
 std::mutex g_mediaMutex;
 std::atomic<bool> g_mediaDataDirty{true};
 winrt::event_token g_mediaSessionsChangedToken;
 winrt::event_token g_mediaPropertiesChangedToken;
 winrt::event_token g_mediaPlaybackChangedToken;
+
+// Lowercased copy of g_settings.mediaPlayer.ignoredPlayers, so that picking a
+// session doesn't have to reach into g_settings from a thread pool thread.
+std::vector<std::wstring> g_mediaIgnoredPlayers;
 
 bool g_mediaActive = false;
 
@@ -800,6 +814,10 @@ struct ClockElementStyleData {
 
 std::atomic<bool> g_clockElementStyleEnabled;
 std::atomic<DWORD> g_clockElementStyleIndex;
+
+// Guards g_clockElementStyleData, which the XAML thread mutates while
+// Wh_ModBeforeUninit polls it.
+std::mutex g_clockElementStyleMutex;
 std::vector<ClockElementStyleData> g_clockElementStyleData;
 
 using GetDpiForWindow_t = UINT(WINAPI*)(HWND hwnd);
@@ -2645,10 +2663,8 @@ DWORD g_dataCollectionLastFormatIndex;
 
 // Media player helper functions
 
-bool IsMediaPlayerIgnored(const winrt::hstring& appId) {
-    std::wstring appIdLower(appId);
-    std::transform(appIdLower.begin(), appIdLower.end(), appIdLower.begin(),
-                   ::towlower);
+void UpdateMediaIgnoredPlayersNoLock() {
+    g_mediaIgnoredPlayers.clear();
 
     for (const auto& ignored : g_settings.mediaPlayer.ignoredPlayers) {
         std::wstring ignoredLower(ignored.get());
@@ -2657,7 +2673,17 @@ bool IsMediaPlayerIgnored(const winrt::hstring& appId) {
         }
         std::transform(ignoredLower.begin(), ignoredLower.end(),
                        ignoredLower.begin(), ::towlower);
-        if (appIdLower.find(ignoredLower) != std::wstring::npos) {
+        g_mediaIgnoredPlayers.push_back(std::move(ignoredLower));
+    }
+}
+
+bool IsMediaPlayerIgnoredNoLock(const winrt::hstring& appId) {
+    std::wstring appIdLower(appId);
+    std::transform(appIdLower.begin(), appIdLower.end(), appIdLower.begin(),
+                   ::towlower);
+
+    for (const auto& ignored : g_mediaIgnoredPlayers) {
+        if (appIdLower.find(ignored) != std::wstring::npos) {
             return true;
         }
     }
@@ -2731,7 +2757,9 @@ std::wstring RemoveBracketsFromString(std::wstring_view input) {
     return result.substr(startPos, endPos - startPos + 1);
 }
 
-void ClearMediaFormattedStrings() {
+// The media helpers below require g_mediaMutex to be held.
+
+void ClearMediaFormattedStringsNoLock() {
     g_mediaActive = false;
     wcscpy_s(g_mediaTitleFormatted.buffer, L"");
     wcscpy_s(g_mediaArtistFormatted.buffer, L"");
@@ -2740,7 +2768,7 @@ void ClearMediaFormattedStrings() {
 }
 
 winrt::Windows::Media::Control::GlobalSystemMediaTransportControlsSession
-FindActiveMediaSession() {
+FindActiveMediaSessionNoLock() {
     if (!g_mediaSessionManager) {
         return nullptr;
     }
@@ -2750,7 +2778,7 @@ FindActiveMediaSession() {
     if (currentSession) {
         try {
             auto appId = currentSession.SourceAppUserModelId();
-            if (!IsMediaPlayerIgnored(appId)) {
+            if (!IsMediaPlayerIgnoredNoLock(appId)) {
                 return currentSession;
             }
         } catch (...) {
@@ -2767,7 +2795,7 @@ FindActiveMediaSession() {
             auto session = sessions.GetAt(i);
             try {
                 auto appId = session.SourceAppUserModelId();
-                if (IsMediaPlayerIgnored(appId)) {
+                if (IsMediaPlayerIgnoredNoLock(appId)) {
                     continue;
                 }
 
@@ -2792,7 +2820,7 @@ FindActiveMediaSession() {
             auto session = sessions.GetAt(i);
             try {
                 auto appId = session.SourceAppUserModelId();
-                if (!IsMediaPlayerIgnored(appId)) {
+                if (!IsMediaPlayerIgnoredNoLock(appId)) {
                     return session;
                 }
             } catch (...) {
@@ -2809,18 +2837,20 @@ FindActiveMediaSession() {
     return nullptr;
 }
 
-void RefreshMediaData() {
-    std::lock_guard<std::mutex> guard(g_mediaMutex);
+void RefreshMediaDataNoLock() {
+    // Clear the flag before reading, so that a change signaled while the query
+    // below is in flight schedules another refresh instead of being swallowed.
+    g_mediaDataDirty = false;
 
     try {
         if (!g_mediaSessionManager) {
-            ClearMediaFormattedStrings();
+            ClearMediaFormattedStringsNoLock();
             return;
         }
 
-        auto session = FindActiveMediaSession();
+        auto session = FindActiveMediaSessionNoLock();
         if (!session) {
-            ClearMediaFormattedStrings();
+            ClearMediaFormattedStringsNoLock();
             return;
         }
 
@@ -2828,7 +2858,7 @@ void RefreshMediaData() {
         auto playbackInfo = session.GetPlaybackInfo();
 
         if (!mediaProperties) {
-            ClearMediaFormattedStrings();
+            ClearMediaFormattedStringsNoLock();
             return;
         }
 
@@ -2871,10 +2901,8 @@ void RefreshMediaData() {
     } catch (...) {
         HRESULT hr = winrt::to_hresult();
         Wh_Log(L"RefreshMediaData error: %08X", hr);
-        ClearMediaFormattedStrings();
+        ClearMediaFormattedStringsNoLock();
     }
-
-    g_mediaDataDirty = false;
 }
 
 void DataCollectionSessionInit() {
@@ -2955,7 +2983,7 @@ bool IsMediaPatternUsed() {
            IsStrInDateTimePatternSettings(L"%media_info%");
 }
 
-void UnsubscribeFromMediaSession() {
+void UnsubscribeFromMediaSessionNoLock() {
     if (g_mediaCurrentSession) {
         try {
             g_mediaCurrentSession.MediaPropertiesChanged(
@@ -2970,15 +2998,15 @@ void UnsubscribeFromMediaSession() {
     }
 }
 
-void SubscribeToMediaSession() {
-    UnsubscribeFromMediaSession();
+void SubscribeToMediaSessionNoLock() {
+    UnsubscribeFromMediaSessionNoLock();
 
     if (!g_mediaSessionManager) {
         return;
     }
 
     try {
-        auto session = FindActiveMediaSession();
+        auto session = FindActiveMediaSessionNoLock();
         if (!session) {
             return;
         }
@@ -2997,24 +3025,41 @@ void SubscribeToMediaSession() {
 }
 
 void MediaSessionUninit() {
-    UnsubscribeFromMediaSession();
+    winrt::Windows::Media::Control::
+        GlobalSystemMediaTransportControlsSessionManager sessionManager{
+            nullptr};
+    winrt::event_token sessionsChangedToken;
 
-    if (g_mediaSessionManager) {
+    {
+        std::lock_guard<std::mutex> guard(g_mediaMutex);
+
+        UnsubscribeFromMediaSessionNoLock();
+
+        sessionManager = std::move(g_mediaSessionManager);
+        sessionsChangedToken = g_mediaSessionsChangedToken;
+        g_mediaSessionsChangedToken = {};
+
+        g_mediaIgnoredPlayers.clear();
+        g_mediaDataDirty = true;
+    }
+
+    // Detach outside the lock: this waits for an in-flight
+    // OnMediaSessionsChanged, which takes the lock itself.
+    if (sessionManager) {
         try {
-            g_mediaSessionManager.SessionsChanged(g_mediaSessionsChangedToken);
+            sessionManager.SessionsChanged(sessionsChangedToken);
         } catch (...) {
             HRESULT hr = winrt::to_hresult();
             Wh_Log(L"MediaSessionUninit error: %08X", hr);
         }
-        g_mediaSessionManager = nullptr;
     }
-
-    g_mediaDataDirty = true;
 }
 
 void OnMediaSessionsChanged() {
     g_mediaDataDirty = true;
-    SubscribeToMediaSession();
+
+    std::lock_guard<std::mutex> guard(g_mediaMutex);
+    SubscribeToMediaSessionNoLock();
 }
 
 void MediaSessionInit() {
@@ -3022,23 +3067,36 @@ void MediaSessionInit() {
         return;
     }
 
-    try {
-        g_mediaSessionManager =
-            winrt::Windows::Media::Control::
-                GlobalSystemMediaTransportControlsSessionManager::RequestAsync()
-                    .get();
+    bool failed = false;
 
-        // Subscribe to SessionsChanged event
-        g_mediaSessionsChangedToken = g_mediaSessionManager.SessionsChanged(
-            [](auto&&, auto&&) { OnMediaSessionsChanged(); });
+    {
+        std::lock_guard<std::mutex> guard(g_mediaMutex);
 
-        // Subscribe to current session events
-        SubscribeToMediaSession();
+        UpdateMediaIgnoredPlayersNoLock();
 
-        RefreshMediaData();
-    } catch (...) {
-        HRESULT hr = winrt::to_hresult();
-        Wh_Log(L"MediaSessionInit error %08X", hr);
+        try {
+            g_mediaSessionManager =
+                winrt::Windows::Media::Control::
+                    GlobalSystemMediaTransportControlsSessionManager::
+                        RequestAsync()
+                            .get();
+
+            // Subscribe to SessionsChanged event
+            g_mediaSessionsChangedToken = g_mediaSessionManager.SessionsChanged(
+                [](auto&&, auto&&) { OnMediaSessionsChanged(); });
+
+            // Subscribe to current session events
+            SubscribeToMediaSessionNoLock();
+
+            RefreshMediaDataNoLock();
+        } catch (...) {
+            HRESULT hr = winrt::to_hresult();
+            Wh_Log(L"MediaSessionInit error %08X", hr);
+            failed = true;
+        }
+    }
+
+    if (failed) {
         MediaSessionUninit();
     }
 }
@@ -3748,9 +3806,12 @@ PCWSTR GetPowerFormatted() {
 }
 
 void RefreshMediaDataIfDirty() {
-    if (g_mediaDataDirty) {
-        RefreshMediaData();
+    if (!g_mediaDataDirty) {
+        return;
     }
+
+    std::lock_guard<std::mutex> guard(g_mediaMutex);
+    RefreshMediaDataNoLock();
 }
 
 PCWSTR GetMediaTitleFormatted() {
@@ -4021,12 +4082,16 @@ void EnsureFormattingInitialized() {
     MediaSessionInit();
 }
 
+// Requires g_formatLineMutex to be held, both for the formatting state and for
+// the format string itself, which is normally owned by g_settings.
 int FormatLineNoLock(PWSTR buffer,
                      size_t bufferSize,
                      std::wstring_view format) {
     if (bufferSize == 0) {
         return 0;
     }
+
+    EnsureFormattingInitialized();
 
     std::wstring_view formatSuffix = format;
 
@@ -4066,23 +4131,14 @@ int FormatLineNoLock(PWSTR buffer,
     return buffer - bufferStart;
 }
 
-int FormatLine(PWSTR buffer, size_t bufferSize, std::wstring_view format) {
-    if (bufferSize == 0) {
-        return 0;
-    }
-
-    std::lock_guard<std::mutex> guard(g_formatLineMutex);
-
-    EnsureFormattingInitialized();
-
-    return FormatLineNoLock(buffer, bufferSize, format);
-}
-
 #pragma region Win11Hooks
 
-DWORD g_refreshIconThreadId;
-bool g_refreshIconNeedToAdjustTimer;
-bool g_inGetTimeToolTipString;
+// Scratch state for the refresh currently running on this thread. Several
+// taskbars refresh independently on thread pool threads, so this cannot be
+// shared between them.
+thread_local bool g_inRefreshIcon;
+thread_local bool g_refreshIconNeedToAdjustTimer;
+thread_local bool g_inGetTimeToolTipString;
 
 using ClockSystemTrayIconDataModel_RefreshIcon_t = void(WINAPI*)(
     LPVOID pThis,
@@ -4139,24 +4195,28 @@ void ClockSystemTrayIconDataModel_RefreshIcon_Hook_Impl(
     LPVOID pThis,
     LPVOID param1,
     ClockSystemTrayIconDataModel_RefreshIcon_t original) {
-    // FormatLine creates the data collection session and the web content thread
+    // Formatting creates the data collection session and the web content thread
     // on demand, but it only runs while calling the original function below,
     // after g_refreshIconNeedToAdjustTimer is set. Create them beforehand so
     // the flag accounts for them, otherwise the first refresh keeps the default
     // one-minute timer instead of shortening it to one second.
+    g_inRefreshIcon = true;
+
     {
         std::lock_guard<std::mutex> guard(g_formatLineMutex);
-        EnsureFormattingInitialized();
-    }
 
-    g_refreshIconThreadId = GetCurrentThreadId();
-    bool webContentPending = g_webContentUpdateThread && !g_webContentLoaded;
-    g_refreshIconNeedToAdjustTimer =
-        g_settings.showSeconds || g_dataCollectionSession || webContentPending;
+        EnsureFormattingInitialized();
+
+        bool webContentPending =
+            g_webContentUpdateThread && !g_webContentLoaded;
+        g_refreshIconNeedToAdjustTimer = g_settings.showSeconds ||
+                                         g_dataCollectionSession ||
+                                         webContentPending;
+    }
 
     original(pThis, param1);
 
-    g_refreshIconThreadId = 0;
+    g_inRefreshIcon = false;
     g_refreshIconNeedToAdjustTimer = false;
 }
 
@@ -4180,8 +4240,13 @@ void UpdateToolTipString(LPVOID tooltipPtrPtr) {
     auto separator = L"\r\n\r\n"sv;
 
     WCHAR extraLine[4096];
-    size_t extraLength = FormatLine(extraLine, ARRAYSIZE(extraLine),
-                                    g_settings.tooltipLine.get());
+    size_t extraLength;
+    {
+        std::lock_guard<std::mutex> guard(g_formatLineMutex);
+        extraLength = FormatLineNoLock(extraLine, ARRAYSIZE(extraLine),
+                                       g_settings.tooltipLine.get());
+    }
+
     if (extraLength == 0) {
         return;
     }
@@ -4506,6 +4571,9 @@ void ApplyTextBlockStyles(
 
 void ApplyDateTimeIconContentStyles(
     FrameworkElement dateTimeIconContentElement) {
+    std::lock_guard<std::mutex> settingsGuard(g_formatLineMutex);
+    std::lock_guard<std::mutex> guard(g_clockElementStyleMutex);
+
     ClockElementStyleData* clockElementStyleData = nullptr;
 
     for (auto it = g_clockElementStyleData.begin();
@@ -4668,8 +4736,8 @@ ClockSystemTrayIconDataModel_GetTimeToolTipString_2_Hook(LPVOID pThis,
 int WINAPI ICalendar_Second_Hook(LPVOID pThis) {
     Wh_Log(L">");
 
-    if (g_refreshIconThreadId == GetCurrentThreadId() &&
-        !g_inGetTimeToolTipString && g_refreshIconNeedToAdjustTimer) {
+    if (g_inRefreshIcon && !g_inGetTimeToolTipString &&
+        g_refreshIconNeedToAdjustTimer) {
         g_refreshIconNeedToAdjustTimer = false;
 
         // Make the next refresh happen in a second.
@@ -4697,8 +4765,7 @@ LPVOID WINAPI ThreadPoolTimer_CreateTimer_Hook(LPVOID param1,
 
     ULONGLONG elapseNew;
 
-    if (g_refreshIconThreadId == GetCurrentThreadId() &&
-        !g_inGetTimeToolTipString && **elapse == 10000000) {
+    if (g_inRefreshIcon && !g_inGetTimeToolTipString && **elapse == 10000000) {
         // Make the next refresh happen next second. Without this hook, the
         // timer was always set one second forward, and so the clock was
         // accumulating a delay, finally caused one second to be skipped.
@@ -4724,8 +4791,7 @@ LPVOID WINAPI ThreadPoolTimer_CreateTimer_lambda_Hook(DWORD_PTR** param1,
 
     Wh_Log(L"> %zu", *elapse);
 
-    if (g_refreshIconThreadId == GetCurrentThreadId() &&
-        !g_inGetTimeToolTipString && *elapse == 10000000) {
+    if (g_inRefreshIcon && !g_inGetTimeToolTipString && *elapse == 10000000) {
         // Make the next refresh happen next second. Without this hook, the
         // timer was always set one second forward, and so the clock was
         // accumulating a delay, finally caused one second to be skipped.
@@ -4744,8 +4810,8 @@ LPVOID WINAPI ThreadPoolTimer_CreateTimer_lambda_Hook(DWORD_PTR** param1,
 VOID WINAPI GetLocalTime_Hook_Win11(LPSYSTEMTIME lpSystemTime) {
     Wh_Log(L">");
 
-    if (g_refreshIconThreadId == GetCurrentThreadId() &&
-        !g_inGetTimeToolTipString && g_refreshIconNeedToAdjustTimer) {
+    if (g_inRefreshIcon && !g_inGetTimeToolTipString &&
+        g_refreshIconNeedToAdjustTimer) {
         g_refreshIconNeedToAdjustTimer = false;
 
         // Make the next refresh happen in a second.
@@ -4763,15 +4829,18 @@ int WINAPI GetTimeFormatEx_Hook_Win11(LPCWSTR lpLocaleName,
                                       LPCWSTR lpFormat,
                                       LPWSTR lpTimeStr,
                                       int cchTime) {
-    if (g_refreshIconThreadId == GetCurrentThreadId() &&
-        !g_inGetTimeToolTipString) {
+    if (g_inRefreshIcon && !g_inGetTimeToolTipString) {
+        std::lock_guard<std::mutex> guard(g_formatLineMutex);
+
         if (wcscmp(g_settings.topLine, L"-") != 0) {
             if (!cchTime) {
                 // Hopefully a large enough buffer size.
                 return FORMATTED_BUFFER_SIZE;
             }
 
-            return FormatLine(lpTimeStr, cchTime, g_settings.topLine.get()) + 1;
+            return FormatLineNoLock(lpTimeStr, cchTime,
+                                    g_settings.topLine.get()) +
+                   1;
         }
     }
 
@@ -4788,8 +4857,7 @@ int WINAPI GetDateFormatEx_Hook_Win11(LPCWSTR lpLocaleName,
                                       LPWSTR lpDateStr,
                                       int cchDate,
                                       LPCWSTR lpCalendar) {
-    if (g_refreshIconThreadId == GetCurrentThreadId() &&
-        !g_inGetTimeToolTipString) {
+    if (g_inRefreshIcon && !g_inGetTimeToolTipString) {
         // Below is a fix for the following situation. The code inside
         // winrt::SystemTray::implementation::ClockSystemTrayIconDataModel::RefreshIcon
         // looks similar to the following (pseudo code):
@@ -4828,6 +4896,8 @@ int WINAPI GetDateFormatEx_Hook_Win11(LPCWSTR lpLocaleName,
         }
 
         if (!(dwFlags & DATE_LONGDATE)) {
+            std::lock_guard<std::mutex> guard(g_formatLineMutex);
+
             if (!cchDate || g_winVersion >= WinVersion::Win11_22H2) {
                 // First call, save date for formatting.
                 g_formatTime = *lpDate;
@@ -4840,8 +4910,8 @@ int WINAPI GetDateFormatEx_Hook_Win11(LPCWSTR lpLocaleName,
                     return FORMATTED_BUFFER_SIZE;
                 }
 
-                return FormatLine(lpDateStr, cchDate,
-                                  g_settings.bottomLine.get()) +
+                return FormatLineNoLock(lpDateStr, cchDate,
+                                        g_settings.bottomLine.get()) +
                        1;
             }
         }
@@ -4899,11 +4969,11 @@ LRESULT WINAPI SendMessageW_Hook(HWND hWnd,
 
 #pragma region Win10Hooks
 
-DWORD g_updateTextStringThreadId;
-int g_getDateFormatExCounter;
-DWORD g_getTooltipTextThreadId;
-WCHAR* g_getTooltipTextBuffer;
-int g_getTooltipTextBufferSize;
+thread_local bool g_inUpdateTextString;
+thread_local int g_getDateFormatExCounter;
+thread_local bool g_inGetTooltipText;
+thread_local WCHAR* g_getTooltipTextBuffer;
+thread_local int g_getTooltipTextBufferSize;
 
 using ClockButton_UpdateTextStringsIfNecessary_t =
     unsigned int(WINAPI*)(LPVOID pThis, bool*);
@@ -4935,22 +5005,24 @@ HRESULT WINAPI ClockButton_v_GetTooltipText_Hook(LPVOID pThis,
                                                  LPVOID param4) {
     Wh_Log(L">");
 
-    g_getTooltipTextThreadId = GetCurrentThreadId();
+    g_inGetTooltipText = true;
 
     HRESULT ret = ClockButton_v_GetTooltipText_Original(pThis, param1, param2,
                                                         param3, param4);
 
     if (g_getTooltipTextBuffer) {
+        std::lock_guard<std::mutex> guard(g_formatLineMutex);
+
         if (g_settings.tooltipLineMode == TooltipLineMode::replace) {
-            FormatLine(g_getTooltipTextBuffer, g_getTooltipTextBufferSize,
-                       g_settings.tooltipLine.get());
+            FormatLineNoLock(g_getTooltipTextBuffer, g_getTooltipTextBufferSize,
+                             g_settings.tooltipLine.get());
         } else {
             size_t stringLen = wcslen(g_getTooltipTextBuffer);
             WCHAR* p = g_getTooltipTextBuffer + stringLen;
             size_t size = g_getTooltipTextBufferSize - stringLen;
             if (size > 4) {
                 wcscpy(p, L"\r\n\r\n");
-                FormatLine(p + 4, size - 4, g_settings.tooltipLine.get());
+                FormatLineNoLock(p + 4, size - 4, g_settings.tooltipLine.get());
             }
         }
     }
@@ -4958,7 +5030,7 @@ HRESULT WINAPI ClockButton_v_GetTooltipText_Hook(LPVOID pThis,
     g_getTooltipTextBuffer = nullptr;
     g_getTooltipTextBufferSize = 0;
 
-    g_getTooltipTextThreadId = 0;
+    g_inGetTooltipText = false;
 
     return ret;
 }
@@ -4967,17 +5039,24 @@ unsigned int WINAPI
 ClockButton_UpdateTextStringsIfNecessary_Hook(LPVOID pThis, bool* param1) {
     Wh_Log(L">");
 
-    g_updateTextStringThreadId = GetCurrentThreadId();
+    g_inUpdateTextString = true;
     g_getDateFormatExCounter = 0;
 
     unsigned int ret =
         ClockButton_UpdateTextStringsIfNecessary_Original(pThis, param1);
 
-    g_updateTextStringThreadId = 0;
+    g_inUpdateTextString = false;
 
-    bool webContentPending = g_webContentUpdateThread && !g_webContentLoaded;
-    if (g_settings.showSeconds || g_dataCollectionSession ||
-        webContentPending) {
+    bool updateEverySecond;
+    {
+        std::lock_guard<std::mutex> guard(g_formatLineMutex);
+        bool webContentPending =
+            g_webContentUpdateThread && !g_webContentLoaded;
+        updateEverySecond = g_settings.showSeconds || g_dataCollectionSession ||
+                            webContentPending;
+    }
+
+    if (updateEverySecond) {
         // Return the time-out value for the time of the next update.
         SYSTEMTIME time;
         GetLocalTime(&time);
@@ -5057,12 +5136,16 @@ int WINAPI GetTimeFormatEx_Hook_Win10(LPCWSTR lpLocaleName,
                                       LPCWSTR lpFormat,
                                       LPWSTR lpTimeStr,
                                       int cchTime) {
-    if (g_updateTextStringThreadId == GetCurrentThreadId()) {
+    if (g_inUpdateTextString) {
+        std::lock_guard<std::mutex> guard(g_formatLineMutex);
+
         g_formatTime = *lpTime;
         g_formatIndex++;
 
         if (wcscmp(g_settings.topLine, L"-") != 0) {
-            return FormatLine(lpTimeStr, cchTime, g_settings.topLine.get()) + 1;
+            return FormatLineNoLock(lpTimeStr, cchTime,
+                                    g_settings.topLine.get()) +
+                   1;
         }
     }
 
@@ -5079,12 +5162,14 @@ int WINAPI GetDateFormatEx_Hook_Win10(LPCWSTR lpLocaleName,
                                       LPWSTR lpDateStr,
                                       int cchDate,
                                       LPCWSTR lpCalendar) {
-    if (g_updateTextStringThreadId == GetCurrentThreadId()) {
+    if (g_inUpdateTextString) {
+        std::lock_guard<std::mutex> guard(g_formatLineMutex);
+
         g_getDateFormatExCounter++;
         PCWSTR format = g_getDateFormatExCounter > 1 ? g_settings.middleLine
                                                      : g_settings.bottomLine;
         if (wcscmp(format, L"-") != 0) {
-            return FormatLine(lpDateStr, cchDate, format) + 1;
+            return FormatLineNoLock(lpDateStr, cchDate, format) + 1;
         }
     }
 
@@ -5100,8 +5185,7 @@ int WINAPI GetDateFormatW_Hook_Win10(LCID Locale,
                                      LPCWSTR lpFormat,
                                      LPWSTR lpDateStr,
                                      int cchDate) {
-    if (g_getTooltipTextThreadId == GetCurrentThreadId() &&
-        !g_getTooltipTextBuffer) {
+    if (g_inGetTooltipText && !g_getTooltipTextBuffer) {
         g_getTooltipTextBuffer = lpDateStr;
         g_getTooltipTextBufferSize = cchDate;
     }
@@ -6053,10 +6137,14 @@ void Wh_ModBeforeUninit() {
         // Wait for styles to be restored.
         for (int i = 0; i < 20; i++) {
             bool allRestored = true;
-            for (const auto& data : g_clockElementStyleData) {
-                if (data.styleIndex < styleIndex) {
-                    allRestored = false;
-                    break;
+
+            {
+                std::lock_guard<std::mutex> guard(g_clockElementStyleMutex);
+                for (const auto& data : g_clockElementStyleData) {
+                    if (data.styleIndex < styleIndex) {
+                        allRestored = false;
+                        break;
+                    }
                 }
             }
 
@@ -6069,14 +6157,23 @@ void Wh_ModBeforeUninit() {
     }
 }
 
+// Stops the background work that feeds the format tokens. Called without
+// g_formatLineMutex held: joining the web content thread waits for an in-flight
+// network fetch and detaching the media handlers waits for an in-flight event,
+// neither of which should hold up the clock.
+void StopFormattingBackgroundWork() {
+    WebContentUpdateThreadUninit();
+    MediaSessionUninit();
+}
+
 void Wh_ModUninit() {
     Wh_Log(L">");
 
+    StopFormattingBackgroundWork();
+
     {
         std::lock_guard<std::mutex> guard(g_formatLineMutex);
-        WebContentUpdateThreadUninit();
         DataCollectionSessionUninit();
-        MediaSessionUninit();
     }
 
     ApplySettings();
@@ -6085,11 +6182,11 @@ void Wh_ModUninit() {
 BOOL Wh_ModSettingsChanged(BOOL* bReload) {
     Wh_Log(L">");
 
+    StopFormattingBackgroundWork();
+
     {
         std::lock_guard<std::mutex> guard(g_formatLineMutex);
-        WebContentUpdateThreadUninit();
         DataCollectionSessionUninit();
-        MediaSessionUninit();
         g_formattingInitialized = false;
 
         bool prevOldTaskbarOnWin11 = g_settings.oldTaskbarOnWin11;
