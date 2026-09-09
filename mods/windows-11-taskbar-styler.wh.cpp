@@ -10885,7 +10885,6 @@ void ApplyCustomizations(ElementId elementId,
 void CleanupCustomizations(ElementId elementId);
 void QueueDiagnosticsRelease(InstanceHandle handle);
 void FlushDiagnosticsReleasesIfQuiet();
-void ResetTaskbarSurfacesIfQuiet();
 
 void HandleClickThroughIslandRoot(
     winrt::Windows::Foundation::IInspectable const& inspectable);
@@ -11170,8 +11169,6 @@ HRESULT VisualTreeWatcher::OnVisualTreeChange(ParentChildRelation relation, Visu
     // A tree discarded whole is never dismantled, so it reports no removals to
     // be released by.
     FlushDiagnosticsReleasesIfQuiet();
-
-    ResetTaskbarSurfacesIfQuiet();
 
     if (mutationType == Add)
     {
@@ -18047,53 +18044,80 @@ void ClearClickThroughRegions() {
 // means the erase draws nothing over the leftovers. The DC must come from
 // GetDCEx without DCX_CLIPCHILDREN, or the fill is clipped away entirely - the
 // XAML island covers the whole window, and the leftovers sit underneath it.
-void ResetTaskbarWindowSurfaces() {
+void ResetTaskbarWindowSurface(HWND hWnd) {
+    RECT rect;
+    if (!GetWindowRect(hWnd, &rect)) {
+        return;
+    }
+
+    HDC hdc = GetDCEx(hWnd, nullptr, DCX_WINDOW | DCX_CACHE);
+    if (!hdc) {
+        Wh_Log(L"GetDCEx failed for %08X", (DWORD)(ULONG_PTR)hWnd);
+        return;
+    }
+
+    RECT fillRect = {0, 0, rect.right - rect.left, rect.bottom - rect.top};
+    FillRect(hdc, &fillRect, (HBRUSH)GetStockObject(BLACK_BRUSH));
+
+    ReleaseDC(hWnd, hdc);
+}
+
+thread_local std::unordered_set<HWND> g_taskbarSurfaceSubclassedWindows;
+
+// A reallocation invalidates the window, so the fill rides the paint which
+// follows it. The fill can't be left to that paint: every DC it hands out is
+// clipped to what the child windows leave uncovered, and the XAML island
+// leaves nothing.
+LRESULT CALLBACK TaskbarSurfaceSubclassProc(HWND hWnd,
+                                            UINT uMsg,
+                                            WPARAM wParam,
+                                            LPARAM lParam,
+                                            DWORD_PTR) {
+    switch (uMsg) {
+        case WM_PAINT:
+            ResetTaskbarWindowSurface(hWnd);
+            break;
+
+        case WM_NCDESTROY:
+            g_taskbarSurfaceSubclassedWindows.erase(hWnd);
+            break;
+    }
+
+    return DefSubclassProc(hWnd, uMsg, wParam, lParam);
+}
+
+// Idempotent, so a window reached both by creation and by the sweep below is
+// only subclassed once.
+void EnsureTaskbarSurfaceSubclass(HWND hWnd) {
+    if (g_taskbarSurfaceSubclassedWindows.contains(hWnd)) {
+        return;
+    }
+
+    if (!WindhawkUtils::SetWindowSubclassFromAnyThread(
+            hWnd, TaskbarSurfaceSubclassProc, 0)) {
+        return;
+    }
+
+    g_taskbarSurfaceSubclassedWindows.insert(hWnd);
+
+    // Leftovers already in the surface don't invalidate the window, so no
+    // paint would come to fill on.
+    ResetTaskbarWindowSurface(hWnd);
+}
+
+// Covers the taskbars which already exist when the mod is enabled. Later ones
+// are subclassed as they are created.
+void EnsureTaskbarSurfaceSubclasses() {
     EnumThreadWindows(
         GetCurrentThreadId(),
         [](HWND hWnd, LPARAM) -> BOOL {
-            RECT rect;
-            if (!IsTaskbarTopLevelWindow(hWnd) || !GetWindowRect(hWnd, &rect)) {
-                return TRUE;
+            if (IsTaskbarTopLevelWindow(hWnd)) {
+                EnsureTaskbarSurfaceSubclass(hWnd);
             }
 
-            HDC hdc = GetDCEx(hWnd, nullptr, DCX_WINDOW | DCX_CACHE);
-            if (!hdc) {
-                Wh_Log(L"GetDCEx failed for %08X", (DWORD)(ULONG_PTR)hWnd);
-                return TRUE;
-            }
-
-            RECT fillRect = {0, 0, rect.right - rect.left,
-                             rect.bottom - rect.top};
-            FillRect(hdc, &fillRect, (HBRUSH)GetStockObject(BLACK_BRUSH));
-
-            ReleaseDC(hWnd, hdc);
             return TRUE;
         },
         0);
-}
-
-thread_local ULONGLONG g_lastTaskbarSurfaceResetQueueTick;
-thread_local bool g_taskbarSurfaceResetPending;
-
-// Long enough to sit out a tree being built.
-constexpr ULONGLONG kTaskbarSurfaceResetDelay = 2000;
-
-// Driven by the next report rather than by a timer, like the diagnostics
-// releases: a thread which goes quiet holds its last reset until it is used
-// again. The redraw is left asynchronous so that it rides the next paint cycle
-// instead of painting from inside a tree report.
-void ResetTaskbarSurfacesIfQuiet() {
-    ULONGLONG tick = GetTickCount64();
-
-    if (g_taskbarSurfaceResetPending &&
-        tick - g_lastTaskbarSurfaceResetQueueTick >=
-            kTaskbarSurfaceResetDelay) {
-        g_taskbarSurfaceResetPending = false;
-        ResetTaskbarWindowSurfaces();
-    }
-
-    g_taskbarSurfaceResetPending = true;
-    g_lastTaskbarSurfaceResetQueueTick = tick;
 }
 
 // Item elements the current virtualization pass recycled, consumed by the
@@ -19676,6 +19700,12 @@ void UninitializeForCurrentThread() {
     }
     g_clickThroughSubclassedWindows.clear();
 
+    for (HWND hWnd : g_taskbarSurfaceSubclassedWindows) {
+        WindhawkUtils::RemoveWindowSubclassFromAnyThread(
+            hWnd, TaskbarSurfaceSubclassProc);
+    }
+    g_taskbarSurfaceSubclassedWindows.clear();
+
     // Restore taskbars clipped for click-through, then drop tracking (revokers
     // auto-unhook LayoutUpdated). Skip the region reset when nothing was
     // tracked, to avoid an unnecessary taskbar redraw on unrelated settings
@@ -19773,6 +19803,8 @@ void InitializeForCurrentThread() {
         return;
     }
 
+    EnsureTaskbarSurfaceSubclasses();
+
     ProcessAllStylesFromSettings();
 
     g_initializedForThread = true;
@@ -19846,6 +19878,13 @@ void OnWindowCreated(HWND hWnd,
                      LPCWSTR lpClassName,
                      PCSTR funcName) {
     BOOL bTextualClassName = ((ULONG_PTR)lpClassName & ~(ULONG_PTR)0xffff) != 0;
+
+    // Only on an initialized thread, since teardown only visits those and a
+    // subclass left behind would outlive the mod. A taskbar created before its
+    // thread is initialized is picked up by the sweep there.
+    if (g_initializedForThread && IsTaskbarTopLevelWindow(hWnd)) {
+        EnsureTaskbarSurfaceSubclass(hWnd);
+    }
 
     WCHAR className[64];
     if (hWndParent && GetClassName(hWnd, className, ARRAYSIZE(className)) &&
