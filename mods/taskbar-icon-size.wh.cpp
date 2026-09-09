@@ -1322,6 +1322,26 @@ int WINAPI TaskbarFrame_MeasureOverride_Hook(
     return ret;
 }
 
+// The small frame state is picked by comparing the frame size against the stock
+// 32, which a customized taskbar height matches by coincidence, so the buttons
+// are laid out for a posture the taskbar isn't in, most visibly the widgets
+// button, which renders its card for the small extent. The taskbar is made to
+// see the regular size anyway.
+using TaskbarFrame_UpdateIsSmallFrame_t = void(WINAPI*)(void* pThis,
+                                                        bool isSmallFrame);
+TaskbarFrame_UpdateIsSmallFrame_t TaskbarFrame_UpdateIsSmallFrame_Original;
+void WINAPI TaskbarFrame_UpdateIsSmallFrame_Hook(void* pThis,
+                                                 bool isSmallFrame) {
+    Wh_Log(L"> isSmallFrame=%d", isSmallFrame);
+
+    if (isSmallFrame && !g_unloading) {
+        Wh_Log(L"Setting isSmallFrame to false");
+        isSmallFrame = false;
+    }
+
+    TaskbarFrame_UpdateIsSmallFrame_Original(pThis, isSmallFrame);
+}
+
 // TaskbarFrame looks the button extents up in the resource dictionary once, in
 // OnApplyTemplate, and keeps them. The overflow flyout looks them up again and
 // fail-fasts unless the metrics extent is one of them, crashing explorer if the
@@ -2702,6 +2722,12 @@ bool HookTaskbarViewDllSymbols(HMODULE module,
                 {LR"(public: virtual int __cdecl winrt::impl::produce<struct winrt::Taskbar::implementation::TaskbarFrame,struct winrt::Windows::UI::Xaml::IFrameworkElementOverrides>::MeasureOverride(struct winrt::Windows::Foundation::Size,struct winrt::Windows::Foundation::Size *))"},
                 &TaskbarFrame_MeasureOverride_Original,
                 TaskbarFrame_MeasureOverride_Hook,
+            },
+            {
+                {LR"(public: void __cdecl winrt::Taskbar::implementation::TaskbarFrame::UpdateIsSmallFrame(bool))"},
+                &TaskbarFrame_UpdateIsSmallFrame_Original,
+                TaskbarFrame_UpdateIsSmallFrame_Hook,
+                true,  // Missing in older Windows 11 versions.
             },
             {
                 {LR"(public: struct winrt::Taskbar::implementation::TaskbarFrameMetrics __cdecl winrt::Taskbar::implementation::TaskbarFrame::GetMetrics(void)const )"},
