@@ -2658,7 +2658,8 @@ QueryDataCollectionSession::FilterGpuPathsByAdapterName(
     return filtered;
 }
 
-std::optional<QueryDataCollectionSession> g_dataCollectionSession;
+[[clang::no_destroy]] std::optional<QueryDataCollectionSession>
+    g_dataCollectionSession;
 DWORD g_dataCollectionLastFormatIndex;
 
 // Media player helper functions
