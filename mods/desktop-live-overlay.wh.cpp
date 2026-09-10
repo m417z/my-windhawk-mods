@@ -9,7 +9,7 @@
 // @homepage        https://m417z.com/
 // @include         explorer.exe
 // @architecture    x86-64
-// @compilerOptions -lcomctl32 -ldxgi -ld2d1 -ldwrite -ld3d11 -ldcomp -ldwmapi -lgdi32 -lwininet -lpdh -lpowrprof -lshcore -lshlwapi
+// @compilerOptions -ldxgi -ld2d1 -ldwrite -ld3d11 -ldcomp -ldwmapi -lgdi32 -lwininet -lpdh -lpowrprof -lshcore -lshlwapi
 // ==/WindhawkMod==
 
 // Source code is published under The GNU General Public License v3.0.
@@ -248,7 +248,6 @@ showing time, date, system metrics, weather, and more.
 
 #include <windhawk_utils.h>
 
-#include <commctrl.h>
 #include <d2d1_1.h>
 #include <d2d1helper.h>
 #include <d3d11.h>
@@ -272,6 +271,7 @@ showing time, date, system metrics, weather, and more.
 #include <string>
 #include <string_view>
 #include <unordered_set>
+#include <vector>
 
 using namespace std::literals;
 using Microsoft::WRL::ComPtr;
@@ -436,6 +436,9 @@ HANDLE g_weatherUpdateRefreshEvent = nullptr;
 std::mutex g_weatherMutex;
 std::atomic<bool> g_weatherLoaded{false};
 std::optional<std::wstring> g_weatherContent;
+// The wttr.in request URL, built from the settings so that the weather thread
+// never reads g_settings, which the settings thread is free to replace.
+std::wstring g_weatherUrl;
 
 // Whether system metrics/weather are used, derived from the line settings.
 bool g_systemMetricsUsed = false;
@@ -454,6 +457,9 @@ FILETIME g_lastWallpaperTime = {};
 
 // Message-only window for receiving system notifications.
 HWND g_messageWnd;
+
+// Pending timer for the delayed overlay creation, owned by the desktop thread.
+UINT_PTR g_createOverlayTimer = 0;
 
 // Overlay window and resources.
 HWND g_overlayWnd;
@@ -802,12 +808,97 @@ void UpdateWildcardMetric(WildcardMetric& metric) {
     }
 }
 
+// The WinINet defaults are minutes long, which would hold up whoever waits for
+// the requesting thread to finish.
+constexpr DWORD kUrlRequestTimeoutMs = 5000;
+
+std::mutex g_urlRequestMutex;
+HINTERNET g_urlRequestOpenHandle = nullptr;
+HINTERNET g_urlRequestUrlHandle = nullptr;
+bool g_urlRequestsCanceled = false;
+
+// Requires g_urlRequestMutex to be held.
+void CloseUrlRequestHandles() {
+    if (g_urlRequestUrlHandle) {
+        InternetCloseHandle(g_urlRequestUrlHandle);
+        g_urlRequestUrlHandle = nullptr;
+    }
+
+    if (g_urlRequestOpenHandle) {
+        InternetCloseHandle(g_urlRequestOpenHandle);
+        g_urlRequestOpenHandle = nullptr;
+    }
+}
+
+// Closes the handles of the request in flight, if any, which makes the blocking
+// WinINet call using them return at once. Further requests fail until
+// ResumeUrlRequests is called.
+void CancelUrlRequests() {
+    std::lock_guard<std::mutex> guard(g_urlRequestMutex);
+    g_urlRequestsCanceled = true;
+    CloseUrlRequestHandles();
+}
+
+void ResumeUrlRequests() {
+    std::lock_guard<std::mutex> guard(g_urlRequestMutex);
+    g_urlRequestsCanceled = false;
+}
+
+// Scope of a single request. At most one request runs at a time, so its handles
+// live in globals where CancelUrlRequests can reach them.
+struct UrlRequestScope {
+    UrlRequestScope() = default;
+    UrlRequestScope(const UrlRequestScope&) = delete;
+    UrlRequestScope& operator=(const UrlRequestScope&) = delete;
+
+    ~UrlRequestScope() {
+        std::lock_guard<std::mutex> guard(g_urlRequestMutex);
+        CloseUrlRequestHandles();
+    }
+
+    bool PublishOpenHandle(HINTERNET handle) {
+        return Publish(&g_urlRequestOpenHandle, handle);
+    }
+
+    bool PublishUrlHandle(HINTERNET handle) {
+        return Publish(&g_urlRequestUrlHandle, handle);
+    }
+
+   private:
+    // Hands the handle over to the globals. Returns false if requests are
+    // canceled, in which case the handle is closed and must not be used.
+    static bool Publish(HINTERNET* slot, HINTERNET handle) {
+        std::lock_guard<std::mutex> guard(g_urlRequestMutex);
+        if (g_urlRequestsCanceled) {
+            InternetCloseHandle(handle);
+            return false;
+        }
+
+        *slot = handle;
+        return true;
+    }
+};
+
 std::optional<std::wstring> GetUrlContent(PCWSTR lpUrl) {
+    UrlRequestScope requestScope;
+
     HINTERNET hOpenHandle = InternetOpen(
         L"WindhawkMod", INTERNET_OPEN_TYPE_PRECONFIG, nullptr, nullptr, 0);
     if (!hOpenHandle) {
         return std::nullopt;
     }
+
+    if (!requestScope.PublishOpenHandle(hOpenHandle)) {
+        return std::nullopt;
+    }
+
+    DWORD timeout = kUrlRequestTimeoutMs;
+    InternetSetOption(hOpenHandle, INTERNET_OPTION_CONNECT_TIMEOUT, &timeout,
+                      sizeof(timeout));
+    InternetSetOption(hOpenHandle, INTERNET_OPTION_SEND_TIMEOUT, &timeout,
+                      sizeof(timeout));
+    InternetSetOption(hOpenHandle, INTERNET_OPTION_RECEIVE_TIMEOUT, &timeout,
+                      sizeof(timeout));
 
     HINTERNET hUrlHandle =
         InternetOpenUrl(hOpenHandle, lpUrl, nullptr, 0,
@@ -816,7 +907,10 @@ std::optional<std::wstring> GetUrlContent(PCWSTR lpUrl) {
                             INTERNET_FLAG_PRAGMA_NOCACHE | INTERNET_FLAG_RELOAD,
                         0);
     if (!hUrlHandle) {
-        InternetCloseHandle(hOpenHandle);
+        return std::nullopt;
+    }
+
+    if (!requestScope.PublishUrlHandle(hUrlHandle)) {
         return std::nullopt;
     }
 
@@ -826,40 +920,40 @@ std::optional<std::wstring> GetUrlContent(PCWSTR lpUrl) {
                        HTTP_QUERY_STATUS_CODE | HTTP_QUERY_FLAG_NUMBER,
                        &dwStatusCode, &dwStatusCodeSize, nullptr) ||
         dwStatusCode != 200) {
-        InternetCloseHandle(hUrlHandle);
-        InternetCloseHandle(hOpenHandle);
         return std::nullopt;
     }
 
     LPBYTE pUrlContent = (LPBYTE)HeapAlloc(GetProcessHeap(), 0, 0x400);
     if (!pUrlContent) {
-        InternetCloseHandle(hUrlHandle);
-        InternetCloseHandle(hOpenHandle);
         return std::nullopt;
     }
 
     DWORD dwNumberOfBytesRead;
-    InternetReadFile(hUrlHandle, pUrlContent, 0x400, &dwNumberOfBytesRead);
+    if (!InternetReadFile(hUrlHandle, pUrlContent, 0x400,
+                          &dwNumberOfBytesRead)) {
+        HeapFree(GetProcessHeap(), 0, pUrlContent);
+        return std::nullopt;
+    }
+
     DWORD dwLength = dwNumberOfBytesRead;
 
     while (dwNumberOfBytesRead) {
         LPBYTE pNewUrlContent = (LPBYTE)HeapReAlloc(
             GetProcessHeap(), 0, pUrlContent, dwLength + 0x400);
         if (!pNewUrlContent) {
-            InternetCloseHandle(hUrlHandle);
-            InternetCloseHandle(hOpenHandle);
             HeapFree(GetProcessHeap(), 0, pUrlContent);
             return std::nullopt;
         }
 
         pUrlContent = pNewUrlContent;
-        InternetReadFile(hUrlHandle, pUrlContent + dwLength, 0x400,
-                         &dwNumberOfBytesRead);
+        if (!InternetReadFile(hUrlHandle, pUrlContent + dwLength, 0x400,
+                              &dwNumberOfBytesRead)) {
+            HeapFree(GetProcessHeap(), 0, pUrlContent);
+            return std::nullopt;
+        }
+
         dwLength += dwNumberOfBytesRead;
     }
-
-    InternetCloseHandle(hUrlHandle);
-    InternetCloseHandle(hOpenHandle);
 
     // Assume UTF-8.
     int charsNeeded = MultiByteToWideChar(CP_UTF8, 0, (PCSTR)pUrlContent,
@@ -915,7 +1009,7 @@ std::wstring EscapeUrlComponent(PCWSTR input) {
     return out;
 }
 
-bool UpdateWeatherContent() {
+std::wstring MakeWeatherUrl() {
     std::wstring format = g_settings.weatherFormat.get();
     if (format.empty()) {
         format = L"%c %t";
@@ -944,6 +1038,20 @@ bool UpdateWeatherContent() {
     }
     weatherUrl += L"format=";
     weatherUrl += EscapeUrlComponent(format.c_str());
+
+    return weatherUrl;
+}
+
+bool UpdateWeatherContent() {
+    std::wstring weatherUrl;
+    {
+        std::lock_guard<std::mutex> guard(g_weatherMutex);
+        weatherUrl = g_weatherUrl;
+    }
+
+    if (weatherUrl.empty()) {
+        return false;
+    }
 
     Wh_Log(L"Fetching weather from URL: %s", weatherUrl.c_str());
 
@@ -1036,8 +1144,10 @@ bool IsSystemMetricsUsed() {
            IsPatternUsed(L"%disk_write%") || IsPatternUsed(L"%disk_total%") ||
            IsPatternUsed(L"%gpu%") || IsPatternUsed(L"%ram_used%") ||
            IsPatternUsed(L"%ram_committed%") ||
-           IsPatternUsed(L"%ram_committed_used%") || IsPatternUsed(L"%vram%") ||
-           IsPatternUsed(L"%vram_used%") || IsPatternUsed(L"%vram_shared%") ||
+           IsPatternUsed(L"%ram_committed_used%") ||
+           IsPatternUsed(L"%ram_committed_total%") ||
+           IsPatternUsed(L"%vram%") || IsPatternUsed(L"%vram_used%") ||
+           IsPatternUsed(L"%vram_shared%") ||
            IsPatternUsed(L"%vram_shared_used%") ||
            IsPatternUsed(L"%cpu_temp%") || IsPatternUsed(L"%cpu_temp_f%") ||
            IsPatternUsed(L"%gpu_temp%") || IsPatternUsed(L"%gpu_temp_f%");
@@ -1074,6 +1184,7 @@ void WeatherUpdateThreadRefresh() {
 void WeatherUpdateThreadUninit() {
     if (g_weatherUpdateThread) {
         SetEvent(g_weatherUpdateStopEvent);
+        CancelUrlRequests();
         WaitForSingleObject(g_weatherUpdateThread, INFINITE);
         CloseHandle(g_weatherUpdateThread);
         g_weatherUpdateThread = nullptr;
@@ -1081,6 +1192,7 @@ void WeatherUpdateThreadUninit() {
         g_weatherUpdateRefreshEvent = nullptr;
         CloseHandle(g_weatherUpdateStopEvent);
         g_weatherUpdateStopEvent = nullptr;
+        ResumeUrlRequests();
     }
 
     std::lock_guard<std::mutex> guard(g_weatherMutex);
@@ -1174,7 +1286,7 @@ std::optional<DxgiAdapterInfo> QueryDxgiAdapterInfo(PCWSTR gpuAdapterName) {
                desc.AdapterLuid.LowPart, desc.DedicatedVideoMemory);
 
         if (*gpuAdapterName) {
-            if (wcsstr(desc.Description, gpuAdapterName)) {
+            if (StrStrIW(desc.Description, gpuAdapterName)) {
                 bestDesc = desc;
                 found = true;
                 break;
@@ -1456,18 +1568,23 @@ PCWSTR GetWeekdayFormatted() {
     return g_weekdayFormatted.buffer;
 }
 
-DWORD GetMetricsFormatIndex() {
-    FILETIME formatTimeFt{};
-    SystemTimeToFileTime(&g_formatTime, &formatTimeFt);
-    ULARGE_INTEGER formatTimeInt{
-        .LowPart = formatTimeFt.dwLowDateTime,
-        .HighPart = formatTimeFt.dwHighDateTime,
-    };
+constexpr ULONGLONG kSecondIn100Ns = 10000000ULL;
 
-    constexpr ULONGLONG kSecondIn100Ns = 10000000ULL;
-    int interval = (std::max)(1, (std::min)(60, g_settings.refreshInterval));
-    ULONGLONG intervalIn100Ns = kSecondIn100Ns * interval;
-    return static_cast<DWORD>(formatTimeInt.QuadPart / intervalIn100Ns);
+ULARGE_INTEGER SystemTimeTo100Ns(const SYSTEMTIME* time) {
+    FILETIME ft{};
+    SystemTimeToFileTime(time, &ft);
+    return ULARGE_INTEGER{
+        .LowPart = ft.dwLowDateTime,
+        .HighPart = ft.dwHighDateTime,
+    };
+}
+
+// Metrics are sampled once per refresh interval, and the formatted values only
+// change when they are.
+DWORD GetMetricsFormatIndex() {
+    ULONGLONG intervalIn100Ns = kSecondIn100Ns * g_settings.refreshInterval;
+    return static_cast<DWORD>(SystemTimeTo100Ns(&g_formatTime).QuadPart /
+                              intervalIn100Ns);
 }
 
 void UpdateAllWildcardMetrics() {
@@ -2364,18 +2481,27 @@ bool IsFolderViewWnd(HWND hWnd) {
     return true;
 }
 
-// Find the WorkerW window behind desktop icons.
-// Based on weebp: https://github.com/Francesco149/weebp
-HWND GetWorkerW() {
+// The Progman window of this process, which owns the desktop thread.
+HWND GetProgmanWnd() {
     HWND hProgman = FindWindow(L"Progman", nullptr);
     if (!hProgman) {
         return nullptr;
     }
 
-    // Ensure Progman is in the current process.
     DWORD progmanProcessId = 0;
     GetWindowThreadProcessId(hProgman, &progmanProcessId);
     if (progmanProcessId != GetCurrentProcessId()) {
+        return nullptr;
+    }
+
+    return hProgman;
+}
+
+// Find the WorkerW window behind desktop icons.
+// Based on weebp: https://github.com/Francesco149/weebp
+HWND GetWorkerW() {
+    HWND hProgman = GetProgmanWnd();
+    if (!hProgman) {
         return nullptr;
     }
 
@@ -2774,6 +2900,10 @@ void ReleaseSwapChainResources() {
 }
 
 bool RecreateTextResources() {
+    if (!g_dc) {
+        return false;
+    }
+
     HRESULT hr;
 
     // Create top line text format.
@@ -3152,6 +3282,16 @@ void RenderOverlay() {
 ////////////////////////////////////////////////////////////////////////////////
 // Refresh timer
 
+// Milliseconds until the next metrics sample, matching the bucketing of
+// GetMetricsFormatIndex.
+UINT GetNextMetricsSampleTimeout(const SYSTEMTIME* time) {
+    ULONGLONG timeIn100Ns = SystemTimeTo100Ns(time).QuadPart;
+    ULONGLONG intervalIn100Ns = kSecondIn100Ns * g_settings.refreshInterval;
+    ULONGLONG nextIn100Ns =
+        (timeIn100Ns / intervalIn100Ns + 1) * intervalIn100Ns;
+    return static_cast<UINT>((nextIn100Ns - timeIn100Ns) / 10000);
+}
+
 UINT GetNextUpdateTimeout() {
     SYSTEMTIME time;
     GetLocalTime(&time);
@@ -3160,14 +3300,19 @@ UINT GetNextUpdateTimeout() {
     // change.
     constexpr UINT kExtraDelayMs = 200;
 
-    // Refresh every second when seconds, system metrics, or pending weather.
-    if (g_settings.showSeconds || g_systemMetricsUsed ||
-        (g_weatherUsed && !g_weatherLoaded)) {
+    // Refresh every second when seconds are shown or weather is pending.
+    if (g_settings.showSeconds || (g_weatherUsed && !g_weatherLoaded)) {
         return 1000 - time.wMilliseconds + kExtraDelayMs;
     }
 
-    // No seconds or system metrics - refresh every minute.
-    return (60 - time.wSecond) * 1000 - time.wMilliseconds + kExtraDelayMs;
+    // Otherwise the time display only changes on the minute.
+    UINT timeout = (60 - time.wSecond) * 1000 - time.wMilliseconds;
+
+    if (g_systemMetricsUsed) {
+        timeout = (std::min)(timeout, GetNextMetricsSampleTimeout(&time));
+    }
+
+    return timeout + kExtraDelayMs;
 }
 
 void ScheduleNextUpdate() {
@@ -3207,8 +3352,11 @@ void HandleDisplayChange() {
         Wh_Log(L"DPI changed: %.2f -> %.2f", g_dpiScale, newDpiScale);
         ReleaseSwapChainResources();
         GetClientRect(g_overlayWnd, &rc);
-        CreateSwapChainResources(rc.right - rc.left, rc.bottom - rc.top);
-        RenderOverlay();
+        if (CreateSwapChainResources(rc.right - rc.left, rc.bottom - rc.top)) {
+            RenderOverlay();
+        } else {
+            ReleaseSwapChainResources();
+        }
     }
 
     // Schedule a delayed wallpaper recapture so the system has time to
@@ -3425,6 +3573,8 @@ void CreateOverlayWindow() {
     if (CreateSwapChainResources(width, height)) {
         RenderOverlay();
         ScheduleNextUpdate();
+    } else {
+        ReleaseSwapChainResources();
     }
 }
 
@@ -3508,13 +3658,14 @@ HWND WINAPI CreateWindowExW_Hook(DWORD dwExStyle,
     Wh_Log(L"FolderView window created");
 
     // Delay overlay creation to let the desktop fully initialize.
-    static UINT_PTR s_timer = 0;
-    s_timer = SetTimer(nullptr, s_timer, 1000,
-                       [](HWND, UINT, UINT_PTR idEvent, DWORD) {
-                           KillTimer(nullptr, idEvent);
-                           CreateOverlayWindow();
-                           CreateMessageWindow();
-                       });
+    g_createOverlayTimer =
+        SetTimer(nullptr, g_createOverlayTimer, 1000,
+                 [](HWND, UINT, UINT_PTR idEvent, DWORD) {
+                     KillTimer(nullptr, idEvent);
+                     g_createOverlayTimer = 0;
+                     CreateOverlayWindow();
+                     CreateMessageWindow();
+                 });
 
     return hWnd;
 }
@@ -3582,10 +3733,8 @@ void LoadSettings() {
     g_settings.timeFormat = WindhawkUtils::StringSetting::make(L"timeFormat");
     g_settings.dateFormat = WindhawkUtils::StringSetting::make(L"dateFormat");
 
-    g_settings.refreshInterval = Wh_GetIntSetting(L"refreshInterval");
-    if (g_settings.refreshInterval <= 0) {
-        g_settings.refreshInterval = 1;
-    }
+    g_settings.refreshInterval =
+        std::clamp(Wh_GetIntSetting(L"refreshInterval"), 1, 60);
 
     g_settings.gpuAdapterName =
         WindhawkUtils::StringSetting::make(L"gpuAdapterName");
@@ -3605,7 +3754,7 @@ void LoadSettings() {
 
     g_settings.backgroundPadding = Wh_GetIntSetting(L"background.padding");
     if (g_settings.backgroundPadding < 0) {
-        g_settings.backgroundPadding = 10;
+        g_settings.backgroundPadding = 20;
     }
 
     g_settings.backgroundCornerRadius =
@@ -3637,8 +3786,10 @@ void LoadSettings() {
     }
     Wh_FreeStringSetting(borderColor);
 
-    g_settings.verticalPosition = Wh_GetIntSetting(L"verticalPosition");
-    g_settings.horizontalPosition = Wh_GetIntSetting(L"horizontalPosition");
+    g_settings.verticalPosition =
+        std::clamp(Wh_GetIntSetting(L"verticalPosition"), 0, 100);
+    g_settings.horizontalPosition =
+        std::clamp(Wh_GetIntSetting(L"horizontalPosition"), 0, 100);
 
     g_settings.monitor = Wh_GetIntSetting(L"monitor");
     if (g_settings.monitor <= 0) {
@@ -3663,6 +3814,11 @@ void LoadSettings() {
 
     g_systemMetricsUsed = IsSystemMetricsUsed();
     g_weatherUsed = IsWeatherUsed();
+
+    {
+        std::lock_guard<std::mutex> guard(g_weatherMutex);
+        g_weatherUrl = MakeWeatherUrl();
+    }
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -3710,6 +3866,21 @@ void Wh_ModUninit() {
 
     g_unloading = true;
 
+    // The timer callback lives in the mod image, so it has to be gone before
+    // the image is unmapped. KillTimer only works from the thread that set the
+    // timer, which is the thread the desktop folder view belongs to.
+    if (HWND hProgman = GetProgmanWnd()) {
+        RunFromWindowThread(
+            hProgman,
+            [](void*) {
+                if (g_createOverlayTimer) {
+                    KillTimer(nullptr, g_createOverlayTimer);
+                    g_createOverlayTimer = 0;
+                }
+            },
+            nullptr);
+    }
+
     // Destroy windows from their owning thread.
     if (g_overlayWnd) {
         SendMessage(g_overlayWnd, WM_APP_CLEANUP, 0, 0);
@@ -3755,15 +3926,22 @@ void ApplySettingsChanged() {
 
         UninitMetrics();
 
-        // Restarting the weather thread makes a new request, so keep it running
-        // unless the weather settings changed.
+        // The thread reads the request URL from g_weatherUrl, so changed
+        // weather settings only call for a new request, not a new thread.
         bool weatherSettingsChanged =
             oldWeatherLocation != g_settings.weatherLocation.get() ||
             oldWeatherFormat != g_settings.weatherFormat.get() ||
             oldWeatherUnits != g_settings.weatherUnits;
-        if (oldWeatherUsed != g_weatherUsed ||
-            (g_weatherUsed && weatherSettingsChanged)) {
+        if (oldWeatherUsed && !g_weatherUsed) {
             WeatherUpdateThreadUninit();
+        } else if (g_weatherUsed && weatherSettingsChanged) {
+            {
+                // Don't keep showing weather for the old settings.
+                std::lock_guard<std::mutex> weatherGuard(g_weatherMutex);
+                g_weatherContent.reset();
+            }
+
+            WeatherUpdateThreadRefresh();
         }
 
         g_formattingInitialized = false;
