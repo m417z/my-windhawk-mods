@@ -445,31 +445,31 @@ bool g_weatherUsed = false;
 FILETIME g_lastWallpaperTime = {};
 
 // DirectX device objects (shared).
-ComPtr<ID3D11Device> g_d3dDevice;
-ComPtr<IDXGIDevice> g_dxgiDevice;
-ComPtr<IDXGIFactory2> g_dxgiFactory;
-ComPtr<ID2D1Factory1> g_d2dFactory;
-ComPtr<ID2D1Device> g_d2dDevice;
-ComPtr<IDWriteFactory> g_dwriteFactory;
+[[clang::no_destroy]] ComPtr<ID3D11Device> g_d3dDevice;
+[[clang::no_destroy]] ComPtr<IDXGIDevice> g_dxgiDevice;
+[[clang::no_destroy]] ComPtr<IDXGIFactory2> g_dxgiFactory;
+[[clang::no_destroy]] ComPtr<ID2D1Factory1> g_d2dFactory;
+[[clang::no_destroy]] ComPtr<ID2D1Device> g_d2dDevice;
+[[clang::no_destroy]] ComPtr<IDWriteFactory> g_dwriteFactory;
 
 // Message-only window for receiving system notifications.
 HWND g_messageWnd;
 
 // Overlay window and resources.
 HWND g_overlayWnd;
-ComPtr<IDXGISwapChain1> g_swapChain;
-ComPtr<ID2D1DeviceContext> g_dc;
-ComPtr<IDCompositionDevice> g_compositionDevice;
-ComPtr<IDCompositionTarget> g_compositionTarget;
-ComPtr<IDCompositionVisual> g_compositionVisual;
-ComPtr<IDWriteTextFormat> g_topLineTextFormat;
-ComPtr<ID2D1SolidColorBrush> g_topLineTextBrush;
-ComPtr<IDWriteTextFormat> g_bottomLineTextFormat;
-ComPtr<ID2D1SolidColorBrush> g_bottomLineTextBrush;
-ComPtr<ID2D1SolidColorBrush> g_backgroundBrush;
-ComPtr<ID2D1SolidColorBrush> g_borderBrush;
-ComPtr<ID2D1Bitmap> g_wallpaperBitmap;
-ComPtr<ID2D1Effect> g_blurEffect;
+[[clang::no_destroy]] ComPtr<IDXGISwapChain1> g_swapChain;
+[[clang::no_destroy]] ComPtr<ID2D1DeviceContext> g_dc;
+[[clang::no_destroy]] ComPtr<IDCompositionDevice> g_compositionDevice;
+[[clang::no_destroy]] ComPtr<IDCompositionTarget> g_compositionTarget;
+[[clang::no_destroy]] ComPtr<IDCompositionVisual> g_compositionVisual;
+[[clang::no_destroy]] ComPtr<IDWriteTextFormat> g_topLineTextFormat;
+[[clang::no_destroy]] ComPtr<ID2D1SolidColorBrush> g_topLineTextBrush;
+[[clang::no_destroy]] ComPtr<IDWriteTextFormat> g_bottomLineTextFormat;
+[[clang::no_destroy]] ComPtr<ID2D1SolidColorBrush> g_bottomLineTextBrush;
+[[clang::no_destroy]] ComPtr<ID2D1SolidColorBrush> g_backgroundBrush;
+[[clang::no_destroy]] ComPtr<ID2D1SolidColorBrush> g_borderBrush;
+[[clang::no_destroy]] ComPtr<ID2D1Bitmap> g_wallpaperBitmap;
+[[clang::no_destroy]] ComPtr<ID2D1Effect> g_blurEffect;
 
 // D2D1 Gaussian Blur effect CLSID.
 // {1FEB6D69-2FE6-4AC9-8C58-1D7F93E7A6A5}
