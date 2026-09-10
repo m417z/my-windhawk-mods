@@ -376,11 +376,11 @@ FormattedString<INTEGER_BUFFER_SIZE> g_dayOfYearFormatted;
 FormattedString<FORMATTED_BUFFER_SIZE> g_timezoneFormatted;
 FormattedString<INTEGER_BUFFER_SIZE> g_cpuFormatted;
 FormattedString<INTEGER_BUFFER_SIZE> g_ramFormatted;
-FormattedString<INTEGER_BUFFER_SIZE> g_ramUsedFormatted;
-FormattedString<INTEGER_BUFFER_SIZE> g_ramTotalFormatted;
+FormattedString<FORMATTED_BUFFER_SIZE> g_ramUsedFormatted;
+FormattedString<FORMATTED_BUFFER_SIZE> g_ramTotalFormatted;
 FormattedString<INTEGER_BUFFER_SIZE> g_ramCommittedFormatted;
-FormattedString<INTEGER_BUFFER_SIZE> g_ramCommittedUsedFormatted;
-FormattedString<INTEGER_BUFFER_SIZE> g_ramCommittedTotalFormatted;
+FormattedString<FORMATTED_BUFFER_SIZE> g_ramCommittedUsedFormatted;
+FormattedString<FORMATTED_BUFFER_SIZE> g_ramCommittedTotalFormatted;
 FormattedString<INTEGER_BUFFER_SIZE> g_batteryFormatted;
 FormattedString<INTEGER_BUFFER_SIZE> g_batteryTimeFormatted;
 FormattedString<INTEGER_BUFFER_SIZE> g_powerFormatted;
@@ -392,11 +392,11 @@ FormattedString<FORMATTED_BUFFER_SIZE> g_diskWriteSpeedFormatted;
 FormattedString<FORMATTED_BUFFER_SIZE> g_diskTotalSpeedFormatted;
 FormattedString<INTEGER_BUFFER_SIZE> g_gpuFormatted;
 FormattedString<INTEGER_BUFFER_SIZE> g_vramFormatted;
-FormattedString<INTEGER_BUFFER_SIZE> g_vramUsedFormatted;
-FormattedString<INTEGER_BUFFER_SIZE> g_vramTotalFormatted;
+FormattedString<FORMATTED_BUFFER_SIZE> g_vramUsedFormatted;
+FormattedString<FORMATTED_BUFFER_SIZE> g_vramTotalFormatted;
 FormattedString<INTEGER_BUFFER_SIZE> g_vramSharedFormatted;
-FormattedString<INTEGER_BUFFER_SIZE> g_vramSharedUsedFormatted;
-FormattedString<INTEGER_BUFFER_SIZE> g_vramSharedTotalFormatted;
+FormattedString<FORMATTED_BUFFER_SIZE> g_vramSharedUsedFormatted;
+FormattedString<FORMATTED_BUFFER_SIZE> g_vramSharedTotalFormatted;
 FormattedString<INTEGER_BUFFER_SIZE> g_cpuTempFormatted;
 FormattedString<INTEGER_BUFFER_SIZE> g_cpuTempFFormatted;
 FormattedString<INTEGER_BUFFER_SIZE> g_gpuTempFormatted;
@@ -1657,7 +1657,7 @@ std::wstring FormatLocaleNum(double val, unsigned int digitsAfterDecimal) {
 }
 
 void FormatGbValue(double val, PWSTR buffer, size_t bufferSize) {
-    wcscpy_s(buffer, bufferSize, FormatLocaleNum(val, 1).c_str());
+    wcsncpy_s(buffer, bufferSize, FormatLocaleNum(val, 1).c_str(), _TRUNCATE);
 }
 
 void FormatTransferSpeed(double bytesPerSec, PWSTR buffer, size_t bufferSize) {
@@ -3673,7 +3673,10 @@ HWND WINAPI CreateWindowExW_Hook(DWORD dwExStyle,
 ////////////////////////////////////////////////////////////////////////////////
 // Settings
 
-void LoadLineSettings(LineSettings& line, PCWSTR prefix, int defaultFontSize) {
+void LoadLineSettings(LineSettings& line,
+                      PCWSTR prefix,
+                      int defaultFontSize,
+                      BYTE defaultColorA) {
     WCHAR settingName[64];
 
     swprintf_s(settingName, L"%s.text", prefix);
@@ -3689,7 +3692,7 @@ void LoadLineSettings(LineSettings& line, PCWSTR prefix, int defaultFontSize) {
     PCWSTR textColor = Wh_GetStringSetting(settingName);
     if (!ParseColor(textColor, &line.colorA, &line.colorR, &line.colorG,
                     &line.colorB)) {
-        line.colorA = 0xC0;
+        line.colorA = defaultColorA;
         line.colorR = 0xFF;
         line.colorG = 0xFF;
         line.colorB = 0xFF;
@@ -3726,8 +3729,8 @@ void LoadLineSettings(LineSettings& line, PCWSTR prefix, int defaultFontSize) {
 }
 
 void LoadSettings() {
-    LoadLineSettings(g_settings.topLine, L"topLine", 48);
-    LoadLineSettings(g_settings.bottomLine, L"bottomLine", 32);
+    LoadLineSettings(g_settings.topLine, L"topLine", 48, 0xC0);
+    LoadLineSettings(g_settings.bottomLine, L"bottomLine", 32, 0x80);
 
     g_settings.showSeconds = Wh_GetIntSetting(L"showSeconds");
     g_settings.timeFormat = WindhawkUtils::StringSetting::make(L"timeFormat");
@@ -3779,7 +3782,7 @@ void LoadSettings() {
                     &g_settings.backgroundBorderColorR,
                     &g_settings.backgroundBorderColorG,
                     &g_settings.backgroundBorderColorB)) {
-        g_settings.backgroundBorderColorA = 0x80;
+        g_settings.backgroundBorderColorA = 0xC0;
         g_settings.backgroundBorderColorR = 0xFF;
         g_settings.backgroundBorderColorG = 0xFF;
         g_settings.backgroundBorderColorB = 0xFF;
