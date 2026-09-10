@@ -849,13 +849,98 @@ GetDateFormatW_t GetDateFormatW_Original;
 using SendMessageW_t = decltype(&SendMessageW);
 SendMessageW_t SendMessageW_Original;
 
+// The WinINet defaults are minutes long, which would hold up whoever waits for
+// the requesting thread to finish.
+constexpr DWORD kUrlRequestTimeoutMs = 5000;
+
+std::mutex g_urlRequestMutex;
+HINTERNET g_urlRequestOpenHandle = nullptr;
+HINTERNET g_urlRequestUrlHandle = nullptr;
+bool g_urlRequestsCanceled = false;
+
+// Requires g_urlRequestMutex to be held.
+void CloseUrlRequestHandles() {
+    if (g_urlRequestUrlHandle) {
+        InternetCloseHandle(g_urlRequestUrlHandle);
+        g_urlRequestUrlHandle = nullptr;
+    }
+
+    if (g_urlRequestOpenHandle) {
+        InternetCloseHandle(g_urlRequestOpenHandle);
+        g_urlRequestOpenHandle = nullptr;
+    }
+}
+
+// Closes the handles of the request in flight, if any, which makes the blocking
+// WinINet call using them return at once. Further requests fail until
+// ResumeUrlRequests is called.
+void CancelUrlRequests() {
+    std::lock_guard<std::mutex> guard(g_urlRequestMutex);
+    g_urlRequestsCanceled = true;
+    CloseUrlRequestHandles();
+}
+
+void ResumeUrlRequests() {
+    std::lock_guard<std::mutex> guard(g_urlRequestMutex);
+    g_urlRequestsCanceled = false;
+}
+
+// Scope of a single request. At most one request runs at a time, so its handles
+// live in globals where CancelUrlRequests can reach them.
+struct UrlRequestScope {
+    UrlRequestScope() = default;
+    UrlRequestScope(const UrlRequestScope&) = delete;
+    UrlRequestScope& operator=(const UrlRequestScope&) = delete;
+
+    ~UrlRequestScope() {
+        std::lock_guard<std::mutex> guard(g_urlRequestMutex);
+        CloseUrlRequestHandles();
+    }
+
+    bool PublishOpenHandle(HINTERNET handle) {
+        return Publish(&g_urlRequestOpenHandle, handle);
+    }
+
+    bool PublishUrlHandle(HINTERNET handle) {
+        return Publish(&g_urlRequestUrlHandle, handle);
+    }
+
+   private:
+    // Hands the handle over to the globals. Returns false if requests are
+    // canceled, in which case the handle is closed and must not be used.
+    static bool Publish(HINTERNET* slot, HINTERNET handle) {
+        std::lock_guard<std::mutex> guard(g_urlRequestMutex);
+        if (g_urlRequestsCanceled) {
+            InternetCloseHandle(handle);
+            return false;
+        }
+
+        *slot = handle;
+        return true;
+    }
+};
+
 std::optional<std::wstring> GetUrlContent(PCWSTR lpUrl,
                                           bool failIfNot200 = true) {
+    UrlRequestScope requestScope;
+
     HINTERNET hOpenHandle = InternetOpen(
         L"WindhawkMod", INTERNET_OPEN_TYPE_PRECONFIG, nullptr, nullptr, 0);
     if (!hOpenHandle) {
         return std::nullopt;
     }
+
+    if (!requestScope.PublishOpenHandle(hOpenHandle)) {
+        return std::nullopt;
+    }
+
+    DWORD timeout = kUrlRequestTimeoutMs;
+    InternetSetOption(hOpenHandle, INTERNET_OPTION_CONNECT_TIMEOUT, &timeout,
+                      sizeof(timeout));
+    InternetSetOption(hOpenHandle, INTERNET_OPTION_SEND_TIMEOUT, &timeout,
+                      sizeof(timeout));
+    InternetSetOption(hOpenHandle, INTERNET_OPTION_RECEIVE_TIMEOUT, &timeout,
+                      sizeof(timeout));
 
     HINTERNET hUrlHandle =
         InternetOpenUrl(hOpenHandle, lpUrl, nullptr, 0,
@@ -864,7 +949,10 @@ std::optional<std::wstring> GetUrlContent(PCWSTR lpUrl,
                             INTERNET_FLAG_PRAGMA_NOCACHE | INTERNET_FLAG_RELOAD,
                         0);
     if (!hUrlHandle) {
-        InternetCloseHandle(hOpenHandle);
+        return std::nullopt;
+    }
+
+    if (!requestScope.PublishUrlHandle(hUrlHandle)) {
         return std::nullopt;
     }
 
@@ -875,41 +963,41 @@ std::optional<std::wstring> GetUrlContent(PCWSTR lpUrl,
                            HTTP_QUERY_STATUS_CODE | HTTP_QUERY_FLAG_NUMBER,
                            &dwStatusCode, &dwStatusCodeSize, nullptr) ||
             dwStatusCode != 200) {
-            InternetCloseHandle(hUrlHandle);
-            InternetCloseHandle(hOpenHandle);
             return std::nullopt;
         }
     }
 
     LPBYTE pUrlContent = (LPBYTE)HeapAlloc(GetProcessHeap(), 0, 0x400);
     if (!pUrlContent) {
-        InternetCloseHandle(hUrlHandle);
-        InternetCloseHandle(hOpenHandle);
         return std::nullopt;
     }
 
     DWORD dwNumberOfBytesRead;
-    InternetReadFile(hUrlHandle, pUrlContent, 0x400, &dwNumberOfBytesRead);
+    if (!InternetReadFile(hUrlHandle, pUrlContent, 0x400,
+                          &dwNumberOfBytesRead)) {
+        HeapFree(GetProcessHeap(), 0, pUrlContent);
+        return std::nullopt;
+    }
+
     DWORD dwLength = dwNumberOfBytesRead;
 
     while (dwNumberOfBytesRead) {
         LPBYTE pNewUrlContent = (LPBYTE)HeapReAlloc(
             GetProcessHeap(), 0, pUrlContent, dwLength + 0x400);
         if (!pNewUrlContent) {
-            InternetCloseHandle(hUrlHandle);
-            InternetCloseHandle(hOpenHandle);
             HeapFree(GetProcessHeap(), 0, pUrlContent);
             return std::nullopt;
         }
 
         pUrlContent = pNewUrlContent;
-        InternetReadFile(hUrlHandle, pUrlContent + dwLength, 0x400,
-                         &dwNumberOfBytesRead);
+        if (!InternetReadFile(hUrlHandle, pUrlContent + dwLength, 0x400,
+                              &dwNumberOfBytesRead)) {
+            HeapFree(GetProcessHeap(), 0, pUrlContent);
+            return std::nullopt;
+        }
+
         dwLength += dwNumberOfBytesRead;
     }
-
-    InternetCloseHandle(hUrlHandle);
-    InternetCloseHandle(hOpenHandle);
 
     // Assume UTF-8.
     int charsNeeded = MultiByteToWideChar(CP_UTF8, 0, (PCSTR)pUrlContent,
@@ -1403,10 +1491,12 @@ void WebContentUpdateThreadUninit() {
 
     if (thread) {
         SetEvent(stopEvent);
+        CancelUrlRequests();
         WaitForSingleObject(thread, INFINITE);
         CloseHandle(thread);
         CloseHandle(refreshEvent);
         CloseHandle(stopEvent);
+        ResumeUrlRequests();
     }
 
     std::lock_guard<std::mutex> guard(g_webContentMutex);
@@ -2088,7 +2178,7 @@ std::optional<DxgiAdapterInfo> GetDxgiAdapterInfo(PCWSTR gpu_name, bool quiet) {
 
         // If a name is specified, check for a match.
         if (gpu_name && *gpu_name) {
-            if (wcsstr(desc.Description, gpu_name)) {
+            if (StrStrIW(desc.Description, gpu_name)) {
                 best_desc = desc;
                 found = true;
                 break;
