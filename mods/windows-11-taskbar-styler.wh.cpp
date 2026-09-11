@@ -18127,13 +18127,12 @@ void EnsureTaskbarSurfaceSubclasses() {
 thread_local std::unordered_set<ElementId> g_recycledElements;
 
 // The item each element was last matched against, which lets a reuse for that
-// same item be left alone. A collapsible layout realizes elements during
-// measure only to ask for their size and recycles them again during arrange, so
-// an element is cleared and handed straight back for the same item on every
-// layout pass. Re-matching there sets dependency properties from inside the
-// pass, which dirties layout and schedules another one, and the taskbar never
-// settles: XAML gives up after enough passes and fails the process with a
-// layout cycle.
+// same item be left alone. A layout can realize elements during measure only to
+// ask for their size and recycle them again during arrange, so an element is
+// cleared and handed straight back for the same item on every layout pass.
+// Re-matching there sets dependency properties from inside the pass, which
+// dirties layout and schedules another one, and layout never settles: XAML
+// gives up after enough passes and fails the process with a layout cycle.
 thread_local std::unordered_map<ElementId, winrt::weak_ref<wf::IInspectable>>
     g_elementMatchedItems;
 
@@ -18219,7 +18218,7 @@ winrt::weak_ref<wf::IInspectable> RepeaterItemAt(
             return nullptr;
         }
 
-        return winrt::make_weak(itemsSourceView.GetAt(index));
+        return TryMakeWeak(itemsSourceView.GetAt(index));
     } catch (winrt::hresult_error const& ex) {
         Wh_Log(L"Error %08X: %s", ex.code(), ex.message().c_str());
         return nullptr;
