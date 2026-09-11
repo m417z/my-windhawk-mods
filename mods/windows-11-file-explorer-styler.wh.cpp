@@ -2775,6 +2775,10 @@ struct StyleVariableState {
         variables;
     std::unordered_map<std::wstring, std::vector<StyleVariableConsumer>>
         consumers;
+    // How many entries the two maps above hold for each element. They're keyed
+    // by variable name, so without this, asking whether an element appears in
+    // either of them means walking every name.
+    std::unordered_map<ElementId, size_t> elementRefs;
 };
 
 thread_local StyleVariableState g_styleVariableState;
@@ -2789,10 +2793,6 @@ struct PendingStyleVariablePropagation {
     std::optional<ElementId> changedOwner;
 
     bool operator==(const PendingStyleVariablePropagation&) const = default;
-    // How many entries the two maps above hold for each element. They're keyed
-    // by variable name, so without this, asking whether an element appears in
-    // either of them means walking every name.
-    std::unordered_map<ElementId, size_t> elementRefs;
 };
 
 void AddStyleVariableElementRef(StyleVariableState* state,
