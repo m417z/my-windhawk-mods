@@ -181,7 +181,6 @@ Labels can also be shown or hidden per-program in the settings.
 
 #include <winrt/Windows.Foundation.Collections.h>
 #include <winrt/Windows.Foundation.Numerics.h>
-#include <winrt/Windows.UI.Core.h>
 #include <winrt/Windows.UI.Xaml.Controls.h>
 #include <winrt/Windows.UI.Xaml.Interop.h>
 #include <winrt/Windows.UI.Xaml.Markup.h>
@@ -1087,13 +1086,13 @@ void UpdateTaskListButtonWithLabelStyle(FrameworkElement taskListButtonElement,
                 : (isProgressIndicator ? g_settings.progressIndicatorStyle
                                        : g_settings.runningIndicatorStyle);
 
-        if (indicatorStyle == IndicatorStyle::left) {
-            indicatorElement.SetValue(Controls::Grid::ColumnSpanProperty(),
-                                      winrt::box_value(1));
-        } else {
-            indicatorElement.SetValue(Controls::Grid::ColumnSpanProperty(),
-                                      winrt::box_value(2));
-        }
+        // Keep the indicator in the icon column, which has a fixed pixel
+        // width. The sizes below derive from the button's actual width, and
+        // spanning into the auto-sized label column would feed them back into
+        // the desired width, which becomes a layout cycle once the taskbar is
+        // full and the layout scales buttons down.
+        indicatorElement.SetValue(Controls::Grid::ColumnSpanProperty(),
+                                  winrt::box_value(1));
 
         double maxWidth = std::fmax(taskListButtonWidth - 6, 0.0);
         indicatorElement.MaxWidth(maxWidth);
@@ -1122,25 +1121,7 @@ void UpdateTaskListButtonWithLabelStyle(FrameworkElement taskListButtonElement,
             }
         }
 
-        // High values of maximumTaskbarItemWidth together with a fullWidth
-        // indicator can crash the process due to a refresh loop. Use this as a
-        // workaround.
-        if (g_settings.taskbarItemWidth == 0 &&
-            indicatorStyle == IndicatorStyle::fullWidth) {
-            double currentMinWidth = indicatorElement.MinWidth();
-            if (minWidth != currentMinWidth) {
-                indicatorElement.MinWidth(0);
-                if (minWidth > 0) {
-                    indicatorElement.Dispatcher().TryRunAsync(
-                        winrt::Windows::UI::Core::CoreDispatcherPriority::High,
-                        [indicatorElement, minWidth]() {
-                            indicatorElement.MinWidth(minWidth);
-                        });
-                }
-            }
-        } else {
-            indicatorElement.MinWidth(minWidth);
-        }
+        indicatorElement.MinWidth(minWidth);
 
         auto indicatorMargin = indicatorElement.Margin();
         indicatorMargin.Left = 0;
@@ -1156,6 +1137,19 @@ void UpdateTaskListButtonWithLabelStyle(FrameworkElement taskListButtonElement,
                 indicatorHorizontalAlignment = HorizontalAlignment::Left;
             }
         }
+
+        // An indicator wider than the icon column gets clipped to it unless
+        // its arrange slot is widened with a negative right margin.
+        double indicatorWidth =
+            indicatorElementWidth > 0
+                ? std::clamp(indicatorElementWidth, minWidth, maxWidth)
+                : minWidth;
+        double columnOverflow =
+            indicatorMargin.Left + indicatorWidth - firstColumnWidthPixels;
+        if (columnOverflow > 0) {
+            indicatorMargin.Right = -columnOverflow;
+        }
+
         indicatorElement.Margin(indicatorMargin);
         indicatorElement.HorizontalAlignment(indicatorHorizontalAlignment);
 
