@@ -472,11 +472,7 @@ const Theme g_themeTranslucentShell = {{
         L"Background:=<SolidColorBrush Color=\"Transparent\"/>"}},
     ThemeTargetStyles{L"ActionCenter.FlexibleToastView#FlexibleNormalToastView", {
         L"Background:=<SolidColorBrush Color=\"Transparent\"/>"}},
-    ThemeTargetStyles{L"Border#ToastBackgroundBorder2", {
-        L"Background:=$CommonBgBrush",
-        L"BorderThickness=0,0,0,0",
-        L"CornerRadius=15"}},
-    ThemeTargetStyles{L"Border#ToastBackgroundBorder", {
+    ThemeTargetStyles{L"Border#ToastBackgroundBorder, Border#ToastBackgroundBorder2", {
         L"Background:=$CommonBgBrush",
         L"BorderThickness=0,0,0,0",
         L"CornerRadius=15"}},
@@ -592,12 +588,7 @@ const Theme g_themeMatter = {{
     ThemeTargetStyles{L"ActionCenter.FlexibleToastView#FlexibleNormalToastView", {
         L"Background:= $transparent",
         L"Shadow :="}},
-    ThemeTargetStyles{L"Border#ToastBackgroundBorder2", {
-        L"Background:=$base",
-        L"BorderThickness=0,0,0,0",
-        L"CornerRadius=16",
-        L"Shadow :="}},
-    ThemeTargetStyles{L"Border#ToastBackgroundBorder", {
+    ThemeTargetStyles{L"Border#ToastBackgroundBorder, Border#ToastBackgroundBorder2", {
         L"Background:=$base",
         L"BorderThickness=0,0,0,0",
         L"CornerRadius=16",
@@ -983,12 +974,7 @@ const Theme g_themeWindowGlass = {{
         L"Margin=8,0,8,0"}},
     ThemeTargetStyles{L"ActionCenter.FlexibleToastView#FlexibleNormalToastView", {
         L"Background=Transparent"}},
-    ThemeTargetStyles{L"Border#ToastBackgroundBorder2", {
-        L"Background:=$Background",
-        L"BorderThickness=$BorderThickness",
-        L"CornerRadius=16",
-        L"BorderBrush:=$BorderBrush"}},
-    ThemeTargetStyles{L"Border#ToastBackgroundBorder", {
+    ThemeTargetStyles{L"Border#ToastBackgroundBorder, Border#ToastBackgroundBorder2", {
         L"Background:=$Background",
         L"BorderThickness=$BorderThickness",
         L"CornerRadius=16",
@@ -1307,12 +1293,7 @@ const Theme g_themeWindowGlass_variant_alternative = {{
         L"Margin=8,0,8,0"}},
     ThemeTargetStyles{L"ActionCenter.FlexibleToastView#FlexibleNormalToastView", {
         L"Background=Transparent"}},
-    ThemeTargetStyles{L"Border#ToastBackgroundBorder2", {
-        L"Background:=$Background",
-        L"BorderThickness=$BorderThickness",
-        L"CornerRadius=16",
-        L"BorderBrush:=$BorderBrush"}},
-    ThemeTargetStyles{L"Border#ToastBackgroundBorder", {
+    ThemeTargetStyles{L"Border#ToastBackgroundBorder, Border#ToastBackgroundBorder2", {
         L"Background:=$Background",
         L"BorderThickness=$BorderThickness",
         L"CornerRadius=16",
@@ -1606,12 +1587,7 @@ const Theme g_themeOversimplified_Accentuated = {{
         L"Shadow:="}},
     ThemeTargetStyles{L"ProgressBar#progressBar > Grid > Border#DeterminateRoot", {
         L"Background=Transparent"}},
-    ThemeTargetStyles{L"Border#ToastBackgroundBorder2", {
-        L"Background:=$Alt",
-        L"BorderBrush=Transparent",
-        L"CornerRadius=15",
-        L"Shadow:="}},
-    ThemeTargetStyles{L"Border#ToastBackgroundBorder", {
+    ThemeTargetStyles{L"Border#ToastBackgroundBorder, Border#ToastBackgroundBorder2", {
         L"Background:=$Alt",
         L"BorderBrush=Transparent",
         L"CornerRadius=15",
@@ -1883,11 +1859,7 @@ const Theme g_themeTintedGlass = {{
         L"Background:=$Transparent"}},
     ThemeTargetStyles{L"ActionCenter.FlexibleToastView#FlexibleNormalToastView", {
         L"Background:=$Transparent"}},
-    ThemeTargetStyles{L"Border#ToastBackgroundBorder2", {
-        L"Background:=$Base",
-        L"BorderThickness=0,0,0,0",
-        L"CornerRadius=$Radius"}},
-    ThemeTargetStyles{L"Border#ToastBackgroundBorder", {
+    ThemeTargetStyles{L"Border#ToastBackgroundBorder, Border#ToastBackgroundBorder2", {
         L"Background:=$Base",
         L"BorderThickness=0,0,0,0",
         L"CornerRadius=$Radius"}},
@@ -1959,11 +1931,7 @@ const Theme g_themeFluid = {{
         L"CornerRadius=$CornerRadius"}},
     ThemeTargetStyles{L"Border#PopupBorder", {
         L"CornerRadius=$CornerRadius"}},
-    ThemeTargetStyles{L"Border#ToastBackgroundBorder2", {
-        L"BorderBrush:=$BorderBrush",
-        L"BorderThickness=1",
-        L"CornerRadius=$CornerRadius"}},
-    ThemeTargetStyles{L"Border#ToastBackgroundBorder", {
+    ThemeTargetStyles{L"Border#ToastBackgroundBorder, Border#ToastBackgroundBorder2", {
         L"BorderBrush:=$BorderBrush",
         L"BorderThickness=1",
         L"CornerRadius=$CornerRadius"}},
@@ -2108,12 +2076,7 @@ const Theme g_themeLiquidGlass = {{
     ThemeTargetStyles{L"ActionCenter.FlexibleToastView#FlexibleNormalToastView", {
         L"Background := Transparent",
         L"Shadow :="}},
-    ThemeTargetStyles{L"Border#ToastBackgroundBorder2", {
-        L"Background :=$Background",
-        L"BorderThickness = 0,0,0,0",
-        L"CornerRadius = $CornerRadius",
-        L"Shadow :="}},
-    ThemeTargetStyles{L"Border#ToastBackgroundBorder", {
+    ThemeTargetStyles{L"Border#ToastBackgroundBorder, Border#ToastBackgroundBorder2", {
         L"Background :=$Background",
         L"BorderThickness = 0,0,0,0",
         L"CornerRadius = $CornerRadius",
@@ -2616,10 +2579,7 @@ const Theme g_themeLayerMicaUI = {{
         L"BorderThickness=1"}},
     ThemeTargetStyles{L"ContentPresenter#PageContent > Grid > Border", {
         L"CornerRadius=$InnerRadius"}},
-    ThemeTargetStyles{L"Border#ToastBackgroundBorder2", {
-        L"BorderThickness=1",
-        L"BorderBrush:=$ThemeOutBorder"}},
-    ThemeTargetStyles{L"Border#ToastBackgroundBorder", {
+    ThemeTargetStyles{L"Border#ToastBackgroundBorder, Border#ToastBackgroundBorder2", {
         L"BorderThickness=1",
         L"BorderBrush:=$ThemeOutBorder"}},
     ThemeTargetStyles{L"Border#CalendarHeaderMinimizedOverlay", {
@@ -3634,7 +3594,8 @@ const Theme g_themeFrostyGlass = {{
     ThemeTargetStyles{L"ContentPresenter#ContentPresenter", {
         L"BorderBrush:=$BorderBrush",
         L"BorderThinkness:=$BorderThickness",
-        L"Background:=$Background"}},
+        L"Background:=$Background",
+        L"CornerRadius:=$CornerRadius"}},
     ThemeTargetStyles{L"Border#WADFeatureFooter", {
         L"BorderBrush:=Transparent"}},
     ThemeTargetStyles{L"StackPanel > ContentPresenter > Border", {
@@ -3645,17 +3606,14 @@ const Theme g_themeFrostyGlass = {{
     ThemeTargetStyles{L"Microsoft.UI.Xaml.Controls.PipsPager#QuickActionsPager", {
         L"Visibility=1"}},
     ThemeTargetStyles{L"JumpViewUI.JumpListListViewItem > Grid#LayoutRoot > Border#BackgroundBorder", {
-        L"CornerRadius:=4.5"}},
+        L"CornerRadius:=4.5",
+        L"Margin=4,0,4,0"}},
     ThemeTargetStyles{L"JumpViewUI.SystemItemListViewItem > Grid#LayoutRoot > Border#BackgroundBorder", {
-        L"CornerRadius:=4.5"}},
+        L"CornerRadius:=4.5",
+        L"Margin=4,0,4,0"}},
     ThemeTargetStyles{L"Grid#NotificationCenterGrid", {
         L"VerticalAlignment:=2"}},
-    ThemeTargetStyles{L"Border#ToastBackgroundBorder2", {
-        L"Background:=$Background",
-        L"BorderBrush:=$BorderBrush",
-        L"BorderThickness:=$BorderThickness",
-        L"CornerRadius:=$CornerRadius"}},
-    ThemeTargetStyles{L"Border#ToastBackgroundBorder", {
+    ThemeTargetStyles{L"Border#ToastBackgroundBorder, Border#ToastBackgroundBorder2", {
         L"Background:=$Background",
         L"BorderBrush:=$BorderBrush",
         L"BorderThickness:=$BorderThickness",
@@ -3696,7 +3654,8 @@ const Theme g_themeFrostyGlass = {{
         L"CornerRadius:=7",
         L"Visibility=0",
         L"BorderBrush:=$BorderBrush",
-        L"BorderThickness:=$BorderThickness"}},
+        L"BorderThickness:=$BorderThickness",
+        L"Margin=4,0,4,1"}},
     ThemeTargetStyles{L"Windows.UI.Xaml.Controls.ListViewItem", {
         L"Margin=0,0,0,3"}},
     ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Grid#StandardHeroContainer > Windows.UI.Xaml.Controls.Image", {
@@ -3712,15 +3671,13 @@ const Theme g_themeFrostyGlass = {{
         L"Background:=$Background",
         L"BorderThickness:=$BorderThickness",
         L"BorderBrush:=$BorderBrush",
-        L"CornerRadius:=$CornerRadius",
-        L"Margin=-4.5,-2,-4.5,-2",
-        L"Height=Auto"}},
-    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.ScrollViewer#JumpListScroller", {
-        L"Margin=-2"}},
+        L"CornerRadius:=$CornerRadius"}},
+    ThemeTargetStyles{L"ScrollViewer#JumpListScroller", {
+        L"Margin=0,-2,0,-2"}},
     ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Grid#SystemItemsContainer > Windows.UI.Xaml.Controls.Border > JumpViewUI.SystemItemListView#SystemItemList", {
         L"Margin:=0,3,0,0"}},
 }, {
-    L"Background=<AcrylicBrush TintColor=\"#1000000F\"/>",
+    L"Background=<WindhawkBlur BlurAmount=\"20\" TintColor=\"{ThemeResource SystemChromeDarkColor}\" TintOpacity=\"0.15\" />",
     L"BorderBrush2=<LinearGradientBrush StartPoint=\"0,0\" EndPoint=\"0,1\"><GradientStop Color=\"{ThemeResource SystemChromeHighColor}\" Offset=\"0.0\" /><GradientStop Color=\"{ThemeResource SystemChromeLowColor}\" Offset=\"0.25\" /><GradientStop Color=\"{ThemeResource SystemChromeHighColor}\" Offset=\"1\" /></LinearGradientBrush>",
     L"BorderThickness=1",
     L"CornerRadius=10",
