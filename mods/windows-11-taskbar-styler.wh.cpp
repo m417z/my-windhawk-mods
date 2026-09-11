@@ -10901,12 +10901,11 @@ HMODULE GetCurrentModuleHandle() {
 }
 
 // The XAML composition diagnostics rebuild a process-wide visual tree walker
-// without any locking whenever a DirectComposition visual is added, so any
-// explorer UI thread which adds one, Task View for example, corrupts the heap
-// while another thread is in the same code. Only element mutations are needed
-// here, and those are reported by an unrelated code path, so the composition
-// diagnostics are kept from being created at all:
-// XamlDiagnostics::CreateCompVisualDiag skips them when the
+// without any locking whenever a DirectComposition visual is added, so any UI
+// thread which adds one corrupts the heap while another thread is in the same
+// code. Only element mutations are needed here, and those are reported by an
+// unrelated code path, so the composition diagnostics are kept from being
+// created at all: XamlDiagnostics::CreateCompVisualDiag skips them when the
 // HKLM\Software\Microsoft\XAML\Debug\DisableCompositionDiag value is 1.
 // Windows.UI.Xaml.dll reads and caches the value once, from within
 // AdviseVisualTreeChange, so answering that single read is enough.
