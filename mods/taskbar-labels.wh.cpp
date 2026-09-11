@@ -978,8 +978,9 @@ void UpdateTaskListButtonWithLabelStyle(FrameworkElement taskListButtonElement,
         auto labelControlMargin = labelControlElement.Margin();
         labelControlMargin.Left =
             g_unloading ? 0
-                        : (iconWidth - 24 + g_settings.leftAndRightPaddingSize -
-                           8 + g_settings.spaceBetweenIconAndLabel - 8);
+                        : (g_settings.leftAndRightPaddingSize + iconWidth +
+                           g_settings.spaceBetweenIconAndLabel -
+                           firstColumnWidthPixels);
         labelControlMargin.Right =
             g_unloading ? 0 : (g_settings.leftAndRightPaddingSize - 10);
         labelControlElement.Margin(labelControlMargin);
@@ -1060,8 +1061,9 @@ void UpdateTaskListButtonWithLabelStyle(FrameworkElement taskListButtonElement,
             badgeElement.Margin(Thickness{
                 .Right = (g_unloading || !labelControlElement)
                              ? 0.0
-                             : 16 - g_settings.leftAndRightPaddingSize +
-                                   (24 - iconWidth),
+                             : firstColumnWidthPixels -
+                                   g_settings.leftAndRightPaddingSize -
+                                   iconWidth,
             });
         }
     }
