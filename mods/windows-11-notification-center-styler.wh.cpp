@@ -2,7 +2,7 @@
 // @id              windows-11-notification-center-styler
 // @name            Windows 11 Notification Center Styler
 // @description     Customize the Notification Center and Action Center with themes contributed by others or create your own
-// @version         1.6
+// @version         1.7
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
@@ -3597,11 +3597,6 @@ const Theme g_themeFrostyGlass = {{
         L"Background:=Transparent"}},
     ThemeTargetStyles{L"ContentControl > ContentPresenter > Grid > Grid", {
         L"BorderBrush:=Transparent"}},
-    ThemeTargetStyles{L"ContentPresenter#ContentPresenter", {
-        L"BorderBrush:=$BorderBrush",
-        L"BorderThinkness:=$BorderThickness",
-        L"Background:=$Background",
-        L"CornerRadius:=$CornerRadius"}},
     ThemeTargetStyles{L"Border#WADFeatureFooter", {
         L"BorderBrush:=Transparent"}},
     ThemeTargetStyles{L"StackPanel > ContentPresenter > Border", {
@@ -3661,7 +3656,7 @@ const Theme g_themeFrostyGlass = {{
         L"Visibility=0",
         L"BorderBrush:=$BorderBrush",
         L"BorderThickness:=$BorderThickness",
-        L"Margin=4,0,4,1"}},
+        L"Margin=4,4,4,1"}},
     ThemeTargetStyles{L"Windows.UI.Xaml.Controls.ListViewItem", {
         L"Margin=0,0,0,3"}},
     ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Grid#StandardHeroContainer > Windows.UI.Xaml.Controls.Image", {
@@ -3807,10 +3802,6 @@ const Theme g_themeOS26_Tahoe_Glass = {{
         L"RadiusX=6",
         L"RadiusY=6",
         L"Margin=0,-7.5,0,7.5"}},
-    ThemeTargetStyles{L"ss.ControlCenterPage > Grid#RootGrid > Grid#RootContent > Grid#ControlCenterRegion > ControlCenter.ControlCenterView#ControlCenterView > Grid#RootGrid > Grid#L1Grid > ContentControl#SlidersGroup > ContentPresenter > GridView#RootGridView > Border > ScrollViewer#ScrollViewer > Border#Root", {
-        L"CornerRadius=6",
-        L"Background:=red",
-        L"Height=auto"}},
     ThemeTargetStyles{L"ControlCenter.ControlCenterPage > Grid#RootGrid > Grid#RootContent > Grid#ControlCenterRegion > ControlCenter.ControlCenterView#ControlCenterView > Grid#RootGrid > Grid#L1Grid > ContentControl#SlidersGroup > ContentPresenter > GridView#RootGridView > Border", {
         L"Background:=transparent",
         L"Height=auto"}},
@@ -12275,7 +12266,7 @@ bool StartStatsTimer() {
     static constexpr WCHAR kStatsBaseUrl[] =
         L"https://github.com/ramensoftware/"
         L"windows-11-notification-center-styling-guide/"
-        L"releases/download/stats-v5/";
+        L"releases/download/stats-v6/";
 
     ULONGLONG lastStatsTime = 0;
     Wh_GetBinaryValue(L"statsTimerLastTime", &lastStatsTime,
