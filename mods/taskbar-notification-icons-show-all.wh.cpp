@@ -2,7 +2,7 @@
 // @id              taskbar-notification-icons-show-all
 // @name            Always show all taskbar tray icons
 // @description     Restore the missing Windows option to always show all tray icons, show new icons by default, or hide all of them (Windows 11 only)
-// @version         1.0
+// @version         1.1
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
@@ -33,8 +33,10 @@ The mod has three modes that can be selected in the mod settings:
 2. New icons are shown, existing icons are unaffected. If this mode is selected,
    the mod only affects icons of new apps, which become visible by default
    instead of being hidden.
-3. All icons are hidden. The opposite of the first mode: all icons are moved to
-   the overflow menu.
+3. All icons are hidden. The opposite of the first mode: all app icons are moved
+   to the overflow menu. System icons such as network, volume and battery are
+   unaffected, they can be hidden with the [Taskbar tray system icon
+   tweaks](https://windhawk.net/mods/taskbar-tray-system-icon-tweaks) mod.
 
 Only Windows 11 is supported.
 
@@ -55,6 +57,7 @@ Only Windows 11 is supported.
 
 #include <ntstatus.h>
 
+#include <atomic>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -66,7 +69,7 @@ enum class Mode {
 };
 
 struct {
-    Mode mode;
+    std::atomic<Mode> mode;
 } g_settings;
 
 // https://github.com/valinet/wh-mods/blob/61319815c7e018e392a08077dc364559548ade02/mods/valinet-unserver.wh.cpp#L95
@@ -247,8 +250,8 @@ void TouchAllNotifyIconSettings() {
         L"_temp_windhawk_taskbar-notification-icons-show-all";
 
     HKEY hKey;
-    LONG result = RegOpenKeyEx(HKEY_CURRENT_USER, kBaseKeyPath, 0,
-                               KEY_READ | KEY_WRITE, &hKey);
+    LONG result =
+        RegOpenKeyEx(HKEY_CURRENT_USER, kBaseKeyPath, 0, KEY_READ, &hKey);
     if (result != ERROR_SUCCESS) {
         Wh_Log(L"Failed to open base key: %d", result);
         return;
@@ -285,14 +288,15 @@ void TouchAllNotifyIconSettings() {
 }
 
 void LoadSettings() {
-    PCWSTR mode = Wh_GetStringSetting(L"mode");
-    g_settings.mode = Mode::showAll;
-    if (wcscmp(mode, L"showNew") == 0) {
-        g_settings.mode = Mode::showNew;
-    } else if (wcscmp(mode, L"hideAll") == 0) {
-        g_settings.mode = Mode::hideAll;
+    PCWSTR modeStr = Wh_GetStringSetting(L"mode");
+    Mode mode = Mode::showAll;
+    if (wcscmp(modeStr, L"showNew") == 0) {
+        mode = Mode::showNew;
+    } else if (wcscmp(modeStr, L"hideAll") == 0) {
+        mode = Mode::hideAll;
     }
-    Wh_FreeStringSetting(mode);
+    Wh_FreeStringSetting(modeStr);
+    g_settings.mode = mode;
 }
 
 BOOL Wh_ModInit() {
