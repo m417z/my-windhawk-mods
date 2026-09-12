@@ -1300,7 +1300,7 @@ const Theme g_themeRosePine = {{
         L"Margin=0,5,4,4",
         L"Padding=3,0,-8,0"}},
     ThemeTargetStyles{L"Grid#IconPanel@CommonStates > Rectangle#RunningIndicator, Taskbar.TaskListLabeledButtonPanel@CommonStates > Rectangle#RunningIndicator", {
-        L"Height=27",
+        L"Height=Auto",
         L"RadiusX=5",
         L"RadiusY=5",
         L"StrokeThickness=2",
@@ -1311,7 +1311,7 @@ const Theme g_themeRosePine = {{
         L"Stroke@ActivePressed=#ebbcba",
         L"Fill=Transparent",
         L"Width=37",
-        L"VerticalAlignment=1",
+        L"VerticalAlignment=Stretch",
         L"Canvas.ZIndex=1"}},
     ThemeTargetStyles{L"SystemTray.ImageIconContent > Grid#ContainerGrid > Image", {
         L"Width=13"}},
@@ -2589,15 +2589,14 @@ const Theme g_themeTaskbarXII = {{
     ThemeTargetStyles{L"ScrollViewer > ScrollContentPresenter > Border > Grid", {
         L"Background:=<AcrylicBrush TintColor=\"{ThemeResource SystemListLowColor}\" TintOpacity=\"0.1\" FallbackColor=\"{ThemeResource SystemChromeHighColor}\" />"}},
     ThemeTargetStyles{L"Taskbar.TaskbarFrame > Grid#RootGrid@DockingStates", {
-        L"Tag@DockedBottom=horizontal",
-        L"Tag@DockedTop=horizontal",
+        L"Tag=horizontal",
         L"Tag@DockedLeft=vertical",
         L"Tag@DockedRight=vertical",
         L"Tag=>taskbarDock"}},
     ThemeTargetStyles{L"Taskbar.TaskbarFrame", {
         L"HorizontalAlignment=Right",
-        L"Width={{taskbarDock==`horizontal`?`Auto`:skip()}}",
-        L"Height={{taskbarDock==`horizontal`?56:skip()}}",
+        L"Width={{taskbarDock==`vertical`?skip():`Auto`}}",
+        L"Height={{taskbarDock==`vertical`?skip():56}}",
         L"Grid.Column=0",
         L"Margin=0,0,2,0"}},
     ThemeTargetStyles{L"Taskbar.TaskbarFrame > Grid", {
@@ -4310,13 +4309,12 @@ const Theme g_themeLuminosity_variant_Dock = {{
     ThemeTargetStyles{L"Taskbar.TaskbarFrame > Grid#RootGrid > Taskbar.TaskbarBackground > Grid > Rectangle#BackgroundFill", {
         L"Visibility=Collapsed"}},
     ThemeTargetStyles{L"Taskbar.TaskbarFrame > Grid#RootGrid@DockingStates", {
-        L"Tag@DockedBottom=horizontal",
-        L"Tag@DockedTop=horizontal",
+        L"Tag=horizontal",
         L"Tag@DockedLeft=vertical",
         L"Tag@DockedRight=vertical",
         L"Tag=>taskbarDock"}},
     ThemeTargetStyles{L"Taskbar.TaskbarFrame", {
-        L"Width={{taskbarDock==`horizontal`?`Auto`:skip()}}",
+        L"Width={{taskbarDock==`vertical`?skip():`Auto`}}",
         L"HorizontalAlignment=Stretch",
         L"Margin=$DockMargin,0,$DockMargin,0"}},
     ThemeTargetStyles{L"Taskbar.TaskbarFrame > Grid#RootGrid", {
@@ -4337,7 +4335,7 @@ const Theme g_themeLuminosity_variant_Dock = {{
         L"VerticalAlignment=Center",
         L"Margin=0,$DockTopGap,$DockMargin,$DockBottomGap"}},
     ThemeTargetStyles{L"Taskbar.TaskbarFrame", {
-        L"Height={{taskbarDock==`horizontal`?$DockHeight:skip()}}"}},
+        L"Height={{taskbarDock==`vertical`?skip():$DockHeight}}"}},
 }, {
     L"DockMargin=250",
     L"DockHeight=58",
@@ -6366,15 +6364,14 @@ const Theme g_themeFluentGlass = {{
         L"ColumnDefinitions:=<ColumnDefinitionCollection><ColumnDefinition Width=\"*\"/><ColumnDefinition Width=\"Auto\"/><ColumnDefinition Width=\"Auto\"/><ColumnDefinition Width=\"*\"/></ColumnDefinitionCollection>",
         L"HorizontalAlignment=Stretch"}},
     ThemeTargetStyles{L"Taskbar.TaskbarFrame > Grid#RootGrid@DockingStates", {
-        L"Tag@DockedBottom=horizontal",
-        L"Tag@DockedTop=horizontal",
+        L"Tag=horizontal",
         L"Tag@DockedLeft=vertical",
         L"Tag@DockedRight=vertical",
         L"Tag=>taskbarDock"}},
     ThemeTargetStyles{L"Taskbar.TaskbarFrame", {
         L"Grid.Column=1",
-        L"Width={{taskbarDock==`horizontal`?$TaskbarFrameWidth:skip()}}",
-        L"Height={{taskbarDock==`horizontal`?$TaskbarHeight:skip()}}",
+        L"Width={{taskbarDock==`vertical`?skip():$TaskbarFrameWidth}}",
+        L"Height={{taskbarDock==`vertical`?skip():$TaskbarHeight}}",
         L"MinHeight=62",
         L"HorizontalAlignment=Center",
         L"VerticalAlignment=Center",
@@ -6466,18 +6463,17 @@ const Theme g_themeFluentGlass = {{
 
 const Theme g_themeOS26_Liquid_Glass_variant_ClearMacDock = {{
     ThemeTargetStyles{L"Taskbar.TaskbarFrame > Grid#RootGrid@DockingStates", {
-        L"Tag@DockedBottom=horizontal",
-        L"Tag@DockedTop=horizontal",
+        L"Tag=horizontal",
         L"Tag@DockedLeft=vertical",
         L"Tag@DockedRight=vertical",
         L"Tag=>taskbarDock"}},
     ThemeTargetStyles{L"Taskbar.TaskbarFrame", {
-        L"Width={{taskbarDock==`horizontal`?`Auto`:skip()}}",
+        L"Width={{taskbarDock==`vertical`?skip():`Auto`}}",
         L"MinWidth:=100",
         L"MaxWidth={{containerGridWidth>0?containerGridWidth:`Infinity`}}",
         L"Grid.Column=1",
         L"Transitions:=<TransitionCollection><RepositionThemeTransition IsStaggeringEnabled=\"False\"/></TransitionCollection>",
-        L"Height={{taskbarDock==`horizontal`?80:skip()}}",
+        L"Height={{taskbarDock==`vertical`?skip():80}}",
         L"MaxHeight=80",
         L"HorizontalAlignment=Center"}},
     ThemeTargetStyles{L"Grid#IconPanel > Image#Icon, Taskbar.TaskListLabeledButtonPanel#IconPanel > Image#Icon", {
@@ -6842,18 +6838,17 @@ const Theme g_themeOS26_Liquid_Glass_variant_ClearMacDock = {{
 
 const Theme g_themeOS26_Liquid_Glass_variant_ClearMacDockCompact = {{
     ThemeTargetStyles{L"Taskbar.TaskbarFrame > Grid#RootGrid@DockingStates", {
-        L"Tag@DockedBottom=horizontal",
-        L"Tag@DockedTop=horizontal",
+        L"Tag=horizontal",
         L"Tag@DockedLeft=vertical",
         L"Tag@DockedRight=vertical",
         L"Tag=>taskbarDock"}},
     ThemeTargetStyles{L"Taskbar.TaskbarFrame", {
-        L"Width={{taskbarDock==`horizontal`?`Auto`:skip()}}",
+        L"Width={{taskbarDock==`vertical`?skip():`Auto`}}",
         L"MinWidth:=100",
         L"MaxWidth={{containerGridWidth>0?containerGridWidth:`Infinity`}}",
         L"Grid.Column=1",
         L"Transitions:=<TransitionCollection><RepositionThemeTransition IsStaggeringEnabled=\"False\"/></TransitionCollection>",
-        L"Height={{taskbarDock==`horizontal`?70:skip()}}",
+        L"Height={{taskbarDock==`vertical`?skip():70}}",
         L"MaxHeight=80",
         L"HorizontalAlignment=Center"}},
     ThemeTargetStyles{L"Grid#IconPanel > Image#Icon, Taskbar.TaskListLabeledButtonPanel#IconPanel > Image#Icon", {
@@ -7492,18 +7487,17 @@ const Theme g_themeOS26_Liquid_Glass_variant_ClearTaskbar = {{
 
 const Theme g_themeOS26_Liquid_Glass_variant_DarkMacDock = {{
     ThemeTargetStyles{L"Taskbar.TaskbarFrame > Grid#RootGrid@DockingStates", {
-        L"Tag@DockedBottom=horizontal",
-        L"Tag@DockedTop=horizontal",
+        L"Tag=horizontal",
         L"Tag@DockedLeft=vertical",
         L"Tag@DockedRight=vertical",
         L"Tag=>taskbarDock"}},
     ThemeTargetStyles{L"Taskbar.TaskbarFrame", {
-        L"Width={{taskbarDock==`horizontal`?`Auto`:skip()}}",
+        L"Width={{taskbarDock==`vertical`?skip():`Auto`}}",
         L"MinWidth:=100",
         L"MaxWidth={{containerGridWidth>0?containerGridWidth:`Infinity`}}",
         L"Grid.Column=1",
         L"Transitions:=<TransitionCollection><RepositionThemeTransition IsStaggeringEnabled=\"False\"/></TransitionCollection>",
-        L"Height={{taskbarDock==`horizontal`?80:skip()}}",
+        L"Height={{taskbarDock==`vertical`?skip():80}}",
         L"MaxHeight=80",
         L"HorizontalAlignment=Center"}},
     ThemeTargetStyles{L"Grid#IconPanel > Image#Icon, Taskbar.TaskListLabeledButtonPanel#IconPanel > Image#Icon", {
@@ -7868,18 +7862,17 @@ const Theme g_themeOS26_Liquid_Glass_variant_DarkMacDock = {{
 
 const Theme g_themeOS26_Liquid_Glass_variant_DarkMacDockCompact = {{
     ThemeTargetStyles{L"Taskbar.TaskbarFrame > Grid#RootGrid@DockingStates", {
-        L"Tag@DockedBottom=horizontal",
-        L"Tag@DockedTop=horizontal",
+        L"Tag=horizontal",
         L"Tag@DockedLeft=vertical",
         L"Tag@DockedRight=vertical",
         L"Tag=>taskbarDock"}},
     ThemeTargetStyles{L"Taskbar.TaskbarFrame", {
-        L"Width={{taskbarDock==`horizontal`?`Auto`:skip()}}",
+        L"Width={{taskbarDock==`vertical`?skip():`Auto`}}",
         L"MinWidth:=100",
         L"MaxWidth={{containerGridWidth>0?containerGridWidth:`Infinity`}}",
         L"Grid.Column=1",
         L"Transitions:=<TransitionCollection><RepositionThemeTransition IsStaggeringEnabled=\"False\"/></TransitionCollection>",
-        L"Height={{taskbarDock==`horizontal`?70:skip()}}",
+        L"Height={{taskbarDock==`vertical`?skip():70}}",
         L"MaxHeight=80",
         L"HorizontalAlignment=Center"}},
     ThemeTargetStyles{L"Grid#IconPanel > Image#Icon, Taskbar.TaskListLabeledButtonPanel#IconPanel > Image#Icon", {
@@ -8543,8 +8536,7 @@ const Theme g_themeFrostyGlass = {{
         L"CornerRadius=7"}},
     ThemeTargetStyles{L"SystemTray.OmniButton#ControlCenterButton", {
         L"Padding=$TrayPadding",
-        L"CornerRadius=7",
-        L"MaxWidth=Auto"}},
+        L"CornerRadius=7"}},
     ThemeTargetStyles{L"SystemTray.OmniButton#NotificationCenterButton", {
         L"Padding=2,4,4.5,4",
         L"CornerRadius=7"}},
@@ -8561,23 +8553,21 @@ const Theme g_themeFrostyGlass = {{
     ThemeTargetStyles{L"SystemTray.Stack#ShowDesktopStack", {
         L"Visibility=1"}},
     ThemeTargetStyles{L"Taskbar.Gripper#GripperControl", {
-        L"Width=Auto",
-        L"MinWidth=Auto"}},
+        L"Width=Auto"}},
     ThemeTargetStyles{L"SystemTray.SystemTrayFrame", {
         L"HorizontalAlignment=Right",
         L"CornerRadius=$CornerRadius",
         L"Width=Auto"}},
     ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Grid#AugmentedEntryPointContentGrid", {
         L"Margin=4,0,0,0",
-        L"HorizontalAlignment=Auto"}},
+        L"HorizontalAlignment=Center"}},
     ThemeTargetStyles{L"TextBlock#TimeInnerTextBlock", {
         L"FontSize=13",
         L"FontFamily=Segoe UI VF",
         L"Margin=0",
         L"Padding=0",
         L"RenderTransform:=<TranslateTransform X=\"5\" Y=\"2\" />",
-        L"Width=Auto",
-        L"MinWidth=Auto"}},
+        L"Width=Auto"}},
     ThemeTargetStyles{L"TextBlock#DateInnerTextBlock", {
         L"Visibility=1",
         L"RenderTransform:=<TranslateTransform X=\"4\" Y=\"0\" />",
@@ -8638,7 +8628,7 @@ const Theme g_themeFrostyGlass = {{
         L"BorderThickness:=$BorderThickness",
         L"CornerRadius:=$CornerRadius"}},
     ThemeTargetStyles{L"SearchUx.SearchUI.SearchButtonControl", {
-        L"MaxWidth=Auto",
+        L"Width=Auto",
         L"Margin=-1,0,-1,0",
         L"Padding=$TrayPadding",
         L"CornerRadius=7"}},
@@ -8679,11 +8669,9 @@ const Theme g_themeFrostyGlass = {{
         L"Padding=$TrayPadding",
         L"Visibility=0"}},
     ThemeTargetStyles{L"Taskbar.TaskbarFrame", {
-        L"HorizontalAlignment=Auto",
+        L"HorizontalAlignment=Center",
         L"Height=>taskbarFrameHeight",
         L"Width={{taskbarFrameHeight>0?`Auto`:skip()}}",
-        L"MinWidth={{taskbarFrameHeight>0?500:skip()}}",
-        L"MaxWidth:=900",
         L"Padding=1,0,1,0"}},
     ThemeTargetStyles{L"StackPanel#SystemTrayFrameGrid, Grid#SystemTrayFrameGrid", {
         L"Visibility=0"}},
@@ -8728,10 +8716,6 @@ const Theme g_themeFrostyGlass = {{
         L"BorderThickness:=$BorderThickness",
         L"BorderBrush:=$BorderBrush",
         L"CornerRadius:=$CornerRadius"}},
-    ThemeTargetStyles{L"Taskbar.TaskbarFrame", {
-        L"Width={{taskbarFrameHeight>0?`Auto`:skip()}}",
-        L"HorizontalAlignment=Center",
-        L"Margin=Auto"}},
     ThemeTargetStyles{L"Taskbar.TaskbarFrame > Grid#RootGrid", {
         L"Background:=$Background",
         L"BorderBrush:=$BorderBrush",
@@ -9610,15 +9594,14 @@ const Theme g_themeMinecraft_Hotbar = {{
         L"CornerRadius=0",
         L"Margin=0,5.5,0,5.5"}},
     ThemeTargetStyles{L"Taskbar.TaskbarFrame > Grid#RootGrid@DockingStates", {
-        L"Tag@DockedBottom=horizontal",
-        L"Tag@DockedTop=horizontal",
+        L"Tag=horizontal",
         L"Tag@DockedLeft=vertical",
         L"Tag@DockedRight=vertical",
         L"Tag=>taskbarDock"}},
     ThemeTargetStyles{L"Taskbar.TaskbarFrame", {
-        L"Width={{taskbarDock==`horizontal`?`Auto`:skip()}}",
+        L"Width={{taskbarDock==`vertical`?skip():`Auto`}}",
         L"MaxWidth={{containerGridWidth>0?containerGridWidth:`Infinity`}}",
-        L"Height={{taskbarDock==`horizontal`?70:skip()}}",
+        L"Height={{taskbarDock==`vertical`?skip():70}}",
         L"MinWidth:=100",
         L"Grid.Column=1",
         L"HorizontalAlignment=Center"}},
@@ -10130,17 +10113,16 @@ const Theme g_themeOne_UI_8_5_variant_Dock = {{
     ThemeTargetStyles{L"Grid#IconPanel@RunningIndicatorStates > Rectangle#RunningIndicator, Taskbar.TaskListLabeledButtonPanel@RunningIndicatorStates > Rectangle#RunningIndicator", {
         L"Fill=white"}},
     ThemeTargetStyles{L"Taskbar.TaskbarFrame > Grid#RootGrid@DockingStates", {
-        L"Tag@DockedBottom=horizontal",
-        L"Tag@DockedTop=horizontal",
+        L"Tag=horizontal",
         L"Tag@DockedLeft=vertical",
         L"Tag@DockedRight=vertical",
         L"Tag=>taskbarDock"}},
     ThemeTargetStyles{L"Taskbar.TaskbarFrame", {
-        L"Width={{taskbarDock==`horizontal`?`Auto`:skip()}}",
+        L"Width={{taskbarDock==`vertical`?skip():`Auto`}}",
         L"MaxWidth={{containerGridWidth>0?containerGridWidth:`Infinity`}}",
         L"Grid.Column=1",
         L"Transitions:=<TransitionCollection><RepositionThemeTransition IsStaggeringEnabled=\"False\"/></TransitionCollection>",
-        L"Height={{taskbarDock==`horizontal`?70:skip()}}",
+        L"Height={{taskbarDock==`vertical`?skip():70}}",
         L"MaxHeight=70",
         L"HorizontalAlignment=Center"}},
     ThemeTargetStyles{L"Taskbar.TaskbarFrame > Grid#RootGrid", {
