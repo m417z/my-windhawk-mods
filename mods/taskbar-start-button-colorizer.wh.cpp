@@ -90,6 +90,7 @@ Only Windows 11 is supported.
 #include <cmath>
 #include <cstdint>
 #include <functional>
+#include <list>
 
 #undef GetCurrentTime
 
@@ -119,6 +120,10 @@ struct {
 
 std::atomic<bool> g_taskbarViewDllLoaded;
 std::atomic<bool> g_unloading;
+
+// The pending subscriptions to the Loaded event of the Start button icons.
+// Only accessed from the taskbar thread.
+std::list<FrameworkElement::Loaded_revoker> g_iconLoadedRevokers;
 
 HWND FindCurrentProcessTaskbarWnd() {
     HWND hTaskbarWnd = nullptr;
@@ -376,6 +381,15 @@ void HookColorKeyFrameAnimation(Composition::Compositor compositor) {
     Wh_ApplyHookOperations();
 }
 
+void EnsureColorKeyFrameAnimationHooked(UIElement element) {
+    [[maybe_unused]] static bool hooked = [&element] {
+        HookColorKeyFrameAnimation(
+            Hosting::ElementCompositionPreview::GetElementVisual(element)
+                .Compositor());
+        return true;
+    }();
+}
+
 // The original color is kept in the property set of the brush or of the
 // gradient stop it belongs to, so that applying the effects again, as well as
 // restoring the icon, always start from it.
@@ -455,12 +469,7 @@ void EnumVisualBrushes(
 }
 
 void ApplyIconColors(FrameworkElement icon) {
-    [[maybe_unused]] static bool hooked = [&icon] {
-        HookColorKeyFrameAnimation(
-            Hosting::ElementCompositionPreview::GetElementVisual(icon)
-                .Compositor());
-        return true;
-    }();
+    EnsureColorKeyFrameAnimationHooked(icon);
 
     // The player hosts the animated visual as the child visual of the icon
     // element, not among the children of the visual which backs the element.
@@ -504,15 +513,24 @@ void ApplyIconScale(FrameworkElement icon) {
     scaleTransform.ScaleY(g_settings.size);
 }
 
-void ApplyStartButtonStyle(FrameworkElement startButton) {
+FrameworkElement FindStartButtonIcon(FrameworkElement startButton) {
     FrameworkElement icon = FindDescendantByName(startButton, L"Icon");
     if (!icon) {
         Wh_Log(L"Failed to find the Start button icon");
-        return;
     }
 
+    return icon;
+}
+
+void ApplyIconStyle(FrameworkElement icon) {
     ApplyIconColors(icon);
     ApplyIconScale(icon);
+}
+
+void ApplyStartButtonStyle(FrameworkElement startButton) {
+    if (FrameworkElement icon = FindStartButtonIcon(startButton)) {
+        ApplyIconStyle(icon);
+    }
 }
 
 bool ApplyStyle(XamlRoot xamlRoot) {
@@ -709,6 +727,10 @@ bool RunFromWindowThread(HWND hWnd,
 void ApplySettingsFromTaskbarThread() {
     Wh_Log(L"Applying settings");
 
+    if (g_unloading) {
+        g_iconLoadedRevokers.clear();
+    }
+
     EnumThreadWindows(
         GetCurrentThreadId(),
         [](HWND hWnd, LPARAM lParam) -> BOOL {
@@ -775,6 +797,24 @@ void WINAPI ExperienceToggleButton_UpdateVisualStates_Hook(void* pThis) {
     }
 }
 
+void ApplyIconStyleOnceLoaded(FrameworkElement icon) {
+    g_iconLoadedRevokers.emplace_back();
+    auto revokerIt = std::prev(g_iconLoadedRevokers.end());
+
+    *revokerIt = icon.Loaded(
+        winrt::auto_revoke,
+        [revokerIt](winrt::Windows::Foundation::IInspectable const& sender,
+                    RoutedEventArgs const&) {
+            Wh_Log(L">");
+
+            g_iconLoadedRevokers.erase(revokerIt);
+
+            if (auto icon = sender.try_as<FrameworkElement>()) {
+                ApplyIconStyle(icon);
+            }
+        });
+}
+
 // Runs when the icon is created, with the original colors.
 using ExperienceToggleButton_InitializeAnimatedVisualPlayer_t =
     void(WINAPI*)(void* pThis);
@@ -784,11 +824,34 @@ void WINAPI
 ExperienceToggleButton_InitializeAnimatedVisualPlayer_Hook(void* pThis) {
     Wh_Log(L">");
 
+    FrameworkElement startButton = GetStartButtonElement(pThis);
+
+    // The icon creates its animations for the first time in here.
+    if (startButton) {
+        EnsureColorKeyFrameAnimationHooked(startButton);
+    }
+
     ExperienceToggleButton_InitializeAnimatedVisualPlayer_Original(pThis);
 
-    if (auto startButton = GetStartButtonElement(pThis)) {
-        ApplyStartButtonStyle(startButton);
+    if (!startButton) {
+        return;
     }
+
+    FrameworkElement icon = FindStartButtonIcon(startButton);
+    if (!icon) {
+        return;
+    }
+
+    // The player attaches the animated visual to the icon element only once
+    // the element is loaded, which is after the icon is initialized while the
+    // taskbar is being created.
+    if (!Hosting::ElementCompositionPreview::GetElementChildVisual(icon)) {
+        Wh_Log(L"Waiting for the icon to load");
+        ApplyIconStyleOnceLoaded(icon);
+        return;
+    }
+
+    ApplyIconStyle(icon);
 }
 
 // Runs whenever the icon recreates the animations which drive it, among them
