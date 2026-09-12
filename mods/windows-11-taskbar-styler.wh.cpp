@@ -16902,6 +16902,55 @@ void UpdateStyleVariableConsumers(
     }
 }
 
+// Whether two values read from a property are the same local value. Boxed
+// primitives compare by value, since XAML boxes them anew on every read;
+// everything else, UnsetValue included, by identity.
+bool SameLocalValue(winrt::Windows::Foundation::IInspectable const& a,
+                    winrt::Windows::Foundation::IInspectable const& b) {
+    if (a == b) {
+        return true;
+    }
+    if (!a || !b) {
+        return false;
+    }
+    auto ua = TryUnboxPropertyValue(a);
+    auto ub = TryUnboxPropertyValue(b);
+    if (!ua || !ub) {
+        return false;
+    }
+    return std::visit(
+        [](auto const& x, auto const& y) -> bool {
+            using X = std::decay_t<decltype(x)>;
+            if constexpr (!std::is_same_v<X, std::decay_t<decltype(y)>>) {
+                return false;
+            } else if constexpr (std::is_floating_point_v<X>) {
+                return x == y || (std::isnan(x) && std::isnan(y));
+            } else {
+                return x == y;
+            }
+        },
+        *ua, *ub);
+}
+
+// Record a write by something other than the mod as the property's pre-style
+// value. A local value still equal to the one the mod applied means nothing
+// external happened (an animation changes only the effective value), and
+// adopting the mod's own brush would make it survive cleanup and crash when
+// the DLL is unloaded.
+void AdoptExternalValueAsOriginal(
+    FrameworkElement element,
+    DependencyProperty property,
+    ElementPropertyCustomizationState* propertyCustomizationState) {
+    if (!propertyCustomizationState->customValue) {
+        return;
+    }
+    auto localValue = ReadLocalValueWithWorkaround(element, property);
+    if (!SameLocalValue(localValue,
+                        propertyCustomizationState->lastAppliedValue)) {
+        propertyCustomizationState->originalValue = localValue;
+    }
+}
+
 // Put the property back to its pre-style value and forget what was applied.
 // Leaves the dynamic template alone, so a later variable change can apply the
 // style again.
@@ -16909,6 +16958,7 @@ void UnapplyStyleValue(
     FrameworkElement element,
     DependencyProperty property,
     ElementPropertyCustomizationState* propertyCustomizationState) {
+    AdoptExternalValueAsOriginal(element, property, propertyCustomizationState);
     if (propertyCustomizationState->originalValue) {
         bool wasModifying = g_elementPropertyModifying;
         g_elementPropertyModifying = true;
@@ -17122,6 +17172,8 @@ void PropagateStyleVariableChangeCore(StyleVariableState* state,
             if (!resolved) {
                 continue;
             }
+            AdoptExternalValueAsOriginal(element, consumer.property,
+                                         &propState);
             if (!propState.originalValue) {
                 propState.originalValue =
                     ReadLocalValueWithWorkaround(element, consumer.property);
@@ -17484,19 +17536,8 @@ void ApplyCustomizationsForVisualStateGroup(
                         return;
                     }
 
-                    auto localValue =
-                        ReadLocalValueWithWorkaround(element, property);
-
-                    // Only update originalValue if the local value was changed
-                    // externally (e.g. by a Setter). When an animation changes
-                    // only the effective value, the local value still matches
-                    // what we set, so updating originalValue would corrupt it
-                    // with our own brush - causing the brush to survive cleanup
-                    // and crash when the mod's DLL is unloaded.
-                    if (localValue !=
-                        propertyCustomizationState.lastAppliedValue) {
-                        propertyCustomizationState.originalValue = localValue;
-                    }
+                    AdoptExternalValueAsOriginal(element, property,
+                                                 &propertyCustomizationState);
 
                     Wh_Log(L"Re-applying style for %s",
                            winrt::get_class_name(element).c_str());
@@ -17596,6 +17637,9 @@ void ApplyCustomizationsForVisualStateGroup(
                             }
 
                             if (resolved) {
+                                AdoptExternalValueAsOriginal(
+                                    element, property,
+                                    &propertyCustomizationState);
                                 if (!propertyCustomizationState.originalValue) {
                                     propertyCustomizationState.originalValue =
                                         ReadLocalValueWithWorkaround(element,
