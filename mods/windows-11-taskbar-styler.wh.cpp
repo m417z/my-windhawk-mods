@@ -12306,18 +12306,16 @@ struct ClickThroughTaskbarState {
     // Quantized signature of the last applied region, to skip redundant work on
     // the frequent LayoutUpdated event.
     std::vector<long long> lastRegionSignature;
-    // Bounding box (in window coordinates) of the region last applied via
-    // SetWindowRgn. The signature captures only XAML-derived inputs, so it
-    // can't tell that the region was reset out from under us: toggling
-    // auto-hide makes Explorer clear the taskbar window region (and later set a
-    // full-window one) with no XAML layout change. Comparing the window's
-    // current region box against this detects that and forces a reapply, and
-    // tells our own region apart from one Explorer is using to clip the window
-    // for its own purposes.
-    RECT lastAppliedRgnBox = {};
 };
 
 thread_local std::list<ClickThroughTaskbarState> g_clickThroughTaskbarState;
+
+// Bounding box of the window region last applied, per top-level taskbar
+// window. Tells whether the current region is still ours: Explorer can clear or
+// replace it with no XAML layout change, e.g. on an auto-hide toggle, which the
+// signature can't see. Keyed by window, which outlives the XamlRoot when the
+// island is rebuilt.
+thread_local std::unordered_map<HWND, RECT> g_clickThroughAppliedRgnBoxes;
 
 // Look up (or create) the entry for a live XamlRoot. Reaps any entries whose
 // XamlRoot has been destroyed before searching, so a recycled address cannot
@@ -17908,8 +17906,10 @@ void UpdateClickThroughRegion(ClickThroughTaskbarState& state) {
 
     RECT currentRgnBox;
     bool hasRgn = GetWindowRgnBox(topLevelWnd, &currentRgnBox) != ERROR;
-    bool rgnIsOurs =
-        hasRgn && EqualRect(&currentRgnBox, &state.lastAppliedRgnBox);
+    auto appliedRgnBoxIt = g_clickThroughAppliedRgnBoxes.find(topLevelWnd);
+    bool rgnIsOurs = hasRgn &&
+                     appliedRgnBoxIt != g_clickThroughAppliedRgnBoxes.end() &&
+                     EqualRect(&currentRgnBox, &appliedRgnBoxIt->second);
 
     // Explorer clips the taskbar window through the very same window region:
     // TaskbarController::UpdateHostWindowClip narrows it to the collapsed
@@ -17987,7 +17987,7 @@ void UpdateClickThroughRegion(ClickThroughTaskbarState& state) {
     g_applyingClickThroughRegion = false;
     if (applied) {
         state.lastRegionSignature = std::move(signature);
-        state.lastAppliedRgnBox = rgnBox;
+        g_clickThroughAppliedRgnBoxes[topLevelWnd] = rgnBox;
     } else {
         Wh_Log(L"SetWindowRgn failed for %08X", (DWORD)(ULONG_PTR)topLevelWnd);
         DeleteObject(rgn);
@@ -18028,6 +18028,7 @@ LRESULT CALLBACK ClickThroughTaskbarSubclassProc(HWND hWnd,
 
         case WM_NCDESTROY:
             g_clickThroughSubclassedWindows.erase(hWnd);
+            g_clickThroughAppliedRgnBoxes.erase(hWnd);
             break;
     }
 
@@ -18162,24 +18163,23 @@ void HandleClickThroughIslandRoot(
 // other than the one recorded as applied is Explorer's own clip (see
 // UpdateClickThroughRegion) and is left in place.
 void ClearClickThroughRegions() {
-    for (auto& state : g_clickThroughTaskbarState) {
-        if (!state.islandHwnd) {
-            continue;
-        }
-
-        HWND topLevelWnd = GetAncestor(state.islandHwnd, GA_ROOT);
-        if (!topLevelWnd || !IsTaskbarTopLevelWindow(topLevelWnd)) {
+    for (const auto& [topLevelWnd, appliedRgnBox] :
+         g_clickThroughAppliedRgnBoxes) {
+        // Stale if the window was destroyed with no subclass attached to drop
+        // the record; the handle may have been reused since.
+        if (!IsTaskbarTopLevelWindow(topLevelWnd)) {
             continue;
         }
 
         RECT currentRgnBox;
         if (GetWindowRgnBox(topLevelWnd, &currentRgnBox) == ERROR ||
-            !EqualRect(&currentRgnBox, &state.lastAppliedRgnBox)) {
+            !EqualRect(&currentRgnBox, &appliedRgnBox)) {
             continue;
         }
 
         SetWindowRgn(topLevelWnd, nullptr, TRUE);
     }
+    g_clickThroughAppliedRgnBoxes.clear();
 }
 
 // Explorer never erases the taskbar window: Shell_TrayWnd,
