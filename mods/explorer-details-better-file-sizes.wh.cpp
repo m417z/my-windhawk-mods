@@ -658,6 +658,35 @@ static BOOL _everything3_wchar_buf_grow_length(_everything3_wchar_buf_t *wcbuf, 
 	return FALSE;
 }
 
+constexpr DWORD kEverything3IpcTimeoutMs = 1000;
+
+static BOOL Everything3_WaitForOverlappedIo(_everything3_client_t *client,
+                                             OVERLAPPED *overlapped) {
+	HANDLE wait_handles[2];
+	wait_handles[0] = client->shutdown_event;
+	wait_handles[1] = overlapped->hEvent;
+
+	DWORD wait_result = WaitForMultipleObjects(2, wait_handles, FALSE, kEverything3IpcTimeoutMs);
+	if (wait_result == WAIT_OBJECT_0 + 1) {
+		return TRUE;
+	}
+
+	DWORD error = EVERYTHING3_ERROR_DISCONNECTED;
+	if (wait_result == WAIT_OBJECT_0) {
+		error = EVERYTHING3_ERROR_SHUTDOWN;
+	} else if (wait_result == WAIT_TIMEOUT) {
+		error = EVERYTHING3_ERROR_CANCELLED;
+	}
+
+	// Don't let a timed-out OVERLAPPED operation outlive its stack object.
+	CancelIoEx(client->pipe_handle, overlapped);
+	DWORD transferred;
+	GetOverlappedResult(client->pipe_handle, overlapped, &transferred, TRUE);
+
+	SetLastError(error);
+	return FALSE;
+}
+
 static BOOL _everything3_send(_everything3_client_t *client, DWORD code, const void *in_data, SIZE_T in_size) {
 	if (in_size <= EVERYTHING3_DWORD_MAX) {
 		_everything3_message_t send_message;
@@ -694,14 +723,7 @@ static BOOL _everything3_send(_everything3_client_t *client, DWORD code, const v
 				last_error = GetLastError();
 
 				if ((last_error == ERROR_IO_INCOMPLETE) || (last_error == ERROR_IO_PENDING)) {
-					HANDLE wait_handles[2];
-
-					wait_handles[0] = client->shutdown_event;
-					wait_handles[1] = client->send_event;
-
-					if (WaitForMultipleObjects(2, wait_handles, FALSE, INFINITE) == WAIT_OBJECT_0) {
-						SetLastError(EVERYTHING3_ERROR_SHUTDOWN);
-
+					if (!Everything3_WaitForOverlappedIo(client, &send_overlapped)) {
 						return FALSE;
 					}
 
@@ -744,14 +766,7 @@ static BOOL _everything3_send(_everything3_client_t *client, DWORD code, const v
 				last_error = GetLastError();
 
 				if ((last_error == ERROR_IO_INCOMPLETE) || (last_error == ERROR_IO_PENDING)) {
-					HANDLE wait_handles[2];
-
-					wait_handles[0] = client->shutdown_event;
-					wait_handles[1] = client->send_event;
-
-					if (WaitForMultipleObjects(2, wait_handles, FALSE, INFINITE) == WAIT_OBJECT_0) {
-						SetLastError(EVERYTHING3_ERROR_SHUTDOWN);
-
+					if (!Everything3_WaitForOverlappedIo(client, &send_overlapped)) {
 						return FALSE;
 					}
 
@@ -856,14 +871,7 @@ static BOOL _everything3_recv_data(_everything3_client_t *client, void *buf, SIZ
 			last_error = GetLastError();
 
 			if ((last_error == ERROR_IO_INCOMPLETE) || (last_error == ERROR_IO_PENDING)) {
-				HANDLE wait_handles[2];
-
-				wait_handles[0] = client->shutdown_event;
-				wait_handles[1] = client->recv_event;
-
-				if (WaitForMultipleObjects(2, wait_handles, FALSE, INFINITE) == WAIT_OBJECT_0) {
-					SetLastError(EVERYTHING3_ERROR_SHUTDOWN);
-
+				if (!Everything3_WaitForOverlappedIo(client, &recv_overlapped)) {
 					break;
 				}
 
@@ -1339,18 +1347,28 @@ unsigned Everything4Wh_GetFileSize(PCWSTR folderPath, int64_t* size) {
         if (!g_everything4Wh_Thread) {
             g_everything4Wh_ThreadReadyEvent =
                 CreateEvent(nullptr, TRUE, FALSE, nullptr);
-
-            g_everything4Wh_Thread = CreateThread(
-                nullptr, 0, Everything4Wh_Thread, nullptr, 0, nullptr);
-            if (g_everything4Wh_Thread) {
-                // Wait for a message queue to be created.
-                WaitForSingleObject(g_everything4Wh_ThreadReadyEvent, INFINITE);
-                CloseHandle(g_everything4Wh_ThreadReadyEvent);
+            if (!g_everything4Wh_ThreadReadyEvent) {
+                Wh_Log(L"CreateEvent failed: %d", GetLastError());
             } else {
-                Wh_Log(L"CreateThread failed: %d", GetLastError());
-            }
+                g_everything4Wh_Thread = CreateThread(
+                    nullptr, 0, Everything4Wh_Thread, nullptr, 0, nullptr);
+                if (g_everything4Wh_Thread) {
+                    // Every thread initialization path signals the event.
+                    WaitForSingleObject(g_everything4Wh_ThreadReadyEvent,
+                                        INFINITE);
+                } else {
+                    Wh_Log(L"CreateThread failed: %d", GetLastError());
+                }
 
-            g_everything4Wh_ThreadReadyEvent = nullptr;
+                CloseHandle(g_everything4Wh_ThreadReadyEvent);
+                g_everything4Wh_ThreadReadyEvent = nullptr;
+
+                if (g_everything4Wh_Thread && !g_gsReceiverWnd) {
+                    WaitForSingleObject(g_everything4Wh_Thread, INFINITE);
+                    CloseHandle(g_everything4Wh_Thread);
+                    g_everything4Wh_Thread = nullptr;
+                }
+            }
         }
     }
 
@@ -1478,6 +1496,7 @@ DWORD WINAPI Everything4Wh_Thread(void* parameter) {
     HANDLE hEvent = CreateEvent(nullptr, TRUE, FALSE, nullptr);
     if (!hEvent) {
         Wh_Log(L"CreateEvent failed");
+        SetEvent(g_everything4Wh_ThreadReadyEvent);
         return 1;
     }
 
@@ -1491,6 +1510,7 @@ DWORD WINAPI Everything4Wh_Thread(void* parameter) {
     if (!RegisterClassEx(&wc)) {
         Wh_Log(L"RegisterClassEx failed");
         CloseHandle(hEvent);
+        SetEvent(g_everything4Wh_ThreadReadyEvent);
         return 1;
     }
 
@@ -1501,6 +1521,7 @@ DWORD WINAPI Everything4Wh_Thread(void* parameter) {
         Wh_Log(L"CreateWindowEx failed");
         UnregisterClass(wc.lpszClassName, wc.hInstance);
         CloseHandle(hEvent);
+        SetEvent(g_everything4Wh_ThreadReadyEvent);
         return 1;
     }
 
