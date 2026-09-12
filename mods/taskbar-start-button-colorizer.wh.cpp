@@ -26,8 +26,8 @@
 
 Customize the Windows logo of the Start button on the taskbar:
 
-* **Color**: recolor the icon with one of the built-in colors, such as red,
-  green or pink.
+* **Color**: recolor the icon with the system accent color or with one of the
+  built-in colors, such as red, green or pink.
 * **Effects**: fine tune the icon with the hue, saturation, brightness and
   opacity effects.
 * **Size**: set the size of the icon.
@@ -50,6 +50,7 @@ Only Windows 11 is supported.
     saturation and brightness.
   $options:
   - none: Original
+  - accent: System accent color
   - red: Red
   - orange: Orange
   - yellow: Yellow
@@ -95,7 +96,9 @@ Only Windows 11 is supported.
 #undef GetCurrentTime
 
 #include <winrt/Windows.Foundation.Collections.h>
+#include <winrt/Windows.System.h>
 #include <winrt/Windows.UI.Composition.h>
+#include <winrt/Windows.UI.ViewManagement.h>
 #include <winrt/Windows.UI.Xaml.Automation.h>
 #include <winrt/Windows.UI.Xaml.Hosting.h>
 #include <winrt/Windows.UI.Xaml.Media.h>
@@ -105,10 +108,13 @@ Only Windows 11 is supported.
 using namespace winrt::Windows::UI::Xaml;
 
 namespace Composition = winrt::Windows::UI::Composition;
+namespace ViewManagement = winrt::Windows::UI::ViewManagement;
 
 struct {
     // The hue the icon is recolored to, or -1 to keep its original hue.
     int colorHue;
+    // Whether the icon is recolored to the hue of the system accent color.
+    bool accentColor;
     int hue;
     double saturation;
     double brightness;
@@ -288,10 +294,60 @@ winrt::Windows::UI::Color HslToRgb(HslColor hsl, uint8_t alpha) {
     return {alpha, toByte(r), toByte(g), toByte(b)};
 }
 
+void ApplySettingsFromTaskbarThread();
+
+// The system accent color is tracked from the taskbar thread, which is the
+// thread the icon is customized from. The tracking starts the first time the
+// hue of the accent color is needed and stops when the mod unloads.
+ViewManagement::UISettings g_uiSettings{nullptr};
+ViewManagement::UISettings::ColorValuesChanged_revoker
+    g_colorValuesChangedRevoker;
+double g_accentColorHue;
+
+double QueryAccentColorHue() {
+    return RgbToHsl(
+               g_uiSettings.GetColorValue(ViewManagement::UIColorType::Accent))
+        .hue;
+}
+
+double AccentColorHue() {
+    if (g_uiSettings) {
+        return g_accentColorHue;
+    }
+
+    g_uiSettings = ViewManagement::UISettings();
+    g_accentColorHue = QueryAccentColorHue();
+
+    // The event is raised on a worker thread.
+    g_colorValuesChangedRevoker = g_uiSettings.ColorValuesChanged(
+        winrt::auto_revoke,
+        [dispatcherQueue =
+             winrt::Windows::System::DispatcherQueue::GetForCurrentThread()](
+            auto&&, auto&&) {
+            dispatcherQueue.TryEnqueue([] {
+                Wh_Log(L">");
+
+                if (g_uiSettings) {
+                    g_accentColorHue = QueryAccentColorHue();
+                    ApplySettingsFromTaskbarThread();
+                }
+            });
+        });
+
+    return g_accentColorHue;
+}
+
+void StopTrackingAccentColor() {
+    g_colorValuesChangedRevoker.revoke();
+    g_uiSettings = nullptr;
+}
+
 winrt::Windows::UI::Color TransformColor(winrt::Windows::UI::Color color) {
     HslColor hsl = RgbToHsl(color);
 
-    if (g_settings.colorHue >= 0) {
+    if (g_settings.accentColor) {
+        hsl.hue = AccentColorHue();
+    } else if (g_settings.colorHue >= 0) {
         hsl.hue = g_settings.colorHue;
     }
 
@@ -729,6 +785,7 @@ void ApplySettingsFromTaskbarThread() {
 
     if (g_unloading) {
         g_iconLoadedRevokers.clear();
+        StopTrackingAccentColor();
     }
 
     EnumThreadWindows(
@@ -1000,6 +1057,7 @@ void LoadSettings() {
     };
 
     PCWSTR color = Wh_GetStringSetting(L"color");
+    g_settings.accentColor = wcscmp(color, L"accent") == 0;
     g_settings.colorHue = -1;
     for (const auto& [name, hue] : colors) {
         if (wcscmp(color, name) == 0) {
@@ -1017,9 +1075,9 @@ void LoadSettings() {
     g_settings.size = Wh_GetIntSetting(L"size") / 100.0;
 
     g_settings.customizeColors =
-        g_settings.colorHue >= 0 || g_settings.hue != 0 ||
-        g_settings.saturation != 1 || g_settings.brightness != 1 ||
-        g_settings.opacity != 1;
+        g_settings.accentColor || g_settings.colorHue >= 0 ||
+        g_settings.hue != 0 || g_settings.saturation != 1 ||
+        g_settings.brightness != 1 || g_settings.opacity != 1;
     g_settings.customizeSize = g_settings.size != 1;
 }
 
