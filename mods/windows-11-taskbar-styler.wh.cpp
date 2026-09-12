@@ -18171,19 +18171,29 @@ void HandleClickThroughIslandRoot(
     }
 }
 
-// Remove click-through regions from every taskbar window on the current thread,
-// restoring the normal rectangular windows. Unconditional, so it cleans up even
-// if per-XamlRoot tracking is stale.
+// Remove the click-through regions applied by the mod from the taskbar windows
+// on the current thread, restoring the normal rectangular windows. A region
+// other than the one recorded as applied is Explorer's own clip (see
+// UpdateClickThroughRegion) and is left in place.
 void ClearClickThroughRegions() {
-    EnumThreadWindows(
-        GetCurrentThreadId(),
-        [](HWND hWnd, LPARAM) -> BOOL {
-            if (IsTaskbarTopLevelWindow(hWnd)) {
-                SetWindowRgn(hWnd, nullptr, TRUE);
-            }
-            return TRUE;
-        },
-        0);
+    for (auto& state : g_clickThroughTaskbarState) {
+        if (!state.islandHwnd) {
+            continue;
+        }
+
+        HWND topLevelWnd = GetAncestor(state.islandHwnd, GA_ROOT);
+        if (!topLevelWnd || !IsTaskbarTopLevelWindow(topLevelWnd)) {
+            continue;
+        }
+
+        RECT currentRgnBox;
+        if (GetWindowRgnBox(topLevelWnd, &currentRgnBox) == ERROR ||
+            !EqualRect(&currentRgnBox, &state.lastAppliedRgnBox)) {
+            continue;
+        }
+
+        SetWindowRgn(topLevelWnd, nullptr, TRUE);
+    }
 }
 
 // Explorer never erases the taskbar window: Shell_TrayWnd,
@@ -19863,13 +19873,9 @@ void UninitializeForCurrentThread() {
     g_taskbarSurfaceSubclassedWindows.clear();
 
     // Restore taskbars clipped for click-through, then drop tracking (revokers
-    // auto-unhook LayoutUpdated). Skip the region reset when nothing was
-    // tracked, to avoid an unnecessary taskbar redraw on unrelated settings
-    // changes.
-    if (!g_clickThroughTaskbarState.empty()) {
-        ClearClickThroughRegions();
-        g_clickThroughTaskbarState.clear();
-    }
+    // auto-unhook LayoutUpdated).
+    ClearClickThroughRegions();
+    g_clickThroughTaskbarState.clear();
     g_clickThroughIslandRoots.clear();
 
     // Clear tracked images for this thread (revokers will automatically
