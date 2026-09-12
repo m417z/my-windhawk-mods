@@ -293,8 +293,8 @@ Inside `{{ ... }}`, the supported expression syntax is:
   e.g. `` {{width > 0 ? `*` : `Auto`}} `` selects a `GridLength` keyword.
 * `min(a, b)` and `max(a, b)`.
 * `skip()`: leaves the style unapplied, so the property keeps (or returns to)
-  its original value, e.g. `` {{width > 0 ? width : skip()}} `` applies only
-  once `width` is positive.
+  its original value, e.g. `{{width > 0 ? width : skip()}}` applies only once
+  `width` is positive.
 * Parentheses for grouping, and nesting such as `{{min(a, b + 1) * 2}}`.
 
 Arithmetic, the unary sign, the relational comparisons, and `min` / `max`
