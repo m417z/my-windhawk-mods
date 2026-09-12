@@ -10737,8 +10737,7 @@ void HandleVirtualizingRepeater(ElementId elementId, FrameworkElement element) {
             }
 
             auto elementId = ElementIdFromElement(element);
-            if (elementId == ElementId::None ||
-                !g_recycledElements.erase(elementId)) {
+            if (elementId == ElementId::None) {
                 return;
             }
 
@@ -10749,6 +10748,16 @@ void HandleVirtualizingRepeater(ElementId elementId, FrameworkElement element) {
             // read, is never recorded: an entry which could match nothing would
             // keep the element held for good.
             auto strongItem = item.get();
+
+            if (!g_recycledElements.erase(elementId)) {
+                // Freshly created, so the styles its Add mutation applied are
+                // the ones for this item, and only the item is recorded.
+                if (strongItem) {
+                    g_elementMatchedItems[elementId] = std::move(item);
+                }
+                return;
+            }
+
             if (strongItem) {
                 auto it = g_elementMatchedItems.find(elementId);
                 if (it != g_elementMatchedItems.end() &&
