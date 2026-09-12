@@ -8353,9 +8353,29 @@ void UpdateStyleVariableConsumers(
     }
 }
 
-// Whether two values read from a property are the same local value. Boxed
-// primitives compare by value, since XAML boxes them anew on every read;
-// everything else, UnsetValue included, by identity.
+// Value comparison of `a` and `b` as boxes of the first struct type in
+// T, Ts... that `a` is a box of; nullopt when it is none of them.
+template <typename T, typename... Ts>
+std::optional<bool> SameBoxedStruct(
+    winrt::Windows::Foundation::IInspectable const& a,
+    winrt::Windows::Foundation::IInspectable const& b) {
+    if (auto ra = a.try_as<winrt::Windows::Foundation::IReference<T>>()) {
+        auto rb = b.try_as<winrt::Windows::Foundation::IReference<T>>();
+        return rb && ra.Value() == rb.Value();
+    }
+    if constexpr (sizeof...(Ts) > 0) {
+        return SameBoxedStruct<Ts...>(a, b);
+    } else {
+        return std::nullopt;
+    }
+}
+
+// Whether two values read from a property are the same local value. XAML boxes
+// value types anew on every read, so those compare by value: primitives and
+// enums through TryUnboxPropertyValue, then the struct types styles commonly
+// set. Any other boxed value type is taken as unchanged: adopting a value that
+// may be the mod's own would leave it in place on cleanup, the worse mistake.
+// Reference types, UnsetValue included, compare by identity.
 bool SameLocalValue(winrt::Windows::Foundation::IInspectable const& a,
                     winrt::Windows::Foundation::IInspectable const& b) {
     if (a == b) {
@@ -8364,23 +8384,41 @@ bool SameLocalValue(winrt::Windows::Foundation::IInspectable const& a,
     if (!a || !b) {
         return false;
     }
+
     auto ua = TryUnboxPropertyValue(a);
     auto ub = TryUnboxPropertyValue(b);
-    if (!ua || !ub) {
-        return false;
+    if (ua || ub) {
+        return ua && ub &&
+               std::visit(
+                   [](auto const& x, auto const& y) -> bool {
+                       using X = std::decay_t<decltype(x)>;
+                       if constexpr (!std::is_same_v<
+                                         X, std::decay_t<decltype(y)>>) {
+                           return false;
+                       } else if constexpr (std::is_floating_point_v<X>) {
+                           return x == y || (std::isnan(x) && std::isnan(y));
+                       } else {
+                           return x == y;
+                       }
+                   },
+                   *ua, *ub);
     }
-    return std::visit(
-        [](auto const& x, auto const& y) -> bool {
-            using X = std::decay_t<decltype(x)>;
-            if constexpr (!std::is_same_v<X, std::decay_t<decltype(y)>>) {
-                return false;
-            } else if constexpr (std::is_floating_point_v<X>) {
-                return x == y || (std::isnan(x) && std::isnan(y));
-            } else {
-                return x == y;
-            }
-        },
-        *ua, *ub);
+
+    if (auto same = SameBoxedStruct<
+            Thickness, CornerRadius, GridLength,
+            winrt::Windows::Foundation::Point, winrt::Windows::Foundation::Size,
+            winrt::Windows::Foundation::Rect, winrt::Windows::UI::Color,
+            winrt::Windows::UI::Text::FontWeight>(a, b)) {
+        return *same;
+    }
+
+    auto isBoxedValue = [](winrt::Windows::Foundation::IInspectable const& v) {
+        return v.try_as<winrt::Windows::Foundation::IPropertyValue>() !=
+                   nullptr ||
+               std::wstring_view(winrt::get_class_name(v))
+                   .starts_with(L"Windows.Foundation.IReference`1<");
+    };
+    return isBoxedValue(a) && isBoxedValue(b);
 }
 
 // Record a write by something other than the mod as the property's pre-style
