@@ -2,7 +2,7 @@
 // @id              taskbar-start-button-colorizer
 // @name            Start button colorizer
 // @description     Recolor the Start button icon on the taskbar with a color preset or with hue, saturation, brightness and opacity effects, and change its size (Windows 11 only)
-// @version         1.0
+// @version         1.1
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
@@ -47,7 +47,7 @@ Only Windows 11 is supported.
   $name: Color
   $description: >-
     Recolors the icon by setting the hue of its colors, keeping their original
-    saturation and brightness.
+    saturation and brightness. The system accent color sets the saturation too.
   $options:
   - none: Original
   - accent: System accent color
@@ -92,6 +92,7 @@ Only Windows 11 is supported.
 #include <cstdint>
 #include <functional>
 #include <list>
+#include <optional>
 
 #undef GetCurrentTime
 
@@ -113,7 +114,7 @@ namespace ViewManagement = winrt::Windows::UI::ViewManagement;
 struct {
     // The hue the icon is recolored to, or -1 to keep its original hue.
     int colorHue;
-    // Whether the icon is recolored to the hue of the system accent color.
+    // Whether the icon is recolored to match the system accent color.
     bool accentColor;
     int hue;
     double saturation;
@@ -128,8 +129,10 @@ std::atomic<bool> g_taskbarViewDllLoaded;
 std::atomic<bool> g_unloading;
 
 // The pending subscriptions to the Loaded event of the Start button icons.
-// Only accessed from the taskbar thread.
-std::list<FrameworkElement::Loaded_revoker> g_iconLoadedRevokers;
+// Only accessed from the taskbar thread, which is also where they're revoked
+// on unload, rather than by the destructor at process exit.
+[[clang::no_destroy]] std::optional<std::list<FrameworkElement::Loaded_revoker>>
+    g_iconLoadedRevokers{std::in_place};
 
 HWND FindCurrentProcessTaskbarWnd() {
     HWND hTaskbarWnd = nullptr;
@@ -297,30 +300,26 @@ winrt::Windows::UI::Color HslToRgb(HslColor hsl, uint8_t alpha) {
 void ApplySettingsFromTaskbarThread();
 
 // The system accent color is tracked from the taskbar thread, which is the
-// thread the icon is customized from. The tracking starts the first time the
-// hue of the accent color is needed and stops when the mod unloads.
-ViewManagement::UISettings g_uiSettings{nullptr};
-ViewManagement::UISettings::ColorValuesChanged_revoker
-    g_colorValuesChangedRevoker;
-double g_accentColorHue;
+// thread the icon is customized from, starting the first time it's needed.
+[[clang::no_destroy]] ViewManagement::UISettings g_uiSettings{nullptr};
+winrt::event_token g_colorValuesChangedToken;
+HslColor g_accentColor;
 
-double QueryAccentColorHue() {
+HslColor QueryAccentColor() {
     return RgbToHsl(
-               g_uiSettings.GetColorValue(ViewManagement::UIColorType::Accent))
-        .hue;
+        g_uiSettings.GetColorValue(ViewManagement::UIColorType::Accent));
 }
 
-double AccentColorHue() {
+HslColor AccentColor() {
     if (g_uiSettings) {
-        return g_accentColorHue;
+        return g_accentColor;
     }
 
     g_uiSettings = ViewManagement::UISettings();
-    g_accentColorHue = QueryAccentColorHue();
+    g_accentColor = QueryAccentColor();
 
     // The event is raised on a worker thread.
-    g_colorValuesChangedRevoker = g_uiSettings.ColorValuesChanged(
-        winrt::auto_revoke,
+    g_colorValuesChangedToken = g_uiSettings.ColorValuesChanged(
         [dispatcherQueue =
              winrt::Windows::System::DispatcherQueue::GetForCurrentThread()](
             auto&&, auto&&) {
@@ -328,25 +327,31 @@ double AccentColorHue() {
                 Wh_Log(L">");
 
                 if (g_uiSettings) {
-                    g_accentColorHue = QueryAccentColorHue();
+                    g_accentColor = QueryAccentColor();
                     ApplySettingsFromTaskbarThread();
                 }
             });
         });
 
-    return g_accentColorHue;
+    return g_accentColor;
 }
 
 void StopTrackingAccentColor() {
-    g_colorValuesChangedRevoker.revoke();
-    g_uiSettings = nullptr;
+    if (g_uiSettings) {
+        g_uiSettings.ColorValuesChanged(g_colorValuesChangedToken);
+        g_uiSettings = nullptr;
+    }
 }
 
 winrt::Windows::UI::Color TransformColor(winrt::Windows::UI::Color color) {
     HslColor hsl = RgbToHsl(color);
 
     if (g_settings.accentColor) {
-        hsl.hue = AccentColorHue();
+        // The saturation is matched as well, since the hue alone can't
+        // reproduce a gray accent color.
+        HslColor accentColor = AccentColor();
+        hsl.hue = accentColor.hue;
+        hsl.saturation *= accentColor.saturation;
     } else if (g_settings.colorHue >= 0) {
         hsl.hue = g_settings.colorHue;
     }
@@ -784,7 +789,10 @@ void ApplySettingsFromTaskbarThread() {
     Wh_Log(L"Applying settings");
 
     if (g_unloading) {
-        g_iconLoadedRevokers.clear();
+        g_iconLoadedRevokers.reset();
+    }
+
+    if (g_unloading || !g_settings.accentColor) {
         StopTrackingAccentColor();
     }
 
@@ -855,8 +863,8 @@ void WINAPI ExperienceToggleButton_UpdateVisualStates_Hook(void* pThis) {
 }
 
 void ApplyIconStyleOnceLoaded(FrameworkElement icon) {
-    g_iconLoadedRevokers.emplace_back();
-    auto revokerIt = std::prev(g_iconLoadedRevokers.end());
+    g_iconLoadedRevokers->emplace_back();
+    auto revokerIt = std::prev(g_iconLoadedRevokers->end());
 
     *revokerIt = icon.Loaded(
         winrt::auto_revoke,
@@ -864,7 +872,7 @@ void ApplyIconStyleOnceLoaded(FrameworkElement icon) {
                     RoutedEventArgs const&) {
             Wh_Log(L">");
 
-            g_iconLoadedRevokers.erase(revokerIt);
+            g_iconLoadedRevokers->erase(revokerIt);
 
             if (auto icon = sender.try_as<FrameworkElement>()) {
                 ApplyIconStyle(icon);
@@ -890,7 +898,9 @@ ExperienceToggleButton_InitializeAnimatedVisualPlayer_Hook(void* pThis) {
 
     ExperienceToggleButton_InitializeAnimatedVisualPlayer_Original(pThis);
 
-    if (!startButton) {
+    // Nothing to restore on a fresh icon while unloading, and no subscription
+    // may be added once the pending ones have been released.
+    if (!startButton || g_unloading) {
         return;
     }
 
