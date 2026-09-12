@@ -1,7 +1,7 @@
 // ==WindhawkMod==
 // @id              taskbar-notification-icons-show-all
 // @name            Always show all taskbar tray icons
-// @description     Restore the missing Windows option to always show all tray icons (Windows 11 only)
+// @description     Restore the missing Windows option to always show all tray icons, show new icons by default, or hide all of them (Windows 11 only)
 // @version         1.0
 // @author          m417z
 // @github          https://github.com/m417z
@@ -23,15 +23,18 @@
 /*
 # Always show all taskbar tray icons
 
-Restore the missing Windows option to always show all tray icons.
+Restore the missing Windows option to always show all tray icons, show new icons
+by default, or hide all of them.
 
-The mod has two modes that can be selected in the mod settings:
+The mod has three modes that can be selected in the mod settings:
 
 1. All icons are shown. That's the default, and like in the animation below, all
    icons become shown when the mod is enabled.
 2. New icons are shown, existing icons are unaffected. If this mode is selected,
    the mod only affects icons of new apps, which become visible by default
    instead of being hidden.
+3. All icons are hidden. The opposite of the first mode: all icons are moved to
+   the overflow menu.
 
 Only Windows 11 is supported.
 
@@ -46,6 +49,7 @@ Only Windows 11 is supported.
   $options:
   - showAll: All icons are shown
   - showNew: New icons are shown, existing icons are unaffected
+  - hideAll: All icons are hidden
 */
 // ==/WindhawkModSettings==
 
@@ -58,6 +62,7 @@ Only Windows 11 is supported.
 enum class Mode {
     showAll,
     showNew,
+    hideAll,
 };
 
 struct {
@@ -154,7 +159,7 @@ LONG WINAPI RegSetValueExW_Hook(HKEY hKey,
                                 DWORD dwType,
                                 CONST BYTE* lpData,
                                 DWORD cbData) {
-    if (g_settings.mode == Mode::showAll && lpValueName &&
+    if (g_settings.mode != Mode::showNew && lpValueName &&
         _wcsicmp(lpValueName, L"IsPromoted") == 0) {
         auto entry = GetNotifyIconSettingsNameFromRegKey(hKey);
         if (!entry.empty()) {
@@ -208,7 +213,7 @@ LONG WINAPI RegGetValueW_Hook(HKEY hkey,
         if (!entry.empty()) {
             Wh_Log(L"Getting IsPromoted for %s", entry.c_str());
 
-            if (g_settings.mode != Mode::showAll) {
+            if (g_settings.mode == Mode::showNew) {
                 LONG result = RegGetValueW_Original(
                     hkey, lpSubKey, lpValue, dwFlags, pdwType, pvData, pcbData);
                 if (result != ERROR_FILE_NOT_FOUND) {
@@ -224,7 +229,7 @@ LONG WINAPI RegGetValueW_Hook(HKEY hkey,
                 *pdwType = REG_DWORD;
             }
 
-            *(DWORD*)pvData = 1;
+            *(DWORD*)pvData = g_settings.mode == Mode::hideAll ? 0 : 1;
             *pcbData = sizeof(DWORD);
             return ERROR_SUCCESS;
         }
@@ -284,6 +289,8 @@ void LoadSettings() {
     g_settings.mode = Mode::showAll;
     if (wcscmp(mode, L"showNew") == 0) {
         g_settings.mode = Mode::showNew;
+    } else if (wcscmp(mode, L"hideAll") == 0) {
+        g_settings.mode = Mode::hideAll;
     }
     Wh_FreeStringSetting(mode);
 }
