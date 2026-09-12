@@ -39,7 +39,33 @@ taskbar.
   - intersected: Auto-hide when a window is maximized or intersects the taskbar
   - maximized: Auto-hide only when a window is maximized
   - never: Never auto-hide
-- foregroundWindowOnly: false
+- foregroundWindowOnly:
+  - enabled: false
+    $name: "Enabled"
+  - filter:
+    - hasNoTaskbarButton: false
+      $name: Has No Taskbar Button
+      $description: >-
+        Does not have WS_EX_APPWINDOW flag _and_ either has WS_EX_TOOLWINDOW or
+        an owner window.
+    - toolWindow: false
+      $name: Tool Window
+      $description: Has WS_EX_TOOLWINDOW flag
+    - owned: false
+      $name: Owned Window
+      $description: Has Owner Window
+    - cloaked: false
+      $name: Cloaked Window
+      $description: DwmGetWindowAttribute DWMWA_CLOAKED
+    $name: Foreground window filters
+    $description: >-
+      Windows matching these enabled criteria are not considered "in the
+      foreground".
+
+      The "next" window not matching these criteria is considered the foreground
+      window instead.
+
+      Useful for applications with tool windows that steal focus.
   $name: Apply only to foreground window
   $description: >-
     Enable this option to apply the auto-hide taskbar feature only to the
@@ -92,7 +118,15 @@ enum class Mode {
 
 struct {
     Mode mode;
-    bool foregroundWindowOnly;
+    struct {
+        bool enabled;
+        struct {
+            bool hasNoTaskbarButton;
+            bool toolWindow;
+            bool owned;
+            bool cloaked;
+        } filter;
+    } foregroundWindowOnly;
     std::unordered_set<std::wstring> excludedPrograms;
     bool primaryMonitorOnly;
     bool oldTaskbarOnWin11;
@@ -441,6 +475,48 @@ std::wstring GetWindowLogInfo(HWND hWnd) {
     return buffer;
 }
 
+bool ShouldIgnoreAsForegroundWindow(HWND hWnd) {
+    if (!hWnd) {
+        return false;
+    }
+
+    LONG_PTR exStyle = GetWindowLongPtr(hWnd, GWL_EXSTYLE);
+    HWND hOwnerWnd = GetWindow(hWnd, GW_OWNER);
+
+    if (g_settings.foregroundWindowOnly.filter.hasNoTaskbarButton &&
+        (exStyle & WS_EX_APPWINDOW) == 0 &&
+        ((exStyle & WS_EX_TOOLWINDOW) != 0 || hOwnerWnd)) {
+        return true;
+    }
+
+    if (g_settings.foregroundWindowOnly.filter.toolWindow &&
+        (exStyle & WS_EX_TOOLWINDOW) != 0) {
+        return true;
+    }
+
+    if (g_settings.foregroundWindowOnly.filter.owned && hOwnerWnd) {
+        return true;
+    }
+
+    if (g_settings.foregroundWindowOnly.filter.cloaked &&
+        IsWindowCloaked(hWnd)) {
+        return true;
+    }
+
+    return false;
+}
+
+HWND GetEffectiveForegroundWindow() {
+    for (HWND hWnd = GetForegroundWindow(); hWnd;
+         hWnd = GetWindow(hWnd, GW_HWNDNEXT)) {
+        if (!ShouldIgnoreAsForegroundWindow(hWnd)) {
+            return hWnd;
+        }
+    }
+
+    return nullptr;
+}
+
 bool IsWindowExcluded(HWND hWnd) {
     if (g_settings.excludedPrograms.empty()) {
         return false;
@@ -621,8 +697,8 @@ bool ShouldKeepTaskbarShown(HWND hTaskbarWnd, HMONITOR monitor) {
     RECT taskbarRect{};
     GetTaskbarRectForMonitor(monitor, &taskbarRect);
 
-    if (g_settings.foregroundWindowOnly) {
-        HWND hForegroundWnd = GetForegroundWindow();
+    if (g_settings.foregroundWindowOnly.enabled) {
+        HWND hForegroundWnd = GetEffectiveForegroundWindow();
         return !hForegroundWnd ||
                !CanHideTaskbarForWindow(hForegroundWnd, monitor, &monitorInfo,
                                         &taskbarRect);
@@ -1139,7 +1215,7 @@ DWORD WINAPI WinEventHookThread(LPVOID lpThreadParameter) {
     }
 
     HWINEVENTHOOK winSystemEventHook1 = nullptr;
-    if (g_settings.foregroundWindowOnly) {
+    if (g_settings.foregroundWindowOnly.enabled) {
         winSystemEventHook1 =
             SetWinEventHook(EVENT_SYSTEM_FOREGROUND, EVENT_SYSTEM_FOREGROUND,
                             nullptr, WinEventProc, 0, 0, WINEVENT_OUTOFCONTEXT);
@@ -1532,7 +1608,16 @@ void LoadSettings() {
     }
     Wh_FreeStringSetting(mode);
 
-    g_settings.foregroundWindowOnly = Wh_GetIntSetting(L"foregroundWindowOnly");
+    g_settings.foregroundWindowOnly.enabled =
+        Wh_GetIntSetting(L"foregroundWindowOnly.enabled");
+    g_settings.foregroundWindowOnly.filter.hasNoTaskbarButton =
+        Wh_GetIntSetting(L"foregroundWindowOnly.filter.hasNoTaskbarButton");
+    g_settings.foregroundWindowOnly.filter.toolWindow =
+        Wh_GetIntSetting(L"foregroundWindowOnly.filter.toolWindow");
+    g_settings.foregroundWindowOnly.filter.owned =
+        Wh_GetIntSetting(L"foregroundWindowOnly.filter.owned");
+    g_settings.foregroundWindowOnly.filter.cloaked =
+        Wh_GetIntSetting(L"foregroundWindowOnly.filter.cloaked");
 
     g_settings.excludedPrograms.clear();
 
@@ -1687,7 +1772,7 @@ void Wh_ModUninit() {
 BOOL Wh_ModSettingsChanged(BOOL* bReload) {
     Wh_Log(L">");
 
-    bool prevForegroundWindowOnly = g_settings.foregroundWindowOnly;
+    bool prevForegroundWindowOnly = g_settings.foregroundWindowOnly.enabled;
     bool prevOldTaskbarOnWin11 = g_settings.oldTaskbarOnWin11;
 
     LoadSettings();
@@ -1698,7 +1783,7 @@ BOOL Wh_ModSettingsChanged(BOOL* bReload) {
     }
 
     if (g_settings.mode == Mode::never ||
-        prevForegroundWindowOnly != g_settings.foregroundWindowOnly) {
+        prevForegroundWindowOnly != g_settings.foregroundWindowOnly.enabled) {
         std::lock_guard<std::mutex> guard(g_winEventHookThreadMutex);
 
         if (g_winEventHookThread) {
