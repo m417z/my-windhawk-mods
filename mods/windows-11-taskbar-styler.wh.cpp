@@ -14983,8 +14983,7 @@ winrt::Windows::Foundation::IInspectable SetOrClearValue(
             Wh_Log(L"Delaying SetValue for BackgroundFill");
             auto asyncOp = elementDo.Dispatcher().TryRunAsync(
                 winrt::Windows::UI::Core::CoreDispatcherPriority::High,
-                [elementDo = std::move(elementDo),
-                 property = std::move(property), value = std::move(value)]() {
+                [elementDo, property, value]() {
                     Wh_Log(L"Running delayed SetValue for BackgroundFill");
                     g_elementPropertyModifying = true;
                     try {

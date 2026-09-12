@@ -11625,9 +11625,7 @@ winrt::Windows::Foundation::IInspectable SetOrClearValue(
             g_delayedAllAppsRootVisibilitySet =
                 elementDo.Dispatcher().TryRunAsync(
                     winrt::Windows::UI::Core::CoreDispatcherPriority::High,
-                    [elementDo = std::move(elementDo),
-                     property = std::move(property),
-                     value = std::move(value)]() {
+                    [elementDo, property, value]() {
                         Wh_Log(
                             L"Running delayed SetValue for AllAppsRoot "
                             L"Visibility");
