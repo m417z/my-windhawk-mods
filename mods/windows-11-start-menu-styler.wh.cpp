@@ -292,6 +292,9 @@ Inside `{{ ... }}`, the supported expression syntax is:
   The condition must be numeric, but each branch may be a number or a string,
   e.g. `` {{width > 0 ? `*` : `Auto`}} `` selects a `GridLength` keyword.
 * `min(a, b)` and `max(a, b)`.
+* `skip()`: leaves the style unapplied, so the property keeps (or returns to)
+  its original value, e.g. `` {{width > 0 ? width : skip()}} `` applies only
+  once `width` is positive.
 * Parentheses for grouping, and nesting such as `{{min(a, b + 1) * 2}}`.
 
 Arithmetic, the unary sign, the relational comparisons, and `min` / `max`
@@ -12975,11 +12978,17 @@ struct StyleExpressionValue {
     bool IsNumber() const { return number.has_value(); }
 };
 
+// Thrown by a live skip() call to unwind the evaluator. Not a std::exception,
+// so a generic failure handler on the way up does not mistake it for an error.
+struct StyleVariableSkipRequested {};
+
 // Recursive-descent evaluator for `{{ ... }}` expressions. Operands: number
 // literals, backtick-delimited string literals, style variable references, and
 // parenthesized subexpressions. Operators: binary + - * /, unary - / +, the
-// comparisons < <= == >= > !=, the conditional operator cond ? a : b, and the
-// two-arg functions min(a, b) and max(a, b). Standard math precedence.
+// comparisons < <= == >= > !=, the conditional operator cond ? a : b, the
+// two-arg functions min(a, b) and max(a, b), and skip(), which throws
+// StyleVariableSkipRequested so the consuming style is left unapplied.
+// Standard math precedence.
 // Arithmetic, relational, unary-sign, and min/max operators require numeric
 // operands; == and != compare two numbers or two strings; the conditional
 // selects one of its (possibly string) branches. Evaluate() formats the result
@@ -13080,8 +13089,8 @@ class StyleVariableExpressionEvaluator {
     // Short-circuit: only the taken branch is evaluated. The untaken branch is
     // still parsed (to advance the position and enforce syntax) with m_live
     // cleared, which suppresses value-level errors (division by zero, a
-    // non-numeric / undefined variable, an unknown function) and dependency
-    // capture for that branch.
+    // non-numeric / undefined variable, an unknown function), skip(), and
+    // dependency capture for that branch.
     StyleExpressionValue ParseTernary() {
         StyleExpressionValue cond = ParseEquality();
         if (!ConsumeChar(L'?')) {
@@ -13325,6 +13334,18 @@ class StyleVariableExpressionEvaluator {
         SkipWhitespace();
         if (m_pos < m_text.size() && m_text[m_pos] == L'(') {
             m_pos++;
+            if (ident == L"skip") {
+                if (!ConsumeChar(L')')) {
+                    throw std::runtime_error(
+                        "skip() takes no arguments in style variable "
+                        "expression");
+                }
+                if (m_live) {
+                    throw StyleVariableSkipRequested{};
+                }
+                // Dead ternary branch: value discarded.
+                return StyleExpressionValue::Number(0.0);
+            }
             double a = RequireNumber(ParseExpression());
             if (!ConsumeChar(L',')) {
                 throw std::runtime_error(
@@ -13404,7 +13425,8 @@ class StyleVariableExpressionEvaluator {
 // both cause this function to return std::nullopt, at which point
 // ExpandStyleVariables aborts the whole expansion and the consuming style is
 // skipped. This matches the arithmetic path's behaviour of failing closed
-// rather than substituting a value that won't parse.
+// rather than substituting a value that won't parse. A live skip() call unwinds
+// through here as StyleVariableSkipRequested.
 std::optional<std::wstring> EvaluateStyleVariableExpression(
     std::wstring_view exprText,
     const StyleVariableLookupContext* context) {
@@ -13439,6 +13461,10 @@ std::optional<std::wstring> EvaluateStyleVariableExpression(
     try {
         StyleVariableExpressionEvaluator eval(trimmed, context);
         return eval.Evaluate();
+    } catch (StyleVariableSkipRequested const&) {
+        Wh_Log(L"skip() reached in '%.*s'; leaving style unapplied",
+               static_cast<int>(trimmed.size()), trimmed.data());
+        throw;
     } catch (std::exception const& ex) {
         Wh_Log(L"Style variable expression failed: %S (in '%.*s')", ex.what(),
                static_cast<int>(trimmed.size()), trimmed.data());
@@ -13447,7 +13473,8 @@ std::optional<std::wstring> EvaluateStyleVariableExpression(
 }
 
 // Walks the input text, repeatedly expanding the innermost `{{ ... }}`
-// substitution. Returns std::nullopt on parse failure (and logs a warning).
+// substitution. Returns std::nullopt on parse failure (and logs a warning); a
+// StyleVariableSkipRequested from an expression propagates out.
 //
 // Inner-matching rule: the first `}}` is paired with the *rightmost* `{{` that
 // precedes it. So `{{{x}}}` -> `{` + value-of-x + `}` (literal outer braces).
@@ -13606,6 +13633,25 @@ void UpdateStyleVariableConsumers(
     }
 }
 
+// Put the property back to its pre-style value and forget what was applied.
+// Leaves the dynamic template alone, so a later variable change can apply the
+// style again.
+void UnapplyStyleValue(
+    FrameworkElement element,
+    DependencyProperty property,
+    ElementPropertyCustomizationState* propertyCustomizationState) {
+    if (propertyCustomizationState->originalValue) {
+        bool wasModifying = g_elementPropertyModifying;
+        g_elementPropertyModifying = true;
+        SetOrClearValue(element, property,
+                        *propertyCustomizationState->originalValue);
+        g_elementPropertyModifying = wasModifying;
+        propertyCustomizationState->originalValue.reset();
+    }
+    propertyCustomizationState->lastAppliedValue = nullptr;
+    propertyCustomizationState->customValue.reset();
+}
+
 // Re-evaluate the dynamic template stored on `propertyCustomizationState` and
 // return the resolved IInspectable / XamlBlurBrushParams ready to be applied.
 // Updates the (elementId, property) -> state->consumers registry to match the
@@ -13631,7 +13677,8 @@ void UpdateStyleVariableConsumers(
 // nullptr to have it looked up from `elementId`.
 //
 // Returns std::nullopt if the state has no template, expansion failed, or XAML
-// resolution failed.
+// resolution failed. A skip() in the rule body also yields std::nullopt, after
+// putting the property back to its original value.
 std::optional<PropertyOverrideValue> ResolveDynamicStyleValue(
     StyleVariableState* state,
     ElementId elementId,
@@ -13660,12 +13707,26 @@ std::optional<PropertyOverrideValue> ResolveDynamicStyleValue(
 
     std::vector<StyleVariableDependency> newDeps;
     StyleVariableLookupContext context{state, consumerNode, &newDeps};
-    auto expanded = ExpandStyleVariables(tmpl.rawValue, &context);
+    std::optional<std::wstring> expanded;
+    bool skipped = false;
+    try {
+        expanded = ExpandStyleVariables(tmpl.rawValue, &context);
+    } catch (StyleVariableSkipRequested const&) {
+        skipped = true;
+    }
 
     UpdateStyleVariableConsumers(
         state, elementId, property, fallbackClassName,
         propertyCustomizationState->variableDependencies, newDeps);
     propertyCustomizationState->variableDependencies = std::move(newDeps);
+
+    if (skipped) {
+        // Every variable that decides whether skip() is reached was read
+        // before it, so targeted propagation still reaches this property.
+        propertyCustomizationState->lastResolveFailed = false;
+        UnapplyStyleValue(element, property, propertyCustomizationState);
+        return std::nullopt;
+    }
 
     if (!expanded) {
         propertyCustomizationState->lastResolveFailed = true;
@@ -14290,17 +14351,8 @@ void ApplyCustomizationsForVisualStateGroup(
                                 propertyCustomizationState.dynamicTemplate
                                     .reset();
                             }
-                            if (propertyCustomizationState.originalValue) {
-                                SetOrClearValue(
-                                    element, property,
-                                    *propertyCustomizationState.originalValue);
-                                propertyCustomizationState.originalValue
-                                    .reset();
-                            }
-                            propertyCustomizationState.lastAppliedValue =
-                                nullptr;
-
-                            propertyCustomizationState.customValue.reset();
+                            UnapplyStyleValue(element, property,
+                                              &propertyCustomizationState);
                         }
                     }
 
