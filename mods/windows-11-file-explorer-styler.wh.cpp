@@ -1749,6 +1749,7 @@ HMODULE GetCurrentModuleHandle() {
 #pragma region winrt_hpp
 
 #include <Unknwn.h>
+#include <weakreference.h>
 #include <winrt/base.h>
 
 // forward declare namespaces we alias
@@ -1765,13 +1766,14 @@ namespace winrt {
 namespace wf = winrt::Windows::Foundation;
 namespace mux = winrt::Microsoft::UI::Xaml;
 
-// A weak reference for the object, or an empty one when the object doesn't
-// support weak references: cppwinrt's make_weak dereferences a null pointer for
-// such an object instead of reporting it. Throws, as make_weak does, when the
-// object supports weak references but one can't be made.
+// A weak reference for the object, or an empty one when the object is null or
+// doesn't support weak references: cppwinrt's make_weak dereferences a null
+// pointer for an object without that support instead of reporting it. Throws,
+// as make_weak does, when the object supports weak references but one can't be
+// made.
 winrt::weak_ref<wf::IInspectable> TryMakeWeak(wf::IInspectable const& object)
 {
-    if (!object.try_as<winrt::impl::IWeakReferenceSource>())
+    if (!object.try_as<::IWeakReferenceSource>())
     {
         return nullptr;
     }
@@ -1912,8 +1914,6 @@ bool VisualTreeWatcher::ReleaseDiagnosticsReference(InstanceHandle handle)
         HRESULT hr = m_XamlDiagnostics->GetIInspectableFromHandle(handle, reinterpret_cast<::IInspectable**>(winrt::put_abi(element)));
         if (SUCCEEDED(hr) && element) {
             try {
-                // Not every reported object supports weak references, and then
-                // the release just proceeds unobserved.
                 weakElement = TryMakeWeak(element);
             } catch (...) {
                 Wh_Log(L"Error %08X", winrt::to_hresult());
@@ -1927,6 +1927,8 @@ bool VisualTreeWatcher::ReleaseDiagnosticsReference(InstanceHandle handle)
         return false;
     }
 
+    // Not every reported object supports weak references, and then the release
+    // just proceeds unobserved.
     return weakElement && !weakElement.get();
 }
 
