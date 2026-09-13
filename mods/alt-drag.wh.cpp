@@ -69,20 +69,16 @@ tool](https://stefansundin.github.io/altdrag/).
 //
 // Content hosted in a composition input sink, such as a WinUI XAML island,
 // receives its pointer input over a side channel and produces no window message
-// at all, so neither hook nor subclass sees the press. As a last resort a raw
-// input sink observes the Alt press directly and the window is moved by
-// SetWindowPos, without the system move loop. To avoid a system-wide stream of
-// WM_INPUT in every hooked process, the raw device is registered only while Alt
-// is held, and the fallback yields to the message-based paths for any window
-// which does deliver the press as a message.
-//
-// Such a press still reaches the island, which turns the release into a click.
-// Only input which hasn't been routed yet can be taken away from it, so while
-// Alt is held a low level mouse hook swallows the press over composition hosted
-// content of this process and moves the window itself. Windows which deliver
-// the press as a message are left to the paths above and keep the system move
-// loop. The move loop is of no use here: it retrieves no mouse input while the
-// sink owns the contact, so it starts and then tracks nothing.
+// at all, so neither hook nor subclass sees the press, and it reaches the
+// island, which turns the release into a click. Only input which hasn't been
+// routed yet can be taken away from it, so while Alt is held a low level mouse
+// hook swallows the press over composition hosted content, recognized by the
+// class of the hosting window, and moves the window itself with SetWindowPos.
+// Windows which deliver the press as a message are left to the paths above and
+// keep the system move loop, which is of no use here: it retrieves no mouse
+// input while the sink owns the contact, so it starts and then tracks nothing.
+// The hook exists only while Alt is held, keeping it out of the input path the
+// rest of the time.
 //
 // The hook is global, and the island of a window which isn't focused belongs to
 // a process which never saw Alt go down and so has no hook of its own. The
@@ -102,7 +98,6 @@ tool](https://stefansundin.github.io/altdrag/).
 #include <memory>
 #include <mutex>
 #include <unordered_set>
-#include <vector>
 
 struct {
     bool dragWindowsWithoutTitleBar;
@@ -130,27 +125,6 @@ std::unordered_set<HWND> g_subclassedWindows;
 thread_local HWND g_contactWnd;
 thread_local UINT g_contactPointerId;
 
-// The raw input fallback for composition-hosted content. The sink window and
-// its raw device registration are process-wide; the drag state is touched only
-// on the sink window's thread.
-std::mutex g_rawSinkMutex;
-HWND g_rawSinkWnd;
-DWORD g_rawSinkThreadId;
-bool g_rawSinkCreateFailed;
-std::atomic<bool> g_rawInputRegistered;
-
-bool g_rawCandidate;
-HWND g_rawCandidateRoot;
-POINT g_rawDownPt;
-HWND g_rawDragRoot;
-POINT g_rawDragGrab;
-
-// The location and time of the last press claimed by the message-based paths,
-// used to tell whether a raw press was already handled by them.
-std::mutex g_lastHandledPressMutex;
-POINT g_lastHandledPressPt;
-DWORD g_lastHandledPressTick;
-
 // The low level mouse hook, installed only while Alt is held. Its state is
 // touched only on the thread which installed it.
 HHOOK g_lowLevelMouseHook;
@@ -164,8 +138,6 @@ POINT g_llDownPt;
 HWND g_llDragRoot;
 POINT g_llDragGrab;
 
-void RegisterRawInputIfNeeded();
-void UnregisterRawInputIfIdle();
 void InstallLowLevelMouseHookIfNeeded();
 void RemoveLowLevelMouseHookIfIdle();
 
@@ -174,24 +146,6 @@ auto HookRefCountScope() {
     return std::unique_ptr<decltype(g_hookRefCount),
                            void (*)(decltype(g_hookRefCount)*)>{
         &g_hookRefCount, [](auto hookRefCount) { (*hookRefCount)--; }};
-}
-
-void NoteHandledPress(POINT pt) {
-    std::lock_guard<std::mutex> guard(g_lastHandledPressMutex);
-    g_lastHandledPressPt = pt;
-    g_lastHandledPressTick = GetTickCount();
-}
-
-bool WasPressAlreadyHandled(POINT pt) {
-    std::lock_guard<std::mutex> guard(g_lastHandledPressMutex);
-    if (!g_lastHandledPressTick) {
-        return false;
-    }
-
-    int tolerance = GetSystemMetrics(SM_CXDRAG) + 4;
-    return GetTickCount() - g_lastHandledPressTick < 2000 &&
-           abs(pt.x - g_lastHandledPressPt.x) <= tolerance &&
-           abs(pt.y - g_lastHandledPressPt.y) <= tolerance;
 }
 
 bool IsExcludedRootWindow(HWND hRootWnd) {
@@ -367,7 +321,7 @@ void OnMessageRemoved(MSG* msg) {
         return;
     }
 
-    // Track Alt so the raw input sink is registered only while it's held.
+    // Track Alt so the low level mouse hook exists only while it's held.
     if (msg->message == WM_SYSKEYDOWN || msg->message == WM_KEYDOWN) {
         if (msg->wParam == VK_MENU) {
             // Bit 30 of lParam is set for the auto repeats which arrive while
@@ -377,7 +331,6 @@ void OnMessageRemoved(MSG* msg) {
                 g_swallowedPress = false;
             }
 
-            RegisterRawInputIfNeeded();
             InstallLowLevelMouseHookIfNeeded();
         }
         return;
@@ -385,7 +338,6 @@ void OnMessageRemoved(MSG* msg) {
 
     if (msg->message == WM_SYSKEYUP || msg->message == WM_KEYUP) {
         if (msg->wParam == VK_MENU) {
-            UnregisterRawInputIfIdle();
             RemoveLowLevelMouseHookIfIdle();
 
             if (g_swallowedPress.exchange(false)) {
@@ -415,8 +367,6 @@ void OnMessageRemoved(MSG* msg) {
     Wh_Log(L"Message %04X for %08X, requesting a move of root window %08X",
            msg->message, (DWORD)(ULONG_PTR)msg->hwnd,
            (DWORD)(ULONG_PTR)hRootWnd);
-
-    NoteHandledPress(msg->pt);
 
     // Posted messages are retrieved before input, so a button release that's
     // already queued is seen by the move loop rather than by the program.
@@ -476,8 +426,6 @@ LRESULT CALLBACK SubclassProc(HWND hWnd,
                     L"Message %04X for %08X, routing pointer %u to "
                     L"DefWindowProc",
                     uMsg, (DWORD)(ULONG_PTR)hWnd, pointerId);
-                NoteHandledPress(
-                    POINT{GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam)});
                 g_contactWnd = hWnd;
                 g_contactPointerId = pointerId;
                 return DefWindowProc(hWnd, uMsg, wParam, lParam);
@@ -598,225 +546,6 @@ void MoveDraggedWindow(HWND hRootWnd, POINT grab, POINT pt) {
                      SWP_ASYNCWINDOWPOS);
 }
 
-void OnRawMouseInput(const RAWMOUSE& mouse) {
-    USHORT buttonFlags = mouse.usButtonFlags;
-
-    if (buttonFlags & RI_MOUSE_LEFT_BUTTON_DOWN) {
-        g_rawCandidate = false;
-        g_rawDragRoot = nullptr;
-
-        POINT pt;
-        if (g_uninitializing || GetAsyncKeyState(VK_MENU) >= 0 ||
-            !GetCursorPos(&pt)) {
-            return;
-        }
-
-        HWND hWnd = WindowFromPoint(pt);
-        if (!hWnd) {
-            return;
-        }
-
-        // Only windows in this process can be moved from here, and the
-        // message-based paths handle same-process windows which deliver the
-        // press as a message.
-        DWORD dwProcessId = 0;
-        GetWindowThreadProcessId(hWnd, &dwProcessId);
-        if (dwProcessId != GetCurrentProcessId()) {
-            return;
-        }
-
-        HWND hRootWnd = GetAncestor(hWnd, GA_ROOT);
-        if (!hRootWnd || IsExcludedRootWindow(hRootWnd)) {
-            return;
-        }
-
-        g_rawCandidate = true;
-        g_rawCandidateRoot = hRootWnd;
-        g_rawDownPt = pt;
-        return;
-    }
-
-    if (buttonFlags & RI_MOUSE_LEFT_BUTTON_UP) {
-        g_rawCandidate = false;
-        g_rawDragRoot = nullptr;
-        RemoveLowLevelMouseHookIfIdle();
-        UnregisterRawInputIfIdle();
-        return;
-    }
-
-    if (g_rawDragRoot) {
-        POINT pt;
-        if (GetCursorPos(&pt)) {
-            MoveDraggedWindow(g_rawDragRoot, g_rawDragGrab, pt);
-        }
-        return;
-    }
-
-    if (!g_rawCandidate || g_uninitializing) {
-        return;
-    }
-
-    // A real drag keeps the button down. Moves buffered while a system move
-    // loop ran arrive after the button was released.
-    if (GetAsyncKeyState(VK_LBUTTON) >= 0) {
-        g_rawCandidate = false;
-        return;
-    }
-
-    if (WasPressAlreadyHandled(g_rawDownPt)) {
-        g_rawCandidate = false;
-        return;
-    }
-
-    POINT pt;
-    if (!GetCursorPos(&pt)) {
-        return;
-    }
-
-    if (abs(pt.x - g_rawDownPt.x) < GetSystemMetrics(SM_CXDRAG) &&
-        abs(pt.y - g_rawDownPt.y) < GetSystemMetrics(SM_CYDRAG)) {
-        return;
-    }
-
-    Wh_Log(L"Moving root window %08X by raw input",
-           (DWORD)(ULONG_PTR)g_rawCandidateRoot);
-
-    g_rawCandidate = false;
-    g_rawDragGrab = CalcDragGrab(g_rawCandidateRoot, g_rawDownPt);
-    g_rawDragRoot = g_rawCandidateRoot;
-    MoveDraggedWindow(g_rawDragRoot, g_rawDragGrab, pt);
-}
-
-constexpr UINT kRawSinkDestroyMessage = WM_APP;
-
-LRESULT CALLBACK RawSinkWndProc(HWND hWnd,
-                                UINT uMsg,
-                                WPARAM wParam,
-                                LPARAM lParam) {
-    auto hookScope = HookRefCountScope();
-
-    switch (uMsg) {
-        case WM_INPUT: {
-            RAWINPUT raw;
-            UINT size = sizeof(raw);
-            if (GetRawInputData((HRAWINPUT)lParam, RID_INPUT, &raw, &size,
-                                sizeof(RAWINPUTHEADER)) != (UINT)-1 &&
-                raw.header.dwType == RIM_TYPEMOUSE) {
-                OnRawMouseInput(raw.data.mouse);
-            }
-            break;
-        }
-
-        case kRawSinkDestroyMessage: {
-            RAWINPUTDEVICE rid = {};
-            rid.usUsagePage = 0x01;
-            rid.usUsage = 0x02;
-            rid.dwFlags = RIDEV_REMOVE;
-            RegisterRawInputDevices(&rid, 1, sizeof(rid));
-            g_rawInputRegistered = false;
-            DestroyWindow(hWnd);
-            return 0;
-        }
-    }
-
-    return DefWindowProc(hWnd, uMsg, wParam, lParam);
-}
-
-bool ProcessAlreadyUsesRawMouse() {
-    UINT count = 0;
-    if (GetRegisteredRawInputDevices(nullptr, &count, sizeof(RAWINPUTDEVICE)) !=
-            0 ||
-        count == 0) {
-        return false;
-    }
-
-    std::vector<RAWINPUTDEVICE> devices(count);
-    UINT written = GetRegisteredRawInputDevices(devices.data(), &count,
-                                                sizeof(RAWINPUTDEVICE));
-    if (written == (UINT)-1) {
-        return false;
-    }
-
-    for (UINT i = 0; i < written; i++) {
-        if (devices[i].usUsagePage == 0x01 && devices[i].usUsage == 0x02) {
-            return true;
-        }
-    }
-
-    return false;
-}
-
-void RegisterRawInputIfNeeded() {
-    if (g_rawInputRegistered) {
-        return;
-    }
-
-    std::lock_guard<std::mutex> guard(g_rawSinkMutex);
-    if (g_uninitializing || g_rawInputRegistered) {
-        return;
-    }
-
-    if (!g_rawSinkWnd) {
-        if (g_rawSinkCreateFailed) {
-            return;
-        }
-
-        // Don't override an app which uses raw mouse input itself.
-        if (ProcessAlreadyUsesRawMouse()) {
-            g_rawSinkCreateFailed = true;
-            return;
-        }
-
-        WNDCLASS wndClass = {};
-        wndClass.lpfnWndProc = RawSinkWndProc;
-        wndClass.hInstance = GetModuleHandle(nullptr);
-        wndClass.lpszClassName = L"Windhawk_AltDragRawSink_" WH_MOD_ID;
-        RegisterClass(&wndClass);
-
-        g_rawSinkWnd =
-            CreateWindowEx(0, wndClass.lpszClassName, L"", 0, 0, 0, 0, 0,
-                           HWND_MESSAGE, nullptr, wndClass.hInstance, nullptr);
-        if (!g_rawSinkWnd) {
-            Wh_Log(L"Raw sink window creation failed: %u", GetLastError());
-            g_rawSinkCreateFailed = true;
-            return;
-        }
-
-        g_rawSinkThreadId = GetCurrentThreadId();
-    }
-
-    RAWINPUTDEVICE rid = {};
-    rid.usUsagePage = 0x01;
-    rid.usUsage = 0x02;
-    rid.dwFlags = RIDEV_INPUTSINK;
-    rid.hwndTarget = g_rawSinkWnd;
-    if (RegisterRawInputDevices(&rid, 1, sizeof(rid))) {
-        g_rawInputRegistered = true;
-    } else {
-        Wh_Log(L"RegisterRawInputDevices error: %u", GetLastError());
-    }
-}
-
-void UnregisterRawInputIfIdle() {
-    if (!g_rawInputRegistered) {
-        return;
-    }
-
-    std::lock_guard<std::mutex> guard(g_rawSinkMutex);
-    // Keep it while a drag is in progress or Alt is still held.
-    if (!g_rawInputRegistered || g_rawDragRoot ||
-        GetAsyncKeyState(VK_MENU) < 0) {
-        return;
-    }
-
-    RAWINPUTDEVICE rid = {};
-    rid.usUsagePage = 0x01;
-    rid.usUsage = 0x02;
-    rid.dwFlags = RIDEV_REMOVE;
-    RegisterRawInputDevices(&rid, 1, sizeof(rid));
-    g_rawInputRegistered = false;
-}
-
 // Runs for mouse input before it's routed anywhere, which is the only point at
 // which a press can be taken away from composition hosted content. Moves are
 // never swallowed: that would stop the cursor.
@@ -862,9 +591,6 @@ LRESULT CALLBACK LowLevelMouseProc(int nCode, WPARAM wParam, LPARAM lParam) {
             g_llCandidateRoot = hRootWnd;
             g_llDownPt = ms->pt;
             g_swallowedPress = true;
-
-            // Keeps the raw input fallback from acting on the same press.
-            NoteHandledPress(ms->pt);
             return 1;
         }
 
@@ -1026,13 +752,7 @@ BOOL WINAPI DllMain(HINSTANCE hinstDLL, DWORD fdwReason, LPVOID lpReserved) {
                 }
             }
 
-            // The sink window and the low level hook go away with their
-            // thread.
-            if (g_rawSinkWnd && GetCurrentThreadId() == g_rawSinkThreadId) {
-                g_rawSinkWnd = nullptr;
-                g_rawInputRegistered = false;
-            }
-
+            // The low level hook goes away with its thread.
             if (g_lowLevelMouseHook &&
                 GetCurrentThreadId() == g_lowLevelMouseHookThreadId) {
                 g_lowLevelMouseHook = nullptr;
@@ -1115,23 +835,6 @@ void Wh_ModUninit() {
         UnhookWindowsHookEx(g_lowLevelMouseHook);
         g_lowLevelMouseHook = nullptr;
     }
-
-    HWND rawSinkWnd;
-    {
-        std::lock_guard<std::mutex> guard(g_rawSinkMutex);
-        rawSinkWnd = g_rawSinkWnd;
-        g_rawSinkWnd = nullptr;
-    }
-
-    // The destroy handler removes the raw device and destroys the window on its
-    // own thread. Done without the lock so it can't deadlock against a raw
-    // callback waiting for it.
-    if (rawSinkWnd && IsWindow(rawSinkWnd)) {
-        SendMessage(rawSinkWnd, kRawSinkDestroyMessage, 0, 0);
-    }
-
-    UnregisterClass(L"Windhawk_AltDragRawSink_" WH_MOD_ID,
-                    GetModuleHandle(nullptr));
 
     while (g_hookRefCount > 0) {
         Sleep(200);
