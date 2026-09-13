@@ -888,6 +888,17 @@ LRESULT CALLBACK LowLevelMouseProc(int nCode, WPARAM wParam, LPARAM lParam) {
                 g_llCandidate = false;
                 g_llDragGrab = CalcDragGrab(g_llCandidateRoot, g_llDownPt);
                 g_llDragRoot = g_llCandidateRoot;
+
+                // The press was swallowed, so the window wasn't brought to the
+                // front the way a click on it would have been. Allowed because
+                // the process holding the hook is the foreground one.
+                if (!SetForegroundWindow(g_llDragRoot)) {
+                    Wh_Log(L"SetForegroundWindow error: %u", GetLastError());
+                    SetWindowPos(g_llDragRoot, HWND_TOP, 0, 0, 0, 0,
+                                 SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE |
+                                     SWP_ASYNCWINDOWPOS);
+                }
+
                 MoveDraggedWindow(g_llDragRoot, g_llDragGrab, ms->pt);
             }
             break;
