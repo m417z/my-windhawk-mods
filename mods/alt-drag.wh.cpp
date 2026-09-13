@@ -31,6 +31,16 @@ tool](https://stefansundin.github.io/altdrag/).
 */
 // ==/WindhawkModReadme==
 
+// ==WindhawkModSettings==
+/*
+- dragWindowsWithoutTitleBar: false
+  $name: Drag windows without a title bar
+  $description: >-
+    Also drag windows without a title bar, such as popup menus, tooltips
+    and flyouts
+*/
+// ==/WindhawkModSettings==
+
 // The drag is started by taking the button press away from the target window
 // as it's retrieved from the message queue, and posting a move request to the
 // root window, which the mod instance in the root window's thread turns into
@@ -88,6 +98,10 @@ tool](https://stefansundin.github.io/altdrag/).
 #include <mutex>
 #include <unordered_set>
 #include <vector>
+
+struct {
+    bool dragWindowsWithoutTitleBar;
+} g_settings;
 
 std::atomic<bool> g_uninitializing;
 std::atomic<int> g_hookRefCount;
@@ -182,10 +196,21 @@ bool IsExcludedRootWindow(HWND hRootWnd) {
     }
 
     // The taskbar and the desktop.
-    return _wcsicmp(className, L"Shell_TrayWnd") == 0 ||
-           _wcsicmp(className, L"Shell_SecondaryTrayWnd") == 0 ||
-           _wcsicmp(className, L"Progman") == 0 ||
-           _wcsicmp(className, L"WorkerW") == 0;
+    if (_wcsicmp(className, L"Shell_TrayWnd") == 0 ||
+        _wcsicmp(className, L"Shell_SecondaryTrayWnd") == 0 ||
+        _wcsicmp(className, L"Progman") == 0 ||
+        _wcsicmp(className, L"WorkerW") == 0) {
+        return true;
+    }
+
+    if (!g_settings.dragWindowsWithoutTitleBar) {
+        LONG style = GetWindowLong(hRootWnd, GWL_STYLE);
+        if ((style & WS_CAPTION) != WS_CAPTION) {
+            return true;
+        }
+    }
+
+    return false;
 }
 
 // Windows which host their content in a composition input sink, such as a WinUI
@@ -1002,7 +1027,8 @@ BOOL WINAPI DllMain(HINSTANCE hinstDLL, DWORD fdwReason, LPVOID lpReserved) {
 }
 
 void LoadSettings() {
-    // None for now.
+    g_settings.dragWindowsWithoutTitleBar =
+        Wh_GetIntSetting(L"dragWindowsWithoutTitleBar");
 }
 
 BOOL Wh_ModInit() {
