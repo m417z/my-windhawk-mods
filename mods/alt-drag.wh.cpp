@@ -64,8 +64,8 @@ tool](https://stefansundin.github.io/altdrag/).
 // is delivered straight to the window procedure and is never seen by
 // WH_GETMESSAGE or WH_CALLWNDPROC hooks, so it's intercepted by subclassing.
 // A WH_CALLWNDPROC hook subclasses the window under the pointer while Alt is
-// held, and the subclass routes an Alt-initiated contact to DefWindowProc, which
-// promotes it to the legacy mouse messages the retrieval hook handles.
+// held, and the subclass routes an Alt-initiated contact to DefWindowProc,
+// which promotes it to the legacy mouse messages the retrieval hook handles.
 //
 // Content hosted in a composition input sink, such as a WinUI XAML island,
 // receives its pointer input over a side channel and produces no window message
@@ -86,8 +86,8 @@ tool](https://stefansundin.github.io/altdrag/).
 //
 // A swallowed press never reaches the input queue, so as far as the system is
 // concerned Alt was tapped on its own, and DefWindowProc turns the release into
-// SC_KEYMENU, activating the menu bar. The Alt release which ends such a drag is
-// therefore taken as well.
+// SC_KEYMENU, activating the menu bar. The Alt release which ends such a drag
+// is therefore taken as well.
 
 #include <commctrl.h>
 #include <windowsx.h>
@@ -231,9 +231,9 @@ bool IsCompositionHostedWindow(HWND hWnd) {
 }
 
 // An island host commonly answers WM_NCHITTEST with HTTRANSPARENT so that the
-// window hosting it can do its own hit testing, and WindowFromPoint then reports
-// that host rather than the island. Walking the children by geometry finds it
-// either way.
+// window hosting it can do its own hit testing, and WindowFromPoint then
+// reports that host rather than the island. Walking the children by geometry
+// finds it either way.
 HWND CompositionHostedWindowFromPoint(POINT pt) {
     HWND hWnd = WindowFromPoint(pt);
     if (!hWnd) {
@@ -467,9 +467,10 @@ LRESULT CALLBACK SubclassProc(HWND hWnd,
             }
 
             if (GetAsyncKeyState(VK_MENU) < 0 && !g_uninitializing) {
-                Wh_Log(L"Message %04X for %08X, routing pointer %u to "
-                       L"DefWindowProc",
-                       uMsg, (DWORD)(ULONG_PTR)hWnd, pointerId);
+                Wh_Log(
+                    L"Message %04X for %08X, routing pointer %u to "
+                    L"DefWindowProc",
+                    uMsg, (DWORD)(ULONG_PTR)hWnd, pointerId);
                 NoteHandledPress(
                     POINT{GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam)});
                 g_contactWnd = hWnd;
@@ -565,7 +566,8 @@ POINT CalcDragGrab(HWND hRootWnd, POINT ptDown) {
     if (IsZoomed(hRootWnd)) {
         int width = rc.right - rc.left;
         int height = rc.bottom - rc.top;
-        double fractionX = width > 0 ? (double)(ptDown.x - rc.left) / width : 0.5;
+        double fractionX =
+            width > 0 ? (double)(ptDown.x - rc.left) / width : 0.5;
         double fractionY =
             height > 0 ? (double)(ptDown.y - rc.top) / height : 0.0;
 
@@ -794,7 +796,8 @@ void UnregisterRawInputIfIdle() {
 
     std::lock_guard<std::mutex> guard(g_rawSinkMutex);
     // Keep it while a drag is in progress or Alt is still held.
-    if (!g_rawInputRegistered || g_rawDragRoot || GetAsyncKeyState(VK_MENU) < 0) {
+    if (!g_rawInputRegistered || g_rawDragRoot ||
+        GetAsyncKeyState(VK_MENU) < 0) {
         return;
     }
 
@@ -869,11 +872,10 @@ LRESULT CALLBACK LowLevelMouseProc(int nCode, WPARAM wParam, LPARAM lParam) {
         case WM_MOUSEMOVE:
             if (g_llDragRoot) {
                 MoveDraggedWindow(g_llDragRoot, g_llDragGrab, ms->pt);
-            } else if (g_llCandidate &&
-                       (abs(ms->pt.x - g_llDownPt.x) >=
-                            GetSystemMetrics(SM_CXDRAG) ||
-                        abs(ms->pt.y - g_llDownPt.y) >=
-                            GetSystemMetrics(SM_CYDRAG))) {
+            } else if (g_llCandidate && (abs(ms->pt.x - g_llDownPt.x) >=
+                                             GetSystemMetrics(SM_CXDRAG) ||
+                                         abs(ms->pt.y - g_llDownPt.y) >=
+                                             GetSystemMetrics(SM_CYDRAG))) {
                 Wh_Log(L"Moving root window %08X",
                        (DWORD)(ULONG_PTR)g_llCandidateRoot);
                 g_llCandidate = false;
