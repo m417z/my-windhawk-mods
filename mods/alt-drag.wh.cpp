@@ -84,6 +84,11 @@ tool](https://stefansundin.github.io/altdrag/).
 // loop. The move loop is of no use here: it retrieves no mouse input while the
 // sink owns the contact, so it starts and then tracks nothing.
 //
+// The hook is global, and the island of a window which isn't focused belongs to
+// a process which never saw Alt go down and so has no hook of its own. The
+// process which does hold the hook therefore handles any window, not just its
+// own, and moves it asynchronously since it doesn't own it.
+//
 // A swallowed press never reaches the input queue, so as far as the system is
 // concerned Alt was tapped on its own, and DefWindowProc turns the release into
 // SC_KEYMENU, activating the menu bar. The Alt release which ends such a drag
@@ -586,8 +591,11 @@ POINT CalcDragGrab(HWND hRootWnd, POINT ptDown) {
 }
 
 void MoveDraggedWindow(HWND hRootWnd, POINT grab, POINT pt) {
+    // SWP_ASYNCWINDOWPOS posts the request when the window belongs to another
+    // thread, which keeps a busy owner from blocking the caller.
     SetWindowPos(hRootWnd, nullptr, pt.x - grab.x, pt.y - grab.y, 0, 0,
-                 SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
+                 SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE |
+                     SWP_ASYNCWINDOWPOS);
 }
 
 void OnRawMouseInput(const RAWMOUSE& mouse) {
@@ -821,6 +829,11 @@ LRESULT CALLBACK LowLevelMouseProc(int nCode, WPARAM wParam, LPARAM lParam) {
 
     const MSLLHOOKSTRUCT* ms = (const MSLLHOOKSTRUCT*)lParam;
 
+    // Focus can move away while Alt is held, e.g. Alt+Tab, and the Alt release
+    // then goes to another process. Drop the hook here instead of keeping it
+    // for the rest of the process's life.
+    RemoveLowLevelMouseHookIfIdle();
+
     switch (wParam) {
         case WM_LBUTTONDOWN: {
             g_llCandidate = false;
@@ -834,12 +847,6 @@ LRESULT CALLBACK LowLevelMouseProc(int nCode, WPARAM wParam, LPARAM lParam) {
             if (!hWnd) {
                 // Delivered as a message, so the paths above handle it and keep
                 // the system move loop.
-                break;
-            }
-
-            DWORD dwProcessId = 0;
-            GetWindowThreadProcessId(hWnd, &dwProcessId);
-            if (dwProcessId != GetCurrentProcessId()) {
                 break;
             }
 
