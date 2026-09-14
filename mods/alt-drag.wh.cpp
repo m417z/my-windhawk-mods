@@ -94,7 +94,9 @@ tool](https://stefansundin.github.io/altdrag/).
 // A swallowed press never reaches the input queue, so as far as the system is
 // concerned Alt was tapped on its own, and DefWindowProc turns the release into
 // SC_KEYMENU, activating the menu bar. The Alt release which ends such a drag
-// is therefore taken as well.
+// is therefore taken as well. A swallowed press which isn't followed by a drag
+// is replayed as a click on the release, so that an Alt+click keeps whatever
+// meaning the program gives it.
 
 #include <commctrl.h>
 
@@ -136,6 +138,9 @@ HHOOK g_lowLevelMouseHook;
 DWORD g_lowLevelMouseHookThreadId;
 // Set when a press was swallowed during the current Alt hold.
 std::atomic<bool> g_swallowedPress;
+
+// Marks the input of a replayed click, which the hook lets through.
+constexpr ULONG_PTR kReplayedClickExtraInfo = 0x57484152;
 
 bool g_llCandidate;
 HWND g_llCandidateRoot;
@@ -295,6 +300,22 @@ bool IsPointerContactEndMessage(UINT message) {
         case WM_NCPOINTERUP:
         case WM_POINTERCAPTURECHANGED:
             return true;
+    }
+
+    return false;
+}
+
+// A message showing that a contact is no longer this window's: the pointer
+// left, e.g. captured by the move loop, or the button is up already, the
+// release having gone elsewhere.
+bool IsPointerContactGoneMessage(UINT message, WPARAM wParam) {
+    switch (message) {
+        case WM_POINTERLEAVE:
+            return true;
+
+        case WM_POINTERUPDATE:
+        case WM_NCPOINTERUPDATE:
+            return !IS_POINTER_FIRSTBUTTON_WPARAM(wParam);
     }
 
     return false;
@@ -471,10 +492,8 @@ LRESULT CALLBACK SubclassProc(HWND hWnd,
                 g_contactPointerId = pointerId;
                 return DefWindowProc(hWnd, uMsg, wParam, lParam);
             }
-        } else if (tracked && uMsg == WM_POINTERLEAVE) {
-            // The contact carries on elsewhere, e.g. captured by the move
-            // loop, and ends there. The program saw the pointer enter, so it
-            // gets to see it leave.
+        } else if (tracked && IsPointerContactGoneMessage(uMsg, wParam)) {
+            // The program saw the pointer enter, so it gets to see this.
             g_contactWnd = nullptr;
         } else if (tracked) {
             if (IsPointerContactEndMessage(uMsg)) {
@@ -692,6 +711,24 @@ POINT ToLogicalPoint(POINT physicalPt) {
     };
 }
 
+// Since this press does enter the input queue, the Alt release needs no
+// swallowing on its account.
+void ReplaySwallowedClick() {
+    INPUT inputs[2]{};
+    inputs[0].type = INPUT_MOUSE;
+    inputs[0].mi.dwFlags = MOUSEEVENTF_LEFTDOWN;
+    inputs[0].mi.dwExtraInfo = kReplayedClickExtraInfo;
+    inputs[1].type = INPUT_MOUSE;
+    inputs[1].mi.dwFlags = MOUSEEVENTF_LEFTUP;
+    inputs[1].mi.dwExtraInfo = kReplayedClickExtraInfo;
+    if (SendInput(ARRAYSIZE(inputs), inputs, sizeof(inputs[0])) ==
+        ARRAYSIZE(inputs)) {
+        g_swallowedPress = false;
+    } else {
+        Wh_Log(L"SendInput error: %u", GetLastError());
+    }
+}
+
 // Runs for mouse input before it's routed anywhere, which is the only point at
 // which a press can be taken away from composition hosted content. Moves are
 // never swallowed: that would stop the cursor.
@@ -703,6 +740,10 @@ LRESULT CALLBACK LowLevelMouseProc(int nCode, WPARAM wParam, LPARAM lParam) {
     }
 
     const MSLLHOOKSTRUCT* ms = (const MSLLHOOKSTRUCT*)lParam;
+
+    if (ms->dwExtraInfo == kReplayedClickExtraInfo) {
+        return CallNextHookEx(nullptr, nCode, wParam, lParam);
+    }
 
     // Focus can move away while Alt is held, e.g. Alt+Tab, and the Alt release
     // then goes to another process. Drop the hook here instead of keeping it
@@ -746,6 +787,10 @@ LRESULT CALLBACK LowLevelMouseProc(int nCode, WPARAM wParam, LPARAM lParam) {
 
         case WM_LBUTTONUP:
             if (g_llCandidate || g_llDragRoot) {
+                if (g_llCandidate) {
+                    ReplaySwallowedClick();
+                }
+
                 g_llCandidate = false;
                 g_llDragRoot = nullptr;
                 DestroyDragOverlay();
@@ -776,8 +821,14 @@ LRESULT CALLBACK LowLevelMouseProc(int nCode, WPARAM wParam, LPARAM lParam) {
                 // The press was swallowed, so the window wasn't brought to the
                 // front the way a click on it would have been. Allowed because
                 // the process holding the hook is the foreground one.
+                DWORD processId = 0;
+                GetWindowThreadProcessId(g_llDragRoot, &processId);
                 if (!SetForegroundWindow(g_llDragRoot)) {
                     Wh_Log(L"SetForegroundWindow error: %u", GetLastError());
+                } else if (processId != GetCurrentProcessId()) {
+                    // The Alt release goes there now, and a later one here
+                    // isn't to be taken for it.
+                    g_swallowedPress = false;
                 }
 
                 g_llDragOverlayWnd = CreateDragOverlay(pt);
