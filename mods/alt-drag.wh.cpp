@@ -91,7 +91,6 @@ tool](https://stefansundin.github.io/altdrag/).
 // is therefore taken as well.
 
 #include <commctrl.h>
-#include <windowsx.h>
 
 #include <atomic>
 #include <cstdlib>
@@ -541,9 +540,9 @@ POINT CalcDragGrab(HWND hRootWnd, POINT ptDown) {
 void MoveDraggedWindow(HWND hRootWnd, POINT grab, POINT pt) {
     // SWP_ASYNCWINDOWPOS posts the request when the window belongs to another
     // thread, which keeps a busy owner from blocking the caller.
-    SetWindowPos(hRootWnd, nullptr, pt.x - grab.x, pt.y - grab.y, 0, 0,
-                 SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE |
-                     SWP_ASYNCWINDOWPOS);
+    SetWindowPos(
+        hRootWnd, nullptr, pt.x - grab.x, pt.y - grab.y, 0, 0,
+        SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_ASYNCWINDOWPOS);
 }
 
 // Runs for mouse input before it's routed anywhere, which is the only point at
@@ -620,9 +619,6 @@ LRESULT CALLBACK LowLevelMouseProc(int nCode, WPARAM wParam, LPARAM lParam) {
                 // the process holding the hook is the foreground one.
                 if (!SetForegroundWindow(g_llDragRoot)) {
                     Wh_Log(L"SetForegroundWindow error: %u", GetLastError());
-                    SetWindowPos(g_llDragRoot, HWND_TOP, 0, 0, 0, 0,
-                                 SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE |
-                                     SWP_ASYNCWINDOWPOS);
                 }
 
                 MoveDraggedWindow(g_llDragRoot, g_llDragGrab, ms->pt);
