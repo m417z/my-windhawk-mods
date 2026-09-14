@@ -279,6 +279,13 @@ bool IsPointerContactEndMessage(UINT message) {
     return false;
 }
 
+// Whether the system move loop is running on this thread.
+bool IsInMoveLoop() {
+    GUITHREADINFO gti{.cbSize = sizeof(gti)};
+    return GetGUIThreadInfo(GetCurrentThreadId(), &gti) &&
+           (gti.flags & GUI_INMOVESIZE);
+}
+
 // Turns a move request retrieved by the root window's thread into the system
 // command. The move loop only starts if this thread's synchronized button state
 // is down, which it isn't when the press was retrieved by another thread.
@@ -349,12 +356,22 @@ void OnMessageRemoved(MSG* msg) {
         return;
     }
 
-    if (!IsPrimaryButtonDownMessage(msg)) {
+    if (msg->message != WM_MOUSEMOVE && !IsPrimaryButtonDownMessage(msg)) {
         return;
     }
 
     // GetKeyState reflects the state at the time of the retrieved message.
     if (GetKeyState(VK_MENU) >= 0) {
+        return;
+    }
+
+    if (msg->message == WM_MOUSEMOVE) {
+        // The move loop retrieves the moves itself, without dispatching them,
+        // holds an internal capture for which no WM_SETCURSOR is sent, and
+        // shows the class cursor.
+        if (IsInMoveLoop()) {
+            SetCursor(LoadCursor(nullptr, IDC_SIZEALL));
+        }
         return;
     }
 
