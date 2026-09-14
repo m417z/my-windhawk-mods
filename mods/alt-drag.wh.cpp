@@ -1,8 +1,8 @@
 // ==WindhawkMod==
 // @id              alt-drag
-// @name            AltDrag (WIP)
+// @name            AltDrag
 // @description     Move any window by holding Alt and dragging it from anywhere, without having to grab the title bar
-// @version         0.1
+// @version         1.0
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
@@ -107,7 +107,7 @@ tool](https://stefansundin.github.io/altdrag/).
 #include <unordered_set>
 
 struct {
-    bool dragWindowsWithoutTitleBar;
+    std::atomic<bool> dragWindowsWithoutTitleBar;
 } g_settings;
 
 std::atomic<bool> g_uninitializing;
@@ -132,8 +132,13 @@ std::unordered_set<HWND> g_subclassedWindows;
 thread_local HWND g_contactWnd;
 thread_local UINT g_contactPointerId;
 
-// The low level mouse hook, installed only while Alt is held. Its state is
-// touched only on the thread which installed it.
+// The low level mouse hook, installed only while Alt is held, by whichever
+// thread retrieves the press. The mutex guards the handle and the thread, and
+// keeps an installation from slipping past the removal at uninit. The drag
+// state below is touched only on the hook's thread, which its callback runs
+// on, and reset with the hook gone: at uninit once the callbacks are waited
+// out, and at the start of an Alt hold.
+std::mutex g_lowLevelMouseHookMutex;
 HHOOK g_lowLevelMouseHook;
 DWORD g_lowLevelMouseHookThreadId;
 // Set when a press was swallowed during the current Alt hold.
@@ -163,6 +168,7 @@ struct {
     RECT logicalRect;
 } g_llMonitor;
 
+void ResetLowLevelMouseHook();
 void InstallLowLevelMouseHookIfNeeded();
 void RemoveLowLevelMouseHookIfIdle();
 
@@ -205,37 +211,33 @@ bool IsCompositionHostedWindow(HWND hWnd) {
         return false;
     }
 
-    return wcsncmp(className, L"Microsoft.UI.Content.",
-                   ARRAYSIZE(L"Microsoft.UI.Content.") - 1) == 0 ||
-           wcsncmp(className, L"Windows.UI.Composition.",
-                   ARRAYSIZE(L"Windows.UI.Composition.") - 1) == 0 ||
-           wcsncmp(className, L"Windows.UI.Input.InputSite.",
-                   ARRAYSIZE(L"Windows.UI.Input.InputSite.") - 1) == 0 ||
+    return _wcsnicmp(className, L"Microsoft.UI.Content.",
+                     ARRAYSIZE(L"Microsoft.UI.Content.") - 1) == 0 ||
+           _wcsnicmp(className, L"Windows.UI.Composition.",
+                     ARRAYSIZE(L"Windows.UI.Composition.") - 1) == 0 ||
+           _wcsnicmp(className, L"Windows.UI.Input.InputSite.",
+                     ARRAYSIZE(L"Windows.UI.Input.InputSite.") - 1) == 0 ||
            _wcsicmp(className, L"InputSiteWindowClass") == 0;
 }
 
-// An island host commonly answers WM_NCHITTEST with HTTRANSPARENT so that the
-// window hosting it can do its own hit testing, and WindowFromPoint then
-// reports that host rather than the island. Walking the children by geometry
-// finds it either way.
+// Found by geometry alone, from the desktop window down. WindowFromPoint sends
+// WM_NCHITTEST to windows of other threads, and from the low level hook a
+// program which stopped responding a moment ago would hold up the mouse
+// system wide. An island host commonly answers that message with HTTRANSPARENT
+// anyway, to do its own hit testing, which would stop the lookup at the host.
+// What geometry misses is per pixel transparency of layered windows, behind
+// which nothing is found.
 HWND CompositionHostedWindowFromPoint(POINT pt) {
-    HWND hWnd = WindowFromPoint(pt);
-    if (!hWnd) {
-        return nullptr;
-    }
-
-    if (IsCompositionHostedWindow(hWnd)) {
-        return hWnd;
-    }
-
-    for (int depth = 0; depth < 8; depth++) {
+    HWND hWnd = GetDesktopWindow();
+    for (int depth = 0; depth < 9; depth++) {
         POINT clientPt = pt;
         if (!ScreenToClient(hWnd, &clientPt)) {
             break;
         }
 
         HWND hChildWnd = ChildWindowFromPointEx(
-            hWnd, clientPt, CWP_SKIPINVISIBLE | CWP_SKIPDISABLED);
+            hWnd, clientPt,
+            CWP_SKIPINVISIBLE | CWP_SKIPDISABLED | CWP_SKIPTRANSPARENT);
         if (!hChildWnd || hChildWnd == hWnd) {
             break;
         }
@@ -249,33 +251,17 @@ HWND CompositionHostedWindowFromPoint(POINT pt) {
     return nullptr;
 }
 
-// Alt+click on the caption buttons keeps its regular meaning.
-bool IsCaptionButtonHitTest(int hitTest) {
-    switch (hitTest) {
-        case HTCLOSE:
-        case HTMINBUTTON:
-        case HTMAXBUTTON:
-        case HTHELP:
-        case HTSYSMENU:
-            return true;
-    }
-
-    return false;
-}
-
 bool IsPointerMessage(UINT message) {
     return message >= WM_NCPOINTERUPDATE && message <= WM_POINTERROUTEDRELEASED;
 }
 
-bool IsPrimaryButtonDownMessage(const MSG* msg) {
-    switch (msg->message) {
+bool IsPrimaryButtonDownMessage(UINT message) {
+    switch (message) {
         case WM_LBUTTONDOWN:
         case WM_LBUTTONDBLCLK:
-            return true;
-
         case WM_NCLBUTTONDOWN:
         case WM_NCLBUTTONDBLCLK:
-            return !IsCaptionButtonHitTest((int)msg->wParam);
+            return true;
     }
 
     return false;
@@ -284,11 +270,8 @@ bool IsPrimaryButtonDownMessage(const MSG* msg) {
 bool IsPrimaryPointerDownMessage(UINT message, WPARAM wParam) {
     switch (message) {
         case WM_POINTERDOWN:
-            return IS_POINTER_FIRSTBUTTON_WPARAM(wParam);
-
         case WM_NCPOINTERDOWN:
-            return IS_POINTER_FIRSTBUTTON_WPARAM(wParam) &&
-                   !IsCaptionButtonHitTest(HIWORD(wParam));
+            return IS_POINTER_FIRSTBUTTON_WPARAM(wParam);
     }
 
     return false;
@@ -377,6 +360,7 @@ void OnMessageRemoved(MSG* msg) {
             constexpr LPARAM kPreviousKeyStateDown = 1 << 30;
             if (!(msg->lParam & kPreviousKeyStateDown)) {
                 g_swallowedPress = false;
+                ResetLowLevelMouseHook();
             }
 
             InstallLowLevelMouseHookIfNeeded();
@@ -398,7 +382,8 @@ void OnMessageRemoved(MSG* msg) {
         return;
     }
 
-    if (msg->message != WM_MOUSEMOVE && !IsPrimaryButtonDownMessage(msg)) {
+    if (msg->message != WM_MOUSEMOVE &&
+        !IsPrimaryButtonDownMessage(msg->message)) {
         return;
     }
 
@@ -575,29 +560,34 @@ LRESULT CALLBACK CallWndProc(int nCode, WPARAM wParam, LPARAM lParam) {
 }
 
 // Where the window is held relative to its origin. A maximized window is
-// restored first, like a title bar drag does, keeping the grab proportional.
+// restored first, like a title bar drag does, keeping the grab proportional to
+// the size it restores to. The restore is queued rather than performed: this
+// runs while the input thread waits, and the window's thread may be busy. The
+// move which follows queues up behind it.
 POINT CalcDragGrab(HWND hRootWnd, POINT ptDown) {
     RECT rc;
     GetWindowRect(hRootWnd, &rc);
 
-    POINT grab;
-    if (IsZoomed(hRootWnd)) {
-        int width = rc.right - rc.left;
-        int height = rc.bottom - rc.top;
-        double fractionX =
-            width > 0 ? (double)(ptDown.x - rc.left) / width : 0.5;
-        double fractionY =
-            height > 0 ? (double)(ptDown.y - rc.top) / height : 0.0;
+    WINDOWPLACEMENT placement{.length = sizeof(placement)};
+    if (!GetWindowPlacement(hRootWnd, &placement) ||
+        placement.showCmd != SW_SHOWMAXIMIZED) {
+        return POINT{ptDown.x - rc.left, ptDown.y - rc.top};
+    }
 
+    const RECT& normal = placement.rcNormalPosition;
+    POINT grab{
+        MulDiv(ptDown.x - rc.left, normal.right - normal.left,
+               rc.right - rc.left),
+        MulDiv(ptDown.y - rc.top, normal.bottom - normal.top,
+               rc.bottom - rc.top),
+    };
+
+    // For a window of this thread the move is applied at once, so the restore
+    // has to be as well.
+    if (GetWindowThreadProcessId(hRootWnd, nullptr) == GetCurrentThreadId()) {
         ShowWindow(hRootWnd, SW_RESTORE);
-
-        RECT restored;
-        GetWindowRect(hRootWnd, &restored);
-        grab.x = (LONG)(fractionX * (restored.right - restored.left));
-        grab.y = (LONG)(fractionY * (restored.bottom - restored.top));
     } else {
-        grab.x = ptDown.x - rc.left;
-        grab.y = ptDown.y - rc.top;
+        ShowWindowAsync(hRootWnd, SW_RESTORE);
     }
 
     return grab;
@@ -754,6 +744,7 @@ LRESULT CALLBACK LowLevelMouseProc(int nCode, WPARAM wParam, LPARAM lParam) {
         case WM_LBUTTONDOWN: {
             g_llCandidate = false;
             g_llDragRoot = nullptr;
+            DestroyDragOverlay();
 
             if (GetAsyncKeyState(VK_MENU) >= 0) {
                 break;
@@ -841,7 +832,25 @@ LRESULT CALLBACK LowLevelMouseProc(int nCode, WPARAM wParam, LPARAM lParam) {
     return CallNextHookEx(nullptr, nCode, wParam, lParam);
 }
 
+// A hook left over from before is discarded along with its drag state. The
+// release ending a drag may never arrive: a hook further along the chain can
+// swallow it, and the system drops a hook which took too long to return. What
+// is left then keeps the hook, or a dead handle, in place for good.
+void ResetLowLevelMouseHook() {
+    std::lock_guard<std::mutex> guard(g_lowLevelMouseHookMutex);
+
+    if (g_lowLevelMouseHook) {
+        UnhookWindowsHookEx(g_lowLevelMouseHook);
+        g_lowLevelMouseHook = nullptr;
+    }
+
+    g_llCandidate = false;
+    g_llDragRoot = nullptr;
+    DestroyDragOverlay();
+}
+
 void InstallLowLevelMouseHookIfNeeded() {
+    std::lock_guard<std::mutex> guard(g_lowLevelMouseHookMutex);
     if (g_lowLevelMouseHook || g_uninitializing) {
         return;
     }
@@ -856,14 +865,20 @@ void InstallLowLevelMouseHookIfNeeded() {
 }
 
 void RemoveLowLevelMouseHookIfIdle() {
-    // Keep it while a drag is in progress or Alt is still held.
-    if (!g_lowLevelMouseHook || g_llDragRoot || GetAsyncKeyState(VK_MENU) < 0) {
+    std::lock_guard<std::mutex> guard(g_lowLevelMouseHookMutex);
+
+    // Only the hook's thread can tell whether a press is being held or a drag
+    // is in progress, which keep the hook, as does Alt. An Alt release
+    // retrieved elsewhere leaves the removal to the callback, which checks on
+    // the next mouse event.
+    if (!g_lowLevelMouseHook ||
+        GetCurrentThreadId() != g_lowLevelMouseHookThreadId || g_llCandidate ||
+        g_llDragRoot || GetAsyncKeyState(VK_MENU) < 0) {
         return;
     }
 
     UnhookWindowsHookEx(g_lowLevelMouseHook);
     g_lowLevelMouseHook = nullptr;
-    g_llCandidate = false;
 }
 
 void SetThreadHooksIfNeeded() {
@@ -1042,18 +1057,22 @@ void Wh_ModUninit() {
 
     ChangeWindowMessageFilter(g_moveRequestMessage, MSGFLT_REMOVE);
 
-    if (g_lowLevelMouseHook) {
-        UnhookWindowsHookEx(g_lowLevelMouseHook);
-        g_lowLevelMouseHook = nullptr;
+    {
+        std::lock_guard<std::mutex> guard(g_lowLevelMouseHookMutex);
+
+        if (g_lowLevelMouseHook) {
+            UnhookWindowsHookEx(g_lowLevelMouseHook);
+            g_lowLevelMouseHook = nullptr;
+        }
+    }
+
+    while (g_hookRefCount > 0) {
+        Sleep(200);
     }
 
     // The class may outlive the window, and is then found in place next time.
     DestroyDragOverlay();
     UnregisterClass(kDragOverlayClassName, GetModuleHandle(nullptr));
-
-    while (g_hookRefCount > 0) {
-        Sleep(200);
-    }
 }
 
 void Wh_ModSettingsChanged() {
