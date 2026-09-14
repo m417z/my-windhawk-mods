@@ -448,6 +448,10 @@ LRESULT CALLBACK SubclassProc(HWND hWnd,
     } else if (uMsg == g_unsubclassRegisteredMessage) {
         UnsubclassWindow(hWnd);
         return 0;
+    } else if (GetAsyncKeyState(VK_MENU) >= 0 && hWnd != g_contactWnd) {
+        // Needed only while Alt is held or a contact is being routed. The hit
+        // test preceding the next Alt press puts it back.
+        UnsubclassWindow(hWnd);
     } else if (IsPointerMessage(uMsg)) {
         UINT pointerId = GET_POINTERID_WPARAM(wParam);
         bool tracked = hWnd == g_contactWnd && pointerId == g_contactPointerId;
@@ -467,6 +471,11 @@ LRESULT CALLBACK SubclassProc(HWND hWnd,
                 g_contactPointerId = pointerId;
                 return DefWindowProc(hWnd, uMsg, wParam, lParam);
             }
+        } else if (tracked && uMsg == WM_POINTERLEAVE) {
+            // The contact carries on elsewhere, e.g. captured by the move
+            // loop, and ends there. The program saw the pointer enter, so it
+            // gets to see it leave.
+            g_contactWnd = nullptr;
         } else if (tracked) {
             if (IsPointerContactEndMessage(uMsg)) {
                 g_contactWnd = nullptr;
