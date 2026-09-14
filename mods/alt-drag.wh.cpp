@@ -1,7 +1,7 @@
 // ==WindhawkMod==
 // @id              alt-drag
 // @name            AltDrag (WIP)
-// @description     AltDrag allows you to move any window by holding Alt and dragging it with your mouse
+// @description     Move any window by holding Alt and dragging it from anywhere, without having to grab the title bar
 // @version         0.1
 // @author          m417z
 // @github          https://github.com/m417z
@@ -23,11 +23,13 @@
 /*
 # AltDrag
 
-AltDrag allows you to move any window by holding Alt and dragging it with your
-mouse.
+Move any window by holding Alt and dragging it from anywhere, without having to
+grab the title bar.
 
 The idea was inspired by [the original AltDrag
 tool](https://stefansundin.github.io/altdrag/).
+
+![Demonstration](https://i.imgur.com/PY0arDE.gif)
 */
 // ==/WindhawkModReadme==
 
@@ -37,14 +39,14 @@ tool](https://stefansundin.github.io/altdrag/).
   $name: Drag windows without a title bar
   $description: >-
     Also drag windows without a title bar, such as popup menus, tooltips
-    and flyouts
+    and flyouts.
 */
 // ==/WindhawkModSettings==
 
-// The drag is started by taking the button press away from the target window
-// as it's retrieved from the message queue, and posting a move request to the
-// root window, which the mod instance in the root window's thread turns into
-// the system command a title bar drag generates. Intercepting at retrieval time
+// The drag is started by taking the button press away from the target window as
+// it's retrieved from the message queue, and posting a move request to the root
+// window, which the mod instance in the root window's thread turns into the
+// system command a title bar drag generates. Intercepting at retrieval time
 // means the window procedure never sees the press, so it doesn't matter how the
 // program handles mouse input, and the system move loop provides snapping, DWM
 // animations and maximized window handling the same way a title bar drag does.
@@ -62,8 +64,8 @@ tool](https://stefansundin.github.io/altdrag/).
 //
 // Pointer input (WM_POINTER*, used by XAML and other mouse-in-pointer windows)
 // is delivered straight to the window procedure and is never seen by
-// WH_GETMESSAGE or WH_CALLWNDPROC hooks, so it's intercepted by subclassing.
-// A WH_CALLWNDPROC hook subclasses the window under the pointer while Alt is
+// WH_GETMESSAGE or WH_CALLWNDPROC hooks, so it's intercepted by subclassing. A
+// WH_CALLWNDPROC hook subclasses the window under the pointer while Alt is
 // held, and the subclass routes an Alt-initiated contact to DefWindowProc,
 // which promotes it to the legacy mouse messages the retrieval hook handles.
 //
@@ -78,12 +80,11 @@ tool](https://stefansundin.github.io/altdrag/).
 // sees, from a thread of its own, so nothing set from outside sticks. For the
 // duration of the drag an invisible topmost window of the hook's thread covers
 // the screen instead: it receives the moves, and with them the right to choose
-// the cursor.
-// Windows which deliver the press as a message are left to the paths above and
-// keep the system move loop, which is of no use here: it retrieves no mouse
-// input while the sink owns the contact, so it starts and then tracks nothing.
-// The hook exists only while Alt is held, keeping it out of the input path the
-// rest of the time.
+// the cursor. Windows which deliver the press as a message are left to the
+// paths above and keep the system move loop, which is of no use here: it
+// retrieves no mouse input while the sink owns the contact, so it starts and
+// then tracks nothing. The hook exists only while Alt is held, keeping it out
+// of the input path the rest of the time.
 //
 // The hook is global, and the island of a window which isn't focused belongs to
 // a process which never saw Alt go down and so has no hook of its own. The
