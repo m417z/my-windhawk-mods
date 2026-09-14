@@ -74,6 +74,11 @@ tool](https://stefansundin.github.io/altdrag/).
 // routed yet can be taken away from it, so while Alt is held a low level mouse
 // hook swallows the press over composition hosted content, recognized by the
 // class of the hosting window, and moves the window itself with SetWindowPos.
+// The cursor shown over such content is chosen by the content, on every move it
+// sees, from a thread of its own, so nothing set from outside sticks. For the
+// duration of the drag an invisible topmost window of the hook's thread covers
+// the screen instead: it receives the moves, and with them the right to choose
+// the cursor.
 // Windows which deliver the press as a message are left to the paths above and
 // keep the system move loop, which is of no use here: it retrieves no mouse
 // input while the sink owns the contact, so it starts and then tracks nothing.
@@ -136,6 +141,9 @@ HWND g_llCandidateRoot;
 POINT g_llDownPt;
 HWND g_llDragRoot;
 POINT g_llDragGrab;
+HWND g_llDragOverlayWnd;
+
+constexpr WCHAR kDragOverlayClassName[] = L"Windhawk_AltDragOverlay_" WH_MOD_ID;
 
 void InstallLowLevelMouseHookIfNeeded();
 void RemoveLowLevelMouseHookIfIdle();
@@ -562,6 +570,46 @@ void MoveDraggedWindow(HWND hRootWnd, POINT grab, POINT pt) {
         SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_ASYNCWINDOWPOS);
 }
 
+// The class supplies the size cursor, and with DefWindowProc as the window
+// procedure no mod code is on the window's call path.
+HWND CreateDragOverlay() {
+    WNDCLASS wc{
+        .lpfnWndProc = DefWindowProc,
+        .hInstance = GetModuleHandle(nullptr),
+        .hCursor = LoadCursor(nullptr, IDC_SIZEALL),
+        .lpszClassName = kDragOverlayClassName,
+    };
+    if (!RegisterClass(&wc) && GetLastError() != ERROR_CLASS_ALREADY_EXISTS) {
+        Wh_Log(L"RegisterClass error: %u", GetLastError());
+        return nullptr;
+    }
+
+    HWND hWnd = CreateWindowEx(
+        WS_EX_TOPMOST | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE | WS_EX_LAYERED,
+        kDragOverlayClassName, nullptr, WS_POPUP,
+        GetSystemMetrics(SM_XVIRTUALSCREEN),
+        GetSystemMetrics(SM_YVIRTUALSCREEN),
+        GetSystemMetrics(SM_CXVIRTUALSCREEN),
+        GetSystemMetrics(SM_CYVIRTUALSCREEN), nullptr, nullptr, wc.hInstance,
+        nullptr);
+    if (!hWnd) {
+        Wh_Log(L"CreateWindowEx error: %u", GetLastError());
+        return nullptr;
+    }
+
+    // As good as invisible, while an alpha of zero would let the mouse through.
+    SetLayeredWindowAttributes(hWnd, 0, 1, LWA_ALPHA);
+    ShowWindow(hWnd, SW_SHOWNOACTIVATE);
+    return hWnd;
+}
+
+void DestroyDragOverlay() {
+    if (g_llDragOverlayWnd) {
+        DestroyWindow(g_llDragOverlayWnd);
+        g_llDragOverlayWnd = nullptr;
+    }
+}
+
 // Runs for mouse input before it's routed anywhere, which is the only point at
 // which a press can be taken away from composition hosted content. Moves are
 // never swallowed: that would stop the cursor.
@@ -614,6 +662,7 @@ LRESULT CALLBACK LowLevelMouseProc(int nCode, WPARAM wParam, LPARAM lParam) {
             if (g_llCandidate || g_llDragRoot) {
                 g_llCandidate = false;
                 g_llDragRoot = nullptr;
+                DestroyDragOverlay();
                 return 1;
             }
             break;
@@ -638,6 +687,7 @@ LRESULT CALLBACK LowLevelMouseProc(int nCode, WPARAM wParam, LPARAM lParam) {
                     Wh_Log(L"SetForegroundWindow error: %u", GetLastError());
                 }
 
+                g_llDragOverlayWnd = CreateDragOverlay();
                 MoveDraggedWindow(g_llDragRoot, g_llDragGrab, ms->pt);
             }
             break;
@@ -765,10 +815,13 @@ BOOL WINAPI DllMain(HINSTANCE hinstDLL, DWORD fdwReason, LPVOID lpReserved) {
                 }
             }
 
-            // The low level hook goes away with its thread.
+            // The low level hook and its overlay go away with their thread.
             if (g_lowLevelMouseHook &&
                 GetCurrentThreadId() == g_lowLevelMouseHookThreadId) {
                 g_lowLevelMouseHook = nullptr;
+                g_llCandidate = false;
+                g_llDragRoot = nullptr;
+                g_llDragOverlayWnd = nullptr;
             }
             break;
 
@@ -848,6 +901,14 @@ void Wh_ModUninit() {
         UnhookWindowsHookEx(g_lowLevelMouseHook);
         g_lowLevelMouseHook = nullptr;
     }
+
+    // Destroyed on its thread by DefWindowProc. The class may outlive it, and
+    // is then found in place next time.
+    if (HWND hOverlayWnd = g_llDragOverlayWnd) {
+        PostMessage(hOverlayWnd, WM_CLOSE, 0, 0);
+    }
+
+    UnregisterClass(kDragOverlayClassName, GetModuleHandle(nullptr));
 
     while (g_hookRefCount > 0) {
         Sleep(200);
