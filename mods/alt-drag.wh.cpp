@@ -78,10 +78,10 @@ tool](https://stefansundin.github.io/altdrag/).
 // class of the hosting window, and moves the window itself with SetWindowPos.
 // The cursor shown over such content is chosen by the content, on every move it
 // sees, from a thread of its own, so nothing set from outside sticks. For the
-// duration of the drag an invisible topmost window of the hook's thread covers
-// the screen instead: it receives the moves, and with them the right to choose
-// the cursor. Windows which deliver the press as a message are left to the
-// paths above and keep the system move loop, which is of no use here: it
+// duration of the drag a small invisible topmost window of the hook's thread
+// follows the cursor instead: it receives the moves, and with them the right to
+// choose the cursor. Windows which deliver the press as a message are left to
+// the paths above and keep the system move loop, which is of no use here: it
 // retrieves no mouse input while the sink owns the contact, so it starts and
 // then tracks nothing. The hook exists only while Alt is held, keeping it out
 // of the input path the rest of the time.
@@ -145,6 +145,18 @@ POINT g_llDragGrab;
 HWND g_llDragOverlayWnd;
 
 constexpr WCHAR kDragOverlayClassName[] = L"Windhawk_AltDragOverlay_" WH_MOD_ID;
+
+// Sized for the cursor alone: a window covering a monitor counts as a full
+// screen one, which the taskbar and notifications make way for.
+constexpr int kDragOverlaySize = 32;
+
+// The monitor the pointer was last seen on, in physical coordinates and in
+// those of this thread, which are scaled per monitor unless the thread is per
+// monitor DPI aware.
+struct {
+    RECT physicalRect;
+    RECT logicalRect;
+} g_llMonitor;
 
 void InstallLowLevelMouseHookIfNeeded();
 void RemoveLowLevelMouseHookIfIdle();
@@ -573,7 +585,7 @@ void MoveDraggedWindow(HWND hRootWnd, POINT grab, POINT pt) {
 
 // The class supplies the size cursor, and with DefWindowProc as the window
 // procedure no mod code is on the window's call path.
-HWND CreateDragOverlay() {
+HWND CreateDragOverlay(POINT pt) {
     WNDCLASS wc{
         .lpfnWndProc = DefWindowProc,
         .hInstance = GetModuleHandle(nullptr),
@@ -587,12 +599,9 @@ HWND CreateDragOverlay() {
 
     HWND hWnd = CreateWindowEx(
         WS_EX_TOPMOST | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE | WS_EX_LAYERED,
-        kDragOverlayClassName, nullptr, WS_POPUP,
-        GetSystemMetrics(SM_XVIRTUALSCREEN),
-        GetSystemMetrics(SM_YVIRTUALSCREEN),
-        GetSystemMetrics(SM_CXVIRTUALSCREEN),
-        GetSystemMetrics(SM_CYVIRTUALSCREEN), nullptr, nullptr, wc.hInstance,
-        nullptr);
+        kDragOverlayClassName, nullptr, WS_POPUP, pt.x - kDragOverlaySize / 2,
+        pt.y - kDragOverlaySize / 2, kDragOverlaySize, kDragOverlaySize,
+        nullptr, nullptr, wc.hInstance, nullptr);
     if (!hWnd) {
         Wh_Log(L"CreateWindowEx error: %u", GetLastError());
         return nullptr;
@@ -604,11 +613,74 @@ HWND CreateDragOverlay() {
     return hWnd;
 }
 
-void DestroyDragOverlay() {
+void PlaceDragOverlay(POINT pt) {
     if (g_llDragOverlayWnd) {
-        DestroyWindow(g_llDragOverlayWnd);
-        g_llDragOverlayWnd = nullptr;
+        SetWindowPos(g_llDragOverlayWnd, nullptr, pt.x - kDragOverlaySize / 2,
+                     pt.y - kDragOverlaySize / 2, 0, 0,
+                     SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
     }
+}
+
+// Through DefWindowProc, so on the window's own thread wherever this runs.
+void DestroyDragOverlay() {
+    if (HWND hOverlayWnd = g_llDragOverlayWnd) {
+        g_llDragOverlayWnd = nullptr;
+        PostMessage(hOverlayWnd, WM_CLOSE, 0, 0);
+    }
+}
+
+// Display settings are never scaled, so they give the physical side.
+BOOL CALLBACK FindMonitorEnumProc(HMONITOR hMonitor,
+                                  HDC hdc,
+                                  LPRECT lprcMonitor,
+                                  LPARAM lParam) {
+    MONITORINFOEX monitorInfo;
+    monitorInfo.cbSize = sizeof(monitorInfo);
+    DEVMODE mode{};
+    mode.dmSize = sizeof(mode);
+    if (!GetMonitorInfo(hMonitor, &monitorInfo) ||
+        !EnumDisplaySettings(monitorInfo.szDevice, ENUM_CURRENT_SETTINGS,
+                             &mode)) {
+        return TRUE;
+    }
+
+    RECT physicalRect{mode.dmPosition.x, mode.dmPosition.y,
+                      mode.dmPosition.x + (LONG)mode.dmPelsWidth,
+                      mode.dmPosition.y + (LONG)mode.dmPelsHeight};
+    if (!PtInRect(&physicalRect, *(const POINT*)lParam)) {
+        return TRUE;
+    }
+
+    g_llMonitor.physicalRect = physicalRect;
+    g_llMonitor.logicalRect = monitorInfo.rcMonitor;
+    return FALSE;
+}
+
+bool FindMonitorForPhysicalPoint(POINT physicalPt) {
+    g_llMonitor = {};
+    EnumDisplayMonitors(nullptr, nullptr, FindMonitorEnumProc,
+                        (LPARAM)&physicalPt);
+    return !IsRectEmpty(&g_llMonitor.physicalRect);
+}
+
+// The hook reports physical coordinates, while this thread looks windows up
+// and places them in its own.
+POINT ToLogicalPoint(POINT physicalPt) {
+    if (!PtInRect(&g_llMonitor.physicalRect, physicalPt) &&
+        !FindMonitorForPhysicalPoint(physicalPt)) {
+        return physicalPt;
+    }
+
+    const RECT& physical = g_llMonitor.physicalRect;
+    const RECT& logical = g_llMonitor.logicalRect;
+    return POINT{
+        logical.left + MulDiv(physicalPt.x - physical.left,
+                              logical.right - logical.left,
+                              physical.right - physical.left),
+        logical.top + MulDiv(physicalPt.y - physical.top,
+                             logical.bottom - logical.top,
+                             physical.bottom - physical.top),
+    };
 }
 
 // Runs for mouse input before it's routed anywhere, which is the only point at
@@ -637,7 +709,11 @@ LRESULT CALLBACK LowLevelMouseProc(int nCode, WPARAM wParam, LPARAM lParam) {
                 break;
             }
 
-            HWND hWnd = CompositionHostedWindowFromPoint(ms->pt);
+            // Looked up afresh in case the display layout changed.
+            g_llMonitor = {};
+            POINT pt = ToLogicalPoint(ms->pt);
+
+            HWND hWnd = CompositionHostedWindowFromPoint(pt);
             if (!hWnd) {
                 // Delivered as a message, so the paths above handle it and keep
                 // the system move loop.
@@ -654,7 +730,7 @@ LRESULT CALLBACK LowLevelMouseProc(int nCode, WPARAM wParam, LPARAM lParam) {
 
             g_llCandidate = true;
             g_llCandidateRoot = hRootWnd;
-            g_llDownPt = ms->pt;
+            g_llDownPt = pt;
             g_swallowedPress = true;
             return 1;
         }
@@ -668,13 +744,20 @@ LRESULT CALLBACK LowLevelMouseProc(int nCode, WPARAM wParam, LPARAM lParam) {
             }
             break;
 
-        case WM_MOUSEMOVE:
+        case WM_MOUSEMOVE: {
+            if (!g_llCandidate && !g_llDragRoot) {
+                break;
+            }
+
+            POINT pt = ToLogicalPoint(ms->pt);
+
             if (g_llDragRoot) {
-                MoveDraggedWindow(g_llDragRoot, g_llDragGrab, ms->pt);
-            } else if (g_llCandidate && (abs(ms->pt.x - g_llDownPt.x) >=
-                                             GetSystemMetrics(SM_CXDRAG) ||
-                                         abs(ms->pt.y - g_llDownPt.y) >=
-                                             GetSystemMetrics(SM_CYDRAG))) {
+                PlaceDragOverlay(pt);
+                MoveDraggedWindow(g_llDragRoot, g_llDragGrab, pt);
+            } else if (abs(pt.x - g_llDownPt.x) >=
+                           GetSystemMetrics(SM_CXDRAG) ||
+                       abs(pt.y - g_llDownPt.y) >=
+                           GetSystemMetrics(SM_CYDRAG)) {
                 Wh_Log(L"Moving root window %08X",
                        (DWORD)(ULONG_PTR)g_llCandidateRoot);
                 g_llCandidate = false;
@@ -688,10 +771,11 @@ LRESULT CALLBACK LowLevelMouseProc(int nCode, WPARAM wParam, LPARAM lParam) {
                     Wh_Log(L"SetForegroundWindow error: %u", GetLastError());
                 }
 
-                g_llDragOverlayWnd = CreateDragOverlay();
-                MoveDraggedWindow(g_llDragRoot, g_llDragGrab, ms->pt);
+                g_llDragOverlayWnd = CreateDragOverlay(pt);
+                MoveDraggedWindow(g_llDragRoot, g_llDragGrab, pt);
             }
             break;
+        }
     }
 
     return CallNextHookEx(nullptr, nCode, wParam, lParam);
@@ -903,12 +987,8 @@ void Wh_ModUninit() {
         g_lowLevelMouseHook = nullptr;
     }
 
-    // Destroyed on its thread by DefWindowProc. The class may outlive it, and
-    // is then found in place next time.
-    if (HWND hOverlayWnd = g_llDragOverlayWnd) {
-        PostMessage(hOverlayWnd, WM_CLOSE, 0, 0);
-    }
-
+    // The class may outlive the window, and is then found in place next time.
+    DestroyDragOverlay();
     UnregisterClass(kDragOverlayClassName, GetModuleHandle(nullptr));
 
     while (g_hookRefCount > 0) {
