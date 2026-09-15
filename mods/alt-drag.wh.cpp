@@ -140,7 +140,8 @@ tool](https://stefansundin.github.io/altdrag/).
 // WH_CALLWNDPROC hook subclasses the window under the pointer while a
 // trigger's keys are held, and the subclass routes a contact those keys
 // started to DefWindowProc, which promotes it to the legacy mouse messages the
-// retrieval hook handles.
+// retrieval hook handles. A trigger with no keys is armed all the time, so it
+// keeps the window under the pointer subclassed all the same.
 //
 // Content hosted in a composition input sink, such as a WinUI XAML island,
 // receives its pointer input over a side channel and produces no window message
@@ -149,7 +150,10 @@ tool](https://stefansundin.github.io/altdrag/).
 // routed yet can be taken away from it, so while a trigger's keys are held a
 // low level mouse hook swallows the press over composition hosted content,
 // recognized by the class of the hosting window, and moves or resizes the
-// window itself with SetWindowPos. The cursor shown over such content is
+// window itself with SetWindowPos. A trigger with no keys has the process
+// which owns the foreground window hold the hook instead, which keeps it to
+// one hook rather than one per process; being global, that one serves a drag
+// of any window. The cursor shown over such content is
 // chosen by the content, on every move it sees, from a thread of its own, so
 // nothing set from outside sticks. For the duration of the drag, and ahead of
 // it from the end of the drag delay, a small invisible topmost window of the
@@ -157,9 +161,9 @@ tool](https://stefansundin.github.io/altdrag/).
 // them the right to choose the cursor. Windows
 // which deliver the press as a message are left to the paths above and keep
 // the system loop, which is of no use here: it retrieves no mouse input while
-// the sink owns the contact, so it starts and then tracks nothing. The hook
-// exists only while the keys are held, keeping it out of the input path the
-// rest of the time.
+// the sink owns the contact, so it starts and then tracks nothing. With keys
+// to hold, the hook exists only while they are, keeping it out of the input
+// path the rest of the time.
 //
 // The hook is global, and the island of a window which isn't focused belongs to
 // a process which never saw the keys go down and so has no hook of its own. The
@@ -417,10 +421,9 @@ bool IsTriggerHeld(const TriggerSettings& trigger, DWORD held) {
     return (held & modifiers) == modifiers;
 }
 
-// A trigger with no keys is held all the time, which is no time to hold the
-// low level hook for or to subclass windows for. Such a trigger is served by
-// the message path alone, which is enough for a window that delivers the press
-// as a message.
+// Whether a trigger's keys are held, for the paths their hold gates. A
+// trigger with no keys is never held this way: it's armed all the time, and
+// what it needs is kept up for as long as it's configured.
 bool IsModifierTriggerHeld(const TriggerSettings& trigger, DWORD held) {
     return trigger.modifiers && IsTriggerHeld(trigger, held);
 }
@@ -428,6 +431,25 @@ bool IsModifierTriggerHeld(const TriggerSettings& trigger, DWORD held) {
 bool IsAnyModifierTriggerHeld(DWORD held) {
     return IsModifierTriggerHeld(g_settings.moveTrigger, held) ||
            IsModifierTriggerHeld(g_settings.sizeTrigger, held);
+}
+
+bool IsAnyTriggerKeyless() {
+    return !g_settings.moveTrigger.modifiers ||
+           !g_settings.sizeTrigger.modifiers;
+}
+
+// The low level hook of a keyless trigger is held by the process which owns
+// the foreground window, so that one hook is in the input path rather than one
+// per process. Activation is what puts it up and takes it down, the way a key
+// press and release do for a trigger which has keys.
+bool ShouldHoldKeylessHook() {
+    if (!IsAnyTriggerKeyless()) {
+        return false;
+    }
+
+    DWORD processId = 0;
+    GetWindowThreadProcessId(GetForegroundWindow(), &processId);
+    return processId == GetCurrentProcessId();
 }
 
 // The button of a client or non-client button message, or 0 for any other
@@ -1019,9 +1041,12 @@ void OnModifierKeyMessageRemoved(MSG* msg, DWORD modifier) {
         constexpr LPARAM kPreviousKeyStateDown = 1 << 30;
         if (!(msg->lParam & kPreviousKeyStateDown) && triggerHeld &&
             !IsAnyModifierTriggerHeld(held & ~modifier)) {
-            // A hold starts with this key.
+            // A hold starts with this key. A keyless trigger keeps its own
+            // hook, and with it whatever drag is under way.
             g_swallowedPress = false;
-            ResetLowLevelMouseHook();
+            if (!IsAnyTriggerKeyless()) {
+                ResetLowLevelMouseHook();
+            }
         }
     }
 
@@ -1205,7 +1230,8 @@ LRESULT CALLBACK SubclassProc(HWND hWnd,
     } else if (uMsg == g_unsubclassRegisteredMessage) {
         UnsubclassWindow(hWnd);
         return 0;
-    } else if (!IsAnyModifierTriggerHeld(HeldModifiers(GetAsyncKeyState)) &&
+    } else if (!IsAnyTriggerKeyless() &&
+               !IsAnyModifierTriggerHeld(HeldModifiers(GetAsyncKeyState)) &&
                hWnd != g_contactWnd) {
         // Needed only while a trigger's keys are held or a contact is being
         // routed. The hit test preceding the next press puts it back.
@@ -1302,10 +1328,20 @@ LRESULT CALLBACK CallWndProc(int nCode, WPARAM wParam, LPARAM lParam) {
                 MarkHookedWindow(cwp->hwnd);
             }
         } else if (cwp->message == WM_NCHITTEST &&
-                   IsAnyModifierTriggerHeld(HeldModifiers(GetAsyncKeyState))) {
+                   (IsAnyTriggerKeyless() ||
+                    IsAnyModifierTriggerHeld(
+                        HeldModifiers(GetAsyncKeyState)))) {
             // The thread's synchronized key state is stale if the window
             // isn't active yet, e.g. a click on a background window.
             SubclassWindowIfNeeded(cwp->hwnd);
+        } else if (cwp->message == WM_ACTIVATEAPP && IsAnyTriggerKeyless()) {
+            // Told by the message rather than by the foreground window, which
+            // the two processes see change at their own times.
+            if (cwp->wParam) {
+                InstallLowLevelMouseHookIfNeeded();
+            } else {
+                RemoveLowLevelMouseHookIfIdle();
+            }
         }
     }
 
@@ -1689,7 +1725,8 @@ void StartLowLevelDrag(POINT pt) {
     MaskWinKeyReleaseIfNeeded(g_llCommand);
 
     if (!g_llDragOverlayWnd) {
-        g_llDragOverlayWnd = CreateDragOverlay(pt, CursorOfCommand(g_llCommand));
+        g_llDragOverlayWnd =
+            CreateDragOverlay(pt, CursorOfCommand(g_llCommand));
     }
 
     DragWindowTo(pt);
@@ -1799,12 +1836,14 @@ void RemoveLowLevelMouseHookIfIdle() {
     std::lock_guard<std::mutex> guard(g_lowLevelMouseHookMutex);
 
     // Only the hook's thread can tell whether a press is being held or a drag
-    // is in progress, which keep the hook, as do the keys. A key release
-    // retrieved elsewhere leaves the removal to the callback, which checks on
-    // the next mouse event.
+    // is in progress, which keep the hook, as do the keys and, for a keyless
+    // trigger, this process being the foreground one. A key release or a
+    // deactivation retrieved elsewhere leaves the removal to the callback,
+    // which checks on the next mouse event.
     if (!g_lowLevelMouseHook ||
         GetCurrentThreadId() != g_lowLevelMouseHookThreadId || g_llRootWnd ||
-        IsAnyModifierTriggerHeld(HeldModifiers(GetAsyncKeyState))) {
+        IsAnyModifierTriggerHeld(HeldModifiers(GetAsyncKeyState)) ||
+        ShouldHoldKeylessHook()) {
         return;
     }
 
@@ -1921,7 +1960,7 @@ void SetThreadHooksIfNeeded() {
 
     g_threadHooksAttempted = true;
 
-    std::lock_guard<std::mutex> guard(g_allThreadHooksMutex);
+    std::unique_lock<std::mutex> guard(g_allThreadHooksMutex);
     if (g_uninitializing) {
         return;
     }
@@ -1959,6 +1998,14 @@ void SetThreadHooksIfNeeded() {
                 return TRUE;
             },
             0);
+    }
+
+    guard.unlock();
+
+    // A process which is the foreground one already sees no activation to put
+    // the hook of a keyless trigger up on.
+    if (ShouldHoldKeylessHook()) {
+        InstallLowLevelMouseHookIfNeeded();
     }
 }
 
