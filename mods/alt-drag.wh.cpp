@@ -152,6 +152,14 @@ Window Arrangement to a different key, or change the key used by this mod.
 // retrieval hook handles. A trigger with no keys is armed all the time, so it
 // keeps the window under the pointer subclassed all the same.
 //
+// With the mouse in pointer mode a contact belongs to the window it went down
+// on, and when that window's thread isn't the root window's, as with Notepad's
+// text box, the loop the root window's thread runs gets none of it: it waits
+// for a move that never comes, starts on a stray one once the contact is over,
+// and never ends. The thread which took such a press drags the window itself,
+// with SetWindowPos, from the moves the contact keeps sending it, promoted
+// like the press was.
+//
 // Content hosted in a composition input sink, such as a WinUI XAML island,
 // receives its pointer input over a side channel and produces no window message
 // at all, so neither hook nor subclass sees the press, and it reaches the
@@ -192,9 +200,12 @@ Window Arrangement to a different key, or change the key used by this mod.
 // A swallowed press never reaches the input queue, so as far as the system is
 // concerned Alt, when it's among the keys, was tapped on its own, and
 // DefWindowProc turns the release into SC_KEYMENU, activating the menu bar.
-// The Alt release which ends such a drag is therefore taken as well. A
-// swallowed press which isn't followed by a drag is replayed on the release
-// as a click, like a press taken for the loop.
+// The Alt release which ends such a drag is therefore taken as well. So is
+// the one which ends a drag run by the pressing thread: a XAML program, whose
+// text box such a press is commonly in, takes it for a lone tap of Alt and
+// puts up its access keys, whatever the mouse did in between. A swallowed
+// press which isn't followed by a drag is replayed on the release as a click,
+// like a press taken for the loop.
 //
 // The Start menu, which a Win key tapped on its own opens, is put off by
 // another key alone, not by a press, swallowed or not. The Win release ending
@@ -262,6 +273,18 @@ thread_local HHOOK g_callWndProcHook;
 std::mutex g_allThreadHooksMutex;
 std::unordered_set<HHOOK> g_allThreadHooks;
 
+// What a drag done with SetWindowPos holds the window by: the point it takes
+// hold of it at, and from then on, for a move where the pointer was relative
+// to the window's origin, for a resize the rect the edges follow the pointer
+// from.
+struct DragHold {
+    HWND hRootWnd;
+    UINT command;
+    POINT startPt;
+    POINT grab;
+    RECT startRect;
+};
+
 // The drag this thread was asked to run, from the request's retrieval until
 // the loop is seen to be over. It's dragged once the loop got going: a move
 // past the threshold wait the caption drag holds the capture through, a resize
@@ -274,6 +297,15 @@ thread_local struct {
     POINT startPt;
     bool dragged;
 } g_loop;
+
+// The drag this thread runs itself, from the press it took until the release,
+// for a root window whose thread's loop is out of the contact's reach. Held
+// once the pointer leaves the drag threshold. Until then a release is a click.
+thread_local struct {
+    int button;
+    bool dragged;
+    DragHold hold;
+} g_threadDrag;
 
 // A press taken from this thread's queue for as long as the drag delay runs.
 thread_local struct {
@@ -309,7 +341,8 @@ thread_local int g_contactButton;
 std::mutex g_lowLevelMouseHookMutex;
 HHOOK g_lowLevelMouseHook;
 DWORD g_lowLevelMouseHookThreadId;
-// Set when a press was swallowed during the current hold with Alt held.
+// Set when a press was swallowed, or taken for a drag run by its thread,
+// during the current hold with Alt held.
 std::atomic<bool> g_swallowedPress;
 
 // Marks the input sent by the mod, which the hooks let through.
@@ -337,13 +370,8 @@ int g_llButton;
 POINT g_llDownPt;
 DWORD g_llDownTime;
 bool g_llDragging;
-// Where the drag started: a move takes its grab from it, a resize measures
-// from it.
-POINT g_llDragStartPt;
-// Where a move holds the window relative to its origin.
-POINT g_llDragGrab;
-// The window's rect when a resize started.
-RECT g_llDragStartRect;
+// The hold of the drag, taken once the drag is set up.
+DragHold g_llHold;
 // Whether the work a drag starts with has been done. The callback decides
 // that a drag is on, the message loop then sets it up.
 bool g_llDragSetUp;
@@ -372,6 +400,8 @@ struct {
 
 void ReplayPress(int button, bool asClick);
 void MaskWinKeyReleaseIfNeeded(UINT command);
+void TakeHold(DragHold* hold);
+void DragHeldWindowTo(const DragHold& hold, POINT pt);
 void OnLowLevelDragDelayElapsed();
 void OnDragUpdate();
 void RemoveLowLevelMouseHook();
@@ -819,7 +849,9 @@ bool IsCompositionHostedWindow(HWND hWnd) {
 // system wide. An island host commonly answers that message with HTTRANSPARENT
 // anyway, to do its own hit testing, which would stop the lookup at the host.
 // What geometry misses is per pixel transparency of layered windows, behind
-// which nothing is found.
+// which nothing is found. A disabled island, e.g. Notepad's status bar, is
+// found like an enabled one: the press over it reaches nothing the message
+// paths see.
 HWND CompositionHostedWindowFromPoint(POINT pt) {
     HWND hWnd = GetDesktopWindow();
     for (int depth = 0; depth < 9; depth++) {
@@ -829,8 +861,7 @@ HWND CompositionHostedWindowFromPoint(POINT pt) {
         }
 
         HWND hChildWnd = ChildWindowFromPointEx(
-            hWnd, clientPt,
-            CWP_SKIPINVISIBLE | CWP_SKIPDISABLED | CWP_SKIPTRANSPARENT);
+            hWnd, clientPt, CWP_SKIPINVISIBLE | CWP_SKIPTRANSPARENT);
         if (!hChildWnd || hChildWnd == hWnd) {
             break;
         }
@@ -861,6 +892,19 @@ bool PostSizeMoveRequest(HWND hRootWnd, UINT command, int button, POINT pt) {
     }
 
     return true;
+}
+
+// Whether the loop the root window's thread would run gets the input of a
+// press this thread retrieved. With the mouse in pointer mode the contact
+// belongs to the window it went down on, and a loop on another thread sees
+// neither its moves nor its release. A root window of another process keeps
+// the request: it's let through from a lower integrity level, which
+// SetWindowPos isn't.
+bool WouldLoopGetContact(HWND hRootWnd) {
+    DWORD processId = 0;
+    DWORD threadId = GetWindowThreadProcessId(hRootWnd, &processId);
+    return threadId == GetCurrentThreadId() ||
+           processId != GetCurrentProcessId() || !IsMouseInPointerEnabled();
 }
 
 // A request carries the command, the button and the window from another
@@ -988,6 +1032,85 @@ void OnLoopOver() {
     g_loop = {};
 }
 
+// Runs for the messages retrieved while this thread holds a drag: the moves
+// and the release of the contact, promoted like the press. Returns whether the
+// drag is still on, with the message either taken or passed on untouched.
+bool OnThreadDragMessageRemoved(MSG* msg) {
+    const DragHold& hold = g_threadDrag.hold;
+
+    if (msg->message == WM_MOUSEMOVE || msg->message == WM_NCMOUSEMOVE) {
+        if (msg->message == WM_MOUSEMOVE &&
+            !(msg->wParam & ButtonMask(g_threadDrag.button))) {
+            // The button is up already, the release having gone elsewhere.
+            Wh_Log(L"Moved with the button up, ending the %s",
+                   NameOfCommand(hold.command));
+            g_threadDrag = {};
+            return false;
+        }
+
+        if (!g_threadDrag.dragged &&
+            IsPastDragThreshold(hold.startPt, msg->pt)) {
+            Wh_Log(L"Starting the %s of root window %08X",
+                   NameOfCommand(hold.command),
+                   (DWORD)(ULONG_PTR)hold.hRootWnd);
+            g_threadDrag.dragged = true;
+            TakeHold(&g_threadDrag.hold);
+            MaskWinKeyReleaseIfNeeded(hold.command);
+        }
+
+        if (g_threadDrag.dragged) {
+            DragHeldWindowTo(hold, msg->pt);
+        }
+
+        SetCursor(LoadCursor(nullptr, CursorOfCommand(hold.command)));
+        TakeMessage(msg);
+        return true;
+    }
+
+    bool down;
+    int button = ButtonOfMessage(msg->message, HIWORD(msg->wParam), &down);
+    if (button != g_threadDrag.button) {
+        return true;
+    }
+
+    if (down) {
+        // A press of the drag's button again means its release was missed.
+        g_threadDrag = {};
+        return false;
+    }
+
+    if (!g_threadDrag.dragged) {
+        Wh_Log(L"Released within the drag threshold, replaying the click");
+        ReplayPress(button, true);
+    }
+
+    g_threadDrag = {};
+    g_takenPressButton = 0;
+    TakeMessage(msg);
+    return true;
+}
+
+// Starts the drag of a press this thread took: at the root window's thread,
+// or here when its loop would get no input.
+bool StartDrag(HWND hRootWnd, UINT command, int button, POINT pt) {
+    if (WouldLoopGetContact(hRootWnd)) {
+        return PostSizeMoveRequest(hRootWnd, command, button, pt);
+    }
+
+    Wh_Log(L"Running the %s of root window %08X on this thread",
+           NameOfCommand(command), (DWORD)(ULONG_PTR)hRootWnd);
+
+    g_threadDrag = {
+        .button = button,
+        .hold = {.hRootWnd = hRootWnd, .command = command, .startPt = pt},
+    };
+    if (GetAsyncKeyState(VK_MENU) < 0) {
+        g_swallowedPress = true;
+    }
+
+    return true;
+}
+
 // Posts the press taken for the drag delay back to its window, followed by a
 // release, as the click it turned out to be.
 void ReplayDelayedPress() {
@@ -1057,9 +1180,9 @@ bool StartDragDelay(const MSG* downMsg,
 
 void OnDragDelayElapsed() {
     if (GetAsyncKeyState(g_delayedPress.button) < 0 &&
-        PostSizeMoveRequest(g_delayedPress.hRootWnd, g_delayedPress.command,
-                            g_delayedPress.button, g_delayedPress.downMsg.pt)) {
-        Wh_Log(L"Drag delay elapsed, requesting a %s of root window %08X",
+        StartDrag(g_delayedPress.hRootWnd, g_delayedPress.command,
+                  g_delayedPress.button, g_delayedPress.downMsg.pt)) {
+        Wh_Log(L"Drag delay elapsed, starting a %s of root window %08X",
                NameOfCommand(g_delayedPress.command),
                (DWORD)(ULONG_PTR)g_delayedPress.hRootWnd);
 
@@ -1168,6 +1291,10 @@ void OnMessageRemoved(MSG* msg) {
         OnLoopOver();
     }
 
+    if (g_threadDrag.button && OnThreadDragMessageRemoved(msg)) {
+        return;
+    }
+
     if (g_delayedPress.timerId &&
         (msg->message == WM_MOUSEMOVE || msg->message == WM_NCMOUSEMOVE) &&
         IsPastDragThreshold(g_delayedPress.downMsg.pt, msg->pt)) {
@@ -1242,11 +1369,11 @@ void OnMessageRemoved(MSG* msg) {
         return;
     }
 
-    Wh_Log(L"Message %04X for %08X, requesting a %s of root window %08X",
+    Wh_Log(L"Message %04X for %08X, starting a %s of root window %08X",
            msg->message, (DWORD)(ULONG_PTR)msg->hwnd, NameOfCommand(command),
            (DWORD)(ULONG_PTR)hRootWnd);
 
-    if (!PostSizeMoveRequest(hRootWnd, command, button, msg->pt)) {
+    if (!StartDrag(hRootWnd, command, button, msg->pt)) {
         g_takenPressButton = 0;
         return;
     }
@@ -1290,6 +1417,11 @@ LRESULT CALLBACK SubclassProc(HWND hWnd,
         // Needed only while a trigger's keys are held or a contact is being
         // routed. The hit test preceding the next press puts it back.
         UnsubclassWindow(hWnd);
+    } else if (uMsg == WM_SETCURSOR && g_threadDrag.button) {
+        // Asked of the window under the pointer ahead of each promoted move.
+        SetCursor(
+            LoadCursor(nullptr, CursorOfCommand(g_threadDrag.hold.command)));
+        return TRUE;
     } else if (IsPointerMessage(uMsg)) {
         UINT pointerId = GET_POINTERID_WPARAM(wParam);
         bool tracked = hWnd == g_contactWnd && pointerId == g_contactPointerId;
@@ -1406,7 +1538,7 @@ LRESULT CALLBACK CallWndProc(int nCode, WPARAM wParam, LPARAM lParam) {
 // restored first, like a title bar drag does, keeping the grab proportional to
 // the size it restores to. The restore is queued rather than performed: this
 // runs while the input thread waits, and the window's thread may be busy. The
-// move which follows queues up behind it.
+// moves which follow wait for it.
 POINT CalcDragGrab(HWND hRootWnd, POINT ptDown) {
     RECT rc;
     GetWindowRect(hRootWnd, &rc);
@@ -1437,8 +1569,15 @@ POINT CalcDragGrab(HWND hRootWnd, POINT ptDown) {
 }
 
 // SWP_ASYNCWINDOWPOS posts the request when the window belongs to another
-// thread, which keeps a busy owner from blocking the caller.
+// thread, which keeps a busy owner from blocking the caller. Not when the
+// threads share an input queue, as those of a window and its child of another
+// thread do: the request is then carried out at once, and would get ahead of
+// the queued restore of a maximized window.
 void MoveDraggedWindow(HWND hRootWnd, POINT grab, POINT pt) {
+    if (IsZoomed(hRootWnd)) {
+        return;
+    }
+
     SetWindowPos(
         hRootWnd, nullptr, pt.x - grab.x, pt.y - grab.y, 0, 0,
         SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_ASYNCWINDOWPOS);
@@ -1490,12 +1629,20 @@ void SizeDraggedWindow(HWND hRootWnd,
                  SWP_NOZORDER | SWP_NOACTIVATE | SWP_ASYNCWINDOWPOS);
 }
 
-void DragWindowTo(POINT pt) {
-    if (IsSizeCommand(g_llCommand)) {
-        SizeDraggedWindow(g_llRootWnd, g_llCommand, g_llDragStartRect,
-                          g_llDragStartPt, pt);
+void TakeHold(DragHold* hold) {
+    if (IsSizeCommand(hold->command)) {
+        GetWindowRect(hold->hRootWnd, &hold->startRect);
     } else {
-        MoveDraggedWindow(g_llRootWnd, g_llDragGrab, pt);
+        hold->grab = CalcDragGrab(hold->hRootWnd, hold->startPt);
+    }
+}
+
+void DragHeldWindowTo(const DragHold& hold, POINT pt) {
+    if (IsSizeCommand(hold.command)) {
+        SizeDraggedWindow(hold.hRootWnd, hold.command, hold.startRect,
+                          hold.startPt, pt);
+    } else {
+        MoveDraggedWindow(hold.hRootWnd, hold.grab, pt);
     }
 }
 
@@ -1759,7 +1906,7 @@ void BeginLowLevelDrag(POINT pt) {
            (DWORD)(ULONG_PTR)g_llRootWnd);
 
     g_llDragging = true;
-    g_llDragStartPt = pt;
+    g_llHold = {.hRootWnd = g_llRootWnd, .command = g_llCommand, .startPt = pt};
     KillLowLevelDelayTimer();
 }
 
@@ -1768,11 +1915,7 @@ void BeginLowLevelDrag(POINT pt) {
 // when the window is of the hook's own thread, which the foreground process's
 // window commonly is.
 void SetUpLowLevelDrag() {
-    if (IsSizeCommand(g_llCommand)) {
-        GetWindowRect(g_llRootWnd, &g_llDragStartRect);
-    } else {
-        g_llDragGrab = CalcDragGrab(g_llRootWnd, g_llDragStartPt);
-    }
+    TakeHold(&g_llHold);
 
     // The press was swallowed, so the window wasn't brought to the front the
     // way a click on it would have been. Allowed because the process holding
@@ -1791,7 +1934,7 @@ void SetUpLowLevelDrag() {
 
     if (!g_llDragOverlayWnd) {
         g_llDragOverlayWnd =
-            CreateDragOverlay(g_llDragStartPt, CursorOfCommand(g_llCommand));
+            CreateDragOverlay(g_llHold.startPt, CursorOfCommand(g_llCommand));
     }
 }
 
@@ -1812,7 +1955,7 @@ void OnDragUpdate() {
     PlaceDragOverlay(g_llDragPt);
 
     if (g_llDragging) {
-        DragWindowTo(g_llDragPt);
+        DragHeldWindowTo(g_llHold, g_llDragPt);
     }
 }
 
