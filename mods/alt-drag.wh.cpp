@@ -38,6 +38,15 @@ add them to the custom process exclusion list in the Advanced tab of this mod.
 The idea was inspired by [the original AltDrag
 tool](https://stefansundin.github.io/altdrag/).
 
+## Compatibility with Slick Window Arrangement
+
+The mod works together with the [Slick Window
+Arrangement](https://windhawk.net/mods/slick-window-arrangement) mod, but note
+that by default, that mod uses the Alt key to temporarily disable snapping, so
+windows won't snap while being dragged with Alt. To have snapping while
+dragging, change the "Keys to temporarily disable snapping" setting of Slick
+Window Arrangement to a different key, or change the key used by this mod.
+
 ![Demonstration](https://i.imgur.com/PY0arDE.gif)
 */
 // ==/WindhawkModReadme==
