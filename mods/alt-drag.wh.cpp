@@ -117,6 +117,8 @@ UINT g_moveRequestMessage =
     RegisterWindowMessage(L"Windhawk_MoveRequest_" WH_MOD_ID);
 UINT g_unsubclassRegisteredMessage =
     RegisterWindowMessage(L"Windhawk_Unsubclass_" WH_MOD_ID);
+UINT g_replayClickMessage =
+    RegisterWindowMessage(L"Windhawk_ReplayClick_" WH_MOD_ID);
 
 thread_local bool g_threadHooksAttempted;
 thread_local HHOOK g_getMessageHook;
@@ -168,6 +170,7 @@ struct {
     RECT logicalRect;
 } g_llMonitor;
 
+void ReplaySwallowedClick();
 void ResetLowLevelMouseHook();
 void InstallLowLevelMouseHookIfNeeded();
 void RemoveLowLevelMouseHookIfIdle();
@@ -343,6 +346,14 @@ void OnMoveRequestRemoved(MSG* msg) {
 // Runs for every message removed from the queue of the current thread, before
 // the program sees it.
 void OnMessageRemoved(MSG* msg) {
+    if (msg->message == g_replayClickMessage) {
+        ReplaySwallowedClick();
+        msg->message = WM_NULL;
+        msg->wParam = 0;
+        msg->lParam = 0;
+        return;
+    }
+
     if (!msg->hwnd) {
         return;
     }
@@ -701,8 +712,11 @@ POINT ToLogicalPoint(POINT physicalPt) {
     };
 }
 
-// Since this press does enter the input queue, the Alt release needs no
-// swallowing on its account.
+// Runs from the message loop of the hook's thread, not from its callback:
+// input sent from within a low level hook callback isn't processed until the
+// hook's timeout has run out, and the callbacks arriving in the meantime see
+// state the callback hasn't updated yet. Since this press does enter the input
+// queue, the Alt release needs no swallowing on its account.
 void ReplaySwallowedClick() {
     INPUT inputs[2]{};
     inputs[0].type = INPUT_MOUSE;
@@ -779,7 +793,14 @@ LRESULT CALLBACK LowLevelMouseProc(int nCode, WPARAM wParam, LPARAM lParam) {
         case WM_LBUTTONUP:
             if (g_llCandidate || g_llDragRoot) {
                 if (g_llCandidate) {
-                    ReplaySwallowedClick();
+                    // Retrieved ahead of the input which follows, including
+                    // an Alt release.
+                    HWND hFocusWnd = GetFocus();
+                    if (!hFocusWnd ||
+                        !PostMessage(hFocusWnd, g_replayClickMessage, 0, 0)) {
+                        PostThreadMessage(GetCurrentThreadId(),
+                                          g_replayClickMessage, 0, 0);
+                    }
                 }
 
                 g_llCandidate = false;
