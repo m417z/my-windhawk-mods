@@ -2,7 +2,7 @@
 // @id              alt-drag
 // @name            AltDrag
 // @description     Move or resize any window by holding Alt and dragging it from anywhere, without having to grab the title bar or the borders
-// @version         1.0
+// @version         1.1
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
@@ -53,7 +53,7 @@ Window Arrangement to a different key, or change the key used by this mod.
 
 // ==WindhawkModSettings==
 /*
-- dragTrigger:
+- moveTrigger:
   - button: left
     $name: Mouse button
     $options:
@@ -75,10 +75,10 @@ Window Arrangement to a different key, or change the key used by this mod.
     $description: >-
       The time in milliseconds to hold the mouse button before the window
       starts moving. A shorter press is passed to the window as a click.
-  $name: Drag trigger
+  $name: Move trigger
   $description: >-
     The mouse button and the keys to hold for moving a window.
-- resizeTrigger:
+- sizeTrigger:
   - button: right
     $name: Mouse button
     $options:
@@ -253,6 +253,8 @@ UINT g_unsubclassRegisteredMessage =
     RegisterWindowMessage(L"Windhawk_Unsubclass_" WH_MOD_ID);
 UINT g_replayPressMessage =
     RegisterWindowMessage(L"Windhawk_ReplayPress_" WH_MOD_ID);
+UINT g_dragUpdateMessage =
+    RegisterWindowMessage(L"Windhawk_DragUpdate_" WH_MOD_ID);
 
 thread_local bool g_threadHooksAttempted;
 thread_local HHOOK g_getMessageHook;
@@ -302,6 +304,8 @@ thread_local int g_contactButton;
 // The low level mouse hook, installed only while a trigger's keys are held, by
 // whichever thread retrieves the press. The mutex guards the handle and the
 // thread, and keeps an installation from slipping past the removal at uninit.
+// It's taken from DllMain as well, under the loader lock, so nothing may call
+// into the loader while holding it, which would invert the two.
 std::mutex g_lowLevelMouseHookMutex;
 HHOOK g_lowLevelMouseHook;
 DWORD g_lowLevelMouseHookThreadId;
@@ -312,7 +316,8 @@ std::atomic<bool> g_swallowedPress;
 constexpr ULONG_PTR kOwnInputExtraInfo = 0x57484152;
 
 // The low level keyboard hook masking the Win release which ends a drag,
-// installed by the thread running the drag and removed with that release.
+// installed by the thread running the drag and removed with that release. The
+// mutex carries the same rule as the one above.
 std::mutex g_winKeyMaskHookMutex;
 HHOOK g_winKeyMaskHook;
 DWORD g_winKeyMaskHookThreadId;
@@ -332,11 +337,19 @@ int g_llButton;
 POINT g_llDownPt;
 DWORD g_llDownTime;
 bool g_llDragging;
+// Where the drag started: a move takes its grab from it, a resize measures
+// from it.
+POINT g_llDragStartPt;
 // Where a move holds the window relative to its origin.
 POINT g_llDragGrab;
-// Where a resize started, and the window's rect then.
-POINT g_llDragStartPt;
+// The window's rect when a resize started.
 RECT g_llDragStartRect;
+// Whether the work a drag starts with has been done. The callback decides
+// that a drag is on, the message loop then sets it up.
+bool g_llDragSetUp;
+// Where the drag last saw the pointer, and whether an update for it is queued.
+POINT g_llDragPt;
+bool g_llDragUpdatePosted;
 HWND g_llDragOverlayWnd;
 // Times the drag delay of a candidate for the cursor at its end. The drag
 // itself waits for a move, timed from the press. A timer is its thread's, and
@@ -360,7 +373,8 @@ struct {
 void ReplayPress(int button, bool asClick);
 void MaskWinKeyReleaseIfNeeded(UINT command);
 void OnLowLevelDragDelayElapsed();
-void ResetLowLevelMouseHook();
+void OnDragUpdate();
+void RemoveLowLevelMouseHook();
 void InstallLowLevelMouseHookIfNeeded();
 void RemoveLowLevelMouseHookIfIdle();
 
@@ -849,6 +863,26 @@ bool PostSizeMoveRequest(HWND hRootWnd, UINT command, int button, POINT pt) {
     return true;
 }
 
+// A request carries the command, the button and the window from another
+// process, and the command is handed to DefWindowProc, so each is held to
+// what the mod itself asks for. The filter which lets the message through
+// from any integrity level is meant for a drag and for nothing else: any
+// other command, SC_CLOSE or one of the program's own among them, would
+// otherwise be the sender's to send.
+bool IsRequestAcceptable(UINT command, int button, HWND hRootWnd) {
+    if (!ButtonMask(button) || GetAncestor(hRootWnd, GA_ROOT) != hRootWnd) {
+        return false;
+    }
+
+    if (command == (SC_MOVE | HTCAPTION)) {
+        return CanMoveRootWindow(hRootWnd);
+    }
+
+    UINT edge = command & 0xF;
+    return IsSizeCommand(command) && edge >= WMSZ_LEFT &&
+           edge <= WMSZ_BOTTOMRIGHT && CanSizeRootWindow(hRootWnd);
+}
+
 // Turns a request retrieved by the root window's thread into the system
 // command. The loop only starts if this thread's synchronized state has the
 // left button down: it isn't when the press was retrieved by another thread,
@@ -857,13 +891,18 @@ void OnSizeMoveRequestRemoved(MSG* msg) {
     UINT command = LOWORD(msg->wParam);
     int button = HIWORD(msg->wParam);
 
+    if (!IsRequestAcceptable(command, button, msg->hwnd)) {
+        Wh_Log(L"Dropping the request %04X %02X for %08X", command, button,
+               (DWORD)(ULONG_PTR)msg->hwnd);
+        TakeMessage(msg);
+        return;
+    }
+
     if (GetAsyncKeyState(button) >= 0) {
-        // Released already, a loop would stick to the cursor.
-        Wh_Log(
-            L"Request to %s %08X, button already released, replaying the "
-            L"click",
-            NameOfCommand(command), (DWORD)(ULONG_PTR)msg->hwnd);
-        ReplayPress(button, true);
+        // Released already, a loop would stick to the cursor, and short of a
+        // held button nothing backs the request.
+        Wh_Log(L"Request to %s %08X, button already released",
+               NameOfCommand(command), (DWORD)(ULONG_PTR)msg->hwnd);
         TakeMessage(msg);
         return;
     }
@@ -1054,7 +1093,7 @@ void OnModifierKeyMessageRemoved(MSG* msg, DWORD modifier) {
             // hook, and with it whatever drag is under way.
             g_swallowedPress = false;
             if (!IsAnyTriggerKeyless()) {
-                ResetLowLevelMouseHook();
+                RemoveLowLevelMouseHook();
             }
         }
     }
@@ -1076,6 +1115,12 @@ void OnModifierKeyMessageRemoved(MSG* msg, DWORD modifier) {
 void OnMessageRemoved(MSG* msg) {
     if (msg->message == g_replayPressMessage) {
         ReplayPress((int)msg->wParam, msg->lParam != 0);
+        TakeMessage(msg);
+        return;
+    }
+
+    if (msg->message == g_dragUpdateMessage) {
+        OnDragUpdate();
         TakeMessage(msg);
         return;
     }
@@ -1514,6 +1559,8 @@ void ResetLowLevelDragState() {
     g_llRootWnd = nullptr;
     g_llButton = 0;
     g_llDragging = false;
+    g_llDragSetUp = false;
+    g_llDragUpdatePosted = false;
     KillLowLevelDelayTimer();
     DestroyDragOverlay();
 }
@@ -1704,18 +1751,27 @@ void OnLowLevelDragDelayElapsed() {
     g_llDragOverlayWnd = CreateDragOverlay(pt, CursorOfCommand(g_llCommand));
 }
 
-// The first move past the drag threshold, once the drag delay is over.
-void StartLowLevelDrag(POINT pt) {
+// The first move past the drag threshold, once the drag delay is over. Only
+// what a low level hook callback can afford is done here, the rest waiting for
+// the update this leaves to be posted.
+void BeginLowLevelDrag(POINT pt) {
     Wh_Log(L"Starting a %s of root window %08X", NameOfCommand(g_llCommand),
            (DWORD)(ULONG_PTR)g_llRootWnd);
 
     g_llDragging = true;
+    g_llDragStartPt = pt;
     KillLowLevelDelayTimer();
+}
+
+// The work a drag starts with, none of which belongs in the callback: the
+// restore of a maximized window runs the program's layout, and it runs inline
+// when the window is of the hook's own thread, which the foreground process's
+// window commonly is.
+void SetUpLowLevelDrag() {
     if (IsSizeCommand(g_llCommand)) {
         GetWindowRect(g_llRootWnd, &g_llDragStartRect);
-        g_llDragStartPt = pt;
     } else {
-        g_llDragGrab = CalcDragGrab(g_llRootWnd, pt);
+        g_llDragGrab = CalcDragGrab(g_llRootWnd, g_llDragStartPt);
     }
 
     // The press was swallowed, so the window wasn't brought to the front the
@@ -1735,10 +1791,51 @@ void StartLowLevelDrag(POINT pt) {
 
     if (!g_llDragOverlayWnd) {
         g_llDragOverlayWnd =
-            CreateDragOverlay(pt, CursorOfCommand(g_llCommand));
+            CreateDragOverlay(g_llDragStartPt, CursorOfCommand(g_llCommand));
+    }
+}
+
+// Runs on the hook's thread once the update posted for it is retrieved. The
+// press may be over by then, its release having reset the state.
+void OnDragUpdate() {
+    g_llDragUpdatePosted = false;
+
+    if (!g_llRootWnd) {
+        return;
     }
 
-    DragWindowTo(pt);
+    if (g_llDragging && !g_llDragSetUp) {
+        g_llDragSetUp = true;
+        SetUpLowLevelDrag();
+    }
+
+    PlaceDragOverlay(g_llDragPt);
+
+    if (g_llDragging) {
+        DragWindowTo(g_llDragPt);
+    }
+}
+
+// The callback records where the pointer is and leaves the windows to the
+// message loop: a low level hook which takes too long to return is dropped by
+// the system, and moving or resizing a window of the hook's own thread runs
+// the program's handlers inline. One update is queued at a time, and it acts
+// on whatever position the last move left.
+void PostDragUpdate(POINT pt) {
+    g_llDragPt = pt;
+    if (g_llDragUpdatePosted) {
+        return;
+    }
+
+    // GetFocus is of this thread, so the update is retrieved here, where the
+    // drag state belongs.
+    HWND hFocusWnd = GetFocus();
+    if (hFocusWnd && PostMessage(hFocusWnd, g_dragUpdateMessage, 0, 0)) {
+        g_llDragUpdatePosted = true;
+    } else if (PostThreadMessage(GetCurrentThreadId(), g_dragUpdateMessage, 0,
+                                 0)) {
+        g_llDragUpdatePosted = true;
+    }
 }
 
 // Runs for mouse input before it's routed anywhere, which is the only point at
@@ -1786,54 +1883,58 @@ LRESULT CALLBACK LowLevelMouseProc(int nCode, WPARAM wParam, LPARAM lParam) {
         return 1;
     } else if (wParam == WM_MOUSEMOVE && g_llRootWnd) {
         POINT pt = ToLogicalPoint(ms->pt);
-        PlaceDragOverlay(pt);
 
-        if (g_llDragging) {
-            DragWindowTo(pt);
-        } else if (IsPastDragThreshold(g_llDownPt, pt)) {
-            DWORD delay = TriggerOfCommand(g_llCommand).delay;
-            if (ms->time - g_llDownTime >= delay) {
-                StartLowLevelDrag(pt);
-            } else {
-                // The drag is the program's own, so the press goes back to
-                // it, where the cursor is by now. The release then follows
-                // on its own.
-                Wh_Log(
-                    L"Moved before the drag delay elapsed, replaying the "
-                    L"press");
-                int pressButton = g_llButton;
-                ResetLowLevelDragState();
-                PostReplayPress(pressButton, false);
-            }
+        DWORD delay = TriggerOfCommand(g_llCommand).delay;
+
+        if (g_llDragging || !IsPastDragThreshold(g_llDownPt, pt)) {
+            PostDragUpdate(pt);
+        } else if (ms->time - g_llDownTime >= delay) {
+            BeginLowLevelDrag(pt);
+            PostDragUpdate(pt);
+        } else {
+            // The drag is the program's own, so the press goes back to it,
+            // where the cursor is by now. The release then follows on its
+            // own.
+            Wh_Log(L"Moved before the drag delay elapsed, replaying the press");
+            int pressButton = g_llButton;
+            ResetLowLevelDragState();
+            PostReplayPress(pressButton, false);
         }
     }
 
     return CallNextHookEx(nullptr, nCode, wParam, lParam);
 }
 
-// A hook left over from before is discarded along with its drag state. The
-// release ending a drag may never arrive: a hook further along the chain can
-// swallow it, and the system drops a hook which took too long to return. What
-// is left then keeps the hook, or a dead handle, in place for good.
-void ResetLowLevelMouseHook() {
+// A hook left over from before is discarded. The release ending a drag may
+// never arrive: a hook further along the chain can swallow it, and the system
+// drops a hook which took too long to return. What is left then keeps the
+// hook, or a dead handle, in place for good. The drag state it leaves behind
+// is cleared by the next installation, on the thread which then owns it.
+void RemoveLowLevelMouseHook() {
     std::lock_guard<std::mutex> guard(g_lowLevelMouseHookMutex);
 
     if (g_lowLevelMouseHook) {
         UnhookWindowsHookEx(g_lowLevelMouseHook);
         g_lowLevelMouseHook = nullptr;
     }
-
-    ResetLowLevelDragState();
 }
 
 void InstallLowLevelMouseHookIfNeeded() {
+    // Outside the lock, the loader being out of bounds while it's held.
+    HMODULE module = GetModuleHandle(nullptr);
+
     std::lock_guard<std::mutex> guard(g_lowLevelMouseHookMutex);
     if (g_lowLevelMouseHook || g_uninitializing) {
         return;
     }
 
-    g_lowLevelMouseHook = SetWindowsHookEx(WH_MOUSE_LL, LowLevelMouseProc,
-                                           GetModuleHandle(nullptr), 0);
+    // With no hook there's no thread the drag state belongs to, so whatever a
+    // discarded hook left behind is cleared here, before the callbacks of the
+    // new one start reading it on this thread.
+    ResetLowLevelDragState();
+
+    g_lowLevelMouseHook =
+        SetWindowsHookEx(WH_MOUSE_LL, LowLevelMouseProc, module, 0);
     if (g_lowLevelMouseHook) {
         g_lowLevelMouseHookThreadId = GetCurrentThreadId();
     } else {
@@ -1935,6 +2036,9 @@ LRESULT CALLBACK WinKeyMaskProc(int nCode, WPARAM wParam, LPARAM lParam) {
 // has to go right before the release, and the hook is installed on the drag
 // thread to see it. One left over from an earlier drag is replaced.
 void InstallWinKeyMaskHook() {
+    // Outside the lock, the loader being out of bounds while it's held.
+    HMODULE module = GetModuleHandle(nullptr);
+
     std::lock_guard<std::mutex> guard(g_winKeyMaskHookMutex);
     if (g_uninitializing) {
         return;
@@ -1944,8 +2048,8 @@ void InstallWinKeyMaskHook() {
         UnhookWindowsHookEx(g_winKeyMaskHook);
     }
 
-    g_winKeyMaskHook = SetWindowsHookEx(WH_KEYBOARD_LL, WinKeyMaskProc,
-                                        GetModuleHandle(nullptr), 0);
+    g_winKeyMaskHook =
+        SetWindowsHookEx(WH_KEYBOARD_LL, WinKeyMaskProc, module, 0);
     if (g_winKeyMaskHook) {
         g_winKeyMaskHookThreadId = GetCurrentThreadId();
     } else {
@@ -2075,19 +2179,31 @@ BOOL WINAPI DllMain(HINSTANCE hinstDLL, DWORD fdwReason, LPVOID lpReserved) {
                 }
             }
 
-            // The low level hooks and the overlay go away with their thread.
-            if (g_lowLevelMouseHook &&
-                GetCurrentThreadId() == g_lowLevelMouseHookThreadId) {
-                g_lowLevelMouseHook = nullptr;
-                g_llRootWnd = nullptr;
-                g_llButton = 0;
-                g_llDragging = false;
-                g_llDragOverlayWnd = nullptr;
+            // The low level hooks and the overlay go away with their
+            // thread. The drag state is this thread's to clear, the hook
+            // being this thread's.
+            {
+                std::lock_guard<std::mutex> guard(g_lowLevelMouseHookMutex);
+
+                if (g_lowLevelMouseHook &&
+                    GetCurrentThreadId() == g_lowLevelMouseHookThreadId) {
+                    g_lowLevelMouseHook = nullptr;
+                    g_llRootWnd = nullptr;
+                    g_llButton = 0;
+                    g_llDragging = false;
+                    g_llDragSetUp = false;
+                    g_llDragUpdatePosted = false;
+                    g_llDragOverlayWnd = nullptr;
+                }
             }
 
-            if (g_winKeyMaskHook &&
-                GetCurrentThreadId() == g_winKeyMaskHookThreadId) {
-                g_winKeyMaskHook = nullptr;
+            {
+                std::lock_guard<std::mutex> guard(g_winKeyMaskHookMutex);
+
+                if (g_winKeyMaskHook &&
+                    GetCurrentThreadId() == g_winKeyMaskHookThreadId) {
+                    g_winKeyMaskHook = nullptr;
+                }
             }
             break;
 
@@ -2138,8 +2254,8 @@ void LoadTriggerSettings(TriggerSettings& trigger, PCWSTR name) {
 }
 
 void LoadSettings() {
-    LoadTriggerSettings(g_settings.moveTrigger, L"dragTrigger");
-    LoadTriggerSettings(g_settings.sizeTrigger, L"resizeTrigger");
+    LoadTriggerSettings(g_settings.moveTrigger, L"moveTrigger");
+    LoadTriggerSettings(g_settings.sizeTrigger, L"sizeTrigger");
     g_settings.dragWindowsWithoutTitleBar =
         Wh_GetIntSetting(L"dragWindowsWithoutTitleBar");
 }
