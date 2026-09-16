@@ -67,6 +67,10 @@ taskbar.
   $description: >-
     Enable this option to customize the old taskbar on Windows 11 (if using
     ExplorerPatcher or a similar tool).
+- hideAllTaskbarsIfAnyMaximized: false
+  $name: Hide all taskbars if any window is maximized
+  $description: >-
+    When enabled, a maximized or fullscreen window on ANY monitor will hide the taskbars on ALL monitors.
 */
 // ==/WindhawkModSettings==
 
@@ -86,7 +90,6 @@ taskbar.
 enum class Mode {
     intersected,
     maximized,
-    fullscreen,
     never,
 };
 
@@ -96,6 +99,7 @@ struct {
     std::unordered_set<std::wstring> excludedPrograms;
     bool primaryMonitorOnly;
     bool oldTaskbarOnWin11;
+    bool hideAllTaskbarsIfAnyMaximized;
 } g_settings;
 
 enum class WinVersion {
@@ -128,12 +132,6 @@ enum {
     kTrayPrivateSettingAutoHideGet = 3,
     kTrayPrivateSettingAutoHideSet = 4,
 };
-
-constexpr WCHAR kCanHideTaskbarEligibilityProp[] =
-    L"Windhawk_CanHideTaskbar_" WH_MOD_ID;
-
-const HANDLE kCanHideTaskbarNotEligible = (HANDLE)1;
-const HANDLE kCanHideTaskbarEligible = (HANDLE)2;
 
 constexpr WCHAR kUpdateTaskbarStatePendingTickCount[] =
     L"Windhawk_UpdateTaskbarStatePendingTickCount_" WH_MOD_ID;
@@ -501,7 +499,7 @@ bool IsWindowExcluded(HWND hWnd) {
     return false;
 }
 
-bool IsWindowEligibleForHidingTaskbar(HWND hWnd) {
+bool IsValidWindowForAutoHide(HWND hWnd) {
     if (!IsWindowVisible(hWnd) || IsWindowCloaked(hWnd) || IsIconic(hWnd) ||
         (GetWindowLong(hWnd, GWL_EXSTYLE) & WS_EX_NOACTIVATE)) {
         return false;
@@ -533,15 +531,7 @@ bool CanHideTaskbarForWindow(HWND hWnd,
                              HMONITOR monitor,
                              const MONITORINFO* monitorInfo,
                              const RECT* taskbarRect) {
-    HANDLE prop = GetProp(hWnd, kCanHideTaskbarEligibilityProp);
-    if (!prop) {
-        prop = IsWindowEligibleForHidingTaskbar(hWnd)
-                   ? kCanHideTaskbarEligible
-                   : kCanHideTaskbarNotEligible;
-        SetProp(hWnd, kCanHideTaskbarEligibilityProp, prop);
-    }
-
-    if (prop == kCanHideTaskbarNotEligible) {
+    if (!IsValidWindowForAutoHide(hWnd)) {
         return false;
     }
 
@@ -550,36 +540,47 @@ bool CanHideTaskbarForWindow(HWND hWnd,
     };
 
     if (GetWindowPlacement(hWnd, &wp) && wp.showCmd == SW_SHOWMAXIMIZED) {
-        if (MonitorFromWindow(hWnd, MONITOR_DEFAULTTONEAREST) == monitor) {
+        if (g_settings.hideAllTaskbarsIfAnyMaximized || MonitorFromWindow(hWnd, MONITOR_DEFAULTTONEAREST) == monitor) {
             return true;
         }
-
         return false;
     }
 
     bool isWindowArranged = pIsWindowArranged && pIsWindowArranged(hWnd);
     if (isWindowArranged &&
         MonitorFromWindow(hWnd, MONITOR_DEFAULTTONEAREST) != monitor) {
+        if (g_settings.hideAllTaskbarsIfAnyMaximized) {
+            return true;
+        }
         return false;
     }
 
-    RECT windowRect{};
-    DwmGetWindowAttribute(hWnd, DWMWA_EXTENDED_FRAME_BOUNDS, &windowRect,
-                          sizeof(windowRect));
+    RECT dwmRect{};
+    DwmGetWindowAttribute(hWnd, DWMWA_EXTENDED_FRAME_BOUNDS, &dwmRect,
+                          sizeof(dwmRect));
+                          
+    RECT standardRect{};
+    GetWindowRect(hWnd, &standardRect);
 
-    // Don't keep the taskbar shown for a fullscreen window.
-    if (EqualRect(&windowRect, &monitorInfo->rcMonitor)) {
+    if (g_settings.hideAllTaskbarsIfAnyMaximized) {
+        HMONITOR windowMonitor = MonitorFromWindow(hWnd, MONITOR_DEFAULTTONEAREST);
+        MONITORINFO windowMonitorInfo{ .cbSize = sizeof(MONITORINFO) };
+        if (GetMonitorInfo(windowMonitor, &windowMonitorInfo)) {
+            if (EqualRect(&dwmRect, &windowMonitorInfo.rcMonitor) || EqualRect(&standardRect, &windowMonitorInfo.rcMonitor)) {
+                return true;
+            }
+        }
+    }
+
+    // Check if fullscreen on THIS specific monitor using standard rect or DWM rect
+    if (EqualRect(&dwmRect, &monitorInfo->rcMonitor) || EqualRect(&standardRect, &monitorInfo->rcMonitor)) {
         return true;
     }
 
-    // It makes sense to treat arranged windows (e.g. with Win+left) as
-    // maximized, as they occupy the whole monitor height. Still check for
-    // intersection, as a window can also just occupy the upper side of the
-    // screen (e.g. Win+left, Win+up).
     if (g_settings.mode == Mode::intersected ||
         (g_settings.mode == Mode::maximized && isWindowArranged)) {
         RECT intersectRect;
-        if (IntersectRect(&intersectRect, &windowRect, taskbarRect)) {
+        if (IntersectRect(&intersectRect, &dwmRect, taskbarRect)) {
             return true;
         }
     }
@@ -602,17 +603,6 @@ bool ShouldKeepTaskbarShown(HWND hTaskbarWnd, HMONITOR monitor) {
         return true;
     }
 
-    if (g_settings.mode == Mode::fullscreen) {
-        QUERY_USER_NOTIFICATION_STATE state;
-        if (SHQueryUserNotificationState(&state) == S_OK) {
-            return !(state == QUNS_BUSY ||
-                     state == QUNS_RUNNING_D3D_FULL_SCREEN ||
-                     state == QUNS_PRESENTATION_MODE);
-        }
-
-        return true;
-    }
-
     MONITORINFO monitorInfo{
         .cbSize = sizeof(MONITORINFO),
     };
@@ -622,10 +612,32 @@ bool ShouldKeepTaskbarShown(HWND hTaskbarWnd, HMONITOR monitor) {
     GetTaskbarRectForMonitor(monitor, &taskbarRect);
 
     if (g_settings.foregroundWindowOnly) {
-        HWND hForegroundWnd = GetForegroundWindow();
-        return !hForegroundWnd ||
-               !CanHideTaskbarForWindow(hForegroundWnd, monitor, &monitorInfo,
-                                        &taskbarRect);
+        HWND hTopWnd = nullptr;
+        DWORD dwTaskbarThreadId = GetCurrentThreadId();
+
+        auto topWindowProc = [&](HWND hWnd) -> BOOL {
+            if (GetWindowThreadProcessId(hWnd, nullptr) == dwTaskbarThreadId) return TRUE;
+            
+            if (!IsValidWindowForAutoHide(hWnd)) return TRUE;
+            if (MonitorFromWindow(hWnd, MONITOR_DEFAULTTONEAREST) != monitor) return TRUE;
+            
+            // We found the top-most valid window on this monitor!
+            hTopWnd = hWnd;
+            return FALSE;
+        };
+
+        EnumWindows(
+            [](HWND hWnd, LPARAM lParam) -> BOOL {
+                auto& proc = *reinterpret_cast<decltype(topWindowProc)*>(lParam);
+                return proc(hWnd);
+            },
+            reinterpret_cast<LPARAM>(&topWindowProc));
+
+        if (!hTopWnd) {
+            return true;
+        }
+
+        return !CanHideTaskbarForWindow(hTopWnd, monitor, &monitorInfo, &taskbarRect);
     }
 
     bool canHideTaskbar = false;
@@ -1084,15 +1096,6 @@ void CALLBACK WinEventProc(HWINEVENTHOOK hWinEventHook,
         }(event),
         GetWindowLogInfo(hWnd).c_str());
 
-    if (event == EVENT_OBJECT_LOCATIONCHANGE) {
-        if (GetProp(hWnd, kCanHideTaskbarEligibilityProp) ==
-            kCanHideTaskbarNotEligible) {
-            return;  // not eligible, position change irrelevant
-        }
-    } else {
-        RemoveProp(hWnd, kCanHideTaskbarEligibilityProp);
-    }
-
     if (g_pendingEventsTimer) {
         return;
     }
@@ -1525,14 +1528,13 @@ void LoadSettings() {
     g_settings.mode = Mode::intersected;
     if (wcscmp(mode, L"maximized") == 0) {
         g_settings.mode = Mode::maximized;
-    } else if (wcscmp(mode, L"fullscreen") == 0) {
-        g_settings.mode = Mode::fullscreen;
     } else if (wcscmp(mode, L"never") == 0) {
         g_settings.mode = Mode::never;
     }
     Wh_FreeStringSetting(mode);
 
     g_settings.foregroundWindowOnly = Wh_GetIntSetting(L"foregroundWindowOnly");
+    g_settings.hideAllTaskbarsIfAnyMaximized = Wh_GetIntSetting(L"hideAllTaskbarsIfAnyMaximized");
 
     g_settings.excludedPrograms.clear();
 
@@ -1654,19 +1656,8 @@ void Wh_ModAfterInit() {
     }
 }
 
-void ClearCanHideTaskbarForWindowProps() {
-    EnumWindows(
-        [](HWND hWnd, LPARAM) -> BOOL {
-            RemoveProp(hWnd, kCanHideTaskbarEligibilityProp);
-            return TRUE;
-        },
-        0);
-}
-
 void Wh_ModUninit() {
     Wh_Log(L">");
-
-    ClearCanHideTaskbarForWindowProps();
 
     if (g_winEventHookThread) {
         PostThreadMessage(GetThreadId(g_winEventHookThread), WM_APP, 0, 0);
@@ -1708,8 +1699,6 @@ BOOL Wh_ModSettingsChanged(BOOL* bReload) {
             g_winEventHookThread = nullptr;
         }
     }
-
-    ClearCanHideTaskbarForWindowProps();
 
     AdjustAllTaskbars();
 
