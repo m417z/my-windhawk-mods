@@ -2311,9 +2311,19 @@ void UpdateTaskListButton(FrameworkElement taskListButtonElement) {
 
         double iconWidth = iconElement.ActualWidth();
 
+        // TaskListLabeledButtonPanel arranges the label to the right of the
+        // icon column regardless of Grid.Column, so shift it back by the icon
+        // column width. A plain Grid arranges it in the icon column cell, where
+        // symmetric margins keep it centered.
+        double labelShift = 0;
+        if (winrt::get_class_name(iconPanelElement) ==
+            L"Taskbar.TaskListLabeledButtonPanel") {
+            labelShift = iconWidth + 16;
+        }
+
         Thickness margin{};
         if (!g_unloading) {
-            margin.Left = -iconWidth - 16 - g_settings.taskbarWidth / 2.0;
+            margin.Left = -labelShift - g_settings.taskbarWidth / 2.0;
             margin.Top = 0;
             margin.Right = -g_settings.taskbarWidth / 2.0;
             margin.Bottom = iconWidth + 20;
