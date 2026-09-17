@@ -129,6 +129,9 @@ std::atomic<int> g_hookCallCounter;
 bool g_inCTaskListThumbnailWnd_DisplayUI;
 bool g_inCTaskListThumbnailWnd_LayoutThumbnails;
 bool g_inOverflowFlyoutModel_Show;
+thread_local bool g_inMenuFlyout_ShowAt;
+constexpr WCHAR kMenuFlyoutPopupPropName[] =
+    L"MenuFlyoutPopup_Windhawk_" WH_MOD_ID;
 int g_lastTaskbarAlignment;
 
 std::atomic<DWORD> g_UpdateFlyoutPosition_threadId;
@@ -1229,7 +1232,11 @@ MenuFlyout_ShowAt_Hook(void* pThis,
     Wh_Log(L">");
 
     auto original = [=]() {
-        return MenuFlyout_ShowAt_Original(pThis, placementTarget, showOptions);
+        g_inMenuFlyout_ShowAt = true;
+        void* ret =
+            MenuFlyout_ShowAt_Original(pThis, placementTarget, showOptions);
+        g_inMenuFlyout_ShowAt = false;
+        return ret;
     };
 
     if (!showOptions) {
@@ -1271,7 +1278,7 @@ MenuFlyout_ShowAt_Hook(void* pThis,
         }
     }
 
-    return MenuFlyout_ShowAt_Original(pThis, placementTarget, showOptions);
+    return original();
 }
 
 bool HandleSystemTrayContextMenu(FrameworkElement element) {
@@ -1323,6 +1330,40 @@ void WINAPI DateTimeIconContent_ShowContextMenu_Hook(void* pThis) {
     if (!element || !HandleSystemTrayContextMenu(element)) {
         DateTimeIconContent_ShowContextMenu_Original(pThis);
     }
+}
+
+using CreateWindowExW_t = decltype(&CreateWindowExW);
+CreateWindowExW_t CreateWindowExW_Original;
+HWND WINAPI CreateWindowExW_Hook(DWORD dwExStyle,
+                                 LPCWSTR lpClassName,
+                                 LPCWSTR lpWindowName,
+                                 DWORD dwStyle,
+                                 int X,
+                                 int Y,
+                                 int nWidth,
+                                 int nHeight,
+                                 HWND hWndParent,
+                                 HMENU hMenu,
+                                 HINSTANCE hInstance,
+                                 PVOID lpParam) {
+    HWND hWnd = CreateWindowExW_Original(dwExStyle, lpClassName, lpWindowName,
+                                         dwStyle, X, Y, nWidth, nHeight,
+                                         hWndParent, hMenu, hInstance, lpParam);
+    if (!hWnd || !g_inMenuFlyout_ShowAt) {
+        return hWnd;
+    }
+
+    // XAML creates the windowed popup of a menu flyout during ShowAt, but
+    // positions it later, so mark it here for SetWindowPos_Hook.
+    WCHAR szClassName[64];
+    if (GetClassName(hWnd, szClassName, ARRAYSIZE(szClassName)) &&
+        _wcsicmp(szClassName, L"Xaml_WindowedPopupClass") == 0) {
+        Wh_Log(L"Menu flyout popup window created: %08X",
+               (DWORD)(ULONG_PTR)hWnd);
+        SetProp(hWnd, kMenuFlyoutPopupPropName, (HANDLE)1);
+    }
+
+    return hWnd;
 }
 
 using SetWindowPos_t = decltype(&SetWindowPos);
@@ -1382,7 +1423,8 @@ BOOL WINAPI SetWindowPos_Hook(HWND hWnd,
         }
     } else if (_wcsicmp(szClassName, L"TopLevelWindowForOverflowXamlIsland") ==
                    0 ||
-               _wcsicmp(szClassName, L"Xaml_WindowedPopupClass") == 0) {
+               (_wcsicmp(szClassName, L"Xaml_WindowedPopupClass") == 0 &&
+                !GetProp(hWnd, kMenuFlyoutPopupPropName))) {
         if (uFlags & (SWP_NOMOVE | SWP_NOSIZE)) {
             return original();
         }
@@ -2658,6 +2700,9 @@ BOOL Wh_ModInit() {
     if (!HookTaskbarDllSymbols()) {
         return FALSE;
     }
+
+    WindhawkUtils::SetFunctionHook(CreateWindowExW, CreateWindowExW_Hook,
+                                   &CreateWindowExW_Original);
 
     WindhawkUtils::SetFunctionHook(SetWindowPos, SetWindowPos_Hook,
                                    &SetWindowPos_Original);
