@@ -739,9 +739,11 @@ HRESULT WINAPI CTaskListWnd_ComputeJumpViewPosition_Hook(
     };
     GetMonitorInfo(monitor, &monitorInfo);
 
-    // Place at the bottom of the monitor, will reposition later in
+    // Place at the center of the monitor, will reposition later in
     // SetWindowPos.
-    point->Y = monitorInfo.rcWork.bottom - 1;
+    int centerY = monitorInfo.rcWork.top +
+                  (monitorInfo.rcWork.bottom - monitorInfo.rcWork.top) / 2;
+    point->Y = centerY;
 
     return ret;
 }
