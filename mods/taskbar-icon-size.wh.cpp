@@ -1235,6 +1235,59 @@ void WINAPI SystemTrayFrame_Height_Hook(void* pThis, double value) {
     SystemTrayFrame_Height_Original(pThis, value);
 }
 
+// The omni button style and the show desktop button column width are picked by
+// comparing the frame height with the stock 24 (collapsed), 32 (small) and 72
+// (tablet posture), and collapsed omni buttons don't take input. The checks get
+// the stock height, and only they do, as the linker folds the height getter
+// with the one of unrelated elements, such as the taskbar frame, on some
+// builds.
+thread_local bool g_inSystemTrayFrameModeCheck;
+
+using SystemTrayFrame_GetStyle_t = int(WINAPI*)(void* pThis, void** style);
+SystemTrayFrame_GetStyle_t SystemTrayFrame_GetStyle_Original;
+int WINAPI SystemTrayFrame_GetStyle_Hook(void* pThis, void** style) {
+    Wh_Log(L">");
+
+    g_inSystemTrayFrameModeCheck = true;
+
+    int ret = SystemTrayFrame_GetStyle_Original(pThis, style);
+
+    g_inSystemTrayFrameModeCheck = false;
+
+    return ret;
+}
+
+using SystemTrayFrame_GetShowDesktopButtonColumnWidth_t =
+    int(WINAPI*)(void* pThis, double* width);
+SystemTrayFrame_GetShowDesktopButtonColumnWidth_t
+    SystemTrayFrame_GetShowDesktopButtonColumnWidth_Original;
+int WINAPI SystemTrayFrame_GetShowDesktopButtonColumnWidth_Hook(void* pThis,
+                                                                double* width) {
+    Wh_Log(L">");
+
+    g_inSystemTrayFrameModeCheck = true;
+
+    int ret =
+        SystemTrayFrame_GetShowDesktopButtonColumnWidth_Original(pThis, width);
+
+    g_inSystemTrayFrameModeCheck = false;
+
+    return ret;
+}
+
+using SystemTrayFrame_Height_get_t = double(WINAPI*)(void* pThis);
+SystemTrayFrame_Height_get_t SystemTrayFrame_Height_get_Original;
+double WINAPI SystemTrayFrame_Height_get_Hook(void* pThis) {
+    // Wh_Log(L">");
+
+    if (g_inSystemTrayFrameModeCheck && !IsVerticalTaskbar() &&
+        g_originalTaskbarHeight) {
+        return g_originalTaskbarHeight;
+    }
+
+    return SystemTrayFrame_Height_get_Original(pThis);
+}
+
 // The system tray takes the taskbar mode from the extent it's measured with, so
 // a custom height matching a stock one (24, 32, 72) gives it that mode's tray
 // icon spacing and compact clock. It gets the stock extent, while the elements
@@ -2571,6 +2624,24 @@ bool HookSystemTraySymbols(HMODULE module) {
             true,  // From Windows 11 version 22H2.
         },
         {
+            {LR"(public: virtual int __cdecl winrt::impl::produce<struct winrt::SystemTray::implementation::SystemTrayFrame,struct winrt::SystemTray::ISystemTrayFrame>::GetStyle(void * *))"},
+            &SystemTrayFrame_GetStyle_Original,
+            SystemTrayFrame_GetStyle_Hook,
+            true,  // Missing in older Windows 11 versions.
+        },
+        {
+            {LR"(public: virtual int __cdecl winrt::impl::produce<struct winrt::SystemTray::implementation::SystemTrayFrame,struct winrt::SystemTray::ISystemTrayFrame>::GetShowDesktopButtonColumnWidth(double *))"},
+            &SystemTrayFrame_GetShowDesktopButtonColumnWidth_Original,
+            SystemTrayFrame_GetShowDesktopButtonColumnWidth_Hook,
+            true,  // Missing in older Windows 11 versions.
+        },
+        {
+            {LR"(public: __cdecl winrt::impl::consume_Windows_UI_Xaml_IFrameworkElement<struct winrt::SystemTray::implementation::SystemTrayFrame>::Height(void)const )"},
+            &SystemTrayFrame_Height_get_Original,
+            SystemTrayFrame_Height_get_Hook,
+            true,  // Missing in older Windows 11 versions.
+        },
+        {
             {LR"(public: virtual int __cdecl winrt::impl::produce<struct winrt::SystemTray::implementation::SystemTrayFrame,struct winrt::Windows::UI::Xaml::IFrameworkElementOverrides>::MeasureOverride(struct winrt::Windows::Foundation::Size,struct winrt::Windows::Foundation::Size *))"},
             &SystemTrayFrame_MeasureOverride_Original,
             SystemTrayFrame_MeasureOverride_Hook,
@@ -2847,6 +2918,24 @@ bool HookTaskbarViewDllSymbols(HMODULE module,
             &SystemTrayFrame_Height_Original,
             SystemTrayFrame_Height_Hook,
             true,  // From Windows 11 version 22H2.
+        },
+        {
+            {LR"(public: virtual int __cdecl winrt::impl::produce<struct winrt::SystemTray::implementation::SystemTrayFrame,struct winrt::SystemTray::ISystemTrayFrame>::GetStyle(void * *))"},
+            &SystemTrayFrame_GetStyle_Original,
+            SystemTrayFrame_GetStyle_Hook,
+            true,  // Missing in older Windows 11 versions.
+        },
+        {
+            {LR"(public: virtual int __cdecl winrt::impl::produce<struct winrt::SystemTray::implementation::SystemTrayFrame,struct winrt::SystemTray::ISystemTrayFrame>::GetShowDesktopButtonColumnWidth(double *))"},
+            &SystemTrayFrame_GetShowDesktopButtonColumnWidth_Original,
+            SystemTrayFrame_GetShowDesktopButtonColumnWidth_Hook,
+            true,  // Missing in older Windows 11 versions.
+        },
+        {
+            {LR"(public: __cdecl winrt::impl::consume_Windows_UI_Xaml_IFrameworkElement<struct winrt::SystemTray::implementation::SystemTrayFrame>::Height(void)const )"},
+            &SystemTrayFrame_Height_get_Original,
+            SystemTrayFrame_Height_get_Hook,
+            true,  // Missing in older Windows 11 versions.
         },
         {
             {LR"(public: virtual int __cdecl winrt::impl::produce<struct winrt::SystemTray::implementation::SystemTrayFrame,struct winrt::Windows::UI::Xaml::IFrameworkElementOverrides>::MeasureOverride(struct winrt::Windows::Foundation::Size,struct winrt::Windows::Foundation::Size *))"},
