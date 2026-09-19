@@ -138,6 +138,9 @@ const HANDLE kCanHideTaskbarEligible = (HANDLE)2;
 constexpr WCHAR kUpdateTaskbarStatePendingTickCount[] =
     L"Windhawk_UpdateTaskbarStatePendingTickCount_" WH_MOD_ID;
 
+static const UINT g_taskbarCreatedMsg =
+    RegisterWindowMessage(L"TaskbarCreated");
+
 static const UINT g_getTaskbarRectRegisteredMsg =
     RegisterWindowMessage(L"Windhawk_GetTaskbarRect_" WH_MOD_ID);
 
@@ -864,12 +867,13 @@ LRESULT WINAPI TrayUI_WndProc_Hook(void* pThis,
                                    bool* flag) {
     if (Msg == WM_NCCREATE) {
         Wh_Log(L"WM_NCCREATE: %08X", (DWORD)(ULONG_PTR)hWnd);
-        AdjustTaskbar(hWnd);
     } else if (Msg == WM_NCDESTROY) {
         Wh_Log(L"WM_NCDESTROY: %08X", (DWORD)(ULONG_PTR)hWnd);
         g_taskbarsKeptShown.erase(
             QueryViaVtableBackwards(pThis, TrayUI_vftable_IInspectable));
         g_taskbarToViewCoordinator.erase(hWnd);
+    } else if (g_taskbarCreatedMsg && Msg == g_taskbarCreatedMsg) {
+        AdjustTaskbar(hWnd);
     } else if (Msg == kHandleTrayPrivateSettingMessage) {
         // Prevent auto-hide from being disabled while the mod is loaded.
         if ((DWORD)wParam == 4) {
@@ -951,11 +955,12 @@ LRESULT WINAPI CSecondaryTray_v_WndProc_Hook(void* pThis,
                                              LPARAM lParam) {
     if (Msg == WM_NCCREATE) {
         Wh_Log(L"WM_NCCREATE: %08X", (DWORD)(ULONG_PTR)hWnd);
-        AdjustTaskbar(hWnd);
     } else if (Msg == WM_NCDESTROY) {
         Wh_Log(L"WM_NCDESTROY: %08X", (DWORD)(ULONG_PTR)hWnd);
         g_taskbarsKeptShown.erase(pThis);
         g_taskbarToViewCoordinator.erase(hWnd);
+    } else if (g_taskbarCreatedMsg && Msg == g_taskbarCreatedMsg) {
+        AdjustTaskbar(hWnd);
     } else if (Msg == g_updateTaskbarStateRegisteredMsg) {
         void* pCSecondaryTray_ISecondaryTray =
             QueryViaVtable(pThis, CSecondaryTray_vftable_ISecondaryTray);
