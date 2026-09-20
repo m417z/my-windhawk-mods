@@ -628,6 +628,20 @@ long WINAPI SetBorderParameters_Hook(void* pThis,
                                         color, borderStyle, shadowStyle);
 }
 
+// The corner radius is only recomputed when DWM refreshes a window's visuals.
+// dwm.exe's notification window turns WM_SYSCOLORCHANGE into an internal
+// settings-change message that marks every window dirty, so the next frame
+// re-runs UpdateWindowVisuals for all of them.
+void RequestDwmRefresh() {
+    HWND hDwm = FindWindow(L"Dwm", nullptr);
+    if (!hDwm) {
+        Wh_Log(L"DWM notification window wasn't found");
+        return;
+    }
+
+    PostMessage(hDwm, WM_SYSCOLORCHANGE, 0, 0);
+}
+
 void LoadSettings() {
     // Use `std::nextafter` to get a value that's just slightly above the
     // integer, for two reasons:
@@ -881,16 +895,24 @@ BOOL Wh_ModInit() {
     return TRUE;
 }
 
+void Wh_ModAfterInit() {
+    Wh_Log(L">");
+
+    RequestDwmRefresh();
+}
+
 void Wh_ModSettingsChanged() {
     Wh_Log(L">");
 
     LoadSettings();
 
     ClearWindowExclusionProps();
+    RequestDwmRefresh();
 }
 
 void Wh_ModUninit() {
     Wh_Log(L">");
 
     ClearWindowExclusionProps();
+    RequestDwmRefresh();
 }
