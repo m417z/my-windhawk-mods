@@ -721,7 +721,18 @@ bool HasMultipleDwminitWarningsInLastMinute() {
 BOOL Wh_ModInit() {
     Wh_Log(L">");
 
-    if (HasMultipleDwminitWarningsInLastMinute()) {
+    // Skip the event log query unless the previous init is recent.
+    FILETIME nowFt;
+    GetSystemTimeAsFileTime(&nowFt);
+    ULONGLONG now =
+        ((ULONGLONG)nowFt.dwHighDateTime << 32) | nowFt.dwLowDateTime;
+    ULONGLONG lastInitTime = 0;
+    Wh_GetBinaryValue(L"lastInitTime", &lastInitTime, sizeof(lastInitTime));
+    Wh_SetBinaryValue(L"lastInitTime", &now, sizeof(now));
+
+    constexpr ULONGLONG kOneMinute = 60 * 10000000ULL;
+    if (now - lastInitTime <= kOneMinute &&
+        HasMultipleDwminitWarningsInLastMinute()) {
         Wh_Log(L"Refusing to load: multiple recent Dwminit warnings");
         return FALSE;
     }
