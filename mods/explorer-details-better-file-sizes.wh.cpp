@@ -2658,8 +2658,9 @@ void** FindImportPtr(HMODULE hFindInModule,
     pDosHeader = (IMAGE_DOS_HEADER*)hFindInModule;
     pNtHeader = (IMAGE_NT_HEADERS*)((char*)pDosHeader + pDosHeader->e_lfanew);
 
-    if (!pNtHeader->OptionalHeader.DataDirectory[1].VirtualAddress)
+    if (!pNtHeader->OptionalHeader.DataDirectory[1].VirtualAddress) {
         return nullptr;
+    }
 
     ImageBase = (ULONG_PTR)hFindInModule;
     pImportDescriptor =
@@ -2684,14 +2685,17 @@ void** FindImportPtr(HMODULE hFindInModule,
                         ImageImportByName += sizeof(WORD);
 
                         if (lstrcmpA((char*)(ImageBase + ImageImportByName),
-                                     pImportName) == 0)
+                                     pImportName) == 0) {
                             return (void**)pFirstThunk;
+                        }
                     }
                 } else {
-                    if (((ULONG_PTR)pImportName & ~0xFFFF) == 0)
+                    if (((ULONG_PTR)pImportName & ~0xFFFF) == 0) {
                         if ((ImageImportByName & 0xFFFF) ==
-                            (ULONG_PTR)pImportName)
+                            (ULONG_PTR)pImportName) {
                             return (void**)pFirstThunk;
+                        }
+                    }
                 }
 
                 pOriginalFirstThunk++;
