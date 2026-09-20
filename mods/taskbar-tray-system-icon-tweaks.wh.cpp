@@ -77,7 +77,6 @@ Only Windows 11 is supported.
 
 #include <atomic>
 #include <functional>
-#include <limits>
 #include <list>
 #include <string>
 #include <vector>
@@ -137,6 +136,16 @@ struct BatteryTextBlockState {
 };
 
 std::vector<BatteryTextBlockState> g_batteryTextBlockStates;
+
+// Local MinWidth/MaxWidth values replaced by the show desktop width override,
+// UnsetValue for a property that had no local value.
+struct ShowDesktopWidthState {
+    winrt::weak_ref<FrameworkElement> element;
+    winrt::Windows::Foundation::IInspectable savedMinWidth;
+    winrt::Windows::Foundation::IInspectable savedMaxWidth;
+};
+
+std::vector<ShowDesktopWidthState> g_showDesktopWidthStates;
 
 HWND FindCurrentProcessTaskbarWnd() {
     HWND hTaskbarWnd = nullptr;
@@ -1068,7 +1077,48 @@ void ApplyBellIconStyle(FrameworkElement systemTrayIconElement) {
     }
 }
 
+// MinWidth/MaxWidth take precedence over an explicit Width, so they override
+// the width without having to replace the Width value itself. The local values
+// are saved the first time an element is seen, for restoring in ApplySettings.
+void OverrideShowDesktopWidth(FrameworkElement element, double width) {
+    bool managed = false;
+    for (const auto& state : g_showDesktopWidthStates) {
+        if (state.element.get() == element) {
+            managed = true;
+            break;
+        }
+    }
+
+    if (!managed) {
+        g_showDesktopWidthStates.push_back({
+            .element = element,
+            .savedMinWidth =
+                element.ReadLocalValue(FrameworkElement::MinWidthProperty()),
+            .savedMaxWidth =
+                element.ReadLocalValue(FrameworkElement::MaxWidthProperty()),
+        });
+    }
+
+    element.MinWidth(width);
+    element.MaxWidth(width);
+}
+
+void RestoreLocalValue(DependencyObject element,
+                       DependencyProperty property,
+                       winrt::Windows::Foundation::IInspectable value) {
+    if (value == DependencyProperty::UnsetValue()) {
+        element.ClearValue(property);
+    } else {
+        element.SetValue(property, value);
+    }
+}
+
 void ApplyShowDesktopStyle(FrameworkElement systemTrayIconElement) {
+    if (g_unloading) {
+        // Restored in ApplySettings.
+        return;
+    }
+
     auto showDesktopStack =
         GetParentElementByName(systemTrayIconElement, L"ShowDesktopStack");
     if (!showDesktopStack) {
@@ -1076,38 +1126,25 @@ void ApplyShowDesktopStyle(FrameworkElement systemTrayIconElement) {
         return;
     }
 
-    if (g_unloading) {
-        Wh_Log(L"Show desktop button, setting default width");
+    // Drop any state for elements that no longer exist.
+    std::erase_if(g_showDesktopWidthStates, [](const ShowDesktopWidthState& s) {
+        return !s.element.get();
+    });
 
-        auto systemTrayIconElementDP =
-            systemTrayIconElement.as<DependencyObject>();
-        systemTrayIconElementDP.ClearValue(
-            FrameworkElement::MinWidthProperty());
-        systemTrayIconElementDP.ClearValue(
-            FrameworkElement::MaxWidthProperty());
+    int width = g_settings.showDesktopButtonWidth;
+    Wh_Log(L"Show desktop button, width=%d", width);
 
-        auto showDesktopStackDP = showDesktopStack.as<DependencyObject>();
-        showDesktopStackDP.ClearValue(FrameworkElement::MinWidthProperty());
-        showDesktopStackDP.ClearValue(FrameworkElement::MaxWidthProperty());
+    OverrideShowDesktopWidth(systemTrayIconElement, width);
+    OverrideShowDesktopWidth(showDesktopStack, width);
+
+    // The container grid has an explicit width, which keeps its content at the
+    // default size regardless of the width of the icon view.
+    auto containerGrid =
+        FindChildByName(systemTrayIconElement, L"ContainerGrid");
+    if (containerGrid) {
+        OverrideShowDesktopWidth(containerGrid, width);
     } else {
-        int width = g_settings.showDesktopButtonWidth;
-        Wh_Log(L"Show desktop button, width=%d", width);
-
-        systemTrayIconElement.MinWidth(width);
-        systemTrayIconElement.MaxWidth(width);
-        showDesktopStack.MinWidth(width);
-        showDesktopStack.MaxWidth(width);
-
-        auto containerGrid =
-            FindChildByName(systemTrayIconElement, L"ContainerGrid");
-        if (containerGrid) {
-            // The container grid has an explicit width, which keeps its content
-            // at the default size regardless of the width of the icon view. Set
-            // it to Auto to have it fill the icon view.
-            containerGrid.Width(std::numeric_limits<double>::quiet_NaN());
-        } else {
-            Wh_Log(L"Failed to get ContainerGrid");
-        }
+        Wh_Log(L"Failed to get ContainerGrid");
     }
 }
 
@@ -1637,6 +1674,20 @@ void ApplySettings() {
                 textBlock.Foreground(state.savedForeground);
             }
             g_batteryTextBlockStates.clear();
+
+            // Restore the show desktop width overrides. ApplyStyle below
+            // re-applies them unless the mod is unloading.
+            for (auto& state : g_showDesktopWidthStates) {
+                auto element = state.element.get();
+                if (!element) {
+                    continue;
+                }
+                RestoreLocalValue(element, FrameworkElement::MinWidthProperty(),
+                                  state.savedMinWidth);
+                RestoreLocalValue(element, FrameworkElement::MaxWidthProperty(),
+                                  state.savedMaxWidth);
+            }
+            g_showDesktopWidthStates.clear();
 
             auto xamlRoot = GetTaskbarXamlRoot(param.hTaskbarWnd);
             if (!xamlRoot) {
