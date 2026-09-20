@@ -748,6 +748,80 @@ void ApplyBatteryIconGrayscaleStyle(FrameworkElement batteryIconContent) {
     });
 }
 
+void SetItemContainerMargin(FrameworkElement container,
+                            double left,
+                            double right) {
+    if (left == 0 && right == 0) {
+        container.ClearValue(FrameworkElement::MarginProperty());
+    } else {
+        container.Margin(Thickness{left, 0, right, 0});
+    }
+}
+
+// A hidden icon keeps its (empty) item container in the panel, and the panel
+// adds Spacing for every child regardless of visibility or size. Cancel the
+// extra spacing with negative margins on the neighboring visible items, and
+// hide the button if all icons are hidden.
+void UpdateControlCenterButtonStackPanel(FrameworkElement stackPanel) {
+    double spacing = 0;
+    if (auto panel = stackPanel.try_as<Controls::StackPanel>()) {
+        spacing = panel.Spacing();
+    }
+
+    // Margins are assigned once the next visible item (or the end) is known,
+    // so that the trailing hidden items can be folded into the right margin.
+    FrameworkElement pendingContainer = nullptr;
+    double pendingLeft = 0;
+    int hiddenRun = 0;
+
+    EnumChildElements(stackPanel, [&](FrameworkElement child) {
+        auto childClassName = winrt::get_class_name(child);
+        if (childClassName != L"Windows.UI.Xaml.Controls.ContentPresenter") {
+            Wh_Log(L"Unsupported class name %s of child",
+                   childClassName.c_str());
+            return false;
+        }
+
+        auto systemTrayIconElement = FindChildByName(child, L"SystemTrayIcon")
+                                         .try_as<Controls::Control>();
+        if (!systemTrayIconElement) {
+            Wh_Log(L"Failed to get SystemTrayIcon of child");
+            return false;
+        }
+
+        if (!systemTrayIconElement.IsEnabled()) {
+            hiddenRun++;
+            return false;
+        }
+
+        if (pendingContainer) {
+            SetItemContainerMargin(pendingContainer, pendingLeft, 0);
+        }
+
+        pendingContainer = child;
+        pendingLeft = -spacing * hiddenRun;
+        hiddenRun = 0;
+        return false;
+    });
+
+    if (pendingContainer) {
+        SetItemContainerMargin(pendingContainer, pendingLeft,
+                               -spacing * hiddenRun);
+    }
+
+    // The button template has some width of its own (e.g. the background
+    // border margins), so an empty panel alone doesn't make it disappear.
+    FrameworkElement controlCenterButton =
+        GetParentElementByName(stackPanel, L"ControlCenterButton");
+    if (!controlCenterButton) {
+        Wh_Log(L"Failed to get ControlCenterButton");
+        return;
+    }
+
+    controlCenterButton.Visibility(pendingContainer ? Visibility::Visible
+                                                    : Visibility::Collapsed);
+}
+
 void ApplyControlCenterButtonIconStyle(FrameworkElement systemTrayIconElement) {
     FrameworkElement contentGrid = nullptr;
 
@@ -832,7 +906,6 @@ void ApplyControlCenterButtonIconStyle(FrameworkElement systemTrayIconElement) {
         Wh_Log(L"Failed");
     }
 
-    // If all icons are hidden, hide container as well.
     FrameworkElement parent = systemTrayIconElement;
     if ((parent = Media::VisualTreeHelper::GetParent(parent)
                       .try_as<FrameworkElement>()) &&
@@ -842,36 +915,7 @@ void ApplyControlCenterButtonIconStyle(FrameworkElement systemTrayIconElement) {
                       .try_as<FrameworkElement>()) &&
         winrt::get_class_name(parent) ==
             L"Windows.UI.Xaml.Controls.StackPanel") {
-        FrameworkElement stackPanel = parent;
-        bool anyEnabledChild = false;
-        EnumChildElements(
-            stackPanel, [&anyEnabledChild](FrameworkElement child) {
-                auto childClassName = winrt::get_class_name(child);
-                if (childClassName !=
-                    L"Windows.UI.Xaml.Controls.ContentPresenter") {
-                    Wh_Log(L"Unsupported class name %s of child",
-                           childClassName.c_str());
-                    return false;
-                }
-
-                auto systemTrayIconElement =
-                    FindChildByName(child, L"SystemTrayIcon")
-                        .try_as<Controls::Control>();
-                if (!systemTrayIconElement) {
-                    Wh_Log(L"Failed to get SystemTrayIcon of child");
-                    return false;
-                }
-
-                if (!systemTrayIconElement.IsEnabled()) {
-                    return false;
-                }
-
-                anyEnabledChild = true;
-                return true;
-            });
-
-        stackPanel.Visibility(anyEnabledChild ? Visibility::Visible
-                                              : Visibility::Collapsed);
+        UpdateControlCenterButtonStackPanel(parent);
     } else {
         Wh_Log(L"Failed");
     }
