@@ -2372,11 +2372,21 @@ HRESULT WINAPI PSFormatForDisplayAlloc_Hook(const PROPERTYKEY& key,
         return original();
     }
 
-    HMODULE module;
+    HMODULE module = nullptr;
     if (!GetModuleHandleEx(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
                                GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
                            (PCWSTR)retAddress, &module) ||
         module != explorerFrame) {
+        Wh_Log(L"Unexpected caller %p in module %s", retAddress,
+               [module] {
+                   WCHAR path[MAX_PATH];
+                   if (!module ||
+                       !GetModuleFileName(module, path, ARRAYSIZE(path))) {
+                       return std::wstring(L"<unknown>");
+                   }
+                   return std::wstring(path);
+               }()
+                   .c_str());
         return original();
     }
 
@@ -2409,11 +2419,21 @@ HRESULT WINAPI PSFormatForDisplay_Hook(const PROPERTYKEY& propkey,
         return original();
     }
 
-    HMODULE module;
+    HMODULE module = nullptr;
     if (!GetModuleHandleEx(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
                                GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
                            (PCWSTR)retAddress, &module) ||
         module != shell32) {
+        Wh_Log(L"Unexpected caller %p in module %s", retAddress,
+               [module] {
+                   WCHAR path[MAX_PATH];
+                   if (!module ||
+                       !GetModuleFileName(module, path, ARRAYSIZE(path))) {
+                       return std::wstring(L"<unknown>");
+                   }
+                   return std::wstring(path);
+               }()
+                   .c_str());
         return original();
     }
 
