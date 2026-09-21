@@ -2349,6 +2349,90 @@ HRESULT WINAPI SHOpenFolderAndSelectItems_Hook(LPCITEMIDLIST pidlFolder,
     return S_OK;
 }
 
+HMODULE GetModuleFromAddress(void* address) {
+    HMODULE module;
+    if (!GetModuleHandleEx(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
+                               GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                           (PCWSTR)address, &module)) {
+        return nullptr;
+    }
+
+    return module;
+}
+
+std::wstring GetModulePath(HMODULE module) {
+    if (!module) {
+        return L"<unknown>";
+    }
+
+    std::wstring path(MAX_PATH, L'\0');
+    while (true) {
+        DWORD len = GetModuleFileName(module, path.data(), path.size());
+        if (len == 0) {
+            return L"<unknown>";
+        }
+
+        // A result equal to the buffer size means the path was truncated.
+        if (len == path.size()) {
+            path.resize(len * 2);
+            continue;
+        }
+
+        path.resize(len);
+        return path;
+    }
+}
+
+// Whether the path is under the Windows directory.
+bool IsSystemModulePath(PCWSTR path) {
+    WCHAR windowsDir[MAX_PATH];
+    UINT len = GetSystemWindowsDirectory(windowsDir, ARRAYSIZE(windowsDir));
+    if (len == 0 || len >= ARRAYSIZE(windowsDir)) {
+        return false;
+    }
+
+    return _wcsnicmp(path, windowsDir, len) == 0 && path[len] == L'\\';
+}
+
+// Another hook on top of ours makes its hook function the direct caller, so a
+// few frames further up the stack are checked as well. A hook isn't in a
+// system module, so the search stops at the first frame in one.
+[[clang::noinline]] bool IsHookCallerFromModule(void* retAddress,
+                                                PCWSTR moduleName) {
+    HMODULE expectedModule = GetModuleHandle(moduleName);
+    if (!expectedModule) {
+        return false;
+    }
+
+    if (GetModuleFromAddress(retAddress) == expectedModule) {
+        return true;
+    }
+
+    Wh_Log(L"Unexpected caller, expected %s", moduleName);
+
+    // The hook's caller comes from the return address rather than from the
+    // backtrace, which can skip frames of functions without frame pointers on
+    // x86. The backtrace skips the frames of this function, the hook, and the
+    // caller.
+    void* frames[5] = {retAddress};
+    WORD count = 1 + CaptureStackBackTrace(3, ARRAYSIZE(frames) - 1, frames + 1,
+                                           nullptr);
+    for (WORD i = 0; i < count; i++) {
+        HMODULE module = GetModuleFromAddress(frames[i]);
+        std::wstring modulePath = GetModulePath(module);
+        Wh_Log(L"Frame %u: %p in module %s", i, frames[i], modulePath.c_str());
+        if (module == expectedModule) {
+            return true;
+        }
+
+        if (IsSystemModulePath(modulePath.c_str())) {
+            return false;
+        }
+    }
+
+    return false;
+}
+
 using PSFormatForDisplayAlloc_t = decltype(&PSFormatForDisplayAlloc);
 PSFormatForDisplayAlloc_t PSFormatForDisplayAlloc_Original;
 HRESULT WINAPI PSFormatForDisplayAlloc_Hook(const PROPERTYKEY& key,
@@ -2365,28 +2449,8 @@ HRESULT WINAPI PSFormatForDisplayAlloc_Hook(const PROPERTYKEY& key,
         return original();
     }
 
-    void* retAddress = __builtin_return_address(0);
-
-    HMODULE explorerFrame = GetModuleHandle(L"explorerframe.dll");
-    if (!explorerFrame) {
-        return original();
-    }
-
-    HMODULE module = nullptr;
-    if (!GetModuleHandleEx(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
-                               GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
-                           (PCWSTR)retAddress, &module) ||
-        module != explorerFrame) {
-        Wh_Log(L"Unexpected caller %p in module %s", retAddress,
-               [module] {
-                   WCHAR path[MAX_PATH];
-                   if (!module ||
-                       !GetModuleFileName(module, path, ARRAYSIZE(path))) {
-                       return std::wstring(L"<unknown>");
-                   }
-                   return std::wstring(path);
-               }()
-                   .c_str());
+    if (!IsHookCallerFromModule(__builtin_return_address(0),
+                                L"explorerframe.dll")) {
         return original();
     }
 
@@ -2412,28 +2476,7 @@ HRESULT WINAPI PSFormatForDisplay_Hook(const PROPERTYKEY& propkey,
         return original();
     }
 
-    void* retAddress = __builtin_return_address(0);
-
-    HMODULE shell32 = GetModuleHandle(L"shell32.dll");
-    if (!shell32) {
-        return original();
-    }
-
-    HMODULE module = nullptr;
-    if (!GetModuleHandleEx(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
-                               GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
-                           (PCWSTR)retAddress, &module) ||
-        module != shell32) {
-        Wh_Log(L"Unexpected caller %p in module %s", retAddress,
-               [module] {
-                   WCHAR path[MAX_PATH];
-                   if (!module ||
-                       !GetModuleFileName(module, path, ARRAYSIZE(path))) {
-                       return std::wstring(L"<unknown>");
-                   }
-                   return std::wstring(path);
-               }()
-                   .c_str());
+    if (!IsHookCallerFromModule(__builtin_return_address(0), L"shell32.dll")) {
         return original();
     }
 
