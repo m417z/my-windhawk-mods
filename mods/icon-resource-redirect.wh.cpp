@@ -821,7 +821,8 @@ bool RedirectModule(DWORD c,
 typedef struct {
     int targetIndex;
     int currentIndex;
-    LPWSTR foundName;
+    std::wstring* nameBuffer;
+    LPCWSTR foundName;
 } ENUMICONCTX;
 
 BOOL CALLBACK EnumIconsProc(HMODULE hModule,
@@ -831,7 +832,14 @@ BOOL CALLBACK EnumIconsProc(HMODULE hModule,
     ENUMICONCTX* ctx = (ENUMICONCTX*)lParam;
 
     if (ctx->currentIndex == ctx->targetIndex) {
-        ctx->foundName = lpszName;
+        if (IS_INTRESOURCE(lpszName)) {
+            ctx->foundName = lpszName;
+        } else {
+            // The string is a temporary buffer owned by EnumResourceNames
+            // which is freed once the enumeration returns.
+            *ctx->nameBuffer = lpszName;
+            ctx->foundName = ctx->nameBuffer->c_str();
+        }
         return FALSE;  // Stop enumeration.
     }
 
@@ -839,10 +847,14 @@ BOOL CALLBACK EnumIconsProc(HMODULE hModule,
     return TRUE;  // Continue.
 }
 
-LPWSTR GetIconGroupNameByIndex(HMODULE hModule, int index) {
+// Returns an integer resource id or a string name stored in nameBuffer.
+LPCWSTR GetIconGroupNameByIndex(HMODULE hModule,
+                                int index,
+                                std::wstring* nameBuffer) {
     ENUMICONCTX ctx = {
         .targetIndex = index,
         .currentIndex = 0,
+        .nameBuffer = nameBuffer,
         .foundName = nullptr,
     };
     EnumResourceNames(hModule, RT_GROUP_ICON, EnumIconsProc, (LONG_PTR)&ctx);
@@ -932,8 +944,9 @@ UINT WINAPI PrivateExtractIconsW_Hook(LPCWSTR szFileName,
                 if (module) {
                     bool resolved = false;
 
-                    LPWSTR iconGroupName =
-                        GetIconGroupNameByIndex(module, iconId);
+                    std::wstring iconGroupNameBuffer;
+                    LPCWSTR iconGroupName = GetIconGroupNameByIndex(
+                        module, iconId, &iconGroupNameBuffer);
                     if (!iconGroupName) {
                         Wh_Log(L"[%u] Failed to get icon group name", c);
                     } else if (!IS_INTRESOURCE(iconGroupName)) {
