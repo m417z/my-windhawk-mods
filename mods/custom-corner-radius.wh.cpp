@@ -9,7 +9,7 @@
 // @homepage        https://m417z.com/
 // @include         dwm.exe
 // @architecture    x86-64
-// @compilerOptions -lgdi32 -lole32 -lwevtapi
+// @compilerOptions -lgdi32 -lole32 -lwevtapi -ld2d1 -ld3d11
 // ==/WindhawkMod==
 
 // Source code is published under The GNU General Public License v3.0.
@@ -51,6 +51,8 @@ and make sure that `dwm.exe` is in the list.
   This can be customized separately with the "Small corner radius" option.
 - Standard tooltips can be customized separately with the "Tooltip corner
   radius" option.
+- Each window corner can have its own radius with the "Per-corner radius"
+  options, for example to round only the top corners.
 - Windows 11 squares off the corners of maximized and snapped windows. The
   "Rounded corners for maximized and snapped windows" option enables rounding
   for them.
@@ -78,6 +80,23 @@ and make sure that `dwm.exe` is in the list.
     your DPI scaling.
 
     Set to -1 to keep the original radius.
+- perCornerRadius:
+  - topLeft: -1
+    $name: Top-left corner
+  - topRight: -1
+    $name: Top-right corner
+  - bottomLeft: -1
+    $name: Bottom-left corner
+  - bottomRight: -1
+    $name: Bottom-right corner
+  $name: Per-corner radius
+  $description: >-
+    Overrides the corner radius of individual window corners, for example to
+    round only the top corners. Set a corner to -1 to use the "Corner radius"
+    value.
+
+    These options don't apply to elements that use the small or tooltip radius,
+    and are ignored when "Corner radius" is -1.
 - smallRadius: 6
   $name: Small corner radius
   $description: >-
@@ -121,17 +140,23 @@ and make sure that `dwm.exe` is in the list.
 
 #include <initguid.h>  // Must appear before propkey.h
 
+#include <d2d1_1.h>
+#include <d3d11.h>
 #include <dwmapi.h>
 #include <propkey.h>
 #include <propsys.h>
 #include <winevt.h>
+#include <winrt/base.h>
 #include <winternl.h>
 
+#include <algorithm>
 #include <cmath>
 #include <limits>
+#include <mutex>
 #include <regex>
 #include <string>
 #include <string_view>
+#include <unordered_map>
 #include <unordered_set>
 
 enum class RoundMaximizedAndSnapped {
@@ -140,8 +165,17 @@ enum class RoundMaximizedAndSnapped {
     snappedAndMaximized,
 };
 
+// Corners are indexed in the order top-left, top-right, bottom-left,
+// bottom-right throughout.
+constexpr int kCornerCount = 4;
+
 struct {
     float radius;
+    // How far each corner's radius falls short of `radius`, in DIPs. All zero
+    // unless per-corner radii are configured, in which case `radius` is the
+    // largest of them.
+    float cornerRadiusDelta[kCornerCount];
+    bool perCornerRadius;
     float smallRadius;
     float tooltipRadius;
     RoundMaximizedAndSnapped roundMaximizedAndSnapped;
@@ -473,6 +507,412 @@ float RadiusForOriginal(float orig, bool isTooltip) {
     return newValue;
 }
 
+// Whether `radius`, as returned by RadiusForOriginal, is the window radius,
+// the one per-corner radii apply to.
+bool IsPerCornerRadius(float radius) {
+    return g_settings.perCornerRadius && radius == g_settings.radius;
+}
+
+// DWM computes a single radius per window and hands it to the functions that
+// build the clip geometry and draw the border. Per-corner radii are applied
+// there: while a call whose output should get them is in progress, this holds
+// how far each corner falls short of that single radius, in pixels, and the
+// hooks on those functions adjust each corner accordingly.
+struct CornerRadiusDeltas {
+    float px[kCornerCount];
+};
+
+thread_local const CornerRadiusDeltas* g_cornerRadiusDeltas;
+
+class CornerRadiusDeltasScope {
+   public:
+    explicit CornerRadiusDeltasScope(const CornerRadiusDeltas* deltas)
+        : m_prev(g_cornerRadiusDeltas) {
+        g_cornerRadiusDeltas = deltas;
+    }
+    ~CornerRadiusDeltasScope() { g_cornerRadiusDeltas = m_prev; }
+
+    CornerRadiusDeltasScope(const CornerRadiusDeltasScope&) = delete;
+    CornerRadiusDeltasScope& operator=(const CornerRadiusDeltasScope&) = delete;
+
+   private:
+    const CornerRadiusDeltas* m_prev;
+};
+
+float AdjustedCornerRadius(float radius, int corner) {
+    return std::max(radius + g_cornerRadiusDeltas->px[corner], 0.0f);
+}
+
+CornerRadiusDeltas CornerRadiusDeltasForDpi(int dpi) {
+    CornerRadiusDeltas deltas;
+    for (int i = 0; i < kCornerCount; i++) {
+        deltas.px[i] = g_settings.cornerRadiusDelta[i] * dpi / 96.0f;
+    }
+    return deltas;
+}
+
+// Deltas for the content clip of each CWindowBorder, keyed by the border. The
+// clip is rebuilt on every resize from just the border's stored radius and
+// DPI, so the deltas are kept from when its parameters were set.
+std::mutex g_borderCornerRadiusDeltasMutex;
+std::unordered_map<void*, CornerRadiusDeltas> g_borderCornerRadiusDeltas;
+
+void SetBorderCornerRadiusDeltas(void* border,
+                                 const CornerRadiusDeltas* deltas) {
+    std::lock_guard lock(g_borderCornerRadiusDeltasMutex);
+    if (deltas) {
+        g_borderCornerRadiusDeltas[border] = *deltas;
+    } else {
+        g_borderCornerRadiusDeltas.erase(border);
+    }
+}
+
+bool GetBorderCornerRadiusDeltas(void* border, CornerRadiusDeltas* deltas) {
+    std::lock_guard lock(g_borderCornerRadiusDeltasMutex);
+    auto it = g_borderCornerRadiusDeltas.find(border);
+    if (it == g_borderCornerRadiusDeltas.end()) {
+        return false;
+    }
+    *deltas = it->second;
+    return true;
+}
+
+using CWindowBorder_Destructor_t = void(WINAPI*)(void* pThis);
+CWindowBorder_Destructor_t CWindowBorder_Destructor_Original;
+void WINAPI CWindowBorder_Destructor_Hook(void* pThis) {
+    SetBorderCornerRadiusDeltas(pThis, nullptr);
+    CWindowBorder_Destructor_Original(pThis);
+}
+
+// The geometry DWM clips window content with. It takes an X and Y radius per
+// corner, but every caller passes the same radius in all eight.
+using SetRectangle_t = long(WINAPI*)(void* pThis,
+                                     float left,
+                                     float top,
+                                     float right,
+                                     float bottom,
+                                     float topLeftX,
+                                     float topLeftY,
+                                     float topRightX,
+                                     float topRightY,
+                                     float bottomLeftX,
+                                     float bottomLeftY,
+                                     float bottomRightX,
+                                     float bottomRightY,
+                                     bool flag);
+SetRectangle_t SetRectangle_Original;
+long WINAPI SetRectangle_Hook(void* pThis,
+                              float left,
+                              float top,
+                              float right,
+                              float bottom,
+                              float topLeftX,
+                              float topLeftY,
+                              float topRightX,
+                              float topRightY,
+                              float bottomLeftX,
+                              float bottomLeftY,
+                              float bottomRightX,
+                              float bottomRightY,
+                              bool flag) {
+    if (g_cornerRadiusDeltas) {
+        Wh_Log(L"> %f", topLeftX);
+        topLeftX = topLeftY = AdjustedCornerRadius(topLeftX, 0);
+        topRightX = topRightY = AdjustedCornerRadius(topRightX, 1);
+        bottomLeftX = bottomLeftY = AdjustedCornerRadius(bottomLeftX, 2);
+        bottomRightX = bottomRightY = AdjustedCornerRadius(bottomRightX, 3);
+    }
+
+    return SetRectangle_Original(pThis, left, top, right, bottom, topLeftX,
+                                 topLeftY, topRightX, topRightY, bottomLeftX,
+                                 bottomLeftY, bottomRightX, bottomRightY, flag);
+}
+
+// Sets the content clip from the border rect, the stored radius and DPI, and
+// the border thickness. Called on every resize.
+using SetClipRectangle_t = void(WINAPI*)(void* pThis,
+                                         void* geometry,
+                                         const RECT& rect);
+SetClipRectangle_t SetClipRectangle_Original;
+void WINAPI SetClipRectangle_Hook(void* pThis,
+                                  void* geometry,
+                                  const RECT& rect) {
+    CornerRadiusDeltas deltas;
+    bool perCorner = GetBorderCornerRadiusDeltas(pThis, &deltas);
+    CornerRadiusDeltasScope scope(perCorner ? &deltas : nullptr);
+    SetClipRectangle_Original(pThis, geometry, rect);
+}
+
+// A rounded rectangle path with the active deltas applied to `radius` at each
+// corner. Replaces the D2D rounded rectangles the border surface is drawn
+// with, which have a single radius.
+HRESULT CreateAdjustedRoundedRectangleGeometry(ID2D1Factory* factory,
+                                               const D2D1_RECT_F& rect,
+                                               float radius,
+                                               ID2D1PathGeometry** geometry) {
+    float maxRadius =
+        std::min(rect.right - rect.left, rect.bottom - rect.top) / 2;
+    float radii[kCornerCount];
+    for (int i = 0; i < kCornerCount; i++) {
+        radii[i] = std::min(AdjustedCornerRadius(radius, i), maxRadius);
+    }
+
+    winrt::com_ptr<ID2D1PathGeometry> path;
+    HRESULT hr = factory->CreatePathGeometry(path.put());
+    if (FAILED(hr)) {
+        return hr;
+    }
+
+    winrt::com_ptr<ID2D1GeometrySink> sink;
+    hr = path->Open(sink.put());
+    if (FAILED(hr)) {
+        return hr;
+    }
+
+    auto arcTo = [&sink](D2D1_POINT_2F point, float r) {
+        if (r > 0) {
+            sink->AddArc(D2D1::ArcSegment(point, D2D1::SizeF(r, r), 0.0f,
+                                          D2D1_SWEEP_DIRECTION_CLOCKWISE,
+                                          D2D1_ARC_SIZE_SMALL));
+        }
+    };
+
+    // Clockwise from the top edge.
+    sink->BeginFigure(D2D1::Point2F(rect.left + radii[0], rect.top),
+                      D2D1_FIGURE_BEGIN_FILLED);
+    sink->AddLine(D2D1::Point2F(rect.right - radii[1], rect.top));
+    arcTo(D2D1::Point2F(rect.right, rect.top + radii[1]), radii[1]);
+    sink->AddLine(D2D1::Point2F(rect.right, rect.bottom - radii[3]));
+    arcTo(D2D1::Point2F(rect.right - radii[3], rect.bottom), radii[3]);
+    sink->AddLine(D2D1::Point2F(rect.left + radii[2], rect.bottom));
+    arcTo(D2D1::Point2F(rect.left, rect.bottom - radii[2]), radii[2]);
+    sink->AddLine(D2D1::Point2F(rect.left, rect.top + radii[0]));
+    arcTo(D2D1::Point2F(rect.left + radii[0], rect.top), radii[0]);
+    sink->EndFigure(D2D1_FIGURE_END_CLOSED);
+
+    hr = sink->Close();
+    if (FAILED(hr)) {
+        return hr;
+    }
+
+    *geometry = path.detach();
+    return S_OK;
+}
+
+using FillRoundedRectangle_t = void(WINAPI*)(ID2D1RenderTarget* pThis,
+                                             const D2D1_ROUNDED_RECT* rect,
+                                             ID2D1Brush* brush);
+
+void FillRoundedRectangleWithDeltas(FillRoundedRectangle_t original,
+                                    ID2D1RenderTarget* pThis,
+                                    const D2D1_ROUNDED_RECT* rect,
+                                    ID2D1Brush* brush) {
+    if (g_cornerRadiusDeltas) {
+        Wh_Log(L"> %f", rect->radiusX);
+        winrt::com_ptr<ID2D1Factory> factory;
+        pThis->GetFactory(factory.put());
+        winrt::com_ptr<ID2D1PathGeometry> geometry;
+        HRESULT hr = CreateAdjustedRoundedRectangleGeometry(
+            factory.get(), rect->rect, rect->radiusX, geometry.put());
+        if (SUCCEEDED(hr)) {
+            pThis->FillGeometry(geometry.get(), brush);
+            return;
+        }
+        Wh_Log(L"Failed: %08X", hr);
+    }
+
+    original(pThis, rect, brush);
+}
+
+// The border ring is filled on the device context DWM gets from the
+// composition surface, and the shadow shape on a bitmap render target made
+// from it. Those are separate classes in d2d1.dll, whose implementations of
+// this method may or may not be folded into one function.
+FillRoundedRectangle_t FillRoundedRectangle_Original;
+void WINAPI FillRoundedRectangle_Hook(ID2D1RenderTarget* pThis,
+                                      const D2D1_ROUNDED_RECT* rect,
+                                      ID2D1Brush* brush) {
+    FillRoundedRectangleWithDeltas(FillRoundedRectangle_Original, pThis, rect,
+                                   brush);
+}
+
+FillRoundedRectangle_t BitmapTargetFillRoundedRectangle_Original;
+void WINAPI BitmapTargetFillRoundedRectangle_Hook(ID2D1RenderTarget* pThis,
+                                                  const D2D1_ROUNDED_RECT* rect,
+                                                  ID2D1Brush* brush) {
+    FillRoundedRectangleWithDeltas(BitmapTargetFillRoundedRectangle_Original,
+                                   pThis, rect, brush);
+}
+
+using CreateRoundedRectangleGeometry_t =
+    HRESULT(WINAPI*)(ID2D1Factory* pThis,
+                     const D2D1_ROUNDED_RECT* rect,
+                     ID2D1RoundedRectangleGeometry** geometry);
+CreateRoundedRectangleGeometry_t CreateRoundedRectangleGeometry_Original;
+HRESULT WINAPI
+CreateRoundedRectangleGeometry_Hook(ID2D1Factory* pThis,
+                                    const D2D1_ROUNDED_RECT* rect,
+                                    ID2D1RoundedRectangleGeometry** geometry) {
+    if (g_cornerRadiusDeltas) {
+        Wh_Log(L"> %f", rect->radiusX);
+        winrt::com_ptr<ID2D1PathGeometry> path;
+        HRESULT hr = CreateAdjustedRoundedRectangleGeometry(
+            pThis, rect->rect, rect->radiusX, path.put());
+        if (SUCCEEDED(hr)) {
+            // The border code only combines the result with another geometry
+            // and releases it, which any ID2D1Geometry supports.
+            *geometry =
+                reinterpret_cast<ID2D1RoundedRectangleGeometry*>(path.detach());
+            return S_OK;
+        }
+        Wh_Log(L"Failed: %08X", hr);
+    }
+
+    return CreateRoundedRectangleGeometry_Original(pThis, rect, geometry);
+}
+
+// Draws the border and its shadow into the surface a window's border brush
+// stretches as a nine-grid. DWM caches the result by these parameters.
+using CreateBorderSurface_t = long(WINAPI*)(float radius,
+                                            int dpi,
+                                            const void* color,
+                                            int borderStyle,
+                                            int shadowStyle,
+                                            void** surface);
+CreateBorderSurface_t CreateBorderSurface_Original;
+long WINAPI CreateBorderSurface_Hook(float radius,
+                                     int dpi,
+                                     const void* color,
+                                     int borderStyle,
+                                     int shadowStyle,
+                                     void** surface) {
+    Wh_Log(L"> %f dpi=%d", radius, dpi);
+
+    CornerRadiusDeltas deltas;
+    bool perCorner = IsPerCornerRadius(radius);
+    if (perCorner) {
+        deltas = CornerRadiusDeltasForDpi(dpi);
+    }
+
+    CornerRadiusDeltasScope scope(perCorner ? &deltas : nullptr);
+    return CreateBorderSurface_Original(radius, dpi, color, borderStyle,
+                                        shadowStyle, surface);
+}
+
+struct D2DFunctions {
+    void* createRoundedRectangleGeometry;
+    void* fillRoundedRectangle;
+    void* bitmapTargetFillRoundedRectangle;
+};
+
+// d2d1.dll's implementations of ID2D1Factory::CreateRoundedRectangleGeometry
+// and ID2D1RenderTarget::FillRoundedRectangle. d2d1.dll doesn't export them,
+// so they're read off the vtables of throwaway objects. A D3D device with the
+// null driver is enough to get a device context of the same class as the one
+// DWM draws the border surface with.
+bool ResolveD2DFunctions(D2DFunctions* functions) {
+    winrt::com_ptr<ID2D1Factory1> factory;
+    HRESULT hr =
+        D2D1CreateFactory(D2D1_FACTORY_TYPE_SINGLE_THREADED,
+                          __uuidof(ID2D1Factory1), nullptr, factory.put_void());
+    if (FAILED(hr)) {
+        Wh_Log(L"D2D1CreateFactory failed: %08X", hr);
+        return false;
+    }
+
+    winrt::com_ptr<ID3D11Device> d3dDevice;
+    hr =
+        D3D11CreateDevice(nullptr, D3D_DRIVER_TYPE_NULL, nullptr,
+                          D3D11_CREATE_DEVICE_BGRA_SUPPORT, nullptr, 0,
+                          D3D11_SDK_VERSION, d3dDevice.put(), nullptr, nullptr);
+    if (FAILED(hr)) {
+        Wh_Log(L"D3D11CreateDevice failed: %08X", hr);
+        return false;
+    }
+
+    winrt::com_ptr<ID2D1Device> d2dDevice;
+    hr = factory->CreateDevice(d3dDevice.try_as<IDXGIDevice>().get(),
+                               d2dDevice.put());
+    if (FAILED(hr)) {
+        Wh_Log(L"CreateDevice failed: %08X", hr);
+        return false;
+    }
+
+    winrt::com_ptr<ID2D1DeviceContext> deviceContext;
+    hr = d2dDevice->CreateDeviceContext(D2D1_DEVICE_CONTEXT_OPTIONS_NONE,
+                                        deviceContext.put());
+    if (FAILED(hr)) {
+        Wh_Log(L"CreateDeviceContext failed: %08X", hr);
+        return false;
+    }
+
+    // A compatible render target needs a target to be compatible with.
+    D2D1_BITMAP_PROPERTIES1 bitmapProperties = D2D1::BitmapProperties1(
+        D2D1_BITMAP_OPTIONS_TARGET,
+        D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM,
+                          D2D1_ALPHA_MODE_PREMULTIPLIED));
+    winrt::com_ptr<ID2D1Bitmap1> bitmap;
+    winrt::com_ptr<ID2D1BitmapRenderTarget> bitmapTarget;
+    hr = deviceContext->CreateBitmap(D2D1::SizeU(1, 1), nullptr, 0,
+                                     &bitmapProperties, bitmap.put());
+    if (SUCCEEDED(hr)) {
+        deviceContext->SetTarget(bitmap.get());
+        hr = deviceContext->CreateCompatibleRenderTarget(bitmapTarget.put());
+    }
+    if (FAILED(hr)) {
+        Wh_Log(L"Bitmap render target creation failed: %08X", hr);
+    }
+
+    // Vtable slots, counted from IUnknown.
+    constexpr int kCreateRoundedRectangleGeometrySlot = 6;
+    constexpr int kFillRoundedRectangleSlot = 19;
+    auto vtableEntry = [](IUnknown* object, int slot) {
+        return (*reinterpret_cast<void***>(object))[slot];
+    };
+
+    functions->createRoundedRectangleGeometry =
+        vtableEntry(factory.get(), kCreateRoundedRectangleGeometrySlot);
+    functions->fillRoundedRectangle =
+        vtableEntry(deviceContext.get(), kFillRoundedRectangleSlot);
+    functions->bitmapTargetFillRoundedRectangle =
+        bitmapTarget
+            ? vtableEntry(bitmapTarget.get(), kFillRoundedRectangleSlot)
+            : nullptr;
+    return true;
+}
+
+bool HookD2DFunctions() {
+    D2DFunctions functions;
+    if (!ResolveD2DFunctions(&functions)) {
+        return false;
+    }
+
+    if (!WindhawkUtils::SetFunctionHook(
+            (CreateRoundedRectangleGeometry_t)
+                functions.createRoundedRectangleGeometry,
+            CreateRoundedRectangleGeometry_Hook,
+            &CreateRoundedRectangleGeometry_Original) ||
+        !WindhawkUtils::SetFunctionHook(
+            (FillRoundedRectangle_t)functions.fillRoundedRectangle,
+            FillRoundedRectangle_Hook, &FillRoundedRectangle_Original)) {
+        Wh_Log(L"Hooking D2D functions failed");
+        return false;
+    }
+
+    if (functions.bitmapTargetFillRoundedRectangle &&
+        functions.bitmapTargetFillRoundedRectangle !=
+            functions.fillRoundedRectangle &&
+        !WindhawkUtils::SetFunctionHook(
+            (FillRoundedRectangle_t)functions.bitmapTargetFillRoundedRectangle,
+            BitmapTargetFillRoundedRectangle_Hook,
+            &BitmapTargetFillRoundedRectangle_Original)) {
+        Wh_Log(L"Hooking the bitmap render target failed");
+        return false;
+    }
+
+    return true;
+}
+
 // Forces an empty window region on a SysShadow companion HWND so the
 // legacy rectangular drop shadow stops being composited. Idempotent: once
 // the window already has the (empty) region we own, the call is a no-op.
@@ -580,11 +1020,43 @@ float AdjustCornerRadius(void* pThis,
     return orig;
 }
 
+// Whether the radius last returned by GetRadiusFromCornerStyle_Hook is the
+// window radius. UpdateAnimatedResources scales that radius for DPI and
+// animation progress and hands it straight to CreateRectangleGeometry, which
+// is where the per-corner radii for the animated clip are applied.
+thread_local bool g_radiusFromCornerStylePerCorner;
+
 using GetRadiusFromCornerStyle_t = float(WINAPI*)(void* pThis);
 GetRadiusFromCornerStyle_t GetRadiusFromCornerStyle_Original;
 float WINAPI GetRadiusFromCornerStyle_Hook(void* pThis) {
-    return AdjustCornerRadius(pThis, GetRadiusFromCornerStyle_Original(pThis),
-                              /*canRoundMaximizedOrSnapped=*/false);
+    float radius =
+        AdjustCornerRadius(pThis, GetRadiusFromCornerStyle_Original(pThis),
+                           /*canRoundMaximizedOrSnapped=*/false);
+    g_radiusFromCornerStylePerCorner = IsPerCornerRadius(radius);
+    return radius;
+}
+
+// The clip of a window in a minimize or restore animation. The radius shrinks
+// along with the window, so the deltas are scaled with it rather than by DPI.
+using CreateRectangleGeometry_t = long(WINAPI*)(const void* rect,
+                                                float radius,
+                                                void** geometry);
+CreateRectangleGeometry_t CreateRectangleGeometry_Original;
+long WINAPI CreateRectangleGeometry_Hook(const void* rect,
+                                         float radius,
+                                         void** geometry) {
+    CornerRadiusDeltas deltas;
+    bool perCorner = radius > 0 && g_radiusFromCornerStylePerCorner;
+    if (perCorner) {
+        Wh_Log(L"> %f", radius);
+        for (int i = 0; i < kCornerCount; i++) {
+            deltas.px[i] =
+                radius * g_settings.cornerRadiusDelta[i] / g_settings.radius;
+        }
+    }
+
+    CornerRadiusDeltasScope scope(perCorner ? &deltas : nullptr);
+    return CreateRectangleGeometry_Original(rect, radius, geometry);
 }
 
 using GetFloatCornerRadiusForCurrentStyle_t = float(WINAPI*)(void* pThis);
@@ -611,6 +1083,7 @@ long WINAPI SetBorderParameters_Hook(void* pThis,
                                      const void* color,
                                      int borderStyle,
                                      int shadowStyle) {
+    bool perCorner = false;
     if (cornerRadius > 0) {
         // pThis here is a CWindowBorder, not a CTopLevelWindow, so there's no
         // straightforward way to recover the HWND for tooltip detection. This
@@ -622,8 +1095,16 @@ long WINAPI SetBorderParameters_Hook(void* pThis,
         if (!excluded) {
             Wh_Log(L"> %f", cornerRadius);
             cornerRadius = RadiusForOriginal(cornerRadius, false);
+            perCorner = IsPerCornerRadius(cornerRadius);
         }
     }
+
+    CornerRadiusDeltas deltas;
+    if (perCorner) {
+        deltas = CornerRadiusDeltasForDpi(dpi);
+    }
+    SetBorderCornerRadiusDeltas(pThis, perCorner ? &deltas : nullptr);
+
     return SetBorderParameters_Original(pThis, borderRect, cornerRadius, dpi,
                                         color, borderStyle, shadowStyle);
 }
@@ -642,7 +1123,62 @@ void RequestDwmRefresh() {
     PostMessage(hDwm, WM_SYSCOLORCHANGE, 0, 0);
 }
 
+// The hooks per-corner radii depend on are only set at init, and only when
+// per-corner radii are configured, which is the uncommon case. Configuring them
+// later reloads the mod.
+enum class PerCornerRadiusHooks {
+    notSet,
+    set,
+    unsupported,
+};
+
+PerCornerRadiusHooks g_perCornerRadiusHooks = PerCornerRadiusHooks::notSet;
+
+// `value` moved `ulps` floats up.
+float FloatAbove(int value, int ulps) {
+    float result = static_cast<float>(value);
+    for (int i = 0; i < ulps; i++) {
+        result = std::nextafter(result, std::numeric_limits<float>::max());
+    }
+    return result;
+}
+
 void LoadSettings() {
+    int radius = Wh_GetIntSetting(L"radius");
+
+    // Per-corner radii are applied as a reduction from the radius DWM works
+    // with, so that radius is the largest of them. Corners left at -1 follow
+    // "Corner radius", and all of them are ignored when it's -1 (keep the
+    // original radius), since there's no known value to reduce from.
+    PCWSTR cornerNames[kCornerCount] = {L"topLeft", L"topRight", L"bottomLeft",
+                                        L"bottomRight"};
+    int cornerRadius[kCornerCount];
+    int maxRadius = radius;
+    for (int i = 0; i < kCornerCount; i++) {
+        cornerRadius[i] = radius >= 0 ? Wh_GetIntSetting(L"perCornerRadius.%s",
+                                                         cornerNames[i])
+                                      : -1;
+        if (cornerRadius[i] < 0) {
+            cornerRadius[i] = radius;
+        }
+        maxRadius = std::max(maxRadius, cornerRadius[i]);
+    }
+
+    g_settings.perCornerRadius = false;
+    for (int i = 0; i < kCornerCount; i++) {
+        g_settings.cornerRadiusDelta[i] =
+            static_cast<float>(cornerRadius[i] - maxRadius);
+        if (g_settings.cornerRadiusDelta[i] != 0) {
+            g_settings.perCornerRadius = true;
+        }
+    }
+
+    if (g_settings.perCornerRadius &&
+        g_perCornerRadiusHooks == PerCornerRadiusHooks::unsupported) {
+        Wh_Log(L"Per-corner radius isn't supported, ignoring");
+        g_settings.perCornerRadius = false;
+    }
+
     // Use `std::nextafter` to get a value that's just slightly above the
     // integer, for two reasons:
     // 1. The original radius values are integer-based, so if the new value is
@@ -651,15 +1187,18 @@ void LoadSettings() {
     //    identical to one of the original values (see RadiusForOriginal).
     // 2. If the zero value is used, some functions may treat it as a special
     //    case, for example dark mode menus will have a white border.
-    g_settings.radius =
-        std::nextafter(static_cast<float>(Wh_GetIntSetting(L"radius")),
-                       std::numeric_limits<float>::max());
-    g_settings.smallRadius =
-        std::nextafter(static_cast<float>(Wh_GetIntSetting(L"smallRadius")),
-                       std::numeric_limits<float>::max());
+    //
+    // The window radius gets an extra ulp per settings load on top of that.
+    // Per-corner radii don't show in the radius DWM sees, so this is what
+    // keeps the window radius apart from a small or tooltip radius with the
+    // same integer, and what makes it a new key for DWM's cache of border
+    // surfaces when only the per-corner radii change.
+    static int loadCount = 0;
+    loadCount++;
+    g_settings.radius = FloatAbove(maxRadius, 1 + loadCount);
+    g_settings.smallRadius = FloatAbove(Wh_GetIntSetting(L"smallRadius"), 1);
     g_settings.tooltipRadius =
-        std::nextafter(static_cast<float>(Wh_GetIntSetting(L"tooltipRadius")),
-                       std::numeric_limits<float>::max());
+        FloatAbove(Wh_GetIntSetting(L"tooltipRadius"), 1);
 
     PCWSTR roundMaximizedAndSnapped =
         Wh_GetStringSetting(L"roundMaximizedAndSnapped");
@@ -784,6 +1323,20 @@ BOOL Wh_ModInit() {
     // condition IsMaximizedOrSnapped tests, without consulting the corner style
     // at all. The animation path isn't squared, so restoring the rounding only
     // takes replacing that zero.
+    //
+    // Per-corner radii are applied one level down, where the single radius is
+    // turned into geometry:
+    //   SetBorderParameters
+    //     -> CreateAndAttachBorderBrush
+    //       -> CCachedBorderBrush::CreateBorderSurface (D2D drawing, cached)
+    //     -> SetBorderRect (also called on resize)
+    //       -> SetClipRectangle
+    //         -> CRectangleGeometryProxy::SetRectangle (content clip)
+    //   CTopLevelWindow3D::UpdateAnimatedResources
+    //     -> ResourceHelper::CreateRectangleGeometry
+    //       -> CRectangleGeometryProxy::SetRectangle (animated clip)
+
+    bool perCorner = g_settings.perCornerRadius;
 
     WindhawkUtils::SYMBOL_HOOK udwmDllHooks[] = {
         // Used to recover the HWND for tooltip detection. Returns the
@@ -860,11 +1413,55 @@ BOOL Wh_ModInit() {
             &SetBorderParameters_Original,
             SetBorderParameters_Hook,
         },
+        // The rest are for per-corner radii, and are only hooked when those
+        // are configured. Per-corner radii are disabled if any of the first
+        // three is missing.
+        {
+            {LR"(public: long __cdecl CRectangleGeometryProxy::SetRectangle(float,float,float,float,float,float,float,float,float,float,float,float,bool))"},
+            &SetRectangle_Original,
+            perCorner ? SetRectangle_Hook : nullptr,
+            true,
+        },
+        {
+            {LR"(private: void __cdecl CWindowBorder::SetClipRectangle(class CRectangleGeometryProxy *,struct tagRECT const &))"},
+            &SetClipRectangle_Original,
+            perCorner ? SetClipRectangle_Hook : nullptr,
+            true,
+        },
+        {
+            {LR"(public: static long __cdecl CWindowBorder::CCachedBorderBrush::CreateBorderSurface(float,int,struct _D3DCOLORVALUE const &,enum CWindowBorder::BorderStyle,enum CWindowBorder::ShadowStyle,struct Windows::UI::Composition::ICompositionSurface * *))"},
+            &CreateBorderSurface_Original,
+            perCorner ? CreateBorderSurface_Hook : nullptr,
+            true,
+        },
+        {
+            {LR"(public: virtual __cdecl CWindowBorder::~CWindowBorder(void))"},
+            &CWindowBorder_Destructor_Original,
+            perCorner ? CWindowBorder_Destructor_Hook : nullptr,
+            true,  // Optional - stale entries stay in the per-border map.
+        },
+        {
+            {LR"(public: static long __cdecl ResourceHelper::CreateRectangleGeometry(struct D2D_POINTANDSIZE_L const &,float,class CRectangleGeometryProxy * *))"},
+            &CreateRectangleGeometry_Original,
+            perCorner ? CreateRectangleGeometry_Hook : nullptr,
+            true,  // Optional - animated clips keep a single radius.
+        },
     };
 
     if (!HookSymbols(udwm, udwmDllHooks, ARRAYSIZE(udwmDllHooks))) {
         Wh_Log(L"HookSymbols failed");
         return FALSE;
+    }
+
+    if (perCorner) {
+        bool hooked = SetRectangle_Original && SetClipRectangle_Original &&
+                      CreateBorderSurface_Original && HookD2DFunctions();
+        g_perCornerRadiusHooks = hooked ? PerCornerRadiusHooks::set
+                                        : PerCornerRadiusHooks::unsupported;
+        if (!hooked) {
+            Wh_Log(L"Per-corner radius isn't supported");
+            g_settings.perCornerRadius = false;
+        }
     }
 
     // Hooks queued by HookSymbols aren't applied until Wh_ModInit returns, so
@@ -901,13 +1498,20 @@ void Wh_ModAfterInit() {
     RequestDwmRefresh();
 }
 
-void Wh_ModSettingsChanged() {
+BOOL Wh_ModSettingsChanged(BOOL* bReload) {
     Wh_Log(L">");
 
     LoadSettings();
 
+    if (g_settings.perCornerRadius &&
+        g_perCornerRadiusHooks == PerCornerRadiusHooks::notSet) {
+        *bReload = TRUE;
+        return TRUE;
+    }
+
     ClearWindowExclusionProps();
     RequestDwmRefresh();
+    return TRUE;
 }
 
 void Wh_ModUninit() {
