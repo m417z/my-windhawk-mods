@@ -515,8 +515,11 @@ void TaskbarWndProcPreProcess(HWND hWnd,
                 break;
             }
 
-            // The taskbar location that affects the jump list animations.
-            if (*wParam == ABE_BOTTOM) {
+            // The taskbar location that affects the jump list animations. Only
+            // change if primary taskbar is on top, otherwise the primary
+            // taskbar won't have jump lists.
+            if (*wParam == ABE_BOTTOM &&
+                g_settings.taskbarLocation == TaskbarLocation::top) {
                 HMONITOR monitor = (HMONITOR)lParam;
                 if (GetTaskbarLocationForMonitor(monitor) ==
                     TaskbarLocation::top) {
