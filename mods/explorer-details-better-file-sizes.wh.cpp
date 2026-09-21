@@ -2395,8 +2395,8 @@ bool IsSystemModulePath(PCWSTR path) {
 }
 
 // Another hook on top of ours makes its hook function the direct caller, so a
-// few frames further up the stack are checked as well. A hook isn't in a
-// system module, so the search stops at the first frame in one.
+// few frames further up the stack are checked as well. A hook isn't in a system
+// module, so the search stops at the first frame in one.
 [[clang::noinline]] bool IsHookCallerFromModule(void* retAddress,
                                                 PCWSTR moduleName) {
     HMODULE expectedModule = GetModuleHandle(moduleName);
@@ -2404,23 +2404,30 @@ bool IsSystemModulePath(PCWSTR path) {
         return false;
     }
 
-    if (GetModuleFromAddress(retAddress) == expectedModule) {
+    HMODULE callerModule = GetModuleFromAddress(retAddress);
+    if (callerModule == expectedModule) {
         return true;
     }
 
-    Wh_Log(L"Unexpected caller, expected %s", moduleName);
+    std::wstring callerPath = GetModulePath(callerModule);
+    if (IsSystemModulePath(callerPath.c_str())) {
+        Wh_Log(L"Skipping caller %p in module %s, expected %s", retAddress,
+               callerPath.c_str(), moduleName);
+        return false;
+    }
 
-    // The hook's caller comes from the return address rather than from the
-    // backtrace, which can skip frames of functions without frame pointers on
-    // x86. The backtrace skips the frames of this function, the hook, and the
+    Wh_Log(L"Tracing caller %p in module %s, expected %s", retAddress,
+           callerPath.c_str(), moduleName);
+
+    // The backtrace skips the frames of this function, the hook, and the
     // caller.
-    void* frames[5] = {retAddress};
-    WORD count = 1 + CaptureStackBackTrace(3, ARRAYSIZE(frames) - 1, frames + 1,
-                                           nullptr);
+    void* frames[4];
+    WORD count = CaptureStackBackTrace(3, ARRAYSIZE(frames), frames, nullptr);
     for (WORD i = 0; i < count; i++) {
         HMODULE module = GetModuleFromAddress(frames[i]);
         std::wstring modulePath = GetModulePath(module);
-        Wh_Log(L"Frame %u: %p in module %s", i, frames[i], modulePath.c_str());
+        Wh_Log(L"Frame %u: %p in module %s", i + 1, frames[i],
+               modulePath.c_str());
         if (module == expectedModule) {
             return true;
         }
