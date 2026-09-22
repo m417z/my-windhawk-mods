@@ -1067,9 +1067,8 @@ void UpdateTaskListButtonWithLabelStyle(FrameworkElement taskListButtonElement,
             badgeElement.Margin(Thickness{
                 .Right = (g_unloading || !labelControlElement)
                              ? 0.0
-                             : firstColumnWidthPixels -
-                                   g_settings.leftAndRightPaddingSize -
-                                   iconWidth,
+                             : (firstColumnWidthPixels - iconWidth) / 2 -
+                                   g_settings.leftAndRightPaddingSize,
             });
         }
     }
