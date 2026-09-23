@@ -2,7 +2,7 @@
 // @id              taskbar-grouping
 // @name            Disable grouping on the taskbar
 // @description     Causes a separate button to be created on the taskbar for each new window
-// @version         1.3.10
+// @version         1.3.11
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
@@ -195,6 +195,7 @@ PVOID g_findTaskBtnGroup_TaskGroupSentinel =
     &g_findTaskBtnGroup_TaskGroupSentinel;
 std::function<bool(PVOID)> g_findTaskBtnGroup_Callback;
 std::atomic<DWORD> g_cTaskListWnd_TaskCreated_ThreadId;
+std::atomic<DWORD> g_cTaskListWnd__CreateTBGroup_ThreadId;
 std::atomic<DWORD> g_taskCreatedReplacingPinnedThreadId;
 bool g_disableGetLauncherName;
 std::atomic<DWORD> g_compareStringOrdinalHookThreadId;
@@ -1001,6 +1002,24 @@ PVOID FindTaskBtnGroup(PVOID taskList,
 using CTaskListWnd_IsOnPrimaryTaskband_t = BOOL(WINAPI*)(PVOID pThis);
 CTaskListWnd_IsOnPrimaryTaskband_t CTaskListWnd_IsOnPrimaryTaskband_Original;
 
+using CTaskListWnd__CreateTBGroup_t = PVOID(WINAPI*)(PVOID pThis,
+                                                     PVOID taskGroup,
+                                                     int index);
+CTaskListWnd__CreateTBGroup_t CTaskListWnd__CreateTBGroup_Original;
+PVOID WINAPI CTaskListWnd__CreateTBGroup_Hook(PVOID pThis,
+                                              PVOID taskGroup,
+                                              int index) {
+    Wh_Log(L">");
+
+    g_cTaskListWnd__CreateTBGroup_ThreadId = GetCurrentThreadId();
+
+    PVOID ret = CTaskListWnd__CreateTBGroup_Original(pThis, taskGroup, index);
+
+    g_cTaskListWnd__CreateTBGroup_ThreadId = 0;
+
+    return ret;
+}
+
 // Returns the index of the pinned button matching the suffixed app ID of the
 // given button without the suffix, or -1 if there's none.
 int FindPinnedTaskBtnGroupIndexForSuffixed(HDPA hdpa, PVOID taskBtnGroup) {
@@ -1077,9 +1096,14 @@ int WINAPI DPA_InsertPtr_Hook(HDPA hdpa, int i, void* p) {
 
     auto original = [=]() { return DPA_InsertPtr_Original(hdpa, i, p); };
 
-    if (g_cTaskListWnd_TaskCreated_ThreadId != GetCurrentThreadId()) {
+    if (g_cTaskListWnd_TaskCreated_ThreadId != GetCurrentThreadId() ||
+        g_cTaskListWnd__CreateTBGroup_ThreadId != GetCurrentThreadId()) {
         return original();
     }
+
+    // Only the first insert in _CreateTBGroup adds the new button group to the
+    // task list, other DPAs may hold different object types.
+    g_cTaskListWnd__CreateTBGroup_ThreadId = 0;
 
     Wh_Log(L"> i=%d, count=%d", i, DPA_GetPtrCount(hdpa));
 
@@ -1679,6 +1703,9 @@ bool HookExplorerPatcherSymbols(HMODULE explorerPatcherModule) {
          &CTaskListWnd__GetTBGroupFromGroup_Original},
         {R"(?IsOnPrimaryTaskband@CTaskListWnd@@UEAAHXZ)",
          &CTaskListWnd_IsOnPrimaryTaskband_Original},
+        {R"(?_CreateTBGroup@CTaskListWnd@@IEAAPEAUITaskBtnGroup@@PEAUITaskGroup@@H@Z)",
+         &CTaskListWnd__CreateTBGroup_Original,
+         CTaskListWnd__CreateTBGroup_Hook},
         {R"(?TaskCreated@CTaskListWnd@@UEAAJPEAUITaskGroup@@PEAUITaskItem@@@Z)",
          &CTaskListWnd_TaskCreated_Original, CTaskListWnd_TaskCreated_Hook},
         {// Available from Windows 11.
@@ -1935,6 +1962,11 @@ bool HookTaskbarSymbols() {
                 &CTaskListWnd_IsOnPrimaryTaskband_Original,
             },
             {
+                {LR"(protected: struct ITaskBtnGroup * __cdecl CTaskListWnd::_CreateTBGroup(struct ITaskGroup *,int))"},
+                &CTaskListWnd__CreateTBGroup_Original,
+                CTaskListWnd__CreateTBGroup_Hook,
+            },
+            {
                 // Available from Windows 11.
                 {LR"(protected: void __cdecl CTaskBand::HandleTaskGroupSwitchItemAdded(struct winrt::Windows::Internal::ComposableShell::Multitasking::ISwitchItem const &))"},
                 &CTaskBand_HandleTaskGroupSwitchItemAdded_Original,
@@ -2154,22 +2186,22 @@ BOOL Wh_ModInit() {
     HMODULE kernelBaseModule = GetModuleHandle(L"kernelbase.dll");
     auto pKernelBaseLoadLibraryExW = (decltype(&LoadLibraryExW))GetProcAddress(
         kernelBaseModule, "LoadLibraryExW");
-    WindhawkUtils::Wh_SetFunctionHookT(pKernelBaseLoadLibraryExW,
-                                       LoadLibraryExW_Hook,
-                                       &LoadLibraryExW_Original);
+    WindhawkUtils::SetFunctionHook(pKernelBaseLoadLibraryExW,
+                                   LoadLibraryExW_Hook,
+                                   &LoadLibraryExW_Original);
 
     auto kernelBaseCompareStringOrdinal =
         (decltype(&CompareStringOrdinal))GetProcAddress(kernelBaseModule,
                                                         "CompareStringOrdinal");
-    WindhawkUtils::Wh_SetFunctionHookT(kernelBaseCompareStringOrdinal,
-                                       CompareStringOrdinal_Hook,
-                                       &CompareStringOrdinal_Original);
+    WindhawkUtils::SetFunctionHook(kernelBaseCompareStringOrdinal,
+                                   CompareStringOrdinal_Hook,
+                                   &CompareStringOrdinal_Original);
 
-    WindhawkUtils::Wh_SetFunctionHookT(DPA_InsertPtr, DPA_InsertPtr_Hook,
-                                       &DPA_InsertPtr_Original);
+    WindhawkUtils::SetFunctionHook(DPA_InsertPtr, DPA_InsertPtr_Hook,
+                                   &DPA_InsertPtr_Original);
 
-    WindhawkUtils::Wh_SetFunctionHookT(DPA_DeletePtr, DPA_DeletePtr_Hook,
-                                       &DPA_DeletePtr_Original);
+    WindhawkUtils::SetFunctionHook(DPA_DeletePtr, DPA_DeletePtr_Hook,
+                                   &DPA_DeletePtr_Original);
 
     g_initialized = true;
 
