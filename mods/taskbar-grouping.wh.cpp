@@ -702,15 +702,18 @@ PCWSTR WINAPI CTaskGroup_GetIconResource_Hook(PVOID pThis) {
 
 using CTaskBand__UpdateItemIcon_t = void(WINAPI*)(PVOID pThis,
                                                   PVOID taskGroup,
-                                                  PVOID taskItem);
+                                                  PVOID taskItem,
+                                                  PVOID iconVariants);
 CTaskBand__UpdateItemIcon_t CTaskBand__UpdateItemIcon_Original;
 void WINAPI CTaskBand__UpdateItemIcon_Hook(PVOID pThis,
                                            PVOID taskGroup,
-                                           PVOID taskItem) {
+                                           PVOID taskItem,
+                                           PVOID iconVariants) {
     Wh_Log(L">");
 
     g_inUpdateItemIcon = true;
-    CTaskBand__UpdateItemIcon_Original(pThis, taskGroup, taskItem);
+    CTaskBand__UpdateItemIcon_Original(pThis, taskGroup, taskItem,
+                                       iconVariants);
     g_inUpdateItemIcon = false;
 }
 
@@ -1690,7 +1693,12 @@ bool HookTaskbarSymbols() {
                 CTaskGroup_GetIconResource_Hook,
             },
             {
-                {LR"(protected: void __cdecl CTaskBand::_UpdateItemIcon(struct ITaskGroup *,struct ITaskItem *))"},
+                {
+                    LR"(protected: void __cdecl CTaskBand::_UpdateItemIcon(struct ITaskGroup *,struct ITaskItem *,class std::vector<struct TaskbarIcon::Variant,class std::allocator<struct TaskbarIcon::Variant> > const *))",
+
+                    // Before Windows 11 build 26100.9549.
+                    LR"(protected: void __cdecl CTaskBand::_UpdateItemIcon(struct ITaskGroup *,struct ITaskItem *))",
+                },
                 &CTaskBand__UpdateItemIcon_Original,
                 CTaskBand__UpdateItemIcon_Hook,
             },
@@ -1792,7 +1800,7 @@ bool HookTaskbarSymbols() {
                 &CTaskListWnd__TaskCreated_Original,
                 CTaskListWnd__TaskCreated_Hook,
             },
-        };
+    };
 
     HMODULE module;
     if (g_winVersion <= WinVersion::Win10) {
