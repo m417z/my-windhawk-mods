@@ -195,6 +195,7 @@ PVOID g_findTaskBtnGroup_TaskGroupSentinel =
     &g_findTaskBtnGroup_TaskGroupSentinel;
 std::function<bool(PVOID)> g_findTaskBtnGroup_Callback;
 std::atomic<DWORD> g_cTaskListWnd_TaskCreated_ThreadId;
+std::atomic<DWORD> g_taskCreatedReplacingPinnedThreadId;
 bool g_disableGetLauncherName;
 std::atomic<DWORD> g_compareStringOrdinalHookThreadId;
 bool g_compareStringOrdinalIgnoreSuffix;
@@ -1000,6 +1001,50 @@ PVOID FindTaskBtnGroup(PVOID taskList,
 using CTaskListWnd_IsOnPrimaryTaskband_t = BOOL(WINAPI*)(PVOID pThis);
 CTaskListWnd_IsOnPrimaryTaskband_t CTaskListWnd_IsOnPrimaryTaskband_Original;
 
+// Returns the index of the pinned button matching the suffixed app ID of the
+// given button without the suffix, or -1 if there's none.
+int FindPinnedTaskBtnGroupIndexForSuffixed(HDPA hdpa, PVOID taskBtnGroup) {
+    PVOID taskGroup = CTaskBtnGroup_GetGroup_Original(taskBtnGroup);
+    if (!taskGroup) {
+        return -1;
+    }
+
+    PCWSTR appId = CTaskGroup_GetAppID_Original(taskGroup);
+    if (!appId) {
+        return -1;
+    }
+
+    WCHAR appIdOriginal[MAX_PATH];
+    if (!RemoveAppIdSuffix(appIdOriginal, appId)) {
+        return -1;
+    }
+
+    int count = DPA_GetPtrCount(hdpa);
+    for (int i = 0; i < count; i++) {
+        PVOID taskBtnGroupIter = DPA_GetPtr(hdpa, i);
+        if (!taskBtnGroupIter ||
+            CTaskBtnGroup_GetGroupType_Original(taskBtnGroupIter) != 2) {
+            continue;
+        }
+
+        PVOID taskGroupIter = CTaskBtnGroup_GetGroup_Original(taskBtnGroupIter);
+        if (!taskGroupIter) {
+            continue;
+        }
+
+        int windowMatchConfidence;
+        winrt::com_ptr<IUnknown> taskItemMatched;
+        HRESULT hr = CTaskGroup_DoesWindowMatch_Original(
+            taskGroupIter, nullptr, nullptr, appIdOriginal,
+            &windowMatchConfidence, taskItemMatched.put_void());
+        if (SUCCEEDED(hr)) {
+            return i;
+        }
+    }
+
+    return -1;
+}
+
 using DPA_InsertPtr_t = decltype(&DPA_InsertPtr);
 DPA_InsertPtr_t DPA_InsertPtr_Original;
 int WINAPI DPA_InsertPtr_Hook(HDPA hdpa, int i, void* p) {
@@ -1036,7 +1081,17 @@ int WINAPI DPA_InsertPtr_Hook(HDPA hdpa, int i, void* p) {
         return original();
     }
 
-    Wh_Log(L">");
+    Wh_Log(L"> i=%d, count=%d", i, DPA_GetPtrCount(hdpa));
+
+    if (g_taskCreatedReplacingPinnedThreadId == GetCurrentThreadId() && p) {
+        int pinnedIndex = FindPinnedTaskBtnGroupIndexForSuffixed(hdpa, p);
+        Wh_Log(L"Matched pinned item index: %d", pinnedIndex);
+        if (pinnedIndex != -1) {
+            // The pinned item is removed after the swap, leaving the new item
+            // in its place.
+            return DPA_InsertPtr_Original(hdpa, pinnedIndex + 1, p);
+        }
+    }
 
     if (g_settings.placeUngroupedItemsTogether ==
             PlaceUngroupedItemsTogetherMode::off ||
@@ -1429,7 +1484,9 @@ LONG_PTR WINAPI CTaskListWnd__TaskCreated_Hook(PVOID pThis,
         return original();
     }
 
+    g_taskCreatedReplacingPinnedThreadId = GetCurrentThreadId();
     LONG_PTR ret = original();
+    g_taskCreatedReplacingPinnedThreadId = 0;
 
     // Check if it exists on the task list.
     PVOID taskBtnGroup =
