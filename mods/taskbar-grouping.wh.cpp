@@ -67,11 +67,9 @@ check out [7+ Taskbar Tweaker](https://tweaker.ramensoftware.com/).
 - useWindowIcons: false
   $name: Use window icons
   $description: >-
-    By default, application icons are used. Enable this option to use window
-    icons instead. Usually it doesn't matter, an example where it does is an
-    open folder window - with application icons, the icon on the taskbar is
-    always the icon of Explorer, while with window icons, the icon changes
-    depending on the open folder.
+    Use window icons instead of application icons when labels are hidden. For
+    example, a folder window then shows the icon of the open folder instead of
+    the Explorer icon.
 - windowIconsPrograms: [program1.exe]
   $name: Use window icons exceptions
   $description: >-
