@@ -72,6 +72,13 @@ check out [7+ Taskbar Tweaker](https://tweaker.ramensoftware.com/).
     open folder window - with application icons, the icon on the taskbar is
     always the icon of Explorer, while with window icons, the icon changes
     depending on the open folder.
+- windowIconsPrograms: [program1.exe]
+  $name: Use window icons exceptions
+  $description: >-
+    Each entry is a name, path, or application ID for which the "Use window
+    icons" option is inverted. If the option is enabled, these programs use
+    application icons. If the option is disabled, only these programs use window
+    icons.
 - customGroups:
   - - name: Group 1
       $name: Group name
@@ -157,6 +164,7 @@ struct {
     PinnedItemsMode pinnedItemsMode;
     PlaceUngroupedItemsTogetherMode placeUngroupedItemsTogether;
     bool useWindowIcons;
+    std::unordered_set<std::wstring> windowIconsProgramItems;
     std::unordered_set<std::wstring> excludedProgramItems;
     std::vector<std::wstring> customGroupNames;
     std::unordered_map<std::wstring, int> customGroupProgramItems;
@@ -197,6 +205,14 @@ std::atomic<DWORD> g_doingPinnedItemSwapThreadId;
 void* g_doingPinnedItemSwapFromTaskGroup;
 void* g_doingPinnedItemSwapToTaskGroup;
 int g_doingPinnedItemSwapIndex = -1;
+
+// Uppercase app ID (without the suffix) to the uppercase process path of the
+// last window resolved with it.
+std::unordered_map<std::wstring, std::wstring> g_appIdProcessPaths;
+
+// Entries of app IDs with no task group are pruned when a new app ID is added
+// after reaching this size.
+constexpr size_t kAppIdProcessPathsPruneThreshold = 64;
 
 constexpr size_t ITaskListUIOffset = 0x28;
 
@@ -252,6 +268,27 @@ bool RemoveAppIdSuffix(WCHAR appIdStripped[MAX_PATH], PCWSTR appIdWithSuffix) {
     return true;
 }
 
+bool IsWindowIconsProgram(PCWSTR appIdUpper, PCWSTR processPathUpper) {
+    const auto& items = g_settings.windowIconsProgramItems;
+
+    if (items.contains(appIdUpper)) {
+        return true;
+    }
+
+    if (processPathUpper) {
+        if (items.contains(processPathUpper)) {
+            return true;
+        }
+
+        PCWSTR fileName = wcsrchr(processPathUpper, L'\\');
+        if (fileName && fileName[1] && items.contains(fileName + 1)) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
 using CTaskGroup_GetNumItems_t = int(WINAPI*)(PVOID pThis);
 CTaskGroup_GetNumItems_t CTaskGroup_GetNumItems_Original;
 
@@ -305,6 +342,36 @@ using CTaskBand__MatchWindow_t = HRESULT(WINAPI*)(PVOID pThis,
                                                   PVOID* taskGroup,
                                                   PVOID* taskItem);
 CTaskBand__MatchWindow_t CTaskBand__MatchWindow_Original;
+
+// Checks whether a task group exists with the given app ID, ignoring suffixes.
+bool AppIdTaskGroupExists(PVOID taskBand, PCWSTR appId) {
+    g_compareStringOrdinalHookThreadId = GetCurrentThreadId();
+    g_compareStringOrdinalIgnoreSuffix = true;
+
+    winrt::com_ptr<IUnknown> taskGroupMatched;
+    winrt::com_ptr<IUnknown> taskItemMatched;
+    HRESULT hr = CTaskBand__MatchWindow_Original(
+        taskBand, nullptr, nullptr, appId, 1, taskGroupMatched.put_void(),
+        taskItemMatched.put_void());
+
+    g_compareStringOrdinalHookThreadId = 0;
+    g_compareStringOrdinalIgnoreSuffix = false;
+
+    return SUCCEEDED(hr) && taskGroupMatched;
+}
+
+void SetAppIdProcessPath(PVOID taskBand,
+                         PCWSTR appIdUpper,
+                         PCWSTR processPathUpper) {
+    if (g_appIdProcessPaths.size() >= kAppIdProcessPathsPruneThreshold &&
+        !g_appIdProcessPaths.contains(appIdUpper)) {
+        std::erase_if(g_appIdProcessPaths, [taskBand](const auto& item) {
+            return !AppIdTaskGroupExists(taskBand, item.first.c_str());
+        });
+    }
+
+    g_appIdProcessPaths[appIdUpper] = processPathUpper;
+}
 
 void ProcessResolvedWindow(PVOID pThis, RESOLVEDWINDOW* resolvedWindow) {
     Wh_Log(L"==========");
@@ -366,6 +433,11 @@ void ProcessResolvedWindow(PVOID pThis, RESOLVEDWINDOW* resolvedWindow) {
             *resolvedWindowProcessPath = L'\0';
             *resolvedWindowProcessPathUpper = L'\0';
         }
+    }
+
+    if (resolvedWindowProcessPathLen > 0) {
+        SetAppIdProcessPath(pThis, resolvedAppIdStrUpper,
+                            resolvedWindowProcessPathUpper);
     }
 
     bool matchedExcludedItem = false;
@@ -452,6 +524,18 @@ void ProcessResolvedWindow(PVOID pThis, RESOLVEDWINDOW* resolvedWindow) {
         swprintf(resolvedWindow->szAppIdStr, L"%s%d", kCustomGroupPrefix,
                  customGroup);
         Wh_Log(L"Custom group AppId: %s", resolvedWindow->szAppIdStr);
+
+        if (resolvedWindowProcessPathLen > 0) {
+            std::wstring customGroupAppIdUpper = resolvedWindow->szAppIdStr;
+            LCMapStringEx(LOCALE_NAME_USER_DEFAULT, LCMAP_UPPERCASE,
+                          &customGroupAppIdUpper[0],
+                          static_cast<int>(customGroupAppIdUpper.length()),
+                          &customGroupAppIdUpper[0],
+                          static_cast<int>(customGroupAppIdUpper.length()),
+                          nullptr, nullptr, 0);
+            SetAppIdProcessPath(pThis, customGroupAppIdUpper.c_str(),
+                                resolvedWindowProcessPathUpper);
+        }
     } else {
         bool appIdSuffixAdded;
         if (g_settings.pinnedItemsMode ==
@@ -628,6 +712,36 @@ winrt::com_ptr<IUnknown> GetTaskGroupWithoutSuffix(
     return taskGroupMatched;
 }
 
+bool TaskGroupUsesWindowIcons(PVOID taskGroup) {
+    if (g_settings.windowIconsProgramItems.empty()) {
+        return g_settings.useWindowIcons;
+    }
+
+    PCWSTR appId = CTaskGroup_GetAppID_Original(taskGroup);
+    if (!appId) {
+        return g_settings.useWindowIcons;
+    }
+
+    WCHAR appIdStripped[MAX_PATH];
+    if (!RemoveAppIdSuffix(appIdStripped, appId)) {
+        wcsncpy_s(appIdStripped, appId, _TRUNCATE);
+    }
+
+    int appIdLen = static_cast<int>(wcslen(appIdStripped));
+    WCHAR appIdUpper[MAX_PATH];
+    LCMapStringEx(LOCALE_NAME_USER_DEFAULT, LCMAP_UPPERCASE, appIdStripped,
+                  appIdLen + 1, appIdUpper, appIdLen + 1, nullptr, nullptr, 0);
+
+    PCWSTR processPathUpper = nullptr;
+    if (auto it = g_appIdProcessPaths.find(appIdUpper);
+        it != g_appIdProcessPaths.end()) {
+        processPathUpper = it->second.c_str();
+    }
+
+    bool matched = IsWindowIconsProgram(appIdUpper, processPathUpper);
+    return g_settings.useWindowIcons != matched;
+}
+
 using CTaskGroup_IsImmersiveGroup_t = bool(WINAPI*)(PVOID pThis);
 CTaskGroup_IsImmersiveGroup_t CTaskGroup_IsImmersiveGroup_Original;
 bool WINAPI CTaskGroup_IsImmersiveGroup_Hook(PVOID pThis) {
@@ -668,7 +782,7 @@ const ITEMIDLIST* WINAPI CTaskGroup_GetShortcutIDList_Hook(PVOID pThis) {
             return nullptr;
         }
 
-        if (g_settings.useWindowIcons) {
+        if (TaskGroupUsesWindowIcons(pThis)) {
             return nullptr;
         }
 
@@ -1170,7 +1284,8 @@ LONG_PTR OnTaskDestroyed(std::function<LONG_PTR()> original,
         HandleUnsuffixedInstanceOnTaskDestroyed(taskList_TaskListUI, taskGroup);
     }
 
-    if (taskGroupIsPinned && numItems == 1 && g_settings.useWindowIcons &&
+    if (taskGroupIsPinned && numItems == 1 &&
+        TaskGroupUsesWindowIcons(taskGroup) &&
         CTaskListWnd_GroupChanged_Original) {
         // Trigger CTaskListWnd::GroupChanged to trigger an icon change.
         // https://github.com/ramensoftware/windhawk-mods/issues/644
@@ -1847,6 +1962,29 @@ void LoadSettings() {
     Wh_FreeStringSetting(placeUngroupedItemsTogetherMode);
 
     g_settings.useWindowIcons = Wh_GetIntSetting(L"useWindowIcons");
+
+    g_settings.windowIconsProgramItems.clear();
+
+    for (int i = 0;; i++) {
+        PCWSTR program = Wh_GetStringSetting(L"windowIconsPrograms[%d]", i);
+
+        bool hasProgram = *program;
+        if (hasProgram) {
+            std::wstring programUpper = program;
+            LCMapStringEx(
+                LOCALE_NAME_USER_DEFAULT, LCMAP_UPPERCASE, &programUpper[0],
+                static_cast<int>(programUpper.length()), &programUpper[0],
+                static_cast<int>(programUpper.length()), nullptr, nullptr, 0);
+
+            g_settings.windowIconsProgramItems.insert(std::move(programUpper));
+        }
+
+        Wh_FreeStringSetting(program);
+
+        if (!hasProgram) {
+            break;
+        }
+    }
 
     g_settings.excludedProgramItems.clear();
 
