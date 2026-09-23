@@ -1006,10 +1006,24 @@ int WINAPI DPA_InsertPtr_Hook(HDPA hdpa, int i, void* p) {
     if (g_doingPinnedItemSwapThreadId == GetCurrentThreadId()) {
         Wh_Log(L">");
 
-        if (g_doingPinnedItemSwapIndex != -1) {
-            PVOID taskGroup = CTaskBtnGroup_GetGroup_Original(p);
-            if (taskGroup && taskGroup == g_doingPinnedItemSwapToTaskGroup) {
+        PVOID taskGroup = p ? CTaskBtnGroup_GetGroup_Original(p) : nullptr;
+        if (taskGroup && taskGroup == g_doingPinnedItemSwapToTaskGroup) {
+            if (g_doingPinnedItemSwapIndex != -1) {
                 i = g_doingPinnedItemSwapIndex;
+            } else {
+                // The source button might not be removed yet, e.g. if its group
+                // still has a window on another monitor. Insert before it so
+                // that the new button takes its place once it's removed.
+                int count = DPA_GetPtrCount(hdpa);
+                for (int j = 0; j < count; j++) {
+                    PVOID taskBtnGroupIter = DPA_GetPtr(hdpa, j);
+                    if (taskBtnGroupIter &&
+                        CTaskBtnGroup_GetGroup_Original(taskBtnGroupIter) ==
+                            g_doingPinnedItemSwapFromTaskGroup) {
+                        i = j;
+                        break;
+                    }
+                }
             }
         }
 
