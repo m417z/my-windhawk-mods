@@ -2,7 +2,7 @@
 // @id              taskbar-volume-control
 // @name            Taskbar Volume Control
 // @description     Control the system volume by scrolling over the taskbar or anywhere with modifier keys
-// @version         1.3.1
+// @version         1.3.2
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
@@ -10,7 +10,7 @@
 // @include         explorer.exe
 // @include         ShellExperienceHost.exe
 // @include         SndVol.exe
-// @compilerOptions -lcomctl32 -ldwmapi -lgdi32 -lole32 -lversion
+// @compilerOptions -lcomctl32 -ldwmapi -lgdi32 -lole32 -loleaut32 -luuid -lversion
 // ==/WindhawkMod==
 
 // Source code is published under The GNU General Public License v3.0.
@@ -38,6 +38,9 @@ Features:
 * **Full screen scrolling**: Scroll at the taskbar position to control the
   volume even when a full screen window covers the taskbar.
 * **Middle click to mute**: Middle click the volume tray icon to toggle mute.
+* **Tray icon scroll passthrough**: Prevent overriding scroll over notification
+  area (system tray) icons so that tray utilities can handle their own scroll
+  actions.
 
 **Note:** Some laptop touchpads might not support scrolling over the taskbar. A
 workaround is to use the "pinch to zoom" gesture. For details, check out [a
@@ -130,6 +133,12 @@ issue](https://tweaker.userecho.com/topics/826-scroll-on-trackpadtouchpad-doesnt
   $description: >-
     Enable this option to customize the old taskbar on Windows 11 (if using
     ExplorerPatcher or a similar tool).
+- dontOverrideTrayIcons: true
+  $name: Don't override tray icons / apps with scroll
+  $description: >-
+    When enabled, scrolling over notification area (system tray) icons
+    (such as Twinkle Tray or other apps) will not change the volume, allowing
+    those apps to receive and handle the scroll wheel event.
 */
 // ==/WindhawkModSettings==
 
@@ -141,6 +150,7 @@ issue](https://tweaker.userecho.com/topics/826-scroll-on-trackpadtouchpad-doesnt
 #include <mmdeviceapi.h>
 #include <objbase.h>
 #include <psapi.h>
+#include <uiautomation.h>
 #include <windowsx.h>
 
 #include <algorithm>
@@ -192,6 +202,7 @@ struct {
     bool noAutomaticMuteToggle;
     int volumeChangeStep;
     bool oldTaskbarOnWin11;
+    bool dontOverrideTrayIcons;
 } g_settings;
 
 enum class Target {
@@ -357,6 +368,157 @@ bool GetNotificationAreaRect(HWND hMMTaskbarWnd, RECT* rcResult) {
     }
 
     return true;
+}
+
+IUIAutomation* g_pUIAutomation = nullptr;
+bool g_uiaInitAttempted = false;
+
+bool IsPointOverNotificationTrayIcon(POINT pt) {
+    // 1. Check Win32 windows under cursor (overflow flyout or toolbar)
+    HWND hUnderCursor = WindowFromPoint(pt);
+    if (hUnderCursor) {
+        WCHAR szClassName[64] = {};
+        GetClassName(hUnderCursor, szClassName, ARRAYSIZE(szClassName));
+
+        HWND hRoot = GetAncestor(hUnderCursor, GA_ROOT);
+        WCHAR szRootClass[64] = {};
+        if (hRoot) {
+            GetClassName(hRoot, szRootClass, ARRAYSIZE(szRootClass));
+        }
+
+        // Inside the overflow flyout window (e.g. NotifyIconOverflowWindow)
+        if (_wcsicmp(szClassName, L"NotifyIconOverflowWindow") == 0 ||
+            _wcsicmp(szRootClass, L"NotifyIconOverflowWindow") == 0) {
+            return true;
+        }
+
+        // Windows 10 / Classic / ExplorerPatcher tray toolbar (ToolbarWindow32)
+        if (_wcsicmp(szClassName, L"ToolbarWindow32") == 0) {
+            HWND hParent = GetParent(hUnderCursor);
+            WCHAR szParentClass[64] = {};
+            if (hParent) {
+                GetClassName(hParent, szParentClass, ARRAYSIZE(szParentClass));
+            }
+            if (_wcsicmp(szParentClass, L"SysPager") == 0 ||
+                _wcsicmp(szParentClass, L"TrayNotifyWnd") == 0 ||
+                _wcsicmp(szRootClass, L"NotifyIconOverflowWindow") == 0) {
+                POINT ptClient = pt;
+                ScreenToClient(hUnderCursor, &ptClient);
+                int buttonIdx = (int)SendMessage(hUnderCursor, TB_HITTEST, 0,
+                                                 (LPARAM)&ptClient);
+                if (buttonIdx >= 0) {
+                    return true;
+                }
+            }
+        }
+    }
+
+    // 2. Windows 11 XAML System Tray via UI Automation (IUIAutomation)
+    if (!g_uiaInitAttempted) {
+        g_uiaInitAttempted = true;
+        CoCreateInstance(CLSID_CUIAutomation, nullptr, CLSCTX_INPROC_SERVER,
+                         IID_IUIAutomation, (void**)&g_pUIAutomation);
+    }
+
+    if (g_pUIAutomation) {
+        IUIAutomationElement* pElem = nullptr;
+        if (SUCCEEDED(g_pUIAutomation->ElementFromPoint(pt, &pElem)) && pElem) {
+            bool isTray = false;
+
+            BSTR bstrName = nullptr;
+            pElem->get_CurrentName(&bstrName);
+
+            BSTR bstrClassName = nullptr;
+            pElem->get_CurrentClassName(&bstrClassName);
+
+            BSTR bstrAutoId = nullptr;
+            pElem->get_CurrentAutomationId(&bstrAutoId);
+
+            auto checkIsTrayString = [](PCWSTR s) {
+                if (!s) {
+                    return false;
+                }
+                return wcsstr(s, L"NotifyIcon") != nullptr ||
+                       wcsstr(s, L"SystemTray") != nullptr ||
+                       wcsstr(s, L"Notification Area") != nullptr ||
+                       wcsstr(s, L"System Tray") != nullptr ||
+                       wcsstr(s, L"Promoted Notification Area") != nullptr ||
+                       wcsstr(s, L"Overflow Notification Area") != nullptr;
+            };
+
+            if (checkIsTrayString(bstrName) ||
+                checkIsTrayString(bstrClassName) ||
+                checkIsTrayString(bstrAutoId)) {
+                isTray = true;
+            }
+
+            // Walk parents using RawViewWalker
+            IUIAutomationTreeWalker* pWalker = nullptr;
+            if (!isTray &&
+                SUCCEEDED(g_pUIAutomation->get_RawViewWalker(&pWalker)) &&
+                pWalker) {
+                IUIAutomationElement* pCurr = pElem;
+                pCurr->AddRef();
+
+                for (int depth = 0; depth < 10 && !isTray; depth++) {
+                    IUIAutomationElement* pParent = nullptr;
+                    if (FAILED(pWalker->GetParentElement(pCurr, &pParent)) ||
+                        !pParent) {
+                        break;
+                    }
+                    pCurr->Release();
+                    pCurr = pParent;
+
+                    BSTR pName = nullptr;
+                    pCurr->get_CurrentName(&pName);
+
+                    BSTR pClass = nullptr;
+                    pCurr->get_CurrentClassName(&pClass);
+
+                    BSTR pId = nullptr;
+                    pCurr->get_CurrentAutomationId(&pId);
+
+                    if (checkIsTrayString(pName) ||
+                        checkIsTrayString(pClass) ||
+                        checkIsTrayString(pId)) {
+                        isTray = true;
+                    }
+
+                    if (pName) {
+                        SysFreeString(pName);
+                    }
+                    if (pClass) {
+                        SysFreeString(pClass);
+                    }
+                    if (pId) {
+                        SysFreeString(pId);
+                    }
+                }
+
+                if (pCurr) {
+                    pCurr->Release();
+                }
+                pWalker->Release();
+            }
+
+            if (bstrName) {
+                SysFreeString(bstrName);
+            }
+            if (bstrClassName) {
+                SysFreeString(bstrClassName);
+            }
+            if (bstrAutoId) {
+                SysFreeString(bstrAutoId);
+            }
+            pElem->Release();
+
+            if (isTray) {
+                return true;
+            }
+        }
+    }
+
+    return false;
 }
 
 bool IsPointInsideTaskbarScrollArea(HWND hMMTaskbarWnd, POINT pt) {
@@ -1450,6 +1612,11 @@ bool OnMouseWheel(HWND hWnd, WPARAM wParam, LPARAM lParam) {
         return false;
     }
 
+    if (g_settings.dontOverrideTrayIcons &&
+        IsPointOverNotificationTrayIcon(pt)) {
+        return false;
+    }
+
     // Allows to steal focus.
     INPUT input;
     ZeroMemory(&input, sizeof(INPUT));
@@ -1837,6 +2004,16 @@ void LoadSettings() {
         Wh_GetIntSetting(L"noAutomaticMuteToggle");
     g_settings.volumeChangeStep = Wh_GetIntSetting(L"volumeChangeStep");
     g_settings.oldTaskbarOnWin11 = Wh_GetIntSetting(L"oldTaskbarOnWin11");
+
+    PCWSTR dontOverrideSetting = Wh_GetStringSetting(L"dontOverrideTrayIcons");
+    if (dontOverrideSetting && *dontOverrideSetting) {
+        g_settings.dontOverrideTrayIcons =
+            (wcscmp(dontOverrideSetting, L"0") != 0 &&
+             _wcsicmp(dontOverrideSetting, L"false") != 0);
+    } else {
+        g_settings.dontOverrideTrayIcons = true;
+    }
+    Wh_FreeStringSetting(dontOverrideSetting);
 
     g_settings.additionalScrollRegions.clear();
     PCWSTR additionalScrollRegions =
@@ -2464,6 +2641,11 @@ void Wh_ModUninit() {
 
     CleanupSndVol();
     SndVolUninit();
+
+    if (g_pUIAutomation) {
+        g_pUIAutomation->Release();
+        g_pUIAutomation = nullptr;
+    }
 }
 
 BOOL Wh_ModSettingsChanged(BOOL* bReload) {
