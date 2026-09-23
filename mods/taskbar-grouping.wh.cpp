@@ -2,14 +2,14 @@
 // @id              taskbar-grouping
 // @name            Disable grouping on the taskbar
 // @description     Causes a separate button to be created on the taskbar for each new window
-// @version         1.3.11
+// @version         1.3.12
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
 // @homepage        https://m417z.com/
 // @include         explorer.exe
 // @architecture    x86-64
-// @compilerOptions -lcomctl32 -lole32 -loleaut32 -lshlwapi -lversion
+// @compilerOptions -lcomctl32 -lgdi32 -lole32 -loleaut32 -lshlwapi -lversion
 // ==/WindhawkMod==
 
 // Source code is published under The GNU General Public License v3.0.
@@ -125,6 +125,7 @@ check out [7+ Taskbar Tweaker](https://tweaker.ramensoftware.com/).
 
 #include <atomic>
 #include <functional>
+#include <mutex>
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
@@ -345,6 +346,9 @@ CTaskGroup_DoesWindowMatch_t CTaskGroup_DoesWindowMatch_Original;
 
 using CTaskBtnGroup_GetGroupType_t = int(WINAPI*)(PVOID pThis);
 CTaskBtnGroup_GetGroupType_t CTaskBtnGroup_GetGroupType_Original;
+
+using CTaskBtnGroup_GetGroup_t = PVOID(WINAPI*)(PVOID pThis);
+CTaskBtnGroup_GetGroup_t CTaskBtnGroup_GetGroup_Original;
 
 using CTaskBand__MatchWindow_t = HRESULT(WINAPI*)(PVOID pThis,
                                                   HWND hWnd,
@@ -796,6 +800,164 @@ const ITEMIDLIST* WINAPI CTaskGroup_GetShortcutIDList_Hook(PVOID pThis) {
     return CTaskGroup_GetShortcutIDList_Original(pThis);
 }
 
+// Returns the app's shortcut id list, owned by a task group, or null.
+const ITEMIDLIST* GetAppShortcutIdList(PVOID taskGroup) {
+    winrt::com_ptr<IUnknown> taskGroupWithoutSuffix =
+        GetTaskGroupWithoutSuffix(taskGroup);
+    if (taskGroupWithoutSuffix) {
+        if (const ITEMIDLIST* idList = CTaskGroup_GetShortcutIDList_Original(
+                taskGroupWithoutSuffix.get())) {
+            return idList;
+        }
+    }
+
+    return CTaskGroup_GetShortcutIDList_Original(taskGroup);
+}
+
+// Used when no task group has a shortcut id list, e.g. when the app isn't
+// pinned. The caller owns the returned id list.
+ITEMIDLIST* CreateAppIdListFromProcessPath(PVOID taskGroup) {
+    PCWSTR appId = CTaskGroup_GetAppID_Original(taskGroup);
+    if (!appId) {
+        return nullptr;
+    }
+
+    WCHAR appIdStripped[MAX_PATH];
+    if (!RemoveAppIdSuffix(appIdStripped, appId)) {
+        wcsncpy_s(appIdStripped, appId, _TRUNCATE);
+    }
+
+    WCHAR appIdUpper[MAX_PATH];
+    ToUpper(appIdStripped, appIdUpper, wcslen(appIdStripped) + 1);
+
+    auto it = g_appIdProcessPaths.find(appIdUpper);
+    if (it == g_appIdProcessPaths.end()) {
+        return nullptr;
+    }
+
+    return ILCreateFromPath(it->second.c_str());
+}
+
+bool GetIconDimensions(HICON icon, int* cx, int* cy) {
+    ICONINFO iconInfo{};
+    if (!GetIconInfo(icon, &iconInfo)) {
+        return false;
+    }
+
+    bool hasColor = !!iconInfo.hbmColor;
+
+    BITMAP bitmap{};
+    bool succeeded = GetObject(hasColor ? iconInfo.hbmColor : iconInfo.hbmMask,
+                               sizeof(bitmap), &bitmap) != 0;
+
+    if (iconInfo.hbmColor) {
+        DeleteObject(iconInfo.hbmColor);
+    }
+
+    if (iconInfo.hbmMask) {
+        DeleteObject(iconInfo.hbmMask);
+    }
+
+    if (!succeeded) {
+        return false;
+    }
+
+    *cx = bitmap.bmWidth;
+    // Without a color bitmap, the mask holds the AND and XOR parts stacked.
+    *cy = hasColor ? bitmap.bmHeight : bitmap.bmHeight / 2;
+    return true;
+}
+
+HICON CreateIconFromIdList(const ITEMIDLIST* idList, int cx, int cy) {
+    winrt::com_ptr<IShellItemImageFactory> factory;
+    if (FAILED(SHCreateItemFromIDList(idList, IID_PPV_ARGS(factory.put())))) {
+        return nullptr;
+    }
+
+    HBITMAP bitmap = nullptr;
+    if (FAILED(factory->GetImage({cx, cy}, SIIGBF_ICONONLY, &bitmap))) {
+        return nullptr;
+    }
+
+    // The returned bitmap isn't necessarily of the requested size, and the mask
+    // has to match it.
+    BITMAP bitmapInfo{};
+    if (!GetObject(bitmap, sizeof(bitmapInfo), &bitmapInfo)) {
+        DeleteObject(bitmap);
+        return nullptr;
+    }
+
+    std::vector<BYTE> maskBits(
+        static_cast<size_t>((bitmapInfo.bmWidth + 15) / 16 * 2) *
+            bitmapInfo.bmHeight,
+        0);
+    HBITMAP mask = CreateBitmap(bitmapInfo.bmWidth, bitmapInfo.bmHeight, 1, 1,
+                                maskBits.data());
+
+    ICONINFO iconInfo{};
+    iconInfo.fIcon = TRUE;
+    iconInfo.hbmMask = mask;
+    iconInfo.hbmColor = bitmap;
+    HICON icon = CreateIconIndirect(&iconInfo);
+
+    DeleteObject(bitmap);
+    DeleteObject(mask);
+
+    return icon;
+}
+
+// Icons are created per request, so hand out copies of a cached master icon.
+std::mutex g_appIconCacheMutex;
+std::unordered_map<std::wstring, HICON> g_appIconCache;
+
+HICON GetAppIcon(PVOID taskGroup, int cx, int cy) {
+    PCWSTR appId = CTaskGroup_GetAppID_Original(taskGroup);
+    if (!appId || cx <= 0 || cy <= 0) {
+        return nullptr;
+    }
+
+    std::wstring key = appId;
+    key += L'|';
+    key += std::to_wstring(cx);
+    key += L'x';
+    key += std::to_wstring(cy);
+
+    {
+        std::lock_guard<std::mutex> guard(g_appIconCacheMutex);
+
+        auto it = g_appIconCache.find(key);
+        if (it != g_appIconCache.end()) {
+            return CopyIcon(it->second);
+        }
+    }
+
+    HICON icon = nullptr;
+
+    if (const ITEMIDLIST* idList = GetAppShortcutIdList(taskGroup)) {
+        icon = CreateIconFromIdList(idList, cx, cy);
+    }
+
+    if (!icon) {
+        if (ITEMIDLIST* idList = CreateAppIdListFromProcessPath(taskGroup)) {
+            icon = CreateIconFromIdList(idList, cx, cy);
+            ILFree(idList);
+        }
+    }
+
+    if (!icon) {
+        return nullptr;
+    }
+
+    std::lock_guard<std::mutex> guard(g_appIconCacheMutex);
+
+    auto [it, inserted] = g_appIconCache.try_emplace(std::move(key), icon);
+    if (!inserted) {
+        DestroyIcon(icon);
+    }
+
+    return CopyIcon(it->second);
+}
+
 using CTaskGroup_SetShortcutIDList_t =
     HRESULT(WINAPI*)(PVOID pThis, const ITEMIDLIST* itList);
 CTaskGroup_SetShortcutIDList_t CTaskGroup_SetShortcutIDList_Original;
@@ -923,16 +1085,43 @@ HRESULT WINAPI CTaskListWnd_ShowJumpView_Hook(PVOID pThis,
 
 using CTaskBtnGroup_GetIcon_t = HRESULT(WINAPI*)(PVOID pThis,
                                                  PVOID taskItem,
-                                                 HICON** icon);
+                                                 HICON* icon);
 CTaskBtnGroup_GetIcon_t CTaskBtnGroup_GetIcon_Original;
 HRESULT WINAPI CTaskBtnGroup_GetIcon_Hook(PVOID pThis,
                                           PVOID taskItem,
-                                          HICON** icon) {
+                                          HICON* icon) {
     Wh_Log(L">");
 
     g_inTaskBtnGroupGetIcon = true;
     HRESULT ret = CTaskBtnGroup_GetIcon_Original(pThis, taskItem, icon);
     g_inTaskBtnGroupGetIcon = false;
+
+    // The returned icon is the window icon, created per call, and the caller
+    // owns it. Swap in the app icon, as the taskbar doesn't consult the
+    // shortcut id list here.
+    if (FAILED(ret) || !icon || !*icon) {
+        return ret;
+    }
+
+    PVOID taskGroup = CTaskBtnGroup_GetGroup_Original(pThis);
+    if (!taskGroup || TaskGroupUsesWindowIcons(taskGroup) ||
+        CTaskGroup_IsImmersiveGroup_Original(taskGroup)) {
+        return ret;
+    }
+
+    int cx = 0;
+    int cy = 0;
+    if (!GetIconDimensions(*icon, &cx, &cy)) {
+        return ret;
+    }
+
+    HICON appIcon = GetAppIcon(taskGroup, cx, cy);
+    if (!appIcon) {
+        return ret;
+    }
+
+    DestroyIcon(*icon);
+    *icon = appIcon;
 
     return ret;
 }
@@ -953,8 +1142,6 @@ void WINAPI CTaskBtnGroup__DrawRegularButton_Hook(PVOID pThis,
     g_inTaskBtnGroupGetIcon = false;
 }
 
-using CTaskBtnGroup_GetGroup_t = PVOID(WINAPI*)(PVOID pThis);
-CTaskBtnGroup_GetGroup_t CTaskBtnGroup_GetGroup_Original;
 PVOID WINAPI CTaskBtnGroup_GetGroup_Hook(PVOID pThis) {
     // Wh_Log(L">");
 
