@@ -268,6 +268,18 @@ bool RemoveAppIdSuffix(WCHAR appIdStripped[MAX_PATH], PCWSTR appIdWithSuffix) {
     return true;
 }
 
+// Maps len characters of src to uppercase into dst. src and dst may be the
+// same buffer.
+void ToUpper(PCWSTR src, PWSTR dst, size_t len) {
+    LCMapStringEx(LOCALE_NAME_USER_DEFAULT, LCMAP_UPPERCASE, src,
+                  static_cast<int>(len), dst, static_cast<int>(len), nullptr,
+                  nullptr, 0);
+}
+
+void ToUpperInPlace(PWSTR str, size_t len) {
+    ToUpper(str, str, len);
+}
+
 bool IsWindowIconsProgram(PCWSTR appIdUpper, PCWSTR processPathUpper) {
     const auto& items = g_settings.windowIconsProgramItems;
 
@@ -388,10 +400,8 @@ void ProcessResolvedWindow(PVOID pThis, RESOLVEDWINDOW* resolvedWindow) {
 
     DWORD resolvedAppIdStrLen = wcslen(resolvedWindow->szAppIdStr);
     WCHAR resolvedAppIdStrUpper[MAX_PATH];
-    LCMapStringEx(LOCALE_NAME_USER_DEFAULT, LCMAP_UPPERCASE,
-                  resolvedWindow->szAppIdStr, resolvedAppIdStrLen + 1,
-                  resolvedAppIdStrUpper, resolvedAppIdStrLen + 1, nullptr,
-                  nullptr, 0);
+    ToUpper(resolvedWindow->szAppIdStr, resolvedAppIdStrUpper,
+            resolvedAppIdStrLen + 1);
 
     DWORD resolvedWindowProcessPathLen = 0;
     WCHAR resolvedWindowProcessPath[MAX_PATH];
@@ -415,11 +425,8 @@ void ProcessResolvedWindow(PVOID pThis, RESOLVEDWINDOW* resolvedWindow) {
         }
 
         if (resolvedWindowProcessPathLen > 0) {
-            LCMapStringEx(
-                LOCALE_NAME_USER_DEFAULT, LCMAP_UPPERCASE,
-                resolvedWindowProcessPath, resolvedWindowProcessPathLen + 1,
-                resolvedWindowProcessPathUpper,
-                resolvedWindowProcessPathLen + 1, nullptr, nullptr, 0);
+            ToUpper(resolvedWindowProcessPath, resolvedWindowProcessPathUpper,
+                    resolvedWindowProcessPathLen + 1);
 
             programFileNameUpper =
                 wcsrchr(resolvedWindowProcessPathUpper, L'\\');
@@ -527,12 +534,8 @@ void ProcessResolvedWindow(PVOID pThis, RESOLVEDWINDOW* resolvedWindow) {
 
         if (resolvedWindowProcessPathLen > 0) {
             std::wstring customGroupAppIdUpper = resolvedWindow->szAppIdStr;
-            LCMapStringEx(LOCALE_NAME_USER_DEFAULT, LCMAP_UPPERCASE,
-                          &customGroupAppIdUpper[0],
-                          static_cast<int>(customGroupAppIdUpper.length()),
-                          &customGroupAppIdUpper[0],
-                          static_cast<int>(customGroupAppIdUpper.length()),
-                          nullptr, nullptr, 0);
+            ToUpperInPlace(customGroupAppIdUpper.data(),
+                           customGroupAppIdUpper.length());
             SetAppIdProcessPath(pThis, customGroupAppIdUpper.c_str(),
                                 resolvedWindowProcessPathUpper);
         }
@@ -727,10 +730,8 @@ bool TaskGroupUsesWindowIcons(PVOID taskGroup) {
         wcsncpy_s(appIdStripped, appId, _TRUNCATE);
     }
 
-    int appIdLen = static_cast<int>(wcslen(appIdStripped));
     WCHAR appIdUpper[MAX_PATH];
-    LCMapStringEx(LOCALE_NAME_USER_DEFAULT, LCMAP_UPPERCASE, appIdStripped,
-                  appIdLen + 1, appIdUpper, appIdLen + 1, nullptr, nullptr, 0);
+    ToUpper(appIdStripped, appIdUpper, wcslen(appIdStripped) + 1);
 
     PCWSTR processPathUpper = nullptr;
     if (auto it = g_appIdProcessPaths.find(appIdUpper);
@@ -1971,10 +1972,7 @@ void LoadSettings() {
         bool hasProgram = *program;
         if (hasProgram) {
             std::wstring programUpper = program;
-            LCMapStringEx(
-                LOCALE_NAME_USER_DEFAULT, LCMAP_UPPERCASE, &programUpper[0],
-                static_cast<int>(programUpper.length()), &programUpper[0],
-                static_cast<int>(programUpper.length()), nullptr, nullptr, 0);
+            ToUpperInPlace(programUpper.data(), programUpper.length());
 
             g_settings.windowIconsProgramItems.insert(std::move(programUpper));
         }
@@ -1994,10 +1992,7 @@ void LoadSettings() {
         bool hasProgram = *program;
         if (hasProgram) {
             std::wstring programUpper = program;
-            LCMapStringEx(
-                LOCALE_NAME_USER_DEFAULT, LCMAP_UPPERCASE, &programUpper[0],
-                static_cast<int>(programUpper.length()), &programUpper[0],
-                static_cast<int>(programUpper.length()), nullptr, nullptr, 0);
+            ToUpperInPlace(programUpper.data(), programUpper.length());
 
             g_settings.excludedProgramItems.insert(std::move(programUpper));
         }
@@ -2033,11 +2028,7 @@ void LoadSettings() {
             bool hasProgram = *program;
             if (hasProgram) {
                 std::wstring programUpper = program;
-                LCMapStringEx(
-                    LOCALE_NAME_USER_DEFAULT, LCMAP_UPPERCASE, &programUpper[0],
-                    static_cast<int>(programUpper.length()), &programUpper[0],
-                    static_cast<int>(programUpper.length()), nullptr, nullptr,
-                    0);
+                ToUpperInPlace(programUpper.data(), programUpper.length());
 
                 g_settings.customGroupProgramItems.insert(
                     {std::move(programUpper), groupIndex + 1});
