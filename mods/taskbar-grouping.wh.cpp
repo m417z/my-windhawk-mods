@@ -923,11 +923,11 @@ HRESULT WINAPI CTaskListWnd_ShowJumpView_Hook(PVOID pThis,
 
 using CTaskBtnGroup_GetIcon_t = HRESULT(WINAPI*)(PVOID pThis,
                                                  PVOID taskItem,
-                                                 HICON** icon);
+                                                 HICON* icon);
 CTaskBtnGroup_GetIcon_t CTaskBtnGroup_GetIcon_Original;
 HRESULT WINAPI CTaskBtnGroup_GetIcon_Hook(PVOID pThis,
                                           PVOID taskItem,
-                                          HICON** icon) {
+                                          HICON* icon) {
     Wh_Log(L">");
 
     g_inTaskBtnGroupGetIcon = true;
