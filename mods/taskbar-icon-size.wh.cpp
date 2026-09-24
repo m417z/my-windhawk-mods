@@ -57,26 +57,31 @@ Also check out the **Taskbar tray icon spacing and grid** mod.
 - TaskbarHeight: 52
   $name: Taskbar height
   $description: >-
-    The height, in pixels, of the taskbar (Windows 11 default: 48)
+    The height, in pixels, of the taskbar (Windows 11 default: 48). 0 keeps the
+    default, other values are limited to 2-1000.
 - IconSize: 32
   $name: Icon size
   $description: >-
-    The size, in pixels, of icons on the taskbar (Windows 11 default: 24)
+    The size, in pixels, of icons on the taskbar (Windows 11 default: 24). 0
+    keeps the default, other values are limited to 1-1000.
 - TaskbarButtonWidth: 44
   $name: Taskbar button width
   $description: >-
-    The width, in pixels, of the taskbar buttons (Windows 11 default: 44)
+    The width, in pixels, of the taskbar buttons (Windows 11 default: 44). 0
+    keeps the default, other values are limited to 4-1000.
 - IconSizeSmall: 16
   $name: Small icon size
   $description: >-
-    The size, in pixels, of small icons on the taskbar (Windows 11 default: 16)
+    The size, in pixels, of small icons on the taskbar (Windows 11 default:
+    16). 0 keeps the default, other values are limited to 1-1000.
 
     Used in newer Windows 11 builds with support for small taskbar icons (around
     July 2025)
 - TaskbarButtonWidthSmall: 32
   $name: Small taskbar button width
   $description: >-
-    The width, in pixels, of the small taskbar buttons (Windows 11 default: 32)
+    The width, in pixels, of the small taskbar buttons (Windows 11 default:
+    32). 0 keeps the default, other values are limited to 4-1000.
 
     Used in newer Windows 11 builds with support for small taskbar icons (around
     July 2025)
@@ -2547,11 +2552,17 @@ LRESULT WINAPI SendMessageTimeoutW_Hook(HWND hWnd,
     return ret;
 }
 
-// Out-of-range sizes, such as a 0 or negative button width, reach XAML setters
-// which reject them, so the settings are clamped.
-int GetClampedIntSetting(PCWSTR name, int minValue, int maxValue) {
+// A zero size stands for the stock one. Out-of-range sizes, such as a negative
+// button width, reach XAML setters which reject them, so they're clamped.
+int GetSizeSetting(PCWSTR name, int stockValue, int minValue) {
+    constexpr int kMaxValue = 1000;
+
     int value = Wh_GetIntSetting(name);
-    int clampedValue = std::clamp(value, minValue, maxValue);
+    if (value == 0) {
+        return stockValue;
+    }
+
+    int clampedValue = std::clamp(value, minValue, kMaxValue);
     if (clampedValue != value) {
         Wh_Log(L"%s=%d is out of range, using %d", name, value, clampedValue);
     }
@@ -2560,20 +2571,32 @@ int GetClampedIntSetting(PCWSTR name, int minValue, int maxValue) {
 }
 
 void LoadSettings() {
-    constexpr int kMaxSize = 1000;
     // The button widths are used with a -4 adjustment, which must leave them
     // non-negative.
     constexpr int kMinButtonWidth = 4;
 
-    g_settings.taskbarHeight =
-        GetClampedIntSetting(L"TaskbarHeight", 2, kMaxSize);
-    g_settings.iconSize = GetClampedIntSetting(L"IconSize", 1, kMaxSize);
-    g_settings.taskbarButtonWidth =
-        GetClampedIntSetting(L"TaskbarButtonWidth", kMinButtonWidth, kMaxSize);
+    // The stock height is only known once the taskbar is seen, so a zero one
+    // is kept and resolved by GetTargetTaskbarHeight.
+    g_settings.taskbarHeight = GetSizeSetting(L"TaskbarHeight", 0, 2);
+    g_settings.iconSize = GetSizeSetting(L"IconSize", kStockIconSize, 1);
+    g_settings.taskbarButtonWidth = GetSizeSetting(
+        L"TaskbarButtonWidth", kStockTaskbarButtonWidth, kMinButtonWidth);
     g_settings.iconSizeSmall =
-        GetClampedIntSetting(L"IconSizeSmall", 1, kMaxSize);
-    g_settings.taskbarButtonWidthSmall = GetClampedIntSetting(
-        L"TaskbarButtonWidthSmall", kMinButtonWidth, kMaxSize);
+        GetSizeSetting(L"IconSizeSmall", kStockIconSizeSmall, 1);
+    g_settings.taskbarButtonWidthSmall =
+        GetSizeSetting(L"TaskbarButtonWidthSmall",
+                       kStockTaskbarButtonWidthSmall, kMinButtonWidth);
+}
+
+// The height the taskbar had before the mod changed it, if it was seen.
+int GetStockTaskbarHeight() {
+    int originalTaskbarHeight = g_originalTaskbarHeight;
+    return originalTaskbarHeight ? originalTaskbarHeight : kStockTaskbarHeight;
+}
+
+int GetTargetTaskbarHeight() {
+    return g_settings.taskbarHeight ? g_settings.taskbarHeight
+                                    : GetStockTaskbarHeight();
 }
 
 HWND FindCurrentProcessTaskbarWnd() {
@@ -3506,7 +3529,7 @@ void Wh_ModAfterInit() {
         }
     }
 
-    ApplySettings(g_settings.taskbarHeight);
+    ApplySettings(GetTargetTaskbarHeight());
 }
 
 void Wh_ModBeforeUninit() {
@@ -3514,9 +3537,7 @@ void Wh_ModBeforeUninit() {
 
     g_unloading = true;
 
-    int originalTaskbarHeight = g_originalTaskbarHeight;
-    ApplySettings(originalTaskbarHeight ? originalTaskbarHeight
-                                        : kStockTaskbarHeight);
+    ApplySettings(GetStockTaskbarHeight());
 }
 
 void Wh_ModUninit() {
@@ -3532,5 +3553,5 @@ void Wh_ModSettingsChanged() {
 
     LoadSettings();
 
-    ApplySettings(g_settings.taskbarHeight);
+    ApplySettings(GetTargetTaskbarHeight());
 }
