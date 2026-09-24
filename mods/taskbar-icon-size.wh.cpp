@@ -106,6 +106,14 @@ Also check out the **Taskbar tray icon spacing and grid** mod.
 
 using namespace winrt::Windows::UI::Xaml;
 
+// Stock Windows 11 values. The stock icon heights also tell the postures apart.
+constexpr int kStockTaskbarHeight = 48;
+constexpr int kStockIconSize = 24;
+constexpr int kStockIconSizeSmall = 16;
+constexpr int kStockIconSizeTablet = 32;
+constexpr int kStockTaskbarButtonWidth = 44;
+constexpr int kStockTaskbarButtonWidthSmall = 32;
+
 struct {
     int taskbarHeight;
     int iconSize;
@@ -129,6 +137,29 @@ std::atomic<int> g_taskbarHeight;
 thread_local bool g_inShellIconLoaderV2_LoadAsyncIcon__ResumeCoro;
 thread_local bool g_inSystemTrayController_UpdateFrameSize;
 std::atomic<bool> g_taskbarButtonWidthCustomized;
+
+// The stock icon height of the current posture, which the taskbar code compares
+// icon heights against to tell the postures apart.
+double GetPostureIconHeight() {
+    return g_smallIconSize ? kStockIconSizeSmall : kStockIconSize;
+}
+
+// The customized icon size of the current posture.
+int GetCustomizedIconSize() {
+    return g_smallIconSize ? g_settings.iconSizeSmall : g_settings.iconSize;
+}
+
+// The taskbar button width of the current posture: the customized one, or the
+// stock one when unloading.
+int GetTaskbarButtonWidth() {
+    if (g_smallIconSize) {
+        return g_unloading ? kStockTaskbarButtonWidthSmall
+                           : g_settings.taskbarButtonWidthSmall;
+    }
+
+    return g_unloading ? kStockTaskbarButtonWidth
+                       : g_settings.taskbarButtonWidth;
+}
 
 double* double_48_value_Original;
 
@@ -491,8 +522,8 @@ void WINAPI IconUtils_GetIconSize_Hook(bool isSmall, int type, SIZE* size) {
     IconUtils_GetIconSize_Original(isSmall, type, size);
 
     if (!g_unloading && !isSmall) {
-        size->cx = MulDiv(size->cx, g_settings.iconSize, 24);
-        size->cy = MulDiv(size->cy, g_settings.iconSize, 24);
+        size->cx = MulDiv(size->cx, g_settings.iconSize, kStockIconSize);
+        size->cy = MulDiv(size->cy, g_settings.iconSize, kStockIconSize);
     }
 }
 
@@ -565,7 +596,8 @@ ULONG_PTR WINAPI CIconLoadingFunctions_GetClassLongPtrW_Hook(void* pThis,
                                                                nIndex);
     }
 
-    if (!g_unloading && nIndex == GCLP_HICON && g_settings.iconSize <= 16) {
+    if (!g_unloading && nIndex == GCLP_HICON &&
+        g_settings.iconSize <= kStockIconSizeSmall) {
         nIndex = GCLP_HICONSM;
     }
 
@@ -602,7 +634,7 @@ CIconLoadingFunctions_SendMessageCallbackW_Hook(void* pThis,
     }
 
     if (!g_unloading && Msg == WM_GETICON && wParam == ICON_BIG &&
-        g_settings.iconSize <= 16) {
+        g_settings.iconSize <= kStockIconSizeSmall) {
         wParam = ICON_SMALL2;
     }
 
@@ -780,7 +812,7 @@ TaskbarConfiguration_GetIconHeightInViewPixels_method_Hook(void* pThis) {
 
     // Stock heights tell the postures apart: 16 small, 24 medium, 32 tablet.
     // The customized heights can't, they may be equal.
-    g_smallIconSize = iconSize <= 16;
+    g_smallIconSize = iconSize <= kStockIconSizeSmall;
 
     if (g_inTaskbarFrame_GetMetrics) {
         g_TaskbarFrame_GetMetrics_iconHeight = iconSize;
@@ -788,7 +820,8 @@ TaskbarConfiguration_GetIconHeightInViewPixels_method_Hook(void* pThis) {
     }
 
     if (!g_unloading) {
-        return iconSize <= 16 ? g_settings.iconSizeSmall : g_settings.iconSize;
+        return iconSize <= kStockIconSizeSmall ? g_settings.iconSizeSmall
+                                               : g_settings.iconSize;
     }
 
     return iconSize;
@@ -1647,18 +1680,20 @@ void* WINAPI TaskbarFrame_GetMetrics_Hook(void* pThis, void* metrics) {
     // Without dynamic icon scaling, the icon height isn't consulted and the
     // extent can't be told. 32 is the tablet posture extent, which isn't
     // customized.
-    if (!iconHeight || *iconHeight == 32) {
+    if (!iconHeight || *iconHeight == kStockIconSizeTablet) {
         return ret;
     }
 
     double newValue;
-    if (*iconHeight == 16) {
+    if (*iconHeight == kStockIconSizeSmall) {
         // Either the small extent or the uncustomized small frame extent, but
         // the small button width is a value the overflow flyout accepts, so it
         // fits both.
-        newValue = g_unloading ? 32 : g_settings.taskbarButtonWidthSmall;
+        newValue = g_unloading ? kStockTaskbarButtonWidthSmall
+                               : g_settings.taskbarButtonWidthSmall;
     } else {
-        newValue = g_unloading ? 44 : g_settings.taskbarButtonWidth;
+        newValue = g_unloading ? kStockTaskbarButtonWidth
+                               : g_settings.taskbarButtonWidth;
     }
 
     // The button extent is the second member of TaskbarFrameMetrics.
@@ -1687,7 +1722,7 @@ void WINAPI TaskListButton_UpdateButtonPadding_Hook(void* pThis) {
     // padding. Value 16 and 32 have special treatment.
     ScopedIconHeightOverride iconHeightOverride;
     iconHeightOverride.Set(pThis, GetIconHeightOffset(),
-                           g_smallIconSize ? 16 : 24);
+                           GetPostureIconHeight());
 
     TaskListButton_UpdateButtonPadding_Original(pThis);
 }
@@ -1710,7 +1745,7 @@ void WINAPI TaskListButton_OverlayIcon_Hook(void* pThis, void* param1) {
     //
     // This hook handles non-UWP badges (e.g. the Win7 taskbar sample).
     ScopedIconHeightOverride iconHeightOverride;
-    iconHeightOverride.Set(pThis, GetIconHeightOffset(), 24);
+    iconHeightOverride.Set(pThis, GetIconHeightOffset(), kStockIconSize);
 
     TaskListButton_OverlayIcon_Original(pThis, param1);
 }
@@ -1733,7 +1768,7 @@ void WINAPI TaskListButton_UpdateBadge_Hook(void* pThis) {
     //
     // This hook handles UWP badges (e.g. Unigram).
     ScopedIconHeightOverride iconHeightOverride;
-    iconHeightOverride.Set(pThis, GetIconHeightOffset(), 24);
+    iconHeightOverride.Set(pThis, GetIconHeightOffset(), kStockIconSize);
 
     TaskListButton_UpdateBadge_Original(pThis);
 }
@@ -1754,7 +1789,7 @@ void WINAPI TaskListButton_UpdateMultiWindowClip_Hook(void* pThis) {
     // match by coincidence, so it gets the posture height.
     ScopedIconHeightOverride iconHeightOverride;
     iconHeightOverride.Set(pThis, GetIconHeightOffset(),
-                           g_smallIconSize ? 16 : 24);
+                           GetPostureIconHeight());
 
     TaskListButton_UpdateMultiWindowClip_Original(pThis);
 }
@@ -1775,7 +1810,7 @@ void WINAPI TaskListButton_CreateMultiWindowClip_Hook(void* pThis) {
     // UpdateMultiWindowClip.
     ScopedIconHeightOverride iconHeightOverride;
     iconHeightOverride.Set(pThis, GetIconHeightOffset(),
-                           g_smallIconSize ? 16 : 24);
+                           GetPostureIconHeight());
 
     TaskListButton_CreateMultiWindowClip_Original(pThis);
 }
@@ -1948,8 +1983,8 @@ void WINAPI TaskListButton_UpdateVisualStates_Hook(void* pThis) {
             double* mediumTaskbarButtonExtent =
                 (double*)((BYTE*)pThis + mediumTaskbarButtonExtentOffset);
             if (IsPlausibleSize(*mediumTaskbarButtonExtent)) {
-                double newValue =
-                    g_unloading ? 44 : g_settings.taskbarButtonWidth;
+                double newValue = g_unloading ? kStockTaskbarButtonWidth
+                                              : g_settings.taskbarButtonWidth;
                 if (newValue != *mediumTaskbarButtonExtent) {
                     Wh_Log(
                         L"Updating MediumTaskbarButtonExtent for "
@@ -1965,8 +2000,9 @@ void WINAPI TaskListButton_UpdateVisualStates_Hook(void* pThis) {
                                         : nullptr;
             if (smallTaskbarButtonExtent &&
                 IsPlausibleSize(*smallTaskbarButtonExtent)) {
-                double newValue =
-                    g_unloading ? 32 : g_settings.taskbarButtonWidthSmall;
+                double newValue = g_unloading
+                                      ? kStockTaskbarButtonWidthSmall
+                                      : g_settings.taskbarButtonWidthSmall;
                 if (newValue != *smallTaskbarButtonExtent) {
                     Wh_Log(
                         L"Updating SmallTaskbarButtonExtent for "
@@ -1988,7 +2024,7 @@ void WINAPI TaskListButton_UpdateVisualStates_Hook(void* pThis) {
 
     ScopedIconHeightOverride iconHeightOverride;
     if (g_hasDynamicIconScaling && !g_unloading) {
-        double newIconHeight = g_smallIconSize ? 16 : 24;
+        double newIconHeight = GetPostureIconHeight();
         if (iconHeightOverride.Set(pThis, GetIconHeightOffset(),
                                    newIconHeight)) {
             g_taskListButtonPostureIconHeight = newIconHeight;
@@ -2014,7 +2050,7 @@ void WINAPI TaskListButton_UpdateVisualStates_Hook(void* pThis) {
                     if (auto iconElement =
                             FindChildByName(iconPanelElement, L"Icon")) {
                         double iconSize =
-                            g_unloading ? 24 : g_settings.iconSize;
+                            g_unloading ? kStockIconSize : g_settings.iconSize;
                         iconElement.Width(iconSize);
                         iconElement.Height(iconSize);
                     }
@@ -2076,7 +2112,7 @@ void WINAPI TaskbarComponentHost_UpdateDefaultWidth_Hook(void* pThis) {
     ScopedIconHeightOverride iconHeightOverride;
     if (g_hasDynamicIconScaling && !g_unloading) {
         iconHeightOverride.Set(pThis, GetTaskbarComponentHostIconHeightOffset(),
-                               g_smallIconSize ? 16 : 24);
+                               GetPostureIconHeight());
     }
 
     TaskbarComponentHost_UpdateDefaultWidth_Original(pThis);
@@ -2102,7 +2138,9 @@ void SetExperienceToggleButtonIconHeight(void* pThis, double height) {
 }
 
 // The widget content is laid out for the stock icon size, so its margins are
-// scaled to the customized one.
+// scaled to the customized one. It's the stock icon with its stock 8 margins.
+constexpr int kAugmentedEntryPointContentSize = kStockIconSize + 2 * 8;
+
 void UpdateAugmentedEntryPointContent(FrameworkElement panelElement) {
     FrameworkElement augmentedEntryPointContentGrid =
         FindChildByName(panelElement, L"AugmentedEntryPointContentGrid");
@@ -2110,7 +2148,10 @@ void UpdateAugmentedEntryPointContent(FrameworkElement panelElement) {
         return;
     }
 
-    double marginValue = static_cast<double>(40 - g_settings.iconSize) / 2;
+    double marginValue =
+        static_cast<double>(kAugmentedEntryPointContentSize -
+                            g_settings.iconSize) /
+        2;
     if (marginValue < 0) {
         marginValue = 0;
     }
@@ -2180,8 +2221,11 @@ void UpdateAugmentedEntryPointContent(FrameworkElement panelElement) {
                 margin.Right = 0;
                 margin.Bottom = 0;
 
-                if (g_taskbarHeight < 48) {
-                    margin.Top -= static_cast<double>(48 - g_taskbarHeight) / 2;
+                if (g_taskbarHeight < kStockTaskbarHeight) {
+                    margin.Top -=
+                        static_cast<double>(kStockTaskbarHeight -
+                                            g_taskbarHeight) /
+                        2;
                     if (margin.Top < 0) {
                         margin.Top = 0;
                     }
@@ -2206,7 +2250,9 @@ void UpdateAugmentedEntryPointContent(FrameworkElement panelElement) {
             return false;
         }
 
-        double badgeMaxValue = g_unloading ? 24 : 40 - marginValue * 2;
+        double badgeMaxValue =
+            g_unloading ? kStockIconSize
+                        : kAugmentedEntryPointContentSize - marginValue * 2;
 
         FrameworkElement badgeSmall = tickerGrid;
         if ((badgeSmall = FindChildByName(badgeSmall, L"SmallTicker1")) &&
@@ -2246,6 +2292,14 @@ void UpdateAugmentedEntryPointContent(FrameworkElement panelElement) {
 
         return false;
     });
+}
+
+// The root panel width of a button laid out like the task list buttons: the
+// taskbar button width of the posture, plus the panel padding, plus an
+// adjustment which depends on the button.
+double GetButtonRootPanelWidth(Thickness padding, double widthAdjustment) {
+    return GetTaskbarButtonWidth() + padding.Left + padding.Right +
+           widthAdjustment;
 }
 
 // The XAML part of the UpdateButtonPadding hook below, run after the original
@@ -2295,16 +2349,8 @@ void UpdateExperienceToggleButtonElement(FrameworkElement toggleButtonElement) {
 
     // For the start button, the padding is different depending on the alignment
     // of the taskbar (left/center).
-    auto buttonPadding = panelElement.Padding();
-
-    double defaultWidth = g_smallIconSize ? 32 : 44;
-    double overrideWidth =
-        g_unloading ? defaultWidth
-                    : (g_smallIconSize ? g_settings.taskbarButtonWidthSmall
-                                       : g_settings.taskbarButtonWidth);
-
-    double newWidth = overrideWidth + buttonPadding.Left + buttonPadding.Right +
-                      defaultWidthExtra;
+    double newWidth =
+        GetButtonRootPanelWidth(panelElement.Padding(), defaultWidthExtra);
     if (newWidth != buttonWidth) {
         Wh_Log(L"Updating MediumTaskbarButtonExtent for %s: %f->%f",
                className.c_str(), buttonWidth, newWidth);
@@ -2330,7 +2376,7 @@ void WINAPI ExperienceToggleButton_UpdateButtonPadding_Hook(void* pThis) {
     if (g_hasDynamicIconScaling && !g_unloading &&
         ExperienceToggleButton_IconHeight_get_Original &&
         ExperienceToggleButton_IconHeight_set_Original) {
-        double postureIconHeight = g_smallIconSize ? 16 : 24;
+        double postureIconHeight = GetPostureIconHeight();
         double iconHeight =
             ExperienceToggleButton_IconHeight_get_Original(pThis);
         if (iconHeight != postureIconHeight) {
@@ -2402,8 +2448,7 @@ void WINAPI SearchButtonBase_IconHeight_Hook(void* pThis, double height) {
     Wh_Log(L"> height=%f", height);
 
     if (!g_unloading && IsSearchIconButton(pThis)) {
-        double iconSize =
-            g_smallIconSize ? g_settings.iconSizeSmall : g_settings.iconSize;
+        double iconSize = GetCustomizedIconSize();
         if (height != iconSize) {
             Wh_Log(L"Setting height: %f->%f", height, iconSize);
             height = iconSize;
@@ -2435,16 +2480,7 @@ void SetSearchButtonRootPanelWidth(Controls::Grid panelElement) {
         return;
     }
 
-    auto buttonPadding = panelElement.Padding();
-
-    double defaultWidth = g_smallIconSize ? 32 : 44;
-    double overrideWidth =
-        g_unloading ? defaultWidth
-                    : (g_smallIconSize ? g_settings.taskbarButtonWidthSmall
-                                       : g_settings.taskbarButtonWidth);
-
-    double newWidth =
-        overrideWidth + buttonPadding.Left + buttonPadding.Right - 4;
+    double newWidth = GetButtonRootPanelWidth(panelElement.Padding(), -4);
     if (newWidth != buttonWidth) {
         Wh_Log(L"Updating MediumTaskbarButtonExtent: %f->%f", buttonWidth,
                newWidth);
@@ -2501,11 +2537,10 @@ void WINAPI SearchButtonBase_UpdateButtonPadding_Hook(void* pThis) {
     std::optional<double> prevIconHeight;
     if (!g_unloading && SearchButtonBase_IconHeight_Original &&
         IsSearchIconButton(pThis)) {
-        double postureIconHeight = g_smallIconSize ? 16 : 24;
+        double postureIconHeight = GetPostureIconHeight();
         // Every write of the property goes through the hook above, so the
         // customized icon size is the height the button has.
-        double iconHeight =
-            g_smallIconSize ? g_settings.iconSizeSmall : g_settings.iconSize;
+        double iconHeight = GetCustomizedIconSize();
         if (iconHeight != postureIconHeight) {
             Wh_Log(L"Setting iconHeight: %f->%f", iconHeight,
                    postureIconHeight);
@@ -2626,8 +2661,7 @@ LRESULT WINAPI SendMessageTimeoutW_Hook(HWND hWnd,
                                         PDWORD_PTR lpdwResult) {
     if (g_inShellIconLoaderV2_LoadAsyncIcon__ResumeCoro && !g_unloading &&
         Msg == WM_GETICON && wParam == ICON_BIG &&
-        (g_smallIconSize ? g_settings.iconSizeSmall : g_settings.iconSize) <=
-            16) {
+        GetCustomizedIconSize() <= kStockIconSizeSmall) {
         Wh_Log(L">");
         wParam = ICON_SMALL2;
     }
@@ -3617,7 +3651,8 @@ void Wh_ModBeforeUninit() {
     g_unloading = true;
 
     int originalTaskbarHeight = g_originalTaskbarHeight;
-    ApplySettings(originalTaskbarHeight ? originalTaskbarHeight : 48);
+    ApplySettings(originalTaskbarHeight ? originalTaskbarHeight
+                                        : kStockTaskbarHeight);
 }
 
 void Wh_ModUninit() {
