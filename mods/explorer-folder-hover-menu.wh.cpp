@@ -101,8 +101,8 @@ Inspired by [QTTabBar](https://qttabbar.wikidot.com/).
 - timeoutSeconds: 5
   $name: Timeout (seconds)
   $description: >-
-    Stop loading a folder's contents into the menu after this many seconds. A
-    safety net for folders whose contents are slow to enumerate.
+    Stop loading a folder's contents after this many seconds. A safety net for
+    folders whose contents are slow to enumerate.
 */
 // ==/WindhawkModSettings==
 
@@ -1401,6 +1401,12 @@ PIDLIST_ABSOLUTE ResolveFolderShortcut(IShellFolder* folder,
 // Enumerates the folder's children into a name -> target-pidl map. Real
 // sub-folders map to their own pidl; shortcuts to a folder map to the target's.
 // The map owns its pidls. Worker thread only.
+//
+// Stops early, keeping what was collected, once g_settings.enumTimeoutMs
+// elapses: some folders (e.g. non-indexed search results, which crawl the disk
+// inside IEnumIDList::Next) enumerate very slowly, and the worker serves
+// nothing else meanwhile. The budget is checked between items, so a single
+// slow Next call can still exceed it.
 void WorkerBuildChildren(
     IShellFolder* folder,
     PCIDLIST_ABSOLUTE folderAbs,
@@ -1417,6 +1423,7 @@ void WorkerBuildChildren(
         return;
     }
 
+    ULONGLONG deadline = GetTickCount64() + g_settings.enumTimeoutMs;
     LPITEMIDLIST child = nullptr;
     ULONG fetched = 0;
     while (enumerator->Next(1, &child, &fetched) == S_OK && fetched == 1) {
@@ -1483,6 +1490,12 @@ void WorkerBuildChildren(
 
         CoTaskMemFree(child);
         child = nullptr;
+
+        if (GetTickCount64() >= deadline) {
+            Wh_Log(L"Worker enumeration timed out with %zu entries",
+                   out.size());
+            break;
+        }
     }
 }
 
