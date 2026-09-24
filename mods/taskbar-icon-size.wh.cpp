@@ -134,6 +134,13 @@ std::atomic<bool> g_pendingMeasureOverride;
 std::atomic<bool> g_unloading;
 std::atomic<int> g_hookCallCounter;
 
+// What became of the hooks of each module, for the status report.
+enum class HookState { NotLoaded, Hooked, Failed };
+std::atomic<HookState> g_taskbarDllHookState;
+std::atomic<HookState> g_taskbarViewHookState;
+std::atomic<HookState> g_systemTrayHookState;
+std::atomic<HookState> g_searchUxUiHookState;
+
 std::atomic<bool> g_hasDynamicIconScaling;
 // The stock icon height of the current posture, as the taskbar reports it.
 std::atomic<double> g_postureIconHeight{kStockIconSize};
@@ -2825,6 +2832,7 @@ bool HookSystemTraySymbols(HMODULE module) {
 
     if (!HookSymbols(module, symbolHooks, ARRAYSIZE(symbolHooks))) {
         Wh_Log(L"HookSymbols failed");
+        g_systemTrayHookState = HookState::Failed;
         return false;
     }
 
@@ -2836,6 +2844,7 @@ bool HookSystemTraySymbols(HMODULE module) {
             &SystemTrayController_UpdateFrameSize_Original);
     }
 
+    g_systemTrayHookState = HookState::Hooked;
     return true;
 }
 
@@ -3137,6 +3146,10 @@ bool HookTaskbarViewDllSymbols(HMODULE module,
 
     if (!HookSymbols(module, allHooks, index)) {
         Wh_Log(L"HookSymbols failed");
+        g_taskbarViewHookState = HookState::Failed;
+        if (hookSystemTraySymbolsInline) {
+            g_systemTrayHookState = HookState::Failed;
+        }
         return false;
     }
 
@@ -3181,6 +3194,10 @@ bool HookTaskbarViewDllSymbols(HMODULE module,
         Wh_Log(L"Dynamic icon scaling is enabled");
     }
 
+    g_taskbarViewHookState = HookState::Hooked;
+    if (hookSystemTraySymbolsInline) {
+        g_systemTrayHookState = HookState::Hooked;
+    }
     return true;
 }
 
@@ -3213,9 +3230,11 @@ bool HookSearchUxUiDllSymbols(HMODULE module) {
 
     if (!HookSymbols(module, symbolHooks, ARRAYSIZE(symbolHooks))) {
         Wh_Log(L"HookSymbols failed");
+        g_searchUxUiHookState = HookState::Failed;
         return false;
     }
 
+    g_searchUxUiHookState = HookState::Hooked;
     return true;
 }
 
@@ -3224,6 +3243,7 @@ bool HookTaskbarDllSymbols() {
         LoadLibraryEx(L"taskbar.dll", nullptr, LOAD_LIBRARY_SEARCH_SYSTEM32);
     if (!module) {
         Wh_Log(L"Failed to load taskbar.dll");
+        g_taskbarDllHookState = HookState::Failed;
         return false;
     }
 
@@ -3284,9 +3304,11 @@ bool HookTaskbarDllSymbols() {
 
     if (!HookSymbols(module, taskbarDllHooks, ARRAYSIZE(taskbarDllHooks))) {
         Wh_Log(L"HookSymbols failed");
+        g_taskbarDllHookState = HookState::Failed;
         return false;
     }
 
+    g_taskbarDllHookState = HookState::Hooked;
     return true;
 }
 
@@ -3355,6 +3377,145 @@ HMODULE GetSearchUxUiModuleHandle() {
     return GetModuleHandle(L"SearchUx.UI.dll");
 }
 
+std::wstring FormatHex(size_t value) {
+    constexpr WCHAR kDigits[] = L"0123456789ABCDEF";
+    std::wstring digits;
+    do {
+        digits.insert(digits.begin(), kDigits[value % 16]);
+        value /= 16;
+    } while (value);
+
+    return L"0x" + digits;
+}
+
+// The file name and version of a module, e.g. "Taskbar.View.dll 2608.1.0.0".
+std::wstring FormatModule(HMODULE module) {
+    WCHAR path[MAX_PATH];
+    DWORD pathLength = GetModuleFileName(module, path, ARRAYSIZE(path));
+    if (!pathLength || pathLength == ARRAYSIZE(path)) {
+        return L"?";
+    }
+
+    std::wstring_view pathView(path, pathLength);
+    std::wstring text(pathView.substr(pathView.find_last_of(L'\\') + 1));
+
+    if (VS_FIXEDFILEINFO* info = GetModuleVersionInfo(module, nullptr)) {
+        text += L" " + std::to_wstring(HIWORD(info->dwFileVersionMS)) + L"." +
+                std::to_wstring(LOWORD(info->dwFileVersionMS)) + L"." +
+                std::to_wstring(HIWORD(info->dwFileVersionLS)) + L"." +
+                std::to_wstring(LOWORD(info->dwFileVersionLS));
+    }
+
+    return text;
+}
+
+// Reports which parts of the mod are in effect, in the log and in the mod's
+// local storage, as the "Status" value, which can be read without enabling
+// logging. A Windows update can make the mod lose a part without any visible
+// error, a module which no longer hooks or an offset which is no longer found,
+// so the status starts with DEGRADED and names the lost parts.
+void ReportStatus() {
+    std::wstring problems;
+    auto addProblem = [&problems](const std::wstring& problem) {
+        problems += problems.empty() ? L"" : L", ";
+        problems += problem;
+    };
+
+    std::wstring modules;
+    auto addModule = [&](PCWSTR name, HookState state, HMODULE module) {
+        modules += modules.empty() ? L"" : L", ";
+        modules += name;
+        switch (state) {
+            case HookState::NotLoaded:
+                modules += L" not loaded";
+                return;
+            case HookState::Hooked:
+                modules += L" hooked";
+                break;
+            case HookState::Failed:
+                modules += L" FAILED";
+                addProblem(std::wstring(name) + L" hooks");
+                break;
+        }
+
+        if (module) {
+            modules += L" (" + FormatModule(module) + L")";
+        }
+    };
+
+    addModule(L"taskbar", g_taskbarDllHookState,
+              GetModuleHandle(L"taskbar.dll"));
+    addModule(L"taskbar view", g_taskbarViewHookState,
+              GetTaskbarViewModuleHandle());
+    // Hosted by the taskbar view module on older builds.
+    addModule(L"system tray", g_systemTrayHookState,
+              GetModuleHandle(L"SystemTray.dll"));
+    addModule(L"search", g_searchUxUiHookState, GetSearchUxUiModuleHandle());
+
+    // An offset is only looked for if the function it's found in exists in
+    // this build, and its module is hooked.
+    std::wstring offsets;
+    auto addOffset = [&](PCWSTR name, void* function, auto getOffset) {
+        offsets += offsets.empty() ? L"" : L", ";
+        offsets += name;
+        if (!function) {
+            offsets += L" n/a";
+        } else if (size_t offset = static_cast<size_t>(getOffset())) {
+            offsets += L" " + FormatHex(offset);
+        } else {
+            offsets += L" NOT FOUND";
+            addProblem(std::wstring(name) + L" offset");
+        }
+    };
+
+    addOffset(L"iconHeight", (void*)TaskListButton_IconHeight_Original,
+              GetIconHeightOffset);
+    addOffset(L"buttonExtent",
+              TaskListButton_UpdateIconColumnDefinition_Original,
+              GetMediumTaskbarButtonExtentOffset);
+    addOffset(L"taskbarFrame", TaskbarController_OnGroupingModeChanged_Original,
+              GetTaskbarFrameOffset);
+    addOffset(L"trayLastHeight",
+              (void*)SystemTrayController_UpdateFrameSize_SymbolAddress,
+              GetLastHeightOffset);
+    addOffset(L"componentHostIconHeight",
+              (void*)TaskbarComponentHost_IconHeight_Original,
+              GetTaskbarComponentHostIconHeightOffset);
+#ifdef _M_ARM64
+    addOffset(L"frameSize",
+              (void*)TaskbarConfiguration_UpdateFrameSize_SymbolAddress,
+              GetFrameSizeOffset);
+#endif
+
+    SYSTEMTIME time;
+    GetLocalTime(&time);
+    WCHAR date[16] = L"";
+    WCHAR timeOfDay[16] = L"";
+    GetDateFormatEx(LOCALE_NAME_INVARIANT, 0, &time, L"yyyy-MM-dd", date,
+                    ARRAYSIZE(date), nullptr);
+    GetTimeFormatEx(LOCALE_NAME_INVARIANT, 0, &time, L"HH:mm:ss", timeOfDay,
+                    ARRAYSIZE(timeOfDay));
+
+    std::wstring status =
+        problems.empty() ? L"OK" : L"DEGRADED (" + problems + L")";
+    status += L" at " + std::wstring(date) + L" " + timeOfDay;
+    status += L" | modules: " + modules;
+    status += L" | dynamic icon scaling: ";
+    status += g_hasDynamicIconScaling ? L"on" : L"off";
+    status += L" | offsets: " + offsets;
+    status += L" | settings: height " +
+              (g_settings.taskbarHeight
+                   ? std::to_wstring(g_settings.taskbarHeight)
+                   : std::wstring(L"default")) +
+              L", icons " + std::to_wstring(g_settings.iconSize) + L"/" +
+              std::to_wstring(g_settings.iconSizeSmall) + L", buttons " +
+              std::to_wstring(g_settings.taskbarButtonWidth) + L"/" +
+              std::to_wstring(g_settings.taskbarButtonWidthSmall);
+
+    Wh_Log(L"Status: %s", status.c_str());
+    Wh_SetStringValue(L"Status", status.c_str());
+}
+
 using LoadLibraryExW_t = decltype(&LoadLibraryExW);
 LoadLibraryExW_t LoadLibraryExW_Original;
 HMODULE WINAPI LoadLibraryExW_Hook(LPCWSTR lpLibFileName,
@@ -3375,6 +3536,8 @@ HMODULE WINAPI LoadLibraryExW_Hook(LPCWSTR lpLibFileName,
         if (HookSystemTraySymbols(module)) {
             Wh_ApplyHookOperations();
         }
+
+        ReportStatus();
     }
 
     if (!g_taskbarViewDllLoaded && GetTaskbarViewModuleHandle() == module &&
@@ -3392,6 +3555,8 @@ HMODULE WINAPI LoadLibraryExW_Hook(LPCWSTR lpLibFileName,
         if (HookTaskbarViewDllSymbols(module, hookSystemTraySymbolsInline)) {
             Wh_ApplyHookOperations();
         }
+
+        ReportStatus();
     }
 
     if (!g_searchUxUiDllLoaded && GetSearchUxUiModuleHandle() == module &&
@@ -3401,6 +3566,8 @@ HMODULE WINAPI LoadLibraryExW_Hook(LPCWSTR lpLibFileName,
         if (HookSearchUxUiDllSymbols(module)) {
             Wh_ApplyHookOperations();
         }
+
+        ReportStatus();
     }
 
     return module;
@@ -3412,6 +3579,7 @@ BOOL Wh_ModInit() {
     LoadSettings();
 
     if (!HookTaskbarDllSymbols()) {
+        ReportStatus();
         return FALSE;
     }
 
@@ -3425,6 +3593,7 @@ BOOL Wh_ModInit() {
         if (systemTrayModule != GetTaskbarViewModuleHandle()) {
             g_systemTrayModuleHooked = true;
             if (!HookSystemTraySymbols(systemTrayModule)) {
+                ReportStatus();
                 return FALSE;
             }
         }
@@ -3440,6 +3609,7 @@ BOOL Wh_ModInit() {
         }
         if (!HookTaskbarViewDllSymbols(taskbarViewModule,
                                        hookSystemTraySymbolsInline)) {
+            ReportStatus();
             return FALSE;
         }
     } else {
@@ -3456,6 +3626,7 @@ BOOL Wh_ModInit() {
     if (HMODULE searchUxUiModule = GetSearchUxUiModuleHandle()) {
         g_searchUxUiDllLoaded = true;
         if (!HookSearchUxUiDllSymbols(searchUxUiModule)) {
+            ReportStatus();
             return FALSE;
         }
     } else {
@@ -3529,11 +3700,15 @@ void Wh_ModAfterInit() {
         }
     }
 
+    ReportStatus();
+
     ApplySettings(GetTargetTaskbarHeight());
 }
 
 void Wh_ModBeforeUninit() {
     Wh_Log(L">");
+
+    Wh_SetStringValue(L"Status", L"Unloaded");
 
     g_unloading = true;
 
@@ -3552,6 +3727,8 @@ void Wh_ModSettingsChanged() {
     Wh_Log(L">");
 
     LoadSettings();
+
+    ReportStatus();
 
     ApplySettings(GetTargetTaskbarHeight());
 }
