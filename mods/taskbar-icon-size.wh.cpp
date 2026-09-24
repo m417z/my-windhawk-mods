@@ -130,7 +130,8 @@ std::atomic<bool> g_unloading;
 std::atomic<int> g_hookCallCounter;
 
 std::atomic<bool> g_hasDynamicIconScaling;
-std::atomic<bool> g_smallIconSize;
+// The stock icon height of the current posture, as the taskbar reports it.
+std::atomic<double> g_postureIconHeight{kStockIconSize};
 std::atomic<int> g_originalTaskbarHeight;
 std::atomic<int> g_taskbarHeight;
 thread_local bool g_inShellIconLoaderV2_LoadAsyncIcon__ResumeCoro;
@@ -138,20 +139,25 @@ thread_local bool g_inSystemTrayController_UpdateFrameSize;
 std::atomic<bool> g_taskbarButtonWidthCustomized;
 
 // The stock icon height of the current posture, which the taskbar code compares
-// icon heights against to tell the postures apart.
+// icon heights against to tell the postures apart. It's handed over as is, so
+// that the tablet posture isn't laid out as the medium one.
 double GetPostureIconHeight() {
-    return g_smallIconSize ? kStockIconSizeSmall : kStockIconSize;
+    return g_postureIconHeight;
+}
+
+bool IsSmallPosture() {
+    return g_postureIconHeight <= kStockIconSizeSmall;
 }
 
 // The customized icon size of the current posture.
 int GetCustomizedIconSize() {
-    return g_smallIconSize ? g_settings.iconSizeSmall : g_settings.iconSize;
+    return IsSmallPosture() ? g_settings.iconSizeSmall : g_settings.iconSize;
 }
 
 // The taskbar button width of the current posture: the customized one, or the
 // stock one when unloading.
 int GetTaskbarButtonWidth() {
-    if (g_smallIconSize) {
+    if (IsSmallPosture()) {
         return g_unloading ? kStockTaskbarButtonWidthSmall
                            : g_settings.taskbarButtonWidthSmall;
     }
@@ -811,7 +817,9 @@ TaskbarConfiguration_GetIconHeightInViewPixels_method_Hook(void* pThis) {
 
     // Stock heights tell the postures apart: 16 small, 24 medium, 32 tablet.
     // The customized heights can't, they may be equal.
-    g_smallIconSize = iconSize <= kStockIconSizeSmall;
+    if (IsPlausibleSize(iconSize)) {
+        g_postureIconHeight = iconSize;
+    }
 
     if (g_inTaskbarFrame_GetMetrics) {
         g_TaskbarFrame_GetMetrics_iconHeight = iconSize;
