@@ -92,6 +92,7 @@ Also check out the **Taskbar tray icon spacing and grid** mod.
 #include <winrt/Windows.UI.Xaml.Controls.h>
 #include <winrt/Windows.UI.Xaml.Media.h>
 
+#include <algorithm>
 #include <atomic>
 #include <functional>
 #include <limits>
@@ -120,13 +121,13 @@ std::atomic<bool> g_pendingMeasureOverride;
 std::atomic<bool> g_unloading;
 std::atomic<int> g_hookCallCounter;
 
-bool g_hasDynamicIconScaling;
+std::atomic<bool> g_hasDynamicIconScaling;
 std::atomic<bool> g_smallIconSize;
-int g_originalTaskbarHeight;
-int g_taskbarHeight;
-std::atomic<DWORD> g_shellIconLoaderV2_LoadAsyncIcon__ResumeCoro_ThreadId;
-bool g_inSystemTrayController_UpdateFrameSize;
-bool g_taskbarButtonWidthCustomized;
+std::atomic<int> g_originalTaskbarHeight;
+std::atomic<int> g_taskbarHeight;
+thread_local bool g_inShellIconLoaderV2_LoadAsyncIcon__ResumeCoro;
+thread_local bool g_inSystemTrayController_UpdateFrameSize;
+std::atomic<bool> g_taskbarButtonWidthCustomized;
 
 double* double_48_value_Original;
 
@@ -140,6 +141,98 @@ STDAPI GetDpiForMonitor(HMONITOR hmonitor,
                         MONITOR_DPI_TYPE dpiType,
                         UINT* dpiX,
                         UINT* dpiY);
+
+// Sets a flag for the duration of a scope. The previous value is restored,
+// rather than the flag being cleared, so that a nested call doesn't clear it
+// while the outer one is still running.
+class ScopedFlag {
+   public:
+    explicit ScopedFlag(bool& flag) : flag_(flag), prevValue_(flag) {
+        flag_ = true;
+    }
+    ScopedFlag(const ScopedFlag&) = delete;
+    ScopedFlag& operator=(const ScopedFlag&) = delete;
+    ~ScopedFlag() { flag_ = prevValue_; }
+
+   private:
+    bool& flag_;
+    bool prevValue_;
+};
+
+// Offsets found by scanning machine code may be wrong on a build the patterns
+// weren't written for. A field at such an offset is only written to if it holds
+// a plausible size, which rules out pointers, counters and flags, whose bits
+// read as tiny or huge doubles.
+bool IsPlausibleSize(double value) {
+    return value >= 1 && value < 10000;
+}
+
+// Temporarily replaces an icon height field found by scanning machine code,
+// and restores the previous value when the scope ends.
+class ScopedIconHeightOverride {
+   public:
+    ScopedIconHeightOverride() = default;
+    ScopedIconHeightOverride(const ScopedIconHeightOverride&) = delete;
+    ScopedIconHeightOverride& operator=(const ScopedIconHeightOverride&) =
+        delete;
+    ~ScopedIconHeightOverride() { Restore(); }
+
+    // Returns whether the field was replaced. A zero offset means that it
+    // wasn't found.
+    bool Set(void* object, size_t offset, double newValue) {
+        if (!offset) {
+            return false;
+        }
+
+        double* field = (double*)((BYTE*)object + offset);
+        if (!IsPlausibleSize(*field)) {
+            Wh_Log(L"Error: Implausible iconHeight %f at offset 0x%zX",
+                   *field, offset);
+            return false;
+        }
+
+        Wh_Log(L"Setting iconHeight: %f->%f", *field, newValue);
+        field_ = field;
+        prevValue_ = *field;
+        *field = newValue;
+        return true;
+    }
+
+    // Returns whether a value was restored.
+    bool Restore() {
+        if (!field_) {
+            return false;
+        }
+
+        *field_ = prevValue_;
+        field_ = nullptr;
+        return true;
+    }
+
+    double PrevValue() const { return prevValue_; }
+
+   private:
+    double* field_ = nullptr;
+    double prevValue_ = 0;
+};
+
+// An exception unwinding from a hook reaches explorer frames compiled with
+// MSVC, which can't catch it, and explorer crashes. XAML calls can throw, e.g.
+// when a property is set to a value XAML rejects, so the ones made from hooks
+// go through this, which logs the error and carries on.
+template <typename F>
+void RunXamlSafely(PCSTR sourceFunctionName, F&& f) {
+    try {
+        f();
+    } catch (const winrt::hresult_error& ex) {
+        Wh_Log(L"[%S] Error %08X: %s", sourceFunctionName, ex.code().value,
+               ex.message().c_str());
+    } catch (const std::exception& ex) {
+        Wh_Log(L"[%S] Error: %S", sourceFunctionName, ex.what());
+    } catch (...) {
+        Wh_Log(L"[%S] Unknown error", sourceFunctionName);
+    }
+}
 
 size_t OffsetFromAssemblyRegex(void* func,
                                size_t defValue,
@@ -170,6 +263,17 @@ size_t OffsetFromAssemblyRegex(void* func,
     return defValue;
 }
 
+// Parses a hexadecimal displacement from disassembly. One which doesn't fit a
+// LONG is returned as -1, which the callers reject like any negative offset,
+// rather than being truncated into a plausible looking one.
+LONG ParseDisasmOffset(const std::string& hex) {
+    unsigned long long value = std::stoull(hex, nullptr, 16);
+    return value > static_cast<unsigned long long>(
+                       std::numeric_limits<LONG>::max())
+               ? -1
+               : static_cast<LONG>(value);
+}
+
 std::optional<bool> IsOsFeatureEnabled(UINT32 featureId) {
     enum FEATURE_ENABLED_STATE {
         FEATURE_ENABLED_STATE_DEFAULT = 0,
@@ -181,7 +285,9 @@ std::optional<bool> IsOsFeatureEnabled(UINT32 featureId) {
     struct RTL_FEATURE_CONFIGURATION {
         unsigned int featureId;
         unsigned __int32 group : 4;
-        FEATURE_ENABLED_STATE enabledState : 2;
+        // Not typed FEATURE_ENABLED_STATE: an enum bit-field is signed with
+        // MSVC, which would read the enabled state (2) back as -2.
+        unsigned __int32 enabledState : 2;
         unsigned __int32 enabledStateOptions : 1;
         unsigned __int32 unused1 : 1;
         unsigned __int32 variant : 6;
@@ -263,6 +369,8 @@ FrameworkElement FindChildByClassName(FrameworkElement element,
     });
 }
 
+// Goes through SHAppBarMessage, a message round trip to the taskbar, so hooks
+// test it after their cheap conditions.
 bool IsVerticalTaskbar() {
     APPBARDATA appBarData = {
         .cbSize = sizeof(APPBARDATA),
@@ -329,7 +437,9 @@ ResourceDictionary_Lookup_TaskbarView_Hook(
         return ret;
     }
 
-    OverrideResourceDirectoryLookup(__FUNCTION__, key, ret);
+    RunXamlSafely(__FUNCTION__, [key, ret, name = __FUNCTION__] {
+        OverrideResourceDirectoryLookup(name, key, ret);
+    });
 
     return ret;
 }
@@ -354,7 +464,9 @@ ResourceDictionary_Lookup_SearchUxUi_Hook(
         return ret;
     }
 
-    OverrideResourceDirectoryLookup(__FUNCTION__, key, ret);
+    RunXamlSafely(__FUNCTION__, [key, ret, name = __FUNCTION__] {
+        OverrideResourceDirectoryLookup(name, key, ret);
+    });
 
     return ret;
 }
@@ -366,7 +478,7 @@ IconUtils_GetIconSize_t IconUtils_GetIconSize_Original;
 void WINAPI IconUtils_GetIconSize_Hook(bool isSmall, int type, SIZE* size) {
     [[maybe_unused]] static bool logged = [] {
         Wh_Log(L"> [%S] First call, hasDynamicIconScaling=%d",
-               __PRETTY_FUNCTION__, g_hasDynamicIconScaling);
+               __PRETTY_FUNCTION__, g_hasDynamicIconScaling.load());
         return true;
     }();
 
@@ -393,7 +505,7 @@ bool WINAPI IconContainer_IsStorageRecreationRequired_Hook(void* pThis,
                                                            int flags) {
     [[maybe_unused]] static bool logged = [] {
         Wh_Log(L"> [%S] First call, hasDynamicIconScaling=%d",
-               __PRETTY_FUNCTION__, g_hasDynamicIconScaling);
+               __PRETTY_FUNCTION__, g_hasDynamicIconScaling.load());
         return true;
     }();
 
@@ -421,10 +533,16 @@ void WINAPI TrayUI_GetMinSize_Hook(void* pThis, HMONITOR monitor, SIZE* size) {
 
     // Reassign min height to fix displaced secondary taskbar when auto-hide is
     // enabled.
-    if (!IsVerticalTaskbar() && g_taskbarHeight) {
+    if (g_taskbarHeight && !IsVerticalTaskbar()) {
         UINT dpiX = 0;
         UINT dpiY = 0;
-        GetDpiForMonitor(monitor, MDT_DEFAULT, &dpiX, &dpiY);
+        // The monitor may be gone during a display change, and a zero DPI would
+        // make the min height zero, so the stock one is kept instead.
+        if (FAILED(GetDpiForMonitor(monitor, MDT_DEFAULT, &dpiX, &dpiY)) ||
+            !dpiY) {
+            Wh_Log(L"Error: Can't get monitor DPI: monitor=%p", monitor);
+            return;
+        }
 
         size->cy = MulDiv(g_taskbarHeight, dpiY, 96);
     }
@@ -438,8 +556,8 @@ CIconLoadingFunctions_GetClassLongPtrW_t
 ULONG_PTR WINAPI CIconLoadingFunctions_GetClassLongPtrW_Hook(void* pThis,
                                                              HWND hWnd,
                                                              int nIndex) {
-    Wh_Log(L"> hasDynamicIconScaling=%d, nIndex=%d", g_hasDynamicIconScaling,
-           nIndex);
+    Wh_Log(L"> hasDynamicIconScaling=%d, nIndex=%d",
+           g_hasDynamicIconScaling.load(), nIndex);
 
     if (g_hasDynamicIconScaling) {
         return CIconLoadingFunctions_GetClassLongPtrW_Original(pThis, hWnd,
@@ -474,8 +592,8 @@ CIconLoadingFunctions_SendMessageCallbackW_Hook(void* pThis,
                                                 LPARAM lParam,
                                                 SENDASYNCPROC lpResultCallBack,
                                                 ULONG_PTR dwData) {
-    Wh_Log(L"> hasDynamicIconScaling=%d, Msg=%u, wParam=%zu, lParam=%zu",
-           g_hasDynamicIconScaling, Msg, wParam, lParam);
+    Wh_Log(L"> hasDynamicIconScaling=%d, Msg=%u, wParam=%zu, lParam=%zd",
+           g_hasDynamicIconScaling.load(), Msg, wParam, lParam);
 
     if (g_hasDynamicIconScaling) {
         return CIconLoadingFunctions_SendMessageCallbackW_Original(
@@ -498,19 +616,18 @@ using ShellIconLoaderV2_LoadAsyncIcon__ResumeCoro_t =
 ShellIconLoaderV2_LoadAsyncIcon__ResumeCoro_t
     ShellIconLoaderV2_LoadAsyncIcon__ResumeCoro_Original;
 void WINAPI ShellIconLoaderV2_LoadAsyncIcon__ResumeCoro_Hook(void* pThis) {
-    Wh_Log(L"> hasDynamicIconScaling=%d", g_hasDynamicIconScaling);
+    Wh_Log(L"> hasDynamicIconScaling=%d", g_hasDynamicIconScaling.load());
 
     if (g_hasDynamicIconScaling) {
         ShellIconLoaderV2_LoadAsyncIcon__ResumeCoro_Original(pThis);
         return;
     }
 
-    g_shellIconLoaderV2_LoadAsyncIcon__ResumeCoro_ThreadId =
-        GetCurrentThreadId();
+    // A per-thread flag: a single thread id shared by the whole process was
+    // overwritten when two icons were loaded on two threads at once.
+    ScopedFlag inResumeCoro(g_inShellIconLoaderV2_LoadAsyncIcon__ResumeCoro);
 
     ShellIconLoaderV2_LoadAsyncIcon__ResumeCoro_Original(pThis);
-
-    g_shellIconLoaderV2_LoadAsyncIcon__ResumeCoro_ThreadId = 0;
 }
 
 using TrayUI__StuckTrayChange_t = void(WINAPI*)(void* pThis);
@@ -546,7 +663,7 @@ int WINAPI TaskListItemViewModel_GetIconHeight_Hook(void* pThis,
                                                     double* iconHeight) {
     [[maybe_unused]] static bool logged = [] {
         Wh_Log(L"> [%S] First call, hasDynamicIconScaling=%d",
-               __PRETTY_FUNCTION__, g_hasDynamicIconScaling);
+               __PRETTY_FUNCTION__, g_hasDynamicIconScaling.load());
         return true;
     }();
 
@@ -573,7 +690,7 @@ TaskListGroupViewModel_GetIconHeight_t
 int WINAPI TaskListGroupViewModel_GetIconHeight_Hook(void* pThis,
                                                      void* param1,
                                                      double* iconHeight) {
-    Wh_Log(L"> hasDynamicIconScaling=%d", g_hasDynamicIconScaling);
+    Wh_Log(L"> hasDynamicIconScaling=%d", g_hasDynamicIconScaling.load());
 
     if (g_hasDynamicIconScaling) {
         return TaskListGroupViewModel_GetIconHeight_Original(pThis, param1,
@@ -598,7 +715,7 @@ double WINAPI
 TaskbarConfiguration_GetIconHeightInViewPixels_taskbarSizeEnum_Hook(
     int enumTaskbarSize) {
     Wh_Log(L"> hasDynamicIconScaling=%d, enumTaskbarSize=%d",
-           g_hasDynamicIconScaling, enumTaskbarSize);
+           g_hasDynamicIconScaling.load(), enumTaskbarSize);
 
     // Even if the feature flag is enabled, the feature may not be actually
     // enabled for some reason. Handle this here by resetting the flag.
@@ -622,7 +739,7 @@ TaskbarConfiguration_GetIconHeightInViewPixels_double_t
 double WINAPI
 TaskbarConfiguration_GetIconHeightInViewPixels_double_Hook(double baseHeight) {
     Wh_Log(L"> hasDynamicIconScaling=%d, baseHeight=%f",
-           g_hasDynamicIconScaling, baseHeight);
+           g_hasDynamicIconScaling.load(), baseHeight);
 
     // Even if the feature flag is enabled, the feature may not be actually
     // enabled for some reason. Handle this here by resetting the flag.
@@ -653,7 +770,7 @@ double WINAPI
 TaskbarConfiguration_GetIconHeightInViewPixels_method_Hook(void* pThis) {
     [[maybe_unused]] static bool logged = [] {
         Wh_Log(L"> [%S] First call, hasDynamicIconScaling=%d",
-               __PRETTY_FUNCTION__, g_hasDynamicIconScaling);
+               __PRETTY_FUNCTION__, g_hasDynamicIconScaling.load());
         return true;
     }();
 
@@ -702,7 +819,7 @@ size_t GetIconHeightOffset() {
 #else
 #error "Unsupported architecture"
 #endif
-        Wh_Log(L"iconHeightOffset=0x%X", offset);
+        Wh_Log(L"iconHeightOffset=0x%zX", offset);
         return offset > 0xFFFF ? 0 : offset;
     }();
 
@@ -789,8 +906,8 @@ double WINAPI SystemTrayController_GetFrameSize_Hook(void* pThis,
                                                      int enumTaskbarSize) {
     Wh_Log(L"> %d", enumTaskbarSize);
 
-    if (!IsVerticalTaskbar() && g_taskbarHeight &&
-        (enumTaskbarSize == 1 || enumTaskbarSize == 2)) {
+    if (g_taskbarHeight && (enumTaskbarSize == 1 || enumTaskbarSize == 2) &&
+        !IsVerticalTaskbar()) {
         return g_taskbarHeight;
     }
 
@@ -806,8 +923,8 @@ SystemTraySecondaryController_GetFrameSize_Hook(void* pThis,
                                                 int enumTaskbarSize) {
     Wh_Log(L"> %d", enumTaskbarSize);
 
-    if (!IsVerticalTaskbar() && g_taskbarHeight &&
-        (enumTaskbarSize == 1 || enumTaskbarSize == 2)) {
+    if (g_taskbarHeight && (enumTaskbarSize == 1 || enumTaskbarSize == 2) &&
+        !IsVerticalTaskbar()) {
         return g_taskbarHeight;
     }
 
@@ -827,8 +944,8 @@ double WINAPI TaskbarConfiguration_GetFrameSize_Hook(int enumTaskbarSize) {
             TaskbarConfiguration_GetFrameSize_Original(enumTaskbarSize);
     }
 
-    if (!IsVerticalTaskbar() && g_taskbarHeight &&
-        (enumTaskbarSize == 1 || enumTaskbarSize == 2)) {
+    if (g_taskbarHeight && (enumTaskbarSize == 1 || enumTaskbarSize == 2) &&
+        !IsVerticalTaskbar()) {
         return g_taskbarHeight;
     }
 
@@ -874,7 +991,7 @@ LONG GetFrameSizeOffset() {
             }
 
             // Wh_Log(L"%S", result1.text);
-            LONG offset = std::stoull(match1[1], nullptr, 16);
+            LONG offset = ParseDisasmOffset(match1[1]);
             Wh_Log(L"frameSizeOffset=0x%X", offset);
             return (offset < 0 || offset > 0xFFFF) ? 0 : offset;
         }
@@ -921,7 +1038,7 @@ void WINAPI Event_operator_call_Hook(void* pThis) {
                 *g_TaskbarConfiguration_UpdateFrameSize_frameSize;
         }
 
-        if (!IsVerticalTaskbar() && g_taskbarHeight) {
+        if (g_taskbarHeight && !IsVerticalTaskbar()) {
             *g_TaskbarConfiguration_UpdateFrameSize_frameSize = g_taskbarHeight;
         }
     }
@@ -1017,7 +1134,7 @@ LONG GetLastHeightOffset() {
             // Wh_Log(L"%S", result1.text);
             // Wh_Log(L"%S", result2.text);
             // Wh_Log(L"%S", result3.text);
-            LONG offset = std::stoull(match1[1], nullptr, 16);
+            LONG offset = ParseDisasmOffset(match1[1]);
             Wh_Log(L"lastHeightOffset=0x%X", offset);
             return (offset < 0 || offset > 0xFFFF) ? 0 : offset;
         }
@@ -1048,16 +1165,21 @@ void WINAPI SystemTrayController_UpdateFrameSize_Hook(void* pThis) {
 
     LONG lastHeightOffset = GetLastHeightOffset();
     if (lastHeightOffset) {
-        *(double*)((BYTE*)pThis + lastHeightOffset) = 0;
+        // A zero last height is already reset, and any other implausible value
+        // means that the offset is wrong for this build.
+        double* lastHeight = (double*)((BYTE*)pThis + lastHeightOffset);
+        if (IsPlausibleSize(*lastHeight)) {
+            *lastHeight = 0;
+        } else if (*lastHeight != 0) {
+            Wh_Log(L"Error: Implausible lastHeight %f, skipping", *lastHeight);
+        }
     } else {
         Wh_Log(L"Error: lastHeightOffset is invalid");
     }
 
-    g_inSystemTrayController_UpdateFrameSize = true;
+    ScopedFlag inUpdateFrameSize(g_inSystemTrayController_UpdateFrameSize);
 
     SystemTrayController_UpdateFrameSize_Original(pThis);
-
-    g_inSystemTrayController_UpdateFrameSize = false;
 }
 
 using TaskbarFrame_MaxHeight_double_t = void(WINAPI*)(void* pThis,
@@ -1133,7 +1255,7 @@ LONG GetTaskbarFrameOffset() {
             }
 
             // Wh_Log(L"%S", result1.text);
-            LONG offset = std::stoull(match1[1], nullptr, 16);
+            LONG offset = ParseDisasmOffset(match1[1]);
             Wh_Log(L"taskbarFrameOffset=0x%X", offset);
             return (offset < 0 || offset > 0xFFFF) ? 0 : offset;
         }
@@ -1187,22 +1309,27 @@ void WINAPI TaskbarController_UpdateFrameHeight_Hook(void* pThis) {
         return;
     }
 
-    taskbarFrameElement.MaxHeight(std::numeric_limits<double>::infinity());
+    RunXamlSafely(__FUNCTION__, [&taskbarFrameElement] {
+        taskbarFrameElement.MaxHeight(std::numeric_limits<double>::infinity());
+    });
 
     TaskbarController_UpdateFrameHeight_Original(pThis);
 
     // Adjust parent grid height if needed.
-    auto contentGrid = Media::VisualTreeHelper::GetParent(taskbarFrameElement)
-                           .try_as<FrameworkElement>();
-    if (contentGrid) {
-        double height = taskbarFrameElement.Height();
-        double contentGridHeight = contentGrid.Height();
-        if (contentGridHeight > 0 && contentGridHeight != height) {
-            Wh_Log(L"Adjusting contentGrid.Height: %f->%f", contentGridHeight,
-                   height);
-            contentGrid.Height(height);
+    RunXamlSafely(__FUNCTION__, [&taskbarFrameElement] {
+        auto contentGrid =
+            Media::VisualTreeHelper::GetParent(taskbarFrameElement)
+                .try_as<FrameworkElement>();
+        if (contentGrid) {
+            double height = taskbarFrameElement.Height();
+            double contentGridHeight = contentGrid.Height();
+            if (contentGridHeight > 0 && contentGridHeight != height) {
+                Wh_Log(L"Adjusting contentGrid.Height: %f->%f",
+                       contentGridHeight, height);
+                contentGrid.Height(height);
+            }
         }
-    }
+    });
 }
 
 using SystemTraySecondaryController_UpdateFrameSize_t =
@@ -1212,11 +1339,9 @@ SystemTraySecondaryController_UpdateFrameSize_t
 void WINAPI SystemTraySecondaryController_UpdateFrameSize_Hook(void* pThis) {
     Wh_Log(L">");
 
-    g_inSystemTrayController_UpdateFrameSize = true;
+    ScopedFlag inUpdateFrameSize(g_inSystemTrayController_UpdateFrameSize);
 
     SystemTraySecondaryController_UpdateFrameSize_Original(pThis);
-
-    g_inSystemTrayController_UpdateFrameSize = false;
 }
 
 using SystemTrayFrame_Height_t = void(WINAPI*)(void* pThis, double value);
@@ -1224,8 +1349,8 @@ SystemTrayFrame_Height_t SystemTrayFrame_Height_Original;
 void WINAPI SystemTrayFrame_Height_Hook(void* pThis, double value) {
     // Wh_Log(L">");
 
-    if (!IsVerticalTaskbar() && g_inSystemTrayController_UpdateFrameSize &&
-        g_taskbarHeight) {
+    if (g_inSystemTrayController_UpdateFrameSize && g_taskbarHeight &&
+        !IsVerticalTaskbar()) {
         Wh_Log(L">");
         // Set the system tray height explicitly, otherwise it may not match the
         // custom taskbar height.
@@ -1248,13 +1373,9 @@ SystemTrayFrame_GetStyle_t SystemTrayFrame_GetStyle_Original;
 int WINAPI SystemTrayFrame_GetStyle_Hook(void* pThis, void** style) {
     Wh_Log(L">");
 
-    g_inSystemTrayFrameModeCheck = true;
+    ScopedFlag inModeCheck(g_inSystemTrayFrameModeCheck);
 
-    int ret = SystemTrayFrame_GetStyle_Original(pThis, style);
-
-    g_inSystemTrayFrameModeCheck = false;
-
-    return ret;
+    return SystemTrayFrame_GetStyle_Original(pThis, style);
 }
 
 using SystemTrayFrame_GetShowDesktopButtonColumnWidth_t =
@@ -1265,14 +1386,10 @@ int WINAPI SystemTrayFrame_GetShowDesktopButtonColumnWidth_Hook(void* pThis,
                                                                 double* width) {
     Wh_Log(L">");
 
-    g_inSystemTrayFrameModeCheck = true;
+    ScopedFlag inModeCheck(g_inSystemTrayFrameModeCheck);
 
-    int ret =
-        SystemTrayFrame_GetShowDesktopButtonColumnWidth_Original(pThis, width);
-
-    g_inSystemTrayFrameModeCheck = false;
-
-    return ret;
+    return SystemTrayFrame_GetShowDesktopButtonColumnWidth_Original(pThis,
+                                                                    width);
 }
 
 using SystemTrayFrame_Height_get_t = double(WINAPI*)(void* pThis);
@@ -1280,8 +1397,8 @@ SystemTrayFrame_Height_get_t SystemTrayFrame_Height_get_Original;
 double WINAPI SystemTrayFrame_Height_get_Hook(void* pThis) {
     // Wh_Log(L">");
 
-    if (g_inSystemTrayFrameModeCheck && !IsVerticalTaskbar() &&
-        g_originalTaskbarHeight) {
+    if (g_inSystemTrayFrameModeCheck && g_originalTaskbarHeight &&
+        !IsVerticalTaskbar()) {
         return g_originalTaskbarHeight;
     }
 
@@ -1404,12 +1521,14 @@ TaskbarFrame_GetMetrics_t TaskbarFrame_GetMetrics_Original;
 void* WINAPI TaskbarFrame_GetMetrics_Hook(void* pThis, void* metrics) {
     Wh_Log(L">");
 
-    g_inTaskbarFrame_GetMetrics = true;
-    g_TaskbarFrame_GetMetrics_iconHeight.reset();
+    void* ret;
+    {
+        ScopedFlag inGetMetrics(g_inTaskbarFrame_GetMetrics);
+        g_TaskbarFrame_GetMetrics_iconHeight.reset();
 
-    void* ret = TaskbarFrame_GetMetrics_Original(pThis, metrics);
+        ret = TaskbarFrame_GetMetrics_Original(pThis, metrics);
+    }
 
-    g_inTaskbarFrame_GetMetrics = false;
     std::optional<double> iconHeight = g_TaskbarFrame_GetMetrics_iconHeight;
 
     // Without dynamic icon scaling, the icon height isn't consulted and the
@@ -1431,8 +1550,7 @@ void* WINAPI TaskbarFrame_GetMetrics_Hook(void* pThis, void* metrics) {
 
     // The button extent is the second member of TaskbarFrameMetrics.
     double* buttonExtent = (double*)((BYTE*)metrics + sizeof(double));
-    if (*buttonExtent >= 1 && *buttonExtent < 10000 &&
-        *buttonExtent != newValue) {
+    if (IsPlausibleSize(*buttonExtent) && *buttonExtent != newValue) {
         Wh_Log(L"Updating button extent for TaskbarFrame metrics: %f->%f",
                *buttonExtent, newValue);
         *buttonExtent = newValue;
@@ -1445,7 +1563,7 @@ using TaskListButton_UpdateButtonPadding_t = void(WINAPI*)(void* pThis);
 TaskListButton_UpdateButtonPadding_t
     TaskListButton_UpdateButtonPadding_Original;
 void WINAPI TaskListButton_UpdateButtonPadding_Hook(void* pThis) {
-    Wh_Log(L"> hasDynamicIconScaling=%d", g_hasDynamicIconScaling);
+    Wh_Log(L"> hasDynamicIconScaling=%d", g_hasDynamicIconScaling.load());
 
     if (!g_hasDynamicIconScaling || g_unloading) {
         TaskListButton_UpdateButtonPadding_Original(pThis);
@@ -1454,27 +1572,17 @@ void WINAPI TaskListButton_UpdateButtonPadding_Hook(void* pThis) {
 
     // Make sure to use a different value for other calculations such as
     // padding. Value 16 and 32 have special treatment.
-    double* iconHeight = nullptr;
-    double prevIconHeight;
-    if (size_t iconHeightOffset = GetIconHeightOffset()) {
-        iconHeight = (double*)((BYTE*)pThis + iconHeightOffset);
-        prevIconHeight = *iconHeight;
-        double newIconHeight = g_smallIconSize ? 16 : 24;
-        Wh_Log(L"Setting iconHeight: %f->%f", prevIconHeight, newIconHeight);
-        *iconHeight = newIconHeight;
-    }
+    ScopedIconHeightOverride iconHeightOverride;
+    iconHeightOverride.Set(pThis, GetIconHeightOffset(),
+                           g_smallIconSize ? 16 : 24);
 
     TaskListButton_UpdateButtonPadding_Original(pThis);
-
-    if (iconHeight) {
-        *iconHeight = prevIconHeight;
-    }
 }
 
 using TaskListButton_OverlayIcon_t = void(WINAPI*)(void* pThis, void* param1);
 TaskListButton_OverlayIcon_t TaskListButton_OverlayIcon_Original;
 void WINAPI TaskListButton_OverlayIcon_Hook(void* pThis, void* param1) {
-    Wh_Log(L"> hasDynamicIconScaling=%d", g_hasDynamicIconScaling);
+    Wh_Log(L"> hasDynamicIconScaling=%d", g_hasDynamicIconScaling.load());
 
     if (!g_hasDynamicIconScaling || g_unloading) {
         TaskListButton_OverlayIcon_Original(pThis, param1);
@@ -1488,27 +1596,16 @@ void WINAPI TaskListButton_OverlayIcon_Hook(void* pThis, void* param1) {
     // functions. Maybe one day...
     //
     // This hook handles non-UWP badges (e.g. the Win7 taskbar sample).
-    double* iconHeight = nullptr;
-    double prevIconHeight;
-    if (size_t iconHeightOffset = GetIconHeightOffset()) {
-        iconHeight = (double*)((BYTE*)pThis + iconHeightOffset);
-        prevIconHeight = *iconHeight;
-        double newIconHeight = 24;
-        Wh_Log(L"Setting iconHeight: %f->%f", prevIconHeight, newIconHeight);
-        *iconHeight = newIconHeight;
-    }
+    ScopedIconHeightOverride iconHeightOverride;
+    iconHeightOverride.Set(pThis, GetIconHeightOffset(), 24);
 
     TaskListButton_OverlayIcon_Original(pThis, param1);
-
-    if (iconHeight) {
-        *iconHeight = prevIconHeight;
-    }
 }
 
 using TaskListButton_UpdateBadge_t = void(WINAPI*)(void* pThis);
 TaskListButton_UpdateBadge_t TaskListButton_UpdateBadge_Original;
 void WINAPI TaskListButton_UpdateBadge_Hook(void* pThis) {
-    Wh_Log(L"> hasDynamicIconScaling=%d", g_hasDynamicIconScaling);
+    Wh_Log(L"> hasDynamicIconScaling=%d", g_hasDynamicIconScaling.load());
 
     if (!g_hasDynamicIconScaling || g_unloading) {
         TaskListButton_UpdateBadge_Original(pThis);
@@ -1522,28 +1619,17 @@ void WINAPI TaskListButton_UpdateBadge_Hook(void* pThis) {
     // functions. Maybe one day...
     //
     // This hook handles UWP badges (e.g. Unigram).
-    double* iconHeight = nullptr;
-    double prevIconHeight;
-    if (size_t iconHeightOffset = GetIconHeightOffset()) {
-        iconHeight = (double*)((BYTE*)pThis + iconHeightOffset);
-        prevIconHeight = *iconHeight;
-        double newIconHeight = 24;
-        Wh_Log(L"Setting iconHeight: %f->%f", prevIconHeight, newIconHeight);
-        *iconHeight = newIconHeight;
-    }
+    ScopedIconHeightOverride iconHeightOverride;
+    iconHeightOverride.Set(pThis, GetIconHeightOffset(), 24);
 
     TaskListButton_UpdateBadge_Original(pThis);
-
-    if (iconHeight) {
-        *iconHeight = prevIconHeight;
-    }
 }
 
 using TaskListButton_UpdateMultiWindowClip_t = void(WINAPI*)(void* pThis);
 TaskListButton_UpdateMultiWindowClip_t
     TaskListButton_UpdateMultiWindowClip_Original;
 void WINAPI TaskListButton_UpdateMultiWindowClip_Hook(void* pThis) {
-    Wh_Log(L"> hasDynamicIconScaling=%d", g_hasDynamicIconScaling);
+    Wh_Log(L"> hasDynamicIconScaling=%d", g_hasDynamicIconScaling.load());
 
     if (!g_hasDynamicIconScaling || g_unloading) {
         TaskListButton_UpdateMultiWindowClip_Original(pThis);
@@ -1553,28 +1639,18 @@ void WINAPI TaskListButton_UpdateMultiWindowClip_Hook(void* pThis) {
     // The size which decides whether the clip has to be recreated is picked by
     // comparing the icon height against 16, which a customized icon size may
     // match by coincidence, so it gets the posture height.
-    double* iconHeight = nullptr;
-    double prevIconHeight;
-    if (size_t iconHeightOffset = GetIconHeightOffset()) {
-        iconHeight = (double*)((BYTE*)pThis + iconHeightOffset);
-        prevIconHeight = *iconHeight;
-        double newIconHeight = g_smallIconSize ? 16 : 24;
-        Wh_Log(L"Setting iconHeight: %f->%f", prevIconHeight, newIconHeight);
-        *iconHeight = newIconHeight;
-    }
+    ScopedIconHeightOverride iconHeightOverride;
+    iconHeightOverride.Set(pThis, GetIconHeightOffset(),
+                           g_smallIconSize ? 16 : 24);
 
     TaskListButton_UpdateMultiWindowClip_Original(pThis);
-
-    if (iconHeight) {
-        *iconHeight = prevIconHeight;
-    }
 }
 
 using TaskListButton_CreateMultiWindowClip_t = void(WINAPI*)(void* pThis);
 TaskListButton_CreateMultiWindowClip_t
     TaskListButton_CreateMultiWindowClip_Original;
 void WINAPI TaskListButton_CreateMultiWindowClip_Hook(void* pThis) {
-    Wh_Log(L"> hasDynamicIconScaling=%d", g_hasDynamicIconScaling);
+    Wh_Log(L"> hasDynamicIconScaling=%d", g_hasDynamicIconScaling.load());
 
     if (!g_hasDynamicIconScaling || g_unloading) {
         TaskListButton_CreateMultiWindowClip_Original(pThis);
@@ -1584,27 +1660,24 @@ void WINAPI TaskListButton_CreateMultiWindowClip_Hook(void* pThis) {
     // The clip of the strip which marks a group of windows is picked the same
     // way. UpdateVisualStates calls this directly, without going through
     // UpdateMultiWindowClip.
-    double* iconHeight = nullptr;
-    double prevIconHeight;
-    if (size_t iconHeightOffset = GetIconHeightOffset()) {
-        iconHeight = (double*)((BYTE*)pThis + iconHeightOffset);
-        prevIconHeight = *iconHeight;
-        double newIconHeight = g_smallIconSize ? 16 : 24;
-        Wh_Log(L"Setting iconHeight: %f->%f", prevIconHeight, newIconHeight);
-        *iconHeight = newIconHeight;
-    }
+    ScopedIconHeightOverride iconHeightOverride;
+    iconHeightOverride.Set(pThis, GetIconHeightOffset(),
+                           g_smallIconSize ? 16 : 24);
 
     TaskListButton_CreateMultiWindowClip_Original(pThis);
-
-    if (iconHeight) {
-        *iconHeight = prevIconHeight;
-    }
 }
 
 void* TaskListButton_UpdateIconColumnDefinition_Original;
 
 LONG GetMediumTaskbarButtonExtentOffset() {
     static LONG mediumTaskbarButtonExtentOffset = []() -> LONG {
+        if (!TaskListButton_UpdateIconColumnDefinition_Original) {
+            Wh_Log(
+                L"Error: TaskListButton_UpdateIconColumnDefinition_Original is "
+                L"null");
+            return 0;
+        }
+
 #if defined(_M_X64)
         // Search for movsd followed by subsd. In newer builds with vertical
         // taskbar support, there may be an additional movsd without a matching
@@ -1685,7 +1758,7 @@ LONG GetMediumTaskbarButtonExtentOffset() {
                 // Wh_Log(L"%S", result.text);
                 std::string reg = matchLdr[1];
                 std::string regSrc = matchLdr[2];
-                LONG offset = std::stoull(matchLdr[3], nullptr, 16);
+                LONG offset = ParseDisasmOffset(matchLdr[3]);
                 ldrs[ldrCount++] = {std::move(reg), std::move(regSrc), offset};
                 continue;
             }
@@ -1761,8 +1834,7 @@ void WINAPI TaskListButton_UpdateVisualStates_Hook(void* pThis) {
 
             double* mediumTaskbarButtonExtent =
                 (double*)((BYTE*)pThis + mediumTaskbarButtonExtentOffset);
-            if (*mediumTaskbarButtonExtent >= 1 &&
-                *mediumTaskbarButtonExtent < 10000) {
+            if (IsPlausibleSize(*mediumTaskbarButtonExtent)) {
                 double newValue =
                     g_unloading ? 44 : g_settings.taskbarButtonWidth;
                 if (newValue != *mediumTaskbarButtonExtent) {
@@ -1778,8 +1850,8 @@ void WINAPI TaskListButton_UpdateVisualStates_Hook(void* pThis) {
             double* smallTaskbarButtonExtent =
                 g_hasDynamicIconScaling ? mediumTaskbarButtonExtent - 1
                                         : nullptr;
-            if (smallTaskbarButtonExtent && *smallTaskbarButtonExtent >= 1 &&
-                *smallTaskbarButtonExtent < 10000) {
+            if (smallTaskbarButtonExtent &&
+                IsPlausibleSize(*smallTaskbarButtonExtent)) {
                 double newValue =
                     g_unloading ? 32 : g_settings.taskbarButtonWidthSmall;
                 if (newValue != *smallTaskbarButtonExtent) {
@@ -1801,26 +1873,20 @@ void WINAPI TaskListButton_UpdateVisualStates_Hook(void* pThis) {
         }
     }
 
-    double* iconHeight = nullptr;
-    double prevIconHeight;
+    ScopedIconHeightOverride iconHeightOverride;
     if (g_hasDynamicIconScaling && !g_unloading) {
-        if (size_t iconHeightOffset = GetIconHeightOffset()) {
-            iconHeight = (double*)((BYTE*)pThis + iconHeightOffset);
-            prevIconHeight = *iconHeight;
-            double newIconHeight = g_smallIconSize ? 16 : 24;
-            Wh_Log(L"Setting iconHeight: %f->%f", prevIconHeight,
-                   newIconHeight);
-            *iconHeight = newIconHeight;
+        double newIconHeight = g_smallIconSize ? 16 : 24;
+        if (iconHeightOverride.Set(pThis, GetIconHeightOffset(),
+                                   newIconHeight)) {
             g_taskListButtonPostureIconHeight = newIconHeight;
-            g_taskListButtonCustomIconHeight = prevIconHeight;
+            g_taskListButtonCustomIconHeight = iconHeightOverride.PrevValue();
         }
     }
 
     TaskListButton_UpdateVisualStates_Original(pThis);
 
-    if (iconHeight) {
+    if (iconHeightOverride.Restore()) {
         g_taskListButtonPostureIconHeight = 0;
-        *iconHeight = prevIconHeight;
     }
 
     if (g_applyingSettings && !g_hasDynamicIconScaling) {
@@ -1829,15 +1895,18 @@ void WINAPI TaskListButton_UpdateVisualStates_Hook(void* pThis) {
             ->QueryInterface(winrt::guid_of<FrameworkElement>(),
                              winrt::put_abi(taskListButtonElement));
         if (taskListButtonElement) {
-            if (auto iconPanelElement =
-                    FindChildByName(taskListButtonElement, L"IconPanel")) {
-                if (auto iconElement =
-                        FindChildByName(iconPanelElement, L"Icon")) {
-                    double iconSize = g_unloading ? 24 : g_settings.iconSize;
-                    iconElement.Width(iconSize);
-                    iconElement.Height(iconSize);
+            RunXamlSafely(__FUNCTION__, [&taskListButtonElement] {
+                if (auto iconPanelElement =
+                        FindChildByName(taskListButtonElement, L"IconPanel")) {
+                    if (auto iconElement =
+                            FindChildByName(iconPanelElement, L"Icon")) {
+                        double iconSize =
+                            g_unloading ? 24 : g_settings.iconSize;
+                        iconElement.Width(iconSize);
+                        iconElement.Height(iconSize);
+                    }
                 }
-            }
+            });
         }
     }
 }
@@ -1874,7 +1943,7 @@ size_t GetTaskbarComponentHostIconHeightOffset() {
 #else
 #error "Unsupported architecture"
 #endif
-        Wh_Log(L"taskbarComponentHostIconHeightOffset=0x%X", offset);
+        Wh_Log(L"taskbarComponentHostIconHeightOffset=0x%zX", offset);
         return offset > 0xFFFF ? 0 : offset;
     }();
 
@@ -1889,27 +1958,15 @@ using TaskbarComponentHost_UpdateDefaultWidth_t = void(WINAPI*)(void* pThis);
 TaskbarComponentHost_UpdateDefaultWidth_t
     TaskbarComponentHost_UpdateDefaultWidth_Original;
 void WINAPI TaskbarComponentHost_UpdateDefaultWidth_Hook(void* pThis) {
-    Wh_Log(L"> hasDynamicIconScaling=%d", g_hasDynamicIconScaling);
+    Wh_Log(L"> hasDynamicIconScaling=%d", g_hasDynamicIconScaling.load());
 
-    double* iconHeight = nullptr;
-    double prevIconHeight;
+    ScopedIconHeightOverride iconHeightOverride;
     if (g_hasDynamicIconScaling && !g_unloading) {
-        if (size_t iconHeightOffset =
-                GetTaskbarComponentHostIconHeightOffset()) {
-            iconHeight = (double*)((BYTE*)pThis + iconHeightOffset);
-            prevIconHeight = *iconHeight;
-            double newIconHeight = g_smallIconSize ? 16 : 24;
-            Wh_Log(L"Setting iconHeight: %f->%f", prevIconHeight,
-                   newIconHeight);
-            *iconHeight = newIconHeight;
-        }
+        iconHeightOverride.Set(pThis, GetTaskbarComponentHostIconHeightOffset(),
+                               g_smallIconSize ? 16 : 24);
     }
 
     TaskbarComponentHost_UpdateDefaultWidth_Original(pThis);
-
-    if (iconHeight) {
-        *iconHeight = prevIconHeight;
-    }
 }
 
 using ExperienceToggleButton_IconHeight_get_t = double(WINAPI*)(void* pThis);
@@ -1927,9 +1984,8 @@ ExperienceToggleButton_IconHeight_set_t
 thread_local bool g_inExperienceToggleButton_IconHeight;
 
 void SetExperienceToggleButtonIconHeight(void* pThis, double height) {
-    g_inExperienceToggleButton_IconHeight = true;
+    ScopedFlag inIconHeight(g_inExperienceToggleButton_IconHeight);
     ExperienceToggleButton_IconHeight_set_Original(pThis, height);
-    g_inExperienceToggleButton_IconHeight = false;
 }
 
 // The widget content is laid out for the stock icon size, so its margins are
@@ -2079,48 +2135,9 @@ void UpdateAugmentedEntryPointContent(FrameworkElement panelElement) {
     });
 }
 
-using ExperienceToggleButton_UpdateButtonPadding_t = void(WINAPI*)(void* pThis);
-ExperienceToggleButton_UpdateButtonPadding_t
-    ExperienceToggleButton_UpdateButtonPadding_Original;
-void WINAPI ExperienceToggleButton_UpdateButtonPadding_Hook(void* pThis) {
-    Wh_Log(L">");
-
-    if (g_inExperienceToggleButton_IconHeight) {
-        return;
-    }
-
-    // The button extent and the padding are picked by comparing the icon height
-    // against the stock 16 and 32, which a customized icon size matches by
-    // coincidence, so it gets the posture height. The setter applies the height
-    // to the icon element as well, hence the restore right after.
-    std::optional<double> prevIconHeight;
-    if (g_hasDynamicIconScaling && !g_unloading &&
-        ExperienceToggleButton_IconHeight_get_Original &&
-        ExperienceToggleButton_IconHeight_set_Original) {
-        double postureIconHeight = g_smallIconSize ? 16 : 24;
-        double iconHeight =
-            ExperienceToggleButton_IconHeight_get_Original(pThis);
-        if (iconHeight != postureIconHeight) {
-            Wh_Log(L"Setting iconHeight: %f->%f", iconHeight,
-                   postureIconHeight);
-            prevIconHeight = iconHeight;
-            SetExperienceToggleButtonIconHeight(pThis, postureIconHeight);
-        }
-    }
-
-    ExperienceToggleButton_UpdateButtonPadding_Original(pThis);
-
-    if (prevIconHeight) {
-        SetExperienceToggleButtonIconHeight(pThis, *prevIconHeight);
-    }
-
-    FrameworkElement toggleButtonElement = nullptr;
-    ((IUnknown**)pThis)[1]->QueryInterface(winrt::guid_of<FrameworkElement>(),
-                                           winrt::put_abi(toggleButtonElement));
-    if (!toggleButtonElement) {
-        return;
-    }
-
+// The XAML part of the UpdateButtonPadding hook below, run after the original
+// function, apart so that its calls can be guarded.
+void UpdateExperienceToggleButtonElement(FrameworkElement toggleButtonElement) {
     auto panelElement =
         FindChildByName(toggleButtonElement, L"ExperienceToggleButtonRootPanel")
             .try_as<Controls::Grid>();
@@ -2182,6 +2199,53 @@ void WINAPI ExperienceToggleButton_UpdateButtonPadding_Hook(void* pThis) {
     }
 }
 
+using ExperienceToggleButton_UpdateButtonPadding_t = void(WINAPI*)(void* pThis);
+ExperienceToggleButton_UpdateButtonPadding_t
+    ExperienceToggleButton_UpdateButtonPadding_Original;
+void WINAPI ExperienceToggleButton_UpdateButtonPadding_Hook(void* pThis) {
+    Wh_Log(L">");
+
+    if (g_inExperienceToggleButton_IconHeight) {
+        return;
+    }
+
+    // The button extent and the padding are picked by comparing the icon height
+    // against the stock 16 and 32, which a customized icon size matches by
+    // coincidence, so it gets the posture height. The setter applies the height
+    // to the icon element as well, hence the restore right after.
+    std::optional<double> prevIconHeight;
+    if (g_hasDynamicIconScaling && !g_unloading &&
+        ExperienceToggleButton_IconHeight_get_Original &&
+        ExperienceToggleButton_IconHeight_set_Original) {
+        double postureIconHeight = g_smallIconSize ? 16 : 24;
+        double iconHeight =
+            ExperienceToggleButton_IconHeight_get_Original(pThis);
+        if (iconHeight != postureIconHeight) {
+            Wh_Log(L"Setting iconHeight: %f->%f", iconHeight,
+                   postureIconHeight);
+            prevIconHeight = iconHeight;
+            SetExperienceToggleButtonIconHeight(pThis, postureIconHeight);
+        }
+    }
+
+    ExperienceToggleButton_UpdateButtonPadding_Original(pThis);
+
+    if (prevIconHeight) {
+        SetExperienceToggleButtonIconHeight(pThis, *prevIconHeight);
+    }
+
+    FrameworkElement toggleButtonElement = nullptr;
+    ((IUnknown**)pThis)[1]->QueryInterface(winrt::guid_of<FrameworkElement>(),
+                                           winrt::put_abi(toggleButtonElement));
+    if (!toggleButtonElement) {
+        return;
+    }
+
+    RunXamlSafely(__FUNCTION__, [&toggleButtonElement] {
+        UpdateExperienceToggleButtonElement(toggleButtonElement);
+    });
+}
+
 // The search box sizes the icon next to its text with the same property, so
 // only the icon-only button gets the customized icon size. The template, which
 // the button width code tells the modes apart by, isn't applied when the
@@ -2194,8 +2258,15 @@ bool IsSearchIconButton(void* pThis) {
         return false;
     }
 
-    return winrt::get_class_name(buttonElement) !=
-           L"SearchUx.SearchUI.SearchBoxButton";
+    // Called from hooks, so a failure is caught, and counts as the search box,
+    // which is left alone.
+    try {
+        return winrt::get_class_name(buttonElement) !=
+               L"SearchUx.SearchUI.SearchBoxButton";
+    } catch (const winrt::hresult_error& ex) {
+        Wh_Log(L"Error %08X: %s", ex.code().value, ex.message().c_str());
+        return false;
+    }
 }
 
 // The search button sizes its icon with the icon height it's bound to, which
@@ -2210,9 +2281,8 @@ SearchButtonBase_IconHeight_t SearchButtonBase_IconHeight_Original;
 thread_local bool g_inSearchButtonBase_IconHeight;
 
 void SetSearchButtonIconHeight(void* pThis, double height) {
-    g_inSearchButtonBase_IconHeight = true;
+    ScopedFlag inIconHeight(g_inSearchButtonBase_IconHeight);
     SearchButtonBase_IconHeight_Original(pThis, height);
-    g_inSearchButtonBase_IconHeight = false;
 }
 
 void WINAPI SearchButtonBase_IconHeight_Hook(void* pThis, double height) {
@@ -2288,9 +2358,11 @@ int WINAPI SearchButtonBase_MeasureOverride_Hook(
         ->QueryInterface(winrt::guid_of<FrameworkElement>(),
                          winrt::put_abi(buttonElement));
     if (buttonElement) {
-        if (auto panelElement = GetSearchButtonRootPanel(buttonElement)) {
-            SetSearchButtonRootPanelWidth(panelElement);
-        }
+        RunXamlSafely(__FUNCTION__, [&buttonElement] {
+            if (auto panelElement = GetSearchButtonRootPanel(buttonElement)) {
+                SetSearchButtonRootPanelWidth(panelElement);
+            }
+        });
     }
 
     return SearchButtonBase_MeasureOverride_Original(pThis, size, resultSize);
@@ -2346,12 +2418,11 @@ void WINAPI SearchButtonBase_UpdateButtonPadding_Hook(void* pThis) {
         return;
     }
 
-    auto panelElement = GetSearchButtonRootPanel(toggleButtonElement);
-    if (!panelElement) {
-        return;
-    }
-
-    SetSearchButtonRootPanelWidth(panelElement);
+    RunXamlSafely(__FUNCTION__, [&toggleButtonElement] {
+        if (auto panelElement = GetSearchButtonRootPanel(toggleButtonElement)) {
+            SetSearchButtonRootPanelWidth(panelElement);
+        }
+    });
 }
 
 using ProgressBar_Width_t = void(WINAPI*)(void* pThis, double width);
@@ -2378,9 +2449,10 @@ SHAppBarMessage_t SHAppBarMessage_Original;
 auto WINAPI SHAppBarMessage_Hook(DWORD dwMessage, PAPPBARDATA pData) {
     auto ret = SHAppBarMessage_Original(dwMessage, pData);
 
-    // This is used to position secondary taskbars.
-    if (dwMessage == ABM_QUERYPOS && ret && !IsVerticalTaskbar() &&
-        g_taskbarHeight) {
+    // This is used to position secondary taskbars. The height is applied by
+    // moving the top edge, which doesn't fit a taskbar at the top edge.
+    if (dwMessage == ABM_QUERYPOS && ret && pData && pData->uEdge != ABE_TOP &&
+        g_taskbarHeight && !IsVerticalTaskbar()) {
         Wh_Log(L">");
 
         HMONITOR monitor = (HMONITOR)GetProp(pData->hWnd, L"TaskbarMonitor");
@@ -2419,9 +2491,8 @@ LRESULT WINAPI SendMessageTimeoutW_Hook(HWND hWnd,
                                         UINT fuFlags,
                                         UINT uTimeout,
                                         PDWORD_PTR lpdwResult) {
-    if (g_shellIconLoaderV2_LoadAsyncIcon__ResumeCoro_ThreadId ==
-            GetCurrentThreadId() &&
-        !g_unloading && Msg == WM_GETICON && wParam == ICON_BIG &&
+    if (g_inShellIconLoaderV2_LoadAsyncIcon__ResumeCoro && !g_unloading &&
+        Msg == WM_GETICON && wParam == ICON_BIG &&
         (g_smallIconSize ? g_settings.iconSizeSmall : g_settings.iconSize) <=
             16) {
         Wh_Log(L">");
@@ -2434,13 +2505,33 @@ LRESULT WINAPI SendMessageTimeoutW_Hook(HWND hWnd,
     return ret;
 }
 
+// Out-of-range sizes, such as a 0 or negative button width, reach XAML setters
+// which reject them, so the settings are clamped.
+int GetClampedIntSetting(PCWSTR name, int minValue, int maxValue) {
+    int value = Wh_GetIntSetting(name);
+    int clampedValue = std::clamp(value, minValue, maxValue);
+    if (clampedValue != value) {
+        Wh_Log(L"%s=%d is out of range, using %d", name, value, clampedValue);
+    }
+
+    return clampedValue;
+}
+
 void LoadSettings() {
-    g_settings.taskbarHeight = Wh_GetIntSetting(L"TaskbarHeight");
-    g_settings.iconSize = Wh_GetIntSetting(L"IconSize");
-    g_settings.taskbarButtonWidth = Wh_GetIntSetting(L"TaskbarButtonWidth");
-    g_settings.iconSizeSmall = Wh_GetIntSetting(L"IconSizeSmall");
-    g_settings.taskbarButtonWidthSmall =
-        Wh_GetIntSetting(L"TaskbarButtonWidthSmall");
+    constexpr int kMaxSize = 1000;
+    // The button widths are used with a -4 adjustment, which must leave them
+    // non-negative.
+    constexpr int kMinButtonWidth = 4;
+
+    g_settings.taskbarHeight =
+        GetClampedIntSetting(L"TaskbarHeight", 2, kMaxSize);
+    g_settings.iconSize = GetClampedIntSetting(L"IconSize", 1, kMaxSize);
+    g_settings.taskbarButtonWidth =
+        GetClampedIntSetting(L"TaskbarButtonWidth", kMinButtonWidth, kMaxSize);
+    g_settings.iconSizeSmall =
+        GetClampedIntSetting(L"IconSizeSmall", 1, kMaxSize);
+    g_settings.taskbarButtonWidthSmall = GetClampedIntSetting(
+        L"TaskbarButtonWidthSmall", kMinButtonWidth, kMaxSize);
 }
 
 HWND FindCurrentProcessTaskbarWnd() {
@@ -2475,6 +2566,17 @@ bool ProtectAndMemcpy(DWORD protect, void* dst, const void* src, size_t size) {
     return true;
 }
 
+// A plain SendMessage would wait forever for a hung taskbar, and hold up the
+// mod unloading with it.
+void SendMessageToTaskbar(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
+    DWORD_PTR result;
+    if (!SendMessageTimeout(hWnd, msg, wParam, lParam, SMTO_ABORTIFHUNG, 10000,
+                            &result)) {
+        Wh_Log(L"Error: SendMessageTimeout(%08X, 0x%X) failed: %u",
+               (DWORD)(DWORD_PTR)hWnd, msg, GetLastError());
+    }
+}
+
 void ApplySettings(int taskbarHeight) {
     if (taskbarHeight < 2) {
         taskbarHeight = 2;
@@ -2491,7 +2593,7 @@ void ApplySettings(int taskbarHeight) {
            (DWORD)(DWORD_PTR)hTaskbarWnd);
 
     if (!g_taskbarHeight) {
-        g_taskbarHeight = g_originalTaskbarHeight;
+        g_taskbarHeight = g_originalTaskbarHeight.load();
     }
 
     if (!g_taskbarHeight) {
@@ -2531,8 +2633,8 @@ void ApplySettings(int taskbarHeight) {
         }
 
         // Trigger TrayUI::_HandleSettingChange.
-        SendMessage(hTaskbarWnd, WM_SETTINGCHANGE, SPI_SETLOGICALDPIOVERRIDE,
-                    0);
+        SendMessageToTaskbar(hTaskbarWnd, WM_SETTINGCHANGE,
+                             SPI_SETLOGICALDPIOVERRIDE, 0);
 
         // Wait for the change to apply.
         for (int i = 0; i < 100; i++) {
@@ -2555,7 +2657,8 @@ void ApplySettings(int taskbarHeight) {
     }
 
     // Trigger TrayUI::_HandleSettingChange.
-    SendMessage(hTaskbarWnd, WM_SETTINGCHANGE, SPI_SETLOGICALDPIOVERRIDE, 0);
+    SendMessageToTaskbar(hTaskbarWnd, WM_SETTINGCHANGE,
+                         SPI_SETLOGICALDPIOVERRIDE, 0);
 
     if (!IsVerticalTaskbar()) {
         // Wait for the change to apply.
@@ -2577,7 +2680,7 @@ void ApplySettings(int taskbarHeight) {
             FindWindowEx(hReBarWindow32, nullptr, L"MSTaskSwWClass", nullptr);
         if (hMSTaskSwWClass) {
             // Trigger CTaskBand::_HandleSyncDisplayChange.
-            SendMessage(hMSTaskSwWClass, 0x452, 3, 0);
+            SendMessageToTaskbar(hMSTaskSwWClass, 0x452, 3, 0);
         }
     }
 
@@ -3369,7 +3472,8 @@ void Wh_ModBeforeUninit() {
 
     g_unloading = true;
 
-    ApplySettings(g_originalTaskbarHeight ? g_originalTaskbarHeight : 48);
+    int originalTaskbarHeight = g_originalTaskbarHeight;
+    ApplySettings(originalTaskbarHeight ? originalTaskbarHeight : 48);
 }
 
 void Wh_ModUninit() {
