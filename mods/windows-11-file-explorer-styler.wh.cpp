@@ -379,6 +379,7 @@ from the **TranslucentTB** project.
   $options:
   - "": Default for the selected theme
   - default: Windows default
+  - acrylicblur: Blur (AccentBlurBehind)
   - acrylic: Acrylic
   - mica: Mica
   - micaAlt: Mica Alt
@@ -448,6 +449,7 @@ struct ThemeTargetStyles {
 
 enum class BackgroundTranslucentEffect {
     kDefault,
+    kBlur,
     kAcrylic,
     kMica,
     kMicaAlt,
@@ -9891,6 +9893,9 @@ HRESULT WINAPI DwmSetWindowAttribute_Hook(HWND hWnd,
     switch (backgroundTranslucentEffect) {
         case BackgroundTranslucentEffect::kDefault:
             return original();
+        case BackgroundTranslucentEffect::kBlur:
+            backdropType = DWMSBT_AUTO;
+            break;
         case BackgroundTranslucentEffect::kAcrylic:
             backdropType = DWMSBT_TRANSIENTWINDOW;
             break;
@@ -10890,6 +10895,71 @@ HRESULT WINAPI DrawThemeBackgroundEx_Hook(HTHEME hTheme,
                                           pOptions);
 }
 
+// Based on the Translucent Windows mod.
+void SetAccentBlurBehind(HWND hWnd, bool enable) {
+    // Without blur behind, the extended frame is drawn over the accent blur.
+    HRGN hRgn = enable ? CreateRectRgn(0, 0, -1, -1) : nullptr;
+    DWM_BLURBEHIND blurBehind = {
+        .dwFlags = DWM_BB_ENABLE | (enable ? DWM_BB_BLURREGION : 0u),
+        .fEnable = enable,
+        .hRgnBlur = hRgn,
+    };
+    DwmEnableBlurBehindWindow(hWnd, &blurBehind);
+    if (hRgn) {
+        DeleteObject(hRgn);
+    }
+
+    if (!enable) {
+        // Restore the accent policy set by WinUI when the window is created
+        // (ACCENT_ENABLE_HOSTBACKDROP).
+        BOOL useHostBackdropBrush = TRUE;
+        DwmSetWindowAttribute_Original(hWnd, DWMWA_USE_HOSTBACKDROPBRUSH,
+                                       &useHostBackdropBrush,
+                                       sizeof(useHostBackdropBrush));
+        return;
+    }
+
+    constexpr int ACCENT_ENABLE_ACRYLICBLURBEHIND = 4;
+
+    struct ACCENT_POLICY {
+        int AccentState;
+        int AccentFlags;
+        int GradientColor;
+        int AnimationId;
+    };
+
+    constexpr DWORD WCA_ACCENT_POLICY = 19;
+
+    struct WINDOWCOMPOSITIONATTRIBDATA {
+        DWORD Attrib;
+        PVOID pvData;
+        SIZE_T cbData;
+    };
+
+    using SetWindowCompositionAttribute_t =
+        BOOL(WINAPI*)(HWND, WINDOWCOMPOSITIONATTRIBDATA*);
+    static auto pSetWindowCompositionAttribute =
+        (SetWindowCompositionAttribute_t)GetProcAddress(
+            GetModuleHandle(L"user32.dll"), "SetWindowCompositionAttribute");
+    if (!pSetWindowCompositionAttribute) {
+        return;
+    }
+
+    ACCENT_POLICY accentPolicy = {
+        .AccentState = ACCENT_ENABLE_ACRYLICBLURBEHIND,
+        // AABBGGRR.
+        .GradientColor = 0x3A232323,
+    };
+
+    WINDOWCOMPOSITIONATTRIBDATA data = {
+        .Attrib = WCA_ACCENT_POLICY,
+        .pvData = &accentPolicy,
+        .cbData = sizeof(accentPolicy),
+    };
+
+    pSetWindowCompositionAttribute(hWnd, &data);
+}
+
 void ApplyBackgroundTranslucentEffect(
     HWND hWnd,
     std::optional<BackgroundTranslucentEffect> effectToApply = std::nullopt) {
@@ -10927,6 +10997,9 @@ void ApplyBackgroundTranslucentEffect(
         case BackgroundTranslucentEffect::kDefault:
             backdropType = DWMSBT_TABBEDWINDOW;
             break;
+        case BackgroundTranslucentEffect::kBlur:
+            backdropType = DWMSBT_AUTO;
+            break;
         case BackgroundTranslucentEffect::kAcrylic:
             backdropType = DWMSBT_TRANSIENTWINDOW;
             break;
@@ -10943,6 +11016,8 @@ void ApplyBackgroundTranslucentEffect(
 
     DwmSetWindowAttribute_Original(hWnd, DWMWA_SYSTEMBACKDROP_TYPE,
                                    &backdropType, sizeof(backdropType));
+
+    SetAccentBlurBehind(hWnd, effect == BackgroundTranslucentEffect::kBlur);
 }
 
 void TriggerWindowCompositionUpdate(HWND hWnd) {
@@ -11477,6 +11552,9 @@ void LoadSettings() {
     if (wcscmp(backgroundTranslucentEffect, L"default") == 0) {
         g_settings.backgroundTranslucentEffect =
             BackgroundTranslucentEffect::kDefault;
+    } else if (wcscmp(backgroundTranslucentEffect, L"acrylicblur") == 0) {
+        g_settings.backgroundTranslucentEffect =
+            BackgroundTranslucentEffect::kBlur;
     } else if (wcscmp(backgroundTranslucentEffect, L"acrylic") == 0) {
         g_settings.backgroundTranslucentEffect =
             BackgroundTranslucentEffect::kAcrylic;
