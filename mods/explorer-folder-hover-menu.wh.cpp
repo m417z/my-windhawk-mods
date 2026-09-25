@@ -98,11 +98,11 @@ Inspired by [QTTabBar](https://qttabbar.wikidot.com/).
     The most items to load into a single folder's menu. When a folder has more,
     the list is truncated and a notice item is shown instead. This keeps the
     menu quick to open for folders that contain a very large number of items.
-- timeoutSeconds: 5
-  $name: Timeout (seconds)
+- timeoutMs: 1000
+  $name: Timeout (milliseconds)
   $description: >-
-    Stop loading a folder's contents after this many seconds. A safety net for
-    folders whose contents are slow to enumerate.
+    Stop loading a folder's contents after this many milliseconds. A safety net
+    for folders whose contents are slow to enumerate.
 */
 // ==/WindhawkModSettings==
 
@@ -126,7 +126,6 @@ Inspired by [QTTabBar](https://qttabbar.wikidot.com/).
 
 #include <winrt/base.h>
 
-#include <climits>
 #include <new>
 #include <string>
 #include <unordered_map>
@@ -282,18 +281,11 @@ void LoadSettings() {
     }
     g_settings.maxEnumItems = maxItems;
 
-    int timeoutSeconds = Wh_GetIntSetting(L"timeoutSeconds");
-    if (timeoutSeconds < 1) {
-        timeoutSeconds = 1;
+    int timeoutMs = Wh_GetIntSetting(L"timeoutMs");
+    if (timeoutMs < 1) {
+        timeoutMs = 1;
     }
-    // Multiply in 64-bit and clamp so a large setting can't overflow the int
-    // millisecond field (which would wrap to a tiny/negative timeout and cap
-    // every enumeration immediately).
-    LONGLONG timeoutMs = (LONGLONG)timeoutSeconds * 1000;
-    if (timeoutMs > INT_MAX) {
-        timeoutMs = INT_MAX;
-    }
-    g_settings.enumTimeoutMs = (int)timeoutMs;
+    g_settings.enumTimeoutMs = timeoutMs;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
