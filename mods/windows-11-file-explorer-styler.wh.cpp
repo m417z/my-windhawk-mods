@@ -388,8 +388,8 @@ from the **TranslucentTB** project.
   $description: >-
     The region where the translucent background effect is applied.
   $options:
-  - "": File Explorer frame only
-  - entireWindow: Entire window
+  - "": Entire window
+  - explorerFrame: File Explorer frame only
 - styleConstants: [""]
   $name: Style constants
   $description: >-
@@ -1688,8 +1688,8 @@ const Theme g_themeFloat = {{
 // clang-format on
 
 enum class BackgroundTranslucentEffectRegion {
-    kExplorerFrame,
     kEntireWindow,
+    kExplorerFrame,
 };
 
 enum class XamlDiagnosticsHandling {
@@ -11464,10 +11464,10 @@ void LoadSettings() {
     PCWSTR backgroundTranslucentEffectRegion =
         Wh_GetStringSetting(L"backgroundTranslucentEffectRegion");
     g_settings.backgroundTranslucentEffectRegion =
-        BackgroundTranslucentEffectRegion::kExplorerFrame;
-    if (wcscmp(backgroundTranslucentEffectRegion, L"entireWindow") == 0) {
+        BackgroundTranslucentEffectRegion::kEntireWindow;
+    if (wcscmp(backgroundTranslucentEffectRegion, L"explorerFrame") == 0) {
         g_settings.backgroundTranslucentEffectRegion =
-            BackgroundTranslucentEffectRegion::kEntireWindow;
+            BackgroundTranslucentEffectRegion::kExplorerFrame;
     }
     Wh_FreeStringSetting(backgroundTranslucentEffectRegion);
 
