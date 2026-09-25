@@ -2045,13 +2045,15 @@ DWORD WINAPI WorkerThreadProc(LPVOID param) {
 // a safety net for folders where the enumeration itself is slow. Both limits
 // are exposed in the "Timeout" settings group.
 
-// Magic stored in the synthetic child pidl so we can recognize it later.
-constexpr DWORD kTimeoutPidlMagic = 0x544D4F45;  // 'EOMT'.
+// Magics stored in the synthetic child pidl so we can recognize it later. The
+// magic also records why the enumeration stopped, which picks the notice text.
+constexpr DWORD kTooManyItemsPidlMagic = 0x544D4F45;  // 'EOMT'.
+constexpr DWORD kTimedOutPidlMagic = 0x4F544F45;      // 'EOTO'.
 
 // Builds the synthetic one-item pidl the bounded enumerator returns when it
 // stops early. Caller frees it with CoTaskMemFree / ILFree (the menu band does
 // so for us).
-LPITEMIDLIST CreateTimeoutPidl() {
+LPITEMIDLIST CreateTimeoutPidl(bool timedOut) {
     // A single SHITEMID carrying our magic, followed by the null terminator.
     const SIZE_T size = sizeof(USHORT) + sizeof(DWORD) + sizeof(USHORT);
     BYTE* p = (BYTE*)CoTaskMemAlloc(size);
@@ -2060,23 +2062,30 @@ LPITEMIDLIST CreateTimeoutPidl() {
     }
     USHORT cb = (USHORT)(sizeof(USHORT) + sizeof(DWORD));
     memcpy(p, &cb, sizeof(cb));
-    memcpy(p + sizeof(USHORT), &kTimeoutPidlMagic, sizeof(kTimeoutPidlMagic));
+    DWORD magic = timedOut ? kTimedOutPidlMagic : kTooManyItemsPidlMagic;
+    memcpy(p + sizeof(USHORT), &magic, sizeof(magic));
     USHORT terminator = 0;
     memcpy(p + sizeof(USHORT) + sizeof(DWORD), &terminator, sizeof(terminator));
     return (LPITEMIDLIST)p;
 }
 
-bool IsTimeoutPidl(LPCITEMIDLIST pidl) {
+bool IsTimeoutPidl(LPCITEMIDLIST pidl, bool* timedOut = nullptr) {
     if (!pidl || pidl->mkid.cb != sizeof(USHORT) + sizeof(DWORD)) {
         return false;
     }
     DWORD magic;
     memcpy(&magic, pidl->mkid.abID, sizeof(magic));
-    if (magic != kTimeoutPidlMagic) {
+    if (magic != kTooManyItemsPidlMagic && magic != kTimedOutPidlMagic) {
         return false;
     }
     LPCITEMIDLIST next = (LPCITEMIDLIST)((const BYTE*)pidl + pidl->mkid.cb);
-    return next->mkid.cb == 0;
+    if (next->mkid.cb != 0) {
+        return false;
+    }
+    if (timedOut) {
+        *timedOut = magic == kTimedOutPidlMagic;
+    }
+    return true;
 }
 
 // Wraps the folder's real enumerator and bounds it. While inside the item-count
@@ -2136,12 +2145,12 @@ class CTimeoutEnumIDList final : public IEnumIDList {
         // so a huge folder must be truncated) or, as a safety net, the time
         // budget (in case the enumeration itself is slow). Checked here,
         // between items.
-        if (m_count >= (UINT)g_settings.maxEnumItems ||
-            GetTickCount64() >= m_deadline) {
+        bool tooManyItems = m_count >= (UINT)g_settings.maxEnumItems;
+        if (tooManyItems || GetTickCount64() >= m_deadline) {
             if (m_timedOutEmitted) {
                 return S_FALSE;  // Notice already returned; nothing more.
             }
-            LPITEMIDLIST pidl = CreateTimeoutPidl();
+            LPITEMIDLIST pidl = CreateTimeoutPidl(!tooManyItems);
             if (!pidl) {
                 return E_OUTOFMEMORY;
             }
@@ -2153,7 +2162,7 @@ class CTimeoutEnumIDList final : public IEnumIDList {
             Wh_Log(
                 L"Enumeration capped after %u items (timedOut=%d), emitting "
                 L"notice",
-                m_count, (int)(GetTickCount64() >= m_deadline));
+                m_count, (int)!tooManyItems);
             return celt == 1 ? S_OK : S_FALSE;
         }
 
@@ -2454,16 +2463,19 @@ HRESULT STDMETHODCALLTYPE GetDisplayNameOf_Hook(IShellFolder* pThis,
                                                 PCUITEMID_CHILD pidl,
                                                 SHGDNF uFlags,
                                                 STRRET* pName) {
-    if (IsTimeoutPidl(pidl)) {
+    bool timedOut;
+    if (IsTimeoutPidl(pidl, &timedOut)) {
         if (!pName) {
             return E_POINTER;
         }
-        static constexpr WCHAR text[] = L"(too many items, list truncated)";
-        LPWSTR copy = (LPWSTR)CoTaskMemAlloc(sizeof(text));
+        PCWSTR text = timedOut ? L"(timed out, list truncated)"
+                               : L"(too many items, list truncated)";
+        size_t size = (wcslen(text) + 1) * sizeof(WCHAR);
+        LPWSTR copy = (LPWSTR)CoTaskMemAlloc(size);
         if (!copy) {
             return E_OUTOFMEMORY;
         }
-        memcpy(copy, text, sizeof(text));
+        memcpy(copy, text, size);
         pName->uType = STRRET_WSTR;
         pName->pOleStr = copy;
         return S_OK;
