@@ -10154,15 +10154,20 @@ BOOL WINAPI Polyline_Hook(HDC hdc, const POINT* apt, int cpt) {
     return TRUE;
 }
 
-BYTE g_textAlphaGammaLut[256];
+BYTE g_lightTextAlphaLut[256];
+BYTE g_darkTextAlphaLut[256];
 
-void InitTextAlphaGammaLut() {
+void InitTextAlphaLuts() {
     for (int i = 0; i < 256; i++) {
         // Inverse gamma from 1.2 for low to 1.5 for full coverage, brightens
         // antialiased edges similarly to DrawTextWithGlow.
         float a = i / 255.0f;
         float gamma = 1.2f + 0.3f * a;
-        g_textAlphaGammaLut[i] = (BYTE)(powf(a, 1.0f / gamma) * 255.0f + 0.5f);
+        g_lightTextAlphaLut[i] = (BYTE)(powf(a, 1.0f / gamma) * 255.0f + 0.5f);
+
+        // Dark text is heavy with boosted edges. The max opacity matches the
+        // WinUI TextFillColorPrimary light theme color (#E4000000).
+        g_darkTextAlphaLut[i] = (BYTE)(i * 0xE4 / 255);
     }
 }
 
@@ -10333,6 +10338,9 @@ BOOL ExtTextOutWithAlpha(HDC hdc,
     BYTE textGreen = GetGValue(textColor);
     BYTE textBlue = GetBValue(textColor);
 
+    bool darkText = textRed * 299 + textGreen * 587 + textBlue * 114 < 128000;
+    const BYTE* alphaLut = darkText ? g_darkTextAlphaLut : g_lightTextAlphaLut;
+
     int width = textRect.right - textRect.left;
     int height = textRect.bottom - textRect.top;
     for (int row = 0; row < height; row++) {
@@ -10344,7 +10352,7 @@ BOOL ExtTextOutWithAlpha(HDC hdc,
             }
 
             BYTE luma = (px.rgbBlue + (px.rgbGreen << 1) + px.rgbRed) >> 2;
-            BYTE alpha = g_textAlphaGammaLut[luma];
+            BYTE alpha = alphaLut[luma];
             px.rgbBlue = (textBlue * alpha) >> 8;
             px.rgbGreen = (textGreen * alpha) >> 8;
             px.rgbRed = (textRed * alpha) >> 8;
@@ -11610,7 +11618,7 @@ BOOL Wh_ModInit() {
                                    DwmExtendFrameIntoClientArea_Hook,
                                    &DwmExtendFrameIntoClientArea_Original);
 
-    InitTextAlphaGammaLut();
+    InitTextAlphaLuts();
 
     WindhawkUtils::SetFunctionHook(ExtTextOutW, ExtTextOutW_Hook,
                                    &ExtTextOutW_Original);
