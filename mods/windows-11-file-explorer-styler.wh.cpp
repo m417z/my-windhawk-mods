@@ -9,7 +9,7 @@
 // @homepage        https://m417z.com/
 // @include         explorer.exe
 // @architecture    x86-64
-// @compilerOptions -lcomctl32 -ldwmapi -lole32 -loleaut32 -lruntimeobject -lshlwapi
+// @compilerOptions -lcomctl32 -ld2d1 -ldwmapi -lgdi32 -lmsimg32 -lole32 -loleaut32 -lruntimeobject -lshlwapi -luxtheme
 // ==/WindhawkMod==
 
 // Source code is published under The GNU General Public License v3.0.
@@ -386,8 +386,7 @@ from the **TranslucentTB** project.
 - backgroundTranslucentEffectRegion: ""
   $name: Translucent background effect region
   $description: >-
-    The region where the translucent background effect is applied. Note that
-    applying the effect to the entire window is only supported in dark mode.
+    The region where the translucent background effect is applied.
   $options:
   - "": File Explorer frame only
   - entireWindow: Entire window
@@ -2263,6 +2262,8 @@ using namespace std::string_view_literals;
 #include <dwmapi.h>
 #include <roapi.h>
 #include <shlwapi.h>
+#include <uxtheme.h>
+#include <vssym32.h>
 #include <windows.graphics.effects.h>
 #include <winstring.h>
 
@@ -9124,7 +9125,7 @@ std::wstring AdjustTypeName(std::wstring_view type) {
     static const std::vector<std::pair<std::wstring_view, std::wstring_view>>
         adjustments = {
             {L"muxc:", L"Microsoft.UI.Xaml.Controls."},
-        };
+    };
 
     for (const auto& adjustment : adjustments) {
         if (type.starts_with(adjustment.first)) {
@@ -9936,6 +9937,959 @@ HRESULT WINAPI DwmExtendFrameIntoClientArea_Hook(HWND hWnd,
     return DwmExtendFrameIntoClientArea_Original(hWnd, &margins);
 }
 
+// Set on threads which host a File Explorer window with the effect extended to
+// the entire window. DWM treats the client area as having an alpha channel
+// which GDI doesn't write, so text and some theme parts are rendered here with
+// explicit alpha. The rendering is based on the Translucent Windows mod.
+thread_local bool g_entireWindowEffectForThread;
+
+bool IsEntireWindowEffectDC(HDC hdc) {
+    if (!g_entireWindowEffectForThread) {
+        return false;
+    }
+
+    // Memory DCs, such as those of buffered painting and comctl32 double
+    // buffering, have no window, and are attributed to the thread.
+    HWND hWnd = WindowFromDC(hdc);
+    return !hWnd || GetTargetWindowType(GetAncestor(hWnd, GA_ROOT)) ==
+                        TargetWindowType::FileExplorer;
+}
+
+// The content background is painted with the window color, which is white in
+// light mode. Fills of that color are replaced with transparent black.
+bool IsWindowBackgroundBrush(HDC hdc, HBRUSH hbr) {
+    if (hbr == (HBRUSH)(COLOR_WINDOW + 1)) {
+        return true;
+    }
+
+    COLORREF color;
+    if (hbr == GetStockObject(DC_BRUSH)) {
+        color = GetDCBrushColor(hdc);
+    } else {
+        LOGBRUSH logBrush;
+        if (GetObject(hbr, sizeof(logBrush), &logBrush) != sizeof(logBrush) ||
+            logBrush.lbStyle != BS_SOLID) {
+            return false;
+        }
+
+        color = logBrush.lbColor;
+    }
+
+    return color == GetSysColor(COLOR_WINDOW);
+}
+
+using FillRect_t = decltype(&FillRect);
+FillRect_t FillRect_Original;
+int WINAPI FillRect_Hook(HDC hDC, const RECT* lprc, HBRUSH hbr) {
+    if (IsEntireWindowEffectDC(hDC) && IsWindowBackgroundBrush(hDC, hbr)) {
+        hbr = (HBRUSH)GetStockObject(BLACK_BRUSH);
+    }
+
+    return FillRect_Original(hDC, lprc, hbr);
+}
+
+using PatBlt_t = decltype(&PatBlt);
+PatBlt_t PatBlt_Original;
+BOOL WINAPI PatBlt_Hook(HDC hdc, int x, int y, int w, int h, DWORD rop) {
+    if (rop == PATCOPY && IsEntireWindowEffectDC(hdc) &&
+        IsWindowBackgroundBrush(hdc,
+                                (HBRUSH)GetCurrentObject(hdc, OBJ_BRUSH))) {
+        HGDIOBJ prevBrush = SelectObject(hdc, GetStockObject(BLACK_BRUSH));
+        BOOL result = PatBlt_Original(hdc, x, y, w, h, rop);
+        SelectObject(hdc, prevBrush);
+        return result;
+    }
+
+    return PatBlt_Original(hdc, x, y, w, h, rop);
+}
+
+bool FillRectWithAlpha(HDC hdc, const RECT* rect, COLORREF color, BYTE alpha) {
+    BLENDFUNCTION blend = {AC_SRC_OVER, 0, 255, AC_SRC_ALPHA};
+    BP_PAINTPARAMS params = {sizeof(params)};
+    params.pBlendFunction = &blend;
+    HDC memDC;
+    HPAINTBUFFER hpb =
+        BeginBufferedPaint(hdc, rect, BPBF_TOPDOWNDIB, &params, &memDC);
+    if (!hpb) {
+        return false;
+    }
+
+    // The buffer is blended as premultiplied alpha.
+    HBRUSH brush = CreateSolidBrush(RGB(GetRValue(color) * alpha / 255,
+                                        GetGValue(color) * alpha / 255,
+                                        GetBValue(color) * alpha / 255));
+    FillRect_Original(memDC, rect, brush);
+    DeleteObject(brush);
+    BufferedPaintSetAlpha(hpb, rect, alpha);
+    EndBufferedPaint(hpb, TRUE);
+    return true;
+}
+
+HMODULE GetModuleFromAddress(void* address) {
+    HMODULE module;
+    if (!GetModuleHandleEx(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
+                               GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                           (PCWSTR)address, &module)) {
+        return nullptr;
+    }
+
+    return module;
+}
+
+std::wstring GetModulePath(HMODULE module) {
+    if (!module) {
+        return L"<unknown>";
+    }
+
+    std::wstring path(MAX_PATH, L'\0');
+    while (true) {
+        DWORD len = GetModuleFileName(module, path.data(), path.size());
+        if (len == 0) {
+            return L"<unknown>";
+        }
+
+        // A result equal to the buffer size means the path was truncated.
+        if (len == path.size()) {
+            path.resize(len * 2);
+            continue;
+        }
+
+        path.resize(len);
+        return path;
+    }
+}
+
+// Whether the path is under the Windows directory.
+bool IsSystemModulePath(PCWSTR path) {
+    WCHAR windowsDir[MAX_PATH];
+    UINT len = GetSystemWindowsDirectory(windowsDir, ARRAYSIZE(windowsDir));
+    if (len == 0 || len >= ARRAYSIZE(windowsDir)) {
+        return false;
+    }
+
+    return _wcsnicmp(path, windowsDir, len) == 0 && path[len] == L'\\';
+}
+
+// Another hook on top of ours makes its hook function the direct caller, so a
+// few frames further up the stack are checked as well. A hook isn't in a system
+// module, so the search stops at the first frame in one.
+[[clang::noinline]] bool IsHookCallerFromModule(void* retAddress,
+                                                PCWSTR moduleName) {
+    HMODULE expectedModule = GetModuleHandle(moduleName);
+    if (!expectedModule) {
+        return false;
+    }
+
+    HMODULE callerModule = GetModuleFromAddress(retAddress);
+    if (callerModule == expectedModule) {
+        return true;
+    }
+
+    std::wstring callerPath = GetModulePath(callerModule);
+    if (IsSystemModulePath(callerPath.c_str())) {
+        Wh_Log(L"Skipping caller %p in module %s, expected %s", retAddress,
+               callerPath.c_str(), moduleName);
+        return false;
+    }
+
+    Wh_Log(L"Tracing caller %p in module %s, expected %s", retAddress,
+           callerPath.c_str(), moduleName);
+
+    // The backtrace skips the frames of this function, the hook, and the
+    // caller.
+    void* frames[4];
+    WORD count = CaptureStackBackTrace(3, ARRAYSIZE(frames), frames, nullptr);
+    for (WORD i = 0; i < count; i++) {
+        HMODULE module = GetModuleFromAddress(frames[i]);
+        std::wstring modulePath = GetModulePath(module);
+        Wh_Log(L"Frame %u: %p in module %s", i + 1, frames[i],
+               modulePath.c_str());
+        if (module == expectedModule) {
+            return true;
+        }
+
+        if (IsSystemModulePath(modulePath.c_str())) {
+            return false;
+        }
+    }
+
+    return false;
+}
+
+// The navigation pane divider is a horizontal line drawn by ExplorerFrame.dll,
+// which is drawn translucent.
+using Polyline_t = decltype(&Polyline);
+Polyline_t Polyline_Original;
+BOOL WINAPI Polyline_Hook(HDC hdc, const POINT* apt, int cpt) {
+    if (cpt != 2 || apt[0].y != apt[1].y || !IsEntireWindowEffectDC(hdc)) {
+        return Polyline_Original(hdc, apt, cpt);
+    }
+
+    LOGPEN pen;
+    if (GetObject(GetCurrentObject(hdc, OBJ_PEN), sizeof(pen), &pen) !=
+            sizeof(pen) ||
+        pen.lopnStyle != PS_SOLID) {
+        return Polyline_Original(hdc, apt, cpt);
+    }
+
+    if (!IsHookCallerFromModule(__builtin_return_address(0),
+                                L"ExplorerFrame.dll")) {
+        return Polyline_Original(hdc, apt, cpt);
+    }
+
+    // A wide pen is centered on the line, and the last point isn't drawn.
+    int width = std::max(pen.lopnWidth.x, 1L);
+    int top = apt[0].y - width / 2;
+    RECT rect = {std::min(apt[0].x, apt[1].x), top,
+                 std::max(apt[0].x, apt[1].x), top + width};
+    if (!FillRectWithAlpha(hdc, &rect, pen.lopnColor, 96)) {
+        return Polyline_Original(hdc, apt, cpt);
+    }
+
+    return TRUE;
+}
+
+BYTE g_textAlphaGammaLut[256];
+
+void InitTextAlphaGammaLut() {
+    for (int i = 0; i < 256; i++) {
+        // Inverse gamma from 1.2 for low to 1.5 for full coverage, brightens
+        // antialiased edges similarly to DrawTextWithGlow.
+        float a = i / 255.0f;
+        float gamma = 1.2f + 0.3f * a;
+        g_textAlphaGammaLut[i] = (BYTE)(powf(a, 1.0f / gamma) * 255.0f + 0.5f);
+    }
+}
+
+bool CalcExtTextOutRect(HDC hdc,
+                        int x,
+                        int y,
+                        UINT options,
+                        const RECT* lprect,
+                        LPCWSTR lpString,
+                        UINT c,
+                        const INT* lpDx,
+                        RECT* textRect) {
+    SIZE textSize;
+    BOOL res = (options & ETO_GLYPH_INDEX)
+                   ? GetTextExtentPointI(hdc, (WORD*)lpString, c, &textSize)
+                   : GetTextExtentPoint32(hdc, lpString, c, &textSize);
+    if (!res) {
+        return false;
+    }
+
+    if (lpDx) {
+        int dx = 0;
+        int dy = 0;
+        UINT stride = (options & ETO_PDY) ? 2 : 1;
+        for (UINT i = 0; i < c; i++) {
+            dx += lpDx[i * stride];
+            if (options & ETO_PDY) {
+                dy += lpDx[i * stride + 1];
+            }
+        }
+
+        textSize.cx = std::max(textSize.cx, (LONG)dx);
+        textSize.cy += abs(dy);
+    }
+
+    // TA_BASELINE and TA_CENTER are supersets of TA_BOTTOM and TA_RIGHT, so the
+    // fields are compared as a whole.
+    UINT align = GetTextAlign(hdc);
+    switch (align & (TA_BOTTOM | TA_BASELINE)) {
+        case TA_BASELINE: {
+            TEXTMETRIC tm;
+            if (GetTextMetrics(hdc, &tm)) {
+                y -= tm.tmAscent;
+            }
+            break;
+        }
+        case TA_BOTTOM:
+            y -= textSize.cy;
+            break;
+    }
+
+    switch (align & (TA_RIGHT | TA_CENTER)) {
+        case TA_CENTER:
+            x -= textSize.cx / 2;
+            break;
+        case TA_RIGHT:
+            x -= textSize.cx;
+            break;
+    }
+
+    SetRect(textRect, x, y, x + textSize.cx, y + textSize.cy);
+
+    if (lprect) {
+        if (options & ETO_CLIPPED) {
+            IntersectRect(textRect, textRect, lprect);
+        }
+        if (options & ETO_OPAQUE) {
+            UnionRect(textRect, textRect, lprect);
+        }
+    }
+
+    return !IsRectEmpty(textRect);
+}
+
+bool PaintExtTextOutBackground(HDC hdc, const RECT* lprect) {
+    COLORREF color = GetBkColor(hdc);
+
+    // The selection highlight is made opaque, other backgrounds are left for
+    // DWM to treat as with any other GDI fill.
+    if (color != GetSysColor(COLOR_HIGHLIGHT)) {
+        HBRUSH brush = CreateSolidBrush(color);
+        FillRect(hdc, lprect, brush);
+        DeleteObject(brush);
+        return true;
+    }
+
+    BP_PAINTPARAMS params = {sizeof(params)};
+    HDC memDC;
+    HPAINTBUFFER hpb =
+        BeginBufferedPaint(hdc, lprect, BPBF_TOPDOWNDIB, &params, &memDC);
+    if (!hpb) {
+        return false;
+    }
+
+    FillRect(memDC, lprect, GetSysColorBrush(COLOR_HIGHLIGHT));
+    BufferedPaintMakeOpaque(hpb, lprect);
+    EndBufferedPaint(hpb, TRUE);
+    return true;
+}
+
+using ExtTextOutW_t = decltype(&ExtTextOutW);
+ExtTextOutW_t ExtTextOutW_Original;
+
+BOOL ExtTextOutWithAlpha(HDC hdc,
+                         int x,
+                         int y,
+                         UINT options,
+                         const RECT* lprect,
+                         LPCWSTR lpString,
+                         UINT c,
+                         const INT* lpDx) {
+    auto original = [=]() {
+        return ExtTextOutW_Original(hdc, x, y, options, lprect, lpString, c,
+                                    lpDx);
+    };
+
+    if (!lpString || !c || !options || (GetTextAlign(hdc) & TA_UPDATECP)) {
+        return original();
+    }
+
+    if ((options & (ETO_OPAQUE | ETO_CLIPPED)) &&
+        (!lprect || IsRectEmpty(lprect))) {
+        return original();
+    }
+
+    RECT textRect;
+    if (!CalcExtTextOutRect(hdc, x, y, options, lprect, lpString, c, lpDx,
+                            &textRect)) {
+        return original();
+    }
+
+    if ((options & ETO_OPAQUE) && !PaintExtTextOutBackground(hdc, lprect)) {
+        return original();
+    }
+
+    BLENDFUNCTION blend = {AC_SRC_OVER, 0, 255, AC_SRC_ALPHA};
+    BP_PAINTPARAMS params = {sizeof(params)};
+    params.dwFlags = BPPF_ERASE | BPPF_NOCLIP;
+    params.pBlendFunction = &blend;
+    HDC memDC;
+    HPAINTBUFFER hpb =
+        BeginBufferedPaint(hdc, &textRect, BPBF_TOPDOWNDIB, &params, &memDC);
+    if (!hpb) {
+        return original();
+    }
+
+    // Draw a white coverage mask, then turn it into the text color with alpha.
+    HGDIOBJ prevFont = SelectObject(memDC, GetCurrentObject(hdc, OBJ_FONT));
+    SetTextAlign(memDC, GetTextAlign(hdc));
+    SetLayout(memDC, GetLayout(hdc));
+    SetBkMode(memDC, TRANSPARENT);
+    SetTextColor(memDC, RGB(255, 255, 255));
+
+    BOOL result = ExtTextOutW_Original(memDC, x, y, options & ~ETO_OPAQUE,
+                                       lprect, lpString, c, lpDx);
+
+    SelectObject(memDC, prevFont);
+
+    RGBQUAD* pixels;
+    int rowWidth;
+    if (FAILED(GetBufferedPaintBits(hpb, &pixels, &rowWidth))) {
+        EndBufferedPaint(hpb, FALSE);
+        return original();
+    }
+
+    COLORREF textColor = GetTextColor(hdc);
+    BYTE textRed = GetRValue(textColor);
+    BYTE textGreen = GetGValue(textColor);
+    BYTE textBlue = GetBValue(textColor);
+
+    int width = textRect.right - textRect.left;
+    int height = textRect.bottom - textRect.top;
+    for (int row = 0; row < height; row++) {
+        RGBQUAD* rowPixels = pixels + row * rowWidth;
+        for (int col = 0; col < width; col++) {
+            RGBQUAD& px = rowPixels[col];
+            if (!(px.rgbBlue | px.rgbGreen | px.rgbRed)) {
+                continue;
+            }
+
+            BYTE luma = (px.rgbBlue + (px.rgbGreen << 1) + px.rgbRed) >> 2;
+            BYTE alpha = g_textAlphaGammaLut[luma];
+            px.rgbBlue = (textBlue * alpha) >> 8;
+            px.rgbGreen = (textGreen * alpha) >> 8;
+            px.rgbRed = (textRed * alpha) >> 8;
+            px.rgbReserved = alpha;
+        }
+    }
+
+    EndBufferedPaint(hpb, TRUE);
+    return result;
+}
+
+BOOL WINAPI ExtTextOutW_Hook(HDC hdc,
+                             int x,
+                             int y,
+                             UINT options,
+                             const RECT* lprect,
+                             LPCWSTR lpString,
+                             UINT c,
+                             const INT* lpDx) {
+    if (!IsEntireWindowEffectDC(hdc)) {
+        return ExtTextOutW_Original(hdc, x, y, options, lprect, lpString, c,
+                                    lpDx);
+    }
+
+    bool windowBk =
+        (options & ETO_OPAQUE) && GetBkColor(hdc) == GetSysColor(COLOR_WINDOW);
+    COLORREF prevBkColor = windowBk ? SetBkColor(hdc, RGB(0, 0, 0)) : 0;
+    BOOL result =
+        ExtTextOutWithAlpha(hdc, x, y, options, lprect, lpString, c, lpDx);
+    if (windowBk) {
+        SetBkColor(hdc, prevBkColor);
+    }
+
+    return result;
+}
+
+using DrawTextWithGlow_t =
+    HRESULT(WINAPI*)(HDC hdcMem,
+                     LPWSTR pszText,
+                     UINT cch,
+                     RECT* pRect,
+                     DWORD dwFlags,
+                     COLORREF crText,
+                     COLORREF crGlow,
+                     UINT nGlowRadius,
+                     UINT nGlowIntensity,
+                     BOOL fPreMultiply,
+                     DTT_CALLBACK_PROC pfnDrawTextCallback,
+                     LPARAM lParam);
+DrawTextWithGlow_t DrawTextWithGlow_Original;
+HRESULT WINAPI DrawTextWithGlow_Hook(HDC hdcMem,
+                                     LPWSTR pszText,
+                                     UINT cch,
+                                     RECT* pRect,
+                                     DWORD dwFlags,
+                                     COLORREF crText,
+                                     COLORREF crGlow,
+                                     UINT nGlowRadius,
+                                     UINT nGlowIntensity,
+                                     BOOL fPreMultiply,
+                                     DTT_CALLBACK_PROC pfnDrawTextCallback,
+                                     LPARAM lParam) {
+    auto original = [=]() {
+        return DrawTextWithGlow_Original(
+            hdcMem, pszText, cch, pRect, dwFlags, crText, crGlow, nGlowRadius,
+            nGlowIntensity, fPreMultiply, pfnDrawTextCallback, lParam);
+    };
+
+    if (nGlowRadius > 0 || !IsEntireWindowEffectDC(hdcMem)) {
+        return original();
+    }
+
+    if ((pRect->right == pRect->left || pRect->bottom == pRect->top) &&
+        !(dwFlags & DT_CALCRECT)) {
+        return original();
+    }
+
+    // Draw plain text, the alpha is handled by the ExtTextOutW hook.
+    SetTextColor(hdcMem, crText);
+    SetBkColor(hdcMem, RGB(0, 0, 0));
+
+    if (pfnDrawTextCallback) {
+        return pfnDrawTextCallback(hdcMem, pszText, cch, pRect, dwFlags,
+                                   lParam);
+    }
+
+    return DrawTextW(hdcMem, pszText, cch, pRect, dwFlags & ~DT_MODIFYSTRING)
+               ? S_OK
+               : E_FAIL;
+}
+
+// Theme part bitmaps are shared by the File Explorer threads.
+SRWLOCK g_themePartCacheLock = SRWLOCK_INIT;
+winrt::com_ptr<ID2D1Factory> g_d2dFactory;
+HDC g_scrollBarThumbCache[4];
+HDC g_headerItemCache[2];
+
+void DeleteThemePartBitmap(HDC& hdc) {
+    if (hdc) {
+        HGDIOBJ bitmap = GetCurrentObject(hdc, OBJ_BITMAP);
+        DeleteDC(hdc);
+        DeleteObject(bitmap);
+        hdc = nullptr;
+    }
+}
+
+void ClearThemePartCache() {
+    AcquireSRWLockExclusive(&g_themePartCacheLock);
+
+    for (HDC& hdc : g_scrollBarThumbCache) {
+        DeleteThemePartBitmap(hdc);
+    }
+
+    for (HDC& hdc : g_headerItemCache) {
+        DeleteThemePartBitmap(hdc);
+    }
+
+    g_d2dFactory = nullptr;
+
+    ReleaseSRWLockExclusive(&g_themePartCacheLock);
+}
+
+float GetThemePartScale() {
+    return GetDpiForSystem() / 96.0f;
+}
+
+D2D1_COLOR_F ThemePartColor(BYTE a, BYTE r, BYTE g, BYTE b) {
+    return D2D1::ColorF(r / 255.0f, g / 255.0f, b / 255.0f, a / 255.0f);
+}
+
+winrt::com_ptr<ID2D1DCRenderTarget> CreateBoundRenderTarget(HDC hdc,
+                                                            const RECT* rect) {
+    if (!g_d2dFactory &&
+        FAILED(D2D1CreateFactory(D2D1_FACTORY_TYPE_MULTI_THREADED,
+                                 __uuidof(ID2D1Factory), nullptr,
+                                 g_d2dFactory.put_void()))) {
+        return nullptr;
+    }
+
+    D2D1_RENDER_TARGET_PROPERTIES props = D2D1::RenderTargetProperties(
+        D2D1_RENDER_TARGET_TYPE_SOFTWARE,
+        D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM,
+                          D2D1_ALPHA_MODE_PREMULTIPLIED),
+        0, 0, D2D1_RENDER_TARGET_USAGE_GDI_COMPATIBLE);
+
+    winrt::com_ptr<ID2D1DCRenderTarget> renderTarget;
+    if (FAILED(
+            g_d2dFactory->CreateDCRenderTarget(&props, renderTarget.put())) ||
+        FAILED(renderTarget->BindDC(hdc, rect))) {
+        return nullptr;
+    }
+
+    return renderTarget;
+}
+
+// Returns a memory DC with a 32-bit bitmap selected, painted by drawFunc.
+template <typename DrawFunc>
+HDC CreateThemePartBitmap(int width, int height, DrawFunc drawFunc) {
+    HDC hdc = CreateCompatibleDC(nullptr);
+    if (!hdc) {
+        return nullptr;
+    }
+
+    BITMAPINFO bmi = {};
+    bmi.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+    bmi.bmiHeader.biWidth = width;
+    bmi.bmiHeader.biHeight = -height;
+    bmi.bmiHeader.biPlanes = 1;
+    bmi.bmiHeader.biBitCount = 32;
+    bmi.bmiHeader.biCompression = BI_RGB;
+
+    void* bits;
+    HBITMAP bitmap =
+        CreateDIBSection(hdc, &bmi, DIB_RGB_COLORS, &bits, nullptr, 0);
+    if (!bitmap) {
+        DeleteDC(hdc);
+        return nullptr;
+    }
+
+    SelectObject(hdc, bitmap);
+
+    RECT rect = {0, 0, width, height};
+    auto renderTarget = CreateBoundRenderTarget(hdc, &rect);
+    if (!renderTarget) {
+        DeleteThemePartBitmap(hdc);
+        return nullptr;
+    }
+
+    renderTarget->BeginDraw();
+    drawFunc(renderTarget.get());
+    if (FAILED(renderTarget->EndDraw())) {
+        DeleteThemePartBitmap(hdc);
+        return nullptr;
+    }
+
+    return hdc;
+}
+
+// Stretches the bitmap over the rect, keeping the margins unscaled.
+void AlphaBlendNineGrid(HDC hdc,
+                        const RECT* rect,
+                        HDC src,
+                        int left,
+                        int top,
+                        int right,
+                        int bottom) {
+    BITMAP bmp;
+    if (!GetObject(GetCurrentObject(src, OBJ_BITMAP), sizeof(bmp), &bmp)) {
+        return;
+    }
+
+    int width = rect->right - rect->left;
+    int height = rect->bottom - rect->top;
+    left = std::min(left, width);
+    right = std::min(right, width - left);
+    top = std::min(top, height);
+    bottom = std::min(bottom, height - top);
+
+    const int srcX[] = {0, left, bmp.bmWidth - right, (int)bmp.bmWidth};
+    const int srcY[] = {0, top, bmp.bmHeight - bottom, (int)bmp.bmHeight};
+    const int dstX[] = {rect->left, rect->left + left, rect->right - right,
+                        rect->right};
+    const int dstY[] = {rect->top, rect->top + top, rect->bottom - bottom,
+                        rect->bottom};
+
+    BLENDFUNCTION blend = {AC_SRC_OVER, 0, 255, AC_SRC_ALPHA};
+    for (int i = 0; i < 3; i++) {
+        for (int j = 0; j < 3; j++) {
+            int dstWidth = dstX[i + 1] - dstX[i];
+            int dstHeight = dstY[j + 1] - dstY[j];
+            int srcWidth = srcX[i + 1] - srcX[i];
+            int srcHeight = srcY[j + 1] - srcY[j];
+            if (dstWidth > 0 && dstHeight > 0 && srcWidth > 0 &&
+                srcHeight > 0) {
+                AlphaBlend(hdc, dstX[i], dstY[j], dstWidth, dstHeight, src,
+                           srcX[i], srcY[j], srcWidth, srcHeight, blend);
+            }
+        }
+    }
+}
+
+bool PaintScrollBarThumb(HDC hdc, int iPartId, int iStateId, LPCRECT pRect) {
+    bool horizontal = iPartId == SBP_THUMBBTNHORZ;
+    bool normal = iStateId == SCRBS_NORMAL;
+    float scale = GetThemePartScale();
+
+    HDC& cached =
+        g_scrollBarThumbCache[(horizontal ? 2 : 0) + (normal ? 0 : 1)];
+    if (!cached) {
+        int width = (horizontal ? 20 : 17) * scale;
+        int height = (horizontal ? 17 : 11) * scale;
+        cached = CreateThemePartBitmap(
+            width, height, [&](ID2D1RenderTarget* renderTarget) {
+                // The thumb gets wider when hovered.
+                float inset = normal ? 0.35f : 0.25f;
+                D2D1_RECT_F rect =
+                    horizontal ? D2D1::RectF(0, height * inset, width,
+                                             height - height * inset)
+                               : D2D1::RectF(width * inset, 0,
+                                             width - width * inset, height);
+                float radius = 4.0f * scale;
+
+                winrt::com_ptr<ID2D1SolidColorBrush> brush;
+                renderTarget->CreateSolidColorBrush(
+                    normal ? ThemePartColor(128, 160, 160, 160)
+                           : ThemePartColor(160, 224, 224, 224),
+                    brush.put());
+                if (brush) {
+                    renderTarget->FillRoundedRectangle(
+                        D2D1::RoundedRect(rect, radius, radius), brush.get());
+                }
+            });
+        if (!cached) {
+            return false;
+        }
+    }
+
+    FillRect(hdc, pRect, (HBRUSH)GetStockObject(BLACK_BRUSH));
+    AlphaBlendNineGrid(hdc, pRect, cached, 8 * scale, 5 * scale, 8 * scale,
+                       5 * scale);
+    return true;
+}
+
+bool PaintScrollBarArrow(HDC hdc, int iStateId, LPCRECT pRect) {
+    // States 1-16 are normal, hot, pressed and disabled for each of up, down,
+    // left and right. States 17-20 are hover for each direction.
+    int direction;
+    int state;
+    if (iStateId >= ABS_UPNORMAL && iStateId <= ABS_RIGHTDISABLED) {
+        direction = (iStateId - ABS_UPNORMAL) / 4;
+        state = (iStateId - ABS_UPNORMAL) % 4 + 1;
+    } else if (iStateId >= ABS_UPHOVER && iStateId <= ABS_RIGHTHOVER) {
+        direction = iStateId - ABS_UPHOVER;
+        state = 0;
+    } else {
+        return false;
+    }
+
+    FillRect(hdc, pRect, (HBRUSH)GetStockObject(BLACK_BRUSH));
+
+    // Arrows are hidden until the scroll bar is hovered.
+    if (state == 1) {
+        return true;
+    }
+
+    float scale = GetThemePartScale();
+    float baseWidth = 7.0f * scale;
+    float arrowHeight = 4.5f * scale;
+    D2D1_COLOR_F color = ThemePartColor(128, 160, 160, 160);
+    if (state == 2) {
+        baseWidth = 8.0f * scale;
+        arrowHeight = 5.5f * scale;
+        color = ThemePartColor(192, 224, 224, 224);
+    } else if (state == 4) {
+        color = ThemePartColor(192, 64, 64, 64);
+    }
+
+    // An up arrow with a thick base, rotated clockwise for the other
+    // directions.
+    D2D1_POINT_2F center = D2D1::Point2F((pRect->right - pRect->left) / 2.0f,
+                                         (pRect->bottom - pRect->top) / 2.0f);
+    const D2D1_POINT_2F points[] = {
+        {center.x - 1 - baseWidth / 2, center.y + arrowHeight / 2},
+        {center.x - 1 - baseWidth / 2, center.y + 2 + arrowHeight / 2},
+        {center.x + baseWidth / 2, center.y + 2 + arrowHeight / 2},
+        {center.x + baseWidth / 2, center.y + arrowHeight / 2},
+        {center.x, center.y - arrowHeight / 2},
+        {center.x - 1, center.y - arrowHeight / 2},
+    };
+
+    // Up, down, left, right.
+    constexpr float kRotationAngles[] = {0, 180, 270, 90};
+
+    auto renderTarget = CreateBoundRenderTarget(hdc, pRect);
+    if (!renderTarget) {
+        return false;
+    }
+
+    winrt::com_ptr<ID2D1PathGeometry> geometry;
+    winrt::com_ptr<ID2D1GeometrySink> sink;
+    winrt::com_ptr<ID2D1SolidColorBrush> brush;
+    if (FAILED(g_d2dFactory->CreatePathGeometry(geometry.put())) ||
+        FAILED(geometry->Open(sink.put())) ||
+        FAILED(renderTarget->CreateSolidColorBrush(color, brush.put()))) {
+        return false;
+    }
+
+    sink->BeginFigure(points[0], D2D1_FIGURE_BEGIN_FILLED);
+    sink->AddLines(points + 1, ARRAYSIZE(points) - 1);
+    sink->EndFigure(D2D1_FIGURE_END_CLOSED);
+    sink->Close();
+
+    renderTarget->BeginDraw();
+    renderTarget->SetTransform(
+        D2D1::Matrix3x2F::Rotation(kRotationAngles[direction], center));
+    renderTarget->FillGeometry(geometry.get(), brush.get());
+    return SUCCEEDED(renderTarget->EndDraw());
+}
+
+bool PaintScrollBarPart(HDC hdc, int iPartId, int iStateId, LPCRECT pRect) {
+    switch (iPartId) {
+        case SBP_ARROWBTN:
+            return PaintScrollBarArrow(hdc, iStateId, pRect);
+
+        case SBP_THUMBBTNHORZ:
+        case SBP_THUMBBTNVERT:
+            return PaintScrollBarThumb(hdc, iPartId, iStateId, pRect);
+
+        case SBP_LOWERTRACKHORZ:
+        case SBP_UPPERTRACKHORZ:
+        case SBP_LOWERTRACKVERT:
+        case SBP_UPPERTRACKVERT:
+            FillRect(hdc, pRect, (HBRUSH)GetStockObject(BLACK_BRUSH));
+            return true;
+    }
+
+    return false;
+}
+
+bool PaintHeaderPart(HDC hdc, int iPartId, int iStateId, LPCRECT pRect) {
+    if (iPartId != 0 && iPartId != HP_HEADERITEM) {
+        return false;
+    }
+
+    FillRect(hdc, pRect, (HBRUSH)GetStockObject(BLACK_BRUSH));
+
+    // Item states cycle through normal, hot and pressed.
+    if (iPartId == 0 || iStateId % 3 == 1) {
+        return true;
+    }
+
+    bool hot = iStateId % 3 == 2;
+    float scale = GetThemePartScale();
+
+    HDC& cached = g_headerItemCache[hot ? 0 : 1];
+    if (!cached) {
+        int size = 24 * scale;
+        cached = CreateThemePartBitmap(
+            size, size, [&](ID2D1RenderTarget* renderTarget) {
+                winrt::com_ptr<ID2D1PathGeometry> geometry;
+                winrt::com_ptr<ID2D1GeometrySink> sink;
+                winrt::com_ptr<ID2D1SolidColorBrush> brush;
+                if (FAILED(g_d2dFactory->CreatePathGeometry(geometry.put())) ||
+                    FAILED(geometry->Open(sink.put())) ||
+                    FAILED(renderTarget->CreateSolidColorBrush(
+                        hot ? ThemePartColor(96, 144, 144, 144)
+                            : ThemePartColor(64, 144, 144, 144),
+                        brush.put()))) {
+                    return;
+                }
+
+                // Rounded bottom corners.
+                float radius = 6.0f * scale;
+                D2D1_SIZE_F arcSize = D2D1::SizeF(radius, radius);
+                sink->BeginFigure(D2D1::Point2F(0, 0),
+                                  D2D1_FIGURE_BEGIN_FILLED);
+                sink->AddLine(D2D1::Point2F(size, 0));
+                sink->AddLine(D2D1::Point2F(size, size - radius));
+                sink->AddArc(D2D1::ArcSegment(
+                    D2D1::Point2F(size - radius, size), arcSize, 0,
+                    D2D1_SWEEP_DIRECTION_CLOCKWISE, D2D1_ARC_SIZE_SMALL));
+                sink->AddLine(D2D1::Point2F(radius, size));
+                sink->AddArc(D2D1::ArcSegment(
+                    D2D1::Point2F(0, size - radius), arcSize, 0,
+                    D2D1_SWEEP_DIRECTION_CLOCKWISE, D2D1_ARC_SIZE_SMALL));
+                sink->EndFigure(D2D1_FIGURE_END_CLOSED);
+                sink->Close();
+
+                renderTarget->FillGeometry(geometry.get(), brush.get());
+            });
+        if (!cached) {
+            return false;
+        }
+    }
+
+    AlphaBlendNineGrid(hdc, pRect, cached, 12 * scale, 0, 11 * scale,
+                       12 * scale);
+    return true;
+}
+
+// The separator between the navigation pane and the content.
+bool PaintPaneSeparatorPart(HDC hdc, int iPartId, LPCRECT pRect) {
+    if (iPartId != 3 && iPartId != 4) {
+        return false;
+    }
+
+    FillRect(hdc, pRect, (HBRUSH)GetStockObject(BLACK_BRUSH));
+    return true;
+}
+
+using GetThemeClass_t = HRESULT(WINAPI*)(HTHEME hTheme,
+                                         LPWSTR pszClassName,
+                                         int cchClassName);
+GetThemeClass_t g_pGetThemeClass;
+
+bool PaintThemeBackground(HTHEME hTheme,
+                          HDC hdc,
+                          int iPartId,
+                          int iStateId,
+                          LPCRECT pRect,
+                          LPCRECT pClipRect) {
+    if (!g_pGetThemeClass || !IsEntireWindowEffectDC(hdc)) {
+        return false;
+    }
+
+    WCHAR themeClass[64];
+    if (FAILED(g_pGetThemeClass(hTheme, themeClass, ARRAYSIZE(themeClass)))) {
+        return false;
+    }
+
+    enum class Part { ScrollBar, Header, PaneSeparator };
+    Part part;
+    if (_wcsicmp(themeClass, L"ScrollBar") == 0) {
+        part = Part::ScrollBar;
+    } else if (_wcsicmp(themeClass, L"Header") == 0) {
+        part = Part::Header;
+    } else if (_wcsicmp(themeClass, L"PreviewPane") == 0) {
+        part = Part::PaneSeparator;
+    } else {
+        return false;
+    }
+
+    int savedDC = 0;
+    if (pClipRect) {
+        savedDC = SaveDC(hdc);
+        IntersectClipRect(hdc, pClipRect->left, pClipRect->top,
+                          pClipRect->right, pClipRect->bottom);
+    }
+
+    AcquireSRWLockExclusive(&g_themePartCacheLock);
+
+    bool painted = false;
+    switch (part) {
+        case Part::ScrollBar:
+            painted = PaintScrollBarPart(hdc, iPartId, iStateId, pRect);
+            break;
+        case Part::Header:
+            painted = PaintHeaderPart(hdc, iPartId, iStateId, pRect);
+            break;
+        case Part::PaneSeparator:
+            painted = PaintPaneSeparatorPart(hdc, iPartId, pRect);
+            break;
+    }
+
+    ReleaseSRWLockExclusive(&g_themePartCacheLock);
+
+    if (savedDC) {
+        RestoreDC(hdc, savedDC);
+    }
+
+    return painted;
+}
+
+using DrawThemeBackground_t = decltype(&DrawThemeBackground);
+DrawThemeBackground_t DrawThemeBackground_Original;
+HRESULT WINAPI DrawThemeBackground_Hook(HTHEME hTheme,
+                                        HDC hdc,
+                                        int iPartId,
+                                        int iStateId,
+                                        LPCRECT pRect,
+                                        LPCRECT pClipRect) {
+    if (PaintThemeBackground(hTheme, hdc, iPartId, iStateId, pRect,
+                             pClipRect)) {
+        return S_OK;
+    }
+
+    return DrawThemeBackground_Original(hTheme, hdc, iPartId, iStateId, pRect,
+                                        pClipRect);
+}
+
+using DrawThemeBackgroundEx_t = decltype(&DrawThemeBackgroundEx);
+DrawThemeBackgroundEx_t DrawThemeBackgroundEx_Original;
+HRESULT WINAPI DrawThemeBackgroundEx_Hook(HTHEME hTheme,
+                                          HDC hdc,
+                                          int iPartId,
+                                          int iStateId,
+                                          LPCRECT pRect,
+                                          const DTBGOPTS* pOptions) {
+    LPCRECT pClipRect = pOptions && (pOptions->dwFlags & DTBG_CLIPRECT)
+                            ? &pOptions->rcClip
+                            : nullptr;
+    if (PaintThemeBackground(hTheme, hdc, iPartId, iStateId, pRect,
+                             pClipRect)) {
+        return S_OK;
+    }
+
+    return DrawThemeBackgroundEx_Original(hTheme, hdc, iPartId, iStateId, pRect,
+                                          pOptions);
+}
+
 void ApplyBackgroundTranslucentEffect(
     HWND hWnd,
     std::optional<BackgroundTranslucentEffect> effectToApply = std::nullopt) {
@@ -9944,6 +10898,12 @@ void ApplyBackgroundTranslucentEffect(
 
     auto effect =
         effectToApply.value_or(GetEffectiveBackgroundTranslucentEffect());
+
+    g_entireWindowEffectForThread =
+        effect != BackgroundTranslucentEffect::kDefault &&
+        g_settings.backgroundTranslucentEffectRegion ==
+            BackgroundTranslucentEffectRegion::kEntireWindow;
+
     if (effect == BackgroundTranslucentEffect::kDefault) {
         if (!RemoveProp(hWnd, kBackgroundTranslucentEffectAppliedKey)) {
             return;
@@ -9992,6 +10952,11 @@ void TriggerWindowCompositionUpdate(HWND hWnd) {
     };
     SendMessage(hWnd, WM_WINDOWPOSCHANGED, 0, (LPARAM)&windowPos);
     SendMessage(hWnd, WM_DWMCOMPOSITIONCHANGED, 0, 0);
+
+    // Repaint the content, which is rendered differently with the effect
+    // extended to the entire window.
+    RedrawWindow(hWnd, nullptr, nullptr,
+                 RDW_INVALIDATE | RDW_ERASE | RDW_FRAME | RDW_ALLCHILDREN);
 }
 
 void OnWindowCreated(HWND hWnd, PCSTR funcName) {
@@ -10567,6 +11532,39 @@ BOOL Wh_ModInit() {
                                    DwmExtendFrameIntoClientArea_Hook,
                                    &DwmExtendFrameIntoClientArea_Original);
 
+    InitTextAlphaGammaLut();
+
+    WindhawkUtils::SetFunctionHook(ExtTextOutW, ExtTextOutW_Hook,
+                                   &ExtTextOutW_Original);
+
+    WindhawkUtils::SetFunctionHook(FillRect, FillRect_Hook, &FillRect_Original);
+
+    WindhawkUtils::SetFunctionHook(PatBlt, PatBlt_Hook, &PatBlt_Original);
+
+    WindhawkUtils::SetFunctionHook(Polyline, Polyline_Hook, &Polyline_Original);
+
+    WindhawkUtils::SetFunctionHook(DrawThemeBackground,
+                                   DrawThemeBackground_Hook,
+                                   &DrawThemeBackground_Original);
+
+    WindhawkUtils::SetFunctionHook(DrawThemeBackgroundEx,
+                                   DrawThemeBackgroundEx_Hook,
+                                   &DrawThemeBackgroundEx_Original);
+
+    HMODULE uxthemeModule = GetModuleHandle(L"uxtheme.dll");
+    if (uxthemeModule) {
+        g_pGetThemeClass = (GetThemeClass_t)GetProcAddress(
+            uxthemeModule, MAKEINTRESOURCEA(74));
+
+        auto pDrawTextWithGlow = (DrawTextWithGlow_t)GetProcAddress(
+            uxthemeModule, MAKEINTRESOURCEA(126));
+        if (pDrawTextWithGlow) {
+            WindhawkUtils::SetFunctionHook(pDrawTextWithGlow,
+                                           DrawTextWithGlow_Hook,
+                                           &DrawTextWithGlow_Original);
+        }
+    }
+
     HMODULE user32Module =
         LoadLibraryEx(L"user32.dll", nullptr, LOAD_LIBRARY_SEARCH_SYSTEM32);
     if (user32Module) {
@@ -10664,6 +11662,8 @@ void Wh_ModUninit() {
             },
             (PVOID)hTargetWnd);
     }
+
+    ClearThemePartCache();
 }
 
 void Wh_ModSettingsChanged() {
