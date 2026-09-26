@@ -9991,16 +9991,57 @@ HRESULT WINAPI DwmExtendFrameIntoClientArea_Hook(HWND hWnd,
 // mod.
 thread_local HWND g_entireWindowEffectWndForThread;
 
+// The window being painted by the thread between BeginPaint and EndPaint, and
+// whether it's part of the File Explorer window.
+thread_local HWND g_paintingWndForThread;
+thread_local bool g_paintingFileExplorerWndForThread;
+
+bool IsFileExplorerWindowPart(HWND hWnd) {
+    return GetTargetWindowType(GetAncestor(hWnd, GA_ROOT)) ==
+           TargetWindowType::FileExplorer;
+}
+
 bool IsEntireWindowEffectDC(HDC hdc) {
     if (!g_entireWindowEffectWndForThread) {
         return false;
     }
 
-    // Memory DCs, such as those of buffered painting and comctl32 double
-    // buffering, have no window, and are attributed to the thread.
     HWND hWnd = WindowFromDC(hdc);
-    return !hWnd || GetTargetWindowType(GetAncestor(hWnd, GA_ROOT)) ==
-                        TargetWindowType::FileExplorer;
+    if (hWnd) {
+        return IsFileExplorerWindowPart(hWnd);
+    }
+
+    // Memory DCs, such as those of buffered painting and comctl32 double
+    // buffering, have no window. They're attributed to the window being
+    // painted, or to the thread outside of painting.
+    return !g_paintingWndForThread || g_paintingFileExplorerWndForThread;
+}
+
+using BeginPaint_t = decltype(&BeginPaint);
+BeginPaint_t BeginPaint_Original;
+HDC WINAPI BeginPaint_Hook(HWND hWnd, LPPAINTSTRUCT lpPaint) {
+    // Set before the call to cover WM_ERASEBKGND, which BeginPaint sends.
+    if (g_entireWindowEffectWndForThread) {
+        g_paintingWndForThread = hWnd;
+        g_paintingFileExplorerWndForThread = IsFileExplorerWindowPart(hWnd);
+    }
+
+    HDC hdc = BeginPaint_Original(hWnd, lpPaint);
+    if (!hdc && hWnd == g_paintingWndForThread) {
+        g_paintingWndForThread = nullptr;
+    }
+
+    return hdc;
+}
+
+using EndPaint_t = decltype(&EndPaint);
+EndPaint_t EndPaint_Original;
+BOOL WINAPI EndPaint_Hook(HWND hWnd, const PAINTSTRUCT* lpPaint) {
+    if (hWnd == g_paintingWndForThread) {
+        g_paintingWndForThread = nullptr;
+    }
+
+    return EndPaint_Original(hWnd, lpPaint);
 }
 
 // The content background is painted with the window color, which is white in
@@ -10534,7 +10575,12 @@ void ClearThemePartCache() {
 
 UINT GetThemePartDpi(HDC hdc) {
     HWND hWnd = WindowFromDC(hdc);
-    UINT dpi = GetDpiForWindow(hWnd ? hWnd : g_entireWindowEffectWndForThread);
+    if (!hWnd) {
+        hWnd = g_paintingWndForThread ? g_paintingWndForThread
+                                      : g_entireWindowEffectWndForThread;
+    }
+
+    UINT dpi = GetDpiForWindow(hWnd);
     return dpi ? dpi : GetDpiForSystem();
 }
 
@@ -11693,6 +11739,11 @@ BOOL Wh_ModInit() {
                                    &DwmExtendFrameIntoClientArea_Original);
 
     InitTextAlphaLuts();
+
+    WindhawkUtils::SetFunctionHook(BeginPaint, BeginPaint_Hook,
+                                   &BeginPaint_Original);
+
+    WindhawkUtils::SetFunctionHook(EndPaint, EndPaint_Hook, &EndPaint_Original);
 
     WindhawkUtils::SetFunctionHook(ExtTextOutW, ExtTextOutW_Hook,
                                    &ExtTextOutW_Original);
