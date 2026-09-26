@@ -342,6 +342,10 @@ code from the **TranslucentTB** project.
 The `WindhawkBlur` brush object implementation is based on
 [XamlBlurBrush](https://github.com/TranslucentTB/TranslucentTB/blob/release/ExplorerTAP/XamlBlurBrush.cpp)
 from the **TranslucentTB** project.
+
+The GDI rendering with alpha and the accent blur behind setup for the entire
+window translucent effect are based on the [Translucent
+Windows](https://windhawk.net/mods/translucent-windows) mod.
 */
 // ==/WindhawkModReadme==
 
