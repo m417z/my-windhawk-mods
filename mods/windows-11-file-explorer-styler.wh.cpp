@@ -10443,17 +10443,24 @@ HRESULT WINAPI DrawTextWithGlow_Hook(HDC hdcMem,
     }
 
     // Draw plain text, the alpha is handled by the ExtTextOutW hook.
-    SetTextColor(hdcMem, crText);
-    SetBkColor(hdcMem, RGB(0, 0, 0));
+    COLORREF prevTextColor = SetTextColor(hdcMem, crText);
+    COLORREF prevBkColor = SetBkColor(hdcMem, RGB(0, 0, 0));
 
+    HRESULT result;
     if (pfnDrawTextCallback) {
-        return pfnDrawTextCallback(hdcMem, pszText, cch, pRect, dwFlags,
-                                   lParam);
+        result =
+            pfnDrawTextCallback(hdcMem, pszText, cch, pRect, dwFlags, lParam);
+    } else {
+        result =
+            DrawTextW(hdcMem, pszText, cch, pRect, dwFlags & ~DT_MODIFYSTRING)
+                ? S_OK
+                : E_FAIL;
     }
 
-    return DrawTextW(hdcMem, pszText, cch, pRect, dwFlags & ~DT_MODIFYSTRING)
-               ? S_OK
-               : E_FAIL;
+    SetTextColor(hdcMem, prevTextColor);
+    SetBkColor(hdcMem, prevBkColor);
+
+    return result;
 }
 
 // Theme part bitmaps are shared by the File Explorer threads.
