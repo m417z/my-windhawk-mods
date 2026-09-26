@@ -9984,14 +9984,15 @@ HRESULT WINAPI DwmExtendFrameIntoClientArea_Hook(HWND hWnd,
     return DwmExtendFrameIntoClientArea_Original(hWnd, &margins);
 }
 
-// Set on threads which host a File Explorer window with the effect extended to
-// the entire window. DWM treats the client area as having an alpha channel
-// which GDI doesn't write, so text and some theme parts are rendered here with
-// explicit alpha. The rendering is based on the Translucent Windows mod.
-thread_local bool g_entireWindowEffectForThread;
+// The File Explorer window hosted by the thread, set if it has the effect
+// extended to the entire window. DWM treats the client area as having an alpha
+// channel which GDI doesn't write, so text and some theme parts are rendered
+// here with explicit alpha. The rendering is based on the Translucent Windows
+// mod.
+thread_local HWND g_entireWindowEffectWndForThread;
 
 bool IsEntireWindowEffectDC(HDC hdc) {
-    if (!g_entireWindowEffectForThread) {
+    if (!g_entireWindowEffectWndForThread) {
         return false;
     }
 
@@ -10493,11 +10494,15 @@ HRESULT WINAPI DrawTextWithGlow_Hook(HDC hdcMem,
     return result;
 }
 
-// Theme part bitmaps are shared by the File Explorer threads.
+struct ThemePartBitmaps {
+    HDC scrollBarThumb[4];
+    HDC headerItem[2];
+};
+
+// Theme part bitmaps are shared by the File Explorer threads, keyed by DPI.
 SRWLOCK g_themePartCacheLock = SRWLOCK_INIT;
 [[clang::no_destroy]] winrt::com_ptr<ID2D1Factory> g_d2dFactory;
-HDC g_scrollBarThumbCache[4];
-HDC g_headerItemCache[2];
+std::unordered_map<UINT, ThemePartBitmaps> g_themePartCache;
 
 void DeleteThemePartBitmap(HDC& hdc) {
     if (hdc) {
@@ -10511,21 +10516,26 @@ void DeleteThemePartBitmap(HDC& hdc) {
 void ClearThemePartCache() {
     AcquireSRWLockExclusive(&g_themePartCacheLock);
 
-    for (HDC& hdc : g_scrollBarThumbCache) {
-        DeleteThemePartBitmap(hdc);
+    for (auto& [dpi, bitmaps] : g_themePartCache) {
+        for (HDC& hdc : bitmaps.scrollBarThumb) {
+            DeleteThemePartBitmap(hdc);
+        }
+
+        for (HDC& hdc : bitmaps.headerItem) {
+            DeleteThemePartBitmap(hdc);
+        }
     }
 
-    for (HDC& hdc : g_headerItemCache) {
-        DeleteThemePartBitmap(hdc);
-    }
-
+    g_themePartCache.clear();
     g_d2dFactory = nullptr;
 
     ReleaseSRWLockExclusive(&g_themePartCacheLock);
 }
 
-float GetThemePartScale() {
-    return GetDpiForSystem() / 96.0f;
+UINT GetThemePartDpi(HDC hdc) {
+    HWND hWnd = WindowFromDC(hdc);
+    UINT dpi = GetDpiForWindow(hWnd ? hWnd : g_entireWindowEffectWndForThread);
+    return dpi ? dpi : GetDpiForSystem();
 }
 
 D2D1_COLOR_F ThemePartColor(BYTE a, BYTE r, BYTE g, BYTE b) {
@@ -10643,13 +10653,17 @@ void AlphaBlendNineGrid(HDC hdc,
     }
 }
 
-bool PaintScrollBarThumb(HDC hdc, int iPartId, int iStateId, LPCRECT pRect) {
+bool PaintScrollBarThumb(HDC hdc,
+                         int iPartId,
+                         int iStateId,
+                         LPCRECT pRect,
+                         UINT dpi) {
     bool horizontal = iPartId == SBP_THUMBBTNHORZ;
     bool normal = iStateId == SCRBS_NORMAL;
-    float scale = GetThemePartScale();
+    float scale = dpi / 96.0f;
 
-    HDC& cached =
-        g_scrollBarThumbCache[(horizontal ? 2 : 0) + (normal ? 0 : 1)];
+    HDC& cached = g_themePartCache[dpi]
+                      .scrollBarThumb[(horizontal ? 2 : 0) + (normal ? 0 : 1)];
     if (!cached) {
         int width = (horizontal ? 20 : 17) * scale;
         int height = (horizontal ? 17 : 11) * scale;
@@ -10685,7 +10699,7 @@ bool PaintScrollBarThumb(HDC hdc, int iPartId, int iStateId, LPCRECT pRect) {
     return true;
 }
 
-bool PaintScrollBarArrow(HDC hdc, int iStateId, LPCRECT pRect) {
+bool PaintScrollBarArrow(HDC hdc, int iStateId, LPCRECT pRect, UINT dpi) {
     // States 1-16 are normal, hot, pressed and disabled for each of up, down,
     // left and right. States 17-20 are hover for each direction.
     int direction;
@@ -10707,7 +10721,7 @@ bool PaintScrollBarArrow(HDC hdc, int iStateId, LPCRECT pRect) {
         return true;
     }
 
-    float scale = GetThemePartScale();
+    float scale = dpi / 96.0f;
     float baseWidth = 7.0f * scale;
     float arrowHeight = 4.5f * scale;
     D2D1_COLOR_F color = ThemePartColor(128, 160, 160, 160);
@@ -10761,14 +10775,18 @@ bool PaintScrollBarArrow(HDC hdc, int iStateId, LPCRECT pRect) {
     return SUCCEEDED(renderTarget->EndDraw());
 }
 
-bool PaintScrollBarPart(HDC hdc, int iPartId, int iStateId, LPCRECT pRect) {
+bool PaintScrollBarPart(HDC hdc,
+                        int iPartId,
+                        int iStateId,
+                        LPCRECT pRect,
+                        UINT dpi) {
     switch (iPartId) {
         case SBP_ARROWBTN:
-            return PaintScrollBarArrow(hdc, iStateId, pRect);
+            return PaintScrollBarArrow(hdc, iStateId, pRect, dpi);
 
         case SBP_THUMBBTNHORZ:
         case SBP_THUMBBTNVERT:
-            return PaintScrollBarThumb(hdc, iPartId, iStateId, pRect);
+            return PaintScrollBarThumb(hdc, iPartId, iStateId, pRect, dpi);
 
         case SBP_LOWERTRACKHORZ:
         case SBP_UPPERTRACKHORZ:
@@ -10781,7 +10799,11 @@ bool PaintScrollBarPart(HDC hdc, int iPartId, int iStateId, LPCRECT pRect) {
     return false;
 }
 
-bool PaintHeaderPart(HDC hdc, int iPartId, int iStateId, LPCRECT pRect) {
+bool PaintHeaderPart(HDC hdc,
+                     int iPartId,
+                     int iStateId,
+                     LPCRECT pRect,
+                     UINT dpi) {
     if (iPartId != 0 && iPartId != HP_HEADERITEM) {
         return false;
     }
@@ -10794,9 +10816,9 @@ bool PaintHeaderPart(HDC hdc, int iPartId, int iStateId, LPCRECT pRect) {
     }
 
     bool hot = iStateId % 3 == 2;
-    float scale = GetThemePartScale();
+    float scale = dpi / 96.0f;
 
-    HDC& cached = g_headerItemCache[hot ? 0 : 1];
+    HDC& cached = g_themePartCache[dpi].headerItem[hot ? 0 : 1];
     if (!cached) {
         int size = 24 * scale;
         cached = CreateThemePartBitmap(
@@ -10891,15 +10913,17 @@ bool PaintThemeBackground(HTHEME hTheme,
                           pClipRect->right, pClipRect->bottom);
     }
 
+    UINT dpi = GetThemePartDpi(hdc);
+
     AcquireSRWLockExclusive(&g_themePartCacheLock);
 
     bool painted = false;
     switch (part) {
         case Part::ScrollBar:
-            painted = PaintScrollBarPart(hdc, iPartId, iStateId, pRect);
+            painted = PaintScrollBarPart(hdc, iPartId, iStateId, pRect, dpi);
             break;
         case Part::Header:
-            painted = PaintHeaderPart(hdc, iPartId, iStateId, pRect);
+            painted = PaintHeaderPart(hdc, iPartId, iStateId, pRect, dpi);
             break;
         case Part::PaneSeparator:
             painted = PaintPaneSeparatorPart(hdc, iPartId, pRect);
@@ -11026,10 +11050,11 @@ void ApplyBackgroundTranslucentEffect(
     auto effect =
         effectToApply.value_or(GetEffectiveBackgroundTranslucentEffect());
 
-    g_entireWindowEffectForThread =
+    bool entireWindowEffect =
         effect != BackgroundTranslucentEffect::kDefault &&
         g_settings.backgroundTranslucentEffectRegion ==
             BackgroundTranslucentEffectRegion::kEntireWindow;
+    g_entireWindowEffectWndForThread = entireWindowEffect ? hWnd : nullptr;
 
     if (effect == BackgroundTranslucentEffect::kDefault) {
         if (!RemoveProp(hWnd, kBackgroundTranslucentEffectAppliedKey)) {
