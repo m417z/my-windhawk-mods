@@ -5197,12 +5197,12 @@ std::shared_ptr<void> TrackImageRetryCallback() {
     // for, and it runs whether the shared_ptr is destroyed or its construction
     // throws.
     return std::shared_ptr<void>(&g_imageRetryPendingCallbacks, [](void*) {
-        {
-            std::lock_guard<std::mutex> lock(g_imageRetryMutex);
+        std::lock_guard<std::mutex> lock(g_imageRetryMutex);
 
-            g_imageRetryPendingCallbacks--;
-        }
+        g_imageRetryPendingCallbacks--;
 
+        // Under the lock, since the module can be freed as soon as the waiter
+        // sees the count drop.
         g_imageRetryPendingCallbacksCv.notify_all();
     });
 }
@@ -5256,13 +5256,6 @@ void OnNetworkStatusChanged(
     winrt::Windows::Foundation::IInspectable const& sender) {
     Wh_Log(L">");
 
-    // Removing the handler doesn't wait for an invocation which is already in
-    // flight, so this one counts itself instead.
-    auto callbackRef = TrackImageRetryCallback();
-    if (!callbackRef) {
-        return;
-    }
-
     // Runs on a Windows Runtime thread pool thread, where the connectivity
     // query is allowed and doesn't hold up a UI thread.
     ScheduleImageLoadRetryOnAllUiThreads();
@@ -5270,9 +5263,22 @@ void OnNetworkStatusChanged(
 
 // Must not be called with g_imageRetryMutex held.
 winrt::event_token RegisterNetworkStatusChangedHandler() {
+    // Removing the handler doesn't wait for an invocation which is already in
+    // flight, and the event source releases the handler, which is mod code,
+    // only after that invocation. The handler holds the reference so that it
+    // covers both.
+    auto callbackRef = TrackImageRetryCallback();
+    if (!callbackRef) {
+        return {};
+    }
+
     try {
         auto token = winrt::Windows::Networking::Connectivity::
-            NetworkInformation::NetworkStatusChanged(OnNetworkStatusChanged);
+            NetworkInformation::NetworkStatusChanged(
+                [callbackRef](
+                    winrt::Windows::Foundation::IInspectable const& sender) {
+                    OnNetworkStatusChanged(sender);
+                });
         Wh_Log(L"Registered global network status change handler");
         return token;
     } catch (winrt::hresult_error const& ex) {
@@ -5319,6 +5325,8 @@ void StopImageLoadRetries() {
     // are already on their way into it are let through first. What they wait on
     // is a connectivity query and a dispatcher pass of a UI thread, and the
     // uninitialization which follows depends on those threads running anyway.
+    // A callback still returns through mod code after dropping its reference,
+    // which the rest of the uninitialization is left to outlast.
     std::unique_lock<std::mutex> lock(g_imageRetryMutex);
     g_imageRetryPendingCallbacksCv.wait(
         lock, [] { return g_imageRetryPendingCallbacks == 0; });
