@@ -1059,8 +1059,6 @@ const Theme g_themeMicaTabless = {{
         L"Background:="}},
     ThemeTargetStyles{L"Microsoft.UI.Xaml.Controls.Grid#HomeViewRootGrid", {
         L"Background:="}},
-    ThemeTargetStyles{L"Microsoft.UI.Xaml.Controls.Grid#DetailsViewControlRootGrid", {
-        L"Background:="}},
     ThemeTargetStyles{L"Microsoft.UI.Xaml.Controls.StackPanel#DetailsViewThumbnail > Microsoft.UI.Xaml.Controls.Grid", {
         L"Background:="}},
 }, {
