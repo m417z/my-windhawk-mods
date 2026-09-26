@@ -406,8 +406,6 @@ void RecalculateLabels() {
     g_applyingSettings = false;
 }
 
-void* TaskbarSettings_GroupingMode_Original;
-
 using TaskListButton_get_IsRunning_t = HRESULT(WINAPI*)(void* pThis,
                                                         bool* running);
 TaskListButton_get_IsRunning_t TaskListButton_get_IsRunning_Original;
@@ -1925,12 +1923,6 @@ bool HookTaskbarViewDllSymbols(HMODULE module) {
     WindhawkUtils::SYMBOL_HOOK symbolHooks[] =  //
         {
             {
-                {LR"(public: __cdecl winrt::impl::consume_WindowsUdk_UI_Shell_ITaskbarSettings5<struct winrt::WindowsUdk::UI::Shell::TaskbarSettings>::GroupingMode(void)const )"},
-                &TaskbarSettings_GroupingMode_Original,
-                nullptr,
-                true,
-            },
-            {
                 {LR"(public: virtual int __cdecl winrt::impl::produce<struct winrt::Taskbar::implementation::TaskListButton,struct winrt::Taskbar::ITaskListButton>::get_IsRunning(bool *))"},
                 &TaskListButton_get_IsRunning_Original,
             },
@@ -1986,16 +1978,14 @@ bool HookTaskbarViewDllSymbols(HMODULE module) {
             {
                 {LR"(public: virtual int __cdecl winrt::impl::produce<struct winrt::Taskbar::implementation::TaskListWindowViewModel,struct winrt::Taskbar::ITaskbarAppItemViewModel>::get_HasLabel(bool *))"},
                 &TaskListWindowViewModel_ITaskbarAppItemViewModel_get_HasLabel_Original,
-
                 TaskListWindowViewModel_ITaskbarAppItemViewModel_get_HasLabel_Hook,
-                true,
+                true,  // From 10.0.22621.2361.
             },
             {
                 {LR"(public: virtual int __cdecl winrt::impl::produce<struct winrt::Taskbar::implementation::TaskListGroupViewModel,struct winrt::Taskbar::ITaskbarAppItemViewModel>::get_HasLabel(bool *))"},
                 &TaskListGroupViewModel_ITaskbarAppItemViewModel_get_HasLabel_Original,
-
                 TaskListGroupViewModel_ITaskbarAppItemViewModel_get_HasLabel_Hook,
-                true,
+                true,  // From 10.0.22621.2361.
             },
             {
                 {
@@ -2019,7 +2009,7 @@ bool HookTaskbarViewDllSymbols(HMODULE module) {
                 nullptr,
                 true,
             },
-        };
+    };
 
     if (!HookSymbols(module, symbolHooks, ARRAYSIZE(symbolHooks))) {
         Wh_Log(L"HookSymbols failed");
@@ -2160,7 +2150,7 @@ BOOL ModInitWithTaskbarView(HMODULE taskbarViewModule) {
                 wil_Feature_GetImpl_Original);
     } else {
         g_hasNativeLabelsImplementation =
-            !!TaskbarSettings_GroupingMode_Original;
+            !!TaskListWindowViewModel_ITaskbarAppItemViewModel_get_HasLabel_Original;
     }
 
     if (!g_hasNativeLabelsImplementation) {
