@@ -10027,14 +10027,35 @@ HRESULT WINAPI DwmExtendFrameIntoClientArea_Hook(HWND hWnd,
 // mod.
 thread_local HWND g_entireWindowEffectWndForThread;
 
-// The window being painted by the thread between BeginPaint and EndPaint, and
-// whether it's part of the File Explorer window.
-thread_local HWND g_paintingWndForThread;
-thread_local bool g_paintingFileExplorerWndForThread;
-
 bool IsFileExplorerWindowPart(HWND hWnd) {
     return GetTargetWindowType(GetAncestor(hWnd, GA_ROOT)) ==
            TargetWindowType::FileExplorer;
+}
+
+struct PaintingWnd {
+    HWND hWnd;
+    bool fileExplorer;
+};
+
+// The windows being painted by the thread between BeginPaint and EndPaint,
+// innermost last. Painting can nest, e.g. with UpdateWindow on a child. Deeper
+// nesting than the array holds is attributed to the outer window.
+thread_local PaintingWnd g_paintingWndsForThread[8];
+thread_local size_t g_paintingWndCountForThread;
+
+const PaintingWnd* GetPaintingWnd() {
+    size_t count = g_paintingWndCountForThread;
+    return count ? &g_paintingWndsForThread[count - 1] : nullptr;
+}
+
+// Windows above it whose EndPaint was missed are removed as well.
+void PopPaintingWnd(HWND hWnd) {
+    for (size_t i = g_paintingWndCountForThread; i > 0; i--) {
+        if (g_paintingWndsForThread[i - 1].hWnd == hWnd) {
+            g_paintingWndCountForThread = i - 1;
+            return;
+        }
+    }
 }
 
 bool IsEntireWindowEffectDC(HDC hdc) {
@@ -10050,21 +10071,25 @@ bool IsEntireWindowEffectDC(HDC hdc) {
     // Memory DCs, such as those of buffered painting and comctl32 double
     // buffering, have no window. They're attributed to the window being
     // painted, or to the thread outside of painting.
-    return !g_paintingWndForThread || g_paintingFileExplorerWndForThread;
+    const PaintingWnd* paintingWnd = GetPaintingWnd();
+    return !paintingWnd || paintingWnd->fileExplorer;
 }
 
 using BeginPaint_t = decltype(&BeginPaint);
 BeginPaint_t BeginPaint_Original;
 HDC WINAPI BeginPaint_Hook(HWND hWnd, LPPAINTSTRUCT lpPaint) {
-    // Set before the call to cover WM_ERASEBKGND, which BeginPaint sends.
-    if (g_entireWindowEffectWndForThread) {
-        g_paintingWndForThread = hWnd;
-        g_paintingFileExplorerWndForThread = IsFileExplorerWindowPart(hWnd);
+    // Pushed before the call to cover WM_ERASEBKGND, which BeginPaint sends.
+    bool pushed = false;
+    if (g_entireWindowEffectWndForThread &&
+        g_paintingWndCountForThread < ARRAYSIZE(g_paintingWndsForThread)) {
+        g_paintingWndsForThread[g_paintingWndCountForThread++] = {
+            hWnd, IsFileExplorerWindowPart(hWnd)};
+        pushed = true;
     }
 
     HDC hdc = BeginPaint_Original(hWnd, lpPaint);
-    if (!hdc && hWnd == g_paintingWndForThread) {
-        g_paintingWndForThread = nullptr;
+    if (!hdc && pushed) {
+        PopPaintingWnd(hWnd);
     }
 
     return hdc;
@@ -10073,10 +10098,7 @@ HDC WINAPI BeginPaint_Hook(HWND hWnd, LPPAINTSTRUCT lpPaint) {
 using EndPaint_t = decltype(&EndPaint);
 EndPaint_t EndPaint_Original;
 BOOL WINAPI EndPaint_Hook(HWND hWnd, const PAINTSTRUCT* lpPaint) {
-    if (hWnd == g_paintingWndForThread) {
-        g_paintingWndForThread = nullptr;
-    }
-
+    PopPaintingWnd(hWnd);
     return EndPaint_Original(hWnd, lpPaint);
 }
 
@@ -10612,8 +10634,9 @@ void ClearThemePartCache() {
 UINT GetThemePartDpi(HDC hdc) {
     HWND hWnd = WindowFromDC(hdc);
     if (!hWnd) {
-        hWnd = g_paintingWndForThread ? g_paintingWndForThread
-                                      : g_entireWindowEffectWndForThread;
+        const PaintingWnd* paintingWnd = GetPaintingWnd();
+        hWnd =
+            paintingWnd ? paintingWnd->hWnd : g_entireWindowEffectWndForThread;
     }
 
     UINT dpi = GetDpiForWindow(hWnd);
