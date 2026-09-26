@@ -181,6 +181,7 @@ Labels can also be shown or hidden per-program in the settings.
 
 #include <winrt/Windows.Foundation.Collections.h>
 #include <winrt/Windows.Foundation.Numerics.h>
+#include <winrt/Windows.UI.Xaml.Controls.Primitives.h>
 #include <winrt/Windows.UI.Xaml.Controls.h>
 #include <winrt/Windows.UI.Xaml.Interop.h>
 #include <winrt/Windows.UI.Xaml.Markup.h>
@@ -1546,6 +1547,57 @@ HRESULT ITaskbarButton_get_MinScalableWidth_Hook(void* pThis, float* minWidth) {
     return ret;
 }
 
+using TaskbarCollapsibleLayout_ArrangeOverride_t =
+    HRESULT(WINAPI*)(void* pThis,
+                     void* context,
+                     winrt::Windows::Foundation::Size finalSize,
+                     winrt::Windows::Foundation::Size* resultSize);
+TaskbarCollapsibleLayout_ArrangeOverride_t
+    TaskbarCollapsibleLayout_ArrangeOverride_Original;
+HRESULT WINAPI TaskbarCollapsibleLayout_ArrangeOverride_Hook(
+    void* pThis,
+    void* context,
+    winrt::Windows::Foundation::Size finalSize,
+    winrt::Windows::Foundation::Size* resultSize) {
+    Wh_Log(L">");
+
+    HRESULT ret = TaskbarCollapsibleLayout_ArrangeOverride_Original(
+        pThis, context, finalSize, resultSize);
+    if (FAILED(ret)) {
+        return ret;
+    }
+
+    // The layout skips dragged items, which are moved with a translation, so
+    // layout changes inside them stay pending until the drop. A label with
+    // ellipsis trimming isn't rendered while its layout is pending, so arrange
+    // the items in their current slots.
+    winrt::Microsoft::UI::Xaml::Controls::VirtualizingLayoutContext
+        layoutContext{nullptr};
+    winrt::copy_from_abi(layoutContext, context);
+    if (layoutContext.ItemCount() == 0) {
+        return ret;
+    }
+
+    auto repeaterElement = Media::VisualTreeHelper::GetParent(
+        layoutContext.GetOrCreateElementAt(0));
+    if (!repeaterElement) {
+        return ret;
+    }
+
+    int childrenCount =
+        Media::VisualTreeHelper::GetChildrenCount(repeaterElement);
+    for (int i = 0; i < childrenCount; i++) {
+        auto child = Media::VisualTreeHelper::GetChild(repeaterElement, i)
+                         .try_as<FrameworkElement>();
+        if (child && child.Name() == L"TaskListButton") {
+            child.Arrange(
+                Controls::Primitives::LayoutInformation::GetLayoutSlot(child));
+        }
+    }
+
+    return ret;
+}
+
 bool IsAppIdExcluded(PCWSTR appId) {
     std::wstring appIdUpper = appId;
     LCMapStringEx(LOCALE_NAME_USER_DEFAULT, LCMAP_UPPERCASE, appIdUpper.data(),
@@ -2075,6 +2127,12 @@ bool HookTaskbarViewDllSymbols(HMODULE module) {
                 &ITaskbarButton_get_MinScalableWidth_Original,
                 ITaskbarButton_get_MinScalableWidth_Hook,
                 true,
+            },
+            {
+                {LR"(public: virtual int __cdecl winrt::impl::produce<struct winrt::Taskbar::implementation::TaskbarCollapsibleLayout,struct winrt::Microsoft::UI::Xaml::Controls::IVirtualizingLayoutOverrides>::ArrangeOverride(void *,struct winrt::Windows::Foundation::Size,struct winrt::Windows::Foundation::Size *))"},
+                &TaskbarCollapsibleLayout_ArrangeOverride_Original,
+                TaskbarCollapsibleLayout_ArrangeOverride_Hook,
+                true,  // From 10.0.22621.2361.
             },
             {
                 {LR"(const winrt::impl::produce<struct winrt::Taskbar::implementation::TaskListWindowViewModel,struct winrt::Taskbar::ITaskListWindowViewModel>::`vftable')"},
