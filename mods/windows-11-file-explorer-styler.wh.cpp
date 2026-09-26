@@ -10458,7 +10458,7 @@ HRESULT WINAPI DrawTextWithGlow_Hook(HDC hdcMem,
 
 // Theme part bitmaps are shared by the File Explorer threads.
 SRWLOCK g_themePartCacheLock = SRWLOCK_INIT;
-winrt::com_ptr<ID2D1Factory> g_d2dFactory;
+[[clang::no_destroy]] winrt::com_ptr<ID2D1Factory> g_d2dFactory;
 HDC g_scrollBarThumbCache[4];
 HDC g_headerItemCache[2];
 
