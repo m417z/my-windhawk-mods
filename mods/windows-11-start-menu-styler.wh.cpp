@@ -14872,8 +14872,15 @@ thread_local std::unordered_set<ElementId> g_recycledElements;
 // Re-matching there sets dependency properties from inside the pass, which
 // dirties layout and schedules another one, and layout never settles: XAML
 // gives up after enough passes and fails the process with a layout cycle.
-thread_local std::unordered_map<ElementId, winrt::weak_ref<wf::IInspectable>>
-    g_elementMatchedItems;
+//
+// A boxed value is recorded by value, since a source can box it anew on every
+// read. Anything else is recorded by a weak reference, so that a destroyed item
+// can't be mistaken for a successor at the same address, which would leave an
+// element wearing the styles matched for its predecessor.
+using RepeaterItem =
+    std::variant<winrt::weak_ref<wf::IInspectable>, UnboxedPropertyValue>;
+
+thread_local std::unordered_map<ElementId, RepeaterItem> g_elementMatchedItems;
 
 struct VirtualizingRepeaterState {
     muxc::ItemsRepeater::ElementClearing_revoker elementClearingRevoker;
@@ -14944,24 +14951,43 @@ void ReapplyCustomizationsForSubtree(FrameworkElement element) {
     }
 }
 
-// A weak reference to the item a repeater realized an element for, empty when
-// there is no such item or it supports no weak reference. Weak so that a
-// destroyed item can't be mistaken for a successor at the same address, which
-// would leave an element wearing the styles matched for its predecessor.
-winrt::weak_ref<wf::IInspectable> RepeaterItemAt(
-    muxc::ItemsRepeater const& repeater,
-    int index) {
+// The item a repeater realized an element for, nullopt when there is no such
+// item or it is neither a boxed value nor supports a weak reference.
+std::optional<RepeaterItem> RepeaterItemAt(muxc::ItemsRepeater const& repeater,
+                                           int index) {
     try {
         auto itemsSourceView = repeater.ItemsSourceView();
         if (!itemsSourceView || index < 0 || index >= itemsSourceView.Count()) {
-            return nullptr;
+            return std::nullopt;
         }
 
-        return TryMakeWeak(itemsSourceView.GetAt(index));
+        auto item = itemsSourceView.GetAt(index);
+        if (auto value = TryUnboxPropertyValue(item)) {
+            return RepeaterItem{std::move(*value)};
+        }
+
+        if (auto weakItem = TryMakeWeak(item)) {
+            return RepeaterItem{std::move(weakItem)};
+        }
+
+        return std::nullopt;
     } catch (winrt::hresult_error const& ex) {
         Wh_Log(L"Error %08X: %s", ex.code(), ex.message().c_str());
-        return nullptr;
+        return std::nullopt;
     }
+}
+
+// Never true for a destroyed item.
+bool SameRepeaterItem(RepeaterItem const& a, RepeaterItem const& b) {
+    using WeakItem = winrt::weak_ref<wf::IInspectable>;
+    if (auto* weakA = std::get_if<WeakItem>(&a)) {
+        auto* weakB = std::get_if<WeakItem>(&b);
+        auto strongA = weakA->get();
+        return weakB && strongA && strongA == weakB->get();
+    }
+
+    auto* valueB = std::get_if<UnboxedPropertyValue>(&b);
+    return valueB && std::get<UnboxedPropertyValue>(a) == *valueB;
 }
 
 // A virtualizing container recycles its item elements instead of destroying
@@ -15019,24 +15045,34 @@ void HandleVirtualizingRepeater(ElementId elementId, FrameworkElement element) {
             auto item = RepeaterItemAt(sender, args.Index());
 
             // Held across the walk below, so that an item which no weak
-            // reference can get back, such as one a source boxes anew on every
+            // reference can get back, such as one a source wraps anew on every
             // read, is never recorded: an entry which could match nothing would
             // keep the element held for good.
-            auto strongItem = item.get();
+            wf::IInspectable strongItem;
+            if (item) {
+                if (auto* weakItem =
+                        std::get_if<winrt::weak_ref<wf::IInspectable>>(
+                            &*item)) {
+                    strongItem = weakItem->get();
+                    if (!strongItem) {
+                        item.reset();
+                    }
+                }
+            }
 
             if (!g_recycledElements.erase(elementId)) {
                 // Freshly created, so the styles its Add mutation applied are
                 // the ones for this item, and only the item is recorded.
-                if (strongItem) {
-                    g_elementMatchedItems[elementId] = std::move(item);
+                if (item) {
+                    g_elementMatchedItems[elementId] = std::move(*item);
                 }
                 return;
             }
 
-            if (strongItem) {
+            if (item) {
                 auto it = g_elementMatchedItems.find(elementId);
                 if (it != g_elementMatchedItems.end() &&
-                    it->second.get() == strongItem) {
+                    SameRepeaterItem(it->second, *item)) {
                     Wh_Log(L"Element reused for the same item: %llu",
                            static_cast<uint64_t>(elementId));
                     return;
@@ -15048,8 +15084,8 @@ void HandleVirtualizingRepeater(ElementId elementId, FrameworkElement element) {
             ReapplyCustomizationsForSubtree(element);
 
             // After the walk, which erases the entry as part of the teardown.
-            if (strongItem) {
-                g_elementMatchedItems[elementId] = std::move(item);
+            if (item) {
+                g_elementMatchedItems[elementId] = std::move(*item);
             }
         });
 }
