@@ -2,7 +2,7 @@
 // @id              taskbar-classic-menu
 // @name            Taskbar classic context menu
 // @description     Show the classic context menu when right-clicking on taskbar items
-// @version         1.0.3
+// @version         1.0.4
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
@@ -503,6 +503,7 @@ bool HookTaskbarViewDllSymbols(HMODULE module) {
             {LR"(public: void __cdecl winrt::Taskbar::implementation::TaskbarResources::OnTaskListButtonContextRequested(struct winrt::Windows::UI::Xaml::UIElement const &,struct winrt::Windows::UI::Xaml::Input::ContextRequestedEventArgs const &))"},
             &TaskbarResources_OnTaskListButtonContextRequested_Original,
             TaskbarResources_OnTaskListButtonContextRequested_Hook,
+            true,  // In case it's removed in the future,
         },
         // Called directly by the TaskListButtonResources XAML handlers,
         // bypassing TaskbarResources::OnTaskListButtonContextRequested.
@@ -601,12 +602,12 @@ BOOL Wh_ModInit() {
     HMODULE kernelBaseModule = GetModuleHandle(L"kernelbase.dll");
     auto pKernelBaseLoadLibraryExW = (decltype(&LoadLibraryExW))GetProcAddress(
         kernelBaseModule, "LoadLibraryExW");
-    WindhawkUtils::Wh_SetFunctionHookT(pKernelBaseLoadLibraryExW,
-                                       LoadLibraryExW_Hook,
-                                       &LoadLibraryExW_Original);
+    WindhawkUtils::SetFunctionHook(pKernelBaseLoadLibraryExW,
+                                   LoadLibraryExW_Hook,
+                                   &LoadLibraryExW_Original);
 
-    WindhawkUtils::Wh_SetFunctionHookT(GetKeyState, GetKeyState_Hook,
-                                       &GetKeyState_Original);
+    WindhawkUtils::SetFunctionHook(GetKeyState, GetKeyState_Hook,
+                                   &GetKeyState_Original);
 
     g_initialized = true;
 
