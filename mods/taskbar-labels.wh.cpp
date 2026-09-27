@@ -1546,53 +1546,6 @@ HRESULT ITaskbarButton_get_MinScalableWidth_Hook(void* pThis, float* minWidth) {
     return ret;
 }
 
-// The group and MRU min width estimates keep the native HasLabel value.
-bool g_inTaskbarCollapsibleLayoutGroupEstimate;
-
-using TaskbarCollapsibleLayoutBase_CalculateEstimatedGroupTotalMinExtent_t =
-    float(WINAPI*)(void* pThis, void* layoutContext, unsigned int index);
-TaskbarCollapsibleLayoutBase_CalculateEstimatedGroupTotalMinExtent_t
-    TaskbarCollapsibleLayoutBase_CalculateEstimatedGroupTotalMinExtent_Original;
-float WINAPI
-TaskbarCollapsibleLayoutBase_CalculateEstimatedGroupTotalMinExtent_Hook(
-    void* pThis,
-    void* layoutContext,
-    unsigned int index) {
-    Wh_Log(L">");
-
-    g_inTaskbarCollapsibleLayoutGroupEstimate = true;
-
-    float ret =
-        TaskbarCollapsibleLayoutBase_CalculateEstimatedGroupTotalMinExtent_Original(
-            pThis, layoutContext, index);
-
-    g_inTaskbarCollapsibleLayoutGroupEstimate = false;
-
-    return ret;
-}
-
-using TaskbarCollapsibleLayoutBase_GetEstimatedMostRecentlyUsedMinExtent_t =
-    float(WINAPI*)(void* pThis, void* layoutContext, unsigned int index);
-TaskbarCollapsibleLayoutBase_GetEstimatedMostRecentlyUsedMinExtent_t
-    TaskbarCollapsibleLayoutBase_GetEstimatedMostRecentlyUsedMinExtent_Original;
-float WINAPI
-TaskbarCollapsibleLayoutBase_GetEstimatedMostRecentlyUsedMinExtent_Hook(
-    void* pThis,
-    void* layoutContext,
-    unsigned int index) {
-    Wh_Log(L">");
-
-    g_inTaskbarCollapsibleLayoutGroupEstimate = true;
-
-    float ret =
-        TaskbarCollapsibleLayoutBase_GetEstimatedMostRecentlyUsedMinExtent_Original(
-            pThis, layoutContext, index);
-
-    g_inTaskbarCollapsibleLayoutGroupEstimate = false;
-
-    return ret;
-}
-
 void* ITaskListWindowViewModel_vftable;
 
 using ITaskListWindowViewModel_get_TaskItem_t =
@@ -1612,8 +1565,7 @@ TaskListWindowViewModel_ITaskbarAppItemViewModel_get_HasLabel_Hook(
     HRESULT ret =
         TaskListWindowViewModel_ITaskbarAppItemViewModel_get_HasLabel_Original(
             pThis, hasLabels);
-    if (g_unloading || g_inTaskbarCollapsibleLayoutGroupEstimate ||
-        FAILED(ret) || !*hasLabels) {
+    if (g_unloading || FAILED(ret) || !*hasLabels) {
         return ret;
     }
 
@@ -1738,8 +1690,7 @@ TaskListGroupViewModel_ITaskbarAppItemViewModel_get_HasLabel_Hook(
     HRESULT ret =
         TaskListGroupViewModel_ITaskbarAppItemViewModel_get_HasLabel_Original(
             pThis, hasLabels);
-    if (g_unloading || g_inTaskbarCollapsibleLayoutGroupEstimate ||
-        FAILED(ret)) {
+    if (g_unloading || FAILED(ret)) {
         return ret;
     }
 
@@ -1993,34 +1944,6 @@ bool HookTaskbarViewDllSymbols(HMODULE module) {
                 {LR"(public: virtual int __cdecl winrt::impl::produce<struct winrt::Taskbar::implementation::TaskListButton,struct winrt::Taskbar::ITaskbarButton>::get_MinScalableWidth(float *))"},
                 &ITaskbarButton_get_MinScalableWidth_Original,
                 ITaskbarButton_get_MinScalableWidth_Hook,
-                true,
-            },
-            {
-                {
-                    LR"(protected: float __cdecl winrt::Taskbar::implementation::TaskbarCollapsibleLayoutBase<struct winrt::Taskbar::implementation::TaskbarCollapsibleLayoutXamlTraits>::CalculateEstimatedGroupTotalMinExtent(struct winrt::Taskbar::implementation::TaskbarCollapsibleLayoutBase<struct winrt::Taskbar::implementation::TaskbarCollapsibleLayoutXamlTraits>::LayoutContext &,unsigned int))",
-
-                    // Before Windows 11 builds 26100.8116 and 28000.1896:
-                    LR"(protected: float __cdecl winrt::Taskbar::implementation::TaskbarCollapsibleLayoutBase<struct winrt::Taskbar::implementation::TaskbarCollapsibleLayoutXamlTraits>::CalculateEstimatedGroupTotalMinWidth(struct winrt::Taskbar::implementation::TaskbarCollapsibleLayoutBase<struct winrt::Taskbar::implementation::TaskbarCollapsibleLayoutXamlTraits>::LayoutContext &,unsigned int))",
-
-                    // Before Windows 11 build 22621.3235:
-                    LR"(private: float __cdecl winrt::Taskbar::implementation::TaskbarCollapsibleLayoutBase<struct winrt::Taskbar::implementation::TaskbarCollapsibleLayoutXamlTraits>::CalculateEstimatedGroupTotalMinWidth(struct winrt::Taskbar::implementation::TaskbarCollapsibleLayoutBase<struct winrt::Taskbar::implementation::TaskbarCollapsibleLayoutXamlTraits>::LayoutContext &,unsigned int))",
-                },
-                &TaskbarCollapsibleLayoutBase_CalculateEstimatedGroupTotalMinExtent_Original,
-                TaskbarCollapsibleLayoutBase_CalculateEstimatedGroupTotalMinExtent_Hook,
-                true,
-            },
-            {
-                {
-                    LR"(protected: float __cdecl winrt::Taskbar::implementation::TaskbarCollapsibleLayoutBase<struct winrt::Taskbar::implementation::TaskbarCollapsibleLayoutXamlTraits>::GetEstimatedMostRecentlyUsedMinExtent(struct winrt::Taskbar::implementation::TaskbarCollapsibleLayoutBase<struct winrt::Taskbar::implementation::TaskbarCollapsibleLayoutXamlTraits>::LayoutContext &,unsigned int))",
-
-                    // Before Windows 11 builds 26100.8116 and 28000.1896:
-                    LR"(protected: float __cdecl winrt::Taskbar::implementation::TaskbarCollapsibleLayoutBase<struct winrt::Taskbar::implementation::TaskbarCollapsibleLayoutXamlTraits>::GetEstimatedMostRecentlyUsedMinWidth(struct winrt::Taskbar::implementation::TaskbarCollapsibleLayoutBase<struct winrt::Taskbar::implementation::TaskbarCollapsibleLayoutXamlTraits>::LayoutContext &,unsigned int))",
-
-                    // Before Windows 11 build 22621.3235:
-                    LR"(private: float __cdecl winrt::Taskbar::implementation::TaskbarCollapsibleLayoutBase<struct winrt::Taskbar::implementation::TaskbarCollapsibleLayoutXamlTraits>::GetEstimatedMostRecentlyUsedMinWidth(struct winrt::Taskbar::implementation::TaskbarCollapsibleLayoutBase<struct winrt::Taskbar::implementation::TaskbarCollapsibleLayoutXamlTraits>::LayoutContext &,unsigned int))",
-                },
-                &TaskbarCollapsibleLayoutBase_GetEstimatedMostRecentlyUsedMinExtent_Original,
-                TaskbarCollapsibleLayoutBase_GetEstimatedMostRecentlyUsedMinExtent_Hook,
                 true,
             },
             {
