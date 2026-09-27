@@ -2,7 +2,7 @@
 // @id              taskbar-vertical
 // @name            Vertical Taskbar for Windows 11
 // @description     Finally, the missing vertical taskbar option for Windows 11! Move the taskbar to the left or right side of the screen.
-// @version         1.3.14
+// @version         1.4
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
@@ -40,7 +40,8 @@ mod.
 
 ## Notes
 
-* To have multiple columns of tray icons, use the [Taskbar tray icon spacing and
+* To have multiple columns of tray icons with the non-native vertical taskbar,
+  use the [Taskbar tray icon spacing and
   grid](https://windhawk.net/mods/taskbar-notification-icon-spacing) mod.
 
 ## Known limitations
@@ -2004,22 +2005,23 @@ SystemTrayFrame_ConfigureWrapGridColumns_Hook(void* itemsHost,
                                               double width) {
     Wh_Log(L"> %u %f", itemCount, width);
 
-    if (!g_unloading) {
-        try {
-            DependencyObject itemsHostObject = nullptr;
-            winrt::copy_from_abi(itemsHostObject, *(void**)itemsHost);
-            if (itemsHostObject) {
-                ConfigureNativeTrayIconGrid(itemsHostObject, itemCount);
-                return;
-            }
-        } catch (...) {
-            HRESULT hr = winrt::to_hresult();
-            Wh_Log(L"Error %08X", hr);
-        }
-    }
-
     SystemTrayFrame_ConfigureWrapGridColumns_Original(itemsHost, itemCount,
                                                       width);
+
+    if (g_unloading) {
+        return;
+    }
+
+    try {
+        DependencyObject itemsHostObject = nullptr;
+        winrt::copy_from_abi(itemsHostObject, *(void**)itemsHost);
+        if (itemsHostObject) {
+            ConfigureNativeTrayIconGrid(itemsHostObject, itemCount);
+        }
+    } catch (...) {
+        HRESULT hr = winrt::to_hresult();
+        Wh_Log(L"Error %08X", hr);
+    }
 }
 
 double GetNativeSystemTrayFrameWidth(FrameworkElement systemTrayFrame,
@@ -4646,12 +4648,65 @@ bool RunFromWindowThread(HWND hWnd,
 
 namespace StartMenuUI {
 
+// Overrides a property's local value, keeping the latest local value set by
+// Windows to restore it, or to clear the property if there's none.
+template <typename T>
+class PropertyOverride {
+   public:
+    using PropertyGetter = DependencyProperty (*)();
+
+    explicit PropertyOverride(PropertyGetter property) : m_property(property) {}
+
+    void Set(DependencyObject element, T value) {
+        auto property = m_property();
+        auto localValue = element.ReadLocalValue(property).try_as<T>();
+        if (m_element.get() != element || localValue != m_value) {
+            m_element = element;
+            m_windowsValue = localValue;
+        }
+
+        m_value = value;
+        element.SetValue(property, winrt::box_value(value));
+    }
+
+    void Restore() {
+        auto element = m_element.get();
+        m_element = nullptr;
+        if (!element) {
+            return;
+        }
+
+        auto property = m_property();
+        if (element.ReadLocalValue(property).try_as<T>() != m_value) {
+            return;
+        }
+
+        if (m_windowsValue) {
+            element.SetValue(property, winrt::box_value(*m_windowsValue));
+        } else {
+            element.ClearValue(property);
+        }
+    }
+
+   private:
+    PropertyGetter m_property;
+    winrt::weak_ref<DependencyObject> m_element;
+    std::optional<T> m_windowsValue;
+    T m_value{};
+};
+
 bool g_inApplyStyle;
 bool g_startMenuAnimationAdjusted;
+PropertyOverride<double> g_canvasTopOverride{&Controls::Canvas::TopProperty};
+PropertyOverride<double> g_canvasLeftOverride{&Controls::Canvas::LeftProperty};
+PropertyOverride<VerticalAlignment> g_verticalAlignmentOverride{
+    &FrameworkElement::VerticalAlignmentProperty};
+PropertyOverride<HorizontalAlignment> g_horizontalAlignmentOverride{
+    &FrameworkElement::HorizontalAlignmentProperty};
+PropertyOverride<Thickness> g_marginOverride{&FrameworkElement::MarginProperty};
 winrt::weak_ref<DependencyObject> g_startSizingFrameWeakRef;
 int64_t g_canvasTopPropertyChangedToken;
 int64_t g_canvasLeftPropertyChangedToken;
-std::optional<HorizontalAlignment> g_previousHorizontalAlignment;
 winrt::weak_ref<DependencyObject> g_frameRootWeakRef;
 int64_t g_verticalAlignmentPropertyChangedToken;
 int64_t g_horizontalAlignmentPropertyChangedToken;
@@ -4695,7 +4750,8 @@ void ApplyStyle();
 
 void ApplyStyleClassicStartMenu(FrameworkElement content,
                                 TaskbarLocation taskbarLocation,
-                                HMONITOR monitor) {
+                                HMONITOR monitor,
+                                bool restore) {
     FrameworkElement startSizingFrame =
         FindChildByClassName(content, L"StartDocked.StartSizingFrame");
     if (!startSizingFrame) {
@@ -4703,11 +4759,9 @@ void ApplyStyleClassicStartMenu(FrameworkElement content,
         return;
     }
 
-    if (g_settings.startMenuAnimationAdjust || g_startMenuAnimationAdjusted) {
-        g_startMenuAnimationAdjusted = true;
-
-        bool adjustAnimation =
-            !g_unloading && g_settings.startMenuAnimationAdjust;
+    bool adjustAnimation = !restore && g_settings.startMenuAnimationAdjust;
+    if (adjustAnimation || g_startMenuAnimationAdjusted) {
+        g_startMenuAnimationAdjusted = adjustAnimation;
 
         FrameworkElement child = startSizingFrame;
         if ((child = FindChildByClassName(
@@ -4784,7 +4838,10 @@ void ApplyStyleClassicStartMenu(FrameworkElement content,
     Wh_Log(L"Invalidating measure");
     startSizingFrame.InvalidateMeasure();
 
-    if (!g_unloading) {
+    if (restore) {
+        g_canvasTopOverride.Restore();
+        g_canvasLeftOverride.Restore();
+    } else {
         MONITORINFO monitorInfo{
             .cbSize = sizeof(MONITORINFO),
         };
@@ -4825,8 +4882,8 @@ void ApplyStyleClassicStartMenu(FrameworkElement content,
         }
 
         Wh_Log(L"Setting Canvas.Top to %f, Canvas.Left to %f", newTop, newLeft);
-        Controls::Canvas::SetTop(startSizingFrame, newTop);
-        Controls::Canvas::SetLeft(startSizingFrame, newLeft);
+        g_canvasTopOverride.Set(startSizingFrame, newTop);
+        g_canvasLeftOverride.Set(startSizingFrame, newLeft);
 
         // Subscribe to Canvas.Top and Canvas.Left property changes to apply
         // custom styles right when that happens. Without it, the start menu may
@@ -4866,7 +4923,15 @@ void ApplyStyleClassicStartMenu(FrameworkElement content,
 }
 
 void ApplyStyleRedesignedStartMenu(FrameworkElement content,
-                                   TaskbarLocation taskbarLocation) {
+                                   TaskbarLocation taskbarLocation,
+                                   bool restore) {
+    if (restore) {
+        g_verticalAlignmentOverride.Restore();
+        g_horizontalAlignmentOverride.Restore();
+        g_marginOverride.Restore();
+        return;
+    }
+
     FrameworkElement frameRoot = FindChildByName(content, L"FrameRoot");
     if (!frameRoot) {
         Wh_Log(L"Failed to find Start menu frame root");
@@ -4876,51 +4941,44 @@ void ApplyStyleRedesignedStartMenu(FrameworkElement content,
     auto margin = frameRoot.Margin();
     auto marginVertical = margin.Top + margin.Bottom;
 
-    auto startMenuAlignment = g_unloading ? StartMenuAlignment::bottom
-                                          : g_settings.startMenuAlignment;
-    switch (startMenuAlignment) {
+    VerticalAlignment verticalAlignment;
+    switch (g_settings.startMenuAlignment) {
         case StartMenuAlignment::windowsDefault:
         case StartMenuAlignment::top:
-            frameRoot.VerticalAlignment(VerticalAlignment::Top);
+            verticalAlignment = VerticalAlignment::Top;
             margin.Top = 0;
             margin.Bottom = marginVertical;
             break;
 
         case StartMenuAlignment::center:
-            frameRoot.VerticalAlignment(VerticalAlignment::Center);
+            verticalAlignment = VerticalAlignment::Center;
             margin.Top = marginVertical / 2;
             margin.Bottom = marginVertical / 2;
             break;
 
         case StartMenuAlignment::bottom:
-            frameRoot.VerticalAlignment(VerticalAlignment::Bottom);
+            verticalAlignment = VerticalAlignment::Bottom;
             margin.Top = marginVertical;
             margin.Bottom = 0;
             break;
     }
 
-    if (g_unloading) {
-        frameRoot.HorizontalAlignment(g_previousHorizontalAlignment.value_or(
-            HorizontalAlignment::Center));
-    } else {
-        if (!g_previousHorizontalAlignment) {
-            g_previousHorizontalAlignment = frameRoot.HorizontalAlignment();
-        }
+    HorizontalAlignment horizontalAlignment;
+    switch (taskbarLocation) {
+        case TaskbarLocation::left:
+            horizontalAlignment = HorizontalAlignment::Left;
+            break;
 
-        switch (taskbarLocation) {
-            case TaskbarLocation::left:
-                frameRoot.HorizontalAlignment(HorizontalAlignment::Left);
-                break;
-
-            case TaskbarLocation::right:
-                frameRoot.HorizontalAlignment(HorizontalAlignment::Right);
-                break;
-        }
+        case TaskbarLocation::right:
+            horizontalAlignment = HorizontalAlignment::Right;
+            break;
     }
 
-    frameRoot.Margin(margin);
+    g_verticalAlignmentOverride.Set(frameRoot, verticalAlignment);
+    g_horizontalAlignmentOverride.Set(frameRoot, horizontalAlignment);
+    g_marginOverride.Set(frameRoot, margin);
 
-    if (!g_unloading && !g_frameRootWeakRef.get()) {
+    if (!g_frameRootWeakRef.get()) {
         auto frameRootDo = frameRoot.as<DependencyObject>();
 
         g_frameRootWeakRef = frameRootDo;
@@ -4954,12 +5012,13 @@ void ApplyStyleRedesignedStartMenu(FrameworkElement content,
 }
 
 void ApplyStyle() {
-    // Left as is while unknown too, since a style applied for the wrong state
-    // isn't reverted.
-    if (g_settings.startMenuAlignment == StartMenuAlignment::windowsDefault &&
-        g_nativeVerticalTaskbar != NativeVerticalTaskbar::unavailable) {
-        return;
-    }
+    // The Windows default alignment leaves the Start menu to Windows with the
+    // native vertical taskbar, and until explorer.exe determines whether it's
+    // available.
+    bool restore =
+        g_unloading ||
+        (g_settings.startMenuAlignment == StartMenuAlignment::windowsDefault &&
+         g_nativeVerticalTaskbar != NativeVerticalTaskbar::unavailable);
 
     g_inApplyStyle = true;
 
@@ -4977,9 +5036,9 @@ void ApplyStyle() {
     Wh_Log(L"Start menu content class name: %s", contentClassName.c_str());
 
     if (contentClassName == L"Windows.UI.Xaml.Controls.Canvas") {
-        ApplyStyleClassicStartMenu(content, taskbarLocation, monitor);
+        ApplyStyleClassicStartMenu(content, taskbarLocation, monitor, restore);
     } else if (contentClassName == L"StartMenu.StartBlendedFlexFrame") {
-        ApplyStyleRedesignedStartMenu(content, taskbarLocation);
+        ApplyStyleRedesignedStartMenu(content, taskbarLocation, restore);
     } else {
         Wh_Log(L"Error: Unsupported Start menu content class name");
     }
@@ -5103,6 +5162,12 @@ HRESULT WINAPI RoGetActivationFactory_Hook(HSTRING activatableClassId,
 
 namespace CoreWindowUI {
 
+// Windows positions the windows for the native vertical taskbar. They're also
+// left alone until explorer.exe determines whether it's available.
+bool ShouldAdjustCoreWindows() {
+    return g_nativeVerticalTaskbar == NativeVerticalTaskbar::unavailable;
+}
+
 bool IsTargetCoreWindow(HWND hWnd, int* extraXAdjustment) {
     DWORD threadId = 0;
     DWORD processId = 0;
@@ -5207,6 +5272,10 @@ void AdjustCoreWindowPos(int* x, int* y, int width, int height) {
 }
 
 void ApplySettings() {
+    if (!ShouldAdjustCoreWindows()) {
+        return;
+    }
+
     for (HWND hCoreWnd : GetCoreWindows()) {
         Wh_Log(L"Adjusting core window %08X", (DWORD)(ULONG_PTR)hCoreWnd);
 
@@ -5241,7 +5310,8 @@ BOOL WINAPI SetWindowPos_Hook(HWND hWnd,
     };
 
     int extraXAdjustment = 0;
-    if (!IsTargetCoreWindow(hWnd, &extraXAdjustment)) {
+    if (!ShouldAdjustCoreWindows() ||
+        !IsTargetCoreWindow(hWnd, &extraXAdjustment)) {
         return original();
     }
 
