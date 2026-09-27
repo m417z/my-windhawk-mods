@@ -929,7 +929,14 @@ void UpdateTaskListButtonWithLabelStyle(FrameworkElement taskListButtonElement,
     }
 
     double taskListButtonWidth = taskListButtonElement.ActualWidth();
-    double iconWidth = iconElement.ActualWidth();
+
+    // The icon is collapsed while the default icon placeholder is shown, and
+    // this runs before layout when the icon size changes, so the actual width
+    // can't be relied on.
+    double iconWidth = iconElement.Width();
+    if (!(iconWidth > 0)) {
+        iconWidth = iconElement.ActualWidth();
+    }
 
     auto columnDefinitions = iconPanelElement.ColumnDefinitions();
 
