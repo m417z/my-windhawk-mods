@@ -175,6 +175,8 @@ Labels can also be shown or hidden per-program in the settings.
 
 #include <windhawk_utils.h>
 
+#include <inspectable.h>
+
 #undef GetCurrentTime
 
 #include <winrt/Windows.Foundation.Collections.h>
@@ -1607,18 +1609,58 @@ bool IsWindowProcessExcluded(HWND hWnd) {
     return excluded;
 }
 
-HWND GetTaskItemWindow(void* taskItem) {
-    // public: virtual int __cdecl winrt::impl::produce<struct
-    // winrt::WindowsUdk::UI::Shell::implementation::TaskItem, struct
-    // winrt::WindowsUdk::UI::Shell::ITaskItem>::get_WindowId(unsigned
-    // __int64 *)
-    using ITaskItem_get_WindowId_t = HRESULT(WINAPI*)(void* pThis, HWND* hWnd);
+// WindowsUdk.UI.Shell interfaces, declared up to the last used method. A WinRT
+// interface doesn't change once published, so a successful query by IID
+// guarantees the layout.
 
-    void** vtable = *(void***)taskItem;
-    auto ITaskItem_get_WindowId = (ITaskItem_get_WindowId_t)vtable[8];
+// {b081d9d6-9b45-5363-8a4d-854add6abe7e}
+constexpr winrt::guid IID_ITaskItem{
+    0xb081d9d6,
+    0x9b45,
+    0x5363,
+    {0x8a, 0x4d, 0x85, 0x4a, 0xdd, 0x6a, 0xbe, 0x7e}};
+
+struct ITaskItem : public IInspectable {
+    virtual HRESULT STDMETHODCALLTYPE get_AppId() = 0;
+    virtual HRESULT STDMETHODCALLTYPE get_UniqueId() = 0;
+    virtual HRESULT STDMETHODCALLTYPE get_WindowId(HWND* value) = 0;
+};
+
+// {a152e779-93df-5be2-af2c-d342452b0ce0}
+constexpr winrt::guid IID_ITaskGroup{
+    0xa152e779,
+    0x93df,
+    0x5be2,
+    {0xaf, 0x2c, 0xd3, 0x42, 0x45, 0x2b, 0x0c, 0xe0}};
+
+struct ITaskGroup : public IInspectable {
+    virtual HRESULT STDMETHODCALLTYPE get_AppId(void** value) = 0;
+    virtual HRESULT STDMETHODCALLTYPE get_UniqueId() = 0;
+    virtual HRESULT STDMETHODCALLTYPE get_DisplayName() = 0;
+    virtual HRESULT STDMETHODCALLTYPE get_AccessibleName() = 0;
+    virtual HRESULT STDMETHODCALLTYPE get_Icon() = 0;
+    virtual HRESULT STDMETHODCALLTYPE get_OverlayIcon() = 0;
+    virtual HRESULT STDMETHODCALLTYPE get_OverlayIconDescription() = 0;
+    virtual HRESULT STDMETHODCALLTYPE get_Badge() = 0;
+    virtual HRESULT STDMETHODCALLTYPE get_IsRequestingAttention() = 0;
+    virtual HRESULT STDMETHODCALLTYPE get_Progress() = 0;
+    virtual HRESULT STDMETHODCALLTYPE get_VisualState() = 0;
+    virtual HRESULT STDMETHODCALLTYPE put_VisualState() = 0;
+    virtual HRESULT STDMETHODCALLTYPE get_Bounds() = 0;
+    virtual HRESULT STDMETHODCALLTYPE put_Bounds() = 0;
+    virtual HRESULT STDMETHODCALLTYPE get_Items(void** value) = 0;
+};
+
+HWND GetTaskItemWindow(IUnknown* taskItemUnknown) {
+    winrt::com_ptr<ITaskItem> taskItem;
+    HRESULT hr =
+        taskItemUnknown->QueryInterface(IID_ITaskItem, taskItem.put_void());
+    if (FAILED(hr)) {
+        return nullptr;
+    }
 
     HWND hWnd = nullptr;
-    if (FAILED(ITaskItem_get_WindowId(taskItem, &hWnd))) {
+    if (FAILED(taskItem->get_WindowId(&hWnd))) {
         return nullptr;
     }
 
@@ -1692,44 +1734,37 @@ TaskListGroupViewModel_ITaskbarAppItemViewModel_get_TaskGroup_t
 // The windows of a group share its app ID, so only the process of the first
 // window is checked in addition to it.
 bool IsTaskGroupExcluded(void* pITaskbarAppItemViewModel, bool requireWindows) {
-    winrt::com_ptr<IUnknown> taskGroup;
+    winrt::com_ptr<IUnknown> taskGroupUnknown;
     HRESULT hr = TaskListGroupViewModel_ITaskbarAppItemViewModel_get_TaskGroup(
-        pITaskbarAppItemViewModel, taskGroup.put_void());
-    if (FAILED(hr) || !taskGroup) {
+        pITaskbarAppItemViewModel, taskGroupUnknown.put_void());
+    if (FAILED(hr) || !taskGroupUnknown) {
         return false;
     }
 
-    void** vtable = *(void***)taskGroup.get();
-
-    // public: virtual int __cdecl winrt::impl::produce<struct
-    // winrt::WindowsUdk::UI::Shell::implementation::TaskGroup, struct
-    // winrt::WindowsUdk::UI::Shell::ITaskGroup>::get_Items(void * *)
-    using ITaskGroup_get_Items_t = HRESULT(WINAPI*)(void* pThis, void** items);
-    auto ITaskGroup_get_Items = (ITaskGroup_get_Items_t)vtable[20];
+    winrt::com_ptr<ITaskGroup> taskGroup;
+    hr = taskGroupUnknown->QueryInterface(IID_ITaskGroup, taskGroup.put_void());
+    if (FAILED(hr)) {
+        return false;
+    }
 
     // An IVectorView<TaskItem>, which has the same ABI.
     winrt::Windows::Foundation::Collections::IVectorView<
         winrt::Windows::Foundation::IInspectable>
         items;
-    hr = ITaskGroup_get_Items(taskGroup.get(), winrt::put_abi(items));
+    hr = taskGroup->get_Items(winrt::put_abi(items));
 
     HWND hWnd = nullptr;
     if (SUCCEEDED(hr) && items && items.Size() > 0) {
-        hWnd = GetTaskItemWindow(winrt::get_abi(items.GetAt(0)));
+        auto item = items.GetAt(0);
+        hWnd = GetTaskItemWindow(static_cast<IUnknown*>(winrt::get_abi(item)));
     }
 
     if (!hWnd && requireWindows) {
         return false;
     }
 
-    // public: virtual int __cdecl winrt::impl::produce<struct
-    // winrt::WindowsUdk::UI::Shell::implementation::TaskGroup, struct
-    // winrt::WindowsUdk::UI::Shell::ITaskGroup>::get_AppId(void * *)
-    using ITaskGroup_get_AppId_t = HRESULT(WINAPI*)(void* pThis, void** appId);
-    auto ITaskGroup_get_AppId = (ITaskGroup_get_AppId_t)vtable[6];
-
     winrt::hstring appId;
-    hr = ITaskGroup_get_AppId(taskGroup.get(), winrt::put_abi(appId));
+    hr = taskGroup->get_AppId(winrt::put_abi(appId));
     if (SUCCEEDED(hr) && IsAppIdExcluded(appId.c_str())) {
         return true;
     }
