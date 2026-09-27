@@ -10032,7 +10032,7 @@ bool IsFileExplorerWindowPart(HWND hWnd) {
            TargetWindowType::FileExplorer;
 }
 
-struct PaintingWnd {
+struct DCWnd {
     HWND hWnd;
     bool fileExplorer;
 };
@@ -10040,10 +10040,28 @@ struct PaintingWnd {
 // The windows being painted by the thread between BeginPaint and EndPaint,
 // innermost last. Painting can nest, e.g. with UpdateWindow on a child. Deeper
 // nesting than the array holds is attributed to the outer window.
-thread_local PaintingWnd g_paintingWndsForThread[8];
+thread_local DCWnd g_paintingWndsForThread[8];
 thread_local size_t g_paintingWndCountForThread;
 
-const PaintingWnd* GetPaintingWnd() {
+// Memory DCs created by comctl32 for double buffering, with the window of the
+// DC they're compatible with. They're also drawn to outside of painting, e.g.
+// by the scroll bar fade animation.
+struct DoubleBufferDC {
+    HDC hdc;
+    DCWnd wnd;
+};
+thread_local DoubleBufferDC g_doubleBufferDCsForThread[8];
+thread_local size_t g_doubleBufferDCCountForThread;
+
+// Memory DCs have no window. They're attributed to the window of their double
+// buffer, or to the window being painted. Returns nullptr outside of painting.
+const DCWnd* GetMemoryDCWnd(HDC hdc) {
+    for (size_t i = 0; i < g_doubleBufferDCCountForThread; i++) {
+        if (g_doubleBufferDCsForThread[i].hdc == hdc) {
+            return &g_doubleBufferDCsForThread[i].wnd;
+        }
+    }
+
     size_t count = g_paintingWndCountForThread;
     return count ? &g_paintingWndsForThread[count - 1] : nullptr;
 }
@@ -10068,11 +10086,9 @@ bool IsEntireWindowEffectDC(HDC hdc) {
         return IsFileExplorerWindowPart(hWnd);
     }
 
-    // Memory DCs, such as those of buffered painting and comctl32 double
-    // buffering, have no window. They're attributed to the window being
-    // painted, or to the thread outside of painting.
-    const PaintingWnd* paintingWnd = GetPaintingWnd();
-    return !paintingWnd || paintingWnd->fileExplorer;
+    // Memory DCs without a known window are attributed to the thread.
+    const DCWnd* memoryDCWnd = GetMemoryDCWnd(hdc);
+    return !memoryDCWnd || memoryDCWnd->fileExplorer;
 }
 
 using BeginPaint_t = decltype(&BeginPaint);
@@ -10204,6 +10220,49 @@ std::wstring GetModulePath(HMODULE module) {
         path.resize(len);
         return path;
     }
+}
+
+using CreateCompatibleDC_t = decltype(&CreateCompatibleDC);
+CreateCompatibleDC_t CreateCompatibleDC_Original;
+HDC WINAPI CreateCompatibleDC_Hook(HDC hdc) {
+    HDC memDC = CreateCompatibleDC_Original(hdc);
+    if (!memDC || !hdc || !g_entireWindowEffectWndForThread ||
+        g_doubleBufferDCCountForThread >=
+            ARRAYSIZE(g_doubleBufferDCsForThread)) {
+        return memDC;
+    }
+
+    HWND hWnd = WindowFromDC(hdc);
+    if (!hWnd) {
+        return memDC;
+    }
+
+    // uxtheme reuses its buffered paint DCs for other targets, so only comctl32
+    // DCs, which are created for each use, are tracked. Both comctl32 versions
+    // are loaded, so the module is matched by name.
+    std::wstring callerPath =
+        GetModulePath(GetModuleFromAddress(__builtin_return_address(0)));
+    if (_wcsicmp(PathFindFileName(callerPath.c_str()), L"comctl32.dll") != 0) {
+        return memDC;
+    }
+
+    g_doubleBufferDCsForThread[g_doubleBufferDCCountForThread++] = {
+        memDC, {hWnd, IsFileExplorerWindowPart(hWnd)}};
+    return memDC;
+}
+
+using DeleteDC_t = decltype(&DeleteDC);
+DeleteDC_t DeleteDC_Original;
+BOOL WINAPI DeleteDC_Hook(HDC hdc) {
+    for (size_t i = 0; i < g_doubleBufferDCCountForThread; i++) {
+        if (g_doubleBufferDCsForThread[i].hdc == hdc) {
+            g_doubleBufferDCsForThread[i] =
+                g_doubleBufferDCsForThread[--g_doubleBufferDCCountForThread];
+            break;
+        }
+    }
+
+    return DeleteDC_Original(hdc);
 }
 
 // Whether the path is under the Windows directory.
@@ -10634,9 +10693,9 @@ void ClearThemePartCache() {
 UINT GetThemePartDpi(HDC hdc) {
     HWND hWnd = WindowFromDC(hdc);
     if (!hWnd) {
-        const PaintingWnd* paintingWnd = GetPaintingWnd();
+        const DCWnd* memoryDCWnd = GetMemoryDCWnd(hdc);
         hWnd =
-            paintingWnd ? paintingWnd->hWnd : g_entireWindowEffectWndForThread;
+            memoryDCWnd ? memoryDCWnd->hWnd : g_entireWindowEffectWndForThread;
     }
 
     UINT dpi = GetDpiForWindow(hWnd);
@@ -11803,6 +11862,11 @@ BOOL Wh_ModInit() {
                                    &BeginPaint_Original);
 
     WindhawkUtils::SetFunctionHook(EndPaint, EndPaint_Hook, &EndPaint_Original);
+
+    WindhawkUtils::SetFunctionHook(CreateCompatibleDC, CreateCompatibleDC_Hook,
+                                   &CreateCompatibleDC_Original);
+
+    WindhawkUtils::SetFunctionHook(DeleteDC, DeleteDC_Hook, &DeleteDC_Original);
 
     WindhawkUtils::SetFunctionHook(ExtTextOutW, ExtTextOutW_Hook,
                                    &ExtTextOutW_Original);
