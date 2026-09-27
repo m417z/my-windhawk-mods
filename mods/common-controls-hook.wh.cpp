@@ -1,7 +1,9 @@
 // ==WindhawkMod==
 // @id              common-controls-hook
 // @name            Common Controls Hook
+// @name:zh-CN      Common Controls 钩子
 // @description     Force-enable Common Controls v6 visual styles for legacy Win32 applications
+// @description:zh-CN 为旧版 Win32 程序强制启用 Common Controls v6 视觉样式
 // @version         1.0.2
 // @author          m417z
 // @github          https://github.com/m417z

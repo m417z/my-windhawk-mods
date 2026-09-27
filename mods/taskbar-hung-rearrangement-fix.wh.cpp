@@ -1,7 +1,9 @@
 // ==WindhawkMod==
 // @id              taskbar-hung-rearrangement-fix
 // @name            Taskbar hung windows rearrangement fix
+// @name:zh-CN      任务栏无响应窗口乱序修复
 // @description     Fixes a taskbar bug which causes taskbar items of hung windows to move to the end of the taskbar
+// @description:zh-CN 修复任务栏的一个缺陷：无响应窗口的任务栏项目会被移动到任务栏末尾
 // @version         1.0
 // @author          m417z
 // @github          https://github.com/m417z

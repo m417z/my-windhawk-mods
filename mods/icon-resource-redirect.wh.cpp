@@ -1,7 +1,9 @@
 // ==WindhawkMod==
 // @id              icon-resource-redirect
 // @name            Resource Redirect
+// @name:zh-CN      系统资源重定向
 // @description     Define alternative files for loading various resources (e.g. icons in imageres.dll) for simple theming without having to modify system files
+// @description:zh-CN 指定替代文件来加载各类系统资源（例如 imageres.dll 中的图标），无需修改系统文件即可实现主题定制
 // @version         1.3
 // @author          m417z
 // @github          https://github.com/m417z

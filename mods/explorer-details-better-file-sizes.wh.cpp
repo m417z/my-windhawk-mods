@@ -1,7 +1,9 @@
 // ==WindhawkMod==
 // @id              explorer-details-better-file-sizes
 // @name            Better file sizes in Explorer details
+// @name:zh-CN      资源管理器更佳的文件大小显示
 // @description     Enhances file size display in Explorer details with folder sizes, human-readable units (MB/GB), and optional IEC notation (KiB/MiB)
+// @description:zh-CN 增强资源管理器详细信息中的文件大小显示：支持文件夹大小、易读单位（MB/GB）以及可选的 IEC 表示法（KiB/MiB）
 // @version         1.5.1
 // @author          m417z
 // @github          https://github.com/m417z

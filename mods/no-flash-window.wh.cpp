@@ -2,6 +2,7 @@
 // @id              no-flash-window
 // @name            NoFlashWindow
 // @description     Prevent programs from flashing their windows on the taskbar
+// @description:zh-CN 阻止程序在任务栏上闪烁窗口以吸引注意，避免打扰正在进行的其他工作
 // @version         1.0
 // @author          m417z
 // @github          https://github.com/m417z

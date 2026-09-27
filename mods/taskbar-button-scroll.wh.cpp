@@ -1,7 +1,9 @@
 // ==WindhawkMod==
 // @id              taskbar-button-scroll
 // @name            Taskbar minimize/restore on scroll
+// @name:zh-CN      滚轮最小化/还原任务栏窗口
 // @description     Minimize/restore by scrolling the mouse wheel over taskbar buttons and thumbnail previews
+// @description:zh-CN 在任务栏按钮和缩略图预览上滚动鼠标滚轮，即可最小化或还原窗口
 // @version         1.1.4
 // @author          m417z
 // @github          https://github.com/m417z

@@ -1,7 +1,9 @@
 // ==WindhawkMod==
 // @id              taskbar-multirow
 // @name            Multirow taskbar for Windows 11
+// @name:zh-CN      Windows 11 多行任务栏
 // @description     Span taskbar items across multiple rows, just like it was possible before Windows 11
+// @description:zh-CN 让任务栏项目跨多行显示，恢复 Windows 11 之前就有的多行能力
 // @version         1.1.3
 // @author          m417z
 // @github          https://github.com/m417z

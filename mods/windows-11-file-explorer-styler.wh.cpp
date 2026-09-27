@@ -1,7 +1,9 @@
 // ==WindhawkMod==
 // @id              windows-11-file-explorer-styler
 // @name            Windows 11 File Explorer Styler
+// @name:zh-CN      Windows 11 文件资源管理器样式器
 // @description     Customize the File Explorer with themes contributed by others or create your own
+// @description:zh-CN 使用他人贡献的主题或自制主题，自定义 Windows 11 文件资源管理器的外观
 // @version         1.7
 // @author          m417z
 // @github          https://github.com/m417z

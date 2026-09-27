@@ -1,7 +1,9 @@
 // ==WindhawkMod==
 // @id              explorer-context-menu-classic
 // @name            Classic context menu on Windows 11
+// @name:zh-CN      Windows 11 经典右键菜单
 // @description     Always show the classic context menu without having to select "Show More Options" or hold Shift
+// @description:zh-CN 始终显示经典完整右键菜单，无需点击“显示更多选项”或按住 Shift
 // @version         1.0.2
 // @author          m417z
 // @github          https://github.com/m417z

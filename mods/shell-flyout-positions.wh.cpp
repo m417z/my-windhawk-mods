@@ -1,7 +1,9 @@
 // ==WindhawkMod==
 // @id              shell-flyout-positions
 // @name            Shell Flyout Positions
+// @name:zh-CN      系统浮出菜单位置
 // @description     Customize the position of the Notification Center, Action Center, and Start menu on Windows 11
+// @description:zh-CN 自定义 Windows 11 通知中心、操作中心和开始菜单的弹出位置
 // @version         1.3
 // @author          m417z
 // @github          https://github.com/m417z

@@ -1,7 +1,9 @@
 // ==WindhawkMod==
 // @id           more-space-in-language-indicator
 // @name         More space in language indicator
+// @name:zh-CN      语言指示器更多空间
 // @description  Enables to see two lines in the language indicator with small taskbar icons (Windows 10)
+// @description:zh-CN 在任务栏使用小图标时，让语言指示器能够显示两行文字（Windows 10）
 // @version      1.0
 // @author       m417z
 // @github       https://github.com/m417z

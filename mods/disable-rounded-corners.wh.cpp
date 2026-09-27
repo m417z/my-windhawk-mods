@@ -1,7 +1,9 @@
 // ==WindhawkMod==
 // @id              disable-rounded-corners
 // @name            Disable rounded corners in Windows 11
+// @name:zh-CN      关闭 Windows 11 窗口圆角
 // @description     A simple mod to disable window rounded corners in Windows 11
+// @description:zh-CN 一个简单的模组，用于关闭 Windows 11 中窗口的圆角效果，让窗口回归直角
 // @version         1.0.1
 // @author          m417z
 // @github          https://github.com/m417z

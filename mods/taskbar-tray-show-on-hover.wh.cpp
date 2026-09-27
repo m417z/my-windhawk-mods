@@ -1,7 +1,9 @@
 // ==WindhawkMod==
 // @id              taskbar-tray-show-on-hover
 // @name            Taskbar tray auto-hide (show on hover)
+// @name:zh-CN      托盘区自动隐藏（悬停显示）
 // @description     Hide the taskbar tray area when not in use, and show it when hovering the mouse over it
+// @description:zh-CN 在不使用时自动隐藏任务栏托盘区，鼠标悬停其上时再将其显示出来
 // @version         1.0
 // @author          m417z
 // @github          https://github.com/m417z

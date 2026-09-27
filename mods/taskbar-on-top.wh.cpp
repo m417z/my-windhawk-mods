@@ -1,7 +1,9 @@
 // ==WindhawkMod==
 // @id              taskbar-on-top
 // @name            Taskbar on top for Windows 11
+// @name:zh-CN      Windows 11 顶部任务栏
 // @description     Moves the Windows 11 taskbar to the top of the screen
+// @description:zh-CN 将 Windows 11 的任务栏整体移动到屏幕顶部，方便配合顶部栏布局使用
 // @version         1.1.8
 // @author          m417z
 // @github          https://github.com/m417z

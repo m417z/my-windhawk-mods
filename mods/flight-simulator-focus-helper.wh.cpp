@@ -1,7 +1,9 @@
 // ==WindhawkMod==
 // @id              flight-simulator-focus-helper
 // @name            Flight Simulator window focus helper
+// @name:zh-CN      飞行模拟器窗口焦点助手
 // @description     Makes the game window active on mouse hover and inactive on mouse leave
+// @description:zh-CN 鼠标移入时激活游戏窗口，移出时取消激活，避免游戏窗口意外失去焦点
 // @version         1.1
 // @author          m417z
 // @github          https://github.com/m417z

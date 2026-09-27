@@ -1,7 +1,9 @@
 // ==WindhawkMod==
 // @id              search-menu-inspect-helper
 // @name            Search Menu Inspect Helper
+// @name:zh-CN      搜索菜单检查助手
 // @description     Helps inspect the search menu web view content via DevTools remote debugging, refer to the description for details
+// @description:zh-CN 通过 DevTools 远程调试来检查搜索菜单的 WebView 内容，详情请参阅模组描述
 // @version         1.0
 // @author          m417z
 // @github          https://github.com/m417z

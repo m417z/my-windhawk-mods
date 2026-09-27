@@ -1,7 +1,9 @@
 // ==WindhawkMod==
 // @id              notepad-dark-mode
 // @name            Dark Mode for Notepad
+// @name:zh-CN      记事本深色模式
 // @description     The missing dark mode theme for Notepad
+// @description:zh-CN 为 Windows 记事本补上官方缺失的深色模式主题，减轻夜间使用时的用眼负担
 // @version         1.0
 // @author          m417z
 // @github          https://github.com/m417z

@@ -1,7 +1,9 @@
 // ==WindhawkMod==
 // @id              taskbar-reorder-right-drag
 // @name            Taskbar reorder within/between groups
+// @name:zh-CN      任务栏右键拖动排序
 // @description     Reorder taskbar items within and between groups by dragging with the right mouse button
+// @description:zh-CN 按住鼠标右键拖动，即可在分组内或分组之间重新排列任务栏上的项目
 // @version         1.0
 // @author          m417z
 // @github          https://github.com/m417z

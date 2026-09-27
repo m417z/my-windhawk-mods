@@ -1,7 +1,9 @@
 // ==WindhawkMod==
 // @id              taskbar-no-minimize
 // @name            Taskbar: no minimize on click
+// @name:zh-CN      任务栏：点击不最小化
 // @description     Disable the minimize window function when clicking an already active window on the taskbar
+// @description:zh-CN 点击任务栏上已处于活动状态的窗口时不再将其最小化，避免误操作
 // @version         1.1
 // @author          m417z
 // @github          https://github.com/m417z

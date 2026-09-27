@@ -1,7 +1,9 @@
 // ==WindhawkMod==
 // @id              vmware-disable-upgrade-dialog
 // @name            Disable VMware upgrade dialog
+// @name:zh-CN      关闭 VMware 升级提示
 // @description     Disable the VMware Workstation "old encryption algorithm" upgrade dialog
+// @description:zh-CN 关闭 VMware Workstation 弹出的“旧加密算法”升级提示，避免每次启动打扰
 // @version         1.0
 // @author          m417z
 // @github          https://github.com/m417z

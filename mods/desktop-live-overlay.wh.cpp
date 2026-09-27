@@ -1,7 +1,9 @@
 // ==WindhawkMod==
 // @id              desktop-live-overlay
 // @name            Desktop Live Overlay
+// @name:zh-CN      桌面实时叠加层
 // @description     Display live, customizable content on the desktop behind icons. Perfect for showing time, date, system metrics, weather, and more.
+// @description:zh-CN 在桌面图标下方显示可自定义的实时内容，适合展示时间、日期、系统指标与天气
 // @version         1.2
 // @author          m417z
 // @github          https://github.com/m417z

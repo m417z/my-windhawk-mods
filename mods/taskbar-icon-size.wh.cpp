@@ -1,7 +1,9 @@
 // ==WindhawkMod==
 // @id              taskbar-icon-size
 // @name            Taskbar height and icon size
+// @name:zh-CN      任务栏高度与图标大小
 // @description     Control the taskbar height and icon size, improve icon quality (Windows 11 only)
+// @description:zh-CN 调整任务栏的高度和图标尺寸，并改善图标清晰度（仅限 Windows 11）
 // @version         1.3.10
 // @author          m417z
 // @github          https://github.com/m417z

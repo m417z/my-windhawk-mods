@@ -1,7 +1,9 @@
 // ==WindhawkMod==
 // @id              vscode-tweaker
 // @name            VSCode Tweaker
+// @name:zh-CN      VSCode 调整器
 // @description     Tweak Microsoft Visual Studio Code by injecting custom JavaScript and CSS code
+// @description:zh-CN 通过注入自定义 JavaScript 和 CSS 代码来调整 Microsoft Visual Studio Code
 // @version         1.1
 // @author          m417z
 // @github          https://github.com/m417z

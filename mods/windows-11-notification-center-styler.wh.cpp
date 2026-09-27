@@ -1,7 +1,9 @@
 // ==WindhawkMod==
 // @id              windows-11-notification-center-styler
 // @name            Windows 11 Notification Center Styler
+// @name:zh-CN      Windows 11 通知中心样式器
 // @description     Customize the Notification Center and Action Center with themes contributed by others or create your own
+// @description:zh-CN 使用他人贡献的主题或自制主题，自定义 Windows 11 通知中心和操作中心的外观
 // @version         1.7
 // @author          m417z
 // @github          https://github.com/m417z

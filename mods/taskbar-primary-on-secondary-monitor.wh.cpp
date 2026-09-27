@@ -1,7 +1,9 @@
 // ==WindhawkMod==
 // @id              taskbar-primary-on-secondary-monitor
 // @name            Primary taskbar on secondary monitor
+// @name:zh-CN      主任务栏移至副显示器
 // @description     Move the primary taskbar, including the tray icons, notifications, action center, etc. to another monitor
+// @description:zh-CN 将主任务栏（包括托盘图标、通知、操作中心等）移动到另一台显示器
 // @version         1.2.1
 // @author          m417z
 // @github          https://github.com/m417z

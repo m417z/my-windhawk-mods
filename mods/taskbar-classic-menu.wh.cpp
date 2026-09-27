@@ -1,7 +1,9 @@
 // ==WindhawkMod==
 // @id              taskbar-classic-menu
 // @name            Taskbar classic context menu
+// @name:zh-CN      任务栏经典右键菜单
 // @description     Show the classic context menu when right-clicking on taskbar items
+// @description:zh-CN 右键点击任务栏上的项目时，显示经典样式的完整右键菜单，无需额外操作
 // @version         1.0.3
 // @author          m417z
 // @github          https://github.com/m417z

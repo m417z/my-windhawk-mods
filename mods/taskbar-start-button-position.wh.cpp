@@ -1,7 +1,9 @@
 // ==WindhawkMod==
 // @id              taskbar-start-button-position
 // @name            Start button always on the left
+// @name:zh-CN      开始按钮固定靠左
 // @description     Forces the Start button to be on the left of the taskbar, even when taskbar icons are centered, with an option to also move the search and task view buttons (Windows 11 only)
+// @description:zh-CN 即使任务栏图标居中，也强制将开始按钮固定在任务栏左侧，还可选择一并移动搜索和任务视图按钮（仅限 Windows 11）
 // @version         1.3.2
 // @author          m417z
 // @github          https://github.com/m417z

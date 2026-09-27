@@ -1,7 +1,9 @@
 // ==WindhawkMod==
 // @id              taskbar-start-button-colorizer
 // @name            Start button colorizer
+// @name:zh-CN      开始按钮着色
 // @description     Recolor the Start button icon on the taskbar with a color preset or with hue, saturation, brightness and opacity effects, and change its size (Windows 11 only)
+// @description:zh-CN 使用预设配色或色相、饱和度、亮度、透明度效果重新着色任务栏上的开始按钮图标，并可调整其大小（仅限 Windows 11）
 // @version         1.1
 // @author          m417z
 // @github          https://github.com/m417z

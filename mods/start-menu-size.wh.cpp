@@ -1,7 +1,9 @@
 // ==WindhawkMod==
 // @id              start-menu-size
 // @name            Start Menu Size
+// @name:zh-CN      开始菜单尺寸
 // @description     Set a custom size for the Start menu and search menu on Windows 11
+// @description:zh-CN 为 Windows 11 的开始菜单和搜索菜单设置自定义尺寸，不再受系统限制
 // @version         1.1
 // @author          m417z
 // @github          https://github.com/m417z

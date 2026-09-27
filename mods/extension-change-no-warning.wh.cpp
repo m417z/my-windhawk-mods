@@ -1,7 +1,9 @@
 // ==WindhawkMod==
 // @id              extension-change-no-warning
 // @name            Turn off change file extension warning
+// @name:zh-CN      关闭修改扩展名警告
 // @description     When a file is renamed and its extension is changed, a confirmation warning appears, this mod turns it off
+// @description:zh-CN 重命名文件并修改其扩展名时系统会弹出确认警告，此模组可关闭该提示
 // @version         1.0.1
 // @author          m417z
 // @github          https://github.com/m417z

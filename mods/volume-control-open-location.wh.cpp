@@ -1,7 +1,9 @@
 // ==WindhawkMod==
 // @id              volume-control-open-location
 // @name            Volume control open location
+// @name:zh-CN      音量控件打开位置
 // @description     Shows the volume control on the monitor where the mouse cursor is located, or on a custom monitor of choice
+// @description:zh-CN 在鼠标光标所在的显示器上显示音量控件，也可指定使用固定的显示器
 // @version         1.0
 // @author          m417z
 // @github          https://github.com/m417z

@@ -1,7 +1,9 @@
 // ==WindhawkMod==
 // @id              start-menu-open-location
 // @name            Start menu open location
+// @name:zh-CN      开始菜单打开位置
 // @description     When clicking the Start button, opens the Start Menu on the monitor where the mouse cursor is located, or in a custom monitor of choice
+// @description:zh-CN 点击开始按钮时，在鼠标光标所在的显示器上打开开始菜单，也可指定固定显示器
 // @version         1.0
 // @author          m417z
 // @github          https://github.com/m417z

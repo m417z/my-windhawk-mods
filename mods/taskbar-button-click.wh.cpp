@@ -1,7 +1,9 @@
 // ==WindhawkMod==
 // @id              taskbar-button-click
 // @name            Middle click to close on the taskbar
+// @name:zh-CN      任务栏中键关闭程序
 // @description     Close programs with a middle click on the taskbar instead of creating a new instance
+// @description:zh-CN 在任务栏按钮上点击鼠标中键即可关闭该程序，而不是新建一个实例窗口
 // @version         1.0.9
 // @author          m417z
 // @github          https://github.com/m417z

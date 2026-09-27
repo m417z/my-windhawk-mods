@@ -1,7 +1,9 @@
 // ==WindhawkMod==
 // @id              taskbar-show-desktop-button-aero-peek
 // @name            Aero Peek on "Show desktop" button hover
+// @name:zh-CN      “显示桌面”按钮悬停 Aero Peek
 // @description     Enable Aero Peek when hovering over the "Show Desktop" button, like it was possible before Windows 11
+// @description:zh-CN 鼠标悬停在“显示桌面”按钮上时启用 Aero Peek 预览，恢复 Windows 11 之前的效果
 // @version         1.0.2
 // @author          m417z
 // @github          https://github.com/m417z

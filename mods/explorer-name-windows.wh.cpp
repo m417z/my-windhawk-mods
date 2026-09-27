@@ -1,7 +1,9 @@
 // ==WindhawkMod==
 // @id              explorer-name-windows
 // @name            Name explorer windows
+// @name:zh-CN      命名资源管理器窗口
 // @description     Assign custom names to explorer windows, just like in Chrome
+// @description:zh-CN 像 Chrome 一样为资源管理器窗口设置自定义名称，便于区分多个窗口
 // @version         1.0
 // @author          m417z
 // @github          https://github.com/m417z

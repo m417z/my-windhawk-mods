@@ -1,7 +1,9 @@
 // ==WindhawkMod==
 // @id              taskbar-auto-hide-custom-activation-area
 // @name            Taskbar auto-hide custom activation area
+// @name:zh-CN      自定义任务栏自动隐藏触发区
 // @description     Customize the taskbar auto-hide activation area, allowing to limit mouse unhiding to specific regions
+// @description:zh-CN 自定义任务栏自动隐藏的触发区域，可将鼠标唤出限制在屏幕的特定范围内
 // @version         1.0
 // @author          m417z
 // @github          https://github.com/m417z

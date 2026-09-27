@@ -1,7 +1,9 @@
 // ==WindhawkMod==
 // @id              taskbar-left-click-cycle
 // @name            Cycle through taskbar windows on click
+// @name:zh-CN      点击循环切换任务栏窗口
 // @description     Makes clicking on combined taskbar items cycle through windows instead of opening thumbnail previews
+// @description:zh-CN 点击合并后的任务栏项目时在窗口之间循环切换，而不是弹出缩略图预览
 // @version         1.1.4
 // @author          m417z
 // @github          https://github.com/m417z

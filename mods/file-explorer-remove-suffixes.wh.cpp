@@ -1,7 +1,9 @@
 // ==WindhawkMod==
 // @id              file-explorer-remove-suffixes
 // @name            Remove Taskbar Window Suffixes
+// @name:zh-CN      移除任务栏窗口标题后缀
 // @description     Remove suffixes from taskbar window titles for File Explorer and other programs, or configure custom text replacement rules
+// @description:zh-CN 移除文件资源管理器等程序任务栏标题中多余的后缀，也可自定义文本替换规则
 // @version         1.1.1
 // @author          m417z
 // @github          https://github.com/m417z

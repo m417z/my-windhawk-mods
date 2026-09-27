@@ -1,7 +1,9 @@
 // ==WindhawkMod==
 // @id              taskbar-grouping
 // @name            Disable grouping on the taskbar
+// @name:zh-CN      关闭任务栏窗口合并
 // @description     Causes a separate button to be created on the taskbar for each new window
+// @description:zh-CN 每个新窗口都在任务栏上创建独立的按钮，不再合并到同一个分组当中
 // @version         1.3.11
 // @author          m417z
 // @github          https://github.com/m417z

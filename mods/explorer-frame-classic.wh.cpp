@@ -1,7 +1,9 @@
 // ==WindhawkMod==
 // @id              explorer-frame-classic
 // @name            Classic Explorer navigation bar
+// @name:zh-CN      经典资源管理器导航栏
 // @description     Restores the classic Explorer navigation bar to the version before the Windows 11 "Moments 4" update
+// @description:zh-CN 将资源管理器导航栏恢复为 Windows 11“Moment 4”更新之前的经典样式
 // @version         1.0.8
 // @author          m417z
 // @github          https://github.com/m417z

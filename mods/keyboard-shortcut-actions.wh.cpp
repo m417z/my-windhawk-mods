@@ -1,7 +1,9 @@
 // ==WindhawkMod==
 // @id              keyboard-shortcut-actions
 // @name            Keyboard Shortcut Actions
+// @name:zh-CN      键盘快捷键动作
 // @description     Trigger custom actions with global keyboard shortcuts (hotkeys): show desktop, mute volume, open Task Manager, media controls, and more
+// @description:zh-CN 通过全局快捷键触发自定义操作：显示桌面、静音、打开任务管理器、媒体控制等
 // @version         1.0.1
 // @author          m417z
 // @github          https://github.com/m417z

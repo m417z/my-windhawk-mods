@@ -1,7 +1,9 @@
 // ==WindhawkMod==
 // @id              taskbar-jump-list-on-cursor-pos
 // @name            Taskbar jump list on cursor pos
+// @name:zh-CN      跳转列表跟随鼠标位置
 // @description     Open the taskbar jump list context menus near the mouse cursor, not in the middle of the taskbar group
+// @description:zh-CN 在鼠标光标附近打开任务栏跳转列表菜单，而不是显示在任务栏分组的中间
 // @version         1.0
 // @author          m417z
 // @github          https://github.com/m417z

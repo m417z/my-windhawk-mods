@@ -1,7 +1,9 @@
 // ==WindhawkMod==
 // @id              windows-11-settings-styler
 // @name            Windows 11 Settings Styler
+// @name:zh-CN      Windows 11 设置样式器
 // @description     Customize the Windows Settings app with themes contributed by others or create your own
+// @description:zh-CN 使用他人贡献的主题或自制主题，自定义 Windows 11 设置应用的外观
 // @version         1.1
 // @author          m417z
 // @github          https://github.com/m417z

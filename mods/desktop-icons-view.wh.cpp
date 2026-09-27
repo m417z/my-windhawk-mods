@@ -1,7 +1,9 @@
 // ==WindhawkMod==
 // @id              desktop-icons-view
 // @name            Desktop icons view
+// @name:zh-CN      桌面图标视图
 // @description     Change desktop icons view to list, details, small icons, or tiles
+// @description:zh-CN 将桌面图标视图切换为列表、详细信息、小图标或平铺模式中的任意一种
 // @version         1.0.2
 // @author          m417z
 // @github          https://github.com/m417z

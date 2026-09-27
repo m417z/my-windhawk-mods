@@ -1,7 +1,9 @@
 // ==WindhawkMod==
 // @id              taskbar-auto-hide-per-monitor
 // @name            Taskbar auto-hide per monitor
+// @name:zh-CN      每台显示器独立自动隐藏
 // @description     By default, Windows uses the same auto-hide setting for all monitors. This mod allows setting different auto-hide settings for each monitor.
+// @description:zh-CN Windows 默认对所有显示器使用相同的自动隐藏设置，此模组可为每台显示器分别设置
 // @version         1.0.3
 // @author          m417z
 // @github          https://github.com/m417z

@@ -1,7 +1,9 @@
 // ==WindhawkMod==
 // @id              taskbar-volume-control
 // @name            Taskbar Volume Control
+// @name:zh-CN      任务栏滚轮调节音量
 // @description     Control the system volume by scrolling over the taskbar or anywhere with modifier keys
+// @description:zh-CN 在任务栏上滚动滚轮即可调节系统音量，也可配合修饰键在任意位置使用
 // @version         1.3.1
 // @author          m417z
 // @github          https://github.com/m417z

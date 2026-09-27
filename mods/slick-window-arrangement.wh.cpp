@@ -1,7 +1,9 @@
 // ==WindhawkMod==
 // @id              slick-window-arrangement
 // @name            Slick Window Arrangement
+// @name:zh-CN      顺滑窗口排列
 // @description     Make window arrangement more slick and pleasant with a sliding animation and snapping
+// @description:zh-CN 通过滑动动画和自动吸附效果，让窗口的排列与分屏操作更顺滑、更自然
 // @version         1.0.2
 // @author          m417z
 // @github          https://github.com/m417z

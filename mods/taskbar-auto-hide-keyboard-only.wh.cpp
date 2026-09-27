@@ -1,7 +1,9 @@
 // ==WindhawkMod==
 // @id              taskbar-auto-hide-keyboard-only
 // @name            Taskbar auto-hide fine tuning
+// @name:zh-CN      任务栏自动隐藏微调
 // @description     Fine-tune taskbar auto-hide: keyboard-only unhide, prevent the taskbar from showing at all, hotkeys and mouse events to show or toggle visibility
+// @description:zh-CN 精细调整任务栏自动隐藏：仅用键盘唤出、完全禁止任务栏出现，并可用热键或鼠标事件切换可见性
 // @version         2.3
 // @author          m417z
 // @github          https://github.com/m417z

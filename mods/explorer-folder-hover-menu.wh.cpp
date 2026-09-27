@@ -1,7 +1,9 @@
 // ==WindhawkMod==
 // @id              explorer-folder-hover-menu
 // @name            Folder Hover Menu
+// @name:zh-CN      文件夹悬停菜单
 // @description     Hover a folder in File Explorer to get an expand button that opens a cascading menu of the folder's contents
+// @description:zh-CN 在文件资源管理器中悬停在文件夹上时显示展开按钮，点击可打开该文件夹内容的级联菜单
 // @version         1.3
 // @author          m417z
 // @github          https://github.com/m417z

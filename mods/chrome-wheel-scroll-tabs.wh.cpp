@@ -1,7 +1,9 @@
 // ==WindhawkMod==
 // @id              chrome-wheel-scroll-tabs
 // @name            Chrome/Edge scroll tabs with mouse wheel
+// @name:zh-CN      用滚轮切换 Chrome/Edge 标签页
 // @description     Use the mouse wheel while hovering over the tab bar to switch between tabs
+// @description:zh-CN 鼠标悬停在标签栏上时，滚动滚轮即可在 Chrome/Edge 的标签页之间切换
 // @version         1.3.1
 // @author          m417z
 // @github          https://github.com/m417z

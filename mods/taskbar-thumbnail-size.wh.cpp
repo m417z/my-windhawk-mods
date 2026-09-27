@@ -1,7 +1,9 @@
 // ==WindhawkMod==
 // @id              taskbar-thumbnail-size
 // @name            Taskbar Thumbnail Size
+// @name:zh-CN      任务栏缩略图大小
 // @description     Customize the size of the new taskbar thumbnails in Windows 11
+// @description:zh-CN 自定义 Windows 11 新版任务栏缩略图的显示尺寸，让预览更大或更紧凑
 // @version         1.2.1
 // @author          m417z
 // @github          https://github.com/m417z

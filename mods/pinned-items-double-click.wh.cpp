@@ -1,7 +1,9 @@
 // ==WindhawkMod==
 // @id              pinned-items-double-click
 // @name            Open pinned items with double click
+// @name:zh-CN      双击打开固定项
 // @description     Only open pinned items when double clicking on them to avoid accidental clicks
+// @description:zh-CN 单击任务栏固定项不再立即打开，仅在双击时才打开，有效避免误触
 // @version         1.0.2
 // @author          m417z
 // @github          https://github.com/m417z

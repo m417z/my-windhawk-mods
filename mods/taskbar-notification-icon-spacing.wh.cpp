@@ -1,7 +1,9 @@
 // ==WindhawkMod==
 // @id              taskbar-notification-icon-spacing
 // @name            Taskbar tray icon spacing and grid
+// @name:zh-CN      任务栏托盘图标间距与网格
 // @description     Reduce or increase the spacing between tray icons on the taskbar, optionally have a grid of tray icons (Windows 11 only)
+// @description:zh-CN 调整任务栏托盘图标之间的间距，也可让托盘图标按网格排列（仅限 Windows 11）
 // @version         1.3.1
 // @author          m417z
 // @github          https://github.com/m417z
@@ -49,12 +51,17 @@ versions check out [7+ Taskbar Tweaker](https://tweaker.ramensoftware.com/).
 - notificationIconWidth: 24
   $name: Tray icon width
   $description: 'Windows 11 default: 32'
+  $name:zh-CN: 托盘图标宽度
+  $description:zh-CN: 'Windows 11 默认值：32'
 - notificationIconRows: 1
   $name: Tray icon rows
   $description: >-
     Allows having a grid of tray icons
+  $name:zh-CN: 托盘图标行数
+  $description:zh-CN: 可将托盘图标排成网格
 - gridArrangement: rowFirstLeftToRight
   $name: Grid arrangement
+  $name:zh-CN: 网格排列方式
   $description: >-
     The order in which tray icons are arranged when using multiple rows.
     Row-first fills each row before moving to the next.
@@ -80,6 +87,31 @@ versions check out [7+ Taskbar Tweaker](https://tweaker.ramensoftware.com/).
       Column-first, bottom-to-top, right-to-left:
         _ F D B
         G E C A
+  $description:zh-CN: >-
+    使用多行时托盘图标的排列顺序。
+    行优先会在换到下一行之前填满当前行。
+    列优先会在换到下一列之前填满当前列。
+    以图标 A-G 和 2 行为例：
+
+      行优先，从左到右：
+        A B C D
+        E F G
+
+      列优先，从上到下：
+        A C E G
+        B D F
+
+      行优先，末行优先：
+        E F G
+        A B C D
+
+      列优先，从下到上：
+        B D F
+        A C E G
+
+      列优先，从下到上、从右到左：
+        _ F D B
+        G E C A
   $options:
   - rowFirstLeftToRight: Row-first, left-to-right
   - columnFirstTopToBottom: Column-first, top-to-bottom
@@ -87,6 +119,12 @@ versions check out [7+ Taskbar Tweaker](https://tweaker.ramensoftware.com/).
   - columnFirstBottomToTop: Column-first, bottom-to-top
   - columnFirstBottomToTopRightToLeft: >-
       Column-first, bottom-to-top, right-to-left
+  $options:zh-CN:
+  - rowFirstLeftToRight: 行优先，从左到右
+  - columnFirstTopToBottom: 列优先，从上到下
+  - rowFirstBottomRowFirst: 行优先，末行优先
+  - columnFirstBottomToTop: 列优先，从下到上
+  - columnFirstBottomToTopRightToLeft: 列优先、从下到上、从右到左
 - overflowIconWidth: 32
   $name: Tray overflow icon width
   $description: >-
@@ -94,12 +132,22 @@ versions check out [7+ Taskbar Tweaker](https://tweaker.ramensoftware.com/).
     chevron icon
 
     Windows 11 default: 40
+  $name:zh-CN: 溢出托盘图标宽度
+  $description:zh-CN: >-
+    点击尖角图标后，溢出弹出窗口中显示的图标宽度
+
+    Windows 11 默认值：40
 - overflowIconsPerRow: 5
   $name: Tray overflow icons per row
   $description: >-
     The maximum amount of icons per row in the overflow popup
 
     Windows 11 default: 5
+  $name:zh-CN: 溢出托盘每行图标数
+  $description:zh-CN: >-
+    溢出弹出窗口中每行可显示的最大图标数量
+
+    Windows 11 默认值：5
 */
 // ==/WindhawkModSettings==
 

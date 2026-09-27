@@ -1,7 +1,9 @@
 // ==WindhawkMod==
 // @id              taskbar-wheel-cycle
 // @name            Cycle taskbar buttons with mouse wheel
+// @name:zh-CN      滚轮循环切换任务栏按钮
 // @description     Use the mouse wheel and/or keyboard shortcuts to cycle between taskbar buttons
+// @description:zh-CN 使用鼠标滚轮或键盘快捷键，在任务栏的按钮之间快速循环切换各窗口
 // @version         1.1.11
 // @author          m417z
 // @github          https://github.com/m417z

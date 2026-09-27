@@ -2,6 +2,7 @@
 // @id              alt-drag
 // @name            AltDrag
 // @description     Move or resize any window by holding Alt and dragging it from anywhere, without having to grab the title bar or the borders
+// @description:zh-CN 按住 Alt 键在窗口任意位置拖动即可移动或缩放窗口，无需瞄准标题栏或边框
 // @version         1.1
 // @author          m417z
 // @github          https://github.com/m417z

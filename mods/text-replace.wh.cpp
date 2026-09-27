@@ -1,7 +1,9 @@
 // ==WindhawkMod==
 // @id              text-replace
 // @name            Text Replace
+// @name:zh-CN      任意文本替换
 // @description     Replace any text with any other text in any program
+// @description:zh-CN 在任意程序中把指定文本自动替换为其他文本，可用于输入纠错或快捷输入
 // @version         1.1.1
 // @author          m417z
 // @github          https://github.com/m417z

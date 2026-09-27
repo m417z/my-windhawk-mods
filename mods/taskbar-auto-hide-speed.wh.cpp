@@ -1,7 +1,9 @@
 // ==WindhawkMod==
 // @id              taskbar-auto-hide-speed
 // @name            Taskbar auto-hide speed
+// @name:zh-CN      任务栏自动隐藏速度
 // @description     Customize the taskbar auto-hide animation speed and frame rate to make it feel less sluggish and janky
+// @description:zh-CN 自定义任务栏自动隐藏时的动画速度与帧率，使其不再显得迟钝、卡顿
 // @version         1.1
 // @author          m417z
 // @github          https://github.com/m417z

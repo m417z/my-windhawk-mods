@@ -1,7 +1,9 @@
 // ==WindhawkMod==
 // @id              taskbar-vertical
 // @name            Vertical Taskbar for Windows 11
+// @name:zh-CN      Windows 11 垂直任务栏
 // @description     Finally, the missing vertical taskbar option for Windows 11! Move the taskbar to the left or right side of the screen.
+// @description:zh-CN 终于补上了 Windows 11 缺失的垂直任务栏选项，可将任务栏移动到屏幕左侧或右侧
 // @version         1.3.14
 // @author          m417z
 // @github          https://github.com/m417z

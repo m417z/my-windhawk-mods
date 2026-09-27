@@ -1,7 +1,9 @@
 // ==WindhawkMod==
 // @id              taskbar-notification-icons-show-all
 // @name            Always show all taskbar tray icons
+// @name:zh-CN      始终显示全部托盘图标
 // @description     Restore the missing Windows option to always show all tray icons, show new icons by default, or hide all of them (Windows 11 only)
+// @description:zh-CN 恢复 Windows 被移除的“始终显示所有托盘图标”选项，也可让新图标默认显示或全部隐藏（仅限 Windows 11）
 // @version         1.1
 // @author          m417z
 // @github          https://github.com/m417z

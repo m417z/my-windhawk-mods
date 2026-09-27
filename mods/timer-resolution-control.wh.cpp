@@ -1,7 +1,9 @@
 // ==WindhawkMod==
 // @id           timer-resolution-control
 // @name         Timer Resolution Control
+// @name:zh-CN      计时器分辨率控制
 // @description  Prevent programs from changing the Windows timer resolution and increasing power consumption
+// @description:zh-CN 阻止程序修改 Windows 计时器分辨率，避免因此增加系统功耗与耗电
 // @version      1.0
 // @author       m417z
 // @github       https://github.com/m417z

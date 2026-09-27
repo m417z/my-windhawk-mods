@@ -1,7 +1,9 @@
 // ==WindhawkMod==
 // @id              start-menu-all-apps
 // @name            Show all apps by default in start menu
+// @name:zh-CN      开始菜单默认显示所有应用
 // @description     When the Windows 11 start menu is opened, show all apps right away
+// @description:zh-CN 打开 Windows 11 开始菜单时直接显示所有应用列表，省去一次点击
 // @version         1.0.5
 // @author          m417z
 // @github          https://github.com/m417z

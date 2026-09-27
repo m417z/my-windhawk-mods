@@ -1,7 +1,9 @@
 // ==WindhawkMod==
 // @id              taskbar-thumbnails
 // @name            Disable Taskbar Thumbnails
+// @name:zh-CN      禁用任务栏缩略图
 // @description     Disable taskbar thumbnail and virtual desktop switcher hover flyouts, or replace thumbnails with a list
+// @description:zh-CN 禁用任务栏缩略图预览和虚拟桌面切换器的悬停浮窗，也可将缩略图替换为列表
 // @version         1.2
 // @author          m417z
 // @github          https://github.com/m417z

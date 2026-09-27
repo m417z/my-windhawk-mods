@@ -1,7 +1,9 @@
 // ==WindhawkMod==
 // @id              taskbar-tray-system-icon-tweaks
 // @name            Taskbar tray system icon tweaks
+// @name:zh-CN      托盘系统图标调整
 // @description     Allows hiding system icons: volume, network, battery, microphone, location/GPS, Studio Effects, Recall, language bar, bell (always or when there are no new notifications), and the "Show desktop" button (hide or set width)
+// @description:zh-CN 可隐藏各类系统图标：音量、网络、电池、麦克风、定位/GPS、Studio Effects、Recall、语言栏、通知铃铛（始终或仅无新通知时），以及“显示桌面”按钮（隐藏或设置宽度）
 // @version         1.3
 // @author          m417z
 // @github          https://github.com/m417z

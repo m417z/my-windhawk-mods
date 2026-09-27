@@ -1,7 +1,9 @@
 // ==WindhawkMod==
 // @id              custom-corner-radius
 // @name            Custom Window Corner Radius
+// @name:zh-CN      自定义窗口圆角半径
 // @description     Customizes window corner radius in Windows 11, making corners more or less rounded
+// @description:zh-CN 调整 Windows 11 中窗口的圆角半径，让窗口边角更圆润或更方正
 // @version         1.3
 // @author          m417z
 // @github          https://github.com/m417z

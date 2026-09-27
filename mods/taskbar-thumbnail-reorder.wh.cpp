@@ -1,7 +1,9 @@
 // ==WindhawkMod==
 // @id              taskbar-thumbnail-reorder
 // @name            Taskbar Thumbnail Reorder
+// @name:zh-CN      任务栏缩略图排序
 // @description     Reorder taskbar thumbnails with the left mouse button
+// @description:zh-CN 使用鼠标左键拖动即可重新排列任务栏缩略图，调整窗口预览的先后顺序
 // @version         1.1.5
 // @author          m417z
 // @github          https://github.com/m417z

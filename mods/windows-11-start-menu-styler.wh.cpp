@@ -1,7 +1,9 @@
 // ==WindhawkMod==
 // @id              windows-11-start-menu-styler
 // @name            Windows 11 Start Menu Styler
+// @name:zh-CN      Windows 11 开始菜单样式器
 // @description     Customize the Start menu with themes contributed by others or create your own
+// @description:zh-CN 使用他人贡献的主题或自制主题，自定义 Windows 11 开始菜单的外观
 // @version         1.7
 // @author          m417z
 // @github          https://github.com/m417z

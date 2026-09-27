@@ -1,7 +1,9 @@
 // ==WindhawkMod==
 // @id              taskbar-scroll-actions
 // @name            Taskbar Scroll Actions
+// @name:zh-CN      任务栏滚动动作
 // @description     Assign actions for scrolling over the taskbar, including virtual desktop switching, brightness control, and microphone volume control
+// @description:zh-CN 为在任务栏上滚动滚轮指定动作，包括切换虚拟桌面、调节亮度和麦克风音量
 // @version         1.2
 // @author          m417z
 // @github          https://github.com/m417z

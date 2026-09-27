@@ -1,7 +1,9 @@
 // ==WindhawkMod==
 // @id              taskbar-labels
 // @name            Taskbar Labels for Windows 11
+// @name:zh-CN      Windows 11 任务栏标签
 // @description     Customize text labels and combining for running programs on the taskbar (Windows 11 only)
+// @description:zh-CN 自定义任务栏上运行程序的文字标签与窗口合并方式（仅限 Windows 11）
 // @version         1.4.5
 // @author          m417z
 // @github          https://github.com/m417z

@@ -1,7 +1,9 @@
 // ==WindhawkMod==
 // @id              notifications-placement
 // @name            Customize Windows notifications placement
+// @name:zh-CN      自定义 Windows 通知位置
 // @description     Move notifications to another monitor or another corner of the screen
+// @description:zh-CN 可将系统通知移动到其他显示器，或移动到屏幕的其他角落，方便集中查看
 // @version         1.2.4
 // @author          m417z
 // @github          https://github.com/m417z

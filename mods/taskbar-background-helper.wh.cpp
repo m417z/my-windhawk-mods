@@ -1,7 +1,9 @@
 // ==WindhawkMod==
 // @id              taskbar-background-helper
 // @name            Taskbar Background Helper
+// @name:zh-CN      任务栏背景助手
 // @description     Sets the taskbar background for the transparent parts, always or only when there's a maximized window, designed to be used with Windows 11 Taskbar Styler
+// @description:zh-CN 为任务栏的透明区域设置背景，可始终生效或仅在窗口最大化时生效，需搭配 Windows 11 任务栏样式器使用
 // @version         1.2
 // @author          m417z
 // @github          https://github.com/m417z

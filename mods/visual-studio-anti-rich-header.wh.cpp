@@ -1,7 +1,9 @@
 // ==WindhawkMod==
 // @id           visual-studio-anti-rich-header
 // @name         Visual Studio Anti-Rich-Header
+// @name:zh-CN      Visual Studio 禁用 Rich 头
 // @description  Prevent the Visual Studio linker from embedding the Rich header into new executables
+// @description:zh-CN 阻止 Visual Studio 链接器将 Rich 头写入新生成的可执行文件
 // @version      1.1
 // @author       m417z
 // @github       https://github.com/m417z

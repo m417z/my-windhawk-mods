@@ -1,7 +1,9 @@
 // ==WindhawkMod==
 // @id              taskbar-clock-customization
 // @name            Taskbar Clock Customization
+// @name:zh-CN      任务栏时钟自定义
 // @description     Custom date/time format, news feed, weather, performance metrics (upload/download speed, CPU, RAM, GPU, battery), media player info, custom fonts and colors, and more
+// @description:zh-CN 自定义日期时间格式、新闻订阅、天气、性能指标（上传/下载速度、CPU、内存、GPU、电池）、播放器信息、字体与颜色等
 // @version         1.8
 // @author          m417z
 // @github          https://github.com/m417z

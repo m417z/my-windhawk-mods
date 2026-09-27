@@ -1,7 +1,9 @@
 // ==WindhawkMod==
 // @id              taskbar-auto-hide-when-maximized
 // @name            Taskbar auto-hide when maximized
+// @name:zh-CN      最大化时自动隐藏任务栏
 // @description     Makes the taskbar auto-hide only when a window is maximized or intersects the taskbar
+// @description:zh-CN 仅当窗口最大化或与任务栏区域重叠时才自动隐藏任务栏，平时保持常显
 // @version         1.2.6
 // @author          m417z
 // @github          https://github.com/m417z

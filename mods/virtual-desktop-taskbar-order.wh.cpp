@@ -1,7 +1,9 @@
 // ==WindhawkMod==
 // @id              virtual-desktop-taskbar-order
 // @name            Virtual Desktop Preserve Taskbar Order
+// @name:zh-CN      虚拟桌面保持任务栏顺序
 // @description     The order on the taskbar isn't preserved between virtual desktop switches, this mod fixes it
+// @description:zh-CN 切换虚拟桌面时任务栏顺序常被打乱，此模组可保持原本的排列顺序
 // @version         1.0.5
 // @author          m417z
 // @github          https://github.com/m417z

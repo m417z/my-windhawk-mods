@@ -1,7 +1,9 @@
 // ==WindhawkMod==
 // @id              taskbar-volume-control-per-app
 // @name            Taskbar Volume Control Per-App
+// @name:zh-CN      任务栏滚轮调节单应用音量
 // @description     Control the per-app volume by scrolling over taskbar buttons
+// @description:zh-CN 在任务栏按钮上滚动鼠标滚轮，即可单独调节该程序自身的音量大小
 // @version         1.1.4
 // @author          m417z
 // @github          https://github.com/m417z
