@@ -93,9 +93,10 @@ With labels:
   - top: Top
   - center: Center
   - bottom: Bottom
-- startMenuAlignment: top
+- startMenuAlignment: windowsDefault
   $name: Start menu vertical alignment
   $options:
+  - windowsDefault: Windows default
   - top: Top
   - center: Center
   - bottom: Bottom
@@ -161,6 +162,8 @@ enum class JumpListAlignment {
 };
 
 enum class StartMenuAlignment {
+    // Left to Windows with the native vertical taskbar, top otherwise.
+    windowsDefault,
     top,
     center,
     bottom,
@@ -191,6 +194,20 @@ Target g_target;
 // they read from the registry. The mod overrides that location instead of
 // rotating a horizontal taskbar.
 bool g_hasNativeVerticalTaskbar;
+
+// Defines data shared by all instances of the library, even across processes.
+#define SHARED_SECTION __attribute__((section(".shared")))
+asm(".section .shared,\"dws\"\n");
+
+enum class NativeVerticalTaskbar : char {
+    unknown,
+    unavailable,
+    available,
+};
+
+// Detected in explorer.exe and shared with the other processes.
+volatile NativeVerticalTaskbar g_nativeVerticalTaskbar SHARED_SECTION =
+    NativeVerticalTaskbar::unknown;
 
 std::atomic<bool> g_systemTrayModuleHooked;
 std::atomic<bool> g_taskbarViewDllLoaded;
@@ -4467,6 +4484,12 @@ HRESULT WINAPI DwmSetWindowAttribute_Hook(HWND hwnd,
         return original();
     }
 
+    if (g_hasNativeVerticalTaskbar &&
+        g_settings.startMenuAlignment == StartMenuAlignment::windowsDefault &&
+        (target == DwmTarget::StartMenu || target == DwmTarget::SearchHost)) {
+        return original();
+    }
+
     HMONITOR monitor = MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST);
 
     UINT monitorDpiX = 96;
@@ -4521,6 +4544,7 @@ HRESULT WINAPI DwmSetWindowAttribute_Hook(HWND hwnd,
 
         int yNew;
         switch (g_settings.startMenuAlignment) {
+            case StartMenuAlignment::windowsDefault:
             case StartMenuAlignment::top:
                 yNew = monitorInfo.rcWork.top;
                 break;
@@ -4773,6 +4797,7 @@ void ApplyStyleClassicStartMenu(FrameworkElement content,
 
         double newTop;
         switch (g_settings.startMenuAlignment) {
+            case StartMenuAlignment::windowsDefault:
             case StartMenuAlignment::top:
                 newTop = kStartMenuMargin;
                 break;
@@ -4854,6 +4879,7 @@ void ApplyStyleRedesignedStartMenu(FrameworkElement content,
     auto startMenuAlignment = g_unloading ? StartMenuAlignment::bottom
                                           : g_settings.startMenuAlignment;
     switch (startMenuAlignment) {
+        case StartMenuAlignment::windowsDefault:
         case StartMenuAlignment::top:
             frameRoot.VerticalAlignment(VerticalAlignment::Top);
             margin.Top = 0;
@@ -4928,6 +4954,13 @@ void ApplyStyleRedesignedStartMenu(FrameworkElement content,
 }
 
 void ApplyStyle() {
+    // Left as is while unknown too, since a style applied for the wrong state
+    // isn't reverted.
+    if (g_settings.startMenuAlignment == StartMenuAlignment::windowsDefault &&
+        g_nativeVerticalTaskbar != NativeVerticalTaskbar::unavailable) {
+        return;
+    }
+
     g_inApplyStyle = true;
 
     HWND coreWnd = GetCoreWnd();
@@ -5288,8 +5321,10 @@ void LoadSettings() {
     Wh_FreeStringSetting(jumpListAlignment);
 
     PCWSTR startMenuAlignment = Wh_GetStringSetting(L"startMenuAlignment");
-    g_settings.startMenuAlignment = StartMenuAlignment::top;
-    if (wcscmp(startMenuAlignment, L"center") == 0) {
+    g_settings.startMenuAlignment = StartMenuAlignment::windowsDefault;
+    if (wcscmp(startMenuAlignment, L"top") == 0) {
+        g_settings.startMenuAlignment = StartMenuAlignment::top;
+    } else if (wcscmp(startMenuAlignment, L"center") == 0) {
         g_settings.startMenuAlignment = StartMenuAlignment::center;
     } else if (wcscmp(startMenuAlignment, L"bottom") == 0) {
         g_settings.startMenuAlignment = StartMenuAlignment::bottom;
@@ -6065,6 +6100,10 @@ bool HookTaskbarDllSymbols() {
 
     g_hasNativeVerticalTaskbar = IsNativeVerticalTaskbarEnabled();
     Wh_Log(L"Native vertical taskbar: %d", g_hasNativeVerticalTaskbar);
+
+    g_nativeVerticalTaskbar = g_hasNativeVerticalTaskbar
+                                  ? NativeVerticalTaskbar::available
+                                  : NativeVerticalTaskbar::unavailable;
 
     if (g_hasNativeVerticalTaskbar &&
         (!TrayUI__GetSaveStateAndInitRects_Original ||
