@@ -2,7 +2,7 @@
 // @id              explorer-frame-classic
 // @name            Classic Explorer navigation bar
 // @description     Restores the classic Explorer navigation bar to the version before the Windows 11 "Moments 4" update
-// @version         1.0.8
+// @version         1.0.9
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
@@ -929,13 +929,13 @@ BOOL Wh_ModInit() {
         auto pKernelBaseLoadLibraryExW =
             (decltype(&LoadLibraryExW))GetProcAddress(kernelBaseModule,
                                                       "LoadLibraryExW");
-        WindhawkUtils::Wh_SetFunctionHookT(pKernelBaseLoadLibraryExW,
-                                           LoadLibraryExW_Hook,
-                                           &LoadLibraryExW_Original);
+        WindhawkUtils::SetFunctionHook(pKernelBaseLoadLibraryExW,
+                                       LoadLibraryExW_Hook,
+                                       &LoadLibraryExW_Original);
     }
 
-    WindhawkUtils::Wh_SetFunctionHookT(CoCreateInstance, CoCreateInstance_Hook,
-                                       &CoCreateInstance_Original);
+    WindhawkUtils::SetFunctionHook(CoCreateInstance, CoCreateInstance_Hook,
+                                   &CoCreateInstance_Original);
 
     return TRUE;
 }
