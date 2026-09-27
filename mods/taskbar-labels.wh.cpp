@@ -2,7 +2,7 @@
 // @id              taskbar-labels
 // @name            Taskbar Labels for Windows 11
 // @description     Customize text labels and combining for running programs on the taskbar (Windows 11 only)
-// @version         1.4.5
+// @version         1.5
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
@@ -249,13 +249,6 @@ double g_initialTaskbarItemWidth;
 UINT_PTR g_invalidateTaskListButtonTimer;
 std::unordered_set<FrameworkElement> g_taskListButtonsWithLabelMissing;
 
-#if __cplusplus < 202302L
-// Missing in older MinGW headers.
-DECLARE_HANDLE(CO_MTA_USAGE_COOKIE);
-WINOLEAPI CoIncrementMTAUsage(CO_MTA_USAGE_COOKIE* pCookie);
-WINOLEAPI CoDecrementMTAUsage(CO_MTA_USAGE_COOKIE Cookie);
-#endif
-
 WINUSERAPI UINT WINAPI GetDpiForWindow(HWND hwnd);
 
 FrameworkElement FindChildByName(FrameworkElement element, PCWSTR name) {
@@ -318,67 +311,56 @@ HWND FindCurrentProcessTaskbarWnd() {
     return hTaskbarWnd;
 }
 
-// https://gist.github.com/m417z/451dfc2dad88d7ba88ed1814779a26b4
-std::wstring GetWindowAppId(HWND hWnd) {
-    // {c8900b66-a973-584b-8cae-355b7f55341b}
-    constexpr winrt::guid CLSID_StartMenuCacheAndAppResolver{
-        0x660b90c8,
-        0x73a9,
-        0x4b58,
-        {0x8c, 0xae, 0x35, 0x5b, 0x7f, 0x55, 0x34, 0x1b}};
+using RunFromWindowThreadProc_t = void(WINAPI*)(PVOID parameter);
 
-    // {de25675a-72de-44b4-9373-05170450c140}
-    constexpr winrt::guid IID_IAppResolver_8{
-        0xde25675a,
-        0x72de,
-        0x44b4,
-        {0x93, 0x73, 0x05, 0x17, 0x04, 0x50, 0xc1, 0x40}};
+bool RunFromWindowThread(HWND hWnd,
+                         RunFromWindowThreadProc_t proc,
+                         PVOID procParam) {
+    static const UINT runFromWindowThreadRegisteredMsg =
+        RegisterWindowMessage(L"Windhawk_RunFromWindowThread_" WH_MOD_ID);
 
-    struct IAppResolver_8 : public IUnknown {
-       public:
-        virtual HRESULT STDMETHODCALLTYPE GetAppIDForShortcut() = 0;
-        virtual HRESULT STDMETHODCALLTYPE GetAppIDForShortcutObject() = 0;
-        virtual HRESULT STDMETHODCALLTYPE
-        GetAppIDForWindow(HWND hWnd,
-                          WCHAR** pszAppId,
-                          void* pUnknown1,
-                          void* pUnknown2,
-                          void* pUnknown3) = 0;
-        virtual HRESULT STDMETHODCALLTYPE
-        GetAppIDForProcess(DWORD dwProcessId,
-                           WCHAR** pszAppId,
-                           void* pUnknown1,
-                           void* pUnknown2,
-                           void* pUnknown3) = 0;
+    struct RUN_FROM_WINDOW_THREAD_PARAM {
+        RunFromWindowThreadProc_t proc;
+        PVOID procParam;
     };
 
-    HRESULT hr;
-    std::wstring result;
-
-    CO_MTA_USAGE_COOKIE cookie;
-    bool mtaUsageIncreased = SUCCEEDED(CoIncrementMTAUsage(&cookie));
-
-    winrt::com_ptr<IAppResolver_8> appResolver;
-    hr = CoCreateInstance(CLSID_StartMenuCacheAndAppResolver, nullptr,
-                          CLSCTX_INPROC_SERVER | CLSCTX_INPROC_HANDLER,
-                          IID_IAppResolver_8, appResolver.put_void());
-    if (SUCCEEDED(hr)) {
-        WCHAR* pszAppId;
-        hr = appResolver->GetAppIDForWindow(hWnd, &pszAppId, nullptr, nullptr,
-                                            nullptr);
-        if (SUCCEEDED(hr)) {
-            result = pszAppId;
-            CoTaskMemFree(pszAppId);
-        }
+    DWORD dwThreadId = GetWindowThreadProcessId(hWnd, nullptr);
+    if (dwThreadId == 0) {
+        return false;
     }
 
-    appResolver = nullptr;
-
-    if (mtaUsageIncreased) {
-        CoDecrementMTAUsage(cookie);
+    if (dwThreadId == GetCurrentThreadId()) {
+        proc(procParam);
+        return true;
     }
 
-    return result;
+    HHOOK hook = SetWindowsHookEx(
+        WH_CALLWNDPROC,
+        [](int nCode, WPARAM wParam, LPARAM lParam) -> LRESULT {
+            if (nCode == HC_ACTION) {
+                const CWPSTRUCT* cwp = (const CWPSTRUCT*)lParam;
+                if (cwp->message == runFromWindowThreadRegisteredMsg) {
+                    RUN_FROM_WINDOW_THREAD_PARAM* param =
+                        (RUN_FROM_WINDOW_THREAD_PARAM*)cwp->lParam;
+                    param->proc(param->procParam);
+                }
+            }
+
+            return CallNextHookEx(nullptr, nCode, wParam, lParam);
+        },
+        nullptr, dwThreadId);
+    if (!hook) {
+        return false;
+    }
+
+    RUN_FROM_WINDOW_THREAD_PARAM param;
+    param.proc = proc;
+    param.procParam = procParam;
+    SendMessage(hWnd, runFromWindowThreadRegisteredMsg, 0, (LPARAM)&param);
+
+    UnhookWindowsHookEx(hook);
+
+    return true;
 }
 
 void RecalculateLabels() {
@@ -1673,7 +1655,7 @@ constexpr winrt::guid IID_ITaskItem{
     {0x8a, 0x4d, 0x85, 0x4a, 0xdd, 0x6a, 0xbe, 0x7e}};
 
 struct ITaskItem : public IInspectable {
-    virtual HRESULT STDMETHODCALLTYPE get_AppId() = 0;
+    virtual HRESULT STDMETHODCALLTYPE get_AppId(void** value) = 0;
     virtual HRESULT STDMETHODCALLTYPE get_UniqueId() = 0;
     virtual HRESULT STDMETHODCALLTYPE get_WindowId(HWND* value) = 0;
 };
@@ -1719,6 +1701,25 @@ HWND GetTaskItemWindow(IUnknown* taskItemUnknown) {
     return hWnd;
 }
 
+bool IsTaskItemExcluded(IUnknown* taskItemUnknown) {
+    winrt::com_ptr<ITaskItem> taskItem;
+    HRESULT hr =
+        taskItemUnknown->QueryInterface(IID_ITaskItem, taskItem.put_void());
+    if (FAILED(hr)) {
+        return false;
+    }
+
+    winrt::hstring appId;
+    hr = taskItem->get_AppId(winrt::put_abi(appId));
+    if (SUCCEEDED(hr) && IsAppIdExcluded(appId.c_str())) {
+        return true;
+    }
+
+    HWND hWnd = nullptr;
+    hr = taskItem->get_WindowId(&hWnd);
+    return SUCCEEDED(hr) && hWnd && IsWindowProcessExcluded(hWnd);
+}
+
 void* ITaskListWindowViewModel_vftable;
 
 using ITaskListWindowViewModel_get_TaskItem_t =
@@ -1756,17 +1757,10 @@ TaskListWindowViewModel_ITaskbarAppItemViewModel_get_HasLabel_Hook(
             pITaskListWindowViewModel = (PVOID*)pITaskListWindowViewModel - 1;
         }
 
-        HWND hWnd = nullptr;
-
         winrt::com_ptr<IUnknown> taskItem;
         HRESULT hr = ITaskListWindowViewModel_get_TaskItem(
             pITaskListWindowViewModel, taskItem.put_void());
-        if (SUCCEEDED(hr) && taskItem) {
-            hWnd = GetTaskItemWindow(taskItem.get());
-        }
-
-        if (hWnd && (IsWindowProcessExcluded(hWnd) ||
-                     IsAppIdExcluded(GetWindowAppId(hWnd).c_str()))) {
+        if (SUCCEEDED(hr) && taskItem && IsTaskItemExcluded(taskItem.get())) {
             hideLabels = !hideLabels;
         }
     }
@@ -2427,7 +2421,13 @@ void Wh_ModUninit() {
 void Wh_ModSettingsChanged() {
     Wh_Log(L">");
 
-    LoadSettings();
+    // The hooks read the settings on the taskbar thread.
+    HWND hTaskbarWnd = FindCurrentProcessTaskbarWnd();
+    if (!hTaskbarWnd ||
+        !RunFromWindowThread(
+            hTaskbarWnd, [](PVOID) { LoadSettings(); }, nullptr)) {
+        LoadSettings();
+    }
 
     if (g_taskbarViewDllLoaded) {
         ApplySettings();
