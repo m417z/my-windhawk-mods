@@ -2089,23 +2089,37 @@ void UpdateNativeSystemTrayFrameWidths() {
 }
 
 bool IsSecondaryTaskbar(XamlRoot xamlRoot) {
-    FrameworkElement controlCenterButton = nullptr;
+    FrameworkElement systemIconsPresenter = nullptr;
 
     FrameworkElement child = xamlRoot.Content().try_as<FrameworkElement>();
     if (child &&
         (child = FindChildByClassName(child, L"SystemTray.SystemTrayFrame")) &&
         (child = FindChildByName(child, L"SystemTrayFrameGrid")) &&
-        (child = FindChildByName(child, L"ControlCenterButton"))) {
-        controlCenterButton = child;
+        (child = FindChildByName(child, L"ControlCenterButton")) &&
+        (child =
+             FindChildByClassName(child, L"Windows.UI.Xaml.Controls.Grid")) &&
+        (child = FindChildByName(child, L"ContentPresenter")) &&
+        (child = FindChildByClassName(
+             child, L"Windows.UI.Xaml.Controls.ItemsPresenter"))) {
+        systemIconsPresenter = child;
     }
 
-    if (!controlCenterButton) {
+    if (!systemIconsPresenter) {
         return false;
     }
 
-    // On secondary taskbars, the element that holds the system icons is empty
-    // and has the width of 2.
-    return controlCenterButton.ActualWidth() < 5;
+    // Secondary taskbars have no system icons. The presenter is either left
+    // without any children, or has an empty panel.
+    if (Media::VisualTreeHelper::GetChildrenCount(systemIconsPresenter) == 0) {
+        return true;
+    }
+
+    auto systemIconsPanel =
+        EnumChildElements(systemIconsPresenter, [](FrameworkElement child) {
+            return !!child.try_as<Controls::Panel>();
+        });
+    return systemIconsPanel &&
+           Media::VisualTreeHelper::GetChildrenCount(systemIconsPanel) == 0;
 }
 
 bool ApplyStyle(XamlRoot xamlRoot) {
