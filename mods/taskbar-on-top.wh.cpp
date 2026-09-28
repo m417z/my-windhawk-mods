@@ -88,6 +88,7 @@ Moves the Windows 11 taskbar to the top of the screen.
 #include <atomic>
 #include <functional>
 #include <list>
+#include <vector>
 
 #ifdef _M_ARM64
 #include <regex>
@@ -1358,6 +1359,32 @@ void UpdateTaskListButton(FrameworkElement taskListButtonElement) {
     }
 }
 
+// With the native taskbar on top, buttons update their visual states when the
+// taskbar location changes, but not when only the settings change, so the
+// buttons are kept to be updated when the settings are applied.
+std::vector<winrt::weak_ref<FrameworkElement>> g_nativeTaskListButtons;
+
+void TrackNativeTaskListButton(FrameworkElement taskListButtonElement) {
+    std::erase_if(g_nativeTaskListButtons,
+                  [](const auto& button) { return !button.get(); });
+
+    for (const auto& button : g_nativeTaskListButtons) {
+        if (button.get() == taskListButtonElement) {
+            return;
+        }
+    }
+
+    g_nativeTaskListButtons.push_back(winrt::make_weak(taskListButtonElement));
+}
+
+void UpdateNativeTaskListButtons() {
+    for (const auto& button : g_nativeTaskListButtons) {
+        if (auto element = button.get()) {
+            UpdateTaskListButton(element);
+        }
+    }
+}
+
 using TaskListButton_UpdateVisualStates_t = void(WINAPI*)(void* pThis);
 TaskListButton_UpdateVisualStates_t TaskListButton_UpdateVisualStates_Original;
 void WINAPI TaskListButton_UpdateVisualStates_Hook(void* pThis) {
@@ -1372,6 +1399,10 @@ void WINAPI TaskListButton_UpdateVisualStates_Hook(void* pThis) {
     auto taskListButtonElement = taskListButtonIUnknown.as<FrameworkElement>();
 
     try {
+        if (g_hasNativeTaskbarOnTop) {
+            TrackNativeTaskListButton(taskListButtonElement);
+        }
+
         UpdateTaskListButton(taskListButtonElement);
     } catch (...) {
         HRESULT hr = winrt::to_hresult();
@@ -2477,6 +2508,18 @@ void LoadSettings() {
 }
 
 void ApplySettingsNative(HWND hTaskbarWnd) {
+    RunFromWindowThread(
+        hTaskbarWnd,
+        [](PVOID) {
+            try {
+                UpdateNativeTaskListButtons();
+            } catch (...) {
+                HRESULT hr = winrt::to_hresult();
+                Wh_Log(L"Error %08X", hr);
+            }
+        },
+        nullptr);
+
     // Move the primary taskbar with the message the Settings app sends, which
     // also has the taskbar content read the location again.
     DWORD edge = g_unloading
