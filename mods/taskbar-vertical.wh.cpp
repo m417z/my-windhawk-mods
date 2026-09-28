@@ -115,6 +115,11 @@ With labels:
     Set to zero to use the default height value, setting a custom height can be
     useful for a customized clock with a non-standard size. Not used with the
     native vertical taskbar.
+- useNativeTaskbar: true
+  $name: Use the native taskbar when possible
+  $description: >-
+    Newer Windows 11 builds include a native vertical taskbar. If disabled, the
+    mod's own implementation is used instead.
 */
 // ==/WindhawkModSettings==
 
@@ -178,6 +183,7 @@ struct {
     StartMenuAlignment startMenuAlignment;
     bool startMenuAnimationAdjust;
     int clockContainerHeight;
+    bool useNativeTaskbar;
 } g_settings;
 
 constexpr int kDefaultClockContainerHeight = 40;
@@ -5574,6 +5580,8 @@ void LoadSettings() {
         Wh_GetIntSetting(L"startMenuAnimationAdjust");
 
     g_settings.clockContainerHeight = Wh_GetIntSetting(L"clockContainerHeight");
+
+    g_settings.useNativeTaskbar = Wh_GetIntSetting(L"useNativeTaskbar");
 }
 
 void ApplySettingsNative(HWND hTaskbarWnd) {
@@ -6354,6 +6362,11 @@ bool HookTaskbarDllSymbols() {
     g_hasNativeVerticalTaskbar = IsNativeVerticalTaskbarEnabled();
     Wh_Log(L"Native vertical taskbar: %d", g_hasNativeVerticalTaskbar);
 
+    if (g_hasNativeVerticalTaskbar && !g_settings.useNativeTaskbar) {
+        Wh_Log(L"Not using native vertical taskbar due to settings");
+        g_hasNativeVerticalTaskbar = false;
+    }
+
     if (g_hasNativeVerticalTaskbar &&
         (!TrayUI__GetSaveStateAndInitRects_Original ||
          !CSecondaryTray__LoadSettings_Original ||
@@ -6619,12 +6632,20 @@ void Wh_ModUninit() {
     }
 }
 
-void Wh_ModSettingsChanged() {
+BOOL Wh_ModSettingsChanged(BOOL* bReload) {
     Wh_Log(L">");
+
+    bool prevUseNativeTaskbar = g_settings.useNativeTaskbar;
 
     LoadSettings();
 
     if (g_target == Target::Explorer) {
+        // The taskbar implementation is chosen when the mod is initialized.
+        if (g_settings.useNativeTaskbar != prevUseNativeTaskbar) {
+            *bReload = TRUE;
+            return TRUE;
+        }
+
         ApplySettings(/*settingsChanged=*/true);
     } else if (g_target == Target::StartMenuExperienceHost) {
         HWND hCoreWnd = StartMenuUI::GetCoreWnd();
@@ -6638,4 +6659,6 @@ void Wh_ModSettingsChanged() {
                g_target == Target::ShellHost) {
         CoreWindowUI::ApplySettings();
     }
+
+    return TRUE;
 }
