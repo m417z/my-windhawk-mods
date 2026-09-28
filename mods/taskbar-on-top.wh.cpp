@@ -67,7 +67,9 @@ Moves the Windows 11 taskbar to the top of the screen.
   $name: Use the native taskbar when possible
   $description: >-
     Newer Windows 11 builds include a native option to show the taskbar on top.
-    If disabled, the mod's own implementation is used instead.
+    If disabled, or if taskbar auto-hide is enabled, the mod's own
+    implementation is used instead, and the taskbar position in Windows settings
+    should be kept at Bottom.
 */
 // ==/WindhawkModSettings==
 
