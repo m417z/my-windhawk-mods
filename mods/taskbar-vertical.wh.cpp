@@ -119,7 +119,8 @@ With labels:
   $name: Use the native taskbar when possible
   $description: >-
     Newer Windows 11 builds include a native vertical taskbar. If disabled, the
-    mod's own implementation is used instead.
+    mod's own implementation is used instead, and the taskbar position in
+    Windows settings should be kept at Bottom.
 */
 // ==/WindhawkModSettings==
 
