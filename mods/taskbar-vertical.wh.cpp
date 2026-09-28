@@ -3239,6 +3239,144 @@ void WINAPI TaskListButton_UpdateVisualStates_Hook(void* pThis) {
     }
 }
 
+// With the native vertical taskbar, taskbar backgrounds get the location of the
+// primary taskbar, and lay out their stroke for it. Secondary taskbars at
+// another location get their own location instead. The backgrounds are kept
+// to be updated when the settings are applied, since only a change of the
+// taskbar location updates them.
+struct NativeTaskbarBackground {
+    winrt::weak_ref<FrameworkElement> element;
+    // Valid as long as the element is alive.
+    void* taskbarBackground;
+    // The location the taskbar gave the background.
+    int location;
+};
+
+std::vector<NativeTaskbarBackground> g_nativeTaskbarBackgrounds;
+
+std::list<FrameworkElementLoadedEventRevoker>
+    g_nativeTaskbarBackgroundAutoRevokerList;
+
+using TaskbarBackground_Location_t = void(WINAPI*)(void* pThis, int location);
+TaskbarBackground_Location_t TaskbarBackground_Location_Original;
+
+int GetNativeTaskbarBackgroundLocation(FrameworkElement element, int location) {
+    if (g_unloading) {
+        return location;
+    }
+
+    auto xamlRoot = element.XamlRoot();
+    if (!xamlRoot || !IsSecondaryTaskbar(xamlRoot)) {
+        return location;
+    }
+
+    return TaskbarLocationToEdge(g_settings.taskbarLocationSecondary);
+}
+
+void UpdateNativeTaskbarBackground(const NativeTaskbarBackground& background) {
+    if (auto element = background.element.get()) {
+        TaskbarBackground_Location_Original(
+            background.taskbarBackground,
+            GetNativeTaskbarBackgroundLocation(element, background.location));
+    }
+}
+
+void UpdateNativeTaskbarBackgrounds() {
+    for (const auto& background : g_nativeTaskbarBackgrounds) {
+        UpdateNativeTaskbarBackground(background);
+    }
+}
+
+// A secondary taskbar is detected by its system tray, which can be loaded after
+// the background gets its location.
+void UpdateNativeTaskbarBackgroundWhenLoaded(FrameworkElement element) {
+    FrameworkElement pendingElement = element;
+    if (element.IsLoaded()) {
+        auto xamlRoot = element.XamlRoot();
+        auto content =
+            xamlRoot ? xamlRoot.Content().try_as<FrameworkElement>() : nullptr;
+        pendingElement = content ? FindChildByClassName(
+                                       content, L"SystemTray.SystemTrayFrame")
+                                 : nullptr;
+        if (!pendingElement || pendingElement.IsLoaded()) {
+            return;
+        }
+    }
+
+    g_nativeTaskbarBackgroundAutoRevokerList.emplace_back();
+    auto autoRevokerIt = g_nativeTaskbarBackgroundAutoRevokerList.end();
+    --autoRevokerIt;
+
+    *autoRevokerIt = pendingElement.Loaded(
+        winrt::auto_revoke_t{},
+        [autoRevokerIt, elementWeak = winrt::make_weak(element)](
+            winrt::Windows::Foundation::IInspectable const& sender,
+            RoutedEventArgs const& e) {
+            Wh_Log(L">");
+
+            g_nativeTaskbarBackgroundAutoRevokerList.erase(autoRevokerIt);
+
+            auto element = elementWeak.get();
+            if (!element) {
+                return;
+            }
+
+            try {
+                auto it =
+                    FindTrackedElement(g_nativeTaskbarBackgrounds, element);
+                if (it != g_nativeTaskbarBackgrounds.end()) {
+                    UpdateNativeTaskbarBackground(*it);
+                }
+
+                UpdateNativeTaskbarBackgroundWhenLoaded(element);
+            } catch (...) {
+                HRESULT hr = winrt::to_hresult();
+                Wh_Log(L"Error %08X", hr);
+            }
+        });
+}
+
+int TrackNativeTaskbarBackground(void* taskbarBackground, int location) {
+    void* taskbarBackgroundIUnknownPtr = (void**)taskbarBackground + 3;
+    winrt::Windows::Foundation::IUnknown taskbarBackgroundIUnknown;
+    winrt::copy_from_abi(taskbarBackgroundIUnknown,
+                         taskbarBackgroundIUnknownPtr);
+
+    auto element = taskbarBackgroundIUnknown.try_as<FrameworkElement>();
+    if (!element) {
+        return location;
+    }
+
+    auto it = FindTrackedElement(g_nativeTaskbarBackgrounds, element);
+    if (it != g_nativeTaskbarBackgrounds.end()) {
+        it->location = location;
+        return GetNativeTaskbarBackgroundLocation(element, location);
+    }
+
+    g_nativeTaskbarBackgrounds.push_back({
+        .element = winrt::make_weak(element),
+        .taskbarBackground = taskbarBackground,
+        .location = location,
+    });
+
+    UpdateNativeTaskbarBackgroundWhenLoaded(element);
+
+    return GetNativeTaskbarBackgroundLocation(element, location);
+}
+
+void WINAPI TaskbarBackground_Location_Hook(void* pThis, int location) {
+    Wh_Log(L"> %d", location);
+
+    try {
+        location = TrackNativeTaskbarBackground(pThis, location);
+    } catch (...) {
+        HRESULT hr = winrt::to_hresult();
+        Wh_Log(L"Error %08X", hr);
+    }
+
+    TaskbarBackground_Location_Original(pThis, location);
+}
+
 using TaskListButton_UpdateBadge_t = void(WINAPI*)(void* pThis);
 TaskListButton_UpdateBadge_t TaskListButton_UpdateBadge_Original;
 void WINAPI TaskListButton_UpdateBadge_Hook(void* pThis) {
@@ -5446,6 +5584,7 @@ void ApplySettingsNative(HWND hTaskbarWnd) {
                 UpdateNativeFrameWidths(g_nativeTaskbarFrames);
                 UpdateNativeTaskListButtonFrameSizes();
                 UpdateNativeSystemTrayFrameWidths();
+                UpdateNativeTaskbarBackgrounds();
             } catch (...) {
                 HRESULT hr = winrt::to_hresult();
                 Wh_Log(L"Error %08X", hr);
@@ -5705,6 +5844,11 @@ bool HookTaskbarViewDllSymbolsNative(HMODULE module) {
             {LR"(private: void __cdecl winrt::Taskbar::implementation::TaskListButton::UpdateVisualStates(void))"},
             &TaskListButton_UpdateVisualStates_Original,
             TaskListButton_UpdateVisualStates_Hook,
+        },
+        {
+            {LR"(public: void __cdecl winrt::Taskbar::implementation::TaskbarBackground::Location(enum winrt::WindowsUdk::UI::Shell::TaskbarLocation))"},
+            &TaskbarBackground_Location_Original,
+            TaskbarBackground_Location_Hook,
         },
     };
 
