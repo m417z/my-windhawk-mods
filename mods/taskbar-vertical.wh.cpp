@@ -4663,13 +4663,17 @@ HRESULT WINAPI DwmSetWindowAttribute_Hook(HWND hwnd,
         return original();
     }
 
+    HMONITOR monitor = MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST);
+
+    // Windows places the Start menu for the primary taskbar location.
     if (g_hasNativeVerticalTaskbar &&
         g_settings.startMenuAlignment == StartMenuAlignment::windowsDefault &&
-        (target == DwmTarget::StartMenu || target == DwmTarget::SearchHost)) {
+        (target == DwmTarget::SearchHost ||
+         (target == DwmTarget::StartMenu &&
+          GetTaskbarLocationForMonitor(monitor) ==
+              g_settings.taskbarLocation))) {
         return original();
     }
-
-    HMONITOR monitor = MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST);
 
     UINT monitorDpiX = 96;
     UINT monitorDpiY = 96;
@@ -4925,10 +4929,18 @@ HWND GetCoreWnd() {
 
 void ApplyStyle();
 
+// The part of the Start menu position set by the mod, the rest is left to
+// Windows.
+enum class StartMenuAdjustment {
+    none,
+    horizontal,
+    full,
+};
+
 void ApplyStyleClassicStartMenu(FrameworkElement content,
                                 TaskbarLocation taskbarLocation,
                                 HMONITOR monitor,
-                                bool restore) {
+                                StartMenuAdjustment adjustment) {
     FrameworkElement startSizingFrame =
         FindChildByClassName(content, L"StartDocked.StartSizingFrame");
     if (!startSizingFrame) {
@@ -4936,7 +4948,8 @@ void ApplyStyleClassicStartMenu(FrameworkElement content,
         return;
     }
 
-    bool adjustAnimation = !restore && g_settings.startMenuAnimationAdjust;
+    bool adjustAnimation = adjustment == StartMenuAdjustment::full &&
+                           g_settings.startMenuAnimationAdjust;
     if (adjustAnimation || g_startMenuAnimationAdjusted) {
         g_startMenuAnimationAdjusted = adjustAnimation;
 
@@ -5015,7 +5028,7 @@ void ApplyStyleClassicStartMenu(FrameworkElement content,
     Wh_Log(L"Invalidating measure");
     startSizingFrame.InvalidateMeasure();
 
-    if (restore) {
+    if (adjustment == StartMenuAdjustment::none) {
         g_canvasTopOverride.Restore();
         g_canvasLeftOverride.Restore();
     } else {
@@ -5029,21 +5042,29 @@ void ApplyStyleClassicStartMenu(FrameworkElement content,
 
         constexpr int kStartMenuMargin = 12;
 
-        double newTop;
-        switch (g_settings.startMenuAlignment) {
-            case StartMenuAlignment::windowsDefault:
-            case StartMenuAlignment::top:
-                newTop = kStartMenuMargin;
-                break;
+        if (adjustment == StartMenuAdjustment::full) {
+            double newTop;
+            switch (g_settings.startMenuAlignment) {
+                case StartMenuAlignment::windowsDefault:
+                case StartMenuAlignment::top:
+                    newTop = kStartMenuMargin;
+                    break;
 
-            case StartMenuAlignment::center:
-                newTop = (canvasHeight - startSizingFrame.ActualHeight()) / 2;
-                break;
+                case StartMenuAlignment::center:
+                    newTop =
+                        (canvasHeight - startSizingFrame.ActualHeight()) / 2;
+                    break;
 
-            case StartMenuAlignment::bottom:
-                newTop = canvasHeight - startSizingFrame.ActualHeight() -
-                         kStartMenuMargin;
-                break;
+                case StartMenuAlignment::bottom:
+                    newTop = canvasHeight - startSizingFrame.ActualHeight() -
+                             kStartMenuMargin;
+                    break;
+            }
+
+            Wh_Log(L"Setting Canvas.Top to %f", newTop);
+            g_canvasTopOverride.Set(startSizingFrame, newTop);
+        } else {
+            g_canvasTopOverride.Restore();
         }
 
         double newLeft;
@@ -5058,8 +5079,7 @@ void ApplyStyleClassicStartMenu(FrameworkElement content,
                 break;
         }
 
-        Wh_Log(L"Setting Canvas.Top to %f, Canvas.Left to %f", newTop, newLeft);
-        g_canvasTopOverride.Set(startSizingFrame, newTop);
+        Wh_Log(L"Setting Canvas.Left to %f", newLeft);
         g_canvasLeftOverride.Set(startSizingFrame, newLeft);
 
         // Subscribe to Canvas.Top and Canvas.Left property changes to apply
@@ -5101,8 +5121,8 @@ void ApplyStyleClassicStartMenu(FrameworkElement content,
 
 void ApplyStyleRedesignedStartMenu(FrameworkElement content,
                                    TaskbarLocation taskbarLocation,
-                                   bool restore) {
-    if (restore) {
+                                   StartMenuAdjustment adjustment) {
+    if (adjustment == StartMenuAdjustment::none) {
         g_verticalAlignmentOverride.Restore();
         g_horizontalAlignmentOverride.Restore();
         g_marginOverride.Restore();
@@ -5115,30 +5135,43 @@ void ApplyStyleRedesignedStartMenu(FrameworkElement content,
         return;
     }
 
+    // Adjust the margin set by Windows.
+    g_marginOverride.Restore();
     auto margin = frameRoot.Margin();
-    auto marginVertical = margin.Top + margin.Bottom;
+    margin.Left = 0;
+    margin.Right = 0;
 
-    VerticalAlignment verticalAlignment;
-    switch (g_settings.startMenuAlignment) {
-        case StartMenuAlignment::windowsDefault:
-        case StartMenuAlignment::top:
-            verticalAlignment = VerticalAlignment::Top;
-            margin.Top = 0;
-            margin.Bottom = marginVertical;
-            break;
+    if (adjustment == StartMenuAdjustment::full) {
+        auto marginVertical = margin.Top + margin.Bottom;
 
-        case StartMenuAlignment::center:
-            verticalAlignment = VerticalAlignment::Center;
-            margin.Top = marginVertical / 2;
-            margin.Bottom = marginVertical / 2;
-            break;
+        VerticalAlignment verticalAlignment;
+        switch (g_settings.startMenuAlignment) {
+            case StartMenuAlignment::windowsDefault:
+            case StartMenuAlignment::top:
+                verticalAlignment = VerticalAlignment::Top;
+                margin.Top = 0;
+                margin.Bottom = marginVertical;
+                break;
 
-        case StartMenuAlignment::bottom:
-            verticalAlignment = VerticalAlignment::Bottom;
-            margin.Top = marginVertical;
-            margin.Bottom = 0;
-            break;
+            case StartMenuAlignment::center:
+                verticalAlignment = VerticalAlignment::Center;
+                margin.Top = marginVertical / 2;
+                margin.Bottom = marginVertical / 2;
+                break;
+
+            case StartMenuAlignment::bottom:
+                verticalAlignment = VerticalAlignment::Bottom;
+                margin.Top = marginVertical;
+                margin.Bottom = 0;
+                break;
+        }
+
+        g_verticalAlignmentOverride.Set(frameRoot, verticalAlignment);
+    } else {
+        g_verticalAlignmentOverride.Restore();
     }
+
+    g_marginOverride.Set(frameRoot, margin);
 
     HorizontalAlignment horizontalAlignment;
     switch (taskbarLocation) {
@@ -5151,9 +5184,7 @@ void ApplyStyleRedesignedStartMenu(FrameworkElement content,
             break;
     }
 
-    g_verticalAlignmentOverride.Set(frameRoot, verticalAlignment);
     g_horizontalAlignmentOverride.Set(frameRoot, horizontalAlignment);
-    g_marginOverride.Set(frameRoot, margin);
 
     if (!g_frameRootWeakRef.get()) {
         auto frameRootDo = frameRoot.as<DependencyObject>();
@@ -5188,15 +5219,36 @@ void ApplyStyleRedesignedStartMenu(FrameworkElement content,
     }
 }
 
-void ApplyStyle() {
+StartMenuAdjustment GetStartMenuAdjustment(TaskbarLocation taskbarLocation) {
+    if (g_unloading) {
+        return StartMenuAdjustment::none;
+    }
+
+    if (g_settings.startMenuAlignment != StartMenuAlignment::windowsDefault) {
+        return StartMenuAdjustment::full;
+    }
+
     // The Windows default alignment leaves the Start menu to Windows with the
     // native vertical taskbar, and until explorer.exe determines whether it's
-    // available.
-    bool restore =
-        g_unloading ||
-        (g_settings.startMenuAlignment == StartMenuAlignment::windowsDefault &&
-         g_nativeVerticalTaskbar != NativeVerticalTaskbar::unavailable);
+    // available. Windows places it for the primary taskbar location, so it's
+    // moved horizontally on monitors with a different location.
+    switch (g_nativeVerticalTaskbar) {
+        case NativeVerticalTaskbar::unknown:
+            return StartMenuAdjustment::none;
 
+        case NativeVerticalTaskbar::unavailable:
+            return StartMenuAdjustment::full;
+
+        case NativeVerticalTaskbar::available:
+            return taskbarLocation == g_settings.taskbarLocation
+                       ? StartMenuAdjustment::none
+                       : StartMenuAdjustment::horizontal;
+    }
+
+    return StartMenuAdjustment::none;
+}
+
+void ApplyStyle() {
     g_inApplyStyle = true;
 
     HWND coreWnd = GetCoreWnd();
@@ -5205,6 +5257,7 @@ void ApplyStyle() {
     Wh_Log(L"Applying Start menu style for monitor %p", monitor);
 
     TaskbarLocation taskbarLocation = GetTaskbarLocationForMonitor(monitor);
+    StartMenuAdjustment adjustment = GetStartMenuAdjustment(taskbarLocation);
 
     auto window = Window::Current();
     FrameworkElement content = window.Content().as<FrameworkElement>();
@@ -5213,9 +5266,10 @@ void ApplyStyle() {
     Wh_Log(L"Start menu content class name: %s", contentClassName.c_str());
 
     if (contentClassName == L"Windows.UI.Xaml.Controls.Canvas") {
-        ApplyStyleClassicStartMenu(content, taskbarLocation, monitor, restore);
+        ApplyStyleClassicStartMenu(content, taskbarLocation, monitor,
+                                   adjustment);
     } else if (contentClassName == L"StartMenu.StartBlendedFlexFrame") {
-        ApplyStyleRedesignedStartMenu(content, taskbarLocation, restore);
+        ApplyStyleRedesignedStartMenu(content, taskbarLocation, adjustment);
     } else {
         Wh_Log(L"Error: Unsupported Start menu content class name");
     }
