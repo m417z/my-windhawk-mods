@@ -1535,9 +1535,10 @@ void UpdateNativeTaskbarBackgroundWhenLoaded(FrameworkElement element) {
             RoutedEventArgs const& e) {
             Wh_Log(L">");
 
+            auto element = elementWeak.get();
+
             g_elementLoadedAutoRevokerList.erase(autoRevokerIt);
 
-            auto element = elementWeak.get();
             if (!element) {
                 return;
             }
