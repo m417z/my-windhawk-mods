@@ -31,12 +31,9 @@ Moves the Windows 11 taskbar to the top of the screen.
 
 ## Known limitations
 
-* The Action Center (Win+A) stays on the bottom. For now, you can use [this
-  alternative
+* With the non-native vertical taskbar, the Action Center (Win+A) stays on the
+  bottom. For now, you can use [this alternative
   solution](https://github.com/ramensoftware/windhawk-mods/issues/1053#issuecomment-2405461863).
-* For some devices, mostly tablets and touchscreen devices, the taskbar may
-  appear in the wrong location after enabling the mod. An explorer restart
-  usually fixes it.
 
 ![Screenshot](https://i.imgur.com/LqBwGVn.png)
 */
