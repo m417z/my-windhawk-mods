@@ -141,7 +141,7 @@ struct {
 
 enum class Target {
     Explorer,
-    ShellHost,  // Win11 24H2.
+    ShellHost,  // From Win11 24H2.
     // Only for the start menu alignment, see MonitorFromWindow_Hook.
     StartMenuExperienceHost,
 };
