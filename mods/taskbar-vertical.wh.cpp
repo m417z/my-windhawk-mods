@@ -6194,7 +6194,8 @@ using WilFeatureImpl_IsEnabled_t = bool(WINAPI*)(void* pThis,
                                                  int reportingKind);
 WilFeatureImpl_IsEnabled_t WilFeatureImpl_59213768_IsEnabled;
 
-void* TaskbarHost_IsHorizontalOrientation;
+void* TrayUI_VerifySize_WithoutMonitor;
+void* TrayUI__HandleSizing_WithoutMonitor;
 
 bool IsNativeVerticalTaskbarEnabled() {
     if (wil_Feature_59213768_GetImpl_impl &&
@@ -6204,9 +6205,10 @@ bool IsNativeVerticalTaskbarEnabled() {
             wil_Feature_59213768_GetImpl_impl, kReportingKindNone);
     }
 
-    // Once the feature flag is gone, the native vertical taskbar is always
-    // available.
-    return !!TaskbarHost_IsHorizontalOrientation;
+    // The feature added a monitor parameter to these functions, so builds
+    // without the flag and without the old overloads always have the feature.
+    return !TrayUI_VerifySize_WithoutMonitor &&
+           !TrayUI__HandleSizing_WithoutMonitor;
 }
 
 bool HookTaskbarDllSymbols() {
@@ -6307,10 +6309,16 @@ bool HookTaskbarDllSymbols() {
             true,
         },
         {
-            {LR"(private: bool __cdecl TaskbarHost::IsHorizontalOrientation(void))"},
-            &TaskbarHost_IsHorizontalOrientation,
+            {LR"(public: virtual void __cdecl TrayUI::VerifySize(bool,bool))"},
+            &TrayUI_VerifySize_WithoutMonitor,
             nullptr,
-            true,  // Only in builds with the native vertical taskbar.
+            true,  // Only in builds from before the native vertical taskbar.
+        },
+        {
+            {LR"(public: int __cdecl TrayUI::_HandleSizing(unsigned __int64,struct tagRECT *,unsigned int,bool))"},
+            &TrayUI__HandleSizing_WithoutMonitor,
+            nullptr,
+            true,  // Only in builds from before the native vertical taskbar.
         },
         {
             {LR"(public: void __cdecl TrayUI::_GetSaveStateAndInitRects(void))"},
@@ -6346,10 +6354,6 @@ bool HookTaskbarDllSymbols() {
     g_hasNativeVerticalTaskbar = IsNativeVerticalTaskbarEnabled();
     Wh_Log(L"Native vertical taskbar: %d", g_hasNativeVerticalTaskbar);
 
-    g_nativeVerticalTaskbar = g_hasNativeVerticalTaskbar
-                                  ? NativeVerticalTaskbar::available
-                                  : NativeVerticalTaskbar::unavailable;
-
     if (g_hasNativeVerticalTaskbar &&
         (!TrayUI__GetSaveStateAndInitRects_Original ||
          !CSecondaryTray__LoadSettings_Original ||
@@ -6357,6 +6361,10 @@ bool HookTaskbarDllSymbols() {
         Wh_Log(L"Error: Missing native vertical taskbar symbols");
         return false;
     }
+
+    g_nativeVerticalTaskbar = g_hasNativeVerticalTaskbar
+                                  ? NativeVerticalTaskbar::available
+                                  : NativeVerticalTaskbar::unavailable;
 
     return true;
 }

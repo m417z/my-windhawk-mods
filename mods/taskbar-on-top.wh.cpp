@@ -2984,7 +2984,8 @@ using WilFeatureImpl_IsEnabled_t = bool(WINAPI*)(void* pThis,
                                                  int reportingKind);
 WilFeatureImpl_IsEnabled_t WilFeatureImpl_59213768_IsEnabled;
 
-void* TaskbarHost_IsHorizontalOrientation;
+void* TrayUI_VerifySize_WithoutMonitor;
+void* TrayUI__HandleSizing_WithoutMonitor;
 
 bool IsNativeTaskbarOnTopEnabled() {
     if (wil_Feature_59213768_GetImpl_impl &&
@@ -2994,9 +2995,10 @@ bool IsNativeTaskbarOnTopEnabled() {
             wil_Feature_59213768_GetImpl_impl, kReportingKindNone);
     }
 
-    // Once the feature flag is gone, the native taskbar on top is always
-    // available.
-    return !!TaskbarHost_IsHorizontalOrientation;
+    // The feature added a monitor parameter to these functions, so builds
+    // without the flag and without the old overloads always have the feature.
+    return !TrayUI_VerifySize_WithoutMonitor &&
+           !TrayUI__HandleSizing_WithoutMonitor;
 }
 
 bool HookTaskbarDllSymbols() {
@@ -3096,10 +3098,16 @@ bool HookTaskbarDllSymbols() {
             true,
         },
         {
-            {LR"(private: bool __cdecl TaskbarHost::IsHorizontalOrientation(void))"},
-            &TaskbarHost_IsHorizontalOrientation,
+            {LR"(public: virtual void __cdecl TrayUI::VerifySize(bool,bool))"},
+            &TrayUI_VerifySize_WithoutMonitor,
             nullptr,
-            true,  // Only in builds with the native taskbar on top.
+            true,  // Only in builds from before the native taskbar on top.
+        },
+        {
+            {LR"(public: int __cdecl TrayUI::_HandleSizing(unsigned __int64,struct tagRECT *,unsigned int,bool))"},
+            &TrayUI__HandleSizing_WithoutMonitor,
+            nullptr,
+            true,  // Only in builds from before the native taskbar on top.
         },
         {
             {LR"(public: void __cdecl TrayUI::_GetSaveStateAndInitRects(void))"},
@@ -3137,10 +3145,6 @@ bool HookTaskbarDllSymbols() {
         g_hasNativeTaskbarOnTop = false;
     }
 
-    g_nativeTaskbarOnTop = g_hasNativeTaskbarOnTop
-                               ? NativeTaskbarOnTop::available
-                               : NativeTaskbarOnTop::unavailable;
-
     if (g_hasNativeTaskbarOnTop &&
         (!TrayUI__GetSaveStateAndInitRects_Original ||
          !CSecondaryTray__LoadSettings_Original ||
@@ -3148,6 +3152,10 @@ bool HookTaskbarDllSymbols() {
         Wh_Log(L"Error: Missing native taskbar on top symbols");
         return false;
     }
+
+    g_nativeTaskbarOnTop = g_hasNativeTaskbarOnTop
+                               ? NativeTaskbarOnTop::available
+                               : NativeTaskbarOnTop::unavailable;
 
     return true;
 }
