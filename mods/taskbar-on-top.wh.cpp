@@ -96,6 +96,7 @@ Moves the Windows 11 taskbar to the top of the screen.
 #include <functional>
 #include <list>
 #include <mutex>
+#include <optional>
 #include <unordered_set>
 #include <vector>
 
@@ -138,7 +139,8 @@ Target g_target;
 // moving a bottom taskbar.
 bool g_hasNativeTaskbarOnTop;
 
-// Defines data shared by all instances of the library, even across processes.
+// Defines data shared by all instances of the library, even across processes
+// and sessions.
 #define SHARED_SECTION __attribute__((section(".shared")))
 asm(".section .shared,\"dws\"\n");
 
@@ -148,9 +150,25 @@ enum class NativeTaskbarOnTop : char {
     available,
 };
 
-// Detected in explorer.exe and shared with the other processes.
-volatile NativeTaskbarOnTop g_nativeTaskbarOnTop SHARED_SECTION =
-    NativeTaskbarOnTop::unknown;
+// Detected in explorer.exe and shared with the other processes of its session,
+// since it depends on per-user settings. Indexed by session id.
+volatile NativeTaskbarOnTop g_nativeTaskbarOnTop[1024] SHARED_SECTION = {};
+
+// Null if the session id is out of range, the state is then unknown.
+volatile NativeTaskbarOnTop* g_sessionNativeTaskbarOnTop;
+
+NativeTaskbarOnTop GetNativeTaskbarOnTop() {
+    if (g_target == Target::Explorer) {
+        return g_hasNativeTaskbarOnTop ? NativeTaskbarOnTop::available
+                                       : NativeTaskbarOnTop::unavailable;
+    }
+
+    if (!g_sessionNativeTaskbarOnTop) {
+        return NativeTaskbarOnTop::unknown;
+    }
+
+    return *g_sessionNativeTaskbarOnTop;
+}
 
 // Auto-hide trigger height in pixels. You must approach within this many pixels
 // of the monitor top to show the taskbar when hidden.
@@ -422,7 +440,7 @@ FrameworkElement FindChildByClassName(FrameworkElement element,
 TaskbarLocation GetTaskbarLocationSecondary() {
     if ((g_settings.taskbarLocationSecondary == TaskbarLocation::left ||
          g_settings.taskbarLocationSecondary == TaskbarLocation::right) &&
-        g_nativeTaskbarOnTop != NativeTaskbarOnTop::available) {
+        GetNativeTaskbarOnTop() != NativeTaskbarOnTop::available) {
         return TaskbarLocation::bottom;
     }
 
@@ -657,7 +675,7 @@ bool ShouldOverrideTaskbarLocation() {
     // Quick Settings and the notification center, in other processes, read the
     // primary taskbar location from the registry too.
     if (g_target != Target::Explorer) {
-        return g_nativeTaskbarOnTop == NativeTaskbarOnTop::available;
+        return GetNativeTaskbarOnTop() == NativeTaskbarOnTop::available;
     }
 
     return g_inTrayUI__GetSaveStateAndInitRects ||
@@ -2881,7 +2899,7 @@ StartMenuAdjustment GetStartMenuAdjustment(TaskbarLocation taskbarLocation) {
     // the native taskbar on top is available. The native taskbar places it for
     // the primary taskbar location, so it's moved on monitors with a different
     // location.
-    switch (g_nativeTaskbarOnTop) {
+    switch (GetNativeTaskbarOnTop()) {
         case NativeTaskbarOnTop::unknown:
             return StartMenuAdjustment::none;
 
@@ -3583,9 +3601,11 @@ bool HookTaskbarDllSymbols() {
         return false;
     }
 
-    g_nativeTaskbarOnTop = g_hasNativeTaskbarOnTop
-                               ? NativeTaskbarOnTop::available
-                               : NativeTaskbarOnTop::unavailable;
+    if (g_sessionNativeTaskbarOnTop) {
+        *g_sessionNativeTaskbarOnTop = g_hasNativeTaskbarOnTop
+                                           ? NativeTaskbarOnTop::available
+                                           : NativeTaskbarOnTop::unavailable;
+    }
 
     return true;
 }
@@ -3622,6 +3642,14 @@ BOOL Wh_ModInit() {
                 return FALSE;
             }
             break;
+    }
+
+    DWORD sessionId;
+    if (ProcessIdToSessionId(GetCurrentProcessId(), &sessionId) &&
+        sessionId < ARRAYSIZE(g_nativeTaskbarOnTop)) {
+        g_sessionNativeTaskbarOnTop = &g_nativeTaskbarOnTop[sessionId];
+    } else {
+        Wh_Log(L"No shared native taskbar on top state for this session");
     }
 
     if (g_target == Target::StartMenuExperienceHost) {
