@@ -63,6 +63,11 @@ Moves the Windows 11 taskbar to the top of the screen.
     of the screen. This option doesn't work with the redesigned Start menu, and
     might not work with the Phone Link sidebar and with some Start Menu Styler
     themes.
+- useNativeTaskbar: true
+  $name: Use the native taskbar when possible
+  $description: >-
+    Newer Windows 11 builds include a native option to show the taskbar on top.
+    If disabled, the mod's own implementation is used instead.
 */
 // ==/WindhawkModSettings==
 
@@ -107,6 +112,7 @@ struct {
     TaskbarLocation taskbarLocationSecondary;
     bool runningIndicatorsOnTop;
     bool startMenuAnimationAdjust;
+    bool useNativeTaskbar;
 } g_settings;
 
 enum class Target {
@@ -2684,6 +2690,7 @@ void LoadSettings() {
         Wh_GetIntSetting(L"runningIndicatorsOnTop");
     g_settings.startMenuAnimationAdjust =
         Wh_GetIntSetting(L"startMenuAnimationAdjust");
+    g_settings.useNativeTaskbar = Wh_GetIntSetting(L"useNativeTaskbar");
 }
 
 void ApplySettingsNative(HWND hTaskbarWnd) {
@@ -3137,6 +3144,11 @@ bool HookTaskbarDllSymbols() {
     g_hasNativeTaskbarOnTop = IsNativeTaskbarOnTopEnabled();
     Wh_Log(L"Native taskbar on top: %d", g_hasNativeTaskbarOnTop);
 
+    if (g_hasNativeTaskbarOnTop && !g_settings.useNativeTaskbar) {
+        Wh_Log(L"Not using native taskbar on top due to settings");
+        g_hasNativeTaskbarOnTop = false;
+    }
+
     // The native taskbar doesn't implement auto-hide for non-bottom taskbars.
     // If auto-hide is enabled, the native taskbar isn't used to avoid breaking
     // the auto-hide behavior.
@@ -3382,12 +3394,20 @@ void Wh_ModUninit() {
     }
 }
 
-void Wh_ModSettingsChanged() {
+BOOL Wh_ModSettingsChanged(BOOL* bReload) {
     Wh_Log(L">");
+
+    bool prevUseNativeTaskbar = g_settings.useNativeTaskbar;
 
     LoadSettings();
 
     if (g_target == Target::Explorer) {
+        // The taskbar implementation is chosen when the mod is initialized.
+        if (g_settings.useNativeTaskbar != prevUseNativeTaskbar) {
+            *bReload = TRUE;
+            return TRUE;
+        }
+
         ApplySettings();
     } else if (g_target == Target::StartMenuExperienceHost) {
         HWND hCoreWnd = StartMenuUI::GetCoreWnd();
@@ -3398,4 +3418,6 @@ void Wh_ModSettingsChanged() {
                 nullptr);
         }
     }
+
+    return TRUE;
 }
