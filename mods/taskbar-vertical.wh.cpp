@@ -596,9 +596,9 @@ constexpr WCHAR kTaskbarLocationSubKey[] =
 constexpr WCHAR kTaskbarLocationValueName[] = L"TaskbarLocation";
 
 // The taskbar windows read the location from the registry, the primary one
-// when it's created, and the secondary ones for themselves. Other readers,
-// such as the taskbar settings, get the stored location, which is what's
-// restored when the mod is unloaded.
+// when it's created, and the secondary ones for themselves. Other readers in
+// explorer.exe, such as the taskbar settings, get the stored location, which is
+// what's restored when the mod is unloaded.
 thread_local bool g_inTrayUI__GetSaveStateAndInitRects;
 thread_local bool g_inCSecondaryTray__LoadSettings;
 
@@ -628,6 +628,17 @@ HRESULT WINAPI CSecondaryTray__LoadSettings_Hook(void* pThis) {
     return ret;
 }
 
+bool ShouldOverrideTaskbarLocation() {
+    // Quick Settings and the notification center, in other processes, read the
+    // primary taskbar location from the registry too.
+    if (g_target != Target::Explorer) {
+        return g_nativeVerticalTaskbar == NativeVerticalTaskbar::available;
+    }
+
+    return g_inTrayUI__GetSaveStateAndInitRects ||
+           g_inCSecondaryTray__LoadSettings;
+}
+
 using RegGetValueW_t = decltype(&RegGetValueW);
 RegGetValueW_t RegGetValueW_Original;
 LONG WINAPI RegGetValueW_Hook(HKEY hkey,
@@ -642,9 +653,7 @@ LONG WINAPI RegGetValueW_Hook(HKEY hkey,
     LONG ret = RegGetValueW_Original(hkey, lpSubKey, lpValue, dwFlags, pdwType,
                                      pvData, pcbData);
 
-    if (g_unloading ||
-        (!g_inTrayUI__GetSaveStateAndInitRects &&
-         !g_inCSecondaryTray__LoadSettings) ||
+    if (g_unloading || !ShouldOverrideTaskbarLocation() ||
         hkey != HKEY_CURRENT_USER || !lpSubKey ||
         _wcsicmp(lpSubKey, kTaskbarLocationSubKey) != 0 || !lpValue ||
         _wcsicmp(lpValue, kTaskbarLocationValueName) != 0 ||
@@ -667,6 +676,14 @@ LONG WINAPI RegGetValueW_Hook(HKEY hkey,
     }
 
     return ERROR_SUCCESS;
+}
+
+void HookRegGetValueW() {
+    HMODULE kernelBaseModule = GetModuleHandle(L"kernelbase.dll");
+    auto pKernelBaseRegGetValueW = (decltype(&RegGetValueW))GetProcAddress(
+        kernelBaseModule, "RegGetValueW");
+    WindhawkUtils::SetFunctionHook(pKernelBaseRegGetValueW, RegGetValueW_Hook,
+                                   &RegGetValueW_Original);
 }
 
 DWORD GetStoredTaskbarLocation() {
@@ -6238,6 +6255,7 @@ BOOL Wh_ModInit() {
         WindhawkUtils::SetFunctionHook(SetWindowPos,
                                        CoreWindowUI::SetWindowPos_Hook,
                                        &SetWindowPos_Original);
+        HookRegGetValueW();
         return TRUE;
     }
 
@@ -6294,11 +6312,7 @@ BOOL Wh_ModInit() {
     }
 
     if (g_hasNativeVerticalTaskbar) {
-        HMODULE kernelBaseModule = GetModuleHandle(L"kernelbase.dll");
-        auto pKernelBaseRegGetValueW = (decltype(&RegGetValueW))GetProcAddress(
-            kernelBaseModule, "RegGetValueW");
-        WindhawkUtils::SetFunctionHook(
-            pKernelBaseRegGetValueW, RegGetValueW_Hook, &RegGetValueW_Original);
+        HookRegGetValueW();
     } else {
         if (HMODULE user32Module = LoadLibraryEx(
                 L"user32.dll", nullptr, LOAD_LIBRARY_SEARCH_SYSTEM32)) {
