@@ -258,6 +258,24 @@ bool IsTaskbarAutoHideEnabled() {
     return (state & ABS_AUTOHIDE) != 0;
 }
 
+// Reads the state saved by the taskbar, available before the taskbar is
+// created. The state is a DWORD at offset 8.
+bool IsStoredTaskbarAutoHideEnabled() {
+    BYTE settings[256];
+    DWORD size = sizeof(settings);
+    if (RegGetValueW(
+            HKEY_CURRENT_USER,
+            LR"(SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\StuckRects3)",
+            L"Settings", RRF_RT_REG_BINARY, nullptr, settings,
+            &size) != ERROR_SUCCESS ||
+        size < 12) {
+        return false;
+    }
+
+    DWORD state = *(DWORD*)(settings + 8);
+    return (state & ABS_AUTOHIDE) != 0;
+}
+
 HWND FindCurrentProcessTaskbarWnd() {
     HWND hTaskbarWnd = nullptr;
 
@@ -635,11 +653,15 @@ void HookRegGetValueW() {
 }
 
 DWORD GetStoredTaskbarLocation() {
+    // Not hooked yet while the mod initializes.
+    auto pRegGetValueW =
+        RegGetValueW_Original ? RegGetValueW_Original : RegGetValueW;
+
     DWORD edge = ABE_BOTTOM;
     DWORD size = sizeof(edge);
-    if (RegGetValueW_Original(HKEY_CURRENT_USER, kTaskbarLocationSubKey,
-                              kTaskbarLocationValueName, RRF_RT_REG_DWORD,
-                              nullptr, &edge, &size) != ERROR_SUCCESS ||
+    if (pRegGetValueW(HKEY_CURRENT_USER, kTaskbarLocationSubKey,
+                      kTaskbarLocationValueName, RRF_RT_REG_DWORD, nullptr,
+                      &edge, &size) != ERROR_SUCCESS ||
         edge > ABE_BOTTOM) {
         edge = ABE_BOTTOM;
     }
@@ -3106,6 +3128,14 @@ bool HookTaskbarDllSymbols() {
 
     g_hasNativeTaskbarOnTop = IsNativeTaskbarOnTopEnabled();
     Wh_Log(L"Native taskbar on top: %d", g_hasNativeTaskbarOnTop);
+
+    // The native taskbar doesn't implement auto-hide for non-bottom taskbars.
+    // If auto-hide is enabled, the native taskbar isn't used to avoid breaking
+    // the auto-hide behavior.
+    if (g_hasNativeTaskbarOnTop && IsStoredTaskbarAutoHideEnabled()) {
+        Wh_Log(L"Not using native taskbar on top with auto-hide");
+        g_hasNativeTaskbarOnTop = false;
+    }
 
     g_nativeTaskbarOnTop = g_hasNativeTaskbarOnTop
                                ? NativeTaskbarOnTop::available
