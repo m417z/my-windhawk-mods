@@ -2183,7 +2183,14 @@ HRESULT WINAPI DwmSetWindowAttribute_Hook(HWND hwnd,
     }
 
     HMONITOR monitor = MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST);
-    if (GetTaskbarLocationForMonitor(monitor) == TaskbarLocation::bottom) {
+    TaskbarLocation taskbarLocation = GetTaskbarLocationForMonitor(monitor);
+
+    // Windows places the windows for a bottom taskbar, and the native taskbar
+    // on top places them for the primary taskbar location.
+    TaskbarLocation windowsTaskbarLocation =
+        g_hasNativeTaskbarOnTop && !g_unloading ? g_settings.taskbarLocation
+                                                : TaskbarLocation::bottom;
+    if (taskbarLocation == windowsTaskbarLocation) {
         return original();
     }
 
@@ -2205,7 +2212,8 @@ HRESULT WINAPI DwmSetWindowAttribute_Hook(HWND hwnd,
     if (_wcsicmp(processFileName.c_str(), L"StartMenuExperienceHost.exe") ==
         0) {
         target = DwmTarget::StartMenu;
-    } else if (_wcsicmp(processFileName.c_str(), L"SearchHost.exe") == 0) {
+    } else if (!g_hasNativeTaskbarOnTop &&
+               _wcsicmp(processFileName.c_str(), L"SearchHost.exe") == 0) {
         target = DwmTarget::SearchHost;
     } else {
         return original();
@@ -2226,20 +2234,40 @@ HRESULT WINAPI DwmSetWindowAttribute_Hook(HWND hwnd,
     int cy = targetRect.bottom - targetRect.top;
 
     if (target == DwmTarget::StartMenu) {
-        // Only change x. This is a workaround for ExplorerPatcher, see:
-        // https://github.com/ramensoftware/windhawk-mods/issues/2401
         MONITORINFO monitorInfo{
             .cbSize = sizeof(MONITORINFO),
         };
         GetMonitorInfo(monitor, &monitorInfo);
 
-        int xNew = monitorInfo.rcWork.left;
+        if (g_hasNativeTaskbarOnTop) {
+            // Only change y.
+            int yNew;
+            switch (taskbarLocation) {
+                case TaskbarLocation::top:
+                    yNew = monitorInfo.rcWork.top;
+                    break;
 
-        if (xNew == x) {
-            return original();
+                case TaskbarLocation::bottom:
+                    yNew = monitorInfo.rcWork.bottom - cy;
+                    break;
+            }
+
+            if (yNew == y) {
+                return original();
+            }
+
+            y = yNew;
+        } else {
+            // Only change x. This is a workaround for ExplorerPatcher, see:
+            // https://github.com/ramensoftware/windhawk-mods/issues/2401
+            int xNew = monitorInfo.rcWork.left;
+
+            if (xNew == x) {
+                return original();
+            }
+
+            x = xNew;
         }
-
-        x = xNew;
     } else if (target == DwmTarget::SearchHost) {
         // Only change y.
         RECT workAreaRect;
@@ -2254,8 +2282,10 @@ HRESULT WINAPI DwmSetWindowAttribute_Hook(HWND hwnd,
         y = yNew;
     }
 
-    SetWindowPos_Original(hwnd, nullptr, x, y, cx, cy,
-                          SWP_NOZORDER | SWP_NOACTIVATE);
+    // SetWindowPos isn't hooked for the native taskbar on top.
+    auto pSetWindowPos =
+        SetWindowPos_Original ? SetWindowPos_Original : SetWindowPos;
+    pSetWindowPos(hwnd, nullptr, x, y, cx, cy, SWP_NOZORDER | SWP_NOACTIVATE);
 
     return original();
 }
@@ -2314,8 +2344,59 @@ bool RunFromWindowThread(HWND hWnd,
 
 namespace StartMenuUI {
 
+// Overrides a property's local value, keeping the latest local value set by
+// Windows to restore it, or to clear the property if there's none.
+template <typename T>
+class PropertyOverride {
+   public:
+    using PropertyGetter = DependencyProperty (*)();
+
+    explicit PropertyOverride(PropertyGetter property) : m_property(property) {}
+
+    void Set(DependencyObject element, T value) {
+        auto property = m_property();
+        auto localValue = element.ReadLocalValue(property).try_as<T>();
+        if (m_element.get() != element || localValue != m_value) {
+            m_element = element;
+            m_windowsValue = localValue;
+        }
+
+        m_value = value;
+        element.SetValue(property, winrt::box_value(value));
+    }
+
+    void Restore() {
+        auto element = m_element.get();
+        m_element = nullptr;
+        if (!element) {
+            return;
+        }
+
+        auto property = m_property();
+        if (element.ReadLocalValue(property).try_as<T>() != m_value) {
+            return;
+        }
+
+        if (m_windowsValue) {
+            element.SetValue(property, winrt::box_value(*m_windowsValue));
+        } else {
+            element.ClearValue(property);
+        }
+    }
+
+   private:
+    PropertyGetter m_property;
+    winrt::weak_ref<DependencyObject> m_element;
+    std::optional<T> m_windowsValue;
+    T m_value{};
+};
+
 bool g_inApplyStyle;
 bool g_startMenuAnimationAdjusted;
+PropertyOverride<double> g_canvasTopOverride{&Controls::Canvas::TopProperty};
+PropertyOverride<VerticalAlignment> g_verticalAlignmentOverride{
+    &FrameworkElement::VerticalAlignmentProperty};
+PropertyOverride<Thickness> g_marginOverride{&FrameworkElement::MarginProperty};
 winrt::weak_ref<DependencyObject> g_startSizingFrameWeakRef;
 int64_t g_canvasTopPropertyChangedToken;
 int64_t g_canvasLeftPropertyChangedToken;
@@ -2359,9 +2440,18 @@ HWND GetCoreWnd() {
 
 void ApplyStyle();
 
+// The part of the Start menu position set by the mod, the rest is left to
+// Windows.
+enum class StartMenuAdjustment {
+    none,
+    vertical,
+    full,
+};
+
 void ApplyStyleClassicStartMenu(FrameworkElement content,
                                 TaskbarLocation taskbarLocation,
-                                HMONITOR monitor) {
+                                HMONITOR monitor,
+                                StartMenuAdjustment adjustment) {
     FrameworkElement startSizingFrame =
         FindChildByClassName(content, L"StartDocked.StartSizingFrame");
     if (!startSizingFrame) {
@@ -2369,12 +2459,10 @@ void ApplyStyleClassicStartMenu(FrameworkElement content,
         return;
     }
 
-    if (g_settings.startMenuAnimationAdjust || g_startMenuAnimationAdjusted) {
-        g_startMenuAnimationAdjusted = true;
-
-        bool adjustAnimation = !g_unloading &&
-                               g_settings.startMenuAnimationAdjust &&
-                               taskbarLocation == TaskbarLocation::top;
+    bool adjustAnimation = adjustment == StartMenuAdjustment::full &&
+                           g_settings.startMenuAnimationAdjust;
+    if (adjustAnimation || g_startMenuAnimationAdjusted) {
+        g_startMenuAnimationAdjusted = adjustAnimation;
 
         FrameworkElement child = startSizingFrame;
         if ((child = FindChildByClassName(
@@ -2443,13 +2531,25 @@ void ApplyStyleClassicStartMenu(FrameworkElement content,
     Wh_Log(L"Invalidating measure");
     startSizingFrame.InvalidateMeasure();
 
-    if (!g_unloading && taskbarLocation == TaskbarLocation::top) {
+    if (adjustment == StartMenuAdjustment::none) {
+        g_canvasTopOverride.Restore();
+    } else {
         constexpr int kStartMenuMargin = 12;
 
-        double newTop = kStartMenuMargin;
+        double newTop;
+        switch (taskbarLocation) {
+            case TaskbarLocation::top:
+                newTop = kStartMenuMargin;
+                break;
+
+            case TaskbarLocation::bottom:
+                newTop = content.ActualHeight() -
+                         startSizingFrame.ActualHeight() - kStartMenuMargin;
+                break;
+        }
 
         Wh_Log(L"Setting Canvas.Top to %f", newTop);
-        Controls::Canvas::SetTop(startSizingFrame, newTop);
+        g_canvasTopOverride.Set(startSizingFrame, newTop);
 
         // Subscribe to Canvas.Top and Canvas.Left property changes to apply
         // custom styles right when that happens. Without it, the start menu may
@@ -2489,29 +2589,44 @@ void ApplyStyleClassicStartMenu(FrameworkElement content,
 }
 
 void ApplyStyleRedesignedStartMenu(FrameworkElement content,
-                                   TaskbarLocation taskbarLocation) {
+                                   TaskbarLocation taskbarLocation,
+                                   StartMenuAdjustment adjustment) {
+    if (adjustment == StartMenuAdjustment::none) {
+        g_verticalAlignmentOverride.Restore();
+        g_marginOverride.Restore();
+        return;
+    }
+
     FrameworkElement frameRoot = FindChildByName(content, L"FrameRoot");
     if (!frameRoot) {
         Wh_Log(L"Failed to find Start menu frame root");
         return;
     }
 
+    // Adjust the margin set by Windows.
+    g_marginOverride.Restore();
     auto margin = frameRoot.Margin();
     auto marginVertical = margin.Top + margin.Bottom;
 
-    if (!g_unloading && taskbarLocation == TaskbarLocation::top) {
-        frameRoot.VerticalAlignment(VerticalAlignment::Top);
-        margin.Top = 0;
-        margin.Bottom = marginVertical;
-    } else {
-        frameRoot.VerticalAlignment(VerticalAlignment::Bottom);
-        margin.Top = marginVertical;
-        margin.Bottom = 0;
+    VerticalAlignment verticalAlignment;
+    switch (taskbarLocation) {
+        case TaskbarLocation::top:
+            verticalAlignment = VerticalAlignment::Top;
+            margin.Top = 0;
+            margin.Bottom = marginVertical;
+            break;
+
+        case TaskbarLocation::bottom:
+            verticalAlignment = VerticalAlignment::Bottom;
+            margin.Top = marginVertical;
+            margin.Bottom = 0;
+            break;
     }
 
-    frameRoot.Margin(margin);
+    g_verticalAlignmentOverride.Set(frameRoot, verticalAlignment);
+    g_marginOverride.Set(frameRoot, margin);
 
-    if (!g_unloading && !g_frameRootWeakRef.get()) {
+    if (!g_frameRootWeakRef.get()) {
         auto frameRootDo = frameRoot.as<DependencyObject>();
 
         g_frameRootWeakRef = frameRootDo;
@@ -2531,13 +2646,34 @@ void ApplyStyleRedesignedStartMenu(FrameworkElement content,
     }
 }
 
-void ApplyStyle() {
-    // The native taskbar on top places the Start menu. It's also left as is
-    // while unknown, since a style applied for the wrong state isn't reverted.
-    if (g_nativeTaskbarOnTop != NativeTaskbarOnTop::unavailable) {
-        return;
+StartMenuAdjustment GetStartMenuAdjustment(TaskbarLocation taskbarLocation) {
+    if (g_unloading) {
+        return StartMenuAdjustment::none;
     }
 
+    // The Start menu is left to Windows until explorer.exe determines whether
+    // the native taskbar on top is available. The native taskbar places it for
+    // the primary taskbar location, so it's moved vertically on monitors with a
+    // different location.
+    switch (g_nativeTaskbarOnTop) {
+        case NativeTaskbarOnTop::unknown:
+            return StartMenuAdjustment::none;
+
+        case NativeTaskbarOnTop::unavailable:
+            return taskbarLocation == TaskbarLocation::top
+                       ? StartMenuAdjustment::full
+                       : StartMenuAdjustment::none;
+
+        case NativeTaskbarOnTop::available:
+            return taskbarLocation == g_settings.taskbarLocation
+                       ? StartMenuAdjustment::none
+                       : StartMenuAdjustment::vertical;
+    }
+
+    return StartMenuAdjustment::none;
+}
+
+void ApplyStyle() {
     g_inApplyStyle = true;
 
     HWND coreWnd = GetCoreWnd();
@@ -2546,6 +2682,7 @@ void ApplyStyle() {
     Wh_Log(L"Applying Start menu style for monitor %p", monitor);
 
     TaskbarLocation taskbarLocation = GetTaskbarLocationForMonitor(monitor);
+    StartMenuAdjustment adjustment = GetStartMenuAdjustment(taskbarLocation);
 
     auto window = Window::Current();
     FrameworkElement content = window.Content().as<FrameworkElement>();
@@ -2554,9 +2691,10 @@ void ApplyStyle() {
     Wh_Log(L"Start menu content class name: %s", contentClassName.c_str());
 
     if (contentClassName == L"Windows.UI.Xaml.Controls.Canvas") {
-        ApplyStyleClassicStartMenu(content, taskbarLocation, monitor);
+        ApplyStyleClassicStartMenu(content, taskbarLocation, monitor,
+                                   adjustment);
     } else if (contentClassName == L"StartMenu.StartBlendedFlexFrame") {
-        ApplyStyleRedesignedStartMenu(content, taskbarLocation);
+        ApplyStyleRedesignedStartMenu(content, taskbarLocation, adjustment);
     } else {
         Wh_Log(L"Error: Unsupported Start menu content class name");
     }
@@ -3292,23 +3430,23 @@ BOOL Wh_ModInit() {
                                        &LoadLibraryExW_Original);
     }
 
-    // The native taskbar on top places its flyouts and windows itself.
+    // The native taskbar on top places its flyouts and windows itself, other
+    // than the Start menu on monitors with a different taskbar location.
     if (g_hasNativeTaskbarOnTop) {
         HookRegGetValueW();
-        return TRUE;
+    } else {
+        WindhawkUtils::SetFunctionHook(CreateWindowExW, CreateWindowExW_Hook,
+                                       &CreateWindowExW_Original);
+
+        WindhawkUtils::SetFunctionHook(SetWindowPos, SetWindowPos_Hook,
+                                       &SetWindowPos_Original);
+
+        WindhawkUtils::SetFunctionHook(MoveWindow, MoveWindow_Hook,
+                                       &MoveWindow_Original);
+
+        WindhawkUtils::SetFunctionHook(MapWindowPoints, MapWindowPoints_Hook,
+                                       &MapWindowPoints_Original);
     }
-
-    WindhawkUtils::SetFunctionHook(CreateWindowExW, CreateWindowExW_Hook,
-                                   &CreateWindowExW_Original);
-
-    WindhawkUtils::SetFunctionHook(SetWindowPos, SetWindowPos_Hook,
-                                   &SetWindowPos_Original);
-
-    WindhawkUtils::SetFunctionHook(MoveWindow, MoveWindow_Hook,
-                                   &MoveWindow_Original);
-
-    WindhawkUtils::SetFunctionHook(MapWindowPoints, MapWindowPoints_Hook,
-                                   &MapWindowPoints_Original);
 
     HMODULE dwmapiModule =
         LoadLibraryEx(L"dwmapi.dll", nullptr, LOAD_LIBRARY_SEARCH_SYSTEM32);
