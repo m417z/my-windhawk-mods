@@ -31,7 +31,7 @@ Moves the Windows 11 taskbar to the top of the screen.
 
 ## Known limitations
 
-* With the non-native vertical taskbar, the Action Center (Win+A) stays on the
+* With the non-native taskbar on top, the Action Center (Win+A) stays on the
   bottom. For now, you can use [this alternative
   solution](https://github.com/ramensoftware/windhawk-mods/issues/1053#issuecomment-2405461863).
 
@@ -48,21 +48,24 @@ Moves the Windows 11 taskbar to the top of the screen.
   - bottom: Bottom
 - taskbarLocationSecondary: sameAsPrimary
   $name: Taskbar location on secondary monitors
+  $description: >-
+    Left and right are only supported with the native taskbar, otherwise the
+    taskbar stays on the bottom.
   $options:
   - sameAsPrimary: Same as on primary monitor
   - top: Top
   - bottom: Bottom
+  - left: Left
+  - right: Right
 - runningIndicatorsOnTop: false
   $name: Running indicators on top
   $description: Show running indicators above the taskbar icons.
 - startMenuAnimationAdjust: false
   $name: Adjust Start menu animation
   $description: >-
-    Adjust the start menu opening animation to match the vertical taskbar
-    position, e.g. sliding in from the left when the taskbar is on the left side
-    of the screen. This option doesn't work with the redesigned Start menu, and
-    might not work with the Phone Link sidebar and with some Start Menu Styler
-    themes.
+    Adjust the Start menu opening animation to match the taskbar on top
+    position. This option doesn't work with the redesigned Start menu, and might
+    not work with the Phone Link sidebar and with some Start Menu Styler themes.
 - useNativeTaskbar: true
   $name: Use the native taskbar when possible
   $description: >-
@@ -92,6 +95,8 @@ Moves the Windows 11 taskbar to the top of the screen.
 #include <atomic>
 #include <functional>
 #include <list>
+#include <mutex>
+#include <unordered_set>
 #include <vector>
 
 #ifdef _M_ARM64
@@ -107,6 +112,8 @@ using namespace winrt::Windows::UI::Xaml;
 enum class TaskbarLocation {
     top,
     bottom,
+    left,
+    right,
 };
 
 struct {
@@ -284,25 +291,34 @@ bool IsStoredTaskbarAutoHideEnabled() {
     return (state & ABS_AUTOHIDE) != 0;
 }
 
-HWND FindCurrentProcessTaskbarWnd() {
-    HWND hTaskbarWnd = nullptr;
+HWND FindCurrentProcessWindow(PCWSTR className) {
+    struct ENUM_WINDOWS_PARAM {
+        PCWSTR className;
+        HWND hWnd;
+    };
 
+    ENUM_WINDOWS_PARAM param = {className, nullptr};
     EnumWindows(
         [](HWND hWnd, LPARAM lParam) -> BOOL {
+            auto& param = *reinterpret_cast<ENUM_WINDOWS_PARAM*>(lParam);
             DWORD dwProcessId;
             WCHAR className[32];
             if (GetWindowThreadProcessId(hWnd, &dwProcessId) &&
                 dwProcessId == GetCurrentProcessId() &&
                 GetClassName(hWnd, className, ARRAYSIZE(className)) &&
-                _wcsicmp(className, L"Shell_TrayWnd") == 0) {
-                *reinterpret_cast<HWND*>(lParam) = hWnd;
+                _wcsicmp(className, param.className) == 0) {
+                param.hWnd = hWnd;
                 return FALSE;
             }
             return TRUE;
         },
-        reinterpret_cast<LPARAM>(&hTaskbarWnd));
+        reinterpret_cast<LPARAM>(&param));
 
-    return hTaskbarWnd;
+    return param.hWnd;
+}
+
+HWND FindCurrentProcessTaskbarWnd() {
+    return FindCurrentProcessWindow(L"Shell_TrayWnd");
 }
 
 static const UINT g_getTaskbarRectRegisteredMsg =
@@ -402,12 +418,24 @@ FrameworkElement FindChildByClassName(FrameworkElement element,
     });
 }
 
+// Left and right are only supported with the native taskbar on top.
+TaskbarLocation GetTaskbarLocationSecondary() {
+    if ((g_settings.taskbarLocationSecondary == TaskbarLocation::left ||
+         g_settings.taskbarLocationSecondary == TaskbarLocation::right) &&
+        g_nativeTaskbarOnTop != NativeTaskbarOnTop::available) {
+        return TaskbarLocation::bottom;
+    }
+
+    return g_settings.taskbarLocationSecondary;
+}
+
 TaskbarLocation GetTaskbarLocationForMonitor(HMONITOR monitor) {
     if (g_unloading) {
         return TaskbarLocation::bottom;
     }
 
-    if (g_settings.taskbarLocation == g_settings.taskbarLocationSecondary) {
+    TaskbarLocation taskbarLocationSecondary = GetTaskbarLocationSecondary();
+    if (g_settings.taskbarLocation == taskbarLocationSecondary) {
         return g_settings.taskbarLocation;
     }
 
@@ -415,7 +443,7 @@ TaskbarLocation GetTaskbarLocationForMonitor(HMONITOR monitor) {
         MonitorFromPoint({0, 0}, MONITOR_DEFAULTTOPRIMARY);
 
     return monitor == primaryMonitor ? g_settings.taskbarLocation
-                                     : g_settings.taskbarLocationSecondary;
+                                     : taskbarLocationSecondary;
 }
 
 using TrayUI_GetStuckRectForMonitor_t = bool(WINAPI*)(void* pThis,
@@ -480,6 +508,10 @@ DWORD WINAPI TrayUI_GetDockedRect_Hook(void* pThis, RECT* rect, BOOL param2) {
             // rect->top = monitorRect.bottom - height;
             // rect->bottom = monitorRect.bottom;
             break;
+
+        case TaskbarLocation::left:
+        case TaskbarLocation::right:
+            break;
     }
 
     return ret;
@@ -525,6 +557,10 @@ void WINAPI TrayUI_MakeStuckRect_Hook(void* pThis,
             // rect->top = monitorRect.bottom - height;
             // rect->bottom = monitorRect.bottom;
             break;
+
+        case TaskbarLocation::left:
+        case TaskbarLocation::right:
+            break;
     }
 }
 
@@ -551,6 +587,10 @@ void WINAPI TrayUI_GetStuckInfo_Hook(void* pThis,
         case TaskbarLocation::bottom:
             // *taskbarPos = ABE_BOTTOM;
             break;
+
+        case TaskbarLocation::left:
+        case TaskbarLocation::right:
+            break;
     }
 }
 
@@ -561,13 +601,24 @@ DWORD TaskbarLocationToEdge(TaskbarLocation taskbarLocation) {
 
         case TaskbarLocation::bottom:
             return ABE_BOTTOM;
+
+        case TaskbarLocation::left:
+            return ABE_LEFT;
+
+        case TaskbarLocation::right:
+            return ABE_RIGHT;
     }
 }
 
-// The native taskbar location, stored as a screen edge (ABE_*).
-constexpr WCHAR kTaskbarLocationSubKey[] =
+constexpr WCHAR kTaskbarSettingsSubKey[] =
     LR"(SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\Advanced)";
+// The native taskbar location, stored as a screen edge (ABE_*).
 constexpr WCHAR kTaskbarLocationValueName[] = L"TaskbarLocation";
+// Whether the taskbar is shown on all displays.
+constexpr WCHAR kMultiMonTaskbarValueName[] = L"MMTaskbarEnabled";
+
+// Makes explorer.exe read that the taskbar isn't shown on all displays.
+std::atomic<bool> g_hidingSecondaryTaskbars;
 
 // The taskbar windows read the location from the registry, the primary one
 // when it's created, and the secondary ones for themselves. Other readers in
@@ -627,23 +678,34 @@ LONG WINAPI RegGetValueW_Hook(HKEY hkey,
     LONG ret = RegGetValueW_Original(hkey, lpSubKey, lpValue, dwFlags, pdwType,
                                      pvData, pcbData);
 
-    if (g_unloading || !ShouldOverrideTaskbarLocation() ||
-        hkey != HKEY_CURRENT_USER || !lpSubKey ||
-        _wcsicmp(lpSubKey, kTaskbarLocationSubKey) != 0 || !lpValue ||
-        _wcsicmp(lpValue, kTaskbarLocationValueName) != 0 ||
-        !(dwFlags & RRF_RT_REG_DWORD) || !pvData || cbData < sizeof(DWORD)) {
+    if (!lpSubKey || _wcsicmp(lpSubKey, kTaskbarSettingsSubKey) != 0 ||
+        !lpValue || !(dwFlags & RRF_RT_REG_DWORD) || !pvData ||
+        cbData < sizeof(DWORD)) {
         return ret;
     }
 
-    TaskbarLocation taskbarLocation = g_inCSecondaryTray__LoadSettings
-                                          ? g_settings.taskbarLocationSecondary
-                                          : g_settings.taskbarLocation;
-    DWORD edge = TaskbarLocationToEdge(taskbarLocation);
+    DWORD value;
+    if (g_hidingSecondaryTaskbars &&
+        _wcsicmp(lpValue, kMultiMonTaskbarValueName) == 0) {
+        value = 0;
+    } else if (!g_unloading && ShouldOverrideTaskbarLocation() &&
+               hkey == HKEY_CURRENT_USER &&
+               _wcsicmp(lpValue, kTaskbarLocationValueName) == 0) {
+        TaskbarLocation taskbarLocation = g_inCSecondaryTray__LoadSettings
+                                              ? GetTaskbarLocationSecondary()
+                                              : g_settings.taskbarLocation;
+        value = TaskbarLocationToEdge(taskbarLocation);
+    } else {
+        return ret;
+    }
 
-    Wh_Log(L"Overriding %s: %u->%u", lpValue,
-           ret == ERROR_SUCCESS ? *(DWORD*)pvData : ABE_BOTTOM, edge);
+    if (ret == ERROR_SUCCESS) {
+        Wh_Log(L"Overriding %s: %u->%u", lpValue, *(DWORD*)pvData, value);
+    } else {
+        Wh_Log(L"Overriding %s: %u", lpValue, value);
+    }
 
-    *(DWORD*)pvData = edge;
+    *(DWORD*)pvData = value;
     *pcbData = sizeof(DWORD);
     if (pdwType) {
         *pdwType = REG_DWORD;
@@ -667,7 +729,7 @@ DWORD GetStoredTaskbarLocation() {
 
     DWORD edge = ABE_BOTTOM;
     DWORD size = sizeof(edge);
-    if (pRegGetValueW(HKEY_CURRENT_USER, kTaskbarLocationSubKey,
+    if (pRegGetValueW(HKEY_CURRENT_USER, kTaskbarSettingsSubKey,
                       kTaskbarLocationValueName, RRF_RT_REG_DWORD, nullptr,
                       &edge, &size) != ERROR_SUCCESS ||
         edge > ABE_BOTTOM) {
@@ -675,6 +737,71 @@ DWORD GetStoredTaskbarLocation() {
     }
 
     return edge;
+}
+
+// Each taskbar has its own settings, which natively all return the same
+// location. The settings of secondary taskbars are identified when they're
+// created, so ones created before the mod was loaded aren't included. Destroyed
+// settings aren't removed, since an address is classified again when new
+// settings reuse it.
+std::mutex g_secondaryTaskbarSettingsMutex;
+std::unordered_set<void*> g_secondaryTaskbarSettings;
+// The location the secondary taskbars are laid out for, unknown for ones
+// created before the mod was loaded.
+std::optional<TaskbarLocation> g_secondaryTaskbarsLocation;
+
+bool IsSecondaryTaskListWndSite(IUnknown* taskListWndSite) {
+    winrt::com_ptr<IUnknown> site;
+    site.copy_from(taskListWndSite);
+
+    auto oleWindow = site.try_as<IOleWindow>();
+    HWND hWnd;
+    if (!oleWindow || FAILED(oleWindow->GetWindow(&hWnd))) {
+        return false;
+    }
+
+    WCHAR szClassName[32];
+    return GetClassName(GetAncestor(hWnd, GA_ROOT), szClassName,
+                        ARRAYSIZE(szClassName)) &&
+           _wcsicmp(szClassName, L"Shell_SecondaryTrayWnd") == 0;
+}
+
+using TaskbarSettings_TaskbarSettings_t = void*(
+    WINAPI*)(void* pThis, void* trayComponentHost, IUnknown* taskListWndSite);
+TaskbarSettings_TaskbarSettings_t TaskbarSettings_TaskbarSettings_Original;
+void* WINAPI TaskbarSettings_TaskbarSettings_Hook(void* pThis,
+                                                  void* trayComponentHost,
+                                                  IUnknown* taskListWndSite) {
+    Wh_Log(L">");
+
+    void* ret = TaskbarSettings_TaskbarSettings_Original(
+        pThis, trayComponentHost, taskListWndSite);
+
+    bool secondary =
+        taskListWndSite && IsSecondaryTaskListWndSite(taskListWndSite);
+    Wh_Log(L"Secondary taskbar settings: %d", secondary);
+
+    std::lock_guard<std::mutex> guard(g_secondaryTaskbarSettingsMutex);
+    if (secondary) {
+        g_secondaryTaskbarSettings.insert(pThis);
+        g_secondaryTaskbarsLocation = GetTaskbarLocationSecondary();
+    } else {
+        g_secondaryTaskbarSettings.erase(pThis);
+    }
+
+    return ret;
+}
+
+// Returns the previous location.
+std::optional<TaskbarLocation> SetSecondaryTaskbarsLocation(
+    TaskbarLocation taskbarLocation) {
+    std::lock_guard<std::mutex> guard(g_secondaryTaskbarSettingsMutex);
+    return std::exchange(g_secondaryTaskbarsLocation, taskbarLocation);
+}
+
+bool IsSecondaryTaskbarSettings(void* taskbarSettings) {
+    std::lock_guard<std::mutex> guard(g_secondaryTaskbarSettingsMutex);
+    return g_secondaryTaskbarSettings.contains(taskbarSettings);
 }
 
 // The location the taskbar content is laid out for, which it reads again
@@ -687,7 +814,10 @@ int WINAPI TaskbarSettings_Location_Hook(void* pThis) {
         return TaskbarSettings_Location_Original(pThis);
     }
 
-    return TaskbarLocationToEdge(g_settings.taskbarLocation);
+    TaskbarLocation taskbarLocation = IsSecondaryTaskbarSettings(pThis)
+                                          ? GetTaskbarLocationSecondary()
+                                          : g_settings.taskbarLocation;
+    return TaskbarLocationToEdge(taskbarLocation);
 }
 
 void TaskbarWndProcPreProcess(HWND hWnd,
@@ -765,6 +895,10 @@ LRESULT TaskbarWndProcPostProcess(HWND hWnd,
                     case TaskbarLocation::bottom:
                         // rect->top = monitorRect.bottom - height;
                         // rect->bottom = monitorRect.bottom;
+                        break;
+
+                    case TaskbarLocation::left:
+                    case TaskbarLocation::right:
                         break;
                 }
             }
@@ -1093,7 +1227,7 @@ void ApplyTaskbarFrameStyle(FrameworkElement taskbarFrame) {
     bool isSecondaryTaskbar = IsSecondaryTaskbar(taskbarFrame.XamlRoot());
 
     TaskbarLocation taskbarLocation = isSecondaryTaskbar
-                                          ? g_settings.taskbarLocationSecondary
+                                          ? GetTaskbarLocationSecondary()
                                           : g_settings.taskbarLocation;
     if (taskbarLocation != TaskbarLocation::top) {
         return;
@@ -1360,8 +1494,14 @@ void UpdateTaskListButton(FrameworkElement taskListButtonElement) {
         return;
     }
 
+    TaskbarLocation taskbarLocationSecondary = GetTaskbarLocationSecondary();
+    bool verticalSecondaryTaskbar =
+        taskbarLocationSecondary == TaskbarLocation::left ||
+        taskbarLocationSecondary == TaskbarLocation::right;
+
     bool indicatorsOnTop = false;
-    if (!g_unloading && g_settings.runningIndicatorsOnTop) {
+    if (!g_unloading &&
+        (g_settings.runningIndicatorsOnTop || verticalSecondaryTaskbar)) {
         auto taskbarFrameRepeaterElement =
             Media::VisualTreeHelper::GetParent(taskListButtonElement)
                 .as<FrameworkElement>();
@@ -1375,10 +1515,18 @@ void UpdateTaskListButton(FrameworkElement taskListButtonElement) {
                 IsSecondaryTaskbar(taskListButtonElement.XamlRoot());
         }
 
-        TaskbarLocation taskbarLocation =
-            isSecondaryTaskbar ? g_settings.taskbarLocationSecondary
-                               : g_settings.taskbarLocation;
-        if (taskbarLocation == TaskbarLocation::top) {
+        TaskbarLocation taskbarLocation = isSecondaryTaskbar
+                                              ? taskbarLocationSecondary
+                                              : g_settings.taskbarLocation;
+
+        // Vertical taskbars place their indicators themselves.
+        if (taskbarLocation == TaskbarLocation::left ||
+            taskbarLocation == TaskbarLocation::right) {
+            return;
+        }
+
+        if (g_settings.runningIndicatorsOnTop &&
+            taskbarLocation == TaskbarLocation::top) {
             indicatorsOnTop = true;
         }
     }
@@ -1451,11 +1599,12 @@ void WINAPI TaskListButton_UpdateVisualStates_Hook(void* pThis) {
     }
 }
 
-// With the native taskbar on top, taskbar backgrounds get the location of the
-// primary taskbar, and lay out their stroke for it. Secondary taskbars at
-// another location get their own location instead. The backgrounds are kept
-// to be updated when the settings are applied, since only a change of the
-// taskbar location updates them.
+// With the native taskbar on top, taskbar backgrounds lay out their stroke for
+// the location they get from their taskbar. Secondary taskbars created before
+// the mod was loaded pass the primary taskbar location, so secondary taskbar
+// backgrounds get their own location instead. The backgrounds are kept to be
+// updated when the settings are applied, since only a change of the taskbar
+// location updates them.
 struct NativeTaskbarBackground {
     winrt::weak_ref<FrameworkElement> element;
     // Valid as long as the element is alive.
@@ -1479,7 +1628,7 @@ int GetNativeTaskbarBackgroundLocation(FrameworkElement element, int location) {
         return location;
     }
 
-    return TaskbarLocationToEdge(g_settings.taskbarLocationSecondary);
+    return TaskbarLocationToEdge(GetTaskbarLocationSecondary());
 }
 
 NativeTaskbarBackground* FindNativeTaskbarBackground(FrameworkElement element) {
@@ -2239,9 +2388,10 @@ HRESULT WINAPI DwmSetWindowAttribute_Hook(HWND hwnd,
         };
         GetMonitorInfo(monitor, &monitorInfo);
 
+        int xNew = x;
+        int yNew = y;
         if (g_hasNativeTaskbarOnTop) {
-            // Only change y.
-            int yNew;
+            // Only move towards the taskbar.
             switch (taskbarLocation) {
                 case TaskbarLocation::top:
                     yNew = monitorInfo.rcWork.top;
@@ -2250,24 +2400,27 @@ HRESULT WINAPI DwmSetWindowAttribute_Hook(HWND hwnd,
                 case TaskbarLocation::bottom:
                     yNew = monitorInfo.rcWork.bottom - cy;
                     break;
-            }
 
-            if (yNew == y) {
-                return original();
-            }
+                case TaskbarLocation::left:
+                    xNew = monitorInfo.rcWork.left;
+                    break;
 
-            y = yNew;
+                case TaskbarLocation::right:
+                    xNew = monitorInfo.rcWork.right - cx;
+                    break;
+            }
         } else {
             // Only change x. This is a workaround for ExplorerPatcher, see:
             // https://github.com/ramensoftware/windhawk-mods/issues/2401
-            int xNew = monitorInfo.rcWork.left;
-
-            if (xNew == x) {
-                return original();
-            }
-
-            x = xNew;
+            xNew = monitorInfo.rcWork.left;
         }
+
+        if (xNew == x && yNew == y) {
+            return original();
+        }
+
+        x = xNew;
+        y = yNew;
     } else if (target == DwmTarget::SearchHost) {
         // Only change y.
         RECT workAreaRect;
@@ -2394,14 +2547,18 @@ class PropertyOverride {
 bool g_inApplyStyle;
 bool g_startMenuAnimationAdjusted;
 PropertyOverride<double> g_canvasTopOverride{&Controls::Canvas::TopProperty};
+PropertyOverride<double> g_canvasLeftOverride{&Controls::Canvas::LeftProperty};
 PropertyOverride<VerticalAlignment> g_verticalAlignmentOverride{
     &FrameworkElement::VerticalAlignmentProperty};
+PropertyOverride<HorizontalAlignment> g_horizontalAlignmentOverride{
+    &FrameworkElement::HorizontalAlignmentProperty};
 PropertyOverride<Thickness> g_marginOverride{&FrameworkElement::MarginProperty};
 winrt::weak_ref<DependencyObject> g_startSizingFrameWeakRef;
 int64_t g_canvasTopPropertyChangedToken;
 int64_t g_canvasLeftPropertyChangedToken;
 winrt::weak_ref<DependencyObject> g_frameRootWeakRef;
 int64_t g_verticalAlignmentPropertyChangedToken;
+int64_t g_horizontalAlignmentPropertyChangedToken;
 winrt::event_token g_visibilityChangedToken;
 
 HWND GetCoreWnd() {
@@ -2440,11 +2597,11 @@ HWND GetCoreWnd() {
 
 void ApplyStyle();
 
-// The part of the Start menu position set by the mod, the rest is left to
-// Windows.
+// The part of the Start menu placement set by the mod, the rest is left to
+// Windows. The full adjustment also covers the animation.
 enum class StartMenuAdjustment {
     none,
-    vertical,
+    position,
     full,
 };
 
@@ -2533,23 +2690,52 @@ void ApplyStyleClassicStartMenu(FrameworkElement content,
 
     if (adjustment == StartMenuAdjustment::none) {
         g_canvasTopOverride.Restore();
+        g_canvasLeftOverride.Restore();
     } else {
+        double canvasWidth = content.ActualWidth();
+        double canvasHeight = content.ActualHeight();
+
         constexpr int kStartMenuMargin = 12;
 
         double newTop;
         switch (taskbarLocation) {
             case TaskbarLocation::top:
+            case TaskbarLocation::left:
+            case TaskbarLocation::right:
                 newTop = kStartMenuMargin;
                 break;
 
             case TaskbarLocation::bottom:
-                newTop = content.ActualHeight() -
-                         startSizingFrame.ActualHeight() - kStartMenuMargin;
+                newTop = canvasHeight - startSizingFrame.ActualHeight() -
+                         kStartMenuMargin;
                 break;
         }
 
         Wh_Log(L"Setting Canvas.Top to %f", newTop);
         g_canvasTopOverride.Set(startSizingFrame, newTop);
+
+        std::optional<double> newLeft;
+        switch (taskbarLocation) {
+            case TaskbarLocation::top:
+            case TaskbarLocation::bottom:
+                break;
+
+            case TaskbarLocation::left:
+                newLeft = kStartMenuMargin;
+                break;
+
+            case TaskbarLocation::right:
+                newLeft = canvasWidth - startSizingFrame.ActualWidth() -
+                          kStartMenuMargin;
+                break;
+        }
+
+        if (newLeft) {
+            Wh_Log(L"Setting Canvas.Left to %f", *newLeft);
+            g_canvasLeftOverride.Set(startSizingFrame, *newLeft);
+        } else {
+            g_canvasLeftOverride.Restore();
+        }
 
         // Subscribe to Canvas.Top and Canvas.Left property changes to apply
         // custom styles right when that happens. Without it, the start menu may
@@ -2593,6 +2779,7 @@ void ApplyStyleRedesignedStartMenu(FrameworkElement content,
                                    StartMenuAdjustment adjustment) {
     if (adjustment == StartMenuAdjustment::none) {
         g_verticalAlignmentOverride.Restore();
+        g_horizontalAlignmentOverride.Restore();
         g_marginOverride.Restore();
         return;
     }
@@ -2611,6 +2798,8 @@ void ApplyStyleRedesignedStartMenu(FrameworkElement content,
     VerticalAlignment verticalAlignment;
     switch (taskbarLocation) {
         case TaskbarLocation::top:
+        case TaskbarLocation::left:
+        case TaskbarLocation::right:
             verticalAlignment = VerticalAlignment::Top;
             margin.Top = 0;
             margin.Bottom = marginVertical;
@@ -2624,6 +2813,30 @@ void ApplyStyleRedesignedStartMenu(FrameworkElement content,
     }
 
     g_verticalAlignmentOverride.Set(frameRoot, verticalAlignment);
+
+    std::optional<HorizontalAlignment> horizontalAlignment;
+    switch (taskbarLocation) {
+        case TaskbarLocation::top:
+        case TaskbarLocation::bottom:
+            break;
+
+        case TaskbarLocation::left:
+            horizontalAlignment = HorizontalAlignment::Left;
+            break;
+
+        case TaskbarLocation::right:
+            horizontalAlignment = HorizontalAlignment::Right;
+            break;
+    }
+
+    if (horizontalAlignment) {
+        margin.Left = 0;
+        margin.Right = 0;
+        g_horizontalAlignmentOverride.Set(frameRoot, *horizontalAlignment);
+    } else {
+        g_horizontalAlignmentOverride.Restore();
+    }
+
     g_marginOverride.Set(frameRoot, margin);
 
     if (!g_frameRootWeakRef.get()) {
@@ -2643,6 +2856,19 @@ void ApplyStyleRedesignedStartMenu(FrameworkElement content,
                         ApplyStyle();
                     }
                 });
+
+        g_horizontalAlignmentPropertyChangedToken =
+            frameRootDo.RegisterPropertyChangedCallback(
+                FrameworkElement::HorizontalAlignmentProperty(),
+                [](DependencyObject sender, DependencyProperty property) {
+                    auto alignment =
+                        sender.as<FrameworkElement>().HorizontalAlignment();
+                    Wh_Log(L"FrameRoot HorizontalAlignment changed to %d",
+                           static_cast<int>(alignment));
+                    if (!g_inApplyStyle) {
+                        ApplyStyle();
+                    }
+                });
     }
 }
 
@@ -2653,8 +2879,8 @@ StartMenuAdjustment GetStartMenuAdjustment(TaskbarLocation taskbarLocation) {
 
     // The Start menu is left to Windows until explorer.exe determines whether
     // the native taskbar on top is available. The native taskbar places it for
-    // the primary taskbar location, so it's moved vertically on monitors with a
-    // different location.
+    // the primary taskbar location, so it's moved on monitors with a different
+    // location.
     switch (g_nativeTaskbarOnTop) {
         case NativeTaskbarOnTop::unknown:
             return StartMenuAdjustment::none;
@@ -2667,7 +2893,7 @@ StartMenuAdjustment GetStartMenuAdjustment(TaskbarLocation taskbarLocation) {
         case NativeTaskbarOnTop::available:
             return taskbarLocation == g_settings.taskbarLocation
                        ? StartMenuAdjustment::none
-                       : StartMenuAdjustment::vertical;
+                       : StartMenuAdjustment::position;
     }
 
     return StartMenuAdjustment::none;
@@ -2764,6 +2990,13 @@ void Uninit() {
                 g_verticalAlignmentPropertyChangedToken);
             g_verticalAlignmentPropertyChangedToken = 0;
         }
+
+        if (g_horizontalAlignmentPropertyChangedToken) {
+            frameRootDo.UnregisterPropertyChangedCallback(
+                FrameworkElement::HorizontalAlignmentProperty(),
+                g_horizontalAlignmentPropertyChangedToken);
+            g_horizontalAlignmentPropertyChangedToken = 0;
+        }
     }
 
     g_frameRootWeakRef = nullptr;
@@ -2824,6 +3057,10 @@ void LoadSettings() {
         g_settings.taskbarLocationSecondary = TaskbarLocation::top;
     } else if (wcscmp(taskbarLocationSecondary, L"bottom") == 0) {
         g_settings.taskbarLocationSecondary = TaskbarLocation::bottom;
+    } else if (wcscmp(taskbarLocationSecondary, L"left") == 0) {
+        g_settings.taskbarLocationSecondary = TaskbarLocation::left;
+    } else if (wcscmp(taskbarLocationSecondary, L"right") == 0) {
+        g_settings.taskbarLocationSecondary = TaskbarLocation::right;
     }
     Wh_FreeStringSetting(taskbarLocationSecondary);
 
@@ -2832,6 +3069,29 @@ void LoadSettings() {
     g_settings.startMenuAnimationAdjust =
         Wh_GetIntSetting(L"startMenuAnimationAdjust");
     g_settings.useNativeTaskbar = Wh_GetIntSetting(L"useNativeTaskbar");
+}
+
+// Explorer destroys the secondary taskbars when it reads that the taskbar isn't
+// shown on all displays, and creates them again when it reads that it is. The
+// Settings app has it read the value with the same setting change.
+void RecreateSecondaryTaskbars(HWND hTaskbarWnd) {
+    if (!FindCurrentProcessWindow(L"Shell_SecondaryTrayWnd")) {
+        return;
+    }
+
+    Wh_Log(L"Recreating secondary taskbars");
+
+    g_hidingSecondaryTaskbars = true;
+    SendMessage(hTaskbarWnd, WM_SETTINGCHANGE, 0, (LPARAM)L"TraySettings");
+
+    // They might be destroyed asynchronously.
+    for (int i = 0;
+         i < 100 && FindCurrentProcessWindow(L"Shell_SecondaryTrayWnd"); i++) {
+        Sleep(20);
+    }
+
+    g_hidingSecondaryTaskbars = false;
+    SendMessage(hTaskbarWnd, WM_SETTINGCHANGE, 0, (LPARAM)L"TraySettings");
 }
 
 void ApplySettingsNative(HWND hTaskbarWnd) {
@@ -2857,6 +3117,17 @@ void ApplySettingsNative(HWND hTaskbarWnd) {
 
     // Make the secondary taskbars reload their location.
     SendMessage(hTaskbarWnd, WM_SETTINGCHANGE, 0, (LPARAM)L"TraySettings");
+
+    // Secondary taskbars only get a vertical layout when they're created.
+    TaskbarLocation taskbarLocationSecondary = GetTaskbarLocationSecondary();
+    auto previousTaskbarLocationSecondary =
+        SetSecondaryTaskbarsLocation(taskbarLocationSecondary);
+    if (!g_unloading &&
+        (taskbarLocationSecondary == TaskbarLocation::left ||
+         taskbarLocationSecondary == TaskbarLocation::right) &&
+        previousTaskbarLocationSecondary != taskbarLocationSecondary) {
+        RecreateSecondaryTaskbars(hTaskbarWnd);
+    }
 }
 
 void ApplySettings() {
@@ -3273,6 +3544,12 @@ bool HookTaskbarDllSymbols() {
             {LR"(public: enum winrt::WindowsUdk::UI::Shell::TaskbarLocation __cdecl winrt::WindowsUdk::UI::Shell::implementation::TaskbarSettings::Location(void))"},
             &TaskbarSettings_Location_Original,
             TaskbarSettings_Location_Hook,
+            true,  // Only needed for the native taskbar on top.
+        },
+        {
+            {LR"(public: __cdecl winrt::WindowsUdk::UI::Shell::implementation::TaskbarSettings::TaskbarSettings(struct ITrayComponentHost *,struct ITaskListWndSite *))"},
+            &TaskbarSettings_TaskbarSettings_Original,
+            TaskbarSettings_TaskbarSettings_Hook,
             true,  // Only needed for the native taskbar on top.
         },
     };
