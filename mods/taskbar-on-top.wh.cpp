@@ -9,6 +9,8 @@
 // @homepage        https://m417z.com/
 // @include         explorer.exe
 // @include         StartMenuExperienceHost.exe
+// @include         ShellExperienceHost.exe
+// @include         ShellHost.exe
 // @architecture    x86-64
 // @compilerOptions -ldwmapi -lole32 -loleaut32 -lruntimeobject -lshcore -lversion
 // ==/WindhawkMod==
@@ -112,9 +114,30 @@ struct {
 enum class Target {
     Explorer,
     StartMenuExperienceHost,
+    ShellExperienceHost,
+    ShellHost,  // From Win11 24H2.
 };
 
 Target g_target;
+
+// Builds with the native taskbar on top lay the taskbar out for the location
+// they read from the registry. The mod overrides that location instead of
+// moving a bottom taskbar.
+bool g_hasNativeTaskbarOnTop;
+
+// Defines data shared by all instances of the library, even across processes.
+#define SHARED_SECTION __attribute__((section(".shared")))
+asm(".section .shared,\"dws\"\n");
+
+enum class NativeTaskbarOnTop : char {
+    unknown,
+    unavailable,
+    available,
+};
+
+// Detected in explorer.exe and shared with the other processes.
+volatile NativeTaskbarOnTop g_nativeTaskbarOnTop SHARED_SECTION =
+    NativeTaskbarOnTop::unknown;
 
 // Auto-hide trigger height in pixels. You must approach within this many pixels
 // of the monitor top to show the taskbar when hidden.
@@ -408,6 +431,10 @@ DWORD WINAPI TrayUI_GetDockedRect_Hook(void* pThis, RECT* rect, BOOL param2) {
 
     DWORD ret = TrayUI_GetDockedRect_Original(pThis, rect, param2);
 
+    if (g_hasNativeTaskbarOnTop) {
+        return ret;
+    }
+
     HMONITOR monitor = MonitorFromRect(rect, MONITOR_DEFAULTTONEAREST);
 
     RECT monitorRect;
@@ -449,7 +476,7 @@ void WINAPI TrayUI_MakeStuckRect_Hook(void* pThis,
 
     TrayUI_MakeStuckRect_Original(pThis, rect, param2, param3, taskbarPos);
 
-    if (taskbarPos != ABE_BOTTOM) {
+    if (g_hasNativeTaskbarOnTop || taskbarPos != ABE_BOTTOM) {
         return;
     }
 
@@ -488,6 +515,10 @@ void WINAPI TrayUI_GetStuckInfo_Hook(void* pThis,
 
     TrayUI_GetStuckInfo_Original(pThis, rect, taskbarPos);
 
+    if (g_hasNativeTaskbarOnTop) {
+        return;
+    }
+
     switch (g_settings.taskbarLocation) {
         case TaskbarLocation::top:
             *taskbarPos = ABE_TOP;
@@ -497,6 +528,138 @@ void WINAPI TrayUI_GetStuckInfo_Hook(void* pThis,
             // *taskbarPos = ABE_BOTTOM;
             break;
     }
+}
+
+DWORD TaskbarLocationToEdge(TaskbarLocation taskbarLocation) {
+    switch (taskbarLocation) {
+        case TaskbarLocation::top:
+            return ABE_TOP;
+
+        case TaskbarLocation::bottom:
+            return ABE_BOTTOM;
+    }
+}
+
+// The native taskbar location, stored as a screen edge (ABE_*).
+constexpr WCHAR kTaskbarLocationSubKey[] =
+    LR"(SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\Advanced)";
+constexpr WCHAR kTaskbarLocationValueName[] = L"TaskbarLocation";
+
+// The taskbar windows read the location from the registry, the primary one
+// when it's created, and the secondary ones for themselves. Other readers in
+// explorer.exe, such as the taskbar settings, get the stored location, which is
+// what's restored when the mod is unloaded.
+thread_local bool g_inTrayUI__GetSaveStateAndInitRects;
+thread_local bool g_inCSecondaryTray__LoadSettings;
+
+using TrayUI__GetSaveStateAndInitRects_t = void(WINAPI*)(void* pThis);
+TrayUI__GetSaveStateAndInitRects_t TrayUI__GetSaveStateAndInitRects_Original;
+void WINAPI TrayUI__GetSaveStateAndInitRects_Hook(void* pThis) {
+    Wh_Log(L">");
+
+    g_inTrayUI__GetSaveStateAndInitRects = true;
+
+    TrayUI__GetSaveStateAndInitRects_Original(pThis);
+
+    g_inTrayUI__GetSaveStateAndInitRects = false;
+}
+
+using CSecondaryTray__LoadSettings_t = HRESULT(WINAPI*)(void* pThis);
+CSecondaryTray__LoadSettings_t CSecondaryTray__LoadSettings_Original;
+HRESULT WINAPI CSecondaryTray__LoadSettings_Hook(void* pThis) {
+    Wh_Log(L">");
+
+    g_inCSecondaryTray__LoadSettings = true;
+
+    HRESULT ret = CSecondaryTray__LoadSettings_Original(pThis);
+
+    g_inCSecondaryTray__LoadSettings = false;
+
+    return ret;
+}
+
+bool ShouldOverrideTaskbarLocation() {
+    // Quick Settings and the notification center, in other processes, read the
+    // primary taskbar location from the registry too.
+    if (g_target != Target::Explorer) {
+        return g_nativeTaskbarOnTop == NativeTaskbarOnTop::available;
+    }
+
+    return g_inTrayUI__GetSaveStateAndInitRects ||
+           g_inCSecondaryTray__LoadSettings;
+}
+
+using RegGetValueW_t = decltype(&RegGetValueW);
+RegGetValueW_t RegGetValueW_Original;
+LONG WINAPI RegGetValueW_Hook(HKEY hkey,
+                              LPCWSTR lpSubKey,
+                              LPCWSTR lpValue,
+                              DWORD dwFlags,
+                              LPDWORD pdwType,
+                              PVOID pvData,
+                              LPDWORD pcbData) {
+    DWORD cbData = pcbData ? *pcbData : 0;
+
+    LONG ret = RegGetValueW_Original(hkey, lpSubKey, lpValue, dwFlags, pdwType,
+                                     pvData, pcbData);
+
+    if (g_unloading || !ShouldOverrideTaskbarLocation() ||
+        hkey != HKEY_CURRENT_USER || !lpSubKey ||
+        _wcsicmp(lpSubKey, kTaskbarLocationSubKey) != 0 || !lpValue ||
+        _wcsicmp(lpValue, kTaskbarLocationValueName) != 0 ||
+        !(dwFlags & RRF_RT_REG_DWORD) || !pvData || cbData < sizeof(DWORD)) {
+        return ret;
+    }
+
+    TaskbarLocation taskbarLocation = g_inCSecondaryTray__LoadSettings
+                                          ? g_settings.taskbarLocationSecondary
+                                          : g_settings.taskbarLocation;
+    DWORD edge = TaskbarLocationToEdge(taskbarLocation);
+
+    Wh_Log(L"Overriding %s: %u->%u", lpValue,
+           ret == ERROR_SUCCESS ? *(DWORD*)pvData : ABE_BOTTOM, edge);
+
+    *(DWORD*)pvData = edge;
+    *pcbData = sizeof(DWORD);
+    if (pdwType) {
+        *pdwType = REG_DWORD;
+    }
+
+    return ERROR_SUCCESS;
+}
+
+void HookRegGetValueW() {
+    HMODULE kernelBaseModule = GetModuleHandle(L"kernelbase.dll");
+    auto pKernelBaseRegGetValueW = (decltype(&RegGetValueW))GetProcAddress(
+        kernelBaseModule, "RegGetValueW");
+    WindhawkUtils::SetFunctionHook(pKernelBaseRegGetValueW, RegGetValueW_Hook,
+                                   &RegGetValueW_Original);
+}
+
+DWORD GetStoredTaskbarLocation() {
+    DWORD edge = ABE_BOTTOM;
+    DWORD size = sizeof(edge);
+    if (RegGetValueW_Original(HKEY_CURRENT_USER, kTaskbarLocationSubKey,
+                              kTaskbarLocationValueName, RRF_RT_REG_DWORD,
+                              nullptr, &edge, &size) != ERROR_SUCCESS ||
+        edge > ABE_BOTTOM) {
+        edge = ABE_BOTTOM;
+    }
+
+    return edge;
+}
+
+// The location the taskbar content is laid out for, which it reads again
+// whenever the taskbar settings change. The TaskbarLocation values match the
+// screen edges.
+using TaskbarSettings_Location_t = int(WINAPI*)(void* pThis);
+TaskbarSettings_Location_t TaskbarSettings_Location_Original;
+int WINAPI TaskbarSettings_Location_Hook(void* pThis) {
+    if (!g_hasNativeTaskbarOnTop || g_unloading) {
+        return TaskbarSettings_Location_Original(pThis);
+    }
+
+    return TaskbarLocationToEdge(g_settings.taskbarLocation);
 }
 
 void TaskbarWndProcPreProcess(HWND hWnd,
@@ -518,13 +681,22 @@ void TaskbarWndProcPreProcess(HWND hWnd,
             // The taskbar location that affects the jump list animations. Only
             // change if primary taskbar is on top, otherwise the primary
             // taskbar won't have jump lists.
-            if (*wParam == ABE_BOTTOM &&
+            if (!g_hasNativeTaskbarOnTop && *wParam == ABE_BOTTOM &&
                 g_settings.taskbarLocation == TaskbarLocation::top) {
                 HMONITOR monitor = (HMONITOR)lParam;
                 if (GetTaskbarLocationForMonitor(monitor) ==
                     TaskbarLocation::top) {
                     *wParam = ABE_TOP;
                 }
+            }
+            break;
+        }
+
+        case 0x5CA: {
+            // A taskbar setting change, 6 being the location, which the
+            // Settings app sends along with storing the location it's set to.
+            if (g_hasNativeTaskbarOnTop && !g_unloading && *wParam == 6) {
+                *lParam = TaskbarLocationToEdge(g_settings.taskbarLocation);
             }
             break;
         }
@@ -537,6 +709,10 @@ LRESULT TaskbarWndProcPostProcess(HWND hWnd,
                                   LPARAM lParam,
                                   bool secondaryTaskbar,
                                   LRESULT result) {
+    if (g_hasNativeTaskbarOnTop) {
+        return result;
+    }
+
     switch (Msg) {
         case WM_SIZING: {
             Wh_Log(L"WM_SIZING: %08X", (DWORD)(ULONG_PTR)hWnd);
@@ -725,6 +901,10 @@ HRESULT WINAPI CTaskListWnd_ComputeJumpViewPosition_Hook(
     HRESULT ret = CTaskListWnd_ComputeJumpViewPosition_Original(
         pThis, taskBtnGroup, param2, point, horizontalAlignment,
         verticalAlignment);
+
+    if (g_hasNativeTaskbarOnTop) {
+        return ret;
+    }
 
     DWORD messagePos = GetMessagePos();
     POINT pt{
@@ -2133,6 +2313,12 @@ void ApplyStyleRedesignedStartMenu(FrameworkElement content,
 }
 
 void ApplyStyle() {
+    // The native taskbar on top places the Start menu. It's also left as is
+    // while unknown, since a style applied for the wrong state isn't reverted.
+    if (g_nativeTaskbarOnTop != NativeTaskbarOnTop::unavailable) {
+        return;
+    }
+
     g_inApplyStyle = true;
 
     HWND coreWnd = GetCoreWnd();
@@ -2290,9 +2476,26 @@ void LoadSettings() {
         Wh_GetIntSetting(L"startMenuAnimationAdjust");
 }
 
+void ApplySettingsNative(HWND hTaskbarWnd) {
+    // Move the primary taskbar with the message the Settings app sends, which
+    // also has the taskbar content read the location again.
+    DWORD edge = g_unloading
+                     ? GetStoredTaskbarLocation()
+                     : TaskbarLocationToEdge(g_settings.taskbarLocation);
+    SendMessage(hTaskbarWnd, 0x5CA, 6, edge);
+
+    // Make the secondary taskbars reload their location.
+    SendMessage(hTaskbarWnd, WM_SETTINGCHANGE, 0, (LPARAM)L"TraySettings");
+}
+
 void ApplySettings() {
     HWND hTaskbarWnd = FindCurrentProcessTaskbarWnd();
     if (!hTaskbarWnd) {
+        return;
+    }
+
+    if (g_hasNativeTaskbarOnTop) {
+        ApplySettingsNative(hTaskbarWnd);
         return;
     }
 
@@ -2320,6 +2523,11 @@ void ApplySettings() {
 }
 
 bool HookSystemTraySymbols(HMODULE module) {
+    // The native taskbar on top lays out the system tray for its location.
+    if (g_hasNativeTaskbarOnTop) {
+        return true;
+    }
+
     // SystemTray.dll
     WindhawkUtils::SYMBOL_HOOK symbolHooks[] = {
         {
@@ -2347,8 +2555,30 @@ bool HookSystemTraySymbols(HMODULE module) {
     return true;
 }
 
+bool HookTaskbarViewDllSymbolsNative(HMODULE module) {
+    // Taskbar.View.dll
+    WindhawkUtils::SYMBOL_HOOK symbolHooks[] = {
+        {
+            {LR"(private: void __cdecl winrt::Taskbar::implementation::TaskListButton::UpdateVisualStates(void))"},
+            &TaskListButton_UpdateVisualStates_Original,
+            TaskListButton_UpdateVisualStates_Hook,
+        },
+    };
+
+    if (!HookSymbols(module, symbolHooks, ARRAYSIZE(symbolHooks))) {
+        Wh_Log(L"HookSymbols failed");
+        return false;
+    }
+
+    return true;
+}
+
 bool HookTaskbarViewDllSymbols(HMODULE module,
                                bool hookSystemTraySymbolsInline) {
+    if (g_hasNativeTaskbarOnTop) {
+        return HookTaskbarViewDllSymbolsNative(module);
+    }
+
     // Taskbar.View.dll, ExplorerExtensions.dll
     WindhawkUtils::SYMBOL_HOOK symbolHooks[] = {
         {
@@ -2520,6 +2750,27 @@ HMODULE WINAPI LoadLibraryExW_Hook(LPCWSTR lpLibFileName,
     return module;
 }
 
+void* wil_Feature_59213768_GetImpl_impl;
+
+using WilFeatureImpl_IsEnabled_t = bool(WINAPI*)(void* pThis,
+                                                 int reportingKind);
+WilFeatureImpl_IsEnabled_t WilFeatureImpl_59213768_IsEnabled;
+
+void* TaskbarHost_IsHorizontalOrientation;
+
+bool IsNativeTaskbarOnTopEnabled() {
+    if (wil_Feature_59213768_GetImpl_impl &&
+        WilFeatureImpl_59213768_IsEnabled) {
+        constexpr int kReportingKindNone = 0;
+        return WilFeatureImpl_59213768_IsEnabled(
+            wil_Feature_59213768_GetImpl_impl, kReportingKindNone);
+    }
+
+    // Once the feature flag is gone, the native taskbar on top is always
+    // available.
+    return !!TaskbarHost_IsHorizontalOrientation;
+}
+
 bool HookTaskbarDllSymbols() {
     HMODULE module =
         LoadLibraryEx(L"taskbar.dll", nullptr, LOAD_LIBRARY_SEARCH_SYSTEM32);
@@ -2528,6 +2779,9 @@ bool HookTaskbarDllSymbols() {
         return false;
     }
 
+    // Hooks for both taskbar implementations are set, since the symbols of the
+    // module are looked up in a single call. Hooks that would change the other
+    // implementation pass through for it.
     WindhawkUtils::SYMBOL_HOOK taskbarDllHooks[] = {
         {
             {LR"(public: virtual bool __cdecl TrayUI::GetStuckRectForMonitor(struct HMONITOR__ *,struct tagRECT *))"},
@@ -2595,9 +2849,71 @@ bool HookTaskbarDllSymbols() {
             &ITaskbarSettings_get_Alignment_Original,
             ITaskbarSettings_get_Alignment_Hook,
         },
+        {
+            {
+                LR"(class wil::details::FeatureImpl<struct __WilFeatureTraits_Feature_59213768> `private: static class wil::details::FeatureImpl<struct __WilFeatureTraits_Feature_59213768> & __cdecl wil::Feature<struct __WilFeatureTraits_Feature_59213768>::GetImpl(void)'::`2'::impl)",
+                LR"(class wil::details::FeatureImpl<struct __WilExternalFeatureTraits_Feature_59213768> `private: static class wil::details::FeatureImpl<struct __WilExternalFeatureTraits_Feature_59213768> & __cdecl wil::Feature<struct __WilExternalFeatureTraits_Feature_59213768>::GetImpl(void)'::`2'::impl)",
+            },
+            &wil_Feature_59213768_GetImpl_impl,
+            nullptr,
+            true,
+        },
+        {
+            {
+                LR"(public: bool __cdecl wil::details::FeatureImpl<struct __WilFeatureTraits_Feature_59213768>::__private_IsEnabled(enum wil::ReportingKind))",
+                LR"(public: bool __cdecl wil::details::FeatureImpl<struct __WilExternalFeatureTraits_Feature_59213768>::__private_IsEnabled(enum wil::ReportingKind))",
+            },
+            &WilFeatureImpl_59213768_IsEnabled,
+            nullptr,
+            true,
+        },
+        {
+            {LR"(private: bool __cdecl TaskbarHost::IsHorizontalOrientation(void))"},
+            &TaskbarHost_IsHorizontalOrientation,
+            nullptr,
+            true,  // Only in builds with the native taskbar on top.
+        },
+        {
+            {LR"(public: void __cdecl TrayUI::_GetSaveStateAndInitRects(void))"},
+            &TrayUI__GetSaveStateAndInitRects_Original,
+            TrayUI__GetSaveStateAndInitRects_Hook,
+            true,  // Only needed for the native taskbar on top.
+        },
+        {
+            {LR"(private: long __cdecl CSecondaryTray::_LoadSettings(void))"},
+            &CSecondaryTray__LoadSettings_Original,
+            CSecondaryTray__LoadSettings_Hook,
+            true,  // Only needed for the native taskbar on top.
+        },
+        {
+            {LR"(public: enum winrt::WindowsUdk::UI::Shell::TaskbarLocation __cdecl winrt::WindowsUdk::UI::Shell::implementation::TaskbarSettings::Location(void))"},
+            &TaskbarSettings_Location_Original,
+            TaskbarSettings_Location_Hook,
+            true,  // Only needed for the native taskbar on top.
+        },
     };
 
-    return HookSymbols(module, taskbarDllHooks, ARRAYSIZE(taskbarDllHooks));
+    if (!HookSymbols(module, taskbarDllHooks, ARRAYSIZE(taskbarDllHooks))) {
+        Wh_Log(L"HookSymbols failed");
+        return false;
+    }
+
+    g_hasNativeTaskbarOnTop = IsNativeTaskbarOnTopEnabled();
+    Wh_Log(L"Native taskbar on top: %d", g_hasNativeTaskbarOnTop);
+
+    g_nativeTaskbarOnTop = g_hasNativeTaskbarOnTop
+                               ? NativeTaskbarOnTop::available
+                               : NativeTaskbarOnTop::unavailable;
+
+    if (g_hasNativeTaskbarOnTop &&
+        (!TrayUI__GetSaveStateAndInitRects_Original ||
+         !CSecondaryTray__LoadSettings_Original ||
+         !TaskbarSettings_Location_Original)) {
+        Wh_Log(L"Error: Missing native taskbar on top symbols");
+        return false;
+    }
+
+    return true;
 }
 
 BOOL Wh_ModInit() {
@@ -2621,6 +2937,11 @@ BOOL Wh_ModInit() {
                 if (_wcsicmp(moduleFileName, L"StartMenuExperienceHost.exe") ==
                     0) {
                     g_target = Target::StartMenuExperienceHost;
+                } else if (_wcsicmp(moduleFileName,
+                                    L"ShellExperienceHost.exe") == 0) {
+                    g_target = Target::ShellExperienceHost;
+                } else if (_wcsicmp(moduleFileName, L"ShellHost.exe") == 0) {
+                    g_target = Target::ShellHost;
                 }
             } else {
                 Wh_Log(L"GetModuleFileName returned an unsupported path");
@@ -2642,6 +2963,12 @@ BOOL Wh_ModInit() {
         return TRUE;
     }
 
+    if (g_target == Target::ShellExperienceHost ||
+        g_target == Target::ShellHost) {
+        HookRegGetValueW();
+        return TRUE;
+    }
+
     if (HMODULE kernel32Module = LoadLibraryEx(L"kernel32.dll", nullptr,
                                                LOAD_LIBRARY_SEARCH_SYSTEM32)) {
         pGetThreadDescription = (GetThreadDescription_t)GetProcAddress(
@@ -2652,6 +2979,10 @@ BOOL Wh_ModInit() {
                                              LOAD_LIBRARY_SEARCH_SYSTEM32)) {
         pGetWindowBand =
             (GetWindowBand_t)GetProcAddress(user32Module, "GetWindowBand");
+    }
+
+    if (!HookTaskbarDllSymbols()) {
+        return FALSE;
     }
 
     if (HMODULE systemTrayModule = GetSystemTrayModuleHandle()) {
@@ -2702,8 +3033,10 @@ BOOL Wh_ModInit() {
                                        &LoadLibraryExW_Original);
     }
 
-    if (!HookTaskbarDllSymbols()) {
-        return FALSE;
+    // The native taskbar on top places its flyouts and windows itself.
+    if (g_hasNativeTaskbarOnTop) {
+        HookRegGetValueW();
+        return TRUE;
     }
 
     WindhawkUtils::SetFunctionHook(CreateWindowExW, CreateWindowExW_Hook,
