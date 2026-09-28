@@ -203,7 +203,8 @@ Target g_target;
 // rotating a horizontal taskbar.
 bool g_hasNativeVerticalTaskbar;
 
-// Defines data shared by all instances of the library, even across processes.
+// Defines data shared by all instances of the library, even across processes
+// and sessions.
 #define SHARED_SECTION __attribute__((section(".shared")))
 asm(".section .shared,\"dws\"\n");
 
@@ -213,9 +214,26 @@ enum class NativeVerticalTaskbar : char {
     available,
 };
 
-// Detected in explorer.exe and shared with the other processes.
-volatile NativeVerticalTaskbar g_nativeVerticalTaskbar SHARED_SECTION =
-    NativeVerticalTaskbar::unknown;
+// Detected in explorer.exe and shared with the other processes of its session,
+// since it depends on per-user settings. Indexed by session id.
+volatile NativeVerticalTaskbar g_nativeVerticalTaskbar[1024] SHARED_SECTION =
+    {};
+
+// Null if the session id is out of range, the state is then unknown.
+volatile NativeVerticalTaskbar* g_sessionNativeVerticalTaskbar;
+
+NativeVerticalTaskbar GetNativeVerticalTaskbar() {
+    if (g_target == Target::Explorer) {
+        return g_hasNativeVerticalTaskbar ? NativeVerticalTaskbar::available
+                                          : NativeVerticalTaskbar::unavailable;
+    }
+
+    if (!g_sessionNativeVerticalTaskbar) {
+        return NativeVerticalTaskbar::unknown;
+    }
+
+    return *g_sessionNativeVerticalTaskbar;
+}
 
 std::atomic<bool> g_systemTrayModuleHooked;
 std::atomic<bool> g_taskbarViewDllLoaded;
@@ -639,7 +657,7 @@ bool ShouldOverrideTaskbarLocation() {
     // Quick Settings and the notification center, in other processes, read the
     // primary taskbar location from the registry too.
     if (g_target != Target::Explorer) {
-        return g_nativeVerticalTaskbar == NativeVerticalTaskbar::available;
+        return GetNativeVerticalTaskbar() == NativeVerticalTaskbar::available;
     }
 
     return g_inTrayUI__GetSaveStateAndInitRects ||
@@ -5232,7 +5250,7 @@ StartMenuAdjustment GetStartMenuAdjustment(TaskbarLocation taskbarLocation) {
     // native vertical taskbar, and until explorer.exe determines whether it's
     // available. Windows places it for the primary taskbar location, so it's
     // moved horizontally on monitors with a different location.
-    switch (g_nativeVerticalTaskbar) {
+    switch (GetNativeVerticalTaskbar()) {
         case NativeVerticalTaskbar::unknown:
             return StartMenuAdjustment::none;
 
@@ -5396,7 +5414,7 @@ namespace CoreWindowUI {
 // Windows positions the windows for the native vertical taskbar. They're also
 // left alone until explorer.exe determines whether it's available.
 bool ShouldAdjustCoreWindows() {
-    return g_nativeVerticalTaskbar == NativeVerticalTaskbar::unavailable;
+    return GetNativeVerticalTaskbar() == NativeVerticalTaskbar::unavailable;
 }
 
 bool IsTargetCoreWindow(HWND hWnd, int* extraXAdjustment) {
@@ -6431,9 +6449,11 @@ bool HookTaskbarDllSymbols() {
         return false;
     }
 
-    g_nativeVerticalTaskbar = g_hasNativeVerticalTaskbar
-                                  ? NativeVerticalTaskbar::available
-                                  : NativeVerticalTaskbar::unavailable;
+    if (g_sessionNativeVerticalTaskbar) {
+        *g_sessionNativeVerticalTaskbar =
+            g_hasNativeVerticalTaskbar ? NativeVerticalTaskbar::available
+                                       : NativeVerticalTaskbar::unavailable;
+    }
 
     return true;
 }
@@ -6470,6 +6490,14 @@ BOOL Wh_ModInit() {
                 return FALSE;
             }
             break;
+    }
+
+    DWORD sessionId;
+    if (ProcessIdToSessionId(GetCurrentProcessId(), &sessionId) &&
+        sessionId < ARRAYSIZE(g_nativeVerticalTaskbar)) {
+        g_sessionNativeVerticalTaskbar = &g_nativeVerticalTaskbar[sessionId];
+    } else {
+        Wh_Log(L"No shared native vertical taskbar state for this session");
     }
 
     if (g_target == Target::StartMenuExperienceHost) {
