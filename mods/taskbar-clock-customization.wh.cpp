@@ -41,22 +41,22 @@ _System performance metrics_
 
 ## Available patterns
 
-Supported fields - top line, bottom line, middle line (Windows 10 only), tooltip
-extra line - can be configured with text that contains patterns. The following
-patterns can be used:
+The top line, bottom line, middle line (Windows 10 only), and tooltip extra line
+can be configured with text that contains patterns. The following patterns can
+be used:
 
 * `%time%` - the time as configured by the time format in settings.
-  * `%time<n>%` - additional time formats which can be specified by separating
-    the time format string with `;`. `<n>` is the additional time format number,
-    starting with 2.
+  * `%time<n>%` - additional time formats, specified by separating multiple
+    formats with `;` in the time format setting. `<n>` is the additional time
+    format number, starting with 2.
   * `%time_tz<n>%` - the time with a custom time zone. `<n>` is the time zone
     number in the list of time zones configured in the mod settings (not Windows
     settings).
 * `%date%` - the date as configured by the date format in settings.
-  * `%date<n>%` - additional date formats which can be specified by separating
-    the date format string with `;`. `<n>` is the additional date format number,
-    starting with 2. Each date format can have its own locale, refer to the date
-    locale setting for details.
+  * `%date<n>%` - additional date formats, specified by separating multiple
+    formats with `;` in the date format setting. `<n>` is the additional date
+    format number, starting with 2. Each date format can have its own locale;
+    refer to the date locale setting for details.
   * `%date_tz<n>%` - the date with a custom time zone. `<n>` is the time zone
     number in the list of time zones configured in the mod settings (not Windows
     settings).
@@ -64,16 +64,16 @@ patterns can be used:
   * `%weekday_tz<n>%` - the week day with a custom time zone. `<n>` is the time
     zone number in the list of time zones configured in the mod settings (not
     Windows settings).
-* `%weekday_num%` - the week day number according to the [first day of
-   week](https://superuser.com/q/61002) system configuration. For example, if
-   first day of week is Sunday, then the week day number is 1 for Sunday, 2 for
-   Monday, ..., 7 for Saturday.
-* `%weeknum%` - the week number, calculated as following: The week containing 1
-  January is defined as week 1 of the year. Subsequent weeks start on first day
-  of week according to the system configuration.
+* `%weekday_num%` - the week day number according to the [first day of the
+  week](https://superuser.com/q/61002) system configuration. For example, if the
+  first day of the week is Sunday, then the week day number is 1 for Sunday, 2
+  for Monday, ..., 7 for Saturday.
+* `%weeknum%` - the week number, calculated as follows: The week containing 1
+  January is defined as week 1 of the year. Subsequent weeks start on the first
+  day of the week according to the system configuration.
 * `%weeknum_iso%` - the [ISO week
   number](https://en.wikipedia.org/wiki/ISO_week_date).
-* `%dayofyear%` - the day of year starting from January 1st.
+* `%dayofyear%` - the day of the year, where January 1st is day 1.
 * `%timezone%` - the time zone in ISO 8601 format.
 * System performance metrics:
   * `%upload_speed%` - system-wide upload transfer rate.
@@ -116,22 +116,22 @@ patterns can be used:
   * `%media_artist%` - currently playing media artist.
   * `%media_album%` - currently playing media album.
   * `%media_status%` - media playback status icon (⏯, ⏸, ⏹).
-  * `%media_info%` - combined media info, truncated with ellipsis. Defaults to
-    "Artist - Title" while media is playing, but the format for both the playing
-    and the not playing state can be customized in the media player settings.
-    It's recommended to use this field on the taskbar, and other fields in the
-    tooltip.
-* `%weather%` - Weather information, powered by [wttr.in](https://wttr.in/),
+  * `%media_info%` - combined media info, truncated with an ellipsis. Defaults
+    to "Artist - Title" while media is playing. The formats for when media is
+    playing and when it isn't can be customized in the media player settings.
+    It's recommended to use this field on the taskbar and the other fields in
+    the tooltip.
+* `%weather%` - weather information, powered by [wttr.in](https://wttr.in/),
   using the location and format configured in settings.
-* `%web<n>%` - the web contents as configured in settings, truncated with
-  ellipsis, where `<n>` is the web contents number.
-* `%web<n>_full%` - the full web contents as configured in settings, where `<n>`
-  is the web contents number.
+* `%web<n>%` - the web content as configured in settings, truncated with an
+  ellipsis, where `<n>` is the web content item number.
+* `%web<n>_full%` - the full web content as configured in settings, where `<n>`
+  is the web content item number.
 * `%newline%` or `%n%` - a newline.
 
 ## Text styles
 
-For Windows 11 version 22H2 and newer, the mod allows to change the clock text
+For Windows 11 version 22H2 and newer, the mod allows changing the clock text
 styles, such as the font color and size.
 
 ![Screenshot](https://i.imgur.com/3JiXwjT.png)
@@ -147,7 +147,7 @@ styles, such as the font color and size.
   $name: Time format
   $description: >-
     The format for the %time% pattern. Leave empty for the default format. For
-    syntax refer to the following page:
+    the syntax, refer to the following page:
 
     https://docs.microsoft.com/en-us/windows/win32/api/datetimeapi/nf-datetimeapi-gettimeformatex#remarks
 - DateFormat: >-
@@ -155,7 +155,7 @@ styles, such as the font color and size.
   $name: Date format
   $description: >-
     The format for the %date% pattern. Leave empty for the default format. For
-    syntax refer to the following page:
+    the syntax, refer to the following page:
 
     https://docs.microsoft.com/en-us/windows/win32/intl/day--month--year--and-era-format-pictures
 - DateLocale: ""
@@ -179,12 +179,12 @@ styles, such as the font color and size.
   $name: Custom week day format
   $description: >-
     A comma-separated list of custom week days, Sunday through Saturday. Used if
-    the custom format is specified for the week day format.
+    the week day format is set to custom.
 - TopLine: '%date% | %time%'
   $name: Top line
   $description: >-
     Text to be shown on the first line. Set to "-" for the default value. Refer
-    to the mod details for list of patterns that can be used.
+    to the mod details for the list of patterns that can be used.
 - BottomLine: '%web1%'
   $name: Bottom line
   $description: >-
@@ -206,7 +206,7 @@ styles, such as the font color and size.
   $name: Clock height (Windows 10 only)
 - MaxWidth: 0
   $name: Clock max width (Windows 11 only)
-  $description: Set to zero to have no max width.
+  $description: Set to zero for no limit.
 - TextSpacing: 0
   $name: Line spacing
   $description: >-
@@ -227,7 +227,7 @@ styles, such as the font color and size.
   - NetworkMetricsFixedDecimals: -1
     $name: Network metrics fixed decimal places
     $description: >-
-      Always use this amount of decimal places for the upload/download transfer
+      Always use this number of decimal places for the upload/download transfer
       rate (-1 means auto/same width).
   - DiskMetricsFormat: sameAsNetwork
     $name: Disk metrics format
@@ -244,16 +244,16 @@ styles, such as the font color and size.
   - DiskMetricsFixedDecimals: -1
     $name: Disk metrics fixed decimal places
     $description: >-
-      Always use this amount of decimal places for the disk read/write speed
+      Always use this number of decimal places for the disk read/write speed
       (-1 means auto/same width). Ignored when the disk metrics format is set to
-      be the same as network metrics.
+      "Same as network metrics format".
   - PercentageFormat: spacePaddingAndSymbol
     $name: Percentage format
     $description: >-
       The format to use for displaying percentage values (CPU, RAM, GPU,
       battery).
     $options:
-    - spacePaddingAndSymbol: Pad with spaces, add percentage symbol
+    - spacePaddingAndSymbol: Pad with spaces, add percent sign
     - spacePadding: Pad with spaces, number only
     - singleSpacePadding: >-
         Pad with a single space, number only (for monospaced fonts)
@@ -288,18 +288,19 @@ styles, such as the font color and size.
   - MaxLength: 28
     $name: Maximum info length
     $description: >-
-      Maximum characters for %media_info%. Longer strings are truncated with
-      ellipsis. Set to 0 for no limit.
+      The maximum number of characters for %media_info%. Longer text is
+      truncated with an ellipsis. Set to 0 for no limit.
   - MediaInfoFormat: "%media_artist% - %media_title%"
     $name: Format when media is playing
     $description: >-
-      The format of %media_info% while media is playing. Can contain any tags,
-      such as %media_artist%, %media_title%, %media_album%, and %media_status%.
+      The format of %media_info% while media is playing. Can contain any
+      patterns, such as %media_artist%, %media_title%, %media_album%, and
+      %media_status%.
   - NoMediaText: No media
     $name: Format when media is not playing
     $description: >-
       The text shown for %media_info% when no media is playing. Can contain any
-      tags, such as %date% or %time%.
+      patterns, such as %date% or %time%.
   - RemoveBrackets: false
     $name: Remove brackets from info
     $description: >-
@@ -309,7 +310,7 @@ styles, such as the font color and size.
 - WebContentWeatherLocation: ""
   $name: Weather location
   $description: >-
-    Get weather information for a specific location. Keep empty to use the
+    Get weather information for a specific location. Leave empty to use the
     current location. For details, refer to the documentation of wttr.in.
 - WebContentWeatherFormat: "%c \U0001F321\uFE0F%t \U0001F32C\uFE0F%w"
   $name: Weather format
@@ -322,8 +323,8 @@ styles, such as the font color and size.
     The weather units. For details, refer to the documentation of wttr.in.
   $options:
   - autoDetect: Auto (default)
-  - uscs: USCS (used by default in US)
-  - metric: Metric (SI) (used by default everywhere except US)
+  - uscs: USCS (used by default in the US)
+  - metric: Metric (SI) (used by default everywhere except the US)
   - metricMsWind: Metric (SI), but show wind speed in m/s
 - WebContentsItems:
   - - Url: https://rss.nytimes.com/services/xml/rss/nyt/World.xml
@@ -358,11 +359,11 @@ styles, such as the font color and size.
         extracted content.
     - MaxLength: 28
       $name: Web content maximum length
-      $description: Longer strings will be truncated with ellipsis.
+      $description: Longer text is truncated with an ellipsis.
   $name: Web content items
   $description: >-
-    Will be used to fetch data displayed in place of the %web<n>% and
-    %web<n>_full% patterns, where <n> is the web contents number.
+    Used to fetch the data displayed in place of the %web<n>% and %web<n>_full%
+    patterns, where <n> is the web content item number.
 - WebContentsUpdateInterval: 10
   $name: Web content update interval
   $description: >-
@@ -371,8 +372,9 @@ styles, such as the font color and size.
   $name: Time zones
   $description: >-
     The list of time zones for patterns such as %time_tz1%. For a full list of
-    supported time zones, use the following PowerShell command: Get-TimeZone
-    -ListAvailable.
+    supported time zones, run the following PowerShell command:
+
+    Get-TimeZone -ListAvailable
 - TimeStyle:
   - Hidden: false
   - TextColor: ""
@@ -422,7 +424,7 @@ styles, such as the font color and size.
     - Italic: Italic
   - FontStretch: ""
     $name: Font stretch
-    $description: Only supported for some fonts.
+    $description: Only supported by some fonts.
     $options:
     - "": Default
     - Undefined: Undefined
@@ -493,7 +495,7 @@ styles, such as the font color and size.
     - Italic: Italic
   - FontStretch: ""
     $name: Font stretch
-    $description: Only supported for some fonts.
+    $description: Only supported by some fonts.
     $options:
     - "": Default
     - Undefined: Undefined
