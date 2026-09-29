@@ -4556,9 +4556,12 @@ void ApplyTextBlockStyles(
 
     if (noWrap) {
         textBlock.TextWrapping(TextWrapping::NoWrap);
+        textBlock.TextTrimming(TextTrimming::CharacterEllipsis);
     } else {
         textBlock.as<DependencyObject>().ClearValue(
             Controls::TextBlock::TextWrappingProperty());
+        textBlock.as<DependencyObject>().ClearValue(
+            Controls::TextBlock::TextTrimmingProperty());
     }
 
     if (textStyleSettings && *textStyleSettings->textColor) {
@@ -5588,7 +5591,7 @@ bool HookSystemTraySymbols(HMODULE module) {
                 ThreadPoolTimer_CreateTimer_lambda_Hook,
                 true,  // Only for more precise clock, see comment in the hook.
             },
-        };
+    };
 
     if (!HookSymbols(module, symbolHooks, ARRAYSIZE(symbolHooks))) {
         Wh_Log(L"HookSymbols failed");
