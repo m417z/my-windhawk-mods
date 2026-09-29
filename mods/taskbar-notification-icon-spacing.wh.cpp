@@ -2,7 +2,7 @@
 // @id              taskbar-notification-icon-spacing
 // @name            Taskbar tray icon spacing and grid
 // @description     Reduce or increase the spacing between tray icons on the taskbar, optionally have a grid of tray icons (Windows 11 only)
-// @version         1.3.1
+// @version         1.4
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
@@ -345,6 +345,15 @@ void ApplyNotifyIconViewStyle(FrameworkElement notifyIconViewElement,
     if (vertical) {
         Wh_Log(L"Setting MinHeight=%d for NotifyIconView", width);
         notifyIconViewElement.MinHeight(width);
+
+        // The icon fills its column, which can be narrower than the minimum
+        // width of the icon style.
+        if (g_unloading) {
+            notifyIconViewElement.as<DependencyObject>().ClearValue(
+                FrameworkElement::MinWidthProperty());
+        } else {
+            notifyIconViewElement.MinWidth(0);
+        }
     } else {
         Wh_Log(L"Setting MinWidth=%d for NotifyIconView", width);
         notifyIconViewElement.MinWidth(width);
@@ -1523,9 +1532,9 @@ BOOL Wh_ModInit() {
         auto pKernelBaseLoadLibraryExW =
             (decltype(&LoadLibraryExW))GetProcAddress(kernelBaseModule,
                                                       "LoadLibraryExW");
-        WindhawkUtils::Wh_SetFunctionHookT(pKernelBaseLoadLibraryExW,
-                                           LoadLibraryExW_Hook,
-                                           &LoadLibraryExW_Original);
+        WindhawkUtils::SetFunctionHook(pKernelBaseLoadLibraryExW,
+                                       LoadLibraryExW_Hook,
+                                       &LoadLibraryExW_Original);
     }
 
     if (!HookTaskbarDllSymbols()) {
