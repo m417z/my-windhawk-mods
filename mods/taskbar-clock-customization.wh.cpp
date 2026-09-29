@@ -3960,29 +3960,39 @@ PCWSTR GetMediaInfoFormatted() {
     return g_mediaInfoFormatted.buffer;
 }
 
-int ResolveFormatTokenWithDigit(std::wstring_view format,
-                                std::wstring_view formatTokenPrefix,
-                                std::wstring_view formatTokenSuffix) {
-    if (format.size() <
-        formatTokenPrefix.size() + 1 + formatTokenSuffix.size()) {
-        return 0;
-    }
-
+// Matches a token of the form <prefix><n><suffix>, where <n> is a positive
+// decimal number without leading zeros. Returns the token length and sets
+// *number, or returns 0 if there's no match.
+size_t ResolveFormatTokenWithNumber(std::wstring_view format,
+                                    std::wstring_view formatTokenPrefix,
+                                    std::wstring_view formatTokenSuffix,
+                                    int* number) {
     if (!format.starts_with(formatTokenPrefix)) {
         return 0;
     }
 
-    WCHAR digitChar = format[formatTokenPrefix.size()];
-    if (digitChar < L'1' || digitChar > L'9') {
+    size_t pos = formatTokenPrefix.size();
+    if (pos >= format.size() || format[pos] < L'1' || format[pos] > L'9') {
         return 0;
     }
 
-    if (!format.substr(formatTokenPrefix.size() + 1)
-             .starts_with(formatTokenSuffix)) {
+    int value = 0;
+    for (; pos < format.size() && format[pos] >= L'0' && format[pos] <= L'9';
+         pos++) {
+        // Prevent overflow, far beyond any practical list size.
+        if (value >= 100000) {
+            return 0;
+        }
+
+        value = value * 10 + (format[pos] - L'0');
+    }
+
+    if (!format.substr(pos).starts_with(formatTokenSuffix)) {
         return 0;
     }
 
-    return digitChar - L'0';
+    *number = value;
+    return pos + formatTokenSuffix.size();
 }
 
 size_t ResolveFormatToken(
@@ -4057,19 +4067,20 @@ size_t ResolveFormatToken(
     };
 
     for (auto formatTzToken : formatTzTokens) {
-        int digit =
-            ResolveFormatTokenWithDigit(format, formatTzToken.prefix, L"%"sv);
-        if (!digit) {
+        int number;
+        size_t tokenLen = ResolveFormatTokenWithNumber(
+            format, formatTzToken.prefix, L"%"sv, &number);
+        if (!tokenLen) {
             continue;
         }
 
-        PCWSTR value = formatTzToken.valueGetter(digit - 1);
+        PCWSTR value = formatTzToken.valueGetter(number - 1);
         if (!value) {
             value = L"-";
         }
 
         resolvedCallback(value);
-        return formatTzToken.prefix.size() + 2;
+        return tokenLen;
     }
 
     if (auto token = L"%web%"sv; format.starts_with(token)) {
@@ -4095,27 +4106,30 @@ size_t ResolveFormatToken(
     };
 
     for (auto formatExtraToken : formatExtraTokens) {
-        int digit = ResolveFormatTokenWithDigit(format, formatExtraToken.prefix,
-                                                L"%"sv);
-        if (!digit) {
+        int number;
+        size_t tokenLen = ResolveFormatTokenWithNumber(
+            format, formatExtraToken.prefix, L"%"sv, &number);
+        if (!tokenLen) {
             continue;
         }
 
         const auto& valueVector = *formatExtraToken.valueVectorGetter();
 
         PCWSTR value;
-        if (digit < 2 || static_cast<size_t>(digit - 2) >= valueVector.size()) {
+        if (number < 2 ||
+            static_cast<size_t>(number - 2) >= valueVector.size()) {
             value = L"-";
         } else {
-            value = valueVector[digit - 2].c_str();
+            value = valueVector[number - 2].c_str();
         }
 
         resolvedCallback(value);
-        return formatExtraToken.prefix.size() + 2;
+        return tokenLen;
     }
 
-    if (int digit = ResolveFormatTokenWithDigit(format, L"%web"sv, L"%"sv)) {
-        size_t index = digit - 1;
+    if (int number; size_t tokenLen = ResolveFormatTokenWithNumber(
+                        format, L"%web"sv, L"%"sv, &number)) {
+        size_t index = number - 1;
 
         std::lock_guard<std::mutex> guard(g_webContentMutex);
 
@@ -4129,12 +4143,12 @@ size_t ResolveFormatToken(
         }
 
         resolvedCallback(value);
-        return "%web1%"sv.size();
+        return tokenLen;
     }
 
-    if (int digit =
-            ResolveFormatTokenWithDigit(format, L"%web"sv, L"_full%"sv)) {
-        size_t index = digit - 1;
+    if (int number; size_t tokenLen = ResolveFormatTokenWithNumber(
+                        format, L"%web"sv, L"_full%"sv, &number)) {
+        size_t index = number - 1;
 
         std::lock_guard<std::mutex> guard(g_webContentMutex);
 
@@ -4148,7 +4162,7 @@ size_t ResolveFormatToken(
         }
 
         resolvedCallback(value);
-        return "%web1_full%"sv.size();
+        return tokenLen;
     }
 
     if (auto token = L"%weather%"sv; format.starts_with(token)) {
