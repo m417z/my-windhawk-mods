@@ -55,7 +55,8 @@ patterns can be used:
 * `%date%` - the date as configured by the date format in settings.
   * `%date<n>%` - additional date formats which can be specified by separating
     the date format string with `;`. `<n>` is the additional date format number,
-    starting with 2.
+    starting with 2. Each date format can have its own locale, refer to the date
+    locale setting for details.
   * `%date_tz<n>%` - the date with a custom time zone. `<n>` is the time zone
     number in the list of time zones configured in the mod settings (not Windows
     settings).
@@ -161,6 +162,8 @@ styles, such as the font color and size.
   $name: Date locale
   $description: >-
     The locale used for formatting the date and the week day. Leave empty for
+    the default locale. Use ";" to set a locale per date format, e.g.
+    "en-US;fr-FR" for an English %date% and a French %date2%. Empty entries use
     the default locale. For the list of locale names, listed as "Language tag",
     refer to the following page:
 
@@ -649,7 +652,7 @@ struct {
     bool showSeconds;
     StringSetting timeFormat;
     StringSetting dateFormat;
-    StringSetting dateLocale;
+    std::vector<std::wstring> dateLocales;
     StringSetting weekdayFormat;
     std::vector<std::wstring> weekdayFormatCustom;
     StringSetting topLine;
@@ -1846,34 +1849,40 @@ PCWSTR GetTimeFormattedTz(size_t index) {
     return timeFormattedTz.buffer;
 }
 
-// GetDateFormatEx treats an empty locale name as the invariant locale, so pass
-// nullptr (the user's default locale) when no locale is configured.
-PCWSTR GetDateLocaleName() {
-    return *g_settings.dateLocale ? g_settings.dateLocale.get() : nullptr;
+// Returns the locale of the date format at the given index, falling back to the
+// first locale. GetDateFormatEx treats an empty locale name as the invariant
+// locale, so return nullptr (the user's default locale) for an empty one.
+PCWSTR GetDateLocaleName(size_t index) {
+    const auto& locales = g_settings.dateLocales;
+    if (index >= locales.size()) {
+        index = 0;
+    }
+
+    return index < locales.size() && !locales[index].empty()
+               ? locales[index].c_str()
+               : nullptr;
 }
 
 PCWSTR GetDateFormattedWithExtra(std::vector<std::wstring>** extra) {
     if (g_dateFormatted.formatIndex != g_formatIndex) {
         const SYSTEMTIME* time = &g_formatTime;
 
-        PCWSTR dateLocale = GetDateLocaleName();
-
         auto dateFormatParts =
             SplitTimeFormatString(g_settings.dateFormat.get());
 
         GetDateFormatEx_Original(
-            dateLocale, DATE_AUTOLAYOUT, time,
+            GetDateLocaleName(0), DATE_AUTOLAYOUT, time,
             !dateFormatParts[0].empty() ? dateFormatParts[0].c_str() : nullptr,
             g_dateFormatted.buffer, ARRAYSIZE(g_dateFormatted.buffer), nullptr);
 
         g_dateFormattedExtra.resize(dateFormatParts.size() - 1);
         for (size_t i = 1; i < dateFormatParts.size(); i++) {
             WCHAR formatted[FORMATTED_BUFFER_SIZE];
-            GetDateFormatEx_Original(dateLocale, DATE_AUTOLAYOUT, time,
-                                     !dateFormatParts[i].empty()
-                                         ? dateFormatParts[i].c_str()
-                                         : nullptr,
-                                     formatted, ARRAYSIZE(formatted), nullptr);
+            GetDateFormatEx_Original(
+                GetDateLocaleName(i), DATE_AUTOLAYOUT, time,
+                !dateFormatParts[i].empty() ? dateFormatParts[i].c_str()
+                                            : nullptr,
+                formatted, ARRAYSIZE(formatted), nullptr);
             g_dateFormattedExtra[i - 1] = formatted;
         }
 
@@ -1921,7 +1930,7 @@ PCWSTR GetDateFormattedTz(size_t index) {
                 SplitTimeFormatString(g_settings.dateFormat.get());
 
             GetDateFormatEx_Original(
-                GetDateLocaleName(), DATE_AUTOLAYOUT, time,
+                GetDateLocaleName(0), DATE_AUTOLAYOUT, time,
                 !dateFormatParts[0].empty() ? dateFormatParts[0].c_str()
                                             : nullptr,
                 dateFormattedTz.buffer, ARRAYSIZE(dateFormattedTz.buffer),
@@ -1938,7 +1947,7 @@ PCWSTR GetDateFormattedTz(size_t index) {
 
 void FormatWeekday(const SYSTEMTIME* time, PWSTR buffer, size_t bufferSize) {
     if (g_settings.weekdayFormatCustom.empty()) {
-        GetDateFormatEx_Original(GetDateLocaleName(), DATE_AUTOLAYOUT, time,
+        GetDateFormatEx_Original(GetDateLocaleName(0), DATE_AUTOLAYOUT, time,
                                  *g_settings.weekdayFormat
                                      ? g_settings.weekdayFormat.get()
                                      : L"dddd",
@@ -5686,7 +5695,13 @@ void LoadSettings() {
     g_settings.showSeconds = Wh_GetIntSetting(L"ShowSeconds");
     g_settings.timeFormat = StringSetting::make(L"TimeFormat");
     g_settings.dateFormat = StringSetting::make(L"DateFormat");
-    g_settings.dateLocale = StringSetting::make(L"DateLocale");
+
+    g_settings.dateLocales.clear();
+    StringSetting dateLocale = StringSetting::make(L"DateLocale");
+    for (const auto locale : SplitStringView(dateLocale.get(), L";")) {
+        g_settings.dateLocales.emplace_back(TrimStringView(locale));
+    }
+
     g_settings.weekdayFormat = StringSetting::make(L"WeekdayFormat");
 
     g_settings.weekdayFormatCustom.clear();
