@@ -863,7 +863,7 @@ SendMessageW_t SendMessageW_Original;
 
 // The WinINet defaults are minutes long, which would hold up whoever waits for
 // the requesting thread to finish.
-constexpr DWORD kUrlRequestTimeoutMs = 5000;
+constexpr DWORD kUrlRequestTimeoutMs = 30 * 1000;
 
 std::mutex g_urlRequestMutex;
 HINTERNET g_urlRequestOpenHandle = nullptr;
