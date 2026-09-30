@@ -546,6 +546,7 @@ using namespace std::string_view_literals;
 
 #include <comutil.h>
 #include <dxgi.h>
+#include <mshtmdid.h>
 #include <mshtml.h>
 #include <pdh.h>
 #include <pdhmsg.h>
@@ -1130,6 +1131,84 @@ std::wstring ExtractWebContent(std::wstring_view webContent,
     return std::wstring(webContent.substr(start, end - start));
 }
 
+// An MSHTML client site whose DLCONTROL ambient property disables scripts,
+// ActiveX, Java, UI and all downloads.
+class HtmlNoDownloadClientSite
+    : public winrt::implements<HtmlNoDownloadClientSite,
+                               IOleClientSite,
+                               IDispatch> {
+   public:
+    // IOleClientSite
+    HRESULT STDMETHODCALLTYPE SaveObject() override { return E_NOTIMPL; }
+
+    HRESULT STDMETHODCALLTYPE GetMoniker(DWORD dwAssign,
+                                         DWORD dwWhichMoniker,
+                                         IMoniker** ppmk) override {
+        *ppmk = nullptr;
+        return E_NOTIMPL;
+    }
+
+    HRESULT STDMETHODCALLTYPE
+    GetContainer(IOleContainer** ppContainer) override {
+        *ppContainer = nullptr;
+        return E_NOINTERFACE;
+    }
+
+    HRESULT STDMETHODCALLTYPE ShowObject() override { return S_OK; }
+
+    HRESULT STDMETHODCALLTYPE OnShowWindow(BOOL fShow) override {
+        return S_OK;
+    }
+
+    HRESULT STDMETHODCALLTYPE RequestNewObjectLayout() override {
+        return E_NOTIMPL;
+    }
+
+    // IDispatch
+    HRESULT STDMETHODCALLTYPE GetTypeInfoCount(UINT* pctinfo) override {
+        *pctinfo = 0;
+        return S_OK;
+    }
+
+    HRESULT STDMETHODCALLTYPE GetTypeInfo(UINT iTInfo,
+                                          LCID lcid,
+                                          ITypeInfo** ppTInfo) override {
+        *ppTInfo = nullptr;
+        return E_NOTIMPL;
+    }
+
+    HRESULT STDMETHODCALLTYPE GetIDsOfNames(REFIID riid,
+                                            LPOLESTR* rgszNames,
+                                            UINT cNames,
+                                            LCID lcid,
+                                            DISPID* rgDispId) override {
+        return E_NOTIMPL;
+    }
+
+    HRESULT STDMETHODCALLTYPE Invoke(DISPID dispIdMember,
+                                     REFIID riid,
+                                     LCID lcid,
+                                     WORD wFlags,
+                                     DISPPARAMS* pDispParams,
+                                     VARIANT* pVarResult,
+                                     EXCEPINFO* pExcepInfo,
+                                     UINT* puArgErr) override {
+        if (dispIdMember != DISPID_AMBIENT_DLCONTROL || !pVarResult) {
+            return DISP_E_MEMBERNOTFOUND;
+        }
+
+        // Omitting DLCTL_DLIMAGES, DLCTL_VIDEOS and DLCTL_BGSOUNDS disables
+        // those downloads.
+        V_VT(pVarResult) = VT_I4;
+        V_I4(pVarResult) = DLCTL_NO_SCRIPTS | DLCTL_NO_JAVA |
+                           DLCTL_NO_RUNACTIVEXCTLS | DLCTL_NO_DLACTIVEXCTLS |
+                           DLCTL_NO_FRAMEDOWNLOAD | DLCTL_NO_BEHAVIORS |
+                           DLCTL_NO_CLIENTPULL | DLCTL_SILENT |
+                           DLCTL_FORCEOFFLINE;
+        return S_OK;
+    }
+};
+
 std::wstring ExtractTextFromHtml(std::wstring html) {
     winrt::com_ptr<IHTMLDocument2> doc;
     winrt::check_hresult(CoCreateInstance(CLSID_HTMLDocument, nullptr,
@@ -1138,6 +1217,11 @@ std::wstring ExtractTextFromHtml(std::wstring html) {
     if (!doc) {
         throw std::runtime_error("HTML document creation failed");
     }
+
+    // The content is untrusted.
+    auto clientSite = winrt::make_self<HtmlNoDownloadClientSite>();
+    winrt::check_hresult(
+        doc.as<IOleObject>()->SetClientSite(clientSite.get()));
 
     // Prepare HTML content for processing.
     _bstr_t htmlBstr(
