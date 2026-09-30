@@ -10123,8 +10123,21 @@ BOOL WINAPI EndPaint_Hook(HWND hWnd, const PAINTSTRUCT* lpPaint) {
     return EndPaint_Original(hWnd, lpPaint);
 }
 
-// The content background is painted with the window color, which is white in
-// light mode. Fills of that color are replaced with transparent black.
+// The content background is painted with the window color in light mode, and
+// with the fill colors of the theme's DarkMode classes in dark mode. Fills of
+// these colors are replaced with transparent black.
+bool IsWindowBackgroundColor(COLORREF color) {
+    switch (color) {
+        case RGB(0x13, 0x13, 0x13):  // ProperTree.
+        case RGB(0x19, 0x19, 0x19):  // ItemsView, ExplorerNavPane.
+        case RGB(0x1C, 0x1C, 0x1C):  // ExplorerStatusBar.
+        case RGB(0x20, 0x20, 0x20):  // ReadingPane.
+            return true;
+    }
+
+    return color == GetSysColor(COLOR_WINDOW);
+}
+
 bool IsWindowBackgroundBrush(HDC hdc, HBRUSH hbr) {
     if (hbr == (HBRUSH)(COLOR_WINDOW + 1)) {
         return true;
@@ -10143,7 +10156,7 @@ bool IsWindowBackgroundBrush(HDC hdc, HBRUSH hbr) {
         color = logBrush.lbColor;
     }
 
-    return color == GetSysColor(COLOR_WINDOW);
+    return IsWindowBackgroundColor(color);
 }
 
 using FillRect_t = decltype(&FillRect);
@@ -10589,7 +10602,7 @@ BOOL WINAPI ExtTextOutW_Hook(HDC hdc,
     }
 
     bool windowBk =
-        (options & ETO_OPAQUE) && GetBkColor(hdc) == GetSysColor(COLOR_WINDOW);
+        (options & ETO_OPAQUE) && IsWindowBackgroundColor(GetBkColor(hdc));
     COLORREF prevBkColor = windowBk ? SetBkColor(hdc, RGB(0, 0, 0)) : 0;
     BOOL result =
         ExtTextOutWithAlpha(hdc, x, y, options, lprect, lpString, c, lpDx);
