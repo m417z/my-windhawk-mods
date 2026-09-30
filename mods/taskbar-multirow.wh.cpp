@@ -54,6 +54,7 @@ Windows 11.
 #include <atomic>
 #include <cmath>
 #include <functional>
+#include <optional>
 #include <unordered_map>
 #include <vector>
 
@@ -256,6 +257,22 @@ int ClampRow(int row) {
     return row;
 }
 
+// Expands the bounds of a task list item to span all rows, given the distance
+// of the item from the top of the task list.
+void ExpandBoundsToAllRows(winrt::Windows::Foundation::Rect* bounds,
+                           double offset,
+                           double taskListHeight) {
+    // Also catches NaN.
+    if (g_settings.rows < 2 || !(taskListHeight > 0)) {
+        return;
+    }
+
+    double rowHeight = taskListHeight / g_settings.rows;
+    int row = ClampRow((int)std::lround(offset / rowHeight));
+    bounds->Y -= row * rowHeight;
+    bounds->Height = taskListHeight;
+}
+
 void UpdateTaskbarFrameRepeaterMargin(FrameworkElement taskbarFrameRepeater,
                                       TaskbarState* taskbarState,
                                       double widthWithoutExtent,
@@ -296,21 +313,24 @@ void UpdateTaskbarFrameRepeaterMargin(FrameworkElement taskbarFrameRepeater,
     }
 }
 
-bool ApplyStyle(XamlRoot xamlRoot) {
-    TaskbarState* taskbarState = GetTaskbarState(xamlRoot);
-
-    auto xamlRootContent = xamlRoot.Content().as<FrameworkElement>();
-
-    FrameworkElement taskbarFrameRepeater = nullptr;
-
+FrameworkElement FindTaskbarFrameRepeater(FrameworkElement xamlRootContent) {
     FrameworkElement child = xamlRootContent;
     if (child &&
         (child = FindChildByClassName(child, L"Taskbar.TaskbarFrame")) &&
         (child = FindChildByName(child, L"RootGrid")) &&
         (child = FindChildByName(child, L"TaskbarFrameRepeater"))) {
-        taskbarFrameRepeater = child;
+        return child;
     }
 
+    return nullptr;
+}
+
+bool ApplyStyle(XamlRoot xamlRoot) {
+    TaskbarState* taskbarState = GetTaskbarState(xamlRoot);
+
+    auto xamlRootContent = xamlRoot.Content().as<FrameworkElement>();
+
+    auto taskbarFrameRepeater = FindTaskbarFrameRepeater(xamlRootContent);
     if (!taskbarFrameRepeater) {
         return false;
     }
@@ -652,6 +672,69 @@ HRESULT WINAPI CTaskListWnd_ComputeJumpViewPosition_Hook(
         verticalAlignment);
 }
 
+// Classic thumbnails are placed right outside the reported bounds of the button
+// group, on the side facing away from the screen edge. The bounds are expanded
+// to span all rows, so that thumbnails don't cover other rows.
+bool g_inCTaskListThumbnailWnd_DisplayUI;
+bool g_inCTaskListThumbnailWnd_LayoutThumbnails;
+
+using CTaskListThumbnailWnd_DisplayUI_t = int(WINAPI*)(void* pThis,
+                                                       void* taskBtnGroup,
+                                                       void* taskItem,
+                                                       void* param3,
+                                                       DWORD param4);
+CTaskListThumbnailWnd_DisplayUI_t CTaskListThumbnailWnd_DisplayUI_Original;
+int WINAPI CTaskListThumbnailWnd_DisplayUI_Hook(void* pThis,
+                                                void* taskBtnGroup,
+                                                void* taskItem,
+                                                void* param3,
+                                                DWORD param4) {
+    Wh_Log(L">");
+
+    ScopedFlag scopedFlag(&g_inCTaskListThumbnailWnd_DisplayUI);
+
+    return CTaskListThumbnailWnd_DisplayUI_Original(pThis, taskBtnGroup,
+                                                    taskItem, param3, param4);
+}
+
+using CTaskListThumbnailWnd_LayoutThumbnails_t = void(WINAPI*)(void* pThis);
+CTaskListThumbnailWnd_LayoutThumbnails_t
+    CTaskListThumbnailWnd_LayoutThumbnails_Original;
+void WINAPI CTaskListThumbnailWnd_LayoutThumbnails_Hook(void* pThis) {
+    Wh_Log(L">");
+
+    ScopedFlag scopedFlag(&g_inCTaskListThumbnailWnd_LayoutThumbnails);
+
+    CTaskListThumbnailWnd_LayoutThumbnails_Original(pThis);
+}
+
+// The bounds of the task list of the taskbar that the window belongs to,
+// relative to the XAML root content.
+bool GetTaskListBounds(HWND hWnd, winrt::Windows::Foundation::Rect* bounds) {
+    HWND hTaskbarWnd = GetAncestor(hWnd, GA_ROOT);
+    WCHAR className[32];
+    if (!hTaskbarWnd ||
+        !GetClassName(hTaskbarWnd, className, ARRAYSIZE(className))) {
+        return false;
+    }
+
+    XamlRoot xamlRoot = nullptr;
+    if (_wcsicmp(className, L"Shell_TrayWnd") == 0) {
+        xamlRoot = GetTaskbarXamlRoot(hTaskbarWnd);
+    } else if (_wcsicmp(className, L"Shell_SecondaryTrayWnd") == 0) {
+        xamlRoot = GetSecondaryTaskbarXamlRoot(hTaskbarWnd);
+    }
+
+    if (!xamlRoot) {
+        return false;
+    }
+
+    auto taskbarFrameRepeater =
+        FindTaskbarFrameRepeater(xamlRoot.Content().try_as<FrameworkElement>());
+    return taskbarFrameRepeater &&
+           GetBoundsInXamlRoot(taskbarFrameRepeater, bounds);
+}
+
 // The jump list is centered horizontally on the reported bounds of the button
 // group, which don't match the displayed buttons: some builds report them as
 // if the buttons were laid out in a single row, and a group's buttons can span
@@ -663,16 +746,115 @@ RECT WINAPI ToRawPixelsInDesktopCoordinates_Hook(
     const winrt::Windows::Foundation::Rect& rect,
     UINT dpi,
     HWND hWnd) {
-    if (!g_inCTaskListWnd_ComputeJumpViewPosition ||
-        !g_hasJumpListButtonBounds || g_unloading) {
+    if (g_unloading) {
         return ToRawPixelsInDesktopCoordinates_Original(rect, dpi, hWnd);
     }
 
     winrt::Windows::Foundation::Rect newRect = rect;
-    newRect.X = g_jumpListButtonBounds.X;
-    newRect.Width = g_jumpListButtonBounds.Width;
+
+    if (g_inCTaskListWnd_ComputeJumpViewPosition && g_hasJumpListButtonBounds) {
+        newRect.X = g_jumpListButtonBounds.X;
+        newRect.Width = g_jumpListButtonBounds.Width;
+    } else if (g_inCTaskListThumbnailWnd_DisplayUI ||
+               g_inCTaskListThumbnailWnd_LayoutThumbnails) {
+        winrt::Windows::Foundation::Rect taskListBounds;
+        if (GetTaskListBounds(hWnd, &taskListBounds)) {
+            ExpandBoundsToAllRows(&newRect, newRect.Y - taskListBounds.Y,
+                                  taskListBounds.Height);
+        }
+    }
 
     return ToRawPixelsInDesktopCoordinates_Original(newRect, dpi, hWnd);
+}
+
+// Hover flyouts, such as thumbnails, are placed right outside the union of the
+// bounds of their targets, on the side facing away from the screen edge. The
+// bounds of each target are expanded to span all rows, so that flyouts don't
+// cover other rows.
+thread_local bool g_inFlyoutFrame_UpdateFlyoutPosition;
+
+// The position in the task list of the target whose bounds are calculated.
+struct TaskListItemPosition {
+    double offset;
+    double taskListHeight;
+};
+thread_local std::optional<TaskListItemPosition> g_flyoutTargetPosition;
+
+using IUIElement_TransformToVisual_t = HRESULT(WINAPI*)(void* pThis,
+                                                        void* visual,
+                                                        void** result);
+IUIElement_TransformToVisual_t IUIElement_TransformToVisual_Original;
+HRESULT WINAPI IUIElement_TransformToVisual_Hook(void* pThis,
+                                                 void* visual,
+                                                 void** result) {
+    auto original = [=] {
+        return IUIElement_TransformToVisual_Original(pThis, visual, result);
+    };
+
+    // The flyout gets the bounds of each target with this function, and then
+    // unites them with UnionRect.
+    if (!g_inFlyoutFrame_UpdateFlyoutPosition || g_unloading) {
+        return original();
+    }
+
+    g_flyoutTargetPosition.reset();
+
+    FrameworkElement element = nullptr;
+    ((IUnknown*)pThis)
+        ->QueryInterface(winrt::guid_of<FrameworkElement>(),
+                         winrt::put_abi(element));
+    if (!element) {
+        return original();
+    }
+
+    auto parent = Media::VisualTreeHelper::GetParent(element);
+    if (!parent) {
+        return original();
+    }
+
+    auto taskbarFrameRepeater = parent.try_as<FrameworkElement>();
+    if (!taskbarFrameRepeater ||
+        taskbarFrameRepeater.Name() != L"TaskbarFrameRepeater") {
+        return original();
+    }
+
+    g_flyoutTargetPosition = TaskListItemPosition{
+        .offset = element.ActualOffset().y,
+        .taskListHeight = taskbarFrameRepeater.ActualHeight(),
+    };
+
+    return original();
+}
+
+using UnionRect_t = winrt::Windows::Foundation::Rect(WINAPI*)(
+    const winrt::Windows::Foundation::Rect& rect1,
+    const winrt::Windows::Foundation::Rect& rect2);
+UnionRect_t UnionRect_Original;
+winrt::Windows::Foundation::Rect WINAPI
+UnionRect_Hook(const winrt::Windows::Foundation::Rect& rect1,
+               const winrt::Windows::Foundation::Rect& rect2) {
+    // The flyout passes the bounds of the target as the second rect.
+    if (!g_inFlyoutFrame_UpdateFlyoutPosition || !g_flyoutTargetPosition) {
+        return UnionRect_Original(rect1, rect2);
+    }
+
+    winrt::Windows::Foundation::Rect newRect2 = rect2;
+    ExpandBoundsToAllRows(&newRect2, g_flyoutTargetPosition->offset,
+                          g_flyoutTargetPosition->taskListHeight);
+    g_flyoutTargetPosition.reset();
+
+    return UnionRect_Original(rect1, newRect2);
+}
+
+using FlyoutFrame_UpdateFlyoutPosition_t = void(WINAPI*)(void* pThis);
+FlyoutFrame_UpdateFlyoutPosition_t FlyoutFrame_UpdateFlyoutPosition_Original;
+void WINAPI FlyoutFrame_UpdateFlyoutPosition_Hook(void* pThis) {
+    Wh_Log(L">");
+
+    g_flyoutTargetPosition.reset();
+    ScopedFlag scopedFlag(&g_inFlyoutFrame_UpdateFlyoutPosition);
+
+    FlyoutFrame_UpdateFlyoutPosition_Original(pThis);
 }
 
 using IUIElement_Arrange_t =
@@ -811,9 +993,13 @@ HRESULT WINAPI TaskbarCollapsibleLayoutXamlTraits_ArrangeOverride_Hook(
 
         void** vtable = *(void***)winrt::get_abi(element);
         auto arrange = (IUIElement_Arrange_t)vtable[92];
+        auto transformToVisual = (IUIElement_TransformToVisual_t)vtable[98];
 
         WindhawkUtils::SetFunctionHook(arrange, IUIElement_Arrange_Hook,
                                        &IUIElement_Arrange_Original);
+        WindhawkUtils::SetFunctionHook(transformToVisual,
+                                       IUIElement_TransformToVisual_Hook,
+                                       &IUIElement_TransformToVisual_Original);
         Wh_ApplyHookOperations();
         return true;
     }();
@@ -1125,6 +1311,18 @@ bool HookTaskbarDllSymbols() {
             &ToRawPixelsInDesktopCoordinates_Original,
             ToRawPixelsInDesktopCoordinates_Hook,
         },
+        {
+            {LR"(public: virtual int __cdecl CTaskListThumbnailWnd::DisplayUI(struct ITaskBtnGroup *,struct ITaskItem *,struct ITaskItem *,unsigned long))"},
+            &CTaskListThumbnailWnd_DisplayUI_Original,
+            CTaskListThumbnailWnd_DisplayUI_Hook,
+            true,  // Classic thumbnails, removed in or near 10.0.26100.8491.
+        },
+        {
+            {LR"(public: virtual void __cdecl CTaskListThumbnailWnd::LayoutThumbnails(void))"},
+            &CTaskListThumbnailWnd_LayoutThumbnails_Original,
+            CTaskListThumbnailWnd_LayoutThumbnails_Hook,
+            true,  // Classic thumbnails, removed in or near 10.0.26100.8491.
+        },
     };
 
     if (!HookSymbols(module, taskbarDllHooks, ARRAYSIZE(taskbarDllHooks))) {
@@ -1137,55 +1335,69 @@ bool HookTaskbarDllSymbols() {
 
 bool HookTaskbarViewDllSymbols(HMODULE module) {
     // Taskbar.View.dll
-    WindhawkUtils::SYMBOL_HOOK symbolHooks[] = {
-        {
-            {LR"(public: virtual int __cdecl winrt::impl::produce<struct winrt::Taskbar::implementation::TaskbarCollapsibleLayout,struct winrt::Microsoft::UI::Xaml::Controls::IVirtualizingLayoutOverrides>::ArrangeOverride(void *,struct winrt::Windows::Foundation::Size,struct winrt::Windows::Foundation::Size *))"},
-            &TaskbarCollapsibleLayoutXamlTraits_ArrangeOverride_Original,
-            TaskbarCollapsibleLayoutXamlTraits_ArrangeOverride_Hook,
-        },
-        {
-            {LR"(public: void __cdecl winrt::Taskbar::implementation::TaskbarResources::OnTaskListButtonContextRequested(struct winrt::Windows::UI::Xaml::UIElement const &,struct winrt::Windows::UI::Xaml::Input::ContextRequestedEventArgs const &))"},
-            &TaskbarResources_OnTaskListButtonContextRequested_Original,
-            TaskbarResources_OnTaskListButtonContextRequested_Hook,
-        },
-        {
-            {LR"(public: void __cdecl winrt::Taskbar::implementation::TaskbarFrame::SystemTrayExtent(double))"},
-            &TaskbarFrame_SystemTrayExtent_Original,
-            TaskbarFrame_SystemTrayExtent_Hook,
-        },
-        {
-            {LR"(private: void __cdecl winrt::Taskbar::implementation::TaskListButton::OnDragStartedGesture(struct winrt::Windows::Foundation::Point))"},
-            &TaskListButton_OnDragStartedGesture_Original,
-            TaskListButton_OnDragStartedGesture_Hook,
-        },
-        {
-            {LR"(private: void __cdecl winrt::Taskbar::implementation::TaskListButton::OnDragCompletedGesture(void))"},
-            &TaskListButton_OnDragCompletedGesture_Original,
-            TaskListButton_OnDragCompletedGesture_Hook,
-        },
-        {
-            {LR"(private: void __cdecl winrt::Taskbar::implementation::TaskListButton::UpdateDrag(struct winrt::Windows::Foundation::Point))"},
-            &TaskListButton_UpdateDrag_Original,
-            TaskListButton_UpdateDrag_Hook,
-        },
+    WindhawkUtils::SYMBOL_HOOK symbolHooks[] =  //
         {
             {
-                LR"(public: struct winrt::Taskbar::implementation::DropPlaceholder __cdecl winrt::Taskbar::implementation::TaskListDragOperation::GetDropPlaceholder(class std::vector<struct winrt::Windows::Foundation::Rect,class std::allocator<struct winrt::Windows::Foundation::Rect> > const &,struct std::pair<unsigned int,unsigned int>,struct winrt::Windows::Foundation::Rect,enum winrt::Taskbar::implementation::RearrangeDirection,struct winrt::Taskbar::implementation::GroupBoundsCalculator const *,bool))",
-
-                // Older builds, which lack the last parameter. Passing an extra
-                // argument is harmless with the x64 calling convention.
-                LR"(public: struct winrt::Taskbar::implementation::DropPlaceholder __cdecl winrt::Taskbar::implementation::TaskListDragOperation::GetDropPlaceholder(class std::vector<struct winrt::Windows::Foundation::Rect,class std::allocator<struct winrt::Windows::Foundation::Rect> > const &,struct std::pair<unsigned int,unsigned int>,struct winrt::Windows::Foundation::Rect,enum winrt::Taskbar::implementation::RearrangeDirection,struct winrt::Taskbar::implementation::GroupBoundsCalculator const *))",
+                {LR"(public: virtual int __cdecl winrt::impl::produce<struct winrt::Taskbar::implementation::TaskbarCollapsibleLayout,struct winrt::Microsoft::UI::Xaml::Controls::IVirtualizingLayoutOverrides>::ArrangeOverride(void *,struct winrt::Windows::Foundation::Size,struct winrt::Windows::Foundation::Size *))"},
+                &TaskbarCollapsibleLayoutXamlTraits_ArrangeOverride_Original,
+                TaskbarCollapsibleLayoutXamlTraits_ArrangeOverride_Hook,
             },
-            &TaskListDragOperation_GetDropPlaceholder_Original,
-            TaskListDragOperation_GetDropPlaceholder_Hook,
-        },
-        {
-            {LR"(public: static void __cdecl winrt::Taskbar::implementation::TaskListButtonHandlers::HandleContextRequested(struct winrt::Windows::UI::Xaml::UIElement const &,struct winrt::Windows::UI::Xaml::Input::ContextRequestedEventArgs const &))"},
-            &TaskListButtonHandlers_HandleContextRequested_Original,
-            TaskListButtonHandlers_HandleContextRequested_Hook,
-            true,  // From 10.0.26200.8116.
-        },
-    };
+            {
+                {LR"(public: void __cdecl winrt::Taskbar::implementation::TaskbarResources::OnTaskListButtonContextRequested(struct winrt::Windows::UI::Xaml::UIElement const &,struct winrt::Windows::UI::Xaml::Input::ContextRequestedEventArgs const &))"},
+                &TaskbarResources_OnTaskListButtonContextRequested_Original,
+                TaskbarResources_OnTaskListButtonContextRequested_Hook,
+            },
+            {
+                {LR"(public: void __cdecl winrt::Taskbar::implementation::TaskbarFrame::SystemTrayExtent(double))"},
+                &TaskbarFrame_SystemTrayExtent_Original,
+                TaskbarFrame_SystemTrayExtent_Hook,
+            },
+            {
+                {LR"(private: void __cdecl winrt::Taskbar::implementation::TaskListButton::OnDragStartedGesture(struct winrt::Windows::Foundation::Point))"},
+                &TaskListButton_OnDragStartedGesture_Original,
+                TaskListButton_OnDragStartedGesture_Hook,
+            },
+            {
+                {LR"(private: void __cdecl winrt::Taskbar::implementation::TaskListButton::OnDragCompletedGesture(void))"},
+                &TaskListButton_OnDragCompletedGesture_Original,
+                TaskListButton_OnDragCompletedGesture_Hook,
+            },
+            {
+                {LR"(private: void __cdecl winrt::Taskbar::implementation::TaskListButton::UpdateDrag(struct winrt::Windows::Foundation::Point))"},
+                &TaskListButton_UpdateDrag_Original,
+                TaskListButton_UpdateDrag_Hook,
+            },
+            {
+                {
+                    LR"(public: struct winrt::Taskbar::implementation::DropPlaceholder __cdecl winrt::Taskbar::implementation::TaskListDragOperation::GetDropPlaceholder(class std::vector<struct winrt::Windows::Foundation::Rect,class std::allocator<struct winrt::Windows::Foundation::Rect> > const &,struct std::pair<unsigned int,unsigned int>,struct winrt::Windows::Foundation::Rect,enum winrt::Taskbar::implementation::RearrangeDirection,struct winrt::Taskbar::implementation::GroupBoundsCalculator const *,bool))",
+
+                    // Older builds, which lack the last parameter. Passing an
+                    // extra argument is harmless with the x64 calling
+                    // convention.
+                    LR"(public: struct winrt::Taskbar::implementation::DropPlaceholder __cdecl winrt::Taskbar::implementation::TaskListDragOperation::GetDropPlaceholder(class std::vector<struct winrt::Windows::Foundation::Rect,class std::allocator<struct winrt::Windows::Foundation::Rect> > const &,struct std::pair<unsigned int,unsigned int>,struct winrt::Windows::Foundation::Rect,enum winrt::Taskbar::implementation::RearrangeDirection,struct winrt::Taskbar::implementation::GroupBoundsCalculator const *))",
+                },
+                &TaskListDragOperation_GetDropPlaceholder_Original,
+                TaskListDragOperation_GetDropPlaceholder_Hook,
+            },
+            {
+                {LR"(public: static void __cdecl winrt::Taskbar::implementation::TaskListButtonHandlers::HandleContextRequested(struct winrt::Windows::UI::Xaml::UIElement const &,struct winrt::Windows::UI::Xaml::Input::ContextRequestedEventArgs const &))"},
+                &TaskListButtonHandlers_HandleContextRequested_Original,
+                TaskListButtonHandlers_HandleContextRequested_Hook,
+                true,  // From 10.0.26200.8116.
+            },
+            {
+                {LR"(private: void __cdecl winrt::Taskbar::implementation::FlyoutFrame::UpdateFlyoutPosition(void))"},
+                &FlyoutFrame_UpdateFlyoutPosition_Original,
+                FlyoutFrame_UpdateFlyoutPosition_Hook,
+                true,  // New XAML thumbnails, enabled in late Windows 11 24H2.
+            },
+            {
+                {LR"(struct winrt::Windows::Foundation::Rect __cdecl UnionRect(struct winrt::Windows::Foundation::Rect const &,struct winrt::Windows::Foundation::Rect const &))"},
+                &UnionRect_Original,
+                UnionRect_Hook,
+                true,  // New XAML thumbnails, enabled in late Windows 11 24H2.
+            },
+        };
 
     if (!HookSymbols(module, symbolHooks, ARRAYSIZE(symbolHooks))) {
         Wh_Log(L"HookSymbols failed");
