@@ -1134,9 +1134,8 @@ std::wstring ExtractWebContent(std::wstring_view webContent,
 // An MSHTML client site whose DLCONTROL ambient property disables scripts,
 // ActiveX, Java, UI and all downloads.
 class HtmlNoDownloadClientSite
-    : public winrt::implements<HtmlNoDownloadClientSite,
-                               IOleClientSite,
-                               IDispatch> {
+    : public winrt::
+          implements<HtmlNoDownloadClientSite, IOleClientSite, IDispatch> {
    public:
     // IOleClientSite
     HRESULT STDMETHODCALLTYPE SaveObject() override { return E_NOTIMPL; }
@@ -1156,9 +1155,7 @@ class HtmlNoDownloadClientSite
 
     HRESULT STDMETHODCALLTYPE ShowObject() override { return S_OK; }
 
-    HRESULT STDMETHODCALLTYPE OnShowWindow(BOOL fShow) override {
-        return S_OK;
-    }
+    HRESULT STDMETHODCALLTYPE OnShowWindow(BOOL fShow) override { return S_OK; }
 
     HRESULT STDMETHODCALLTYPE RequestNewObjectLayout() override {
         return E_NOTIMPL;
@@ -1220,8 +1217,7 @@ std::wstring ExtractTextFromHtml(std::wstring html) {
 
     // The content is untrusted.
     auto clientSite = winrt::make_self<HtmlNoDownloadClientSite>();
-    winrt::check_hresult(
-        doc.as<IOleObject>()->SetClientSite(clientSite.get()));
+    winrt::check_hresult(doc.as<IOleObject>()->SetClientSite(clientSite.get()));
 
     // Prepare HTML content for processing.
     _bstr_t htmlBstr(
@@ -2241,17 +2237,17 @@ struct DxgiAdapterInfo {
     SIZE_T shared_system_memory;
 };
 
-std::optional<DxgiAdapterInfo> GetDxgiAdapterInfo(PCWSTR gpu_name, bool quiet) {
-    static std::optional<std::wstring> s_gpuName;
-    static std::optional<DxgiAdapterInfo> s_info;
+std::optional<std::wstring> g_dxgiAdapterInfoGpuName;
+std::optional<DxgiAdapterInfo> g_dxgiAdapterInfo;
 
+std::optional<DxgiAdapterInfo> GetDxgiAdapterInfo(PCWSTR gpu_name, bool quiet) {
     std::wstring gpu_name_key = gpu_name ? gpu_name : L"";
-    if (s_gpuName == gpu_name_key) {
-        return s_info;
+    if (g_dxgiAdapterInfoGpuName == gpu_name_key) {
+        return g_dxgiAdapterInfo;
     }
 
-    s_gpuName = gpu_name_key;
-    s_info.reset();
+    g_dxgiAdapterInfoGpuName = gpu_name_key;
+    g_dxgiAdapterInfo.reset();
 
     winrt::com_ptr<IDXGIFactory> factory;
     if (FAILED(CreateDXGIFactory(IID_PPV_ARGS(factory.put())))) {
@@ -2303,13 +2299,19 @@ std::optional<DxgiAdapterInfo> GetDxgiAdapterInfo(PCWSTR gpu_name, bool quiet) {
     swprintf_s(luid_str, L"0x%08X_0x%08X", best_desc.AdapterLuid.HighPart,
                best_desc.AdapterLuid.LowPart);
 
-    s_info = DxgiAdapterInfo{
+    g_dxgiAdapterInfo = DxgiAdapterInfo{
         best_desc.Description,        luid_str,
         best_desc.AdapterLuid,        best_desc.DedicatedVideoMemory,
         best_desc.SharedSystemMemory,
     };
 
-    return s_info;
+    return g_dxgiAdapterInfo;
+}
+
+// Makes the next GetDxgiAdapterInfo call enumerate the adapters again. A driver
+// update or a GPU reset assigns the adapter a new LUID.
+void InvalidateDxgiAdapterInfo() {
+    g_dxgiAdapterInfoGpuName.reset();
 }
 
 std::optional<double> GetDedicatedVramTotalGb() {
@@ -2348,6 +2350,7 @@ std::optional<double> GetGpuTemperatureCelsius() {
     D3DKMT_OPENADAPTERFROMLUID openAdapter{};
     openAdapter.AdapterLuid = info->luidValue;
     if (pD3DKMTOpenAdapterFromLuid(&openAdapter) != 0) {
+        InvalidateDxgiAdapterInfo();
         return std::nullopt;
     }
 
@@ -2761,7 +2764,7 @@ std::wstring_view QueryDataCollectionSession::ExtractGpuLuid(
     return instance.substr(luid_start, phys_pos - luid_start);
 }
 
-// Filter network paths by adapter name (substring match).
+// Filter network paths by adapter name (case-insensitive substring match).
 std::vector<std::wstring>
 QueryDataCollectionSession::FilterNetworkPathsByAdapterName(
     const std::vector<std::wstring>& paths,
@@ -2778,7 +2781,7 @@ QueryDataCollectionSession::FilterNetworkPathsByAdapterName(
             continue;
         }
 
-        if (instance.find(adapter_name) != std::wstring_view::npos) {
+        if (StrStrIW(std::wstring(instance).c_str(), adapter_name)) {
             if (!quiet) {
                 Wh_Log(L"Matched network adapter: %.*s",
                        static_cast<int>(instance.size()), instance.data());
@@ -2853,6 +2856,10 @@ QueryDataCollectionSession::FilterGpuPathsByAdapterName(
 [[clang::no_destroy]] std::optional<QueryDataCollectionSession>
     g_dataCollectionSession;
 DWORD g_dataCollectionLastFormatIndex;
+
+// Whether a metric that changes over time is shown, in which case the clock
+// refreshes every second so that the update interval takes effect.
+bool g_dataCollectionPatternUsed;
 
 // Media player helper functions
 
@@ -3140,8 +3147,23 @@ void DataCollectionSessionInit() {
         IsStrInDateTimePatternSettings(L"%cpu_temp%") ||
         IsStrInDateTimePatternSettings(L"%cpu_temp_f%");
 
-    if (!std::any_of(std::begin(metrics), std::end(metrics),
-                     [](bool x) { return x; })) {
+    bool sessionNeeded = std::any_of(std::begin(metrics), std::end(metrics),
+                                     [](bool x) { return x; });
+
+    // Metrics read without the session. Totals that never change are left out.
+    g_dataCollectionPatternUsed =
+        sessionNeeded || IsStrInDateTimePatternSettings(L"%ram%") ||
+        IsStrInDateTimePatternSettings(L"%ram_used%") ||
+        IsStrInDateTimePatternSettings(L"%ram_committed%") ||
+        IsStrInDateTimePatternSettings(L"%ram_committed_used%") ||
+        IsStrInDateTimePatternSettings(L"%ram_committed_total%") ||
+        IsStrInDateTimePatternSettings(L"%gpu_temp%") ||
+        IsStrInDateTimePatternSettings(L"%gpu_temp_f%") ||
+        IsStrInDateTimePatternSettings(L"%battery%") ||
+        IsStrInDateTimePatternSettings(L"%battery_time%") ||
+        IsStrInDateTimePatternSettings(L"%power%");
+
+    if (!sessionNeeded) {
         return;
     }
 
@@ -3166,6 +3188,7 @@ void DataCollectionSessionInit() {
 void DataCollectionSessionUninit() {
     g_dataCollectionSession.reset();
     g_dataCollectionLastFormatIndex = 0;
+    g_dataCollectionPatternUsed = false;
 }
 
 bool IsMediaPatternUsed() {
@@ -4407,8 +4430,6 @@ void ClockSystemTrayIconDataModel_RefreshIcon_Hook_Impl(
     // after g_refreshIconNeedToAdjustTimer is set. Create them beforehand so
     // the flag accounts for them, otherwise the first refresh keeps the default
     // one-minute timer instead of shortening it to one second.
-    g_inRefreshIcon = true;
-
     {
         std::lock_guard<std::mutex> guard(g_formatLineMutex);
 
@@ -4417,9 +4438,11 @@ void ClockSystemTrayIconDataModel_RefreshIcon_Hook_Impl(
         bool webContentPending =
             g_webContentUpdateThread && !g_webContentLoaded;
         g_refreshIconNeedToAdjustTimer = g_settings.showSeconds ||
-                                         g_dataCollectionSession ||
+                                         g_dataCollectionPatternUsed ||
                                          webContentPending;
     }
+
+    g_inRefreshIcon = true;
 
     original(pThis, param1);
 
@@ -5262,8 +5285,8 @@ ClockButton_UpdateTextStringsIfNecessary_Hook(LPVOID pThis, bool* param1) {
         std::lock_guard<std::mutex> guard(g_formatLineMutex);
         bool webContentPending =
             g_webContentUpdateThread && !g_webContentLoaded;
-        updateEverySecond = g_settings.showSeconds || g_dataCollectionSession ||
-                            webContentPending;
+        updateEverySecond = g_settings.showSeconds ||
+                            g_dataCollectionPatternUsed || webContentPending;
     }
 
     if (updateEverySecond) {
