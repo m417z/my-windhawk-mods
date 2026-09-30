@@ -650,6 +650,13 @@ struct TextStyleSettings {
     int lineHeight;
 };
 
+struct ClockElementStyleSettings {
+    int maxWidth;
+    int textSpacing;
+    TextStyleSettings timeStyle;
+    TextStyleSettings dateStyle;
+};
+
 struct {
     bool showSeconds;
     StringSetting timeFormat;
@@ -664,7 +671,6 @@ struct {
     TooltipLineMode tooltipLineMode;
     int width;
     int height;
-    int maxWidth;
     int textSpacing;
     DataCollectionSettings dataCollection;
     MediaPlayerSettings mediaPlayer;
@@ -674,8 +680,6 @@ struct {
     std::vector<WebContentsSettings> webContentsItems;
     int webContentsUpdateInterval;
     std::vector<StringSetting> timeZones;
-    TextStyleSettings timeStyle;
-    TextStyleSettings dateStyle;
     bool oldTaskbarOnWin11;
 
     // Kept for compatibility with old settings:
@@ -820,9 +824,12 @@ struct ClockElementStyleData {
 std::atomic<bool> g_clockElementStyleEnabled;
 std::atomic<DWORD> g_clockElementStyleIndex;
 
-// Guards g_clockElementStyleData, which the XAML thread mutates while
-// Wh_ModBeforeUninit polls it.
+// Guards the clock element style settings and g_clockElementStyleData. The
+// style settings are kept out of g_settings so that the XAML thread applying
+// them never waits for g_formatLineMutex, which formatting holds across slow
+// work. When both are taken, g_formatLineMutex comes first.
 std::mutex g_clockElementStyleMutex;
+ClockElementStyleSettings g_clockElementStyleSettings;
 std::vector<ClockElementStyleData> g_clockElementStyleData;
 
 using GetDpiForWindow_t = UINT(WINAPI*)(HWND hwnd);
@@ -4690,7 +4697,6 @@ void ApplyTextBlockStyles(
 
 void ApplyDateTimeIconContentStyles(
     FrameworkElement dateTimeIconContentElement) {
-    std::lock_guard<std::mutex> settingsGuard(g_formatLineMutex);
     std::lock_guard<std::mutex> guard(g_clockElementStyleMutex);
 
     ClockElementStyleData* clockElementStyleData = nullptr;
@@ -4765,19 +4771,20 @@ void ApplyDateTimeIconContentStyles(
         clockElementStyleData = &g_clockElementStyleData.back();
     }
 
-    int maxWidth = clockElementStyleEnabled ? g_settings.maxWidth : 0;
-    int textSpacing = clockElementStyleEnabled ? g_settings.textSpacing : 0;
+    const ClockElementStyleSettings* styleSettings =
+        clockElementStyleEnabled ? &g_clockElementStyleSettings : nullptr;
+
+    int maxWidth = styleSettings ? styleSettings->maxWidth : 0;
+    int textSpacing = styleSettings ? styleSettings->textSpacing : 0;
     bool noWrap = maxWidth;
 
     ApplyStackPanelStyles(stackPanel, maxWidth, textSpacing);
     ApplyTextBlockStyles(
-        dateInnerTextBlock,
-        clockElementStyleEnabled ? &g_settings.dateStyle : nullptr, noWrap,
-        &clockElementStyleData->dateVisibilityPropertyChangedToken);
+        dateInnerTextBlock, styleSettings ? &styleSettings->dateStyle : nullptr,
+        noWrap, &clockElementStyleData->dateVisibilityPropertyChangedToken);
     ApplyTextBlockStyles(
-        timeInnerTextBlock,
-        clockElementStyleEnabled ? &g_settings.timeStyle : nullptr, noWrap,
-        &clockElementStyleData->timeVisibilityPropertyChangedToken);
+        timeInnerTextBlock, styleSettings ? &styleSettings->timeStyle : nullptr,
+        noWrap, &clockElementStyleData->timeVisibilityPropertyChangedToken);
 
     clockElementStyleData->styleIndex = clockElementStyleIndex;
 }
@@ -5731,7 +5738,6 @@ void LoadSettings() {
 
     g_settings.width = Wh_GetIntSetting(L"Width");
     g_settings.height = Wh_GetIntSetting(L"Height");
-    g_settings.maxWidth = Wh_GetIntSetting(L"MaxWidth");
     g_settings.textSpacing = Wh_GetIntSetting(L"TextSpacing");
 
     g_settings.dataCollection.networkMetricsFormat = ParseNetworkMetricsFormat(
@@ -5888,57 +5894,53 @@ void LoadSettings() {
         g_settings.timeZones.push_back(std::move(timeZone));
     }
 
-    g_settings.timeStyle.hidden = Wh_GetIntSetting(L"TimeStyle.Hidden");
-    g_settings.timeStyle.textColor =
-        StringSetting::make(L"TimeStyle.TextColor");
-    g_settings.timeStyle.textAlignment =
-        StringSetting::make(L"TimeStyle.TextAlignment");
-    g_settings.timeStyle.fontSize = Wh_GetIntSetting(L"TimeStyle.FontSize");
-    g_settings.timeStyle.fontFamily =
-        StringSetting::make(L"TimeStyle.FontFamily");
-    g_settings.timeStyle.fontWeight =
-        StringSetting::make(L"TimeStyle.FontWeight");
-    g_settings.timeStyle.fontStyle =
-        StringSetting::make(L"TimeStyle.FontStyle");
-    g_settings.timeStyle.fontStretch =
-        StringSetting::make(L"TimeStyle.FontStretch");
-    g_settings.timeStyle.characterSpacing =
+    ClockElementStyleSettings styleSettings;
+    styleSettings.maxWidth = Wh_GetIntSetting(L"MaxWidth");
+    styleSettings.textSpacing = g_settings.textSpacing;
+
+    TextStyleSettings& timeStyle = styleSettings.timeStyle;
+    timeStyle.hidden = Wh_GetIntSetting(L"TimeStyle.Hidden");
+    timeStyle.textColor = StringSetting::make(L"TimeStyle.TextColor");
+    timeStyle.textAlignment = StringSetting::make(L"TimeStyle.TextAlignment");
+    timeStyle.fontSize = Wh_GetIntSetting(L"TimeStyle.FontSize");
+    timeStyle.fontFamily = StringSetting::make(L"TimeStyle.FontFamily");
+    timeStyle.fontWeight = StringSetting::make(L"TimeStyle.FontWeight");
+    timeStyle.fontStyle = StringSetting::make(L"TimeStyle.FontStyle");
+    timeStyle.fontStretch = StringSetting::make(L"TimeStyle.FontStretch");
+    timeStyle.characterSpacing =
         Wh_GetIntSetting(L"TimeStyle.CharacterSpacing");
-    g_settings.timeStyle.lineHeight = Wh_GetIntSetting(L"TimeStyle.LineHeight");
+    timeStyle.lineHeight = Wh_GetIntSetting(L"TimeStyle.LineHeight");
 
-    g_settings.dateStyle.hidden = Wh_GetIntSetting(L"DateStyle.Hidden");
-    g_settings.dateStyle.textColor =
-        StringSetting::make(L"DateStyle.TextColor");
-    g_settings.dateStyle.textAlignment =
-        StringSetting::make(L"DateStyle.TextAlignment");
-    g_settings.dateStyle.fontSize = Wh_GetIntSetting(L"DateStyle.FontSize");
-    g_settings.dateStyle.fontFamily =
-        StringSetting::make(L"DateStyle.FontFamily");
-    g_settings.dateStyle.fontWeight =
-        StringSetting::make(L"DateStyle.FontWeight");
-    g_settings.dateStyle.fontStyle =
-        StringSetting::make(L"DateStyle.FontStyle");
-    g_settings.dateStyle.fontStretch =
-        StringSetting::make(L"DateStyle.FontStretch");
-    g_settings.dateStyle.characterSpacing =
+    TextStyleSettings& dateStyle = styleSettings.dateStyle;
+    dateStyle.hidden = Wh_GetIntSetting(L"DateStyle.Hidden");
+    dateStyle.textColor = StringSetting::make(L"DateStyle.TextColor");
+    dateStyle.textAlignment = StringSetting::make(L"DateStyle.TextAlignment");
+    dateStyle.fontSize = Wh_GetIntSetting(L"DateStyle.FontSize");
+    dateStyle.fontFamily = StringSetting::make(L"DateStyle.FontFamily");
+    dateStyle.fontWeight = StringSetting::make(L"DateStyle.FontWeight");
+    dateStyle.fontStyle = StringSetting::make(L"DateStyle.FontStyle");
+    dateStyle.fontStretch = StringSetting::make(L"DateStyle.FontStretch");
+    dateStyle.characterSpacing =
         Wh_GetIntSetting(L"DateStyle.CharacterSpacing");
-    g_settings.dateStyle.lineHeight = Wh_GetIntSetting(L"DateStyle.LineHeight");
+    dateStyle.lineHeight = Wh_GetIntSetting(L"DateStyle.LineHeight");
 
-    g_clockElementStyleEnabled =
-        (g_settings.maxWidth || g_settings.textSpacing ||
-         g_settings.timeStyle.hidden || *g_settings.timeStyle.textColor ||
-         *g_settings.timeStyle.textAlignment || g_settings.timeStyle.fontSize ||
-         *g_settings.timeStyle.fontFamily || *g_settings.timeStyle.fontWeight ||
-         *g_settings.timeStyle.fontStyle || *g_settings.timeStyle.fontStretch ||
-         g_settings.timeStyle.characterSpacing ||
-         g_settings.timeStyle.lineHeight || g_settings.dateStyle.hidden ||
-         *g_settings.dateStyle.textColor ||
-         *g_settings.dateStyle.textAlignment || g_settings.dateStyle.fontSize ||
-         *g_settings.dateStyle.fontFamily || *g_settings.dateStyle.fontWeight ||
-         *g_settings.dateStyle.fontStyle || *g_settings.dateStyle.fontStretch ||
-         g_settings.dateStyle.characterSpacing ||
-         g_settings.dateStyle.lineHeight);
-    g_clockElementStyleIndex++;
+    bool clockElementStyleEnabled =
+        styleSettings.maxWidth || styleSettings.textSpacing ||
+        timeStyle.hidden || *timeStyle.textColor || *timeStyle.textAlignment ||
+        timeStyle.fontSize || *timeStyle.fontFamily || *timeStyle.fontWeight ||
+        *timeStyle.fontStyle || *timeStyle.fontStretch ||
+        timeStyle.characterSpacing || timeStyle.lineHeight ||
+        dateStyle.hidden || *dateStyle.textColor || *dateStyle.textAlignment ||
+        dateStyle.fontSize || *dateStyle.fontFamily || *dateStyle.fontWeight ||
+        *dateStyle.fontStyle || *dateStyle.fontStretch ||
+        dateStyle.characterSpacing || dateStyle.lineHeight;
+
+    {
+        std::lock_guard<std::mutex> guard(g_clockElementStyleMutex);
+        g_clockElementStyleSettings = std::move(styleSettings);
+        g_clockElementStyleEnabled = clockElementStyleEnabled;
+        g_clockElementStyleIndex++;
+    }
 
     g_settings.oldTaskbarOnWin11 = Wh_GetIntSetting(L"oldTaskbarOnWin11");
 
@@ -6282,11 +6284,17 @@ void Wh_ModBeforeUninit() {
     }
 }
 
-// Stops the background work that feeds the format tokens. Called without
+// Stops the background work that feeds the format tokens, and keeps it stopped
+// until g_formattingInitialized is cleared. Must be called without
 // g_formatLineMutex held: joining the web content thread waits for an in-flight
 // network fetch and detaching the media handlers waits for an in-flight event,
 // neither of which should hold up the clock.
 void StopFormattingBackgroundWork() {
+    {
+        std::lock_guard<std::mutex> guard(g_formatLineMutex);
+        g_formattingInitialized = true;
+    }
+
     WebContentUpdateThreadUninit();
     MediaSessionUninit();
 }
