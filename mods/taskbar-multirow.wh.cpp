@@ -57,8 +57,6 @@ Windows 11.
 #include <unordered_map>
 #include <vector>
 
-#include <windowsx.h>
-
 #undef GetCurrentTime
 
 #include <winrt/Windows.Foundation.Numerics.h>
@@ -98,8 +96,8 @@ thread_local bool g_inTaskbarCollapsibleLayoutXamlTraits_ArrangeOverride;
 // Set while the taskbar calculates the drop position of a dragged item, holding
 // the horizontal distance between the row the item is dragged over and the
 // single row the taskbar lays items out in.
-thread_local bool g_hasDropPlaceholderOffset;
-thread_local float g_dropPlaceholderOffset;
+bool g_hasDropPlaceholderOffset;
+float g_dropPlaceholderOffset;
 
 struct TaskbarState {
     winrt::weak_ref<XamlRoot> xamlRoot;
@@ -549,6 +547,75 @@ void ApplySettings(HWND hTaskbarWnd) {
         [](void* pParam) -> void { ApplySettingsFromTaskbarThread(); }, 0);
 }
 
+// The bounds of the taskbar button whose context menu (jump list) is being
+// opened, relative to the XAML root content.
+bool g_hasJumpListButtonBounds;
+winrt::Windows::Foundation::Rect g_jumpListButtonBounds;
+
+bool g_inCTaskListWnd_ComputeJumpViewPosition;
+
+bool GetBoundsInXamlRoot(UIElement const& uiElement,
+                         winrt::Windows::Foundation::Rect* bounds) {
+    auto element = uiElement.try_as<FrameworkElement>();
+    auto xamlRoot = element ? element.XamlRoot() : nullptr;
+    auto xamlRootContent = xamlRoot ? xamlRoot.Content() : nullptr;
+    if (!xamlRootContent) {
+        return false;
+    }
+
+    *bounds = element.TransformToVisual(xamlRootContent)
+                  .TransformBounds(winrt::Windows::Foundation::Rect{
+                      0, 0, (float)element.ActualWidth(),
+                      (float)element.ActualHeight()});
+    return true;
+}
+
+using TaskbarResources_OnTaskListButtonContextRequested_t =
+    void(WINAPI*)(void* pThis, UIElement const& sender, void* args);
+TaskbarResources_OnTaskListButtonContextRequested_t
+    TaskbarResources_OnTaskListButtonContextRequested_Original;
+void WINAPI
+TaskbarResources_OnTaskListButtonContextRequested_Hook(void* pThis,
+                                                       UIElement const& sender,
+                                                       void* args) {
+    Wh_Log(L">");
+
+    auto original = [&] {
+        TaskbarResources_OnTaskListButtonContextRequested_Original(
+            pThis, sender, args);
+    };
+
+    if (!GetBoundsInXamlRoot(sender, &g_jumpListButtonBounds)) {
+        return original();
+    }
+
+    ScopedFlag scopedFlag(&g_hasJumpListButtonBounds);
+
+    original();
+}
+
+using TaskListButtonHandlers_HandleContextRequested_t =
+    void(WINAPI*)(UIElement const& sender, void* args);
+TaskListButtonHandlers_HandleContextRequested_t
+    TaskListButtonHandlers_HandleContextRequested_Original;
+void WINAPI
+TaskListButtonHandlers_HandleContextRequested_Hook(UIElement const& sender,
+                                                   void* args) {
+    Wh_Log(L">");
+
+    auto original = [&] {
+        TaskListButtonHandlers_HandleContextRequested_Original(sender, args);
+    };
+
+    if (!GetBoundsInXamlRoot(sender, &g_jumpListButtonBounds)) {
+        return original();
+    }
+
+    ScopedFlag scopedFlag(&g_hasJumpListButtonBounds);
+
+    original();
+}
+
 using CTaskListWnd_ComputeJumpViewPosition_t =
     HRESULT(WINAPI*)(void* pThis,
                      void* taskBtnGroup,
@@ -567,19 +634,34 @@ HRESULT WINAPI CTaskListWnd_ComputeJumpViewPosition_Hook(
     VerticalAlignment* verticalAlignment) {
     Wh_Log(L">");
 
-    HRESULT ret = CTaskListWnd_ComputeJumpViewPosition_Original(
+    ScopedFlag scopedFlag(&g_inCTaskListWnd_ComputeJumpViewPosition);
+
+    return CTaskListWnd_ComputeJumpViewPosition_Original(
         pThis, taskBtnGroup, param2, point, horizontalAlignment,
         verticalAlignment);
+}
 
-    DWORD messagePos = GetMessagePos();
-    POINT pt{
-        GET_X_LPARAM(messagePos),
-        GET_Y_LPARAM(messagePos),
-    };
+// The jump list is centered horizontally on the reported bounds of the button
+// group, which don't match the displayed buttons: some builds report them as
+// if the buttons were laid out in a single row, and a group's buttons can span
+// multiple rows. It's centered on the button it's opened for instead.
+using ToRawPixelsInDesktopCoordinates_t = RECT(
+    WINAPI*)(const winrt::Windows::Foundation::Rect& rect, UINT dpi, HWND hWnd);
+ToRawPixelsInDesktopCoordinates_t ToRawPixelsInDesktopCoordinates_Original;
+RECT WINAPI ToRawPixelsInDesktopCoordinates_Hook(
+    const winrt::Windows::Foundation::Rect& rect,
+    UINT dpi,
+    HWND hWnd) {
+    if (!g_inCTaskListWnd_ComputeJumpViewPosition ||
+        !g_hasJumpListButtonBounds || g_unloading) {
+        return ToRawPixelsInDesktopCoordinates_Original(rect, dpi, hWnd);
+    }
 
-    point->X = pt.x;
+    winrt::Windows::Foundation::Rect newRect = rect;
+    newRect.X = g_jumpListButtonBounds.X;
+    newRect.Width = g_jumpListButtonBounds.Width;
 
-    return ret;
+    return ToRawPixelsInDesktopCoordinates_Original(newRect, dpi, hWnd);
 }
 
 using IUIElement_Arrange_t =
@@ -1006,6 +1088,11 @@ bool HookTaskbarDllSymbols() {
             &CTaskListWnd_ComputeJumpViewPosition_Original,
             CTaskListWnd_ComputeJumpViewPosition_Hook,
         },
+        {
+            {LR"(struct tagRECT __cdecl ToRawPixelsInDesktopCoordinates(struct winrt::Windows::Foundation::Rect const &,unsigned int,struct HWND__ *))"},
+            &ToRawPixelsInDesktopCoordinates_Original,
+            ToRawPixelsInDesktopCoordinates_Hook,
+        },
     };
 
     if (!HookSymbols(module, taskbarDllHooks, ARRAYSIZE(taskbarDllHooks))) {
@@ -1023,6 +1110,11 @@ bool HookTaskbarViewDllSymbols(HMODULE module) {
             {LR"(public: virtual int __cdecl winrt::impl::produce<struct winrt::Taskbar::implementation::TaskbarCollapsibleLayout,struct winrt::Microsoft::UI::Xaml::Controls::IVirtualizingLayoutOverrides>::ArrangeOverride(void *,struct winrt::Windows::Foundation::Size,struct winrt::Windows::Foundation::Size *))"},
             &TaskbarCollapsibleLayoutXamlTraits_ArrangeOverride_Original,
             TaskbarCollapsibleLayoutXamlTraits_ArrangeOverride_Hook,
+        },
+        {
+            {LR"(public: void __cdecl winrt::Taskbar::implementation::TaskbarResources::OnTaskListButtonContextRequested(struct winrt::Windows::UI::Xaml::UIElement const &,struct winrt::Windows::UI::Xaml::Input::ContextRequestedEventArgs const &))"},
+            &TaskbarResources_OnTaskListButtonContextRequested_Original,
+            TaskbarResources_OnTaskListButtonContextRequested_Hook,
         },
         {
             {LR"(public: void __cdecl winrt::Taskbar::implementation::TaskbarFrame::SystemTrayExtent(double))"},
@@ -1054,6 +1146,12 @@ bool HookTaskbarViewDllSymbols(HMODULE module) {
             },
             &TaskListDragOperation_GetDropPlaceholder_Original,
             TaskListDragOperation_GetDropPlaceholder_Hook,
+        },
+        {
+            {LR"(public: static void __cdecl winrt::Taskbar::implementation::TaskListButtonHandlers::HandleContextRequested(struct winrt::Windows::UI::Xaml::UIElement const &,struct winrt::Windows::UI::Xaml::Input::ContextRequestedEventArgs const &))"},
+            &TaskListButtonHandlers_HandleContextRequested_Original,
+            TaskListButtonHandlers_HandleContextRequested_Hook,
+            true,  // From 10.0.26200.8116.
         },
     };
 
