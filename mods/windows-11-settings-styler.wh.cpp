@@ -11114,6 +11114,23 @@ HWND GetCoreWnd() {
                 return TRUE;
             }
 
+            auto isCurrentProcessWnd = [](HWND hWnd) {
+                DWORD dwProcessId = 0;
+                return GetWindowThreadProcessId(hWnd, &dwProcessId) &&
+                       dwProcessId == GetCurrentProcessId();
+            };
+
+            // The CoreWindow is top-level until the frame window adopts it,
+            // and while the app is minimized.
+            if (_wcsicmp(szClassName, L"Windows.UI.Core.CoreWindow") == 0) {
+                if (isCurrentProcessWnd(hWnd)) {
+                    *param.hWnd = hWnd;
+                    return FALSE;
+                }
+
+                return TRUE;
+            }
+
             if (_wcsicmp(szClassName, L"ApplicationFrameWindow") != 0) {
                 return TRUE;
             }
@@ -11123,9 +11140,7 @@ HWND GetCoreWnd() {
             while ((hCoreWnd = FindWindowEx(hWnd, hCoreWnd,
                                             L"Windows.UI.Core.CoreWindow",
                                             nullptr)) != nullptr) {
-                DWORD dwProcessId = 0;
-                if (GetWindowThreadProcessId(hCoreWnd, &dwProcessId) &&
-                    dwProcessId == GetCurrentProcessId()) {
+                if (isCurrentProcessWnd(hCoreWnd)) {
                     *param.hWnd = hCoreWnd;
                     return FALSE;
                 }
