@@ -10076,8 +10076,13 @@ void PopPaintingWnd(HWND hWnd) {
     }
 }
 
+// Set while uxtheme renders text with DrawTextWithGlow. It draws the text on a
+// white mask with GDI and derives the alpha from it, so that drawing must not
+// be altered.
+thread_local bool g_drawingTextWithGlowForThread;
+
 bool IsEntireWindowEffectDC(HDC hdc) {
-    if (!g_entireWindowEffectWndForThread) {
+    if (!g_entireWindowEffectWndForThread || g_drawingTextWithGlowForThread) {
         return false;
     }
 
@@ -10622,9 +10627,13 @@ HRESULT WINAPI DrawTextWithGlow_Hook(HDC hdcMem,
                                      DTT_CALLBACK_PROC pfnDrawTextCallback,
                                      LPARAM lParam) {
     auto original = [=]() {
-        return DrawTextWithGlow_Original(
+        bool prevDrawingTextWithGlow = g_drawingTextWithGlowForThread;
+        g_drawingTextWithGlowForThread = true;
+        HRESULT result = DrawTextWithGlow_Original(
             hdcMem, pszText, cch, pRect, dwFlags, crText, crGlow, nGlowRadius,
             nGlowIntensity, fPreMultiply, pfnDrawTextCallback, lParam);
+        g_drawingTextWithGlowForThread = prevDrawingTextWithGlow;
+        return result;
     };
 
     if (nGlowRadius > 0 || !IsEntireWindowEffectDC(hdcMem)) {
