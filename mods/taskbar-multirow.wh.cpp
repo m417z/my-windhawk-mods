@@ -92,6 +92,17 @@ class ScopedFlag {
 };
 
 thread_local bool g_inTaskbarCollapsibleLayoutXamlTraits_ArrangeOverride;
+thread_local float g_taskbarCollapsibleLayoutHeight;
+
+// The rect each item was last moved to, so that an item re-arranged in its
+// slot, e.g. by another mod, isn't moved again. A slot from another layout
+// height doesn't count, as the layout's rect for the new height can match it.
+struct ArrangedItem {
+    winrt::weak_ref<FrameworkElement> element;
+    winrt::Windows::Foundation::Rect rect;
+    float layoutHeight;
+};
+std::unordered_map<void*, ArrangedItem> g_arrangedItems;
 
 // Set while the taskbar calculates the drop position of a dragged item, holding
 // the horizontal distance between the row the item is dragged over and the
@@ -697,6 +708,13 @@ HRESULT WINAPI IUIElement_Arrange_Hook(void* pThis,
         return original();
     }
 
+    void* elementAbi = winrt::get_abi(element);
+    if (auto it = g_arrangedItems.find(elementAbi);
+        it != g_arrangedItems.end() && it->second.rect == rect &&
+        it->second.layoutHeight == g_taskbarCollapsibleLayoutHeight) {
+        return original();
+    }
+
     FrameworkElement startButton = nullptr;
     if (g_settings.fullHeightStartButton) {
         startButton =
@@ -761,6 +779,15 @@ HRESULT WINAPI IUIElement_Arrange_Hook(void* pThis,
                                          widthWithoutExtent);
     }
 
+    // A rect left as is, e.g. with a single row, can be the layout's rect again
+    // after a settings change.
+    if (newRect != rect) {
+        g_arrangedItems[elementAbi] = {winrt::make_weak(element), newRect,
+                                       g_taskbarCollapsibleLayoutHeight};
+    } else {
+        g_arrangedItems.erase(elementAbi);
+    }
+
     return IUIElement_Arrange_Original(pThis, newRect);
 }
 
@@ -793,6 +820,11 @@ HRESULT WINAPI TaskbarCollapsibleLayoutXamlTraits_ArrangeOverride_Hook(
 
     ScopedFlag scopedFlag(
         &g_inTaskbarCollapsibleLayoutXamlTraits_ArrangeOverride);
+
+    g_taskbarCollapsibleLayoutHeight = size.Height;
+
+    std::erase_if(g_arrangedItems,
+                  [](const auto& item) { return !item.second.element.get(); });
 
     return TaskbarCollapsibleLayoutXamlTraits_ArrangeOverride_Original(
         pThis, context, size, resultSize);
