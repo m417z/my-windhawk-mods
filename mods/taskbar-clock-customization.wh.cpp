@@ -795,6 +795,10 @@ std::vector<std::wstring> g_mediaIgnoredPlayers;
 
 bool g_mediaActive = false;
 
+// Whether a media pattern is shown. Media changes arrive as events, so the
+// clock refreshes every second to show them without a delay.
+bool g_mediaPatternUsed = false;
+
 // Set while %media_info% expands its format string, to keep a stray
 // %media_info% tag inside that format from recursing into itself.
 bool g_inMediaInfoFormat = false;
@@ -822,14 +826,14 @@ struct ClockElementStyleData {
     std::optional<int64_t> timeVisibilityPropertyChangedToken;
 };
 
-std::atomic<bool> g_clockElementStyleEnabled;
-std::atomic<DWORD> g_clockElementStyleIndex;
-
-// Guards the clock element style settings and g_clockElementStyleData. The
-// style settings are kept out of g_settings so that the XAML thread applying
-// them never waits for g_formatLineMutex, which formatting holds across slow
-// work. When both are taken, g_formatLineMutex comes first.
+// Guards the clock element style settings, their enabled flag and index, and
+// g_clockElementStyleData. The style settings are kept out of g_settings so
+// that the XAML thread applying them never waits for g_formatLineMutex, which
+// formatting holds across slow work. When both are taken, g_formatLineMutex
+// comes first.
 std::mutex g_clockElementStyleMutex;
+bool g_clockElementStyleEnabled;
+DWORD g_clockElementStyleIndex;
 ClockElementStyleSettings g_clockElementStyleSettings;
 std::vector<ClockElementStyleData> g_clockElementStyleData;
 
@@ -1216,8 +1220,16 @@ std::wstring ExtractTextFromHtml(std::wstring html) {
     }
 
     // The content is untrusted.
+    auto oleObject = doc.as<IOleObject>();
     auto clientSite = winrt::make_self<HtmlNoDownloadClientSite>();
-    winrt::check_hresult(doc.as<IOleObject>()->SetClientSite(clientSite.get()));
+    winrt::check_hresult(oleObject->SetClientSite(clientSite.get()));
+
+    // The site's code lives in the mod, so don't leave MSHTML holding it once
+    // the document goes away, including on the error paths below.
+    struct ClientSiteDetacher {
+        IOleObject* oleObject;
+        ~ClientSiteDetacher() { oleObject->SetClientSite(nullptr); }
+    } clientSiteDetacher{oleObject.get()};
 
     // Prepare HTML content for processing.
     _bstr_t htmlBstr(
@@ -2314,6 +2326,28 @@ void InvalidateDxgiAdapterInfo() {
     g_dxgiAdapterInfoGpuName.reset();
 }
 
+// Invalidates the cached adapter info if D3DKMT no longer recognizes its LUID.
+// This is much cheaper than enumerating the adapters again.
+void InvalidateDxgiAdapterInfoIfStale() {
+    if (!g_dxgiAdapterInfo || !pD3DKMTOpenAdapterFromLuid ||
+        !pD3DKMTCloseAdapter) {
+        return;
+    }
+
+    D3DKMT_OPENADAPTERFROMLUID openAdapter{};
+    openAdapter.AdapterLuid = g_dxgiAdapterInfo->luidValue;
+    if (pD3DKMTOpenAdapterFromLuid(&openAdapter) != 0) {
+        Wh_Log(L"GPU adapter LUID %s is stale",
+               g_dxgiAdapterInfo->luid.c_str());
+        InvalidateDxgiAdapterInfo();
+        return;
+    }
+
+    D3DKMT_CLOSEADAPTER closeAdapter{};
+    closeAdapter.hAdapter = openAdapter.hAdapter;
+    pD3DKMTCloseAdapter(&closeAdapter);
+}
+
 std::optional<double> GetDedicatedVramTotalGb() {
     auto info =
         GetDxgiAdapterInfo(g_settings.dataCollection.gpuAdapterName, true);
@@ -2844,6 +2878,10 @@ QueryDataCollectionSession::FilterGpuPathsByAdapterName(
         if (!quiet) {
             Wh_Log(L"No GPU paths matched LUID %s", info->luid.c_str());
         }
+
+        // An idle GPU may have no instances either, so check the LUID before
+        // enumerating the adapters again.
+        InvalidateDxgiAdapterInfoIfStale();
         return {};
     }
 
@@ -3279,7 +3317,8 @@ void OnMediaSessionsChanged() {
 }
 
 void MediaSessionInit() {
-    if (!IsMediaPatternUsed()) {
+    g_mediaPatternUsed = IsMediaPatternUsed();
+    if (!g_mediaPatternUsed) {
         return;
     }
 
@@ -4437,9 +4476,9 @@ void ClockSystemTrayIconDataModel_RefreshIcon_Hook_Impl(
 
         bool webContentPending =
             g_webContentUpdateThread && !g_webContentLoaded;
-        g_refreshIconNeedToAdjustTimer = g_settings.showSeconds ||
-                                         g_dataCollectionPatternUsed ||
-                                         webContentPending;
+        g_refreshIconNeedToAdjustTimer =
+            g_settings.showSeconds || g_dataCollectionPatternUsed ||
+            g_mediaPatternUsed || webContentPending;
     }
 
     g_inRefreshIcon = true;
@@ -5286,7 +5325,8 @@ ClockButton_UpdateTextStringsIfNecessary_Hook(LPVOID pThis, bool* param1) {
         bool webContentPending =
             g_webContentUpdateThread && !g_webContentLoaded;
         updateEverySecond = g_settings.showSeconds ||
-                            g_dataCollectionPatternUsed || webContentPending;
+                            g_dataCollectionPatternUsed || g_mediaPatternUsed ||
+                            webContentPending;
     }
 
     if (updateEverySecond) {
@@ -6362,32 +6402,42 @@ void Wh_ModAfterInit() {
 void Wh_ModBeforeUninit() {
     Wh_Log(L">");
 
-    if (g_winVersion >= WinVersion::Win11 &&
-        g_clockElementStyleEnabled.exchange(false)) {
-        DWORD styleIndex = ++g_clockElementStyleIndex;
+    if (g_winVersion < WinVersion::Win11) {
+        return;
+    }
 
-        ApplySettings();
+    DWORD styleIndex;
+    {
+        std::lock_guard<std::mutex> guard(g_clockElementStyleMutex);
+        if (!g_clockElementStyleEnabled) {
+            return;
+        }
 
-        // Wait for styles to be restored.
-        for (int i = 0; i < 20; i++) {
-            bool allRestored = true;
+        g_clockElementStyleEnabled = false;
+        styleIndex = ++g_clockElementStyleIndex;
+    }
 
-            {
-                std::lock_guard<std::mutex> guard(g_clockElementStyleMutex);
-                for (const auto& data : g_clockElementStyleData) {
-                    if (data.styleIndex < styleIndex) {
-                        allRestored = false;
-                        break;
-                    }
+    ApplySettings();
+
+    // Wait for styles to be restored.
+    for (int i = 0; i < 20; i++) {
+        bool allRestored = true;
+
+        {
+            std::lock_guard<std::mutex> guard(g_clockElementStyleMutex);
+            for (const auto& data : g_clockElementStyleData) {
+                if (data.styleIndex < styleIndex) {
+                    allRestored = false;
+                    break;
                 }
             }
-
-            if (allRestored) {
-                break;
-            }
-
-            Sleep(100);
         }
+
+        if (allRestored) {
+            break;
+        }
+
+        Sleep(100);
     }
 }
 
