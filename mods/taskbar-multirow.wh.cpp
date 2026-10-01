@@ -105,6 +105,14 @@ struct ArrangedItem {
 };
 std::unordered_map<void*, ArrangedItem> g_arrangedItems;
 
+// XAML stores a slot with layout rounding, which can move each value by up to
+// half a physical pixel.
+bool IsSameSlot(winrt::Windows::Foundation::Rect a,
+                winrt::Windows::Foundation::Rect b) {
+    return std::abs(a.X - b.X) < 1 && std::abs(a.Y - b.Y) < 1 &&
+           std::abs(a.Width - b.Width) < 1 && std::abs(a.Height - b.Height) < 1;
+}
+
 // Set while the taskbar calculates the drop position of a dragged item, holding
 // the horizontal distance between the row the item is dragged over and the
 // single row the taskbar lays items out in.
@@ -997,7 +1005,7 @@ HRESULT WINAPI IUIElement_Arrange_Hook(void* pThis,
 
     void* elementAbi = winrt::get_abi(element);
     if (auto it = g_arrangedItems.find(elementAbi);
-        it != g_arrangedItems.end() && it->second.rect == rect &&
+        it != g_arrangedItems.end() && IsSameSlot(it->second.rect, rect) &&
         it->second.layoutHeight == g_taskbarCollapsibleLayoutHeight) {
         return original();
     }
