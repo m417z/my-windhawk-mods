@@ -74,6 +74,11 @@ be used:
 * `%weeknum_iso%` - the [ISO week
   number](https://en.wikipedia.org/wiki/ISO_week_date).
 * `%dayofyear%` - the day of the year, where January 1st is day 1.
+* `%beat%` - the time of day in [@beat](https://sigelith.org/beat/) (Internet
+  Time anchored to UTC), for example `@523`. A day has 1000 beats of 86.4
+  seconds, with no time zones or daylight saving time. Computed from the system
+  clock, without network access.
+  * `%beat_centi%` - the same with hundredths of a beat, for example `@523.45`.
 * `%timezone%` - the time zone in ISO 8601 format.
 * System performance metrics:
   * `%upload_speed%` - system-wide upload transfer rate.
@@ -738,6 +743,8 @@ FormattedString<INTEGER_BUFFER_SIZE> g_weekdayNumFormatted;
 FormattedString<INTEGER_BUFFER_SIZE> g_weeknumFormatted;
 FormattedString<INTEGER_BUFFER_SIZE> g_weeknumIsoFormatted;
 FormattedString<INTEGER_BUFFER_SIZE> g_dayOfYearFormatted;
+FormattedString<INTEGER_BUFFER_SIZE> g_beatFormatted;
+FormattedString<INTEGER_BUFFER_SIZE> g_beatCentiFormatted;
 FormattedString<FORMATTED_BUFFER_SIZE> g_timezoneFormatted;
 
 FormattedString<FORMATTED_BUFFER_SIZE> g_uploadSpeedFormatted;
@@ -798,6 +805,10 @@ bool g_mediaActive = false;
 // Whether a media pattern is shown. Media changes arrive as events, so the
 // clock refreshes every second to show them without a delay.
 bool g_mediaPatternUsed = false;
+
+// Whether a @beat pattern is shown. A beat lasts 86.4 seconds, so the clock
+// refreshes every second to keep it current even when seconds aren't shown.
+bool g_beatPatternUsed = false;
 
 // Set while %media_info% expands its format string, to keep a stray
 // %media_info% tag inside that format from recursing into itself.
@@ -2162,6 +2173,45 @@ PCWSTR GetDayOfYearFormatted() {
     }
 
     return g_dayOfYearFormatted.buffer;
+}
+
+// @beat: 1000 beats per UTC day, 86.4 seconds each. Integer math truncates,
+// so the value never rounds up to @1000.
+void GetBeatTime(int* beats, int* centibeats) {
+    SYSTEMTIME time;
+    GetSystemTime(&time);
+
+    int ms = ((time.wHour * 60 + time.wMinute) * 60 + time.wSecond) * 1000 +
+             time.wMilliseconds;
+    *beats = ms / 86400;
+    *centibeats = ms % 86400 / 864;
+}
+
+PCWSTR GetBeatFormatted() {
+    if (g_beatFormatted.formatIndex != g_formatIndex) {
+        int beats, centibeats;
+        GetBeatTime(&beats, &centibeats);
+
+        swprintf_s(g_beatFormatted.buffer, L"@%03d", beats);
+
+        g_beatFormatted.formatIndex = g_formatIndex;
+    }
+
+    return g_beatFormatted.buffer;
+}
+
+PCWSTR GetBeatCentiFormatted() {
+    if (g_beatCentiFormatted.formatIndex != g_formatIndex) {
+        int beats, centibeats;
+        GetBeatTime(&beats, &centibeats);
+
+        swprintf_s(g_beatCentiFormatted.buffer, L"@%03d.%02d", beats,
+                   centibeats);
+
+        g_beatCentiFormatted.formatIndex = g_formatIndex;
+    }
+
+    return g_beatCentiFormatted.buffer;
 }
 
 PCWSTR GetTimezoneFormatted() {
@@ -4175,6 +4225,8 @@ size_t ResolveFormatToken(
         {L"%weeknum%"sv, GetWeeknumFormatted},
         {L"%weeknum_iso%"sv, GetWeeknumIsoFormatted},
         {L"%dayofyear%"sv, GetDayOfYearFormatted},
+        {L"%beat%"sv, GetBeatFormatted},
+        {L"%beat_centi%"sv, GetBeatCentiFormatted},
         {L"%timezone%"sv, GetTimezoneFormatted},
         {L"%upload_speed%"sv, GetUploadSpeedFormatted},
         {L"%download_speed%"sv, GetDownloadSpeedFormatted},
@@ -4349,6 +4401,7 @@ void EnsureFormattingInitialized() {
     WebContentUpdateThreadInit();
     DataCollectionSessionInit();
     MediaSessionInit();
+    g_beatPatternUsed = IsStrInDateTimePatternSettings(L"%beat");
 }
 
 // Requires g_formatLineMutex to be held, both for the formatting state and for
@@ -4478,7 +4531,7 @@ void ClockSystemTrayIconDataModel_RefreshIcon_Hook_Impl(
             g_webContentUpdateThread && !g_webContentLoaded;
         g_refreshIconNeedToAdjustTimer =
             g_settings.showSeconds || g_dataCollectionPatternUsed ||
-            g_mediaPatternUsed || webContentPending;
+            g_mediaPatternUsed || g_beatPatternUsed || webContentPending;
     }
 
     g_inRefreshIcon = true;
@@ -5326,7 +5379,7 @@ ClockButton_UpdateTextStringsIfNecessary_Hook(LPVOID pThis, bool* param1) {
             g_webContentUpdateThread && !g_webContentLoaded;
         updateEverySecond = g_settings.showSeconds ||
                             g_dataCollectionPatternUsed || g_mediaPatternUsed ||
-                            webContentPending;
+                            g_beatPatternUsed || webContentPending;
     }
 
     if (updateEverySecond) {
