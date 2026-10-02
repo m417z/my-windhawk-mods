@@ -2436,6 +2436,12 @@ LRESULT WINAPI SendMessageTimeoutW_Hook(HWND hWnd,
 
 void LoadSettings() {
     g_settings.taskbarHeight = Wh_GetIntSetting(L"TaskbarHeight");
+    if (g_settings.taskbarHeight < 6) {
+        g_settings.taskbarHeight = 6;
+    } else if (g_settings.taskbarHeight > 600) {
+        g_settings.taskbarHeight = 600;
+    }
+
     g_settings.iconSize = Wh_GetIntSetting(L"IconSize");
     g_settings.taskbarButtonWidth = Wh_GetIntSetting(L"TaskbarButtonWidth");
     g_settings.iconSizeSmall = Wh_GetIntSetting(L"IconSizeSmall");
@@ -2880,7 +2886,7 @@ bool HookTaskbarViewDllSymbols(HMODULE module,
                 ProgressBar_Width_Hook,
                 true,  // From Windows 11 version 22H2.
             },
-        };
+    };
 
     // On older Taskbar.View.dll versions (before the SystemTray types moved out
     // into SystemTray.dll), these SystemTray symbols live in Taskbar.View.dll
