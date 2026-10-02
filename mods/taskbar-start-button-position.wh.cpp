@@ -1340,8 +1340,17 @@ HRESULT WINAPI DwmSetWindowAttribute_Hook(HWND hwnd,
             int workAreaStart =
                 vertical ? monitorInfo.rcWork.top : monitorInfo.rcWork.left;
 
-            // Not centered or already changed.
-            if (pos == workAreaStart) {
+            // Only a window centered on the monitor is moved (within a pixel,
+            // to allow for rounding). One positioned by the search box or
+            // button, or already moved, stays.
+            int monitorStart = vertical ? monitorInfo.rcMonitor.top
+                                        : monitorInfo.rcMonitor.left;
+            int monitorEnd = vertical ? monitorInfo.rcMonitor.bottom
+                                      : monitorInfo.rcMonitor.right;
+            int size = vertical ? cy : cx;
+            int centeredPos =
+                monitorStart + (monitorEnd - monitorStart - size) / 2;
+            if (std::abs(pos - centeredPos) > 1) {
                 return original();
             }
 
@@ -1382,6 +1391,105 @@ HRESULT WINAPI DwmSetWindowAttribute_Hook(HWND hwnd,
     SetWindowPos(hwnd, nullptr, x, y, cx, cy, SWP_NOZORDER | SWP_NOACTIVATE);
 
     return original();
+}
+
+using SearchBoxOnTaskbarSearchAppPositioner_GetAppRectForSearchBoxOnTaskbar_t =
+    RECT*(WINAPI*)(void* pThis,
+                   RECT* result,
+                   const void* monitorInfo,
+                   bool rtl,
+                   int width,
+                   int height,
+                   bool fullWidth);
+SearchBoxOnTaskbarSearchAppPositioner_GetAppRectForSearchBoxOnTaskbar_t
+    SearchBoxOnTaskbarSearchAppPositioner_GetAppRectForSearchBoxOnTaskbar;
+
+using Mirror_IsThreadRTL_t = int(WINAPI*)();
+Mirror_IsThreadRTL_t Mirror_IsThreadRTL;
+
+// Depending on how the search app is activated, the search window positioner
+// places the window by the search button and then, for a center-aligned
+// taskbar, centers it on the monitor, instead of using its usual position, such
+// as by the search box. With the search button pinned to the left, the usual
+// position is used, which is also where the search app expects the search box
+// to be. With a vertical taskbar, the window stays by the button. When opened
+// from the Start menu, the window is left as is, to be positioned along with
+// the Start menu.
+using SearchBoxOnTaskbarSearchAppPositioner_AdjustAppRectForCenterAlignedTaskbar_t =
+    void(WINAPI*)(void* pThis,
+                  RECT* appRect,
+                  const void* monitorInfo,
+                  int width);
+SearchBoxOnTaskbarSearchAppPositioner_AdjustAppRectForCenterAlignedTaskbar_t
+    SearchBoxOnTaskbarSearchAppPositioner_AdjustAppRectForCenterAlignedTaskbar_Original;
+void WINAPI
+SearchBoxOnTaskbarSearchAppPositioner_AdjustAppRectForCenterAlignedTaskbar_Hook(
+    void* pThis,
+    RECT* appRect,
+    const void* monitorInfo,
+    int width) {
+    RECT originalRect = *appRect;
+
+    SearchBoxOnTaskbarSearchAppPositioner_AdjustAppRectForCenterAlignedTaskbar_Original(
+        pThis, appRect, monitorInfo, width);
+
+    if (!g_settings.otherSystemButtonsOnTheLeft || g_unloading) {
+        return;
+    }
+
+    if (IsStartMenuOpen()) {
+        return;
+    }
+
+    if (appRect->top != originalRect.top) {
+        appRect->top = originalRect.top;
+        return;
+    }
+
+    if (appRect->left == originalRect.left) {
+        return;
+    }
+
+    RECT rect;
+    SearchBoxOnTaskbarSearchAppPositioner_GetAppRectForSearchBoxOnTaskbar(
+        pThis, &rect, monitorInfo, Mirror_IsThreadRTL() != 0, width, 0, false);
+
+    // The usual positioning centers the window if it doesn't fit by the search
+    // box. The monitor info starts with the monitor rect.
+    const RECT* monitorRect = (const RECT*)monitorInfo;
+    if (rect.left < monitorRect->left || rect.right > monitorRect->right) {
+        return;
+    }
+
+    appRect->left = rect.left;
+}
+
+bool HookTwinuiPcshellSymbols() {
+    HMODULE module = LoadLibraryEx(L"twinui.pcshell.dll", nullptr,
+                                   LOAD_LIBRARY_SEARCH_SYSTEM32);
+    if (!module) {
+        Wh_Log(L"Failed to load twinui.pcshell.dll");
+        return false;
+    }
+
+    WindhawkUtils::SYMBOL_HOOK twinuiPcshellHooks[] = {
+        {
+            {LR"(private: struct tagRECT __cdecl SearchBoxOnTaskbarSearchAppPositioner::GetAppRectForSearchBoxOnTaskbar(struct MonitorInfo const &,bool,int,int,bool))"},
+            &SearchBoxOnTaskbarSearchAppPositioner_GetAppRectForSearchBoxOnTaskbar,
+        },
+        {
+            {LR"(int __cdecl Mirror_IsThreadRTL(void))"},
+            &Mirror_IsThreadRTL,
+        },
+        {
+            {LR"(private: void __cdecl SearchBoxOnTaskbarSearchAppPositioner::AdjustAppRectForCenterAlignedTaskbar(struct tagRECT *,struct MonitorInfo,int))"},
+            &SearchBoxOnTaskbarSearchAppPositioner_AdjustAppRectForCenterAlignedTaskbar_Original,
+            SearchBoxOnTaskbarSearchAppPositioner_AdjustAppRectForCenterAlignedTaskbar_Hook,
+        },
+    };
+
+    return HookSymbols(module, twinuiPcshellHooks,
+                       ARRAYSIZE(twinuiPcshellHooks));
 }
 
 namespace StartMenuUI {
@@ -1846,6 +1954,10 @@ BOOL Wh_ModInit() {
 
     if (!HookTaskbarDllSymbols()) {
         return FALSE;
+    }
+
+    if (!HookTwinuiPcshellSymbols()) {
+        Wh_Log(L"HookTwinuiPcshellSymbols failed");
     }
 
     if (HMODULE taskbarViewModule = GetTaskbarViewModuleHandle()) {
