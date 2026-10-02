@@ -866,6 +866,60 @@ HRESULT WINAPI IUIElement_Arrange_Hook(void* pThis,
     return IUIElement_Arrange_Original(pThis, newRect);
 }
 
+// The layout of MSVC's std::vector, which the mod's own STL may not match.
+struct MsvcRectVector {
+    winrt::Windows::Foundation::Rect* first;
+    winrt::Windows::Foundation::Rect* last;
+    winrt::Windows::Foundation::Rect* end;
+};
+
+// The per-item bounds recorded by the taskbar layout, which the taskbar reports
+// to the shell, e.g. to anchor the search flyout to the search box. Depending
+// on the Windows version, they're the layout slots rather than where the items
+// were arranged, so the pinned buttons get their arranged bounds.
+using TaskbarFrame_ChildItemBounds_t = MsvcRectVector*(WINAPI*)(void* pThis);
+TaskbarFrame_ChildItemBounds_t TaskbarFrame_ChildItemBounds_Original;
+MsvcRectVector* WINAPI TaskbarFrame_ChildItemBounds_Hook(void* pThis) {
+    MsvcRectVector* bounds = TaskbarFrame_ChildItemBounds_Original(pThis);
+    if (g_unloading) {
+        return bounds;
+    }
+
+    FrameworkElement taskbarFrame = nullptr;
+    ((IUnknown**)pThis)[1]->QueryInterface(winrt::guid_of<FrameworkElement>(),
+                                           winrt::put_abi(taskbarFrame));
+    if (!taskbarFrame) {
+        return bounds;
+    }
+
+    FrameworkElement child = taskbarFrame;
+    if (!(child = FindChildByName(child, L"RootGrid")) ||
+        !(child = FindChildByName(child, L"TaskbarFrameRepeater"))) {
+        return bounds;
+    }
+
+    auto repeater =
+        child.try_as<winrt::Microsoft::UI::Xaml::Controls::ItemsRepeater>();
+    if (!repeater) {
+        return bounds;
+    }
+
+    // The bounds are indexed by item index.
+    int count = static_cast<int>(bounds->last - bounds->first);
+    for (int index = 0; index < count; index++) {
+        auto element = repeater.TryGetElement(index).try_as<FrameworkElement>();
+        if (!element || !IsPinnedClusterButton(IdentifySystemButton(element))) {
+            continue;
+        }
+
+        auto offset = element.ActualOffset();
+        auto size = element.ActualSize();
+        bounds->first[index] = {offset.x, offset.y, size.x, size.y};
+    }
+
+    return bounds;
+}
+
 using TaskbarCollapsibleLayoutXamlTraits_ArrangeOverride_t =
     HRESULT(WINAPI*)(void* pThis,
                      void* context,
@@ -1051,6 +1105,12 @@ bool HookTaskbarViewDllSymbols(HMODULE module) {
             {LR"(static  winrt::Taskbar::implementation::ContextMenus::ShowStartButtonContextMenuAsync$_ResumeCoro$1())"},
             &ShowStartButtonContextMenuResumeCoro_Original,
             ShowStartButtonContextMenuResumeCoro_Hook,
+        },
+        {
+            {LR"(public: class std::vector<struct winrt::Windows::Foundation::Rect,class std::allocator<struct winrt::Windows::Foundation::Rect> > const & __cdecl winrt::Taskbar::implementation::TaskbarFrame::ChildItemBounds(void)const )"},
+            &TaskbarFrame_ChildItemBounds_Original,
+            TaskbarFrame_ChildItemBounds_Hook,
+            true,
         },
     };
 
