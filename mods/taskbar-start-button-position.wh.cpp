@@ -31,6 +31,8 @@ icons are centered.
 There's also an option to move the search and task view buttons to the left,
 keeping only the app icons centered.
 
+With a vertical taskbar, the buttons are moved to the top instead.
+
 Only Windows 11 is supported.
 
 ![Screenshot](https://i.imgur.com/MSKYKbE.png) \
@@ -66,6 +68,7 @@ _Start button, search and task view buttons on the left_
 
 #include <windhawk_utils.h>
 
+#include <algorithm>
 #include <atomic>
 #include <functional>
 #include <limits>
@@ -78,6 +81,7 @@ _Start button, search and task view buttons on the left_
 
 #undef GetCurrentTime
 
+#include <winrt/Windows.Foundation.Collections.h>
 #include <winrt/Windows.Foundation.h>
 #include <winrt/Windows.UI.Core.h>
 #include <winrt/Windows.UI.Xaml.Automation.h>
@@ -211,6 +215,44 @@ FrameworkElement EnumRepeaterChildElements(
     return nullptr;
 }
 
+// Taskbar items are laid out left to right, or top to bottom on a vertical
+// taskbar, where "left" means the top. The helpers below work along that axis:
+// an item's extent is its size along it, and its leading and trailing margins
+// are the ones before and after it.
+
+// The taskbar frame's root grid has a visual state for the side the taskbar is
+// docked to. Builds without the vertical taskbar may not set a current state.
+bool IsVerticalTaskbar(FrameworkElement taskbarFrameRepeater) {
+    auto rootGrid = Media::VisualTreeHelper::GetParent(taskbarFrameRepeater)
+                        .try_as<FrameworkElement>();
+    if (!rootGrid) {
+        return false;
+    }
+
+    for (const auto& group :
+         VisualStateManager::GetVisualStateGroups(rootGrid)) {
+        if (group.Name() == L"DockingStates") {
+            auto currentState = group.CurrentState();
+            if (!currentState) {
+                return false;
+            }
+
+            auto name = currentState.Name();
+            return name == L"DockedLeft" || name == L"DockedRight";
+        }
+    }
+
+    return false;
+}
+
+double& LeadingMargin(Thickness& margin, bool vertical) {
+    return vertical ? margin.Top : margin.Left;
+}
+
+double& TrailingMargin(Thickness& margin, bool vertical) {
+    return vertical ? margin.Bottom : margin.Right;
+}
+
 // The taskbar system buttons that the mod can pin to the left.
 enum class SystemButton {
     None,
@@ -276,44 +318,57 @@ bool IsPinnedClusterButton(SystemButton button) {
            (button == SystemButton::Search || button == SystemButton::TaskView);
 }
 
-// The width a cluster button takes up when it's not collapsed. ActualWidth
-// can't be used: it includes the collapse margin (-width), so it never drops
+// The extent a cluster button takes up when it's not collapsed. The actual size
+// can't be used: it includes the collapse margin (-extent), so it never drops
 // below it and grows on every layout pass. The content child's DesiredSize
 // doesn't depend on the button's own margin.
-double GetClusterButtonWidth(FrameworkElement element) {
+double GetClusterButtonExtent(FrameworkElement element, bool vertical) {
     if (Media::VisualTreeHelper::GetChildrenCount(element) > 0) {
         auto child = Media::VisualTreeHelper::GetChild(element, 0)
                          .try_as<FrameworkElement>();
         if (child) {
-            return child.DesiredSize().Width;
+            auto size = child.DesiredSize();
+            return vertical ? size.Height : size.Width;
         }
     }
 
-    return element.ActualWidth();
+    return vertical ? element.ActualHeight() : element.ActualWidth();
 }
 
-// The X at which a pinned cluster button goes: the summed widths of the buttons
-// before it in cluster order (start at 0, then search, task view, widgets), so
-// it's independent of the order the layout arranges its children in.
-double ComputePinnedSystemButtonX(FrameworkElement taskbarFrameRepeater,
-                                  SystemButton target) {
+// The offset at which a pinned cluster button goes: the summed extents of the
+// pinned buttons before it in cluster order (start at 0, then search, task
+// view, widgets), so it's independent of the order the layout arranges its
+// children in.
+double ComputePinnedSystemButtonOffset(FrameworkElement taskbarFrameRepeater,
+                                       SystemButton target,
+                                       bool vertical) {
     int targetRank = SystemButtonClusterRank(target);
     if (targetRank <= 0) {
         return 0;
     }
 
-    double x = 0;
+    double offset = 0;
     EnumRepeaterChildElements(
-        taskbarFrameRepeater, [&x, targetRank](FrameworkElement child) {
-            int childRank =
-                SystemButtonClusterRank(IdentifySystemButton(child));
-            if (childRank >= 0 && childRank < targetRank) {
-                x += GetClusterButtonWidth(child);
+        taskbarFrameRepeater,
+        [&offset, targetRank, vertical](FrameworkElement child) {
+            SystemButton button = IdentifySystemButton(child);
+            int childRank = SystemButtonClusterRank(button);
+            if (childRank >= 0 && childRank < targetRank &&
+                IsPinnedClusterButton(button)) {
+                offset += GetClusterButtonExtent(child, vertical);
             }
             return false;
         });
 
-    return x;
+    return offset;
+}
+
+// Whether the widgets button is where Windows pins it when the taskbar items
+// are centered: at the leading edge, so that its offset is just its margin.
+bool IsWidgetsButtonPinned(FrameworkElement element) {
+    auto margin = element.Margin();
+    auto offset = element.ActualOffset();
+    return offset.x == margin.Left && offset.y == margin.Top;
 }
 
 // Last GetTickCount64() at which each pinned button was collapsed, to throttle
@@ -322,7 +377,7 @@ ULONGLONG g_lastButtonCollapseTick[kSystemButtonCount];
 
 // Keeps the pinned cluster (start, plus search and task view when the option is
 // on) from overlapping the centered group: a button collapses out of the layout
-// when there's room and expands to reserve its width when crowded. Expansions
+// when there's room and expands to reserve its extent when crowded. Expansions
 // are throttled (see below) to avoid oscillation. Runs on the taskbar thread.
 void UpdatePinnedSystemButtonMargin(FrameworkElement element) {
     SystemButton self = IdentifySystemButton(element);
@@ -338,41 +393,47 @@ void UpdatePinnedSystemButtonMargin(FrameworkElement element) {
         return;
     }
 
-    // Measure the pinned set's total width and the nearest centered item.
-    double pinnedWidth = 0;
-    double centeredLeftX = std::numeric_limits<double>::infinity();
+    bool vertical = IsVerticalTaskbar(taskbarFrameRepeater);
+
+    // Measure the pinned set's total extent and the nearest centered item.
+    double pinnedExtent = 0;
+    double centeredStart = std::numeric_limits<double>::infinity();
     EnumRepeaterChildElements(
         taskbarFrameRepeater, [&](FrameworkElement child) {
             SystemButton button = IdentifySystemButton(child);
             if (IsPinnedClusterButton(button)) {
-                pinnedWidth += GetClusterButtonWidth(child);
+                pinnedExtent += GetClusterButtonExtent(child, vertical);
             } else if (button != SystemButton::Widgets) {
                 auto offset = child.ActualOffset();
-                if (offset.x >= 0 && offset.x < centeredLeftX) {
-                    centeredLeftX = offset.x;
+                float start = vertical ? offset.y : offset.x;
+                if (start >= 0 && start < centeredStart) {
+                    centeredStart = start;
                 }
             }
             return false;
         });
 
     Thickness margin = element.Margin();
+    double& trailingMargin = TrailingMargin(margin, vertical);
+    double extent = GetClusterButtonExtent(element, vertical);
 
-    double newRight;
-    if (centeredLeftX < pinnedWidth) {
-        newRight = 0;  // expand: reserve this button's width
-    } else if (margin.Right != 0 || centeredLeftX > pinnedWidth + 44) {
-        newRight =
-            -GetClusterButtonWidth(element);  // collapse out of the group
+    double newTrailingMargin;
+    if (centeredStart < pinnedExtent) {
+        newTrailingMargin = 0;  // expand: reserve this button's extent
+    } else if (trailingMargin != 0 || centeredStart > pinnedExtent + extent) {
+        // collapse out of the group, once there's room for this button's
+        // extent to spare
+        newTrailingMargin = -extent;
     } else {
         return;  // already collapsed and not crowded
     }
 
-    if (margin.Right == newRight) {
+    if (trailingMargin == newTrailingMargin) {
         return;
     }
 
-    if (newRight < margin.Right) {
-        // Collapsing gives up this button's reserved width and shifts the
+    if (newTrailingMargin < trailingMargin) {
+        // Collapsing gives up this button's reserved extent and shifts the
         // centered group back, which can immediately make expanding look right
         // again. Throttle collapses to at most once a second per button so it
         // settles in the expanded (non-overlapping) state instead of
@@ -386,17 +447,20 @@ void UpdatePinnedSystemButtonMargin(FrameworkElement element) {
         *lastCollapse = now;
     }
 
-    margin.Right = newRight;
+    trailingMargin = newTrailingMargin;
     element.Margin(margin);
 }
 
-// Pins the widgets button to the right of the start button (or the whole
-// cluster, when the option is on) via its left margin. Windows left-pins it at
-// the far left where the start button goes, so it always needs nudging right.
-// Runs on the taskbar thread.
-void UpdateWidgetLeftMargin(FrameworkElement element) {
-    if (g_unloading) {
-        // ApplyStyle restores the margin on unload; don't fight it.
+// Collapses a pinned cluster button (the start button always, plus the search
+// and task view buttons when the option is on) out of the centered group;
+// IUIElement_Arrange_Hook positions it. Buttons that aren't pinned, and
+// everything while unloading, are restored to the centered group. Runs on the
+// taskbar thread.
+void ApplyClusterButtonCollapse(FrameworkElement element) {
+    SystemButton systemButton = IdentifySystemButton(element);
+    if (systemButton != SystemButton::Start &&
+        systemButton != SystemButton::Search &&
+        systemButton != SystemButton::TaskView) {
         return;
     }
 
@@ -406,15 +470,57 @@ void UpdateWidgetLeftMargin(FrameworkElement element) {
         return;
     }
 
-    double left = g_settings.otherSystemButtonsOnTheLeft
-                      ? ComputePinnedSystemButtonX(taskbarFrameRepeater,
-                                                   SystemButton::Widgets)
-                      : 44;
+    bool vertical = IsVerticalTaskbar(taskbarFrameRepeater);
 
     Thickness margin = element.Margin();
-    if (margin.Left != left) {
-        margin.Left = left;
-        element.Margin(margin);
+    Thickness newMargin = margin;
+
+    // Restore only the collapse applied by the mod. Check both axes, since
+    // the taskbar orientation can change.
+    newMargin.Right = std::max(newMargin.Right, 0.0);
+    newMargin.Bottom = std::max(newMargin.Bottom, 0.0);
+
+    if (IsPinnedClusterButton(systemButton) && !g_unloading) {
+        TrailingMargin(newMargin, vertical) =
+            -GetClusterButtonExtent(element, vertical);
+    }
+
+    if (newMargin == margin) {
+        return;
+    }
+
+    Wh_Log(
+        L"Collapsing system button %d: margin.Right=%.1f, margin.Bottom=%.1f",
+        (int)systemButton, newMargin.Right, newMargin.Bottom);
+    element.Margin(newMargin);
+}
+
+// Pins the widgets button after the start button (or the whole cluster, when
+// the option is on) via its leading margin, or restores it while unloading.
+// Windows pins it at the leading edge where the start button goes, so it always
+// needs nudging. Runs on the taskbar thread.
+void ApplyWidgetMargin(FrameworkElement element) {
+    auto taskbarFrameRepeater =
+        Media::VisualTreeHelper::GetParent(element).try_as<FrameworkElement>();
+    if (!taskbarFrameRepeater) {
+        return;
+    }
+
+    bool vertical = IsVerticalTaskbar(taskbarFrameRepeater);
+
+    double leadingMargin = g_unloading ? 0
+                                       : ComputePinnedSystemButtonOffset(
+                                             taskbarFrameRepeater,
+                                             SystemButton::Widgets, vertical);
+
+    Thickness margin = element.Margin();
+    Thickness newMargin = margin;
+    // Clear the margin applied for the other taskbar orientation.
+    LeadingMargin(newMargin, !vertical) = 0;
+    LeadingMargin(newMargin, vertical) = leadingMargin;
+
+    if (newMargin != margin) {
+        element.Margin(newMargin);
     }
 }
 
@@ -447,71 +553,15 @@ bool ApplyStyle(XamlRoot xamlRoot) {
 
     auto widgetElement = EnumRepeaterChildElements(
         taskbarFrameRepeater, [](FrameworkElement child) {
-            auto childClassName = winrt::get_class_name(child);
-            if (childClassName != L"Taskbar.AugmentedEntryPointButton") {
-                return false;
-            }
-
-            if (child.Name() != L"AugmentedEntryPointButton") {
-                return false;
-            }
-
-            auto margin = child.Margin();
-
-            auto offset = child.ActualOffset();
-            if (offset.x != margin.Left || offset.y != 0) {
-                return false;
-            }
-
-            return true;
+            return IdentifySystemButton(child) == SystemButton::Widgets &&
+                   IsWidgetsButtonPinned(child);
         });
     if (widgetElement) {
-        auto margin = widgetElement.Margin();
-        if (g_unloading) {
-            margin.Left = 0;
-        } else if (g_settings.otherSystemButtonsOnTheLeft) {
-            // Pin the widgets button at the end of the cluster, after the task
-            // view button, instead of right after the start button.
-            margin.Left = ComputePinnedSystemButtonX(taskbarFrameRepeater,
-                                                     SystemButton::Widgets);
-        } else {
-            margin.Left = 44;
-        }
-        widgetElement.Margin(margin);
+        ApplyWidgetMargin(widgetElement);
     }
 
-    // Collapse the pinned cluster buttons - the start button always, plus the
-    // search and task view buttons when the option is on - so they're excluded
-    // from the centered group; their left positioning happens in
-    // IUIElement_Arrange_Hook. Buttons that aren't pinned, and everything while
-    // unloading, are restored to the centered group.
     EnumRepeaterChildElements(taskbarFrameRepeater, [](FrameworkElement child) {
-        SystemButton systemButton = IdentifySystemButton(child);
-        switch (systemButton) {
-            case SystemButton::Start:
-            case SystemButton::Search:
-            case SystemButton::TaskView: {
-                Thickness margin = child.Margin();
-                double width = GetClusterButtonWidth(child);
-                if (IsPinnedClusterButton(systemButton) && !g_unloading) {
-                    margin.Right = -width;
-                } else if (margin.Right < 0) {
-                    // Restore only the collapse applied by the mod.
-                    margin.Right = 0;
-                } else {
-                    break;
-                }
-                Wh_Log(
-                    L"Collapsing system button %d: width=%.1f, "
-                    L"margin.Right=%.1f",
-                    (int)systemButton, width, margin.Right);
-                child.Margin(margin);
-                break;
-            }
-            default:
-                break;
-        }
-
+        ApplyClusterButtonCollapse(child);
         return false;
     });
 
@@ -755,7 +805,7 @@ HRESULT WINAPI IUIElement_Arrange_Hook(void* pThis,
     // The widgets button needs repositioning whether or not the option is on,
     // so handle it before the pinned-cluster check below.
     if (systemButton == SystemButton::Widgets) {
-        ScheduleOnTaskbarThread(element, UpdateWidgetLeftMargin);
+        ScheduleOnTaskbarThread(element, ApplyWidgetMargin);
         return original();
     }
 
@@ -772,18 +822,22 @@ HRESULT WINAPI IUIElement_Arrange_Hook(void* pThis,
         return original();
     }
 
-    // Find the widgets button at its left-pinned position (offset matches its
-    // margin). When present, it sits right of the start button (or cluster) and
-    // anchors it against the centered group.
+    bool vertical = IsVerticalTaskbar(taskbarFrameRepeater);
+
+    // A collapse along the other axis is left over from before the taskbar
+    // orientation changed.
+    Thickness margin = element.Margin();
+    if (TrailingMargin(margin, !vertical) < 0) {
+        ScheduleOnTaskbarThread(element, ApplyClusterButtonCollapse);
+    }
+
+    // Find the widgets button at its left-pinned position. When present, it
+    // sits right of the start button (or cluster) and anchors it against the
+    // centered group.
     auto widgetElement = EnumRepeaterChildElements(
         taskbarFrameRepeater, [](FrameworkElement child) {
-            if (IdentifySystemButton(child) != SystemButton::Widgets) {
-                return false;
-            }
-
-            auto margin = child.Margin();
-            auto offset = child.ActualOffset();
-            return offset.x == margin.Left && offset.y == 0;
+            return IdentifySystemButton(child) == SystemButton::Widgets &&
+                   IsWidgetsButtonPinned(child);
         });
 
     // Without that anchor, adjust the margin so the start button (or cluster)
@@ -792,14 +846,20 @@ HRESULT WINAPI IUIElement_Arrange_Hook(void* pThis,
         ScheduleOnTaskbarThread(element, UpdatePinnedSystemButtonMargin);
     }
 
-    // Pin it to the left in cluster order: the start button gets
-    // X = 0, then search, then task view.
-    double x = ComputePinnedSystemButtonX(taskbarFrameRepeater, systemButton);
+    // Pin it to the left in cluster order: the start button gets offset 0,
+    // then search, then task view.
+    double offset = ComputePinnedSystemButtonOffset(taskbarFrameRepeater,
+                                                    systemButton, vertical);
 
-    Wh_Log(L"Pinning system button %d to x=%.1f", (int)systemButton, x);
+    Wh_Log(L"Pinning system button %d to %s=%.1f", (int)systemButton,
+           vertical ? L"y" : L"x", offset);
 
     winrt::Windows::Foundation::Rect newRect = rect;
-    newRect.X = x;
+    if (vertical) {
+        newRect.Y = offset;
+    } else {
+        newRect.X = offset;
+    }
     return IUIElement_Arrange_Original(pThis, newRect);
 }
 
