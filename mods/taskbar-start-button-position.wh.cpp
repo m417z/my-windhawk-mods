@@ -2,7 +2,7 @@
 // @id              taskbar-start-button-position
 // @name            Start button always on the left
 // @description     Forces the Start button to be on the left of the taskbar, even when taskbar icons are centered, with an option to also move the search and task view buttons (Windows 11 only)
-// @version         1.3.2
+// @version         1.3.3
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
@@ -71,6 +71,7 @@ _Start button, search and task view buttons on the left_
 
 #include <algorithm>
 #include <atomic>
+#include <cstdlib>
 #include <functional>
 #include <limits>
 #include <optional>
@@ -1412,9 +1413,9 @@ Mirror_IsThreadRTL_t Mirror_IsThreadRTL;
 // taskbar, centers it on the monitor, instead of using its usual position, such
 // as by the search box. With the search button pinned to the left, the usual
 // position is used, which is also where the search app expects the search box
-// to be. With a vertical taskbar, the window stays by the button. When opened
-// from the Start menu, the window is left as is, to be positioned along with
-// the Start menu.
+// to be. A vertical taskbar has no search box, and the window stays centered.
+// When opened from the Start menu, the window is left as is, to be positioned
+// along with the Start menu.
 using SearchBoxOnTaskbarSearchAppPositioner_AdjustAppRectForCenterAlignedTaskbar_t =
     void(WINAPI*)(void* pThis,
                   RECT* appRect,
@@ -1437,16 +1438,8 @@ SearchBoxOnTaskbarSearchAppPositioner_AdjustAppRectForCenterAlignedTaskbar_Hook(
         return;
     }
 
-    if (IsStartMenuOpen()) {
-        return;
-    }
-
-    if (appRect->top != originalRect.top) {
-        appRect->top = originalRect.top;
-        return;
-    }
-
-    if (appRect->left == originalRect.left) {
+    // Not centered horizontally, e.g. with a vertical taskbar.
+    if (appRect->left == originalRect.left || IsStartMenuOpen()) {
         return;
     }
 
@@ -1472,6 +1465,7 @@ bool HookTwinuiPcshellSymbols() {
         return false;
     }
 
+    // twinui.pcshell.dll
     WindhawkUtils::SYMBOL_HOOK twinuiPcshellHooks[] = {
         {
             {LR"(private: struct tagRECT __cdecl SearchBoxOnTaskbarSearchAppPositioner::GetAppRectForSearchBoxOnTaskbar(struct MonitorInfo const &,bool,int,int,bool))"},
@@ -1957,6 +1951,7 @@ BOOL Wh_ModInit() {
     }
 
     if (!HookTwinuiPcshellSymbols()) {
+        // The mod can continue without these hooks.
         Wh_Log(L"HookTwinuiPcshellSymbols failed");
     }
 
