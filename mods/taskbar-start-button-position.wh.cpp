@@ -31,7 +31,8 @@ icons are centered.
 There's also an option to move the search and task view buttons to the left,
 keeping only the app icons centered.
 
-With a vertical taskbar, the buttons are moved to the top instead.
+With a vertical taskbar, the buttons and the Start menu are moved to the top
+instead.
 
 Only Windows 11 is supported.
 
@@ -119,7 +120,9 @@ thread_local bool g_TaskbarCollapsibleLayoutXamlTraits_ArrangeOverride;
 thread_local bool g_inShowStartButtonContextMenu;
 
 HWND g_searchMenuWnd;
-int g_searchMenuOriginalX;
+// The search menu's x before it was moved, or y with a vertical taskbar.
+int g_searchMenuOriginalPos;
+bool g_searchMenuVertical;
 HMONITOR g_searchMenuMonitor;
 
 HWND FindCurrentProcessTaskbarWnd() {
@@ -1150,6 +1153,66 @@ bool IsStartMenuOpen() {
     return open;
 }
 
+HWND GetTaskbarForMonitor(HMONITOR monitor) {
+    HWND hTaskbarWnd = FindWindow(L"Shell_TrayWnd", nullptr);
+    if (!hTaskbarWnd) {
+        return nullptr;
+    }
+
+    HMONITOR taskbarMonitor = (HMONITOR)GetProp(hTaskbarWnd, L"TaskbarMonitor");
+    if (taskbarMonitor == monitor) {
+        return hTaskbarWnd;
+    }
+
+    DWORD taskbarThreadId = GetWindowThreadProcessId(hTaskbarWnd, nullptr);
+    if (!taskbarThreadId) {
+        return nullptr;
+    }
+
+    struct EnumData {
+        HMONITOR monitor;
+        HWND result;
+    } enumData = {monitor, nullptr};
+
+    EnumThreadWindows(
+        taskbarThreadId,
+        [](HWND hWnd, LPARAM lParam) -> BOOL {
+            auto& data = *reinterpret_cast<EnumData*>(lParam);
+
+            WCHAR szClassName[32];
+            if (GetClassName(hWnd, szClassName, ARRAYSIZE(szClassName)) == 0) {
+                return TRUE;
+            }
+
+            if (_wcsicmp(szClassName, L"Shell_SecondaryTrayWnd") != 0) {
+                return TRUE;
+            }
+
+            HMONITOR taskbarMonitor =
+                (HMONITOR)GetProp(hWnd, L"TaskbarMonitor");
+            if (taskbarMonitor != data.monitor) {
+                return TRUE;
+            }
+
+            data.result = hWnd;
+            return FALSE;
+        },
+        reinterpret_cast<LPARAM>(&enumData));
+
+    return enumData.result;
+}
+
+// A vertical taskbar window is taller than it's wide, also while auto-hidden.
+bool IsVerticalTaskbarOnMonitor(HMONITOR monitor) {
+    HWND hTaskbarWnd = GetTaskbarForMonitor(monitor);
+    RECT rect;
+    if (!hTaskbarWnd || !GetWindowRect(hTaskbarWnd, &rect)) {
+        return false;
+    }
+
+    return rect.bottom - rect.top > rect.right - rect.left;
+}
+
 using DwmSetWindowAttribute_t = decltype(&DwmSetWindowAttribute);
 DwmSetWindowAttribute_t DwmSetWindowAttribute_Original;
 HRESULT WINAPI DwmSetWindowAttribute_Hook(HWND hwnd,
@@ -1205,30 +1268,39 @@ HRESULT WINAPI DwmSetWindowAttribute_Hook(HWND hwnd,
     int cy = targetRect.bottom - targetRect.top;
 
     if (target == DwmTarget::SearchHost) {
-        // Only change x.
-        int xNew;
+        // Only change the position along the taskbar: x, or y with a vertical
+        // taskbar.
+        bool vertical;
+        int newPos;
 
         if (g_settings.startMenuOnTheLeft && !cloak &&
             (g_settings.searchMenuPositionInAllCases || IsStartMenuOpen())) {
+            vertical = IsVerticalTaskbarOnMonitor(monitor);
+            int pos = vertical ? y : x;
+            int workAreaStart =
+                vertical ? monitorInfo.rcWork.top : monitorInfo.rcWork.left;
+
             // Not centered or already changed.
-            if (x == monitorInfo.rcWork.left) {
+            if (pos == workAreaStart) {
                 return original();
             }
 
-            xNew = monitorInfo.rcWork.left;
+            newPos = workAreaStart;
             g_searchMenuWnd = hwnd;
-            g_searchMenuOriginalX = x;
+            g_searchMenuOriginalPos = pos;
+            g_searchMenuVertical = vertical;
             g_searchMenuMonitor = monitor;
         } else {
-            if (!g_searchMenuOriginalX) {
+            if (!g_searchMenuOriginalPos) {
                 return original();
             }
 
-            xNew = g_searchMenuOriginalX;
+            vertical = g_searchMenuVertical;
+            newPos = g_searchMenuOriginalPos;
             bool monitorMatches = monitor == g_searchMenuMonitor;
 
             g_searchMenuWnd = nullptr;
-            g_searchMenuOriginalX = 0;
+            g_searchMenuOriginalPos = 0;
             g_searchMenuMonitor = nullptr;
 
             if (!monitorMatches) {
@@ -1236,13 +1308,15 @@ HRESULT WINAPI DwmSetWindowAttribute_Hook(HWND hwnd,
             }
         }
 
-        if (xNew == x) {
+        int& pos = vertical ? y : x;
+        if (newPos == pos) {
             return original();
         }
 
-        Wh_Log(L"Adjusting search menu: %d -> %d", x, xNew);
+        Wh_Log(L"Adjusting search menu %s: %d -> %d", vertical ? L"y" : L"x",
+               pos, newPos);
 
-        x = xNew;
+        pos = newPos;
     }
 
     SetWindowPos(hwnd, nullptr, x, y, cx, cy, SWP_NOZORDER | SWP_NOACTIVATE);
@@ -1252,13 +1326,73 @@ HRESULT WINAPI DwmSetWindowAttribute_Hook(HWND hwnd,
 
 namespace StartMenuUI {
 
+// Overrides a property's local value, keeping the latest local value set by
+// Windows to restore it, or to clear the property if there's none.
+template <typename T>
+class PropertyOverride {
+   public:
+    using PropertyGetter = DependencyProperty (*)();
+
+    explicit PropertyOverride(PropertyGetter property) : m_property(property) {}
+
+    void Set(DependencyObject element, T value) {
+        auto property = m_property();
+        auto localValue = element.ReadLocalValue(property).try_as<T>();
+        if (m_element.get() != element || localValue != m_value) {
+            m_element = element;
+            m_windowsValue = localValue;
+        }
+
+        m_value = value;
+        element.SetValue(property, winrt::box_value(value));
+    }
+
+    void Restore() {
+        auto element = m_element.get();
+        m_element = nullptr;
+        if (!element) {
+            return;
+        }
+
+        auto property = m_property();
+        if (element.ReadLocalValue(property).try_as<T>() != m_value) {
+            return;
+        }
+
+        if (m_windowsValue) {
+            element.SetValue(property, winrt::box_value(*m_windowsValue));
+        } else {
+            element.ClearValue(property);
+        }
+    }
+
+    // Stops overriding, leaving the current value.
+    void Release() { m_element = nullptr; }
+
+   private:
+    PropertyGetter m_property;
+    winrt::weak_ref<DependencyObject> m_element;
+    std::optional<T> m_windowsValue;
+    T m_value{};
+};
+
+// The Start menu is moved to the left, or to the top with a vertical taskbar,
+// which has the Start menu next to it. Its position along the other axis is
+// left to Windows, which sets it for the side the taskbar is docked to, also
+// when the taskbar orientation changes.
 bool g_inApplyStyle;
-std::optional<double> g_previousCanvasLeft;
+PropertyOverride<double> g_canvasTopOverride{&Controls::Canvas::TopProperty};
+PropertyOverride<double> g_canvasLeftOverride{&Controls::Canvas::LeftProperty};
+PropertyOverride<VerticalAlignment> g_verticalAlignmentOverride{
+    &FrameworkElement::VerticalAlignmentProperty};
+PropertyOverride<HorizontalAlignment> g_horizontalAlignmentOverride{
+    &FrameworkElement::HorizontalAlignmentProperty};
+PropertyOverride<Thickness> g_marginOverride{&FrameworkElement::MarginProperty};
 winrt::weak_ref<DependencyObject> g_startSizingFrameWeakRef;
 int64_t g_canvasTopPropertyChangedToken;
 int64_t g_canvasLeftPropertyChangedToken;
-std::optional<HorizontalAlignment> g_previousHorizontalAlignment;
 winrt::weak_ref<DependencyObject> g_frameRootWeakRef;
+int64_t g_verticalAlignmentPropertyChangedToken;
 int64_t g_horizontalAlignmentPropertyChangedToken;
 winrt::event_token g_visibilityChangedToken;
 
@@ -1298,7 +1432,8 @@ HWND GetCoreWnd() {
 
 void ApplyStyle();
 
-void ApplyStyleClassicStartMenu(FrameworkElement content, HMONITOR monitor) {
+void ApplyStyleClassicStartMenu(FrameworkElement content,
+                                bool verticalTaskbar) {
     FrameworkElement startSizingFrame =
         FindChildByClassName(content, L"StartDocked.StartSizingFrame");
     if (!startSizingFrame) {
@@ -1307,66 +1442,60 @@ void ApplyStyleClassicStartMenu(FrameworkElement content, HMONITOR monitor) {
     }
 
     if (g_unloading) {
-        if (g_previousCanvasLeft.has_value()) {
-            Wh_Log(L"Restoring Canvas.Left to %f",
-                   g_previousCanvasLeft.value());
-            Controls::Canvas::SetLeft(startSizingFrame,
-                                      g_previousCanvasLeft.value());
-        }
+        g_canvasLeftOverride.Restore();
+        g_canvasTopOverride.Restore();
+        return;
+    }
+
+    constexpr int kStartMenuMargin = 12;
+
+    if (verticalTaskbar) {
+        g_canvasLeftOverride.Release();
+        Wh_Log(L"Setting Canvas.Top to %d", kStartMenuMargin);
+        g_canvasTopOverride.Set(startSizingFrame, kStartMenuMargin);
     } else {
-        if (!g_previousCanvasLeft.has_value()) {
-            double canvasLeft = Controls::Canvas::GetLeft(startSizingFrame);
-            // The value might be zero when not yet initialized.
-            if (canvasLeft) {
-                g_previousCanvasLeft = canvasLeft;
-            }
-        }
+        g_canvasTopOverride.Release();
+        Wh_Log(L"Setting Canvas.Left to %d", kStartMenuMargin);
+        g_canvasLeftOverride.Set(startSizingFrame, kStartMenuMargin);
+    }
 
-        constexpr int kStartMenuMargin = 12;
+    // Subscribe to Canvas.Top and Canvas.Left property changes to apply custom
+    // styles right when that happens. Without it, the start menu may end up
+    // truncated. A simple reproduction is to open the start menu on different
+    // monitors, each with a different resolution/DPI/taskbar side.
+    if (!g_startSizingFrameWeakRef.get()) {
+        auto startSizingFrameDo = startSizingFrame.as<DependencyObject>();
 
-        double newLeft = kStartMenuMargin;
+        g_startSizingFrameWeakRef = startSizingFrameDo;
 
-        Wh_Log(L"Setting Canvas.Left to %f", newLeft);
-        Controls::Canvas::SetLeft(startSizingFrame, newLeft);
+        g_canvasTopPropertyChangedToken =
+            startSizingFrameDo.RegisterPropertyChangedCallback(
+                Controls::Canvas::TopProperty(),
+                [](DependencyObject sender, DependencyProperty property) {
+                    double top =
+                        Controls::Canvas::GetTop(sender.as<FrameworkElement>());
+                    Wh_Log(L"Canvas.Top changed to %f", top);
+                    if (!g_inApplyStyle) {
+                        ApplyStyle();
+                    }
+                });
 
-        // Subscribe to Canvas.Top and Canvas.Left property changes to apply
-        // custom styles right when that happens. Without it, the start menu may
-        // end up truncated. A simple reproduction is to open the start menu on
-        // different monitors, each with a different resolution/DPI/taskbar
-        // side.
-        if (!g_startSizingFrameWeakRef.get()) {
-            auto startSizingFrameDo = startSizingFrame.as<DependencyObject>();
-
-            g_startSizingFrameWeakRef = startSizingFrameDo;
-
-            g_canvasTopPropertyChangedToken =
-                startSizingFrameDo.RegisterPropertyChangedCallback(
-                    Controls::Canvas::TopProperty(),
-                    [](DependencyObject sender, DependencyProperty property) {
-                        double top = Controls::Canvas::GetTop(
-                            sender.as<FrameworkElement>());
-                        Wh_Log(L"Canvas.Top changed to %f", top);
-                        if (!g_inApplyStyle) {
-                            ApplyStyle();
-                        }
-                    });
-
-            g_canvasLeftPropertyChangedToken =
-                startSizingFrameDo.RegisterPropertyChangedCallback(
-                    Controls::Canvas::LeftProperty(),
-                    [](DependencyObject sender, DependencyProperty property) {
-                        double left = Controls::Canvas::GetLeft(
-                            sender.as<FrameworkElement>());
-                        Wh_Log(L"Canvas.Left changed to %f", left);
-                        if (!g_inApplyStyle) {
-                            ApplyStyle();
-                        }
-                    });
-        }
+        g_canvasLeftPropertyChangedToken =
+            startSizingFrameDo.RegisterPropertyChangedCallback(
+                Controls::Canvas::LeftProperty(),
+                [](DependencyObject sender, DependencyProperty property) {
+                    double left = Controls::Canvas::GetLeft(
+                        sender.as<FrameworkElement>());
+                    Wh_Log(L"Canvas.Left changed to %f", left);
+                    if (!g_inApplyStyle) {
+                        ApplyStyle();
+                    }
+                });
     }
 }
 
-void ApplyStyleRedesignedStartMenu(FrameworkElement content) {
+void ApplyStyleRedesignedStartMenu(FrameworkElement content,
+                                   bool verticalTaskbar) {
     FrameworkElement frameRoot = FindChildByName(content, L"FrameRoot");
     if (!frameRoot) {
         Wh_Log(L"Failed to find Start menu frame root");
@@ -1374,33 +1503,60 @@ void ApplyStyleRedesignedStartMenu(FrameworkElement content) {
     }
 
     if (g_unloading) {
-        frameRoot.HorizontalAlignment(g_previousHorizontalAlignment.value_or(
-            HorizontalAlignment::Center));
+        g_horizontalAlignmentOverride.Restore();
+        g_verticalAlignmentOverride.Restore();
+        g_marginOverride.Restore();
+        return;
+    }
+
+    g_marginOverride.Restore();
+
+    if (verticalTaskbar) {
+        g_horizontalAlignmentOverride.Release();
+
+        // Keep the vertical margin set by Windows, moved to the bottom so that
+        // it doesn't offset the menu from the top.
+        auto margin = frameRoot.Margin();
+        margin.Bottom += margin.Top;
+        margin.Top = 0;
+        g_marginOverride.Set(frameRoot, margin);
+
+        g_verticalAlignmentOverride.Set(frameRoot, VerticalAlignment::Top);
     } else {
-        if (!g_previousHorizontalAlignment) {
-            g_previousHorizontalAlignment = frameRoot.HorizontalAlignment();
-        }
+        g_verticalAlignmentOverride.Release();
+        g_horizontalAlignmentOverride.Set(frameRoot, HorizontalAlignment::Left);
+    }
 
-        frameRoot.HorizontalAlignment(HorizontalAlignment::Left);
+    if (!g_frameRootWeakRef.get()) {
+        auto frameRootDo = frameRoot.as<DependencyObject>();
 
-        if (!g_frameRootWeakRef.get()) {
-            auto frameRootDo = frameRoot.as<DependencyObject>();
+        g_frameRootWeakRef = frameRootDo;
 
-            g_frameRootWeakRef = frameRootDo;
+        g_verticalAlignmentPropertyChangedToken =
+            frameRootDo.RegisterPropertyChangedCallback(
+                FrameworkElement::VerticalAlignmentProperty(),
+                [](DependencyObject sender, DependencyProperty property) {
+                    auto alignment =
+                        sender.as<FrameworkElement>().VerticalAlignment();
+                    Wh_Log(L"FrameRoot VerticalAlignment changed to %d",
+                           static_cast<int>(alignment));
+                    if (!g_inApplyStyle) {
+                        ApplyStyle();
+                    }
+                });
 
-            g_horizontalAlignmentPropertyChangedToken =
-                frameRootDo.RegisterPropertyChangedCallback(
-                    FrameworkElement::HorizontalAlignmentProperty(),
-                    [](DependencyObject sender, DependencyProperty property) {
-                        auto alignment =
-                            sender.as<FrameworkElement>().HorizontalAlignment();
-                        Wh_Log(L"FrameRoot HorizontalAlignment changed to %d",
-                               static_cast<int>(alignment));
-                        if (!g_inApplyStyle) {
-                            ApplyStyle();
-                        }
-                    });
-        }
+        g_horizontalAlignmentPropertyChangedToken =
+            frameRootDo.RegisterPropertyChangedCallback(
+                FrameworkElement::HorizontalAlignmentProperty(),
+                [](DependencyObject sender, DependencyProperty property) {
+                    auto alignment =
+                        sender.as<FrameworkElement>().HorizontalAlignment();
+                    Wh_Log(L"FrameRoot HorizontalAlignment changed to %d",
+                           static_cast<int>(alignment));
+                    if (!g_inApplyStyle) {
+                        ApplyStyle();
+                    }
+                });
     }
 }
 
@@ -1409,8 +1565,10 @@ void ApplyStyle() {
 
     HWND coreWnd = GetCoreWnd();
     HMONITOR monitor = MonitorFromWindow(coreWnd, MONITOR_DEFAULTTONEAREST);
+    bool verticalTaskbar = IsVerticalTaskbarOnMonitor(monitor);
 
-    Wh_Log(L"Applying Start menu style for monitor %p", monitor);
+    Wh_Log(L"Applying Start menu style for monitor %p, vertical taskbar: %d",
+           monitor, verticalTaskbar);
 
     auto window = Window::Current();
     FrameworkElement content = window.Content().as<FrameworkElement>();
@@ -1419,9 +1577,9 @@ void ApplyStyle() {
     Wh_Log(L"Start menu content class name: %s", contentClassName.c_str());
 
     if (contentClassName == L"Windows.UI.Xaml.Controls.Canvas") {
-        ApplyStyleClassicStartMenu(content, monitor);
+        ApplyStyleClassicStartMenu(content, verticalTaskbar);
     } else if (contentClassName == L"StartMenu.StartBlendedFlexFrame") {
-        ApplyStyleRedesignedStartMenu(content);
+        ApplyStyleRedesignedStartMenu(content, verticalTaskbar);
     } else {
         Wh_Log(L"Error: Unsupported Start menu content class name");
     }
@@ -1485,6 +1643,13 @@ void Uninit() {
 
     auto frameRootDo = g_frameRootWeakRef.get();
     if (frameRootDo) {
+        if (g_verticalAlignmentPropertyChangedToken) {
+            frameRootDo.UnregisterPropertyChangedCallback(
+                FrameworkElement::VerticalAlignmentProperty(),
+                g_verticalAlignmentPropertyChangedToken);
+            g_verticalAlignmentPropertyChangedToken = 0;
+        }
+
         if (g_horizontalAlignmentPropertyChangedToken) {
             frameRootDo.UnregisterPropertyChangedCallback(
                 FrameworkElement::HorizontalAlignmentProperty(),
@@ -1537,7 +1702,7 @@ HRESULT WINAPI RoGetActivationFactory_Hook(HSTRING activatableClassId,
 }  // namespace StartMenuUI
 
 void RestoreMenuPositions() {
-    if (g_searchMenuWnd && g_searchMenuOriginalX) {
+    if (g_searchMenuWnd && g_searchMenuOriginalPos) {
         HMONITOR monitor =
             MonitorFromWindow(g_searchMenuWnd, MONITOR_DEFAULTTONEAREST);
 
@@ -1551,15 +1716,16 @@ void RestoreMenuPositions() {
             int cx = rect.right - rect.left;
             int cy = rect.bottom - rect.top;
 
-            if (g_searchMenuOriginalX != x) {
-                x = g_searchMenuOriginalX;
+            int& pos = g_searchMenuVertical ? y : x;
+            if (g_searchMenuOriginalPos != pos) {
+                pos = g_searchMenuOriginalPos;
                 SetWindowPos(g_searchMenuWnd, nullptr, x, y, cx, cy,
                              SWP_NOZORDER | SWP_NOACTIVATE);
             }
         }
 
         g_searchMenuWnd = nullptr;
-        g_searchMenuOriginalX = 0;
+        g_searchMenuOriginalPos = 0;
         g_searchMenuMonitor = nullptr;
     }
 }
