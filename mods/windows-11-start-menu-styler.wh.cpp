@@ -2,7 +2,7 @@
 // @id              windows-11-start-menu-styler
 // @name            Windows 11 Start Menu Styler
 // @description     Customize the Start menu with themes contributed by others or create your own
-// @version         1.7
+// @version         1.7.1
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
@@ -414,6 +414,31 @@ code from the **TranslucentTB** project.
 The `WindhawkBlur` brush object implementation is based on
 [XamlBlurBrush](https://github.com/TranslucentTB/TranslucentTB/blob/release/ExplorerTAP/XamlBlurBrush.cpp)
 from the **TranslucentTB** project.
+
+### Native theme in Search WebView styles
+
+The search WebView's current XAML theme is exposed as
+`data-windhawk-theme="light"` or `data-windhawk-theme="dark"` on the document's
+root element. Web content style targets can use this attribute, for example:
+
+```
+html[data-windhawk-theme="dark"] body
+```
+
+Custom JavaScript can read `window.windhawkTheme` during initialization and
+listen for `windhawk-theme-changed` on `window`. The event's `detail.theme` is
+`"light"` or `"dark"`. Read the initial value directly: the initial event is
+dispatched before custom JavaScript runs. Theme changes update the attribute
+and dispatch an event without re-running custom JavaScript, avoiding duplicate
+listeners or observers. Normal navigation still applies the configured styles
+and custom JavaScript to the new document.
+
+The theme follows the WebView's `ActualTheme`, including inherited or explicitly
+requested XAML themes. This does not force the browser's `prefers-color-scheme`.
+The signal is exposed only in the search documents already supported by this
+mod; embedded result frames are not modified automatically. Custom JavaScript
+can propagate the signal to accessible frames if needed.
+
 */
 // ==/WindhawkModReadme==
 
@@ -8751,6 +8776,7 @@ struct WebViewCustomizationState {
     winrt::weak_ref<FrameworkElement> element;
     bool isWebView2 = false;
     winrt::event_token navigationCompletedEventToken;
+    winrt::event_token actualThemeChangedEventToken;
 };
 
 std::unordered_map<ElementId, WebViewCustomizationState>
@@ -14607,8 +14633,33 @@ std::wstring EscapeJsTemplateString(std::wstring_view str) {
     return buffer;
 }
 
-std::wstring CreateWebViewJsCodeForApply() {
-    std::wstring jsCode =
+std::wstring CreateWebViewThemeJsCode(ElementTheme theme) {
+    std::wstring jsCode = LR"(
+        (() => {
+        const theme = ')";
+    jsCode += theme == ElementTheme::Dark ? L"dark" : L"light";
+    jsCode += LR"(';
+        const previousTheme = window.windhawkTheme;
+        window.windhawkTheme = theme;
+        document.documentElement.setAttribute("data-windhawk-theme", theme);
+        if (previousTheme !== theme) {
+            window.dispatchEvent(new CustomEvent("windhawk-theme-changed", {
+                detail: { theme },
+            }));
+        }
+        })();
+    )";
+    return jsCode;
+}
+
+std::wstring CreateWebViewJsCodeForApply(ElementTheme theme,
+                                        bool themeOnly = false) {
+    std::wstring jsCode = CreateWebViewThemeJsCode(theme);
+    if (themeOnly) {
+        return jsCode;
+    }
+
+    jsCode +=
         LR"(
         (() => {
         const styleElementId = "windhawk-windows-11-start-menu-styler-style";
@@ -14646,7 +14697,8 @@ std::wstring CreateWebViewJsCodeForApply() {
     return jsCode;
 }
 
-bool ApplyWebViewStyleCustomizations(Controls::WebView webViewElement) {
+bool ApplyWebViewStyleCustomizations(Controls::WebView webViewElement,
+                                     bool themeOnly = false) {
     auto source = webViewElement.Source();
     if (!source) {
         return false;
@@ -14669,7 +14721,8 @@ bool ApplyWebViewStyleCustomizations(Controls::WebView webViewElement) {
         return false;
     }
 
-    std::wstring jsCode = CreateWebViewJsCodeForApply();
+    std::wstring jsCode = CreateWebViewJsCodeForApply(
+        webViewElement.ActualTheme(), themeOnly);
 
     webViewElement.InvokeScriptAsync(
         L"eval", winrt::single_threaded_vector<winrt::hstring>(
@@ -14679,7 +14732,9 @@ bool ApplyWebViewStyleCustomizations(Controls::WebView webViewElement) {
 }
 
 bool ApplyWebView2StyleCustomizations(
-    WebView2Standalone_IWebView2* webViewElement) {
+    WebView2Standalone_IWebView2* webViewElement,
+    ElementTheme theme,
+    bool themeOnly = false) {
     void* sourcePtr;
     winrt::check_hresult(webViewElement->get_Source(&sourcePtr));
     auto source = winrt::Windows::Foundation::Uri{
@@ -14698,7 +14753,7 @@ bool ApplyWebView2StyleCustomizations(
         return false;
     }
 
-    std::wstring jsCode = CreateWebViewJsCodeForApply();
+    std::wstring jsCode = CreateWebViewJsCodeForApply(theme, themeOnly);
 
     void* operationPtr;
     auto jsCodeHstring = winrt::hstring(jsCode.c_str(), jsCode.size());
@@ -14711,6 +14766,27 @@ bool ApplyWebView2StyleCustomizations(
     return true;
 }
 
+winrt::event_token WatchWebViewTheme(FrameworkElement element) {
+    return element.ActualThemeChanged(
+        [](FrameworkElement const& sender, auto const&) {
+            try {
+                if (auto webView = sender.try_as<Controls::WebView>()) {
+                    ApplyWebViewStyleCustomizations(webView, true);
+                } else {
+                    winrt::com_ptr<WebView2Standalone_IWebView2> webView2;
+                    winrt::check_hresult(
+                        ((IUnknown*)winrt::get_abi(sender))
+                            ->QueryInterface(IID_WebView2Standalone_IWebView2,
+                                             webView2.put_void()));
+                    ApplyWebView2StyleCustomizations(
+                        webView2.get(), sender.ActualTheme(), true);
+                }
+            } catch (winrt::hresult_error const& ex) {
+                Wh_Log(L"WebView theme update failed: %08X", ex.code());
+            }
+        });
+}
+
 void ApplyCustomizationsIfWebView(ElementId elementId,
                                   FrameworkElement element) {
     auto className = winrt::get_class_name(element);
@@ -14719,6 +14795,8 @@ void ApplyCustomizationsIfWebView(ElementId elementId,
             g_webViewsCustomizationState[elementId];
         if (!webViewCustomizationState.element.get()) {
             webViewCustomizationState.element = element;
+            webViewCustomizationState.actualThemeChangedEventToken =
+                WatchWebViewTheme(element);
 
             auto webViewElement = element.as<Controls::WebView>();
 
@@ -14739,6 +14817,8 @@ void ApplyCustomizationsIfWebView(ElementId elementId,
             g_webViewsCustomizationState[elementId];
         if (!webViewCustomizationState.element.get()) {
             webViewCustomizationState.element = element;
+            webViewCustomizationState.actualThemeChangedEventToken =
+                WatchWebViewTheme(element);
             webViewCustomizationState.isWebView2 = true;
 
             winrt::com_ptr<WebView2Standalone_IWebView2> webViewElement;
@@ -14747,7 +14827,8 @@ void ApplyCustomizationsIfWebView(ElementId elementId,
                     ->QueryInterface(IID_WebView2Standalone_IWebView2,
                                      webViewElement.put_void()));
 
-            ApplyWebView2StyleCustomizations(webViewElement.get());
+            ApplyWebView2StyleCustomizations(webViewElement.get(),
+                                             element.ActualTheme());
 
             winrt::Windows::Foundation::TypedEventHandler<
                 winrt::Windows::Foundation::IInspectable,
@@ -14776,7 +14857,9 @@ void ApplyCustomizationsIfWebView(ElementId elementId,
                             ->QueryInterface(IID_WebView2Standalone_IWebView2,
                                              webViewElement.put_void()));
 
-                    ApplyWebView2StyleCustomizations(webViewElement.get());
+                    ApplyWebView2StyleCustomizations(
+                        webViewElement.get(),
+                        sender.as<FrameworkElement>().ActualTheme());
                 };
 
             winrt::check_hresult(webViewElement->add_NavigationCompleted(
@@ -14791,6 +14874,8 @@ PCWSTR CreateWebViewJsCodeForClear() {
     PCWSTR jsCode =
         LR"(
         (() => {
+        delete window.windhawkTheme;
+        document.documentElement.removeAttribute("data-windhawk-theme");
         const styleElementId = "windhawk-windows-11-start-menu-styler-style";
         const style = document.getElementById(styleElementId);
         if (style) {
@@ -14837,6 +14922,9 @@ void ClearWebViewCustomizations(
     if (!element) {
         return;
     }
+
+    element.ActualThemeChanged(
+        webViewCustomizationState.actualThemeChangedEventToken);
 
     if (!webViewCustomizationState.isWebView2) {
         auto webViewElement = element.as<Controls::WebView>();
