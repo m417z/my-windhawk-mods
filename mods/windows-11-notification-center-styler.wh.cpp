@@ -11995,6 +11995,16 @@ void ProcessAllStylesFromSettings() {
     StyleConstants styleConstants = LoadStyleConstants(
         theme ? theme->styleConstants : std::vector<PCWSTR>{});
 
+    // Under XAML diagnostics, merging a dictionary into the app resources
+    // (Control Center does it when the Wi-Fi page is first opened) drops
+    // implicit styles, and the header toggle switch falls back to the
+    // misaligned system template. An explicit style is kept. Added first so
+    // that theme and user rules override it. Fixes:
+    // https://github.com/ramensoftware/windows-11-notification-center-styling-guide/issues/14
+    AddElementCustomizationRules(
+        L"ToggleSwitch#HeaderToggleSwitch",
+        {L"Style={StaticResource DefaultToggleSwitchStyle}"});
+
     if (theme) {
         for (const auto& themeTargetStyle : theme->targetStyles) {
             try {
