@@ -10081,19 +10081,42 @@ void PopPaintingWnd(HWND hWnd) {
 // be altered.
 thread_local bool g_drawingTextWithGlowForThread;
 
-bool IsEntireWindowEffectDC(HDC hdc) {
+// Set while DirectUI paints an element border.
+thread_local bool g_paintingDirectUIBorderForThread;
+
+// Returns the window of the DC if it's rendered with alpha, nullptr otherwise.
+HWND GetEntireWindowEffectDCWnd(HDC hdc) {
     if (!g_entireWindowEffectWndForThread || g_drawingTextWithGlowForThread) {
-        return false;
+        return nullptr;
     }
 
     HWND hWnd = WindowFromDC(hdc);
     if (hWnd) {
-        return IsFileExplorerWindowPart(hWnd);
+        return IsFileExplorerWindowPart(hWnd) ? hWnd : nullptr;
     }
 
     // Memory DCs without a known window are skipped.
     const DCWnd* memoryDCWnd = GetMemoryDCWnd(hdc);
-    return memoryDCWnd && memoryDCWnd->fileExplorer;
+    return memoryDCWnd && memoryDCWnd->fileExplorer ? memoryDCWnd->hWnd
+                                                    : nullptr;
+}
+
+bool IsEntireWindowEffectDC(HDC hdc) {
+    return GetEntireWindowEffectDCWnd(hdc);
+}
+
+// GDI fills leave the alpha at zero, which DWM doesn't show in HDR mode. These
+// fills are made opaque: DirectUI element borders, which aren't backgrounds
+// even if they have a background color, and edit controls, since the system
+// caret inverts only the color bits.
+bool IsOpaqueFill(HWND hWnd) {
+    if (g_paintingDirectUIBorderForThread) {
+        return true;
+    }
+
+    WCHAR className[16];
+    return GetClassName(hWnd, className, ARRAYSIZE(className)) &&
+           _wcsicmp(className, L"Edit") == 0;
 }
 
 using BeginPaint_t = decltype(&BeginPaint);
@@ -10159,21 +10182,65 @@ bool IsWindowBackgroundBrush(HDC hdc, HBRUSH hbr) {
     return IsWindowBackgroundColor(color);
 }
 
+using PatBlt_t = decltype(&PatBlt);
+PatBlt_t PatBlt_Original;
+
+// Sets the alpha of the area to opaque by ORing it with a pattern of opaque
+// black, which keeps the colors and the clipping of what was drawn there.
+void MakeOpaque(HDC hdc, int x, int y, int w, int h) {
+    static HBRUSH alphaBrush = [] {
+        struct {
+            BITMAPINFOHEADER header;
+            DWORD bits[1];
+        } dib = {{sizeof(BITMAPINFOHEADER), 1, 1, 1, 32, BI_RGB}, {0xFF000000}};
+        return CreateDIBPatternBrushPt(&dib, DIB_RGB_COLORS);
+    }();
+
+    HGDIOBJ prevBrush = SelectObject(hdc, alphaBrush);
+    if (!prevBrush) {
+        return;
+    }
+
+    constexpr DWORD kRopDestOrPattern = 0x00FA0089;
+    PatBlt_Original(hdc, x, y, w, h, kRopDestOrPattern);
+    SelectObject(hdc, prevBrush);
+}
+
 using FillRect_t = decltype(&FillRect);
 FillRect_t FillRect_Original;
 int WINAPI FillRect_Hook(HDC hDC, const RECT* lprc, HBRUSH hbr) {
-    if (IsEntireWindowEffectDC(hDC) && IsWindowBackgroundBrush(hDC, hbr)) {
+    HWND hWnd = GetEntireWindowEffectDCWnd(hDC);
+    if (hWnd && IsOpaqueFill(hWnd)) {
+        int result = FillRect_Original(hDC, lprc, hbr);
+        if (result) {
+            MakeOpaque(hDC, lprc->left, lprc->top, lprc->right - lprc->left,
+                       lprc->bottom - lprc->top);
+        }
+        return result;
+    }
+
+    if (hWnd && IsWindowBackgroundBrush(hDC, hbr)) {
         hbr = (HBRUSH)GetStockObject(BLACK_BRUSH);
     }
 
     return FillRect_Original(hDC, lprc, hbr);
 }
 
-using PatBlt_t = decltype(&PatBlt);
-PatBlt_t PatBlt_Original;
 BOOL WINAPI PatBlt_Hook(HDC hdc, int x, int y, int w, int h, DWORD rop) {
-    if (rop == PATCOPY && IsEntireWindowEffectDC(hdc) &&
-        IsWindowBackgroundBrush(hdc,
+    HWND hWnd = rop == PATCOPY ? GetEntireWindowEffectDCWnd(hdc) : nullptr;
+    if (!hWnd) {
+        return PatBlt_Original(hdc, x, y, w, h, rop);
+    }
+
+    if (IsOpaqueFill(hWnd)) {
+        BOOL result = PatBlt_Original(hdc, x, y, w, h, rop);
+        if (result) {
+            MakeOpaque(hdc, x, y, w, h);
+        }
+        return result;
+    }
+
+    if (IsWindowBackgroundBrush(hdc,
                                 (HBRUSH)GetCurrentObject(hdc, OBJ_BRUSH))) {
         HGDIOBJ prevBrush = SelectObject(hdc, GetStockObject(BLACK_BRUSH));
         BOOL result = PatBlt_Original(hdc, x, y, w, h, rop);
@@ -10486,7 +10553,7 @@ bool PaintExtTextOutBackground(HDC hdc, const RECT* lprect) {
         return false;
     }
 
-    FillRect(memDC, lprect, GetSysColorBrush(COLOR_HIGHLIGHT));
+    FillRect_Original(memDC, lprect, GetSysColorBrush(COLOR_HIGHLIGHT));
     BufferedPaintMakeOpaque(hpb, lprect);
     EndBufferedPaint(hpb, TRUE);
     return true;
@@ -10596,13 +10663,15 @@ BOOL WINAPI ExtTextOutW_Hook(HDC hdc,
                              LPCWSTR lpString,
                              UINT c,
                              const INT* lpDx) {
-    if (!IsEntireWindowEffectDC(hdc)) {
+    HWND hWnd = GetEntireWindowEffectDCWnd(hdc);
+    if (!hWnd) {
         return ExtTextOutW_Original(hdc, x, y, options, lprect, lpString, c,
                                     lpDx);
     }
 
-    bool windowBk =
-        (options & ETO_OPAQUE) && IsWindowBackgroundColor(GetBkColor(hdc));
+    bool windowBk = (options & ETO_OPAQUE) &&
+                    IsWindowBackgroundColor(GetBkColor(hdc)) &&
+                    !IsOpaqueFill(hWnd);
     COLORREF prevBkColor = windowBk ? SetBkColor(hdc, RGB(0, 0, 0)) : 0;
     BOOL result =
         ExtTextOutWithAlpha(hdc, x, y, options, lprect, lpString, c, lpDx);
@@ -11165,6 +11234,23 @@ HRESULT WINAPI DrawThemeBackgroundEx_Hook(HTHEME hTheme,
 
     return DrawThemeBackgroundEx_Original(hTheme, hdc, iPartId, iStateId, pRect,
                                           pOptions);
+}
+
+using Element_PaintBorder_t = void(WINAPI*)(void* pThis,
+                                            HDC hdc,
+                                            void* pvBorder,
+                                            RECT* prcBounds,
+                                            const RECT& rcThickness);
+Element_PaintBorder_t Element_PaintBorder_Original;
+void WINAPI Element_PaintBorder_Hook(void* pThis,
+                                     HDC hdc,
+                                     void* pvBorder,
+                                     RECT* prcBounds,
+                                     const RECT& rcThickness) {
+    bool prevPaintingDirectUIBorder = g_paintingDirectUIBorderForThread;
+    g_paintingDirectUIBorderForThread = true;
+    Element_PaintBorder_Original(pThis, hdc, pvBorder, prcBounds, rcThickness);
+    g_paintingDirectUIBorderForThread = prevPaintingDirectUIBorder;
 }
 
 // Based on the Translucent Windows mod.
@@ -11911,6 +11997,20 @@ BOOL Wh_ModInit() {
     WindhawkUtils::SetFunctionHook(DrawThemeBackgroundEx,
                                    DrawThemeBackgroundEx_Hook,
                                    &DrawThemeBackgroundEx_Original);
+
+    HMODULE dui70Module =
+        LoadLibraryEx(L"dui70.dll", nullptr, LOAD_LIBRARY_SEARCH_SYSTEM32);
+    if (dui70Module) {
+        auto pElement_PaintBorder = (Element_PaintBorder_t)GetProcAddress(
+            dui70Module,
+            "?PaintBorder@Element@DirectUI@@QEAAXPEAUHDC__@@PEAVValue@2@"
+            "PEAUtagRECT@@AEBU5@@Z");
+        if (pElement_PaintBorder) {
+            WindhawkUtils::SetFunctionHook(pElement_PaintBorder,
+                                           Element_PaintBorder_Hook,
+                                           &Element_PaintBorder_Original);
+        }
+    }
 
     HMODULE uxthemeModule = GetModuleHandle(L"uxtheme.dll");
     if (uxthemeModule) {
