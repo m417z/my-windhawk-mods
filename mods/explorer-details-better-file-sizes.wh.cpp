@@ -88,10 +88,12 @@ another. That's the default Explorer behavior, which also applies when sorting
 by other columns. This option changes sorting by size to disable this
 separation.
 
-## Use MB/GB for large files
+## File size units
 
-Explorer always shows file sizes in KBs in details, make it use MB/GB when
-appropriate.
+Explorer shows file sizes in KBs in details. Starting with update KB5101684,
+Windows 11 is gradually switching to MB/GB for large files. The mod can use
+MB/GB for large files regardless of the Windows version, or keep the sizes in
+KBs.
 
 ## Use IEC terms
 
@@ -127,10 +129,15 @@ KiB?](https://devblogs.microsoft.com/oldnewthing/20090611-00/?p=17933).
   $name: Mix files and folders when sorting by size
   $description: >-
     By default, folders are kept separately from files when sorting
-- disableKbOnlySizes: true
-  $name: Use MB/GB for large files
+- disableKbOnlySizes: "1"
+  $name: File size units
   $description: >-
-    By default, sizes are shown in KBs
+    Older Windows versions always show sizes in KBs, newer Windows 11 versions
+    use MB/GB for large files
+  $options:
+  - 0: Windows default
+  - 1: MB/GB for large files
+  - alwaysKb: Always KB
 - useIecTerms: false
   $name: Use IEC terms
   $description: >-
@@ -169,10 +176,16 @@ enum class CalculateFolderSizes {
     always,
 };
 
+enum class FileSizeUnits {
+    windowsDefault,
+    mbGbForLargeFiles,
+    alwaysKb,
+};
+
 struct {
     CalculateFolderSizes calculateFolderSizes;
     bool sortSizesMixFolders;
-    bool disableKbOnlySizes;
+    FileSizeUnits fileSizeUnits;
     bool useIecTerms;
 } g_settings;
 
@@ -2017,6 +2030,29 @@ HRESULT WINAPI CFSFolder_CompareIDs_Hook(void* pCFSFolder,
     }
 }
 
+using CFSFolder_GetFormatForDisplayFlags_t = HRESULT(
+    WINAPI*)(void* pThis, const PROPERTYKEY* key, PROPDESC_FORMAT_FLAGS* pdff);
+CFSFolder_GetFormatForDisplayFlags_t
+    CFSFolder_GetFormatForDisplayFlags_Original;
+HRESULT WINAPI
+CFSFolder_GetFormatForDisplayFlags_Hook(void* pThis,
+                                        const PROPERTYKEY* key,
+                                        PROPDESC_FORMAT_FLAGS* pdff) {
+    auto hookScope = hookRefCountScope();
+
+    HRESULT ret = CFSFolder_GetFormatForDisplayFlags_Original(pThis, key, pdff);
+    if (FAILED(ret) || !IsEqualPropertyKey(*key, kPKEY_Size)) {
+        return ret;
+    }
+
+    Wh_Log(L">");
+
+    // Without flags from the folder, the view uses its default flags, which
+    // are KB-only in details.
+    *pdff = PDFF_DEFAULT;
+    return E_NOTIMPL;
+}
+
 bool StartsWithCaseInsensitive(std::wstring_view str,
                                std::wstring_view prefix) {
     return str.size() >= prefix.size() &&
@@ -2701,7 +2737,7 @@ bool HookWindowsStorageSymbols() {
     }
 
     // windows.storage.dll
-    WindhawkUtils::SYMBOL_HOOK windowsStorageHooks[] = {
+    WindhawkUtils::SYMBOL_HOOK folderSizesHooks[] = {
         {
             {
 #ifdef _WIN64
@@ -2792,8 +2828,41 @@ bool HookWindowsStorageSymbols() {
         },
     };
 
-    return HookSymbols(windowsStorageModule, windowsStorageHooks,
-                       ARRAYSIZE(windowsStorageHooks));
+    // windows.storage.dll
+    WindhawkUtils::SYMBOL_HOOK alwaysKbHooks[] = {
+        {
+            {
+#ifdef _WIN64
+                LR"(public: virtual long __cdecl CFSFolder::GetFormatForDisplayFlags(struct _tagpropertykey const &,enum PROPDESC_FORMAT_FLAGS *))",
+#else
+                LR"(public: virtual long __stdcall CFSFolder::GetFormatForDisplayFlags(struct _tagpropertykey const &,enum PROPDESC_FORMAT_FLAGS *))",
+#endif
+            },
+            &CFSFolder_GetFormatForDisplayFlags_Original,
+            CFSFolder_GetFormatForDisplayFlags_Hook,
+            true,
+        },
+    };
+
+    // Alias for the extract_mod_symbols.py script.
+    using COMBINED_SH = WindhawkUtils::SYMBOL_HOOK;
+    COMBINED_SH allHooks[  //
+        ARRAYSIZE(folderSizesHooks) + ARRAYSIZE(alwaysKbHooks)];
+    int index = 0;
+
+    if (g_settings.calculateFolderSizes != CalculateFolderSizes::disabled) {
+        for (auto& hook : folderSizesHooks) {
+            allHooks[index++] = std::move(hook);
+        }
+    }
+
+    if (g_settings.fileSizeUnits == FileSizeUnits::alwaysKb) {
+        for (auto& hook : alwaysKbHooks) {
+            allHooks[index++] = std::move(hook);
+        }
+    }
+
+    return HookSymbols(windowsStorageModule, allHooks, index);
 }
 
 // A workaround for https://github.com/mstorsjo/llvm-mingw/issues/459.
@@ -3034,7 +3103,16 @@ void LoadSettings() {
     Wh_FreeStringSetting(calculateFolderSizes);
 
     g_settings.sortSizesMixFolders = Wh_GetIntSetting(L"sortSizesMixFolders");
-    g_settings.disableKbOnlySizes = Wh_GetIntSetting(L"disableKbOnlySizes");
+
+    PCWSTR fileSizeUnits = Wh_GetStringSetting(L"disableKbOnlySizes");
+    g_settings.fileSizeUnits = FileSizeUnits::windowsDefault;
+    if (wcscmp(fileSizeUnits, L"1") == 0) {
+        g_settings.fileSizeUnits = FileSizeUnits::mbGbForLargeFiles;
+    } else if (wcscmp(fileSizeUnits, L"alwaysKb") == 0) {
+        g_settings.fileSizeUnits = FileSizeUnits::alwaysKb;
+    }
+    Wh_FreeStringSetting(fileSizeUnits);
+
     g_settings.useIecTerms = Wh_GetIntSetting(L"useIecTerms");
 }
 
@@ -3045,12 +3123,15 @@ BOOL Wh_ModInit() {
 
     LoadSettings();
 
-    if (g_settings.calculateFolderSizes != CalculateFolderSizes::disabled) {
+    if (g_settings.calculateFolderSizes != CalculateFolderSizes::disabled ||
+        g_settings.fileSizeUnits == FileSizeUnits::alwaysKb) {
         if (!HookWindowsStorageSymbols()) {
             Wh_Log(L"Failed hooking Windows Storage symbols");
             return false;
         }
+    }
 
+    if (g_settings.calculateFolderSizes != CalculateFolderSizes::disabled) {
         HMODULE kernelBaseModule = GetModuleHandle(L"kernelbase.dll");
         if (kernelBaseModule) {
             auto pRegQueryValueExW = (RegQueryValueExW_t)GetProcAddress(
@@ -3095,7 +3176,7 @@ BOOL Wh_ModInit() {
         }
     }
 
-    if (g_settings.disableKbOnlySizes) {
+    if (g_settings.fileSizeUnits == FileSizeUnits::mbGbForLargeFiles) {
         WindhawkUtils::Wh_SetFunctionHookT(PSFormatForDisplayAlloc,
                                            PSFormatForDisplayAlloc_Hook,
                                            &PSFormatForDisplayAlloc_Original);
