@@ -2,7 +2,7 @@
 // @id              explorer-details-better-file-sizes
 // @name            Better file sizes in Explorer details
 // @description     Enhances file size display in Explorer details with folder sizes, human-readable units (MB/GB), and optional IEC notation (KiB/MiB)
-// @version         1.5.1
+// @version         1.6
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
@@ -3137,9 +3137,9 @@ BOOL Wh_ModInit() {
             auto pRegQueryValueExW = (RegQueryValueExW_t)GetProcAddress(
                 kernelBaseModule, "RegQueryValueExW");
             if (pRegQueryValueExW) {
-                WindhawkUtils::Wh_SetFunctionHookT(pRegQueryValueExW,
-                                                   RegQueryValueExW_Hook,
-                                                   &RegQueryValueExW_Original);
+                WindhawkUtils::SetFunctionHook(pRegQueryValueExW,
+                                               RegQueryValueExW_Hook,
+                                               &RegQueryValueExW_Original);
             }
         }
     }
@@ -3170,21 +3170,21 @@ BOOL Wh_ModInit() {
         if (isEverything) {
             g_isEverything = true;
 
-            WindhawkUtils::Wh_SetFunctionHookT(
+            WindhawkUtils::SetFunctionHook(
                 SHOpenFolderAndSelectItems, SHOpenFolderAndSelectItems_Hook,
                 &SHOpenFolderAndSelectItems_Original);
         }
     }
 
     if (g_settings.fileSizeUnits == FileSizeUnits::mbGbForLargeFiles) {
-        WindhawkUtils::Wh_SetFunctionHookT(PSFormatForDisplayAlloc,
-                                           PSFormatForDisplayAlloc_Hook,
-                                           &PSFormatForDisplayAlloc_Original);
+        WindhawkUtils::SetFunctionHook(PSFormatForDisplayAlloc,
+                                       PSFormatForDisplayAlloc_Hook,
+                                       &PSFormatForDisplayAlloc_Original);
 
         // Used by older file dialogs, for example Regedit's export dialog.
-        WindhawkUtils::Wh_SetFunctionHookT(PSFormatForDisplay,
-                                           PSFormatForDisplay_Hook,
-                                           &PSFormatForDisplay_Original);
+        WindhawkUtils::SetFunctionHook(PSFormatForDisplay,
+                                       PSFormatForDisplay_Hook,
+                                       &PSFormatForDisplay_Original);
     }
 
     if (g_settings.useIecTerms) {
@@ -3198,15 +3198,15 @@ BOOL Wh_ModInit() {
 
         auto pPSStrFormatByteSizeW =
             (PSStrFormatByteSizeW_t)GetProcAddress(propsysModule, (PCSTR)421);
-        WindhawkUtils::Wh_SetFunctionHookT(pPSStrFormatByteSizeW,
-                                           PSStrFormatByteSizeW_Hook,
-                                           &PSStrFormatByteSizeW_Original);
+        WindhawkUtils::SetFunctionHook(pPSStrFormatByteSizeW,
+                                       PSStrFormatByteSizeW_Hook,
+                                       &PSStrFormatByteSizeW_Original);
 
         auto pPSStrFormatKBSizeW =
             (PSStrFormatKBSizeW_t)GetProcAddress(propsysModule, (PCSTR)422);
-        WindhawkUtils::Wh_SetFunctionHookT(pPSStrFormatKBSizeW,
-                                           PSStrFormatKBSizeW_Hook,
-                                           &PSStrFormatKBSizeW_Original);
+        WindhawkUtils::SetFunctionHook(pPSStrFormatKBSizeW,
+                                       PSStrFormatKBSizeW_Hook,
+                                       &PSStrFormatKBSizeW_Original);
 
         HMODULE kernelBaseModule = GetModuleHandle(L"kernelbase.dll");
         HMODULE kernel32Module = GetModuleHandle(L"kernel32.dll");
