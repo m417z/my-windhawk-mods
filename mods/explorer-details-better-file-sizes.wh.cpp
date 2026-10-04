@@ -182,6 +182,7 @@ std::atomic<int> g_hookRefCount;
 
 thread_local bool g_inCRecursiveFolderOperation_Prepare;
 thread_local bool g_inCRecursiveFolderOperation_Do;
+thread_local bool g_inCDefCollection_Item_GetValue_Size;
 
 auto hookRefCountScope() {
     g_hookRefCount++;
@@ -1875,6 +1876,82 @@ HRESULT __thiscall CRecursiveFolderOperation_Do_Hook(void* pThis) {
     return ret;
 }
 
+using CDefCollection_Item_GetValue_t =
+    HRESULT(WINAPI*)(void* pThis,
+                     const void* itemKey,
+                     int valueAccessMode,
+                     const PROPERTYKEY* key,
+                     PROPVARIANT* propVariant,
+                     int* valueState);
+CDefCollection_Item_GetValue_t CDefCollection_Item_GetValue_Original;
+HRESULT WINAPI CDefCollection_Item_GetValue_Hook(void* pThis,
+                                                 const void* itemKey,
+                                                 int valueAccessMode,
+                                                 const PROPERTYKEY* key,
+                                                 PROPVARIANT* propVariant,
+                                                 int* valueState) {
+    auto hookScope = hookRefCountScope();
+
+    bool prevInItemGetValueSize = g_inCDefCollection_Item_GetValue_Size;
+    g_inCDefCollection_Item_GetValue_Size =
+        IsEqualPropertyKey(*key, kPKEY_Size);
+
+    HRESULT ret = CDefCollection_Item_GetValue_Original(
+        pThis, itemKey, valueAccessMode, key, propVariant, valueState);
+
+    g_inCDefCollection_Item_GetValue_Size = prevInItemGetValueSize;
+
+    return ret;
+}
+
+// The GIPTYPE value which makes _GetItemProperty extract the value if it isn't
+// cached or the cached value is dirty.
+constexpr int kGipTypeExtract = 0;
+
+using CDefCollection__GetItemProperty_t =
+    HRESULT(__thiscall*)(void* pThis,
+                         void* itemStore,
+                         const void* itemKey,
+                         int gipType,
+                         const PROPERTYKEY* key,
+                         int* dirty,
+                         PROPVARIANT* propVariant);
+CDefCollection__GetItemProperty_t CDefCollection__GetItemProperty_Original;
+HRESULT __thiscall CDefCollection__GetItemProperty_Hook(
+    void* pThis,
+    void* itemStore,
+    const void* itemKey,
+    int gipType,
+    const PROPERTYKEY* key,
+    int* dirty,
+    PROPVARIANT* propVariant) {
+    auto hookScope = hookRefCountScope();
+
+    HRESULT ret = CDefCollection__GetItemProperty_Original(
+        pThis, itemStore, itemKey, gipType, key, dirty, propVariant);
+
+    // When Item_GetValue only looks up the cached size, on a cache miss it
+    // takes the size from the item's WIN32_FIND_DATA, which has no size for
+    // folders. Extract the size instead, which goes through
+    // CFSFolder::_GetSize.
+    if (!g_inCDefCollection_Item_GetValue_Size || gipType == kGipTypeExtract ||
+        (SUCCEEDED(ret) && !(dirty && *dirty)) ||
+        !IsEqualPropertyKey(*key, kPKEY_Size)) {
+        return ret;
+    }
+
+    Wh_Log(L">");
+
+    PropVariantClear(propVariant);
+    ret = CDefCollection__GetItemProperty_Original(
+        pThis, itemStore, itemKey, kGipTypeExtract, key, nullptr, propVariant);
+    if (SUCCEEDED(ret) && dirty) {
+        *dirty = 0;
+    }
+
+    return ret;
+}
+
 using CFSFolder_MapColumnToSCID_t = HRESULT(WINAPI*)(void* pCFSFolder,
                                                      int column,
                                                      PROPERTYKEY* scid);
@@ -2657,6 +2734,30 @@ bool HookWindowsStorageSymbols() {
             },
             &CRecursiveFolderOperation_Do_Original,
             CRecursiveFolderOperation_Do_Hook,
+        },
+        {
+            {
+#ifdef _WIN64
+                LR"(public: virtual long __cdecl CDefCollection::Item_GetValue(struct tagITEMKEY const *,enum VALUE_ACCESS_MODE,struct _tagpropertykey const &,struct tagPROPVARIANT *,enum VALUE_STATE *))",
+#else
+                LR"(public: virtual long __stdcall CDefCollection::Item_GetValue(struct tagITEMKEY const *,enum VALUE_ACCESS_MODE,struct _tagpropertykey const &,struct tagPROPVARIANT *,enum VALUE_STATE *))",
+#endif
+            },
+            &CDefCollection_Item_GetValue_Original,
+            CDefCollection_Item_GetValue_Hook,
+            true,
+        },
+        {
+            {
+#ifdef _WIN64
+                LR"(private: long __cdecl CDefCollection::_GetItemProperty(struct IItemStore *,struct tagITEMKEY const *,enum GIPTYPE,struct _tagpropertykey const &,int *,struct tagPROPVARIANT *))",
+#else
+                LR"(private: long __thiscall CDefCollection::_GetItemProperty(struct IItemStore *,struct tagITEMKEY const *,enum GIPTYPE,struct _tagpropertykey const &,int *,struct tagPROPVARIANT *))",
+#endif
+            },
+            &CDefCollection__GetItemProperty_Original,
+            CDefCollection__GetItemProperty_Hook,
+            true,
         },
         {
             {
