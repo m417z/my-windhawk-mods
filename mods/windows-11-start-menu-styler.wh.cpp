@@ -8158,6 +8158,7 @@ using namespace std::string_view_literals;
 #include <winrt/Windows.UI.ViewManagement.h>
 #include <winrt/Windows.UI.Xaml.Controls.h>
 #include <winrt/Windows.UI.Xaml.Hosting.h>
+#include <winrt/Windows.UI.Xaml.Input.h>
 #include <winrt/Windows.UI.Xaml.Markup.h>
 #include <winrt/Windows.UI.Xaml.Media.Imaging.h>
 #include <winrt/Windows.UI.Xaml.Media.h>
@@ -15129,11 +15130,29 @@ constexpr WCHAR kSeparatePinnedContentName[] = L"SideBySidePinnedContent";
 struct SeparatePinnedScrollEntry {
     winrt::weak_ref<Controls::Border> border;
     winrt::weak_ref<Controls::Grid> sourceTopLevelHeader;
+    Input::FocusManager::GettingFocus_revoker gettingFocusRevoker;
+    UIElement::KeyDown_revoker wrapperKeyDownRevoker;
 };
 std::vector<SeparatePinnedScrollEntry> g_separatePinnedScrollEntries;
 
 std::vector<winrt::Windows::Foundation::IAsyncOperation<bool>>
     g_separatePinnedScrollPendingActions;
+
+// Tracks a pending dispatcher callback so UninitializeSettingsAndTap can cancel
+// it on teardown. Finished ones are pruned first to keep the list bounded (only
+// a handful are ever in flight).
+void TrackSeparatePinnedScrollAction(
+    winrt::Windows::Foundation::IAsyncOperation<bool> action) {
+    std::erase_if(
+        g_separatePinnedScrollPendingActions,
+        [](winrt::Windows::Foundation::IAsyncOperation<bool> const& a) {
+            return !a || a.Status() !=
+                             winrt::Windows::Foundation::AsyncStatus::Started;
+        });
+    if (action) {
+        g_separatePinnedScrollPendingActions.push_back(std::move(action));
+    }
+}
 
 bool IsSeparatePinnedScrollTargetName(winrt::hstring const& name) {
     return name == L"PinnedListHeaderGrid" || name == L"ShowMorePinnedGrid" ||
@@ -15416,6 +15435,330 @@ void MoveElementToPinnedContent(FrameworkElement element,
     target.Children().Append(uiElement);
 }
 
+bool IsVisualTreeDescendant(DependencyObject element,
+                            DependencyObject const& ancestor) {
+    while (element) {
+        if (element == ancestor) {
+            return true;
+        }
+        element = Media::VisualTreeHelper::GetParent(element);
+    }
+    return false;
+}
+
+bool IsTabNavigationOnce(DependencyObject const& element) {
+    auto control = element.try_as<Controls::Control>();
+    if (control &&
+        control.TabNavigation() == Input::KeyboardNavigationMode::Once) {
+        return true;
+    }
+    auto uiElement = element.try_as<UIElement>();
+    return uiElement && uiElement.TabFocusNavigation() ==
+                            Input::KeyboardNavigationMode::Once;
+}
+
+// Whether `element` is a tab stop itself, as opposed to only containing one.
+bool IsTabStopElement(DependencyObject const& element) {
+    auto control = element.try_as<Controls::Control>();
+    return control && control.IsTabStop() &&
+           (control.IsEnabled() || control.AllowFocusWhenDisabled());
+}
+
+// Appends the controls below `element`, without looking inside of them.
+void CollectTabScopeControls(DependencyObject const& element,
+                             std::vector<Controls::Control>& controls) {
+    int count = Media::VisualTreeHelper::GetChildrenCount(element);
+    for (int i = 0; i < count; i++) {
+        auto child =
+            Media::VisualTreeHelper::GetChild(element, i).try_as<UIElement>();
+        if (!child || child.Visibility() != Visibility::Visible) {
+            continue;
+        }
+
+        if (auto control = child.try_as<Controls::Control>()) {
+            controls.push_back(std::move(control));
+        } else {
+            CollectTabScopeControls(child, controls);
+        }
+    }
+}
+
+// The tab stop after `from`, or before it if `backward`, among the descendants
+// of `scope`, or in the whole tree if `scope` is null. Follows the focus
+// manager: Tab moves between the controls in the scope of the nearest control
+// ancestor, ordered by TabIndex and then by tree order, and leaves a control
+// with TabNavigation=Once as a whole.
+DependencyObject FindAdjacentTabStop(DependencyObject const& from,
+                                     DependencyObject const& scope,
+                                     bool backward) {
+    DependencyObject current = from;
+    for (auto ancestor = Media::VisualTreeHelper::GetParent(from); ancestor;
+         ancestor = Media::VisualTreeHelper::GetParent(ancestor)) {
+        bool isRoot =
+            ancestor == scope || !Media::VisualTreeHelper::GetParent(ancestor);
+        auto ancestorControl = ancestor.try_as<Controls::Control>();
+        if (!isRoot && !ancestorControl) {
+            continue;
+        }
+
+        if (!isRoot && IsTabNavigationOnce(ancestor)) {
+            current = ancestor;
+            continue;
+        }
+
+        std::vector<Controls::Control> controls;
+        CollectTabScopeControls(ancestor, controls);
+        std::stable_sort(
+            controls.begin(), controls.end(),
+            [](Controls::Control const& a, Controls::Control const& b) {
+                return a.TabIndex() < b.TabIndex();
+            });
+
+        auto it = std::find(controls.begin(), controls.end(), current);
+        if (it != controls.end()) {
+            int index = static_cast<int>(it - controls.begin());
+            int step = backward ? -1 : 1;
+            for (int i = index + step;
+                 i >= 0 && i < static_cast<int>(controls.size()); i += step) {
+                auto const& control = controls[i];
+
+                // A control which is a tab stop comes before its descendants.
+                if (!backward && IsTabStopElement(control)) {
+                    return control;
+                }
+
+                auto found =
+                    backward
+                        ? Input::FocusManager::FindLastFocusableElement(control)
+                        : Input::FocusManager::FindFirstFocusableElement(
+                              control);
+                if (found) {
+                    return found;
+                }
+
+                if (backward && IsTabStopElement(control)) {
+                    return control;
+                }
+            }
+        }
+
+        if (backward && ancestor != scope && IsTabStopElement(ancestor)) {
+            return ancestor;
+        }
+
+        if (isRoot) {
+            break;
+        }
+
+        current = ancestor;
+    }
+
+    return nullptr;
+}
+
+// The pinned ScrollViewer and the apps one.
+std::pair<UIElement, UIElement> GetSeparatePinnedScrollViewers(
+    Controls::Grid const& wrapper) {
+    UIElement pinnedScroll{nullptr};
+    UIElement appsScroll{nullptr};
+    for (auto const& child : wrapper.Children()) {
+        auto sv = child.try_as<Controls::ScrollViewer>();
+        if (sv && sv.Name() == kSeparatePinnedScrollName) {
+            pinnedScroll = child;
+        } else if (!appsScroll) {
+            appsScroll = child;
+        }
+    }
+    return {pinnedScroll, appsScroll};
+}
+
+// ListViewBase handles Tab for everything in its template by visiting only its
+// header, items and footer, so in the AllAppsGrid the pinned ScrollViewer is
+// skipped, and Tab from inside of it jumps to the apps list. Returns where a
+// focus change should go instead to put the pinned items right before the apps
+// list, as when they're in its header, or null to keep `newFocus`.
+DependencyObject GetSeparatePinnedFocusRedirect(
+    Controls::Grid const& wrapper,
+    DependencyObject const& oldFocus,
+    DependencyObject const& newFocus,
+    Input::FocusNavigationDirection direction,
+    Input::FocusInputDeviceKind inputDevice) {
+    auto [pinnedScroll, appsScroll] = GetSeparatePinnedScrollViewers(wrapper);
+    if (!pinnedScroll || !appsScroll) {
+        return nullptr;
+    }
+
+    bool oldInGrid = IsVisualTreeDescendant(oldFocus, wrapper);
+    bool newInGrid = IsVisualTreeDescendant(newFocus, wrapper);
+    bool newInPinned = IsVisualTreeDescendant(newFocus, pinnedScroll);
+
+    // The Start menu moves focus into the AllAppsGrid by itself, without a
+    // direction, when it opens and when tabbing from the tab stop before it.
+    if (direction == Input::FocusNavigationDirection::None) {
+        if (inputDevice == Input::FocusInputDeviceKind::Mouse ||
+            inputDevice == Input::FocusInputDeviceKind::Touch ||
+            inputDevice == Input::FocusInputDeviceKind::Pen || oldInGrid ||
+            !newInGrid || newInPinned ||
+            newFocus !=
+                Input::FocusManager::FindFirstFocusableElement(appsScroll) ||
+            (oldFocus && oldFocus != FindAdjacentTabStop(wrapper, nullptr,
+                                                         /*backward=*/true))) {
+            return nullptr;
+        }
+
+        return Input::FocusManager::FindFirstFocusableElement(pinnedScroll);
+    }
+
+    if (direction != Input::FocusNavigationDirection::Next &&
+        direction != Input::FocusNavigationDirection::Previous) {
+        return nullptr;
+    }
+
+    bool backward = direction == Input::FocusNavigationDirection::Previous;
+
+    if (IsVisualTreeDescendant(oldFocus, pinnedScroll)) {
+        if (newInPinned) {
+            return nullptr;
+        }
+
+        if (auto target =
+                FindAdjacentTabStop(oldFocus, pinnedScroll, backward)) {
+            return target;
+        }
+
+        // Leaving the pinned items: forward into the apps list, backward to
+        // what precedes the AllAppsGrid.
+        if (!backward) {
+            return newInGrid ? nullptr
+                             : Input::FocusManager::FindFirstFocusableElement(
+                                   appsScroll);
+        }
+
+        if (!newInGrid) {
+            return nullptr;
+        }
+
+        auto target = FindAdjacentTabStop(wrapper, nullptr, backward);
+        if (!target) {
+            // Wrap around, as the focus manager does.
+            DependencyObject root = wrapper;
+            while (auto parent = Media::VisualTreeHelper::GetParent(root)) {
+                root = parent;
+            }
+            target = Input::FocusManager::FindLastFocusableElement(root);
+        }
+        return target && !IsVisualTreeDescendant(target, wrapper) ? target
+                                                                  : nullptr;
+    }
+
+    // Entering the AllAppsGrid, or leaving it backward from the apps list.
+    if (!backward && !oldInGrid && newInGrid && !newInPinned) {
+        return Input::FocusManager::FindFirstFocusableElement(pinnedScroll);
+    }
+
+    if (backward && oldInGrid && !newInGrid) {
+        return Input::FocusManager::FindLastFocusableElement(pinnedScroll);
+    }
+
+    return nullptr;
+}
+
+// A handler of the focus manager's GettingFocus event, which is raised after the
+// routed one, so that ListViewBase can't undo the redirect: it uses the routed
+// event to send focus coming from outside of it to the item focused last.
+void OnSeparatePinnedFocusChange(Controls::Grid const& wrapper,
+                                 Input::GettingFocusEventArgs const& args) {
+    try {
+        auto newFocus = args.NewFocusedElement();
+        if (!newFocus) {
+            return;
+        }
+
+        auto target = GetSeparatePinnedFocusRedirect(
+            wrapper, args.OldFocusedElement(), newFocus, args.Direction(),
+            args.InputDevice());
+        if (!target || args.TrySetNewFocusedElement(target)) {
+            return;
+        }
+
+        // Some focus changes can't be redirected, such as the one made when
+        // the window is activated, so focus is moved once it's done instead.
+        auto action = wrapper.Dispatcher().TryRunAsync(
+            winrt::Windows::UI::Core::CoreDispatcherPriority::Normal,
+            [weakWrapper = winrt::make_weak(wrapper),
+             weakNewFocus = winrt::make_weak(newFocus),
+             weakTarget = winrt::make_weak(target),
+             focusState = args.FocusState()]() {
+                auto wrapper = weakWrapper.get();
+                auto newFocus = weakNewFocus.get();
+                auto target = weakTarget.get();
+                if (!wrapper || !newFocus || !target) {
+                    return;
+                }
+
+                try {
+                    auto xamlRoot = wrapper.XamlRoot();
+                    auto focused =
+                        xamlRoot
+                            ? Input::FocusManager::GetFocusedElement(xamlRoot)
+                            : Input::FocusManager::GetFocusedElement();
+                    if (focused != newFocus) {
+                        return;
+                    }
+
+                    Input::FocusManager::TryFocusAsync(target, focusState);
+                } catch (winrt::hresult_error const& ex) {
+                    Wh_Log(L"SeparatePinnedScroll focus error %08X: %s",
+                           ex.code(), ex.message().c_str());
+                }
+            });
+        TrackSeparatePinnedScrollAction(std::move(action));
+    } catch (winrt::hresult_error const& ex) {
+        Wh_Log(L"SeparatePinnedScroll focus error %08X: %s", ex.code(),
+               ex.message().c_str());
+    }
+}
+
+// Shift+Tab out of the apps list, when nothing precedes the AllAppsGrid, wraps
+// around, which the Start menu follows by sending focus to the search box no
+// matter where the focus change was redirected to. Moving focus to the pinned
+// items before the key is processed keeps it from being a wrap-around.
+void OnSeparatePinnedWrapperKeyDown(Controls::Grid const& wrapper,
+                                    Input::KeyRoutedEventArgs const& args) {
+    try {
+        if (args.Key() != winrt::Windows::System::VirtualKey::Tab ||
+            !(GetKeyState(VK_SHIFT) & 0x8000) ||
+            (GetKeyState(VK_CONTROL) & 0x8000) ||
+            (GetKeyState(VK_MENU) & 0x8000)) {
+            return;
+        }
+
+        auto [pinnedScroll, appsScroll] =
+            GetSeparatePinnedScrollViewers(wrapper);
+        if (!pinnedScroll || !appsScroll ||
+            !IsVisualTreeDescendant(
+                args.OriginalSource().try_as<DependencyObject>(), appsScroll)) {
+            return;
+        }
+
+        auto next = Input::FocusManager::FindNextElement(
+            Input::FocusNavigationDirection::Previous);
+        if (next && IsVisualTreeDescendant(next, wrapper)) {
+            return;
+        }
+
+        auto target =
+            Input::FocusManager::FindLastFocusableElement(pinnedScroll)
+                .try_as<Controls::Control>();
+        if (target && target.Focus(FocusState::Keyboard)) {
+            args.Handled(true);
+        }
+    } catch (winrt::hresult_error const& ex) {
+        Wh_Log(L"SeparatePinnedScroll key error %08X: %s", ex.code(),
+               ex.message().c_str());
+    }
+}
+
 void HandleSeparatePinnedScroll(FrameworkElement element) {
     if (g_disableNewStartMenuLayout !=
         DisableNewStartMenuLayout::newLayoutSideBySide) {
@@ -15488,9 +15831,29 @@ void HandleSeparatePinnedScroll(FrameworkElement element) {
                                   [](SeparatePinnedScrollEntry const& e) {
                                       return !e.border.get();
                                   });
+                    auto wrapper = border.Child().as<Controls::Grid>();
                     g_separatePinnedScrollEntries.push_back(
                         {winrt::make_weak(border),
-                         winrt::make_weak(topLevelHeader)});
+                         winrt::make_weak(topLevelHeader),
+                         Input::FocusManager::GettingFocus(
+                             winrt::auto_revoke,
+                             [weakWrapper = winrt::make_weak(wrapper)](
+                                 wf::IInspectable const&,
+                                 Input::GettingFocusEventArgs const& args) {
+                                 if (auto wrapper = weakWrapper.get()) {
+                                     OnSeparatePinnedFocusChange(wrapper, args);
+                                 }
+                             }),
+                         wrapper.KeyDown(
+                             winrt::auto_revoke,
+                             [](wf::IInspectable const& sender,
+                                Input::KeyRoutedEventArgs const& args) {
+                                 if (auto wrapper =
+                                         sender.try_as<Controls::Grid>()) {
+                                     OnSeparatePinnedWrapperKeyDown(wrapper,
+                                                                    args);
+                                 }
+                             })});
                 }
 
                 MoveElementToPinnedContent(element, contentGrid);
@@ -15500,19 +15863,7 @@ void HandleSeparatePinnedScroll(FrameworkElement element) {
             }
         });
 
-    // Track the pending callback so UninitializeSettingsAndTap can cancel it on
-    // teardown. Prune already-finished actions first to keep the list bounded
-    // (at most a handful are ever in flight - one per target element per Start
-    // menu instance).
-    std::erase_if(
-        g_separatePinnedScrollPendingActions,
-        [](winrt::Windows::Foundation::IAsyncOperation<bool> const& a) {
-            return !a || a.Status() !=
-                             winrt::Windows::Foundation::AsyncStatus::Started;
-        });
-    if (action) {
-        g_separatePinnedScrollPendingActions.push_back(std::move(action));
-    }
+    TrackSeparatePinnedScrollAction(std::move(action));
 }
 
 void ApplyCustomizations(ElementId elementId,
