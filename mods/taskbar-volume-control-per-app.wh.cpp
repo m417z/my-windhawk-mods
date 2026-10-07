@@ -2,7 +2,7 @@
 // @id              taskbar-volume-control-per-app
 // @name            Taskbar Volume Control Per-App
 // @description     Control the per-app volume by scrolling over taskbar buttons
-// @version         1.1.4
+// @version         1.1.5
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
@@ -27,9 +27,9 @@
 Control the per-app volume by scrolling over taskbar buttons on Windows 11.
 
 Scrolling over a taskbar button will adjust the volume of that specific
-application. Ctrl+clicking or middle-clicking (clicking the mouse wheel) on a
-taskbar button will toggle mute for that app. A tooltip shows the current
-volume percentage, or "No audio session" if the app has no active audio.
+application. Ctrl+clicking on a taskbar button will toggle mute for that app. A
+tooltip shows the current volume percentage, or "No audio session" if the app
+has no active audio.
 
 **Note:** Some laptop touchpads might not support scrolling over the taskbar. A
 workaround is to use the "pinch to zoom" gesture. For details, check out [a
@@ -67,11 +67,6 @@ Control mod takes precedence due to the way the mod works.
   $description: >-
     When enabled, Ctrl+clicking on a taskbar button will toggle the mute state
     of the application.
-- middleClickToMute: true
-  $name: Middle Click to mute
-  $description: >-
-    When enabled, middle-clicking (clicking the mouse wheel) on a taskbar
-    button will toggle the mute state of the application.
 - ctrlScrollVolumeChange: false
   $name: Ctrl + Scroll to change volume
   $description: >-
@@ -82,17 +77,39 @@ Control mod takes precedence due to the way the mod works.
   $description: >-
     When enabled, the tooltip shows a compact format with emojis instead of
     text (e.g., "🔊 64%" instead of "Volume: 64%").
-- tooltipColor: ""
-  $name: Tooltip color
-  $description: >-
-    Custom tooltip background color in #RRGGBB or #AARRGGBB format (e.g.,
-    #FF0000 for red). Leave empty to use the system accent color.
 - noAutomaticMuteToggle: false
   $name: No automatic mute toggle
   $description: >-
     By default, the app is muted once the volume reaches zero, and is unmuted
     on any change to a non-zero volume. Enabling this option turns off this
     functionality, such that the app mute status is not changed.
+- tooltipNoAudioSessionText: No audio session
+  $name: No audio session tooltip text
+  $description: >-
+    Text to show when the hovered app has no active audio session.
+- tooltipMutedText: Muted
+  $name: Muted tooltip text
+  $description: >-
+    Text to show when the hovered app is muted.
+- tooltipVolumeText: 'Volume: {volume}%'
+  $name: Volume tooltip text
+  $description: >-
+    Text to show for the hovered app volume. Use {volume} for the volume
+    percentage.
+- tooltipTerseNoAudioSessionText: '🔕'
+  $name: Terse no audio session tooltip text
+  $description: >-
+    Text to show when terse format is enabled and the hovered app has no active
+    audio session.
+- tooltipTerseMutedText: '🔇'
+  $name: Terse muted tooltip text
+  $description: >-
+    Text to show when terse format is enabled and the hovered app is muted.
+- tooltipTerseVolumeText: '🔊 {volume}%'
+  $name: Terse volume tooltip text
+  $description: >-
+    Text to show when terse format is enabled for the hovered app volume. Use
+    {volume} for the volume percentage.
 */
 // ==/WindhawkModSettings==
 
@@ -127,11 +144,15 @@ using namespace winrt::Windows::UI::Xaml;
 struct {
     int volumeChangeStep;
     bool ctrlClickToMute;
-    bool middleClickToMute;
     bool ctrlScrollVolumeChange;
     bool terseFormat;
-    std::optional<winrt::Windows::UI::Color> tooltipColor;
     bool noAutomaticMuteToggle;
+    std::wstring tooltipNoAudioSessionText;
+    std::wstring tooltipMutedText;
+    std::wstring tooltipVolumeText;
+    std::wstring tooltipTerseNoAudioSessionText;
+    std::wstring tooltipTerseMutedText;
+    std::wstring tooltipTerseVolumeText;
 } g_settings;
 
 std::atomic<bool> g_taskbarViewDllLoaded;
@@ -1008,16 +1029,11 @@ void ShowVolumeTooltip(FrameworkElement taskbarFrame,
         textBlock.Text(text);
     }
 
-    // Use custom color or system accent color for styling.
-    winrt::Windows::UI::Color bgColor;
-    if (g_settings.tooltipColor) {
-        bgColor = *g_settings.tooltipColor;
-    } else {
-        winrt::Windows::UI::ViewManagement::UISettings uiSettings;
-        bgColor = uiSettings.GetColorValue(
-            winrt::Windows::UI::ViewManagement::UIColorType::Accent);
-    }
-    border.Background(Media::SolidColorBrush(bgColor));
+    // Use system accent color for styling.
+    winrt::Windows::UI::ViewManagement::UISettings uiSettings;
+    auto accentColor = uiSettings.GetColorValue(
+        winrt::Windows::UI::ViewManagement::UIColorType::Accent);
+    border.Background(Media::SolidColorBrush(accentColor));
 
     // Set text color to white for contrast.
     if (auto textBlock = border.Child().try_as<Controls::TextBlock>()) {
@@ -1061,6 +1077,37 @@ void HideVolumeTooltip() {
     g_volumeTooltipState.cursorX = 0.0;
 }
 
+std::wstring FormatVolumeText(std::wstring text, int volume) {
+    const std::wstring placeholder = L"{volume}";
+    const std::wstring volumeText = std::to_wstring(volume);
+
+    size_t pos = 0;
+    while ((pos = text.find(placeholder, pos)) != std::wstring::npos) {
+        text.replace(pos, placeholder.length(), volumeText);
+        pos += volumeText.length();
+    }
+
+    return text;
+}
+
+std::wstring FormatVolumeTooltipText(
+    std::optional<AppVolumeResult> volumeResult) {
+    if (!volumeResult) {
+        return g_settings.terseFormat ? g_settings.tooltipTerseNoAudioSessionText
+                                      : g_settings.tooltipNoAudioSessionText;
+    }
+
+    if (volumeResult->muted) {
+        return g_settings.terseFormat ? g_settings.tooltipTerseMutedText
+                                      : g_settings.tooltipMutedText;
+    }
+
+    const std::wstring& format = g_settings.terseFormat
+                                     ? g_settings.tooltipTerseVolumeText
+                                     : g_settings.tooltipVolumeText;
+    return FormatVolumeText(format, volumeResult->volume);
+}
+
 void ShowVolumeResultTooltip(UIElement element,
                              Input::PointerRoutedEventArgs args,
                              std::optional<AppVolumeResult> volumeResult) {
@@ -1078,19 +1125,9 @@ void ShowVolumeResultTooltip(UIElement element,
     double cursorX = rootPoint.X;
     double cursorY = rootPoint.Y;
 
-    WCHAR tooltipText[64];
-    if (!volumeResult) {
-        wcscpy_s(tooltipText,
-                 g_settings.terseFormat ? L"🔕" : L"No audio session");
-    } else if (volumeResult->muted) {
-        wcscpy_s(tooltipText, g_settings.terseFormat ? L"🔇" : L"Muted");
-    } else {
-        swprintf_s(tooltipText,
-                   g_settings.terseFormat ? L"🔊 %d%%" : L"Volume: %d%%",
-                   volumeResult->volume);
-    }
+    std::wstring tooltipText = FormatVolumeTooltipText(volumeResult);
     ShowVolumeTooltip(taskbarFrame, cursorX, cursorY, isOverflowPopup,
-                      tooltipText);
+                      tooltipText.c_str());
 }
 
 // Per-app volume wheel scroll handling.
@@ -1246,12 +1283,12 @@ int WINAPI TaskListButton_OnPointerPressed_Hook(void* pThis, void* pArgs) {
         return TaskListButton_OnPointerPressed_Original(pThis, pArgs);
     };
 
-    if (!g_settings.ctrlClickToMute && !g_settings.middleClickToMute) {
+    if (!g_settings.ctrlClickToMute) {
         return original();
     }
 
-    // Skip if Ctrl is not pressed and middle click to mute is not enabled.
-    if (GetKeyState(VK_CONTROL) >= 0 && !g_settings.middleClickToMute) {
+    // Check if Ctrl is pressed.
+    if (GetKeyState(VK_CONTROL) >= 0) {
         return original();
     }
 
@@ -1275,16 +1312,6 @@ int WINAPI TaskListButton_OnPointerPressed_Hook(void* pThis, void* pArgs) {
         return original();
     }
 
-    // Check if Ctrl is pressed or middle button is pressed.
-    bool isCtrlPressed = GetKeyState(VK_CONTROL) < 0;
-    auto point = args.GetCurrentPoint(element);
-    bool isMiddleButton = point.Properties().IsMiddleButtonPressed();
-
-    if (!(g_settings.ctrlClickToMute && isCtrlPressed) &&
-        !(g_settings.middleClickToMute && isMiddleButton)) {
-        return original();
-    }
-
     // Get process ID from the taskbar button.
     DWORD processId = GetProcessIdFromTaskListButton(element);
     if (!processId) {
@@ -1304,33 +1331,36 @@ int WINAPI TaskListButton_OnPointerPressed_Hook(void* pThis, void* pArgs) {
     return 0;
 }
 
+std::wstring GetStringSettingWithFallback(PCWSTR valueName,
+                                          PCWSTR fallbackValue) {
+    PCWSTR value = Wh_GetStringSetting(valueName);
+    std::wstring result = value && *value ? value : fallbackValue;
+    if (value) {
+        Wh_FreeStringSetting(value);
+    }
+    return result;
+}
+
 void LoadSettings() {
     g_settings.volumeChangeStep = Wh_GetIntSetting(L"volumeChangeStep");
     g_settings.ctrlClickToMute = Wh_GetIntSetting(L"ctrlClickToMute");
-    g_settings.middleClickToMute = Wh_GetIntSetting(L"middleClickToMute");
     g_settings.ctrlScrollVolumeChange =
         Wh_GetIntSetting(L"ctrlScrollVolumeChange");
     g_settings.terseFormat = Wh_GetIntSetting(L"terseFormat");
-
-    g_settings.tooltipColor.reset();
-    PCWSTR tooltipColorStr = Wh_GetStringSetting(L"tooltipColor");
-    size_t len = wcslen(tooltipColorStr);
-    if (tooltipColorStr[0] == L'#' && (len == 7 || len == 9)) {
-        unsigned long hex = wcstoul(tooltipColorStr + 1, nullptr, 16);
-        if (len == 7) {
-            hex |= 0xFF000000;
-        }
-        g_settings.tooltipColor = winrt::Windows::UI::Color{
-            static_cast<uint8_t>((hex >> 24) & 0xFF),
-            static_cast<uint8_t>((hex >> 16) & 0xFF),
-            static_cast<uint8_t>((hex >> 8) & 0xFF),
-            static_cast<uint8_t>(hex & 0xFF),
-        };
-    }
-    Wh_FreeStringSetting(tooltipColorStr);
-
     g_settings.noAutomaticMuteToggle =
         Wh_GetIntSetting(L"noAutomaticMuteToggle");
+    g_settings.tooltipNoAudioSessionText = GetStringSettingWithFallback(
+        L"tooltipNoAudioSessionText", L"No audio session");
+    g_settings.tooltipMutedText =
+        GetStringSettingWithFallback(L"tooltipMutedText", L"Muted");
+    g_settings.tooltipVolumeText =
+        GetStringSettingWithFallback(L"tooltipVolumeText", L"Volume: {volume}%");
+    g_settings.tooltipTerseNoAudioSessionText = GetStringSettingWithFallback(
+        L"tooltipTerseNoAudioSessionText", L"🔕");
+    g_settings.tooltipTerseMutedText =
+        GetStringSettingWithFallback(L"tooltipTerseMutedText", L"🔇");
+    g_settings.tooltipTerseVolumeText = GetStringSettingWithFallback(
+        L"tooltipTerseVolumeText", L"🔊 {volume}%");
 }
 
 bool HookTaskbarViewDllSymbols(HMODULE module) {
