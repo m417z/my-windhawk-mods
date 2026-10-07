@@ -193,6 +193,12 @@ styles, such as the font color and size.
   $name: Middle line (Windows 10 only)
   $description: >-
     Only shown if the taskbar is large enough. Set to "-" for the default value.
+- ForceTwoLines: false
+  $name: Force two lines (Windows 10 and Windows 11)
+  $description: >-
+    On Windows 11, render TopLine and BottomLine together as two lines in the
+    time text block, using the top line style; hide the separate date block.
+    On Windows 10 / the old taskbar, suppress MiddleLine. Disabled by default.
 - TooltipLine: '%web1_full%'
   $name: Tooltip extra line
 - TooltipLineMode: append
@@ -652,6 +658,7 @@ struct TextStyleSettings {
 };
 
 struct ClockElementStyleSettings {
+    bool forceTwoLines;
     int maxWidth;
     int textSpacing;
     TextStyleSettings timeStyle;
@@ -668,6 +675,7 @@ struct {
     StringSetting topLine;
     StringSetting bottomLine;
     StringSetting middleLine;
+    bool forceTwoLines;
     StringSetting tooltipLine;
     TooltipLineMode tooltipLineMode;
     int width;
@@ -822,6 +830,7 @@ WCHAR g_webContentFull[FORMATTED_BUFFER_SIZE];
 struct ClockElementStyleData {
     winrt::weak_ref<FrameworkElement> dateTimeIconContentElement;
     DWORD styleIndex;
+    bool forceTwoLinesApplied = false;
     std::optional<int64_t> dateVisibilityPropertyChangedToken;
     std::optional<int64_t> timeVisibilityPropertyChangedToken;
 };
@@ -4705,6 +4714,8 @@ void ApplyTextBlockStyles(
     Controls::TextBlock textBlock,
     const TextStyleSettings* textStyleSettings,
     bool noWrap,
+    bool forceTwoLines,
+    bool forceHide,
     std::optional<int64_t>* visibilityPropertyChangedToken) {
     if (visibilityPropertyChangedToken->has_value()) {
         textBlock.UnregisterPropertyChangedCallback(
@@ -4712,7 +4723,7 @@ void ApplyTextBlockStyles(
             visibilityPropertyChangedToken->value());
     }
 
-    if (textStyleSettings && textStyleSettings->hidden) {
+    if (forceHide || (!forceTwoLines && textStyleSettings && textStyleSettings->hidden)) {
         textBlock.Visibility(Visibility::Collapsed);
         *visibilityPropertyChangedToken =
             textBlock.RegisterPropertyChangedCallback(
@@ -4731,6 +4742,20 @@ void ApplyTextBlockStyles(
     visibilityPropertyChangedToken->reset();
 
     textBlock.Visibility(Visibility::Visible);
+
+    if (forceTwoLines) {
+        // Keep the combined time block visible after subsequent Windows updates.
+        *visibilityPropertyChangedToken =
+            textBlock.RegisterPropertyChangedCallback(
+                UIElement::VisibilityProperty(),
+                [](DependencyObject sender, DependencyProperty) {
+                    auto textBlock = sender.try_as<Controls::TextBlock>();
+                    if (textBlock &&
+                        textBlock.Visibility() != Visibility::Visible) {
+                        textBlock.Visibility(Visibility::Visible);
+                    }
+                });
+    }
 
     if (noWrap) {
         textBlock.TextWrapping(TextWrapping::NoWrap);
@@ -4922,15 +4947,27 @@ void ApplyDateTimeIconContentStyles(
 
     int maxWidth = styleSettings ? styleSettings->maxWidth : 0;
     int textSpacing = styleSettings ? styleSettings->textSpacing : 0;
-    bool noWrap = maxWidth;
+    bool forceTwoLines = styleSettings && styleSettings->forceTwoLines;
+    bool noWrap = maxWidth || forceTwoLines;
+
+    if (forceTwoLines) {
+        dateInnerTextBlock.MaxLines(1);
+        timeInnerTextBlock.MaxLines(2);
+    } else if (clockElementStyleData->forceTwoLinesApplied) {
+        dateInnerTextBlock.ClearValue(Controls::TextBlock::MaxLinesProperty());
+        timeInnerTextBlock.ClearValue(Controls::TextBlock::MaxLinesProperty());
+    }
+    clockElementStyleData->forceTwoLinesApplied = forceTwoLines;
 
     ApplyStackPanelStyles(stackPanel, maxWidth, textSpacing);
     ApplyTextBlockStyles(
         dateInnerTextBlock, styleSettings ? &styleSettings->dateStyle : nullptr,
-        noWrap, &clockElementStyleData->dateVisibilityPropertyChangedToken);
+        noWrap, forceTwoLines, forceTwoLines,
+        &clockElementStyleData->dateVisibilityPropertyChangedToken);
     ApplyTextBlockStyles(
         timeInnerTextBlock, styleSettings ? &styleSettings->timeStyle : nullptr,
-        noWrap, &clockElementStyleData->timeVisibilityPropertyChangedToken);
+        noWrap, forceTwoLines, false,
+        &clockElementStyleData->timeVisibilityPropertyChangedToken);
 
     clockElementStyleData->styleIndex = clockElementStyleIndex;
 }
@@ -5103,6 +5140,53 @@ int WINAPI GetTimeFormatEx_Hook_Win11(LPCWSTR lpLocaleName,
                                       int cchTime) {
     if (g_inRefreshIcon && !g_inGetTimeToolTipString) {
         std::lock_guard<std::mutex> guard(g_formatLineMutex);
+
+        if (g_settings.forceTwoLines) {
+            if (!cchTime) {
+                return FORMATTED_BUFFER_SIZE * 2 + 2;
+            }
+
+            g_formatTime = *lpTime;
+            g_formatIndex++;
+
+            WCHAR top[FORMATTED_BUFFER_SIZE] = {};
+            WCHAR bottom[FORMATTED_BUFFER_SIZE] = {};
+            if (wcscmp(g_settings.topLine, L"-") == 0) {
+                GetTimeFormatEx_Original(lpLocaleName, dwFlags, lpTime,
+                                         lpFormat, top, ARRAYSIZE(top));
+            } else {
+                FormatLineNoLock(top, ARRAYSIZE(top), g_settings.topLine.get());
+            }
+            if (wcscmp(g_settings.bottomLine, L"-") == 0) {
+                GetDateFormatEx_Original(lpLocaleName, DATE_SHORTDATE, lpTime,
+                                         nullptr, bottom, ARRAYSIZE(bottom), nullptr);
+            } else {
+                FormatLineNoLock(bottom, ARRAYSIZE(bottom), g_settings.bottomLine.get());
+            }
+
+            // Each configured line occupies one visual line, even if a pattern
+            // or web content contains a newline. Reserve space for both lines
+            // when Explorer supplies a smaller fixed buffer.
+            for (auto buffer : {top, bottom}) {
+                for (WCHAR* p = buffer; *p; p++) {
+                    if (*p == L'\r' || *p == L'\n' ||
+                        *p == L'\u2028' || *p == L'\u2029') {
+                        *p = L' ';
+                    }
+                }
+            }
+            if (cchTime < 3) {
+                lpTimeStr[0] = L'\0';
+                return 1;
+            }
+            size_t budget = (cchTime - 2) / 2;
+            std::wstring text(top, std::min(wcslen(top), budget));
+            text += L'\n';
+            text.append(bottom, std::min(wcslen(bottom), budget));
+            bool truncated = false;
+            return StringCopyTruncated(lpTimeStr, cchTime, text.c_str(),
+                                       &truncated) + 1;
+        }
 
         if (wcscmp(g_settings.topLine, L"-") != 0) {
             if (!cchTime) {
@@ -5439,6 +5523,12 @@ int WINAPI GetDateFormatEx_Hook_Win10(LPCWSTR lpLocaleName,
         std::lock_guard<std::mutex> guard(g_formatLineMutex);
 
         g_getDateFormatExCounter++;
+        if (g_settings.forceTwoLines && g_getDateFormatExCounter > 1) {
+            // Keep the first date line (BottomLine), but suppress MiddleLine.
+            // Use the existing formatter for buffer and length conventions.
+            return FormatLineNoLock(lpDateStr, cchDate, L"") + 1;
+        }
+
         PCWSTR format = g_getDateFormatExCounter > 1 ? g_settings.middleLine
                                                      : g_settings.bottomLine;
         if (wcscmp(format, L"-") != 0) {
@@ -5875,6 +5965,7 @@ void LoadSettings() {
     g_settings.topLine = StringSetting::make(L"TopLine");
     g_settings.bottomLine = StringSetting::make(L"BottomLine");
     g_settings.middleLine = StringSetting::make(L"MiddleLine");
+    g_settings.forceTwoLines = Wh_GetIntSetting(L"ForceTwoLines") != 0;
     g_settings.tooltipLine = StringSetting::make(L"TooltipLine");
 
     g_settings.tooltipLineMode = TooltipLineMode::append;
@@ -6042,6 +6133,7 @@ void LoadSettings() {
     }
 
     ClockElementStyleSettings styleSettings;
+    styleSettings.forceTwoLines = g_settings.forceTwoLines;
     styleSettings.maxWidth = Wh_GetIntSetting(L"MaxWidth");
     styleSettings.textSpacing = g_settings.textSpacing;
 
@@ -6072,7 +6164,8 @@ void LoadSettings() {
     dateStyle.lineHeight = Wh_GetIntSetting(L"DateStyle.LineHeight");
 
     bool clockElementStyleEnabled =
-        styleSettings.maxWidth || styleSettings.textSpacing ||
+        styleSettings.forceTwoLines || styleSettings.maxWidth ||
+        styleSettings.textSpacing ||
         timeStyle.hidden || *timeStyle.textColor || *timeStyle.textAlignment ||
         timeStyle.fontSize || *timeStyle.fontFamily || *timeStyle.fontWeight ||
         *timeStyle.fontStyle || *timeStyle.fontStretch ||
