@@ -37,6 +37,12 @@ choose to group Paint and Notepad:
 **Note:** After enabling the mod, the relevant windows must be reopened to apply
 the grouping settings.
 
+After a Windows update, the mod might temporarily fail to load until matching
+debug symbols are available. Refer to the [Windhawk troubleshooting
+guide](https://github.com/ramensoftware/windhawk/wiki/Troubleshooting#some-or-all-windhawk-mods-dont-work)
+for details. Once the symbols are available, disable and re-enable the mod, or
+restart Explorer, to retry loading them.
+
 Only Windows 10 64-bit and Windows 11 are supported. For older Windows versions
 check out [7+ Taskbar Tweaker](https://tweaker.ramensoftware.com/).
 */
