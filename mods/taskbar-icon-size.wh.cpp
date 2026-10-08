@@ -93,6 +93,7 @@ Also check out the **Taskbar tray icon spacing and grid** mod.
 #include <winrt/Windows.UI.Xaml.Media.h>
 
 #include <atomic>
+#include <cmath>
 #include <functional>
 #include <limits>
 #include <mutex>
@@ -1152,6 +1153,58 @@ void TaskbarController_OnGroupingModeChanged_InitOffsets() {
     GetTaskbarFrameOffset();
 }
 
+// With custom scaling, the DPI is the scaling percentage rounded to a whole DPI
+// value, e.g. 106 for 110%. The taskbar window height is scaled by the DPI, but
+// XAML scales by the exact percentage, and when the two round to a different
+// pixel count, the frame leaves a gap below it or gets cut off. Returns the
+// height which XAML scales to the window height.
+double GetFrameHeightMatchingWindow(FrameworkElement frameElement, int height) {
+    auto xamlRoot = frameElement.XamlRoot();
+    if (!xamlRoot) {
+        return height;
+    }
+
+    double scale = xamlRoot.RasterizationScale();
+    int dpi = static_cast<int>(std::lround(scale * 96));
+    int windowHeight = MulDiv(height, dpi, 96);
+    if (std::floor(height * scale + 0.5) == windowHeight) {
+        return height;
+    }
+
+    return windowHeight / scale;
+}
+
+bool ApplyFrameHeightMatchingWindow(FrameworkElement frameElement) {
+    if (g_unloading || !g_taskbarHeight ||
+        frameElement.Height() != g_taskbarHeight) {
+        return false;
+    }
+
+    double height = GetFrameHeightMatchingWindow(frameElement, g_taskbarHeight);
+    if (height == g_taskbarHeight || IsVerticalTaskbar()) {
+        return false;
+    }
+
+    Wh_Log(L"Adjusting frame height for the XAML scale: %d->%f",
+           g_taskbarHeight, height);
+    frameElement.Height(height);
+    return true;
+}
+
+void UpdateTaskbarFrameContentGridHeight(FrameworkElement taskbarFrameElement) {
+    auto contentGrid = Media::VisualTreeHelper::GetParent(taskbarFrameElement)
+                           .try_as<FrameworkElement>();
+    if (contentGrid) {
+        double height = taskbarFrameElement.Height();
+        double contentGridHeight = contentGrid.Height();
+        if (contentGridHeight > 0 && contentGridHeight != height) {
+            Wh_Log(L"Adjusting contentGrid.Height: %f->%f", contentGridHeight,
+                   height);
+            contentGrid.Height(height);
+        }
+    }
+}
+
 using TaskbarController_UpdateFrameHeight_t = void(WINAPI*)(void* pThis);
 TaskbarController_UpdateFrameHeight_t
     TaskbarController_UpdateFrameHeight_Original;
@@ -1191,18 +1244,7 @@ void WINAPI TaskbarController_UpdateFrameHeight_Hook(void* pThis) {
 
     TaskbarController_UpdateFrameHeight_Original(pThis);
 
-    // Adjust parent grid height if needed.
-    auto contentGrid = Media::VisualTreeHelper::GetParent(taskbarFrameElement)
-                           .try_as<FrameworkElement>();
-    if (contentGrid) {
-        double height = taskbarFrameElement.Height();
-        double contentGridHeight = contentGrid.Height();
-        if (contentGridHeight > 0 && contentGridHeight != height) {
-            Wh_Log(L"Adjusting contentGrid.Height: %f->%f", contentGridHeight,
-                   height);
-            contentGrid.Height(height);
-        }
-    }
+    UpdateTaskbarFrameContentGridHeight(taskbarFrameElement);
 }
 
 using SystemTraySecondaryController_UpdateFrameSize_t =
@@ -1331,6 +1373,14 @@ int WINAPI SystemTrayFrame_MeasureOverride_Hook(
     winrt::Windows::Foundation::Size* resultSize) {
     Wh_Log(L">");
 
+    FrameworkElement systemTrayFrameElement = nullptr;
+    ((IUnknown*)pThis)
+        ->QueryInterface(winrt::guid_of<FrameworkElement>(),
+                         winrt::put_abi(systemTrayFrameElement));
+    if (systemTrayFrameElement) {
+        ApplyFrameHeightMatchingWindow(systemTrayFrameElement);
+    }
+
     // The substitution needs the hook that hands the real available size back
     // to the measure, and has nothing to fix for a vertical taskbar, which
     // marks the mode with the width, not the customized height.
@@ -1365,6 +1415,17 @@ int WINAPI TaskbarFrame_MeasureOverride_Hook(
     g_hookCallCounter++;
 
     Wh_Log(L">");
+
+    // The XAML scale is only known once the frame is in the visual tree, which
+    // it is when measured.
+    FrameworkElement taskbarFrameElement = nullptr;
+    ((IUnknown*)pThis)
+        ->QueryInterface(winrt::guid_of<FrameworkElement>(),
+                         winrt::put_abi(taskbarFrameElement));
+    if (taskbarFrameElement &&
+        ApplyFrameHeightMatchingWindow(taskbarFrameElement)) {
+        UpdateTaskbarFrameContentGridHeight(taskbarFrameElement);
+    }
 
     int ret = TaskbarFrame_MeasureOverride_Original(pThis, size, resultSize);
 
