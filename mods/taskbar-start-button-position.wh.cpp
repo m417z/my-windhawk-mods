@@ -948,12 +948,20 @@ HRESULT WINAPI TaskbarCollapsibleLayoutXamlTraits_ArrangeOverride_Hook(
         return true;
     }();
 
+    // Arrange can be nested. Restore the previous state on every exit, including
+    // when the arrange call leaves through an exception.
+    const bool previousArrangeOverride =
+        g_TaskbarCollapsibleLayoutXamlTraits_ArrangeOverride;
     g_TaskbarCollapsibleLayoutXamlTraits_ArrangeOverride = true;
+    struct ArrangeOverrideGuard {
+        bool previous;
+        ~ArrangeOverrideGuard() {
+            g_TaskbarCollapsibleLayoutXamlTraits_ArrangeOverride = previous;
+        }
+    } restoreArrangeOverride{previousArrangeOverride};
 
     HRESULT ret = TaskbarCollapsibleLayoutXamlTraits_ArrangeOverride_Original(
         pThis, context, size, resultSize);
-
-    g_TaskbarCollapsibleLayoutXamlTraits_ArrangeOverride = false;
 
     return ret;
 }
@@ -1023,8 +1031,7 @@ using TaskbarFrame_get_Alignment_t = HRESULT(WINAPI*)(void* pThis,
 TaskbarFrame_get_Alignment_t TaskbarFrame_get_Alignment_Original;
 HRESULT WINAPI TaskbarFrame_get_Alignment_Hook(void* pThis, int* alignment) {
     HRESULT hr = TaskbarFrame_get_Alignment_Original(pThis, alignment);
-    if (SUCCEEDED(hr) && !g_unloading && g_settings.startMenuOnTheLeft &&
-        g_inShowStartButtonContextMenu) {
+    if (SUCCEEDED(hr) && !g_unloading && g_inShowStartButtonContextMenu) {
         *alignment = 0;  // TaskbarAlignment::Left
     }
 
