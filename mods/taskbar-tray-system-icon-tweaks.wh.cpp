@@ -2,7 +2,7 @@
 // @id              taskbar-tray-system-icon-tweaks
 // @name            Taskbar tray system icon tweaks
 // @description     Allows hiding system icons: volume, network, battery, microphone, location/GPS, Studio Effects, Recall, language bar, bell (always or when there are no new notifications), and the "Show desktop" button (hide or set width)
-// @version         1.3
+// @version         1.3.1
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
@@ -75,14 +75,17 @@ Only Windows 11 is supported.
 
 #include <windhawk_utils.h>
 
+#include <algorithm>
 #include <atomic>
 #include <functional>
 #include <list>
+#include <optional>
 #include <string>
 #include <vector>
 
 #undef GetCurrentTime
 
+#include <winrt/Windows.Foundation.h>
 #include <winrt/Windows.UI.Core.h>
 #include <winrt/Windows.UI.Xaml.Automation.h>
 #include <winrt/Windows.UI.Xaml.Controls.h>
@@ -121,7 +124,9 @@ using FrameworkElementLoadedEventRevoker = winrt::impl::event_revoker<
     IFrameworkElement,
     &winrt::impl::abi<IFrameworkElement>::type::remove_Loaded>;
 
-std::list<FrameworkElementLoadedEventRevoker> g_autoRevokerList;
+[[clang::no_destroy]] std::optional<
+    std::list<FrameworkElementLoadedEventRevoker>> g_autoRevokerList{
+    std::in_place};
 
 winrt::weak_ref<Controls::TextBlock> g_mainStackInnerTextBlock;
 int64_t g_mainStackTextChangedToken;
@@ -129,20 +134,24 @@ int64_t g_mainStackTextChangedToken;
 winrt::weak_ref<FrameworkElement> g_bellSystemTrayIconElement;
 int64_t g_bellAutomationNameChangedToken;
 
+winrt::weak_ref<FrameworkElement> g_controlCenterStackPanel;
+winrt::event_token g_controlCenterStackPanelSizeChangedToken;
+
 struct BatteryTextBlockState {
     winrt::weak_ref<Controls::TextBlock> textBlock;
     Media::Brush savedForeground{nullptr};
     int64_t foregroundChangedToken{0};
 };
 
-std::vector<BatteryTextBlockState> g_batteryTextBlockStates;
+[[clang::no_destroy]] std::optional<std::vector<BatteryTextBlockState>>
+    g_batteryTextBlockStates{std::in_place};
 
 // Local MinWidth/MaxWidth values replaced by the show desktop width override,
-// UnsetValue for a property that had no local value.
+// nullopt for a property that had no local value.
 struct ShowDesktopWidthState {
     winrt::weak_ref<FrameworkElement> element;
-    winrt::Windows::Foundation::IInspectable savedMinWidth;
-    winrt::Windows::Foundation::IInspectable savedMaxWidth;
+    std::optional<double> savedMinWidth;
+    std::optional<double> savedMaxWidth;
 };
 
 std::vector<ShowDesktopWidthState> g_showDesktopWidthStates;
@@ -558,7 +567,7 @@ void ApplyMainStackIconViewStyle(FrameworkElement notifyIconViewElement) {
         g_mainStackTextChangedToken =
             innerTextBlock.RegisterPropertyChangedCallback(
                 Controls::TextBlock::TextProperty(),
-                [notifyIconViewElementWeakRef, &shouldHide](
+                [notifyIconViewElementWeakRef, shouldHide](
                     DependencyObject sender, DependencyProperty property) {
                     auto innerTextBlock = sender.try_as<Controls::TextBlock>();
                     if (!innerTextBlock) {
@@ -668,12 +677,12 @@ void ApplyBatteryIconGrayscaleStyle(FrameworkElement batteryIconContent) {
     bool grayscale = !g_unloading && g_settings.grayscaleBatteryIcon;
 
     // Drop any state for TextBlocks that no longer exist.
-    std::erase_if(g_batteryTextBlockStates, [](const BatteryTextBlockState& s) {
-        return !s.textBlock.get();
-    });
+    std::erase_if(
+        *g_batteryTextBlockStates,
+        [](const BatteryTextBlockState& s) { return !s.textBlock.get(); });
 
     // Nothing to apply and nothing to restore - skip the tree traversal.
-    if (!grayscale && g_batteryTextBlockStates.empty()) {
+    if (!grayscale && g_batteryTextBlockStates->empty()) {
         return;
     }
 
@@ -697,13 +706,13 @@ void ApplyBatteryIconGrayscaleStyle(FrameworkElement batteryIconContent) {
             return false;
         }
 
-        auto it = g_batteryTextBlockStates.begin();
-        for (; it != g_batteryTextBlockStates.end(); ++it) {
+        auto it = g_batteryTextBlockStates->begin();
+        for (; it != g_batteryTextBlockStates->end(); ++it) {
             if (it->textBlock.get() == textBlock) {
                 break;
             }
         }
-        bool managed = (it != g_batteryTextBlockStates.end());
+        bool managed = (it != g_batteryTextBlockStates->end());
 
         if (grayscale && !managed) {
             auto localForeground =
@@ -734,7 +743,7 @@ void ApplyBatteryIconGrayscaleStyle(FrameworkElement batteryIconContent) {
                         if (!fg) {
                             return;
                         }
-                        for (auto& s : g_batteryTextBlockStates) {
+                        for (auto& s : *g_batteryTextBlockStates) {
                             if (s.textBlock.get() == tb) {
                                 s.savedForeground = fg;
                                 break;
@@ -743,7 +752,7 @@ void ApplyBatteryIconGrayscaleStyle(FrameworkElement batteryIconContent) {
                         tb.as<DependencyObject>().ClearValue(
                             Controls::TextBlock::ForegroundProperty());
                     });
-            g_batteryTextBlockStates.push_back(std::move(state));
+            g_batteryTextBlockStates->push_back(std::move(state));
             textBlock.as<DependencyObject>().ClearValue(
                 Controls::TextBlock::ForegroundProperty());
         } else if (!grayscale && managed) {
@@ -751,7 +760,7 @@ void ApplyBatteryIconGrayscaleStyle(FrameworkElement batteryIconContent) {
                 Controls::TextBlock::ForegroundProperty(),
                 it->foregroundChangedToken);
             textBlock.Foreground(it->savedForeground);
-            g_batteryTextBlockStates.erase(it);
+            g_batteryTextBlockStates->erase(it);
         }
         return false;
     });
@@ -903,18 +912,18 @@ void ApplyControlCenterButtonIconStyle(FrameworkElement systemTrayIconElement) {
 
     bool hidden =
         systemTrayTextIconContent.Visibility() == Visibility::Collapsed;
-    if (hide == hidden) {
-        return;
+    if (hide != hidden) {
+        systemTrayTextIconContent.Visibility(hide ? Visibility::Collapsed
+                                                  : Visibility::Visible);
+        if (auto control = systemTrayIconElement.try_as<Controls::Control>()) {
+            control.IsEnabled(!hide);
+        } else {
+            Wh_Log(L"Failed");
+        }
     }
 
-    systemTrayTextIconContent.Visibility(hide ? Visibility::Collapsed
-                                              : Visibility::Visible);
-    if (auto control = systemTrayIconElement.try_as<Controls::Control>()) {
-        control.IsEnabled(!hide);
-    } else {
-        Wh_Log(L"Failed");
-    }
-
+    // The layout depends on the siblings too, e.g. a newly added visible icon
+    // must show the button even if this icon's own state is unchanged.
     FrameworkElement parent = systemTrayIconElement;
     if ((parent = Media::VisualTreeHelper::GetParent(parent)
                       .try_as<FrameworkElement>()) &&
@@ -924,6 +933,25 @@ void ApplyControlCenterButtonIconStyle(FrameworkElement systemTrayIconElement) {
                       .try_as<FrameworkElement>()) &&
         winrt::get_class_name(parent) ==
             L"Windows.UI.Xaml.Controls.StackPanel") {
+        // Removing an item container changes the panel size, which is the
+        // only signal that the margins of the remaining items are stale.
+        if (!g_unloading && !g_controlCenterStackPanel.get()) {
+            g_controlCenterStackPanel = parent;
+            g_controlCenterStackPanelSizeChangedToken = parent.SizeChanged(
+                [](winrt::Windows::Foundation::IInspectable const& sender,
+                   SizeChangedEventArgs const& e) {
+                    Wh_Log(L">");
+
+                    auto stackPanel = sender.try_as<FrameworkElement>();
+                    if (!stackPanel) {
+                        Wh_Log(L"Failed to get sender");
+                        return;
+                    }
+
+                    UpdateControlCenterButtonStackPanel(stackPanel);
+                });
+        }
+
         UpdateControlCenterButtonStackPanel(parent);
     } else {
         Wh_Log(L"Failed");
@@ -939,7 +967,7 @@ void ApplyBellIconStyleWithRetry(FrameworkElement systemTrayIconElement,
                                  int attempt) {
     Wh_Log(L"> %d", attempt);
 
-    if (attempt == 10) {
+    if (attempt == 10 || g_unloading) {
         return;
     }
 
@@ -1093,24 +1121,16 @@ void OverrideShowDesktopWidth(FrameworkElement element, double width) {
         g_showDesktopWidthStates.push_back({
             .element = element,
             .savedMinWidth =
-                element.ReadLocalValue(FrameworkElement::MinWidthProperty()),
+                element.ReadLocalValue(FrameworkElement::MinWidthProperty())
+                    .try_as<double>(),
             .savedMaxWidth =
-                element.ReadLocalValue(FrameworkElement::MaxWidthProperty()),
+                element.ReadLocalValue(FrameworkElement::MaxWidthProperty())
+                    .try_as<double>(),
         });
     }
 
     element.MinWidth(width);
     element.MaxWidth(width);
-}
-
-void RestoreLocalValue(DependencyObject element,
-                       DependencyProperty property,
-                       winrt::Windows::Foundation::IInspectable value) {
-    if (value == DependencyProperty::UnsetValue()) {
-        element.ClearValue(property);
-    } else {
-        element.SetValue(property, value);
-    }
 }
 
 void ApplyShowDesktopStyle(FrameworkElement systemTrayIconElement) {
@@ -1404,6 +1424,12 @@ void* WINAPI IconView_IconView_Hook(void* pThis) {
 
     void* ret = IconView_IconView_Original(pThis);
 
+    // A new icon view has nothing to restore, and the revoker list is released
+    // while unloading.
+    if (g_unloading) {
+        return ret;
+    }
+
     FrameworkElement iconView = nullptr;
     ((IUnknown**)pThis)[1]->QueryInterface(winrt::guid_of<FrameworkElement>(),
                                            winrt::put_abi(iconView));
@@ -1411,8 +1437,8 @@ void* WINAPI IconView_IconView_Hook(void* pThis) {
         return ret;
     }
 
-    g_autoRevokerList.emplace_back();
-    auto autoRevokerIt = g_autoRevokerList.end();
+    g_autoRevokerList->emplace_back();
+    auto autoRevokerIt = g_autoRevokerList->end();
     --autoRevokerIt;
 
     *autoRevokerIt = iconView.Loaded(
@@ -1421,7 +1447,7 @@ void* WINAPI IconView_IconView_Hook(void* pThis) {
                         RoutedEventArgs const& e) {
             Wh_Log(L">");
 
-            g_autoRevokerList.erase(autoRevokerIt);
+            g_autoRevokerList->erase(autoRevokerIt);
 
             auto iconView = sender.try_as<FrameworkElement>();
             if (!iconView) {
@@ -1615,7 +1641,7 @@ void LoadSettings() {
     Wh_FreeStringSetting(hideBellIcon);
 
     g_settings.showDesktopButtonWidth =
-        Wh_GetIntSetting(L"showDesktopButtonWidth");
+        std::clamp(Wh_GetIntSetting(L"showDesktopButtonWidth"), 0, 800);
 }
 
 void ApplySettings() {
@@ -1640,7 +1666,7 @@ void ApplySettings() {
         [](void* pParam) {
             ApplySettingsParam& param = *(ApplySettingsParam*)pParam;
 
-            g_autoRevokerList.clear();
+            g_autoRevokerList->clear();
 
             if (auto bellSystemTrayIconElement =
                     g_bellSystemTrayIconElement.get()) {
@@ -1660,10 +1686,18 @@ void ApplySettings() {
                 g_mainStackTextChangedToken = 0;
             }
 
+            if (auto controlCenterStackPanel =
+                    g_controlCenterStackPanel.get()) {
+                controlCenterStackPanel.SizeChanged(
+                    g_controlCenterStackPanelSizeChangedToken);
+                g_controlCenterStackPanel = nullptr;
+                g_controlCenterStackPanelSizeChangedToken = {};
+            }
+
             // Unregister and restore battery TextBlock foregrounds. ApplyStyle
             // below will re-register if grayscale is still enabled. This also
             // covers stale entries whose icon view was destroyed.
-            for (auto& state : g_batteryTextBlockStates) {
+            for (auto& state : *g_batteryTextBlockStates) {
                 auto textBlock = state.textBlock.get();
                 if (!textBlock) {
                     continue;
@@ -1673,7 +1707,7 @@ void ApplySettings() {
                     state.foregroundChangedToken);
                 textBlock.Foreground(state.savedForeground);
             }
-            g_batteryTextBlockStates.clear();
+            g_batteryTextBlockStates->clear();
 
             // Restore the show desktop width overrides. ApplyStyle below
             // re-applies them unless the mod is unloading.
@@ -1682,21 +1716,29 @@ void ApplySettings() {
                 if (!element) {
                     continue;
                 }
-                RestoreLocalValue(element, FrameworkElement::MinWidthProperty(),
-                                  state.savedMinWidth);
-                RestoreLocalValue(element, FrameworkElement::MaxWidthProperty(),
-                                  state.savedMaxWidth);
+                if (state.savedMinWidth) {
+                    element.MinWidth(*state.savedMinWidth);
+                } else {
+                    element.ClearValue(FrameworkElement::MinWidthProperty());
+                }
+                if (state.savedMaxWidth) {
+                    element.MaxWidth(*state.savedMaxWidth);
+                } else {
+                    element.ClearValue(FrameworkElement::MaxWidthProperty());
+                }
             }
             g_showDesktopWidthStates.clear();
 
             auto xamlRoot = GetTaskbarXamlRoot(param.hTaskbarWnd);
             if (!xamlRoot) {
                 Wh_Log(L"Getting XamlRoot failed");
-                return;
+            } else if (!ApplyStyle(xamlRoot)) {
+                Wh_Log(L"ApplyStyle failed");
             }
 
-            if (!ApplyStyle(xamlRoot)) {
-                Wh_Log(L"ApplyStyle failed");
+            if (g_unloading) {
+                g_autoRevokerList.reset();
+                g_batteryTextBlockStates.reset();
             }
         },
         &param);
