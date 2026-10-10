@@ -746,6 +746,35 @@ bool IsRuntimeClass(void* pThis, std::wstring_view className) {
     return it->second == className;
 }
 
+// Newer C++/WinRT versions call property setters through consume_general, which
+// is passed the ABI method as a pointer to a member function, i.e. a thunk
+// which loads the method from the vtable. Returns the thunk's vtable offset.
+size_t GetVcallThunkVtableOffset(void* thunk) {
+#if defined(_M_X64)
+    // mov rax, [rcx]
+    // mov rax, [rax+0x90]
+    static const std::regex regex(R"(mov \w+, \[\w+\+0x([0-9a-f]+)\])",
+                                  std::regex_constants::icase);
+#elif defined(_M_ARM64)
+    // ldr x16, [x0]
+    // ldr x16, [x16, #0x90]
+    static const std::regex regex(R"(ldr\s+x\d+, \[x\d+, #0x([0-9a-f]+)\])",
+                                  std::regex_constants::icase);
+#else
+#error "Unsupported architecture"
+#endif
+
+    return OffsetFromAssemblyRegex(thunk, 0, regex, 2);
+}
+
+// IFrameworkElement vtable offsets, past the 6 IInspectable methods.
+constexpr size_t kFrameworkElementPutWidthOffset = (6 + 10) * sizeof(void*);
+constexpr size_t kFrameworkElementPutHeightOffset = (6 + 12) * sizeof(void*);
+
+using FrameworkElement_SetDouble_t = void(WINAPI*)(void* pThis,
+                                                   void* method,
+                                                   double* value);
+
 // enumTaskbarSize is a winrt::WindowsUdk::UI::Shell::TaskbarSize: 0 small, 1
 // regular, 2 large. The mod isn't compatible with the small size, so the
 // taskbar is made to see the regular size instead.
@@ -1275,6 +1304,25 @@ void WINAPI SystemTrayFrame_Height_Hook(void* pThis, double value) {
     }
 
     SystemTrayFrame_Height_Original(pThis, value);
+}
+
+// The height setter in builds with newer C++/WinRT versions.
+FrameworkElement_SetDouble_t SystemTrayFrame_SetDouble_Original;
+void WINAPI SystemTrayFrame_SetDouble_Hook(void* pThis,
+                                           void* method,
+                                           double* value) {
+    // Wh_Log(L">");
+
+    if (g_inSystemTrayController_UpdateFrameSize && g_taskbarHeight &&
+        GetVcallThunkVtableOffset(method) == kFrameworkElementPutHeightOffset &&
+        !IsVerticalTaskbar()) {
+        Wh_Log(L">");
+        double height = g_taskbarHeight;
+        SystemTrayFrame_SetDouble_Original(pThis, method, &height);
+        return;
+    }
+
+    SystemTrayFrame_SetDouble_Original(pThis, method, value);
 }
 
 // The omni button style and the show desktop button column width are picked by
@@ -2415,23 +2463,43 @@ void WINAPI SearchButtonBase_UpdateButtonPadding_Hook(void* pThis) {
     SetSearchButtonRootPanelWidth(panelElement);
 }
 
+// The hooked setters are folded with the ones of other element types, and other
+// elements are given the posture height as well, such as the running indicator,
+// whose small posture extent is 16.
+bool IsProgressBarPostureWidth(void* pThis, double width) {
+    return g_taskListButtonPostureIconHeight &&
+           width == g_taskListButtonPostureIconHeight &&
+           IsRuntimeClass(pThis, L"Microsoft.UI.Xaml.Controls.ProgressBar");
+}
+
 using ProgressBar_Width_t = void(WINAPI*)(void* pThis, double width);
 ProgressBar_Width_t ProgressBar_Width_Original;
 void WINAPI ProgressBar_Width_Hook(void* pThis, double width) {
     Wh_Log(L"> width=%f", width);
 
-    // The setter is folded with the ones of other element types, and other
-    // elements are given the posture height as well, such as the running
-    // indicator, whose small posture extent is 16.
-    if (g_taskListButtonPostureIconHeight &&
-        width == g_taskListButtonPostureIconHeight &&
-        IsRuntimeClass(pThis, L"Microsoft.UI.Xaml.Controls.ProgressBar")) {
+    if (IsProgressBarPostureWidth(pThis, width)) {
         width = g_taskListButtonCustomIconHeight;
         Wh_Log(L"Setting width: %f->%f", g_taskListButtonPostureIconHeight,
                width);
     }
 
     ProgressBar_Width_Original(pThis, width);
+}
+
+// The width setter in builds with newer C++/WinRT versions.
+FrameworkElement_SetDouble_t ProgressBar_SetDouble_Original;
+void WINAPI ProgressBar_SetDouble_Hook(void* pThis,
+                                       void* method,
+                                       double* value) {
+    if (IsProgressBarPostureWidth(pThis, *value) &&
+        GetVcallThunkVtableOffset(method) == kFrameworkElementPutWidthOffset) {
+        double width = g_taskListButtonCustomIconHeight;
+        Wh_Log(L"Setting width: %f->%f", *value, width);
+        ProgressBar_SetDouble_Original(pThis, method, &width);
+        return;
+    }
+
+    ProgressBar_SetDouble_Original(pThis, method, value);
 }
 
 using SHAppBarMessage_t = decltype(&SHAppBarMessage);
@@ -2691,6 +2759,12 @@ bool HookSystemTraySymbols(HMODULE module) {
             true,  // From Windows 11 version 22H2.
         },
         {
+            {LR"(void __cdecl winrt::impl::consume_general<struct winrt::Windows::UI::Xaml::IFrameworkElement,struct winrt::SystemTray::SystemTrayFrame,int (__cdecl winrt::impl::abi<struct winrt::Windows::UI::Xaml::IFrameworkElement,void>::type::*)(double) noexcept,double &>(struct winrt::SystemTray::SystemTrayFrame const *,int (__cdecl winrt::impl::abi<struct winrt::Windows::UI::Xaml::IFrameworkElement,void>::type::*)(double) noexcept,double &))"},
+            &SystemTrayFrame_SetDouble_Original,
+            SystemTrayFrame_SetDouble_Hook,
+            true,  // From SystemTray.dll 2609.4001.0.6000.
+        },
+        {
             {LR"(public: virtual int __cdecl winrt::impl::produce<struct winrt::SystemTray::implementation::SystemTrayFrame,struct winrt::SystemTray::ISystemTrayFrame>::GetStyle(void * *))"},
             &SystemTrayFrame_GetStyle_Original,
             SystemTrayFrame_GetStyle_Hook,
@@ -2946,6 +3020,12 @@ bool HookTaskbarViewDllSymbols(HMODULE module,
                 &ProgressBar_Width_Original,
                 ProgressBar_Width_Hook,
                 true,  // From Windows 11 version 22H2.
+            },
+            {
+                {LR"(void __cdecl winrt::impl::consume_general<struct winrt::Windows::UI::Xaml::IFrameworkElement,struct winrt::Microsoft::UI::Xaml::Controls::ProgressBar,int (__cdecl winrt::impl::abi<struct winrt::Windows::UI::Xaml::IFrameworkElement,void>::type::*)(double) noexcept,double &>(struct winrt::Microsoft::UI::Xaml::Controls::ProgressBar const *,int (__cdecl winrt::impl::abi<struct winrt::Windows::UI::Xaml::IFrameworkElement,void>::type::*)(double) noexcept,double &))"},
+                &ProgressBar_SetDouble_Original,
+                ProgressBar_SetDouble_Hook,
+                true,  // From Taskbar.View.dll 2609.10000.100.6000.
             },
     };
 
