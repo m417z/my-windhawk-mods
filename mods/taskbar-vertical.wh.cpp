@@ -156,12 +156,9 @@ With labels:
 #include <list>
 #include <mutex>
 #include <optional>
+#include <regex>
 #include <unordered_set>
 #include <vector>
-
-#ifdef _M_ARM64
-#include <regex>
-#endif
 
 using namespace winrt::Windows::UI::Xaml;
 
@@ -411,6 +408,52 @@ FrameworkElement FindChildByClassName(FrameworkElement element,
         return winrt::get_class_name(child) == className;
     });
 }
+
+// Newer C++/WinRT versions call property setters through consume_general, which
+// is passed the ABI method as a pointer to a member function, i.e. a thunk
+// which loads the method from the vtable. Returns the thunk's vtable offset, or
+// 0 if the thunk isn't recognized.
+size_t GetVcallThunkVtableOffset(void* thunk) {
+#if defined(_M_X64)
+    // mov rax, [rcx]
+    // mov rax, [rax+0x90]
+    static const std::regex regex(R"(mov \w+, \[\w+\+0x([0-9a-f]+)\])",
+                                  std::regex_constants::icase);
+#elif defined(_M_ARM64)
+    // ldr x16, [x0]
+    // ldr x16, [x16, #0x90]
+    static const std::regex regex(R"(ldr\s+x\d+, \[x\d+, #0x([0-9a-f]+)\])",
+                                  std::regex_constants::icase);
+#else
+#error "Unsupported architecture"
+#endif
+
+    BYTE* p = (BYTE*)thunk;
+    for (int i = 0; i < 2; i++) {
+        WH_DISASM_RESULT result;
+        if (!Wh_Disasm(p, &result)) {
+            break;
+        }
+
+        p += result.length;
+
+        std::string_view s = result.text;
+        std::match_results<std::string_view::const_iterator> match;
+        if (std::regex_match(s.begin(), s.end(), match, regex)) {
+            return std::stoull(match[1], nullptr, 16);
+        }
+    }
+
+    return 0;
+}
+
+// IFrameworkElement vtable offsets, past the 6 IInspectable methods.
+constexpr size_t kFrameworkElementPutWidthOffset = (6 + 10) * sizeof(void*);
+constexpr size_t kFrameworkElementPutHeightOffset = (6 + 12) * sizeof(void*);
+
+using FrameworkElement_SetDouble_t = void(WINAPI*)(void* pThis,
+                                                   void* method,
+                                                   double* value);
 
 bool IsHorizontalTaskbarLocation(TaskbarLocation taskbarLocation) {
     return taskbarLocation == TaskbarLocation::top ||
@@ -2044,6 +2087,24 @@ void WINAPI SystemTrayFrame_Height_Hook(void* pThis, double value) {
     SystemTrayFrame_Height_Original(pThis, value);
 }
 
+// The height setter in builds with newer C++/WinRT versions.
+FrameworkElement_SetDouble_t SystemTrayFrame_SetDouble_Height_Original;
+void WINAPI SystemTrayFrame_SetDouble_Height_Hook(void* pThis,
+                                                  void* method,
+                                                  double* value) {
+    // Wh_Log(L">");
+
+    if (g_inSystemTrayController_UpdateFrameSize &&
+        GetVcallThunkVtableOffset(method) == kFrameworkElementPutHeightOffset) {
+        Wh_Log(L">");
+        double height = std::numeric_limits<double>::quiet_NaN();
+        SystemTrayFrame_SetDouble_Height_Original(pThis, method, &height);
+        return;
+    }
+
+    SystemTrayFrame_SetDouble_Height_Original(pThis, method, value);
+}
+
 std::vector<NativeFrame> g_nativeSystemTrayFrames;
 
 // The detailed layout gives the clock button and the button next to it fixed
@@ -2351,14 +2412,11 @@ double GetNativeSystemTrayFrameWidth(FrameworkElement systemTrayFrame,
     return g_unloading ? width : g_settings.taskbarWidth;
 }
 
-using SystemTrayFrame_Width_t = void(WINAPI*)(void* pThis, double value);
-SystemTrayFrame_Width_t SystemTrayFrame_Width_Original;
-void WINAPI SystemTrayFrame_Width_Hook(void* pThis, double value) {
+double OverrideNativeSystemTrayFrameWidth(void* pThis, double value) {
     // The frame of a vertical taskbar is given a width, and the frame of a
     // horizontal one a height, with an Auto (NaN) width.
     if (!g_inSystemTrayController_UpdateFrameSize || std::isnan(value)) {
-        SystemTrayFrame_Width_Original(pThis, value);
-        return;
+        return value;
     }
 
     Wh_Log(L"> %f", value);
@@ -2377,7 +2435,29 @@ void WINAPI SystemTrayFrame_Width_Hook(void* pThis, double value) {
         Wh_Log(L"Error %08X", hr);
     }
 
-    SystemTrayFrame_Width_Original(pThis, value);
+    return value;
+}
+
+using SystemTrayFrame_Width_t = void(WINAPI*)(void* pThis, double value);
+SystemTrayFrame_Width_t SystemTrayFrame_Width_Original;
+void WINAPI SystemTrayFrame_Width_Hook(void* pThis, double value) {
+    SystemTrayFrame_Width_Original(
+        pThis, OverrideNativeSystemTrayFrameWidth(pThis, value));
+}
+
+// The width setter in builds with newer C++/WinRT versions.
+FrameworkElement_SetDouble_t SystemTrayFrame_SetDouble_Width_Original;
+void WINAPI SystemTrayFrame_SetDouble_Width_Hook(void* pThis,
+                                                 void* method,
+                                                 double* value) {
+    if (g_inSystemTrayController_UpdateFrameSize &&
+        GetVcallThunkVtableOffset(method) == kFrameworkElementPutWidthOffset) {
+        double width = OverrideNativeSystemTrayFrameWidth(pThis, *value);
+        SystemTrayFrame_SetDouble_Width_Original(pThis, method, &width);
+        return;
+    }
+
+    SystemTrayFrame_SetDouble_Width_Original(pThis, method, value);
 }
 
 void UpdateNativeSystemTrayFrameWidths() {
@@ -2675,17 +2755,7 @@ void WINAPI AugmentedEntryPointButton_UpdateButtonPadding_Hook(void* pThis) {
     g_inAugmentedEntryPointButton_UpdateButtonPadding = false;
 }
 
-using RepeatButton_Width_t = void(WINAPI*)(void* pThis, double width);
-RepeatButton_Width_t RepeatButton_Width_Original;
-void WINAPI RepeatButton_Width_Hook(void* pThis, double width) {
-    Wh_Log(L">");
-
-    RepeatButton_Width_Original(pThis, width);
-
-    if (!g_inAugmentedEntryPointButton_UpdateButtonPadding) {
-        return;
-    }
-
+void ApplyAugmentedEntryPointButtonStyle(void* pThis) {
     FrameworkElement button = nullptr;
     (*(IUnknown**)pThis)
         ->QueryInterface(winrt::guid_of<FrameworkElement>(),
@@ -2787,6 +2857,32 @@ void WINAPI RepeatButton_Width_Hook(void* pThis, double width) {
 
         return false;
     });
+}
+
+using RepeatButton_Width_t = void(WINAPI*)(void* pThis, double width);
+RepeatButton_Width_t RepeatButton_Width_Original;
+void WINAPI RepeatButton_Width_Hook(void* pThis, double width) {
+    Wh_Log(L">");
+
+    RepeatButton_Width_Original(pThis, width);
+
+    if (g_inAugmentedEntryPointButton_UpdateButtonPadding) {
+        ApplyAugmentedEntryPointButtonStyle(pThis);
+    }
+}
+
+// The width setter in builds with newer C++/WinRT versions.
+FrameworkElement_SetDouble_t RepeatButton_SetDouble_Original;
+void WINAPI RepeatButton_SetDouble_Hook(void* pThis,
+                                        void* method,
+                                        double* value) {
+    RepeatButton_SetDouble_Original(pThis, method, value);
+
+    if (g_inAugmentedEntryPointButton_UpdateButtonPadding &&
+        GetVcallThunkVtableOffset(method) == kFrameworkElementPutWidthOffset) {
+        Wh_Log(L">");
+        ApplyAugmentedEntryPointButtonStyle(pThis);
+    }
 }
 
 void ApplyNotifyIconViewStyle(FrameworkElement notifyIconViewElement) {
@@ -6209,6 +6305,13 @@ bool HookSystemTraySymbolsNative(HMODULE module) {
             {LR"(public: __cdecl winrt::impl::consume_Windows_UI_Xaml_IFrameworkElement<struct winrt::SystemTray::SystemTrayFrame>::Width(double)const )"},
             &SystemTrayFrame_Width_Original,
             SystemTrayFrame_Width_Hook,
+            true,  // Gone in SystemTray.dll 2609.4001.0.6000.
+        },
+        {
+            {LR"(void __cdecl winrt::impl::consume_general<struct winrt::Windows::UI::Xaml::IFrameworkElement,struct winrt::SystemTray::SystemTrayFrame,int (__cdecl winrt::impl::abi<struct winrt::Windows::UI::Xaml::IFrameworkElement,void>::type::*)(double) noexcept,double &>(struct winrt::SystemTray::SystemTrayFrame const *,int (__cdecl winrt::impl::abi<struct winrt::Windows::UI::Xaml::IFrameworkElement,void>::type::*)(double) noexcept,double &))"},
+            &SystemTrayFrame_SetDouble_Width_Original,
+            SystemTrayFrame_SetDouble_Width_Hook,
+            true,  // From SystemTray.dll 2609.4001.0.6000.
         },
         {
             {LR"(private: void __cdecl winrt::SystemTray::implementation::SystemTrayFrame::UpdateLayoutState(void))"},
@@ -6235,6 +6338,12 @@ bool HookSystemTraySymbolsNative(HMODULE module) {
 
     if (!HookSymbols(module, symbolHooks, ARRAYSIZE(symbolHooks))) {
         Wh_Log(L"HookSymbols failed");
+        return false;
+    }
+
+    if (!SystemTrayFrame_Width_Original &&
+        !SystemTrayFrame_SetDouble_Width_Original) {
+        Wh_Log(L"Error: Missing system tray frame width setter");
         return false;
     }
 
@@ -6281,6 +6390,13 @@ bool HookSystemTraySymbols(HMODULE module) {
             {LR"(public: __cdecl winrt::impl::consume_Windows_UI_Xaml_IFrameworkElement<struct winrt::SystemTray::SystemTrayFrame>::Height(double)const )"},
             &SystemTrayFrame_Height_Original,
             SystemTrayFrame_Height_Hook,
+            true,  // Gone in SystemTray.dll 2609.4001.0.6000.
+        },
+        {
+            {LR"(void __cdecl winrt::impl::consume_general<struct winrt::Windows::UI::Xaml::IFrameworkElement,struct winrt::SystemTray::SystemTrayFrame,int (__cdecl winrt::impl::abi<struct winrt::Windows::UI::Xaml::IFrameworkElement,void>::type::*)(double) noexcept,double &>(struct winrt::SystemTray::SystemTrayFrame const *,int (__cdecl winrt::impl::abi<struct winrt::Windows::UI::Xaml::IFrameworkElement,void>::type::*)(double) noexcept,double &))"},
+            &SystemTrayFrame_SetDouble_Height_Original,
+            SystemTrayFrame_SetDouble_Height_Hook,
+            true,  // From SystemTray.dll 2609.4001.0.6000.
         },
         {
             {LR"(public: virtual int __cdecl winrt::impl::produce<struct winrt::SystemTray::implementation::SystemTrayFrame,struct winrt::Windows::UI::Xaml::IFrameworkElementOverrides>::MeasureOverride(struct winrt::Windows::Foundation::Size,struct winrt::Windows::Foundation::Size *))"},
@@ -6328,6 +6444,12 @@ bool HookSystemTraySymbols(HMODULE module) {
 
     if (!HookSymbols(module, symbolHooks, ARRAYSIZE(symbolHooks))) {
         Wh_Log(L"HookSymbols failed");
+        return false;
+    }
+
+    if (!SystemTrayFrame_Height_Original &&
+        !SystemTrayFrame_SetDouble_Height_Original) {
+        Wh_Log(L"Error: Missing system tray frame height setter");
         return false;
     }
 
@@ -6436,6 +6558,13 @@ bool HookTaskbarViewDllSymbols(HMODULE module,
                 {LR"(public: __cdecl winrt::impl::consume_Windows_UI_Xaml_IFrameworkElement<struct winrt::Windows::UI::Xaml::Controls::Primitives::RepeatButton>::Width(double)const )"},
                 &RepeatButton_Width_Original,
                 RepeatButton_Width_Hook,
+                true,  // Replaced by consume_general in Taskbar.View.dll 2609.
+            },
+            {
+                {LR"(void __cdecl winrt::impl::consume_general<struct winrt::Windows::UI::Xaml::IFrameworkElement,struct winrt::Windows::UI::Xaml::Controls::Primitives::RepeatButton,int (__cdecl winrt::impl::abi<struct winrt::Windows::UI::Xaml::IFrameworkElement,void>::type::*)(double) noexcept,double &>(struct winrt::Windows::UI::Xaml::Controls::Primitives::RepeatButton const *,int (__cdecl winrt::impl::abi<struct winrt::Windows::UI::Xaml::IFrameworkElement,void>::type::*)(double) noexcept,double &))"},
+                &RepeatButton_SetDouble_Original,
+                RepeatButton_SetDouble_Hook,
+                true,  // From Taskbar.View.dll 2609.10000.100.6000.
             },
             {
                 {LR"(private: void __cdecl winrt::Taskbar::implementation::TaskListButton::UpdateVisualStates(void))"},
@@ -6577,6 +6706,11 @@ bool HookTaskbarViewDllSymbols(HMODULE module,
 
     if (!HookSymbols(module, allHooks, index)) {
         Wh_Log(L"HookSymbols failed");
+        return false;
+    }
+
+    if (!RepeatButton_Width_Original && !RepeatButton_SetDouble_Original) {
+        Wh_Log(L"Error: Missing repeat button width setter");
         return false;
     }
 
