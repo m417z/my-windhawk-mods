@@ -52,6 +52,7 @@ be used:
   * `%time_tz<n>%` - the time with a custom time zone. `<n>` is the time zone
     number in the list of time zones configured in the mod settings (not Windows
     settings).
+* `%unix%` - the time since epoch in seconds.
 * `%date%` - the date as configured by the date format in settings.
   * `%date<n>%` - additional date formats, specified by separating multiple
     formats with `;` in the date format setting. `<n>` is the additional date
@@ -1867,6 +1868,15 @@ int GetTimeFormatExWithShowSeconds(LPCWSTR lpLocaleName,
 
     return GetTimeFormatEx_Original(lpLocaleName, dwFlags, lpTime, lpFormat,
                                     lpTimeStr, cchTime);
+}
+
+PCWSTR GetUnixTimeFormatted() {
+    static WCHAR buffer[32];
+    auto seconds = std::chrono::duration_cast<std::chrono::seconds>(
+        std::chrono::system_clock::now().time_since_epoch()).count();
+    swprintf_s(buffer, ARRAYSIZE(buffer), L"%lld",
+               static_cast<long long>(seconds));
+    return buffer;
 }
 
 PCWSTR GetTimeFormattedWithExtra(std::vector<std::wstring>** extra) {
@@ -4169,6 +4179,7 @@ size_t ResolveFormatToken(
         FormattedStringValueGetter valueGetter;
     } formatTokens[] = {
         {L"%time%"sv, GetTimeFormatted},
+        {L"%unix%"sv, GetUnixTimeFormatted},
         {L"%date%"sv, GetDateFormatted},
         {L"%weekday%"sv, GetWeekdayFormatted},
         {L"%weekday_num%"sv, GetWeekdayNumFormatted},
