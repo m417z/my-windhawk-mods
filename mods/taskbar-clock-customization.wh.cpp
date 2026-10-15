@@ -554,7 +554,6 @@ using namespace std::string_view_literals;
 #include <powrprof.h>
 #include <psapi.h>
 #include <shlwapi.h>
-#include <time.h>
 #include <wininet.h>
 
 #undef GetCurrentTime
@@ -712,12 +711,12 @@ std::atomic<bool> g_explorerPatcherInitialized;
 
 bool g_formattingInitialized;
 
-// Whether %unix% is shown. It changes every second, so the clock refreshes
-// every second even if seconds aren't shown.
 bool g_unixPatternUsed;
 
 DWORD g_formatIndex;
 SYSTEMTIME g_formatTime;
+DWORD g_formatTimeUtcFormatIndex = 0xFFFFFFFF;
+SYSTEMTIME g_formatTimeUtc;
 
 // Guards g_settings and the formatting state derived from it: the format
 // time/index, the cached formatted strings, the data collection session and
@@ -1824,6 +1823,75 @@ void GetTimeZone(WCHAR* buffer, size_t bufferSize) {
                  static_cast<int>(minutes));
 }
 
+ULONGLONG SystemTimeToFileTimeValue(const SYSTEMTIME* time) {
+    FILETIME fileTime{};
+    SystemTimeToFileTime(time, &fileTime);
+    ULARGE_INTEGER value{
+        .LowPart = fileTime.dwLowDateTime,
+        .HighPart = fileTime.dwHighDateTime,
+    };
+    return value.QuadPart;
+}
+
+SYSTEMTIME FileTimeValueToSystemTime(ULONGLONG value) {
+    FILETIME fileTime{
+        .dwLowDateTime = static_cast<DWORD>(value),
+        .dwHighDateTime = static_cast<DWORD>(value >> 32),
+    };
+    SYSTEMTIME time{};
+    FileTimeToSystemTime(&fileTime, &time);
+    return time;
+}
+
+// Returns g_formatTime converted to UTC. When DST ends, an hour of local time
+// repeats, so the latest matching UTC time is chosen, within a window from a
+// day ago to a minute from now (the minute tolerates the clock being adjusted
+// backwards). The window has at most one DST change, so the UTC offsets at its
+// ends are the only candidates.
+const SYSTEMTIME* GetFormatTimeUtc() {
+    if (g_formatTimeUtcFormatIndex == g_formatIndex) {
+        return &g_formatTimeUtc;
+    }
+
+    g_formatTimeUtcFormatIndex = g_formatIndex;
+
+    auto utcToLocal = [](ULONGLONG utc) {
+        SYSTEMTIME utcTime = FileTimeValueToSystemTime(utc);
+        SYSTEMTIME localTime{};
+        SystemTimeToTzSpecificLocalTime(nullptr, &utcTime, &localTime);
+        return SystemTimeToFileTimeValue(&localTime);
+    };
+
+    constexpr ULONGLONG kMinuteIn100Ns = 60 * 10000000ULL;
+    constexpr ULONGLONG kDayIn100Ns = 24 * 60 * kMinuteIn100Ns;
+
+    SYSTEMTIME nowTime;
+    GetSystemTime(&nowTime);
+    ULONGLONG now = SystemTimeToFileTimeValue(&nowTime);
+
+    ULONGLONG local = SystemTimeToFileTimeValue(&g_formatTime);
+
+    ULONGLONG windowEnd = now + kMinuteIn100Ns;
+
+    std::optional<ULONGLONG> result;
+    for (ULONGLONG offsetTime : {windowEnd, now - kDayIn100Ns}) {
+        ULONGLONG utc = local + offsetTime - utcToLocal(offsetTime);
+        if (utc <= windowEnd && utcToLocal(utc) == local &&
+            (!result || utc > *result)) {
+            result = utc;
+        }
+    }
+
+    if (result) {
+        g_formatTimeUtc = FileTimeValueToSystemTime(*result);
+    } else {
+        TzSpecificLocalTimeToSystemTime(nullptr, &g_formatTime,
+                                        &g_formatTimeUtc);
+    }
+
+    return &g_formatTimeUtc;
+}
+
 std::vector<std::wstring> SplitTimeFormatString(std::wstring_view s) {
     size_t posStart = 0;
     std::wstring token;
@@ -1929,13 +1997,9 @@ PCWSTR GetTimeFormattedTz(size_t index) {
     if (timeFormattedTz.formatIndex != g_formatIndex) {
         const auto& timeZoneInformation = g_timeZoneInformation[index];
         if (timeZoneInformation && pSystemTimeToTzSpecificLocalTimeEx) {
-            SYSTEMTIME systemTime;
-            TzSpecificLocalTimeToSystemTime(nullptr, &g_formatTime,
-                                            &systemTime);
-
             SYSTEMTIME timeTz;
             pSystemTimeToTzSpecificLocalTimeEx(&*timeZoneInformation,
-                                               &systemTime, &timeTz);
+                                               GetFormatTimeUtc(), &timeTz);
 
             const SYSTEMTIME* time = &timeTz;
 
@@ -1959,7 +2023,14 @@ PCWSTR GetTimeFormattedTz(size_t index) {
 
 PCWSTR GetUnixTimeFormatted() {
     if (g_unixTimeFormatted.formatIndex != g_formatIndex) {
-        swprintf_s(g_unixTimeFormatted.buffer, L"%lld", _time64(nullptr));
+        // 100-nanosecond intervals between 1601-01-01 and 1970-01-01.
+        constexpr LONGLONG kUnixEpochIn100Ns = 116444736000000000LL;
+        constexpr LONGLONG kSecondIn100Ns = 10000000LL;
+
+        LONGLONG formatTimeUtc = static_cast<LONGLONG>(
+            SystemTimeToFileTimeValue(GetFormatTimeUtc()));
+        swprintf_s(g_unixTimeFormatted.buffer, L"%lld",
+                   (formatTimeUtc - kUnixEpochIn100Ns) / kSecondIn100Ns);
 
         g_unixTimeFormatted.formatIndex = g_formatIndex;
     }
@@ -2034,13 +2105,9 @@ PCWSTR GetDateFormattedTz(size_t index) {
     if (dateFormattedTz.formatIndex != g_formatIndex) {
         const auto& timeZoneInformation = g_timeZoneInformation[index];
         if (timeZoneInformation && pSystemTimeToTzSpecificLocalTimeEx) {
-            SYSTEMTIME systemTime;
-            TzSpecificLocalTimeToSystemTime(nullptr, &g_formatTime,
-                                            &systemTime);
-
             SYSTEMTIME timeTz;
             pSystemTimeToTzSpecificLocalTimeEx(&*timeZoneInformation,
-                                               &systemTime, &timeTz);
+                                               GetFormatTimeUtc(), &timeTz);
 
             const SYSTEMTIME* time = &timeTz;
 
@@ -2103,13 +2170,9 @@ PCWSTR GetWeekdayFormattedTz(size_t index) {
     if (weekdayFormattedTz.formatIndex != g_formatIndex) {
         const auto& timeZoneInformation = g_timeZoneInformation[index];
         if (timeZoneInformation && pSystemTimeToTzSpecificLocalTimeEx) {
-            SYSTEMTIME systemTime;
-            TzSpecificLocalTimeToSystemTime(nullptr, &g_formatTime,
-                                            &systemTime);
-
             SYSTEMTIME timeTz;
             pSystemTimeToTzSpecificLocalTimeEx(&*timeZoneInformation,
-                                               &systemTime, &timeTz);
+                                               GetFormatTimeUtc(), &timeTz);
 
             const SYSTEMTIME* time = &timeTz;
 
