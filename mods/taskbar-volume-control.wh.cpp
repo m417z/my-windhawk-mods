@@ -75,6 +75,11 @@ issue](https://tweaker.userecho.com/topics/826-scroll-on-trackpadtouchpad-doesnt
   - notification_area: The tray area
   - taskbarWithoutNotificationArea: The taskbar without the tray area
   - none: None (only additional scroll regions)
+- controlMode: api
+  $name: Control Mode
+  $options:
+  - api: Win32 Windows APIs
+  - keysim: Virtual Keyboard Simulation
 - additionalScrollRegions: ""
   $name: Additional scroll regions
   $description: >-
@@ -164,6 +169,11 @@ enum class ScrollArea {
     none,
 };
 
+enum class ControlMode {
+    API,
+    KeySim,
+};
+
 struct Region {
     bool isPercentage;
     int start;
@@ -179,6 +189,7 @@ enum class FullScreenScrolling {
 struct {
     VolumeIndicator volumeIndicator;
     ScrollArea scrollArea;
+    ControlMode controlMode;
     std::vector<Region> additionalScrollRegions;
     bool middleClickToMute;
     bool ctrlScrollVolumeChange;
@@ -1433,6 +1444,25 @@ static BOOL CALLBACK EnumThreadFindSndVolTrayControlWnd(HWND hWnd,
 
 ////////////////////////////////////////////////////////////
 
+void ChangeVolumeWithVirtualKeys(int delta) {
+    int clicks = delta / WHEEL_DELTA;
+    if (clicks == 0) {
+        return;
+    }
+
+    int num_events = abs(clicks) * g_settings.volumeChangeStep / 2;
+    WORD vkey = (clicks > 0) ? VK_VOLUME_UP : VK_VOLUME_DOWN;
+
+    for (int i = 0; i < num_events; ++i) {
+        INPUT inputs[2] = {};
+        inputs[0].type = INPUT_KEYBOARD;
+        inputs[0].ki.wVk = vkey;
+        inputs[1] = inputs[0];
+        inputs[1].ki.dwFlags = KEYEVENTF_KEYUP;
+        SendInput(ARRAYSIZE(inputs), inputs, sizeof(INPUT));
+    }
+}
+
 bool OnMouseWheel(HWND hWnd, WPARAM wParam, LPARAM lParam) {
     if (GetCapture()) {
         return false;
@@ -1455,7 +1485,10 @@ bool OnMouseWheel(HWND hWnd, WPARAM wParam, LPARAM lParam) {
     ZeroMemory(&input, sizeof(INPUT));
     SendInput(1, &input, sizeof(INPUT));
 
-    OpenScrollSndVol(wParam, lParam);
+    if(g_settings.controlMode == ControlMode::API)
+        OpenScrollSndVol(wParam, lParam);
+    else
+        ChangeVolumeWithVirtualKeys(GET_WHEEL_DELTA_WPARAM(wParam));
 
     return true;
 }
@@ -1811,6 +1844,15 @@ void LoadSettings() {
         g_settings.scrollArea = ScrollArea::none;
     }
     Wh_FreeStringSetting(scrollArea);
+
+    PCWSTR controlMode = Wh_GetStringSetting(L"controlMode");
+    g_settings.controlMode = ControlMode::API;
+    if (wcscmp(controlMode, L"api") == 0) {
+        g_settings.controlMode = ControlMode::API;
+    } else if (wcscmp(controlMode, L"keysim") == 0) {
+        g_settings.controlMode = ControlMode::KeySim;
+    }
+    Wh_FreeStringSetting(controlMode);
 
     g_settings.middleClickToMute = Wh_GetIntSetting(L"middleClickToMute");
     g_settings.ctrlScrollVolumeChange =
