@@ -52,7 +52,7 @@ be used:
   * `%time_tz<n>%` - the time with a custom time zone. `<n>` is the time zone
     number in the list of time zones configured in the mod settings (not Windows
     settings).
-* `%unix%` - the time since epoch in seconds.
+* `%unix%` - the Unix timestamp (seconds since 1970-01-01 00:00:00 UTC).
 * `%date%` - the date as configured by the date format in settings.
   * `%date<n>%` - additional date formats, specified by separating multiple
     formats with `;` in the date format setting. `<n>` is the additional date
@@ -554,6 +554,7 @@ using namespace std::string_view_literals;
 #include <powrprof.h>
 #include <psapi.h>
 #include <shlwapi.h>
+#include <time.h>
 #include <wininet.h>
 
 #undef GetCurrentTime
@@ -711,6 +712,10 @@ std::atomic<bool> g_explorerPatcherInitialized;
 
 bool g_formattingInitialized;
 
+// Whether %unix% is shown. It changes every second, so the clock refreshes
+// every second even if seconds aren't shown.
+bool g_unixPatternUsed;
+
 DWORD g_formatIndex;
 SYSTEMTIME g_formatTime;
 
@@ -730,6 +735,7 @@ struct FormattedString {
 FormattedString<FORMATTED_BUFFER_SIZE> g_timeFormatted;
 std::vector<std::wstring> g_timeFormattedExtra;
 std::vector<FormattedString<FORMATTED_BUFFER_SIZE>> g_timeFormattedTz;
+FormattedString<FORMATTED_BUFFER_SIZE> g_unixTimeFormatted;
 FormattedString<FORMATTED_BUFFER_SIZE> g_dateFormatted;
 std::vector<std::wstring> g_dateFormattedExtra;
 std::vector<FormattedString<FORMATTED_BUFFER_SIZE>> g_dateFormattedTz;
@@ -1870,15 +1876,6 @@ int GetTimeFormatExWithShowSeconds(LPCWSTR lpLocaleName,
                                     lpTimeStr, cchTime);
 }
 
-PCWSTR GetUnixTimeFormatted() {
-    static WCHAR buffer[32];
-    auto seconds = std::chrono::duration_cast<std::chrono::seconds>(
-        std::chrono::system_clock::now().time_since_epoch()).count();
-    swprintf_s(buffer, ARRAYSIZE(buffer), L"%lld",
-               static_cast<long long>(seconds));
-    return buffer;
-}
-
 PCWSTR GetTimeFormattedWithExtra(std::vector<std::wstring>** extra) {
     if (g_timeFormatted.formatIndex != g_formatIndex) {
         const SYSTEMTIME* time = &g_formatTime;
@@ -1958,6 +1955,16 @@ PCWSTR GetTimeFormattedTz(size_t index) {
     }
 
     return timeFormattedTz.buffer;
+}
+
+PCWSTR GetUnixTimeFormatted() {
+    if (g_unixTimeFormatted.formatIndex != g_formatIndex) {
+        swprintf_s(g_unixTimeFormatted.buffer, L"%lld", _time64(nullptr));
+
+        g_unixTimeFormatted.formatIndex = g_formatIndex;
+    }
+
+    return g_unixTimeFormatted.buffer;
 }
 
 // Returns the locale of the date format at the given index, falling back to the
@@ -4357,6 +4364,8 @@ void EnsureFormattingInitialized() {
 
     g_formattingInitialized = true;
 
+    g_unixPatternUsed = IsStrInDateTimePatternSettings(L"%unix%");
+
     WebContentUpdateThreadInit();
     DataCollectionSessionInit();
     MediaSessionInit();
@@ -4488,8 +4497,9 @@ void ClockSystemTrayIconDataModel_RefreshIcon_Hook_Impl(
         bool webContentPending =
             g_webContentUpdateThread && !g_webContentLoaded;
         g_refreshIconNeedToAdjustTimer =
-            g_settings.showSeconds || g_dataCollectionPatternUsed ||
-            g_mediaPatternUsed || webContentPending;
+            g_settings.showSeconds || g_unixPatternUsed ||
+            g_dataCollectionPatternUsed || g_mediaPatternUsed ||
+            webContentPending;
     }
 
     g_inRefreshIcon = true;
@@ -5335,7 +5345,7 @@ ClockButton_UpdateTextStringsIfNecessary_Hook(LPVOID pThis, bool* param1) {
         std::lock_guard<std::mutex> guard(g_formatLineMutex);
         bool webContentPending =
             g_webContentUpdateThread && !g_webContentLoaded;
-        updateEverySecond = g_settings.showSeconds ||
+        updateEverySecond = g_settings.showSeconds || g_unixPatternUsed ||
                             g_dataCollectionPatternUsed || g_mediaPatternUsed ||
                             webContentPending;
     }
