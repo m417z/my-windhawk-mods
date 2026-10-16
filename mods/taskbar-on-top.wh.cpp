@@ -92,6 +92,7 @@ Moves the Windows 11 taskbar to the top of the screen.
 #include <winrt/Windows.UI.Xaml.Controls.h>
 #include <winrt/Windows.UI.Xaml.Media.h>
 
+#include <algorithm>
 #include <atomic>
 #include <functional>
 #include <list>
@@ -530,8 +531,8 @@ DWORD WINAPI TrayUI_GetDockedRect_Hook(void* pThis, RECT* rect, BOOL param2) {
     switch (GetTaskbarLocationForMonitor(monitor)) {
         case TaskbarLocation::top:
             // The rect of an auto-hidden taskbar is mostly below the monitor.
-            // Keep it hidden at the position used in WM_WINDOWPOSCHANGING,
-            // since Windows also derives the window's clip region from it.
+            // Move it to the hidden position on top, which Windows slides the
+            // taskbar to and derives the window's clip region from.
             rect->top =
                 rect->bottom > monitorRect.bottom
                     ? GetAutoHiddenTaskbarTop(monitorRect, monitorDpiY, height)
@@ -957,8 +958,9 @@ LRESULT TaskbarWndProcPostProcess(HWND hWnd,
                         // Normal positioning without auto-hide adjustment.
                         int yPosition = monitorRect.top;
 
-                        // Auto-hide positioning: move taskbar mostly off-screen
-                        // when hiding.
+                        // Auto-hide positioning: Windows slides the taskbar
+                        // between the shown position and the hidden one from
+                        // TrayUI_GetDockedRect_Hook.
                         if (!secondaryTaskbar && IsTaskbarAutoHideEnabled()) {
                             RECT currentRect;
                             GetWindowRect(hWnd, &currentRect);
@@ -969,33 +971,15 @@ LRESULT TaskbarWndProcPostProcess(HWND hWnd,
                                     ? currentRect.bottom - currentRect.top
                                     : windowpos->cy;
 
-                            // Check if cursor is within the taskbar's shown
-                            // bounds.
-                            DWORD messagePos = GetMessagePos();
-                            POINT pt{
-                                GET_X_LPARAM(messagePos),
-                                GET_Y_LPARAM(messagePos),
-                            };
-                            bool cursorInShownTaskbarArea =
-                                pt.x >= monitorRect.left &&
-                                pt.x < monitorRect.right &&
-                                pt.y >= monitorRect.top &&
-                                pt.y < monitorRect.top + height;
+                            UINT monitorDpiX = 96;
+                            UINT monitorDpiY = 96;
+                            GetDpiForMonitor(monitor, MDT_DEFAULT, &monitorDpiX,
+                                             &monitorDpiY);
+                            int hiddenTop = GetAutoHiddenTaskbarTop(
+                                monitorRect, monitorDpiY, height);
 
-                            // Windows requests a position above the monitor
-                            // when hiding, see TrayUI_GetDockedRect_Hook, and
-                            // the shown position when showing, e.g. for the
-                            // Win key.
-                            bool hideRequested = windowpos->y < monitorRect.top;
-
-                            if (hideRequested && !cursorInShownTaskbarArea) {
-                                UINT monitorDpiX = 96;
-                                UINT monitorDpiY = 96;
-                                GetDpiForMonitor(monitor, MDT_DEFAULT,
-                                                 &monitorDpiX, &monitorDpiY);
-                                yPosition = GetAutoHiddenTaskbarTop(
-                                    monitorRect, monitorDpiY, height);
-                            }
+                            yPosition = std::clamp((int)windowpos->y, hiddenTop,
+                                                   yPosition);
                         }
 
                         windowpos->y = yPosition;
