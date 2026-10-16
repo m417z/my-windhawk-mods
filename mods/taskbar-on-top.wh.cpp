@@ -291,6 +291,15 @@ bool IsTaskbarAutoHideEnabled() {
     return (state & ABS_AUTOHIDE) != 0;
 }
 
+// Returns the top of an auto-hidden taskbar on top, of which only the trigger
+// strip stays on the monitor.
+int GetAutoHiddenTaskbarTop(const RECT& monitorRect,
+                            UINT monitorDpiY,
+                            int taskbarHeight) {
+    int triggerHeight = MulDiv(kAutoHideTriggerHeight, monitorDpiY, 96);
+    return monitorRect.top + triggerHeight - taskbarHeight;
+}
+
 // Reads the state saved by the taskbar, available before the taskbar is
 // created. The state is a DWORD at offset 8.
 bool IsStoredTaskbarAutoHideEnabled() {
@@ -505,7 +514,9 @@ DWORD WINAPI TrayUI_GetDockedRect_Hook(void* pThis, RECT* rect, BOOL param2) {
         return ret;
     }
 
-    HMONITOR monitor = MonitorFromRect(rect, MONITOR_DEFAULTTONEAREST);
+    // The top edge stays on the monitor when the taskbar is auto-hidden.
+    HMONITOR monitor = MonitorFromPoint(
+        {(rect->left + rect->right) / 2, rect->top}, MONITOR_DEFAULTTONEAREST);
 
     RECT monitorRect;
     GetMonitorRect(monitor, &monitorRect);
@@ -518,8 +529,14 @@ DWORD WINAPI TrayUI_GetDockedRect_Hook(void* pThis, RECT* rect, BOOL param2) {
 
     switch (GetTaskbarLocationForMonitor(monitor)) {
         case TaskbarLocation::top:
-            rect->top = monitorRect.top;
-            rect->bottom = monitorRect.top + height;
+            // The rect of an auto-hidden taskbar is mostly below the monitor.
+            // Keep it hidden at the position used in WM_WINDOWPOSCHANGING,
+            // since Windows also derives the window's clip region from it.
+            rect->top =
+                rect->bottom > monitorRect.bottom
+                    ? GetAutoHiddenTaskbarTop(monitorRect, monitorDpiY, height)
+                    : monitorRect.top;
+            rect->bottom = rect->top + height;
             break;
 
         case TaskbarLocation::bottom:
@@ -930,58 +947,54 @@ LRESULT TaskbarWndProcPostProcess(HWND hWnd,
                 Wh_Log(L"WM_WINDOWPOSCHANGING (size or move): %08X",
                        (DWORD)(ULONG_PTR)hWnd);
 
-                if (!g_unloading) {
-                    RECT rect{
-                        .left = windowpos->x,
-                        .top = windowpos->y,
-                        .right = windowpos->x + windowpos->cx,
-                        .bottom = windowpos->y + windowpos->cy,
-                    };
+                if (!g_unloading && !(windowpos->flags & SWP_NOMOVE)) {
                     HMONITOR monitor =
-                        MonitorFromRect(&rect, MONITOR_DEFAULTTONEAREST);
-
-                    if (!(windowpos->flags & SWP_NOMOVE) &&
+                        (HMONITOR)GetProp(hWnd, L"TaskbarMonitor");
+                    RECT monitorRect;
+                    if (monitor && GetMonitorRect(monitor, &monitorRect) &&
                         GetTaskbarLocationForMonitor(monitor) ==
                             TaskbarLocation::top) {
-                        RECT monitorRect;
-                        GetMonitorRect(monitor, &monitorRect);
-
                         // Normal positioning without auto-hide adjustment.
                         int yPosition = monitorRect.top;
 
                         // Auto-hide positioning: move taskbar mostly off-screen
                         // when hiding.
                         if (!secondaryTaskbar && IsTaskbarAutoHideEnabled()) {
-                            // Check if cursor is within the taskbar's current
+                            RECT currentRect;
+                            GetWindowRect(hWnd, &currentRect);
+
+                            // cy isn't set with SWP_NOSIZE.
+                            int height =
+                                (windowpos->flags & SWP_NOSIZE)
+                                    ? currentRect.bottom - currentRect.top
+                                    : windowpos->cy;
+
+                            // Check if cursor is within the taskbar's shown
                             // bounds.
                             DWORD messagePos = GetMessagePos();
                             POINT pt{
                                 GET_X_LPARAM(messagePos),
                                 GET_Y_LPARAM(messagePos),
                             };
-
-                            RECT currentRect;
-                            GetWindowRect(hWnd, &currentRect);
-
-                            // Check if cursor is in the taskbar area (on screen
-                            // and over taskbar).
-                            int currentHeight =
-                                currentRect.bottom - currentRect.top;
                             bool cursorInShownTaskbarArea =
                                 pt.x >= monitorRect.left &&
                                 pt.x < monitorRect.right &&
                                 pt.y >= monitorRect.top &&
-                                pt.y < monitorRect.top + currentHeight;
-                            if (!cursorInShownTaskbarArea) {
-                                // Cursor is not in taskbar - hide it by moving
-                                // mostly off-screen.
+                                pt.y < monitorRect.top + height;
+
+                            // Windows requests a position above the monitor
+                            // when hiding, see TrayUI_GetDockedRect_Hook, and
+                            // the shown position when showing, e.g. for the
+                            // Win key.
+                            bool hideRequested = windowpos->y < monitorRect.top;
+
+                            if (hideRequested && !cursorInShownTaskbarArea) {
                                 UINT monitorDpiX = 96;
                                 UINT monitorDpiY = 96;
                                 GetDpiForMonitor(monitor, MDT_DEFAULT,
                                                  &monitorDpiX, &monitorDpiY);
-                                int triggerHeight = MulDiv(
-                                    kAutoHideTriggerHeight, monitorDpiY, 96);
-                                yPosition -= currentHeight - triggerHeight;
+                                yPosition = GetAutoHiddenTaskbarTop(
+                                    monitorRect, monitorDpiY, height);
                             }
                         }
 
