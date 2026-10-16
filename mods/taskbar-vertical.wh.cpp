@@ -111,9 +111,8 @@ With labels:
   $description: >-
     Adjust the Start menu opening animation to match the vertical taskbar
     position, e.g. sliding in from the left when the taskbar is on the left side
-    of the screen. This option doesn't work with the redesigned Start menu, and
-    might not work with the Phone Link sidebar and with some Start Menu Styler
-    themes.
+    of the screen. This option might not work with the Phone Link sidebar and
+    with some Start Menu Styler themes.
 - clockContainerHeight: 0
   $name: Clock container height
   $description: >-
@@ -5856,6 +5855,293 @@ void SettingsChanged() {
     ApplyStyle();
 }
 
+// The redesigned Start menu (StartMenu.dll) has entrance and dismiss
+// animations for each taskbar edge. Windows passes the edge of the primary
+// taskbar, and in builds without feature 59213768 the edge is ignored and the
+// menu always slides in from the bottom. The feature is enabled and the edge is
+// replaced with the taskbar location of the Start menu monitor.
+enum class StartMenuTaskbarEdge {
+    left = 0,
+    top = 1,
+    right = 2,
+    bottom = 3,
+};
+
+std::atomic<bool> g_startMenuDllHooked;
+
+StartMenuTaskbarEdge GetStartMenuTaskbarEdge(StartMenuTaskbarEdge edge) {
+    if (g_unloading) {
+        return edge;
+    }
+
+    HMONITOR monitor =
+        MonitorFromWindow(GetCoreWnd(), MONITOR_DEFAULTTONEAREST);
+    switch (GetTaskbarLocationForMonitor(monitor)) {
+        case TaskbarLocation::left:
+            return StartMenuTaskbarEdge::left;
+        case TaskbarLocation::right:
+            return StartMenuTaskbarEdge::right;
+        case TaskbarLocation::top:
+            return StartMenuTaskbarEdge::top;
+        case TaskbarLocation::bottom:
+            return StartMenuTaskbarEdge::bottom;
+    }
+
+    return edge;
+}
+
+using Feature_59213768_IsEnabled_t = bool(WINAPI*)(void* pThis);
+Feature_59213768_IsEnabled_t Feature_59213768_IsEnabled_Original;
+bool WINAPI Feature_59213768_IsEnabled_Hook(void* pThis) {
+    return g_unloading ? Feature_59213768_IsEnabled_Original(pThis) : true;
+}
+
+using Feature_59213768_IsEnabledReporting_t = bool(WINAPI*)(void* pThis,
+                                                            int reportingKind);
+Feature_59213768_IsEnabledReporting_t
+    Feature_59213768_IsEnabledReporting_Original;
+bool WINAPI Feature_59213768_IsEnabledReporting_Hook(void* pThis,
+                                                     int reportingKind) {
+    return g_unloading
+               ? Feature_59213768_IsEnabledReporting_Original(pThis,
+                                                              reportingKind)
+               : true;
+}
+
+using StartBlendedFlexFrame_GetCurrentTaskbarEdge_t =
+    StartMenuTaskbarEdge(WINAPI*)(void* pThis, StartMenuTaskbarEdge edge);
+StartBlendedFlexFrame_GetCurrentTaskbarEdge_t
+    StartBlendedFlexFrame_GetCurrentTaskbarEdge_Original;
+StartMenuTaskbarEdge WINAPI
+StartBlendedFlexFrame_GetCurrentTaskbarEdge_Hook(void* pThis,
+                                                 StartMenuTaskbarEdge edge) {
+    StartMenuTaskbarEdge ret =
+        StartBlendedFlexFrame_GetCurrentTaskbarEdge_Original(pThis, edge);
+    StartMenuTaskbarEdge newEdge = GetStartMenuTaskbarEdge(ret);
+    Wh_Log(L"> %d->%d", static_cast<int>(ret), static_cast<int>(newEdge));
+    return newEdge;
+}
+
+using StartBlendedFlexFrame_BuildAndStartAnimations_t =
+    void(WINAPI*)(void* pThis, StartMenuTaskbarEdge edge);
+StartBlendedFlexFrame_BuildAndStartAnimations_t
+    StartBlendedFlexFrame_BuildAndStartAnimations_Original;
+void WINAPI
+StartBlendedFlexFrame_BuildAndStartAnimations_Hook(void* pThis,
+                                                   StartMenuTaskbarEdge edge) {
+    Wh_Log(L"> %d", static_cast<int>(edge));
+    StartBlendedFlexFrame_BuildAndStartAnimations_Original(
+        pThis, GetStartMenuTaskbarEdge(edge));
+}
+
+using StartBlendedFlexFrame_PlayEntranceAnimation_t =
+    void(WINAPI*)(void* pThis,
+                  int showMethod,
+                  unsigned __int64 param2,
+                  const void* gestureAnimationData,
+                  StartMenuTaskbarEdge edge);
+StartBlendedFlexFrame_PlayEntranceAnimation_t
+    StartBlendedFlexFrame_PlayEntranceAnimation_Original;
+void WINAPI
+StartBlendedFlexFrame_PlayEntranceAnimation_Hook(void* pThis,
+                                                 int showMethod,
+                                                 unsigned __int64 param2,
+                                                 const void* gestureAnimationData,
+                                                 StartMenuTaskbarEdge edge) {
+    Wh_Log(L"> %d", static_cast<int>(edge));
+    StartBlendedFlexFrame_PlayEntranceAnimation_Original(
+        pThis, showMethod, param2, gestureAnimationData,
+        GetStartMenuTaskbarEdge(edge));
+}
+
+StartBlendedFlexFrame_PlayEntranceAnimation_t
+    StartBlendedFlexFrame_PlayEntranceAnimation_CP3_0625_Original;
+void WINAPI StartBlendedFlexFrame_PlayEntranceAnimation_CP3_0625_Hook(
+    void* pThis,
+    int showMethod,
+    unsigned __int64 param2,
+    const void* gestureAnimationData,
+    StartMenuTaskbarEdge edge) {
+    Wh_Log(L"> %d", static_cast<int>(edge));
+    StartBlendedFlexFrame_PlayEntranceAnimation_CP3_0625_Original(
+        pThis, showMethod, param2, gestureAnimationData,
+        GetStartMenuTaskbarEdge(edge));
+}
+
+using StartBlendedFlexFrame_PlayDismissAnimation_t =
+    void(WINAPI*)(void* pThis,
+                  int animationType,
+                  int dismissMethod,
+                  unsigned __int64 param3,
+                  const void* gestureAnimationData,
+                  StartMenuTaskbarEdge edge);
+StartBlendedFlexFrame_PlayDismissAnimation_t
+    StartBlendedFlexFrame_PlayDismissAnimation_Original;
+void WINAPI
+StartBlendedFlexFrame_PlayDismissAnimation_Hook(void* pThis,
+                                                int animationType,
+                                                int dismissMethod,
+                                                unsigned __int64 param3,
+                                                const void* gestureAnimationData,
+                                                StartMenuTaskbarEdge edge) {
+    Wh_Log(L"> %d", static_cast<int>(edge));
+    StartBlendedFlexFrame_PlayDismissAnimation_Original(
+        pThis, animationType, dismissMethod, param3, gestureAnimationData,
+        GetStartMenuTaskbarEdge(edge));
+}
+
+StartBlendedFlexFrame_PlayDismissAnimation_t
+    StartBlendedFlexFrame_PlayDismissAnimation_CP3_0625_Original;
+void WINAPI StartBlendedFlexFrame_PlayDismissAnimation_CP3_0625_Hook(
+    void* pThis,
+    int animationType,
+    int dismissMethod,
+    unsigned __int64 param3,
+    const void* gestureAnimationData,
+    StartMenuTaskbarEdge edge) {
+    Wh_Log(L"> %d", static_cast<int>(edge));
+    StartBlendedFlexFrame_PlayDismissAnimation_CP3_0625_Original(
+        pThis, animationType, dismissMethod, param3, gestureAnimationData,
+        GetStartMenuTaskbarEdge(edge));
+}
+
+// Touch and pen dragging of the Start menu.
+using StartBlendedFlexFrame_StartInputDrivenAnimation_t =
+    void(WINAPI*)(void* pThis,
+                  int animationType,
+                  float param2,
+                  const void* gestureAnimationData,
+                  StartMenuTaskbarEdge edge);
+StartBlendedFlexFrame_StartInputDrivenAnimation_t
+    StartBlendedFlexFrame_StartInputDrivenAnimation_Original;
+void WINAPI StartBlendedFlexFrame_StartInputDrivenAnimation_Hook(
+    void* pThis,
+    int animationType,
+    float param2,
+    const void* gestureAnimationData,
+    StartMenuTaskbarEdge edge) {
+    Wh_Log(L"> %d", static_cast<int>(edge));
+    StartBlendedFlexFrame_StartInputDrivenAnimation_Original(
+        pThis, animationType, param2, gestureAnimationData,
+        GetStartMenuTaskbarEdge(edge));
+}
+
+bool HookStartMenuDllSymbols(HMODULE module) {
+    // StartMenu.dll
+    WindhawkUtils::SYMBOL_HOOK symbolHooks[] = {
+        {
+            {
+                LR"(public: bool __cdecl wil::details::FeatureImpl<struct __WilExternalFeatureTraits_Feature_59213768>::__private_IsEnabled(void))",
+                LR"(public: bool __cdecl wil::details::FeatureImpl<struct __WilFeatureTraits_Feature_59213768>::__private_IsEnabled(void))",
+            },
+            &Feature_59213768_IsEnabled_Original,
+            Feature_59213768_IsEnabled_Hook,
+            true,
+        },
+        {
+            {
+                LR"(public: bool __cdecl wil::details::FeatureImpl<struct __WilExternalFeatureTraits_Feature_59213768>::__private_IsEnabled(enum wil::ReportingKind))",
+                LR"(public: bool __cdecl wil::details::FeatureImpl<struct __WilFeatureTraits_Feature_59213768>::__private_IsEnabled(enum wil::ReportingKind))",
+            },
+            &Feature_59213768_IsEnabledReporting_Original,
+            Feature_59213768_IsEnabledReporting_Hook,
+            true,
+        },
+        {
+            {LR"(private: enum winrt::StartMenu::implementation::DockedAnimationTypes::TaskbarEdge __cdecl winrt::StartMenu::implementation::StartBlendedFlexFrame::GetCurrentTaskbarEdge(enum winrt::StartMenu::implementation::DockedAnimationTypes::TaskbarEdge))"},
+            &StartBlendedFlexFrame_GetCurrentTaskbarEdge_Original,
+            StartBlendedFlexFrame_GetCurrentTaskbarEdge_Hook,
+            true,
+        },
+        {
+            {LR"(private: void __cdecl winrt::StartMenu::implementation::StartBlendedFlexFrame::BuildAndStartAnimations(enum winrt::StartMenu::implementation::DockedAnimationTypes::TaskbarEdge))"},
+            &StartBlendedFlexFrame_BuildAndStartAnimations_Original,
+            StartBlendedFlexFrame_BuildAndStartAnimations_Hook,
+        },
+        {
+            {LR"(private: void __cdecl winrt::StartMenu::implementation::StartBlendedFlexFrame::PlayEntranceAnimation(enum winrt::StartMenu::implementation::DockedAnimationTypes::IMMERSIVELAUNCHERSHOWMETHOD,unsigned __int64,struct winrt::WindowsUdk::UI::Input::GestureAnimationData const &,enum winrt::StartMenu::implementation::DockedAnimationTypes::TaskbarEdge))"},
+            &StartBlendedFlexFrame_PlayEntranceAnimation_Original,
+            StartBlendedFlexFrame_PlayEntranceAnimation_Hook,
+            true,
+        },
+        {
+            {LR"(private: void __cdecl winrt::StartMenu::implementation::StartBlendedFlexFrame::PlayEntranceAnimation_CP3_0625(enum winrt::StartMenu::implementation::DockedAnimationTypes::IMMERSIVELAUNCHERSHOWMETHOD,unsigned __int64,struct winrt::WindowsUdk::UI::Input::GestureAnimationData const &,enum winrt::StartMenu::implementation::DockedAnimationTypes::TaskbarEdge))"},
+            &StartBlendedFlexFrame_PlayEntranceAnimation_CP3_0625_Original,
+            StartBlendedFlexFrame_PlayEntranceAnimation_CP3_0625_Hook,
+            true,
+        },
+        {
+            {LR"(private: void __cdecl winrt::StartMenu::implementation::StartBlendedFlexFrame::PlayDismissAnimation(enum winrt::StartMenu::implementation::DockedAnimationTypes::AnimationType,enum winrt::StartMenu::implementation::DockedAnimationTypes::IMMERSIVELAUNCHERDISMISSMETHOD,unsigned __int64,struct winrt::WindowsUdk::UI::Input::GestureAnimationData const &,enum winrt::StartMenu::implementation::DockedAnimationTypes::TaskbarEdge))"},
+            &StartBlendedFlexFrame_PlayDismissAnimation_Original,
+            StartBlendedFlexFrame_PlayDismissAnimation_Hook,
+            true,
+        },
+        {
+            {LR"(private: void __cdecl winrt::StartMenu::implementation::StartBlendedFlexFrame::PlayDismissAnimation_CP3_0625(enum winrt::StartMenu::implementation::DockedAnimationTypes::AnimationType,enum winrt::StartMenu::implementation::DockedAnimationTypes::IMMERSIVELAUNCHERDISMISSMETHOD,unsigned __int64,struct winrt::WindowsUdk::UI::Input::GestureAnimationData const &,enum winrt::StartMenu::implementation::DockedAnimationTypes::TaskbarEdge))"},
+            &StartBlendedFlexFrame_PlayDismissAnimation_CP3_0625_Original,
+            StartBlendedFlexFrame_PlayDismissAnimation_CP3_0625_Hook,
+            true,
+        },
+        {
+            {LR"(private: void __cdecl winrt::StartMenu::implementation::StartBlendedFlexFrame::StartInputDrivenAnimation(enum winrt::StartMenu::implementation::DockedAnimationTypes::AnimationType,float,struct winrt::WindowsUdk::UI::Input::GestureAnimationData const &,enum winrt::StartMenu::implementation::DockedAnimationTypes::TaskbarEdge))"},
+            &StartBlendedFlexFrame_StartInputDrivenAnimation_Original,
+            StartBlendedFlexFrame_StartInputDrivenAnimation_Hook,
+            true,
+        },
+    };
+
+    if (!HookSymbols(module, symbolHooks, ARRAYSIZE(symbolHooks))) {
+        Wh_Log(L"HookSymbols failed");
+        return false;
+    }
+
+    return true;
+}
+
+HMODULE GetStartMenuModuleHandle() {
+    return GetModuleHandle(L"StartMenu.dll");
+}
+
+void HandleLoadedModuleIfStartMenu(HMODULE module, LPCWSTR lpLibFileName) {
+    if (!g_startMenuDllHooked && GetStartMenuModuleHandle() == module &&
+        !g_startMenuDllHooked.exchange(true)) {
+        Wh_Log(L"Loaded %s", lpLibFileName);
+
+        if (HookStartMenuDllSymbols(module)) {
+            Wh_ApplyHookOperations();
+        }
+    }
+}
+
+using LoadLibraryExW_t = decltype(&LoadLibraryExW);
+LoadLibraryExW_t LoadLibraryExW_Original;
+HMODULE WINAPI LoadLibraryExW_Hook(LPCWSTR lpLibFileName,
+                                   HANDLE hFile,
+                                   DWORD dwFlags) {
+    HMODULE module = LoadLibraryExW_Original(lpLibFileName, hFile, dwFlags);
+    if (module) {
+        HandleLoadedModuleIfStartMenu(module, lpLibFileName);
+    }
+
+    return module;
+}
+
+// The animation hooks are only set with the option enabled, since they require
+// the symbols of StartMenu.dll. The mod is reloaded when the option changes.
+void HookStartMenuAnimation() {
+    if (HMODULE startMenuModule = GetStartMenuModuleHandle()) {
+        g_startMenuDllHooked = true;
+        HookStartMenuDllSymbols(startMenuModule);
+    }
+
+    HMODULE kernelBaseModule = GetModuleHandle(L"kernelbase.dll");
+    auto pKernelBaseLoadLibraryExW = (decltype(&LoadLibraryExW))GetProcAddress(
+        kernelBaseModule, "LoadLibraryExW");
+    WindhawkUtils::SetFunctionHook(pKernelBaseLoadLibraryExW,
+                                   LoadLibraryExW_Hook,
+                                   &LoadLibraryExW_Original);
+}
+
 using RoGetActivationFactory_t = decltype(&RoGetActivationFactory);
 RoGetActivationFactory_t RoGetActivationFactory_Original;
 HRESULT WINAPI RoGetActivationFactory_Hook(HSTRING activatableClassId,
@@ -7092,6 +7378,10 @@ BOOL Wh_ModInit() {
             pRoGetActivationFactory, StartMenuUI::RoGetActivationFactory_Hook,
             &StartMenuUI::RoGetActivationFactory_Original);
 
+        if (g_settings.startMenuAnimationAdjust) {
+            StartMenuUI::HookStartMenuAnimation();
+        }
+
         return TRUE;
     }
 
@@ -7302,8 +7592,15 @@ BOOL Wh_ModSettingsChanged(BOOL* bReload) {
     Wh_Log(L">");
 
     bool prevUseNativeTaskbar = g_settings.useNativeTaskbar;
+    bool prevStartMenuAnimationAdjust = g_settings.startMenuAnimationAdjust;
 
     LoadSettings();
+
+    if (g_target == Target::StartMenuExperienceHost &&
+        g_settings.startMenuAnimationAdjust != prevStartMenuAnimationAdjust) {
+        *bReload = TRUE;
+        return TRUE;
+    }
 
     if (g_target == Target::Explorer) {
         // The taskbar implementation is chosen when the mod is initialized.
