@@ -110,9 +110,9 @@ With labels:
   $description: >-
     Adjust the Start menu opening animation to match the vertical taskbar
     position, e.g. sliding in from the left when the taskbar is on the left side
-    of the screen. This option doesn't work with the redesigned Start menu, and
-    might not work with the Phone Link sidebar and with some Start Menu Styler
-    themes.
+    of the screen. The redesigned Start menu animation is always adjusted, so
+    this option only affects the classic Start menu. This option might not work
+    with the Phone Link sidebar and with some Start Menu Styler themes.
 - clockContainerHeight: 0
   $name: Clock container height
   $description: >-
@@ -6011,6 +6011,115 @@ void SettingsChanged() {
     ApplyStyle();
 }
 
+// The redesigned Start menu (StartMenu.dll) has entrance and dismiss
+// animations for each taskbar edge. All of them get the edge from
+// GetCurrentTaskbarEdge, which is replaced with the taskbar location of the
+// Start menu monitor.
+enum class StartMenuTaskbarEdge {
+    left = 0,
+    top = 1,
+    right = 2,
+    bottom = 3,
+};
+
+std::atomic<bool> g_startMenuDllHooked;
+
+StartMenuTaskbarEdge GetStartMenuTaskbarEdge(StartMenuTaskbarEdge edge) {
+    if (g_unloading) {
+        return edge;
+    }
+
+    HMONITOR monitor =
+        MonitorFromWindow(GetCoreWnd(), MONITOR_DEFAULTTONEAREST);
+    switch (GetTaskbarLocationForMonitor(monitor)) {
+        case TaskbarLocation::left:
+            return StartMenuTaskbarEdge::left;
+        case TaskbarLocation::right:
+            return StartMenuTaskbarEdge::right;
+        case TaskbarLocation::top:
+            return StartMenuTaskbarEdge::top;
+        case TaskbarLocation::bottom:
+            return StartMenuTaskbarEdge::bottom;
+    }
+
+    return edge;
+}
+
+using StartBlendedFlexFrame_GetCurrentTaskbarEdge_t =
+    StartMenuTaskbarEdge(WINAPI*)(void* pThis, StartMenuTaskbarEdge edge);
+StartBlendedFlexFrame_GetCurrentTaskbarEdge_t
+    StartBlendedFlexFrame_GetCurrentTaskbarEdge_Original;
+StartMenuTaskbarEdge WINAPI
+StartBlendedFlexFrame_GetCurrentTaskbarEdge_Hook(void* pThis,
+                                                 StartMenuTaskbarEdge edge) {
+    StartMenuTaskbarEdge ret =
+        StartBlendedFlexFrame_GetCurrentTaskbarEdge_Original(pThis, edge);
+    StartMenuTaskbarEdge newEdge = GetStartMenuTaskbarEdge(ret);
+    Wh_Log(L"> %d->%d", static_cast<int>(ret), static_cast<int>(newEdge));
+    return newEdge;
+}
+
+bool HookStartMenuDllSymbols(HMODULE module) {
+    // StartMenu.dll
+    WindhawkUtils::SYMBOL_HOOK symbolHooks[] = {
+        {
+            {LR"(private: enum winrt::StartMenu::implementation::DockedAnimationTypes::TaskbarEdge __cdecl winrt::StartMenu::implementation::StartBlendedFlexFrame::GetCurrentTaskbarEdge(enum winrt::StartMenu::implementation::DockedAnimationTypes::TaskbarEdge))"},
+            &StartBlendedFlexFrame_GetCurrentTaskbarEdge_Original,
+            StartBlendedFlexFrame_GetCurrentTaskbarEdge_Hook,
+        },
+    };
+
+    if (!HookSymbols(module, symbolHooks, ARRAYSIZE(symbolHooks))) {
+        Wh_Log(L"HookSymbols failed");
+        return false;
+    }
+
+    return true;
+}
+
+HMODULE GetStartMenuModuleHandle() {
+    return GetModuleHandle(L"StartMenu.dll");
+}
+
+void HandleLoadedModuleIfStartMenu(HMODULE module, LPCWSTR lpLibFileName) {
+    if (!g_startMenuDllHooked && GetStartMenuModuleHandle() == module &&
+        !g_startMenuDllHooked.exchange(true)) {
+        Wh_Log(L"Loaded %s", lpLibFileName);
+
+        if (HookStartMenuDllSymbols(module)) {
+            Wh_ApplyHookOperations();
+        }
+    }
+}
+
+using LoadLibraryExW_t = decltype(&LoadLibraryExW);
+LoadLibraryExW_t LoadLibraryExW_Original;
+HMODULE WINAPI LoadLibraryExW_Hook(LPCWSTR lpLibFileName,
+                                   HANDLE hFile,
+                                   DWORD dwFlags) {
+    HMODULE module = LoadLibraryExW_Original(lpLibFileName, hFile, dwFlags);
+    if (module) {
+        HandleLoadedModuleIfStartMenu(module, lpLibFileName);
+    }
+
+    return module;
+}
+
+void HookStartMenuAnimation() {
+    if (HMODULE startMenuModule = GetStartMenuModuleHandle()) {
+        g_startMenuDllHooked = true;
+        HookStartMenuDllSymbols(startMenuModule);
+        return;
+    }
+
+    HMODULE kernelBaseModule = GetModuleHandle(L"kernelbase.dll");
+    auto pKernelBaseLoadLibraryExW = (decltype(&LoadLibraryExW))GetProcAddress(
+        kernelBaseModule, "LoadLibraryExW");
+    WindhawkUtils::SetFunctionHook(pKernelBaseLoadLibraryExW,
+                                   LoadLibraryExW_Hook,
+                                   &LoadLibraryExW_Original);
+}
+
 using RoGetActivationFactory_t = decltype(&RoGetActivationFactory);
 RoGetActivationFactory_t RoGetActivationFactory_Original;
 HRESULT WINAPI RoGetActivationFactory_Hook(HSTRING activatableClassId,
@@ -7265,6 +7374,8 @@ BOOL Wh_ModInit() {
             pRoGetActivationFactory, StartMenuUI::RoGetActivationFactory_Hook,
             &StartMenuUI::RoGetActivationFactory_Original);
 
+        StartMenuUI::HookStartMenuAnimation();
+
         return TRUE;
     }
 
@@ -7404,6 +7515,11 @@ void Wh_ModAfterInit() {
 
         ApplySettings();
     } else if (g_target == Target::StartMenuExperienceHost) {
+        if (HMODULE startMenuModule = StartMenuUI::GetStartMenuModuleHandle()) {
+            StartMenuUI::HandleLoadedModuleIfStartMenu(startMenuModule,
+                                                       L"StartMenu.dll");
+        }
+
         HWND hCoreWnd = StartMenuUI::GetCoreWnd();
         if (hCoreWnd) {
             Wh_Log(L"Initializing - Found core window");
