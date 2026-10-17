@@ -502,19 +502,9 @@ void WINAPI TrayUI__HandleSettingChange_Hook(void* pThis,
     }
 }
 
-using TrayUI_GetDockedRect_t = DWORD(WINAPI*)(void* pThis,
-                                              RECT* rect,
-                                              BOOL param2);
-TrayUI_GetDockedRect_t TrayUI_GetDockedRect_Original;
-DWORD WINAPI TrayUI_GetDockedRect_Hook(void* pThis, RECT* rect, BOOL param2) {
-    Wh_Log(L">");
-
-    DWORD ret = TrayUI_GetDockedRect_Original(pThis, rect, param2);
-
-    if (g_hasNativeTaskbarOnTop) {
-        return ret;
-    }
-
+// Moves a taskbar rect that Windows computes for the bottom of the monitor to
+// the top of the monitor.
+void MoveTaskbarRectToTop(RECT* rect) {
     // The top edge stays on the monitor when the taskbar is auto-hidden.
     HMONITOR monitor = MonitorFromPoint(
         {(rect->left + rect->right) / 2, rect->top}, MONITOR_DEFAULTTONEAREST);
@@ -549,8 +539,35 @@ DWORD WINAPI TrayUI_GetDockedRect_Hook(void* pThis, RECT* rect, BOOL param2) {
         case TaskbarLocation::right:
             break;
     }
+}
+
+using TrayUI_GetDockedRect_t = DWORD(WINAPI*)(void* pThis,
+                                              RECT* rect,
+                                              BOOL param2);
+TrayUI_GetDockedRect_t TrayUI_GetDockedRect_Original;
+DWORD WINAPI TrayUI_GetDockedRect_Hook(void* pThis, RECT* rect, BOOL param2) {
+    Wh_Log(L">");
+
+    DWORD ret = TrayUI_GetDockedRect_Original(pThis, rect, param2);
+
+    if (!g_hasNativeTaskbarOnTop) {
+        MoveTaskbarRectToTop(rect);
+    }
 
     return ret;
+}
+
+using CSecondaryTray__ComputeHiddenRect_t = void(WINAPI*)(void* pThis,
+                                                          RECT* rect);
+CSecondaryTray__ComputeHiddenRect_t CSecondaryTray__ComputeHiddenRect_Original;
+void WINAPI CSecondaryTray__ComputeHiddenRect_Hook(void* pThis, RECT* rect) {
+    Wh_Log(L">");
+
+    CSecondaryTray__ComputeHiddenRect_Original(pThis, rect);
+
+    if (!g_hasNativeTaskbarOnTop) {
+        MoveTaskbarRectToTop(rect);
+    }
 }
 
 using TrayUI_MakeStuckRect_t = void(WINAPI*)(void* pThis,
@@ -960,8 +977,12 @@ LRESULT TaskbarWndProcPostProcess(HWND hWnd,
 
                         // Auto-hide positioning: Windows slides the taskbar
                         // between the shown position and the hidden one from
-                        // TrayUI_GetDockedRect_Hook.
-                        if (!secondaryTaskbar && IsTaskbarAutoHideEnabled()) {
+                        // TrayUI_GetDockedRect_Hook, or from
+                        // CSecondaryTray__ComputeHiddenRect_Hook for secondary
+                        // taskbars, which hide below the monitor without it.
+                        if ((!secondaryTaskbar ||
+                             CSecondaryTray__ComputeHiddenRect_Original) &&
+                            IsTaskbarAutoHideEnabled()) {
                             RECT currentRect;
                             GetWindowRect(hWnd, &currentRect);
 
@@ -3484,6 +3505,12 @@ bool HookTaskbarDllSymbols() {
             {LR"(private: virtual __int64 __cdecl CSecondaryTray::v_WndProc(struct HWND__ *,unsigned int,unsigned __int64,__int64))"},
             &CSecondaryTray_v_WndProc_Original,
             CSecondaryTray_v_WndProc_Hook,
+        },
+        {
+            {LR"(private: void __cdecl CSecondaryTray::_ComputeHiddenRect(struct tagRECT *))"},
+            &CSecondaryTray__ComputeHiddenRect_Original,
+            CSecondaryTray__ComputeHiddenRect_Hook,
+            true,  // Only needed for auto-hide on secondary monitors.
         },
         {
             {LR"(protected: long __cdecl CTaskListWnd::_ComputeJumpViewPosition(struct ITaskBtnGroup *,int,struct Windows::Foundation::Point &,enum Windows::UI::Xaml::HorizontalAlignment &,enum Windows::UI::Xaml::VerticalAlignment &)const )"},
