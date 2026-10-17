@@ -562,6 +562,11 @@ void WINAPI TrayUI_GetMinSize_Hook(void* pThis, HMONITOR monitor, SIZE* size) {
     }
 }
 
+using TrayUI_GetStuckRectForMonitor_t = bool(WINAPI*)(void* pThis,
+                                                      HMONITOR hMonitor,
+                                                      RECT* rect);
+TrayUI_GetStuckRectForMonitor_t TrayUI_GetStuckRectForMonitor_Original;
+
 using TrayUI__StuckTrayChange_t = void(WINAPI*)(void* pThis);
 TrayUI__StuckTrayChange_t TrayUI__StuckTrayChange_Original;
 
@@ -1075,6 +1080,40 @@ HWND FindCurrentProcessTaskbarWnd() {
     return FindCurrentProcessWindow(L"Shell_TrayWnd");
 }
 
+static const UINT g_getTaskbarRectRegisteredMsg =
+    RegisterWindowMessage(L"Windhawk_GetTaskbarRect_" WH_MOD_ID);
+
+bool GetTaskbarRectForMonitor(HMONITOR monitor, RECT* rect) {
+    SetRectEmpty(rect);
+
+    HWND hTaskbarWnd = FindCurrentProcessTaskbarWnd();
+    if (!hTaskbarWnd) {
+        return false;
+    }
+
+    SendMessage(hTaskbarWnd, g_getTaskbarRectRegisteredMsg, (WPARAM)monitor,
+                (LPARAM)rect);
+    return true;
+}
+
+// The work area includes an auto-hidden taskbar.
+bool GetMonitorWorkAreaWithoutTaskbar(HMONITOR monitor, RECT* rc) {
+    MONITORINFO monitorInfo{
+        .cbSize = sizeof(MONITORINFO),
+    };
+    if (!GetMonitorInfo(monitor, &monitorInfo)) {
+        SetRectEmpty(rc);
+        return false;
+    }
+
+    RECT taskbarRect;
+    if (!GetTaskbarRectForMonitor(monitor, &taskbarRect)) {
+        return CopyRect(rc, &monitorInfo.rcWork);
+    }
+
+    return SubtractRect(rc, &monitorInfo.rcWork, &taskbarRect);
+}
+
 LRESULT TaskbarWndProcPostProcess(HWND hWnd,
                                   UINT Msg,
                                   WPARAM wParam,
@@ -1219,6 +1258,15 @@ LRESULT WINAPI TrayUI_WndProc_Hook(void* pThis,
                                    WPARAM wParam,
                                    LPARAM lParam,
                                    bool* flag) {
+    if (Msg == g_getTaskbarRectRegisteredMsg) {
+        HMONITOR monitor = (HMONITOR)wParam;
+        RECT* rect = (RECT*)lParam;
+        if (!TrayUI_GetStuckRectForMonitor_Original(pThis, monitor, rect)) {
+            SetRectEmpty(rect);
+        }
+        return 0;
+    }
+
     g_hookCallCounter++;
 
     TaskbarWndProcPreProcess(hWnd, Msg, &wParam, &lParam);
@@ -1410,10 +1458,8 @@ void* WINAPI XamlExplorerHostWindow_XamlExplorerHostWindow_Hook(
 
         HMONITOR monitor = MonitorFromRect(&rc, MONITOR_DEFAULTTONEAREST);
 
-        MONITORINFO monitorInfo{
-            .cbSize = sizeof(MONITORINFO),
-        };
-        GetMonitorInfo(monitor, &monitorInfo);
+        RECT workAreaRect;
+        GetMonitorWorkAreaWithoutTaskbar(monitor, &workAreaRect);
 
         UINT monitorDpiX = 96;
         UINT monitorDpiY = 96;
@@ -1424,11 +1470,11 @@ void* WINAPI XamlExplorerHostWindow_XamlExplorerHostWindow_Hook(
 
         switch (GetTaskbarLocationForMonitor(monitor)) {
             case TaskbarLocation::left:
-                rectNew.X = monitorInfo.rcWork.left;
+                rectNew.X = workAreaRect.left;
                 break;
 
             case TaskbarLocation::right:
-                rectNew.X = monitorInfo.rcWork.right - rectNew.Width;
+                rectNew.X = workAreaRect.right - rectNew.Width;
                 break;
 
             case TaskbarLocation::top:
@@ -1449,10 +1495,10 @@ void* WINAPI XamlExplorerHostWindow_XamlExplorerHostWindow_Hook(
 
         rectNew.Y = pt.y - rectNew.Height / 2;
 
-        if (rectNew.Y < monitorInfo.rcWork.top) {
-            rectNew.Y = monitorInfo.rcWork.top;
-        } else if (rectNew.Y > monitorInfo.rcWork.bottom - rectNew.Height) {
-            rectNew.Y = monitorInfo.rcWork.bottom - rectNew.Height;
+        if (rectNew.Y < workAreaRect.top) {
+            rectNew.Y = workAreaRect.top;
+        } else if (rectNew.Y > workAreaRect.bottom - rectNew.Height) {
+            rectNew.Y = workAreaRect.bottom - rectNew.Height;
         }
 
         return XamlExplorerHostWindow_XamlExplorerHostWindow_Original(
@@ -4166,9 +4212,11 @@ bool UpdateCopilotPosition() {
             return TRUE;
         }
 
-        if (monitorInfo.rcWork.right != monitorInfo.rcMonitor.right) {
-            int x = rc.left - monitorInfo.rcMonitor.right +
-                    monitorInfo.rcWork.right;
+        RECT workAreaRect;
+        GetMonitorWorkAreaWithoutTaskbar(monitor, &workAreaRect);
+
+        if (workAreaRect.right != monitorInfo.rcMonitor.right) {
+            int x = rc.left - monitorInfo.rcMonitor.right + workAreaRect.right;
             int y = rc.top;
             SetWindowPos(hWnd, nullptr, x, y, 0, 0,
                          SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
@@ -4591,9 +4639,17 @@ BOOL WINAPI SetWindowPos_Hook(HWND hWnd,
                     break;
             }
 
+            // TPM_WORKAREA doesn't keep the window off an auto-hidden taskbar.
+            RECT workAreaRect;
+            GetMonitorWorkAreaWithoutTaskbar(monitor, &workAreaRect);
+            POINT anchorPt{
+                std::clamp(pt.x, workAreaRect.left, workAreaRect.right),
+                pt.y,
+            };
+
             CalculatePopupWindowPosition(
-                &pt, &sz, alignment | TPM_VCENTERALIGN | TPM_WORKAREA, nullptr,
-                &rc);
+                &anchorPt, &sz, alignment | TPM_VCENTERALIGN | TPM_WORKAREA,
+                nullptr, &rc);
 
             rc.left += distance;
             rc.right -= distance;
@@ -4637,18 +4693,16 @@ BOOL WINAPI SetWindowPos_Hook(HWND hWnd,
 
         HMONITOR monitor = MonitorFromPoint(pt, MONITOR_DEFAULTTONEAREST);
 
-        MONITORINFO monitorInfo{
-            .cbSize = sizeof(MONITORINFO),
-        };
-        GetMonitorInfo(monitor, &monitorInfo);
+        RECT workAreaRect;
+        GetMonitorWorkAreaWithoutTaskbar(monitor, &workAreaRect);
 
         switch (GetTaskbarLocationForMonitor(monitor)) {
             case TaskbarLocation::left:
-                X = monitorInfo.rcWork.left;
+                X = workAreaRect.left;
                 break;
 
             case TaskbarLocation::right:
-                X = monitorInfo.rcWork.right - cx;
+                X = workAreaRect.right - cx;
                 break;
 
             case TaskbarLocation::top:
@@ -4666,10 +4720,10 @@ BOOL WINAPI SetWindowPos_Hook(HWND hWnd,
             Y = prevCenterY - cy / 2;
         }
 
-        if (Y < monitorInfo.rcWork.top) {
-            Y = monitorInfo.rcWork.top;
-        } else if (Y > monitorInfo.rcWork.bottom - cy) {
-            Y = monitorInfo.rcWork.bottom - cy;
+        if (Y < workAreaRect.top) {
+            Y = workAreaRect.top;
+        } else if (Y > workAreaRect.bottom - cy) {
+            Y = workAreaRect.bottom - cy;
         }
     } else if (_wcsicmp(szClassName, L"Windows.UI.Core.CoreWindow") == 0) {
         if (uFlags & SWP_NOMOVE) {
@@ -4690,18 +4744,16 @@ BOOL WINAPI SetWindowPos_Hook(HWND hWnd,
 
             HMONITOR monitor = MonitorFromPoint(pt, MONITOR_DEFAULTTONEAREST);
 
-            MONITORINFO monitorInfo{
-                .cbSize = sizeof(MONITORINFO),
-            };
-            GetMonitorInfo(monitor, &monitorInfo);
+            RECT workAreaRect;
+            GetMonitorWorkAreaWithoutTaskbar(monitor, &workAreaRect);
 
             switch (GetTaskbarLocationForMonitor(monitor)) {
                 case TaskbarLocation::left:
-                    X = monitorInfo.rcWork.left;
+                    X = workAreaRect.left;
                     break;
 
                 case TaskbarLocation::right:
-                    X = monitorInfo.rcWork.right - cx;
+                    X = workAreaRect.right - cx;
                     break;
 
                 case TaskbarLocation::top:
@@ -4723,10 +4775,10 @@ BOOL WINAPI SetWindowPos_Hook(HWND hWnd,
                     break;
             }
 
-            if (Y < monitorInfo.rcWork.top) {
-                Y = monitorInfo.rcWork.top;
-            } else if (Y > monitorInfo.rcWork.bottom - cy) {
-                Y = monitorInfo.rcWork.bottom - cy;
+            if (Y < workAreaRect.top) {
+                Y = workAreaRect.top;
+            } else if (Y > workAreaRect.bottom - cy) {
+                Y = workAreaRect.bottom - cy;
             }
 
             // If hovering over the overflow window, exclude it.
@@ -4771,18 +4823,16 @@ BOOL WINAPI SetWindowPos_Hook(HWND hWnd,
             };
             HMONITOR monitor = MonitorFromRect(&rect, MONITOR_DEFAULTTONEAREST);
 
-            MONITORINFO monitorInfo{
-                .cbSize = sizeof(MONITORINFO),
-            };
-            GetMonitorInfo(monitor, &monitorInfo);
+            RECT workAreaRect;
+            GetMonitorWorkAreaWithoutTaskbar(monitor, &workAreaRect);
 
             switch (GetTaskbarLocationForMonitor(monitor)) {
                 case TaskbarLocation::left:
-                    X = monitorInfo.rcWork.left;
+                    X = workAreaRect.left;
                     break;
 
                 case TaskbarLocation::right:
-                    X = monitorInfo.rcWork.right - cx;
+                    X = workAreaRect.right - cx;
                     break;
 
                 case TaskbarLocation::top:
@@ -4839,24 +4889,22 @@ BOOL WINAPI SetWindowPos_Hook(HWND hWnd,
 
         HMONITOR monitor = MonitorFromPoint(pt, MONITOR_DEFAULTTONEAREST);
 
-        MONITORINFO monitorInfo{
-            .cbSize = sizeof(MONITORINFO),
-        };
-        GetMonitorInfo(monitor, &monitorInfo);
+        RECT workAreaRect;
+        GetMonitorWorkAreaWithoutTaskbar(monitor, &workAreaRect);
 
-        if (X < monitorInfo.rcWork.left) {
-            X = monitorInfo.rcWork.left;
-        } else if (X > monitorInfo.rcWork.right - cx) {
-            X = monitorInfo.rcWork.right - cx;
+        if (X < workAreaRect.left) {
+            X = workAreaRect.left;
+        } else if (X > workAreaRect.right - cx) {
+            X = workAreaRect.right - cx;
         }
 
         // Also adjust the tooltip vertically.
         Y = GET_Y_LPARAM(originMessagePos) - cy / 2;
 
-        if (Y < monitorInfo.rcWork.top) {
-            Y = monitorInfo.rcWork.top;
-        } else if (Y > monitorInfo.rcWork.bottom - cy) {
-            Y = monitorInfo.rcWork.bottom - cy;
+        if (Y < workAreaRect.top) {
+            Y = workAreaRect.top;
+        } else if (Y > workAreaRect.bottom - cy) {
+            Y = workAreaRect.bottom - cy;
         }
     } else if (_wcsicmp(szClassName, L"XamlExplorerHostIslandWindow") == 0 &&
                g_inHoverFlyoutController_UpdateFlyoutWindowPosition) {
@@ -4872,13 +4920,11 @@ BOOL WINAPI SetWindowPos_Hook(HWND hWnd,
 
         HMONITOR monitor = MonitorFromPoint(pt, MONITOR_DEFAULTTONEAREST);
 
-        MONITORINFO monitorInfo{
-            .cbSize = sizeof(MONITORINFO),
-        };
-        GetMonitorInfo(monitor, &monitorInfo);
+        RECT workAreaRect;
+        GetMonitorWorkAreaWithoutTaskbar(monitor, &workAreaRect);
 
-        X = monitorInfo.rcWork.left;
-        cx = monitorInfo.rcWork.right - monitorInfo.rcWork.left;
+        X = workAreaRect.left;
+        cx = workAreaRect.right - workAreaRect.left;
 
         // If hovering over the overflow window, exclude it.
         HWND windowFromPoint = WindowFromPoint(pt);
@@ -4934,19 +4980,17 @@ BOOL WINAPI SetWindowPos_Hook(HWND hWnd,
 
         HMONITOR monitor = MonitorFromPoint(pt, MONITOR_DEFAULTTONEAREST);
 
-        MONITORINFO monitorInfo{
-            .cbSize = sizeof(MONITORINFO),
-        };
-        GetMonitorInfo(monitor, &monitorInfo);
+        RECT workAreaRect;
+        GetMonitorWorkAreaWithoutTaskbar(monitor, &workAreaRect);
 
-        if (X < monitorInfo.rcWork.left) {
-            X = monitorInfo.rcWork.left;
-        } else if (X > monitorInfo.rcWork.right - cx) {
-            X = monitorInfo.rcWork.right - cx;
+        if (X < workAreaRect.left) {
+            X = workAreaRect.left;
+        } else if (X > workAreaRect.right - cx) {
+            X = workAreaRect.right - cx;
         }
 
-        if (cx > monitorInfo.rcWork.right - monitorInfo.rcWork.left) {
-            cx = monitorInfo.rcWork.right - monitorInfo.rcWork.left;
+        if (cx > workAreaRect.right - workAreaRect.left) {
+            cx = workAreaRect.right - workAreaRect.left;
         }
     } else {
         return original();
@@ -5011,10 +5055,8 @@ BOOL WINAPI MoveWindow_Hook(HWND hWnd,
 
         HMONITOR monitor = MonitorFromRect(&rect, MONITOR_DEFAULTTONEAREST);
 
-        MONITORINFO monitorInfo{
-            .cbSize = sizeof(MONITORINFO),
-        };
-        GetMonitorInfo(monitor, &monitorInfo);
+        RECT workAreaRect;
+        GetMonitorWorkAreaWithoutTaskbar(monitor, &workAreaRect);
 
         if (isAltTabWindow) {
             // Make sure the Alt+Tab window doesn't overlap with the taskbar.
@@ -5022,14 +5064,14 @@ BOOL WINAPI MoveWindow_Hook(HWND hWnd,
             // created by CreateWindowInBand, and an inner child window is
             // positioned with SetWindowPos. It'd be nice to handle that case
             // too, maybe one day...
-            if (X < monitorInfo.rcWork.left) {
-                X = monitorInfo.rcWork.left;
-            } else if (X > monitorInfo.rcWork.right - nWidth) {
-                X = monitorInfo.rcWork.right - nWidth;
+            if (X < workAreaRect.left) {
+                X = workAreaRect.left;
+            } else if (X > workAreaRect.right - nWidth) {
+                X = workAreaRect.right - nWidth;
             }
 
-            if (nWidth > monitorInfo.rcWork.right - monitorInfo.rcWork.left) {
-                nWidth = monitorInfo.rcWork.right - monitorInfo.rcWork.left;
+            if (nWidth > workAreaRect.right - workAreaRect.left) {
+                nWidth = workAreaRect.right - workAreaRect.left;
             }
         } else {
             // Handle the virtual desktop switcher, which shows up when hovering
@@ -5048,10 +5090,10 @@ BOOL WINAPI MoveWindow_Hook(HWND hWnd,
             int marginY = MulDiv(12, monitorDpiY, 96);
 
             Y = pt.y - nHeight / 2;
-            if (Y < monitorInfo.rcWork.top + marginY) {
-                Y = monitorInfo.rcWork.top + marginY;
-            } else if (Y > monitorInfo.rcWork.bottom - nHeight - marginY) {
-                Y = monitorInfo.rcWork.bottom - nHeight - marginY;
+            if (Y < workAreaRect.top + marginY) {
+                Y = workAreaRect.top + marginY;
+            } else if (Y > workAreaRect.bottom - nHeight - marginY) {
+                Y = workAreaRect.bottom - nHeight - marginY;
             }
         }
     } else {
@@ -5230,14 +5272,8 @@ HRESULT WINAPI DwmSetWindowAttribute_Hook(HWND hwnd,
         return original();
     }
 
-    UINT monitorDpiX = 96;
-    UINT monitorDpiY = 96;
-    GetDpiForMonitor(monitor, MDT_DEFAULT, &monitorDpiX, &monitorDpiY);
-
-    MONITORINFO monitorInfo{
-        .cbSize = sizeof(MONITORINFO),
-    };
-    GetMonitorInfo(monitor, &monitorInfo);
+    RECT workAreaRect;
+    GetMonitorWorkAreaWithoutTaskbar(monitor, &workAreaRect);
 
     RECT targetRect;
     if (!GetWindowRect(hwnd, &targetRect)) {
@@ -5256,19 +5292,19 @@ HRESULT WINAPI DwmSetWindowAttribute_Hook(HWND hwnd,
         int yNew = y;
         switch (taskbarLocation) {
             case TaskbarLocation::left:
-                xNew = monitorInfo.rcWork.left;
+                xNew = workAreaRect.left;
                 break;
 
             case TaskbarLocation::right:
-                xNew = monitorInfo.rcWork.right - cx;
+                xNew = workAreaRect.right - cx;
                 break;
 
             case TaskbarLocation::top:
-                yNew = monitorInfo.rcWork.top;
+                yNew = workAreaRect.top;
                 break;
 
             case TaskbarLocation::bottom:
-                yNew = monitorInfo.rcWork.bottom - cy;
+                yNew = workAreaRect.bottom - cy;
                 break;
         }
 
@@ -5282,11 +5318,11 @@ HRESULT WINAPI DwmSetWindowAttribute_Hook(HWND hwnd,
         int xNew = x;
         switch (taskbarLocation) {
             case TaskbarLocation::left:
-                xNew = monitorInfo.rcWork.left;
+                xNew = workAreaRect.left;
                 break;
 
             case TaskbarLocation::right:
-                xNew = monitorInfo.rcWork.right - cx;
+                xNew = workAreaRect.right - cx;
                 break;
 
             case TaskbarLocation::top:
@@ -5298,17 +5334,16 @@ HRESULT WINAPI DwmSetWindowAttribute_Hook(HWND hwnd,
         switch (g_settings.startMenuAlignment) {
             case StartMenuAlignment::windowsDefault:
             case StartMenuAlignment::top:
-                yNew = monitorInfo.rcWork.top;
+                yNew = workAreaRect.top;
                 break;
 
             case StartMenuAlignment::center:
-                yNew = monitorInfo.rcWork.top + (monitorInfo.rcWork.bottom -
-                                                 monitorInfo.rcWork.top - cy) /
-                                                    2;
+                yNew = workAreaRect.top +
+                       (workAreaRect.bottom - workAreaRect.top - cy) / 2;
                 break;
 
             case StartMenuAlignment::bottom:
-                yNew = monitorInfo.rcWork.bottom - cy;
+                yNew = workAreaRect.bottom - cy;
                 break;
         }
 
@@ -5322,11 +5357,11 @@ HRESULT WINAPI DwmSetWindowAttribute_Hook(HWND hwnd,
         int xNew = x;
         switch (taskbarLocation) {
             case TaskbarLocation::left:
-                xNew = monitorInfo.rcWork.left;
+                xNew = workAreaRect.left;
                 break;
 
             case TaskbarLocation::right:
-                xNew = monitorInfo.rcWork.right - cx;
+                xNew = workAreaRect.right - cx;
                 break;
 
             case TaskbarLocation::top:
@@ -7005,6 +7040,10 @@ bool HookTaskbarDllSymbols() {
                 {LR"(public: virtual void __cdecl TrayUI::GetMinSize(struct HMONITOR__ *,struct tagSIZE *))"},
                 &TrayUI_GetMinSize_Original,
                 TrayUI_GetMinSize_Hook,
+            },
+            {
+                {LR"(public: virtual bool __cdecl TrayUI::GetStuckRectForMonitor(struct HMONITOR__ *,struct tagRECT *))"},
+                &TrayUI_GetStuckRectForMonitor_Original,
             },
             {
                 {LR"(public: void __cdecl TrayUI::_StuckTrayChange(void))"},
