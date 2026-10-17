@@ -46,7 +46,8 @@ mod.
 
 ## Known limitations
 
-* The option to automatically hide the taskbar isn't supported.
+* With the mod's own implementation, the option to automatically hide the
+  taskbar is only supported on the primary monitor.
 * After disabling the mod, some leftover artifacts might stay, such as
   incorrectly rotated icons. Restarting explorer.exe will clear all such
   leftovers.
@@ -242,6 +243,10 @@ NativeVerticalTaskbar GetNativeVerticalTaskbar() {
     return *g_sessionNativeVerticalTaskbar;
 }
 
+// Auto-hide trigger width in pixels. You must approach within this many pixels
+// of the monitor edge to show the taskbar when hidden.
+constexpr int kAutoHideTriggerWidth = 2;
+
 std::atomic<bool> g_systemTrayModuleHooked;
 std::atomic<bool> g_taskbarViewDllLoaded;
 std::atomic<bool> g_applyingSettings;
@@ -316,6 +321,29 @@ bool GetMonitorRect(HMONITOR monitor, RECT* rc) {
     };
     return GetMonitorInfo(monitor, &monitorInfo) &&
            CopyRect(rc, &monitorInfo.rcMonitor);
+}
+
+bool IsTaskbarAutoHideEnabled() {
+    APPBARDATA abd = {sizeof(APPBARDATA)};
+    UINT state = (UINT)SHAppBarMessage(ABM_GETSTATE, &abd);
+    return (state & ABS_AUTOHIDE) != 0;
+}
+
+// Returns the left edge of a taskbar on the left or on the right of the
+// monitor. Only the trigger strip of an auto-hidden taskbar stays on the
+// monitor.
+int GetTaskbarLeft(TaskbarLocation taskbarLocation,
+                   const RECT& monitorRect,
+                   UINT monitorDpiX,
+                   int taskbarWidth,
+                   bool autoHidden) {
+    int visibleWidth = autoHidden
+                           ? MulDiv(kAutoHideTriggerWidth, monitorDpiX, 96)
+                           : taskbarWidth;
+
+    return taskbarLocation == TaskbarLocation::right
+               ? monitorRect.right - visibleWidth
+               : monitorRect.left + visibleWidth - taskbarWidth;
 }
 
 bool GetMonitorRectDpiUnscaled(HMONITOR monitor, RECT* rc) {
@@ -553,7 +581,9 @@ DWORD WINAPI TrayUI_GetDockedRect_Hook(void* pThis, RECT* rect, BOOL param2) {
         return ret;
     }
 
-    HMONITOR monitor = MonitorFromRect(rect, MONITOR_DEFAULTTONEAREST);
+    // The top edge stays on the monitor when the taskbar is auto-hidden.
+    HMONITOR monitor = MonitorFromPoint(
+        {(rect->left + rect->right) / 2, rect->top}, MONITOR_DEFAULTTONEAREST);
 
     RECT monitorRect;
     GetMonitorRect(monitor, &monitorRect);
@@ -566,17 +596,24 @@ DWORD WINAPI TrayUI_GetDockedRect_Hook(void* pThis, RECT* rect, BOOL param2) {
         int taskbarWidthScaled =
             MulDiv(g_settings.taskbarWidth, monitorDpiX, 96);
 
+        // The rect of an auto-hidden taskbar is mostly below the monitor. Move
+        // it to the hidden position on the side, which Windows slides the
+        // taskbar to and derives the window's clip region from.
+        bool autoHidden = rect->bottom > monitorRect.bottom;
+        if (autoHidden) {
+            rect->bottom = monitorRect.top + (rect->bottom - rect->top);
+        }
+
         rect->top = monitorRect.top;
 
-        switch (GetTaskbarLocationForMonitor(monitor)) {
+        TaskbarLocation taskbarLocation = GetTaskbarLocationForMonitor(monitor);
+        switch (taskbarLocation) {
             case TaskbarLocation::left:
-                rect->left = monitorRect.left;
-                rect->right = rect->left + taskbarWidthScaled;
-                break;
-
             case TaskbarLocation::right:
-                rect->right = monitorRect.right;
-                rect->left = rect->right - taskbarWidthScaled;
+                rect->left =
+                    GetTaskbarLeft(taskbarLocation, monitorRect, monitorDpiX,
+                                   taskbarWidthScaled, autoHidden);
+                rect->right = rect->left + taskbarWidthScaled;
                 break;
 
             case TaskbarLocation::top:
@@ -997,6 +1034,7 @@ LRESULT TaskbarWndProcPostProcess(HWND hWnd,
                                   UINT Msg,
                                   WPARAM wParam,
                                   LPARAM lParam,
+                                  bool secondaryTaskbar,
                                   LRESULT result) {
     switch (Msg) {
         case WM_SIZING: {
@@ -1043,15 +1081,6 @@ LRESULT TaskbarWndProcPostProcess(HWND hWnd,
                        (DWORD)(ULONG_PTR)hWnd);
 
                 if (!g_unloading) {
-                    RECT rect{
-                        .left = windowpos->x,
-                        .top = windowpos->y,
-                        .right = windowpos->x + windowpos->cx,
-                        .bottom = windowpos->y + windowpos->cy,
-                    };
-                    HMONITOR monitor =
-                        MonitorFromRect(&rect, MONITOR_DEFAULTTONEAREST);
-
                     if (!(windowpos->flags & SWP_NOSIZE)) {
                         int taskbarWidthScaled = MulDiv(
                             g_settings.taskbarWidth, GetDpiForWindow(hWnd), 96);
@@ -1059,13 +1088,45 @@ LRESULT TaskbarWndProcPostProcess(HWND hWnd,
                         windowpos->cx = taskbarWidthScaled;
                     }
 
-                    if (!(windowpos->flags & SWP_NOMOVE) &&
-                        GetTaskbarLocationForMonitor(monitor) ==
-                            TaskbarLocation::right) {
-                        RECT monitorRect;
-                        GetMonitorRect(monitor, &monitorRect);
+                    HMONITOR monitor =
+                        (HMONITOR)GetProp(hWnd, L"TaskbarMonitor");
+                    RECT monitorRect;
+                    if (!(windowpos->flags & SWP_NOMOVE) && monitor &&
+                        GetMonitorRect(monitor, &monitorRect)) {
+                        int width = windowpos->cx;
 
-                        windowpos->x = monitorRect.right - windowpos->cx;
+                        // cx isn't set with SWP_NOSIZE.
+                        if (windowpos->flags & SWP_NOSIZE) {
+                            RECT currentRect;
+                            GetWindowRect(hWnd, &currentRect);
+                            width = currentRect.right - currentRect.left;
+                        }
+
+                        TaskbarLocation taskbarLocation =
+                            GetTaskbarLocationForMonitor(monitor);
+
+                        // Auto-hide positioning: Windows slides the taskbar
+                        // between the shown position and the hidden one from
+                        // TrayUI_GetDockedRect_Hook.
+                        if (!secondaryTaskbar && IsTaskbarAutoHideEnabled()) {
+                            UINT monitorDpiX = 96;
+                            UINT monitorDpiY = 96;
+                            GetDpiForMonitor(monitor, MDT_DEFAULT, &monitorDpiX,
+                                             &monitorDpiY);
+                            int shownLeft = GetTaskbarLeft(
+                                taskbarLocation, monitorRect, monitorDpiX,
+                                width, /*autoHidden=*/false);
+                            int hiddenLeft = GetTaskbarLeft(
+                                taskbarLocation, monitorRect, monitorDpiX,
+                                width, /*autoHidden=*/true);
+
+                            windowpos->x = std::clamp(
+                                windowpos->x, std::min(shownLeft, hiddenLeft),
+                                std::max(shownLeft, hiddenLeft));
+                            windowpos->y = monitorRect.top;
+                        } else if (taskbarLocation == TaskbarLocation::right) {
+                            windowpos->x = monitorRect.right - width;
+                        }
                     }
                 }
             }
@@ -1117,7 +1178,8 @@ LRESULT WINAPI TrayUI_WndProc_Hook(void* pThis,
         TrayUI_WndProc_Original(pThis, hWnd, Msg, wParam, lParam, flag);
 
     if (!g_hasNativeVerticalTaskbar) {
-        ret = TaskbarWndProcPostProcess(hWnd, Msg, wParam, lParam, ret);
+        ret = TaskbarWndProcPostProcess(hWnd, Msg, wParam, lParam,
+                                        /*secondaryTaskbar=*/false, ret);
     }
 
     g_hookCallCounter--;
@@ -1141,7 +1203,8 @@ LRESULT WINAPI CSecondaryTray_v_WndProc_Hook(void* pThis,
         CSecondaryTray_v_WndProc_Original(pThis, hWnd, Msg, wParam, lParam);
 
     if (!g_hasNativeVerticalTaskbar) {
-        ret = TaskbarWndProcPostProcess(hWnd, Msg, wParam, lParam, ret);
+        ret = TaskbarWndProcPostProcess(hWnd, Msg, wParam, lParam,
+                                        /*secondaryTaskbar=*/true, ret);
     }
 
     g_hookCallCounter--;
@@ -2525,6 +2588,13 @@ bool ApplyStyle(XamlRoot xamlRoot) {
 
     float origin = g_unloading ? 0 : 0.5;
     contentGrid.RenderTransformOrigin({origin, origin});
+
+    // The taskbar host sets the frame width to the taskbar window width
+    // whenever the window width changes, which might not be followed by
+    // TaskbarController_UpdateFrameHeight_Hook.
+    if (!g_unloading && !std::isnan(taskbarFrame.Width())) {
+        taskbarFrame.Width(std::numeric_limits<double>::quiet_NaN());
+    }
 
     double borderHeight = border.Height();
     Thickness margin{};
