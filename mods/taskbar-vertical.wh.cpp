@@ -46,8 +46,6 @@ mod.
 
 ## Known limitations
 
-* The option to automatically hide the taskbar is only supported on the primary
-  monitor.
 * After disabling the mod, some leftover artifacts might stay, such as
   incorrectly rotated icons. Restarting explorer.exe will clear all such
   leftovers.
@@ -587,6 +585,48 @@ void WINAPI TrayUI__HandleSettingChange_Hook(void* pThis,
     }
 }
 
+// Moves a taskbar rect that Windows computes for the bottom of the monitor to
+// the side of the monitor.
+void MoveTaskbarRectToSide(RECT* rect) {
+    // The top edge stays on the monitor when the taskbar is auto-hidden.
+    HMONITOR monitor = MonitorFromPoint(
+        {(rect->left + rect->right) / 2, rect->top}, MONITOR_DEFAULTTONEAREST);
+
+    RECT monitorRect;
+    GetMonitorRect(monitor, &monitorRect);
+
+    UINT monitorDpiX = 96;
+    UINT monitorDpiY = 96;
+    GetDpiForMonitor(monitor, MDT_DEFAULT, &monitorDpiX, &monitorDpiY);
+
+    int taskbarWidthScaled = MulDiv(g_settings.taskbarWidth, monitorDpiX, 96);
+
+    // The rect of an auto-hidden taskbar is mostly below the monitor. Move it
+    // to the hidden position on the side, which Windows slides the taskbar to
+    // and derives the window's clip region from.
+    bool autoHidden = rect->bottom > monitorRect.bottom;
+    if (autoHidden) {
+        rect->bottom = monitorRect.top + (rect->bottom - rect->top);
+    }
+
+    rect->top = monitorRect.top;
+
+    TaskbarLocation taskbarLocation = GetTaskbarLocationForMonitor(monitor);
+    switch (taskbarLocation) {
+        case TaskbarLocation::left:
+        case TaskbarLocation::right:
+            rect->left =
+                GetTaskbarLeft(taskbarLocation, monitorRect, monitorDpiX,
+                               taskbarWidthScaled, autoHidden);
+            rect->right = rect->left + taskbarWidthScaled;
+            break;
+
+        case TaskbarLocation::top:
+        case TaskbarLocation::bottom:
+            break;
+    }
+}
+
 using TrayUI_GetDockedRect_t = DWORD(WINAPI*)(void* pThis,
                                               RECT* rect,
                                               BOOL param2);
@@ -600,9 +640,12 @@ DWORD WINAPI TrayUI_GetDockedRect_Hook(void* pThis, RECT* rect, BOOL param2) {
         return ret;
     }
 
-    // The top edge stays on the monitor when the taskbar is auto-hidden.
-    HMONITOR monitor = MonitorFromPoint(
-        {(rect->left + rect->right) / 2, rect->top}, MONITOR_DEFAULTTONEAREST);
+    if (!g_unloading) {
+        MoveTaskbarRectToSide(rect);
+        return ret;
+    }
+
+    HMONITOR monitor = MonitorFromRect(rect, MONITOR_DEFAULTTONEAREST);
 
     RECT monitorRect;
     GetMonitorRect(monitor, &monitorRect);
@@ -611,44 +654,27 @@ DWORD WINAPI TrayUI_GetDockedRect_Hook(void* pThis, RECT* rect, BOOL param2) {
     UINT monitorDpiY = 96;
     GetDpiForMonitor(monitor, MDT_DEFAULT, &monitorDpiX, &monitorDpiY);
 
-    if (!g_unloading) {
-        int taskbarWidthScaled =
-            MulDiv(g_settings.taskbarWidth, monitorDpiX, 96);
+    int taskbarOriginalHeightScaled =
+        MulDiv(g_originalTaskbarHeight, monitorDpiY, 96);
 
-        // The rect of an auto-hidden taskbar is mostly below the monitor. Move
-        // it to the hidden position on the side, which Windows slides the
-        // taskbar to and derives the window's clip region from.
-        bool autoHidden = rect->bottom > monitorRect.bottom;
-        if (autoHidden) {
-            rect->bottom = monitorRect.top + (rect->bottom - rect->top);
-        }
-
-        rect->top = monitorRect.top;
-
-        TaskbarLocation taskbarLocation = GetTaskbarLocationForMonitor(monitor);
-        switch (taskbarLocation) {
-            case TaskbarLocation::left:
-            case TaskbarLocation::right:
-                rect->left =
-                    GetTaskbarLeft(taskbarLocation, monitorRect, monitorDpiX,
-                                   taskbarWidthScaled, autoHidden);
-                rect->right = rect->left + taskbarWidthScaled;
-                break;
-
-            case TaskbarLocation::top:
-            case TaskbarLocation::bottom:
-                break;
-        }
-    } else {
-        int taskbarOriginalHeightScaled =
-            MulDiv(g_originalTaskbarHeight, monitorDpiY, 96);
-
-        rect->top = rect->bottom - taskbarOriginalHeightScaled;
-        rect->left = monitorRect.left;
-        rect->right = monitorRect.right;
-    }
+    rect->top = rect->bottom - taskbarOriginalHeightScaled;
+    rect->left = monitorRect.left;
+    rect->right = monitorRect.right;
 
     return ret;
+}
+
+using CSecondaryTray__ComputeHiddenRect_t = void(WINAPI*)(void* pThis,
+                                                          RECT* rect);
+CSecondaryTray__ComputeHiddenRect_t CSecondaryTray__ComputeHiddenRect_Original;
+void WINAPI CSecondaryTray__ComputeHiddenRect_Hook(void* pThis, RECT* rect) {
+    Wh_Log(L">");
+
+    CSecondaryTray__ComputeHiddenRect_Original(pThis, rect);
+
+    if (!g_hasNativeVerticalTaskbar && !g_unloading) {
+        MoveTaskbarRectToSide(rect);
+    }
 }
 
 using TrayUI_MakeStuckRect_t = void(WINAPI*)(void* pThis,
@@ -1126,8 +1152,12 @@ LRESULT TaskbarWndProcPostProcess(HWND hWnd,
 
                         // Auto-hide positioning: Windows slides the taskbar
                         // between the shown position and the hidden one from
-                        // TrayUI_GetDockedRect_Hook.
-                        if (!secondaryTaskbar && IsTaskbarAutoHideEnabled()) {
+                        // TrayUI_GetDockedRect_Hook, or from
+                        // CSecondaryTray__ComputeHiddenRect_Hook for secondary
+                        // taskbars, which hide below the monitor without it.
+                        if ((!secondaryTaskbar ||
+                             CSecondaryTray__ComputeHiddenRect_Original) &&
+                            IsTaskbarAutoHideEnabled()) {
                             UINT monitorDpiX = 96;
                             UINT monitorDpiY = 96;
                             GetDpiForMonitor(monitor, MDT_DEFAULT, &monitorDpiX,
@@ -7009,6 +7039,12 @@ bool HookTaskbarDllSymbols() {
                 {LR"(private: virtual __int64 __cdecl CSecondaryTray::v_WndProc(struct HWND__ *,unsigned int,unsigned __int64,__int64))"},
                 &CSecondaryTray_v_WndProc_Original,
                 CSecondaryTray_v_WndProc_Hook,
+            },
+            {
+                {LR"(private: void __cdecl CSecondaryTray::_ComputeHiddenRect(struct tagRECT *))"},
+                &CSecondaryTray__ComputeHiddenRect_Original,
+                CSecondaryTray__ComputeHiddenRect_Hook,
+                true,  // Only needed for auto-hide on secondary monitors.
             },
             {
                 {LR"(protected: long __cdecl CTaskListWnd::_ComputeJumpViewPosition(struct ITaskBtnGroup *,int,struct Windows::Foundation::Point &,enum Windows::UI::Xaml::HorizontalAlignment &,enum Windows::UI::Xaml::VerticalAlignment &)const )"},
