@@ -46,8 +46,8 @@ mod.
 
 ## Known limitations
 
-* With the mod's own implementation, the option to automatically hide the
-  taskbar is only supported on the primary monitor.
+* The option to automatically hide the taskbar is only supported on the primary
+  monitor.
 * After disabling the mod, some leftover artifacts might stay, such as
   incorrectly rotated icons. Restarting explorer.exe will clear all such
   leftovers.
@@ -124,9 +124,10 @@ With labels:
 - useNativeTaskbar: true
   $name: Use the native taskbar when possible
   $description: >-
-    Newer Windows 11 builds include a native vertical taskbar. If disabled, the
-    mod's own implementation is used instead, and the taskbar position in
-    Windows settings should be kept at Bottom.
+    Newer Windows 11 builds include a native vertical taskbar. If disabled, or
+    if taskbar auto-hide is enabled, the mod's own implementation is used
+    instead, and the taskbar position in Windows settings should be kept at
+    Bottom.
 */
 // ==/WindhawkModSettings==
 
@@ -344,6 +345,24 @@ int GetTaskbarLeft(TaskbarLocation taskbarLocation,
     return taskbarLocation == TaskbarLocation::right
                ? monitorRect.right - visibleWidth
                : monitorRect.left + visibleWidth - taskbarWidth;
+}
+
+// Reads the state saved by the taskbar, available before the taskbar is
+// created. The state is a DWORD at offset 8.
+bool IsStoredTaskbarAutoHideEnabled() {
+    BYTE settings[256];
+    DWORD size = sizeof(settings);
+    if (RegGetValueW(
+            HKEY_CURRENT_USER,
+            LR"(SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\StuckRects3)",
+            L"Settings", RRF_RT_REG_BINARY, nullptr, settings,
+            &size) != ERROR_SUCCESS ||
+        size < 12) {
+        return false;
+    }
+
+    DWORD state = *(DWORD*)(settings + 8);
+    return (state & ABS_AUTOHIDE) != 0;
 }
 
 bool GetMonitorRectDpiUnscaled(HMONITOR monitor, RECT* rc) {
@@ -3303,7 +3322,8 @@ bool ApplyStyleIfNeeded(XamlRoot xamlRoot) {
         return true;
     }
 
-    if (rootGrid.ActualHeight() == g_settings.taskbarWidth) {
+    if (rootGrid.ActualHeight() == g_settings.taskbarWidth &&
+        std::isnan(taskbarFrame.Width())) {
         return true;
     }
 
@@ -7090,6 +7110,14 @@ bool HookTaskbarDllSymbols() {
 
     if (g_hasNativeVerticalTaskbar && !g_settings.useNativeTaskbar) {
         Wh_Log(L"Not using native vertical taskbar due to settings");
+        g_hasNativeVerticalTaskbar = false;
+    }
+
+    // The native taskbar doesn't implement auto-hide for non-bottom taskbars.
+    // If auto-hide is enabled, the native taskbar isn't used to avoid breaking
+    // the auto-hide behavior.
+    if (g_hasNativeVerticalTaskbar && IsStoredTaskbarAutoHideEnabled()) {
+        Wh_Log(L"Not using native vertical taskbar with auto-hide");
         g_hasNativeVerticalTaskbar = false;
     }
 
