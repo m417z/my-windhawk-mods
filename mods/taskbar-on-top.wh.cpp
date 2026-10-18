@@ -71,9 +71,8 @@ Moves the Windows 11 taskbar to the top of the screen.
   $name: Use the native taskbar when possible
   $description: >-
     Newer Windows 11 builds include a native option to show the taskbar on top.
-    If disabled, or if taskbar auto-hide is enabled, the mod's own
-    implementation is used instead, and the taskbar position in Windows settings
-    should be kept at Bottom.
+    If disabled, the mod's own implementation is used instead, and the taskbar
+    position in Windows settings should be kept at Bottom.
 */
 // ==/WindhawkModSettings==
 
@@ -569,6 +568,18 @@ void WINAPI CSecondaryTray__ComputeHiddenRect_Hook(void* pThis, RECT* rect) {
     if (!g_hasNativeTaskbarOnTop) {
         MoveTaskbarRectToTop(rect);
     }
+}
+
+// While this feature is enabled, the native primary taskbar doesn't auto-hide
+// when it's not on the bottom. The rest of its auto-hide handles all edges.
+using WilFeatureImpl_61970341_IsEnabled_t = bool(WINAPI*)(void* pThis);
+WilFeatureImpl_61970341_IsEnabled_t WilFeatureImpl_61970341_IsEnabled_Original;
+bool WINAPI WilFeatureImpl_61970341_IsEnabled_Hook(void* pThis) {
+    if (g_hasNativeTaskbarOnTop && !g_unloading) {
+        return false;
+    }
+
+    return WilFeatureImpl_61970341_IsEnabled_Original(pThis);
 }
 
 using TrayUI_MakeStuckRect_t = void(WINAPI*)(void* pThis,
@@ -2420,33 +2431,36 @@ HRESULT WINAPI DwmSetWindowAttribute_Hook(HWND hwnd,
     int cy = targetRect.bottom - targetRect.top;
 
     if (target == DwmTarget::StartMenu) {
-        MONITORINFO monitorInfo{
-            .cbSize = sizeof(MONITORINFO),
-        };
-        GetMonitorInfo(monitor, &monitorInfo);
-
         int xNew = x;
         int yNew = y;
         if (g_hasNativeTaskbarOnTop) {
+            RECT workAreaRect;
+            GetMonitorWorkAreaWithoutTaskbar(monitor, &workAreaRect);
+
             // Only move towards the taskbar.
             switch (taskbarLocation) {
                 case TaskbarLocation::top:
-                    yNew = monitorInfo.rcWork.top;
+                    yNew = workAreaRect.top;
                     break;
 
                 case TaskbarLocation::bottom:
-                    yNew = monitorInfo.rcWork.bottom - cy;
+                    yNew = workAreaRect.bottom - cy;
                     break;
 
                 case TaskbarLocation::left:
-                    xNew = monitorInfo.rcWork.left;
+                    xNew = workAreaRect.left;
                     break;
 
                 case TaskbarLocation::right:
-                    xNew = monitorInfo.rcWork.right - cx;
+                    xNew = workAreaRect.right - cx;
                     break;
             }
         } else {
+            MONITORINFO monitorInfo{
+                .cbSize = sizeof(MONITORINFO),
+            };
+            GetMonitorInfo(monitor, &monitorInfo);
+
             // Only change x. This is a workaround for ExplorerPatcher, see:
             // https://github.com/ramensoftware/windhawk-mods/issues/2401
             xNew = monitorInfo.rcWork.left;
@@ -3704,6 +3718,12 @@ bool HookTaskbarDllSymbols() {
             TaskbarSettings_TaskbarSettings_Hook,
             true,  // Only needed for the native taskbar on top.
         },
+        {
+            {LR"(public: bool __cdecl wil::details::FeatureImpl<struct __WilFeatureTraits_Feature_61970341>::__private_IsEnabled(void))"},
+            &WilFeatureImpl_61970341_IsEnabled_Original,
+            WilFeatureImpl_61970341_IsEnabled_Hook,
+            true,  // Only needed for auto-hide with the native taskbar on top.
+        },
     };
 
     if (!HookSymbols(module, taskbarDllHooks, ARRAYSIZE(taskbarDllHooks))) {
@@ -3719,10 +3739,11 @@ bool HookTaskbarDllSymbols() {
         g_hasNativeTaskbarOnTop = false;
     }
 
-    // The native taskbar doesn't implement auto-hide for non-bottom taskbars.
-    // If auto-hide is enabled, the native taskbar isn't used to avoid breaking
-    // the auto-hide behavior.
-    if (g_hasNativeTaskbarOnTop && IsStoredTaskbarAutoHideEnabled()) {
+    // Without the feature override, the native taskbar doesn't auto-hide when
+    // it's not on the bottom.
+    if (g_hasNativeTaskbarOnTop &&
+        !WilFeatureImpl_61970341_IsEnabled_Original &&
+        IsStoredTaskbarAutoHideEnabled()) {
         Wh_Log(L"Not using native taskbar on top with auto-hide");
         g_hasNativeTaskbarOnTop = false;
     }

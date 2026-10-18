@@ -122,10 +122,9 @@ With labels:
 - useNativeTaskbar: true
   $name: Use the native taskbar when possible
   $description: >-
-    Newer Windows 11 builds include a native vertical taskbar. If disabled, or
-    if taskbar auto-hide is enabled, the mod's own implementation is used
-    instead, and the taskbar position in Windows settings should be kept at
-    Bottom.
+    Newer Windows 11 builds include a native vertical taskbar. If disabled, the
+    mod's own implementation is used instead, and the taskbar position in
+    Windows settings should be kept at Bottom.
 */
 // ==/WindhawkModSettings==
 
@@ -680,6 +679,18 @@ void WINAPI CSecondaryTray__ComputeHiddenRect_Hook(void* pThis, RECT* rect) {
     if (!g_hasNativeVerticalTaskbar && !g_unloading) {
         MoveTaskbarRectToSide(rect);
     }
+}
+
+// While this feature is enabled, the native primary taskbar doesn't auto-hide
+// when it's not on the bottom. The rest of its auto-hide handles all edges.
+using WilFeatureImpl_61970341_IsEnabled_t = bool(WINAPI*)(void* pThis);
+WilFeatureImpl_61970341_IsEnabled_t WilFeatureImpl_61970341_IsEnabled_Original;
+bool WINAPI WilFeatureImpl_61970341_IsEnabled_Hook(void* pThis) {
+    if (g_hasNativeVerticalTaskbar && !g_unloading) {
+        return false;
+    }
+
+    return WilFeatureImpl_61970341_IsEnabled_Original(pThis);
 }
 
 using TrayUI_MakeStuckRect_t = void(WINAPI*)(void* pThis,
@@ -7277,6 +7288,13 @@ bool HookTaskbarDllSymbols() {
                 true,  // Only needed for the native vertical taskbar.
             },
             {
+                {LR"(public: bool __cdecl wil::details::FeatureImpl<struct __WilFeatureTraits_Feature_61970341>::__private_IsEnabled(void))"},
+                &WilFeatureImpl_61970341_IsEnabled_Original,
+                WilFeatureImpl_61970341_IsEnabled_Hook,
+                true,  // Only needed for auto-hide with the native vertical
+                       // taskbar.
+            },
+            {
                 {LR"(struct tagRECT __cdecl ToRawPixelsInDesktopCoordinates(struct winrt::Windows::Foundation::Rect const &,unsigned int,struct HWND__ *))"},
                 &ToRawPixelsInDesktopCoordinates_Original,
                 ToRawPixelsInDesktopCoordinates_Hook,
@@ -7297,10 +7315,11 @@ bool HookTaskbarDllSymbols() {
         g_hasNativeVerticalTaskbar = false;
     }
 
-    // The native taskbar doesn't implement auto-hide for non-bottom taskbars.
-    // If auto-hide is enabled, the native taskbar isn't used to avoid breaking
-    // the auto-hide behavior.
-    if (g_hasNativeVerticalTaskbar && IsStoredTaskbarAutoHideEnabled()) {
+    // Without the feature override, the native taskbar doesn't auto-hide when
+    // it's not on the bottom.
+    if (g_hasNativeVerticalTaskbar &&
+        !WilFeatureImpl_61970341_IsEnabled_Original &&
+        IsStoredTaskbarAutoHideEnabled()) {
         Wh_Log(L"Not using native vertical taskbar with auto-hide");
         g_hasNativeVerticalTaskbar = false;
     }
