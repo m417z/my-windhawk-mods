@@ -2684,6 +2684,12 @@ bool ApplyStyle(XamlRoot xamlRoot) {
         taskbarFrame.Width(std::numeric_limits<double>::quiet_NaN());
     }
 
+    // A whole number of pixels. Otherwise, the layout rounding of the edge
+    // margins and of the background stroke margin might not cancel out,
+    // leaving a gap between the stroke and the edge.
+    double scale = xamlRoot.RasterizationScale();
+    double edgeOffset = std::ceil(scale) / scale;
+
     double borderHeight = border.Height();
     Thickness margin{};
     if (!g_unloading && borderHeight > 0) {
@@ -2696,10 +2702,10 @@ bool ApplyStyle(XamlRoot xamlRoot) {
 
         // Fix the edge of the taskbar being non-clickable by moving the edge
         // pixels out of the screen.
-        margin.Left -= 1;
-        margin.Top -= 1;
-        margin.Right -= 1;
-        margin.Bottom -= 1;
+        margin.Left -= edgeOffset;
+        margin.Top -= edgeOffset;
+        margin.Right -= edgeOffset;
+        margin.Bottom -= edgeOffset;
     }
 
     if (auto rootGrid = FindChildByName(taskbarFrame, L"RootGrid")) {
@@ -2737,13 +2743,13 @@ bool ApplyStyle(XamlRoot xamlRoot) {
                 case TaskbarLocation::left:
                     child.VerticalAlignment(VerticalAlignment::Top);
                     // Account for the extra margin above.
-                    child.Margin(Thickness{0, 1, 0, 0});
+                    child.Margin(Thickness{0, edgeOffset, 0, 0});
                     break;
 
                 case TaskbarLocation::right:
                     child.VerticalAlignment(VerticalAlignment::Bottom);
                     // Account for the extra margin above.
-                    child.Margin(Thickness{0, 0, 0, 1});
+                    child.Margin(Thickness{0, 0, 0, edgeOffset});
                     break;
 
                 case TaskbarLocation::top:
