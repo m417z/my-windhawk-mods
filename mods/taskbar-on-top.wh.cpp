@@ -2,7 +2,7 @@
 // @id              taskbar-on-top
 // @name            Taskbar on top for Windows 11
 // @description     Moves the Windows 11 taskbar to the top of the screen
-// @version         1.2
+// @version         1.3
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
@@ -299,24 +299,6 @@ int GetAutoHiddenTaskbarTop(const RECT& monitorRect,
                             int taskbarHeight) {
     int triggerHeight = MulDiv(kAutoHideTriggerHeight, monitorDpiY, 96);
     return monitorRect.top + triggerHeight - taskbarHeight;
-}
-
-// Reads the state saved by the taskbar, available before the taskbar is
-// created. The state is a DWORD at offset 8.
-bool IsStoredTaskbarAutoHideEnabled() {
-    BYTE settings[256];
-    DWORD size = sizeof(settings);
-    if (RegGetValueW(
-            HKEY_CURRENT_USER,
-            LR"(SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\StuckRects3)",
-            L"Settings", RRF_RT_REG_BINARY, nullptr, settings,
-            &size) != ERROR_SUCCESS ||
-        size < 12) {
-        return false;
-    }
-
-    DWORD state = *(DWORD*)(settings + 8);
-    return (state & ABS_AUTOHIDE) != 0;
 }
 
 HWND FindCurrentProcessWindow(PCWSTR className) {
@@ -3077,6 +3059,11 @@ StartMenuTaskbarEdge GetStartMenuTaskbarEdge(StartMenuTaskbarEdge edge) {
         return edge;
     }
 
+    // The Start menu is left to Windows, see GetStartMenuAdjustment.
+    if (GetNativeTaskbarOnTop() == NativeTaskbarOnTop::unknown) {
+        return edge;
+    }
+
     HMONITOR monitor =
         MonitorFromWindow(GetCoreWnd(), MONITOR_DEFAULTTONEAREST);
     switch (GetTaskbarLocationForMonitor(monitor)) {
@@ -3736,15 +3723,6 @@ bool HookTaskbarDllSymbols() {
 
     if (g_hasNativeTaskbarOnTop && !g_settings.useNativeTaskbar) {
         Wh_Log(L"Not using native taskbar on top due to settings");
-        g_hasNativeTaskbarOnTop = false;
-    }
-
-    // Without the feature override, the native taskbar doesn't auto-hide when
-    // it's not on the bottom.
-    if (g_hasNativeTaskbarOnTop &&
-        !WilFeatureImpl_61970341_IsEnabled_Original &&
-        IsStoredTaskbarAutoHideEnabled()) {
-        Wh_Log(L"Not using native taskbar on top with auto-hide");
         g_hasNativeTaskbarOnTop = false;
     }
 
