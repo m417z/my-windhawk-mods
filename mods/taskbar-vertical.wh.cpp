@@ -2,7 +2,7 @@
 // @id              taskbar-vertical
 // @name            Vertical Taskbar for Windows 11
 // @description     Finally, the missing vertical taskbar option for Windows 11! Move the taskbar to the left or right side of the screen.
-// @version         1.4.2
+// @version         1.5
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
@@ -342,24 +342,6 @@ int GetTaskbarLeft(TaskbarLocation taskbarLocation,
     return taskbarLocation == TaskbarLocation::right
                ? monitorRect.right - visibleWidth
                : monitorRect.left + visibleWidth - taskbarWidth;
-}
-
-// Reads the state saved by the taskbar, available before the taskbar is
-// created. The state is a DWORD at offset 8.
-bool IsStoredTaskbarAutoHideEnabled() {
-    BYTE settings[256];
-    DWORD size = sizeof(settings);
-    if (RegGetValueW(
-            HKEY_CURRENT_USER,
-            LR"(SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\StuckRects3)",
-            L"Settings", RRF_RT_REG_BINARY, nullptr, settings,
-            &size) != ERROR_SUCCESS ||
-        size < 12) {
-        return false;
-    }
-
-    DWORD state = *(DWORD*)(settings + 8);
-    return (state & ABS_AUTOHIDE) != 0;
 }
 
 bool GetMonitorRectDpiUnscaled(HMONITOR monitor, RECT* rc) {
@@ -1193,7 +1175,7 @@ LRESULT TaskbarWndProcPostProcess(HWND hWnd,
                         // cx isn't set with SWP_NOSIZE.
                         if (windowpos->flags & SWP_NOSIZE) {
                             RECT currentRect;
-                            GetWindowRect(hWnd, &currentRect);
+                            GetWindowRect_Original(hWnd, &currentRect);
                             width = currentRect.right - currentRect.left;
                         }
 
@@ -6040,6 +6022,12 @@ StartMenuTaskbarEdge GetStartMenuTaskbarEdge(StartMenuTaskbarEdge edge) {
         return edge;
     }
 
+    // The Start menu is left to Windows, see GetStartMenuAdjustment.
+    if (g_settings.startMenuAlignment == StartMenuAlignment::windowsDefault &&
+        GetNativeVerticalTaskbar() == NativeVerticalTaskbar::unknown) {
+        return edge;
+    }
+
     HMONITOR monitor =
         MonitorFromWindow(GetCoreWnd(), MONITOR_DEFAULTTONEAREST);
     switch (GetTaskbarLocationForMonitor(monitor)) {
@@ -7312,15 +7300,6 @@ bool HookTaskbarDllSymbols() {
 
     if (g_hasNativeVerticalTaskbar && !g_settings.useNativeTaskbar) {
         Wh_Log(L"Not using native vertical taskbar due to settings");
-        g_hasNativeVerticalTaskbar = false;
-    }
-
-    // Without the feature override, the native taskbar doesn't auto-hide when
-    // it's not on the bottom.
-    if (g_hasNativeVerticalTaskbar &&
-        !WilFeatureImpl_61970341_IsEnabled_Original &&
-        IsStoredTaskbarAutoHideEnabled()) {
-        Wh_Log(L"Not using native vertical taskbar with auto-hide");
         g_hasNativeVerticalTaskbar = false;
     }
 
