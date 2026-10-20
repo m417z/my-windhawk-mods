@@ -9,7 +9,7 @@
 // @homepage        https://m417z.com/
 // @include         explorer.exe
 // @architecture    x86-64
-// @compilerOptions -ldwmapi -lole32 -loleaut32 -lruntimeobject
+// @compilerOptions -lcomctl32 -ldwmapi -lole32 -loleaut32 -lruntimeobject
 // ==/WindhawkMod==
 
 // Source code is published under The GNU General Public License v3.0.
@@ -635,13 +635,55 @@ HWND GetTaskbarForMonitor(HMONITOR monitor) {
     return hResultWnd;
 }
 
+// An auto-hidden taskbar leaves a thin strip at the screen edge, either by
+// clipping the window with a region or by moving it mostly off the monitor.
+bool IsTaskbarAutoHidden(HWND hWnd) {
+    RECT windowRect;
+    if (!GetWindowRect(hWnd, &windowRect)) {
+        return false;
+    }
+
+    HMONITOR monitor = (HMONITOR)GetProp(hWnd, L"TaskbarMonitor");
+    if (!monitor) {
+        monitor = MonitorFromWindow(hWnd, MONITOR_DEFAULTTONEAREST);
+    }
+
+    MONITORINFO monitorInfo{
+        .cbSize = sizeof(monitorInfo),
+    };
+    if (!GetMonitorInfo(monitor, &monitorInfo)) {
+        return false;
+    }
+
+    RECT visibleRect;
+    if (!IntersectRect(&visibleRect, &windowRect, &monitorInfo.rcMonitor)) {
+        return true;
+    }
+
+    RECT regionRect;
+    if (GetWindowRgnBox(hWnd, &regionRect) != ERROR) {
+        OffsetRect(&regionRect, windowRect.left, windowRect.top);
+        if (!IntersectRect(&visibleRect, &visibleRect, &regionRect)) {
+            return true;
+        }
+    }
+
+    int width = windowRect.right - windowRect.left;
+    int height = windowRect.bottom - windowRect.top;
+    int visibleThickness = width >= height
+                               ? visibleRect.bottom - visibleRect.top
+                               : visibleRect.right - visibleRect.left;
+
+    return visibleThickness <= MulDiv(4, GetDpiForWindow(hWnd), 96);
+}
+
 void UpdateTaskbarStyleForMonitor(HMONITOR monitor, bool hasMaximized) {
     HWND hMMTaskbarWnd = GetTaskbarForMonitor(monitor);
     if (!hMMTaskbarWnd) {
         return;
     }
 
-    if (hasMaximized) {
+    if (hasMaximized && !IsTaskbarAutoHidden(hMMTaskbarWnd)) {
         SetTaskbarStyle(hMMTaskbarWnd);
     } else {
         ResetTaskbarStyle(hMMTaskbarWnd);
@@ -649,6 +691,10 @@ void UpdateTaskbarStyleForMonitor(HMONITOR monitor, bool hasMaximized) {
 }
 
 BOOL ApplyTaskbarStyleForWindow(HWND hWnd) {
+    if (IsTaskbarAutoHidden(hWnd)) {
+        return ResetTaskbarStyle(hWnd);
+    }
+
     if (!g_settings.onlyWhenMaximized) {
         return SetTaskbarStyle(hWnd);
     }
@@ -1212,6 +1258,58 @@ void EnsureMonitoringThreadStarted() {
     }
 }
 
+std::mutex g_subclassedTaskbarWindowsMutex;
+std::unordered_set<HWND> g_subclassedTaskbarWindows;
+
+// Auto-hide moves the taskbar or changes its window region, and both send
+// WM_WINDOWPOSCHANGED.
+LRESULT CALLBACK TaskbarWindowSubclassProc(_In_ HWND hWnd,
+                                           _In_ UINT uMsg,
+                                           _In_ WPARAM wParam,
+                                           _In_ LPARAM lParam,
+                                           _In_ DWORD_PTR dwRefData) {
+    if (uMsg == WM_NCDESTROY) {
+        std::lock_guard<std::mutex> lock(g_subclassedTaskbarWindowsMutex);
+        g_subclassedTaskbarWindows.erase(hWnd);
+    }
+
+    LRESULT result = DefSubclassProc(hWnd, uMsg, wParam, lParam);
+
+    if (uMsg == WM_WINDOWPOSCHANGED) {
+        ApplyTaskbarStyleForWindow(hWnd);
+    }
+
+    return result;
+}
+
+void SubclassTaskbarWindow(HWND hWnd) {
+    {
+        std::lock_guard<std::mutex> lock(g_subclassedTaskbarWindowsMutex);
+        if (!g_subclassedTaskbarWindows.insert(hWnd).second) {
+            return;
+        }
+    }
+
+    if (!WindhawkUtils::SetWindowSubclassFromAnyThread(
+            hWnd, TaskbarWindowSubclassProc, 0)) {
+        std::lock_guard<std::mutex> lock(g_subclassedTaskbarWindowsMutex);
+        g_subclassedTaskbarWindows.erase(hWnd);
+    }
+}
+
+void UnsubclassTaskbarWindows() {
+    std::unordered_set<HWND> subclassedTaskbarWindows;
+    {
+        std::lock_guard<std::mutex> lock(g_subclassedTaskbarWindowsMutex);
+        subclassedTaskbarWindows.swap(g_subclassedTaskbarWindows);
+    }
+
+    for (HWND hWnd : subclassedTaskbarWindows) {
+        WindhawkUtils::RemoveWindowSubclassFromAnyThread(
+            hWnd, TaskbarWindowSubclassProc);
+    }
+}
+
 BOOL WINAPI SetWindowCompositionAttribute_Hook(
     HWND hWnd,
     const WINDOWCOMPOSITIONATTRIBDATA* pAttrData) {
@@ -1234,6 +1332,7 @@ BOOL WINAPI SetWindowCompositionAttribute_Hook(
     }
 
     EnsureMonitoringThreadStarted();
+    SubclassTaskbarWindow(hWnd);
     return ApplyTaskbarStyleForWindow(hWnd);
 }
 
@@ -1346,6 +1445,15 @@ void Wh_ModAfterInit() {
 
     WNDCLASS wndclass;
     if (GetClassInfo(GetModuleHandle(nullptr), L"Shell_TrayWnd", &wndclass)) {
+        std::unordered_set<HWND> secondaryTaskbarWindows;
+        if (HWND hTaskbarWnd = FindTaskbarWindows(&secondaryTaskbarWindows)) {
+            SubclassTaskbarWindow(hTaskbarWnd);
+        }
+
+        for (HWND hSecondaryWnd : secondaryTaskbarWindows) {
+            SubclassTaskbarWindow(hSecondaryWnd);
+        }
+
         UpdateAllTaskbarStyles();
     }
 }
@@ -1359,6 +1467,8 @@ void Wh_ModUninit() {
         CloseHandle(g_winEventHookThread);
         g_winEventHookThread = nullptr;
     }
+
+    UnsubclassTaskbarWindows();
 
     std::unordered_set<HWND> secondaryTaskbarWindows;
     HWND hWnd = FindTaskbarWindows(&secondaryTaskbarWindows);
