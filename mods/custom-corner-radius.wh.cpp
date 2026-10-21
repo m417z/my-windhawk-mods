@@ -52,7 +52,7 @@ and make sure that `dwm.exe` is in the list.
 - Standard tooltips can be customized separately with the "Tooltip corner
   radius" option.
 - Each window corner can have its own radius with the "Per-corner radius"
-  options, for example to round only the top corners.
+  option, for example to round only the top corners.
 - Windows 11 squares off the corners of maximized and snapped windows. The
   "Rounded corners for maximized and snapped windows" option enables rounding
   for them.
@@ -80,23 +80,11 @@ and make sure that `dwm.exe` is in the list.
     your DPI scaling.
 
     Set to -1 to keep the original radius.
-- perCornerRadius:
-  - topLeft: -1
-    $name: Top-left corner
-  - topRight: -1
-    $name: Top-right corner
-  - bottomLeft: -1
-    $name: Bottom-left corner
-  - bottomRight: -1
-    $name: Bottom-right corner
+- perCornerRadius: ""
   $name: Per-corner radius
   $description: >-
-    Overrides the corner radius of individual window corners, for example to
-    round only the top corners. Set a corner to -1 to use the "Corner radius"
-    value.
-
-    These options don't apply to elements that use the small or tooltip radius,
-    and are ignored when "Corner radius" is -1.
+    Overrides the radius of each corner, in the order top-left, top-right,
+    bottom-right, bottom-left. For example, 8,8,0,0 rounds only the top corners.
 - smallRadius: 6
   $name: Small corner radius
   $description: >-
@@ -1152,21 +1140,54 @@ float FloatAbove(int value, int ulps) {
     return result;
 }
 
+// Parses four comma-separated integers, given clockwise from the top-left
+// corner, into `radii`. Leaves `radii` unchanged on failure.
+bool ParseCornerRadii(PCWSTR text, int radii[kCornerCount]) {
+    constexpr int kCornerIndex[kCornerCount] = {0, 1, 3, 2};
+
+    int values[kCornerCount];
+    PCWSTR p = text;
+    for (int i = 0; i < kCornerCount; i++) {
+        PWSTR end;
+        values[kCornerIndex[i]] = wcstol(p, &end, 10);
+        if (end == p) {
+            return false;
+        }
+
+        while (iswspace(*end)) {
+            end++;
+        }
+
+        if (*end != (i < kCornerCount - 1 ? L',' : L'\0')) {
+            return false;
+        }
+
+        p = end + 1;
+    }
+
+    std::copy(values, values + kCornerCount, radii);
+    return true;
+}
+
 void LoadSettings() {
     int radius = Wh_GetIntSetting(L"radius");
 
     // Per-corner radii are applied as a reduction from the radius DWM works
-    // with, so that radius is the largest of them. Corners left at -1 follow
+    // with, so that radius is the largest of them. Negative corners follow
     // "Corner radius", and all of them are ignored when it's -1 (keep the
     // original radius), since there's no known value to reduce from.
-    PCWSTR cornerNames[kCornerCount] = {L"topLeft", L"topRight", L"bottomLeft",
-                                        L"bottomRight"};
-    int cornerRadius[kCornerCount];
+    int cornerRadius[kCornerCount] = {-1, -1, -1, -1};
+    if (radius >= 0) {
+        PCWSTR perCornerRadius = Wh_GetStringSetting(L"perCornerRadius");
+        if (*perCornerRadius &&
+            !ParseCornerRadii(perCornerRadius, cornerRadius)) {
+            Wh_Log(L"Invalid per-corner radius: %s", perCornerRadius);
+        }
+        Wh_FreeStringSetting(perCornerRadius);
+    }
+
     int maxRadius = radius;
     for (int i = 0; i < kCornerCount; i++) {
-        cornerRadius[i] = radius >= 0 ? Wh_GetIntSetting(L"perCornerRadius.%s",
-                                                         cornerNames[i])
-                                      : -1;
         if (cornerRadius[i] < 0) {
             cornerRadius[i] = radius;
         }
