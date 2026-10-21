@@ -774,6 +774,16 @@ const ITEMIDLIST* WINAPI CTaskGroup_GetShortcutIDList_Hook(PVOID pThis) {
         return CTaskGroup_GetApplicationIDList_Original(pThis);
     }
 
+    // The shortcut icon can differ from the executable icon.
+    if (g_inUpdateItemIcon) {
+        winrt::com_ptr<IUnknown> taskGroupWithoutSuffix =
+            GetTaskGroupWithoutSuffix(pThis);
+        if (taskGroupWithoutSuffix) {
+            return CTaskGroup_GetShortcutIDList_Original(
+                taskGroupWithoutSuffix.get());
+        }
+    }
+
     if (g_inTaskBtnGroupGetIcon && CTaskGroup_GetNumItems_Original(pThis) > 0) {
         winrt::com_ptr<IUnknown> taskGroupWithoutSuffix =
             GetTaskGroupWithoutSuffix(pThis);
