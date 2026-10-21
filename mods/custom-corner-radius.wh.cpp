@@ -913,18 +913,27 @@ bool HookD2DFunctions() {
     return true;
 }
 
-// Forces an empty window region on a SysShadow companion HWND so the
-// legacy rectangular drop shadow stops being composited. Idempotent: once
-// the window already has the (empty) region we own, the call is a no-op.
-void HideSysShadowWindow(HWND hwnd) {
-    HRGN rgn = CreateRectRgn(0, 0, 0, 0);
-    if (!rgn) {
+using CVisual_Hide_t = void(WINAPI*)(void* pThis);
+CVisual_Hide_t CVisual_Hide_Original;
+
+constexpr WCHAR kSysShadowHiddenProp[] =
+    L"Windhawk_SysShadowHidden_" WH_MOD_ID;
+
+// Hides the visual of a SysShadow companion window so the legacy rectangular
+// drop shadow stops being composited. CVisual::Hide counts requests, so DWM
+// showing the window doesn't undo this one. SysShadow windows are short-lived
+// and the request is never withdrawn, so the property recording which visual
+// holds it is never removed either.
+void HideSysShadowWindow(void* pThis, HWND hwnd) {
+    if (GetProp(hwnd, kSysShadowHiddenProp) == pThis) {
         return;
     }
-    if (!SetWindowRgn(hwnd, rgn, FALSE)) {
-        DeleteObject(rgn);
+
+    Wh_Log(L"> hiding SysShadow hwnd=%p", hwnd);
+    CVisual_Hide_Original(pThis);
+    if (!SetProp(hwnd, kSysShadowHiddenProp, pThis)) {
+        Wh_Log(L"SetProp failed for hwnd=%p: %u", hwnd, GetLastError());
     }
-    // SetWindowRgn takes ownership of the region on success.
 }
 
 // The CTopLevelWindow whose UpdateWindowVisuals call is currently running, or
@@ -935,11 +944,11 @@ thread_local void* g_updateWindowVisualsTarget;
 using UpdateWindowVisuals_t = long(WINAPI*)(void* pThis);
 UpdateWindowVisuals_t UpdateWindowVisuals_Original;
 long WINAPI UpdateWindowVisuals_Hook(void* pThis) {
-    if (g_settings.tooltipRadius >= 0.0f && !IsTopLevelWindowExcluded(pThis)) {
+    if (CVisual_Hide_Original && g_settings.tooltipRadius >= 0.0f &&
+        !IsTopLevelWindowExcluded(pThis)) {
         HWND hwnd = HwndFromTopLevelWindow(pThis);
         if (HwndHasClass(hwnd, L"SysShadow")) {
-            Wh_Log(L"> hiding SysShadow hwnd=%p", hwnd);
-            HideSysShadowWindow(hwnd);
+            HideSysShadowWindow(pThis, hwnd);
             return 0;
         }
     }
@@ -1365,12 +1374,21 @@ BOOL Wh_ModInit() {
             nullptr,
             true,  // Optional - maximized/snapped rounding is skipped.
         },
-        // Skips visual updates for SysShadow companion windows so the legacy
-        // rectangular drop shadow doesn't poke out beside the rounded tooltip.
+        // Hides SysShadow companion windows and skips their visual updates so
+        // the legacy rectangular drop shadow doesn't poke out beside the
+        // rounded tooltip.
         {
             {LR"(private: long __cdecl CTopLevelWindow::UpdateWindowVisuals(void))"},
             &UpdateWindowVisuals_Original,
             UpdateWindowVisuals_Hook,
+            true,  // Optional - SysShadow remains visible if missing.
+        },
+        // Used by the hook above to hide SysShadow windows. Capture only, no
+        // hook.
+        {
+            {LR"(public: void __cdecl CVisual::Hide(void))"},
+            &CVisual_Hide_Original,
+            nullptr,
             true,  // Optional - SysShadow remains visible if missing.
         },
         // Used to promote tooltips from "no rounding" to "round small" so the
