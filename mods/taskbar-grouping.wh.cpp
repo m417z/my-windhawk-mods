@@ -201,6 +201,8 @@ bool g_disableGetLauncherName;
 std::atomic<DWORD> g_compareStringOrdinalHookThreadId;
 bool g_compareStringOrdinalIgnoreSuffix;
 bool g_compareStringOrdinalAnySuffixEqual;
+// App IDs that g_compareStringOrdinalAnySuffixEqual doesn't apply to.
+const std::unordered_set<std::wstring>* g_compareStringOrdinalAnySuffixExcluded;
 std::atomic<DWORD> g_doingPinnedItemSwapThreadId;
 void* g_doingPinnedItemSwapFromTaskGroup;
 void* g_doingPinnedItemSwapToTaskGroup;
@@ -715,6 +717,47 @@ winrt::com_ptr<IUnknown> GetTaskGroupWithoutSuffix(
     return taskGroupMatched;
 }
 
+// Calls the callback for each task group with the given app ID and a suffix.
+void ForEachSuffixedTaskGroup(PVOID taskBand,
+                              PCWSTR appId,
+                              const std::function<void(PVOID)>& callback) {
+    WCHAR appIdWithSuffix[MAX_PATH];
+    wcscpy_s(appIdWithSuffix, appId);
+    if (!AddAppIdSuffix(appIdWithSuffix, L'_', 0)) {
+        return;
+    }
+
+    std::unordered_set<std::wstring> matchedAppIds;
+
+    while (true) {
+        g_compareStringOrdinalHookThreadId = GetCurrentThreadId();
+        g_compareStringOrdinalAnySuffixEqual = true;
+        g_compareStringOrdinalAnySuffixExcluded = &matchedAppIds;
+
+        winrt::com_ptr<IUnknown> taskGroupMatched;
+        winrt::com_ptr<IUnknown> taskItemMatched;
+        HRESULT hr = CTaskBand__MatchWindow_Original(
+            taskBand, nullptr, nullptr, appIdWithSuffix, 1,
+            taskGroupMatched.put_void(), taskItemMatched.put_void());
+
+        g_compareStringOrdinalHookThreadId = 0;
+        g_compareStringOrdinalAnySuffixEqual = false;
+        g_compareStringOrdinalAnySuffixExcluded = nullptr;
+
+        if (FAILED(hr) || !taskGroupMatched) {
+            break;
+        }
+
+        PCWSTR matchedAppId =
+            CTaskGroup_GetAppID_Original(taskGroupMatched.get());
+        if (!matchedAppId || !matchedAppIds.insert(matchedAppId).second) {
+            break;
+        }
+
+        callback(taskGroupMatched.get());
+    }
+}
+
 bool TaskGroupUsesWindowIcons(PVOID taskGroup) {
     if (g_settings.windowIconsProgramItems.empty()) {
         return g_settings.useWindowIcons;
@@ -840,6 +883,19 @@ void WINAPI CTaskBand__UpdateItemIcon_Hook(PVOID pThis,
     CTaskBand__UpdateItemIcon_Original(pThis, taskGroup, taskItem,
                                        iconVariants);
     g_inUpdateItemIcon = false;
+
+    // Suffixed groups get their icon from the shortcut of this group, which
+    // might have changed, e.g. if the app changed the shortcut icon.
+    if (!taskItem) {
+        PCWSTR appId = CTaskGroup_GetAppID_Original(taskGroup);
+        if (appId && !FindAppIdSuffix(appId)) {
+            ForEachSuffixedTaskGroup(
+                pThis, appId, [=](PVOID suffixedTaskGroup) {
+                    CTaskBand__UpdateItemIcon_Hook(pThis, suffixedTaskGroup,
+                                                   nullptr, iconVariants);
+                });
+        }
+    }
 }
 
 using CTaskBand_Launch_t = HRESULT(WINAPI*)(PVOID pThis,
@@ -1546,8 +1602,14 @@ int WINAPI CompareStringOrdinal_Hook(LPCWCH lpString1,
         PCWSTR suffix1 = FindAppIdSuffix(lpString1);
         PCWSTR suffix2 = FindAppIdSuffix(lpString2);
 
+        auto isExcluded = [](PCWSTR str) {
+            auto* excluded = g_compareStringOrdinalAnySuffixExcluded;
+            return excluded && excluded->contains(str);
+        };
+
         if (g_compareStringOrdinalAnySuffixEqual) {
-            if (suffix1 && suffix2) {
+            if (suffix1 && suffix2 && !isExcluded(lpString1) &&
+                !isExcluded(lpString2)) {
                 cchCount1 = suffix1 - lpString1;
                 cchCount2 = suffix2 - lpString2;
             }
