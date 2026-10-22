@@ -2,7 +2,7 @@
 // @id              shell-flyout-positions
 // @name            Shell Flyout Positions
 // @description     Customize the position of the Notification Center, Action Center, and Start menu on Windows 11
-// @version         1.3
+// @version         1.4
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
@@ -68,7 +68,8 @@ shift options allow fine-tuning in both directions.
     - right: Right
     - center: Center
     - left: Left
-    - tray: Aligned to tray area
+    - tray: Tray area
+    - trayMirror: Tray area mirrored
   - horizontalShift: 0
     $name: Horizontal shift
     $description: >-
@@ -87,7 +88,8 @@ shift options allow fine-tuning in both directions.
     - right: Right
     - center: Center
     - left: Left
-    - tray: Aligned to tray area
+    - tray: Tray area
+    - trayMirror: Tray area mirrored
   - horizontalShift: 0
     $name: Horizontal shift
     $description: >-
@@ -162,6 +164,7 @@ enum class TrayHorizontalAlignment {
     center,
     left,
     tray,
+    trayMirror,
 };
 
 struct TrayElementSettings {
@@ -218,7 +221,6 @@ LONG g_searchMenuOriginalX;
 LONG g_searchMenuOriginalY;
 LONG g_searchMenuCustomX = LONG_MAX;
 LONG g_searchMenuCustomY = LONG_MAX;
-HMONITOR g_searchMenuMonitor;
 
 FrameworkElement EnumChildElements(
     FrameworkElement element,
@@ -447,17 +449,16 @@ void RestoreSearchMenuToDefault() {
         return;
     }
 
-    HMONITOR monitor =
-        MonitorFromWindow(g_searchMenuWnd, MONITOR_DEFAULTTONEAREST);
-
     RECT rc;
-    if (monitor == g_searchMenuMonitor && GetWindowRect(g_searchMenuWnd, &rc)) {
-        int x = restoreX ? g_searchMenuOriginalX : rc.left;
-        int y = restoreY ? g_searchMenuOriginalY : rc.top;
-
-        SetWindowPos(g_searchMenuWnd, nullptr, x, y, 0, 0,
-                     SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
+    if (!GetWindowRect(g_searchMenuWnd, &rc)) {
+        return;
     }
+
+    int x = restoreX ? g_searchMenuOriginalX : rc.left;
+    int y = restoreY ? g_searchMenuOriginalY : rc.top;
+
+    SetWindowPos(g_searchMenuWnd, nullptr, x, y, 0, 0,
+                 SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
 
     if (restoreX) {
         g_searchMenuCustomX = LONG_MAX;
@@ -467,7 +468,6 @@ void RestoreSearchMenuToDefault() {
     }
     if (g_searchMenuCustomX == LONG_MAX && g_searchMenuCustomY == LONG_MAX) {
         g_searchMenuWnd = nullptr;
-        g_searchMenuMonitor = nullptr;
     }
 }
 
@@ -764,6 +764,15 @@ int CalculateAlignedX(
                 x = rcWork.right - width;
             }
             break;
+        
+        case TrayHorizontalAlignment::trayMirror:
+            if (showDesktopButtonBounds) {
+                x = rcWork.right - showDesktopButtonBounds->right;
+            } else {
+                // Fallback to left alignment if bounds not available.
+                x = rcWork.left;
+            }
+            break;
     }
 
     return x + MulDiv(settings.horizontalShift, monitorDpi, 96);
@@ -774,7 +783,8 @@ int CalculateAlignedXForMonitor(HMONITOR monitor,
                                 int width,
                                 const TrayElementSettings& settings) {
     std::optional<RECT> showDesktopButtonBounds;
-    if (settings.horizontalAlignment == TrayHorizontalAlignment::tray) {
+    if (settings.horizontalAlignment == TrayHorizontalAlignment::tray ||
+        settings.horizontalAlignment == TrayHorizontalAlignment::trayMirror) {
         HWND hTaskbarWnd = GetTaskbarForMonitor(monitor);
         if (hTaskbarWnd) {
             showDesktopButtonBounds = GetShowDesktopButtonBounds(hTaskbarWnd);
@@ -805,8 +815,11 @@ HRESULT WINAPI DwmSetWindowAttribute_Hook(HWND hwnd,
     }
 
     BOOL cloak = *(BOOL*)pvAttribute;
+    if (cloak) {
+        return original();
+    }
 
-    Wh_Log(L"> %08X %s", (DWORD)(DWORD_PTR)hwnd, cloak ? L"cloak" : L"uncloak");
+    Wh_Log(L"> %08X", (DWORD)(DWORD_PTR)hwnd);
 
     DWORD processId = 0;
     DWORD threadId = GetWindowThreadProcessId(hwnd, &processId);
@@ -859,38 +872,13 @@ HRESULT WINAPI DwmSetWindowAttribute_Hook(HWND hwnd,
     int cy = targetRect.bottom - targetRect.top;
 
     if (target == DwmTarget::SearchHost) {
-        if (cloak || !IsStartMenuOpen()) {
-            // The search menu is shown without the start menu (Win+S or the
-            // taskbar search bar) or is being hidden (cloaked). Don't align it
-            // to the start menu; restore the saved position and stop tracking
-            // it, since the same window is reused and would otherwise reappear
-            // where it was last aligned to the start menu.
-            int xNew = x;
-            int yNew = y;
-
-            // The saved positions are absolute coordinates, valid only on the
-            // monitor where they were recorded.
-            if (monitor == g_searchMenuMonitor) {
-                if (g_searchMenuCustomX != LONG_MAX) {
-                    xNew = g_searchMenuOriginalX;
-                }
-                if (g_searchMenuCustomY != LONG_MAX) {
-                    yNew = g_searchMenuOriginalY;
-                }
-            }
-
+        if (!IsStartMenuOpen()) {
+            // Win+S or the search bar on the taskbar cause the search menu to
+            // be repositioned. Don't customize it and restore the original
+            // position.
             g_searchMenuWnd = nullptr;
             g_searchMenuCustomX = LONG_MAX;
             g_searchMenuCustomY = LONG_MAX;
-            g_searchMenuMonitor = nullptr;
-
-            if (xNew != x || yNew != y) {
-                Wh_Log(L"Restoring search menu: (%d, %d) -> (%d, %d)", x, y,
-                       xNew, yNew);
-                SetWindowPos(hwnd, nullptr, xNew, yNew, cx, cy,
-                             SWP_NOZORDER | SWP_NOACTIVATE);
-            }
-
             return original();
         }
 
@@ -1024,15 +1012,10 @@ HRESULT WINAPI DwmSetWindowAttribute_Hook(HWND hwnd,
             (g_searchMenuCustomX != LONG_MAX || g_searchMenuCustomY != LONG_MAX)
                 ? hwnd
                 : nullptr;
-        g_searchMenuMonitor = g_searchMenuWnd ? monitor : nullptr;
 
         x = xNew;
         y = yNew;
     } else if (target == DwmTarget::ShellExperienceHost) {
-        if (cloak) {
-            return original();
-        }
-
         bool xIsDefault = g_settings.notificationCenter.horizontalAlignment ==
                               TrayHorizontalAlignment::windowsDefault &&
                           g_settings.notificationCenter.horizontalShift == 0;
@@ -1968,6 +1951,9 @@ void LoadSettings() {
     } else if (wcscmp(notificationCenterHorizontalAlignment, L"tray") == 0) {
         g_settings.notificationCenter.horizontalAlignment =
             TrayHorizontalAlignment::tray;
+    } else if (wcscmp(notificationCenterHorizontalAlignment, L"trayMirror") == 0) {
+        g_settings.notificationCenter.horizontalAlignment =
+            TrayHorizontalAlignment::trayMirror;
     }
     Wh_FreeStringSetting(notificationCenterHorizontalAlignment);
 
@@ -1995,6 +1981,9 @@ void LoadSettings() {
         } else if (wcscmp(actionCenterHorizontalAlignment, L"tray") == 0) {
             g_settings.actionCenter.horizontalAlignment =
                 TrayHorizontalAlignment::tray;
+        } else if (wcscmp(actionCenterHorizontalAlignment, L"trayMirror") == 0) {
+            g_settings.actionCenter.horizontalAlignment =
+                TrayHorizontalAlignment::trayMirror;
         }
 
         g_settings.actionCenter.horizontalShift =
@@ -2053,41 +2042,27 @@ void LoadSettings() {
 }
 
 bool NeedsToBeLoaded() {
-    bool startMenuNeedsAdjustment =
-        g_settings.startMenu.horizontalAlignment !=
-            StartMenuHorizontalAlignment::windowsDefault ||
-        g_settings.startMenu.horizontalShift != 0 ||
-        g_settings.startMenu.verticalAlignment !=
-            StartMenuVerticalAlignment::windowsDefault ||
-        g_settings.startMenu.verticalShift != 0;
-
-    bool notificationCenterNeedsAdjustment =
-        g_settings.notificationCenter.horizontalAlignment !=
-            TrayHorizontalAlignment::windowsDefault ||
-        g_settings.notificationCenter.horizontalShift != 0;
-
-    bool actionCenterNeedsAdjustment =
-        g_settings.actionCenter.horizontalAlignment !=
-            TrayHorizontalAlignment::windowsDefault ||
-        g_settings.actionCenter.horizontalShift != 0;
-
     switch (g_target) {
         case Target::Explorer:
-            // The search menu is aligned to the start menu and the notification
-            // center flyout is positioned from this process.
-            return startMenuNeedsAdjustment ||
-                   notificationCenterNeedsAdjustment;
+            return true;
 
         case Target::StartMenuExperienceHost:
-            return startMenuNeedsAdjustment;
+            return g_settings.startMenu.horizontalAlignment !=
+                       StartMenuHorizontalAlignment::windowsDefault ||
+                   g_settings.startMenu.horizontalShift != 0 ||
+                   g_settings.startMenu.verticalAlignment !=
+                       StartMenuVerticalAlignment::windowsDefault ||
+                   g_settings.startMenu.verticalShift != 0;
 
         case Target::ShellExperienceHost:
         case Target::ShellHost:
-            return notificationCenterNeedsAdjustment ||
-                   actionCenterNeedsAdjustment;
+            return g_settings.notificationCenter.horizontalAlignment !=
+                       TrayHorizontalAlignment::windowsDefault ||
+                   g_settings.notificationCenter.horizontalShift != 0 ||
+                   g_settings.actionCenter.horizontalAlignment !=
+                       TrayHorizontalAlignment::windowsDefault ||
+                   g_settings.actionCenter.horizontalShift != 0;
     }
-
-    return false;
 }
 
 BOOL Wh_ModInit() {
