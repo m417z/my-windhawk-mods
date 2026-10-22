@@ -12073,6 +12073,9 @@ struct StyleVariableState {
     // by variable name, so without this, asking whether an element appears in
     // either of them means walking every name.
     std::unordered_map<ElementId, size_t> elementRefs;
+    // Elements whose captures are out of `variables` while they sit in a
+    // recycled repeater item. See RefreshRecycledItemCaptures.
+    std::unordered_set<ElementId> withdrawnCaptureOwners;
 };
 
 void AddStyleVariableElementRef(StyleVariableState* state,
@@ -17577,6 +17580,80 @@ void RestoreCapturesForElement(FrameworkElement element,
     }
 }
 
+// Take an element's captures out of the registry, returning the names they were
+// under. Other elements may still capture the same names, so a name only
+// becomes undefined once its last capture is gone.
+std::vector<std::wstring> WithdrawCapturesForElement(
+    StyleVariableState* state,
+    ElementId elementId,
+    const ElementCustomizationState& elementState) {
+    std::vector<std::wstring> varNames;
+
+    for (const auto& [property, captureState] :
+         elementState.captureCustomizationStates) {
+        if (captureState.varName.empty()) {
+            continue;
+        }
+
+        auto varIt = state->variables.find(captureState.varName);
+        if (varIt == state->variables.end()) {
+            continue;
+        }
+
+        size_t removed =
+            std::erase_if(varIt->second,
+                          [elementId](const StyleVariableCapture& capture) {
+                              return capture.elementId == elementId;
+                          });
+        if (!removed) {
+            continue;
+        }
+
+        ReleaseStyleVariableElementRefs(state, elementId, removed);
+
+        varNames.push_back(captureState.varName);
+        if (varIt->second.empty()) {
+            state->variables.erase(varIt);
+        }
+    }
+
+    return varNames;
+}
+
+// Put back the captures WithdrawCapturesForElement took out, returning the
+// names they're under. Values are read afresh: the capture callbacks drop
+// changes for a capture that isn't in the registry.
+std::vector<std::wstring> RepublishCapturesForElement(
+    StyleVariableState* state,
+    ElementId elementId,
+    FrameworkElement element,
+    const ElementCustomizationState& elementState) {
+    std::vector<std::wstring> varNames;
+
+    for (const auto& [property, captureState] :
+         elementState.captureCustomizationStates) {
+        if (captureState.varName.empty()) {
+            continue;
+        }
+
+        auto& captures = state->variables[captureState.varName];
+        if (std::any_of(captures.begin(), captures.end(),
+                        [elementId](const StyleVariableCapture& capture) {
+                            return capture.elementId == elementId;
+                        })) {
+            continue;
+        }
+
+        captures.push_back(
+            {elementId, ReadCapturedStyleVariableValue(element, property)});
+        AddStyleVariableElementRef(state, elementId);
+
+        varNames.push_back(captureState.varName);
+    }
+
+    return varNames;
+}
+
 void ApplyCustomizationsForVisualStateGroup(
     StyleVariableState* state,
     ElementId elementId,
@@ -18482,8 +18559,165 @@ bool SameRepeaterItem(RepeaterItem const& a, RepeaterItem const& b) {
     return valueB && std::get<UnboxedPropertyValue>(a) == *valueB;
 }
 
+// Whether the element is in an item element a repeater holds without having it
+// realized, i.e. one sitting in its recycle pool.
+bool IsInRecycledRepeaterItem(FrameworkElement element) {
+    try {
+        DependencyObject child = element;
+        while (child) {
+            auto parent = Media::VisualTreeHelper::GetParent(child);
+            if (auto repeater = parent.try_as<muxc::ItemsRepeater>()) {
+                if (repeater.GetElementIndex(child.as<UIElement>()) < 0) {
+                    return true;
+                }
+            }
+
+            child = std::move(parent);
+        }
+    } catch (winrt::hresult_error const& ex) {
+        Wh_Log(L"Error %08X: %s", ex.code(), ex.message().c_str());
+    }
+
+    return false;
+}
+
+thread_local bool g_recycledItemCapturesRefreshQueued;
+thread_local winrt::Windows::System::DispatcherQueueTimer
+    g_recycledItemCapturesRefreshTimer{nullptr};
+thread_local winrt::Windows::System::DispatcherQueueTimer::Tick_revoker
+    g_recycledItemCapturesRefreshTimerTickRevoker;
+
+// The captures of an element in a recycled repeater item are withdrawn, as if
+// the item was removed: the recycle pool keeps the item in the tree, out of
+// sight, and its captures would keep publishing the values they last saw. This
+// runs once layout is done rather than on each clear and prepare, since a
+// layout can clear an element and hand it straight back within a pass, and
+// flipping the captures there would restyle their consumers on every pass.
+void RefreshRecycledItemCaptures() {
+    g_recycledItemCapturesRefreshQueued = false;
+
+    // Propagating runs arbitrary XAML work, which can re-enter and reap.
+    StyleVariableStatePin statePin;
+
+    for (auto& state : g_styleVariableState) {
+        std::vector<ElementId> owners(state.withdrawnCaptureOwners.begin(),
+                                      state.withdrawnCaptureOwners.end());
+        for (const auto& [varName, captures] : state.variables) {
+            for (const auto& capture : captures) {
+                owners.push_back(capture.elementId);
+            }
+        }
+
+        std::sort(owners.begin(), owners.end());
+        owners.erase(std::unique(owners.begin(), owners.end()), owners.end());
+
+        std::vector<std::wstring> changedVarNames;
+        for (ElementId owner : owners) {
+            auto it = g_elementsCustomizationState.find(owner);
+            if (it == g_elementsCustomizationState.end()) {
+                continue;
+            }
+
+            auto& elementState = it->second;
+            auto element = elementState.element.get();
+            if (!element) {
+                continue;
+            }
+
+            bool withdrawn = state.withdrawnCaptureOwners.contains(owner);
+            if (IsInRecycledRepeaterItem(element) == withdrawn) {
+                continue;
+            }
+
+            std::vector<std::wstring> varNames;
+            if (withdrawn) {
+                Wh_Log(L"Republishing captures of %llu",
+                       static_cast<uint64_t>(owner));
+                varNames = RepublishCapturesForElement(&state, owner, element,
+                                                       elementState);
+                state.withdrawnCaptureOwners.erase(owner);
+            } else {
+                Wh_Log(L"Withdrawing captures of %llu",
+                       static_cast<uint64_t>(owner));
+                varNames =
+                    WithdrawCapturesForElement(&state, owner, elementState);
+                state.withdrawnCaptureOwners.insert(owner);
+            }
+
+            changedVarNames.insert(changedVarNames.end(), varNames.begin(),
+                                   varNames.end());
+        }
+
+        std::sort(changedVarNames.begin(), changedVarNames.end());
+        changedVarNames.erase(
+            std::unique(changedVarNames.begin(), changedVarNames.end()),
+            changedVarNames.end());
+
+        for (const auto& varName : changedVarNames) {
+            PropagateStyleVariableChange(&state, varName, std::nullopt);
+        }
+    }
+}
+
+// Armed from inside a layout pass, and the timer carries the refresh out of it.
+void QueueRecycledItemCapturesRefresh() {
+    if (g_recycledItemCapturesRefreshQueued) {
+        return;
+    }
+
+    if (std::none_of(g_styleVariableState.begin(), g_styleVariableState.end(),
+                     [](const StyleVariableState& state) {
+                         return !state.variables.empty() ||
+                                !state.withdrawnCaptureOwners.empty();
+                     })) {
+        return;
+    }
+
+    try {
+        if (!g_recycledItemCapturesRefreshTimer) {
+            auto dispatcherQueue =
+                winrt::Windows::System::DispatcherQueue::GetForCurrentThread();
+            if (!dispatcherQueue) {
+                Wh_Log(L"No dispatcher queue, recycled item captures stay");
+                return;
+            }
+
+            g_recycledItemCapturesRefreshTimer = dispatcherQueue.CreateTimer();
+            g_recycledItemCapturesRefreshTimer.IsRepeating(false);
+            g_recycledItemCapturesRefreshTimer.Interval(
+                std::chrono::milliseconds{1});
+            g_recycledItemCapturesRefreshTimerTickRevoker =
+                g_recycledItemCapturesRefreshTimer.Tick(
+                    winrt::auto_revoke,
+                    [](winrt::Windows::System::DispatcherQueueTimer const&,
+                       winrt::Windows::Foundation::IInspectable const&) {
+                        RefreshRecycledItemCaptures();
+                    });
+        }
+
+        g_recycledItemCapturesRefreshTimer.Start();
+        g_recycledItemCapturesRefreshQueued = true;
+    } catch (winrt::hresult_error const& ex) {
+        Wh_Log(L"Error %08X: %s", ex.code(), ex.message().c_str());
+    }
+}
+
+void StopRecycledItemCapturesRefresh() {
+    if (g_recycledItemCapturesRefreshTimer) {
+        try {
+            g_recycledItemCapturesRefreshTimer.Stop();
+        } catch (winrt::hresult_error const& ex) {
+            Wh_Log(L"Error %08X: %s", ex.code(), ex.message().c_str());
+        }
+    }
+
+    g_recycledItemCapturesRefreshTimerTickRevoker.revoke();
+    g_recycledItemCapturesRefreshTimer = nullptr;
+    g_recycledItemCapturesRefreshQueued = false;
+}
+
 // A virtualizing container recycles its item elements instead of destroying
-// them: the recycle pool collapses the element and leaves it parented, so XAML
+// them: the recycle pool keeps the element parented, out of sight, so XAML
 // diagnostics reports no Remove/Add mutation and the styles matched for the
 // previous item would stay on the element once it's reused for another one.
 // Treat a cleared element as removed and a prepared one as newly added.
@@ -18501,6 +18735,10 @@ void HandleVirtualizingRepeater(ElementId elementId, FrameworkElement element) {
         winrt::auto_revoke,
         [](muxc::ItemsRepeater const&,
            muxc::ItemsRepeaterElementClearingEventArgs const& args) {
+            // Ahead of the early returns: the item's descendants can hold
+            // captures even when the item itself has no id.
+            QueueRecycledItemCapturesRefresh();
+
             auto element = args.Element().try_as<FrameworkElement>();
             if (!element) {
                 return;
@@ -18524,6 +18762,8 @@ void HandleVirtualizingRepeater(ElementId elementId, FrameworkElement element) {
         winrt::auto_revoke,
         [](muxc::ItemsRepeater const& sender,
            muxc::ItemsRepeaterElementPreparedEventArgs const& args) {
+            QueueRecycledItemCapturesRefresh();
+
             auto element = args.Element().try_as<FrameworkElement>();
             if (!element) {
                 return;
@@ -18654,6 +18894,12 @@ void ApplyCustomizations(ElementId elementId,
     // consumer's own stored fallback.
     SetUpCapturesForElement(state, elementId, element, resolved.captures,
                             &elementCustomizationState);
+
+    // The element may be in an item already sitting in a recycle pool, which
+    // no clear will be reported for.
+    if (!resolved.captures.empty()) {
+        QueueRecycledItemCapturesRefresh();
+    }
 
     for (auto& [visualStateGroup, overridesForVisualStateGroup] :
          resolved.overridesPerVSG) {
@@ -18882,40 +19128,13 @@ void CleanupCustomizations(ElementId elementId) {
 
     RestoreCapturesForElement(element, elementCustomizationState);
 
-    // Drop this element's captures from the registry. Other elements may still
-    // capture the same names, so a name only becomes undefined once its last
-    // capture is gone. Runs after RestoreCapturesForElement so the
-    // just-unregistered capture callbacks can't re-seed a variable
-    // mid-teardown.
+    // After RestoreCapturesForElement so the just-unregistered capture
+    // callbacks can't re-seed a variable mid-teardown.
     std::vector<std::wstring> removedVarNames;
     if (state) {
-        for (const auto& [property, captureState] :
-             elementCustomizationState.captureCustomizationStates) {
-            if (captureState.varName.empty()) {
-                continue;
-            }
-
-            auto varIt = state->variables.find(captureState.varName);
-            if (varIt == state->variables.end()) {
-                continue;
-            }
-
-            size_t removed =
-                std::erase_if(varIt->second,
-                              [elementId](const StyleVariableCapture& capture) {
-                                  return capture.elementId == elementId;
-                              });
-            if (!removed) {
-                continue;
-            }
-
-            ReleaseStyleVariableElementRefs(state, elementId, removed);
-
-            removedVarNames.push_back(captureState.varName);
-            if (varIt->second.empty()) {
-                state->variables.erase(varIt);
-            }
-        }
+        removedVarNames = WithdrawCapturesForElement(state, elementId,
+                                                     elementCustomizationState);
+        state->withdrawnCaptureOwners.erase(elementId);
     }
 
     for (const auto& [visualStateGroupOptionalWeakPtrIter, stateIter] :
@@ -20014,6 +20233,7 @@ void UninitializeForCurrentThread() {
     // half-cleared state, and no pending release can consult state which is
     // being cleared.
     StopDiagnosticsReleases();
+    StopRecycledItemCapturesRefresh();
     g_virtualizingRepeaters.clear();
     g_recycledElements.clear();
     g_elementMatchedItems.clear();
