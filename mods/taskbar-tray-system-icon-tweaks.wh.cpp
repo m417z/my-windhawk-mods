@@ -767,12 +767,15 @@ void ApplyBatteryIconGrayscaleStyle(FrameworkElement batteryIconContent) {
 }
 
 void SetItemContainerMargin(FrameworkElement container,
-                            double left,
-                            double right) {
-    if (left == 0 && right == 0) {
+                            double before,
+                            double after,
+                            bool vertical) {
+    if (before == 0 && after == 0) {
         container.ClearValue(FrameworkElement::MarginProperty());
+    } else if (vertical) {
+        container.Margin(Thickness{0, before, 0, after});
     } else {
-        container.Margin(Thickness{left, 0, right, 0});
+        container.Margin(Thickness{before, 0, after, 0});
     }
 }
 
@@ -782,14 +785,16 @@ void SetItemContainerMargin(FrameworkElement container,
 // hide the button if all icons are hidden.
 void UpdateControlCenterButtonStackPanel(FrameworkElement stackPanel) {
     double spacing = 0;
+    bool vertical = false;
     if (auto panel = stackPanel.try_as<Controls::StackPanel>()) {
         spacing = panel.Spacing();
+        vertical = panel.Orientation() == Controls::Orientation::Vertical;
     }
 
     // Margins are assigned once the next visible item (or the end) is known,
-    // so that the trailing hidden items can be folded into the right margin.
+    // so that the trailing hidden items can be folded into the after margin.
     FrameworkElement pendingContainer = nullptr;
-    double pendingLeft = 0;
+    double pendingBefore = 0;
     int hiddenRun = 0;
 
     EnumChildElements(stackPanel, [&](FrameworkElement child) {
@@ -813,18 +818,19 @@ void UpdateControlCenterButtonStackPanel(FrameworkElement stackPanel) {
         }
 
         if (pendingContainer) {
-            SetItemContainerMargin(pendingContainer, pendingLeft, 0);
+            SetItemContainerMargin(pendingContainer, pendingBefore, 0,
+                                   vertical);
         }
 
         pendingContainer = child;
-        pendingLeft = -spacing * hiddenRun;
+        pendingBefore = -spacing * hiddenRun;
         hiddenRun = 0;
         return false;
     });
 
     if (pendingContainer) {
-        SetItemContainerMargin(pendingContainer, pendingLeft,
-                               -spacing * hiddenRun);
+        SetItemContainerMargin(pendingContainer, pendingBefore,
+                               -spacing * hiddenRun, vertical);
     }
 
     // The button template has some width of its own (e.g. the background
