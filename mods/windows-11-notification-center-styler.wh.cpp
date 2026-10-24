@@ -5118,6 +5118,10 @@ struct TrackedImage {
     // remote address, which is what a load failure is judged by.
     bool usingCache = false;
 
+    // The BitmapImage the last retry assigned to the target, which is the mod's
+    // value just like the one the style declared.
+    winrt::weak_ref<Media::Imaging::BitmapImage> retryImage;
+
     ULONGLONG lastRetryTick = 0;
     int retryCount = 0;
 };
@@ -7265,6 +7269,7 @@ void StartImageRetry(const std::shared_ptr<TrackedImage>& tracked) {
         // the same URI to a BitmapImage doesn't reload it. The target's own
         // ImageOpened and ImageFailed report how this attempt went.
         target.SetValue(tracked->sourceProperty, retryImage);
+        tracked->retryImage = winrt::make_weak(retryImage);
 
         // The URI goes last: XAML decodes an image to the size it's displayed
         // at only when the BitmapImage is already connected to the live tree by
@@ -7851,6 +7856,23 @@ void UntrackImageTarget(DependencyObject const& target,
                         DependencyProperty const& sourceProperty) {
     std::erase_if(g_trackedImagesForThread.images, [&](const auto& tracked) {
         return tracked->sourceProperty == sourceProperty &&
+               tracked->target.get() == target;
+    });
+}
+
+// Whether `value` is the image a retry assigned to the target's
+// `sourceProperty`.
+bool IsImageRetryValue(DependencyObject const& target,
+                       DependencyProperty const& sourceProperty,
+                       winrt::Windows::Foundation::IInspectable const& value) {
+    if (!value) {
+        return false;
+    }
+
+    const auto& images = g_trackedImagesForThread.images;
+    return std::any_of(images.begin(), images.end(), [&](const auto& tracked) {
+        return tracked->sourceProperty == sourceProperty &&
+               tracked->retryImage.get() == value &&
                tracked->target.get() == target;
     });
 }
@@ -9849,7 +9871,7 @@ bool SameLocalValue(winrt::Windows::Foundation::IInspectable const& a,
 // value. A local value still equal to the one the mod applied means nothing
 // external happened (an animation changes only the effective value), and
 // adopting the mod's own brush would make it survive cleanup and crash when
-// the DLL is unloaded.
+// the DLL is unloaded. An image which a retry assigned is the mod's too.
 void AdoptExternalValueAsOriginal(
     FrameworkElement element,
     DependencyProperty property,
@@ -9859,7 +9881,8 @@ void AdoptExternalValueAsOriginal(
     }
     auto localValue = ReadLocalValueWithWorkaround(element, property);
     if (!SameLocalValue(localValue,
-                        propertyCustomizationState->lastAppliedValue)) {
+                        propertyCustomizationState->lastAppliedValue) &&
+        !IsImageRetryValue(element, property, localValue)) {
         propertyCustomizationState->originalValue = localValue;
     }
 }
