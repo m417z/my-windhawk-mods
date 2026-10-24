@@ -6635,6 +6635,15 @@ void TrackIfRemoteImageSource(
     SetupImageTracking(target, sourceProperty, bitmapImage, uri);
 }
 
+// Stops tracking the image which the target shows through `sourceProperty`.
+void UntrackImageTarget(DependencyObject const& target,
+                        DependencyProperty const& sourceProperty) {
+    std::erase_if(g_trackedImagesForThread.images, [&](const auto& tracked) {
+        return tracked->sourceProperty == sourceProperty &&
+               tracked->target.get() == target;
+    });
+}
+
 // Returns the value written, UnsetValue for a clear, so that callers can
 // record what they applied. Reading it back is not an option: while a visual
 // state has a setter on the property, ReadLocalValue keeps reporting the value
@@ -6768,6 +6777,18 @@ winrt::Windows::Foundation::IInspectable SetOrClearValue(
     }
 
     return value;
+}
+
+// Puts back the value the property had before the style. The target's image
+// entry goes with the style's value: a retry would put that image back, and the
+// restored image's load events would be taken for it.
+void RestoreOriginalValue(
+    DependencyObject elementDo,
+    DependencyProperty property,
+    winrt::Windows::Foundation::IInspectable const& originalValue) {
+    UntrackImageTarget(elementDo, property);
+    SetOrClearValue(elementDo, property, originalValue, /*initialApply=*/false,
+                    /*trackImage=*/false);
 }
 
 // https://stackoverflow.com/a/5665377
@@ -8643,9 +8664,8 @@ void UnapplyStyleValue(
     if (propertyCustomizationState->originalValue) {
         bool wasModifying = g_elementPropertyModifying;
         g_elementPropertyModifying = true;
-        SetOrClearValue(element, property,
-                        *propertyCustomizationState->originalValue,
-                        /*initialApply=*/false, /*trackImage=*/false);
+        RestoreOriginalValue(element, property,
+                             *propertyCustomizationState->originalValue);
         g_elementPropertyModifying = wasModifying;
         propertyCustomizationState->originalValue.reset();
     }
@@ -9453,8 +9473,8 @@ void RestoreCustomizationsForVisualStateGroup(
             }
 
             if (propState.originalValue) {
-                SetOrClearValue(element, property, *propState.originalValue,
-                                /*initialApply=*/false, /*trackImage=*/false);
+                RestoreOriginalValue(element, property,
+                                     *propState.originalValue);
             }
         }
     } else {
