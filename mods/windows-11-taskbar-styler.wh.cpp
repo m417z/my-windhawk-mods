@@ -15013,7 +15013,8 @@ winrt::Windows::Foundation::IInspectable SetOrClearValue(
     DependencyObject elementDo,
     DependencyProperty property,
     const PropertyOverrideValue& overrideValue,
-    bool initialApply = false) {
+    bool initialApply = false,
+    bool trackImage = true) {
     winrt::Windows::Foundation::IInspectable value;
     if (auto* inspectable =
             std::get_if<winrt::Windows::Foundation::IInspectable>(
@@ -15106,18 +15107,22 @@ winrt::Windows::Foundation::IInspectable SetOrClearValue(
     // Track a remote image source for retry on network reconnection. A style
     // can declare one as the ImageBrush a property is set to (e.g. Background),
     // as the ImageSource of an ImageBrush it targets, or as the Source of an
-    // Image element.
-    if (auto imageBrush = value.try_as<Media::ImageBrush>()) {
-        TrackIfRemoteImageSource(imageBrush,
-                                 Media::ImageBrush::ImageSourceProperty(),
-                                 imageBrush.ImageSource());
-    } else if (auto imageBrush = elementDo.try_as<Media::ImageBrush>()) {
-        if (property == Media::ImageBrush::ImageSourceProperty()) {
-            TrackIfRemoteImageSource(imageBrush, property, value);
-        }
-    } else if (auto image = elementDo.try_as<Controls::Image>()) {
-        if (property == Controls::Image::SourceProperty()) {
-            TrackIfRemoteImageSource(image, property, value);
+    // Image element. A value being restored isn't tracked: it's the app's own,
+    // and during uninitialization tracking it would register handlers which
+    // outlive the mod.
+    if (trackImage) {
+        if (auto imageBrush = value.try_as<Media::ImageBrush>()) {
+            TrackIfRemoteImageSource(imageBrush,
+                                     Media::ImageBrush::ImageSourceProperty(),
+                                     imageBrush.ImageSource());
+        } else if (auto imageBrush = elementDo.try_as<Media::ImageBrush>()) {
+            if (property == Media::ImageBrush::ImageSourceProperty()) {
+                TrackIfRemoteImageSource(imageBrush, property, value);
+            }
+        } else if (auto image = elementDo.try_as<Controls::Image>()) {
+            if (property == Controls::Image::SourceProperty()) {
+                TrackIfRemoteImageSource(image, property, value);
+            }
         }
     }
 
@@ -17083,7 +17088,8 @@ void UnapplyStyleValue(
         bool wasModifying = g_elementPropertyModifying;
         g_elementPropertyModifying = true;
         SetOrClearValue(element, property,
-                        *propertyCustomizationState->originalValue);
+                        *propertyCustomizationState->originalValue,
+                        /*initialApply=*/false, /*trackImage=*/false);
         g_elementPropertyModifying = wasModifying;
         propertyCustomizationState->originalValue.reset();
     }
@@ -17893,7 +17899,8 @@ void RestoreCustomizationsForVisualStateGroup(
             }
 
             if (propState.originalValue) {
-                SetOrClearValue(element, property, *propState.originalValue);
+                SetOrClearValue(element, property, *propState.originalValue,
+                                /*initialApply=*/false, /*trackImage=*/false);
             }
         }
     } else {
