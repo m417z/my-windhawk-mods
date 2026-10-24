@@ -150,6 +150,10 @@ Labels can also be shown or hidden per-program in the settings.
   $name: Running indicator height
   $description: >-
     Set to zero for the default height, set to -1 to hide it
+- inactiveRunningIndicatorHeight: 0
+  $name: Inactive running indicator height
+  $description: >-
+    Set to zero for the default height, set to -1 to hide it
 - runningIndicatorVerticalOffset: 0
   $name: Running indicator vertical offset
 - alwaysShowThumbnailLabels: false
@@ -231,6 +235,7 @@ struct {
     int leftAndRightPaddingSize;
     int spaceBetweenIconAndLabel;
     int runningIndicatorHeight;
+	int inactiveRunningIndicatorHeight;
     int runningIndicatorVerticalOffset;
     bool alwaysShowThumbnailLabels;
     WindhawkUtils::StringSetting labelForSingleItem;
@@ -288,6 +293,27 @@ FrameworkElement FindChildByClassName(FrameworkElement element,
     }
 
     return nullptr;
+}
+
+bool IsActiveTaskbarButton(FrameworkElement iconPanelElement)
+{
+    auto groups =
+        VisualStateManager::GetVisualStateGroups(iconPanelElement);
+
+    for (auto const& group : groups)
+    {
+        if (group.Name() != L"RunningIndicatorStates")
+        {
+            continue;
+        }
+
+        auto currentState = group.CurrentState();
+
+        return currentState &&
+               currentState.Name() == L"ActiveRunningIndicator";
+    }
+
+    return false;
 }
 
 HWND FindCurrentProcessTaskbarWnd() {
@@ -1160,6 +1186,32 @@ void UpdateTaskListButtonWithLabelStyle(FrameworkElement taskListButtonElement,
         int height = g_unloading || !g_settings.runningIndicatorHeight
                          ? 3
                          : std::max(g_settings.runningIndicatorHeight, 0);
+
+
+		bool isActiveRunningIndicator =
+			isProgressIndicator ||
+			IsActiveTaskbarButton(iconPanelElement);
+
+		if (!g_unloading &&
+			!isProgressIndicator &&
+			!isActiveRunningIndicator)
+		{
+			if (!g_settings.inactiveRunningIndicatorHeight)
+			{
+				// 0 = use Windows default height.
+				height = 3;
+			}
+			else if (g_settings.inactiveRunningIndicatorHeight < 0)
+			{
+				// -1 = hidden.
+				height = 0;
+			}
+			else
+			{
+				height = g_settings.inactiveRunningIndicatorHeight;
+			}
+		}
+
         indicatorElement.Height(height);
 
         float verticalOffset =
@@ -2266,6 +2318,8 @@ void LoadSettings() {
         Wh_GetIntSetting(L"spaceBetweenIconAndLabel");
     g_settings.runningIndicatorHeight =
         Wh_GetIntSetting(L"runningIndicatorHeight");
+	g_settings.inactiveRunningIndicatorHeight =
+		Wh_GetIntSetting(L"inactiveRunningIndicatorHeight");
     g_settings.runningIndicatorVerticalOffset =
         Wh_GetIntSetting(L"runningIndicatorVerticalOffset");
     g_settings.alwaysShowThumbnailLabels =
