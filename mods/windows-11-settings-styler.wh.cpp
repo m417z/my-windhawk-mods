@@ -2,7 +2,7 @@
 // @id              windows-11-settings-styler
 // @name            Windows 11 Settings Styler
 // @description     Customize the Windows Settings app with themes contributed by others or create your own
-// @version         1.1
+// @version         1.2
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
@@ -11612,7 +11612,7 @@ bool StartStatsTimer() {
     static constexpr WCHAR kStatsBaseUrl[] =
         L"https://github.com/ramensoftware/"
         L"windows-11-settings-styling-guide/"
-        L"releases/download/stats-v1/";
+        L"releases/download/stats-v2/";
 
     ULONGLONG lastStatsTime = 0;
     Wh_GetBinaryValue(L"statsTimerLastTime", &lastStatsTime,
