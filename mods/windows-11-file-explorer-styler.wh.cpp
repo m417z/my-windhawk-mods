@@ -767,7 +767,7 @@ const Theme g_themeWindowGlass = {{
     ThemeTargetStyles{L"FileExplorerExtensions.GalleryViewControl#GalleryViewControl > Grid > Grid#GalleryRootGrid", {
         L"Background:=$MainContentBG"}},
     ThemeTargetStyles{L"ToolTip", {
-        L"Background:=$Background"}},
+        L"Background:=<AcrylicBrush TintColor=\"#15323232\" Opacity=\"0.96\"/>"}},
     ThemeTargetStyles{L"Grid#TabContainerGrid > Border#LeftBottomBorderLine", {
         L"Visibility=Collapsed"}},
     ThemeTargetStyles{L"Grid#TabContainerGrid > Border#RightBottomBorderLine", {
@@ -818,7 +818,7 @@ const Theme g_themeWindowGlass = {{
         L"BorderBrush:=$BorderBrush",
         L"CornerRadius=$CornerRadius"}},
     ThemeTargetStyles{L"CommandBarOverflowPresenter#SecondaryItemsControl > Grid#LayoutRoot", {
-        L"Background:=$Background",
+        L"Background:=<AcrylicBrush TintColor=\"#15323232\" Opacity=\"0.96\"/>",
         L"BorderThickness=$BorderThickness",
         L"BorderBrush:=$BorderBrush",
         L"CornerRadius=$CornerRadius"}},
@@ -988,8 +988,6 @@ const Theme g_themeLiquidGlass = {{
         L"Background:=Transparent"}},
     ThemeTargetStyles{L"Microsoft.UI.Xaml.Controls.Border > Microsoft.UI.Xaml.Controls.Button#AddButton", {
         L"RenderTransform:=<TranslateTransform Y=\"-8\" />"}},
-    ThemeTargetStyles{L"Microsoft.UI.Xaml.Controls.TextBlock#TextLabel", {
-        L"Visibility=1"}},
     ThemeTargetStyles{L"Microsoft.UI.Xaml.Controls.Grid#SubItemChevronPanel > Microsoft.UI.Xaml.Controls.FontIcon#SubItemChevron", {
         L"RenderTransform:=<TranslateTransform X=\"-5\" Y=\"12\" />"}},
     ThemeTargetStyles{L"TabViewItem > Grid#LayoutRoot", {
