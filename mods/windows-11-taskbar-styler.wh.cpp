@@ -14778,14 +14778,26 @@ void SetupImageTracking(DependencyObject const& target,
     if (it != images.end()) {
         // Resolved style values are cached, so the same source object is
         // applied to many targets and reapplied on every visual state change.
-        // Keep the load state which was collected so far unless the source
+        // Keep the retry state which was collected so far unless the source
         // changed.
         if ((*it)->uri.Equals(uri)) {
             RestoreRejectedImageSource(*it, bitmapImage);
 
             // The value being applied takes over from whatever a retry has put
-            // there, so it's what a load failure is judged by.
+            // there, so it's what a load failure is judged by, and what decides
+            // whether the target has an image.
             (*it)->usingCache = !bitmapImage.UriSource().Equals(uri);
+
+            bool wasLoaded = (*it)->loaded;
+            (*it)->loaded = bitmapImage.PixelWidth() != 0;
+
+            // Nothing else starts a round for a target which loses its image
+            // this way: the value may have failed already, which raises no
+            // further event.
+            if (wasLoaded && !(*it)->loaded) {
+                ScheduleImageLoadRetryOnCurrentThread(kImageRetryBaseDelayMs,
+                                                      /*reschedule=*/false);
+            }
             return;
         }
 
