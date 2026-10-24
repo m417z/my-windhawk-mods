@@ -8885,6 +8885,9 @@ constexpr int kImageRetryMaxCount = 20;
 // UI thread pumps messages, which can re-enter this code on the same thread.
 std::mutex g_imageRetryMutex;
 bool g_imageRetryActive;
+// Set once the mod is being unloaded, so that nothing which runs during the
+// uninitialization tracks an image again.
+bool g_imageRetryStopping;
 // The dispatcher of each UI thread which has tracked images, used to run a
 // retry on the thread that owns the image.
 std::vector<winrt::weak_ref<winrt::Windows::System::DispatcherQueue>>
@@ -11303,6 +11306,7 @@ void StopImageLoadRetries() {
         // early, which is what stops the retries. Removing the handler only
         // stops further invocations.
         g_imageRetryActive = false;
+        g_imageRetryStopping = true;
 
         token = g_networkStatusChangedToken;
         g_networkStatusChangedToken = {};
@@ -11368,6 +11372,14 @@ void SetupImageTracking(DependencyObject const& target,
                         DependencyProperty const& sourceProperty,
                         Media::Imaging::BitmapImage const& bitmapImage,
                         winrt::Windows::Foundation::Uri const& uri) {
+    {
+        std::lock_guard<std::mutex> lock(g_imageRetryMutex);
+
+        if (g_imageRetryStopping) {
+            return;
+        }
+    }
+
     auto& images = g_trackedImagesForThread.images;
 
     std::erase_if(images,
@@ -11540,6 +11552,11 @@ void SetupImageTracking(DependencyObject const& target,
 
     {
         std::lock_guard<std::mutex> lock(g_imageRetryMutex);
+
+        // Checked again, since StopImageLoadRetries runs on another thread.
+        if (g_imageRetryStopping) {
+            return;
+        }
 
         g_imageRetryActive = true;
 
@@ -14623,6 +14640,22 @@ void RestoreCustomizationsForVisualStateGroup(
         visualStateGroupOptionalWeakPtr,
     const ElementCustomizationStateForVisualStateGroup&
         elementCustomizationStateForVisualStateGroup) {
+    // Before the properties are restored, so that a visual state change which
+    // restoring one causes can't apply the style again.
+    auto visualStateGroupIter = visualStateGroupOptionalWeakPtr
+                                    ? visualStateGroupOptionalWeakPtr->get()
+                                    : nullptr;
+    if (visualStateGroupIter && elementCustomizationStateForVisualStateGroup
+                                    .visualStateGroupCurrentStateChangedToken) {
+        try {
+            visualStateGroupIter.CurrentStateChanged(
+                elementCustomizationStateForVisualStateGroup
+                    .visualStateGroupCurrentStateChangedToken);
+        } catch (winrt::hresult_error const& ex) {
+            Wh_Log(L"Error %08X: %s", ex.code(), ex.message().c_str());
+        }
+    }
+
     if (element) {
         for (const auto& [property, propState] :
              elementCustomizationStateForVisualStateGroup
@@ -14658,20 +14691,6 @@ void RestoreCustomizationsForVisualStateGroup(
                                              propState.variableDependencies,
                                              {});
             }
-        }
-    }
-
-    auto visualStateGroupIter = visualStateGroupOptionalWeakPtr
-                                    ? visualStateGroupOptionalWeakPtr->get()
-                                    : nullptr;
-    if (visualStateGroupIter && elementCustomizationStateForVisualStateGroup
-                                    .visualStateGroupCurrentStateChangedToken) {
-        try {
-            visualStateGroupIter.CurrentStateChanged(
-                elementCustomizationStateForVisualStateGroup
-                    .visualStateGroupCurrentStateChangedToken);
-        } catch (winrt::hresult_error const& ex) {
-            Wh_Log(L"Error %08X: %s", ex.code(), ex.message().c_str());
         }
     }
 }
