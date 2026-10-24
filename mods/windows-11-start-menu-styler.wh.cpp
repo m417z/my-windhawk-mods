@@ -8544,6 +8544,14 @@ struct ElementCustomizationState {
 std::unordered_map<ElementId, ElementCustomizationState>
     g_elementsCustomizationState;
 
+// Empties a thread local container and frees its storage, which clear() keeps.
+// A thread local isn't destroyed when the module is unloaded while its thread
+// lives on, so what it still holds then is leaked.
+template <typename T>
+void ResetThreadLocal(T& container) {
+    container = T{};
+}
+
 // The weak reference is what keeps an id honest. A handle is an address, so a
 // destroyed element can be replaced by one reporting the same handle, and an
 // entry whose element is gone, or is no longer the element being asked about,
@@ -16525,7 +16533,7 @@ void FlushDiagnosticsReleasesIfQuiet() {
 }
 
 void StopDiagnosticsReleases() {
-    g_pendingDiagnosticsRelease.clear();
+    ResetThreadLocal(g_pendingDiagnosticsRelease);
 
     if (g_diagnosticsReleaseDrainTimer) {
         try {
@@ -17634,7 +17642,7 @@ void UninitializeSettingsAndTap() {
     g_trackedImagesForThread.retryTimer = nullptr;
     g_trackedImagesForThread.retryDueTick = 0;
     g_trackedImagesForThread.images.clear();
-    g_imageCacheUriRemotes.clear();
+    ResetThreadLocal(g_imageCacheUriRemotes);
     StopImageLoadRetriesForCurrentThread();
 
     if (g_delayedAllAppsRootVisibilitySet) {
@@ -17662,9 +17670,9 @@ void UninitializeSettingsAndTap() {
     // being cleared.
     StopDiagnosticsReleases();
     StopRecycledItemCapturesRefresh();
-    g_virtualizingRepeaters.clear();
-    g_recycledElements.clear();
-    g_elementMatchedItems.clear();
+    ResetThreadLocal(g_virtualizingRepeaters);
+    ResetThreadLocal(g_recycledElements);
+    ResetThreadLocal(g_elementMatchedItems);
 
     // Detached from the global before being walked: restoring a value runs
     // arbitrary XAML work, and whatever it re-enters looks its elements up in
@@ -17714,7 +17722,7 @@ void UninitializeSettingsAndTap() {
 
     // After everything keyed by an id. g_lastElementId keeps counting, since an
     // id must never name two elements.
-    g_elementIds.clear();
+    ResetThreadLocal(g_elementIds);
     g_elementIdsReapThreshold = 64;
 
     g_targetThreadId = 0;

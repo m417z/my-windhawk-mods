@@ -4868,6 +4868,14 @@ struct ElementCustomizationState {
 thread_local std::unordered_map<ElementId, ElementCustomizationState>
     g_elementsCustomizationState;
 
+// Empties a thread local container and frees its storage, which clear() keeps.
+// A thread local isn't destroyed when the module is unloaded while its thread
+// lives on, so what it still holds then is leaked.
+template <typename T>
+void ResetThreadLocal(T& container) {
+    container = T{};
+}
+
 // The weak reference is what keeps an id honest. A handle is an address, so a
 // destroyed element can be replaced by one reporting the same handle, and an
 // entry whose element is gone, or is no longer the element being asked about,
@@ -11408,7 +11416,7 @@ void FlushDiagnosticsReleasesIfQuiet() {
 }
 
 void StopDiagnosticsReleases() {
-    g_pendingDiagnosticsRelease.clear();
+    ResetThreadLocal(g_pendingDiagnosticsRelease);
 
     if (g_diagnosticsReleaseDrainTimer) {
         try {
@@ -12340,7 +12348,7 @@ void UninitializeResourceVariables() {
         g_colorValuesChangedToken = {};
     }
     g_uiSettings = nullptr;
-    g_resourceVariables.clear();
+    ResetThreadLocal(g_resourceVariables);
 
     // Restore original resource values.
     auto resources = Application::Current().Resources();
@@ -12352,7 +12360,7 @@ void UninitializeResourceVariables() {
             Wh_Log(L"Error %08X", hr);
         }
     }
-    g_originalResourceValues.clear();
+    ResetThreadLocal(g_originalResourceValues);
 
     // Remove our merged theme dictionary.
     if (g_resourceVariablesThemeDict) {
@@ -12379,7 +12387,7 @@ void UninitializeForCurrentThread() {
     g_trackedImagesForThread.retryTimer = nullptr;
     g_trackedImagesForThread.retryDueTick = 0;
     g_trackedImagesForThread.images.clear();
-    g_imageCacheUriRemotes.clear();
+    ResetThreadLocal(g_imageCacheUriRemotes);
     StopImageLoadRetriesForCurrentThread();
 
     // Before the teardown below, so that no recycling callback can fire into
@@ -12387,9 +12395,9 @@ void UninitializeForCurrentThread() {
     // being cleared.
     StopDiagnosticsReleases();
     StopRecycledItemCapturesRefresh();
-    g_virtualizingRepeaters.clear();
-    g_recycledElements.clear();
-    g_elementMatchedItems.clear();
+    ResetThreadLocal(g_virtualizingRepeaters);
+    ResetThreadLocal(g_recycledElements);
+    ResetThreadLocal(g_elementMatchedItems);
 
     // Detached from the global before being walked: restoring a value runs
     // arbitrary XAML work, and whatever it re-enters looks its elements up in
@@ -12417,17 +12425,17 @@ void UninitializeForCurrentThread() {
     // Before g_elementTreeNodes, since the states hold the last strong refs to
     // the spine nodes.
     elementsCustomizationState.clear();
-    g_elementTreeNodes.clear();
+    ResetThreadLocal(g_elementTreeNodes);
     g_elementTreeNodesReapThreshold = 64;
-    g_pendingStyleVariablePropagations.clear();
+    ResetThreadLocal(g_pendingStyleVariablePropagations);
     g_styleVariableState = {};
 
     // After everything keyed by an id. g_lastElementId keeps counting, since an
     // id must never name two elements.
-    g_elementIds.clear();
+    ResetThreadLocal(g_elementIds);
     g_elementIdsReapThreshold = 64;
 
-    g_elementsCustomizationRules.clear();
+    ResetThreadLocal(g_elementsCustomizationRules);
 
     UninitializeResourceVariables();
 
