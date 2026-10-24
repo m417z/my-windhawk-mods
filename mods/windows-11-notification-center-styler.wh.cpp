@@ -3132,10 +3132,10 @@ const Theme g_themeBorderless = {{
     ThemeTargetStyles{L"ActionCenter.FocusSessionControl", {
         L"Visibility=Collapsed"}},
     ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Grid", {
-        L"Shadow:=",
+        L"Shadow:=$Shadows",
         L"BorderThickness=0"}},
     ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Border", {
-        L"Shadow:=",
+        L"Shadow:=$Shadows",
         L"BorderThickness=0"}},
     ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Grid#NotificationCenterGrid", {
         L"Height=Auto",
@@ -3149,13 +3149,11 @@ const Theme g_themeBorderless = {{
     ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Grid#DoNotDisturbSubtext > Windows.UI.Xaml.Controls.Button", {
         L"Visibility=Collapsed"}},
     ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Button#ClearAll > Windows.UI.Xaml.Controls.ContentPresenter#ContentPresenter > Windows.UI.Xaml.Controls.TextBlock", {
-        L"Text=\uE653",
+        L"Text=\uE711",
         L"FontFamily=Segoe Fluent Icons",
-        L"FontSize=8"}},
+        L"FontSize=12"}},
     ThemeTargetStyles{L"Windows.UI.Xaml.Controls.TextBlock", {
         L"FontWeight=Normal"}},
-    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Grid#CalendarSection", {
-        L"Height=300"}},
     ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Button#PreviousButton", {
         L"Visibility=Collapsed"}},
     ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Button#NextButton", {
@@ -3173,10 +3171,12 @@ const Theme g_themeBorderless = {{
         L"Margin=0,10,0,160"}},
     ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Button#ClearAll", {
         L"Width=24",
-        L"Height=24"}},
+        L"Height=24",
+        L"Padding=0"}},
     ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Primitives.ToggleButton#DoNotDisturbButton", {
         L"Height=24",
-        L"Width=24"}},
+        L"Width=24",
+        L"Padding=0"}},
     ThemeTargetStyles{L"Microsoft.UI.Xaml.Controls.AnimatedIcon#DoNotDisturbButtonIcon", {
         L"Height=12",
         L"Width=12"}},
@@ -3206,6 +3206,12 @@ const Theme g_themeBorderless = {{
         L"Opacity=0.7"}},
     ThemeTargetStyles{L"ActionCenter.ToastCenterView", {
         L"MaxWidth=348"}},
+    ThemeTargetStyles{L"ScrollViewer#ShareTargets > Border > Grid", {
+        L"Background:="}},
+    ThemeTargetStyles{L"ControlCenter.FrameWithContentChanged#L2Frame", {
+        L"Background:="}},
+}, {
+    L"Shadows=",
 }};
 
 const Theme g_themeDensy = {{
