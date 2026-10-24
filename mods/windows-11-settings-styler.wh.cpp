@@ -65,6 +65,12 @@ WindowGlass](https://github.com/ramensoftware/windows-11-settings-styling-guide/
 \
 OLED](https://github.com/ramensoftware/windows-11-settings-styling-guide/blob/main/Themes/OLED/README.md)
 
+[![Translucent
+Seamless](https://raw.githubusercontent.com/ramensoftware/windows-11-settings-styling-guide/refs/heads/main/Themes/Translucent%20Seamless/screenshot-small.png)
+\
+Translucent
+Seamless](https://github.com/ramensoftware/windows-11-settings-styling-guide/blob/main/Themes/Translucent%20Seamless/README.md)
+
 More themes can be found in the **Themes** section of [The Windows 11 Settings
 styling
 guide](https://github.com/ramensoftware/windows-11-settings-styling-guide/blob/main/README.md#themes)
@@ -104,6 +110,7 @@ from the **TranslucentTB** project.
   - WindowGlass: WindowGlass
   - OLED_variant_ModrinthGreen: OLED (Modrinth Green)
   - OLED_variant_SystemAscent: OLED (System Ascent)
+  - Translucent_Seamless: Translucent Seamless
 - styleConstants: [""]
   $name: Style constants
   $description: >-
@@ -2580,6 +2587,144 @@ const Theme g_themeOLED_variant_SystemAscent = {{
         L"BorderThickness=0"}},
     ThemeTargetStyles{L"ScrollViewer > ScrollContentPresenter > Border > Frame > ContentPresenter > SystemSettings.View.RootPage > Grid#RootPageGrid > Microsoft.UI.Xaml.Controls.NavigationView#PermanentNavigationView > Grid#RootGrid > Grid > SplitView#RootSplitView > Grid > Grid#PaneRoot", {
         L"Background=Transparent"}},
+}};
+
+const Theme g_themeTranslucent_Seamless = {{
+    ThemeTargetStyles{L"SystemSettings.View.SettingsExpander > Grid > SystemSettings.View.ExpanderToggleButton#ContainerButton > ContentPresenter#ContentPresenter", {
+        L"CornerRadius:=12,12,12,12"}},
+    ThemeTargetStyles{L"SystemSettings.View.SpacingStackPanel > ContentPresenter > SystemSettings.View.EntityItem > Grid", {
+        L"CornerRadius:=12"}},
+    ThemeTargetStyles{L"SystemSettings.View.EntityItem#BluetoothRadioToggleEntityItem > Grid", {
+        L"CornerRadius:=12"}},
+    ThemeTargetStyles{L"SystemSettings.View.TwoSegmentsHeroUserControl#DefaultOneSegmentHeroUserControl > Grid#LayoutRoot > Grid#LeftLayout > ContentPresenter > ItemsControl > ItemsPresenter > StackPanel > ContentPresenter > StackPanel > Button > ContentPresenter#ContentPresenter", {
+        L"CornerRadius:=12",
+        L"Width=250"}},
+    ThemeTargetStyles{L"SystemSettings.View.SettingsExpander > Grid > ContentPresenter#RevealedContent", {
+        L"CornerRadius:=12"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Primitives.ListViewItemPresenter > SystemSettings.View.EntityItem > Grid", {
+        L"CornerRadius:=$InRadius"}},
+    ThemeTargetStyles{L"SystemSettings.View.SettingsListViewItem > Windows.UI.Xaml.Controls.Primitives.ListViewItemPresenter > Border", {
+        L"CornerRadius:=$InRadius"}},
+    ThemeTargetStyles{L"SystemSettings.View.ButtonEntityItem > Button#ContainerButton > ContentPresenter#ContentPresenter", {
+        L"CornerRadius:=$InRadius"}},
+    ThemeTargetStyles{L"Grid#PaneRoot", {
+        L"Background:=<AcrylicBrush BackgroundSource=\"HostBackdrop\" FallbackColor=\"#00000000\" TintColor=\"#101010\" TintLuminosityOpacity=\"0.45\" TintOpacity=\"0.4\"/>",
+        L"BorderThickness=0",
+        L"BorderBrush:=<SolidColorBrush Color=\"#00000000\"/>"}},
+    ThemeTargetStyles{L"SplitView#RootSplitView", {
+        L"PaneBorderThickness=0",
+        L"BorderThickness=0",
+        L"PaneBorderBrush:=<SolidColorBrush Color=\"#00000000\"/>",
+        L"BorderBrush:=<SolidColorBrush Color=\"#00000000\"/>"}},
+    ThemeTargetStyles{L"SplitView#RootSplitView > Grid > Rectangle", {
+        L"Visibility=Collapsed",
+        L"Width=0"}},
+    ThemeTargetStyles{L"SplitView#RootSplitView > Grid > Border#PaneBorder", {
+        L"BorderThickness=0",
+        L"Visibility=Collapsed"}},
+    ThemeTargetStyles{L"SplitView#RootSplitView > Grid > Grid#ContentRoot", {
+        L"Margin=-2,0,0,0",
+        L"Background:=<SolidColorBrush Color=\"#00000000\"/>"}},
+    ThemeTargetStyles{L"SplitView#RootSplitView > Grid > Grid#ContentRoot > Border", {
+        L"BorderThickness=0",
+        L"BorderBrush:=<SolidColorBrush Color=\"#00000000\"/>"}},
+    ThemeTargetStyles{L"SplitView#RootSplitView > Grid > Grid#ContentRoot > Border > Grid#ContentGrid", {
+        L"Background:=<AcrylicBrush BackgroundSource=\"HostBackdrop\" FallbackColor=\"#00000000\" TintColor=\"#101010\" TintLuminosityOpacity=\"0.45\" TintOpacity=\"0.4\"/>",
+        L"CornerRadius=0",
+        L"BorderThickness=0",
+        L"BorderBrush:=<SolidColorBrush Color=\"#00000000\"/>"}},
+    ThemeTargetStyles{L"Grid#ContentRoot", {
+        L"Background:=<SolidColorBrush Color=\"#00000000\"/>"}},
+    ThemeTargetStyles{L"Grid#ContentRoot > Border > Grid#ContentGrid > ContentControl#HeaderContent", {
+        L"Background:=<SolidColorBrush Color=\"#00000000\"/>"}},
+    ThemeTargetStyles{L"Frame#PermanentNavRootFrame", {
+        L"Background:=<SolidColorBrush Color=\"#00000000\"/>"}},
+    ThemeTargetStyles{L"SystemSettings.View.RootPage > Grid#RootPageGrid", {
+        L"Background:=<SolidColorBrush Color=\"#00000000\"/>"}},
+    ThemeTargetStyles{L"Microsoft.UI.Xaml.Controls.NavigationView#PermanentNavigationView > Grid#RootGrid", {
+        L"Background:=<SolidColorBrush Color=\"#00000000\"/>"}},
+    ThemeTargetStyles{L"Microsoft.UI.Xaml.Controls.NavigationView#PermanentNavigationView > Grid#RootGrid > Grid", {
+        L"Background:=<SolidColorBrush Color=\"#00000000\"/>"}},
+    ThemeTargetStyles{L"Grid#TitleBar", {
+        L"Background:=<AcrylicBrush BackgroundSource=\"HostBackdrop\" FallbackColor=\"#00000000\" TintColor=\"#101010\" TintLuminosityOpacity=\"0.45\" TintOpacity=\"0.4\"/>"}},
+    ThemeTargetStyles{L"Border#TitleBarBackground", {
+        L"Background:=<AcrylicBrush BackgroundSource=\"HostBackdrop\" FallbackColor=\"#00000000\" TintColor=\"#101010\" TintLuminosityOpacity=\"0.45\" TintOpacity=\"0.4\"/>"}},
+    ThemeTargetStyles{L"StackPanel#SettingsCommandSearchBoxBackground", {
+        L"CornerRadius=$InRadius",
+        L"MinHeight=32"}},
+    ThemeTargetStyles{L"TextBox#CommandSearchTextBox", {
+        L"CornerRadius=$InRadius",
+        L"VerticalContentAlignment=Center",
+        L"Background:=<AcrylicBrush BackgroundSource=\"HostBackdrop\" FallbackColor=\"#00000000\" TintColor=\"#252525\" TintLuminosityOpacity=\"0.6\" TintOpacity=\"0.5\"/>",
+        L"BorderBrush:=<SolidColorBrush Color=\"#22FFFFFF\"/>",
+        L"BorderThickness=1"}},
+    ThemeTargetStyles{L"TextBox#CommandSearchTextBox > Grid > ScrollViewer", {
+        L"VerticalAlignment=Center"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Shapes.Rectangle#ProgressBarIndicator", {
+        L"RadiusX=4",
+        L"RadiusY=4",
+        L"Height=6",
+        L"Fill:=<SolidColorBrush Color=\"{ThemeResource Accent}\"/>"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Border#DeterminateRoot", {
+        L"CornerRadius=3",
+        L"Height=6"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.ProgressBar", {
+        L"Height=6"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.StackPanel#TopBreakdownBar > Windows.UI.Xaml.Controls.ProgressBar > Windows.UI.Xaml.Controls.Grid > Windows.UI.Xaml.Controls.Border#DeterminateRoot > Windows.UI.Xaml.Shapes.Rectangle#ProgressBarIndicator", {
+        L"Height=16"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.StackPanel#TopBreakdownBar > Windows.UI.Xaml.Controls.ProgressBar > Windows.UI.Xaml.Controls.Grid > Windows.UI.Xaml.Controls.Border#DeterminateRoot", {
+        L"Height=16"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.StackPanel#TopBreakdownBar > Windows.UI.Xaml.Controls.ProgressBar", {
+        L"Height=16"}},
+    ThemeTargetStyles{L"SystemSettings.View.SettingsExpander > Grid", {
+        L"BorderThickness=0",
+        L"BorderBrush:=<SolidColorBrush Color=\"#00000000\"/>"}},
+    ThemeTargetStyles{L"SystemSettings.View.SettingsExpander", {
+        L"BorderThickness=0",
+        L"BorderBrush:=<SolidColorBrush Color=\"#00000000\"/>"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Primitives.ListViewItemPresenter", {
+        L"BorderThickness=0",
+        L"BorderBrush:=<SolidColorBrush Color=\"#00000000\"/>"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Primitives.ListViewItemPresenter > Border", {
+        L"BorderThickness=0",
+        L"BorderBrush:=<SolidColorBrush Color=\"#00000000\"/>"}},
+}, {
+    L"OutRadius=8",
+    L"InRadius=10",
+    L"BgBorder=<SolidColorBrush Color=\"#00000000\"/>",
+}, {
+    L"Overlay@Light=#55FFFFFF",
+    L"Overlay@Dark=#09FFFFFF",
+    L"Border@Light=#00000000",
+    L"Border@Dark=#00000000",
+    L"Accent@Dark={ThemeResource SystemAccentColorLight2}",
+    L"Accent@Light={ThemeResource SystemAccentColorDark1}",
+    L"WindowCaptionBackground@Dark=#00000000",
+    L"WindowCaptionBackground@Light=#00000000",
+    L"WindowCaptionBackgroundDisabled@Dark=#00000000",
+    L"WindowCaptionBackgroundDisabled@Light=#00000000",
+    L"SolidBackgroundFillColorBase@Dark=#00000000",
+    L"SolidBackgroundFillColorBase@Light=#00000000",
+    L"SolidBackgroundFillColorSecondary@Dark=#00000000",
+    L"SolidBackgroundFillColorSecondary@Light=#00000000",
+    L"LayerFillColorDefault@Dark=#00000000",
+    L"LayerFillColorDefault@Light=#00000000",
+    L"ApplicationPageBackgroundThemeBrush@Dark=#00000000",
+    L"ApplicationPageBackgroundThemeBrush@Light=#00000000",
+    L"CardStrokeColorDefault@Dark=#00000000",
+    L"CardStrokeColorDefault@Light=#00000000",
+    L"ControlStrokeColorDefault@Dark=#00000000",
+    L"ControlStrokeColorDefault@Light=#00000000",
+    L"SurfaceStrokeColorDefault@Dark=#00000000",
+    L"SurfaceStrokeColorDefault@Light=#00000000",
+    L"NavigationViewItemSeparatorForeground@Dark=#00000000",
+    L"NavigationViewItemSeparatorForeground@Light=#00000000",
+    L"SystemControlForegroundBaseLowBrush@Dark=#00000000",
+    L"SystemControlForegroundBaseLowBrush@Light=#00000000",
+    L"SplitViewPaneBorderBrush@Dark=#00000000",
+    L"SplitViewPaneBorderBrush@Light=#00000000",
+    L"NavigationViewBorderBrush@Dark=#00000000",
+    L"NavigationViewBorderBrush@Light=#00000000",
 }};
 
 // clang-format on
@@ -10894,6 +11039,8 @@ void ProcessAllStylesFromSettings() {
         theme = &g_themeOLED_variant_ModrinthGreen;
     } else if (wcscmp(themeName, L"OLED_variant_SystemAscent") == 0) {
         theme = &g_themeOLED_variant_SystemAscent;
+    } else if (wcscmp(themeName, L"Translucent_Seamless") == 0) {
+        theme = &g_themeTranslucent_Seamless;
     }
     Wh_FreeStringSetting(themeName);
 
