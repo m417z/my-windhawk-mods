@@ -97,6 +97,12 @@ Glass](https://raw.githubusercontent.com/ramensoftware/windows-11-notification-c
 OS26 Tahoe
 Glass](https://github.com/ramensoftware/windows-11-notification-center-styling-guide/blob/main/Themes/OS26%20Tahoe%20Glass/README.md)
 
+[![Command
+Center](https://raw.githubusercontent.com/ramensoftware/windows-11-notification-center-styling-guide/main/Themes/Command%20Center/screenshot-small.png)
+\
+Command
+Center](https://github.com/ramensoftware/windows-11-notification-center-styling-guide/blob/main/Themes/Command%20Center/README.md)
+
 More themes can be found in the **Themes** section of [The Windows 11
 notification center styling
 guide](https://github.com/ramensoftware/windows-11-notification-center-styling-guide/blob/main/README.md#themes).
@@ -385,6 +391,7 @@ from the **TranslucentTB** project.
   - Densy: Densy
   - FrostyGlass: FrostyGlass
   - OS26 Tahoe Glass: OS26 Tahoe Glass
+  - Command Center: Command Center
 - styleConstants: [""]
   $name: Style constants
   $description: >-
@@ -3892,6 +3899,355 @@ const Theme g_themeOS26_Tahoe_Glass = {{
         L"CornerRadius=25",
         L"BorderThickness=2",
         L"Background:=<WindhawkBlur BlurAmount=\"16\" TintColor=\"#761E1E1E\"/>"}},
+}};
+
+const Theme g_themeCommand_Center = {{
+    ThemeTargetStyles{L"Grid#NotificationCenterGrid", {
+        L"Background:=$Background",
+        L"BorderBrush:=$BorderBrush",
+        L"BorderThickness=$BorderThickness",
+        L"CornerRadius=$PanelRadius",
+        L"Shadow:="}},
+    ThemeTargetStyles{L"Grid#CalendarCenterGrid", {
+        L"Background:=$Background",
+        L"BorderBrush:=$BorderBrush",
+        L"BorderThickness=$BorderThickness",
+        L"CornerRadius=$PanelRadius",
+        L"Shadow:=",
+        L"Margin=0,6,0,6",
+        L"MinHeight=40"}},
+    ThemeTargetStyles{L"ScrollViewer#CalendarControlScrollViewer", {
+        L"Background:=$ElementBackground",
+        L"CornerRadius=$CardRadius",
+        L"Margin=-10,11,-10,-14",
+        L"Shadow:="}},
+    ThemeTargetStyles{L"Border#CalendarHeaderMinimizedOverlay", {
+        L"Background:=$ElementBackground",
+        L"CornerRadius=$CardRadius",
+        L"Shadow:=",
+        L"Margin=-10,-6,-10,-8",
+        L"Height=45"}},
+    ThemeTargetStyles{L"ActionCenter.FocusSessionControl#FocusSessionControl > Grid#FocusGrid", {
+        L"Background:=$ElementBackground",
+        L"CornerRadius=$CardRadius",
+        L"Margin=6,7,6,6",
+        L"Shadow:="}},
+    ThemeTargetStyles{L"MenuFlyoutPresenter", {
+        L"Background:=$Background",
+        L"BorderBrush:=$BorderBrush",
+        L"BorderThickness=$BorderThickness",
+        L"CornerRadius=$ChipRadius",
+        L"Padding=1,2,1,2",
+        L"Shadow:="}},
+    ThemeTargetStyles{L"Border#JumpListRestyledAcrylic", {
+        L"Background:=$Background",
+        L"BorderBrush:=$BorderBrush",
+        L"BorderThickness=$BorderThickness",
+        L"CornerRadius=$ChipRadius",
+        L"Margin=-2,-2,-2,-2",
+        L"Shadow:="}},
+    ThemeTargetStyles{L"Grid#ControlCenterRegion", {
+        L"Background:=$Background",
+        L"BorderBrush:=$BorderBrush",
+        L"BorderThickness=$BorderThickness",
+        L"CornerRadius=$PanelRadius",
+        L"Shadow:=",
+        L"Margin=0,0,0,-6"}},
+    ThemeTargetStyles{L"ContentPresenter#PageContent", {
+        L"Background:=<SolidColorBrush Color=\"Transparent\"/>",
+        L"Shadow:="}},
+    ThemeTargetStyles{L"ContentPresenter#PageContent > Grid > Border", {
+        L"Background:=$ElementBackground",
+        L"CornerRadius=$CardRadius",
+        L"Margin=8,0,8,2",
+        L"Shadow:="}},
+    ThemeTargetStyles{L"QuickActions.ControlCenter.AccessibleWindow#PageWindow > ContentPresenter > Grid#FullScreenPageRoot", {
+        L"Background:=<SolidColorBrush Color=\"Transparent\"/>",
+        L"Shadow:="}},
+    ThemeTargetStyles{L"QuickActions.ControlCenter.AccessibleWindow#PageWindow > ContentPresenter > Grid#FullScreenPageRoot > ContentPresenter#PageHeader", {
+        L"Background:=$ElementBackground",
+        L"CornerRadius=$CardRadius",
+        L"Margin=7,7,7,7",
+        L"Shadow:="}},
+    ThemeTargetStyles{L"ScrollViewer#ListContent", {
+        L"Background:=$ElementBackground",
+        L"CornerRadius=$CardRadius",
+        L"Margin=8,0,8,0",
+        L"Shadow:="}},
+    ThemeTargetStyles{L"ActionCenter.FlexibleToastView#FlexibleNormalToastView", {
+        L"Background:=<SolidColorBrush Color=\"Transparent\"/>",
+        L"Shadow:="}},
+    ThemeTargetStyles{L"Border#ToastBackgroundBorder, Border#ToastBackgroundBorder2", {
+        L"Background:=$Background",
+        L"BorderBrush:=$BorderBrush",
+        L"BorderThickness=$BorderThickness",
+        L"CornerRadius=$CardRadius",
+        L"Shadow:="}},
+    ThemeTargetStyles{L"JumpViewUI.SystemItemListViewItem > Grid#LayoutRoot > Border#BackgroundBorder", {
+        L"Background:=$ElementBackground",
+        L"CornerRadius=$ChipRadius"}},
+    ThemeTargetStyles{L"JumpViewUI.JumpListListViewItem > Grid#LayoutRoot > Border#BackgroundBorder", {
+        L"CornerRadius=$ChipRadius"}},
+    ThemeTargetStyles{L"ActionCenter.FlexibleItemView", {
+        L"CornerRadius=$CardRadius",
+        L"Shadow:="}},
+    ThemeTargetStyles{L"QuickActions.AccessibleToggleButton#ToggleButton, ControlCenter.PaginatedToggleButton#ToggleButton", {
+        L"CornerRadius=$CardRadius",
+        L"BorderThickness=$BorderThickness",
+        L"BorderBrush:=$BorderBrush",
+        L"BackgroundSizing=InnerBorderEdge",
+        L"Background:=Transparent"}},
+    ThemeTargetStyles{L"QuickActions.AccessibleToggleButton#SplitL2Button, ControlCenter.PaginatedToggleButton#SplitL2Button, Button#SplitL2Button", {
+        L"CornerRadius=$CardRadius",
+        L"Margin=4,0,-4,0",
+        L"BorderThickness=$BorderThickness",
+        L"BorderBrush:=$BorderBrush",
+        L"BackgroundSizing=InnerBorderEdge",
+        L"Background:=Transparent"}},
+    ThemeTargetStyles{L"ControlCenter.PaginatedToggleButton > ContentPresenter#ContentPresenter@CommonStates, ControlCenter.PaginatedToggleButton > ContentPresenter@CommonStates, QuickActions.AccessibleToggleButton > ContentPresenter#ContentPresenter@CommonStates, QuickActions.AccessibleToggleButton > ContentPresenter@CommonStates, Button#SplitL2Button > ContentPresenter#ContentPresenter@CommonStates, Button#SplitL2Button > ContentPresenter@CommonStates", {
+        L"CornerRadius=$CardRadius",
+        L"BorderThickness=$BorderThickness",
+        L"BorderBrush:=$BorderBrush",
+        L"BackgroundSizing=InnerBorderEdge",
+        L"Background@Normal:=$ElementBackground",
+        L"Background@PointerOver:=$OverlayColor2",
+        L"Background@Pressed:=$OverlayColor",
+        L"Background@Checked:=$AccentColor",
+        L"Background@CheckedPointerOver:=$AccentColor",
+        L"Background@CheckedPressed:=$OverlayColor",
+        L"Background@Disabled:=$ElementBackground",
+        L"Background@CheckedDisabled:=$ElementBackground"}},
+    ThemeTargetStyles{L"QuickActions.AccessibleToggleButton#ToggleButton > ContentPresenter, ControlCenter.PaginatedToggleButton#ToggleButton > ContentPresenter, QuickActions.AccessibleToggleButton#SplitL2Button > ContentPresenter, ControlCenter.PaginatedToggleButton#SplitL2Button > ContentPresenter, Button#SplitL2Button > ContentPresenter", {
+        L"CornerRadius=$CardRadius",
+        L"BorderThickness=$BorderThickness",
+        L"BorderBrush:=$BorderBrush",
+        L"BackgroundSizing=InnerBorderEdge"}},
+    ThemeTargetStyles{L"Grid#NotificationCenterTopBanner", {
+        L"Background:=$ElementBackground",
+        L"CornerRadius=$CardRadius",
+        L"Margin=6"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Grid#L1Grid > Border", {
+        L"Background:=<SolidColorBrush Color=\"Transparent\"/>"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Button#FooterButton[AutomationProperties.Name = Edit quick settings]", {
+        L"Margin=0,0,8,0",
+        L"CornerRadius=$ChipRadius",
+        L"BorderThickness=$BorderThickness",
+        L"BorderBrush:=$BorderBrush"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Button[AutomationProperties.AutomationId = Microsoft.QuickAction.Battery]", {
+        L"Margin=2,0,0,0",
+        L"CornerRadius=$ChipRadius",
+        L"BorderThickness=$BorderThickness",
+        L"BorderBrush:=$BorderBrush"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Button#FooterButton[AutomationProperties.Name = All settings]", {
+        L"Margin=0,0,-1,0",
+        L"CornerRadius=$PanelRadius",
+        L"BorderThickness=$BorderThickness",
+        L"BorderBrush:=$BorderBrush"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Button[AutomationProperties.AutomationId = Microsoft.QuickAction.Volume]", {
+        L"CornerRadius=$CardRadius",
+        L"BorderThickness=$BorderThickness",
+        L"BorderBrush:=$BorderBrush"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Button#VolumeL2Button[AutomationProperties.Name = Select a sound output]", {
+        L"CornerRadius=$CardRadius",
+        L"BorderThickness=$BorderThickness",
+        L"BorderBrush:=$BorderBrush"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Shapes.Rectangle#HorizontalTrackRect", {
+        L"Height=10",
+        L"Fill:=$OverlayColor",
+        L"RadiusY=3",
+        L"RadiusX=3"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Shapes.Rectangle#HorizontalDecreaseRect", {
+        L"Height=10",
+        L"RadiusY=3",
+        L"RadiusX=3",
+        L"Margin=0",
+        L"Fill:=$AccentColor"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Primitives.Thumb#HorizontalThumb", {
+        L"Visibility=1"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Grid#MediaTransportControlsRegion", {
+        L"Height=Auto",
+        L"CornerRadius=$PanelRadius",
+        L"BorderBrush:=$BorderBrush",
+        L"BorderThickness=$BorderThickness",
+        L"Background:=$Background",
+        L"Shadow:=",
+        L"Padding=0,0,0,12",
+        L"Margin=0,0,0,12"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Grid#ThumbnailImage", {
+        L"Width=$thumbnailImageSize",
+        L"Height=$thumbnailImageSize",
+        L"HorizontalAlignment=Right",
+        L"VerticalAlignment=Center",
+        L"Grid.Column=1",
+        L"Margin=0,0,8,0",
+        L"CornerRadius=$CardRadius"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.StackPanel#PrimaryAndSecondaryTextContainer", {
+        L"VerticalAlignment=Center",
+        L"Margin=0,0,0,0",
+        L"Grid.Column=0"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.ListView#MediaButtonsListView", {
+        L"VerticalAlignment=Center",
+        L"Height=40",
+        L"Margin=0,4,0,0"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Primitives.RepeatButton#PreviousButton > Windows.UI.Xaml.Controls.ContentPresenter#ContentPresenter@CommonStates", {
+        L"Background@Normal:=$OverlayColor2",
+        L"Background@PointerOver:=$AccentColor",
+        L"Background@Pressed:=$OverlayColor",
+        L"BorderThickness=$BorderThickness",
+        L"BorderBrush:=$BorderBrush",
+        L"Width=36",
+        L"Height=28",
+        L"CornerRadius=$ChipRadius",
+        L"Margin=4,0,4,0"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Button#PlayPauseButton > Windows.UI.Xaml.Controls.ContentPresenter#ContentPresenter@CommonStates", {
+        L"Background@Normal:=$OverlayColor2",
+        L"Background@PointerOver:=$AccentColor",
+        L"Background@Pressed:=$OverlayColor",
+        L"BorderThickness=$BorderThickness",
+        L"BorderBrush:=$BorderBrush",
+        L"Width=36",
+        L"Height=36",
+        L"CornerRadius=$ChipRadius",
+        L"Margin=4,0,4,0"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Primitives.RepeatButton#NextButton > Windows.UI.Xaml.Controls.ContentPresenter#ContentPresenter@CommonStates", {
+        L"Background@Normal:=$OverlayColor2",
+        L"Background@PointerOver:=$AccentColor",
+        L"Background@Pressed:=$OverlayColor",
+        L"BorderThickness=$BorderThickness",
+        L"BorderBrush:=$BorderBrush",
+        L"Width=36",
+        L"Height=28",
+        L"CornerRadius=$ChipRadius",
+        L"Margin=4,0,4,0"}},
+    ThemeTargetStyles{L"Grid#MediaTransportControlsRoot", {
+        L"Background:=<SolidColorBrush Color=\"Transparent\"/>"}},
+    ThemeTargetStyles{L"Grid#ToastPeekRegion", {
+        L"Background=",
+        L"RenderTransform:=<TranslateTransform Y=\"-495\" X=\"395\" />",
+        L"Grid.Column=0",
+        L"Grid.Row=2"}},
+    ThemeTargetStyles{L"CalendarViewDayItem", {
+        L"CornerRadius=4",
+        L"BorderThickness=$BorderThickness",
+        L"BorderBrush:=$BorderBrush",
+        L"Background:=$ElementBackground"}},
+    ThemeTargetStyles{L"CalendarViewDayItem > Border", {
+        L"CornerRadius=4",
+        L"Margin=1,2,1,2",
+        L"BorderThickness=$BorderThickness",
+        L"BorderBrush:=$BorderBrush"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Primitives.CalendarViewItem", {
+        L"CornerRadius=4",
+        L"BorderThickness=$BorderThickness",
+        L"BorderBrush:=$BorderBrush",
+        L"Background:=$ElementBackground"}},
+    ThemeTargetStyles{L"Control > Border", {
+        L"CornerRadius=4",
+        L"BorderThickness=$BorderThickness",
+        L"BorderBrush:=$BorderBrush"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.ListViewHeaderItem", {
+        L"Margin=5,6,5,2",
+        L"CornerRadius=$CardRadius",
+        L"Height=35"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Button#SettingsButton", {
+        L"CornerRadius=$ChipRadius",
+        L"BorderThickness=$BorderThickness",
+        L"BorderBrush:=$BorderBrush"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Button#DismissButton", {
+        L"CornerRadius=$ChipRadius",
+        L"BorderThickness=$BorderThickness",
+        L"BorderBrush:=$BorderBrush"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.StackPanel#CalendarHeader", {
+        L"Margin=6,0,0,0"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.ScrollContentPresenter#ScrollContentPresenter", {
+        L"Margin=1,2,1,2"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Grid#WeekDayNames", {
+        L"Background:=<SolidColorBrush Color=\"{ThemeResource SystemAccentColorLight1}\" Opacity=\"0.4\" />",
+        L"CornerRadius=4",
+        L"Margin=4,0,4,0",
+        L"Padding=0,-5,0,-3"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.ListViewItem", {
+        L"CornerRadius=$ChipRadius"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Grid#RootGrid > Windows.UI.Xaml.Controls.ContentPresenter#ContentPresenter", {
+        L"Background:=$OverlayColor2",
+        L"BorderThickness=0",
+        L"CornerRadius=$ChipRadius"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Grid > Windows.UI.Xaml.Controls.Border#ItemOpaquePlating", {
+        L"Background:=$OverlayColor2",
+        L"BorderThickness=0",
+        L"CornerRadius=$ChipRadius"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Grid#StandardHeroContainer", {
+        L"Margin=12,0,12,0",
+        L"CornerRadius=0",
+        L"Height=150"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Primitives.ScrollBar#VerticalScrollBar", {
+        L"Visibility=1"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Grid#SliderContainer", {
+        L"Margin=0,-2,0,0"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Button#BackButton", {
+        L"CornerRadius=$ChipRadius",
+        L"BorderThickness=$BorderThickness",
+        L"BorderBrush:=$BorderBrush"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Shapes.Rectangle#OuterBorder", {
+        L"RadiusX=6",
+        L"RadiusY=6",
+        L"Height=18"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Shapes.Rectangle#SwitchKnobOff", {
+        L"RadiusY=3",
+        L"RadiusX=3"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Border#SwitchKnobOn", {
+        L"CornerRadius=3"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Shapes.Rectangle#SwitchKnobBounds", {
+        L"RadiusX=6",
+        L"RadiusY=6",
+        L"Height=18"}},
+    ThemeTargetStyles{L"ActionCenter.NotificationListViewItem", {
+        L"Margin=5,2,5,3",
+        L"CornerRadius=$CardRadius",
+        L"BorderThickness=$BorderThickness"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Grid[AutomationProperties.LocalizedLandmarkType = Footer]", {
+        L"BorderThickness=0"}},
+    ThemeTargetStyles{L"NetworkUX.View.SettingsListViewItem > Windows.UI.Xaml.Controls.Primitives.ListViewItemPresenter#Root", {
+        L"CornerRadius=$CardRadius"}},
+    ThemeTargetStyles{L"Button#ClearAll", {
+        L"AccessKey=x",
+        L"CornerRadius=$ChipRadius",
+        L"BorderThickness=$BorderThickness",
+        L"BorderBrush:=$BorderBrush"}},
+    ThemeTargetStyles{L"Button#ExpandCollapseButton", {
+        L"AccessKey=e",
+        L"CornerRadius=$ChipRadius",
+        L"BorderThickness=$BorderThickness",
+        L"BorderBrush:=$BorderBrush"}},
+    ThemeTargetStyles{L"Button > Grid@CommonStates > Border#BackgroundBorder", {
+        L"BorderThickness=$BorderThickness",
+        L"BorderBrush@PointerOver:=$BorderBrush",
+        L"BorderBrush@Pressed:=$BorderBrush",
+        L"CornerRadius=$ChipRadius",
+        L"BackgroundSizing=InnerBorderEdge"}},
+    ThemeTargetStyles{L"ListViewItem > Grid@CommonStates > Border#BackgroundBorder, ListViewItem > Grid@CommonStates > Border#BorderBackground", {
+        L"BorderThickness=$BorderThickness",
+        L"BorderBrush@PointerOver:=$BorderBrush",
+        L"BorderBrush@Pressed:=$BorderBrush",
+        L"CornerRadius=$ChipRadius",
+        L"BackgroundSizing=InnerBorderEdge"}},
+}, {
+    L"Translucent=<WindhawkBlur BlurAmount=\"15\" TintColor=\"#10808080\"/>",
+    L"Glass=<WindhawkBlur BlurAmount=\"5\" TintColor=\"{ThemeResource SystemChromeMediumColor}\" TintOpacity=\"0.7\" />",
+    L"Frosted=<WindhawkBlur BlurAmount=\"20\" TintColor=\"{ThemeResource SystemChromeMediumColor}\" TintOpacity=\"0.7\" />",
+    L"Acrylic=<WindhawkBlur BlurAmount=\"30\" TintColor=\"{ThemeResource SystemChromeMediumColor}\" TintOpacity=\"0.8\" />",
+    L"Background=$Frosted",
+    L"BorderBrush=<LinearGradientBrush StartPoint=\"0,0\" EndPoint=\"0,1\"><GradientStop Color=\"#60808080\" Offset=\"0.0\" /><GradientStop Color=\"#50404040\" Offset=\"0.25\" /><GradientStop Color=\"#40808080\" Offset=\"1\" /></LinearGradientBrush>",
+    L"BorderBrush2=<WindhawkBlur BlurAmount=\"10\" TintColor=\"#909090\" TintOpacity=\"0.3\"/>",
+    L"OverlayColor=<AcrylicBrush TintColor=\"{ThemeResource SystemAltLowColor}\" TintOpacity=\"1\" TintLuminosityOpacity=\"0.8\" FallbackColor=\"{ThemeResource CardStrokeColorDefaultSolid}\" />",
+    L"OverlayColor2=<AcrylicBrush TintColor=\"{ThemeResource SystemAltLowColor}\" TintOpacity=\"1\" TintLuminosityOpacity=\"0.5\" FallbackColor=\"{ThemeResource CardStrokeColorDefaultSolid}\" />",
+    L"AccentColor=<AcrylicBrush TintColor=\"{ThemeResource SystemAccentColor}\" TintOpacity=\"1\" TintLuminosityOpacity=\"0.5\" FallbackColor=\"{ThemeResource CardStrokeColorDefaultSolid}\" />",
+    L"ElementBackground=<SolidColorBrush Color=\"{ThemeResource SystemAltLowColor}\" Opacity=\"0.25\" />",
+    L"BorderThickness=0.3,1,0.3,1",
+    L"PanelRadius=13",
+    L"CardRadius=10",
+    L"ChipRadius=6",
+    L"thumbnailImageSize=70",
 }};
 
 // clang-format on
@@ -12298,6 +12654,8 @@ void ProcessAllStylesFromSettings() {
         theme = &g_themeFrostyGlass;
     } else if (wcscmp(themeName, L"OS26 Tahoe Glass") == 0) {
         theme = &g_themeOS26_Tahoe_Glass;
+    } else if (wcscmp(themeName, L"Command Center") == 0) {
+        theme = &g_themeCommand_Center;
     }
     Wh_FreeStringSetting(themeName);
 
