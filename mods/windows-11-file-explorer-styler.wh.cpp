@@ -2,7 +2,7 @@
 // @id              windows-11-file-explorer-styler
 // @name            Windows 11 File Explorer Styler
 // @description     Customize the File Explorer with themes contributed by others or create your own
-// @version         1.7
+// @version         1.7.1
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
@@ -8677,10 +8677,10 @@ bool IsInRecycledRepeaterItem(FrameworkElement element) {
 }
 
 thread_local bool g_recycledItemCapturesRefreshQueued;
-thread_local winrt::Windows::System::DispatcherQueueTimer
+thread_local winrt::Microsoft::UI::Dispatching::DispatcherQueueTimer
     g_recycledItemCapturesRefreshTimer{nullptr};
-thread_local winrt::Windows::System::DispatcherQueueTimer::Tick_revoker
-    g_recycledItemCapturesRefreshTimerTickRevoker;
+thread_local winrt::Microsoft::UI::Dispatching::DispatcherQueueTimer::
+    Tick_revoker g_recycledItemCapturesRefreshTimerTickRevoker;
 
 // The captures of an element in a recycled repeater item are withdrawn, as if
 // the item was removed: the recycle pool keeps the item in the tree, out of
@@ -8763,8 +8763,8 @@ void QueueRecycledItemCapturesRefresh() {
 
     try {
         if (!g_recycledItemCapturesRefreshTimer) {
-            auto dispatcherQueue =
-                winrt::Windows::System::DispatcherQueue::GetForCurrentThread();
+            auto dispatcherQueue = winrt::Microsoft::UI::Dispatching::
+                DispatcherQueue::GetForCurrentThread();
             if (!dispatcherQueue) {
                 Wh_Log(L"No dispatcher queue, recycled item captures stay");
                 return;
@@ -8777,7 +8777,8 @@ void QueueRecycledItemCapturesRefresh() {
             g_recycledItemCapturesRefreshTimerTickRevoker =
                 g_recycledItemCapturesRefreshTimer.Tick(
                     winrt::auto_revoke,
-                    [](winrt::Windows::System::DispatcherQueueTimer const&,
+                    [](winrt::Microsoft::UI::Dispatching::
+                           DispatcherQueueTimer const&,
                        winrt::Windows::Foundation::IInspectable const&) {
                         RefreshRecycledItemCaptures();
                     });
@@ -10450,16 +10451,51 @@ BOOL WINAPI EndPaint_Hook(HWND hWnd, const PAINTSTRUCT* lpPaint) {
     return EndPaint_Original(hWnd, lpPaint);
 }
 
+// The theme parts with the content background fill in dark mode. The part ids
+// have no SDK constants.
+constexpr struct {
+    PCWSTR themeClass;
+    int partId;
+} kDarkModeBackgroundParts[] = {
+    {L"DarkMode::ItemsView", 0},
+    {L"DarkMode::ExplorerNavPane", 0},
+    {L"DarkMode::ExplorerStatusBar", 0},
+    {L"DarkMode::ReadingPane", 1},
+    {L"DarkMode::ProperTree", 2},
+};
+
+thread_local COLORREF
+    g_darkModeBackgroundColorsForThread[ARRAYSIZE(kDarkModeBackgroundParts)];
+thread_local size_t g_darkModeBackgroundColorCountForThread;
+
+void LoadDarkModeBackgroundColors() {
+    size_t count = 0;
+    for (const auto& [themeClass, partId] : kDarkModeBackgroundParts) {
+        HTHEME hTheme = OpenThemeData(nullptr, themeClass);
+        if (!hTheme) {
+            continue;
+        }
+
+        COLORREF color;
+        if (SUCCEEDED(
+                GetThemeColor(hTheme, partId, 0, TMT_FILLCOLOR, &color))) {
+            g_darkModeBackgroundColorsForThread[count++] = color;
+        }
+
+        CloseThemeData(hTheme);
+    }
+
+    g_darkModeBackgroundColorCountForThread = count;
+}
+
 // The content background is painted with the window color in light mode, and
 // with the fill colors of the theme's DarkMode classes in dark mode. Fills of
 // these colors are replaced with transparent black.
 bool IsWindowBackgroundColor(COLORREF color) {
-    switch (color) {
-        case RGB(0x13, 0x13, 0x13):  // ProperTree.
-        case RGB(0x19, 0x19, 0x19):  // ItemsView, ExplorerNavPane.
-        case RGB(0x1C, 0x1C, 0x1C):  // ExplorerStatusBar.
-        case RGB(0x20, 0x20, 0x20):  // ReadingPane.
+    for (size_t i = 0; i < g_darkModeBackgroundColorCountForThread; i++) {
+        if (g_darkModeBackgroundColorsForThread[i] == color) {
             return true;
+        }
     }
 
     return color == GetSysColor(COLOR_WINDOW);
@@ -10489,18 +10525,28 @@ bool IsWindowBackgroundBrush(HDC hdc, HBRUSH hbr) {
 using PatBlt_t = decltype(&PatBlt);
 PatBlt_t PatBlt_Original;
 
-// Sets the alpha of the area to opaque by ORing it with a pattern of opaque
-// black, which keeps the colors and the clipping of what was drawn there.
-void MakeOpaque(HDC hdc, int x, int y, int w, int h) {
-    static HBRUSH alphaBrush = [] {
-        struct {
-            BITMAPINFOHEADER header;
-            DWORD bits[1];
-        } dib = {{sizeof(BITMAPINFOHEADER), 1, 1, 1, 32, BI_RGB}, {0xFF000000}};
-        return CreateDIBPatternBrushPt(&dib, DIB_RGB_COLORS);
-    }();
+// A pattern of opaque black, with only the alpha bits set.
+HBRUSH g_alphaBrush;
 
-    HGDIOBJ prevBrush = SelectObject(hdc, alphaBrush);
+void CreateAlphaBrush() {
+    struct {
+        BITMAPINFOHEADER header;
+        DWORD bits[1];
+    } dib = {{sizeof(BITMAPINFOHEADER), 1, 1, 1, 32, BI_RGB}, {0xFF000000}};
+    g_alphaBrush = CreateDIBPatternBrushPt(&dib, DIB_RGB_COLORS);
+}
+
+void DeleteAlphaBrush() {
+    if (g_alphaBrush) {
+        DeleteObject(g_alphaBrush);
+        g_alphaBrush = nullptr;
+    }
+}
+
+// Sets the alpha of the area to opaque by ORing it with g_alphaBrush, which
+// keeps the colors and the clipping of what was drawn there.
+void MakeOpaque(HDC hdc, int x, int y, int w, int h) {
+    HGDIOBJ prevBrush = SelectObject(hdc, g_alphaBrush);
     if (!prevBrush) {
         return;
     }
@@ -11636,6 +11682,9 @@ void ApplyBackgroundTranslucentEffect(
         g_settings.backgroundTranslucentEffectRegion ==
             BackgroundTranslucentEffectRegion::kEntireWindow;
     g_entireWindowEffectWndForThread = entireWindowEffect ? hWnd : nullptr;
+    if (entireWindowEffect) {
+        LoadDarkModeBackgroundColors();
+    }
 
     if (effect == BackgroundTranslucentEffect::kDefault) {
         if (!RemoveProp(hWnd, kBackgroundTranslucentEffectAppliedKey)) {
@@ -12274,6 +12323,7 @@ BOOL Wh_ModInit() {
                                    &DwmExtendFrameIntoClientArea_Original);
 
     InitTextAlphaLuts();
+    CreateAlphaBrush();
 
     WindhawkUtils::SetFunctionHook(BeginPaint, BeginPaint_Hook,
                                    &BeginPaint_Original);
@@ -12429,6 +12479,7 @@ void Wh_ModUninit() {
     }
 
     ClearThemePartCache();
+    DeleteAlphaBrush();
 }
 
 void Wh_ModSettingsChanged() {
