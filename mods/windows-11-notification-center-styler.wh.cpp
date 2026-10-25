@@ -10834,11 +10834,10 @@ std::vector<std::wstring> WithdrawCapturesForElement(
             continue;
         }
 
-        size_t removed =
-            std::erase_if(varIt->second,
-                          [elementId](const StyleVariableCapture& capture) {
-                              return capture.elementId == elementId;
-                          });
+        size_t removed = std::erase_if(
+            varIt->second, [elementId](const StyleVariableCapture& capture) {
+                return capture.elementId == elementId;
+            });
         if (!removed) {
             continue;
         }
@@ -12147,7 +12146,7 @@ std::wstring AdjustTypeName(std::wstring_view type) {
     static const std::vector<std::pair<std::wstring_view, std::wstring_view>>
         adjustments = {
             {L"muxc:", L"Microsoft.UI.Xaml.Controls."},
-        };
+    };
 
     for (const auto& adjustment : adjustments) {
         if (type.starts_with(adjustment.first)) {

@@ -14395,11 +14395,10 @@ std::vector<std::wstring> WithdrawCapturesForElement(
             continue;
         }
 
-        size_t removed =
-            std::erase_if(varIt->second,
-                          [elementId](const StyleVariableCapture& capture) {
-                              return capture.elementId == elementId;
-                          });
+        size_t removed = std::erase_if(
+            varIt->second, [elementId](const StyleVariableCapture& capture) {
+                return capture.elementId == elementId;
+            });
         if (!removed) {
             continue;
         }
@@ -16067,9 +16066,10 @@ DependencyObject GetSeparatePinnedFocusRedirect(
     return nullptr;
 }
 
-// A handler of the focus manager's GettingFocus event, which is raised after the
-// routed one, so that ListViewBase can't undo the redirect: it uses the routed
-// event to send focus coming from outside of it to the item focused last.
+// A handler of the focus manager's GettingFocus event, which is raised after
+// the routed one, so that ListViewBase can't undo the redirect: it uses the
+// routed event to send focus coming from outside of it to the item focused
+// last.
 void OnSeparatePinnedFocusChange(Controls::Grid const& wrapper,
                                  Input::GettingFocusEventArgs const& args) {
     try {
@@ -16913,7 +16913,7 @@ std::wstring AdjustTypeName(std::wstring_view type) {
         adjustments = {
             {L"StartMenu:", L"StartMenu."},
             {L"muxc:", L"Microsoft.UI.Xaml.Controls."},
-        };
+    };
 
     for (const auto& adjustment : adjustments) {
         if (type.starts_with(adjustment.first)) {
