@@ -8213,11 +8213,10 @@ std::vector<std::wstring> WithdrawCapturesForElement(
             continue;
         }
 
-        size_t removed =
-            std::erase_if(varIt->second,
-                          [elementId](const StyleVariableCapture& capture) {
-                              return capture.elementId == elementId;
-                          });
+        size_t removed = std::erase_if(
+            varIt->second, [elementId](const StyleVariableCapture& capture) {
+                return capture.elementId == elementId;
+            });
         if (!removed) {
             continue;
         }
@@ -10476,10 +10475,8 @@ constexpr struct {
     PCWSTR themeClass;
     int partId;
 } kDarkModeBackgroundParts[] = {
-    {L"DarkMode::ItemsView", 0},
-    {L"DarkMode::ExplorerNavPane", 0},
-    {L"DarkMode::ExplorerStatusBar", 0},
-    {L"DarkMode::ReadingPane", 1},
+    {L"DarkMode::ItemsView", 0},         {L"DarkMode::ExplorerNavPane", 0},
+    {L"DarkMode::ExplorerStatusBar", 0}, {L"DarkMode::ReadingPane", 1},
     {L"DarkMode::ProperTree", 2},
 };
 

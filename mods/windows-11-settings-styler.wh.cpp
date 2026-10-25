@@ -9261,11 +9261,10 @@ std::vector<std::wstring> WithdrawCapturesForElement(
             continue;
         }
 
-        size_t removed =
-            std::erase_if(varIt->second,
-                          [elementId](const StyleVariableCapture& capture) {
-                              return capture.elementId == elementId;
-                          });
+        size_t removed = std::erase_if(
+            varIt->second, [elementId](const StyleVariableCapture& capture) {
+                return capture.elementId == elementId;
+            });
         if (!removed) {
             continue;
         }
