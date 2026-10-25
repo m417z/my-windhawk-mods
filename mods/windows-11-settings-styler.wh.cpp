@@ -10064,16 +10064,241 @@ void ApplyCustomizations(ElementId elementId,
 }
 
 // With XAML diagnostics enabled, which the mod relies on to observe the visual
-// tree, adding a resource dictionary with implicit styles to the app makes XAML
-// re-apply implicit styles even where they didn't change, which replaces the
-// template of a control styled that way. The Settings app hits this with the
-// SplitView inside its NavigationView, e.g. when opening Personalization >
-// Background. The SplitView keeps its old `PaneRoot` and `ContentRoot` until
-// the new template is applied, and their Borders still own `SplitView.Pane` and
-// `SplitView.Content`, which the new template binds `Border.Child` to. Taking
-// them over fails the association check with E_INVALIDARG, and XAML turns that
-// into an unhandled error which terminates the app. Hand the children back as
-// soon as the template changes, before the replacement is built.
+// tree, CFrameworkElement::UpdateImplicitStyle drops an element's implicit
+// style when all implicit styles are invalidated, instead of looking it up
+// again. Changing the app's resources does that, e.g. opening Personalization >
+// Background or Bluetooth & devices > Printers & scanners, and leaves controls
+// with their default styles, such as the navigation pane without its backdrop.
+// The diagnostics check is patched to take the path it takes without
+// diagnostics. With no symbols to go by, it's found by the code around it.
+//
+// The patched code behaves as the original does with diagnostics disabled and
+// refers to nothing in the mod, so it's left in place when the mod unloads.
+bool g_implicitStyleDiagnosticsCheckPatchAttempted;
+
+struct CodeRange {
+    const BYTE* begin;
+    const BYTE* end;
+};
+
+// The executable sections of a module, or for an ARM64X module, its ARM64 code
+// without the ARM64EC code it also holds.
+std::vector<CodeRange> GetNativeCodeRanges(HMODULE module) {
+    auto* base = reinterpret_cast<const BYTE*>(module);
+    auto* ntHeaders = reinterpret_cast<const IMAGE_NT_HEADERS*>(
+        base + reinterpret_cast<const IMAGE_DOS_HEADER*>(base)->e_lfanew);
+
+    std::vector<CodeRange> ranges;
+
+#ifdef _M_ARM64
+    // IMAGE_ARM64EC_METADATA and IMAGE_CHPE_RANGE_ENTRY, which the headers
+    // don't define. The low bits of a range's start hold its code type, ARM64
+    // being 0.
+    struct Arm64EcMetadata {
+        ULONG Version;
+        ULONG CodeMap;
+        ULONG CodeMapCount;
+    };
+    struct ChpeRangeEntry {
+        ULONG StartOffset;
+        ULONG Length;
+    };
+
+    const auto& loadConfigDirectory =
+        ntHeaders->OptionalHeader
+            .DataDirectory[IMAGE_DIRECTORY_ENTRY_LOAD_CONFIG];
+    auto* loadConfig = reinterpret_cast<const IMAGE_LOAD_CONFIG_DIRECTORY*>(
+        base + loadConfigDirectory.VirtualAddress);
+    if (loadConfigDirectory.VirtualAddress &&
+        loadConfig->Size >=
+            offsetof(IMAGE_LOAD_CONFIG_DIRECTORY, CHPEMetadataPointer) +
+                sizeof(loadConfig->CHPEMetadataPointer) &&
+        loadConfig->CHPEMetadataPointer) {
+        auto* metadata = reinterpret_cast<const Arm64EcMetadata*>(
+            base + (loadConfig->CHPEMetadataPointer -
+                    ntHeaders->OptionalHeader.ImageBase));
+        auto* codeMap =
+            reinterpret_cast<const ChpeRangeEntry*>(base + metadata->CodeMap);
+        for (ULONG i = 0; i < metadata->CodeMapCount; i++) {
+            if ((codeMap[i].StartOffset & 3) == 0) {
+                const BYTE* begin = base + codeMap[i].StartOffset;
+                ranges.push_back({begin, begin + codeMap[i].Length});
+            }
+        }
+
+        return ranges;
+    }
+#endif
+
+    auto* section = IMAGE_FIRST_SECTION(ntHeaders);
+    for (WORD i = 0; i < ntHeaders->FileHeader.NumberOfSections;
+         i++, section++) {
+        if (section->Characteristics & IMAGE_SCN_MEM_EXECUTE) {
+            const BYTE* begin = base + section->VirtualAddress;
+            ranges.push_back({begin, begin + section->Misc.VirtualSize});
+        }
+    }
+
+    return ranges;
+}
+
+#if defined(_M_X64)
+// The opcode of `test al, al`, which `xor al, al` replaces.
+using CheckCode = BYTE;
+constexpr CheckCode kPatchedCheck = 0x30;
+
+// xor r8d, r8d
+// lea edx, [r8+5]  ; RuntimeEnabledFeature::XamlDiagnostics
+// call IsFeatureEnabled
+// test al, al
+// je <lookup>
+//
+// Directly after the comparison of the old and new styles, which branches to
+// the same place:
+// jne <lookup>
+// mov rcx, [rbp+disp8] or mov rcx, [rsp+disp8]
+void FindImplicitStyleDiagnosticsChecks(CodeRange range,
+                                        std::vector<CheckCode*>& found) {
+    constexpr BYTE kFeatureCheck[] = {0x45, 0x33, 0xC0, 0x41,
+                                      0x8D, 0x50, 0x05, 0xE8};
+    for (const BYTE* p = range.begin + 11; p + 20 <= range.end; p++) {
+        if (memcmp(p, kFeatureCheck, sizeof(kFeatureCheck)) != 0 ||
+            (p[12] != 0x84 && p[12] != kPatchedCheck) || p[13] != 0xC0 ||
+            p[14] != 0x0F || p[15] != 0x84) {
+            continue;
+        }
+
+        const BYTE* lookup = p + 20 + *reinterpret_cast<const INT32*>(p + 16);
+
+        const BYTE* mov;
+        if (p[-4] == 0x48 && p[-3] == 0x8B && p[-2] == 0x4D) {
+            mov = p - 4;
+        } else if (p[-5] == 0x48 && p[-4] == 0x8B && p[-3] == 0x4C &&
+                   p[-2] == 0x24) {
+            mov = p - 5;
+        } else {
+            continue;
+        }
+
+        if ((mov[-2] == 0x75 && mov + static_cast<INT8>(mov[-1]) == lookup) ||
+            (mov[-6] == 0x0F && mov[-5] == 0x85 &&
+             mov + *reinterpret_cast<const INT32*>(mov - 4) == lookup)) {
+            found.push_back(const_cast<BYTE*>(p + 12));
+        }
+    }
+}
+#elif defined(_M_ARM64)
+// The call of IsFeatureEnabled, which `mov w0, #0` replaces.
+using CheckCode = DWORD;
+constexpr CheckCode kPatchedCheck = 0x52800000;
+
+// mov w2, #0
+// mov w1, #5  ; RuntimeEnabledFeature::XamlDiagnostics
+// bl IsFeatureEnabled
+// uxtb w8, w0 + cbz w8, <lookup> or tbz x0, #0, <lookup>
+// mov wN, #1  ; possibly after a branch
+// ...
+// <lookup>:
+// mov wN, #0
+//
+// x0 is set before the call too, and the order of the moves varies.
+void FindImplicitStyleDiagnosticsChecks(CodeRange range,
+                                        std::vector<CheckCode*>& found) {
+    auto* begin = reinterpret_cast<const DWORD*>(range.begin);
+    auto* end = reinterpret_cast<const DWORD*>(range.end);
+
+    auto branchTarget = [](const DWORD* p, int shift, int bits) {
+        INT32 offset =
+            static_cast<INT32>((*p >> shift) << (32 - bits)) >> (32 - bits);
+        return p + offset;
+    };
+
+    for (const DWORD* p = begin + 3; p + 3 <= end; p++) {
+        if ((*p >> 26 != 0x25 && *p != kPatchedCheck) ||
+            std::find(p - 3, p, 0x52800002) == p ||
+            std::find(p - 3, p, 0x528000A1) == p) {
+            continue;
+        }
+
+        const DWORD* branch = p + 1;
+        const DWORD* lookup;
+        if (branch[0] == 0x53001C08 && (branch[1] & 0xFF00001F) == 0x34000008) {
+            branch++;
+            lookup = branchTarget(branch, 5, 19);
+        } else if ((branch[0] & 0xFFF8001F) == 0x36000000) {
+            lookup = branchTarget(branch, 5, 14);
+        } else {
+            continue;
+        }
+
+        const DWORD* set = branch + 1;
+        if (set < end && *set >> 26 == 0x05) {
+            set = branchTarget(set, 0, 26);
+        }
+
+        if (lookup >= begin && lookup < end && set >= begin && set < end &&
+            (*lookup & 0xFFFFFFE0) == 0x52800000 && *set == (*lookup | 0x20)) {
+            found.push_back(const_cast<DWORD*>(p));
+        }
+    }
+}
+#endif
+
+void PatchImplicitStyleDiagnosticsCheck() {
+    if (g_implicitStyleDiagnosticsCheckPatchAttempted) {
+        return;
+    }
+
+    g_implicitStyleDiagnosticsCheckPatchAttempted = true;
+
+    HMODULE module = GetModuleHandle(L"Windows.UI.Xaml.dll");
+    if (!module) {
+        Wh_Log(L"Windows.UI.Xaml.dll isn't loaded");
+        return;
+    }
+
+    std::vector<CheckCode*> found;
+    for (const auto& range : GetNativeCodeRanges(module)) {
+        FindImplicitStyleDiagnosticsChecks(range, found);
+    }
+
+    if (found.size() != 1) {
+        Wh_Log(L"Found %zu implicit style diagnostics checks", found.size());
+        return;
+    }
+
+    CheckCode* check = found[0];
+    if (*check == kPatchedCheck) {
+        Wh_Log(L"Implicit style diagnostics check is already patched");
+        return;
+    }
+
+    DWORD oldProtect;
+    if (!VirtualProtect(check, sizeof(*check), PAGE_EXECUTE_READWRITE,
+                        &oldProtect)) {
+        Wh_Log(L"VirtualProtect failed: %u", GetLastError());
+        return;
+    }
+
+    // A single store, since other UI threads may be running the code.
+    *reinterpret_cast<volatile CheckCode*>(check) = kPatchedCheck;
+
+    VirtualProtect(check, sizeof(*check), oldProtect, &oldProtect);
+    FlushInstructionCache(GetCurrentProcess(), check, sizeof(*check));
+
+    Wh_Log(L"Patched the implicit style diagnostics check at %p", check);
+}
+
+// If the diagnostics check above can't be patched, the dropped implicit style
+// also replaces the template of a control styled that way. The Settings app
+// hits this with the SplitView inside its NavigationView, e.g. when opening
+// Personalization > Background. The SplitView keeps its old `PaneRoot` and
+// `ContentRoot` until the new template is applied, and their Borders still own
+// `SplitView.Pane` and `SplitView.Content`, which the new template binds
+// `Border.Child` to. Taking them over fails the association check with
+// E_INVALIDARG, and XAML turns that into an unhandled error which terminates
+// the app. Hand the children back as soon as the template changes, before the
+// replacement is built.
 //
 // By then the old content has left the tree, where neither
 // VisualTreeHelper::GetParent nor FrameworkElement.Parent reports an owner for
@@ -11387,6 +11612,8 @@ void InitializeSettingsAndTap() {
     }
 
     ProcessAllStylesFromSettings();
+
+    PatchImplicitStyleDiagnosticsCheck();
 
     HRESULT hr = InjectWindhawkTAP();
     if (FAILED(hr)) {
