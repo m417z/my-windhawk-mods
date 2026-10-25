@@ -3584,120 +3584,6 @@ bool UpdateNotifyIconsIfNeeded(XamlRoot xamlRoot) {
     }
 }
 
-using FrameworkElementSizeChangedEventRevoker = winrt::impl::event_revoker<
-    IFrameworkElement,
-    &winrt::impl::abi<IFrameworkElement>::type::remove_SizeChanged>;
-
-// Badges which aren't laid out yet, updated once they get a size.
-std::list<std::pair<winrt::weak_ref<FrameworkElement>,
-                    FrameworkElementSizeChangedEventRevoker>>
-    g_badgeAutoRevokerList;
-
-void UpdateTaskListButtonBadge(FrameworkElement badgeElement,
-                               FrameworkElement iconElement);
-
-void UpdateTaskListButtonBadgeWhenLaidOut(FrameworkElement badgeElement) {
-    for (const auto& [elementWeak, revoker] : g_badgeAutoRevokerList) {
-        if (elementWeak.get() == badgeElement) {
-            return;
-        }
-    }
-
-    g_badgeAutoRevokerList.emplace_back();
-    auto autoRevokerIt = g_badgeAutoRevokerList.end();
-    --autoRevokerIt;
-
-    autoRevokerIt->first = winrt::make_weak(badgeElement);
-    autoRevokerIt->second = badgeElement.SizeChanged(
-        winrt::auto_revoke_t{},
-        [autoRevokerIt](winrt::Windows::Foundation::IInspectable const& sender,
-                        SizeChangedEventArgs const& e) {
-            Wh_Log(L">");
-
-            g_badgeAutoRevokerList.erase(autoRevokerIt);
-
-            auto badgeElement = sender.try_as<FrameworkElement>();
-            if (!badgeElement) {
-                return;
-            }
-
-            auto iconPanelElement =
-                Media::VisualTreeHelper::GetParent(badgeElement)
-                    .try_as<FrameworkElement>();
-            if (!iconPanelElement) {
-                return;
-            }
-
-            if (auto iconElement =
-                    FindChildByName(iconPanelElement, L"Icon")) {
-                UpdateTaskListButtonBadge(badgeElement, iconElement);
-            }
-        });
-}
-
-// The taskbar is rotated by 90 degrees, which moves a badge at an offset (x, y)
-// from the icon center to (-y, x) on the screen. The badge is moved to the
-// offset (y, -x), which ends up at (x, y) on the screen, i.e. at the same place
-// relative to the icon as on a horizontal taskbar, and is rotated back around
-// its center.
-void UpdateTaskListButtonBadge(FrameworkElement badgeElement,
-                               FrameworkElement iconElement) {
-    Media::CompositeTransform transform;
-
-    if (!g_unloading) {
-        double badgeWidth = badgeElement.ActualWidth();
-        double badgeHeight = badgeElement.ActualHeight();
-        double iconWidth = iconElement.ActualWidth();
-        double iconHeight = iconElement.ActualHeight();
-        if (!(badgeWidth > 0 && badgeHeight > 0 && iconWidth > 0 &&
-              iconHeight > 0)) {
-            UpdateTaskListButtonBadgeWhenLaidOut(badgeElement);
-            return;
-        }
-
-        auto badgeOffset = badgeElement.ActualOffset();
-        auto iconOffset = iconElement.ActualOffset();
-        double x = badgeOffset.x + badgeWidth / 2 -
-                   (iconOffset.x + iconWidth / 2);
-        double y = badgeOffset.y + badgeHeight / 2 -
-                   (iconOffset.y + iconHeight / 2);
-
-        // The new center, kept inside the icon panel, which is shorter along
-        // the taskbar than on a horizontal taskbar. The rotated badge spans
-        // its height horizontally and its width vertically.
-        double iconCenterX = iconOffset.x + iconWidth / 2;
-        double iconCenterY = iconOffset.y + iconHeight / 2;
-        double centerX = iconCenterX + y;
-        double centerY = iconCenterY - x;
-        if (auto iconPanelElement =
-                Media::VisualTreeHelper::GetParent(badgeElement)
-                    .try_as<FrameworkElement>()) {
-            double panelWidth = iconPanelElement.ActualWidth();
-            double panelHeight = iconPanelElement.ActualHeight();
-            if (panelWidth >= badgeHeight) {
-                centerX = std::clamp(centerX, badgeHeight / 2,
-                                     panelWidth - badgeHeight / 2);
-            }
-            if (panelHeight >= badgeWidth) {
-                centerY = std::clamp(centerY, badgeWidth / 2,
-                                     panelHeight - badgeWidth / 2);
-            }
-        }
-
-        Wh_Log(L"Badge offset from icon center: %f, %f -> %f, %f", x, y,
-               centerX - iconCenterX, centerY - iconCenterY);
-
-        transform.Rotation(-90);
-        transform.CenterX(badgeWidth / 2);
-        transform.CenterY(badgeHeight / 2);
-        transform.TranslateX(centerX - (iconCenterX + x));
-        transform.TranslateY(centerY - (iconCenterY + y));
-    }
-
-    badgeElement.RenderTransform(transform);
-    badgeElement.RenderTransformOrigin({0, 0});
-}
-
 void UpdateTaskListButton(FrameworkElement taskListButtonElement) {
     auto iconPanelElement =
         FindChildByName(taskListButtonElement, L"IconPanel");
@@ -3777,7 +3663,56 @@ void UpdateTaskListButton(FrameworkElement taskListButtonElement) {
         auto badgeElement = FindChildByName(iconPanelElement, badgeElementName);
         if (badgeElement) {
             badgeElement.Margin(margin);
-            UpdateTaskListButtonBadge(badgeElement, iconElement);
+
+            // Rotating the badge around the icon center undoes the taskbar
+            // rotation of its position relative to the icon. The badge is then
+            // kept inside the icon panel, which is shorter along a vertical
+            // taskbar.
+            Media::CompositeTransform transform;
+            double badgeWidth = badgeElement.ActualWidth();
+            double badgeHeight = badgeElement.ActualHeight();
+            if (!g_unloading && badgeWidth > 0 && badgeHeight > 0) {
+                auto badgeOffset = badgeElement.ActualOffset();
+                auto iconOffset = iconElement.ActualOffset();
+                double pivotX = iconOffset.x + iconElement.ActualWidth() / 2 -
+                                badgeOffset.x;
+                double pivotY = iconOffset.y + iconElement.ActualHeight() / 2 -
+                                badgeOffset.y;
+
+                // The rotated badge center, in the icon panel coordinates.
+                double centerX =
+                    badgeOffset.x + pivotX + (badgeHeight / 2 - pivotY);
+                double centerY =
+                    badgeOffset.y + pivotY - (badgeWidth / 2 - pivotX);
+                double maxCenterX =
+                    iconPanelElement.ActualWidth() - badgeHeight / 2;
+                double maxCenterY =
+                    iconPanelElement.ActualHeight() - badgeWidth / 2;
+
+                transform.Rotation(-90);
+                transform.CenterX(pivotX);
+                transform.CenterY(pivotY);
+                if (maxCenterX >= badgeHeight / 2) {
+                    transform.TranslateX(
+                        std::clamp(centerX, badgeHeight / 2, maxCenterX) -
+                        centerX);
+                }
+                if (maxCenterY >= badgeWidth / 2) {
+                    transform.TranslateY(
+                        std::clamp(centerY, badgeWidth / 2, maxCenterY) -
+                        centerY);
+                }
+
+                badgeElement.RenderTransformOrigin({0, 0});
+            } else {
+                // Not laid out yet, at least keep it upright until the next
+                // update.
+                transform.Rotation(g_unloading ? 0 : -90);
+                float origin = g_unloading ? 0 : 0.5;
+                badgeElement.RenderTransformOrigin({origin, origin});
+            }
+
+            badgeElement.RenderTransform(transform);
         }
     }
 
