@@ -2751,8 +2751,8 @@ void CleanupCustomizations(ElementId elementId);
 void QueueDiagnosticsRelease(InstanceHandle handle);
 void FlushDiagnosticsReleasesIfQuiet();
 void TrackSplitView(winrt::Windows::UI::Xaml::FrameworkElement element);
-void ReleaseDiscardedSplitViewChild(
-    winrt::Windows::Foundation::IInspectable removedElement);
+void TrackSplitViewChildHost(
+    winrt::Windows::UI::Xaml::FrameworkElement element);
 
 HMODULE GetCurrentModuleHandle() {
     HMODULE module;
@@ -3007,6 +3007,7 @@ HRESULT VisualTreeWatcher::OnVisualTreeChange(ParentChildRelation relation, Visu
             {
                 Wh_Log(L"FrameworkElement name: %s", frameworkElement.Name().c_str());
                 TrackSplitView(frameworkElement);
+                TrackSplitViewChildHost(frameworkElement);
                 if (elementId == ElementId::None)
                 {
                     Wh_Log(L"Skipping element which can't be given an id");
@@ -3024,7 +3025,6 @@ HRESULT VisualTreeWatcher::OnVisualTreeChange(ParentChildRelation relation, Visu
         else if (mutationType == Remove)
         {
             CleanupCustomizations(FindElementId(element.Handle));
-            ReleaseDiscardedSplitViewChild(FromHandle(element.Handle));
         }
     }
     catch (...)
@@ -10063,21 +10063,111 @@ void ApplyCustomizations(ElementId elementId,
     }
 }
 
-// XAML diagnostics, which the mod relies on to observe the visual tree, holds a
-// strong reference to every element it reports. Template content that a control
-// discarded therefore stays alive, still owning the children the control handed
-// to it. When the control instantiates its template again, taking those
-// children back fails the association check with E_INVALIDARG, and XAML turns
-// that into an unhandled error which terminates the app. The Settings app hits
-// this with the SplitView inside its NavigationView: `PaneRoot` binds
-// `Border.Child` to `SplitView.Pane`. Hand the children back while the content
-// holding them is torn down, which happens before the replacement is built.
+// With XAML diagnostics enabled, which the mod relies on to observe the visual
+// tree, adding a resource dictionary with implicit styles to the app makes XAML
+// re-apply implicit styles even where they didn't change, which replaces the
+// template of a control styled that way. The Settings app hits this with the
+// SplitView inside its NavigationView, e.g. when opening Personalization >
+// Background. The SplitView keeps its old `PaneRoot` and `ContentRoot` until
+// the new template is applied, and their Borders still own `SplitView.Pane` and
+// `SplitView.Content`, which the new template binds `Border.Child` to. Taking
+// them over fails the association check with E_INVALIDARG, and XAML turns that
+// into an unhandled error which terminates the app. Hand the children back as
+// soon as the template changes, before the replacement is built.
 //
-// The owner is found from the Border rather than from the child: once content
-// leaves the tree, neither VisualTreeHelper::GetParent nor
-// FrameworkElement.Parent reports an owner for the child anymore, while
-// Border.Child keeps reading fine.
-std::vector<winrt::weak_ref<Controls::SplitView>> g_trackedSplitViews;
+// By then the old content has left the tree, where neither
+// VisualTreeHelper::GetParent nor FrameworkElement.Parent reports an owner for
+// the children anymore, so the Borders holding them are recorded as they're
+// added.
+struct TrackedSplitView {
+    winrt::weak_ref<Controls::SplitView> splitView;
+    int64_t templateChangedToken = 0;
+    std::vector<winrt::weak_ref<Controls::Border>> childHosts;
+};
+
+std::vector<TrackedSplitView> g_trackedSplitViews;
+
+bool IsSplitViewChild(Controls::SplitView const& splitView,
+                      UIElement const& element) {
+    return element &&
+           (element == splitView.Pane() || element == splitView.Content());
+}
+
+void AddSplitViewChildHost(TrackedSplitView& tracked,
+                           Controls::Border const& border) {
+    std::erase_if(tracked.childHosts,
+                  [](const auto& host) { return !host.get(); });
+
+    if (std::any_of(
+            tracked.childHosts.begin(), tracked.childHosts.end(),
+            [&border](const auto& host) { return host.get() == border; })) {
+        return;
+    }
+
+    tracked.childHosts.push_back(winrt::make_weak(border));
+}
+
+// For a SplitView whose template was applied before it was reported. The
+// children themselves aren't descended into, since they can be whole pages.
+void FindSplitViewChildHosts(TrackedSplitView& tracked,
+                             Controls::SplitView const& splitView,
+                             DependencyObject const& element) {
+    int count = Media::VisualTreeHelper::GetChildrenCount(element);
+    for (int i = 0; i < count; i++) {
+        auto child = Media::VisualTreeHelper::GetChild(element, i);
+        if (auto border = child.try_as<Controls::Border>();
+            border && IsSplitViewChild(splitView, border.Child())) {
+            AddSplitViewChildHost(tracked, border);
+        } else if (!IsSplitViewChild(splitView, child.try_as<UIElement>())) {
+            FindSplitViewChildHosts(tracked, splitView, child);
+        }
+    }
+}
+
+void TrackSplitViewChildHost(FrameworkElement element) {
+    auto border = element.try_as<Controls::Border>();
+    if (!border) {
+        return;
+    }
+
+    auto child = border.Child();
+    for (auto& tracked : g_trackedSplitViews) {
+        auto splitView = tracked.splitView.get();
+        if (splitView && IsSplitViewChild(splitView, child)) {
+            AddSplitViewChildHost(tracked, border);
+            return;
+        }
+    }
+}
+
+void ReleaseSplitViewChildren(Controls::SplitView const& splitView) {
+    auto it =
+        std::find_if(g_trackedSplitViews.begin(), g_trackedSplitViews.end(),
+                     [&splitView](const TrackedSplitView& tracked) {
+                         return tracked.splitView.get() == splitView;
+                     });
+    if (it == g_trackedSplitViews.end()) {
+        return;
+    }
+
+    // A copy: detaching reports removals, which re-enter the mod.
+    auto childHosts = it->childHosts;
+    for (const auto& host : childHosts) {
+        auto border = host.get();
+        if (!border) {
+            continue;
+        }
+
+        auto child = border.Child();
+        if (!IsSplitViewChild(splitView, child)) {
+            continue;
+        }
+
+        Wh_Log(L"Detaching %s from the replaced SplitView template",
+               winrt::get_class_name(child).c_str());
+        border.Child(nullptr);
+    }
+}
 
 void TrackSplitView(FrameworkElement element) {
     auto splitView = element.try_as<Controls::SplitView>();
@@ -10085,60 +10175,54 @@ void TrackSplitView(FrameworkElement element) {
         return;
     }
 
-    // An element is reported again every time it re-enters the tree, so without
-    // this the same SplitView piles up.
-    std::erase_if(g_trackedSplitViews,
-                  [&splitView](const auto& trackedWeakPtr) {
-                      auto tracked = trackedWeakPtr.get();
-                      return !tracked || tracked == splitView;
-                  });
-
-    g_trackedSplitViews.push_back(winrt::make_weak(splitView));
-}
-
-void ReleaseDiscardedSplitViewChild(
-    winrt::Windows::Foundation::IInspectable removedElement) {
-    auto border = removedElement.try_as<Controls::Border>();
-    if (!border) {
-        return;
-    }
-
-    auto child = border.Child();
-    if (!child) {
-        return;
-    }
-
-    bool discarded = false;
-    std::erase_if(g_trackedSplitViews, [&](const auto& splitViewWeakPtr) {
-        auto splitView = splitViewWeakPtr.get();
-        if (!splitView) {
-            return true;
-        }
-
-        // A SplitView on its way out of the tree takes its content with it and
-        // keeps using it once it's back, so only a SplitView that stays needs
-        // its children handed back.
-        if (!Media::VisualTreeHelper::GetParent(splitView)) {
-            return false;
-        }
-
-        if (child == splitView.Pane() || child == splitView.Content()) {
-            discarded = true;
-        }
-
-        return false;
+    std::erase_if(g_trackedSplitViews, [](const TrackedSplitView& tracked) {
+        return !tracked.splitView.get();
     });
 
-    if (!discarded) {
+    // An element is reported again every time it re-enters the tree.
+    if (std::any_of(g_trackedSplitViews.begin(), g_trackedSplitViews.end(),
+                    [&splitView](const TrackedSplitView& tracked) {
+                        return tracked.splitView.get() == splitView;
+                    })) {
         return;
     }
 
-    Wh_Log(L"Detaching %s from discarded SplitView template content",
-           winrt::get_class_name(child).c_str());
+    auto token = splitView.RegisterPropertyChangedCallback(
+        Controls::Control::TemplateProperty(),
+        [](DependencyObject const& sender, DependencyProperty const&) {
+            // Runs from within XAML's own property change, which an exception
+            // escaping into would turn into a crash.
+            try {
+                if (auto splitView = sender.try_as<Controls::SplitView>()) {
+                    ReleaseSplitViewChildren(splitView);
+                }
+            } catch (...) {
+                Wh_Log(L"Error %08X", winrt::to_hresult());
+            }
+        });
 
-    // Detaching reports the child as removed, which re-enters this function, so
-    // it has to happen once the tracked SplitViews are no longer being walked.
-    border.Child(nullptr);
+    g_trackedSplitViews.push_back({winrt::make_weak(splitView), token});
+
+    FindSplitViewChildHosts(g_trackedSplitViews.back(), splitView, splitView);
+}
+
+void UntrackSplitViews() {
+    for (const auto& tracked : g_trackedSplitViews) {
+        auto splitView = tracked.splitView.get();
+        if (!splitView) {
+            continue;
+        }
+
+        try {
+            splitView.UnregisterPropertyChangedCallback(
+                Controls::Control::TemplateProperty(),
+                tracked.templateChangedToken);
+        } catch (winrt::hresult_error const& ex) {
+            Wh_Log(L"Error %08X: %s", ex.code(), ex.message().c_str());
+        }
+    }
+
+    g_trackedSplitViews.clear();
 }
 
 // The diagnostics create a runtime object which holds every element they
@@ -11286,7 +11370,7 @@ void UninitializeSettingsAndTap() {
     g_elementIdsReapThreshold = 64;
 
     g_elementsCustomizationRules.clear();
-    g_trackedSplitViews.clear();
+    UntrackSplitViews();
 
     UninitializeResourceVariables();
 
