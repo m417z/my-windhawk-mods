@@ -3662,57 +3662,32 @@ void UpdateTaskListButton(FrameworkElement taskListButtonElement) {
          }) {
         auto badgeElement = FindChildByName(iconPanelElement, badgeElementName);
         if (badgeElement) {
-            badgeElement.Margin(margin);
-
-            // Rotating the badge around the icon center undoes the taskbar
-            // rotation of its position relative to the icon. The badge is then
-            // kept inside the icon panel, which is shorter along a vertical
-            // taskbar.
+            // The badge is rotated back around its center, and its center is
+            // moved to the top-right corner of the icon, which is the top-left
+            // corner before the taskbar rotation. Until the badge is laid out,
+            // it's only rotated.
             Media::CompositeTransform transform;
-            double badgeWidth = badgeElement.ActualWidth();
-            double badgeHeight = badgeElement.ActualHeight();
-            if (!g_unloading && badgeWidth > 0 && badgeHeight > 0) {
-                auto badgeOffset = badgeElement.ActualOffset();
-                auto iconOffset = iconElement.ActualOffset();
-                double pivotX = iconOffset.x + iconElement.ActualWidth() / 2 -
-                                badgeOffset.x;
-                double pivotY = iconOffset.y + iconElement.ActualHeight() / 2 -
-                                badgeOffset.y;
-
-                // The rotated badge center, in the icon panel coordinates.
-                double centerX =
-                    badgeOffset.x + pivotX + (badgeHeight / 2 - pivotY);
-                double centerY =
-                    badgeOffset.y + pivotY - (badgeWidth / 2 - pivotX);
-                double maxCenterX =
-                    iconPanelElement.ActualWidth() - badgeHeight / 2;
-                double maxCenterY =
-                    iconPanelElement.ActualHeight() - badgeWidth / 2;
-
+            if (!g_unloading) {
                 transform.Rotation(-90);
-                transform.CenterX(pivotX);
-                transform.CenterY(pivotY);
-                if (maxCenterX >= badgeHeight / 2) {
-                    transform.TranslateX(
-                        std::clamp(centerX, badgeHeight / 2, maxCenterX) -
-                        centerX);
-                }
-                if (maxCenterY >= badgeWidth / 2) {
-                    transform.TranslateY(
-                        std::clamp(centerY, badgeWidth / 2, maxCenterY) -
-                        centerY);
-                }
 
-                badgeElement.RenderTransformOrigin({0, 0});
-            } else {
-                // Not laid out yet, at least keep it upright until the next
-                // update.
-                transform.Rotation(g_unloading ? 0 : -90);
-                float origin = g_unloading ? 0 : 0.5;
-                badgeElement.RenderTransformOrigin({origin, origin});
+                double badgeWidth = badgeElement.ActualWidth();
+                double badgeHeight = badgeElement.ActualHeight();
+                if (badgeWidth > 0 && badgeHeight > 0) {
+                    auto badgeOffset = badgeElement.ActualOffset();
+                    auto iconOffset = iconElement.ActualOffset();
+                    transform.TranslateX(iconOffset.x -
+                                         (badgeOffset.x + badgeWidth / 2));
+                    transform.TranslateY(iconOffset.y -
+                                         (badgeOffset.y + badgeHeight / 2));
+                }
             }
 
             badgeElement.RenderTransform(transform);
+
+            float origin = g_unloading ? 0 : 0.5;
+            badgeElement.RenderTransformOrigin({origin, origin});
+
+            badgeElement.Margin(margin);
         }
     }
 
