@@ -10247,6 +10247,13 @@ TargetWindowType GetTargetWindowType(HWND hWnd) {
     }
 
     if (_wcsicmp(className, L"CabinetWClass") == 0) {
+        // The legacy frame, used for Control Panel, hosts its toolbar in a
+        // WorkerW child. It has no XAML, and its content isn't readable over
+        // the background effect.
+        if (FindWindowEx(hWnd, nullptr, L"WorkerW", nullptr)) {
+            return TargetWindowType::None;
+        }
+
         return TargetWindowType::FileExplorer;
     }
 
