@@ -767,7 +767,7 @@ const Theme g_themeWindowGlass = {{
     ThemeTargetStyles{L"FileExplorerExtensions.GalleryViewControl#GalleryViewControl > Grid > Grid#GalleryRootGrid", {
         L"Background:=$MainContentBG"}},
     ThemeTargetStyles{L"ToolTip", {
-        L"Background:=<AcrylicBrush TintColor=\"#15323232\" Opacity=\"0.96\"/>"}},
+        L"Background:=$AcrylicBackground"}},
     ThemeTargetStyles{L"Grid#TabContainerGrid > Border#LeftBottomBorderLine", {
         L"Visibility=Collapsed"}},
     ThemeTargetStyles{L"Grid#TabContainerGrid > Border#RightBottomBorderLine", {
@@ -805,7 +805,11 @@ const Theme g_themeWindowGlass = {{
         L"Background:=$Background",
         L"BorderThickness=$BorderThickness",
         L"BorderBrush:=$BorderBrush",
-        L"Margin=0,0,0,-5",
+        L"CornerRadius=$CornerRadius"}},
+    ThemeTargetStyles{L"Microsoft.UI.Xaml.Controls.Primitives.CommandBarFlyoutCommandBar > Grid#LayoutRoot@ExpansionStates > Grid#OuterContentRoot > Grid#ContentRoot > Microsoft.UI.Xaml.Controls.Primitives.Popup#OverflowPopup", {
+        L"VerticalOffset@ExpandedUp=-5",
+        L"VerticalOffset@ExpandedDown=5"}},
+    ThemeTargetStyles{L"Grid#OuterOverflowContentRootV2", {
         L"CornerRadius=$CornerRadius"}},
     ThemeTargetStyles{L"Grid#OuterOverflowContentRootV2 > Grid#OverflowContentRoot > CommandBarOverflowPresenter#SecondaryItemsControl > Grid#LayoutRoot", {
         L"Background:=$Background",
@@ -817,8 +821,8 @@ const Theme g_themeWindowGlass = {{
         L"BorderThickness=$BorderThickness",
         L"BorderBrush:=$BorderBrush",
         L"CornerRadius=$CornerRadius"}},
-    ThemeTargetStyles{L"CommandBarOverflowPresenter#SecondaryItemsControl > Grid#LayoutRoot", {
-        L"Background:=<AcrylicBrush TintColor=\"#15323232\" Opacity=\"0.96\"/>",
+    ThemeTargetStyles{L"Grid#SecondaryItemsControlShadowWrapper > CommandBarOverflowPresenter#SecondaryItemsControl > Grid#LayoutRoot", {
+        L"Background:=$AcrylicBackground",
         L"BorderThickness=$BorderThickness",
         L"BorderBrush:=$BorderBrush",
         L"CornerRadius=$CornerRadius"}},
@@ -838,12 +842,13 @@ const Theme g_themeWindowGlass = {{
         L"Background=Transparent"}},
     ThemeTargetStyles{L"Microsoft.UI.Xaml.Controls.Border > Microsoft.UI.Xaml.Controls.Button#AddButton", {
         L"RenderTransform:=<TranslateTransform Y=\"-6\" />"}},
-    ThemeTargetStyles{L"Microsoft.UI.Xaml.Controls.TextBlock#TextLabel", {
+    ThemeTargetStyles{L"Microsoft.UI.Xaml.Controls.CommandBar > * > Microsoft.UI.Xaml.Controls.TextBlock#TextLabel", {
         L"Visibility=Collapsed"}},
     ThemeTargetStyles{L"Microsoft.UI.Xaml.Controls.Grid#SubItemChevronPanel > Microsoft.UI.Xaml.Controls.FontIcon#SubItemChevron", {
         L"RenderTransform:=<TranslateTransform X=\"-5\" Y=\"12\" />"}},
 }, {
     L"Background=<WindhawkBlur BlurAmount=\"15\" TintColor=\"#15323232\"/>",
+    L"AcrylicBackground=<AcrylicBrush TintColor=\"{ThemeResource SystemChromeMediumLowColor}\" TintOpacity=\"0.9\" Opacity=\"0.96\"/>",
     L"BorderBrush=<LinearGradientBrush StartPoint=\"0,0\" EndPoint=\"0,1\"><GradientStop Color=\"{ThemeResource SystemChromeHighColor}\" Offset=\"0.0\" /><GradientStop Color=\"{ThemeResource SystemChromeLowColor}\" Offset=\"0.15\" /><GradientStop Color=\"{ThemeResource SystemChromeHighColor}\" Offset=\"0.95\" /></LinearGradientBrush>",
     L"BorderThickness=0.3,1,0.3,0.3",
     L"ButtonBackground=<SolidColorBrush Color=\"{ThemeResource SystemAccentColor}\" Opacity=\"1\" />",
