@@ -3662,17 +3662,30 @@ void UpdateTaskListButton(FrameworkElement taskListButtonElement) {
          }) {
         auto badgeElement = FindChildByName(iconPanelElement, badgeElementName);
         if (badgeElement) {
-            double angle = g_unloading ? 0 : -90;
-            Media::RotateTransform transform;
-            transform.Angle(angle);
-            badgeElement.RenderTransform(transform);
-
-            winrt::Windows::Foundation::Point origin{};
+            // The badge is rotated back around its center, and its center is
+            // moved to the top-right corner of the icon, which is the top-left
+            // corner before the taskbar rotation. Until the badge is laid out,
+            // it's only rotated.
+            Media::CompositeTransform transform;
             if (!g_unloading) {
-                origin.Y = labelControlElement ? 1.25 : 0.75;
+                transform.Rotation(-90);
+
+                double badgeWidth = badgeElement.ActualWidth();
+                double badgeHeight = badgeElement.ActualHeight();
+                if (badgeWidth > 0 && badgeHeight > 0) {
+                    auto badgeOffset = badgeElement.ActualOffset();
+                    auto iconOffset = iconElement.ActualOffset();
+                    transform.TranslateX(iconOffset.x -
+                                         (badgeOffset.x + badgeWidth / 2));
+                    transform.TranslateY(iconOffset.y -
+                                         (badgeOffset.y + badgeHeight / 2));
+                }
             }
 
-            badgeElement.RenderTransformOrigin(origin);
+            badgeElement.RenderTransform(transform);
+
+            float origin = g_unloading ? 0 : 0.5;
+            badgeElement.RenderTransformOrigin({origin, origin});
 
             badgeElement.Margin(margin);
         }
