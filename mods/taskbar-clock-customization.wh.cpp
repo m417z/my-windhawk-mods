@@ -2,7 +2,7 @@
 // @id              taskbar-clock-customization
 // @name            Taskbar Clock Customization
 // @description     Custom date/time format, news feed, weather, performance metrics (upload/download speed, CPU, RAM, GPU, battery), media player info, custom fonts and colors, and more
-// @version         1.8
+// @version         1.8.1
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
@@ -41,21 +41,23 @@ _System performance metrics_
 
 ## Available patterns
 
-Supported fields - top line, bottom line, middle line (Windows 10 only), tooltip
-extra line - can be configured with text that contains patterns. The following
-patterns can be used:
+The top line, bottom line, middle line (Windows 10 only), and tooltip extra line
+can be configured with text that contains patterns. The following patterns can
+be used:
 
 * `%time%` - the time as configured by the time format in settings.
-  * `%time<n>%` - additional time formats which can be specified by separating
-    the time format string with `;`. `<n>` is the additional time format number,
-    starting with 2.
+  * `%time<n>%` - additional time formats, specified by separating multiple
+    formats with `;` in the time format setting. `<n>` is the additional time
+    format number, starting with 2.
   * `%time_tz<n>%` - the time with a custom time zone. `<n>` is the time zone
     number in the list of time zones configured in the mod settings (not Windows
     settings).
+* `%unix%` - the Unix timestamp (seconds since 1970-01-01 00:00:00 UTC).
 * `%date%` - the date as configured by the date format in settings.
-  * `%date<n>%` - additional date formats which can be specified by separating
-    the date format string with `;`. `<n>` is the additional date format number,
-    starting with 2.
+  * `%date<n>%` - additional date formats, specified by separating multiple
+    formats with `;` in the date format setting. `<n>` is the additional date
+    format number, starting with 2. Each date format can have its own locale;
+    refer to the date locale setting for details.
   * `%date_tz<n>%` - the date with a custom time zone. `<n>` is the time zone
     number in the list of time zones configured in the mod settings (not Windows
     settings).
@@ -63,16 +65,16 @@ patterns can be used:
   * `%weekday_tz<n>%` - the week day with a custom time zone. `<n>` is the time
     zone number in the list of time zones configured in the mod settings (not
     Windows settings).
-* `%weekday_num%` - the week day number according to the [first day of
-   week](https://superuser.com/q/61002) system configuration. For example, if
-   first day of week is Sunday, then the week day number is 1 for Sunday, 2 for
-   Monday, ..., 7 for Saturday.
-* `%weeknum%` - the week number, calculated as following: The week containing 1
-  January is defined as week 1 of the year. Subsequent weeks start on first day
-  of week according to the system configuration.
+* `%weekday_num%` - the week day number according to the [first day of the
+  week](https://superuser.com/q/61002) system configuration. For example, if the
+  first day of the week is Sunday, then the week day number is 1 for Sunday, 2
+  for Monday, ..., 7 for Saturday.
+* `%weeknum%` - the week number, calculated as follows: The week containing 1
+  January is defined as week 1 of the year. Subsequent weeks start on the first
+  day of the week according to the system configuration.
 * `%weeknum_iso%` - the [ISO week
   number](https://en.wikipedia.org/wiki/ISO_week_date).
-* `%dayofyear%` - the day of year starting from January 1st.
+* `%dayofyear%` - the day of the year, where January 1st is day 1.
 * `%timezone%` - the time zone in ISO 8601 format.
 * System performance metrics:
   * `%upload_speed%` - system-wide upload transfer rate.
@@ -115,22 +117,22 @@ patterns can be used:
   * `%media_artist%` - currently playing media artist.
   * `%media_album%` - currently playing media album.
   * `%media_status%` - media playback status icon (⏯, ⏸, ⏹).
-  * `%media_info%` - combined media info, truncated with ellipsis. Defaults to
-    "Artist - Title" while media is playing, but the format for both the playing
-    and the not playing state can be customized in the media player settings.
-    It's recommended to use this field on the taskbar, and other fields in the
-    tooltip.
-* `%weather%` - Weather information, powered by [wttr.in](https://wttr.in/),
+  * `%media_info%` - combined media info, truncated with an ellipsis. Defaults
+    to "Artist - Title" while media is playing. The formats for when media is
+    playing and when it isn't can be customized in the media player settings.
+    It's recommended to use this field on the taskbar and the other fields in
+    the tooltip.
+* `%weather%` - weather information, powered by [wttr.in](https://wttr.in/),
   using the location and format configured in settings.
-* `%web<n>%` - the web contents as configured in settings, truncated with
-  ellipsis, where `<n>` is the web contents number.
-* `%web<n>_full%` - the full web contents as configured in settings, where `<n>`
-  is the web contents number.
+* `%web<n>%` - the web content as configured in settings, truncated with an
+  ellipsis, where `<n>` is the web content item number.
+* `%web<n>_full%` - the full web content as configured in settings, where `<n>`
+  is the web content item number.
 * `%newline%` or `%n%` - a newline.
 
 ## Text styles
 
-For Windows 11 version 22H2 and newer, the mod allows to change the clock text
+For Windows 11 version 22H2 and newer, the mod allows changing the clock text
 styles, such as the font color and size.
 
 ![Screenshot](https://i.imgur.com/3JiXwjT.png)
@@ -146,7 +148,7 @@ styles, such as the font color and size.
   $name: Time format
   $description: >-
     The format for the %time% pattern. Leave empty for the default format. For
-    syntax refer to the following page:
+    the syntax, refer to the following page:
 
     https://docs.microsoft.com/en-us/windows/win32/api/datetimeapi/nf-datetimeapi-gettimeformatex#remarks
 - DateFormat: >-
@@ -154,13 +156,15 @@ styles, such as the font color and size.
   $name: Date format
   $description: >-
     The format for the %date% pattern. Leave empty for the default format. For
-    syntax refer to the following page:
+    the syntax, refer to the following page:
 
     https://docs.microsoft.com/en-us/windows/win32/intl/day--month--year--and-era-format-pictures
 - DateLocale: ""
   $name: Date locale
   $description: >-
     The locale used for formatting the date and the week day. Leave empty for
+    the default locale. Use ";" to set a locale per date format, e.g.
+    "en-US;fr-FR" for an English %date% and a French %date2%. Empty entries use
     the default locale. For the list of locale names, listed as "Language tag",
     refer to the following page:
 
@@ -176,12 +180,12 @@ styles, such as the font color and size.
   $name: Custom week day format
   $description: >-
     A comma-separated list of custom week days, Sunday through Saturday. Used if
-    the custom format is specified for the week day format.
+    the week day format is set to custom.
 - TopLine: '%date% | %time%'
   $name: Top line
   $description: >-
     Text to be shown on the first line. Set to "-" for the default value. Refer
-    to the mod details for list of patterns that can be used.
+    to the mod details for the list of patterns that can be used.
 - BottomLine: '%web1%'
   $name: Bottom line
   $description: >-
@@ -203,7 +207,7 @@ styles, such as the font color and size.
   $name: Clock height (Windows 10 only)
 - MaxWidth: 0
   $name: Clock max width (Windows 11 only)
-  $description: Set to zero to have no max width.
+  $description: Set to zero for no limit.
 - TextSpacing: 0
   $name: Line spacing
   $description: >-
@@ -224,7 +228,7 @@ styles, such as the font color and size.
   - NetworkMetricsFixedDecimals: -1
     $name: Network metrics fixed decimal places
     $description: >-
-      Always use this amount of decimal places for the upload/download transfer
+      Always use this number of decimal places for the upload/download transfer
       rate (-1 means auto/same width).
   - DiskMetricsFormat: sameAsNetwork
     $name: Disk metrics format
@@ -241,16 +245,16 @@ styles, such as the font color and size.
   - DiskMetricsFixedDecimals: -1
     $name: Disk metrics fixed decimal places
     $description: >-
-      Always use this amount of decimal places for the disk read/write speed
+      Always use this number of decimal places for the disk read/write speed
       (-1 means auto/same width). Ignored when the disk metrics format is set to
-      be the same as network metrics.
+      "Same as network metrics format".
   - PercentageFormat: spacePaddingAndSymbol
     $name: Percentage format
     $description: >-
       The format to use for displaying percentage values (CPU, RAM, GPU,
       battery).
     $options:
-    - spacePaddingAndSymbol: Pad with spaces, add percentage symbol
+    - spacePaddingAndSymbol: Pad with spaces, add percent sign
     - spacePadding: Pad with spaces, number only
     - singleSpacePadding: >-
         Pad with a single space, number only (for monospaced fonts)
@@ -285,18 +289,19 @@ styles, such as the font color and size.
   - MaxLength: 28
     $name: Maximum info length
     $description: >-
-      Maximum characters for %media_info%. Longer strings are truncated with
-      ellipsis. Set to 0 for no limit.
+      The maximum number of characters for %media_info%. Longer text is
+      truncated with an ellipsis. Set to 0 for no limit.
   - MediaInfoFormat: "%media_artist% - %media_title%"
     $name: Format when media is playing
     $description: >-
-      The format of %media_info% while media is playing. Can contain any tags,
-      such as %media_artist%, %media_title%, %media_album%, and %media_status%.
+      The format of %media_info% while media is playing. Can contain any
+      patterns, such as %media_artist%, %media_title%, %media_album%, and
+      %media_status%.
   - NoMediaText: No media
     $name: Format when media is not playing
     $description: >-
       The text shown for %media_info% when no media is playing. Can contain any
-      tags, such as %date% or %time%.
+      patterns, such as %date% or %time%.
   - RemoveBrackets: false
     $name: Remove brackets from info
     $description: >-
@@ -306,7 +311,7 @@ styles, such as the font color and size.
 - WebContentWeatherLocation: ""
   $name: Weather location
   $description: >-
-    Get weather information for a specific location. Keep empty to use the
+    Get weather information for a specific location. Leave empty to use the
     current location. For details, refer to the documentation of wttr.in.
 - WebContentWeatherFormat: "%c \U0001F321\uFE0F%t \U0001F32C\uFE0F%w"
   $name: Weather format
@@ -319,8 +324,8 @@ styles, such as the font color and size.
     The weather units. For details, refer to the documentation of wttr.in.
   $options:
   - autoDetect: Auto (default)
-  - uscs: USCS (used by default in US)
-  - metric: Metric (SI) (used by default everywhere except US)
+  - uscs: USCS (used by default in the US)
+  - metric: Metric (SI) (used by default everywhere except the US)
   - metricMsWind: Metric (SI), but show wind speed in m/s
 - WebContentsItems:
   - - Url: https://rss.nytimes.com/services/xml/rss/nyt/World.xml
@@ -355,11 +360,11 @@ styles, such as the font color and size.
         extracted content.
     - MaxLength: 28
       $name: Web content maximum length
-      $description: Longer strings will be truncated with ellipsis.
+      $description: Longer text is truncated with an ellipsis.
   $name: Web content items
   $description: >-
-    Will be used to fetch data displayed in place of the %web<n>% and
-    %web<n>_full% patterns, where <n> is the web contents number.
+    Used to fetch the data displayed in place of the %web<n>% and %web<n>_full%
+    patterns, where <n> is the web content item number.
 - WebContentsUpdateInterval: 10
   $name: Web content update interval
   $description: >-
@@ -368,8 +373,9 @@ styles, such as the font color and size.
   $name: Time zones
   $description: >-
     The list of time zones for patterns such as %time_tz1%. For a full list of
-    supported time zones, use the following PowerShell command: Get-TimeZone
-    -ListAvailable.
+    supported time zones, run the following PowerShell command:
+
+    Get-TimeZone -ListAvailable
 - TimeStyle:
   - Hidden: false
   - TextColor: ""
@@ -419,7 +425,7 @@ styles, such as the font color and size.
     - Italic: Italic
   - FontStretch: ""
     $name: Font stretch
-    $description: Only supported for some fonts.
+    $description: Only supported by some fonts.
     $options:
     - "": Default
     - Undefined: Undefined
@@ -490,7 +496,7 @@ styles, such as the font color and size.
     - Italic: Italic
   - FontStretch: ""
     $name: Font stretch
-    $description: Only supported for some fonts.
+    $description: Only supported by some fonts.
     $options:
     - "": Default
     - Undefined: Undefined
@@ -541,6 +547,7 @@ using namespace std::string_view_literals;
 
 #include <comutil.h>
 #include <dxgi.h>
+#include <mshtmdid.h>
 #include <mshtml.h>
 #include <pdh.h>
 #include <pdhmsg.h>
@@ -645,11 +652,18 @@ struct TextStyleSettings {
     int lineHeight;
 };
 
+struct ClockElementStyleSettings {
+    int maxWidth;
+    int textSpacing;
+    TextStyleSettings timeStyle;
+    TextStyleSettings dateStyle;
+};
+
 struct {
     bool showSeconds;
     StringSetting timeFormat;
     StringSetting dateFormat;
-    StringSetting dateLocale;
+    std::vector<std::wstring> dateLocales;
     StringSetting weekdayFormat;
     std::vector<std::wstring> weekdayFormatCustom;
     StringSetting topLine;
@@ -659,7 +673,6 @@ struct {
     TooltipLineMode tooltipLineMode;
     int width;
     int height;
-    int maxWidth;
     int textSpacing;
     DataCollectionSettings dataCollection;
     MediaPlayerSettings mediaPlayer;
@@ -669,8 +682,6 @@ struct {
     std::vector<WebContentsSettings> webContentsItems;
     int webContentsUpdateInterval;
     std::vector<StringSetting> timeZones;
-    TextStyleSettings timeStyle;
-    TextStyleSettings dateStyle;
     bool oldTaskbarOnWin11;
 
     // Kept for compatibility with old settings:
@@ -700,8 +711,18 @@ std::atomic<bool> g_explorerPatcherInitialized;
 
 bool g_formattingInitialized;
 
+bool g_unixPatternUsed;
+
 DWORD g_formatIndex;
 SYSTEMTIME g_formatTime;
+DWORD g_formatTimeUtcFormatIndex = 0xFFFFFFFF;
+SYSTEMTIME g_formatTimeUtc;
+
+// Guards g_settings and the formatting state derived from it: the format
+// time/index, the cached formatted strings, the data collection session and
+// the web content/media initialization flags. Settings are replaced wholesale
+// by LoadSettings, which frees the previous string buffers, so a hook must
+// hold this lock for as long as it uses anything from g_settings.
 std::mutex g_formatLineMutex;
 
 template <size_t N>
@@ -713,6 +734,7 @@ struct FormattedString {
 FormattedString<FORMATTED_BUFFER_SIZE> g_timeFormatted;
 std::vector<std::wstring> g_timeFormattedExtra;
 std::vector<FormattedString<FORMATTED_BUFFER_SIZE>> g_timeFormattedTz;
+FormattedString<FORMATTED_BUFFER_SIZE> g_unixTimeFormatted;
 FormattedString<FORMATTED_BUFFER_SIZE> g_dateFormatted;
 std::vector<std::wstring> g_dateFormattedExtra;
 std::vector<FormattedString<FORMATTED_BUFFER_SIZE>> g_dateFormattedTz;
@@ -763,13 +785,25 @@ FormattedString<FORMATTED_BUFFER_SIZE> g_mediaInfoFormatted;
         nullptr};
 [[clang::no_destroy]] winrt::Windows::Media::Control::
     GlobalSystemMediaTransportControlsSession g_mediaCurrentSession{nullptr};
+// Guards the media session objects, their event tokens and the formatted
+// media strings. The session events fire on arbitrary thread pool threads, so
+// this covers the subscribe/unsubscribe paths as well as the refresh. When
+// both are taken, g_formatLineMutex comes first.
 std::mutex g_mediaMutex;
 std::atomic<bool> g_mediaDataDirty{true};
 winrt::event_token g_mediaSessionsChangedToken;
 winrt::event_token g_mediaPropertiesChangedToken;
 winrt::event_token g_mediaPlaybackChangedToken;
 
+// Lowercased copy of g_settings.mediaPlayer.ignoredPlayers, so that picking a
+// session doesn't have to reach into g_settings from a thread pool thread.
+std::vector<std::wstring> g_mediaIgnoredPlayers;
+
 bool g_mediaActive = false;
+
+// Whether a media pattern is shown. Media changes arrive as events, so the
+// clock refreshes every second to show them without a delay.
+bool g_mediaPatternUsed = false;
 
 // Set while %media_info% expands its format string, to keep a stray
 // %media_info% tag inside that format from recursing into itself.
@@ -798,8 +832,15 @@ struct ClockElementStyleData {
     std::optional<int64_t> timeVisibilityPropertyChangedToken;
 };
 
-std::atomic<bool> g_clockElementStyleEnabled;
-std::atomic<DWORD> g_clockElementStyleIndex;
+// Guards the clock element style settings, their enabled flag and index, and
+// g_clockElementStyleData. The style settings are kept out of g_settings so
+// that the XAML thread applying them never waits for g_formatLineMutex, which
+// formatting holds across slow work. When both are taken, g_formatLineMutex
+// comes first.
+std::mutex g_clockElementStyleMutex;
+bool g_clockElementStyleEnabled;
+DWORD g_clockElementStyleIndex;
+ClockElementStyleSettings g_clockElementStyleSettings;
 std::vector<ClockElementStyleData> g_clockElementStyleData;
 
 using GetDpiForWindow_t = UINT(WINAPI*)(HWND hwnd);
@@ -831,13 +872,98 @@ GetDateFormatW_t GetDateFormatW_Original;
 using SendMessageW_t = decltype(&SendMessageW);
 SendMessageW_t SendMessageW_Original;
 
+// The WinINet defaults are minutes long, which would hold up whoever waits for
+// the requesting thread to finish.
+constexpr DWORD kUrlRequestTimeoutMs = 30 * 1000;
+
+std::mutex g_urlRequestMutex;
+HINTERNET g_urlRequestOpenHandle = nullptr;
+HINTERNET g_urlRequestUrlHandle = nullptr;
+bool g_urlRequestsCanceled = false;
+
+// Requires g_urlRequestMutex to be held.
+void CloseUrlRequestHandles() {
+    if (g_urlRequestUrlHandle) {
+        InternetCloseHandle(g_urlRequestUrlHandle);
+        g_urlRequestUrlHandle = nullptr;
+    }
+
+    if (g_urlRequestOpenHandle) {
+        InternetCloseHandle(g_urlRequestOpenHandle);
+        g_urlRequestOpenHandle = nullptr;
+    }
+}
+
+// Closes the handles of the request in flight, if any, which makes the blocking
+// WinINet call using them return at once. Further requests fail until
+// ResumeUrlRequests is called.
+void CancelUrlRequests() {
+    std::lock_guard<std::mutex> guard(g_urlRequestMutex);
+    g_urlRequestsCanceled = true;
+    CloseUrlRequestHandles();
+}
+
+void ResumeUrlRequests() {
+    std::lock_guard<std::mutex> guard(g_urlRequestMutex);
+    g_urlRequestsCanceled = false;
+}
+
+// Scope of a single request. At most one request runs at a time, so its handles
+// live in globals where CancelUrlRequests can reach them.
+struct UrlRequestScope {
+    UrlRequestScope() = default;
+    UrlRequestScope(const UrlRequestScope&) = delete;
+    UrlRequestScope& operator=(const UrlRequestScope&) = delete;
+
+    ~UrlRequestScope() {
+        std::lock_guard<std::mutex> guard(g_urlRequestMutex);
+        CloseUrlRequestHandles();
+    }
+
+    bool PublishOpenHandle(HINTERNET handle) {
+        return Publish(&g_urlRequestOpenHandle, handle);
+    }
+
+    bool PublishUrlHandle(HINTERNET handle) {
+        return Publish(&g_urlRequestUrlHandle, handle);
+    }
+
+   private:
+    // Hands the handle over to the globals. Returns false if requests are
+    // canceled, in which case the handle is closed and must not be used.
+    static bool Publish(HINTERNET* slot, HINTERNET handle) {
+        std::lock_guard<std::mutex> guard(g_urlRequestMutex);
+        if (g_urlRequestsCanceled) {
+            InternetCloseHandle(handle);
+            return false;
+        }
+
+        *slot = handle;
+        return true;
+    }
+};
+
 std::optional<std::wstring> GetUrlContent(PCWSTR lpUrl,
                                           bool failIfNot200 = true) {
+    UrlRequestScope requestScope;
+
     HINTERNET hOpenHandle = InternetOpen(
         L"WindhawkMod", INTERNET_OPEN_TYPE_PRECONFIG, nullptr, nullptr, 0);
     if (!hOpenHandle) {
         return std::nullopt;
     }
+
+    if (!requestScope.PublishOpenHandle(hOpenHandle)) {
+        return std::nullopt;
+    }
+
+    DWORD timeout = kUrlRequestTimeoutMs;
+    InternetSetOption(hOpenHandle, INTERNET_OPTION_CONNECT_TIMEOUT, &timeout,
+                      sizeof(timeout));
+    InternetSetOption(hOpenHandle, INTERNET_OPTION_SEND_TIMEOUT, &timeout,
+                      sizeof(timeout));
+    InternetSetOption(hOpenHandle, INTERNET_OPTION_RECEIVE_TIMEOUT, &timeout,
+                      sizeof(timeout));
 
     HINTERNET hUrlHandle =
         InternetOpenUrl(hOpenHandle, lpUrl, nullptr, 0,
@@ -846,7 +972,10 @@ std::optional<std::wstring> GetUrlContent(PCWSTR lpUrl,
                             INTERNET_FLAG_PRAGMA_NOCACHE | INTERNET_FLAG_RELOAD,
                         0);
     if (!hUrlHandle) {
-        InternetCloseHandle(hOpenHandle);
+        return std::nullopt;
+    }
+
+    if (!requestScope.PublishUrlHandle(hUrlHandle)) {
         return std::nullopt;
     }
 
@@ -857,41 +986,41 @@ std::optional<std::wstring> GetUrlContent(PCWSTR lpUrl,
                            HTTP_QUERY_STATUS_CODE | HTTP_QUERY_FLAG_NUMBER,
                            &dwStatusCode, &dwStatusCodeSize, nullptr) ||
             dwStatusCode != 200) {
-            InternetCloseHandle(hUrlHandle);
-            InternetCloseHandle(hOpenHandle);
             return std::nullopt;
         }
     }
 
     LPBYTE pUrlContent = (LPBYTE)HeapAlloc(GetProcessHeap(), 0, 0x400);
     if (!pUrlContent) {
-        InternetCloseHandle(hUrlHandle);
-        InternetCloseHandle(hOpenHandle);
         return std::nullopt;
     }
 
     DWORD dwNumberOfBytesRead;
-    InternetReadFile(hUrlHandle, pUrlContent, 0x400, &dwNumberOfBytesRead);
+    if (!InternetReadFile(hUrlHandle, pUrlContent, 0x400,
+                          &dwNumberOfBytesRead)) {
+        HeapFree(GetProcessHeap(), 0, pUrlContent);
+        return std::nullopt;
+    }
+
     DWORD dwLength = dwNumberOfBytesRead;
 
     while (dwNumberOfBytesRead) {
         LPBYTE pNewUrlContent = (LPBYTE)HeapReAlloc(
             GetProcessHeap(), 0, pUrlContent, dwLength + 0x400);
         if (!pNewUrlContent) {
-            InternetCloseHandle(hUrlHandle);
-            InternetCloseHandle(hOpenHandle);
             HeapFree(GetProcessHeap(), 0, pUrlContent);
             return std::nullopt;
         }
 
         pUrlContent = pNewUrlContent;
-        InternetReadFile(hUrlHandle, pUrlContent + dwLength, 0x400,
-                         &dwNumberOfBytesRead);
+        if (!InternetReadFile(hUrlHandle, pUrlContent + dwLength, 0x400,
+                              &dwNumberOfBytesRead)) {
+            HeapFree(GetProcessHeap(), 0, pUrlContent);
+            return std::nullopt;
+        }
+
         dwLength += dwNumberOfBytesRead;
     }
-
-    InternetCloseHandle(hUrlHandle);
-    InternetCloseHandle(hOpenHandle);
 
     // Assume UTF-8.
     int charsNeeded = MultiByteToWideChar(CP_UTF8, 0, (PCSTR)pUrlContent,
@@ -1012,6 +1141,81 @@ std::wstring ExtractWebContent(std::wstring_view webContent,
     return std::wstring(webContent.substr(start, end - start));
 }
 
+// An MSHTML client site whose DLCONTROL ambient property disables scripts,
+// ActiveX, Java, UI and all downloads.
+class HtmlNoDownloadClientSite
+    : public winrt::
+          implements<HtmlNoDownloadClientSite, IOleClientSite, IDispatch> {
+   public:
+    // IOleClientSite
+    HRESULT STDMETHODCALLTYPE SaveObject() override { return E_NOTIMPL; }
+
+    HRESULT STDMETHODCALLTYPE GetMoniker(DWORD dwAssign,
+                                         DWORD dwWhichMoniker,
+                                         IMoniker** ppmk) override {
+        *ppmk = nullptr;
+        return E_NOTIMPL;
+    }
+
+    HRESULT STDMETHODCALLTYPE
+    GetContainer(IOleContainer** ppContainer) override {
+        *ppContainer = nullptr;
+        return E_NOINTERFACE;
+    }
+
+    HRESULT STDMETHODCALLTYPE ShowObject() override { return S_OK; }
+
+    HRESULT STDMETHODCALLTYPE OnShowWindow(BOOL fShow) override { return S_OK; }
+
+    HRESULT STDMETHODCALLTYPE RequestNewObjectLayout() override {
+        return E_NOTIMPL;
+    }
+
+    // IDispatch
+    HRESULT STDMETHODCALLTYPE GetTypeInfoCount(UINT* pctinfo) override {
+        *pctinfo = 0;
+        return S_OK;
+    }
+
+    HRESULT STDMETHODCALLTYPE GetTypeInfo(UINT iTInfo,
+                                          LCID lcid,
+                                          ITypeInfo** ppTInfo) override {
+        *ppTInfo = nullptr;
+        return E_NOTIMPL;
+    }
+
+    HRESULT STDMETHODCALLTYPE GetIDsOfNames(REFIID riid,
+                                            LPOLESTR* rgszNames,
+                                            UINT cNames,
+                                            LCID lcid,
+                                            DISPID* rgDispId) override {
+        return E_NOTIMPL;
+    }
+
+    HRESULT STDMETHODCALLTYPE Invoke(DISPID dispIdMember,
+                                     REFIID riid,
+                                     LCID lcid,
+                                     WORD wFlags,
+                                     DISPPARAMS* pDispParams,
+                                     VARIANT* pVarResult,
+                                     EXCEPINFO* pExcepInfo,
+                                     UINT* puArgErr) override {
+        if (dispIdMember != DISPID_AMBIENT_DLCONTROL || !pVarResult) {
+            return DISP_E_MEMBERNOTFOUND;
+        }
+
+        // Omitting DLCTL_DLIMAGES, DLCTL_VIDEOS and DLCTL_BGSOUNDS disables
+        // those downloads.
+        V_VT(pVarResult) = VT_I4;
+        V_I4(pVarResult) = DLCTL_NO_SCRIPTS | DLCTL_NO_JAVA |
+                           DLCTL_NO_RUNACTIVEXCTLS | DLCTL_NO_DLACTIVEXCTLS |
+                           DLCTL_NO_FRAMEDOWNLOAD | DLCTL_NO_BEHAVIORS |
+                           DLCTL_NO_CLIENTPULL | DLCTL_SILENT |
+                           DLCTL_FORCEOFFLINE;
+        return S_OK;
+    }
+};
+
 std::wstring ExtractTextFromHtml(std::wstring html) {
     winrt::com_ptr<IHTMLDocument2> doc;
     winrt::check_hresult(CoCreateInstance(CLSID_HTMLDocument, nullptr,
@@ -1020,6 +1224,18 @@ std::wstring ExtractTextFromHtml(std::wstring html) {
     if (!doc) {
         throw std::runtime_error("HTML document creation failed");
     }
+
+    // The content is untrusted.
+    auto oleObject = doc.as<IOleObject>();
+    auto clientSite = winrt::make_self<HtmlNoDownloadClientSite>();
+    winrt::check_hresult(oleObject->SetClientSite(clientSite.get()));
+
+    // The site's code lives in the mod, so don't leave MSHTML holding it once
+    // the document goes away, including on the error paths below.
+    struct ClientSiteDetacher {
+        IOleObject* oleObject;
+        ~ClientSiteDetacher() { oleObject->SetClientSite(nullptr); }
+    } clientSiteDetacher{oleObject.get()};
 
     // Prepare HTML content for processing.
     _bstr_t htmlBstr(
@@ -1385,10 +1601,12 @@ void WebContentUpdateThreadUninit() {
 
     if (thread) {
         SetEvent(stopEvent);
+        CancelUrlRequests();
         WaitForSingleObject(thread, INFINITE);
         CloseHandle(thread);
         CloseHandle(refreshEvent);
         CloseHandle(stopEvent);
+        ResumeUrlRequests();
     }
 
     std::lock_guard<std::mutex> guard(g_webContentMutex);
@@ -1605,6 +1823,75 @@ void GetTimeZone(WCHAR* buffer, size_t bufferSize) {
                  static_cast<int>(minutes));
 }
 
+ULONGLONG SystemTimeToFileTimeValue(const SYSTEMTIME* time) {
+    FILETIME fileTime{};
+    SystemTimeToFileTime(time, &fileTime);
+    ULARGE_INTEGER value{
+        .LowPart = fileTime.dwLowDateTime,
+        .HighPart = fileTime.dwHighDateTime,
+    };
+    return value.QuadPart;
+}
+
+SYSTEMTIME FileTimeValueToSystemTime(ULONGLONG value) {
+    FILETIME fileTime{
+        .dwLowDateTime = static_cast<DWORD>(value),
+        .dwHighDateTime = static_cast<DWORD>(value >> 32),
+    };
+    SYSTEMTIME time{};
+    FileTimeToSystemTime(&fileTime, &time);
+    return time;
+}
+
+// Returns g_formatTime converted to UTC. When DST ends, an hour of local time
+// repeats, so the latest matching UTC time is chosen, within a window from a
+// day ago to a minute from now (the minute tolerates the clock being adjusted
+// backwards). The window has at most one DST change, so the UTC offsets at its
+// ends are the only candidates.
+const SYSTEMTIME* GetFormatTimeUtc() {
+    if (g_formatTimeUtcFormatIndex == g_formatIndex) {
+        return &g_formatTimeUtc;
+    }
+
+    g_formatTimeUtcFormatIndex = g_formatIndex;
+
+    auto utcToLocal = [](ULONGLONG utc) {
+        SYSTEMTIME utcTime = FileTimeValueToSystemTime(utc);
+        SYSTEMTIME localTime{};
+        SystemTimeToTzSpecificLocalTime(nullptr, &utcTime, &localTime);
+        return SystemTimeToFileTimeValue(&localTime);
+    };
+
+    constexpr ULONGLONG kMinuteIn100Ns = 60 * 10000000ULL;
+    constexpr ULONGLONG kDayIn100Ns = 24 * 60 * kMinuteIn100Ns;
+
+    SYSTEMTIME nowTime;
+    GetSystemTime(&nowTime);
+    ULONGLONG now = SystemTimeToFileTimeValue(&nowTime);
+
+    ULONGLONG local = SystemTimeToFileTimeValue(&g_formatTime);
+
+    ULONGLONG windowEnd = now + kMinuteIn100Ns;
+
+    std::optional<ULONGLONG> result;
+    for (ULONGLONG offsetTime : {windowEnd, now - kDayIn100Ns}) {
+        ULONGLONG utc = local + offsetTime - utcToLocal(offsetTime);
+        if (utc <= windowEnd && utcToLocal(utc) == local &&
+            (!result || utc > *result)) {
+            result = utc;
+        }
+    }
+
+    if (result) {
+        g_formatTimeUtc = FileTimeValueToSystemTime(*result);
+    } else {
+        TzSpecificLocalTimeToSystemTime(nullptr, &g_formatTime,
+                                        &g_formatTimeUtc);
+    }
+
+    return &g_formatTimeUtc;
+}
+
 std::vector<std::wstring> SplitTimeFormatString(std::wstring_view s) {
     size_t posStart = 0;
     std::wstring token;
@@ -1710,13 +1997,9 @@ PCWSTR GetTimeFormattedTz(size_t index) {
     if (timeFormattedTz.formatIndex != g_formatIndex) {
         const auto& timeZoneInformation = g_timeZoneInformation[index];
         if (timeZoneInformation && pSystemTimeToTzSpecificLocalTimeEx) {
-            SYSTEMTIME systemTime;
-            TzSpecificLocalTimeToSystemTime(nullptr, &g_formatTime,
-                                            &systemTime);
-
             SYSTEMTIME timeTz;
             pSystemTimeToTzSpecificLocalTimeEx(&*timeZoneInformation,
-                                               &systemTime, &timeTz);
+                                               GetFormatTimeUtc(), &timeTz);
 
             const SYSTEMTIME* time = &timeTz;
 
@@ -1738,34 +2021,57 @@ PCWSTR GetTimeFormattedTz(size_t index) {
     return timeFormattedTz.buffer;
 }
 
-// GetDateFormatEx treats an empty locale name as the invariant locale, so pass
-// nullptr (the user's default locale) when no locale is configured.
-PCWSTR GetDateLocaleName() {
-    return *g_settings.dateLocale ? g_settings.dateLocale.get() : nullptr;
+PCWSTR GetUnixTimeFormatted() {
+    if (g_unixTimeFormatted.formatIndex != g_formatIndex) {
+        // 100-nanosecond intervals between 1601-01-01 and 1970-01-01.
+        constexpr LONGLONG kUnixEpochIn100Ns = 116444736000000000LL;
+        constexpr LONGLONG kSecondIn100Ns = 10000000LL;
+
+        LONGLONG formatTimeUtc = static_cast<LONGLONG>(
+            SystemTimeToFileTimeValue(GetFormatTimeUtc()));
+        swprintf_s(g_unixTimeFormatted.buffer, L"%lld",
+                   (formatTimeUtc - kUnixEpochIn100Ns) / kSecondIn100Ns);
+
+        g_unixTimeFormatted.formatIndex = g_formatIndex;
+    }
+
+    return g_unixTimeFormatted.buffer;
+}
+
+// Returns the locale of the date format at the given index, falling back to the
+// first locale. GetDateFormatEx treats an empty locale name as the invariant
+// locale, so return nullptr (the user's default locale) for an empty one.
+PCWSTR GetDateLocaleName(size_t index) {
+    const auto& locales = g_settings.dateLocales;
+    if (index >= locales.size()) {
+        index = 0;
+    }
+
+    return index < locales.size() && !locales[index].empty()
+               ? locales[index].c_str()
+               : nullptr;
 }
 
 PCWSTR GetDateFormattedWithExtra(std::vector<std::wstring>** extra) {
     if (g_dateFormatted.formatIndex != g_formatIndex) {
         const SYSTEMTIME* time = &g_formatTime;
 
-        PCWSTR dateLocale = GetDateLocaleName();
-
         auto dateFormatParts =
             SplitTimeFormatString(g_settings.dateFormat.get());
 
         GetDateFormatEx_Original(
-            dateLocale, DATE_AUTOLAYOUT, time,
+            GetDateLocaleName(0), DATE_AUTOLAYOUT, time,
             !dateFormatParts[0].empty() ? dateFormatParts[0].c_str() : nullptr,
             g_dateFormatted.buffer, ARRAYSIZE(g_dateFormatted.buffer), nullptr);
 
         g_dateFormattedExtra.resize(dateFormatParts.size() - 1);
         for (size_t i = 1; i < dateFormatParts.size(); i++) {
             WCHAR formatted[FORMATTED_BUFFER_SIZE];
-            GetDateFormatEx_Original(dateLocale, DATE_AUTOLAYOUT, time,
-                                     !dateFormatParts[i].empty()
-                                         ? dateFormatParts[i].c_str()
-                                         : nullptr,
-                                     formatted, ARRAYSIZE(formatted), nullptr);
+            GetDateFormatEx_Original(
+                GetDateLocaleName(i), DATE_AUTOLAYOUT, time,
+                !dateFormatParts[i].empty() ? dateFormatParts[i].c_str()
+                                            : nullptr,
+                formatted, ARRAYSIZE(formatted), nullptr);
             g_dateFormattedExtra[i - 1] = formatted;
         }
 
@@ -1799,13 +2105,9 @@ PCWSTR GetDateFormattedTz(size_t index) {
     if (dateFormattedTz.formatIndex != g_formatIndex) {
         const auto& timeZoneInformation = g_timeZoneInformation[index];
         if (timeZoneInformation && pSystemTimeToTzSpecificLocalTimeEx) {
-            SYSTEMTIME systemTime;
-            TzSpecificLocalTimeToSystemTime(nullptr, &g_formatTime,
-                                            &systemTime);
-
             SYSTEMTIME timeTz;
             pSystemTimeToTzSpecificLocalTimeEx(&*timeZoneInformation,
-                                               &systemTime, &timeTz);
+                                               GetFormatTimeUtc(), &timeTz);
 
             const SYSTEMTIME* time = &timeTz;
 
@@ -1813,7 +2115,7 @@ PCWSTR GetDateFormattedTz(size_t index) {
                 SplitTimeFormatString(g_settings.dateFormat.get());
 
             GetDateFormatEx_Original(
-                GetDateLocaleName(), DATE_AUTOLAYOUT, time,
+                GetDateLocaleName(0), DATE_AUTOLAYOUT, time,
                 !dateFormatParts[0].empty() ? dateFormatParts[0].c_str()
                                             : nullptr,
                 dateFormattedTz.buffer, ARRAYSIZE(dateFormattedTz.buffer),
@@ -1830,7 +2132,7 @@ PCWSTR GetDateFormattedTz(size_t index) {
 
 void FormatWeekday(const SYSTEMTIME* time, PWSTR buffer, size_t bufferSize) {
     if (g_settings.weekdayFormatCustom.empty()) {
-        GetDateFormatEx_Original(GetDateLocaleName(), DATE_AUTOLAYOUT, time,
+        GetDateFormatEx_Original(GetDateLocaleName(0), DATE_AUTOLAYOUT, time,
                                  *g_settings.weekdayFormat
                                      ? g_settings.weekdayFormat.get()
                                      : L"dddd",
@@ -1868,18 +2170,11 @@ PCWSTR GetWeekdayFormattedTz(size_t index) {
     if (weekdayFormattedTz.formatIndex != g_formatIndex) {
         const auto& timeZoneInformation = g_timeZoneInformation[index];
         if (timeZoneInformation && pSystemTimeToTzSpecificLocalTimeEx) {
-            SYSTEMTIME systemTime;
-            TzSpecificLocalTimeToSystemTime(nullptr, &g_formatTime,
-                                            &systemTime);
-
             SYSTEMTIME timeTz;
             pSystemTimeToTzSpecificLocalTimeEx(&*timeZoneInformation,
-                                               &systemTime, &timeTz);
+                                               GetFormatTimeUtc(), &timeTz);
 
             const SYSTEMTIME* time = &timeTz;
-
-            auto weekdayFormatParts =
-                SplitTimeFormatString(g_settings.weekdayFormat.get());
 
             FormatWeekday(time, weekdayFormattedTz.buffer,
                           ARRAYSIZE(weekdayFormattedTz.buffer));
@@ -2034,17 +2329,17 @@ struct DxgiAdapterInfo {
     SIZE_T shared_system_memory;
 };
 
-std::optional<DxgiAdapterInfo> GetDxgiAdapterInfo(PCWSTR gpu_name, bool quiet) {
-    static std::optional<std::wstring> s_gpuName;
-    static std::optional<DxgiAdapterInfo> s_info;
+std::optional<std::wstring> g_dxgiAdapterInfoGpuName;
+std::optional<DxgiAdapterInfo> g_dxgiAdapterInfo;
 
+std::optional<DxgiAdapterInfo> GetDxgiAdapterInfo(PCWSTR gpu_name, bool quiet) {
     std::wstring gpu_name_key = gpu_name ? gpu_name : L"";
-    if (s_gpuName == gpu_name_key) {
-        return s_info;
+    if (g_dxgiAdapterInfoGpuName == gpu_name_key) {
+        return g_dxgiAdapterInfo;
     }
 
-    s_gpuName = gpu_name_key;
-    s_info.reset();
+    g_dxgiAdapterInfoGpuName = gpu_name_key;
+    g_dxgiAdapterInfo.reset();
 
     winrt::com_ptr<IDXGIFactory> factory;
     if (FAILED(CreateDXGIFactory(IID_PPV_ARGS(factory.put())))) {
@@ -2073,7 +2368,7 @@ std::optional<DxgiAdapterInfo> GetDxgiAdapterInfo(PCWSTR gpu_name, bool quiet) {
 
         // If a name is specified, check for a match.
         if (gpu_name && *gpu_name) {
-            if (wcsstr(desc.Description, gpu_name)) {
+            if (StrStrIW(desc.Description, gpu_name)) {
                 best_desc = desc;
                 found = true;
                 break;
@@ -2096,13 +2391,41 @@ std::optional<DxgiAdapterInfo> GetDxgiAdapterInfo(PCWSTR gpu_name, bool quiet) {
     swprintf_s(luid_str, L"0x%08X_0x%08X", best_desc.AdapterLuid.HighPart,
                best_desc.AdapterLuid.LowPart);
 
-    s_info = DxgiAdapterInfo{
+    g_dxgiAdapterInfo = DxgiAdapterInfo{
         best_desc.Description,        luid_str,
         best_desc.AdapterLuid,        best_desc.DedicatedVideoMemory,
         best_desc.SharedSystemMemory,
     };
 
-    return s_info;
+    return g_dxgiAdapterInfo;
+}
+
+// Makes the next GetDxgiAdapterInfo call enumerate the adapters again. A driver
+// update or a GPU reset assigns the adapter a new LUID.
+void InvalidateDxgiAdapterInfo() {
+    g_dxgiAdapterInfoGpuName.reset();
+}
+
+// Invalidates the cached adapter info if D3DKMT no longer recognizes its LUID.
+// This is much cheaper than enumerating the adapters again.
+void InvalidateDxgiAdapterInfoIfStale() {
+    if (!g_dxgiAdapterInfo || !pD3DKMTOpenAdapterFromLuid ||
+        !pD3DKMTCloseAdapter) {
+        return;
+    }
+
+    D3DKMT_OPENADAPTERFROMLUID openAdapter{};
+    openAdapter.AdapterLuid = g_dxgiAdapterInfo->luidValue;
+    if (pD3DKMTOpenAdapterFromLuid(&openAdapter) != 0) {
+        Wh_Log(L"GPU adapter LUID %s is stale",
+               g_dxgiAdapterInfo->luid.c_str());
+        InvalidateDxgiAdapterInfo();
+        return;
+    }
+
+    D3DKMT_CLOSEADAPTER closeAdapter{};
+    closeAdapter.hAdapter = openAdapter.hAdapter;
+    pD3DKMTCloseAdapter(&closeAdapter);
 }
 
 std::optional<double> GetDedicatedVramTotalGb() {
@@ -2141,6 +2464,7 @@ std::optional<double> GetGpuTemperatureCelsius() {
     D3DKMT_OPENADAPTERFROMLUID openAdapter{};
     openAdapter.AdapterLuid = info->luidValue;
     if (pD3DKMTOpenAdapterFromLuid(&openAdapter) != 0) {
+        InvalidateDxgiAdapterInfo();
         return std::nullopt;
     }
 
@@ -2554,7 +2878,7 @@ std::wstring_view QueryDataCollectionSession::ExtractGpuLuid(
     return instance.substr(luid_start, phys_pos - luid_start);
 }
 
-// Filter network paths by adapter name (substring match).
+// Filter network paths by adapter name (case-insensitive substring match).
 std::vector<std::wstring>
 QueryDataCollectionSession::FilterNetworkPathsByAdapterName(
     const std::vector<std::wstring>& paths,
@@ -2571,7 +2895,7 @@ QueryDataCollectionSession::FilterNetworkPathsByAdapterName(
             continue;
         }
 
-        if (instance.find(adapter_name) != std::wstring_view::npos) {
+        if (StrStrIW(std::wstring(instance).c_str(), adapter_name)) {
             if (!quiet) {
                 Wh_Log(L"Matched network adapter: %.*s",
                        static_cast<int>(instance.size()), instance.data());
@@ -2634,6 +2958,10 @@ QueryDataCollectionSession::FilterGpuPathsByAdapterName(
         if (!quiet) {
             Wh_Log(L"No GPU paths matched LUID %s", info->luid.c_str());
         }
+
+        // An idle GPU may have no instances either, so check the LUID before
+        // enumerating the adapters again.
+        InvalidateDxgiAdapterInfoIfStale();
         return {};
     }
 
@@ -2643,15 +2971,18 @@ QueryDataCollectionSession::FilterGpuPathsByAdapterName(
     return filtered;
 }
 
-std::optional<QueryDataCollectionSession> g_dataCollectionSession;
+[[clang::no_destroy]] std::optional<QueryDataCollectionSession>
+    g_dataCollectionSession;
 DWORD g_dataCollectionLastFormatIndex;
+
+// Whether a metric that changes over time is shown, in which case the clock
+// refreshes every second so that the update interval takes effect.
+bool g_dataCollectionPatternUsed;
 
 // Media player helper functions
 
-bool IsMediaPlayerIgnored(const winrt::hstring& appId) {
-    std::wstring appIdLower(appId);
-    std::transform(appIdLower.begin(), appIdLower.end(), appIdLower.begin(),
-                   ::towlower);
+void UpdateMediaIgnoredPlayersNoLock() {
+    g_mediaIgnoredPlayers.clear();
 
     for (const auto& ignored : g_settings.mediaPlayer.ignoredPlayers) {
         std::wstring ignoredLower(ignored.get());
@@ -2660,7 +2991,17 @@ bool IsMediaPlayerIgnored(const winrt::hstring& appId) {
         }
         std::transform(ignoredLower.begin(), ignoredLower.end(),
                        ignoredLower.begin(), ::towlower);
-        if (appIdLower.find(ignoredLower) != std::wstring::npos) {
+        g_mediaIgnoredPlayers.push_back(std::move(ignoredLower));
+    }
+}
+
+bool IsMediaPlayerIgnoredNoLock(const winrt::hstring& appId) {
+    std::wstring appIdLower(appId);
+    std::transform(appIdLower.begin(), appIdLower.end(), appIdLower.begin(),
+                   ::towlower);
+
+    for (const auto& ignored : g_mediaIgnoredPlayers) {
+        if (appIdLower.find(ignored) != std::wstring::npos) {
             return true;
         }
     }
@@ -2734,7 +3075,9 @@ std::wstring RemoveBracketsFromString(std::wstring_view input) {
     return result.substr(startPos, endPos - startPos + 1);
 }
 
-void ClearMediaFormattedStrings() {
+// The media helpers below require g_mediaMutex to be held.
+
+void ClearMediaFormattedStringsNoLock() {
     g_mediaActive = false;
     wcscpy_s(g_mediaTitleFormatted.buffer, L"");
     wcscpy_s(g_mediaArtistFormatted.buffer, L"");
@@ -2743,7 +3086,7 @@ void ClearMediaFormattedStrings() {
 }
 
 winrt::Windows::Media::Control::GlobalSystemMediaTransportControlsSession
-FindActiveMediaSession() {
+FindActiveMediaSessionNoLock() {
     if (!g_mediaSessionManager) {
         return nullptr;
     }
@@ -2753,7 +3096,7 @@ FindActiveMediaSession() {
     if (currentSession) {
         try {
             auto appId = currentSession.SourceAppUserModelId();
-            if (!IsMediaPlayerIgnored(appId)) {
+            if (!IsMediaPlayerIgnoredNoLock(appId)) {
                 return currentSession;
             }
         } catch (...) {
@@ -2770,7 +3113,7 @@ FindActiveMediaSession() {
             auto session = sessions.GetAt(i);
             try {
                 auto appId = session.SourceAppUserModelId();
-                if (IsMediaPlayerIgnored(appId)) {
+                if (IsMediaPlayerIgnoredNoLock(appId)) {
                     continue;
                 }
 
@@ -2795,7 +3138,7 @@ FindActiveMediaSession() {
             auto session = sessions.GetAt(i);
             try {
                 auto appId = session.SourceAppUserModelId();
-                if (!IsMediaPlayerIgnored(appId)) {
+                if (!IsMediaPlayerIgnoredNoLock(appId)) {
                     return session;
                 }
             } catch (...) {
@@ -2812,18 +3155,20 @@ FindActiveMediaSession() {
     return nullptr;
 }
 
-void RefreshMediaData() {
-    std::lock_guard<std::mutex> guard(g_mediaMutex);
+void RefreshMediaDataNoLock() {
+    // Clear the flag before reading, so that a change signaled while the query
+    // below is in flight schedules another refresh instead of being swallowed.
+    g_mediaDataDirty = false;
 
     try {
         if (!g_mediaSessionManager) {
-            ClearMediaFormattedStrings();
+            ClearMediaFormattedStringsNoLock();
             return;
         }
 
-        auto session = FindActiveMediaSession();
+        auto session = FindActiveMediaSessionNoLock();
         if (!session) {
-            ClearMediaFormattedStrings();
+            ClearMediaFormattedStringsNoLock();
             return;
         }
 
@@ -2831,7 +3176,7 @@ void RefreshMediaData() {
         auto playbackInfo = session.GetPlaybackInfo();
 
         if (!mediaProperties) {
-            ClearMediaFormattedStrings();
+            ClearMediaFormattedStringsNoLock();
             return;
         }
 
@@ -2874,10 +3219,8 @@ void RefreshMediaData() {
     } catch (...) {
         HRESULT hr = winrt::to_hresult();
         Wh_Log(L"RefreshMediaData error: %08X", hr);
-        ClearMediaFormattedStrings();
+        ClearMediaFormattedStringsNoLock();
     }
-
-    g_mediaDataDirty = false;
 }
 
 void DataCollectionSessionInit() {
@@ -2922,8 +3265,23 @@ void DataCollectionSessionInit() {
         IsStrInDateTimePatternSettings(L"%cpu_temp%") ||
         IsStrInDateTimePatternSettings(L"%cpu_temp_f%");
 
-    if (!std::any_of(std::begin(metrics), std::end(metrics),
-                     [](bool x) { return x; })) {
+    bool sessionNeeded = std::any_of(std::begin(metrics), std::end(metrics),
+                                     [](bool x) { return x; });
+
+    // Metrics read without the session. Totals that never change are left out.
+    g_dataCollectionPatternUsed =
+        sessionNeeded || IsStrInDateTimePatternSettings(L"%ram%") ||
+        IsStrInDateTimePatternSettings(L"%ram_used%") ||
+        IsStrInDateTimePatternSettings(L"%ram_committed%") ||
+        IsStrInDateTimePatternSettings(L"%ram_committed_used%") ||
+        IsStrInDateTimePatternSettings(L"%ram_committed_total%") ||
+        IsStrInDateTimePatternSettings(L"%gpu_temp%") ||
+        IsStrInDateTimePatternSettings(L"%gpu_temp_f%") ||
+        IsStrInDateTimePatternSettings(L"%battery%") ||
+        IsStrInDateTimePatternSettings(L"%battery_time%") ||
+        IsStrInDateTimePatternSettings(L"%power%");
+
+    if (!sessionNeeded) {
         return;
     }
 
@@ -2948,6 +3306,7 @@ void DataCollectionSessionInit() {
 void DataCollectionSessionUninit() {
     g_dataCollectionSession.reset();
     g_dataCollectionLastFormatIndex = 0;
+    g_dataCollectionPatternUsed = false;
 }
 
 bool IsMediaPatternUsed() {
@@ -2958,7 +3317,7 @@ bool IsMediaPatternUsed() {
            IsStrInDateTimePatternSettings(L"%media_info%");
 }
 
-void UnsubscribeFromMediaSession() {
+void UnsubscribeFromMediaSessionNoLock() {
     if (g_mediaCurrentSession) {
         try {
             g_mediaCurrentSession.MediaPropertiesChanged(
@@ -2973,15 +3332,15 @@ void UnsubscribeFromMediaSession() {
     }
 }
 
-void SubscribeToMediaSession() {
-    UnsubscribeFromMediaSession();
+void SubscribeToMediaSessionNoLock() {
+    UnsubscribeFromMediaSessionNoLock();
 
     if (!g_mediaSessionManager) {
         return;
     }
 
     try {
-        auto session = FindActiveMediaSession();
+        auto session = FindActiveMediaSessionNoLock();
         if (!session) {
             return;
         }
@@ -3000,48 +3359,79 @@ void SubscribeToMediaSession() {
 }
 
 void MediaSessionUninit() {
-    UnsubscribeFromMediaSession();
+    winrt::Windows::Media::Control::
+        GlobalSystemMediaTransportControlsSessionManager sessionManager{
+            nullptr};
+    winrt::event_token sessionsChangedToken;
 
-    if (g_mediaSessionManager) {
+    {
+        std::lock_guard<std::mutex> guard(g_mediaMutex);
+
+        UnsubscribeFromMediaSessionNoLock();
+
+        sessionManager = std::move(g_mediaSessionManager);
+        sessionsChangedToken = g_mediaSessionsChangedToken;
+        g_mediaSessionsChangedToken = {};
+
+        g_mediaIgnoredPlayers.clear();
+        g_mediaDataDirty = true;
+    }
+
+    // Detach outside the lock: this waits for an in-flight
+    // OnMediaSessionsChanged, which takes the lock itself.
+    if (sessionManager) {
         try {
-            g_mediaSessionManager.SessionsChanged(g_mediaSessionsChangedToken);
+            sessionManager.SessionsChanged(sessionsChangedToken);
         } catch (...) {
             HRESULT hr = winrt::to_hresult();
             Wh_Log(L"MediaSessionUninit error: %08X", hr);
         }
-        g_mediaSessionManager = nullptr;
     }
-
-    g_mediaDataDirty = true;
 }
 
 void OnMediaSessionsChanged() {
     g_mediaDataDirty = true;
-    SubscribeToMediaSession();
+
+    std::lock_guard<std::mutex> guard(g_mediaMutex);
+    SubscribeToMediaSessionNoLock();
 }
 
 void MediaSessionInit() {
-    if (!IsMediaPatternUsed()) {
+    g_mediaPatternUsed = IsMediaPatternUsed();
+    if (!g_mediaPatternUsed) {
         return;
     }
 
-    try {
-        g_mediaSessionManager =
-            winrt::Windows::Media::Control::
-                GlobalSystemMediaTransportControlsSessionManager::RequestAsync()
-                    .get();
+    bool failed = false;
 
-        // Subscribe to SessionsChanged event
-        g_mediaSessionsChangedToken = g_mediaSessionManager.SessionsChanged(
-            [](auto&&, auto&&) { OnMediaSessionsChanged(); });
+    {
+        std::lock_guard<std::mutex> guard(g_mediaMutex);
 
-        // Subscribe to current session events
-        SubscribeToMediaSession();
+        UpdateMediaIgnoredPlayersNoLock();
 
-        RefreshMediaData();
-    } catch (...) {
-        HRESULT hr = winrt::to_hresult();
-        Wh_Log(L"MediaSessionInit error %08X", hr);
+        try {
+            g_mediaSessionManager =
+                winrt::Windows::Media::Control::
+                    GlobalSystemMediaTransportControlsSessionManager::
+                        RequestAsync()
+                            .get();
+
+            // Subscribe to SessionsChanged event
+            g_mediaSessionsChangedToken = g_mediaSessionManager.SessionsChanged(
+                [](auto&&, auto&&) { OnMediaSessionsChanged(); });
+
+            // Subscribe to current session events
+            SubscribeToMediaSessionNoLock();
+
+            RefreshMediaDataNoLock();
+        } catch (...) {
+            HRESULT hr = winrt::to_hresult();
+            Wh_Log(L"MediaSessionInit error %08X", hr);
+            failed = true;
+        }
+    }
+
+    if (failed) {
         MediaSessionUninit();
     }
 }
@@ -3219,6 +3609,10 @@ void FormatDiskTransferSpeed(double val, PWSTR buffer, size_t bufferSize) {
     FormatTransferSpeed(val, g_settings.dataCollection.diskMetricsFormat,
                         g_settings.dataCollection.diskMetricsFixedDecimals,
                         buffer, bufferSize);
+}
+
+void FormatGbValue(double val, PWSTR buffer, size_t bufferSize) {
+    wcscpy_s(buffer, bufferSize, FormatLocaleNum(val, 1).c_str());
 }
 
 void FormatPercentValue(int val, PWSTR buffer, size_t bufferSize, int maxVal) {
@@ -3423,7 +3817,7 @@ PCWSTR GetRamUsedFormatted() {
         }
         double usedGb =
             (double)(status->ullTotalPhys - status->ullAvailPhys) / kGBInBytes;
-        swprintf_s(buffer, bufferSize, L"%.1f", usedGb);
+        FormatGbValue(usedGb, buffer, bufferSize);
         return true;
     });
 }
@@ -3436,7 +3830,7 @@ PCWSTR GetRamTotalFormatted() {
                 return false;
             }
             double totalGb = (double)status->ullTotalPhys / kGBInBytes;
-            swprintf_s(buffer, bufferSize, L"%.1f", totalGb);
+            FormatGbValue(totalGb, buffer, bufferSize);
             return true;
         });
 }
@@ -3468,7 +3862,7 @@ PCWSTR GetRamCommittedUsedFormatted() {
             double usedGb =
                 (double)(status->ullTotalPageFile - status->ullAvailPageFile) /
                 kGBInBytes;
-            swprintf_s(buffer, bufferSize, L"%.1f", usedGb);
+            FormatGbValue(usedGb, buffer, bufferSize);
             return true;
         });
 }
@@ -3481,7 +3875,7 @@ PCWSTR GetRamCommittedTotalFormatted() {
                 return false;
             }
             double totalGb = (double)status->ullTotalPageFile / kGBInBytes;
-            swprintf_s(buffer, bufferSize, L"%.1f", totalGb);
+            FormatGbValue(totalGb, buffer, bufferSize);
             return true;
         });
 }
@@ -3539,7 +3933,7 @@ PCWSTR GetVramUsedFormatted() {
             if (!val) {
                 return false;
             }
-            swprintf_s(buffer, bufferSize, L"%.1f", *val / kGBInBytes);
+            FormatGbValue(*val / kGBInBytes, buffer, bufferSize);
             return true;
         });
 }
@@ -3551,7 +3945,7 @@ PCWSTR GetVramTotalFormatted() {
             if (!val) {
                 return false;
             }
-            swprintf_s(buffer, bufferSize, L"%.1f", *val);
+            FormatGbValue(*val, buffer, bufferSize);
             return true;
         });
 }
@@ -3590,7 +3984,7 @@ PCWSTR GetVramSharedUsedFormatted() {
             if (!val) {
                 return false;
             }
-            swprintf_s(buffer, bufferSize, L"%.1f", *val / kGBInBytes);
+            FormatGbValue(*val / kGBInBytes, buffer, bufferSize);
             return true;
         });
 }
@@ -3602,7 +3996,7 @@ PCWSTR GetVramSharedTotalFormatted() {
             if (!val) {
                 return false;
             }
-            swprintf_s(buffer, bufferSize, L"%.1f", *val);
+            FormatGbValue(*val, buffer, bufferSize);
             return true;
         });
 }
@@ -3676,7 +4070,9 @@ PCWSTR GetBatteryFormatted() {
     return GetMetricFormatted(
         g_batteryFormatted, [](PWSTR buffer, size_t bufferSize) {
             SYSTEM_POWER_STATUS powerStatus;
-            if (!GetSystemPowerStatus(&powerStatus)) {
+            // A level of 255 means unknown.
+            if (!GetSystemPowerStatus(&powerStatus) ||
+                powerStatus.BatteryLifePercent == 255) {
                 return false;
             }
             int maxVal = 100;
@@ -3745,9 +4141,12 @@ PCWSTR GetPowerFormatted() {
 }
 
 void RefreshMediaDataIfDirty() {
-    if (g_mediaDataDirty) {
-        RefreshMediaData();
+    if (!g_mediaDataDirty) {
+        return;
     }
+
+    std::lock_guard<std::mutex> guard(g_mediaMutex);
+    RefreshMediaDataNoLock();
 }
 
 PCWSTR GetMediaTitleFormatted() {
@@ -3805,29 +4204,39 @@ PCWSTR GetMediaInfoFormatted() {
     return g_mediaInfoFormatted.buffer;
 }
 
-int ResolveFormatTokenWithDigit(std::wstring_view format,
-                                std::wstring_view formatTokenPrefix,
-                                std::wstring_view formatTokenSuffix) {
-    if (format.size() <
-        formatTokenPrefix.size() + 1 + formatTokenSuffix.size()) {
-        return 0;
-    }
-
+// Matches a token of the form <prefix><n><suffix>, where <n> is a positive
+// decimal number without leading zeros. Returns the token length and sets
+// *number, or returns 0 if there's no match.
+size_t ResolveFormatTokenWithNumber(std::wstring_view format,
+                                    std::wstring_view formatTokenPrefix,
+                                    std::wstring_view formatTokenSuffix,
+                                    int* number) {
     if (!format.starts_with(formatTokenPrefix)) {
         return 0;
     }
 
-    WCHAR digitChar = format[formatTokenPrefix.size()];
-    if (digitChar < L'1' || digitChar > L'9') {
+    size_t pos = formatTokenPrefix.size();
+    if (pos >= format.size() || format[pos] < L'1' || format[pos] > L'9') {
         return 0;
     }
 
-    if (!format.substr(formatTokenPrefix.size() + 1)
-             .starts_with(formatTokenSuffix)) {
+    int value = 0;
+    for (; pos < format.size() && format[pos] >= L'0' && format[pos] <= L'9';
+         pos++) {
+        // Prevent overflow, far beyond any practical list size.
+        if (value >= 100000) {
+            return 0;
+        }
+
+        value = value * 10 + (format[pos] - L'0');
+    }
+
+    if (!format.substr(pos).starts_with(formatTokenSuffix)) {
         return 0;
     }
 
-    return digitChar - L'0';
+    *number = value;
+    return pos + formatTokenSuffix.size();
 }
 
 size_t ResolveFormatToken(
@@ -3840,6 +4249,7 @@ size_t ResolveFormatToken(
         FormattedStringValueGetter valueGetter;
     } formatTokens[] = {
         {L"%time%"sv, GetTimeFormatted},
+        {L"%unix%"sv, GetUnixTimeFormatted},
         {L"%date%"sv, GetDateFormatted},
         {L"%weekday%"sv, GetWeekdayFormatted},
         {L"%weekday_num%"sv, GetWeekdayNumFormatted},
@@ -3902,19 +4312,20 @@ size_t ResolveFormatToken(
     };
 
     for (auto formatTzToken : formatTzTokens) {
-        int digit =
-            ResolveFormatTokenWithDigit(format, formatTzToken.prefix, L"%"sv);
-        if (!digit) {
+        int number;
+        size_t tokenLen = ResolveFormatTokenWithNumber(
+            format, formatTzToken.prefix, L"%"sv, &number);
+        if (!tokenLen) {
             continue;
         }
 
-        PCWSTR value = formatTzToken.valueGetter(digit - 1);
+        PCWSTR value = formatTzToken.valueGetter(number - 1);
         if (!value) {
             value = L"-";
         }
 
         resolvedCallback(value);
-        return formatTzToken.prefix.size() + 2;
+        return tokenLen;
     }
 
     if (auto token = L"%web%"sv; format.starts_with(token)) {
@@ -3940,27 +4351,30 @@ size_t ResolveFormatToken(
     };
 
     for (auto formatExtraToken : formatExtraTokens) {
-        int digit = ResolveFormatTokenWithDigit(format, formatExtraToken.prefix,
-                                                L"%"sv);
-        if (!digit) {
+        int number;
+        size_t tokenLen = ResolveFormatTokenWithNumber(
+            format, formatExtraToken.prefix, L"%"sv, &number);
+        if (!tokenLen) {
             continue;
         }
 
         const auto& valueVector = *formatExtraToken.valueVectorGetter();
 
         PCWSTR value;
-        if (digit < 2 || static_cast<size_t>(digit - 2) >= valueVector.size()) {
+        if (number < 2 ||
+            static_cast<size_t>(number - 2) >= valueVector.size()) {
             value = L"-";
         } else {
-            value = valueVector[digit - 2].c_str();
+            value = valueVector[number - 2].c_str();
         }
 
         resolvedCallback(value);
-        return formatExtraToken.prefix.size() + 2;
+        return tokenLen;
     }
 
-    if (int digit = ResolveFormatTokenWithDigit(format, L"%web"sv, L"%"sv)) {
-        size_t index = digit - 1;
+    if (int number; size_t tokenLen = ResolveFormatTokenWithNumber(
+                        format, L"%web"sv, L"%"sv, &number)) {
+        size_t index = number - 1;
 
         std::lock_guard<std::mutex> guard(g_webContentMutex);
 
@@ -3974,12 +4388,12 @@ size_t ResolveFormatToken(
         }
 
         resolvedCallback(value);
-        return "%web1%"sv.size();
+        return tokenLen;
     }
 
-    if (int digit =
-            ResolveFormatTokenWithDigit(format, L"%web"sv, L"_full%"sv)) {
-        size_t index = digit - 1;
+    if (int number; size_t tokenLen = ResolveFormatTokenWithNumber(
+                        format, L"%web"sv, L"_full%"sv, &number)) {
+        size_t index = number - 1;
 
         std::lock_guard<std::mutex> guard(g_webContentMutex);
 
@@ -3993,7 +4407,7 @@ size_t ResolveFormatToken(
         }
 
         resolvedCallback(value);
-        return "%web1_full%"sv.size();
+        return tokenLen;
     }
 
     if (auto token = L"%weather%"sv; format.starts_with(token)) {
@@ -4013,17 +4427,23 @@ void EnsureFormattingInitialized() {
 
     g_formattingInitialized = true;
 
+    g_unixPatternUsed = IsStrInDateTimePatternSettings(L"%unix%");
+
     WebContentUpdateThreadInit();
     DataCollectionSessionInit();
     MediaSessionInit();
 }
 
+// Requires g_formatLineMutex to be held, both for the formatting state and for
+// the format string itself, which is normally owned by g_settings.
 int FormatLineNoLock(PWSTR buffer,
                      size_t bufferSize,
                      std::wstring_view format) {
     if (bufferSize == 0) {
         return 0;
     }
+
+    EnsureFormattingInitialized();
 
     std::wstring_view formatSuffix = format;
 
@@ -4063,23 +4483,14 @@ int FormatLineNoLock(PWSTR buffer,
     return buffer - bufferStart;
 }
 
-int FormatLine(PWSTR buffer, size_t bufferSize, std::wstring_view format) {
-    if (bufferSize == 0) {
-        return 0;
-    }
-
-    std::lock_guard<std::mutex> guard(g_formatLineMutex);
-
-    EnsureFormattingInitialized();
-
-    return FormatLineNoLock(buffer, bufferSize, format);
-}
-
 #pragma region Win11Hooks
 
-DWORD g_refreshIconThreadId;
-bool g_refreshIconNeedToAdjustTimer;
-bool g_inGetTimeToolTipString;
+// Scratch state for the refresh currently running on this thread. Several
+// taskbars refresh independently on thread pool threads, so this cannot be
+// shared between them.
+thread_local bool g_inRefreshIcon;
+thread_local bool g_refreshIconNeedToAdjustTimer;
+thread_local bool g_inGetTimeToolTipString;
 
 using ClockSystemTrayIconDataModel_RefreshIcon_t = void(WINAPI*)(
     LPVOID pThis,
@@ -4136,24 +4547,29 @@ void ClockSystemTrayIconDataModel_RefreshIcon_Hook_Impl(
     LPVOID pThis,
     LPVOID param1,
     ClockSystemTrayIconDataModel_RefreshIcon_t original) {
-    // FormatLine creates the data collection session and the web content thread
+    // Formatting creates the data collection session and the web content thread
     // on demand, but it only runs while calling the original function below,
     // after g_refreshIconNeedToAdjustTimer is set. Create them beforehand so
     // the flag accounts for them, otherwise the first refresh keeps the default
     // one-minute timer instead of shortening it to one second.
     {
         std::lock_guard<std::mutex> guard(g_formatLineMutex);
+
         EnsureFormattingInitialized();
+
+        bool webContentPending =
+            g_webContentUpdateThread && !g_webContentLoaded;
+        g_refreshIconNeedToAdjustTimer =
+            g_settings.showSeconds || g_unixPatternUsed ||
+            g_dataCollectionPatternUsed || g_mediaPatternUsed ||
+            webContentPending;
     }
 
-    g_refreshIconThreadId = GetCurrentThreadId();
-    bool webContentPending = g_webContentUpdateThread && !g_webContentLoaded;
-    g_refreshIconNeedToAdjustTimer =
-        g_settings.showSeconds || g_dataCollectionSession || webContentPending;
+    g_inRefreshIcon = true;
 
     original(pThis, param1);
 
-    g_refreshIconThreadId = 0;
+    g_inRefreshIcon = false;
     g_refreshIconNeedToAdjustTimer = false;
 }
 
@@ -4177,8 +4593,13 @@ void UpdateToolTipString(LPVOID tooltipPtrPtr) {
     auto separator = L"\r\n\r\n"sv;
 
     WCHAR extraLine[4096];
-    size_t extraLength = FormatLine(extraLine, ARRAYSIZE(extraLine),
-                                    g_settings.tooltipLine.get());
+    size_t extraLength;
+    {
+        std::lock_guard<std::mutex> guard(g_formatLineMutex);
+        extraLength = FormatLineNoLock(extraLine, ARRAYSIZE(extraLine),
+                                       g_settings.tooltipLine.get());
+    }
+
     if (extraLength == 0) {
         return;
     }
@@ -4397,9 +4818,12 @@ void ApplyTextBlockStyles(
 
     if (noWrap) {
         textBlock.TextWrapping(TextWrapping::NoWrap);
+        textBlock.TextTrimming(TextTrimming::CharacterEllipsis);
     } else {
         textBlock.as<DependencyObject>().ClearValue(
             Controls::TextBlock::TextWrappingProperty());
+        textBlock.as<DependencyObject>().ClearValue(
+            Controls::TextBlock::TextTrimmingProperty());
     }
 
     if (textStyleSettings && *textStyleSettings->textColor) {
@@ -4503,6 +4927,8 @@ void ApplyTextBlockStyles(
 
 void ApplyDateTimeIconContentStyles(
     FrameworkElement dateTimeIconContentElement) {
+    std::lock_guard<std::mutex> guard(g_clockElementStyleMutex);
+
     ClockElementStyleData* clockElementStyleData = nullptr;
 
     for (auto it = g_clockElementStyleData.begin();
@@ -4575,19 +5001,20 @@ void ApplyDateTimeIconContentStyles(
         clockElementStyleData = &g_clockElementStyleData.back();
     }
 
-    int maxWidth = clockElementStyleEnabled ? g_settings.maxWidth : 0;
-    int textSpacing = clockElementStyleEnabled ? g_settings.textSpacing : 0;
+    const ClockElementStyleSettings* styleSettings =
+        clockElementStyleEnabled ? &g_clockElementStyleSettings : nullptr;
+
+    int maxWidth = styleSettings ? styleSettings->maxWidth : 0;
+    int textSpacing = styleSettings ? styleSettings->textSpacing : 0;
     bool noWrap = maxWidth;
 
     ApplyStackPanelStyles(stackPanel, maxWidth, textSpacing);
     ApplyTextBlockStyles(
-        dateInnerTextBlock,
-        clockElementStyleEnabled ? &g_settings.dateStyle : nullptr, noWrap,
-        &clockElementStyleData->dateVisibilityPropertyChangedToken);
+        dateInnerTextBlock, styleSettings ? &styleSettings->dateStyle : nullptr,
+        noWrap, &clockElementStyleData->dateVisibilityPropertyChangedToken);
     ApplyTextBlockStyles(
-        timeInnerTextBlock,
-        clockElementStyleEnabled ? &g_settings.timeStyle : nullptr, noWrap,
-        &clockElementStyleData->timeVisibilityPropertyChangedToken);
+        timeInnerTextBlock, styleSettings ? &styleSettings->timeStyle : nullptr,
+        noWrap, &clockElementStyleData->timeVisibilityPropertyChangedToken);
 
     clockElementStyleData->styleIndex = clockElementStyleIndex;
 }
@@ -4665,8 +5092,8 @@ ClockSystemTrayIconDataModel_GetTimeToolTipString_2_Hook(LPVOID pThis,
 int WINAPI ICalendar_Second_Hook(LPVOID pThis) {
     Wh_Log(L">");
 
-    if (g_refreshIconThreadId == GetCurrentThreadId() &&
-        !g_inGetTimeToolTipString && g_refreshIconNeedToAdjustTimer) {
+    if (g_inRefreshIcon && !g_inGetTimeToolTipString &&
+        g_refreshIconNeedToAdjustTimer) {
         g_refreshIconNeedToAdjustTimer = false;
 
         // Make the next refresh happen in a second.
@@ -4694,8 +5121,7 @@ LPVOID WINAPI ThreadPoolTimer_CreateTimer_Hook(LPVOID param1,
 
     ULONGLONG elapseNew;
 
-    if (g_refreshIconThreadId == GetCurrentThreadId() &&
-        !g_inGetTimeToolTipString && **elapse == 10000000) {
+    if (g_inRefreshIcon && !g_inGetTimeToolTipString && **elapse == 10000000) {
         // Make the next refresh happen next second. Without this hook, the
         // timer was always set one second forward, and so the clock was
         // accumulating a delay, finally caused one second to be skipped.
@@ -4721,8 +5147,7 @@ LPVOID WINAPI ThreadPoolTimer_CreateTimer_lambda_Hook(DWORD_PTR** param1,
 
     Wh_Log(L"> %zu", *elapse);
 
-    if (g_refreshIconThreadId == GetCurrentThreadId() &&
-        !g_inGetTimeToolTipString && *elapse == 10000000) {
+    if (g_inRefreshIcon && !g_inGetTimeToolTipString && *elapse == 10000000) {
         // Make the next refresh happen next second. Without this hook, the
         // timer was always set one second forward, and so the clock was
         // accumulating a delay, finally caused one second to be skipped.
@@ -4741,8 +5166,8 @@ LPVOID WINAPI ThreadPoolTimer_CreateTimer_lambda_Hook(DWORD_PTR** param1,
 VOID WINAPI GetLocalTime_Hook_Win11(LPSYSTEMTIME lpSystemTime) {
     Wh_Log(L">");
 
-    if (g_refreshIconThreadId == GetCurrentThreadId() &&
-        !g_inGetTimeToolTipString && g_refreshIconNeedToAdjustTimer) {
+    if (g_inRefreshIcon && !g_inGetTimeToolTipString &&
+        g_refreshIconNeedToAdjustTimer) {
         g_refreshIconNeedToAdjustTimer = false;
 
         // Make the next refresh happen in a second.
@@ -4760,15 +5185,18 @@ int WINAPI GetTimeFormatEx_Hook_Win11(LPCWSTR lpLocaleName,
                                       LPCWSTR lpFormat,
                                       LPWSTR lpTimeStr,
                                       int cchTime) {
-    if (g_refreshIconThreadId == GetCurrentThreadId() &&
-        !g_inGetTimeToolTipString) {
+    if (g_inRefreshIcon && !g_inGetTimeToolTipString) {
+        std::lock_guard<std::mutex> guard(g_formatLineMutex);
+
         if (wcscmp(g_settings.topLine, L"-") != 0) {
             if (!cchTime) {
                 // Hopefully a large enough buffer size.
                 return FORMATTED_BUFFER_SIZE;
             }
 
-            return FormatLine(lpTimeStr, cchTime, g_settings.topLine.get()) + 1;
+            return FormatLineNoLock(lpTimeStr, cchTime,
+                                    g_settings.topLine.get()) +
+                   1;
         }
     }
 
@@ -4785,8 +5213,7 @@ int WINAPI GetDateFormatEx_Hook_Win11(LPCWSTR lpLocaleName,
                                       LPWSTR lpDateStr,
                                       int cchDate,
                                       LPCWSTR lpCalendar) {
-    if (g_refreshIconThreadId == GetCurrentThreadId() &&
-        !g_inGetTimeToolTipString) {
+    if (g_inRefreshIcon && !g_inGetTimeToolTipString) {
         // Below is a fix for the following situation. The code inside
         // winrt::SystemTray::implementation::ClockSystemTrayIconDataModel::RefreshIcon
         // looks similar to the following (pseudo code):
@@ -4825,6 +5252,8 @@ int WINAPI GetDateFormatEx_Hook_Win11(LPCWSTR lpLocaleName,
         }
 
         if (!(dwFlags & DATE_LONGDATE)) {
+            std::lock_guard<std::mutex> guard(g_formatLineMutex);
+
             if (!cchDate || g_winVersion >= WinVersion::Win11_22H2) {
                 // First call, save date for formatting.
                 g_formatTime = *lpDate;
@@ -4837,8 +5266,8 @@ int WINAPI GetDateFormatEx_Hook_Win11(LPCWSTR lpLocaleName,
                     return FORMATTED_BUFFER_SIZE;
                 }
 
-                return FormatLine(lpDateStr, cchDate,
-                                  g_settings.bottomLine.get()) +
+                return FormatLineNoLock(lpDateStr, cchDate,
+                                        g_settings.bottomLine.get()) +
                        1;
             }
         }
@@ -4896,11 +5325,11 @@ LRESULT WINAPI SendMessageW_Hook(HWND hWnd,
 
 #pragma region Win10Hooks
 
-DWORD g_updateTextStringThreadId;
-int g_getDateFormatExCounter;
-DWORD g_getTooltipTextThreadId;
-WCHAR* g_getTooltipTextBuffer;
-int g_getTooltipTextBufferSize;
+thread_local bool g_inUpdateTextString;
+thread_local int g_getDateFormatExCounter;
+thread_local bool g_inGetTooltipText;
+thread_local WCHAR* g_getTooltipTextBuffer;
+thread_local int g_getTooltipTextBufferSize;
 
 using ClockButton_UpdateTextStringsIfNecessary_t =
     unsigned int(WINAPI*)(LPVOID pThis, bool*);
@@ -4932,22 +5361,24 @@ HRESULT WINAPI ClockButton_v_GetTooltipText_Hook(LPVOID pThis,
                                                  LPVOID param4) {
     Wh_Log(L">");
 
-    g_getTooltipTextThreadId = GetCurrentThreadId();
+    g_inGetTooltipText = true;
 
     HRESULT ret = ClockButton_v_GetTooltipText_Original(pThis, param1, param2,
                                                         param3, param4);
 
     if (g_getTooltipTextBuffer) {
+        std::lock_guard<std::mutex> guard(g_formatLineMutex);
+
         if (g_settings.tooltipLineMode == TooltipLineMode::replace) {
-            FormatLine(g_getTooltipTextBuffer, g_getTooltipTextBufferSize,
-                       g_settings.tooltipLine.get());
+            FormatLineNoLock(g_getTooltipTextBuffer, g_getTooltipTextBufferSize,
+                             g_settings.tooltipLine.get());
         } else {
             size_t stringLen = wcslen(g_getTooltipTextBuffer);
             WCHAR* p = g_getTooltipTextBuffer + stringLen;
             size_t size = g_getTooltipTextBufferSize - stringLen;
             if (size > 4) {
                 wcscpy(p, L"\r\n\r\n");
-                FormatLine(p + 4, size - 4, g_settings.tooltipLine.get());
+                FormatLineNoLock(p + 4, size - 4, g_settings.tooltipLine.get());
             }
         }
     }
@@ -4955,7 +5386,7 @@ HRESULT WINAPI ClockButton_v_GetTooltipText_Hook(LPVOID pThis,
     g_getTooltipTextBuffer = nullptr;
     g_getTooltipTextBufferSize = 0;
 
-    g_getTooltipTextThreadId = 0;
+    g_inGetTooltipText = false;
 
     return ret;
 }
@@ -4964,17 +5395,25 @@ unsigned int WINAPI
 ClockButton_UpdateTextStringsIfNecessary_Hook(LPVOID pThis, bool* param1) {
     Wh_Log(L">");
 
-    g_updateTextStringThreadId = GetCurrentThreadId();
+    g_inUpdateTextString = true;
     g_getDateFormatExCounter = 0;
 
     unsigned int ret =
         ClockButton_UpdateTextStringsIfNecessary_Original(pThis, param1);
 
-    g_updateTextStringThreadId = 0;
+    g_inUpdateTextString = false;
 
-    bool webContentPending = g_webContentUpdateThread && !g_webContentLoaded;
-    if (g_settings.showSeconds || g_dataCollectionSession ||
-        webContentPending) {
+    bool updateEverySecond;
+    {
+        std::lock_guard<std::mutex> guard(g_formatLineMutex);
+        bool webContentPending =
+            g_webContentUpdateThread && !g_webContentLoaded;
+        updateEverySecond = g_settings.showSeconds || g_unixPatternUsed ||
+                            g_dataCollectionPatternUsed || g_mediaPatternUsed ||
+                            webContentPending;
+    }
+
+    if (updateEverySecond) {
         // Return the time-out value for the time of the next update.
         SYSTEMTIME time;
         GetLocalTime(&time);
@@ -5054,12 +5493,16 @@ int WINAPI GetTimeFormatEx_Hook_Win10(LPCWSTR lpLocaleName,
                                       LPCWSTR lpFormat,
                                       LPWSTR lpTimeStr,
                                       int cchTime) {
-    if (g_updateTextStringThreadId == GetCurrentThreadId()) {
+    if (g_inUpdateTextString) {
+        std::lock_guard<std::mutex> guard(g_formatLineMutex);
+
         g_formatTime = *lpTime;
         g_formatIndex++;
 
         if (wcscmp(g_settings.topLine, L"-") != 0) {
-            return FormatLine(lpTimeStr, cchTime, g_settings.topLine.get()) + 1;
+            return FormatLineNoLock(lpTimeStr, cchTime,
+                                    g_settings.topLine.get()) +
+                   1;
         }
     }
 
@@ -5076,12 +5519,14 @@ int WINAPI GetDateFormatEx_Hook_Win10(LPCWSTR lpLocaleName,
                                       LPWSTR lpDateStr,
                                       int cchDate,
                                       LPCWSTR lpCalendar) {
-    if (g_updateTextStringThreadId == GetCurrentThreadId()) {
+    if (g_inUpdateTextString) {
+        std::lock_guard<std::mutex> guard(g_formatLineMutex);
+
         g_getDateFormatExCounter++;
         PCWSTR format = g_getDateFormatExCounter > 1 ? g_settings.middleLine
                                                      : g_settings.bottomLine;
         if (wcscmp(format, L"-") != 0) {
-            return FormatLine(lpDateStr, cchDate, format) + 1;
+            return FormatLineNoLock(lpDateStr, cchDate, format) + 1;
         }
     }
 
@@ -5097,8 +5542,7 @@ int WINAPI GetDateFormatW_Hook_Win10(LCID Locale,
                                      LPCWSTR lpFormat,
                                      LPWSTR lpDateStr,
                                      int cchDate) {
-    if (g_getTooltipTextThreadId == GetCurrentThreadId() &&
-        !g_getTooltipTextBuffer) {
+    if (g_inGetTooltipText && !g_getTooltipTextBuffer) {
         g_getTooltipTextBuffer = lpDateStr;
         g_getTooltipTextBufferSize = cchDate;
     }
@@ -5410,7 +5854,7 @@ bool HookSystemTraySymbols(HMODULE module) {
                 ThreadPoolTimer_CreateTimer_lambda_Hook,
                 true,  // Only for more precise clock, see comment in the hook.
             },
-        };
+    };
 
     if (!HookSymbols(module, symbolHooks, ARRAYSIZE(symbolHooks))) {
         Wh_Log(L"HookSymbols failed");
@@ -5491,7 +5935,13 @@ void LoadSettings() {
     g_settings.showSeconds = Wh_GetIntSetting(L"ShowSeconds");
     g_settings.timeFormat = StringSetting::make(L"TimeFormat");
     g_settings.dateFormat = StringSetting::make(L"DateFormat");
-    g_settings.dateLocale = StringSetting::make(L"DateLocale");
+
+    g_settings.dateLocales.clear();
+    StringSetting dateLocale = StringSetting::make(L"DateLocale");
+    for (const auto locale : SplitStringView(dateLocale.get(), L";")) {
+        g_settings.dateLocales.emplace_back(TrimStringView(locale));
+    }
+
     g_settings.weekdayFormat = StringSetting::make(L"WeekdayFormat");
 
     g_settings.weekdayFormatCustom.clear();
@@ -5519,7 +5969,6 @@ void LoadSettings() {
 
     g_settings.width = Wh_GetIntSetting(L"Width");
     g_settings.height = Wh_GetIntSetting(L"Height");
-    g_settings.maxWidth = Wh_GetIntSetting(L"MaxWidth");
     g_settings.textSpacing = Wh_GetIntSetting(L"TextSpacing");
 
     g_settings.dataCollection.networkMetricsFormat = ParseNetworkMetricsFormat(
@@ -5676,57 +6125,53 @@ void LoadSettings() {
         g_settings.timeZones.push_back(std::move(timeZone));
     }
 
-    g_settings.timeStyle.hidden = Wh_GetIntSetting(L"TimeStyle.Hidden");
-    g_settings.timeStyle.textColor =
-        StringSetting::make(L"TimeStyle.TextColor");
-    g_settings.timeStyle.textAlignment =
-        StringSetting::make(L"TimeStyle.TextAlignment");
-    g_settings.timeStyle.fontSize = Wh_GetIntSetting(L"TimeStyle.FontSize");
-    g_settings.timeStyle.fontFamily =
-        StringSetting::make(L"TimeStyle.FontFamily");
-    g_settings.timeStyle.fontWeight =
-        StringSetting::make(L"TimeStyle.FontWeight");
-    g_settings.timeStyle.fontStyle =
-        StringSetting::make(L"TimeStyle.FontStyle");
-    g_settings.timeStyle.fontStretch =
-        StringSetting::make(L"TimeStyle.FontStretch");
-    g_settings.timeStyle.characterSpacing =
+    ClockElementStyleSettings styleSettings;
+    styleSettings.maxWidth = Wh_GetIntSetting(L"MaxWidth");
+    styleSettings.textSpacing = g_settings.textSpacing;
+
+    TextStyleSettings& timeStyle = styleSettings.timeStyle;
+    timeStyle.hidden = Wh_GetIntSetting(L"TimeStyle.Hidden");
+    timeStyle.textColor = StringSetting::make(L"TimeStyle.TextColor");
+    timeStyle.textAlignment = StringSetting::make(L"TimeStyle.TextAlignment");
+    timeStyle.fontSize = Wh_GetIntSetting(L"TimeStyle.FontSize");
+    timeStyle.fontFamily = StringSetting::make(L"TimeStyle.FontFamily");
+    timeStyle.fontWeight = StringSetting::make(L"TimeStyle.FontWeight");
+    timeStyle.fontStyle = StringSetting::make(L"TimeStyle.FontStyle");
+    timeStyle.fontStretch = StringSetting::make(L"TimeStyle.FontStretch");
+    timeStyle.characterSpacing =
         Wh_GetIntSetting(L"TimeStyle.CharacterSpacing");
-    g_settings.timeStyle.lineHeight = Wh_GetIntSetting(L"TimeStyle.LineHeight");
+    timeStyle.lineHeight = Wh_GetIntSetting(L"TimeStyle.LineHeight");
 
-    g_settings.dateStyle.hidden = Wh_GetIntSetting(L"DateStyle.Hidden");
-    g_settings.dateStyle.textColor =
-        StringSetting::make(L"DateStyle.TextColor");
-    g_settings.dateStyle.textAlignment =
-        StringSetting::make(L"DateStyle.TextAlignment");
-    g_settings.dateStyle.fontSize = Wh_GetIntSetting(L"DateStyle.FontSize");
-    g_settings.dateStyle.fontFamily =
-        StringSetting::make(L"DateStyle.FontFamily");
-    g_settings.dateStyle.fontWeight =
-        StringSetting::make(L"DateStyle.FontWeight");
-    g_settings.dateStyle.fontStyle =
-        StringSetting::make(L"DateStyle.FontStyle");
-    g_settings.dateStyle.fontStretch =
-        StringSetting::make(L"DateStyle.FontStretch");
-    g_settings.dateStyle.characterSpacing =
+    TextStyleSettings& dateStyle = styleSettings.dateStyle;
+    dateStyle.hidden = Wh_GetIntSetting(L"DateStyle.Hidden");
+    dateStyle.textColor = StringSetting::make(L"DateStyle.TextColor");
+    dateStyle.textAlignment = StringSetting::make(L"DateStyle.TextAlignment");
+    dateStyle.fontSize = Wh_GetIntSetting(L"DateStyle.FontSize");
+    dateStyle.fontFamily = StringSetting::make(L"DateStyle.FontFamily");
+    dateStyle.fontWeight = StringSetting::make(L"DateStyle.FontWeight");
+    dateStyle.fontStyle = StringSetting::make(L"DateStyle.FontStyle");
+    dateStyle.fontStretch = StringSetting::make(L"DateStyle.FontStretch");
+    dateStyle.characterSpacing =
         Wh_GetIntSetting(L"DateStyle.CharacterSpacing");
-    g_settings.dateStyle.lineHeight = Wh_GetIntSetting(L"DateStyle.LineHeight");
+    dateStyle.lineHeight = Wh_GetIntSetting(L"DateStyle.LineHeight");
 
-    g_clockElementStyleEnabled =
-        (g_settings.maxWidth || g_settings.textSpacing ||
-         g_settings.timeStyle.hidden || *g_settings.timeStyle.textColor ||
-         *g_settings.timeStyle.textAlignment || g_settings.timeStyle.fontSize ||
-         *g_settings.timeStyle.fontFamily || *g_settings.timeStyle.fontWeight ||
-         *g_settings.timeStyle.fontStyle || *g_settings.timeStyle.fontStretch ||
-         g_settings.timeStyle.characterSpacing ||
-         g_settings.timeStyle.lineHeight || g_settings.dateStyle.hidden ||
-         *g_settings.dateStyle.textColor ||
-         *g_settings.dateStyle.textAlignment || g_settings.dateStyle.fontSize ||
-         *g_settings.dateStyle.fontFamily || *g_settings.dateStyle.fontWeight ||
-         *g_settings.dateStyle.fontStyle || *g_settings.dateStyle.fontStretch ||
-         g_settings.dateStyle.characterSpacing ||
-         g_settings.dateStyle.lineHeight);
-    g_clockElementStyleIndex++;
+    bool clockElementStyleEnabled =
+        styleSettings.maxWidth || styleSettings.textSpacing ||
+        timeStyle.hidden || *timeStyle.textColor || *timeStyle.textAlignment ||
+        timeStyle.fontSize || *timeStyle.fontFamily || *timeStyle.fontWeight ||
+        *timeStyle.fontStyle || *timeStyle.fontStretch ||
+        timeStyle.characterSpacing || timeStyle.lineHeight ||
+        dateStyle.hidden || *dateStyle.textColor || *dateStyle.textAlignment ||
+        dateStyle.fontSize || *dateStyle.fontFamily || *dateStyle.fontWeight ||
+        *dateStyle.fontStyle || *dateStyle.fontStretch ||
+        dateStyle.characterSpacing || dateStyle.lineHeight;
+
+    {
+        std::lock_guard<std::mutex> guard(g_clockElementStyleMutex);
+        g_clockElementStyleSettings = std::move(styleSettings);
+        g_clockElementStyleEnabled = clockElementStyleEnabled;
+        g_clockElementStyleIndex++;
+    }
 
     g_settings.oldTaskbarOnWin11 = Wh_GetIntSetting(L"oldTaskbarOnWin11");
 
@@ -6041,39 +6486,68 @@ void Wh_ModAfterInit() {
 void Wh_ModBeforeUninit() {
     Wh_Log(L">");
 
-    if (g_winVersion >= WinVersion::Win11 &&
-        g_clockElementStyleEnabled.exchange(false)) {
-        DWORD styleIndex = ++g_clockElementStyleIndex;
+    if (g_winVersion < WinVersion::Win11) {
+        return;
+    }
 
-        ApplySettings();
+    DWORD styleIndex;
+    {
+        std::lock_guard<std::mutex> guard(g_clockElementStyleMutex);
+        if (!g_clockElementStyleEnabled) {
+            return;
+        }
 
-        // Wait for styles to be restored.
-        for (int i = 0; i < 20; i++) {
-            bool allRestored = true;
+        g_clockElementStyleEnabled = false;
+        styleIndex = ++g_clockElementStyleIndex;
+    }
+
+    ApplySettings();
+
+    // Wait for styles to be restored.
+    for (int i = 0; i < 20; i++) {
+        bool allRestored = true;
+
+        {
+            std::lock_guard<std::mutex> guard(g_clockElementStyleMutex);
             for (const auto& data : g_clockElementStyleData) {
                 if (data.styleIndex < styleIndex) {
                     allRestored = false;
                     break;
                 }
             }
-
-            if (allRestored) {
-                break;
-            }
-
-            Sleep(100);
         }
+
+        if (allRestored) {
+            break;
+        }
+
+        Sleep(100);
     }
+}
+
+// Stops the background work that feeds the format tokens, and keeps it stopped
+// until g_formattingInitialized is cleared. Must be called without
+// g_formatLineMutex held: joining the web content thread waits for an in-flight
+// network fetch and detaching the media handlers waits for an in-flight event,
+// neither of which should hold up the clock.
+void StopFormattingBackgroundWork() {
+    {
+        std::lock_guard<std::mutex> guard(g_formatLineMutex);
+        g_formattingInitialized = true;
+    }
+
+    WebContentUpdateThreadUninit();
+    MediaSessionUninit();
 }
 
 void Wh_ModUninit() {
     Wh_Log(L">");
 
+    StopFormattingBackgroundWork();
+
     {
         std::lock_guard<std::mutex> guard(g_formatLineMutex);
-        WebContentUpdateThreadUninit();
         DataCollectionSessionUninit();
-        MediaSessionUninit();
     }
 
     ApplySettings();
@@ -6082,11 +6556,11 @@ void Wh_ModUninit() {
 BOOL Wh_ModSettingsChanged(BOOL* bReload) {
     Wh_Log(L">");
 
+    StopFormattingBackgroundWork();
+
     {
         std::lock_guard<std::mutex> guard(g_formatLineMutex);
-        WebContentUpdateThreadUninit();
         DataCollectionSessionUninit();
-        MediaSessionUninit();
         g_formattingInitialized = false;
 
         bool prevOldTaskbarOnWin11 = g_settings.oldTaskbarOnWin11;

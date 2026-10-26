@@ -203,7 +203,7 @@ enum class Target {
     Explorer,
     StartMenuExperienceHost,
     ShellExperienceHost,
-    ShellHost,  // Win11 24H2.
+    ShellHost,  // From Win11 24H2.
 };
 
 Target g_target;

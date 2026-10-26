@@ -2,13 +2,14 @@
 // @id              taskbar-primary-on-secondary-monitor
 // @name            Primary taskbar on secondary monitor
 // @description     Move the primary taskbar, including the tray icons, notifications, action center, etc. to another monitor
-// @version         1.2
+// @version         1.2.1
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
 // @homepage        https://m417z.com/
 // @include         explorer.exe
 // @include         ShellHost.exe
+// @include         StartMenuExperienceHost.exe
 // @architecture    x86-64
 // @compilerOptions -loleaut32 -lruntimeobject -lversion -lwtsapi32
 // ==/WindhawkMod==
@@ -122,6 +123,7 @@ number when both are configured.
 #include <winrt/Windows.UI.Xaml.Input.h>
 
 #include <atomic>
+#include <string>
 
 enum class ClickToSwitchMonitor {
     disabled,
@@ -139,7 +141,9 @@ struct {
 
 enum class Target {
     Explorer,
-    ShellHost,  // Win11 24H2.
+    ShellHost,  // From Win11 24H2.
+    // Only for the start menu alignment, see MonitorFromWindow_Hook.
+    StartMenuExperienceHost,
 };
 
 Target g_target;
@@ -169,14 +173,20 @@ DWORD g_lastPressTime;
 HMONITOR g_lastPressMonitor;
 std::atomic<bool> g_lastIsSessionLocked;
 
+// Each target only hooks the functions it needs, while some of the code calling
+// the originals runs in all of them, so they start out as the unhooked
+// functions and are replaced by the trampolines of the hooks that are set.
 using MonitorFromPoint_t = decltype(&MonitorFromPoint);
-MonitorFromPoint_t MonitorFromPoint_Original;
+MonitorFromPoint_t MonitorFromPoint_Original = MonitorFromPoint;
 
 using MonitorFromRect_t = decltype(&MonitorFromRect);
-MonitorFromRect_t MonitorFromRect_Original;
+MonitorFromRect_t MonitorFromRect_Original = MonitorFromRect;
+
+using MonitorFromWindow_t = decltype(&MonitorFromWindow);
+MonitorFromWindow_t MonitorFromWindow_Original = MonitorFromWindow;
 
 using EnumDisplayDevicesW_t = decltype(&EnumDisplayDevicesW);
-EnumDisplayDevicesW_t EnumDisplayDevicesW_Original;
+EnumDisplayDevicesW_t EnumDisplayDevicesW_Original = EnumDisplayDevicesW;
 
 HWND FindCurrentProcessTaskbarWnd() {
     HWND hTaskbarWnd = nullptr;
@@ -292,7 +302,7 @@ bool IsSessionLocked() {
 }
 
 struct GetTargetMonitorParams {
-    void* retAddress = nullptr;
+    bool callerInShell32 = false;
     bool ignoreLockedState = false;
 };
 
@@ -317,20 +327,10 @@ HMONITOR GetTargetMonitor(GetTargetMonitorParams params = {}) {
         return nullptr;
     }
 
-    if (!g_settings.moveAdditionalElements && params.retAddress) {
-        HMODULE shell32Module = GetModuleHandle(L"shell32.dll");
-        if (shell32Module) {
-            // If the caller is in shell32.dll, which mainly does things such as
-            // handling desktop icons and wallpapers.
-            HMODULE module;
-            if (GetModuleHandleEx(
-                    GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
-                        GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
-                    (PCWSTR)params.retAddress, &module) &&
-                module == shell32Module) {
-                return nullptr;
-            }
-        }
+    // shell32.dll mainly does things such as handling desktop icons and
+    // wallpapers.
+    if (!g_settings.moveAdditionalElements && params.callerInShell32) {
+        return nullptr;
     }
 
     if (g_unloading) {
@@ -340,6 +340,22 @@ HMONITOR GetTargetMonitor(GetTargetMonitorParams params = {}) {
     }
 
     HMONITOR monitor = g_overrideMonitor;
+    if (monitor) {
+        // The override monitor handle becomes invalid when the display
+        // configuration changes, e.g. when a remote desktop session adds or
+        // removes a virtual display. Since it takes priority over the
+        // configured monitor and is never revalidated, a stale handle would
+        // keep winning and the primary taskbar would end up stuck to a monitor
+        // that no longer exists. Drop it and fall back to the settings.
+        MONITORINFO monitorInfo = {};
+        monitorInfo.cbSize = sizeof(monitorInfo);
+        if (!GetMonitorInfo(monitor, &monitorInfo)) {
+            Wh_Log(L"Override monitor is stale, falling back to settings");
+            g_overrideMonitor = nullptr;
+            monitor = nullptr;
+        }
+    }
+
     if (!monitor) {
         if (*g_settings.monitorInterfaceName.get()) {
             monitor = GetMonitorByInterfaceNameSubstr(
@@ -352,6 +368,97 @@ HMONITOR GetTargetMonitor(GetTargetMonitorParams params = {}) {
     return monitor;
 }
 
+HMODULE GetModuleFromAddress(void* address) {
+    HMODULE module;
+    if (!GetModuleHandleEx(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
+                               GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                           (PCWSTR)address, &module)) {
+        return nullptr;
+    }
+
+    return module;
+}
+
+std::wstring GetModulePath(HMODULE module) {
+    if (!module) {
+        return L"<unknown>";
+    }
+
+    std::wstring path(MAX_PATH, L'\0');
+    while (true) {
+        DWORD len = GetModuleFileName(module, path.data(), path.size());
+        if (len == 0) {
+            return L"<unknown>";
+        }
+
+        // A result equal to the buffer size means the path was truncated.
+        if (len == path.size()) {
+            path.resize(len * 2);
+            continue;
+        }
+
+        path.resize(len);
+        return path;
+    }
+}
+
+// Whether the path is under the Windows directory.
+bool IsSystemModulePath(PCWSTR path) {
+    WCHAR windowsDir[MAX_PATH];
+    UINT len = GetSystemWindowsDirectory(windowsDir, ARRAYSIZE(windowsDir));
+    if (len == 0 || len >= ARRAYSIZE(windowsDir)) {
+        return false;
+    }
+
+    return _wcsnicmp(path, windowsDir, len) == 0 && path[len] == L'\\';
+}
+
+// Another hook on top of ours makes its hook function the direct caller, so a
+// few frames further up the stack are checked as well. A hook isn't in a system
+// module, so the search stops at the first frame in one.
+[[clang::noinline]] bool IsHookCallerFromModule(void* retAddress,
+                                                PCWSTR moduleName) {
+    HMODULE expectedModule = GetModuleHandle(moduleName);
+    if (!expectedModule) {
+        return false;
+    }
+
+    HMODULE callerModule = GetModuleFromAddress(retAddress);
+    if (callerModule == expectedModule) {
+        return true;
+    }
+
+    std::wstring callerPath = GetModulePath(callerModule);
+    if (IsSystemModulePath(callerPath.c_str())) {
+        Wh_Log(L"Skipping caller %p in module %s, expected %s", retAddress,
+               callerPath.c_str(), moduleName);
+        return false;
+    }
+
+    Wh_Log(L"Tracing caller %p in module %s, expected %s", retAddress,
+           callerPath.c_str(), moduleName);
+
+    // The backtrace skips the frames of this function, the hook, and the
+    // caller.
+    void* frames[4];
+    WORD count = CaptureStackBackTrace(3, ARRAYSIZE(frames), frames, nullptr);
+    for (WORD i = 0; i < count; i++) {
+        HMODULE module = GetModuleFromAddress(frames[i]);
+        std::wstring modulePath = GetModulePath(module);
+        Wh_Log(L"Frame %u: %p in module %s", i + 1, frames[i],
+               modulePath.c_str());
+        if (module == expectedModule) {
+            return true;
+        }
+
+        if (IsSystemModulePath(modulePath.c_str())) {
+            return false;
+        }
+    }
+
+    return false;
+}
+
 HMONITOR WINAPI MonitorFromPoint_Hook(POINT pt, DWORD dwFlags) {
     auto original = [=] { return MonitorFromPoint_Original(pt, dwFlags); };
 
@@ -362,7 +469,8 @@ HMONITOR WINAPI MonitorFromPoint_Hook(POINT pt, DWORD dwFlags) {
     Wh_Log(L">");
 
     HMONITOR monitor = GetTargetMonitor({
-        .retAddress = __builtin_return_address(0),
+        .callerInShell32 =
+            IsHookCallerFromModule(__builtin_return_address(0), L"shell32.dll"),
     });
     if (!monitor) {
         return original();
@@ -382,8 +490,42 @@ HMONITOR WINAPI MonitorFromRect_Hook(LPCRECT lprc, DWORD dwFlags) {
     Wh_Log(L">");
 
     HMONITOR monitor = GetTargetMonitor({
-        .retAddress = __builtin_return_address(0),
+        .callerInShell32 =
+            IsHookCallerFromModule(__builtin_return_address(0), L"shell32.dll"),
     });
+    if (!monitor) {
+        return original();
+    }
+
+    return monitor;
+}
+
+// The start menu reads the taskbar alignment from
+// WindowsUdk.UI.Shell.TaskbarLayout for the monitor its core window is on,
+// resolved with MONITOR_DEFAULTTOPRIMARY, and keeps its centered default if the
+// layout has no alignment for that monitor. On startup it reads it while the
+// window is still on the real primary monitor, which has no taskbar once the
+// primary taskbar is moved away, and it isn't read again when the window moves
+// to the taskbar's monitor. Point it at the taskbar's monitor instead, which is
+// the one whose alignment the start menu follows.
+HMONITOR WINAPI MonitorFromWindow_Hook(HWND hWnd, DWORD dwFlags) {
+    auto original = [=] { return MonitorFromWindow_Original(hWnd, dwFlags); };
+
+    if (dwFlags != MONITOR_DEFAULTTOPRIMARY) {
+        return original();
+    }
+
+    // StartMenu.dll is the redesigned start menu, StartDocked.dll the older
+    // one.
+    void* retAddress = __builtin_return_address(0);
+    if (!IsHookCallerFromModule(retAddress, L"StartMenu.dll") &&
+        !IsHookCallerFromModule(retAddress, L"StartDocked.dll")) {
+        return original();
+    }
+
+    Wh_Log(L">");
+
+    HMONITOR monitor = GetTargetMonitor();
     if (!monitor) {
         return original();
     }
@@ -405,7 +547,8 @@ BOOL WINAPI EnumDisplayDevicesW_Hook(LPCWSTR lpDevice,
     Wh_Log(L">");
 
     HMONITOR monitor = GetTargetMonitor({
-        .retAddress = __builtin_return_address(0),
+        .callerInShell32 =
+            IsHookCallerFromModule(__builtin_return_address(0), L"shell32.dll"),
     });
     if (!monitor) {
         return result;
@@ -888,6 +1031,9 @@ BOOL Wh_ModInit() {
                 moduleFileName++;
                 if (_wcsicmp(moduleFileName, L"ShellHost.exe") == 0) {
                     g_target = Target::ShellHost;
+                } else if (_wcsicmp(moduleFileName,
+                                    L"StartMenuExperienceHost.exe") == 0) {
+                    g_target = Target::StartMenuExperienceHost;
                 }
             } else {
                 Wh_Log(L"GetModuleFileName returned an unsupported path");
@@ -942,15 +1088,21 @@ BOOL Wh_ModInit() {
         HookHardwareConfirmatorSymbols();
     }
 
-    WindhawkUtils::SetFunctionHook(MonitorFromPoint, MonitorFromPoint_Hook,
-                                   &MonitorFromPoint_Original);
+    if (g_target == Target::StartMenuExperienceHost) {
+        WindhawkUtils::SetFunctionHook(MonitorFromWindow,
+                                       MonitorFromWindow_Hook,
+                                       &MonitorFromWindow_Original);
+    } else {
+        WindhawkUtils::SetFunctionHook(MonitorFromPoint, MonitorFromPoint_Hook,
+                                       &MonitorFromPoint_Original);
 
-    WindhawkUtils::SetFunctionHook(MonitorFromRect, MonitorFromRect_Hook,
-                                   &MonitorFromRect_Original);
+        WindhawkUtils::SetFunctionHook(MonitorFromRect, MonitorFromRect_Hook,
+                                       &MonitorFromRect_Original);
 
-    WindhawkUtils::SetFunctionHook(EnumDisplayDevicesW,
-                                   EnumDisplayDevicesW_Hook,
-                                   &EnumDisplayDevicesW_Original);
+        WindhawkUtils::SetFunctionHook(EnumDisplayDevicesW,
+                                       EnumDisplayDevicesW_Hook,
+                                       &EnumDisplayDevicesW_Original);
+    }
 
     g_initialized = true;
 

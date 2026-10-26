@@ -2,14 +2,14 @@
 // @id              windows-11-taskbar-styler
 // @name            Windows 11 Taskbar Styler
 // @description     Customize the taskbar with themes contributed by others or create your own
-// @version         1.8
+// @version         1.10
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
 // @homepage        https://m417z.com/
 // @include         explorer.exe
 // @architecture    x86-64
-// @compilerOptions -lcomctl32 -lgdi32 -lole32 -loleaut32 -lruntimeobject
+// @compilerOptions -lcomctl32 -lgdi32 -lole32 -loleaut32 -lruntimeobject -lshlwapi
 // ==/WindhawkMod==
 
 // Source code is published under The GNU General Public License v3.0.
@@ -387,6 +387,9 @@ Inside `{{ ... }}`, the supported expression syntax is:
   The condition must be numeric, but each branch may be a number or a string,
   e.g. `` {{width > 0 ? `*` : `Auto`}} `` selects a `GridLength` keyword.
 * `min(a, b)` and `max(a, b)`.
+* `skip()`: leaves the style unapplied, so the property keeps (or returns to)
+  its original value, e.g. `{{width > 0 ? width : skip()}}` applies only once
+  `width` is positive.
 * Parentheses for grouping, and nesting such as `{{min(a, b + 1) * 2}}`.
 
 Arithmetic, the unary sign, the relational comparisons, and `min` / `max`
@@ -668,8 +671,13 @@ const Theme g_themeTranslucentTaskbar = {{
 }};
 
 const Theme g_themeDockLike = {{
+    ThemeTargetStyles{L"Taskbar.TaskbarFrame > Grid#RootGrid@DockingStates", {
+        L"Tag=horizontal",
+        L"Tag@DockedLeft=vertical",
+        L"Tag@DockedRight=vertical",
+        L"Tag=>taskbarDock"}},
     ThemeTargetStyles{L"Taskbar.TaskbarFrame", {
-        L"Width=Auto",
+        L"Width={{taskbarDock==`vertical`?skip():`Auto`}}",
         L"HorizontalAlignment=Center",
         L"Margin=250,0,250,0"}},
     ThemeTargetStyles{L"Taskbar.TaskbarFrame > Grid#RootGrid", {
@@ -722,7 +730,7 @@ const Theme g_themeSquircle = {{
         L"Fill=Transparent"}},
     ThemeTargetStyles{L"Taskbar.TaskbarBackground#HoverFlyoutBackgroundControl > Grid > Rectangle#BackgroundFill", {
         L"Fill=#CC222222"}},
-    ThemeTargetStyles{L"Grid#IconPanel@CommonStates > Border#BackgroundElement, Taskbar.TaskListButtonPanel@CommonStates > Grid > Border#BackgroundElement, Taskbar.TaskListButtonPanel@CommonStates > Border#BackgroundElement, SearchUx.SearchUI.SearchButtonRootGrid#SearchBoxButtonRootPanel@CommonStates > Grid > Border#BackgroundElement, SearchUx.SearchUI.SearchButtonRootGrid#SearchBoxButtonRootPanel@CommonStates > Border#BackgroundElement", {
+    ThemeTargetStyles{L"Taskbar.TaskListButtonPanel@CommonStates > Grid > Border#BackgroundElement, Taskbar.TaskListButtonPanel@CommonStates > Border#BackgroundElement, SearchUx.SearchUI.SearchButtonRootGrid#SearchBoxButtonRootPanel@CommonStates > Grid > Border#BackgroundElement, SearchUx.SearchUI.SearchButtonRootGrid#SearchBoxButtonRootPanel@CommonStates > Border#BackgroundElement", {
         L"CornerRadius=5",
         L"Background:=<AcrylicBrush TintColor=\"Black\" TintOpacity=\"0.8\" FallbackColor=\"#BB222222\" />",
         L"Background@InactivePointerOver:=<AcrylicBrush TintColor=\"Black\" TintOpacity=\"0.8\" FallbackColor=\"#CC222222\" />",
@@ -889,7 +897,7 @@ const Theme g_themeMatter = {{
         L"CornerRadius = $mainRadius"}},
     ThemeTargetStyles{L"Taskbar.AugmentedEntryPointButton#AugmentedEntryPointButton", {
         L"Margin=-1,1,1,1"}},
-    ThemeTargetStyles{L"Grid#IconPanel@CommonStates > Border#BackgroundElement, Taskbar.TaskListButtonPanel@CommonStates > Grid > Border#BackgroundElement, Taskbar.TaskListButtonPanel@CommonStates > Border#BackgroundElement", {
+    ThemeTargetStyles{L"Taskbar.TaskListButtonPanel@CommonStates > Grid > Border#BackgroundElement, Taskbar.TaskListButtonPanel@CommonStates > Border#BackgroundElement", {
         L"CornerRadius = $mainRadius",
         L"Background :=$base",
         L"Background@InactivePointerOver :=$overlay2",
@@ -1142,7 +1150,7 @@ const Theme g_themeBubbles = {{
         L"BorderThickness@NoRunningIndicator=1",
         L"BorderBrush@NoRunningIndicator:=<SolidColorBrush x:Name=\"SearchBoxTextBlock\" Opacity=\"0.15\" Color=\"{ThemeResource SearchPillButtonForeground}\" />",
         L"Margin=1"}},
-    ThemeTargetStyles{L"Grid#IconPanel@CommonStates > Border#BackgroundElement, Taskbar.TaskListButtonPanel@CommonStates > Grid > Border#BackgroundElement, Taskbar.TaskListButtonPanel@CommonStates > Border#BackgroundElement, SearchUx.SearchUI.SearchButtonRootGrid#SearchBoxButtonRootPanel@CommonStates > Grid > Border#BackgroundElement, SearchUx.SearchUI.SearchButtonRootGrid#SearchBoxButtonRootPanel@CommonStates > Border#BackgroundElement", {
+    ThemeTargetStyles{L"Taskbar.TaskListButtonPanel@CommonStates > Grid > Border#BackgroundElement, Taskbar.TaskListButtonPanel@CommonStates > Border#BackgroundElement, SearchUx.SearchUI.SearchButtonRootGrid#SearchBoxButtonRootPanel@CommonStates > Grid > Border#BackgroundElement, SearchUx.SearchUI.SearchButtonRootGrid#SearchBoxButtonRootPanel@CommonStates > Border#BackgroundElement", {
         L"Background:=<SolidColorBrush x:Name=\"SystemChromeHigh\" Opacity=\"0.3\" Color=\"{ThemeResource SystemChromeHighColor}\" />",
         L"BorderBrush:=<SolidColorBrush x:Name=\"SystemChromeHigh\" Opacity=\"0.6\" Color=\"{ThemeResource SystemChromeHighColor}\" />",
         L"Background@ActivePointerOver:=<SolidColorBrush x:Name=\"SystemChromeHigh\" Opacity=\"0.8\" Color=\"{ThemeResource SystemChromeHighColor}\" />",
@@ -1183,8 +1191,8 @@ const Theme g_themeBubbles = {{
         L"Fill@RequestingAttentionPointerOver:=<SolidColorBrush Opacity=\"0.4\" Color=\"Orange\" />",
         L"StrokeThickness@RequestingAttention=2.5",
         L"StrokeThickness@RequestingAttentionPointerOver=2.5",
-        L"Height=39",
-        L"Width=39",
+        L"Height=38",
+        L"Width=38",
         L"MinWidth=Auto"}},
     ThemeTargetStyles{L"Grid#IconPanel > TextBlock#LabelControl, Taskbar.TaskListLabeledButtonPanel > TextBlock#LabelControl", {
         L"Margin=4,0,0,0"}},
@@ -1296,7 +1304,7 @@ const Theme g_themeRosePine = {{
         L"Margin=0,5,4,4",
         L"Padding=3,0,-8,0"}},
     ThemeTargetStyles{L"Grid#IconPanel@CommonStates > Rectangle#RunningIndicator, Taskbar.TaskListLabeledButtonPanel@CommonStates > Rectangle#RunningIndicator", {
-        L"Height=27",
+        L"Height=Auto",
         L"RadiusX=5",
         L"RadiusY=5",
         L"StrokeThickness=2",
@@ -1307,7 +1315,7 @@ const Theme g_themeRosePine = {{
         L"Stroke@ActivePressed=#ebbcba",
         L"Fill=Transparent",
         L"Width=37",
-        L"VerticalAlignment=1",
+        L"VerticalAlignment=Stretch",
         L"Canvas.ZIndex=1"}},
     ThemeTargetStyles{L"SystemTray.ImageIconContent > Grid#ContainerGrid > Image", {
         L"Width=13"}},
@@ -1397,7 +1405,7 @@ const Theme g_themeWinVista = {{
 const Theme g_themeCleanSlate = {{
     ThemeTargetStyles{L"Taskbar.TaskbarFrame > Grid#RootGrid > Taskbar.TaskbarBackground > Grid > Rectangle#BackgroundFill", {
         L"Fill:=<AcrylicBrush TintColor=\"{ThemeResource SystemAccentColorDark2}\" TintOpacity=\"0.4\" FallbackColor=\"{ThemeResource SystemAccentColorDark1}\" />"}},
-    ThemeTargetStyles{L"Grid#IconPanel@CommonStates > Border#BackgroundElement, Taskbar.TaskListButtonPanel@CommonStates > Grid > Border#BackgroundElement, Taskbar.TaskListButtonPanel@CommonStates > Border#BackgroundElement", {
+    ThemeTargetStyles{L"Taskbar.TaskListButtonPanel@CommonStates > Grid > Border#BackgroundElement, Taskbar.TaskListButtonPanel@CommonStates > Border#BackgroundElement", {
         L"CornerRadius=100",
         L"Background:=<AcrylicBrush TintColor=\"{ThemeResource SystemAccentColorDark2}\" TintOpacity=\"0.4\" FallbackColor=\"{ThemeResource SystemAccentColorDark2}\" />",
         L"Background@InactivePointerOver:=<AcrylicBrush TintColor=\"{ThemeResource SystemAccentColorDark1}\" TintOpacity=\"0.4\" FallbackColor=\"{ThemeResource SystemAccentColorDark2}\"/>",
@@ -1455,7 +1463,7 @@ const Theme g_themeCleanSlate = {{
         L"Margin=-6,0,0,0"}},
     ThemeTargetStyles{L"SystemTray.Stack#ShowDesktopStack", {
         L"Width=12"}},
-    ThemeTargetStyles{L"Grid#IconPanel, Taskbar.TaskListButtonPanel", {
+    ThemeTargetStyles{L"Taskbar.TaskListButtonPanel", {
         L"Margin=-3,0,0,0"}},
     ThemeTargetStyles{L"Grid#OverflowRootGrid > Border", {
         L"Background:=<AcrylicBrush TintColor=\"{ThemeResource SystemAccentColorDark2}\" TintOpacity=\"0.4\" FallbackColor=\"{ThemeResource SystemAccentColorDark1}\" />",
@@ -1581,7 +1589,7 @@ const Theme g_themeLucent = {{
         L"BorderThickness=0",
         L"Margin=-2,-4,-2,-4",
         L"CornerRadius=0"}},
-    ThemeTargetStyles{L"Grid#IconPanel@CommonStates > Border, Taskbar.TaskListButtonPanel@CommonStates > Grid > Border, Taskbar.TaskListButtonPanel@CommonStates > Border", {
+    ThemeTargetStyles{L"Taskbar.TaskListButtonPanel@CommonStates > Grid > Border, Taskbar.TaskListButtonPanel@CommonStates > Border", {
         L"CornerRadius=0",
         L"Background@InactivePointerOver:=<SolidColorBrush Color=\"{ThemeResource SystemAccentColorLight3}\"/>",
         L"Background@InactivePressed:=<SolidColorBrush Color=\"{ThemeResource SystemAccentColorLight2}\"/>",
@@ -1712,7 +1720,7 @@ const Theme g_themeLucent_variant_Light = {{
         L"BorderThickness=0",
         L"Margin=-2,-4,-2,-4",
         L"CornerRadius=0"}},
-    ThemeTargetStyles{L"Grid#IconPanel@CommonStates > Border, Taskbar.TaskListButtonPanel@CommonStates > Grid > Border, Taskbar.TaskListButtonPanel@CommonStates > Border", {
+    ThemeTargetStyles{L"Taskbar.TaskListButtonPanel@CommonStates > Grid > Border, Taskbar.TaskListButtonPanel@CommonStates > Border", {
         L"CornerRadius=0",
         L"Background@InactivePointerOver=#BBBBBB",
         L"Background@InactivePressed=#EBEBEB",
@@ -1948,12 +1956,6 @@ const Theme g_themeSunValley = {{
     ThemeTargetStyles{L"Taskbar.TaskItemThumbnailView > Grid > Border", {
         L"BorderBrush:=<SolidColorBrush Color=\"{ThemeResource SystemBaseHighColor}\" Opacity=\"0.5\" />",
         L"CornerRadius=0"}},
-    ThemeTargetStyles{L"SystemTray.OmniButton#NotificationCenterButton > Windows.UI.Xaml.Controls.Grid > Windows.UI.Xaml.Controls.ContentPresenter > Windows.UI.Xaml.Controls.ItemsPresenter > Windows.UI.Xaml.Controls.StackPanel > Windows.UI.Xaml.Controls.ContentPresenter > SystemTray.IconView > Windows.UI.Xaml.Controls.Grid > Windows.UI.Xaml.Controls.Grid > SystemTray.TextIconContent > Windows.UI.Xaml.Controls.Grid > SystemTray.AdaptiveTextBlock#Base > Windows.UI.Xaml.Controls.TextBlock, SystemTray.OmniButton#NotificationCenterButton > Windows.UI.Xaml.Controls.Grid > Windows.UI.Xaml.Controls.ContentPresenter > Windows.UI.Xaml.Controls.ItemsPresenter > Windows.UI.Xaml.Controls.StackPanel > Windows.UI.Xaml.Controls.ContentPresenter > SystemTray.IconView > Windows.UI.Xaml.Controls.Grid > Windows.UI.Xaml.Controls.ContentPresenter > Windows.UI.Xaml.Controls.Grid > SystemTray.TextIconContent > Windows.UI.Xaml.Controls.Grid > SystemTray.AdaptiveTextBlock#Base > Windows.UI.Xaml.Controls.TextBlock", {
-        L"Text=\u200E\uE7E7",
-        L"FontWeight=Light",
-        L"FontSize=17.3",
-        L"Foreground:=<SolidColorBrush Color=\"{ThemeResource SystemBaseHighColor}\" />",
-        L"Margin=-0.5,0,1,0"}},
     ThemeTargetStyles{L"SystemTray.OmniButton#NotificationCenterButton > Windows.UI.Xaml.Controls.Grid > Windows.UI.Xaml.Controls.ContentPresenter > Windows.UI.Xaml.Controls.ItemsPresenter > Windows.UI.Xaml.Controls.StackPanel > Windows.UI.Xaml.Controls.ContentPresenter > SystemTray.IconView", {
         L"CornerRadius=0",
         L"Padding=0,0,0,0"}},
@@ -2360,12 +2362,6 @@ const Theme g_theme21996Taskbar = {{
     ThemeTargetStyles{L"Taskbar.TaskItemThumbnailView > Grid > Border", {
         L"BorderBrush:=<SolidColorBrush Color=\"{ThemeResource SystemBaseHighColor}\" Opacity=\"0.5\" />",
         L"CornerRadius=0"}},
-    ThemeTargetStyles{L"SystemTray.OmniButton#NotificationCenterButton > Windows.UI.Xaml.Controls.Grid > Windows.UI.Xaml.Controls.ContentPresenter > Windows.UI.Xaml.Controls.ItemsPresenter > Windows.UI.Xaml.Controls.StackPanel > Windows.UI.Xaml.Controls.ContentPresenter > SystemTray.IconView > Windows.UI.Xaml.Controls.Grid > Windows.UI.Xaml.Controls.Grid > SystemTray.TextIconContent > Windows.UI.Xaml.Controls.Grid > SystemTray.AdaptiveTextBlock#Base > Windows.UI.Xaml.Controls.TextBlock, SystemTray.OmniButton#NotificationCenterButton > Windows.UI.Xaml.Controls.Grid > Windows.UI.Xaml.Controls.ContentPresenter > Windows.UI.Xaml.Controls.ItemsPresenter > Windows.UI.Xaml.Controls.StackPanel > Windows.UI.Xaml.Controls.ContentPresenter > SystemTray.IconView > Windows.UI.Xaml.Controls.Grid > Windows.UI.Xaml.Controls.ContentPresenter > Windows.UI.Xaml.Controls.Grid > SystemTray.TextIconContent > Windows.UI.Xaml.Controls.Grid > SystemTray.AdaptiveTextBlock#Base > Windows.UI.Xaml.Controls.TextBlock", {
-        L"Text=\u200E\uE91C",
-        L"FontWeight=Light",
-        L"FontSize=16.4",
-        L"Foreground:=<SolidColorBrush Color=\"{ThemeResource SystemBaseHighColor}\" />",
-        L"Margin=-1,0,1,0"}},
     ThemeTargetStyles{L"SystemTray.OmniButton#NotificationCenterButton > Windows.UI.Xaml.Controls.Grid > Windows.UI.Xaml.Controls.ContentPresenter > Windows.UI.Xaml.Controls.ItemsPresenter > Windows.UI.Xaml.Controls.StackPanel > Windows.UI.Xaml.Controls.ContentPresenter > SystemTray.IconView", {
         L"CornerRadius=0",
         L"Padding=0,0,0,0"}},
@@ -2596,10 +2592,15 @@ const Theme g_themeBottomDensy_variant_NoInd = {{
 const Theme g_themeTaskbarXII = {{
     ThemeTargetStyles{L"ScrollViewer > ScrollContentPresenter > Border > Grid", {
         L"Background:=<AcrylicBrush TintColor=\"{ThemeResource SystemListLowColor}\" TintOpacity=\"0.1\" FallbackColor=\"{ThemeResource SystemChromeHighColor}\" />"}},
+    ThemeTargetStyles{L"Taskbar.TaskbarFrame > Grid#RootGrid@DockingStates", {
+        L"Tag=horizontal",
+        L"Tag@DockedLeft=vertical",
+        L"Tag@DockedRight=vertical",
+        L"Tag=>taskbarDock"}},
     ThemeTargetStyles{L"Taskbar.TaskbarFrame", {
         L"HorizontalAlignment=Right",
-        L"Width=Auto",
-        L"Height=56",
+        L"Width={{taskbarDock==`vertical`?skip():`Auto`}}",
+        L"Height={{taskbarDock==`vertical`?skip():56}}",
         L"Grid.Column=0",
         L"Margin=0,0,2,0"}},
     ThemeTargetStyles{L"Taskbar.TaskbarFrame > Grid", {
@@ -3033,13 +3034,13 @@ const Theme g_themeAeris = {{
     ThemeTargetStyles{L"Taskbar.TaskbarFrame > Grid#RootGrid > Taskbar.TaskbarBackground > Grid > Rectangle#BackgroundStroke", {
         L"Visibility=Collapsed",
         L"Fill:=<SolidColorBrush Color=\"$primaryColor\" Opacity=\"0.05\"/>"}},
-    ThemeTargetStyles{L"Grid#IconPanel@CommonStates, Taskbar.TaskListButtonPanel@CommonStates", {
+    ThemeTargetStyles{L"Taskbar.TaskListButtonPanel@CommonStates", {
         L"Padding=0",
         L"Margin=$taskListMargin,0,$taskListMargin,0",
         L"Background@ActiveNormal:=<SolidColorBrush Color=\"$activeColor\" Opacity=\"0.5\"/>",
         L"Background@ActivePointerOver:=<SolidColorBrush Color=\"$activeColor\" Opacity=\"0.5\"/>",
         L"Background@ActivePressed:=<SolidColorBrush Color=\"$activeColor\" Opacity=\"0.5\"/>"}},
-    ThemeTargetStyles{L"Grid#IconPanel@CommonStates > Border#BackgroundElement, Taskbar.TaskListButtonPanel@CommonStates > Grid > Border#BackgroundElement, Taskbar.TaskListButtonPanel@CommonStates > Border#BackgroundElement", {
+    ThemeTargetStyles{L"Taskbar.TaskListButtonPanel@CommonStates > Grid > Border#BackgroundElement, Taskbar.TaskListButtonPanel@CommonStates > Border#BackgroundElement", {
         L"Background:=$transparent",
         L"Background@InactivePointerOver:=$pointerOver",
         L"Background@InactivePressed:=$pressed",
@@ -3395,9 +3396,14 @@ const Theme g_themePlasma = {{
 }};
 
 const Theme g_themeWindowGlass = {{
+    ThemeTargetStyles{L"Taskbar.TaskbarFrame > Grid#RootGrid@DockingStates", {
+        L"Tag=horizontal",
+        L"Tag@DockedLeft=vertical",
+        L"Tag@DockedRight=vertical",
+        L"Tag=>taskbarDock"}},
     ThemeTargetStyles{L"Taskbar.TaskbarFrame", {
         L"MaxWidth={{containerGridWidth>0?min($TaskbarFrameMaxWidth,containerGridWidth):$TaskbarFrameMaxWidth}}",
-        L"Width=Auto",
+        L"Width={{taskbarDock==`vertical`?skip():`Auto`}}",
         L"MinWidth:=100",
         L"Grid.Column=1"}},
     ThemeTargetStyles{L"Taskbar.TaskbarFrame > Grid#RootGrid", {
@@ -3488,12 +3494,14 @@ const Theme g_themeWindowGlass = {{
     ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Button", {
         L"BorderThickness=$BorderThickness"}},
     ThemeTargetStyles{L"WindowsInternal.ComposableShell.Experiences.Switcher.AltTab > Windows.UI.Xaml.Controls.Grid#ModalRootGrid > Windows.UI.Xaml.Controls.Border#BackgroundElement", {
-        L"BorderThickness=$BorderThickness",
-        L"BorderBrush:=$BorderBrush",
+        L"BorderThickness=0",
         L"Background=Transparent",
         L"CornerRadius=$CornerRadius"}},
     ThemeTargetStyles{L"WindowsInternal.ComposableShell.Experiences.Switcher.AltTab > Windows.UI.Xaml.Controls.Grid#ModalRootGrid > Windows.UI.Xaml.Controls.Border#BackgroundElement > WindowsInternal.ComposableShell.Experiences.Switcher.SwitchItemList", {
-        L"Background:=$Background"}},
+        L"Background:=$Background",
+        L"BorderThickness=$BorderThickness",
+        L"BorderBrush:=$BorderBrush",
+        L"CornerRadius=$CornerRadius"}},
     ThemeTargetStyles{L"WindowsInternal.ComposableShell.Experiences.Switcher.VirtualDesktopBarElement#VirtualDesktopBar > Grid > Border", {
         L"BorderThickness=$BorderThickness",
         L"BorderBrush:=$BorderBrush",
@@ -3585,10 +3593,15 @@ const Theme g_themeWindowGlass = {{
 }};
 
 const Theme g_themeWindowGlass_variant_Split = {{
+    ThemeTargetStyles{L"Taskbar.TaskbarFrame > Grid#RootGrid@DockingStates", {
+        L"Tag=horizontal",
+        L"Tag@DockedLeft=vertical",
+        L"Tag@DockedRight=vertical",
+        L"Tag=>taskbarDock"}},
     ThemeTargetStyles{L"Taskbar.TaskbarFrame", {
         L"Grid.Column=1",
         L"MaxWidth={{containerGridWidth>0?min($TaskbarFrameMaxWidth,containerGridWidth):$TaskbarFrameMaxWidth}}",
-        L"Width=Auto",
+        L"Width={{taskbarDock==`vertical`?skip():`Auto`}}",
         L"MinWidth:=100"}},
     ThemeTargetStyles{L"Taskbar.TaskbarFrame > Grid#RootGrid", {
         L"Margin=10,2,3,2",
@@ -3669,12 +3682,14 @@ const Theme g_themeWindowGlass_variant_Split = {{
     ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Button", {
         L"BorderThickness=$BorderThickness"}},
     ThemeTargetStyles{L"WindowsInternal.ComposableShell.Experiences.Switcher.AltTab > Windows.UI.Xaml.Controls.Grid#ModalRootGrid > Windows.UI.Xaml.Controls.Border#BackgroundElement", {
-        L"BorderThickness=$BorderThickness",
-        L"BorderBrush:=$BorderBrush",
+        L"BorderThickness=0",
         L"Background=Transparent",
         L"CornerRadius=$CornerRadius"}},
     ThemeTargetStyles{L"WindowsInternal.ComposableShell.Experiences.Switcher.AltTab > Windows.UI.Xaml.Controls.Grid#ModalRootGrid > Windows.UI.Xaml.Controls.Border#BackgroundElement > WindowsInternal.ComposableShell.Experiences.Switcher.SwitchItemList", {
-        L"Background:=$Background"}},
+        L"Background:=$Background",
+        L"BorderThickness=$BorderThickness",
+        L"BorderBrush:=$BorderBrush",
+        L"CornerRadius=$CornerRadius"}},
     ThemeTargetStyles{L"WindowsInternal.ComposableShell.Experiences.Switcher.VirtualDesktopBarElement#VirtualDesktopBar > Grid > Border", {
         L"BorderThickness=$BorderThickness",
         L"BorderBrush:=$BorderBrush",
@@ -3773,8 +3788,13 @@ const Theme g_themeWindowGlass_variant_Split = {{
 }};
 
 const Theme g_themeWindowGlass_variant_FullLength = {{
+    ThemeTargetStyles{L"Taskbar.TaskbarFrame > Grid#RootGrid@DockingStates", {
+        L"Tag=horizontal",
+        L"Tag@DockedLeft=vertical",
+        L"Tag@DockedRight=vertical",
+        L"Tag=>taskbarDock"}},
     ThemeTargetStyles{L"Taskbar.TaskbarFrame", {
-        L"Width=Auto",
+        L"Width={{taskbarDock==`vertical`?skip():`Auto`}}",
         L"MinWidth:=100"}},
     ThemeTargetStyles{L"Taskbar.TaskbarFrame > Grid#RootGrid", {
         L"Margin=10,2,10,2",
@@ -3857,12 +3877,14 @@ const Theme g_themeWindowGlass_variant_FullLength = {{
     ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Button", {
         L"BorderThickness=$BorderThickness"}},
     ThemeTargetStyles{L"WindowsInternal.ComposableShell.Experiences.Switcher.AltTab > Windows.UI.Xaml.Controls.Grid#ModalRootGrid > Windows.UI.Xaml.Controls.Border#BackgroundElement", {
-        L"BorderThickness=$BorderThickness",
-        L"BorderBrush:=$BorderBrush",
+        L"BorderThickness=0",
         L"Background=Transparent",
         L"CornerRadius=$CornerRadius"}},
     ThemeTargetStyles{L"WindowsInternal.ComposableShell.Experiences.Switcher.AltTab > Windows.UI.Xaml.Controls.Grid#ModalRootGrid > Windows.UI.Xaml.Controls.Border#BackgroundElement > WindowsInternal.ComposableShell.Experiences.Switcher.SwitchItemList", {
-        L"Background:=$Background"}},
+        L"Background:=$Background",
+        L"BorderThickness=$BorderThickness",
+        L"BorderBrush:=$BorderBrush",
+        L"CornerRadius=$CornerRadius"}},
     ThemeTargetStyles{L"WindowsInternal.ComposableShell.Experiences.Switcher.VirtualDesktopBarElement#VirtualDesktopBar > Grid > Border", {
         L"BorderThickness=$BorderThickness",
         L"BorderBrush:=$BorderBrush",
@@ -3964,8 +3986,13 @@ const Theme g_themeSurface = {{
         L"Padding=-1"}},
     ThemeTargetStyles{L"Rectangle#BackgroundStroke", {
         L"Fill=Transparent"}},
+    ThemeTargetStyles{L"Taskbar.TaskbarFrame > Grid#RootGrid@DockingStates", {
+        L"Tag=horizontal",
+        L"Tag@DockedLeft=vertical",
+        L"Tag@DockedRight=vertical",
+        L"Tag=>taskbarDock"}},
     ThemeTargetStyles{L"Taskbar.TaskbarFrame", {
-        L"Width=Auto",
+        L"Width={{taskbarDock==`vertical`?skip():`Auto`}}",
         L"HorizontalAlignment=Center"}},
     ThemeTargetStyles{L"Taskbar.TaskbarFrame > Grid#RootGrid", {
         L"Visibility=Visible",
@@ -4085,7 +4112,7 @@ const Theme g_themeOversimplified_Accentuated = {{
         L"Fill:= <AcrylicBrush TintColor=\"{ThemeResource SystemAccentColor}\" TintOpacity=\"1\" TintLuminosityOpacity=\"1\" FallbackColor=\"{ThemeResource SystemAccentColorDark2}\" />"}},
     ThemeTargetStyles{L"WindowsInternal.ComposableShell.Experiences.Switcher.AltTab > Grid#ModalRootGrid > Border#BackgroundElement", {
         L"Background=Transparent",
-        L"BorderBrush=Transparent",
+        L"BorderThickness=0",
         L"CornerRadius=20",
         L"Shadow:="}},
     ThemeTargetStyles{L"WindowsInternal.ComposableShell.Experiences.Switcher.AltTab > Grid#ModalRootGrid > Border#BackgroundElement > WindowsInternal.ComposableShell.Experiences.Switcher.SwitchItemList", {
@@ -4191,11 +4218,13 @@ const Theme g_themeLuminosity_variant_Dock = {{
     ThemeTargetStyles{L"WindowsInternal.ComposableShell.Experiences.Switcher.AltTab > Windows.UI.Xaml.Controls.Grid#ModalRootGrid > Windows.UI.Xaml.Controls.Border#BackgroundElement", {
         L"Background=$t",
         L"CornerRadius=$wcr",
-        L"BorderThickness=$bt",
-        L"BorderBrush=$bb",
+        L"BorderThickness=0",
         L"Shadow:="}},
     ThemeTargetStyles{L"WindowsInternal.ComposableShell.Experiences.Switcher.AltTab > Windows.UI.Xaml.Controls.Grid#ModalRootGrid > Windows.UI.Xaml.Controls.Border#BackgroundElement > WindowsInternal.ComposableShell.Experiences.Switcher.SwitchItemList", {
-        L"Background:=$mbg"}},
+        L"Background:=$mbg",
+        L"CornerRadius=$wcr",
+        L"BorderThickness=$bt",
+        L"BorderBrush=$bb"}},
     ThemeTargetStyles{L"WindowsInternal.ComposableShell.Experiences.Switcher.DynamicFlowPanel > WindowsInternal.ComposableShell.Experiences.Switcher.SwitchItemListViewItem > Windows.UI.Xaml.Controls.Grid#Root@CommonStates > Windows.UI.Xaml.Controls.Border#BackgroundBorder", {
         L"Background:=#09FFFFFF",
         L"CornerRadius=$mcr",
@@ -4299,8 +4328,13 @@ const Theme g_themeLuminosity_variant_Dock = {{
         L"BackgroundTransition:=<BrushTransition Duration=\"0:0:0.100\" />"}},
     ThemeTargetStyles{L"Taskbar.TaskbarFrame > Grid#RootGrid > Taskbar.TaskbarBackground > Grid > Rectangle#BackgroundFill", {
         L"Visibility=Collapsed"}},
+    ThemeTargetStyles{L"Taskbar.TaskbarFrame > Grid#RootGrid@DockingStates", {
+        L"Tag=horizontal",
+        L"Tag@DockedLeft=vertical",
+        L"Tag@DockedRight=vertical",
+        L"Tag=>taskbarDock"}},
     ThemeTargetStyles{L"Taskbar.TaskbarFrame", {
-        L"Width=Auto",
+        L"Width={{taskbarDock==`vertical`?skip():`Auto`}}",
         L"HorizontalAlignment=Stretch",
         L"Margin=$DockMargin,0,$DockMargin,0"}},
     ThemeTargetStyles{L"Taskbar.TaskbarFrame > Grid#RootGrid", {
@@ -4321,7 +4355,7 @@ const Theme g_themeLuminosity_variant_Dock = {{
         L"VerticalAlignment=Center",
         L"Margin=0,$DockTopGap,$DockMargin,$DockBottomGap"}},
     ThemeTargetStyles{L"Taskbar.TaskbarFrame", {
-        L"Height=$DockHeight"}},
+        L"Height={{taskbarDock==`vertical`?skip():$DockHeight}}"}},
 }, {
     L"DockMargin=250",
     L"DockHeight=58",
@@ -4431,11 +4465,13 @@ const Theme g_themeLuminosity_variant_Classic = {{
     ThemeTargetStyles{L"WindowsInternal.ComposableShell.Experiences.Switcher.AltTab > Windows.UI.Xaml.Controls.Grid#ModalRootGrid > Windows.UI.Xaml.Controls.Border#BackgroundElement", {
         L"Background=$t",
         L"CornerRadius=$wcr",
-        L"BorderThickness=$bt",
-        L"BorderBrush=$bb",
+        L"BorderThickness=0",
         L"Shadow:="}},
     ThemeTargetStyles{L"WindowsInternal.ComposableShell.Experiences.Switcher.AltTab > Windows.UI.Xaml.Controls.Grid#ModalRootGrid > Windows.UI.Xaml.Controls.Border#BackgroundElement > WindowsInternal.ComposableShell.Experiences.Switcher.SwitchItemList", {
-        L"Background:=$mbg"}},
+        L"Background:=$mbg",
+        L"CornerRadius=$wcr",
+        L"BorderThickness=$bt",
+        L"BorderBrush=$bb"}},
     ThemeTargetStyles{L"WindowsInternal.ComposableShell.Experiences.Switcher.DynamicFlowPanel > WindowsInternal.ComposableShell.Experiences.Switcher.SwitchItemListViewItem > Windows.UI.Xaml.Controls.Grid#Root@CommonStates > Windows.UI.Xaml.Controls.Border#BackgroundBorder", {
         L"Background:=#09FFFFFF",
         L"CornerRadius=$mcr",
@@ -4643,11 +4679,13 @@ const Theme g_themeLuminosity_variant_Compact = {{
     ThemeTargetStyles{L"WindowsInternal.ComposableShell.Experiences.Switcher.AltTab > Windows.UI.Xaml.Controls.Grid#ModalRootGrid > Windows.UI.Xaml.Controls.Border#BackgroundElement", {
         L"Background=$t",
         L"CornerRadius=$wcr",
-        L"BorderThickness=$bt",
-        L"BorderBrush=$bb",
+        L"BorderThickness=0",
         L"Shadow:="}},
     ThemeTargetStyles{L"WindowsInternal.ComposableShell.Experiences.Switcher.AltTab > Windows.UI.Xaml.Controls.Grid#ModalRootGrid > Windows.UI.Xaml.Controls.Border#BackgroundElement > WindowsInternal.ComposableShell.Experiences.Switcher.SwitchItemList", {
-        L"Background:=$mbg"}},
+        L"Background:=$mbg",
+        L"CornerRadius=$wcr",
+        L"BorderThickness=$bt",
+        L"BorderBrush=$bb"}},
     ThemeTargetStyles{L"WindowsInternal.ComposableShell.Experiences.Switcher.DynamicFlowPanel > WindowsInternal.ComposableShell.Experiences.Switcher.SwitchItemListViewItem > Windows.UI.Xaml.Controls.Grid#Root@CommonStates > Windows.UI.Xaml.Controls.Border#BackgroundBorder", {
         L"Background:=#09FFFFFF",
         L"CornerRadius=$mcr",
@@ -4819,9 +4857,12 @@ const Theme g_themeLayerMicaUI = {{
     ThemeTargetStyles{L"WindowsInternal.ComposableShell.Experiences.Switcher.AltTab > Grid#ModalRootGrid > Border#BackgroundElement", {
         L"Background=Transparent",
         L"CornerRadius=$OuterRadius",
-        L"BorderBrush:=$ThemeOutBorder"}},
+        L"BorderThickness=0"}},
     ThemeTargetStyles{L"WindowsInternal.ComposableShell.Experiences.Switcher.AltTab > Grid#ModalRootGrid > Border#BackgroundElement > WindowsInternal.ComposableShell.Experiences.Switcher.SwitchItemList", {
-        L"Background:=$ThemeBlur"}},
+        L"Background:=$ThemeBlur",
+        L"CornerRadius=$OuterRadius",
+        L"BorderThickness=1",
+        L"BorderBrush:=$ThemeOutBorder"}},
     ThemeTargetStyles{L"Grid#ConfirmatorMainGrid", {
         L"Background:=$ThemeLayer",
         L"CornerRadius=$OuterRadius",
@@ -4906,8 +4947,13 @@ const Theme g_themeLayerMicaUI = {{
         L"CornerRadius=$OuterRadius"}},
     ThemeTargetStyles{L"Taskbar.TaskbarBackground#HoverFlyoutBackgroundControl", {
         L"FontFamily=$ThFnt"}},
+    ThemeTargetStyles{L"Taskbar.TaskbarFrame > Grid#RootGrid@DockingStates", {
+        L"Tag=horizontal",
+        L"Tag@DockedLeft=vertical",
+        L"Tag@DockedRight=vertical",
+        L"Tag=>taskbarDock"}},
     ThemeTargetStyles{L"Taskbar.TaskbarFrame", {
-        L"Width=Auto"}},
+        L"Width={{taskbarDock==`vertical`?skip():`Auto`}}"}},
     ThemeTargetStyles{L"Taskbar.TaskbarFrame > Grid#RootGrid", {
         L"Margin=8,3,0,3",
         L"CornerRadius=$OuterRadius",
@@ -5203,7 +5249,7 @@ const Theme g_themeTaskbarToStatusbar = {{
         L"Margin=0,0,-3840,0"}},
     ThemeTargetStyles{L"Taskbar.ExperienceToggleButton#LaunchListButton > Taskbar.TaskListButtonPanel > Grid > Microsoft.UI.Xaml.Controls.AnimatedVisualPlayer#Icon, Taskbar.ExperienceToggleButton#LaunchListButton > Taskbar.TaskListButtonPanel > Microsoft.UI.Xaml.Controls.AnimatedVisualPlayer#Icon", {
         L"Visibility=Collapsed"}},
-    ThemeTargetStyles{L"Grid#IconPanel@CommonStates > Border#BackgroundElement, Taskbar.TaskListButtonPanel@CommonStates > Grid > Border#BackgroundElement, Taskbar.TaskListButtonPanel@CommonStates > Border#BackgroundElement", {
+    ThemeTargetStyles{L"Taskbar.TaskListButtonPanel@CommonStates > Grid > Border#BackgroundElement, Taskbar.TaskListButtonPanel@CommonStates > Border#BackgroundElement", {
         L"Visibility=Collapsed"}},
     ThemeTargetStyles{L"Taskbar.SearchBoxButton#SearchBoxButton[AutomationProperties.AutomationId=SearchButton] > Taskbar.TaskListButtonPanel", {
         L"Visibility=Collapsed"}},
@@ -5255,9 +5301,14 @@ const Theme g_themeUltraWideFriendly = {{
         L"HorizontalAlignment=Stretch",
         L"Background:=<SolidColorBrush Color=\"$GhostBarBackgroundColor\"/>",
         L"ActualWidth=>containerGridWidth"}},
+    ThemeTargetStyles{L"Taskbar.TaskbarFrame > Grid#RootGrid@DockingStates", {
+        L"Tag=horizontal",
+        L"Tag@DockedLeft=vertical",
+        L"Tag@DockedRight=vertical",
+        L"Tag=>taskbarDock"}},
     ThemeTargetStyles{L"Taskbar.TaskbarFrame", {
         L"Grid.Column=1",
-        L"Width=Auto",
+        L"Width={{taskbarDock==`vertical`?skip():`Auto`}}",
         L"HorizontalAlignment=Right",
         L"Margin=0,0,$IslandHorizontalMargin,0",
         L"MaxWidth={{containerGridWidth>0?min($TaskbarFrameMaxWidth,containerGridWidth):$TaskbarFrameMaxWidth}}"}},
@@ -5319,8 +5370,13 @@ const Theme g_themeLiquidGlass2 = {{
         L"ActualWidth=>containerGridWidth",
         L"ActualHeight=>TaskHeight",
         L"HorizontalAlignment=Stretch"}},
+    ThemeTargetStyles{L"Taskbar.TaskbarFrame > Grid#RootGrid@DockingStates", {
+        L"Tag=horizontal",
+        L"Tag@DockedLeft=vertical",
+        L"Tag@DockedRight=vertical",
+        L"Tag=>taskbarDock"}},
     ThemeTargetStyles{L"Taskbar.TaskbarFrame", {
-        L"Width=Auto",
+        L"Width={{taskbarDock==`vertical`?skip():`Auto`}}",
         L"HorizontalAlignment=Center",
         L"MinWidth=100",
         L"MaxWidth={{containerGridWidth>0?max(containerGridWidth-250,100):`Infinity`}}",
@@ -5469,11 +5525,13 @@ const Theme g_themeLiquidGlass2 = {{
     ThemeTargetStyles{L"WindowsInternal.ComposableShell.Experiences.Switcher.AltTab > Grid#ModalRootGrid > Border#BackgroundElement", {
         L"CornerRadius={{ max(68, min(90, (AltTabHeight / 5) * 1.75)) }}",
         L"ActualHeight=>AltTabHeight",
-        L"BorderThickness=1",
-        L"BorderBrush:=<LinearGradientBrush StartPoint=\"0,0\" EndPoint=\"0,1\"><GradientStop Color=\"#69D3D3D3\" Offset=\"0.0\" /><GradientStop Color=\"#5F303030\" Offset=\"0.1\" /><GradientStop Color=\"#70303030\" Offset=\"0.5\" /><GradientStop Color=\"#5F303030\" Offset=\"0.9\" /><GradientStop Color=\"#69D3D3D3\" Offset=\"1\" /></LinearGradientBrush>",
+        L"BorderThickness=0",
         L"Background=Transparent"}},
     ThemeTargetStyles{L"WindowsInternal.ComposableShell.Experiences.Switcher.AltTab > Grid#ModalRootGrid > Border#BackgroundElement > WindowsInternal.ComposableShell.Experiences.Switcher.SwitchItemList", {
-        L"Background:=<WindhawkBlur BlurAmount=\"6\" TintColor=\"#20000000\" TintSaturation=\"1.2\"/>"}},
+        L"Background:=<WindhawkBlur BlurAmount=\"6\" TintColor=\"#20000000\" TintSaturation=\"1.2\"/>",
+        L"CornerRadius={{ max(68, min(90, (AltTabHeight / 5) * 1.75)) }}",
+        L"BorderThickness=1",
+        L"BorderBrush:=<LinearGradientBrush StartPoint=\"0,0\" EndPoint=\"0,1\"><GradientStop Color=\"#69D3D3D3\" Offset=\"0.0\" /><GradientStop Color=\"#5F303030\" Offset=\"0.1\" /><GradientStop Color=\"#70303030\" Offset=\"0.5\" /><GradientStop Color=\"#5F303030\" Offset=\"0.9\" /><GradientStop Color=\"#69D3D3D3\" Offset=\"1\" /></LinearGradientBrush>"}},
     ThemeTargetStyles{L"WindowsInternal.ComposableShell.Experiences.Switcher.SwitchItemListViewItem > Grid > Border", {
         L"CornerRadius=25,25,12,12",
         L"Background:=<WindhawkBlur BlurAmount=\"18\" TintColor=\"#701F1F1F\"/>",
@@ -5539,7 +5597,7 @@ const Theme g_themeLiquidGlass2 = {{
     ThemeTargetStyles{L"Grid#IconPanel@CommonStates > Border#BackgroundElement, Taskbar.TaskListLabeledButtonPanel@CommonStates > Border#BackgroundElement", {
         L"Background=Transparent",
         L"BorderBrush=Transparent"}},
-    ThemeTargetStyles{L"Grid#IconPanel@CommonStates > Border#BackgroundElement, Taskbar.TaskListButtonPanel@CommonStates > Grid > Border#BackgroundElement, Taskbar.TaskListButtonPanel@CommonStates > Border#BackgroundElement", {
+    ThemeTargetStyles{L"Taskbar.TaskListButtonPanel@CommonStates > Grid > Border#BackgroundElement, Taskbar.TaskListButtonPanel@CommonStates > Border#BackgroundElement", {
         L"BorderBrush=Transparent",
         L"Background=Transparent"}},
     ThemeTargetStyles{L"SystemTray.ChevronIconView", {
@@ -5726,12 +5784,14 @@ const Theme g_themeLiquidGlass = {{
         L"Background:=$Background",
         L"CornerRadius=$CornerRadius"}},
     ThemeTargetStyles{L"WindowsInternal.ComposableShell.Experiences.Switcher.AltTab > Windows.UI.Xaml.Controls.Grid#ModalRootGrid > Windows.UI.Xaml.Controls.Border#BackgroundElement", {
-        L"BorderThickness=$BorderThickness",
-        L"BorderBrush:=$BorderBrush",
+        L"BorderThickness=0",
         L"Background=Transparent",
         L"CornerRadius=$CornerRadius"}},
     ThemeTargetStyles{L"WindowsInternal.ComposableShell.Experiences.Switcher.AltTab > Windows.UI.Xaml.Controls.Grid#ModalRootGrid > Windows.UI.Xaml.Controls.Border#BackgroundElement > WindowsInternal.ComposableShell.Experiences.Switcher.SwitchItemList", {
-        L"Background:=$Background"}},
+        L"Background:=$Background",
+        L"BorderThickness=$BorderThickness",
+        L"BorderBrush:=$BorderBrush",
+        L"CornerRadius=$CornerRadius"}},
     ThemeTargetStyles{L"WindowsInternal.ComposableShell.Experiences.Switcher.VirtualDesktopBarElement#VirtualDesktopBar", {
         L"CornerRadius=$CornerRadius",
         L"Background:=$Background"}},
@@ -5851,8 +5911,13 @@ const Theme g_themeLiquidGlass = {{
 }};
 
 const Theme g_themeLiquidGlass_variant_Alternate = {{
+    ThemeTargetStyles{L"Taskbar.TaskbarFrame > Grid#RootGrid@DockingStates", {
+        L"Tag=horizontal",
+        L"Tag@DockedLeft=vertical",
+        L"Tag@DockedRight=vertical",
+        L"Tag=>taskbarDock"}},
     ThemeTargetStyles{L"Taskbar.TaskbarFrame", {
-        L"Width=Auto",
+        L"Width={{taskbarDock==`vertical`?skip():`Auto`}}",
         L"MinWidth:=100",
         L"MaxWidth:=1200",
         L"HorizontalAlignment=Center"}},
@@ -5907,12 +5972,14 @@ const Theme g_themeLiquidGlass_variant_Alternate = {{
         L"Background:=$Background",
         L"CornerRadius=$CornerRadius"}},
     ThemeTargetStyles{L"WindowsInternal.ComposableShell.Experiences.Switcher.AltTab > Windows.UI.Xaml.Controls.Grid#ModalRootGrid > Windows.UI.Xaml.Controls.Border#BackgroundElement", {
-        L"BorderThickness=$BorderThickness",
-        L"BorderBrush:=$BorderBrush",
+        L"BorderThickness=0",
         L"Background=Transparent",
         L"CornerRadius=$CornerRadius"}},
     ThemeTargetStyles{L"WindowsInternal.ComposableShell.Experiences.Switcher.AltTab > Windows.UI.Xaml.Controls.Grid#ModalRootGrid > Windows.UI.Xaml.Controls.Border#BackgroundElement > WindowsInternal.ComposableShell.Experiences.Switcher.SwitchItemList", {
-        L"Background:=$Background"}},
+        L"Background:=$Background",
+        L"BorderThickness=$BorderThickness",
+        L"BorderBrush:=$BorderBrush",
+        L"CornerRadius=$CornerRadius"}},
     ThemeTargetStyles{L"WindowsInternal.ComposableShell.Experiences.Switcher.VirtualDesktopBarElement#VirtualDesktopBar", {
         L"CornerRadius=$CornerRadius",
         L"Background:=$Background"}},
@@ -6042,9 +6109,14 @@ const Theme g_themeBorderless = {{
     ThemeTargetStyles{L"ScrollViewer > ScrollContentPresenter > Border > Grid", {
         L"ColumnDefinitions:=<ColumnDefinitionCollection><ColumnDefinition Width=\"*\"/><ColumnDefinition Width=\"Auto\"/><ColumnDefinition Width=\"Auto\"/><ColumnDefinition Width=\"*\"/></ColumnDefinitionCollection>",
         L"HorizontalAlignment=Stretch"}},
+    ThemeTargetStyles{L"Taskbar.TaskbarFrame > Grid#RootGrid@DockingStates", {
+        L"Tag=horizontal",
+        L"Tag@DockedLeft=vertical",
+        L"Tag@DockedRight=vertical",
+        L"Tag=>taskbarDock"}},
     ThemeTargetStyles{L"Taskbar.TaskbarFrame", {
         L"Grid.Column=1",
-        L"Width=$TaskbarFrameWidth",
+        L"Width={{taskbarDock==`vertical`?skip():$TaskbarFrameWidth}}",
         L"Margin=0",
         L"MaxWidth=$TaskbarFrameWidth"}},
     ThemeTargetStyles{L"SystemTray.SystemTrayFrame", {
@@ -6099,7 +6171,7 @@ const Theme g_themeCommand_Center = {{
         L"BorderBrush:=$BorderBrush",
         L"BorderThickness=$BorderThickness",
         L"CornerRadius=$R1"}},
-    ThemeTargetStyles{L"Grid#IconPanel@CommonStates > Border#BackgroundElement, Taskbar.TaskListButtonPanel@CommonStates > Grid > Border#BackgroundElement, Taskbar.TaskListButtonPanel@CommonStates > Border#BackgroundElement", {
+    ThemeTargetStyles{L"Taskbar.TaskListButtonPanel@CommonStates > Grid > Border#BackgroundElement, Taskbar.TaskListButtonPanel@CommonStates > Border#BackgroundElement", {
         L"Padding=6",
         L"Margin=2",
         L"Background@ActiveNormal:=$ActiveColor",
@@ -6331,10 +6403,15 @@ const Theme g_themeFluentGlass = {{
     ThemeTargetStyles{L"ScrollViewer > ScrollContentPresenter > Border > Grid", {
         L"ColumnDefinitions:=<ColumnDefinitionCollection><ColumnDefinition Width=\"*\"/><ColumnDefinition Width=\"Auto\"/><ColumnDefinition Width=\"Auto\"/><ColumnDefinition Width=\"*\"/></ColumnDefinitionCollection>",
         L"HorizontalAlignment=Stretch"}},
+    ThemeTargetStyles{L"Taskbar.TaskbarFrame > Grid#RootGrid@DockingStates", {
+        L"Tag=horizontal",
+        L"Tag@DockedLeft=vertical",
+        L"Tag@DockedRight=vertical",
+        L"Tag=>taskbarDock"}},
     ThemeTargetStyles{L"Taskbar.TaskbarFrame", {
         L"Grid.Column=1",
-        L"Width=$TaskbarFrameWidth",
-        L"Height=$TaskbarHeight",
+        L"Width={{taskbarDock==`vertical`?skip():$TaskbarFrameWidth}}",
+        L"Height={{taskbarDock==`vertical`?skip():$TaskbarHeight}}",
         L"MinHeight=62",
         L"HorizontalAlignment=Center",
         L"VerticalAlignment=Center",
@@ -6425,20 +6502,25 @@ const Theme g_themeFluentGlass = {{
 }};
 
 const Theme g_themeOS26_Liquid_Glass_variant_ClearMacDock = {{
+    ThemeTargetStyles{L"Taskbar.TaskbarFrame > Grid#RootGrid@DockingStates", {
+        L"Tag=horizontal",
+        L"Tag@DockedLeft=vertical",
+        L"Tag@DockedRight=vertical",
+        L"Tag=>taskbarDock"}},
     ThemeTargetStyles{L"Taskbar.TaskbarFrame", {
-        L"Width=auto",
+        L"Width={{taskbarDock==`vertical`?skip():`Auto`}}",
         L"MinWidth:=100",
         L"MaxWidth={{containerGridWidth>0?containerGridWidth:`Infinity`}}",
         L"Grid.Column=1",
         L"Transitions:=<TransitionCollection><RepositionThemeTransition IsStaggeringEnabled=\"False\"/></TransitionCollection>",
-        L"Height=80",
+        L"Height={{taskbarDock==`vertical`?skip():80}}",
         L"MaxHeight=80",
         L"HorizontalAlignment=Center"}},
     ThemeTargetStyles{L"Grid#IconPanel > Image#Icon, Taskbar.TaskListLabeledButtonPanel#IconPanel > Image#Icon", {
         L"Height=24",
         L"Width=24",
         L"Margin=5,0,-5,0"}},
-    ThemeTargetStyles{L"Grid#IconPanel, Taskbar.TaskListButtonPanel", {
+    ThemeTargetStyles{L"Taskbar.TaskListButtonPanel", {
         L"Width=55",
         L"Height=70"}},
     ThemeTargetStyles{L"Grid#IconPanel, Taskbar.TaskListLabeledButtonPanel", {
@@ -6477,11 +6559,13 @@ const Theme g_themeOS26_Liquid_Glass_variant_ClearMacDock = {{
         L"Margin=0"}},
     ThemeTargetStyles{L"WindowsInternal.ComposableShell.Experiences.Switcher.AltTab > Grid#ModalRootGrid > Border#BackgroundElement", {
         L"Background=Transparent",
+        L"BorderThickness=0",
+        L"CornerRadius=50"}},
+    ThemeTargetStyles{L"WindowsInternal.ComposableShell.Experiences.Switcher.AltTab > Grid#ModalRootGrid > Border#BackgroundElement > WindowsInternal.ComposableShell.Experiences.Switcher.SwitchItemList", {
+        L"Background:=<WindhawkBlur BlurAmount=\"8\" TintColor=\"#2D101010\"/>",
         L"BorderThickness=2",
         L"BorderBrush:=<WindhawkBlur BlurAmount=\"8\" TintColor=\"#30ffffff\"/>",
         L"CornerRadius=50"}},
-    ThemeTargetStyles{L"WindowsInternal.ComposableShell.Experiences.Switcher.AltTab > Grid#ModalRootGrid > Border#BackgroundElement > WindowsInternal.ComposableShell.Experiences.Switcher.SwitchItemList", {
-        L"Background:=<WindhawkBlur BlurAmount=\"8\" TintColor=\"#2D101010\"/>"}},
     ThemeTargetStyles{L"MenuFlyoutPresenter", {
         L"CornerRadius=20"}},
     ThemeTargetStyles{L"MenuFlyoutPresenter > Border", {
@@ -6551,15 +6635,6 @@ const Theme g_themeOS26_Liquid_Glass_variant_ClearMacDock = {{
         L"CornerRadius=15"}},
     ThemeTargetStyles{L"SystemTray.SystemTrayFrame > StackPanel#SystemTrayFrameGrid > SystemTray.OmniButton#ControlCenterButton > Grid > ContentPresenter#ContentPresenter > ItemsPresenter > StackPanel > ContentPresenter > SystemTray.IconView#SystemTrayIcon > Grid#ContainerGrid > Grid#ContentGrid > SystemTray.BatteryIconContent > Grid#ContainerGrid > StackPanel, SystemTray.SystemTrayFrame > Grid#SystemTrayFrameGrid > SystemTray.OmniButton#ControlCenterButton > Grid > ContentPresenter#ContentPresenter > ItemsPresenter > StackPanel > ContentPresenter > SystemTray.IconView#SystemTrayIcon > Grid#ContainerGrid > Grid#ContentGrid > SystemTray.BatteryIconContent > Grid#ContainerGrid > StackPanel", {
         L"HorizontalAlignment=Center"}},
-    ThemeTargetStyles{L"SystemTray.SystemTrayFrame > StackPanel#SystemTrayFrameGrid > SystemTray.OmniButton#NotificationCenterButton > Grid > ContentPresenter#ContentPresenter > ItemsPresenter > StackPanel > ContentPresenter > SystemTray.IconView#SystemTrayIcon > Grid#ContainerGrid > Grid#ContentGrid > SystemTray.TextIconContent > Grid#ContainerGrid, SystemTray.SystemTrayFrame > StackPanel#SystemTrayFrameGrid > SystemTray.OmniButton#NotificationCenterButton > Grid > ContentPresenter#ContentPresenter > ItemsPresenter > StackPanel > ContentPresenter > SystemTray.IconView#SystemTrayIcon > Grid#ContainerGrid > ContentPresenter#ContentPresenter > Grid#ContentGrid > SystemTray.TextIconContent > Grid#ContainerGrid, SystemTray.SystemTrayFrame > Grid#SystemTrayFrameGrid > SystemTray.OmniButton#NotificationCenterButton > Grid > ContentPresenter#ContentPresenter > ItemsPresenter > StackPanel > ContentPresenter > SystemTray.IconView#SystemTrayIcon > Grid#ContainerGrid > Grid#ContentGrid > SystemTray.TextIconContent > Grid#ContainerGrid, SystemTray.SystemTrayFrame > Grid#SystemTrayFrameGrid > SystemTray.OmniButton#NotificationCenterButton > Grid > ContentPresenter#ContentPresenter > ItemsPresenter > StackPanel > ContentPresenter > SystemTray.IconView#SystemTrayIcon > Grid#ContainerGrid > ContentPresenter#ContentPresenter > Grid#ContentGrid > SystemTray.TextIconContent > Grid#ContainerGrid", {
-        L"Visibility=Visible",
-        L"Width=48",
-        L"Height=48",
-        L"Margin=-2,4,0,0",
-        L"Background:=$IconBackground",
-        L"BorderBrush:=$IconBorder",
-        L"BorderThickness=1.2",
-        L"CornerRadius=15"}},
     ThemeTargetStyles{L"SystemTray.AdaptiveTextBlock > TextBlock", {
         L"FontSize=30"}},
     ThemeTargetStyles{L"SystemTray.SystemTrayFrame > StackPanel#SystemTrayFrameGrid > SystemTray.Stack#NotifyIconStack > Grid#Content > SystemTray.StackListView#IconStack > ItemsPresenter > StackPanel > ContentPresenter > SystemTray.ChevronIconView > Grid#ContainerGrid > ContentPresenter#ContentPresenter > Grid#ContentGrid > SystemTray.TextIconContent > Grid#ContainerGrid > SystemTray.AdaptiveTextBlock#Base > TextBlock#InnerTextBlock, SystemTray.SystemTrayFrame > Grid#SystemTrayFrameGrid > SystemTray.Stack#NotifyIconStack > Grid#Content > SystemTray.StackListView#IconStack > ItemsPresenter > StackPanel > ContentPresenter > SystemTray.ChevronIconView > Grid#ContainerGrid > ContentPresenter#ContentPresenter > Grid#ContentGrid > SystemTray.TextIconContent > Grid#ContainerGrid > SystemTray.AdaptiveTextBlock#Base > TextBlock#InnerTextBlock", {
@@ -6631,15 +6706,11 @@ const Theme g_themeOS26_Liquid_Glass_variant_ClearMacDock = {{
     ThemeTargetStyles{L"SystemTray.OmniButton#ControlCenterButton > Grid > Border#BackgroundBorder", {
         L"Background:=Transparent",
         L"BorderThickness=0"}},
-    ThemeTargetStyles{L"SystemTray.SystemTrayFrame > StackPanel#SystemTrayFrameGrid > SystemTray.OmniButton#NotificationCenterButton > Grid > ContentPresenter#ContentPresenter > ItemsPresenter > StackPanel > ContentPresenter > SystemTray.IconView#SystemTrayIcon > Grid#ContainerGrid > Grid#ContentGrid, SystemTray.SystemTrayFrame > StackPanel#SystemTrayFrameGrid > SystemTray.OmniButton#NotificationCenterButton > Grid > ContentPresenter#ContentPresenter > ItemsPresenter > StackPanel > ContentPresenter > SystemTray.IconView#SystemTrayIcon > Grid#ContainerGrid > ContentPresenter#ContentPresenter, SystemTray.SystemTrayFrame > Grid#SystemTrayFrameGrid > SystemTray.OmniButton#NotificationCenterButton > Grid > ContentPresenter#ContentPresenter > ItemsPresenter > StackPanel > ContentPresenter > SystemTray.IconView#SystemTrayIcon > Grid#ContainerGrid > Grid#ContentGrid, SystemTray.SystemTrayFrame > Grid#SystemTrayFrameGrid > SystemTray.OmniButton#NotificationCenterButton > Grid > ContentPresenter#ContentPresenter > ItemsPresenter > StackPanel > ContentPresenter > SystemTray.IconView#SystemTrayIcon > Grid#ContainerGrid > ContentPresenter#ContentPresenter", {
-        L"Margin=0,0,15,0",
-        L"Background:=transparent",
-        L"BorderThickness=0"}},
     ThemeTargetStyles{L"SystemTray.Stack#MainStack", {
         L"Visibility=1"}},
     ThemeTargetStyles{L"SystemTray.SystemTrayFrame > StackPanel#SystemTrayFrameGrid > SystemTray.OmniButton#ControlCenterButton > Grid > ContentPresenter#ContentPresenter > ItemsPresenter > StackPanel > ContentPresenter > SystemTray.IconView#SystemTrayIcon > Grid#ContainerGrid > Grid#ContentGrid > SystemTray.TextIconContent > Grid#ContainerGrid > SystemTray.AdaptiveTextBlock#Underlay > TextBlock#InnerTextBlock, SystemTray.SystemTrayFrame > Grid#SystemTrayFrameGrid > SystemTray.OmniButton#ControlCenterButton > Grid > ContentPresenter#ContentPresenter > ItemsPresenter > StackPanel > ContentPresenter > SystemTray.IconView#SystemTrayIcon > Grid#ContainerGrid > Grid#ContentGrid > SystemTray.TextIconContent > Grid#ContainerGrid > SystemTray.AdaptiveTextBlock#Underlay > TextBlock#InnerTextBlock", {
         L"Foreground=white"}},
-    ThemeTargetStyles{L"Grid#IconPanel@CommonStates > Border#BackgroundElement, Taskbar.TaskListButtonPanel@CommonStates > Grid > Border#BackgroundElement, Taskbar.TaskListButtonPanel@CommonStates > Border#BackgroundElement", {
+    ThemeTargetStyles{L"Taskbar.TaskListButtonPanel@CommonStates > Grid > Border#BackgroundElement, Taskbar.TaskListButtonPanel@CommonStates > Border#BackgroundElement", {
         L"CornerRadius=15",
         L"Margin=0,5.5,0,5.5",
         L"Background:=$IconBackground",
@@ -6806,20 +6877,25 @@ const Theme g_themeOS26_Liquid_Glass_variant_ClearMacDock = {{
 }};
 
 const Theme g_themeOS26_Liquid_Glass_variant_ClearMacDockCompact = {{
+    ThemeTargetStyles{L"Taskbar.TaskbarFrame > Grid#RootGrid@DockingStates", {
+        L"Tag=horizontal",
+        L"Tag@DockedLeft=vertical",
+        L"Tag@DockedRight=vertical",
+        L"Tag=>taskbarDock"}},
     ThemeTargetStyles{L"Taskbar.TaskbarFrame", {
-        L"Width=auto",
+        L"Width={{taskbarDock==`vertical`?skip():`Auto`}}",
         L"MinWidth:=100",
         L"MaxWidth={{containerGridWidth>0?containerGridWidth:`Infinity`}}",
         L"Grid.Column=1",
         L"Transitions:=<TransitionCollection><RepositionThemeTransition IsStaggeringEnabled=\"False\"/></TransitionCollection>",
-        L"Height=70",
+        L"Height={{taskbarDock==`vertical`?skip():70}}",
         L"MaxHeight=80",
         L"HorizontalAlignment=Center"}},
     ThemeTargetStyles{L"Grid#IconPanel > Image#Icon, Taskbar.TaskListLabeledButtonPanel#IconPanel > Image#Icon", {
         L"Height=24",
         L"Width=24",
         L"Margin=3,0,-3,0"}},
-    ThemeTargetStyles{L"Grid#IconPanel, Taskbar.TaskListButtonPanel", {
+    ThemeTargetStyles{L"Taskbar.TaskListButtonPanel", {
         L"Width=50",
         L"Height=65",
         L"Margin=0,-2,0,2"}},
@@ -6861,11 +6937,13 @@ const Theme g_themeOS26_Liquid_Glass_variant_ClearMacDockCompact = {{
         L"Margin=0"}},
     ThemeTargetStyles{L"WindowsInternal.ComposableShell.Experiences.Switcher.AltTab > Grid#ModalRootGrid > Border#BackgroundElement", {
         L"Background=Transparent",
+        L"BorderThickness=0",
+        L"CornerRadius=50"}},
+    ThemeTargetStyles{L"WindowsInternal.ComposableShell.Experiences.Switcher.AltTab > Grid#ModalRootGrid > Border#BackgroundElement > WindowsInternal.ComposableShell.Experiences.Switcher.SwitchItemList", {
+        L"Background:=<WindhawkBlur BlurAmount=\"8\" TintColor=\"#2D101010\"/>",
         L"BorderThickness=2",
         L"BorderBrush:=<WindhawkBlur BlurAmount=\"8\" TintColor=\"#30ffffff\"/>",
         L"CornerRadius=50"}},
-    ThemeTargetStyles{L"WindowsInternal.ComposableShell.Experiences.Switcher.AltTab > Grid#ModalRootGrid > Border#BackgroundElement > WindowsInternal.ComposableShell.Experiences.Switcher.SwitchItemList", {
-        L"Background:=<WindhawkBlur BlurAmount=\"8\" TintColor=\"#2D101010\"/>"}},
     ThemeTargetStyles{L"MenuFlyoutPresenter", {
         L"CornerRadius=20"}},
     ThemeTargetStyles{L"MenuFlyoutPresenter > Border", {
@@ -6935,15 +7013,6 @@ const Theme g_themeOS26_Liquid_Glass_variant_ClearMacDockCompact = {{
         L"CornerRadius=13"}},
     ThemeTargetStyles{L"SystemTray.SystemTrayFrame > StackPanel#SystemTrayFrameGrid > SystemTray.OmniButton#ControlCenterButton > Grid > ContentPresenter#ContentPresenter > ItemsPresenter > StackPanel > ContentPresenter > SystemTray.IconView#SystemTrayIcon > Grid#ContainerGrid > Grid#ContentGrid > SystemTray.BatteryIconContent > Grid#ContainerGrid > StackPanel, SystemTray.SystemTrayFrame > Grid#SystemTrayFrameGrid > SystemTray.OmniButton#ControlCenterButton > Grid > ContentPresenter#ContentPresenter > ItemsPresenter > StackPanel > ContentPresenter > SystemTray.IconView#SystemTrayIcon > Grid#ContainerGrid > Grid#ContentGrid > SystemTray.BatteryIconContent > Grid#ContainerGrid > StackPanel", {
         L"HorizontalAlignment=Center"}},
-    ThemeTargetStyles{L"SystemTray.SystemTrayFrame > StackPanel#SystemTrayFrameGrid > SystemTray.OmniButton#NotificationCenterButton > Grid > ContentPresenter#ContentPresenter > ItemsPresenter > StackPanel > ContentPresenter > SystemTray.IconView#SystemTrayIcon > Grid#ContainerGrid > Grid#ContentGrid > SystemTray.TextIconContent > Grid#ContainerGrid, SystemTray.SystemTrayFrame > StackPanel#SystemTrayFrameGrid > SystemTray.OmniButton#NotificationCenterButton > Grid > ContentPresenter#ContentPresenter > ItemsPresenter > StackPanel > ContentPresenter > SystemTray.IconView#SystemTrayIcon > Grid#ContainerGrid > ContentPresenter#ContentPresenter > Grid#ContentGrid > SystemTray.TextIconContent > Grid#ContainerGrid, SystemTray.SystemTrayFrame > Grid#SystemTrayFrameGrid > SystemTray.OmniButton#NotificationCenterButton > Grid > ContentPresenter#ContentPresenter > ItemsPresenter > StackPanel > ContentPresenter > SystemTray.IconView#SystemTrayIcon > Grid#ContainerGrid > Grid#ContentGrid > SystemTray.TextIconContent > Grid#ContainerGrid, SystemTray.SystemTrayFrame > Grid#SystemTrayFrameGrid > SystemTray.OmniButton#NotificationCenterButton > Grid > ContentPresenter#ContentPresenter > ItemsPresenter > StackPanel > ContentPresenter > SystemTray.IconView#SystemTrayIcon > Grid#ContainerGrid > ContentPresenter#ContentPresenter > Grid#ContentGrid > SystemTray.TextIconContent > Grid#ContainerGrid", {
-        L"Visibility=Visible",
-        L"Height=44",
-        L"Width=44",
-        L"Margin=-2,4,0,0",
-        L"Background:=$IconBackground",
-        L"BorderBrush:=$IconBorder",
-        L"BorderThickness=1.2",
-        L"CornerRadius=13"}},
     ThemeTargetStyles{L"SystemTray.AdaptiveTextBlock > TextBlock", {
         L"FontSize=30"}},
     ThemeTargetStyles{L"SystemTray.SystemTrayFrame > StackPanel#SystemTrayFrameGrid > SystemTray.Stack#NotifyIconStack > Grid#Content > SystemTray.StackListView#IconStack > ItemsPresenter > StackPanel > ContentPresenter > SystemTray.ChevronIconView > Grid#ContainerGrid > ContentPresenter#ContentPresenter > Grid#ContentGrid > SystemTray.TextIconContent > Grid#ContainerGrid > SystemTray.AdaptiveTextBlock#Base > TextBlock#InnerTextBlock, SystemTray.SystemTrayFrame > Grid#SystemTrayFrameGrid > SystemTray.Stack#NotifyIconStack > Grid#Content > SystemTray.StackListView#IconStack > ItemsPresenter > StackPanel > ContentPresenter > SystemTray.ChevronIconView > Grid#ContainerGrid > ContentPresenter#ContentPresenter > Grid#ContentGrid > SystemTray.TextIconContent > Grid#ContainerGrid > SystemTray.AdaptiveTextBlock#Base > TextBlock#InnerTextBlock", {
@@ -7016,15 +7085,11 @@ const Theme g_themeOS26_Liquid_Glass_variant_ClearMacDockCompact = {{
     ThemeTargetStyles{L"SystemTray.OmniButton#ControlCenterButton > Grid > Border#BackgroundBorder", {
         L"Background:=Transparent",
         L"BorderThickness=0"}},
-    ThemeTargetStyles{L"SystemTray.SystemTrayFrame > StackPanel#SystemTrayFrameGrid > SystemTray.OmniButton#NotificationCenterButton > Grid > ContentPresenter#ContentPresenter > ItemsPresenter > StackPanel > ContentPresenter > SystemTray.IconView#SystemTrayIcon > Grid#ContainerGrid > Grid#ContentGrid, SystemTray.SystemTrayFrame > StackPanel#SystemTrayFrameGrid > SystemTray.OmniButton#NotificationCenterButton > Grid > ContentPresenter#ContentPresenter > ItemsPresenter > StackPanel > ContentPresenter > SystemTray.IconView#SystemTrayIcon > Grid#ContainerGrid > ContentPresenter#ContentPresenter, SystemTray.SystemTrayFrame > Grid#SystemTrayFrameGrid > SystemTray.OmniButton#NotificationCenterButton > Grid > ContentPresenter#ContentPresenter > ItemsPresenter > StackPanel > ContentPresenter > SystemTray.IconView#SystemTrayIcon > Grid#ContainerGrid > Grid#ContentGrid, SystemTray.SystemTrayFrame > Grid#SystemTrayFrameGrid > SystemTray.OmniButton#NotificationCenterButton > Grid > ContentPresenter#ContentPresenter > ItemsPresenter > StackPanel > ContentPresenter > SystemTray.IconView#SystemTrayIcon > Grid#ContainerGrid > ContentPresenter#ContentPresenter", {
-        L"Margin=0,0,15,0",
-        L"Background:=transparent",
-        L"BorderThickness=0"}},
     ThemeTargetStyles{L"SystemTray.Stack#MainStack", {
         L"Visibility=1"}},
     ThemeTargetStyles{L"SystemTray.SystemTrayFrame > StackPanel#SystemTrayFrameGrid > SystemTray.OmniButton#ControlCenterButton > Grid > ContentPresenter#ContentPresenter > ItemsPresenter > StackPanel > ContentPresenter > SystemTray.IconView#SystemTrayIcon > Grid#ContainerGrid > Grid#ContentGrid > SystemTray.TextIconContent > Grid#ContainerGrid > SystemTray.AdaptiveTextBlock#Underlay > TextBlock#InnerTextBlock, SystemTray.SystemTrayFrame > Grid#SystemTrayFrameGrid > SystemTray.OmniButton#ControlCenterButton > Grid > ContentPresenter#ContentPresenter > ItemsPresenter > StackPanel > ContentPresenter > SystemTray.IconView#SystemTrayIcon > Grid#ContainerGrid > Grid#ContentGrid > SystemTray.TextIconContent > Grid#ContainerGrid > SystemTray.AdaptiveTextBlock#Underlay > TextBlock#InnerTextBlock", {
         L"Foreground=white"}},
-    ThemeTargetStyles{L"Grid#IconPanel@CommonStates > Border#BackgroundElement, Taskbar.TaskListButtonPanel@CommonStates > Grid > Border#BackgroundElement, Taskbar.TaskListButtonPanel@CommonStates > Border#BackgroundElement", {
+    ThemeTargetStyles{L"Taskbar.TaskListButtonPanel@CommonStates > Grid > Border#BackgroundElement, Taskbar.TaskListButtonPanel@CommonStates > Border#BackgroundElement", {
         L"CornerRadius=13",
         L"Margin=0,5.5,0,5.5",
         L"Background:=$IconBackground",
@@ -7201,7 +7266,7 @@ const Theme g_themeOS26_Liquid_Glass_variant_ClearTaskbar = {{
         L"Height=24",
         L"Width=24",
         L"Margin=5,0,-5,0"}},
-    ThemeTargetStyles{L"Grid#IconPanel, Taskbar.TaskListButtonPanel", {
+    ThemeTargetStyles{L"Taskbar.TaskListButtonPanel", {
         L"Width=55",
         L"Height=70"}},
     ThemeTargetStyles{L"Grid#IconPanel, Taskbar.TaskListLabeledButtonPanel", {
@@ -7239,11 +7304,13 @@ const Theme g_themeOS26_Liquid_Glass_variant_ClearTaskbar = {{
         L"Margin=0"}},
     ThemeTargetStyles{L"WindowsInternal.ComposableShell.Experiences.Switcher.AltTab > Grid#ModalRootGrid > Border#BackgroundElement", {
         L"Background=Transparent",
+        L"BorderThickness=0",
+        L"CornerRadius=50"}},
+    ThemeTargetStyles{L"WindowsInternal.ComposableShell.Experiences.Switcher.AltTab > Grid#ModalRootGrid > Border#BackgroundElement > WindowsInternal.ComposableShell.Experiences.Switcher.SwitchItemList", {
+        L"Background:=<WindhawkBlur BlurAmount=\"8\" TintColor=\"#2D101010\"/>",
         L"BorderThickness=2",
         L"BorderBrush:=<WindhawkBlur BlurAmount=\"8\" TintColor=\"#30ffffff\"/>",
         L"CornerRadius=50"}},
-    ThemeTargetStyles{L"WindowsInternal.ComposableShell.Experiences.Switcher.AltTab > Grid#ModalRootGrid > Border#BackgroundElement > WindowsInternal.ComposableShell.Experiences.Switcher.SwitchItemList", {
-        L"Background:=<WindhawkBlur BlurAmount=\"8\" TintColor=\"#2D101010\"/>"}},
     ThemeTargetStyles{L"MenuFlyoutPresenter", {
         L"CornerRadius=20"}},
     ThemeTargetStyles{L"MenuFlyoutPresenter > Border", {
@@ -7267,7 +7334,7 @@ const Theme g_themeOS26_Liquid_Glass_variant_ClearTaskbar = {{
         L"BorderBrush:=<LinearGradientBrush EndPoint=\"1,1\" StartPoint=\"0,0\"><GradientStop Color=\"#50ffffff\" Offset=\"0.0\"/><GradientStop Color=\"#10ffffff\" Offset=\"0.5\"/><GradientStop Color=\"#30ffffff\" Offset=\"1.0\"/></LinearGradientBrush>",
         L"BorderThickness=2",
         L"Visibility=Visible"}},
-    ThemeTargetStyles{L"Grid#IconPanel@CommonStates > Border#BackgroundElement, Taskbar.TaskListButtonPanel@CommonStates > Grid > Border#BackgroundElement, Taskbar.TaskListButtonPanel@CommonStates > Border#BackgroundElement", {
+    ThemeTargetStyles{L"Taskbar.TaskListButtonPanel@CommonStates > Grid > Border#BackgroundElement, Taskbar.TaskListButtonPanel@CommonStates > Border#BackgroundElement", {
         L"CornerRadius=15",
         L"Margin=0,5.5,0,5.5",
         L"Background:=$IconBackground",
@@ -7459,20 +7526,25 @@ const Theme g_themeOS26_Liquid_Glass_variant_ClearTaskbar = {{
 }};
 
 const Theme g_themeOS26_Liquid_Glass_variant_DarkMacDock = {{
+    ThemeTargetStyles{L"Taskbar.TaskbarFrame > Grid#RootGrid@DockingStates", {
+        L"Tag=horizontal",
+        L"Tag@DockedLeft=vertical",
+        L"Tag@DockedRight=vertical",
+        L"Tag=>taskbarDock"}},
     ThemeTargetStyles{L"Taskbar.TaskbarFrame", {
-        L"Width=auto",
+        L"Width={{taskbarDock==`vertical`?skip():`Auto`}}",
         L"MinWidth:=100",
         L"MaxWidth={{containerGridWidth>0?containerGridWidth:`Infinity`}}",
         L"Grid.Column=1",
         L"Transitions:=<TransitionCollection><RepositionThemeTransition IsStaggeringEnabled=\"False\"/></TransitionCollection>",
-        L"Height=80",
+        L"Height={{taskbarDock==`vertical`?skip():80}}",
         L"MaxHeight=80",
         L"HorizontalAlignment=Center"}},
     ThemeTargetStyles{L"Grid#IconPanel > Image#Icon, Taskbar.TaskListLabeledButtonPanel#IconPanel > Image#Icon", {
         L"Height=24",
         L"Width=24",
         L"Margin=5,0,-5,0"}},
-    ThemeTargetStyles{L"Grid#IconPanel, Taskbar.TaskListButtonPanel", {
+    ThemeTargetStyles{L"Taskbar.TaskListButtonPanel", {
         L"Width=55",
         L"Height=70"}},
     ThemeTargetStyles{L"Grid#IconPanel, Taskbar.TaskListLabeledButtonPanel", {
@@ -7511,11 +7583,13 @@ const Theme g_themeOS26_Liquid_Glass_variant_DarkMacDock = {{
         L"Margin=0"}},
     ThemeTargetStyles{L"WindowsInternal.ComposableShell.Experiences.Switcher.AltTab > Grid#ModalRootGrid > Border#BackgroundElement", {
         L"Background=Transparent",
+        L"BorderThickness=0",
+        L"CornerRadius=50"}},
+    ThemeTargetStyles{L"WindowsInternal.ComposableShell.Experiences.Switcher.AltTab > Grid#ModalRootGrid > Border#BackgroundElement > WindowsInternal.ComposableShell.Experiences.Switcher.SwitchItemList", {
+        L"Background:=<WindhawkBlur BlurAmount=\"8\" TintColor=\"#2D101010\"/>",
         L"BorderThickness=2",
         L"BorderBrush:=<WindhawkBlur BlurAmount=\"8\" TintColor=\"#30ffffff\"/>",
         L"CornerRadius=50"}},
-    ThemeTargetStyles{L"WindowsInternal.ComposableShell.Experiences.Switcher.AltTab > Grid#ModalRootGrid > Border#BackgroundElement > WindowsInternal.ComposableShell.Experiences.Switcher.SwitchItemList", {
-        L"Background:=<WindhawkBlur BlurAmount=\"8\" TintColor=\"#2D101010\"/>"}},
     ThemeTargetStyles{L"MenuFlyoutPresenter", {
         L"CornerRadius=20"}},
     ThemeTargetStyles{L"MenuFlyoutPresenter > Border", {
@@ -7585,15 +7659,6 @@ const Theme g_themeOS26_Liquid_Glass_variant_DarkMacDock = {{
         L"CornerRadius=15"}},
     ThemeTargetStyles{L"SystemTray.SystemTrayFrame > StackPanel#SystemTrayFrameGrid > SystemTray.OmniButton#ControlCenterButton > Grid > ContentPresenter#ContentPresenter > ItemsPresenter > StackPanel > ContentPresenter > SystemTray.IconView#SystemTrayIcon > Grid#ContainerGrid > Grid#ContentGrid > SystemTray.BatteryIconContent > Grid#ContainerGrid > StackPanel, SystemTray.SystemTrayFrame > Grid#SystemTrayFrameGrid > SystemTray.OmniButton#ControlCenterButton > Grid > ContentPresenter#ContentPresenter > ItemsPresenter > StackPanel > ContentPresenter > SystemTray.IconView#SystemTrayIcon > Grid#ContainerGrid > Grid#ContentGrid > SystemTray.BatteryIconContent > Grid#ContainerGrid > StackPanel", {
         L"HorizontalAlignment=Center"}},
-    ThemeTargetStyles{L"SystemTray.SystemTrayFrame > StackPanel#SystemTrayFrameGrid > SystemTray.OmniButton#NotificationCenterButton > Grid > ContentPresenter#ContentPresenter > ItemsPresenter > StackPanel > ContentPresenter > SystemTray.IconView#SystemTrayIcon > Grid#ContainerGrid > Grid#ContentGrid > SystemTray.TextIconContent > Grid#ContainerGrid, SystemTray.SystemTrayFrame > StackPanel#SystemTrayFrameGrid > SystemTray.OmniButton#NotificationCenterButton > Grid > ContentPresenter#ContentPresenter > ItemsPresenter > StackPanel > ContentPresenter > SystemTray.IconView#SystemTrayIcon > Grid#ContainerGrid > ContentPresenter#ContentPresenter > Grid#ContentGrid > SystemTray.TextIconContent > Grid#ContainerGrid, SystemTray.SystemTrayFrame > Grid#SystemTrayFrameGrid > SystemTray.OmniButton#NotificationCenterButton > Grid > ContentPresenter#ContentPresenter > ItemsPresenter > StackPanel > ContentPresenter > SystemTray.IconView#SystemTrayIcon > Grid#ContainerGrid > Grid#ContentGrid > SystemTray.TextIconContent > Grid#ContainerGrid, SystemTray.SystemTrayFrame > Grid#SystemTrayFrameGrid > SystemTray.OmniButton#NotificationCenterButton > Grid > ContentPresenter#ContentPresenter > ItemsPresenter > StackPanel > ContentPresenter > SystemTray.IconView#SystemTrayIcon > Grid#ContainerGrid > ContentPresenter#ContentPresenter > Grid#ContentGrid > SystemTray.TextIconContent > Grid#ContainerGrid", {
-        L"Visibility=Visible",
-        L"Width=48",
-        L"Height=48",
-        L"Margin=-2,4,0,0",
-        L"Background:=$IconBackground",
-        L"BorderBrush:=$IconBorder",
-        L"BorderThickness=1.2",
-        L"CornerRadius=15"}},
     ThemeTargetStyles{L"SystemTray.AdaptiveTextBlock > TextBlock", {
         L"FontSize=30"}},
     ThemeTargetStyles{L"SystemTray.SystemTrayFrame > StackPanel#SystemTrayFrameGrid > SystemTray.Stack#NotifyIconStack > Grid#Content > SystemTray.StackListView#IconStack > ItemsPresenter > StackPanel > ContentPresenter > SystemTray.ChevronIconView > Grid#ContainerGrid > ContentPresenter#ContentPresenter > Grid#ContentGrid > SystemTray.TextIconContent > Grid#ContainerGrid > SystemTray.AdaptiveTextBlock#Base > TextBlock#InnerTextBlock, SystemTray.SystemTrayFrame > Grid#SystemTrayFrameGrid > SystemTray.Stack#NotifyIconStack > Grid#Content > SystemTray.StackListView#IconStack > ItemsPresenter > StackPanel > ContentPresenter > SystemTray.ChevronIconView > Grid#ContainerGrid > ContentPresenter#ContentPresenter > Grid#ContentGrid > SystemTray.TextIconContent > Grid#ContainerGrid > SystemTray.AdaptiveTextBlock#Base > TextBlock#InnerTextBlock", {
@@ -7665,15 +7730,11 @@ const Theme g_themeOS26_Liquid_Glass_variant_DarkMacDock = {{
     ThemeTargetStyles{L"SystemTray.OmniButton#ControlCenterButton > Grid > Border#BackgroundBorder", {
         L"Background:=Transparent",
         L"BorderThickness=0"}},
-    ThemeTargetStyles{L"SystemTray.SystemTrayFrame > StackPanel#SystemTrayFrameGrid > SystemTray.OmniButton#NotificationCenterButton > Grid > ContentPresenter#ContentPresenter > ItemsPresenter > StackPanel > ContentPresenter > SystemTray.IconView#SystemTrayIcon > Grid#ContainerGrid > Grid#ContentGrid, SystemTray.SystemTrayFrame > StackPanel#SystemTrayFrameGrid > SystemTray.OmniButton#NotificationCenterButton > Grid > ContentPresenter#ContentPresenter > ItemsPresenter > StackPanel > ContentPresenter > SystemTray.IconView#SystemTrayIcon > Grid#ContainerGrid > ContentPresenter#ContentPresenter, SystemTray.SystemTrayFrame > Grid#SystemTrayFrameGrid > SystemTray.OmniButton#NotificationCenterButton > Grid > ContentPresenter#ContentPresenter > ItemsPresenter > StackPanel > ContentPresenter > SystemTray.IconView#SystemTrayIcon > Grid#ContainerGrid > Grid#ContentGrid, SystemTray.SystemTrayFrame > Grid#SystemTrayFrameGrid > SystemTray.OmniButton#NotificationCenterButton > Grid > ContentPresenter#ContentPresenter > ItemsPresenter > StackPanel > ContentPresenter > SystemTray.IconView#SystemTrayIcon > Grid#ContainerGrid > ContentPresenter#ContentPresenter", {
-        L"Margin=0,0,15,0",
-        L"Background:=transparent",
-        L"BorderThickness=0"}},
     ThemeTargetStyles{L"SystemTray.Stack#MainStack", {
         L"Visibility=1"}},
     ThemeTargetStyles{L"SystemTray.SystemTrayFrame > StackPanel#SystemTrayFrameGrid > SystemTray.OmniButton#ControlCenterButton > Grid > ContentPresenter#ContentPresenter > ItemsPresenter > StackPanel > ContentPresenter > SystemTray.IconView#SystemTrayIcon > Grid#ContainerGrid > Grid#ContentGrid > SystemTray.TextIconContent > Grid#ContainerGrid > SystemTray.AdaptiveTextBlock#Underlay > TextBlock#InnerTextBlock, SystemTray.SystemTrayFrame > Grid#SystemTrayFrameGrid > SystemTray.OmniButton#ControlCenterButton > Grid > ContentPresenter#ContentPresenter > ItemsPresenter > StackPanel > ContentPresenter > SystemTray.IconView#SystemTrayIcon > Grid#ContainerGrid > Grid#ContentGrid > SystemTray.TextIconContent > Grid#ContainerGrid > SystemTray.AdaptiveTextBlock#Underlay > TextBlock#InnerTextBlock", {
         L"Foreground=white"}},
-    ThemeTargetStyles{L"Grid#IconPanel@CommonStates > Border#BackgroundElement, Taskbar.TaskListButtonPanel@CommonStates > Grid > Border#BackgroundElement, Taskbar.TaskListButtonPanel@CommonStates > Border#BackgroundElement", {
+    ThemeTargetStyles{L"Taskbar.TaskListButtonPanel@CommonStates > Grid > Border#BackgroundElement, Taskbar.TaskListButtonPanel@CommonStates > Border#BackgroundElement", {
         L"CornerRadius=15",
         L"Margin=0,5.5,0,5.5",
         L"Background:=$IconBackground",
@@ -7840,20 +7901,25 @@ const Theme g_themeOS26_Liquid_Glass_variant_DarkMacDock = {{
 }};
 
 const Theme g_themeOS26_Liquid_Glass_variant_DarkMacDockCompact = {{
+    ThemeTargetStyles{L"Taskbar.TaskbarFrame > Grid#RootGrid@DockingStates", {
+        L"Tag=horizontal",
+        L"Tag@DockedLeft=vertical",
+        L"Tag@DockedRight=vertical",
+        L"Tag=>taskbarDock"}},
     ThemeTargetStyles{L"Taskbar.TaskbarFrame", {
-        L"Width=auto",
+        L"Width={{taskbarDock==`vertical`?skip():`Auto`}}",
         L"MinWidth:=100",
         L"MaxWidth={{containerGridWidth>0?containerGridWidth:`Infinity`}}",
         L"Grid.Column=1",
         L"Transitions:=<TransitionCollection><RepositionThemeTransition IsStaggeringEnabled=\"False\"/></TransitionCollection>",
-        L"Height=70",
+        L"Height={{taskbarDock==`vertical`?skip():70}}",
         L"MaxHeight=80",
         L"HorizontalAlignment=Center"}},
     ThemeTargetStyles{L"Grid#IconPanel > Image#Icon, Taskbar.TaskListLabeledButtonPanel#IconPanel > Image#Icon", {
         L"Height=24",
         L"Width=24",
         L"Margin=3,0,-3,0"}},
-    ThemeTargetStyles{L"Grid#IconPanel, Taskbar.TaskListButtonPanel", {
+    ThemeTargetStyles{L"Taskbar.TaskListButtonPanel", {
         L"Width=50",
         L"Height=65",
         L"Margin=0,-2,0,2"}},
@@ -7895,11 +7961,13 @@ const Theme g_themeOS26_Liquid_Glass_variant_DarkMacDockCompact = {{
         L"Margin=0"}},
     ThemeTargetStyles{L"WindowsInternal.ComposableShell.Experiences.Switcher.AltTab > Grid#ModalRootGrid > Border#BackgroundElement", {
         L"Background=Transparent",
+        L"BorderThickness=0",
+        L"CornerRadius=50"}},
+    ThemeTargetStyles{L"WindowsInternal.ComposableShell.Experiences.Switcher.AltTab > Grid#ModalRootGrid > Border#BackgroundElement > WindowsInternal.ComposableShell.Experiences.Switcher.SwitchItemList", {
+        L"Background:=<WindhawkBlur BlurAmount=\"8\" TintColor=\"#2D101010\"/>",
         L"BorderThickness=2",
         L"BorderBrush:=<WindhawkBlur BlurAmount=\"8\" TintColor=\"#30ffffff\"/>",
         L"CornerRadius=50"}},
-    ThemeTargetStyles{L"WindowsInternal.ComposableShell.Experiences.Switcher.AltTab > Grid#ModalRootGrid > Border#BackgroundElement > WindowsInternal.ComposableShell.Experiences.Switcher.SwitchItemList", {
-        L"Background:=<WindhawkBlur BlurAmount=\"8\" TintColor=\"#2D101010\"/>"}},
     ThemeTargetStyles{L"MenuFlyoutPresenter", {
         L"CornerRadius=20"}},
     ThemeTargetStyles{L"MenuFlyoutPresenter > Border", {
@@ -7969,15 +8037,6 @@ const Theme g_themeOS26_Liquid_Glass_variant_DarkMacDockCompact = {{
         L"CornerRadius=13"}},
     ThemeTargetStyles{L"SystemTray.SystemTrayFrame > StackPanel#SystemTrayFrameGrid > SystemTray.OmniButton#ControlCenterButton > Grid > ContentPresenter#ContentPresenter > ItemsPresenter > StackPanel > ContentPresenter > SystemTray.IconView#SystemTrayIcon > Grid#ContainerGrid > Grid#ContentGrid > SystemTray.BatteryIconContent > Grid#ContainerGrid > StackPanel, SystemTray.SystemTrayFrame > Grid#SystemTrayFrameGrid > SystemTray.OmniButton#ControlCenterButton > Grid > ContentPresenter#ContentPresenter > ItemsPresenter > StackPanel > ContentPresenter > SystemTray.IconView#SystemTrayIcon > Grid#ContainerGrid > Grid#ContentGrid > SystemTray.BatteryIconContent > Grid#ContainerGrid > StackPanel", {
         L"HorizontalAlignment=Center"}},
-    ThemeTargetStyles{L"SystemTray.SystemTrayFrame > StackPanel#SystemTrayFrameGrid > SystemTray.OmniButton#NotificationCenterButton > Grid > ContentPresenter#ContentPresenter > ItemsPresenter > StackPanel > ContentPresenter > SystemTray.IconView#SystemTrayIcon > Grid#ContainerGrid > Grid#ContentGrid > SystemTray.TextIconContent > Grid#ContainerGrid, SystemTray.SystemTrayFrame > StackPanel#SystemTrayFrameGrid > SystemTray.OmniButton#NotificationCenterButton > Grid > ContentPresenter#ContentPresenter > ItemsPresenter > StackPanel > ContentPresenter > SystemTray.IconView#SystemTrayIcon > Grid#ContainerGrid > ContentPresenter#ContentPresenter > Grid#ContentGrid > SystemTray.TextIconContent > Grid#ContainerGrid, SystemTray.SystemTrayFrame > Grid#SystemTrayFrameGrid > SystemTray.OmniButton#NotificationCenterButton > Grid > ContentPresenter#ContentPresenter > ItemsPresenter > StackPanel > ContentPresenter > SystemTray.IconView#SystemTrayIcon > Grid#ContainerGrid > Grid#ContentGrid > SystemTray.TextIconContent > Grid#ContainerGrid, SystemTray.SystemTrayFrame > Grid#SystemTrayFrameGrid > SystemTray.OmniButton#NotificationCenterButton > Grid > ContentPresenter#ContentPresenter > ItemsPresenter > StackPanel > ContentPresenter > SystemTray.IconView#SystemTrayIcon > Grid#ContainerGrid > ContentPresenter#ContentPresenter > Grid#ContentGrid > SystemTray.TextIconContent > Grid#ContainerGrid", {
-        L"Visibility=Visible",
-        L"Height=44",
-        L"Width=44",
-        L"Margin=-2,4,0,0",
-        L"Background:=$IconBackground",
-        L"BorderBrush:=$IconBorder",
-        L"BorderThickness=1.2",
-        L"CornerRadius=13"}},
     ThemeTargetStyles{L"SystemTray.AdaptiveTextBlock > TextBlock", {
         L"FontSize=30"}},
     ThemeTargetStyles{L"SystemTray.SystemTrayFrame > StackPanel#SystemTrayFrameGrid > SystemTray.Stack#NotifyIconStack > Grid#Content > SystemTray.StackListView#IconStack > ItemsPresenter > StackPanel > ContentPresenter > SystemTray.ChevronIconView > Grid#ContainerGrid > ContentPresenter#ContentPresenter > Grid#ContentGrid > SystemTray.TextIconContent > Grid#ContainerGrid > SystemTray.AdaptiveTextBlock#Base > TextBlock#InnerTextBlock, SystemTray.SystemTrayFrame > Grid#SystemTrayFrameGrid > SystemTray.Stack#NotifyIconStack > Grid#Content > SystemTray.StackListView#IconStack > ItemsPresenter > StackPanel > ContentPresenter > SystemTray.ChevronIconView > Grid#ContainerGrid > ContentPresenter#ContentPresenter > Grid#ContentGrid > SystemTray.TextIconContent > Grid#ContainerGrid > SystemTray.AdaptiveTextBlock#Base > TextBlock#InnerTextBlock", {
@@ -8050,15 +8109,11 @@ const Theme g_themeOS26_Liquid_Glass_variant_DarkMacDockCompact = {{
     ThemeTargetStyles{L"SystemTray.OmniButton#ControlCenterButton > Grid > Border#BackgroundBorder", {
         L"Background:=Transparent",
         L"BorderThickness=0"}},
-    ThemeTargetStyles{L"SystemTray.SystemTrayFrame > StackPanel#SystemTrayFrameGrid > SystemTray.OmniButton#NotificationCenterButton > Grid > ContentPresenter#ContentPresenter > ItemsPresenter > StackPanel > ContentPresenter > SystemTray.IconView#SystemTrayIcon > Grid#ContainerGrid > Grid#ContentGrid, SystemTray.SystemTrayFrame > StackPanel#SystemTrayFrameGrid > SystemTray.OmniButton#NotificationCenterButton > Grid > ContentPresenter#ContentPresenter > ItemsPresenter > StackPanel > ContentPresenter > SystemTray.IconView#SystemTrayIcon > Grid#ContainerGrid > ContentPresenter#ContentPresenter, SystemTray.SystemTrayFrame > Grid#SystemTrayFrameGrid > SystemTray.OmniButton#NotificationCenterButton > Grid > ContentPresenter#ContentPresenter > ItemsPresenter > StackPanel > ContentPresenter > SystemTray.IconView#SystemTrayIcon > Grid#ContainerGrid > Grid#ContentGrid, SystemTray.SystemTrayFrame > Grid#SystemTrayFrameGrid > SystemTray.OmniButton#NotificationCenterButton > Grid > ContentPresenter#ContentPresenter > ItemsPresenter > StackPanel > ContentPresenter > SystemTray.IconView#SystemTrayIcon > Grid#ContainerGrid > ContentPresenter#ContentPresenter", {
-        L"Margin=0,0,15,0",
-        L"Background:=transparent",
-        L"BorderThickness=0"}},
     ThemeTargetStyles{L"SystemTray.Stack#MainStack", {
         L"Visibility=1"}},
     ThemeTargetStyles{L"SystemTray.SystemTrayFrame > StackPanel#SystemTrayFrameGrid > SystemTray.OmniButton#ControlCenterButton > Grid > ContentPresenter#ContentPresenter > ItemsPresenter > StackPanel > ContentPresenter > SystemTray.IconView#SystemTrayIcon > Grid#ContainerGrid > Grid#ContentGrid > SystemTray.TextIconContent > Grid#ContainerGrid > SystemTray.AdaptiveTextBlock#Underlay > TextBlock#InnerTextBlock, SystemTray.SystemTrayFrame > Grid#SystemTrayFrameGrid > SystemTray.OmniButton#ControlCenterButton > Grid > ContentPresenter#ContentPresenter > ItemsPresenter > StackPanel > ContentPresenter > SystemTray.IconView#SystemTrayIcon > Grid#ContainerGrid > Grid#ContentGrid > SystemTray.TextIconContent > Grid#ContainerGrid > SystemTray.AdaptiveTextBlock#Underlay > TextBlock#InnerTextBlock", {
         L"Foreground=white"}},
-    ThemeTargetStyles{L"Grid#IconPanel@CommonStates > Border#BackgroundElement, Taskbar.TaskListButtonPanel@CommonStates > Grid > Border#BackgroundElement, Taskbar.TaskListButtonPanel@CommonStates > Border#BackgroundElement", {
+    ThemeTargetStyles{L"Taskbar.TaskListButtonPanel@CommonStates > Grid > Border#BackgroundElement, Taskbar.TaskListButtonPanel@CommonStates > Border#BackgroundElement", {
         L"CornerRadius=13",
         L"Margin=0,5.5,0,5.5",
         L"Background:=$IconBackground",
@@ -8235,7 +8290,7 @@ const Theme g_themeOS26_Liquid_Glass_variant_DarkTaskbar = {{
         L"Height=24",
         L"Width=24",
         L"Margin=5,0,-5,0"}},
-    ThemeTargetStyles{L"Grid#IconPanel, Taskbar.TaskListButtonPanel", {
+    ThemeTargetStyles{L"Taskbar.TaskListButtonPanel", {
         L"Width=55",
         L"Height=70"}},
     ThemeTargetStyles{L"Grid#IconPanel, Taskbar.TaskListLabeledButtonPanel", {
@@ -8273,11 +8328,13 @@ const Theme g_themeOS26_Liquid_Glass_variant_DarkTaskbar = {{
         L"Margin=0"}},
     ThemeTargetStyles{L"WindowsInternal.ComposableShell.Experiences.Switcher.AltTab > Grid#ModalRootGrid > Border#BackgroundElement", {
         L"Background=Transparent",
+        L"BorderThickness=0",
+        L"CornerRadius=50"}},
+    ThemeTargetStyles{L"WindowsInternal.ComposableShell.Experiences.Switcher.AltTab > Grid#ModalRootGrid > Border#BackgroundElement > WindowsInternal.ComposableShell.Experiences.Switcher.SwitchItemList", {
+        L"Background:=<WindhawkBlur BlurAmount=\"8\" TintColor=\"#2D101010\"/>",
         L"BorderThickness=2",
         L"BorderBrush:=<WindhawkBlur BlurAmount=\"8\" TintColor=\"#30ffffff\"/>",
         L"CornerRadius=50"}},
-    ThemeTargetStyles{L"WindowsInternal.ComposableShell.Experiences.Switcher.AltTab > Grid#ModalRootGrid > Border#BackgroundElement > WindowsInternal.ComposableShell.Experiences.Switcher.SwitchItemList", {
-        L"Background:=<WindhawkBlur BlurAmount=\"8\" TintColor=\"#2D101010\"/>"}},
     ThemeTargetStyles{L"MenuFlyoutPresenter", {
         L"CornerRadius=20"}},
     ThemeTargetStyles{L"MenuFlyoutPresenter > Border", {
@@ -8301,7 +8358,7 @@ const Theme g_themeOS26_Liquid_Glass_variant_DarkTaskbar = {{
         L"BorderBrush:=<LinearGradientBrush EndPoint=\"1,1\" StartPoint=\"0,0\"><GradientStop Color=\"#50ffffff\" Offset=\"0.0\"/><GradientStop Color=\"#10ffffff\" Offset=\"0.5\"/><GradientStop Color=\"#30ffffff\" Offset=\"1.0\"/></LinearGradientBrush>",
         L"BorderThickness=2",
         L"Visibility=Visible"}},
-    ThemeTargetStyles{L"Grid#IconPanel@CommonStates > Border#BackgroundElement, Taskbar.TaskListButtonPanel@CommonStates > Grid > Border#BackgroundElement, Taskbar.TaskListButtonPanel@CommonStates > Border#BackgroundElement", {
+    ThemeTargetStyles{L"Taskbar.TaskListButtonPanel@CommonStates > Grid > Border#BackgroundElement, Taskbar.TaskListButtonPanel@CommonStates > Border#BackgroundElement", {
         L"CornerRadius=15",
         L"Margin=0,5.5,0,5.5",
         L"Background:=$IconBackground",
@@ -8519,8 +8576,7 @@ const Theme g_themeFrostyGlass = {{
         L"CornerRadius=7"}},
     ThemeTargetStyles{L"SystemTray.OmniButton#ControlCenterButton", {
         L"Padding=$TrayPadding",
-        L"CornerRadius=7",
-        L"MaxWidth=Auto"}},
+        L"CornerRadius=7"}},
     ThemeTargetStyles{L"SystemTray.OmniButton#NotificationCenterButton", {
         L"Padding=2,4,4.5,4",
         L"CornerRadius=7"}},
@@ -8537,24 +8593,21 @@ const Theme g_themeFrostyGlass = {{
     ThemeTargetStyles{L"SystemTray.Stack#ShowDesktopStack", {
         L"Visibility=1"}},
     ThemeTargetStyles{L"Taskbar.Gripper#GripperControl", {
-        L"Width=Auto",
-        L"MinWidth=Auto"}},
+        L"Width=Auto"}},
     ThemeTargetStyles{L"SystemTray.SystemTrayFrame", {
         L"HorizontalAlignment=Right",
         L"CornerRadius=$CornerRadius",
         L"Width=Auto"}},
     ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Grid#AugmentedEntryPointContentGrid", {
         L"Margin=4,0,0,0",
-        L"HorizontalAlignment=Auto"}},
+        L"HorizontalAlignment=Center"}},
     ThemeTargetStyles{L"TextBlock#TimeInnerTextBlock", {
         L"FontSize=13",
         L"FontFamily=Segoe UI VF",
         L"Margin=0",
         L"Padding=0",
-        L"RenderTransform:=<TranslateTransform X=\"3.5\" Y=\"2\" />",
-        L"Width=Auto",
-        L"MinWidth=Auto",
-        L"HorizontalAlignment=Left"}},
+        L"RenderTransform:=<TranslateTransform X=\"5\" Y=\"2\" />",
+        L"Width=Auto"}},
     ThemeTargetStyles{L"TextBlock#DateInnerTextBlock", {
         L"Visibility=1",
         L"RenderTransform:=<TranslateTransform X=\"4\" Y=\"0\" />",
@@ -8615,7 +8668,7 @@ const Theme g_themeFrostyGlass = {{
         L"BorderThickness:=$BorderThickness",
         L"CornerRadius:=$CornerRadius"}},
     ThemeTargetStyles{L"SearchUx.SearchUI.SearchButtonControl", {
-        L"MaxWidth=Auto",
+        L"Width=Auto",
         L"Margin=-1,0,-1,0",
         L"Padding=$TrayPadding",
         L"CornerRadius=7"}},
@@ -8655,11 +8708,14 @@ const Theme g_themeFrostyGlass = {{
         L"CornerRadius=7",
         L"Padding=$TrayPadding",
         L"Visibility=0"}},
+    ThemeTargetStyles{L"Taskbar.TaskbarFrame > Grid#RootGrid@DockingStates", {
+        L"Tag=horizontal",
+        L"Tag@DockedLeft=vertical",
+        L"Tag@DockedRight=vertical",
+        L"Tag=>taskbarDock"}},
     ThemeTargetStyles{L"Taskbar.TaskbarFrame", {
-        L"HorizontalAlignment=Auto",
-        L"Width=Auto",
-        L"MinWidth:=500",
-        L"MaxWidth:=900",
+        L"HorizontalAlignment=Center",
+        L"Width={{taskbarDock==`vertical`?skip():`Auto`}}",
         L"Padding=1,0,1,0"}},
     ThemeTargetStyles{L"StackPanel#SystemTrayFrameGrid, Grid#SystemTrayFrameGrid", {
         L"Visibility=0"}},
@@ -8697,15 +8753,13 @@ const Theme g_themeFrostyGlass = {{
         L"Visibility=Collapsed"}},
     ThemeTargetStyles{L"WindowsInternal.ComposableShell.Experiences.Switcher.AltTab > Windows.UI.Xaml.Controls.Grid#ModalRootGrid > Windows.UI.Xaml.Controls.Border#BackgroundElement", {
         L"Background=Transparent",
+        L"BorderThickness=0",
+        L"CornerRadius:=$CornerRadius"}},
+    ThemeTargetStyles{L"WindowsInternal.ComposableShell.Experiences.Switcher.AltTab > Windows.UI.Xaml.Controls.Grid#ModalRootGrid > Windows.UI.Xaml.Controls.Border#BackgroundElement > WindowsInternal.ComposableShell.Experiences.Switcher.SwitchItemList", {
+        L"Background:=$Background",
         L"BorderThickness:=$BorderThickness",
         L"BorderBrush:=$BorderBrush",
         L"CornerRadius:=$CornerRadius"}},
-    ThemeTargetStyles{L"WindowsInternal.ComposableShell.Experiences.Switcher.AltTab > Windows.UI.Xaml.Controls.Grid#ModalRootGrid > Windows.UI.Xaml.Controls.Border#BackgroundElement > WindowsInternal.ComposableShell.Experiences.Switcher.SwitchItemList", {
-        L"Background:=$Background"}},
-    ThemeTargetStyles{L"Taskbar.TaskbarFrame", {
-        L"Width=Auto",
-        L"HorizontalAlignment=Center",
-        L"Margin=Auto"}},
     ThemeTargetStyles{L"Taskbar.TaskbarFrame > Grid#RootGrid", {
         L"Background:=$Background",
         L"BorderBrush:=$BorderBrush",
@@ -8758,8 +8812,13 @@ const Theme g_themeFrostyGlass = {{
 const Theme g_themeFrostedAcrylic = {{
     ThemeTargetStyles{L":root > ScrollViewer > ScrollContentPresenter > Border > Grid", {
         L"ActualWidth=>containerGridWidth"}},
+    ThemeTargetStyles{L"Taskbar.TaskbarFrame > Grid#RootGrid@DockingStates", {
+        L"Tag=horizontal",
+        L"Tag@DockedLeft=vertical",
+        L"Tag@DockedRight=vertical",
+        L"Tag=>taskbarDock"}},
     ThemeTargetStyles{L"Taskbar.TaskbarFrame", {
-        L"Width=Auto",
+        L"Width={{taskbarDock==`vertical`?skip():`Auto`}}",
         L"MinWidth:=100",
         L"MaxWidth={{containerGridWidth>0?containerGridWidth:`Infinity`}}",
         L"Margin=0",
@@ -8806,7 +8865,7 @@ const Theme g_themeFrostedAcrylic = {{
         L"Margin=0",
         L"HorizontalAlignment=Center",
         L"VerticalAlignment=Center"}},
-    ThemeTargetStyles{L"Taskbar.TaskListButton > Grid#IconPanel, Taskbar.TaskListButton > Taskbar.TaskListButtonPanel", {
+    ThemeTargetStyles{L"Taskbar.TaskListButton > Grid#IconPanel, Taskbar.TaskListButton > Taskbar.TaskListLabeledButtonPanel", {
         L"Height=60",
         L"MinHeight=60",
         L"MaxHeight=60",
@@ -8814,7 +8873,7 @@ const Theme g_themeFrostedAcrylic = {{
         L"Margin=0",
         L"HorizontalAlignment=Center",
         L"VerticalAlignment=Center"}},
-    ThemeTargetStyles{L"Grid#IconPanel > TextBlock, Taskbar.TaskListButtonPanel > Grid > TextBlock, Taskbar.TaskListButtonPanel > TextBlock, SearchUx.SearchUI.SearchButtonRootGrid > Grid > TextBlock, SearchUx.SearchUI.SearchButtonRootGrid > TextBlock", {
+    ThemeTargetStyles{L"Grid#IconPanel > TextBlock, Taskbar.TaskListLabeledButtonPanel > TextBlock, Taskbar.TaskListButtonPanel > Grid > TextBlock, Taskbar.TaskListButtonPanel > TextBlock, SearchUx.SearchUI.SearchButtonRootGrid > Grid > TextBlock, SearchUx.SearchUI.SearchButtonRootGrid > TextBlock", {
         L"Visibility=Collapsed",
         L"Margin=0"}},
     ThemeTargetStyles{L"Taskbar.TaskListButtonPanel > Grid > TextBlock", {
@@ -8910,11 +8969,13 @@ const Theme g_themeFrostedAcrylic = {{
         L"CornerRadius=$CornerRadius"}},
     ThemeTargetStyles{L"WindowsInternal.ComposableShell.Experiences.Switcher.AltTab > Grid#ModalRootGrid > Border#BackgroundElement", {
         L"Background=Transparent",
+        L"BorderThickness=0",
+        L"CornerRadius=$CornerRadius"}},
+    ThemeTargetStyles{L"WindowsInternal.ComposableShell.Experiences.Switcher.AltTab > Grid#ModalRootGrid > Border#BackgroundElement > WindowsInternal.ComposableShell.Experiences.Switcher.SwitchItemList", {
+        L"Background:=$Background",
         L"BorderBrush:=$BorderBrush",
         L"BorderThickness=$BorderThickness",
         L"CornerRadius=$CornerRadius"}},
-    ThemeTargetStyles{L"WindowsInternal.ComposableShell.Experiences.Switcher.AltTab > Grid#ModalRootGrid > Border#BackgroundElement > WindowsInternal.ComposableShell.Experiences.Switcher.SwitchItemList", {
-        L"Background:=$Background"}},
     ThemeTargetStyles{L"WindowsInternal.ComposableShell.Experiences.TextInput.Common.InputSwitcher", {
         L"Background:=$Background",
         L"BorderBrush:=$BorderBrush",
@@ -9021,6 +9082,7 @@ const Theme g_themePills = {{
     ThemeTargetStyles{L"Border#MultiWindowElement", {
         L"Visibility = 1"}},
     ThemeTargetStyles{L"Grid#IconPanel > TextBlock#LabelControl, Taskbar.TaskListLabeledButtonPanel > TextBlock#LabelControl", {
+        L"ActualWidth => LabelWidth",
         L"Margin := {{$iconLabelSpacing-12}},{{$taskbarTopOffset}},6,{{$taskbarBottomOffset}}",
         L"Padding := {{$leftRightPadding}},0",
         L"HorizontalAlignment = 1",
@@ -9056,7 +9118,8 @@ const Theme g_themePills = {{
         L"RadiusX = 2",
         L"RadiusY = 2",
         L"StrokeThickness = 0",
-        L"Margin = 0,0,{{ImageIconWidth+8}},0",
+        L"HorizontalAlignment = 0",
+        L"Margin = 4,0,0,0",
         L"Canvas.ZIndex = 4"}},
     ThemeTargetStyles{L"Taskbar.TaskbarExtensionElement", {
         L"Visibility = 1"}},
@@ -9067,6 +9130,7 @@ const Theme g_themePills = {{
         L"Width := $badgeSize",
         L"Height := $badgeSize",
         L"Margin := $badgeNudge",
+        L"RenderTransform := <TranslateTransform X=\"{{LabelWidth>0?6:0}}\" Y=\"0\" />",
         L"Canvas.ZIndex = 3"}},
     ThemeTargetStyles{L"Grid#IconPanel > Taskbar.Badge#BadgeControl > Grid > TextBlock#BadgeText, Taskbar.TaskListLabeledButtonPanel#IconPanel > Taskbar.Badge#BadgeControl > Grid > TextBlock#BadgeText", {
         L"FontSize = 8",
@@ -9233,13 +9297,13 @@ const Theme g_themePills = {{
     L"iconLabelSpacing = 10",
     L"leftRightPadding = 8",
     L"badgeSize = 12",
-    L"badgeNudge = 12,4,0,0",
+    L"badgeNudge = 0,4,2,0",
     L"sysTrayIconSize = 16",
     L"taskbarSidesRounded = 1",
     L"buttonFill = <WindhawkBlur BlurAmount=\"7\" TintColor=\"{ThemeResource AdaptiveFill}\" TintOpacity=\"0.2\" TintLuminosityOpacity=\"0.2\"/>",
     L"buttonBorderColor = <SolidColorBrush Color=\"{ThemeResource AdaptiveBorder}\" Opacity=\"1\"/>",
-    L"taskbarFill = {{__unset}}",
-    L"taskbarStrokeColor = {{__unset}}",
+    L"taskbarFill = {{skip()}}",
+    L"taskbarStrokeColor = {{skip()}}",
     L"progressColor = <SolidColorBrush Color=\"{ThemeResource SystemAccentColor}\" Opacity=\"0.2\"/>",
     L"showDesktopIndicatorColor = <SolidColorBrush Color=\"{ThemeResource SystemAccentColor}\" Opacity=\"0.7\"/>",
     L"multiWinIndicatorColor = <SolidColorBrush Color=\"{ThemeResource AdaptiveIndicator}\" Opacity=\"0.7\"/>",
@@ -9568,19 +9632,24 @@ const Theme g_themeMinecraft_Hotbar = {{
         L"Fill:=<WindhawkBlur BlurAmount=\"4\" />"}},
     ThemeTargetStyles{L"Rectangle#BackgroundStroke", {
         L"Fill=Transparent"}},
-    ThemeTargetStyles{L"Grid#IconPanel, Taskbar.TaskListButtonPanel", {
+    ThemeTargetStyles{L"Taskbar.TaskListButtonPanel", {
         L"MinWidth=55"}},
     ThemeTargetStyles{L"Grid#IconPanel, Taskbar.TaskListLabeledButtonPanel", {
         L"MinWidth=55"}},
     ThemeTargetStyles{L"SearchUx.SearchUI.SearchButtonControl > Grid > SearchUx.SearchUI.SearchIconButton > SearchUx.SearchUI.SearchButtonRootGrid#SearchBoxButtonRootPanel", {
         L"MinWidth=55"}},
-    ThemeTargetStyles{L"Grid#IconPanel@CommonStates > Border#BackgroundElement, Taskbar.TaskListButtonPanel@CommonStates > Grid > Border#BackgroundElement, Taskbar.TaskListButtonPanel@CommonStates > Border#BackgroundElement", {
+    ThemeTargetStyles{L"Taskbar.TaskListButtonPanel@CommonStates > Grid > Border#BackgroundElement, Taskbar.TaskListButtonPanel@CommonStates > Border#BackgroundElement", {
         L"CornerRadius=0",
         L"Margin=0,5.5,0,5.5"}},
+    ThemeTargetStyles{L"Taskbar.TaskbarFrame > Grid#RootGrid@DockingStates", {
+        L"Tag=horizontal",
+        L"Tag@DockedLeft=vertical",
+        L"Tag@DockedRight=vertical",
+        L"Tag=>taskbarDock"}},
     ThemeTargetStyles{L"Taskbar.TaskbarFrame", {
-        L"Width=Auto",
+        L"Width={{taskbarDock==`vertical`?skip():`Auto`}}",
         L"MaxWidth={{containerGridWidth>0?containerGridWidth:`Infinity`}}",
-        L"Height=70",
+        L"Height={{taskbarDock==`vertical`?skip():70}}",
         L"MinWidth:=100",
         L"Grid.Column=1",
         L"HorizontalAlignment=Center"}},
@@ -9648,14 +9717,14 @@ const Theme g_themeMinecraft_Hotbar = {{
         L"Margin@ActivePointerOver=0,-5,0,-5",
         L"Margin@ActivePressed=0,-5,0,-5",
         L"Margin@ActiveNormal=0,-5,0,-5"}},
-    ThemeTargetStyles{L"Grid#IconPanel@CommonStates > Border#BackgroundElement, Taskbar.TaskListButtonPanel@CommonStates > Grid > Border#BackgroundElement, Taskbar.TaskListButtonPanel@CommonStates > Border#BackgroundElement", {
+    ThemeTargetStyles{L"Taskbar.TaskListButtonPanel@CommonStates > Grid > Border#BackgroundElement, Taskbar.TaskListButtonPanel@CommonStates > Border#BackgroundElement", {
         L"Canvas.ZIndex=0",
         L"CornerRadius=0",
         L"Margin=-3,3.5,-3,3.5",
         L"Background:=$IconBackground",
         L"Background@InactivePointerOver:=$ActiveBackground",
         L"BorderThickness=0"}},
-    ThemeTargetStyles{L"Grid#IconPanel@CommonStates, Taskbar.TaskListButtonPanel@CommonStates", {
+    ThemeTargetStyles{L"Taskbar.TaskListButtonPanel@CommonStates", {
         L"Canvas.ZIndex=0",
         L"Width@InactivePointerOver=59",
         L"Margin@InactivePointerOver=0,-5,0,-5"}},
@@ -9723,14 +9792,6 @@ const Theme g_themeMinecraft_Hotbar = {{
         L"BorderThickness=0"}},
     ThemeTargetStyles{L"SystemTray.SystemTrayFrame > StackPanel#SystemTrayFrameGrid > SystemTray.OmniButton#ControlCenterButton > Grid > ContentPresenter#ContentPresenter > ItemsPresenter > StackPanel > ContentPresenter > SystemTray.IconView#SystemTrayIcon > Grid#ContainerGrid > Grid#ContentGrid > SystemTray.BatteryIconContent > Grid#ContainerGrid > StackPanel, SystemTray.SystemTrayFrame > Grid#SystemTrayFrameGrid > SystemTray.OmniButton#ControlCenterButton > Grid > ContentPresenter#ContentPresenter > ItemsPresenter > StackPanel > ContentPresenter > SystemTray.IconView#SystemTrayIcon > Grid#ContainerGrid > Grid#ContentGrid > SystemTray.BatteryIconContent > Grid#ContainerGrid > StackPanel", {
         L"HorizontalAlignment=Center"}},
-    ThemeTargetStyles{L"SystemTray.SystemTrayFrame > StackPanel#SystemTrayFrameGrid > SystemTray.OmniButton#NotificationCenterButton > Grid > ContentPresenter#ContentPresenter > ItemsPresenter > StackPanel > ContentPresenter > SystemTray.IconView#SystemTrayIcon > Grid#ContainerGrid > Grid#ContentGrid > SystemTray.TextIconContent > Grid#ContainerGrid, SystemTray.SystemTrayFrame > StackPanel#SystemTrayFrameGrid > SystemTray.OmniButton#NotificationCenterButton > Grid > ContentPresenter#ContentPresenter > ItemsPresenter > StackPanel > ContentPresenter > SystemTray.IconView#SystemTrayIcon > Grid#ContainerGrid > ContentPresenter#ContentPresenter > Grid#ContentGrid > SystemTray.TextIconContent > Grid#ContainerGrid, SystemTray.SystemTrayFrame > Grid#SystemTrayFrameGrid > SystemTray.OmniButton#NotificationCenterButton > Grid > ContentPresenter#ContentPresenter > ItemsPresenter > StackPanel > ContentPresenter > SystemTray.IconView#SystemTrayIcon > Grid#ContainerGrid > Grid#ContentGrid > SystemTray.TextIconContent > Grid#ContainerGrid, SystemTray.SystemTrayFrame > Grid#SystemTrayFrameGrid > SystemTray.OmniButton#NotificationCenterButton > Grid > ContentPresenter#ContentPresenter > ItemsPresenter > StackPanel > ContentPresenter > SystemTray.IconView#SystemTrayIcon > Grid#ContainerGrid > ContentPresenter#ContentPresenter > Grid#ContentGrid > SystemTray.TextIconContent > Grid#ContainerGrid", {
-        L"Visibility=Visible",
-        L"Margin=5,0,-5,0",
-        L"CornerRadius=0",
-        L"Height=55",
-        L"Width=55",
-        L"Background:=$IconBackground",
-        L"BorderThickness=0"}},
     ThemeTargetStyles{L"SystemTray.AdaptiveTextBlock > TextBlock", {
         L"FontSize=30"}},
     ThemeTargetStyles{L"SystemTray.SystemTrayFrame > StackPanel#SystemTrayFrameGrid > SystemTray.Stack#NotifyIconStack > Grid#Content > SystemTray.StackListView#IconStack > ItemsPresenter > StackPanel > ContentPresenter > SystemTray.ChevronIconView > Grid#ContainerGrid > ContentPresenter#ContentPresenter > Grid#ContentGrid > SystemTray.TextIconContent > Grid#ContainerGrid > SystemTray.AdaptiveTextBlock#Base > TextBlock#InnerTextBlock, SystemTray.SystemTrayFrame > Grid#SystemTrayFrameGrid > SystemTray.Stack#NotifyIconStack > Grid#Content > SystemTray.StackListView#IconStack > ItemsPresenter > StackPanel > ContentPresenter > SystemTray.ChevronIconView > Grid#ContainerGrid > ContentPresenter#ContentPresenter > Grid#ContentGrid > SystemTray.TextIconContent > Grid#ContainerGrid > SystemTray.AdaptiveTextBlock#Base > TextBlock#InnerTextBlock", {
@@ -9775,10 +9836,6 @@ const Theme g_themeMinecraft_Hotbar = {{
         L"BorderThickness=0"}},
     ThemeTargetStyles{L"SystemTray.OmniButton#ControlCenterButton > Grid > Border#BackgroundBorder", {
         L"Background:=Transparent",
-        L"BorderThickness=0"}},
-    ThemeTargetStyles{L"SystemTray.SystemTrayFrame > StackPanel#SystemTrayFrameGrid > SystemTray.OmniButton#NotificationCenterButton > Grid > ContentPresenter#ContentPresenter > ItemsPresenter > StackPanel > ContentPresenter > SystemTray.IconView#SystemTrayIcon > Grid#ContainerGrid > Grid#ContentGrid, SystemTray.SystemTrayFrame > StackPanel#SystemTrayFrameGrid > SystemTray.OmniButton#NotificationCenterButton > Grid > ContentPresenter#ContentPresenter > ItemsPresenter > StackPanel > ContentPresenter > SystemTray.IconView#SystemTrayIcon > Grid#ContainerGrid > ContentPresenter#ContentPresenter, SystemTray.SystemTrayFrame > Grid#SystemTrayFrameGrid > SystemTray.OmniButton#NotificationCenterButton > Grid > ContentPresenter#ContentPresenter > ItemsPresenter > StackPanel > ContentPresenter > SystemTray.IconView#SystemTrayIcon > Grid#ContainerGrid > Grid#ContentGrid, SystemTray.SystemTrayFrame > Grid#SystemTrayFrameGrid > SystemTray.OmniButton#NotificationCenterButton > Grid > ContentPresenter#ContentPresenter > ItemsPresenter > StackPanel > ContentPresenter > SystemTray.IconView#SystemTrayIcon > Grid#ContainerGrid > ContentPresenter#ContentPresenter", {
-        L"Margin=0,0,15,0",
-        L"Background:=transparent",
         L"BorderThickness=0"}},
     ThemeTargetStyles{L"Taskbar.TaskbarBackground#HoverFlyoutBackgroundControl > Grid > Rectangle#BackgroundFill", {
         L"Canvas.ZIndex=0",
@@ -10068,7 +10125,7 @@ const Theme g_themeOne_UI_8_5_variant_Dock = {{
         L"Margin=0,0,0,0"}},
     ThemeTargetStyles{L"Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: 5319275A.51895FA4EA97F_cv1g1gvanyjgm!App] > Grid#IconPanel > Border, Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: 5319275A.51895FA4EA97F_cv1g1gvanyjgm!App] > Taskbar.TaskListLabeledButtonPanel#IconPanel > Border", {
         L"Visibility=Collapsed"}},
-    ThemeTargetStyles{L"Grid#IconPanel, Taskbar.TaskListButtonPanel", {
+    ThemeTargetStyles{L"Taskbar.TaskListButtonPanel", {
         L"Width=45",
         L"Height=60"}},
     ThemeTargetStyles{L"Grid#IconPanel, Taskbar.TaskListLabeledButtonPanel", {
@@ -10103,12 +10160,17 @@ const Theme g_themeOne_UI_8_5_variant_Dock = {{
         L"Visibility=Collapsed"}},
     ThemeTargetStyles{L"Grid#IconPanel@RunningIndicatorStates > Rectangle#RunningIndicator, Taskbar.TaskListLabeledButtonPanel@RunningIndicatorStates > Rectangle#RunningIndicator", {
         L"Fill=white"}},
+    ThemeTargetStyles{L"Taskbar.TaskbarFrame > Grid#RootGrid@DockingStates", {
+        L"Tag=horizontal",
+        L"Tag@DockedLeft=vertical",
+        L"Tag@DockedRight=vertical",
+        L"Tag=>taskbarDock"}},
     ThemeTargetStyles{L"Taskbar.TaskbarFrame", {
-        L"Width=auto",
+        L"Width={{taskbarDock==`vertical`?skip():`Auto`}}",
         L"MaxWidth={{containerGridWidth>0?containerGridWidth:`Infinity`}}",
         L"Grid.Column=1",
         L"Transitions:=<TransitionCollection><RepositionThemeTransition IsStaggeringEnabled=\"False\"/></TransitionCollection>",
-        L"Height=70",
+        L"Height={{taskbarDock==`vertical`?skip():70}}",
         L"MaxHeight=70",
         L"HorizontalAlignment=Center"}},
     ThemeTargetStyles{L"Taskbar.TaskbarFrame > Grid#RootGrid", {
@@ -10153,10 +10215,6 @@ const Theme g_themeOne_UI_8_5_variant_Dock = {{
         L"BorderThickness=0"}},
     ThemeTargetStyles{L"SystemTray.OmniButton#ControlCenterButton > Grid > Border#BackgroundBorder", {
         L"Background:=Transparent",
-        L"BorderThickness=0"}},
-    ThemeTargetStyles{L"SystemTray.SystemTrayFrame > StackPanel#SystemTrayFrameGrid > SystemTray.OmniButton#NotificationCenterButton > Grid > ContentPresenter#ContentPresenter > ItemsPresenter > StackPanel > ContentPresenter > SystemTray.IconView#SystemTrayIcon > Grid#ContainerGrid > Grid#ContentGrid, SystemTray.SystemTrayFrame > StackPanel#SystemTrayFrameGrid > SystemTray.OmniButton#NotificationCenterButton > Grid > ContentPresenter#ContentPresenter > ItemsPresenter > StackPanel > ContentPresenter > SystemTray.IconView#SystemTrayIcon > Grid#ContainerGrid > ContentPresenter#ContentPresenter, SystemTray.SystemTrayFrame > Grid#SystemTrayFrameGrid > SystemTray.OmniButton#NotificationCenterButton > Grid > ContentPresenter#ContentPresenter > ItemsPresenter > StackPanel > ContentPresenter > SystemTray.IconView#SystemTrayIcon > Grid#ContainerGrid > Grid#ContentGrid, SystemTray.SystemTrayFrame > Grid#SystemTrayFrameGrid > SystemTray.OmniButton#NotificationCenterButton > Grid > ContentPresenter#ContentPresenter > ItemsPresenter > StackPanel > ContentPresenter > SystemTray.IconView#SystemTrayIcon > Grid#ContainerGrid > ContentPresenter#ContentPresenter", {
-        L"Margin=0,0,15,0",
-        L"Background:=transparent",
         L"BorderThickness=0"}},
     ThemeTargetStyles{L"SystemTray.Stack#MainStack", {
         L"Visibility=1"}},
@@ -10265,15 +10323,6 @@ const Theme g_themeOne_UI_8_5_variant_Dock = {{
         L"CornerRadius=15"}},
     ThemeTargetStyles{L"SystemTray.SystemTrayFrame > StackPanel#SystemTrayFrameGrid > SystemTray.OmniButton#ControlCenterButton > Grid > ContentPresenter#ContentPresenter > ItemsPresenter > StackPanel > ContentPresenter > SystemTray.IconView#SystemTrayIcon > Grid#ContainerGrid > Grid#ContentGrid > SystemTray.BatteryIconContent > Grid#ContainerGrid > StackPanel, SystemTray.SystemTrayFrame > Grid#SystemTrayFrameGrid > SystemTray.OmniButton#ControlCenterButton > Grid > ContentPresenter#ContentPresenter > ItemsPresenter > StackPanel > ContentPresenter > SystemTray.IconView#SystemTrayIcon > Grid#ContainerGrid > Grid#ContentGrid > SystemTray.BatteryIconContent > Grid#ContainerGrid > StackPanel", {
         L"HorizontalAlignment=Center"}},
-    ThemeTargetStyles{L"SystemTray.SystemTrayFrame > StackPanel#SystemTrayFrameGrid > SystemTray.OmniButton#NotificationCenterButton > Grid > ContentPresenter#ContentPresenter > ItemsPresenter > StackPanel > ContentPresenter > SystemTray.IconView#SystemTrayIcon > Grid#ContainerGrid > Grid#ContentGrid > SystemTray.TextIconContent > Grid#ContainerGrid, SystemTray.SystemTrayFrame > StackPanel#SystemTrayFrameGrid > SystemTray.OmniButton#NotificationCenterButton > Grid > ContentPresenter#ContentPresenter > ItemsPresenter > StackPanel > ContentPresenter > SystemTray.IconView#SystemTrayIcon > Grid#ContainerGrid > ContentPresenter#ContentPresenter > Grid#ContentGrid > SystemTray.TextIconContent > Grid#ContainerGrid, SystemTray.SystemTrayFrame > Grid#SystemTrayFrameGrid > SystemTray.OmniButton#NotificationCenterButton > Grid > ContentPresenter#ContentPresenter > ItemsPresenter > StackPanel > ContentPresenter > SystemTray.IconView#SystemTrayIcon > Grid#ContainerGrid > Grid#ContentGrid > SystemTray.TextIconContent > Grid#ContainerGrid, SystemTray.SystemTrayFrame > Grid#SystemTrayFrameGrid > SystemTray.OmniButton#NotificationCenterButton > Grid > ContentPresenter#ContentPresenter > ItemsPresenter > StackPanel > ContentPresenter > SystemTray.IconView#SystemTrayIcon > Grid#ContainerGrid > ContentPresenter#ContentPresenter > Grid#ContentGrid > SystemTray.TextIconContent > Grid#ContainerGrid", {
-        L"Visibility=Visible",
-        L"Height=40",
-        L"Width=40",
-        L"Margin=-2,4,0,0",
-        L"Background:=$IconBackground",
-        L"BorderBrush:=$IconBorder",
-        L"BorderThickness=1.3",
-        L"CornerRadius=15"}},
     ThemeTargetStyles{L"SystemTray.AdaptiveTextBlock > TextBlock", {
         L"Foreground:=black",
         L"FontSize=30"}},
@@ -10596,7 +10645,7 @@ const Theme g_themeOne_UI_8_5_variant_Taskbar = {{
         L"Margin=0,0,0,0"}},
     ThemeTargetStyles{L"Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: 5319275A.51895FA4EA97F_cv1g1gvanyjgm!App] > Grid#IconPanel > Border, Taskbar.TaskListButton[AutomationProperties.AutomationId=Appid: 5319275A.51895FA4EA97F_cv1g1gvanyjgm!App] > Taskbar.TaskListLabeledButtonPanel#IconPanel > Border", {
         L"Visibility=Collapsed"}},
-    ThemeTargetStyles{L"Grid#IconPanel, Taskbar.TaskListButtonPanel", {
+    ThemeTargetStyles{L"Taskbar.TaskListButtonPanel", {
         L"Width=45",
         L"Height=60"}},
     ThemeTargetStyles{L"Grid#IconPanel, Taskbar.TaskListLabeledButtonPanel", {
@@ -10882,7 +10931,6 @@ void ApplyCustomizations(ElementId elementId,
 void CleanupCustomizations(ElementId elementId);
 void QueueDiagnosticsRelease(InstanceHandle handle);
 void FlushDiagnosticsReleasesIfQuiet();
-void ResetTaskbarSurfacesIfQuiet();
 
 void HandleClickThroughIslandRoot(
     winrt::Windows::Foundation::IInspectable const& inspectable);
@@ -10899,12 +10947,11 @@ HMODULE GetCurrentModuleHandle() {
 }
 
 // The XAML composition diagnostics rebuild a process-wide visual tree walker
-// without any locking whenever a DirectComposition visual is added, so any
-// explorer UI thread which adds one, Task View for example, corrupts the heap
-// while another thread is in the same code. Only element mutations are needed
-// here, and those are reported by an unrelated code path, so the composition
-// diagnostics are kept from being created at all:
-// XamlDiagnostics::CreateCompVisualDiag skips them when the
+// without any locking whenever a DirectComposition visual is added, so any UI
+// thread which adds one corrupts the heap while another thread is in the same
+// code. Only element mutations are needed here, and those are reported by an
+// unrelated code path, so the composition diagnostics are kept from being
+// created at all: XamlDiagnostics::CreateCompVisualDiag skips them when the
 // HKLM\Software\Microsoft\XAML\Debug\DisableCompositionDiag value is 1.
 // Windows.UI.Xaml.dll reads and caches the value once, from within
 // AdviseVisualTreeChange, so answering that single read is enough.
@@ -10916,6 +10963,7 @@ thread_local bool g_reportCompositionDiagAsDisabled;
 #pragma region winrt_hpp
 
 #include <Unknwn.h>
+#include <weakreference.h>
 #include <winrt/base.h>
 
 // forward declare namespaces we alias
@@ -10929,6 +10977,21 @@ namespace winrt {
 // alias some long namespaces for convenience
 namespace wf = winrt::Windows::Foundation;
 namespace wux = winrt::Windows::UI::Xaml;
+
+// A weak reference for the object, or an empty one when the object is null or
+// doesn't support weak references: cppwinrt's make_weak dereferences a null
+// pointer for an object without that support instead of reporting it. Throws,
+// as make_weak does, when the object supports weak references but one can't be
+// made.
+winrt::weak_ref<wf::IInspectable> TryMakeWeak(wf::IInspectable const& object)
+{
+    if (!object.try_as<::IWeakReferenceSource>())
+    {
+        return nullptr;
+    }
+
+    return winrt::make_weak(object);
+}
 
 #pragma endregion  // winrt_hpp
 
@@ -11067,10 +11130,8 @@ bool VisualTreeWatcher::ReleaseDiagnosticsReference(InstanceHandle handle)
         HRESULT hr = m_XamlDiagnostics->GetIInspectableFromHandle(handle, reinterpret_cast<::IInspectable**>(winrt::put_abi(element)));
         if (SUCCEEDED(hr) && element) {
             try {
-                weakElement = winrt::make_weak(element);
+                weakElement = TryMakeWeak(element);
             } catch (...) {
-                // Not every reported object supports weak references, and then
-                // the release just proceeds unobserved.
                 Wh_Log(L"Error %08X", winrt::to_hresult());
             }
         }
@@ -11082,6 +11143,8 @@ bool VisualTreeWatcher::ReleaseDiagnosticsReference(InstanceHandle handle)
         return false;
     }
 
+    // Not every reported object supports weak references, and then the release
+    // just proceeds unobserved.
     return weakElement && !weakElement.get();
 }
 
@@ -11154,8 +11217,6 @@ HRESULT VisualTreeWatcher::OnVisualTreeChange(ParentChildRelation relation, Visu
     // be released by.
     FlushDiagnosticsReleasesIfQuiet();
 
-    ResetTaskbarSurfacesIfQuiet();
-
     if (mutationType == Add)
     {
         QueueDiagnosticsRelease(element.Handle);
@@ -11193,7 +11254,10 @@ HRESULT VisualTreeWatcher::OnElementStateChanged(InstanceHandle, VisualElementSt
 
 #include <ocidl.h>
 
-winrt::com_ptr<VisualTreeWatcher> g_visualTreeWatcher;
+// Read by the UI threads while the thread which injects or uninitializes the TAP
+// replaces it.
+[[clang::no_destroy]] winrt::com_ptr<VisualTreeWatcher> g_visualTreeWatcher;
+SRWLOCK g_visualTreeWatcherLock = SRWLOCK_INIT;
 
 // {C85D8CC7-5463-40E8-A432-F5916B6427E5}
 static constexpr CLSID CLSID_WindhawkTAP = { 0xc85d8cc7, 0x5463, 0x40e8, { 0xa4, 0x32, 0xf5, 0x91, 0x6b, 0x64, 0x27, 0xe5 } };
@@ -11212,13 +11276,30 @@ private:
 
 #pragma region tap_cpp
 
+winrt::com_ptr<VisualTreeWatcher> GetVisualTreeWatcher()
+{
+    AcquireSRWLockShared(&g_visualTreeWatcherLock);
+    auto watcher = g_visualTreeWatcher;
+    ReleaseSRWLockShared(&g_visualTreeWatcherLock);
+    return watcher;
+}
+
+// Hands the previous watcher back to be unadvised and released outside the
+// lock: both can wait on the UI threads, which take it.
+winrt::com_ptr<VisualTreeWatcher> ExchangeVisualTreeWatcher(winrt::com_ptr<VisualTreeWatcher> watcher)
+{
+    AcquireSRWLockExclusive(&g_visualTreeWatcherLock);
+    std::swap(g_visualTreeWatcher, watcher);
+    ReleaseSRWLockExclusive(&g_visualTreeWatcherLock);
+    return watcher;
+}
+
 HRESULT WindhawkTAP::SetSite(IUnknown *pUnkSite) try
 {
     // Only ever 1 VTW at once.
-    if (g_visualTreeWatcher)
+    if (auto previous = ExchangeVisualTreeWatcher(nullptr))
     {
-        g_visualTreeWatcher->UnadviseVisualTreeChange();
-        g_visualTreeWatcher = nullptr;
+        previous->UnadviseVisualTreeChange();
     }
 
     site.copy_from(pUnkSite);
@@ -11228,7 +11309,7 @@ HRESULT WindhawkTAP::SetSite(IUnknown *pUnkSite) try
         // Decrease refcount increased by InitializeXamlDiagnosticsEx.
         FreeLibrary(GetCurrentModuleHandle());
 
-        g_visualTreeWatcher = winrt::make_self<VisualTreeWatcher>(site);
+        ExchangeVisualTreeWatcher(winrt::make_self<VisualTreeWatcher>(site));
     }
 
     return S_OK;
@@ -11393,6 +11474,8 @@ HRESULT InjectWindhawkTAP() noexcept
 #include <charconv>
 #include <chrono>
 #include <cmath>
+#include <condition_variable>
+#include <filesystem>
 #include <limits>
 #include <list>
 #include <memory>
@@ -11415,6 +11498,7 @@ using namespace std::string_view_literals;
 #include <commctrl.h>
 #include <d2d1_1.h>
 #include <roapi.h>
+#include <shlwapi.h>
 #include <windows.graphics.effects.h>
 #include <windows.ui.xaml.hosting.desktopwindowxamlsource.h>
 #include <winstring.h>
@@ -11761,6 +11845,8 @@ struct ElementPropertyCustomizationState {
     // one of those before being stored, and the source template lives
     // separately in `dynamicTemplate` below.
     std::optional<PropertyOverrideValue> customValue;
+    // The value SetOrClearValue wrote for customValue, which is what a write
+    // by something else is told apart from.
     winrt::Windows::Foundation::IInspectable lastAppliedValue{nullptr};
     int64_t propertyChangedToken = 0;
     // Source template for dynamic styles whose value contains `{{...}}`
@@ -11827,6 +11913,14 @@ struct ElementCustomizationState {
 thread_local std::unordered_map<ElementId, ElementCustomizationState>
     g_elementsCustomizationState;
 
+// Empties a thread local container and frees its storage, which clear() keeps.
+// A thread local isn't destroyed when the module is unloaded while its thread
+// lives on, so what it still holds then is leaked.
+template <typename T>
+void ResetThreadLocal(T& container) {
+    container = T{};
+}
+
 // The weak reference is what keeps an id honest. A handle is an address, so a
 // destroyed element can be replaced by one reporting the same handle, and an
 // entry whose element is gone, or is no longer the element being asked about,
@@ -11851,19 +11945,25 @@ ElementId GetOrCreateElementId(InstanceHandle handle,
     }
 
     entry.id = static_cast<ElementId>(++g_lastElementId);
+
+    winrt::weak_ref<wf::IInspectable> weakElement;
     try {
-        entry.element = winrt::make_weak(element);
+        weakElement = TryMakeWeak(element);
     } catch (winrt::hresult_error const& ex) {
+        Wh_Log(L"Error %08X: %s", ex.code(), ex.message().c_str());
+    }
+
+    if (!weakElement) {
         // Without a weak reference the entry cannot be told apart from one for
         // a successor at the same address, so neither it nor the id it names is
         // kept: an id no lookup can reach again would key state that nothing
         // could ever tear down, on an element nothing would then hold back from
         // being released.
-        Wh_Log(L"Error %08X: %s", ex.code(), ex.message().c_str());
         g_elementIds.erase(handle);
         return ElementId::None;
     }
 
+    entry.element = std::move(weakElement);
     return entry.id;
 }
 
@@ -11877,6 +11977,41 @@ ElementId FindElementId(InstanceHandle handle) {
 
 void ForgetElementId(InstanceHandle handle) {
     g_elementIds.erase(handle);
+}
+
+// Dead entries are reaped once the map grows past this, which is then set to
+// twice the surviving size, making the sweep amortized O(1).
+thread_local size_t g_elementIdsReapThreshold = 64;
+
+// An element whose diagnostics reference was handed back is destroyed without a
+// removal being reported for it, so what the mod keys by that element has to be
+// found rather than told. An entry whose weak reference no longer resolves
+// names such an element, and is torn down the way its removal would have.
+void ReapDeadElementIdsIfNeeded() {
+    if (g_elementIds.size() < g_elementIdsReapThreshold) {
+        return;
+    }
+
+    // Collected before anything is torn down: CleanupCustomizations runs XAML
+    // work which can re-enter ApplyCustomizations and rehash the map.
+    std::vector<std::pair<InstanceHandle, ElementId>> dead;
+    for (const auto& [handle, entry] : g_elementIds) {
+        if (!entry.element.get()) {
+            dead.push_back({handle, entry.id});
+        }
+    }
+
+    if (!dead.empty()) {
+        Wh_Log(L"Reaping %zu of %zu element ids", dead.size(),
+               g_elementIds.size());
+    }
+
+    for (const auto& [handle, elementId] : dead) {
+        CleanupCustomizations(elementId);
+        g_elementIds.erase(handle);
+    }
+
+    g_elementIdsReapThreshold = std::max<size_t>(64, g_elementIds.size() * 2);
 }
 
 // The element's spine node. An element can be matched before its subtree is
@@ -11942,7 +12077,38 @@ struct StyleVariableState {
         variables;
     std::unordered_map<std::wstring, std::vector<StyleVariableConsumer>>
         consumers;
+    // How many entries the two maps above hold for each element. They're keyed
+    // by variable name, so without this, asking whether an element appears in
+    // either of them means walking every name.
+    std::unordered_map<ElementId, size_t> elementRefs;
+    // Elements whose captures are out of `variables` while they sit in a
+    // recycled repeater item. See RefreshRecycledItemCaptures.
+    std::unordered_set<ElementId> withdrawnCaptureOwners;
 };
+
+void AddStyleVariableElementRef(StyleVariableState* state,
+                                ElementId elementId) {
+    state->elementRefs[elementId]++;
+}
+
+void ReleaseStyleVariableElementRefs(StyleVariableState* state,
+                                     ElementId elementId,
+                                     size_t count) {
+    if (!count) {
+        return;
+    }
+
+    auto it = state->elementRefs.find(elementId);
+    if (it == state->elementRefs.end()) {
+        return;
+    }
+
+    if (it->second > count) {
+        it->second -= count;
+    } else {
+        state->elementRefs.erase(it);
+    }
+}
 
 thread_local std::list<StyleVariableState> g_styleVariableState;
 
@@ -12037,9 +12203,11 @@ thread_local std::list<
 
 // An image with a remote source fails to load when the process starts before
 // the network is up. Such images are tracked so that the load can be retried
-// once there's internet access. Only a target which has no image is retried, so
-// replacing its source has nothing to hide, and the source is never cleared, so
-// an image that's currently displayed can't be blanked out.
+// once there's internet access, and are cached in a file in the mod storage
+// folder, which is what's loaded when it's there, so that the image shows up at
+// once and offline. Only a target which has no image is retried, and only a
+// source which isn't showing anything is replaced, so an image that's currently
+// displayed can't be blanked out.
 struct TrackedImage {
     // An ImageBrush or an Image element. Both hold an image source which can
     // fail to load and both report the outcome, but through unrelated types, so
@@ -12047,7 +12215,12 @@ struct TrackedImage {
     // revoker pair.
     winrt::weak_ref<DependencyObject> target;
     DependencyProperty sourceProperty{nullptr};
+    // The remote address: the entry's identity and what's downloaded, even
+    // while the cached file is what's loaded.
     winrt::Windows::Foundation::Uri uri{nullptr};
+    std::wstring url;
+    // The cached copy of the image, empty when there's no cache folder.
+    std::filesystem::path cachePath;
 
     // Decode properties of the BitmapImage the style declared, reapplied to the
     // BitmapImage a retry creates.
@@ -12067,6 +12240,14 @@ struct TrackedImage {
     // Whether the target has an image. Retries target the ones which don't.
     bool loaded = false;
 
+    // Whether the target is loading from the cached file rather than from the
+    // remote address, which is what a load failure is judged by.
+    bool usingCache = false;
+
+    // The BitmapImage the last retry assigned to the target, which is the mod's
+    // value just like the one the style declared.
+    winrt::weak_ref<Media::Imaging::BitmapImage> retryImage;
+
     ULONGLONG lastRetryTick = 0;
     int retryCount = 0;
 };
@@ -12084,6 +12265,13 @@ struct TrackedImagesForThread {
 };
 
 thread_local TrackedImagesForThread g_trackedImagesForThread;
+
+// The remote address of each cached file which has been substituted for one, so
+// that a target given an already substituted source is tracked as well.
+// Outlives the entries, since the style value it describes is shared by targets
+// which come and go. Thread local like that value.
+thread_local std::unordered_map<std::wstring, winrt::Windows::Foundation::Uri>
+    g_imageCacheUriRemotes;
 
 // A single connectivity transition raises several network status events, and
 // the state right after the first one isn't final yet.
@@ -12108,6 +12296,9 @@ constexpr int kImageRetryMaxCount = 20;
 // UI thread pumps messages, which can re-enter this code on the same thread.
 std::mutex g_imageRetryMutex;
 bool g_imageRetryActive;
+// Set once the mod is being unloaded, so that nothing which runs during the
+// uninitialization tracks an image again.
+bool g_imageRetryStopping;
 // The dispatcher of each UI thread which has tracked images, used to run a
 // retry on the thread that owns the image.
 std::vector<winrt::weak_ref<winrt::Windows::System::DispatcherQueue>>
@@ -12116,6 +12307,38 @@ winrt::event_token g_networkStatusChangedToken;
 // Set while a thread is registering the handler outside the mutex, so that a
 // concurrent or re-entrant call doesn't register a second one.
 bool g_networkStatusChangedRegistering;
+// Callbacks which are on their way into mod code, counted so that the module
+// isn't freed out from under them.
+size_t g_imageRetryPendingCallbacks;
+std::condition_variable g_imageRetryPendingCallbacksCv;
+
+// A cached file is fetched again once it's this old, and its write time is
+// stamped whether or not the fetch gets through, so that the write time doubles
+// as when the file was last known to be in use.
+constexpr ULONGLONG kImageCacheRefreshIntervalMs = 7ULL * 24 * 60 * 60 * 1000;
+// A file which nothing stamps ages until it's swept. Long enough for a theme
+// which is switched away from and back to keep its images.
+constexpr ULONGLONG kImageCacheMaxUnusedMs = 30ULL * 24 * 60 * 60 * 1000;
+
+// Guards the globals below it.
+std::mutex g_imageDownloadMutex;
+// The URL of each image to fetch, or an empty string for a cache sweep. The
+// path a URL is cached at follows from the URL, so it isn't carried along.
+std::list<std::wstring> g_imageDownloadQueue;
+// The URL of every queued and in flight job, so that one image isn't fetched
+// twice at once. A job which failed is dropped: the retries of the image it's
+// for are what ask again, and they're already paced and capped.
+std::unordered_set<std::wstring> g_imageDownloadUrls;
+// The URL of every cached file which failed to load, taking the images it's
+// for back to the remote address for the rest of the process. Not per entry,
+// since the file is what was rejected and the entries which share the URL
+// would otherwise hand it out again. Global for the same reason: the file is
+// process wide, not thread wide.
+std::unordered_set<std::wstring> g_imageCacheRejectedUrls;
+PTP_WORK g_imageDownloadWork;
+// Whether a callback is draining the queue; a job added meanwhile joins it.
+bool g_imageDownloadRunning;
+bool g_imageDownloadStopping;
 
 enum class ResourceVariableTheme {
     None,
@@ -12171,16 +12394,16 @@ struct ClickThroughTaskbarState {
     // Quantized signature of the last applied region, to skip redundant work on
     // the frequent LayoutUpdated event.
     std::vector<long long> lastRegionSignature;
-    // Bounding box (in window coordinates) of the region last applied via
-    // SetWindowRgn. The signature captures only XAML-derived inputs, so it
-    // can't tell that the region was reset out from under us: toggling
-    // auto-hide makes Explorer clear the taskbar window region (and later set a
-    // full-window one) with no XAML layout change. Comparing the window's
-    // current region box against this detects that and forces a reapply.
-    RECT lastAppliedRgnBox = {};
 };
 
 thread_local std::list<ClickThroughTaskbarState> g_clickThroughTaskbarState;
+
+// Bounding box of the window region last applied, per top-level taskbar
+// window. Tells whether the current region is still ours: Explorer can clear or
+// replace it with no XAML layout change, e.g. on an auto-hide toggle, which the
+// signature can't see. Keyed by window, which outlives the XamlRoot when the
+// island is rebuilt.
+thread_local std::unordered_map<HWND, RECT> g_clickThroughAppliedRgnBoxes;
 
 // Look up (or create) the entry for a live XamlRoot. Reaps any entries whose
 // XamlRoot has been destroyed before searching, so a recycled address cannot
@@ -12290,17 +12513,19 @@ winrt::Windows::Foundation::IInspectable ReadLocalValueWithWorkaround(
 // Generates a tileable noise BMP in memory. Density controls the brightness
 // distribution curve via a power function (lower density = sparser bright
 // pixels). Opacity is handled downstream by the composition effect graph.
+
+// The last stream generated, cached to avoid regenerating when density hasn't
+// changed. The cached stream is never read directly; callers get independent
+// clones via CloneStream() so they don't share a seek cursor.
+thread_local float g_noiseStreamDensity =
+    std::numeric_limits<float>::quiet_NaN();
+thread_local winrt::Windows::Storage::Streams::InMemoryRandomAccessStream
+    g_noiseStream{nullptr};
+
 winrt::Windows::Storage::Streams::IRandomAccessStream CreateNoiseStream(
     float density) {
-    // Cache the last stream to avoid regenerating when density hasn't changed.
-    // The cached stream is never read directly; callers get independent clones
-    // via CloneStream() so they don't share a seek cursor.
-    thread_local float cachedDensity = std::numeric_limits<float>::quiet_NaN();
-    thread_local winrt::Windows::Storage::Streams::InMemoryRandomAccessStream
-        cachedStream{nullptr};
-
-    if (density == cachedDensity && cachedStream) {
-        return cachedStream.CloneStream();
+    if (density == g_noiseStreamDensity && g_noiseStream) {
+        return g_noiseStream.CloneStream();
     }
 
     // Use 256x256 to minimize visible tiling seams.
@@ -12360,10 +12585,10 @@ winrt::Windows::Storage::Streams::IRandomAccessStream CreateNoiseStream(
     writer.StoreAsync().get();
     writer.DetachStream();
 
-    cachedStream = std::move(stream);
-    cachedDensity = density;
+    g_noiseStream = std::move(stream);
+    g_noiseStreamDensity = density;
 
-    return cachedStream.CloneStream();
+    return g_noiseStream.CloneStream();
 }
 
 // Blur background implementation, copied from TranslucentTB.
@@ -13792,7 +14017,7 @@ void XamlBlurBrush::RefreshBrush()
 // clang-format on
 ////////////////////////////////////////////////////////////////////////////////
 
-// Helper functions for tracking and retrying failed image loads.
+// Helper functions for tracking, caching and retrying remote image loads.
 
 // Reports true if the query itself fails, as a retry which turns out to be
 // pointless is harmless, while skipping a necessary one leaves images missing.
@@ -13809,13 +14034,381 @@ bool HasInternetAccess() {
     }
 }
 
+// The folder the remote images are cached in, empty if it's not available, in
+// which case images are only ever loaded from their remote source.
+const std::filesystem::path& GetImageCacheDir() {
+    static const std::filesystem::path dir = []() -> std::filesystem::path {
+        WCHAR storagePathBuffer[MAX_PATH];
+        if (!Wh_GetModStoragePath(storagePathBuffer,
+                                  ARRAYSIZE(storagePathBuffer))) {
+            Wh_Log(L"Wh_GetModStoragePath failed");
+            return std::filesystem::path();
+        }
+
+        auto path = std::filesystem::path{storagePathBuffer} / L"images";
+
+        std::error_code ec;
+        std::filesystem::create_directories(path, ec);
+        if (!std::filesystem::is_directory(path, ec)) {
+            Wh_Log(L"Failed to create %s", path.c_str());
+            return std::filesystem::path();
+        }
+
+        return path;
+    }();
+
+    return dir;
+}
+
+// The cached copy of a remote image, named uniquely after its URL. Empty when
+// there's no cache folder. The extension of the URL is kept so that the folder
+// can be looked through.
+std::filesystem::path ImageCachePath(std::wstring_view url) {
+    const auto& cacheDir = GetImageCacheDir();
+    if (cacheDir.empty()) {
+        return std::filesystem::path();
+    }
+
+    // FNV-1a; one mod's folder, so an unlikely collision is good enough.
+    uint64_t hash = 14695981039346656037ULL;
+    for (wchar_t c : url) {
+        hash ^= (uint16_t)c;
+        hash *= 1099511628211ULL;
+    }
+
+    WCHAR hashString[17];
+    swprintf_s(hashString, L"%016llx", hash);
+
+    std::wstring name = hashString;
+
+    auto urlPath = url.substr(0, url.find_first_of(L"?#"));
+    auto extension = std::filesystem::path(urlPath).extension().native();
+    if (extension.length() >= 2 && extension.length() <= 5 &&
+        std::all_of(extension.begin() + 1, extension.end(), [](wchar_t c) {
+            return (c >= L'a' && c <= L'z') || (c >= L'A' && c <= L'Z') ||
+                   (c >= L'0' && c <= L'9');
+        })) {
+        name += extension;
+    }
+
+    return cacheDir / name;
+}
+
+// XAML loads a local image through a file URI.
+winrt::Windows::Foundation::Uri ImageCacheFileUri(
+    const std::filesystem::path& path) {
+    // Room for every character to be escaped, plus the scheme.
+    std::wstring uri(path.native().size() * 3 + 16, L'\0');
+
+    DWORD uriLength = (DWORD)uri.size();
+    HRESULT hr = UrlCreateFromPath(path.c_str(), uri.data(), &uriLength, 0);
+    if (FAILED(hr)) {
+        Wh_Log(L"UrlCreateFromPath returned 0x%08X", hr);
+        return nullptr;
+    }
+
+    uri.resize(uriLength);
+
+    try {
+        return winrt::Windows::Foundation::Uri(uri);
+    } catch (winrt::hresult_error const& ex) {
+        Wh_Log(L"Error %08X: %s", ex.code(), ex.message().c_str());
+        return nullptr;
+    }
+}
+
+// The time since a file was written.
+ULONGLONG FileAgeMs(std::filesystem::file_time_type writeTime) {
+    auto age = std::filesystem::file_time_type::clock::now() - writeTime;
+
+    // A file stamped in the future, e.g. after a clock change, is brand new.
+    if (age.count() <= 0) {
+        return 0;
+    }
+
+    return std::chrono::duration_cast<std::chrono::milliseconds>(age).count();
+}
+
+// The time since a file was written, nullopt if there's no such file.
+std::optional<ULONGLONG> FileAgeMs(const std::filesystem::path& path) {
+    std::error_code ec;
+    auto writeTime = std::filesystem::last_write_time(path, ec);
+    if (ec) {
+        return std::nullopt;
+    }
+
+    return FileAgeMs(writeTime);
+}
+
+void TouchFile(const std::filesystem::path& path) {
+    std::error_code ec;
+    std::filesystem::last_write_time(
+        path, std::filesystem::file_time_type::clock::now(), ec);
+}
+
+// Removes the files which haven't been stamped for a long time, which is what
+// becomes of a theme's images once it's out of use, and of what an interrupted
+// download leaves behind.
+void SweepImageCache() {
+    const auto& cacheDir = GetImageCacheDir();
+    if (cacheDir.empty()) {
+        return;
+    }
+
+    Wh_Log(L"Sweeping the image cache");
+
+    try {
+        std::error_code ec;
+        for (const auto& entry :
+             std::filesystem::directory_iterator(cacheDir, ec)) {
+            if (!entry.is_regular_file(ec)) {
+                continue;
+            }
+
+            auto writeTime = entry.last_write_time(ec);
+            if (ec || FileAgeMs(writeTime) < kImageCacheMaxUnusedMs) {
+                continue;
+            }
+
+            Wh_Log(L"Removing unused cached image: %s",
+                   entry.path().filename().c_str());
+            std::filesystem::remove(entry.path(), ec);
+        }
+    } catch (const std::exception& ex) {
+        Wh_Log(L"Error sweeping the image cache: %S", ex.what());
+    }
+}
+
+// Via a temporary file, so that a partial or failed response, which the engine
+// writes before the status code is known, never becomes the cached image.
+void DownloadImage(const std::wstring& url) {
+    auto cachePath = ImageCachePath(url);
+    if (cachePath.empty()) {
+        return;
+    }
+
+    auto tempPath = cachePath;
+    tempPath += L".tmp" + std::to_wstring(GetCurrentProcessId());
+
+    bool succeeded = false;
+
+    WH_GET_URL_CONTENT_OPTIONS options{
+        .optionsSize = sizeof(options),
+        .targetFilePath = tempPath.c_str(),
+    };
+
+    if (const WH_URL_CONTENT* urlContent =
+            Wh_GetUrlContent(url.c_str(), &options)) {
+        if (urlContent->statusCode == 200) {
+            succeeded = true;
+        } else {
+            Wh_Log(L"Wh_GetUrlContent returned %d", urlContent->statusCode);
+        }
+
+        Wh_FreeUrlContent(urlContent);
+    } else {
+        Wh_Log(L"Wh_GetUrlContent failed");
+    }
+
+    std::error_code ec;
+
+    if (succeeded) {
+        auto size = std::filesystem::file_size(tempPath, ec);
+        if (ec || size == 0) {
+            Wh_Log(L"No downloaded file to move into place");
+            succeeded = false;
+        }
+    }
+
+    if (succeeded) {
+        std::filesystem::rename(tempPath, cachePath, ec);
+        if (ec) {
+            // Another process can be reading it.
+            Wh_Log(L"Failed to move %s into place", tempPath.c_str());
+        }
+    }
+
+    std::filesystem::remove(tempPath, ec);
+}
+
+void ProcessImageDownloads() {
+    for (;;) {
+        std::wstring url;
+
+        {
+            std::lock_guard<std::mutex> lock(g_imageDownloadMutex);
+
+            if (g_imageDownloadStopping || g_imageDownloadQueue.empty()) {
+                g_imageDownloadRunning = false;
+                return;
+            }
+
+            url = std::move(g_imageDownloadQueue.front());
+            g_imageDownloadQueue.pop_front();
+        }
+
+        if (url.empty()) {
+            SweepImageCache();
+            continue;
+        }
+
+        Wh_Log(L"Downloading image: %s", url.c_str());
+        DownloadImage(url);
+
+        std::lock_guard<std::mutex> lock(g_imageDownloadMutex);
+        g_imageDownloadUrls.erase(url);
+    }
+}
+
+// Must be called with g_imageDownloadMutex held, with the job it's for already
+// queued.
+void SubmitImageDownloadWork() {
+    if (g_imageDownloadRunning) {
+        return;
+    }
+
+    if (!g_imageDownloadWork) {
+        g_imageDownloadWork =
+            CreateThreadpoolWork([](PTP_CALLBACK_INSTANCE, PVOID,
+                                    PTP_WORK) { ProcessImageDownloads(); },
+                                 nullptr, nullptr);
+        if (!g_imageDownloadWork) {
+            Wh_Log(L"Failed to create the image download work item");
+            g_imageDownloadQueue.clear();
+            g_imageDownloadUrls.clear();
+            return;
+        }
+    }
+
+    g_imageDownloadRunning = true;
+    SubmitThreadpoolWork(g_imageDownloadWork);
+}
+
+void QueueImageDownload(const std::wstring& url) {
+    std::lock_guard<std::mutex> lock(g_imageDownloadMutex);
+
+    if (g_imageDownloadStopping) {
+        return;
+    }
+
+    if (!g_imageDownloadUrls.insert(url).second) {
+        return;
+    }
+
+    g_imageDownloadQueue.push_back(url);
+
+    SubmitImageDownloadWork();
+}
+
+// Asks the download thread for a sweep, once per process. Not tied to there
+// being anything to download, so that a cache which is fully up to date, and
+// whose unused files nothing else removes, is swept too.
+void QueueImageCacheSweep() {
+    static std::once_flag once;
+    std::call_once(once, []() {
+        std::lock_guard<std::mutex> lock(g_imageDownloadMutex);
+
+        if (g_imageDownloadStopping) {
+            return;
+        }
+
+        g_imageDownloadQueue.emplace_back();
+
+        SubmitImageDownloadWork();
+    });
+}
+
+// Whether the cached file of a URL failed to load, which takes the images it's
+// for back to the remote address.
+bool IsImageCacheRejected(const std::wstring& url) {
+    std::lock_guard<std::mutex> lock(g_imageDownloadMutex);
+
+    return g_imageCacheRejectedUrls.contains(url);
+}
+
+void RejectImageCache(const std::wstring& url) {
+    std::lock_guard<std::mutex> lock(g_imageDownloadMutex);
+
+    g_imageCacheRejectedUrls.insert(url);
+}
+
+void StopImageDownloads() {
+    PTP_WORK work;
+
+    {
+        std::lock_guard<std::mutex> lock(g_imageDownloadMutex);
+
+        g_imageDownloadStopping = true;
+        g_imageDownloadQueue.clear();
+        g_imageDownloadUrls.clear();
+        g_imageCacheRejectedUrls.clear();
+
+        work = g_imageDownloadWork;
+        g_imageDownloadWork = nullptr;
+    }
+
+    // A request which is in flight can't be cancelled, so a server which is
+    // slow to answer holds up the unload for as long as it takes. Accepted as
+    // it is: the alternative is letting the callback run on into a module which
+    // is going away.
+    if (work) {
+        WaitForThreadpoolWorkCallbacks(work, TRUE);
+        CloseThreadpoolWork(work);
+    }
+}
+
+// The address an entry should load from: the cached file when there is one, the
+// remote address otherwise. Asks for the download the answer implies.
+winrt::Windows::Foundation::Uri ImageSourceUri(
+    const std::shared_ptr<TrackedImage>& tracked) {
+    if (!tracked->cachePath.empty() && !IsImageCacheRejected(tracked->url)) {
+        if (auto age = FileAgeMs(tracked->cachePath)) {
+            if (*age >= kImageCacheRefreshIntervalMs) {
+                // Stamped whether or not the download gets through, so that an
+                // offline machine doesn't lose the images it's using.
+                TouchFile(tracked->cachePath);
+                QueueImageDownload(tracked->url);
+            }
+
+            if (auto uri = ImageCacheFileUri(tracked->cachePath)) {
+                return uri;
+            }
+        } else {
+            QueueImageDownload(tracked->url);
+        }
+    }
+
+    return tracked->uri;
+}
+
+// Takes the BitmapImage the style declared off a cached file which has been
+// rejected, so that reapplying the value doesn't put the file which failed back
+// on the target. Nothing is showing from that file, so this is the one case
+// where a source is replaced without regard for what the target holds.
+void RestoreRejectedImageSource(
+    const std::shared_ptr<TrackedImage>& tracked,
+    Media::Imaging::BitmapImage const& bitmapImage) {
+    try {
+        if (bitmapImage.UriSource().Equals(tracked->uri) ||
+            !IsImageCacheRejected(tracked->url)) {
+            return;
+        }
+
+        Wh_Log(L"Loading remote image for: %s", tracked->url.c_str());
+
+        bitmapImage.UriSource(tracked->uri);
+    } catch (winrt::hresult_error const& ex) {
+        Wh_Log(L"Error %08X: %s", ex.code(), ex.message().c_str());
+    }
+}
+
 void StartImageRetry(const std::shared_ptr<TrackedImage>& tracked) {
     auto target = tracked->target.get();
     if (!target) {
         return;
     }
 
-    Wh_Log(L"Retrying image load for: %s", tracked->uri.RawUri().c_str());
+    Wh_Log(L"Retrying image load for: %s", tracked->url.c_str());
 
     tracked->lastRetryTick = GetTickCount64();
     tracked->retryCount++;
@@ -13823,9 +14416,14 @@ void StartImageRetry(const std::shared_ptr<TrackedImage>& tracked) {
     // An Image element's source is a property the mod customizes, and writing
     // to it would otherwise be seen as an external change and reverted to the
     // failed source the style declared.
+    bool wasModifying = g_elementPropertyModifying;
     g_elementPropertyModifying = true;
 
     try {
+        // The cached file when a download has landed since the last attempt.
+        auto uri = ImageSourceUri(tracked);
+        tracked->usingCache = !uri.Equals(tracked->uri);
+
         Media::Imaging::BitmapImage retryImage;
         // Bypass the XAML image cache: a retry is only needed when what the
         // cache holds for the URI is a failed or missing image.
@@ -13843,18 +14441,19 @@ void StartImageRetry(const std::shared_ptr<TrackedImage>& tracked) {
         // the same URI to a BitmapImage doesn't reload it. The target's own
         // ImageOpened and ImageFailed report how this attempt went.
         target.SetValue(tracked->sourceProperty, retryImage);
+        tracked->retryImage = winrt::make_weak(retryImage);
 
         // The URI goes last: XAML decodes an image to the size it's displayed
         // at only when the BitmapImage is already connected to the live tree by
         // the time its source is set. Setting the URI first decodes at the
         // image's natural size, which is then scaled at render time and looks
         // poor.
-        retryImage.UriSource(tracked->uri);
+        retryImage.UriSource(uri);
     } catch (winrt::hresult_error const& ex) {
         Wh_Log(L"Error %08X: %s", ex.code(), ex.message().c_str());
     }
 
-    g_elementPropertyModifying = false;
+    g_elementPropertyModifying = wasModifying;
 }
 
 // The wait before the next attempt of an image which has been retried
@@ -13979,6 +14578,35 @@ void ScheduleImageLoadRetryOnCurrentThread(ULONGLONG delayMs, bool reschedule) {
     }
 }
 
+// Counts a callback which is about to be handed to code outside the mod for as
+// long as the returned reference is alive, so that StopImageLoadRetries waits
+// for it whether it ends up running or being dropped. Null once the retries
+// have been stopped, which is the caller's cue not to hand it over at all.
+std::shared_ptr<void> TrackImageRetryCallback() {
+    {
+        std::lock_guard<std::mutex> lock(g_imageRetryMutex);
+
+        if (!g_imageRetryActive) {
+            return nullptr;
+        }
+
+        g_imageRetryPendingCallbacks++;
+    }
+
+    // The pointer is only a non-null tag; the deleter is what the reference is
+    // for, and it runs whether the shared_ptr is destroyed or its construction
+    // throws.
+    return std::shared_ptr<void>(&g_imageRetryPendingCallbacks, [](void*) {
+        std::lock_guard<std::mutex> lock(g_imageRetryMutex);
+
+        g_imageRetryPendingCallbacks--;
+
+        // Under the lock, since the module can be freed as soon as the waiter
+        // sees the count drop.
+        g_imageRetryPendingCallbacksCv.notify_all();
+    });
+}
+
 void ScheduleImageLoadRetryOnAllUiThreads() {
     // Losing connectivity raises a network status event just like gaining it
     // does, and there's nothing to retry with no internet access.
@@ -14007,8 +14635,13 @@ void ScheduleImageLoadRetryOnAllUiThreads() {
     }
 
     for (auto& dispatcher : dispatchers) {
+        auto callbackRef = TrackImageRetryCallback();
+        if (!callbackRef) {
+            return;
+        }
+
         try {
-            dispatcher.TryEnqueue([]() {
+            dispatcher.TryEnqueue([callbackRef]() {
                 ScheduleImageLoadRetryOnCurrentThread(kNetworkChangeDebounceMs,
                                                       /*reschedule=*/true);
             });
@@ -14030,9 +14663,22 @@ void OnNetworkStatusChanged(
 
 // Must not be called with g_imageRetryMutex held.
 winrt::event_token RegisterNetworkStatusChangedHandler() {
+    // Removing the handler doesn't wait for an invocation which is already in
+    // flight, and the event source releases the handler, which is mod code,
+    // only after that invocation. The handler holds the reference so that it
+    // covers both.
+    auto callbackRef = TrackImageRetryCallback();
+    if (!callbackRef) {
+        return {};
+    }
+
     try {
         auto token = winrt::Windows::Networking::Connectivity::
-            NetworkInformation::NetworkStatusChanged(OnNetworkStatusChanged);
+            NetworkInformation::NetworkStatusChanged(
+                [callbackRef](
+                    winrt::Windows::Foundation::IInspectable const& sender) {
+                    OnNetworkStatusChanged(sender);
+                });
         Wh_Log(L"Registered global network status change handler");
         return token;
     } catch (winrt::hresult_error const& ex) {
@@ -14064,6 +14710,7 @@ void StopImageLoadRetries() {
         // early, which is what stops the retries. Removing the handler only
         // stops further invocations.
         g_imageRetryActive = false;
+        g_imageRetryStopping = true;
 
         token = g_networkStatusChangedToken;
         g_networkStatusChangedToken = {};
@@ -14074,6 +14721,16 @@ void StopImageLoadRetries() {
     if (token) {
         UnregisterNetworkStatusChangedHandler(token);
     }
+
+    // The module is freed once the mod is uninitialized, so the callbacks which
+    // are already on their way into it are let through first. What they wait on
+    // is a connectivity query and a dispatcher pass of a UI thread, and the
+    // uninitialization which follows depends on those threads running anyway.
+    // A callback still returns through mod code after dropping its reference,
+    // which the rest of the uninitialization is left to outlast.
+    std::unique_lock<std::mutex> lock(g_imageRetryMutex);
+    g_imageRetryPendingCallbacksCv.wait(
+        lock, [] { return g_imageRetryPendingCallbacks == 0; });
 }
 
 // Drops the calling thread from the dispatcher registry, and stops the retries
@@ -14115,10 +14772,19 @@ void StopImageLoadRetriesForCurrentThread() {
     }
 }
 
-void SetupImageTracking(DependencyObject const& target,
-                        DependencyProperty const& sourceProperty,
-                        Media::Imaging::BitmapImage const& bitmapImage,
-                        winrt::Windows::Foundation::Uri const& uri) {
+Media::Imaging::BitmapImage SetupImageTracking(
+    DependencyObject const& target,
+    DependencyProperty const& sourceProperty,
+    Media::Imaging::BitmapImage const& bitmapImage,
+    winrt::Windows::Foundation::Uri const& uri) {
+    {
+        std::lock_guard<std::mutex> lock(g_imageRetryMutex);
+
+        if (g_imageRetryStopping) {
+            return nullptr;
+        }
+    }
+
     auto& images = g_trackedImagesForThread.images;
 
     std::erase_if(images,
@@ -14135,10 +14801,36 @@ void SetupImageTracking(DependencyObject const& target,
     if (it != images.end()) {
         // Resolved style values are cached, so the same source object is
         // applied to many targets and reapplied on every visual state change.
-        // Keep the load state which was collected so far unless the source
+        // Keep the retry state which was collected so far unless the source
         // changed.
         if ((*it)->uri.Equals(uri)) {
-            return;
+            RestoreRejectedImageSource(*it, bitmapImage);
+
+            // A declared image which shows nothing has typically failed, and
+            // isn't loaded again by being reapplied, so it would blank a retry
+            // image which has loaded since, or cut short one which is still
+            // loading. The target keeps its retry image instead.
+            Media::Imaging::BitmapImage retryImage{nullptr};
+            if (bitmapImage.PixelWidth() == 0) {
+                retryImage = (*it)->retryImage.get();
+            }
+            auto const& applied = retryImage ? retryImage : bitmapImage;
+
+            // The image being applied is what a load failure is judged by, and
+            // what decides whether the target has an image.
+            (*it)->usingCache = !applied.UriSource().Equals(uri);
+
+            bool wasLoaded = (*it)->loaded;
+            (*it)->loaded = applied.PixelWidth() != 0;
+
+            // Nothing else starts a round for a target which loses its image
+            // this way: the value may have failed already, which raises no
+            // further event.
+            if (wasLoaded && !(*it)->loaded) {
+                ScheduleImageLoadRetryOnCurrentThread(kImageRetryBaseDelayMs,
+                                                      /*reschedule=*/false);
+            }
+            return retryImage;
         }
 
         images.erase(it);
@@ -14151,6 +14843,12 @@ void SetupImageTracking(DependencyObject const& target,
     tracked->target = winrt::make_weak(target);
     tracked->sourceProperty = sourceProperty;
     tracked->uri = uri;
+    tracked->url = std::wstring(uri.RawUri());
+    tracked->cachePath = ImageCachePath(tracked->url);
+
+    if (!tracked->cachePath.empty()) {
+        QueueImageCacheSweep();
+    }
 
     try {
         tracked->decodePixelWidth = bitmapImage.DecodePixelWidth();
@@ -14163,6 +14861,34 @@ void SetupImageTracking(DependencyObject const& target,
         // one that isn't. An image which is still loading counts as missing,
         // which at worst costs a redundant download.
         tracked->loaded = bitmapImage.PixelWidth() != 0;
+
+        // The cached file when there is one, and a download asked for when
+        // there isn't.
+        auto sourceUri = ImageSourceUri(tracked);
+
+        // Assigned to the BitmapImage the style declared rather than to a new
+        // object, so that the value the element customization state knows stays
+        // the one which is applied and nothing looks like an external change.
+        // Only while the image isn't showing anything: swapping a source which
+        // is would blank its targets for the length of a load, and the file is
+        // there for the next process either way.
+        if (!tracked->loaded && !sourceUri.Equals(bitmapImage.UriSource())) {
+            bool fromCache = !sourceUri.Equals(uri);
+            Wh_Log(L"Loading %s image for: %s",
+                   fromCache ? L"cached" : L"remote", tracked->url.c_str());
+
+            // Recorded before the substitution, so that a source which was
+            // pointed at a cached file is never one no entry can be recovered
+            // from.
+            if (fromCache) {
+                g_imageCacheUriRemotes.insert_or_assign(
+                    std::wstring(sourceUri.RawUri()), uri);
+            }
+
+            bitmapImage.UriSource(sourceUri);
+        }
+
+        tracked->usingCache = !bitmapImage.UriSource().Equals(uri);
     } catch (winrt::hresult_error const& ex) {
         Wh_Log(L"Error %08X: %s", ex.code(), ex.message().c_str());
     }
@@ -14177,10 +14903,28 @@ void SetupImageTracking(DependencyObject const& target,
             return;
         }
 
-        Wh_Log(L"Image load failed for: %s, error: %s",
-               tracked->uri.RawUri().c_str(), e.ErrorMessage().c_str());
+        Wh_Log(L"Image load failed for: %s, error: %s", tracked->url.c_str(),
+               e.ErrorMessage().c_str());
 
         tracked->loaded = false;
+
+        // A cached file which doesn't decode is dropped, taking every image the
+        // URL is for back to the remote address and fetching the file once
+        // more, in case it was left incomplete, for the next process. The
+        // declared source is pointed back at the remote address by the next
+        // apply, rather than from here, so that a source isn't swapped from
+        // within the event which reports how loading it went.
+        if (tracked->usingCache) {
+            Wh_Log(L"Dropping the cached image which failed to load");
+
+            tracked->usingCache = false;
+            RejectImageCache(tracked->url);
+
+            std::error_code ec;
+            std::filesystem::remove(tracked->cachePath, ec);
+
+            QueueImageDownload(tracked->url);
+        }
 
         // Waiting for the base delay coalesces the failures of a batch of
         // images into a single round, and keeps the retries off the burst of
@@ -14197,7 +14941,7 @@ void SetupImageTracking(DependencyObject const& target,
             return;
         }
 
-        Wh_Log(L"Image loaded for: %s", tracked->uri.RawUri().c_str());
+        Wh_Log(L"Image loaded for: %s", tracked->url.c_str());
 
         tracked->loaded = true;
         tracked->retryCount = 0;
@@ -14222,6 +14966,11 @@ void SetupImageTracking(DependencyObject const& target,
 
     {
         std::lock_guard<std::mutex> lock(g_imageRetryMutex);
+
+        // Checked again, since StopImageLoadRetries runs on another thread.
+        if (g_imageRetryStopping) {
+            return nullptr;
+        }
 
         g_imageRetryActive = true;
 
@@ -14250,7 +14999,7 @@ void SetupImageTracking(DependencyObject const& target,
     }
 
     if (!registerHandler) {
-        return;
+        return nullptr;
     }
 
     winrt::event_token token = RegisterNetworkStatusChangedHandler();
@@ -14273,36 +15022,82 @@ void SetupImageTracking(DependencyObject const& target,
     if (stopped && token) {
         UnregisterNetworkStatusChangedHandler(token);
     }
+
+    return nullptr;
 }
 
 // Tracks the target if the image source is a remote URL, which can fail to
-// load and be worth retrying.
-void TrackIfRemoteImageSource(
+// load and is worth caching. Returns the image to apply in place of
+// `imageSource`, null if it's `imageSource` itself.
+Media::Imaging::BitmapImage TrackIfRemoteImageSource(
     DependencyObject const& target,
     DependencyProperty const& sourceProperty,
     winrt::Windows::Foundation::IInspectable const& imageSource) {
     auto bitmapImage = imageSource.try_as<Media::Imaging::BitmapImage>();
     if (!bitmapImage) {
-        return;
+        return nullptr;
     }
 
     auto uri = bitmapImage.UriSource();
     if (!uri) {
-        return;
+        return nullptr;
     }
 
     auto scheme = uri.SchemeName();
-    if (scheme != L"http" && scheme != L"https") {
-        return;
+    if (scheme == L"file") {
+        // A cached file which was substituted for its remote address, by which
+        // the entry is identified. A style value is shared by many targets, so
+        // the substitution a previous target's entry made is what the rest of
+        // them are given.
+        auto it = g_imageCacheUriRemotes.find(std::wstring(uri.RawUri()));
+        if (it == g_imageCacheUriRemotes.end()) {
+            return nullptr;
+        }
+
+        uri = it->second;
+    } else if (scheme != L"http" && scheme != L"https") {
+        return nullptr;
     }
 
-    SetupImageTracking(target, sourceProperty, bitmapImage, uri);
+    return SetupImageTracking(target, sourceProperty, bitmapImage, uri);
 }
 
-void SetOrClearValue(DependencyObject elementDo,
-                     DependencyProperty property,
-                     const PropertyOverrideValue& overrideValue,
-                     bool initialApply = false) {
+// Stops tracking the image which the target shows through `sourceProperty`.
+void UntrackImageTarget(DependencyObject const& target,
+                        DependencyProperty const& sourceProperty) {
+    std::erase_if(g_trackedImagesForThread.images, [&](const auto& tracked) {
+        return tracked->sourceProperty == sourceProperty &&
+               tracked->target.get() == target;
+    });
+}
+
+// Whether `value` is the image a retry assigned to the target's
+// `sourceProperty`.
+bool IsImageRetryValue(DependencyObject const& target,
+                       DependencyProperty const& sourceProperty,
+                       winrt::Windows::Foundation::IInspectable const& value) {
+    if (!value) {
+        return false;
+    }
+
+    const auto& images = g_trackedImagesForThread.images;
+    return std::any_of(images.begin(), images.end(), [&](const auto& tracked) {
+        return tracked->sourceProperty == sourceProperty &&
+               tracked->retryImage.get() == value &&
+               tracked->target.get() == target;
+    });
+}
+
+// Returns the value written, UnsetValue for a clear, so that callers can
+// record what they applied. Reading it back is not an option: while a visual
+// state has a setter on the property, ReadLocalValue keeps reporting the value
+// from before that state rather than the one written.
+winrt::Windows::Foundation::IInspectable SetOrClearValue(
+    DependencyObject elementDo,
+    DependencyProperty property,
+    const PropertyOverrideValue& overrideValue,
+    bool initialApply = false,
+    bool trackImage = true) {
     winrt::Windows::Foundation::IInspectable value;
     if (auto* inspectable =
             std::get_if<winrt::Windows::Foundation::IInspectable>(
@@ -14321,11 +15116,11 @@ void SetOrClearValue(DependencyObject elementDo,
                 winrt::hstring(blurBrushParams->fallbackThemeResourceKey));
         } else {
             Wh_Log(L"Can't get UIElement for blur brush");
-            return;
+            return nullptr;
         }
     } else {
         Wh_Log(L"Unsupported override value");
-        return;
+        return nullptr;
     }
 
     // If customized before
@@ -14351,8 +15146,7 @@ void SetOrClearValue(DependencyObject elementDo,
             Wh_Log(L"Delaying SetValue for BackgroundFill");
             auto asyncOp = elementDo.Dispatcher().TryRunAsync(
                 winrt::Windows::UI::Core::CoreDispatcherPriority::High,
-                [elementDo = std::move(elementDo),
-                 property = std::move(property), value = std::move(value)]() {
+                [elementDo, property, value]() {
                     Wh_Log(L"Running delayed SetValue for BackgroundFill");
                     g_elementPropertyModifying = true;
                     try {
@@ -14372,7 +15166,7 @@ void SetOrClearValue(DependencyObject elementDo,
                 });
             g_delayedBackgroundFillSet.emplace_back(elementDo,
                                                     std::move(asyncOp));
-            return;
+            return value;
         } else if (it != g_delayedBackgroundFillSet.end()) {
             Wh_Log(L"Canceling delayed SetValue for BackgroundFill");
             it->second.Cancel();
@@ -14387,7 +15181,7 @@ void SetOrClearValue(DependencyObject elementDo,
         } catch (winrt::hresult_error const& ex) {
             Wh_Log(L"Error %08X: %s", ex.code(), ex.message().c_str());
         }
-        return;
+        return value;
     }
 
     Wh_Log(L"Setting property value %s",
@@ -14396,18 +15190,28 @@ void SetOrClearValue(DependencyObject elementDo,
     // Track a remote image source for retry on network reconnection. A style
     // can declare one as the ImageBrush a property is set to (e.g. Background),
     // as the ImageSource of an ImageBrush it targets, or as the Source of an
-    // Image element.
-    if (auto imageBrush = value.try_as<Media::ImageBrush>()) {
-        TrackIfRemoteImageSource(imageBrush,
-                                 Media::ImageBrush::ImageSourceProperty(),
-                                 imageBrush.ImageSource());
-    } else if (auto imageBrush = elementDo.try_as<Media::ImageBrush>()) {
-        if (property == Media::ImageBrush::ImageSourceProperty()) {
-            TrackIfRemoteImageSource(imageBrush, property, value);
-        }
-    } else if (auto image = elementDo.try_as<Controls::Image>()) {
-        if (property == Controls::Image::SourceProperty()) {
-            TrackIfRemoteImageSource(image, property, value);
+    // Image element. A value being restored isn't tracked: it's the app's own,
+    // and during uninitialization tracking it would register handlers which
+    // outlive the mod.
+    if (trackImage) {
+        if (auto imageBrush = value.try_as<Media::ImageBrush>()) {
+            TrackIfRemoteImageSource(imageBrush,
+                                     Media::ImageBrush::ImageSourceProperty(),
+                                     imageBrush.ImageSource());
+        } else if (auto imageBrush = elementDo.try_as<Media::ImageBrush>()) {
+            if (property == Media::ImageBrush::ImageSourceProperty()) {
+                if (auto retryImage =
+                        TrackIfRemoteImageSource(imageBrush, property, value)) {
+                    value = retryImage;
+                }
+            }
+        } else if (auto image = elementDo.try_as<Controls::Image>()) {
+            if (property == Controls::Image::SourceProperty()) {
+                if (auto retryImage =
+                        TrackIfRemoteImageSource(image, property, value)) {
+                    value = retryImage;
+                }
+            }
         }
     }
 
@@ -14472,6 +15276,20 @@ void SetOrClearValue(DependencyObject elementDo,
     } catch (winrt::hresult_error const& ex) {
         Wh_Log(L"Error %08X: %s", ex.code(), ex.message().c_str());
     }
+
+    return value;
+}
+
+// Puts back the value the property had before the style. The target's image
+// entry goes with the style's value: a retry would put that image back, and the
+// restored image's load events would be taken for it.
+void RestoreOriginalValue(
+    DependencyObject elementDo,
+    DependencyProperty property,
+    winrt::Windows::Foundation::IInspectable const& originalValue) {
+    UntrackImageTarget(elementDo, property);
+    SetOrClearValue(elementDo, property, originalValue, /*initialApply=*/false,
+                    /*trackImage=*/false);
 }
 
 // https://stackoverflow.com/a/5665377
@@ -15108,8 +15926,16 @@ VisualStateGroup GetVisualStateGroup(FrameworkElement element,
 }
 
 // Locale-independent double formatter. Uses `std::to_chars` shortest round-trip
-// representation so XAML always sees `.` as the decimal separator.
+// representation so XAML always sees `.` as the decimal separator. Non-finite
+// values use the spellings the XAML double converter accepts (case-sensitive;
+// it rejects "-NaN").
 std::wstring FormatDoubleInvariant(double d) {
+    if (std::isnan(d)) {
+        return L"NaN";
+    }
+    if (std::isinf(d)) {
+        return d < 0 ? L"-Infinity" : L"Infinity";
+    }
     char buf[64];
     auto [end, ec] = std::to_chars(buf, buf + std::size(buf), d);
     if (ec != std::errc{}) {
@@ -15609,11 +16435,17 @@ struct StyleExpressionValue {
     bool IsNumber() const { return number.has_value(); }
 };
 
+// Thrown by a live skip() call to unwind the evaluator. Not a std::exception,
+// so a generic failure handler on the way up does not mistake it for an error.
+struct StyleVariableSkipRequested {};
+
 // Recursive-descent evaluator for `{{ ... }}` expressions. Operands: number
 // literals, backtick-delimited string literals, style variable references, and
 // parenthesized subexpressions. Operators: binary + - * /, unary - / +, the
-// comparisons < <= == >= > !=, the conditional operator cond ? a : b, and the
-// two-arg functions min(a, b) and max(a, b). Standard math precedence.
+// comparisons < <= == >= > !=, the conditional operator cond ? a : b, the
+// two-arg functions min(a, b) and max(a, b), and skip(), which throws
+// StyleVariableSkipRequested so the consuming style is left unapplied.
+// Standard math precedence.
 // Arithmetic, relational, unary-sign, and min/max operators require numeric
 // operands; == and != compare two numbers or two strings; the conditional
 // selects one of its (possibly string) branches. Evaluate() formats the result
@@ -15630,10 +16462,7 @@ class StyleVariableExpressionEvaluator {
     // Returns the text form of the result: numeric results are formatted with
     // FormatDoubleInvariant, string results are returned verbatim. Throws
     // std::runtime_error on parse / evaluation failure (including when a value
-    // is used where the grammar requires a number, or when a numeric result is
-    // non-finite -- NaN/Inf can't be formatted into XAML attributes
-    // meaningfully and would also break the consumer-equality check in
-    // SetStyleVariableIfChangedAndPropagate, since NaN != NaN).
+    // is used where the grammar requires a number).
     std::wstring Evaluate() {
         m_pos = 0;
         SkipWhitespace();
@@ -15644,10 +16473,6 @@ class StyleVariableExpressionEvaluator {
                 "Unexpected trailing characters in style variable expression");
         }
         if (v.IsNumber()) {
-            if (!std::isfinite(*v.number)) {
-                throw std::runtime_error(
-                    "Style variable expression produced a non-finite result");
-            }
             return FormatDoubleInvariant(*v.number);
         }
         return v.text;
@@ -15721,8 +16546,8 @@ class StyleVariableExpressionEvaluator {
     // Short-circuit: only the taken branch is evaluated. The untaken branch is
     // still parsed (to advance the position and enforce syntax) with m_live
     // cleared, which suppresses value-level errors (division by zero, a
-    // non-numeric / undefined variable, an unknown function) and dependency
-    // capture for that branch.
+    // non-numeric / undefined variable, an unknown function), skip(), and
+    // dependency capture for that branch.
     StyleExpressionValue ParseTernary() {
         StyleExpressionValue cond = ParseEquality();
         if (!ConsumeChar(L'?')) {
@@ -15966,6 +16791,18 @@ class StyleVariableExpressionEvaluator {
         SkipWhitespace();
         if (m_pos < m_text.size() && m_text[m_pos] == L'(') {
             m_pos++;
+            if (ident == L"skip") {
+                if (!ConsumeChar(L')')) {
+                    throw std::runtime_error(
+                        "skip() takes no arguments in style variable "
+                        "expression");
+                }
+                if (m_live) {
+                    throw StyleVariableSkipRequested{};
+                }
+                // Dead ternary branch: value discarded.
+                return StyleExpressionValue::Number(0.0);
+            }
             double a = RequireNumber(ParseExpression());
             if (!ConsumeChar(L',')) {
                 throw std::runtime_error(
@@ -16045,7 +16882,8 @@ class StyleVariableExpressionEvaluator {
 // both cause this function to return std::nullopt, at which point
 // ExpandStyleVariables aborts the whole expansion and the consuming style is
 // skipped. This matches the arithmetic path's behaviour of failing closed
-// rather than substituting a value that won't parse.
+// rather than substituting a value that won't parse. A live skip() call unwinds
+// through here as StyleVariableSkipRequested.
 std::optional<std::wstring> EvaluateStyleVariableExpression(
     std::wstring_view exprText,
     const StyleVariableLookupContext* context) {
@@ -16080,6 +16918,10 @@ std::optional<std::wstring> EvaluateStyleVariableExpression(
     try {
         StyleVariableExpressionEvaluator eval(trimmed, context);
         return eval.Evaluate();
+    } catch (StyleVariableSkipRequested const&) {
+        Wh_Log(L"skip() reached in '%.*s'; leaving style unapplied",
+               static_cast<int>(trimmed.size()), trimmed.data());
+        throw;
     } catch (std::exception const& ex) {
         Wh_Log(L"Style variable expression failed: %S (in '%.*s')", ex.what(),
                static_cast<int>(trimmed.size()), trimmed.data());
@@ -16088,7 +16930,8 @@ std::optional<std::wstring> EvaluateStyleVariableExpression(
 }
 
 // Walks the input text, repeatedly expanding the innermost `{{ ... }}`
-// substitution. Returns std::nullopt on parse failure (and logs a warning).
+// substitution. Returns std::nullopt on parse failure (and logs a warning); a
+// StyleVariableSkipRequested from an expression propagates out.
 //
 // Inner-matching rule: the first `}}` is paired with the *rightmost* `{{` that
 // precedes it. So `{{{x}}}` -> `{` + value-of-x + `}` (literal outer braces).
@@ -16221,9 +17064,11 @@ void UpdateStyleVariableConsumers(
             continue;
         }
         auto& consumers = it->second;
-        std::erase_if(consumers, [&](const StyleVariableConsumer& c) {
-            return c.elementId == elementId && c.property == property;
-        });
+        ReleaseStyleVariableElementRefs(
+            state, elementId,
+            std::erase_if(consumers, [&](const StyleVariableConsumer& c) {
+                return c.elementId == elementId && c.property == property;
+            }));
         if (consumers.empty()) {
             state->consumers.erase(it);
         }
@@ -16240,8 +17085,117 @@ void UpdateStyleVariableConsumers(
                                    });
         if (!already) {
             consumers.push_back({elementId, property, fallbackClassNameStr});
+            AddStyleVariableElementRef(state, elementId);
         }
     }
+}
+
+// Value comparison of `a` and `b` as boxes of the first struct type in
+// T, Ts... that `a` is a box of; nullopt when it is none of them.
+template <typename T, typename... Ts>
+std::optional<bool> SameBoxedStruct(
+    winrt::Windows::Foundation::IInspectable const& a,
+    winrt::Windows::Foundation::IInspectable const& b) {
+    if (auto ra = a.try_as<winrt::Windows::Foundation::IReference<T>>()) {
+        auto rb = b.try_as<winrt::Windows::Foundation::IReference<T>>();
+        return rb && ra.Value() == rb.Value();
+    }
+    if constexpr (sizeof...(Ts) > 0) {
+        return SameBoxedStruct<Ts...>(a, b);
+    } else {
+        return std::nullopt;
+    }
+}
+
+// Whether two values read from a property are the same local value. XAML boxes
+// value types anew on every read, so those compare by value: primitives and
+// enums through TryUnboxPropertyValue, then the struct types styles commonly
+// set. Any other boxed value type is taken as unchanged: adopting a value that
+// may be the mod's own would leave it in place on cleanup, the worse mistake.
+// Reference types, UnsetValue included, compare by identity.
+bool SameLocalValue(winrt::Windows::Foundation::IInspectable const& a,
+                    winrt::Windows::Foundation::IInspectable const& b) {
+    if (a == b) {
+        return true;
+    }
+    if (!a || !b) {
+        return false;
+    }
+
+    auto ua = TryUnboxPropertyValue(a);
+    auto ub = TryUnboxPropertyValue(b);
+    if (ua || ub) {
+        return ua && ub &&
+               std::visit(
+                   [](auto const& x, auto const& y) -> bool {
+                       using X = std::decay_t<decltype(x)>;
+                       if constexpr (!std::is_same_v<
+                                         X, std::decay_t<decltype(y)>>) {
+                           return false;
+                       } else if constexpr (std::is_floating_point_v<X>) {
+                           return x == y || (std::isnan(x) && std::isnan(y));
+                       } else {
+                           return x == y;
+                       }
+                   },
+                   *ua, *ub);
+    }
+
+    if (auto same = SameBoxedStruct<
+            Thickness, CornerRadius, GridLength,
+            winrt::Windows::Foundation::Point, winrt::Windows::Foundation::Size,
+            winrt::Windows::Foundation::Rect, winrt::Windows::UI::Color,
+            winrt::Windows::UI::Text::FontWeight>(a, b)) {
+        return *same;
+    }
+
+    auto isBoxedValue = [](winrt::Windows::Foundation::IInspectable const& v) {
+        return v.try_as<winrt::Windows::Foundation::IPropertyValue>() !=
+                   nullptr ||
+               std::wstring_view(winrt::get_class_name(v))
+                   .starts_with(L"Windows.Foundation.IReference`1<");
+    };
+    return isBoxedValue(a) && isBoxedValue(b);
+}
+
+// Record a write by something other than the mod as the property's pre-style
+// value. A local value still equal to the one the mod applied means nothing
+// external happened (an animation changes only the effective value), and
+// adopting the mod's own brush would make it survive cleanup and crash when
+// the DLL is unloaded. An image which a retry assigned is the mod's too.
+void AdoptExternalValueAsOriginal(
+    FrameworkElement element,
+    DependencyProperty property,
+    ElementPropertyCustomizationState* propertyCustomizationState) {
+    if (!propertyCustomizationState->customValue) {
+        return;
+    }
+    auto localValue = ReadLocalValueWithWorkaround(element, property);
+    if (!SameLocalValue(localValue,
+                        propertyCustomizationState->lastAppliedValue) &&
+        !IsImageRetryValue(element, property, localValue)) {
+        propertyCustomizationState->originalValue = localValue;
+    }
+}
+
+// Put the property back to its pre-style value and forget what was applied.
+// Leaves the dynamic template alone, so a later variable change can apply the
+// style again.
+void UnapplyStyleValue(
+    FrameworkElement element,
+    DependencyProperty property,
+    ElementPropertyCustomizationState* propertyCustomizationState) {
+    AdoptExternalValueAsOriginal(element, property, propertyCustomizationState);
+    if (propertyCustomizationState->originalValue) {
+        bool wasModifying = g_elementPropertyModifying;
+        g_elementPropertyModifying = true;
+        RestoreOriginalValue(element, property,
+                             *propertyCustomizationState->originalValue);
+        g_elementPropertyModifying = wasModifying;
+        propertyCustomizationState->originalValue.reset();
+    }
+    propertyCustomizationState->lastAppliedValue = nullptr;
+    propertyCustomizationState->customValue.reset();
 }
 
 // Re-evaluate the dynamic template stored on `propertyCustomizationState` and
@@ -16269,7 +17223,8 @@ void UpdateStyleVariableConsumers(
 // nullptr to have it looked up from `elementId`.
 //
 // Returns std::nullopt if the state has no template, expansion failed, or XAML
-// resolution failed.
+// resolution failed. A skip() in the rule body also yields std::nullopt, after
+// putting the property back to its original value.
 std::optional<PropertyOverrideValue> ResolveDynamicStyleValue(
     StyleVariableState* state,
     ElementId elementId,
@@ -16298,12 +17253,26 @@ std::optional<PropertyOverrideValue> ResolveDynamicStyleValue(
 
     std::vector<StyleVariableDependency> newDeps;
     StyleVariableLookupContext context{state, consumerNode, &newDeps};
-    auto expanded = ExpandStyleVariables(tmpl.rawValue, &context);
+    std::optional<std::wstring> expanded;
+    bool skipped = false;
+    try {
+        expanded = ExpandStyleVariables(tmpl.rawValue, &context);
+    } catch (StyleVariableSkipRequested const&) {
+        skipped = true;
+    }
 
     UpdateStyleVariableConsumers(
         state, elementId, property, fallbackClassName,
         propertyCustomizationState->variableDependencies, newDeps);
     propertyCustomizationState->variableDependencies = std::move(newDeps);
+
+    if (skipped) {
+        // Every variable that decides whether skip() is reached was read
+        // before it, so targeted propagation still reaches this property.
+        propertyCustomizationState->lastResolveFailed = false;
+        UnapplyStyleValue(element, property, propertyCustomizationState);
+        return std::nullopt;
+    }
 
     if (!expanded) {
         propertyCustomizationState->lastResolveFailed = true;
@@ -16430,6 +17399,8 @@ void PropagateStyleVariableChangeCore(StyleVariableState* state,
             if (!resolved) {
                 continue;
             }
+            AdoptExternalValueAsOriginal(element, consumer.property,
+                                         &propState);
             if (!propState.originalValue) {
                 propState.originalValue =
                     ReadLocalValueWithWorkaround(element, consumer.property);
@@ -16438,9 +17409,8 @@ void PropagateStyleVariableChangeCore(StyleVariableState* state,
 
             bool wasModifying = g_elementPropertyModifying;
             g_elementPropertyModifying = true;
-            SetOrClearValue(element, consumer.property, *resolved);
             propState.lastAppliedValue =
-                ReadLocalValueWithWorkaround(element, consumer.property);
+                SetOrClearValue(element, consumer.property, *resolved);
             g_elementPropertyModifying = wasModifying;
         }
     }
@@ -16503,6 +17473,16 @@ void PropagateStyleVariableChange(StyleVariableState* state,
     }
 }
 
+// std::optional<double>'s operator== follows IEEE (NaN != NaN), which would
+// report a NaN capture such as Height=Auto as changed on every re-read.
+bool SameNumericValue(const std::optional<double>& a,
+                      const std::optional<double>& b) {
+    if (a.has_value() != b.has_value()) {
+        return false;
+    }
+    return !a || *a == *b || (std::isnan(*a) && std::isnan(*b));
+}
+
 // Store a capture's freshly read value and notify dependents if it changed.
 // The comparison is against this capture's own previous value: comparing
 // against whichever capture currently wins would silently drop a second
@@ -16529,7 +17509,7 @@ void SetStyleVariableIfChangedAndPropagate(StyleVariableState* state,
     }
 
     if (it->value.stringForm == value.stringForm &&
-        it->value.numeric == value.numeric &&
+        SameNumericValue(it->value.numeric, value.numeric) &&
         it->value.substitutable == value.substitutable) {
         Wh_Log(L"Style variable '%s' unchanged at '%s'", varName.c_str(),
                value.stringForm.c_str());
@@ -16619,6 +17599,7 @@ void SetUpCapturesForElement(StyleVariableState* state,
             capture.varName.c_str(), winrt::get_class_name(element).c_str(),
             value.stringForm.c_str(), capturesForVar.size());
         capturesForVar.push_back({elementId, std::move(value)});
+        AddStyleVariableElementRef(state, elementId);
 
         seededVarNames.push_back(capture.varName);
 
@@ -16706,6 +17687,79 @@ void RestoreCapturesForElement(FrameworkElement element,
     }
 }
 
+// Take an element's captures out of the registry, returning the names they were
+// under. Other elements may still capture the same names, so a name only
+// becomes undefined once its last capture is gone.
+std::vector<std::wstring> WithdrawCapturesForElement(
+    StyleVariableState* state,
+    ElementId elementId,
+    const ElementCustomizationState& elementState) {
+    std::vector<std::wstring> varNames;
+
+    for (const auto& [property, captureState] :
+         elementState.captureCustomizationStates) {
+        if (captureState.varName.empty()) {
+            continue;
+        }
+
+        auto varIt = state->variables.find(captureState.varName);
+        if (varIt == state->variables.end()) {
+            continue;
+        }
+
+        size_t removed = std::erase_if(
+            varIt->second, [elementId](const StyleVariableCapture& capture) {
+                return capture.elementId == elementId;
+            });
+        if (!removed) {
+            continue;
+        }
+
+        ReleaseStyleVariableElementRefs(state, elementId, removed);
+
+        varNames.push_back(captureState.varName);
+        if (varIt->second.empty()) {
+            state->variables.erase(varIt);
+        }
+    }
+
+    return varNames;
+}
+
+// Put back the captures WithdrawCapturesForElement took out, returning the
+// names they're under. Values are read afresh: the capture callbacks drop
+// changes for a capture that isn't in the registry.
+std::vector<std::wstring> RepublishCapturesForElement(
+    StyleVariableState* state,
+    ElementId elementId,
+    FrameworkElement element,
+    const ElementCustomizationState& elementState) {
+    std::vector<std::wstring> varNames;
+
+    for (const auto& [property, captureState] :
+         elementState.captureCustomizationStates) {
+        if (captureState.varName.empty()) {
+            continue;
+        }
+
+        auto& captures = state->variables[captureState.varName];
+        if (std::any_of(captures.begin(), captures.end(),
+                        [elementId](const StyleVariableCapture& capture) {
+                            return capture.elementId == elementId;
+                        })) {
+            continue;
+        }
+
+        captures.push_back(
+            {elementId, ReadCapturedStyleVariableValue(element, property)});
+        AddStyleVariableElementRef(state, elementId);
+
+        varNames.push_back(captureState.varName);
+    }
+
+    return varNames;
+}
+
 void ApplyCustomizationsForVisualStateGroup(
     StyleVariableState* state,
     ElementId elementId,
@@ -16756,10 +17810,8 @@ void ApplyCustomizationsForVisualStateGroup(
                 propertyCustomizationState.originalValue =
                     ReadLocalValueWithWorkaround(element, property);
                 propertyCustomizationState.customValue = *resolved;
-                SetOrClearValue(element, property, *resolved,
-                                /*initialApply=*/true);
-                propertyCustomizationState.lastAppliedValue =
-                    ReadLocalValueWithWorkaround(element, property);
+                propertyCustomizationState.lastAppliedValue = SetOrClearValue(
+                    element, property, *resolved, /*initialApply=*/true);
             }
         }
 
@@ -16781,28 +17833,17 @@ void ApplyCustomizationsForVisualStateGroup(
                         return;
                     }
 
-                    auto localValue =
-                        ReadLocalValueWithWorkaround(element, property);
-
-                    // Only update originalValue if the local value was changed
-                    // externally (e.g. by a Setter). When an animation changes
-                    // only the effective value, the local value still matches
-                    // what we set, so updating originalValue would corrupt it
-                    // with our own brush - causing the brush to survive cleanup
-                    // and crash when the mod's DLL is unloaded.
-                    if (localValue !=
-                        propertyCustomizationState.lastAppliedValue) {
-                        propertyCustomizationState.originalValue = localValue;
-                    }
+                    AdoptExternalValueAsOriginal(element, property,
+                                                 &propertyCustomizationState);
 
                     Wh_Log(L"Re-applying style for %s",
                            winrt::get_class_name(element).c_str());
 
                     g_elementPropertyModifying = true;
-                    SetOrClearValue(element, property,
-                                    *propertyCustomizationState.customValue);
                     propertyCustomizationState.lastAppliedValue =
-                        ReadLocalValueWithWorkaround(element, property);
+                        SetOrClearValue(
+                            element, property,
+                            *propertyCustomizationState.customValue);
                     g_elementPropertyModifying = false;
                 });
     }
@@ -16893,6 +17934,9 @@ void ApplyCustomizationsForVisualStateGroup(
                             }
 
                             if (resolved) {
+                                AdoptExternalValueAsOriginal(
+                                    element, property,
+                                    &propertyCustomizationState);
                                 if (!propertyCustomizationState.originalValue) {
                                     propertyCustomizationState.originalValue =
                                         ReadLocalValueWithWorkaround(element,
@@ -16901,10 +17945,9 @@ void ApplyCustomizationsForVisualStateGroup(
 
                                 propertyCustomizationState.customValue =
                                     *resolved;
-                                SetOrClearValue(element, property, *resolved);
                                 propertyCustomizationState.lastAppliedValue =
-                                    ReadLocalValueWithWorkaround(element,
-                                                                 property);
+                                    SetOrClearValue(element, property,
+                                                    *resolved);
                             }
                         } else {
                             if (propertyCustomizationState.dynamicTemplate) {
@@ -16919,17 +17962,8 @@ void ApplyCustomizationsForVisualStateGroup(
                                 propertyCustomizationState.dynamicTemplate
                                     .reset();
                             }
-                            if (propertyCustomizationState.originalValue) {
-                                SetOrClearValue(
-                                    element, property,
-                                    *propertyCustomizationState.originalValue);
-                                propertyCustomizationState.originalValue
-                                    .reset();
-                            }
-                            propertyCustomizationState.lastAppliedValue =
-                                nullptr;
-
-                            propertyCustomizationState.customValue.reset();
+                            UnapplyStyleValue(element, property,
+                                              &propertyCustomizationState);
                         }
                     }
 
@@ -16946,6 +17980,22 @@ void RestoreCustomizationsForVisualStateGroup(
         visualStateGroupOptionalWeakPtr,
     const ElementCustomizationStateForVisualStateGroup&
         elementCustomizationStateForVisualStateGroup) {
+    // Before the properties are restored, so that a visual state change which
+    // restoring one causes can't apply the style again.
+    auto visualStateGroupIter = visualStateGroupOptionalWeakPtr
+                                    ? visualStateGroupOptionalWeakPtr->get()
+                                    : nullptr;
+    if (visualStateGroupIter && elementCustomizationStateForVisualStateGroup
+                                    .visualStateGroupCurrentStateChangedToken) {
+        try {
+            visualStateGroupIter.CurrentStateChanged(
+                elementCustomizationStateForVisualStateGroup
+                    .visualStateGroupCurrentStateChangedToken);
+        } catch (winrt::hresult_error const& ex) {
+            Wh_Log(L"Error %08X: %s", ex.code(), ex.message().c_str());
+        }
+    }
+
     if (element) {
         for (const auto& [property, propState] :
              elementCustomizationStateForVisualStateGroup
@@ -16965,7 +18015,8 @@ void RestoreCustomizationsForVisualStateGroup(
             }
 
             if (propState.originalValue) {
-                SetOrClearValue(element, property, *propState.originalValue);
+                RestoreOriginalValue(element, property,
+                                     *propState.originalValue);
             }
         }
     } else {
@@ -16980,20 +18031,6 @@ void RestoreCustomizationsForVisualStateGroup(
                                              propState.variableDependencies,
                                              {});
             }
-        }
-    }
-
-    auto visualStateGroupIter = visualStateGroupOptionalWeakPtr
-                                    ? visualStateGroupOptionalWeakPtr->get()
-                                    : nullptr;
-    if (visualStateGroupIter && elementCustomizationStateForVisualStateGroup
-                                    .visualStateGroupCurrentStateChangedToken) {
-        try {
-            visualStateGroupIter.CurrentStateChanged(
-                elementCustomizationStateForVisualStateGroup
-                    .visualStateGroupCurrentStateChangedToken);
-        } catch (winrt::hresult_error const& ex) {
-            Wh_Log(L"Error %08X: %s", ex.code(), ex.message().c_str());
         }
     }
 }
@@ -17122,26 +18159,6 @@ void UpdateClickThroughRegion(ClickThroughTaskbarState& state) {
     appendRect(signature, taskbarFrameRect);
     appendRect(signature, systemTrayFrameRect);
 
-    // Skip the redundant SetWindowRgn (and the redraw it forces) only when the
-    // desired region is unchanged AND the window still carries the region we
-    // applied. Toggling auto-hide makes Explorer reset the taskbar window
-    // region without any XAML layout change, so a matching signature alone
-    // doesn't prove our region is still in effect.
-    if (signature == state.lastRegionSignature) {
-        RECT currentRgnBox;
-        if (GetWindowRgnBox(topLevelWnd, &currentRgnBox) != ERROR &&
-            EqualRect(&currentRgnBox, &state.lastAppliedRgnBox)) {
-            return;
-        }
-    }
-
-    // Convert DIP rects to physical pixels in top-level window coordinates. The
-    // island client origin and the window rect are both physical/screen pixels,
-    // so multiplying DIPs by the rasterization scale keeps everything
-    // DPI-consistent.
-    POINT islandOrigin = {0, 0};
-    ClientToScreen(state.islandHwnd, &islandOrigin);
-
     RECT tlRect;
     if (!GetWindowRect(topLevelWnd, &tlRect)) {
         Wh_Log(L"GetWindowRect failed for %08X", (DWORD)(ULONG_PTR)topLevelWnd);
@@ -17150,6 +18167,47 @@ void UpdateClickThroughRegion(ClickThroughTaskbarState& state) {
 
     int tlWidth = tlRect.right - tlRect.left;
     int tlHeight = tlRect.bottom - tlRect.top;
+
+    RECT currentRgnBox;
+    bool hasRgn = GetWindowRgnBox(topLevelWnd, &currentRgnBox) != ERROR;
+    auto appliedRgnBoxIt = g_clickThroughAppliedRgnBoxes.find(topLevelWnd);
+    bool rgnIsOurs = hasRgn &&
+                     appliedRgnBoxIt != g_clickThroughAppliedRgnBoxes.end() &&
+                     EqualRect(&currentRgnBox, &appliedRgnBoxIt->second);
+
+    // Explorer clips the taskbar window through the very same window region:
+    // TaskbarController::UpdateHostWindowClip narrows it to the collapsed
+    // extent while the tablet taskbar is folded, and that narrowed window is
+    // what keeps the fold from being expanded by a pointer anywhere along the
+    // taskbar. Our region can't stand in for it, since the frames stay laid out
+    // at the expanded size (the fold is a composition transform), so replacing
+    // it would widen the hover area rather than narrow it. Only take the window
+    // over when nothing else is clipping it: no region, or the full-window one
+    // Explorer sets when it isn't narrowing anything.
+    if (hasRgn && !rgnIsOurs) {
+        RECT fullRgnBox = {0, 0, tlWidth, tlHeight};
+        if (!EqualRect(&currentRgnBox, &fullRgnBox)) {
+            Wh_Log(L"Leaving the region of %08X to its owner",
+                   (DWORD)(ULONG_PTR)topLevelWnd);
+            return;
+        }
+    }
+
+    // Skip the redundant SetWindowRgn (and the redraw it forces) only when the
+    // desired region is unchanged AND the window still carries the region we
+    // applied. Toggling auto-hide makes Explorer reset the taskbar window
+    // region without any XAML layout change, so a matching signature alone
+    // doesn't prove our region is still in effect.
+    if (signature == state.lastRegionSignature && rgnIsOurs) {
+        return;
+    }
+
+    // Convert DIP rects to physical pixels in top-level window coordinates. The
+    // island client origin and the window rect are both physical/screen pixels,
+    // so multiplying DIPs by the rasterization scale keeps everything
+    // DPI-consistent.
+    POINT islandOrigin = {0, 0};
+    ClientToScreen(state.islandHwnd, &islandOrigin);
 
     auto toWindowRect =
         [&](winrt::Windows::Foundation::Rect const& dip) -> RECT {
@@ -17193,7 +18251,7 @@ void UpdateClickThroughRegion(ClickThroughTaskbarState& state) {
     g_applyingClickThroughRegion = false;
     if (applied) {
         state.lastRegionSignature = std::move(signature);
-        state.lastAppliedRgnBox = rgnBox;
+        g_clickThroughAppliedRgnBoxes[topLevelWnd] = rgnBox;
     } else {
         Wh_Log(L"SetWindowRgn failed for %08X", (DWORD)(ULONG_PTR)topLevelWnd);
         DeleteObject(rgn);
@@ -17234,6 +18292,7 @@ LRESULT CALLBACK ClickThroughTaskbarSubclassProc(HWND hWnd,
 
         case WM_NCDESTROY:
             g_clickThroughSubclassedWindows.erase(hWnd);
+            g_clickThroughAppliedRgnBoxes.erase(hWnd);
             break;
     }
 
@@ -17363,71 +18422,143 @@ void HandleClickThroughIslandRoot(
     }
 }
 
-// Remove click-through regions from every taskbar window on the current thread,
-// restoring the normal rectangular windows. Unconditional, so it cleans up even
-// if per-XamlRoot tracking is stale.
+// Remove the click-through regions applied by the mod from the taskbar windows
+// on the current thread, restoring the normal rectangular windows. A region
+// other than the one recorded as applied is Explorer's own clip (see
+// UpdateClickThroughRegion) and is left in place.
 void ClearClickThroughRegions() {
-    EnumThreadWindows(
-        GetCurrentThreadId(),
-        [](HWND hWnd, LPARAM) -> BOOL {
-            if (IsTaskbarTopLevelWindow(hWnd)) {
-                SetWindowRgn(hWnd, nullptr, TRUE);
-            }
-            return TRUE;
-        },
-        0);
+    for (const auto& [topLevelWnd, appliedRgnBox] :
+         g_clickThroughAppliedRgnBoxes) {
+        // Stale if the window was destroyed with no subclass attached to drop
+        // the record; the handle may have been reused since.
+        if (!IsTaskbarTopLevelWindow(topLevelWnd)) {
+            continue;
+        }
+
+        RECT currentRgnBox;
+        if (GetWindowRgnBox(topLevelWnd, &currentRgnBox) == ERROR ||
+            !EqualRect(&currentRgnBox, &appliedRgnBox)) {
+            continue;
+        }
+
+        SetWindowRgn(topLevelWnd, nullptr, TRUE);
+    }
+    ResetThreadLocal(g_clickThroughAppliedRgnBoxes);
 }
 
 // Explorer never erases the taskbar window: Shell_TrayWnd,
 // Shell_SecondaryTrayWnd and their legacy children all use a NULL class brush,
-// so whatever is drawn into the window's redirection surface stays there for
-// the window's lifetime. An opaque taskbar background hides it, a see-through
-// style doesn't, and it shows as solid boxes behind the taskbar.
-// RDW_ALLCHILDREN is what makes the invalidation reach the area under the XAML
-// island, which is where the leftovers sit; with a NULL brush nothing is drawn
-// back, so the surface lands at fully transparent again.
-void ResetTaskbarWindowSurfaces() {
+// and nothing paints into them, so whatever DWM leaves in the window's
+// redirection surface stays there for the window's lifetime. The surface is
+// normally all zeros, which composites as fully transparent, but a
+// reallocation - a mode or display change, a fullscreen transition - can leave
+// opaque white in it. An opaque taskbar background hides that, a see-through
+// style doesn't, and it shows as white boxes behind the taskbar.
+//
+// Filling the window black puts the surface back to zeros: GDI leaves the
+// alpha channel at zero, so the fill composites as transparent rather than as
+// an opaque black bar. Invalidating instead does nothing, since the NULL brush
+// means the erase draws nothing over the leftovers. The DC must come from
+// GetDCEx without DCX_CLIPCHILDREN, or the fill is clipped away entirely - the
+// XAML island covers the whole window, and the leftovers sit underneath it.
+void ResetTaskbarWindowSurface(HWND hWnd) {
+    RECT rect;
+    if (!GetWindowRect(hWnd, &rect)) {
+        return;
+    }
+
+    HDC hdc = GetDCEx(hWnd, nullptr, DCX_WINDOW | DCX_CACHE);
+    if (!hdc) {
+        Wh_Log(L"GetDCEx failed for %08X", (DWORD)(ULONG_PTR)hWnd);
+        return;
+    }
+
+    RECT fillRect = {0, 0, rect.right - rect.left, rect.bottom - rect.top};
+    FillRect(hdc, &fillRect, (HBRUSH)GetStockObject(BLACK_BRUSH));
+
+    ReleaseDC(hWnd, hdc);
+}
+
+thread_local std::unordered_set<HWND> g_taskbarSurfaceSubclassedWindows;
+
+// A reallocation invalidates the window, so the fill rides the paint which
+// follows it. The fill can't be left to that paint: every DC it hands out is
+// clipped to what the child windows leave uncovered, and the XAML island
+// leaves nothing.
+LRESULT CALLBACK TaskbarSurfaceSubclassProc(HWND hWnd,
+                                            UINT uMsg,
+                                            WPARAM wParam,
+                                            LPARAM lParam,
+                                            DWORD_PTR) {
+    switch (uMsg) {
+        case WM_PAINT:
+            ResetTaskbarWindowSurface(hWnd);
+            break;
+
+        case WM_NCDESTROY:
+            g_taskbarSurfaceSubclassedWindows.erase(hWnd);
+            break;
+    }
+
+    return DefSubclassProc(hWnd, uMsg, wParam, lParam);
+}
+
+// Idempotent, so a window reached both by creation and by the sweep below is
+// only subclassed once.
+void EnsureTaskbarSurfaceSubclass(HWND hWnd) {
+    if (g_taskbarSurfaceSubclassedWindows.contains(hWnd)) {
+        return;
+    }
+
+    if (!WindhawkUtils::SetWindowSubclassFromAnyThread(
+            hWnd, TaskbarSurfaceSubclassProc, 0)) {
+        return;
+    }
+
+    g_taskbarSurfaceSubclassedWindows.insert(hWnd);
+
+    // Leftovers already in the surface don't invalidate the window, so no
+    // paint would come to fill on.
+    ResetTaskbarWindowSurface(hWnd);
+}
+
+// Covers the taskbars which already exist when the mod is enabled. Later ones
+// are subclassed as they are created.
+void EnsureTaskbarSurfaceSubclasses() {
     EnumThreadWindows(
         GetCurrentThreadId(),
         [](HWND hWnd, LPARAM) -> BOOL {
             if (IsTaskbarTopLevelWindow(hWnd)) {
-                RedrawWindow(hWnd, nullptr, nullptr,
-                             RDW_INVALIDATE | RDW_ALLCHILDREN);
+                EnsureTaskbarSurfaceSubclass(hWnd);
             }
+
             return TRUE;
         },
         0);
 }
 
-thread_local ULONGLONG g_lastTaskbarSurfaceResetQueueTick;
-thread_local bool g_taskbarSurfaceResetPending;
-
-// Long enough to sit out a tree being built.
-constexpr ULONGLONG kTaskbarSurfaceResetDelay = 2000;
-
-// Driven by the next report rather than by a timer, like the diagnostics
-// releases: a thread which goes quiet holds its last reset until it is used
-// again. The redraw is left asynchronous so that it rides the next paint cycle
-// instead of painting from inside a tree report.
-void ResetTaskbarSurfacesIfQuiet() {
-    ULONGLONG tick = GetTickCount64();
-
-    if (g_taskbarSurfaceResetPending &&
-        tick - g_lastTaskbarSurfaceResetQueueTick >=
-            kTaskbarSurfaceResetDelay) {
-        g_taskbarSurfaceResetPending = false;
-        ResetTaskbarWindowSurfaces();
-    }
-
-    g_taskbarSurfaceResetPending = true;
-    g_lastTaskbarSurfaceResetQueueTick = tick;
-}
-
-// Item elements the current virtualization pass tore down, consumed by the
+// Item elements the current virtualization pass recycled, consumed by the
 // matching ElementPrepared. A freshly created element is prepared without ever
 // having been cleared, and its Add mutation already applied the styles, so
 // re-matching it would restore and re-push every value for nothing.
 thread_local std::unordered_set<ElementId> g_recycledElements;
+
+// The item each element was last matched against, which lets a reuse for that
+// same item be left alone. A layout can realize elements during measure only to
+// ask for their size and recycle them again during arrange, so an element is
+// cleared and handed straight back for the same item on every layout pass.
+// Re-matching there sets dependency properties from inside the pass, which
+// dirties layout and schedules another one, and layout never settles: XAML
+// gives up after enough passes and fails the process with a layout cycle.
+//
+// A boxed value is recorded by value, since a source can box it anew on every
+// read. Anything else is recorded by a weak reference, so that a destroyed item
+// can't be mistaken for a successor at the same address, which would leave an
+// element wearing the styles matched for its predecessor.
+using RepeaterItem =
+    std::variant<winrt::weak_ref<wf::IInspectable>, UnboxedPropertyValue>;
+
+thread_local std::unordered_map<ElementId, RepeaterItem> g_elementMatchedItems;
 
 struct VirtualizingRepeaterState {
     muxc::ItemsRepeater::ElementClearing_revoker elementClearingRevoker;
@@ -17458,11 +18589,11 @@ ElementId ElementIdFromElement(FrameworkElement const& element) {
     }
 }
 
-// Tear down and, when `applying`, re-match every element of a subtree. The
-// whole subtree is revisited rather than only its root, since a rule can match
-// a descendant through a condition on an ancestor, and descendants of a reused
-// element get no mutation of their own.
-void ReapplyCustomizationsForSubtree(FrameworkElement element, bool applying) {
+// Tear down and re-match every element of a subtree. The whole subtree is
+// revisited rather than only its root, since a rule can match a descendant
+// through a condition on an ancestor, and descendants of a reused element get
+// no mutation of their own.
+void ReapplyCustomizationsForSubtree(FrameworkElement element) {
     // Caught per element, both because these run from a layout pass the caller
     // can't fail, and so that one element's failure doesn't skip the rest of
     // the subtree.
@@ -17470,10 +18601,8 @@ void ReapplyCustomizationsForSubtree(FrameworkElement element, bool applying) {
         if (auto elementId = ElementIdFromElement(element);
             elementId != ElementId::None) {
             CleanupCustomizations(elementId);
-            if (applying) {
-                auto className = winrt::get_class_name(element);
-                ApplyCustomizations(elementId, element, className.c_str());
-            }
+            auto className = winrt::get_class_name(element);
+            ApplyCustomizations(elementId, element, className.c_str());
         }
     } catch (winrt::hresult_error const& ex) {
         Wh_Log(L"Error %08X: %s", ex.code(), ex.message().c_str());
@@ -17496,12 +18625,208 @@ void ReapplyCustomizationsForSubtree(FrameworkElement element, bool applying) {
     }
 
     for (const auto& child : children) {
-        ReapplyCustomizationsForSubtree(child, applying);
+        ReapplyCustomizationsForSubtree(child);
     }
 }
 
+// The item a repeater realized an element for, nullopt when there is no such
+// item or it is neither a boxed value nor supports a weak reference.
+std::optional<RepeaterItem> RepeaterItemAt(muxc::ItemsRepeater const& repeater,
+                                           int index) {
+    try {
+        auto itemsSourceView = repeater.ItemsSourceView();
+        if (!itemsSourceView || index < 0 || index >= itemsSourceView.Count()) {
+            return std::nullopt;
+        }
+
+        auto item = itemsSourceView.GetAt(index);
+        if (auto value = TryUnboxPropertyValue(item)) {
+            return RepeaterItem{std::move(*value)};
+        }
+
+        if (auto weakItem = TryMakeWeak(item)) {
+            return RepeaterItem{std::move(weakItem)};
+        }
+
+        return std::nullopt;
+    } catch (winrt::hresult_error const& ex) {
+        Wh_Log(L"Error %08X: %s", ex.code(), ex.message().c_str());
+        return std::nullopt;
+    }
+}
+
+// Never true for a destroyed item.
+bool SameRepeaterItem(RepeaterItem const& a, RepeaterItem const& b) {
+    using WeakItem = winrt::weak_ref<wf::IInspectable>;
+    if (auto* weakA = std::get_if<WeakItem>(&a)) {
+        auto* weakB = std::get_if<WeakItem>(&b);
+        auto strongA = weakA->get();
+        return weakB && strongA && strongA == weakB->get();
+    }
+
+    auto* valueB = std::get_if<UnboxedPropertyValue>(&b);
+    return valueB && std::get<UnboxedPropertyValue>(a) == *valueB;
+}
+
+// Whether the element is in an item element a repeater holds without having it
+// realized, i.e. one sitting in its recycle pool.
+bool IsInRecycledRepeaterItem(FrameworkElement element) {
+    try {
+        DependencyObject child = element;
+        while (child) {
+            auto parent = Media::VisualTreeHelper::GetParent(child);
+            if (auto repeater = parent.try_as<muxc::ItemsRepeater>()) {
+                if (repeater.GetElementIndex(child.as<UIElement>()) < 0) {
+                    return true;
+                }
+            }
+
+            child = std::move(parent);
+        }
+    } catch (winrt::hresult_error const& ex) {
+        Wh_Log(L"Error %08X: %s", ex.code(), ex.message().c_str());
+    }
+
+    return false;
+}
+
+thread_local bool g_recycledItemCapturesRefreshQueued;
+thread_local winrt::Windows::System::DispatcherQueueTimer
+    g_recycledItemCapturesRefreshTimer{nullptr};
+thread_local winrt::Windows::System::DispatcherQueueTimer::Tick_revoker
+    g_recycledItemCapturesRefreshTimerTickRevoker;
+
+// The captures of an element in a recycled repeater item are withdrawn, as if
+// the item was removed: the recycle pool keeps the item in the tree, out of
+// sight, and its captures would keep publishing the values they last saw. This
+// runs once layout is done rather than on each clear and prepare, since a
+// layout can clear an element and hand it straight back within a pass, and
+// flipping the captures there would restyle their consumers on every pass.
+void RefreshRecycledItemCaptures() {
+    g_recycledItemCapturesRefreshQueued = false;
+
+    // Propagating runs arbitrary XAML work, which can re-enter and reap.
+    StyleVariableStatePin statePin;
+
+    for (auto& state : g_styleVariableState) {
+        std::vector<ElementId> owners(state.withdrawnCaptureOwners.begin(),
+                                      state.withdrawnCaptureOwners.end());
+        for (const auto& [varName, captures] : state.variables) {
+            for (const auto& capture : captures) {
+                owners.push_back(capture.elementId);
+            }
+        }
+
+        std::sort(owners.begin(), owners.end());
+        owners.erase(std::unique(owners.begin(), owners.end()), owners.end());
+
+        std::vector<std::wstring> changedVarNames;
+        for (ElementId owner : owners) {
+            auto it = g_elementsCustomizationState.find(owner);
+            if (it == g_elementsCustomizationState.end()) {
+                continue;
+            }
+
+            auto& elementState = it->second;
+            auto element = elementState.element.get();
+            if (!element) {
+                continue;
+            }
+
+            bool withdrawn = state.withdrawnCaptureOwners.contains(owner);
+            if (IsInRecycledRepeaterItem(element) == withdrawn) {
+                continue;
+            }
+
+            std::vector<std::wstring> varNames;
+            if (withdrawn) {
+                Wh_Log(L"Republishing captures of %llu",
+                       static_cast<uint64_t>(owner));
+                varNames = RepublishCapturesForElement(&state, owner, element,
+                                                       elementState);
+                state.withdrawnCaptureOwners.erase(owner);
+            } else {
+                Wh_Log(L"Withdrawing captures of %llu",
+                       static_cast<uint64_t>(owner));
+                varNames =
+                    WithdrawCapturesForElement(&state, owner, elementState);
+                state.withdrawnCaptureOwners.insert(owner);
+            }
+
+            changedVarNames.insert(changedVarNames.end(), varNames.begin(),
+                                   varNames.end());
+        }
+
+        std::sort(changedVarNames.begin(), changedVarNames.end());
+        changedVarNames.erase(
+            std::unique(changedVarNames.begin(), changedVarNames.end()),
+            changedVarNames.end());
+
+        for (const auto& varName : changedVarNames) {
+            PropagateStyleVariableChange(&state, varName, std::nullopt);
+        }
+    }
+}
+
+// Armed from inside a layout pass, and the timer carries the refresh out of it.
+void QueueRecycledItemCapturesRefresh() {
+    if (g_recycledItemCapturesRefreshQueued) {
+        return;
+    }
+
+    if (std::none_of(g_styleVariableState.begin(), g_styleVariableState.end(),
+                     [](const StyleVariableState& state) {
+                         return !state.variables.empty() ||
+                                !state.withdrawnCaptureOwners.empty();
+                     })) {
+        return;
+    }
+
+    try {
+        if (!g_recycledItemCapturesRefreshTimer) {
+            auto dispatcherQueue =
+                winrt::Windows::System::DispatcherQueue::GetForCurrentThread();
+            if (!dispatcherQueue) {
+                Wh_Log(L"No dispatcher queue, recycled item captures stay");
+                return;
+            }
+
+            g_recycledItemCapturesRefreshTimer = dispatcherQueue.CreateTimer();
+            g_recycledItemCapturesRefreshTimer.IsRepeating(false);
+            g_recycledItemCapturesRefreshTimer.Interval(
+                std::chrono::milliseconds{1});
+            g_recycledItemCapturesRefreshTimerTickRevoker =
+                g_recycledItemCapturesRefreshTimer.Tick(
+                    winrt::auto_revoke,
+                    [](winrt::Windows::System::DispatcherQueueTimer const&,
+                       winrt::Windows::Foundation::IInspectable const&) {
+                        RefreshRecycledItemCaptures();
+                    });
+        }
+
+        g_recycledItemCapturesRefreshTimer.Start();
+        g_recycledItemCapturesRefreshQueued = true;
+    } catch (winrt::hresult_error const& ex) {
+        Wh_Log(L"Error %08X: %s", ex.code(), ex.message().c_str());
+    }
+}
+
+void StopRecycledItemCapturesRefresh() {
+    if (g_recycledItemCapturesRefreshTimer) {
+        try {
+            g_recycledItemCapturesRefreshTimer.Stop();
+        } catch (winrt::hresult_error const& ex) {
+            Wh_Log(L"Error %08X: %s", ex.code(), ex.message().c_str());
+        }
+    }
+
+    g_recycledItemCapturesRefreshTimerTickRevoker.revoke();
+    g_recycledItemCapturesRefreshTimer = nullptr;
+    g_recycledItemCapturesRefreshQueued = false;
+}
+
 // A virtualizing container recycles its item elements instead of destroying
-// them: the recycle pool collapses the element and leaves it parented, so XAML
+// them: the recycle pool keeps the element parented, out of sight, so XAML
 // diagnostics reports no Remove/Add mutation and the styles matched for the
 // previous item would stay on the element once it's reused for another one.
 // Treat a cleared element as removed and a prepared one as newly added.
@@ -17519,43 +18844,90 @@ void HandleVirtualizingRepeater(ElementId elementId, FrameworkElement element) {
         winrt::auto_revoke,
         [](muxc::ItemsRepeater const&,
            muxc::ItemsRepeaterElementClearingEventArgs const& args) {
+            // Ahead of the early returns: the item's descendants can hold
+            // captures even when the item itself has no id.
+            QueueRecycledItemCapturesRefresh();
+
             auto element = args.Element().try_as<FrameworkElement>();
             if (!element) {
                 return;
             }
 
             auto elementId = ElementIdFromElement(element);
-            if (elementId != ElementId::None) {
-                Wh_Log(L"Element cleared: %llu",
-                       static_cast<uint64_t>(elementId));
+            if (elementId == ElementId::None) {
+                return;
             }
 
-            ReapplyCustomizationsForSubtree(element, /*applying=*/false);
+            Wh_Log(L"Element cleared: %llu", static_cast<uint64_t>(elementId));
 
-            // After the walk, which erases the id as part of the teardown.
-            if (elementId != ElementId::None) {
-                g_recycledElements.insert(elementId);
-            }
+            // Nothing is restored here. Whether the styles still apply depends
+            // on the item the element is handed back for, which only the
+            // matching ElementPrepared knows, and until then they sit on an
+            // element the recycle pool keeps out of sight.
+            g_recycledElements.insert(elementId);
         });
 
     state.elementPreparedRevoker = repeater.ElementPrepared(
         winrt::auto_revoke,
-        [](muxc::ItemsRepeater const&,
+        [](muxc::ItemsRepeater const& sender,
            muxc::ItemsRepeaterElementPreparedEventArgs const& args) {
+            QueueRecycledItemCapturesRefresh();
+
             auto element = args.Element().try_as<FrameworkElement>();
             if (!element) {
                 return;
             }
 
             auto elementId = ElementIdFromElement(element);
-            if (elementId == ElementId::None ||
-                !g_recycledElements.erase(elementId)) {
+            if (elementId == ElementId::None) {
                 return;
+            }
+
+            auto item = RepeaterItemAt(sender, args.Index());
+
+            // Held across the walk below, so that an item which no weak
+            // reference can get back, such as one a source wraps anew on every
+            // read, is never recorded: an entry which could match nothing would
+            // keep the element held for good.
+            wf::IInspectable strongItem;
+            if (item) {
+                if (auto* weakItem =
+                        std::get_if<winrt::weak_ref<wf::IInspectable>>(
+                            &*item)) {
+                    strongItem = weakItem->get();
+                    if (!strongItem) {
+                        item.reset();
+                    }
+                }
+            }
+
+            if (!g_recycledElements.erase(elementId)) {
+                // Freshly created, so the styles its Add mutation applied are
+                // the ones for this item, and only the item is recorded.
+                if (item) {
+                    g_elementMatchedItems[elementId] = std::move(*item);
+                }
+                return;
+            }
+
+            if (item) {
+                auto it = g_elementMatchedItems.find(elementId);
+                if (it != g_elementMatchedItems.end() &&
+                    SameRepeaterItem(it->second, *item)) {
+                    Wh_Log(L"Element reused for the same item: %llu",
+                           static_cast<uint64_t>(elementId));
+                    return;
+                }
             }
 
             Wh_Log(L"Element reused: %llu", static_cast<uint64_t>(elementId));
 
-            ReapplyCustomizationsForSubtree(element, /*applying=*/true);
+            ReapplyCustomizationsForSubtree(element);
+
+            // After the walk, which erases the entry as part of the teardown.
+            if (item) {
+                g_elementMatchedItems[elementId] = std::move(*item);
+            }
         });
 }
 
@@ -17632,6 +19004,12 @@ void ApplyCustomizations(ElementId elementId,
     SetUpCapturesForElement(state, elementId, element, resolved.captures,
                             &elementCustomizationState);
 
+    // The element may be in an item already sitting in a recycle pool, which
+    // no clear will be reported for.
+    if (!resolved.captures.empty()) {
+        QueueRecycledItemCapturesRefresh();
+    }
+
     for (auto& [visualStateGroup, overridesForVisualStateGroup] :
          resolved.overridesPerVSG) {
         std::optional<winrt::weak_ref<VisualStateGroup>>
@@ -17668,9 +19046,19 @@ void ApplyCustomizations(ElementId elementId,
 thread_local std::vector<InstanceHandle> g_pendingDiagnosticsRelease;
 thread_local ULONGLONG g_lastDiagnosticsReleaseQueueTick;
 thread_local bool g_diagnosticsReleaseDrainQueued;
+thread_local winrt::Windows::System::DispatcherQueueTimer
+    g_diagnosticsReleaseDrainTimer{nullptr};
+thread_local winrt::Windows::System::DispatcherQueueTimer::Tick_revoker
+    g_diagnosticsReleaseDrainTimerTickRevoker;
 
 // Long enough to sit out a tree being built.
 constexpr ULONGLONG kDiagnosticsReleaseDelay = 200;
+
+// The drain waits on a one-shot timer, which the thread teardown can stop,
+// rather than on a dispatcher item, which it cannot: the module is freed once
+// the mod is uninitialized, and an item still on the dispatcher would call into
+// it. The interval only has to carry the drain out of the report which arms it.
+constexpr ULONGLONG kDiagnosticsReleaseDrainDelay = 1;
 
 // Releasing an element the mod still records something for would strand that
 // recording, since no removal is reported for a handle whose runtime object is
@@ -17687,25 +19075,14 @@ bool ElementHasState(ElementId elementId) {
 
     if (g_elementsCustomizationState.contains(elementId) ||
         g_virtualizingRepeaters.contains(elementId) ||
-        g_recycledElements.contains(elementId)) {
+        g_recycledElements.contains(elementId) ||
+        g_elementMatchedItems.contains(elementId)) {
         return true;
     }
 
     for (const auto& state : g_styleVariableState) {
-        for (const auto& [varName, captures] : state.variables) {
-            for (const auto& capture : captures) {
-                if (capture.elementId == elementId) {
-                    return true;
-                }
-            }
-        }
-
-        for (const auto& [varName, consumers] : state.consumers) {
-            for (const auto& consumer : consumers) {
-                if (consumer.elementId == elementId) {
-                    return true;
-                }
-            }
+        if (state.elementRefs.contains(elementId)) {
+            return true;
         }
     }
 
@@ -17722,7 +19099,8 @@ void FlushDiagnosticsReleases() {
     auto pending = std::move(g_pendingDiagnosticsRelease);
     g_pendingDiagnosticsRelease.clear();
 
-    if (!g_visualTreeWatcher) {
+    auto visualTreeWatcher = GetVisualTreeWatcher();
+    if (!visualTreeWatcher) {
         return;
     }
 
@@ -17736,10 +19114,16 @@ void FlushDiagnosticsReleases() {
             continue;
         }
 
-        if (g_visualTreeWatcher->ReleaseDiagnosticsReference(handle)) {
+        if (visualTreeWatcher->ReleaseDiagnosticsReference(handle)) {
             ForgetElementId(handle);
         }
     }
+
+    // Here rather than anywhere else on the report path: the releases above are
+    // what let elements be destroyed unreported, and this runs from the
+    // dispatcher, so the teardown of what they were keyed by is outside the
+    // walk the reports came from.
+    ReapDeadElementIdsIfNeeded();
 }
 
 void QueueDiagnosticsRelease(InstanceHandle handle) {
@@ -17751,30 +19135,24 @@ void QueueDiagnosticsRelease(InstanceHandle handle) {
     g_lastDiagnosticsReleaseQueueTick = GetTickCount64();
 }
 
+// Whether the burst has stopped is decided when this is scheduled: the report
+// which schedules it queues its own handles right afterwards, so the time since
+// the last queue is short again by the time this runs.
 void DrainDiagnosticsReleases() {
     g_diagnosticsReleaseDrainQueued = false;
-
-    // Reports kept arriving while this sat on the queue, so the burst this was
-    // meant to sit out is still going. The report which queued them schedules
-    // the next drain.
-    if (GetTickCount64() - g_lastDiagnosticsReleaseQueueTick <
-        kDiagnosticsReleaseDelay) {
-        return;
-    }
-
     FlushDiagnosticsReleases();
 }
 
 // Reports arrive from inside XAML's own Enter and Leave walks, and a release
 // there re-enters the diagnostics while the tree is being mutated: dropping the
 // last reference to an element the walk is still visiting destroys it mid-walk.
-// The drain is therefore handed to the thread's dispatcher, which runs it once
+// The drain is therefore armed on the thread's dispatcher, which runs it once
 // the walk has finished.
 //
-// Scheduling is still driven by the next report rather than by a timer, so that
-// nothing of the mod is left waiting on a thread it does not tear down. A
-// thread which goes quiet therefore holds its last burst until it is used
-// again.
+// Whether to arm it is decided by the next report rather than by a recurring
+// timer, so that nothing of the mod is left waiting on a thread it does not
+// tear down. A thread which goes quiet therefore holds its last burst until it
+// is used again.
 void FlushDiagnosticsReleasesIfQuiet() {
     if (g_pendingDiagnosticsRelease.empty() ||
         g_diagnosticsReleaseDrainQueued ||
@@ -17783,23 +19161,50 @@ void FlushDiagnosticsReleasesIfQuiet() {
         return;
     }
 
-    auto dispatcherQueue =
-        winrt::Windows::System::DispatcherQueue::GetForCurrentThread();
-    if (!dispatcherQueue) {
-        // Releasing from here is the one thing that isn't safe, so the elements
-        // stay held instead.
-        Wh_Log(L"No dispatcher queue, elements will be held");
-        return;
-    }
+    try {
+        if (!g_diagnosticsReleaseDrainTimer) {
+            auto dispatcherQueue =
+                winrt::Windows::System::DispatcherQueue::GetForCurrentThread();
+            if (!dispatcherQueue) {
+                // Releasing from here is the one thing that isn't safe, so the
+                // elements stay held instead.
+                Wh_Log(L"No dispatcher queue, elements will be held");
+                return;
+            }
 
-    g_diagnosticsReleaseDrainQueued =
-        dispatcherQueue.TryEnqueue(DrainDiagnosticsReleases);
+            g_diagnosticsReleaseDrainTimer = dispatcherQueue.CreateTimer();
+            g_diagnosticsReleaseDrainTimer.IsRepeating(false);
+            g_diagnosticsReleaseDrainTimer.Interval(
+                std::chrono::milliseconds{kDiagnosticsReleaseDrainDelay});
+            g_diagnosticsReleaseDrainTimerTickRevoker =
+                g_diagnosticsReleaseDrainTimer.Tick(
+                    winrt::auto_revoke,
+                    [](winrt::Windows::System::DispatcherQueueTimer const&,
+                       winrt::Windows::Foundation::IInspectable const&) {
+                        DrainDiagnosticsReleases();
+                    });
+        }
+
+        g_diagnosticsReleaseDrainTimer.Start();
+        g_diagnosticsReleaseDrainQueued = true;
+    } catch (winrt::hresult_error const& ex) {
+        Wh_Log(L"Error %08X: %s", ex.code(), ex.message().c_str());
+    }
 }
 
 void StopDiagnosticsReleases() {
-    g_pendingDiagnosticsRelease.clear();
+    ResetThreadLocal(g_pendingDiagnosticsRelease);
 
-    // A drain already on the dispatcher still runs, and finds nothing to do.
+    if (g_diagnosticsReleaseDrainTimer) {
+        try {
+            g_diagnosticsReleaseDrainTimer.Stop();
+        } catch (winrt::hresult_error const& ex) {
+            Wh_Log(L"Error %08X: %s", ex.code(), ex.message().c_str());
+        }
+    }
+
+    g_diagnosticsReleaseDrainTimerTickRevoker.revoke();
+    g_diagnosticsReleaseDrainTimer = nullptr;
     g_diagnosticsReleaseDrainQueued = false;
 }
 
@@ -17808,6 +19213,7 @@ void CleanupCustomizations(ElementId elementId) {
     // no customization state but can still have virtualization bookkeeping.
     g_virtualizingRepeaters.erase(elementId);
     g_recycledElements.erase(elementId);
+    g_elementMatchedItems.erase(elementId);
 
     auto it = g_elementsCustomizationState.find(elementId);
     if (it == g_elementsCustomizationState.end()) {
@@ -17831,37 +19237,13 @@ void CleanupCustomizations(ElementId elementId) {
 
     RestoreCapturesForElement(element, elementCustomizationState);
 
-    // Drop this element's captures from the registry. Other elements may still
-    // capture the same names, so a name only becomes undefined once its last
-    // capture is gone. Runs after RestoreCapturesForElement so the
-    // just-unregistered capture callbacks can't re-seed a variable
-    // mid-teardown.
+    // After RestoreCapturesForElement so the just-unregistered capture
+    // callbacks can't re-seed a variable mid-teardown.
     std::vector<std::wstring> removedVarNames;
     if (state) {
-        for (const auto& [property, captureState] :
-             elementCustomizationState.captureCustomizationStates) {
-            if (captureState.varName.empty()) {
-                continue;
-            }
-
-            auto varIt = state->variables.find(captureState.varName);
-            if (varIt == state->variables.end()) {
-                continue;
-            }
-
-            if (!std::erase_if(
-                    varIt->second,
-                    [elementId](const StyleVariableCapture& capture) {
-                        return capture.elementId == elementId;
-                    })) {
-                continue;
-            }
-
-            removedVarNames.push_back(captureState.varName);
-            if (varIt->second.empty()) {
-                state->variables.erase(varIt);
-            }
-        }
+        removedVarNames = WithdrawCapturesForElement(state, elementId,
+                                                     elementCustomizationState);
+        state->withdrawnCaptureOwners.erase(elementId);
     }
 
     for (const auto& [visualStateGroupOptionalWeakPtrIter, stateIter] :
@@ -18166,7 +19548,7 @@ std::wstring AdjustTypeName(std::wstring_view type) {
             {L"systemtray:", L"SystemTray."},
             {L"udk:", L"WindowsUdk.UI.Shell."},
             {L"muxc:", L"Microsoft.UI.Xaml.Controls."},
-        };
+    };
 
     for (const auto& adjustment : adjustments) {
         if (type.starts_with(adjustment.first)) {
@@ -18886,7 +20268,7 @@ void UninitializeResourceVariables() {
         g_colorValuesChangedToken = {};
     }
     g_uiSettings = nullptr;
-    g_resourceVariables.clear();
+    ResetThreadLocal(g_resourceVariables);
 
     // Restore original resource values.
     auto resources = Application::Current().Resources();
@@ -18898,7 +20280,7 @@ void UninitializeResourceVariables() {
             Wh_Log(L"Error %08X", hr);
         }
     }
-    g_originalResourceValues.clear();
+    ResetThreadLocal(g_originalResourceValues);
 
     // Remove our merged theme dictionary.
     if (g_resourceVariablesThemeDict) {
@@ -18920,16 +20302,18 @@ void UninitializeForCurrentThread() {
         WindhawkUtils::RemoveWindowSubclassFromAnyThread(
             hWnd, ClickThroughTaskbarSubclassProc);
     }
-    g_clickThroughSubclassedWindows.clear();
+    ResetThreadLocal(g_clickThroughSubclassedWindows);
+
+    for (HWND hWnd : g_taskbarSurfaceSubclassedWindows) {
+        WindhawkUtils::RemoveWindowSubclassFromAnyThread(
+            hWnd, TaskbarSurfaceSubclassProc);
+    }
+    ResetThreadLocal(g_taskbarSurfaceSubclassedWindows);
 
     // Restore taskbars clipped for click-through, then drop tracking (revokers
-    // auto-unhook LayoutUpdated). Skip the region reset when nothing was
-    // tracked, to avoid an unnecessary taskbar redraw on unrelated settings
-    // changes.
-    if (!g_clickThroughTaskbarState.empty()) {
-        ClearClickThroughRegions();
-        g_clickThroughTaskbarState.clear();
-    }
+    // auto-unhook LayoutUpdated).
+    ClearClickThroughRegions();
+    g_clickThroughTaskbarState.clear();
     g_clickThroughIslandRoots.clear();
 
     // Clear tracked images for this thread (revokers will automatically
@@ -18945,6 +20329,7 @@ void UninitializeForCurrentThread() {
     g_trackedImagesForThread.retryTimer = nullptr;
     g_trackedImagesForThread.retryDueTick = 0;
     g_trackedImagesForThread.images.clear();
+    ResetThreadLocal(g_imageCacheUriRemotes);
     StopImageLoadRetriesForCurrentThread();
 
     for (const auto& [elementDo, asyncOp] : g_delayedBackgroundFillSet) {
@@ -18957,11 +20342,21 @@ void UninitializeForCurrentThread() {
     // half-cleared state, and no pending release can consult state which is
     // being cleared.
     StopDiagnosticsReleases();
-    g_virtualizingRepeaters.clear();
-    g_recycledElements.clear();
+    StopRecycledItemCapturesRefresh();
+    ResetThreadLocal(g_virtualizingRepeaters);
+    ResetThreadLocal(g_recycledElements);
+    ResetThreadLocal(g_elementMatchedItems);
+
+    // Detached from the global before being walked: restoring a value runs
+    // arbitrary XAML work, and whatever it re-enters looks its elements up in
+    // g_elementsCustomizationState. Walking a map nothing else can reach keeps
+    // a re-entrant insert or erase from invalidating this loop, and leaving the
+    // global empty makes those lookups miss, which is what teardown wants.
+    auto elementsCustomizationState = std::move(g_elementsCustomizationState);
+    g_elementsCustomizationState.clear();
 
     for (const auto& [elementId, elementCustomizationState] :
-         g_elementsCustomizationState) {
+         elementsCustomizationState) {
         auto element = elementCustomizationState.element.get();
         auto* state = GetStyleVariableState(elementCustomizationState.xamlRoot);
 
@@ -18977,27 +20372,29 @@ void UninitializeForCurrentThread() {
 
     // Before g_elementTreeNodes, since the states hold the last strong refs to
     // the spine nodes.
-    g_elementsCustomizationState.clear();
-    g_elementTreeNodes.clear();
+    elementsCustomizationState.clear();
+    ResetThreadLocal(g_elementTreeNodes);
     g_elementTreeNodesReapThreshold = 64;
-    g_pendingStyleVariablePropagations.clear();
+    ResetThreadLocal(g_pendingStyleVariablePropagations);
     g_styleVariableState.clear();
 
     // After everything keyed by an id. g_lastElementId keeps counting, since an
     // id must never name two elements.
-    g_elementIds.clear();
+    ResetThreadLocal(g_elementIds);
+    g_elementIdsReapThreshold = 64;
 
-    g_elementsCustomizationRules.clear();
+    ResetThreadLocal(g_elementsCustomizationRules);
 
     UninitializeResourceVariables();
+
+    g_noiseStream = nullptr;
 
     g_initializedForThread = false;
 }
 
 void UninitializeSettingsAndTap() {
-    if (g_visualTreeWatcher) {
-        g_visualTreeWatcher->UnadviseVisualTreeChange();
-        g_visualTreeWatcher = nullptr;
+    if (auto watcher = ExchangeVisualTreeWatcher(nullptr)) {
+        watcher->UnadviseVisualTreeChange();
     }
 
     g_initialized = false;
@@ -19007,6 +20404,8 @@ void InitializeForCurrentThread() {
     if (g_initializedForThread) {
         return;
     }
+
+    EnsureTaskbarSurfaceSubclasses();
 
     ProcessAllStylesFromSettings();
 
@@ -19081,6 +20480,13 @@ void OnWindowCreated(HWND hWnd,
                      LPCWSTR lpClassName,
                      PCSTR funcName) {
     BOOL bTextualClassName = ((ULONG_PTR)lpClassName & ~(ULONG_PTR)0xffff) != 0;
+
+    // Only on an initialized thread, since teardown only visits those and a
+    // subclass left behind would outlive the mod. A taskbar created before its
+    // thread is initialized is picked up by the sweep there.
+    if (g_initializedForThread && IsTaskbarTopLevelWindow(hWnd)) {
+        EnsureTaskbarSurfaceSubclass(hWnd);
+    }
 
     WCHAR className[64];
     if (hWndParent && GetClassName(hWnd, className, ARRAYSIZE(className)) &&
@@ -19462,7 +20868,7 @@ bool StartStatsTimer() {
     static constexpr WCHAR kStatsBaseUrl[] =
         L"https://github.com/ramensoftware/"
         L"windows-11-taskbar-styling-guide/"
-        L"releases/download/stats-v5/";
+        L"releases/download/stats-v6/";
 
     ULONGLONG lastStatsTime = 0;
     Wh_GetBinaryValue(L"statsTimerLastTime", &lastStatsTime,
@@ -19693,6 +21099,8 @@ void Wh_ModUninit() {
     }
 
     StopStatsTimer();
+
+    StopImageDownloads();
 
     // Before the UI threads are uninitialized, so that a retry can't be
     // scheduled on a thread which is being uninitialized.

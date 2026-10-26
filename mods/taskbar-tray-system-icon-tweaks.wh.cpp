@@ -2,7 +2,7 @@
 // @id              taskbar-tray-system-icon-tweaks
 // @name            Taskbar tray system icon tweaks
 // @description     Allows hiding system icons: volume, network, battery, microphone, location/GPS, Studio Effects, Recall, language bar, bell (always or when there are no new notifications), and the "Show desktop" button (hide or set width)
-// @version         1.3
+// @version         1.3.1
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
@@ -75,15 +75,17 @@ Only Windows 11 is supported.
 
 #include <windhawk_utils.h>
 
+#include <algorithm>
 #include <atomic>
 #include <functional>
-#include <limits>
 #include <list>
+#include <optional>
 #include <string>
 #include <vector>
 
 #undef GetCurrentTime
 
+#include <winrt/Windows.Foundation.h>
 #include <winrt/Windows.UI.Core.h>
 #include <winrt/Windows.UI.Xaml.Automation.h>
 #include <winrt/Windows.UI.Xaml.Controls.h>
@@ -122,7 +124,9 @@ using FrameworkElementLoadedEventRevoker = winrt::impl::event_revoker<
     IFrameworkElement,
     &winrt::impl::abi<IFrameworkElement>::type::remove_Loaded>;
 
-std::list<FrameworkElementLoadedEventRevoker> g_autoRevokerList;
+[[clang::no_destroy]] std::optional<
+    std::list<FrameworkElementLoadedEventRevoker>> g_autoRevokerList{
+    std::in_place};
 
 winrt::weak_ref<Controls::TextBlock> g_mainStackInnerTextBlock;
 int64_t g_mainStackTextChangedToken;
@@ -130,13 +134,27 @@ int64_t g_mainStackTextChangedToken;
 winrt::weak_ref<FrameworkElement> g_bellSystemTrayIconElement;
 int64_t g_bellAutomationNameChangedToken;
 
+winrt::weak_ref<FrameworkElement> g_controlCenterStackPanel;
+winrt::event_token g_controlCenterStackPanelSizeChangedToken;
+
 struct BatteryTextBlockState {
     winrt::weak_ref<Controls::TextBlock> textBlock;
     Media::Brush savedForeground{nullptr};
     int64_t foregroundChangedToken{0};
 };
 
-std::vector<BatteryTextBlockState> g_batteryTextBlockStates;
+[[clang::no_destroy]] std::optional<std::vector<BatteryTextBlockState>>
+    g_batteryTextBlockStates{std::in_place};
+
+// Local MinWidth/MaxWidth values replaced by the show desktop width override,
+// nullopt for a property that had no local value.
+struct ShowDesktopWidthState {
+    winrt::weak_ref<FrameworkElement> element;
+    std::optional<double> savedMinWidth;
+    std::optional<double> savedMaxWidth;
+};
+
+std::vector<ShowDesktopWidthState> g_showDesktopWidthStates;
 
 HWND FindCurrentProcessTaskbarWnd() {
     HWND hTaskbarWnd = nullptr;
@@ -549,7 +567,7 @@ void ApplyMainStackIconViewStyle(FrameworkElement notifyIconViewElement) {
         g_mainStackTextChangedToken =
             innerTextBlock.RegisterPropertyChangedCallback(
                 Controls::TextBlock::TextProperty(),
-                [notifyIconViewElementWeakRef, &shouldHide](
+                [notifyIconViewElementWeakRef, shouldHide](
                     DependencyObject sender, DependencyProperty property) {
                     auto innerTextBlock = sender.try_as<Controls::TextBlock>();
                     if (!innerTextBlock) {
@@ -659,12 +677,12 @@ void ApplyBatteryIconGrayscaleStyle(FrameworkElement batteryIconContent) {
     bool grayscale = !g_unloading && g_settings.grayscaleBatteryIcon;
 
     // Drop any state for TextBlocks that no longer exist.
-    std::erase_if(g_batteryTextBlockStates, [](const BatteryTextBlockState& s) {
-        return !s.textBlock.get();
-    });
+    std::erase_if(
+        *g_batteryTextBlockStates,
+        [](const BatteryTextBlockState& s) { return !s.textBlock.get(); });
 
     // Nothing to apply and nothing to restore - skip the tree traversal.
-    if (!grayscale && g_batteryTextBlockStates.empty()) {
+    if (!grayscale && g_batteryTextBlockStates->empty()) {
         return;
     }
 
@@ -688,13 +706,13 @@ void ApplyBatteryIconGrayscaleStyle(FrameworkElement batteryIconContent) {
             return false;
         }
 
-        auto it = g_batteryTextBlockStates.begin();
-        for (; it != g_batteryTextBlockStates.end(); ++it) {
+        auto it = g_batteryTextBlockStates->begin();
+        for (; it != g_batteryTextBlockStates->end(); ++it) {
             if (it->textBlock.get() == textBlock) {
                 break;
             }
         }
-        bool managed = (it != g_batteryTextBlockStates.end());
+        bool managed = (it != g_batteryTextBlockStates->end());
 
         if (grayscale && !managed) {
             auto localForeground =
@@ -725,7 +743,7 @@ void ApplyBatteryIconGrayscaleStyle(FrameworkElement batteryIconContent) {
                         if (!fg) {
                             return;
                         }
-                        for (auto& s : g_batteryTextBlockStates) {
+                        for (auto& s : *g_batteryTextBlockStates) {
                             if (s.textBlock.get() == tb) {
                                 s.savedForeground = fg;
                                 break;
@@ -734,7 +752,7 @@ void ApplyBatteryIconGrayscaleStyle(FrameworkElement batteryIconContent) {
                         tb.as<DependencyObject>().ClearValue(
                             Controls::TextBlock::ForegroundProperty());
                     });
-            g_batteryTextBlockStates.push_back(std::move(state));
+            g_batteryTextBlockStates->push_back(std::move(state));
             textBlock.as<DependencyObject>().ClearValue(
                 Controls::TextBlock::ForegroundProperty());
         } else if (!grayscale && managed) {
@@ -742,10 +760,90 @@ void ApplyBatteryIconGrayscaleStyle(FrameworkElement batteryIconContent) {
                 Controls::TextBlock::ForegroundProperty(),
                 it->foregroundChangedToken);
             textBlock.Foreground(it->savedForeground);
-            g_batteryTextBlockStates.erase(it);
+            g_batteryTextBlockStates->erase(it);
         }
         return false;
     });
+}
+
+void SetItemContainerMargin(FrameworkElement container,
+                            double before,
+                            double after,
+                            bool vertical) {
+    if (before == 0 && after == 0) {
+        container.ClearValue(FrameworkElement::MarginProperty());
+    } else if (vertical) {
+        container.Margin(Thickness{0, before, 0, after});
+    } else {
+        container.Margin(Thickness{before, 0, after, 0});
+    }
+}
+
+// A hidden icon keeps its (empty) item container in the panel, and the panel
+// adds Spacing for every child regardless of visibility or size. Cancel the
+// extra spacing with negative margins on the neighboring visible items, and
+// hide the button if all icons are hidden.
+void UpdateControlCenterButtonStackPanel(FrameworkElement stackPanel) {
+    double spacing = 0;
+    bool vertical = false;
+    if (auto panel = stackPanel.try_as<Controls::StackPanel>()) {
+        spacing = panel.Spacing();
+        vertical = panel.Orientation() == Controls::Orientation::Vertical;
+    }
+
+    // Margins are assigned once the next visible item (or the end) is known,
+    // so that the trailing hidden items can be folded into the after margin.
+    FrameworkElement pendingContainer = nullptr;
+    double pendingBefore = 0;
+    int hiddenRun = 0;
+
+    EnumChildElements(stackPanel, [&](FrameworkElement child) {
+        auto childClassName = winrt::get_class_name(child);
+        if (childClassName != L"Windows.UI.Xaml.Controls.ContentPresenter") {
+            Wh_Log(L"Unsupported class name %s of child",
+                   childClassName.c_str());
+            return false;
+        }
+
+        auto systemTrayIconElement = FindChildByName(child, L"SystemTrayIcon")
+                                         .try_as<Controls::Control>();
+        if (!systemTrayIconElement) {
+            Wh_Log(L"Failed to get SystemTrayIcon of child");
+            return false;
+        }
+
+        if (!systemTrayIconElement.IsEnabled()) {
+            hiddenRun++;
+            return false;
+        }
+
+        if (pendingContainer) {
+            SetItemContainerMargin(pendingContainer, pendingBefore, 0,
+                                   vertical);
+        }
+
+        pendingContainer = child;
+        pendingBefore = -spacing * hiddenRun;
+        hiddenRun = 0;
+        return false;
+    });
+
+    if (pendingContainer) {
+        SetItemContainerMargin(pendingContainer, pendingBefore,
+                               -spacing * hiddenRun, vertical);
+    }
+
+    // The button template has some width of its own (e.g. the background
+    // border margins), so an empty panel alone doesn't make it disappear.
+    FrameworkElement controlCenterButton =
+        GetParentElementByName(stackPanel, L"ControlCenterButton");
+    if (!controlCenterButton) {
+        Wh_Log(L"Failed to get ControlCenterButton");
+        return;
+    }
+
+    controlCenterButton.Visibility(pendingContainer ? Visibility::Visible
+                                                    : Visibility::Collapsed);
 }
 
 void ApplyControlCenterButtonIconStyle(FrameworkElement systemTrayIconElement) {
@@ -820,19 +918,18 @@ void ApplyControlCenterButtonIconStyle(FrameworkElement systemTrayIconElement) {
 
     bool hidden =
         systemTrayTextIconContent.Visibility() == Visibility::Collapsed;
-    if (hide == hidden) {
-        return;
+    if (hide != hidden) {
+        systemTrayTextIconContent.Visibility(hide ? Visibility::Collapsed
+                                                  : Visibility::Visible);
+        if (auto control = systemTrayIconElement.try_as<Controls::Control>()) {
+            control.IsEnabled(!hide);
+        } else {
+            Wh_Log(L"Failed");
+        }
     }
 
-    systemTrayTextIconContent.Visibility(hide ? Visibility::Collapsed
-                                              : Visibility::Visible);
-    if (auto control = systemTrayIconElement.try_as<Controls::Control>()) {
-        control.IsEnabled(!hide);
-    } else {
-        Wh_Log(L"Failed");
-    }
-
-    // If all icons are hidden, hide container as well.
+    // The layout depends on the siblings too, e.g. a newly added visible icon
+    // must show the button even if this icon's own state is unchanged.
     FrameworkElement parent = systemTrayIconElement;
     if ((parent = Media::VisualTreeHelper::GetParent(parent)
                       .try_as<FrameworkElement>()) &&
@@ -842,36 +939,26 @@ void ApplyControlCenterButtonIconStyle(FrameworkElement systemTrayIconElement) {
                       .try_as<FrameworkElement>()) &&
         winrt::get_class_name(parent) ==
             L"Windows.UI.Xaml.Controls.StackPanel") {
-        FrameworkElement stackPanel = parent;
-        bool anyEnabledChild = false;
-        EnumChildElements(
-            stackPanel, [&anyEnabledChild](FrameworkElement child) {
-                auto childClassName = winrt::get_class_name(child);
-                if (childClassName !=
-                    L"Windows.UI.Xaml.Controls.ContentPresenter") {
-                    Wh_Log(L"Unsupported class name %s of child",
-                           childClassName.c_str());
-                    return false;
-                }
+        // Removing an item container changes the panel size, which is the
+        // only signal that the margins of the remaining items are stale.
+        if (!g_unloading && !g_controlCenterStackPanel.get()) {
+            g_controlCenterStackPanel = parent;
+            g_controlCenterStackPanelSizeChangedToken = parent.SizeChanged(
+                [](winrt::Windows::Foundation::IInspectable const& sender,
+                   SizeChangedEventArgs const& e) {
+                    Wh_Log(L">");
 
-                auto systemTrayIconElement =
-                    FindChildByName(child, L"SystemTrayIcon")
-                        .try_as<Controls::Control>();
-                if (!systemTrayIconElement) {
-                    Wh_Log(L"Failed to get SystemTrayIcon of child");
-                    return false;
-                }
+                    auto stackPanel = sender.try_as<FrameworkElement>();
+                    if (!stackPanel) {
+                        Wh_Log(L"Failed to get sender");
+                        return;
+                    }
 
-                if (!systemTrayIconElement.IsEnabled()) {
-                    return false;
-                }
+                    UpdateControlCenterButtonStackPanel(stackPanel);
+                });
+        }
 
-                anyEnabledChild = true;
-                return true;
-            });
-
-        stackPanel.Visibility(anyEnabledChild ? Visibility::Visible
-                                              : Visibility::Collapsed);
+        UpdateControlCenterButtonStackPanel(parent);
     } else {
         Wh_Log(L"Failed");
     }
@@ -886,7 +973,7 @@ void ApplyBellIconStyleWithRetry(FrameworkElement systemTrayIconElement,
                                  int attempt) {
     Wh_Log(L"> %d", attempt);
 
-    if (attempt == 10) {
+    if (attempt == 10 || g_unloading) {
         return;
     }
 
@@ -1024,7 +1111,40 @@ void ApplyBellIconStyle(FrameworkElement systemTrayIconElement) {
     }
 }
 
+// MinWidth/MaxWidth take precedence over an explicit Width, so they override
+// the width without having to replace the Width value itself. The local values
+// are saved the first time an element is seen, for restoring in ApplySettings.
+void OverrideShowDesktopWidth(FrameworkElement element, double width) {
+    bool managed = false;
+    for (const auto& state : g_showDesktopWidthStates) {
+        if (state.element.get() == element) {
+            managed = true;
+            break;
+        }
+    }
+
+    if (!managed) {
+        g_showDesktopWidthStates.push_back({
+            .element = element,
+            .savedMinWidth =
+                element.ReadLocalValue(FrameworkElement::MinWidthProperty())
+                    .try_as<double>(),
+            .savedMaxWidth =
+                element.ReadLocalValue(FrameworkElement::MaxWidthProperty())
+                    .try_as<double>(),
+        });
+    }
+
+    element.MinWidth(width);
+    element.MaxWidth(width);
+}
+
 void ApplyShowDesktopStyle(FrameworkElement systemTrayIconElement) {
+    if (g_unloading) {
+        // Restored in ApplySettings.
+        return;
+    }
+
     auto showDesktopStack =
         GetParentElementByName(systemTrayIconElement, L"ShowDesktopStack");
     if (!showDesktopStack) {
@@ -1032,38 +1152,25 @@ void ApplyShowDesktopStyle(FrameworkElement systemTrayIconElement) {
         return;
     }
 
-    if (g_unloading) {
-        Wh_Log(L"Show desktop button, setting default width");
+    // Drop any state for elements that no longer exist.
+    std::erase_if(g_showDesktopWidthStates, [](const ShowDesktopWidthState& s) {
+        return !s.element.get();
+    });
 
-        auto systemTrayIconElementDP =
-            systemTrayIconElement.as<DependencyObject>();
-        systemTrayIconElementDP.ClearValue(
-            FrameworkElement::MinWidthProperty());
-        systemTrayIconElementDP.ClearValue(
-            FrameworkElement::MaxWidthProperty());
+    int width = g_settings.showDesktopButtonWidth;
+    Wh_Log(L"Show desktop button, width=%d", width);
 
-        auto showDesktopStackDP = showDesktopStack.as<DependencyObject>();
-        showDesktopStackDP.ClearValue(FrameworkElement::MinWidthProperty());
-        showDesktopStackDP.ClearValue(FrameworkElement::MaxWidthProperty());
+    OverrideShowDesktopWidth(systemTrayIconElement, width);
+    OverrideShowDesktopWidth(showDesktopStack, width);
+
+    // The container grid has an explicit width, which keeps its content at the
+    // default size regardless of the width of the icon view.
+    auto containerGrid =
+        FindChildByName(systemTrayIconElement, L"ContainerGrid");
+    if (containerGrid) {
+        OverrideShowDesktopWidth(containerGrid, width);
     } else {
-        int width = g_settings.showDesktopButtonWidth;
-        Wh_Log(L"Show desktop button, width=%d", width);
-
-        systemTrayIconElement.MinWidth(width);
-        systemTrayIconElement.MaxWidth(width);
-        showDesktopStack.MinWidth(width);
-        showDesktopStack.MaxWidth(width);
-
-        auto containerGrid =
-            FindChildByName(systemTrayIconElement, L"ContainerGrid");
-        if (containerGrid) {
-            // The container grid has an explicit width, which keeps its content
-            // at the default size regardless of the width of the icon view. Set
-            // it to Auto to have it fill the icon view.
-            containerGrid.Width(std::numeric_limits<double>::quiet_NaN());
-        } else {
-            Wh_Log(L"Failed to get ContainerGrid");
-        }
+        Wh_Log(L"Failed to get ContainerGrid");
     }
 }
 
@@ -1323,6 +1430,12 @@ void* WINAPI IconView_IconView_Hook(void* pThis) {
 
     void* ret = IconView_IconView_Original(pThis);
 
+    // A new icon view has nothing to restore, and the revoker list is released
+    // while unloading.
+    if (g_unloading) {
+        return ret;
+    }
+
     FrameworkElement iconView = nullptr;
     ((IUnknown**)pThis)[1]->QueryInterface(winrt::guid_of<FrameworkElement>(),
                                            winrt::put_abi(iconView));
@@ -1330,8 +1443,8 @@ void* WINAPI IconView_IconView_Hook(void* pThis) {
         return ret;
     }
 
-    g_autoRevokerList.emplace_back();
-    auto autoRevokerIt = g_autoRevokerList.end();
+    g_autoRevokerList->emplace_back();
+    auto autoRevokerIt = g_autoRevokerList->end();
     --autoRevokerIt;
 
     *autoRevokerIt = iconView.Loaded(
@@ -1340,7 +1453,7 @@ void* WINAPI IconView_IconView_Hook(void* pThis) {
                         RoutedEventArgs const& e) {
             Wh_Log(L">");
 
-            g_autoRevokerList.erase(autoRevokerIt);
+            g_autoRevokerList->erase(autoRevokerIt);
 
             auto iconView = sender.try_as<FrameworkElement>();
             if (!iconView) {
@@ -1534,7 +1647,7 @@ void LoadSettings() {
     Wh_FreeStringSetting(hideBellIcon);
 
     g_settings.showDesktopButtonWidth =
-        Wh_GetIntSetting(L"showDesktopButtonWidth");
+        std::clamp(Wh_GetIntSetting(L"showDesktopButtonWidth"), 0, 800);
 }
 
 void ApplySettings() {
@@ -1559,7 +1672,7 @@ void ApplySettings() {
         [](void* pParam) {
             ApplySettingsParam& param = *(ApplySettingsParam*)pParam;
 
-            g_autoRevokerList.clear();
+            g_autoRevokerList->clear();
 
             if (auto bellSystemTrayIconElement =
                     g_bellSystemTrayIconElement.get()) {
@@ -1579,10 +1692,18 @@ void ApplySettings() {
                 g_mainStackTextChangedToken = 0;
             }
 
+            if (auto controlCenterStackPanel =
+                    g_controlCenterStackPanel.get()) {
+                controlCenterStackPanel.SizeChanged(
+                    g_controlCenterStackPanelSizeChangedToken);
+                g_controlCenterStackPanel = nullptr;
+                g_controlCenterStackPanelSizeChangedToken = {};
+            }
+
             // Unregister and restore battery TextBlock foregrounds. ApplyStyle
             // below will re-register if grayscale is still enabled. This also
             // covers stale entries whose icon view was destroyed.
-            for (auto& state : g_batteryTextBlockStates) {
+            for (auto& state : *g_batteryTextBlockStates) {
                 auto textBlock = state.textBlock.get();
                 if (!textBlock) {
                     continue;
@@ -1592,16 +1713,38 @@ void ApplySettings() {
                     state.foregroundChangedToken);
                 textBlock.Foreground(state.savedForeground);
             }
-            g_batteryTextBlockStates.clear();
+            g_batteryTextBlockStates->clear();
+
+            // Restore the show desktop width overrides. ApplyStyle below
+            // re-applies them unless the mod is unloading.
+            for (auto& state : g_showDesktopWidthStates) {
+                auto element = state.element.get();
+                if (!element) {
+                    continue;
+                }
+                if (state.savedMinWidth) {
+                    element.MinWidth(*state.savedMinWidth);
+                } else {
+                    element.ClearValue(FrameworkElement::MinWidthProperty());
+                }
+                if (state.savedMaxWidth) {
+                    element.MaxWidth(*state.savedMaxWidth);
+                } else {
+                    element.ClearValue(FrameworkElement::MaxWidthProperty());
+                }
+            }
+            g_showDesktopWidthStates.clear();
 
             auto xamlRoot = GetTaskbarXamlRoot(param.hTaskbarWnd);
             if (!xamlRoot) {
                 Wh_Log(L"Getting XamlRoot failed");
-                return;
+            } else if (!ApplyStyle(xamlRoot)) {
+                Wh_Log(L"ApplyStyle failed");
             }
 
-            if (!ApplyStyle(xamlRoot)) {
-                Wh_Log(L"ApplyStyle failed");
+            if (g_unloading) {
+                g_autoRevokerList.reset();
+                g_batteryTextBlockStates.reset();
             }
         },
         &param);
