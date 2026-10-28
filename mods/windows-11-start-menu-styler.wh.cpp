@@ -8160,6 +8160,7 @@ using namespace std::string_view_literals;
 #include <winrt/Windows.UI.Xaml.Hosting.h>
 #include <winrt/Windows.UI.Xaml.Input.h>
 #include <winrt/Windows.UI.Xaml.Markup.h>
+#include <winrt/Windows.UI.Xaml.Media.Animation.h>
 #include <winrt/Windows.UI.Xaml.Media.Imaging.h>
 #include <winrt/Windows.UI.Xaml.Media.h>
 #include <winrt/Windows.UI.Xaml.h>
@@ -8311,8 +8312,8 @@ struct ResolvedRules {
     PropertyOverrides propertyOverrides;
     // Setters of the values in propertyOverrides that are objects, other than
     // ones from resources. Each element gets its own instance parsed from them:
-    // a template animating such an object, e.g. a brush's color, would
-    // otherwise change it for every element.
+    // an element or a geometry can't be shared, and a template animating a
+    // shared object, e.g. a brush's color, would change it for every element.
     PropertyOverrideSetters elementInstanceSetters;
     std::vector<CaptureSpec> captures;
     // Whether this target consumes style variables. Lets ApplyCustomizations
@@ -12401,7 +12402,7 @@ PropertyOverrideSetters GetElementInstanceSetters(
     std::wstring const& xaml,
     Style const& style,
     std::vector<ValueRule> const& valueRules,
-    std::vector<size_t> const& valueRuleSetterOffsets) {
+    std::vector<std::wstring> const& valueRuleSetterXamls) {
     PropertyOverrideSetters result;
 
     auto isObject = [](winrt::Windows::Foundation::IInspectable const& value) {
@@ -12430,9 +12431,7 @@ PropertyOverrideSetters GetElementInstanceSetters(
             auto& setters = result[setter.Property()];
             if (isObject(value) &&
                 styleAgain.Setters().GetAt(i).as<Setter>().Value() != value) {
-                setters[visualState] = xaml.substr(
-                    valueRuleSetterOffsets[i],
-                    valueRuleSetterOffsets[i + 1] - valueRuleSetterOffsets[i]);
+                setters[visualState] = valueRuleSetterXamls[i];
             } else {
                 setters.erase(visualState);
             }
@@ -12445,53 +12444,6 @@ PropertyOverrideSetters GetElementInstanceSetters(
     std::erase_if(result, [](const auto& item) { return item.second.empty(); });
 
     return result;
-}
-
-// The center of a ScaleTransform with scales of 1 has no effect, so it can hold
-// a marker. XAML's copy of a brush keeps the values of its transforms, which is
-// how IsAnimationCopy recognizes a copy of a marked brush.
-constexpr double kBrushMarkerCenterY = 7919.25;
-
-// Marks the brush in whichever of its transforms is unset, if any. Composition
-// brushes don't support transforms, and XAML never copies tile brushes such as
-// ImageBrush.
-void MarkBrush(winrt::Windows::Foundation::IInspectable const& value) {
-    if (!value.try_as<Media::SolidColorBrush>() &&
-        !value.try_as<Media::LinearGradientBrush>()) {
-        return;
-    }
-
-    // An unset transform reads as an identity MatrixTransform, not null.
-    auto brush = value.as<Media::Brush>();
-    auto property = Media::Brush::TransformProperty();
-    if (brush.ReadLocalValue(property) != DependencyProperty::UnsetValue()) {
-        property = Media::Brush::RelativeTransformProperty();
-        if (brush.ReadLocalValue(property) !=
-            DependencyProperty::UnsetValue()) {
-            return;
-        }
-    }
-
-    // Kept within 24 bits, which a float holds exactly.
-    static std::atomic<uint32_t> s_markerCounter{0};
-    Media::ScaleTransform marker;
-    marker.CenterX(++s_markerCounter & 0xFFFFFF);
-    marker.CenterY(kBrushMarkerCenterY);
-    brush.SetValue(property, marker);
-}
-
-// The marker MarkBrush gave the brush, or null.
-Media::ScaleTransform GetBrushMarker(Media::Brush const& brush) {
-    for (const auto& transform :
-         {brush.Transform(), brush.RelativeTransform()}) {
-        auto marker = transform.try_as<Media::ScaleTransform>();
-        if (marker && marker.ScaleX() == 1 && marker.ScaleY() == 1 &&
-            marker.CenterY() == kBrushMarkerCenterY) {
-            return marker;
-        }
-    }
-
-    return nullptr;
 }
 
 const ResolvedRules& GetResolvedPropertyOverrides(
@@ -12524,15 +12476,12 @@ const ResolvedRules& GetResolvedPropertyOverrides(
                 propertyOverrideValues;
             propertyOverrideValues.reserve(valueRules.size());
 
-            // Where each value rule's setter starts in `xaml`, followed by
-            // where the last one ends.
-            std::vector<size_t> valueRuleSetterOffsets;
-            valueRuleSetterOffsets.reserve(valueRules.size() + 1);
+            std::vector<std::wstring> valueRuleSetterXamls;
+            valueRuleSetterXamls.reserve(valueRules.size());
 
             for (const auto& rule : valueRules) {
                 const bool isDynamic = rule.isDynamic();
-
-                valueRuleSetterOffsets.push_back(xaml.size());
+                const size_t setterStart = xaml.size();
 
                 propertyOverrideValues.push_back(
                     !isDynamic && rule.isXamlValue
@@ -12559,9 +12508,9 @@ const ResolvedRules& GetResolvedPropertyOverrides(
                         L"            </Setter.Value>\n"
                         L"        </Setter>\n";
                 }
-            }
 
-            valueRuleSetterOffsets.push_back(xaml.size());
+                valueRuleSetterXamls.push_back(xaml.substr(setterStart));
+            }
 
             for (const auto& rule : captureRules) {
                 xaml += L"        <Setter Property=\"";
@@ -12600,7 +12549,7 @@ const ResolvedRules& GetResolvedPropertyOverrides(
 
             resolved.elementInstanceSetters =
                 GetElementInstanceSetters(type, fallbackType, xaml, style,
-                                          valueRules, valueRuleSetterOffsets);
+                                          valueRules, valueRuleSetterXamls);
         }
 
         Wh_Log(L"%.*s: %zu override styles, %zu captures",
@@ -13085,9 +13034,8 @@ ElementResolvedRules FindElementPropertyOverrides(FrameworkElement element,
                 for (size_t i = 0; i < elementInstanceCells.size(); i++) {
                     const auto& [property, visualState] =
                         elementInstanceCells[i];
-                    auto value = style.Setters().GetAt(i).as<Setter>().Value();
-                    MarkBrush(value);
-                    propertyOverridesForVSG[property][visualState] = value;
+                    propertyOverridesForVSG[property][visualState] =
+                        style.Setters().GetAt(i).as<Setter>().Value();
                 }
             } catch (winrt::hresult_error const& ex) {
                 Wh_Log(L"Error %08X: %s", ex.code(), ex.message().c_str());
@@ -14005,162 +13953,80 @@ bool SameLocalValue(winrt::Windows::Foundation::IInspectable const& a,
     return isBoxedValue(a) && isBoxedValue(b);
 }
 
-// Whether `a` and `b` have the same base values of `properties`, which hold
-// doubles.
-bool SameBaseDoubles(DependencyObject const& a,
-                     DependencyObject const& b,
-                     std::initializer_list<DependencyProperty> properties) {
-    return std::all_of(
-        properties.begin(), properties.end(),
-        [&](DependencyProperty const& property) {
-            auto x = a.GetAnimationBaseValue(property).try_as<double>();
-            auto y = b.GetAnimationBaseValue(property).try_as<double>();
-            return x && y && *x == *y;
-        });
-}
+// Before animating a property of a brush or a transform, such as Fill.Color in
+// ProgressBar's paused state, XAML replaces the value with a copy of it, unless
+// the value is such a copy itself. Whether `value` is one shows in whether a
+// storyboard that targets it through a holder replaces the holder's value.
+bool IsXamlAnimationCopy(
+    winrt::Windows::Foundation::IInspectable const& value) {
+    DependencyObject holder{nullptr};
+    DependencyProperty property{nullptr};
+    PCWSTR path = nullptr;
+    if (value.try_as<Media::SolidColorBrush>() ||
+        value.try_as<Media::LinearGradientBrush>()) {
+        holder = Controls::Border();
+        property = Controls::Border::BackgroundProperty();
+        path = L"(Border.Background).(Brush.Opacity)";
+    } else if (value.try_as<Media::Transform>()) {
+        // A path which doesn't resolve is an error, so it names a property of
+        // the transform's own type.
+        holder = Media::SolidColorBrush();
+        property = Media::Brush::TransformProperty();
+        if (value.try_as<Media::TranslateTransform>()) {
+            path = L"(Brush.Transform).(TranslateTransform.X)";
+        } else if (value.try_as<Media::ScaleTransform>()) {
+            path = L"(Brush.Transform).(ScaleTransform.ScaleX)";
+        } else if (value.try_as<Media::RotateTransform>()) {
+            path = L"(Brush.Transform).(RotateTransform.Angle)";
+        } else if (value.try_as<Media::SkewTransform>()) {
+            path = L"(Brush.Transform).(SkewTransform.AngleX)";
+        } else if (value.try_as<Media::CompositeTransform>()) {
+            path = L"(Brush.Transform).(CompositeTransform.Rotation)";
+        } else if (value.try_as<Media::MatrixTransform>()) {
+            path = L"(Brush.Transform).(MatrixTransform.Matrix)";
+        } else if (value.try_as<Media::TransformGroup>()) {
+            path = L"(Brush.Transform).(TransformGroup.Children)";
+        }
+    }
 
-// Whether `copy` is a transform of the same type with the same values as
-// `source`, as XAML's copy of a transform is.
-bool IsTransformCopy(Media::Transform const& copy,
-                     Media::Transform const& source) {
-    if (winrt::get_class_name(copy) != winrt::get_class_name(source)) {
+    if (!path) {
         return false;
     }
 
-    if (auto group = copy.try_as<Media::TransformGroup>()) {
-        auto children = group.Children();
-        auto sourceChildren = source.as<Media::TransformGroup>().Children();
-        if (children.Size() != sourceChildren.Size()) {
-            return false;
-        }
-        for (uint32_t i = 0; i < children.Size(); i++) {
-            if (!IsTransformCopy(children.GetAt(i), sourceChildren.GetAt(i))) {
-                return false;
-            }
-        }
-        return true;
+    try {
+        holder.SetValue(property, value);
+        // Without key frames, beginning the storyboard only resolves the path.
+        Media::Animation::ObjectAnimationUsingKeyFrames animation;
+        Media::Animation::Storyboard::SetTarget(animation, holder);
+        Media::Animation::Storyboard::SetTargetProperty(animation, path);
+        Media::Animation::Storyboard storyboard;
+        storyboard.Children().Append(animation);
+        storyboard.Begin();
+        storyboard.Stop();
+        return holder.ReadLocalValue(property) == value;
+    } catch (winrt::hresult_error const& ex) {
+        Wh_Log(L"Error %08X: %s", ex.code(), ex.message().c_str());
+        return false;
     }
-
-    if (copy.try_as<Media::MatrixTransform>()) {
-        auto baseMatrix = [](Media::Transform const& transform) {
-            return transform
-                .GetAnimationBaseValue(Media::MatrixTransform::MatrixProperty())
-                .try_as<Media::Matrix>();
-        };
-        auto a = baseMatrix(copy);
-        auto b = baseMatrix(source);
-        return a && b && *a == *b;
-    }
-
-    if (copy.try_as<Media::TranslateTransform>()) {
-        return SameBaseDoubles(copy, source,
-                               {Media::TranslateTransform::XProperty(),
-                                Media::TranslateTransform::YProperty()});
-    }
-
-    if (copy.try_as<Media::ScaleTransform>()) {
-        return SameBaseDoubles(copy, source,
-                               {Media::ScaleTransform::CenterXProperty(),
-                                Media::ScaleTransform::CenterYProperty(),
-                                Media::ScaleTransform::ScaleXProperty(),
-                                Media::ScaleTransform::ScaleYProperty()});
-    }
-
-    if (copy.try_as<Media::RotateTransform>()) {
-        return SameBaseDoubles(copy, source,
-                               {Media::RotateTransform::CenterXProperty(),
-                                Media::RotateTransform::CenterYProperty(),
-                                Media::RotateTransform::AngleProperty()});
-    }
-
-    if (copy.try_as<Media::SkewTransform>()) {
-        return SameBaseDoubles(copy, source,
-                               {Media::SkewTransform::CenterXProperty(),
-                                Media::SkewTransform::CenterYProperty(),
-                                Media::SkewTransform::AngleXProperty(),
-                                Media::SkewTransform::AngleYProperty()});
-    }
-
-    if (copy.try_as<Media::CompositeTransform>()) {
-        return SameBaseDoubles(
-            copy, source,
-            {Media::CompositeTransform::CenterXProperty(),
-             Media::CompositeTransform::CenterYProperty(),
-             Media::CompositeTransform::ScaleXProperty(),
-             Media::CompositeTransform::ScaleYProperty(),
-             Media::CompositeTransform::SkewXProperty(),
-             Media::CompositeTransform::SkewYProperty(),
-             Media::CompositeTransform::RotationProperty(),
-             Media::CompositeTransform::TranslateXProperty(),
-             Media::CompositeTransform::TranslateYProperty()});
-    }
-
-    return false;
 }
 
-// XAML's copy of a XamlCompositionBrushBase is an instance of that base class
-// itself, which nothing else creates. It lacks the original's composition
-// brush, so it renders nothing.
-bool IsCompositionBrushCopy(
-    winrt::Windows::Foundation::IInspectable const& value,
-    winrt::Windows::Foundation::IInspectable const& applied) {
-    auto copy = value.try_as<Media::XamlCompositionBrushBase>();
-    auto source = applied.try_as<Media::XamlCompositionBrushBase>();
-    return copy && source && copy != source &&
-           std::wstring_view(winrt::get_class_name(copy)) ==
-               winrt::name_of<Media::XamlCompositionBrushBase>() &&
-           SameBaseDoubles(copy, source, {Media::Brush::OpacityProperty()});
-}
-
-// Before animating a property of a brush or a transform, such as Fill.Color in
-// ProgressBar's paused state, XAML replaces the local value with a copy of it.
-// A marked brush's copy has the same marker, and a composition brush's copy is
-// told by its type. Otherwise, a different transform of the same type with the
-// same values, or SolidColorBrush with the same color and opacity, is taken to
-// be that copy.
+// Whether `value` is XAML's animation copy of `applied`. XAML copies only the
+// property's current value, so a copy of the same type is taken to be one of
+// `applied`.
 bool IsAnimationCopy(winrt::Windows::Foundation::IInspectable const& value,
                      winrt::Windows::Foundation::IInspectable const& applied) {
-    if (value == applied) {
-        return false;
-    }
+    return value && applied && value != applied &&
+           winrt::get_class_name(value) == winrt::get_class_name(applied) &&
+           IsXamlAnimationCopy(value);
+}
 
-    if (auto copy = value.try_as<Media::Transform>()) {
-        auto source = applied.try_as<Media::Transform>();
-        return source && IsTransformCopy(copy, source);
-    }
-
-    if (IsCompositionBrushCopy(value, applied)) {
-        return true;
-    }
-
-    auto copyBrush = value.try_as<Media::Brush>();
-    auto sourceBrush = applied.try_as<Media::Brush>();
-    if (!copyBrush || !sourceBrush) {
-        return false;
-    }
-
-    if (auto sourceMarker = GetBrushMarker(sourceBrush)) {
-        auto copyMarker = GetBrushMarker(copyBrush);
-        return copyMarker && copyMarker.CenterX() == sourceMarker.CenterX();
-    }
-
-    auto copy = copyBrush.try_as<Media::SolidColorBrush>();
-    auto source = sourceBrush.try_as<Media::SolidColorBrush>();
-    if (!copy || !source) {
-        return false;
-    }
-
-    auto baseColor = [](Media::SolidColorBrush const& b) {
-        return winrt::unbox_value_or<winrt::Windows::UI::Color>(
-            b.GetAnimationBaseValue(Media::SolidColorBrush::ColorProperty()),
-            {});
-    };
-    auto baseOpacity = [](Media::SolidColorBrush const& b) {
-        return winrt::unbox_value_or<double>(
-            b.GetAnimationBaseValue(Media::Brush::OpacityProperty()), 1.0);
-    };
-    return baseColor(copy) == baseColor(source) &&
-           baseOpacity(copy) == baseOpacity(source);
+// XAML's animation copy of a XamlCompositionBrushBase is an instance of that
+// base class itself, which nothing else creates. It lacks the original's
+// composition brush, so it renders nothing.
+bool IsCompositionBrushCopy(
+    winrt::Windows::Foundation::IInspectable const& value) {
+    return value && std::wstring_view(winrt::get_class_name(value)) ==
+                        winrt::name_of<Media::XamlCompositionBrushBase>();
 }
 
 // Let XAML's animation copy of the applied value stand in for it. Applying the
@@ -14172,9 +14038,8 @@ bool TakeAnimationCopyAsApplied(
     DependencyProperty property,
     ElementPropertyCustomizationState* propertyCustomizationState) {
     auto localValue = element.ReadLocalValue(property);
-    const auto& appliedValue = propertyCustomizationState->lastAppliedValue;
-    if (!IsAnimationCopy(localValue, appliedValue) ||
-        IsCompositionBrushCopy(localValue, appliedValue)) {
+    if (!IsAnimationCopy(localValue,
+                         propertyCustomizationState->lastAppliedValue)) {
         return false;
     }
 
@@ -14200,6 +14065,7 @@ void AdoptExternalValueAsOriginal(
     if (!SameLocalValue(localValue,
                         propertyCustomizationState->lastAppliedValue) &&
         !IsImageRetryValue(element, property, localValue) &&
+        !IsCompositionBrushCopy(localValue) &&
         !IsAnimationCopy(localValue,
                          propertyCustomizationState->lastAppliedValue)) {
         propertyCustomizationState->originalValue = localValue;
