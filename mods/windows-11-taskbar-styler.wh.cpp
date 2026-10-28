@@ -412,6 +412,19 @@ string, letting a style supply its own default via the conditional, e.g. ```
 numeric operators above then fail on such a variable, skipping the style rather
 than treating it as `0`.
 
+The built-in numeric variable `taskbarAlignment` follows Windows' taskbar icon
+alignment setting (`0` for Left, `1` for Center), including changes made while
+the mod is running. It can be used without a capture rule, for example:
+
+```
+HorizontalAlignment={{taskbarAlignment==0?`Left`:`Center`}}
+```
+
+A capture with the same name takes precedence over the built-in value. DockLike
+uses this variable to follow Windows' setting. Its horizontal taskbar is centered
+in the space beside the tray and can grow until the native overflow limit is
+reached; the tray's current width is captured separately for each taskbar.
+
 ### Resource variables
 
 Some variables, such as size and padding for various controls, colors, and
@@ -678,8 +691,15 @@ const Theme g_themeDockLike = {{
         L"Tag=>taskbarDock"}},
     ThemeTargetStyles{L"Taskbar.TaskbarFrame", {
         L"Width={{taskbarDock==`vertical`?skip():`Auto`}}",
-        L"HorizontalAlignment=Center",
-        L"Margin=250,0,250,0"}},
+        L"HorizontalAlignment={{taskbarDock==`vertical`?skip():taskbarAlignment==0?`Left`:`Center`}}",
+        // Native taskbar measurement already reserves space for the tray.
+        // Keep the margin sum at -32 to cancel its 16-DIP insets, and shift
+        // the center by half the tray width without reserving that width twice.
+        L"Margin={{taskbarDock==`vertical`?skip():taskbarAlignment==0?8:-16-(dockLikeTrayWidth==``?0:dockLikeTrayWidth)/2}},0,{{taskbarDock==`vertical`?skip():taskbarAlignment==0?-40:-16+(dockLikeTrayWidth==``?0:dockLikeTrayWidth)/2}},0"}},
+    ThemeTargetStyles{L"SystemTray.SystemTrayFrame", {
+        L"Width={{taskbarDock==`vertical`?skip():`Auto`}}",
+        L"HorizontalAlignment={{taskbarDock==`vertical`?skip():`Right`}}",
+        L"ActualWidth=>dockLikeTrayWidth"}},
     ThemeTargetStyles{L"Taskbar.TaskbarFrame > Grid#RootGrid", {
         L"Background:=<AcrylicBrush TintColor=\"{ThemeResource SystemChromeAltHighColor}\" TintOpacity=\"0.8\" FallbackColor=\"{ThemeResource SystemChromeLowColor}\" />",
         L"Padding=6,0,6,0",
@@ -10824,6 +10844,23 @@ const Theme g_themeOne_UI_8_5_variant_Taskbar = {{
 
 // clang-format on
 
+constexpr WCHAR kTaskbarAdvancedKey[] =
+    L"Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Advanced";
+
+// TaskbarAl is per-user and shared by the primary and secondary taskbars.
+int ReadTaskbarAlignment() {
+    DWORD alignment = 1;
+    DWORD size = sizeof(alignment);
+    if (RegGetValueW(HKEY_CURRENT_USER, kTaskbarAdvancedKey, L"TaskbarAl",
+                     RRF_RT_REG_DWORD, nullptr, &alignment, &size) !=
+        ERROR_SUCCESS) {
+        return 1;
+    }
+    return alignment == 0 ? 0 : 1;
+}
+
+std::atomic<int> g_taskbarAlignment{1};
+
 std::atomic<bool> g_initialized;
 thread_local bool g_initializedForThread;
 
@@ -12033,9 +12070,9 @@ ElementTreeNode* EnsureElementTreeNode(
 
 // Mod-global style variable registry. Populated by `Property=>VarName` capture
 // rules and consumed by `{{VarName}}` substitutions in other styles. Every
-// capturing element gets its own entry, so a name stays defined until its last
-// capture goes away, and a consumer reading the name resolves to whichever
-// capture is closest to it in the visual tree.
+// capturing element gets its own entry, and a consumer reading the name
+// resolves to whichever capture is closest to it in the visual tree. A name
+// without captures can fall back to a built-in variable.
 struct StyleVariableValue {
     std::wstring stringForm;        // invariant-formatted text representation
     std::optional<double> numeric;  // only present when source was numeric
@@ -12045,6 +12082,11 @@ struct StyleVariableValue {
     // for diagnostics; bare-identifier substitution skips such variables.
     bool substitutable = false;
 };
+
+// Built-ins have no capturing element (ElementId::None). Keep the UI-thread
+// value separate from the worker's atomic so evaluation and propagation always
+// see one consistent value, even if Windows changes it again in the meantime.
+thread_local StyleVariableValue g_taskbarAlignmentStyleVariable{L"1", 1, true};
 
 // One element's capture of a variable. FindElementPropertyOverrides dedupes
 // captures by name, so (name, elementId) identifies an entry.
@@ -16263,7 +16305,7 @@ ElementResolvedRules FindElementPropertyOverrides(FrameworkElement element,
 }
 
 struct StyleVariableResolution {
-    // Points into state->variables; only valid until that map is next touched,
+    // Points to a capture or a built-in; only valid until variables next change,
     // so read it out before doing anything that could apply a style.
     const StyleVariableValue* value = nullptr;
     ElementId owner = ElementId::None;
@@ -16294,7 +16336,8 @@ std::pair<int, int> StyleVariableCaptureRank(
     return {-lcaDepth, captureDepth};
 }
 
-// Pick the capture of `varName` that `consumerNode` should read.
+// Pick the capture of `varName` that `consumerNode` should read, falling back to
+// a built-in only when no element captures the name.
 StyleVariableResolution FindWinningCapture(
     StyleVariableState* state,
     const std::wstring& varName,
@@ -16303,6 +16346,9 @@ StyleVariableResolution FindWinningCapture(
 
     auto it = state->variables.find(varName);
     if (it == state->variables.end() || it->second.empty()) {
+        if (varName == L"taskbarAlignment") {
+            return {&g_taskbarAlignmentStyleVariable, ElementId::None};
+        }
         return result;
     }
 
@@ -18479,6 +18525,119 @@ void ResetTaskbarWindowSurface(HWND hWnd) {
     ReleaseDC(hWnd, hdc);
 }
 
+UINT TaskbarAlignmentChangedMessage() {
+    static const UINT message =
+        RegisterWindowMessage(L"Windhawk_TaskbarAlignmentChanged_" WH_MOD_ID);
+    return message;
+}
+
+void RefreshTaskbarAlignmentForCurrentThread() {
+    int alignment = g_taskbarAlignment.load();
+    if (g_taskbarAlignmentStyleVariable.numeric == alignment) {
+        return;
+    }
+    g_taskbarAlignmentStyleVariable = {
+        alignment == 0 ? L"0" : L"1", double(alignment), true};
+
+    StyleVariableStatePin pin;
+    for (auto& state : g_styleVariableState) {
+        // A real capture of this name wins over the built-in and has a
+        // different owner, so its consumers are left alone.
+        PropagateStyleVariableChange(&state, L"taskbarAlignment",
+                                     ElementId::None);
+    }
+}
+
+HANDLE g_taskbarAlignmentThread;
+HANDLE g_taskbarAlignmentStopEvent;
+HANDLE g_taskbarAlignmentNotifyEvent;
+HKEY g_taskbarAlignmentKey;
+
+void PublishTaskbarAlignment() {
+    int alignment = ReadTaskbarAlignment();
+    if (g_taskbarAlignment.exchange(alignment) == alignment) {
+        return;
+    }
+
+    // Post instead of synchronously entering a UI thread: unloading can then
+    // join the registry watcher without waiting for the UI to dispatch work.
+    EnumWindows(
+        [](HWND hWnd, LPARAM) -> BOOL {
+            DWORD processId = 0;
+            GetWindowThreadProcessId(hWnd, &processId);
+            if (processId == GetCurrentProcessId() &&
+                IsTaskbarTopLevelWindow(hWnd)) {
+                PostMessage(hWnd, TaskbarAlignmentChangedMessage(), 0, 0);
+            }
+            return TRUE;
+        },
+        0);
+}
+
+DWORD WINAPI TaskbarAlignmentWatchThread(void*) {
+    HANDLE events[] = {g_taskbarAlignmentStopEvent,
+                       g_taskbarAlignmentNotifyEvent};
+    for (;;) {
+        // Arm before reading so a change between the read and the wait isn't
+        // lost. The same dedicated thread owns every notification request.
+        LSTATUS status = RegNotifyChangeKeyValue(
+            g_taskbarAlignmentKey, FALSE, REG_NOTIFY_CHANGE_LAST_SET,
+            g_taskbarAlignmentNotifyEvent, TRUE);
+        if (status != ERROR_SUCCESS) {
+            Wh_Log(L"Taskbar alignment registry watch failed: %ld", status);
+            return 0;
+        }
+        PublishTaskbarAlignment();
+        if (WaitForMultipleObjects(ARRAYSIZE(events), events, FALSE, INFINITE) !=
+            WAIT_OBJECT_0 + 1) {
+            return 0;
+        }
+    }
+}
+
+void StopTaskbarAlignmentWatch() {
+    if (g_taskbarAlignmentThread) {
+        SetEvent(g_taskbarAlignmentStopEvent);
+        WaitForSingleObject(g_taskbarAlignmentThread, INFINITE);
+        CloseHandle(g_taskbarAlignmentThread);
+        g_taskbarAlignmentThread = nullptr;
+    }
+    if (g_taskbarAlignmentKey) {
+        RegCloseKey(g_taskbarAlignmentKey);
+        g_taskbarAlignmentKey = nullptr;
+    }
+    if (g_taskbarAlignmentNotifyEvent) {
+        CloseHandle(g_taskbarAlignmentNotifyEvent);
+        g_taskbarAlignmentNotifyEvent = nullptr;
+    }
+    if (g_taskbarAlignmentStopEvent) {
+        CloseHandle(g_taskbarAlignmentStopEvent);
+        g_taskbarAlignmentStopEvent = nullptr;
+    }
+}
+
+void StartTaskbarAlignmentWatch() {
+    g_taskbarAlignment = ReadTaskbarAlignment();
+    LSTATUS status =
+        RegOpenKeyExW(HKEY_CURRENT_USER, kTaskbarAdvancedKey, 0, KEY_NOTIFY,
+                       &g_taskbarAlignmentKey);
+    if (status != ERROR_SUCCESS) {
+        Wh_Log(L"Can't watch taskbar alignment: %ld", status);
+        return;
+    }
+    g_taskbarAlignmentStopEvent = CreateEvent(nullptr, TRUE, FALSE, nullptr);
+    g_taskbarAlignmentNotifyEvent = CreateEvent(nullptr, FALSE, FALSE, nullptr);
+    if (g_taskbarAlignmentStopEvent && g_taskbarAlignmentNotifyEvent) {
+        g_taskbarAlignmentThread =
+            CreateThread(nullptr, 0, TaskbarAlignmentWatchThread, nullptr, 0,
+                         nullptr);
+    }
+    if (!g_taskbarAlignmentThread) {
+        Wh_Log(L"Can't start taskbar alignment watch: %lu", GetLastError());
+        StopTaskbarAlignmentWatch();
+    }
+}
+
 thread_local std::unordered_set<HWND> g_taskbarSurfaceSubclassedWindows;
 
 // A reallocation invalidates the window, so the fill rides the paint which
@@ -18490,6 +18649,14 @@ LRESULT CALLBACK TaskbarSurfaceSubclassProc(HWND hWnd,
                                             WPARAM wParam,
                                             LPARAM lParam,
                                             DWORD_PTR) {
+    if (uMsg == TaskbarAlignmentChangedMessage()) {
+        try {
+            RefreshTaskbarAlignmentForCurrentThread();
+        } catch (...) {
+            Wh_Log(L"Error updating taskbar alignment: %08X", winrt::to_hresult());
+        }
+    }
+
     switch (uMsg) {
         case WM_PAINT:
             ResetTaskbarWindowSurface(hWnd);
@@ -20407,6 +20574,10 @@ void InitializeForCurrentThread() {
 
     EnsureTaskbarSurfaceSubclasses();
 
+    int alignment = g_taskbarAlignment.load();
+    g_taskbarAlignmentStyleVariable = {
+        alignment == 0 ? L"0" : L"1", double(alignment), true};
+
     ProcessAllStylesFromSettings();
 
     g_initializedForThread = true;
@@ -21009,6 +21180,8 @@ BOOL Wh_ModInit() {
 
     LoadSettings();
 
+    StartTaskbarAlignmentWatch();
+
     WindhawkUtils::SetFunctionHook(CreateWindowExW, CreateWindowExW_Hook,
                                    &CreateWindowExW_Original);
 
@@ -21086,6 +21259,8 @@ void Wh_ModAfterInit() {
 
 void Wh_ModUninit() {
     Wh_Log(L">");
+
+    StopTaskbarAlignmentWatch();
 
     HWND restartExplorerPromptWindow = g_restartExplorerPromptWindow;
     if (restartExplorerPromptWindow) {
