@@ -1978,6 +1978,9 @@ bool HookTaskbarSymbols() {
             },
             {
                 {
+                    LR"(protected: void __cdecl CTaskBand::_UpdateItemIcon(struct ITaskGroup *,struct ITaskItem *,class std::vector<struct TaskbarIcon::IconMetrics,class std::allocator<struct TaskbarIcon::IconMetrics> > const *))",
+
+                    // Before Windows 11 build 26300.9818.
                     LR"(protected: void __cdecl CTaskBand::_UpdateItemIcon(struct ITaskGroup *,struct ITaskItem *,class std::vector<struct TaskbarIcon::Variant,class std::allocator<struct TaskbarIcon::Variant> > const *))",
 
                     // Before Windows 11 build 26100.9549.
