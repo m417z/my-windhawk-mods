@@ -2,7 +2,7 @@
 // @id              taskbar-grouping
 // @name            Disable grouping on the taskbar
 // @description     Causes a separate button to be created on the taskbar for each new window
-// @version         1.3.11
+// @version         1.3.12
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
@@ -359,6 +359,9 @@ CTaskBand__MatchWindow_t CTaskBand__MatchWindow_Original;
 
 // Checks whether a task group exists with the given app ID, ignoring suffixes.
 bool AppIdTaskGroupExists(PVOID taskBand, PCWSTR appId) {
+    DWORD prevThreadId = g_compareStringOrdinalHookThreadId;
+    bool prevIgnoreSuffix = g_compareStringOrdinalIgnoreSuffix;
+
     g_compareStringOrdinalHookThreadId = GetCurrentThreadId();
     g_compareStringOrdinalIgnoreSuffix = true;
 
@@ -368,8 +371,8 @@ bool AppIdTaskGroupExists(PVOID taskBand, PCWSTR appId) {
         taskBand, nullptr, nullptr, appId, 1, taskGroupMatched.put_void(),
         taskItemMatched.put_void());
 
-    g_compareStringOrdinalHookThreadId = 0;
-    g_compareStringOrdinalIgnoreSuffix = false;
+    g_compareStringOrdinalHookThreadId = prevThreadId;
+    g_compareStringOrdinalIgnoreSuffix = prevIgnoreSuffix;
 
     return SUCCEEDED(hr) && taskGroupMatched;
 }
@@ -579,13 +582,16 @@ LRESULT WINAPI CTaskBand_v_WndProc_Hook(void* pThis,
     if (Msg == 0x44A) {
         Wh_Log(L">");
 
+        DWORD prevThreadId = g_compareStringOrdinalHookThreadId;
+        bool prevIgnoreSuffix = g_compareStringOrdinalIgnoreSuffix;
+
         g_compareStringOrdinalHookThreadId = GetCurrentThreadId();
         g_compareStringOrdinalIgnoreSuffix = true;
 
         ret = CTaskBand_v_WndProc_Original(pThis, hWnd, Msg, wParam, lParam);
 
-        g_compareStringOrdinalHookThreadId = 0;
-        g_compareStringOrdinalIgnoreSuffix = false;
+        g_compareStringOrdinalHookThreadId = prevThreadId;
+        g_compareStringOrdinalIgnoreSuffix = prevIgnoreSuffix;
     } else {
         ret = CTaskBand_v_WndProc_Original(pThis, hWnd, Msg, wParam, lParam);
     }
@@ -701,11 +707,19 @@ winrt::com_ptr<IUnknown> GetTaskGroupWithoutSuffix(
         return nullptr;
     }
 
+    // Match the unsuffixed app ID exactly, even inside an enclosing scope that
+    // set the CompareStringOrdinal flags.
+    DWORD prevThreadId = g_compareStringOrdinalHookThreadId;
+    g_compareStringOrdinalHookThreadId = 0;
+
     winrt::com_ptr<IUnknown> taskGroupMatched;
     winrt::com_ptr<IUnknown> taskItemMatched;
     HRESULT hr = CTaskBand__MatchWindow_Original(
         taskBand, nullptr, nullptr, appIdOriginal, 1,
         taskGroupMatched.put_void(), taskItemMatched.put_void());
+
+    g_compareStringOrdinalHookThreadId = prevThreadId;
+
     if (FAILED(hr)) {
         return nullptr;
     }
@@ -717,34 +731,55 @@ winrt::com_ptr<IUnknown> GetTaskGroupWithoutSuffix(
     return taskGroupMatched;
 }
 
+// Returns a task group with the given app ID and any suffix, skipping task
+// groups whose app ID is in the excluded set.
+winrt::com_ptr<IUnknown> FindSuffixedTaskGroup(
+    PVOID taskBand,
+    PCWSTR appId,
+    const std::unordered_set<std::wstring>* excludedAppIds = nullptr) {
+    WCHAR appIdWithSuffix[MAX_PATH];
+    wcscpy_s(appIdWithSuffix, appId);
+    if (!AddAppIdSuffix(appIdWithSuffix, L'_', 0)) {
+        return nullptr;
+    }
+
+    // The flags may already be set by an enclosing scope, e.g. if
+    // _UpdateItemIcon runs during the 0x44A handling of CTaskBand_v_WndProc.
+    DWORD prevThreadId = g_compareStringOrdinalHookThreadId;
+    bool prevAnySuffixEqual = g_compareStringOrdinalAnySuffixEqual;
+    auto* prevAnySuffixExcluded = g_compareStringOrdinalAnySuffixExcluded;
+
+    g_compareStringOrdinalHookThreadId = GetCurrentThreadId();
+    g_compareStringOrdinalAnySuffixEqual = true;
+    g_compareStringOrdinalAnySuffixExcluded = excludedAppIds;
+
+    winrt::com_ptr<IUnknown> taskGroupMatched;
+    winrt::com_ptr<IUnknown> taskItemMatched;
+    HRESULT hr = CTaskBand__MatchWindow_Original(
+        taskBand, nullptr, nullptr, appIdWithSuffix, 1,
+        taskGroupMatched.put_void(), taskItemMatched.put_void());
+
+    g_compareStringOrdinalHookThreadId = prevThreadId;
+    g_compareStringOrdinalAnySuffixEqual = prevAnySuffixEqual;
+    g_compareStringOrdinalAnySuffixExcluded = prevAnySuffixExcluded;
+
+    if (FAILED(hr)) {
+        return nullptr;
+    }
+
+    return taskGroupMatched;
+}
+
 // Calls the callback for each task group with the given app ID and a suffix.
 void ForEachSuffixedTaskGroup(PVOID taskBand,
                               PCWSTR appId,
                               const std::function<void(PVOID)>& callback) {
-    WCHAR appIdWithSuffix[MAX_PATH];
-    wcscpy_s(appIdWithSuffix, appId);
-    if (!AddAppIdSuffix(appIdWithSuffix, L'_', 0)) {
-        return;
-    }
-
     std::unordered_set<std::wstring> matchedAppIds;
 
     while (true) {
-        g_compareStringOrdinalHookThreadId = GetCurrentThreadId();
-        g_compareStringOrdinalAnySuffixEqual = true;
-        g_compareStringOrdinalAnySuffixExcluded = &matchedAppIds;
-
-        winrt::com_ptr<IUnknown> taskGroupMatched;
-        winrt::com_ptr<IUnknown> taskItemMatched;
-        HRESULT hr = CTaskBand__MatchWindow_Original(
-            taskBand, nullptr, nullptr, appIdWithSuffix, 1,
-            taskGroupMatched.put_void(), taskItemMatched.put_void());
-
-        g_compareStringOrdinalHookThreadId = 0;
-        g_compareStringOrdinalAnySuffixEqual = false;
-        g_compareStringOrdinalAnySuffixExcluded = nullptr;
-
-        if (FAILED(hr) || !taskGroupMatched) {
+        winrt::com_ptr<IUnknown> taskGroupMatched =
+            FindSuffixedTaskGroup(taskBand, appId, &matchedAppIds);
+        if (!taskGroupMatched) {
             break;
         }
 
@@ -1219,6 +1254,9 @@ int WINAPI DPA_InsertPtr_Hook(HDPA hdpa, int i, void* p) {
             }
         }
 
+        DWORD prevThreadId = g_compareStringOrdinalHookThreadId;
+        bool prevIgnoreSuffix = g_compareStringOrdinalIgnoreSuffix;
+
         g_compareStringOrdinalHookThreadId = GetCurrentThreadId();
         g_compareStringOrdinalIgnoreSuffix = true;
 
@@ -1231,8 +1269,8 @@ int WINAPI DPA_InsertPtr_Hook(HDPA hdpa, int i, void* p) {
             lastMatchIndex = i;
         }
 
-        g_compareStringOrdinalHookThreadId = 0;
-        g_compareStringOrdinalIgnoreSuffix = false;
+        g_compareStringOrdinalHookThreadId = prevThreadId;
+        g_compareStringOrdinalIgnoreSuffix = prevIgnoreSuffix;
     }
 
     if (lastMatchIndex != DA_LAST) {
@@ -1351,25 +1389,9 @@ void HandleUnsuffixedInstanceOnTaskDestroyed(PVOID taskList_TaskListUI,
         return;
     }
 
-    WCHAR appIdWithSuffix[MAX_PATH];
-    wcscpy_s(appIdWithSuffix, appId);
-    if (!AddAppIdSuffix(appIdWithSuffix, L'_', 0)) {
-        return;
-    }
-
-    g_compareStringOrdinalHookThreadId = GetCurrentThreadId();
-    g_compareStringOrdinalAnySuffixEqual = true;
-
-    winrt::com_ptr<IUnknown> taskGroupMatched;
-    winrt::com_ptr<IUnknown> taskItemMatched;
-    HRESULT hr = CTaskBand__MatchWindow_Original(
-        taskBand, nullptr, nullptr, appIdWithSuffix, 1,
-        taskGroupMatched.put_void(), taskItemMatched.put_void());
-
-    g_compareStringOrdinalHookThreadId = 0;
-    g_compareStringOrdinalAnySuffixEqual = false;
-
-    if (FAILED(hr) || !taskGroupMatched) {
+    winrt::com_ptr<IUnknown> taskGroupMatched =
+        FindSuffixedTaskGroup(taskBand, appId);
+    if (!taskGroupMatched) {
         return;
     }
 
