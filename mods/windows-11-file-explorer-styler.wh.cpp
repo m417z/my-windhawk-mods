@@ -5824,15 +5824,12 @@ winrt::Windows::Foundation::IInspectable SetOrClearValue(
             }
         }
 
-        // Grid ColumnDefinitions/RowDefinitions hold DependencyObjects
-        // (ColumnDefinition/RowDefinition) that the layout engine writes
-        // ActualWidth/ActualHeight back into. The resolved value is parsed once
-        // and cached, so applying it to more than one grid - e.g. a taskbar per
-        // monitor, all sharing one UI thread - would set the same collection on
-        // each, and one monitor's column sizes would then leak onto another's.
-        // Give each element a private copy. The scratch Grid owns the fresh
-        // collection until SetValue reassigns ownership to the target, so it's
-        // kept alive through the SetValue call below.
+        // A Grid treats row and column definitions as its own only while it's
+        // their parent, which setting a collection parsed from a style doesn't
+        // make it: ActualWidth/ActualHeight read 0, and changing a definition
+        // doesn't update the layout. SetValue does take over a collection which
+        // another Grid created, so the value is copied into a scratch Grid's
+        // collection, kept alive through the SetValue call below.
         Controls::Grid definitionsCloneOwner{nullptr};
         if (auto sourceColumns =
                 value.try_as<Controls::ColumnDefinitionCollection>()) {
