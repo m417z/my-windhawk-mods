@@ -9039,13 +9039,33 @@ bool IsMainModuleVersionAtLeast(WORD major, WORD minor, WORD build, WORD qfe) {
 winrt::Windows::Foundation::IInspectable ReadLocalValueWithWorkaround(
     DependencyObject elementDo,
     DependencyProperty property) {
-    // Workaround for AcrylicBrushes returning an incorrect background brush.
-    // When restored, it doesn't look correct.
-    if (property == Controls::Border::BackgroundProperty()) {
-        auto border = elementDo.try_as<Controls::Border>();
-        if (border && border.Name() == L"AcrylicBorder") {
-            Wh_Log(L"Using GetValue workaround for AcrylicBorder background");
-            return elementDo.GetValue(property);
+    // These properties have a visual state's value over their local one, and
+    // restoring the local one would show it while the state lasts. The value in
+    // effect is restored instead, at the cost of keeping it once the state
+    // changes.
+    struct {
+        DependencyProperty property;
+        std::wstring_view elementType;
+        std::wstring_view elementName;
+    } propertiesForWorkaround[] = {
+        {Controls::Border::BackgroundProperty(),
+         L"Windows.UI.Xaml.Controls.Border", L"AcrylicBorder"},
+        {FrameworkElement::MaxHeightProperty(),
+         L"Windows.UI.Xaml.Controls.Grid", L"FrameRoot"},
+        {FrameworkElement::WidthProperty(), L"Windows.UI.Xaml.Controls.Grid",
+         L"MainMenu"},
+    };
+
+    if (auto element = elementDo.try_as<FrameworkElement>()) {
+        auto elementName = element.Name();
+        auto elementClassName = winrt::get_class_name(element);
+        for (const auto& [prop, type, name] : propertiesForWorkaround) {
+            if (property == prop && elementName == name &&
+                elementClassName == type) {
+                Wh_Log(L"Using GetValue workaround for %.*s",
+                       static_cast<int>(name.length()), name.data());
+                return elementDo.GetValue(property);
+            }
         }
     }
 
