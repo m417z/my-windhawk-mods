@@ -360,11 +360,22 @@ bool GetMonitorRectDpiUnscaled(HMONITOR monitor, RECT* rc) {
     return true;
 }
 
-int GetPrimaryMonitorHeightDpiUnscaled() {
-    HMONITOR primaryMonitor =
-        MonitorFromPoint({0, 0}, MONITOR_DEFAULTTOPRIMARY);
+// The primary taskbar isn't necessarily on the primary monitor, e.g. with the
+// "Primary taskbar on secondary monitor" mod. The taskbar window property is
+// set when the taskbar moves to a monitor, before it's laid out there.
+HMONITOR GetPrimaryTaskbarMonitor() {
+    if (HWND hTaskbarWnd = FindWindow(L"Shell_TrayWnd", nullptr)) {
+        if (auto monitor = (HMONITOR)GetProp(hTaskbarWnd, L"TaskbarMonitor")) {
+            return monitor;
+        }
+    }
+
+    return MonitorFromPoint({0, 0}, MONITOR_DEFAULTTOPRIMARY);
+}
+
+int GetPrimaryTaskbarMonitorHeightDpiUnscaled() {
     RECT monitorRect;
-    if (!GetMonitorRectDpiUnscaled(primaryMonitor, &monitorRect)) {
+    if (!GetMonitorRectDpiUnscaled(GetPrimaryTaskbarMonitor(), &monitorRect)) {
         return 0;
     }
 
@@ -502,11 +513,8 @@ TaskbarLocation GetTaskbarLocationForMonitor(HMONITOR monitor) {
         return g_settings.taskbarLocation;
     }
 
-    HMONITOR primaryMonitor =
-        MonitorFromPoint({0, 0}, MONITOR_DEFAULTTOPRIMARY);
-
-    return monitor == primaryMonitor ? g_settings.taskbarLocation
-                                     : taskbarLocationSecondary;
+    return monitor == GetPrimaryTaskbarMonitor() ? g_settings.taskbarLocation
+                                                 : taskbarLocationSecondary;
 }
 
 using IconContainer_IsStorageRecreationRequired_t = bool(WINAPI*)(void* pThis,
@@ -1571,7 +1579,7 @@ double WINAPI SystemTrayController_GetFrameSize_Hook(void* pThis,
     Wh_Log(L">");
 
     if ((enumTaskbarSize == 1 || enumTaskbarSize == 2) && !g_unloading) {
-        return GetPrimaryMonitorHeightDpiUnscaled();
+        return GetPrimaryTaskbarMonitorHeightDpiUnscaled();
     }
 
     return SystemTrayController_GetFrameSize_Original(pThis, enumTaskbarSize);
@@ -1587,7 +1595,7 @@ SystemTraySecondaryController_GetFrameSize_Hook(void* pThis,
     Wh_Log(L">");
 
     if ((enumTaskbarSize == 1 || enumTaskbarSize == 2) && !g_unloading) {
-        return GetPrimaryMonitorHeightDpiUnscaled();
+        return GetPrimaryTaskbarMonitorHeightDpiUnscaled();
     }
 
     return SystemTraySecondaryController_GetFrameSize_Original(pThis,
@@ -1606,7 +1614,7 @@ double WINAPI TaskbarConfiguration_GetFrameSize_Hook(int enumTaskbarSize) {
                 TaskbarConfiguration_GetFrameSize_Original(enumTaskbarSize);
         }
 
-        return GetPrimaryMonitorHeightDpiUnscaled();
+        return GetPrimaryTaskbarMonitorHeightDpiUnscaled();
     }
 
     return TaskbarConfiguration_GetFrameSize_Original(enumTaskbarSize);
@@ -1689,7 +1697,7 @@ void WINAPI Event_operator_call_Hook(void* pThis) {
         }
 
         *g_TaskbarConfiguration_UpdateFrameSize_frameSize =
-            GetPrimaryMonitorHeightDpiUnscaled();
+            GetPrimaryTaskbarMonitorHeightDpiUnscaled();
     }
 
     Event_operator_call_Original(pThis);
