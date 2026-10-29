@@ -2,7 +2,7 @@
 // @id              taskbar-icon-size
 // @name            Taskbar height and icon size
 // @description     Control the taskbar height and icon size, improve icon quality (Windows 11 only)
-// @version         1.3.10
+// @version         1.3.11
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
@@ -1204,18 +1204,19 @@ double GetFrameHeightMatchingWindow(FrameworkElement frameElement, int height) {
 }
 
 bool ApplyFrameHeightMatchingWindow(FrameworkElement frameElement) {
-    if (g_unloading || !g_taskbarHeight ||
-        frameElement.Height() != g_taskbarHeight) {
+    int taskbarHeight = g_taskbarHeight;
+    if (g_unloading || !taskbarHeight ||
+        frameElement.Height() != taskbarHeight) {
         return false;
     }
 
-    double height = GetFrameHeightMatchingWindow(frameElement, g_taskbarHeight);
-    if (height == g_taskbarHeight || IsVerticalTaskbar()) {
+    double height = GetFrameHeightMatchingWindow(frameElement, taskbarHeight);
+    if (height == taskbarHeight || IsVerticalTaskbar()) {
         return false;
     }
 
-    Wh_Log(L"Adjusting frame height for the XAML scale: %d->%f",
-           g_taskbarHeight, height);
+    Wh_Log(L"Adjusting frame height for the XAML scale: %d->%f", taskbarHeight,
+           height);
     frameElement.Height(height);
     return true;
 }
