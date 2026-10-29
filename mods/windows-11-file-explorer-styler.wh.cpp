@@ -2310,6 +2310,7 @@ using namespace std::string_view_literals;
 #include <winrt/Microsoft.UI.Dispatching.h>
 #include <winrt/Microsoft.UI.Text.h>
 #include <winrt/Microsoft.UI.Xaml.Controls.h>
+#include <winrt/Microsoft.UI.Xaml.Data.h>
 #include <winrt/Microsoft.UI.Xaml.Hosting.h>
 #include <winrt/Microsoft.UI.Xaml.Markup.h>
 #include <winrt/Microsoft.UI.Xaml.Media.Animation.h>
@@ -3097,43 +3098,27 @@ winrt::Windows::Foundation::IInspectable ReadLocalValueWithWorkaround(
     DependencyObject elementDo,
     DependencyProperty property) {
     auto value = elementDo.ReadLocalValue(property);
-    if (value) {
-        // A workaround for ColumnDefinitionCollection of
-        // NavigationBarControlGrid which can't be read by ReadLocalValue for
-        // some reason, even though it seems to be a local property.
-        if (value == DependencyProperty::UnsetValue()) {
-            auto grid = elementDo.try_as<Controls::Grid>();
-            if (grid && grid.Name() == L"NavigationBarControlGrid") {
-                auto value2 = elementDo.GetValue(property);
-                if (value2 && winrt::get_class_name(value2) ==
-                                  L"Microsoft.UI.Xaml.Controls."
-                                  L"ColumnDefinitionCollection") {
-                    Wh_Log(
-                        L"Using GetValue workaround for "
-                        L"ColumnDefinitionCollection");
-                    value = std::move(value2);
-                }
-            }
+    if (!value || value.try_as<Data::BindingExpressionBase>()) {
+        // A TemplateBinding reads as null, or for some properties such as
+        // CornerRadius as a BindingExpressionBase, and a Binding reads as a
+        // BindingExpression. None of these writes back the bound value, which
+        // is the base value. An explicit null has a null base value.
+        Wh_Log(L"ReadLocalValue returned %s, using GetAnimationBaseValue",
+               value ? winrt::get_class_name(value).c_str() : L"null");
+        value = elementDo.GetAnimationBaseValue(property);
+    } else if (value == DependencyProperty::UnsetValue()) {
+        // A Grid's definitions, and transitions which markup lists without
+        // naming the collection type, are in a collection which isn't a local
+        // value, and clearing the property would leave the element without
+        // them.
+        auto effectiveValue = elementDo.GetValue(property);
+        if (effectiveValue.try_as<Controls::ColumnDefinitionCollection>() ||
+            effectiveValue.try_as<Controls::RowDefinitionCollection>() ||
+            effectiveValue.try_as<Media::Animation::TransitionCollection>()) {
+            Wh_Log(L"ReadLocalValue returned unset, using GetValue for %s",
+                   winrt::get_class_name(effectiveValue).c_str());
+            value = std::move(effectiveValue);
         }
-
-        // TODO: Is this still needed?
-#if 0
-        auto className = winrt::get_class_name(value);
-        if (className == L"Windows.UI.Xaml.Data.BindingExpressionBase" ||
-            className == L"Windows.UI.Xaml.Data.BindingExpression") {
-            // BindingExpressionBase was observed to be returned for XAML
-            // properties that were declared as following:
-            //
-            // <Border ... CornerRadius="{TemplateBinding CornerRadius}" />
-            //
-            // Calling SetValue with it fails with an error, so we won't be able
-            // to use it to restore the value. As a workaround, we use
-            // GetAnimationBaseValue to get the value.
-            Wh_Log(L"ReadLocalValue returned %s, using GetAnimationBaseValue",
-                   className.c_str());
-            value = elementDo.GetAnimationBaseValue(property);
-        }
-#endif
     }
 
     Wh_Log(L"Read property value %s",
@@ -5736,7 +5721,7 @@ winrt::Windows::Foundation::IInspectable SetOrClearValue(
     DependencyProperty property,
     const PropertyOverrideValue& overrideValue,
     bool initialApply = false,
-    bool trackImage = true) {
+    bool styleValue = true) {
     winrt::Windows::Foundation::IInspectable value;
     if (auto* inspectable =
             std::get_if<winrt::Windows::Foundation::IInspectable>(
@@ -5781,7 +5766,7 @@ winrt::Windows::Foundation::IInspectable SetOrClearValue(
     // Image element. A value being restored isn't tracked: it's the app's own,
     // and during uninitialization tracking it would register handlers which
     // outlive the mod.
-    if (trackImage) {
+    if (styleValue) {
         if (auto imageBrush = value.try_as<Media::ImageBrush>()) {
             TrackIfRemoteImageSource(imageBrush,
                                      Media::ImageBrush::ImageSourceProperty(),
@@ -5830,31 +5815,34 @@ winrt::Windows::Foundation::IInspectable SetOrClearValue(
         // doesn't update the layout. SetValue does take over a collection which
         // another Grid created, so the value is copied into a scratch Grid's
         // collection, kept alive through the SetValue call below.
+        // A collection being restored is the Grid's own and goes back as is.
         Controls::Grid definitionsCloneOwner{nullptr};
-        if (auto sourceColumns =
-                value.try_as<Controls::ColumnDefinitionCollection>()) {
-            definitionsCloneOwner = Controls::Grid{};
-            auto clonedColumns = definitionsCloneOwner.ColumnDefinitions();
-            for (auto const& column : sourceColumns) {
-                Controls::ColumnDefinition clonedColumn;
-                clonedColumn.Width(column.Width());
-                clonedColumn.MinWidth(column.MinWidth());
-                clonedColumn.MaxWidth(column.MaxWidth());
-                clonedColumns.Append(clonedColumn);
+        if (styleValue) {
+            if (auto sourceColumns =
+                    value.try_as<Controls::ColumnDefinitionCollection>()) {
+                definitionsCloneOwner = Controls::Grid{};
+                auto clonedColumns = definitionsCloneOwner.ColumnDefinitions();
+                for (auto const& column : sourceColumns) {
+                    Controls::ColumnDefinition clonedColumn;
+                    clonedColumn.Width(column.Width());
+                    clonedColumn.MinWidth(column.MinWidth());
+                    clonedColumn.MaxWidth(column.MaxWidth());
+                    clonedColumns.Append(clonedColumn);
+                }
+                value = clonedColumns;
+            } else if (auto sourceRows =
+                           value.try_as<Controls::RowDefinitionCollection>()) {
+                definitionsCloneOwner = Controls::Grid{};
+                auto clonedRows = definitionsCloneOwner.RowDefinitions();
+                for (auto const& row : sourceRows) {
+                    Controls::RowDefinition clonedRow;
+                    clonedRow.Height(row.Height());
+                    clonedRow.MinHeight(row.MinHeight());
+                    clonedRow.MaxHeight(row.MaxHeight());
+                    clonedRows.Append(clonedRow);
+                }
+                value = clonedRows;
             }
-            value = clonedColumns;
-        } else if (auto sourceRows =
-                       value.try_as<Controls::RowDefinitionCollection>()) {
-            definitionsCloneOwner = Controls::Grid{};
-            auto clonedRows = definitionsCloneOwner.RowDefinitions();
-            for (auto const& row : sourceRows) {
-                Controls::RowDefinition clonedRow;
-                clonedRow.Height(row.Height());
-                clonedRow.MinHeight(row.MinHeight());
-                clonedRow.MaxHeight(row.MaxHeight());
-                clonedRows.Append(clonedRow);
-            }
-            value = clonedRows;
         }
 
         elementDo.SetValue(property, value);
@@ -5874,7 +5862,7 @@ void RestoreOriginalValue(
     winrt::Windows::Foundation::IInspectable const& originalValue) {
     UntrackImageTarget(elementDo, property);
     SetOrClearValue(elementDo, property, originalValue, /*initialApply=*/false,
-                    /*trackImage=*/false);
+                    /*styleValue=*/false);
 }
 
 // https://stackoverflow.com/a/5665377
