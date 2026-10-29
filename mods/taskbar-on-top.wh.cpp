@@ -439,6 +439,19 @@ TaskbarLocation GetTaskbarLocationSecondary() {
     return g_settings.taskbarLocationSecondary;
 }
 
+// The primary taskbar isn't necessarily on the primary monitor, e.g. with the
+// "Primary taskbar on secondary monitor" mod. The taskbar window property is
+// set when the taskbar moves to a monitor, before it's laid out there.
+HMONITOR GetPrimaryTaskbarMonitor() {
+    if (HWND hTaskbarWnd = FindWindow(L"Shell_TrayWnd", nullptr)) {
+        if (auto monitor = (HMONITOR)GetProp(hTaskbarWnd, L"TaskbarMonitor")) {
+            return monitor;
+        }
+    }
+
+    return MonitorFromPoint({0, 0}, MONITOR_DEFAULTTOPRIMARY);
+}
+
 TaskbarLocation GetTaskbarLocationForMonitor(HMONITOR monitor) {
     if (g_unloading) {
         return TaskbarLocation::bottom;
@@ -449,11 +462,8 @@ TaskbarLocation GetTaskbarLocationForMonitor(HMONITOR monitor) {
         return g_settings.taskbarLocation;
     }
 
-    HMONITOR primaryMonitor =
-        MonitorFromPoint({0, 0}, MONITOR_DEFAULTTOPRIMARY);
-
-    return monitor == primaryMonitor ? g_settings.taskbarLocation
-                                     : taskbarLocationSecondary;
+    return monitor == GetPrimaryTaskbarMonitor() ? g_settings.taskbarLocation
+                                                 : taskbarLocationSecondary;
 }
 
 using TrayUI_GetStuckRectForMonitor_t = bool(WINAPI*)(void* pThis,
