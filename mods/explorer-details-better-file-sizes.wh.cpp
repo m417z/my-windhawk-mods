@@ -428,7 +428,51 @@ static EVERYTHING3_WCHAR *_everything3_wchar_string_cat_wchar_string_no_null_ter
 	return d;
 }
 
-static EVERYTHING3_WCHAR *_Everything3_get_pipe_name(EVERYTHING3_WCHAR *buf, const EVERYTHING3_WCHAR *instance_name) {
+static int _everything3_unicode_hex_char(int value) {
+	if ((value >= 0) && (value < 10)) {
+		return '0' + value;
+	}
+
+	return 'A' + value - 10;
+}
+
+static EVERYTHING3_WCHAR *_everything3_cat_escaped_instance_name(EVERYTHING3_WCHAR *buf, EVERYTHING3_WCHAR *dstart, const EVERYTHING3_WCHAR *instance_name) {
+	EVERYTHING3_WCHAR *d;
+	const EVERYTHING3_WCHAR *p;
+
+	d = dstart;
+	p = instance_name;
+
+	while (*p) {
+		switch (*p) {
+			case '%':
+			case ':': // invalid pipe name
+			case '\\': // invalid pipe name
+				if (buf) {
+					*d++ = '%';
+					*d++ = _everything3_unicode_hex_char(*p >> 4);
+					*d++ = _everything3_unicode_hex_char(*p & 0x0f);
+				} else {
+					d += 3;
+				}
+				break;
+
+			default:
+				if (buf) {
+					*d++ = *p;
+				} else {
+					d++;
+				}
+				break;
+		}
+
+		p++;
+	}
+
+	return d;
+}
+
+static EVERYTHING3_WCHAR *_everything3_get_pipe_name(EVERYTHING3_WCHAR *buf, const EVERYTHING3_WCHAR *instance_name) {
 	EVERYTHING3_WCHAR *d;
 
 	d = buf;
@@ -437,7 +481,7 @@ static EVERYTHING3_WCHAR *_Everything3_get_pipe_name(EVERYTHING3_WCHAR *buf, con
 
 	if ((instance_name) && (*instance_name)) {
 		d = _everything3_wchar_string_cat_wchar_string_no_null_terminate(buf, d, L" (");
-		d = _everything3_wchar_string_cat_wchar_string_no_null_terminate(buf, d, instance_name);
+		d = _everything3_cat_escaped_instance_name(buf, d, instance_name);
 		d = _everything3_wchar_string_cat_wchar_string_no_null_terminate(buf, d, L")");
 	}
 
@@ -449,8 +493,8 @@ static EVERYTHING3_WCHAR *_Everything3_get_pipe_name(EVERYTHING3_WCHAR *buf, con
 }
 
 static BOOL _everything3_wchar_buf_get_pipe_name(_everything3_wchar_buf_t *wcbuf, const EVERYTHING3_WCHAR *instance_name) {
-	if (_everything3_wchar_buf_grow_length(wcbuf, (SIZE_T)_Everything3_get_pipe_name(NULL, instance_name))) {
-		_Everything3_get_pipe_name(wcbuf->buf, instance_name);
+	if (_everything3_wchar_buf_grow_length(wcbuf, (SIZE_T)_everything3_get_pipe_name(NULL, instance_name))) {
+		_everything3_get_pipe_name(wcbuf->buf, instance_name);
 
 		return TRUE;
 	}
