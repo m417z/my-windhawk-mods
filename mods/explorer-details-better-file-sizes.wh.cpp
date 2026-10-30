@@ -854,7 +854,7 @@ static BOOL _everything3_recv_header(_everything3_client_t *client, _everything3
 				} else if (recv_header->code == _EVERYTHING3_RESPONSE_ERROR_CANCELLED) {
 					SetLastError(EVERYTHING3_ERROR_CANCELLED);
 				} else if (recv_header->code == _EVERYTHING3_RESPONSE_ERROR_NOT_FOUND) {
-					SetLastError(EVERYTHING3_ERROR_IPC_PIPE_NOT_FOUND);
+					SetLastError(EVERYTHING3_ERROR_PROPERTY_NOT_FOUND);
 				} else if (recv_header->code == _EVERYTHING3_RESPONSE_ERROR_OUT_OF_MEMORY) {
 					SetLastError(EVERYTHING3_ERROR_SERVER);
 				} else if (recv_header->code == _EVERYTHING3_RESPONSE_ERROR_INVALID_COMMAND) {
