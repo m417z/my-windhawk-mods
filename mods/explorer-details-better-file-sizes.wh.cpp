@@ -380,6 +380,8 @@ typedef struct _everything3_client_s {
 	HANDLE send_event;
 	HANDLE recv_event;
 	HANDLE shutdown_event;
+	// overlapped structs must remain valid until the pipe is closed.
+	OVERLAPPED recv_overlapped;
 } _everything3_client_t;
 
 static void _everything3_Lock(_everything3_client_t *client);
@@ -586,6 +588,13 @@ BOOL EVERYTHING3_API Everything3_DestroyClient(_everything3_client_t *client) {
 	if (client) {
 		Everything3_ShutdownClient(client);
 
+		if (client->pipe_handle != INVALID_HANDLE_VALUE) {
+			CloseHandle(client->pipe_handle);
+
+			client->pipe_handle = INVALID_HANDLE_VALUE;
+		}
+
+		// close events after the pipe handle, which could still be using them in overlapped IO.
 		if (client->recv_event) {
 			CloseHandle(client->recv_event);
 		}
@@ -596,12 +605,6 @@ BOOL EVERYTHING3_API Everything3_DestroyClient(_everything3_client_t *client) {
 
 		if (client->shutdown_event) {
 			CloseHandle(client->shutdown_event);
-		}
-
-		if (client->pipe_handle != INVALID_HANDLE_VALUE) {
-			CloseHandle(client->pipe_handle);
-
-			client->pipe_handle = INVALID_HANDLE_VALUE;
 		}
 
 		DeleteCriticalSection(&client->cs);
@@ -874,14 +877,10 @@ static BOOL _everything3_recv_header(_everything3_client_t *client, _everything3
 static BOOL _everything3_recv_data(_everything3_client_t *client, void *buf, SIZE_T buf_size) {
 	BOOL ret;
 	DWORD numread;
-	OVERLAPPED recv_overlapped;
 	BYTE *recv_p;
 	SIZE_T recv_run;
 
 	ret = FALSE;
-	recv_overlapped.hEvent = client->recv_event;
-	recv_overlapped.Offset = 0;
-	recv_overlapped.OffsetHigh = 0;
 
 	recv_p = (BYTE *)buf;
 	recv_run = buf_size;
@@ -901,7 +900,11 @@ static BOOL _everything3_recv_data(_everything3_client_t *client, void *buf, SIZ
 			chunk_size = 65536;
 		}
 
-		if (ReadFile(client->pipe_handle, recv_p, chunk_size, &numread, &recv_overlapped)) {
+		ZeroMemory(&client->recv_overlapped, sizeof(OVERLAPPED));
+		client->recv_overlapped.hEvent = client->recv_event;
+		ResetEvent(client->recv_overlapped.hEvent);
+
+		if (ReadFile(client->pipe_handle, recv_p, chunk_size, &numread, &client->recv_overlapped)) {
 			if (numread) {
 				recv_p += numread;
 				recv_run -= numread;
@@ -927,7 +930,7 @@ static BOOL _everything3_recv_data(_everything3_client_t *client, void *buf, SIZ
 					break;
 				}
 
-				if (GetOverlappedResult(client->pipe_handle, &recv_overlapped, &numread, FALSE)) {
+				if (GetOverlappedResult(client->pipe_handle, &client->recv_overlapped, &numread, FALSE)) {
 					if (numread) {
 						recv_p += numread;
 						recv_run -= numread;
