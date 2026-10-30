@@ -520,6 +520,7 @@ _everything3_client_t *EVERYTHING3_API Everything3_ConnectW(const EVERYTHING3_WC
 	if (_everything3_wchar_buf_get_pipe_name(&pipe_name_wcbuf, instance_name)) {
 		HANDLE pipe_handle;
 
+retry:
 		pipe_handle = CreateFileW(pipe_name_wcbuf.buf, GENERIC_READ | GENERIC_WRITE, 0, 0, OPEN_EXISTING, FILE_FLAG_OVERLAPPED, 0);
 		if (pipe_handle != INVALID_HANDLE_VALUE) {
 			_everything3_client_t *client;
@@ -561,8 +562,18 @@ _everything3_client_t *EVERYTHING3_API Everything3_ConnectW(const EVERYTHING3_WC
 			if (pipe_handle != INVALID_HANDLE_VALUE) {
 				CloseHandle(pipe_handle);
 			}
-
 		} else {
+			DWORD last_error;
+
+			last_error = GetLastError();
+
+			if (last_error == ERROR_PIPE_BUSY) {
+				Sleep(10);
+
+				// Everything will create a new pipe server immediately.
+				goto retry;
+			}
+
 			SetLastError(EVERYTHING3_ERROR_IPC_PIPE_NOT_FOUND);
 		}
 	} else {
