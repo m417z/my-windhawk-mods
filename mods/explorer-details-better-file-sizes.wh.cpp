@@ -749,10 +749,16 @@ static BOOL _everything3_write_pipe(_everything3_client_t *client, const void *i
 		ResetEvent(client->send_overlapped.hEvent);
 
 		if (WriteFile(client->pipe_handle, send_p, send_run, &numwritten, &client->send_overlapped)) {
-			send_p += numwritten;
-			send_run -= numwritten;
+			if (numwritten) {
+				send_p += numwritten;
+				send_run -= numwritten;
 
-			continue;
+				continue;
+			} else {
+				SetLastError(EVERYTHING3_ERROR_DISCONNECTED);
+
+				return FALSE;
+			}
 		} else {
 			DWORD last_error;
 
