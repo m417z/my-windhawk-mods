@@ -924,17 +924,33 @@ static BOOL _everything3_recv_data(_everything3_client_t *client, void *buf, SIZ
 
 			if ((last_error == ERROR_IO_INCOMPLETE) || (last_error == ERROR_IO_PENDING)) {
 				HANDLE wait_handles[2];
+				DWORD wait_ret;
 
 				wait_handles[0] = client->shutdown_event;
 				wait_handles[1] = client->recv_event;
 
-				if (WaitForMultipleObjects(2, wait_handles, FALSE, INFINITE) == WAIT_OBJECT_0) {
+				wait_ret = WaitForMultipleObjects(2, wait_handles, FALSE, INFINITE);
+
+				if (wait_ret == WAIT_OBJECT_0) {
 					SetLastError(EVERYTHING3_ERROR_SHUTDOWN);
+
+					// cancel pending IO and wait for it to complete.
+					CancelIo(client->pipe_handle);
+					GetOverlappedResult(client->pipe_handle, &client->recv_overlapped, &numread, TRUE);
 
 					break;
 				}
 
-				if (GetOverlappedResult(client->pipe_handle, &client->recv_overlapped, &numread, FALSE)) {
+				if (wait_ret != WAIT_OBJECT_0 + 1) {
+					SetLastError(EVERYTHING3_ERROR_SHUTDOWN);
+
+					CancelIo(client->pipe_handle);
+					GetOverlappedResult(client->pipe_handle, &client->recv_overlapped, &numread, TRUE);
+
+					break;
+				}
+
+				if (GetOverlappedResult(client->pipe_handle, &client->recv_overlapped, &numread, TRUE)) {
 					if (numread) {
 						recv_p += numread;
 						recv_run -= numread;
