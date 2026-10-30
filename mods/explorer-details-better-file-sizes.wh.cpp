@@ -381,6 +381,7 @@ typedef struct _everything3_client_s {
 	HANDLE recv_event;
 	HANDLE shutdown_event;
 	// overlapped structs must remain valid until the pipe is closed.
+	OVERLAPPED send_overlapped;
 	OVERLAPPED recv_overlapped;
 } _everything3_client_t;
 
@@ -725,22 +726,21 @@ static BOOL _everything3_send(_everything3_client_t *client, DWORD code, const v
 	if (in_size <= EVERYTHING3_DWORD_MAX) {
 		_everything3_message_t send_message;
 		DWORD numwritten;
-		OVERLAPPED send_overlapped;
 		BYTE *send_p;
 		DWORD send_run;
 
 		send_message.code = code;
 		send_message.size = (DWORD)in_size;
 
-		send_overlapped.hEvent = client->send_event;
-		send_overlapped.Offset = 0;
-		send_overlapped.OffsetHigh = 0;
-
 		send_p = (BYTE *)&send_message;
 		send_run = sizeof(send_message);
 
 		while (send_run) {
-			if (WriteFile(client->pipe_handle, send_p, send_run, &numwritten, &send_overlapped)) {
+			ZeroMemory(&client->send_overlapped, sizeof(OVERLAPPED));
+			client->send_overlapped.hEvent = client->send_event;
+			ResetEvent(client->send_overlapped.hEvent);
+
+			if (WriteFile(client->pipe_handle, send_p, send_run, &numwritten, &client->send_overlapped)) {
 				if (numwritten) {
 					send_p += numwritten;
 					send_run -= numwritten;
@@ -768,7 +768,7 @@ static BOOL _everything3_send(_everything3_client_t *client, DWORD code, const v
 						return FALSE;
 					}
 
-					if (GetOverlappedResult(client->pipe_handle, &send_overlapped, &numwritten, FALSE)) {
+					if (GetOverlappedResult(client->pipe_handle, &client->send_overlapped, &numwritten, FALSE)) {
 						if (numwritten) {
 							send_p += numwritten;
 							send_run -= numwritten;
@@ -796,7 +796,11 @@ static BOOL _everything3_send(_everything3_client_t *client, DWORD code, const v
 		send_run = (DWORD)in_size;
 
 		while (send_run) {
-			if (WriteFile(client->pipe_handle, send_p, send_run, &numwritten, &send_overlapped)) {
+			ZeroMemory(&client->send_overlapped, sizeof(OVERLAPPED));
+			client->send_overlapped.hEvent = client->send_event;
+			ResetEvent(client->send_overlapped.hEvent);
+
+			if (WriteFile(client->pipe_handle, send_p, send_run, &numwritten, &client->send_overlapped)) {
 				send_p += numwritten;
 				send_run -= numwritten;
 
@@ -818,7 +822,7 @@ static BOOL _everything3_send(_everything3_client_t *client, DWORD code, const v
 						return FALSE;
 					}
 
-					if (GetOverlappedResult(client->pipe_handle, &send_overlapped, &numwritten, FALSE)) {
+					if (GetOverlappedResult(client->pipe_handle, &client->send_overlapped, &numwritten, FALSE)) {
 						send_p += numwritten;
 						send_run -= numwritten;
 
