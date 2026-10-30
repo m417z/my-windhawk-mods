@@ -620,6 +620,8 @@ static void *_everything3_mem_alloc(SIZE_T size) {
 	void *p;
 
 	if (size == SIZE_MAX) {
+		SetLastError(EVERYTHING3_ERROR_OUT_OF_MEMORY);
+
 		return NULL;
 	}
 
