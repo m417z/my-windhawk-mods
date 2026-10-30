@@ -342,6 +342,7 @@ EVERYTHING3_UINT64 EVERYTHING3_API Everything3_GetFolderSizeFromFilenameW(EVERYT
 
 #define _EVERYTHING3_WCHAR_BUF_STACK_SIZE					MAX_PATH
 #define _EVERYTHING3_UTF8_BUF_STACK_SIZE					MAX_PATH
+#define _EVERYTHING3_CONNECT_BUSY_TIMEOUT					30000
 
 // IPC pipe commands.
 #define _EVERYTHING3_COMMAND_GET_FOLDER_SIZE				18
@@ -567,6 +568,9 @@ _everything3_client_t *EVERYTHING3_API Everything3_ConnectW(const EVERYTHING3_WC
 
 	if (_everything3_wchar_buf_get_pipe_name(&pipe_name_wcbuf, instance_name, TRUE)) {
 		HANDLE pipe_handle;
+		DWORD tick_start;
+
+		tick_start = GetTickCount();
 
 retry:
 		pipe_handle = CreateFileW(pipe_name_wcbuf.buf, GENERIC_READ | GENERIC_WRITE, 0, 0, OPEN_EXISTING, FILE_FLAG_OVERLAPPED, 0);
@@ -626,10 +630,17 @@ retry:
 					}
 				}
 			} else if (last_error == ERROR_PIPE_BUSY) {
-				Sleep(10);
+				DWORD elapsed;
 
-				// Everything will create a new pipe server immediately.
-				goto retry;
+				elapsed = GetTickCount() - tick_start;
+
+				// the server recreates the pipe server immediately, so this shouldn't take long.
+				// the large timeout is for worst case scenarios.
+				if (elapsed < _EVERYTHING3_CONNECT_BUSY_TIMEOUT) {
+					if (WaitNamedPipe(pipe_name_wcbuf.buf, _EVERYTHING3_CONNECT_BUSY_TIMEOUT - elapsed)) {
+						goto retry;
+					}
+				}
 			}
 
 			SetLastError(EVERYTHING3_ERROR_IPC_PIPE_NOT_FOUND);
