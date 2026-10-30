@@ -1132,10 +1132,14 @@ static EVERYTHING3_UTF8 *_everything3_utf8_string_copy_wchar_string(EVERYTHING3_
 }
 
 static BOOL _everything3_utf8_buf_copy_wchar_string(_everything3_utf8_buf_t *cbuf, const EVERYTHING3_WCHAR *ws) {
-	if (_everything3_utf8_buf_grow_length(cbuf, (SIZE_T)_everything3_utf8_string_copy_wchar_string(NULL, ws))) {
-		_everything3_utf8_string_copy_wchar_string(cbuf->buf, ws);
+	if (ws) {
+		if (_everything3_utf8_buf_grow_length(cbuf, (SIZE_T)_everything3_utf8_string_copy_wchar_string(NULL, ws))) {
+			_everything3_utf8_string_copy_wchar_string(cbuf->buf, ws);
 
-		return TRUE;
+			return TRUE;
+		}
+	} else {
+		SetLastError(EVERYTHING3_ERROR_INVALID_PARAMETER);
 	}
 
 	return FALSE;
