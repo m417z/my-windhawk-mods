@@ -397,7 +397,7 @@ static void _everything3_wchar_buf_kill(_everything3_wchar_buf_t *wcbuf);
 static void _everything3_wchar_buf_empty(_everything3_wchar_buf_t *wcbuf);
 static BOOL _everything3_wchar_buf_grow_size(_everything3_wchar_buf_t *wcbuf, SIZE_T length_in_wchars);
 static BOOL _everything3_wchar_buf_grow_length(_everything3_wchar_buf_t *wcbuf, SIZE_T length_in_wchars);
-static BOOL _everything3_wchar_buf_get_pipe_name(_everything3_wchar_buf_t *wcbuf, const EVERYTHING3_WCHAR *instance_name);
+static BOOL _everything3_wchar_buf_get_pipe_name(_everything3_wchar_buf_t *wcbuf, const EVERYTHING3_WCHAR *instance_name, BOOL allow_session);
 static BOOL _everything3_write_pipe(_everything3_client_t *client, const void *in_data, DWORD in_size);
 static BOOL _everything3_send(_everything3_client_t *client, DWORD code, const void *in_data, SIZE_T in_size);
 static BOOL _everything3_recv_header(_everything3_client_t *client, _everything3_message_t *recv_header);
@@ -430,6 +430,35 @@ static EVERYTHING3_WCHAR *_everything3_wchar_string_cat_wchar_string_no_null_ter
 	}
 
 	return d;
+}
+
+static EVERYTHING3_WCHAR *_everything3_wchar_string_cat_format_dword(EVERYTHING3_WCHAR *buf, EVERYTHING3_WCHAR *current_d, DWORD number) {
+	EVERYTHING3_WCHAR num_buf[32];
+	EVERYTHING3_WCHAR *num_d;
+	DWORD i;
+
+	num_d = num_buf + 32;
+	i = number;
+
+	num_d--;
+	*num_d = 0;
+
+	if (i) {
+loop2:
+		num_d--;
+		*num_d = '0' + (int)(i % 10);
+
+		i /= 10;
+
+		if (i) {
+			goto loop2;
+		}
+	} else {
+		num_d--;
+		*num_d = '0';
+	}
+
+	return _everything3_wchar_string_cat_wchar_string_no_null_terminate(buf, current_d, num_d);
 }
 
 static int _everything3_unicode_hex_char(int value) {
@@ -476,12 +505,17 @@ static EVERYTHING3_WCHAR *_everything3_cat_escaped_instance_name(EVERYTHING3_WCH
 	return d;
 }
 
-static EVERYTHING3_WCHAR *_everything3_get_pipe_name(EVERYTHING3_WCHAR *buf, const EVERYTHING3_WCHAR *instance_name) {
+static EVERYTHING3_WCHAR *_everything3_get_pipe_name(EVERYTHING3_WCHAR *buf, const EVERYTHING3_WCHAR *instance_name, BOOL got_session_id, DWORD session_id) {
 	EVERYTHING3_WCHAR *d;
 
 	d = buf;
 
 	d = _everything3_wchar_string_cat_wchar_string_no_null_terminate(buf, d, L"\\\\.\\PIPE\\Everything IPC");
+
+	if (got_session_id) {
+		d = _everything3_wchar_string_cat_wchar_string_no_null_terminate(buf, d, L" Session ");
+		d = _everything3_wchar_string_cat_format_dword(buf, d, session_id);
+	}
 
 	if ((instance_name) && (*instance_name)) {
 		d = _everything3_wchar_string_cat_wchar_string_no_null_terminate(buf, d, L" (");
@@ -496,9 +530,21 @@ static EVERYTHING3_WCHAR *_everything3_get_pipe_name(EVERYTHING3_WCHAR *buf, con
 	return d;
 }
 
-static BOOL _everything3_wchar_buf_get_pipe_name(_everything3_wchar_buf_t *wcbuf, const EVERYTHING3_WCHAR *instance_name) {
-	if (_everything3_wchar_buf_grow_length(wcbuf, (SIZE_T)_everything3_get_pipe_name(NULL, instance_name))) {
-		_everything3_get_pipe_name(wcbuf->buf, instance_name);
+static BOOL _everything3_wchar_buf_get_pipe_name(_everything3_wchar_buf_t *wcbuf, const EVERYTHING3_WCHAR *instance_name, BOOL allow_session) {
+	BOOL got_session_id;
+	DWORD session_id;
+
+	got_session_id = FALSE;
+	session_id = 0;
+
+	if (allow_session) {
+		if (ProcessIdToSessionId(GetCurrentProcessId(), &session_id)) {
+			got_session_id = TRUE;
+		}
+	}
+
+	if (_everything3_wchar_buf_grow_length(wcbuf, (SIZE_T)_everything3_get_pipe_name(NULL, instance_name, got_session_id, session_id))) {
+		_everything3_get_pipe_name(wcbuf->buf, instance_name, got_session_id, session_id);
 
 		return TRUE;
 	}
@@ -513,11 +559,13 @@ static BOOL _everything3_wchar_buf_get_pipe_name(_everything3_wchar_buf_t *wcbuf
 _everything3_client_t *EVERYTHING3_API Everything3_ConnectW(const EVERYTHING3_WCHAR *instance_name) {
 	_everything3_client_t *ret;
 	_everything3_wchar_buf_t pipe_name_wcbuf;
+	BOOL did_session_name;
 
 	ret = NULL;
 	_everything3_wchar_buf_init(&pipe_name_wcbuf);
+	did_session_name = FALSE;
 
-	if (_everything3_wchar_buf_get_pipe_name(&pipe_name_wcbuf, instance_name)) {
+	if (_everything3_wchar_buf_get_pipe_name(&pipe_name_wcbuf, instance_name, TRUE)) {
 		HANDLE pipe_handle;
 
 retry:
@@ -567,7 +615,17 @@ retry:
 
 			last_error = GetLastError();
 
-			if (last_error == ERROR_PIPE_BUSY) {
+			if (last_error == ERROR_FILE_NOT_FOUND) {
+				if (!did_session_name) {
+					// try the pipe name without the session.
+					// if our session doesn't match, the server will boot us.
+					if (_everything3_wchar_buf_get_pipe_name(&pipe_name_wcbuf, instance_name, FALSE)) {
+						did_session_name = TRUE;
+
+						goto retry;
+					}
+				}
+			} else if (last_error == ERROR_PIPE_BUSY) {
 				Sleep(10);
 
 				// Everything will create a new pipe server immediately.
