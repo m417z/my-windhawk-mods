@@ -398,6 +398,7 @@ static void _everything3_wchar_buf_empty(_everything3_wchar_buf_t *wcbuf);
 static BOOL _everything3_wchar_buf_grow_size(_everything3_wchar_buf_t *wcbuf, SIZE_T length_in_wchars);
 static BOOL _everything3_wchar_buf_grow_length(_everything3_wchar_buf_t *wcbuf, SIZE_T length_in_wchars);
 static BOOL _everything3_wchar_buf_get_pipe_name(_everything3_wchar_buf_t *wcbuf, const EVERYTHING3_WCHAR *instance_name);
+static BOOL _everything3_write_pipe(_everything3_client_t *client, const void *in_data, DWORD in_size);
 static BOOL _everything3_send(_everything3_client_t *client, DWORD code, const void *in_data, SIZE_T in_size);
 static BOOL _everything3_recv_header(_everything3_client_t *client, _everything3_message_t *recv_header);
 static BOOL _everything3_recv_data(_everything3_client_t *client, void *buf, SIZE_T buf_size);
@@ -722,107 +723,60 @@ static BOOL _everything3_wchar_buf_grow_length(_everything3_wchar_buf_t *wcbuf, 
 	return FALSE;
 }
 
-static BOOL _everything3_send(_everything3_client_t *client, DWORD code, const void *in_data, SIZE_T in_size) {
-	if (in_size <= EVERYTHING3_DWORD_MAX) {
-		_everything3_message_t send_message;
+static BOOL _everything3_write_pipe(_everything3_client_t *client, const void *in_data, DWORD in_size) {
+	const BYTE *send_p;
+	DWORD send_run;
+
+	send_p = (const BYTE *)in_data;
+	send_run = in_size;
+
+	while (send_run) {
 		DWORD numwritten;
-		BYTE *send_p;
-		DWORD send_run;
 
-		send_message.code = code;
-		send_message.size = (DWORD)in_size;
+		ZeroMemory(&client->send_overlapped, sizeof(OVERLAPPED));
+		client->send_overlapped.hEvent = client->send_event;
+		ResetEvent(client->send_overlapped.hEvent);
 
-		send_p = (BYTE *)&send_message;
-		send_run = sizeof(send_message);
+		if (WriteFile(client->pipe_handle, send_p, send_run, &numwritten, &client->send_overlapped)) {
+			send_p += numwritten;
+			send_run -= numwritten;
 
-		while (send_run) {
-			ZeroMemory(&client->send_overlapped, sizeof(OVERLAPPED));
-			client->send_overlapped.hEvent = client->send_event;
-			ResetEvent(client->send_overlapped.hEvent);
+			continue;
+		} else {
+			DWORD last_error;
 
-			if (WriteFile(client->pipe_handle, send_p, send_run, &numwritten, &client->send_overlapped)) {
-				if (numwritten) {
-					send_p += numwritten;
-					send_run -= numwritten;
+			last_error = GetLastError();
 
-					continue;
-				} else {
-					SetLastError(EVERYTHING3_ERROR_DISCONNECTED);
+			if ((last_error == ERROR_IO_INCOMPLETE) || (last_error == ERROR_IO_PENDING)) {
+				HANDLE wait_handles[2];
+				DWORD wait_ret;
 
-					return FALSE;
-				}
-			} else {
-				DWORD last_error;
+				wait_handles[0] = client->shutdown_event;
+				wait_handles[1] = client->send_event;
 
-				last_error = GetLastError();
+				wait_ret = WaitForMultipleObjects(2, wait_handles, FALSE, INFINITE);
 
-				if ((last_error == ERROR_IO_INCOMPLETE) || (last_error == ERROR_IO_PENDING)) {
-					HANDLE wait_handles[2];
+				if (wait_ret == WAIT_OBJECT_0) {
+					SetLastError(EVERYTHING3_ERROR_SHUTDOWN);
 
-					wait_handles[0] = client->shutdown_event;
-					wait_handles[1] = client->send_event;
-
-					if (WaitForMultipleObjects(2, wait_handles, FALSE, INFINITE) == WAIT_OBJECT_0) {
-						SetLastError(EVERYTHING3_ERROR_SHUTDOWN);
-
-						return FALSE;
-					}
-
-					if (GetOverlappedResult(client->pipe_handle, &client->send_overlapped, &numwritten, FALSE)) {
-						if (numwritten) {
-							send_p += numwritten;
-							send_run -= numwritten;
-
-							continue;
-						} else {
-							SetLastError(EVERYTHING3_ERROR_DISCONNECTED);
-
-							return FALSE;
-						}
-					} else {
-						SetLastError(EVERYTHING3_ERROR_DISCONNECTED);
-
-						return FALSE;
-					}
-				} else {
-					SetLastError(EVERYTHING3_ERROR_DISCONNECTED);
+					// cancel pending IO and wait for it to complete.
+					CancelIo(client->pipe_handle);
+					GetOverlappedResult(client->pipe_handle, &client->send_overlapped, &numwritten, TRUE);
 
 					return FALSE;
 				}
-			}
-		}
 
-		send_p = (BYTE *)in_data;
-		send_run = (DWORD)in_size;
+				if (wait_ret != WAIT_OBJECT_0 + 1) {
+					SetLastError(EVERYTHING3_ERROR_SERVER);
 
-		while (send_run) {
-			ZeroMemory(&client->send_overlapped, sizeof(OVERLAPPED));
-			client->send_overlapped.hEvent = client->send_event;
-			ResetEvent(client->send_overlapped.hEvent);
+					CancelIo(client->pipe_handle);
+					GetOverlappedResult(client->pipe_handle, &client->send_overlapped, &numwritten, TRUE);
 
-			if (WriteFile(client->pipe_handle, send_p, send_run, &numwritten, &client->send_overlapped)) {
-				send_p += numwritten;
-				send_run -= numwritten;
+					return FALSE;
+				}
 
-				continue;
-			} else {
-				DWORD last_error;
-
-				last_error = GetLastError();
-
-				if ((last_error == ERROR_IO_INCOMPLETE) || (last_error == ERROR_IO_PENDING)) {
-					HANDLE wait_handles[2];
-
-					wait_handles[0] = client->shutdown_event;
-					wait_handles[1] = client->send_event;
-
-					if (WaitForMultipleObjects(2, wait_handles, FALSE, INFINITE) == WAIT_OBJECT_0) {
-						SetLastError(EVERYTHING3_ERROR_SHUTDOWN);
-
-						return FALSE;
-					}
-
-					if (GetOverlappedResult(client->pipe_handle, &client->send_overlapped, &numwritten, FALSE)) {
+				if (GetOverlappedResult(client->pipe_handle, &client->send_overlapped, &numwritten, TRUE)) {
+					if (numwritten) {
 						send_p += numwritten;
 						send_run -= numwritten;
 
@@ -837,15 +791,38 @@ static BOOL _everything3_send(_everything3_client_t *client, DWORD code, const v
 
 					return FALSE;
 				}
+			} else {
+				SetLastError(EVERYTHING3_ERROR_DISCONNECTED);
+
+				return FALSE;
 			}
 		}
-
-		return TRUE;
-	} else {
-		SetLastError(EVERYTHING3_ERROR_OUT_OF_MEMORY);
-
-		return FALSE;
 	}
+
+	return TRUE;
+}
+
+static BOOL _everything3_send(_everything3_client_t *client, DWORD code, const void *in_data, SIZE_T in_size) {
+	BOOL ret;
+
+	ret = FALSE;
+
+	if (in_size <= EVERYTHING3_DWORD_MAX) {
+		_everything3_message_t send_message;
+
+		send_message.code = code;
+		send_message.size = (DWORD)in_size;
+
+		if (_everything3_write_pipe(client, &send_message, sizeof(_everything3_message_t))) {
+			if (_everything3_write_pipe(client, in_data, (DWORD)in_size)) {
+				ret = TRUE;
+			}
+		}
+	} else {
+		SetLastError(EVERYTHING3_ERROR_INVALID_PARAMETER);
+	}
+
+	return ret;
 }
 
 static BOOL _everything3_recv_header(_everything3_client_t *client, _everything3_message_t *recv_header) {
