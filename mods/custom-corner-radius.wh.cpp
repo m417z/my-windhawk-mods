@@ -2,14 +2,14 @@
 // @id              custom-corner-radius
 // @name            Custom Window Corner Radius
 // @description     Customizes window corner radius in Windows 11, making corners more or less rounded
-// @version         1.3
+// @version         1.4
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
 // @homepage        https://m417z.com/
 // @include         dwm.exe
 // @architecture    x86-64
-// @compilerOptions -lgdi32 -lole32 -lwevtapi -ld2d1 -ld3d11
+// @compilerOptions -lole32 -lwevtapi -ld2d1 -ld3d11
 // ==/WindhawkMod==
 
 // Source code is published under The GNU General Public License v3.0.
@@ -52,7 +52,7 @@ and make sure that `dwm.exe` is in the list.
 - Standard tooltips can be customized separately with the "Tooltip corner
   radius" option.
 - Each window corner can have its own radius with the "Per-corner radius"
-  options, for example to round only the top corners.
+  option, for example to round only the top corners.
 - Windows 11 squares off the corners of maximized and snapped windows. The
   "Rounded corners for maximized and snapped windows" option enables rounding
   for them.
@@ -80,23 +80,11 @@ and make sure that `dwm.exe` is in the list.
     your DPI scaling.
 
     Set to -1 to keep the original radius.
-- perCornerRadius:
-  - topLeft: -1
-    $name: Top-left corner
-  - topRight: -1
-    $name: Top-right corner
-  - bottomLeft: -1
-    $name: Bottom-left corner
-  - bottomRight: -1
-    $name: Bottom-right corner
+- perCornerRadius: ""
   $name: Per-corner radius
   $description: >-
-    Overrides the corner radius of individual window corners, for example to
-    round only the top corners. Set a corner to -1 to use the "Corner radius"
-    value.
-
-    These options don't apply to elements that use the small or tooltip radius,
-    and are ignored when "Corner radius" is -1.
+    Overrides the radius of each corner, in the order top-left, top-right,
+    bottom-right, bottom-left. For example, 8,8,0,0 rounds only the top corners.
 - smallRadius: 6
   $name: Small corner radius
   $description: >-
@@ -154,6 +142,7 @@ and make sure that `dwm.exe` is in the list.
 #include <limits>
 #include <mutex>
 #include <regex>
+#include <shared_mutex>
 #include <string>
 #include <string_view>
 #include <unordered_map>
@@ -181,6 +170,10 @@ struct {
     RoundMaximizedAndSnapped roundMaximizedAndSnapped;
     std::unordered_set<std::wstring> excludedPrograms;
 } g_settings;
+
+// Guards `g_settings.excludedPrograms`, which DWM reads while the settings are
+// being reloaded.
+std::shared_mutex g_excludedProgramsMutex;
 
 using GetWindowData_t = void*(WINAPI*)(void* pThis);
 GetWindowData_t GetWindowData_Original;
@@ -460,6 +453,10 @@ bool IsWindowExcludedCached(HWND hWnd) {
 // Windows whose HWND can't be recovered are never excluded, same as the other
 // HWND-based checks.
 bool IsTopLevelWindowExcluded(void* pThis) {
+    // Held until the verdict is cached, so that one based on the previous
+    // exclusions can't be stored after they're replaced and the cache cleared.
+    std::shared_lock lock(g_excludedProgramsMutex);
+
     if (g_settings.excludedPrograms.empty()) {
         return false;
     }
@@ -913,18 +910,26 @@ bool HookD2DFunctions() {
     return true;
 }
 
-// Forces an empty window region on a SysShadow companion HWND so the
-// legacy rectangular drop shadow stops being composited. Idempotent: once
-// the window already has the (empty) region we own, the call is a no-op.
-void HideSysShadowWindow(HWND hwnd) {
-    HRGN rgn = CreateRectRgn(0, 0, 0, 0);
-    if (!rgn) {
+using CVisual_Hide_t = void(WINAPI*)(void* pThis);
+CVisual_Hide_t CVisual_Hide_Original;
+
+constexpr WCHAR kSysShadowHiddenProp[] = L"Windhawk_SysShadowHidden_" WH_MOD_ID;
+
+// Hides the visual of a SysShadow companion window so the legacy rectangular
+// drop shadow stops being composited. CVisual::Hide counts requests, so DWM
+// showing the window doesn't undo this one. SysShadow windows are short-lived
+// and the request is never withdrawn, so the property recording which visual
+// holds it is never removed either.
+void HideSysShadowWindow(void* pThis, HWND hwnd) {
+    if (GetProp(hwnd, kSysShadowHiddenProp) == pThis) {
         return;
     }
-    if (!SetWindowRgn(hwnd, rgn, FALSE)) {
-        DeleteObject(rgn);
+
+    Wh_Log(L"> hiding SysShadow hwnd=%p", hwnd);
+    CVisual_Hide_Original(pThis);
+    if (!SetProp(hwnd, kSysShadowHiddenProp, pThis)) {
+        Wh_Log(L"SetProp failed for hwnd=%p: %u", hwnd, GetLastError());
     }
-    // SetWindowRgn takes ownership of the region on success.
 }
 
 // The CTopLevelWindow whose UpdateWindowVisuals call is currently running, or
@@ -935,11 +940,11 @@ thread_local void* g_updateWindowVisualsTarget;
 using UpdateWindowVisuals_t = long(WINAPI*)(void* pThis);
 UpdateWindowVisuals_t UpdateWindowVisuals_Original;
 long WINAPI UpdateWindowVisuals_Hook(void* pThis) {
-    if (g_settings.tooltipRadius >= 0.0f && !IsTopLevelWindowExcluded(pThis)) {
+    if (CVisual_Hide_Original && g_settings.tooltipRadius >= 0.0f &&
+        !IsTopLevelWindowExcluded(pThis)) {
         HWND hwnd = HwndFromTopLevelWindow(pThis);
         if (HwndHasClass(hwnd, L"SysShadow")) {
-            Wh_Log(L"> hiding SysShadow hwnd=%p", hwnd);
-            HideSysShadowWindow(hwnd);
+            HideSysShadowWindow(pThis, hwnd);
             return 0;
         }
     }
@@ -1020,11 +1025,23 @@ float AdjustCornerRadius(void* pThis,
     return orig;
 }
 
-// Whether the radius last returned by GetRadiusFromCornerStyle_Hook is the
-// window radius. UpdateAnimatedResources scales that radius for DPI and
+// While CTopLevelWindow3D::UpdateAnimatedResources runs, whether the radius
+// last returned by GetRadiusFromCornerStyle_Hook is the window radius, and null
+// outside of it. UpdateAnimatedResources scales that radius for DPI and
 // animation progress and hands it straight to CreateRectangleGeometry, which
 // is where the per-corner radii for the animated clip are applied.
-thread_local bool g_radiusFromCornerStylePerCorner;
+thread_local bool* g_animatedRadiusPerCorner;
+
+using UpdateAnimatedResources_t = long(WINAPI*)(void* pThis);
+UpdateAnimatedResources_t UpdateAnimatedResources_Original;
+long WINAPI UpdateAnimatedResources_Hook(void* pThis) {
+    bool perCorner = false;
+    bool* prev = g_animatedRadiusPerCorner;
+    g_animatedRadiusPerCorner = &perCorner;
+    long ret = UpdateAnimatedResources_Original(pThis);
+    g_animatedRadiusPerCorner = prev;
+    return ret;
+}
 
 using GetRadiusFromCornerStyle_t = float(WINAPI*)(void* pThis);
 GetRadiusFromCornerStyle_t GetRadiusFromCornerStyle_Original;
@@ -1032,7 +1049,9 @@ float WINAPI GetRadiusFromCornerStyle_Hook(void* pThis) {
     float radius =
         AdjustCornerRadius(pThis, GetRadiusFromCornerStyle_Original(pThis),
                            /*canRoundMaximizedOrSnapped=*/false);
-    g_radiusFromCornerStylePerCorner = IsPerCornerRadius(radius);
+    if (g_animatedRadiusPerCorner) {
+        *g_animatedRadiusPerCorner = IsPerCornerRadius(radius);
+    }
     return radius;
 }
 
@@ -1046,7 +1065,8 @@ long WINAPI CreateRectangleGeometry_Hook(const void* rect,
                                          float radius,
                                          void** geometry) {
     CornerRadiusDeltas deltas;
-    bool perCorner = radius > 0 && g_radiusFromCornerStylePerCorner;
+    bool perCorner =
+        radius > 0 && g_animatedRadiusPerCorner && *g_animatedRadiusPerCorner;
     if (perCorner) {
         Wh_Log(L"> %f", radius);
         for (int i = 0; i < kCornerCount; i++) {
@@ -1143,26 +1163,71 @@ float FloatAbove(int value, int ulps) {
     return result;
 }
 
+// Settings loads so far in this dwm.exe process, which is how long DWM's cache
+// of border surfaces lives. It's passed from one load of the mod to the next on
+// DWM's notification window.
+int g_loadCount;
+
+constexpr WCHAR kLoadCountProp[] = L"Windhawk_LoadCount_" WH_MOD_ID;
+
+// Parses four comma-separated integers, given clockwise from the top-left
+// corner, into `radii`. Leaves `radii` unchanged on failure.
+bool ParseCornerRadii(PCWSTR text, int radii[kCornerCount]) {
+    constexpr int kCornerIndex[kCornerCount] = {0, 1, 3, 2};
+
+    int values[kCornerCount];
+    PCWSTR p = text;
+    for (int i = 0; i < kCornerCount; i++) {
+        PWSTR end;
+        values[kCornerIndex[i]] = wcstol(p, &end, 10);
+        if (end == p) {
+            return false;
+        }
+
+        while (iswspace(*end)) {
+            end++;
+        }
+
+        if (*end != (i < kCornerCount - 1 ? L',' : L'\0')) {
+            return false;
+        }
+
+        p = end + 1;
+    }
+
+    std::copy(values, values + kCornerCount, radii);
+    return true;
+}
+
 void LoadSettings() {
     int radius = Wh_GetIntSetting(L"radius");
 
+    int cornerRadius[kCornerCount] = {-1, -1, -1, -1};
+    PCWSTR perCornerRadius = Wh_GetStringSetting(L"perCornerRadius");
+    if (*perCornerRadius && !ParseCornerRadii(perCornerRadius, cornerRadius)) {
+        Wh_Log(L"Invalid per-corner radius: %s", perCornerRadius);
+    }
+    Wh_FreeStringSetting(perCornerRadius);
+
     // Per-corner radii are applied as a reduction from the radius DWM works
-    // with, so that radius is the largest of them. Corners left at -1 follow
-    // "Corner radius", and all of them are ignored when it's -1 (keep the
-    // original radius), since there's no known value to reduce from.
-    PCWSTR cornerNames[kCornerCount] = {L"topLeft", L"topRight", L"bottomLeft",
-                                        L"bottomRight"};
-    int cornerRadius[kCornerCount];
-    int maxRadius = radius;
+    // with, so that radius is the largest of them. Negative corners follow
+    // "Corner radius", and if that's -1 (keep the original radius), the
+    // original is taken to be the Win11 default.
+    constexpr int kDefaultRadius = 8;
+    bool hasCornerRadius =
+        std::any_of(cornerRadius, cornerRadius + kCornerCount,
+                    [](int r) { return r >= 0; });
+    if (radius < 0 && hasCornerRadius) {
+        radius = kDefaultRadius;
+    }
+
     for (int i = 0; i < kCornerCount; i++) {
-        cornerRadius[i] = radius >= 0 ? Wh_GetIntSetting(L"perCornerRadius.%s",
-                                                         cornerNames[i])
-                                      : -1;
         if (cornerRadius[i] < 0) {
             cornerRadius[i] = radius;
         }
-        maxRadius = std::max(maxRadius, cornerRadius[i]);
     }
+    int maxRadius =
+        *std::max_element(cornerRadius, cornerRadius + kCornerCount);
 
     g_settings.perCornerRadius = false;
     for (int i = 0; i < kCornerCount; i++) {
@@ -1193,9 +1258,8 @@ void LoadSettings() {
     // keeps the window radius apart from a small or tooltip radius with the
     // same integer, and what makes it a new key for DWM's cache of border
     // surfaces when only the per-corner radii change.
-    static int loadCount = 0;
-    loadCount++;
-    g_settings.radius = FloatAbove(maxRadius, 1 + loadCount);
+    g_loadCount++;
+    g_settings.radius = FloatAbove(maxRadius, 1 + g_loadCount);
     g_settings.smallRadius = FloatAbove(Wh_GetIntSetting(L"smallRadius"), 1);
     g_settings.tooltipRadius =
         FloatAbove(Wh_GetIntSetting(L"tooltipRadius"), 1);
@@ -1211,7 +1275,7 @@ void LoadSettings() {
     }
     Wh_FreeStringSetting(roundMaximizedAndSnapped);
 
-    g_settings.excludedPrograms.clear();
+    std::unordered_set<std::wstring> excludedPrograms;
 
     for (int i = 0;; i++) {
         PCWSTR program = Wh_GetStringSetting(L"excludedPrograms[%d]", i);
@@ -1219,14 +1283,11 @@ void LoadSettings() {
         bool hasProgram = *program;
         if (hasProgram) {
             std::wstring programUpper = program;
-            LCMapStringEx(
-                LOCALE_NAME_USER_DEFAULT, LCMAP_UPPERCASE, &programUpper[0],
-                static_cast<int>(programUpper.length()), &programUpper[0],
-                static_cast<int>(programUpper.length()), nullptr, nullptr, 0);
+            MakeUpper(&programUpper);
 
             Wh_Log(L"Excluded program: [%s]", programUpper.c_str());
 
-            g_settings.excludedPrograms.insert(std::move(programUpper));
+            excludedPrograms.insert(std::move(programUpper));
         }
 
         Wh_FreeStringSetting(program);
@@ -1235,6 +1296,9 @@ void LoadSettings() {
             break;
         }
     }
+
+    std::unique_lock lock(g_excludedProgramsMutex);
+    g_settings.excludedPrograms = std::move(excludedPrograms);
 }
 
 // Returns true if at least two Dwminit warnings (Level=3) were logged in the
@@ -1288,6 +1352,12 @@ BOOL Wh_ModInit() {
         HasMultipleDwminitWarningsInLastMinute()) {
         Wh_Log(L"Refusing to load: multiple recent Dwminit warnings");
         return FALSE;
+    }
+
+    // The window is missing only in a process that's just starting, which has
+    // nothing cached yet.
+    if (HWND hDwm = FindWindow(L"Dwm", nullptr)) {
+        g_loadCount = PtrToInt(GetProp(hDwm, kLoadCountProp));
     }
 
     LoadSettings();
@@ -1365,12 +1435,21 @@ BOOL Wh_ModInit() {
             nullptr,
             true,  // Optional - maximized/snapped rounding is skipped.
         },
-        // Skips visual updates for SysShadow companion windows so the legacy
-        // rectangular drop shadow doesn't poke out beside the rounded tooltip.
+        // Hides SysShadow companion windows and skips their visual updates so
+        // the legacy rectangular drop shadow doesn't poke out beside the
+        // rounded tooltip.
         {
             {LR"(private: long __cdecl CTopLevelWindow::UpdateWindowVisuals(void))"},
             &UpdateWindowVisuals_Original,
             UpdateWindowVisuals_Hook,
+            true,  // Optional - SysShadow remains visible if missing.
+        },
+        // Used by the hook above to hide SysShadow windows. Capture only, no
+        // hook.
+        {
+            {LR"(public: void __cdecl CVisual::Hide(void))"},
+            &CVisual_Hide_Original,
+            nullptr,
             true,  // Optional - SysShadow remains visible if missing.
         },
         // Used to promote tooltips from "no rounding" to "round small" so the
@@ -1446,6 +1525,12 @@ BOOL Wh_ModInit() {
             perCorner ? CreateRectangleGeometry_Hook : nullptr,
             true,  // Optional - animated clips keep a single radius.
         },
+        {
+            {LR"(private: long __cdecl CTopLevelWindow3D::UpdateAnimatedResources(void))"},
+            &UpdateAnimatedResources_Original,
+            perCorner ? UpdateAnimatedResources_Hook : nullptr,
+            true,  // Optional - animated clips keep a single radius.
+        },
     };
 
     if (!HookSymbols(udwm, udwmDllHooks, ARRAYSIZE(udwmDllHooks))) {
@@ -1516,6 +1601,10 @@ BOOL Wh_ModSettingsChanged(BOOL* bReload) {
 
 void Wh_ModUninit() {
     Wh_Log(L">");
+
+    if (HWND hDwm = FindWindow(L"Dwm", nullptr)) {
+        SetProp(hDwm, kLoadCountProp, IntToPtr(g_loadCount));
+    }
 
     ClearWindowExclusionProps();
     RequestDwmRefresh();

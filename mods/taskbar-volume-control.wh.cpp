@@ -2048,11 +2048,20 @@ struct ModifierMaskState {
 ModifierMaskState g_winMaskState;
 ModifierMaskState g_altMaskState;
 
+// dwExtraInfo tag of the injected 0xE8 key events ("WHMK").
+constexpr ULONG_PTR kMaskKeyTag = 0x57484D4B;
+
+// Set by the keyboard hook after our tagged 0xE8 key-up. SendInput doesn't
+// interleave its events with other input, so the next keyboard event is the
+// replayed key-up.
+bool g_maskReplayNext;
+
 // Returns true if the original key-up was suppressed and re-sent masked, in
 // which case the caller should swallow it.
 bool MaskModifierKeyEvent(ModifierMaskState* state,
                           WPARAM wParam,
-                          KBDLLHOOKSTRUCT* pKbdStruct) {
+                          KBDLLHOOKSTRUCT* pKbdStruct,
+                          bool isOwnReplay) {
     if (wParam == WM_KEYDOWN || wParam == WM_SYSKEYDOWN) {
         // Reset the flag on the initial press, but not on auto-repeat events
         // (which keep firing while the key is held).
@@ -2063,21 +2072,25 @@ bool MaskModifierKeyEvent(ModifierMaskState* state,
     } else if (wParam == WM_KEYUP || wParam == WM_SYSKEYUP) {
         state->down = false;
 
-        // Ignore injected key-ups (such as the one we re-send below) to avoid
-        // masking them again.
-        if (state->usedForScroll && !(pKbdStruct->flags & LLKHF_INJECTED)) {
+        // Skip our own replay to avoid masking it again. Keys remapped to
+        // Win/Alt by software (e.g. AutoHotkey, PowerToys) arrive injected
+        // too and need masking.
+        if (state->usedForScroll && !isOwnReplay) {
             state->usedForScroll = false;
 
             INPUT input[3] = {};
             input[0].type = INPUT_KEYBOARD;
             input[0].ki.wVk = 0xE8;
+            input[0].ki.dwExtraInfo = kMaskKeyTag;
             input[1].type = INPUT_KEYBOARD;
             input[1].ki.wVk = 0xE8;
             input[1].ki.dwFlags = KEYEVENTF_KEYUP;
+            input[1].ki.dwExtraInfo = kMaskKeyTag;
             // Faithfully replay the original key-up. The extended-key flag must
             // be preserved, otherwise extended modifiers (right Alt/AltGr and
             // the Win keys) may not be released correctly and could get stuck
-            // down.
+            // down. dwExtraInfo is preserved too, since remappers use it to
+            // recognize and skip their own injected events.
             input[2].type = INPUT_KEYBOARD;
             input[2].ki.wVk = (WORD)pKbdStruct->vkCode;
             input[2].ki.wScan = (WORD)pKbdStruct->scanCode;
@@ -2085,6 +2098,7 @@ bool MaskModifierKeyEvent(ModifierMaskState* state,
             if (pKbdStruct->flags & LLKHF_EXTENDED) {
                 input[2].ki.dwFlags |= KEYEVENTF_EXTENDEDKEY;
             }
+            input[2].ki.dwExtraInfo = pKbdStruct->dwExtraInfo;
 
             // Only suppress the original key-up if we managed to re-send the
             // whole sequence, otherwise the key would get stuck down (e.g. when
@@ -2106,6 +2120,12 @@ LRESULT CALLBACK LowLevelKeyboardProc(int nCode, WPARAM wParam, LPARAM lParam) {
 
     KBDLLHOOKSTRUCT* pKbdStruct = (KBDLLHOOKSTRUCT*)lParam;
 
+    bool isOwnReplay = g_maskReplayNext;
+    g_maskReplayNext = pKbdStruct->vkCode == 0xE8 &&
+                       (wParam == WM_KEYUP || wParam == WM_SYSKEYUP) &&
+                       (pKbdStruct->flags & LLKHF_INJECTED) &&
+                       pKbdStruct->dwExtraInfo == kMaskKeyTag;
+
     ModifierMaskState* state = nullptr;
     switch (pKbdStruct->vkCode) {
         case VK_LWIN:
@@ -2118,7 +2138,7 @@ LRESULT CALLBACK LowLevelKeyboardProc(int nCode, WPARAM wParam, LPARAM lParam) {
             break;
     }
 
-    if (state && MaskModifierKeyEvent(state, wParam, pKbdStruct)) {
+    if (state && MaskModifierKeyEvent(state, wParam, pKbdStruct, isOwnReplay)) {
         return 1;
     }
 

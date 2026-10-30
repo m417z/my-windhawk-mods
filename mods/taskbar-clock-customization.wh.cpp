@@ -52,6 +52,7 @@ be used:
   * `%time_tz<n>%` - the time with a custom time zone. `<n>` is the time zone
     number in the list of time zones configured in the mod settings (not Windows
     settings).
+* `%unix%` - the Unix timestamp (seconds since 1970-01-01 00:00:00 UTC).
 * `%date%` - the date as configured by the date format in settings.
   * `%date<n>%` - additional date formats, specified by separating multiple
     formats with `;` in the date format setting. `<n>` is the additional date
@@ -715,8 +716,12 @@ std::atomic<bool> g_explorerPatcherInitialized;
 
 bool g_formattingInitialized;
 
+bool g_unixPatternUsed;
+
 DWORD g_formatIndex;
 SYSTEMTIME g_formatTime;
+DWORD g_formatTimeUtcFormatIndex = 0xFFFFFFFF;
+SYSTEMTIME g_formatTimeUtc;
 
 // Guards g_settings and the formatting state derived from it: the format
 // time/index, the cached formatted strings, the data collection session and
@@ -734,6 +739,7 @@ struct FormattedString {
 FormattedString<FORMATTED_BUFFER_SIZE> g_timeFormatted;
 std::vector<std::wstring> g_timeFormattedExtra;
 std::vector<FormattedString<FORMATTED_BUFFER_SIZE>> g_timeFormattedTz;
+FormattedString<FORMATTED_BUFFER_SIZE> g_unixTimeFormatted;
 FormattedString<FORMATTED_BUFFER_SIZE> g_dateFormatted;
 std::vector<std::wstring> g_dateFormattedExtra;
 std::vector<FormattedString<FORMATTED_BUFFER_SIZE>> g_dateFormattedTz;
@@ -1828,6 +1834,75 @@ void GetTimeZone(WCHAR* buffer, size_t bufferSize) {
                  static_cast<int>(minutes));
 }
 
+ULONGLONG SystemTimeToFileTimeValue(const SYSTEMTIME* time) {
+    FILETIME fileTime{};
+    SystemTimeToFileTime(time, &fileTime);
+    ULARGE_INTEGER value{
+        .LowPart = fileTime.dwLowDateTime,
+        .HighPart = fileTime.dwHighDateTime,
+    };
+    return value.QuadPart;
+}
+
+SYSTEMTIME FileTimeValueToSystemTime(ULONGLONG value) {
+    FILETIME fileTime{
+        .dwLowDateTime = static_cast<DWORD>(value),
+        .dwHighDateTime = static_cast<DWORD>(value >> 32),
+    };
+    SYSTEMTIME time{};
+    FileTimeToSystemTime(&fileTime, &time);
+    return time;
+}
+
+// Returns g_formatTime converted to UTC. When DST ends, an hour of local time
+// repeats, so the latest matching UTC time is chosen, within a window from a
+// day ago to a minute from now (the minute tolerates the clock being adjusted
+// backwards). The window has at most one DST change, so the UTC offsets at its
+// ends are the only candidates.
+const SYSTEMTIME* GetFormatTimeUtc() {
+    if (g_formatTimeUtcFormatIndex == g_formatIndex) {
+        return &g_formatTimeUtc;
+    }
+
+    g_formatTimeUtcFormatIndex = g_formatIndex;
+
+    auto utcToLocal = [](ULONGLONG utc) {
+        SYSTEMTIME utcTime = FileTimeValueToSystemTime(utc);
+        SYSTEMTIME localTime{};
+        SystemTimeToTzSpecificLocalTime(nullptr, &utcTime, &localTime);
+        return SystemTimeToFileTimeValue(&localTime);
+    };
+
+    constexpr ULONGLONG kMinuteIn100Ns = 60 * 10000000ULL;
+    constexpr ULONGLONG kDayIn100Ns = 24 * 60 * kMinuteIn100Ns;
+
+    SYSTEMTIME nowTime;
+    GetSystemTime(&nowTime);
+    ULONGLONG now = SystemTimeToFileTimeValue(&nowTime);
+
+    ULONGLONG local = SystemTimeToFileTimeValue(&g_formatTime);
+
+    ULONGLONG windowEnd = now + kMinuteIn100Ns;
+
+    std::optional<ULONGLONG> result;
+    for (ULONGLONG offsetTime : {windowEnd, now - kDayIn100Ns}) {
+        ULONGLONG utc = local + offsetTime - utcToLocal(offsetTime);
+        if (utc <= windowEnd && utcToLocal(utc) == local &&
+            (!result || utc > *result)) {
+            result = utc;
+        }
+    }
+
+    if (result) {
+        g_formatTimeUtc = FileTimeValueToSystemTime(*result);
+    } else {
+        TzSpecificLocalTimeToSystemTime(nullptr, &g_formatTime,
+                                        &g_formatTimeUtc);
+    }
+
+    return &g_formatTimeUtc;
+}
+
 std::vector<std::wstring> SplitTimeFormatString(std::wstring_view s) {
     size_t posStart = 0;
     std::wstring token;
@@ -1933,13 +2008,9 @@ PCWSTR GetTimeFormattedTz(size_t index) {
     if (timeFormattedTz.formatIndex != g_formatIndex) {
         const auto& timeZoneInformation = g_timeZoneInformation[index];
         if (timeZoneInformation && pSystemTimeToTzSpecificLocalTimeEx) {
-            SYSTEMTIME systemTime;
-            TzSpecificLocalTimeToSystemTime(nullptr, &g_formatTime,
-                                            &systemTime);
-
             SYSTEMTIME timeTz;
             pSystemTimeToTzSpecificLocalTimeEx(&*timeZoneInformation,
-                                               &systemTime, &timeTz);
+                                               GetFormatTimeUtc(), &timeTz);
 
             const SYSTEMTIME* time = &timeTz;
 
@@ -1959,6 +2030,23 @@ PCWSTR GetTimeFormattedTz(size_t index) {
     }
 
     return timeFormattedTz.buffer;
+}
+
+PCWSTR GetUnixTimeFormatted() {
+    if (g_unixTimeFormatted.formatIndex != g_formatIndex) {
+        // 100-nanosecond intervals between 1601-01-01 and 1970-01-01.
+        constexpr LONGLONG kUnixEpochIn100Ns = 116444736000000000LL;
+        constexpr LONGLONG kSecondIn100Ns = 10000000LL;
+
+        LONGLONG formatTimeUtc = static_cast<LONGLONG>(
+            SystemTimeToFileTimeValue(GetFormatTimeUtc()));
+        swprintf_s(g_unixTimeFormatted.buffer, L"%lld",
+                   (formatTimeUtc - kUnixEpochIn100Ns) / kSecondIn100Ns);
+
+        g_unixTimeFormatted.formatIndex = g_formatIndex;
+    }
+
+    return g_unixTimeFormatted.buffer;
 }
 
 // Returns the locale of the date format at the given index, falling back to the
@@ -2028,13 +2116,9 @@ PCWSTR GetDateFormattedTz(size_t index) {
     if (dateFormattedTz.formatIndex != g_formatIndex) {
         const auto& timeZoneInformation = g_timeZoneInformation[index];
         if (timeZoneInformation && pSystemTimeToTzSpecificLocalTimeEx) {
-            SYSTEMTIME systemTime;
-            TzSpecificLocalTimeToSystemTime(nullptr, &g_formatTime,
-                                            &systemTime);
-
             SYSTEMTIME timeTz;
             pSystemTimeToTzSpecificLocalTimeEx(&*timeZoneInformation,
-                                               &systemTime, &timeTz);
+                                               GetFormatTimeUtc(), &timeTz);
 
             const SYSTEMTIME* time = &timeTz;
 
@@ -2097,13 +2181,9 @@ PCWSTR GetWeekdayFormattedTz(size_t index) {
     if (weekdayFormattedTz.formatIndex != g_formatIndex) {
         const auto& timeZoneInformation = g_timeZoneInformation[index];
         if (timeZoneInformation && pSystemTimeToTzSpecificLocalTimeEx) {
-            SYSTEMTIME systemTime;
-            TzSpecificLocalTimeToSystemTime(nullptr, &g_formatTime,
-                                            &systemTime);
-
             SYSTEMTIME timeTz;
             pSystemTimeToTzSpecificLocalTimeEx(&*timeZoneInformation,
-                                               &systemTime, &timeTz);
+                                               GetFormatTimeUtc(), &timeTz);
 
             const SYSTEMTIME* time = &timeTz;
 
@@ -4219,6 +4299,7 @@ size_t ResolveFormatToken(
         FormattedStringValueGetter valueGetter;
     } formatTokens[] = {
         {L"%time%"sv, GetTimeFormatted},
+        {L"%unix%"sv, GetUnixTimeFormatted},
         {L"%date%"sv, GetDateFormatted},
         {L"%weekday%"sv, GetWeekdayFormatted},
         {L"%weekday_num%"sv, GetWeekdayNumFormatted},
@@ -4398,6 +4479,8 @@ void EnsureFormattingInitialized() {
 
     g_formattingInitialized = true;
 
+    g_unixPatternUsed = IsStrInDateTimePatternSettings(L"%unix%");
+
     WebContentUpdateThreadInit();
     DataCollectionSessionInit();
     MediaSessionInit();
@@ -4530,8 +4613,9 @@ void ClockSystemTrayIconDataModel_RefreshIcon_Hook_Impl(
         bool webContentPending =
             g_webContentUpdateThread && !g_webContentLoaded;
         g_refreshIconNeedToAdjustTimer =
-            g_settings.showSeconds || g_dataCollectionPatternUsed ||
-            g_mediaPatternUsed || g_beatPatternUsed || webContentPending;
+            g_settings.showSeconds || g_unixPatternUsed ||
+            g_dataCollectionPatternUsed || g_mediaPatternUsed ||
+            g_beatPatternUsed || webContentPending;
     }
 
     g_inRefreshIcon = true;
@@ -5377,7 +5461,7 @@ ClockButton_UpdateTextStringsIfNecessary_Hook(LPVOID pThis, bool* param1) {
         std::lock_guard<std::mutex> guard(g_formatLineMutex);
         bool webContentPending =
             g_webContentUpdateThread && !g_webContentLoaded;
-        updateEverySecond = g_settings.showSeconds ||
+        updateEverySecond = g_settings.showSeconds || g_unixPatternUsed ||
                             g_dataCollectionPatternUsed || g_mediaPatternUsed ||
                             g_beatPatternUsed || webContentPending;
     }

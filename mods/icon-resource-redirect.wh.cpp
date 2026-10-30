@@ -41,6 +41,26 @@ repository.
 A short demonstration can be found [here on
 YouTube](https://youtu.be/irzVmKHB83E).
 
+## All icons disappeared
+
+Some users reported that all icons on the desktop, in Explorer and on the
+taskbar disappeared after applying a theme, and didn't come back after disabling
+the mod or clearing the icon cache. It's unclear whether the mod causes the
+issue, but in some of the reported cases, the problem was fixed by removing the
+`Shell Icons` registry key, which is commonly used by tweaks that customize
+system icons, such as removing the shortcut arrow:
+
+1. Open the Registry Editor (regedit) and navigate to
+   `HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer`.
+2. If there's a `Shell Icons` key, right-click it and choose Export to keep a
+   backup, then delete it.
+3. Sign out and sign back in, or restart the computer.
+
+For details, refer to issues
+[#17](https://github.com/niivu/resource-redirect-icon-themes/issues/17),
+[#23](https://github.com/niivu/resource-redirect-icon-themes/issues/23) and
+[#24](https://github.com/niivu/resource-redirect-icon-themes/issues/24).
+
 ## Disable folder thumbnails
 
 The mod has an option to disable thumbnails in Explorer folders, making folders

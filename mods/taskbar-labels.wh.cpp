@@ -1658,6 +1658,7 @@ struct ITaskItem : public IInspectable {
     virtual HRESULT STDMETHODCALLTYPE get_AppId(void** value) = 0;
     virtual HRESULT STDMETHODCALLTYPE get_UniqueId() = 0;
     virtual HRESULT STDMETHODCALLTYPE get_WindowId(HWND* value) = 0;
+    virtual HRESULT STDMETHODCALLTYPE get_DisplayName(void** value) = 0;
 };
 
 // {a152e779-93df-5be2-af2c-d342452b0ce0}
@@ -1684,6 +1685,17 @@ struct ITaskGroup : public IInspectable {
     virtual HRESULT STDMETHODCALLTYPE put_Bounds() = 0;
     virtual HRESULT STDMETHODCALLTYPE get_Items(void** value) = 0;
 };
+
+// The default interface of TaskItemPropertyChangedEventArgs, which is what the
+// event handlers receive.
+struct ITaskItemPropertyChangedEventArgs : public IInspectable {
+    virtual HRESULT STDMETHODCALLTYPE get_Group(void** value) = 0;
+    virtual HRESULT STDMETHODCALLTYPE get_Item(void** value) = 0;
+    virtual HRESULT STDMETHODCALLTYPE get_Property(int* value) = 0;
+};
+
+// WindowsUdk.UI.Shell.TaskItemProperty.DisplayName
+constexpr int kTaskItemPropertyDisplayName = 2;
 
 HWND GetTaskItemWindow(IUnknown* taskItemUnknown) {
     winrt::com_ptr<ITaskItem> taskItem;
@@ -1948,6 +1960,114 @@ using TaskListGroupViewModel_OnPropertyChanged_t =
 TaskListGroupViewModel_OnPropertyChanged_t
     TaskListGroupViewModel_OnPropertyChanged;
 
+// In the combining modes, an item with a single window is labeled with the
+// window title, as in the modes without combining.
+bool UseSingleWindowTitles() {
+    return !g_unloading && (g_settings.mode == Mode::labelsWithCombining ||
+                            g_settings.mode == Mode::noLabelsWithCombining);
+}
+
+// Returns an empty string unless the group has exactly one window.
+winrt::hstring GetTaskGroupSingleWindowTitle(void* pITaskbarAppItemViewModel) {
+    winrt::com_ptr<IUnknown> taskGroupUnknown;
+    HRESULT hr = TaskListGroupViewModel_ITaskbarAppItemViewModel_get_TaskGroup(
+        pITaskbarAppItemViewModel, taskGroupUnknown.put_void());
+    if (FAILED(hr) || !taskGroupUnknown) {
+        return {};
+    }
+
+    winrt::com_ptr<ITaskGroup> taskGroup;
+    hr = taskGroupUnknown->QueryInterface(IID_ITaskGroup, taskGroup.put_void());
+    if (FAILED(hr)) {
+        return {};
+    }
+
+    // An IVectorView<TaskItem>, which has the same ABI.
+    winrt::Windows::Foundation::Collections::IVectorView<
+        winrt::Windows::Foundation::IInspectable>
+        items;
+    hr = taskGroup->get_Items(winrt::put_abi(items));
+    if (FAILED(hr) || !items || items.Size() != 1) {
+        return {};
+    }
+
+    auto item = items.GetAt(0);
+    winrt::com_ptr<ITaskItem> taskItem;
+    hr = static_cast<IUnknown*>(winrt::get_abi(item))
+             ->QueryInterface(IID_ITaskItem, taskItem.put_void());
+    if (FAILED(hr)) {
+        return {};
+    }
+
+    winrt::hstring title;
+    taskItem->get_DisplayName(winrt::put_abi(title));
+    return title;
+}
+
+// The ABI getter is hooked to change the label while keeping the accessible
+// name, which uses the implementation getter.
+using TaskListGroupViewModel_ITaskbarItemViewModel_get_DisplayName_t =
+    HRESULT(WINAPI*)(void* pThis, void** value);
+TaskListGroupViewModel_ITaskbarItemViewModel_get_DisplayName_t
+    TaskListGroupViewModel_ITaskbarItemViewModel_get_DisplayName_Original;
+HRESULT WINAPI
+TaskListGroupViewModel_ITaskbarItemViewModel_get_DisplayName_Hook(
+    void* pThis,
+    void** value) {
+    Wh_Log(L">");
+
+    HRESULT ret =
+        TaskListGroupViewModel_ITaskbarItemViewModel_get_DisplayName_Original(
+            pThis, value);
+    if (FAILED(ret) || !UseSingleWindowTitles() ||
+        !TaskListGroupViewModel_ITaskbarAppItemViewModel_vftable ||
+        !TaskListGroupViewModel_ITaskbarAppItemViewModel_get_TaskGroup) {
+        return ret;
+    }
+
+    // ITaskbarAppItemViewModel follows ITaskbarItemViewModel in the object.
+    PVOID pITaskbarAppItemViewModel = pThis;
+    while (*(PVOID*)pITaskbarAppItemViewModel !=
+           TaskListGroupViewModel_ITaskbarAppItemViewModel_vftable) {
+        pITaskbarAppItemViewModel = (PVOID*)pITaskbarAppItemViewModel + 1;
+    }
+
+    winrt::hstring title =
+        GetTaskGroupSingleWindowTitle(pITaskbarAppItemViewModel);
+    if (!title.empty()) {
+        // Releases the original string.
+        winrt::hstring displayName;
+        winrt::attach_abi(displayName, *value);
+
+        *value = winrt::detach_abi(title);
+    }
+
+    return ret;
+}
+
+using TaskListGroupViewModel_OnTaskItemPropertyChanged_t =
+    void(WINAPI*)(void* pThis, void* args);
+TaskListGroupViewModel_OnTaskItemPropertyChanged_t
+    TaskListGroupViewModel_OnTaskItemPropertyChanged_Original;
+void WINAPI TaskListGroupViewModel_OnTaskItemPropertyChanged_Hook(void* pThis,
+                                                                  void* args) {
+    Wh_Log(L">");
+
+    TaskListGroupViewModel_OnTaskItemPropertyChanged_Original(pThis, args);
+
+    // A group doesn't notify about a change of its windows' titles.
+    if (!UseSingleWindowTitles() || !TaskListGroupViewModel_OnPropertyChanged) {
+        return;
+    }
+
+    auto eventArgs = *(ITaskItemPropertyChangedEventArgs**)args;
+    int property;
+    if (SUCCEEDED(eventArgs->get_Property(&property)) &&
+        property == kTaskItemPropertyDisplayName) {
+        TaskListGroupViewModel_OnPropertyChanged(pThis, L"DisplayName");
+    }
+}
+
 using TaskListGroupViewModel_OnTaskItemsCollectionChanged_t =
     void(WINAPI*)(void* pThis, void* args);
 TaskListGroupViewModel_OnTaskItemsCollectionChanged_t
@@ -1964,6 +2084,11 @@ TaskListGroupViewModel_OnTaskItemsCollectionChanged_Hook(void* pThis,
     if (!g_unloading && !g_settings.excludedPrograms.empty() &&
         TaskListGroupViewModel_OnPropertyChanged) {
         TaskListGroupViewModel_OnPropertyChanged(pThis, L"HasLabel");
+    }
+
+    // The label depends on the number of windows.
+    if (UseSingleWindowTitles() && TaskListGroupViewModel_OnPropertyChanged) {
+        TaskListGroupViewModel_OnPropertyChanged(pThis, L"DisplayName");
     }
 }
 
@@ -2268,6 +2393,18 @@ bool HookTaskbarViewDllSymbols(HMODULE module) {
                 {LR"(public: void __cdecl winrt::Taskbar::implementation::TaskListGroupViewModel::OnTaskItemsCollectionChanged(struct winrt::WindowsUdk::UI::Shell::TaskItemCollectionChangedEventArgs const &))"},
                 &TaskListGroupViewModel_OnTaskItemsCollectionChanged_Original,
                 TaskListGroupViewModel_OnTaskItemsCollectionChanged_Hook,
+                true,  // From 10.0.22621.2361.
+            },
+            {
+                {LR"(public: virtual int __cdecl winrt::impl::produce<struct winrt::Taskbar::implementation::TaskListGroupViewModel,struct winrt::Taskbar::ITaskbarItemViewModel>::get_DisplayName(void * *))"},
+                &TaskListGroupViewModel_ITaskbarItemViewModel_get_DisplayName_Original,
+                TaskListGroupViewModel_ITaskbarItemViewModel_get_DisplayName_Hook,
+                true,  // From 10.0.22621.2361.
+            },
+            {
+                {LR"(public: void __cdecl winrt::Taskbar::implementation::TaskListGroupViewModel::OnTaskItemPropertyChanged(struct winrt::WindowsUdk::UI::Shell::TaskItemPropertyChangedEventArgs const &))"},
+                &TaskListGroupViewModel_OnTaskItemPropertyChanged_Original,
+                TaskListGroupViewModel_OnTaskItemPropertyChanged_Hook,
                 true,  // From 10.0.22621.2361.
             },
             {

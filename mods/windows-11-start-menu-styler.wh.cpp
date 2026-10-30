@@ -8157,8 +8157,11 @@ using namespace std::string_view_literals;
 #include <winrt/Windows.UI.Text.h>
 #include <winrt/Windows.UI.ViewManagement.h>
 #include <winrt/Windows.UI.Xaml.Controls.h>
+#include <winrt/Windows.UI.Xaml.Data.h>
 #include <winrt/Windows.UI.Xaml.Hosting.h>
+#include <winrt/Windows.UI.Xaml.Input.h>
 #include <winrt/Windows.UI.Xaml.Markup.h>
+#include <winrt/Windows.UI.Xaml.Media.Animation.h>
 #include <winrt/Windows.UI.Xaml.Media.Imaging.h>
 #include <winrt/Windows.UI.Xaml.Media.h>
 #include <winrt/Windows.UI.Xaml.h>
@@ -8301,8 +8304,18 @@ struct CaptureSpec {
     std::wstring varName;
 };
 
+// Property -> visual state -> setter XAML.
+using PropertyOverrideSetters =
+    std::unordered_map<DependencyProperty,
+                       std::unordered_map<std::wstring, std::wstring>>;
+
 struct ResolvedRules {
     PropertyOverrides propertyOverrides;
+    // Setters of the values in propertyOverrides that are objects, other than
+    // ones from resources. Each element gets its own instance parsed from them:
+    // an element or a geometry can't be shared, and a template animating a
+    // shared object, e.g. a brush's color, would change it for every element.
+    PropertyOverrideSetters elementInstanceSetters;
     std::vector<CaptureSpec> captures;
     // Whether this target consumes style variables. Lets ApplyCustomizations
     // skip the visual-tree bookkeeping that only variable users need.
@@ -8482,8 +8495,8 @@ struct ElementPropertyCustomizationState {
     // one of those before being stored, and the source template lives
     // separately in `dynamicTemplate` below.
     std::optional<PropertyOverrideValue> customValue;
-    // The value SetOrClearValue wrote for customValue, which is what a write
-    // by something else is told apart from.
+    // The value SetOrClearValue wrote for customValue, or XAML's animation copy
+    // of it, which is what a write by something else is told apart from.
     winrt::Windows::Foundation::IInspectable lastAppliedValue{nullptr};
     int64_t propertyChangedToken = 0;
     // Source template for dynamic styles whose value contains `{{...}}`
@@ -8542,6 +8555,14 @@ struct ElementCustomizationState {
 
 std::unordered_map<ElementId, ElementCustomizationState>
     g_elementsCustomizationState;
+
+// Empties a thread local container and frees its storage, which clear() keeps.
+// A thread local isn't destroyed when the module is unloaded while its thread
+// lives on, so what it still holds then is leaked.
+template <typename T>
+void ResetThreadLocal(T& container) {
+    container = T{};
+}
 
 // The weak reference is what keeps an id honest. A handle is an address, so a
 // destroyed element can be replaced by one reporting the same handle, and an
@@ -8696,6 +8717,9 @@ struct StyleVariableState {
     // by variable name, so without this, asking whether an element appears in
     // either of them means walking every name.
     std::unordered_map<ElementId, size_t> elementRefs;
+    // Elements whose captures are out of `variables` while they sit in a
+    // recycled repeater item. See RefreshRecycledItemCaptures.
+    std::unordered_set<ElementId> withdrawnCaptureOwners;
 };
 
 StyleVariableState g_styleVariableState;
@@ -8829,6 +8853,10 @@ struct TrackedImage {
     // remote address, which is what a load failure is judged by.
     bool usingCache = false;
 
+    // The BitmapImage the last retry assigned to the target, which is the mod's
+    // value just like the one the style declared.
+    winrt::weak_ref<Media::Imaging::BitmapImage> retryImage;
+
     ULONGLONG lastRetryTick = 0;
     int retryCount = 0;
 };
@@ -8877,6 +8905,9 @@ constexpr int kImageRetryMaxCount = 20;
 // UI thread pumps messages, which can re-enter this code on the same thread.
 std::mutex g_imageRetryMutex;
 bool g_imageRetryActive;
+// Set once the mod is being unloaded, so that nothing which runs during the
+// uninitialization tracks an image again.
+bool g_imageRetryStopping;
 // The dispatcher of each UI thread which has tracked images, used to run a
 // retry on the thread that owns the image.
 std::vector<winrt::weak_ref<winrt::Windows::System::DispatcherQueue>>
@@ -9008,80 +9039,57 @@ bool IsMainModuleVersionAtLeast(WORD major, WORD minor, WORD build, WORD qfe) {
 winrt::Windows::Foundation::IInspectable ReadLocalValueWithWorkaround(
     DependencyObject elementDo,
     DependencyProperty property) {
-    // Workaround for AcrylicBrushes returning an incorrect background brush.
-    // When restored, it doesn't look correct.
-    bool getValueWorkaround = false;
-    if (property == Controls::Border::BackgroundProperty()) {
-        auto border = elementDo.try_as<Controls::Border>();
-        if (border && border.Name() == L"AcrylicBorder") {
-            Wh_Log(L"Using GetValue workaround for AcrylicBorder background");
-            getValueWorkaround = true;
-        }
-    } else {
-        // The properties below return null from ReadLocalValue for some reason.
-        struct {
-            DependencyProperty property;
-            std::wstring_view elementType;
-            std::wstring_view elementName;
-        } propertiesForWorkaround[] = {
-            {FrameworkElement::MaxHeightProperty(),
-             L"Windows.UI.Xaml.Controls.Grid", L"FrameRoot"},
-            {FrameworkElement::WidthProperty(),
-             L"Windows.UI.Xaml.Controls.Grid", L"MainMenu"},
-            {FrameworkElement::WidthProperty(),
-             L"Windows.UI.Xaml.Controls.GridView", L"PinnedList"},
-        };
+    // These properties have a visual state's value over their local one, and
+    // restoring the local one would show it while the state lasts. The value in
+    // effect is restored instead, at the cost of keeping it once the state
+    // changes.
+    struct {
+        DependencyProperty property;
+        std::wstring_view elementType;
+        std::wstring_view elementName;
+    } propertiesForWorkaround[] = {
+        {Controls::Border::BackgroundProperty(),
+         L"Windows.UI.Xaml.Controls.Border", L"AcrylicBorder"},
+        {FrameworkElement::MaxHeightProperty(),
+         L"Windows.UI.Xaml.Controls.Grid", L"FrameRoot"},
+        {FrameworkElement::WidthProperty(), L"Windows.UI.Xaml.Controls.Grid",
+         L"MainMenu"},
+    };
 
-        auto element = elementDo.try_as<FrameworkElement>();
-        if (element) {
-            auto elementName = element.Name();
-            auto elementClassName = winrt::get_class_name(element);
-            for (const auto& [prop, type, name] : propertiesForWorkaround) {
-                if (property == prop && elementName == name &&
-                    elementClassName == type) {
-                    Wh_Log(L"Using GetValue workaround for %.*s",
-                           static_cast<int>(name.length()), name.data());
-                    getValueWorkaround = true;
-                    break;
-                }
+    if (auto element = elementDo.try_as<FrameworkElement>()) {
+        auto elementName = element.Name();
+        auto elementClassName = winrt::get_class_name(element);
+        for (const auto& [prop, type, name] : propertiesForWorkaround) {
+            if (property == prop && elementName == name &&
+                elementClassName == type) {
+                Wh_Log(L"Using GetValue workaround for %.*s",
+                       static_cast<int>(name.length()), name.data());
+                return elementDo.GetValue(property);
             }
         }
     }
 
-    auto value = getValueWorkaround ? elementDo.GetValue(property)
-                                    : elementDo.ReadLocalValue(property);
-
-    // Workaround for ColumnDefinitions on our SideBySidePinnedWrapper Grid.
-    if (!getValueWorkaround && value == DependencyProperty::UnsetValue()) {
-        auto grid = elementDo.try_as<Controls::Grid>();
-        if (grid && grid.Name() == L"SideBySidePinnedWrapper") {
-            auto value2 = elementDo.GetValue(property);
-            if (value2 &&
-                winrt::get_class_name(value2) ==
-                    L"Windows.UI.Xaml.Controls.ColumnDefinitionCollection") {
-                Wh_Log(
-                    L"Using GetValue workaround for SideBySidePinnedWrapper "
-                    L"ColumnDefinitions");
-                value = std::move(value2);
-            }
-        }
-    }
-
-    if (value) {
-        auto className = winrt::get_class_name(value);
-        if (className == L"Windows.UI.Xaml.Data.BindingExpressionBase" ||
-            className == L"Windows.UI.Xaml.Data.BindingExpression") {
-            // BindingExpressionBase was observed to be returned for XAML
-            // properties that were declared as following:
-            //
-            // <Border ... CornerRadius="{TemplateBinding CornerRadius}" />
-            //
-            // Calling SetValue with it fails with an error, so we won't be able
-            // to use it to restore the value. As a workaround, we use
-            // GetAnimationBaseValue to get the value.
-            Wh_Log(L"ReadLocalValue returned %s, using GetAnimationBaseValue",
-                   className.c_str());
-            value = elementDo.GetAnimationBaseValue(property);
+    auto value = elementDo.ReadLocalValue(property);
+    if (!value || value.try_as<Data::BindingExpressionBase>()) {
+        // A TemplateBinding reads as null, or for some properties such as
+        // CornerRadius as a BindingExpressionBase, and a Binding reads as a
+        // BindingExpression. None of these writes back the bound value, which
+        // is the base value. An explicit null has a null base value.
+        Wh_Log(L"ReadLocalValue returned %s, using GetAnimationBaseValue",
+               value ? winrt::get_class_name(value).c_str() : L"null");
+        value = elementDo.GetAnimationBaseValue(property);
+    } else if (value == DependencyProperty::UnsetValue()) {
+        // A Grid's definitions, and transitions which markup lists without
+        // naming the collection type, are in a collection which isn't a local
+        // value, and clearing the property would leave the element without
+        // them.
+        auto effectiveValue = elementDo.GetValue(property);
+        if (effectiveValue.try_as<Controls::ColumnDefinitionCollection>() ||
+            effectiveValue.try_as<Controls::RowDefinitionCollection>() ||
+            effectiveValue.try_as<Media::Animation::TransitionCollection>()) {
+            Wh_Log(L"ReadLocalValue returned unset, using GetValue for %s",
+                   winrt::get_class_name(effectiveValue).c_str());
+            value = std::move(effectiveValue);
         }
     }
 
@@ -9100,17 +9108,19 @@ winrt::Windows::Foundation::IInspectable ReadLocalValueWithWorkaround(
 // Generates a tileable noise BMP in memory. Density controls the brightness
 // distribution curve via a power function (lower density = sparser bright
 // pixels). Opacity is handled downstream by the composition effect graph.
+
+// The last stream generated, cached to avoid regenerating when density hasn't
+// changed. The cached stream is never read directly; callers get independent
+// clones via CloneStream() so they don't share a seek cursor.
+thread_local float g_noiseStreamDensity =
+    std::numeric_limits<float>::quiet_NaN();
+thread_local winrt::Windows::Storage::Streams::InMemoryRandomAccessStream
+    g_noiseStream{nullptr};
+
 winrt::Windows::Storage::Streams::IRandomAccessStream CreateNoiseStream(
     float density) {
-    // Cache the last stream to avoid regenerating when density hasn't changed.
-    // The cached stream is never read directly; callers get independent clones
-    // via CloneStream() so they don't share a seek cursor.
-    thread_local float cachedDensity = std::numeric_limits<float>::quiet_NaN();
-    thread_local winrt::Windows::Storage::Streams::InMemoryRandomAccessStream
-        cachedStream{nullptr};
-
-    if (density == cachedDensity && cachedStream) {
-        return cachedStream.CloneStream();
+    if (density == g_noiseStreamDensity && g_noiseStream) {
+        return g_noiseStream.CloneStream();
     }
 
     // Use 256x256 to minimize visible tiling seams.
@@ -9170,10 +9180,10 @@ winrt::Windows::Storage::Streams::IRandomAccessStream CreateNoiseStream(
     writer.StoreAsync().get();
     writer.DetachStream();
 
-    cachedStream = std::move(stream);
-    cachedDensity = density;
+    g_noiseStream = std::move(stream);
+    g_noiseStreamDensity = density;
 
-    return cachedStream.CloneStream();
+    return g_noiseStream.CloneStream();
 }
 
 // Blur background implementation, copied from TranslucentTB.
@@ -11026,6 +11036,7 @@ void StartImageRetry(const std::shared_ptr<TrackedImage>& tracked) {
         // the same URI to a BitmapImage doesn't reload it. The target's own
         // ImageOpened and ImageFailed report how this attempt went.
         target.SetValue(tracked->sourceProperty, retryImage);
+        tracked->retryImage = winrt::make_weak(retryImage);
 
         // The URI goes last: XAML decodes an image to the size it's displayed
         // at only when the BitmapImage is already connected to the live tree by
@@ -11294,6 +11305,7 @@ void StopImageLoadRetries() {
         // early, which is what stops the retries. Removing the handler only
         // stops further invocations.
         g_imageRetryActive = false;
+        g_imageRetryStopping = true;
 
         token = g_networkStatusChangedToken;
         g_networkStatusChangedToken = {};
@@ -11355,10 +11367,19 @@ void StopImageLoadRetriesForCurrentThread() {
     }
 }
 
-void SetupImageTracking(DependencyObject const& target,
-                        DependencyProperty const& sourceProperty,
-                        Media::Imaging::BitmapImage const& bitmapImage,
-                        winrt::Windows::Foundation::Uri const& uri) {
+Media::Imaging::BitmapImage SetupImageTracking(
+    DependencyObject const& target,
+    DependencyProperty const& sourceProperty,
+    Media::Imaging::BitmapImage const& bitmapImage,
+    winrt::Windows::Foundation::Uri const& uri) {
+    {
+        std::lock_guard<std::mutex> lock(g_imageRetryMutex);
+
+        if (g_imageRetryStopping) {
+            return nullptr;
+        }
+    }
+
     auto& images = g_trackedImagesForThread.images;
 
     std::erase_if(images,
@@ -11375,15 +11396,36 @@ void SetupImageTracking(DependencyObject const& target,
     if (it != images.end()) {
         // Resolved style values are cached, so the same source object is
         // applied to many targets and reapplied on every visual state change.
-        // Keep the load state which was collected so far unless the source
+        // Keep the retry state which was collected so far unless the source
         // changed.
         if ((*it)->uri.Equals(uri)) {
             RestoreRejectedImageSource(*it, bitmapImage);
 
-            // The value being applied takes over from whatever a retry has put
-            // there, so it's what a load failure is judged by.
-            (*it)->usingCache = !bitmapImage.UriSource().Equals(uri);
-            return;
+            // A declared image which shows nothing has typically failed, and
+            // isn't loaded again by being reapplied, so it would blank a retry
+            // image which has loaded since, or cut short one which is still
+            // loading. The target keeps its retry image instead.
+            Media::Imaging::BitmapImage retryImage{nullptr};
+            if (bitmapImage.PixelWidth() == 0) {
+                retryImage = (*it)->retryImage.get();
+            }
+            auto const& applied = retryImage ? retryImage : bitmapImage;
+
+            // The image being applied is what a load failure is judged by, and
+            // what decides whether the target has an image.
+            (*it)->usingCache = !applied.UriSource().Equals(uri);
+
+            bool wasLoaded = (*it)->loaded;
+            (*it)->loaded = applied.PixelWidth() != 0;
+
+            // Nothing else starts a round for a target which loses its image
+            // this way: the value may have failed already, which raises no
+            // further event.
+            if (wasLoaded && !(*it)->loaded) {
+                ScheduleImageLoadRetryOnCurrentThread(kImageRetryBaseDelayMs,
+                                                      /*reschedule=*/false);
+            }
+            return retryImage;
         }
 
         images.erase(it);
@@ -11520,6 +11562,11 @@ void SetupImageTracking(DependencyObject const& target,
     {
         std::lock_guard<std::mutex> lock(g_imageRetryMutex);
 
+        // Checked again, since StopImageLoadRetries runs on another thread.
+        if (g_imageRetryStopping) {
+            return nullptr;
+        }
+
         g_imageRetryActive = true;
 
         if (!g_trackedImagesForThread.dispatcher) {
@@ -11547,7 +11594,7 @@ void SetupImageTracking(DependencyObject const& target,
     }
 
     if (!registerHandler) {
-        return;
+        return nullptr;
     }
 
     winrt::event_token token = RegisterNetworkStatusChangedHandler();
@@ -11570,22 +11617,25 @@ void SetupImageTracking(DependencyObject const& target,
     if (stopped && token) {
         UnregisterNetworkStatusChangedHandler(token);
     }
+
+    return nullptr;
 }
 
 // Tracks the target if the image source is a remote URL, which can fail to
-// load and is worth caching.
-void TrackIfRemoteImageSource(
+// load and is worth caching. Returns the image to apply in place of
+// `imageSource`, null if it's `imageSource` itself.
+Media::Imaging::BitmapImage TrackIfRemoteImageSource(
     DependencyObject const& target,
     DependencyProperty const& sourceProperty,
     winrt::Windows::Foundation::IInspectable const& imageSource) {
     auto bitmapImage = imageSource.try_as<Media::Imaging::BitmapImage>();
     if (!bitmapImage) {
-        return;
+        return nullptr;
     }
 
     auto uri = bitmapImage.UriSource();
     if (!uri) {
-        return;
+        return nullptr;
     }
 
     auto scheme = uri.SchemeName();
@@ -11596,15 +11646,41 @@ void TrackIfRemoteImageSource(
         // them are given.
         auto it = g_imageCacheUriRemotes.find(std::wstring(uri.RawUri()));
         if (it == g_imageCacheUriRemotes.end()) {
-            return;
+            return nullptr;
         }
 
         uri = it->second;
     } else if (scheme != L"http" && scheme != L"https") {
-        return;
+        return nullptr;
     }
 
-    SetupImageTracking(target, sourceProperty, bitmapImage, uri);
+    return SetupImageTracking(target, sourceProperty, bitmapImage, uri);
+}
+
+// Stops tracking the image which the target shows through `sourceProperty`.
+void UntrackImageTarget(DependencyObject const& target,
+                        DependencyProperty const& sourceProperty) {
+    std::erase_if(g_trackedImagesForThread.images, [&](const auto& tracked) {
+        return tracked->sourceProperty == sourceProperty &&
+               tracked->target.get() == target;
+    });
+}
+
+// Whether `value` is the image a retry assigned to the target's
+// `sourceProperty`.
+bool IsImageRetryValue(DependencyObject const& target,
+                       DependencyProperty const& sourceProperty,
+                       winrt::Windows::Foundation::IInspectable const& value) {
+    if (!value) {
+        return false;
+    }
+
+    const auto& images = g_trackedImagesForThread.images;
+    return std::any_of(images.begin(), images.end(), [&](const auto& tracked) {
+        return tracked->sourceProperty == sourceProperty &&
+               tracked->retryImage.get() == value &&
+               tracked->target.get() == target;
+    });
 }
 
 // Returns the value written, UnsetValue for a clear, so that callers can
@@ -11615,7 +11691,8 @@ winrt::Windows::Foundation::IInspectable SetOrClearValue(
     DependencyObject elementDo,
     DependencyProperty property,
     const PropertyOverrideValue& overrideValue,
-    bool initialApply = false) {
+    bool initialApply = false,
+    bool styleValue = true) {
     winrt::Windows::Foundation::IInspectable value;
     if (auto* inspectable =
             std::get_if<winrt::Windows::Foundation::IInspectable>(
@@ -11805,18 +11882,28 @@ winrt::Windows::Foundation::IInspectable SetOrClearValue(
     // Track a remote image source for retry on network reconnection. A style
     // can declare one as the ImageBrush a property is set to (e.g. Background),
     // as the ImageSource of an ImageBrush it targets, or as the Source of an
-    // Image element.
-    if (auto imageBrush = value.try_as<Media::ImageBrush>()) {
-        TrackIfRemoteImageSource(imageBrush,
-                                 Media::ImageBrush::ImageSourceProperty(),
-                                 imageBrush.ImageSource());
-    } else if (auto imageBrush = elementDo.try_as<Media::ImageBrush>()) {
-        if (property == Media::ImageBrush::ImageSourceProperty()) {
-            TrackIfRemoteImageSource(imageBrush, property, value);
-        }
-    } else if (auto image = elementDo.try_as<Controls::Image>()) {
-        if (property == Controls::Image::SourceProperty()) {
-            TrackIfRemoteImageSource(image, property, value);
+    // Image element. A value being restored isn't tracked: it's the app's own,
+    // and during uninitialization tracking it would register handlers which
+    // outlive the mod.
+    if (styleValue) {
+        if (auto imageBrush = value.try_as<Media::ImageBrush>()) {
+            TrackIfRemoteImageSource(imageBrush,
+                                     Media::ImageBrush::ImageSourceProperty(),
+                                     imageBrush.ImageSource());
+        } else if (auto imageBrush = elementDo.try_as<Media::ImageBrush>()) {
+            if (property == Media::ImageBrush::ImageSourceProperty()) {
+                if (auto retryImage =
+                        TrackIfRemoteImageSource(imageBrush, property, value)) {
+                    value = retryImage;
+                }
+            }
+        } else if (auto image = elementDo.try_as<Controls::Image>()) {
+            if (property == Controls::Image::SourceProperty()) {
+                if (auto retryImage =
+                        TrackIfRemoteImageSource(image, property, value)) {
+                    value = retryImage;
+                }
+            }
         }
     }
 
@@ -11841,40 +11928,40 @@ winrt::Windows::Foundation::IInspectable SetOrClearValue(
             }
         }
 
-        // Grid ColumnDefinitions/RowDefinitions hold DependencyObjects
-        // (ColumnDefinition/RowDefinition) that the layout engine writes
-        // ActualWidth/ActualHeight back into. The resolved value is parsed once
-        // and cached, so applying it to more than one grid - e.g. a taskbar per
-        // monitor, all sharing one UI thread - would set the same collection on
-        // each, and one monitor's column sizes would then leak onto another's.
-        // Give each element a private copy. The scratch Grid owns the fresh
-        // collection until SetValue reassigns ownership to the target, so it's
-        // kept alive through the SetValue call below.
+        // A Grid treats row and column definitions as its own only while it's
+        // their parent, which setting a collection parsed from a style doesn't
+        // make it: ActualWidth/ActualHeight read 0, and changing a definition
+        // doesn't update the layout. SetValue does take over a collection which
+        // another Grid created, so the value is copied into a scratch Grid's
+        // collection, kept alive through the SetValue call below.
+        // A collection being restored is the Grid's own and goes back as is.
         Controls::Grid definitionsCloneOwner{nullptr};
-        if (auto sourceColumns =
-                value.try_as<Controls::ColumnDefinitionCollection>()) {
-            definitionsCloneOwner = Controls::Grid{};
-            auto clonedColumns = definitionsCloneOwner.ColumnDefinitions();
-            for (auto const& column : sourceColumns) {
-                Controls::ColumnDefinition clonedColumn;
-                clonedColumn.Width(column.Width());
-                clonedColumn.MinWidth(column.MinWidth());
-                clonedColumn.MaxWidth(column.MaxWidth());
-                clonedColumns.Append(clonedColumn);
+        if (styleValue) {
+            if (auto sourceColumns =
+                    value.try_as<Controls::ColumnDefinitionCollection>()) {
+                definitionsCloneOwner = Controls::Grid{};
+                auto clonedColumns = definitionsCloneOwner.ColumnDefinitions();
+                for (auto const& column : sourceColumns) {
+                    Controls::ColumnDefinition clonedColumn;
+                    clonedColumn.Width(column.Width());
+                    clonedColumn.MinWidth(column.MinWidth());
+                    clonedColumn.MaxWidth(column.MaxWidth());
+                    clonedColumns.Append(clonedColumn);
+                }
+                value = clonedColumns;
+            } else if (auto sourceRows =
+                           value.try_as<Controls::RowDefinitionCollection>()) {
+                definitionsCloneOwner = Controls::Grid{};
+                auto clonedRows = definitionsCloneOwner.RowDefinitions();
+                for (auto const& row : sourceRows) {
+                    Controls::RowDefinition clonedRow;
+                    clonedRow.Height(row.Height());
+                    clonedRow.MinHeight(row.MinHeight());
+                    clonedRow.MaxHeight(row.MaxHeight());
+                    clonedRows.Append(clonedRow);
+                }
+                value = clonedRows;
             }
-            value = clonedColumns;
-        } else if (auto sourceRows =
-                       value.try_as<Controls::RowDefinitionCollection>()) {
-            definitionsCloneOwner = Controls::Grid{};
-            auto clonedRows = definitionsCloneOwner.RowDefinitions();
-            for (auto const& row : sourceRows) {
-                Controls::RowDefinition clonedRow;
-                clonedRow.Height(row.Height());
-                clonedRow.MinHeight(row.MinHeight());
-                clonedRow.MaxHeight(row.MaxHeight());
-                clonedRows.Append(clonedRow);
-            }
-            value = clonedRows;
         }
 
         elementDo.SetValue(property, value);
@@ -11883,6 +11970,18 @@ winrt::Windows::Foundation::IInspectable SetOrClearValue(
     }
 
     return value;
+}
+
+// Puts back the value the property had before the style. The target's image
+// entry goes with the style's value: a retry would put that image back, and the
+// restored image's load events would be taken for it.
+void RestoreOriginalValue(
+    DependencyObject elementDo,
+    DependencyProperty property,
+    winrt::Windows::Foundation::IInspectable const& originalValue) {
+    UntrackImageTarget(elementDo, property);
+    SetOrClearValue(elementDo, property, originalValue, /*initialApply=*/false,
+                    /*styleValue=*/false);
 }
 
 // https://stackoverflow.com/a/5665377
@@ -12270,6 +12369,61 @@ Style GetStyleFromXamlSettersWithFallbackType(
     }
 }
 
+// Picks the setters of `style`, parsed from `xaml`, whose value is an object
+// that parsing creates anew. An object from resources, which parsing again
+// gives back unchanged, is shared anyway, and styles and templates are sealed
+// once in use. A later setter for the same property and visual state replaces
+// an earlier one.
+PropertyOverrideSetters GetElementInstanceSetters(
+    std::wstring_view type,
+    std::wstring_view fallbackType,
+    std::wstring const& xaml,
+    Style const& style,
+    std::vector<ValueRule> const& valueRules,
+    std::vector<std::wstring> const& valueRuleSetterXamls) {
+    PropertyOverrideSetters result;
+
+    auto isObject = [](winrt::Windows::Foundation::IInspectable const& value) {
+        return value.try_as<DependencyObject>() && !value.try_as<Style>() &&
+               !value.try_as<FrameworkTemplate>();
+    };
+
+    try {
+        bool hasObjectValues = false;
+        for (size_t i = 0; i < valueRules.size() && !hasObjectValues; i++) {
+            hasObjectValues =
+                isObject(style.Setters().GetAt(i).as<Setter>().Value());
+        }
+
+        if (!hasObjectValues) {
+            return result;
+        }
+
+        auto styleAgain =
+            GetStyleFromXamlSettersWithFallbackType(type, fallbackType, xaml);
+
+        for (size_t i = 0; i < valueRules.size(); i++) {
+            const auto setter = style.Setters().GetAt(i).as<Setter>();
+            const auto value = setter.Value();
+            const auto& visualState = valueRules[i].visualState;
+            auto& setters = result[setter.Property()];
+            if (isObject(value) &&
+                styleAgain.Setters().GetAt(i).as<Setter>().Value() != value) {
+                setters[visualState] = valueRuleSetterXamls[i];
+            } else {
+                setters.erase(visualState);
+            }
+        }
+    } catch (winrt::hresult_error const& ex) {
+        Wh_Log(L"Error %08X: %s", ex.code(), ex.message().c_str());
+        result.clear();
+    }
+
+    std::erase_if(result, [](const auto& item) { return item.second.empty(); });
+
+    return result;
+}
+
 const ResolvedRules& GetResolvedPropertyOverrides(
     const std::wstring_view type,
     const std::wstring_view fallbackType,
@@ -12300,8 +12454,12 @@ const ResolvedRules& GetResolvedPropertyOverrides(
                 propertyOverrideValues;
             propertyOverrideValues.reserve(valueRules.size());
 
+            std::vector<std::wstring> valueRuleSetterXamls;
+            valueRuleSetterXamls.reserve(valueRules.size());
+
             for (const auto& rule : valueRules) {
                 const bool isDynamic = rule.isDynamic();
+                const size_t setterStart = xaml.size();
 
                 propertyOverrideValues.push_back(
                     !isDynamic && rule.isXamlValue
@@ -12328,6 +12486,8 @@ const ResolvedRules& GetResolvedPropertyOverrides(
                         L"            </Setter.Value>\n"
                         L"        </Setter>\n";
                 }
+
+                valueRuleSetterXamls.push_back(xaml.substr(setterStart));
             }
 
             for (const auto& rule : captureRules) {
@@ -12364,6 +12524,10 @@ const ResolvedRules& GetResolvedPropertyOverrides(
                     style.Setters().GetAt(setterIndex++).as<Setter>();
                 resolved.captures.push_back({setter.Property(), rule.varName});
             }
+
+            resolved.elementInstanceSetters =
+                GetElementInstanceSetters(type, fallbackType, xaml, style,
+                                          valueRules, valueRuleSetterXamls);
         }
 
         Wh_Log(L"%.*s: %zu override styles, %zu captures",
@@ -12804,16 +12968,20 @@ ElementResolvedRules FindElementPropertyOverrides(FrameworkElement element,
             continue;
         }
 
-        const auto& resolvedRules = GetResolvedPropertyOverrides(
-            override.elementMatcher.type,
+        std::wstring_view fallbackType =
             fallbackClassName ? fallbackClassName
-                              : winrt::name_of<FrameworkElement>(),
+                              : winrt::name_of<FrameworkElement>();
+        const auto& resolvedRules = GetResolvedPropertyOverrides(
+            override.elementMatcher.type, fallbackType,
             &override.propertyOverrides);
 
         result.hasDynamicValues |= resolvedRules.hasDynamicValues;
 
         auto& propertyOverridesForVSG =
             result.overridesPerVSG[visualStateGroup];
+        std::wstring elementInstanceXaml;
+        std::vector<std::pair<DependencyProperty, std::wstring>>
+            elementInstanceCells;
         for (const auto& [property, valuesPerVisualState] :
              resolvedRules.propertyOverrides) {
             bool propertyInserted = propertiesAdded.insert(property).second;
@@ -12824,6 +12992,31 @@ ElementResolvedRules FindElementPropertyOverrides(FrameworkElement element,
             auto& propertyOverrides = propertyOverridesForVSG[property];
             for (const auto& [visualState, value] : valuesPerVisualState) {
                 propertyOverrides.insert({visualState, value});
+            }
+
+            if (auto it = resolvedRules.elementInstanceSetters.find(property);
+                it != resolvedRules.elementInstanceSetters.end()) {
+                for (const auto& [visualState, setterXaml] : it->second) {
+                    elementInstanceXaml += setterXaml;
+                    elementInstanceCells.push_back({property, visualState});
+                }
+            }
+        }
+
+        // On failure, the element keeps the values shared with other elements.
+        if (!elementInstanceCells.empty()) {
+            try {
+                auto style = GetStyleFromXamlSettersWithFallbackType(
+                    override.elementMatcher.type, fallbackType,
+                    elementInstanceXaml);
+                for (size_t i = 0; i < elementInstanceCells.size(); i++) {
+                    const auto& [property, visualState] =
+                        elementInstanceCells[i];
+                    propertyOverridesForVSG[property][visualState] =
+                        style.Setters().GetAt(i).as<Setter>().Value();
+                }
+            } catch (winrt::hresult_error const& ex) {
+                Wh_Log(L"Error %08X: %s", ex.code(), ex.message().c_str());
             }
         }
 
@@ -13738,11 +13931,107 @@ bool SameLocalValue(winrt::Windows::Foundation::IInspectable const& a,
     return isBoxedValue(a) && isBoxedValue(b);
 }
 
+// Before animating a property of a brush or a transform, such as Fill.Color in
+// ProgressBar's paused state, XAML replaces the value with a copy of it, unless
+// the value is such a copy itself. Whether `value` is one shows in whether a
+// storyboard that targets it through a holder replaces the holder's value.
+bool IsXamlAnimationCopy(
+    winrt::Windows::Foundation::IInspectable const& value) {
+    DependencyObject holder{nullptr};
+    DependencyProperty property{nullptr};
+    PCWSTR path = nullptr;
+    if (value.try_as<Media::SolidColorBrush>() ||
+        value.try_as<Media::LinearGradientBrush>()) {
+        holder = Controls::Border();
+        property = Controls::Border::BackgroundProperty();
+        path = L"(Border.Background).(Brush.Opacity)";
+    } else if (value.try_as<Media::Transform>()) {
+        // A path which doesn't resolve is an error, so it names a property of
+        // the transform's own type.
+        holder = Media::SolidColorBrush();
+        property = Media::Brush::TransformProperty();
+        if (value.try_as<Media::TranslateTransform>()) {
+            path = L"(Brush.Transform).(TranslateTransform.X)";
+        } else if (value.try_as<Media::ScaleTransform>()) {
+            path = L"(Brush.Transform).(ScaleTransform.ScaleX)";
+        } else if (value.try_as<Media::RotateTransform>()) {
+            path = L"(Brush.Transform).(RotateTransform.Angle)";
+        } else if (value.try_as<Media::SkewTransform>()) {
+            path = L"(Brush.Transform).(SkewTransform.AngleX)";
+        } else if (value.try_as<Media::CompositeTransform>()) {
+            path = L"(Brush.Transform).(CompositeTransform.Rotation)";
+        } else if (value.try_as<Media::MatrixTransform>()) {
+            path = L"(Brush.Transform).(MatrixTransform.Matrix)";
+        } else if (value.try_as<Media::TransformGroup>()) {
+            path = L"(Brush.Transform).(TransformGroup.Children)";
+        }
+    }
+
+    if (!path) {
+        return false;
+    }
+
+    try {
+        holder.SetValue(property, value);
+        // Without key frames, beginning the storyboard only resolves the path.
+        Media::Animation::ObjectAnimationUsingKeyFrames animation;
+        Media::Animation::Storyboard::SetTarget(animation, holder);
+        Media::Animation::Storyboard::SetTargetProperty(animation, path);
+        Media::Animation::Storyboard storyboard;
+        storyboard.Children().Append(animation);
+        storyboard.Begin();
+        storyboard.Stop();
+        return holder.ReadLocalValue(property) == value;
+    } catch (winrt::hresult_error const& ex) {
+        Wh_Log(L"Error %08X: %s", ex.code(), ex.message().c_str());
+        return false;
+    }
+}
+
+// Whether `value` is XAML's animation copy of `applied`. XAML copies only the
+// property's current value, so a copy of the same type is taken to be one of
+// `applied`.
+bool IsAnimationCopy(winrt::Windows::Foundation::IInspectable const& value,
+                     winrt::Windows::Foundation::IInspectable const& applied) {
+    return value && applied && value != applied &&
+           winrt::get_class_name(value) == winrt::get_class_name(applied) &&
+           IsXamlAnimationCopy(value);
+}
+
+// XAML's animation copy of a XamlCompositionBrushBase is an instance of that
+// base class itself, which nothing else creates. It lacks the original's
+// composition brush, so it renders nothing.
+bool IsCompositionBrushCopy(
+    winrt::Windows::Foundation::IInspectable const& value) {
+    return value && std::wstring_view(winrt::get_class_name(value)) ==
+                        winrt::name_of<Media::XamlCompositionBrushBase>();
+}
+
+// Let XAML's animation copy of the applied value stand in for it. Applying the
+// value again would make the running animation change it in place, for every
+// element that shares it. A composition brush's copy renders nothing, so it
+// isn't taken.
+bool TakeAnimationCopyAsApplied(
+    FrameworkElement element,
+    DependencyProperty property,
+    ElementPropertyCustomizationState* propertyCustomizationState) {
+    auto localValue = element.ReadLocalValue(property);
+    if (!IsAnimationCopy(localValue,
+                         propertyCustomizationState->lastAppliedValue)) {
+        return false;
+    }
+
+    Wh_Log(L"Taking animation copy of the applied value");
+    propertyCustomizationState->lastAppliedValue = localValue;
+    return true;
+}
+
 // Record a write by something other than the mod as the property's pre-style
 // value. A local value still equal to the one the mod applied means nothing
-// external happened (an animation changes only the effective value), and
-// adopting the mod's own brush would make it survive cleanup and crash when
-// the DLL is unloaded.
+// external happened (animating the property changes only the effective value),
+// and adopting the mod's own brush would make it survive cleanup and crash when
+// the DLL is unloaded. An image which a retry assigned is the mod's too, and so
+// is XAML's animation copy of the applied value.
 void AdoptExternalValueAsOriginal(
     FrameworkElement element,
     DependencyProperty property,
@@ -13752,7 +14041,11 @@ void AdoptExternalValueAsOriginal(
     }
     auto localValue = ReadLocalValueWithWorkaround(element, property);
     if (!SameLocalValue(localValue,
-                        propertyCustomizationState->lastAppliedValue)) {
+                        propertyCustomizationState->lastAppliedValue) &&
+        !IsImageRetryValue(element, property, localValue) &&
+        !IsCompositionBrushCopy(localValue) &&
+        !IsAnimationCopy(localValue,
+                         propertyCustomizationState->lastAppliedValue)) {
         propertyCustomizationState->originalValue = localValue;
     }
 }
@@ -13768,8 +14061,8 @@ void UnapplyStyleValue(
     if (propertyCustomizationState->originalValue) {
         bool wasModifying = g_elementPropertyModifying;
         g_elementPropertyModifying = true;
-        SetOrClearValue(element, property,
-                        *propertyCustomizationState->originalValue);
+        RestoreOriginalValue(element, property,
+                             *propertyCustomizationState->originalValue);
         g_elementPropertyModifying = wasModifying;
         propertyCustomizationState->originalValue.reset();
     }
@@ -14264,6 +14557,79 @@ void RestoreCapturesForElement(FrameworkElement element,
     }
 }
 
+// Take an element's captures out of the registry, returning the names they were
+// under. Other elements may still capture the same names, so a name only
+// becomes undefined once its last capture is gone.
+std::vector<std::wstring> WithdrawCapturesForElement(
+    StyleVariableState* state,
+    ElementId elementId,
+    const ElementCustomizationState& elementState) {
+    std::vector<std::wstring> varNames;
+
+    for (const auto& [property, captureState] :
+         elementState.captureCustomizationStates) {
+        if (captureState.varName.empty()) {
+            continue;
+        }
+
+        auto varIt = state->variables.find(captureState.varName);
+        if (varIt == state->variables.end()) {
+            continue;
+        }
+
+        size_t removed = std::erase_if(
+            varIt->second, [elementId](const StyleVariableCapture& capture) {
+                return capture.elementId == elementId;
+            });
+        if (!removed) {
+            continue;
+        }
+
+        ReleaseStyleVariableElementRefs(state, elementId, removed);
+
+        varNames.push_back(captureState.varName);
+        if (varIt->second.empty()) {
+            state->variables.erase(varIt);
+        }
+    }
+
+    return varNames;
+}
+
+// Put back the captures WithdrawCapturesForElement took out, returning the
+// names they're under. Values are read afresh: the capture callbacks drop
+// changes for a capture that isn't in the registry.
+std::vector<std::wstring> RepublishCapturesForElement(
+    StyleVariableState* state,
+    ElementId elementId,
+    FrameworkElement element,
+    const ElementCustomizationState& elementState) {
+    std::vector<std::wstring> varNames;
+
+    for (const auto& [property, captureState] :
+         elementState.captureCustomizationStates) {
+        if (captureState.varName.empty()) {
+            continue;
+        }
+
+        auto& captures = state->variables[captureState.varName];
+        if (std::any_of(captures.begin(), captures.end(),
+                        [elementId](const StyleVariableCapture& capture) {
+                            return capture.elementId == elementId;
+                        })) {
+            continue;
+        }
+
+        captures.push_back(
+            {elementId, ReadCapturedStyleVariableValue(element, property)});
+        AddStyleVariableElementRef(state, elementId);
+
+        varNames.push_back(captureState.varName);
+    }
+
+    return varNames;
+}
+
 void ApplyCustomizationsForVisualStateGroup(
     StyleVariableState* state,
     ElementId elementId,
@@ -14334,6 +14700,11 @@ void ApplyCustomizationsForVisualStateGroup(
                     }
 
                     if (!propertyCustomizationState.customValue) {
+                        return;
+                    }
+
+                    if (TakeAnimationCopyAsApplied(
+                            element, property, &propertyCustomizationState)) {
                         return;
                     }
 
@@ -14484,6 +14855,22 @@ void RestoreCustomizationsForVisualStateGroup(
         visualStateGroupOptionalWeakPtr,
     const ElementCustomizationStateForVisualStateGroup&
         elementCustomizationStateForVisualStateGroup) {
+    // Before the properties are restored, so that a visual state change which
+    // restoring one causes can't apply the style again.
+    auto visualStateGroupIter = visualStateGroupOptionalWeakPtr
+                                    ? visualStateGroupOptionalWeakPtr->get()
+                                    : nullptr;
+    if (visualStateGroupIter && elementCustomizationStateForVisualStateGroup
+                                    .visualStateGroupCurrentStateChangedToken) {
+        try {
+            visualStateGroupIter.CurrentStateChanged(
+                elementCustomizationStateForVisualStateGroup
+                    .visualStateGroupCurrentStateChangedToken);
+        } catch (winrt::hresult_error const& ex) {
+            Wh_Log(L"Error %08X: %s", ex.code(), ex.message().c_str());
+        }
+    }
+
     if (element) {
         for (const auto& [property, propState] :
              elementCustomizationStateForVisualStateGroup
@@ -14503,7 +14890,8 @@ void RestoreCustomizationsForVisualStateGroup(
             }
 
             if (propState.originalValue) {
-                SetOrClearValue(element, property, *propState.originalValue);
+                RestoreOriginalValue(element, property,
+                                     *propState.originalValue);
             }
         }
     } else {
@@ -14518,20 +14906,6 @@ void RestoreCustomizationsForVisualStateGroup(
                                              propState.variableDependencies,
                                              {});
             }
-        }
-    }
-
-    auto visualStateGroupIter = visualStateGroupOptionalWeakPtr
-                                    ? visualStateGroupOptionalWeakPtr->get()
-                                    : nullptr;
-    if (visualStateGroupIter && elementCustomizationStateForVisualStateGroup
-                                    .visualStateGroupCurrentStateChangedToken) {
-        try {
-            visualStateGroupIter.CurrentStateChanged(
-                elementCustomizationStateForVisualStateGroup
-                    .visualStateGroupCurrentStateChangedToken);
-        } catch (winrt::hresult_error const& ex) {
-            Wh_Log(L"Error %08X: %s", ex.code(), ex.message().c_str());
         }
     }
 }
@@ -14990,8 +15364,158 @@ bool SameRepeaterItem(RepeaterItem const& a, RepeaterItem const& b) {
     return valueB && std::get<UnboxedPropertyValue>(a) == *valueB;
 }
 
+// Whether the element is in an item element a repeater holds without having it
+// realized, i.e. one sitting in its recycle pool.
+bool IsInRecycledRepeaterItem(FrameworkElement element) {
+    try {
+        DependencyObject child = element;
+        while (child) {
+            auto parent = Media::VisualTreeHelper::GetParent(child);
+            if (auto repeater = parent.try_as<muxc::ItemsRepeater>()) {
+                if (repeater.GetElementIndex(child.as<UIElement>()) < 0) {
+                    return true;
+                }
+            }
+
+            child = std::move(parent);
+        }
+    } catch (winrt::hresult_error const& ex) {
+        Wh_Log(L"Error %08X: %s", ex.code(), ex.message().c_str());
+    }
+
+    return false;
+}
+
+thread_local bool g_recycledItemCapturesRefreshQueued;
+thread_local winrt::Windows::System::DispatcherQueueTimer
+    g_recycledItemCapturesRefreshTimer{nullptr};
+thread_local winrt::Windows::System::DispatcherQueueTimer::Tick_revoker
+    g_recycledItemCapturesRefreshTimerTickRevoker;
+
+// The captures of an element in a recycled repeater item are withdrawn, as if
+// the item was removed: the recycle pool keeps the item in the tree, out of
+// sight, and its captures would keep publishing the values they last saw. This
+// runs once layout is done rather than on each clear and prepare, since a
+// layout can clear an element and hand it straight back within a pass, and
+// flipping the captures there would restyle their consumers on every pass.
+void RefreshRecycledItemCaptures() {
+    g_recycledItemCapturesRefreshQueued = false;
+
+    auto* state = GetStyleVariableState();
+
+    std::vector<ElementId> owners(state->withdrawnCaptureOwners.begin(),
+                                  state->withdrawnCaptureOwners.end());
+    for (const auto& [varName, captures] : state->variables) {
+        for (const auto& capture : captures) {
+            owners.push_back(capture.elementId);
+        }
+    }
+
+    std::sort(owners.begin(), owners.end());
+    owners.erase(std::unique(owners.begin(), owners.end()), owners.end());
+
+    std::vector<std::wstring> changedVarNames;
+    for (ElementId owner : owners) {
+        auto it = g_elementsCustomizationState.find(owner);
+        if (it == g_elementsCustomizationState.end()) {
+            continue;
+        }
+
+        auto& elementState = it->second;
+        auto element = elementState.element.get();
+        if (!element) {
+            continue;
+        }
+
+        bool withdrawn = state->withdrawnCaptureOwners.contains(owner);
+        if (IsInRecycledRepeaterItem(element) == withdrawn) {
+            continue;
+        }
+
+        std::vector<std::wstring> varNames;
+        if (withdrawn) {
+            Wh_Log(L"Republishing captures of %llu",
+                   static_cast<uint64_t>(owner));
+            varNames = RepublishCapturesForElement(state, owner, element,
+                                                   elementState);
+            state->withdrawnCaptureOwners.erase(owner);
+        } else {
+            Wh_Log(L"Withdrawing captures of %llu",
+                   static_cast<uint64_t>(owner));
+            varNames = WithdrawCapturesForElement(state, owner, elementState);
+            state->withdrawnCaptureOwners.insert(owner);
+        }
+
+        changedVarNames.insert(changedVarNames.end(), varNames.begin(),
+                               varNames.end());
+    }
+
+    std::sort(changedVarNames.begin(), changedVarNames.end());
+    changedVarNames.erase(
+        std::unique(changedVarNames.begin(), changedVarNames.end()),
+        changedVarNames.end());
+
+    for (const auto& varName : changedVarNames) {
+        PropagateStyleVariableChange(state, varName, std::nullopt);
+    }
+}
+
+// Armed from inside a layout pass, and the timer carries the refresh out of it.
+void QueueRecycledItemCapturesRefresh() {
+    if (g_recycledItemCapturesRefreshQueued) {
+        return;
+    }
+
+    auto* state = GetStyleVariableState();
+    if (state->variables.empty() && state->withdrawnCaptureOwners.empty()) {
+        return;
+    }
+
+    try {
+        if (!g_recycledItemCapturesRefreshTimer) {
+            auto dispatcherQueue =
+                winrt::Windows::System::DispatcherQueue::GetForCurrentThread();
+            if (!dispatcherQueue) {
+                Wh_Log(L"No dispatcher queue, recycled item captures stay");
+                return;
+            }
+
+            g_recycledItemCapturesRefreshTimer = dispatcherQueue.CreateTimer();
+            g_recycledItemCapturesRefreshTimer.IsRepeating(false);
+            g_recycledItemCapturesRefreshTimer.Interval(
+                std::chrono::milliseconds{1});
+            g_recycledItemCapturesRefreshTimerTickRevoker =
+                g_recycledItemCapturesRefreshTimer.Tick(
+                    winrt::auto_revoke,
+                    [](winrt::Windows::System::DispatcherQueueTimer const&,
+                       winrt::Windows::Foundation::IInspectable const&) {
+                        RefreshRecycledItemCaptures();
+                    });
+        }
+
+        g_recycledItemCapturesRefreshTimer.Start();
+        g_recycledItemCapturesRefreshQueued = true;
+    } catch (winrt::hresult_error const& ex) {
+        Wh_Log(L"Error %08X: %s", ex.code(), ex.message().c_str());
+    }
+}
+
+void StopRecycledItemCapturesRefresh() {
+    if (g_recycledItemCapturesRefreshTimer) {
+        try {
+            g_recycledItemCapturesRefreshTimer.Stop();
+        } catch (winrt::hresult_error const& ex) {
+            Wh_Log(L"Error %08X: %s", ex.code(), ex.message().c_str());
+        }
+    }
+
+    g_recycledItemCapturesRefreshTimerTickRevoker.revoke();
+    g_recycledItemCapturesRefreshTimer = nullptr;
+    g_recycledItemCapturesRefreshQueued = false;
+}
+
 // A virtualizing container recycles its item elements instead of destroying
-// them: the recycle pool collapses the element and leaves it parented, so XAML
+// them: the recycle pool keeps the element parented, out of sight, so XAML
 // diagnostics reports no Remove/Add mutation and the styles matched for the
 // previous item would stay on the element once it's reused for another one.
 // Treat a cleared element as removed and a prepared one as newly added.
@@ -15009,6 +15533,10 @@ void HandleVirtualizingRepeater(ElementId elementId, FrameworkElement element) {
         winrt::auto_revoke,
         [](muxc::ItemsRepeater const&,
            muxc::ItemsRepeaterElementClearingEventArgs const& args) {
+            // Ahead of the early returns: the item's descendants can hold
+            // captures even when the item itself has no id.
+            QueueRecycledItemCapturesRefresh();
+
             auto element = args.Element().try_as<FrameworkElement>();
             if (!element) {
                 return;
@@ -15032,6 +15560,8 @@ void HandleVirtualizingRepeater(ElementId elementId, FrameworkElement element) {
         winrt::auto_revoke,
         [](muxc::ItemsRepeater const& sender,
            muxc::ItemsRepeaterElementPreparedEventArgs const& args) {
+            QueueRecycledItemCapturesRefresh();
+
             auto element = args.Element().try_as<FrameworkElement>();
             if (!element) {
                 return;
@@ -15129,11 +15659,33 @@ constexpr WCHAR kSeparatePinnedContentName[] = L"SideBySidePinnedContent";
 struct SeparatePinnedScrollEntry {
     winrt::weak_ref<Controls::Border> border;
     winrt::weak_ref<Controls::Grid> sourceTopLevelHeader;
+    Input::FocusManager::GettingFocus_revoker gettingFocusRevoker;
+    UIElement::KeyDown_revoker wrapperKeyDownRevoker;
 };
 std::vector<SeparatePinnedScrollEntry> g_separatePinnedScrollEntries;
 
+// The index of the item each list in the pinned items was focused at last.
+std::vector<std::pair<winrt::weak_ref<Controls::ListViewBase>, int>>
+    g_separatePinnedListFocusedIndexes;
+
 std::vector<winrt::Windows::Foundation::IAsyncOperation<bool>>
     g_separatePinnedScrollPendingActions;
+
+// Tracks a pending dispatcher callback so UninitializeSettingsAndTap can cancel
+// it on teardown. Finished ones are pruned first to keep the list bounded (only
+// a handful are ever in flight).
+void TrackSeparatePinnedScrollAction(
+    winrt::Windows::Foundation::IAsyncOperation<bool> action) {
+    std::erase_if(
+        g_separatePinnedScrollPendingActions,
+        [](winrt::Windows::Foundation::IAsyncOperation<bool> const& a) {
+            return !a || a.Status() !=
+                             winrt::Windows::Foundation::AsyncStatus::Started;
+        });
+    if (action) {
+        g_separatePinnedScrollPendingActions.push_back(std::move(action));
+    }
+}
 
 bool IsSeparatePinnedScrollTargetName(winrt::hstring const& name) {
     return name == L"PinnedListHeaderGrid" || name == L"ShowMorePinnedGrid" ||
@@ -15279,6 +15831,7 @@ void RevertAllSeparatePinnedScroll() {
         }
     }
     g_separatePinnedScrollEntries.clear();
+    g_separatePinnedListFocusedIndexes.clear();
 }
 
 // Wrap the inner ScrollViewer in a sibling-capable Grid the first time we see
@@ -15416,6 +15969,413 @@ void MoveElementToPinnedContent(FrameworkElement element,
     target.Children().Append(uiElement);
 }
 
+bool IsVisualTreeDescendant(DependencyObject element,
+                            DependencyObject const& ancestor) {
+    while (element) {
+        if (element == ancestor) {
+            return true;
+        }
+        element = Media::VisualTreeHelper::GetParent(element);
+    }
+    return false;
+}
+
+bool IsTabNavigationOnce(DependencyObject const& element) {
+    auto control = element.try_as<Controls::Control>();
+    if (control &&
+        control.TabNavigation() == Input::KeyboardNavigationMode::Once) {
+        return true;
+    }
+    auto uiElement = element.try_as<UIElement>();
+    return uiElement && uiElement.TabFocusNavigation() ==
+                            Input::KeyboardNavigationMode::Once;
+}
+
+// Whether `element` is a tab stop itself, as opposed to only containing one.
+bool IsTabStopElement(DependencyObject const& element) {
+    auto control = element.try_as<Controls::Control>();
+    return control && control.IsTabStop() &&
+           (control.IsEnabled() || control.AllowFocusWhenDisabled());
+}
+
+// The list item container `element` is in, and its list, if the list is in
+// `scope`.
+std::pair<Controls::ListViewBase, UIElement> FindListViewBaseItem(
+    DependencyObject element,
+    DependencyObject const& scope) {
+    for (; element && element != scope;
+         element = Media::VisualTreeHelper::GetParent(element)) {
+        auto list =
+            Controls::ItemsControl::ItemsControlFromItemContainer(element)
+                .try_as<Controls::ListViewBase>();
+        if (list) {
+            if (!IsVisualTreeDescendant(list, scope)) {
+                break;
+            }
+            return {list, element.try_as<UIElement>()};
+        }
+    }
+    return {nullptr, nullptr};
+}
+
+void RecordSeparatePinnedListFocus(DependencyObject const& element,
+                                   UIElement const& pinnedScroll) {
+    auto [list, container] = FindListViewBaseItem(element, pinnedScroll);
+    if (!list) {
+        return;
+    }
+
+    int index = list.IndexFromContainer(container);
+    if (index < 0) {
+        return;
+    }
+
+    std::erase_if(g_separatePinnedListFocusedIndexes,
+                  [](auto const& entry) { return !entry.first.get(); });
+    for (auto& [weakList, focusedIndex] : g_separatePinnedListFocusedIndexes) {
+        if (weakList.get() == list) {
+            focusedIndex = index;
+            return;
+        }
+    }
+    g_separatePinnedListFocusedIndexes.push_back(
+        {winrt::make_weak(list), index});
+}
+
+// The element Tab enters `scope` at from outside of it. While something else
+// is focused, XAML looks for it in tree order, but a list with
+// TabNavigation=Once is entered at the item it was focused at last, or else at
+// its first item.
+DependencyObject FindTabEntryElement(DependencyObject const& scope,
+                                     bool backward) {
+    auto found = backward
+                     ? Input::FocusManager::FindLastFocusableElement(scope)
+                     : Input::FocusManager::FindFirstFocusableElement(scope);
+
+    auto [list, container] = FindListViewBaseItem(found, scope);
+    if (!list || !IsTabNavigationOnce(list)) {
+        return found;
+    }
+
+    int index = 0;
+    for (auto const& [weakList, focusedIndex] :
+         g_separatePinnedListFocusedIndexes) {
+        if (weakList.get() == list) {
+            index = focusedIndex;
+            break;
+        }
+    }
+
+    for (int i : {index, 0}) {
+        if (i < static_cast<int>(list.Items().Size())) {
+            auto entry = list.ContainerFromIndex(i);
+            if (entry && IsTabStopElement(entry)) {
+                return entry;
+            }
+        }
+    }
+
+    return found;
+}
+
+// Appends the controls below `element`, without looking inside of them.
+void CollectTabScopeControls(DependencyObject const& element,
+                             std::vector<Controls::Control>& controls) {
+    int count = Media::VisualTreeHelper::GetChildrenCount(element);
+    for (int i = 0; i < count; i++) {
+        auto child =
+            Media::VisualTreeHelper::GetChild(element, i).try_as<UIElement>();
+        if (!child || child.Visibility() != Visibility::Visible) {
+            continue;
+        }
+
+        if (auto control = child.try_as<Controls::Control>()) {
+            controls.push_back(std::move(control));
+        } else {
+            CollectTabScopeControls(child, controls);
+        }
+    }
+}
+
+// The tab stop after `from`, or before it if `backward`, among the descendants
+// of `scope`, or in the whole tree if `scope` is null. Follows the focus
+// manager: Tab moves between the controls in the scope of the nearest control
+// ancestor, ordered by TabIndex and then by tree order, and leaves a control
+// with TabNavigation=Once as a whole.
+DependencyObject FindAdjacentTabStop(DependencyObject const& from,
+                                     DependencyObject const& scope,
+                                     bool backward) {
+    DependencyObject current = from;
+    for (auto ancestor = Media::VisualTreeHelper::GetParent(from); ancestor;
+         ancestor = Media::VisualTreeHelper::GetParent(ancestor)) {
+        bool isRoot =
+            ancestor == scope || !Media::VisualTreeHelper::GetParent(ancestor);
+        auto ancestorControl = ancestor.try_as<Controls::Control>();
+        if (!isRoot && !ancestorControl) {
+            continue;
+        }
+
+        if (!isRoot && IsTabNavigationOnce(ancestor)) {
+            current = ancestor;
+            continue;
+        }
+
+        std::vector<Controls::Control> controls;
+        CollectTabScopeControls(ancestor, controls);
+        std::stable_sort(
+            controls.begin(), controls.end(),
+            [](Controls::Control const& a, Controls::Control const& b) {
+                return a.TabIndex() < b.TabIndex();
+            });
+
+        auto it = std::find(controls.begin(), controls.end(), current);
+        if (it != controls.end()) {
+            int index = static_cast<int>(it - controls.begin());
+            int step = backward ? -1 : 1;
+            for (int i = index + step;
+                 i >= 0 && i < static_cast<int>(controls.size()); i += step) {
+                auto const& control = controls[i];
+
+                // A control which is a tab stop comes before its descendants.
+                if (!backward && IsTabStopElement(control)) {
+                    return control;
+                }
+
+                if (auto found = FindTabEntryElement(control, backward)) {
+                    return found;
+                }
+
+                if (backward && IsTabStopElement(control)) {
+                    return control;
+                }
+            }
+        }
+
+        if (isRoot) {
+            break;
+        }
+
+        if (backward && IsTabStopElement(ancestor)) {
+            return ancestor;
+        }
+
+        current = ancestor;
+    }
+
+    return nullptr;
+}
+
+// The pinned ScrollViewer and the apps one.
+std::pair<UIElement, UIElement> GetSeparatePinnedScrollViewers(
+    Controls::Grid const& wrapper) {
+    UIElement pinnedScroll{nullptr};
+    UIElement appsScroll{nullptr};
+    for (auto const& child : wrapper.Children()) {
+        auto sv = child.try_as<Controls::ScrollViewer>();
+        if (sv && sv.Name() == kSeparatePinnedScrollName) {
+            pinnedScroll = child;
+        } else if (!appsScroll) {
+            appsScroll = child;
+        }
+    }
+    return {pinnedScroll, appsScroll};
+}
+
+// ListViewBase handles Tab for everything in its template by visiting only its
+// header, items and footer, so in the AllAppsGrid the pinned ScrollViewer is
+// skipped, and Tab from inside of it jumps to the apps list. Returns where a
+// focus change should go instead to put the pinned items right before the apps
+// list, as when they're in its header, or null to keep `newFocus`.
+DependencyObject GetSeparatePinnedFocusRedirect(
+    Controls::Grid const& wrapper,
+    DependencyObject const& oldFocus,
+    DependencyObject const& newFocus,
+    Input::FocusNavigationDirection direction,
+    Input::FocusInputDeviceKind inputDevice) {
+    auto [pinnedScroll, appsScroll] = GetSeparatePinnedScrollViewers(wrapper);
+    if (!pinnedScroll || !appsScroll) {
+        return nullptr;
+    }
+
+    bool oldInGrid = IsVisualTreeDescendant(oldFocus, wrapper);
+    bool newInGrid = IsVisualTreeDescendant(newFocus, wrapper);
+    bool newInPinned = IsVisualTreeDescendant(newFocus, pinnedScroll);
+
+    // The Start menu moves focus into the AllAppsGrid by itself, without a
+    // direction, when it opens and when tabbing from the tab stop before it.
+    if (direction == Input::FocusNavigationDirection::None) {
+        if (inputDevice == Input::FocusInputDeviceKind::Mouse ||
+            inputDevice == Input::FocusInputDeviceKind::Touch ||
+            inputDevice == Input::FocusInputDeviceKind::Pen || oldInGrid ||
+            !newInGrid || newInPinned ||
+            newFocus !=
+                Input::FocusManager::FindFirstFocusableElement(appsScroll) ||
+            (oldFocus && oldFocus != FindAdjacentTabStop(wrapper, nullptr,
+                                                         /*backward=*/true))) {
+            return nullptr;
+        }
+
+        return FindTabEntryElement(pinnedScroll, /*backward=*/false);
+    }
+
+    if (direction != Input::FocusNavigationDirection::Next &&
+        direction != Input::FocusNavigationDirection::Previous) {
+        return nullptr;
+    }
+
+    bool backward = direction == Input::FocusNavigationDirection::Previous;
+
+    if (IsVisualTreeDescendant(oldFocus, pinnedScroll)) {
+        if (newInPinned) {
+            return nullptr;
+        }
+
+        if (auto target =
+                FindAdjacentTabStop(oldFocus, pinnedScroll, backward)) {
+            return target;
+        }
+
+        // Leaving the pinned items forward goes into the apps list. Leaving
+        // them backward is done on key down, see
+        // OnSeparatePinnedWrapperKeyDown.
+        if (backward || newInGrid) {
+            return nullptr;
+        }
+
+        return Input::FocusManager::FindFirstFocusableElement(appsScroll);
+    }
+
+    // Entering the AllAppsGrid.
+    if (!backward && !oldInGrid && newInGrid && !newInPinned) {
+        return FindTabEntryElement(pinnedScroll, /*backward=*/false);
+    }
+
+    return nullptr;
+}
+
+// A handler of the focus manager's GettingFocus event, which is raised after
+// the routed one, so that ListViewBase can't undo the redirect: it uses the
+// routed event to send focus coming from outside of it to the item focused
+// last.
+void OnSeparatePinnedFocusChange(Controls::Grid const& wrapper,
+                                 Input::GettingFocusEventArgs const& args) {
+    try {
+        auto newFocus = args.NewFocusedElement();
+        if (!newFocus) {
+            return;
+        }
+
+        if (auto [pinnedScroll, appsScroll] =
+                GetSeparatePinnedScrollViewers(wrapper);
+            pinnedScroll && IsVisualTreeDescendant(newFocus, pinnedScroll)) {
+            RecordSeparatePinnedListFocus(newFocus, pinnedScroll);
+        }
+
+        auto target = GetSeparatePinnedFocusRedirect(
+            wrapper, args.OldFocusedElement(), newFocus, args.Direction(),
+            args.InputDevice());
+        if (!target || args.TrySetNewFocusedElement(target)) {
+            return;
+        }
+
+        // Some focus changes can't be redirected, such as the one made when
+        // the window is activated, so focus is moved once it's done instead.
+        auto action = wrapper.Dispatcher().TryRunAsync(
+            winrt::Windows::UI::Core::CoreDispatcherPriority::Normal,
+            [weakWrapper = winrt::make_weak(wrapper),
+             weakNewFocus = winrt::make_weak(newFocus),
+             weakTarget = winrt::make_weak(target),
+             focusState = args.FocusState()]() {
+                auto wrapper = weakWrapper.get();
+                auto newFocus = weakNewFocus.get();
+                auto target = weakTarget.get();
+                if (!wrapper || !newFocus || !target) {
+                    return;
+                }
+
+                try {
+                    auto xamlRoot = wrapper.XamlRoot();
+                    auto focused =
+                        xamlRoot
+                            ? Input::FocusManager::GetFocusedElement(xamlRoot)
+                            : Input::FocusManager::GetFocusedElement();
+                    if (focused != newFocus) {
+                        return;
+                    }
+
+                    Input::FocusManager::TryFocusAsync(target, focusState);
+                } catch (winrt::hresult_error const& ex) {
+                    Wh_Log(L"SeparatePinnedScroll focus error %08X: %s",
+                           ex.code(), ex.message().c_str());
+                }
+            });
+        TrackSeparatePinnedScrollAction(std::move(action));
+    } catch (winrt::hresult_error const& ex) {
+        Wh_Log(L"SeparatePinnedScroll focus error %08X: %s", ex.code(),
+               ex.message().c_str());
+    }
+}
+
+// Shift+Tab out of the AllAppsGrid, when nothing precedes it, wraps around,
+// which the Start menu follows by sending focus to the search box no matter
+// where the focus change was redirected to. So it's handled before XAML
+// processes the key: out of the apps list, focus moves to the pinned items,
+// keeping it from being a wrap-around. Out of the pinned items, focus moves to
+// the apps list's first element for XAML to leave the AllAppsGrid from there,
+// as it does when the pinned items are in its header.
+void OnSeparatePinnedWrapperKeyDown(Controls::Grid const& wrapper,
+                                    Input::KeyRoutedEventArgs const& args) {
+    try {
+        if (args.Key() != winrt::Windows::System::VirtualKey::Tab ||
+            !(GetKeyState(VK_SHIFT) & 0x8000) ||
+            (GetKeyState(VK_CONTROL) & 0x8000) ||
+            (GetKeyState(VK_MENU) & 0x8000)) {
+            return;
+        }
+
+        auto [pinnedScroll, appsScroll] =
+            GetSeparatePinnedScrollViewers(wrapper);
+        if (!pinnedScroll || !appsScroll) {
+            return;
+        }
+
+        auto source = args.OriginalSource().try_as<DependencyObject>();
+
+        if (IsVisualTreeDescendant(source, pinnedScroll)) {
+            if (FindAdjacentTabStop(source, pinnedScroll, /*backward=*/true)) {
+                return;
+            }
+
+            auto first =
+                Input::FocusManager::FindFirstFocusableElement(appsScroll)
+                    .try_as<Controls::Control>();
+            if (first) {
+                first.Focus(FocusState::Keyboard);
+            }
+            return;
+        }
+
+        if (!IsVisualTreeDescendant(source, appsScroll)) {
+            return;
+        }
+
+        auto next = Input::FocusManager::FindNextElement(
+            Input::FocusNavigationDirection::Previous);
+        if (next && IsVisualTreeDescendant(next, wrapper)) {
+            return;
+        }
+
+        auto target = FindTabEntryElement(pinnedScroll, /*backward=*/true)
+                          .try_as<Controls::Control>();
+        if (target && target.Focus(FocusState::Keyboard)) {
+            args.Handled(true);
+        }
+    } catch (winrt::hresult_error const& ex) {
+        Wh_Log(L"SeparatePinnedScroll key error %08X: %s", ex.code(),
+               ex.message().c_str());
+    }
+}
+
 void HandleSeparatePinnedScroll(FrameworkElement element) {
     if (g_disableNewStartMenuLayout !=
         DisableNewStartMenuLayout::newLayoutSideBySide) {
@@ -15488,9 +16448,29 @@ void HandleSeparatePinnedScroll(FrameworkElement element) {
                                   [](SeparatePinnedScrollEntry const& e) {
                                       return !e.border.get();
                                   });
+                    auto wrapper = border.Child().as<Controls::Grid>();
                     g_separatePinnedScrollEntries.push_back(
                         {winrt::make_weak(border),
-                         winrt::make_weak(topLevelHeader)});
+                         winrt::make_weak(topLevelHeader),
+                         Input::FocusManager::GettingFocus(
+                             winrt::auto_revoke,
+                             [weakWrapper = winrt::make_weak(wrapper)](
+                                 wf::IInspectable const&,
+                                 Input::GettingFocusEventArgs const& args) {
+                                 if (auto wrapper = weakWrapper.get()) {
+                                     OnSeparatePinnedFocusChange(wrapper, args);
+                                 }
+                             }),
+                         wrapper.KeyDown(
+                             winrt::auto_revoke,
+                             [](wf::IInspectable const& sender,
+                                Input::KeyRoutedEventArgs const& args) {
+                                 if (auto wrapper =
+                                         sender.try_as<Controls::Grid>()) {
+                                     OnSeparatePinnedWrapperKeyDown(wrapper,
+                                                                    args);
+                                 }
+                             })});
                 }
 
                 MoveElementToPinnedContent(element, contentGrid);
@@ -15500,19 +16480,7 @@ void HandleSeparatePinnedScroll(FrameworkElement element) {
             }
         });
 
-    // Track the pending callback so UninitializeSettingsAndTap can cancel it on
-    // teardown. Prune already-finished actions first to keep the list bounded
-    // (at most a handful are ever in flight - one per target element per Start
-    // menu instance).
-    std::erase_if(
-        g_separatePinnedScrollPendingActions,
-        [](winrt::Windows::Foundation::IAsyncOperation<bool> const& a) {
-            return !a || a.Status() !=
-                             winrt::Windows::Foundation::AsyncStatus::Started;
-        });
-    if (action) {
-        g_separatePinnedScrollPendingActions.push_back(std::move(action));
-    }
+    TrackSeparatePinnedScrollAction(std::move(action));
 }
 
 void ApplyCustomizations(ElementId elementId,
@@ -15583,6 +16551,12 @@ void ApplyCustomizations(ElementId elementId,
     // consumer's own stored fallback.
     SetUpCapturesForElement(state, elementId, element, resolved.captures,
                             &elementCustomizationState);
+
+    // The element may be in an item already sitting in a recycle pool, which
+    // no clear will be reported for.
+    if (!resolved.captures.empty()) {
+        QueueRecycledItemCapturesRefresh();
+    }
 
     for (auto& [visualStateGroup, overridesForVisualStateGroup] :
          resolved.overridesPerVSG) {
@@ -15767,7 +16741,7 @@ void FlushDiagnosticsReleasesIfQuiet() {
 }
 
 void StopDiagnosticsReleases() {
-    g_pendingDiagnosticsRelease.clear();
+    ResetThreadLocal(g_pendingDiagnosticsRelease);
 
     if (g_diagnosticsReleaseDrainTimer) {
         try {
@@ -15805,40 +16779,13 @@ void CleanupCustomizations(ElementId elementId) {
 
         RestoreCapturesForElement(element, elementCustomizationState);
 
-        // Drop this element's captures from the registry. Other elements may
-        // still capture the same names, so a name only becomes undefined once
-        // its last capture is gone. Runs after RestoreCapturesForElement so the
-        // just-unregistered capture callbacks can't re-seed a variable
-        // mid-teardown.
+        // After RestoreCapturesForElement so the just-unregistered capture
+        // callbacks can't re-seed a variable mid-teardown.
         std::vector<std::wstring> removedVarNames;
         if (state) {
-            for (const auto& [property, captureState] :
-                 elementCustomizationState.captureCustomizationStates) {
-                if (captureState.varName.empty()) {
-                    continue;
-                }
-
-                auto varIt = state->variables.find(captureState.varName);
-                if (varIt == state->variables.end()) {
-                    continue;
-                }
-
-                size_t removed = std::erase_if(
-                    varIt->second,
-                    [elementId](const StyleVariableCapture& capture) {
-                        return capture.elementId == elementId;
-                    });
-                if (!removed) {
-                    continue;
-                }
-
-                ReleaseStyleVariableElementRefs(state, elementId, removed);
-
-                removedVarNames.push_back(captureState.varName);
-                if (varIt->second.empty()) {
-                    state->variables.erase(varIt);
-                }
-            }
+            removedVarNames = WithdrawCapturesForElement(
+                state, elementId, elementCustomizationState);
+            state->withdrawnCaptureOwners.erase(elementId);
         }
 
         for (const auto& [visualStateGroupOptionalWeakPtrIter, stateIter] :
@@ -16153,7 +17100,7 @@ std::wstring AdjustTypeName(std::wstring_view type) {
         adjustments = {
             {L"StartMenu:", L"StartMenu."},
             {L"muxc:", L"Microsoft.UI.Xaml.Controls."},
-        };
+    };
 
     for (const auto& adjustment : adjustments) {
         if (type.starts_with(adjustment.first)) {
@@ -16903,7 +17850,7 @@ void UninitializeSettingsAndTap() {
     g_trackedImagesForThread.retryTimer = nullptr;
     g_trackedImagesForThread.retryDueTick = 0;
     g_trackedImagesForThread.images.clear();
-    g_imageCacheUriRemotes.clear();
+    ResetThreadLocal(g_imageCacheUriRemotes);
     StopImageLoadRetriesForCurrentThread();
 
     if (g_delayedAllAppsRootVisibilitySet) {
@@ -16930,9 +17877,10 @@ void UninitializeSettingsAndTap() {
     // half-cleared state, and no pending release can consult state which is
     // being cleared.
     StopDiagnosticsReleases();
-    g_virtualizingRepeaters.clear();
-    g_recycledElements.clear();
-    g_elementMatchedItems.clear();
+    StopRecycledItemCapturesRefresh();
+    ResetThreadLocal(g_virtualizingRepeaters);
+    ResetThreadLocal(g_recycledElements);
+    ResetThreadLocal(g_elementMatchedItems);
 
     // Detached from the global before being walked: restoring a value runs
     // arbitrary XAML work, and whatever it re-enters looks its elements up in
@@ -16969,6 +17917,8 @@ void UninitializeSettingsAndTap() {
 
     UninitializeResourceVariables();
 
+    g_noiseStream = nullptr;
+
     for (const auto& [elementId, webViewCustomizationState] :
          g_webViewsCustomizationState) {
         try {
@@ -16982,7 +17932,7 @@ void UninitializeSettingsAndTap() {
 
     // After everything keyed by an id. g_lastElementId keeps counting, since an
     // id must never name two elements.
-    g_elementIds.clear();
+    ResetThreadLocal(g_elementIds);
     g_elementIdsReapThreshold = 64;
 
     g_targetThreadId = 0;

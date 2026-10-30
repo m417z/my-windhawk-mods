@@ -1401,8 +1401,14 @@ bool HookExplorerPatcherSymbols(HMODULE explorerPatcherModule) {
 
     if (!succeeded) {
         Wh_Log(L"HookExplorerPatcherSymbols failed");
-    } else if (g_initialized) {
-        Wh_ApplyHookOperations();
+    } else {
+        // ExplorerPatcher's taskbar has classic thumbnails even if taskbar.dll
+        // doesn't.
+        g_noClassicThumbnails = false;
+
+        if (g_initialized) {
+            Wh_ApplyHookOperations();
+        }
     }
 
     return succeeded;
