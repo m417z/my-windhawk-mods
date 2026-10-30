@@ -80,6 +80,8 @@ be used:
   seconds, with no time zones or daylight saving time. Computed from the system
   clock, without network access.
   * `%beat_centi%` - the same with hundredths of a beat, for example `@523.45`.
+    A hundredth lasts 0.864 seconds and the clock refreshes once per second, so
+    a value is skipped every few seconds.
 * `%timezone%` - the time zone in ISO 8601 format.
 * System performance metrics:
   * `%upload_speed%` - system-wide upload transfer rate.
@@ -2256,13 +2258,13 @@ PCWSTR GetDayOfYearFormatted() {
 }
 
 // @beat: 1000 beats per UTC day, 86.4 seconds each. Integer math truncates,
-// so the value never rounds up to @1000.
+// so the value never rounds up to @1000. The time is the formatted clock time
+// in UTC, like for %unix%, so %beat% and %beat_centi% always agree.
 void GetBeatTime(int* beats, int* centibeats) {
-    SYSTEMTIME time;
-    GetSystemTime(&time);
+    const SYSTEMTIME* time = GetFormatTimeUtc();
 
-    int ms = ((time.wHour * 60 + time.wMinute) * 60 + time.wSecond) * 1000 +
-             time.wMilliseconds;
+    int ms = ((time->wHour * 60 + time->wMinute) * 60 + time->wSecond) * 1000 +
+             time->wMilliseconds;
     *beats = ms / 86400;
     *centibeats = ms % 86400 / 864;
 }
