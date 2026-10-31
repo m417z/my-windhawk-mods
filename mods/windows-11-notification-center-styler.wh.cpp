@@ -4055,7 +4055,12 @@ const Theme g_themeCommand_Center = {{
         L"Height=10",
         L"Fill:=$OverlayColor",
         L"RadiusY=3",
-        L"RadiusX=3"}},
+        L"RadiusX=3",
+        // The Slider sizes HorizontalDecreaseRect to (trackWidth - thumbWidth)
+        // and this theme hides the thumb, so without the matching right margin
+        // the last thumbWidth of the track stays visible as an unfilled sliver
+        // at 100%. Keep the track in the same coordinate space as the fill.
+        L"Margin=0,0,20,0"}},
     ThemeTargetStyles{L"Windows.UI.Xaml.Shapes.Rectangle#HorizontalDecreaseRect", {
         L"Height=10",
         L"RadiusY=3",
@@ -4239,9 +4244,9 @@ const Theme g_themeCommand_Center = {{
     L"Background=$Frosted",
     L"BorderBrush=<LinearGradientBrush StartPoint=\"0,0\" EndPoint=\"0,1\"><GradientStop Color=\"#60808080\" Offset=\"0.0\" /><GradientStop Color=\"#50404040\" Offset=\"0.25\" /><GradientStop Color=\"#40808080\" Offset=\"1\" /></LinearGradientBrush>",
     L"BorderBrush2=<WindhawkBlur BlurAmount=\"10\" TintColor=\"#909090\" TintOpacity=\"0.3\"/>",
-    L"OverlayColor=<AcrylicBrush TintColor=\"{ThemeResource SystemAltLowColor}\" TintOpacity=\"1\" TintLuminosityOpacity=\"0.8\" FallbackColor=\"{ThemeResource CardStrokeColorDefaultSolid}\" />",
-    L"OverlayColor2=<AcrylicBrush TintColor=\"{ThemeResource SystemAltLowColor}\" TintOpacity=\"1\" TintLuminosityOpacity=\"0.5\" FallbackColor=\"{ThemeResource CardStrokeColorDefaultSolid}\" />",
-    L"AccentColor=<AcrylicBrush TintColor=\"{ThemeResource SystemAccentColor}\" TintOpacity=\"1\" TintLuminosityOpacity=\"0.5\" FallbackColor=\"{ThemeResource CardStrokeColorDefaultSolid}\" />",
+    L"OverlayColor=<AcrylicBrush TintColor=\"{ThemeResource SystemAltLowColor}\" TintOpacity=\"1\" TintLuminosityOpacity=\"0.8\" FallbackColor=\"{ThemeResource SystemAltLowColor}\" />",
+    L"OverlayColor2=<AcrylicBrush TintColor=\"{ThemeResource SystemAltLowColor}\" TintOpacity=\"1\" TintLuminosityOpacity=\"0.5\" FallbackColor=\"{ThemeResource SystemAltLowColor}\" />",
+    L"AccentColor=<AcrylicBrush TintColor=\"{ThemeResource SystemAccentColor}\" TintOpacity=\"1\" TintLuminosityOpacity=\"0.5\" FallbackColor=\"{ThemeResource SystemAccentColor}\" />",
     L"ElementBackground=<SolidColorBrush Color=\"{ThemeResource SystemAltLowColor}\" Opacity=\"0.25\" />",
     L"BorderThickness=0.3,1,0.3,1",
     L"PanelRadius=13",
