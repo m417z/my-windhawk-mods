@@ -19401,6 +19401,54 @@ void OnSeparatePinnedWrapperKeyDown(Controls::Grid const& wrapper,
     }
 }
 
+// Styling an element can force a synchronous layout pass. When the mod moves a
+// live subtree, XAML reports each of its elements while putting the subtree
+// back, and a layout pass then arranges list panels whose items aren't back
+// yet, which crashes. Elements reported during such a move are styled after it.
+struct DeferredCustomization {
+    ElementId elementId;
+    FrameworkElement element;
+    std::wstring fallbackClassName;
+};
+
+bool g_customizationsDeferred;
+std::vector<DeferredCustomization> g_deferredCustomizations;
+
+void ApplyDeferredCustomizations() {
+    for (const auto& deferred : g_deferredCustomizations) {
+        if (deferred.elementId == ElementId::None) {
+            continue;
+        }
+
+        // Caught per element, both so that one failure doesn't skip the rest,
+        // and because this runs from a destructor.
+        try {
+            ApplyCustomizations(deferred.elementId, deferred.element,
+                                deferred.fallbackClassName.empty()
+                                    ? nullptr
+                                    : deferred.fallbackClassName.c_str());
+        } catch (...) {
+            Wh_Log(L"Error %08X", winrt::to_hresult());
+        }
+    }
+
+    g_deferredCustomizations = {};
+}
+
+class DeferCustomizationsScope {
+   public:
+    DeferCustomizationsScope() { g_customizationsDeferred = true; }
+
+    ~DeferCustomizationsScope() {
+        g_customizationsDeferred = false;
+        ApplyDeferredCustomizations();
+    }
+
+    DeferCustomizationsScope(const DeferCustomizationsScope&) = delete;
+    DeferCustomizationsScope& operator=(const DeferCustomizationsScope&) =
+        delete;
+};
+
 void HandleSeparatePinnedScroll(FrameworkElement element) {
     if (g_disableNewStartMenuLayout !=
         DisableNewStartMenuLayout::newLayoutSideBySide) {
@@ -19420,6 +19468,8 @@ void HandleSeparatePinnedScroll(FrameworkElement element) {
             if (!element) {
                 return;
             }
+
+            DeferCustomizationsScope deferCustomizations;
 
             try {
                 FrameworkElement allAppsGrid{nullptr};
@@ -19511,6 +19561,12 @@ void HandleSeparatePinnedScroll(FrameworkElement element) {
 void ApplyCustomizations(ElementId elementId,
                          FrameworkElement element,
                          PCWSTR fallbackClassName) {
+    if (g_customizationsDeferred) {
+        g_deferredCustomizations.push_back(
+            {elementId, element, fallbackClassName ? fallbackClassName : L""});
+        return;
+    }
+
     // The app's resources can be reset during initialization, even after the
     // first element is added, so the resource variables are merged on the
     // first element add and verified on subsequent ones.
@@ -19783,6 +19839,14 @@ void CleanupCustomizations(ElementId elementId) {
     g_virtualizingRepeaters.erase(elementId);
     g_recycledElements.erase(elementId);
     g_elementMatchedItems.erase(elementId);
+
+    // Marked rather than removed, since ApplyDeferredCustomizations may be
+    // walking the list.
+    for (auto& deferred : g_deferredCustomizations) {
+        if (deferred.elementId == elementId) {
+            deferred.elementId = ElementId::None;
+        }
+    }
 
     if (auto it = g_elementsCustomizationState.find(elementId);
         it != g_elementsCustomizationState.end()) {
