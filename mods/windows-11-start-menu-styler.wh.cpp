@@ -10664,7 +10664,7 @@ public:
 
     void UnadviseVisualTreeChange();
 
-    bool ReleaseDiagnosticsReference(InstanceHandle handle);
+    void ReleaseDiagnosticsReference(InstanceHandle handle);
 
 private:
     HRESULT STDMETHODCALLTYPE OnVisualTreeChange(ParentChildRelation relation, VisualElement element, VisualMutationType mutationType) override;
@@ -10735,41 +10735,16 @@ void VisualTreeWatcher::UnadviseVisualTreeChange()
     }
 }
 
-// Reports whether dropping the reference destroyed the element, which is what
-// tells the caller that the handle is free to name a different element from now
-// on and that the id recorded for this one has to go.
-bool VisualTreeWatcher::ReleaseDiagnosticsReference(InstanceHandle handle)
+void VisualTreeWatcher::ReleaseDiagnosticsReference(InstanceHandle handle)
 {
     if (!m_XamlDiagnosticsTestHooks) {
-        return false;
-    }
-
-    winrt::weak_ref<wf::IInspectable> weakElement;
-    {
-        // Not through FromHandle: a handle whose runtime object is already gone
-        // fails to resolve routinely, and throwing for it would pay for an
-        // originate with a stack capture every time. The strong reference has
-        // to be gone again before the release below, hence the scope.
-        wf::IInspectable element;
-        HRESULT hr = m_XamlDiagnostics->GetIInspectableFromHandle(handle, reinterpret_cast<::IInspectable**>(winrt::put_abi(element)));
-        if (SUCCEEDED(hr) && element) {
-            try {
-                weakElement = TryMakeWeak(element);
-            } catch (...) {
-                Wh_Log(L"Error %08X", winrt::to_hresult());
-            }
-        }
+        return;
     }
 
     HRESULT hr = m_XamlDiagnosticsTestHooks->UnregisterInstance(handle);
     if (FAILED(hr)) {
         Wh_Log(L"UnregisterInstance failed with error %08X", hr);
-        return false;
     }
-
-    // Not every reported object supports weak references, and then the release
-    // just proceeds unobserved.
-    return weakElement && !weakElement.get();
 }
 
 HRESULT VisualTreeWatcher::OnVisualTreeChange(ParentChildRelation relation, VisualElement element, VisualMutationType mutationType) try
@@ -11498,7 +11473,9 @@ struct ElementCustomizationStateForVisualStateGroup {
 };
 
 struct ElementCustomizationState {
-    winrt::weak_ref<FrameworkElement> element;
+    // Held for as long as the state is, as is each visual state group below:
+    // what is registered on them can only be unregistered through them.
+    FrameworkElement element{nullptr};
 
     // Scores how close each capture of a style variable is to this element.
     // Only built for elements that capture or consume a variable.
@@ -11518,10 +11495,12 @@ struct ElementCustomizationState {
     // changes.
     winrt::event_token captureSizeChangedToken;
 
-    // Use list to avoid reallocations on insertion, as pointers to items are
-    // captured in callbacks and stored.
-    std::list<std::pair<std::optional<winrt::weak_ref<VisualStateGroup>>,
-                        ElementCustomizationStateForVisualStateGroup>>
+    // The group is null for rules without one. The callbacks registered for a
+    // group find its state gone if they outlive it, and keep it alive while
+    // they run, since applying a value can tear it down.
+    std::list<std::pair<
+        VisualStateGroup,
+        std::shared_ptr<ElementCustomizationStateForVisualStateGroup>>>
         perVisualStateGroup;
 };
 
@@ -11536,17 +11515,27 @@ void ResetThreadLocal(T& container) {
     container = T{};
 }
 
-// The weak reference is what keeps an id honest. A handle is an address, so a
-// destroyed element can be replaced by one reporting the same handle, and an
-// entry whose element is gone, or is no longer the element being asked about,
-// belongs to that destroyed predecessor and must not name the new one.
+// A handle is an address, so a destroyed element can be replaced by one
+// reporting the same handle, and an entry made for that predecessor must not
+// name the new one. An entry holds its element until the diagnostics are made
+// to release it, which never happens while the mod keeps state for it, and only
+// a weak reference after that. The weak reference isn't relied on any sooner:
+// a XAML one stops resolving once the element's reference count drops to zero,
+// even if the element survives that, as reported elements were seen to do.
 struct ElementIdEntry {
     ElementId id = ElementId::None;
-    winrt::weak_ref<wf::IInspectable> element;
+    wf::IInspectable element{nullptr};
+    winrt::weak_ref<wf::IInspectable> weakElement;
 };
 
 thread_local std::unordered_map<InstanceHandle, ElementIdEntry> g_elementIds;
 thread_local uint64_t g_lastElementId;
+
+bool ElementIdEntryNames(ElementIdEntry const& entry,
+                         wf::IInspectable const& element) {
+    return entry.element ? entry.element == element
+                         : entry.weakElement.get() == element;
+}
 
 ElementId GetOrCreateElementId(InstanceHandle handle,
                                wf::IInspectable const& element) {
@@ -11555,30 +11544,20 @@ ElementId GetOrCreateElementId(InstanceHandle handle,
     }
 
     auto& entry = g_elementIds[handle];
-    if (entry.id != ElementId::None && entry.element.get() == element) {
-        return entry.id;
+    if (entry.id == ElementId::None || !ElementIdEntryNames(entry, element)) {
+        entry.id = static_cast<ElementId>(++g_lastElementId);
+
+        winrt::weak_ref<wf::IInspectable> weakElement;
+        try {
+            weakElement = TryMakeWeak(element);
+        } catch (winrt::hresult_error const& ex) {
+            Wh_Log(L"Error %08X: %s", ex.code(), ex.message().c_str());
+        }
+
+        entry.weakElement = std::move(weakElement);
     }
 
-    entry.id = static_cast<ElementId>(++g_lastElementId);
-
-    winrt::weak_ref<wf::IInspectable> weakElement;
-    try {
-        weakElement = TryMakeWeak(element);
-    } catch (winrt::hresult_error const& ex) {
-        Wh_Log(L"Error %08X: %s", ex.code(), ex.message().c_str());
-    }
-
-    if (!weakElement) {
-        // Without a weak reference the entry cannot be told apart from one for
-        // a successor at the same address, so neither it nor the id it names is
-        // kept: an id no lookup can reach again would key state that nothing
-        // could ever tear down, on an element nothing would then hold back from
-        // being released.
-        g_elementIds.erase(handle);
-        return ElementId::None;
-    }
-
-    entry.element = std::move(weakElement);
+    entry.element = element;
     return entry.id;
 }
 
@@ -11594,14 +11573,29 @@ void ForgetElementId(InstanceHandle handle) {
     g_elementIds.erase(handle);
 }
 
+// For an element the diagnostics were just made to release. The entry stays,
+// weakly, for as long as the element lives on.
+void ReleaseElementIdEntry(InstanceHandle handle) {
+    auto it = g_elementIds.find(handle);
+    if (it == g_elementIds.end()) {
+        return;
+    }
+
+    it->second.element = nullptr;
+    if (!it->second.weakElement.get()) {
+        g_elementIds.erase(it);
+    }
+}
+
 // Dead entries are reaped once the map grows past this, which is then set to
 // twice the surviving size, making the sweep amortized O(1).
 thread_local size_t g_elementIdsReapThreshold = 64;
 
 // An element whose diagnostics reference was handed back is destroyed without a
 // removal being reported for it, so what the mod keys by that element has to be
-// found rather than told. An entry whose weak reference no longer resolves
-// names such an element, and is torn down the way its removal would have.
+// found rather than told. A released entry whose weak reference no longer
+// resolves names such an element, and is torn down the way its removal would
+// have.
 void ReapDeadElementIdsIfNeeded() {
     if (g_elementIds.size() < g_elementIdsReapThreshold) {
         return;
@@ -11611,7 +11605,7 @@ void ReapDeadElementIdsIfNeeded() {
     // work which can re-enter ApplyCustomizations and rehash the map.
     std::vector<std::pair<InstanceHandle, ElementId>> dead;
     for (const auto& [handle, entry] : g_elementIds) {
-        if (!entry.element.get()) {
+        if (!entry.element && !entry.weakElement.get()) {
             dead.push_back({handle, entry.id});
         }
     }
@@ -11637,10 +11631,8 @@ ElementTreeNode* EnsureElementTreeNode(
     ElementCustomizationState& elementCustomizationState) {
     if (!elementCustomizationState.treeNode ||
         IsStaleSpine(*elementCustomizationState.treeNode)) {
-        if (auto element = elementCustomizationState.element.get()) {
-            elementCustomizationState.treeNode =
-                GetOrCreateElementTreeNode(element);
-        }
+        elementCustomizationState.treeNode =
+            GetOrCreateElementTreeNode(elementCustomizationState.element);
     }
 
     return elementCustomizationState.treeNode.get();
@@ -11744,7 +11736,8 @@ std::wstring g_webContentCss;
 std::wstring g_webContentJs;
 
 struct WebViewCustomizationState {
-    winrt::weak_ref<FrameworkElement> element;
+    // Held, as in ElementCustomizationState.
+    FrameworkElement element{nullptr};
     bool isWebView2 = false;
     winrt::event_token navigationCompletedEventToken;
 };
@@ -17212,7 +17205,7 @@ void PropagateStyleVariableChangeCore(StyleVariableState* state,
         // below, but the re-entrancy is for the newly realized children.
         auto& elementState = stateIt->second;
 
-        auto element = elementState.element.get();
+        auto element = elementState.element;
         if (!element) {
             continue;
         }
@@ -17229,10 +17222,10 @@ void PropagateStyleVariableChangeCore(StyleVariableState* state,
                 ? nullptr
                 : consumer.fallbackClassName.c_str();
 
-        for (auto& [vsgWeak, vsgState] : elementState.perVisualStateGroup) {
+        for (auto& [vsg, vsgState] : elementState.perVisualStateGroup) {
             auto propIt =
-                vsgState.propertyCustomizationStates.find(consumer.property);
-            if (propIt == vsgState.propertyCustomizationStates.end()) {
+                vsgState->propertyCustomizationStates.find(consumer.property);
+            if (propIt == vsgState->propertyCustomizationStates.end()) {
                 continue;
             }
             auto& propState = propIt->second;
@@ -17406,7 +17399,6 @@ void SetUpCapturesForElement(StyleVariableState* state,
     }
 
     auto elementDo = element.as<DependencyObject>();
-    winrt::weak_ref<FrameworkElement> elementWeakRef = element;
 
     // Names seeded below, propagated once the whole batch is in place.
     std::vector<std::wstring> seededVarNames;
@@ -17464,9 +17456,9 @@ void SetUpCapturesForElement(StyleVariableState* state,
         captureState.propertyChangedToken =
             elementDo.RegisterPropertyChangedCallback(
                 capture.property,
-                [state, varName, elementId, elementWeakRef](
-                    DependencyObject sender, DependencyProperty property) {
-                    auto element = elementWeakRef.get();
+                [state, varName, elementId](DependencyObject sender,
+                                            DependencyProperty property) {
+                    auto element = sender.try_as<FrameworkElement>();
                     if (!element) {
                         return;
                     }
@@ -17479,11 +17471,11 @@ void SetUpCapturesForElement(StyleVariableState* state,
 
     if (!sizeChangedCaptures.empty()) {
         elementState->captureSizeChangedToken = element.SizeChanged(
-            [state, elementId, elementWeakRef,
+            [state, elementId,
              sizeChangedCaptures = std::move(sizeChangedCaptures)](
                 winrt::Windows::Foundation::IInspectable const& sender,
                 SizeChangedEventArgs const& e) {
-                auto element = elementWeakRef.get();
+                auto element = sender.try_as<FrameworkElement>();
                 if (!element) {
                     return;
                 }
@@ -17617,7 +17609,7 @@ void ApplyCustomizationsForVisualStateGroup(
     VisualStateGroup visualStateGroup,
     PCWSTR fallbackClassName,
     PropertyOverrides propertyOverrides,
-    ElementCustomizationStateForVisualStateGroup*
+    std::shared_ptr<ElementCustomizationStateForVisualStateGroup>
         elementCustomizationStateForVisualStateGroup) {
     auto elementDo = element.as<DependencyObject>();
 
@@ -17665,12 +17657,26 @@ void ApplyCustomizationsForVisualStateGroup(
             }
         }
 
+        // Shares ownership of the group, which keeps its entries for as long
+        // as it lives.
+        std::weak_ptr<ElementPropertyCustomizationState>
+            weakPropertyCustomizationState =
+                std::shared_ptr<ElementPropertyCustomizationState>(
+                    elementCustomizationStateForVisualStateGroup,
+                    &propertyCustomizationState);
+
         propertyCustomizationState.propertyChangedToken =
             elementDo.RegisterPropertyChangedCallback(
                 property,
-                [&propertyCustomizationState](DependencyObject sender,
-                                              DependencyProperty property) {
+                [weakPropertyCustomizationState](DependencyObject sender,
+                                                 DependencyProperty property) {
                     if (g_elementPropertyModifying) {
+                        return;
+                    }
+
+                    auto propertyCustomizationState =
+                        weakPropertyCustomizationState.lock();
+                    if (!propertyCustomizationState) {
                         return;
                     }
 
@@ -17679,43 +17685,57 @@ void ApplyCustomizationsForVisualStateGroup(
                         return;
                     }
 
-                    if (!propertyCustomizationState.customValue) {
+                    if (!propertyCustomizationState->customValue) {
                         return;
                     }
 
                     if (TakeAnimationCopyAsApplied(
-                            element, property, &propertyCustomizationState)) {
+                            element, property,
+                            propertyCustomizationState.get())) {
                         return;
                     }
 
-                    AdoptExternalValueAsOriginal(element, property,
-                                                 &propertyCustomizationState);
+                    AdoptExternalValueAsOriginal(
+                        element, property, propertyCustomizationState.get());
 
                     Wh_Log(L"Re-applying style for %s",
                            winrt::get_class_name(element).c_str());
 
                     g_elementPropertyModifying = true;
-                    propertyCustomizationState.lastAppliedValue =
+                    propertyCustomizationState->lastAppliedValue =
                         SetOrClearValue(
                             element, property,
-                            *propertyCustomizationState.customValue);
+                            *propertyCustomizationState->customValue);
                     g_elementPropertyModifying = false;
                 });
     }
 
     if (visualStateGroup) {
-        winrt::weak_ref<FrameworkElement> elementWeakRef = element;
         std::wstring fallbackClassNameStr =
             fallbackClassName ? fallbackClassName : L"";
+        std::weak_ptr<ElementCustomizationStateForVisualStateGroup>
+            weakElementCustomizationStateForVisualStateGroup =
+                elementCustomizationStateForVisualStateGroup;
         elementCustomizationStateForVisualStateGroup
             ->visualStateGroupCurrentStateChangedToken =
             visualStateGroup.CurrentStateChanged(
-                [state, elementWeakRef, propertyOverrides, elementId,
-                 fallbackClassNameStr,
-                 elementCustomizationStateForVisualStateGroup](
+                [state, propertyOverrides, elementId, fallbackClassNameStr,
+                 weakElementCustomizationStateForVisualStateGroup](
                     winrt::Windows::Foundation::IInspectable const& sender,
                     VisualStateChangedEventArgs const& e) {
-                    auto element = elementWeakRef.get();
+                    auto elementCustomizationStateForVisualStateGroup =
+                        weakElementCustomizationStateForVisualStateGroup.lock();
+                    if (!elementCustomizationStateForVisualStateGroup) {
+                        return;
+                    }
+
+                    auto elementStateIt =
+                        g_elementsCustomizationState.find(elementId);
+                    if (elementStateIt == g_elementsCustomizationState.end()) {
+                        return;
+                    }
+
+                    auto element = elementStateIt->second.element;
                     if (!element) {
                         return;
                     }
@@ -17831,19 +17851,15 @@ void RestoreCustomizationsForVisualStateGroup(
     StyleVariableState* state,
     ElementId elementId,
     FrameworkElement element,
-    std::optional<winrt::weak_ref<VisualStateGroup>>
-        visualStateGroupOptionalWeakPtr,
+    VisualStateGroup visualStateGroup,
     const ElementCustomizationStateForVisualStateGroup&
         elementCustomizationStateForVisualStateGroup) {
     // Before the properties are restored, so that a visual state change which
     // restoring one causes can't apply the style again.
-    auto visualStateGroupIter = visualStateGroupOptionalWeakPtr
-                                    ? visualStateGroupOptionalWeakPtr->get()
-                                    : nullptr;
-    if (visualStateGroupIter && elementCustomizationStateForVisualStateGroup
-                                    .visualStateGroupCurrentStateChangedToken) {
+    if (visualStateGroup && elementCustomizationStateForVisualStateGroup
+                                .visualStateGroupCurrentStateChangedToken) {
         try {
-            visualStateGroupIter.CurrentStateChanged(
+            visualStateGroup.CurrentStateChanged(
                 elementCustomizationStateForVisualStateGroup
                     .visualStateGroupCurrentStateChangedToken);
         } catch (winrt::hresult_error const& ex) {
@@ -18071,7 +18087,7 @@ void ApplyCustomizationsIfWebView(ElementId elementId,
     if (className == L"Windows.UI.Xaml.Controls.WebView") {
         auto& webViewCustomizationState =
             g_webViewsCustomizationState[elementId];
-        if (!webViewCustomizationState.element.get()) {
+        if (!webViewCustomizationState.element) {
             webViewCustomizationState.element = element;
 
             auto webViewElement = element.as<Controls::WebView>();
@@ -18091,7 +18107,7 @@ void ApplyCustomizationsIfWebView(ElementId elementId,
     } else if (className == L"WebView2Standalone.Controls.WebView2") {
         auto& webViewCustomizationState =
             g_webViewsCustomizationState[elementId];
-        if (!webViewCustomizationState.element.get()) {
+        if (!webViewCustomizationState.element) {
             webViewCustomizationState.element = element;
             webViewCustomizationState.isWebView2 = true;
 
@@ -18187,7 +18203,7 @@ void ClearWebView2StyleCustomizations(
 
 void ClearWebViewCustomizations(
     const WebViewCustomizationState& webViewCustomizationState) {
-    auto element = webViewCustomizationState.element.get();
+    auto element = webViewCustomizationState.element;
     if (!element) {
         return;
     }
@@ -18254,7 +18270,8 @@ ElementId ElementIdFromElement(FrameworkElement const& element) {
 
     try {
         auto it = g_elementIds.find(HandleFromInspectable(element));
-        if (it == g_elementIds.end() || it->second.element.get() != element) {
+        if (it == g_elementIds.end() ||
+            !ElementIdEntryNames(it->second, element)) {
             return ElementId::None;
         }
 
@@ -18402,7 +18419,7 @@ void RefreshRecycledItemCaptures() {
         }
 
         auto& elementState = it->second;
-        auto element = elementState.element.get();
+        auto element = elementState.element;
         if (!element) {
             continue;
         }
@@ -19508,11 +19525,10 @@ void ApplyCustomizations(ElementId elementId,
 
     auto& elementCustomizationState = g_elementsCustomizationState[elementId];
 
-    for (const auto& [visualStateGroupOptionalWeakPtrIter, stateIter] :
+    for (const auto& [visualStateGroup, stateIter] :
          elementCustomizationState.perVisualStateGroup) {
         RestoreCustomizationsForVisualStateGroup(
-            state, elementId, element, visualStateGroupOptionalWeakPtrIter,
-            stateIter);
+            state, elementId, element, visualStateGroup, *stateIter);
     }
 
     elementCustomizationState.element = element;
@@ -19545,16 +19561,10 @@ void ApplyCustomizations(ElementId elementId,
 
     for (auto& [visualStateGroup, overridesForVisualStateGroup] :
          resolved.overridesPerVSG) {
-        std::optional<winrt::weak_ref<VisualStateGroup>>
-            visualStateGroupOptionalWeakPtr;
-        if (visualStateGroup) {
-            visualStateGroupOptionalWeakPtr = visualStateGroup;
-        }
-
+        auto elementCustomizationStateForVisualStateGroup =
+            std::make_shared<ElementCustomizationStateForVisualStateGroup>();
         elementCustomizationState.perVisualStateGroup.push_back(
-            {visualStateGroupOptionalWeakPtr, {}});
-        auto* elementCustomizationStateForVisualStateGroup =
-            &elementCustomizationState.perVisualStateGroup.back().second;
+            {visualStateGroup, elementCustomizationStateForVisualStateGroup});
 
         ApplyCustomizationsForVisualStateGroup(
             state, elementId, element, visualStateGroup, fallbackClassName,
@@ -19647,9 +19657,10 @@ void FlushDiagnosticsReleases() {
             continue;
         }
 
-        if (visualTreeWatcher->ReleaseDiagnosticsReference(handle)) {
-            ForgetElementId(handle);
-        }
+        // The diagnostics' reference first, so that an element left with no
+        // other is destroyed by dropping the entry's, and is seen to be gone.
+        visualTreeWatcher->ReleaseDiagnosticsReference(handle);
+        ReleaseElementIdEntry(handle);
     }
 
     // Here rather than anywhere else on the report path: the releases above are
@@ -19759,7 +19770,7 @@ void CleanupCustomizations(ElementId elementId) {
         // torn down here.
         auto& elementCustomizationState = it->second;
 
-        auto element = elementCustomizationState.element.get();
+        auto element = elementCustomizationState.element;
         auto* state = GetStyleVariableState();
 
         RestoreCapturesForElement(element, elementCustomizationState);
@@ -19773,11 +19784,10 @@ void CleanupCustomizations(ElementId elementId) {
             state->withdrawnCaptureOwners.erase(elementId);
         }
 
-        for (const auto& [visualStateGroupOptionalWeakPtrIter, stateIter] :
+        for (const auto& [visualStateGroup, stateIter] :
              elementCustomizationState.perVisualStateGroup) {
             RestoreCustomizationsForVisualStateGroup(
-                state, elementId, element, visualStateGroupOptionalWeakPtrIter,
-                stateIter);
+                state, elementId, element, visualStateGroup, *stateIter);
         }
 
         // By elementId, not by `it`: a re-entrant apply above may have
@@ -20926,16 +20936,15 @@ void UninitializeSettingsAndTap() {
 
     for (const auto& [elementId, elementCustomizationState] :
          elementsCustomizationState) {
-        auto element = elementCustomizationState.element.get();
+        auto element = elementCustomizationState.element;
         auto* state = GetStyleVariableState();
 
         RestoreCapturesForElement(element, elementCustomizationState);
 
-        for (const auto& [visualStateGroupOptionalWeakPtrIter, stateIter] :
+        for (const auto& [visualStateGroup, stateIter] :
              elementCustomizationState.perVisualStateGroup) {
             RestoreCustomizationsForVisualStateGroup(
-                state, elementId, element, visualStateGroupOptionalWeakPtrIter,
-                stateIter);
+                state, elementId, element, visualStateGroup, *stateIter);
         }
     }
 
