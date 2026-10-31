@@ -61,6 +61,15 @@ be used:
   * `%date_tz<n>%` - the date with a custom time zone. `<n>` is the time zone
     number in the list of time zones configured in the mod settings (not Windows
     settings).
+* `%lunar%` - the lunisolar date according to the configured lunar calendar
+  (or auto-detected from system locale and time zone).
+  * `%lunar_day%` - the lunar day of the month (e.g. `15`).
+  * `%lunar_month%` - the lunar month of the year (e.g. `8`, or with a leap
+    month indicator if applicable).
+  * `%lunar_year%` - the cyclical year name (e.g. `Giáp Thìn` for Vietnamese,
+    `甲辰` for Chinese, `갑진` for Korean).
+  * `%lunar_full%` - the full formatted lunar date (e.g. `15/08 Giáp Thìn` or
+    `甲辰年 八月十五`).
 * `%weekday%` - the week day as configured in settings.
   * `%weekday_tz<n>%` - the week day with a custom time zone. `<n>` is the time
     zone number in the list of time zones configured in the mod settings (not
@@ -169,6 +178,20 @@ styles, such as the font color and size.
     refer to the following page:
 
     https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-lcid/a9eac961-e77d-41a6-90a5-ce1a8b0cdb9c
+- LunarCalendar: none
+  $name: Lunar calendar
+  $description: >-
+    East Asian lunisolar calendar support for %lunar%, %lunar_day%, %lunar_month%,
+    %lunar_year%, and %lunar_full% patterns. Set to "auto" to automatically
+    detect Vietnamese (UTC+7), Chinese (UTC+8), or Korean (UTC+9) based on system
+    locale and time zone.
+  $options:
+  - none: None (disabled)
+  - auto: Auto-detect
+  - vietnamese: Vietnamese (UTC+7)
+  - chinese: Chinese (UTC+8)
+  - korean: Korean (UTC+9)
+  - numeric: Numeric (e.g. 15/08)
 - WeekdayFormat: dddd
   $name: Week day format
   $description: The format for the %weekday% pattern.
@@ -532,6 +555,7 @@ using WindhawkUtils::StringSetting;
 
 #include <algorithm>
 #include <atomic>
+#include <cmath>
 #include <functional>
 #include <mutex>
 #include <optional>
@@ -659,11 +683,21 @@ struct ClockElementStyleSettings {
     TextStyleSettings dateStyle;
 };
 
+enum class LunarCalendarType {
+    none,
+    auto_detect,
+    vietnamese,
+    chinese,
+    korean,
+    numeric,
+};
+
 struct {
     bool showSeconds;
     StringSetting timeFormat;
     StringSetting dateFormat;
     std::vector<std::wstring> dateLocales;
+    LunarCalendarType lunarCalendar;
     StringSetting weekdayFormat;
     std::vector<std::wstring> weekdayFormatCustom;
     StringSetting topLine;
@@ -738,6 +772,11 @@ FormattedString<FORMATTED_BUFFER_SIZE> g_unixTimeFormatted;
 FormattedString<FORMATTED_BUFFER_SIZE> g_dateFormatted;
 std::vector<std::wstring> g_dateFormattedExtra;
 std::vector<FormattedString<FORMATTED_BUFFER_SIZE>> g_dateFormattedTz;
+FormattedString<FORMATTED_BUFFER_SIZE> g_lunarFormatted;
+FormattedString<FORMATTED_BUFFER_SIZE> g_lunarDayFormatted;
+FormattedString<FORMATTED_BUFFER_SIZE> g_lunarMonthFormatted;
+FormattedString<FORMATTED_BUFFER_SIZE> g_lunarYearFormatted;
+FormattedString<FORMATTED_BUFFER_SIZE> g_lunarFullFormatted;
 FormattedString<FORMATTED_BUFFER_SIZE> g_weekdayFormatted;
 std::vector<FormattedString<FORMATTED_BUFFER_SIZE>> g_weekdayFormattedTz;
 FormattedString<INTEGER_BUFFER_SIZE> g_weekdayNumFormatted;
@@ -2128,6 +2167,553 @@ PCWSTR GetDateFormattedTz(size_t index) {
     }
 
     return dateFormattedTz.buffer;
+}
+
+namespace EastAsianLunar {
+
+constexpr double kPI = 3.14159265358979323846;
+constexpr double kDegToRad = kPI / 180.0;
+
+// Epoch J2000.0: Mean New Moon of 2000 January 6 14:20 TT (Jean Meeus, 1998, ch. 49).
+constexpr double kJ2000NewMoonEpochJd = 2451550.09766;
+constexpr double kSynodicMonth = 29.530588861;
+
+// Julian Day Number from Gregorian date (Claus Tøndering's algorithm).
+inline int JulianDayFromGregorian(int day, int month, int year) {
+    int a = (14 - month) / 12;
+    int y = year + 4800 - a;
+    int m = month + 12 * a - 3;
+    int jd = day + (153 * m + 2) / 5 + 365 * y + y / 4 - y / 100 + y / 400 - 32045;
+    if (jd < 2299161) {
+        jd = day + (153 * m + 2) / 5 + 365 * y + y / 4 - 32083;
+    }
+    return jd;
+}
+
+// Apparent ecliptic longitude of the Sun in degrees [0, 360) (Jean Meeus, 1998, ch. 25).
+// Includes equation of the center, aberration (-0.00569 deg) and nutation correction.
+inline double SunEclipticLongitudeDeg(double jde) {
+    double t = (jde - 2451545.0) / 36525.0;
+    double t2 = t * t;
+    double meanAnomaly = 357.52910 + 35999.05030 * t - 0.0001559 * t2 - 0.00000048 * t * t2;
+    double meanLongitude = 280.46645 + 36000.76983 * t + 0.0003032 * t2;
+
+    double correction = (1.914600 - 0.004817 * t - 0.000014 * t2) * std::sin(kDegToRad * meanAnomaly);
+    correction += (0.019993 - 0.000101 * t) * std::sin(kDegToRad * 2.0 * meanAnomaly);
+    correction += 0.000290 * std::sin(kDegToRad * 3.0 * meanAnomaly);
+
+    double trueLongitude = meanLongitude + correction;
+    double omega = 125.04 - 1934.136 * t;
+    double apparentLongitude = trueLongitude - 0.00569 - 0.00478 * std::sin(kDegToRad * omega);
+    apparentLongitude -= 360.0 * std::floor(apparentLongitude / 360.0);
+    return apparentLongitude;
+}
+
+// Time difference Delta T (TT - UT) in seconds (Espenak & Meeus, 2006; NASA polynomial series).
+inline double DeltaTSeconds(double year) {
+    if (year < 500.0) {
+        double u = (year - 1820.0) / 100.0;
+        return -20.0 + 32.0 * u * u;
+    }
+    if (year < 1600.0) {
+        double u = (year - 1000.0) / 100.0;
+        return 1574.2 - 556.01 * u + 71.2347 * u * u + 0.319781 * std::pow(u, 3) -
+               0.8503463 * std::pow(u, 4) - 0.005050998 * std::pow(u, 5) + 0.0083572073 * std::pow(u, 6);
+    }
+    if (year < 1700.0) {
+        double t = year - 1600.0;
+        return 120.0 - 0.9808 * t - 0.01532 * t * t + t * t * t / 7129.0;
+    }
+    if (year < 1800.0) {
+        double t = year - 1700.0;
+        return 8.83 + 0.1603 * t - 0.0059285 * t * t + 0.00013336 * t * t * t - t * t * t * t / 1174000.0;
+    }
+    if (year < 1860.0) {
+        double t = year - 1800.0;
+        return 13.72 - 0.332447 * t + 0.0068612 * t * t + 0.0041116 * t * t * t -
+               0.00037436 * t * t * t * t + 0.0000121272 * std::pow(t, 5) -
+               0.0000001699 * std::pow(t, 6) + 0.000000000875 * std::pow(t, 7);
+    }
+    if (year < 1900.0) {
+        double t = year - 1860.0;
+        return 7.62 + 0.5737 * t - 0.251754 * t * t + 0.01680668 * t * t * t -
+               0.0004473624 * t * t * t * t + std::pow(t, 5) / 233174.0;
+    }
+    if (year < 1920.0) {
+        double t = year - 1900.0;
+        return -2.79 + 1.494119 * t - 0.0598939 * t * t + 0.0061966 * t * t * t - 0.000197 * t * t * t * t;
+    }
+    if (year < 1941.0) {
+        double t = year - 1920.0;
+        return 21.20 + 0.84493 * t - 0.076100 * t * t + 0.0020936 * t * t * t;
+    }
+    if (year < 1961.0) {
+        double t = year - 1950.0;
+        return 29.07 + 0.407 * t - t * t / 233.0 + t * t * t / 2547.0;
+    }
+    if (year < 1986.0) {
+        double t = year - 1975.0;
+        return 45.45 + 1.067 * t - t * t / 260.0 - t * t * t / 718.0;
+    }
+    if (year < 2005.0) {
+        double t = year - 2000.0;
+        return 63.86 + 0.3345 * t - 0.060374 * t * t + 0.0017275 * t * t * t +
+               0.000651814 * t * t * t * t + 0.00002373599 * std::pow(t, 5);
+    }
+    if (year < 2050.0) {
+        double t = year - 2000.0;
+        return 62.92 + 0.32217 * t + 0.005589 * t * t;
+    }
+    if (year < 2150.0) {
+        double u = (year - 1820.0) / 100.0;
+        return -20.0 + 32.0 * u * u - 0.5628 * (2150.0 - year);
+    }
+    double u = (year - 1820.0) / 100.0;
+    return -20.0 + 32.0 * u * u;
+}
+
+// Major solar term index (0-11, where 9 corresponds to Winter Solstice / Đông Chí)
+// at the given local Julian Day and time zone.
+inline int MajorSolarTermIndex(int jdn, double timeZone) {
+    double jdUt = static_cast<double>(jdn) - 0.5 - timeZone / 24.0;
+    double approxYear = 2000.0 + (jdUt - 2451545.0) / 365.25;
+    double jde = jdUt + DeltaTSeconds(approxYear) / 86400.0;
+    return static_cast<int>(std::floor(SunEclipticLongitudeDeg(jde) / 30.0)) % 12;
+}
+
+// True New Moon time in JD (UT) (Jean Meeus, Astronomical Algorithms 2nd ed. 1998, ch. 49).
+// Includes Table 49.A periodic terms (with eccentricity factor E) and Table 49.B planetary perturbations.
+inline double NewMoonJulianDay(int k) {
+    double t = static_cast<double>(k) / 1236.85;
+    double t2 = t * t;
+    double t3 = t2 * t;
+    double t4 = t2 * t2;
+
+    double jde = kJ2000NewMoonEpochJd + kSynodicMonth * k +
+                 0.00015437 * t2 - 0.000000150 * t3 + 0.00000000073 * t4;
+
+    double E = 1.0 - 0.002516 * t - 0.0000074 * t2;
+    double sunAnomaly = (2.5534 + 29.10535670 * k - 0.0000014 * t2 - 0.00000011 * t3) * kDegToRad;
+    double moonAnomaly = (201.5643 + 385.81693528 * k + 0.0107582 * t2 + 0.00001238 * t3 - 0.000000058 * t4) * kDegToRad;
+    double moonArgument = (160.7108 + 390.67050284 * k - 0.0016118 * t2 - 0.00000227 * t3 + 0.000000011 * t4) * kDegToRad;
+    double omega = (124.7746 - 1.56375588 * k + 0.0020672 * t2 + 0.00000215 * t3) * kDegToRad;
+
+    // Periodic terms from Table 49.A with exact signs and eccentricity factor E
+    double correction =
+        -0.40720 * std::sin(moonAnomaly) +
+        0.17241 * E * std::sin(sunAnomaly) +
+        0.01608 * std::sin(2.0 * moonAnomaly) +
+        0.01039 * std::sin(2.0 * moonArgument) +
+        0.00739 * E * std::sin(moonAnomaly - sunAnomaly) -
+        0.00514 * E * std::sin(moonAnomaly + sunAnomaly) +
+        0.00208 * E * E * std::sin(2.0 * sunAnomaly) -
+        0.00111 * std::sin(moonAnomaly - 2.0 * moonArgument) -
+        0.00057 * std::sin(moonAnomaly + 2.0 * moonArgument) +
+        0.00056 * E * std::sin(2.0 * moonAnomaly + sunAnomaly) -
+        0.00042 * std::sin(3.0 * moonAnomaly) +
+        0.00042 * E * std::sin(sunAnomaly + 2.0 * moonArgument) +
+        0.00038 * E * std::sin(sunAnomaly - 2.0 * moonArgument) -
+        0.00024 * E * std::sin(2.0 * moonAnomaly - sunAnomaly) -
+        0.00017 * std::sin(omega) -
+        0.00007 * std::sin(moonAnomaly + 2.0 * sunAnomaly) +
+        0.00004 * std::sin(2.0 * moonAnomaly - 2.0 * moonArgument) +
+        0.00004 * std::sin(3.0 * sunAnomaly) +
+        0.00003 * std::sin(moonAnomaly + sunAnomaly - 2.0 * moonArgument) +
+        0.00003 * std::sin(2.0 * moonAnomaly + 2.0 * moonArgument) -
+        0.00003 * std::sin(moonAnomaly + sunAnomaly + 2.0 * moonArgument) +
+        0.00003 * std::sin(moonAnomaly - sunAnomaly + 2.0 * moonArgument) -
+        0.00002 * std::sin(moonAnomaly - sunAnomaly - 2.0 * moonArgument) -
+        0.00002 * std::sin(3.0 * moonAnomaly + sunAnomaly) +
+        0.00002 * std::sin(4.0 * moonAnomaly);
+
+    // Planetary perturbations from Table 49.B (remaining 13 terms)
+    static const double A0[13] = {251.88, 251.83, 349.42, 84.66, 141.74, 207.14, 154.84, 34.52, 207.19, 291.34, 161.72, 239.56, 331.55};
+    static const double A1[13] = {0.016321, 26.651886, 36.412478, 18.206239, 53.303771, 2.453732, 7.306860, 27.261239, 0.121824, 1.844379, 24.198154, 25.513099, 3.592518};
+    static const double C[13]  = {165e-6, 164e-6, 126e-6, 110e-6, 62e-6, 60e-6, 56e-6, 47e-6, 42e-6, 40e-6, 37e-6, 35e-6, 23e-6};
+
+    double planetary = 325e-6 * std::sin((299.77 + 0.107408 * k - 0.009173 * t2) * kDegToRad);
+    for (int i = 0; i < 13; i++) {
+        planetary += C[i] * std::sin((A0[i] + A1[i] * k) * kDegToRad);
+    }
+
+    double j = jde + correction + planetary;
+    double approxYear = 2000.0 + (j - 2451545.0) / 365.25;
+    return j - DeltaTSeconds(approxYear) / 86400.0;
+}
+
+// Calendar day (local JDN) on which the k-th New Moon falls.
+inline int NewMoonDay(int k, double timeZone) {
+    return static_cast<int>(std::floor(NewMoonJulianDay(k) + 0.5 + timeZone / 24.0));
+}
+
+// A specific lunation identified by its lunation number k (from J2000) and local start day.
+struct Lunation {
+    int index = 0;
+    int day = 0;
+};
+
+// Finds the lunation on or immediately preceding local Julian day jd.
+inline Lunation FindNewMoonBefore(int jd, double timeZone) {
+    int k = static_cast<int>(std::floor((static_cast<double>(jd) - kJ2000NewMoonEpochJd) / kSynodicMonth));
+    int day = NewMoonDay(k, timeZone);
+    while (true) {
+        int nextDay = NewMoonDay(k + 1, timeZone);
+        if (nextDay <= jd) {
+            k++;
+            day = nextDay;
+        } else {
+            break;
+        }
+    }
+    while (day > jd) {
+        k--;
+        day = NewMoonDay(k, timeZone);
+    }
+    return {k, day};
+}
+
+// Finds Month 11 (the month containing Major Solar Term 9 / Winter Solstice) for Gregorian year 'year'.
+// A lunation contains Winter Solstice if the solar term index transitions from <= 8 to >= 9.
+inline Lunation FindMonth11(int year, double timeZone) {
+    int midDec = JulianDayFromGregorian(15, 12, year);
+    Lunation lun = FindNewMoonBefore(midDec, timeZone);
+    for (int k = lun.index - 1; k <= lun.index + 2; k++) {
+        int t0 = MajorSolarTermIndex(NewMoonDay(k, timeZone), timeZone);
+        int t1 = MajorSolarTermIndex(NewMoonDay(k + 1, timeZone), timeZone);
+        if (t0 <= 8 && t1 >= 9) {
+            return {k, NewMoonDay(k, timeZone)};
+        }
+    }
+    return lun;
+}
+
+// Finds the 1-based offset (from Month 11) of the leap month in a 13-month lunar year (Sui).
+// By the 24 solar terms rule (无中气置闰), the leap month is the first month that does not contain a Major Solar Term.
+// Returns 0 if no month without a Major Solar Term is found.
+inline int FindLeapMonthOffset(int k11, double timeZone) {
+    int prevTerm = MajorSolarTermIndex(NewMoonDay(k11 + 1, timeZone), timeZone);
+    for (int i = 1; i <= 12; i++) {
+        int nextTerm = MajorSolarTermIndex(NewMoonDay(k11 + i + 1, timeZone), timeZone);
+        if (nextTerm == prevTerm) {
+            return i;
+        }
+        prevTerm = nextTerm;
+    }
+    return 0;
+}
+
+// Converts a solar (Gregorian) date to an East Asian lunisolar date (Vietnam UTC+7, China UTC+8).
+// The lunisolar calendar is based on astronomical rules:
+// - Days begin at midnight local standard time; Day 1 of each month is the day of the New Moon.
+// - Month 11 is the month that contains the Winter Solstice (Đông Chí / 冬至).
+// - A solar cycle (Sui / 岁) spans from Month 11 to the next Month 11. If it contains 13 months,
+//   the first month without a Major Solar Term (Trung khí / 中气) is a leap month.
+// - Civil lunar years (Năm / 年) begin at Month 1 (Tết / Lunar New Year).
+inline void convertSolar2Lunar(int day, int month, int year, int& lunarDay, int& lunarMonth,
+                               int& lunarYear, int& lunarLeap, double timeZone) {
+    int jd = JulianDayFromGregorian(day, month, year);
+    Lunation curLun = FindNewMoonBefore(jd, timeZone);
+    lunarDay = jd - curLun.day + 1;
+
+    // Anchor at Month 11 (the month containing the Winter Solstice) for the current Gregorian year.
+    Lunation lun11ThisYear = FindMonth11(year, timeZone);
+
+    int suiYear = 0;
+    Lunation lun11Prev;
+    Lunation lun11Next;
+
+    if (curLun.day >= lun11ThisYear.day) {
+        // Date is in the Sui anchored at Month 11 of year 'year'
+        suiYear = year + 1;
+        lun11Prev = lun11ThisYear;
+        lun11Next = FindMonth11(year + 1, timeZone);
+    } else {
+        // Date is in the Sui anchored at Month 11 of year 'year - 1'
+        suiYear = year;
+        lun11Next = lun11ThisYear;
+        lun11Prev = FindMonth11(year - 1, timeZone);
+    }
+
+    int monthOffset = curLun.index - lun11Prev.index; // 0 for Month 11
+    int totalMonths = lun11Next.index - lun11Prev.index; // 12 (regular) or 13 (leap)
+    int leapOffset = (totalMonths == 13) ? FindLeapMonthOffset(lun11Prev.index, timeZone) : 0;
+
+    lunarLeap = 0;
+    int m = monthOffset + 11;
+    if (leapOffset > 0 && monthOffset >= leapOffset) {
+        if (monthOffset == leapOffset) {
+            lunarLeap = 1;
+        }
+        m = monthOffset + 10;
+    }
+    if (m > 12) {
+        m -= 12;
+    }
+    lunarMonth = m;
+
+    // In a Sui from Month 11 to next Month 11:
+    // Month 11 and 12 precede Lunar New Year (Tết) and belong to civil year (suiYear - 1).
+    // Months 1 through 10 belong to civil year (suiYear).
+    if (lunarMonth >= 11) {
+        lunarYear = suiYear - 1;
+    } else {
+        lunarYear = suiYear;
+    }
+}
+
+}  // namespace EastAsianLunar
+
+inline LunarCalendarType ResolveLunarCalendarType(LunarCalendarType configured, double& outTimeZone) {
+    if (configured == LunarCalendarType::none) {
+        outTimeZone = 7.0;
+        return LunarCalendarType::none;
+    }
+    if (configured != LunarCalendarType::auto_detect) {
+        switch (configured) {
+            case LunarCalendarType::vietnamese: outTimeZone = 7.0; break;
+            case LunarCalendarType::chinese:    outTimeZone = 8.0; break;
+            case LunarCalendarType::korean:     outTimeZone = 9.0; break;
+            case LunarCalendarType::numeric: {
+                TIME_ZONE_INFORMATION tzi;
+                if (GetTimeZoneInformation(&tzi) != TIME_ZONE_ID_INVALID) {
+                    outTimeZone = -static_cast<double>(tzi.Bias) / 60.0;
+                } else {
+                    outTimeZone = 7.0;
+                }
+                break;
+            }
+            default: outTimeZone = 7.0; break;
+        }
+        return configured;
+    }
+
+    // Auto-detect based on primary UI language
+    LANGID langId = PRIMARYLANGID(GetUserDefaultUILanguage());
+    if (langId == LANG_VIETNAMESE) {
+        outTimeZone = 7.0;
+        return LunarCalendarType::vietnamese;
+    }
+    if (langId == LANG_CHINESE) {
+        outTimeZone = 8.0;
+        return LunarCalendarType::chinese;
+    }
+    if (langId == LANG_KOREAN) {
+        outTimeZone = 9.0;
+        return LunarCalendarType::korean;
+    }
+
+    // Fallback: check system time zone offset
+    TIME_ZONE_INFORMATION tzi;
+    if (GetTimeZoneInformation(&tzi) != TIME_ZONE_ID_INVALID) {
+        int offsetMinutes = -tzi.Bias;
+        if (offsetMinutes >= 390 && offsetMinutes <= 450) { // UTC+7
+            outTimeZone = 7.0;
+            return LunarCalendarType::vietnamese;
+        }
+        if (offsetMinutes >= 451 && offsetMinutes <= 510) { // UTC+8
+            outTimeZone = 8.0;
+            return LunarCalendarType::chinese;
+        }
+        if (offsetMinutes >= 511 && offsetMinutes <= 570) { // UTC+9
+            outTimeZone = 9.0;
+            return LunarCalendarType::korean;
+        }
+        outTimeZone = static_cast<double>(offsetMinutes) / 60.0;
+        return LunarCalendarType::numeric;
+    }
+
+    outTimeZone = 7.0;
+    return LunarCalendarType::vietnamese;
+}
+
+inline void FormatLunarStrings(LunarCalendarType type, int lunarDay, int lunarMonth, int lunarYear, int lunarLeap,
+                              wchar_t* outShort, size_t shortSize,
+                              wchar_t* outDay, size_t daySize,
+                              wchar_t* outMonth, size_t monthSize,
+                              wchar_t* outYear, size_t yearSize,
+                              wchar_t* outFull, size_t fullSize) {
+    static const wchar_t* const kCanVn[] = {
+        L"Gi\u00E1p", L"\u1EA4t", L"B\u00EDnh", L"\u0110inh", L"M\u1EADu",
+        L"K\u1EF7", L"Canh", L"T\u00E2n", L"Nh\u00E2m", L"Qu\u00FD"
+    };
+    static const wchar_t* const kChiVn[] = {
+        L"T\u00FD", L"S\u1EEDu", L"D\u1EA7n", L"M\u00E3o", L"Th\u00ECn", L"T\u1EF5",
+        L"Ng\u1ECD", L"M\u00F9i", L"Th\u00E2n", L"D\u1EADu", L"Tu\u1EA5t", L"H\u1EE3i"
+    };
+
+    static const wchar_t* const kCanZh[] = {
+        L"\u7532", L"\u4E59", L"\u4E19", L"\u4E01", L"\u620A",
+        L"\u5DF1", L"\u5E9A", L"\u8F9B", L"\u58EC", L"\u7678"
+    };
+    static const wchar_t* const kChiZh[] = {
+        L"\u5B50", L"\u4E11", L"\u5BC5", L"\u536F", L"\u8FB0", L"\u5DF3",
+        L"\u5348", L"\u672A", L"\u7533", L"\u9149", L"\u620C", L"\u4EA5"
+    };
+    static const wchar_t* const kMonthZh[] = {
+        L"", L"\u6B63\u6708", L"\u4E8C\u6708", L"\u4E09\u6708", L"\u56DB\u6708",
+        L"\u4E94\u6708", L"\u516D\u6708", L"\u4E03\u6708", L"\u516B\u6708",
+        L"\u4E5D\u6708", L"\u5341\u6708", L"\u5341\u4E00\u6708", L"\u5341\u4E8C\u6708"
+    };
+    static const wchar_t* const kDayZh[] = {
+        L"", L"\u521D\u4E00", L"\u521D\u4E8C", L"\u521D\u4E09", L"\u521D\u56DB", L"\u521D\u4E94",
+        L"\u521D\u516D", L"\u521D\u4E03", L"\u521D\u516B", L"\u521D\u4E5D", L"\u521D\u5341",
+        L"\u5341\u4E00", L"\u5341\u4E8C", L"\u5341\u4E09", L"\u5341\u56DB", L"\u5341\u4E94",
+        L"\u5341\u516D", L"\u5341\u4E03", L"\u5341\u516B", L"\u5341\u4E5D", L"\u4E8C\u5341",
+        L"\u5EFF\u4E00", L"\u5EFF\u4E8C", L"\u5EFF\u4E09", L"\u5EFF\u56DB", L"\u5EFF\u4E94",
+        L"\u5EFF\u516D", L"\u5EFF\u4E03", L"\u5EFF\u516B", L"\u5EFF\u4E5D", L"\u4E09\u5341"
+    };
+
+    static const wchar_t* const kCanKo[] = {
+        L"\uAC11", L"\uC744", L"\uBCD1", L"\uC815", L"\uBB34",
+        L"\uAE30", L"\uACBD", L"\uC2E0", L"\uC784", L"\uACC4"
+    };
+    static const wchar_t* const kChiKo[] = {
+        L"\uC790", L"\uCD95", L"\uC778", L"\uBB18", L"\uC9C4", L"\uC0AC",
+        L"\uC624", L"\uBBF8", L"\uC2E0", L"\uC720", L"\uC220", L"\uD574"
+    };
+
+    int canIdx = (lunarYear + 6) % 10;
+    if (canIdx < 0) canIdx += 10;
+    int chiIdx = (lunarYear + 8) % 12;
+    if (chiIdx < 0) chiIdx += 12;
+
+    switch (type) {
+        case LunarCalendarType::chinese: {
+            swprintf_s(outYear, yearSize, L"%s%s", kCanZh[canIdx], kChiZh[chiIdx]);
+            if (lunarMonth >= 1 && lunarMonth <= 12) {
+                if (lunarLeap) {
+                    swprintf_s(outMonth, monthSize, L"\u95f0%s", kMonthZh[lunarMonth]);
+                } else {
+                    swprintf_s(outMonth, monthSize, L"%s", kMonthZh[lunarMonth]);
+                }
+            } else {
+                swprintf_s(outMonth, monthSize, L"%d\u6708", lunarMonth);
+            }
+            if (lunarDay >= 1 && lunarDay <= 30) {
+                swprintf_s(outDay, daySize, L"%s", kDayZh[lunarDay]);
+            } else {
+                swprintf_s(outDay, daySize, L"%d", lunarDay);
+            }
+            swprintf_s(outShort, shortSize, L"%s%s", outMonth, outDay);
+            swprintf_s(outFull, fullSize, L"%s\u5E74 %s%s", outYear, outMonth, outDay);
+            break;
+        }
+        case LunarCalendarType::korean: {
+            swprintf_s(outYear, yearSize, L"%s%s", kCanKo[canIdx], kChiKo[chiIdx]);
+            if (lunarLeap) {
+                swprintf_s(outMonth, monthSize, L"\uC724%d\uC6D4", lunarMonth);
+            } else {
+                swprintf_s(outMonth, monthSize, L"%d\uC6D4", lunarMonth);
+            }
+            swprintf_s(outDay, daySize, L"%d\uC77C", lunarDay);
+            swprintf_s(outShort, shortSize, L"%s %s", outMonth, outDay);
+            swprintf_s(outFull, fullSize, L"%s\uB144 %s %s", outYear, outMonth, outDay);
+            break;
+        }
+        case LunarCalendarType::numeric: {
+            swprintf_s(outYear, yearSize, L"%d", lunarYear);
+            if (lunarLeap) {
+                swprintf_s(outMonth, monthSize, L"%d+", lunarMonth);
+            } else {
+                swprintf_s(outMonth, monthSize, L"%d", lunarMonth);
+            }
+            swprintf_s(outDay, daySize, L"%d", lunarDay);
+            swprintf_s(outShort, shortSize, L"%02d/%02d%s", lunarDay, lunarMonth, lunarLeap ? L"+" : L"");
+            swprintf_s(outFull, fullSize, L"%02d/%02d/%d%s", lunarDay, lunarMonth, lunarYear, lunarLeap ? L"+" : L"");
+            break;
+        }
+        case LunarCalendarType::vietnamese:
+        default: {
+            swprintf_s(outYear, yearSize, L"%s %s", kCanVn[canIdx], kChiVn[chiIdx]);
+            if (lunarLeap) {
+                swprintf_s(outMonth, monthSize, L"%d (Nhu\u1EADn)", lunarMonth);
+            } else {
+                swprintf_s(outMonth, monthSize, L"%d", lunarMonth);
+            }
+            swprintf_s(outDay, daySize, L"%d", lunarDay);
+            swprintf_s(outShort, shortSize, L"%02d/%02d%s", lunarDay, lunarMonth, lunarLeap ? L"N" : L"");
+            swprintf_s(outFull, fullSize, L"%02d/%02d%s %s", lunarDay, lunarMonth, lunarLeap ? L"N" : L"", outYear);
+            break;
+        }
+    }
+}
+
+void UpdateLunarFormatted() {
+    if (g_lunarFormatted.formatIndex == g_formatIndex) {
+        return;
+    }
+
+    g_lunarFormatted.formatIndex = g_formatIndex;
+    g_lunarDayFormatted.formatIndex = g_formatIndex;
+    g_lunarMonthFormatted.formatIndex = g_formatIndex;
+    g_lunarYearFormatted.formatIndex = g_formatIndex;
+    g_lunarFullFormatted.formatIndex = g_formatIndex;
+
+    if (g_settings.lunarCalendar == LunarCalendarType::none) {
+        g_lunarFormatted.buffer[0] = L'\0';
+        g_lunarDayFormatted.buffer[0] = L'\0';
+        g_lunarMonthFormatted.buffer[0] = L'\0';
+        g_lunarYearFormatted.buffer[0] = L'\0';
+        g_lunarFullFormatted.buffer[0] = L'\0';
+        return;
+    }
+
+    double timeZone = 7.0;
+    LunarCalendarType resolvedType = ResolveLunarCalendarType(g_settings.lunarCalendar, timeZone);
+
+    const SYSTEMTIME* time = &g_formatTime;
+
+    static int s_cachedDay = 0;
+    static int s_cachedMonth = 0;
+    static int s_cachedYear = 0;
+    static LunarCalendarType s_cachedType = LunarCalendarType::none;
+    static int s_lunarDay = 0;
+    static int s_lunarMonth = 0;
+    static int s_lunarYear = 0;
+    static int s_lunarLeap = 0;
+
+    if (s_cachedDay != time->wDay || s_cachedMonth != time->wMonth ||
+        s_cachedYear != time->wYear || s_cachedType != resolvedType) {
+        EastAsianLunar::convertSolar2Lunar(time->wDay, time->wMonth, time->wYear,
+                                           s_lunarDay, s_lunarMonth, s_lunarYear,
+                                           s_lunarLeap, timeZone);
+        s_cachedDay = time->wDay;
+        s_cachedMonth = time->wMonth;
+        s_cachedYear = time->wYear;
+        s_cachedType = resolvedType;
+    }
+
+    FormatLunarStrings(resolvedType, s_lunarDay, s_lunarMonth, s_lunarYear, s_lunarLeap,
+                       g_lunarFormatted.buffer, ARRAYSIZE(g_lunarFormatted.buffer),
+                       g_lunarDayFormatted.buffer, ARRAYSIZE(g_lunarDayFormatted.buffer),
+                       g_lunarMonthFormatted.buffer, ARRAYSIZE(g_lunarMonthFormatted.buffer),
+                       g_lunarYearFormatted.buffer, ARRAYSIZE(g_lunarYearFormatted.buffer),
+                       g_lunarFullFormatted.buffer, ARRAYSIZE(g_lunarFullFormatted.buffer));
+}
+
+PCWSTR GetLunarFormatted() {
+    UpdateLunarFormatted();
+    return g_lunarFormatted.buffer;
+}
+
+PCWSTR GetLunarDayFormatted() {
+    UpdateLunarFormatted();
+    return g_lunarDayFormatted.buffer;
+}
+
+PCWSTR GetLunarMonthFormatted() {
+    UpdateLunarFormatted();
+    return g_lunarMonthFormatted.buffer;
+}
+
+PCWSTR GetLunarYearFormatted() {
+    UpdateLunarFormatted();
+    return g_lunarYearFormatted.buffer;
+}
+
+PCWSTR GetLunarFullFormatted() {
+    UpdateLunarFormatted();
+    return g_lunarFullFormatted.buffer;
 }
 
 void FormatWeekday(const SYSTEMTIME* time, PWSTR buffer, size_t bufferSize) {
@@ -4251,6 +4837,11 @@ size_t ResolveFormatToken(
         {L"%time%"sv, GetTimeFormatted},
         {L"%unix%"sv, GetUnixTimeFormatted},
         {L"%date%"sv, GetDateFormatted},
+        {L"%lunar%"sv, GetLunarFormatted},
+        {L"%lunar_day%"sv, GetLunarDayFormatted},
+        {L"%lunar_month%"sv, GetLunarMonthFormatted},
+        {L"%lunar_year%"sv, GetLunarYearFormatted},
+        {L"%lunar_full%"sv, GetLunarFullFormatted},
         {L"%weekday%"sv, GetWeekdayFormatted},
         {L"%weekday_num%"sv, GetWeekdayNumFormatted},
         {L"%weeknum%"sv, GetWeeknumFormatted},
@@ -5940,6 +6531,20 @@ void LoadSettings() {
     StringSetting dateLocale = StringSetting::make(L"DateLocale");
     for (const auto locale : SplitStringView(dateLocale.get(), L";")) {
         g_settings.dateLocales.emplace_back(TrimStringView(locale));
+    }
+
+    g_settings.lunarCalendar = LunarCalendarType::none;
+    StringSetting lunarCalendar = StringSetting::make(L"LunarCalendar");
+    if (wcscmp(lunarCalendar, L"auto") == 0) {
+        g_settings.lunarCalendar = LunarCalendarType::auto_detect;
+    } else if (wcscmp(lunarCalendar, L"vietnamese") == 0) {
+        g_settings.lunarCalendar = LunarCalendarType::vietnamese;
+    } else if (wcscmp(lunarCalendar, L"chinese") == 0) {
+        g_settings.lunarCalendar = LunarCalendarType::chinese;
+    } else if (wcscmp(lunarCalendar, L"korean") == 0) {
+        g_settings.lunarCalendar = LunarCalendarType::korean;
+    } else if (wcscmp(lunarCalendar, L"numeric") == 0) {
+        g_settings.lunarCalendar = LunarCalendarType::numeric;
     }
 
     g_settings.weekdayFormat = StringSetting::make(L"WeekdayFormat");
