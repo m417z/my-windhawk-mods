@@ -11869,6 +11869,15 @@ void InitializeSettingsAndTap() {
     }
 }
 
+// To be called on the UI thread: while signaling a mutation, XAML calls the
+// watcher through a pointer it holds no reference to, so unadvising from
+// another thread can free the watcher during that call.
+void UnadviseVisualTreeWatcher() {
+    if (auto watcher = ExchangeVisualTreeWatcher(nullptr)) {
+        watcher->UnadviseVisualTreeChange();
+    }
+}
+
 using RunFromWindowThreadProc_t = void(WINAPI*)(PVOID parameter);
 
 bool RunFromWindowThread(HWND hWnd,
@@ -12374,24 +12383,25 @@ void Wh_ModUninit() {
     // scheduled on a thread which is being uninitialized.
     StopImageLoadRetries();
 
-    if (auto watcher = ExchangeVisualTreeWatcher(nullptr)) {
-        watcher->UnadviseVisualTreeChange();
-    }
-
     HWND hCoreWnd = GetCoreWnd();
     if (hCoreWnd) {
         Wh_Log(L"Uninitializing - Found core window");
         RunFromWindowThread(
-            hCoreWnd, [](PVOID) { UninitializeSettingsAndTap(); }, nullptr);
+            hCoreWnd,
+            [](PVOID) {
+                UnadviseVisualTreeWatcher();
+                UninitializeSettingsAndTap();
+            },
+            nullptr);
     }
+
+    // In case the core window thread didn't run the above: XAML must not call
+    // into the module once it's unloaded.
+    UnadviseVisualTreeWatcher();
 }
 
 void Wh_ModSettingsChanged() {
     Wh_Log(L">");
-
-    if (auto watcher = ExchangeVisualTreeWatcher(nullptr)) {
-        watcher->UnadviseVisualTreeChange();
-    }
 
     HWND hCoreWnd = GetCoreWnd();
     if (hCoreWnd) {
@@ -12399,6 +12409,7 @@ void Wh_ModSettingsChanged() {
         RunFromWindowThread(
             hCoreWnd,
             [](PVOID) {
+                UnadviseVisualTreeWatcher();
                 UninitializeSettingsAndTap();
                 InitializeSettingsAndTap();
             },
