@@ -3656,7 +3656,8 @@ struct ElementCustomizationRules {
     PropertyOverridesMaybeUnresolved propertyOverrides;
 };
 
-std::vector<ElementCustomizationRules> g_elementsCustomizationRules;
+[[clang::no_destroy]] std::optional<std::vector<ElementCustomizationRules>>
+    g_elementsCustomizationRules{std::in_place};
 
 // A property's pre-style value, and how it was set when that was through a
 // binding, which writing the value back would replace for good.
@@ -3739,8 +3740,9 @@ struct ElementCustomizationState {
         perVisualStateGroup;
 };
 
-std::unordered_map<ElementId, ElementCustomizationState>
-    g_elementsCustomizationState;
+[[clang::no_destroy]] std::optional<
+    std::unordered_map<ElementId, ElementCustomizationState>>
+    g_elementsCustomizationState{std::in_place};
 
 // Empties a thread local container and frees its storage, which clear() keeps.
 // A thread local isn't destroyed when the module is unloaded while its thread
@@ -7899,8 +7901,8 @@ ElementResolvedRules FindElementPropertyOverrides(FrameworkElement element,
     std::unordered_set<DependencyProperty> propertiesAdded;
     std::unordered_set<std::wstring> capturesAdded;
 
-    for (auto it = g_elementsCustomizationRules.rbegin();
-         it != g_elementsCustomizationRules.rend(); ++it) {
+    for (auto it = g_elementsCustomizationRules->rbegin();
+         it != g_elementsCustomizationRules->rend(); ++it) {
         auto& override = *it;
 
         VisualStateGroup visualStateGroup = nullptr;
@@ -8095,8 +8097,8 @@ StyleVariableResolution FindWinningCapture(
     for (const auto& capture : captures) {
         ElementTreeNode const* captureNode = nullptr;
         if (auto elementIt =
-                g_elementsCustomizationState.find(capture.elementId);
-            elementIt != g_elementsCustomizationState.end()) {
+                g_elementsCustomizationState->find(capture.elementId);
+            elementIt != g_elementsCustomizationState->end()) {
             captureNode = EnsureElementTreeNode(elementIt->second);
         }
 
@@ -8130,8 +8132,8 @@ std::vector<StyleVariableCandidate> SnapshotStyleVariableCaptures(
         StyleVariableCandidate candidate;
         candidate.owner = capture.elementId;
         if (auto elementIt =
-                g_elementsCustomizationState.find(capture.elementId);
-            elementIt != g_elementsCustomizationState.end()) {
+                g_elementsCustomizationState->find(capture.elementId);
+            elementIt != g_elementsCustomizationState->end()) {
             auto& elementCustomizationState = elementIt->second;
             EnsureElementTreeNode(elementCustomizationState);
             candidate.node = elementCustomizationState.treeNode;
@@ -9273,8 +9275,8 @@ std::optional<PropertyOverrideValue> ResolveDynamicStyleValue(
     const auto& tmpl = *propertyCustomizationState->dynamicTemplate;
 
     if (!elementCustomizationState) {
-        if (auto it = g_elementsCustomizationState.find(elementId);
-            it != g_elementsCustomizationState.end()) {
+        if (auto it = g_elementsCustomizationState->find(elementId);
+            it != g_elementsCustomizationState->end()) {
             elementCustomizationState = &it->second;
         }
     }
@@ -9381,8 +9383,8 @@ void PropagateStyleVariableChangeCore(StyleVariableState* state,
 
     auto consumersCopy = consumersIt->second;
     for (const auto& consumer : consumersCopy) {
-        auto stateIt = g_elementsCustomizationState.find(consumer.elementId);
-        if (stateIt == g_elementsCustomizationState.end()) {
+        auto stateIt = g_elementsCustomizationState->find(consumer.elementId);
+        if (stateIt == g_elementsCustomizationState->end()) {
             continue;
         }
         // A reference rather than the iterator: applying a style below can
@@ -9918,8 +9920,8 @@ void ApplyCustomizationsForVisualStateGroup(
                     }
 
                     auto elementStateIt =
-                        g_elementsCustomizationState.find(elementId);
-                    if (elementStateIt == g_elementsCustomizationState.end()) {
+                        g_elementsCustomizationState->find(elementId);
+                    if (elementStateIt == g_elementsCustomizationState->end()) {
                         return;
                     }
 
@@ -10277,8 +10279,8 @@ void RefreshRecycledItemCaptures() {
 
     std::vector<std::wstring> changedVarNames;
     for (ElementId owner : owners) {
-        auto it = g_elementsCustomizationState.find(owner);
-        if (it == g_elementsCustomizationState.end()) {
+        auto it = g_elementsCustomizationState->find(owner);
+        if (it == g_elementsCustomizationState->end()) {
             continue;
         }
 
@@ -10516,7 +10518,8 @@ void ApplyCustomizations(ElementId elementId,
 
     EnsureElementHeld(element);
 
-    auto& elementCustomizationState = g_elementsCustomizationState[elementId];
+    auto& elementCustomizationState =
+        (*g_elementsCustomizationState)[elementId];
 
     for (const auto& [visualStateGroup, stateIter] :
          elementCustomizationState.perVisualStateGroup) {
@@ -10997,7 +11000,7 @@ bool ElementHasState(ElementId elementId) {
         return false;
     }
 
-    if (g_elementsCustomizationState.contains(elementId) ||
+    if (g_elementsCustomizationState->contains(elementId) ||
         g_virtualizingRepeaters.contains(elementId) ||
         g_recycledElements.contains(elementId) ||
         g_elementMatchedItems.contains(elementId)) {
@@ -11138,8 +11141,8 @@ void CleanupCustomizations(ElementId elementId) {
     g_recycledElements.erase(elementId);
     g_elementMatchedItems.erase(elementId);
 
-    auto it = g_elementsCustomizationState.find(elementId);
-    if (it == g_elementsCustomizationState.end()) {
+    auto it = g_elementsCustomizationState->find(elementId);
+    if (it == g_elementsCustomizationState->end()) {
         return;
     }
 
@@ -11174,7 +11177,7 @@ void CleanupCustomizations(ElementId elementId) {
 
     // By elementId, not by `it`: a re-entrant apply above may have rehashed the
     // map since the lookup.
-    g_elementsCustomizationState.erase(elementId);
+    g_elementsCustomizationState->erase(elementId);
 
     ReapElementTreeNodesIfNeeded();
 
@@ -11588,7 +11591,7 @@ void AddElementCustomizationRulesForSingleTarget(
         first = false;
     }
 
-    g_elementsCustomizationRules.push_back(
+    g_elementsCustomizationRules->push_back(
         std::move(elementCustomizationRules));
 }
 
@@ -12099,8 +12102,8 @@ void UninitializeSettingsAndTap() {
     // g_elementsCustomizationState. Walking a map nothing else can reach keeps
     // a re-entrant insert or erase from invalidating this loop, and leaving the
     // global empty makes those lookups miss, which is what teardown wants.
-    auto elementsCustomizationState = std::move(g_elementsCustomizationState);
-    g_elementsCustomizationState.clear();
+    auto elementsCustomizationState = std::move(*g_elementsCustomizationState);
+    g_elementsCustomizationState.emplace();
 
     for (const auto& [elementId, elementCustomizationState] :
          elementsCustomizationState) {
@@ -12129,7 +12132,7 @@ void UninitializeSettingsAndTap() {
     ResetThreadLocal(g_elementIds);
     g_elementIdsReapThreshold = 64;
 
-    g_elementsCustomizationRules.clear();
+    g_elementsCustomizationRules.emplace();
     UntrackSplitViews();
 
     UninitializeResourceVariables();

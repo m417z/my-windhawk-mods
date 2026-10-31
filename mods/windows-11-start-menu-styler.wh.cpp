@@ -11471,7 +11471,8 @@ struct ElementCustomizationRules {
     PropertyOverridesMaybeUnresolved propertyOverrides;
 };
 
-std::vector<ElementCustomizationRules> g_elementsCustomizationRules;
+[[clang::no_destroy]] std::optional<std::vector<ElementCustomizationRules>>
+    g_elementsCustomizationRules{std::in_place};
 
 // A property's pre-style value, and how it was set when that was through a
 // binding, which writing the value back would replace for good.
@@ -11554,8 +11555,9 @@ struct ElementCustomizationState {
         perVisualStateGroup;
 };
 
-std::unordered_map<ElementId, ElementCustomizationState>
-    g_elementsCustomizationState;
+[[clang::no_destroy]] std::optional<
+    std::unordered_map<ElementId, ElementCustomizationState>>
+    g_elementsCustomizationState{std::in_place};
 
 // Empties a thread local container and frees its storage, which clear() keeps.
 // A thread local isn't destroyed when the module is unloaded while its thread
@@ -11821,8 +11823,9 @@ struct WebViewCustomizationState {
     winrt::event_token navigationCompletedEventToken;
 };
 
-std::unordered_map<ElementId, WebViewCustomizationState>
-    g_webViewsCustomizationState;
+[[clang::no_destroy]] std::optional<
+    std::unordered_map<ElementId, WebViewCustomizationState>>
+    g_webViewsCustomizationState{std::in_place};
 
 bool g_elementPropertyModifying;
 
@@ -15987,8 +15990,8 @@ ElementResolvedRules FindElementPropertyOverrides(FrameworkElement element,
     std::unordered_set<DependencyProperty> propertiesAdded;
     std::unordered_set<std::wstring> capturesAdded;
 
-    for (auto it = g_elementsCustomizationRules.rbegin();
-         it != g_elementsCustomizationRules.rend(); ++it) {
+    for (auto it = g_elementsCustomizationRules->rbegin();
+         it != g_elementsCustomizationRules->rend(); ++it) {
         auto& override = *it;
 
         VisualStateGroup visualStateGroup = nullptr;
@@ -16193,8 +16196,8 @@ StyleVariableResolution FindWinningCapture(
     for (const auto& capture : captures) {
         ElementTreeNode const* captureNode = nullptr;
         if (auto elementIt =
-                g_elementsCustomizationState.find(capture.elementId);
-            elementIt != g_elementsCustomizationState.end()) {
+                g_elementsCustomizationState->find(capture.elementId);
+            elementIt != g_elementsCustomizationState->end()) {
             captureNode = EnsureElementTreeNode(elementIt->second);
         }
 
@@ -16228,8 +16231,8 @@ std::vector<StyleVariableCandidate> SnapshotStyleVariableCaptures(
         StyleVariableCandidate candidate;
         candidate.owner = capture.elementId;
         if (auto elementIt =
-                g_elementsCustomizationState.find(capture.elementId);
-            elementIt != g_elementsCustomizationState.end()) {
+                g_elementsCustomizationState->find(capture.elementId);
+            elementIt != g_elementsCustomizationState->end()) {
             auto& elementCustomizationState = elementIt->second;
             EnsureElementTreeNode(elementCustomizationState);
             candidate.node = elementCustomizationState.treeNode;
@@ -17371,8 +17374,8 @@ std::optional<PropertyOverrideValue> ResolveDynamicStyleValue(
     const auto& tmpl = *propertyCustomizationState->dynamicTemplate;
 
     if (!elementCustomizationState) {
-        if (auto it = g_elementsCustomizationState.find(elementId);
-            it != g_elementsCustomizationState.end()) {
+        if (auto it = g_elementsCustomizationState->find(elementId);
+            it != g_elementsCustomizationState->end()) {
             elementCustomizationState = &it->second;
         }
     }
@@ -17479,8 +17482,8 @@ void PropagateStyleVariableChangeCore(StyleVariableState* state,
 
     auto consumersCopy = consumersIt->second;
     for (const auto& consumer : consumersCopy) {
-        auto stateIt = g_elementsCustomizationState.find(consumer.elementId);
-        if (stateIt == g_elementsCustomizationState.end()) {
+        auto stateIt = g_elementsCustomizationState->find(consumer.elementId);
+        if (stateIt == g_elementsCustomizationState->end()) {
             continue;
         }
         // A reference rather than the iterator: applying a style below can
@@ -18016,8 +18019,8 @@ void ApplyCustomizationsForVisualStateGroup(
                     }
 
                     auto elementStateIt =
-                        g_elementsCustomizationState.find(elementId);
-                    if (elementStateIt == g_elementsCustomizationState.end()) {
+                        g_elementsCustomizationState->find(elementId);
+                    if (elementStateIt == g_elementsCustomizationState->end()) {
                         return;
                     }
 
@@ -18371,7 +18374,7 @@ void ApplyCustomizationsIfWebView(ElementId elementId,
     auto className = winrt::get_class_name(element);
     if (className == L"Windows.UI.Xaml.Controls.WebView") {
         auto& webViewCustomizationState =
-            g_webViewsCustomizationState[elementId];
+            (*g_webViewsCustomizationState)[elementId];
         if (!webViewCustomizationState.element) {
             EnsureElementHeld(element);
             webViewCustomizationState.element = element;
@@ -18392,7 +18395,7 @@ void ApplyCustomizationsIfWebView(ElementId elementId,
         }
     } else if (className == L"WebView2Standalone.Controls.WebView2") {
         auto& webViewCustomizationState =
-            g_webViewsCustomizationState[elementId];
+            (*g_webViewsCustomizationState)[elementId];
         if (!webViewCustomizationState.element) {
             EnsureElementHeld(element);
             webViewCustomizationState.element = element;
@@ -18700,8 +18703,8 @@ void RefreshRecycledItemCaptures() {
 
     std::vector<std::wstring> changedVarNames;
     for (ElementId owner : owners) {
-        auto it = g_elementsCustomizationState.find(owner);
-        if (it == g_elementsCustomizationState.end()) {
+        auto it = g_elementsCustomizationState->find(owner);
+        if (it == g_elementsCustomizationState->end()) {
             continue;
         }
 
@@ -19719,10 +19722,11 @@ struct DeferredCustomization {
 };
 
 bool g_customizationsDeferred;
-std::vector<DeferredCustomization> g_deferredCustomizations;
+[[clang::no_destroy]] std::optional<std::vector<DeferredCustomization>>
+    g_deferredCustomizations{std::in_place};
 
 void ApplyDeferredCustomizations() {
-    for (const auto& deferred : g_deferredCustomizations) {
+    for (const auto& deferred : *g_deferredCustomizations) {
         if (deferred.elementId == ElementId::None) {
             continue;
         }
@@ -19739,7 +19743,7 @@ void ApplyDeferredCustomizations() {
         }
     }
 
-    g_deferredCustomizations = {};
+    g_deferredCustomizations.emplace();
 }
 
 class DeferCustomizationsScope {
@@ -19870,7 +19874,7 @@ void ApplyCustomizations(ElementId elementId,
                          FrameworkElement element,
                          PCWSTR fallbackClassName) {
     if (g_customizationsDeferred) {
-        g_deferredCustomizations.push_back(
+        g_deferredCustomizations->push_back(
             {elementId, element, fallbackClassName ? fallbackClassName : L""});
         return;
     }
@@ -19914,7 +19918,8 @@ void ApplyCustomizations(ElementId elementId,
 
     EnsureElementHeld(element);
 
-    auto& elementCustomizationState = g_elementsCustomizationState[elementId];
+    auto& elementCustomizationState =
+        (*g_elementsCustomizationState)[elementId];
 
     for (const auto& [visualStateGroup, stateIter] :
          elementCustomizationState.perVisualStateGroup) {
@@ -20008,8 +20013,8 @@ bool ElementHasState(ElementId elementId) {
         return false;
     }
 
-    if (g_elementsCustomizationState.contains(elementId) ||
-        g_webViewsCustomizationState.contains(elementId) ||
+    if (g_elementsCustomizationState->contains(elementId) ||
+        g_webViewsCustomizationState->contains(elementId) ||
         g_virtualizingRepeaters.contains(elementId) ||
         g_recycledElements.contains(elementId) ||
         g_elementMatchedItems.contains(elementId)) {
@@ -20152,14 +20157,14 @@ void CleanupCustomizations(ElementId elementId) {
 
     // Marked rather than removed, since ApplyDeferredCustomizations may be
     // walking the list.
-    for (auto& deferred : g_deferredCustomizations) {
+    for (auto& deferred : *g_deferredCustomizations) {
         if (deferred.elementId == elementId) {
             deferred.elementId = ElementId::None;
         }
     }
 
-    if (auto it = g_elementsCustomizationState.find(elementId);
-        it != g_elementsCustomizationState.end()) {
+    if (auto it = g_elementsCustomizationState->find(elementId);
+        it != g_elementsCustomizationState->end()) {
         // A reference rather than the iterator: restoring a style below runs
         // arbitrary XAML work that can re-enter ApplyCustomizations and rehash
         // g_elementsCustomizationState, which invalidates iterators but not
@@ -20191,7 +20196,7 @@ void CleanupCustomizations(ElementId elementId) {
 
         // By elementId, not by `it`: a re-entrant apply above may have
         // rehashed the map since the lookup.
-        g_elementsCustomizationState.erase(elementId);
+        g_elementsCustomizationState->erase(elementId);
 
         ReapElementTreeNodesIfNeeded();
 
@@ -20206,8 +20211,8 @@ void CleanupCustomizations(ElementId elementId) {
         }
     }
 
-    if (auto it = g_webViewsCustomizationState.find(elementId);
-        it != g_webViewsCustomizationState.end()) {
+    if (auto it = g_webViewsCustomizationState->find(elementId);
+        it != g_webViewsCustomizationState->end()) {
         const auto& webViewCustomizationState = it->second;
         try {
             ClearWebViewCustomizations(webViewCustomizationState);
@@ -20215,7 +20220,7 @@ void CleanupCustomizations(ElementId elementId) {
             Wh_Log(L"Error %08X: %s", ex.code(), ex.message().c_str());
         }
 
-        g_webViewsCustomizationState.erase(it);
+        g_webViewsCustomizationState->erase(it);
     }
 }
 
@@ -20632,7 +20637,7 @@ void AddElementCustomizationRulesForSingleTarget(
         first = false;
     }
 
-    g_elementsCustomizationRules.push_back(
+    g_elementsCustomizationRules->push_back(
         std::move(elementCustomizationRules));
 }
 
@@ -21330,8 +21335,8 @@ void UninitializeSettingsAndTap() {
     // g_elementsCustomizationState. Walking a map nothing else can reach keeps
     // a re-entrant insert or erase from invalidating this loop, and leaving the
     // global empty makes those lookups miss, which is what teardown wants.
-    auto elementsCustomizationState = std::move(g_elementsCustomizationState);
-    g_elementsCustomizationState.clear();
+    auto elementsCustomizationState = std::move(*g_elementsCustomizationState);
+    g_elementsCustomizationState.emplace();
 
     for (const auto& [elementId, elementCustomizationState] :
          elementsCustomizationState) {
@@ -21355,14 +21360,14 @@ void UninitializeSettingsAndTap() {
     g_pendingStyleVariablePropagations.clear();
     g_styleVariableState = {};
 
-    g_elementsCustomizationRules.clear();
+    g_elementsCustomizationRules.emplace();
 
     UninitializeResourceVariables();
 
     g_noiseStream = nullptr;
 
     for (const auto& [elementId, webViewCustomizationState] :
-         g_webViewsCustomizationState) {
+         *g_webViewsCustomizationState) {
         try {
             ClearWebViewCustomizations(webViewCustomizationState);
         } catch (winrt::hresult_error const& ex) {
@@ -21370,7 +21375,7 @@ void UninitializeSettingsAndTap() {
         }
     }
 
-    g_webViewsCustomizationState.clear();
+    g_webViewsCustomizationState.emplace();
 
     // After everything keyed by an id. g_lastElementId keeps counting, since an
     // id must never name two elements.
