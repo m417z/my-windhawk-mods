@@ -2860,6 +2860,8 @@ public:
 
     void ReleaseDiagnosticsReference(InstanceHandle handle);
 
+    bool TakeDiagnosticsReference(wf::IInspectable const& element);
+
     std::vector<DWORD> GetCallbackThreadIds();
 
 private:
@@ -2946,6 +2948,20 @@ void VisualTreeWatcher::ReleaseDiagnosticsReference(InstanceHandle handle)
     if (FAILED(hr)) {
         Wh_Log(L"UnregisterInstance failed with error %08X", hr);
     }
+}
+
+// GetHandleFromIInspectable creates the runtime object of an element which has
+// none cached, and that object holds the element until its removal is reported.
+bool VisualTreeWatcher::TakeDiagnosticsReference(wf::IInspectable const& element)
+{
+    InstanceHandle handle;
+    HRESULT hr = m_XamlDiagnostics->GetHandleFromIInspectable(reinterpret_cast<::IInspectable*>(winrt::get_abi(element)), &handle);
+    if (FAILED(hr)) {
+        Wh_Log(L"GetHandleFromIInspectable failed with error %08X", hr);
+        return false;
+    }
+
+    return true;
 }
 
 std::vector<DWORD> VisualTreeWatcher::GetCallbackThreadIds()
@@ -3795,6 +3811,35 @@ void ReleaseElementIdEntry(InstanceHandle handle) {
     if (!it->second.weakElement.get()) {
         g_elementIds.erase(it);
     }
+}
+
+// For an element about to get state that holds it. No removal is reported for
+// an element the diagnostics were made to release, so that state would hold it
+// for good, and the diagnostics are made to hold it again.
+void EnsureElementHeld(wf::IInspectable const& element) {
+    InstanceHandle handle;
+    try {
+        handle = HandleFromInspectable(element);
+    } catch (winrt::hresult_error const& ex) {
+        Wh_Log(L"Error %08X: %s", ex.code(), ex.message().c_str());
+        return;
+    }
+
+    auto it = g_elementIds.find(handle);
+    if (it == g_elementIds.end() || it->second.element ||
+        !ElementIdEntryNames(it->second, element)) {
+        return;
+    }
+
+    auto visualTreeWatcher = GetVisualTreeWatcher();
+    if (!visualTreeWatcher ||
+        !visualTreeWatcher->TakeDiagnosticsReference(element)) {
+        return;
+    }
+
+    Wh_Log(L"Holding released element %llu",
+           static_cast<uint64_t>(it->second.id));
+    it->second.element = element;
 }
 
 // Dead entries are reaped once the map grows past this, which is then set to
@@ -10253,6 +10298,8 @@ void ApplyCustomizations(ElementId elementId,
     }
 
     Wh_Log(L"Applying styles to %s", winrt::get_class_name(element).c_str());
+
+    EnsureElementHeld(element);
 
     auto& elementCustomizationState = g_elementsCustomizationState[elementId];
 
