@@ -11984,6 +11984,10 @@ HWND FindThreadWindow(DWORD threadId) {
 // XAML calls the watcher without holding a reference, so a thread it was called
 // on can still be inside a call after the unadvise. A thread which processes a
 // message sent after the unadvise is past any such call.
+//
+// The watcher can hold the last reference to the diagnostics, whose destruction
+// stops XAML from reporting mutations to any diagnostics created before it, so
+// this has to come before the TAP is injected again.
 void ReleaseUnadvisedVisualTreeWatcher(
     winrt::com_ptr<VisualTreeWatcher> watcher) {
     if (!watcher) {
@@ -12547,8 +12551,6 @@ void Wh_ModSettingsChanged() {
             [](PVOID p) {
                 *(std::optional<winrt::com_ptr<VisualTreeWatcher>>*)p =
                     UnadviseVisualTreeWatcher();
-                UninitializeSettingsAndTap();
-                InitializeSettingsAndTap();
             },
             &unadvisedWatcher);
     }
@@ -12559,4 +12561,14 @@ void Wh_ModSettingsChanged() {
     }
 
     ReleaseUnadvisedVisualTreeWatcher(std::move(*unadvisedWatcher));
+
+    if (hCoreWnd) {
+        RunFromWindowThread(
+            hCoreWnd,
+            [](PVOID) {
+                UninitializeSettingsAndTap();
+                InitializeSettingsAndTap();
+            },
+            nullptr);
+    }
 }
