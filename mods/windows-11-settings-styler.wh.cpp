@@ -11894,6 +11894,9 @@ void InitializeSettingsAndTap() {
     }
 }
 
+// Unadvising from a thread other than the one XAML is signaling a mutation on
+// can make XAML call through null: it checks the watcher pointer, and reads it
+// again later to make the call.
 winrt::com_ptr<VisualTreeWatcher> UnadviseVisualTreeWatcher() {
     auto watcher = ExchangeVisualTreeWatcher(nullptr);
     if (watcher) {
@@ -12442,34 +12445,52 @@ void Wh_ModUninit() {
     // scheduled on a thread which is being uninitialized.
     StopImageLoadRetries();
 
-    auto unadvisedWatcher = UnadviseVisualTreeWatcher();
+    std::optional<winrt::com_ptr<VisualTreeWatcher>> unadvisedWatcher;
 
     HWND hCoreWnd = GetCoreWnd();
     if (hCoreWnd) {
         Wh_Log(L"Uninitializing - Found core window");
         RunFromWindowThread(
-            hCoreWnd, [](PVOID) { UninitializeSettingsAndTap(); }, nullptr);
+            hCoreWnd,
+            [](PVOID p) {
+                *(std::optional<winrt::com_ptr<VisualTreeWatcher>>*)p =
+                    UnadviseVisualTreeWatcher();
+                UninitializeSettingsAndTap();
+            },
+            &unadvisedWatcher);
     }
 
-    ReleaseUnadvisedVisualTreeWatcher(std::move(unadvisedWatcher));
+    // In case the core window thread didn't run the above.
+    if (!unadvisedWatcher) {
+        unadvisedWatcher = UnadviseVisualTreeWatcher();
+    }
+
+    ReleaseUnadvisedVisualTreeWatcher(std::move(*unadvisedWatcher));
 }
 
 void Wh_ModSettingsChanged() {
     Wh_Log(L">");
 
-    auto unadvisedWatcher = UnadviseVisualTreeWatcher();
+    std::optional<winrt::com_ptr<VisualTreeWatcher>> unadvisedWatcher;
 
     HWND hCoreWnd = GetCoreWnd();
     if (hCoreWnd) {
         Wh_Log(L"Reinitializing - Found core window");
         RunFromWindowThread(
             hCoreWnd,
-            [](PVOID) {
+            [](PVOID p) {
+                *(std::optional<winrt::com_ptr<VisualTreeWatcher>>*)p =
+                    UnadviseVisualTreeWatcher();
                 UninitializeSettingsAndTap();
                 InitializeSettingsAndTap();
             },
-            nullptr);
+            &unadvisedWatcher);
     }
 
-    ReleaseUnadvisedVisualTreeWatcher(std::move(unadvisedWatcher));
+    // In case the core window thread didn't run the above.
+    if (!unadvisedWatcher) {
+        unadvisedWatcher = UnadviseVisualTreeWatcher();
+    }
+
+    ReleaseUnadvisedVisualTreeWatcher(std::move(*unadvisedWatcher));
 }

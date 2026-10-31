@@ -21085,6 +21085,9 @@ void InitializeSettingsAndTap() {
     }
 }
 
+// Unadvising from a thread other than the one XAML is signaling a mutation on
+// can make XAML call through null: it checks the watcher pointer, and reads it
+// again later to make the call.
 winrt::com_ptr<VisualTreeWatcher> UnadviseVisualTreeWatcher() {
     auto watcher = ExchangeVisualTreeWatcher(nullptr);
     if (watcher) {
@@ -21889,21 +21892,28 @@ void Wh_ModUninit() {
     // scheduled on a thread which is being uninitialized.
     StopImageLoadRetries();
 
-    auto unadvisedWatcher = UnadviseVisualTreeWatcher();
+    std::optional<winrt::com_ptr<VisualTreeWatcher>> unadvisedWatcher;
 
     HWND hCoreWnd = GetCoreWnd();
     if (hCoreWnd) {
         Wh_Log(L"Uninitializing - Found core window");
         RunFromWindowThread(
             hCoreWnd,
-            [](PVOID) {
+            [](PVOID p) {
+                *(std::optional<winrt::com_ptr<VisualTreeWatcher>>*)p =
+                    UnadviseVisualTreeWatcher();
                 RevertAllSeparatePinnedScroll();
                 UninitializeSettingsAndTap();
             },
-            nullptr);
+            &unadvisedWatcher);
     }
 
-    ReleaseUnadvisedVisualTreeWatcher(std::move(unadvisedWatcher));
+    // In case the core window thread didn't run the above.
+    if (!unadvisedWatcher) {
+        unadvisedWatcher = UnadviseVisualTreeWatcher();
+    }
+
+    ReleaseUnadvisedVisualTreeWatcher(std::move(*unadvisedWatcher));
 }
 
 void Wh_ModSettingsChanged() {
@@ -21934,7 +21944,12 @@ void Wh_ModSettingsChanged() {
         oldLayout == DisableNewStartMenuLayout::newLayoutSideBySide &&
         newLayout != DisableNewStartMenuLayout::newLayoutSideBySide;
 
-    auto unadvisedWatcher = UnadviseVisualTreeWatcher();
+    struct ReinitializeParam {
+        bool needsRevert;
+        std::optional<winrt::com_ptr<VisualTreeWatcher>> unadvisedWatcher;
+    };
+
+    ReinitializeParam param{needsRevert};
 
     HWND hCoreWnd = GetCoreWnd();
     if (hCoreWnd) {
@@ -21942,15 +21957,21 @@ void Wh_ModSettingsChanged() {
         RunFromWindowThread(
             hCoreWnd,
             [](PVOID p) {
-                bool needsRevert = *(bool*)p;
-                if (needsRevert) {
+                auto& param = *(ReinitializeParam*)p;
+                param.unadvisedWatcher = UnadviseVisualTreeWatcher();
+                if (param.needsRevert) {
                     RevertAllSeparatePinnedScroll();
                 }
                 UninitializeSettingsAndTap();
                 InitializeSettingsAndTap();
             },
-            &needsRevert);
+            &param);
     }
 
-    ReleaseUnadvisedVisualTreeWatcher(std::move(unadvisedWatcher));
+    // In case the core window thread didn't run the above.
+    if (!param.unadvisedWatcher) {
+        param.unadvisedWatcher = UnadviseVisualTreeWatcher();
+    }
+
+    ReleaseUnadvisedVisualTreeWatcher(std::move(*param.unadvisedWatcher));
 }
