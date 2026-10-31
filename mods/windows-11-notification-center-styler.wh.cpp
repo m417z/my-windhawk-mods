@@ -4381,9 +4381,13 @@ public:
 
     void ReleaseDiagnosticsReference(InstanceHandle handle);
 
+    std::vector<DWORD> GetCallbackThreadIds();
+
 private:
     HRESULT STDMETHODCALLTYPE OnVisualTreeChange(ParentChildRelation relation, VisualElement element, VisualMutationType mutationType) override;
     HRESULT STDMETHODCALLTYPE OnElementStateChanged(InstanceHandle element, VisualElementState elementState, LPCWSTR context) noexcept override;
+
+    void RecordCallbackThread();
 
     wf::IInspectable FromHandle(InstanceHandle handle)
     {
@@ -4394,6 +4398,9 @@ private:
 
     winrt::com_ptr<IXamlDiagnostics> m_XamlDiagnostics = nullptr;
     winrt::com_ptr<IXamlDiagnosticsTestHooks> m_XamlDiagnosticsTestHooks = nullptr;
+
+    winrt::slim_mutex m_callbackThreadIdsLock;
+    std::vector<DWORD> m_callbackThreadIds;
 };
 
 #pragma endregion  // visualtreewatcher_hpp
@@ -4462,8 +4469,26 @@ void VisualTreeWatcher::ReleaseDiagnosticsReference(InstanceHandle handle)
     }
 }
 
+std::vector<DWORD> VisualTreeWatcher::GetCallbackThreadIds()
+{
+    winrt::slim_lock_guard lock(m_callbackThreadIdsLock);
+    return m_callbackThreadIds;
+}
+
+void VisualTreeWatcher::RecordCallbackThread()
+{
+    DWORD threadId = GetCurrentThreadId();
+
+    winrt::slim_lock_guard lock(m_callbackThreadIdsLock);
+    if (std::find(m_callbackThreadIds.begin(), m_callbackThreadIds.end(), threadId) == m_callbackThreadIds.end()) {
+        m_callbackThreadIds.push_back(threadId);
+    }
+}
+
 HRESULT VisualTreeWatcher::OnVisualTreeChange(ParentChildRelation relation, VisualElement element, VisualMutationType mutationType) try
 {
+    RecordCallbackThread();
+
     Wh_Log(L"========================================");
 
     switch (mutationType)
@@ -13057,12 +13082,49 @@ void UninitializeForCurrentThread() {
     g_initializedForThread = false;
 }
 
-void UninitializeSettingsAndTap() {
-    if (auto watcher = ExchangeVisualTreeWatcher(nullptr)) {
+winrt::com_ptr<VisualTreeWatcher> UninitializeSettingsAndTap() {
+    auto watcher = ExchangeVisualTreeWatcher(nullptr);
+    if (watcher) {
         watcher->UnadviseVisualTreeChange();
     }
 
     g_initialized = false;
+
+    return watcher;
+}
+
+// Bounds the wait for a thread which doesn't get to its messages, giving up the
+// guarantee for that thread rather than hanging the caller.
+constexpr UINT kUnadvisedVisualTreeWatcherWaitTimeout = 5000;
+
+// XAML calls the watcher without holding a reference, so a thread it was called
+// on can still be inside a call after the unadvise. A thread which processes a
+// message sent after the unadvise is past any such call.
+void ReleaseUnadvisedVisualTreeWatcher(
+    winrt::com_ptr<VisualTreeWatcher> watcher) {
+    if (!watcher) {
+        return;
+    }
+
+    for (DWORD threadId : watcher->GetCallbackThreadIds()) {
+        HWND hWnd = nullptr;
+        EnumThreadWindows(
+            threadId,
+            [](HWND hWnd, LPARAM lParam) -> BOOL {
+                // The id may have been reused by a thread of another process.
+                DWORD processId = 0;
+                if (GetWindowThreadProcessId(hWnd, &processId) &&
+                    processId == GetCurrentProcessId()) {
+                    *reinterpret_cast<HWND*>(lParam) = hWnd;
+                }
+                return FALSE;
+            },
+            reinterpret_cast<LPARAM>(&hWnd));
+        if (hWnd) {
+            SendMessageTimeout(hWnd, WM_NULL, 0, 0, SMTO_ABORTIFHUNG,
+                               kUnadvisedVisualTreeWatcherWaitTimeout, nullptr);
+        }
+    }
 }
 
 void InitializeForCurrentThread() {
@@ -13635,19 +13697,21 @@ void Wh_ModUninit() {
     // scheduled on a thread which is being uninitialized.
     StopImageLoadRetries();
 
-    UninitializeSettingsAndTap();
+    auto unadvisedWatcher = UninitializeSettingsAndTap();
 
     for (auto hCoreWnd : GetCoreWnds()) {
         Wh_Log(L"Uninitializing for %08X", (DWORD)(ULONG_PTR)hCoreWnd);
         RunFromWindowThread(
             hCoreWnd, [](PVOID) { UninitializeForCurrentThread(); }, nullptr);
     }
+
+    ReleaseUnadvisedVisualTreeWatcher(std::move(unadvisedWatcher));
 }
 
 void Wh_ModSettingsChanged() {
     Wh_Log(L">");
 
-    UninitializeSettingsAndTap();
+    auto unadvisedWatcher = UninitializeSettingsAndTap();
 
     bool initialize = false;
 
@@ -13662,6 +13726,8 @@ void Wh_ModSettingsChanged() {
             nullptr);
         initialize = true;
     }
+
+    ReleaseUnadvisedVisualTreeWatcher(std::move(unadvisedWatcher));
 
     if (initialize) {
         InitializeSettingsAndTap();
