@@ -2,7 +2,7 @@
 // @id              windows-11-start-menu-styler
 // @name            Windows 11 Start Menu Styler
 // @description     Customize the Start menu with themes contributed by others or create your own
-// @version         1.7
+// @version         1.8
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
@@ -2920,6 +2920,8 @@ const Theme g_themeRosePine = {{
         L"CornerRadius=25",
         L"BorderBrush=#ebbcba",
         L"Background=#191724"}},
+    ThemeTargetStyles{L"Border#LayerBorder, Border#AccentLayerBorder", {
+        L"Visibility=Collapsed"}},
     ThemeTargetStyles{L"StartMenu.StartBlendedFlexFrame", {
         L"CornerRadius=25"}},
     ThemeTargetStyles{L"Windows.UI.Xaml.Controls.FontIcon > Windows.UI.Xaml.Controls.Grid > Windows.UI.Xaml.Controls.TextBlock", {
@@ -3090,6 +3092,8 @@ const Theme g_themeRosePine_variant_ClassicStartMenu = {{
         L"BorderThickness=1.5",
         L"BorderBrush=#ebbcba",
         L"CornerRadius=25"}},
+    ThemeTargetStyles{L"Border#LayerBorder, Border#AccentLayerBorder", {
+        L"Visibility=Collapsed"}},
     ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Grid#OuterBorderGrid", {
         L"CornerRadius=25"}},
     ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Border#TaskbarSearchBackground", {
@@ -3240,6 +3244,8 @@ const Theme g_themeEverblush = {{
         L"BorderBrush=#268ccf7e"}},
     ThemeTargetStyles{L"Border#AcrylicOverlay", {
         L"Background=#141b1e"}},
+    ThemeTargetStyles{L"Border#LayerBorder, Border#AccentLayerBorder", {
+        L"Visibility=Collapsed"}},
     ThemeTargetStyles{L"StartMenu.SearchBoxToggleButton > Grid > Border", {
         L"Background=#232a2d",
         L"BorderBrush=transparent"}},
@@ -3356,6 +3362,8 @@ const Theme g_themeEverblush_variant_ClassicStartMenu = {{
         L"Background=transparent"}},
     ThemeTargetStyles{L"Border#AppBorder, Border#AccentAppBorder", {
         L"Background=#141b1e"}},
+    ThemeTargetStyles{L"Border#LayerBorder, Border#AccentLayerBorder", {
+        L"Visibility=Collapsed"}},
     ThemeTargetStyles{L"Border#TaskbarSearchBackground", {
         L"Background=#232a2d",
         L"BorderBrush=transparent"}},
@@ -3429,6 +3437,8 @@ const Theme g_themeSunValley = {{
         L"Visibility=Visible",
         L"BorderThickness=1,1,1,0"}},
     ThemeTargetStyles{L"Cortana.UI.Views.TaskbarSearchPage > Grid#RootGrid > Grid#OuterBorderGrid > Grid#BorderGrid > Border#AccentAppBorder", {
+        L"Visibility=Collapsed"}},
+    ThemeTargetStyles{L"Border#LayerBorder, Border#AccentLayerBorder", {
         L"Visibility=Collapsed"}},
     ThemeTargetStyles{L"Cortana.UI.Views.TaskbarSearchPage > Grid#RootGrid > Grid#OuterBorderGrid > Grid#BorderGrid > Border#dropshadow", {
         L"Opacity=0"}},
@@ -3639,6 +3649,8 @@ const Theme g_theme21996 = {{
         L"CornerRadius=7"}},
     ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Border#AppBorder, Windows.UI.Xaml.Controls.Border#AccentAppBorder", {
         L"Background:=<AcrylicBrush TintColor=\"{ThemeResource SystemChromeMediumColor}\" TintOpacity=\"0\" TintLuminosityOpacity=\"0.7\" FallbackColor=\"{ThemeResource SystemChromeLowColor}\" />"}},
+    ThemeTargetStyles{L"Border#LayerBorder, Border#AccentLayerBorder", {
+        L"Visibility=Collapsed"}},
     ThemeTargetStyles{L"Border#FullBleedBackground", {
         L"Background:=<AcrylicBrush TintColor=\"{ThemeResource SystemChromeMediumColor}\" TintOpacity=\"0.76\" TintLuminosityOpacity=\"0.77\" FallbackColor=\"{ThemeResource SystemChromeLowColor}\" />"}},
     ThemeTargetStyles{L"Image#SearchIconOn", {
@@ -3910,7 +3922,7 @@ const Theme g_themeUniMenu = {{
     ThemeTargetStyles{L"Windows.UI.Xaml.Controls.ListView#ZoomedOutListView", {
         L"Margin=0,40,0,0"}},
     ThemeTargetStyles{L"Button#HideMoreSuggestionsButton", {
-        L"Margin=-67,-14,67,0",
+        L"Margin=-30,17,30,-31",
         L"Height=40"}},
     ThemeTargetStyles{L"Button#HideMoreSuggestionsButton > Grid@CommonStates > ContentPresenter", {
         L"Background:=<AcrylicBrush TintColor=\"{ThemeResource CardStrokeColorDefaultSolid}\" FallbackColor=\"{ThemeResource CardStrokeColorDefaultSolid}\" TintOpacity=\".3\" TintLuminosityOpacity=\".5\" Opacity=\"1\"/>",
@@ -4195,7 +4207,7 @@ const Theme g_themeLegacyFluent = {{
         L"BorderBrush:=<SolidColorBrush Color=\"{ThemeResource SystemListMediumColor}\"/>",
         L"BorderBrush@SearchBoxHover:=<SolidColorBrush Color=\"{ThemeResource SystemChromeHighColor}\"/>",
         L"BorderBrush@FindInStartSearchBoxHover:=<SolidColorBrush Color=\"{ThemeResource SystemChromeHighColor}\"/>",
-        L"Margin=25,37,21,15"}},
+        L"Margin=25,17,21,10"}},
     ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Button#SearchGlyphContainer", {
         L"Visibility=Visible"}},
     ThemeTargetStyles{L"Microsoft.UI.Xaml.Controls.AnimatedIcon#SearchIconPlayer", {
@@ -4441,7 +4453,7 @@ const Theme g_themeLegacyFluent_variant_ClassicStartMenu = {{
         L"BorderBrush:=<SolidColorBrush Color=\"{ThemeResource SystemListMediumColor}\"/>",
         L"BorderBrush@SearchBoxHover:=<SolidColorBrush Color=\"{ThemeResource SystemChromeHighColor}\"/>",
         L"BorderBrush@FindInStartSearchBoxHover:=<SolidColorBrush Color=\"{ThemeResource SystemChromeHighColor}\"/>",
-        L"Margin=25,37,21,15"}},
+        L"Margin=25,17,21,10"}},
     ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Button#SearchGlyphContainer", {
         L"Visibility=Visible"}},
     ThemeTargetStyles{L"Microsoft.UI.Xaml.Controls.AnimatedIcon#SearchIconPlayer", {
@@ -5149,7 +5161,7 @@ const Theme g_themeLiquidGlass2 = {{
     ThemeTargetStyles{L"Grid#ContentBorder", {
         L"CornerRadius=10"}},
     ThemeTargetStyles{L"Border#LayerBorder, Border#AccentLayerBorder", {
-        L"CornerRadius=50"}},
+        L"Visibility=Collapsed"}},
     ThemeTargetStyles{L"StartMenu.StartBlendedFlexFrame", {
         L"Width=Auto",
         L"Height=Auto"}},
@@ -5659,6 +5671,8 @@ const Theme g_themeLiquidGlass = {{
         L"BorderBrush:=$BorderBrush",
         L"BorderThickness=$BorderThickness",
         L"CornerRadius=$CornerRadius"}},
+    ThemeTargetStyles{L"Border#LayerBorder, Border#AccentLayerBorder", {
+        L"Visibility=Collapsed"}},
     ThemeTargetStyles{L"Border#ContentBorder@CommonStates > Grid > Border#BackgroundBorder", {
         L"BorderThickness=$ElementBorderThickness",
         L"BorderBrush@PointerOver:=$ElementBorderBrush",
@@ -6541,6 +6555,8 @@ const Theme g_themeTintedGlass_variant_ClassicStartMenu = {{
         L"Background:=$CommonBgBrush",
         L"BorderThickness=0",
         L"CornerRadius=14"}},
+    ThemeTargetStyles{L"Border#LayerBorder, Border#AccentLayerBorder", {
+        L"Visibility=Collapsed"}},
     ThemeTargetStyles{L"Border#TaskbarSearchBackground", {
         L"Background:=<WindhawkBlur BlurAmount=\"25\" TintColor=\"#15000000\"/>",
         L"BorderThickness=0",
@@ -9439,6 +9455,8 @@ const Theme g_themeOS26_Tahoe_App_Launcher_variant_DarkCenter = {{
         L"BorderBrush=Gray",
         L"CornerRadius=50",
         L"BorderThickness=0"}},
+    ThemeTargetStyles{L"Border#LayerBorder, Border#AccentLayerBorder", {
+        L"Visibility=Collapsed"}},
     ThemeTargetStyles{L"ScrollViewer > ScrollContentPresenter > Border > Cortana.UI.Views.TaskbarSearchPage > Grid#RootGrid > Border#TaskbarSearchBackground", {
         L"Background=transparent",
         L"Margin=20,10,20,10",
@@ -9598,6 +9616,8 @@ const Theme g_themeOS26_Tahoe_App_Launcher_variant_DarkBottom = {{
         L"BorderBrush=Gray",
         L"CornerRadius=50",
         L"BorderThickness=0"}},
+    ThemeTargetStyles{L"Border#LayerBorder, Border#AccentLayerBorder", {
+        L"Visibility=Collapsed"}},
     ThemeTargetStyles{L"ScrollViewer > ScrollContentPresenter > Border > Cortana.UI.Views.TaskbarSearchPage > Grid#RootGrid > Border#TaskbarSearchBackground", {
         L"Background=transparent",
         L"Margin=20,10,20,10",
@@ -9760,6 +9780,8 @@ const Theme g_themeOS26_Tahoe_App_Launcher_variant_ClearCenter = {{
         L"BorderBrush=Gray",
         L"CornerRadius=50",
         L"BorderThickness=0"}},
+    ThemeTargetStyles{L"Border#LayerBorder, Border#AccentLayerBorder", {
+        L"Visibility=Collapsed"}},
     ThemeTargetStyles{L"ScrollViewer > ScrollContentPresenter > Border > Cortana.UI.Views.TaskbarSearchPage > Grid#RootGrid > Border#TaskbarSearchBackground", {
         L"Background=transparent",
         L"Margin=20,10,20,10",
@@ -9919,6 +9941,8 @@ const Theme g_themeOS26_Tahoe_App_Launcher_variant_ClearBottom = {{
         L"BorderBrush=Gray",
         L"CornerRadius=50",
         L"BorderThickness=0"}},
+    ThemeTargetStyles{L"Border#LayerBorder, Border#AccentLayerBorder", {
+        L"Visibility=Collapsed"}},
     ThemeTargetStyles{L"ScrollViewer > ScrollContentPresenter > Border > Cortana.UI.Views.TaskbarSearchPage > Grid#RootGrid > Border#TaskbarSearchBackground", {
         L"Background=transparent",
         L"Margin=20,10,20,10",
@@ -21894,7 +21918,7 @@ bool StartStatsTimer() {
     static constexpr WCHAR kStatsBaseUrl[] =
         L"https://github.com/ramensoftware/"
         L"windows-11-start-menu-styling-guide/"
-        L"releases/download/stats-v5/";
+        L"releases/download/stats-v6/";
 
     ULONGLONG lastStatsTime = 0;
     Wh_GetBinaryValue(L"statsTimerLastTime", &lastStatsTime,
