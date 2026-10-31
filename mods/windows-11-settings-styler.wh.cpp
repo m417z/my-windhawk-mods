@@ -11957,6 +11957,30 @@ winrt::com_ptr<VisualTreeWatcher> UnadviseVisualTreeWatcher() {
 // guarantee for that thread rather than hanging the caller.
 constexpr UINT kUnadvisedVisualTreeWatcherWaitTimeout = 5000;
 
+// Any window of the thread. EnumThreadWindows doesn't report message-only
+// windows, so those are looked through when it finds none.
+HWND FindThreadWindow(DWORD threadId) {
+    HWND hWnd = nullptr;
+    EnumThreadWindows(
+        threadId,
+        [](HWND hWnd, LPARAM lParam) -> BOOL {
+            *reinterpret_cast<HWND*>(lParam) = hWnd;
+            return FALSE;
+        },
+        reinterpret_cast<LPARAM>(&hWnd));
+    if (hWnd) {
+        return hWnd;
+    }
+
+    while ((hWnd = FindWindowEx(HWND_MESSAGE, hWnd, nullptr, nullptr))) {
+        if (GetWindowThreadProcessId(hWnd, nullptr) == threadId) {
+            return hWnd;
+        }
+    }
+
+    return nullptr;
+}
+
 // XAML calls the watcher without holding a reference, so a thread it was called
 // on can still be inside a call after the unadvise. A thread which processes a
 // message sent after the unadvise is past any such call.
@@ -11967,23 +11991,18 @@ void ReleaseUnadvisedVisualTreeWatcher(
     }
 
     for (DWORD threadId : watcher->GetCallbackThreadIds()) {
-        HWND hWnd = nullptr;
-        EnumThreadWindows(
-            threadId,
-            [](HWND hWnd, LPARAM lParam) -> BOOL {
-                // The id may have been reused by a thread of another process.
-                DWORD processId = 0;
-                if (GetWindowThreadProcessId(hWnd, &processId) &&
-                    processId == GetCurrentProcessId()) {
-                    *reinterpret_cast<HWND*>(lParam) = hWnd;
-                }
-                return FALSE;
-            },
-            reinterpret_cast<LPARAM>(&hWnd));
-        if (hWnd) {
-            SendMessageTimeout(hWnd, WM_NULL, 0, 0, SMTO_ABORTIFHUNG,
-                               kUnadvisedVisualTreeWatcherWaitTimeout, nullptr);
+        HWND hWnd = FindThreadWindow(threadId);
+
+        // The id may have been reused by a thread of another process.
+        DWORD processId = 0;
+        if (!hWnd || !GetWindowThreadProcessId(hWnd, &processId) ||
+            processId != GetCurrentProcessId()) {
+            Wh_Log(L"No window to wait on for thread %u", threadId);
+            continue;
         }
+
+        SendMessageTimeout(hWnd, WM_NULL, 0, 0, SMTO_ABORTIFHUNG,
+                           kUnadvisedVisualTreeWatcherWaitTimeout, nullptr);
     }
 }
 
