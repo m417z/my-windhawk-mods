@@ -160,6 +160,20 @@ FullScreen](https://github.com/ramensoftware/windows-11-start-menu-styling-guide
 \
 FrostyGlass](https://github.com/ramensoftware/windows-11-start-menu-styling-guide/blob/main/Themes/FrostyGlass/README.md)
 
+[![FlyoutStartMenu](https://raw.githubusercontent.com/ramensoftware/windows-11-start-menu-styling-guide/main/Themes/FlyoutStartMenu/screenshot-small.png)
+\
+FlyoutStartMenu](https://github.com/ramensoftware/windows-11-start-menu-styling-guide/blob/main/Themes/FlyoutStartMenu/README.md)
+
+[![OS26 Tahoe App
+Launcher](https://raw.githubusercontent.com/ramensoftware/windows-11-start-menu-styling-guide/main/Themes/OS26%20Tahoe%20App%20Launcher/screenshot-small.png)
+\
+OS26 Tahoe App
+Launcher](https://github.com/ramensoftware/windows-11-start-menu-styling-guide/blob/main/Themes/OS26%20Tahoe%20App%20Launcher/README.md)
+
+[![Raycast](https://raw.githubusercontent.com/ramensoftware/windows-11-start-menu-styling-guide/main/Themes/Raycast/screenshot-small.png)
+\
+Raycast](https://github.com/ramensoftware/windows-11-start-menu-styling-guide/blob/main/Themes/Raycast/README.md)
+
 More themes can be found in the **Themes** section of [The Windows 11 Start menu
 styling
 guide](https://github.com/ramensoftware/windows-11-start-menu-styling-guide/blob/main/README.md#themes).
@@ -458,6 +472,16 @@ from the **TranslucentTB** project.
   - Command Center: Command Center
   - FullScreen: FullScreen
   - FrostyGlass: FrostyGlass
+  - FlyoutStartMenu: FlyoutStartMenu
+  - OS26 Tahoe App Launcher_variant_DarkCenter: >-
+      OS26 Tahoe App Launcher (Dark, Center)
+  - OS26 Tahoe App Launcher_variant_DarkBottom: >-
+      OS26 Tahoe App Launcher (Dark, Bottom)
+  - OS26 Tahoe App Launcher_variant_ClearCenter: >-
+      OS26 Tahoe App Launcher (Clear, Center)
+  - OS26 Tahoe App Launcher_variant_ClearBottom: >-
+      OS26 Tahoe App Launcher (Clear, Bottom)
+  - Raycast: Raycast
 - disableNewStartMenuLayout: ""
   $name: Start menu layout
   $description: >-
@@ -7755,6 +7779,2762 @@ const Theme g_themeFrostyGlass = {{
     ThemeTargetStyles{L"#qfPreviewPane", {
         L"min-width: 325px !important"}},
 }};
+
+
+const Theme g_themeFlyoutStartMenu = {{
+    ThemeTargetStyles{L":root > ScrollViewer > ScrollContentPresenter", {
+        L"Tag=$EnableFullscreenStartMenu"}},
+    ThemeTargetStyles{L"ScrollViewer#MenuFlyoutPresenterScrollViewer > Border > Grid > ScrollContentPresenter > ItemsPresenter > StackPanel", {
+        L"ChildrenTransitions:=<TransitionCollection><EntranceThemeTransition IsStaggeringEnabled=\"True\" FromHorizontalOffset=\"0\" FromVerticalOffset=\"-50\" /></TransitionCollection>"}},
+    ThemeTargetStyles{L"Cortana.UI.Views.CortanaRichSearchBox#SearchTextBox > Grid@CommonStates > Border#BorderElement", {
+        L"CornerRadius=4,4,0,0",
+        L"BorderThickness=1",
+        L"Background@Focused:=$Chrome",
+        L"BorderBrush:=transparent",
+        L"BackgroundTransition:=<BrushTransition Duration=\"0:0:0.083\" />",
+        L"BackgroundSizing=InnerBorderEdge"}},
+    ThemeTargetStyles{L"Cortana.UI.Views.CortanaRichSearchBox#SearchTextBox", {
+        L"Margin=0",
+        L"Grid.Column=0",
+        L"Grid.ColumnSpan=2"}},
+    ThemeTargetStyles{L"Cortana.UI.Views.CortanaRichSearchBox#SearchTextBox > Grid@CommonStates", {
+        L"CornerRadius=2",
+        L"BorderBrush:=<SolidColorBrush Color=\"{ThemeResource SystemChromeAutoOverlayColor}\" />",
+        L"BorderBrush@Focused:=$AccentColor1",
+        L"BorderThickness=0",
+        L"BorderThickness@Focused=0,0,0,2",
+        L"Padding@Focused=0,0,0,-2"}},
+    ThemeTargetStyles{L"Cortana.UI.Views.RichSearchBoxControl#SearchBoxControl > Grid#RootGrid", {
+        L"CornerRadius=4"}},
+    ThemeTargetStyles{L"Cortana.UI.Views.RichSearchBoxControl#SearchBoxControl > Grid#RootGrid > Grid#UnderlineContainer", {
+        L"Visibility=1",
+        L"CornerRadius=4",
+        L"Margin=0",
+        L"Canvas.ZIndex=99",
+        L"Opacity=1"}},
+    ThemeTargetStyles{L"Cortana.UI.Views.RichSearchBoxControl#SearchBoxControl > Grid#RootGrid > Grid#UnderlineContainer > Border#GradientUnderlineBorder", {
+        L"Canvas.ZIndex=99"}},
+    ThemeTargetStyles{L"Cortana.UI.Views.TaskbarSearchPage > Grid#RootGrid@SearchBoxLocationStates > Border#TaskbarSearchBackground", {
+        L"CornerRadius=4",
+        L"BorderBrush:=$ButtonBorderAlt",
+        L"Visibility@SearchBoxOnBottomWithoutQFMargin=1"}},
+    ThemeTargetStyles{L"Cortana.UI.Views.TaskbarSearchPage > Grid#RootGrid > Grid#OuterBorderGrid > Grid#BorderGrid > Border#LayerBorder", {
+        L"Margin=0,64,0,0",
+        L"CornerRadius=0",
+        L"BorderThickness=0,1,0,0",
+        L"BorderBrush:=#19000000",
+        L"Visibility=0"}},
+    ThemeTargetStyles{L"Cortana.UI.Views.TaskbarSearchPage > Grid#RootGrid@SearchBoxLocationStates > Grid#OuterBorderGrid > Grid#BorderGrid > Border#LayerBorder", {
+        L"Visibility@SearchBoxOnBottomWithoutQFMargin=1"}},
+    ThemeTargetStyles{L"Cortana.UI.Views.TaskbarSearchPage > Grid#RootGrid > Grid#OuterBorderGrid > Grid#BorderGrid > Border#AccentLayerBorder", {
+        L"Visibility=1"}},
+    ThemeTargetStyles{L"Border#dropshadow", {
+        L"Canvas.ZIndex=-99",
+        L"Visibility=0"}},
+    ThemeTargetStyles{L"StartMenu.StartBlendedFlexFrame > Grid#FrameRoot > Grid#AnimationRoot > Grid#RightCompanionContainerGrid", {
+        L"Visibility=>PhoneLinkPaneVisibility",
+        L"Padding=7,0,0,25",
+        L"Width=356",
+        L"Height={{$EnableFullscreenStartMenu == 1 ? `Auto` : 670 }}",
+        L"VerticalAlignment={{$EnableFullscreenStartMenu + 2}}"}},
+    ThemeTargetStyles{L"Border#RightCompanionDropShadow", {
+        L"Visibility=0"}},
+    ThemeTargetStyles{L"Border#RightCompanionDropShadowDismissTarget", {
+        L"Visibility=1"}},
+    ThemeTargetStyles{L"Grid#LeftCompanionContainerGrid", {
+        L"Visibility=1",
+        L"HorizontalAlignment=3",
+        L"VerticalAlignment=3",
+        L"Width=Auto",
+        L"Height=Auto",
+        L"Background:=$NativeAcrylic2",
+        L"BorderBrush:=$FloatBorder",
+        L"BorderThickness=1",
+        L"CornerRadius=8",
+        L"Grid.Column=1",
+        L"Grid.ColumnSpan=12"}},
+    ThemeTargetStyles{L"StartMenu.StartBlendedFlexFrame", {
+        L"ActualWidth=>ScreenWidth",
+        L"ActualHeight=>ScreenHeight"}},
+    ThemeTargetStyles{L"StartMenu.StartBlendedFlexFrame", {
+        L"IsTaskbarCenteredProperty=>StartMenuCenter"}},
+    ThemeTargetStyles{L":root > ScrollViewer > ScrollContentPresenter[Tag=1] > Border > StartMenu.StartBlendedFlexFrame", {
+        L"IsTaskbarCenteredProperty=False"}},
+    ThemeTargetStyles{L"StartMenu.StartBlendedFlexFrame > Grid#FrameRoot", {
+        L"Padding=12,{{$EnableFullscreenStartMenu * 12}},12,0",
+        L"Margin=0,0,0,-12"}},
+    ThemeTargetStyles{L":root > ScrollViewer > ScrollContentPresenter[Tag=1] > Border > StartMenu.StartBlendedFlexFrame > Grid#FrameRoot", {
+        L"MaxHeight=Infinity",
+        L"HorizontalAlignment=3"}},
+    ThemeTargetStyles{L":root > ScrollViewer > ScrollContentPresenter[Tag=1] > Border > StartMenu.StartBlendedFlexFrame > Grid#FrameRoot > Grid#AnimationRoot", {
+        L"HorizontalAlignment=3",
+        L"Width=Auto",
+        L"Padding=0,0,0,0"}},
+    ThemeTargetStyles{L":root > ScrollViewer > ScrollContentPresenter[Tag=1] > Border > StartMenu.StartBlendedFlexFrame > Grid#FrameRoot > Grid#AnimationRoot > Grid#MainMenu", {
+        L"HorizontalAlignment=3",
+        L"Width=Auto",
+        L"MaxWidth={{ScreenWidth - 24 - (RightCompanionWidth * ((RightCompanionVisibility - 1) * -1))}}"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Primitives.ToggleButton#ShowHideCompanion > Border@CommonStates > ContentPresenter#ContentPresenter > FontIcon > Grid > TextBlock", {
+        L"Tag={{PhoneLinkPaneVisibility}}",
+        L"Text=\uEA5B",
+        L"Text@Checked=\uEA49",
+        L"Text@CheckedPointerOver=\uEA49",
+        L"Text@CheckedPressed=\uEA49",
+        L"Text@CheckedDisabled=\uEA49",
+        L"VerticalAlignment=Center",
+        L"HorizontalAlignment=Center"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Primitives.ToggleButton#ShowHideCompanion > Border@CommonStates > ContentPresenter#ContentPresenter", {
+        L"VerticalAlignment=3",
+        L"HorizontalAlignment=3",
+        L"Height=Auto",
+        L"Width=Auto",
+        L"Background:=$NormalBtn",
+        L"Background@PointerOver:=$PointerOverBtn",
+        L"Background@Pressed:=$PressedBtn",
+        L"Background@Checked:=$NormalBtn",
+        L"Background@CheckedPointerOver:=$PointerOverBtn",
+        L"Background@CheckedPressed:=$PressedBtn",
+        L"BorderBrush:=$ButtonBorderAlt",
+        L"BorderThickness=0,1,1,1",
+        L"BackgroundTransition:=<BrushTransition Duration=\"0:0:0.083\" />",
+        L"BackgroundSizing=InnerBorderEdge",
+        L"CornerRadius=0,4,4,0"}},
+    ThemeTargetStyles{L"StartMenu.StartBlendedFlexFrame > Grid#FrameRoot > Grid#AnimationRoot > Grid#MainMenu > Grid#MainContent > Grid > Windows.UI.Xaml.Controls.Primitives.ToggleButton#ShowHideCompanion", {
+        L"Visibility=>PhoneLinkButtonVisibility",
+        L"Margin=0,0,{{3 * ((PhoneLinkButtonVisibility - 1) * -1)}},0"}},
+    ThemeTargetStyles{L"StartMenu.StartBlendedFlexFrame > Grid#FrameRoot > Grid#AnimationRoot > Grid#MainMenu > Grid#MainContent > Grid > StartMenu.SearchBoxToggleButton#SearchBoxToggleButton", {
+        L"Margin=0,0,{{4 * PhoneLinkButtonVisibility}},0"}},
+    ThemeTargetStyles{L"StartMenu.StartBlendedFlexFrame > Grid#FrameRoot > Grid#AnimationRoot > Grid#MainMenu > Grid#MainContent > Grid[1]", {
+        L"Margin=45,1,41,-1"}},
+    ThemeTargetStyles{L"StartMenu.SearchBoxToggleButton#SearchBoxToggleButton > Grid@CommonStates > Border#BorderElement", {
+        L"Opacity=1",
+        L"CornerRadius=4,{{4 * PhoneLinkButtonVisibility}},{{4 * PhoneLinkButtonVisibility}},4",
+        L"Background@Normal:=$NormalBtn",
+        L"Background@PointerOver:=$PointerOverBtn",
+        L"Background@Pressed:=$PressedBtn",
+        L"Background@Disabled:=$NormalBtn",
+        L"Opacity@Disabed=0.6",
+        L"Background@Checked:=$NormalBtn",
+        L"Background@CheckedPointerOver:=$PointerOverBtn",
+        L"Background@CheckedPressed:=$PressedBtn",
+        L"Background@CheckedDisabled:=$NormalBtn",
+        L"Opacity@CheckedDisabed=0.6",
+        L"BorderBrush@Normal:=$ButtonBorderAlt",
+        L"BorderBrush@PointerOver:=$ButtonBorderAlt",
+        L"BorderBrush@Pressed:=$ButtonBorderAlt",
+        L"BorderBrush@Disabled:=$ButtonBorderAlt",
+        L"BorderBrush@Checked:=$ButtonBorderAlt",
+        L"BorderBrush@CheckedPointerOver:=$ButtonBorderAlt",
+        L"BorderBrush@CheckedPressed:=$ButtonBorderAlt",
+        L"BorderBrush@CheckedDisabled:=$ButtonBorderAlt",
+        L"BorderThickness=1,1,{{PhoneLinkButtonVisibility}},1"}},
+    ThemeTargetStyles{L"Rectangle#TextCaret", {
+        L"Visibility=1"}},
+    ThemeTargetStyles{L"MenuFlyoutPresenter > Border", {
+        L"BorderBrush:=$TaskbarBorderStroke",
+        L"BorderThickness=1"}},
+    ThemeTargetStyles{L"StartMenu.StartBlendedFlexFrame > Grid#FrameRoot > Grid#AnimationRoot > Grid#MainMenu > Border#AcrylicBorder", {
+        L"VerticalAlignment=Top",
+        L"Height=114",
+        L"CornerRadius=8,8,8,8",
+        L"BorderBrush:=$FloatBorder",
+        L"BorderThickness=1,1,1,1"}},
+    ThemeTargetStyles{L"Border#AcrylicOverlay", {
+        L"Visibility=0",
+        L"Canvas.ZIndex=-1",
+        L"BorderThickness=0,1,0,0",
+        L"CornerRadius=0,0,8,8",
+        L"Margin=13,1,13,-1",
+        L"Height=48",
+        L"VerticalAlignment=Top"}},
+    ThemeTargetStyles{L"Border#StartDropShadow", {
+        L"VerticalAlignment=Top",
+        L"Height=114",
+        L"Visibility=1",
+        L"Margin=0,0,0,1"}},
+    ThemeTargetStyles{L"GridViewItem > Border#ContentBorder@CommonStates > Grid#DroppedFlickerWorkaroundWrapper > Border#BackgroundBorder", {
+        L"Margin=0,0",
+        L"BorderThickness=1",
+        L"Style@PointerOver:=<Style TargetType=\"Border\"><Setter Property=\"BorderBrush\" Value=\"{ThemeResource ControlElevationBorderBrush}\"/></Style>",
+        L"Style@Pressed:=<Style TargetType=\"Border\"><Setter Property=\"BorderBrush\" Value=\"{ThemeResource ControlElevationBorderBrush}\"/></Style>",
+        L"BackgroundTransition:=<BrushTransition Duration=\"0:0:0.083\" />",
+        L"BackgroundSizing=InnerBorderEdge"}},
+    ThemeTargetStyles{L"Button#Header", {
+        L"Margin=0,0,26,0"}},
+    ThemeTargetStyles{L"Button#Header > Border#Border@CommonStates", {
+        L"BorderThickness=1",
+        L"BorderBrush@PointerOver:=$ButtonBorderAlt",
+        L"BorderBrush@Pressed:=$ButtonBorderAlt",
+        L"BackgroundTransition:=<BrushTransition Duration=\"0:0:0.083\" />",
+        L"BackgroundSizing=InnerBorderEdge",
+        L"Opacity=1"}},
+    ThemeTargetStyles{L"StartMenu.PinnedList#StartMenuPinnedList > Grid#Root > GridView#PinnedList > Border > ScrollViewer#ScrollViewer > Border#Root > Grid > ScrollContentPresenter#ScrollContentPresenter > ItemsPresenter > ItemsWrapGrid > GridViewItem > Border#ContentBorder > Grid#DroppedFlickerWorkaroundWrapper > Border#BackgroundBorder", {
+        L"Margin=0,0"}},
+    ThemeTargetStyles{L"StartMenu.StartHome > Grid#PageRoot > SemanticZoom#TopLevelRoot > Grid > ScrollViewer#ScrollViewer > ScrollContentPresenter#ScrollContentPresenter > Grid > ContentPresenter#ZoomedInPresenter > GridView#AllAppsGrid > Border > ScrollViewer#ScrollViewer > Border#Root > Grid > ScrollContentPresenter#ScrollContentPresenter > ItemsPresenter > ContentControl > ContentPresenter > Grid#TopLevelHeader > Grid", {
+        L"Canvas.ZIndex=-99",
+        L"Background:=$NativeAcrylic2",
+        L"BorderBrush:=$FloatBorder",
+        L"BorderThickness=1",
+        L"CornerRadius=4"}},
+    ThemeTargetStyles{L"StartMenu.StartHome > Grid#PageRoot > SemanticZoom#TopLevelRoot > Grid > ScrollViewer#ScrollViewer > ScrollContentPresenter#ScrollContentPresenter > Grid > ContentPresenter#ZoomedInPresenter > GridView#AllAppsGrid > Border > ScrollViewer#ScrollViewer > Border#Root > Grid > ScrollContentPresenter#ScrollContentPresenter > ItemsPresenter > ContentControl > ContentPresenter > Grid#TopLevelHeader > Grid#TopLevelSuggestionsRoot", {
+        L"Padding=-50,-15,-1,8",
+        L"Margin=0,0,0,0",
+        L"CornerRadius=8,8,8,8"}},
+    ThemeTargetStyles{L"StartMenu.StartHome > Grid#PageRoot > SemanticZoom#TopLevelRoot > Grid > ScrollViewer#ScrollViewer > ScrollContentPresenter#ScrollContentPresenter > Grid > ContentPresenter#ZoomedInPresenter > GridView#AllAppsGrid > Border > ScrollViewer#ScrollViewer > Border#Root > Grid > ScrollContentPresenter#ScrollContentPresenter > ItemsPresenter > ContentControl > ContentPresenter > Grid#TopLevelHeader > Grid#TopLevelSuggestionsRoot > Grid#TopLevelSuggestionsContainerParent > Grid#TopLevelSuggestionsContainer > Border#TopLevelSuggestionsBackground", {
+        L"Margin=0,0,0,-16",
+        L"Background:=<SolidColorBrush Color=\"{ThemeResource SystemChromeAutoOverlayColor}\" />",
+        L"BorderBrush:=#19000000",
+        L"BorderThickness=0,1,0,0",
+        L"CornerRadius=0,0,0,0"}},
+    ThemeTargetStyles{L"StartMenu.StartHome > Grid#PageRoot > SemanticZoom#TopLevelRoot > Grid > ScrollViewer#ScrollViewer > ScrollContentPresenter#ScrollContentPresenter > Grid > ContentPresenter#ZoomedInPresenter > GridView#AllAppsGrid > Border > ScrollViewer#ScrollViewer > Border#Root > Grid > ScrollContentPresenter#ScrollContentPresenter > ItemsPresenter > ContentControl > ContentPresenter > Grid#TopLevelHeader > Grid#TopLevelSuggestionsRoot > Grid#TopLevelSuggestionsContainerParent > Grid#TopLevelSuggestionsContainer > ContentControl", {
+        L"Margin=0,0,0,0",
+        L"Padding=8,8,0,-8"}},
+    ThemeTargetStyles{L"StartMenu.StartHome > Grid#PageRoot > SemanticZoom#TopLevelRoot > Grid > ScrollViewer#ScrollViewer > ScrollContentPresenter#ScrollContentPresenter > Grid > ContentPresenter#ZoomedInPresenter > GridView#AllAppsGrid > Border > ScrollViewer#ScrollViewer > Border#Root > Grid > ScrollContentPresenter#ScrollContentPresenter > ItemsPresenter > ContentControl > ContentPresenter > Grid#TopLevelHeader > Grid#TopLevelSuggestionsRoot > Grid#TopLevelSuggestionsContainerParent > Grid#TopLevelSuggestionsContainer", {
+        L"Margin=50,0,0,0"}},
+    ThemeTargetStyles{L"GridView#RecommendedList > Border > ScrollViewer#ScrollViewer > Border#Root > Grid > ScrollContentPresenter#ScrollContentPresenter > ItemsPresenter > ItemsWrapGrid > GridViewItem", {
+        L"MinWidth=230",
+        L"MaxWidth=230"}},
+    ThemeTargetStyles{L"StartMenu.StartHome > Grid#PageRoot > SemanticZoom#TopLevelRoot > Grid > ScrollViewer#ScrollViewer > ScrollContentPresenter#ScrollContentPresenter > Grid > ContentPresenter#ZoomedInPresenter > GridView#AllAppsGrid > Border > ScrollViewer#ScrollViewer > Border#Root > Grid > ScrollContentPresenter#ScrollContentPresenter > ItemsPresenter > ContentControl > ContentPresenter > Grid#TopLevelHeader > Grid[1]", {
+        L"Margin=0,14,0,12",
+        L"CornerRadius=8,8,8,8",
+        L"BorderThickness=1,1,1,1",
+        L"Grid.ColumnSpan=2",
+        L"Grid.RowSpan=2",
+        L"ActualHeight=>PinnedListHeaderHeight"}},
+    ThemeTargetStyles{L"StartMenu.StartHome > Grid#PageRoot > SemanticZoom#TopLevelRoot > Grid > ScrollViewer#ScrollViewer > ScrollContentPresenter#ScrollContentPresenter > Grid > ContentPresenter#ZoomedInPresenter > GridView#AllAppsGrid > Border > ScrollViewer#ScrollViewer > Border#Root > Grid > ScrollContentPresenter#ScrollContentPresenter > ItemsPresenter > ContentControl > ContentPresenter > Grid#TopLevelHeader > Grid[1] > TextBlock#PinnedListHeaderText", {
+        L"Margin=12,14,12,15",
+        L"FontWeight=Normal"}},
+    ThemeTargetStyles{L"StartMenu.StartHome > Grid#PageRoot > SemanticZoom#TopLevelRoot > Grid > ScrollViewer#ScrollViewer > ScrollContentPresenter#ScrollContentPresenter > Grid > ContentPresenter#ZoomedInPresenter > GridView#AllAppsGrid > Border > ScrollViewer#ScrollViewer > Border#Root > Grid > ScrollContentPresenter#ScrollContentPresenter > ItemsPresenter > ContentControl > ContentPresenter > Grid#TopLevelHeader > Grid[2]", {
+        L"Visibility=0",
+        L"Margin=0,14,0,0",
+        L"CornerRadius=0",
+        L"BorderThickness=0",
+        L"Background:=transparent",
+        L"BorderBrush:=transparent"}},
+    ThemeTargetStyles{L"StartMenu.StartHome > Grid#PageRoot > SemanticZoom#TopLevelRoot > Grid > ScrollViewer#ScrollViewer > ScrollContentPresenter#ScrollContentPresenter > Grid > ContentPresenter#ZoomedInPresenter > GridView#AllAppsGrid > Border > ScrollViewer#ScrollViewer > Border#Root > Grid > ScrollContentPresenter#ScrollContentPresenter > ItemsPresenter > ContentControl > ContentPresenter > Grid#TopLevelHeader > Grid[2] > Button", {
+        L"Margin=8,8,8,8"}},
+    ThemeTargetStyles{L"Grid#MainMenu > Grid#MainContent", {
+        L"Margin=0",
+        L"Padding=0"}},
+    ThemeTargetStyles{L"Grid#MainMenu", {
+        L"Margin=0",
+        L"Padding=0",
+        L"Grid.ColumnSpan=0",
+        L"ActualWidth=>StartMenuWidth",
+        L"ActualHeight=>StartMenuHeight"}},
+    ThemeTargetStyles{L"Grid#MainMenu > Grid#MainContent > Grid#NavPanePlaceholder", {
+        L"Width=Auto",
+        L"HorizontalAlignment=3",
+        L"Canvas.ZIndex=99",
+        L"BorderBrush:=$FloatBorder",
+        L"Padding=4",
+        L"Height=Auto",
+        L"VerticalAlignment=Bottom",
+        L"Margin=12,50,12,-50",
+        L"Grid.Row=0"}},
+    ThemeTargetStyles{L"StartMenu.StartHome > Grid#PageRoot > Grid#MoreSuggestionsRoot", {
+        L"Canvas.ZIndex=-99",
+        L"Background:=$NativeAcrylic2",
+        L"BorderBrush:=$FloatBorder",
+        L"BorderThickness=1,1,1,1",
+        L"CornerRadius=8,8,8,8",
+        L"Margin=12,65,12,-40",
+        L"Padding=0,-14,0,0",
+        L"VerticalAlignment=3",
+        L"Height=Auto"}},
+    ThemeTargetStyles{L"StartMenu.StartHome > Grid#PageRoot > Grid#MoreSuggestionsRoot > Grid#MoreSuggestionsContainer > Border#MoreSuggestionsBackground", {
+        L"Background:=<SolidColorBrush Color=\"{ThemeResource SystemChromeAutoOverlayColor}\" />",
+        L"BorderBrush:=#19000000",
+        L"BorderThickness=0,1,0,0",
+        L"CornerRadius=0,0,0,0"}},
+    ThemeTargetStyles{L"StartMenu.StartHome > Grid#PageRoot > Grid#MoreSuggestionsRoot > Grid > TextBlock#MoreSuggestionsListHeaderText", {
+        L"Margin=22,6,12,7",
+        L"FontWeight=Normal",
+        L"Text=Recent Files & Apps"}},
+    ThemeTargetStyles{L"StartMenu.StartHome > Grid#PageRoot > Grid#MoreSuggestionsRoot > Button#HideMoreSuggestionsButton", {
+        L"Margin=0,23,8,0"}},
+    ThemeTargetStyles{L"StartMenu.PinnedList#StartMenuPinnedList > Grid#Root", {
+        L"Margin=1,0,1,-67",
+        L"Padding=31,32,-9,31",
+        L"Canvas.ZIndex=-99",
+        L"Background:=<SolidColorBrush Color=\"{ThemeResource SystemChromeAutoOverlayColor}\" />",
+        L"BorderBrush:=#19000000",
+        L"BorderThickness=0,1,0,0",
+        L"CornerRadius=0,0,8,8"}},
+    ThemeTargetStyles{L"StartMenu.PinnedList#StartMenuPinnedList", {
+        L"Margin=0,0,0,80"}},
+    ThemeTargetStyles{L"StartMenu.StartHome > Grid#PageRoot > SemanticZoom#TopLevelRoot > Grid > ScrollViewer#ScrollViewer > ScrollContentPresenter#ScrollContentPresenter > Grid > ContentPresenter#ZoomedInPresenter > GridView#AllAppsGrid > Border > ScrollViewer#ScrollViewer > Border#Root > Grid > ScrollContentPresenter#ScrollContentPresenter > ItemsPresenter > ContentControl > ContentPresenter > Grid#TopLevelHeader > Grid#TopLevelSuggestionsRoot > Grid#ShowMoreSuggestions > Button#ShowMoreSuggestionsButton", {
+        L"Margin=0,0,8,0"}},
+    ThemeTargetStyles{L"GridView#RecommendedList > Border > ScrollViewer#ScrollViewer > Border#Root > Grid > ScrollContentPresenter#ScrollContentPresenter > ItemsPresenter > ItemsWrapGrid > GridViewItem", {
+        L"Margin=0,0,16,0"}},
+    ThemeTargetStyles{L"ListView#RecommendedList", {
+        L"Margin=0,0,0,0",
+        L"HorizontalAlignment=1"}},
+    ThemeTargetStyles{L"ListView#RecommendedList > Border > ScrollViewer#ScrollViewer > Border#Root > Grid > ScrollContentPresenter#ScrollContentPresenter > ItemsPresenter > ItemsStackPanel", {
+        L"Margin=0,1,0,0",
+        L"Width=Auto",
+        L"HorizontalAlignment=3"}},
+    ThemeTargetStyles{L"ListView#RecommendedList > Border > ScrollViewer#ScrollViewer > Border#Root > Grid > ScrollContentPresenter#ScrollContentPresenter > ItemsPresenter > ItemsStackPanel > ListViewItem", {
+        L"Margin=0,8,0,0",
+        L"Width=10",
+        L"HorizontalAlignment=1"}},
+    ThemeTargetStyles{L"ListView#RecommendedList > Border > ScrollViewer#ScrollViewer > Border#Root > Grid > ScrollContentPresenter#ScrollContentPresenter > ItemsPresenter > ItemsStackPanel > ListViewItem > Grid#ContentBorder@CommonStates > Border#BorderBackground", {
+        L"BorderThickness=1",
+        L"Background:=transparent",
+        L"Background@PointerOver:=$NormalBtn",
+        L"Background@Pressed:=$PressedBtn",
+        L"BorderBrush:=transparent",
+        L"BorderBrush@PointerOver:=$ButtonBorderAlt",
+        L"BorderBrush@Pressed:=$ButtonBorderAlt",
+        L"BackgroundTransition:=<BrushTransition Duration=\"0:0:0.083\" />",
+        L"BackgroundSizing=InnerBorderEdge"}},
+    ThemeTargetStyles{L"Grid@CommonStates > Border#BorderBackground", {
+        L"BorderThickness=1",
+        L"Style@PointerOver:=<Style TargetType=\"Border\"><Setter Property=\"BorderBrush\" Value=\"{ThemeResource ControlElevationBorderBrush}\"/></Style>",
+        L"Style@Pressed:=<Style TargetType=\"Border\"><Setter Property=\"BorderBrush\" Value=\"{ThemeResource ControlFillColorTertiary}\"/></Style>",
+        L"BackgroundTransition:=<BrushTransition Duration=\"0:0:0.083\" />",
+        L"BackgroundSizing=InnerBorderEdge"}},
+    ThemeTargetStyles{L"StartDocked.UserTileView#UserTile", {
+        L"Width=40",
+        L"Margin=0",
+        L"Padding=0",
+        L"ActualWidth=>UserTileWidth",
+        L"HorizontalAlignment=Left"}},
+    ThemeTargetStyles{L"Grid#UserTileIcon > Windows.UI.Xaml.Shapes.Ellipse", {
+        L"Visibility=0"}},
+    ThemeTargetStyles{L"Grid#UserTileIcon", {
+        L"Visibility=0",
+        L"Grid.Column=0"}},
+    ThemeTargetStyles{L"TextBlock#UserTileNameText", {
+        L"Grid.Column=0",
+        L"Visibility=1",
+        L"Margin=0,0,0,0",
+        L"FontSize=16",
+        L"FontFamily=Segoe Fluent Icons",
+        L"Text=>Username",
+        L"Width=32",
+        L"HorizontalAlignment=Center",
+        L"TextAlignment=Center"}},
+    ThemeTargetStyles{L"StartDocked.NavigationPaneButton#UserTileButton", {
+        L"Padding=3,0,3,0"}},
+    ThemeTargetStyles{L"StartMenu.StartHome > Grid#PageRoot > SemanticZoom#TopLevelRoot > Grid > ScrollViewer#ScrollViewer > ScrollContentPresenter#ScrollContentPresenter", {
+        L"Padding=0,0,0,63",
+        L"Margin=0,50,0,-63"}},
+    ThemeTargetStyles{L"Grid#RightCompanionContainerGrid > StartMenu.StartMenuCompanion#RightCompanion > Grid#CompanionRoot > Grid#MainContent > Border#AcrylicOverlay", {
+        L"Margin=0,164,0,0",
+        L"BorderThickness=0,1",
+        L"CornerRadius=0",
+        L"Visibility=0",
+        L"Height=Auto",
+        L"VerticalAlignment=3"}},
+    ThemeTargetStyles{L"Grid#RightCompanionContainerGrid", {
+        L"ActualWidth=>RightCompanionWidth",
+        L"Visibility=>RightCompanionVisibility"}},
+    ThemeTargetStyles{L"Grid#NavPanePlaceholder > StartDocked.NavigationPaneView#UserControl > Grid#RootPanel > StackPanel[Tag=WH_SMB_Container] > Button", {
+        L"Margin=0,0,0,0"}},
+    ThemeTargetStyles{L"StartDocked.AppListView#NavigationPanePlacesListView > Border > ScrollViewer#ScrollViewer > Border#Root > Grid > ScrollContentPresenter#ScrollContentPresenter > ItemsPresenter > ItemsStackPanel > ListViewItem", {
+        L"Margin=0,0,4,0"}},
+    ThemeTargetStyles{L"StartDocked.AppListView#NavigationPanePlacesListView > Border > ScrollViewer#ScrollViewer > Border#Root > Grid > ScrollContentPresenter#ScrollContentPresenter > ItemsPresenter > ItemsStackPanel", {
+        L"HorizontalAlignment=1",
+        L"Width=Auto",
+        L"GroupPadding=0,0,-4,0"}},
+    ThemeTargetStyles{L"StartDocked.AppListView#NavigationPanePlacesListView > Border > ScrollViewer#ScrollViewer > Border#Root > Grid > ScrollContentPresenter#ScrollContentPresenter > ItemsPresenter", {
+        L"HorizontalAlignment=1",
+        L"Width=Auto"}},
+    ThemeTargetStyles{L"StartDocked.AppListView#NavigationPanePlacesListView > Border > ScrollViewer#ScrollViewer > Border#Root > Grid > ScrollContentPresenter#ScrollContentPresenter", {
+        L"HorizontalAlignment=1",
+        L"Width=Auto"}},
+    ThemeTargetStyles{L"StartDocked.AppListView#NavigationPanePlacesListView > Border > ScrollViewer#ScrollViewer > Border#Root > Grid", {
+        L"HorizontalAlignment=1",
+        L"Width=Auto"}},
+    ThemeTargetStyles{L"StartDocked.AppListView#NavigationPanePlacesListView > Border > ScrollViewer#ScrollViewer > Border#Root", {
+        L"HorizontalAlignment=1",
+        L"Width=Auto"}},
+    ThemeTargetStyles{L"StartDocked.AppListView#NavigationPanePlacesListView > Border > ScrollViewer#ScrollViewer", {
+        L"HorizontalAlignment=1",
+        L"Width=Auto",
+        L"ExtentHeight=Infinity",
+        L"ViewportHeight=Infinity",
+        L"ExtentWidth=Infinity",
+        L"ViewportWidth=Infinity"}},
+    ThemeTargetStyles{L"StartDocked.AppListView#NavigationPanePlacesListView > Border", {
+        L"HorizontalAlignment=1",
+        L"Width=Auto"}},
+    ThemeTargetStyles{L"StartDocked.PowerOptionsView#PowerButton > StartDocked.NavigationPaneButton#PowerButton", {
+        L"Margin=0,0,0,0"}},
+    ThemeTargetStyles{L"StartDocked.PowerOptionsView#PowerButton", {
+        L"Visibility=0"}},
+    ThemeTargetStyles{L"StartDocked.NavigationPaneButton > Grid@CommonStates > Border#BackgroundBorder", {
+        L"BorderBrush:=$ButtonBorderAlt",
+        L"BorderBrush@Normal:=transparent",
+        L"BorderThickness=1",
+        L"Background:=transparent",
+        L"Background@PointerOver:=$NormalBtn",
+        L"Background@Pressed:=$PressedBtn",
+        L"BackgroundTransition:=<BrushTransition Duration=\"0:0:0.083\" />",
+        L"BackgroundSizing=InnerBorderEdge",
+        L"Opacity=1"}},
+    ThemeTargetStyles{L"Grid#ContentBorder@CommonStates > Border#BackgroundBorder", {
+        L"BorderBrush:=$ButtonBorderAlt",
+        L"BorderBrush@Normal:=transparent",
+        L"BorderThickness=1",
+        L"Background:=transparent",
+        L"Background@PointerOver:=$NormalBtn",
+        L"Background@Pressed:=$PressedBtn",
+        L"BackgroundTransition:=<BrushTransition Duration=\"0:0:0.083\" />",
+        L"BackgroundSizing=InnerBorderEdge",
+        L"Opacity=1"}},
+    ThemeTargetStyles{L"Button > ContentPresenter@CommonStates", {
+        L"BorderBrush:=$ButtonBorderAlt",
+        L"BorderBrush@Normal:=transparent",
+        L"BorderThickness=1",
+        L"Background:=transparent",
+        L"Background@PointerOver:=$NormalBtn",
+        L"Background@Pressed:=$PressedBtn",
+        L"BackgroundTransition:=<BrushTransition Duration=\"0:0:0.083\" />",
+        L"BackgroundSizing=InnerBorderEdge",
+        L"Opacity=1"}},
+    ThemeTargetStyles{L"Button > Grid@CommonStates > Border#BackgroundBorder", {
+        L"Background:=$NormalBtn",
+        L"Background@PointerOver:=$PointerOverBtn",
+        L"Background@Pressed:=$PressedBtn",
+        L"BorderBrush:=$ButtonBorderAlt",
+        L"BorderThickness=1",
+        L"BackgroundTransition:=<BrushTransition Duration=\"0:0:0.083\" />",
+        L"BackgroundSizing=InnerBorderEdge",
+        L"Opacity=1"}},
+    ThemeTargetStyles{L"StartMenu.StartMenuCompanion#RightCompanion > Grid#CompanionRoot > Grid#MainContent > Grid#ActionsBar > Button", {
+        L"Margin=12,0,0,0"}},
+    ThemeTargetStyles{L"StartMenu.StartMenuCompanion#RightCompanion > Grid#CompanionRoot > Grid#MainContent > Grid#ActionsBar", {
+        L"Padding=12,0"}},
+    ThemeTargetStyles{L"StartMenu.FolderModal#StartFolderModal > Grid#Root > Border", {
+        L"Background:=$NativeAcrylic3",
+        L"BorderBrush:=$TaskbarBorderStroke",
+        L"BorderThickness=1",
+        L"CornerRadius=8"}},
+    ThemeTargetStyles{L"StartMenu.FolderModal#StartFolderModal > Grid#Root > ContentControl#ContentControl > ContentPresenter > StartMenu.UniversalTileContainer#UniversalTileContainer > Grid#GridViewContainer > Grid[2]", {
+        L"Margin=28,0,0,0"}},
+    ThemeTargetStyles{L"StartMenu.FolderModal#StartFolderModal > Grid#Root > ContentControl#ContentControl > ContentPresenter > StartMenu.UniversalTileContainer#UniversalTileContainer > Grid#GridViewContainer > Grid#FolderLabels", {
+        L"Margin=0,-24,0,8"}},
+    ThemeTargetStyles{L"TextBox > Grid@CommonStates > Border#BorderElement", {
+        L"Background@PointerOver:=$NormalBtn",
+        L"Background@Pressed:=$PressedBtn",
+        L"BorderBrush@PointerOver:=$ButtonBorderAlt",
+        L"BorderBrush@Pressed:=$ButtonBorderAlt",
+        L"BorderBrush@Normal:=transparent",
+        L"BackgroundTransition:=<BrushTransition Duration=\"0:0:0.083\" />",
+        L"BackgroundSizing=InnerBorderEdge"}},
+    ThemeTargetStyles{L"TextBlock#TopLevelSuggestionsListHeaderText", {
+        L"Margin=71,6,12,7",
+        L"FontWeight=Normal",
+        L"Text=Recent Files & Apps"}},
+    ThemeTargetStyles{L"TextBlock#PinnedListHeaderText", {
+        L"Margin=20,14,12,15",
+        L"FontWeight=Normal"}},
+    ThemeTargetStyles{L"Grid#QueryFormulationRoot", {
+        L"Margin=0,5,0,0"}},
+    ThemeTargetStyles{L"GridView#AllAppsGrid > Border > ScrollViewer#ScrollViewer > Border#Root > Grid > ScrollContentPresenter#ScrollContentPresenter > ItemsPresenter > ContentControl > ContentPresenter > Grid#TopLevelHeader > Grid#AllListHeading", {
+        L"Margin=0,12,0,0"}},
+    ThemeTargetStyles{L"GridView#AllAppsGrid > Border > ScrollViewer#ScrollViewer > Border#Root > Grid > Grid", {
+        L"Visibility=1",
+        L"Grid.Column=0",
+        L"Padding=0",
+        L"Width=0",
+        L"Height=0"}},
+    ThemeTargetStyles{L"GridView#AllAppsGrid > Border > ScrollViewer#ScrollViewer > Border#Root > Grid > ScrollContentPresenter#ScrollContentPresenter > ItemsPresenter > ItemsWrapGrid", {
+        L"Background:=<SolidColorBrush Color=\"{ThemeResource SystemChromeAutoOverlayColor}\" />",
+        L"BorderBrushProtected:=#19000000",
+        L"BorderThicknessProtected=0,1,0,0",
+        L"CornerRadiusProtected=0,0,8,8",
+        L"Margin=1,0,1,1",
+        L"GroupPadding=52,14,26,14",
+        L"VerticalAlignment=Top",
+        L"ActualHeight=>AAGHeight"}},
+    ThemeTargetStyles{L"GridView#AllAppsGrid > Border > ScrollViewer#ScrollViewer > Border#Root > Grid > ScrollContentPresenter#ScrollContentPresenter > ItemsPresenter > ContentControl > ContentPresenter > Grid#TopLevelHeader > Grid#AllListHeading", {
+        L"CornerRadius=8,8,8,8",
+        L"BorderBrush:=$FloatBorder",
+        L"BorderThickness=1,1,1,1",
+        L"Background:=$NativeAcrylic2",
+        L"MinHeight=50",
+        L"Grid.RowSpan=40",
+        L"Height={{50 + AAGHeight}}",
+        L"Margin=0,12,0,{{-1* AAGHeight}}",
+        L"Padding=0,0,0,0"}},
+    ThemeTargetStyles{L"GridView#AllAppsGrid > Border > ScrollViewer#ScrollViewer > Border#Root > Grid > ScrollContentPresenter#ScrollContentPresenter > ItemsPresenter > ItemsWrapGrid", {
+        L"MaximumRowsOrColumns:="}},
+    ThemeTargetStyles{L"TextBlock#AllListHeadingText", {
+        L"Margin=24,15,0,0",
+        L"VerticalAlignment=Top",
+        L"HorizontalAlignment=3",
+        L"FontWeight=Normal",
+        L"Text=All Apps"}},
+    ThemeTargetStyles{L"Microsoft.UI.Xaml.Controls.DropDownButton#ViewSelectionButton > Grid@CommonStates", {
+        L"Background:=$NormalBtn",
+        L"Background@PointerOver:=$PointerOverBtn",
+        L"Background@Pressed:=$PressedBtn",
+        L"BorderBrush:=$ButtonBorderAlt",
+        L"BorderThickness=1",
+        L"BackgroundTransition:=<BrushTransition Duration=\"0:0:0.083\" />",
+        L"BackgroundSizing=InnerBorderEdge"}},
+    ThemeTargetStyles{L"Microsoft.UI.Xaml.Controls.DropDownButton#ViewSelectionButton", {
+        L"Margin=0,8,7,0",
+        L"VerticalAlignment=Top",
+        L"HorizontalAlignment=Right"}},
+    ThemeTargetStyles{L"ContentPresenter > Button > Grid@CommonStates > Border#BackgroundBorder", {
+        L"Margin=0,0",
+        L"BorderThickness=1",
+        L"Background:=transparent",
+        L"Background@PointerOver:=$NormalBtn",
+        L"Background@Pressed:=$PressedBtn",
+        L"BorderBrush:=transparent",
+        L"BorderBrush@PointerOver:=$ButtonBorderAlt",
+        L"BorderBrush@Pressed:=$ButtonBorderAlt",
+        L"BackgroundTransition:=<BrushTransition Duration=\"0:0:0.083\" />",
+        L"BackgroundSizing=InnerBorderEdge"}},
+    ThemeTargetStyles{L"Button#SeeAllButton", {
+        L"Margin=0,8,0,0"}},
+    ThemeTargetStyles{L"StartMenu.CategoryControl > Grid#RootGrid > Border", {
+        L"BorderThickness=1",
+        L"BorderBrush:=$ButtonBorderAlt",
+        L"Background:=$NormalBtn",
+        L"CornerRadius=4"}},
+    ThemeTargetStyles{L"ContentPresenter#ZoomedOutPresenter", {
+        L"Margin=12,14,12,24",
+        L"Background:=$NativeAcrylic2",
+        L"BorderBrush:=$TaskbarBorderStroke",
+        L"BorderThickness=1",
+        L"CornerRadius=8",
+        L"ContentTransitions:=<TransitionCollection><NavigationThemeTransition /></TransitionCollection>"}},
+    ThemeTargetStyles{L"TextBlock#ZoomedOutHeading", {
+        L"Margin=36,79,0,-79",
+        L"FontWeight=Normal",
+        L"Text=All Apps Category"}},
+    ThemeTargetStyles{L"Button#ZoomInButton", {
+        L"Margin=0,73,22,-50"}},
+    ThemeTargetStyles{L"Button#ZoomOutButton", {
+        L"Margin=0,40,0,0",
+        L"HorizontalAlignment=Center",
+        L"VerticalAlignment=Center",
+        L"Visibility=1",
+        L"Canvas.ZIndex=99",
+        L"Height=32",
+        L"Width=32",
+        L"FontSize=16",
+        L"Opacity=1",
+        L"UseSystemFocusVisuals=0",
+        L"BackgroundSizing=InnerBorderEdge"}},
+    ThemeTargetStyles{L"ContentPresenter#ZoomedOutPresenter > ListView#ZoomedOutListView > Border > ScrollViewer#ScrollViewer > Border#Root > Grid > ScrollContentPresenter#ScrollContentPresenter > ItemsPresenter > ItemsWrapGrid", {
+        L"Background:=<SolidColorBrush Color=\"{ThemeResource SystemChromeAutoOverlayColor}\" />",
+        L"BorderBrushProtected:=#19000000",
+        L"BorderThicknessProtected=1,1,1,1",
+        L"CornerRadiusProtected=4,4,4,4",
+        L"GroupPadding=0,0,8,8"}},
+    ThemeTargetStyles{L"ContentPresenter#ZoomedOutPresenter > ListView#ZoomedOutListView > Border > ScrollViewer#ScrollViewer > Border#Root > Grid > ScrollContentPresenter#ScrollContentPresenter > ItemsPresenter > ItemsWrapGrid > ListViewItem > Grid#ContentBorder@CommonStates > Border#BorderBackground", {
+        L"BorderBrush:=$ButtonBorderAlt",
+        L"BorderBrush@Normal:=transparent",
+        L"BorderThickness=1",
+        L"Background:=transparent",
+        L"Background@PointerOver:=$NormalBtn",
+        L"Background@Pressed:=$PressedBtn",
+        L"BackgroundTransition:=<BrushTransition Duration=\"0:0:0.083\" />",
+        L"BackgroundSizing=InnerBorderEdge",
+        L"Margin=0,0,0,0"}},
+    ThemeTargetStyles{L"ContentPresenter#ZoomedOutPresenter > ListView#ZoomedOutListView > Border > ScrollViewer#ScrollViewer > Border#Root > Grid > ScrollContentPresenter#ScrollContentPresenter > ItemsPresenter > ItemsWrapGrid > ListViewItem", {
+        L"Margin=8,8,0,0"}},
+    ThemeTargetStyles{L"Cortana.UI.Views.TaskbarSearchPage > Grid#RootGrid@SearchBoxLocationStates", {
+        L"Tag=0",
+        L"Tag@SearchBoxOnBottom=1",
+        L"Tag@SearchBoxOnBottomWithoutQFMargin=1",
+        L"Tag=>SearchBoxLocation"}},
+    ThemeTargetStyles{L"Grid#GleamContainer", {
+        L"Visibility=0",
+        L"Grid.Column=0",
+        L"Grid.ColumnSpan=2",
+        L"HorizontalAlignment=2",
+        L"Height=32",
+        L"Width=32",
+        L"Padding=0",
+        L"CornerRadius=3"}},
+    ThemeTargetStyles{L"Button#GleamButton", {
+        L"Visibility=0",
+        L"Height=32",
+        L"Width=32",
+        L"Background:=#09FFFFFF"}},
+    ThemeTargetStyles{L"Grid#SearchBoxOnTaskbarGleamContainer", {
+        L"Visibility=1",
+        L"IsHitTestVisible=0",
+        L"Grid.Column=0",
+        L"Grid.ColumnSpan=2",
+        L"HorizontalAlignment=2",
+        L"Canvas.ZIndex=0"}},
+    ThemeTargetStyles{L"Grid#SearchBoxOnTaskbarGleamImageContainer", {
+        L"IsHitTestVisible=0",
+        L"Margin=0,0,1,0",
+        L"CornerRadius=0,3,3,0"}},
+    ThemeTargetStyles{L"Image#SearchBoxOnTaskbarGleamImage", {
+        L"Height=32",
+        L"ActualWidth=>SearchBoxOnTaskbarGleamImage_ActualWidth"}},
+    ThemeTargetStyles{L"Grid#GleamContainer > Button#GleamButton > Grid#GleamBackplate > ContentPresenter > Image", {
+        L"Height=32",
+        L"Width=32",
+        L"Margin=0,0,-4,-4",
+        L"Visibility=1"}},
+    ThemeTargetStyles{L"Grid#GleamContainer > Button#GleamButton > Grid#GleamBackplate", {
+        L"Margin=0,4,4,4",
+        L"Height=Max",
+        L"Width=Max",
+        L"Visibility=1"}},
+    ThemeTargetStyles{L"Grid#GleamContainer > Button#GleamButton > Grid#GleamBackplate@CommonStates > ContentPresenter", {
+        L"CornerRadius=4",
+        L"BorderBrush:=$ButtonBorderAlt",
+        L"BorderBrush@Normal:=transparent",
+        L"BorderThickness=1",
+        L"Foreground@Normal:=<SolidColorBrush Color=\"{ThemeResource InactiveFontColor}\" />",
+        L"Background:=transparent",
+        L"Background@PointerOver:=$NormalBtn",
+        L"Background@Pressed:=$PressedBtn",
+        L"BackgroundTransition:=<BrushTransition Duration=\"0:0:0.083\" />",
+        L"BackgroundSizing=InnerBorderEdge",
+        L"Visibility=0",
+        L"Content=\uF6FA",
+        L"FontFamily=Segoe Fluent Icons",
+        L"FontSize=16",
+        L"HorizontalContentAlignment=1",
+        L"VerticalContentAlignment=1",
+        L"ToolTipService.ToolTip=Web search is enabled",
+        L"Visibility=>GleamButtonVisibility",
+        L"Tag={{18 * ((GleamButtonVisibility - 1) * -1)}}",
+        L"Tag=>WebSearchEnabled"}},
+    ThemeTargetStyles{L"Cortana.UI.Views.CortanaRichSearchBox#SearchTextBox > Grid > ScrollViewer#ContentElement > Border#Root > Grid > ScrollContentPresenter#ScrollContentPresenter > Windows.UI.Xaml.Internal.TextBoxView", {
+        L"Margin=0,0,{{WebSearchEnabled + 0}},0"}},
+    ThemeTargetStyles{L"SemanticZoom#TopLevelRoot > Grid > ScrollViewer#ScrollViewer > ScrollContentPresenter#ScrollContentPresenter", {
+        L"Padding=0"}},
+    ThemeTargetStyles{L"StartDocked.AppListView#NavigationPanePlacesListView", {
+        L"Grid.Column=0",
+        L"HorizontalAlignment=Center",
+        L"Width=Auto",
+        L"Margin=0,0,0,0",
+        L"Grid.ColumnSpan=999"}},
+    ThemeTargetStyles{L"Grid#TopLevelHeader > Grid#PinnedListHeaderGrid > ContentControl#CustomInjectedPresenter > Grid > ContentPresenter", {
+        L"Content:=<Border x:Name=\"Shadow\" Background=\"#00FFFFFF\" BorderBrush=\"transparent\" BorderThickness=\"0\" CornerRadius=\"8\" BackgroundSizing=\"InnerBorderEdge\" Translation=\"0,0,32\" Shadow=\"{StaticResource HoverFlyoutBackgroundShadow}\" Margin=\"24,24,24,24\"></Border>"}},
+    ThemeTargetStyles{L"Grid#TopLevelHeader > Grid#PinnedListHeaderGrid > ContentControl#CustomInjectedPresenter", {
+        L"Canvas.ZIndex=99"}},
+    ThemeTargetStyles{L"Grid#TopLevelHeader > Grid#ShowMorePinnedGrid > ContentControl#CustomInjectedPresenter > Grid@CommonStates > ContentPresenter", {
+        L"Background:=$NormalBtn",
+        L"Background@Disabled:=transparent",
+        L"Background@PointerOver:=$PointerOverBtn",
+        L"Background@Pressed:=$PressedBtn",
+        L"BorderBrush:=$ButtonBorderAlt",
+        L"BorderBrush@Disabled:=transparent",
+        L"BorderBrush@PointerOver:=$ButtonBorderAlt",
+        L"BorderBrush@Pressed:=$ButtonBorderAlt",
+        L"BorderThickness=1",
+        L"BackgroundTransition:=<BrushTransition Duration=\"0:0:0.083\" />",
+        L"BackgroundSizing=InnerBorderEdge",
+        L"CornerRadius=4",
+        L"Height=32",
+        L"Width=32",
+        L"HorizontalAlignment=Center",
+        L"VerticalAlignment=Center",
+        L"HorizontalContentAlignment=Center",
+        L"VerticalContentAlignment=Center",
+        L"Content=\uE840",
+        L"FontSize=16",
+        L"FontWeight=Normal",
+        L"FontFamily=Segoe Fluent Icons"}},
+    ThemeTargetStyles{L"Grid#TopLevelHeader > Grid#ShowMorePinnedGrid > ContentControl#CustomInjectedPresenter > Grid", {
+        L"Height=32",
+        L"Width=32",
+        L"HorizontalAlignment=Center",
+        L"VerticalAlignment=Center"}},
+    ThemeTargetStyles{L"Grid#TopLevelHeader > Grid#ShowMorePinnedGrid > ContentControl#CustomInjectedPresenter", {
+        L"Height=32",
+        L"Width=32",
+        L"Grid.Column=1",
+        L"Grid.ColumnSpan=1",
+        L"Canvas.ZIndex=99",
+        L"HorizontalAlignment=Center",
+        L"VerticalAlignment=Center"}},
+    ThemeTargetStyles{L"Grid#TopLevelHeader > Grid#ShowMorePinnedGrid > Button", {
+        L"Grid.Column=2"}},
+    ThemeTargetStyles{L"Grid#TopLevelHeader > Grid#ShowMorePinnedGrid", {
+        L"ColumnDefinitions:=<ColumnDefinitionCollection><ColumnDefinition Width=\"Auto\"/><ColumnDefinition Width=\"Auto\"/><ColumnDefinition Width=\"Auto\"/><ColumnDefinition Width=\"Auto\"/></ColumnDefinitionCollection>"}},
+    ThemeTargetStyles{L"Grid#TopLevelHeader > Grid#TopLevelSuggestionsRoot > ContentControl#CustomInjectedPresenter", {
+        L"Visibility=1"}},
+    ThemeTargetStyles{L"Grid#TopLevelHeader > Grid#TopLevelSuggestionsRoot > Grid#ShowMoreSuggestions > ContentControl#CustomInjectedPresenter > Grid@CommonStates > ContentPresenter", {
+        L"Background:=$NormalBtn",
+        L"Background@Disabled:=transparent",
+        L"Background@PointerOver:=$PointerOverBtn",
+        L"Background@Pressed:=$PressedBtn",
+        L"BorderBrush:=$ButtonBorderAlt",
+        L"BorderBrush@Disabled:=transparent",
+        L"BorderBrush@PointerOver:=$ButtonBorderAlt",
+        L"BorderBrush@Pressed:=$ButtonBorderAlt",
+        L"BorderThickness=1",
+        L"BackgroundTransition:=<BrushTransition Duration=\"0:0:0.083\" />",
+        L"BackgroundSizing=InnerBorderEdge",
+        L"CornerRadius=4",
+        L"Height=32",
+        L"Width=32",
+        L"HorizontalAlignment=Center",
+        L"VerticalAlignment=Center",
+        L"HorizontalContentAlignment=Center",
+        L"VerticalContentAlignment=Center",
+        L"Content=\uE823",
+        L"FontSize=16",
+        L"FontWeight=Normal",
+        L"FontFamily=Segoe Fluent Icons"}},
+    ThemeTargetStyles{L"Grid#TopLevelHeader > Grid#TopLevelSuggestionsRoot > Grid#ShowMoreSuggestions > ContentControl#CustomInjectedPresenter > Grid", {
+        L"Height=Auto",
+        L"Width=Auto",
+        L"HorizontalAlignment=Center",
+        L"VerticalAlignment=Center"}},
+    ThemeTargetStyles{L"Grid#TopLevelHeader > Grid#TopLevelSuggestionsRoot > Grid#ShowMoreSuggestions > ContentControl#CustomInjectedPresenter", {
+        L"Height=Auto",
+        L"Width=Auto",
+        L"Grid.Column=1",
+        L"Grid.ColumnSpan=1",
+        L"Canvas.ZIndex=99",
+        L"HorizontalAlignment=Center",
+        L"VerticalAlignment=Center",
+        L"Margin=0,0,8,0"}},
+    ThemeTargetStyles{L"Grid#TopLevelHeader > Grid#TopLevelSuggestionsRoot > Grid#ShowMoreSuggestions > Button", {
+        L"Grid.Column=2"}},
+    ThemeTargetStyles{L"Grid#TopLevelHeader > Grid#TopLevelSuggestionsRoot > Grid#ShowMoreSuggestions", {
+        L"HorizontalAlignment=Right",
+        L"VerticalAlignment=Center",
+        L"Width=Auto",
+        L"Height=Auto",
+        L"ColumnDefinitions:=<ColumnDefinitionCollection><ColumnDefinition Width=\"Auto\"/><ColumnDefinition Width=\"Auto\"/><ColumnDefinition Width=\"Auto\"/><ColumnDefinition Width=\"Auto\"/></ColumnDefinitionCollection>"}},
+    ThemeTargetStyles{L"Grid#TopLevelHeader > Grid#AllListHeading > ContentControl#CustomInjectedPresenter > Grid@CommonStates > ContentPresenter", {
+        L"Background:=transparent",
+        L"Background@Normal:=$NormalBtn",
+        L"Background@PointerOver:=$PointerOverBtn",
+        L"Background@Pressed:=$PressedBtn",
+        L"BorderBrush:=transparent",
+        L"BorderBrush@Normal:=$ButtonBorderAlt",
+        L"BorderBrush@PointerOver:=$ButtonBorderAlt",
+        L"BorderBrush@Pressed:=$ButtonBorderAlt",
+        L"BorderThickness=1",
+        L"BackgroundTransition:=<BrushTransition Duration=\"0:0:0.083\" />",
+        L"BackgroundSizing=InnerBorderEdge",
+        L"CornerRadius=4",
+        L"Height=32",
+        L"Width=32",
+        L"HorizontalAlignment=Center",
+        L"VerticalAlignment=Center",
+        L"HorizontalContentAlignment=Center",
+        L"VerticalContentAlignment=Center",
+        L"Content=\uE71D",
+        L"FontSize=16",
+        L"FontWeight=Normal",
+        L"FontFamily=Segoe Fluent Icons"}},
+    ThemeTargetStyles{L"Grid#TopLevelHeader > Grid#AllListHeading > ContentControl#CustomInjectedPresenter > Grid", {
+        L"Height=32",
+        L"Width=32",
+        L"HorizontalAlignment=Center",
+        L"VerticalAlignment=Center"}},
+    ThemeTargetStyles{L"Grid#TopLevelHeader > Grid#AllListHeading > ContentControl#CustomInjectedPresenter", {
+        L"Height=32",
+        L"Width=32",
+        L"Grid.Column=1",
+        L"Grid.ColumnSpan=1",
+        L"Canvas.ZIndex=99",
+        L"HorizontalAlignment=Right",
+        L"VerticalAlignment=Top",
+        L"Margin=0,9,8,0"}},
+    ThemeTargetStyles{L"Grid#TopLevelHeader > Grid#AllListHeading > Microsoft.UI.Xaml.Controls.DropDownButton", {
+        L"Grid.Column=2"}},
+    ThemeTargetStyles{L"Grid#TopLevelHeader > Grid#AllListHeading", {
+        L"ColumnDefinitions:=<ColumnDefinitionCollection><ColumnDefinition Width=\"Auto\"/><ColumnDefinition Width=\"*\"/><ColumnDefinition Width=\"Auto\"/><ColumnDefinition Width=\"Auto\"/></ColumnDefinitionCollection>"}},
+    ThemeTargetStyles{L"StartMenu.StartBlendedFlexFrame > Grid#FrameRoot > Grid#AnimationRoot > ContentControl#CustomCompanionPresenter", {
+        L"Visibility=0",
+        L"HorizontalAlignment=1",
+        L"VerticalAlignment=3",
+        L"Width=Auto",
+        L"Height=Auto",
+        L"Grid.Column=0",
+        L"Grid.ColumnSpan=1"}},
+    ThemeTargetStyles{L"StartMenu.StartBlendedFlexFrame > Grid#FrameRoot > Grid#AnimationRoot > ContentControl#CustomCompanionPresenter > Grid", {
+        L"Background:=$NativeAcrylic2",
+        L"BorderBrush:=$FloatBorder",
+        L"BorderThickness=1",
+        L"CornerRadius=8",
+        L"Width=282",
+        L"Margin=12,0,12,24",
+        L"RowDefinitions:=<RowDefinitionCollection><RowDefinition Height=\"Auto\"/><RowDefinition Height=\"Auto\"/><RowDefinition Height=\"*\"/><RowDefinition Height=\"Auto\"/></RowDefinitionCollection>",
+        L"ActualHeight=>CustomCompanionHeight",
+        L"ActualWidth=>CustomCompanionWidth"}},
+    ThemeTargetStyles{L"StartMenu.StartBlendedFlexFrame > Grid#FrameRoot > Grid#AnimationRoot > ContentControl#CustomCompanionShadowPresenter", {
+        L"Visibility=0",
+        L"HorizontalAlignment=1",
+        L"VerticalAlignment=3",
+        L"Width=Auto",
+        L"Height=Auto",
+        L"Grid.Column=0",
+        L"Grid.ColumnSpan=1",
+        L"Canvas.ZIndex=-99",
+        L"IsHitTestVisible=0"}},
+    ThemeTargetStyles{L"StartMenu.StartBlendedFlexFrame > Grid#FrameRoot > Grid#AnimationRoot > ContentControl#CustomCompanionShadowPresenter > Grid", {
+        L"Width={{CustomCompanionWidth}}",
+        L"Padding=0,0,0,24"}},
+    ThemeTargetStyles{L"StartMenu.StartBlendedFlexFrame > Grid#FrameRoot > Grid#AnimationRoot > ContentControl#CustomCompanionShadowPresenter > Grid > ContentPresenter", {
+        L"Content:=<Grid x:Name=\"Shadow\" Margin=\"0,0,0,0\" CornerRadius=\"8\" Translation=\"0,0,32\"><Grid.Shadow><ThemeShadow><ThemeShadow.Receivers><Grid /></ThemeShadow.Receivers></ThemeShadow></Grid.Shadow></Grid>"}},
+    ThemeTargetStyles{L"StartMenu.StartBlendedFlexFrame > Grid#FrameRoot > Grid#AnimationRoot > ContentControl#CustomCompanionPresenter > Grid > ContentPresenter", {
+        L"Margin=0,0,0,0",
+        L"Background:=<SolidColorBrush Color=\"{ThemeResource SystemChromeAutoOverlayColor}\" />",
+        L"BorderBrush:=#19000000",
+        L"BorderThickness=0,1,0,0",
+        L"CornerRadius=0",
+        L"Grid.Row=2",
+        L"Grid.RowSpan=1",
+        L"VerticalAlignment=3",
+        L"Height=Auto",
+        L"Content:=<Grid x:Name=\"BigTilesGrid\" Padding=\"0,0,0,0\" Width=\"Auto\" Height=\"Auto\" HorizontalAlignment=\"3\" VerticalAlignment=\"3\" Margin=\"0,0,0,0\"></Grid>"}},
+    ThemeTargetStyles{L"StartMenu.StartBlendedFlexFrame > Grid#FrameRoot > Grid#AnimationRoot > ContentControl#CustomCompanionPresenter > Grid > ContentControl#BigTilesPresenter", {
+        L"Grid.Row=1",
+        L"Grid.RowSpan=1",
+        L"Height=272",
+        L"VerticalAlignment=1"}},
+    ThemeTargetStyles{L"StartMenu.StartBlendedFlexFrame > Grid#FrameRoot > Grid#AnimationRoot > ContentControl#CustomCompanionPresenter > Grid > ContentControl#BigTilesPresenter > Grid > ContentPresenter", {
+        L"Margin=8",
+        L"Background:=<SolidColorBrush Color=\"{ThemeResource SystemChromeAutoOverlayColor}\" />",
+        L"BorderBrush:=<LinearGradientBrush StartPoint=\"0.5,0\" EndPoint=\"0.5,1\"><GradientStop Offset=\"0\" Color=\"#04000000\"/><GradientStop Offset=\"1\" Color=\"#19000000\"/></LinearGradientBrush>",
+        L"BorderThickness=1,1,1,3",
+        L"CornerRadius=4",
+        L"HorizontalContentAlignment=3",
+        L"VerticalContentAlignment=3",
+        L"Padding=8,8,8,8",
+        L"Content:=<Grid x:Name=\"BigTilesGrid\" Padding=\"0,0,0,0\" Width=\"Auto\" Height=\"Auto\" HorizontalAlignment=\"3\" VerticalAlignment=\"Top\" Margin=\"0,0,0,0\"><FontIcon FontFamily=\"Segoe Fluent Icons\" Glyph=\"\uE944\" HorizontalAlignment=\"Center\" VerticalAlignment=\"Center\" FontSize=\"16\" Margin=\"0,0,0,0\" Grid.Column=\"1\" Grid.ColumnSpan=\"1\"/><TextBlock VerticalAlignment=\"Center\" HorizontalAlignment=\"Center\" Margin=\"0,0,0,0\" Grid.Column=\"2\" Grid.ColumnSpan=\"1\">Quick Launch</TextBlock></Grid>"}},
+    ThemeTargetStyles{L"StartMenu.StartBlendedFlexFrame > Grid#FrameRoot > Grid#AnimationRoot > ContentControl#CustomCompanionPresenter > Grid > ContentControl#BigTilesPresenter > Grid > ContentPresenter > Grid#BigTilesGrid", {
+        L"ColumnDefinitions:=<ColumnDefinitionCollection><ColumnDefinition Width=\"Auto\"/><ColumnDefinition Width=\"Auto\"/><ColumnDefinition Width=\"Auto\"/><ColumnDefinition Width=\"*\"/></ColumnDefinitionCollection>",
+        L"ColumnSpacing=8",
+        L"Padding=-4,0,0,0",
+        L"Grid.Column=1",
+        L"Grid.ColumnSpan=1"}},
+    ThemeTargetStyles{L"ContentControl#BigTilesPresenter > Grid > ContentPresenter > Grid#BigTilesGrid > ContentControl#BigTilesButton", {
+        L"HorizontalAlignment=3",
+        L"VerticalAlignment=Center",
+        L"Width=Auto",
+        L"Height=Auto",
+        L"Grid.Column=3",
+        L"Grid.ColumnSpan=999"}},
+    ThemeTargetStyles{L"ContentControl#BigTilesPresenter > Grid > ContentPresenter > Grid#BigTilesGrid > ContentControl#BigTilesButton > Grid", {
+        L"HorizontalAlignment=Right",
+        L"VerticalAlignment=Center",
+        L"Width=Auto",
+        L"Height=Auto"}},
+    ThemeTargetStyles{L"ContentControl#BigTilesPresenter > Grid > ContentPresenter > Grid#BigTilesGrid > ContentControl#BigTilesButton > Grid@CommonStates > ContentPresenter", {
+        L"Background:=transparent",
+        L"Background@PointerOver:=$NormalBtn",
+        L"Background@Pressed:=$PressedBtn",
+        L"BorderBrush:=transparent",
+        L"BorderBrush@PointerOver:=$ButtonBorderAlt",
+        L"BorderBrush@Pressed:=$ButtonBorderAlt",
+        L"BorderThickness=1",
+        L"BackgroundTransition:=<BrushTransition Duration=\"0:0:0.083\" />",
+        L"BackgroundSizing=InnerBorderEdge",
+        L"CornerRadius=4",
+        L"Height=24",
+        L"Width=40",
+        L"HorizontalAlignment=Right",
+        L"VerticalAlignment=Center",
+        L"HorizontalContentAlignment=Center",
+        L"VerticalContentAlignment=Center",
+        L"Content=\uE712",
+        L"FontSize=24",
+        L"FontWeight=Normal",
+        L"FontFamily=Segoe Fluent Icons"}},
+    ThemeTargetStyles{L"StartMenu.StartBlendedFlexFrame > Grid#FrameRoot > Grid#AnimationRoot > Grid#MainMenu > Grid#MainContent", {
+        L"Margin=-12,0"}},
+    ThemeTargetStyles{L"GridView#AllAppsGrid > Border > ScrollViewer#ScrollViewer > Border#Root > Grid > ScrollContentPresenter#ScrollContentPresenter > ItemsPresenter", {
+        L"Padding=12,0,12,24",
+        L"Margin=0,0,0,0",
+        L"Canvas.ZIndex=99"}},
+    ThemeTargetStyles{L"Grid#TopLevelHeader > ContentControl#PinnedListShadowPresenter", {
+        L"Grid.ColumnSpan=2",
+        L"Grid.Row=0",
+        L"Grid.RowSpan=2",
+        L"Margin=0,12,0,12",
+        L"Canvas.ZIndex=-99",
+        L"IsHitTestVisible=0"}},
+    ThemeTargetStyles{L"Grid#TopLevelHeader > ContentControl#PinnedListShadowPresenter > Grid > ContentPresenter", {
+        L"Content:=<Grid x:Name=\"Shadow\" Margin=\"0,0,0,0\" CornerRadius=\"8\" Translation=\"0,0,32\"><Grid.Shadow><ThemeShadow><ThemeShadow.Receivers><Grid /></ThemeShadow.Receivers></ThemeShadow></Grid.Shadow></Grid>"}},
+    ThemeTargetStyles{L"Grid#TopLevelHeader > ContentControl#RecommendedListShadowPresenter", {
+        L"Grid.ColumnSpan=2",
+        L"Grid.Row=2",
+        L"Grid.RowSpan=1",
+        L"Canvas.ZIndex=-99",
+        L"IsHitTestVisible=0"}},
+    ThemeTargetStyles{L"Grid#TopLevelHeader > ContentControl#RecommendedListShadowPresenter > Grid > ContentPresenter", {
+        L"Content:=<Grid x:Name=\"Shadow\" Margin=\"0,0,0,0\" CornerRadius=\"8\" Translation=\"0,0,32\"><Grid.Shadow><ThemeShadow><ThemeShadow.Receivers><Grid /></ThemeShadow.Receivers></ThemeShadow></Grid.Shadow></Grid>"}},
+    ThemeTargetStyles{L"Grid#TopLevelHeader > ContentControl#AllAppsListShadowPresenter", {
+        L"Grid.ColumnSpan=2",
+        L"Grid.Row=3",
+        L"Grid.RowSpan=1",
+        L"Height={{52 + AAGHeight}}",
+        L"Margin=0,12,0,{{-1* AAGHeight}}",
+        L"Canvas.ZIndex=-99",
+        L"IsHitTestVisible=0"}},
+    ThemeTargetStyles{L"Grid#TopLevelHeader > ContentControl#AllAppsListShadowPresenter > Grid > ContentPresenter", {
+        L"Content:=<Grid x:Name=\"Shadow\" Margin=\"0,0,0,0\" CornerRadius=\"8\" Translation=\"0,0,32\"><Grid.Shadow><ThemeShadow><ThemeShadow.Receivers><Grid /></ThemeShadow.Receivers></ThemeShadow></Grid.Shadow></Grid>"}},
+    ThemeTargetStyles{L"Button#CloseButton > ContentPresenter#ContentPresenter@CommonStates", {
+        L"Background@Normal:=$AccentColor1",
+        L"Background@PointerOver:=$AccentColor3",
+        L"Background@Pressed:=$AccentColor2",
+        L"BorderBrush@Normal:=$AccentColor1",
+        L"BorderBrush@PointerOver:=$AccentColor3",
+        L"BorderBrush@Pressed:=$AccentColor2"}},
+    ThemeTargetStyles{L"Button#CloseButton > ContentPresenter#ContentPresenter > TextBlock", {
+        L"Foreground:=<SolidColorBrush Color=\"{ThemeResource SystemAltHighColor}\" />"}},
+    ThemeTargetStyles{L"Button#PrimaryButton > ContentPresenter#ContentPresenter@CommonStates", {
+        L"Background@Normal:=$NormalBtn",
+        L"Background@PointerOver:=$PointerOverBtn",
+        L"Background@Pressed:=$PressedBtn",
+        L"BorderBrush:=$ButtonBorderAlt"}},
+    ThemeTargetStyles{L"Grid#RightCompanionContainerGrid > StartMenu.StartMenuCompanion#RightCompanion > Grid#CompanionRoot > Grid#MainContent", {
+        L"Padding=0,0,0,-14"}},
+    ThemeTargetStyles{L"Grid#ActionsBar", {
+        L"Height=48",
+        L"Padding=8,0,8,0",
+        L"Margin=0",
+        L"RowDefinitions:=<RowDefinitionCollection><RowDefinition Height=\"Auto\"/><RowDefinition Height=\"Auto\"/><RowDefinition Height=\"Auto\"/></RowDefinitionCollection>"}},
+    ThemeTargetStyles{L"Grid#ActionsBar > Button", {
+        L"Height=32",
+        L"Width=32",
+        L"Margin=8,0,0,0"}},
+    ThemeTargetStyles{L"Grid#ActionsBar > Button#PrimaryActionBarButton", {
+        L"HorizontalAlignment=Left",
+        L"Margin=0",
+        L"Width=Auto"}},
+    ThemeTargetStyles{L"Grid#ActionsBar > Button#PrimaryActionBarButton > Grid > ContentPresenter", {
+        L"Width=Auto",
+        L"Content:=<Grid x:Name=\"CustomLabel\" Width=\"Auto\" Height=\"Auto\" HorizontalAlignment=\"1\" VerticalAlignment=\"1\" Padding=\"8,4,8,4\" ><FontIcon FontFamily=\"Segoe Fluent Icons\" Glyph=\"\uE724\" HorizontalAlignment=\"1\" VerticalAlignment=\"1\" FontSize=\"16\" Margin=\"0,0,8,0\" Grid.Column=\"0\" /><TextBlock HorizontalAlignment=\"1\" VerticalAlignment=\"1\" Margin=\"0,0,0,0\" Grid.Column=\"1\" FontSize=\"14\" >Send Files</TextBlock></Grid>"}},
+    ThemeTargetStyles{L"Grid#ActionsBar > Button#PrimaryActionBarButton > Grid > ContentPresenter > Grid", {
+        L"ColumnDefinitions:=<ColumnDefinitionCollection><ColumnDefinition Width=\"Auto\"/><ColumnDefinition Width=\"Auto\"/></ColumnDefinitionCollection>",
+        L"Padding=7,0"}},
+    ThemeTargetStyles{L"Grid > ListView[AutomationProperties.Name=Features] > Border > ScrollViewer#ScrollViewer > Border#Root > Grid > ScrollContentPresenter#ScrollContentPresenter > ItemsPresenter > ItemsStackPanel > ListViewItem > Grid#ContentBorder@CommonStates > Border#BorderBackground", {
+        L"Background:=transparent",
+        L"Background@Normal:=$NormalBtn",
+        L"Background@PointerOver:=$PointerOverBtn",
+        L"Background@Pressed:=$PressedBtn",
+        L"BorderBrush:=transparent",
+        L"BorderBrush@Normal:=$ButtonBorderAlt",
+        L"BorderBrush@PointerOver:=$ButtonBorderAlt",
+        L"BorderBrush@Pressed:=$ButtonBorderAlt",
+        L"BorderThickness=1",
+        L"BackgroundTransition:=<BrushTransition Duration=\"0:0:0.083\" />",
+        L"BackgroundSizing=InnerBorderEdge",
+        L"CornerRadius=4"}},
+    ThemeTargetStyles{L"Grid > ListView[AutomationProperties.Name=Features] > Border > ScrollViewer#ScrollViewer > Border#Root > Grid > ScrollContentPresenter#ScrollContentPresenter > ItemsPresenter > ItemsStackPanel > ListViewItem", {
+        L"Height=80",
+        L"Width=100",
+        L"Margin=0"}},
+    ThemeTargetStyles{L"Grid > ListView[AutomationProperties.Name=Features] > * > ListViewItem[AutomationProperties.Name=Messages, new messages are available in Phone Link. Open Phone Link to view and send text messages]", {
+        L"Margin=-108,0,108,0"}},
+    ThemeTargetStyles{L"Grid > ListView[AutomationProperties.Name=Features] > * > ListViewItem[AutomationProperties.Name=Calls. Open Phone Link to view and make calls]", {
+        L"Margin=0,-80,0,0"}},
+    ThemeTargetStyles{L"Grid > ListView[AutomationProperties.Name=Features] > * > ListViewItem[AutomationProperties.Name=Photos. Open Phone Link to view photos from your mobile device]", {
+        L"Margin=108,-80,-108,0"}},
+    ThemeTargetStyles{L"Grid > ListView[AutomationProperties.Name=Features] > * > ListViewItem[AutomationProperties.Name=Send files. Select files to send to your mobile device]", {
+        L"Margin=-108,8,108,0"}},
+    ThemeTargetStyles{L"ListViewItem[AutomationProperties.Name=Messages, new messages are available in Phone Link. Open Phone Link to view and send text messages] > * > Grid > Border", {
+        L"Grid.Column=0",
+        L"Grid.ColumnSpan=6",
+        L"HorizontalAlignment=1",
+        L"Width=Auto"}},
+    ThemeTargetStyles{L"ListViewItem[AutomationProperties.Name=Messages, new messages are available in Phone Link. Open Phone Link to view and send text messages] > * > Image", {
+        L"HorizontalAlignment=1",
+        L"Width=Auto",
+        L"VerticalAlignment=Top",
+        L"Height=Auto",
+        L"Margin=0",
+        L"RenderTransform:=<TranslateTransform X=\"0\" Y=\"-12\" />"}},
+    ThemeTargetStyles{L"ListViewItem[AutomationProperties.Name=Messages, new messages are available in Phone Link. Open Phone Link to view and send text messages] > * > TextBlock", {
+        L"HorizontalAlignment=1",
+        L"Width=Auto",
+        L"VerticalAlignment=Bottom",
+        L"Height=Auto",
+        L"Margin=0,20",
+        L"RenderTransform:=<TranslateTransform X=\"0\" Y=\"14\" />"}},
+    ThemeTargetStyles{L"ListViewItem[AutomationProperties.Name=Messages, new messages are available in Phone Link. Open Phone Link to view and send text messages] > * > Border#BorderBackground", {
+        L"HorizontalAlignment=3"}},
+    ThemeTargetStyles{L"ListViewItem[AutomationProperties.Name=Calls. Open Phone Link to view and make calls] > * > Grid > Border", {
+        L"Grid.Column=0",
+        L"Grid.ColumnSpan=6",
+        L"HorizontalAlignment=1",
+        L"Width=Auto"}},
+    ThemeTargetStyles{L"ListViewItem[AutomationProperties.Name=Calls. Open Phone Link to view and make calls] > * > Image", {
+        L"HorizontalAlignment=1",
+        L"Width=Auto",
+        L"VerticalAlignment=Top",
+        L"Height=Auto",
+        L"Margin=0",
+        L"RenderTransform:=<TranslateTransform X=\"0\" Y=\"-12\" />"}},
+    ThemeTargetStyles{L"ListViewItem[AutomationProperties.Name=Calls. Open Phone Link to view and make calls] > * > TextBlock", {
+        L"HorizontalAlignment=1",
+        L"Width=Auto",
+        L"VerticalAlignment=Bottom",
+        L"Height=Auto",
+        L"Margin=0,20",
+        L"RenderTransform:=<TranslateTransform X=\"0\" Y=\"14\" />"}},
+    ThemeTargetStyles{L"ListViewItem[AutomationProperties.Name=Calls. Open Phone Link to view and make calls] > * > Border#BorderBackground", {
+        L"HorizontalAlignment=3"}},
+    ThemeTargetStyles{L"ListViewItem[AutomationProperties.Name=Photos. Open Phone Link to view photos from your mobile device] > * > Grid > Border", {
+        L"Grid.Column=0",
+        L"Grid.ColumnSpan=6",
+        L"HorizontalAlignment=1",
+        L"Width=Auto"}},
+    ThemeTargetStyles{L"ListViewItem[AutomationProperties.Name=Photos. Open Phone Link to view photos from your mobile device] > * > Image", {
+        L"HorizontalAlignment=1",
+        L"Width=Auto",
+        L"VerticalAlignment=Top",
+        L"Height=Auto",
+        L"Margin=0",
+        L"RenderTransform:=<TranslateTransform X=\"0\" Y=\"-12\" />"}},
+    ThemeTargetStyles{L"ListViewItem[AutomationProperties.Name=Photos. Open Phone Link to view photos from your mobile device] > * > TextBlock", {
+        L"HorizontalAlignment=1",
+        L"Width=Auto",
+        L"VerticalAlignment=Bottom",
+        L"Height=Auto",
+        L"Margin=0,20",
+        L"RenderTransform:=<TranslateTransform X=\"0\" Y=\"14\" />"}},
+    ThemeTargetStyles{L"ListViewItem[AutomationProperties.Name=Photos. Open Phone Link to view photos from your mobile device] > * > Border#BorderBackground", {
+        L"HorizontalAlignment=3"}},
+    ThemeTargetStyles{L"ListViewItem[AutomationProperties.Name=Send files. Select files to send to your mobile device] > * > Grid > Border", {
+        L"Grid.Column=0",
+        L"Grid.ColumnSpan=6",
+        L"HorizontalAlignment=1",
+        L"Width=Auto"}},
+    ThemeTargetStyles{L"ListViewItem[AutomationProperties.Name=Send files. Select files to send to your mobile device] > * > Image", {
+        L"HorizontalAlignment=1",
+        L"Width=Auto",
+        L"VerticalAlignment=Top",
+        L"Height=Auto",
+        L"Margin=0",
+        L"RenderTransform:=<TranslateTransform X=\"0\" Y=\"-12\" />"}},
+    ThemeTargetStyles{L"ListViewItem[AutomationProperties.Name=Send files. Select files to send to your mobile device] > * > TextBlock", {
+        L"HorizontalAlignment=1",
+        L"Width=Auto",
+        L"VerticalAlignment=Bottom",
+        L"Height=Auto",
+        L"Margin=0,20",
+        L"RenderTransform:=<TranslateTransform X=\"0\" Y=\"14\" />"}},
+    ThemeTargetStyles{L"ListViewItem[AutomationProperties.Name=Send files. Select files to send to your mobile device] > * > Border#BorderBackground", {
+        L"HorizontalAlignment=3"}},
+    ThemeTargetStyles{L"Grid > ListView[AutomationProperties.Name=Recent] > Border > ScrollViewer#ScrollViewer > Border#Root > Grid > ScrollContentPresenter#ScrollContentPresenter > ItemsPresenter > ItemsStackPanel > ListViewItem > Grid#ContentBorder@CommonStates > Border#BorderBackground", {
+        L"Background:=transparent",
+        L"Background@PointerOver:=$NormalBtn",
+        L"Background@Pressed:=$PressedBtn",
+        L"BorderBrush:=transparent",
+        L"BorderBrush@PointerOver:=$ButtonBorderAlt",
+        L"BorderBrush@Pressed:=$ButtonBorderAlt"}},
+    ThemeTargetStyles{L"Grid > ListView[AutomationProperties.Name=Recent]", {
+        L"Margin=0,-8,0,8"}},
+    ThemeTargetStyles{L"Grid > ListView[AutomationProperties.Name=Recent] > * > ListViewItem", {
+        L"Margin=0,8,0,0"}},
+    ThemeTargetStyles{L":root > ScrollViewer > ScrollContentPresenter[Tag=1] > Border", {
+        L"Background:=<WindhawkBlur BlurAmount=\"5\" TintColor=\"{ThemeResource SystemChromeMediumColor}\" TintOpacity=\"0\" TintLuminosityOpacity=\"0.5\" FallbackColor=\"#00FFFFFF\" />"}},
+}, {
+    L"NativeAcrylic1=<WindhawkBlur BlurAmount=\"20\" TintColor=\"{ThemeResource SystemChromeAutoColor}\"   TintOpacity=\"{ThemeResource NativeAcrylicOpacity}\"   TintLuminosityOpacity=\"0.93\"/>",
+    L"NativeAcrylic2=<AcrylicBrush x:Key=\"AcrylicBackgroundFillColorBaseBrush\"   TintColor=\"{ThemeResource SystemChromeAutoColor}\"   TintOpacity=\"{ThemeResource NativeAcrylicOpacity}\"   TintLuminosityOpacity=\"0.93\"   FallbackColor=\"{ThemeResource SystemChromeMediumColor}\"/>",
+    L"NativeAcrylic3=<AcrylicBrush x:Key=\"AcrylicBackgroundFillColorBaseBrush\"   TintColor=\"{ThemeResource SystemChromeAutoColor}\"   TintOpacity=\"0\"   TintLuminosityOpacity=\"0.93\"   FallbackColor=\"{ThemeResource SystemChromeMediumColor}\"/>",
+    L"TaskbarBorderStroke=<AcrylicBrush x:Key=\"AcrylicBackgroundFillColorBaseBrush\"   TintColor=\"#434343\"   TintOpacity=\"0\"   TintLuminosityOpacity=\"0.5\"   FallbackColor=\"#AA434343\"/>",
+    L"TaskbarBorderStrokeAlt=<WindhawkBlur BlurAmount=\"20\" TintColor=\"#FFFFFF\"  TintOpacity=\"0.15\"   TintLuminosityOpacity=\"0.5\" />",
+    L"FloatBorder=<SolidColorBrush Color=\"{ThemeResource SurfaceStrokeColorDefault}\" />",
+    L"ButtonBorder=<LinearGradientBrush x:Key=\"ShellTaskbarItemGradientStrokeColorSecondaryBrush\" MappingMode=\"Absolute\" StartPoint=\"0,0\" EndPoint=\"0,3\"><LinearGradientBrush.GradientStops><GradientStop Offset=\"0.33\" Color=\"{ThemeResource ControlFillColorSecondary}\" /><GradientStop Offset=\"1\" Color=\"{ThemeResource ControlFillColorTertiary}\" /></LinearGradientBrush.GradientStops></LinearGradientBrush>",
+    L"ButtonBorderAlt=<LinearGradientBrush x:Key=\"ControlElevationBorderBrush\" MappingMode=\"{ThemeResource GradientMappingMode}\" StartPoint=\"0,0\" EndPoint=\"0,3\"><GradientStop Offset=\"{ThemeResource ButtonBorderStopOffset1}\" Color=\"{ThemeResource ControlStrokeColorSecondary}\" /><GradientStop Offset=\"{ThemeResource ButtonBorderStopOffset2}\" Color=\"{ThemeResource ControlStrokeColorDefault}\" /></LinearGradientBrush>",
+    L"NormalBtn=<SolidColorBrush Color=\"{ThemeResource ControlFillColorDefault}\" />",
+    L"PointerOverBtn=<SolidColorBrush Color=\"{ThemeResource ControlFillColorSecondary}\" />",
+    L"PressedBtn=<SolidColorBrush Color=\"{ThemeResource ControlFillColorTertiary}\" />",
+    L"NormalBtnAlt=<SolidColorBrush Color=\"{ThemeResource ControlFillColorDefault}\" Opacity=\"0.75\" />",
+    L"PointerOverBtnAlt=<SolidColorBrush Color=\"{ThemeResource ControlFillColorSecondary}\" Opacity=\"0.75\" />",
+    L"PressedBtnAlt=<SolidColorBrush Color=\"{ThemeResource ControlFillColorTertiary}\" Opacity=\"0.75\" />",
+    L"Chrome=<SolidColorBrush Color=\"{ThemeResource Chrome}\" />",
+    L"AccentColor1=<SolidColorBrush Color=\"{ThemeResource AccentColor1}\" />",
+    L"AccentColor2=<SolidColorBrush Color=\"{ThemeResource AccentColor2}\" />",
+    L"AccentColor3=<SolidColorBrush Color=\"{ThemeResource AccentColor3}\" />",
+    L"EnableFullscreenStartMenu=0",
+}, {
+    L"GradientMappingMode@Dark=Absolute",
+    L"GradientMappingMode@Light=RelativeToBoundingBox",
+    L"ButtonBorderStartPoint@Dark=0,0",
+    L"ButtonBorderStartPoint@Light=0,0",
+    L"ButtonBorderEndPoint@Dark=0,3",
+    L"ButtonBorderEndPoint@Light=0,3",
+    L"ButtonBorderStopOffset1@Dark=0.33",
+    L"ButtonBorderStopOffset1@Light=0.33",
+    L"ButtonBorderStopOffset2@Dark=1",
+    L"ButtonBorderStopOffset2@Light=0.3",
+    L"ButtonBorderAltTop@Dark=#1DFFFFFF",
+    L"ButtonBorderAltTop@Light=#13000000",
+    L"ButtonBorderAltBottom@Dark=#13FFFFFF",
+    L"ButtonBorderAltBottom@Light=#8E000000",
+    L"AccentColor1@Dark={ThemeResource SystemAccentColorLight2}",
+    L"AccentColor1@Light={ThemeResource SystemAccentColorDark1}",
+    L"AccentColor2@Dark={ThemeResource SystemAccentColorLight1}",
+    L"AccentColor2@Light={ThemeResource SystemAccentColorDark2}",
+    L"AccentColor3@Dark={ThemeResource SystemAccentColorLight3}",
+    L"AccentColor3@Light={ThemeResource SystemAccentColorDark3}",
+    L"Chrome@Dark={ThemeResource SystemChromeMediumColor}",
+    L"Chrome@Light={ThemeResource SystemChromeLowColor}",
+    L"SystemChromeAutoAcrylicOverlayColor@Dark=#262626",
+    L"SystemChromeAutoAcrylicOverlayColor@Light=#F4F4F4",
+    L"SystemChromeAutoColor@Dark={ThemeResource SystemChromeMediumColor}",
+    L"SystemChromeAutoColor@Light={ThemeResource SystemChromeLowColor}",
+    L"SystemChromeAutoOverlayColor@Dark=#09FFFFFF",
+    L"SystemChromeAutoOverlayColor@Light=#40FFFFFF",
+    L"NativeAcrylicOpacity@Dark=0.5",
+    L"NativeAcrylicOpacity@Light=0",
+    L"NativeAcrylicLuminosity@Dark=0.96",
+    L"NativeAcrylicLuminosity@Light=0.9",
+    L"OtherButtonBorder@Dark=#20FFFFFF",
+    L"OtherButtonBorder@Light=#30000000",
+    L"InactiveFontColor@Dark=#9FFFFFFF",
+    L"InactiveFontColor@Light=#9F000000",
+}, {
+    ThemeTargetStyles{L".scope-with-background__backButton", {
+        L"display: none !important"}},
+    ThemeTargetStyles{L".scope-with-background__rightCaret, .scope-with-background__leftCaret", {
+        L"display: none !important"}},
+    ThemeTargetStyles{L"#rewardsBadgeButton", {
+        L"display: none !important"}},
+    ThemeTargetStyles{L".suggContainer", {
+        L"background-color: #FFFFFF00 !important",
+        L"border: 0px solid transparent !important",
+        L"margin: 1px !important",
+        L"border-radius: 4px !important",
+        L"box-shadow: none !important",
+        L"transition: background-color 83ms ease-in-out !important"}},
+    ThemeTargetStyles{L".suggContainer:hover", {
+        L"background-color: #FDFDFD85 !important",
+        L"box-shadow: 0 0 0 1px rgba(0,0,0,.06), 0 1px 0 rgba(0,0,0,.1) !important",
+        L"transition: background-color 83ms ease-in-out !important"}},
+    ThemeTargetStyles{L".darkTheme .suggContainer:hover", {
+        L"background-color: #FFFFFF10 !important",
+        L"box-shadow: 0 0 0 1px rgba(255,255,255,.07), 0 -1px 0 rgba(255,255,255,.02) !important"}},
+    ThemeTargetStyles{L".suggContainer:active", {
+        L"background-color: #FFFFFFDD !important",
+        L"box-shadow: 0 0 0 1px rgba(0,0,0,.06), 0 1px 0 rgba(0,0,0,.1) !important",
+        L"transition: background-color 83ms ease-in-out !important"}},
+    ThemeTargetStyles{L".darkTheme .suggContainer:active", {
+        L"background-color: #FFFFFF09 !important",
+        L"box-shadow: 0 0 0 1px rgba(255,255,255,.07), 0 -1px 0 rgba(255,255,255,.02) !important"}},
+    ThemeTargetStyles{L".groupHeader", {
+        L"background-color: #FFFFFF00 !important"}},
+    ThemeTargetStyles{L".suggDetailsContainer", {
+        L"background-color: #FFFFFF00 !important"}},
+    ThemeTargetStyles{L".openPreviewPaneBtn", {
+        L"background-color: #FFFFFF00 !important",
+        L"border: none !important",
+        L"border-radius: 0px 4px 4px 0px !important",
+        L"width: 48px !important",
+        L"transition: background-color 83ms ease-in-out !important"}},
+    ThemeTargetStyles{L".openPreviewPaneBtn:hover", {
+        L"background-color: #00000010 !important",
+        L"border: none !important"}},
+    ThemeTargetStyles{L".darkTheme .openPreviewPaneBtn:hover", {
+        L"background-color: #FFFFFF10 !important"}},
+    ThemeTargetStyles{L".openPreviewPaneBtn:active", {
+        L"background-color: #00000009 !important",
+        L"border: none !important"}},
+    ThemeTargetStyles{L".darkTheme .openPreviewPaneBtn:active", {
+        L"background-color: #FFFFFF09 !important"}},
+    ThemeTargetStyles{L"#qfPreviewPane", {
+        L"margin-top: 0px",
+        L"margin-bottom: 24px"}},
+    ThemeTargetStyles{L".previewContainer", {
+        L"border: solid 1px #00000069 !important",
+        L"background-color: #FFFFFFAA !important"}},
+    ThemeTargetStyles{L".darkTheme .previewContainer", {
+        L"border: solid 1px #00000069 !important",
+        L"background-color: #FFFFFF09 !important"}},
+    ThemeTargetStyles{L"#temporaryMessage:has(> .indexingMessage)", {
+        L"display: none !important"}},
+    ThemeTargetStyles{L".groupTitleSeeMore", {
+        L"display: none !important"}},
+    ThemeTargetStyles{L".topItemsGroup > .group > .suggsListContainer > .suggsList > .suggestion", {
+        L"border: solid 0px white !important",
+        L"background: #FFFFFF00 !important",
+        L"box-shadow: none !important"}},
+    ThemeTargetStyles{L".topItemsGroup > .group > .suggsListContainer", {
+        L"background: #FFFFFFAA !important",
+        L"border: solid 1px #00000069 !important",
+        L"border-radius: 8px !important",
+        L"padding-top: 8px !important",
+        L"padding-left: 8px !important",
+        L"padding-bottom: 10px !important",
+        L"padding-right: 8px !important"}},
+    ThemeTargetStyles{L".darkTheme .topItemsGroup > .group > .suggsListContainer", {
+        L"background: #FFFFFF09 !important",
+        L"border: solid 1px #00000069 !important"}},
+    ThemeTargetStyles{L".storeAppsGroup", {
+        L"display: none !important"}},
+    ThemeTargetStyles{L"#qfContainer", {
+        L"padding-right: 14px !important",
+        L"margin-top: 0px !important"}},
+    ThemeTargetStyles{L".suggestion", {
+        L"background-color: #FFFFFF00 !important",
+        L"border: none !important",
+        L"padding-right: 2px !important"}},
+    ThemeTargetStyles{L".suggestion.selectable.pointerCursor", {
+        L"border: none !important",
+        L"border-thickness: 0px !important",
+        L"background-color: #FFFFFF00 !important",
+        L"border-radius: 4px !important",
+        L"box-shadow: none !important"}},
+    ThemeTargetStyles{L".curatedSettingsGroup > .group > .suggsListContainer > .suggsList", {
+        L"border: solid 1px #00000069 !important",
+        L"background-color: #FFFFFFAA !important",
+        L"border-radius: 8px !important",
+        L"box-shadow: none !important"}},
+    ThemeTargetStyles{L".darkTheme .curatedSettingsGroup > .group > .suggsListContainer > .suggsList", {
+        L"border: solid 1px #00000069 !important",
+        L"background-color: #FFFFFF09 !important"}},
+    ThemeTargetStyles{L".resultsContainer", {
+        L"margin-top: 0px !important",
+        L"margin-bottom: 0px !important"}},
+    ThemeTargetStyles{L"#rootContainer", {
+        L"padding-top: 8px !important"}},
+    ThemeTargetStyles{L".scope-tile", {
+        L"margin-left: 0px !important",
+        L"margin-right: 4px !important"}},
+    ThemeTargetStyles{L".scope-tile > div", {
+        L"background: transparent !important",
+        L"border: solid 0px transparent !important",
+        L"border-radius: 4px !important",
+        L"transition: background-color 83ms ease-in-out !important",
+        L"width: 36px !important",
+        L"min-height: 36px !important",
+        L"margin-left: -1px !important"}},
+    ThemeTargetStyles{L".scope-tile > div:hover", {
+        L"background-color: #FDFDFD85 !important",
+        L"box-shadow: 0 0 0 1px rgba(0,0,0,.06), 0 1px 0 rgba(0,0,0,.1) !important",
+        L"transition: background-color 83ms ease-in-out !important"}},
+    ThemeTargetStyles{L".darkTheme .scope-tile > div:hover", {
+        L"background-color: #FFFFFF10 !important",
+        L"box-shadow: 0 0 0 1px rgba(255,255,255,.07), 0 -1px 0 rgba(255,255,255,.02) !important"}},
+    ThemeTargetStyles{L".scope-tile > div:active", {
+        L"background-color: #FFFFFFDD !important",
+        L"box-shadow: 0 0 0 1px rgba(0,0,0,.06), 0 1px 0 rgba(0,0,0,.1) !important",
+        L"transition: background-color 83ms ease-in-out !important"}},
+    ThemeTargetStyles{L".darkTheme .scope-tile > div:active", {
+        L"background-color: #FFFFFF07 !important",
+        L"box-shadow: 0 0 0 1px rgba(255,255,255,.07), 0 -1px 0 rgba(255,255,255,.02) !important"}},
+    ThemeTargetStyles{L".scope-tile > div:nth-child(1)", {
+        L"background: none !important",
+        L"border: none !important",
+        L"box-shadow: none !important",
+        L"margin-left: 0px !important",
+        L"margin-right: -7px !important",
+        L"border-radius: 4px 4px 0px 0px !important"}},
+    ThemeTargetStyles{L".scope-with-background__slider", {
+        L"padding-left: 4px !important",
+        L"padding-right: 4px !important",
+        L"padding-top: 4px !important",
+        L"padding-bottom: 0px !important",
+        L"margin-left: 4px !important",
+        L"margin-right: 4px !important",
+        L"max-height: 38px !important"}},
+    ThemeTargetStyles{L".scope-with-background__slider > ul", {
+        L"margin-top: -7px !important",
+        L"margin-right: -2px !important",
+        L"padding-bottom: -8px !important"}},
+    ThemeTargetStyles{L".bottomPill > div::after", {
+        L"content: '' !important",
+        L"width: 30% !important",
+        L"height: 4px !important",
+        L"background-color: var(--accent9) !important",
+        L"display: block !important",
+        L"border-radius: 99px !important",
+        L"bottom: 1px !important",
+        L"left: 35% !important",
+        L"position: absolute !important",
+        L"animation: selectorBar 187ms forwards !important",
+        L"transform-origin: center !important",
+        L"margin-left: -1px",
+        L"margin-right: 1px"}},
+    ThemeTargetStyles{L".bottomPill > div", {
+        L"opacity: 1 !important",
+        L"color: black !important",
+        L"font-weight: 400 !important"}},
+    ThemeTargetStyles{L".darkTheme .bottomPill > div", {
+        L"color: white !important"}},
+    ThemeTargetStyles{L".darkTheme .bottomPill > div::after", {
+        L"background-color: var(--accent19) !important"}},
+    ThemeTargetStyles{L".scope-tile__title", {
+        L"font-size: 0px !important"}},
+    ThemeTargetStyles{L"#l1scope0 .scope-tile__title::before", {
+        L"content: \"\uE80F\"",
+        L"font-size: 18px !important",
+        L"visibility: visible",
+        L"display: inline-block",
+        L"margin-top: 4px !important",
+        L"margin-left: -2px !important",
+        L"font-family: \"Segoe Fluent Icons\" !important",
+        L"vertical-align: middle",
+        L"font-weight: 575 !important"}},
+    ThemeTargetStyles{L"#l1scope1 .scope-tile__title::before", {
+        L"content: \"\uECAA\"",
+        L"font-size: 18px !important",
+        L"visibility: visible",
+        L"display: inline-block",
+        L"margin-top: 4px !important",
+        L"margin-left: -2px !important",
+        L"font-family: \"Segoe Fluent Icons\" !important",
+        L"vertical-align: middle",
+        L"font-weight: 575 !important"}},
+    ThemeTargetStyles{L"#l1scope8 .scope-tile__title::before", {
+        L"content: \"\uF6FA\"",
+        L"font-size: 18px !important",
+        L"visibility: visible",
+        L"display: inline-block",
+        L"margin-top: 4px !important",
+        L"margin-left: -2px !important",
+        L"font-family: \"Segoe Fluent Icons\" !important",
+        L"vertical-align: middle",
+        L"font-weight: 575 !important"}},
+    ThemeTargetStyles{L"#l1scope6 .scope-tile__title::before", {
+        L"content: \"\uE8A5\"",
+        L"font-size: 18px !important",
+        L"visibility: visible",
+        L"display: inline-block",
+        L"margin-top: 4px !important",
+        L"margin-left: -2px !important",
+        L"font-family: \"Segoe Fluent Icons\" !important",
+        L"vertical-align: middle",
+        L"font-weight: 575 !important"}},
+    ThemeTargetStyles{L"#l1scope2 .scope-tile__title::before", {
+        L"content: \"\uE713\"",
+        L"font-size: 18px !important",
+        L"visibility: visible",
+        L"display: inline-block",
+        L"margin-top: 4px !important",
+        L"margin-left: -2px !important",
+        L"font-family: \"Segoe Fluent Icons\" !important",
+        L"vertical-align: middle",
+        L"font-weight: 575 !important"}},
+    ThemeTargetStyles{L"#scope2 .scope-tile__title::before", {
+        L"content: \"\uE713\"",
+        L"font-size: 18px !important",
+        L"visibility: visible",
+        L"display: inline-block",
+        L"margin-top: 4px !important",
+        L"margin-left: -2px !important",
+        L"vertical-align: middle",
+        L"font-weight: 575 !important",
+        L"font-family: \"Segoe Fluent Icons\" !important"}},
+    ThemeTargetStyles{L"#scope7 .scope-tile__title::before", {
+        L"content: \"\uE8B7\"",
+        L"font-size: 18px !important",
+        L"visibility: visible",
+        L"display: inline-block",
+        L"margin-top: 4px !important",
+        L"margin-left: -2px !important",
+        L"font-family: \"Segoe Fluent Icons\" !important",
+        L"vertical-align: middle",
+        L"font-weight: 575 !important"}},
+    ThemeTargetStyles{L"#scope3 .scope-tile__title::before", {
+        L"content: \"\uE91B\"",
+        L"font-size: 18px !important",
+        L"visibility: visible",
+        L"display: inline-block",
+        L"margin-top: 4px !important",
+        L"margin-left: -2px !important",
+        L"vertical-align: middle",
+        L"font-weight: 575 !important",
+        L"font-family: \"Segoe Fluent Icons\" !important"}},
+    ThemeTargetStyles{L"*", {
+        L"scrollbar-width: none !important",
+        L"cursor: default !important"}},
+    ThemeTargetStyles{L":root", {
+        L"--webview-winui-menuPadding: 3px",
+        L"--webview-winui-menuRadius: 7px",
+        L"--webview-winui-menuGap: 2px",
+        L"--webview-winui-menuBorder: 1px solid rgba(0,0,0,0.26)",
+        L"--webview-winui-menuShadow: 0 9px 16px 0 rgba(0,0,0,0.26)",
+        L"--webview-winui-itemPadding: 3px 8px 3px 8px",
+        L"--webview-winui-itemRadius: 5px",
+        L"--webview-winui-itemHeight: 28px"}},
+    ThemeTargetStyles{L".contextMenu", {
+        L"padding: var(--webview-winui-menuPadding) !important",
+        L"margin: 0 !important",
+        L"background-color: transparent !important",
+        L"border: unset !important",
+        L"box-shadow: unset !important",
+        L"outline: unset !important",
+        L"min-width: unset !important",
+        L"width: unset !important",
+        L"display: flex !important",
+        L"flex-direction: column !important",
+        L"border-radius: var(--webview-winui-menuRadius) !important",
+        L"gap: var(--webview-winui-menuGap)  !important",
+        L"background-image: url(\"data:image/svg+xml,%3Csvg viewBox='0 0 250 250' style='opacity: 0.08' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='10' numOctaves='3' stitchTiles='stitch '/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E\") !important",
+        L"background-repeat: repeat !important",
+        L"background-blend-mode: overlay !important"}},
+    ThemeTargetStyles{L".contextMenu::after", {
+        L"content: \"\" !important",
+        L"width: calc(100%) !important",
+        L"height: calc(100%) !important",
+        L"display: block !important",
+        L"position: absolute !important",
+        L"top: 0px !important",
+        L"left: 0px !important",
+        L"background-color: #fff !important",
+        L"border-radius: var(--webview-winui-menuRadius) !important",
+        L"opacity: 0.5 !important",
+        L"z-index: -2 !important"}},
+    ThemeTargetStyles{L".contextMenu::before", {
+        L"border-radius: var(--webview-winui-menuRadius) !important"}},
+    ThemeTargetStyles{L".darkTheme .contextMenu::after", {
+        L"background-color: #242424 !important"}},
+    ThemeTargetStyles{L".contextMenu .menuItem", {
+        L"margin: 0 !important",
+        L"border: 0 !important",
+        L"padding: var(--webview-winui-itemPadding) !important",
+        L"background-color: transparent !important",
+        L"position: relative !important",
+        L"display: flex !important",
+        L"align-items: center !important",
+        L"border-radius: var(--webview-winui-itemRadius) !important",
+        L"min-height: var(--webview-winui-itemHeight) !important"}},
+    ThemeTargetStyles{L".contextMenu .menuItem:hover::after", {
+        L"content: \"\" !important",
+        L"width: calc(100%) !important",
+        L"height: calc(100%) !important",
+        L"display: block !important",
+        L"top: 0 !important",
+        L"left: 0 !important",
+        L"position: absolute !important",
+        L"border-radius: var(--webview-winui-itemRadius) !important",
+        L"opacity: 0.1 !important",
+        L"background-color: #000 !important"}},
+    ThemeTargetStyles{L".contextMenu .menuItem:focus::after", {
+        L"opacity: 0.05 !important"}},
+    ThemeTargetStyles{L".darkTheme .contextMenu .menuItem:hover::after", {
+        L"background-color: #fff !important"}},
+    ThemeTargetStyles{L".contextMenu .divider", {
+        L"border-top-color: rgba(0,0,0,.0803) !important",
+        L"margin-left: -3px !important",
+        L"margin-right: -3px !important"}},
+    ThemeTargetStyles{L".darkTheme .contextMenu .divider", {
+        L"border-top-color: rgba(255,255,255,.0837) !important"}},
+    ThemeTargetStyles{L"#menuContainer", {
+        L"background-color: transparent !important",
+        L"min-width: unset !important",
+        L"width: unset !important",
+        L"opacity: 0 !important",
+        L"transition: opacity 230ms ease, transform 280ms ease, box-shadow 830ms ease !important",
+        L"transform: translateY(-14px) !important",
+        L"box-shadow: unset !important",
+        L"border-radius: var(--webview-winui-menuRadius) !important",
+        L"border: var(--webview-winui-menuBorder) !important"}},
+    ThemeTargetStyles{L"#menuContainer.show", {
+        L"opacity: 1 !important",
+        L"transform: translateY(0px) !important",
+        L"box-shadow: var(--webview-winui-menuShadow) !important"}},
+    ThemeTargetStyles{L"*:not(.divider):not(#menuContainer)", {
+        L"border-color: transparent !important"}},
+    ThemeTargetStyles{L".userProfileMenuIcon", {
+        L"background: transparent !important",
+        L"border: solid 0px transparent !important",
+        L"border-radius: 4px !important",
+        L"transition: background-color 83ms ease-in-out !important",
+        L"width: 36px !important",
+        L"min-height: 36px !important",
+        L"margin-left: -1px !important"}},
+    ThemeTargetStyles{L".userProfileMenuIcon:hover", {
+        L"background-color: #FDFDFD85 !important",
+        L"box-shadow: 0 0 0 1px rgba(0,0,0,.06), 0 1px 0 rgba(0,0,0,.1) !important",
+        L"transition: background-color 83ms ease-in-out !important"}},
+    ThemeTargetStyles{L".darkTheme .userProfileMenuIcon:hover", {
+        L"background-color: #FFFFFF10 !important",
+        L"box-shadow: 0 0 0 1px rgba(255,255,255,.07), 0 -1px 0 rgba(255,255,255,.02) !important"}},
+    ThemeTargetStyles{L".userProfileMenuIcon:active", {
+        L"background-color: #FFFFFFDD !important",
+        L"box-shadow: 0 0 0 1px rgba(0,0,0,.06), 0 1px 0 rgba(0,0,0,.1) !important",
+        L"transition: background-color 83ms ease-in-out !important"}},
+    ThemeTargetStyles{L".darkTheme .userProfileMenuIcon:active", {
+        L"background-color: #FFFFFF07 !important",
+        L"box-shadow: 0 0 0 1px rgba(255,255,255,.07), 0 -1px 0 rgba(255,255,255,.02) !important"}},
+    ThemeTargetStyles{L".scope-tile__button", {
+        L"background: transparent !important",
+        L"border: solid 0px transparent !important",
+        L"border-radius: 4px !important",
+        L"transition: background-color 83ms ease-in-out !important",
+        L"width: 36px !important",
+        L"min-height: 36px !important",
+        L"margin-left: -1px !important"}},
+    ThemeTargetStyles{L".scope-tile__button:hover", {
+        L"background-color: #FDFDFD85 !important",
+        L"box-shadow: 0 0 0 1px rgba(0,0,0,.06), 0 1px 0 rgba(0,0,0,.1) !important",
+        L"transition: background-color 83ms ease-in-out !important"}},
+    ThemeTargetStyles{L".darkTheme .scope-tile__button:hover", {
+        L"background-color: #FFFFFF10 !important",
+        L"box-shadow: 0 0 0 1px rgba(255,255,255,.07), 0 -1px 0 rgba(255,255,255,.02) !important"}},
+    ThemeTargetStyles{L".scope-tile__button:active", {
+        L"background-color: #FFFFFFDD !important",
+        L"box-shadow: 0 0 0 1px rgba(0,0,0,.06), 0 1px 0 rgba(0,0,0,.1) !important",
+        L"transition: background-color 83ms ease-in-out !important"}},
+    ThemeTargetStyles{L".darkTheme .scope-tile__button:active", {
+        L"background-color: #FFFFFF07 !important",
+        L"box-shadow: 0 0 0 1px rgba(255,255,255,.07), 0 -1px 0 rgba(255,255,255,.02) !important"}},
+    ThemeTargetStyles{L"#optionsButton > .scope-tile__button > .iconContainer", {
+        L"margin-top: 2px !important",
+        L"margin-left: 2px !important",
+        L"transition: background-color 83ms ease-in-out !important"}},
+    ThemeTargetStyles{L"#optionsButton", {
+        L"margin-left: 4px !important"}},
+    ThemeTargetStyles{L".groupTitleSeeMoreAndChevron > .groupTitleChevron", {
+        L"background: transparent !important",
+        L"border: solid 0px transparent !important",
+        L"border-radius: 4px !important",
+        L"transition: background-color 83ms ease-in-out !important",
+        L"width: 32px !important",
+        L"height: 32px !important",
+        L"padding: 8px 4px 4px 6px !important",
+        L"font-size: 16px !important"}},
+    ThemeTargetStyles{L".groupTitleSeeMoreAndChevron > .groupTitleChevron:hover", {
+        L"color: black !important",
+        L"background-color: #FDFDFD85 !important",
+        L"box-shadow: 0 0 0 1px rgba(0,0,0,.06), 0 1px 0 rgba(0,0,0,.1) !important",
+        L"transition: background-color 83ms ease-in-out !important"}},
+    ThemeTargetStyles{L".darkTheme .groupTitleSeeMoreAndChevron > .groupTitleChevron:hover", {
+        L"color: white !important",
+        L"background-color: #FFFFFF10 !important",
+        L"box-shadow: 0 0 0 1px rgba(255,255,255,.07), 0 -1px 0 rgba(255,255,255,.02) !important"}},
+    ThemeTargetStyles{L".groupTitleSeeMoreAndChevron > .groupTitleChevron:active", {
+        L"color: black !important",
+        L"background-color: #FFFFFFDD !important",
+        L"box-shadow: 0 0 0 1px rgba(0,0,0,.06), 0 1px 0 rgba(0,0,0,.1) !important",
+        L"transition: background-color 83ms ease-in-out !important"}},
+    ThemeTargetStyles{L".darkTheme .groupTitleSeeMoreAndChevron > .groupTitleChevron:active", {
+        L"color: white !important",
+        L"background-color: #FFFFFF07 !important",
+        L"box-shadow: 0 0 0 1px rgba(255,255,255,.07), 0 -1px 0 rgba(255,255,255,.02) !important"}},
+    ThemeTargetStyles{L".openPreviewPaneText", {
+        L"border-radius: 4px !important",
+        L"font-size: 0px !important",
+        L"max-width: 24px !important",
+        L"margin-top: 4px !important",
+        L"margin-right: 4px !important",
+        L"margin-bottom: 4px !important"}},
+    ThemeTargetStyles{L".openPreviewPaneText::after", {
+        L"content: \"\uE974\"",
+        L"font-family: Segoe Fluent Icons !important",
+        L"font-size: 16px !important",
+        L"font-weight: normal !important"}},
+    ThemeTargetStyles{L".removeIcon > .iconContainer > .icon", {
+        L"background: transparent !important",
+        L"border: solid 0px transparent !important",
+        L"border-radius: 4px !important",
+        L"transition: background-color 83ms ease-in-out !important",
+        L"width: 24px !important",
+        L"height: 24px !important",
+        L"padding: 4px 3px 2px 6px !important",
+        L"margin: -7px 4px 7px -4px !important",
+        L"font-size: 16px !important"}},
+    ThemeTargetStyles{L".removeIcon > .iconContainer > .icon:hover", {
+        L"background-color: #FDFDFD85 !important",
+        L"transition: background-color 83ms ease-in-out !important"}},
+    ThemeTargetStyles{L".darkTheme .removeIcon > .iconContainer > .icon:hover", {
+        L"background-color: #FFFFFF10 !important"}},
+    ThemeTargetStyles{L".removeIcon > .iconContainer > .icon:active", {
+        L"background-color: #FFFFFFDD !important",
+        L"transition: background-color 83ms ease-in-out !important"}},
+    ThemeTargetStyles{L".darkTheme .removeIcon > .iconContainer > .icon:active", {
+        L"background-color: #FFFFFF07 !important"}},
+}};
+
+const Theme g_themeOS26_Tahoe_App_Launcher_variant_DarkCenter = {{
+    ThemeTargetStyles{L"StartMenu.StartBlendedFlexFrame > Grid#FrameRoot", {
+        L"Height=624",
+        L"VerticalAlignment=Center",
+        L"Margin=0"}},
+    ThemeTargetStyles{L"StartMenu.StartBlendedFlexFrame > Grid#FrameRoot > Grid#AnimationRoot > Grid#MainMenu > Border#AcrylicBorder", {
+        L"Background:=<WindhawkBlur BlurAmount=\"8\" TintColor=\"#761E1E1E\" />",
+        L"CornerRadius=50"}},
+    ThemeTargetStyles{L"StartMenu.StartBlendedFlexFrame > Grid#FrameRoot > Grid#AnimationRoot > Border#StartDropShadow", {
+        L"CornerRadius=50"}},
+    ThemeTargetStyles{L"Border#AcrylicOverlay", {
+        L"CornerRadius=50,50,0,0",
+        L"Margin=0,-65,0,470"}},
+    ThemeTargetStyles{L"StartMenu.StartBlendedFlexFrame > Grid#FrameRoot > Grid#AnimationRoot > Grid#MainMenu > Grid#MainContent > Frame#StartFrame > ContentPresenter > StartMenu.StartHome > Grid#PageRoot > SemanticZoom#TopLevelRoot > Grid > ScrollViewer#ScrollViewer > ScrollContentPresenter#ScrollContentPresenter > Grid > ContentPresenter#ZoomedInPresenter > GridView#AllAppsGrid > Border > ScrollViewer#ScrollViewer > Border#Root > Grid > Grid > Windows.UI.Xaml.Controls.Primitives.ScrollBar#VerticalScrollBar > Grid#Root > Grid#VerticalRoot", {
+        L"Margin=0,-50,0,40",
+        L"Height=500"}},
+    ThemeTargetStyles{L"ScrollViewer > ScrollContentPresenter > Border > StartMenu.StartBlendedFlexFrame > Grid#FrameRoot > Grid#AnimationRoot > Grid#MainMenu > Grid#MainContent > Frame#StartFrame > ContentPresenter > StartMenu.StartHome > Grid#PageRoot > SemanticZoom#TopLevelRoot > Grid > ScrollViewer#ScrollViewer > ScrollContentPresenter#ScrollContentPresenter > Grid > ContentPresenter#ZoomedInPresenter > GridView#AllAppsGrid > Border > ScrollViewer#ScrollViewer > Border#Root > Grid > Grid > Windows.UI.Xaml.Controls.Primitives.ScrollBar#VerticalScrollBar > Grid#Root > Grid#VerticalRoot > Rectangle#VerticalTrackRect", {
+        L"Height=500"}},
+    ThemeTargetStyles{L"StartMenu.StartHome", {
+        L"Margin=0,5,0,-120"}},
+    ThemeTargetStyles{L"StartMenu.SearchBoxToggleButton#SearchBoxToggleButton > Grid > Border#BorderElement", {
+        L"BorderBrush=transparent",
+        L"Background:=transparent",
+        L"Height=55"}},
+    ThemeTargetStyles{L"ScrollViewer > ScrollContentPresenter > Border > StartMenu.StartBlendedFlexFrame > Grid#FrameRoot > Grid#AnimationRoot > Grid#MainMenu > Grid#MainContent > Grid > StartMenu.SearchBoxToggleButton#SearchBoxToggleButton > Grid", {
+        L"Margin=10,0,-10,0",
+        L"Height=55"}},
+    ThemeTargetStyles{L"ScrollViewer > ScrollContentPresenter > Border > StartMenu.StartBlendedFlexFrame > Grid#FrameRoot > Grid#AnimationRoot > Grid#MainMenu > Grid#MainContent > Grid > StartMenu.SearchBoxToggleButton#SearchBoxToggleButton", {
+        L"Margin=10,0,-10,0",
+        L"Height=55"}},
+    ThemeTargetStyles{L"StartMenu.SearchBoxToggleButton#SearchBoxToggleButton > Grid > Image#SearchIconOff", {
+        L"Margin=680,0,-680,0",
+        L"Height=25",
+        L"Width=25"}},
+    ThemeTargetStyles{L"StartMenu.SearchBoxToggleButton#SearchBoxToggleButton > Grid > Image#SearchIconOn", {
+        L"Margin=680,0,-680,0",
+        L"Height=25",
+        L"Width=25"}},
+    ThemeTargetStyles{L"StartMenu.StartBlendedFlexFrame > Grid#FrameRoot > Grid#AnimationRoot > Grid#MainMenu > Grid#MainContent > Grid > StartMenu.SearchBoxToggleButton#SearchBoxToggleButton > Grid > ContentPresenter#ContentPresenter > TextBlock#PlaceholderText", {
+        L"Text:=Applications",
+        L"FontSize=25"}},
+    ThemeTargetStyles{L"StartDocked.NavigationPaneView#UserControl > Grid#RootPanel > StartDocked.UserTileView#UserTile", {
+        L"Height=45",
+        L"Width=55",
+        L"HorizontalAlignment=left"}},
+    ThemeTargetStyles{L"StartDocked.NavigationPaneButton#UserTileButton > Grid > ContentPresenter#ContentPresenter > Grid > Grid#UserTileIcon", {
+        L"Width=32",
+        L"Height=32"}},
+    ThemeTargetStyles{L"StartDocked.NavigationPaneButton#PowerButton > Grid > ContentPresenter#ContentPresenter > Grid > FontIcon > Grid > TextBlock", {
+        L"Margin=0,1,0,-1",
+        L"FontSize=22"}},
+    ThemeTargetStyles{L"ScrollViewer > ScrollContentPresenter > Border > StartMenu.StartBlendedFlexFrame > Grid#FrameRoot > Grid#AnimationRoot > Grid#MainMenu > Grid#MainContent > Frame#StartFrame > ContentPresenter > StartMenu.StartHome > Grid#PageRoot > SemanticZoom#TopLevelRoot > Grid > ScrollViewer#ScrollViewer > ScrollContentPresenter#ScrollContentPresenter > Grid > ContentPresenter#ZoomedInPresenter > GridView#AllAppsGrid > Border > ScrollViewer#ScrollViewer > Border#Root > Grid > ScrollContentPresenter#ScrollContentPresenter > ItemsPresenter > ContentControl > ContentPresenter > Grid#TopLevelHeader > StartMenu.PinnedList#StartMenuPinnedList > Grid#Root > GridView#PinnedList > Border > ScrollViewer#ScrollViewer > Border#Root > Grid > ScrollContentPresenter#ScrollContentPresenter > ItemsPresenter > ItemsWrapGrid > GridViewItem > Border#ContentBorder > Grid#DroppedFlickerWorkaroundWrapper > Border#BackgroundBorder", {
+        L"BackgroundSizing=1",
+        L"Background:=$IconBackground",
+        L"BorderBrush:=$IconBorder",
+        L"BorderThickness=1.3",
+        L"CornerRadius=16",
+        L"Margin=18,0,18,27"}},
+    ThemeTargetStyles{L"ScrollViewer > ScrollContentPresenter > Border > StartMenu.StartBlendedFlexFrame > Grid#FrameRoot > Grid#AnimationRoot > Grid#MainMenu > Grid#MainContent > Frame#StartFrame > ContentPresenter > StartMenu.StartHome > Grid#PageRoot > SemanticZoom#TopLevelRoot > Grid > ScrollViewer#ScrollViewer > ScrollContentPresenter#ScrollContentPresenter > Grid > ContentPresenter#ZoomedInPresenter > GridView#AllAppsGrid > Border > ScrollViewer#ScrollViewer > Border#Root > Grid > ScrollContentPresenter#ScrollContentPresenter > ItemsPresenter > ContentControl > ContentPresenter > Grid#TopLevelHeader > StartMenu.PinnedList#StartMenuPinnedList > Grid#Root > GridView#PinnedList > Border > ScrollViewer#ScrollViewer > Border#Root > Grid > ScrollContentPresenter#ScrollContentPresenter > ItemsPresenter > ItemsWrapGrid > GridViewItem > Border#ContentBorder > Grid#DroppedFlickerWorkaroundWrapper > ContentPresenter#ContentPresenter > Grid > StartMenu.PinnedListTile > Grid#Root > Grid#DisplayNameAndDownloadIconContainer > TextBlock#DisplayName", {
+        L"Margin=0,15,0,-15"}},
+    ThemeTargetStyles{L"ScrollViewer > ScrollContentPresenter > Border > StartMenu.StartBlendedFlexFrame > Grid#FrameRoot > Grid#AnimationRoot > Grid#MainMenu > Grid#MainContent > Frame#StartFrame > ContentPresenter > StartMenu.StartHome > Grid#PageRoot > SemanticZoom#TopLevelRoot > Grid > ScrollViewer#ScrollViewer > ScrollContentPresenter#ScrollContentPresenter > Grid > ContentPresenter#ZoomedInPresenter > GridView#AllAppsGrid > Border > ScrollViewer#ScrollViewer > Border#Root > Grid > ScrollContentPresenter#ScrollContentPresenter > ItemsPresenter > ItemsWrapGrid > GridViewItem > Border#ContentBorder > Grid#DroppedFlickerWorkaroundWrapper > Border#BackgroundBorder", {
+        L"BackgroundSizing=1",
+        L"Background:=$IconBackground",
+        L"BorderBrush:=$IconBorder",
+        L"BorderThickness=1.3",
+        L"CornerRadius=16",
+        L"Margin=18,0,18,27"}},
+    ThemeTargetStyles{L"ScrollViewer > ScrollContentPresenter > Border > StartMenu.StartBlendedFlexFrame > Grid#FrameRoot > Grid#AnimationRoot > Grid#MainMenu > Grid#MainContent > Frame#StartFrame > ContentPresenter > StartMenu.StartHome > Grid#PageRoot > SemanticZoom#TopLevelRoot > Grid > ScrollViewer#ScrollViewer > ScrollContentPresenter#ScrollContentPresenter > Grid > ContentPresenter#ZoomedInPresenter > GridView#AllAppsGrid > Border > ScrollViewer#ScrollViewer > Border#Root > Grid > ScrollContentPresenter#ScrollContentPresenter > ItemsPresenter > ItemsWrapGrid > GridViewItem > Border#ContentBorder > Grid#DroppedFlickerWorkaroundWrapper > ContentPresenter#ContentPresenter > Grid > TextBlock", {
+        L"Margin=0,15,0,-15"}},
+    ThemeTargetStyles{L"ScrollViewer > ScrollContentPresenter > Border > StartMenu.StartBlendedFlexFrame > Grid#FrameRoot > Grid#AnimationRoot > Grid#MainMenu > Grid#MainContent > Frame#StartFrame > ContentPresenter > StartMenu.StartHome > Grid#PageRoot > SemanticZoom#TopLevelRoot > Grid > ScrollViewer#ScrollViewer > ScrollContentPresenter#ScrollContentPresenter > Grid > ContentPresenter#ZoomedInPresenter > GridView#AllAppsGrid > Border > ScrollViewer#ScrollViewer > Border#Root > Grid > ScrollContentPresenter#ScrollContentPresenter > ItemsPresenter > ItemsWrapGrid > GridViewItem > Grid#RootGrid > ContentPresenter#ContentPresenter > StartMenu.CategoryControl > Grid#RootGrid > Border", {
+        L"BorderBrush:=$IconBorder",
+        L"BorderThickness=1.3",
+        L"CornerRadius=25"}},
+    ThemeTargetStyles{L"ScrollViewer > ScrollContentPresenter > Border > StartMenu.StartBlendedFlexFrame > Grid#FrameRoot > Grid#AnimationRoot > Grid#MainMenu > Grid#MainContent > Frame#StartFrame > ContentPresenter > StartMenu.StartHome > Grid#PageRoot > SemanticZoom#TopLevelRoot > Grid > ScrollViewer#ScrollViewer > ScrollContentPresenter#ScrollContentPresenter > Grid > ContentPresenter#ZoomedInPresenter > GridView#AllAppsGrid > Border > ScrollViewer#ScrollViewer > Border#Root > Grid > ScrollContentPresenter#ScrollContentPresenter > ItemsPresenter > ItemsWrapGrid > GridViewItem > Grid#RootGrid > ContentPresenter#ContentPresenter > StartMenu.CategoryControl > Grid#RootGrid > ScrollViewer#ScrollViewer > Border#Root > Grid > ScrollContentPresenter#ScrollContentPresenter > ItemsPresenter#ItemsPresenter > ItemsWrapGrid > ContentPresenter > Button#LogoContainer > Grid > Border#BackgroundBorder", {
+        L"Background:=$IconBackground",
+        L"BorderBrush:=$IconBorder",
+        L"BorderThickness=1.3",
+        L"CornerRadius=16",
+        L"Margin=7"}},
+    ThemeTargetStyles{L"StartMenu.StartBlendedFlexFrame > Grid#FrameRoot > Grid#AnimationRoot > Grid#MainMenu > Grid#MainContent > Frame#StartFrame > ContentPresenter > StartMenu.StartHome > Grid#PageRoot > SemanticZoom#TopLevelRoot > Grid > ScrollViewer#ScrollViewer > ScrollContentPresenter#ScrollContentPresenter > Grid > ContentPresenter#ZoomedInPresenter > GridView#AllAppsGrid > Border > ScrollViewer#ScrollViewer > Border#Root > Grid > ScrollContentPresenter#ScrollContentPresenter > ItemsPresenter > ContentControl > ContentPresenter > Grid#TopLevelHeader > Grid#TopLevelSuggestionsRoot", {
+        L"Visibility=1"}},
+    ThemeTargetStyles{L"ScrollViewer > ScrollContentPresenter > Border > Cortana.UI.Views.TaskbarSearchPage > Grid#RootGrid > Grid#OuterBorderGrid", {
+        L"Height=541",
+        L"CornerRadius=50"}},
+    ThemeTargetStyles{L"ScrollViewer > ScrollContentPresenter > Border > Cortana.UI.Views.TaskbarSearchPage > Grid#RootGrid", {
+        L"Margin=0,-200,0,0",
+        L"CornerRadius=50",
+        L"VerticalAlignment=Center"}},
+    ThemeTargetStyles{L"ScrollViewer > ScrollContentPresenter > Border > Cortana.UI.Views.TaskbarSearchPage > Grid#RootGrid > Grid#OuterBorderGrid > Grid#BorderGrid > Border#AppBorder, ScrollViewer > ScrollContentPresenter > Border > Cortana.UI.Views.TaskbarSearchPage > Grid#RootGrid > Grid#OuterBorderGrid > Grid#BorderGrid > Border#AccentAppBorder", {
+        L"Background:=<WindhawkBlur BlurAmount=\"8\" TintColor=\"#761E1E1E\"/>",
+        L"BorderBrush=Gray",
+        L"CornerRadius=50",
+        L"BorderThickness=0"}},
+    ThemeTargetStyles{L"ScrollViewer > ScrollContentPresenter > Border > Cortana.UI.Views.TaskbarSearchPage > Grid#RootGrid > Border#TaskbarSearchBackground", {
+        L"Background=transparent",
+        L"Margin=20,10,20,10",
+        L"Height=55"}},
+    ThemeTargetStyles{L"ScrollViewer > ScrollContentPresenter > Border > Cortana.UI.Views.TaskbarSearchPage > Grid#RootGrid > Cortana.UI.Views.RichSearchBoxControl#SearchBoxControl", {
+        L"Margin=20,0,20,0"}},
+    ThemeTargetStyles{L"ScrollViewer > ScrollContentPresenter > Border > Cortana.UI.Views.TaskbarSearchPage > Grid#RootGrid > Cortana.UI.Views.RichSearchBoxControl#SearchBoxControl > Grid#RootGrid > Microsoft.UI.Xaml.Controls.AnimatedIcon#SearchIconPlayer", {
+        L"Height=25",
+        L"Width=25"}},
+    ThemeTargetStyles{L"ScrollViewer > ScrollContentPresenter > Border > Cortana.UI.Views.TaskbarSearchPage > Grid#RootGrid > Cortana.UI.Views.RichSearchBoxControl#SearchBoxControl > Grid#RootGrid > Cortana.UI.Views.CortanaRichSearchBox#SearchTextBox", {
+        L"FontSize=25",
+        L"Margin=10,-1,10,1",
+        L"Foreground=#BFBDB7"}},
+    ThemeTargetStyles{L"ScrollViewer > ScrollContentPresenter > Border > StartMenu.StartBlendedFlexFrame > Grid#FrameRoot > Grid#AnimationRoot > Grid#MainMenu > Grid#MainContent > Frame#StartFrame > ContentPresenter > StartMenu.StartHome > Grid#PageRoot > StartMenu.FolderModal#StartFolderModal > Grid#Root > Border", {
+        L"Background:=<WindhawkBlur BlurAmount=\"8\" TintColor=\"#761E1E1E\"/>",
+        L"CornerRadius=50",
+        L"BorderBrush:=$IconBorder",
+        L"BorderThickness=1.3"}},
+    ThemeTargetStyles{L"ScrollViewer > ScrollContentPresenter > Border > StartMenu.StartBlendedFlexFrame > Grid#FrameRoot > Grid#AnimationRoot > Grid#MainMenu > Grid#MainContent > Frame#StartFrame > ContentPresenter > StartMenu.StartHome > Grid#PageRoot > StartMenu.FolderModal#StartFolderModal > Grid#Root > ContentControl#ContentControl > ContentPresenter > StartMenu.UniversalTileContainer#UniversalTileContainer > Grid#GridViewContainer > Grid > GridView#LevelOneGridView > Border > ScrollViewer#ScrollViewer > Border#Root > Grid > ScrollContentPresenter#ScrollContentPresenter > ItemsPresenter > ItemsWrapGrid > GridViewItem > Border#ContentBorder > Grid#DroppedFlickerWorkaroundWrapper > Border#BackgroundBorder", {
+        L"Background:=$IconBackground",
+        L"BorderBrush:=$IconBorder",
+        L"BorderThickness=1.3",
+        L"CornerRadius=16",
+        L"Margin=30,20,30,43",
+        L"Height=60",
+        L"Width=60"}},
+    ThemeTargetStyles{L"StartMenu.StartBlendedFlexFrame > Grid#FrameRoot > Grid#AnimationRoot > Grid#MainMenu > Grid#MainContent > Frame#StartFrame > ContentPresenter > StartMenu.StartHome > Grid#PageRoot > StartMenu.FolderModal#StartFolderModal > Grid#Root > ContentControl#ContentControl > ContentPresenter > StartMenu.UniversalTileContainer#UniversalTileContainer > Grid#GridViewContainer > Grid > GridView#LevelOneGridView > Border > ScrollViewer#ScrollViewer > Border#Root > Grid > ScrollContentPresenter#ScrollContentPresenter > ItemsPresenter > ItemsWrapGrid > GridViewItem > Border#ContentBorder > Grid#DroppedFlickerWorkaroundWrapper > ContentPresenter#ContentPresenter > Grid > TextBlock", {
+        L"Margin=0,15,0,-15"}},
+    ThemeTargetStyles{L"Grid#NavPanePlaceholder", {
+        L"Grid.Row=0",
+        L"Margin=20,0,20,0"}},
+    ThemeTargetStyles{L"ScrollViewer > ScrollContentPresenter > Border > StartMenu.StartBlendedFlexFrame > Grid#FrameRoot > Grid#AnimationRoot > Grid#MainMenu > Grid#MainContent > Frame#StartFrame > ContentPresenter > StartMenu.StartHome > Grid#PageRoot > StartMenu.FolderModal#StartFolderModal > Grid#Root > Border", {
+        L"Height=350"}},
+    ThemeTargetStyles{L"ScrollViewer > ScrollContentPresenter > Border > StartMenu.StartBlendedFlexFrame > Grid#FrameRoot > Grid#AnimationRoot > Grid#MainMenu > Grid#MainContent > Frame#StartFrame > ContentPresenter > StartMenu.StartHome > Grid#PageRoot > StartMenu.FolderModal#StartFolderModal > Grid#Root > ContentControl#ContentControl", {
+        L"Height=350"}},
+    ThemeTargetStyles{L"ScrollViewer > ScrollContentPresenter > Border > StartMenu.StartBlendedFlexFrame > Grid#FrameRoot > Grid#AnimationRoot > Grid#MainMenu > Grid#MainContent > Frame#StartFrame > ContentPresenter > StartMenu.StartHome > Grid#PageRoot > StartMenu.FolderModal#StartFolderModal > Grid#Root > ContentControl#ContentControl > ContentPresenter > StartMenu.UniversalTileContainer#UniversalTileContainer > Grid#GridViewContainer > Grid > Microsoft.UI.Xaml.Controls.PipsPager#PipsPager > StackPanel#RootPanel > ScrollViewer#PipsPagerScrollViewer > Border#Root > Grid > ScrollContentPresenter#ScrollContentPresenter", {
+        L"Margin=0,-100,0,100"}},
+    ThemeTargetStyles{L"GridView#AllAppsGrid > Border > ScrollViewer#ScrollViewer > Border#Root > Grid > ScrollContentPresenter#ScrollContentPresenter > ItemsPresenter > ItemsWrapGrid > GridViewItem > Border#ContentBorder > Grid#DroppedFlickerWorkaroundWrapper", {
+        L"Padding=0,0,0,25"}},
+    ThemeTargetStyles{L"StartDocked.AppListView#NavigationPanePlacesListView", {
+        L"MaxWidth=120",
+        L"Margin=-55,0,55,0"}},
+    ThemeTargetStyles{L"StartMenu.PinnedListTile > Grid#Root > Grid#DisplayNameAndDownloadIconContainer > TextBlock#DisplayName", {
+        L"Height=25"}},
+    ThemeTargetStyles{L"GridView#PinnedList > Border > ScrollViewer#ScrollViewer > Border#Root > Grid > ScrollContentPresenter#ScrollContentPresenter > ItemsPresenter > ItemsWrapGrid > GridViewItem > Border#ContentBorder > Grid#DroppedFlickerWorkaroundWrapper > ContentPresenter#ContentPresenter > Grid > StartMenu.PinnedListCollapsedFolder > Grid#Root > TextBlock#DisplayName", {
+        L"VerticalAlignment=bottom",
+        L"Height=25"}},
+    ThemeTargetStyles{L"ScrollViewer > ScrollContentPresenter > Border > StartMenu.StartBlendedFlexFrame > Grid#FrameRoot > Grid#AnimationRoot > Grid#MainMenu > Grid#MainContent > Frame#StartFrame > ContentPresenter > StartMenu.StartHome > Grid#PageRoot > StartMenu.FolderModal#StartFolderModal > Grid#Root > ContentControl#ContentControl > ContentPresenter > StartMenu.UniversalTileContainer#UniversalTileContainer > Grid#GridViewContainer > Grid > GridView#LevelOneGridView > Border > ScrollViewer#ScrollViewer > Border#Root > Grid > ScrollContentPresenter#ScrollContentPresenter > ItemsPresenter > ItemsWrapGrid > GridViewItem > Border#ContentBorder > Grid#DroppedFlickerWorkaroundWrapper > ContentPresenter#ContentPresenter > Grid > StartMenu.PinnedListTile > Grid#Root > Grid#DisplayNameAndDownloadIconContainer > TextBlock#DisplayName", {
+        L"VerticalAlignment=bottom",
+        L"Height=25"}},
+}, {
+    L"IconBackground=<LinearGradientBrush StartPoint=\"0.47,-0.29\" EndPoint=\"0.50,1.29\"><GradientStop Offset=\"0.18\" Color=\"#2F2F2F\"/><GradientStop Offset=\"0.3\" Color=\"#292929\"/><GradientStop Offset=\"0.5\" Color=\"#141414\"/><GradientStop Offset=\"0.68\" Color=\"#080808\"/><GradientStop Offset=\"0.81\" Color=\"#000000\"/></LinearGradientBrush>",
+    L"IconBorder=<LinearGradientBrush StartPoint=\"0.04,-0.14\" EndPoint=\"1.22,1.10\"><GradientStop Offset=\"0.18\" Color=\"#4FFFFFFF\"/><GradientStop Offset=\"0.34\" Color=\"#661D1D1D\"/><GradientStop Offset=\"0.63\" Color=\"#00000000\"/><GradientStop Offset=\"0.71\" Color=\"#662D2D2D\"/><GradientStop Offset=\"0.77\" Color=\"#4FFFFFFF\"/></LinearGradientBrush>",
+}, {}, {
+    ThemeTargetStyles{L"#qfPreviewPane, .previewContainer, .preview-content-container", {
+        L"display: none !important"}},
+    ThemeTargetStyles{L".suggsListContainer, #qfSuggsList, .results-container, .left-pane", {
+        L"width: 100% !important",
+        L"max-width: 100% !important",
+        L"flex: 1 1 100% !important"}},
+    ThemeTargetStyles{L".main-content-container, .search-results-grid, #searchPane", {
+        L"grid-template-columns: 100% !important",
+        L"display: block !important",
+        L"width: 100% !important"}},
+    ThemeTargetStyles{L".suggContainer, .groupContainer, .card", {
+        L"width: 100% !important",
+        L"box-sizing: border-box !important"}},
+}};
+
+const Theme g_themeOS26_Tahoe_App_Launcher_variant_DarkBottom = {{
+    ThemeTargetStyles{L"StartMenu.StartBlendedFlexFrame > Grid#FrameRoot", {
+        L"Height=624"}},
+    ThemeTargetStyles{L"StartMenu.StartBlendedFlexFrame > Grid#FrameRoot > Grid#AnimationRoot > Grid#MainMenu > Border#AcrylicBorder", {
+        L"Background:=<WindhawkBlur BlurAmount=\"8\" TintColor=\"#761E1E1E\" />",
+        L"CornerRadius=50"}},
+    ThemeTargetStyles{L"StartMenu.StartBlendedFlexFrame > Grid#FrameRoot > Grid#AnimationRoot > Border#StartDropShadow", {
+        L"CornerRadius=50"}},
+    ThemeTargetStyles{L"Border#AcrylicOverlay", {
+        L"CornerRadius=50,50,0,0",
+        L"Margin=0,-65,0,470"}},
+    ThemeTargetStyles{L"StartMenu.StartBlendedFlexFrame > Grid#FrameRoot > Grid#AnimationRoot > Grid#MainMenu > Grid#MainContent > Frame#StartFrame > ContentPresenter > StartMenu.StartHome > Grid#PageRoot > SemanticZoom#TopLevelRoot > Grid > ScrollViewer#ScrollViewer > ScrollContentPresenter#ScrollContentPresenter > Grid > ContentPresenter#ZoomedInPresenter > GridView#AllAppsGrid > Border > ScrollViewer#ScrollViewer > Border#Root > Grid > Grid > Windows.UI.Xaml.Controls.Primitives.ScrollBar#VerticalScrollBar > Grid#Root > Grid#VerticalRoot", {
+        L"Margin=0,-50,0,40",
+        L"Height=500"}},
+    ThemeTargetStyles{L"ScrollViewer > ScrollContentPresenter > Border > StartMenu.StartBlendedFlexFrame > Grid#FrameRoot > Grid#AnimationRoot > Grid#MainMenu > Grid#MainContent > Frame#StartFrame > ContentPresenter > StartMenu.StartHome > Grid#PageRoot > SemanticZoom#TopLevelRoot > Grid > ScrollViewer#ScrollViewer > ScrollContentPresenter#ScrollContentPresenter > Grid > ContentPresenter#ZoomedInPresenter > GridView#AllAppsGrid > Border > ScrollViewer#ScrollViewer > Border#Root > Grid > Grid > Windows.UI.Xaml.Controls.Primitives.ScrollBar#VerticalScrollBar > Grid#Root > Grid#VerticalRoot > Rectangle#VerticalTrackRect", {
+        L"Height=500"}},
+    ThemeTargetStyles{L"StartMenu.StartHome", {
+        L"Margin=0,5,0,-120"}},
+    ThemeTargetStyles{L"StartMenu.SearchBoxToggleButton#SearchBoxToggleButton > Grid > Border#BorderElement", {
+        L"BorderBrush=transparent",
+        L"Background:=transparent",
+        L"Height=55"}},
+    ThemeTargetStyles{L"ScrollViewer > ScrollContentPresenter > Border > StartMenu.StartBlendedFlexFrame > Grid#FrameRoot > Grid#AnimationRoot > Grid#MainMenu > Grid#MainContent > Grid > StartMenu.SearchBoxToggleButton#SearchBoxToggleButton > Grid", {
+        L"Margin=10,0,-10,0",
+        L"Height=55"}},
+    ThemeTargetStyles{L"ScrollViewer > ScrollContentPresenter > Border > StartMenu.StartBlendedFlexFrame > Grid#FrameRoot > Grid#AnimationRoot > Grid#MainMenu > Grid#MainContent > Grid > StartMenu.SearchBoxToggleButton#SearchBoxToggleButton", {
+        L"Margin=10,0,-10,0",
+        L"Height=55"}},
+    ThemeTargetStyles{L"StartMenu.SearchBoxToggleButton#SearchBoxToggleButton > Grid > Image#SearchIconOff", {
+        L"Margin=680,0,-680,0",
+        L"Height=25",
+        L"Width=25"}},
+    ThemeTargetStyles{L"StartMenu.SearchBoxToggleButton#SearchBoxToggleButton > Grid > Image#SearchIconOn", {
+        L"Margin=680,0,-680,0",
+        L"Height=25",
+        L"Width=25"}},
+    ThemeTargetStyles{L"StartMenu.StartBlendedFlexFrame > Grid#FrameRoot > Grid#AnimationRoot > Grid#MainMenu > Grid#MainContent > Grid > StartMenu.SearchBoxToggleButton#SearchBoxToggleButton > Grid > ContentPresenter#ContentPresenter > TextBlock#PlaceholderText", {
+        L"Text:=Applications",
+        L"FontSize=25"}},
+    ThemeTargetStyles{L"StartDocked.NavigationPaneView#UserControl > Grid#RootPanel > StartDocked.UserTileView#UserTile", {
+        L"Height=45",
+        L"Width=55",
+        L"HorizontalAlignment=left"}},
+    ThemeTargetStyles{L"StartDocked.NavigationPaneButton#UserTileButton > Grid > ContentPresenter#ContentPresenter > Grid > Grid#UserTileIcon", {
+        L"Width=32",
+        L"Height=32"}},
+    ThemeTargetStyles{L"StartDocked.NavigationPaneButton#PowerButton > Grid > ContentPresenter#ContentPresenter > Grid > FontIcon > Grid > TextBlock", {
+        L"Margin=0,1,0,-1",
+        L"FontSize=22"}},
+    ThemeTargetStyles{L"ScrollViewer > ScrollContentPresenter > Border > StartMenu.StartBlendedFlexFrame > Grid#FrameRoot > Grid#AnimationRoot > Grid#MainMenu > Grid#MainContent > Frame#StartFrame > ContentPresenter > StartMenu.StartHome > Grid#PageRoot > SemanticZoom#TopLevelRoot > Grid > ScrollViewer#ScrollViewer > ScrollContentPresenter#ScrollContentPresenter > Grid > ContentPresenter#ZoomedInPresenter > GridView#AllAppsGrid > Border > ScrollViewer#ScrollViewer > Border#Root > Grid > ScrollContentPresenter#ScrollContentPresenter > ItemsPresenter > ContentControl > ContentPresenter > Grid#TopLevelHeader > StartMenu.PinnedList#StartMenuPinnedList > Grid#Root > GridView#PinnedList > Border > ScrollViewer#ScrollViewer > Border#Root > Grid > ScrollContentPresenter#ScrollContentPresenter > ItemsPresenter > ItemsWrapGrid > GridViewItem > Border#ContentBorder > Grid#DroppedFlickerWorkaroundWrapper > Border#BackgroundBorder", {
+        L"BackgroundSizing=1",
+        L"Background:=$IconBackground",
+        L"BorderBrush:=$IconBorder",
+        L"BorderThickness=1.3",
+        L"CornerRadius=16",
+        L"Margin=18,0,18,27"}},
+    ThemeTargetStyles{L"ScrollViewer > ScrollContentPresenter > Border > StartMenu.StartBlendedFlexFrame > Grid#FrameRoot > Grid#AnimationRoot > Grid#MainMenu > Grid#MainContent > Frame#StartFrame > ContentPresenter > StartMenu.StartHome > Grid#PageRoot > SemanticZoom#TopLevelRoot > Grid > ScrollViewer#ScrollViewer > ScrollContentPresenter#ScrollContentPresenter > Grid > ContentPresenter#ZoomedInPresenter > GridView#AllAppsGrid > Border > ScrollViewer#ScrollViewer > Border#Root > Grid > ScrollContentPresenter#ScrollContentPresenter > ItemsPresenter > ContentControl > ContentPresenter > Grid#TopLevelHeader > StartMenu.PinnedList#StartMenuPinnedList > Grid#Root > GridView#PinnedList > Border > ScrollViewer#ScrollViewer > Border#Root > Grid > ScrollContentPresenter#ScrollContentPresenter > ItemsPresenter > ItemsWrapGrid > GridViewItem > Border#ContentBorder > Grid#DroppedFlickerWorkaroundWrapper > ContentPresenter#ContentPresenter > Grid > StartMenu.PinnedListTile > Grid#Root > Grid#DisplayNameAndDownloadIconContainer > TextBlock#DisplayName", {
+        L"Margin=0,15,0,-15"}},
+    ThemeTargetStyles{L"ScrollViewer > ScrollContentPresenter > Border > StartMenu.StartBlendedFlexFrame > Grid#FrameRoot > Grid#AnimationRoot > Grid#MainMenu > Grid#MainContent > Frame#StartFrame > ContentPresenter > StartMenu.StartHome > Grid#PageRoot > SemanticZoom#TopLevelRoot > Grid > ScrollViewer#ScrollViewer > ScrollContentPresenter#ScrollContentPresenter > Grid > ContentPresenter#ZoomedInPresenter > GridView#AllAppsGrid > Border > ScrollViewer#ScrollViewer > Border#Root > Grid > ScrollContentPresenter#ScrollContentPresenter > ItemsPresenter > ItemsWrapGrid > GridViewItem > Border#ContentBorder > Grid#DroppedFlickerWorkaroundWrapper > Border#BackgroundBorder", {
+        L"BackgroundSizing=1",
+        L"Background:=$IconBackground",
+        L"BorderBrush:=$IconBorder",
+        L"BorderThickness=1.3",
+        L"CornerRadius=16",
+        L"Margin=18,0,18,27"}},
+    ThemeTargetStyles{L"ScrollViewer > ScrollContentPresenter > Border > StartMenu.StartBlendedFlexFrame > Grid#FrameRoot > Grid#AnimationRoot > Grid#MainMenu > Grid#MainContent > Frame#StartFrame > ContentPresenter > StartMenu.StartHome > Grid#PageRoot > SemanticZoom#TopLevelRoot > Grid > ScrollViewer#ScrollViewer > ScrollContentPresenter#ScrollContentPresenter > Grid > ContentPresenter#ZoomedInPresenter > GridView#AllAppsGrid > Border > ScrollViewer#ScrollViewer > Border#Root > Grid > ScrollContentPresenter#ScrollContentPresenter > ItemsPresenter > ItemsWrapGrid > GridViewItem > Border#ContentBorder > Grid#DroppedFlickerWorkaroundWrapper > ContentPresenter#ContentPresenter > Grid > TextBlock", {
+        L"Margin=0,15,0,-15"}},
+    ThemeTargetStyles{L"ScrollViewer > ScrollContentPresenter > Border > StartMenu.StartBlendedFlexFrame > Grid#FrameRoot > Grid#AnimationRoot > Grid#MainMenu > Grid#MainContent > Frame#StartFrame > ContentPresenter > StartMenu.StartHome > Grid#PageRoot > SemanticZoom#TopLevelRoot > Grid > ScrollViewer#ScrollViewer > ScrollContentPresenter#ScrollContentPresenter > Grid > ContentPresenter#ZoomedInPresenter > GridView#AllAppsGrid > Border > ScrollViewer#ScrollViewer > Border#Root > Grid > ScrollContentPresenter#ScrollContentPresenter > ItemsPresenter > ItemsWrapGrid > GridViewItem > Grid#RootGrid > ContentPresenter#ContentPresenter > StartMenu.CategoryControl > Grid#RootGrid > Border", {
+        L"BorderBrush:=$IconBorder",
+        L"BorderThickness=1.3",
+        L"CornerRadius=25"}},
+    ThemeTargetStyles{L"ScrollViewer > ScrollContentPresenter > Border > StartMenu.StartBlendedFlexFrame > Grid#FrameRoot > Grid#AnimationRoot > Grid#MainMenu > Grid#MainContent > Frame#StartFrame > ContentPresenter > StartMenu.StartHome > Grid#PageRoot > SemanticZoom#TopLevelRoot > Grid > ScrollViewer#ScrollViewer > ScrollContentPresenter#ScrollContentPresenter > Grid > ContentPresenter#ZoomedInPresenter > GridView#AllAppsGrid > Border > ScrollViewer#ScrollViewer > Border#Root > Grid > ScrollContentPresenter#ScrollContentPresenter > ItemsPresenter > ItemsWrapGrid > GridViewItem > Grid#RootGrid > ContentPresenter#ContentPresenter > StartMenu.CategoryControl > Grid#RootGrid > ScrollViewer#ScrollViewer > Border#Root > Grid > ScrollContentPresenter#ScrollContentPresenter > ItemsPresenter#ItemsPresenter > ItemsWrapGrid > ContentPresenter > Button#LogoContainer > Grid > Border#BackgroundBorder", {
+        L"Background:=$IconBackground",
+        L"BorderBrush:=$IconBorder",
+        L"BorderThickness=1.3",
+        L"CornerRadius=16",
+        L"Margin=7"}},
+    ThemeTargetStyles{L"StartMenu.StartBlendedFlexFrame > Grid#FrameRoot > Grid#AnimationRoot > Grid#MainMenu > Grid#MainContent > Frame#StartFrame > ContentPresenter > StartMenu.StartHome > Grid#PageRoot > SemanticZoom#TopLevelRoot > Grid > ScrollViewer#ScrollViewer > ScrollContentPresenter#ScrollContentPresenter > Grid > ContentPresenter#ZoomedInPresenter > GridView#AllAppsGrid > Border > ScrollViewer#ScrollViewer > Border#Root > Grid > ScrollContentPresenter#ScrollContentPresenter > ItemsPresenter > ContentControl > ContentPresenter > Grid#TopLevelHeader > Grid#TopLevelSuggestionsRoot", {
+        L"Visibility=1"}},
+    ThemeTargetStyles{L"ScrollViewer > ScrollContentPresenter > Border > Cortana.UI.Views.TaskbarSearchPage > Grid#RootGrid > Grid#OuterBorderGrid", {
+        L"Height=541",
+        L"CornerRadius=50"}},
+    ThemeTargetStyles{L"ScrollViewer > ScrollContentPresenter > Border > Cortana.UI.Views.TaskbarSearchPage > Grid#RootGrid", {
+        L"CornerRadius=50",
+        L"VerticalAlignment=Bottom"}},
+    ThemeTargetStyles{L"ScrollViewer > ScrollContentPresenter > Border > Cortana.UI.Views.TaskbarSearchPage > Grid#RootGrid > Grid#OuterBorderGrid > Grid#BorderGrid > Border#AppBorder, ScrollViewer > ScrollContentPresenter > Border > Cortana.UI.Views.TaskbarSearchPage > Grid#RootGrid > Grid#OuterBorderGrid > Grid#BorderGrid > Border#AccentAppBorder", {
+        L"Background:=<WindhawkBlur BlurAmount=\"8\" TintColor=\"#761E1E1E\"/>",
+        L"BorderBrush=Gray",
+        L"CornerRadius=50",
+        L"BorderThickness=0"}},
+    ThemeTargetStyles{L"ScrollViewer > ScrollContentPresenter > Border > Cortana.UI.Views.TaskbarSearchPage > Grid#RootGrid > Border#TaskbarSearchBackground", {
+        L"Background=transparent",
+        L"Margin=20,10,20,10",
+        L"Height=55"}},
+    ThemeTargetStyles{L"ScrollViewer > ScrollContentPresenter > Border > Cortana.UI.Views.TaskbarSearchPage > Grid#RootGrid > Cortana.UI.Views.RichSearchBoxControl#SearchBoxControl", {
+        L"Margin=20,0,20,0"}},
+    ThemeTargetStyles{L"ScrollViewer > ScrollContentPresenter > Border > Cortana.UI.Views.TaskbarSearchPage > Grid#RootGrid > Cortana.UI.Views.RichSearchBoxControl#SearchBoxControl > Grid#RootGrid > Microsoft.UI.Xaml.Controls.AnimatedIcon#SearchIconPlayer", {
+        L"Height=25",
+        L"Width=25"}},
+    ThemeTargetStyles{L"ScrollViewer > ScrollContentPresenter > Border > Cortana.UI.Views.TaskbarSearchPage > Grid#RootGrid > Cortana.UI.Views.RichSearchBoxControl#SearchBoxControl > Grid#RootGrid > Cortana.UI.Views.CortanaRichSearchBox#SearchTextBox", {
+        L"FontSize=25",
+        L"Margin=10,-1,10,1",
+        L"Foreground=#BFBDB7"}},
+    ThemeTargetStyles{L"ScrollViewer > ScrollContentPresenter > Border > StartMenu.StartBlendedFlexFrame > Grid#FrameRoot > Grid#AnimationRoot > Grid#MainMenu > Grid#MainContent > Frame#StartFrame > ContentPresenter > StartMenu.StartHome > Grid#PageRoot > StartMenu.FolderModal#StartFolderModal > Grid#Root > Border", {
+        L"Background:=<WindhawkBlur BlurAmount=\"8\" TintColor=\"#761E1E1E\"/>",
+        L"CornerRadius=50",
+        L"BorderBrush:=$IconBorder",
+        L"BorderThickness=1.3"}},
+    ThemeTargetStyles{L"ScrollViewer > ScrollContentPresenter > Border > StartMenu.StartBlendedFlexFrame > Grid#FrameRoot > Grid#AnimationRoot > Grid#MainMenu > Grid#MainContent > Frame#StartFrame > ContentPresenter > StartMenu.StartHome > Grid#PageRoot > StartMenu.FolderModal#StartFolderModal > Grid#Root > ContentControl#ContentControl > ContentPresenter > StartMenu.UniversalTileContainer#UniversalTileContainer > Grid#GridViewContainer > Grid > GridView#LevelOneGridView > Border > ScrollViewer#ScrollViewer > Border#Root > Grid > ScrollContentPresenter#ScrollContentPresenter > ItemsPresenter > ItemsWrapGrid > GridViewItem > Border#ContentBorder > Grid#DroppedFlickerWorkaroundWrapper > Border#BackgroundBorder", {
+        L"Background:=$IconBackground",
+        L"BorderBrush:=$IconBorder",
+        L"BorderThickness=1.3",
+        L"CornerRadius=16",
+        L"Margin=30,20,30,43",
+        L"Height=60",
+        L"Width=60"}},
+    ThemeTargetStyles{L"StartMenu.StartBlendedFlexFrame > Grid#FrameRoot > Grid#AnimationRoot > Grid#MainMenu > Grid#MainContent > Frame#StartFrame > ContentPresenter > StartMenu.StartHome > Grid#PageRoot > StartMenu.FolderModal#StartFolderModal > Grid#Root > ContentControl#ContentControl > ContentPresenter > StartMenu.UniversalTileContainer#UniversalTileContainer > Grid#GridViewContainer > Grid > GridView#LevelOneGridView > Border > ScrollViewer#ScrollViewer > Border#Root > Grid > ScrollContentPresenter#ScrollContentPresenter > ItemsPresenter > ItemsWrapGrid > GridViewItem > Border#ContentBorder > Grid#DroppedFlickerWorkaroundWrapper > ContentPresenter#ContentPresenter > Grid > TextBlock", {
+        L"Margin=0,15,0,-15"}},
+    ThemeTargetStyles{L"Grid#NavPanePlaceholder", {
+        L"Grid.Row=0",
+        L"Margin=20,0,20,0"}},
+    ThemeTargetStyles{L"ScrollViewer > ScrollContentPresenter > Border > StartMenu.StartBlendedFlexFrame > Grid#FrameRoot > Grid#AnimationRoot > Grid#MainMenu > Grid#MainContent > Frame#StartFrame > ContentPresenter > StartMenu.StartHome > Grid#PageRoot > StartMenu.FolderModal#StartFolderModal > Grid#Root > Border", {
+        L"Height=350"}},
+    ThemeTargetStyles{L"ScrollViewer > ScrollContentPresenter > Border > StartMenu.StartBlendedFlexFrame > Grid#FrameRoot > Grid#AnimationRoot > Grid#MainMenu > Grid#MainContent > Frame#StartFrame > ContentPresenter > StartMenu.StartHome > Grid#PageRoot > StartMenu.FolderModal#StartFolderModal > Grid#Root > ContentControl#ContentControl", {
+        L"Height=350"}},
+    ThemeTargetStyles{L"ScrollViewer > ScrollContentPresenter > Border > StartMenu.StartBlendedFlexFrame > Grid#FrameRoot > Grid#AnimationRoot > Grid#MainMenu > Grid#MainContent > Frame#StartFrame > ContentPresenter > StartMenu.StartHome > Grid#PageRoot > StartMenu.FolderModal#StartFolderModal > Grid#Root > ContentControl#ContentControl > ContentPresenter > StartMenu.UniversalTileContainer#UniversalTileContainer > Grid#GridViewContainer > Grid > Microsoft.UI.Xaml.Controls.PipsPager#PipsPager > StackPanel#RootPanel > ScrollViewer#PipsPagerScrollViewer > Border#Root > Grid > ScrollContentPresenter#ScrollContentPresenter", {
+        L"Margin=0,-100,0,100"}},
+    ThemeTargetStyles{L"GridView#AllAppsGrid > Border > ScrollViewer#ScrollViewer > Border#Root > Grid > ScrollContentPresenter#ScrollContentPresenter > ItemsPresenter > ItemsWrapGrid > GridViewItem > Border#ContentBorder > Grid#DroppedFlickerWorkaroundWrapper", {
+        L"Padding=0,0,0,25"}},
+    ThemeTargetStyles{L"StartDocked.AppListView#NavigationPanePlacesListView", {
+        L"MaxWidth=120",
+        L"Margin=-55,0,55,0"}},
+    ThemeTargetStyles{L"StartMenu.PinnedListTile > Grid#Root > Grid#DisplayNameAndDownloadIconContainer > TextBlock#DisplayName", {
+        L"Height=25"}},
+    ThemeTargetStyles{L"GridView#PinnedList > Border > ScrollViewer#ScrollViewer > Border#Root > Grid > ScrollContentPresenter#ScrollContentPresenter > ItemsPresenter > ItemsWrapGrid > GridViewItem > Border#ContentBorder > Grid#DroppedFlickerWorkaroundWrapper > ContentPresenter#ContentPresenter > Grid > StartMenu.PinnedListCollapsedFolder > Grid#Root > TextBlock#DisplayName", {
+        L"VerticalAlignment=bottom",
+        L"Height=25"}},
+    ThemeTargetStyles{L"ScrollViewer > ScrollContentPresenter > Border > StartMenu.StartBlendedFlexFrame > Grid#FrameRoot > Grid#AnimationRoot > Grid#MainMenu > Grid#MainContent > Frame#StartFrame > ContentPresenter > StartMenu.StartHome > Grid#PageRoot > StartMenu.FolderModal#StartFolderModal > Grid#Root > ContentControl#ContentControl > ContentPresenter > StartMenu.UniversalTileContainer#UniversalTileContainer > Grid#GridViewContainer > Grid > GridView#LevelOneGridView > Border > ScrollViewer#ScrollViewer > Border#Root > Grid > ScrollContentPresenter#ScrollContentPresenter > ItemsPresenter > ItemsWrapGrid > GridViewItem > Border#ContentBorder > Grid#DroppedFlickerWorkaroundWrapper > ContentPresenter#ContentPresenter > Grid > StartMenu.PinnedListTile > Grid#Root > Grid#DisplayNameAndDownloadIconContainer > TextBlock#DisplayName", {
+        L"VerticalAlignment=bottom",
+        L"Height=25"}},
+}, {
+    L"IconBackground=<LinearGradientBrush StartPoint=\"0.47,-0.29\" EndPoint=\"0.50,1.29\"><GradientStop Offset=\"0.18\" Color=\"#2F2F2F\"/><GradientStop Offset=\"0.3\" Color=\"#292929\"/><GradientStop Offset=\"0.5\" Color=\"#141414\"/><GradientStop Offset=\"0.68\" Color=\"#080808\"/><GradientStop Offset=\"0.81\" Color=\"#000000\"/></LinearGradientBrush>",
+    L"IconBorder=<LinearGradientBrush StartPoint=\"0.04,-0.14\" EndPoint=\"1.22,1.10\"><GradientStop Offset=\"0.18\" Color=\"#4FFFFFFF\"/><GradientStop Offset=\"0.34\" Color=\"#661D1D1D\"/><GradientStop Offset=\"0.63\" Color=\"#00000000\"/><GradientStop Offset=\"0.71\" Color=\"#662D2D2D\"/><GradientStop Offset=\"0.77\" Color=\"#4FFFFFFF\"/></LinearGradientBrush>",
+}, {}, {
+    ThemeTargetStyles{L"#qfPreviewPane, .previewContainer, .preview-content-container", {
+        L"display: none !important"}},
+    ThemeTargetStyles{L".suggsListContainer, #qfSuggsList, .results-container, .left-pane", {
+        L"width: 100% !important",
+        L"max-width: 100% !important",
+        L"flex: 1 1 100% !important"}},
+    ThemeTargetStyles{L".main-content-container, .search-results-grid, #searchPane", {
+        L"grid-template-columns: 100% !important",
+        L"display: block !important",
+        L"width: 100% !important"}},
+    ThemeTargetStyles{L".suggContainer, .groupContainer, .card", {
+        L"width: 100% !important",
+        L"box-sizing: border-box !important"}},
+}};
+
+const Theme g_themeOS26_Tahoe_App_Launcher_variant_ClearCenter = {{
+    ThemeTargetStyles{L"StartMenu.StartBlendedFlexFrame > Grid#FrameRoot", {
+        L"Height=624",
+        L"VerticalAlignment=Center",
+        L"Margin=0"}},
+    ThemeTargetStyles{L"StartMenu.StartBlendedFlexFrame > Grid#FrameRoot > Grid#AnimationRoot > Grid#MainMenu > Border#AcrylicBorder", {
+        L"Background:=<WindhawkBlur BlurAmount=\"8\" TintColor=\"#761E1E1E\" />",
+        L"CornerRadius=50"}},
+    ThemeTargetStyles{L"StartMenu.StartBlendedFlexFrame > Grid#FrameRoot > Grid#AnimationRoot > Border#StartDropShadow", {
+        L"CornerRadius=50"}},
+    ThemeTargetStyles{L"Border#AcrylicOverlay", {
+        L"CornerRadius=50,50,0,0",
+        L"Margin=0,-65,0,470"}},
+    ThemeTargetStyles{L"StartMenu.StartBlendedFlexFrame > Grid#FrameRoot > Grid#AnimationRoot > Grid#MainMenu > Grid#MainContent > Frame#StartFrame > ContentPresenter > StartMenu.StartHome > Grid#PageRoot > SemanticZoom#TopLevelRoot > Grid > ScrollViewer#ScrollViewer > ScrollContentPresenter#ScrollContentPresenter > Grid > ContentPresenter#ZoomedInPresenter > GridView#AllAppsGrid > Border > ScrollViewer#ScrollViewer > Border#Root > Grid > Grid > Windows.UI.Xaml.Controls.Primitives.ScrollBar#VerticalScrollBar > Grid#Root > Grid#VerticalRoot", {
+        L"Margin=0,-50,0,40",
+        L"Height=500"}},
+    ThemeTargetStyles{L"ScrollViewer > ScrollContentPresenter > Border > StartMenu.StartBlendedFlexFrame > Grid#FrameRoot > Grid#AnimationRoot > Grid#MainMenu > Grid#MainContent > Frame#StartFrame > ContentPresenter > StartMenu.StartHome > Grid#PageRoot > SemanticZoom#TopLevelRoot > Grid > ScrollViewer#ScrollViewer > ScrollContentPresenter#ScrollContentPresenter > Grid > ContentPresenter#ZoomedInPresenter > GridView#AllAppsGrid > Border > ScrollViewer#ScrollViewer > Border#Root > Grid > Grid > Windows.UI.Xaml.Controls.Primitives.ScrollBar#VerticalScrollBar > Grid#Root > Grid#VerticalRoot > Rectangle#VerticalTrackRect", {
+        L"Height=500"}},
+    ThemeTargetStyles{L"StartMenu.StartHome", {
+        L"Margin=0,5,0,-120"}},
+    ThemeTargetStyles{L"StartMenu.SearchBoxToggleButton#SearchBoxToggleButton > Grid > Border#BorderElement", {
+        L"BorderBrush=transparent",
+        L"Background:=transparent",
+        L"Height=55"}},
+    ThemeTargetStyles{L"ScrollViewer > ScrollContentPresenter > Border > StartMenu.StartBlendedFlexFrame > Grid#FrameRoot > Grid#AnimationRoot > Grid#MainMenu > Grid#MainContent > Grid > StartMenu.SearchBoxToggleButton#SearchBoxToggleButton > Grid", {
+        L"Margin=10,0,-10,0",
+        L"Height=55"}},
+    ThemeTargetStyles{L"ScrollViewer > ScrollContentPresenter > Border > StartMenu.StartBlendedFlexFrame > Grid#FrameRoot > Grid#AnimationRoot > Grid#MainMenu > Grid#MainContent > Grid > StartMenu.SearchBoxToggleButton#SearchBoxToggleButton", {
+        L"Margin=10,0,-10,0",
+        L"Height=55"}},
+    ThemeTargetStyles{L"StartMenu.SearchBoxToggleButton#SearchBoxToggleButton > Grid > Image#SearchIconOff", {
+        L"Margin=680,0,-680,0",
+        L"Height=25",
+        L"Width=25"}},
+    ThemeTargetStyles{L"StartMenu.SearchBoxToggleButton#SearchBoxToggleButton > Grid > Image#SearchIconOn", {
+        L"Margin=680,0,-680,0",
+        L"Height=25",
+        L"Width=25"}},
+    ThemeTargetStyles{L"StartMenu.StartBlendedFlexFrame > Grid#FrameRoot > Grid#AnimationRoot > Grid#MainMenu > Grid#MainContent > Grid > StartMenu.SearchBoxToggleButton#SearchBoxToggleButton > Grid > ContentPresenter#ContentPresenter > TextBlock#PlaceholderText", {
+        L"Text:=Applications",
+        L"FontSize=25"}},
+    ThemeTargetStyles{L"StartDocked.NavigationPaneView#UserControl > Grid#RootPanel > StartDocked.UserTileView#UserTile", {
+        L"Height=45",
+        L"Width=55",
+        L"HorizontalAlignment=left"}},
+    ThemeTargetStyles{L"StartDocked.NavigationPaneButton#UserTileButton > Grid > ContentPresenter#ContentPresenter > Grid > Grid#UserTileIcon", {
+        L"Width=32",
+        L"Height=32"}},
+    ThemeTargetStyles{L"StartDocked.NavigationPaneButton#PowerButton > Grid > ContentPresenter#ContentPresenter > Grid > FontIcon > Grid > TextBlock", {
+        L"Margin=0,1,0,-1",
+        L"FontSize=22"}},
+    ThemeTargetStyles{L"ScrollViewer > ScrollContentPresenter > Border > StartMenu.StartBlendedFlexFrame > Grid#FrameRoot > Grid#AnimationRoot > Grid#MainMenu > Grid#MainContent > Frame#StartFrame > ContentPresenter > StartMenu.StartHome > Grid#PageRoot > SemanticZoom#TopLevelRoot > Grid > ScrollViewer#ScrollViewer > ScrollContentPresenter#ScrollContentPresenter > Grid > ContentPresenter#ZoomedInPresenter > GridView#AllAppsGrid > Border > ScrollViewer#ScrollViewer > Border#Root > Grid > ScrollContentPresenter#ScrollContentPresenter > ItemsPresenter > ContentControl > ContentPresenter > Grid#TopLevelHeader > StartMenu.PinnedList#StartMenuPinnedList > Grid#Root > GridView#PinnedList > Border > ScrollViewer#ScrollViewer > Border#Root > Grid > ScrollContentPresenter#ScrollContentPresenter > ItemsPresenter > ItemsWrapGrid > GridViewItem > Border#ContentBorder > Grid#DroppedFlickerWorkaroundWrapper > Border#BackgroundBorder", {
+        L"BackgroundSizing=1",
+        L"Background:=$IconBackground",
+        L"BorderBrush:=$IconBorder",
+        L"BorderThickness=1.3",
+        L"CornerRadius=16",
+        L"Margin=18,0,18,27"}},
+    ThemeTargetStyles{L"ScrollViewer > ScrollContentPresenter > Border > StartMenu.StartBlendedFlexFrame > Grid#FrameRoot > Grid#AnimationRoot > Grid#MainMenu > Grid#MainContent > Frame#StartFrame > ContentPresenter > StartMenu.StartHome > Grid#PageRoot > SemanticZoom#TopLevelRoot > Grid > ScrollViewer#ScrollViewer > ScrollContentPresenter#ScrollContentPresenter > Grid > ContentPresenter#ZoomedInPresenter > GridView#AllAppsGrid > Border > ScrollViewer#ScrollViewer > Border#Root > Grid > ScrollContentPresenter#ScrollContentPresenter > ItemsPresenter > ContentControl > ContentPresenter > Grid#TopLevelHeader > StartMenu.PinnedList#StartMenuPinnedList > Grid#Root > GridView#PinnedList > Border > ScrollViewer#ScrollViewer > Border#Root > Grid > ScrollContentPresenter#ScrollContentPresenter > ItemsPresenter > ItemsWrapGrid > GridViewItem > Border#ContentBorder > Grid#DroppedFlickerWorkaroundWrapper > ContentPresenter#ContentPresenter > Grid > StartMenu.PinnedListTile > Grid#Root > Grid#DisplayNameAndDownloadIconContainer > TextBlock#DisplayName", {
+        L"Margin=0,15,0,-15"}},
+    ThemeTargetStyles{L"ScrollViewer > ScrollContentPresenter > Border > StartMenu.StartBlendedFlexFrame > Grid#FrameRoot > Grid#AnimationRoot > Grid#MainMenu > Grid#MainContent > Frame#StartFrame > ContentPresenter > StartMenu.StartHome > Grid#PageRoot > SemanticZoom#TopLevelRoot > Grid > ScrollViewer#ScrollViewer > ScrollContentPresenter#ScrollContentPresenter > Grid > ContentPresenter#ZoomedInPresenter > GridView#AllAppsGrid > Border > ScrollViewer#ScrollViewer > Border#Root > Grid > ScrollContentPresenter#ScrollContentPresenter > ItemsPresenter > ItemsWrapGrid > GridViewItem > Border#ContentBorder > Grid#DroppedFlickerWorkaroundWrapper > Border#BackgroundBorder", {
+        L"BackgroundSizing=1",
+        L"Background:=$IconBackground",
+        L"BorderBrush:=$IconBorder",
+        L"BorderThickness=1.3",
+        L"CornerRadius=16",
+        L"Margin=18,0,18,27"}},
+    ThemeTargetStyles{L"ScrollViewer > ScrollContentPresenter > Border > StartMenu.StartBlendedFlexFrame > Grid#FrameRoot > Grid#AnimationRoot > Grid#MainMenu > Grid#MainContent > Frame#StartFrame > ContentPresenter > StartMenu.StartHome > Grid#PageRoot > SemanticZoom#TopLevelRoot > Grid > ScrollViewer#ScrollViewer > ScrollContentPresenter#ScrollContentPresenter > Grid > ContentPresenter#ZoomedInPresenter > GridView#AllAppsGrid > Border > ScrollViewer#ScrollViewer > Border#Root > Grid > ScrollContentPresenter#ScrollContentPresenter > ItemsPresenter > ItemsWrapGrid > GridViewItem > Border#ContentBorder > Grid#DroppedFlickerWorkaroundWrapper > ContentPresenter#ContentPresenter > Grid > TextBlock", {
+        L"Margin=0,15,0,-15"}},
+    ThemeTargetStyles{L"ScrollViewer > ScrollContentPresenter > Border > StartMenu.StartBlendedFlexFrame > Grid#FrameRoot > Grid#AnimationRoot > Grid#MainMenu > Grid#MainContent > Frame#StartFrame > ContentPresenter > StartMenu.StartHome > Grid#PageRoot > SemanticZoom#TopLevelRoot > Grid > ScrollViewer#ScrollViewer > ScrollContentPresenter#ScrollContentPresenter > Grid > ContentPresenter#ZoomedInPresenter > GridView#AllAppsGrid > Border > ScrollViewer#ScrollViewer > Border#Root > Grid > ScrollContentPresenter#ScrollContentPresenter > ItemsPresenter > ItemsWrapGrid > GridViewItem > Grid#RootGrid > ContentPresenter#ContentPresenter > StartMenu.CategoryControl > Grid#RootGrid > Border", {
+        L"BorderBrush:=$IconBorder",
+        L"BorderThickness=1.3",
+        L"CornerRadius=25"}},
+    ThemeTargetStyles{L"ScrollViewer > ScrollContentPresenter > Border > StartMenu.StartBlendedFlexFrame > Grid#FrameRoot > Grid#AnimationRoot > Grid#MainMenu > Grid#MainContent > Frame#StartFrame > ContentPresenter > StartMenu.StartHome > Grid#PageRoot > SemanticZoom#TopLevelRoot > Grid > ScrollViewer#ScrollViewer > ScrollContentPresenter#ScrollContentPresenter > Grid > ContentPresenter#ZoomedInPresenter > GridView#AllAppsGrid > Border > ScrollViewer#ScrollViewer > Border#Root > Grid > ScrollContentPresenter#ScrollContentPresenter > ItemsPresenter > ItemsWrapGrid > GridViewItem > Grid#RootGrid > ContentPresenter#ContentPresenter > StartMenu.CategoryControl > Grid#RootGrid > ScrollViewer#ScrollViewer > Border#Root > Grid > ScrollContentPresenter#ScrollContentPresenter > ItemsPresenter#ItemsPresenter > ItemsWrapGrid > ContentPresenter > Button#LogoContainer > Grid > Border#BackgroundBorder", {
+        L"Background:=$IconBackground",
+        L"BorderBrush:=$IconBorder",
+        L"BorderThickness=1.3",
+        L"CornerRadius=16",
+        L"Margin=7"}},
+    ThemeTargetStyles{L"StartMenu.StartBlendedFlexFrame > Grid#FrameRoot > Grid#AnimationRoot > Grid#MainMenu > Grid#MainContent > Frame#StartFrame > ContentPresenter > StartMenu.StartHome > Grid#PageRoot > SemanticZoom#TopLevelRoot > Grid > ScrollViewer#ScrollViewer > ScrollContentPresenter#ScrollContentPresenter > Grid > ContentPresenter#ZoomedInPresenter > GridView#AllAppsGrid > Border > ScrollViewer#ScrollViewer > Border#Root > Grid > ScrollContentPresenter#ScrollContentPresenter > ItemsPresenter > ContentControl > ContentPresenter > Grid#TopLevelHeader > Grid#TopLevelSuggestionsRoot", {
+        L"Visibility=1"}},
+    ThemeTargetStyles{L"ScrollViewer > ScrollContentPresenter > Border > Cortana.UI.Views.TaskbarSearchPage > Grid#RootGrid > Grid#OuterBorderGrid", {
+        L"Height=541",
+        L"CornerRadius=50"}},
+    ThemeTargetStyles{L"ScrollViewer > ScrollContentPresenter > Border > Cortana.UI.Views.TaskbarSearchPage > Grid#RootGrid", {
+        L"Margin=0,-200,0,0",
+        L"CornerRadius=50",
+        L"VerticalAlignment=Center"}},
+    ThemeTargetStyles{L"ScrollViewer > ScrollContentPresenter > Border > Cortana.UI.Views.TaskbarSearchPage > Grid#RootGrid > Grid#OuterBorderGrid > Grid#BorderGrid > Border#AppBorder, ScrollViewer > ScrollContentPresenter > Border > Cortana.UI.Views.TaskbarSearchPage > Grid#RootGrid > Grid#OuterBorderGrid > Grid#BorderGrid > Border#AccentAppBorder", {
+        L"Background:=<WindhawkBlur BlurAmount=\"8\" TintColor=\"#761E1E1E\"/>",
+        L"BorderBrush=Gray",
+        L"CornerRadius=50",
+        L"BorderThickness=0"}},
+    ThemeTargetStyles{L"ScrollViewer > ScrollContentPresenter > Border > Cortana.UI.Views.TaskbarSearchPage > Grid#RootGrid > Border#TaskbarSearchBackground", {
+        L"Background=transparent",
+        L"Margin=20,10,20,10",
+        L"Height=55"}},
+    ThemeTargetStyles{L"ScrollViewer > ScrollContentPresenter > Border > Cortana.UI.Views.TaskbarSearchPage > Grid#RootGrid > Cortana.UI.Views.RichSearchBoxControl#SearchBoxControl", {
+        L"Margin=20,0,20,0"}},
+    ThemeTargetStyles{L"ScrollViewer > ScrollContentPresenter > Border > Cortana.UI.Views.TaskbarSearchPage > Grid#RootGrid > Cortana.UI.Views.RichSearchBoxControl#SearchBoxControl > Grid#RootGrid > Microsoft.UI.Xaml.Controls.AnimatedIcon#SearchIconPlayer", {
+        L"Height=25",
+        L"Width=25"}},
+    ThemeTargetStyles{L"ScrollViewer > ScrollContentPresenter > Border > Cortana.UI.Views.TaskbarSearchPage > Grid#RootGrid > Cortana.UI.Views.RichSearchBoxControl#SearchBoxControl > Grid#RootGrid > Cortana.UI.Views.CortanaRichSearchBox#SearchTextBox", {
+        L"FontSize=25",
+        L"Margin=10,-1,10,1",
+        L"Foreground=#BFBDB7"}},
+    ThemeTargetStyles{L"ScrollViewer > ScrollContentPresenter > Border > StartMenu.StartBlendedFlexFrame > Grid#FrameRoot > Grid#AnimationRoot > Grid#MainMenu > Grid#MainContent > Frame#StartFrame > ContentPresenter > StartMenu.StartHome > Grid#PageRoot > StartMenu.FolderModal#StartFolderModal > Grid#Root > Border", {
+        L"Background:=<WindhawkBlur BlurAmount=\"8\" TintColor=\"#761E1E1E\"/>",
+        L"CornerRadius=50",
+        L"BorderBrush:=$IconBorder",
+        L"BorderThickness=1.3"}},
+    ThemeTargetStyles{L"ScrollViewer > ScrollContentPresenter > Border > StartMenu.StartBlendedFlexFrame > Grid#FrameRoot > Grid#AnimationRoot > Grid#MainMenu > Grid#MainContent > Frame#StartFrame > ContentPresenter > StartMenu.StartHome > Grid#PageRoot > StartMenu.FolderModal#StartFolderModal > Grid#Root > ContentControl#ContentControl > ContentPresenter > StartMenu.UniversalTileContainer#UniversalTileContainer > Grid#GridViewContainer > Grid > GridView#LevelOneGridView > Border > ScrollViewer#ScrollViewer > Border#Root > Grid > ScrollContentPresenter#ScrollContentPresenter > ItemsPresenter > ItemsWrapGrid > GridViewItem > Border#ContentBorder > Grid#DroppedFlickerWorkaroundWrapper > Border#BackgroundBorder", {
+        L"Background:=$IconBackground",
+        L"BorderBrush:=$IconBorder",
+        L"BorderThickness=1.3",
+        L"CornerRadius=16",
+        L"Margin=30,20,30,43",
+        L"Height=60",
+        L"Width=60"}},
+    ThemeTargetStyles{L"StartMenu.StartBlendedFlexFrame > Grid#FrameRoot > Grid#AnimationRoot > Grid#MainMenu > Grid#MainContent > Frame#StartFrame > ContentPresenter > StartMenu.StartHome > Grid#PageRoot > StartMenu.FolderModal#StartFolderModal > Grid#Root > ContentControl#ContentControl > ContentPresenter > StartMenu.UniversalTileContainer#UniversalTileContainer > Grid#GridViewContainer > Grid > GridView#LevelOneGridView > Border > ScrollViewer#ScrollViewer > Border#Root > Grid > ScrollContentPresenter#ScrollContentPresenter > ItemsPresenter > ItemsWrapGrid > GridViewItem > Border#ContentBorder > Grid#DroppedFlickerWorkaroundWrapper > ContentPresenter#ContentPresenter > Grid > TextBlock", {
+        L"Margin=0,15,0,-15"}},
+    ThemeTargetStyles{L"Grid#NavPanePlaceholder", {
+        L"Grid.Row=0",
+        L"Margin=20,0,20,0"}},
+    ThemeTargetStyles{L"ScrollViewer > ScrollContentPresenter > Border > StartMenu.StartBlendedFlexFrame > Grid#FrameRoot > Grid#AnimationRoot > Grid#MainMenu > Grid#MainContent > Frame#StartFrame > ContentPresenter > StartMenu.StartHome > Grid#PageRoot > StartMenu.FolderModal#StartFolderModal > Grid#Root > Border", {
+        L"Height=350"}},
+    ThemeTargetStyles{L"ScrollViewer > ScrollContentPresenter > Border > StartMenu.StartBlendedFlexFrame > Grid#FrameRoot > Grid#AnimationRoot > Grid#MainMenu > Grid#MainContent > Frame#StartFrame > ContentPresenter > StartMenu.StartHome > Grid#PageRoot > StartMenu.FolderModal#StartFolderModal > Grid#Root > ContentControl#ContentControl", {
+        L"Height=350"}},
+    ThemeTargetStyles{L"ScrollViewer > ScrollContentPresenter > Border > StartMenu.StartBlendedFlexFrame > Grid#FrameRoot > Grid#AnimationRoot > Grid#MainMenu > Grid#MainContent > Frame#StartFrame > ContentPresenter > StartMenu.StartHome > Grid#PageRoot > StartMenu.FolderModal#StartFolderModal > Grid#Root > ContentControl#ContentControl > ContentPresenter > StartMenu.UniversalTileContainer#UniversalTileContainer > Grid#GridViewContainer > Grid > Microsoft.UI.Xaml.Controls.PipsPager#PipsPager > StackPanel#RootPanel > ScrollViewer#PipsPagerScrollViewer > Border#Root > Grid > ScrollContentPresenter#ScrollContentPresenter", {
+        L"Margin=0,-100,0,100"}},
+    ThemeTargetStyles{L"GridView#AllAppsGrid > Border > ScrollViewer#ScrollViewer > Border#Root > Grid > ScrollContentPresenter#ScrollContentPresenter > ItemsPresenter > ItemsWrapGrid > GridViewItem > Border#ContentBorder > Grid#DroppedFlickerWorkaroundWrapper", {
+        L"Padding=0,0,0,25"}},
+    ThemeTargetStyles{L"StartDocked.AppListView#NavigationPanePlacesListView", {
+        L"MaxWidth=120",
+        L"Margin=-55,0,55,0"}},
+    ThemeTargetStyles{L"StartMenu.PinnedListTile > Grid#Root > Grid#DisplayNameAndDownloadIconContainer > TextBlock#DisplayName", {
+        L"Height=25"}},
+    ThemeTargetStyles{L"GridView#PinnedList > Border > ScrollViewer#ScrollViewer > Border#Root > Grid > ScrollContentPresenter#ScrollContentPresenter > ItemsPresenter > ItemsWrapGrid > GridViewItem > Border#ContentBorder > Grid#DroppedFlickerWorkaroundWrapper > ContentPresenter#ContentPresenter > Grid > StartMenu.PinnedListCollapsedFolder > Grid#Root > TextBlock#DisplayName", {
+        L"VerticalAlignment=bottom",
+        L"Height=25"}},
+    ThemeTargetStyles{L"ScrollViewer > ScrollContentPresenter > Border > StartMenu.StartBlendedFlexFrame > Grid#FrameRoot > Grid#AnimationRoot > Grid#MainMenu > Grid#MainContent > Frame#StartFrame > ContentPresenter > StartMenu.StartHome > Grid#PageRoot > StartMenu.FolderModal#StartFolderModal > Grid#Root > ContentControl#ContentControl > ContentPresenter > StartMenu.UniversalTileContainer#UniversalTileContainer > Grid#GridViewContainer > Grid > GridView#LevelOneGridView > Border > ScrollViewer#ScrollViewer > Border#Root > Grid > ScrollContentPresenter#ScrollContentPresenter > ItemsPresenter > ItemsWrapGrid > GridViewItem > Border#ContentBorder > Grid#DroppedFlickerWorkaroundWrapper > ContentPresenter#ContentPresenter > Grid > StartMenu.PinnedListTile > Grid#Root > Grid#DisplayNameAndDownloadIconContainer > TextBlock#DisplayName", {
+        L"VerticalAlignment=bottom",
+        L"Height=25"}},
+}, {
+    L"IconBackground=<ImageBrush ImageSource=\"https://raw.githubusercontent.com/ramensoftware/windows-11-start-menu-styling-guide/refs/heads/main/Themes/OS26%20Tahoe%20App%20Launcher/Assets/tahoeappbg.png\" Stretch=\"UniformtoFill\"/>",
+    L"IconBorder=<LinearGradientBrush StartPoint=\"0.03,-0.15\" EndPoint=\"1.18,1.23\"><GradientStop Offset=\"0.07\" Color=\"#D6D7D7\"/><GradientStop Offset=\"0.3\" Color=\"#05D6D7D7\"/><GradientStop Offset=\"0.62\" Color=\"#00D6D7D7\"/><GradientStop Offset=\"0.84\" Color=\"#D6D7D7\"/></LinearGradientBrush>",
+}, {}, {
+    ThemeTargetStyles{L"#qfPreviewPane, .previewContainer, .preview-content-container", {
+        L"display: none !important"}},
+    ThemeTargetStyles{L".suggsListContainer, #qfSuggsList, .results-container, .left-pane", {
+        L"width: 100% !important",
+        L"max-width: 100% !important",
+        L"flex: 1 1 100% !important"}},
+    ThemeTargetStyles{L".main-content-container, .search-results-grid, #searchPane", {
+        L"grid-template-columns: 100% !important",
+        L"display: block !important",
+        L"width: 100% !important"}},
+    ThemeTargetStyles{L".suggContainer, .groupContainer, .card", {
+        L"width: 100% !important",
+        L"box-sizing: border-box !important"}},
+}};
+
+const Theme g_themeOS26_Tahoe_App_Launcher_variant_ClearBottom = {{
+    ThemeTargetStyles{L"StartMenu.StartBlendedFlexFrame > Grid#FrameRoot", {
+        L"Height=624"}},
+    ThemeTargetStyles{L"StartMenu.StartBlendedFlexFrame > Grid#FrameRoot > Grid#AnimationRoot > Grid#MainMenu > Border#AcrylicBorder", {
+        L"Background:=<WindhawkBlur BlurAmount=\"8\" TintColor=\"#761E1E1E\" />",
+        L"CornerRadius=50"}},
+    ThemeTargetStyles{L"StartMenu.StartBlendedFlexFrame > Grid#FrameRoot > Grid#AnimationRoot > Border#StartDropShadow", {
+        L"CornerRadius=50"}},
+    ThemeTargetStyles{L"Border#AcrylicOverlay", {
+        L"CornerRadius=50,50,0,0",
+        L"Margin=0,-65,0,470"}},
+    ThemeTargetStyles{L"StartMenu.StartBlendedFlexFrame > Grid#FrameRoot > Grid#AnimationRoot > Grid#MainMenu > Grid#MainContent > Frame#StartFrame > ContentPresenter > StartMenu.StartHome > Grid#PageRoot > SemanticZoom#TopLevelRoot > Grid > ScrollViewer#ScrollViewer > ScrollContentPresenter#ScrollContentPresenter > Grid > ContentPresenter#ZoomedInPresenter > GridView#AllAppsGrid > Border > ScrollViewer#ScrollViewer > Border#Root > Grid > Grid > Windows.UI.Xaml.Controls.Primitives.ScrollBar#VerticalScrollBar > Grid#Root > Grid#VerticalRoot", {
+        L"Margin=0,-50,0,40",
+        L"Height=500"}},
+    ThemeTargetStyles{L"ScrollViewer > ScrollContentPresenter > Border > StartMenu.StartBlendedFlexFrame > Grid#FrameRoot > Grid#AnimationRoot > Grid#MainMenu > Grid#MainContent > Frame#StartFrame > ContentPresenter > StartMenu.StartHome > Grid#PageRoot > SemanticZoom#TopLevelRoot > Grid > ScrollViewer#ScrollViewer > ScrollContentPresenter#ScrollContentPresenter > Grid > ContentPresenter#ZoomedInPresenter > GridView#AllAppsGrid > Border > ScrollViewer#ScrollViewer > Border#Root > Grid > Grid > Windows.UI.Xaml.Controls.Primitives.ScrollBar#VerticalScrollBar > Grid#Root > Grid#VerticalRoot > Rectangle#VerticalTrackRect", {
+        L"Height=500"}},
+    ThemeTargetStyles{L"StartMenu.StartHome", {
+        L"Margin=0,5,0,-120"}},
+    ThemeTargetStyles{L"StartMenu.SearchBoxToggleButton#SearchBoxToggleButton > Grid > Border#BorderElement", {
+        L"BorderBrush=transparent",
+        L"Background:=transparent",
+        L"Height=55"}},
+    ThemeTargetStyles{L"ScrollViewer > ScrollContentPresenter > Border > StartMenu.StartBlendedFlexFrame > Grid#FrameRoot > Grid#AnimationRoot > Grid#MainMenu > Grid#MainContent > Grid > StartMenu.SearchBoxToggleButton#SearchBoxToggleButton > Grid", {
+        L"Margin=10,0,-10,0",
+        L"Height=55"}},
+    ThemeTargetStyles{L"ScrollViewer > ScrollContentPresenter > Border > StartMenu.StartBlendedFlexFrame > Grid#FrameRoot > Grid#AnimationRoot > Grid#MainMenu > Grid#MainContent > Grid > StartMenu.SearchBoxToggleButton#SearchBoxToggleButton", {
+        L"Margin=10,0,-10,0",
+        L"Height=55"}},
+    ThemeTargetStyles{L"StartMenu.SearchBoxToggleButton#SearchBoxToggleButton > Grid > Image#SearchIconOff", {
+        L"Margin=680,0,-680,0",
+        L"Height=25",
+        L"Width=25"}},
+    ThemeTargetStyles{L"StartMenu.SearchBoxToggleButton#SearchBoxToggleButton > Grid > Image#SearchIconOn", {
+        L"Margin=680,0,-680,0",
+        L"Height=25",
+        L"Width=25"}},
+    ThemeTargetStyles{L"StartMenu.StartBlendedFlexFrame > Grid#FrameRoot > Grid#AnimationRoot > Grid#MainMenu > Grid#MainContent > Grid > StartMenu.SearchBoxToggleButton#SearchBoxToggleButton > Grid > ContentPresenter#ContentPresenter > TextBlock#PlaceholderText", {
+        L"Text:=Applications",
+        L"FontSize=25"}},
+    ThemeTargetStyles{L"StartDocked.NavigationPaneView#UserControl > Grid#RootPanel > StartDocked.UserTileView#UserTile", {
+        L"Height=45",
+        L"Width=55",
+        L"HorizontalAlignment=left"}},
+    ThemeTargetStyles{L"StartDocked.NavigationPaneButton#UserTileButton > Grid > ContentPresenter#ContentPresenter > Grid > Grid#UserTileIcon", {
+        L"Width=32",
+        L"Height=32"}},
+    ThemeTargetStyles{L"StartDocked.NavigationPaneButton#PowerButton > Grid > ContentPresenter#ContentPresenter > Grid > FontIcon > Grid > TextBlock", {
+        L"Margin=0,1,0,-1",
+        L"FontSize=22"}},
+    ThemeTargetStyles{L"ScrollViewer > ScrollContentPresenter > Border > StartMenu.StartBlendedFlexFrame > Grid#FrameRoot > Grid#AnimationRoot > Grid#MainMenu > Grid#MainContent > Frame#StartFrame > ContentPresenter > StartMenu.StartHome > Grid#PageRoot > SemanticZoom#TopLevelRoot > Grid > ScrollViewer#ScrollViewer > ScrollContentPresenter#ScrollContentPresenter > Grid > ContentPresenter#ZoomedInPresenter > GridView#AllAppsGrid > Border > ScrollViewer#ScrollViewer > Border#Root > Grid > ScrollContentPresenter#ScrollContentPresenter > ItemsPresenter > ContentControl > ContentPresenter > Grid#TopLevelHeader > StartMenu.PinnedList#StartMenuPinnedList > Grid#Root > GridView#PinnedList > Border > ScrollViewer#ScrollViewer > Border#Root > Grid > ScrollContentPresenter#ScrollContentPresenter > ItemsPresenter > ItemsWrapGrid > GridViewItem > Border#ContentBorder > Grid#DroppedFlickerWorkaroundWrapper > Border#BackgroundBorder", {
+        L"BackgroundSizing=1",
+        L"Background:=$IconBackground",
+        L"BorderBrush:=$IconBorder",
+        L"BorderThickness=1.3",
+        L"CornerRadius=16",
+        L"Margin=18,0,18,27"}},
+    ThemeTargetStyles{L"ScrollViewer > ScrollContentPresenter > Border > StartMenu.StartBlendedFlexFrame > Grid#FrameRoot > Grid#AnimationRoot > Grid#MainMenu > Grid#MainContent > Frame#StartFrame > ContentPresenter > StartMenu.StartHome > Grid#PageRoot > SemanticZoom#TopLevelRoot > Grid > ScrollViewer#ScrollViewer > ScrollContentPresenter#ScrollContentPresenter > Grid > ContentPresenter#ZoomedInPresenter > GridView#AllAppsGrid > Border > ScrollViewer#ScrollViewer > Border#Root > Grid > ScrollContentPresenter#ScrollContentPresenter > ItemsPresenter > ContentControl > ContentPresenter > Grid#TopLevelHeader > StartMenu.PinnedList#StartMenuPinnedList > Grid#Root > GridView#PinnedList > Border > ScrollViewer#ScrollViewer > Border#Root > Grid > ScrollContentPresenter#ScrollContentPresenter > ItemsPresenter > ItemsWrapGrid > GridViewItem > Border#ContentBorder > Grid#DroppedFlickerWorkaroundWrapper > ContentPresenter#ContentPresenter > Grid > StartMenu.PinnedListTile > Grid#Root > Grid#DisplayNameAndDownloadIconContainer > TextBlock#DisplayName", {
+        L"Margin=0,15,0,-15"}},
+    ThemeTargetStyles{L"ScrollViewer > ScrollContentPresenter > Border > StartMenu.StartBlendedFlexFrame > Grid#FrameRoot > Grid#AnimationRoot > Grid#MainMenu > Grid#MainContent > Frame#StartFrame > ContentPresenter > StartMenu.StartHome > Grid#PageRoot > SemanticZoom#TopLevelRoot > Grid > ScrollViewer#ScrollViewer > ScrollContentPresenter#ScrollContentPresenter > Grid > ContentPresenter#ZoomedInPresenter > GridView#AllAppsGrid > Border > ScrollViewer#ScrollViewer > Border#Root > Grid > ScrollContentPresenter#ScrollContentPresenter > ItemsPresenter > ItemsWrapGrid > GridViewItem > Border#ContentBorder > Grid#DroppedFlickerWorkaroundWrapper > Border#BackgroundBorder", {
+        L"BackgroundSizing=1",
+        L"Background:=$IconBackground",
+        L"BorderBrush:=$IconBorder",
+        L"BorderThickness=1.3",
+        L"CornerRadius=16",
+        L"Margin=18,0,18,27"}},
+    ThemeTargetStyles{L"ScrollViewer > ScrollContentPresenter > Border > StartMenu.StartBlendedFlexFrame > Grid#FrameRoot > Grid#AnimationRoot > Grid#MainMenu > Grid#MainContent > Frame#StartFrame > ContentPresenter > StartMenu.StartHome > Grid#PageRoot > SemanticZoom#TopLevelRoot > Grid > ScrollViewer#ScrollViewer > ScrollContentPresenter#ScrollContentPresenter > Grid > ContentPresenter#ZoomedInPresenter > GridView#AllAppsGrid > Border > ScrollViewer#ScrollViewer > Border#Root > Grid > ScrollContentPresenter#ScrollContentPresenter > ItemsPresenter > ItemsWrapGrid > GridViewItem > Border#ContentBorder > Grid#DroppedFlickerWorkaroundWrapper > ContentPresenter#ContentPresenter > Grid > TextBlock", {
+        L"Margin=0,15,0,-15"}},
+    ThemeTargetStyles{L"ScrollViewer > ScrollContentPresenter > Border > StartMenu.StartBlendedFlexFrame > Grid#FrameRoot > Grid#AnimationRoot > Grid#MainMenu > Grid#MainContent > Frame#StartFrame > ContentPresenter > StartMenu.StartHome > Grid#PageRoot > SemanticZoom#TopLevelRoot > Grid > ScrollViewer#ScrollViewer > ScrollContentPresenter#ScrollContentPresenter > Grid > ContentPresenter#ZoomedInPresenter > GridView#AllAppsGrid > Border > ScrollViewer#ScrollViewer > Border#Root > Grid > ScrollContentPresenter#ScrollContentPresenter > ItemsPresenter > ItemsWrapGrid > GridViewItem > Grid#RootGrid > ContentPresenter#ContentPresenter > StartMenu.CategoryControl > Grid#RootGrid > Border", {
+        L"BorderBrush:=$IconBorder",
+        L"BorderThickness=1.3",
+        L"CornerRadius=25"}},
+    ThemeTargetStyles{L"ScrollViewer > ScrollContentPresenter > Border > StartMenu.StartBlendedFlexFrame > Grid#FrameRoot > Grid#AnimationRoot > Grid#MainMenu > Grid#MainContent > Frame#StartFrame > ContentPresenter > StartMenu.StartHome > Grid#PageRoot > SemanticZoom#TopLevelRoot > Grid > ScrollViewer#ScrollViewer > ScrollContentPresenter#ScrollContentPresenter > Grid > ContentPresenter#ZoomedInPresenter > GridView#AllAppsGrid > Border > ScrollViewer#ScrollViewer > Border#Root > Grid > ScrollContentPresenter#ScrollContentPresenter > ItemsPresenter > ItemsWrapGrid > GridViewItem > Grid#RootGrid > ContentPresenter#ContentPresenter > StartMenu.CategoryControl > Grid#RootGrid > ScrollViewer#ScrollViewer > Border#Root > Grid > ScrollContentPresenter#ScrollContentPresenter > ItemsPresenter#ItemsPresenter > ItemsWrapGrid > ContentPresenter > Button#LogoContainer > Grid > Border#BackgroundBorder", {
+        L"Background:=$IconBackground",
+        L"BorderBrush:=$IconBorder",
+        L"BorderThickness=1.3",
+        L"CornerRadius=16",
+        L"Margin=7"}},
+    ThemeTargetStyles{L"StartMenu.StartBlendedFlexFrame > Grid#FrameRoot > Grid#AnimationRoot > Grid#MainMenu > Grid#MainContent > Frame#StartFrame > ContentPresenter > StartMenu.StartHome > Grid#PageRoot > SemanticZoom#TopLevelRoot > Grid > ScrollViewer#ScrollViewer > ScrollContentPresenter#ScrollContentPresenter > Grid > ContentPresenter#ZoomedInPresenter > GridView#AllAppsGrid > Border > ScrollViewer#ScrollViewer > Border#Root > Grid > ScrollContentPresenter#ScrollContentPresenter > ItemsPresenter > ContentControl > ContentPresenter > Grid#TopLevelHeader > Grid#TopLevelSuggestionsRoot", {
+        L"Visibility=1"}},
+    ThemeTargetStyles{L"ScrollViewer > ScrollContentPresenter > Border > Cortana.UI.Views.TaskbarSearchPage > Grid#RootGrid > Grid#OuterBorderGrid", {
+        L"Height=541",
+        L"CornerRadius=50"}},
+    ThemeTargetStyles{L"ScrollViewer > ScrollContentPresenter > Border > Cortana.UI.Views.TaskbarSearchPage > Grid#RootGrid", {
+        L"CornerRadius=50",
+        L"VerticalAlignment=Bottom"}},
+    ThemeTargetStyles{L"ScrollViewer > ScrollContentPresenter > Border > Cortana.UI.Views.TaskbarSearchPage > Grid#RootGrid > Grid#OuterBorderGrid > Grid#BorderGrid > Border#AppBorder, ScrollViewer > ScrollContentPresenter > Border > Cortana.UI.Views.TaskbarSearchPage > Grid#RootGrid > Grid#OuterBorderGrid > Grid#BorderGrid > Border#AccentAppBorder", {
+        L"Background:=<WindhawkBlur BlurAmount=\"8\" TintColor=\"#761E1E1E\"/>",
+        L"BorderBrush=Gray",
+        L"CornerRadius=50",
+        L"BorderThickness=0"}},
+    ThemeTargetStyles{L"ScrollViewer > ScrollContentPresenter > Border > Cortana.UI.Views.TaskbarSearchPage > Grid#RootGrid > Border#TaskbarSearchBackground", {
+        L"Background=transparent",
+        L"Margin=20,10,20,10",
+        L"Height=55"}},
+    ThemeTargetStyles{L"ScrollViewer > ScrollContentPresenter > Border > Cortana.UI.Views.TaskbarSearchPage > Grid#RootGrid > Cortana.UI.Views.RichSearchBoxControl#SearchBoxControl", {
+        L"Margin=20,0,20,0"}},
+    ThemeTargetStyles{L"ScrollViewer > ScrollContentPresenter > Border > Cortana.UI.Views.TaskbarSearchPage > Grid#RootGrid > Cortana.UI.Views.RichSearchBoxControl#SearchBoxControl > Grid#RootGrid > Microsoft.UI.Xaml.Controls.AnimatedIcon#SearchIconPlayer", {
+        L"Height=25",
+        L"Width=25"}},
+    ThemeTargetStyles{L"ScrollViewer > ScrollContentPresenter > Border > Cortana.UI.Views.TaskbarSearchPage > Grid#RootGrid > Cortana.UI.Views.RichSearchBoxControl#SearchBoxControl > Grid#RootGrid > Cortana.UI.Views.CortanaRichSearchBox#SearchTextBox", {
+        L"FontSize=25",
+        L"Margin=10,-1,10,1",
+        L"Foreground=#BFBDB7"}},
+    ThemeTargetStyles{L"ScrollViewer > ScrollContentPresenter > Border > StartMenu.StartBlendedFlexFrame > Grid#FrameRoot > Grid#AnimationRoot > Grid#MainMenu > Grid#MainContent > Frame#StartFrame > ContentPresenter > StartMenu.StartHome > Grid#PageRoot > StartMenu.FolderModal#StartFolderModal > Grid#Root > Border", {
+        L"Background:=<WindhawkBlur BlurAmount=\"8\" TintColor=\"#761E1E1E\"/>",
+        L"CornerRadius=50",
+        L"BorderBrush:=$IconBorder",
+        L"BorderThickness=1.3"}},
+    ThemeTargetStyles{L"ScrollViewer > ScrollContentPresenter > Border > StartMenu.StartBlendedFlexFrame > Grid#FrameRoot > Grid#AnimationRoot > Grid#MainMenu > Grid#MainContent > Frame#StartFrame > ContentPresenter > StartMenu.StartHome > Grid#PageRoot > StartMenu.FolderModal#StartFolderModal > Grid#Root > ContentControl#ContentControl > ContentPresenter > StartMenu.UniversalTileContainer#UniversalTileContainer > Grid#GridViewContainer > Grid > GridView#LevelOneGridView > Border > ScrollViewer#ScrollViewer > Border#Root > Grid > ScrollContentPresenter#ScrollContentPresenter > ItemsPresenter > ItemsWrapGrid > GridViewItem > Border#ContentBorder > Grid#DroppedFlickerWorkaroundWrapper > Border#BackgroundBorder", {
+        L"Background:=$IconBackground",
+        L"BorderBrush:=$IconBorder",
+        L"BorderThickness=1.3",
+        L"CornerRadius=16",
+        L"Margin=30,20,30,43",
+        L"Height=60",
+        L"Width=60"}},
+    ThemeTargetStyles{L"StartMenu.StartBlendedFlexFrame > Grid#FrameRoot > Grid#AnimationRoot > Grid#MainMenu > Grid#MainContent > Frame#StartFrame > ContentPresenter > StartMenu.StartHome > Grid#PageRoot > StartMenu.FolderModal#StartFolderModal > Grid#Root > ContentControl#ContentControl > ContentPresenter > StartMenu.UniversalTileContainer#UniversalTileContainer > Grid#GridViewContainer > Grid > GridView#LevelOneGridView > Border > ScrollViewer#ScrollViewer > Border#Root > Grid > ScrollContentPresenter#ScrollContentPresenter > ItemsPresenter > ItemsWrapGrid > GridViewItem > Border#ContentBorder > Grid#DroppedFlickerWorkaroundWrapper > ContentPresenter#ContentPresenter > Grid > TextBlock", {
+        L"Margin=0,15,0,-15"}},
+    ThemeTargetStyles{L"Grid#NavPanePlaceholder", {
+        L"Grid.Row=0",
+        L"Margin=20,0,20,0"}},
+    ThemeTargetStyles{L"ScrollViewer > ScrollContentPresenter > Border > StartMenu.StartBlendedFlexFrame > Grid#FrameRoot > Grid#AnimationRoot > Grid#MainMenu > Grid#MainContent > Frame#StartFrame > ContentPresenter > StartMenu.StartHome > Grid#PageRoot > StartMenu.FolderModal#StartFolderModal > Grid#Root > Border", {
+        L"Height=350"}},
+    ThemeTargetStyles{L"ScrollViewer > ScrollContentPresenter > Border > StartMenu.StartBlendedFlexFrame > Grid#FrameRoot > Grid#AnimationRoot > Grid#MainMenu > Grid#MainContent > Frame#StartFrame > ContentPresenter > StartMenu.StartHome > Grid#PageRoot > StartMenu.FolderModal#StartFolderModal > Grid#Root > ContentControl#ContentControl", {
+        L"Height=350"}},
+    ThemeTargetStyles{L"ScrollViewer > ScrollContentPresenter > Border > StartMenu.StartBlendedFlexFrame > Grid#FrameRoot > Grid#AnimationRoot > Grid#MainMenu > Grid#MainContent > Frame#StartFrame > ContentPresenter > StartMenu.StartHome > Grid#PageRoot > StartMenu.FolderModal#StartFolderModal > Grid#Root > ContentControl#ContentControl > ContentPresenter > StartMenu.UniversalTileContainer#UniversalTileContainer > Grid#GridViewContainer > Grid > Microsoft.UI.Xaml.Controls.PipsPager#PipsPager > StackPanel#RootPanel > ScrollViewer#PipsPagerScrollViewer > Border#Root > Grid > ScrollContentPresenter#ScrollContentPresenter", {
+        L"Margin=0,-100,0,100"}},
+    ThemeTargetStyles{L"GridView#AllAppsGrid > Border > ScrollViewer#ScrollViewer > Border#Root > Grid > ScrollContentPresenter#ScrollContentPresenter > ItemsPresenter > ItemsWrapGrid > GridViewItem > Border#ContentBorder > Grid#DroppedFlickerWorkaroundWrapper", {
+        L"Padding=0,0,0,25"}},
+    ThemeTargetStyles{L"StartDocked.AppListView#NavigationPanePlacesListView", {
+        L"MaxWidth=120",
+        L"Margin=-55,0,55,0"}},
+    ThemeTargetStyles{L"StartMenu.PinnedListTile > Grid#Root > Grid#DisplayNameAndDownloadIconContainer > TextBlock#DisplayName", {
+        L"Height=25"}},
+    ThemeTargetStyles{L"GridView#PinnedList > Border > ScrollViewer#ScrollViewer > Border#Root > Grid > ScrollContentPresenter#ScrollContentPresenter > ItemsPresenter > ItemsWrapGrid > GridViewItem > Border#ContentBorder > Grid#DroppedFlickerWorkaroundWrapper > ContentPresenter#ContentPresenter > Grid > StartMenu.PinnedListCollapsedFolder > Grid#Root > TextBlock#DisplayName", {
+        L"VerticalAlignment=bottom",
+        L"Height=25"}},
+    ThemeTargetStyles{L"ScrollViewer > ScrollContentPresenter > Border > StartMenu.StartBlendedFlexFrame > Grid#FrameRoot > Grid#AnimationRoot > Grid#MainMenu > Grid#MainContent > Frame#StartFrame > ContentPresenter > StartMenu.StartHome > Grid#PageRoot > StartMenu.FolderModal#StartFolderModal > Grid#Root > ContentControl#ContentControl > ContentPresenter > StartMenu.UniversalTileContainer#UniversalTileContainer > Grid#GridViewContainer > Grid > GridView#LevelOneGridView > Border > ScrollViewer#ScrollViewer > Border#Root > Grid > ScrollContentPresenter#ScrollContentPresenter > ItemsPresenter > ItemsWrapGrid > GridViewItem > Border#ContentBorder > Grid#DroppedFlickerWorkaroundWrapper > ContentPresenter#ContentPresenter > Grid > StartMenu.PinnedListTile > Grid#Root > Grid#DisplayNameAndDownloadIconContainer > TextBlock#DisplayName", {
+        L"VerticalAlignment=bottom",
+        L"Height=25"}},
+}, {
+    L"IconBackground=<ImageBrush ImageSource=\"https://raw.githubusercontent.com/ramensoftware/windows-11-start-menu-styling-guide/refs/heads/main/Themes/OS26%20Tahoe%20App%20Launcher/Assets/tahoeappbg.png\" Stretch=\"UniformtoFill\"/>",
+    L"IconBorder=<LinearGradientBrush StartPoint=\"0.03,-0.15\" EndPoint=\"1.18,1.23\"><GradientStop Offset=\"0.07\" Color=\"#D6D7D7\"/><GradientStop Offset=\"0.3\" Color=\"#05D6D7D7\"/><GradientStop Offset=\"0.62\" Color=\"#00D6D7D7\"/><GradientStop Offset=\"0.84\" Color=\"#D6D7D7\"/></LinearGradientBrush>",
+}, {}, {
+    ThemeTargetStyles{L"#qfPreviewPane, .previewContainer, .preview-content-container", {
+        L"display: none !important"}},
+    ThemeTargetStyles{L".suggsListContainer, #qfSuggsList, .results-container, .left-pane", {
+        L"width: 100% !important",
+        L"max-width: 100% !important",
+        L"flex: 1 1 100% !important"}},
+    ThemeTargetStyles{L".main-content-container, .search-results-grid, #searchPane", {
+        L"grid-template-columns: 100% !important",
+        L"display: block !important",
+        L"width: 100% !important"}},
+    ThemeTargetStyles{L".suggContainer, .groupContainer, .card", {
+        L"width: 100% !important",
+        L"box-sizing: border-box !important"}},
+}};
+
+const Theme g_themeRaycast = {{
+    ThemeTargetStyles{L"StartMenu.StartBlendedFlexFrame", {
+        L"HorizontalAlignment=Center",
+        L"RenderTransform:=<TranslateTransform Y=\"$PaletteOffsetY\" />",
+        L"CornerRadius=$PaletteRadius"}},
+    ThemeTargetStyles{L"StartMenu.StartBlendedFlexFrame > Grid#FrameRoot", {
+        L"Width=$PaletteWidth",
+        L"MinWidth=$PaletteWidth",
+        L"MaxWidth=$PaletteWidth",
+        L"Height=$PaletteHeight",
+        L"MinHeight=$PaletteHeight",
+        L"MaxHeight=$PaletteHeight",
+        L"Margin=0",
+        L"Padding=0"}},
+    ThemeTargetStyles{L"Grid#MainMenu", {
+        L"Width=$PaletteWidth",
+        L"MaxWidth=$PaletteWidth",
+        L"Height=$PaletteHeight",
+        L"MaxHeight=$PaletteHeight",
+        L"HorizontalAlignment=Center",
+        L"VerticalAlignment=Top",
+        L"Background=Transparent"}},
+    ThemeTargetStyles{L"Border#AcrylicBorder", {
+        L"Background:=$PaletteBackground",
+        L"BorderBrush=$PaletteBorder",
+        L"BorderThickness=1",
+        L"CornerRadius=$PaletteRadius",
+        L"Margin=0"}},
+    ThemeTargetStyles{L"Border#AcrylicOverlay", {
+        L"Visibility=Collapsed"}},
+    ThemeTargetStyles{L"Border#StartDropShadow", {
+        L"CornerRadius=$PaletteRadius",
+        L"Margin=$ShadowMargin",
+        L"Opacity=$ShadowOpacity"}},
+    ThemeTargetStyles{L"Border#RootGridDropShadow", {
+        L"CornerRadius=$PaletteRadius",
+        L"Margin=$ShadowMargin",
+        L"Opacity=$ShadowOpacity"}},
+    ThemeTargetStyles{L"StartMenu.SearchBoxToggleButton#SearchBoxToggleButton", {
+        L"Height=$SearchHeight",
+        L"MinHeight=$SearchHeight",
+        L"MaxHeight=$SearchHeight",
+        L"Margin=0",
+        L"Padding=0",
+        L"Background=Transparent",
+        L"BorderThickness=0",
+        L"HorizontalAlignment=Stretch",
+        L"VerticalAlignment=Top"}},
+    ThemeTargetStyles{L"StartMenu.SearchBoxToggleButton#SearchBoxToggleButton > Grid@CommonStates > Border#BorderElement", {
+        L"Background@Normal=$Transparent",
+        L"Background@PointerOver=$Transparent",
+        L"Background@Pressed=$Transparent",
+        L"Background@Checked=$Transparent",
+        L"Background@CheckedPointerOver=$Transparent",
+        L"Background@CheckedPressed=$Transparent",
+        L"BorderBrush=$DividerBrush",
+        L"BorderThickness=0,0,0,1",
+        L"CornerRadius=$PaletteRadius,$PaletteRadius,0,0",
+        L"Margin=0"}},
+    ThemeTargetStyles{L"StartMenu.SearchBoxToggleButton#SearchBoxToggleButton > Grid > ContentPresenter > TextBlock#PlaceholderText", {
+        L"Text=Search for apps and commands...",
+        L"Foreground=$TextSecondary",
+        L"FontFamily=$UIFont",
+        L"FontSize=$SearchTextSize",
+        L"FontWeight=400",
+        L"Opacity=0.70",
+        L"VerticalAlignment=Center"}},
+    ThemeTargetStyles{L"StartMenu.SearchBoxToggleButton > Grid > FontIcon#SearchGlyph", {
+        L"Foreground=$TextSecondary",
+        L"FontSize=$SearchTextSize",
+        L"Width=$SearchGlyphBox",
+        L"Height=$SearchGlyphBox",
+        L"Margin=$EdgePadding,0,4,0"}},
+    ThemeTargetStyles{L"StartMenu.SearchBoxToggleButton > Grid > Rectangle#TextCaret", {
+        L"Visibility=Visible"}},
+    ThemeTargetStyles{L"StartMenu.PinnedList#StartMenuPinnedList", {
+        L"Visibility=Collapsed",
+        L"MaxHeight=0",
+        L"Height=0"}},
+    ThemeTargetStyles{L"GridView#PinnedList", {
+        L"Visibility=Collapsed",
+        L"MaxHeight=0"}},
+    ThemeTargetStyles{L"TextBlock#PinnedListHeaderText", {
+        L"Visibility=Collapsed"}},
+    ThemeTargetStyles{L"Grid#TopLevelHeader", {
+        L"Visibility=Collapsed",
+        L"MaxHeight=0",
+        L"MinHeight=0",
+        L"Margin=0"}},
+    ThemeTargetStyles{L"Grid#NavPanePlaceholder", {
+        L"Visibility=Collapsed",
+        L"MaxHeight=0"}},
+    ThemeTargetStyles{L"Grid#AllAppsPaneHeader", {
+        L"Visibility=Collapsed",
+        L"MaxHeight=0"}},
+    ThemeTargetStyles{L"Grid#SuggestionsParentContainer", {
+        L"Visibility=Collapsed"}},
+    ThemeTargetStyles{L"Grid#TopLevelSuggestionsRoot", {
+        L"Visibility=Collapsed",
+        L"MaxHeight=0"}},
+    ThemeTargetStyles{L"Grid#TopLevelSuggestionsContainer", {
+        L"Visibility=Collapsed"}},
+    ThemeTargetStyles{L"Grid#TopLevelSuggestionsListHeader", {
+        L"Visibility=Collapsed"}},
+    ThemeTargetStyles{L"Grid#ShowMoreSuggestions", {
+        L"Visibility=Collapsed",
+        L"MaxHeight=0"}},
+    ThemeTargetStyles{L"Grid#ShowMorePinnedGrid", {
+        L"Visibility=Collapsed",
+        L"MaxHeight=0"}},
+    ThemeTargetStyles{L"TextBlock#ShowMorePinnedButtonText", {
+        L"Visibility=Collapsed"}},
+    ThemeTargetStyles{L"Button#ShowMoreSuggestionsButton", {
+        L"Visibility=Collapsed"}},
+    ThemeTargetStyles{L"Button#HideMoreSuggestionsButton", {
+        L"Visibility=Collapsed"}},
+    ThemeTargetStyles{L"Grid#MoreSuggestionsRoot", {
+        L"Visibility=Collapsed",
+        L"MaxHeight=0"}},
+    ThemeTargetStyles{L"Grid#MoreSuggestionsContainer", {
+        L"Visibility=Collapsed"}},
+    ThemeTargetStyles{L"TextBlock#MoreSuggestionsListHeaderText", {
+        L"Visibility=Collapsed"}},
+    ThemeTargetStyles{L"TextBlock#ShowAllAppsButtonText", {
+        L"Visibility=Collapsed"}},
+    ThemeTargetStyles{L"TextBlock#SeeAllButtonLabelTextblock", {
+        L"Visibility=Collapsed"}},
+    ThemeTargetStyles{L"GridView#RecommendedList", {
+        L"Visibility=Collapsed",
+        L"MaxHeight=0"}},
+    ThemeTargetStyles{L"Microsoft.UI.Xaml.Controls.PipsPager#PinnedListPipsPager", {
+        L"Visibility=Collapsed"}},
+    ThemeTargetStyles{L"Button#ShowAllAppsButton", {
+        L"Visibility=Collapsed"}},
+    ThemeTargetStyles{L"Button#SeeAllButton", {
+        L"Visibility=Collapsed"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Primitives.ToggleButton#ShowHideCompanion", {
+        L"Visibility=Collapsed"}},
+    ThemeTargetStyles{L"Grid#RightCompanionContainerGrid", {
+        L"Visibility=Collapsed"}},
+    ThemeTargetStyles{L"StartDocked.StartMenuCompanion#RightCompanion", {
+        L"Visibility=Collapsed"}},
+    ThemeTargetStyles{L"StartMenu.StartMenuCompanion#RightCompanion", {
+        L"Visibility=Collapsed"}},
+    ThemeTargetStyles{L"StartDocked.UserTileView", {
+        L"Visibility=Collapsed"}},
+    ThemeTargetStyles{L"StartDocked.PowerOptionsView", {
+        L"Visibility=Collapsed"}},
+    ThemeTargetStyles{L"StartDocked.NavigationPaneView#NavigationPane", {
+        L"Visibility=Collapsed"}},
+    ThemeTargetStyles{L"Grid#AccountBadgePlaceholder", {
+        L"Visibility=Collapsed"}},
+    ThemeTargetStyles{L"Grid#AllListHeading", {
+        L"Visibility=Collapsed",
+        L"MaxHeight=0",
+        L"MinHeight=0",
+        L"Height=0",
+        L"Margin=0"}},
+    ThemeTargetStyles{L"TextBlock#AllListHeadingText", {
+        L"Visibility=Collapsed"}},
+    ThemeTargetStyles{L"Microsoft.UI.Xaml.Controls.DropDownButton#ViewSelectionButton", {
+        L"Visibility=Collapsed",
+        L"MaxHeight=0"}},
+    ThemeTargetStyles{L"StartDocked.AllAppsGridListView#AppsList", {
+        L"MaxHeight=$AppsListHeight",
+        L"Padding=0,0,0,4",
+        L"Margin=$EdgePadding,0,$EdgePadding,0",
+        L"Background=Transparent",
+        L"BorderThickness=0"}},
+    ThemeTargetStyles{L"StartDocked.AllAppsGridListViewItem", {
+        L"Height=$RowHeight",
+        L"MinHeight=$RowHeight",
+        L"MaxHeight=$RowHeight",
+        L"Margin=0",
+        L"Padding=0",
+        L"FontFamily=$UIFont",
+        L"HorizontalContentAlignment=Stretch"}},
+    ThemeTargetStyles{L"StartDocked.AllAppsGridListViewItem > Grid@CommonStates > Border", {
+        L"Background@Normal=$Transparent",
+        L"Background@PointerOver=$RowHover",
+        L"Background@Pressed=$RowPressed",
+        L"Background@Selected=$RowSelected",
+        L"Background@SelectedPointerOver=$RowSelected",
+        L"Background@SelectedPressed=$RowPressed",
+        L"BorderThickness=0",
+        L"CornerRadius=$RowRadius",
+        L"Margin=$RowInset,1"}},
+    ThemeTargetStyles{L"StartDocked.AllAppsGridListViewItem > Grid@CommonStates > Border#BackgroundBorder", {
+        L"Background@Normal=$Transparent",
+        L"Background@PointerOver=$RowHover",
+        L"Background@Pressed=$RowPressed",
+        L"Background@Selected=$RowSelected",
+        L"BorderThickness=0",
+        L"CornerRadius=$RowRadius",
+        L"Margin=$RowInset,1"}},
+    ThemeTargetStyles{L"StartDocked.AllAppsGridListViewItem > Grid#ContentBorder@CommonStates", {
+        L"Background@Normal=$Transparent",
+        L"Background@PointerOver=$RowHover",
+        L"Background@Pressed=$RowPressed",
+        L"Background@Selected=$RowSelected",
+        L"CornerRadius=$RowRadius"}},
+    ThemeTargetStyles{L"StartDocked.AppListViewItem", {
+        L"Height=$RowHeight",
+        L"MinHeight=$RowHeight",
+        L"FontFamily=$UIFont"}},
+    ThemeTargetStyles{L"StartDocked.AppListViewItem > Grid@CommonStates > Border#BackgroundBorder", {
+        L"Background@Normal=$Transparent",
+        L"Background@PointerOver=$RowHover",
+        L"Background@Pressed=$RowPressed",
+        L"Background@Selected=$RowSelected",
+        L"BorderThickness=0",
+        L"CornerRadius=$RowRadius",
+        L"Margin=$RowInset,1"}},
+    ThemeTargetStyles{L"Border#LogoBackgroundPlate", {
+        L"Width=$IconSize",
+        L"Height=$IconSize",
+        L"MinWidth=$IconSize",
+        L"Background=Transparent",
+        L"CornerRadius=$IconRadius",
+        L"Margin=$IconMargin",
+        L"VerticalAlignment=Center"}},
+    ThemeTargetStyles{L"Image#AllAppsItemLogo", {
+        L"Width=$IconSize",
+        L"Height=$IconSize"}},
+    ThemeTargetStyles{L"TextBlock#DisplayName", {
+        L"Foreground=$TextPrimary",
+        L"FontFamily=$UIFont",
+        L"FontSize=$BodyTextSize",
+        L"FontWeight=400",
+        L"TextTrimming=CharacterEllipsis",
+        L"TextWrapping=NoWrap",
+        L"VerticalAlignment=Center",
+        L"Margin=0"}},
+    ThemeTargetStyles{L"TextBlock#AllAppsHeading", {
+        L"Foreground=$TextMuted",
+        L"FontFamily=$UIFont",
+        L"FontSize=$CaptionTextSize",
+        L"FontWeight=$SectionTextWeight",
+        L"Margin=$RowInset,10,0,4"}},
+    ThemeTargetStyles{L"StartDocked.AllAppsZoomListViewItem > Grid@CommonStates > Border", {
+        L"Background@Normal=$Transparent",
+        L"Background@PointerOver=$RowHover",
+        L"CornerRadius=$RowRadius",
+        L"BorderThickness=0"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Primitives.ScrollBar", {
+        L"Opacity=$ScrollbarOpacity",
+        L"Width=$ScrollbarWidth",
+        L"MinWidth=$ScrollbarWidth"}},
+    ThemeTargetStyles{L"Cortana.UI.Views.TaskbarSearchPage", {
+        L"Width=$SearchWidth",
+        L"MinWidth=$SearchWidth",
+        L"MaxWidth=$SearchWidth",
+        L"Height=$PaletteHeight",
+        L"MinHeight=$PaletteHeight",
+        L"MaxHeight=$PaletteHeight",
+        L"HorizontalAlignment=Center",
+        L"VerticalAlignment=Bottom",
+        L"RenderTransform:=<TranslateTransform Y=\"$SearchOffsetY\" />",
+        L"Margin=0"}},
+    ThemeTargetStyles{L"Cortana.UI.Views.TaskbarSearchPage > Grid#RootGrid", {
+        L"Width=$SearchWidth",
+        L"MinWidth=$SearchWidth",
+        L"MaxWidth=$SearchWidth",
+        L"Height=$PaletteHeight",
+        L"MinHeight=$PaletteHeight",
+        L"MaxHeight=$PaletteHeight",
+        L"HorizontalAlignment=Center",
+        L"VerticalAlignment=Bottom",
+        L"RequestedTheme=2",
+        L"CornerRadius=$PaletteRadius",
+        L"Background:=$SearchPaletteBackground",
+        L"BorderBrush=$PaletteBorder",
+        L"BorderThickness=1",
+        L"Margin=0"}},
+    ThemeTargetStyles{L"Cortana.UI.Views.TaskbarSearchPage > Grid#RootGrid > Grid#OuterBorderGrid", {
+        L"Width=$SearchWidth",
+        L"MinWidth=$SearchWidth",
+        L"MaxWidth=$SearchWidth",
+        L"Height=$PaletteHeight",
+        L"MinHeight=$PaletteHeight",
+        L"MaxHeight=$PaletteHeight",
+        L"HorizontalAlignment=Center",
+        L"VerticalAlignment=Bottom",
+        L"Background=Transparent",
+        L"CornerRadius=$PaletteRadius",
+        L"Margin=0"}},
+    ThemeTargetStyles{L"Border#AppBorder", {
+        L"Background:=$SearchPaletteBackground",
+        L"BorderBrush=$PaletteBorder",
+        L"BorderThickness=1",
+        L"CornerRadius=$PaletteRadius",
+        L"Width=$SearchWidth",
+        L"MinWidth=$SearchWidth",
+        L"MaxWidth=$SearchWidth",
+        L"Height=$PaletteHeight",
+        L"MinHeight=$PaletteHeight",
+        L"MaxHeight=$PaletteHeight",
+        L"HorizontalAlignment=Center",
+        L"VerticalAlignment=Bottom",
+        L"Margin=0"}},
+    ThemeTargetStyles{L"Border#AccentAppBorder", {
+        L"Background=Transparent",
+        L"BorderThickness=0",
+        L"CornerRadius=$PaletteRadius"}},
+    ThemeTargetStyles{L"Border#LayerBorder", {
+        L"Background=Transparent",
+        L"BorderThickness=0",
+        L"CornerRadius=$PaletteRadius"}},
+    ThemeTargetStyles{L"Border#AccentLayerBorder", {
+        L"Background=Transparent",
+        L"BorderThickness=0",
+        L"CornerRadius=$PaletteRadius"}},
+    ThemeTargetStyles{L"Border#dropshadow", {
+        L"CornerRadius=$PaletteRadius"}},
+    ThemeTargetStyles{L"Border#TaskbarMargin", {
+        L"Visibility=Collapsed"}},
+    ThemeTargetStyles{L"Grid@SearchBoxInputStates > Border#TaskbarSearchBackground", {
+        L"Height=$SearchHeight",
+        L"Margin=0",
+        L"VerticalAlignment=Top",
+        L"Background@NoFocus=$Transparent",
+        L"Background@ActiveInput=$Transparent",
+        L"Background@SearchBoxHover=$Transparent",
+        L"BorderBrush=$DividerBrush",
+        L"BorderThickness=0,0,0,1",
+        L"CornerRadius=$PaletteRadius,$PaletteRadius,0,0"}},
+    ThemeTargetStyles{L"Cortana.UI.Views.RichSearchBoxControl#SearchBoxControl", {
+        L"Margin=$EdgePadding,0,$EdgePadding,0",
+        L"Height=$SearchHeight",
+        L"VerticalAlignment=Top",
+        L"FontFamily=$UIFont",
+        L"FontSize=$SearchTextSize"}},
+    ThemeTargetStyles{L"Cortana.UI.Views.RichSearchBoxControl#SearchBoxControl > Grid#RootGrid", {
+        L"Background=Transparent",
+        L"BorderThickness=0",
+        L"CornerRadius=0"}},
+    ThemeTargetStyles{L"Grid#WebViewGrid", {
+        L"Background=Transparent",
+        L"HorizontalAlignment=Stretch",
+        L"VerticalAlignment=Stretch",
+        L"Margin=1,0,1,$PaletteRadius",
+        L"CornerRadius=0,0,$PaletteRadius,$PaletteRadius"}},
+    ThemeTargetStyles{L"WebView2Standalone.Controls.WebView2", {
+        L"HorizontalAlignment=Stretch",
+        L"VerticalAlignment=Stretch",
+        L"Margin=0",
+        L"CornerRadius=0,0,$PaletteRadius,$PaletteRadius"}},
+    ThemeTargetStyles{L"ListViewItem", {
+        L"MinHeight=$RowHeight",
+        L"FontFamily=$UIFont"}},
+    ThemeTargetStyles{L"ListViewItem > Grid@CommonStates > Border#BackgroundBorder", {
+        L"Background@Normal=$Transparent",
+        L"Background@PointerOver=$RowHover",
+        L"Background@Pressed=$RowPressed",
+        L"Background@Selected=$RowSelected",
+        L"BorderThickness=0",
+        L"CornerRadius=$RowRadius",
+        L"Margin=$RowInset,1"}},
+    ThemeTargetStyles{L"TextBlock#Title", {
+        L"Foreground=$TextPrimary",
+        L"FontFamily=$UIFont",
+        L"FontSize=$BodyTextSize",
+        L"FontWeight=400",
+        L"TextTrimming=CharacterEllipsis"}},
+    ThemeTargetStyles{L"TextBlock#Subtitle", {
+        L"Foreground=$TextSecondary",
+        L"FontFamily=$UIFont",
+        L"FontSize=$CaptionTextSize",
+        L"FontWeight=400",
+        L"TextTrimming=CharacterEllipsis"}},
+    ThemeTargetStyles{L"ToolTip > ContentPresenter#LayoutRoot", {
+        L"Background=$FlyoutBackground",
+        L"BorderBrush=$PaletteBorder",
+        L"BorderThickness=1",
+        L"CornerRadius=$RowRadius"}},
+    ThemeTargetStyles{L"FlyoutPresenter", {
+        L"Background=$FlyoutBackground",
+        L"BorderBrush=$PaletteBorder",
+        L"BorderThickness=1",
+        L"CornerRadius=$EdgePadding"}},
+    ThemeTargetStyles{L"MenuFlyoutPresenter", {
+        L"Background=$FlyoutBackground",
+        L"BorderBrush=$PaletteBorder",
+        L"BorderThickness=1",
+        L"CornerRadius=$EdgePadding"}},
+    ThemeTargetStyles{L"MenuFlyoutItem", {
+        L"CornerRadius=$MenuItemRadius",
+        L"Margin=$MenuItemMargin"}},
+}, {
+    L"PaletteWidth=700",
+    L"PaletteHeight=460",
+    L"PaletteOffsetY=-140",
+    L"SearchOffsetY=-140",
+    L"SearchWidth=700",
+    L"PaletteRadius=12",
+    L"EdgePadding=10",
+    L"SearchHeight=52",
+    L"SearchTextSize=17",
+    L"SearchGlyphBox=32",
+    L"RowHeight=38",
+    L"RowRadius=8",
+    L"RowInset=8",
+    L"IconSize=20",
+    L"IconRadius=4",
+    L"IconMargin=6,0,12,0",
+    L"MenuItemRadius=6",
+    L"MenuItemMargin=4,0,4,0",
+    L"BodyTextSize=14",
+    L"CaptionTextSize=11.5",
+    L"SectionTextWeight=600",
+    L"ShadowMargin=-26",
+    L"ShadowOpacity=0.5",
+    L"ScrollbarWidth=4",
+    L"ScrollbarOpacity=0.22",
+    L"WebPaletteRadius=12px",
+    L"WebEdgePadding=10px",
+    L"WebRowHeight=38px",
+    L"WebRowRadius=8px",
+    L"WebRowMargin=1px 8px",
+    L"WebSectionMargin=10px 8px 4px",
+    L"WebIconSize=20px",
+    L"WebIconTextSize=18px",
+    L"WebIconGap=12px",
+    L"WebBodyTextSize=14px",
+    L"WebCaptionTextSize=11.5px",
+    L"AppsListHeight=400",
+    L"PaletteBackground=<WindhawkBlur BlurAmount=\"40\" TintColor=\"#17171A\" TintOpacity=\"0.84\" TintSaturation=\"1.10\" NoiseOpacity=\"0.010\" FallbackColor=\"#E617171A\" />",
+    L"SearchPaletteBackground=<WindhawkBlur BlurAmount=\"40\" TintColor=\"#17171A\" TintOpacity=\"0.86\" TintSaturation=\"1.10\" NoiseOpacity=\"0.010\" FallbackColor=\"#EA17171A\" />",
+    L"FlyoutBackground=#F017171A",
+    L"PaletteBorder=#26FFFFFF",
+    L"DividerBrush=#14FFFFFF",
+    L"Transparent=#00000000",
+    L"RowHover=#0DFFFFFF",
+    L"RowSelected=#17FFFFFF",
+    L"RowPressed=#22FFFFFF",
+    L"WebRowHover=rgba(255,255,255,0.05)",
+    L"WebRowSelected=rgba(255,255,255,0.09)",
+    L"WebScrollbar=rgba(255,255,255,.16)",
+    L"TextPrimary=#EDEDEF",
+    L"TextSecondary=#8E8E93",
+    L"TextMuted=#7C7C82",
+    L"TextIcon=#D8D8DA",
+    L"UIFont=Segoe UI Variable Text",
+    L"WebUIFont='Segoe UI Variable Text', 'Segoe UI', sans-serif",
+    L"AccentColor=#8A8A92",
+    L"AccentColorLight=#A0A0A7",
+    L"AccentColorDark=#6E6E75",
+}, {
+    L"SystemAccentColor=$AccentColor",
+    L"SystemAccentColorLight1=$AccentColorLight",
+    L"SystemAccentColorDark1=$AccentColorDark",
+}, {
+    ThemeTargetStyles{L"html, body, #rootContainer, #root, .scr", {
+        L"background: transparent !important",
+        L"background-color: transparent !important",
+        L"color: $TextPrimary !important",
+        L"font-family: $WebUIFont !important",
+        L"overflow-x: hidden !important",
+        L"letter-spacing: 0 !important"}},
+    ThemeTargetStyles{L"html, body", {
+        L"border-bottom-left-radius: $WebPaletteRadius !important",
+        L"border-bottom-right-radius: $WebPaletteRadius !important",
+        L"overflow: hidden !important"}},
+    ThemeTargetStyles{L"#rootContainer, #root", {
+        L"border-bottom-left-radius: $WebPaletteRadius !important",
+        L"border-bottom-right-radius: $WebPaletteRadius !important",
+        L"overflow-x: hidden !important"}},
+    ThemeTargetStyles{L"#root.twoColumns", {
+        L"display: block !important",
+        L"width: 100% !important",
+        L"max-width: 100% !important"}},
+    ThemeTargetStyles{L"#scopesHeader, #scopesHeader *, #chatButtonRight, #topHitHeader, #qfPreviewPane, #qfPreviewPane *, .previewContainer, .scope-with-background__backButton, .scope-with-background__rightCaret, .scope-with-background__leftCaret, .curatedSettingsGroup, .userProfileMenuIcon, .openPreviewPaneBtn, .scope-tile__button", {
+        L"display: none !important",
+        L"visibility: hidden !important"}},
+    ThemeTargetStyles{L".leftPill::before", {
+        L"display: none !important"}},
+    ThemeTargetStyles{L"#qfContainer, .leftPane, .leftPaneZIsuggestions, .suggsListContainer, .searchResults, .topResults, .groupContainer", {
+        L"width: 100% !important",
+        L"max-width: none !important",
+        L"box-sizing: border-box !important",
+        L"background: transparent !important"}},
+    ThemeTargetStyles{L".suggsList, .groupContainer", {
+        L"padding-left: $WebEdgePadding !important",
+        L"padding-right: $WebEdgePadding !important",
+        L"box-sizing: border-box !important"}},
+    ThemeTargetStyles{L".groupTitle, .groupHeader", {
+        L"color: $TextMuted !important",
+        L"font-family: $WebUIFont !important",
+        L"font-size: $WebCaptionTextSize !important",
+        L"font-weight: $SectionTextWeight !important",
+        L"margin: $WebSectionMargin !important",
+        L"background: transparent !important"}},
+    ThemeTargetStyles{L".suggContainer, .suggestion:not(.groupHeader)", {
+        L"min-height: $WebRowHeight !important",
+        L"height: $WebRowHeight !important",
+        L"margin: $WebRowMargin !important",
+        L"padding: 0 $WebEdgePadding !important",
+        L"border-radius: $WebRowRadius !important",
+        L"background-color: transparent !important",
+        L"border: none !important",
+        L"box-shadow: none !important",
+        L"box-sizing: border-box !important",
+        L"display: flex !important",
+        L"align-items: center !important",
+        L"transition: background-color 100ms ease !important"}},
+    ThemeTargetStyles{L".suggContainer:hover, .suggestion:not(.groupHeader):hover", {
+        L"background-color: $WebRowHover !important"}},
+    ThemeTargetStyles{L".suggContainer:focus-within, .suggContainer[aria-selected=\"true\"], .suggContainer.selected, .suggContainer.active, .suggestion[aria-selected=\"true\"]", {
+        L"background-color: $WebRowSelected !important"}},
+    ThemeTargetStyles{L"h1, h2, h3, h4, .title, .primaryText, .suggContainer, .menu-item_details", {
+        L"color: $TextPrimary !important",
+        L"font-family: $WebUIFont !important",
+        L"font-size: $WebBodyTextSize !important",
+        L"font-weight: 400 !important",
+        L"white-space: nowrap !important",
+        L"overflow: hidden !important",
+        L"text-overflow: ellipsis !important",
+        L"letter-spacing: 0 !important"}},
+    ThemeTargetStyles{L".secondaryText, .details, .metadata, .caption, .subtitle", {
+        L"color: $TextSecondary !important",
+        L"font-family: $WebUIFont !important",
+        L"font-size: $WebCaptionTextSize !important",
+        L"font-weight: 400 !important",
+        L"white-space: nowrap !important",
+        L"overflow: hidden !important",
+        L"text-overflow: ellipsis !important"}},
+    ThemeTargetStyles{L".cortanaFontIcon, .iconContent, .suggIcon, .iconContainer", {
+        L"width: $WebIconSize !important",
+        L"height: $WebIconSize !important",
+        L"font-size: $WebIconTextSize !important",
+        L"margin-right: $WebIconGap !important",
+        L"color: $TextIcon !important"}},
+    ThemeTargetStyles{L"*", {
+        L"letter-spacing: 0 !important",
+        L"scrollbar-width: thin !important",
+        L"scrollbar-color: $WebScrollbar transparent !important"}},
+    ThemeTargetStyles{L"[id*=\"iotd\" i], [class*=\"iotd\" i], [id*=\"imageOfTheDay\" i], [class*=\"imageOfTheDay\" i], [class*=\"image-of-the-day\" i], [id*=\"heroImage\" i], [class*=\"heroImage\" i], [class*=\"dailyImage\" i], [class*=\"bingImage\" i], [class*=\"wallpaperCard\" i], div[data-region=\"TopApps\"], div[data-region=\"News\"], div[data-region=\"Trending\"]", {
+        L"display: none !important"}},
+    ThemeTargetStyles{L":is([id*=\"iotd\" i], [class*=\"iotd\" i], [data-region*=\"iotd\" i], [id*=\"imageOfTheDay\" i], [class*=\"imageOfTheDay\" i], [data-region*=\"imageOfTheDay\" i], [id*=\"image-of-the-day\" i], [class*=\"image-of-the-day\" i], [data-region*=\"image-of-the-day\" i]):not(#_)", {
+        L"display: none !important"}},
+    ThemeTargetStyles{L":is([id*=\"heroImage\" i], [class*=\"heroImage\" i], [data-region*=\"heroImage\" i], [id*=\"dailyImage\" i], [class*=\"dailyImage\" i], [data-region*=\"dailyImage\" i], [id*=\"bingImage\" i], [class*=\"bingImage\" i], [data-region*=\"bingImage\" i], [id*=\"wallpaperCard\" i], [class*=\"wallpaperCard\" i], [data-region*=\"wallpaperCard\" i]):not(#_)", {
+        L"display: none !important"}},
+    ThemeTargetStyles{L":is([id*=\"copilot\" i], [class*=\"copilot\" i], [data-region*=\"copilot\" i], [id*=\"chatButton\" i], [class*=\"chatButton\" i], [data-region*=\"chatButton\" i]):not(#_)", {
+        L"display: none !important"}},
+    ThemeTargetStyles{L":is(div[data-region=\"TopApps\"], div[data-region=\"News\"], div[data-region=\"Trending\"]):not(#_)", {
+        L"display: none !important"}},
+}, DisableNewStartMenuLayout::forceNewLayout};
 
 // clang-format on
 
@@ -17944,6 +20724,22 @@ const Theme* GetSelectedTheme(bool useNewLayoutVariant) {
                                     : &g_themeFullScreen_variant_1;
     } else if (wcscmp(themeName, L"FrostyGlass") == 0) {
         theme = &g_themeFrostyGlass;
+    } else if (wcscmp(themeName, L"FlyoutStartMenu") == 0) {
+        theme = &g_themeFlyoutStartMenu;
+    } else if (wcscmp(themeName,
+                      L"OS26 Tahoe App Launcher_variant_DarkCenter") == 0) {
+        theme = &g_themeOS26_Tahoe_App_Launcher_variant_DarkCenter;
+    } else if (wcscmp(themeName,
+                      L"OS26 Tahoe App Launcher_variant_DarkBottom") == 0) {
+        theme = &g_themeOS26_Tahoe_App_Launcher_variant_DarkBottom;
+    } else if (wcscmp(themeName,
+                      L"OS26 Tahoe App Launcher_variant_ClearCenter") == 0) {
+        theme = &g_themeOS26_Tahoe_App_Launcher_variant_ClearCenter;
+    } else if (wcscmp(themeName,
+                      L"OS26 Tahoe App Launcher_variant_ClearBottom") == 0) {
+        theme = &g_themeOS26_Tahoe_App_Launcher_variant_ClearBottom;
+    } else if (wcscmp(themeName, L"Raycast") == 0) {
+        theme = &g_themeRaycast;
     }
     Wh_FreeStringSetting(themeName);
     return theme;
