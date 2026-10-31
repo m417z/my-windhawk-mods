@@ -18729,6 +18729,9 @@ constexpr WCHAR kSeparatePinnedContentName[] = L"SideBySidePinnedContent";
 struct SeparatePinnedScrollEntry {
     winrt::weak_ref<Controls::Border> border;
     winrt::weak_ref<Controls::Grid> sourceTopLevelHeader;
+    // The index each moved element had among the TopLevelHeader children,
+    // which positional selectors such as `Grid[1]` depend on.
+    std::vector<std::pair<winrt::hstring, uint32_t>> sourceIndexes;
     Input::FocusManager::GettingFocus_revoker gettingFocusRevoker;
     UIElement::KeyDown_revoker wrapperKeyDownRevoker;
 };
@@ -18762,6 +18765,19 @@ void TrackSeparatePinnedScrollAction(
 bool IsSeparatePinnedScrollTargetName(winrt::hstring const& name) {
     return name == L"PinnedListHeaderGrid" || name == L"ShowMorePinnedGrid" ||
            name == L"StartMenuPinnedList" || name == L"TopLevelSuggestionsRoot";
+}
+
+std::vector<std::pair<winrt::hstring, uint32_t>>
+GetSeparatePinnedScrollTargetIndexes(Controls::Grid const& parent) {
+    std::vector<std::pair<winrt::hstring, uint32_t>> indexes;
+    auto children = parent.Children();
+    for (uint32_t i = 0; i < children.Size(); i++) {
+        auto fe = children.GetAt(i).try_as<FrameworkElement>();
+        if (fe && IsSeparatePinnedScrollTargetName(fe.Name())) {
+            indexes.push_back({fe.Name(), i});
+        }
+    }
+    return indexes;
 }
 
 // Walk the visual tree below `root` and return the first FrameworkElement
@@ -18826,13 +18842,16 @@ void ConfigurePinnedContentFromSource(Controls::Grid target,
 }
 
 // Undo `EnsureSeparatePinnedScrollViewer` for a single Border:
-// 1. Move each child back from SideBySidePinnedContent into TopLevelHeader.
+// 1. Move each child back from SideBySidePinnedContent into TopLevelHeader, at
+//    the index it had there.
 // 2. Detach the original ScrollViewer from the wrapper and reset Border.Child
 //    to it, releasing the wrapper for GC.
 //
 // Best-effort: silently skips parts that have already been disposed.
-void RevertSeparatePinnedScrollForBorder(Controls::Border border,
-                                         Controls::Grid sourceTopLevelHeader) {
+void RevertSeparatePinnedScrollForBorder(
+    Controls::Border border,
+    Controls::Grid sourceTopLevelHeader,
+    std::vector<std::pair<winrt::hstring, uint32_t>> const& sourceIndexes) {
     if (!border) {
         return;
     }
@@ -18862,12 +18881,37 @@ void RevertSeparatePinnedScrollForBorder(Controls::Border border,
     }
 
     if (sourceTopLevelHeader && contentGrid) {
+        std::vector<std::pair<uint32_t, UIElement>> children;
         while (contentGrid.Children().Size() > 0) {
-            auto child = contentGrid.Children().GetAt(0).try_as<UIElement>();
+            auto child = contentGrid.Children().GetAt(0);
             contentGrid.Children().RemoveAt(0);
-            if (child) {
-                sourceTopLevelHeader.Children().Append(child);
+            if (!child) {
+                continue;
             }
+
+            uint32_t index = std::numeric_limits<uint32_t>::max();
+            if (auto fe = child.try_as<FrameworkElement>()) {
+                for (auto const& [name, sourceIndex] : sourceIndexes) {
+                    if (name == fe.Name()) {
+                        index = sourceIndex;
+                        break;
+                    }
+                }
+            }
+
+            children.push_back({index, std::move(child)});
+        }
+
+        // Inserted in increasing index order, each at its index, which puts
+        // them back around the children that stayed.
+        std::stable_sort(
+            children.begin(), children.end(),
+            [](auto const& a, auto const& b) { return a.first < b.first; });
+
+        auto sourceChildren = sourceTopLevelHeader.Children();
+        for (auto const& [index, child] : children) {
+            sourceChildren.InsertAt(std::min(index, sourceChildren.Size()),
+                                    child);
         }
     }
 
@@ -18896,7 +18940,8 @@ void RevertAllSeparatePinnedScroll() {
     for (auto const& entry : *g_separatePinnedScrollEntries) {
         try {
             RevertSeparatePinnedScrollForBorder(
-                entry.border.get(), entry.sourceTopLevelHeader.get());
+                entry.border.get(), entry.sourceTopLevelHeader.get(),
+                entry.sourceIndexes);
         } catch (winrt::hresult_error const& ex) {
             Wh_Log(L"Error reverting separate pinned scroll %08X: %s",
                    ex.code(), ex.message().c_str());
@@ -19574,6 +19619,7 @@ void HandleSeparatePinnedScroll(FrameworkElement element) {
                     g_separatePinnedScrollEntries->push_back(
                         {winrt::make_weak(border),
                          winrt::make_weak(topLevelHeader),
+                         GetSeparatePinnedScrollTargetIndexes(topLevelHeader),
                          Input::FocusManager::GettingFocus(
                              winrt::auto_revoke,
                              [weakWrapper = winrt::make_weak(wrapper)](
