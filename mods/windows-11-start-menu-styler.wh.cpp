@@ -11949,6 +11949,11 @@ std::unordered_map<std::wstring, winrt::Windows::Foundation::IInspectable>
 
 // Track our merged theme dictionary for cleanup (per-thread).
 ResourceDictionary g_resourceVariablesThemeDict{nullptr};
+bool g_resourceVariablesThemeDictMerged;
+
+// The application resources that the resource variables were merged into
+// (per-thread).
+ResourceDictionary g_resourceVariablesTargetResources{nullptr};
 
 // For listening to theme color changes (per-thread).
 winrt::Windows::UI::ViewManagement::UISettings g_uiSettings{nullptr};
@@ -18593,6 +18598,7 @@ void HandleVirtualizingRepeater(ElementId elementId, FrameworkElement element) {
 }
 
 void MergeResourceVariables();
+void EnsureResourceVariablesMerged();
 
 // === Separate pinned items scroll ===
 //
@@ -19458,11 +19464,13 @@ void HandleSeparatePinnedScroll(FrameworkElement element) {
 void ApplyCustomizations(ElementId elementId,
                          FrameworkElement element,
                          PCWSTR fallbackClassName) {
-    // Merge resource dictionary on first element add. Merging it earlier on
-    // window creation doesn't work, perhaps merged dictionaries are reset
-    // during initialization.
+    // The app's resources can be reset during initialization, even after the
+    // first element is added, so the resource variables are merged on the
+    // first element add and verified on subsequent ones.
     if (!g_resourceVariablesThemeDict) {
         MergeResourceVariables();
+    } else if (!g_resourceVariables.empty()) {
+        EnsureResourceVariablesMerged();
     }
 
     HandleSeparatePinnedScroll(element);
@@ -20608,8 +20616,11 @@ void MergeResourceVariables() {
         resources.MergedDictionaries().Append(g_resourceVariablesThemeDict);
     }
 
+    g_resourceVariablesThemeDictMerged = hasThemeResources;
+    g_resourceVariablesTargetResources = resources;
+
     // Register for color changes to refresh theme resource references.
-    if (hasThemeResourceReferences) {
+    if (hasThemeResourceReferences && !g_colorValuesChangedToken) {
         g_uiSettings = winrt::Windows::UI::ViewManagement::UISettings();
         auto dispatcherQueue =
             winrt::Windows::System::DispatcherQueue::GetForCurrentThread();
@@ -20617,6 +20628,34 @@ void MergeResourceVariables() {
             g_uiSettings.ColorValuesChanged([dispatcherQueue](auto&&, auto&&) {
                 dispatcherQueue.TryEnqueue(RefreshThemeResourceEntries);
             });
+    }
+}
+
+void EnsureResourceVariablesMerged() {
+    try {
+        auto resources = Application::Current().Resources();
+        if (resources != g_resourceVariablesTargetResources) {
+            Wh_Log(
+                L"Application resources were replaced, merging resource "
+                L"variables again");
+            // The original values belong to the replaced resources.
+            g_originalResourceValues.clear();
+            MergeResourceVariables();
+            return;
+        }
+
+        if (g_resourceVariablesThemeDictMerged) {
+            auto merged = resources.MergedDictionaries();
+            uint32_t index;
+            if (!merged.IndexOf(g_resourceVariablesThemeDict, index)) {
+                Wh_Log(
+                    L"Resource variables dictionary was removed, merging "
+                    L"it again");
+                merged.Append(g_resourceVariablesThemeDict);
+            }
+        }
+    } catch (winrt::hresult_error const& ex) {
+        Wh_Log(L"Error %08X: %s", ex.code(), ex.message().c_str());
     }
 }
 
@@ -20822,6 +20861,8 @@ void UninitializeResourceVariables() {
         }
         g_resourceVariablesThemeDict = nullptr;
     }
+    g_resourceVariablesThemeDictMerged = false;
+    g_resourceVariablesTargetResources = nullptr;
 }
 
 void UninitializeSettingsAndTap() {
