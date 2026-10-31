@@ -11862,17 +11862,16 @@ struct ElementCustomizationStateForVisualStateGroup {
     winrt::event_token visualStateGroupCurrentStateChangedToken;
 };
 
+struct StyleVariableState;
+
 struct ElementCustomizationState {
     // Held for as long as the state is, as is each visual state group below:
     // what is registered on them can only be unregistered through them.
     FrameworkElement element{nullptr};
 
-    // Cached weak ref to the element's XamlRoot at register time. Used during
-    // cleanup paths to find this element's per-XamlRoot StyleVariableState
-    // even after the element above has left its tree. A weak_ref (not a raw
-    // pointer) so that an expired XamlRoot does not silently collide with a
-    // freshly-allocated one at the same address.
-    winrt::weak_ref<XamlRoot> xamlRoot;
+    // The registry of the XamlRoot the element was matched in, which it can
+    // leave before its state is cleaned up.
+    std::shared_ptr<StyleVariableState> styleVariableState;
 
     // Scores how close each capture of a style variable is to this element.
     // Only built for elements that capture or consume a variable.
@@ -12069,14 +12068,15 @@ struct StyleVariableConsumer {
 // Per-XamlRoot scope for the style variable registry. Multiple taskbars on one
 // UI thread each have their own XamlRoot; keying by XamlRoot prevents
 // `Property=>Var` captures on one taskbar from being substituted into
-// `{{Var}}` on another. Identity is tracked via weak_ref so that a destroyed
-// XamlRoot's slot cannot be confused with a new XamlRoot allocated at the
-// same address. std::list is used because pointers to existing entries must
-// stay valid as new entries are added or stale ones reaped: lambdas
-// registered on per-element captures hold a StyleVariableState* for the
-// lifetime of the entry.
-struct StyleVariableState {
-    winrt::weak_ref<XamlRoot> xamlRoot;
+// `{{Var}}` on another. An entry is kept for as long as the state of an element
+// matched in it, and the callbacks registered on such an element find it gone
+// if they outlive it. std::list keeps a walk over the entries valid when a
+// re-entrant lookup adds one.
+struct StyleVariableState : std::enable_shared_from_this<StyleVariableState> {
+    // Held, so that no other XamlRoot can take its address while the entry
+    // names it. That keeps no elements alive: a tree lets go of them, and of
+    // its XamlRoot, as it shuts down.
+    XamlRoot xamlRoot{nullptr};
     std::unordered_map<std::wstring, std::vector<StyleVariableCapture>>
         variables;
     std::unordered_map<std::wstring, std::vector<StyleVariableConsumer>>
@@ -12114,7 +12114,8 @@ void ReleaseStyleVariableElementRefs(StyleVariableState* state,
     }
 }
 
-thread_local std::list<StyleVariableState> g_styleVariableState;
+thread_local std::list<std::shared_ptr<StyleVariableState>>
+    g_styleVariableState;
 
 // Non-zero while a frame is holding a StyleVariableState*. Suppresses reaping,
 // which would otherwise free the entry out from under that frame: applying or
@@ -12149,38 +12150,30 @@ struct PendingStyleVariablePropagation {
 thread_local std::vector<PendingStyleVariablePropagation>
     g_pendingStyleVariablePropagations;
 
-// Look up (or create) the entry for a live XamlRoot. Reaps any entries whose
-// XamlRoot has been destroyed before searching, so a recycled address cannot
-// collide with a stale entry.
+// Drops the entries nothing but the list refers to.
+void ReapStyleVariableStates() {
+    if (g_styleVariableStatePinDepth == 0) {
+        g_styleVariableState.remove_if(
+            [](std::shared_ptr<StyleVariableState> const& entry) {
+                return entry.use_count() == 1;
+            });
+    }
+}
+
+// Look up (or create) the entry for a XamlRoot.
 StyleVariableState* GetStyleVariableState(XamlRoot const& xamlRoot) {
     if (!xamlRoot) {
         return nullptr;
     }
-    if (g_styleVariableStatePinDepth == 0) {
-        g_styleVariableState.remove_if([](StyleVariableState const& entry) {
-            return !entry.xamlRoot.get();
-        });
-    }
     for (auto& entry : g_styleVariableState) {
-        if (entry.xamlRoot.get() == xamlRoot) {
-            return &entry;
+        if (entry->xamlRoot == xamlRoot) {
+            return entry.get();
         }
     }
-    auto& fresh = g_styleVariableState.emplace_back();
-    fresh.xamlRoot = xamlRoot;
-    return &fresh;
-}
-
-// Look up an existing entry from a cached weak_ref. Returns nullptr if the
-// XamlRoot is already gone (cleanup is then a no-op since the entry has been
-// or will be reaped).
-StyleVariableState* GetStyleVariableState(
-    winrt::weak_ref<XamlRoot> const& xamlRootWeak) {
-    auto strong = xamlRootWeak.get();
-    if (!strong) {
-        return nullptr;
-    }
-    return GetStyleVariableState(strong);
+    auto& fresh = g_styleVariableState.emplace_back(
+        std::make_shared<StyleVariableState>());
+    fresh->xamlRoot = xamlRoot;
+    return fresh.get();
 }
 
 // Convenience for entry points that have a FrameworkElement. Returns nullptr
@@ -17158,11 +17151,8 @@ void UpdateStyleVariableConsumers(
     const std::vector<StyleVariableDependency>& oldDeps,
     const std::vector<StyleVariableDependency>& newDeps) {
     if (!state) {
-        // The element's XamlRoot has already been destroyed (or was never
-        // available); the StyleVariableState entry has been or will be reaped,
-        // and there is nothing to clean up. New registrations (newDeps) are
-        // also dropped on the floor: without a state we cannot route
-        // propagations anyway.
+        // Without a registry there is nothing to clean up, and nowhere to
+        // route propagations for new registrations (newDeps).
         return;
     }
 
@@ -17764,6 +17754,8 @@ void SetUpCapturesForElement(StyleVariableState* state,
 
     auto elementDo = element.as<DependencyObject>();
 
+    std::weak_ptr<StyleVariableState> weakState = state->weak_from_this();
+
     // Names seeded below, propagated once the whole batch is in place.
     std::vector<std::wstring> seededVarNames;
     seededVarNames.reserve(captures.size());
@@ -17820,8 +17812,12 @@ void SetUpCapturesForElement(StyleVariableState* state,
         captureState.propertyChangedToken =
             elementDo.RegisterPropertyChangedCallback(
                 capture.property,
-                [state, varName, elementId](DependencyObject sender,
-                                            DependencyProperty property) {
+                [weakState, varName, elementId](DependencyObject sender,
+                                                DependencyProperty property) {
+                    auto state = weakState.lock();
+                    if (!state) {
+                        return;
+                    }
                     auto element = sender.try_as<FrameworkElement>();
                     if (!element) {
                         return;
@@ -17829,16 +17825,20 @@ void SetUpCapturesForElement(StyleVariableState* state,
                     auto value =
                         ReadCapturedStyleVariableValue(element, property);
                     SetStyleVariableIfChangedAndPropagate(
-                        state, varName, elementId, std::move(value));
+                        state.get(), varName, elementId, std::move(value));
                 });
     }
 
     if (!sizeChangedCaptures.empty()) {
         elementState->captureSizeChangedToken = element.SizeChanged(
-            [state, elementId,
+            [weakState, elementId,
              sizeChangedCaptures = std::move(sizeChangedCaptures)](
                 winrt::Windows::Foundation::IInspectable const& sender,
                 SizeChangedEventArgs const& e) {
+                auto state = weakState.lock();
+                if (!state) {
+                    return;
+                }
                 auto element = sender.try_as<FrameworkElement>();
                 if (!element) {
                     return;
@@ -17850,7 +17850,7 @@ void SetUpCapturesForElement(StyleVariableState* state,
                     auto value =
                         ReadCapturedStyleVariableValue(element, property);
                     SetStyleVariableIfChangedAndPropagate(
-                        state, varName, elementId, std::move(value));
+                        state.get(), varName, elementId, std::move(value));
                 }
             });
     }
@@ -18077,19 +18077,22 @@ void ApplyCustomizationsForVisualStateGroup(
     if (visualStateGroup) {
         std::wstring fallbackClassNameStr =
             fallbackClassName ? fallbackClassName : L"";
+        std::weak_ptr<StyleVariableState> weakState = state->weak_from_this();
         std::weak_ptr<ElementCustomizationStateForVisualStateGroup>
             weakElementCustomizationStateForVisualStateGroup =
                 elementCustomizationStateForVisualStateGroup;
         elementCustomizationStateForVisualStateGroup
             ->visualStateGroupCurrentStateChangedToken =
             visualStateGroup.CurrentStateChanged(
-                [state, propertyOverrides, elementId, fallbackClassNameStr,
+                [weakState, propertyOverrides, elementId, fallbackClassNameStr,
                  weakElementCustomizationStateForVisualStateGroup](
                     winrt::Windows::Foundation::IInspectable const& sender,
                     VisualStateChangedEventArgs const& e) {
+                    auto state = weakState.lock();
                     auto elementCustomizationStateForVisualStateGroup =
                         weakElementCustomizationStateForVisualStateGroup.lock();
-                    if (!elementCustomizationStateForVisualStateGroup) {
+                    if (!state ||
+                        !elementCustomizationStateForVisualStateGroup) {
                         return;
                     }
 
@@ -18147,7 +18150,7 @@ void ApplyCustomizationsForVisualStateGroup(
                                 propertyCustomizationState.dynamicTemplate =
                                     *tmpl;
                                 resolved = ResolveDynamicStyleValue(
-                                    state, elementId, element, property,
+                                    state.get(), elementId, element, property,
                                     fallbackClassNamePtr,
                                     &propertyCustomizationState,
                                     /*elementCustomizationState=*/nullptr);
@@ -18158,7 +18161,7 @@ void ApplyCustomizationsForVisualStateGroup(
                                 if (propertyCustomizationState
                                         .dynamicTemplate) {
                                     UpdateStyleVariableConsumers(
-                                        state, elementId, property,
+                                        state.get(), elementId, property,
                                         /*fallbackClassName=*/nullptr,
                                         propertyCustomizationState
                                             .variableDependencies,
@@ -18191,7 +18194,7 @@ void ApplyCustomizationsForVisualStateGroup(
                         } else {
                             if (propertyCustomizationState.dynamicTemplate) {
                                 UpdateStyleVariableConsumers(
-                                    state, elementId, property,
+                                    state.get(), elementId, property,
                                     /*fallbackClassName=*/nullptr,
                                     propertyCustomizationState
                                         .variableDependencies,
@@ -18944,7 +18947,8 @@ void RefreshRecycledItemCaptures() {
     // Propagating runs arbitrary XAML work, which can re-enter and reap.
     StyleVariableStatePin statePin;
 
-    for (auto& state : g_styleVariableState) {
+    for (const auto& entry : g_styleVariableState) {
+        auto& state = *entry;
         std::vector<ElementId> owners(state.withdrawnCaptureOwners.begin(),
                                       state.withdrawnCaptureOwners.end());
         for (const auto& [varName, captures] : state.variables) {
@@ -19011,9 +19015,9 @@ void QueueRecycledItemCapturesRefresh() {
     }
 
     if (std::none_of(g_styleVariableState.begin(), g_styleVariableState.end(),
-                     [](const StyleVariableState& state) {
-                         return !state.variables.empty() ||
-                                !state.withdrawnCaptureOwners.empty();
+                     [](const std::shared_ptr<StyleVariableState>& state) {
+                         return !state->variables.empty() ||
+                                !state->withdrawnCaptureOwners.empty();
                      })) {
         return;
     }
@@ -19220,7 +19224,7 @@ void ApplyCustomizations(ElementId elementId,
     }
 
     elementCustomizationState.element = element;
-    elementCustomizationState.xamlRoot = state->xamlRoot;
+    elementCustomizationState.styleVariableState = state->shared_from_this();
     elementCustomizationState.perVisualStateGroup.clear();
 
     // Elements that neither capture nor consume a variable pay nothing. The
@@ -19313,7 +19317,7 @@ bool ElementHasState(ElementId elementId) {
     }
 
     for (const auto& state : g_styleVariableState) {
-        if (state.elementRefs.contains(elementId)) {
+        if (state->elementRefs.contains(elementId)) {
             return true;
         }
     }
@@ -19357,6 +19361,11 @@ void FlushDiagnosticsReleases() {
     // dispatcher, so the teardown of what they were keyed by is outside the
     // walk the reports came from.
     ReapDeadElementIdsIfNeeded();
+
+    // After the teardown above, which can leave entries unreferenced, and
+    // likewise outside the walk: an entry can hold the last reference to its
+    // XamlRoot.
+    ReapStyleVariableStates();
 }
 
 void QueueDiagnosticsRelease(InstanceHandle handle) {
@@ -19462,11 +19471,12 @@ void CleanupCustomizations(ElementId elementId) {
     // here.
     auto& elementCustomizationState = it->second;
 
-    // Likewise keeps `state` from being reaped by a re-entrant lookup.
+    // Likewise keeps `state` from being reaped once the erase below lets go of
+    // it.
     StyleVariableStatePin statePin;
 
     auto element = elementCustomizationState.element;
-    auto* state = GetStyleVariableState(elementCustomizationState.xamlRoot);
+    auto* state = elementCustomizationState.styleVariableState.get();
 
     RestoreCapturesForElement(element, elementCustomizationState);
 
@@ -20623,7 +20633,7 @@ void UninitializeForCurrentThread() {
     for (const auto& [elementId, elementCustomizationState] :
          elementsCustomizationState) {
         auto element = elementCustomizationState.element;
-        auto* state = GetStyleVariableState(elementCustomizationState.xamlRoot);
+        auto* state = elementCustomizationState.styleVariableState.get();
 
         RestoreCapturesForElement(element, elementCustomizationState);
 
