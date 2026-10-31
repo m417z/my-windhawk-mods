@@ -10492,26 +10492,108 @@ bool SameLocalValue(winrt::Windows::Foundation::IInspectable const& a,
     return unknownBoxedValuesSame && isBoxedValue(a) && isBoxedValue(b);
 }
 
+// Whether templates are known to bind the property, by name, with a
+// TemplateBinding to a property of another name, such as a ScrollBar's
+// Visibility to ComputedVerticalScrollBarVisibility. Tallied from the control
+// templates of the Windows SDK's generic.xaml and of WinUI.
+bool IsTemplateBoundToOtherName(FrameworkElement const& element,
+                                std::wstring_view name) {
+    // Bound to a property of another name in about a quarter of the templates
+    // or more.
+    static constexpr std::wstring_view kOftenOtherName[] = {
+        L"AllowDrop",
+        L"CanDragItems",
+        L"CanReorderItems",
+        L"Child",
+        L"Command",
+        L"CommandParameter",
+        L"Components",
+        L"Content",
+        L"ContentMargin",
+        L"ContentTemplate",
+        L"DataContext",
+        L"Fill",
+        L"Glyph",
+        L"HorizontalAlignment",
+        L"IsEnabled",
+        L"ItemContainerStyle",
+        L"ItemContainerStyleSelector",
+        L"ItemTemplate",
+        L"ItemTemplateSelector",
+        L"ItemsSource",
+        L"Margin",
+        L"Maximum",
+        L"MaximumRowsOrColumns",
+        L"Opacity",
+        L"RequestedTheme",
+        L"Shape",
+        L"Source",
+        L"Stroke",
+        L"StrokeThickness",
+        L"Style",
+        L"Text",
+        L"To",
+        L"Value",
+        L"VerticalAlignment",
+        L"ViewportSize",
+        L"Visibility",
+    };
+    if (std::ranges::find(kOftenOtherName, name) != std::end(kOftenOtherName)) {
+        return true;
+    }
+
+    // Bound to a property of another name only in the templates of these
+    // controls, by property.
+    static constexpr std::pair<std::wstring_view, std::wstring_view>
+        kOtherNameByControl[] = {
+            {L"Background", L"CalendarView"},
+            {L"Background", L"SplitView"},
+            {L"ContentTemplateSelector", L"Expander"},
+            {L"FontSize", L"TreeViewItem"},
+            {L"Foreground", L"CalendarView"},
+            {L"Foreground", L"TreeViewItem"},
+            {L"Height", L"Button"},
+            {L"Height", L"ProgressBar"},
+            {L"Width", L"Button"},
+            {L"Width", L"NavigationView"},
+            {L"Width", L"TextBox"},
+        };
+    if (std::ranges::find(
+            kOtherNameByControl, name,
+            &std::pair<std::wstring_view, std::wstring_view>::first) ==
+        std::end(kOtherNameByControl)) {
+        return false;
+    }
+
+    // The templated parent is taken to be the nearest Control ancestor.
+    for (auto parent = Media::VisualTreeHelper::GetParent(element); parent;
+         parent = Media::VisualTreeHelper::GetParent(parent)) {
+        if (!parent.try_as<Controls::Control>()) {
+            continue;
+        }
+
+        auto fullClassName = winrt::get_class_name(parent);
+        std::wstring_view className = fullClassName;
+        className = className.substr(className.rfind(L'.') + 1);
+        return std::ranges::find(
+                   kOtherNameByControl,
+                   std::pair<std::wstring_view, std::wstring_view>{
+                       name, className}) != std::end(kOtherNameByControl);
+    }
+
+    return false;
+}
+
 // A TemplateBinding can't be set again, so a binding to the templated parent's
 // property of the same name stands in for one. It's kept only if it gives back
-// the value the property had, as a TemplateBinding can be to a property of
-// another name.
+// the value the property had, which also rules out most bindings to a property
+// of another name that IsTemplateBoundToOtherName doesn't know of.
 bool BindToTemplatedParent(
     FrameworkElement const& element,
     DependencyProperty const& property,
     winrt::Windows::Foundation::IInspectable const& value) {
-    // Templates commonly bind these to a property of another name, such as a
-    // ScrollBar's Visibility to ComputedVerticalScrollBarVisibility, where the
-    // values being the same would keep a wrong binding.
-    if (property == UIElement::VisibilityProperty() ||
-        property == FrameworkElement::HorizontalAlignmentProperty() ||
-        property == FrameworkElement::VerticalAlignmentProperty() ||
-        property == FrameworkElement::MarginProperty()) {
-        return false;
-    }
-
     auto name = GetPropertyName(property);
-    if (name.empty()) {
+    if (name.empty() || IsTemplateBoundToOtherName(element, name)) {
         return false;
     }
 
