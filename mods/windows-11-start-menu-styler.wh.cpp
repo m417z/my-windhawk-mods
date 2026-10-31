@@ -11473,8 +11473,17 @@ struct ElementCustomizationRules {
 
 std::vector<ElementCustomizationRules> g_elementsCustomizationRules;
 
+// A property's pre-style value, and how it was set when that was through a
+// binding, which writing the value back would replace for good.
+struct OriginalValue {
+    winrt::Windows::Foundation::IInspectable value;
+    Data::BindingBase binding{nullptr};
+    // A TemplateBinding, which reads back as nothing and can't be set again.
+    bool templateBound = false;
+};
+
 struct ElementPropertyCustomizationState {
-    std::optional<winrt::Windows::Foundation::IInspectable> originalValue;
+    std::optional<OriginalValue> originalValue;
     // The most recently applied value, re-pushed by the per-DP property-
     // changed callback when something external (animation, system Setter)
     // overrides it. Although PropertyOverrideValue's variant declares a
@@ -12079,9 +12088,16 @@ bool IsMainModuleVersionAtLeast(WORD major, WORD minor, WORD build, WORD qfe) {
     return moduleQfe >= qfe;
 }
 
+// `bound` is set when the value is read through a binding or a TemplateBinding,
+// or is an explicit null.
 winrt::Windows::Foundation::IInspectable ReadLocalValueWithWorkaround(
     DependencyObject elementDo,
-    DependencyProperty property) {
+    DependencyProperty property,
+    bool* bound = nullptr) {
+    if (bound) {
+        *bound = false;
+    }
+
     // These properties have a visual state's value over their local one, and
     // restoring the local one would show it while the state lasts. The value in
     // effect is restored instead, at the cost of keeping it once the state
@@ -12121,6 +12137,9 @@ winrt::Windows::Foundation::IInspectable ReadLocalValueWithWorkaround(
         Wh_Log(L"ReadLocalValue returned %s, using GetAnimationBaseValue",
                value ? winrt::get_class_name(value).c_str() : L"null");
         value = elementDo.GetAnimationBaseValue(property);
+        if (bound) {
+            *bound = true;
+        }
     } else if (value == DependencyProperty::UnsetValue()) {
         // A Grid's definitions, and transitions which markup lists without
         // naming the collection type, are in a collection which isn't a local
@@ -12143,6 +12162,58 @@ winrt::Windows::Foundation::IInspectable ReadLocalValueWithWorkaround(
                  : L"(null)");
 
     return value;
+}
+
+OriginalValue ReadOriginalValue(DependencyObject elementDo,
+                                DependencyProperty property) {
+    bool bound = false;
+    OriginalValue original{
+        ReadLocalValueWithWorkaround(elementDo, property, &bound)};
+    if (!bound) {
+        return original;
+    }
+
+    auto element = elementDo.try_as<FrameworkElement>();
+    if (auto expression =
+            element ? element.GetBindingExpression(property) : nullptr) {
+        original.binding = expression.ParentBinding();
+    } else {
+        // A null is taken to be an explicit one, which a binding mustn't
+        // replace.
+        original.templateBound = original.value != nullptr;
+    }
+
+    return original;
+}
+
+// The name each property was given in the rules. XAML doesn't expose a
+// DependencyProperty's name. Keyed by pointer, since a property lives for as
+// long as XAML does.
+std::unordered_map<void*, std::wstring> g_propertyNames;
+SRWLOCK g_propertyNamesLock = SRWLOCK_INIT;
+
+void RecordPropertyName(DependencyProperty const& property,
+                        std::wstring_view name) {
+    // Only names a binding path takes as they are, which an attached
+    // property's isn't.
+    if (name.empty() || name.find_first_of(L".:(") != name.npos) {
+        return;
+    }
+
+    AcquireSRWLockExclusive(&g_propertyNamesLock);
+    g_propertyNames.try_emplace(winrt::get_abi(property), name);
+    ReleaseSRWLockExclusive(&g_propertyNamesLock);
+}
+
+std::wstring GetPropertyName(DependencyProperty const& property) {
+    std::wstring name;
+    AcquireSRWLockShared(&g_propertyNamesLock);
+    if (auto it = g_propertyNames.find(winrt::get_abi(property));
+        it != g_propertyNames.end()) {
+        name = it->second;
+    }
+    ReleaseSRWLockShared(&g_propertyNamesLock);
+    return name;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -15015,18 +15086,6 @@ winrt::Windows::Foundation::IInspectable SetOrClearValue(
     return value;
 }
 
-// Puts back the value the property had before the style. The target's image
-// entry goes with the style's value: a retry would put that image back, and the
-// restored image's load events would be taken for it.
-void RestoreOriginalValue(
-    DependencyObject elementDo,
-    DependencyProperty property,
-    winrt::Windows::Foundation::IInspectable const& originalValue) {
-    UntrackImageTarget(elementDo, property);
-    SetOrClearValue(elementDo, property, originalValue, /*initialApply=*/false,
-                    /*styleValue=*/false);
-}
-
 // https://stackoverflow.com/a/5665377
 std::wstring EscapeXmlAttribute(std::wstring_view data) {
     std::wstring buffer;
@@ -15548,6 +15607,7 @@ const ResolvedRules& GetResolvedPropertyOverrides(
                 const auto setter =
                     style.Setters().GetAt(setterIndex).as<Setter>();
                 auto property = setter.Property();
+                RecordPropertyName(property, rule.propertyName);
                 if (rule.isDynamic()) {
                     resolved.propertyOverrides[property][rule.visualState] =
                         DynamicStyleTemplate{rule.propertyName, rule.value,
@@ -16926,11 +16986,13 @@ std::optional<bool> SameBoxedStruct(
 // Whether two values read from a property are the same local value. XAML boxes
 // value types anew on every read, so those compare by value: primitives and
 // enums through TryUnboxPropertyValue, then the struct types styles commonly
-// set. Any other boxed value type is taken as unchanged: adopting a value that
-// may be the mod's own would leave it in place on cleanup, the worse mistake.
-// Reference types, UnsetValue included, compare by identity.
+// set. Any other boxed value type is taken as unchanged if
+// `unknownBoxedValuesSame` is set: adopting a value that may be the mod's own
+// would leave it in place on cleanup, the worse mistake. Reference types,
+// UnsetValue included, compare by identity.
 bool SameLocalValue(winrt::Windows::Foundation::IInspectable const& a,
-                    winrt::Windows::Foundation::IInspectable const& b) {
+                    winrt::Windows::Foundation::IInspectable const& b,
+                    bool unknownBoxedValuesSame = true) {
     if (a == b) {
         return true;
     }
@@ -16971,7 +17033,78 @@ bool SameLocalValue(winrt::Windows::Foundation::IInspectable const& a,
                std::wstring_view(winrt::get_class_name(v))
                    .starts_with(L"Windows.Foundation.IReference`1<");
     };
-    return isBoxedValue(a) && isBoxedValue(b);
+    return unknownBoxedValuesSame && isBoxedValue(a) && isBoxedValue(b);
+}
+
+// A TemplateBinding can't be set again, so a binding to the templated parent's
+// property of the same name stands in for one. It's kept only if it gives back
+// the value the property had, as a TemplateBinding can be to a property of
+// another name.
+bool BindToTemplatedParent(
+    FrameworkElement const& element,
+    DependencyProperty const& property,
+    winrt::Windows::Foundation::IInspectable const& value) {
+    // Templates commonly bind these to a property of another name, such as a
+    // ScrollBar's Visibility to ComputedVerticalScrollBarVisibility, where the
+    // values being the same would keep a wrong binding.
+    if (property == UIElement::VisibilityProperty() ||
+        property == FrameworkElement::HorizontalAlignmentProperty() ||
+        property == FrameworkElement::VerticalAlignmentProperty() ||
+        property == FrameworkElement::MarginProperty()) {
+        return false;
+    }
+
+    auto name = GetPropertyName(property);
+    if (name.empty()) {
+        return false;
+    }
+
+    try {
+        Data::RelativeSource relativeSource;
+        relativeSource.Mode(Data::RelativeSourceMode::TemplatedParent);
+        Data::Binding binding;
+        binding.RelativeSource(relativeSource);
+        binding.Path(PropertyPath(name));
+        element.SetBinding(property, binding);
+        if (SameLocalValue(element.GetAnimationBaseValue(property), value,
+                           /*unknownBoxedValuesSame=*/false)) {
+            Wh_Log(L"Bound %s to the templated parent", name.c_str());
+            return true;
+        }
+    } catch (winrt::hresult_error const& ex) {
+        Wh_Log(L"Error %08X: %s", ex.code(), ex.message().c_str());
+    }
+
+    Wh_Log(L"Binding %s to the templated parent didn't give back its value",
+           name.c_str());
+    return false;
+}
+
+// Puts back the value the property had before the style. The target's image
+// entry goes with the style's value: a retry would put that image back, and the
+// restored image's load events would be taken for it.
+void RestoreOriginalValue(DependencyObject elementDo,
+                          DependencyProperty property,
+                          OriginalValue const& originalValue) {
+    UntrackImageTarget(elementDo, property);
+
+    auto element = elementDo.try_as<FrameworkElement>();
+    if (element && originalValue.binding) {
+        try {
+            element.SetBinding(property, originalValue.binding);
+            return;
+        } catch (winrt::hresult_error const& ex) {
+            Wh_Log(L"Error %08X: %s", ex.code(), ex.message().c_str());
+        }
+    }
+
+    if (element && originalValue.templateBound &&
+        BindToTemplatedParent(element, property, originalValue.value)) {
+        return;
+    }
+
+    SetOrClearValue(elementDo, property, originalValue.value,
+                    /*initialApply=*/false, /*styleValue=*/false);
 }
 
 // Before animating a property of a brush or a transform, such as Fill.Color in
@@ -17082,14 +17215,15 @@ void AdoptExternalValueAsOriginal(
     if (!propertyCustomizationState->customValue) {
         return;
     }
-    auto localValue = ReadLocalValueWithWorkaround(element, property);
+    auto original = ReadOriginalValue(element, property);
+    auto const& localValue = original.value;
     if (!SameLocalValue(localValue,
                         propertyCustomizationState->lastAppliedValue) &&
         !IsImageRetryValue(element, property, localValue) &&
         !IsCompositionBrushCopy(localValue) &&
         !IsAnimationCopy(localValue,
                          propertyCustomizationState->lastAppliedValue)) {
-        propertyCustomizationState->originalValue = localValue;
+        propertyCustomizationState->originalValue = std::move(original);
     }
 }
 
@@ -17318,7 +17452,7 @@ void PropagateStyleVariableChangeCore(StyleVariableState* state,
                                          &propState);
             if (!propState.originalValue) {
                 propState.originalValue =
-                    ReadLocalValueWithWorkaround(element, consumer.property);
+                    ReadOriginalValue(element, consumer.property);
             }
             propState.customValue = *resolved;
 
@@ -17720,7 +17854,7 @@ void ApplyCustomizationsForVisualStateGroup(
 
             if (resolved) {
                 propertyCustomizationState.originalValue =
-                    ReadLocalValueWithWorkaround(element, property);
+                    ReadOriginalValue(element, property);
                 propertyCustomizationState.customValue = *resolved;
                 propertyCustomizationState.lastAppliedValue = SetOrClearValue(
                     element, property, *resolved, /*initialApply=*/true);
@@ -17884,8 +18018,7 @@ void ApplyCustomizationsForVisualStateGroup(
                                     &propertyCustomizationState);
                                 if (!propertyCustomizationState.originalValue) {
                                     propertyCustomizationState.originalValue =
-                                        ReadLocalValueWithWorkaround(element,
-                                                                     property);
+                                        ReadOriginalValue(element, property);
                                 }
 
                                 propertyCustomizationState.customValue =
