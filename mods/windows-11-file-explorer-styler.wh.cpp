@@ -925,12 +925,14 @@ const Theme g_themeLiquidGlass = {{
         L"BorderBrush:=$ElementBorderBrush",
         L"CornerRadius=$ElementCornerRadius",
         L"BorderThickness=$ElementBorderThickness",
-        L"Margin=4,0"}},
+        L"Margin=4,0",
+        L"Background:=Transparent"}},
     ThemeTargetStyles{L"FileExplorerExtensions.GalleryViewControl#GalleryViewControl > Grid", {
         L"BorderBrush:=$ElementBorderBrush",
         L"CornerRadius=$ElementCornerRadius",
         L"BorderThickness=$ElementBorderThickness",
-        L"Margin=4,0"}},
+        L"Margin=4,0",
+        L"Background:=Transparent"}},
     ThemeTargetStyles{L"FileExplorerExtensions.GalleryViewControl#GalleryViewControl > Grid > Grid#GalleryRootGrid", {
         L"Background:=Transparent"}},
     ThemeTargetStyles{L"ToolTip", {
