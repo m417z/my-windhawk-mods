@@ -4089,19 +4089,22 @@ std::vector<ResourceVariableEntry> g_resourceVariables;
 
 // Track original resource values for restoration (per-thread since
 // Application::Current().Resources() is per-thread).
-std::unordered_map<std::wstring, winrt::Windows::Foundation::IInspectable>
-    g_originalResourceValues;
+[[clang::no_destroy]] std::optional<
+    std::unordered_map<std::wstring, winrt::Windows::Foundation::IInspectable>>
+    g_originalResourceValues{std::in_place};
 
 // Track our merged theme dictionary for cleanup (per-thread).
-ResourceDictionary g_resourceVariablesThemeDict{nullptr};
+[[clang::no_destroy]] ResourceDictionary g_resourceVariablesThemeDict{nullptr};
 bool g_resourceVariablesThemeDictMerged;
 
 // The application resources that the resource variables were merged into
 // (per-thread).
-ResourceDictionary g_resourceVariablesTargetResources{nullptr};
+[[clang::no_destroy]] ResourceDictionary g_resourceVariablesTargetResources{
+    nullptr};
 
 // For listening to theme color changes (per-thread).
-winrt::Windows::UI::ViewManagement::UISettings g_uiSettings{nullptr};
+[[clang::no_destroy]] winrt::Windows::UI::ViewManagement::UISettings
+    g_uiSettings{nullptr};
 thread_local winrt::event_token g_colorValuesChangedToken;
 
 winrt::Windows::Foundation::IInspectable ReadLocalValueWithWorkaround(
@@ -11474,7 +11477,7 @@ bool ProcessResourceVariable(ResourceDictionary resources,
     }
 
     auto [it, inserted] =
-        g_originalResourceValues.try_emplace(entry.key, existingResource);
+        g_originalResourceValues->try_emplace(entry.key, existingResource);
     if (!inserted) {
         Wh_Log(L"Resource variable key '%s' already modified, skipping",
                entry.key.c_str());
@@ -11653,7 +11656,7 @@ void EnsureResourceVariablesMerged() {
                 L"Application resources were replaced, merging resource "
                 L"variables again");
             // The original values belong to the replaced resources.
-            g_originalResourceValues.clear();
+            g_originalResourceValues->clear();
             MergeResourceVariables();
             return;
         }
@@ -11746,7 +11749,7 @@ void UninitializeResourceVariables() {
 
     // Restore original resource values.
     auto resources = Application::Current().Resources();
-    for (const auto& [key, originalValue] : g_originalResourceValues) {
+    for (const auto& [key, originalValue] : *g_originalResourceValues) {
         try {
             resources.Insert(winrt::box_value(key), originalValue);
         } catch (...) {
@@ -11754,7 +11757,7 @@ void UninitializeResourceVariables() {
             Wh_Log(L"Error %08X", hr);
         }
     }
-    g_originalResourceValues.clear();
+    g_originalResourceValues.emplace();
 
     // Remove our merged theme dictionary.
     if (g_resourceVariablesThemeDict) {

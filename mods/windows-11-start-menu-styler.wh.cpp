@@ -11754,10 +11754,10 @@ std::unordered_map<ElementId, WebViewCustomizationState>
 
 bool g_elementPropertyModifying;
 
-winrt::Windows::Foundation::IAsyncOperation<bool>
+[[clang::no_destroy]] winrt::Windows::Foundation::IAsyncOperation<bool>
     g_delayedAllAppsRootVisibilitySet;
 
-VisualStateGroup g_allAppsRootRenderTransformVsg{nullptr};
+[[clang::no_destroy]] VisualStateGroup g_allAppsRootRenderTransformVsg{nullptr};
 winrt::event_token g_allAppsRootRenderTransformToken{};
 
 bool g_windowsDefaultIsNewLayout = false;
@@ -11944,19 +11944,22 @@ std::vector<ResourceVariableEntry> g_resourceVariables;
 
 // Track original resource values for restoration (per-thread since
 // Application::Current().Resources() is per-thread).
-std::unordered_map<std::wstring, winrt::Windows::Foundation::IInspectable>
-    g_originalResourceValues;
+[[clang::no_destroy]] std::optional<
+    std::unordered_map<std::wstring, winrt::Windows::Foundation::IInspectable>>
+    g_originalResourceValues{std::in_place};
 
 // Track our merged theme dictionary for cleanup (per-thread).
-ResourceDictionary g_resourceVariablesThemeDict{nullptr};
+[[clang::no_destroy]] ResourceDictionary g_resourceVariablesThemeDict{nullptr};
 bool g_resourceVariablesThemeDictMerged;
 
 // The application resources that the resource variables were merged into
 // (per-thread).
-ResourceDictionary g_resourceVariablesTargetResources{nullptr};
+[[clang::no_destroy]] ResourceDictionary g_resourceVariablesTargetResources{
+    nullptr};
 
 // For listening to theme color changes (per-thread).
-winrt::Windows::UI::ViewManagement::UISettings g_uiSettings{nullptr};
+[[clang::no_destroy]] winrt::Windows::UI::ViewManagement::UISettings
+    g_uiSettings{nullptr};
 thread_local winrt::event_token g_colorValuesChangedToken;
 
 VS_FIXEDFILEINFO* GetModuleVersionInfo(HMODULE hModule, UINT* puPtrLen) {
@@ -18640,14 +18643,16 @@ struct SeparatePinnedScrollEntry {
     Input::FocusManager::GettingFocus_revoker gettingFocusRevoker;
     UIElement::KeyDown_revoker wrapperKeyDownRevoker;
 };
-std::vector<SeparatePinnedScrollEntry> g_separatePinnedScrollEntries;
+[[clang::no_destroy]] std::optional<std::vector<SeparatePinnedScrollEntry>>
+    g_separatePinnedScrollEntries{std::in_place};
 
 // The index of the item each list in the pinned items was focused at last.
 std::vector<std::pair<winrt::weak_ref<Controls::ListViewBase>, int>>
     g_separatePinnedListFocusedIndexes;
 
-std::vector<winrt::Windows::Foundation::IAsyncOperation<bool>>
-    g_separatePinnedScrollPendingActions;
+[[clang::no_destroy]] std::optional<
+    std::vector<winrt::Windows::Foundation::IAsyncOperation<bool>>>
+    g_separatePinnedScrollPendingActions{std::in_place};
 
 // Tracks a pending dispatcher callback so UninitializeSettingsAndTap can cancel
 // it on teardown. Finished ones are pruned first to keep the list bounded (only
@@ -18655,13 +18660,13 @@ std::vector<winrt::Windows::Foundation::IAsyncOperation<bool>>
 void TrackSeparatePinnedScrollAction(
     winrt::Windows::Foundation::IAsyncOperation<bool> action) {
     std::erase_if(
-        g_separatePinnedScrollPendingActions,
+        *g_separatePinnedScrollPendingActions,
         [](winrt::Windows::Foundation::IAsyncOperation<bool> const& a) {
             return !a || a.Status() !=
                              winrt::Windows::Foundation::AsyncStatus::Started;
         });
     if (action) {
-        g_separatePinnedScrollPendingActions.push_back(std::move(action));
+        g_separatePinnedScrollPendingActions->push_back(std::move(action));
     }
 }
 
@@ -18799,7 +18804,7 @@ void RevertSeparatePinnedScrollForBorder(Controls::Border border,
 // Walk every tracked entry and revert the tree mutation. Called when the
 // user toggles the setting off at runtime and on Wh_ModUninit.
 void RevertAllSeparatePinnedScroll() {
-    for (auto const& entry : g_separatePinnedScrollEntries) {
+    for (auto const& entry : *g_separatePinnedScrollEntries) {
         try {
             RevertSeparatePinnedScrollForBorder(
                 entry.border.get(), entry.sourceTopLevelHeader.get());
@@ -18808,7 +18813,7 @@ void RevertAllSeparatePinnedScroll() {
                    ex.code(), ex.message().c_str());
         }
     }
-    g_separatePinnedScrollEntries.clear();
+    g_separatePinnedScrollEntries.emplace();
     g_separatePinnedListFocusedIndexes.clear();
 }
 
@@ -19422,12 +19427,12 @@ void HandleSeparatePinnedScroll(FrameworkElement element) {
                     // Prune entries whose Border has been destroyed (e.g.
                     // Start menu instances opened in previous sessions of
                     // the host process) before pushing the new one.
-                    std::erase_if(g_separatePinnedScrollEntries,
+                    std::erase_if(*g_separatePinnedScrollEntries,
                                   [](SeparatePinnedScrollEntry const& e) {
                                       return !e.border.get();
                                   });
                     auto wrapper = border.Child().as<Controls::Grid>();
-                    g_separatePinnedScrollEntries.push_back(
+                    g_separatePinnedScrollEntries->push_back(
                         {winrt::make_weak(border),
                          winrt::make_weak(topLevelHeader),
                          Input::FocusManager::GettingFocus(
@@ -20460,7 +20465,7 @@ bool ProcessResourceVariable(ResourceDictionary resources,
     }
 
     auto [it, inserted] =
-        g_originalResourceValues.try_emplace(entry.key, existingResource);
+        g_originalResourceValues->try_emplace(entry.key, existingResource);
     if (!inserted) {
         Wh_Log(L"Resource variable key '%s' already modified, skipping",
                entry.key.c_str());
@@ -20639,7 +20644,7 @@ void EnsureResourceVariablesMerged() {
                 L"Application resources were replaced, merging resource "
                 L"variables again");
             // The original values belong to the replaced resources.
-            g_originalResourceValues.clear();
+            g_originalResourceValues->clear();
             MergeResourceVariables();
             return;
         }
@@ -20842,7 +20847,7 @@ void UninitializeResourceVariables() {
 
     // Restore original resource values.
     auto resources = Application::Current().Resources();
-    for (const auto& [key, originalValue] : g_originalResourceValues) {
+    for (const auto& [key, originalValue] : *g_originalResourceValues) {
         try {
             resources.Insert(winrt::box_value(key), originalValue);
         } catch (...) {
@@ -20850,7 +20855,7 @@ void UninitializeResourceVariables() {
             Wh_Log(L"Error %08X", hr);
         }
     }
-    g_originalResourceValues.clear();
+    g_originalResourceValues.emplace();
 
     // Remove our merged theme dictionary.
     if (g_resourceVariablesThemeDict) {
@@ -20887,13 +20892,13 @@ void UninitializeSettingsAndTap() {
         g_delayedAllAppsRootVisibilitySet = nullptr;
     }
 
-    for (auto const& action : g_separatePinnedScrollPendingActions) {
+    for (auto const& action : *g_separatePinnedScrollPendingActions) {
         if (action && action.Status() ==
                           winrt::Windows::Foundation::AsyncStatus::Started) {
             action.Cancel();
         }
     }
-    g_separatePinnedScrollPendingActions.clear();
+    g_separatePinnedScrollPendingActions.emplace();
 
     if (g_allAppsRootRenderTransformVsg) {
         g_allAppsRootRenderTransformVsg.CurrentStateChanged(
