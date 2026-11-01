@@ -70,6 +70,7 @@ Only Windows 11 is supported.
   - always: Always
 - showDesktopButtonWidth: 12
   $name: '"Show desktop" button width'
+  $description: With the vertical taskbar, sets the button height.
 */
 // ==/WindhawkModSettings==
 
@@ -85,6 +86,7 @@ Only Windows 11 is supported.
 
 #undef GetCurrentTime
 
+#include <winrt/Windows.Foundation.Collections.h>
 #include <winrt/Windows.Foundation.h>
 #include <winrt/Windows.UI.Core.h>
 #include <winrt/Windows.UI.Xaml.Automation.h>
@@ -146,15 +148,17 @@ struct BatteryTextBlockState {
 [[clang::no_destroy]] std::optional<std::vector<BatteryTextBlockState>>
     g_batteryTextBlockStates{std::in_place};
 
-// Local MinWidth/MaxWidth values replaced by the show desktop width override,
-// nullopt for a property that had no local value.
-struct ShowDesktopWidthState {
+// Local MinWidth/MaxWidth values (MinHeight/MaxHeight if vertical) replaced by
+// the show desktop size override, nullopt for a property that had no local
+// value.
+struct ShowDesktopSizeState {
     winrt::weak_ref<FrameworkElement> element;
-    std::optional<double> savedMinWidth;
-    std::optional<double> savedMaxWidth;
+    bool vertical;
+    std::optional<double> savedMin;
+    std::optional<double> savedMax;
 };
 
-std::vector<ShowDesktopWidthState> g_showDesktopWidthStates;
+std::vector<ShowDesktopSizeState> g_showDesktopSizeStates;
 
 HWND FindCurrentProcessTaskbarWnd() {
     HWND hTaskbarWnd = nullptr;
@@ -247,6 +251,21 @@ FrameworkElement FindChildByClassName(FrameworkElement element,
     return EnumChildElements(element, [className](FrameworkElement child) {
         return winrt::get_class_name(child) == className;
     });
+}
+
+// The native vertical taskbar switches the tray to a vertical layout with a
+// visual state. A tray which is rotated as a whole keeps the horizontal layout.
+bool IsVerticalSystemTray(FrameworkElement systemTrayFrameGrid) {
+    for (const auto& group :
+         VisualStateManager::GetVisualStateGroups(systemTrayFrameGrid)) {
+        if (group.Name() == L"OrientationStates") {
+            auto currentState = group.CurrentState();
+            return currentState &&
+                   currentState.Name() == L"VerticalOrientation";
+        }
+    }
+
+    return false;
 }
 
 // https://stackoverflow.com/a/3382894
@@ -1111,32 +1130,45 @@ void ApplyBellIconStyle(FrameworkElement systemTrayIconElement) {
     }
 }
 
+std::pair<DependencyProperty, DependencyProperty> GetMinMaxSizeProperties(
+    bool vertical) {
+    if (vertical) {
+        return {FrameworkElement::MinHeightProperty(),
+                FrameworkElement::MaxHeightProperty()};
+    }
+
+    return {FrameworkElement::MinWidthProperty(),
+            FrameworkElement::MaxWidthProperty()};
+}
+
 // MinWidth/MaxWidth take precedence over an explicit Width, so they override
-// the width without having to replace the Width value itself. The local values
-// are saved the first time an element is seen, for restoring in ApplySettings.
-void OverrideShowDesktopWidth(FrameworkElement element, double width) {
+// the width without having to replace the Width value itself, and the same
+// goes for the height. The local values are saved the first time an element is
+// seen, for restoring in ApplySettings.
+void OverrideShowDesktopSize(FrameworkElement element,
+                             double size,
+                             bool vertical) {
+    auto [minProperty, maxProperty] = GetMinMaxSizeProperties(vertical);
+
     bool managed = false;
-    for (const auto& state : g_showDesktopWidthStates) {
-        if (state.element.get() == element) {
+    for (const auto& state : g_showDesktopSizeStates) {
+        if (state.element.get() == element && state.vertical == vertical) {
             managed = true;
             break;
         }
     }
 
     if (!managed) {
-        g_showDesktopWidthStates.push_back({
+        g_showDesktopSizeStates.push_back({
             .element = element,
-            .savedMinWidth =
-                element.ReadLocalValue(FrameworkElement::MinWidthProperty())
-                    .try_as<double>(),
-            .savedMaxWidth =
-                element.ReadLocalValue(FrameworkElement::MaxWidthProperty())
-                    .try_as<double>(),
+            .vertical = vertical,
+            .savedMin = element.ReadLocalValue(minProperty).try_as<double>(),
+            .savedMax = element.ReadLocalValue(maxProperty).try_as<double>(),
         });
     }
 
-    element.MinWidth(width);
-    element.MaxWidth(width);
+    element.SetValue(minProperty, winrt::box_value(size));
+    element.SetValue(maxProperty, winrt::box_value(size));
 }
 
 void ApplyShowDesktopStyle(FrameworkElement systemTrayIconElement) {
@@ -1153,22 +1185,29 @@ void ApplyShowDesktopStyle(FrameworkElement systemTrayIconElement) {
     }
 
     // Drop any state for elements that no longer exist.
-    std::erase_if(g_showDesktopWidthStates, [](const ShowDesktopWidthState& s) {
+    std::erase_if(g_showDesktopSizeStates, [](const ShowDesktopSizeState& s) {
         return !s.element.get();
     });
 
-    int width = g_settings.showDesktopButtonWidth;
-    Wh_Log(L"Show desktop button, width=%d", width);
+    auto systemTrayFrameGrid =
+        GetParentElementByName(showDesktopStack, L"SystemTrayFrameGrid");
+    bool vertical =
+        systemTrayFrameGrid && IsVerticalSystemTray(systemTrayFrameGrid);
 
-    OverrideShowDesktopWidth(systemTrayIconElement, width);
-    OverrideShowDesktopWidth(showDesktopStack, width);
+    // The width setting is the extent of the button along the taskbar.
+    int size = g_settings.showDesktopButtonWidth;
+    Wh_Log(L"Show desktop button, size=%d, vertical=%d", size, vertical);
 
-    // The container grid has an explicit width, which keeps its content at the
-    // default size regardless of the width of the icon view.
+    OverrideShowDesktopSize(systemTrayIconElement, size, vertical);
+    OverrideShowDesktopSize(showDesktopStack, size, vertical);
+
+    // The container grid has an explicit width (height if vertical), which
+    // keeps its content at the default size regardless of the size of the icon
+    // view.
     auto containerGrid =
         FindChildByName(systemTrayIconElement, L"ContainerGrid");
     if (containerGrid) {
-        OverrideShowDesktopWidth(containerGrid, width);
+        OverrideShowDesktopSize(containerGrid, size, vertical);
     } else {
         Wh_Log(L"Failed to get ContainerGrid");
     }
@@ -1715,25 +1754,29 @@ void ApplySettings() {
             }
             g_batteryTextBlockStates->clear();
 
-            // Restore the show desktop width overrides. ApplyStyle below
+            // Restore the show desktop size overrides. ApplyStyle below
             // re-applies them unless the mod is unloading.
-            for (auto& state : g_showDesktopWidthStates) {
+            for (auto& state : g_showDesktopSizeStates) {
                 auto element = state.element.get();
                 if (!element) {
                     continue;
                 }
-                if (state.savedMinWidth) {
-                    element.MinWidth(*state.savedMinWidth);
+                auto [minProperty, maxProperty] =
+                    GetMinMaxSizeProperties(state.vertical);
+                if (state.savedMin) {
+                    element.SetValue(minProperty,
+                                     winrt::box_value(*state.savedMin));
                 } else {
-                    element.ClearValue(FrameworkElement::MinWidthProperty());
+                    element.ClearValue(minProperty);
                 }
-                if (state.savedMaxWidth) {
-                    element.MaxWidth(*state.savedMaxWidth);
+                if (state.savedMax) {
+                    element.SetValue(maxProperty,
+                                     winrt::box_value(*state.savedMax));
                 } else {
-                    element.ClearValue(FrameworkElement::MaxWidthProperty());
+                    element.ClearValue(maxProperty);
                 }
             }
-            g_showDesktopWidthStates.clear();
+            g_showDesktopSizeStates.clear();
 
             auto xamlRoot = GetTaskbarXamlRoot(param.hTaskbarWnd);
             if (!xamlRoot) {
