@@ -1058,8 +1058,13 @@ void UpdateTaskListButtonWithLabelStyle(FrameworkElement taskListButtonElement,
         FindChildByName(iconPanelElement, L"LabelControl")
             .as<Controls::TextBlock>();
 
-    // In labelsWithCombining mode, pinned items have labels too. Hide them.
-    if (g_settings.mode == Mode::labelsWithCombining && labelControlElement &&
+    bool vertical = IsVerticalTaskListButton(iconPanelElement);
+
+    // In labelsWithCombining mode, pinned items have labels too. Hide them,
+    // except on a vertical taskbar, which natively shows labels for pinned
+    // items.
+    if (g_settings.mode == Mode::labelsWithCombining && !vertical &&
+        labelControlElement &&
         !TaskListButton_IsRunning(taskListButtonElement)) {
         secondColumnWidthPixels = 0;
         labelControlElement.Visibility(Visibility::Collapsed);
@@ -1176,8 +1181,6 @@ void UpdateTaskListButtonWithLabelStyle(FrameworkElement taskListButtonElement,
         std::fmax(taskListButtonWidth - iconPanelPadding.Left -
                       iconPanelPadding.Right - 2,
                   0.0);
-
-    bool vertical = IsVerticalTaskListButton(iconPanelElement);
 
     PCWSTR indicatorClassNames[] = {
         L"RunningIndicator",
@@ -1694,6 +1697,70 @@ HRESULT WINAPI TaskbarCollapsibleLayout_ArrangeOverride_Hook(
     }
 
     return ret;
+}
+
+// The width that Windows uses for a vertical taskbar with labels.
+constexpr double kVerticalTaskbarWithLabelsWidth = 160;
+
+// TaskbarController::UpdateFrameHeight reports the frame size before it sets
+// the frame width.
+thread_local double g_updateFrameHeightFrameSize;
+
+using TaskbarTelemetry_FrameSizeChanged_t =
+    void(WINAPI*)(const double* frameSize);
+TaskbarTelemetry_FrameSizeChanged_t TaskbarTelemetry_FrameSizeChanged_Original;
+void WINAPI TaskbarTelemetry_FrameSizeChanged_Hook(const double* frameSize) {
+    Wh_Log(L">");
+
+    g_updateFrameHeightFrameSize = *frameSize;
+
+    TaskbarTelemetry_FrameSizeChanged_Original(frameSize);
+}
+
+// Returns the taskbar frame, and creates it if it doesn't exist yet.
+using TaskbarController_View_t = void*(WINAPI*)(void* pThis, void** result);
+TaskbarController_View_t TaskbarController_View_Original;
+
+// Sets the frame width to NaN for a horizontal taskbar. A vertical taskbar is
+// as wide as the frame size if items are always combined, and wide enough for
+// labels otherwise, which only fits the modes that tie labels to combining.
+using TaskbarController_UpdateFrameHeight_t = void(WINAPI*)(void* pThis);
+TaskbarController_UpdateFrameHeight_t
+    TaskbarController_UpdateFrameHeight_Original;
+void WINAPI TaskbarController_UpdateFrameHeight_Hook(void* pThis) {
+    Wh_Log(L">");
+
+    Mode mode = g_settings.mode;
+    if (g_unloading || !TaskbarController_View_Original ||
+        (mode != Mode::labelsWithCombining &&
+         mode != Mode::noLabelsWithoutCombining)) {
+        TaskbarController_UpdateFrameHeight_Original(pThis);
+        return;
+    }
+
+    g_updateFrameHeightFrameSize = 0;
+
+    TaskbarController_UpdateFrameHeight_Original(pThis);
+
+    double width = mode == Mode::labelsWithCombining
+                       ? kVerticalTaskbarWithLabelsWidth
+                       : g_updateFrameHeightFrameSize;
+    if (width <= 0) {
+        return;
+    }
+
+    // The frame is created before anything calls UpdateFrameHeight.
+    FrameworkElement taskbarFrame = nullptr;
+    TaskbarController_View_Original(pThis, winrt::put_abi(taskbarFrame));
+    if (!taskbarFrame) {
+        return;
+    }
+
+    double currentWidth = taskbarFrame.Width();
+    if (!std::isnan(currentWidth) && currentWidth != width) {
+        Wh_Log(L"Vertical taskbar width: %f->%f", currentWidth, width);
+        taskbarFrame.Width(width);
+    }
 }
 
 bool IsAppIdExcluded(PCWSTR appId) {
@@ -2456,6 +2523,24 @@ bool HookTaskbarViewDllSymbols(HMODULE module) {
                 &TaskbarCollapsibleLayout_ArrangeOverride_Original,
                 TaskbarCollapsibleLayout_ArrangeOverride_Hook,
                 true,  // From 10.0.22621.2361.
+            },
+            {
+                {LR"(public: static void __cdecl TaskbarTelemetry::FrameSizeChanged<double const &>(double const &))"},
+                &TaskbarTelemetry_FrameSizeChanged_Original,
+                TaskbarTelemetry_FrameSizeChanged_Hook,
+                true,  // Only needed for the vertical taskbar.
+            },
+            {
+                {LR"(public: struct winrt::Windows::UI::Xaml::FrameworkElement __cdecl winrt::Taskbar::implementation::TaskbarController::View(void))"},
+                &TaskbarController_View_Original,
+                nullptr,
+                true,  // Only needed for the vertical taskbar.
+            },
+            {
+                {LR"(private: void __cdecl winrt::Taskbar::implementation::TaskbarController::UpdateFrameHeight(void))"},
+                &TaskbarController_UpdateFrameHeight_Original,
+                TaskbarController_UpdateFrameHeight_Hook,
+                true,  // Only needed for the vertical taskbar.
             },
             {
                 {LR"(const winrt::impl::produce<struct winrt::Taskbar::implementation::TaskListWindowViewModel,struct winrt::Taskbar::ITaskListWindowViewModel>::`vftable')"},
