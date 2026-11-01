@@ -136,8 +136,8 @@ int64_t g_mainStackTextChangedToken;
 winrt::weak_ref<FrameworkElement> g_bellSystemTrayIconElement;
 int64_t g_bellAutomationNameChangedToken;
 
-winrt::weak_ref<FrameworkElement> g_controlCenterStackPanel;
-winrt::event_token g_controlCenterStackPanelSizeChangedToken;
+winrt::weak_ref<FrameworkElement> g_controlCenterPanel;
+winrt::event_token g_controlCenterPanelSizeChangedToken;
 
 struct BatteryTextBlockState {
     winrt::weak_ref<Controls::TextBlock> textBlock;
@@ -250,6 +250,12 @@ FrameworkElement FindChildByClassName(FrameworkElement element,
                                       PCWSTR className) {
     return EnumChildElements(element, [className](FrameworkElement child) {
         return winrt::get_class_name(child) == className;
+    });
+}
+
+FrameworkElement FindChildPanel(FrameworkElement element) {
+    return EnumChildElements(element, [](FrameworkElement child) {
+        return !!child.try_as<Controls::Panel>();
     });
 }
 
@@ -504,6 +510,115 @@ SystemTrayIconIdent IdentifySystemTrayIconFromText(std::wstring_view text) {
     return SystemTrayIconIdent::kUnknown;
 }
 
+// A wrap grid places each item in the cell of its index, so a hidden item keeps
+// its cell. Move the visible items with margins to the cells they'd have
+// without the hidden ones, in as many columns as the taskbar uses for that many
+// items, and trim the rows that are left empty. Returns the number of visible
+// items.
+int UpdateWrapGridHiddenItems(
+    Controls::WrapGrid wrapGrid,
+    std::function<bool(FrameworkElement)> isContainerHidden) {
+    auto itemsControl = Controls::ItemsControl::GetItemsOwner(wrapGrid);
+    if (!itemsControl) {
+        Wh_Log(L"Failed to get items owner");
+        return 0;
+    }
+
+    int itemCount = itemsControl.Items().Size();
+    auto getContainer = [&itemsControl](int index) {
+        return itemsControl.ContainerFromIndex(index)
+            .try_as<FrameworkElement>();
+    };
+
+    int visibleCount = 0;
+    for (int i = 0; i < itemCount; i++) {
+        auto container = getContainer(i);
+        if (!container || !isContainerHidden(container)) {
+            visibleCount++;
+        }
+    }
+
+    int columns = wrapGrid.MaximumRowsOrColumns();
+    double itemWidth = wrapGrid.ItemWidth();
+    double itemHeight = wrapGrid.ItemHeight();
+    if (wrapGrid.Orientation() != Controls::Orientation::Horizontal ||
+        columns < 1 || !(itemWidth > 0) || !(itemHeight > 0)) {
+        Wh_Log(L"Unsupported WrapGrid");
+        return visibleCount;
+    }
+
+    // The taskbar uses a column for each item, up to a maximum.
+    int visibleColumns = std::min(visibleCount, columns);
+    double visibleItemWidth = visibleColumns == columns
+                                  ? itemWidth
+                                  : itemWidth * columns / visibleColumns;
+
+    int visibleIndex = 0;
+    for (int i = 0; i < itemCount; i++) {
+        auto container = getContainer(i);
+        if (!container) {
+            visibleIndex++;
+            continue;
+        }
+
+        if (isContainerHidden(container)) {
+            container.ClearValue(FrameworkElement::MarginProperty());
+            continue;
+        }
+
+        int column = i % columns;
+        int row = i / columns;
+        int visibleColumn = visibleIndex % visibleColumns;
+        int visibleRow = visibleIndex / visibleColumns;
+
+        double x = column * itemWidth;
+        double y = row * itemHeight;
+        double visibleX = visibleColumn * visibleItemWidth;
+        double visibleY = visibleRow * itemHeight;
+        visibleIndex++;
+
+        if (visibleX == x && visibleY == y && visibleItemWidth == itemWidth) {
+            container.ClearValue(FrameworkElement::MarginProperty());
+        } else {
+            container.Margin(Thickness{
+                visibleX - x,
+                visibleY - y,
+                x + itemWidth - visibleX - visibleItemWidth,
+                y - visibleY,
+            });
+        }
+    }
+
+    int rows = (itemCount + columns - 1) / columns;
+    int visibleRows = visibleColumns
+                          ? (visibleCount + visibleColumns - 1) / visibleColumns
+                          : 0;
+    if (visibleRows < rows) {
+        wrapGrid.MaxHeight(visibleRows * itemHeight);
+    } else {
+        wrapGrid.ClearValue(FrameworkElement::MaxHeightProperty());
+    }
+
+    return visibleCount;
+}
+
+void UpdateMainStackWrapGridOfIcon(FrameworkElement notifyIconViewElement) {
+    auto contentPresenter =
+        Media::VisualTreeHelper::GetParent(notifyIconViewElement);
+    auto wrapGrid = contentPresenter
+                        ? Media::VisualTreeHelper::GetParent(contentPresenter)
+                              .try_as<Controls::WrapGrid>()
+                        : nullptr;
+    if (!wrapGrid) {
+        return;
+    }
+
+    UpdateWrapGridHiddenItems(wrapGrid, [](FrameworkElement container) {
+        auto iconView = FindChildByName(container, L"SystemTrayIcon");
+        return iconView && iconView.Visibility() == Visibility::Collapsed;
+    });
+}
+
 void ApplyMainStackIconViewStyle(FrameworkElement notifyIconViewElement) {
     FrameworkElement systemTrayTextIconContent = nullptr;
 
@@ -578,6 +693,7 @@ void ApplyMainStackIconViewStyle(FrameworkElement notifyIconViewElement) {
 
     notifyIconViewElement.Visibility(hide ? Visibility::Collapsed
                                           : Visibility::Visible);
+    UpdateMainStackWrapGridOfIcon(notifyIconViewElement);
 
     if (!g_unloading && !g_mainStackInnerTextBlock.get()) {
         auto notifyIconViewElementWeakRef =
@@ -605,6 +721,7 @@ void ApplyMainStackIconViewStyle(FrameworkElement notifyIconViewElement) {
 
                     notifyIconViewElement.Visibility(
                         hide ? Visibility::Collapsed : Visibility::Visible);
+                    UpdateMainStackWrapGridOfIcon(notifyIconViewElement);
                 });
     }
 }
@@ -800,9 +917,9 @@ void SetItemContainerMargin(FrameworkElement container,
 
 // A hidden icon keeps its (empty) item container in the panel, and the panel
 // adds Spacing for every child regardless of visibility or size. Cancel the
-// extra spacing with negative margins on the neighboring visible items, and
-// hide the button if all icons are hidden.
-void UpdateControlCenterButtonStackPanel(FrameworkElement stackPanel) {
+// extra spacing with negative margins on the neighboring visible items. Returns
+// whether any item is visible.
+bool UpdateControlCenterButtonStackPanel(FrameworkElement stackPanel) {
     double spacing = 0;
     bool vertical = false;
     if (auto panel = stackPanel.try_as<Controls::StackPanel>()) {
@@ -852,17 +969,36 @@ void UpdateControlCenterButtonStackPanel(FrameworkElement stackPanel) {
                                -spacing * hiddenRun, vertical);
     }
 
+    return !!pendingContainer;
+}
+
+// Hides the button if all icons are hidden.
+void UpdateControlCenterButtonPanel(FrameworkElement panel) {
+    bool anyVisible;
+    if (auto wrapGrid = panel.try_as<Controls::WrapGrid>()) {
+        anyVisible =
+            UpdateWrapGridHiddenItems(wrapGrid, [](FrameworkElement container) {
+                auto systemTrayIconElement =
+                    FindChildByName(container, L"SystemTrayIcon")
+                        .try_as<Controls::Control>();
+                return systemTrayIconElement &&
+                       !systemTrayIconElement.IsEnabled();
+            }) > 0;
+    } else {
+        anyVisible = UpdateControlCenterButtonStackPanel(panel);
+    }
+
     // The button template has some width of its own (e.g. the background
     // border margins), so an empty panel alone doesn't make it disappear.
     FrameworkElement controlCenterButton =
-        GetParentElementByName(stackPanel, L"ControlCenterButton");
+        GetParentElementByName(panel, L"ControlCenterButton");
     if (!controlCenterButton) {
         Wh_Log(L"Failed to get ControlCenterButton");
         return;
     }
 
-    controlCenterButton.Visibility(pendingContainer ? Visibility::Visible
-                                                    : Visibility::Collapsed);
+    controlCenterButton.Visibility(anyVisible ? Visibility::Visible
+                                              : Visibility::Collapsed);
 }
 
 void ApplyControlCenterButtonIconStyle(FrameworkElement systemTrayIconElement) {
@@ -956,28 +1092,32 @@ void ApplyControlCenterButtonIconStyle(FrameworkElement systemTrayIconElement) {
             L"Windows.UI.Xaml.Controls.ContentPresenter" &&
         (parent = Media::VisualTreeHelper::GetParent(parent)
                       .try_as<FrameworkElement>()) &&
-        winrt::get_class_name(parent) ==
-            L"Windows.UI.Xaml.Controls.StackPanel") {
-        // Removing an item container changes the panel size, which is the
-        // only signal that the margins of the remaining items are stale.
-        if (!g_unloading && !g_controlCenterStackPanel.get()) {
-            g_controlCenterStackPanel = parent;
-            g_controlCenterStackPanelSizeChangedToken = parent.SizeChanged(
+        parent.try_as<Controls::Panel>()) {
+        // Removing an item container changes the size of a stack panel, which
+        // is the only signal that the margins of the remaining items are
+        // stale. The panel is replaced when the taskbar layout changes.
+        if (!g_unloading && g_controlCenterPanel.get() != parent) {
+            if (auto previousPanel = g_controlCenterPanel.get()) {
+                previousPanel.SizeChanged(g_controlCenterPanelSizeChangedToken);
+            }
+
+            g_controlCenterPanel = parent;
+            g_controlCenterPanelSizeChangedToken = parent.SizeChanged(
                 [](winrt::Windows::Foundation::IInspectable const& sender,
                    SizeChangedEventArgs const& e) {
                     Wh_Log(L">");
 
-                    auto stackPanel = sender.try_as<FrameworkElement>();
-                    if (!stackPanel) {
+                    auto panel = sender.try_as<FrameworkElement>();
+                    if (!panel) {
                         Wh_Log(L"Failed to get sender");
                         return;
                     }
 
-                    UpdateControlCenterButtonStackPanel(stackPanel);
+                    UpdateControlCenterButtonPanel(panel);
                 });
         }
 
-        UpdateControlCenterButtonStackPanel(parent);
+        UpdateControlCenterButtonPanel(parent);
     } else {
         Wh_Log(L"Failed");
     }
@@ -1214,23 +1354,22 @@ void ApplyShowDesktopStyle(FrameworkElement systemTrayIconElement) {
 }
 
 bool ApplyMainStackStyle(FrameworkElement container) {
-    FrameworkElement stackPanel = nullptr;
+    FrameworkElement panel = nullptr;
 
     FrameworkElement child = container;
     if ((child = FindChildByName(child, L"Content")) &&
         (child = FindChildByName(child, L"IconStack")) &&
         (child = FindChildByClassName(
              child, L"Windows.UI.Xaml.Controls.ItemsPresenter")) &&
-        (child = FindChildByClassName(
-             child, L"Windows.UI.Xaml.Controls.StackPanel"))) {
-        stackPanel = child;
+        (child = FindChildPanel(child))) {
+        panel = child;
     }
 
-    if (!stackPanel) {
+    if (!panel) {
         return false;
     }
 
-    EnumChildElements(stackPanel, [](FrameworkElement child) {
+    EnumChildElements(panel, [](FrameworkElement child) {
         auto childClassName = winrt::get_class_name(child);
         if (childClassName != L"Windows.UI.Xaml.Controls.ContentPresenter") {
             Wh_Log(L"Unsupported class name %s of child",
@@ -1253,23 +1392,22 @@ bool ApplyMainStackStyle(FrameworkElement container) {
 }
 
 bool ApplyNonActivatableStackStyle(FrameworkElement container) {
-    FrameworkElement stackPanel = nullptr;
+    FrameworkElement panel = nullptr;
 
     FrameworkElement child = container;
     if ((child = FindChildByName(child, L"Content")) &&
         (child = FindChildByName(child, L"IconStack")) &&
         (child = FindChildByClassName(
              child, L"Windows.UI.Xaml.Controls.ItemsPresenter")) &&
-        (child = FindChildByClassName(
-             child, L"Windows.UI.Xaml.Controls.StackPanel"))) {
-        stackPanel = child;
+        (child = FindChildPanel(child))) {
+        panel = child;
     }
 
-    if (!stackPanel) {
+    if (!panel) {
         return false;
     }
 
-    EnumChildElements(stackPanel, [](FrameworkElement child) {
+    EnumChildElements(panel, [](FrameworkElement child) {
         auto childClassName = winrt::get_class_name(child);
         if (childClassName != L"Windows.UI.Xaml.Controls.ContentPresenter") {
             Wh_Log(L"Unsupported class name %s of child",
@@ -1292,7 +1430,7 @@ bool ApplyNonActivatableStackStyle(FrameworkElement container) {
 }
 
 bool ApplyControlCenterButtonStyle(FrameworkElement controlCenterButton) {
-    FrameworkElement stackPanel = nullptr;
+    FrameworkElement panel = nullptr;
 
     FrameworkElement child = controlCenterButton;
     if ((child =
@@ -1300,16 +1438,15 @@ bool ApplyControlCenterButtonStyle(FrameworkElement controlCenterButton) {
         (child = FindChildByName(child, L"ContentPresenter")) &&
         (child = FindChildByClassName(
              child, L"Windows.UI.Xaml.Controls.ItemsPresenter")) &&
-        (child = FindChildByClassName(
-             child, L"Windows.UI.Xaml.Controls.StackPanel"))) {
-        stackPanel = child;
+        (child = FindChildPanel(child))) {
+        panel = child;
     }
 
-    if (!stackPanel) {
+    if (!panel) {
         return false;
     }
 
-    EnumChildElements(stackPanel, [](FrameworkElement child) {
+    EnumChildElements(panel, [](FrameworkElement child) {
         auto childClassName = winrt::get_class_name(child);
         if (childClassName != L"Windows.UI.Xaml.Controls.ContentPresenter") {
             Wh_Log(L"Unsupported class name %s of child",
@@ -1332,7 +1469,7 @@ bool ApplyControlCenterButtonStyle(FrameworkElement controlCenterButton) {
 }
 
 bool ApplyNotificationCenterButtonStyle(FrameworkElement controlCenterButton) {
-    FrameworkElement stackPanel = nullptr;
+    FrameworkElement panel = nullptr;
 
     FrameworkElement child = controlCenterButton;
     if ((child =
@@ -1340,16 +1477,15 @@ bool ApplyNotificationCenterButtonStyle(FrameworkElement controlCenterButton) {
         (child = FindChildByName(child, L"ContentPresenter")) &&
         (child = FindChildByClassName(
              child, L"Windows.UI.Xaml.Controls.ItemsPresenter")) &&
-        (child = FindChildByClassName(
-             child, L"Windows.UI.Xaml.Controls.StackPanel"))) {
-        stackPanel = child;
+        (child = FindChildPanel(child))) {
+        panel = child;
     }
 
-    if (!stackPanel) {
+    if (!panel) {
         return false;
     }
 
-    EnumChildElements(stackPanel, [](FrameworkElement child) {
+    EnumChildElements(panel, [](FrameworkElement child) {
         auto childClassName = winrt::get_class_name(child);
         if (childClassName != L"Windows.UI.Xaml.Controls.ContentPresenter") {
             Wh_Log(L"Unsupported class name %s of child",
@@ -1372,23 +1508,22 @@ bool ApplyNotificationCenterButtonStyle(FrameworkElement controlCenterButton) {
 }
 
 bool ApplyShowDesktopStackStyle(FrameworkElement container) {
-    FrameworkElement stackPanel = nullptr;
+    FrameworkElement panel = nullptr;
 
     FrameworkElement child = container;
     if ((child = FindChildByName(child, L"Content")) &&
         (child = FindChildByName(child, L"IconStack")) &&
         (child = FindChildByClassName(
              child, L"Windows.UI.Xaml.Controls.ItemsPresenter")) &&
-        (child = FindChildByClassName(
-             child, L"Windows.UI.Xaml.Controls.StackPanel"))) {
-        stackPanel = child;
+        (child = FindChildPanel(child))) {
+        panel = child;
     }
 
-    if (!stackPanel) {
+    if (!panel) {
         return false;
     }
 
-    EnumChildElements(stackPanel, [](FrameworkElement child) {
+    EnumChildElements(panel, [](FrameworkElement child) {
         auto childClassName = winrt::get_class_name(child);
         if (childClassName != L"Windows.UI.Xaml.Controls.ContentPresenter") {
             Wh_Log(L"Unsupported class name %s of child",
@@ -1524,6 +1659,46 @@ void* WINAPI IconView_IconView_Hook(void* pThis) {
         });
 
     return ret;
+}
+
+// Sets the columns and item width of a wrap grid for all of its icons,
+// including the hidden ones, e.g. when icons are added or removed. The hidden
+// icons are excluded from the layout again afterwards.
+using SystemTrayFrame_ConfigureWrapGridColumns_t =
+    void(WINAPI*)(void* element, unsigned int itemCount, double width);
+SystemTrayFrame_ConfigureWrapGridColumns_t
+    SystemTrayFrame_ConfigureWrapGridColumns_Original;
+void WINAPI
+SystemTrayFrame_ConfigureWrapGridColumns_Hook(void* element,
+                                              unsigned int itemCount,
+                                              double width) {
+    SystemTrayFrame_ConfigureWrapGridColumns_Original(element, itemCount,
+                                                      width);
+
+    if (g_unloading) {
+        return;
+    }
+
+    try {
+        DependencyObject dependencyObject = nullptr;
+        winrt::copy_from_abi(dependencyObject, *(void**)element);
+        auto frameworkElement = dependencyObject.try_as<FrameworkElement>();
+        if (!frameworkElement) {
+            return;
+        }
+
+        auto name = frameworkElement.Name();
+        Wh_Log(L"> %s %u", name.c_str(), itemCount);
+
+        if (name == L"MainStack") {
+            ApplyMainStackStyle(frameworkElement);
+        } else if (name == L"ControlCenterButton") {
+            ApplyControlCenterButtonStyle(frameworkElement);
+        }
+    } catch (...) {
+        HRESULT hr = winrt::to_hresult();
+        Wh_Log(L"Error %08X", hr);
+    }
 }
 
 void* CTaskBand_ITaskListWndSite_vftable;
@@ -1731,12 +1906,11 @@ void ApplySettings() {
                 g_mainStackTextChangedToken = 0;
             }
 
-            if (auto controlCenterStackPanel =
-                    g_controlCenterStackPanel.get()) {
-                controlCenterStackPanel.SizeChanged(
-                    g_controlCenterStackPanelSizeChangedToken);
-                g_controlCenterStackPanel = nullptr;
-                g_controlCenterStackPanelSizeChangedToken = {};
+            if (auto controlCenterPanel = g_controlCenterPanel.get()) {
+                controlCenterPanel.SizeChanged(
+                    g_controlCenterPanelSizeChangedToken);
+                g_controlCenterPanel = nullptr;
+                g_controlCenterPanelSizeChangedToken = {};
             }
 
             // Unregister and restore battery TextBlock foregrounds. ApplyStyle
@@ -1800,6 +1974,12 @@ bool HookSystemTraySymbols(HMODULE module) {
             {LR"(public: __cdecl winrt::SystemTray::implementation::IconView::IconView(void))"},
             &IconView_IconView_Original,
             IconView_IconView_Hook,
+        },
+        {
+            {LR"(private: static void __cdecl winrt::SystemTray::implementation::SystemTrayFrame::ConfigureWrapGridColumns(struct winrt::Windows::UI::Xaml::DependencyObject const &,unsigned int,double))"},
+            &SystemTrayFrame_ConfigureWrapGridColumns_Original,
+            SystemTrayFrame_ConfigureWrapGridColumns_Hook,
+            true,  // Only used with the native vertical taskbar.
         },
     };
 
