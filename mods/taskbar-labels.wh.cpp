@@ -904,6 +904,116 @@ void HideLabelSpacer(Controls::Grid iconPanelElement) {
     }
 }
 
+// The native vertical taskbar switches the buttons to a vertical layout with a
+// visual state. A taskbar which is rotated as a whole keeps the horizontal
+// layout.
+bool IsVerticalTaskListButton(FrameworkElement iconPanelElement) {
+    for (const auto& group :
+         VisualStateManager::GetVisualStateGroups(iconPanelElement)) {
+        if (group.Name() == L"OrientationStates") {
+            auto currentState = group.CurrentState();
+            return currentState &&
+                   currentState.Name() == L"VerticalOrientation";
+        }
+    }
+
+    return false;
+}
+
+void UpdateProgressIndicatorTrack(FrameworkElement progressIndicatorElement,
+                                  double minWidth,
+                                  double height) {
+    auto element = progressIndicatorElement;
+    if ((element = FindChildByName(element, L"LayoutRoot")) &&
+        (element = FindChildByName(element, L"ProgressBarRoot")) &&
+        (element = FindChildByClassName(element,
+                                        L"Windows.UI.Xaml.Controls.Border")) &&
+        (element =
+             FindChildByClassName(element, L"Windows.UI.Xaml.Controls.Grid"))) {
+        auto progressBarTrack = FindChildByName(element, L"ProgressBarTrack");
+        if (progressBarTrack) {
+            element.Height(height);
+            progressBarTrack.MinWidth(minWidth);
+        }
+    }
+}
+
+// On a vertical taskbar, the indicators are vertical bars on the left of the
+// button. The button height doesn't change with the label, so only the full
+// width style, which spans the height, differs from the native size. The
+// progress indicator is laid out horizontally at the bottom, and its visual is
+// rotated by 270 degrees around its top left corner, so its width is the
+// length, and its top is the bottom end.
+void UpdateVerticalIndicatorStyle(Controls::Grid iconPanelElement,
+                                  FrameworkElement indicatorElement,
+                                  bool isProgressIndicator,
+                                  IndicatorStyle indicatorStyle,
+                                  double firstColumnWidthPixels) {
+    // Undo the horizontal style. It replaces the left and right margins, which
+    // are natively the same as the top one.
+    indicatorElement.ClearValue(FrameworkElement::MaxWidthProperty());
+
+    auto indicatorMargin = indicatorElement.Margin();
+    indicatorMargin.Left = indicatorMargin.Top;
+    indicatorMargin.Right = indicatorMargin.Top;
+
+    double fullLength = 0;
+    if (!g_unloading && indicatorStyle == IndicatorStyle::fullWidth) {
+        auto iconPanelPadding = iconPanelElement.Padding();
+        fullLength =
+            std::fmax(iconPanelElement.ActualHeight() - iconPanelPadding.Top -
+                          iconPanelPadding.Bottom - indicatorMargin.Top -
+                          indicatorMargin.Bottom,
+                      0.0);
+    }
+
+    double thickness = g_unloading || !g_settings.runningIndicatorHeight
+                           ? 3
+                           : std::max(g_settings.runningIndicatorHeight, 0);
+
+    // Positive offsets move the indicator away from the icon, like they move
+    // the horizontal indicator down.
+    float offsetX =
+        g_unloading
+            ? 0.0f
+            : -static_cast<float>(g_settings.runningIndicatorVerticalOffset);
+    float offsetY = 0;
+
+    if (isProgressIndicator) {
+        indicatorElement.MinWidth(fullLength);
+        indicatorElement.Height(thickness);
+        UpdateProgressIndicatorTrack(indicatorElement, fullLength, thickness);
+
+        // A layout wider than the icon column gets clipped to it unless its
+        // arrange slot is widened with a negative margin.
+        double columnOverflow =
+            indicatorMargin.Left + fullLength - firstColumnWidthPixels;
+        if (columnOverflow > 0) {
+            indicatorMargin.Right = -columnOverflow;
+        }
+
+        // Move the bottom end of a full length indicator to the bottom of the
+        // layout.
+        if (fullLength > 0) {
+            offsetY = static_cast<float>(
+                std::fmax(thickness, indicatorElement.MinHeight()));
+        }
+    } else {
+        indicatorElement.ClearValue(FrameworkElement::MinWidthProperty());
+        indicatorElement.MinHeight(fullLength);
+        indicatorElement.Width(thickness);
+    }
+
+    indicatorElement.Margin(indicatorMargin);
+
+    auto translation = indicatorElement.Translation();
+    if (translation.x != offsetX || translation.y != offsetY) {
+        translation.x = offsetX;
+        translation.y = offsetY;
+        indicatorElement.Translation(translation);
+    }
+}
+
 void UpdateTaskListButtonWithLabelStyle(FrameworkElement taskListButtonElement,
                                         Controls::Grid iconPanelElement) {
     auto iconElement = FindChildByName(iconPanelElement, L"Icon");
@@ -1061,6 +1171,14 @@ void UpdateTaskListButtonWithLabelStyle(FrameworkElement taskListButtonElement,
         }
     }
 
+    // Within the button padding and the native indicator margins.
+    double maxIndicatorWidth =
+        std::fmax(taskListButtonWidth - iconPanelPadding.Left -
+                      iconPanelPadding.Right - 2,
+                  0.0);
+
+    bool vertical = IsVerticalTaskListButton(iconPanelElement);
+
     PCWSTR indicatorClassNames[] = {
         L"RunningIndicator",
         L"ProgressIndicator",
@@ -1081,6 +1199,18 @@ void UpdateTaskListButtonWithLabelStyle(FrameworkElement taskListButtonElement,
                 : (isProgressIndicator ? g_settings.progressIndicatorStyle
                                        : g_settings.runningIndicatorStyle);
 
+        if (vertical) {
+            UpdateVerticalIndicatorStyle(iconPanelElement, indicatorElement,
+                                         isProgressIndicator, indicatorStyle,
+                                         firstColumnWidthPixels);
+            continue;
+        }
+
+        if (!isProgressIndicator) {
+            // Undo the vertical style.
+            indicatorElement.ClearValue(FrameworkElement::MinHeightProperty());
+        }
+
         // Keep the indicator in the icon column, which has a fixed pixel
         // width. The sizes below derive from the button's actual width, and
         // spanning into the auto-sized label column would feed them back into
@@ -1089,7 +1219,7 @@ void UpdateTaskListButtonWithLabelStyle(FrameworkElement taskListButtonElement,
         indicatorElement.SetValue(Controls::Grid::ColumnSpanProperty(),
                                   winrt::box_value(1));
 
-        double maxWidth = std::fmax(taskListButtonWidth - 6, 0.0);
+        double maxWidth = maxIndicatorWidth;
         indicatorElement.MaxWidth(maxWidth);
 
         double minWidth = 0;
@@ -1105,10 +1235,7 @@ void UpdateTaskListButtonWithLabelStyle(FrameworkElement taskListButtonElement,
                                firstColumnWidthPixels;
                 }
             } else if (indicatorStyle == IndicatorStyle::fullWidth) {
-                minWidth = taskListButtonWidth - 6;
-                if (minWidth < 0) {
-                    minWidth = 0;
-                }
+                minWidth = maxWidth;
             }
 
             if (minWidth > maxWidth) {
@@ -1130,7 +1257,8 @@ void UpdateTaskListButtonWithLabelStyle(FrameworkElement taskListButtonElement,
                                        g_settings.leftAndRightPaddingSize * 2 -
                                        firstColumnWidthPixels;
             } else {
-                indicatorMargin.Left = (taskListButtonWidth - minWidth) / 2 - 2;
+                indicatorMargin.Left = (taskListButtonWidth - minWidth) / 2 -
+                                       iconPanelPadding.Left;
                 indicatorHorizontalAlignment = HorizontalAlignment::Left;
             }
         }
@@ -1167,26 +1295,14 @@ void UpdateTaskListButtonWithLabelStyle(FrameworkElement taskListButtonElement,
                 ? 0.0f
                 : static_cast<float>(g_settings.runningIndicatorVerticalOffset);
         auto translation = indicatorElement.Translation();
-        if (translation.y != verticalOffset) {
+        if (translation.x != 0 || translation.y != verticalOffset) {
+            translation.x = 0;
             translation.y = verticalOffset;
             indicatorElement.Translation(translation);
         }
 
         if (isProgressIndicator) {
-            auto element = indicatorElement;
-            if ((element = FindChildByName(element, L"LayoutRoot")) &&
-                (element = FindChildByName(element, L"ProgressBarRoot")) &&
-                (element = FindChildByClassName(
-                     element, L"Windows.UI.Xaml.Controls.Border")) &&
-                (element = FindChildByClassName(
-                     element, L"Windows.UI.Xaml.Controls.Grid"))) {
-                auto progressBarTrack =
-                    FindChildByName(element, L"ProgressBarTrack");
-                if (progressBarTrack) {
-                    element.Height(height);
-                    progressBarTrack.MinWidth(minWidth);
-                }
-            }
+            UpdateProgressIndicatorTrack(indicatorElement, minWidth, height);
         }
     }
 }
