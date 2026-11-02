@@ -439,6 +439,11 @@ struct Theme {
 
 // clang-format off
 
+// The themes below are generated automatically from the theme YAML files in
+// the styling guide and should not be edited manually. Submit changes as pull
+// requests to the styling guide:
+// https://github.com/ramensoftware/windows-11-notification-center-styling-guide
+
 const Theme g_themeTranslucentShell = {{
     ThemeTargetStyles{L"Grid#NotificationCenterGrid", {
         L"Background:=$CommonBgBrush",

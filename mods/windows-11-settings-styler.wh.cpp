@@ -158,6 +158,11 @@ struct Theme {
 
 // clang-format off
 
+// The themes below are generated automatically from the theme YAML files in
+// the styling guide and should not be edited manually. Submit changes as pull
+// requests to the styling guide:
+// https://github.com/ramensoftware/windows-11-settings-styling-guide
+
 const Theme g_themeDensy = {{
     ThemeTargetStyles{L"SystemSettings.View.RootPage > Grid#RootPageGrid > Grid#RootCommandSearchGrid > SystemSettings.View.SettingsAutoSuggestCommandSearchBox#CommandSearchBox", {
         L"Margin=0,0,0,0"}},

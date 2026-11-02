@@ -641,6 +641,11 @@ struct Theme {
 
 // clang-format off
 
+// The themes below are generated automatically from the theme YAML files in
+// the styling guide and should not be edited manually. Submit changes as pull
+// requests to the styling guide:
+// https://github.com/ramensoftware/windows-11-taskbar-styling-guide
+
 const Theme g_themeTranslucentTaskbar = {{
     ThemeTargetStyles{L"Taskbar.TaskbarFrame > Grid#RootGrid > Taskbar.TaskbarBackground > Grid > Rectangle#BackgroundFill", {
         L"Fill:=$CommonBgBrush"}},
