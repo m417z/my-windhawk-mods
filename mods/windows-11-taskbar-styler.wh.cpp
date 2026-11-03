@@ -2633,7 +2633,7 @@ const Theme g_themeTaskbarXII = {{
         L"Height=48",
         L"CornerRadius=4"}},
     ThemeTargetStyles{L"Taskbar.TaskbarBackground#BackgroundControl", {
-        L"Transform3D:=<CompositeTransform3D TranslateX=\"{{widgetWidth==``?skip():widgetWidth+4.5}}\"/>",
+        L"Transform3D:=<CompositeTransform3D TranslateX=\"{{$separateWidget?(widgetWidth==``?skip():widgetWidth+4.5):skip()}}\"/>",
         L"Opacity=0.7",
         L"Height=48"}},
     ThemeTargetStyles{L"Taskbar.TaskbarBackground > Grid", {
@@ -2644,12 +2644,12 @@ const Theme g_themeTaskbarXII = {{
     ThemeTargetStyles{L"Microsoft.UI.Xaml.Controls.ItemsRepeater#TaskbarFrameRepeater", {
         L"Margin=3,0,3,0"}},
     ThemeTargetStyles{L"Taskbar.AugmentedEntryPointButton > Taskbar.TaskListButtonPanel", {
-        L"Background:=<SolidColorBrush Color=\"{ThemeResource SystemChromeAltHighColor}\" Opacity=\"0.6\" />",
-        L"CornerRadius=4",
-        L"Padding=6,0,6,0",
-        L"Margin=-3,0,8,0",
+        L"Background:={{$separateWidget?`<SolidColorBrush Color=\"{ThemeResource SystemChromeAltHighColor}\" Opacity=\"0.6\" />`:skip()}}",
+        L"CornerRadius={{$separateWidget?4:skip()}}",
+        L"Padding={{$separateWidget?`6,0,6,0`:skip()}}",
+        L"Margin={{$separateWidget?-3:-4}},0,8,0",
         L"Width=>widgetBaseWidth",
-        L"MinWidth={{widgetBaseWidth>0?widgetBaseWidth+8:skip()}}",
+        L"MinWidth={{$separateWidget?(widgetBaseWidth>0?widgetBaseWidth+8:skip()):skip()}}",
         L"ActualWidth=>widgetWidth"}},
     ThemeTargetStyles{L"Border#LargeTicker1", {
         L"Margin=0,2,4,0"}},
@@ -2682,6 +2682,8 @@ const Theme g_themeTaskbarXII = {{
     ThemeTargetStyles{L"TextBlock#DateInnerTextBlock", {
         L"FontSize=15",
         L"FontWeight=SemiBold"}},
+}, {
+    L"separateWidget=1",
 }};
 
 const Theme g_themexdark = {{
