@@ -9,7 +9,7 @@
 // @homepage        https://m417z.com/
 // @include         explorer.exe
 // @architecture    x86-64
-// @compilerOptions -lcomctl32 -lntdll -lole32 -loleaut32 -lruntimeobject
+// @compilerOptions -lcomctl32 -lhid -lntdll -lole32 -loleaut32 -lruntimeobject
 // ==/WindhawkMod==
 
 // Source code is published under The GNU General Public License v3.0.
@@ -31,9 +31,10 @@ application. Ctrl+clicking or middle-clicking (clicking the mouse wheel) on a
 taskbar button will toggle mute for that app. A tooltip shows the current
 volume percentage, or "No audio session" if the app has no active audio.
 
-**Note:** Some laptop touchpads might not support scrolling over the taskbar. A
-workaround is to use the "pinch to zoom" gesture. For details, check out [a
-relevant
+**Note:** Some laptop touchpads might not support scrolling over the taskbar.
+For precision touchpads, the "Touchpad scrolling" option can be enabled to read
+two-finger scrolling directly from the touchpad. Another workaround is to use
+the "pinch to zoom" gesture. For details, check out [a relevant
 issue](https://tweaker.userecho.com/topics/826-scroll-on-trackpadtouchpad-doesnt-trigger-mouse-wheel-options).
 
 ![Demonstration](https://i.imgur.com/56QHjUv.gif)
@@ -77,6 +78,12 @@ Control mod takes precedence due to the way the mod works.
   $description: >-
     When enabled, scrolling the mouse wheel will only change the volume when
     the Ctrl key is held down.
+- touchpadScroll: false
+  $name: Touchpad scrolling
+  $description: >-
+    Change the volume with two-finger scrolling on a precision touchpad, for
+    touchpads whose scrolling doesn't work over the taskbar. Moving two fingers
+    up raises the volume.
 - terseFormat: false
   $name: Terse format
   $description: >-
@@ -98,6 +105,7 @@ Control mod takes precedence due to the way the mod works.
 
 #include <windhawk_utils.h>
 
+#include <algorithm>
 #include <atomic>
 #include <cmath>
 #include <functional>
@@ -108,9 +116,13 @@ Control mod takes precedence due to the way the mod works.
 
 #include <audiopolicy.h>
 #include <endpointvolume.h>
+#include <hidusage.h>
 #include <mmdeviceapi.h>
 #include <tlhelp32.h>
 #include <winternl.h>
+
+// Depends on hidusage.h.
+#include <hidpi.h>
 
 #undef GetCurrentTime
 
@@ -129,6 +141,7 @@ struct {
     bool ctrlClickToMute;
     bool middleClickToMute;
     bool ctrlScrollVolumeChange;
+    bool touchpadScroll;
     bool terseFormat;
     std::optional<winrt::Windows::UI::Color> tooltipColor;
     bool noAutomaticMuteToggle;
@@ -1062,21 +1075,12 @@ void HideVolumeTooltip() {
 }
 
 void ShowVolumeResultTooltip(UIElement element,
-                             Input::PointerRoutedEventArgs args,
+                             winrt::Windows::Foundation::Point rootPoint,
                              std::optional<AppVolumeResult> volumeResult) {
     auto [taskbarFrame, isOverflowPopup] = FindTaskbarFrameAncestor(element);
     if (!taskbarFrame) {
         return;
     }
-
-    auto point = args.GetCurrentPoint(taskbarFrame);
-    // Transform from taskbarFrame-relative to root-relative coordinates.
-    auto transform = taskbarFrame.TransformToVisual(nullptr);
-    auto rootPoint =
-        transform.TransformPoint({static_cast<float>(point.Position().X),
-                                  static_cast<float>(point.Position().Y)});
-    double cursorX = rootPoint.X;
-    double cursorY = rootPoint.Y;
 
     WCHAR tooltipText[64];
     if (!volumeResult) {
@@ -1089,8 +1093,640 @@ void ShowVolumeResultTooltip(UIElement element,
                    g_settings.terseFormat ? L"🔊 %d%%" : L"Volume: %d%%",
                    volumeResult->volume);
     }
-    ShowVolumeTooltip(taskbarFrame, cursorX, cursorY, isOverflowPopup,
+    ShowVolumeTooltip(taskbarFrame, rootPoint.X, rootPoint.Y, isOverflowPopup,
                       tooltipText);
+}
+
+void ShowVolumeResultTooltip(UIElement element,
+                             Input::PointerRoutedEventArgs args,
+                             std::optional<AppVolumeResult> volumeResult) {
+    // Transform from element-relative to root-relative coordinates.
+    auto rootPoint = element.TransformToVisual(nullptr).TransformPoint(
+        args.GetCurrentPoint(element).Position());
+    ShowVolumeResultTooltip(element, rootPoint, volumeResult);
+}
+
+float VolumeChangeFromWheelDelta(double delta) {
+    int step = g_settings.volumeChangeStep;
+    if (!step) {
+        step = 2;
+    }
+    return (float)delta * step * (0.01f / WHEEL_DELTA);
+}
+
+// Touchpad scrolling. Two-finger scrolling on some precision touchpads doesn't
+// produce wheel input over the taskbar, so the touchpad is read as raw HID
+// input instead, only while the cursor is over a taskbar button. A dedicated
+// thread receives the input, and the volume is changed on the taskbar thread.
+
+constexpr USAGE kHidUsageTouchPad = 0x05;
+constexpr USAGE kHidUsageContactId = 0x51;
+constexpr USAGE kHidUsageContactCount = 0x54;
+
+// The finger movement of one volume step, relative to the touchpad height.
+constexpr double kTouchpadStepHeight = 1.0 / 16;
+
+// Wheel input is ignored for this long after two fingers were on the touchpad,
+// for touchpads which produce wheel input too.
+constexpr ULONGLONG kTouchpadWheelSuppressMs = 1000;
+
+constexpr WCHAR kTouchpadWndClassName[] = L"Windhawk_TouchpadScroll_" WH_MOD_ID;
+
+// wParam: whether the cursor is over a taskbar button.
+constexpr UINT kTouchpadMsgHover = WM_APP + 1;
+// wParam: the volume steps, positive to raise the volume.
+constexpr UINT kTouchpadMsgScroll = WM_APP + 2;
+
+bool g_touchpadWndClassRegistered;
+HANDLE g_touchpadThread;
+// The window of the touchpad thread.
+std::atomic<HWND> g_touchpadWnd;
+// The window of the taskbar thread, created on the first hover.
+std::atomic<HWND> g_touchpadUiWnd;
+std::atomic<ULONGLONG> g_touchpadTwoFingersTick;
+
+// Belongs to the taskbar thread.
+struct {
+    winrt::weak_ref<UIElement> element;
+    // The touchpad thread window which was notified about the hover.
+    HWND touchpadWnd;
+    // The button's screen rectangle.
+    RECT rect;
+    // Map XAML root coordinates to screen coordinates.
+    double originX;
+    double originY;
+    double scale;
+} g_touchpadHover;
+
+void TouchpadHoverClear() {
+    HWND hTouchpadWnd = g_touchpadHover.touchpadWnd;
+    g_touchpadHover.element = nullptr;
+    g_touchpadHover.touchpadWnd = nullptr;
+    if (hTouchpadWnd && hTouchpadWnd == g_touchpadWnd) {
+        PostMessage(hTouchpadWnd, kTouchpadMsgHover, FALSE, 0);
+    }
+}
+
+void ApplyTouchpadScroll(int steps) {
+    auto element = g_touchpadHover.element.get();
+    if (!element) {
+        return;
+    }
+
+    // The hover isn't ended by exits with the pointer still over the button,
+    // see TouchpadHoverEnd.
+    POINT pt;
+    GetCursorPos(&pt);
+    if (!PtInRect(&g_touchpadHover.rect, pt)) {
+        TouchpadHoverClear();
+        return;
+    }
+
+    DWORD processId = GetProcessIdFromTaskListButton(element);
+    if (!processId) {
+        Wh_Log(L"Could not get process ID from taskbar button");
+        return;
+    }
+
+    Wh_Log(L"Per-app volume (touchpad): PID=%u, steps=%d", processId, steps);
+
+    auto volumeResult = AdjustAppVolume(
+        processId, VolumeChangeFromWheelDelta(steps * WHEEL_DELTA));
+
+    ShowVolumeResultTooltip(
+        element,
+        winrt::Windows::Foundation::Point{
+            static_cast<float>((pt.x - g_touchpadHover.originX) /
+                               g_touchpadHover.scale),
+            static_cast<float>((pt.y - g_touchpadHover.originY) /
+                               g_touchpadHover.scale),
+        },
+        volumeResult);
+}
+
+// Everything below up to TouchpadWndProc belongs to the touchpad thread.
+
+struct TouchpadDevice {
+    std::vector<BYTE> preparsed;
+    // The link collections of the contact slots.
+    std::vector<USHORT> fingerCollections;
+    USHORT contactCountCollection;
+    double rangeY;
+};
+
+// Devices which can't be used are kept as nullopt.
+std::unordered_map<HANDLE, std::optional<TouchpadDevice>> g_touchpadDevices;
+
+struct TouchpadContact {
+    ULONG id;
+    ULONG y;
+};
+
+struct {
+    bool registered;
+    std::vector<BYTE> inputBuffer;
+    // A frame's contacts can be spread over several reports, the first of
+    // which has the contact count.
+    std::vector<TouchpadContact> frame;
+    ULONG frameExpected;
+    ULONG frameReceived;
+    // Two contacts are tracked while they move.
+    bool tracking;
+    ULONG trackedIds[2];
+    double lastY;
+    double accumulatedY;
+} g_touchpadState;
+
+const TouchpadDevice* GetTouchpadDevice(HANDLE hDevice) {
+    auto [it, inserted] = g_touchpadDevices.try_emplace(hDevice);
+    if (!inserted) {
+        return it->second ? &*it->second : nullptr;
+    }
+
+    TouchpadDevice dev{};
+
+    UINT size = 0;
+    if (GetRawInputDeviceInfo(hDevice, RIDI_PREPARSEDDATA, nullptr, &size) !=
+            0 ||
+        !size) {
+        return nullptr;
+    }
+
+    dev.preparsed.resize(size);
+    if (GetRawInputDeviceInfo(hDevice, RIDI_PREPARSEDDATA, dev.preparsed.data(),
+                              &size) == (UINT)-1) {
+        return nullptr;
+    }
+
+    auto preparsed = (PHIDP_PREPARSED_DATA)dev.preparsed.data();
+    HIDP_CAPS caps;
+    if (HidP_GetCaps(preparsed, &caps) != HIDP_STATUS_SUCCESS) {
+        return nullptr;
+    }
+
+    USHORT valueCapsCount = caps.NumberInputValueCaps;
+    std::vector<HIDP_VALUE_CAPS> valueCaps(valueCapsCount);
+    if (!valueCapsCount ||
+        HidP_GetValueCaps(HidP_Input, valueCaps.data(), &valueCapsCount,
+                          preparsed) != HIDP_STATUS_SUCCESS) {
+        return nullptr;
+    }
+
+    bool hasContactCount = false;
+    for (USHORT i = 0; i < valueCapsCount; i++) {
+        const HIDP_VALUE_CAPS& vc = valueCaps[i];
+        if (vc.IsRange) {
+            continue;
+        }
+
+        if (vc.UsagePage == HID_USAGE_PAGE_DIGITIZER &&
+            vc.NotRange.Usage == kHidUsageContactCount) {
+            hasContactCount = true;
+            dev.contactCountCollection = vc.LinkCollection;
+        } else if (vc.UsagePage == HID_USAGE_PAGE_GENERIC &&
+                   vc.NotRange.Usage == HID_USAGE_GENERIC_Y) {
+            dev.fingerCollections.push_back(vc.LinkCollection);
+            if (!dev.rangeY) {
+                LONGLONG range = (LONGLONG)vc.LogicalMax - vc.LogicalMin;
+                // Some devices declare a maximum which only fits unsigned.
+                if (range <= 0 && vc.BitSize > 0 && vc.BitSize <= 32) {
+                    range = (1LL << vc.BitSize) - 1;
+                }
+                dev.rangeY = (double)range;
+            }
+        }
+    }
+
+    bool valid =
+        hasContactCount && !dev.fingerCollections.empty() && dev.rangeY > 0;
+
+    Wh_Log(L"Touchpad %p: valid=%d, slots=%u, range=%.0f", hDevice, valid,
+           (UINT)dev.fingerCollections.size(), dev.rangeY);
+
+    if (!valid) {
+        return nullptr;
+    }
+
+    it->second = std::move(dev);
+    return &*it->second;
+}
+
+void OnTouchpadFrame(const TouchpadDevice& dev) {
+    auto& state = g_touchpadState;
+
+    if (state.frame.size() != 2) {
+        state.tracking = false;
+        return;
+    }
+
+    g_touchpadTwoFingersTick = GetTickCount64();
+
+    const TouchpadContact& a = state.frame[0];
+    const TouchpadContact& b = state.frame[1];
+    double y = ((double)a.y + b.y) / 2;
+
+    if (!state.tracking ||
+        !((a.id == state.trackedIds[0] && b.id == state.trackedIds[1]) ||
+          (a.id == state.trackedIds[1] && b.id == state.trackedIds[0]))) {
+        state.tracking = true;
+        state.trackedIds[0] = a.id;
+        state.trackedIds[1] = b.id;
+        state.lastY = y;
+        state.accumulatedY = 0;
+        return;
+    }
+
+    // Y grows downwards, and moving up raises the volume.
+    state.accumulatedY += state.lastY - y;
+    state.lastY = y;
+
+    double stepHeight = dev.rangeY * kTouchpadStepHeight;
+    int steps = (int)(state.accumulatedY / stepHeight);
+    if (!steps) {
+        return;
+    }
+
+    state.accumulatedY -= steps * stepHeight;
+
+    // GetKeyState doesn't reflect the keyboard on this thread.
+    if (g_settings.ctrlScrollVolumeChange &&
+        GetAsyncKeyState(VK_CONTROL) >= 0) {
+        return;
+    }
+
+    if (HWND hUiWnd = g_touchpadUiWnd) {
+        PostMessage(hUiWnd, kTouchpadMsgScroll, steps, 0);
+    }
+}
+
+void OnTouchpadReport(const TouchpadDevice& dev, PCHAR report, ULONG length) {
+    auto& state = g_touchpadState;
+    auto preparsed = (PHIDP_PREPARSED_DATA)dev.preparsed.data();
+
+    ULONG count = 0;
+    if (HidP_GetUsageValue(HidP_Input, HID_USAGE_PAGE_DIGITIZER,
+                           dev.contactCountCollection, kHidUsageContactCount,
+                           &count, preparsed, report,
+                           length) == HIDP_STATUS_SUCCESS &&
+        count > 0) {
+        state.frame.clear();
+        state.frameExpected = count;
+        state.frameReceived = 0;
+    }
+
+    // The rest of a frame whose start was missed.
+    if (!state.frameExpected) {
+        return;
+    }
+
+    for (USHORT collection : dev.fingerCollections) {
+        if (state.frameReceived == state.frameExpected) {
+            break;
+        }
+
+        ULONG y;
+        if (HidP_GetUsageValue(HidP_Input, HID_USAGE_PAGE_GENERIC, collection,
+                               HID_USAGE_GENERIC_Y, &y, preparsed, report,
+                               length) != HIDP_STATUS_SUCCESS) {
+            continue;
+        }
+
+        state.frameReceived++;
+
+        USAGE usages[16];
+        ULONG usageCount = ARRAYSIZE(usages);
+        if (HidP_GetUsages(HidP_Input, HID_USAGE_PAGE_DIGITIZER, collection,
+                           usages, &usageCount, preparsed, report,
+                           length) != HIDP_STATUS_SUCCESS ||
+            std::find(usages, usages + usageCount,
+                      HID_USAGE_DIGITIZER_TIP_SWITCH) == usages + usageCount) {
+            continue;
+        }
+
+        ULONG id = collection;
+        HidP_GetUsageValue(HidP_Input, HID_USAGE_PAGE_DIGITIZER, collection,
+                           kHidUsageContactId, &id, preparsed, report, length);
+
+        state.frame.push_back({id, y});
+    }
+
+    if (state.frameReceived == state.frameExpected) {
+        OnTouchpadFrame(dev);
+        state.frameExpected = 0;
+    }
+}
+
+void OnTouchpadRawInput(HRAWINPUT hRawInput) {
+    auto& state = g_touchpadState;
+
+    // Input which was queued before the registration was removed.
+    if (!state.registered) {
+        return;
+    }
+
+    UINT size = 0;
+    if (GetRawInputData(hRawInput, RID_INPUT, nullptr, &size,
+                        sizeof(RAWINPUTHEADER)) != 0 ||
+        !size) {
+        return;
+    }
+
+    state.inputBuffer.resize(size);
+    if (GetRawInputData(hRawInput, RID_INPUT, state.inputBuffer.data(), &size,
+                        sizeof(RAWINPUTHEADER)) == (UINT)-1) {
+        return;
+    }
+
+    const RAWINPUT* raw = (const RAWINPUT*)state.inputBuffer.data();
+    if (raw->header.dwType != RIM_TYPEHID) {
+        return;
+    }
+
+    const TouchpadDevice* dev = GetTouchpadDevice(raw->header.hDevice);
+    if (!dev) {
+        return;
+    }
+
+    const RAWHID& hid = raw->data.hid;
+    for (DWORD i = 0; i < hid.dwCount; i++) {
+        OnTouchpadReport(*dev, (PCHAR)hid.bRawData + i * hid.dwSizeHid,
+                         hid.dwSizeHid);
+    }
+}
+
+// Returns whether the touchpad raw input of the process is registered, and to
+// which window.
+bool GetTouchpadRawInputTarget(HWND* hTargetWnd) {
+    UINT count = 0;
+    GetRegisteredRawInputDevices(nullptr, &count, sizeof(RAWINPUTDEVICE));
+    if (!count) {
+        return false;
+    }
+
+    std::vector<RAWINPUTDEVICE> devices(count);
+    if (GetRegisteredRawInputDevices(devices.data(), &count,
+                                     sizeof(RAWINPUTDEVICE)) == (UINT)-1) {
+        return false;
+    }
+
+    for (const auto& device : devices) {
+        if (device.usUsagePage == HID_USAGE_PAGE_DIGITIZER &&
+            device.usUsage == kHidUsageTouchPad) {
+            *hTargetWnd = device.hwndTarget;
+            return true;
+        }
+    }
+
+    return false;
+}
+
+// Raw input of a device type goes to a single window in a process, so a
+// registration of someone else is neither taken over nor removed.
+void SetTouchpadHovered(HWND hWnd, bool hovered) {
+    auto& state = g_touchpadState;
+    if (hovered == state.registered) {
+        return;
+    }
+
+    HWND hTargetWnd = nullptr;
+    bool hasTarget = GetTouchpadRawInputTarget(&hTargetWnd);
+
+    if (hovered) {
+        if (hasTarget) {
+            Wh_Log(L"Touchpad raw input is already registered to %p",
+                   hTargetWnd);
+            return;
+        }
+
+        RAWINPUTDEVICE rid{
+            .usUsagePage = HID_USAGE_PAGE_DIGITIZER,
+            .usUsage = kHidUsageTouchPad,
+            .dwFlags = RIDEV_INPUTSINK,
+            .hwndTarget = hWnd,
+        };
+        if (!RegisterRawInputDevices(&rid, 1, sizeof(rid))) {
+            Wh_Log(L"RegisterRawInputDevices failed: %u", GetLastError());
+            return;
+        }
+    } else {
+        if (hasTarget && hTargetWnd == hWnd) {
+            RAWINPUTDEVICE rid{
+                .usUsagePage = HID_USAGE_PAGE_DIGITIZER,
+                .usUsage = kHidUsageTouchPad,
+                .dwFlags = RIDEV_REMOVE,
+            };
+            RegisterRawInputDevices(&rid, 1, sizeof(rid));
+        }
+
+        // A device handle can be reused by another device.
+        g_touchpadDevices.clear();
+        state.frameExpected = 0;
+        state.tracking = false;
+    }
+
+    state.registered = hovered;
+}
+
+// Serves both the touchpad thread window and the taskbar thread window.
+LRESULT CALLBACK TouchpadWndProc(HWND hWnd,
+                                 UINT uMsg,
+                                 WPARAM wParam,
+                                 LPARAM lParam) {
+    switch (uMsg) {
+        case WM_INPUT:
+            OnTouchpadRawInput((HRAWINPUT)lParam);
+            break;
+
+        case kTouchpadMsgHover:
+            SetTouchpadHovered(hWnd, wParam);
+            return 0;
+
+        case kTouchpadMsgScroll:
+            ApplyTouchpadScroll((int)wParam);
+            return 0;
+    }
+
+    return DefWindowProc(hWnd, uMsg, wParam, lParam);
+}
+
+HINSTANCE GetTouchpadWndInstance() {
+    HINSTANCE hInstance = nullptr;
+    GetModuleHandleEx(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
+                          GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                      (LPCWSTR)&TouchpadWndProc, &hInstance);
+    return hInstance;
+}
+
+HWND CreateTouchpadWnd() {
+    HWND hWnd = CreateWindowEx(0, kTouchpadWndClassName, nullptr, 0, 0, 0, 0, 0,
+                               HWND_MESSAGE, nullptr, GetTouchpadWndInstance(),
+                               nullptr);
+    if (!hWnd) {
+        Wh_Log(L"CreateWindowEx failed: %u", GetLastError());
+    }
+
+    return hWnd;
+}
+
+// Called on the taskbar thread on pointer moves over a taskbar button.
+void TouchpadHoverUpdate(UIElement element,
+                         Input::PointerRoutedEventArgs args) {
+    HWND hTouchpadWnd = g_touchpadWnd;
+    if (!hTouchpadWnd) {
+        return;
+    }
+
+    auto frameworkElement = element.try_as<FrameworkElement>();
+    auto xamlRoot = element.XamlRoot();
+    if (!frameworkElement || !xamlRoot) {
+        return;
+    }
+
+    if (g_touchpadHover.element.get() != element ||
+        g_touchpadHover.touchpadWnd != hTouchpadWnd) {
+        HWND hUiWnd = g_touchpadUiWnd;
+        if (!hUiWnd) {
+            hUiWnd = CreateTouchpadWnd();
+            g_touchpadUiWnd = hUiWnd;
+        }
+
+        // The scrolling is applied on the thread of this window.
+        if (!hUiWnd ||
+            GetWindowThreadProcessId(hUiWnd, nullptr) != GetCurrentThreadId()) {
+            return;
+        }
+
+        g_touchpadHover.element = element;
+        g_touchpadHover.touchpadWnd = hTouchpadWnd;
+        PostMessage(hTouchpadWnd, kTouchpadMsgHover, TRUE, 0);
+    }
+
+    // The cursor position is read later than the event's position, so the
+    // geometry is refreshed on each move, until the cursor rests.
+    POINT pt;
+    GetCursorPos(&pt);
+
+    auto transform = element.TransformToVisual(nullptr);
+    auto rootPoint =
+        transform.TransformPoint(args.GetCurrentPoint(element).Position());
+    auto bounds = transform.TransformBounds(winrt::Windows::Foundation::Rect{
+        0,
+        0,
+        static_cast<float>(frameworkElement.ActualWidth()),
+        static_cast<float>(frameworkElement.ActualHeight()),
+    });
+
+    double scale = xamlRoot.RasterizationScale();
+    double originX = pt.x - rootPoint.X * scale;
+    double originY = pt.y - rootPoint.Y * scale;
+
+    g_touchpadHover.rect = {
+        .left = (LONG)std::lround(originX + bounds.X * scale),
+        .top = (LONG)std::lround(originY + bounds.Y * scale),
+        .right = (LONG)std::lround(originX + (bounds.X + bounds.Width) * scale),
+        .bottom =
+            (LONG)std::lround(originY + (bounds.Y + bounds.Height) * scale),
+    };
+    g_touchpadHover.originX = originX;
+    g_touchpadHover.originY = originY;
+    g_touchpadHover.scale = scale;
+}
+
+// Called on the taskbar thread when the pointer exits a taskbar button.
+void TouchpadHoverEnd(UIElement element, Input::PointerRoutedEventArgs args) {
+    if (g_touchpadHover.element.get() != element) {
+        return;
+    }
+
+    // An exit with the pointer still over the button might be due to something
+    // else taking the pointer, such as a touchpad gesture.
+    auto frameworkElement = element.try_as<FrameworkElement>();
+    auto position = args.GetCurrentPoint(element).Position();
+    if (frameworkElement && position.X >= 0 && position.Y >= 0 &&
+        position.X < frameworkElement.ActualWidth() &&
+        position.Y < frameworkElement.ActualHeight()) {
+        return;
+    }
+
+    TouchpadHoverClear();
+}
+
+DWORD WINAPI TouchpadThread(LPVOID lpParameter) {
+    HANDLE hReadyEvent = (HANDLE)lpParameter;
+
+    HWND hWnd = CreateTouchpadWnd();
+    g_touchpadWnd = hWnd;
+
+    SetEvent(hReadyEvent);
+
+    if (!hWnd) {
+        return 1;
+    }
+
+    BOOL bRet;
+    MSG msg;
+    while ((bRet = GetMessage(&msg, nullptr, 0, 0)) != 0) {
+        if (bRet == -1) {
+            break;
+        }
+
+        if (msg.hwnd == nullptr && msg.message == WM_APP) {
+            PostQuitMessage(0);
+            continue;
+        }
+
+        TranslateMessage(&msg);
+        DispatchMessage(&msg);
+    }
+
+    SetTouchpadHovered(hWnd, false);
+    DestroyWindow(hWnd);
+    return 0;
+}
+
+void TouchpadThreadInit() {
+    if (g_touchpadThread) {
+        return;
+    }
+
+    // Kept registered until the mod is unloaded, since the taskbar thread
+    // window outlives the thread.
+    if (!g_touchpadWndClassRegistered) {
+        WNDCLASS wc{
+            .lpfnWndProc = TouchpadWndProc,
+            .hInstance = GetTouchpadWndInstance(),
+            .lpszClassName = kTouchpadWndClassName,
+        };
+        if (!RegisterClass(&wc)) {
+            Wh_Log(L"RegisterClass failed: %u", GetLastError());
+            return;
+        }
+
+        g_touchpadWndClassRegistered = true;
+    }
+
+    HANDLE hReadyEvent = CreateEvent(nullptr, TRUE, FALSE, nullptr);
+    if (!hReadyEvent) {
+        return;
+    }
+
+    g_touchpadThread =
+        CreateThread(nullptr, 0, TouchpadThread, hReadyEvent, 0, nullptr);
+    if (g_touchpadThread) {
+        WaitForSingleObject(hReadyEvent, INFINITE);
+    }
+
+    CloseHandle(hReadyEvent);
+}
+
+void TouchpadThreadUninit() {
+    if (g_touchpadThread) {
+        g_touchpadWnd = nullptr;
+        PostThreadMessage(GetThreadId(g_touchpadThread), WM_APP, 0, 0);
+        WaitForSingleObject(g_touchpadThread, INFINITE);
+        CloseHandle(g_touchpadThread);
+        g_touchpadThread = nullptr;
+    }
 }
 
 // Per-app volume wheel scroll handling.
@@ -1130,6 +1766,12 @@ int WINAPI TaskListButton_OnPointerWheelChanged_Hook(void* pThis, void* pArgs) {
         return original();
     }
 
+    if (g_settings.touchpadScroll &&
+        GetTickCount64() - g_touchpadTwoFingersTick <
+            kTouchpadWheelSuppressMs) {
+        return original();
+    }
+
     double delta = args.GetCurrentPoint(element).Properties().MouseWheelDelta();
     if (!delta) {
         return original();
@@ -1144,15 +1786,9 @@ int WINAPI TaskListButton_OnPointerWheelChanged_Hook(void* pThis, void* pArgs) {
 
     Wh_Log(L"Per-app volume: PID=%u, delta=%f", processId, delta);
 
-    // Calculate volume change.
-    int step = g_settings.volumeChangeStep;
-    if (!step) {
-        step = 2;
-    }
-    float volumeChange = (float)delta * step * (0.01f / WHEEL_DELTA);
-
     // Adjust the app's volume.
-    auto volumeResult = AdjustAppVolume(processId, volumeChange);
+    auto volumeResult =
+        AdjustAppVolume(processId, VolumeChangeFromWheelDelta(delta));
 
     ShowVolumeResultTooltip(element, args, volumeResult);
 
@@ -1184,6 +1820,14 @@ int WINAPI TaskListButton_OnPointerExited_Hook(void* pThis, void* pArgs) {
 
     HideVolumeTooltip();
 
+    Input::PointerRoutedEventArgs args = nullptr;
+    ((IUnknown*)pArgs)
+        ->QueryInterface(winrt::guid_of<Input::PointerRoutedEventArgs>(),
+                         winrt::put_abi(args));
+    if (args) {
+        TouchpadHoverEnd(element, args);
+    }
+
     return original();
 }
 
@@ -1194,8 +1838,9 @@ int WINAPI TaskListButton_OnPointerMoved_Hook(void* pThis, void* pArgs) {
         return TaskListButton_OnPointerMoved_Original(pThis, pArgs);
     };
 
-    // Only update if tooltip is currently shown.
-    if (!g_volumeTooltipState.popup || !g_volumeTooltipState.popup.IsOpen()) {
+    bool tooltipShown =
+        g_volumeTooltipState.popup && g_volumeTooltipState.popup.IsOpen();
+    if (!tooltipShown && !g_touchpadWnd) {
         return original();
     }
 
@@ -1216,6 +1861,13 @@ int WINAPI TaskListButton_OnPointerMoved_Hook(void* pThis, void* pArgs) {
         ->QueryInterface(winrt::guid_of<Input::PointerRoutedEventArgs>(),
                          winrt::put_abi(args));
     if (!args) {
+        return original();
+    }
+
+    TouchpadHoverUpdate(element, args);
+
+    // Only update if tooltip is currently shown.
+    if (!tooltipShown) {
         return original();
     }
 
@@ -1310,6 +1962,7 @@ void LoadSettings() {
     g_settings.middleClickToMute = Wh_GetIntSetting(L"middleClickToMute");
     g_settings.ctrlScrollVolumeChange =
         Wh_GetIntSetting(L"ctrlScrollVolumeChange");
+    g_settings.touchpadScroll = Wh_GetIntSetting(L"touchpadScroll");
     g_settings.terseFormat = Wh_GetIntSetting(L"terseFormat");
 
     g_settings.tooltipColor.reset();
@@ -1487,6 +2140,10 @@ BOOL Wh_ModInit() {
                                        LoadLibraryExW_Hook,
                                        &LoadLibraryExW_Original);
 
+    if (g_settings.touchpadScroll) {
+        TouchpadThreadInit();
+    }
+
     return TRUE;
 }
 
@@ -1509,6 +2166,16 @@ void Wh_ModAfterInit() {
 void Wh_ModUninit() {
     Wh_Log(L">");
 
+    TouchpadThreadUninit();
+
+    if (HWND hTouchpadUiWnd = g_touchpadUiWnd.exchange(nullptr)) {
+        SendMessage(hTouchpadUiWnd, WM_CLOSE, 0, 0);
+    }
+
+    if (g_touchpadWndClassRegistered) {
+        UnregisterClass(kTouchpadWndClassName, GetTouchpadWndInstance());
+    }
+
     HWND hTaskbarWnd = FindCurrentProcessTaskbarWnd();
     if (hTaskbarWnd) {
         RunFromWindowThread(
@@ -1516,6 +2183,7 @@ void Wh_ModUninit() {
             [](void*) {
                 HideVolumeTooltip();
                 SndVolUninit();
+                g_touchpadHover.element = nullptr;
             },
             nullptr);
     }
@@ -1525,4 +2193,10 @@ void Wh_ModSettingsChanged() {
     Wh_Log(L">");
 
     LoadSettings();
+
+    if (g_settings.touchpadScroll) {
+        TouchpadThreadInit();
+    } else {
+        TouchpadThreadUninit();
+    }
 }
