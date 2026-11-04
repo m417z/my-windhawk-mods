@@ -84,6 +84,17 @@ Control mod takes precedence due to the way the mod works.
     Change the volume with two-finger scrolling on a precision touchpad, for
     touchpads whose scrolling doesn't work over the taskbar. Moving two fingers
     up raises the volume.
+- touchpadTopLevelWindow: false
+  $name: Touchpad scrolling test - hidden window
+  $description: >-
+    A testing option for touchpad scrolling. Read the touchpad with a hidden
+    top-level window instead of a message-only window.
+- touchpadCursorHoverEnd: false
+  $name: Touchpad scrolling test - cursor position
+  $description: >-
+    A testing option for touchpad scrolling. When the taskbar reports that the
+    pointer left a button, check the current cursor position instead of the
+    reported pointer position.
 - terseFormat: false
   $name: Terse format
   $description: >-
@@ -142,6 +153,8 @@ struct {
     bool middleClickToMute;
     bool ctrlScrollVolumeChange;
     bool touchpadScroll;
+    bool touchpadTopLevelWindow;
+    bool touchpadCursorHoverEnd;
     bool terseFormat;
     std::optional<winrt::Windows::UI::Color> tooltipColor;
     bool noAutomaticMuteToggle;
@@ -1557,10 +1570,12 @@ HINSTANCE GetTouchpadWndInstance() {
     return hInstance;
 }
 
-HWND CreateTouchpadWnd() {
-    HWND hWnd = CreateWindowEx(0, kTouchpadWndClassName, nullptr, 0, 0, 0, 0, 0,
-                               HWND_MESSAGE, nullptr, GetTouchpadWndInstance(),
-                               nullptr);
+HWND CreateTouchpadWnd(bool topLevel) {
+    HWND hWnd = CreateWindowEx(topLevel ? WS_EX_TOOLWINDOW : 0,
+                               kTouchpadWndClassName, nullptr,
+                               topLevel ? WS_POPUP : 0, 0, 0, 0, 0,
+                               topLevel ? nullptr : HWND_MESSAGE, nullptr,
+                               GetTouchpadWndInstance(), nullptr);
     if (!hWnd) {
         Wh_Log(L"CreateWindowEx failed: %u", GetLastError());
     }
@@ -1586,7 +1601,7 @@ void TouchpadHoverUpdate(UIElement element,
         g_touchpadHover.touchpadWnd != hTouchpadWnd) {
         HWND hUiWnd = g_touchpadUiWnd;
         if (!hUiWnd) {
-            hUiWnd = CreateTouchpadWnd();
+            hUiWnd = CreateTouchpadWnd(false);
             g_touchpadUiWnd = hUiWnd;
         }
 
@@ -1640,12 +1655,20 @@ void TouchpadHoverEnd(UIElement element, Input::PointerRoutedEventArgs args) {
 
     // An exit with the pointer still over the button might be due to something
     // else taking the pointer, such as a touchpad gesture.
-    auto frameworkElement = element.try_as<FrameworkElement>();
-    auto position = args.GetCurrentPoint(element).Position();
-    if (frameworkElement && position.X >= 0 && position.Y >= 0 &&
-        position.X < frameworkElement.ActualWidth() &&
-        position.Y < frameworkElement.ActualHeight()) {
-        return;
+    if (g_settings.touchpadCursorHoverEnd) {
+        POINT pt;
+        GetCursorPos(&pt);
+        if (PtInRect(&g_touchpadHover.rect, pt)) {
+            return;
+        }
+    } else {
+        auto frameworkElement = element.try_as<FrameworkElement>();
+        auto position = args.GetCurrentPoint(element).Position();
+        if (frameworkElement && position.X >= 0 && position.Y >= 0 &&
+            position.X < frameworkElement.ActualWidth() &&
+            position.Y < frameworkElement.ActualHeight()) {
+            return;
+        }
     }
 
     TouchpadHoverClear();
@@ -1654,7 +1677,7 @@ void TouchpadHoverEnd(UIElement element, Input::PointerRoutedEventArgs args) {
 DWORD WINAPI TouchpadThread(LPVOID lpParameter) {
     HANDLE hReadyEvent = (HANDLE)lpParameter;
 
-    HWND hWnd = CreateTouchpadWnd();
+    HWND hWnd = CreateTouchpadWnd(g_settings.touchpadTopLevelWindow);
     g_touchpadWnd = hWnd;
 
     SetEvent(hReadyEvent);
@@ -1963,6 +1986,10 @@ void LoadSettings() {
     g_settings.ctrlScrollVolumeChange =
         Wh_GetIntSetting(L"ctrlScrollVolumeChange");
     g_settings.touchpadScroll = Wh_GetIntSetting(L"touchpadScroll");
+    g_settings.touchpadTopLevelWindow =
+        Wh_GetIntSetting(L"touchpadTopLevelWindow");
+    g_settings.touchpadCursorHoverEnd =
+        Wh_GetIntSetting(L"touchpadCursorHoverEnd");
     g_settings.terseFormat = Wh_GetIntSetting(L"terseFormat");
 
     g_settings.tooltipColor.reset();
@@ -2194,9 +2221,9 @@ void Wh_ModSettingsChanged() {
 
     LoadSettings();
 
+    // The touchpad thread creates its window according to the settings.
+    TouchpadThreadUninit();
     if (g_settings.touchpadScroll) {
         TouchpadThreadInit();
-    } else {
-        TouchpadThreadUninit();
     }
 }
