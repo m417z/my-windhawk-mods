@@ -184,7 +184,7 @@ useful for temporarily disabling a target or style.
 
 A couple of practical examples:
 
-#### Hide the focus assist section
+#### Hide the focus section
 **Target**: `ActionCenter.FocusSessionControl` \
 **Style**: `Height=0`
 
@@ -208,10 +208,6 @@ Makes panel non full-height when there are fewer notifications (fit to size). \
 #### Square the corners of the quick action center
 **Target**: `Grid#ControlCenterRegion` \
 **Style**: `CornerRadius=0`
-
-#### Calendar and notification titlebars: titles on the right, buttons on the left
-**Target**: `Grid#RootContent` \
-**Style**: `FlowDirection=1`
 
 #### Add accelerator key (ALT+X) to clear all notifications
 **Target**: `Windows.UI.Xaml.Controls.Button#ClearAll` \
