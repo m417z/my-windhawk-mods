@@ -19902,11 +19902,6 @@ void ApplyCustomizations(ElementId elementId,
     HandleVirtualizingRepeater(elementId, element);
 
     auto* state = GetStyleVariableState();
-    if (!state) {
-        Wh_Log(L"No XamlRoot for %s, skipping",
-               winrt::get_class_name(element).c_str());
-        return;
-    }
 
     auto resolved = FindElementPropertyOverrides(element, fallbackClassName);
     if (resolved.overridesPerVSG.empty() && resolved.captures.empty()) {
@@ -20180,12 +20175,9 @@ void CleanupCustomizations(ElementId elementId) {
 
         // After RestoreCapturesForElement so the just-unregistered capture
         // callbacks can't re-seed a variable mid-teardown.
-        std::vector<std::wstring> removedVarNames;
-        if (state) {
-            removedVarNames = WithdrawCapturesForElement(
-                state, elementId, elementCustomizationState);
-            state->withdrawnCaptureOwners.erase(elementId);
-        }
+        auto removedVarNames = WithdrawCapturesForElement(
+            state, elementId, elementCustomizationState);
+        state->withdrawnCaptureOwners.erase(elementId);
 
         for (const auto& [visualStateGroup, stateIter] :
              elementCustomizationState.perVisualStateGroup) {

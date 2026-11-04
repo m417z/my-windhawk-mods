@@ -20026,12 +20026,9 @@ void CleanupCustomizations(ElementId elementId) {
 
     // After RestoreCapturesForElement so the just-unregistered capture
     // callbacks can't re-seed a variable mid-teardown.
-    std::vector<std::wstring> removedVarNames;
-    if (state) {
-        removedVarNames = WithdrawCapturesForElement(state, elementId,
-                                                     elementCustomizationState);
-        state->withdrawnCaptureOwners.erase(elementId);
-    }
+    auto removedVarNames =
+        WithdrawCapturesForElement(state, elementId, elementCustomizationState);
+    state->withdrawnCaptureOwners.erase(elementId);
 
     for (const auto& [visualStateGroup, stateIter] :
          elementCustomizationState.perVisualStateGroup) {
@@ -20050,8 +20047,7 @@ void CleanupCustomizations(ElementId elementId) {
     // the loops above don't walk state that re-entrant style applies could
     // invalidate. Every removal propagates, not just the one that left a name
     // undefined: dropping one of several captures still changes which one wins
-    // for the consumers that were closest to it. Nothing is collected without a
-    // `state`, and the pin above keeps that entry alive until here.
+    // for the consumers that were closest to it.
     for (const auto& varName : removedVarNames) {
         PropagateStyleVariableChange(state, varName, std::nullopt);
     }
