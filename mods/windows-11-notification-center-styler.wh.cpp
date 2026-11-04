@@ -10953,9 +10953,6 @@ void PropagateStyleVariableChangeCore(StyleVariableState* state,
         auto& elementState = stateIt->second;
 
         auto element = elementState.element;
-        if (!element) {
-            continue;
-        }
 
         // A handful of pointer comparisons against the snapshot above, far
         // cheaper than the re-parse it avoids.
@@ -11250,10 +11247,6 @@ void SetUpCapturesForElement(StyleVariableState* state,
 // ElementCustomizationState entry is erased.
 void RestoreCapturesForElement(FrameworkElement element,
                                const ElementCustomizationState& elementState) {
-    if (!element) {
-        return;
-    }
-
     for (const auto& [property, captureState] :
          elementState.captureCustomizationStates) {
         if (!captureState.propertyChangedToken) {
@@ -11483,9 +11476,6 @@ void ApplyCustomizationsForVisualStateGroup(
                     }
 
                     auto element = elementStateIt->second.element;
-                    if (!element) {
-                        return;
-                    }
 
                     Wh_Log(L"Re-applying all styles for %s",
                            winrt::get_class_name(element).c_str());
@@ -11613,41 +11603,24 @@ void RestoreCustomizationsForVisualStateGroup(
         }
     }
 
-    if (element) {
-        for (const auto& [property, propState] :
-             elementCustomizationStateForVisualStateGroup
-                 .propertyCustomizationStates) {
-            try {
-                element.UnregisterPropertyChangedCallback(
-                    property, propState.propertyChangedToken);
-            } catch (winrt::hresult_error const& ex) {
-                Wh_Log(L"Error %08X: %s", ex.code(), ex.message().c_str());
-            }
-
-            if (!propState.variableDependencies.empty()) {
-                UpdateStyleVariableConsumers(state, elementId, property,
-                                             /*fallbackClassName=*/nullptr,
-                                             propState.variableDependencies,
-                                             {});
-            }
-
-            if (propState.originalValue) {
-                RestoreOriginalValue(element, property,
-                                     *propState.originalValue);
-            }
+    for (const auto& [property, propState] :
+         elementCustomizationStateForVisualStateGroup
+             .propertyCustomizationStates) {
+        try {
+            element.UnregisterPropertyChangedCallback(
+                property, propState.propertyChangedToken);
+        } catch (winrt::hresult_error const& ex) {
+            Wh_Log(L"Error %08X: %s", ex.code(), ex.message().c_str());
         }
-    } else {
-        // Element is gone; still clear consumer entries so a stale (elementId,
-        // property) pair isn't visited during PropagateStyleVariableChange.
-        for (const auto& [property, propState] :
-             elementCustomizationStateForVisualStateGroup
-                 .propertyCustomizationStates) {
-            if (!propState.variableDependencies.empty()) {
-                UpdateStyleVariableConsumers(state, elementId, property,
-                                             /*fallbackClassName=*/nullptr,
-                                             propState.variableDependencies,
-                                             {});
-            }
+
+        if (!propState.variableDependencies.empty()) {
+            UpdateStyleVariableConsumers(state, elementId, property,
+                                         /*fallbackClassName=*/nullptr,
+                                         propState.variableDependencies, {});
+        }
+
+        if (propState.originalValue) {
+            RestoreOriginalValue(element, property, *propState.originalValue);
         }
     }
 }
@@ -11843,9 +11816,6 @@ void RefreshRecycledItemCaptures() {
 
         auto& elementState = it->second;
         auto element = elementState.element;
-        if (!element) {
-            continue;
-        }
 
         bool withdrawn = state->withdrawnCaptureOwners.contains(owner);
         if (IsInRecycledRepeaterItem(element) == withdrawn) {
