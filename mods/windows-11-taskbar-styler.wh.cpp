@@ -15771,6 +15771,32 @@ std::vector<std::wstring_view> SplitStringView(std::wstring_view s,
     return res;
 }
 
+// Locale-independent std::stof. Skips leading whitespace and a plus sign, and
+// ignores trailing characters. Throws if there's no number to parse.
+float ParseFloatInvariant(std::wstring_view sv) {
+    sv = TrimStringView(sv);
+    if (sv.starts_with(L'+')) {
+        sv.remove_prefix(1);
+    }
+
+    std::string narrow;
+    narrow.reserve(sv.size());
+    for (auto c : sv) {
+        if (c > 127) {
+            break;
+        }
+        narrow.push_back(static_cast<char>(c));
+    }
+
+    float result = 0;
+    auto [ptr, ec] =
+        std::from_chars(narrow.data(), narrow.data() + narrow.size(), result);
+    if (ec != std::errc{}) {
+        throw std::runtime_error("Invalid float value");
+    }
+    return result;
+}
+
 std::optional<PropertyOverrideValue> ParseNonXamlPropertyOverrideValue(
     std::wstring_view stringValue) {
     // Example:
@@ -15929,7 +15955,7 @@ std::optional<PropertyOverrideValue> ParseNonXamlPropertyOverrideValue(
             auto valStr = propSubstr.substr(
                 std::size(kTintOpacityPrefix),
                 propSubstr.size() - std::size(kTintOpacityPrefix) - 1);
-            tintOpacity = std::stof(std::wstring(valStr));
+            tintOpacity = ParseFloatInvariant(valStr);
             continue;
         }
 
@@ -15939,7 +15965,7 @@ std::optional<PropertyOverrideValue> ParseNonXamlPropertyOverrideValue(
                 std::size(kTintLuminosityOpacityPrefix),
                 propSubstr.size() - std::size(kTintLuminosityOpacityPrefix) -
                     1);
-            tintLuminosityOpacity = std::stof(std::wstring(valStr));
+            tintLuminosityOpacity = ParseFloatInvariant(valStr);
             continue;
         }
 
@@ -15948,7 +15974,7 @@ std::optional<PropertyOverrideValue> ParseNonXamlPropertyOverrideValue(
             auto valStr = propSubstr.substr(
                 std::size(kTintSaturationPrefix),
                 propSubstr.size() - std::size(kTintSaturationPrefix) - 1);
-            tintSaturation = std::stof(std::wstring(valStr));
+            tintSaturation = ParseFloatInvariant(valStr);
             continue;
         }
 
@@ -15957,7 +15983,7 @@ std::optional<PropertyOverrideValue> ParseNonXamlPropertyOverrideValue(
             auto valStr = propSubstr.substr(
                 std::size(kNoiseOpacityPrefix),
                 propSubstr.size() - std::size(kNoiseOpacityPrefix) - 1);
-            noiseOpacity = std::stof(std::wstring(valStr));
+            noiseOpacity = ParseFloatInvariant(valStr);
             continue;
         }
 
@@ -15966,7 +15992,7 @@ std::optional<PropertyOverrideValue> ParseNonXamlPropertyOverrideValue(
             auto valStr = propSubstr.substr(
                 std::size(kNoiseDensityPrefix),
                 propSubstr.size() - std::size(kNoiseDensityPrefix) - 1);
-            noiseDensity = std::stof(std::wstring(valStr));
+            noiseDensity = ParseFloatInvariant(valStr);
             continue;
         }
 
@@ -15975,7 +16001,7 @@ std::optional<PropertyOverrideValue> ParseNonXamlPropertyOverrideValue(
             auto valStr = propSubstr.substr(
                 std::size(kBlurAmountPrefix),
                 propSubstr.size() - std::size(kBlurAmountPrefix) - 1);
-            blurAmount = std::stof(std::wstring(valStr));
+            blurAmount = ParseFloatInvariant(valStr);
             continue;
         }
 
