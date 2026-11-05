@@ -532,6 +532,7 @@ using WindhawkUtils::StringSetting;
 
 #include <algorithm>
 #include <atomic>
+#include <charconv>
 #include <functional>
 #include <mutex>
 #include <optional>
@@ -3480,15 +3481,17 @@ std::optional<MEMORYSTATUSEX> GetRamStatus() {
 }
 
 std::wstring FormatLocaleNum(double val, unsigned int digitsAfterDecimal) {
-    int valStrLen = _scwprintf(L"%.17f", val);
-    if (valStrLen < 0) {
+    // GetNumberFormatEx only accepts "." as the decimal point. to_chars ignores
+    // the CRT locale, which any module in the process can change.
+    char valChars[64];
+    auto [valCharsEnd, ec] =
+        std::to_chars(valChars, valChars + ARRAYSIZE(valChars), val,
+                      std::chars_format::fixed, 17);
+    if (ec != std::errc{}) {
         return std::wstring();
     }
 
-    std::wstring valStr(valStrLen + 1, L'\0');
-    if (swprintf_s(valStr.data(), valStr.size(), L"%.17f", val) < 0) {
-        return std::wstring();
-    }
+    std::wstring valStr(valChars, valCharsEnd);
 
     WCHAR decSep[4];
     if (!GetLocaleInfoEx(LOCALE_NAME_USER_DEFAULT, LOCALE_SDECIMAL, decSep,
