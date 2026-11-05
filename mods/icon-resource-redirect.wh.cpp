@@ -543,6 +543,20 @@ auto StrToW(PCSTR str) {
     return result;
 }
 
+// Converts to the process ANSI code page. Fails if the string doesn't fit or
+// can't be represented exactly. The docs don't allow the best-fit flag or the
+// default character check for UTF-8, which only fails on invalid characters.
+bool WideToAnsi(PCWSTR str, PSTR buffer, int bufferSize) {
+    UINT codePage = GetACP();
+    bool isUtf8 = codePage == CP_UTF8;
+    BOOL usedDefaultChar = FALSE;
+    return WideCharToMultiByte(
+               codePage, isUtf8 ? WC_ERR_INVALID_CHARS : WC_NO_BEST_FIT_CHARS,
+               str, -1, buffer, bufferSize, nullptr,
+               isUtf8 ? nullptr : &usedDefaultChar) != 0 &&
+           !usedDefaultChar;
+}
+
 // A helper function to skip locking if the thread already holds the lock, since
 // it's UB. Nested locks may happen if one hooked function is implemented with
 // the help of another hooked function. We assume here that the locks are freed
@@ -2920,12 +2934,9 @@ void LoadSettings() {
 
         char originalExpandedA[MAX_PATH];
         char redirectA[MAX_PATH];
-        size_t charsConverted = 0;
-        if (wcstombs_s(&charsConverted, originalExpandedA,
-                       ARRAYSIZE(originalExpandedA), originalExpanded,
-                       _TRUNCATE) == 0 &&
-            wcstombs_s(&charsConverted, redirectA, ARRAYSIZE(redirectA),
-                       redirect, _TRUNCATE) == 0) {
+        if (WideToAnsi(originalExpanded, originalExpandedA,
+                       ARRAYSIZE(originalExpandedA)) &&
+            WideToAnsi(redirect, redirectA, ARRAYSIZE(redirectA))) {
             if (isPattern) {
                 pathPatternsA.push_back({originalExpandedA, redirectA});
             } else {
