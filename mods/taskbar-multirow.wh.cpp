@@ -2,7 +2,7 @@
 // @id              taskbar-multirow
 // @name            Multirow taskbar for Windows 11
 // @description     Span taskbar items across multiple rows, just like it was possible before Windows 11
-// @version         1.1.4
+// @version         1.2
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
@@ -265,7 +265,9 @@ double GetTaskbarFrameLength(FrameworkElement taskbarFrameElement,
 
 // The length a single row of items can span, i.e. the taskbar frame length
 // without the part which is occupied by the system tray.
-bool GetLengthWithoutExtent(FrameworkElement xamlRootContent, double* result) {
+bool GetLengthWithoutExtent(FrameworkElement xamlRootContent,
+                            bool vertical,
+                            double* result) {
     auto taskbarFrameElement =
         FindChildByName(xamlRootContent, L"TaskbarFrame");
     if (!taskbarFrameElement) {
@@ -278,7 +280,6 @@ bool GetLengthWithoutExtent(FrameworkElement xamlRootContent, double* result) {
         return false;
     }
 
-    bool vertical = IsVerticalTaskbarFrame(taskbarFrameElement);
     *result = GetTaskbarFrameLength(taskbarFrameElement, vertical) -
               GetElementLength(systemTrayFrame, vertical);
     return true;
@@ -372,8 +373,7 @@ TaskbarState* GetTaskbarState(XamlRoot xamlRoot) {
         };
     }
 
-    auto xamlRootContent =
-        xamlRoot ? xamlRoot.Content().try_as<FrameworkElement>() : nullptr;
+    auto xamlRootContent = xamlRoot.Content().try_as<FrameworkElement>();
     auto taskbarFrameElement =
         xamlRootContent ? FindChildByName(xamlRootContent, L"TaskbarFrame")
                         : nullptr;
@@ -558,7 +558,8 @@ bool ApplyStyle(XamlRoot xamlRoot) {
     }
 
     double lengthWithoutExtent;
-    if (!GetLengthWithoutExtent(xamlRootContent, &lengthWithoutExtent)) {
+    if (!GetLengthWithoutExtent(xamlRootContent, taskbarState->vertical,
+                                &lengthWithoutExtent)) {
         return false;
     }
 
@@ -995,6 +996,9 @@ void MoveGroupBoundsToDisplayedRow(HWND hWnd,
         return;
     }
 
+    TaskbarState* taskbarState = GetTaskbarState(xamlRoot);
+    bool vertical = taskbarState->vertical;
+
     auto taskbarFrame =
         FindChildByClassName(xamlRootContent, L"Taskbar.TaskbarFrame");
     auto taskbarFrameRepeater = FindTaskbarFrameRepeater(xamlRootContent);
@@ -1002,13 +1006,11 @@ void MoveGroupBoundsToDisplayedRow(HWND hWnd,
     double lengthWithoutExtent;
     if (!taskbarFrame || !taskbarFrameRepeater ||
         !GetBoundsInXamlRoot(taskbarFrame, &taskbarFrameBounds) ||
-        !GetLengthWithoutExtent(xamlRootContent, &lengthWithoutExtent) ||
+        !GetLengthWithoutExtent(xamlRootContent, vertical,
+                                &lengthWithoutExtent) ||
         !(lengthWithoutExtent > 0)) {
         return;
     }
-
-    TaskbarState* taskbarState = GetTaskbarState(xamlRoot);
-    bool vertical = taskbarState->vertical;
 
     auto startButton = FindFullHeightStartButton(taskbarFrameRepeater);
     double startButtonLength =
@@ -1241,7 +1243,8 @@ HRESULT WINAPI IUIElement_Arrange_Hook(void* pThis,
         startButton ? GetElementLength(startButton, vertical) : 0;
 
     double lengthWithoutExtent;
-    if (!GetLengthWithoutExtent(xamlRootContent, &lengthWithoutExtent)) {
+    if (!GetLengthWithoutExtent(xamlRootContent, vertical,
+                                &lengthWithoutExtent)) {
         return original();
     }
 
@@ -1250,8 +1253,9 @@ HRESULT WINAPI IUIElement_Arrange_Hook(void* pThis,
         return original();
     }
 
-    if (vertical && g_settings.rows > 1 && layoutThickness > 0) {
-        LimitItemContentWidth(element, layoutThickness / g_settings.rows);
+    int rows = static_cast<int>(taskbarState->rowOffsetAdjustment.size());
+    if (vertical && rows > 1 && layoutThickness > 0) {
+        LimitItemContentWidth(element, layoutThickness / rows);
     }
 
     winrt::Windows::Foundation::Rect displayedRect = MoveToDisplayedRow(
@@ -1370,7 +1374,8 @@ bool GetMultirowMetrics(FrameworkElement taskListButtonElement,
     }
 
     double lengthWithoutExtent;
-    if (!GetLengthWithoutExtent(xamlRootContent, &lengthWithoutExtent) ||
+    if (!GetLengthWithoutExtent(xamlRootContent, taskbarState->vertical,
+                                &lengthWithoutExtent) ||
         !(lengthWithoutExtent > 0)) {
         return false;
     }
@@ -1535,13 +1540,17 @@ void WINAPI TaskbarFrame_SystemTrayExtent_Hook(void* pThis, double value) {
         return;
     }
 
-    auto xamlRoot = taskbarFrameRepeater.XamlRoot();
+    bool vertical = IsVerticalTaskbarFrame(taskbarFrameElement);
 
-    TaskbarState* taskbarState = GetTaskbarState(xamlRoot);
+    // A frame without a XAML root has no state yet, and no row offsets to
+    // apply.
+    TaskbarState detachedState{.vertical = vertical};
+    auto xamlRoot = taskbarFrameRepeater.XamlRoot();
+    TaskbarState* taskbarState =
+        xamlRoot ? GetTaskbarState(xamlRoot) : &detachedState;
 
     double lengthWithoutExtent =
-        GetTaskbarFrameLength(taskbarFrameElement, taskbarState->vertical) -
-        value;
+        GetTaskbarFrameLength(taskbarFrameElement, vertical) - value;
 
     UpdateTaskbarFrameRepeaterMargin(taskbarFrameRepeater, taskbarState,
                                      lengthWithoutExtent);
