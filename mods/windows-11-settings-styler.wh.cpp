@@ -2754,7 +2754,6 @@ void ApplyCustomizations(ElementId elementId,
                          PCWSTR fallbackClassName);
 void CleanupCustomizations(ElementId elementId);
 void QueueDiagnosticsRelease(InstanceHandle handle);
-void FlushDiagnosticsReleasesIfQuiet();
 void TrackSplitView(winrt::Windows::UI::Xaml::FrameworkElement element);
 void TrackSplitViewChildHost(
     winrt::Windows::UI::Xaml::FrameworkElement element);
@@ -3052,10 +3051,6 @@ HRESULT VisualTreeWatcher::OnVisualTreeChange(ParentChildRelation relation, Visu
     {
         Wh_Log(L"Error %08X", winrt::to_hresult());
     }
-
-    // A tree discarded whole is never dismantled, so it reports no removals to
-    // be released by.
-    FlushDiagnosticsReleasesIfQuiet();
 
     if (mutationType == Add)
     {
@@ -3760,10 +3755,11 @@ void ResetThreadLocal(T& container) {
 // A handle is an address, so a destroyed element can be replaced by one
 // reporting the same handle, and an entry made for that predecessor must not
 // name the new one. An entry holds its element until the diagnostics are made
-// to release it, which never happens while the mod keeps state for it, and only
-// a weak reference after that. The weak reference isn't relied on any sooner:
-// a XAML one stops resolving once the element's reference count drops to zero,
-// even if the element survives that, as reported elements were seen to do.
+// to release it, which never happens while the mod has state which needs it
+// held, and only a weak reference after that. The weak reference isn't relied
+// on any sooner: a XAML one stops resolving once the element's reference count
+// drops to zero, even if the element survives that, as reported elements were
+// seen to do.
 struct ElementIdEntry {
     ElementId id = ElementId::None;
     wf::IInspectable element{nullptr};
@@ -3787,6 +3783,11 @@ ElementId GetOrCreateElementId(InstanceHandle handle,
 
     auto& entry = g_elementIds[handle];
     if (entry.id == ElementId::None || !ElementIdEntryNames(entry, element)) {
+        // A predecessor the diagnostics released reported no removal.
+        if (entry.id != ElementId::None) {
+            CleanupCustomizations(entry.id);
+        }
+
         entry.id = static_cast<ElementId>(++g_lastElementId);
 
         winrt::weak_ref<wf::IInspectable> weakElement;
@@ -3825,7 +3826,9 @@ void ReleaseElementIdEntry(InstanceHandle handle) {
 
     it->second.element = nullptr;
     if (!it->second.weakElement.get()) {
+        ElementId elementId = it->second.id;
         g_elementIds.erase(it);
+        CleanupCustomizations(elementId);
     }
 }
 
@@ -10440,8 +10443,7 @@ void HandleVirtualizingRepeater(ElementId elementId, FrameworkElement element) {
 
             // Held across the walk below, so that an item which no weak
             // reference can get back, such as one a source wraps anew on every
-            // read, is never recorded: an entry which could match nothing would
-            // keep the element held for good.
+            // read, is never recorded: such an entry could match nothing.
             wf::IInspectable strongItem;
             if (item) {
                 if (auto* weakItem =
@@ -10958,8 +10960,8 @@ void UntrackSplitViews() {
 // list item is released, but a tree which is discarded whole is never taken
 // apart that way: dropping its root would destroy it. Holding every element is
 // what stops that destruction, so nothing is ever removed and nothing is ever
-// reported. Elements nothing is keyed by are handed back from here so the
-// teardown can happen.
+// reported. Elements which don't need to be held are handed back from here so
+// the teardown can happen.
 //
 // Reporting an element recreates the runtime object of its parent, which is why
 // each report queues the parent as well, and why the queue is drained only once
@@ -10976,30 +10978,25 @@ thread_local winrt::Windows::System::DispatcherQueueTimer::Tick_revoker
 // Long enough to sit out a tree being built.
 constexpr ULONGLONG kDiagnosticsReleaseDelay = 200;
 
-// The drain waits on a one-shot timer, which the thread teardown can stop,
-// rather than on a dispatcher item, which it cannot: the module is freed once
-// the mod is uninitialized, and an item still on the dispatcher would call into
-// it. The interval only has to carry the drain out of the report which arms it.
-constexpr ULONGLONG kDiagnosticsReleaseDrainDelay = 1;
-
-// Releasing an element the mod still records something for would strand that
-// recording, since no removal is reported for a handle whose runtime object is
-// gone. Such an element stays held, and its own removal releases it.
+// Releasing an element the mod holds state for would strand that state, since
+// no removal is reported for a handle whose runtime object is gone. Such an
+// element stays held, and its own removal releases it.
 //
 // Which leaves a styled element of a tree discarded whole held for good, and
 // with it everything below it, since a parent holds its children. Rules that
 // match the Settings app match almost nothing of such a tree, so what this
 // retains is small, but a rule written against a bare type would retain much
 // more.
+//
+// Virtualization bookkeeping doesn't count, being weak and torn down once the
+// element is gone. A repeater has to be let go of in any case: it holds its
+// items source, which the app can expect to be gone along with the tree.
 bool ElementHasState(ElementId elementId) {
     if (elementId == ElementId::None) {
         return false;
     }
 
-    if (g_elementsCustomizationState->contains(elementId) ||
-        g_virtualizingRepeaters.contains(elementId) ||
-        g_recycledElements.contains(elementId) ||
-        g_elementMatchedItems.contains(elementId)) {
+    if (g_elementsCustomizationState->contains(elementId)) {
         return true;
     }
 
@@ -11048,22 +11045,7 @@ void FlushDiagnosticsReleases() {
     ReapDeadElementIdsIfNeeded();
 }
 
-void QueueDiagnosticsRelease(InstanceHandle handle) {
-    if (!handle) {
-        return;
-    }
-
-    g_pendingDiagnosticsRelease.push_back(handle);
-    g_lastDiagnosticsReleaseQueueTick = GetTickCount64();
-}
-
-// Whether the burst has stopped is decided when this is scheduled: the report
-// which schedules it queues its own handles right afterwards, so the time since
-// the last queue is short again by the time this runs.
-void DrainDiagnosticsReleases() {
-    g_diagnosticsReleaseDrainQueued = false;
-    FlushDiagnosticsReleases();
-}
+void DrainDiagnosticsReleases();
 
 // Reports arrive from inside XAML's own Enter and Leave walks, and a release
 // there re-enters the diagnostics while the tree is being mutated: dropping the
@@ -11071,18 +11053,10 @@ void DrainDiagnosticsReleases() {
 // The drain is therefore armed on the thread's dispatcher, which runs it once
 // the walk has finished.
 //
-// Whether to arm it is decided by the next report rather than by a recurring
-// timer, so that nothing of the mod is left waiting on a thread it does not
-// tear down. A thread which goes quiet therefore holds its last burst until it
-// is used again.
-void FlushDiagnosticsReleasesIfQuiet() {
-    if (g_pendingDiagnosticsRelease.empty() ||
-        g_diagnosticsReleaseDrainQueued ||
-        GetTickCount64() - g_lastDiagnosticsReleaseQueueTick <
-            kDiagnosticsReleaseDelay) {
-        return;
-    }
-
+// It waits on a one-shot timer, which the thread teardown can stop, rather than
+// on a dispatcher item, which it cannot: the module is freed once the mod is
+// uninitialized, and an item still on the dispatcher would call into it.
+void ArmDiagnosticsReleaseDrain(ULONGLONG delay) {
     try {
         if (!g_diagnosticsReleaseDrainTimer) {
             auto dispatcherQueue =
@@ -11096,8 +11070,6 @@ void FlushDiagnosticsReleasesIfQuiet() {
 
             g_diagnosticsReleaseDrainTimer = dispatcherQueue.CreateTimer();
             g_diagnosticsReleaseDrainTimer.IsRepeating(false);
-            g_diagnosticsReleaseDrainTimer.Interval(
-                std::chrono::milliseconds{kDiagnosticsReleaseDrainDelay});
             g_diagnosticsReleaseDrainTimerTickRevoker =
                 g_diagnosticsReleaseDrainTimer.Tick(
                     winrt::auto_revoke,
@@ -11107,10 +11079,37 @@ void FlushDiagnosticsReleasesIfQuiet() {
                     });
         }
 
+        g_diagnosticsReleaseDrainTimer.Interval(
+            std::chrono::milliseconds{delay});
         g_diagnosticsReleaseDrainTimer.Start();
         g_diagnosticsReleaseDrainQueued = true;
     } catch (winrt::hresult_error const& ex) {
         Wh_Log(L"Error %08X: %s", ex.code(), ex.message().c_str());
+    }
+}
+
+void DrainDiagnosticsReleases() {
+    g_diagnosticsReleaseDrainQueued = false;
+
+    ULONGLONG elapsed = GetTickCount64() - g_lastDiagnosticsReleaseQueueTick;
+    if (elapsed < kDiagnosticsReleaseDelay) {
+        ArmDiagnosticsReleaseDrain(kDiagnosticsReleaseDelay - elapsed);
+        return;
+    }
+
+    FlushDiagnosticsReleases();
+}
+
+void QueueDiagnosticsRelease(InstanceHandle handle) {
+    if (!handle) {
+        return;
+    }
+
+    g_pendingDiagnosticsRelease.push_back(handle);
+    g_lastDiagnosticsReleaseQueueTick = GetTickCount64();
+
+    if (!g_diagnosticsReleaseDrainQueued) {
+        ArmDiagnosticsReleaseDrain(kDiagnosticsReleaseDelay);
     }
 }
 
