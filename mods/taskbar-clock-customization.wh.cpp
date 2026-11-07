@@ -52,6 +52,8 @@ be used:
   * `%time_tz<n>%` - the time with a custom time zone. `<n>` is the time zone
     number in the list of time zones configured in the mod settings (not Windows
     settings).
+  * `%time<n>_tz<m>%` - additional time format `<n>` with custom time zone
+    `<m>`, for example, `%time2_tz1%`.
 * `%unix%` - the Unix timestamp (seconds since 1970-01-01 00:00:00 UTC).
 * `%date%` - the date as configured by the date format in settings.
   * `%date<n>%` - additional date formats, specified by separating multiple
@@ -61,6 +63,8 @@ be used:
   * `%date_tz<n>%` - the date with a custom time zone. `<n>` is the time zone
     number in the list of time zones configured in the mod settings (not Windows
     settings).
+  * `%date<n>_tz<m>%` - additional date format `<n>` with custom time zone
+    `<m>`, for example, `%date2_tz1%`.
 * `%weekday%` - the week day as configured in settings.
   * `%weekday_tz<n>%` - the week day with a custom time zone. `<n>` is the time
     zone number in the list of time zones configured in the mod settings (not
@@ -732,13 +736,18 @@ struct FormattedString {
     WCHAR buffer[N];
 };
 
+struct FormattedStrings {
+    DWORD formatIndex;
+    std::vector<std::wstring> strings;
+};
+
 FormattedString<FORMATTED_BUFFER_SIZE> g_timeFormatted;
 std::vector<std::wstring> g_timeFormattedExtra;
-std::vector<FormattedString<FORMATTED_BUFFER_SIZE>> g_timeFormattedTz;
+std::vector<FormattedStrings> g_timeFormattedTz;
 FormattedString<FORMATTED_BUFFER_SIZE> g_unixTimeFormatted;
 FormattedString<FORMATTED_BUFFER_SIZE> g_dateFormatted;
 std::vector<std::wstring> g_dateFormattedExtra;
-std::vector<FormattedString<FORMATTED_BUFFER_SIZE>> g_dateFormattedTz;
+std::vector<FormattedStrings> g_dateFormattedTz;
 FormattedString<FORMATTED_BUFFER_SIZE> g_weekdayFormatted;
 std::vector<FormattedString<FORMATTED_BUFFER_SIZE>> g_weekdayFormattedTz;
 FormattedString<INTEGER_BUFFER_SIZE> g_weekdayNumFormatted;
@@ -1988,7 +1997,7 @@ std::vector<std::wstring>* GetTimeFormattedExtra() {
     return extra;
 }
 
-PCWSTR GetTimeFormattedTz(size_t index) {
+PCWSTR GetTimeFormattedTz(size_t index, size_t partIndex) {
     if (index >= g_settings.timeZones.size()) {
         return nullptr;
     }
@@ -1996,6 +2005,8 @@ PCWSTR GetTimeFormattedTz(size_t index) {
     auto& timeFormattedTz = g_timeFormattedTz[index];
 
     if (timeFormattedTz.formatIndex != g_formatIndex) {
+        timeFormattedTz.strings.clear();
+
         const auto& timeZoneInformation = g_timeZoneInformation[index];
         if (timeZoneInformation && pSystemTimeToTzSpecificLocalTimeEx) {
             SYSTEMTIME timeTz;
@@ -2007,19 +2018,24 @@ PCWSTR GetTimeFormattedTz(size_t index) {
             auto timeFormatParts =
                 SplitTimeFormatString(g_settings.timeFormat.get());
 
-            GetTimeFormatExWithShowSeconds(
-                nullptr, time,
-                !timeFormatParts[0].empty() ? timeFormatParts[0].c_str()
-                                            : nullptr,
-                timeFormattedTz.buffer, ARRAYSIZE(timeFormattedTz.buffer));
-        } else {
-            wcscpy_s(timeFormattedTz.buffer, L"-");
+            for (const auto& timeFormatPart : timeFormatParts) {
+                WCHAR formatted[FORMATTED_BUFFER_SIZE];
+                GetTimeFormatExWithShowSeconds(
+                    nullptr, time,
+                    !timeFormatPart.empty() ? timeFormatPart.c_str() : nullptr,
+                    formatted, ARRAYSIZE(formatted));
+                timeFormattedTz.strings.push_back(formatted);
+            }
         }
 
         timeFormattedTz.formatIndex = g_formatIndex;
     }
 
-    return timeFormattedTz.buffer;
+    if (partIndex >= timeFormattedTz.strings.size()) {
+        return nullptr;
+    }
+
+    return timeFormattedTz.strings[partIndex].c_str();
 }
 
 PCWSTR GetUnixTimeFormatted() {
@@ -2096,7 +2112,7 @@ std::vector<std::wstring>* GetDateFormattedExtra() {
     return extra;
 }
 
-PCWSTR GetDateFormattedTz(size_t index) {
+PCWSTR GetDateFormattedTz(size_t index, size_t partIndex) {
     if (index >= g_settings.timeZones.size()) {
         return nullptr;
     }
@@ -2104,6 +2120,8 @@ PCWSTR GetDateFormattedTz(size_t index) {
     auto& dateFormattedTz = g_dateFormattedTz[index];
 
     if (dateFormattedTz.formatIndex != g_formatIndex) {
+        dateFormattedTz.strings.clear();
+
         const auto& timeZoneInformation = g_timeZoneInformation[index];
         if (timeZoneInformation && pSystemTimeToTzSpecificLocalTimeEx) {
             SYSTEMTIME timeTz;
@@ -2115,20 +2133,25 @@ PCWSTR GetDateFormattedTz(size_t index) {
             auto dateFormatParts =
                 SplitTimeFormatString(g_settings.dateFormat.get());
 
-            GetDateFormatEx_Original(
-                GetDateLocaleName(0), DATE_AUTOLAYOUT, time,
-                !dateFormatParts[0].empty() ? dateFormatParts[0].c_str()
-                                            : nullptr,
-                dateFormattedTz.buffer, ARRAYSIZE(dateFormattedTz.buffer),
-                nullptr);
-        } else {
-            wcscpy_s(dateFormattedTz.buffer, L"-");
+            for (size_t i = 0; i < dateFormatParts.size(); i++) {
+                WCHAR formatted[FORMATTED_BUFFER_SIZE];
+                GetDateFormatEx_Original(
+                    GetDateLocaleName(i), DATE_AUTOLAYOUT, time,
+                    !dateFormatParts[i].empty() ? dateFormatParts[i].c_str()
+                                                : nullptr,
+                    formatted, ARRAYSIZE(formatted), nullptr);
+                dateFormattedTz.strings.push_back(formatted);
+            }
         }
 
         dateFormattedTz.formatIndex = g_formatIndex;
     }
 
-    return dateFormattedTz.buffer;
+    if (partIndex >= dateFormattedTz.strings.size()) {
+        return nullptr;
+    }
+
+    return dateFormattedTz.strings[partIndex].c_str();
 }
 
 void FormatWeekday(const SYSTEMTIME* time, PWSTR buffer, size_t bufferSize) {
@@ -4309,8 +4332,10 @@ size_t ResolveFormatToken(
         std::wstring_view prefix;
         FormattedStringValueGetterTz valueGetter;
     } formatTzTokens[] = {
-        {L"%time_tz"sv, GetTimeFormattedTz},
-        {L"%date_tz"sv, GetDateFormattedTz},
+        {L"%time_tz"sv,
+         [](size_t index) { return GetTimeFormattedTz(index, 0); }},
+        {L"%date_tz"sv,
+         [](size_t index) { return GetDateFormattedTz(index, 0); }},
         {L"%weekday_tz"sv, GetWeekdayFormattedTz},
     };
 
@@ -4373,6 +4398,45 @@ size_t ResolveFormatToken(
 
         resolvedCallback(value);
         return tokenLen;
+    }
+
+    using FormattedStringValueGetterExtraTz =
+        PCWSTR (*)(size_t index, size_t partIndex);
+
+    struct {
+        std::wstring_view prefix;
+        FormattedStringValueGetterExtraTz valueGetter;
+    } formatExtraTzTokens[] = {
+        {L"%time"sv, GetTimeFormattedTz},
+        {L"%date"sv, GetDateFormattedTz},
+    };
+
+    for (auto formatExtraTzToken : formatExtraTzTokens) {
+        int number;
+        size_t numberLen = ResolveFormatTokenWithNumber(
+            format, formatExtraTzToken.prefix, L"_tz"sv, &number);
+        if (!numberLen) {
+            continue;
+        }
+
+        int tzNumber;
+        size_t tzNumberLen = ResolveFormatTokenWithNumber(
+            format.substr(numberLen), L""sv, L"%"sv, &tzNumber);
+        if (!tzNumberLen) {
+            continue;
+        }
+
+        PCWSTR value = nullptr;
+        if (number >= 2) {
+            value = formatExtraTzToken.valueGetter(tzNumber - 1, number - 1);
+        }
+
+        if (!value) {
+            value = L"-";
+        }
+
+        resolvedCallback(value);
+        return numberLen + tzNumberLen;
     }
 
     if (int number; size_t tokenLen = ResolveFormatTokenWithNumber(
