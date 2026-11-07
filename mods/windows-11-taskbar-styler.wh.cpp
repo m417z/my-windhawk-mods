@@ -19348,10 +19348,10 @@ void EnsureTaskbarSurfaceSubclasses() {
         0);
 }
 
-// Item elements the current virtualization pass recycled, consumed by the
-// matching ElementPrepared. A freshly created element is prepared without ever
-// having been cleared, and its Add mutation already applied the styles, so
-// re-matching it would restore and re-push every value for nothing.
+// Item elements sitting in a recycle pool, consumed by the matching
+// ElementPrepared. A freshly created element is prepared without ever having
+// been in one, and its Add mutation already applied the styles, so re-matching
+// it would restore and re-push every value for nothing.
 thread_local std::unordered_set<ElementId> g_recycledElements;
 
 // The item each element was last matched against, which lets a reuse for that
@@ -19740,6 +19740,22 @@ void HandleVirtualizingRepeater(ElementId elementId, FrameworkElement element) {
         });
 }
 
+// An element can be in a recycle pool with no clear ever seen for it, as when
+// the diagnostics attach to a live tree, and its next prepare is a reuse all
+// the same. A freshly created element isn't taken for one: a repeater gives it
+// its index ahead of adding it.
+void MarkIfInRecyclePool(ElementId elementId, FrameworkElement element) {
+    try {
+        auto repeater = Media::VisualTreeHelper::GetParent(element)
+                            .try_as<muxc::ItemsRepeater>();
+        if (repeater && repeater.GetElementIndex(element) < 0) {
+            g_recycledElements.insert(elementId);
+        }
+    } catch (winrt::hresult_error const& ex) {
+        Wh_Log(L"Error %08X: %s", ex.code(), ex.message().c_str());
+    }
+}
+
 void MergeResourceVariables();
 void EnsureResourceVariablesMerged();
 
@@ -19763,8 +19779,10 @@ void ApplyCustomizations(ElementId elementId,
     }
 
     // Before the early return below: a repeater rarely has styles of its own,
-    // but its item elements do.
+    // but its item elements do, and one that matches nothing for its current
+    // item can match for the next.
     HandleVirtualizingRepeater(elementId, element);
+    MarkIfInRecyclePool(elementId, element);
 
     // Everything below holds `state` across calls that run arbitrary XAML work
     // and can re-enter, so keep the entry from being reaped underneath it.
