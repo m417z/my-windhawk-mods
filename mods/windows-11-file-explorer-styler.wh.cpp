@@ -10858,8 +10858,12 @@ TargetWindowType GetTargetWindowType(HWND hWnd) {
     if (_wcsicmp(className, L"CabinetWClass") == 0) {
         // The legacy frame, used for Control Panel, hosts its toolbar in a
         // WorkerW child. It has no XAML, and its content isn't readable over
-        // the background effect.
-        if (FindWindowEx(hWnd, nullptr, L"WorkerW", nullptr)) {
+        // the background effect. A frame with XAML can also have a WorkerW
+        // child, e.g. with the Classic Explorer navigation bar mod.
+        if (FindWindowEx(hWnd, nullptr, L"WorkerW", nullptr) &&
+            !FindWindowEx(hWnd, nullptr,
+                          L"Microsoft.UI.Content.DesktopChildSiteBridge",
+                          nullptr)) {
             return TargetWindowType::None;
         }
 
