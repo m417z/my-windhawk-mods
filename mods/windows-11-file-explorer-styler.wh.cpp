@@ -2366,8 +2366,9 @@ using PropertyKeyValue =
 using PropertyValuesUnresolved =
     std::vector<std::pair<std::wstring, std::wstring>>;
 using PropertyValues = std::vector<PropertyKeyValue>;
+// Nullopt once resolving has failed, which no element matches.
 using PropertyValuesMaybeUnresolved =
-    std::variant<PropertyValuesUnresolved, PropertyValues>;
+    std::variant<PropertyValuesUnresolved, std::optional<PropertyValues>>;
 
 struct ElementMatcher {
     enum class Kind {
@@ -6604,15 +6605,15 @@ std::optional<PropertyOverrideValue> ResolveExpandedSinglePropertyValue(
     return std::nullopt;
 }
 
-const PropertyValues& GetResolvedPropertyValues(
+const std::optional<PropertyValues>& GetResolvedPropertyValues(
     const std::wstring_view type,
     PropertyValuesMaybeUnresolved* propertyValuesMaybeUnresolved) {
-    if (const auto* resolved =
-            std::get_if<PropertyValues>(propertyValuesMaybeUnresolved)) {
+    if (const auto* resolved = std::get_if<std::optional<PropertyValues>>(
+            propertyValuesMaybeUnresolved)) {
         return *resolved;
     }
 
-    PropertyValues propertyValues;
+    std::optional<PropertyValues> propertyValues{std::in_place};
 
     try {
         const auto& propertyValuesStr =
@@ -6632,7 +6633,7 @@ const PropertyValues& GetResolvedPropertyValues(
 
             for (size_t i = 0; i < propertyValuesStr.size(); i++) {
                 const auto setter = style.Setters().GetAt(i).as<Setter>();
-                propertyValues.push_back({
+                propertyValues->push_back({
                     setter.Property(),
                     setter.Value(),
                 });
@@ -6640,15 +6641,18 @@ const PropertyValues& GetResolvedPropertyValues(
         }
 
         Wh_Log(L"%.*s: %zu matcher styles", static_cast<int>(type.length()),
-               type.data(), propertyValues.size());
+               type.data(), propertyValues->size());
     } catch (winrt::hresult_error const& ex) {
         Wh_Log(L"Error %08X: %s", ex.code(), ex.message().c_str());
+        propertyValues.reset();
     } catch (std::exception const& ex) {
         Wh_Log(L"Error: %S", ex.what());
+        propertyValues.reset();
     }
 
     *propertyValuesMaybeUnresolved = std::move(propertyValues);
-    return std::get<PropertyValues>(*propertyValuesMaybeUnresolved);
+    return std::get<std::optional<PropertyValues>>(
+        *propertyValuesMaybeUnresolved);
 }
 
 // https://stackoverflow.com/a/12835139
@@ -6839,8 +6843,13 @@ bool TestElementMatcher(FrameworkElement element,
 
     auto elementDo = element.as<DependencyObject>();
 
-    for (const auto& propertyValue :
-         GetResolvedPropertyValues(matcher.type, &matcher.propertyValues)) {
+    const auto& propertyValues =
+        GetResolvedPropertyValues(matcher.type, &matcher.propertyValues);
+    if (!propertyValues) {
+        return false;
+    }
+
+    for (const auto& propertyValue : *propertyValues) {
         const auto value =
             ReadLocalValueWithWorkaround(elementDo, propertyValue.first);
         if (!value) {
