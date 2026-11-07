@@ -12442,10 +12442,9 @@ struct StyleVariableConsumer {
 // if they outlive it. std::list keeps a walk over the entries valid when a
 // re-entrant lookup adds one.
 struct StyleVariableState : std::enable_shared_from_this<StyleVariableState> {
-    // Held, so that no other XamlRoot can take its address while the entry
-    // names it. That keeps no elements alive: a tree lets go of them, and of
-    // its XamlRoot, as it shuts down.
-    XamlRoot xamlRoot{nullptr};
+    // Weak: the last reference to a XamlRoot can shut down the XAML core, which
+    // mustn't happen from TLS destructors, under the loader lock.
+    winrt::weak_ref<XamlRoot> xamlRoot;
     std::unordered_map<std::wstring, std::vector<StyleVariableCapture>>
         variables;
     std::unordered_map<std::wstring, std::vector<StyleVariableConsumer>>
@@ -12535,7 +12534,7 @@ StyleVariableState* GetStyleVariableState(XamlRoot const& xamlRoot) {
         return nullptr;
     }
     for (auto& entry : g_styleVariableState) {
-        if (entry->xamlRoot == xamlRoot) {
+        if (entry->xamlRoot.get() == xamlRoot) {
             return entry.get();
         }
     }
@@ -19930,9 +19929,7 @@ void FlushDiagnosticsReleases() {
     // walk the reports came from.
     ReapDeadElementIdsIfNeeded();
 
-    // After the teardown above, which can leave entries unreferenced, and
-    // likewise outside the walk: an entry can hold the last reference to its
-    // XamlRoot.
+    // After the teardown above, which can leave entries unreferenced.
     ReapStyleVariableStates();
 }
 
