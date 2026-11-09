@@ -80,6 +80,13 @@ guide](https://github.com/ramensoftware/windows-11-settings-styling-guide/blob/m
 See the same section of the **Windows 11 Start Menu Styler**
 [mod](https://windhawk.net/mods/windows-11-start-menu-styler)
 
+In addition, the `WindhawkBlur` object supports
+`BackgroundSource="HostBackdrop"`, which blurs what's behind the window instead
+of what the app drew behind the element. It's needed for a blur on the window's
+own background, behind which the app draws nothing, for example:
+`Background:=<WindhawkBlur BackgroundSource="HostBackdrop" BlurAmount="25"
+TintColor="#25323232"/>`.
+
 ## Implementation notes
 
 The VisualTreeWatcher implementation is based on the
@@ -3423,6 +3430,7 @@ struct UnresolvedRules {
 };
 
 struct XamlBlurBrushParams {
+    bool hostBackdrop;
     float blurAmount;
     winrt::Windows::UI::Color tint;
     std::optional<uint8_t> tintOpacity;
@@ -4393,6 +4401,7 @@ class XamlBlurBrush : public Media::XamlCompositionBrushBaseT<XamlBlurBrush>
 {
 public:
     XamlBlurBrush(UIElement element,
+                  bool hostBackdrop,
                   float blurAmount,
                   winrt::Windows::UI::Color tint,
                   std::optional<uint8_t> tintOpacity,
@@ -4417,6 +4426,7 @@ private:
     wuc::CompositionBrush CreateFallbackBrush();
 
     wuc::Compositor m_compositor;
+    bool m_hostBackdrop;
     float m_blurAmount;
     winrt::Windows::UI::Color m_tint;
     std::optional<uint8_t> m_tintOpacity;
@@ -5241,6 +5251,7 @@ void ColorMatrixEffect::Name(winrt::hstring name)
 ////////////////////////////////////////////////////////////////////////////////
 // XamlBlurBrush.cpp
 XamlBlurBrush::XamlBlurBrush(UIElement element,
+                             bool hostBackdrop,
                              float blurAmount,
                              winrt::Windows::UI::Color tint,
                              std::optional<uint8_t> tintOpacity,
@@ -5253,6 +5264,7 @@ XamlBlurBrush::XamlBlurBrush(UIElement element,
                              winrt::hstring fallbackThemeResourceKey) :
     m_compositor(wuxh::ElementCompositionPreview::GetElementVisual(element)
                      .Compositor()),
+    m_hostBackdrop(hostBackdrop),
     m_blurAmount(blurAmount),
     m_tint(tint),
     m_tintOpacity(tintOpacity),
@@ -5571,7 +5583,9 @@ wuc::CompositionBrush XamlBlurBrush::CreateFallbackBrush()
 
 wuc::CompositionBrush XamlBlurBrush::CreateEffectBrush()
 {
-    auto backdropBrush = m_compositor.CreateBackdropBrush();
+    // The host backdrop is what's behind the window.
+    auto backdropBrush = m_hostBackdrop ? m_compositor.CreateHostBackdropBrush()
+                                        : m_compositor.CreateBackdropBrush();
 
     // Rec. 709 luma coefficients, used for saturation and luminosity.
     constexpr float kLumaR = 0.2126f;
@@ -6887,7 +6901,8 @@ winrt::Windows::Foundation::IInspectable SetOrClearValue(
                    std::get_if<XamlBlurBrushParams>(&overrideValue)) {
         if (auto uiElement = elementDo.try_as<UIElement>()) {
             value = winrt::make<XamlBlurBrush>(
-                uiElement, blurBrushParams->blurAmount, blurBrushParams->tint,
+                uiElement, blurBrushParams->hostBackdrop,
+                blurBrushParams->blurAmount, blurBrushParams->tint,
                 blurBrushParams->tintOpacity,
                 winrt::hstring(blurBrushParams->tintThemeResourceKey),
                 blurBrushParams->tintLuminosityOpacity,
@@ -7123,6 +7138,7 @@ std::optional<PropertyOverrideValue> ParseNonXamlPropertyOverrideValue(
     float noiseOpacity = std::numeric_limits<float>::quiet_NaN();
     float noiseDensity = std::numeric_limits<float>::quiet_NaN();
     float blurAmount = 0;
+    bool hostBackdrop = false;
 
     constexpr auto kTintColorThemeResourcePrefix =
         L"TintColor=\"{ThemeResource"sv;
@@ -7134,6 +7150,7 @@ std::optional<PropertyOverrideValue> ParseNonXamlPropertyOverrideValue(
     constexpr auto kNoiseOpacityPrefix = L"NoiseOpacity=\""sv;
     constexpr auto kNoiseDensityPrefix = L"NoiseDensity=\""sv;
     constexpr auto kBlurAmountPrefix = L"BlurAmount=\""sv;
+    constexpr auto kBackgroundSourcePrefix = L"BackgroundSource=\""sv;
     constexpr auto kFallbackColorThemeResourcePrefix =
         L"FallbackColor=\"{ThemeResource"sv;
     constexpr auto kFallbackColorThemeResourceSuffix = L"}\""sv;
@@ -7299,6 +7316,22 @@ std::optional<PropertyOverrideValue> ParseNonXamlPropertyOverrideValue(
             continue;
         }
 
+        if (propSubstr.starts_with(kBackgroundSourcePrefix) &&
+            propSubstr.back() == L'\"') {
+            auto valStr = propSubstr.substr(
+                std::size(kBackgroundSourcePrefix),
+                propSubstr.size() - std::size(kBackgroundSourcePrefix) - 1);
+            if (valStr == L"Backdrop") {
+                hostBackdrop = false;
+            } else if (valStr == L"HostBackdrop") {
+                hostBackdrop = true;
+            } else {
+                throw std::runtime_error(
+                    "WindhawkBlur: Unsupported BackgroundSource value");
+            }
+            continue;
+        }
+
         throw std::runtime_error("WindhawkBlur: Bad property");
     }
 
@@ -7323,6 +7356,7 @@ std::optional<PropertyOverrideValue> ParseNonXamlPropertyOverrideValue(
     }
 
     return XamlBlurBrushParams{
+        .hostBackdrop = hostBackdrop,
         .blurAmount = blurAmount,
         .tint = tint,
         .tintOpacity =
