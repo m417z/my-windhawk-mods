@@ -1381,79 +1381,6 @@ bool IsReparse(PCWSTR folderPath) {
            (fad.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT);
 }
 
-// Checks whether a symbolic link or a junction points to a network location.
-// Only the link itself is read, its target isn't accessed.
-bool IsReparsePointToNetworkPath(PCWSTR folderPath) {
-    HANDLE handle = CreateFile(
-        folderPath, FILE_READ_ATTRIBUTES,
-        FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
-        OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT,
-        nullptr);
-    if (handle == INVALID_HANDLE_VALUE) {
-        return false;
-    }
-
-    // Layout of REPARSE_DATA_BUFFER from the DDK, up to the path buffer.
-    struct ReparseData {
-        ULONG ReparseTag;
-        USHORT ReparseDataLength;
-        USHORT Reserved;
-        USHORT SubstituteNameOffset;
-        USHORT SubstituteNameLength;
-        USHORT PrintNameOffset;
-        USHORT PrintNameLength;
-    };
-
-    std::vector<BYTE> buffer(MAXIMUM_REPARSE_DATA_BUFFER_SIZE);
-    DWORD bytesReturned;
-    BOOL succeeded =
-        DeviceIoControl(handle, FSCTL_GET_REPARSE_POINT, nullptr, 0,
-                        buffer.data(), buffer.size(), &bytesReturned, nullptr);
-    CloseHandle(handle);
-    if (!succeeded || bytesReturned < sizeof(ReparseData)) {
-        return false;
-    }
-
-    const auto* reparseData = (const ReparseData*)buffer.data();
-
-    // Symbolic links have an additional Flags field before the path buffer.
-    size_t pathBufferOffset;
-    switch (reparseData->ReparseTag) {
-        case IO_REPARSE_TAG_SYMLINK:
-            pathBufferOffset = sizeof(ReparseData) + sizeof(ULONG);
-            break;
-        case IO_REPARSE_TAG_MOUNT_POINT:
-            pathBufferOffset = sizeof(ReparseData);
-            break;
-        default:
-            return false;
-    }
-
-    size_t offset = pathBufferOffset + reparseData->SubstituteNameOffset;
-    size_t length = reparseData->SubstituteNameLength;
-    if (offset + length > bytesReturned) {
-        return false;
-    }
-
-    std::wstring_view target((PCWSTR)(buffer.data() + offset),
-                             length / sizeof(WCHAR));
-
-    constexpr auto kNtUncPrefix = L"\\??\\UNC\\"sv;
-    if (target.starts_with(kNtUncPrefix)) {
-        return true;
-    }
-
-    // Absolute targets such as \??\Z:\folder, where Z: may be a mapped network
-    // drive. Relative symbolic links don't have this prefix.
-    constexpr auto kNtPrefix = L"\\??\\"sv;
-    if (target.starts_with(kNtPrefix)) {
-        target.remove_prefix(kNtPrefix.size());
-        return IsNetworkPath(std::wstring(target).c_str());
-    }
-
-    return false;
-}
-
 // Code based on:
 // https://github.com/transmission/transmission/blob/f2aeb11b0733957d8d77d7038daa3ae88442dd5b/libtransmission/file-win32.cc
 std::wstring NativePathToPath(std::wstring_view wide_path) {
@@ -1505,9 +1432,88 @@ std::wstring ResolvePath(PCWSTR path) {
     return result;
 }
 
+// Returns the target of a symbolic link or a junction if it's a network
+// location, or an empty string otherwise. Only the link itself is read, its
+// target isn't accessed.
+std::wstring GetReparsePointNetworkTarget(PCWSTR folderPath) {
+    HANDLE handle = CreateFile(
+        folderPath, FILE_READ_ATTRIBUTES,
+        FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
+        OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT,
+        nullptr);
+    if (handle == INVALID_HANDLE_VALUE) {
+        return {};
+    }
+
+    // Layout of REPARSE_DATA_BUFFER from the DDK, up to the path buffer.
+    struct ReparseData {
+        ULONG ReparseTag;
+        USHORT ReparseDataLength;
+        USHORT Reserved;
+        USHORT SubstituteNameOffset;
+        USHORT SubstituteNameLength;
+        USHORT PrintNameOffset;
+        USHORT PrintNameLength;
+    };
+
+    std::vector<BYTE> buffer(MAXIMUM_REPARSE_DATA_BUFFER_SIZE);
+    DWORD bytesReturned;
+    BOOL succeeded =
+        DeviceIoControl(handle, FSCTL_GET_REPARSE_POINT, nullptr, 0,
+                        buffer.data(), buffer.size(), &bytesReturned, nullptr);
+    CloseHandle(handle);
+    if (!succeeded || bytesReturned < sizeof(ReparseData)) {
+        return {};
+    }
+
+    const auto* reparseData = (const ReparseData*)buffer.data();
+
+    // Symbolic links have an additional Flags field before the path buffer.
+    size_t pathBufferOffset;
+    switch (reparseData->ReparseTag) {
+        case IO_REPARSE_TAG_SYMLINK:
+            pathBufferOffset = sizeof(ReparseData) + sizeof(ULONG);
+            break;
+        case IO_REPARSE_TAG_MOUNT_POINT:
+            pathBufferOffset = sizeof(ReparseData);
+            break;
+        default:
+            return {};
+    }
+
+    size_t offset = pathBufferOffset + reparseData->SubstituteNameOffset;
+    size_t length = reparseData->SubstituteNameLength;
+    if (offset + length > bytesReturned) {
+        return {};
+    }
+
+    std::wstring_view target((PCWSTR)(buffer.data() + offset),
+                             length / sizeof(WCHAR));
+
+    // Absolute targets, e.g. \??\UNC\server\share or \??\Z:\folder. Relative
+    // symbolic links don't have this prefix.
+    constexpr auto kNtPathPrefix = L"\\??\\"sv;
+    if (!target.starts_with(kNtPathPrefix)) {
+        return {};
+    }
+
+    // The \??\ NT prefix is equivalent to the \\?\ Win32 prefix.
+    target.remove_prefix(kNtPathPrefix.size());
+    std::wstring path = NativePathToPath(L"\\\\?\\" + std::wstring(target));
+    if (!IsNetworkPath(path.c_str())) {
+        return {};
+    }
+
+    return path;
+}
+
 DWORD WINAPI Everything4Wh_Thread(void* parameter);
 
-unsigned Everything4Wh_GetFileSize(PCWSTR folderPath, int64_t* size) {
+// If checkReparsePoint is set, a zero size is checked for being a reparse
+// point, which accesses the folder.
+unsigned Everything4Wh_GetFileSize(PCWSTR folderPath,
+                                   int64_t* size,
+                                   bool checkReparsePoint = true) {
     *size = 0;
 
     // Prevent querying from within the Everything process to avoid deadlocks.
@@ -1533,7 +1539,7 @@ unsigned Everything4Wh_GetFileSize(PCWSTR folderPath, int64_t* size) {
             return ES_QUERY_NO_INDEX;
         }
 
-        if (!*size && IsReparse(folderPath)) {
+        if (!*size && checkReparsePoint && IsReparse(folderPath)) {
             return ES_QUERY_ZERO_SIZE_REPARSE_POINT;
         }
 
@@ -1632,7 +1638,8 @@ unsigned Everything4Wh_GetFileSize(PCWSTR folderPath, int64_t* size) {
             result = ES_QUERY_REPLY_TIMEOUT;
         } else if (!g_gsReply.bResult) {
             result = ES_QUERY_NO_INDEX;
-        } else if (!g_gsReply.liSize && IsReparse(folderPath)) {
+        } else if (!g_gsReply.liSize && checkReparsePoint &&
+                   IsReparse(folderPath)) {
             result = ES_QUERY_ZERO_SIZE_REPARSE_POINT;
         } else {
             *size = g_gsReply.liSize;
@@ -2016,12 +2023,23 @@ HRESULT WINAPI CFSFolder__GetSize_Hook(void* pCFSFolder,
                 // Avoid resolving network folders (UNC paths and mapped network
                 // drives) which are not indexed as it can be slow, and will be
                 // done for all folders if the network host isn't indexed.
-                // Similarly, avoid resolving links to network folders, which
+                // Links to network folders aren't resolved either, since that
                 // can block for a long time, e.g. until a NAS disk spins up.
-                if ((result == ES_QUERY_ZERO_SIZE_REPARSE_POINT &&
-                     !IsReparsePointToNetworkPath(path.c_str())) ||
-                    (result == ES_QUERY_NO_INDEX &&
-                     !IsNetworkPath(path.c_str()))) {
+                // Their target is read from the link and queried directly.
+                std::wstring networkTarget;
+                if (result == ES_QUERY_ZERO_SIZE_REPARSE_POINT) {
+                    networkTarget = GetReparsePointNetworkTarget(path.c_str());
+                }
+
+                if (!networkTarget.empty()) {
+                    Wh_Log(L"Trying network link target %s",
+                           networkTarget.c_str());
+                    result = Everything4Wh_GetFileSize(
+                        networkTarget.c_str(), &size,
+                        /*checkReparsePoint=*/false);
+                } else if (result == ES_QUERY_ZERO_SIZE_REPARSE_POINT ||
+                           (result == ES_QUERY_NO_INDEX &&
+                            !IsNetworkPath(path.c_str()))) {
                     Wh_Log(L"Resolving path due to status: %s",
                            g_gsQueryStatus[result]);
 
