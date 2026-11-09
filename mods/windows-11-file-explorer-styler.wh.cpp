@@ -2322,9 +2322,11 @@ using namespace std::string_view_literals;
 #include <windows.graphics.effects.h>
 #include <winstring.h>
 
+#include <winrt/Microsoft.UI.Composition.SystemBackdrops.h>
 #include <winrt/Microsoft.UI.Composition.h>
 #include <winrt/Microsoft.UI.Dispatching.h>
 #include <winrt/Microsoft.UI.Text.h>
+#include <winrt/Microsoft.UI.Xaml.Controls.Primitives.h>
 #include <winrt/Microsoft.UI.Xaml.Controls.h>
 #include <winrt/Microsoft.UI.Xaml.Data.h>
 #include <winrt/Microsoft.UI.Xaml.Hosting.h>
@@ -2440,9 +2442,9 @@ struct DynamicStyleTemplate {
 // Possible states:
 // - IInspectable        : fully resolved WinRT value (literal or static XAML).
 //                         Apply directly via SetValue.
-// - XamlBlurBrushParams : parsed `<WindhawkBlur .../>` parameters. The brush
-//                         instance is constructed at apply time (needs the live
-//                         UIElement).
+// - XamlBlurBrushParams : parsed `<WindhawkBlur .../>` parameters. The brush,
+//                         or the backdrop for a SystemBackdrop property, is
+//                         constructed at apply time (needs the live element).
 // - DynamicStyleTemplate: rule body contains `{{...}}` substitutions.
 //                         Re-resolved on every apply and on every variable
 //                         change. This arm appears only inside
@@ -4787,6 +4789,170 @@ void XamlBlurBrush::RefreshBrush()
 // clang-format on
 ////////////////////////////////////////////////////////////////////////////////
 
+// `WindhawkBlur` set as a SystemBackdrop, drawn as the system acrylic. The blur
+// brush can only sample what the app drew behind it, which is nothing in a
+// popup with its own window, such as a context menu, while the system acrylic
+// is drawn by DWM, which has what's behind the window. The acrylic tint keeps
+// the backdrop's luminance, so TintLuminosityOpacity defaults to the tint
+// opacity, making a tint darken or lighten as it does with the brush.
+class XamlBlurBackdrop : public Media::SystemBackdropT<XamlBlurBackdrop> {
+   public:
+    XamlBlurBackdrop(FrameworkElement element, XamlBlurBrushParams params)
+        : m_params(std::move(params)) {
+        if (m_params.blurAmount || m_params.tintSaturation ||
+            m_params.noiseOpacity || m_params.noiseDensity) {
+            Wh_Log(
+                L"BlurAmount, TintSaturation and noise don't apply to a "
+                L"system backdrop");
+        }
+
+        if (!element) {
+            return;
+        }
+
+        if (!m_params.tintThemeResourceKey.empty()) {
+            m_tintProxyBrush =
+                AddThemeResourceProxy(element, m_params.tintThemeResourceKey);
+        }
+
+        if (!m_params.fallbackThemeResourceKey.empty()) {
+            m_fallbackProxyBrush = AddThemeResourceProxy(
+                element, m_params.fallbackThemeResourceKey);
+        }
+    }
+
+    ~XamlBlurBackdrop() {
+        for (const auto& entry : m_controllers) {
+            CloseController(entry);
+        }
+
+        if (auto element = m_weakProxyElement.get()) {
+            try {
+                for (const auto& key : m_proxyKeys) {
+                    element.Resources().Remove(winrt::box_value(key));
+                }
+            } catch (winrt::hresult_error const& ex) {
+                Wh_Log(L"Error %08X: %s", ex.code(), ex.message().c_str());
+            }
+        }
+    }
+
+    void OnTargetConnected(
+        muc::ICompositionSupportsSystemBackdrop const& target,
+        XamlRoot const& xamlRoot) {
+        SystemBackdropT::OnTargetConnected(target, xamlRoot);
+
+        try {
+            muc::SystemBackdrops::DesktopAcrylicController controller;
+            controller.AddSystemBackdropTarget(target);
+            controller.SetSystemBackdropConfiguration(
+                GetDefaultSystemBackdropConfiguration(target, xamlRoot));
+            ApplyColors(controller);
+            m_controllers.push_back({target, controller});
+        } catch (winrt::hresult_error const& ex) {
+            Wh_Log(L"Error %08X: %s", ex.code(), ex.message().c_str());
+        }
+    }
+
+    void OnTargetDisconnected(
+        muc::ICompositionSupportsSystemBackdrop const& target) {
+        SystemBackdropT::OnTargetDisconnected(target);
+
+        auto it = std::find_if(m_controllers.begin(), m_controllers.end(),
+                               [&](const ControllerEntry& entry) {
+                                   return entry.target == target;
+                               });
+        if (it != m_controllers.end()) {
+            CloseController(*it);
+            m_controllers.erase(it);
+        }
+    }
+
+   private:
+    struct ControllerEntry {
+        muc::ICompositionSupportsSystemBackdrop target;
+        muc::SystemBackdrops::DesktopAcrylicController controller;
+    };
+
+    // The proxy brush follows the element's theme while it's in the element's
+    // resources.
+    Media::SolidColorBrush AddThemeResourceProxy(
+        FrameworkElement const& element,
+        std::wstring_view themeResourceKey) {
+        std::wstring xaml =
+            L"<SolidColorBrush"
+            L" xmlns=\"http://schemas.microsoft.com/winfx/2006/xaml/"
+            L"presentation\""
+            L" Color=\"{ThemeResource ";
+        xaml += themeResourceKey;
+        xaml += L"}\"/>";
+
+        static std::atomic<uint64_t> s_proxyCounter{0};
+
+        try {
+            auto proxyBrush =
+                Markup::XamlReader::Load(xaml).as<Media::SolidColorBrush>();
+            winrt::hstring key{L"__WhBlurBackdropProxy_" +
+                               std::to_wstring(++s_proxyCounter)};
+            element.Resources().Insert(winrt::box_value(key), proxyBrush);
+            m_weakProxyElement = winrt::make_weak(element);
+            m_proxyKeys.push_back(key);
+
+            proxyBrush.RegisterPropertyChangedCallback(
+                Media::SolidColorBrush::ColorProperty(),
+                [weakThis = get_weak()](auto&&, auto&&) {
+                    if (auto self = weakThis.get()) {
+                        for (const auto& entry : self->m_controllers) {
+                            self->ApplyColors(entry.controller);
+                        }
+                    }
+                });
+
+            return proxyBrush;
+        } catch (winrt::hresult_error const& ex) {
+            Wh_Log(L"Failed to create proxy brush: %08X", ex.code());
+            return nullptr;
+        }
+    }
+
+    void ApplyColors(
+        muc::SystemBackdrops::DesktopAcrylicController const& controller) {
+        auto tint = m_tintProxyBrush ? m_tintProxyBrush.Color() : m_params.tint;
+        if (m_params.tintOpacity) {
+            tint.A = *m_params.tintOpacity;
+        }
+
+        float tintOpacity = tint.A / 255.0f;
+        tint.A = 255;
+        controller.TintColor(tint);
+        controller.TintOpacity(tintOpacity);
+        controller.LuminosityOpacity(std::clamp(
+            m_params.tintLuminosityOpacity.value_or(tintOpacity), 0.0f, 1.0f));
+
+        if (m_fallbackProxyBrush) {
+            controller.FallbackColor(m_fallbackProxyBrush.Color());
+        } else if (m_params.fallbackColor) {
+            controller.FallbackColor(*m_params.fallbackColor);
+        }
+    }
+
+    static void CloseController(const ControllerEntry& entry) {
+        try {
+            entry.controller.RemoveSystemBackdropTarget(entry.target);
+            entry.controller.Close();
+        } catch (winrt::hresult_error const& ex) {
+            Wh_Log(L"Error %08X: %s", ex.code(), ex.message().c_str());
+        }
+    }
+
+    XamlBlurBrushParams m_params;
+    Media::SolidColorBrush m_tintProxyBrush{nullptr};
+    Media::SolidColorBrush m_fallbackProxyBrush{nullptr};
+    winrt::weak_ref<FrameworkElement> m_weakProxyElement;
+    std::vector<winrt::hstring> m_proxyKeys;
+    std::vector<ControllerEntry> m_controllers;
+};
+
 // Helper functions for tracking, caching and retrying remote image loads.
 
 // Reports true if the query itself fails, as a retry which turns out to be
@@ -5876,7 +6042,10 @@ winrt::Windows::Foundation::IInspectable SetOrClearValue(
         value = *inspectable;
     } else if (auto* blurBrushParams =
                    std::get_if<XamlBlurBrushParams>(&overrideValue)) {
-        if (auto uiElement = elementDo.try_as<UIElement>()) {
+        if (GetPropertyName(property) == L"SystemBackdrop") {
+            value = winrt::make<XamlBlurBackdrop>(
+                elementDo.try_as<FrameworkElement>(), *blurBrushParams);
+        } else if (auto uiElement = elementDo.try_as<UIElement>()) {
             value = winrt::make<XamlBlurBrush>(
                 uiElement, blurBrushParams->blurAmount, blurBrushParams->tint,
                 blurBrushParams->tintOpacity,
@@ -6437,6 +6606,44 @@ PropertyOverrideSetters GetElementInstanceSetters(
     return result;
 }
 
+// Loading a style with a SystemBackdrop setter for CommandBarFlyoutCommandBar
+// fails with E_FAIL, so a `WindhawkBlur` value for that property, which a
+// dynamic value has to expand to, is resolved with the property looked up
+// directly. Returns false for any other rule.
+bool ResolveSystemBackdropRule(std::wstring_view type,
+                               const ValueRule& rule,
+                               ResolvedRules* resolved) {
+    if (rule.propertyName != L"SystemBackdrop" || !rule.isXamlValue) {
+        return false;
+    }
+
+    auto className = type;
+    if (auto pos = type.rfind(L'.'); pos != type.npos) {
+        className = type.substr(pos + 1);
+    }
+
+    if (className != L"CommandBarFlyoutCommandBar") {
+        return false;
+    }
+
+    PropertyOverrideValue value;
+    if (rule.isDynamic()) {
+        value = DynamicStyleTemplate{rule.propertyName, rule.value,
+                                     rule.isXamlValue};
+    } else if (auto blur = ParseNonXamlPropertyOverrideValue(rule.value)) {
+        value = std::move(*blur);
+    } else {
+        return false;
+    }
+
+    auto property = Controls::Primitives::CommandBarFlyoutCommandBar::
+        SystemBackdropProperty();
+    RecordPropertyName(property, rule.propertyName);
+    resolved->propertyOverrides[property][rule.visualState] = std::move(value);
+    resolved->hasDynamicValues |= rule.isDynamic();
+    return true;
+}
+
 const ResolvedRules& GetResolvedPropertyOverrides(
     const std::wstring_view type,
     PropertyOverridesMaybeUnresolved* propertyOverridesMaybeUnresolved) {
@@ -6450,8 +6657,14 @@ const ResolvedRules& GetResolvedPropertyOverrides(
     try {
         const auto& unresolved =
             std::get<UnresolvedRules>(*propertyOverridesMaybeUnresolved);
-        const auto& valueRules = unresolved.valueRules;
         const auto& captureRules = unresolved.captureRules;
+
+        std::vector<ValueRule> valueRules;
+        for (const auto& rule : unresolved.valueRules) {
+            if (!ResolveSystemBackdropRule(type, rule, &resolved)) {
+                valueRules.push_back(rule);
+            }
+        }
 
         if (!valueRules.empty() || !captureRules.empty()) {
             // Build a single XAML <Style> with one <Setter> per rule. Setters
