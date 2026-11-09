@@ -6607,9 +6607,9 @@ PropertyOverrideSetters GetElementInstanceSetters(
 }
 
 // Loading a style with a SystemBackdrop setter for CommandBarFlyoutCommandBar
-// fails with E_FAIL, so a `WindhawkBlur` value for that property, which a
-// dynamic value has to expand to, is resolved with the property looked up
-// directly. Returns false for any other rule.
+// fails with E_FAIL, so a `WindhawkBlur` or empty value for that property,
+// which a dynamic value has to expand to, is resolved with the property looked
+// up directly. Returns false for any other rule.
 bool ResolveSystemBackdropRule(std::wstring_view type,
                                const ValueRule& rule,
                                ResolvedRules* resolved) {
@@ -6630,6 +6630,8 @@ bool ResolveSystemBackdropRule(std::wstring_view type,
     if (rule.isDynamic()) {
         value = DynamicStyleTemplate{rule.propertyName, rule.value,
                                      rule.isXamlValue};
+    } else if (rule.value.empty()) {
+        value = DependencyProperty::UnsetValue();
     } else if (auto blur = ParseNonXamlPropertyOverrideValue(rule.value)) {
         value = std::move(*blur);
     } else {
