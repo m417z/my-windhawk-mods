@@ -21428,6 +21428,40 @@ void UninitializeSettingsAndTap() {
     g_targetThreadId = 0;
 }
 
+// The XAML diagnostics attach can silently fail during the boot rush; the
+// mod otherwise never retries until the next settings change.
+constexpr int kTapRetryMaxAttempts = 10;
+constexpr int kTapRetryDelayMs = 3000;
+
+int g_tapRetryAttempts = 0;
+winrt::Windows::System::DispatcherQueueTimer g_tapRetryTimer{nullptr};
+
+void ScheduleTapRetry() {
+    if (g_tapRetryAttempts >= kTapRetryMaxAttempts) {
+        return;
+    }
+    g_tapRetryAttempts++;
+    auto dispatcher =
+        winrt::Windows::System::DispatcherQueue::GetForCurrentThread();
+    if (!dispatcher) {
+        return;
+    }
+    g_tapRetryTimer = dispatcher.CreateTimer();
+    g_tapRetryTimer.IsRepeating(false);
+    g_tapRetryTimer.Interval(std::chrono::milliseconds{kTapRetryDelayMs});
+    g_tapRetryTimer.Tick([=](auto&&, auto&&) {
+        HRESULT hr = InjectWindhawkTAP();
+        if (SUCCEEDED(hr)) {
+            Wh_Log(L"TAP attach recovered on retry %d", g_tapRetryAttempts);
+            g_tapRetryTimer.Stop();
+        } else {
+            ScheduleTapRetry();
+        }
+    });
+    g_tapRetryTimer.Start();
+}
+
+
 void InitializeSettingsAndTap() {
     DWORD kNoThreadId = 0;
     if (!g_targetThreadId.compare_exchange_strong(kNoThreadId,
@@ -21441,6 +21475,7 @@ void InitializeSettingsAndTap() {
     if (FAILED(hr)) {
         Wh_Log(L"Error %08X", hr);
     }
+        ScheduleTapRetry();
 }
 
 // Unadvising from a thread other than the one XAML is signaling a mutation on
@@ -22272,6 +22307,11 @@ void Wh_ModUninit() {
     // Before the UI threads are uninitialized, so that a retry can't be
     // scheduled on a thread which is being uninitialized.
     StopImageLoadRetries();
+    if (g_tapRetryTimer) {
+        g_tapRetryTimer.Stop();
+        g_tapRetryTimer = nullptr;
+    }
+    g_tapRetryAttempts = 0;
 
     std::optional<winrt::com_ptr<VisualTreeWatcher>> unadvisedWatcher;
 
