@@ -21524,7 +21524,6 @@ void InitializeSettingsAndTap() {
     }
 
     StartDeadAttachCheck();
-        ScheduleTapRetry();
 }
 
 // Unadvising from a thread other than the one XAML is signaling a mutation on
