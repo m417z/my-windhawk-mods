@@ -118,7 +118,6 @@ enum class WinVersion {
     Unsupported,
     Win10,
     Win11,
-    Win11_24H2,
 };
 
 WinVersion g_winVersion;
@@ -510,10 +509,8 @@ WinVersion GetExplorerVersion() {
         case 10:
             if (build < 22000) {
                 return WinVersion::Win10;
-            } else if (build < 26100) {
-                return WinVersion::Win11;
             } else {
-                return WinVersion::Win11_24H2;
+                return WinVersion::Win11;
             }
             break;
     }

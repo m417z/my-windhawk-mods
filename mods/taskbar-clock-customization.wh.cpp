@@ -705,7 +705,6 @@ enum class WinVersion {
     Win10,
     Win11,
     Win11_22H2,
-    Win11_24H2,
 };
 
 WinVersion g_winVersion;
@@ -5649,7 +5648,9 @@ VS_FIXEDFILEINFO* GetModuleVersionInfo(HMODULE hModule, UINT* puPtrLen) {
     return (VS_FIXEDFILEINFO*)pFixedFileInfo;
 }
 
-WinVersion GetExplorerVersion() {
+WinVersion GetExplorerVersion(bool* hasWin10Clock) {
+    *hasWin10Clock = false;
+
     VS_FIXEDFILEINFO* fixedFileInfo = GetModuleVersionInfo(nullptr, nullptr);
     if (!fixedFileInfo) {
         return WinVersion::Unsupported;
@@ -5664,14 +5665,14 @@ WinVersion GetExplorerVersion() {
 
     switch (major) {
         case 10:
+            // explorer.exe includes the Win10 taskbar clock before this build.
+            *hasWin10Clock = build < 26100;
             if (build < 22000) {
                 return WinVersion::Win10;
             } else if (build <= 22000) {
                 return WinVersion::Win11;
-            } else if (build < 26100) {
-                return WinVersion::Win11_22H2;
             } else {
-                return WinVersion::Win11_24H2;
+                return WinVersion::Win11_22H2;
             }
             break;
     }
@@ -6427,20 +6428,19 @@ BOOL Wh_ModInit() {
 
     LoadSettings();
 
-    g_winVersion = GetExplorerVersion();
+    bool hasWin10Clock;
+    g_winVersion = GetExplorerVersion(&hasWin10Clock);
     if (g_winVersion == WinVersion::Unsupported) {
         Wh_Log(L"Unsupported Windows version");
         return FALSE;
     }
 
     if (g_settings.oldTaskbarOnWin11) {
-        bool hasWin10Taskbar = g_winVersion < WinVersion::Win11_24H2;
-
         if (g_winVersion >= WinVersion::Win11) {
             g_winVersion = WinVersion::Win10;
         }
 
-        if (hasWin10Taskbar && !HookWin10TaskbarSymbols()) {
+        if (hasWin10Clock && !HookWin10TaskbarSymbols()) {
             return FALSE;
         }
     } else if (g_winVersion >= WinVersion::Win11) {

@@ -88,7 +88,6 @@ enum class WinVersion {
     Unsupported,
     Win10,
     Win11,
-    Win11_24H2,
 };
 
 WinVersion g_winVersion;
@@ -1330,7 +1329,9 @@ VS_FIXEDFILEINFO* GetModuleVersionInfo(HMODULE hModule, UINT* puPtrLen) {
     return (VS_FIXEDFILEINFO*)pFixedFileInfo;
 }
 
-WinVersion GetExplorerVersion() {
+WinVersion GetExplorerVersion(bool* hasWin10Taskbar) {
+    *hasWin10Taskbar = false;
+
     VS_FIXEDFILEINFO* fixedFileInfo = GetModuleVersionInfo(nullptr, nullptr);
     if (!fixedFileInfo) {
         return WinVersion::Unsupported;
@@ -1345,13 +1346,12 @@ WinVersion GetExplorerVersion() {
 
     switch (major) {
         case 10:
+            // explorer.exe includes the Win10 taskbar before this build.
+            *hasWin10Taskbar = build < 26100 || (build == 26100 && qfe < 1301);
             if (build < 22000) {
                 return WinVersion::Win10;
-            } else if (build < 26100 || (build == 26100 && qfe < 1301)) {
-                // explorer.exe includes the Win10 taskbar before 26100.1301.
-                return WinVersion::Win11;
             } else {
-                return WinVersion::Win11_24H2;
+                return WinVersion::Win11;
             }
             break;
     }
@@ -1539,15 +1539,14 @@ BOOL Wh_ModInit() {
 
     LoadSettings();
 
-    g_winVersion = GetExplorerVersion();
+    bool hasWin10Taskbar;
+    g_winVersion = GetExplorerVersion(&hasWin10Taskbar);
     if (g_winVersion == WinVersion::Unsupported) {
         Wh_Log(L"Unsupported Windows version");
         return FALSE;
     }
 
     if (g_settings.oldTaskbarOnWin11) {
-        bool hasWin10Taskbar = g_winVersion < WinVersion::Win11_24H2;
-
         if (g_winVersion >= WinVersion::Win11) {
             g_winVersion = WinVersion::Win10;
         }
