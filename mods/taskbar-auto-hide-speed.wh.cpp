@@ -361,7 +361,8 @@ WinVersion GetExplorerVersion() {
         case 10:
             if (build < 22000) {
                 return WinVersion::Win10;
-            } else if (build < 26100) {
+            } else if (build < 26100 || (build == 26100 && qfe < 1301)) {
+                // explorer.exe includes the Win10 taskbar before 26100.1301.
                 return WinVersion::Win11;
             } else {
                 return WinVersion::Win11_24H2;
