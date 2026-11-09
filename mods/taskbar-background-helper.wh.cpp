@@ -1481,9 +1481,9 @@ BOOL Wh_ModInit() {
         return FALSE;
     }
 
-    WindhawkUtils::Wh_SetFunctionHookT(pSetWindowCompositionAttribute,
-                                       SetWindowCompositionAttribute_Hook,
-                                       &SetWindowCompositionAttribute_Original);
+    WindhawkUtils::SetFunctionHook(pSetWindowCompositionAttribute,
+                                   SetWindowCompositionAttribute_Hook,
+                                   &SetWindowCompositionAttribute_Original);
 
     pGetWindowBand = (GetWindowBand_t)GetProcAddress(hUser32, "GetWindowBand");
     pIsWindowArranged =

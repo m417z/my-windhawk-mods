@@ -241,17 +241,17 @@ BOOL Wh_ModInit() {
             auto pKernelBaseLoadLibraryExW =
                 (decltype(&LoadLibraryExW))GetProcAddress(kernelBaseModule,
                                                           "LoadLibraryExW");
-            WindhawkUtils::Wh_SetFunctionHookT(pKernelBaseLoadLibraryExW,
-                                               LoadLibraryExW_Hook,
-                                               &LoadLibraryExW_Original);
+            WindhawkUtils::SetFunctionHook(pKernelBaseLoadLibraryExW,
+                                           LoadLibraryExW_Hook,
+                                           &LoadLibraryExW_Original);
         }
 
         auto pCreateProcessInternalW = (CreateProcessInternalW_t)GetProcAddress(
             GetModuleHandle(L"kernelbase.dll"), "CreateProcessInternalW");
 
-        WindhawkUtils::Wh_SetFunctionHookT(pCreateProcessInternalW,
-                                           CreateProcessInternalW_Hook,
-                                           &CreateProcessInternalW_Original);
+        WindhawkUtils::SetFunctionHook(pCreateProcessInternalW,
+                                       CreateProcessInternalW_Hook,
+                                       &CreateProcessInternalW_Original);
     } else {
         if (!HookTwinuiPcshellSymbols()) {
             return FALSE;

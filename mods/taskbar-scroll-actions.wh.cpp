@@ -1300,8 +1300,8 @@ void HandleIdentifiedInputSiteWindow(HWND hWnd) {
     // but the inputsite.dll code checks that the value wasn't changed, and
     // crashes otherwise.
     auto wndProc = (WNDPROC)GetWindowLongPtr(hWnd, GWLP_WNDPROC);
-    WindhawkUtils::Wh_SetFunctionHookT(wndProc, InputSiteWindowProc_Hook,
-                                       &InputSiteWindowProc_Original);
+    WindhawkUtils::SetFunctionHook(wndProc, InputSiteWindowProc_Hook,
+                                   &InputSiteWindowProc_Original);
 
     if (g_initialized) {
         Wh_ApplyHookOperations();
@@ -1620,8 +1620,8 @@ BOOL Wh_ModInit() {
         g_nExplorerVersion = WIN_VERSION_10_20H1;
     }
 
-    WindhawkUtils::Wh_SetFunctionHookT(CreateWindowExW, CreateWindowExW_Hook,
-                                       &CreateWindowExW_Original);
+    WindhawkUtils::SetFunctionHook(CreateWindowExW, CreateWindowExW_Hook,
+                                   &CreateWindowExW_Original);
 
     HMODULE user32Module =
         LoadLibraryEx(L"user32.dll", nullptr, LOAD_LIBRARY_SEARCH_SYSTEM32);
@@ -1629,9 +1629,9 @@ BOOL Wh_ModInit() {
         auto pCreateWindowInBand = (CreateWindowInBand_t)GetProcAddress(
             user32Module, "CreateWindowInBand");
         if (pCreateWindowInBand) {
-            WindhawkUtils::Wh_SetFunctionHookT(pCreateWindowInBand,
-                                               CreateWindowInBand_Hook,
-                                               &CreateWindowInBand_Original);
+            WindhawkUtils::SetFunctionHook(pCreateWindowInBand,
+                                           CreateWindowInBand_Hook,
+                                           &CreateWindowInBand_Original);
         }
     }
 
@@ -1640,9 +1640,9 @@ BOOL Wh_ModInit() {
     HMODULE kernelBaseModule = GetModuleHandle(L"kernelbase.dll");
     auto pKernelBaseLoadLibraryExW = (decltype(&LoadLibraryExW))GetProcAddress(
         kernelBaseModule, "LoadLibraryExW");
-    WindhawkUtils::Wh_SetFunctionHookT(pKernelBaseLoadLibraryExW,
-                                       LoadLibraryExW_Hook,
-                                       &LoadLibraryExW_Original);
+    WindhawkUtils::SetFunctionHook(pKernelBaseLoadLibraryExW,
+                                   LoadLibraryExW_Hook,
+                                   &LoadLibraryExW_Original);
 
     g_initialized = true;
 

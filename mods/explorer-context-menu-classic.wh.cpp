@@ -160,9 +160,9 @@ BOOL Wh_ModInit() {
         return FALSE;
     }
 
-    WindhawkUtils::Wh_SetFunctionHookT(pIUnknown_QueryService,
-                                       IUnknown_QueryService_Hook,
-                                       &IUnknown_QueryService_Original);
+    WindhawkUtils::SetFunctionHook(pIUnknown_QueryService,
+                                   IUnknown_QueryService_Hook,
+                                   &IUnknown_QueryService_Original);
 
     return TRUE;
 }

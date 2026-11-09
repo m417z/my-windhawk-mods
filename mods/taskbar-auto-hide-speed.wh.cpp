@@ -550,19 +550,19 @@ BOOL Wh_ModInit() {
     HMODULE kernelBaseModule = GetModuleHandle(L"kernelbase.dll");
     auto pKernelBaseLoadLibraryExW = (decltype(&LoadLibraryExW))GetProcAddress(
         kernelBaseModule, "LoadLibraryExW");
-    WindhawkUtils::Wh_SetFunctionHookT(pKernelBaseLoadLibraryExW,
-                                       LoadLibraryExW_Hook,
-                                       &LoadLibraryExW_Original);
+    WindhawkUtils::SetFunctionHook(pKernelBaseLoadLibraryExW,
+                                   LoadLibraryExW_Hook,
+                                   &LoadLibraryExW_Original);
 
     auto pKernelBaseGetTickCount = (decltype(&GetTickCount))GetProcAddress(
         kernelBaseModule, "GetTickCount");
-    WindhawkUtils::Wh_SetFunctionHookT(
-        pKernelBaseGetTickCount, GetTickCount_Hook, &GetTickCount_Original);
+    WindhawkUtils::SetFunctionHook(pKernelBaseGetTickCount, GetTickCount_Hook,
+                                   &GetTickCount_Original);
 
     auto pKernelBaseSleep =
         (decltype(&Sleep))GetProcAddress(kernelBaseModule, "Sleep");
-    WindhawkUtils::Wh_SetFunctionHookT(pKernelBaseSleep, Sleep_Hook,
-                                       &Sleep_Original);
+    WindhawkUtils::SetFunctionHook(pKernelBaseSleep, Sleep_Hook,
+                                   &Sleep_Original);
 
     TimerInitialize();
 
