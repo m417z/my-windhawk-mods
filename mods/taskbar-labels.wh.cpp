@@ -238,6 +238,7 @@ struct {
 } g_settings;
 
 std::atomic<bool> g_taskbarViewDllLoaded;
+std::atomic<bool> g_searchUxUiDllLoaded;
 std::atomic<bool> g_applyingSettings;
 std::atomic<bool> g_overrideGroupingMode;
 std::atomic<bool> g_unloading;
@@ -1763,6 +1764,50 @@ void WINAPI TaskbarController_UpdateFrameHeight_Hook(void* pThis) {
     }
 }
 
+// Experience buttons, such as Start and Search, get the grouping mode, which
+// only affects them on a vertical taskbar. They show labels there unless items
+// are always combined.
+int GetExperienceButtonGroupingMode(int groupingMode) {
+    // Same values as TaskbarGlomLevel: 0 - always combine, 2 - never combine.
+    if (!g_unloading) {
+        if (g_settings.mode == Mode::labelsWithCombining) {
+            return 2;
+        } else if (g_settings.mode == Mode::noLabelsWithoutCombining) {
+            return 0;
+        }
+    }
+
+    return groupingMode;
+}
+
+using ExperienceToggleButton_TaskbarItemGroupingMode_t =
+    void(WINAPI*)(void* pThis, int groupingMode);
+ExperienceToggleButton_TaskbarItemGroupingMode_t
+    ExperienceToggleButton_TaskbarItemGroupingMode_Original;
+void WINAPI ExperienceToggleButton_TaskbarItemGroupingMode_Hook(
+    void* pThis,
+    int groupingMode) {
+    Wh_Log(L">");
+
+    ExperienceToggleButton_TaskbarItemGroupingMode_Original(
+        pThis, GetExperienceButtonGroupingMode(groupingMode));
+}
+
+// The search button of SearchUx.UI.dll is bound to its view model for the
+// grouping mode, which the view model reads from the taskbar settings.
+using SearchButtonBase_put_TaskbarItemGroupingMode_t =
+    HRESULT(WINAPI*)(void* pThis, int groupingMode);
+SearchButtonBase_put_TaskbarItemGroupingMode_t
+    SearchButtonBase_put_TaskbarItemGroupingMode_Original;
+HRESULT WINAPI SearchButtonBase_put_TaskbarItemGroupingMode_Hook(
+    void* pThis,
+    int groupingMode) {
+    Wh_Log(L">");
+
+    return SearchButtonBase_put_TaskbarItemGroupingMode_Original(
+        pThis, GetExperienceButtonGroupingMode(groupingMode));
+}
+
 bool IsAppIdExcluded(PCWSTR appId) {
     std::wstring appIdUpper = appId;
     LCMapStringEx(LOCALE_NAME_USER_DEFAULT, LCMAP_UPPERCASE, appIdUpper.data(),
@@ -2543,6 +2588,12 @@ bool HookTaskbarViewDllSymbols(HMODULE module) {
                 true,  // Only needed for the vertical taskbar.
             },
             {
+                {LR"(public: virtual void __cdecl winrt::Taskbar::implementation::ExperienceToggleButton::TaskbarItemGroupingMode(enum winrt::WindowsUdk::UI::Shell::TaskbarItemGroupingMode))"},
+                &ExperienceToggleButton_TaskbarItemGroupingMode_Original,
+                ExperienceToggleButton_TaskbarItemGroupingMode_Hook,
+                true,  // Only needed for the vertical taskbar.
+            },
+            {
                 {LR"(const winrt::impl::produce<struct winrt::Taskbar::implementation::TaskListWindowViewModel,struct winrt::Taskbar::ITaskListWindowViewModel>::`vftable')"},
                 &ITaskListWindowViewModel_vftable,
                 nullptr,
@@ -2640,6 +2691,25 @@ bool HookTaskbarViewDllSymbols(HMODULE module) {
     return true;
 }
 
+bool HookSearchUxUiDllSymbols(HMODULE module) {
+    // SearchUx.UI.dll
+    WindhawkUtils::SYMBOL_HOOK symbolHooks[] = {
+        {
+            {LR"(public: virtual int __cdecl winrt::impl::produce<struct winrt::SearchUx::SearchUI::implementation::SearchButtonBase,struct winrt::SearchUx::SearchUI::ISearchButtonBase>::put_TaskbarItemGroupingMode(int))"},
+            &SearchButtonBase_put_TaskbarItemGroupingMode_Original,
+            SearchButtonBase_put_TaskbarItemGroupingMode_Hook,
+            true,  // Only needed for the vertical taskbar.
+        },
+    };
+
+    if (!HookSymbols(module, symbolHooks, ARRAYSIZE(symbolHooks))) {
+        Wh_Log(L"HookSymbols failed");
+        return false;
+    }
+
+    return true;
+}
+
 HMODULE GetTaskbarViewModuleHandle() {
     HMODULE module = GetModuleHandle(L"Taskbar.View.dll");
     if (!module) {
@@ -2647,6 +2717,10 @@ HMODULE GetTaskbarViewModuleHandle() {
     }
 
     return module;
+}
+
+HMODULE GetSearchUxUiModuleHandle() {
+    return GetModuleHandle(L"SearchUx.UI.dll");
 }
 
 BOOL ModInitWithTaskbarView(HMODULE taskbarViewModule);
@@ -2662,6 +2736,17 @@ void HandleLoadedModuleIfTaskbarView(HMODULE module, LPCWSTR lpLibFileName) {
     }
 }
 
+void HandleLoadedModuleIfSearchUxUi(HMODULE module, LPCWSTR lpLibFileName) {
+    if (!g_searchUxUiDllLoaded && GetSearchUxUiModuleHandle() == module &&
+        !g_searchUxUiDllLoaded.exchange(true)) {
+        Wh_Log(L"Loaded %s", lpLibFileName);
+
+        if (HookSearchUxUiDllSymbols(module)) {
+            Wh_ApplyHookOperations();
+        }
+    }
+}
+
 using LoadLibraryExW_t = decltype(&LoadLibraryExW);
 LoadLibraryExW_t LoadLibraryExW_Original;
 HMODULE WINAPI LoadLibraryExW_Hook(LPCWSTR lpLibFileName,
@@ -2670,6 +2755,7 @@ HMODULE WINAPI LoadLibraryExW_Hook(LPCWSTR lpLibFileName,
     HMODULE module = LoadLibraryExW_Original(lpLibFileName, hFile, dwFlags);
     if (module) {
         HandleLoadedModuleIfTaskbarView(module, lpLibFileName);
+        HandleLoadedModuleIfSearchUxUi(module, lpLibFileName);
     }
 
     return module;
@@ -2802,6 +2888,8 @@ BOOL Wh_ModInit() {
 
     LoadSettings();
 
+    bool delayLoadingNeeded = false;
+
     if (HMODULE taskbarViewModule = GetTaskbarViewModuleHandle()) {
         g_taskbarViewDllLoaded = true;
         if (!ModInitWithTaskbarView(taskbarViewModule)) {
@@ -2809,7 +2897,18 @@ BOOL Wh_ModInit() {
         }
     } else {
         Wh_Log(L"Taskbar view module not loaded yet");
+        delayLoadingNeeded = true;
+    }
 
+    if (HMODULE searchUxUiModule = GetSearchUxUiModuleHandle()) {
+        g_searchUxUiDllLoaded = true;
+        HookSearchUxUiDllSymbols(searchUxUiModule);
+    } else {
+        Wh_Log(L"Search UX UI module not loaded yet");
+        delayLoadingNeeded = true;
+    }
+
+    if (delayLoadingNeeded) {
         HMODULE kernelBaseModule = GetModuleHandle(L"kernelbase.dll");
         auto pKernelBaseLoadLibraryExW =
             (decltype(&LoadLibraryExW))GetProcAddress(kernelBaseModule,
@@ -2831,6 +2930,18 @@ void Wh_ModAfterInit() {
                 Wh_Log(L"Got Taskbar.View.dll");
 
                 if (ModInitWithTaskbarView(taskbarViewModule)) {
+                    Wh_ApplyHookOperations();
+                }
+            }
+        }
+    }
+
+    if (!g_searchUxUiDllLoaded) {
+        if (HMODULE searchUxUiModule = GetSearchUxUiModuleHandle()) {
+            if (!g_searchUxUiDllLoaded.exchange(true)) {
+                Wh_Log(L"Got SearchUx.UI.dll");
+
+                if (HookSearchUxUiDllSymbols(searchUxUiModule)) {
                     Wh_ApplyHookOperations();
                 }
             }
