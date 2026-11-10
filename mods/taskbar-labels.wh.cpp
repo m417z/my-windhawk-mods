@@ -1764,9 +1764,9 @@ void WINAPI TaskbarController_UpdateFrameHeight_Hook(void* pThis) {
     }
 }
 
-// Experience buttons, such as Start and Search, get the grouping mode, which
-// only affects them on a vertical taskbar. They show labels there unless items
-// are always combined.
+// Experience buttons, such as Start, Search and Widgets, get the grouping mode,
+// which only affects them on a vertical taskbar. They show labels there unless
+// items are always combined.
 int GetExperienceButtonGroupingMode(int groupingMode) {
     // Same values as TaskbarGlomLevel: 0 - always combine, 2 - never combine.
     if (!g_unloading) {
@@ -1790,6 +1790,21 @@ void WINAPI ExperienceToggleButton_TaskbarItemGroupingMode_Hook(
     Wh_Log(L">");
 
     ExperienceToggleButton_TaskbarItemGroupingMode_Original(
+        pThis, GetExperienceButtonGroupingMode(groupingMode));
+}
+
+// The view model of the widgets button collapses it to an icon on a vertical
+// taskbar if items are always combined.
+using AugmentedEntryPointViewModel_put_TaskbarItemGroupingMode_t =
+    HRESULT(WINAPI*)(void* pThis, int groupingMode);
+AugmentedEntryPointViewModel_put_TaskbarItemGroupingMode_t
+    AugmentedEntryPointViewModel_put_TaskbarItemGroupingMode_Original;
+HRESULT WINAPI AugmentedEntryPointViewModel_put_TaskbarItemGroupingMode_Hook(
+    void* pThis,
+    int groupingMode) {
+    Wh_Log(L">");
+
+    return AugmentedEntryPointViewModel_put_TaskbarItemGroupingMode_Original(
         pThis, GetExperienceButtonGroupingMode(groupingMode));
 }
 
@@ -2591,6 +2606,12 @@ bool HookTaskbarViewDllSymbols(HMODULE module) {
                 {LR"(public: virtual void __cdecl winrt::Taskbar::implementation::ExperienceToggleButton::TaskbarItemGroupingMode(enum winrt::WindowsUdk::UI::Shell::TaskbarItemGroupingMode))"},
                 &ExperienceToggleButton_TaskbarItemGroupingMode_Original,
                 ExperienceToggleButton_TaskbarItemGroupingMode_Hook,
+                true,  // Only needed for the vertical taskbar.
+            },
+            {
+                {LR"(public: virtual int __cdecl winrt::impl::produce<struct winrt::Taskbar::implementation::AugmentedEntryPointViewModel,struct winrt::Taskbar::IAugmentedEntryPointViewModel>::put_TaskbarItemGroupingMode(int))"},
+                &AugmentedEntryPointViewModel_put_TaskbarItemGroupingMode_Original,
+                AugmentedEntryPointViewModel_put_TaskbarItemGroupingMode_Hook,
                 true,  // Only needed for the vertical taskbar.
             },
             {
