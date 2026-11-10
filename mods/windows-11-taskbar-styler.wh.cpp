@@ -19524,6 +19524,130 @@ struct VirtualizingRepeaterState {
 thread_local std::unordered_map<ElementId, VirtualizingRepeaterState>
     g_virtualizingRepeaters;
 
+// On some builds, the tray is an item of the taskbar frame repeater, and the
+// taskbar makes the item's transform relative to the frame, so that the tray
+// stays in place while a collapsing touch taskbar slides the repeater out. That
+// also skips whatever offsets the repeater within the frame, such as a root
+// grid margin set by a style, so the tray is drawn away from where it's laid
+// out and hit-tested. The taskbar's value is cleared while there's an offset.
+struct SystemTrayItemState {
+    winrt::weak_ref<FrameworkElement> item;
+    wuc::Visual taskbarParentForTransform;
+    FrameworkElement::LayoutUpdated_revoker layoutUpdatedRevoker;
+};
+
+thread_local std::vector<SystemTrayItemState> g_systemTrayItems;
+
+bool IsSystemTrayItem(FrameworkElement const& element) {
+    if (winrt::get_class_name(element) != L"Taskbar.TaskbarExtensionElement") {
+        return false;
+    }
+
+    auto contentControl = element.try_as<Controls::ContentControl>();
+    auto content = contentControl ? contentControl.Content() : nullptr;
+    return content &&
+           winrt::get_class_name(content) == L"SystemTray.SystemTrayFrame";
+}
+
+// Composition animations, such as the collapsing slide, aren't part of the
+// XAML transform, so they never count as an offset.
+bool IsRepeaterOffsetInTaskbarFrame(FrameworkElement const& item) {
+    auto repeater =
+        Media::VisualTreeHelper::GetParent(item).try_as<muxc::ItemsRepeater>();
+    if (!repeater) {
+        return false;
+    }
+
+    for (auto ancestor = Media::VisualTreeHelper::GetParent(repeater); ancestor;
+         ancestor = Media::VisualTreeHelper::GetParent(ancestor)) {
+        auto frame = ancestor.try_as<FrameworkElement>();
+        if (!frame || winrt::get_class_name(frame) != L"Taskbar.TaskbarFrame") {
+            continue;
+        }
+
+        auto rect = repeater.TransformToVisual(frame).TransformBounds(
+            wf::Rect{0, 0, 1, 1});
+        constexpr float kEpsilon = 0.01f;
+        return std::abs(rect.X) > kEpsilon || std::abs(rect.Y) > kEpsilon ||
+               std::abs(rect.Width - 1) > kEpsilon ||
+               std::abs(rect.Height - 1) > kEpsilon;
+    }
+
+    return false;
+}
+
+void UpdateSystemTrayItemParentForTransform(FrameworkElement const& element) {
+    if (!IsSystemTrayItem(element)) {
+        return;
+    }
+
+    try {
+        auto visual =
+            wuxh::ElementCompositionPreview::GetElementVisual(element);
+        auto parentForTransform = visual.ParentForTransform();
+
+        auto& items = g_systemTrayItems;
+        std::erase_if(items,
+                      [](const auto& state) { return !state.item.get(); });
+
+        auto it = std::find_if(items.begin(), items.end(),
+                               [&element](const auto& state) {
+                                   return state.item.get() == element;
+                               });
+        if (it == items.end()) {
+            if (!parentForTransform) {
+                return;
+            }
+
+            items.push_back({winrt::make_weak(element), parentForTransform});
+            it = std::prev(items.end());
+            it->layoutUpdatedRevoker = element.LayoutUpdated(
+                winrt::auto_revoke,
+                [weakElement = winrt::make_weak(element)](
+                    wf::IInspectable const&, wf::IInspectable const&) {
+                    if (auto element = weakElement.get()) {
+                        UpdateSystemTrayItemParentForTransform(element);
+                    }
+                });
+        } else if (parentForTransform) {
+            it->taskbarParentForTransform = parentForTransform;
+        }
+
+        wuc::Visual targetParentForTransform{nullptr};
+        if (!IsRepeaterOffsetInTaskbarFrame(element)) {
+            targetParentForTransform = it->taskbarParentForTransform;
+        }
+
+        if (parentForTransform != targetParentForTransform) {
+            Wh_Log(L"%s the system tray item's ParentForTransform",
+                   targetParentForTransform ? L"Restoring" : L"Resetting");
+            visual.ParentForTransform(targetParentForTransform);
+        }
+    } catch (winrt::hresult_error const& ex) {
+        Wh_Log(L"Error %08X: %s", ex.code(), ex.message().c_str());
+    }
+}
+
+void RestoreSystemTrayItemsParentForTransform() {
+    for (const auto& state : g_systemTrayItems) {
+        auto item = state.item.get();
+        if (!item) {
+            continue;
+        }
+
+        try {
+            if (IsSystemTrayItem(item)) {
+                wuxh::ElementCompositionPreview::GetElementVisual(item)
+                    .ParentForTransform(state.taskbarParentForTransform);
+            }
+        } catch (winrt::hresult_error const& ex) {
+            Wh_Log(L"Error %08X: %s", ex.code(), ex.message().c_str());
+        }
+    }
+
+    ResetThreadLocal(g_systemTrayItems);
+}
+
 // The id of an element which was reached some other way, e.g. by walking the
 // visual tree. None for an element the mutation callbacks never reported, which
 // leaves callers to skip it rather than key it by something made up.
@@ -19833,6 +19957,10 @@ void HandleVirtualizingRepeater(ElementId elementId, FrameworkElement element) {
                 return;
             }
 
+            // The taskbar's own handler, which runs first, sets it on every
+            // prepare.
+            UpdateSystemTrayItemParentForTransform(element);
+
             auto elementId = ElementIdFromElement(element);
             if (elementId == ElementId::None) {
                 return;
@@ -19928,6 +20056,7 @@ void ApplyCustomizations(ElementId elementId,
     // item can match for the next.
     HandleVirtualizingRepeater(elementId, element);
     MarkIfInRecyclePool(elementId, element);
+    UpdateSystemTrayItemParentForTransform(element);
 
     // Everything below holds `state` across calls that run arbitrary XAML work
     // and can re-enter, so keep the entry from being reaped underneath it.
@@ -21347,6 +21476,7 @@ void UninitializeForCurrentThread() {
     ResetThreadLocal(g_virtualizingRepeaters);
     ResetThreadLocal(g_recycledElements);
     ResetThreadLocal(g_elementMatchedItems);
+    RestoreSystemTrayItemsParentForTransform();
 
     // Detached from the global before being walked: restoring a value runs
     // arbitrary XAML work, and whatever it re-enters looks its elements up in
