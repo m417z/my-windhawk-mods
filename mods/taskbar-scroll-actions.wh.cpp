@@ -9,7 +9,7 @@
 // @homepage        https://m417z.com/
 // @include         explorer.exe
 // @architecture    x86-64
-// @compilerOptions -lcomctl32 -ldxva2 -lgdi32 -lole32 -loleaut32 -lversion
+// @compilerOptions -lcomctl32 -ldxva2 -lgdi32 -lole32 -loleaut32 -lruntimeobject -lversion
 // ==/WindhawkMod==
 
 // Source code is published under The GNU General Public License v3.0.
@@ -36,6 +36,13 @@ Currently, the following actions are supported:
 Brightness control works with both external monitors (via DDC/CI) and laptop
 internal displays (via WMI). For external monitors, DDC/CI must be enabled in
 the monitor's OSD settings.
+
+By default, the brightness is changed with the native Windows brightness API,
+the one used by the Windows Settings app, and a native Windows indicator is
+shown. For external monitors, this requires native external monitor brightness
+support, which is only available in some Windows 11 builds. If the native method
+isn't available, the brightness is changed directly via WMI or DDC/CI, without
+an indicator. The method can be changed in the mod settings.
 
 **Note:** Some laptop touchpads might not support scrolling over the taskbar. A
 workaround is to use the "pinch to zoom" gesture. For details, check out [a
@@ -92,6 +99,25 @@ issue](https://tweaker.userecho.com/topics/826-scroll-on-trackpadtouchpad-doesnt
   $name: Scroll actions
   $description: >-
     Define one or more scroll actions for different regions of the taskbar.
+- brightnessMethodWmi: native
+  $name: Laptop display brightness method (WMI)
+  $description: >-
+    The native method uses the Windows brightness API and shows the Windows
+    brightness indicator. The custom method uses WMI directly and shows no
+    indicator. If the native method isn't available, the custom method is used.
+  $options:
+  - native: Native (with indicator)
+  - custom: Custom (no indicator)
+- brightnessMethodDdcCi: native
+  $name: External monitor brightness method (DDC/CI)
+  $description: >-
+    The native method uses the Windows external monitor brightness API, which is
+    only available in some Windows 11 builds, and shows a Windows text
+    indicator. The custom method uses DDC/CI directly and shows no indicator. If
+    the native method isn't available, the custom method is used.
+  $options:
+  - native: Native (with indicator)
+  - custom: Custom (no indicator)
 - oldTaskbarOnWin11: false
   $name: Customize the old taskbar on Windows 11
   $description: >-
@@ -104,6 +130,7 @@ issue](https://tweaker.userecho.com/topics/826-scroll-on-trackpadtouchpad-doesnt
 
 #include <initguid.h>
 
+#include <asyncinfo.h>
 #include <combaseapi.h>
 #include <commctrl.h>
 #include <comutil.h>
@@ -112,16 +139,22 @@ issue](https://tweaker.userecho.com/topics/826-scroll-on-trackpadtouchpad-doesnt
 #include <mmdeviceapi.h>
 #include <physicalmonitorenumerationapi.h>
 #include <psapi.h>
+#include <roapi.h>
+#include <servprov.h>
 #include <wbemcli.h>
 #include <windowsx.h>
 
 #include <algorithm>
 #include <atomic>
+#include <mutex>
 #include <optional>
+#include <string>
 #include <string_view>
 #include <thread>
 #include <unordered_set>
 #include <vector>
+
+#include <winrt/base.h>
 
 enum class ScrollAction {
     virtualDesktopSwitch,
@@ -151,8 +184,15 @@ struct ScrollActionEntry {
     bool reverseScrollingDirection;
 };
 
+enum class BrightnessMethod {
+    native,
+    custom,
+};
+
 struct {
     std::vector<ScrollActionEntry> scrollActions;
+    BrightnessMethod brightnessMethodWmi;
+    BrightnessMethod brightnessMethodDdcCi;
     bool oldTaskbarOnWin11;
 } g_settings;
 
@@ -952,19 +992,519 @@ bool AdjustBrightnessDdcCi(HMONITOR hMonitor, int delta) {
     return anySuccess;
 }
 
-void AdjustBrightnessThread(HMONITOR hMonitor, int delta) {
-    if (!hMonitor || !AdjustBrightnessDdcCi(hMonitor, delta)) {
-        int brightness = GetBrightnessWmi();
-        if (brightness >= 0) {
-            int newBrightness = std::clamp(brightness + delta, 0, 100);
-            Wh_Log(L"WMI: Changing brightness from %d to %d", brightness,
-                   newBrightness);
-            if (!SetBrightnessWmi(newBrightness)) {
-                Wh_Log(L"Error setting brightness via WMI");
-            }
-        } else {
-            Wh_Log(L"Error getting brightness via WMI");
+void AdjustBrightnessWmi(int delta) {
+    int brightness = GetBrightnessWmi();
+    if (brightness >= 0) {
+        int newBrightness = std::clamp(brightness + delta, 0, 100);
+        Wh_Log(L"WMI: Changing brightness from %d to %d", brightness,
+               newBrightness);
+        if (!SetBrightnessWmi(newBrightness)) {
+            Wh_Log(L"Error setting brightness via WMI");
         }
+    } else {
+        Wh_Log(L"Error getting brightness via WMI");
+    }
+}
+
+// The native method uses undocumented Windows interfaces, as found in Windows
+// 11 build 26300. If any of them is missing or doesn't match, the native method
+// fails and the custom method is used instead.
+
+// The per-display brightness API used by the Settings app. It supports external
+// monitors only if the ExternalBrightness Windows feature is enabled.
+constexpr WCHAR kDisplayEnhancementManagementDll[] =
+    L"Windows.Internal.Graphics.Display.DisplayEnhancementManagement.dll";
+constexpr WCHAR kDisplayEnhancementManagementClass[] =
+    L"Windows.Internal.Graphics.Display.DisplayEnhancementManagement."
+    L"DisplayEnhancementManagement";
+
+const static GUID XIID_IDisplayEnhancementManagementStatics = {
+    0x22771028,
+    0x1658,
+    0x4E5E,
+    {0xAB, 0x77, 0x30, 0x36, 0x91, 0xA8, 0x6F, 0xDA}};
+const static GUID XIID_IDisplayEnhancementManagement = {
+    0xCDA29A3E,
+    0x9E7E,
+    0x4B86,
+    {0x8F, 0x5F, 0x36, 0x8A, 0xA0, 0x71, 0x00, 0x08}};
+// IAsyncOperation<DisplayEnhancementManagement>.
+const static GUID XIID_IAsyncOperationDisplayEnhancementManagement = {
+    0xBD9CB39A,
+    0x6F09,
+    0x5209,
+    {0xA6, 0x56, 0x13, 0x06, 0xF0, 0xDD, 0xF5, 0xC9}};
+
+MIDL_INTERFACE("BD9CB39A-6F09-5209-A656-1306F0DDF5C9")
+IAsyncOperationDisplayEnhancementManagement : public IInspectable {
+   public:
+    virtual HRESULT STDMETHODCALLTYPE put_Completed(IUnknown * handler) = 0;
+    virtual HRESULT STDMETHODCALLTYPE get_Completed(IUnknown * *handler) = 0;
+    virtual HRESULT STDMETHODCALLTYPE GetResults(IInspectable * *results) = 0;
+};
+
+// Resolved from symbols, and called only on objects whose vtables point to
+// them.
+struct {
+    HRESULT(STDMETHODCALLTYPE* FromIdAsync)(IInspectable* pThis,
+                                            HSTRING id,
+                                            IInspectable** operation);
+    HRESULT(STDMETHODCALLTYPE* get_IsBrightnessCapable)(IInspectable* pThis,
+                                                        BYTE* value);
+    HRESULT(STDMETHODCALLTYPE* get_UserBrightnessSettingPercent)(
+        IInspectable* pThis,
+        ULONG* value);
+    HRESULT(STDMETHODCALLTYPE* put_UserBrightnessSettingPercent)(
+        IInspectable* pThis,
+        ULONG value);
+} g_displayEnhancementManagement;
+
+// Vtable indices, IInspectable methods included.
+constexpr int kFromIdAsyncIndex = 6;
+constexpr int kGetIsBrightnessCapableIndex = 34;
+constexpr int kGetUserBrightnessSettingPercentIndex = 46;
+constexpr int kPutUserBrightnessSettingPercentIndex = 47;
+
+// The shell component which shows the volume, brightness and other hardware
+// indicators.
+const static GUID XCLSID_ImmersiveShell = {
+    0xC2F03A33,
+    0x21F5,
+    0x47FA,
+    {0xB4, 0xBB, 0x15, 0x63, 0x62, 0xA2, 0xF2, 0x39}};
+const static GUID XIID_IAudioFlyoutController = {
+    0x41F9D2FB,
+    0x7834,
+    0x4AB6,
+    {0x8B, 0x1B, 0x73, 0xE7, 0x40, 0x64, 0xB4, 0x65}};
+const static GUID XIID_IServiceProvider = {
+    0x6D5140C1,
+    0x7436,
+    0x11CE,
+    {0x80, 0x34, 0x00, 0xAA, 0x00, 0x60, 0x09, 0xFA}};
+
+MIDL_INTERFACE("41F9D2FB-7834-4AB6-8B1B-73E74064B465")
+IAudioFlyoutController : public IUnknown {
+   public:
+    virtual HRESULT STDMETHODCALLTYPE Show(int type, DWORD arg) = 0;
+    virtual HRESULT STDMETHODCALLTYPE ShowWithCustomMessage(int type, DWORD arg,
+                                                            PCWSTR message) = 0;
+};
+
+// Shows the system brightness level.
+constexpr int kFlyoutTypeBrightness = 3;
+// The microphone mute indicator. With an argument of 0, it shows only the
+// custom message, without an icon.
+constexpr int kFlyoutTypeMicrophoneMuted = 7;
+
+// The shell hook code that the system sends for brightness key presses.
+constexpr WPARAM kShellHookBrightness = 0x37;
+
+std::mutex g_brightnessMutex;
+bool g_nativeBrightnessInitAttempted;
+bool g_nativeBrightnessInitialized;
+
+bool InitNativeBrightness() {
+    // The indicator types above are those of the Windows 11 22H2+ indicators.
+    WCHAR hardwareConfirmatorPath[MAX_PATH];
+    UINT len = GetSystemDirectory(hardwareConfirmatorPath,
+                                  ARRAYSIZE(hardwareConfirmatorPath));
+    if (!len || len >= ARRAYSIZE(hardwareConfirmatorPath) ||
+        wcscat_s(hardwareConfirmatorPath,
+                 L"\\Windows.Internal.HardwareConfirmator.dll") != 0 ||
+        GetFileAttributes(hardwareConfirmatorPath) == INVALID_FILE_ATTRIBUTES) {
+        Wh_Log(L"Native brightness indicators aren't available");
+        return false;
+    }
+
+    HMODULE module = LoadLibraryEx(kDisplayEnhancementManagementDll, nullptr,
+                                   LOAD_LIBRARY_SEARCH_SYSTEM32);
+    if (!module) {
+        Wh_Log(L"Native brightness API isn't available");
+        return false;
+    }
+
+    WindhawkUtils::SYMBOL_HOOK symbolHooks[] = {
+        {
+            {LR"(public: virtual long __cdecl Windows::Internal::Graphics::Display::DisplayEnhancementManagement::DisplayEnhancementManagementStatics::FromIdAsync(struct HSTRING__ *,struct Windows::Foundation::IAsyncOperation<class Windows::Internal::Graphics::Display::DisplayEnhancementManagement::DisplayEnhancementManagement *> * *))"},
+            &g_displayEnhancementManagement.FromIdAsync,
+        },
+        {
+            {LR"(public: virtual long __cdecl Windows::Internal::Graphics::Display::DisplayEnhancementManagement::DisplayEnhancementManagement::get_IsBrightnessCapable(unsigned char *))"},
+            &g_displayEnhancementManagement.get_IsBrightnessCapable,
+        },
+        {
+            {LR"(public: virtual long __cdecl Windows::Internal::Graphics::Display::DisplayEnhancementManagement::DisplayEnhancementManagement::get_UserBrightnessSettingPercent(unsigned long *))"},
+            &g_displayEnhancementManagement.get_UserBrightnessSettingPercent,
+        },
+        {
+            {LR"(public: virtual long __cdecl Windows::Internal::Graphics::Display::DisplayEnhancementManagement::DisplayEnhancementManagement::put_UserBrightnessSettingPercent(unsigned long))"},
+            &g_displayEnhancementManagement.put_UserBrightnessSettingPercent,
+        },
+    };
+
+    if (!HookSymbols(module, symbolHooks, ARRAYSIZE(symbolHooks))) {
+        Wh_Log(L"Native brightness API symbols weren't found");
+        return false;
+    }
+
+    return true;
+}
+
+bool IsVtableEntry(IUnknown* object, int index, void* function) {
+    return (*reinterpret_cast<void***>(object))[index] == function;
+}
+
+winrt::com_ptr<IInspectable> GetAsyncOperationResults(IInspectable* operation) {
+    winrt::com_ptr<IAsyncInfo> asyncInfo;
+    if (FAILED(
+            operation->QueryInterface(IID_IAsyncInfo, asyncInfo.put_void()))) {
+        return nullptr;
+    }
+
+    AsyncStatus status = AsyncStatus::Error;
+    DWORD startTime = GetTickCount();
+    while (SUCCEEDED(asyncInfo->get_Status(&status)) &&
+           status == AsyncStatus::Started) {
+        if (GetTickCount() - startTime > 5000) {
+            asyncInfo->Cancel();
+            return nullptr;
+        }
+
+        Sleep(10);
+    }
+
+    if (status != AsyncStatus::Completed) {
+        return nullptr;
+    }
+
+    winrt::com_ptr<IAsyncOperationDisplayEnhancementManagement> typedOperation;
+    winrt::com_ptr<IInspectable> results;
+    if (FAILED(operation->QueryInterface(
+            XIID_IAsyncOperationDisplayEnhancementManagement,
+            typedOperation.put_void())) ||
+        FAILED(typedOperation->GetResults(results.put()))) {
+        return nullptr;
+    }
+
+    return results;
+}
+
+winrt::com_ptr<IInspectable> GetDisplayEnhancementManagement(
+    PCWSTR monitorDevicePath) {
+    const auto& functions = g_displayEnhancementManagement;
+
+    winrt::hstring className{kDisplayEnhancementManagementClass};
+    winrt::com_ptr<IInspectable> statics;
+    HRESULT hr = RoGetActivationFactory(
+        static_cast<HSTRING>(winrt::get_abi(className)),
+        XIID_IDisplayEnhancementManagementStatics, statics.put_void());
+    if (FAILED(hr)) {
+        Wh_Log(L"RoGetActivationFactory failed: %08X", hr);
+        return nullptr;
+    }
+
+    if (!IsVtableEntry(statics.get(), kFromIdAsyncIndex,
+                       reinterpret_cast<void*>(functions.FromIdAsync))) {
+        Wh_Log(L"Native brightness API mismatch");
+        return nullptr;
+    }
+
+    winrt::hstring id{monitorDevicePath};
+    winrt::com_ptr<IInspectable> operation;
+    hr = functions.FromIdAsync(statics.get(),
+                               static_cast<HSTRING>(winrt::get_abi(id)),
+                               operation.put());
+    if (FAILED(hr)) {
+        Wh_Log(L"FromIdAsync failed: %08X", hr);
+        return nullptr;
+    }
+
+    winrt::com_ptr<IInspectable> results =
+        GetAsyncOperationResults(operation.get());
+    if (!results) {
+        Wh_Log(L"FromIdAsync didn't complete for %s", monitorDevicePath);
+        return nullptr;
+    }
+
+    winrt::com_ptr<IInspectable> displayEnhancementManagement;
+    if (FAILED(
+            results->QueryInterface(XIID_IDisplayEnhancementManagement,
+                                    displayEnhancementManagement.put_void()))) {
+        Wh_Log(L"Native brightness API mismatch");
+        return nullptr;
+    }
+
+    IInspectable* object = displayEnhancementManagement.get();
+    if (!IsVtableEntry(
+            object, kGetIsBrightnessCapableIndex,
+            reinterpret_cast<void*>(functions.get_IsBrightnessCapable)) ||
+        !IsVtableEntry(object, kGetUserBrightnessSettingPercentIndex,
+                       reinterpret_cast<void*>(
+                           functions.get_UserBrightnessSettingPercent)) ||
+        !IsVtableEntry(object, kPutUserBrightnessSettingPercentIndex,
+                       reinterpret_cast<void*>(
+                           functions.put_UserBrightnessSettingPercent))) {
+        Wh_Log(L"Native brightness API mismatch");
+        return nullptr;
+    }
+
+    return displayEnhancementManagement;
+}
+
+winrt::com_ptr<IAudioFlyoutController> GetAudioFlyoutController() {
+    winrt::com_ptr<IServiceProvider> serviceProvider;
+    HRESULT hr =
+        CoCreateInstance(XCLSID_ImmersiveShell, nullptr, CLSCTX_LOCAL_SERVER,
+                         XIID_IServiceProvider, serviceProvider.put_void());
+    if (FAILED(hr)) {
+        Wh_Log(L"CoCreateInstance failed: %08X", hr);
+        return nullptr;
+    }
+
+    winrt::com_ptr<IAudioFlyoutController> flyoutController;
+    hr = serviceProvider->QueryService(XIID_IAudioFlyoutController,
+                                       XIID_IAudioFlyoutController,
+                                       flyoutController.put_void());
+    if (FAILED(hr)) {
+        Wh_Log(L"QueryService failed: %08X", hr);
+        return nullptr;
+    }
+
+    return flyoutController;
+}
+
+HWND FindTaskSwWindow() {
+    HWND hTaskbarWnd = g_hTaskbarWnd;
+    if (!hTaskbarWnd) {
+        return nullptr;
+    }
+
+    HWND hReBarWindow32 =
+        FindWindowEx(hTaskbarWnd, nullptr, L"ReBarWindow32", nullptr);
+    if (!hReBarWindow32) {
+        return nullptr;
+    }
+
+    return FindWindowEx(hReBarWindow32, nullptr, L"MSTaskSwWClass", nullptr);
+}
+
+struct DisplayTarget {
+    std::wstring monitorDevicePath;
+    std::wstring monitorFriendlyName;
+    bool internal;
+};
+
+// Returns the active display targets of the given monitor, or of all monitors
+// if it's null.
+std::vector<DisplayTarget> GetDisplayTargets(HMONITOR hMonitor) {
+    std::vector<DisplayTarget> targets;
+
+    MONITORINFOEX monitorInfo{};
+    monitorInfo.cbSize = sizeof(monitorInfo);
+    if (hMonitor && !GetMonitorInfo(hMonitor, &monitorInfo)) {
+        return targets;
+    }
+
+    std::vector<DISPLAYCONFIG_PATH_INFO> paths;
+    std::vector<DISPLAYCONFIG_MODE_INFO> modes;
+    LONG result;
+    do {
+        UINT32 pathCount;
+        UINT32 modeCount;
+        result = GetDisplayConfigBufferSizes(QDC_ONLY_ACTIVE_PATHS, &pathCount,
+                                             &modeCount);
+        if (result != ERROR_SUCCESS) {
+            return targets;
+        }
+
+        paths.resize(pathCount);
+        modes.resize(modeCount);
+        result =
+            QueryDisplayConfig(QDC_ONLY_ACTIVE_PATHS, &pathCount, paths.data(),
+                               &modeCount, modes.data(), nullptr);
+        paths.resize(pathCount);
+    } while (result == ERROR_INSUFFICIENT_BUFFER);
+
+    if (result != ERROR_SUCCESS) {
+        return targets;
+    }
+
+    for (const auto& path : paths) {
+        if (hMonitor) {
+            DISPLAYCONFIG_SOURCE_DEVICE_NAME sourceName{};
+            sourceName.header.type = DISPLAYCONFIG_DEVICE_INFO_GET_SOURCE_NAME;
+            sourceName.header.size = sizeof(sourceName);
+            sourceName.header.adapterId = path.sourceInfo.adapterId;
+            sourceName.header.id = path.sourceInfo.id;
+            if (DisplayConfigGetDeviceInfo(&sourceName.header) !=
+                    ERROR_SUCCESS ||
+                _wcsicmp(sourceName.viewGdiDeviceName, monitorInfo.szDevice) !=
+                    0) {
+                continue;
+            }
+        }
+
+        DISPLAYCONFIG_TARGET_DEVICE_NAME targetName{};
+        targetName.header.type = DISPLAYCONFIG_DEVICE_INFO_GET_TARGET_NAME;
+        targetName.header.size = sizeof(targetName);
+        targetName.header.adapterId = path.targetInfo.adapterId;
+        targetName.header.id = path.targetInfo.id;
+        if (DisplayConfigGetDeviceInfo(&targetName.header) != ERROR_SUCCESS ||
+            !*targetName.monitorDevicePath) {
+            continue;
+        }
+
+        auto tech = targetName.outputTechnology;
+        targets.push_back({
+            .monitorDevicePath = targetName.monitorDevicePath,
+            .monitorFriendlyName = targetName.monitorFriendlyDeviceName,
+            .internal =
+                tech == DISPLAYCONFIG_OUTPUT_TECHNOLOGY_INTERNAL ||
+                tech == DISPLAYCONFIG_OUTPUT_TECHNOLOGY_DISPLAYPORT_EMBEDDED ||
+                tech == DISPLAYCONFIG_OUTPUT_TECHNOLOGY_UDI_EMBEDDED,
+        });
+    }
+
+    return targets;
+}
+
+// For internal displays, adjusts all of them, like the WMI method does. For
+// external monitors, adjusts the ones of the given monitor.
+bool AdjustBrightnessNative(bool internal, HMONITOR hMonitor, int delta) {
+    if (!g_nativeBrightnessInitialized) {
+        return false;
+    }
+
+    std::vector<DisplayTarget> targets;
+    for (auto& target : GetDisplayTargets(internal ? nullptr : hMonitor)) {
+        if (target.internal == internal) {
+            targets.push_back(std::move(target));
+        }
+    }
+
+    if (targets.empty()) {
+        return false;
+    }
+
+    // Make sure that an indicator can be shown before changing the brightness.
+    HWND hTaskSwWnd = internal ? FindTaskSwWindow() : nullptr;
+    winrt::com_ptr<IAudioFlyoutController> flyoutController;
+    if (!hTaskSwWnd) {
+        flyoutController = GetAudioFlyoutController();
+        if (!flyoutController) {
+            return false;
+        }
+    }
+
+    const auto& functions = g_displayEnhancementManagement;
+    std::wstring message;
+    bool adjusted = false;
+
+    for (const auto& target : targets) {
+        winrt::com_ptr<IInspectable> displayEnhancementManagement =
+            GetDisplayEnhancementManagement(target.monitorDevicePath.c_str());
+        if (!displayEnhancementManagement) {
+            continue;
+        }
+
+        IInspectable* object = displayEnhancementManagement.get();
+
+        BYTE capable;
+        ULONG current;
+        if (FAILED(functions.get_IsBrightnessCapable(object, &capable)) ||
+            !capable ||
+            FAILED(
+                functions.get_UserBrightnessSettingPercent(object, &current)) ||
+            current > 100) {
+            Wh_Log(L"Native: %s isn't brightness capable",
+                   target.monitorDevicePath.c_str());
+            continue;
+        }
+
+        ULONG newValue = std::clamp((int)current + delta, 0, 100);
+
+        Wh_Log(L"Native: %s brightness %lu -> %lu",
+               target.monitorDevicePath.c_str(), current, newValue);
+
+        if (newValue != current &&
+            FAILED(
+                functions.put_UserBrightnessSettingPercent(object, newValue))) {
+            Wh_Log(L"Native: Error setting brightness");
+            continue;
+        }
+
+        adjusted = true;
+
+        if (!message.empty()) {
+            message += L", ";
+        }
+
+        if (target.monitorFriendlyName.empty()) {
+            message += L"Brightness";
+        } else {
+            message += target.monitorFriendlyName;
+            message += L" brightness";
+        }
+
+        message += L": ";
+        message += std::to_wstring(newValue);
+        message += L"%";
+    }
+
+    if (!adjusted) {
+        return false;
+    }
+
+    if (!internal) {
+        flyoutController->ShowWithCustomMessage(kFlyoutTypeMicrophoneMuted, 0,
+                                                message.c_str());
+    } else if (hTaskSwWnd) {
+        // Same as a brightness key press.
+        static const UINT shellHookMsg = RegisterWindowMessage(L"SHELLHOOK");
+        PostMessage(hTaskSwWnd, shellHookMsg, kShellHookBrightness, 0);
+    } else {
+        flyoutController->Show(kFlyoutTypeBrightness, 0);
+    }
+
+    return true;
+}
+
+bool AdjustBrightnessExternal(HMONITOR hMonitor,
+                              int delta,
+                              BrightnessMethod method) {
+    if (method == BrightnessMethod::native &&
+        AdjustBrightnessNative(/*internal=*/false, hMonitor, delta)) {
+        return true;
+    }
+
+    return AdjustBrightnessDdcCi(hMonitor, delta);
+}
+
+void AdjustBrightnessInternal(int delta, BrightnessMethod method) {
+    if (method == BrightnessMethod::native &&
+        AdjustBrightnessNative(/*internal=*/true, nullptr, delta)) {
+        return;
+    }
+
+    AdjustBrightnessWmi(delta);
+}
+
+void AdjustBrightnessThread(HMONITOR hMonitor,
+                            int delta,
+                            BrightnessMethod methodWmi,
+                            BrightnessMethod methodDdcCi) {
+    // Each brightness change reads the current level and writes a new one.
+    std::lock_guard<std::mutex> lock(g_brightnessMutex);
+
+    HRESULT hrCoInit = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
+
+    if (!hMonitor || !AdjustBrightnessExternal(hMonitor, delta, methodDdcCi)) {
+        AdjustBrightnessInternal(delta, methodWmi);
+    }
+
+    if (SUCCEEDED(hrCoInit)) {
+        CoUninitialize();
     }
 }
 
@@ -1168,7 +1708,10 @@ void InvokeScrollAction(HWND hWnd,
                 // blocking the taskbar message loop with slow WMI/DDC-CI calls.
                 HMONITOR hMonitor =
                     MonitorFromWindow(hWnd, MONITOR_DEFAULTTONEAREST);
-                std::thread(AdjustBrightnessThread, hMonitor, clicks).detach();
+                std::thread(AdjustBrightnessThread, hMonitor, clicks,
+                            g_settings.brightnessMethodWmi,
+                            g_settings.brightnessMethodDdcCi)
+                    .detach();
                 break;
             }
 
@@ -1537,7 +2080,34 @@ void LoadSettings() {
         g_settings.scrollActions.push_back(std::move(entry));
     }
 
+    PCWSTR brightnessMethodWmi = Wh_GetStringSetting(L"brightnessMethodWmi");
+    g_settings.brightnessMethodWmi = wcscmp(brightnessMethodWmi, L"custom") == 0
+                                         ? BrightnessMethod::custom
+                                         : BrightnessMethod::native;
+    Wh_FreeStringSetting(brightnessMethodWmi);
+
+    PCWSTR brightnessMethodDdcCi =
+        Wh_GetStringSetting(L"brightnessMethodDdcCi");
+    g_settings.brightnessMethodDdcCi =
+        wcscmp(brightnessMethodDdcCi, L"custom") == 0
+            ? BrightnessMethod::custom
+            : BrightnessMethod::native;
+    Wh_FreeStringSetting(brightnessMethodDdcCi);
+
     g_settings.oldTaskbarOnWin11 = Wh_GetIntSetting(L"oldTaskbarOnWin11");
+}
+
+bool IsNativeBrightnessNeeded() {
+    if (g_settings.brightnessMethodWmi != BrightnessMethod::native &&
+        g_settings.brightnessMethodDdcCi != BrightnessMethod::native) {
+        return false;
+    }
+
+    return std::any_of(g_settings.scrollActions.begin(),
+                       g_settings.scrollActions.end(), [](const auto& entry) {
+                           return entry.scrollAction ==
+                                  ScrollAction::brightnessChange;
+                       });
 }
 
 bool IsExplorerPatcherModule(HMODULE module) {
@@ -1620,6 +2190,11 @@ BOOL Wh_ModInit() {
         g_nExplorerVersion = WIN_VERSION_10_20H1;
     }
 
+    if (IsNativeBrightnessNeeded()) {
+        g_nativeBrightnessInitAttempted = true;
+        g_nativeBrightnessInitialized = InitNativeBrightness();
+    }
+
     WindhawkUtils::SetFunctionHook(CreateWindowExW, CreateWindowExW_Hook,
                                    &CreateWindowExW_Original);
 
@@ -1687,7 +2262,9 @@ BOOL Wh_ModSettingsChanged(BOOL* bReload) {
 
     LoadSettings();
 
-    *bReload = g_settings.oldTaskbarOnWin11 != prevOldTaskbarOnWin11;
+    // Native brightness is only initialized on init.
+    *bReload = g_settings.oldTaskbarOnWin11 != prevOldTaskbarOnWin11 ||
+               (IsNativeBrightnessNeeded() && !g_nativeBrightnessInitAttempted);
 
     return TRUE;
 }
