@@ -1743,12 +1743,14 @@ void WINAPI TaskbarController_UpdateFrameHeight_Hook(void* pThis) {
 
     TaskbarController_UpdateFrameHeight_Original(pThis);
 
-    double width = mode == Mode::labelsWithCombining
-                       ? kVerticalTaskbarWithLabelsWidth
-                       : g_updateFrameHeightFrameSize;
-    if (width <= 0) {
+    double frameSize = g_updateFrameHeightFrameSize;
+    if (frameSize <= 0) {
         return;
     }
+
+    double width = mode == Mode::labelsWithCombining
+                       ? kVerticalTaskbarWithLabelsWidth
+                       : frameSize;
 
     // The frame is created before anything calls UpdateFrameHeight.
     FrameworkElement taskbarFrame = nullptr;
@@ -1757,8 +1759,13 @@ void WINAPI TaskbarController_UpdateFrameHeight_Hook(void* pThis) {
         return;
     }
 
+    // Another mod hooking this function may have replaced the width that
+    // Windows set, which is one of these. The NaN width of a horizontal taskbar
+    // is neither.
     double currentWidth = taskbarFrame.Width();
-    if (!std::isnan(currentWidth) && currentWidth != width) {
+    if ((currentWidth == frameSize ||
+         currentWidth == kVerticalTaskbarWithLabelsWidth) &&
+        currentWidth != width) {
         Wh_Log(L"Vertical taskbar width: %f->%f", currentWidth, width);
         taskbarFrame.Width(width);
     }
