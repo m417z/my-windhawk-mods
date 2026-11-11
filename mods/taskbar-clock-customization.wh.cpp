@@ -157,7 +157,7 @@ weather, network, media and customization features remain available.
 The Smart Clock panel contribution was developed by Cynrath and is based on
 Taskbar Smart Clock v0.2.7 (GPL-3.0).
 
-![Smart Clock panel screenshot](https://raw.githubusercontent.com/Cynrath/windhawk-smart-clock/main/assets/smart-clock-taskbar.png)
+Smart Clock screenshot: to be added after validating the integrated build.
 */
 // ==/WindhawkModReadme==
 
