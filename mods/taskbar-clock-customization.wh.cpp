@@ -12,8 +12,6 @@
 // @compilerOptions -ldxgi -lole32 -loleaut32 -lpdh -lpowrprof -lruntimeobject -lshlwapi -lversion -lwininet
 // ==/WindhawkMod==
 
-
-
 // Source code is published under The GNU General Public License v3.0.
 //
 // For bug reports and feature requests, please open an issue here:
@@ -144,20 +142,15 @@ styles, such as the font color and size.
 ![Screenshot](https://i.imgur.com/3JiXwjT.png)
 
 
-## Optional Smart Clock performance panel (Windows 11)
+## Optional performance panel (Windows 11)
 
-Adds a compact two-row performance panel next to the native clock, with
-RAM/VRAM, CPU/GPU utilization and temperature, and upload/download speeds.
-Supports configurable columns, fonts, stable widths, adaptive/manual
-threshold colors and Turkish settings translations.
+Display RAM/VRAM, CPU/GPU usage and temperatures, and upload/download speeds
+in a configurable two-row panel next to the native clock. Customize visible
+metrics, column widths, fonts, spacing, and adaptive/manual warning colors.
+The panel can be enabled or disabled independently from clock formatting.
+Turkish translations are available for the settings.
 
-To use it, enable the panel in the SmartClock settings. Existing date/time,
-weather, network, media and customization features remain available.
-
-The Smart Clock panel contribution was developed by Cynrath and is based on
-Taskbar Smart Clock v0.2.7 (GPL-3.0).
-
-Smart Clock screenshot: to be added after validating the integrated build.
+Panel contribution: Cynrath (with AI assistance).
 */
 // ==/WindhawkModReadme==
 
@@ -809,10 +802,10 @@ using namespace winrt::Windows::UI::Xaml;
 #include <sstream>
 #include <utility>
 
-// Smart Clock cross-platform policy + parser (generated from src/*.hpp).
+// Performance-panel policy and formatting helpers.
 // Keep changes to the embedded copy synchronized with the tested headers.
 // SPDX-License-Identifier: GPL-3.0-only
-// Smart Clock policy engine prototype; no Windows/Explorer hooks here.
+// Platform-independent panel formatting helpers; no Explorer hooks here.
 
 
 namespace smartclock {
@@ -7543,7 +7536,7 @@ void ApplySettingsWin11() {
     // Touch a registry value to trigger a watcher for a clock update. Do so
     // only if the current explorer.exe instance owns the taskbar.
     constexpr WCHAR kTempValueName[] =
-        L"_temp_windhawk_cynrath-smart-clock";
+        L"_temp_windhawk_taskbar-taskbar-clock-customization";
     HKEY hSubKey;
     LONG result = RegOpenKeyEx(HKEY_CURRENT_USER,
                                L"Control Panel\\TimeDate\\AdditionalClocks", 0,
