@@ -150,6 +150,8 @@ metrics, column widths, fonts, spacing, and adaptive/manual warning colors.
 The panel can be enabled or disabled independently from clock formatting.
 Turkish translations are available for the settings.
 
+![Performance panel on the Windows 11 taskbar](https://i.imgur.com/HyPBjWR.png)
+
 Panel contribution: Cynrath.
 */
 // ==/WindhawkModReadme==
