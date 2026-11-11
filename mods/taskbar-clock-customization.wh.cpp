@@ -150,7 +150,7 @@ metrics, column widths, fonts, spacing, and adaptive/manual warning colors.
 The panel can be enabled or disabled independently from clock formatting.
 Turkish translations are available for the settings.
 
-Panel contribution: Cynrath (with AI assistance).
+Panel contribution: Cynrath.
 */
 // ==/WindhawkModReadme==
 
