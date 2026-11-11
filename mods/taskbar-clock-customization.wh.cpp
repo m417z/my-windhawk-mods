@@ -605,7 +605,7 @@ Panel contribution: Cynrath.
     $options:
       - sidecar: Native clock + side panel / Orijinal saat + yan panel
       - replace: Custom clock / Özel saat
-  - ShowPanel: true
+  - ShowPanel: false
     $name: Show metrics panel
     $name:tr-TR: Ölçüm panelini göster
   - PanelPreset: wide
@@ -1187,7 +1187,7 @@ enum class SmartClockLayout { Sidecar, Replace };
 
 struct SmartClockPanelSettings {
     SmartClockLayout layout = SmartClockLayout::Sidecar;
-    bool visible = true;
+    bool visible = false;
     bool compact = false;
     bool memory = true;
     bool processor = true;
