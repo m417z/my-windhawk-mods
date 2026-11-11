@@ -2,7 +2,7 @@
 // @id              taskbar-clock-customization
 // @name            Taskbar Clock Customization
 // @description     Custom date/time format, news feed, weather, performance metrics (upload/download speed, CPU, RAM, GPU, battery), media player info, custom fonts and colors, and more
-// @version         1.8.1
+// @version         1.8.2
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
@@ -140,6 +140,19 @@ For Windows 11 version 22H2 and newer, the mod allows changing the clock text
 styles, such as the font color and size.
 
 ![Screenshot](https://i.imgur.com/3JiXwjT.png)
+
+
+## Optional performance panel (Windows 11)
+
+Display RAM/VRAM, CPU/GPU usage and temperatures, and upload/download speeds
+in a configurable two-row panel next to the native clock. Customize visible
+metrics, column widths, fonts, spacing, and adaptive/manual warning colors.
+The panel can be enabled or disabled independently from clock formatting.
+Turkish translations are available for the settings.
+
+![Performance panel on the Windows 11 taskbar](https://i.imgur.com/HyPBjWR.png)
+
+Panel contribution: Cynrath.
 */
 // ==/WindhawkModReadme==
 
@@ -147,17 +160,20 @@ styles, such as the font color and size.
 /*
 - ShowSeconds: true
   $name: Show seconds
+  $name:tr-TR: Saniyeleri göster
 - TimeFormat: >-
-    hh':'mm':'ss tt
+    HH':'mm':'ss
   $name: Time format
+  $name:tr-TR: Saat biçimi
   $description: >-
     The format for the %time% pattern. Leave empty for the default format. For
     the syntax, refer to the following page:
 
     https://docs.microsoft.com/en-us/windows/win32/api/datetimeapi/nf-datetimeapi-gettimeformatex#remarks
 - DateFormat: >-
-    ddd',' MMM dd yyyy
+    dd.MM;dd.MM.yyyy
   $name: Date format
+  $name:tr-TR: Tarih biçimi
   $description: >-
     The format for the %date% pattern. Leave empty for the default format. For
     the syntax, refer to the following page:
@@ -165,6 +181,7 @@ styles, such as the font color and size.
     https://docs.microsoft.com/en-us/windows/win32/intl/day--month--year--and-era-format-pictures
 - DateLocale: ""
   $name: Date locale
+  $name:tr-TR: Tarih yereli
   $description: >-
     The locale used for formatting the date and the week day. Leave empty for
     the default locale. Use ";" to set a locale per date format, e.g.
@@ -175,6 +192,7 @@ styles, such as the font color and size.
     https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-lcid/a9eac961-e77d-41a6-90a5-ce1a8b0cdb9c
 - WeekdayFormat: dddd
   $name: Week day format
+  $name:tr-TR: Gün adı biçimi
   $description: The format for the %weekday% pattern.
   $options:
   - dddd: Full day of the week
@@ -182,44 +200,55 @@ styles, such as the font color and size.
   - custom: Custom, specified below
 - WeekdayFormatCustom: Sun, Mon, Tue, Wed, Thu, Fri, Sat
   $name: Custom week day format
+  $name:tr-TR: Özel gün adları
   $description: >-
     A comma-separated list of custom week days, Sunday through Saturday. Used if
     the week day format is set to custom.
 - TopLine: '%date% | %time%'
   $name: Top line
+  $name:tr-TR: Üst satır
   $description: >-
     Text to be shown on the first line. Set to "-" for the default value. Refer
     to the mod details for the list of patterns that can be used.
 - BottomLine: '%web1%'
   $name: Bottom line
+  $name:tr-TR: Alt satır
   $description: >-
     Only shown if the taskbar is large enough. Set to "-" for the default value.
 - MiddleLine: '%weekday%'
   $name: Middle line (Windows 10 only)
+  $name:tr-TR: Orta satır (yalnızca Windows 10)
   $description: >-
     Only shown if the taskbar is large enough. Set to "-" for the default value.
 - TooltipLine: '%web1_full%'
   $name: Tooltip extra line
+  $name:tr-TR: Fareyle üzerine gelince bilgi
 - TooltipLineMode: append
   $name: Tooltip line mode
+  $name:tr-TR: Bilgi balonu metin modu
   $options:
   - append: Append to default tooltip
   - replace: Replace default tooltip
 - Width: 180
   $name: Clock width (Windows 10 only)
+  $name:tr-TR: Saat genişliği (yalnızca Windows 10)
 - Height: 60
   $name: Clock height (Windows 10 only)
+  $name:tr-TR: Saat yüksekliği (yalnızca Windows 10)
 - MaxWidth: 0
   $name: Clock max width (Windows 11 only)
+  $name:tr-TR: Saat en büyük genişliği (Windows 11)
   $description: Set to zero for no limit.
 - TextSpacing: 0
   $name: Line spacing
+  $name:tr-TR: Satır aralığı
   $description: >-
     Set to zero for the default system value. A negative value can be used for
     negative spacing.
 - DataCollection:
-  - NetworkMetricsFormat: mbs
+  - NetworkMetricsFormat: mbsNumberOnly
     $name: Network metrics format
+    $name:tr-TR: Ağ hızı biçimi
     $description: >-
       The format to use for displaying the upload/download transfer rate.
     $options:
@@ -229,13 +258,15 @@ styles, such as the font color and size.
     - mbits: MBit/s
     - mbitsNumberOnly: MBit/s, number only
     - mbitsDynamic: MBit/s or KBit/s (dynamic)
-  - NetworkMetricsFixedDecimals: -1
+  - NetworkMetricsFixedDecimals: 2
     $name: Network metrics fixed decimal places
+    $name:tr-TR: Ağ hızı sabit ondalık basamağı
     $description: >-
       Always use this number of decimal places for the upload/download transfer
       rate (-1 means auto/same width).
   - DiskMetricsFormat: sameAsNetwork
     $name: Disk metrics format
+    $name:tr-TR: Disk hızı biçimi
     $description: >-
       The format to use for displaying the disk read/write speed.
     $options:
@@ -248,12 +279,14 @@ styles, such as the font color and size.
     - mbitsDynamic: MBit/s or KBit/s (dynamic)
   - DiskMetricsFixedDecimals: -1
     $name: Disk metrics fixed decimal places
+    $name:tr-TR: Disk hızı sabit ondalık basamağı
     $description: >-
       Always use this number of decimal places for the disk read/write speed
       (-1 means auto/same width). Ignored when the disk metrics format is set to
       "Same as network metrics format".
   - PercentageFormat: spacePaddingAndSymbol
     $name: Percentage format
+    $name:tr-TR: Yüzde gösterimi
     $description: >-
       The format to use for displaying percentage values (CPU, RAM, GPU,
       battery).
@@ -266,10 +299,12 @@ styles, such as the font color and size.
     - noPadding: No padding, number only
   - UpdateInterval: 1
     $name: Update interval
+    $name:tr-TR: Güncelleme aralığı
     $description: >-
       The update interval, in seconds, of the system performance metrics.
   - NetworkAdapterName: ""
     $name: Network adapter name
+    $name:tr-TR: Ağ bağdaştırıcısı adı
     $description: >-
       The network adapter to use for upload/download metrics. Leave empty to
       sum all adapters. Partial match is supported. To list adapters, run:
@@ -277,6 +312,7 @@ styles, such as the font color and size.
       typeperf -qx "Network Interface"
   - GpuAdapterName: ""
     $name: GPU adapter name
+    $name:tr-TR: GPU bağdaştırıcısı adı
     $description: >-
       The GPU adapter to use for GPU usage, VRAM, and temperature metrics. Leave
       empty to auto-detect (uses the adapter with the most dedicated VRAM).
@@ -284,46 +320,56 @@ styles, such as the font color and size.
 
       wmic path win32_videocontroller get Name
   $name: System performance metrics
+  $name:tr-TR: Sistem performans ölçümleri
 - MediaPlayer:
   - IgnoredPlayers: [""]
     $name: Ignored media players
+    $name:tr-TR: Yoksayılan medya oynatıcılar
     $description: >-
       List of media player names to ignore (case-insensitive, partial match).
       Examples: "Spotify", "VLC". Leave empty to disable.
   - MaxLength: 28
     $name: Maximum info length
+    $name:tr-TR: Maksimum bilgi uzunluğu
     $description: >-
       The maximum number of characters for %media_info%. Longer text is
       truncated with an ellipsis. Set to 0 for no limit.
   - MediaInfoFormat: "%media_artist% - %media_title%"
     $name: Format when media is playing
+    $name:tr-TR: Medya oynatılırken biçim
     $description: >-
       The format of %media_info% while media is playing. Can contain any
       patterns, such as %media_artist%, %media_title%, %media_album%, and
       %media_status%.
   - NoMediaText: No media
     $name: Format when media is not playing
+    $name:tr-TR: Medya oynatılmıyorken biçim
     $description: >-
       The text shown for %media_info% when no media is playing. Can contain any
       patterns, such as %date% or %time%.
   - RemoveBrackets: false
     $name: Remove brackets from info
+    $name:tr-TR: Bilgilerden parantezleri kaldır
     $description: >-
       Remove text in brackets from media info. E.g., "Song (feat. Artist)"
       becomes "Song".
   $name: Media player info
+  $name:tr-TR: Medya oynatıcı bilgileri
 - WebContentWeatherLocation: ""
   $name: Weather location
+  $name:tr-TR: Hava durumu konumu
   $description: >-
     Get weather information for a specific location. Leave empty to use the
     current location. For details, refer to the documentation of wttr.in.
 - WebContentWeatherFormat: "%c \U0001F321\uFE0F%t \U0001F32C\uFE0F%w"
   $name: Weather format
+  $name:tr-TR: Hava durumu biçimi
   $description: >-
     The weather information format. For details, refer to the documentation of
     wttr.in.
 - WebContentWeatherUnits: autoDetect
   $name: Weather units
+  $name:tr-TR: Hava durumu birimi
   $description: >-
     The weather units. For details, refer to the documentation of wttr.in.
   $options:
@@ -332,19 +378,24 @@ styles, such as the font color and size.
   - metric: Metric (SI) (used by default everywhere except the US)
   - metricMsWind: Metric (SI), but show wind speed in m/s
 - WebContentsItems:
-  - - Url: https://rss.nytimes.com/services/xml/rss/nyt/World.xml
+  - - Url: ""
       $name: Web content URL
+      $name:tr-TR: Web içeriği adresi
     - BlockStart: '<item>'
       $name: Web content block start
+      $name:tr-TR: Web içeriği blok başlangıcı
       $description: The string in the webpage to start from.
     - Start: '<title>'
       $name: Web content start
+      $name:tr-TR: Web içeriği başlangıcı
       $description: The string just before the content.
     - End: '</title>'
       $name: Web content end
+      $name:tr-TR: Web içeriği bitişi
       $description: The string just after the content.
     - ContentMode: xmlHtml
       $name: Content mode
+      $name:tr-TR: İçerik modu
       $description: >-
         The plain text mode leaves the content unchanged. Tags or entities such
         as "&amp;" can be stripped/decoded with the respective modes. The XML
@@ -359,22 +410,27 @@ styles, such as the font color and size.
       - - Search: ""
         - Replace: ""
       $name: Content search/replace
+      $name:tr-TR: İçerik bul/değiştir
       $description: >-
         Regular expression-based search and replace operations applied to the
         extracted content.
     - MaxLength: 28
       $name: Web content maximum length
+      $name:tr-TR: Web içeriği maksimum uzunluğu
       $description: Longer text is truncated with an ellipsis.
   $name: Web content items
+  $name:tr-TR: Web içeriği öğeleri
   $description: >-
     Used to fetch the data displayed in place of the %web<n>% and %web<n>_full%
     patterns, where <n> is the web content item number.
 - WebContentsUpdateInterval: 10
   $name: Web content update interval
+  $name:tr-TR: Web içeriği güncelleme aralığı
   $description: >-
     The update interval, in minutes, of the weather and the web content items.
 - TimeZones: ["Eastern Standard Time"]
   $name: Time zones
+  $name:tr-TR: Saat dilimleri
   $description: >-
     The list of time zones for patterns such as %time_tz1%. For a full list of
     supported time zones, run the following PowerShell command:
@@ -382,24 +438,28 @@ styles, such as the font color and size.
     Get-TimeZone -ListAvailable
 - TimeStyle:
   - Hidden: false
-  - TextColor: ""
+  - TextColor: "#8BD9FF"
     $name: Text color
+    $name:tr-TR: Metin rengi
     $description: >-
       Can be a color name (Red, Black, ...) or an RGB/ARGB color code (like
       #00FF00, #CC00FF00, ...).
-  - TextAlignment: ""
+  - TextAlignment: "Center"
     $name: Text alignment
+    $name:tr-TR: Metin hizalama
     $options:
     - "": Default
     - Right: Right
     - Center: Center
     - Left: Left
     - Justify: Justified
-  - FontSize: 0
+  - FontSize: 11
     $name: Font size
+    $name:tr-TR: Yazı boyutu
     $description: Set to zero for the default size.
-  - FontFamily: ""
+  - FontFamily: "Consolas"
     $name: Font family
+    $name:tr-TR: Yazı tipi ailesi
     $description: >-
       For a list of fonts that are shipped with Windows 11, refer to the
       following page:
@@ -407,6 +467,7 @@ styles, such as the font color and size.
       https://learn.microsoft.com/en-us/typography/fonts/windows_11_font_list
   - FontWeight: ""
     $name: Font weight
+    $name:tr-TR: Yazı kalınlığı
     $options:
     - "": Default
     - Thin: Thin
@@ -422,6 +483,7 @@ styles, such as the font color and size.
     - ExtraBlack: Extra black
   - FontStyle: ""
     $name: Font style
+    $name:tr-TR: Yazı stili
     $options:
     - "": Default
     - Normal: Normal
@@ -429,6 +491,7 @@ styles, such as the font color and size.
     - Italic: Italic
   - FontStretch: ""
     $name: Font stretch
+    $name:tr-TR: Yazı genişliği
     $description: Only supported by some fonts.
     $options:
     - "": Default
@@ -444,33 +507,40 @@ styles, such as the font color and size.
     - UltraExpanded: Ultra expanded
   - CharacterSpacing: 0
     $name: Character spacing
+    $name:tr-TR: Harf aralığı
     $description: Can be a positive or a negative number.
   - LineHeight: 0
     $name: Line height
+    $name:tr-TR: Satır yüksekliği
     $description: >-
       The line height in pixels, useful when the line contains multiple lines of
       text (using the %newline% pattern). Set to zero for the default value.
   $name: Top line style (Windows 11 version 22H2 and newer)
+  $name:tr-TR: Üst satır stili (Windows 11)
 - DateStyle:
   - Hidden: false
-  - TextColor: ""
+  - TextColor: "#A6E3A1"
     $name: Text color
+    $name:tr-TR: Metin rengi
     $description: >-
       Can be a color name (Red, Black, ...) or an RGB/ARGB color code (like
       #00FF00, #CC00FF00, ...).
-  - TextAlignment: ""
+  - TextAlignment: "Center"
     $name: Text alignment
+    $name:tr-TR: Metin hizalama
     $options:
     - "": Default
     - Right: Right
     - Center: Center
     - Left: Left
     - Justify: Justified
-  - FontSize: 0
+  - FontSize: 11
     $name: Font size
+    $name:tr-TR: Yazı boyutu
     $description: Set to zero for the default size.
-  - FontFamily: ""
+  - FontFamily: "Consolas"
     $name: Font family
+    $name:tr-TR: Yazı tipi ailesi
     $description: >-
       For a list of fonts that are shipped with Windows 11, refer to the
       following page:
@@ -478,6 +548,7 @@ styles, such as the font color and size.
       https://learn.microsoft.com/en-us/typography/fonts/windows_11_font_list
   - FontWeight: ""
     $name: Font weight
+    $name:tr-TR: Yazı kalınlığı
     $options:
     - "": Default
     - Thin: Thin
@@ -493,6 +564,7 @@ styles, such as the font color and size.
     - ExtraBlack: Extra black
   - FontStyle: ""
     $name: Font style
+    $name:tr-TR: Yazı stili
     $options:
     - "": Default
     - Normal: Normal
@@ -500,6 +572,7 @@ styles, such as the font color and size.
     - Italic: Italic
   - FontStretch: ""
     $name: Font stretch
+    $name:tr-TR: Yazı genişliği
     $description: Only supported by some fonts.
     $options:
     - "": Default
@@ -515,15 +588,161 @@ styles, such as the font color and size.
     - UltraExpanded: Ultra expanded
   - CharacterSpacing: 0
     $name: Character spacing
+    $name:tr-TR: Harf aralığı
     $description: Can be a positive or a negative number.
   - LineHeight: 0
     $name: Line height
+    $name:tr-TR: Satır yüksekliği
     $description: >-
       The line height in pixels, useful when the line contains multiple lines of
       text (using the %newline% pattern). Set to zero for the default value.
   $name: Bottom line style (Windows 11 version 22H2 and newer)
+  $name:tr-TR: Alt satır stili (Windows 11)
+- SmartClock:
+  - LayoutMode: sidecar
+    $name: Layout mode
+    $name:tr-TR: Yerleşim modu
+    $description: Sidecar keeps the Windows clock unmodified. Replace uses customizable clock lines.
+    $description:tr-TR: Yan panel Windows saatine dokunmaz. Değiştir modu özel saat satırlarını kullanır.
+    $options:
+      - sidecar: Native clock + side panel / Orijinal saat + yan panel
+      - replace: Custom clock / Özel saat
+  - ShowPanel: false
+    $name: Show metrics panel
+    $name:tr-TR: Ölçüm panelini göster
+  - PanelPreset: wide
+    $name: Side panel density
+    $name:tr-TR: Yan panel yoğunluğu
+    $options:
+      - wide: Wide, two rows / Geniş, iki satır
+      - compact: Compact, one row / Kompakt, tek satır
+  - ShowMemory: true
+    $name: Show RAM and VRAM column
+    $name:tr-TR: RAM ve VRAM sütununu göster
+  - ShowProcessor: true
+    $name: Show CPU and GPU column
+    $name:tr-TR: CPU ve GPU sütununu göster
+  - ShowNetwork: true
+    $name: Show download and upload column
+    $name:tr-TR: İndirme ve yükleme sütununu göster
+  - MemoryColumnWidth: 64
+    $name: Memory column width (px)
+    $name:tr-TR: Bellek sütunu genişliği (piksel)
+  - ProcessorColumnWidth: 102
+    $name: CPU/GPU column width (px)
+    $name:tr-TR: CPU/GPU sütunu genişliği (piksel)
+  - NetworkColumnWidth: 96
+    $name: Network column width (px)
+    $name:tr-TR: Ağ sütunu genişliği (piksel)
+  - ColumnGap: 0
+    $name: Gap between metric columns (px)
+    $name:tr-TR: Sütunlar arasındaki boşluk (piksel)
+    $description: Blank gap in pixels between metric groups. No dot separator is drawn.
+    $description:tr-TR: Ölçüm grupları arasında boşluk (piksel). Nokta ayraç çizilmez.
+  - ClockGap: 0
+    $name: Gap before native Windows clock (px)
+    $name:tr-TR: Orijinal saat öncesi boşluk (piksel)
+  - PanelFontSize: 10
+    $name: Side panel text size
+    $name:tr-TR: Yan panel yazı boyutu
+  - AutoSizeColumns: true
+    $name: Automatically measure metric column widths
+    $name:tr-TR: Ölçüm sütunlarını otomatik boyutlandır
+    $description: Uses the selected font to reserve enough room for two rows, independently of the current metric values. Manual widths apply when disabled.
+    $description:tr-TR: Seçilen yazı tipine göre iki satır için yeterli sabit alan hesaplar. Kapatıldığında manuel genişlikler kullanılır.
+  - PanelTopColor: "#8BD9FF"
+    $name: Upper metric row color (HEX)
+    $name:tr-TR: Üst ölçüm satırı rengi (HEX)
+  - PanelBottomColor: "#A6E3A1"
+    $name: Lower metric row color (HEX)
+    $name:tr-TR: Alt ölçüm satırı rengi (HEX)
+  - PanelMissingColor: "#9399B2"
+    $name: Unavailable metric color (HEX)
+    $name:tr-TR: Okunamayan ölçüm rengi (HEX)
+  - Language: auto
+    $name: Date and weekday language
+    $name:tr-TR: Tarih ve gün dili
+    $description: System language (auto), Turkish or English.
+    $description:tr-TR: Sistem dili (auto), Türkçe veya İngilizce.
+    $options:
+      - auto: System / Sistem
+      - tr: Turkish / Türkçe
+      - en: English / İngilizce
+  - FixedWidth: 0
+    $name: Fixed clock width (Windows 11, px)
+    $name:tr-TR: Sabit saat genişliği (Windows 11, piksel)
+    $description: Used only in replace mode. Zero means natural clock width. Sidecar mode uses fixed metric columns.
+    $description:tr-TR: Yalnızca özel saat modunda kullanılır. Yan panel ayrı sabit sütunlardan oluşur.
+  - ColorMode: adaptive
+    $name: Metric color mode
+    $name:tr-TR: Ölçümlerin renk modu
+    $description: Adaptive or manual highlighting. Off disables colored metric values.
+    $description:tr-TR: Otomatik veya manuel renklendirme. off özelliği kapatır.
+    $options:
+      - adaptive: Adaptive / Otomatik
+      - manual: Manual / Manuel
+      - off: Off / Kapalı
+  - WarningColor: "#F9E2AF"
+    $name: Warning color (HEX)
+    $name:tr-TR: Uyarı rengi (HEX)
+    #! $format: colorRgb
+  - CriticalColor: "#F38BA8"
+    $name: Critical color (HEX)
+    $name:tr-TR: Kritik renk (HEX)
+    #! $format: colorRgb
+  - CpuUsageWarning: 80
+    $name: CPU usage warning (%)
+    $name:tr-TR: CPU kullanımı uyarı (%)
+  - CpuUsageCritical: 96
+    $name: CPU usage critical (%)
+    $name:tr-TR: CPU kullanımı kritik (%)
+  - CpuTempWarning: 80
+    $name: CPU temperature warning (C)
+    $name:tr-TR: CPU sıcaklığı uyarı (C)
+  - CpuTempCritical: 90
+    $name: CPU temperature critical (C)
+    $name:tr-TR: CPU sıcaklığı kritik (C)
+  - GpuUsageWarning: 80
+    $name: GPU usage warning (%)
+    $name:tr-TR: GPU kullanımı uyarı (%)
+  - GpuUsageCritical: 96
+    $name: GPU usage critical (%)
+    $name:tr-TR: GPU kullanımı kritik (%)
+  - GpuTempWarning: 75
+    $name: GPU temperature warning (C)
+    $name:tr-TR: GPU sıcaklığı uyarı (C)
+  - GpuTempCritical: 87
+    $name: GPU temperature critical (C)
+    $name:tr-TR: GPU sıcaklığı kritik (C)
+  - RamWarning: 80
+    $name: RAM usage warning (%)
+    $name:tr-TR: RAM kullanımı uyarı (%)
+  - RamCritical: 90
+    $name: RAM usage critical (%)
+    $name:tr-TR: RAM kullanımı kritik (%)
+  - VramWarning: 80
+    $name: VRAM usage warning (%)
+    $name:tr-TR: VRAM kullanımı uyarı (%)
+  - VramCritical: 90
+    $name: VRAM usage critical (%)
+    $name:tr-TR: VRAM kullanımı kritik (%)
+  - DownloadWarning: 10
+    $name: Download activity warning (MB/s)
+    $name:tr-TR: İndirme etkinliği uyarı (MB/s)
+  - DownloadCritical: 40
+    $name: Download activity high (MB/s)
+    $name:tr-TR: İndirme etkinliği yüksek (MB/s)
+  - UploadWarning: 10
+    $name: Upload activity warning (MB/s)
+    $name:tr-TR: Yükleme etkinliği uyarı (MB/s)
+  - UploadCritical: 40
+    $name: Upload activity high (MB/s)
+    $name:tr-TR: Yükleme etkinliği yüksek (MB/s)
+  $name: Smart Clock
+  $name:tr-TR: Akıllı Saat
 - oldTaskbarOnWin11: false
   $name: Customize the old taskbar on Windows 11
+  $name:tr-TR: Windows 11'de eski görev çubuğunu özelleştir
   $description: >-
     Enable this option to customize the old taskbar on Windows 11 (if using
     ExplorerPatcher or a similar tool).
@@ -567,12 +786,320 @@ using namespace std::string_view_literals;
 #include <winrt/Windows.Foundation.Collections.h>
 #include <winrt/Windows.Media.Control.h>
 #include <winrt/Windows.UI.Xaml.Controls.h>
+#include <winrt/Windows.UI.Xaml.Documents.h>
 #include <winrt/Windows.UI.Xaml.Interop.h>
 #include <winrt/Windows.UI.Xaml.Markup.h>
 #include <winrt/Windows.UI.Xaml.Media.h>
 #include <winrt/base.h>
 
 using namespace winrt::Windows::UI::Xaml;
+#include <array>
+#include <cmath>
+#include <cwctype>
+#include <cstdint>
+#include <deque>
+#include <iomanip>
+#include <limits>
+#include <memory>
+#include <sstream>
+#include <utility>
+
+// Performance-panel policy and formatting helpers.
+// Keep changes to the embedded copy synchronized with the tested headers.
+// SPDX-License-Identifier: GPL-3.0-only
+// Platform-independent panel formatting helpers; no Explorer hooks here.
+
+
+namespace smartclock {
+
+enum class Level { Unknown, Normal, Warning, Critical };
+enum class Mode { Disabled, Manual, Adaptive };
+
+struct Policy {
+    Mode mode = Mode::Adaptive;
+    double manualWarning = 80.0;
+    double manualCritical = 90.0;
+    // Optional, device-specific guardrail: must never be inferred from ACPI.
+    double safetyCritical = std::numeric_limits<double>::infinity();
+    double warningQuantile = 0.80;
+    double criticalQuantile = 0.95;
+    double hysteresis = 2.0;
+    std::size_t window = 300;
+    std::size_t warmup = 60;
+    unsigned consecutiveSamples = 3;
+};
+
+class AdaptiveStatus {
+public:
+    explicit AdaptiveStatus(Policy policy) : policy_(policy) {
+        if (policy_.window < 4) policy_.window = 4;
+        if (policy_.warmup > policy_.window) policy_.warmup = policy_.window;
+        if (policy_.consecutiveSamples == 0) policy_.consecutiveSamples = 1;
+    }
+
+    Level Sample(double value) {
+        if (!std::isfinite(value) || value < 0) {
+            candidateCount_ = 0;
+            return Level::Unknown;
+        }
+        if (policy_.mode == Mode::Disabled) return Level::Normal;
+
+        double warning = policy_.manualWarning;
+        double critical = policy_.manualCritical;
+        if (policy_.mode == Mode::Adaptive && history_.size() >= policy_.warmup) {
+            // Classify against prior samples, never the new value itself.
+            double baseline = Percentile(history_, 0.50);
+            double margin = std::max(2.0, baseline * 0.05);
+            warning = Percentile(history_, policy_.warningQuantile) + margin;
+            critical = Percentile(history_, policy_.criticalQuantile) + 2 * margin;
+            critical = std::max(critical, warning + margin);
+        }
+        critical = std::min(critical, policy_.safetyCritical);
+        warning = std::min(warning, critical);
+
+        Level target = value >= critical ? Level::Critical
+                     : value >= warning ? Level::Warning : Level::Normal;
+        if (state_ == Level::Critical && value >= critical - policy_.hysteresis)
+            target = Level::Critical;
+        else if (state_ == Level::Warning &&
+                 value >= warning - policy_.hysteresis && target == Level::Normal)
+            target = Level::Warning;
+
+        if (target == state_) {
+            candidateCount_ = 0;
+        } else if (target == candidate_) {
+            if (++candidateCount_ >= policy_.consecutiveSamples) {
+                state_ = target;
+                candidateCount_ = 0;
+            }
+        } else {
+            candidate_ = target;
+            candidateCount_ = 1;
+            if (candidateCount_ >= policy_.consecutiveSamples) {
+                state_ = target;
+                candidateCount_ = 0;
+            }
+        }
+        history_.push_back(value);
+        if (history_.size() > policy_.window) history_.pop_front();
+        return state_;
+    }
+
+    Level Current() const { return state_; }
+    std::size_t Observations() const { return history_.size(); }
+
+private:
+    static double Percentile(const std::deque<double>& values, double q) {
+        std::vector<double> sorted(values.begin(), values.end());
+        std::sort(sorted.begin(), sorted.end());
+        q = std::clamp(q, 0.0, 1.0);
+        double pos = q * (sorted.size() - 1);
+        auto lo = static_cast<std::size_t>(pos);
+        auto hi = std::min(lo + 1, sorted.size() - 1);
+        return sorted[lo] + (sorted[hi] - sorted[lo]) * (pos - lo);
+    }
+
+    Policy policy_;
+    std::deque<double> history_;
+    Level state_ = Level::Normal;
+    Level candidate_ = Level::Normal;
+    unsigned candidateCount_ = 0;
+};
+
+inline bool ValidHexColor(const std::string& color) {
+    if (color.size() != 7 || color[0] != '#') return false;
+    return std::all_of(color.begin() + 1, color.end(), [](unsigned char c) {
+        return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') ||
+               (c >= 'A' && c <= 'F');
+    });
+}
+
+struct Palette {
+    std::string normal = "#A6E3A1";
+    std::string warning = "#F9E2AF";
+    std::string critical = "#F38BA8";
+    std::string missing = "#9399B2";
+
+    bool Validate() const {
+        return ValidHexColor(normal) && ValidHexColor(warning) &&
+               ValidHexColor(critical) && ValidHexColor(missing);
+    }
+
+    const std::string& For(Level level) const {
+        switch (level) {
+        case Level::Normal: return normal;
+        case Level::Warning: return warning;
+        case Level::Critical: return critical;
+        default: return missing;
+        }
+    }
+};
+
+// Always seven character columns, intended for a monospaced font.
+// Units are MiB/s in the underlying binary calculation; UI should label correctly.
+inline std::wstring FixedNetworkMBps(double bytesPerSecond) {
+    if (!std::isfinite(bytesPerSecond) || bytesPerSecond < 0) return L" ---.--";
+    double mbps = bytesPerSecond / 1048576.0;
+    if (mbps >= 1000.0) return L">999.99";
+    std::wostringstream out;
+    out.imbue(std::locale::classic());
+    out << std::fixed << std::setprecision(2) << std::setw(7) << mbps;
+    return out.str();
+}
+
+inline std::wstring FixedPercent(double value) {
+    if (!std::isfinite(value) || value < 0) return L" ---";
+    int rounded = static_cast<int>(std::clamp(std::round(value), 0.0, 100.0));
+    std::wostringstream out;
+    out << std::setw(3) << rounded << L'%';
+    return out.str();
+}
+
+} // namespace smartclock
+
+// SPDX-License-Identifier: GPL-3.0-only
+
+namespace smartclock {
+enum class Metric : std::size_t { Cpu, CpuTemp, Gpu, GpuTemp, Ram, Vram, Down, Up, Count };
+struct MetricSpan {
+    std::size_t start;
+    std::size_t end;
+    Metric metric;
+    double value;
+};
+inline std::optional<MetricSpan> ParseNumeric(std::wstring_view text,
+                                              std::size_t from,
+                                              std::size_t limit,
+                                              Metric metric,
+                                              wchar_t suffix,
+                                              bool prefixOnly = false) {
+    while (from < limit && text[from] == L' ') ++from;
+    const auto begin = from;
+    double value = 0.0;
+    double decimal = 0.1;
+    bool inFraction = false;
+    std::size_t digits = 0;
+    for (; from < limit; ++from) {
+        wchar_t c = text[from];
+        if (c >= L'0' && c <= L'9') {
+            ++digits;
+            if (digits > 9) return std::nullopt;
+            if (inFraction) {
+                value += (c - L'0') * decimal;
+                decimal /= 10.0;
+            } else {
+                value = value * 10.0 + (c - L'0');
+            }
+        } else if ((c == L'.' || c == L',') && !inFraction) {
+            inFraction = true;
+        } else {
+            break;
+        }
+    }
+    if (!digits) return std::nullopt;
+    if (suffix && from < limit && text[from] == suffix) {
+        return MetricSpan{begin, from + 1, metric, value};
+    }
+    if (suffix && from + 1 < limit && text[from] == L' ' && text[from + 1] == suffix) {
+        return MetricSpan{begin, from + 2, metric, value};
+    }
+    if (prefixOnly && !suffix) return MetricSpan{begin, from, metric, value};
+    return std::nullopt;
+}
+inline std::vector<MetricSpan> ScanMetrics(std::wstring_view text) {
+    std::vector<MetricSpan> result;
+    constexpr struct { std::wstring_view name; Metric use; Metric temp; } names[] = {
+        {L"CPU ", Metric::Cpu, Metric::CpuTemp},
+        {L"GPU ", Metric::Gpu, Metric::GpuTemp},
+        {L"RAM ", Metric::Ram, Metric::Count},
+        {L"VRAM ", Metric::Vram, Metric::Count},
+    };
+    for (auto label : names) {
+        auto begin = text.find(label.name);
+        // RAM also occurs inside VRAM; only match at word boundaries.
+        while (begin != std::wstring_view::npos && begin > 0 &&
+               (std::iswalnum(text[begin - 1]) || text[begin - 1] == L'_')) {
+            begin = text.find(label.name, begin + 1);
+        }
+        if (begin == std::wstring_view::npos) continue;
+        auto end = text.find(L'·', begin);
+        if (end == std::wstring_view::npos) end = text.size();
+        auto percent = ParseNumeric(text, begin + label.name.size(), end,
+                                    label.use, L'%');
+        if (!percent) continue;
+        result.push_back(*percent);
+        if (label.temp != Metric::Count) {
+            auto temp = ParseNumeric(text, percent->end, end, label.temp, L'°');
+            if (temp && temp->end < end &&
+                (text[temp->end] == L'C' || text[temp->end] == L'F')) {
+                temp->end += 1;
+                // Temperature threshold settings are in Celsius only.
+                if (text[temp->end - 1] == L'C') result.push_back(*temp);
+            }
+        }
+    }
+    for (auto arrow : {std::pair{L'↓', Metric::Down}, std::pair{L'↑', Metric::Up}}) {
+        auto at = text.find(arrow.first);
+        if (at == std::wstring_view::npos) continue;
+        // The default mod preset uses number-only MB/s. If users change to
+        // dynamic units, speed highlighting becomes informational only.
+        auto speed = ParseNumeric(text, at + 1, text.size(), arrow.second,
+                                  L'\0', true);
+        if (speed) result.push_back(*speed);
+    }
+    std::sort(result.begin(), result.end(),
+              [](auto a, auto b) { return a.start < b.start; });
+    return result;
+}
+inline Level WithGuardrails(Level predicted, Metric metric, double value,
+                            double warning, double critical) {
+    // Adaptive statistical baselines must never normalize sustained high
+    // temperatures or physical memory pressure.
+    if (metric == Metric::CpuTemp || metric == Metric::GpuTemp ||
+        metric == Metric::Ram || metric == Metric::Vram) {
+        if (value >= critical) return Level::Critical;
+        if (value >= warning && predicted == Level::Normal)
+            return Level::Warning;
+    }
+    return predicted;
+}
+
+inline std::wstring ComposeSidecarMetric(std::size_t index,
+                                          std::wstring_view formatted) {
+    // Each row begins in the same XAML column, but the label and value
+    // remain separated by just one space. Never pad percentages or
+    // right-justify them inside a fixed-width column.
+    constexpr std::wstring_view labels[]{
+        L"RAM", L"VRAM", L"CPU", L"GPU", L"↓", L"↑"
+    };
+    if (index >= std::size(labels)) return std::wstring(formatted);
+
+    // Windhawk's default percentage formatter adds leading spaces.
+    // Normalize them rather than letting 0%, 99%, and 100% push the label
+    // and temperature away from each other.
+    std::wstring compact;
+    compact.reserve(formatted.size());
+    bool pendingSpace = false;
+    for (wchar_t ch : formatted) {
+        bool blank = ch == L' ' || ch == L'\t' ||
+                     ch == L'\r' || ch == L'\n' || ch == L'\u00A0';
+        if (blank) {
+            pendingSpace = !compact.empty();
+        } else {
+            if (pendingSpace) compact += L' ';
+            compact += ch;
+            pendingSpace = false;
+        }
+    }
+    if (compact.empty()) compact = L"-";
+    std::wstring result(labels[index]);
+    if (index < 4) result += L' ';
+    result += compact; // ↓/↑ touch the number, labels use one space.
+    return result;
+}
+} // namespace smartclock
+
+
 
 // For Windhawk 1.4 and earlier compatibility.
 #ifndef URL_ESCAPE_ASCII_URI_COMPONENT
@@ -657,7 +1184,39 @@ struct TextStyleSettings {
     int lineHeight;
 };
 
+
+enum class SmartClockLayout { Sidecar, Replace };
+
+struct SmartClockPanelSettings {
+    SmartClockLayout layout = SmartClockLayout::Sidecar;
+    bool visible = false;
+    bool compact = false;
+    bool memory = true;
+    bool processor = true;
+    bool network = true;
+    int memoryWidth = 64;
+    int processorWidth = 102;
+    int networkWidth = 96;
+    int columnGap = 0;
+    int clockGap = 0;
+    int fontSize = 10;
+    bool autoSizeColumns = true;
+    std::string topColor = "#8BD9FF";
+    std::string bottomColor = "#A6E3A1";
+    std::string missingColor = "#9399B2";
+};
+
+struct SmartClockAlertStyle {
+    smartclock::Mode mode = smartclock::Mode::Disabled;
+    smartclock::Palette palette;
+    std::array<int, 8> warning{80, 80, 80, 75, 80, 80, 10, 10};
+    std::array<int, 8> critical{96, 90, 96, 87, 90, 90, 40, 40};
+};
+
 struct ClockElementStyleSettings {
+    SmartClockAlertStyle alerts;
+    SmartClockPanelSettings panel;
+    int fixedWidth;
     int maxWidth;
     int textSpacing;
     TextStyleSettings timeStyle;
@@ -688,6 +1247,7 @@ struct {
     int webContentsUpdateInterval;
     std::vector<StringSetting> timeZones;
     bool oldTaskbarOnWin11;
+    SmartClockPanelSettings smartPanel;
 
     // Kept for compatibility with old settings:
     StringSetting webContentsUrl;
@@ -834,15 +1394,21 @@ std::optional<std::wstring> g_webContentWeather;
 WCHAR g_webContent[FORMATTED_BUFFER_SIZE];
 WCHAR g_webContentFull[FORMATTED_BUFFER_SIZE];
 
+struct SmartClockSidecar;
 struct ClockElementStyleData {
     winrt::weak_ref<FrameworkElement> dateTimeIconContentElement;
     DWORD styleIndex;
     std::optional<int64_t> dateVisibilityPropertyChangedToken;
     std::optional<int64_t> timeVisibilityPropertyChangedToken;
+    std::optional<int64_t> dateTextChangedToken;
+    std::optional<int64_t> timeTextChangedToken;
+    winrt::weak_ref<Controls::TextBlock> dateTextBlock;
+    winrt::weak_ref<Controls::TextBlock> timeTextBlock;
+    std::shared_ptr<struct SmartClockSidecar> sidecar;
 };
 
 // Guards the clock element style settings, their enabled flag and index, and
-// g_clockElementStyleData. The style settings are kept out of g_settings so
+// g_clockElementStyleData-> The style settings are kept out of g_settings so
 // that the XAML thread applying them never waits for g_formatLineMutex, which
 // formatting holds across slow work. When both are taken, g_formatLineMutex
 // comes first.
@@ -850,7 +1416,84 @@ std::mutex g_clockElementStyleMutex;
 bool g_clockElementStyleEnabled;
 DWORD g_clockElementStyleIndex;
 ClockElementStyleSettings g_clockElementStyleSettings;
-std::vector<ClockElementStyleData> g_clockElementStyleData;
+// XAML objects in this container must only be released on their XAML thread.
+// If Explorer shuts down before cleanup, deliberately leak the container
+// rather than invoke XAML destructors on the process-exit thread.
+[[clang::no_destroy]] std::optional<std::vector<ClockElementStyleData>>
+    g_clockElementStyleData{std::in_place};
+
+
+// Adapted from Windhawk Taskbar Clock Spacer (GPL-3.0): dispatch cleanup to
+// the taskbar XAML thread rather than destroying UI objects on the engine thread.
+HWND FindSmartClockTaskbarWindow() {
+    HWND result = nullptr;
+    EnumWindows(
+        [](HWND window, LPARAM parameter) -> BOOL {
+            DWORD processId = 0;
+            WCHAR className[32]{};
+            if (GetWindowThreadProcessId(window, &processId) &&
+                processId == GetCurrentProcessId() &&
+                GetClassNameW(window, className, ARRAYSIZE(className)) &&
+                _wcsicmp(className, L"Shell_TrayWnd") == 0) {
+                *reinterpret_cast<HWND*>(parameter) = window;
+                return FALSE;
+            }
+            return TRUE;
+        },
+        reinterpret_cast<LPARAM>(&result));
+    return result;
+}
+
+using SmartClockUiProc = void (*)(void*);
+struct SmartClockUiDispatch {
+    SmartClockUiProc function;
+    void* context;
+    bool executed = false;
+    bool succeeded = false;
+};
+std::atomic<UINT> g_smartClockUiDispatchMessage{0};
+
+bool RunSmartClockOnUiThread(HWND window, SmartClockUiProc func, void* context) {
+    const UINT message = RegisterWindowMessageW(
+        L"Windhawk_SmartClock_UiCleanup_" WH_MOD_ID);
+    if (!message) return false;
+    const DWORD uiThreadId = GetWindowThreadProcessId(window, nullptr);
+    if (!uiThreadId) return false;
+    if (uiThreadId == GetCurrentThreadId()) {
+        try { func(context); return true; }
+        catch (...) { Wh_Log(L"SmartClock: UI cleanup callback failed"); return false; }
+    }
+    g_smartClockUiDispatchMessage.store(message, std::memory_order_release);
+    HHOOK hook = SetWindowsHookExW(
+        WH_CALLWNDPROC,
+        [](int code, WPARAM wParam, LPARAM lParam) -> LRESULT {
+            if (code == HC_ACTION) {
+                auto* call = reinterpret_cast<const CWPSTRUCT*>(lParam);
+                const UINT expected =
+                    g_smartClockUiDispatchMessage.load(std::memory_order_acquire);
+                if (expected && call->message == expected) {
+                    auto* dispatch =
+                        reinterpret_cast<SmartClockUiDispatch*>(call->lParam);
+                    if (dispatch && !dispatch->executed) {
+                        dispatch->executed = true;
+                        try {
+                            dispatch->function(dispatch->context);
+                            dispatch->succeeded = true;
+                        } catch (...) {
+                            Wh_Log(L"SmartClock: UI cleanup callback failed");
+                        }
+                    }
+                }
+            }
+            return CallNextHookEx(nullptr, code, wParam, lParam);
+        },
+        nullptr, uiThreadId);
+    if (!hook) return false;
+    SmartClockUiDispatch dispatch{func, context};
+    SendMessageW(window, message, 0, reinterpret_cast<LPARAM>(&dispatch));
+    UnhookWindowsHookEx(hook);
+    return dispatch.succeeded;
+}
 
 using GetDpiForWindow_t = UINT(WINAPI*)(HWND hwnd);
 GetDpiForWindow_t pGetDpiForWindow;
@@ -3304,6 +3947,20 @@ void DataCollectionSessionInit() {
         IsStrInDateTimePatternSettings(L"%battery_time%") ||
         IsStrInDateTimePatternSettings(L"%power%");
 
+    if (g_settings.smartPanel.layout == SmartClockLayout::Sidecar &&
+        g_settings.smartPanel.visible) {
+        metrics[static_cast<int>(MetricType::kVramUsed)] |= g_settings.smartPanel.memory;
+        metrics[static_cast<int>(MetricType::kCpu)] |= g_settings.smartPanel.processor;
+        metrics[static_cast<int>(MetricType::kGpuUsage)] |= g_settings.smartPanel.processor;
+        metrics[static_cast<int>(MetricType::kCpuTemp)] |= g_settings.smartPanel.processor;
+        metrics[static_cast<int>(MetricType::kDownloadSpeed)] |= g_settings.smartPanel.network;
+        metrics[static_cast<int>(MetricType::kUploadSpeed)] |= g_settings.smartPanel.network;
+        sessionNeeded = std::any_of(std::begin(metrics), std::end(metrics),
+                                    [](bool enabled) { return enabled; });
+        g_dataCollectionPatternUsed |= g_settings.smartPanel.memory ||
+                                       g_settings.smartPanel.processor ||
+                                       g_settings.smartPanel.network;
+    }
     if (!sessionNeeded) {
         return;
     }
@@ -4609,6 +5266,60 @@ using ThreadPoolTimer_CreateTimer_lambda_t = LPVOID(WINAPI*)(DWORD_PTR** param1,
 ThreadPoolTimer_CreateTimer_lambda_t
     ThreadPoolTimer_CreateTimer_lambda_Original;
 
+
+// Published from the clock's existing worker refresh. The XAML DispatcherTimer
+// never acquires g_formatLineMutex or invokes PDH/DXGI/D3DKMT APIs.
+std::mutex g_sidecarSnapshotMutex;
+struct SmartClockSnapshot {
+    std::array<std::wstring, 6> texts;
+    uint64_t sequence = 0;
+    bool ready = false;
+};
+[[clang::no_destroy]] SmartClockSnapshot g_sidecarSnapshot;
+
+void PublishSmartClockSnapshotNoLock() {
+    if (g_settings.smartPanel.layout != SmartClockLayout::Sidecar ||
+        !g_settings.smartPanel.visible) return;
+
+    constexpr std::wstring_view formats[] = {
+        L"%ram%", L"%vram%", L"%cpu% %cpu_temp%",
+        L"%gpu% %gpu_temp%", L"%download_speed% MB/s",
+        L"%upload_speed% MB/s"
+    };
+    std::array<std::wstring, 6> sample{};
+    // A clock refresh hook can spoof GetLocalTime to adjust its timer.
+    // Use the original call while sampling so the snapshot always has
+    // the actual wall-clock time.
+    if (GetLocalTime_Original) {
+        GetLocalTime_Original(&g_formatTime);
+    } else {
+        GetLocalTime(&g_formatTime);
+    }
+    ++g_formatIndex;
+
+    // The sidecar ALWAYS displays MB/s numeric values. Ignore the inherited
+    // clock's user-configurable network units to avoid incorrect MB/s suffixes.
+    const auto previousNetworkFormat = g_settings.dataCollection.networkMetricsFormat;
+    g_settings.dataCollection.networkMetricsFormat =
+        NetworkMetricsFormat::mbsNumberOnly;
+    try {
+        for (size_t i = 0; i < sample.size(); ++i) {
+            WCHAR value[128]{};
+            FormatLineNoLock(value, ARRAYSIZE(value), formats[i]);
+            sample[i] = smartclock::ComposeSidecarMetric(i, value);
+        }
+    } catch (...) {
+        g_settings.dataCollection.networkMetricsFormat = previousNetworkFormat;
+        throw;
+    }
+    g_settings.dataCollection.networkMetricsFormat = previousNetworkFormat;
+
+    std::lock_guard<std::mutex> guard(g_sidecarSnapshotMutex);
+    g_sidecarSnapshot.texts = std::move(sample);
+    ++g_sidecarSnapshot.sequence;
+    g_sidecarSnapshot.ready = true;
+}
+
 void ClockSystemTrayIconDataModel_RefreshIcon_Hook_Impl(
     LPVOID pThis,
     LPVOID param1,
@@ -4634,6 +5345,15 @@ void ClockSystemTrayIconDataModel_RefreshIcon_Hook_Impl(
     g_inRefreshIcon = true;
 
     original(pThis, param1);
+
+    // The original clock refresh runs on a worker; do potentially expensive
+    // PDH sampling here, not in the XAML panel timer.
+    try {
+        std::lock_guard<std::mutex> guard(g_formatLineMutex);
+        PublishSmartClockSnapshotNoLock();
+    } catch (...) {
+        Wh_Log(L"SmartClock: metric snapshot failed %08X", winrt::to_hresult());
+    }
 
     g_inRefreshIcon = false;
     g_refreshIconNeedToAdjustTimer = false;
@@ -4834,8 +5554,15 @@ FrameworkElement FindChildByName(FrameworkElement element,
 }
 
 void ApplyStackPanelStyles(Controls::StackPanel stackPanel,
+                           int fixedWidth,
                            int maxWidth,
                            int textSpacing) {
+    if (fixedWidth > 0) {
+        stackPanel.Width(fixedWidth);
+    } else {
+        stackPanel.as<DependencyObject>().ClearValue(
+            FrameworkElement::WidthProperty());
+    }
     if (maxWidth) {
         stackPanel.MaxWidth(maxWidth);
     } else {
@@ -4991,27 +5718,443 @@ void ApplyTextBlockStyles(
     }
 }
 
+
+// Clock UI render code only executes on the owning XAML thread.
+struct SmartClockRenderState {
+    SmartClockAlertStyle style;
+    std::vector<smartclock::AdaptiveStatus> states;
+
+    explicit SmartClockRenderState(const SmartClockAlertStyle& settings)
+        : style(settings) {
+        states.reserve(static_cast<size_t>(smartclock::Metric::Count));
+        for (size_t i = 0; i < static_cast<size_t>(smartclock::Metric::Count); ++i) {
+            smartclock::Policy policy;
+            policy.mode = settings.mode;
+            policy.manualWarning = settings.warning[i];
+            policy.manualCritical = settings.critical[i];
+            policy.hysteresis = i == static_cast<size_t>(smartclock::Metric::Down) ||
+                                i == static_cast<size_t>(smartclock::Metric::Up) ? 0.5 : 2.0;
+            policy.window = 300;
+            policy.warmup = 30;
+            policy.consecutiveSamples = 2;
+            states.emplace_back(policy);
+        }
+    }
+};
+
+std::optional<winrt::Windows::UI::Color> SmartHexToColor(std::string_view hex) {
+    if (hex.size() != 7 || hex[0] != '#') return std::nullopt;
+    auto byte = [&](size_t start) -> std::optional<uint8_t> {
+        auto decode = [](char c) -> int {
+            if (c >= '0' && c <= '9') return c - '0';
+            if (c >= 'a' && c <= 'f') return c - 'a' + 10;
+            if (c >= 'A' && c <= 'F') return c - 'A' + 10;
+            return -1;
+        };
+        int hi = decode(hex[start]);
+        int lo = decode(hex[start + 1]);
+        if (hi < 0 || lo < 0) return std::nullopt;
+        return static_cast<uint8_t>((hi << 4) | lo);
+    };
+    auto r = byte(1), g = byte(3), b = byte(5);
+    if (!r || !g || !b) return std::nullopt;
+    return winrt::Windows::UI::Color{255, *r, *g, *b};
+}
+
+void SmartColorizeText(Controls::TextBlock block, SmartClockRenderState& state) {
+    static thread_local bool inRendering = false;
+    if (inRendering || !block) return;
+    std::wstring text(block.Text().c_str());
+    if (text.empty() || text.size() > 255) return;
+    auto segments = smartclock::ScanMetrics(text);
+    if (segments.empty()) return;
+    const auto warningColor = SmartHexToColor(state.style.palette.warning);
+    const auto criticalColor = SmartHexToColor(state.style.palette.critical);
+    if (!warningColor || !criticalColor) return;
+
+    struct ColoredSegment {
+        size_t start;
+        size_t end;
+        smartclock::Level level;
+    };
+    std::vector<ColoredSegment> spans;
+    for (const auto& segment : segments) {
+        const size_t index = static_cast<size_t>(segment.metric);
+        if (index >= state.states.size()) continue;
+        auto level = state.states[index].Sample(segment.value);
+        level = smartclock::WithGuardrails(level, segment.metric, segment.value,
+                                          state.style.warning[index],
+                                          state.style.critical[index]);
+        spans.push_back({segment.start, segment.end, level});
+    }
+    if (spans.empty()) return;
+
+    // The original clock binds Text on every update. Rebuild Runs from that
+    // value and color only highlighted numbers, not the entire line.
+    inRendering = true;
+    try {
+        auto inlines = block.Inlines();
+        inlines.Clear();
+        size_t cursor = 0;
+        auto addRun = [&](std::wstring_view part, smartclock::Level level) {
+            if (part.empty()) return;
+            winrt::Windows::UI::Xaml::Documents::Run run;
+            run.Text(winrt::hstring(part));
+            if (level == smartclock::Level::Warning) {
+                run.Foreground(Media::SolidColorBrush{*warningColor});
+            } else if (level == smartclock::Level::Critical) {
+                run.Foreground(Media::SolidColorBrush{*criticalColor});
+            }
+            inlines.Append(run);
+        };
+        for (auto span : spans) {
+            if (span.start < cursor || span.end > text.size()) continue;
+            addRun(std::wstring_view(text).substr(cursor, span.start - cursor),
+                   smartclock::Level::Normal);
+            addRun(std::wstring_view(text).substr(span.start, span.end - span.start),
+                   span.level);
+            cursor = span.end;
+        }
+        addRun(std::wstring_view(text).substr(cursor), smartclock::Level::Normal);
+    } catch (...) {
+        Wh_Log(L"SmartClock text render failure %08X", winrt::to_hresult());
+        // The original binding will replace the text on its next refresh.
+    }
+    inRendering = false;
+}
+
+void RegisterSmartClockColors(
+    Controls::TextBlock block,
+    const SmartClockAlertStyle& style,
+    std::optional<int64_t>* callbackToken) {
+    if (*callbackToken) {
+        block.UnregisterPropertyChangedCallback(
+            Controls::TextBlock::TextProperty(), callbackToken->value());
+        callbackToken->reset();
+    }
+    if (style.mode == smartclock::Mode::Disabled) return;
+    auto state = std::make_shared<SmartClockRenderState>(style);
+    *callbackToken = block.RegisterPropertyChangedCallback(
+        Controls::TextBlock::TextProperty(),
+        [state](DependencyObject sender, DependencyProperty) {
+            auto block = sender.try_as<Controls::TextBlock>();
+            if (block) SmartColorizeText(block, *state);
+        });
+    SmartColorizeText(block, *state);
+}
+
+
+// Sidecar owns only the additional metrics UI; the native clock StackPanel is
+// reparented unchanged, then restored on disable/settings changes.
+struct SmartClockSidecar {
+    Controls::Grid root{nullptr};
+    Controls::StackPanel host{nullptr};
+    Controls::StackPanel nativeClock{nullptr};
+    std::array<Controls::TextBlock, 6> cells{
+        nullptr, nullptr, nullptr, nullptr, nullptr, nullptr};
+    DispatcherTimer timer{nullptr};
+    winrt::event_token tickToken{};
+    bool tickSubscribed = false;
+    std::shared_ptr<SmartClockRenderState> colors;
+    SmartClockPanelSettings settings;
+    uint64_t renderedSequence = 0;
+};
+
+
+void RefreshSmartClockSidecar(const std::shared_ptr<SmartClockSidecar>& panel) {
+    if (!panel) return;
+    std::array<std::wstring, 6> texts{};
+    {
+        std::lock_guard<std::mutex> guard(g_sidecarSnapshotMutex);
+        if (!g_sidecarSnapshot.ready ||
+            g_sidecarSnapshot.sequence == panel->renderedSequence)
+            return;
+        texts = g_sidecarSnapshot.texts;
+        panel->renderedSequence = g_sidecarSnapshot.sequence;
+    }
+    for (size_t i = 0; i < panel->cells.size(); ++i) {
+        if (!panel->cells[i]) continue;
+        auto& cell = panel->cells[i];
+        cell.Text(winrt::hstring(texts[i]));
+        const auto& preferredColor =
+            texts[i].find(L"-") != std::wstring::npos
+                ? panel->settings.missingColor
+                : ((i % 2) == 0 ? panel->settings.topColor
+                                : panel->settings.bottomColor);
+        if (auto color = SmartHexToColor(preferredColor)) {
+            cell.Foreground(Media::SolidColorBrush{*color});
+        }
+        if (panel->colors) SmartColorizeText(cell, *panel->colors);
+    }
+}
+
+void RemoveSmartClockSidecar(const std::shared_ptr<SmartClockSidecar>& state);
+
+std::shared_ptr<SmartClockSidecar> CreateSmartClockSidecar(
+    Controls::Grid root,
+    Controls::StackPanel nativeClock,
+    const ClockElementStyleSettings& style) {
+    // Limit mutations to the exact template structure known from Windows 11.
+    // Unknown future templates retain the original native clock unchanged.
+    if (root.Children().Size() == 0 ||
+        root.Children().GetAt(0).try_as<Controls::StackPanel>() != nativeClock) {
+        Wh_Log(L"SmartClock: template changed, sidecar not installed");
+        return nullptr;
+    }
+    const auto& opts = style.panel;
+    if (!opts.visible || (!opts.memory && !opts.processor && !opts.network))
+        return nullptr;
+
+    auto result = std::make_shared<SmartClockSidecar>();
+    result->settings = opts;
+    auto panel = Controls::StackPanel{};
+    panel.Orientation(Controls::Orientation::Horizontal);
+    panel.Spacing(opts.columnGap); // Direct, explicit space between groups.
+    panel.VerticalAlignment(VerticalAlignment::Center);
+
+
+    // Measure fixed reference samples once on the XAML UI thread, never on
+    // metric refresh. The result is stable as CPU or network values change.
+    // TextBlocks use Consolas, matching the actual metric rows.
+    auto measureColumnWidth = [&](size_t first) -> double {
+        constexpr std::wstring_view samples[] = {
+            L"RAM 100%", L"VRAM 100%",
+            L"CPU 100% 100°C", L"GPU 100% 100°C",
+            // Reserve through 999,99 MB/s without over-allocating a
+            // spare network digit. Extremely fast links can use manual widths.
+            L"↓999,99 MB/s", L"↑999,99 MB/s"
+        };
+        double width = 0.0;
+        for (size_t i = first; i < first + 2; ++i) {
+            Controls::TextBlock sample{};
+            sample.Text(winrt::hstring(samples[i]));
+            sample.FontFamily(Media::FontFamily{L"Consolas"});
+            sample.FontSize(opts.fontSize);
+            sample.TextWrapping(TextWrapping::NoWrap);
+            // A large finite constraint avoids infinity-related XAML issues.
+            sample.Measure(winrt::Windows::Foundation::Size{10000.0f, 10000.0f});
+            width = std::max(width, static_cast<double>(sample.DesiredSize().Width));
+        }
+        return std::clamp(std::ceil(width + 1.0), 45.0, 260.0);
+    };
+
+    auto createColumn = [&](size_t first, double width) {
+        if (opts.autoSizeColumns) width = measureColumnWidth(first);
+        // One TextBlock per row. Labels are part of the same string as the
+        // metric value: "RAM  81%", "CPU 80% 90°C", "↓0,00 MB/s".
+        Controls::Grid column{};
+        column.Width(width);
+        column.VerticalAlignment(VerticalAlignment::Center);
+        for (size_t row = 0; row < (opts.compact ? 1u : 2u); ++row) {
+            const size_t index = first + row;
+            Controls::RowDefinition definition{};
+            definition.Height(GridLength{1, GridUnitType::Auto});
+            column.RowDefinitions().Append(definition);
+
+            Controls::TextBlock line{};
+            line.FontFamily(Media::FontFamily{L"Consolas"});
+            line.FontSize(opts.fontSize);
+            line.TextAlignment(TextAlignment::Left);
+            line.TextTrimming(TextTrimming::CharacterEllipsis);
+            line.TextWrapping(TextWrapping::NoWrap);
+            line.VerticalAlignment(VerticalAlignment::Center);
+            const auto preferred = SmartHexToColor(
+                row == 0 ? opts.topColor : opts.bottomColor);
+            if (preferred) {
+                line.Foreground(Media::SolidColorBrush{*preferred});
+            }
+            Controls::Grid::SetColumn(line, 0);
+            Controls::Grid::SetRow(line, static_cast<int32_t>(row));
+            column.Children().Append(line);
+            result->cells[index] = line;
+        }
+        panel.Children().Append(column);
+    };
+
+    // No standalone dot: the two rows remain a clean aligned text grid.
+    if (opts.memory) createColumn(0, opts.memoryWidth);
+    if (opts.processor) createColumn(2, opts.processorWidth);
+    if (opts.network) createColumn(4, opts.networkWidth);
+
+    auto host = Controls::StackPanel{};
+    host.Orientation(Controls::Orientation::Horizontal);
+    host.Spacing(opts.clockGap);
+    host.VerticalAlignment(VerticalAlignment::Center);
+    host.HorizontalAlignment(HorizontalAlignment::Right);
+
+    // Do not modify the native text, bindings, or formatting. Only reparent it.
+    root.Children().RemoveAt(0);
+    try {
+        host.Children().Append(panel);
+        host.Children().Append(nativeClock);
+        root.Children().InsertAt(0, host);
+    } catch (...) {
+        // Restore the unmodified clock even if the root has other siblings.
+        uint32_t index = 0;
+        if (root.Children().IndexOf(host, index)) {
+            root.Children().RemoveAt(index);
+        }
+        if (host.Children().IndexOf(nativeClock, index)) {
+            host.Children().RemoveAt(index);
+        }
+        root.Children().InsertAt(0, nativeClock);
+        throw;
+    }
+
+    result->root = root;
+    result->nativeClock = nativeClock;
+    result->host = host;
+    if (style.alerts.mode != smartclock::Mode::Disabled)
+        result->colors = std::make_shared<SmartClockRenderState>(style.alerts);
+
+    try {
+        result->timer = DispatcherTimer{};
+        result->timer.Interval(std::chrono::seconds(1));
+        std::weak_ptr<SmartClockSidecar> weak = result;
+        result->tickToken = result->timer.Tick(
+            [weak](auto const&, auto const&) {
+                if (auto state = weak.lock()) {
+                    try { RefreshSmartClockSidecar(state); }
+                    catch (...) {
+                        Wh_Log(L"SmartClock: update failed %08X", winrt::to_hresult());
+                    }
+                }
+            });
+        result->tickSubscribed = true;
+        // Do not sample metrics here: caller holds g_clockElementStyleMutex.
+        // The timer fires after the callback returns to the XAML dispatcher.
+        result->timer.Start();
+        return result;
+    } catch (...) {
+        RemoveSmartClockSidecar(result);
+        throw;
+    }
+}
+
+void RemoveSmartClockSidecar(const std::shared_ptr<SmartClockSidecar>& state) {
+    if (!state) return;
+    if (state->timer) {
+        state->timer.Stop();
+        if (state->tickSubscribed) {
+            state->timer.Tick(state->tickToken);
+            state->tickSubscribed = false;
+        }
+        state->timer = nullptr;
+    }
+    if (!state->root || !state->host || !state->nativeClock) return;
+    auto rootChildren = state->root.Children();
+    uint32_t position = 0;
+    if (!rootChildren.IndexOf(state->host, position)) return;
+
+    rootChildren.RemoveAt(position);
+    auto hostChildren = state->host.Children();
+    uint32_t clockIndex = 0;
+    if (hostChildren.IndexOf(state->nativeClock, clockIndex)) {
+        hostChildren.RemoveAt(clockIndex);
+        rootChildren.InsertAt(position, state->nativeClock);
+    }
+}
+
+
+// Always unregister callbacks from the same TextBlock on which they were
+// registered. Re-templating creates new blocks with different identities.
+void UnregisterSmartClockCallbacks(ClockElementStyleData& data) {
+    auto unregister = [&](winrt::weak_ref<Controls::TextBlock>& reference,
+                          std::optional<int64_t>& textToken,
+                          std::optional<int64_t>& visibilityToken) {
+        auto textBlock = reference.get();
+        if (textBlock) {
+            if (textToken) {
+                textBlock.UnregisterPropertyChangedCallback(
+                    Controls::TextBlock::TextProperty(), *textToken);
+            }
+            if (visibilityToken) {
+                textBlock.UnregisterPropertyChangedCallback(
+                    UIElement::VisibilityProperty(), *visibilityToken);
+            }
+        }
+        textToken.reset();
+        visibilityToken.reset();
+        reference = {};
+    };
+    unregister(data.dateTextBlock, data.dateTextChangedToken,
+               data.dateVisibilityPropertyChangedToken);
+    unregister(data.timeTextBlock, data.timeTextChangedToken,
+               data.timeVisibilityPropertyChangedToken);
+}
+
+bool ClearSmartClockXamlState() {
+    std::lock_guard<std::mutex> guard(g_clockElementStyleMutex);
+    if (!g_clockElementStyleData) return true;
+
+    bool success = true;
+    for (auto& data : *g_clockElementStyleData) {
+        try {
+            // Restore the original time/date block styles and panel layout
+            // while their XAML objects still exist, before clearing weak refs.
+            auto dateBlock = data.dateTextBlock.get();
+            auto timeBlock = data.timeTextBlock.get();
+            UnregisterSmartClockCallbacks(data);
+            RemoveSmartClockSidecar(data.sidecar);
+            data.sidecar.reset();
+            if (dateBlock) {
+                std::optional<int64_t> token;
+                ApplyTextBlockStyles(dateBlock, nullptr, false, &token);
+            }
+            if (timeBlock) {
+                std::optional<int64_t> token;
+                ApplyTextBlockStyles(timeBlock, nullptr, false, &token);
+            }
+            if (auto rootElement = data.dateTimeIconContentElement.get()) {
+                auto grid = FindChildByName(rootElement, L"ContainerGrid")
+                                .try_as<Controls::Grid>();
+                if (grid && grid.Children().Size()) {
+                    auto clock = grid.Children().GetAt(0).try_as<Controls::StackPanel>();
+                    if (clock) ApplyStackPanelStyles(clock, 0, 0, 0);
+                }
+            }
+        } catch (...) {
+            success = false;
+            Wh_Log(L"SmartClock: XAML state cleanup failure %08X",
+                   winrt::to_hresult());
+        }
+    }
+    if (success) {
+        // Must execute on XAML owner thread; optional is no_destroy.
+        g_clockElementStyleData.reset();
+    }
+    return success;
+}
+
 void ApplyDateTimeIconContentStyles(
     FrameworkElement dateTimeIconContentElement) {
     std::lock_guard<std::mutex> guard(g_clockElementStyleMutex);
 
+    if (!g_clockElementStyleData) return;
     ClockElementStyleData* clockElementStyleData = nullptr;
 
-    for (auto it = g_clockElementStyleData.begin();
-         it != g_clockElementStyleData.end();) {
-        auto& data = *it;
-        auto element = data.dateTimeIconContentElement.get();
-        if (!element) {
-            it = g_clockElementStyleData.erase(it);
-            continue;
+    // Prune ALL stale clocks, not just entries preceding the first match.
+    for (auto it = g_clockElementStyleData->begin();
+         it != g_clockElementStyleData->end();) {
+        if (!it->dateTimeIconContentElement.get()) {
+            try {
+                UnregisterSmartClockCallbacks(*it);
+                RemoveSmartClockSidecar(it->sidecar);
+                it->sidecar.reset();
+            } catch (...) {
+                Wh_Log(L"SmartClock: stale clock cleanup failed %08X",
+                       winrt::to_hresult());
+            }
+            it = g_clockElementStyleData->erase(it);
+        } else {
+            ++it;
         }
-
-        if (element == dateTimeIconContentElement) {
+    }
+    for (auto& data : *g_clockElementStyleData) {
+        if (data.dateTimeIconContentElement.get() == dateTimeIconContentElement) {
             clockElementStyleData = &data;
             break;
         }
-
-        ++it;
     }
 
     bool clockElementStyleEnabled = g_clockElementStyleEnabled;
@@ -5021,20 +6164,29 @@ void ApplyDateTimeIconContentStyles(
         return;
     }
 
-    if (clockElementStyleData &&
-        clockElementStyleData->styleIndex == clockElementStyleIndex) {
-        return;
-    }
-
     auto containerGridElement =
         FindChildByName(dateTimeIconContentElement, L"ContainerGrid")
-            .as<Controls::Grid>();
+            .try_as<Controls::Grid>();
+    if (clockElementStyleData &&
+        clockElementStyleData->styleIndex == clockElementStyleIndex &&
+        (!clockElementStyleData->sidecar ||
+         clockElementStyleData->sidecar->root == containerGridElement)) {
+        return;
+    }
     if (!containerGridElement) {
         return;
     }
 
-    auto stackPanel =
-        containerGridElement.Children().GetAt(0).as<Controls::StackPanel>();
+    if (clockElementStyleData) {
+        UnregisterSmartClockCallbacks(*clockElementStyleData);
+        if (clockElementStyleData->sidecar) {
+            RemoveSmartClockSidecar(clockElementStyleData->sidecar);
+            clockElementStyleData->sidecar.reset();
+        }
+    }
+    if (containerGridElement.Children().Size() == 0) return;
+    auto stackPanel = containerGridElement.Children().GetAt(0).try_as<Controls::StackPanel>();
+    if (!stackPanel) return;
 
     Controls::TextBlock dateInnerTextBlock = nullptr;
     Controls::TextBlock timeInnerTextBlock = nullptr;
@@ -5061,27 +6213,43 @@ void ApplyDateTimeIconContentStyles(
     }
 
     if (!clockElementStyleData) {
-        g_clockElementStyleData.push_back(ClockElementStyleData{
+        g_clockElementStyleData->push_back(ClockElementStyleData{
             .dateTimeIconContentElement = dateTimeIconContentElement,
         });
-        clockElementStyleData = &g_clockElementStyleData.back();
+        clockElementStyleData = &g_clockElementStyleData->back();
     }
 
     const ClockElementStyleSettings* styleSettings =
         clockElementStyleEnabled ? &g_clockElementStyleSettings : nullptr;
 
-    int maxWidth = styleSettings ? styleSettings->maxWidth : 0;
-    int textSpacing = styleSettings ? styleSettings->textSpacing : 0;
-    bool noWrap = maxWidth;
+    bool preserveNative = styleSettings &&
+        styleSettings->panel.layout == SmartClockLayout::Sidecar;
+    int fixedWidth = styleSettings && !preserveNative ? styleSettings->fixedWidth : 0;
+    int maxWidth = styleSettings && !preserveNative ? styleSettings->maxWidth : 0;
+    int textSpacing = styleSettings && !preserveNative ? styleSettings->textSpacing : 0;
+    bool noWrap = fixedWidth || maxWidth;
 
-    ApplyStackPanelStyles(stackPanel, maxWidth, textSpacing);
+    ApplyStackPanelStyles(stackPanel, fixedWidth, maxWidth, textSpacing);
+    // Keep only weak references to the precise blocks we are modifying.
+    clockElementStyleData->dateTextBlock = dateInnerTextBlock;
+    clockElementStyleData->timeTextBlock = timeInnerTextBlock;
     ApplyTextBlockStyles(
-        dateInnerTextBlock, styleSettings ? &styleSettings->dateStyle : nullptr,
+        dateInnerTextBlock, styleSettings && !preserveNative ? &styleSettings->dateStyle : nullptr,
         noWrap, &clockElementStyleData->dateVisibilityPropertyChangedToken);
     ApplyTextBlockStyles(
-        timeInnerTextBlock, styleSettings ? &styleSettings->timeStyle : nullptr,
+        timeInnerTextBlock, styleSettings && !preserveNative ? &styleSettings->timeStyle : nullptr,
         noWrap, &clockElementStyleData->timeVisibilityPropertyChangedToken);
 
+    if (styleSettings && !preserveNative) {
+        RegisterSmartClockColors(timeInnerTextBlock, styleSettings->alerts,
+                                 &clockElementStyleData->timeTextChangedToken);
+        RegisterSmartClockColors(dateInnerTextBlock, styleSettings->alerts,
+                                 &clockElementStyleData->dateTextChangedToken);
+    }
+    if (styleSettings && preserveNative) {
+        clockElementStyleData->sidecar =
+            CreateSmartClockSidecar(containerGridElement, stackPanel, *styleSettings);
+    }
     clockElementStyleData->styleIndex = clockElementStyleIndex;
 }
 
@@ -5254,7 +6422,8 @@ int WINAPI GetTimeFormatEx_Hook_Win11(LPCWSTR lpLocaleName,
     if (g_inRefreshIcon && !g_inGetTimeToolTipString) {
         std::lock_guard<std::mutex> guard(g_formatLineMutex);
 
-        if (wcscmp(g_settings.topLine, L"-") != 0) {
+        if (g_settings.smartPanel.layout != SmartClockLayout::Sidecar &&
+            wcscmp(g_settings.topLine, L"-") != 0) {
             if (!cchTime) {
                 // Hopefully a large enough buffer size.
                 return FORMATTED_BUFFER_SIZE;
@@ -5326,7 +6495,8 @@ int WINAPI GetDateFormatEx_Hook_Win11(LPCWSTR lpLocaleName,
                 g_formatIndex++;
             }
 
-            if (wcscmp(g_settings.bottomLine, L"-") != 0) {
+            if (g_settings.smartPanel.layout != SmartClockLayout::Sidecar &&
+                wcscmp(g_settings.bottomLine, L"-") != 0) {
                 if (!cchDate) {
                     // Hopefully a large enough buffer size.
                     return FORMATTED_BUFFER_SIZE;
@@ -6011,6 +7181,15 @@ void LoadSettings() {
     }
 
     g_settings.weekdayFormat = StringSetting::make(L"WeekdayFormat");
+    // Keep a predictable locale irrespective of Windows display language when
+    // user explicitly selects Turkish or English. "auto" preserves system.
+    StringSetting languageSetting = StringSetting::make(L"SmartClock.Language");
+    if (wcscmp(languageSetting, L"tr") == 0 ||
+        wcscmp(languageSetting, L"en") == 0) {
+        const wchar_t* languageLocale =
+            wcscmp(languageSetting, L"tr") == 0 ? L"tr-TR" : L"en-US";
+        g_settings.dateLocales.assign(2, languageLocale);
+    }
 
     g_settings.weekdayFormatCustom.clear();
     if (wcscmp(g_settings.weekdayFormat, L"custom") == 0) {
@@ -6024,6 +7203,30 @@ void LoadSettings() {
         g_settings.weekdayFormatCustom.resize(7);
     }
 
+    // The default sidecar preserves native Windows time/date rendering.
+    StringSetting layout = StringSetting::make(L"SmartClock.LayoutMode");
+    g_settings.smartPanel.layout = wcscmp(layout, L"replace") == 0
+        ? SmartClockLayout::Replace : SmartClockLayout::Sidecar;
+    g_settings.smartPanel.visible = Wh_GetIntSetting(L"SmartClock.ShowPanel") != 0;
+    StringSetting preset = StringSetting::make(L"SmartClock.PanelPreset");
+    g_settings.smartPanel.compact = wcscmp(preset, L"compact") == 0;
+    g_settings.smartPanel.memory = Wh_GetIntSetting(L"SmartClock.ShowMemory") != 0;
+    g_settings.smartPanel.processor = Wh_GetIntSetting(L"SmartClock.ShowProcessor") != 0;
+    g_settings.smartPanel.network = Wh_GetIntSetting(L"SmartClock.ShowNetwork") != 0;
+    g_settings.smartPanel.memoryWidth = std::clamp(
+        Wh_GetIntSetting(L"SmartClock.MemoryColumnWidth"), 55, 260);
+    g_settings.smartPanel.processorWidth = std::clamp(
+        Wh_GetIntSetting(L"SmartClock.ProcessorColumnWidth"), 65, 260);
+    g_settings.smartPanel.networkWidth = std::clamp(
+        Wh_GetIntSetting(L"SmartClock.NetworkColumnWidth"), 65, 260);
+    g_settings.smartPanel.columnGap = std::clamp(
+        Wh_GetIntSetting(L"SmartClock.ColumnGap"), 0, 30);
+    g_settings.smartPanel.clockGap = std::clamp(
+        Wh_GetIntSetting(L"SmartClock.ClockGap"), 0, 30);
+    g_settings.smartPanel.fontSize = std::clamp(
+        Wh_GetIntSetting(L"SmartClock.PanelFontSize"), 8, 20);
+    g_settings.smartPanel.autoSizeColumns =
+        Wh_GetIntSetting(L"SmartClock.AutoSizeColumns") != 0;
     g_settings.topLine = StringSetting::make(L"TopLine");
     g_settings.bottomLine = StringSetting::make(L"BottomLine");
     g_settings.middleLine = StringSetting::make(L"MiddleLine");
@@ -6194,7 +7397,53 @@ void LoadSettings() {
     }
 
     ClockElementStyleSettings styleSettings;
+    styleSettings.panel = g_settings.smartPanel;
     styleSettings.maxWidth = Wh_GetIntSetting(L"MaxWidth");
+    styleSettings.fixedWidth = std::clamp(Wh_GetIntSetting(L"SmartClock.FixedWidth"), 0, 1200);
+
+    SmartClockAlertStyle& alerts = styleSettings.alerts;
+    StringSetting colorMode = StringSetting::make(L"SmartClock.ColorMode");
+    if (wcscmp(colorMode, L"adaptive") == 0) {
+        alerts.mode = smartclock::Mode::Adaptive;
+    } else if (wcscmp(colorMode, L"manual") == 0) {
+        alerts.mode = smartclock::Mode::Manual;
+    } else {
+        alerts.mode = smartclock::Mode::Disabled;
+    }
+    auto readHexColor = [](const wchar_t* setting, std::string& into) {
+        StringSetting raw = StringSetting::make(setting);
+        std::wstring_view value(raw.get());
+        if (value.size() != 7 || value[0] != L'#') return;
+        std::string text(value.begin(), value.end());
+        if (smartclock::ValidHexColor(text)) into = std::move(text);
+    };
+    readHexColor(L"SmartClock.WarningColor", alerts.palette.warning);
+    readHexColor(L"SmartClock.CriticalColor", alerts.palette.critical);
+    readHexColor(L"SmartClock.PanelTopColor", styleSettings.panel.topColor);
+    readHexColor(L"SmartClock.PanelBottomColor", styleSettings.panel.bottomColor);
+    readHexColor(L"SmartClock.PanelMissingColor", styleSettings.panel.missingColor);
+    constexpr PCWSTR warningKeys[] = {
+        L"SmartClock.CpuUsageWarning", L"SmartClock.CpuTempWarning",
+        L"SmartClock.GpuUsageWarning", L"SmartClock.GpuTempWarning",
+        L"SmartClock.RamWarning", L"SmartClock.VramWarning",
+        L"SmartClock.DownloadWarning",
+        L"SmartClock.UploadWarning"
+    };
+    constexpr PCWSTR criticalKeys[] = {
+        L"SmartClock.CpuUsageCritical", L"SmartClock.CpuTempCritical",
+        L"SmartClock.GpuUsageCritical", L"SmartClock.GpuTempCritical",
+        L"SmartClock.RamCritical", L"SmartClock.VramCritical",
+        L"SmartClock.DownloadCritical",
+        L"SmartClock.UploadCritical"
+    };
+    for (size_t i = 0; i < alerts.warning.size(); ++i) {
+        alerts.warning[i] = std::clamp(Wh_GetIntSetting(warningKeys[i]), 0, 10000);
+        alerts.critical[i] = std::clamp(Wh_GetIntSetting(criticalKeys[i]), 0, 10000);
+        if (alerts.critical[i] < alerts.warning[i]) {
+            alerts.critical[i] = alerts.warning[i];
+        }
+    }
+
     styleSettings.textSpacing = g_settings.textSpacing;
 
     TextStyleSettings& timeStyle = styleSettings.timeStyle;
@@ -6224,7 +7473,10 @@ void LoadSettings() {
     dateStyle.lineHeight = Wh_GetIntSetting(L"DateStyle.LineHeight");
 
     bool clockElementStyleEnabled =
-        styleSettings.maxWidth || styleSettings.textSpacing ||
+        (styleSettings.panel.layout == SmartClockLayout::Sidecar &&
+         styleSettings.panel.visible) ||
+        styleSettings.alerts.mode != smartclock::Mode::Disabled ||
+        styleSettings.fixedWidth || styleSettings.maxWidth || styleSettings.textSpacing ||
         timeStyle.hidden || *timeStyle.textColor || *timeStyle.textAlignment ||
         timeStyle.fontSize || *timeStyle.fontFamily || *timeStyle.fontWeight ||
         *timeStyle.fontStyle || *timeStyle.fontStretch ||
@@ -6570,26 +7822,9 @@ void Wh_ModBeforeUninit() {
 
     ApplySettings();
 
-    // Wait for styles to be restored.
-    for (int i = 0; i < 20; i++) {
-        bool allRestored = true;
-
-        {
-            std::lock_guard<std::mutex> guard(g_clockElementStyleMutex);
-            for (const auto& data : g_clockElementStyleData) {
-                if (data.styleIndex < styleIndex) {
-                    allRestored = false;
-                    break;
-                }
-            }
-        }
-
-        if (allRestored) {
-            break;
-        }
-
-        Sleep(100);
-    }
+    // No polling: XAML callback/timer removal must be performed synchronously
+    // on the taskbar UI thread in Wh_ModUninit, even if a clock is not loaded.
+    (void)styleIndex;
 }
 
 // Stops the background work that feeds the format tokens, and keeps it stopped
@@ -6609,6 +7844,27 @@ void StopFormattingBackgroundWork() {
 
 void Wh_ModUninit() {
     Wh_Log(L">");
+
+    if (g_winVersion >= WinVersion::Win11) {
+        // Never hold g_formatLineMutex while calling the UI dispatcher.
+        // The timer reads only the snapshot, and the XAML callback uses
+        // g_clockElementStyleMutex on the UI thread.
+        bool cleaned = false;
+        for (int attempt = 0; attempt < 5 && !cleaned; ++attempt) {
+            HWND taskbar = FindSmartClockTaskbarWindow();
+            if (!taskbar) break;
+            bool callbackCleared = false;
+            const bool dispatched = RunSmartClockOnUiThread(taskbar, [](void* context) {
+                auto* result = static_cast<bool*>(context);
+                *result = ClearSmartClockXamlState();
+            }, &callbackCleared);
+            cleaned = dispatched && callbackCleared;
+            if (!cleaned) Sleep(100);
+        }
+        if (!cleaned) {
+            Wh_Log(L"SmartClock: XAML cleanup unavailable; thread-affine state retained");
+        }
+    }
 
     StopFormattingBackgroundWork();
 
