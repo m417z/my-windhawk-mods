@@ -18975,6 +18975,42 @@ FrameworkElement FindTaskbarFrameBackground(
     return nullptr;
 }
 
+// The frame's bounds relative to `content`, moved along with the render
+// transform of the frame's root grid. A style can move the frame's content
+// that way while the frame itself stays in place. Nullopt when the root grid
+// has no render transform.
+std::optional<winrt::Windows::Foundation::Rect> TransformedTaskbarFrameRect(
+    FrameworkElement const& taskbarFrame,
+    UIElement const& content) {
+    try {
+        if (Media::VisualTreeHelper::GetChildrenCount(taskbarFrame) < 1) {
+            return std::nullopt;
+        }
+
+        auto rootGrid = Media::VisualTreeHelper::GetChild(taskbarFrame, 0)
+                            .try_as<FrameworkElement>();
+        if (!rootGrid || !rootGrid.RenderTransform()) {
+            return std::nullopt;
+        }
+
+        // The frame's bounds in the root grid's coordinates before its render
+        // transform, mapped to `content` through that transform.
+        auto offset = rootGrid.ActualOffset();
+        auto rect = rootGrid.TransformToVisual(content).TransformBounds(
+            {-offset.x, -offset.y,
+             static_cast<float>(taskbarFrame.ActualWidth()),
+             static_cast<float>(taskbarFrame.ActualHeight())});
+        if (rect.Width <= 0 || rect.Height <= 0) {
+            return std::nullopt;
+        }
+
+        return rect;
+    } catch (winrt::hresult_error const& ex) {
+        Wh_Log(L"Error %08X: %s", ex.code(), ex.message().c_str());
+        return std::nullopt;
+    }
+}
+
 // Click-through taskbar: clip the top-level taskbar window to the TaskbarFrame
 // and SystemTrayFrame rects so the empty areas become both invisible and
 // click-through. When the tray is laid out inside the frame, the part of its
@@ -19051,7 +19087,10 @@ void UpdateClickThroughRegion(ClickThroughTaskbarState& state) {
         return rect;
     };
 
-    auto taskbarFrameRect = frameRect(taskbarFrame);
+    auto taskbarFrameRect = TransformedTaskbarFrameRect(taskbarFrame, content);
+    if (!taskbarFrameRect) {
+        taskbarFrameRect = frameRect(taskbarFrame);
+    }
     if (!taskbarFrameRect) {
         // Without the taskbar frame there's nothing meaningful to keep, and an
         // empty region would hide the whole taskbar. Retry on the next pass.
