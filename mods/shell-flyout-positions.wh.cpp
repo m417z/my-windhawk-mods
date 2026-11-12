@@ -41,6 +41,14 @@ This is especially useful when using custom taskbar themes that relocate the
 system tray area, as you can reposition these flyouts to match your custom
 layout.
 
+The Action Center can also be shifted vertically. When the taskbar is set to
+auto-hide, Windows still places Quick Settings above where the taskbar would
+be. A vertical shift of 48 (the default taskbar height) moves it down to the
+bottom of the screen. With "Only while the taskbar is hidden" enabled, the shift
+is applied only while an auto-hidden taskbar is out of view. When the taskbar is
+shown, Quick Settings stays in its normal place above it, and an open Quick
+Settings panel follows the taskbar as it shows and hides.
+
 Note: The Notification Center and Action Center can be moved to the top of the
 screen with the help of the [Windows 11 Notification Center
 Styler](https://windhawk.net/mods/windows-11-notification-center-styler) mod.
@@ -79,8 +87,9 @@ shift options allow fine-tuning in both directions.
   - horizontalAlignment: same
     $name: Horizontal alignment
     $description: >-
-      If "Same as Notification Center" is selected, all settings below are
-      ignored and Notification Center settings are used
+      If "Same as Notification Center" is selected, the horizontal shift below
+      is ignored and Notification Center settings are used. The vertical
+      settings always apply
     $options:
     - same: Same as Notification Center
     - windowsDefault: Windows default
@@ -93,6 +102,17 @@ shift options allow fine-tuning in both directions.
     $description: >-
       A positive value moves the element to the right, a negative value moves it
       to the left
+  - verticalShift: 0
+    $name: Vertical shift
+    $description: >-
+      A positive value moves Quick Settings down, a negative value moves it up.
+      48 matches the default taskbar height
+  - verticalShiftOnlyWhenAutoHide: true
+    $name: Only while the taskbar is hidden
+    $description: >-
+      Apply the vertical shift only while an auto-hidden bottom taskbar is out
+      of view. When the taskbar is shown, Quick Settings stays in its normal
+      place, and an open panel follows the taskbar as it shows and hides
   $name: Action Center
 - startMenu:
   - horizontalAlignment: windowsDefault
@@ -150,8 +170,10 @@ shift options allow fine-tuning in both directions.
 #include <functional>
 #include <future>
 #include <limits>
+#include <mutex>
 #include <optional>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 using namespace winrt::Windows::UI::Xaml;
@@ -196,6 +218,8 @@ struct StartMenuSettings {
 struct {
     TrayElementSettings notificationCenter;
     TrayElementSettings actionCenter;
+    int actionCenterVerticalShift;
+    bool actionCenterVerticalShiftOnlyWhenAutoHide;
     StartMenuSettings startMenu;
 } g_settings;
 
@@ -1842,13 +1866,168 @@ std::vector<HWND> GetCoreWindows() {
     return hWnds;
 }
 
-void AdjustCoreWindowPos(int* x, int* y, int width, int height) {
+// Remembers, per window, the position Windows asked for and the position this
+// mod applied instead. Used to recover Windows' own position when only the
+// size changes or settings are re-applied, so that shifts don't accumulate.
+struct CoreWindowPosState {
+    int systemX;
+    int systemY;
+    int appliedX;
+    int appliedY;
+};
+
+std::mutex g_coreWindowPosMutex;
+std::unordered_map<HWND, CoreWindowPosState> g_coreWindowPos;
+
+void GetSystemPos(HWND hWnd, int* x, int* y) {
+    std::lock_guard<std::mutex> lock(g_coreWindowPosMutex);
+
+    auto it = g_coreWindowPos.find(hWnd);
+    if (it == g_coreWindowPos.end()) {
+        return;
+    }
+
+    if (*x == it->second.appliedX) {
+        *x = it->second.systemX;
+    }
+
+    if (*y == it->second.appliedY) {
+        *y = it->second.systemY;
+    }
+}
+
+void RememberPos(HWND hWnd,
+                 int systemX,
+                 int systemY,
+                 int appliedX,
+                 int appliedY) {
+    std::lock_guard<std::mutex> lock(g_coreWindowPosMutex);
+
+    if (g_coreWindowPos.size() > 16) {
+        for (auto it = g_coreWindowPos.begin(); it != g_coreWindowPos.end();) {
+            if (!IsWindow(it->first)) {
+                it = g_coreWindowPos.erase(it);
+            } else {
+                ++it;
+            }
+        }
+    }
+
+    g_coreWindowPos[hWnd] = {
+        .systemX = systemX,
+        .systemY = systemY,
+        .appliedX = appliedX,
+        .appliedY = appliedY,
+    };
+}
+
+// Starts tracking a window at its current position, if it isn't tracked yet.
+void TrackWindow(HWND hWnd) {
+    {
+        std::lock_guard<std::mutex> lock(g_coreWindowPosMutex);
+        if (g_coreWindowPos.contains(hWnd)) {
+            return;
+        }
+    }
+
+    RECT rc;
+    if (GetWindowRect(hWnd, &rc)) {
+        RememberPos(hWnd, rc.left, rc.top, rc.left, rc.top);
+    }
+}
+
+std::vector<HWND> GetTrackedWindows() {
+    std::lock_guard<std::mutex> lock(g_coreWindowPosMutex);
+
+    std::vector<HWND> hWnds;
+    for (const auto& item : g_coreWindowPos) {
+        hWnds.push_back(item.first);
+    }
+
+    return hWnds;
+}
+
+// A background thread that, while a panel is visible, keeps its position in
+// sync with the taskbar showing and hiding.
+HANDLE g_watcherThread;
+HANDLE g_watcherWakeEvent;
+HANDLE g_watcherStopEvent;
+
+constexpr DWORD kWatcherIntervalMs = 50;
+// Keep polling for this many intervals after no panel is visible.
+constexpr int kWatcherIdleTicks = 20;
+
+// Only a shift that waits on an auto-hidden taskbar changes while a panel is
+// open; otherwise the position set when the panel is shown stays right.
+void WakeWatcher() {
+    if (g_watcherWakeEvent && g_settings.actionCenterVerticalShift != 0 &&
+        g_settings.actionCenterVerticalShiftOnlyWhenAutoHide) {
+        SetEvent(g_watcherWakeEvent);
+    }
+}
+
+// Whether the bottom taskbar on the monitor is currently out of view. When an
+// auto-hidden taskbar hides, its window slides off the screen, leaving only a
+// thin strip visible.
+bool IsBottomTaskbarHidden(HMONITOR monitor, const MONITORINFO& monitorInfo) {
+    HWND hTaskbarWnd = GetTaskbarForMonitor(monitor);
+    if (!hTaskbarWnd) {
+        // No taskbar found for this monitor. Fall back to checking whether
+        // anything reserves space at the bottom of the monitor.
+        return monitorInfo.rcWork.bottom >= monitorInfo.rcMonitor.bottom;
+    }
+
+    RECT taskbarRect;
+    if (!GetWindowRect(hTaskbarWnd, &taskbarRect)) {
+        return false;
+    }
+
+    LONG taskbarWidth = taskbarRect.right - taskbarRect.left;
+    LONG taskbarHeight = taskbarRect.bottom - taskbarRect.top;
+    if (taskbarHeight <= 0 || taskbarWidth <= taskbarHeight) {
+        // Vertical taskbar, not handled.
+        return false;
+    }
+
+    LONG monitorCenterY =
+        monitorInfo.rcMonitor.top +
+        (monitorInfo.rcMonitor.bottom - monitorInfo.rcMonitor.top) / 2;
+    if (taskbarRect.top < monitorCenterY) {
+        // Top taskbar, not handled.
+        return false;
+    }
+
+    LONG visibleHeight =
+        (std::min)(taskbarRect.bottom, monitorInfo.rcMonitor.bottom) -
+        (std::max)(taskbarRect.top, monitorInfo.rcMonitor.top);
+
+    return visibleHeight < taskbarHeight / 2;
+}
+
+bool ShouldShiftVertically(HMONITOR monitor, const MONITORINFO& monitorInfo) {
+    if (g_settings.actionCenterVerticalShift == 0) {
+        return false;
+    }
+
+    if (!g_settings.actionCenterVerticalShiftOnlyWhenAutoHide) {
+        return true;
+    }
+
+    return IsBottomTaskbarHidden(monitor, monitorInfo);
+}
+
+void AdjustCoreWindowPos(int* x,
+                         int* y,
+                         int width,
+                         int height,
+                         bool horizontal = true) {
     bool xIsDefault = g_settings.actionCenter.horizontalAlignment ==
                           TrayHorizontalAlignment::windowsDefault &&
                       g_settings.actionCenter.horizontalShift == 0;
+    bool yIsDefault = g_settings.actionCenterVerticalShift == 0;
 
     // The system will reposition it on its own.
-    if (g_unloading || xIsDefault) {
+    if (g_unloading || (xIsDefault && yIsDefault)) {
         return;
     }
 
@@ -1865,15 +2044,23 @@ void AdjustCoreWindowPos(int* x, int* y, int width, int height) {
     };
     GetMonitorInfo(monitor, &monitorInfo);
 
-    if (g_settings.actionCenter.horizontalAlignment ==
-        TrayHorizontalAlignment::windowsDefault) {
-        UINT monitorDpiX = 96;
-        UINT monitorDpiY = 96;
-        GetDpiForMonitor(monitor, MDT_DEFAULT, &monitorDpiX, &monitorDpiY);
-        *x += MulDiv(g_settings.actionCenter.horizontalShift, monitorDpiX, 96);
-    } else {
-        *x = CalculateAlignedXForMonitor(monitor, monitorInfo, width,
-                                         g_settings.actionCenter);
+    UINT monitorDpiX = 96;
+    UINT monitorDpiY = 96;
+    GetDpiForMonitor(monitor, MDT_DEFAULT, &monitorDpiX, &monitorDpiY);
+
+    if (horizontal && !xIsDefault) {
+        if (g_settings.actionCenter.horizontalAlignment ==
+            TrayHorizontalAlignment::windowsDefault) {
+            *x += MulDiv(g_settings.actionCenter.horizontalShift, monitorDpiX,
+                         96);
+        } else {
+            *x = CalculateAlignedXForMonitor(monitor, monitorInfo, width,
+                                             g_settings.actionCenter);
+        }
+    }
+
+    if (ShouldShiftVertically(monitor, monitorInfo)) {
+        *y += MulDiv(g_settings.actionCenterVerticalShift, monitorDpiY, 96);
     }
 }
 
@@ -1891,10 +2078,160 @@ void ApplySettings() {
         int cx = rc.right - rc.left;
         int cy = rc.bottom - rc.top;
 
+        // Start from Windows' own position if the window is still where this
+        // mod put it.
+        GetSystemPos(hCoreWnd, &x, &y);
+        int systemX = x;
+        int systemY = y;
+
         AdjustCoreWindowPos(&x, &y, cx, cy);
+        RememberPos(hCoreWnd, systemX, systemY, x, y);
 
         SetWindowPos_Original(hCoreWnd, nullptr, x, y, cx, cy,
                               SWP_NOZORDER | SWP_NOACTIVATE);
+    }
+
+    WakeWatcher();
+}
+
+bool IsWindowOnScreen(HWND hWnd) {
+    if (!IsWindowVisible(hWnd) || IsIconic(hWnd)) {
+        return false;
+    }
+
+    DWORD cloaked = 0;
+    if (SUCCEEDED(DwmGetWindowAttribute(hWnd, DWMWA_CLOAKED, &cloaked,
+                                        sizeof(cloaked))) &&
+        cloaked) {
+        return false;
+    }
+
+    return true;
+}
+
+// Computes where the window should be right now, based on Windows' own
+// position and the current taskbar state. Returns false if the window is
+// already there.
+bool GetDesiredCoreWindowPos(HWND hWnd,
+                             int* systemX,
+                             int* systemY,
+                             int* x,
+                             int* y) {
+    RECT rc;
+    if (!GetWindowRect(hWnd, &rc)) {
+        return false;
+    }
+
+    *x = rc.left;
+    *y = rc.top;
+    GetSystemPos(hWnd, x, y);
+    *systemX = *x;
+    *systemY = *y;
+
+    // Only the vertical position follows the taskbar. The horizontal one stays
+    // where it was set, which also keeps the tray alignment's UI Automation
+    // lookup out of this polling path.
+    *x = rc.left;
+    AdjustCoreWindowPos(x, y, rc.right - rc.left, rc.bottom - rc.top,
+                        /*horizontal=*/false);
+
+    return *y != rc.top;
+}
+
+// Runs on the window's own thread, so that it doesn't race with Windows
+// positioning the window.
+void WINAPI UpdateCoreWindowPosFromWindowThread(PVOID param) {
+    HWND hWnd = (HWND)param;
+
+    int systemX, systemY, x, y;
+    if (!GetDesiredCoreWindowPos(hWnd, &systemX, &systemY, &x, &y)) {
+        return;
+    }
+
+    Wh_Log(L"Following taskbar: moving core window to %d,%d", x, y);
+
+    RememberPos(hWnd, systemX, systemY, x, y);
+    SetWindowPos_Original(hWnd, nullptr, x, y, 0, 0,
+                          SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
+}
+
+DWORD WINAPI WatcherThreadProc(LPVOID) {
+    HANDLE waitHandles[] = {g_watcherStopEvent, g_watcherWakeEvent};
+
+    while (true) {
+        // Sleep until a panel is positioned or shown.
+        DWORD waitResult = WaitForMultipleObjects(
+            ARRAYSIZE(waitHandles), waitHandles, FALSE, INFINITE);
+        if (waitResult != WAIT_OBJECT_0 + 1) {
+            return 0;
+        }
+
+        // Poll while a panel is visible, plus a short grace period so that a
+        // panel shown right after being positioned isn't missed.
+        int idleTicks = 0;
+        while (idleTicks < kWatcherIdleTicks) {
+            bool anyVisible = false;
+
+            for (HWND hWnd : GetTrackedWindows()) {
+                if (!IsWindow(hWnd) || !IsWindowOnScreen(hWnd)) {
+                    continue;
+                }
+
+                anyVisible = true;
+
+                int systemX, systemY, x, y;
+                if (GetDesiredCoreWindowPos(hWnd, &systemX, &systemY, &x,
+                                            &y)) {
+                    RunFromWindowThread(
+                        hWnd, UpdateCoreWindowPosFromWindowThread, hWnd);
+                }
+            }
+
+            idleTicks = anyVisible ? 0 : idleTicks + 1;
+
+            if (WaitForSingleObject(g_watcherStopEvent, kWatcherIntervalMs) !=
+                WAIT_TIMEOUT) {
+                return 0;
+            }
+        }
+    }
+}
+
+void StartWatcher() {
+    g_watcherStopEvent = CreateEvent(nullptr, TRUE, FALSE, nullptr);
+    g_watcherWakeEvent = CreateEvent(nullptr, FALSE, FALSE, nullptr);
+    if (!g_watcherStopEvent || !g_watcherWakeEvent) {
+        Wh_Log(L"CreateEvent failed");
+        return;
+    }
+
+    g_watcherThread =
+        CreateThread(nullptr, 0, WatcherThreadProc, nullptr, 0, nullptr);
+    if (!g_watcherThread) {
+        Wh_Log(L"CreateThread failed");
+    }
+}
+
+// Called before the hooks are removed.
+void StopWatcher() {
+    if (g_watcherThread) {
+        SetEvent(g_watcherStopEvent);
+        WaitForSingleObject(g_watcherThread, INFINITE);
+        CloseHandle(g_watcherThread);
+        g_watcherThread = nullptr;
+    }
+}
+
+// Called after the hooks are removed, so that nothing uses the events anymore.
+void CloseWatcherEvents() {
+    if (g_watcherWakeEvent) {
+        CloseHandle(g_watcherWakeEvent);
+        g_watcherWakeEvent = nullptr;
+    }
+
+    if (g_watcherStopEvent) {
+        CloseHandle(g_watcherStopEvent);
+        g_watcherStopEvent = nullptr;
     }
 }
 
@@ -1916,6 +2253,10 @@ BOOL WINAPI SetWindowPos_Hook(HWND hWnd,
 
     Wh_Log(L"%08X %08X", (DWORD)(ULONG_PTR)hWnd, uFlags);
 
+    // Let the watcher follow the taskbar while this panel is visible.
+    TrackWindow(hWnd);
+    WakeWatcher();
+
     if ((uFlags & (SWP_NOSIZE | SWP_NOMOVE)) == (SWP_NOSIZE | SWP_NOMOVE)) {
         return original();
     }
@@ -1929,6 +2270,9 @@ BOOL WINAPI SetWindowPos_Hook(HWND hWnd,
         uFlags &= ~SWP_NOMOVE;
         X = rc.left;
         Y = rc.top;
+        // The window may already be shifted. Use Windows' own position as the
+        // base so that the shift isn't applied twice.
+        GetSystemPos(hWnd, &X, &Y);
     }
 
     int width;
@@ -1942,7 +2286,10 @@ BOOL WINAPI SetWindowPos_Hook(HWND hWnd,
     }
 
     if (!(uFlags & SWP_NOMOVE)) {
+        int systemX = X;
+        int systemY = Y;
         AdjustCoreWindowPos(&X, &Y, width, height);
+        RememberPos(hWnd, systemX, systemY, X, Y);
     }
 
     return SetWindowPos_Original(hWnd, hWndInsertAfter, X, Y, cx, cy, uFlags);
@@ -2001,6 +2348,11 @@ void LoadSettings() {
             Wh_GetIntSetting(L"actionCenter.horizontalShift");
     }
     Wh_FreeStringSetting(actionCenterHorizontalAlignment);
+
+    g_settings.actionCenterVerticalShift =
+        Wh_GetIntSetting(L"actionCenter.verticalShift");
+    g_settings.actionCenterVerticalShiftOnlyWhenAutoHide =
+        Wh_GetIntSetting(L"actionCenter.verticalShiftOnlyWhenAutoHide");
 
     // Start menu settings.
     PCWSTR startMenuHorizontalAlignment =
@@ -2069,7 +2421,8 @@ bool NeedsToBeLoaded() {
     bool actionCenterNeedsAdjustment =
         g_settings.actionCenter.horizontalAlignment !=
             TrayHorizontalAlignment::windowsDefault ||
-        g_settings.actionCenter.horizontalShift != 0;
+        g_settings.actionCenter.horizontalShift != 0 ||
+        g_settings.actionCenterVerticalShift != 0;
 
     switch (g_target) {
         case Target::Explorer:
@@ -2144,6 +2497,7 @@ BOOL Wh_ModInit() {
 
     if (g_target == Target::ShellExperienceHost ||
         g_target == Target::ShellHost) {
+        CoreWindowUI::StartWatcher();
         WindhawkUtils::SetFunctionHook(SetWindowPos,
                                        CoreWindowUI::SetWindowPos_Hook,
                                        &CoreWindowUI::SetWindowPos_Original);
@@ -2199,12 +2553,18 @@ void Wh_ModBeforeUninit() {
         }
     } else if (g_target == Target::ShellExperienceHost ||
                g_target == Target::ShellHost) {
+        CoreWindowUI::StopWatcher();
         CoreWindowUI::ApplySettings();
     }
 }
 
 void Wh_ModUninit() {
     Wh_Log(L">");
+
+    if (g_target == Target::ShellExperienceHost ||
+        g_target == Target::ShellHost) {
+        CoreWindowUI::CloseWatcherEvents();
+    }
 }
 
 BOOL Wh_ModSettingsChanged(BOOL* bReload) {
