@@ -44,6 +44,15 @@ mod.
   use the [Taskbar tray icon spacing and
   grid](https://windhawk.net/mods/taskbar-notification-icon-spacing) mod.
 
+* With the native Windows 11 taskbar, enable **Two-column notification icons
+  on narrow taskbars** to fit two columns at widths from 62 to 95 logical
+  pixels while keeping the clock and system controls in their compact layout.
+  This option is disabled by default and requires the
+  [Taskbar tray icon spacing and
+  grid](https://windhawk.net/mods/taskbar-notification-icon-spacing) mod with
+  **Tray icon rows** set to 2. That mod lets icons shrink to the column width
+  and controls their height.
+
 ## Known limitations
 
 * After disabling the mod, some leftover artifacts might stay, such as
@@ -79,6 +88,14 @@ With labels:
 
     Note: If the clock is too wide for the taskbar width you prefer, you can use
     the "Taskbar Clock Customization" mod to customize the taskbar clock format.
+- compactTrayIconGrid: false
+  $name: Two-column notification icons on narrow taskbars
+  $description: >-
+    With the native Windows 11 taskbar, show notification icons in two columns
+    at widths from 62 to 95 logical pixels. The clock and system controls keep
+    their compact layout. Requires "Taskbar tray icon spacing and grid" with
+    "Tray icon rows" set to 2 so icons fit within narrow columns. That mod
+    also controls the icon height.
 - taskbarLocationSecondary: sameAsPrimary
   $name: Taskbar location on secondary monitors
   $description: >-
@@ -145,6 +162,7 @@ With labels:
 #include <winrt/Windows.Foundation.h>
 #include <winrt/Windows.UI.Core.h>
 #include <winrt/Windows.UI.Xaml.Controls.h>
+#include <winrt/Windows.UI.Xaml.Markup.h>
 #include <winrt/Windows.UI.Xaml.Media.h>
 
 #include <algorithm>
@@ -186,6 +204,7 @@ struct {
     TaskbarLocation taskbarLocation;
     TaskbarLocation taskbarLocationSecondary;
     int taskbarWidth;
+    bool compactTrayIconGrid;
     JumpListAlignment jumpListAlignment;
     StartMenuAlignment startMenuAlignment;
     bool startMenuAnimationAdjust;
@@ -2266,6 +2285,161 @@ void WINAPI SystemTrayFrame_SetDouble_Height_Hook(void* pThis,
 
 std::vector<NativeFrame> g_nativeSystemTrayFrames;
 
+// Preserve the compact native clock/control-center layout on narrow taskbars.
+// Only the notification icons get a two-column ItemsPanel; the native layout
+// state, other icon groups and clock properties are left alone.
+struct NarrowNotificationPanel {
+    winrt::weak_ref<FrameworkElement> element;
+    winrt::Windows::Foundation::IInspectable originalLocalValue{nullptr};
+    Controls::ItemsPanelTemplate replacement{nullptr};
+    std::optional<int64_t> itemsPanelChangedToken;
+    double itemWidth = 0;
+};
+
+std::vector<NarrowNotificationPanel> g_narrowNotificationPanels;
+thread_local bool g_applyingNarrowNotificationPanel;
+
+struct NarrowNotificationPanelGuard {
+    NarrowNotificationPanelGuard() { g_applyingNarrowNotificationPanel = true; }
+    ~NarrowNotificationPanelGuard() { g_applyingNarrowNotificationPanel = false; }
+};
+
+void RestoreNarrowNotificationPanel(NarrowNotificationPanel& panel) {
+    auto element = panel.element.get();
+    if (!element) {
+        return;
+    }
+
+    if (panel.itemsPanelChangedToken) {
+        element.UnregisterPropertyChangedCallback(
+            Controls::ItemsControl::ItemsPanelProperty(),
+            *panel.itemsPanelChangedToken);
+        panel.itemsPanelChangedToken.reset();
+    }
+    auto icons = element.as<Controls::ItemsControl>();
+    // Don't overwrite a subsequent local customization made by another mod.
+    if (icons.ItemsPanel() == panel.replacement) {
+        if (panel.originalLocalValue == DependencyProperty::UnsetValue()) {
+            icons.ClearValue(Controls::ItemsControl::ItemsPanelProperty());
+        } else {
+            icons.SetValue(Controls::ItemsControl::ItemsPanelProperty(),
+                           panel.originalLocalValue);
+        }
+        icons.InvalidateMeasure();
+    }
+}
+
+void RestoreAllNarrowNotificationPanels() {
+    if (g_applyingNarrowNotificationPanel) {
+        return;
+    }
+    NarrowNotificationPanelGuard guard;
+    for (auto& panel : g_narrowNotificationPanels) {
+        try {
+            RestoreNarrowNotificationPanel(panel);
+        } catch (...) {
+            Wh_Log(L"Narrow notification grid restore error: %08X",
+                   winrt::to_hresult());
+        }
+    }
+    g_narrowNotificationPanels.clear();
+}
+
+void ApplyNarrowNotificationPanel(FrameworkElement systemTrayFrame) {
+    if (g_applyingNarrowNotificationPanel) {
+        return;
+    }
+    NarrowNotificationPanelGuard guard;
+
+    auto frameGrid = FindChildByName(systemTrayFrame, L"SystemTrayFrameGrid");
+    if (!frameGrid) {
+        return;
+    }
+    auto iconsElement = FindChildByName(frameGrid, L"NotificationAreaIcons");
+    auto icons = iconsElement.try_as<Controls::ItemsControl>();
+    if (!icons) {
+        return;
+    }
+
+    bool vertical = false;
+    for (const auto& group : VisualStateManager::GetVisualStateGroups(frameGrid)) {
+        if (group.Name() == L"OrientationStates") {
+            auto state = group.CurrentState();
+            vertical = state && state.Name() == L"VerticalOrientation";
+            break;
+        }
+    }
+
+    auto it = FindTrackedElement(g_narrowNotificationPanels, iconsElement);
+    if (g_unloading || !g_settings.compactTrayIconGrid || !vertical ||
+        g_settings.taskbarWidth < 62 || g_settings.taskbarWidth >= 96) {
+        if (it != g_narrowNotificationPanels.end()) {
+            RestoreNarrowNotificationPanel(*it);
+            g_narrowNotificationPanels.erase(it);
+        }
+        return;
+    }
+
+    double scale = 1;
+    if (auto root = icons.XamlRoot()) {
+        scale = root.RasterizationScale();
+    }
+    double itemWidth =
+        std::floor(g_settings.taskbarWidth / 2.0 * scale) / scale;
+
+    if (it == g_narrowNotificationPanels.end()) {
+        NarrowNotificationPanel panel;
+        panel.element = winrt::make_weak(iconsElement);
+        panel.originalLocalValue =
+            icons.ReadLocalValue(Controls::ItemsControl::ItemsPanelProperty());
+        g_narrowNotificationPanels.push_back(std::move(panel));
+        it = std::prev(g_narrowNotificationPanels.end());
+    } else if (it->replacement && icons.ItemsPanel() != it->replacement) {
+        // Keep the most recent native/other local value for exact restoration.
+        it->originalLocalValue =
+            icons.ReadLocalValue(Controls::ItemsControl::ItemsPanelProperty());
+    }
+
+    if (!it->itemsPanelChangedToken) {
+        auto frameWeak = winrt::make_weak(systemTrayFrame);
+        it->itemsPanelChangedToken = icons.RegisterPropertyChangedCallback(
+            Controls::ItemsControl::ItemsPanelProperty(),
+            [frameWeak](const DependencyObject&, const DependencyProperty&) {
+                if (g_unloading || g_applyingNarrowNotificationPanel) {
+                    return;
+                }
+                try {
+                    if (auto frame = frameWeak.get()) {
+                        // Apply records the newly supplied native/local value
+                        // before replacing it. Our own write is guarded.
+                        ApplyNarrowNotificationPanel(frame);
+                    }
+                } catch (...) {
+                    Wh_Log(L"Narrow notification grid panel-change error: %08X",
+                           winrt::to_hresult());
+                }
+            });
+    }
+
+    if (!it->replacement || it->itemWidth != itemWidth) {
+        std::wstring markup =
+            L"<ItemsPanelTemplate "
+            L"xmlns=\"http://schemas.microsoft.com/winfx/2006/xaml/presentation\">"
+            L"<WrapGrid Orientation=\"Horizontal\" "
+            L"MaximumRowsOrColumns=\"2\" ItemWidth=\"" +
+            std::to_wstring(itemWidth) +
+            L"\" ItemHeight=\"44\"/></ItemsPanelTemplate>";
+        it->replacement = Markup::XamlReader::Load(markup)
+                              .as<Controls::ItemsPanelTemplate>();
+        it->itemWidth = itemWidth;
+    }
+
+    if (icons.ItemsPanel() != it->replacement) {
+        icons.ItemsPanel(it->replacement);
+        icons.InvalidateMeasure();
+    }
+}
+
 // The detailed layout gives the clock button and the button next to it fixed
 // heights. They're made minimum heights instead, so that the buttons fit their
 // content like in the compact layout.
@@ -2352,6 +2526,18 @@ void WINAPI SystemTrayFrame_UpdateLayoutState_Hook(void* pThis) {
     }
 
     SystemTrayFrame_UpdateLayoutState_Original(pThis);
+
+    // Apply after native state setters, so only the notification panel changes.
+    try {
+        FrameworkElement systemTrayFrame = nullptr;
+        ((IUnknown**)pThis)[1]->QueryInterface(
+            winrt::guid_of<FrameworkElement>(), winrt::put_abi(systemTrayFrame));
+        if (systemTrayFrame) {
+            ApplyNarrowNotificationPanel(systemTrayFrame);
+        }
+    } catch (...) {
+        Wh_Log(L"Narrow notification grid state error: %08X", winrt::to_hresult());
+    }
 }
 
 // The width of the native vertical taskbar without labels, which fits a single
@@ -2567,6 +2753,8 @@ double GetNativeSystemTrayFrameWidth(FrameworkElement systemTrayFrame,
                                      double width) {
     TrackNativeFrameWidth(g_nativeSystemTrayFrames, systemTrayFrame, width);
     UpdateNativeTrayButtonHeights(systemTrayFrame);
+    // Frames can be created after the initial settings refresh.
+    ApplyNarrowNotificationPanel(systemTrayFrame);
 
     return g_unloading ? width : g_settings.taskbarWidth;
 }
@@ -2625,6 +2813,7 @@ void UpdateNativeSystemTrayFrameWidths() {
     for (const auto& nativeFrame : g_nativeSystemTrayFrames) {
         if (auto element = nativeFrame.element.get()) {
             UpdateNativeTrayButtonHeights(element);
+            ApplyNarrowNotificationPanel(element);
         }
     }
 }
@@ -6409,6 +6598,8 @@ void LoadSettings() {
         g_settings.taskbarWidth = 800;
     }
 
+    g_settings.compactTrayIconGrid = Wh_GetIntSetting(L"compactTrayIconGrid");
+
     PCWSTR jumpListAlignment = Wh_GetStringSetting(L"jumpListAlignment");
     g_settings.jumpListAlignment = JumpListAlignment::top;
     if (wcscmp(jumpListAlignment, L"center") == 0) {
@@ -6465,6 +6656,9 @@ void ApplySettingsNative(HWND hTaskbarWnd) {
         hTaskbarWnd,
         [](PVOID) {
             try {
+                if (g_unloading) {
+                    RestoreAllNarrowNotificationPanels();
+                }
                 UpdateNativeFrameWidths(g_nativeTaskbarFrames);
                 UpdateNativeTaskListButtonFrameSizes();
                 UpdateNativeSystemTrayFrameWidths();
