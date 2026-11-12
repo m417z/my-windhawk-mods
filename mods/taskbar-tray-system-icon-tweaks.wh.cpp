@@ -1,7 +1,7 @@
 // ==WindhawkMod==
 // @id              taskbar-tray-system-icon-tweaks
 // @name            Taskbar tray system icon tweaks
-// @description     Allows hiding system icons: volume, network, battery, microphone, location/GPS, Studio Effects, Recall, language bar, bell (always or when there are no new notifications), and the "Show desktop" button (hide or set width)
+// @description     Allows hiding system icons: volume, network, battery, microphone, location/GPS, Studio Effects, Recall, language bar, bell (always or when there are no new notifications or when Do not disturb is on), and the "Show desktop" button (hide or set width)
 // @version         1.3.1
 // @author          m417z
 // @github          https://github.com/m417z
@@ -67,6 +67,9 @@ Only Windows 11 is supported.
   - whenInactive: When there are no new notifications
   - whenInactiveAndNoDnd: >-
       When there are no new notifications and "Do not disturb" is off
+  - whenInactiveAndDnd: >-
+      When there are no new notifications, or always when "Do not disturb" is
+      on
   - always: Always
 - showDesktopButtonWidth: 12
   $name: '"Show desktop" button width'
@@ -101,6 +104,7 @@ enum class HideBellIcon {
     never,
     whenInactive,
     whenInactiveAndNoDnd,
+    whenInactiveAndDnd,
     always,
 };
 
@@ -1195,7 +1199,9 @@ void ApplyBellIconStyle(FrameworkElement systemTrayIconElement) {
             hide = true;
         } else if (g_settings.hideBellIcon == HideBellIcon::whenInactive ||
                    g_settings.hideBellIcon ==
-                       HideBellIcon::whenInactiveAndNoDnd) {
+                       HideBellIcon::whenInactiveAndNoDnd ||
+                   g_settings.hideBellIcon ==
+                       HideBellIcon::whenInactiveAndDnd) {
             Controls::TextBlock innerTextBlock = nullptr;
 
             child = systemTrayTextIconContent;
@@ -1220,8 +1226,12 @@ void ApplyBellIconStyle(FrameworkElement systemTrayIconElement) {
                                HideBellIcon::whenInactiveAndNoDnd;
 
                     case SystemTrayIconIdent::kBellFull:
-                    case SystemTrayIconIdent::kBellFullDnd:
                         return false;
+
+                    case SystemTrayIconIdent::kBellFullDnd:
+                        // Do not disturb is on: hide even with notifications.
+                        return g_settings.hideBellIcon ==
+                               HideBellIcon::whenInactiveAndDnd;
 
                     default:
                         Wh_Log(L"Unknown bell icon %d (%s)",
@@ -1855,6 +1865,8 @@ void LoadSettings() {
         g_settings.hideBellIcon = HideBellIcon::whenInactive;
     } else if (wcscmp(hideBellIcon, L"whenInactiveAndNoDnd") == 0) {
         g_settings.hideBellIcon = HideBellIcon::whenInactiveAndNoDnd;
+    } else if (wcscmp(hideBellIcon, L"whenInactiveAndDnd") == 0) {
+        g_settings.hideBellIcon = HideBellIcon::whenInactiveAndDnd;
     } else if (wcscmp(hideBellIcon, L"always") == 0) {
         g_settings.hideBellIcon = HideBellIcon::always;
     }
