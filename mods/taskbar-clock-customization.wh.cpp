@@ -132,7 +132,9 @@ be used:
   ellipsis, where `<n>` is the web content item number.
 * `%web<n>_full%` - the full web content as configured in settings, where `<n>`
   is the web content item number.
-* `%newline%` or `%n%` - a newline.
+* `%newline%` or `%n%` - a newline. Also supported in the Date format and
+  Weather format settings. In date formats, tokens inside single-quoted
+  literals are left unchanged.
 
 ## Text styles
 
@@ -159,8 +161,9 @@ styles, such as the font color and size.
     ddd',' MMM dd yyyy
   $name: Date format
   $description: >-
-    The format for the %date% pattern. Leave empty for the default format. For
-    the syntax, refer to the following page:
+    The format for the %date% pattern. Use %newline% or %n% outside single-quoted
+    literals for a line break, e.g. ddd%newline%MMM dd yyyy. Leave empty for the
+    default format. For the remaining syntax, refer to the following page:
 
     https://docs.microsoft.com/en-us/windows/win32/intl/day--month--year--and-era-format-pictures
 - DateLocale: ""
@@ -320,8 +323,8 @@ styles, such as the font color and size.
 - WebContentWeatherFormat: "%c \U0001F321\uFE0F%t \U0001F32C\uFE0F%w"
   $name: Weather format
   $description: >-
-    The weather information format. For details, refer to the documentation of
-    wttr.in.
+    The weather information format. Use %newline% or %n% for a line break.
+    Other weather tokens follow the documentation of wttr.in.
 - WebContentWeatherUnits: autoDetect
   $name: Weather units
   $description: >-
@@ -1345,6 +1348,12 @@ bool UpdateWeatherWebContent() {
         format = L"%c \U0001F321\uFE0F%t \U0001F32C\uFE0F%w";
     }
 
+    // Expand clock-specific newline tokens locally. A private marker keeps
+    // them distinct from wttr.in tokens and from the %c spacing marker below.
+    constexpr auto kWeatherNewlineMarker = L"\uE001";
+    format = ReplaceAll(format, L"%newline%", kWeatherNewlineMarker);
+    format = ReplaceAll(format, L"%n%", kWeatherNewlineMarker);
+
     // Spaces are added after the weather emoji by the server. Add a marker
     // character after it to be able to remove the spaces. See:
     // https://github.com/chubin/wttr.in/issues/345
@@ -1402,6 +1411,8 @@ bool UpdateWeatherWebContent() {
 
     // Care for the rest after last occurrence.
     weatherContent += urlContent->substr(lastPos);
+
+    weatherContent = ReplaceAll(weatherContent, kWeatherNewlineMarker, L"\n");
 
     std::lock_guard<std::mutex> guard(g_webContentMutex);
     g_webContentWeather = weatherContent;
@@ -1935,6 +1946,36 @@ std::vector<std::wstring> SplitTimeFormatString(std::wstring_view s) {
     return result;
 }
 
+std::vector<std::wstring> SplitDateFormatString(std::wstring_view s) {
+    auto parts = SplitTimeFormatString(s);
+    for (auto& part : parts) {
+        std::wstring expanded;
+        expanded.reserve(part.size());
+        bool inQuote = false;
+        for (size_t i = 0; i < part.size();) {
+            if (part[i] == L'\'') {
+                expanded += part[i++];
+                if (i < part.size() && part[i] == L'\'') {
+                    // Doubled apostrophes don't change the quote state.
+                    expanded += part[i++];
+                } else {
+                    inQuote = !inQuote;
+                }
+            } else if (!inQuote && part.compare(i, 9, L"%newline%") == 0) {
+                expanded += L'\n';
+                i += 9;
+            } else if (!inQuote && part.compare(i, 3, L"%n%") == 0) {
+                expanded += L'\n';
+                i += 3;
+            } else {
+                expanded += part[i++];
+            }
+        }
+        part = std::move(expanded);
+    }
+    return parts;
+}
+
 int GetTimeFormatExWithShowSeconds(LPCWSTR lpLocaleName,
                                    const SYSTEMTIME* lpTime,
                                    LPCWSTR lpFormat,
@@ -2073,7 +2114,7 @@ PCWSTR GetDateFormattedWithExtra(std::vector<std::wstring>** extra) {
         const SYSTEMTIME* time = &g_formatTime;
 
         auto dateFormatParts =
-            SplitTimeFormatString(g_settings.dateFormat.get());
+            SplitDateFormatString(g_settings.dateFormat.get());
 
         GetDateFormatEx_Original(
             GetDateLocaleName(0), DATE_AUTOLAYOUT, time,
@@ -2130,7 +2171,7 @@ PCWSTR GetDateFormattedTz(size_t index, size_t partIndex) {
             const SYSTEMTIME* time = &timeTz;
 
             auto dateFormatParts =
-                SplitTimeFormatString(g_settings.dateFormat.get());
+                SplitDateFormatString(g_settings.dateFormat.get());
 
             for (size_t i = 0; i < dateFormatParts.size(); i++) {
                 WCHAR formatted[FORMATTED_BUFFER_SIZE];
