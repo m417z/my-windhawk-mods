@@ -196,6 +196,7 @@ std::atomic<int> g_hookRefCount;
 thread_local bool g_inCRecursiveFolderOperation_Prepare;
 thread_local bool g_inCRecursiveFolderOperation_Do;
 thread_local bool g_inCDefCollection_Item_GetValue_Size;
+thread_local bool g_inCalculateFolderSize;
 
 auto hookRefCountScope() {
     g_hookRefCount++;
@@ -1954,9 +1955,11 @@ HRESULT WINAPI CFSFolder__GetSize_Hook(void* pCFSFolder,
 
     HRESULT ret = CFSFolder__GetSize_Original(pCFSFolder, itemidChild, idFolder,
                                               propVariant);
+    // The folder walk reports links to folders as items without entering
+    // them, and querying their size gets here. Leave them out of the total.
     if (g_inCRecursiveFolderOperation_Prepare ||
-        g_inCRecursiveFolderOperation_Do || ret != S_OK ||
-        propVariant->vt != VT_EMPTY) {
+        g_inCRecursiveFolderOperation_Do || g_inCalculateFolderSize ||
+        ret != S_OK || propVariant->vt != VT_EMPTY) {
         return ret;
     }
 
@@ -1996,10 +1999,11 @@ HRESULT WINAPI CFSFolder__GetSize_Hook(void* pCFSFolder,
 
     g_cacheShellFolder = std::move(shellFolder2Vector);
 
-    auto [cacheIt, cacheMissing] = g_cacheShellFolderSizes.try_emplace(
-        PIDLToVector(itemidChild), std::nullopt);
+    auto cacheKey = PIDLToVector(itemidChild);
+    auto cacheIt = g_cacheShellFolderSizes.find(cacheKey);
+    std::optional<ULONGLONG> folderSize;
 
-    if (cacheMissing) {
+    if (cacheIt == g_cacheShellFolderSizes.end()) {
         winrt::com_ptr<IShellFolder2> childFolder;
         hr = shellFolder2->BindToObject(itemidChild, nullptr,
                                         IID_PPV_ARGS(childFolder.put()));
@@ -2065,7 +2069,7 @@ HRESULT WINAPI CFSFolder__GetSize_Hook(void* pCFSFolder,
                 }
 
                 if (result == ES_QUERY_OK) {
-                    cacheIt->second = size;
+                    folderSize = size;
                 } else {
                     Wh_Log(L"Failed to get size: %s", g_gsQueryStatus[result]);
                 }
@@ -2073,15 +2077,19 @@ HRESULT WINAPI CFSFolder__GetSize_Hook(void* pCFSFolder,
                 Wh_Log(L"Failed to get path");
             }
         } else {
-            cacheIt->second = CalculateFolderSize(childFolder.get());
+            g_inCalculateFolderSize = true;
+            folderSize = CalculateFolderSize(childFolder.get());
+            g_inCalculateFolderSize = false;
         }
+
+        g_cacheShellFolderSizes[std::move(cacheKey)] = folderSize;
     } else {
         Wh_Log(L"Using cached size");
+        folderSize = cacheIt->second;
     }
 
     g_cacheShellFolderLastUsedTickCount = GetTickCount();
 
-    std::optional<ULONGLONG> folderSize = cacheIt->second;
     if (folderSize) {
         propVariant->uhVal.QuadPart = *folderSize;
         propVariant->vt = VT_UI8;
