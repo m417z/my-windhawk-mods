@@ -801,8 +801,8 @@ BOOL WINAPI SetWindowPos_Hook(HWND hWnd,
     RECT rc{};
     GetWindowRect(hWnd, &rc);
 
-    // Skip if no size or empty size.
-    if ((uFlags & SWP_NOSIZE) || cx == 0 || cy == 0) {
+    // Skip if no size.
+    if (uFlags & SWP_NOSIZE) {
         Wh_Log(L"Skipping");
         uFlags |= SWP_NOMOVE | SWP_NOSIZE;
         return original();
