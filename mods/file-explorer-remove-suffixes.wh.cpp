@@ -386,30 +386,41 @@ bool IsSystemModulePath(PCWSTR path) {
     return _wcsnicmp(path, windowsDir, len) == 0 && path[len] == L'\\';
 }
 
-// Another hook on top of ours makes its hook function the direct caller, so a
-// few frames further up the stack are checked as well. A hook isn't in a system
-// module, so the search stops at the first frame in one.
-[[clang::noinline]] bool IsHookCallerFromModule(void* retAddress,
-                                                PCWSTR moduleName) {
-    HMODULE expectedModule = GetModuleHandle(moduleName);
-    if (!expectedModule) {
+// The taskbar is implemented in taskbar.dll, in explorer.exe on Windows 10, or
+// in the ExplorerPatcher taskbar module.
+bool IsTaskbarModule(HMODULE module, PCWSTR modulePath) {
+    if (!module) {
         return false;
     }
 
-    HMODULE callerModule = GetModuleFromAddress(retAddress);
-    if (callerModule == expectedModule) {
+    if (module == GetModuleHandle(nullptr) ||
+        module == GetModuleHandle(L"taskbar.dll")) {
         return true;
     }
 
+    PCWSTR moduleFileName = wcsrchr(modulePath, L'\\');
+    return moduleFileName &&
+           _wcsnicmp(moduleFileName + 1, L"ep_taskbar.",
+                     sizeof("ep_taskbar.") - 1) == 0;
+}
+
+// Another hook on top of ours makes its hook function the direct caller, so a
+// few frames further up the stack are checked as well. A hook isn't in a system
+// module, so the search stops at the first frame in one.
+[[clang::noinline]] bool IsHookCallerFromTaskbar(void* retAddress) {
+    HMODULE callerModule = GetModuleFromAddress(retAddress);
     std::wstring callerPath = GetModulePath(callerModule);
+    if (IsTaskbarModule(callerModule, callerPath.c_str())) {
+        return true;
+    }
+
     if (IsSystemModulePath(callerPath.c_str())) {
-        Wh_Log(L"Skipping caller %p in module %s, expected %s", retAddress,
-               callerPath.c_str(), moduleName);
+        Wh_Log(L"Skipping caller %p in module %s", retAddress,
+               callerPath.c_str());
         return false;
     }
 
-    Wh_Log(L"Tracing caller %p in module %s, expected %s", retAddress,
-           callerPath.c_str(), moduleName);
+    Wh_Log(L"Tracing caller %p in module %s", retAddress, callerPath.c_str());
 
     // The backtrace skips the frames of this function, the hook, and the
     // caller.
@@ -420,7 +431,7 @@ bool IsSystemModulePath(PCWSTR path) {
         std::wstring modulePath = GetModulePath(module);
         Wh_Log(L"Frame %u: %p in module %s", i + 1, frames[i],
                modulePath.c_str());
-        if (module == expectedModule) {
+        if (IsTaskbarModule(module, modulePath.c_str())) {
             return true;
         }
 
@@ -449,7 +460,7 @@ int WINAPI InternalGetWindowText_Hook(HWND hWnd,
         return result;
     }
 
-    if (!IsHookCallerFromModule(__builtin_return_address(0), L"taskbar.dll")) {
+    if (!IsHookCallerFromTaskbar(__builtin_return_address(0))) {
         return result;
     }
 
