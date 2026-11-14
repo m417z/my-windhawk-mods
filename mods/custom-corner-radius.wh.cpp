@@ -138,6 +138,7 @@ and make sure that `dwm.exe` is in the list.
 #include <winternl.h>
 
 #include <algorithm>
+#include <atomic>
 #include <cmath>
 #include <limits>
 #include <mutex>
@@ -157,6 +158,10 @@ enum class RoundMaximizedAndSnapped {
 // Corners are indexed in the order top-left, top-right, bottom-left,
 // bottom-right throughout.
 constexpr int kCornerCount = 4;
+
+// Win11 corner radii for windows and for elements that use a smaller radius.
+constexpr int kDefaultRadius = 8;
+constexpr int kDefaultSmallRadius = 4;
 
 struct {
     float radius;
@@ -1088,6 +1093,29 @@ float WINAPI GetFloatCornerRadiusForCurrentStyle_Hook(void* pThis) {
         /*canRoundMaximizedOrSnapped=*/true);
 }
 
+// The radii DWM draws, published on DWM's notification window while the mod
+// runs, for other processes to match. The low word is the window radius + 1 and
+// the high word is the small radius + 1, in DIPs, so the value is never zero.
+// With per-corner radii, the window radius is the largest of them. The name
+// doesn't include the mod id, so other processes can rely on it.
+constexpr WCHAR kPublishedRadiiProp[] = L"Windhawk_CustomCornerRadius_Radii";
+
+// Set while DWM's notification window is missing, as in a process that's just
+// starting. SetBorderParameters_Hook publishes once it exists.
+std::atomic<bool> g_publishRadiiPending;
+
+void PublishRadii() {
+    int radius = g_settings.radius < 0 ? kDefaultRadius
+                                       : static_cast<int>(g_settings.radius);
+    int smallRadius = g_settings.smallRadius < 0
+                          ? kDefaultSmallRadius
+                          : static_cast<int>(g_settings.smallRadius);
+    HANDLE value = (HANDLE)(ULONG_PTR)MAKELONG(radius + 1, smallRadius + 1);
+
+    HWND hDwm = FindWindow(L"Dwm", nullptr);
+    g_publishRadiiPending = !hDwm || !SetProp(hDwm, kPublishedRadiiProp, value);
+}
+
 using SetBorderParameters_t = long(WINAPI*)(void* pThis,
                                             const RECT& borderRect,
                                             float cornerRadius,
@@ -1103,6 +1131,10 @@ long WINAPI SetBorderParameters_Hook(void* pThis,
                                      const void* color,
                                      int borderStyle,
                                      int shadowStyle) {
+    if (g_publishRadiiPending) {
+        PublishRadii();
+    }
+
     bool perCorner = false;
     if (cornerRadius > 0) {
         // pThis here is a CWindowBorder, not a CTopLevelWindow, so there's no
@@ -1213,7 +1245,6 @@ void LoadSettings() {
     // with, so that radius is the largest of them. Negative corners follow
     // "Corner radius", and if that's -1 (keep the original radius), the
     // original is taken to be the Win11 default.
-    constexpr int kDefaultRadius = 8;
     bool hasCornerRadius =
         std::any_of(cornerRadius, cornerRadius + kCornerCount,
                     [](int r) { return r >= 0; });
@@ -1580,6 +1611,7 @@ BOOL Wh_ModInit() {
 void Wh_ModAfterInit() {
     Wh_Log(L">");
 
+    PublishRadii();
     RequestDwmRefresh();
 }
 
@@ -1595,6 +1627,7 @@ BOOL Wh_ModSettingsChanged(BOOL* bReload) {
     }
 
     ClearWindowExclusionProps();
+    PublishRadii();
     RequestDwmRefresh();
     return TRUE;
 }
@@ -1604,6 +1637,7 @@ void Wh_ModUninit() {
 
     if (HWND hDwm = FindWindow(L"Dwm", nullptr)) {
         SetProp(hDwm, kLoadCountProp, IntToPtr(g_loadCount));
+        RemoveProp(hDwm, kPublishedRadiiProp);
     }
 
     ClearWindowExclusionProps();
