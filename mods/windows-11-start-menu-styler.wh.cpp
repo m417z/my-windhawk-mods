@@ -10722,6 +10722,17 @@ private:
 
 #pragma region visualtreewatcher_cpp
 
+// Dead-attach detection state; see StartDeadAttachCheck near
+// InitializeSettingsAndTap.
+constexpr int kDeadAttachCheckDelayMs = 12000;
+constexpr int kDeadAttachMaxReinits = 3;
+
+int g_deadAttachReinits = 0;
+bool g_sawVisualTreeChange = false;
+winrt::Windows::System::DispatcherQueueTimer g_deadAttachTimer{nullptr};
+
+void InitializeSettingsAndTap();
+
 VisualTreeWatcher::VisualTreeWatcher(winrt::com_ptr<IUnknown> site) :
     m_XamlDiagnostics(site.as<IXamlDiagnostics>())
 {
@@ -10817,6 +10828,7 @@ void VisualTreeWatcher::RecordCallbackThread()
 HRESULT VisualTreeWatcher::OnVisualTreeChange(ParentChildRelation relation, VisualElement element, VisualMutationType mutationType) try
 {
     RecordCallbackThread();
+    g_sawVisualTreeChange = true;
 
     if (GetCurrentThreadId() != g_targetThreadId)
     {
@@ -21428,6 +21440,74 @@ void UninitializeSettingsAndTap() {
     g_targetThreadId = 0;
 }
 
+// The XAML diagnostics attach can silently fail during the boot rush; the
+// mod otherwise never retries until the next settings change.
+constexpr int kTapRetryMaxAttempts = 10;
+constexpr int kTapRetryDelayMs = 3000;
+
+int g_tapRetryAttempts = 0;
+winrt::Windows::System::DispatcherQueueTimer g_tapRetryTimer{nullptr};
+
+void ScheduleTapRetry() {
+    if (g_tapRetryAttempts >= kTapRetryMaxAttempts) {
+        return;
+    }
+    g_tapRetryAttempts++;
+    auto dispatcher =
+        winrt::Windows::System::DispatcherQueue::GetForCurrentThread();
+    if (!dispatcher) {
+        return;
+    }
+    g_tapRetryTimer = dispatcher.CreateTimer();
+    g_tapRetryTimer.IsRepeating(false);
+    g_tapRetryTimer.Interval(std::chrono::milliseconds{kTapRetryDelayMs});
+    g_tapRetryTimer.Tick([=](auto&&, auto&&) {
+        HRESULT hr = InjectWindhawkTAP();
+        if (SUCCEEDED(hr)) {
+            Wh_Log(L"TAP attach recovered on retry %d", g_tapRetryAttempts);
+            g_tapRetryTimer.Stop();
+        } else {
+            ScheduleTapRetry();
+        }
+    });
+    g_tapRetryTimer.Start();
+}
+
+
+// The XAML diagnostics attach can silently fail during the boot rush:
+// InitializeXamlDiagnosticsEx returns S_OK but the connection never
+// delivers tree data, leaving the mod loaded but unstyled until the next
+// settings change. Verify liveness by checking whether any visual tree
+// change was reported, and re-initialize when the connection is dead
+// (state globals are declared earlier in the file).
+void StartDeadAttachCheck() {
+    g_sawVisualTreeChange = false;
+    auto dispatcher =
+        winrt::Windows::System::DispatcherQueue::GetForCurrentThread();
+    if (!dispatcher) {
+        return;
+    }
+    g_deadAttachTimer = dispatcher.CreateTimer();
+    g_deadAttachTimer.IsRepeating(false);
+    g_deadAttachTimer.Interval(
+        std::chrono::milliseconds{kDeadAttachCheckDelayMs});
+    g_deadAttachTimer.Tick([=](auto&&, auto&&) {
+        if (g_sawVisualTreeChange) {
+            return;
+        }
+        if (g_deadAttachReinits >= kDeadAttachMaxReinits) {
+            return;
+        }
+        g_deadAttachReinits++;
+        Wh_Log(L"Dead TAP attach detected, re-initializing (attempt %d)",
+               g_deadAttachReinits);
+        UninitializeSettingsAndTap();
+        InitializeSettingsAndTap();
+    });
+    g_deadAttachTimer.Start();
+}
+
+
 void InitializeSettingsAndTap() {
     DWORD kNoThreadId = 0;
     if (!g_targetThreadId.compare_exchange_strong(kNoThreadId,
@@ -21440,7 +21520,10 @@ void InitializeSettingsAndTap() {
     HRESULT hr = InjectWindhawkTAP();
     if (FAILED(hr)) {
         Wh_Log(L"Error %08X", hr);
+        ScheduleTapRetry();
     }
+
+    StartDeadAttachCheck();
 }
 
 // Unadvising from a thread other than the one XAML is signaling a mutation on
@@ -22254,7 +22337,61 @@ void Wh_ModAfterInit() {
     }
 }
 
+    CreateThread(nullptr, 0, WatchdogThread, nullptr, 0, nullptr);
+
+// Watchdog: both boot failure modes leave the mod dormant - the engine
+// can inject so late that the core-window hook misses creation and the
+// init pass finds nothing, and a successful attach can still be dead
+// (S_OK, no tree data). Poll independently of init: initialize once the
+// core window appears, and re-initialize when the tree stops delivering.
+bool g_watchdogExit = false;
+
+DWORD WINAPI WatchdogThread(LPVOID) {
+    int reinits = 0;
+    while (!g_watchdogExit) {
+        Sleep(10000);
+        if (g_watchdogExit) {
+            return 0;
+        }
+        HWND hCoreWnd = GetCoreWnd();
+        if (!hCoreWnd) {
+            continue;
+        }
+        if (!g_targetThreadId) {
+            if (reinits >= kDeadAttachMaxReinits) {
+                return 0;
+            }
+            reinits++;
+            Wh_Log(L"Watchdog: initializing (attempt %d)", reinits);
+            RunFromWindowThread(
+                hCoreWnd, [](PVOID) { InitializeSettingsAndTap(); }, nullptr);
+            continue;
+        }
+        if (!g_sawVisualTreeChange) {
+            if (reinits >= kDeadAttachMaxReinits) {
+                return 0;
+            }
+            reinits++;
+            Wh_Log(L"Watchdog: dead attach, re-initializing (attempt %d)",
+                   reinits);
+            RunFromWindowThread(
+                hCoreWnd,
+                [](PVOID) {
+                    UninitializeSettingsAndTap();
+                    InitializeSettingsAndTap();
+                },
+                nullptr);
+            continue;
+        }
+
+        return 0;
+    }
+
+    return 0;
+}
+
 void Wh_ModUninit() {
+    g_watchdogExit = true;
     Wh_Log(L">");
 
     if (!DoesLayoutOverrideMatchWindowsDefault(g_disableNewStartMenuLayout)) {
@@ -22272,6 +22409,16 @@ void Wh_ModUninit() {
     // Before the UI threads are uninitialized, so that a retry can't be
     // scheduled on a thread which is being uninitialized.
     StopImageLoadRetries();
+    if (g_tapRetryTimer) {
+        g_tapRetryTimer.Stop();
+        g_tapRetryTimer = nullptr;
+    }
+    g_tapRetryAttempts = 0;
+    if (g_deadAttachTimer) {
+        g_deadAttachTimer.Stop();
+        g_deadAttachTimer = nullptr;
+    }
+    g_deadAttachReinits = 0;
 
     std::optional<winrt::com_ptr<VisualTreeWatcher>> unadvisedWatcher;
 
