@@ -1223,7 +1223,7 @@ bool ApplyFrameHeightMatchingWindow(FrameworkElement frameElement) {
 
 void UpdateTaskbarFrameContentGridHeight(FrameworkElement taskbarFrameElement) {
     auto contentGrid = Media::VisualTreeHelper::GetParent(taskbarFrameElement)
-                           .try_as<FrameworkElement>();
+                           .try_as<Controls::Grid>();
     if (contentGrid) {
         double height = taskbarFrameElement.Height();
         double contentGridHeight = contentGrid.Height();
