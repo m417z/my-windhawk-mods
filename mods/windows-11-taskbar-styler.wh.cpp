@@ -11840,7 +11840,6 @@ using namespace std::string_view_literals;
 #include <winrt/Windows.UI.Core.h>
 #include <winrt/Windows.UI.Text.h>
 #include <winrt/Windows.UI.ViewManagement.h>
-#include <winrt/Windows.UI.Xaml.Controls.Primitives.h>
 #include <winrt/Windows.UI.Xaml.Controls.h>
 #include <winrt/Windows.UI.Xaml.Data.h>
 #include <winrt/Windows.UI.Xaml.Hosting.h>
@@ -18903,54 +18902,40 @@ bool IsTaskbarTopLevelWindow(HWND hWnd) {
            _wcsicmp(className, L"Shell_SecondaryTrayWnd") == 0;
 }
 
-// The slot the system tray's repeater item is arranged in, ignoring render
-// transforms, relative to `content`. On some builds, the tray is an item of a
-// repeater inside the taskbar frame. Nullopt when the tray isn't inside the
-// frame.
-std::optional<winrt::Windows::Foundation::Rect> SystemTraySlotInTaskbarFrame(
+// The repeater item that holds the system tray. On some builds, the tray is an
+// item of a repeater inside the taskbar frame. Null when the tray isn't inside
+// the frame.
+FrameworkElement SystemTrayItemInTaskbarFrame(
     FrameworkElement const& systemTrayFrame,
-    FrameworkElement const& taskbarFrame,
-    UIElement const& content) {
+    FrameworkElement const& taskbarFrame) {
     try {
         FrameworkElement item{nullptr};
-        UIElement repeater{nullptr};
         DependencyObject child = systemTrayFrame;
         while (true) {
             auto parent = Media::VisualTreeHelper::GetParent(child);
             if (!parent) {
-                return std::nullopt;
+                return nullptr;
             }
 
-            if (!repeater && parent.try_as<muxc::ItemsRepeater>()) {
+            if (!item && parent.try_as<muxc::ItemsRepeater>()) {
                 item = child.try_as<FrameworkElement>();
-                repeater = parent.as<UIElement>();
             }
 
             if (parent == taskbarFrame) {
-                break;
+                return item;
             }
 
             child = std::move(parent);
         }
-
-        if (!item) {
-            return std::nullopt;
-        }
-
-        auto rect = repeater.TransformToVisual(content).TransformBounds(
-            Controls::Primitives::LayoutInformation::GetLayoutSlot(item));
-        if (rect.Width <= 0 || rect.Height <= 0) {
-            return std::nullopt;
-        }
-
-        return rect;
     } catch (winrt::hresult_error const& ex) {
         Wh_Log(L"Error %08X: %s", ex.code(), ex.message().c_str());
-        return std::nullopt;
+        return nullptr;
     }
 }
 
-// The TaskbarBackground child of the taskbar frame's root grid.
+// The element that draws the background of the taskbar frame: the content of
+// the root grid's TaskbarBackground, which a style can move or resize apart
+// from the frame.
 FrameworkElement FindTaskbarFrameBackground(
     FrameworkElement const& taskbarFrame) {
     try {
@@ -18962,10 +18947,19 @@ FrameworkElement FindTaskbarFrameBackground(
             for (int j = 0; j < rootGridCount; j++) {
                 auto child = Media::VisualTreeHelper::GetChild(rootGrid, j)
                                  .try_as<FrameworkElement>();
-                if (child && winrt::get_class_name(child) ==
-                                 L"Taskbar.TaskbarBackground") {
-                    return child;
+                if (!child || winrt::get_class_name(child) !=
+                                  L"Taskbar.TaskbarBackground") {
+                    continue;
                 }
+
+                if (Media::VisualTreeHelper::GetChildrenCount(child) > 0) {
+                    if (auto content = Media::VisualTreeHelper::GetChild(child, 0)
+                                           .try_as<FrameworkElement>()) {
+                        return content;
+                    }
+                }
+
+                return child;
             }
         }
     } catch (winrt::hresult_error const& ex) {
@@ -18977,9 +18971,8 @@ FrameworkElement FindTaskbarFrameBackground(
 
 // Click-through taskbar: clip the top-level taskbar window to the TaskbarFrame
 // and SystemTrayFrame rects so the empty areas become both invisible and
-// click-through. When the tray is laid out inside the frame, the part of its
-// slot which the frame's background doesn't cover is left out, since a style
-// can move the tray away from its slot.
+// click-through. When the tray is an item inside the frame, the frame's
+// background and items take the place of the frame's rect, see below.
 void UpdateClickThroughRegion(ClickThroughTaskbarState& state) {
     auto taskbarFrame = state.taskbarFrame.get();
     if (!taskbarFrame) {
@@ -19062,14 +19055,40 @@ void UpdateClickThroughRegion(ClickThroughTaskbarState& state) {
     auto systemTrayFrame = state.systemTrayFrame.get();
     auto systemTrayFrameRect = frameRect(systemTrayFrame);
 
-    std::optional<winrt::Windows::Foundation::Rect> systemTraySlotRect;
-    std::optional<winrt::Windows::Foundation::Rect> backgroundRect;
+    // With the tray inside the frame, the frame stays at the left edge and a
+    // style moves a dock by its background and items, so those make up the
+    // region. The tray item is left out, since the tray can be moved away from
+    // it, and the tray's own rect is added below.
+    std::vector<winrt::Windows::Foundation::Rect> contentRects;
+    FrameworkElement systemTrayItem{nullptr};
     if (systemTrayFrame) {
-        systemTraySlotRect = SystemTraySlotInTaskbarFrame(
-            systemTrayFrame, taskbarFrame, content);
-        if (systemTraySlotRect) {
-            backgroundRect =
-                frameRect(FindTaskbarFrameBackground(taskbarFrame));
+        systemTrayItem =
+            SystemTrayItemInTaskbarFrame(systemTrayFrame, taskbarFrame);
+    }
+    if (systemTrayItem) {
+        try {
+            if (auto rect =
+                    frameRect(FindTaskbarFrameBackground(taskbarFrame))) {
+                contentRects.push_back(*rect);
+            }
+
+            auto repeater = Media::VisualTreeHelper::GetParent(systemTrayItem);
+            int count = Media::VisualTreeHelper::GetChildrenCount(repeater);
+            for (int i = 0; i < count; i++) {
+                auto item = Media::VisualTreeHelper::GetChild(repeater, i)
+                                .try_as<FrameworkElement>();
+                if (!item || item == systemTrayItem ||
+                    item.Visibility() != Visibility::Visible) {
+                    continue;
+                }
+
+                if (auto rect = frameRect(item)) {
+                    contentRects.push_back(*rect);
+                }
+            }
+        } catch (winrt::hresult_error const& ex) {
+            Wh_Log(L"Error %08X: %s", ex.code(), ex.message().c_str());
+            contentRects.clear();
         }
     }
 
@@ -19093,8 +19112,9 @@ void UpdateClickThroughRegion(ClickThroughTaskbarState& state) {
     signature.push_back(QuantizeLayoutSize(scale * 100));
     appendRect(signature, taskbarFrameRect);
     appendRect(signature, systemTrayFrameRect);
-    appendRect(signature, systemTraySlotRect);
-    appendRect(signature, backgroundRect);
+    for (auto const& rect : contentRects) {
+        appendRect(signature, rect);
+    }
 
     RECT tlRect;
     if (!GetWindowRect(topLevelWnd, &tlRect)) {
@@ -19157,42 +19177,37 @@ void UpdateClickThroughRegion(ClickThroughTaskbarState& state) {
                     std::clamp(bottom, 0, tlHeight)};
     };
 
-    RECT tf = toWindowRect(*taskbarFrameRect);
-    HRGN rgn = CreateRectRgn(tf.left, tf.top, tf.right, tf.bottom);
+    HRGN rgn = CreateRectRgn(0, 0, 0, 0);
     if (!rgn) {
         Wh_Log(L"CreateRectRgn failed");
         return;
     }
 
-    RECT rgnBox = tf;
+    auto addRect = [&](winrt::Windows::Foundation::Rect const& dip) {
+        RECT rect = toWindowRect(dip);
+        if (HRGN rectRgn =
+                CreateRectRgn(rect.left, rect.top, rect.right, rect.bottom)) {
+            CombineRgn(rgn, rgn, rectRgn, RGN_OR);
+            DeleteObject(rectRgn);
+        }
+    };
 
-    if (systemTraySlotRect) {
-        RECT slot = toWindowRect(*systemTraySlotRect);
-        RECT bg = backgroundRect ? toWindowRect(*backgroundRect) : RECT{};
-        HRGN slotRgn =
-            CreateRectRgn(slot.left, slot.top, slot.right, slot.bottom);
-        HRGN bgRgn = CreateRectRgn(bg.left, bg.top, bg.right, bg.bottom);
-        if (slotRgn && bgRgn) {
-            CombineRgn(slotRgn, slotRgn, bgRgn, RGN_DIFF);
-            CombineRgn(rgn, rgn, slotRgn, RGN_DIFF);
-            GetRgnBox(rgn, &rgnBox);
-        }
-        if (slotRgn) {
-            DeleteObject(slotRgn);
-        }
-        if (bgRgn) {
-            DeleteObject(bgRgn);
-        }
+    if (contentRects.empty()) {
+        addRect(*taskbarFrameRect);
+    }
+    for (auto const& rect : contentRects) {
+        addRect(rect);
+    }
+    if (systemTrayFrameRect) {
+        addRect(*systemTrayFrameRect);
     }
 
-    if (systemTrayFrameRect) {
-        RECT st = toWindowRect(*systemTrayFrameRect);
-        if (HRGN trayRgn =
-                CreateRectRgn(st.left, st.top, st.right, st.bottom)) {
-            CombineRgn(rgn, rgn, trayRgn, RGN_OR);
-            DeleteObject(trayRgn);
-            UnionRect(&rgnBox, &rgnBox, &st);
-        }
+    RECT rgnBox;
+    if (GetRgnBox(rgn, &rgnBox) == NULLREGION) {
+        // An empty region would hide the whole taskbar. Retry on the next pass.
+        Wh_Log(L"Empty click-through region");
+        DeleteObject(rgn);
+        return;
     }
 
     Wh_Log(L"Applying region to %08X, dpi=%u, rasterization scale=%f",
