@@ -861,7 +861,9 @@ DWORD GetProcessIdFromTaskListButton(UIElement element) {
 struct {
     Controls::Primitives::Popup popup = nullptr;
     winrt::weak_ref<FrameworkElement> taskbarFrame;
-    double rotationAngle = 0.0;
+    bool vertical = false;
+    // The cursor's monitor in root coordinates.
+    winrt::Windows::Foundation::Rect monitorRect{};
     double cursorX = 0.0;
     double cursorY = 0.0;
     UINT_PTR hideTimer = 0;
@@ -931,38 +933,165 @@ void UpdateTooltipPosition() {
 
     auto popup = g_volumeTooltipState.popup;
     auto border = popup.Child().try_as<FrameworkElement>();
+    double tooltipWidth = border ? border.ActualWidth() : 0;
     double tooltipHeight = border ? border.ActualHeight() : 0;
+
+    double cursorX = g_volumeTooltipState.cursorX;
+    double cursorY = g_volumeTooltipState.cursorY;
+    const auto& monitorRect = g_volumeTooltipState.monitorRect;
+    double monitorRight = monitorRect.X + monitorRect.Width;
 
     auto taskbarFrame = g_volumeTooltipState.taskbarFrame.get();
     if (!taskbarFrame) {
-        // Overflow popup: use stored cursor coordinates.
-        popup.HorizontalOffset(g_volumeTooltipState.cursorX + kTooltipOffset);
-        popup.VerticalOffset(g_volumeTooltipState.cursorY - tooltipHeight / 2);
-    } else {
-        // Main taskbar: use element-relative coordinates.
-        double cursorX = g_volumeTooltipState.cursorX;
-        double cursorY = g_volumeTooltipState.cursorY;
+        // Overflow popup: to the right of the cursor, or to the left if
+        // there's no room, as with a vertical taskbar docked to the right.
+        double x = cursorX + kTooltipOffset;
+        if (x + tooltipWidth > monitorRight) {
+            x = cursorX - kTooltipOffset - tooltipWidth;
+        }
+        popup.HorizontalOffset(x);
+        popup.VerticalOffset(cursorY - tooltipHeight / 2);
+        return;
+    }
 
+    if (!g_volumeTooltipState.vertical) {
         // Get TaskbarFrame's position in root coordinates. In some cases,
         // taskbarFrame may be contained in an element with a larger height,
         // with a region above that's invisible.
         auto transform = taskbarFrame.TransformToVisual(nullptr);
         auto frameOrigin = transform.TransformPoint({0, 0});
 
-        if (g_volumeTooltipState.rotationAngle == 0.0) {
-            // Horizontal taskbar.
-            double taskbarHeight = taskbarFrame.ActualHeight();
-            popup.HorizontalOffset(cursorX + kTooltipOffset);
-            popup.VerticalOffset(
-                frameOrigin.Y +
-                std::fmax((taskbarHeight - tooltipHeight) / 2,
-                          static_cast<double>(kTooltipOffsetTaskbarEdge)));
-        } else {
-            // Vertical taskbar.
-            popup.HorizontalOffset(kTooltipOffsetTaskbarEdge);
-            popup.VerticalOffset(cursorY + kTooltipOffset);
+        double taskbarHeight = taskbarFrame.ActualHeight();
+        popup.HorizontalOffset(cursorX + kTooltipOffset);
+        popup.VerticalOffset(
+            frameOrigin.Y +
+            std::fmax((taskbarHeight - tooltipHeight) / 2,
+                      static_cast<double>(kTooltipOffsetTaskbarEdge)));
+    } else {
+        // At the screen edge which the taskbar is docked to, extending over
+        // the taskbar towards the screen center.
+        bool dockedRight = cursorX > monitorRect.X + monitorRect.Width / 2;
+        popup.HorizontalOffset(
+            dockedRight ? monitorRight - kTooltipOffsetTaskbarEdge - tooltipWidth
+                        : monitorRect.X + kTooltipOffsetTaskbarEdge);
+        popup.VerticalOffset(cursorY + kTooltipOffset);
+    }
+}
+
+// Set while the tooltip popup opens, which creates the popup's window if it's a
+// windowed popup.
+thread_local bool g_openingTooltipPopup;
+
+// ZBID_SYSTEM_TOOLS, an undocumented window band above the band of the taskbar
+// thumbnail previews.
+constexpr DWORD kZbidSystemTools = 16;
+
+using CreateWindowInBand_t = HWND(WINAPI*)(DWORD dwExStyle,
+                                           LPCWSTR lpClassName,
+                                           LPCWSTR lpWindowName,
+                                           DWORD dwStyle,
+                                           int X,
+                                           int Y,
+                                           int nWidth,
+                                           int nHeight,
+                                           HWND hWndParent,
+                                           HMENU hMenu,
+                                           HINSTANCE hInstance,
+                                           LPVOID lpParam,
+                                           DWORD dwBand);
+
+bool IsWindowedPopupClass(LPCWSTR className, HINSTANCE hInstance) {
+    constexpr WCHAR kWindowedPopupClassName[] = L"Xaml_WindowedPopupClass";
+    if (!IS_INTRESOURCE(className)) {
+        return _wcsicmp(className, kWindowedPopupClassName) == 0;
+    }
+
+    // GetClassInfoEx returns the class atom.
+    WNDCLASSEX wc{
+        .cbSize = sizeof(wc),
+    };
+    ATOM atom =
+        (ATOM)GetClassInfoEx(hInstance, kWindowedPopupClassName, &wc);
+    return atom && atom == (ATOM)(ULONG_PTR)className;
+}
+
+using CreateWindowExW_t = decltype(&CreateWindowExW);
+CreateWindowExW_t CreateWindowExW_Original;
+HWND WINAPI CreateWindowExW_Hook(DWORD dwExStyle,
+                                 LPCWSTR lpClassName,
+                                 LPCWSTR lpWindowName,
+                                 DWORD dwStyle,
+                                 int X,
+                                 int Y,
+                                 int nWidth,
+                                 int nHeight,
+                                 HWND hWndParent,
+                                 HMENU hMenu,
+                                 HINSTANCE hInstance,
+                                 LPVOID lpParam) {
+    if (!g_openingTooltipPopup ||
+        !IsWindowedPopupClass(lpClassName, hInstance)) {
+        return CreateWindowExW_Original(dwExStyle, lpClassName, lpWindowName,
+                                        dwStyle, X, Y, nWidth, nHeight,
+                                        hWndParent, hMenu, hInstance, lpParam);
+    }
+
+    // The window takes mouse input regardless of the popup's IsHitTestVisible,
+    // and the tooltip follows the cursor, so the window is made transparent to
+    // mouse input to keep the pointer on the taskbar.
+    dwExStyle |= WS_EX_LAYERED | WS_EX_TRANSPARENT;
+
+    static auto pCreateWindowInBand = (CreateWindowInBand_t)GetProcAddress(
+        GetModuleHandle(L"user32.dll"), "CreateWindowInBand");
+
+    HWND hWnd = nullptr;
+    if (pCreateWindowInBand) {
+        // A window can't be owned by a window of another band. Without an
+        // owner, it's a tool window to stay off the taskbar and Alt+Tab.
+        hWnd = pCreateWindowInBand(dwExStyle | WS_EX_TOOLWINDOW, lpClassName,
+                                   lpWindowName, dwStyle, X, Y, nWidth, nHeight,
+                                   nullptr, hMenu, hInstance, lpParam,
+                                   kZbidSystemTools);
+        if (!hWnd) {
+            Wh_Log(L"CreateWindowInBand failed: %u", GetLastError());
         }
     }
+
+    if (!hWnd) {
+        hWnd = CreateWindowExW_Original(dwExStyle, lpClassName, lpWindowName,
+                                        dwStyle, X, Y, nWidth, nHeight,
+                                        hWndParent, hMenu, hInstance, lpParam);
+    }
+
+    if (hWnd) {
+        SetLayeredWindowAttributes(hWnd, 0, 255, LWA_ALPHA);
+    }
+
+    return hWnd;
+}
+
+// Returns the cursor's monitor in root coordinates, given the cursor's root
+// coordinates.
+winrt::Windows::Foundation::Rect GetCursorMonitorRect(
+    double cursorX,
+    double cursorY,
+    double rasterizationScale) {
+    POINT pt;
+    GetCursorPos(&pt);
+
+    MONITORINFO monitorInfo{
+        .cbSize = sizeof(MONITORINFO),
+    };
+    GetMonitorInfo(MonitorFromPoint(pt, MONITOR_DEFAULTTONEAREST),
+                   &monitorInfo);
+    const RECT& rc = monitorInfo.rcMonitor;
+
+    return {
+        static_cast<float>(cursorX + (rc.left - pt.x) / rasterizationScale),
+        static_cast<float>(cursorY + (rc.top - pt.y) / rasterizationScale),
+        static_cast<float>((rc.right - rc.left) / rasterizationScale),
+        static_cast<float>((rc.bottom - rc.top) / rasterizationScale),
+    };
 }
 
 void ShowVolumeTooltip(FrameworkElement taskbarFrame,
@@ -970,8 +1099,20 @@ void ShowVolumeTooltip(FrameworkElement taskbarFrame,
                        double cursorY,
                        bool isOverflowPopup,
                        PCWSTR text) {
-    if (!taskbarFrame) {
+    auto xamlRoot = taskbarFrame ? taskbarFrame.XamlRoot() : nullptr;
+    if (!xamlRoot) {
         return;
+    }
+
+    // The XAML root of a vertical taskbar is taller than it's wide, unless a
+    // mod rotates the XAML root content to make the taskbar vertical.
+    bool vertical = false;
+    if (!isOverflowPopup) {
+        auto xamlRootSize = xamlRoot.Size();
+        auto xamlRootContent = xamlRoot.Content();
+        vertical = xamlRootSize.Height > xamlRootSize.Width ||
+                   (xamlRootContent &&
+                    GetRotationAngle(xamlRootContent) != 0.0);
     }
 
     // Create the popup if it doesn't exist.
@@ -987,7 +1128,8 @@ void ShowVolumeTooltip(FrameworkElement taskbarFrame,
 
         Controls::Primitives::Popup popup;
         popup.IsHitTestVisible(false);
-        if (isOverflowPopup) {
+        // A vertical taskbar is usually narrower than the tooltip.
+        if (isOverflowPopup || vertical) {
             popup.ShouldConstrainToRootBounds(false);
         }
         popup.Child(border);
@@ -1002,6 +1144,9 @@ void ShowVolumeTooltip(FrameworkElement taskbarFrame,
     // null taskbarFrame indicates screen coordinates mode.
     g_volumeTooltipState.taskbarFrame =
         isOverflowPopup ? nullptr : taskbarFrame;
+    g_volumeTooltipState.vertical = vertical;
+    g_volumeTooltipState.monitorRect = GetCursorMonitorRect(
+        cursorX, cursorY, xamlRoot.RasterizationScale());
     g_volumeTooltipState.cursorX = cursorX;
     g_volumeTooltipState.cursorY = cursorY;
 
@@ -1031,18 +1176,13 @@ void ShowVolumeTooltip(FrameworkElement taskbarFrame,
     }
 
     // Set XamlRoot and position near cursor.
-    auto xamlRoot = taskbarFrame.XamlRoot();
     popup.XamlRoot(xamlRoot);
-
-    // Check if the taskbar is rotated (vertical taskbar), which rotates the
-    // XAML root content.
-    auto xamlRootContent = xamlRoot ? xamlRoot.Content() : nullptr;
-    g_volumeTooltipState.rotationAngle =
-        xamlRootContent ? GetRotationAngle(xamlRootContent) : 0.0;
 
     UpdateTooltipPosition();
 
+    g_openingTooltipPopup = true;
     popup.IsOpen(true);
+    g_openingTooltipPopup = false;
 
     // Reset the hide timer.
     if (g_volumeTooltipState.hideTimer) {
@@ -1066,7 +1206,8 @@ void HideVolumeTooltip() {
     // created next time.
     g_volumeTooltipState.popup = nullptr;
     g_volumeTooltipState.taskbarFrame = nullptr;
-    g_volumeTooltipState.rotationAngle = 0.0;
+    g_volumeTooltipState.vertical = false;
+    g_volumeTooltipState.monitorRect = {};
     g_volumeTooltipState.cursorX = 0.0;
 }
 
@@ -2135,6 +2276,9 @@ BOOL Wh_ModInit() {
     WindhawkUtils::SetFunctionHook(pKernelBaseLoadLibraryExW,
                                    LoadLibraryExW_Hook,
                                    &LoadLibraryExW_Original);
+
+    WindhawkUtils::SetFunctionHook(CreateWindowExW, CreateWindowExW_Hook,
+                                   &CreateWindowExW_Original);
 
     if (g_settings.touchpadScroll) {
         TouchpadThreadInit();
