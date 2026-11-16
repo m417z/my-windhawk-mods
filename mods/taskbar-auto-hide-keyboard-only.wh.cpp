@@ -127,6 +127,7 @@ Optionally override what happens when the Win key is pressed:
 
 #include <algorithm>
 #include <atomic>
+#include <cmath>
 #include <string>
 #include <string_view>
 #include <unordered_map>
@@ -1532,6 +1533,7 @@ LRESULT WINAPI CTaskBand_v_WndProc_Hook(void* pThis,
 
 // Double-click state for mouse toggle.
 DWORD g_lastPressTime;
+winrt::Windows::Foundation::Point g_lastPressPoint;  // In pixels.
 
 bool IsInSystemTrayFrame(winrt::Windows::UI::Xaml::DependencyObject element) {
     while (element) {
@@ -1591,7 +1593,8 @@ int TaskbarFrame_OnPointerPressed_Hook(void* pThis, void* pArgs) {
         return original();
     }
 
-    auto properties = args.GetCurrentPoint(taskbarFrame).Properties();
+    auto currentPoint = args.GetCurrentPoint(taskbarFrame);
+    auto properties = currentPoint.Properties();
 
     bool shouldToggle = false;
 
@@ -1602,12 +1605,30 @@ int TaskbarFrame_OnPointerPressed_Hook(void* pThis, void* pArgs) {
         }
     } else if (g_settings.toggleAlwaysShowMouseEvent ==
                ToggleAlwaysShowMouseEvent::DoubleClick) {
-        DWORD now = GetTickCount();
-        if (now - g_lastPressTime <= GetDoubleClickTime()) {
+        if (!properties.IsLeftButtonPressed()) {
             g_lastPressTime = 0;
-            shouldToggle = true;
         } else {
-            g_lastPressTime = now;
+            // The pointer position is in DIPs, the double-click rectangle
+            // size is in pixels.
+            auto xamlRoot = taskbarFrame.XamlRoot();
+            double scale = xamlRoot ? xamlRoot.RasterizationScale() : 1.0;
+            auto position = currentPoint.Position();
+            winrt::Windows::Foundation::Point point{
+                static_cast<float>(position.X * scale),
+                static_cast<float>(position.Y * scale)};
+
+            DWORD now = GetTickCount();
+            if (now - g_lastPressTime <= GetDoubleClickTime() &&
+                std::abs(point.X - g_lastPressPoint.X) <=
+                    GetSystemMetrics(SM_CXDOUBLECLK) / 2.0f &&
+                std::abs(point.Y - g_lastPressPoint.Y) <=
+                    GetSystemMetrics(SM_CYDOUBLECLK) / 2.0f) {
+                g_lastPressTime = 0;
+                shouldToggle = true;
+            } else {
+                g_lastPressTime = now;
+                g_lastPressPoint = point;
+            }
         }
     }
 
