@@ -687,16 +687,16 @@ bool IsTaskbarAutoHidden(HWND hWnd) {
         return false;
     }
 
+    // The window property might hold a monitor that was just disconnected.
     HMONITOR monitor = (HMONITOR)GetProp(hWnd, L"TaskbarMonitor");
-    if (!monitor) {
-        monitor = MonitorFromWindow(hWnd, MONITOR_DEFAULTTONEAREST);
-    }
-
     MONITORINFO monitorInfo{
         .cbSize = sizeof(monitorInfo),
     };
-    if (!GetMonitorInfo(monitor, &monitorInfo)) {
-        return false;
+    if (!monitor || !GetMonitorInfo(monitor, &monitorInfo)) {
+        monitor = MonitorFromWindow(hWnd, MONITOR_DEFAULTTONEAREST);
+        if (!GetMonitorInfo(monitor, &monitorInfo)) {
+            return false;
+        }
     }
 
     RECT visibleRect;

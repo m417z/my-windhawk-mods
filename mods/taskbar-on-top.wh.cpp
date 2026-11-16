@@ -455,11 +455,17 @@ TaskbarLocation GetTaskbarLocationSecondary() {
 
 // The primary taskbar isn't necessarily on the primary monitor, e.g. with the
 // "Primary taskbar on secondary monitor" mod. The taskbar window property is
-// set when the taskbar moves to a monitor, before it's laid out there.
+// set when the taskbar moves to a monitor, before it's laid out there. It might
+// hold a monitor that was just disconnected.
 HMONITOR GetPrimaryTaskbarMonitor() {
     if (HWND hTaskbarWnd = FindWindow(L"Shell_TrayWnd", nullptr)) {
         if (auto monitor = (HMONITOR)GetProp(hTaskbarWnd, L"TaskbarMonitor")) {
-            return monitor;
+            MONITORINFO monitorInfo{
+                .cbSize = sizeof(MONITORINFO),
+            };
+            if (GetMonitorInfo(monitor, &monitorInfo)) {
+                return monitor;
+            }
         }
     }
 
