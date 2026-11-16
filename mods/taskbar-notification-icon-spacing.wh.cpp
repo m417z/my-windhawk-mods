@@ -872,12 +872,48 @@ bool ApplyIconStackStyle(PCWSTR containerName,
     return true;
 }
 
+// On newer builds, the XAML root content is the taskbar frame, and the tray
+// frame is an item of its repeater.
+FrameworkElement FindSystemTrayFrame(FrameworkElement xamlRootContent) {
+    if (winrt::get_class_name(xamlRootContent) != L"Taskbar.TaskbarFrame") {
+        return FindChildByClassName(xamlRootContent,
+                                    L"SystemTray.SystemTrayFrame");
+    }
+
+    FrameworkElement child = xamlRootContent;
+    if (!(child = FindChildByName(child, L"RootGrid")) ||
+        !(child = FindChildByName(child, L"TaskbarFrameRepeater"))) {
+        return nullptr;
+    }
+
+    FrameworkElement systemTrayFrame = nullptr;
+    EnumChildElements(child, [&systemTrayFrame](FrameworkElement item) {
+        if (winrt::get_class_name(item) != L"Taskbar.TaskbarExtensionElement") {
+            return false;
+        }
+
+        auto extensionElement = item.try_as<Controls::ContentControl>();
+        auto content =
+            extensionElement
+                ? extensionElement.Content().try_as<FrameworkElement>()
+                : nullptr;
+        if (!content ||
+            winrt::get_class_name(content) != L"SystemTray.SystemTrayFrame") {
+            return false;
+        }
+
+        systemTrayFrame = content;
+        return true;
+    });
+
+    return systemTrayFrame;
+}
+
 bool ApplyStyle(XamlRoot xamlRoot, int rows, int width) {
     FrameworkElement systemTrayFrameGrid = nullptr;
 
     FrameworkElement child = xamlRoot.Content().try_as<FrameworkElement>();
-    if (child &&
-        (child = FindChildByClassName(child, L"SystemTray.SystemTrayFrame")) &&
+    if (child && (child = FindSystemTrayFrame(child)) &&
         (child = FindChildByName(child, L"SystemTrayFrameGrid"))) {
         systemTrayFrameGrid = child;
     }

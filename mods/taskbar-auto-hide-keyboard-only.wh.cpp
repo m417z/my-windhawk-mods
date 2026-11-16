@@ -123,6 +123,7 @@ Optionally override what happens when the Win key is pressed:
 #include <winrt/Windows.UI.Input.h>
 #include <winrt/Windows.UI.Xaml.Controls.h>
 #include <winrt/Windows.UI.Xaml.Input.h>
+#include <winrt/Windows.UI.Xaml.Media.h>
 
 #include <algorithm>
 #include <atomic>
@@ -1532,6 +1533,24 @@ LRESULT WINAPI CTaskBand_v_WndProc_Hook(void* pThis,
 // Double-click state for mouse toggle.
 DWORD g_lastPressTime;
 
+bool IsInSystemTrayFrame(winrt::Windows::UI::Xaml::DependencyObject element) {
+    while (element) {
+        auto className = winrt::get_class_name(element);
+        if (className == L"SystemTray.SystemTrayFrame") {
+            return true;
+        }
+
+        if (className == L"Taskbar.TaskbarFrame") {
+            break;
+        }
+
+        element = winrt::Windows::UI::Xaml::Media::VisualTreeHelper::GetParent(
+            element);
+    }
+
+    return false;
+}
+
 using TaskbarFrame_OnPointerPressed_t = int(WINAPI*)(void* pThis, void* pArgs);
 TaskbarFrame_OnPointerPressed_t TaskbarFrame_OnPointerPressed_Original;
 int TaskbarFrame_OnPointerPressed_Hook(void* pThis, void* pArgs) {
@@ -1562,6 +1581,13 @@ int TaskbarFrame_OnPointerPressed_Hook(void* pThis, void* pArgs) {
     winrt::Windows::UI::Xaml::Input::PointerRoutedEventArgs args{nullptr};
     winrt::copy_from_abi(args, pArgs);
     if (!args) {
+        return original();
+    }
+
+    // On newer builds, the tray is inside the taskbar frame.
+    if (IsInSystemTrayFrame(
+            args.OriginalSource()
+                .try_as<winrt::Windows::UI::Xaml::DependencyObject>())) {
         return original();
     }
 

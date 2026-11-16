@@ -539,30 +539,43 @@ std::optional<RECT> GetShowDesktopButtonBoundsWorker(HWND hTaskbarWnd) {
             }
         };
 
-    auto findChildByClassName =
-        [&automation](
-            winrt::com_ptr<IUIAutomationElement>& parent,
-            PCWSTR className) -> winrt::com_ptr<IUIAutomationElement> {
-        _bstr_t classNameBstr(className);
-        VARIANT classNameVariant{};
-        classNameVariant.vt = VT_BSTR;
-        classNameVariant.bstrVal = classNameBstr.GetBSTR();
+    auto findChild =
+        [&automation](winrt::com_ptr<IUIAutomationElement>& parent,
+                      PROPERTYID propertyId,
+                      PCWSTR value) -> winrt::com_ptr<IUIAutomationElement> {
+        _bstr_t valueBstr(value);
+        VARIANT valueVariant{};
+        valueVariant.vt = VT_BSTR;
+        valueVariant.bstrVal = valueBstr.GetBSTR();
 
         winrt::com_ptr<IUIAutomationCondition> condition;
         HRESULT hr = automation->CreatePropertyCondition(
-            UIA_ClassNamePropertyId, classNameVariant, condition.put());
+            propertyId, valueVariant, condition.put());
         if (FAILED(hr) || !condition) {
             return nullptr;
         }
 
         winrt::com_ptr<IUIAutomationElement> child;
-        hr =
-            parent->FindFirst(TreeScope_Children, condition.get(), child.put());
+        hr = parent->FindFirst(TreeScope_Children, condition.get(),
+                               child.put());
         if (FAILED(hr)) {
             return nullptr;
         }
 
         return child;
+    };
+
+    // ShowDesktopButton is on the primary taskbar. On secondary taskbars, use
+    // OmniButtonRight instead.
+    auto findTargetChild = [&findChild](
+                               winrt::com_ptr<IUIAutomationElement>& parent) {
+        auto target = findChild(parent, UIA_ClassNamePropertyId,
+                                L"SystemTray.ShowDesktopButton");
+        if (!target) {
+            target = findChild(parent, UIA_ClassNamePropertyId,
+                               L"SystemTray.OmniButtonRight");
+        }
+        return target;
     };
 
     // The DesktopWindowContentBridge is a child HWND, not a UI Automation
@@ -582,13 +595,16 @@ std::optional<RECT> GetShowDesktopButtonBoundsWorker(HWND hTaskbarWnd) {
         return std::nullopt;
     }
 
-    // ShowDesktopButton is a direct child of DesktopWindowContentBridge on the
-    // primary taskbar. On secondary taskbars, use OmniButtonRight instead.
-    winrt::com_ptr<IUIAutomationElement> targetElement =
-        findChildByClassName(element, L"SystemTray.ShowDesktopButton");
+    // On newer builds, the tray buttons are children of the taskbar frame. On
+    // older builds, they're children of DesktopWindowContentBridge, next to the
+    // taskbar frame.
+    winrt::com_ptr<IUIAutomationElement> targetElement;
+    if (auto taskbarFrame =
+            findChild(element, UIA_AutomationIdPropertyId, L"TaskbarFrame")) {
+        targetElement = findTargetChild(taskbarFrame);
+    }
     if (!targetElement) {
-        targetElement =
-            findChildByClassName(element, L"SystemTray.OmniButtonRight");
+        targetElement = findTargetChild(element);
     }
     if (!targetElement) {
         Wh_Log(

@@ -304,7 +304,13 @@ SystemButton IdentifySystemButton(FrameworkElement element) {
             return SystemButton::Widgets;
         }
     } else if (className == L"Taskbar.TaskbarExtensionElement") {
-        return SystemButton::Search;
+        // On newer builds, the system tray is an extension element too.
+        auto contentControl = element.try_as<Controls::ContentControl>();
+        auto content = contentControl ? contentControl.Content() : nullptr;
+        if (content && winrt::get_class_name(content) ==
+                           L"SearchUx.SearchUI.SearchButtonControl") {
+            return SystemButton::Search;
+        }
     }
 
     return SystemButton::None;
@@ -543,10 +549,13 @@ bool ApplyStyle(XamlRoot xamlRoot) {
 
     FrameworkElement taskbarFrameRepeater = nullptr;
 
+    // On newer builds, the XAML root content is the taskbar frame itself.
     FrameworkElement child = xamlRootContent;
-    if (child &&
-        (child = FindChildByClassName(child, L"Taskbar.TaskbarFrame")) &&
-        (child = FindChildByName(child, L"RootGrid")) &&
+    if (child && winrt::get_class_name(child) != L"Taskbar.TaskbarFrame") {
+        child = FindChildByClassName(child, L"Taskbar.TaskbarFrame");
+    }
+
+    if (child && (child = FindChildByName(child, L"RootGrid")) &&
         (child = FindChildByName(child, L"TaskbarFrameRepeater"))) {
         taskbarFrameRepeater = child;
     }

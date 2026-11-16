@@ -143,8 +143,10 @@ With labels:
 
 #include <winrt/Windows.Foundation.Collections.h>
 #include <winrt/Windows.Foundation.h>
+#include <winrt/Windows.UI.Composition.h>
 #include <winrt/Windows.UI.Core.h>
 #include <winrt/Windows.UI.Xaml.Controls.h>
+#include <winrt/Windows.UI.Xaml.Hosting.h>
 #include <winrt/Windows.UI.Xaml.Media.h>
 
 #include <algorithm>
@@ -272,7 +274,15 @@ using FrameworkElementLoadedEventRevoker = winrt::impl::event_revoker<
     IFrameworkElement,
     &winrt::impl::abi<IFrameworkElement>::type::remove_Loaded>;
 
-std::list<FrameworkElementLoadedEventRevoker> g_notifyIconAutoRevokerList;
+using FrameworkElementLayoutUpdatedEventRevoker = winrt::impl::event_revoker<
+    IFrameworkElement,
+    &winrt::impl::abi<IFrameworkElement>::type::remove_LayoutUpdated>;
+
+// Only accessed from the taskbar thread, which is also where they're released
+// on unload, rather than by the destructor at process exit.
+[[clang::no_destroy]] std::optional<
+    std::list<FrameworkElementLoadedEventRevoker>>
+    g_notifyIconAutoRevokerList{std::in_place};
 
 int g_copilotPosTimerCounter;
 UINT_PTR g_copilotPosTimer;
@@ -2211,7 +2221,7 @@ void WINAPI TaskbarController_UpdateFrameHeight_Hook(void* pThis) {
     // Adjust parent grid height too, for compatibility with some tablet or
     // touch-optimized mode.
     auto contentGrid = Media::VisualTreeHelper::GetParent(taskbarFrameElement)
-                           .try_as<FrameworkElement>();
+                           .try_as<Controls::Grid>();
     if (contentGrid) {
         contentGrid.Height(std::numeric_limits<double>::quiet_NaN());
     }
@@ -2629,12 +2639,151 @@ void UpdateNativeSystemTrayFrameWidths() {
     }
 }
 
+// The taskbar content is either a grid with the taskbar frame and the tray
+// frame, or the taskbar frame itself, with the tray frame as an item of its
+// repeater.
+FrameworkElement FindTaskbarFrame(FrameworkElement content) {
+    if (content && winrt::get_class_name(content) == L"Taskbar.TaskbarFrame") {
+        return content;
+    }
+
+    return FindChildByName(content, L"TaskbarFrame");
+}
+
+// The item of the taskbar frame repeater which holds the tray on newer builds.
+Controls::ContentControl FindSystemTrayItem(FrameworkElement taskbarFrame) {
+    FrameworkElement repeater = taskbarFrame;
+    if (!(repeater = FindChildByName(repeater, L"RootGrid")) ||
+        !(repeater = FindChildByName(repeater, L"TaskbarFrameRepeater"))) {
+        return nullptr;
+    }
+
+    Controls::ContentControl systemTrayItem = nullptr;
+    EnumChildElements(repeater, [&systemTrayItem](FrameworkElement child) {
+        if (winrt::get_class_name(child) !=
+            L"Taskbar.TaskbarExtensionElement") {
+            return false;
+        }
+
+        auto extensionElement = child.try_as<Controls::ContentControl>();
+        if (!extensionElement) {
+            return false;
+        }
+
+        auto content = extensionElement.Content().try_as<FrameworkElement>();
+        if (!content ||
+            winrt::get_class_name(content) != L"SystemTray.SystemTrayFrame") {
+            return false;
+        }
+
+        systemTrayItem = extensionElement;
+        return true;
+    });
+
+    return systemTrayItem;
+}
+
+FrameworkElement FindSystemTrayFrame(FrameworkElement content) {
+    auto taskbarFrame = FindTaskbarFrame(content);
+    if (taskbarFrame != content) {
+        return FindChildByClassName(content, L"SystemTray.SystemTrayFrame");
+    }
+
+    auto systemTrayItem = FindSystemTrayItem(taskbarFrame);
+    return systemTrayItem ? systemTrayItem.Content().as<FrameworkElement>()
+                          : nullptr;
+}
+
+// The taskbar makes the transform of the tray's item relative to the taskbar
+// frame whenever the item is prepared. That skips the root grid margin, drawing
+// the tray away from where it's laid out, so the item's ParentForTransform is
+// cleared after each layout pass and restored on unload.
+struct SystemTrayItemTaskbarFrame {
+    winrt::weak_ref<FrameworkElement> taskbarFrame;
+    FrameworkElementLayoutUpdatedEventRevoker layoutUpdatedRevoker;
+};
+
+[[clang::no_destroy]] std::optional<std::list<SystemTrayItemTaskbarFrame>>
+    g_systemTrayItemTaskbarFrames{std::in_place};
+
+void ClearSystemTrayItemParentForTransform(FrameworkElement taskbarFrame) {
+    auto systemTrayItem = FindSystemTrayItem(taskbarFrame);
+    if (!systemTrayItem) {
+        return;
+    }
+
+    auto visual =
+        Hosting::ElementCompositionPreview::GetElementVisual(systemTrayItem);
+    if (visual.ParentForTransform()) {
+        visual.ParentForTransform(nullptr);
+    }
+}
+
+void TrackSystemTrayItemParentForTransform(FrameworkElement taskbarFrame) {
+    g_systemTrayItemTaskbarFrames->remove_if(
+        [](const auto& entry) { return !entry.taskbarFrame.get(); });
+
+    if (std::any_of(g_systemTrayItemTaskbarFrames->begin(),
+                    g_systemTrayItemTaskbarFrames->end(),
+                    [&taskbarFrame](const auto& entry) {
+                        return entry.taskbarFrame.get() == taskbarFrame;
+                    })) {
+        return;
+    }
+
+    auto& entry = g_systemTrayItemTaskbarFrames->emplace_back();
+    entry.taskbarFrame = winrt::make_weak(taskbarFrame);
+    entry.layoutUpdatedRevoker = taskbarFrame.LayoutUpdated(
+        winrt::auto_revoke_t{},
+        [taskbarFrameWeak = entry.taskbarFrame](
+            winrt::Windows::Foundation::IInspectable const& sender,
+            winrt::Windows::Foundation::IInspectable const& e) {
+            auto taskbarFrame = taskbarFrameWeak.get();
+            if (!taskbarFrame) {
+                return;
+            }
+
+            try {
+                ClearSystemTrayItemParentForTransform(taskbarFrame);
+            } catch (...) {
+                HRESULT hr = winrt::to_hresult();
+                Wh_Log(L"Error %08X", hr);
+            }
+        });
+
+    ClearSystemTrayItemParentForTransform(taskbarFrame);
+}
+
+// Revokes the LayoutUpdated handlers, so it has to run on the taskbar thread.
+void RestoreSystemTrayItemsParentForTransform() {
+    for (const auto& entry : *g_systemTrayItemTaskbarFrames) {
+        auto taskbarFrame = entry.taskbarFrame.get();
+        if (!taskbarFrame) {
+            continue;
+        }
+
+        try {
+            if (auto systemTrayItem = FindSystemTrayItem(taskbarFrame)) {
+                Hosting::ElementCompositionPreview::GetElementVisual(
+                    systemTrayItem)
+                    .ParentForTransform(
+                        Hosting::ElementCompositionPreview::GetElementVisual(
+                            taskbarFrame));
+            }
+        } catch (...) {
+            HRESULT hr = winrt::to_hresult();
+            Wh_Log(L"Error %08X", hr);
+        }
+    }
+
+    g_systemTrayItemTaskbarFrames.reset();
+}
+
 bool IsSecondaryTaskbar(XamlRoot xamlRoot) {
     FrameworkElement systemIconsPresenter = nullptr;
 
     FrameworkElement child = xamlRoot.Content().try_as<FrameworkElement>();
-    if (child &&
-        (child = FindChildByClassName(child, L"SystemTray.SystemTrayFrame")) &&
+    if (child && (child = FindSystemTrayFrame(child)) &&
         (child = FindChildByName(child, L"SystemTrayFrameGrid")) &&
         (child = FindChildByName(child, L"ControlCenterButton")) &&
         (child =
@@ -2667,12 +2816,15 @@ bool ApplyStyle(XamlRoot xamlRoot) {
     FrameworkElement contentGrid =
         xamlRoot.Content().try_as<FrameworkElement>();
 
-    auto taskbarFrame = FindChildByName(contentGrid, L"TaskbarFrame");
+    auto taskbarFrame = FindTaskbarFrame(contentGrid);
     if (!taskbarFrame) {
         return false;
     }
 
-    contentGrid = contentGrid.as<Controls::Grid>();
+    bool taskbarFrameIsContent = taskbarFrame == contentGrid;
+    if (!taskbarFrameIsContent) {
+        contentGrid = contentGrid.as<Controls::Grid>();
+    }
 
     auto border =
         Media::VisualTreeHelper::GetParent(contentGrid).as<FrameworkElement>();
@@ -2720,15 +2872,21 @@ bool ApplyStyle(XamlRoot xamlRoot) {
         rootGrid.Margin(margin);
     }
 
-    if (auto systemTrayFrame =
-            FindChildByClassName(contentGrid, L"SystemTray.SystemTrayFrame")) {
+    if (taskbarFrameIsContent && !g_unloading) {
+        TrackSystemTrayItemParentForTransform(taskbarFrame);
+    }
+
+    if (auto systemTrayFrame = FindSystemTrayFrame(contentGrid)) {
         // It's usually Stretch already, but it might be Bottom in some tablet
         // or touch-optimized mode.
         systemTrayFrame.VerticalAlignment(VerticalAlignment::Stretch);
 
-        if (auto systemTrayFrameGrid =
-                FindChildByName(systemTrayFrame, L"SystemTrayFrameGrid")) {
-            systemTrayFrameGrid.Margin(margin);
+        // A tray frame inside the taskbar frame gets the root grid margin.
+        if (!taskbarFrameIsContent) {
+            if (auto systemTrayFrameGrid =
+                    FindChildByName(systemTrayFrame, L"SystemTrayFrameGrid")) {
+                systemTrayFrameGrid.Margin(margin);
+            }
         }
     }
 
@@ -3317,12 +3475,12 @@ void* WINAPI IconView_IconView_Hook(PVOID pThis) {
     FrameworkElement iconView = nullptr;
     ((IUnknown**)pThis)[1]->QueryInterface(winrt::guid_of<FrameworkElement>(),
                                            winrt::put_abi(iconView));
-    if (!iconView) {
+    if (!iconView || g_unloading) {
         return ret;
     }
 
-    g_notifyIconAutoRevokerList.emplace_back();
-    auto autoRevokerIt = g_notifyIconAutoRevokerList.end();
+    g_notifyIconAutoRevokerList->emplace_back();
+    auto autoRevokerIt = g_notifyIconAutoRevokerList->end();
     --autoRevokerIt;
 
     *autoRevokerIt = iconView.Loaded(
@@ -3331,7 +3489,7 @@ void* WINAPI IconView_IconView_Hook(PVOID pThis) {
                         RoutedEventArgs const& e) {
             Wh_Log(L">");
 
-            g_notifyIconAutoRevokerList.erase(autoRevokerIt);
+            g_notifyIconAutoRevokerList->erase(autoRevokerIt);
 
             auto iconView = sender.try_as<FrameworkElement>();
             if (!iconView) {
@@ -3395,7 +3553,7 @@ bool ApplyStyleIfNeeded(XamlRoot xamlRoot) {
     FrameworkElement contentGrid =
         xamlRoot.Content().try_as<FrameworkElement>();
 
-    auto taskbarFrame = FindChildByName(contentGrid, L"TaskbarFrame");
+    auto taskbarFrame = FindTaskbarFrame(contentGrid);
     if (!taskbarFrame) {
         return true;
     }
@@ -3419,8 +3577,7 @@ bool UpdateNotifyIcons(XamlRoot xamlRoot) {
     FrameworkElement systemTrayFrameGrid = nullptr;
 
     FrameworkElement child = rootGrid;
-    if (child &&
-        (child = FindChildByClassName(child, L"SystemTray.SystemTrayFrame")) &&
+    if (child && (child = FindSystemTrayFrame(child)) &&
         (child = FindChildByName(child, L"SystemTrayFrameGrid"))) {
         systemTrayFrameGrid = child;
     }
@@ -3843,8 +4000,13 @@ struct NativeTaskbarBackground {
 
 std::vector<NativeTaskbarBackground> g_nativeTaskbarBackgrounds;
 
-std::list<FrameworkElementLoadedEventRevoker>
-    g_nativeTaskbarBackgroundAutoRevokerList;
+[[clang::no_destroy]] std::optional<
+    std::list<FrameworkElementLoadedEventRevoker>>
+    g_nativeTaskbarBackgroundAutoRevokerList{std::in_place};
+
+[[clang::no_destroy]] std::optional<
+    std::list<FrameworkElementLayoutUpdatedEventRevoker>>
+    g_nativeTaskbarBackgroundLayoutUpdatedAutoRevokerList{std::in_place};
 
 using TaskbarBackground_Location_t = void(WINAPI*)(void* pThis, int location);
 TaskbarBackground_Location_t TaskbarBackground_Location_Original;
@@ -3876,24 +4038,90 @@ void UpdateNativeTaskbarBackgrounds() {
     }
 }
 
+void UpdateNativeTaskbarBackgroundWhenLoaded(FrameworkElement element);
+
+// A tray frame which is an item of the taskbar frame repeater can be added
+// after the background is loaded.
+void UpdateNativeTaskbarBackgroundWhenTrayAdded(FrameworkElement element) {
+    if (g_unloading) {
+        return;
+    }
+
+    g_nativeTaskbarBackgroundLayoutUpdatedAutoRevokerList->emplace_back();
+    auto autoRevokerIt =
+        g_nativeTaskbarBackgroundLayoutUpdatedAutoRevokerList->end();
+    --autoRevokerIt;
+
+    *autoRevokerIt = element.LayoutUpdated(
+        winrt::auto_revoke_t{},
+        [autoRevokerIt, elementWeak = winrt::make_weak(element)](
+            winrt::Windows::Foundation::IInspectable const& sender,
+            winrt::Windows::Foundation::IInspectable const& e) {
+            auto element = elementWeak.get();
+
+            try {
+                auto xamlRoot = element ? element.XamlRoot() : nullptr;
+                auto content =
+                    xamlRoot ? xamlRoot.Content().try_as<FrameworkElement>()
+                             : nullptr;
+                if (content && !FindSystemTrayFrame(content)) {
+                    return;
+                }
+            } catch (...) {
+                HRESULT hr = winrt::to_hresult();
+                Wh_Log(L"Error %08X", hr);
+            }
+
+            Wh_Log(L">");
+
+            g_nativeTaskbarBackgroundLayoutUpdatedAutoRevokerList->erase(
+                autoRevokerIt);
+
+            if (!element) {
+                return;
+            }
+
+            try {
+                auto it =
+                    FindTrackedElement(g_nativeTaskbarBackgrounds, element);
+                if (it != g_nativeTaskbarBackgrounds.end()) {
+                    UpdateNativeTaskbarBackground(*it);
+                }
+
+                UpdateNativeTaskbarBackgroundWhenLoaded(element);
+            } catch (...) {
+                HRESULT hr = winrt::to_hresult();
+                Wh_Log(L"Error %08X", hr);
+            }
+        });
+}
+
 // A secondary taskbar is detected by its system tray, which can be loaded after
 // the background gets its location.
 void UpdateNativeTaskbarBackgroundWhenLoaded(FrameworkElement element) {
+    if (g_unloading) {
+        return;
+    }
+
     FrameworkElement pendingElement = element;
     if (element.IsLoaded()) {
         auto xamlRoot = element.XamlRoot();
         auto content =
             xamlRoot ? xamlRoot.Content().try_as<FrameworkElement>() : nullptr;
-        pendingElement = content ? FindChildByClassName(
-                                       content, L"SystemTray.SystemTrayFrame")
-                                 : nullptr;
+        pendingElement = content ? FindSystemTrayFrame(content) : nullptr;
+        if (!pendingElement && content &&
+            FindTaskbarFrame(content) == content) {
+            UpdateNativeTaskbarBackgroundWhenTrayAdded(element);
+            return;
+        }
+
         if (!pendingElement || pendingElement.IsLoaded()) {
             return;
         }
     }
 
-    g_nativeTaskbarBackgroundAutoRevokerList.emplace_back();
-    auto autoRevokerIt = g_nativeTaskbarBackgroundAutoRevokerList.end();
+    g_nativeTaskbarBackgroundAutoRevokerList->emplace_back();
+    auto autoRevokerIt = g_nativeTaskbarBackgroundAutoRevokerList->end();
     --autoRevokerIt;
 
     *autoRevokerIt = pendingElement.Loaded(
@@ -3905,7 +4133,7 @@ void UpdateNativeTaskbarBackgroundWhenLoaded(FrameworkElement element) {
 
             auto element = elementWeak.get();
 
-            g_nativeTaskbarBackgroundAutoRevokerList.erase(autoRevokerIt);
+            g_nativeTaskbarBackgroundAutoRevokerList->erase(autoRevokerIt);
 
             if (!element) {
                 return;
@@ -6779,6 +7007,7 @@ bool HookTaskbarViewDllSymbolsNative(HMODULE module) {
             {LR"(public: void __cdecl winrt::Taskbar::implementation::TaskbarBackground::Location(enum winrt::WindowsUdk::UI::Shell::TaskbarLocation))"},
             &TaskbarBackground_Location_Original,
             TaskbarBackground_Location_Hook,
+            true,  // Inlined in newer Windows 11 builds.
         },
     };
 
@@ -6885,6 +7114,7 @@ bool HookTaskbarViewDllSymbols(HMODULE module,
                 {LR"(public: void __cdecl winrt::Taskbar::implementation::OverflowFlyoutModel::Show(void))"},
                 &OverflowFlyoutModel_Show_Original,
                 OverflowFlyoutModel_Show_Hook,
+                true,  // Missing in newer Windows 11 builds.
             },
             {
                 {LR"(private: void __cdecl winrt::Taskbar::implementation::FlyoutFrame::UpdateFlyoutPosition(void))"},
@@ -7591,6 +7821,19 @@ void Wh_ModBeforeUninit() {
         // This is required to give time for taskbar buttons of UWP apps to
         // update the layout.
         Sleep(400);
+
+        if (HWND hTaskbarWnd = FindCurrentProcessTaskbarWnd()) {
+            RunFromWindowThread(
+                hTaskbarWnd,
+                [](PVOID) {
+                    RestoreSystemTrayItemsParentForTransform();
+                    g_notifyIconAutoRevokerList.reset();
+                    g_nativeTaskbarBackgroundAutoRevokerList.reset();
+                    g_nativeTaskbarBackgroundLayoutUpdatedAutoRevokerList
+                        .reset();
+                },
+                nullptr);
+        }
     } else if (g_target == Target::StartMenuExperienceHost) {
         HWND hCoreWnd = StartMenuUI::GetCoreWnd();
         if (hCoreWnd) {

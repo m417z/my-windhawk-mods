@@ -85,6 +85,7 @@ check out [7+ Taskbar Tweaker](https://tweaker.ramensoftware.com/).
 #include <winrt/Windows.UI.Input.h>
 #include <winrt/Windows.UI.Xaml.Controls.h>
 #include <winrt/Windows.UI.Xaml.Input.h>
+#include <winrt/Windows.UI.Xaml.Media.h>
 
 #include <algorithm>
 #include <atomic>
@@ -1414,6 +1415,23 @@ LRESULT WINAPI CSecondaryTray_v_WndProc_Hook(void* pThis,
     return ret;
 }
 
+bool IsInSystemTrayFrame(DependencyObject element) {
+    while (element) {
+        auto className = winrt::get_class_name(element);
+        if (className == L"SystemTray.SystemTrayFrame") {
+            return true;
+        }
+
+        if (className == L"Taskbar.TaskbarFrame") {
+            break;
+        }
+
+        element = Media::VisualTreeHelper::GetParent(element);
+    }
+
+    return false;
+}
+
 using TaskbarFrame_OnPointerWheelChanged_t = int(WINAPI*)(PVOID pThis,
                                                           PVOID pArgs);
 TaskbarFrame_OnPointerWheelChanged_t
@@ -1453,6 +1471,11 @@ int TaskbarFrame_OnPointerWheelChanged_Hook(PVOID pThis, PVOID pArgs) {
         ->QueryInterface(winrt::guid_of<Input::PointerRoutedEventArgs>(),
                          winrt::put_abi(args));
     if (!args) {
+        return original();
+    }
+
+    // On newer builds, the tray is inside the taskbar frame.
+    if (IsInSystemTrayFrame(args.OriginalSource().try_as<DependencyObject>())) {
         return original();
     }
 

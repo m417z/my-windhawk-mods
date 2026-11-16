@@ -903,16 +903,8 @@ void CALLBACK HideVolumeTooltipTimerProc(HWND hwnd,
 constexpr int kTooltipOffset = 12;
 constexpr int kTooltipOffsetTaskbarEdge = 4;
 
-// Get rotation angle from element's parent RenderTransform.
-// Used to detect vertical taskbar orientation.
-double GetParentRotationAngle(FrameworkElement element) {
-    auto parent =
-        Media::VisualTreeHelper::GetParent(element).try_as<UIElement>();
-    if (!parent) {
-        return 0.0;
-    }
-
-    auto transform = parent.RenderTransform();
+double GetRotationAngle(UIElement element) {
+    auto transform = element.RenderTransform();
     if (!transform) {
         return 0.0;
     }
@@ -1039,10 +1031,14 @@ void ShowVolumeTooltip(FrameworkElement taskbarFrame,
     }
 
     // Set XamlRoot and position near cursor.
-    popup.XamlRoot(taskbarFrame.XamlRoot());
+    auto xamlRoot = taskbarFrame.XamlRoot();
+    popup.XamlRoot(xamlRoot);
 
-    // Check if taskbar frame's parent is rotated (vertical taskbar).
-    g_volumeTooltipState.rotationAngle = GetParentRotationAngle(taskbarFrame);
+    // Check if the taskbar is rotated (vertical taskbar), which rotates the
+    // XAML root content.
+    auto xamlRootContent = xamlRoot ? xamlRoot.Content() : nullptr;
+    g_volumeTooltipState.rotationAngle =
+        xamlRootContent ? GetRotationAngle(xamlRootContent) : 0.0;
 
     UpdateTooltipPosition();
 

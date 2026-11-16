@@ -595,10 +595,13 @@ void ApplyStartButtonStyle(FrameworkElement startButton) {
 }
 
 bool ApplyStyle(XamlRoot xamlRoot) {
+    // On newer builds, the taskbar frame is the content itself.
     FrameworkElement child = xamlRoot.Content().try_as<FrameworkElement>();
-    if (!child ||
-        !(child = FindChildByClassName(child, L"Taskbar.TaskbarFrame")) ||
-        !(child = FindChildByName(child, L"RootGrid")) ||
+    if (child && winrt::get_class_name(child) != L"Taskbar.TaskbarFrame") {
+        child = FindChildByClassName(child, L"Taskbar.TaskbarFrame");
+    }
+
+    if (!child || !(child = FindChildByName(child, L"RootGrid")) ||
         !(child = FindChildByName(child, L"TaskbarFrameRepeater"))) {
         return false;
     }
