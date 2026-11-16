@@ -125,6 +125,7 @@ arranged in a grid when the taskbar is wide enough.
 #include <cmath>
 #include <functional>
 #include <list>
+#include <optional>
 
 #undef GetCurrentTime
 
@@ -160,7 +161,11 @@ using FrameworkElementLoadedEventRevoker = winrt::impl::event_revoker<
     IFrameworkElement,
     &winrt::impl::abi<IFrameworkElement>::type::remove_Loaded>;
 
-std::list<FrameworkElementLoadedEventRevoker> g_autoRevokerList;
+// Only accessed from the taskbar thread, which is also where it's cleared in
+// ApplySettings, rather than by the destructor at process exit.
+[[clang::no_destroy]] std::optional<
+    std::list<FrameworkElementLoadedEventRevoker>> g_autoRevokerList{
+    std::in_place};
 
 winrt::weak_ref<FrameworkElement> g_notificationAreaIconsStackPanel;
 winrt::weak_ref<FrameworkElement> g_overflowRootGrid;
@@ -991,8 +996,8 @@ void* WINAPI IconView_IconView_Hook(void* pThis) {
         return ret;
     }
 
-    g_autoRevokerList.emplace_back();
-    auto autoRevokerIt = g_autoRevokerList.end();
+    g_autoRevokerList->emplace_back();
+    auto autoRevokerIt = g_autoRevokerList->end();
     --autoRevokerIt;
 
     *autoRevokerIt = iconView.Loaded(
@@ -1001,7 +1006,7 @@ void* WINAPI IconView_IconView_Hook(void* pThis) {
                         RoutedEventArgs const& e) {
             Wh_Log(L">");
 
-            g_autoRevokerList.erase(autoRevokerIt);
+            g_autoRevokerList->erase(autoRevokerIt);
 
             auto iconView = sender.try_as<FrameworkElement>();
             if (!iconView) {
@@ -1079,64 +1084,69 @@ void WINAPI NotifyIconView_ApplyLayoutMode_Hook(void* pThis, int layoutMode) {
         return;
     }
 
-    FrameworkElement notifyIconView = nullptr;
-    ((IUnknown**)pThis)[1]->QueryInterface(winrt::guid_of<FrameworkElement>(),
-                                           winrt::put_abi(notifyIconView));
-    if (!notifyIconView ||
-        IsChildOfElementByClassName(notifyIconView,
-                                    L"SystemTray.NotificationAreaOverflow")) {
-        return;
-    }
+    try {
+        FrameworkElement notifyIconView = nullptr;
+        ((IUnknown**)pThis)[1]->QueryInterface(
+            winrt::guid_of<FrameworkElement>(), winrt::put_abi(notifyIconView));
+        if (!notifyIconView ||
+            IsChildOfElementByClassName(
+                notifyIconView, L"SystemTray.NotificationAreaOverflow")) {
+            return;
+        }
 
-    Wh_Log(L"Setting MinHeight=%d for NotifyIconView",
-           g_settings.notificationIconWidth);
-    notifyIconView.MinHeight(g_settings.notificationIconWidth);
+        Wh_Log(L"Setting MinHeight=%d for NotifyIconView",
+               g_settings.notificationIconWidth);
+        notifyIconView.MinHeight(g_settings.notificationIconWidth);
 
-    // The compact layout state sets its panel some time after the layout of the
-    // icons is updated, replacing the panel set for a grid. The icons apply
-    // their layout mode once they're moved to that panel, and the grid panel is
-    // set again after that.
-    if (g_settings.notificationIconRows <= 1) {
-        return;
-    }
+        // The compact layout state sets its panel some time after the layout of
+        // the icons is updated, replacing the panel set for a grid. The icons
+        // apply their layout mode once they're moved to that panel, and the
+        // grid panel is set again after that.
+        if (g_settings.notificationIconRows <= 1) {
+            return;
+        }
 
-    auto notificationAreaIcons =
-        FindParentByName(notifyIconView, L"NotificationAreaIcons")
-            .try_as<Controls::ItemsControl>();
-    if (!notificationAreaIcons ||
-        notificationAreaIcons.ItemsPanelRoot().try_as<Controls::WrapGrid>()) {
-        return;
-    }
+        auto notificationAreaIcons =
+            FindParentByName(notifyIconView, L"NotificationAreaIcons")
+                .try_as<Controls::ItemsControl>();
+        if (!notificationAreaIcons || notificationAreaIcons.ItemsPanelRoot()
+                                          .try_as<Controls::WrapGrid>()) {
+            return;
+        }
 
-    notificationAreaIcons.Dispatcher().TryRunAsync(
-        winrt::Windows::UI::Core::CoreDispatcherPriority::Normal,
-        [notificationAreaIconsWeak =
-             winrt::make_weak(notificationAreaIcons)]() {
-            auto notificationAreaIcons = notificationAreaIconsWeak.get();
-            if (!notificationAreaIcons || g_unloading) {
-                return;
-            }
-
-            try {
-                int rows = g_settings.notificationIconRows;
-                auto systemTrayFrameGrid = FindParentByName(
-                    notificationAreaIcons, L"SystemTrayFrameGrid");
-                if (!systemTrayFrameGrid ||
-                    !ApplyNotifyIconsCompactLayoutPanel(
-                        systemTrayFrameGrid, notificationAreaIcons, rows)) {
+        notificationAreaIcons.Dispatcher().TryRunAsync(
+            winrt::Windows::UI::Core::CoreDispatcherPriority::Normal,
+            [notificationAreaIconsWeak =
+                 winrt::make_weak(notificationAreaIcons)]() {
+                auto notificationAreaIcons = notificationAreaIconsWeak.get();
+                if (!notificationAreaIcons || g_unloading) {
                     return;
                 }
 
-                // Creates the panel, which is styled below.
-                notificationAreaIcons.UpdateLayout();
-                ApplyNotifyIconsStyle(notificationAreaIcons, rows,
-                                      g_settings.notificationIconWidth,
-                                      /*vertical=*/true);
-            } catch (...) {
-                HRESULT hr = winrt::to_hresult();
-                Wh_Log(L"Error %08X", hr);
-            }
-        });
+                try {
+                    int rows = g_settings.notificationIconRows;
+                    auto systemTrayFrameGrid = FindParentByName(
+                        notificationAreaIcons, L"SystemTrayFrameGrid");
+                    if (!systemTrayFrameGrid ||
+                        !ApplyNotifyIconsCompactLayoutPanel(
+                            systemTrayFrameGrid, notificationAreaIcons, rows)) {
+                        return;
+                    }
+
+                    // Creates the panel, which is styled below.
+                    notificationAreaIcons.UpdateLayout();
+                    ApplyNotifyIconsStyle(notificationAreaIcons, rows,
+                                          g_settings.notificationIconWidth,
+                                          /*vertical=*/true);
+                } catch (...) {
+                    HRESULT hr = winrt::to_hresult();
+                    Wh_Log(L"Error %08X", hr);
+                }
+            });
+    } catch (...) {
+        HRESULT hr = winrt::to_hresult();
+        Wh_Log(L"Error %08X", hr);
+    }
 }
 
 // Runs once the layout state is applied, and creates the panel of the icons,
@@ -1238,7 +1248,7 @@ SystemTrayFrame_ResetIconViewLocalPadding_t
 void WINAPI SystemTrayFrame_ResetIconViewLocalPadding_Hook(void* itemsControl) {
     Wh_Log(L">");
 
-    if (!g_unloading) {
+    if (!g_unloading && g_settings.notificationIconRows > 1) {
         try {
             Controls::ItemsControl itemsControlObject = nullptr;
             winrt::copy_from_abi(itemsControlObject, *(void**)itemsControl);
@@ -1514,6 +1524,7 @@ void ApplySettings() {
         HWND hTaskbarWnd;
         int rows;
         int width;
+        winrt::Windows::UI::Core::CoreDispatcher dispatcher{nullptr};
     };
 
     Wh_Log(L"Applying settings");
@@ -1535,12 +1546,18 @@ void ApplySettings() {
         [](void* pParam) {
             ApplySettingsParam& param = *(ApplySettingsParam*)pParam;
 
-            g_autoRevokerList.clear();
+            g_autoRevokerList->clear();
 
             auto xamlRoot = GetTaskbarXamlRoot(param.hTaskbarWnd);
             if (!xamlRoot) {
                 Wh_Log(L"Getting XamlRoot failed");
                 return;
+            }
+
+            if (g_unloading) {
+                if (auto content = xamlRoot.Content()) {
+                    param.dispatcher = content.Dispatcher();
+                }
             }
 
             if (!ApplyStyle(xamlRoot, param.rows, param.width)) {
@@ -1552,10 +1569,26 @@ void ApplySettings() {
             }
         },
         &param);
+
+    // The callbacks queued by NotifyIconView_ApplyLayoutMode_Hook run mod code,
+    // and none are queued while unloading. They run at Normal priority, so all
+    // of them have run once a Low priority callback runs.
+    if (param.dispatcher) {
+        try {
+            param.dispatcher
+                .TryRunAsync(
+                    winrt::Windows::UI::Core::CoreDispatcherPriority::Low,
+                    [] {})
+                .get();
+        } catch (...) {
+            HRESULT hr = winrt::to_hresult();
+            Wh_Log(L"Error %08X", hr);
+        }
+    }
 }
 
 bool HookSystemTraySymbols(HMODULE module) {
-    // SystemTray.dll, Taskbar.View.dll
+    // SystemTray.dll, Taskbar.View.dll, ExplorerExtensions.dll
     WindhawkUtils::SYMBOL_HOOK symbolHooks[] = {
         {
             {LR"(public: __cdecl winrt::SystemTray::implementation::IconView::IconView(void))"},
