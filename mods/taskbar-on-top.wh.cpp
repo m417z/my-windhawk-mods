@@ -912,7 +912,7 @@ void TaskbarWndProcPreProcess(HWND hWnd,
             // taskbar won't have jump lists.
             if (!g_hasNativeTaskbarOnTop && *wParam == ABE_BOTTOM &&
                 g_settings.taskbarLocation == TaskbarLocation::top) {
-                HMONITOR monitor = (HMONITOR)lParam;
+                HMONITOR monitor = (HMONITOR)*lParam;
                 if (GetTaskbarLocationForMonitor(monitor) ==
                     TaskbarLocation::top) {
                     *wParam = ABE_TOP;
