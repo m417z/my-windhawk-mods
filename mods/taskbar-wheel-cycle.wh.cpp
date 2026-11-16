@@ -59,8 +59,10 @@ check out [7+ Taskbar Tweaker](https://tweaker.ramensoftware.com/).
 - cycleLeftKeyboardShortcut: Alt+[
   $name: Cycle left keyboard shortcut
   $description: >-
-    Possible modifier keys: Alt, Ctrl, Shift, Win. For possible shortcut keys,
-    refer to the following page:
+    Possible modifier keys: Alt, Ctrl, Shift, Win. Keys can be letters, digits,
+    F1-F24, names such as Left, Home, PageUp, Space, or characters such as
+    [ ] ; ' (US keyboard layout). VK_ names and numeric virtual-key codes are
+    also supported, see:
     https://learn.microsoft.com/en-us/windows/win32/inputdev/virtual-key-codes
 
     Set to an empty string to disable.
@@ -89,6 +91,7 @@ check out [7+ Taskbar Tweaker](https://tweaker.ramensoftware.com/).
 
 #include <algorithm>
 #include <atomic>
+#include <climits>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -980,29 +983,18 @@ bool FromStringHotKey(std::wstring_view hotkeyString,
         {L"VK_NONAME", 0xFC},
         {L"VK_PA1", 0xFD},
         {L"VK_OEM_CLEAR", 0xFE},
-        // US keyboard character aliases for OEM keys.
+        // Unshifted characters of the OEM keys on the US keyboard layout.
         {L";", 0xBA},   // VK_OEM_1
-        {L":", 0xBA},   // VK_OEM_1
         {L"=", 0xBB},   // VK_OEM_PLUS
-        {L"+", 0xBB},   // VK_OEM_PLUS
         {L",", 0xBC},   // VK_OEM_COMMA
-        {L"<", 0xBC},   // VK_OEM_COMMA
         {L"-", 0xBD},   // VK_OEM_MINUS
-        {L"_", 0xBD},   // VK_OEM_MINUS
         {L".", 0xBE},   // VK_OEM_PERIOD
-        {L">", 0xBE},   // VK_OEM_PERIOD
         {L"/", 0xBF},   // VK_OEM_2
-        {L"?", 0xBF},   // VK_OEM_2
         {L"`", 0xC0},   // VK_OEM_3
-        {L"~", 0xC0},   // VK_OEM_3
         {L"[", 0xDB},   // VK_OEM_4
-        {L"{", 0xDB},   // VK_OEM_4
         {L"\\", 0xDC},  // VK_OEM_5
-        {L"|", 0xDC},   // VK_OEM_5
         {L"]", 0xDD},   // VK_OEM_6
-        {L"}", 0xDD},   // VK_OEM_6
         {L"'", 0xDE},   // VK_OEM_7
-        {L"\"", 0xDE},  // VK_OEM_7
         // Legacy VK_-prefixed names kept for backwards compatibility with
         // existing configurations. These duplicate the friendly names above.
         {L"VK_BACK", 0x08},
@@ -1092,35 +1084,12 @@ bool FromStringHotKey(std::wstring_view hotkeyString,
         {L"VK_MEDIA_PLAY_PAUSE", 0xB3},
     };
 
-    auto splitStringView = [](std::wstring_view s, WCHAR delimiter) {
-        size_t pos_start = 0, pos_end;
-        std::wstring_view token;
-        std::vector<std::wstring_view> res;
-
-        while ((pos_end = s.find(delimiter, pos_start)) !=
-               std::wstring_view::npos) {
-            token = s.substr(pos_start, pos_end - pos_start);
-            pos_start = pos_end + 1;
-            res.push_back(token);
-        }
-
-        res.push_back(s.substr(pos_start));
-        return res;
-    };
-
-    auto trimStringView = [](std::wstring_view s) {
-        s.remove_prefix(std::min(s.find_first_not_of(L" \t\r\v\n"), s.size()));
-        s.remove_suffix(std::min(
-            s.size() - s.find_last_not_of(L" \t\r\v\n") - 1, s.size()));
-        return s;
-    };
-
     UINT modifiers = 0;
     UINT vk = 0;
 
-    auto hotkeyParts = splitStringView(hotkeyString, '+');
+    auto hotkeyParts = SplitStringView(hotkeyString, L"+");
     for (auto hotkeyPart : hotkeyParts) {
-        hotkeyPart = trimStringView(hotkeyPart);
+        hotkeyPart = TrimStringView(hotkeyPart);
         std::wstring hotkeyPartUpper{hotkeyPart};
         std::transform(hotkeyPartUpper.begin(), hotkeyPartUpper.end(),
                        hotkeyPartUpper.begin(), ::toupper);
