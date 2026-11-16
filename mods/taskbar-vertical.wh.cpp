@@ -270,6 +270,8 @@ std::vector<winrt::weak_ref<XamlRoot>> g_notifyIconsUpdated;
 // coalesce redundant applies.
 std::vector<winrt::weak_ref<XamlRoot>> g_applyStyleQueued;
 
+std::atomic<int> g_queuedApplyStyleCount;
+
 using FrameworkElementLoadedEventRevoker = winrt::impl::event_revoker<
     IFrameworkElement,
     &winrt::impl::abi<IFrameworkElement>::type::remove_Loaded>;
@@ -372,11 +374,17 @@ bool GetMonitorRectDpiUnscaled(HMONITOR monitor, RECT* rc) {
 
 // The primary taskbar isn't necessarily on the primary monitor, e.g. with the
 // "Primary taskbar on secondary monitor" mod. The taskbar window property is
-// set when the taskbar moves to a monitor, before it's laid out there.
+// set when the taskbar moves to a monitor, before it's laid out there. It might
+// hold a monitor that was just disconnected.
 HMONITOR GetPrimaryTaskbarMonitor() {
     if (HWND hTaskbarWnd = FindWindow(L"Shell_TrayWnd", nullptr)) {
         if (auto monitor = (HMONITOR)GetProp(hTaskbarWnd, L"TaskbarMonitor")) {
-            return monitor;
+            MONITORINFO monitorInfo{
+                .cbSize = sizeof(MONITORINFO),
+            };
+            if (GetMonitorInfo(monitor, &monitorInfo)) {
+                return monitor;
+            }
         }
     }
 
@@ -2953,6 +2961,16 @@ void RemoveQueuedApplyStyle(XamlRoot xamlRoot) {
         g_applyStyleQueued.end());
 }
 
+// Counts the live copies of a queued callback, so the count drops to zero once
+// the dispatcher has run or dropped it.
+struct QueuedApplyStyleGuard {
+    QueuedApplyStyleGuard() { g_queuedApplyStyleCount++; }
+    QueuedApplyStyleGuard(const QueuedApplyStyleGuard&) {
+        g_queuedApplyStyleCount++;
+    }
+    ~QueuedApplyStyleGuard() { g_queuedApplyStyleCount--; }
+};
+
 // Applies the style asynchronously, outside the measure pass that triggered it.
 // Mutating layout properties from within MeasureOverride can cause an
 // AG_E_LAYOUT_CYCLE fail-fast on some Taskbar.View.dll builds. At most one
@@ -2980,7 +2998,7 @@ void QueueApplyStyle(FrameworkElement element) {
     try {
         auto asyncOperation = element.Dispatcher().TryRunAsync(
             winrt::Windows::UI::Core::CoreDispatcherPriority::Normal,
-            [xamlRootWeak]() {
+            [xamlRootWeak, guard = QueuedApplyStyleGuard{}]() {
                 auto xamlRoot = xamlRootWeak.get();
                 if (!xamlRoot) {
                     RemoveExpiredQueuedApplyStyles();
@@ -3586,13 +3604,14 @@ bool UpdateNotifyIcons(XamlRoot xamlRoot) {
         return false;
     }
 
-    // Copy margin from TaskbarFrame root. It's done in
-    // TaskbarFrame_MeasureOverride_Hook as well, but SystemTrayFrameGrid might
-    // not exist yet at this point.
-    child = rootGrid;
-    if (child && (child = FindChildByName(child, L"TaskbarFrame")) &&
-        (child = FindChildByName(child, L"RootGrid"))) {
-        systemTrayFrameGrid.Margin(child.Margin());
+    // Copy margin from TaskbarFrame root. It's done in ApplyStyle as well, but
+    // SystemTrayFrameGrid might not exist yet at that point. A tray frame
+    // inside the taskbar frame gets the root grid margin.
+    auto taskbarFrame = FindTaskbarFrame(rootGrid);
+    if (taskbarFrame && taskbarFrame != rootGrid) {
+        if (auto taskbarRootGrid = FindChildByName(taskbarFrame, L"RootGrid")) {
+            systemTrayFrameGrid.Margin(taskbarRootGrid.Margin());
+        }
     }
 
     FrameworkElement notificationAreaIcons =
@@ -7851,6 +7870,11 @@ void Wh_ModUninit() {
     Wh_Log(L">");
 
     while (g_hookCallCounter > 0) {
+        Sleep(100);
+    }
+
+    // The hooks are removed, so no more callbacks can be queued.
+    while (g_queuedApplyStyleCount > 0) {
         Sleep(100);
     }
 }
