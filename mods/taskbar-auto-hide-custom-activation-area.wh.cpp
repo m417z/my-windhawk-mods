@@ -45,6 +45,7 @@ unhiding to specific regions.
 #include <windowsx.h>
 
 #include <atomic>
+#include <climits>
 #include <optional>
 #include <string_view>
 #include <vector>

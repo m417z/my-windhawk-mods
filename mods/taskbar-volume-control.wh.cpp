@@ -156,6 +156,7 @@ issue](https://tweaker.userecho.com/topics/826-scroll-on-trackpadtouchpad-doesnt
 
 #include <algorithm>
 #include <atomic>
+#include <climits>
 #include <optional>
 #include <string_view>
 #include <unordered_map>

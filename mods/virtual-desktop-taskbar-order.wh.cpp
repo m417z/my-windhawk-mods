@@ -37,6 +37,7 @@ Tweaker](https://tweaker.ramensoftware.com/).
 
 #include <windhawk_utils.h>
 
+#include <climits>
 #include <regex>
 #include <string>
 #include <string_view>
