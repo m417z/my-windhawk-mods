@@ -47,6 +47,12 @@ appears.
 - **Toggle always-show**: Toggles permanent taskbar visibility. Press again to
   return to auto-hide behavior.
 
+Possible modifier keys: Alt, Ctrl, Shift, Win. Keys can be letters, digits,
+F1-F24, names such as Escape, Home, PageUp, Space, or characters such as
+`` ` ``, `[`, `]`, `;`, `'` (US keyboard layout). VK_ names and numeric
+virtual-key codes are also supported, see [Virtual-Key
+Codes](https://learn.microsoft.com/en-us/windows/win32/inputdev/virtual-key-codes).
+
 On Windows 11, you can also toggle always-show via a mouse event (middle click
 or double click) on the taskbar.
 
@@ -538,7 +544,6 @@ bool FromStringHotKey(std::wstring_view hotkeyString,
         {L";", 0xBA},   // VK_OEM_1
         {L":", 0xBA},   // VK_OEM_1
         {L"=", 0xBB},   // VK_OEM_PLUS
-        {L"+", 0xBB},   // VK_OEM_PLUS
         {L",", 0xBC},   // VK_OEM_COMMA
         {L"<", 0xBC},   // VK_OEM_COMMA
         {L"-", 0xBD},   // VK_OEM_MINUS
