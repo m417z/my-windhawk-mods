@@ -130,8 +130,12 @@ using FrameworkElementLoadedEventRevoker = winrt::impl::event_revoker<
     std::list<FrameworkElementLoadedEventRevoker>> g_autoRevokerList{
     std::in_place};
 
-winrt::weak_ref<Controls::TextBlock> g_mainStackInnerTextBlock;
-int64_t g_mainStackTextChangedToken;
+struct MainStackTextBlockState {
+    winrt::weak_ref<Controls::TextBlock> textBlock;
+    int64_t textChangedToken{0};
+};
+
+std::vector<MainStackTextBlockState> g_mainStackTextBlockStates;
 
 winrt::weak_ref<FrameworkElement> g_bellSystemTrayIconElement;
 int64_t g_bellAutomationNameChangedToken;
@@ -159,6 +163,13 @@ struct ShowDesktopSizeState {
 };
 
 std::vector<ShowDesktopSizeState> g_showDesktopSizeStates;
+
+struct OrientationStatesSubscription {
+    winrt::weak_ref<VisualStateGroup> group;
+    winrt::event_token currentStateChangedToken;
+};
+
+std::vector<OrientationStatesSubscription> g_orientationStatesSubscriptions;
 
 HWND FindCurrentProcessTaskbarWnd() {
     HWND hTaskbarWnd = nullptr;
@@ -260,18 +271,24 @@ FrameworkElement FindChildPanel(FrameworkElement element) {
 }
 
 // The native vertical taskbar switches the tray to a vertical layout with a
-// visual state. A tray which is rotated as a whole keeps the horizontal layout.
-bool IsVerticalSystemTray(FrameworkElement systemTrayFrameGrid) {
+// state of this group. A tray which is rotated as a whole keeps the horizontal
+// layout.
+VisualStateGroup GetOrientationStatesGroup(
+    FrameworkElement systemTrayFrameGrid) {
     for (const auto& group :
          VisualStateManager::GetVisualStateGroups(systemTrayFrameGrid)) {
         if (group.Name() == L"OrientationStates") {
-            auto currentState = group.CurrentState();
-            return currentState &&
-                   currentState.Name() == L"VerticalOrientation";
+            return group;
         }
     }
 
-    return false;
+    return nullptr;
+}
+
+bool IsVerticalOrientationState(VisualStateGroup orientationStates) {
+    auto currentState =
+        orientationStates ? orientationStates.CurrentState() : nullptr;
+    return currentState && currentState.Name() == L"VerticalOrientation";
 }
 
 // https://stackoverflow.com/a/3382894
@@ -538,6 +555,18 @@ int UpdateWrapGridHiddenItems(
         }
     }
 
+    // The default layout is right even if the grid isn't configured for the
+    // current items yet, e.g. right after an item is removed.
+    if (visibleCount == itemCount) {
+        for (int i = 0; i < itemCount; i++) {
+            if (auto container = getContainer(i)) {
+                container.ClearValue(FrameworkElement::MarginProperty());
+            }
+        }
+        wrapGrid.ClearValue(FrameworkElement::MaxHeightProperty());
+        return visibleCount;
+    }
+
     int columns = wrapGrid.MaximumRowsOrColumns();
     double itemWidth = wrapGrid.ItemWidth();
     double itemHeight = wrapGrid.ItemHeight();
@@ -695,35 +724,46 @@ void ApplyMainStackIconViewStyle(FrameworkElement notifyIconViewElement) {
                                           : Visibility::Visible);
     UpdateMainStackWrapGridOfIcon(notifyIconViewElement);
 
-    if (!g_unloading && !g_mainStackInnerTextBlock.get()) {
-        auto notifyIconViewElementWeakRef =
-            winrt::make_weak(notifyIconViewElement);
-        g_mainStackInnerTextBlock = innerTextBlock;
-        g_mainStackTextChangedToken =
-            innerTextBlock.RegisterPropertyChangedCallback(
-                Controls::TextBlock::TextProperty(),
-                [notifyIconViewElementWeakRef, shouldHide](
-                    DependencyObject sender, DependencyProperty property) {
-                    auto innerTextBlock = sender.try_as<Controls::TextBlock>();
-                    if (!innerTextBlock) {
-                        return;
-                    }
-
-                    auto notifyIconViewElement =
-                        notifyIconViewElementWeakRef.get();
-                    if (!notifyIconViewElement) {
-                        return;
-                    }
-
-                    bool hide = shouldHide(innerTextBlock);
-
-                    Wh_Log(L"Main stack icon, hide=%d", hide);
-
-                    notifyIconViewElement.Visibility(
-                        hide ? Visibility::Collapsed : Visibility::Visible);
-                    UpdateMainStackWrapGridOfIcon(notifyIconViewElement);
-                });
+    if (g_unloading) {
+        return;
     }
+
+    std::erase_if(
+        g_mainStackTextBlockStates,
+        [](const MainStackTextBlockState& s) { return !s.textBlock.get(); });
+
+    for (const auto& state : g_mainStackTextBlockStates) {
+        if (state.textBlock.get() == innerTextBlock) {
+            return;
+        }
+    }
+
+    auto notifyIconViewElementWeakRef = winrt::make_weak(notifyIconViewElement);
+    g_mainStackTextBlockStates.push_back({
+        .textBlock = innerTextBlock,
+        .textChangedToken = innerTextBlock.RegisterPropertyChangedCallback(
+            Controls::TextBlock::TextProperty(),
+            [notifyIconViewElementWeakRef, shouldHide](
+                DependencyObject sender, DependencyProperty property) {
+                auto innerTextBlock = sender.try_as<Controls::TextBlock>();
+                if (!innerTextBlock) {
+                    return;
+                }
+
+                auto notifyIconViewElement = notifyIconViewElementWeakRef.get();
+                if (!notifyIconViewElement) {
+                    return;
+                }
+
+                bool hide = shouldHide(innerTextBlock);
+
+                Wh_Log(L"Main stack icon, hide=%d", hide);
+
+                notifyIconViewElement.Visibility(hide ? Visibility::Collapsed
+                                                      : Visibility::Visible);
+                UpdateMainStackWrapGridOfIcon(notifyIconViewElement);
+            }),
+    });
 }
 
 void ApplyNonActivatableStackIconViewStyle(
@@ -1281,14 +1321,45 @@ std::pair<DependencyProperty, DependencyProperty> GetMinMaxSizeProperties(
             FrameworkElement::MaxWidthProperty()};
 }
 
+void RestoreShowDesktopSize(const ShowDesktopSizeState& state) {
+    auto element = state.element.get();
+    if (!element) {
+        return;
+    }
+
+    auto [minProperty, maxProperty] = GetMinMaxSizeProperties(state.vertical);
+    if (state.savedMin) {
+        element.SetValue(minProperty, winrt::box_value(*state.savedMin));
+    } else {
+        element.ClearValue(minProperty);
+    }
+    if (state.savedMax) {
+        element.SetValue(maxProperty, winrt::box_value(*state.savedMax));
+    } else {
+        element.ClearValue(maxProperty);
+    }
+}
+
 // MinWidth/MaxWidth take precedence over an explicit Width, so they override
 // the width without having to replace the Width value itself, and the same
 // goes for the height. The local values are saved the first time an element is
-// seen, for restoring in ApplySettings.
+// seen along an axis.
 void OverrideShowDesktopSize(FrameworkElement element,
                              double size,
                              bool vertical) {
     auto [minProperty, maxProperty] = GetMinMaxSizeProperties(vertical);
+
+    // After a taskbar orientation change, undo the override along the other
+    // axis.
+    std::erase_if(
+        g_showDesktopSizeStates, [&](const ShowDesktopSizeState& state) {
+            if (state.vertical == vertical || state.element.get() != element) {
+                return false;
+            }
+
+            RestoreShowDesktopSize(state);
+            return true;
+        });
 
     bool managed = false;
     for (const auto& state : g_showDesktopSizeStates) {
@@ -1311,6 +1382,44 @@ void OverrideShowDesktopSize(FrameworkElement element,
     element.SetValue(maxProperty, winrt::box_value(size));
 }
 
+bool ApplyShowDesktopStackStyle(FrameworkElement container);
+
+// The icon view isn't necessarily recreated when the tray orientation changes,
+// so the show desktop size is re-applied for the new orientation.
+void SubscribeToOrientationChanges(FrameworkElement systemTrayFrameGrid,
+                                   VisualStateGroup orientationStates) {
+    std::erase_if(
+        g_orientationStatesSubscriptions,
+        [](const OrientationStatesSubscription& s) { return !s.group.get(); });
+
+    for (const auto& subscription : g_orientationStatesSubscriptions) {
+        if (subscription.group.get() == orientationStates) {
+            return;
+        }
+    }
+
+    auto systemTrayFrameGridWeakRef = winrt::make_weak(systemTrayFrameGrid);
+    g_orientationStatesSubscriptions.push_back({
+        .group = orientationStates,
+        .currentStateChangedToken = orientationStates.CurrentStateChanged(
+            [systemTrayFrameGridWeakRef](
+                winrt::Windows::Foundation::IInspectable const& sender,
+                VisualStateChangedEventArgs const& e) {
+                Wh_Log(L">");
+
+                auto systemTrayFrameGrid = systemTrayFrameGridWeakRef.get();
+                if (!systemTrayFrameGrid) {
+                    return;
+                }
+
+                if (auto showDesktopStack = FindChildByName(
+                        systemTrayFrameGrid, L"ShowDesktopStack")) {
+                    ApplyShowDesktopStackStyle(showDesktopStack);
+                }
+            }),
+    });
+}
+
 void ApplyShowDesktopStyle(FrameworkElement systemTrayIconElement) {
     if (g_unloading) {
         // Restored in ApplySettings.
@@ -1331,8 +1440,14 @@ void ApplyShowDesktopStyle(FrameworkElement systemTrayIconElement) {
 
     auto systemTrayFrameGrid =
         GetParentElementByName(showDesktopStack, L"SystemTrayFrameGrid");
-    bool vertical =
-        systemTrayFrameGrid && IsVerticalSystemTray(systemTrayFrameGrid);
+    auto orientationStates =
+        systemTrayFrameGrid ? GetOrientationStatesGroup(systemTrayFrameGrid)
+                            : nullptr;
+    if (orientationStates) {
+        SubscribeToOrientationChanges(systemTrayFrameGrid, orientationStates);
+    }
+
+    bool vertical = IsVerticalOrientationState(orientationStates);
 
     // The width setting is the extent of the button along the taskbar.
     int size = g_settings.showDesktopButtonWidth;
@@ -1933,14 +2048,14 @@ void ApplySettings() {
                 g_bellAutomationNameChangedToken = 0;
             }
 
-            if (auto mainStackInnerTextBlock =
-                    g_mainStackInnerTextBlock.get()) {
-                mainStackInnerTextBlock.UnregisterPropertyChangedCallback(
-                    Controls::TextBlock::TextProperty(),
-                    g_mainStackTextChangedToken);
-                g_mainStackInnerTextBlock = nullptr;
-                g_mainStackTextChangedToken = 0;
+            for (const auto& state : g_mainStackTextBlockStates) {
+                if (auto textBlock = state.textBlock.get()) {
+                    textBlock.UnregisterPropertyChangedCallback(
+                        Controls::TextBlock::TextProperty(),
+                        state.textChangedToken);
+                }
             }
+            g_mainStackTextBlockStates.clear();
 
             if (auto controlCenterPanel = g_controlCenterPanel.get()) {
                 controlCenterPanel.SizeChanged(
@@ -1964,27 +2079,18 @@ void ApplySettings() {
             }
             g_batteryTextBlockStates->clear();
 
+            for (const auto& subscription : g_orientationStatesSubscriptions) {
+                if (auto group = subscription.group.get()) {
+                    group.CurrentStateChanged(
+                        subscription.currentStateChangedToken);
+                }
+            }
+            g_orientationStatesSubscriptions.clear();
+
             // Restore the show desktop size overrides. ApplyStyle below
             // re-applies them unless the mod is unloading.
-            for (auto& state : g_showDesktopSizeStates) {
-                auto element = state.element.get();
-                if (!element) {
-                    continue;
-                }
-                auto [minProperty, maxProperty] =
-                    GetMinMaxSizeProperties(state.vertical);
-                if (state.savedMin) {
-                    element.SetValue(minProperty,
-                                     winrt::box_value(*state.savedMin));
-                } else {
-                    element.ClearValue(minProperty);
-                }
-                if (state.savedMax) {
-                    element.SetValue(maxProperty,
-                                     winrt::box_value(*state.savedMax));
-                } else {
-                    element.ClearValue(maxProperty);
-                }
+            for (const auto& state : g_showDesktopSizeStates) {
+                RestoreShowDesktopSize(state);
             }
             g_showDesktopSizeStates.clear();
 
