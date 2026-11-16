@@ -68,7 +68,7 @@ Control mod takes precedence due to the way the mod works.
   $description: >-
     When enabled, Ctrl+clicking on a taskbar button will toggle the mute state
     of the application.
-- middleClickToMute: true
+- middleClickToMute: false
   $name: Middle Click to mute
   $description: >-
     When enabled, middle-clicking (clicking the mouse wheel) on a taskbar
