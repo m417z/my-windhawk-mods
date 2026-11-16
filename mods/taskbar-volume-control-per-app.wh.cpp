@@ -1274,8 +1274,7 @@ constexpr WCHAR kTouchpadWndClassName[] = L"Windhawk_TouchpadScroll_" WH_MOD_ID;
 
 // wParam: whether the cursor is over a taskbar button.
 constexpr UINT kTouchpadMsgHover = WM_APP + 1;
-// wParam: the wheel delta, WHEEL_DELTA per volume step, positive to raise the
-// volume.
+// Applies g_touchpadScrollDelta.
 constexpr UINT kTouchpadMsgScroll = WM_APP + 2;
 
 bool g_touchpadWndClassRegistered;
@@ -1285,6 +1284,10 @@ std::atomic<HWND> g_touchpadWnd;
 // The window of the taskbar thread, created on the first hover.
 std::atomic<HWND> g_touchpadUiWnd;
 std::atomic<ULONGLONG> g_touchpadTwoFingersTick;
+// The wheel delta which the taskbar thread didn't apply yet, WHEEL_DELTA per
+// volume step, positive to raise the volume. A scroll message is posted when it
+// becomes non-zero.
+std::atomic<int> g_touchpadScrollDelta;
 
 // Belongs to the taskbar thread.
 struct {
@@ -1496,7 +1499,9 @@ void OnTouchpadFrame(const TouchpadDevice& dev) {
     }
 
     if (HWND hUiWnd = g_touchpadUiWnd) {
-        PostMessage(hUiWnd, kTouchpadMsgScroll, delta, 0);
+        if (g_touchpadScrollDelta.fetch_add(delta) == 0) {
+            PostMessage(hUiWnd, kTouchpadMsgScroll, 0, 0);
+        }
     }
 }
 
@@ -1683,7 +1688,9 @@ LRESULT CALLBACK TouchpadWndProc(HWND hWnd,
             return 0;
 
         case kTouchpadMsgScroll:
-            ApplyTouchpadScroll((int)wParam);
+            if (int delta = g_touchpadScrollDelta.exchange(0)) {
+                ApplyTouchpadScroll(delta);
+            }
             return 0;
     }
 
