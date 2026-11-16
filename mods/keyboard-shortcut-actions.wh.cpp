@@ -68,6 +68,8 @@ Hotkeys are specified in the format: `Modifier+Modifier+Key`
   MediaStop
 - Modifier keys (for Virtual key press): LWin, RWin, LShift, RShift, LCtrl,
   RCtrl, LAlt, RAlt
+- Characters (US keyboard layout): `` ` ``, `-`, `=`, `[`, `]`, `\`, `;`, `'`,
+  `,`, `.`, `/`. For shifted characters, add Shift, e.g. `Shift+[` for `{`.
 - Some of the VK_* codes from [Virtual-Key
   Codes](https://learn.microsoft.com/en-us/windows/win32/inputdev/virtual-key-codes)
 
@@ -98,7 +100,8 @@ semicolons. For example: `arg1;arg2`.
     - Example: `Win+E` (Win + E)
     - Example: `Ctrl+Shift+Escape` (Ctrl + Shift + Escape)
     - Example: `LCtrl;C` (Ctrl + C using separate keys)
-    - Uses the same key and modifier names as the hotkey format above
+    - Uses the same key and modifier names as the hotkey format above, except
+      `;` which separates keys (use `VK_OEM_1` instead)
 12. Open application, path or URL - `command`
     - Example: `notepad.exe`
     - Example: `"C:\Program Files\App\app.exe" --arg`
@@ -124,7 +127,8 @@ space](https://windhawk.net/mods/taskbar-empty-space-clicks) mod by
       $description: >-
         Hotkey in format: Modifier+Key (e.g., Ctrl+Alt+D).
         Modifiers: Alt, Ctrl, Shift, Win.
-        Keys: A-Z, 0-9, F1-F24, Enter, Space, Home, End, Insert, Delete, etc.
+        Keys: A-Z, 0-9, F1-F24, Enter, Space, Home, End, Insert, Delete,
+        characters such as [ ] ; ' (US keyboard layout), etc.
     - Action: ACTION_NOTHING
       $name: Action
       $description: Action to invoke when the hotkey is pressed.
@@ -603,29 +607,18 @@ bool FromStringHotKey(std::wstring_view hotkeyString,
         {L"VK_NONAME", 0xFC},
         {L"VK_PA1", 0xFD},
         {L"VK_OEM_CLEAR", 0xFE},
-        // US keyboard character aliases for OEM keys.
+        // Unshifted characters of the OEM keys on the US keyboard layout.
         {L";", 0xBA},   // VK_OEM_1
-        {L":", 0xBA},   // VK_OEM_1
         {L"=", 0xBB},   // VK_OEM_PLUS
-        {L"+", 0xBB},   // VK_OEM_PLUS
         {L",", 0xBC},   // VK_OEM_COMMA
-        {L"<", 0xBC},   // VK_OEM_COMMA
         {L"-", 0xBD},   // VK_OEM_MINUS
-        {L"_", 0xBD},   // VK_OEM_MINUS
         {L".", 0xBE},   // VK_OEM_PERIOD
-        {L">", 0xBE},   // VK_OEM_PERIOD
         {L"/", 0xBF},   // VK_OEM_2
-        {L"?", 0xBF},   // VK_OEM_2
         {L"`", 0xC0},   // VK_OEM_3
-        {L"~", 0xC0},   // VK_OEM_3
         {L"[", 0xDB},   // VK_OEM_4
-        {L"{", 0xDB},   // VK_OEM_4
         {L"\\", 0xDC},  // VK_OEM_5
-        {L"|", 0xDC},   // VK_OEM_5
         {L"]", 0xDD},   // VK_OEM_6
-        {L"}", 0xDD},   // VK_OEM_6
         {L"'", 0xDE},   // VK_OEM_7
-        {L"\"", 0xDE},  // VK_OEM_7
     };
 
     auto splitStringView = [](std::wstring_view s, WCHAR delimiter) {
