@@ -1377,7 +1377,7 @@ HRESULT WINAPI DwmSetWindowAttribute_Hook(HWND hwnd,
             g_searchMenuVertical = vertical;
             g_searchMenuMonitor = monitor;
         } else {
-            if (!g_searchMenuOriginalPos) {
+            if (hwnd != g_searchMenuWnd || !g_searchMenuOriginalPos) {
                 return original();
             }
 
@@ -1405,9 +1405,17 @@ HRESULT WINAPI DwmSetWindowAttribute_Hook(HWND hwnd,
         pos = newPos;
     }
 
-    SetWindowPos(hwnd, nullptr, x, y, cx, cy, SWP_NOZORDER | SWP_NOACTIVATE);
+    // Move a window that's being shown before uncloaking it, and one that's
+    // being hidden after cloaking it, so that the move isn't visible.
+    if (!cloak) {
+        SetWindowPos(hwnd, nullptr, x, y, cx, cy,
+                     SWP_NOZORDER | SWP_NOACTIVATE);
+        return original();
+    }
 
-    return original();
+    HRESULT hr = original();
+    SetWindowPos(hwnd, nullptr, x, y, cx, cy, SWP_NOZORDER | SWP_NOACTIVATE);
+    return hr;
 }
 
 using SearchBoxOnTaskbarSearchAppPositioner_GetAppRectForSearchBoxOnTaskbar_t =
