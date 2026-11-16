@@ -129,6 +129,11 @@ enum {
     kTrayPrivateSettingAutoHideSet = 4,
 };
 
+// Posted by TrayUI::_AutoHideCollision when the taskbar can't register as the
+// auto-hide bar for its screen edge. The handler turns auto-hide off and shows
+// a "toolbar is already hidden" message box.
+constexpr UINT kTrayAutoHideCollisionMessage = WM_USER + 0x153;
+
 constexpr WCHAR kCanHideTaskbarEligibilityProp[] =
     L"Windhawk_CanHideTaskbar_" WH_MOD_ID;
 
@@ -916,6 +921,10 @@ LRESULT WINAPI TrayUI_WndProc_Hook(void* pThis,
                 return 0;
             }
         }
+    } else if (Msg == kTrayAutoHideCollisionMessage) {
+        // Keep auto-hide on while the mod is loaded, and don't show the message
+        // box each time turning it on fails.
+        return 0;
     } else if (Msg == g_getTaskbarRectRegisteredMsg) {
         HMONITOR monitor = (HMONITOR)wParam;
         RECT* rect = (RECT*)lParam;
@@ -929,12 +938,12 @@ LRESULT WINAPI TrayUI_WndProc_Hook(void* pThis,
             SetRectEmpty(rect);
         }
     } else if (Msg == g_updateTaskbarStateRegisteredMsg) {
+        bool isAutoHideEnabled =
+            SendMessage(hWnd, kHandleTrayPrivateSettingMessage,
+                        kTrayPrivateSettingAutoHideGet, 0);
+
         if (!g_wasAutoHideProcessed) {
             g_wasAutoHideProcessed = true;
-
-            bool isAutoHideEnabled =
-                SendMessage(hWnd, kHandleTrayPrivateSettingMessage,
-                            kTrayPrivateSettingAutoHideGet, 0);
 
             // The persisted value survives explorer restarts, after which the
             // auto-hide setting reflects the mod's change rather than the
@@ -947,11 +956,14 @@ LRESULT WINAPI TrayUI_WndProc_Hook(void* pThis,
             } else {
                 g_wasAutoHideDisabled = wasAutoHideDisabled;
             }
+        }
 
-            if (!isAutoHideEnabled) {
-                SendMessage(hWnd, kHandleTrayPrivateSettingMessage,
-                            kTrayPrivateSettingAutoHideSet, TRUE);
-            }
+        // Explorer turns auto-hide off if the taskbar can't register as the
+        // auto-hide bar for its edge on creation, so check on each update.
+        if (!isAutoHideEnabled) {
+            Wh_Log(L"Turning auto-hide on");
+            SendMessage(hWnd, kHandleTrayPrivateSettingMessage,
+                        kTrayPrivateSettingAutoHideSet, TRUE);
         }
 
         HMONITOR monitor = TrayUI_GetStuckMonitor_Original(pThis);
