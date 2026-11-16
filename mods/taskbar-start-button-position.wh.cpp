@@ -120,6 +120,7 @@ std::atomic<bool> g_unloading;
 thread_local bool g_TaskbarCollapsibleLayoutXamlTraits_ArrangeOverride;
 thread_local bool g_inShowStartButtonContextMenu;
 
+// The search menu window moved by the mod, or null.
 HWND g_searchMenuWnd;
 // The search menu's x before it was moved, or y with a vertical taskbar.
 int g_searchMenuOriginalPos;
@@ -788,8 +789,47 @@ void ApplySettingsFromTaskbarThread() {
 }
 
 void ApplySettings(HWND hTaskbarWnd) {
+    struct ApplySettingsParam {
+        HWND hTaskbarWnd;
+        winrt::Windows::UI::Core::CoreDispatcher dispatcher{nullptr};
+    };
+
+    ApplySettingsParam param{
+        .hTaskbarWnd = hTaskbarWnd,
+    };
+
     RunFromWindowThread(
-        hTaskbarWnd, [](void* pParam) { ApplySettingsFromTaskbarThread(); }, 0);
+        hTaskbarWnd,
+        [](void* pParam) {
+            ApplySettingsParam& param = *(ApplySettingsParam*)pParam;
+
+            if (g_unloading) {
+                if (auto xamlRoot = GetTaskbarXamlRoot(param.hTaskbarWnd)) {
+                    if (auto content = xamlRoot.Content()) {
+                        param.dispatcher = content.Dispatcher();
+                    }
+                }
+            }
+
+            ApplySettingsFromTaskbarThread();
+        },
+        &param);
+
+    // The callbacks queued by ScheduleOnTaskbarThread run mod code, and none
+    // are queued while unloading. They run at High priority, so all of them
+    // have run once a Low priority callback runs.
+    if (param.dispatcher) {
+        try {
+            param.dispatcher
+                .TryRunAsync(
+                    winrt::Windows::UI::Core::CoreDispatcherPriority::Low,
+                    [] {})
+                .get();
+        } catch (...) {
+            HRESULT hr = winrt::to_hresult();
+            Wh_Log(L"Error %08X", hr);
+        }
+    }
 }
 
 using IUIElement_Arrange_t =
@@ -957,20 +997,12 @@ HRESULT WINAPI TaskbarCollapsibleLayoutXamlTraits_ArrangeOverride_Hook(
         return true;
     }();
 
-    // Arrange can be nested. Restore the previous state on every exit, including
-    // when the arrange call leaves through an exception.
-    const bool previousArrangeOverride =
-        g_TaskbarCollapsibleLayoutXamlTraits_ArrangeOverride;
+    // Arrange can be nested.
+    bool prev = g_TaskbarCollapsibleLayoutXamlTraits_ArrangeOverride;
     g_TaskbarCollapsibleLayoutXamlTraits_ArrangeOverride = true;
-    struct ArrangeOverrideGuard {
-        bool previous;
-        ~ArrangeOverrideGuard() {
-            g_TaskbarCollapsibleLayoutXamlTraits_ArrangeOverride = previous;
-        }
-    } restoreArrangeOverride{previousArrangeOverride};
-
     HRESULT ret = TaskbarCollapsibleLayoutXamlTraits_ArrangeOverride_Original(
         pThis, context, size, resultSize);
+    g_TaskbarCollapsibleLayoutXamlTraits_ArrangeOverride = prev;
 
     return ret;
 }
@@ -1377,7 +1409,7 @@ HRESULT WINAPI DwmSetWindowAttribute_Hook(HWND hwnd,
             g_searchMenuVertical = vertical;
             g_searchMenuMonitor = monitor;
         } else {
-            if (hwnd != g_searchMenuWnd || !g_searchMenuOriginalPos) {
+            if (hwnd != g_searchMenuWnd) {
                 return original();
             }
 
@@ -1386,7 +1418,6 @@ HRESULT WINAPI DwmSetWindowAttribute_Hook(HWND hwnd,
             bool monitorMatches = monitor == g_searchMenuMonitor;
 
             g_searchMenuWnd = nullptr;
-            g_searchMenuOriginalPos = 0;
             g_searchMenuMonitor = nullptr;
 
             if (!monitorMatches) {
@@ -1888,7 +1919,7 @@ HRESULT WINAPI RoGetActivationFactory_Hook(HSTRING activatableClassId,
 }  // namespace StartMenuUI
 
 void RestoreMenuPositions() {
-    if (g_searchMenuWnd && g_searchMenuOriginalPos) {
+    if (g_searchMenuWnd) {
         HMONITOR monitor =
             MonitorFromWindow(g_searchMenuWnd, MONITOR_DEFAULTTONEAREST);
 
@@ -1911,7 +1942,6 @@ void RestoreMenuPositions() {
         }
 
         g_searchMenuWnd = nullptr;
-        g_searchMenuOriginalPos = 0;
         g_searchMenuMonitor = nullptr;
     }
 }
