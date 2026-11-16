@@ -150,7 +150,6 @@ issue](https://tweaker.userecho.com/topics/826-scroll-on-trackpadtouchpad-doesnt
 #include <optional>
 #include <string>
 #include <string_view>
-#include <thread>
 #include <unordered_set>
 #include <vector>
 
@@ -669,14 +668,6 @@ int GetBrightnessWmi() {
         goto cleanup;
     }
 
-    // Initialize COM as MTA so WMI calls are direct (no cross-apartment
-    // proxy). This function is meant to be called from a worker thread.
-
-    hr = CoInitializeEx(0, COINIT_MULTITHREADED);
-    if (FAILED(hr)) {
-        goto cleanup;
-    }
-
     hr = CoCreateInstance(CLSID_WbemLocator, 0, CLSCTX_INPROC_SERVER,
                           IID_IWbemLocator, (LPVOID*)&pLocator);
     if (FAILED(hr)) {
@@ -726,14 +717,16 @@ int GetBrightnessWmi() {
         }
 
         VARIANT var1;
+        VariantInit(&var1);
         hr = pObj->Get(_bstr_t(L"CurrentBrightness"), 0, &var1, NULL, NULL);
+        pObj->Release();
+        if (hr != WBEM_S_NO_ERROR) {
+            goto cleanup;
+        }
 
         ret = V_UI1(&var1);
 
         VariantClear(&var1);
-        if (hr != WBEM_S_NO_ERROR) {
-            goto cleanup;
-        }
     }
 
     // Free up resources
@@ -743,14 +736,15 @@ cleanup:
     SysFreeString(ClassPath);
     SysFreeString(bstrQuery);
 
+    if (pEnum) {
+        pEnum->Release();
+    }
     if (pLocator) {
         pLocator->Release();
     }
     if (pNamespace) {
         pNamespace->Release();
     }
-
-    CoUninitialize();
 
     return ret;
 }
@@ -779,15 +773,6 @@ bool SetBrightnessWmi(int val) {
         goto cleanup;
     }
 
-    // Initialize COM as MTA so WMI calls are direct (no cross-apartment
-    // proxy). This function is meant to be called from a worker thread.
-
-    hr = CoInitializeEx(0, COINIT_MULTITHREADED);
-    if (FAILED(hr)) {
-        bRet = false;
-        goto cleanup;
-    }
-
     hr = CoCreateInstance(CLSID_WbemLocator, 0, CLSCTX_INPROC_SERVER,
                           IID_IWbemLocator, (LPVOID*)&pLocator);
     if (FAILED(hr)) {
@@ -805,6 +790,60 @@ bool SetBrightnessWmi(int val) {
                            NULL, RPC_C_AUTHN_LEVEL_PKT,
                            RPC_C_IMP_LEVEL_IMPERSONATE, NULL, EOAC_NONE);
 
+    if (hr != WBEM_S_NO_ERROR) {
+        bRet = false;
+        goto cleanup;
+    }
+
+    // Get the class object
+    hr = pNamespace->GetObject(ClassPath, 0, NULL, &pClass, NULL);
+    if (hr != WBEM_S_NO_ERROR) {
+        bRet = false;
+        goto cleanup;
+    }
+
+    // Get the input argument and set the property
+    hr = pClass->GetMethod(MethodName, 0, &pInClass, NULL);
+    if (hr != WBEM_S_NO_ERROR) {
+        bRet = false;
+        goto cleanup;
+    }
+
+    hr = pInClass->SpawnInstance(0, &pInInst);
+    if (hr != WBEM_S_NO_ERROR) {
+        bRet = false;
+        goto cleanup;
+    }
+
+    VARIANT var1;
+    VariantInit(&var1);
+
+    V_VT(&var1) = VT_BSTR;
+    V_BSTR(&var1) = SysAllocString(L"0");
+    hr = pInInst->Put(ArgName0, 0, &var1, CIM_UINT32);  // CIM_UINT64
+
+    // var1.vt = VT_I4;
+    // var1.ullVal = 0;
+    //    hr = pInInst->Put(ArgName0, 0, &var1, 0);
+    VariantClear(&var1);
+    if (hr != WBEM_S_NO_ERROR) {
+        bRet = false;
+        goto cleanup;
+    }
+
+    VARIANT var;
+    VariantInit(&var);
+
+    V_VT(&var) = VT_BSTR;
+    WCHAR buf[10];
+    swprintf_s(buf, _countof(buf), L"%d", val);
+    V_BSTR(&var) = SysAllocString(buf);
+    hr = pInInst->Put(ArgName1, 0, &var, CIM_UINT8);
+
+    // var.vt=VT_UI1;
+    // var.uiVal = 100;
+    // hr = pInInst->Put(ArgName1, 0, &var, 0);
+    VariantClear(&var);
     if (hr != WBEM_S_NO_ERROR) {
         bRet = false;
         goto cleanup;
@@ -836,71 +875,24 @@ bool SetBrightnessWmi(int val) {
                          &ulReturned     // No of object returned
         );
 
+        if (hr == WBEM_S_FALSE) {
+            break;
+        }
+
         if (hr != WBEM_S_NO_ERROR) {
             bRet = false;
             goto cleanup;
         }
 
-        // Get the class object
-        hr = pNamespace->GetObject(ClassPath, 0, NULL, &pClass, NULL);
-        if (hr != WBEM_S_NO_ERROR) {
-            bRet = false;
-            goto cleanup;
-        }
-
-        // Get the input argument and set the property
-        hr = pClass->GetMethod(MethodName, 0, &pInClass, NULL);
-        if (hr != WBEM_S_NO_ERROR) {
-            bRet = false;
-            goto cleanup;
-        }
-
-        hr = pInClass->SpawnInstance(0, &pInInst);
-        if (hr != WBEM_S_NO_ERROR) {
-            bRet = false;
-            goto cleanup;
-        }
-
-        VARIANT var1;
-        VariantInit(&var1);
-
-        V_VT(&var1) = VT_BSTR;
-        V_BSTR(&var1) = SysAllocString(L"0");
-        hr = pInInst->Put(ArgName0, 0, &var1, CIM_UINT32);  // CIM_UINT64
-
-        // var1.vt = VT_I4;
-        // var1.ullVal = 0;
-        //    hr = pInInst->Put(ArgName0, 0, &var1, 0);
-        VariantClear(&var1);
-        if (hr != WBEM_S_NO_ERROR) {
-            bRet = false;
-            goto cleanup;
-        }
-
-        VARIANT var;
-        VariantInit(&var);
-
-        V_VT(&var) = VT_BSTR;
-        WCHAR buf[10] = {0};
-        swprintf_s(buf, _countof(buf), L"%d", val);
-        V_BSTR(&var) = SysAllocString(buf);
-        hr = pInInst->Put(ArgName1, 0, &var, CIM_UINT8);
-
-        // var.vt=VT_UI1;
-        // var.uiVal = 100;
-        // hr = pInInst->Put(ArgName1, 0, &var, 0);
-        VariantClear(&var);
-        if (hr != WBEM_S_NO_ERROR) {
-            bRet = false;
-            goto cleanup;
-        }
         // Call the method
 
         VARIANT pathVariable;
         VariantInit(&pathVariable);
 
         hr = pObj->Get(_bstr_t(L"__PATH"), 0, &pathVariable, NULL, NULL);
+        pObj->Release();
         if (hr != WBEM_S_NO_ERROR) {
+            bRet = false;
             goto cleanup;
         }
 
@@ -923,6 +915,9 @@ cleanup:
     SysFreeString(ArgName1);
     SysFreeString(bstrQuery);
 
+    if (pEnum) {
+        pEnum->Release();
+    }
     if (pClass) {
         pClass->Release();
     }
@@ -938,8 +933,6 @@ cleanup:
     if (pNamespace) {
         pNamespace->Release();
     }
-
-    CoUninitialize();
 
     return bRet;
 }
@@ -1100,9 +1093,24 @@ constexpr int kFlyoutTypeMicrophoneMuted = 7;
 // The shell hook code that the system sends for brightness key presses.
 constexpr WPARAM kShellHookBrightness = 0x37;
 
-std::mutex g_brightnessMutex;
 bool g_nativeBrightnessInitAttempted;
 bool g_nativeBrightnessInitialized;
+HMODULE g_displayEnhancementManagementModule;
+
+// Brightness changes are slow, so they're made by a worker thread. Requests
+// that queue up while it's busy are merged.
+struct BrightnessRequest {
+    HMONITOR hMonitor;
+    BrightnessMethod methodWmi;
+    BrightnessMethod methodDdcCi;
+    int delta;
+};
+
+HANDLE g_brightnessThread;
+HANDLE g_brightnessRequestEvent;
+HANDLE g_brightnessStopEvent;
+std::mutex g_brightnessRequestsMutex;
+std::vector<BrightnessRequest> g_brightnessRequests;
 
 bool InitNativeBrightness() {
     // The indicator types above are those of the Windows 11 22H2+ indicators.
@@ -1123,6 +1131,8 @@ bool InitNativeBrightness() {
         Wh_Log(L"Native brightness API isn't available");
         return false;
     }
+
+    g_displayEnhancementManagementModule = module;
 
     // Windows.Internal.Graphics.Display.DisplayEnhancementManagement.dll
     WindhawkUtils::SYMBOL_HOOK symbolHooks[] = {
@@ -1167,12 +1177,11 @@ winrt::com_ptr<IInspectable> GetAsyncOperationResults(IInspectable* operation) {
     DWORD startTime = GetTickCount();
     while (SUCCEEDED(asyncInfo->get_Status(&status)) &&
            status == AsyncStatus::Started) {
-        if (GetTickCount() - startTime > 5000) {
+        if (GetTickCount() - startTime > 5000 ||
+            WaitForSingleObject(g_brightnessStopEvent, 10) != WAIT_TIMEOUT) {
             asyncInfo->Cancel();
             return nullptr;
         }
-
-        Sleep(10);
     }
 
     if (status != AsyncStatus::Completed) {
@@ -1491,22 +1500,96 @@ void AdjustBrightnessInternal(int delta, BrightnessMethod method) {
     AdjustBrightnessWmi(delta);
 }
 
-void AdjustBrightnessThread(HMONITOR hMonitor,
-                            int delta,
-                            BrightnessMethod methodWmi,
-                            BrightnessMethod methodDdcCi) {
-    // Each brightness change reads the current level and writes a new one.
-    std::lock_guard<std::mutex> lock(g_brightnessMutex);
+void AdjustBrightness(const BrightnessRequest& request) {
+    if (!request.hMonitor ||
+        !AdjustBrightnessExternal(request.hMonitor, request.delta,
+                                  request.methodDdcCi)) {
+        AdjustBrightnessInternal(request.delta, request.methodWmi);
+    }
+}
 
+DWORD WINAPI BrightnessThread(LPVOID) {
     HRESULT hrCoInit = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
 
-    if (!hMonitor || !AdjustBrightnessExternal(hMonitor, delta, methodDdcCi)) {
-        AdjustBrightnessInternal(delta, methodWmi);
+    HANDLE events[] = {g_brightnessStopEvent, g_brightnessRequestEvent};
+    while (WaitForMultipleObjects(ARRAYSIZE(events), events, FALSE, INFINITE) ==
+           WAIT_OBJECT_0 + 1) {
+        std::vector<BrightnessRequest> requests;
+        {
+            std::lock_guard<std::mutex> lock(g_brightnessRequestsMutex);
+            requests.swap(g_brightnessRequests);
+        }
+
+        for (const auto& request : requests) {
+            if (WaitForSingleObject(g_brightnessStopEvent, 0) != WAIT_TIMEOUT) {
+                break;
+            }
+
+            AdjustBrightness(request);
+        }
     }
 
     if (SUCCEEDED(hrCoInit)) {
         CoUninitialize();
     }
+
+    return 0;
+}
+
+void BrightnessThreadInit() {
+    g_brightnessRequestEvent = CreateEvent(nullptr, FALSE, FALSE, nullptr);
+    g_brightnessStopEvent = CreateEvent(nullptr, TRUE, FALSE, nullptr);
+    if (g_brightnessRequestEvent && g_brightnessStopEvent) {
+        g_brightnessThread =
+            CreateThread(nullptr, 0, BrightnessThread, nullptr, 0, nullptr);
+    }
+
+    if (!g_brightnessThread) {
+        Wh_Log(L"Failed to create the brightness thread");
+    }
+}
+
+void BrightnessThreadUninit() {
+    if (g_brightnessThread) {
+        SetEvent(g_brightnessStopEvent);
+        WaitForSingleObject(g_brightnessThread, INFINITE);
+        CloseHandle(g_brightnessThread);
+        g_brightnessThread = nullptr;
+    }
+
+    if (g_brightnessRequestEvent) {
+        CloseHandle(g_brightnessRequestEvent);
+        g_brightnessRequestEvent = nullptr;
+    }
+
+    if (g_brightnessStopEvent) {
+        CloseHandle(g_brightnessStopEvent);
+        g_brightnessStopEvent = nullptr;
+    }
+}
+
+void RequestBrightnessChange(const BrightnessRequest& request) {
+    if (!g_brightnessThread) {
+        return;
+    }
+
+    {
+        std::lock_guard<std::mutex> lock(g_brightnessRequestsMutex);
+        auto it = std::find_if(
+            g_brightnessRequests.begin(), g_brightnessRequests.end(),
+            [&request](const BrightnessRequest& pending) {
+                return pending.hMonitor == request.hMonitor &&
+                       pending.methodWmi == request.methodWmi &&
+                       pending.methodDdcCi == request.methodDdcCi;
+            });
+        if (it != g_brightnessRequests.end()) {
+            it->delta += request.delta;
+        } else {
+            g_brightnessRequests.push_back(request);
+        }
+    }
+
+    SetEvent(g_brightnessRequestEvent);
 }
 
 #pragma endregion  // brightness
@@ -1703,18 +1786,15 @@ void InvokeScrollAction(HWND hWnd,
                 SwitchDesktopViaKeyboardShortcut(clicks);
                 break;
 
-            case ScrollAction::brightnessChange: {
-                // Resolve the monitor on the UI thread (fast), then do the
-                // actual brightness work on a background MTA thread to avoid
-                // blocking the taskbar message loop with slow WMI/DDC-CI calls.
-                HMONITOR hMonitor =
-                    MonitorFromWindow(hWnd, MONITOR_DEFAULTTONEAREST);
-                std::thread(AdjustBrightnessThread, hMonitor, clicks,
-                            g_settings.brightnessMethodWmi,
-                            g_settings.brightnessMethodDdcCi)
-                    .detach();
+            case ScrollAction::brightnessChange:
+                RequestBrightnessChange({
+                    .hMonitor =
+                        MonitorFromWindow(hWnd, MONITOR_DEFAULTTONEAREST),
+                    .methodWmi = g_settings.brightnessMethodWmi,
+                    .methodDdcCi = g_settings.brightnessMethodDdcCi,
+                    .delta = clicks,
+                });
                 break;
-            }
 
             case ScrollAction::micVolumeChange:
                 if (AddMicMasterVolumeLevelScalar(clicks * 0.01f)) {
@@ -2196,6 +2276,8 @@ BOOL Wh_ModInit() {
         g_nativeBrightnessInitialized = InitNativeBrightness();
     }
 
+    BrightnessThreadInit();
+
     WindhawkUtils::SetFunctionHook(CreateWindowExW, CreateWindowExW_Hook,
                                    &CreateWindowExW_Original);
 
@@ -2251,6 +2333,13 @@ void Wh_ModUninit() {
         for (HWND hSecondaryWnd : g_secondaryTaskbarWindows) {
             UnsubclassTaskbarWindow(hSecondaryWnd);
         }
+    }
+
+    BrightnessThreadUninit();
+
+    if (g_displayEnhancementManagementModule) {
+        FreeLibrary(g_displayEnhancementManagementModule);
+        g_displayEnhancementManagementModule = nullptr;
     }
 
     MicVolUninit();
