@@ -129,6 +129,7 @@ arranged in a grid when the taskbar is wide enough.
 #undef GetCurrentTime
 
 #include <winrt/Windows.Foundation.Collections.h>
+#include <winrt/Windows.UI.Core.h>
 #include <winrt/Windows.UI.Xaml.Controls.h>
 #include <winrt/Windows.UI.Xaml.Media.h>
 #include <winrt/Windows.UI.Xaml.h>
@@ -1090,6 +1091,52 @@ void WINAPI NotifyIconView_ApplyLayoutMode_Hook(void* pThis, int layoutMode) {
     Wh_Log(L"Setting MinHeight=%d for NotifyIconView",
            g_settings.notificationIconWidth);
     notifyIconView.MinHeight(g_settings.notificationIconWidth);
+
+    // The compact layout state sets its panel some time after the layout of the
+    // icons is updated, replacing the panel set for a grid. The icons apply
+    // their layout mode once they're moved to that panel, and the grid panel is
+    // set again after that.
+    if (g_settings.notificationIconRows <= 1) {
+        return;
+    }
+
+    auto notificationAreaIcons =
+        FindParentByName(notifyIconView, L"NotificationAreaIcons")
+            .try_as<Controls::ItemsControl>();
+    if (!notificationAreaIcons ||
+        notificationAreaIcons.ItemsPanelRoot().try_as<Controls::WrapGrid>()) {
+        return;
+    }
+
+    notificationAreaIcons.Dispatcher().TryRunAsync(
+        winrt::Windows::UI::Core::CoreDispatcherPriority::Normal,
+        [notificationAreaIconsWeak =
+             winrt::make_weak(notificationAreaIcons)]() {
+            auto notificationAreaIcons = notificationAreaIconsWeak.get();
+            if (!notificationAreaIcons || g_unloading) {
+                return;
+            }
+
+            try {
+                int rows = g_settings.notificationIconRows;
+                auto systemTrayFrameGrid = FindParentByName(
+                    notificationAreaIcons, L"SystemTrayFrameGrid");
+                if (!systemTrayFrameGrid ||
+                    !ApplyNotifyIconsCompactLayoutPanel(
+                        systemTrayFrameGrid, notificationAreaIcons, rows)) {
+                    return;
+                }
+
+                // Creates the panel, which is styled below.
+                notificationAreaIcons.UpdateLayout();
+                ApplyNotifyIconsStyle(notificationAreaIcons, rows,
+                                      g_settings.notificationIconWidth,
+                                      /*vertical=*/true);
+            } catch (...) {
+                HRESULT hr = winrt::to_hresult();
+                Wh_Log(L"Error %08X", hr);
+            }
+        });
 }
 
 // Runs once the layout state is applied, and creates the panel of the icons,
