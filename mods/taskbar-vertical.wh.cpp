@@ -1015,7 +1015,7 @@ void TaskbarWndProcPreProcess(HWND hWnd,
             // The taskbar location that affects the jump list animations.
             if (!g_hasNativeVerticalTaskbar && !g_unloading &&
                 *wParam == ABE_BOTTOM) {
-                HMONITOR monitor = (HMONITOR)lParam;
+                HMONITOR monitor = (HMONITOR)*lParam;
                 switch (GetTaskbarLocationForMonitor(monitor)) {
                     case TaskbarLocation::left:
                         *wParam = ABE_LEFT;
