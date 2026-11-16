@@ -137,8 +137,12 @@ struct MainStackTextBlockState {
 
 std::vector<MainStackTextBlockState> g_mainStackTextBlockStates;
 
-winrt::weak_ref<FrameworkElement> g_bellSystemTrayIconElement;
-int64_t g_bellAutomationNameChangedToken;
+struct BellIconState {
+    winrt::weak_ref<FrameworkElement> element;
+    int64_t automationNameChangedToken{0};
+};
+
+std::vector<BellIconState> g_bellIconStates;
 
 winrt::weak_ref<FrameworkElement> g_controlCenterPanel;
 winrt::event_token g_controlCenterPanelSizeChangedToken;
@@ -1278,25 +1282,36 @@ void ApplyBellIconStyle(FrameworkElement systemTrayIconElement) {
 
             hide = shouldHide(innerTextBlock);
 
-            if (!g_bellSystemTrayIconElement.get()) {
-                g_bellSystemTrayIconElement = systemTrayIconElement;
-                g_bellAutomationNameChangedToken =
-                    systemTrayIconElement.RegisterPropertyChangedCallback(
-                        Automation::AutomationProperties::NameProperty(),
-                        [](DependencyObject sender,
-                           DependencyProperty property) {
-                            Wh_Log(L">");
+            std::erase_if(g_bellIconStates, [](const BellIconState& s) {
+                return !s.element.get();
+            });
 
-                            auto bellSystemTrayIconElement =
-                                sender.try_as<FrameworkElement>();
-                            if (!bellSystemTrayIconElement) {
-                                Wh_Log(L"Failed to get sender");
-                                return;
-                            }
+            bool registered = std::any_of(
+                g_bellIconStates.begin(), g_bellIconStates.end(),
+                [&systemTrayIconElement](const BellIconState& s) {
+                    return s.element.get() == systemTrayIconElement;
+                });
+            if (!registered) {
+                g_bellIconStates.push_back({
+                    .element = systemTrayIconElement,
+                    .automationNameChangedToken =
+                        systemTrayIconElement.RegisterPropertyChangedCallback(
+                            Automation::AutomationProperties::NameProperty(),
+                            [](DependencyObject sender,
+                               DependencyProperty property) {
+                                Wh_Log(L">");
 
-                            ApplyBellIconStyleWithRetry(
-                                bellSystemTrayIconElement, 0);
-                        });
+                                auto bellSystemTrayIconElement =
+                                    sender.try_as<FrameworkElement>();
+                                if (!bellSystemTrayIconElement) {
+                                    Wh_Log(L"Failed to get sender");
+                                    return;
+                                }
+
+                                ApplyBellIconStyleWithRetry(
+                                    bellSystemTrayIconElement, 0);
+                            }),
+                });
             }
         }
     }
@@ -1859,35 +1874,21 @@ SystemTrayFrame_ConfigureWrapGridColumns_Hook(void* element,
 
 void* CTaskBand_ITaskListWndSite_vftable;
 
+void* CSecondaryTaskBand_ITaskListWndSite_vftable;
+
 using CTaskBand_GetTaskbarHost_t = void*(WINAPI*)(void* pThis, void** result);
 CTaskBand_GetTaskbarHost_t CTaskBand_GetTaskbarHost_Original;
 
 void* TaskbarHost_FrameHeight_Original;
 
+using CSecondaryTaskBand_GetTaskbarHost_t = void*(WINAPI*)(void* pThis,
+                                                           void** result);
+CSecondaryTaskBand_GetTaskbarHost_t CSecondaryTaskBand_GetTaskbarHost_Original;
+
 using std__Ref_count_base__Decref_t = void(WINAPI*)(void* pThis);
 std__Ref_count_base__Decref_t std__Ref_count_base__Decref_Original;
 
-XamlRoot GetTaskbarXamlRoot(HWND hTaskbarWnd) {
-    HWND hTaskSwWnd = (HWND)GetProp(hTaskbarWnd, L"TaskbandHWND");
-    if (!hTaskSwWnd) {
-        return nullptr;
-    }
-
-    void* taskBand = (void*)GetWindowLongPtr(hTaskSwWnd, 0);
-    void* taskBandForTaskListWndSite = taskBand;
-    for (int i = 0; *(void**)taskBandForTaskListWndSite !=
-                    CTaskBand_ITaskListWndSite_vftable;
-         i++) {
-        if (i == 20) {
-            return nullptr;
-        }
-
-        taskBandForTaskListWndSite = (void**)taskBandForTaskListWndSite + 1;
-    }
-
-    void* taskbarHostSharedPtr[2]{};
-    CTaskBand_GetTaskbarHost_Original(taskBandForTaskListWndSite,
-                                      taskbarHostSharedPtr);
+XamlRoot XamlRootFromTaskbarHostSharedPtr(void* taskbarHostSharedPtr[2]) {
     if (!taskbarHostSharedPtr[0] && !taskbarHostSharedPtr[1]) {
         return nullptr;
     }
@@ -1937,6 +1938,57 @@ XamlRoot GetTaskbarXamlRoot(HWND hTaskbarWnd) {
     std__Ref_count_base__Decref_Original(taskbarHostSharedPtr[1]);
 
     return result;
+}
+
+XamlRoot GetTaskbarXamlRoot(HWND hTaskbarWnd) {
+    HWND hTaskSwWnd = (HWND)GetProp(hTaskbarWnd, L"TaskbandHWND");
+    if (!hTaskSwWnd) {
+        return nullptr;
+    }
+
+    void* taskBand = (void*)GetWindowLongPtr(hTaskSwWnd, 0);
+    void* taskBandForTaskListWndSite = taskBand;
+    for (int i = 0; *(void**)taskBandForTaskListWndSite !=
+                    CTaskBand_ITaskListWndSite_vftable;
+         i++) {
+        if (i == 20) {
+            return nullptr;
+        }
+
+        taskBandForTaskListWndSite = (void**)taskBandForTaskListWndSite + 1;
+    }
+
+    void* taskbarHostSharedPtr[2]{};
+    CTaskBand_GetTaskbarHost_Original(taskBandForTaskListWndSite,
+                                      taskbarHostSharedPtr);
+
+    return XamlRootFromTaskbarHostSharedPtr(taskbarHostSharedPtr);
+}
+
+XamlRoot GetSecondaryTaskbarXamlRoot(HWND hSecondaryTaskbarWnd) {
+    HWND hTaskSwWnd =
+        (HWND)FindWindowEx(hSecondaryTaskbarWnd, nullptr, L"WorkerW", nullptr);
+    if (!hTaskSwWnd) {
+        return nullptr;
+    }
+
+    void* taskBand = (void*)GetWindowLongPtr(hTaskSwWnd, 0);
+    void* taskBandForTaskListWndSite = taskBand;
+    for (int i = 0; *(void**)taskBandForTaskListWndSite !=
+                    CSecondaryTaskBand_ITaskListWndSite_vftable;
+         i++) {
+        if (i == 20) {
+            return nullptr;
+        }
+
+        taskBandForTaskListWndSite = (void**)taskBandForTaskListWndSite + 1;
+    }
+
+    void* taskbarHostSharedPtr[2]{};
+    CSecondaryTaskBand_GetTaskbarHost_Original(taskBandForTaskListWndSite,
+                                               taskbarHostSharedPtr);
+
+    return XamlRootFromTaskbarHostSharedPtr(taskbarHostSharedPtr);
 }
 
 using RunFromWindowThreadProc_t = void(WINAPI*)(void* parameter);
@@ -2021,10 +2073,6 @@ void LoadSettings() {
 }
 
 void ApplySettings() {
-    struct ApplySettingsParam {
-        HWND hTaskbarWnd;
-    };
-
     Wh_Log(L"Applying settings");
 
     HWND hTaskbarWnd = FindCurrentProcessTaskbarWnd();
@@ -2033,25 +2081,19 @@ void ApplySettings() {
         return;
     }
 
-    ApplySettingsParam param{
-        .hTaskbarWnd = hTaskbarWnd,
-    };
-
     RunFromWindowThread(
         hTaskbarWnd,
         [](void* pParam) {
-            ApplySettingsParam& param = *(ApplySettingsParam*)pParam;
-
             g_autoRevokerList->clear();
 
-            if (auto bellSystemTrayIconElement =
-                    g_bellSystemTrayIconElement.get()) {
-                bellSystemTrayIconElement.UnregisterPropertyChangedCallback(
-                    Automation::AutomationProperties::NameProperty(),
-                    g_bellAutomationNameChangedToken);
-                g_bellSystemTrayIconElement = nullptr;
-                g_bellAutomationNameChangedToken = 0;
+            for (const auto& state : g_bellIconStates) {
+                if (auto element = state.element.get()) {
+                    element.UnregisterPropertyChangedCallback(
+                        Automation::AutomationProperties::NameProperty(),
+                        state.automationNameChangedToken);
+                }
             }
+            g_bellIconStates.clear();
 
             for (const auto& state : g_mainStackTextBlockStates) {
                 if (auto textBlock = state.textBlock.get()) {
@@ -2099,19 +2141,41 @@ void ApplySettings() {
             }
             g_showDesktopSizeStates.clear();
 
-            auto xamlRoot = GetTaskbarXamlRoot(param.hTaskbarWnd);
-            if (!xamlRoot) {
-                Wh_Log(L"Getting XamlRoot failed");
-            } else if (!ApplyStyle(xamlRoot)) {
-                Wh_Log(L"ApplyStyle failed");
-            }
+            // Secondary taskbars are created on the primary taskbar's thread.
+            EnumThreadWindows(
+                GetCurrentThreadId(),
+                [](HWND hWnd, LPARAM lParam) -> BOOL {
+                    WCHAR className[32];
+                    if (!GetClassName(hWnd, className, ARRAYSIZE(className))) {
+                        return TRUE;
+                    }
+
+                    XamlRoot xamlRoot = nullptr;
+                    if (_wcsicmp(className, L"Shell_TrayWnd") == 0) {
+                        xamlRoot = GetTaskbarXamlRoot(hWnd);
+                    } else if (_wcsicmp(className, L"Shell_SecondaryTrayWnd") ==
+                               0) {
+                        xamlRoot = GetSecondaryTaskbarXamlRoot(hWnd);
+                    } else {
+                        return TRUE;
+                    }
+
+                    if (!xamlRoot) {
+                        Wh_Log(L"Getting XamlRoot failed");
+                    } else if (!ApplyStyle(xamlRoot)) {
+                        Wh_Log(L"ApplyStyle failed");
+                    }
+
+                    return TRUE;
+                },
+                0);
 
             if (g_unloading) {
                 g_autoRevokerList.reset();
                 g_batteryTextBlockStates.reset();
             }
         },
-        &param);
+        nullptr);
 }
 
 bool HookSystemTraySymbols(HMODULE module) {
@@ -2228,12 +2292,20 @@ bool HookTaskbarDllSymbols() {
             &CTaskBand_ITaskListWndSite_vftable,
         },
         {
+            {LR"(const CSecondaryTaskBand::`vftable'{for `ITaskListWndSite'})"},
+            &CSecondaryTaskBand_ITaskListWndSite_vftable,
+        },
+        {
             {LR"(public: virtual class std::shared_ptr<class TaskbarHost> __cdecl CTaskBand::GetTaskbarHost(void)const )"},
             &CTaskBand_GetTaskbarHost_Original,
         },
         {
             {LR"(public: int __cdecl TaskbarHost::FrameHeight(void)const )"},
             &TaskbarHost_FrameHeight_Original,
+        },
+        {
+            {LR"(public: virtual class std::shared_ptr<class TaskbarHost> __cdecl CSecondaryTaskBand::GetTaskbarHost(void)const )"},
+            &CSecondaryTaskBand_GetTaskbarHost_Original,
         },
         {
             {LR"(public: void __cdecl std::_Ref_count_base::_Decref(void))"},
