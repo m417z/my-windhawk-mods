@@ -2,7 +2,7 @@
 // @id              taskbar-tray-show-on-hover
 // @name            Taskbar tray auto-hide (show on hover)
 // @description     Hide the taskbar tray area when not in use, and show it when hovering the mouse over it
-// @version         1.0
+// @version         1.0.1
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
