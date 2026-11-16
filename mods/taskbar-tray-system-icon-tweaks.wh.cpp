@@ -531,14 +531,14 @@ SystemTrayIconIdent IdentifySystemTrayIconFromText(std::wstring_view text) {
 // its cell. Move the visible items with margins to the cells they'd have
 // without the hidden ones, in as many columns as the taskbar uses for that many
 // items, and trim the rows that are left empty. Returns the number of visible
-// items.
-int UpdateWrapGridHiddenItems(
+// items, or nullopt if the items are unknown.
+std::optional<int> UpdateWrapGridHiddenItems(
     Controls::WrapGrid wrapGrid,
     std::function<bool(FrameworkElement)> isContainerHidden) {
     auto itemsControl = Controls::ItemsControl::GetItemsOwner(wrapGrid);
     if (!itemsControl) {
         Wh_Log(L"Failed to get items owner");
-        return 0;
+        return std::nullopt;
     }
 
     int itemCount = itemsControl.Items().Size();
@@ -1016,14 +1016,19 @@ bool UpdateControlCenterButtonStackPanel(FrameworkElement stackPanel) {
 void UpdateControlCenterButtonPanel(FrameworkElement panel) {
     bool anyVisible;
     if (auto wrapGrid = panel.try_as<Controls::WrapGrid>()) {
-        anyVisible =
+        auto visibleCount =
             UpdateWrapGridHiddenItems(wrapGrid, [](FrameworkElement container) {
                 auto systemTrayIconElement =
                     FindChildByName(container, L"SystemTrayIcon")
                         .try_as<Controls::Control>();
                 return systemTrayIconElement &&
                        !systemTrayIconElement.IsEnabled();
-            }) > 0;
+            });
+        if (!visibleCount) {
+            return;
+        }
+
+        anyVisible = *visibleCount > 0;
     } else {
         anyVisible = UpdateControlCenterButtonStackPanel(panel);
     }
