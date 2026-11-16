@@ -55,8 +55,10 @@ over it.
 
 #include <algorithm>
 #include <atomic>
+#include <chrono>
 #include <functional>
 #include <list>
+#include <memory>
 #include <optional>
 #include <vector>
 
