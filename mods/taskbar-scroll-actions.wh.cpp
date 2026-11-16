@@ -1124,6 +1124,7 @@ bool InitNativeBrightness() {
         return false;
     }
 
+    // Windows.Internal.Graphics.Display.DisplayEnhancementManagement.dll
     WindhawkUtils::SYMBOL_HOOK symbolHooks[] = {
         {
             {LR"(public: virtual long __cdecl Windows::Internal::Graphics::Display::DisplayEnhancementManagement::DisplayEnhancementManagementStatics::FromIdAsync(struct HSTRING__ *,struct Windows::Foundation::IAsyncOperation<class Windows::Internal::Graphics::Display::DisplayEnhancementManagement::DisplayEnhancementManagement *> * *))"},
