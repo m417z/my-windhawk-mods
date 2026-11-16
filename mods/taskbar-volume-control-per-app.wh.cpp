@@ -76,8 +76,8 @@ Control mod takes precedence due to the way the mod works.
 - ctrlScrollVolumeChange: false
   $name: Ctrl + Scroll to change volume
   $description: >-
-    When enabled, scrolling the mouse wheel will only change the volume when
-    the Ctrl key is held down.
+    When enabled, scrolling with the mouse wheel or the touchpad will only
+    change the volume when the Ctrl key is held down.
 - touchpadScroll: false
   $name: Touchpad scrolling
   $description: >-
@@ -858,7 +858,7 @@ DWORD GetProcessIdFromTaskListButton(UIElement element) {
     return 0;
 }
 
-struct {
+struct VolumeTooltipState {
     Controls::Primitives::Popup popup = nullptr;
     winrt::weak_ref<FrameworkElement> taskbarFrame;
     bool vertical = false;
@@ -867,7 +867,10 @@ struct {
     double cursorX = 0.0;
     double cursorY = 0.0;
     UINT_PTR hideTimer = 0;
-} g_volumeTooltipState;
+};
+
+// Released on the UI thread by HideVolumeTooltip.
+[[clang::no_destroy]] VolumeTooltipState g_volumeTooltipState;
 
 struct TaskbarFrameAncestorResult {
     FrameworkElement element = nullptr;
@@ -1271,7 +1274,8 @@ constexpr WCHAR kTouchpadWndClassName[] = L"Windhawk_TouchpadScroll_" WH_MOD_ID;
 
 // wParam: whether the cursor is over a taskbar button.
 constexpr UINT kTouchpadMsgHover = WM_APP + 1;
-// wParam: the volume steps, positive to raise the volume.
+// wParam: the wheel delta, WHEEL_DELTA per volume step, positive to raise the
+// volume.
 constexpr UINT kTouchpadMsgScroll = WM_APP + 2;
 
 bool g_touchpadWndClassRegistered;
@@ -1304,7 +1308,7 @@ void TouchpadHoverClear() {
     }
 }
 
-void ApplyTouchpadScroll(int steps) {
+void ApplyTouchpadScroll(int delta) {
     auto element = g_touchpadHover.element.get();
     if (!element) {
         return;
@@ -1325,10 +1329,10 @@ void ApplyTouchpadScroll(int steps) {
         return;
     }
 
-    Wh_Log(L"Per-app volume (touchpad): PID=%u, steps=%d", processId, steps);
+    Wh_Log(L"Per-app volume (touchpad): PID=%u, delta=%d", processId, delta);
 
-    auto volumeResult = AdjustAppVolume(
-        processId, VolumeChangeFromWheelDelta(steps * WHEEL_DELTA));
+    auto volumeResult =
+        AdjustAppVolume(processId, VolumeChangeFromWheelDelta(delta));
 
     ShowVolumeResultTooltip(
         element,
@@ -1477,13 +1481,13 @@ void OnTouchpadFrame(const TouchpadDevice& dev) {
     state.accumulatedY += state.lastY - y;
     state.lastY = y;
 
-    double stepHeight = dev.rangeY * kTouchpadStepHeight;
-    int steps = (int)(state.accumulatedY / stepHeight);
-    if (!steps) {
+    double deltaHeight = dev.rangeY * kTouchpadStepHeight / WHEEL_DELTA;
+    int delta = (int)(state.accumulatedY / deltaHeight);
+    if (!delta) {
         return;
     }
 
-    state.accumulatedY -= steps * stepHeight;
+    state.accumulatedY -= delta * deltaHeight;
 
     // GetKeyState doesn't reflect the keyboard on this thread.
     if (g_settings.ctrlScrollVolumeChange &&
@@ -1492,7 +1496,7 @@ void OnTouchpadFrame(const TouchpadDevice& dev) {
     }
 
     if (HWND hUiWnd = g_touchpadUiWnd) {
-        PostMessage(hUiWnd, kTouchpadMsgScroll, steps, 0);
+        PostMessage(hUiWnd, kTouchpadMsgScroll, delta, 0);
     }
 }
 
@@ -2081,7 +2085,7 @@ int WINAPI TaskListButton_OnPointerPressed_Hook(void* pThis, void* pArgs) {
         return original();
     }
 
-    Wh_Log(L"Ctrl+click to toggle mute: PID=%u", processId);
+    Wh_Log(L"Click to toggle mute: PID=%u", processId);
 
     // Toggle mute state.
     auto muteResult = ToggleAppMute(processId);
