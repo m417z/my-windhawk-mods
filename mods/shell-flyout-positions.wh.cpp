@@ -147,6 +147,7 @@ shift options allow fine-tuning in both directions.
 
 #include <algorithm>
 #include <atomic>
+#include <cmath>
 #include <functional>
 #include <future>
 #include <limits>
@@ -599,8 +600,9 @@ std::optional<RECT> GetShowDesktopButtonBoundsWorker(HWND hTaskbarWnd) {
     // older builds, they're children of DesktopWindowContentBridge, next to the
     // taskbar frame.
     winrt::com_ptr<IUIAutomationElement> targetElement;
-    if (auto taskbarFrame =
-            findChild(element, UIA_AutomationIdPropertyId, L"TaskbarFrame")) {
+    auto taskbarFrame =
+        findChild(element, UIA_AutomationIdPropertyId, L"TaskbarFrame");
+    if (taskbarFrame) {
         targetElement = findTargetChild(taskbarFrame);
     }
     if (!targetElement) {
@@ -610,6 +612,10 @@ std::optional<RECT> GetShowDesktopButtonBoundsWorker(HWND hTaskbarWnd) {
         Wh_Log(
             L"Failed to find ShowDesktopButton or OmniButtonRight, children:");
         logChildrenClassNames(element);
+        if (taskbarFrame) {
+            Wh_Log(L"TaskbarFrame children:");
+            logChildrenClassNames(taskbarFrame);
+        }
         return std::nullopt;
     }
 
@@ -881,6 +887,10 @@ HRESULT WINAPI DwmSetWindowAttribute_Hook(HWND hwnd,
             // to the start menu; restore the saved position and stop tracking
             // it, since the same window is reused and would otherwise reappear
             // where it was last aligned to the start menu.
+            if (hwnd != g_searchMenuWnd) {
+                return original();
+            }
+
             int xNew = x;
             int yNew = y;
 
@@ -900,14 +910,26 @@ HRESULT WINAPI DwmSetWindowAttribute_Hook(HWND hwnd,
             g_searchMenuCustomY = LONG_MAX;
             g_searchMenuMonitor = nullptr;
 
-            if (xNew != x || yNew != y) {
-                Wh_Log(L"Restoring search menu: (%d, %d) -> (%d, %d)", x, y,
-                       xNew, yNew);
-                SetWindowPos(hwnd, nullptr, xNew, yNew, cx, cy,
-                             SWP_NOZORDER | SWP_NOACTIVATE);
+            if (xNew == x && yNew == y) {
+                return original();
             }
 
-            return original();
+            Wh_Log(L"Restoring search menu: (%d, %d) -> (%d, %d)", x, y, xNew,
+                   yNew);
+
+            // Move a window that's being shown before uncloaking it, and one
+            // that's being hidden after cloaking it, so that the move isn't
+            // visible.
+            if (!cloak) {
+                SetWindowPos(hwnd, nullptr, xNew, yNew, cx, cy,
+                             SWP_NOZORDER | SWP_NOACTIVATE);
+                return original();
+            }
+
+            HRESULT hr = original();
+            SetWindowPos(hwnd, nullptr, xNew, yNew, cx, cy,
+                         SWP_NOZORDER | SWP_NOACTIVATE);
+            return hr;
         }
 
         int xNew;
@@ -2099,8 +2121,8 @@ bool NeedsToBeLoaded() {
 
         case Target::ShellExperienceHost:
         case Target::ShellHost:
-            return notificationCenterNeedsAdjustment ||
-                   actionCenterNeedsAdjustment;
+            // Only the action center flyout is positioned from these processes.
+            return actionCenterNeedsAdjustment;
     }
 
     return false;
