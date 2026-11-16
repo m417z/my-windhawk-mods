@@ -74,6 +74,7 @@ taskbar.
 
 #include <dwmapi.h>
 #include <psapi.h>
+#include <sddl.h>
 
 #include <winrt/base.h>
 
@@ -133,8 +134,6 @@ constexpr WCHAR kCanHideTaskbarEligibilityProp[] =
 
 const HANDLE kCanHideTaskbarNotEligible = (HANDLE)1;
 const HANDLE kCanHideTaskbarEligible = (HANDLE)2;
-
-constexpr WCHAR kWasAutoHideDisabledValueName[] = L"wasAutoHideDisabled";
 
 constexpr WCHAR kUpdateTaskbarStatePendingTickCount[] =
     L"Windhawk_UpdateTaskbarStatePendingTickCount_" WH_MOD_ID;
@@ -323,6 +322,34 @@ bool GetTaskbarRectForMonitor(HMONITOR monitor, RECT* rect) {
     SendMessage(hTaskbarWnd, g_getTaskbarRectRegisteredMsg, (WPARAM)monitor,
                 (LPARAM)rect);
     return true;
+}
+
+// The auto-hide setting is per user, but the mod storage is shared by all
+// users.
+std::wstring GetWasAutoHideDisabledValueName() {
+    std::wstring valueName = L"wasAutoHideDisabled";
+
+    HANDLE hToken;
+    if (OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &hToken)) {
+        struct {
+            TOKEN_USER tokenUser;
+            BYTE sid[SECURITY_MAX_SID_SIZE];
+        } tokenUserBuffer;
+        DWORD size;
+        PWSTR sidString;
+        if (GetTokenInformation(hToken, TokenUser, &tokenUserBuffer,
+                                sizeof(tokenUserBuffer), &size) &&
+            ConvertSidToStringSid(tokenUserBuffer.tokenUser.User.Sid,
+                                  &sidString)) {
+            valueName += L"_";
+            valueName += sidString;
+            LocalFree(sidString);
+        }
+
+        CloseHandle(hToken);
+    }
+
+    return valueName;
 }
 
 // https://gist.github.com/m417z/451dfc2dad88d7ba88ed1814779a26b4
@@ -592,6 +619,17 @@ bool CanHideTaskbarForWindow(HWND hWnd,
 }
 
 bool ShouldKeepTaskbarShown(HWND hTaskbarWnd, HMONITOR monitor) {
+    // The taskbar might hold a monitor that was just disconnected.
+    MONITORINFO monitorInfo{
+        .cbSize = sizeof(MONITORINFO),
+    };
+    if (!GetMonitorInfo(monitor, &monitorInfo)) {
+        Wh_Log(L"Stale monitor %p for taskbar %08X", monitor,
+               (DWORD)(DWORD_PTR)hTaskbarWnd);
+        monitor = MonitorFromWindow(hTaskbarWnd, MONITOR_DEFAULTTONEAREST);
+        GetMonitorInfo(monitor, &monitorInfo);
+    }
+
     if (g_settings.primaryMonitorOnly &&
         monitor != MonitorFromPoint({0, 0}, MONITOR_DEFAULTTOPRIMARY)) {
         return false;
@@ -616,11 +654,6 @@ bool ShouldKeepTaskbarShown(HWND hTaskbarWnd, HMONITOR monitor) {
 
         return true;
     }
-
-    MONITORINFO monitorInfo{
-        .cbSize = sizeof(MONITORINFO),
-    };
-    GetMonitorInfo(monitor, &monitorInfo);
 
     RECT taskbarRect{};
     GetTaskbarRectForMonitor(monitor, &taskbarRect);
@@ -906,12 +939,11 @@ LRESULT WINAPI TrayUI_WndProc_Hook(void* pThis,
             // The persisted value survives explorer restarts, after which the
             // auto-hide setting reflects the mod's change rather than the
             // user's original choice.
-            int wasAutoHideDisabled =
-                Wh_GetIntValue(kWasAutoHideDisabledValueName, -1);
+            std::wstring valueName = GetWasAutoHideDisabledValueName();
+            int wasAutoHideDisabled = Wh_GetIntValue(valueName.c_str(), -1);
             if (wasAutoHideDisabled == -1) {
                 g_wasAutoHideDisabled = !isAutoHideEnabled;
-                Wh_SetIntValue(kWasAutoHideDisabledValueName,
-                               g_wasAutoHideDisabled);
+                Wh_SetIntValue(valueName.c_str(), g_wasAutoHideDisabled);
             } else {
                 g_wasAutoHideDisabled = wasAutoHideDisabled;
             }
@@ -1200,6 +1232,11 @@ DWORD WINAPI WinEventHookThread(LPVOID lpThreadParameter) {
 
     if (winSystemEventHook1) {
         UnhookWinEvent(winSystemEventHook1);
+    }
+
+    if (g_pendingEventsTimer) {
+        KillTimer(nullptr, g_pendingEventsTimer);
+        g_pendingEventsTimer = 0;
     }
 
     g_multitaskingViewHwnd = nullptr;
@@ -1697,15 +1734,17 @@ void Wh_ModUninit() {
         g_winEventHookThread = nullptr;
     }
 
-    if (g_wasAutoHideDisabled) {
+    if (g_wasAutoHideProcessed) {
         HWND hTaskbarWnd = FindCurrentProcessTaskbarWnd();
         if (hTaskbarWnd) {
-            SendMessage(hTaskbarWnd, kHandleTrayPrivateSettingMessage,
-                        kTrayPrivateSettingAutoHideSet, FALSE);
+            if (g_wasAutoHideDisabled) {
+                SendMessage(hTaskbarWnd, kHandleTrayPrivateSettingMessage,
+                            kTrayPrivateSettingAutoHideSet, FALSE);
+            }
+
+            Wh_DeleteValue(GetWasAutoHideDisabledValueName().c_str());
         }
     }
-
-    Wh_DeleteValue(kWasAutoHideDisabledValueName);
 }
 
 BOOL Wh_ModSettingsChanged(BOOL* bReload) {
