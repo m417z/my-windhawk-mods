@@ -123,6 +123,7 @@ number when both are configured.
 #include <winrt/Windows.UI.Xaml.Input.h>
 #include <winrt/Windows.UI.Xaml.Media.h>
 
+#include <algorithm>
 #include <atomic>
 #include <string>
 
@@ -162,6 +163,9 @@ std::atomic<bool> g_initialized;
 std::atomic<bool> g_explorerPatcherInitialized;
 
 std::atomic<bool> g_unloading;
+
+WCHAR g_windowsDir[MAX_PATH];
+UINT g_windowsDirLen;
 
 // Defines data shared by all instances of the library, even across processes.
 #define SHARED_SECTION __attribute__((section(".shared")))
@@ -404,39 +408,54 @@ std::wstring GetModulePath(HMODULE module) {
 
 // Whether the path is under the Windows directory.
 bool IsSystemModulePath(PCWSTR path) {
-    WCHAR windowsDir[MAX_PATH];
-    UINT len = GetSystemWindowsDirectory(windowsDir, ARRAYSIZE(windowsDir));
-    if (len == 0 || len >= ARRAYSIZE(windowsDir)) {
-        return false;
-    }
-
-    return _wcsnicmp(path, windowsDir, len) == 0 && path[len] == L'\\';
+    return g_windowsDirLen > 0 &&
+           _wcsnicmp(path, g_windowsDir, g_windowsDirLen) == 0 &&
+           path[g_windowsDirLen] == L'\\';
 }
 
-// Another hook on top of ours makes its hook function the direct caller, so a
-// few frames further up the stack are checked as well. A hook isn't in a system
-// module, so the search stops at the first frame in one.
+// Whether the hook's caller is in one of the modules. Another hook on top of
+// ours makes its hook function the direct caller, so a few frames further up
+// the stack are checked as well. A hook isn't in a system module, so the search
+// stops at the first frame in one.
+template <typename... ModuleNames>
 [[clang::noinline]] bool IsHookCallerFromModule(void* retAddress,
-                                                PCWSTR moduleName) {
-    HMODULE expectedModule = GetModuleHandle(moduleName);
-    if (!expectedModule) {
+                                                ModuleNames... moduleNames) {
+    HMODULE expectedModules[] = {GetModuleHandle(moduleNames)...};
+    if (std::ranges::all_of(expectedModules,
+                            [](HMODULE module) { return !module; })) {
         return false;
     }
 
+    auto isExpectedModule = [&expectedModules](HMODULE module) {
+        return module && std::ranges::find(expectedModules, module) !=
+                             std::end(expectedModules);
+    };
+
+    auto expectedModuleNames = [=] {
+        std::wstring names;
+        for (PCWSTR moduleName : {moduleNames...}) {
+            if (!names.empty()) {
+                names += L" or ";
+            }
+            names += moduleName;
+        }
+        return names;
+    };
+
     HMODULE callerModule = GetModuleFromAddress(retAddress);
-    if (callerModule == expectedModule) {
+    if (isExpectedModule(callerModule)) {
         return true;
     }
 
     std::wstring callerPath = GetModulePath(callerModule);
     if (IsSystemModulePath(callerPath.c_str())) {
         Wh_Log(L"Skipping caller %p in module %s, expected %s", retAddress,
-               callerPath.c_str(), moduleName);
+               callerPath.c_str(), expectedModuleNames().c_str());
         return false;
     }
 
     Wh_Log(L"Tracing caller %p in module %s, expected %s", retAddress,
-           callerPath.c_str(), moduleName);
+           callerPath.c_str(), expectedModuleNames().c_str());
 
     // The backtrace skips the frames of this function, the hook, and the
     // caller.
@@ -447,7 +466,7 @@ bool IsSystemModulePath(PCWSTR path) {
         std::wstring modulePath = GetModulePath(module);
         Wh_Log(L"Frame %u: %p in module %s", i + 1, frames[i],
                modulePath.c_str());
-        if (module == expectedModule) {
+        if (isExpectedModule(module)) {
             return true;
         }
 
@@ -469,8 +488,9 @@ HMONITOR WINAPI MonitorFromPoint_Hook(POINT pt, DWORD dwFlags) {
     Wh_Log(L">");
 
     HMONITOR monitor = GetTargetMonitor({
-        .callerInShell32 =
-            IsHookCallerFromModule(__builtin_return_address(0), L"shell32.dll"),
+        .callerInShell32 = !g_settings.moveAdditionalElements &&
+                           IsHookCallerFromModule(__builtin_return_address(0),
+                                                  L"shell32.dll"),
     });
     if (!monitor) {
         return original();
@@ -490,8 +510,9 @@ HMONITOR WINAPI MonitorFromRect_Hook(LPCRECT lprc, DWORD dwFlags) {
     Wh_Log(L">");
 
     HMONITOR monitor = GetTargetMonitor({
-        .callerInShell32 =
-            IsHookCallerFromModule(__builtin_return_address(0), L"shell32.dll"),
+        .callerInShell32 = !g_settings.moveAdditionalElements &&
+                           IsHookCallerFromModule(__builtin_return_address(0),
+                                                  L"shell32.dll"),
     });
     if (!monitor) {
         return original();
@@ -517,9 +538,8 @@ HMONITOR WINAPI MonitorFromWindow_Hook(HWND hWnd, DWORD dwFlags) {
 
     // StartMenu.dll is the redesigned start menu, StartDocked.dll the older
     // one.
-    void* retAddress = __builtin_return_address(0);
-    if (!IsHookCallerFromModule(retAddress, L"StartMenu.dll") &&
-        !IsHookCallerFromModule(retAddress, L"StartDocked.dll")) {
+    if (!IsHookCallerFromModule(__builtin_return_address(0), L"StartMenu.dll",
+                                L"StartDocked.dll")) {
         return original();
     }
 
@@ -547,8 +567,9 @@ BOOL WINAPI EnumDisplayDevicesW_Hook(LPCWSTR lpDevice,
     Wh_Log(L">");
 
     HMONITOR monitor = GetTargetMonitor({
-        .callerInShell32 =
-            IsHookCallerFromModule(__builtin_return_address(0), L"shell32.dll"),
+        .callerInShell32 = !g_settings.moveAdditionalElements &&
+                           IsHookCallerFromModule(__builtin_return_address(0),
+                                                  L"shell32.dll"),
     });
     if (!monitor) {
         return result;
@@ -1042,6 +1063,12 @@ BOOL Wh_ModInit() {
     Wh_Log(L">");
 
     LoadSettings();
+
+    g_windowsDirLen =
+        GetSystemWindowsDirectory(g_windowsDir, ARRAYSIZE(g_windowsDir));
+    if (g_windowsDirLen >= ARRAYSIZE(g_windowsDir)) {
+        g_windowsDirLen = 0;
+    }
 
     g_target = Target::Explorer;
 
