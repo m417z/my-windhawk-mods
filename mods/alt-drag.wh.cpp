@@ -308,13 +308,15 @@ std::unordered_set<HHOOK> g_allThreadHooks;
 // What a drag done with SetWindowPos holds the window by: the point it takes
 // hold of it at, and from then on, for a move where the pointer was relative
 // to the window's origin, for a resize the rect the edges follow the pointer
-// from.
+// from and the sizes the window accepts.
 struct DragHold {
     HWND hRootWnd;
     UINT command;
     POINT startPt;
     POINT grab;
     RECT startRect;
+    SIZE minSize;
+    SIZE maxSize;
 };
 
 // The drag this thread was asked to run, from the request's retrieval until
@@ -1645,19 +1647,49 @@ RECT CenterResizedRect(const RECT& rcStart,
     return rc;
 }
 
+// Windows 10 1607 and later.
+using GetWindowDpiAwarenessContext_t = DPI_AWARENESS_CONTEXT(WINAPI*)(HWND);
+using GetThreadDpiAwarenessContext_t = DPI_AWARENESS_CONTEXT(WINAPI*)();
+using AreDpiAwarenessContextsEqual_t = BOOL(WINAPI*)(DPI_AWARENESS_CONTEXT,
+                                                     DPI_AWARENESS_CONTEXT);
+GetWindowDpiAwarenessContext_t pGetWindowDpiAwarenessContext;
+GetThreadDpiAwarenessContext_t pGetThreadDpiAwarenessContext;
+AreDpiAwarenessContextsEqual_t pAreDpiAwarenessContextsEqual;
+
 // The sizes the window accepts, asked of it the way the system does for a drag:
-// the defaults are offered for the window to change.
+// the defaults are offered for the window to change. Bounded, the window being
+// possibly of another thread or process.
 void GetSizeLimits(HWND hWnd, SIZE* minSize, SIZE* maxSize) {
-    MINMAXINFO info{};
-    info.ptMaxSize = {GetSystemMetrics(SM_CXMAXIMIZED),
-                      GetSystemMetrics(SM_CYMAXIMIZED)};
-    info.ptMinTrackSize = {GetSystemMetrics(SM_CXMINTRACK),
-                           GetSystemMetrics(SM_CYMINTRACK)};
-    info.ptMaxTrackSize = {GetSystemMetrics(SM_CXMAXTRACK),
-                           GetSystemMetrics(SM_CYMAXTRACK)};
-    SendMessage(hWnd, WM_GETMINMAXINFO, 0, (LPARAM)&info);
-    *minSize = {info.ptMinTrackSize.x, info.ptMinTrackSize.y};
-    *maxSize = {info.ptMaxTrackSize.x, info.ptMaxTrackSize.y};
+    MINMAXINFO defaults{};
+    defaults.ptMaxSize = {GetSystemMetrics(SM_CXMAXIMIZED),
+                          GetSystemMetrics(SM_CYMAXIMIZED)};
+    defaults.ptMinTrackSize = {GetSystemMetrics(SM_CXMINTRACK),
+                               GetSystemMetrics(SM_CYMINTRACK)};
+    defaults.ptMaxTrackSize = {GetSystemMetrics(SM_CXMAXTRACK),
+                               GetSystemMetrics(SM_CYMAXTRACK)};
+    *minSize = {defaults.ptMinTrackSize.x, defaults.ptMinTrackSize.y};
+    *maxSize = {defaults.ptMaxTrackSize.x, defaults.ptMaxTrackSize.y};
+
+    // The answer is in the window's coordinates, which are this thread's only
+    // with the same DPI awareness.
+    if (pAreDpiAwarenessContextsEqual &&
+        !pAreDpiAwarenessContextsEqual(pGetWindowDpiAwarenessContext(hWnd),
+                                       pGetThreadDpiAwarenessContext())) {
+        return;
+    }
+
+    // A window of another thread of this process may still write its answer
+    // after the call failed, so the memory is left to it then.
+    auto* info = new MINMAXINFO(defaults);
+    constexpr UINT kTimeoutMs = 50;
+    if (!SendMessageTimeout(hWnd, WM_GETMINMAXINFO, 0, (LPARAM)info,
+                            SMTO_ABORTIFHUNG, kTimeoutMs, nullptr)) {
+        return;
+    }
+
+    *minSize = {info->ptMinTrackSize.x, info->ptMinTrackSize.y};
+    *maxSize = {info->ptMaxTrackSize.x, info->ptMaxTrackSize.y};
+    delete info;
 }
 
 // The rect the loop proposes for the bottom right corner is replaced by the one
@@ -1838,36 +1870,37 @@ void MoveDraggedWindow(HWND hRootWnd, POINT grab, POINT pt) {
 
 // The edges the command takes hold of follow the pointer from where the drag
 // started, the others stay put; a resize from the center takes hold of them
-// all, each side moving opposite to the other. SetWindowPos doesn't ask the
-// window for its minimum size, so the system's minimum is kept instead.
-void SizeDraggedWindow(HWND hRootWnd,
-                       UINT command,
-                       const RECT& rcStart,
-                       POINT ptStart,
-                       POINT pt) {
-    UINT edge = command & 0xF;
-    LONG dx = pt.x - ptStart.x;
-    LONG dy = pt.y - ptStart.y;
-    LONG minWidth = GetSystemMetrics(SM_CXMINTRACK);
-    LONG minHeight = GetSystemMetrics(SM_CYMINTRACK);
+// all, each side moving opposite to the other. The window's size limits are
+// applied here rather than left to the window, which keeps its top left corner
+// in place applying them and so moves the other edges.
+void SizeDraggedWindow(const DragHold& hold, POINT pt) {
+    UINT edge = hold.command & 0xF;
+    const RECT& rcStart = hold.startRect;
+    LONG dx = pt.x - hold.startPt.x;
+    LONG dy = pt.y - hold.startPt.y;
+    LONG minWidth = hold.minSize.cx;
+    LONG minHeight = hold.minSize.cy;
+    LONG maxWidth = std::max(hold.maxSize.cx, minWidth);
+    LONG maxHeight = std::max(hold.maxSize.cy, minHeight);
 
     RECT rc = rcStart;
     if (edge == kWmszCenter) {
-        rc = CenterResizedRect(
-            rcStart, ptStart, pt, {minWidth, minHeight},
-            {GetSystemMetrics(SM_CXMAXTRACK), GetSystemMetrics(SM_CYMAXTRACK)});
+        rc = CenterResizedRect(rcStart, hold.startPt, pt, hold.minSize,
+                               hold.maxSize);
     }
 
     switch (edge) {
         case WMSZ_LEFT:
         case WMSZ_TOPLEFT:
         case WMSZ_BOTTOMLEFT:
-            rc.left = std::min(rcStart.left + dx, rc.right - minWidth);
+            rc.left = std::clamp(rcStart.left + dx, rc.right - maxWidth,
+                                 rc.right - minWidth);
             break;
         case WMSZ_RIGHT:
         case WMSZ_TOPRIGHT:
         case WMSZ_BOTTOMRIGHT:
-            rc.right = std::max(rcStart.right + dx, rc.left + minWidth);
+            rc.right = std::clamp(rcStart.right + dx, rc.left + minWidth,
+                                  rc.left + maxWidth);
             break;
     }
 
@@ -1875,16 +1908,18 @@ void SizeDraggedWindow(HWND hRootWnd,
         case WMSZ_TOP:
         case WMSZ_TOPLEFT:
         case WMSZ_TOPRIGHT:
-            rc.top = std::min(rcStart.top + dy, rc.bottom - minHeight);
+            rc.top = std::clamp(rcStart.top + dy, rc.bottom - maxHeight,
+                                rc.bottom - minHeight);
             break;
         case WMSZ_BOTTOM:
         case WMSZ_BOTTOMLEFT:
         case WMSZ_BOTTOMRIGHT:
-            rc.bottom = std::max(rcStart.bottom + dy, rc.top + minHeight);
+            rc.bottom = std::clamp(rcStart.bottom + dy, rc.top + minHeight,
+                                   rc.top + maxHeight);
             break;
     }
 
-    SetWindowPos(hRootWnd, nullptr, rc.left, rc.top, rc.right - rc.left,
+    SetWindowPos(hold.hRootWnd, nullptr, rc.left, rc.top, rc.right - rc.left,
                  rc.bottom - rc.top,
                  SWP_NOZORDER | SWP_NOACTIVATE | SWP_ASYNCWINDOWPOS);
 }
@@ -1892,6 +1927,7 @@ void SizeDraggedWindow(HWND hRootWnd,
 void TakeHold(DragHold* hold) {
     if (IsSizeCommand(hold->command)) {
         GetWindowRect(hold->hRootWnd, &hold->startRect);
+        GetSizeLimits(hold->hRootWnd, &hold->minSize, &hold->maxSize);
     } else {
         hold->grab = CalcDragGrab(hold->hRootWnd, hold->startPt);
     }
@@ -1899,8 +1935,7 @@ void TakeHold(DragHold* hold) {
 
 void DragHeldWindowTo(const DragHold& hold, POINT pt) {
     if (IsSizeCommand(hold.command)) {
-        SizeDraggedWindow(hold.hRootWnd, hold.command, hold.startRect,
-                          hold.startPt, pt);
+        SizeDraggedWindow(hold, pt);
     } else {
         MoveDraggedWindow(hold.hRootWnd, hold.grab, pt);
     }
@@ -2705,6 +2740,17 @@ BOOL Wh_ModInit() {
     Wh_Log(L">");
 
     LoadSettings();
+
+    HMODULE user32Module = GetModuleHandle(L"user32.dll");
+    pGetWindowDpiAwarenessContext =
+        (GetWindowDpiAwarenessContext_t)GetProcAddress(
+            user32Module, "GetWindowDpiAwarenessContext");
+    pGetThreadDpiAwarenessContext =
+        (GetThreadDpiAwarenessContext_t)GetProcAddress(
+            user32Module, "GetThreadDpiAwarenessContext");
+    pAreDpiAwarenessContextsEqual =
+        (AreDpiAwarenessContextsEqual_t)GetProcAddress(
+            user32Module, "AreDpiAwarenessContextsEqual");
 
     HMODULE win32uModule = GetModuleHandle(L"win32u.dll");
     if (!win32uModule) {
