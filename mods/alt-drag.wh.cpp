@@ -880,8 +880,6 @@ PCWSTR CursorOfCommand(UINT command) {
         case SC_SIZE | WMSZ_TOPRIGHT:
         case SC_SIZE | WMSZ_BOTTOMLEFT:
             return IDC_SIZENESW;
-        case SC_SIZE | kWmszCenter:
-            return IDC_SIZEALL;
     }
 
     return IDC_SIZEALL;
@@ -1050,11 +1048,12 @@ void OnSizeMoveRequestRemoved(MSG* msg) {
     // The loop knows no resize from the center: it runs a resize from the
     // bottom right corner, which the subclass turns into the one asked for. If
     // there is no subclass, the corner is all there is.
+    UINT systemCommand = command;
     UINT loopCommand = command;
     if (IsCenterSizeCommand(command)) {
-        loopCommand = SC_SIZE | WMSZ_BOTTOMRIGHT;
-        if (BeginCenterResize(msg->hwnd, msg->pt)) {
-            loopCommand = command;
+        systemCommand = SC_SIZE | WMSZ_BOTTOMRIGHT;
+        if (!BeginCenterResize(msg->hwnd, msg->pt)) {
+            loopCommand = systemCommand;
         }
     }
 
@@ -1070,8 +1069,7 @@ void OnSizeMoveRequestRemoved(MSG* msg) {
     ShowDragCursor(g_loop.command);
 
     msg->message = WM_SYSCOMMAND;
-    msg->wParam = IsCenterSizeCommand(command) ? SC_SIZE | WMSZ_BOTTOMRIGHT
-                                               : command;
+    msg->wParam = systemCommand;
 }
 
 // Clears the loop this thread was asked to run, and puts back the cursor the
