@@ -1074,6 +1074,13 @@ void OnSizeMoveRequestRemoved(MSG* msg) {
                                                : command;
 }
 
+// Clears the loop this thread was asked to run, and puts back the cursor the
+// drag replaced.
+void EndLoop() {
+    g_loop = {};
+    RestoreCursorAfterDrag();
+}
+
 // Runs for the messages the loop retrieves, and ahead of it the wait for the
 // drag threshold, which inLoop tells apart.
 void OnLoopMessageRemoved(MSG* msg, bool inLoop) {
@@ -1124,9 +1131,8 @@ void OnLoopMessageRemoved(MSG* msg, bool inLoop) {
     }
 
     // The loop consumes the release.
-    g_loop = {};
+    EndLoop();
     g_takenPressButton = 0;
-    RestoreCursorAfterDrag();
 }
 
 // The loop ended without its release being seen, e.g. cancelled with Esc.
@@ -1135,8 +1141,14 @@ void OnLoopOver() {
         SetSyncKeyState(VK_LBUTTON, false);
     }
 
-    g_loop = {};
+    EndLoop();
     EndCenterResize(g_centerResize.hWnd);
+}
+
+// Clears the drag this thread runs itself, and puts back the cursor the drag
+// replaced.
+void EndThreadDrag() {
+    g_threadDrag = {};
     RestoreCursorAfterDrag();
 }
 
@@ -1152,8 +1164,7 @@ bool OnThreadDragMessageRemoved(MSG* msg) {
             // The button is up already, the release having gone elsewhere.
             Wh_Log(L"Moved with the button up, ending the %s",
                    NameOfCommand(hold.command));
-            g_threadDrag = {};
-            RestoreCursorAfterDrag();
+            EndThreadDrag();
             return false;
         }
 
@@ -1184,8 +1195,7 @@ bool OnThreadDragMessageRemoved(MSG* msg) {
 
     if (down) {
         // A press of the drag's button again means its release was missed.
-        g_threadDrag = {};
-        RestoreCursorAfterDrag();
+        EndThreadDrag();
         return false;
     }
 
@@ -1194,9 +1204,8 @@ bool OnThreadDragMessageRemoved(MSG* msg) {
         ReplayPress(button, true);
     }
 
-    g_threadDrag = {};
+    EndThreadDrag();
     g_takenPressButton = 0;
-    RestoreCursorAfterDrag();
     TakeMessage(msg);
     return true;
 }
