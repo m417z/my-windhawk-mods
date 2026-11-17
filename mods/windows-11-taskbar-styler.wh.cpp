@@ -19322,7 +19322,7 @@ FrameworkElement SystemTrayItemInTaskbarFrame(
 }
 
 // The element that draws the background of the taskbar frame: the content of
-// the root grid's TaskbarBackground, which a style can move or resize apart
+// the root grid's BackgroundControl, which a style can move or resize apart
 // from the frame.
 FrameworkElement FindTaskbarFrameBackground(
     FrameworkElement const& taskbarFrame) {
@@ -19335,8 +19335,10 @@ FrameworkElement FindTaskbarFrameBackground(
             for (int j = 0; j < rootGridCount; j++) {
                 auto child = Media::VisualTreeHelper::GetChild(rootGrid, j)
                                  .try_as<FrameworkElement>();
-                if (!child || winrt::get_class_name(child) !=
-                                  L"Taskbar.TaskbarBackground") {
+                if (!child ||
+                    winrt::get_class_name(child) !=
+                        L"Taskbar.TaskbarBackground" ||
+                    child.Name() != L"BackgroundControl") {
                     continue;
                 }
 
