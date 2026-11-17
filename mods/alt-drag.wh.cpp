@@ -2,7 +2,7 @@
 // @id              alt-drag
 // @name            AltDrag
 // @description     Move or resize any window by holding Alt and dragging it from anywhere, without having to grab the title bar or the borders
-// @version         1.1
+// @version         1.2
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
@@ -26,7 +26,8 @@
 Move any window by holding Alt and dragging it from anywhere, without having to
 grab the title bar. Resize any window by holding Alt and dragging it with the
 right mouse button: the edge or corner which follows the mouse is the one
-closest to where the drag starts.
+closest to where the drag starts. Starting the drag from the center of the
+window resizes it in all directions at once, keeping its center in place.
 
 The mouse buttons and the keys can be changed in the mod settings. A delay can
 be set for each as well, so that a click keeps its usual meaning and only a
@@ -104,6 +105,12 @@ Window Arrangement to a different key, or change the key used by this mod.
   $description: >-
     The mouse button and the keys to hold for resizing a window. The edge or
     corner which follows the mouse is the one closest to where the drag starts.
+- centerResizeAllDirections: true
+  $name: Resize from the center in all directions
+  $description: >-
+    Dragging from the center of the window resizes it in all directions at
+    once, keeping its center in place. When disabled, a drag from the center
+    resizes from the bottom right corner.
 - dragWindowsWithoutTitleBar: false
   $name: Drag windows without a title bar
   $description: >-
@@ -134,6 +141,18 @@ Window Arrangement to a different key, or change the key used by this mod.
 // turned into the request once the delay is over, posted back as a click if
 // the button was released before that, or handed back in place of the move
 // which left the drag threshold before that, the drag being the program's own.
+//
+// A resize from the center of the window, which moves every edge at once, has
+// no system command either. The loop is run as a resize from the bottom right
+// corner, and the rect it proposes with each WM_SIZING is replaced, ahead of
+// the program's own handling of the message, by the one which moves the edges
+// in opposite directions by the distance the pointer traveled. The loop thereby
+// keeps the cancellation with Esc, the animations and the program's size
+// limits. The message is sent to the window procedure, and only the window
+// procedure can change it: a hook procedure may look at a message but what it
+// writes to is ignored, as measured on the size loop. A subclass of the root
+// window serves for the length of the drag, put on with the request, on the
+// thread of the window, and taken off when the loop ends.
 //
 // The interception is done with a WH_GETMESSAGE hook per thread. Threads which
 // retrieve messages are discovered by hooking the win32u syscall stubs, which
@@ -241,6 +260,7 @@ struct TriggerSettings {
 struct {
     TriggerSettings moveTrigger;
     TriggerSettings sizeTrigger;
+    std::atomic<bool> centerResizeAllDirections;
     std::atomic<bool> dragWindowsWithoutTitleBar;
 } g_settings;
 
@@ -251,6 +271,16 @@ std::atomic<int> g_hookRefCount;
 // HTCAPTION for a move, SC_SIZE | WMSZ_* for a resize from that edge or corner.
 bool IsSizeCommand(UINT command) {
     return (command & 0xFFF0) == SC_SIZE;
+}
+
+// The resize which takes hold of all the edges at once, keeping the center of
+// the window in place. The system has no such command, so it's the mod's own,
+// past the WMSZ_* values: the system loop runs it as a resize from the bottom
+// right corner, and the rect it proposes is replaced on the way.
+constexpr UINT kWmszCenter = WMSZ_BOTTOMRIGHT + 1;
+
+bool IsCenterSizeCommand(UINT command) {
+    return command == (SC_SIZE | kWmszCenter);
 }
 
 const TriggerSettings& TriggerOfCommand(UINT command) {
@@ -266,6 +296,8 @@ UINT g_replayPressMessage =
     RegisterWindowMessage(L"Windhawk_ReplayPress_" WH_MOD_ID);
 UINT g_dragUpdateMessage =
     RegisterWindowMessage(L"Windhawk_DragUpdate_" WH_MOD_ID);
+UINT g_refreshCursorMessage =
+    RegisterWindowMessage(L"Windhawk_RefreshCursor_" WH_MOD_ID);
 
 thread_local bool g_threadHooksAttempted;
 thread_local HHOOK g_getMessageHook;
@@ -306,6 +338,27 @@ thread_local struct {
     bool dragged;
     DragHold hold;
 } g_threadDrag;
+
+// The resize from the center this thread's size loop runs, from the request
+// until the loop ends. It's kept apart from g_loop, which is reset by the
+// release the loop is still to act on. The start is taken with the loop's first
+// WM_SIZING, which comes before the pointer has moved: the loop measures from
+// where the pointer is then.
+thread_local struct {
+    HWND hWnd;
+    bool started;
+    RECT startRect;
+    POINT startPt;
+    SIZE minSize;
+    SIZE maxSize;
+} g_centerResize;
+
+// The windows with the subclass of a resize from the center, for it to be taken
+// off at uninit. Each is told on its own thread, the only one it can be taken
+// off from.
+constexpr UINT_PTR kCenterResizeSubclassId = 1;
+std::mutex g_centerResizeWindowsMutex;
+std::unordered_set<HWND> g_centerResizeWindows;
 
 // A press taken from this thread's queue for as long as the drag delay runs.
 thread_local struct {
@@ -398,12 +451,15 @@ struct {
     RECT logicalRect;
 } g_llMonitor;
 
+bool BeginCenterResize(HWND hWnd);
+void EndCenterResize(HWND hWnd);
 void ReplayPress(int button, bool asClick);
 void MaskWinKeyReleaseIfNeeded(UINT command);
 void TakeHold(DragHold* hold);
 void DragHeldWindowTo(const DragHold& hold, POINT pt);
 void OnLowLevelDragDelayElapsed();
 void OnDragUpdate();
+void RefreshCursorAfterOverlay();
 void RemoveLowLevelMouseHook();
 void InstallLowLevelMouseHookIfNeeded();
 void RemoveLowLevelMouseHookIfIdle();
@@ -757,8 +813,8 @@ bool CanSizeRootWindow(HWND hRootWnd) {
 }
 
 // The edge or corner a resize which grabs the window at pt takes hold of, from
-// a 3x3 grid over the window. The center cell resizes from the bottom right
-// corner.
+// a 3x3 grid over the window. The center cell resizes in all directions, or
+// from the bottom right corner if that's what the settings ask for.
 UINT SizeCommandAtPoint(HWND hRootWnd, POINT pt) {
     RECT rc;
     if (!GetWindowRect(hRootWnd, &rc) || IsRectEmpty(&rc)) {
@@ -771,10 +827,14 @@ UINT SizeCommandAtPoint(HWND hRootWnd, POINT pt) {
 
     static constexpr UINT kEdges[3][3] = {
         {WMSZ_TOPLEFT, WMSZ_TOP, WMSZ_TOPRIGHT},
-        {WMSZ_LEFT, WMSZ_BOTTOMRIGHT, WMSZ_RIGHT},
+        {WMSZ_LEFT, kWmszCenter, WMSZ_RIGHT},
         {WMSZ_BOTTOMLEFT, WMSZ_BOTTOM, WMSZ_BOTTOMRIGHT},
     };
-    return SC_SIZE | kEdges[row][col];
+    UINT edge = kEdges[row][col];
+    if (edge == kWmszCenter && !g_settings.centerResizeAllDirections) {
+        edge = WMSZ_BOTTOMRIGHT;
+    }
+    return SC_SIZE | edge;
 }
 
 // The drag a press of the button starts, given the modifier keys held, or 0.
@@ -817,6 +877,8 @@ PCWSTR CursorOfCommand(UINT command) {
         case SC_SIZE | WMSZ_TOPRIGHT:
         case SC_SIZE | WMSZ_BOTTOMLEFT:
             return IDC_SIZENESW;
+        case SC_SIZE | kWmszCenter:
+            return IDC_SIZEALL;
     }
 
     return IDC_SIZEALL;
@@ -824,6 +886,30 @@ PCWSTR CursorOfCommand(UINT command) {
 
 PCWSTR NameOfCommand(UINT command) {
     return IsSizeCommand(command) ? L"resize" : L"move";
+}
+
+// The cursor this thread showed before a drag set its own. A program which
+// keeps the cursor it last set, e.g. a XAML one, doesn't set it again until its
+// own state changes, so the drag's cursor would stay up after the drag, until
+// the pointer left the window. Put back at each end of a drag, on the thread
+// which set it.
+thread_local struct {
+    bool saved;
+    HCURSOR cursor;
+} g_cursorBeforeDrag;
+
+void ShowDragCursor(UINT command) {
+    HCURSOR previous = SetCursor(LoadCursor(nullptr, CursorOfCommand(command)));
+    if (!g_cursorBeforeDrag.saved) {
+        g_cursorBeforeDrag = {.saved = true, .cursor = previous};
+    }
+}
+
+void RestoreCursorAfterDrag() {
+    if (g_cursorBeforeDrag.saved) {
+        SetCursor(g_cursorBeforeDrag.cursor);
+        g_cursorBeforeDrag = {};
+    }
 }
 
 // Windows which host their content in a composition input sink, such as a WinUI
@@ -924,7 +1010,7 @@ bool IsRequestAcceptable(UINT command, int button, HWND hRootWnd) {
 
     UINT edge = command & 0xF;
     return IsSizeCommand(command) && edge >= WMSZ_LEFT &&
-           edge <= WMSZ_BOTTOMRIGHT && CanSizeRootWindow(hRootWnd);
+           edge <= kWmszCenter && CanSizeRootWindow(hRootWnd);
 }
 
 // Turns a request retrieved by the root window's thread into the system
@@ -958,15 +1044,27 @@ void OnSizeMoveRequestRemoved(MSG* msg) {
     Wh_Log(L"Request to %s %08X, starting the loop", NameOfCommand(command),
            (DWORD)(ULONG_PTR)msg->hwnd);
 
+    // The loop knows no resize from the center: it runs a resize from the
+    // bottom right corner, which the subclass turns into the one asked for. If
+    // there is no subclass, the corner is all there is.
+    UINT loopCommand = command;
+    if (IsCenterSizeCommand(command)) {
+        loopCommand = SC_SIZE | WMSZ_BOTTOMRIGHT;
+        if (BeginCenterResize(msg->hwnd)) {
+            loopCommand = command;
+        }
+    }
+
     g_loop = {
-        .command = command,
+        .command = loopCommand,
         .button = button,
         .hWnd = msg->hwnd,
         .startPt = msg->pt,
     };
 
     msg->message = WM_SYSCOMMAND;
-    msg->wParam = command;
+    msg->wParam = IsCenterSizeCommand(command) ? SC_SIZE | WMSZ_BOTTOMRIGHT
+                                               : command;
 }
 
 // Runs for the messages the loop retrieves, and ahead of it the wait for the
@@ -989,7 +1087,7 @@ void OnLoopMessageRemoved(MSG* msg, bool inLoop) {
         // The loop retrieves the moves itself, without dispatching them,
         // holds an internal capture for which no WM_SETCURSOR is sent, and
         // shows the class cursor.
-        SetCursor(LoadCursor(nullptr, CursorOfCommand(g_loop.command)));
+        ShowDragCursor(g_loop.command);
         return;
     }
 
@@ -1021,6 +1119,7 @@ void OnLoopMessageRemoved(MSG* msg, bool inLoop) {
     // The loop consumes the release.
     g_loop = {};
     g_takenPressButton = 0;
+    RestoreCursorAfterDrag();
 }
 
 // The loop ended without its release being seen, e.g. cancelled with Esc.
@@ -1030,6 +1129,8 @@ void OnLoopOver() {
     }
 
     g_loop = {};
+    EndCenterResize(g_centerResize.hWnd);
+    RestoreCursorAfterDrag();
 }
 
 // Runs for the messages retrieved while this thread holds a drag: the moves
@@ -1045,6 +1146,7 @@ bool OnThreadDragMessageRemoved(MSG* msg) {
             Wh_Log(L"Moved with the button up, ending the %s",
                    NameOfCommand(hold.command));
             g_threadDrag = {};
+            RestoreCursorAfterDrag();
             return false;
         }
 
@@ -1062,7 +1164,7 @@ bool OnThreadDragMessageRemoved(MSG* msg) {
             DragHeldWindowTo(hold, msg->pt);
         }
 
-        SetCursor(LoadCursor(nullptr, CursorOfCommand(hold.command)));
+        ShowDragCursor(hold.command);
         TakeMessage(msg);
         return true;
     }
@@ -1076,6 +1178,7 @@ bool OnThreadDragMessageRemoved(MSG* msg) {
     if (down) {
         // A press of the drag's button again means its release was missed.
         g_threadDrag = {};
+        RestoreCursorAfterDrag();
         return false;
     }
 
@@ -1086,6 +1189,7 @@ bool OnThreadDragMessageRemoved(MSG* msg) {
 
     g_threadDrag = {};
     g_takenPressButton = 0;
+    RestoreCursorAfterDrag();
     TakeMessage(msg);
     return true;
 }
@@ -1099,6 +1203,8 @@ bool StartDrag(HWND hRootWnd, UINT command, int button, POINT pt) {
 
     Wh_Log(L"Running the %s of root window %08X on this thread",
            NameOfCommand(command), (DWORD)(ULONG_PTR)hRootWnd);
+
+    g_cursorBeforeDrag = {};
 
     g_threadDrag = {
         .button = button,
@@ -1189,7 +1295,7 @@ void OnDragDelayElapsed() {
         // Shown from here on, ahead of the first move the loop sets it for:
         // the window under the cursor is this thread's, which retrieved the
         // press.
-        SetCursor(LoadCursor(nullptr, CursorOfCommand(g_delayedPress.command)));
+        ShowDragCursor(g_delayedPress.command);
     } else {
         ReplayDelayedPress();
     }
@@ -1244,6 +1350,12 @@ void OnMessageRemoved(MSG* msg) {
 
     if (msg->message == g_dragUpdateMessage) {
         OnDragUpdate();
+        TakeMessage(msg);
+        return;
+    }
+
+    if (msg->message == g_refreshCursorMessage) {
+        RefreshCursorAfterOverlay();
         TakeMessage(msg);
         return;
     }
@@ -1419,8 +1531,7 @@ LRESULT CALLBACK SubclassProc(HWND hWnd,
         UnsubclassWindow(hWnd);
     } else if (uMsg == WM_SETCURSOR && g_threadDrag.button) {
         // Asked of the window under the pointer ahead of each promoted move.
-        SetCursor(
-            LoadCursor(nullptr, CursorOfCommand(g_threadDrag.hold.command)));
+        ShowDragCursor(g_threadDrag.hold.command);
         return TRUE;
     } else if (IsPointerMessage(uMsg)) {
         UINT pointerId = GET_POINTERID_WPARAM(wParam);
@@ -1499,6 +1610,143 @@ void SubclassWindowIfNeeded(HWND hWnd) {
     }
 
     g_lastSubclassedWnd = hWnd;
+}
+
+// The rect of a window resized from its center: the two edges of an axis move
+// by the pointer's travel since the drag started, one each way, so the center
+// stays in place. A size past the limits is held to them, and the window stays
+// centered where it stops instead of being pinned to one side.
+RECT CenterResizedRect(const RECT& rcStart,
+                       POINT ptStart,
+                       POINT pt,
+                       SIZE minSize,
+                       SIZE maxSize) {
+    auto resizeAxis = [](LONG start, LONG end, LONG travel, LONG minLength,
+                         LONG maxLength, LONG* newStart, LONG* newEnd) {
+        LONG length = end - start + 2 * travel;
+        LONG clamped =
+            std::clamp(length, minLength, std::max(minLength, maxLength));
+        *newStart = start - travel + (length - clamped) / 2;
+        *newEnd = *newStart + clamped;
+    };
+
+    RECT rc;
+    resizeAxis(rcStart.left, rcStart.right, pt.x - ptStart.x, minSize.cx,
+               maxSize.cx, &rc.left, &rc.right);
+    resizeAxis(rcStart.top, rcStart.bottom, pt.y - ptStart.y, minSize.cy,
+               maxSize.cy, &rc.top, &rc.bottom);
+    return rc;
+}
+
+// The sizes the window accepts, asked of it the way the system does for a drag:
+// the defaults are offered for the window to change.
+void GetSizeLimits(HWND hWnd, SIZE* minSize, SIZE* maxSize) {
+    MINMAXINFO info{};
+    info.ptMaxSize = {GetSystemMetrics(SM_CXMAXIMIZED),
+                      GetSystemMetrics(SM_CYMAXIMIZED)};
+    info.ptMinTrackSize = {GetSystemMetrics(SM_CXMINTRACK),
+                           GetSystemMetrics(SM_CYMINTRACK)};
+    info.ptMaxTrackSize = {GetSystemMetrics(SM_CXMAXTRACK),
+                           GetSystemMetrics(SM_CYMAXTRACK)};
+    SendMessage(hWnd, WM_GETMINMAXINFO, 0, (LPARAM)&info);
+    *minSize = {info.ptMinTrackSize.x, info.ptMinTrackSize.y};
+    *maxSize = {info.ptMaxTrackSize.x, info.ptMaxTrackSize.y};
+}
+
+// The rect the loop proposes for the bottom right corner is replaced by the one
+// which moves every edge. The loop adds the pointer's movement to the rect it
+// is handed back, so the new rect is worked out from the start each time. It's
+// done ahead of the program's own handling of the message, so that a program
+// which limits its size, e.g. to an aspect ratio, still gets to have its say.
+void ReplaceSizingRect(HWND hWnd, RECT* rc) {
+    POINT pt;
+    if (!GetCursorPos(&pt)) {
+        return;
+    }
+
+    if (!g_centerResize.started) {
+        // The loop's first message, before the pointer has moved.
+        if (!GetWindowRect(hWnd, &g_centerResize.startRect)) {
+            return;
+        }
+
+        g_centerResize.started = true;
+        g_centerResize.startPt = pt;
+        GetSizeLimits(hWnd, &g_centerResize.minSize, &g_centerResize.maxSize);
+    }
+
+    // A press which isn't dragged yet may still turn out to be a click, so the
+    // window stays as it is until the pointer leaves the drag threshold.
+    if (g_loop.command && !g_loop.dragged) {
+        *rc = g_centerResize.startRect;
+        return;
+    }
+
+    *rc = CenterResizedRect(g_centerResize.startRect, g_centerResize.startPt,
+                            pt, g_centerResize.minSize, g_centerResize.maxSize);
+}
+
+LRESULT CALLBACK CenterResizeSubclassProc(HWND hWnd,
+                                          UINT uMsg,
+                                          WPARAM wParam,
+                                          LPARAM lParam,
+                                          UINT_PTR uIdSubclass,
+                                          DWORD_PTR dwRefData) {
+    auto hookScope = HookRefCountScope();
+
+    if (uMsg == WM_SIZING) {
+        if (wParam == WMSZ_BOTTOMRIGHT && lParam &&
+            hWnd == g_centerResize.hWnd && !g_uninitializing) {
+            ReplaceSizingRect(hWnd, (RECT*)lParam);
+        }
+    } else if (uMsg == WM_EXITSIZEMOVE || uMsg == WM_NCDESTROY) {
+        // Ends every drag, one cancelled with Esc included.
+        EndCenterResize(hWnd);
+    } else if (uMsg == g_unsubclassRegisteredMessage) {
+        EndCenterResize(hWnd);
+        return 0;
+    }
+
+    return DefSubclassProc(hWnd, uMsg, wParam, lParam);
+}
+
+// Runs on the root window's thread, with the request that starts the loop.
+bool BeginCenterResize(HWND hWnd) {
+    EndCenterResize(g_centerResize.hWnd);
+
+    std::lock_guard<std::mutex> guard(g_centerResizeWindowsMutex);
+    if (g_uninitializing) {
+        return false;
+    }
+
+    if (!SetWindowSubclass(hWnd, CenterResizeSubclassProc,
+                           kCenterResizeSubclassId, 0)) {
+        Wh_Log(L"SetWindowSubclass error for %08X", (DWORD)(ULONG_PTR)hWnd);
+        return false;
+    }
+
+    g_centerResizeWindows.insert(hWnd);
+    g_centerResize = {.hWnd = hWnd};
+    return true;
+}
+
+// Safe to call whether or not the subclass is on, from the window's thread.
+void EndCenterResize(HWND hWnd) {
+    if (!hWnd) {
+        return;
+    }
+
+    RemoveWindowSubclass(hWnd, CenterResizeSubclassProc,
+                         kCenterResizeSubclassId);
+
+    {
+        std::lock_guard<std::mutex> guard(g_centerResizeWindowsMutex);
+        g_centerResizeWindows.erase(hWnd);
+    }
+
+    if (g_centerResize.hWnd == hWnd) {
+        g_centerResize = {};
+    }
 }
 
 LRESULT CALLBACK CallWndProc(int nCode, WPARAM wParam, LPARAM lParam) {
@@ -1584,8 +1832,9 @@ void MoveDraggedWindow(HWND hRootWnd, POINT grab, POINT pt) {
 }
 
 // The edges the command takes hold of follow the pointer from where the drag
-// started, the others stay put. SetWindowPos doesn't ask the window for its
-// minimum size, so the system's minimum is kept instead.
+// started, the others stay put; a resize from the center takes hold of them
+// all, each side moving opposite to the other. SetWindowPos doesn't ask the
+// window for its minimum size, so the system's minimum is kept instead.
 void SizeDraggedWindow(HWND hRootWnd,
                        UINT command,
                        const RECT& rcStart,
@@ -1598,6 +1847,12 @@ void SizeDraggedWindow(HWND hRootWnd,
     LONG minHeight = GetSystemMetrics(SM_CYMINTRACK);
 
     RECT rc = rcStart;
+    if (edge == kWmszCenter) {
+        rc = CenterResizedRect(
+            rcStart, ptStart, pt, {minWidth, minHeight},
+            {GetSystemMetrics(SM_CXMAXTRACK), GetSystemMetrics(SM_CYMAXTRACK)});
+    }
+
     switch (edge) {
         case WMSZ_LEFT:
         case WMSZ_TOPLEFT:
@@ -1687,11 +1942,53 @@ void PlaceDragOverlay(POINT pt) {
     }
 }
 
-// Through DefWindowProc, so on the window's own thread wherever this runs.
-void DestroyDragOverlay() {
+// Posts a message of the mod to the message loop of the current thread, where
+// the hooks retrieve it. GetFocus is of this thread, so the message is
+// retrieved here, where the drag state belongs.
+bool PostToThisThread(UINT message) {
+    HWND hFocusWnd = GetFocus();
+    return (hFocusWnd && PostMessage(hFocusWnd, message, 0, 0)) ||
+           PostThreadMessage(GetCurrentThreadId(), message, 0, 0);
+}
+
+// The overlay's cursor is what the pointer shows until the window under it is
+// asked for its own, which the system does only on a real mouse move. A program
+// which sets its cursor from its own pointer input, e.g. a XAML island, keeps
+// the overlay's cursor up until then. Asked here, once the overlay is gone,
+// the way the system asks on a move, with the hit test code the window gives
+// for the spot. Bounded, the window being possibly of another process.
+void RefreshCursorAfterOverlay() {
+    POINT pt;
+    if (!GetCursorPos(&pt)) {
+        return;
+    }
+
+    HWND hWnd = WindowFromPoint(pt);
+    if (!hWnd) {
+        return;
+    }
+
+    constexpr UINT kTimeoutMs = 50;
+    DWORD_PTR hitTest = HTCLIENT;
+    if (!SendMessageTimeout(hWnd, WM_NCHITTEST, 0, MAKELPARAM(pt.x, pt.y),
+                            SMTO_ABORTIFHUNG, kTimeoutMs, &hitTest)) {
+        return;
+    }
+
+    SendMessageTimeout(hWnd, WM_SETCURSOR, (WPARAM)hWnd,
+                       MAKELPARAM((WORD)hitTest, WM_MOUSEMOVE),
+                       SMTO_ABORTIFHUNG, kTimeoutMs, nullptr);
+}
+
+// Through DefWindowProc, so on the window's own thread wherever this runs. The
+// cursor refresh is queued behind the close, which is retrieved first.
+void DestroyDragOverlay(bool refreshCursor = true) {
     if (HWND hOverlayWnd = g_llDragOverlayWnd) {
         g_llDragOverlayWnd = nullptr;
         PostMessage(hOverlayWnd, WM_CLOSE, 0, 0);
+        if (refreshCursor) {
+            PostToThisThread(g_refreshCursorMessage);
+        }
     }
 }
 
@@ -1970,13 +2267,7 @@ void PostDragUpdate(POINT pt) {
         return;
     }
 
-    // GetFocus is of this thread, so the update is retrieved here, where the
-    // drag state belongs.
-    HWND hFocusWnd = GetFocus();
-    if (hFocusWnd && PostMessage(hFocusWnd, g_dragUpdateMessage, 0, 0)) {
-        g_llDragUpdatePosted = true;
-    } else if (PostThreadMessage(GetCurrentThreadId(), g_dragUpdateMessage, 0,
-                                 0)) {
+    if (PostToThisThread(g_dragUpdateMessage)) {
         g_llDragUpdatePosted = true;
     }
 }
@@ -2399,6 +2690,8 @@ void LoadTriggerSettings(TriggerSettings& trigger, PCWSTR name) {
 void LoadSettings() {
     LoadTriggerSettings(g_settings.moveTrigger, L"moveTrigger");
     LoadTriggerSettings(g_settings.sizeTrigger, L"sizeTrigger");
+    g_settings.centerResizeAllDirections =
+        Wh_GetIntSetting(L"centerResizeAllDirections");
     g_settings.dragWindowsWithoutTitleBar =
         Wh_GetIntSetting(L"dragWindowsWithoutTitleBar");
 }
@@ -2451,6 +2744,17 @@ void Wh_ModUninit() {
         SendMessage(hWnd, g_unsubclassRegisteredMessage, 0, 0);
     }
 
+    std::unordered_set<HWND> centerResizeWindows;
+    {
+        std::lock_guard<std::mutex> guard(g_centerResizeWindowsMutex);
+        centerResizeWindows = std::move(g_centerResizeWindows);
+        g_centerResizeWindows.clear();
+    }
+
+    for (HWND hWnd : centerResizeWindows) {
+        SendMessage(hWnd, g_unsubclassRegisteredMessage, 0, 0);
+    }
+
     {
         std::lock_guard<std::mutex> guard(g_allThreadHooksMutex);
 
@@ -2491,7 +2795,7 @@ void Wh_ModUninit() {
         0);
 
     // The class may outlive the window, and is then found in place next time.
-    DestroyDragOverlay();
+    DestroyDragOverlay(false);
     UnregisterClass(kDragOverlayClassName, GetModuleHandle(nullptr));
 }
 
