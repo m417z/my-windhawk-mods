@@ -1983,10 +1983,15 @@ void PlaceDragOverlay(POINT pt) {
 }
 
 // Posts a message of the mod to the message loop of the current thread, where
-// the hooks retrieve it. GetFocus is of this thread, so the message is
-// retrieved here, where the drag state belongs.
+// the hooks retrieve it. The focus window is passed over when it's of another
+// thread sharing this thread's input queue, whose loop would retrieve it.
 bool PostToThisThread(UINT message) {
     HWND hFocusWnd = GetFocus();
+    if (hFocusWnd &&
+        GetWindowThreadProcessId(hFocusWnd, nullptr) != GetCurrentThreadId()) {
+        hFocusWnd = nullptr;
+    }
+
     return (hFocusWnd && PostMessage(hFocusWnd, message, 0, 0)) ||
            PostThreadMessage(GetCurrentThreadId(), message, 0, 0);
 }
@@ -2021,12 +2026,17 @@ void RefreshCursorAfterOverlay() {
 }
 
 // Through DefWindowProc, so on the window's own thread wherever this runs. The
-// cursor refresh is queued behind the close, which is retrieved first.
+// cursor refresh is queued behind the close, which is retrieved first, if the
+// overlay is this thread's: that of another thread may still be up when the
+// refresh is retrieved here.
 void DestroyDragOverlay(bool refreshCursor = true) {
     if (HWND hOverlayWnd = g_llDragOverlayWnd) {
         g_llDragOverlayWnd = nullptr;
+        bool overlayOfThisThread =
+            GetWindowThreadProcessId(hOverlayWnd, nullptr) ==
+            GetCurrentThreadId();
         PostMessage(hOverlayWnd, WM_CLOSE, 0, 0);
-        if (refreshCursor) {
+        if (refreshCursor && overlayOfThisThread) {
             PostToThisThread(g_refreshCursorMessage);
         }
     }
