@@ -1699,12 +1699,11 @@ LRESULT CALLBACK CenterResizeSubclassProc(HWND hWnd,
             hWnd == g_centerResize.hWnd && !g_uninitializing) {
             ReplaceSizingRect(hWnd, (RECT*)lParam);
         }
-    } else if (uMsg == WM_EXITSIZEMOVE || uMsg == WM_NCDESTROY) {
-        // Ends every drag, one cancelled with Esc included.
+    } else if (uMsg == WM_EXITSIZEMOVE || uMsg == WM_NCDESTROY ||
+               uMsg == g_unsubclassRegisteredMessage) {
+        // Ends every drag, one cancelled with Esc included. The message to
+        // unsubclass goes on to the window's other subclass.
         EndCenterResize(hWnd);
-    } else if (uMsg == g_unsubclassRegisteredMessage) {
-        EndCenterResize(hWnd);
-        return 0;
     }
 
     return DefSubclassProc(hWnd, uMsg, wParam, lParam);
