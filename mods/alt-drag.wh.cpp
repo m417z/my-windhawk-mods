@@ -1985,15 +1985,15 @@ void PlaceDragOverlay(POINT pt) {
 // Posts a message of the mod to the message loop of the current thread, where
 // the hooks retrieve it. The focus window is passed over when it's of another
 // thread sharing this thread's input queue, whose loop would retrieve it.
-bool PostToThisThread(UINT message) {
+bool PostToThisThread(UINT message, WPARAM wParam = 0, LPARAM lParam = 0) {
     HWND hFocusWnd = GetFocus();
     if (hFocusWnd &&
         GetWindowThreadProcessId(hFocusWnd, nullptr) != GetCurrentThreadId()) {
         hFocusWnd = nullptr;
     }
 
-    return (hFocusWnd && PostMessage(hFocusWnd, message, 0, 0)) ||
-           PostThreadMessage(GetCurrentThreadId(), message, 0, 0);
+    return (hFocusWnd && PostMessage(hFocusWnd, message, wParam, lParam)) ||
+           PostThreadMessage(GetCurrentThreadId(), message, wParam, lParam);
 }
 
 // The overlay's cursor is what the pointer shows until the window under it is
@@ -2164,12 +2164,7 @@ void ReplayPress(int button, bool asClick) {
 // Hands a replay over to the message loop of this thread, where it's retrieved
 // ahead of the input which follows, including an Alt release.
 void PostReplayPress(int button, bool asClick) {
-    HWND hFocusWnd = GetFocus();
-    if (!hFocusWnd ||
-        !PostMessage(hFocusWnd, g_replayPressMessage, button, asClick)) {
-        PostThreadMessage(GetCurrentThreadId(), g_replayPressMessage, button,
-                          asClick);
-    }
+    PostToThisThread(g_replayPressMessage, button, asClick);
 }
 
 // The press of a trigger's button over composition hosted content. Returns
