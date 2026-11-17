@@ -6607,9 +6607,9 @@ PropertyOverrideSetters GetElementInstanceSetters(
 }
 
 // Loading a style with a SystemBackdrop setter for CommandBarFlyoutCommandBar
-// fails with E_FAIL, so a `WindhawkBlur` or empty value for that property,
-// which a dynamic value has to expand to, is resolved with the property looked
-// up directly. Returns false for any other rule.
+// or MenuFlyoutPresenter fails with E_FAIL, so a `WindhawkBlur` or empty value
+// for that property, which a dynamic value has to expand to, is resolved with
+// the property looked up directly. Returns false for any other rule.
 bool ResolveSystemBackdropRule(std::wstring_view type,
                                const ValueRule& rule,
                                ResolvedRules* resolved) {
@@ -6622,7 +6622,13 @@ bool ResolveSystemBackdropRule(std::wstring_view type,
         className = type.substr(pos + 1);
     }
 
-    if (className != L"CommandBarFlyoutCommandBar") {
+    DependencyProperty property{nullptr};
+    if (className == L"CommandBarFlyoutCommandBar") {
+        property = Controls::Primitives::CommandBarFlyoutCommandBar::
+            SystemBackdropProperty();
+    } else if (className == L"MenuFlyoutPresenter") {
+        property = Controls::MenuFlyoutPresenter::SystemBackdropProperty();
+    } else {
         return false;
     }
 
@@ -6638,8 +6644,6 @@ bool ResolveSystemBackdropRule(std::wstring_view type,
         return false;
     }
 
-    auto property = Controls::Primitives::CommandBarFlyoutCommandBar::
-        SystemBackdropProperty();
     RecordPropertyName(property, rule.propertyName);
     resolved->propertyOverrides[property][rule.visualState] = std::move(value);
     resolved->hasDynamicValues |= rule.isDynamic();
