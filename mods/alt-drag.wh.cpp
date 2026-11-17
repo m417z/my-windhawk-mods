@@ -341,9 +341,10 @@ thread_local struct {
 
 // The resize from the center this thread's size loop runs, from the request
 // until the loop ends. It's kept apart from g_loop, which is reset by the
-// release the loop is still to act on. The start is taken with the loop's first
-// WM_SIZING, which comes before the pointer has moved: the loop measures from
-// where the pointer is then.
+// release the loop is still to act on. The pointer's travel is measured from
+// where the request found it, as the drag threshold is. The rect and the size
+// limits are taken with the loop's first WM_SIZING, which comes with the first
+// move.
 thread_local struct {
     HWND hWnd;
     bool started;
@@ -451,7 +452,7 @@ struct {
     RECT logicalRect;
 } g_llMonitor;
 
-bool BeginCenterResize(HWND hWnd);
+bool BeginCenterResize(HWND hWnd, POINT startPt);
 void EndCenterResize(HWND hWnd);
 void ReplayPress(int button, bool asClick);
 void MaskWinKeyReleaseIfNeeded(UINT command);
@@ -1050,7 +1051,7 @@ void OnSizeMoveRequestRemoved(MSG* msg) {
     UINT loopCommand = command;
     if (IsCenterSizeCommand(command)) {
         loopCommand = SC_SIZE | WMSZ_BOTTOMRIGHT;
-        if (BeginCenterResize(msg->hwnd)) {
+        if (BeginCenterResize(msg->hwnd, msg->pt)) {
             loopCommand = command;
         }
     }
@@ -1665,13 +1666,12 @@ void ReplaceSizingRect(HWND hWnd, RECT* rc) {
     }
 
     if (!g_centerResize.started) {
-        // The loop's first message, before the pointer has moved.
+        // The loop's first message, with the window still as it started.
         if (!GetWindowRect(hWnd, &g_centerResize.startRect)) {
             return;
         }
 
         g_centerResize.started = true;
-        g_centerResize.startPt = pt;
         GetSizeLimits(hWnd, &g_centerResize.minSize, &g_centerResize.maxSize);
     }
 
@@ -1711,7 +1711,7 @@ LRESULT CALLBACK CenterResizeSubclassProc(HWND hWnd,
 }
 
 // Runs on the root window's thread, with the request that starts the loop.
-bool BeginCenterResize(HWND hWnd) {
+bool BeginCenterResize(HWND hWnd, POINT startPt) {
     EndCenterResize(g_centerResize.hWnd);
 
     std::lock_guard<std::mutex> guard(g_centerResizeWindowsMutex);
@@ -1726,7 +1726,7 @@ bool BeginCenterResize(HWND hWnd) {
     }
 
     g_centerResizeWindows.insert(hWnd);
-    g_centerResize = {.hWnd = hWnd};
+    g_centerResize = {.hWnd = hWnd, .startPt = startPt};
     return true;
 }
 
