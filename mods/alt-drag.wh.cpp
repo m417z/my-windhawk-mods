@@ -1063,6 +1063,10 @@ void OnSizeMoveRequestRemoved(MSG* msg) {
         .startPt = msg->pt,
     };
 
+    // Shown from the start, by the thread which puts the cursor back at the
+    // end, and saved ahead of the cursors the loop sets.
+    ShowDragCursor(g_loop.command);
+
     msg->message = WM_SYSCOMMAND;
     msg->wParam = IsCenterSizeCommand(command) ? SC_SIZE | WMSZ_BOTTOMRIGHT
                                                : command;
@@ -1293,10 +1297,12 @@ void OnDragDelayElapsed() {
                NameOfCommand(g_delayedPress.command),
                (DWORD)(ULONG_PTR)g_delayedPress.hRootWnd);
 
-        // Shown from here on, ahead of the first move the loop sets it for:
-        // the window under the cursor is this thread's, which retrieved the
-        // press.
-        ShowDragCursor(g_delayedPress.command);
+        // Shown from here on, ahead of the first move, for a drag this thread
+        // runs: the window under the cursor is this thread's, which retrieved
+        // the press. A loop shows it as it starts, on its own thread.
+        if (g_threadDrag.button) {
+            ShowDragCursor(g_delayedPress.command);
+        }
     } else {
         ReplayDelayedPress();
     }
