@@ -31,18 +31,34 @@ Only Windows 11 x64 is currently supported. ARM64 is unsupported. For older
 Windows versions check out [7+ Taskbar
 Tweaker](https://tweaker.ramensoftware.com/).
 
+ExplorerPatcher diagnostics are available for the specific taskbar build
+recognized by this mod. Enable the setting and mod logging, move a taskbar
+button, then switch away from the current desktop and back. In this mode the
+mod records ExplorerPatcher callbacks without restoring order.
+
 ![Demonstration](https://i.imgur.com/ie8Q9cl.gif)
 */
 // ==/WindhawkModReadme==
 
+// ==WindhawkModSettings==
+/*
+- explorerPatcherDiagnostics: false
+  $name: ExplorerPatcher diagnostics
+  $description: Trace the supported ExplorerPatcher taskbar build without applying order preservation in this mode.
+*/
+// ==/WindhawkModSettings==
+
 #include <windhawk_utils.h>
 
+#include <atomic>
 #include <climits>
+#include <cstring>
 #include <regex>
 #include <string>
 #include <string_view>
 
 #include <commctrl.h>
+#include <psapi.h>
 
 enum class WinVersion {
     Unsupported,
@@ -591,6 +607,278 @@ WinVersion GetExplorerVersion() {
     return WinVersion::Unsupported;
 }
 
+namespace ep_diagnostics {
+
+std::atomic<bool> canApplyHooks;
+std::atomic<bool> installing;
+std::atomic<bool> ready;
+std::atomic<DWORD> taskbarThread;
+
+// Only accessed on the primary taskbar thread.
+unsigned int sequence;
+thread_local unsigned int desktopUpdateDepth;
+
+using Update_t = HRESULT(WINAPI*)(void*);
+using Move_t = HRESULT(WINAPI*)(void*, int, int);
+using CreateGroup_t = void*(WINAPI*)(void*, void*, int);
+using TaskCreated_t = HRESULT(WINAPI*)(void*, void*, void*, int);
+using TaskDestroyed_t = HRESULT(WINAPI*)(void*, void*, void*, unsigned int);
+using GetNumItems_t = int(WINAPI*)(void*);
+
+Update_t updateOriginal;
+Move_t moveOriginal;
+CreateGroup_t createGroupOriginal;
+TaskCreated_t taskCreatedOriginal;
+TaskDestroyed_t taskDestroyedOriginal;
+GetNumItems_t getNumItems;
+void* buttonGroupVtable;
+decltype(&LoadLibraryExW) loadLibraryOriginal;
+
+bool CanTrace() {
+    if (!ready) {
+        return false;
+    }
+    if (!taskbarThread) {
+        HWND tray = FindCurrentProcessTaskbarWnd();
+        if (tray) {
+            taskbarThread = GetWindowThreadProcessId(tray, nullptr);
+        }
+    }
+    return GetCurrentThreadId() == taskbarThread && sequence < 256;
+}
+
+HDPA GetButtonGroups(void* taskList) {
+    // Verified in _CreateTBGroup and _MoveTaskBtnGroup on the guarded image.
+    return *reinterpret_cast<HDPA*>(static_cast<BYTE*>(taskList) + 0xD8);
+}
+
+int GetGroupCount(void* taskList) {
+    HDPA groups = GetButtonGroups(taskList);
+    return groups ? DPA_GetPtrCount(groups) : 0;
+}
+
+HRESULT WINAPI UpdateHook(void* taskBand) {
+    if (!CanTrace()) {
+        return updateOriginal(taskBand);
+    }
+
+    ++desktopUpdateDepth;
+    Wh_Log(L"EP #%u desktop inclusion begin (depth %u)", ++sequence,
+           desktopUpdateDepth);
+    HRESULT result = updateOriginal(taskBand);
+    --desktopUpdateDepth;
+    if (CanTrace()) {
+        Wh_Log(L"EP #%u desktop inclusion end (result 0x%08X)", ++sequence,
+               static_cast<unsigned int>(result));
+    }
+    return result;
+}
+
+HRESULT WINAPI MoveHook(void* taskList, int from, int to) {
+    HRESULT result = moveOriginal(taskList, from, to);
+    if (CanTrace()) {
+        Wh_Log(L"EP #%u move %d -> %d, groups=%d, result=0x%08X", ++sequence,
+               from, to, GetGroupCount(taskList),
+               static_cast<unsigned int>(result));
+    }
+    return result;
+}
+
+void* WINAPI CreateGroupHook(void* taskList, void* taskGroup, int index) {
+    int before = CanTrace() ? GetGroupCount(taskList) : -1;
+    void* result = createGroupOriginal(taskList, taskGroup, index);
+    if (before >= 0 && CanTrace()) {
+        HDPA groups = GetButtonGroups(taskList);
+        int inserted = groups && result ? DPA_GetPtrIndex(groups, result) : -1;
+        Wh_Log(L"EP #%u create group requested=%d, inserted=%d, groups=%d -> %d, desktop depth=%u",
+               ++sequence, index, inserted, before, GetGroupCount(taskList),
+               desktopUpdateDepth);
+    }
+    return result;
+}
+
+HRESULT WINAPI TaskCreatedHook(void* taskList, void* group, void* item, int flags) {
+    HRESULT result = taskCreatedOriginal(taskList, group, item, flags);
+    if (CanTrace()) {
+        HDPA groups = GetButtonGroups(taskList);
+        int count = groups ? DPA_GetPtrCount(groups) : 0;
+        int populatedGroups = 0;
+        int itemCount = 0;
+        for (int index = 0; index < count && index < 64; ++index) {
+            void* buttonGroup = DPA_GetPtr(groups, index);
+            if (buttonGroup && *static_cast<void**>(buttonGroup) == buttonGroupVtable) {
+                itemCount += getNumItems(buttonGroup);
+                ++populatedGroups;
+            }
+        }
+        Wh_Log(L"EP #%u task created, groups=%d, scanned=%d, items=%d, desktop depth=%u, result=0x%08X",
+               ++sequence, count, populatedGroups, itemCount, desktopUpdateDepth,
+               static_cast<unsigned int>(result));
+    }
+    return result;
+}
+
+HRESULT WINAPI TaskDestroyedHook(void* taskList, void* group, void* item,
+                                 unsigned int flags) {
+    HRESULT result = taskDestroyedOriginal(taskList, group, item, flags);
+    if (CanTrace()) {
+        Wh_Log(L"EP #%u task destroyed, desktop depth=%u, result=0x%08X",
+               ++sequence, desktopUpdateDepth,
+               static_cast<unsigned int>(result));
+    }
+    return result;
+}
+
+bool IsSupportedImage(HMODULE module) {
+    MODULEINFO info{};
+    if (!GetModuleInformation(GetCurrentProcess(), module, &info, sizeof(info)) ||
+        info.SizeOfImage != 0x299000) {
+        return false;
+    }
+    const auto* base = reinterpret_cast<const BYTE*>(module);
+    const auto* dos = reinterpret_cast<const IMAGE_DOS_HEADER*>(base);
+    if (dos->e_magic != IMAGE_DOS_SIGNATURE ||
+        dos->e_lfanew < static_cast<LONG>(sizeof(IMAGE_DOS_HEADER)) ||
+        static_cast<DWORD>(dos->e_lfanew) > info.SizeOfImage - sizeof(IMAGE_NT_HEADERS64)) {
+        return false;
+    }
+    const auto* pe = reinterpret_cast<const IMAGE_NT_HEADERS64*>(base + dos->e_lfanew);
+    if (pe->Signature != IMAGE_NT_SIGNATURE ||
+        pe->FileHeader.Machine != IMAGE_FILE_MACHINE_AMD64 ||
+        pe->FileHeader.TimeDateStamp != 0x6AE29682 ||
+        pe->OptionalHeader.Magic != IMAGE_NT_OPTIONAL_HDR64_MAGIC ||
+        pe->OptionalHeader.NumberOfRvaAndSizes <= IMAGE_DIRECTORY_ENTRY_DEBUG) {
+        return false;
+    }
+
+    const auto& debug = pe->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_DEBUG];
+    if (!debug.VirtualAddress || debug.VirtualAddress >= info.SizeOfImage ||
+        debug.Size > info.SizeOfImage - debug.VirtualAddress) {
+        return false;
+    }
+    // RSDS, ep_taskbar.ge.pdb GUID 8bdf7673-5e1d-4218-b2c6-93af45c4d4f9, age 1.
+    constexpr BYTE codeView[] = {
+        'R', 'S', 'D', 'S', 0x73, 0x76, 0xDF, 0x8B, 0x1D, 0x5E, 0x18, 0x42,
+        0xB2, 0xC6, 0x93, 0xAF, 0x45, 0xC4, 0xD4, 0xF9, 1, 0, 0, 0,
+    };
+    const auto* entries =
+        reinterpret_cast<const IMAGE_DEBUG_DIRECTORY*>(base + debug.VirtualAddress);
+    for (size_t i = 0; i < debug.Size / sizeof(*entries); ++i) {
+        const auto& entry = entries[i];
+        if (entry.Type == IMAGE_DEBUG_TYPE_CODEVIEW &&
+            entry.SizeOfData >= sizeof(codeView) && entry.AddressOfRawData &&
+            entry.AddressOfRawData <= info.SizeOfImage - sizeof(codeView) &&
+            std::memcmp(base + entry.AddressOfRawData, codeView, sizeof(codeView)) == 0) {
+            return true;
+        }
+    }
+    return false;
+}
+
+void TryInstall(HMODULE module) {
+    if (ready || !module || (reinterpret_cast<ULONG_PTR>(module) & 3)) {
+        return;
+    }
+
+    WCHAR path[MAX_PATH];
+    DWORD length = GetModuleFileName(module, path, ARRAYSIZE(path));
+    PCWSTR filename = length && length < ARRAYSIZE(path) ? wcsrchr(path, L'\\') : nullptr;
+    if (!filename || _wcsicmp(filename + 1, L"ep_taskbar.ge.dll") != 0 ||
+        installing.exchange(true)) {
+        return;
+    }
+
+    if (!IsSupportedImage(module)) {
+        Wh_Log(L"EP diagnostics skipped: ep_taskbar.ge.dll has an unrecognized image identity");
+        return;
+    }
+    Wh_Log(L"EP diagnostics: ep_taskbar.ge.dll matched the guarded CodeView build");
+
+    struct Hook {
+        const char* name;
+        void* hook;
+        void** original;
+        void* address;
+    };
+    Hook hooks[] = {
+        {"?_UpdateVirtualDesktopInclusion@CTaskBand@@IEAAJXZ",
+         reinterpret_cast<void*>(UpdateHook), reinterpret_cast<void**>(&updateOriginal)},
+        {"?_MoveTaskBtnGroup@CTaskListWnd@@IEAAJHH@Z",
+         reinterpret_cast<void*>(MoveHook), reinterpret_cast<void**>(&moveOriginal)},
+        {"?_CreateTBGroup@CTaskListWnd@@IEAAPEAUITaskBtnGroup@@PEAUITaskGroup@@H@Z",
+         reinterpret_cast<void*>(CreateGroupHook), reinterpret_cast<void**>(&createGroupOriginal)},
+        {"?_TaskCreated@CTaskListWnd@@IEAAJPEAUITaskGroup@@PEAUITaskItem@@H@Z",
+         reinterpret_cast<void*>(TaskCreatedHook), reinterpret_cast<void**>(&taskCreatedOriginal)},
+        {"?TaskDestroyed@CTaskListWnd@@UEAAJPEAUITaskGroup@@PEAUITaskItem@@W4TaskDestroyedFlags@@@Z",
+         reinterpret_cast<void*>(TaskDestroyedHook), reinterpret_cast<void**>(&taskDestroyedOriginal)},
+    };
+    buttonGroupVtable = reinterpret_cast<void*>(
+        GetProcAddress(module, "??_7CTaskBtnGroup@@6BITaskBtnGroup@@@"));
+    getNumItems = reinterpret_cast<GetNumItems_t>(
+        GetProcAddress(module, "?GetNumItems@CTaskBtnGroup@@UEAAHXZ"));
+    if (!buttonGroupVtable || !getNumItems) {
+        Wh_Log(L"EP diagnostics skipped: button group vtable or GetNumItems export missing");
+        return;
+    }
+    for (auto& hook : hooks) {
+        hook.address = reinterpret_cast<void*>(GetProcAddress(module, hook.name));
+        if (!hook.address) {
+            Wh_Log(L"EP diagnostics skipped: missing export %S", hook.name);
+            return;
+        }
+    }
+    size_t queued = 0;
+    for (const auto& hook : hooks) {
+        if (!Wh_SetFunctionHook(hook.address, hook.hook, hook.original)) {
+            Wh_Log(L"EP diagnostics skipped: could not queue %S", hook.name);
+            for (size_t i = 0; i < queued; ++i) {
+                Wh_RemoveFunctionHook(hooks[i].address);
+            }
+            Wh_ApplyHookOperations();
+            return;
+        }
+        ++queued;
+    }
+    ready = Wh_ApplyHookOperations();
+    Wh_Log(L"EP diagnostics: hook apply=%d, taskbar thread=%u", ready.load(),
+           taskbarThread.load());
+}
+
+HMODULE WINAPI LoadLibraryHook(LPCWSTR filename, HANDLE file, DWORD flags) {
+    HMODULE module = loadLibraryOriginal(filename, file, flags);
+    if (canApplyHooks) {
+        TryInstall(module);
+    }
+    return module;
+}
+
+bool Init() {
+    auto loadLibrary = GetProcAddress(GetModuleHandle(L"kernelbase.dll"), "LoadLibraryExW");
+    return loadLibrary && Wh_SetFunctionHook(
+        reinterpret_cast<void*>(loadLibrary), reinterpret_cast<void*>(LoadLibraryHook),
+        reinterpret_cast<void**>(&loadLibraryOriginal));
+}
+
+void AfterInit() {
+    HWND tray = FindCurrentProcessTaskbarWnd();
+    if (tray) {
+        taskbarThread = GetWindowThreadProcessId(tray, nullptr);
+    } else {
+        Wh_Log(L"EP diagnostics: waiting for the primary taskbar window");
+    }
+    canApplyHooks = true;
+    HMODULE module = GetModuleHandle(L"ep_taskbar.ge.dll");
+    if (module) {
+        TryInstall(module);
+    } else {
+        Wh_Log(L"EP diagnostics: waiting for ep_taskbar.ge.dll");
+    }
+}
+
+}  // namespace ep_diagnostics
+
+bool g_explorerPatcherDiagnostics;
+
 BOOL Wh_ModInit() {
     Wh_Log(L">");
 
@@ -604,6 +892,11 @@ BOOL Wh_ModInit() {
     Wh_Log(L"Unsupported architecture");
     return FALSE;
 #endif
+
+    g_explorerPatcherDiagnostics = Wh_GetIntSetting(L"explorerPatcherDiagnostics");
+    if (g_explorerPatcherDiagnostics) {
+        return ep_diagnostics::Init();
+    }
 
     WindhawkUtils::SYMBOL_HOOK taskbarDllHooks[] = {
         {
@@ -690,8 +983,19 @@ BOOL Wh_ModInit() {
 void Wh_ModAfterInit() {
     Wh_Log(L">");
 
+    if (g_explorerPatcherDiagnostics) {
+        ep_diagnostics::AfterInit();
+        return;
+    }
+
     HWND hTaskbarWnd = FindCurrentProcessTaskbarWnd();
     if (hTaskbarWnd) {
         InitializeTaskbarVariables(hTaskbarWnd);
     }
+}
+
+BOOL Wh_ModSettingsChanged(BOOL* reload) {
+    *reload = g_explorerPatcherDiagnostics !=
+              (Wh_GetIntSetting(L"explorerPatcherDiagnostics") != 0);
+    return TRUE;
 }
