@@ -2,7 +2,7 @@
 // @id              alt-drag
 // @name            AltDrag
 // @description     Move or resize any window by holding Alt and dragging it from anywhere, without having to grab the title bar or the borders
-// @version         1.1
+// @version         1.2
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
