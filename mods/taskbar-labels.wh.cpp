@@ -3064,8 +3064,10 @@ BOOL ModInitWithTaskbarView(HMODULE taskbarViewModule) {
             return FALSE;
         }
     } else {
-        if (!HookTaskbarDllSymbols()) {
-            return FALSE;
+        if (g_settings.alwaysShowThumbnailLabels) {
+            if (!HookTaskbarDllSymbols()) {
+                return FALSE;
+            }
         }
 
         HMODULE kernelBaseModule = GetModuleHandle(L"kernelbase.dll");
@@ -3193,8 +3195,10 @@ void Wh_ModUninit() {
     Wh_Log(L">");
 }
 
-void Wh_ModSettingsChanged() {
+BOOL Wh_ModSettingsChanged(BOOL* bReload) {
     Wh_Log(L">");
+
+    bool prevAlwaysShowThumbnailLabels = g_settings.alwaysShowThumbnailLabels;
 
     // The hooks read the settings on the taskbar thread.
     HWND hTaskbarWnd = FindCurrentProcessTaskbarWnd();
@@ -3204,7 +3208,16 @@ void Wh_ModSettingsChanged() {
         LoadSettings();
     }
 
+    // The thumbnail hook is only set when the option is enabled.
+    if (g_hasNativeLabelsImplementation &&
+        g_settings.alwaysShowThumbnailLabels != prevAlwaysShowThumbnailLabels) {
+        *bReload = TRUE;
+        return TRUE;
+    }
+
     if (g_taskbarViewDllLoaded) {
         ApplySettings();
     }
+
+    return TRUE;
 }
