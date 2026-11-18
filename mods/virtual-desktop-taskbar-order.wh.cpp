@@ -39,7 +39,8 @@ restore recognized single-window groups when the pinned prefix is unchanged
 and Windows shows only windows on the current desktop.
 
 Enable ExplorerPatcher diagnostics and mod logging to record the observed
-order and insertion decisions. Diagnostics alone perform a dry run.
+order and insertion decisions. Diagnostics alone perform a dry run. These
+settings apply when ExplorerPatcher owns the active taskbar.
 
 ![Demonstration](https://i.imgur.com/ie8Q9cl.gif)
 */
@@ -78,6 +79,9 @@ enum class WinVersion {
 WinVersion g_winVersion;
 DWORD g_taskbarThreadId;
 HWND g_hTaskbarWnd;
+bool g_nativeTaskbarInitialized;
+bool g_explorerPatcherInitialized;
+bool g_requireNativeTaskbandOwner;
 
 #pragma region offsets
 
@@ -457,6 +461,34 @@ void OnButtonGroupInserted(LONG_PTR lpTaskSwLongPtr,
     ReleaseSRWLockExclusive(pArrayLock);
 }
 
+enum class TaskbandOwner { Unknown, Native, ExplorerPatcher };
+
+TaskbandOwner GetTaskbandOwner(LONG_PTR taskband) {
+    // Window data can become stale while Explorer is creating or replacing
+    // the taskbar. ReadProcessMemory keeps an unreadable object a failed check.
+    void* vtable = nullptr;
+    HMODULE module = nullptr;
+    if (!taskband ||
+        !ReadProcessMemory(GetCurrentProcess(), reinterpret_cast<void*>(taskband),
+                           &vtable, sizeof(vtable), nullptr) ||
+        !vtable ||
+        !GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
+                                GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                            reinterpret_cast<PCWSTR>(vtable), &module)) {
+        return TaskbandOwner::Unknown;
+    }
+    if (module == GetModuleHandleW(L"taskbar.dll")) {
+        return TaskbandOwner::Native;
+    }
+    WCHAR path[MAX_PATH];
+    DWORD length = GetModuleFileNameW(module, path, ARRAYSIZE(path));
+    PCWSTR filename = length && length < ARRAYSIZE(path) ? wcsrchr(path, L'\\') : nullptr;
+    if (filename && _wcsnicmp(filename + 1, L"ep_taskbar.", 10) == 0) {
+        return TaskbandOwner::ExplorerPatcher;
+    }
+    return TaskbandOwner::Unknown;
+}
+
 void ComFuncVirtualDesktopFixAfterDPA_InsertPtr(HDPA pdpa, int index, void* p) {
     Wh_Log(L"> index=%d, p=%p", index, p);
 
@@ -486,7 +518,9 @@ void ComFuncVirtualDesktopFixAfterDPA_InsertPtr(HDPA pdpa, int index, void* p) {
     }
 
     LONG_PTR lpTaskSwLongPtr = GetWindowLongPtr(hTaskSwWnd, 0);
-    if (!lpTaskSwLongPtr) {
+    if (!lpTaskSwLongPtr ||
+        (g_requireNativeTaskbandOwner &&
+         GetTaskbandOwner(lpTaskSwLongPtr) != TaskbandOwner::Native)) {
         return;
     }
 
@@ -699,7 +733,7 @@ struct GroupSnapshot {
     bool recognized;
     bool pinned;
     int itemCount;
-    std::array<unsigned int, kMaxItemsPerGroup> items;
+    std::array<WindowIdentity, kMaxItemsPerGroup> items;
 };
 
 struct Snapshot {
@@ -713,8 +747,10 @@ struct TaskCreatedContext {
     void* item;
 };
 
-std::array<WindowIdentity, 256> windowIdentities;
-size_t windowIdentityCount;
+// Stable labels for the bounded diagnostic trace. The restore path uses
+// identities directly, so exhausting these labels cannot affect ordering.
+std::array<WindowIdentity, 256> diagnosticWindows;
+size_t diagnosticWindowCount;
 void* savedTaskList;
 Snapshot savedOrder;
 Snapshot lastObservedOrder;
@@ -745,26 +781,33 @@ bool IsCurrentDesktopOnly() {
            filter == 1;
 }
 
-unsigned int WindowId(void* item) {
+WindowIdentity ReadWindowIdentity(void* item) {
     if (!HasVtable(item, windowItemVtable)) {
-        return 0;
+        return {};
     }
     WindowIdentity key{};
     key.hwnd = getItemWindow(item);
     key.thread = key.hwnd ? GetWindowThreadProcessId(key.hwnd, &key.process) : 0;
     if (!key.thread || !key.process) {
+        return {};
+    }
+    return key;
+}
+
+unsigned int WindowLabel(const WindowIdentity& key) {
+    if (!key.hwnd) {
         return 0;
     }
-    for (size_t i = 0; i < windowIdentityCount; ++i) {
-        if (windowIdentities[i] == key) {
+    for (size_t i = 0; i < diagnosticWindowCount; ++i) {
+        if (diagnosticWindows[i] == key) {
             return static_cast<unsigned int>(i + 1);
         }
     }
-    if (windowIdentityCount == windowIdentities.size()) {
+    if (diagnosticWindowCount == diagnosticWindows.size()) {
         return 0;
     }
-    windowIdentities[windowIdentityCount++] = key;
-    return static_cast<unsigned int>(windowIdentityCount);
+    diagnosticWindows[diagnosticWindowCount++] = key;
+    return static_cast<unsigned int>(diagnosticWindowCount);
 }
 
 Snapshot ReadOrder(void* taskList) {
@@ -785,7 +828,7 @@ Snapshot ReadOrder(void* taskList) {
         entry.pinned = (getGroupFlags(group) & 1) != 0;
         entry.itemCount = getNumItems(buttonGroup);
         for (int j = 0; j < entry.itemCount && j < kMaxItemsPerGroup; ++j) {
-            entry.items[j] = WindowId(getTaskItem(buttonGroup, j));
+            entry.items[j] = ReadWindowIdentity(getTaskItem(buttonGroup, j));
         }
     }
     return snapshot;
@@ -800,7 +843,7 @@ void LogOrder(PCWSTR label, const Snapshot& snapshot) {
             if (j) {
                 order += L",";
             }
-            order += std::to_wstring(entry.items[j]);
+            order += std::to_wstring(WindowLabel(entry.items[j]));
         }
         if (entry.itemCount > kMaxItemsPerGroup) {
             order += L",...";
@@ -814,13 +857,16 @@ void LogOrder(PCWSTR label, const Snapshot& snapshot) {
            snapshot.count, order.c_str());
 }
 
-int SavedPosition(unsigned int id) {
+int SavedPosition(const WindowIdentity& key) {
+    if (!key.hwnd) {
+        return -1;
+    }
     int position = -1;
-    for (int i = 0; id && i < savedOrder.count && i < kMaxGroups; ++i) {
+    for (int i = 0; i < savedOrder.count && i < kMaxGroups; ++i) {
         const auto& entry = savedOrder.groups[i];
         for (int j = 0; entry.recognized && j < entry.itemCount &&
                         j < kMaxItemsPerGroup; ++j) {
-            if (entry.items[j] == id) {
+            if (entry.items[j] == key) {
                 if (position >= 0 || entry.pinned || entry.itemCount != 1) {
                     return -1;
                 }
@@ -856,8 +902,9 @@ int GetInsertionIndex(void* taskList, void* taskGroup) {
         }
         return INT_MAX;
     }
-    unsigned int id = WindowId(taskCreatedContext.item);
-    int rank = SavedPosition(id);
+    const auto key = ReadWindowIdentity(taskCreatedContext.item);
+    int rank = SavedPosition(key);
+    unsigned int id = CanLog() ? WindowLabel(key) : 0;
     if ((getGroupFlags(taskGroup) & 1) || rank < 0) {
         if (CanLog()) {
             Wh_Log(L"EP #%u insertion skipped: id=%u pinned or no unique single-window match",
@@ -987,7 +1034,7 @@ HRESULT WINAPI TaskCreatedHook(void* taskList, void* group, void* item, int flag
     }
     TaskCreatedContext previous = taskCreatedContext;
     taskCreatedContext = {taskList, group, item};
-    unsigned int id = CanLog() ? WindowId(item) : 0;
+    unsigned int id = CanLog() ? WindowLabel(ReadWindowIdentity(item)) : 0;
     HRESULT result = taskCreatedOriginal(taskList, group, item, flags);
     taskCreatedContext = previous;
     if (CanLog()) {
@@ -1187,26 +1234,7 @@ void AfterInit() {
 
 }  // namespace explorer_patcher
 
-BOOL Wh_ModInit() {
-    Wh_Log(L">");
-
-    g_winVersion = GetExplorerVersion();
-    if (g_winVersion < WinVersion::Win11) {
-        Wh_Log(L"Unsupported Windows version");
-        return FALSE;
-    }
-
-#ifdef _M_ARM64
-    Wh_Log(L"Unsupported architecture");
-    return FALSE;
-#endif
-
-    explorer_patcher::diagnostics = Wh_GetIntSetting(L"explorerPatcherDiagnostics");
-    explorer_patcher::restoreOrder = Wh_GetIntSetting(L"explorerPatcherRestoreOrder");
-    if (explorer_patcher::diagnostics || explorer_patcher::restoreOrder) {
-        return explorer_patcher::Init();
-    }
-
+bool InitNativeTaskbar() {
     WindhawkUtils::SYMBOL_HOOK taskbarDllHooks[] = {
         {
             {LR"(const CTaskBtnGroup::`vftable'{for `ITaskBtnGroup'})"},
@@ -1249,13 +1277,13 @@ BOOL Wh_ModInit() {
         LoadLibraryEx(L"taskbar.dll", nullptr, LOAD_LIBRARY_SEARCH_SYSTEM32);
     if (!taskbarModule) {
         Wh_Log(L"Couldn't load taskbar.dll");
-        return FALSE;
+        return false;
     }
 
     if (!HookSymbols(taskbarModule, taskbarDllHooks,
                      ARRAYSIZE(taskbarDllHooks))) {
         Wh_Log(L"HookSymbols failed");
-        return FALSE;
+        return false;
     }
 
     // twinui.pcshell.dll
@@ -1271,13 +1299,13 @@ BOOL Wh_ModInit() {
                                                 LOAD_LIBRARY_SEARCH_SYSTEM32);
     if (!twinuiPcshellModule) {
         Wh_Log(L"Couldn't load twinui.pcshell.dll");
-        return FALSE;
+        return false;
     }
 
     if (!HookSymbols(twinuiPcshellModule, twinuiPcshellSymbolHooks,
                      ARRAYSIZE(twinuiPcshellSymbolHooks))) {
         Wh_Log(L"HookSymbols failed");
-        return FALSE;
+        return false;
     }
 
     WindhawkUtils::SetFunctionHook(DPA_InsertPtr, DPA_InsertPtr_Hook,
@@ -1286,20 +1314,59 @@ BOOL Wh_ModInit() {
     WindhawkUtils::SetFunctionHook(CreateWindowExW, CreateWindowExW_Hook,
                                    &CreateWindowExW_Original);
 
-    return TRUE;
+    return true;
+}
+
+BOOL Wh_ModInit() {
+    Wh_Log(L">");
+
+    g_winVersion = GetExplorerVersion();
+    if (g_winVersion < WinVersion::Win11) {
+        Wh_Log(L"Unsupported Windows version");
+        return FALSE;
+    }
+
+#ifdef _M_ARM64
+    Wh_Log(L"Unsupported architecture");
+    return FALSE;
+#endif
+
+    explorer_patcher::diagnostics = Wh_GetIntSetting(L"explorerPatcherDiagnostics");
+    explorer_patcher::restoreOrder = Wh_GetIntSetting(L"explorerPatcherRestoreOrder");
+    if (!explorer_patcher::diagnostics && !explorer_patcher::restoreOrder) {
+        g_nativeTaskbarInitialized = InitNativeTaskbar();
+        return g_nativeTaskbarInitialized;
+    }
+
+    HWND tray = FindCurrentProcessTaskbarWnd();
+    HWND taskband = tray ? static_cast<HWND>(GetPropW(tray, L"TaskbandHWND")) : nullptr;
+    TaskbandOwner owner = GetTaskbandOwner(taskband ? GetWindowLongPtrW(taskband, 0) : 0);
+    if (owner != TaskbandOwner::ExplorerPatcher) {
+        // When Explorer is still starting, either module may own the future
+        // taskbar. Require native ownership before using the native layout.
+        g_requireNativeTaskbandOwner = owner == TaskbandOwner::Unknown;
+        g_nativeTaskbarInitialized = InitNativeTaskbar();
+    }
+    if (owner != TaskbandOwner::Native) {
+        g_explorerPatcherInitialized = explorer_patcher::Init();
+    }
+    Wh_Log(L"Taskbar hooks initialized: native=%d, ExplorerPatcher=%d",
+           g_nativeTaskbarInitialized, g_explorerPatcherInitialized);
+    return g_nativeTaskbarInitialized || g_explorerPatcherInitialized;
 }
 
 void Wh_ModAfterInit() {
     Wh_Log(L">");
 
-    if (explorer_patcher::diagnostics || explorer_patcher::restoreOrder) {
+    if (g_explorerPatcherInitialized) {
         explorer_patcher::AfterInit();
-        return;
     }
 
-    HWND hTaskbarWnd = FindCurrentProcessTaskbarWnd();
-    if (hTaskbarWnd) {
-        InitializeTaskbarVariables(hTaskbarWnd);
+    if (g_nativeTaskbarInitialized) {
+        HWND hTaskbarWnd = FindCurrentProcessTaskbarWnd();
+        if (hTaskbarWnd) {
+            InitializeTaskbarVariables(hTaskbarWnd);
+        }
     }
 }
 
