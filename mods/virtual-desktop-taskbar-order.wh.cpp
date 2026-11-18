@@ -675,7 +675,6 @@ using TaskCreated_t = HRESULT(WINAPI*)(void*, void*, void*, int);
 using GetNumItems_t = int(WINAPI*)(void*);
 using GetFlags_t = DWORD(WINAPI*)(void*);
 using GetWindow_t = HWND(WINAPI*)(void*);
-using IsOnPrimaryTaskband_t = BOOL(WINAPI*)(void*);
 
 Update_t updateOriginal;
 Move_t moveOriginal;
@@ -686,11 +685,9 @@ CTaskBtnGroup_GetGroup_t getGroup;
 CTaskBtnGroup_GetTaskItem_t getTaskItem;
 GetFlags_t getGroupFlags;
 GetWindow_t getItemWindow;
-IsOnPrimaryTaskband_t isOnPrimaryTaskband;
 void* buttonGroupVtable;
 void* taskGroupVtable;
 void* windowItemVtable;
-void* taskListUiVtable;
 decltype(&LoadLibraryExW) loadLibraryOriginal;
 
 bool IsTaskbarThread() {
@@ -764,13 +761,19 @@ bool HasVtable(void* object, void* vtable) {
 }
 
 bool IsPrimaryTaskList(void* taskList) {
-    // The guarded CTaskListWnd methods receive the complete object. The
-    // ITaskListUI subobject at +0x28 owns IsOnPrimaryTaskband.
-    if (!taskList) {
+    // In the guarded build, the primary task-list window stores the complete
+    // CTaskListWnd object at index 0. Check again after callbacks that can
+    // synchronously rebuild the taskbar.
+    HWND tray = FindWindowW(L"Shell_TrayWnd", nullptr);
+    if (!taskList || !tray ||
+        GetWindowThreadProcessId(tray, nullptr) != GetCurrentThreadId()) {
         return false;
     }
-    void* taskListUi = static_cast<BYTE*>(taskList) + 0x28;
-    return HasVtable(taskListUi, taskListUiVtable) && isOnPrimaryTaskband(taskListUi);
+    HWND band = static_cast<HWND>(GetPropW(tray, L"TaskbandHWND"));
+    HWND list = band ? FindWindowExW(band, nullptr, L"MSTaskListWClass", nullptr)
+                     : nullptr;
+    return list && GetWindowThreadProcessId(list, nullptr) == GetCurrentThreadId() &&
+           reinterpret_cast<void*>(GetWindowLongPtrW(list, 0)) == taskList;
 }
 
 bool IsCurrentDesktopOnly() {
@@ -990,7 +993,8 @@ HRESULT WINAPI UpdateHook(void* taskBand) {
 
 HRESULT WINAPI MoveHook(void* taskList, int from, int to) {
     HRESULT result = moveOriginal(taskList, from, to);
-    if (!IsTaskbarThread()) {
+    if (!IsTaskbarThread() || (!restoreOrder && !CanLog()) ||
+        !IsPrimaryTaskList(taskList)) {
         return result;
     }
     if (CanLog()) {
@@ -999,8 +1003,7 @@ HRESULT WINAPI MoveHook(void* taskList, int from, int to) {
                static_cast<unsigned int>(result));
     }
     if (result == S_OK && !desktopUpdateDepth &&
-        (restoreOrder ? IsCurrentDesktopOnly() : CanLog()) &&
-        IsPrimaryTaskList(taskList)) {
+        (restoreOrder ? IsCurrentDesktopOnly() : CanLog())) {
         savedTaskList = taskList;
         savedOrder = ReadOrder(taskList);
         if (CanLog()) {
@@ -1011,7 +1014,8 @@ HRESULT WINAPI MoveHook(void* taskList, int from, int to) {
 }
 
 void* WINAPI CreateGroupHook(void* taskList, void* taskGroup, int index) {
-    if (!IsTaskbarThread()) {
+    if (!IsTaskbarThread() || (!restoreDuringUpdate && !CanLog()) ||
+        !IsPrimaryTaskList(taskList)) {
         return createGroupOriginal(taskList, taskGroup, index);
     }
     const int before = CanLog() ? GetGroupCount(taskList) : -1;
@@ -1020,7 +1024,7 @@ void* WINAPI CreateGroupHook(void* taskList, void* taskGroup, int index) {
         requested = GetInsertionIndex(taskList, taskGroup);
     }
     void* result = createGroupOriginal(taskList, taskGroup, requested);
-    if (before >= 0 && CanLog()) {
+    if (before >= 0 && CanLog() && IsPrimaryTaskList(taskList)) {
         HDPA groups = GetButtonGroups(taskList);
         int inserted = groups && result ? DPA_GetPtrIndex(groups, result) : -1;
         Wh_Log(L"EP #%u create group requested=%d, passed=%d, inserted=%d, groups=%d -> %d, desktop depth=%u",
@@ -1031,7 +1035,8 @@ void* WINAPI CreateGroupHook(void* taskList, void* taskGroup, int index) {
 }
 
 HRESULT WINAPI TaskCreatedHook(void* taskList, void* group, void* item, int flags) {
-    if (!IsTaskbarThread() || (!restoreDuringUpdate && !CanLog())) {
+    if (!IsTaskbarThread() || (!restoreDuringUpdate && !CanLog()) ||
+        !IsPrimaryTaskList(taskList)) {
         return taskCreatedOriginal(taskList, group, item, flags);
     }
     TaskCreatedContext previous = taskCreatedContext;
@@ -1043,7 +1048,7 @@ HRESULT WINAPI TaskCreatedHook(void* taskList, void* group, void* item, int flag
         Wh_Log(L"EP #%u task created id=%u, desktop depth=%u, result=0x%08X",
                ++sequence, id, desktopUpdateDepth,
                static_cast<unsigned int>(result));
-        if (taskList == savedTaskList && CanLog()) {
+        if (taskList == savedTaskList && CanLog() && IsPrimaryTaskList(taskList)) {
             if (desktopUpdateDepth) {
                 lastObservedOrder = ReadOrder(taskList);
                 observedDuringUpdate = true;
@@ -1139,7 +1144,7 @@ void TryInstall(HMODULE module) {
         const char* name;
         void* hook;
         void** original;
-        void* address;
+        void* address = nullptr;
     };
     Hook hooks[] = {
         {"?_UpdateVirtualDesktopInclusion@CTaskBand@@IEAAJXZ",
@@ -1161,8 +1166,6 @@ void TryInstall(HMODULE module) {
     if (!resolve("??_7CTaskBtnGroup@@6BITaskBtnGroup@@@", buttonGroupVtable) ||
         !resolve("??_7CTaskGroup@@6BITaskGroup@@@", taskGroupVtable) ||
         !resolve("??_7CWindowTaskItem@@6BITaskItem@@@", windowItemVtable) ||
-        !resolve("??_7CTaskListWnd@@6BITaskListUI@@@", taskListUiVtable) ||
-        !resolve("?IsOnPrimaryTaskband@CTaskListWnd@@UEAAHXZ", isOnPrimaryTaskband) ||
         !resolve("?GetNumItems@CTaskBtnGroup@@UEAAHXZ", getNumItems) ||
         !resolve("?GetGroup@CTaskBtnGroup@@UEAAPEAUITaskGroup@@XZ", getGroup) ||
         !resolve("?GetTaskItem@CTaskBtnGroup@@UEAAPEAUITaskItem@@H@Z", getTaskItem) ||
