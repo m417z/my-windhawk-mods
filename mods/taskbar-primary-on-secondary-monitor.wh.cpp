@@ -528,7 +528,9 @@ HMONITOR WINAPI MonitorFromRect_Hook(LPCRECT lprc, DWORD dwFlags) {
 // window is still on the real primary monitor, which has no taskbar once the
 // primary taskbar is moved away, and it isn't read again when the window moves
 // to the taskbar's monitor. Point it at the taskbar's monitor instead, which is
-// the one whose alignment the start menu follows.
+// the one whose alignment the start menu follows. The session can be locked on
+// startup, when Windows signs in and locks it after a restart, and the taskbar
+// stays on its monitor while locked, so the lock state is ignored.
 HMONITOR WINAPI MonitorFromWindow_Hook(HWND hWnd, DWORD dwFlags) {
     auto original = [=] { return MonitorFromWindow_Original(hWnd, dwFlags); };
 
@@ -545,7 +547,9 @@ HMONITOR WINAPI MonitorFromWindow_Hook(HWND hWnd, DWORD dwFlags) {
 
     Wh_Log(L">");
 
-    HMONITOR monitor = GetTargetMonitor();
+    HMONITOR monitor = GetTargetMonitor({
+        .ignoreLockedState = true,
+    });
     if (!monitor) {
         return original();
     }
