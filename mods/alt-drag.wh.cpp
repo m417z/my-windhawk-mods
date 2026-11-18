@@ -454,6 +454,23 @@ struct {
     RECT logicalRect;
 } g_llMonitor;
 
+// Windows 10 1607 and later.
+using GetWindowDpiAwarenessContext_t = DPI_AWARENESS_CONTEXT(WINAPI*)(HWND);
+using GetThreadDpiAwarenessContext_t = DPI_AWARENESS_CONTEXT(WINAPI*)();
+using SetThreadDpiAwarenessContext_t =
+    DPI_AWARENESS_CONTEXT(WINAPI*)(DPI_AWARENESS_CONTEXT);
+using AreDpiAwarenessContextsEqual_t = BOOL(WINAPI*)(DPI_AWARENESS_CONTEXT,
+                                                     DPI_AWARENESS_CONTEXT);
+GetWindowDpiAwarenessContext_t pGetWindowDpiAwarenessContext;
+GetThreadDpiAwarenessContext_t pGetThreadDpiAwarenessContext;
+SetThreadDpiAwarenessContext_t pSetThreadDpiAwarenessContext;
+AreDpiAwarenessContextsEqual_t pAreDpiAwarenessContextsEqual;
+
+// The DPI awareness this thread retrieves its messages in, which their points
+// are in. Hook procedures are called in the process's awareness instead, which
+// differs for a thread that sets one of its own.
+thread_local DPI_AWARENESS_CONTEXT g_messageLoopDpiContext;
+
 bool BeginCenterResize(HWND hWnd, POINT startPt);
 void EndCenterResize(HWND hWnd);
 void ReplayPress(int button, bool asClick);
@@ -472,6 +489,21 @@ auto HookRefCountScope() {
     return std::unique_ptr<decltype(g_hookRefCount),
                            void (*)(decltype(g_hookRefCount)*)>{
         &g_hookRefCount, [](auto hookRefCount) { (*hookRefCount)--; }};
+}
+
+// Puts the message loop's DPI awareness in place for a hook procedure, so that
+// points it gets and the window coordinates it works with agree.
+auto MessageLoopDpiScope() {
+    DPI_AWARENESS_CONTEXT previous = nullptr;
+    if (pSetThreadDpiAwarenessContext && g_messageLoopDpiContext) {
+        previous = pSetThreadDpiAwarenessContext(g_messageLoopDpiContext);
+    }
+
+    return std::unique_ptr<std::remove_pointer_t<DPI_AWARENESS_CONTEXT>,
+                           void (*)(DPI_AWARENESS_CONTEXT)>{
+        previous, [](DPI_AWARENESS_CONTEXT context) {
+            pSetThreadDpiAwarenessContext(context);
+        }};
 }
 
 void TakeMessage(MSG* msg) {
@@ -1514,6 +1546,7 @@ LRESULT CALLBACK GetMsgProc(int nCode, WPARAM wParam, LPARAM lParam) {
 
     if (nCode == HC_ACTION && (wParam & PM_REMOVE) && lParam &&
         !g_uninitializing) {
+        auto dpiScope = MessageLoopDpiScope();
         OnMessageRemoved((MSG*)lParam);
     }
 
@@ -1653,15 +1686,6 @@ RECT CenterResizedRect(const RECT& rcStart,
                maxSize.cy, &rc.top, &rc.bottom);
     return rc;
 }
-
-// Windows 10 1607 and later.
-using GetWindowDpiAwarenessContext_t = DPI_AWARENESS_CONTEXT(WINAPI*)(HWND);
-using GetThreadDpiAwarenessContext_t = DPI_AWARENESS_CONTEXT(WINAPI*)();
-using AreDpiAwarenessContextsEqual_t = BOOL(WINAPI*)(DPI_AWARENESS_CONTEXT,
-                                                     DPI_AWARENESS_CONTEXT);
-GetWindowDpiAwarenessContext_t pGetWindowDpiAwarenessContext;
-GetThreadDpiAwarenessContext_t pGetThreadDpiAwarenessContext;
-AreDpiAwarenessContextsEqual_t pAreDpiAwarenessContextsEqual;
 
 // The sizes the window accepts, asked of it the way the system does for a drag:
 // the defaults are offered for the window to change. Bounded, the window being
@@ -2340,6 +2364,9 @@ LRESULT CALLBACK LowLevelMouseProc(int nCode, WPARAM wParam, LPARAM lParam) {
         return CallNextHookEx(nullptr, nCode, wParam, lParam);
     }
 
+    // The points recorded here are applied by the message loop's hook.
+    auto dpiScope = MessageLoopDpiScope();
+
     // Focus can move away while the keys are held, e.g. Alt+Tab, and their
     // release then goes to another process. Drop the hook here instead of
     // keeping it for the rest of the process's life.
@@ -2608,6 +2635,12 @@ void SetThreadHooksIfNeeded() {
     }
 }
 
+void RecordMessageLoopDpiContext() {
+    if (pGetThreadDpiAwarenessContext) {
+        g_messageLoopDpiContext = pGetThreadDpiAwarenessContext();
+    }
+}
+
 using NtUserGetMessage_t = BOOL(WINAPI*)(MSG* pMsg,
                                          HWND hWnd,
                                          UINT wMsgFilterMin,
@@ -2618,6 +2651,7 @@ BOOL WINAPI NtUserGetMessage_Hook(MSG* pMsg,
                                   UINT wMsgFilterMin,
                                   UINT wMsgFilterMax) {
     SetThreadHooksIfNeeded();
+    RecordMessageLoopDpiContext();
 
     [[clang::musttail]] return NtUserGetMessage_Original(
         pMsg, hWnd, wMsgFilterMin, wMsgFilterMax);
@@ -2639,6 +2673,7 @@ BOOL WINAPI NtUserPeekMessage_Hook(MSG* pMsg,
                                    UINT wRemoveMsg,
                                    UINT flags) {
     SetThreadHooksIfNeeded();
+    RecordMessageLoopDpiContext();
 
     [[clang::musttail]] return NtUserPeekMessage_Original(
         pMsg, hWnd, wMsgFilterMin, wMsgFilterMax, wRemoveMsg, flags);
@@ -2760,6 +2795,9 @@ BOOL Wh_ModInit() {
     pGetThreadDpiAwarenessContext =
         (GetThreadDpiAwarenessContext_t)GetProcAddress(
             user32Module, "GetThreadDpiAwarenessContext");
+    pSetThreadDpiAwarenessContext =
+        (SetThreadDpiAwarenessContext_t)GetProcAddress(
+            user32Module, "SetThreadDpiAwarenessContext");
     pAreDpiAwarenessContextsEqual =
         (AreDpiAwarenessContextsEqual_t)GetProcAddress(
             user32Module, "AreDpiAwarenessContextsEqual");
