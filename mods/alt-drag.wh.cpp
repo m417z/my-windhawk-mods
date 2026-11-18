@@ -2217,6 +2217,12 @@ bool OnLowLevelButtonDown(const MSLLHOOKSTRUCT* ms, int button) {
         return false;
     }
 
+    // A disabled window, such as the owner of a modal dialog, takes no mouse
+    // input, so it isn't dragged either.
+    if (!IsWindowEnabled(hRootWnd)) {
+        return false;
+    }
+
     UINT command = DragCommandForPress(button, HeldModifiers(GetAsyncKeyState),
                                        hRootWnd, pt);
     if (!command) {
