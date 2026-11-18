@@ -31,10 +31,15 @@ Only Windows 11 x64 is currently supported. ARM64 is unsupported. For older
 Windows versions check out [7+ Taskbar
 Tweaker](https://tweaker.ramensoftware.com/).
 
-ExplorerPatcher diagnostics are available for the specific taskbar build
-recognized by this mod. Enable the setting and mod logging, move a taskbar
-button, then switch away from the current desktop and back. In this mode the
-mod records ExplorerPatcher callbacks without restoring order.
+Experimental ExplorerPatcher support is available for the specific taskbar
+build recognized by this mod. Enable order restoration, move a button on the
+primary taskbar, then switch away from that virtual desktop and back. The mod
+keeps the most recent manual order for the current Explorer session. It can
+restore recognized single-window groups when the pinned prefix is unchanged
+and Windows shows only windows on the current desktop.
+
+Enable ExplorerPatcher diagnostics and mod logging to record the observed
+order and insertion decisions. Diagnostics alone perform a dry run.
 
 ![Demonstration](https://i.imgur.com/ie8Q9cl.gif)
 */
@@ -44,7 +49,10 @@ mod records ExplorerPatcher callbacks without restoring order.
 /*
 - explorerPatcherDiagnostics: false
   $name: ExplorerPatcher diagnostics
-  $description: Trace the supported ExplorerPatcher taskbar build without applying order preservation in this mode.
+  $description: Trace order decisions on the supported ExplorerPatcher taskbar build.
+- explorerPatcherRestoreOrder: false
+  $name: Restore order on ExplorerPatcher (experimental)
+  $description: Restore the most recent manual order on the primary taskbar for the supported build.
 */
 // ==/WindhawkModSettings==
 
@@ -608,8 +616,10 @@ WinVersion GetExplorerVersion() {
     return WinVersion::Unsupported;
 }
 
-namespace ep_diagnostics {
+namespace explorer_patcher {
 
+bool diagnostics;
+bool restoreOrder;
 std::atomic<bool> canApplyHooks;
 std::atomic<bool> installing;
 std::atomic<bool> ready;
@@ -618,6 +628,7 @@ std::atomic<DWORD> taskbarThread;
 // Only accessed on the primary taskbar thread.
 unsigned int sequence;
 thread_local unsigned int desktopUpdateDepth;
+thread_local bool restoreDuringUpdate;
 
 using Update_t = HRESULT(WINAPI*)(void*);
 using Move_t = HRESULT(WINAPI*)(void*, int, int);
@@ -627,6 +638,7 @@ using TaskDestroyed_t = HRESULT(WINAPI*)(void*, void*, void*, unsigned int);
 using GetNumItems_t = int(WINAPI*)(void*);
 using GetFlags_t = DWORD(WINAPI*)(void*);
 using GetWindow_t = HWND(WINAPI*)(void*);
+using IsOnPrimaryTaskband_t = BOOL(WINAPI*)(void*);
 
 Update_t updateOriginal;
 Move_t moveOriginal;
@@ -638,12 +650,14 @@ CTaskBtnGroup_GetGroup_t getGroup;
 CTaskBtnGroup_GetTaskItem_t getTaskItem;
 GetFlags_t getGroupFlags;
 GetWindow_t getItemWindow;
+IsOnPrimaryTaskband_t isOnPrimaryTaskband;
 void* buttonGroupVtable;
 void* taskGroupVtable;
 void* windowItemVtable;
+void* taskListUiVtable;
 decltype(&LoadLibraryExW) loadLibraryOriginal;
 
-bool CanTrace() {
+bool IsTaskbarThread() {
     if (!ready) {
         return false;
     }
@@ -653,7 +667,11 @@ bool CanTrace() {
             taskbarThread = GetWindowThreadProcessId(tray, nullptr);
         }
     }
-    return GetCurrentThreadId() == taskbarThread && sequence < 256;
+    return GetCurrentThreadId() == taskbarThread;
+}
+
+bool CanLog() {
+    return diagnostics && sequence < 256;
 }
 
 HDPA GetButtonGroups(void* taskList) {
@@ -705,6 +723,26 @@ thread_local TaskCreatedContext taskCreatedContext;
 
 bool HasVtable(void* object, void* vtable) {
     return object && *static_cast<void**>(object) == vtable;
+}
+
+bool IsPrimaryTaskList(void* taskList) {
+    // The guarded CTaskListWnd methods receive the complete object. The
+    // ITaskListUI subobject at +0x28 owns IsOnPrimaryTaskband.
+    if (!taskList) {
+        return false;
+    }
+    void* taskListUi = static_cast<BYTE*>(taskList) + 0x28;
+    return HasVtable(taskListUi, taskListUiVtable) && isOnPrimaryTaskband(taskListUi);
+}
+
+bool IsCurrentDesktopOnly() {
+    DWORD filter = 0;
+    DWORD size = sizeof(filter);
+    return RegGetValueW(HKEY_CURRENT_USER,
+                        L"Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Advanced",
+                        L"VirtualDesktopTaskbarFilter", RRF_RT_REG_DWORD,
+                        nullptr, &filter, &size) == ERROR_SUCCESS &&
+           filter == 1;
 }
 
 unsigned int WindowId(void* item) {
@@ -808,66 +846,93 @@ int PinnedPrefix(const Snapshot& snapshot) {
     return prefix;
 }
 
-void LogInsertionCandidate(void* taskList, void* taskGroup) {
+int GetInsertionIndex(void* taskList, void* taskGroup) {
     if (taskList != savedTaskList || taskList != taskCreatedContext.taskList ||
         taskGroup != taskCreatedContext.group ||
         !HasVtable(taskGroup, taskGroupVtable)) {
-        Wh_Log(L"EP #%u dry run skipped: no matching task-created context or drag snapshot",
-               ++sequence);
-        return;
+        if (CanLog()) {
+            Wh_Log(L"EP #%u insertion skipped: no matching task-created context or drag snapshot",
+                   ++sequence);
+        }
+        return INT_MAX;
     }
     unsigned int id = WindowId(taskCreatedContext.item);
     int rank = SavedPosition(id);
     if ((getGroupFlags(taskGroup) & 1) || rank < 0) {
-        Wh_Log(L"EP #%u dry run skipped: id=%u pinned or no unique single-window match",
-               ++sequence, id);
-        return;
+        if (CanLog()) {
+            Wh_Log(L"EP #%u insertion skipped: id=%u pinned or no unique single-window match",
+                   ++sequence, id);
+        }
+        return INT_MAX;
     }
 
     Snapshot live = ReadOrder(taskList);
     int firstUnpinned = PinnedPrefix(live);
     int savedFirstUnpinned = PinnedPrefix(savedOrder);
     if (firstUnpinned < 0 || firstUnpinned != savedFirstUnpinned) {
-        Wh_Log(L"EP #%u dry run skipped: id=%u saved index=%d pin boundary saved=%d current=%d",
-               ++sequence, id, rank, savedFirstUnpinned, firstUnpinned);
-        return;
+        if (CanLog()) {
+            Wh_Log(L"EP #%u insertion skipped: id=%u saved index=%d pin boundary saved=%d current=%d",
+                   ++sequence, id, rank, savedFirstUnpinned, firstUnpinned);
+        }
+        return INT_MAX;
     }
     int candidate = live.count;
     std::array<bool, kMaxGroups> seenRanks{};
     seenRanks[rank] = true;
+    int previousRank = -1;
     for (int i = firstUnpinned; i < live.count; ++i) {
         const auto& entry = live.groups[i];
         int otherRank = entry.itemCount == 1 ? SavedPosition(entry.items[0]) : -1;
         if (otherRank < 0 || seenRanks[otherRank]) {
-            Wh_Log(L"EP #%u dry run skipped: id=%u unmatched or ambiguous group at index=%d",
-                   ++sequence, id, i);
-            return;
+            if (CanLog()) {
+                Wh_Log(L"EP #%u insertion skipped: id=%u unmatched or ambiguous group at index=%d",
+                       ++sequence, id, i);
+            }
+            return INT_MAX;
         }
         seenRanks[otherRank] = true;
+        if (restoreDuringUpdate && otherRank < previousRank) {
+            if (CanLog()) {
+                Wh_Log(L"EP #%u insertion skipped: id=%u existing groups are out of saved order",
+                       ++sequence, id);
+            }
+            return INT_MAX;
+        }
+        previousRank = otherRank;
         if (otherRank > rank && candidate == live.count) {
             candidate = i;
         }
     }
-    Wh_Log(L"EP #%u dry run id=%u saved index=%d candidate=%d native append=%d",
-           ++sequence, id, rank, candidate, live.count);
+    const bool apply = restoreDuringUpdate && candidate < live.count &&
+                       IsPrimaryTaskList(taskList);
+    if (CanLog()) {
+        Wh_Log(L"EP #%u insertion id=%u saved index=%d candidate=%d native append=%d apply=%d",
+               ++sequence, id, rank, candidate, live.count, apply);
+    }
+    return apply ? candidate : INT_MAX;
 }
 
 HRESULT WINAPI UpdateHook(void* taskBand) {
-    if (!CanTrace()) {
+    if (!IsTaskbarThread() || (!restoreOrder && !CanLog())) {
         return updateOriginal(taskBand);
     }
 
     if (++desktopUpdateDepth == 1) {
         observedDuringUpdate = false;
+        restoreDuringUpdate = restoreOrder && IsCurrentDesktopOnly();
     }
-    Wh_Log(L"EP #%u desktop inclusion begin (depth %u)", ++sequence,
-           desktopUpdateDepth);
+    if (CanLog()) {
+        Wh_Log(L"EP #%u desktop inclusion begin (depth %u, restore=%d)", ++sequence,
+               desktopUpdateDepth, restoreDuringUpdate);
+    }
     HRESULT result = updateOriginal(taskBand);
-    --desktopUpdateDepth;
-    if (CanTrace()) {
+    if (--desktopUpdateDepth == 0) {
+        restoreDuringUpdate = false;
+    }
+    if (CanLog()) {
         Wh_Log(L"EP #%u desktop inclusion end (result 0x%08X)", ++sequence,
                static_cast<unsigned int>(result));
-        if (!desktopUpdateDepth && observedDuringUpdate && CanTrace()) {
+        if (!desktopUpdateDepth && observedDuringUpdate && CanLog()) {
             LogOrder(L"last creation during update", lastObservedOrder);
         }
     }
@@ -876,13 +941,20 @@ HRESULT WINAPI UpdateHook(void* taskBand) {
 
 HRESULT WINAPI MoveHook(void* taskList, int from, int to) {
     HRESULT result = moveOriginal(taskList, from, to);
-    if (CanTrace()) {
+    if (!IsTaskbarThread()) {
+        return result;
+    }
+    if (CanLog()) {
         Wh_Log(L"EP #%u move %d -> %d, groups=%d, result=0x%08X", ++sequence,
                from, to, GetGroupCount(taskList),
                static_cast<unsigned int>(result));
-        if (result == S_OK && !desktopUpdateDepth && CanTrace()) {
-            savedTaskList = taskList;
-            savedOrder = ReadOrder(taskList);
+    }
+    if (result == S_OK && !desktopUpdateDepth &&
+        (restoreOrder ? IsCurrentDesktopOnly() : CanLog()) &&
+        IsPrimaryTaskList(taskList)) {
+        savedTaskList = taskList;
+        savedOrder = ReadOrder(taskList);
+        if (CanLog()) {
             LogOrder(L"order after drag move", savedOrder);
         }
     }
@@ -890,31 +962,35 @@ HRESULT WINAPI MoveHook(void* taskList, int from, int to) {
 }
 
 void* WINAPI CreateGroupHook(void* taskList, void* taskGroup, int index) {
-    int before = CanTrace() ? GetGroupCount(taskList) : -1;
-    if (before >= 0 && desktopUpdateDepth && index == INT_MAX) {
-        LogInsertionCandidate(taskList, taskGroup);
+    if (!IsTaskbarThread()) {
+        return createGroupOriginal(taskList, taskGroup, index);
     }
-    void* result = createGroupOriginal(taskList, taskGroup, index);
-    if (before >= 0 && CanTrace()) {
+    const int before = CanLog() ? GetGroupCount(taskList) : -1;
+    int requested = index;
+    if (desktopUpdateDepth && index == INT_MAX && (restoreDuringUpdate || CanLog())) {
+        requested = GetInsertionIndex(taskList, taskGroup);
+    }
+    void* result = createGroupOriginal(taskList, taskGroup, requested);
+    if (before >= 0 && CanLog()) {
         HDPA groups = GetButtonGroups(taskList);
         int inserted = groups && result ? DPA_GetPtrIndex(groups, result) : -1;
-        Wh_Log(L"EP #%u create group requested=%d, inserted=%d, groups=%d -> %d, desktop depth=%u",
-               ++sequence, index, inserted, before, GetGroupCount(taskList),
+        Wh_Log(L"EP #%u create group requested=%d, passed=%d, inserted=%d, groups=%d -> %d, desktop depth=%u",
+               ++sequence, index, requested, inserted, before, GetGroupCount(taskList),
                desktopUpdateDepth);
     }
     return result;
 }
 
 HRESULT WINAPI TaskCreatedHook(void* taskList, void* group, void* item, int flags) {
-    if (!CanTrace()) {
+    if (!IsTaskbarThread() || (!restoreDuringUpdate && !CanLog())) {
         return taskCreatedOriginal(taskList, group, item, flags);
     }
     TaskCreatedContext previous = taskCreatedContext;
     taskCreatedContext = {taskList, group, item};
-    unsigned int id = WindowId(item);
+    unsigned int id = CanLog() ? WindowId(item) : 0;
     HRESULT result = taskCreatedOriginal(taskList, group, item, flags);
     taskCreatedContext = previous;
-    if (CanTrace()) {
+    if (CanLog()) {
         HDPA groups = GetButtonGroups(taskList);
         int count = groups ? DPA_GetPtrCount(groups) : 0;
         int populatedGroups = 0;
@@ -929,7 +1005,7 @@ HRESULT WINAPI TaskCreatedHook(void* taskList, void* group, void* item, int flag
         Wh_Log(L"EP #%u task created id=%u, groups=%d, scanned=%d, items=%d, desktop depth=%u, result=0x%08X",
                ++sequence, id, count, populatedGroups, itemCount, desktopUpdateDepth,
                static_cast<unsigned int>(result));
-        if (taskList == savedTaskList && CanTrace()) {
+        if (taskList == savedTaskList && CanLog()) {
             if (desktopUpdateDepth) {
                 lastObservedOrder = ReadOrder(taskList);
                 observedDuringUpdate = true;
@@ -944,7 +1020,7 @@ HRESULT WINAPI TaskCreatedHook(void* taskList, void* group, void* item, int flag
 HRESULT WINAPI TaskDestroyedHook(void* taskList, void* group, void* item,
                                  unsigned int flags) {
     HRESULT result = taskDestroyedOriginal(taskList, group, item, flags);
-    if (CanTrace()) {
+    if (IsTaskbarThread() && CanLog()) {
         Wh_Log(L"EP #%u task destroyed, desktop depth=%u, result=0x%08X",
                ++sequence, desktopUpdateDepth,
                static_cast<unsigned int>(result));
@@ -1045,6 +1121,8 @@ void TryInstall(HMODULE module) {
     if (!resolve("??_7CTaskBtnGroup@@6BITaskBtnGroup@@@", buttonGroupVtable) ||
         !resolve("??_7CTaskGroup@@6BITaskGroup@@@", taskGroupVtable) ||
         !resolve("??_7CWindowTaskItem@@6BITaskItem@@@", windowItemVtable) ||
+        !resolve("??_7CTaskListWnd@@6BITaskListUI@@@", taskListUiVtable) ||
+        !resolve("?IsOnPrimaryTaskband@CTaskListWnd@@UEAAHXZ", isOnPrimaryTaskband) ||
         !resolve("?GetNumItems@CTaskBtnGroup@@UEAAHXZ", getNumItems) ||
         !resolve("?GetGroup@CTaskBtnGroup@@UEAAPEAUITaskGroup@@XZ", getGroup) ||
         !resolve("?GetTaskItem@CTaskBtnGroup@@UEAAPEAUITaskItem@@H@Z", getTaskItem) ||
@@ -1072,8 +1150,8 @@ void TryInstall(HMODULE module) {
         ++queued;
     }
     ready = Wh_ApplyHookOperations();
-    Wh_Log(L"EP diagnostics: order dry run hook apply=%d, taskbar thread=%u", ready.load(),
-           taskbarThread.load());
+    Wh_Log(L"EP diagnostics: hook apply=%d, restore=%d, taskbar thread=%u",
+           ready.load(), restoreOrder, taskbarThread.load());
 }
 
 HMODULE WINAPI LoadLibraryHook(LPCWSTR filename, HANDLE file, DWORD flags) {
@@ -1107,9 +1185,7 @@ void AfterInit() {
     }
 }
 
-}  // namespace ep_diagnostics
-
-bool g_explorerPatcherDiagnostics;
+}  // namespace explorer_patcher
 
 BOOL Wh_ModInit() {
     Wh_Log(L">");
@@ -1125,9 +1201,10 @@ BOOL Wh_ModInit() {
     return FALSE;
 #endif
 
-    g_explorerPatcherDiagnostics = Wh_GetIntSetting(L"explorerPatcherDiagnostics");
-    if (g_explorerPatcherDiagnostics) {
-        return ep_diagnostics::Init();
+    explorer_patcher::diagnostics = Wh_GetIntSetting(L"explorerPatcherDiagnostics");
+    explorer_patcher::restoreOrder = Wh_GetIntSetting(L"explorerPatcherRestoreOrder");
+    if (explorer_patcher::diagnostics || explorer_patcher::restoreOrder) {
+        return explorer_patcher::Init();
     }
 
     WindhawkUtils::SYMBOL_HOOK taskbarDllHooks[] = {
@@ -1215,8 +1292,8 @@ BOOL Wh_ModInit() {
 void Wh_ModAfterInit() {
     Wh_Log(L">");
 
-    if (g_explorerPatcherDiagnostics) {
-        ep_diagnostics::AfterInit();
+    if (explorer_patcher::diagnostics || explorer_patcher::restoreOrder) {
+        explorer_patcher::AfterInit();
         return;
     }
 
@@ -1227,7 +1304,10 @@ void Wh_ModAfterInit() {
 }
 
 BOOL Wh_ModSettingsChanged(BOOL* reload) {
-    *reload = g_explorerPatcherDiagnostics !=
-              (Wh_GetIntSetting(L"explorerPatcherDiagnostics") != 0);
+    *reload =
+        explorer_patcher::diagnostics !=
+            (Wh_GetIntSetting(L"explorerPatcherDiagnostics") != 0) ||
+        explorer_patcher::restoreOrder !=
+            (Wh_GetIntSetting(L"explorerPatcherRestoreOrder") != 0);
     return TRUE;
 }
