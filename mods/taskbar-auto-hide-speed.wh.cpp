@@ -2,14 +2,14 @@
 // @id              taskbar-auto-hide-speed
 // @name            Taskbar auto-hide speed
 // @description     Customize the taskbar auto-hide animation speed and frame rate to make it feel less sluggish and janky
-// @version         1.1
+// @version         1.2
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
 // @homepage        https://m417z.com/
 // @include         explorer.exe
 // @architecture    x86-64
-// @compilerOptions -loleaut32 -lruntimeobject -lversion
+// @compilerOptions -loleaut32 -lruntimeobject -lversion -ldwmapi
 // ==/WindhawkMod==
 
 // Source code is published under The GNU General Public License v3.0.
@@ -28,6 +28,17 @@ Customize the taskbar auto-hide animation speed and frame rate to make it feel
 less sluggish and janky.
 
 ![Demonstration](https://i.imgur.com/x7pg5xX.gif)
+
+## Smoothness options
+
+* **Sync to display refresh rate**: steps the slide once per screen refresh
+  (via `DwmFlush`) instead of sleeping between frames. `Sleep` has a ~15.6 ms
+  granularity by default, which caps the stock slide at an uneven ~60 fps; with
+  this option the slide runs at the monitor's refresh rate (144/165/240 Hz).
+* **Show/hide curve**: applies an easing curve to the slide. For a macOS-like
+  feel, try "Ease-out strong" for show and "Ease-in-out" for hide with a
+  speedup of 100-120%. The slide length is measured on the first slide after
+  Explorer starts, so that first slide is not eased.
 */
 // ==/WindhawkModReadme==
 
@@ -39,11 +50,34 @@ less sluggish and janky.
 - hideSpeedup: 250
   $name: Hide animation speedup
   $description: In percentage of the original speed.
+- vsync: true
+  $name: Sync to display refresh rate
+  $description: >-
+    Step the animation once per screen refresh for the smoothest motion. When
+    disabled, the frame rate below is used. Has no effect on the new Windows 11
+    auto-hide animation.
 - frameRate: 90
   $name: Animation frame rate
   $description: >-
-    Frames per second. Higher frame rate will use more CPU. Has no effect on the
-    new Windows 11 auto-hide animation.
+    Frames per second, used when syncing to the display refresh rate is
+    disabled. Higher frame rate will use more CPU. Has no effect on the new
+    Windows 11 auto-hide animation.
+- showEasing: linear
+  $name: Show animation curve
+  $description: Has no effect on the new Windows 11 auto-hide animation.
+  $options:
+  - linear: Linear (default)
+  - easeOutCubic: Ease-out
+  - easeOutQuint: Ease-out strong
+  - easeInOutCubic: Ease-in-out
+- hideEasing: linear
+  $name: Hide animation curve
+  $description: Has no effect on the new Windows 11 auto-hide animation.
+  $options:
+  - linear: Linear (default)
+  - easeOutCubic: Ease-out
+  - easeOutQuint: Ease-out strong
+  - easeInOutCubic: Ease-in-out
 - oldTaskbarOnWin11: false
   $name: Customize the old taskbar on Windows 11
   $description: >-
@@ -56,16 +90,92 @@ less sluggish and janky.
 
 #include <winrt/Windows.UI.Composition.h>
 
+#include <dwmapi.h>
 #include <psapi.h>
 
 #include <atomic>
+#include <cmath>
+
+enum class Easing {
+    Linear,
+    EaseOutCubic,
+    EaseOutQuint,
+    EaseInOutCubic,
+};
 
 struct {
     int showSpeedup;
     int hideSpeedup;
+    bool vsync;
     int frameRate;
+    Easing showEasing;
+    Easing hideEasing;
     bool oldTaskbarOnWin11;
 } g_settings;
+
+Easing ParseEasing(PCWSTR name) {
+    if (wcscmp(name, L"easeOutCubic") == 0) {
+        return Easing::EaseOutCubic;
+    }
+    if (wcscmp(name, L"easeOutQuint") == 0) {
+        return Easing::EaseOutQuint;
+    }
+    if (wcscmp(name, L"easeInOutCubic") == 0) {
+        return Easing::EaseInOutCubic;
+    }
+    return Easing::Linear;
+}
+
+double EaseCurve(Easing easing, double x) {
+    switch (easing) {
+        case Easing::EaseOutCubic:
+            return 1.0 - std::pow(1.0 - x, 3.0);
+        case Easing::EaseOutQuint:
+            return 1.0 - std::pow(1.0 - x, 5.0);
+        case Easing::EaseInOutCubic:
+            return x < 0.5 ? 4.0 * x * x * x
+                           : 1.0 - std::pow(-2.0 * x + 2.0, 3.0) / 2.0;
+        case Easing::Linear:
+            break;
+    }
+    return x;
+}
+
+// Length of the stock slide in the stock animation's own milliseconds, learned
+// from previous slides: the stock loop exits on the first frame whose
+// GetTickCount value passes the duration, so every observation is >= the real
+// duration and the minimum converges on it. Zero means not learned yet, in
+// which case the slide is not eased. Index 0 is hide, index 1 is show.
+double g_learnedSlideDuration[2];
+bool g_slideWindowShow;
+double g_slideWindowLastReturnedMs;
+
+double ApplyEasing(double ms) {
+    Easing easing =
+        g_slideWindowShow ? g_settings.showEasing : g_settings.hideEasing;
+    double duration = g_learnedSlideDuration[g_slideWindowShow];
+    if (easing == Easing::Linear || duration <= 0 || ms <= 0 ||
+        ms >= duration) {
+        // Pass the time through unchanged outside the learned span, so that the
+        // stock loop always reaches its end. Since ease(1) == 1, the mapping
+        // stays continuous and monotonic.
+        return ms;
+    }
+
+    return EaseCurve(easing, ms / duration) * duration;
+}
+
+void LearnSlideDuration() {
+    double observed = g_slideWindowLastReturnedMs;
+    if (observed < 30.0 || observed > 3000.0) {
+        return;
+    }
+
+    double& learned = g_learnedSlideDuration[g_slideWindowShow];
+    if (learned <= 0 || observed < learned) {
+        learned = observed;
+    }
+}
 
 enum class WinVersion {
     Unsupported,
@@ -193,11 +303,17 @@ void WINAPI TrayUI_SlideWindow_Hook(void* pThis,
         show ? g_settings.showSpeedup : g_settings.hideSpeedup;
     g_slideWindowStartTime = TimerGetSeconds();
     g_slideWindowLastFrameStartTime = g_slideWindowStartTime;
+    g_slideWindowShow = show;
+    g_slideWindowLastReturnedMs = 0;
     g_slideWindowThreadId = GetCurrentThreadId();
 
     TrayUI_SlideWindow_Original(pThis, hWnd, rect, monitor, show, animate);
 
     g_slideWindowThreadId = 0;
+
+    if (animate) {
+        LearnSlideDuration();
+    }
 }
 
 using GetTickCount_t = decltype(&GetTickCount);
@@ -207,9 +323,12 @@ DWORD WINAPI GetTickCount_Hook() {
         return GetTickCount_Original();
     }
 
-    DWORD ms = (g_slideWindowLastFrameStartTime - g_slideWindowStartTime) *
-                   1000.0 * (g_slideWindowSpeedup / 100.0) +
-               0.5;
+    double elapsedMs =
+        (g_slideWindowLastFrameStartTime - g_slideWindowStartTime) * 1000.0 *
+        (g_slideWindowSpeedup / 100.0);
+    double easedMs = ApplyEasing(elapsedMs);
+    g_slideWindowLastReturnedMs = easedMs;
+    DWORD ms = easedMs + 0.5;
 
     Wh_Log(L"> %u", ms);
 
@@ -221,6 +340,13 @@ Sleep_t Sleep_Original;
 void WINAPI Sleep_Hook(DWORD dwMilliseconds) {
     if (g_slideWindowThreadId != GetCurrentThreadId()) {
         Sleep_Original(dwMilliseconds);
+        return;
+    }
+
+    // Wait for the next DWM composition, i.e. the next display refresh, so that
+    // each step lands on its own frame. Fall back to timed pacing on failure.
+    if (g_settings.vsync && SUCCEEDED(DwmFlush())) {
+        g_slideWindowLastFrameStartTime = TimerGetSeconds();
         return;
     }
 
@@ -499,7 +625,16 @@ HMODULE WINAPI LoadLibraryExW_Hook(LPCWSTR lpLibFileName,
 void LoadSettings() {
     g_settings.showSpeedup = std::max(1, Wh_GetIntSetting(L"showSpeedup"));
     g_settings.hideSpeedup = std::max(1, Wh_GetIntSetting(L"hideSpeedup"));
-    g_settings.frameRate = Wh_GetIntSetting(L"frameRate");
+    g_settings.vsync = Wh_GetIntSetting(L"vsync");
+    g_settings.frameRate = std::max(1, Wh_GetIntSetting(L"frameRate"));
+
+    PCWSTR easing = Wh_GetStringSetting(L"showEasing");
+    g_settings.showEasing = ParseEasing(easing);
+    Wh_FreeStringSetting(easing);
+
+    easing = Wh_GetStringSetting(L"hideEasing");
+    g_settings.hideEasing = ParseEasing(easing);
+    Wh_FreeStringSetting(easing);
     g_settings.oldTaskbarOnWin11 = Wh_GetIntSetting(L"oldTaskbarOnWin11");
 }
 
