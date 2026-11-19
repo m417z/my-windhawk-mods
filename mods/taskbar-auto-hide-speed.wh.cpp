@@ -49,6 +49,23 @@ less sluggish and janky.
 - hideSpeedup: 250
   $name: Hide animation speedup
   $description: In percentage of the original speed.
+- showEasing: linear
+  $name: Show animation curve
+  $description: Has no effect on the new Windows 11 auto-hide animation.
+  $options:
+  - linear: Linear (default)
+  - easeOutCubic: Ease-out
+  - easeOutQuint: Ease-out strong
+  - easeInOutCubic: Ease-in-out
+- hideEasing: sameAsShow
+  $name: Hide animation curve
+  $description: Has no effect on the new Windows 11 auto-hide animation.
+  $options:
+  - sameAsShow: Same as show animation curve
+  - linear: Linear
+  - easeOutCubic: Ease-out
+  - easeOutQuint: Ease-out strong
+  - easeInOutCubic: Ease-in-out
 - vsync: true
   $name: Sync to display refresh rate
   $description: >-
@@ -61,22 +78,6 @@ less sluggish and janky.
     Frames per second, used when syncing to the display refresh rate is
     disabled. Higher frame rate will use more CPU. Has no effect on the new
     Windows 11 auto-hide animation.
-- showEasing: linear
-  $name: Show animation curve
-  $description: Has no effect on the new Windows 11 auto-hide animation.
-  $options:
-  - linear: Linear (default)
-  - easeOutCubic: Ease-out
-  - easeOutQuint: Ease-out strong
-  - easeInOutCubic: Ease-in-out
-- hideEasing: linear
-  $name: Hide animation curve
-  $description: Has no effect on the new Windows 11 auto-hide animation.
-  $options:
-  - linear: Linear (default)
-  - easeOutCubic: Ease-out
-  - easeOutQuint: Ease-out strong
-  - easeInOutCubic: Ease-in-out
 - oldTaskbarOnWin11: false
   $name: Customize the old taskbar on Windows 11
   $description: >-
@@ -105,10 +106,10 @@ enum class Easing {
 struct {
     int showSpeedup;
     int hideSpeedup;
-    bool vsync;
-    int frameRate;
     Easing showEasing;
     Easing hideEasing;
+    bool vsync;
+    int frameRate;
     bool oldTaskbarOnWin11;
 } g_settings;
 
@@ -637,17 +638,19 @@ HMODULE WINAPI LoadLibraryExW_Hook(LPCWSTR lpLibFileName,
 void LoadSettings() {
     g_settings.showSpeedup = std::max(1, Wh_GetIntSetting(L"showSpeedup"));
     g_settings.hideSpeedup = std::max(1, Wh_GetIntSetting(L"hideSpeedup"));
-    g_settings.vsync = Wh_GetIntSetting(L"vsync");
-    g_settings.frameRate = std::max(1, Wh_GetIntSetting(L"frameRate"));
 
     PCWSTR easing = Wh_GetStringSetting(L"showEasing");
     g_settings.showEasing = ParseEasing(easing);
     Wh_FreeStringSetting(easing);
 
     easing = Wh_GetStringSetting(L"hideEasing");
-    g_settings.hideEasing = ParseEasing(easing);
+    g_settings.hideEasing = wcscmp(easing, L"sameAsShow") == 0
+                                ? g_settings.showEasing
+                                : ParseEasing(easing);
     Wh_FreeStringSetting(easing);
 
+    g_settings.vsync = Wh_GetIntSetting(L"vsync");
+    g_settings.frameRate = std::max(1, Wh_GetIntSetting(L"frameRate"));
     g_settings.oldTaskbarOnWin11 = Wh_GetIntSetting(L"oldTaskbarOnWin11");
 }
 
