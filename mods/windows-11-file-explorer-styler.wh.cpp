@@ -1813,7 +1813,7 @@ winrt::weak_ref<wf::IInspectable> TryMakeWeak(wf::IInspectable const& object)
 // it. UnregisterInstance closes the runtime object cached for a handle, the
 // only reference the diagnostics keep to an element once it was reported.
 static constexpr GUID IID_IXamlDiagnosticsTestHooks =
-    {0x735941a2, 0x3ee3, 0x495a, {0x8d, 0xa9, 0x97, 0x26, 0x27, 0x00, 0x30, 0x75}};
+    {0x7776037b, 0xcbbe, 0x4de1, {0xad, 0x6f, 0x0d, 0xbf, 0x1d, 0x58, 0x17, 0xb4}};
 
 struct IXamlDiagnosticsTestHooks : IUnknown
 {
