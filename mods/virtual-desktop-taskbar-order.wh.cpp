@@ -2,7 +2,7 @@
 // @id              virtual-desktop-taskbar-order
 // @name            Virtual Desktop Preserve Taskbar Order
 // @description     The order on the taskbar isn't preserved between virtual desktop switches, this mod fixes it
-// @version         1.0.5
+// @version         1.1
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
