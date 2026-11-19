@@ -2,7 +2,7 @@
 // @id              taskbar-auto-hide-speed
 // @name            Taskbar auto-hide speed
 // @description     Customize the taskbar auto-hide animation speed and frame rate to make it feel less sluggish and janky
-// @version         1.2
+// @version         1.1
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
