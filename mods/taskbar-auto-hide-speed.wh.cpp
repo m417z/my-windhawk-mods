@@ -9,7 +9,7 @@
 // @homepage        https://m417z.com/
 // @include         explorer.exe
 // @architecture    x86-64
-// @compilerOptions -loleaut32 -lruntimeobject -lversion -ldwmapi
+// @compilerOptions -ldwmapi -loleaut32 -lruntimeobject -lversion
 // ==/WindhawkMod==
 
 // Source code is published under The GNU General Public License v3.0.
@@ -37,8 +37,7 @@ less sluggish and janky.
   this option the slide runs at the monitor's refresh rate (144/165/240 Hz).
 * **Show/hide curve**: applies an easing curve to the slide. For a macOS-like
   feel, try "Ease-out strong" for show and "Ease-in-out" for hide with a
-  speedup of 100-120%. The slide length is measured on the first slide after
-  Explorer starts, so that first slide is not eased.
+  speedup of 100-120%.
 */
 // ==/WindhawkModReadme==
 
@@ -113,70 +112,6 @@ struct {
     bool oldTaskbarOnWin11;
 } g_settings;
 
-Easing ParseEasing(PCWSTR name) {
-    if (wcscmp(name, L"easeOutCubic") == 0) {
-        return Easing::EaseOutCubic;
-    }
-    if (wcscmp(name, L"easeOutQuint") == 0) {
-        return Easing::EaseOutQuint;
-    }
-    if (wcscmp(name, L"easeInOutCubic") == 0) {
-        return Easing::EaseInOutCubic;
-    }
-    return Easing::Linear;
-}
-
-double EaseCurve(Easing easing, double x) {
-    switch (easing) {
-        case Easing::EaseOutCubic:
-            return 1.0 - std::pow(1.0 - x, 3.0);
-        case Easing::EaseOutQuint:
-            return 1.0 - std::pow(1.0 - x, 5.0);
-        case Easing::EaseInOutCubic:
-            return x < 0.5 ? 4.0 * x * x * x
-                           : 1.0 - std::pow(-2.0 * x + 2.0, 3.0) / 2.0;
-        case Easing::Linear:
-            break;
-    }
-    return x;
-}
-
-// Length of the stock slide in the stock animation's own milliseconds, learned
-// from previous slides: the stock loop exits on the first frame whose
-// GetTickCount value passes the duration, so every observation is >= the real
-// duration and the minimum converges on it. Zero means not learned yet, in
-// which case the slide is not eased. Index 0 is hide, index 1 is show.
-double g_learnedSlideDuration[2];
-bool g_slideWindowShow;
-double g_slideWindowLastReturnedMs;
-
-double ApplyEasing(double ms) {
-    Easing easing =
-        g_slideWindowShow ? g_settings.showEasing : g_settings.hideEasing;
-    double duration = g_learnedSlideDuration[g_slideWindowShow];
-    if (easing == Easing::Linear || duration <= 0 || ms <= 0 ||
-        ms >= duration) {
-        // Pass the time through unchanged outside the learned span, so that the
-        // stock loop always reaches its end. Since ease(1) == 1, the mapping
-        // stays continuous and monotonic.
-        return ms;
-    }
-
-    return EaseCurve(easing, ms / duration) * duration;
-}
-
-void LearnSlideDuration() {
-    double observed = g_slideWindowLastReturnedMs;
-    if (observed < 30.0 || observed > 3000.0) {
-        return;
-    }
-
-    double& learned = g_learnedSlideDuration[g_slideWindowShow];
-    if (learned <= 0 || observed < learned) {
-        learned = observed;
-    }
-}
-
 enum class WinVersion {
     Unsupported,
     Win10,
@@ -193,8 +128,10 @@ double g_recipCyclesPerSecond;
 
 std::atomic<DWORD> g_slideWindowThreadId;
 int g_slideWindowSpeedup;
+bool g_slideWindowShow;
 double g_slideWindowStartTime;
 double g_slideWindowLastFrameStartTime;
+double g_slideWindowLastReturnedMs;
 
 winrt::Windows::UI::Composition::KeyFrameAnimation g_collapseAnimation =
     nullptr;
@@ -282,6 +219,62 @@ double TimerGetCycles() {
 
 double TimerGetSeconds() {
     return TimerGetCycles() * g_recipCyclesPerSecond;
+}
+
+Easing ParseEasing(PCWSTR name) {
+    if (wcscmp(name, L"easeOutCubic") == 0) {
+        return Easing::EaseOutCubic;
+    }
+    if (wcscmp(name, L"easeOutQuint") == 0) {
+        return Easing::EaseOutQuint;
+    }
+    if (wcscmp(name, L"easeInOutCubic") == 0) {
+        return Easing::EaseInOutCubic;
+    }
+    return Easing::Linear;
+}
+
+double EaseCurve(Easing easing, double x) {
+    switch (easing) {
+        case Easing::EaseOutCubic:
+            return 1.0 - std::pow(1.0 - x, 3.0);
+        case Easing::EaseOutQuint:
+            return 1.0 - std::pow(1.0 - x, 5.0);
+        case Easing::EaseInOutCubic:
+            return x < 0.5 ? 4.0 * x * x * x
+                           : 1.0 - std::pow(-2.0 * x + 2.0, 3.0) / 2.0;
+        case Easing::Linear:
+            break;
+    }
+    return x;
+}
+
+// Length of the stock slide in the stock animation's own milliseconds, index 0
+// for hide and 1 for show. Starts at TrayUI's constants and is lowered by
+// observed slides: the stock loop exits on the first frame whose GetTickCount
+// value reaches the duration, so the minimum observation converges on it.
+double g_learnedSlideDuration[2] = {400, 200};
+
+double ApplyEasing(double ms) {
+    Easing easing =
+        g_slideWindowShow ? g_settings.showEasing : g_settings.hideEasing;
+    double duration = g_learnedSlideDuration[g_slideWindowShow];
+    if (easing == Easing::Linear || ms <= 0 || ms >= duration) {
+        // Pass the time through unchanged outside the learned span, so that the
+        // stock loop always reaches its end. Since ease(1) == 1, the mapping
+        // stays continuous and monotonic.
+        return ms;
+    }
+
+    return EaseCurve(easing, ms / duration) * duration;
+}
+
+void LearnSlideDuration() {
+    double observed = g_slideWindowLastReturnedMs;
+    double& learned = g_learnedSlideDuration[g_slideWindowShow];
+    if (observed >= 30.0 && observed < learned) {
+        learned = observed;
+    }
 }
 
 using TrayUI_SlideWindow_t = void(WINAPI*)(void* pThis,
@@ -635,6 +628,7 @@ void LoadSettings() {
     easing = Wh_GetStringSetting(L"hideEasing");
     g_settings.hideEasing = ParseEasing(easing);
     Wh_FreeStringSetting(easing);
+
     g_settings.oldTaskbarOnWin11 = Wh_GetIntSetting(L"oldTaskbarOnWin11");
 }
 
