@@ -9,7 +9,7 @@
 // @homepage        https://m417z.com/
 // @include         explorer.exe
 // @architecture    x86-64
-// @compilerOptions -lcomctl32 -lversion
+// @compilerOptions -lcomctl32 -lole32 -lversion
 // ==/WindhawkMod==
 
 // Source code is published under The GNU General Public License v3.0.
@@ -27,9 +27,8 @@
 The order on the taskbar isn't preserved between virtual desktop switches, this
 mod fixes it.
 
-Only Windows 11 x64 is currently supported. ARM64 is unsupported. For older
-Windows versions check out [7+ Taskbar
-Tweaker](https://tweaker.ramensoftware.com/).
+Only Windows 11 is currently supported. For older Windows versions check out [7+
+Taskbar Tweaker](https://tweaker.ramensoftware.com/).
 
 ![Demonstration](https://i.imgur.com/ie8Q9cl.gif)
 */
@@ -37,12 +36,15 @@ Tweaker](https://tweaker.ramensoftware.com/).
 
 #include <windhawk_utils.h>
 
+#include <algorithm>
+#include <atomic>
 #include <climits>
-#include <regex>
-#include <string>
-#include <string_view>
+#include <mutex>
+#include <utility>
+#include <vector>
 
 #include <commctrl.h>
+#include <objectarray.h>
 
 enum class WinVersion {
     Unsupported,
@@ -53,73 +55,6 @@ enum class WinVersion {
 WinVersion g_winVersion;
 DWORD g_taskbarThreadId;
 HWND g_hTaskbarWnd;
-
-#pragma region offsets
-
-void* CTaskBand__EnumExistingImmersiveApps;
-void* CApplicationViewManager__GetViewInFocus;
-
-size_t OffsetFromAssembly(void* func,
-                          size_t defValue,
-                          std::string opcode = "mov",
-                          int limit = 30) {
-    // Example: mov rax, [rcx+0xE0]
-    std::regex regex(
-        opcode +
-        R"( r(?:[a-z]{2}|\d{1,2}), \[r(?:[a-z]{2}|\d{1,2})\+(0x[0-9A-F]+)\])");
-
-    BYTE* p = (BYTE*)func;
-    for (int i = 0; i < limit; i++) {
-        WH_DISASM_RESULT result;
-        if (!Wh_Disasm(p, &result)) {
-            break;
-        }
-
-        p += result.length;
-
-        std::string_view s = result.text;
-        if (s == "ret") {
-            break;
-        }
-
-        std::match_results<std::string_view::const_iterator> match;
-        if (std::regex_match(s.begin(), s.end(), match, regex)) {
-            // Wh_Log(L"%S", result.text);
-            return std::stoull(match[1], nullptr, 16);
-        }
-    }
-
-    Wh_Log(L"Failed for %p", func);
-    return defValue;
-}
-
-LONG_PTR* EV_TASK_SW_APP_VIEW_MGR(LONG_PTR lp) {
-    static size_t offset =
-        OffsetFromAssembly(CTaskBand__EnumExistingImmersiveApps, 0x220);
-
-    return (LONG_PTR*)(lp + offset);
-}
-
-size_t EV_APP_VIEW_MGR_APP_ARRAY_LOCK_OFFSET() {
-    static size_t offset = OffsetFromAssembly(
-        CApplicationViewManager__GetViewInFocus, 0x210, "lea");
-
-    return offset;
-}
-
-SRWLOCK* EV_APP_VIEW_MGR_APP_ARRAY_LOCK(LONG_PTR lp) {
-    return (SRWLOCK*)(lp + EV_APP_VIEW_MGR_APP_ARRAY_LOCK_OFFSET());
-}
-
-LONG_PTR** EV_APP_VIEW_MGR_APP_ARRAY(LONG_PTR lp) {
-    return (LONG_PTR**)(lp + EV_APP_VIEW_MGR_APP_ARRAY_LOCK_OFFSET() + 0x08);
-}
-
-size_t* EV_APP_VIEW_MGR_APP_ARRAY_SIZE(LONG_PTR lp) {
-    return (size_t*)(lp + EV_APP_VIEW_MGR_APP_ARRAY_LOCK_OFFSET() + 0x10);
-}
-
-#pragma endregion  // offsets
 
 void* CTaskBtnGroup_ITaskBtnGroup_vftable;
 
@@ -132,21 +67,12 @@ CTaskBtnGroup_GetNumItems_t CTaskBtnGroup_GetNumItems;
 using CTaskBtnGroup_GetTaskItem_t = void*(WINAPI*)(void* pThis, int index);
 CTaskBtnGroup_GetTaskItem_t CTaskBtnGroup_GetTaskItem;
 
-using CTaskGroup_DoesWindowMatch_t =
+using CTaskBand__MatchApplicationView_t =
     HRESULT(WINAPI*)(LPVOID pThis,
-                     HWND hCompareWnd,
-                     LPVOID pCompareItemIdList,  // ITEMIDLIST*
-                     WCHAR* pCompareAppId,
-                     int* pnMatch,  // WINDOWMATCHCONFIDENCE*
-                     LONG_PTR** p_task_item);
-CTaskGroup_DoesWindowMatch_t CTaskGroup_DoesWindowMatch_Original;
-
-using CTaskBand_ViewVirtualDesktopChanged_t = HRESULT(WINAPI*)(
-    LPVOID pThis,
-    LPVOID applicationView  // IApplicationView*
-);
-CTaskBand_ViewVirtualDesktopChanged_t
-    CTaskBand_ViewVirtualDesktopChanged_Original;
+                     IUnknown* applicationView,  // IApplicationView*
+                     IUnknown** taskGroup,       // ITaskGroup**
+                     IUnknown** taskItem);       // ITaskItem**
+CTaskBand__MatchApplicationView_t CTaskBand__MatchApplicationView;
 
 using CTaskListWnd_TryMoveGroup_t =
     bool(WINAPI*)(LPVOID pThis,
@@ -154,131 +80,206 @@ using CTaskListWnd_TryMoveGroup_t =
                   DWORD index);
 CTaskListWnd_TryMoveGroup_t CTaskListWnd_TryMoveGroup_Original;
 
-int g_doesWindowMatchCalls;
-
-HRESULT WINAPI
-CTaskGroup_DoesWindowMatch_Hook(LPVOID pThis,
-                                HWND hCompareWnd,
-                                LPVOID pCompareItemIdList,  // ITEMIDLIST*
-                                WCHAR* pCompareAppId,
-                                int* pnMatch,  // WINDOWMATCHCONFIDENCE*
-                                LONG_PTR** p_task_item) {
-    g_doesWindowMatchCalls++;
-
-    HRESULT ret = CTaskGroup_DoesWindowMatch_Original(
-        pThis, hCompareWnd, pCompareItemIdList, pCompareAppId, pnMatch,
-        p_task_item);
-
-    g_doesWindowMatchCalls--;
-
-    return ret;
-}
-
-LONG_PTR g_tryMoveGroup_taskListLongPtr;
+LPVOID g_tryMoveGroup_taskList;
 LONG_PTR* g_tryMoveGroup_taskGroup;
 
 bool WINAPI CTaskListWnd_TryMoveGroup_Hook(LPVOID pThis,
                                            LPVOID taskGroup,  // ITaskGroup *
                                            DWORD index) {
-    g_tryMoveGroup_taskListLongPtr = (LONG_PTR)pThis - 0x28;
+    g_tryMoveGroup_taskList = pThis;
     g_tryMoveGroup_taskGroup = (LONG_PTR*)taskGroup;
 
     bool ret = CTaskListWnd_TryMoveGroup_Original(pThis, taskGroup, index);
 
-    g_tryMoveGroup_taskListLongPtr = 0;
+    g_tryMoveGroup_taskList = nullptr;
     g_tryMoveGroup_taskGroup = nullptr;
 
     return ret;
 }
 
-#pragma region pointer_redirection
+#pragma region view_order
 
-#ifdef _WIN64
-#define POINTER_REDIRECTION_ASM_COMMAND "\xFF\x25\xF2\xFF\xFF\xFF"
-#else
-#define POINTER_REDIRECTION_ASM_COMMAND "\xE8\x00\x00\x00\x00\x58\xFF\x60\xF7"
-#endif
+// The order of app views which GetViews returns. The taskbar adds the buttons
+// in this order after a virtual desktop switch. Holds no references.
+std::mutex g_viewOrderMutex;
+std::vector<IUnknown*> g_viewOrder;
 
-#define POINTER_REDIRECTION_SIGNATURE "ptr_redr"
+// The CApplicationViewManager interface which GetViews is called on.
+std::atomic<void*> g_appViewCollection;
 
-struct POINTER_REDIRECTION {
-    void* pOriginalAddress = nullptr;
-    void* pRedirectionAddress = nullptr;
-    BYTE bAsmCommand[sizeof(POINTER_REDIRECTION_ASM_COMMAND)] =
-        POINTER_REDIRECTION_ASM_COMMAND;
-    BYTE bSignature[sizeof(POINTER_REDIRECTION_SIGNATURE)] =
-        POINTER_REDIRECTION_SIGNATURE;
+struct GetViewsCapture {
+    void* collection = nullptr;
+    std::vector<IUnknown*> views;
 };
 
-#define POINTER_REDIRECTION_VAR \
-    __attribute__((section(".text"))) constinit POINTER_REDIRECTION
+thread_local GetViewsCapture* g_getViewsCapture;
 
-void PatchPtr(void** ppAddress, void* pPtr) {
-    DWORD dwOldProtect, dwOtherProtect;
+using CEnumerableObjectCollection_AddObject_t =
+    HRESULT(WINAPI*)(void* pThis, IUnknown* object);
+CEnumerableObjectCollection_AddObject_t
+    CEnumerableObjectCollection_AddObject_Original;
+HRESULT WINAPI CEnumerableObjectCollection_AddObject_Hook(void* pThis,
+                                                          IUnknown* object) {
+    GetViewsCapture* capture = g_getViewsCapture;
+    if (capture && object &&
+        (!capture->collection || capture->collection == pThis)) {
+        // Keep the view, it's added to the collection after GetViews returns.
+        capture->collection = pThis;
+        object->AddRef();
+        capture->views.push_back(object);
+        return S_OK;
+    }
 
-    VirtualProtect(ppAddress, sizeof(void*), PAGE_EXECUTE_READWRITE,
-                   &dwOldProtect);
-    *ppAddress = pPtr;
-    VirtualProtect(ppAddress, sizeof(void*), dwOldProtect, &dwOtherProtect);
+    return CEnumerableObjectCollection_AddObject_Original(pThis, object);
 }
 
-void PointerRedirectionAdd(void** pp, void* pNew, POINTER_REDIRECTION* ppr) {
-    PatchPtr(&ppr->pOriginalAddress, *pp);
-    PatchPtr(&ppr->pRedirectionAddress, pNew);
+// Makes g_viewOrder contain exactly the given views, keeping the order of the
+// known views and appending the new ones, and returns the views in that order.
+std::vector<IUnknown*> UpdateViewOrder(const std::vector<IUnknown*>& views) {
+    std::lock_guard<std::mutex> lock(g_viewOrderMutex);
 
-    PatchPtr(pp, &ppr->bAsmCommand);
+    std::erase_if(g_viewOrder, [&views](IUnknown* view) {
+        return std::ranges::find(views, view) == views.end();
+    });
+
+    for (IUnknown* view : views) {
+        if (std::ranges::find(g_viewOrder, view) == g_viewOrder.end()) {
+            g_viewOrder.push_back(view);
+        }
+    }
+
+    return g_viewOrder;
 }
 
-void PointerRedirectionRemove(void** pp, POINTER_REDIRECTION* ppr) {
-    POINTER_REDIRECTION* pprTemp;
+using CApplicationViewManager_GetViews_t =
+    HRESULT(WINAPI*)(void* pThis, IObjectArray** views);
+CApplicationViewManager_GetViews_t CApplicationViewManager_GetViews_Original;
 
-    if (*pp != ppr->bAsmCommand) {
-        pprTemp =
-            (POINTER_REDIRECTION*)((BYTE*)*pp -
-                                   offsetof(POINTER_REDIRECTION, bAsmCommand));
-        while (pprTemp->pOriginalAddress != ppr->bAsmCommand) {
-            pprTemp = (POINTER_REDIRECTION*)((BYTE*)pprTemp->pOriginalAddress -
-                                             offsetof(POINTER_REDIRECTION,
-                                                      bAsmCommand));
+// Calls GetViews and adds the views to the returned collection in the order of
+// g_viewOrder. On success, orderedViews receives the views in the same order,
+// with a reference to each of them.
+HRESULT GetViewsInOrder(void* pThis,
+                        IObjectArray** views,
+                        std::vector<IUnknown*>* orderedViews) {
+    GetViewsCapture capture;
+    GetViewsCapture* prevCapture = std::exchange(g_getViewsCapture, &capture);
+    HRESULT hr = CApplicationViewManager_GetViews_Original(pThis, views);
+    g_getViewsCapture = prevCapture;
+
+    if (SUCCEEDED(hr)) {
+        *orderedViews = UpdateViewOrder(capture.views);
+        for (IUnknown* view : *orderedViews) {
+            hr = CEnumerableObjectCollection_AddObject_Original(
+                capture.collection, view);
+            if (FAILED(hr)) {
+                (*views)->Release();
+                *views = nullptr;
+                break;
+            }
+        }
+    }
+
+    if (FAILED(hr)) {
+        for (IUnknown* view : capture.views) {
+            view->Release();
         }
 
-        PatchPtr(&pprTemp->pOriginalAddress, ppr->pOriginalAddress);
-    } else {
-        PatchPtr(pp, ppr->pOriginalAddress);
+        orderedViews->clear();
+    }
+
+    return hr;
+}
+
+HRESULT WINAPI CApplicationViewManager_GetViews_Hook(void* pThis,
+                                                     IObjectArray** views) {
+    g_appViewCollection = pThis;
+
+    std::vector<IUnknown*> orderedViews;
+    HRESULT hr = GetViewsInOrder(pThis, views, &orderedViews);
+
+    for (IUnknown* view : orderedViews) {
+        view->Release();
+    }
+
+    return hr;
+}
+
+using CApplicationViewManager_RemoveApplicationView_t =
+    HRESULT(WINAPI*)(void* pThis,
+                     IUnknown* applicationView,  // IApplicationView*
+                     int options);  // REMOVE_APPLICATION_VIEW_OPTIONS
+CApplicationViewManager_RemoveApplicationView_t
+    CApplicationViewManager_RemoveApplicationView_Original;
+HRESULT WINAPI
+CApplicationViewManager_RemoveApplicationView_Hook(void* pThis,
+                                                   IUnknown* applicationView,
+                                                   int options) {
+    g_appViewCollection = pThis;
+
+    HRESULT hr = CApplicationViewManager_RemoveApplicationView_Original(
+        pThis, applicationView, options);
+
+    // Forget the view right away, a new view might reuse its address.
+    std::lock_guard<std::mutex> lock(g_viewOrderMutex);
+    std::erase(g_viewOrder, applicationView);
+
+    return hr;
+}
+
+const GUID kClsidImmersiveShell = {
+    0xC2F03A33,
+    0x21F5,
+    0x47FA,
+    {0xB4, 0xBB, 0x15, 0x63, 0x62, 0xA2, 0xF2, 0x39}};
+const GUID kIidApplicationViewCollection = {
+    0x1841C6D7,
+    0x4F9D,
+    0x42C0,
+    {0xAF, 0x41, 0x87, 0x47, 0x53, 0x8F, 0x10, 0xE5}};
+
+// Only GetViews, the first method, is declared.
+struct IApplicationViewCollection : public IUnknown {
+    virtual HRESULT STDMETHODCALLTYPE GetViews(IObjectArray** views) = 0;
+};
+
+// Calls GetViews of the immersive shell's view collection service, which sets
+// g_appViewCollection in the GetViews hook.
+void QueryAppViewCollection() {
+    HRESULT hrInit = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
+
+    IServiceProvider* serviceProvider = nullptr;
+    HRESULT hr =
+        CoCreateInstance(kClsidImmersiveShell, nullptr, CLSCTX_LOCAL_SERVER,
+                         IID_PPV_ARGS(&serviceProvider));
+
+    IApplicationViewCollection* collection = nullptr;
+    if (SUCCEEDED(hr)) {
+        hr = serviceProvider->QueryService(kIidApplicationViewCollection,
+                                           kIidApplicationViewCollection,
+                                           (void**)&collection);
+        serviceProvider->Release();
+    }
+
+    if (SUCCEEDED(hr)) {
+        IObjectArray* views = nullptr;
+        hr = collection->GetViews(&views);
+        if (SUCCEEDED(hr)) {
+            views->Release();
+        }
+
+        collection->Release();
+    }
+
+    if (FAILED(hr)) {
+        Wh_Log(L"Querying the app view collection failed: %08X", hr);
+    }
+
+    if (SUCCEEDED(hrInit)) {
+        CoUninitialize();
     }
 }
 
-#pragma endregion  // pointer_redirection
-
-POINTER_REDIRECTION_VAR prTaskGroupRelease;
-POINTER_REDIRECTION_VAR prTaskItemRelease;
-
-LONG_PTR* g_taskGroupVirtualDesktopReleased;
-LONG_PTR* g_taskItemVirtualDesktopReleased;
-
-ULONG WINAPI TaskGroupReleaseHook(LONG_PTR this_ptr) {
-    ULONG ulRet;
-
-    ulRet = ((ULONG(WINAPI*)(LONG_PTR))prTaskGroupRelease.pOriginalAddress)(
-        this_ptr);
-    if (ulRet > 0 && g_doesWindowMatchCalls == 0) {
-        g_taskGroupVirtualDesktopReleased = (LONG_PTR*)this_ptr;
-    }
-
-    return ulRet;
-}
-
-ULONG WINAPI TaskItemReleaseHook(LONG_PTR this_ptr) {
-    ULONG ulRet;
-
-    ulRet = ((ULONG(WINAPI*)(LONG_PTR))prTaskItemRelease.pOriginalAddress)(
-        this_ptr);
-    if (ulRet > 0 && g_doesWindowMatchCalls == 0) {
-        g_taskItemVirtualDesktopReleased = (LONG_PTR*)this_ptr;
-    }
-
-    return ulRet;
-}
+#pragma endregion  // view_order
 
 void OnButtonGroupInserted(LONG_PTR lpTaskSwLongPtr,
                            HDPA hButtonGroupsDpa,
@@ -301,135 +302,80 @@ void OnButtonGroupInserted(LONG_PTR lpTaskSwLongPtr,
         return;
     }
 
-    LONG_PTR* first_task_item =
-        (LONG_PTR*)CTaskBtnGroup_GetTaskItem(button_group, 0);
-    if (!first_task_item) {
+    void* appViewCollection = g_appViewCollection;
+    if (!appViewCollection) {
+        Wh_Log(L"GetViews wasn't called yet, skipping");
         return;
     }
 
-    plp = *(LONG_PTR**)task_group;
-    void** ppTaskGroupRelease = (void**)&plp[2];
-    PointerRedirectionAdd(ppTaskGroupRelease, (void*)TaskGroupReleaseHook,
-                          &prTaskGroupRelease);
+    IObjectArray* views;
+    std::vector<IUnknown*> orderedViews;
+    HRESULT hr = GetViewsInOrder(appViewCollection, &views, &orderedViews);
+    if (FAILED(hr)) {
+        Wh_Log(L"GetViews failed: %08X", hr);
+        return;
+    }
 
-    plp = *(LONG_PTR**)first_task_item;
-    void** ppTaskItemRelease = (void**)&plp[2];
-    PointerRedirectionAdd(ppTaskItemRelease, (void*)TaskItemReleaseHook,
-                          &prTaskItemRelease);
+    views->Release();
 
-    LONG_PTR lpAppViewMgr = *EV_TASK_SW_APP_VIEW_MGR(lpTaskSwLongPtr);
-    SRWLOCK* pArrayLock = EV_APP_VIEW_MGR_APP_ARRAY_LOCK(lpAppViewMgr);
+    // Find the views of the buttons in the newly inserted group, and the first
+    // view which belongs to one of the groups to the right of it.
+    std::vector<IUnknown*> matchingViews;
+    IUnknown* rightNeighbourView = nullptr;
 
-    AcquireSRWLockExclusive(pArrayLock);
+    for (IUnknown* view : orderedViews) {
+        IUnknown* viewTaskGroup = nullptr;
+        IUnknown* viewTaskItem = nullptr;
+        CTaskBand__MatchApplicationView((LPVOID)lpTaskSwLongPtr, view,
+                                        &viewTaskGroup, &viewTaskItem);
 
-    LONG_PTR* lpArray = *EV_APP_VIEW_MGR_APP_ARRAY(lpAppViewMgr);
-    size_t nArraySize = *EV_APP_VIEW_MGR_APP_ARRAY_SIZE(lpAppViewMgr);
-
-    int nMatchCount = 0;
-    size_t nRightNeighbourItemIndex = nArraySize;
-
-    // Stage one: move all items in lpArray matching the items
-    // in the newly inserted group to the beginning of the array.
-    // Their amount is maintained in nMatchCount.
-    // Also, find nRightNeighbourItemIndex, which is the index of
-    // the item in lpArray which will be the first one before the
-    // found matching items.
-
-    for (size_t i = 0; i < nArraySize; i++) {
-        g_taskGroupVirtualDesktopReleased = NULL;
-        g_taskItemVirtualDesktopReleased = NULL;
-
-        LONG_PTR this_ptr = (LONG_PTR)(lpTaskSwLongPtr + 0x70);
-        plp = *(LONG_PTR**)this_ptr;
-
-        ReleaseSRWLockExclusive(pArrayLock);
-
-        CTaskBand_ViewVirtualDesktopChanged_Original((LPVOID)this_ptr,
-                                                     (LPVOID)lpArray[i]);
-
-        AcquireSRWLockExclusive(pArrayLock);
-
-        if (lpArray != *EV_APP_VIEW_MGR_APP_ARRAY(lpAppViewMgr) ||
-            nArraySize != *EV_APP_VIEW_MGR_APP_ARRAY_SIZE(lpAppViewMgr)) {
-            // Something went wrong, abort.
-            nMatchCount = 0;
-            break;
-        }
-
-        if (!g_taskGroupVirtualDesktopReleased) {
-            continue;
-        }
-
-        if (g_taskGroupVirtualDesktopReleased != task_group) {
-            if (nRightNeighbourItemIndex == nArraySize) {
-                for (int j = nButtonGroupIndex + 1; j < button_groups_count;
-                     j++) {
-                    LONG_PTR* check_button_group = button_groups[j];
-                    LONG_PTR* check_task_group =
-                        (LONG_PTR*)CTaskBtnGroup_GetGroup(check_button_group);
-                    if (g_taskGroupVirtualDesktopReleased == check_task_group) {
-                        // The current item in lpArray is from the same group
-                        // of at least one of the items in button_groups to the
-                        // right of the newly added item.
-                        nRightNeighbourItemIndex = i - nMatchCount;
-                        break;
-                    }
+        if (viewTaskGroup && viewTaskGroup == (IUnknown*)task_group) {
+            for (int j = 0; j < buttons_count; j++) {
+                if (viewTaskItem ==
+                    CTaskBtnGroup_GetTaskItem(button_group, j)) {
+                    matchingViews.push_back(view);
+                    break;
                 }
             }
-
-            continue;
-        }
-
-        if (!g_taskItemVirtualDesktopReleased) {
-            continue;
-        }
-
-        for (int j = 0; j < buttons_count; j++) {
-            LONG_PTR* task_item =
-                (LONG_PTR*)CTaskBtnGroup_GetTaskItem(button_group, j);
-
-            if (g_taskItemVirtualDesktopReleased == task_item) {
-                // The current item in lpArray matches one of the
-                // buttons in the newly added item.
-                if (i > (size_t)nMatchCount) {
-                    LONG_PTR lpTemp = lpArray[i];
-                    memmove(&lpArray[nMatchCount + 1], &lpArray[nMatchCount],
-                            (i - nMatchCount) * sizeof(LONG_PTR));
-                    lpArray[nMatchCount] = lpTemp;
+        } else if (viewTaskGroup && !rightNeighbourView) {
+            for (int j = nButtonGroupIndex + 1; j < button_groups_count; j++) {
+                if (viewTaskGroup == CTaskBtnGroup_GetGroup(button_groups[j])) {
+                    rightNeighbourView = view;
+                    break;
                 }
-
-                nMatchCount++;
-                break;
             }
         }
-    }
 
-    PointerRedirectionRemove(ppTaskGroupRelease, &prTaskGroupRelease);
-    PointerRedirectionRemove(ppTaskItemRelease, &prTaskItemRelease);
+        if (viewTaskGroup) {
+            viewTaskGroup->Release();
+        }
 
-    // Stage two: move the found items before the item in
-    // nRightNeighbourItemIndex.
-
-    if (nRightNeighbourItemIndex == nArraySize) {
-        // By default, move to the right end.
-        nRightNeighbourItemIndex = nArraySize - nMatchCount;
-    }
-
-    if (nMatchCount > 0 && nRightNeighbourItemIndex > 0) {
-        LONG_PTR* lpBuffer = (LONG_PTR*)HeapAlloc(
-            GetProcessHeap(), 0, nMatchCount * sizeof(LONG_PTR));
-        if (lpBuffer) {
-            memcpy(lpBuffer, lpArray, nMatchCount * sizeof(LONG_PTR));
-            memmove(&lpArray[0], &lpArray[nMatchCount],
-                    nRightNeighbourItemIndex * sizeof(LONG_PTR));
-            memcpy(&lpArray[nRightNeighbourItemIndex], lpBuffer,
-                   nMatchCount * sizeof(LONG_PTR));
-
-            HeapFree(GetProcessHeap(), 0, lpBuffer);
+        if (viewTaskItem) {
+            viewTaskItem->Release();
         }
     }
 
-    ReleaseSRWLockExclusive(pArrayLock);
+    // Move the matching views before the right neighbour view, or to the end.
+    if (!matchingViews.empty()) {
+        std::lock_guard<std::mutex> lock(g_viewOrderMutex);
+
+        // Skip views which were removed in the meantime.
+        std::erase_if(matchingViews, [](IUnknown* view) {
+            return std::ranges::find(g_viewOrder, view) == g_viewOrder.end();
+        });
+
+        std::erase_if(g_viewOrder, [&matchingViews](IUnknown* view) {
+            return std::ranges::find(matchingViews, view) !=
+                   matchingViews.end();
+        });
+
+        g_viewOrder.insert(std::ranges::find(g_viewOrder, rightNeighbourView),
+                           matchingViews.begin(), matchingViews.end());
+    }
+
+    for (IUnknown* view : orderedViews) {
+        view->Release();
+    }
 }
 
 void ComFuncVirtualDesktopFixAfterDPA_InsertPtr(HDPA pdpa, int index, void* p) {
@@ -439,7 +385,7 @@ void ComFuncVirtualDesktopFixAfterDPA_InsertPtr(HDPA pdpa, int index, void* p) {
         return;
     }
 
-    if (!g_tryMoveGroup_taskListLongPtr) {
+    if (!g_tryMoveGroup_taskList) {
         Wh_Log(L"Not in TryMoveGroup, skipping");
         return;
     }
@@ -600,11 +546,6 @@ BOOL Wh_ModInit() {
         return FALSE;
     }
 
-#ifdef _M_ARM64
-    Wh_Log(L"Unsupported architecture");
-    return FALSE;
-#endif
-
     WindhawkUtils::SYMBOL_HOOK taskbarDllHooks[] = {
         {
             {LR"(const CTaskBtnGroup::`vftable'{for `ITaskBtnGroup'})"},
@@ -623,23 +564,13 @@ BOOL Wh_ModInit() {
             &CTaskBtnGroup_GetTaskItem,
         },
         {
-            {LR"(public: virtual long __cdecl CTaskGroup::DoesWindowMatch(struct HWND__ *,struct _ITEMIDLIST_ABSOLUTE const *,unsigned short const *,enum WINDOWMATCHCONFIDENCE *,struct ITaskItem * *))"},
-            &CTaskGroup_DoesWindowMatch_Original,
-            CTaskGroup_DoesWindowMatch_Hook,
+            {LR"(protected: long __cdecl CTaskBand::_MatchApplicationView(struct IApplicationView *,struct ITaskGroup * *,struct ITaskItem * *))"},
+            &CTaskBand__MatchApplicationView,
         },
         {
             {LR"(public: virtual bool __cdecl CTaskListWnd::TryMoveGroup(struct ITaskGroup *,unsigned int))"},
             &CTaskListWnd_TryMoveGroup_Original,
             CTaskListWnd_TryMoveGroup_Hook,
-        },
-        {
-            {LR"(public: virtual long __cdecl CTaskBand::ViewVirtualDesktopChanged(struct IApplicationView *))"},
-            &CTaskBand_ViewVirtualDesktopChanged_Original,
-        },
-        // For offsets:
-        {
-            {LR"(protected: void __cdecl CTaskBand::_EnumExistingImmersiveApps(void))"},
-            &CTaskBand__EnumExistingImmersiveApps,
         },
     };
 
@@ -658,10 +589,20 @@ BOOL Wh_ModInit() {
 
     // twinui.pcshell.dll
     WindhawkUtils::SYMBOL_HOOK twinuiPcshellSymbolHooks[] = {
-        // For offsets:
         {
-            {LR"(public: virtual long __cdecl CApplicationViewManager::GetViewInFocus(struct IApplicationView * *))"},
-            &CApplicationViewManager__GetViewInFocus,
+            {LR"(public: virtual long __cdecl CApplicationViewManager::GetViews(struct IObjectArray * *))"},
+            &CApplicationViewManager_GetViews_Original,
+            CApplicationViewManager_GetViews_Hook,
+        },
+        {
+            {LR"(public: virtual long __cdecl CApplicationViewManager::RemoveApplicationView(struct IApplicationView *,enum REMOVE_APPLICATION_VIEW_OPTIONS))"},
+            &CApplicationViewManager_RemoveApplicationView_Original,
+            CApplicationViewManager_RemoveApplicationView_Hook,
+        },
+        {
+            {LR"(public: virtual long __cdecl CEnumerableObjectCollection::AddObject(struct IUnknown *))"},
+            &CEnumerableObjectCollection_AddObject_Original,
+            CEnumerableObjectCollection_AddObject_Hook,
         },
     };
 
@@ -693,5 +634,9 @@ void Wh_ModAfterInit() {
     HWND hTaskbarWnd = FindCurrentProcessTaskbarWnd();
     if (hTaskbarWnd) {
         InitializeTaskbarVariables(hTaskbarWnd);
+
+        // The taskbar already started, and won't call GetViews until the next
+        // virtual desktop switch.
+        QueryAppViewCollection();
     }
 }
