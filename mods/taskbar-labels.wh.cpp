@@ -1202,10 +1202,20 @@ void UpdateTaskListButtonWithLabelStyle(FrameworkElement taskListButtonElement,
         }
     }
 
-    // Within the button padding and the native indicator margins.
+    // Within the button padding and the native indicator margins, rounded to
+    // whole physical pixels. Layout rounding snaps the indicator's offset and
+    // width separately, so a fractional margin ends up on one side only.
+    double indicatorInset = 1;
+    if (auto xamlRoot = taskListButtonElement.XamlRoot()) {
+        double scale = xamlRoot.RasterizationScale();
+        if (scale > 0) {
+            indicatorInset = std::round(scale) / scale;
+        }
+    }
+
     double maxIndicatorWidth =
         std::fmax(taskListButtonWidth - iconPanelPadding.Left -
-                      iconPanelPadding.Right - 2,
+                      iconPanelPadding.Right - indicatorInset * 2,
                   0.0);
 
     PCWSTR indicatorClassNames[] = {
