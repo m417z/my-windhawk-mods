@@ -27,22 +27,38 @@
 The order on the taskbar isn't preserved between virtual desktop switches, this
 mod fixes it.
 
-Only Windows 11 is currently supported. For older Windows versions check out [7+
-Taskbar Tweaker](https://tweaker.ramensoftware.com/).
+Only Windows 10 64-bit and Windows 11 are supported. For older Windows versions
+check out [7+ Taskbar Tweaker](https://tweaker.ramensoftware.com/).
 
 ![Demonstration](https://i.imgur.com/ie8Q9cl.gif)
 */
 // ==/WindhawkModReadme==
 
+// ==WindhawkModSettings==
+/*
+- oldTaskbarOnWin11: false
+  $name: Customize the old taskbar on Windows 11
+  $description: >-
+    Enable this option to customize the old taskbar on Windows 11 (if using
+    ExplorerPatcher or a similar tool).
+*/
+// ==/WindhawkModSettings==
+
 #include <windhawk_utils.h>
 
 #include <algorithm>
+#include <atomic>
 #include <climits>
 #include <map>
 #include <utility>
 #include <vector>
 
 #include <commctrl.h>
+#include <psapi.h>
+
+struct {
+    bool oldTaskbarOnWin11;
+} g_settings;
 
 enum class WinVersion {
     Unsupported,
@@ -51,6 +67,10 @@ enum class WinVersion {
 };
 
 WinVersion g_winVersion;
+
+std::atomic<bool> g_initialized;
+std::atomic<bool> g_explorerPatcherInitialized;
+
 DWORD g_taskbarThreadId;
 
 void* CTaskBtnGroup_ITaskBtnGroup_vftable;
@@ -58,9 +78,12 @@ void* CTaskBtnGroup_ITaskBtnGroup_vftable;
 using CTaskBtnGroup_GetGroup_t = void*(WINAPI*)(void* pThis);
 CTaskBtnGroup_GetGroup_t CTaskBtnGroup_GetGroup;
 
+bool IsButtonGroup(void* p) {
+    return p && *(void**)p == CTaskBtnGroup_ITaskBtnGroup_vftable;
+}
+
 bool IsButtonGroupOf(void* p, void* taskGroup) {
-    return taskGroup && p &&
-           *(void**)p == CTaskBtnGroup_ITaskBtnGroup_vftable &&
+    return taskGroup && IsButtonGroup(p) &&
            CTaskBtnGroup_GetGroup(p) == taskGroup;
 }
 
@@ -251,7 +274,8 @@ void WINAPI CTaskListWnd__TaskDestroyedFinal_Hook(void* pThis,
     g_taskDestroyedFinal_buttonGroup = nullptr;
 }
 
-thread_local void* g_tryMoveGroup_taskGroup;
+// Set while the taskbar moves a button group to another position.
+thread_local bool g_movingButtonGroup;
 
 using CTaskListWnd_TryMoveGroup_t =
     bool(WINAPI*)(void* pThis,
@@ -261,11 +285,28 @@ CTaskListWnd_TryMoveGroup_t CTaskListWnd_TryMoveGroup_Original;
 bool WINAPI CTaskListWnd_TryMoveGroup_Hook(void* pThis,
                                            void* taskGroup,
                                            DWORD index) {
-    g_tryMoveGroup_taskGroup = taskGroup;
+    g_movingButtonGroup = true;
 
     bool ret = CTaskListWnd_TryMoveGroup_Original(pThis, taskGroup, index);
 
-    g_tryMoveGroup_taskGroup = nullptr;
+    g_movingButtonGroup = false;
+
+    return ret;
+}
+
+using CTaskListWnd__MoveTaskBtnGroup_t = HRESULT(WINAPI*)(void* pThis,
+                                                         int indexFrom,
+                                                         int indexTo);
+CTaskListWnd__MoveTaskBtnGroup_t CTaskListWnd__MoveTaskBtnGroup_Original;
+HRESULT WINAPI CTaskListWnd__MoveTaskBtnGroup_Hook(void* pThis,
+                                                   int indexFrom,
+                                                   int indexTo) {
+    g_movingButtonGroup = true;
+
+    HRESULT ret =
+        CTaskListWnd__MoveTaskBtnGroup_Original(pThis, indexFrom, indexTo);
+
+    g_movingButtonGroup = false;
 
     return ret;
 }
@@ -283,7 +324,7 @@ int WINAPI DPA_InsertPtr_Hook(HDPA hdpa, int i, void* p) {
 
     int ret = DPA_InsertPtr_Original(hdpa, i, p);
 
-    if (IsButtonGroupOf(p, g_tryMoveGroup_taskGroup) &&
+    if (g_movingButtonGroup && !g_desktopSwitch && IsButtonGroup(p) &&
         GetCurrentThreadId() == g_taskbarThreadId) {
         Wh_Log(L"Button group %p moved to %d", p, ret);
         g_desktopArrangements[{hdpa, g_currentDesktop}] =
@@ -388,7 +429,9 @@ VS_FIXEDFILEINFO* GetModuleVersionInfo(HMODULE hModule, UINT* puPtrLen) {
     return (VS_FIXEDFILEINFO*)pFixedFileInfo;
 }
 
-WinVersion GetExplorerVersion() {
+WinVersion GetExplorerVersion(bool* hasWin10Taskbar) {
+    *hasWin10Taskbar = false;
+
     VS_FIXEDFILEINFO* fixedFileInfo = GetModuleVersionInfo(nullptr, nullptr);
     if (!fixedFileInfo) {
         return WinVersion::Unsupported;
@@ -403,6 +446,8 @@ WinVersion GetExplorerVersion() {
 
     switch (major) {
         case 10:
+            // explorer.exe includes the Win10 taskbar before this build.
+            *hasWin10Taskbar = build < 26100 || (build == 26100 && qfe < 1301);
             if (build < 22000) {
                 return WinVersion::Win10;
             } else {
@@ -414,16 +459,158 @@ WinVersion GetExplorerVersion() {
     return WinVersion::Unsupported;
 }
 
-BOOL Wh_ModInit() {
-    Wh_Log(L">");
+struct EXPLORER_PATCHER_HOOK {
+    PCSTR symbol;
+    void** pOriginalFunction;
+    void* hookFunction = nullptr;
+    bool optional = false;
 
-    g_winVersion = GetExplorerVersion();
-    if (g_winVersion < WinVersion::Win11) {
-        Wh_Log(L"Unsupported Windows version");
-        return FALSE;
+    template <typename Prototype>
+    EXPLORER_PATCHER_HOOK(
+        PCSTR symbol,
+        Prototype** originalFunction,
+        std::type_identity_t<Prototype*> hookFunction = nullptr,
+        bool optional = false)
+        : symbol(symbol),
+          pOriginalFunction(reinterpret_cast<void**>(originalFunction)),
+          hookFunction(reinterpret_cast<void*>(hookFunction)),
+          optional(optional) {}
+};
+
+bool HookExplorerPatcherSymbols(HMODULE explorerPatcherModule) {
+    if (g_explorerPatcherInitialized.exchange(true)) {
+        return true;
     }
 
-    WindhawkUtils::SYMBOL_HOOK taskbarDllHooks[] = {
+    if (g_winVersion >= WinVersion::Win11) {
+        g_winVersion = WinVersion::Win10;
+    }
+
+    EXPLORER_PATCHER_HOOK hooks[] = {
+        {R"(??_7CTaskBtnGroup@@6BITaskBtnGroup@@@)",
+         &CTaskBtnGroup_ITaskBtnGroup_vftable},
+        {R"(?GetGroup@CTaskBtnGroup@@UEAAPEAUITaskGroup@@XZ)",
+         &CTaskBtnGroup_GetGroup},
+        {R"(?_MoveTaskBtnGroup@CTaskListWnd@@IEAAJHH@Z)",
+         &CTaskListWnd__MoveTaskBtnGroup_Original,
+         CTaskListWnd__MoveTaskBtnGroup_Hook},
+        {R"(?_CreateTBGroup@CTaskListWnd@@IEAAPEAUITaskBtnGroup@@PEAUITaskGroup@@H@Z)",
+         &CTaskListWnd__CreateTBGroup_Original,
+         CTaskListWnd__CreateTBGroup_Hook},
+        {R"(?_TaskDestroyedFinal@CTaskListWnd@@IEAAXPEAUITaskBtnGroup@@H@Z)",
+         &CTaskListWnd__TaskDestroyedFinal_Original,
+         CTaskListWnd__TaskDestroyedFinal_Hook},
+        {R"(?CurrentVirtualDesktopChanged@CTaskBand@@UEAAJPEAUIVirtualDesktop@@0@Z)",
+         &CTaskBand_CurrentVirtualDesktopChanged_Original,
+         CTaskBand_CurrentVirtualDesktopChanged_Hook},
+        {// Windows 11 before version 24H2.
+         R"(?CurrentVirtualDesktopChanged@CTaskBand@@UEAAJPEAUIObjectArray@@PEAUIVirtualDesktop@@1@Z)",
+         &CTaskBand_CurrentVirtualDesktopChangedPre24H2_Original,
+         CTaskBand_CurrentVirtualDesktopChangedPre24H2_Hook, true},
+        {R"(?CurrentVirtualDesktopChangedAnimated@CTaskBand@@UEAAJPEAUIVirtualDesktop@@0@Z)",
+         &CTaskBand_CurrentVirtualDesktopChangedAnimated_Original,
+         CTaskBand_CurrentVirtualDesktopChangedAnimated_Hook},
+    };
+
+    bool succeeded = true;
+
+    for (const auto& hook : hooks) {
+        void* ptr = (void*)GetProcAddress(explorerPatcherModule, hook.symbol);
+        if (!ptr) {
+            Wh_Log(L"ExplorerPatcher symbol%s doesn't exist: %S",
+                   hook.optional ? L" (optional)" : L"", hook.symbol);
+            if (!hook.optional) {
+                succeeded = false;
+            }
+            continue;
+        }
+
+        if (hook.hookFunction) {
+            Wh_SetFunctionHook(ptr, hook.hookFunction, hook.pOriginalFunction);
+        } else {
+            *hook.pOriginalFunction = ptr;
+        }
+    }
+
+    if (!succeeded) {
+        Wh_Log(L"HookExplorerPatcherSymbols failed");
+    } else if (g_initialized) {
+        Wh_ApplyHookOperations();
+    }
+
+    return succeeded;
+}
+
+bool IsExplorerPatcherModule(HMODULE module) {
+    WCHAR moduleFilePath[MAX_PATH];
+    switch (
+        GetModuleFileName(module, moduleFilePath, ARRAYSIZE(moduleFilePath))) {
+        case 0:
+        case ARRAYSIZE(moduleFilePath):
+            return false;
+    }
+
+    PCWSTR moduleFileName = wcsrchr(moduleFilePath, L'\\');
+    if (!moduleFileName) {
+        return false;
+    }
+
+    moduleFileName++;
+
+    if (_wcsnicmp(L"ep_taskbar.", moduleFileName, sizeof("ep_taskbar.") - 1) ==
+        0) {
+        Wh_Log(L"ExplorerPatcher taskbar module: %s", moduleFileName);
+        return true;
+    }
+
+    return false;
+}
+
+bool HandleLoadedExplorerPatcher() {
+    HMODULE hMods[1024];
+    DWORD cbNeeded;
+    if (EnumProcessModules(GetCurrentProcess(), hMods, sizeof(hMods),
+                           &cbNeeded)) {
+        for (size_t i = 0; i < cbNeeded / sizeof(HMODULE); i++) {
+            if (IsExplorerPatcherModule(hMods[i])) {
+                return HookExplorerPatcherSymbols(hMods[i]);
+            }
+        }
+    }
+
+    return true;
+}
+
+using LoadLibraryExW_t = decltype(&LoadLibraryExW);
+LoadLibraryExW_t LoadLibraryExW_Original;
+HMODULE WINAPI LoadLibraryExW_Hook(LPCWSTR lpLibFileName,
+                                   HANDLE hFile,
+                                   DWORD dwFlags) {
+    HMODULE module = LoadLibraryExW_Original(lpLibFileName, hFile, dwFlags);
+    if (module && !((ULONG_PTR)module & 3) && !g_explorerPatcherInitialized) {
+        if (IsExplorerPatcherModule(module)) {
+            HookExplorerPatcherSymbols(module);
+        }
+    }
+
+    return module;
+}
+
+bool HookTaskbarSymbols() {
+    HMODULE module;
+    if (g_winVersion <= WinVersion::Win10) {
+        module = GetModuleHandle(nullptr);
+    } else {
+        module = LoadLibraryEx(L"taskbar.dll", nullptr,
+                               LOAD_LIBRARY_SEARCH_SYSTEM32);
+        if (!module) {
+            Wh_Log(L"Couldn't load taskbar.dll");
+            return false;
+        }
+    }
+
+    // Taskbar.dll, explorer.exe
+    WindhawkUtils::SYMBOL_HOOK symbolHooks[] = {
         {
             {LR"(const CTaskBtnGroup::`vftable'{for `ITaskBtnGroup'})"},
             &CTaskBtnGroup_ITaskBtnGroup_vftable,
@@ -433,9 +620,16 @@ BOOL Wh_ModInit() {
             &CTaskBtnGroup_GetGroup,
         },
         {
+            // Windows 11.
             {LR"(public: virtual bool __cdecl CTaskListWnd::TryMoveGroup(struct ITaskGroup *,unsigned int))"},
             &CTaskListWnd_TryMoveGroup_Original,
             CTaskListWnd_TryMoveGroup_Hook,
+            true,
+        },
+        {
+            {LR"(protected: long __cdecl CTaskListWnd::_MoveTaskBtnGroup(int,int))"},
+            &CTaskListWnd__MoveTaskBtnGroup_Original,
+            CTaskListWnd__MoveTaskBtnGroup_Hook,
         },
         {
             {LR"(protected: struct ITaskBtnGroup * __cdecl CTaskListWnd::_CreateTBGroup(struct ITaskGroup *,int))"},
@@ -448,14 +642,14 @@ BOOL Wh_ModInit() {
             CTaskListWnd__TaskDestroyedFinal_Hook,
         },
         {
-            // Windows 11 version 24H2 and newer.
+            // Windows 10, and Windows 11 version 24H2 and newer.
             {LR"(public: virtual long __cdecl CTaskBand::CurrentVirtualDesktopChanged(struct IVirtualDesktop *,struct IVirtualDesktop *))"},
             &CTaskBand_CurrentVirtualDesktopChanged_Original,
             CTaskBand_CurrentVirtualDesktopChanged_Hook,
             true,
         },
         {
-            // Before Windows 11 version 24H2.
+            // Windows 11 before version 24H2.
             {LR"(public: virtual long __cdecl CTaskBand::CurrentVirtualDesktopChanged(struct IObjectArray *,struct IVirtualDesktop *,struct IVirtualDesktop *))"},
             &CTaskBand_CurrentVirtualDesktopChangedPre24H2_Original,
             CTaskBand_CurrentVirtualDesktopChangedPre24H2_Hook,
@@ -468,18 +662,48 @@ BOOL Wh_ModInit() {
         },
     };
 
-    HMODULE taskbarModule =
-        LoadLibraryEx(L"taskbar.dll", nullptr, LOAD_LIBRARY_SEARCH_SYSTEM32);
-    if (!taskbarModule) {
-        Wh_Log(L"Couldn't load taskbar.dll");
+    return HookSymbols(module, symbolHooks, ARRAYSIZE(symbolHooks));
+}
+
+void LoadSettings() {
+    g_settings.oldTaskbarOnWin11 = Wh_GetIntSetting(L"oldTaskbarOnWin11");
+}
+
+BOOL Wh_ModInit() {
+    Wh_Log(L">");
+
+    LoadSettings();
+
+    bool hasWin10Taskbar;
+    g_winVersion = GetExplorerVersion(&hasWin10Taskbar);
+    if (g_winVersion == WinVersion::Unsupported) {
+        Wh_Log(L"Unsupported Windows version");
         return FALSE;
     }
 
-    if (!HookSymbols(taskbarModule, taskbarDllHooks,
-                     ARRAYSIZE(taskbarDllHooks))) {
-        Wh_Log(L"HookSymbols failed");
+    if (g_settings.oldTaskbarOnWin11) {
+        if (g_winVersion >= WinVersion::Win11) {
+            g_winVersion = WinVersion::Win10;
+        }
+
+        if (hasWin10Taskbar && !HookTaskbarSymbols()) {
+            return FALSE;
+        }
+    } else if (!HookTaskbarSymbols()) {
         return FALSE;
     }
+
+    if (!HandleLoadedExplorerPatcher()) {
+        Wh_Log(L"HandleLoadedExplorerPatcher failed");
+        return FALSE;
+    }
+
+    HMODULE kernelBaseModule = GetModuleHandle(L"kernelbase.dll");
+    auto pKernelBaseLoadLibraryExW = (decltype(&LoadLibraryExW))GetProcAddress(
+        kernelBaseModule, "LoadLibraryExW");
+    WindhawkUtils::SetFunctionHook(pKernelBaseLoadLibraryExW,
+                                   LoadLibraryExW_Hook,
+                                   &LoadLibraryExW_Original);
 
     WindhawkUtils::SetFunctionHook(DPA_InsertPtr, DPA_InsertPtr_Hook,
                                    &DPA_InsertPtr_Original);
@@ -490,14 +714,34 @@ BOOL Wh_ModInit() {
     WindhawkUtils::SetFunctionHook(CreateWindowExW, CreateWindowExW_Hook,
                                    &CreateWindowExW_Original);
 
+    g_initialized = true;
+
     return TRUE;
 }
 
 void Wh_ModAfterInit() {
     Wh_Log(L">");
 
+    // Try again in case there's a race between the previous attempt and the
+    // LoadLibraryExW hook.
+    if (!g_explorerPatcherInitialized) {
+        HandleLoadedExplorerPatcher();
+    }
+
     HWND hTaskbarWnd = FindCurrentProcessTaskbarWnd();
     if (hTaskbarWnd) {
         InitializeTaskbarVariables(hTaskbarWnd);
     }
+}
+
+BOOL Wh_ModSettingsChanged(BOOL* bReload) {
+    Wh_Log(L">");
+
+    bool prevOldTaskbarOnWin11 = g_settings.oldTaskbarOnWin11;
+
+    LoadSettings();
+
+    *bReload = g_settings.oldTaskbarOnWin11 != prevOldTaskbarOnWin11;
+
+    return TRUE;
 }
