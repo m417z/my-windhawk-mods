@@ -32,8 +32,8 @@ less sluggish and janky.
 ## Smoothness options
 
 * **Sync to display refresh rate**: steps the slide once per screen refresh
-  (via `DwmFlush`) instead of sleeping between frames. `Sleep` has a ~15.6 ms
-  granularity by default, which caps the stock slide at an uneven ~60 fps; with
+  (via `DwmFlush`) instead of waiting a fixed time between frames. Timed frames
+  drift against the display's refresh, so steps land unevenly on screen; with
   this option the slide runs at the monitor's refresh rate (144/165/240 Hz).
 * **Show/hide curve**: applies an easing curve to the slide. For a macOS-like
   feel, try "Ease-out strong" for show and "Ease-in-out" for hide with a
@@ -125,6 +125,7 @@ std::atomic<bool> g_initialized;
 std::atomic<bool> g_explorerPatcherInitialized;
 
 double g_recipCyclesPerSecond;
+HANDLE g_frameTimer;
 
 std::atomic<DWORD> g_slideWindowThreadId;
 int g_slideWindowSpeedup;
@@ -219,6 +220,24 @@ double TimerGetCycles() {
 
 double TimerGetSeconds() {
     return TimerGetCycles() * g_recipCyclesPerSecond;
+}
+
+// Unlike Sleep, which is rounded up to the system timer tick (15.6 ms by
+// default), a high resolution timer wakes close to the requested time.
+bool TimerWait(double ms) {
+    if (!g_frameTimer) {
+        return false;
+    }
+
+    // Negative for a relative time, in 100 nanosecond units.
+    LARGE_INTEGER dueTime;
+    dueTime.QuadPart = -static_cast<LONGLONG>(ms * 10000.0);
+    if (!SetWaitableTimer(g_frameTimer, &dueTime, 0, nullptr, nullptr, FALSE)) {
+        return false;
+    }
+
+    WaitForSingleObject(g_frameTimer, INFINITE);
+    return true;
 }
 
 Easing ParseEasing(PCWSTR name) {
@@ -348,12 +367,12 @@ void WINAPI Sleep_Hook(DWORD dwMilliseconds) {
     double frameElapsedTime =
         (TimerGetSeconds() - g_slideWindowLastFrameStartTime) * 1000.0;
 
-    int sleepTime = frameTotalTime - frameElapsedTime + 0.5;
+    double sleepTime = frameTotalTime - frameElapsedTime;
 
-    Wh_Log(L"> %f - %f = %d", frameTotalTime, frameElapsedTime, sleepTime);
+    Wh_Log(L"> %f - %f = %f", frameTotalTime, frameElapsedTime, sleepTime);
 
-    if (sleepTime > 0) {
-        Sleep_Original(sleepTime);
+    if (sleepTime > 0 && !TimerWait(sleepTime)) {
+        Sleep_Original(sleepTime + 0.5);
     }
 
     g_slideWindowLastFrameStartTime = TimerGetSeconds();
@@ -695,6 +714,14 @@ BOOL Wh_ModInit() {
 
     TimerInitialize();
 
+    // Requires Windows 10 version 1803, Sleep is used otherwise.
+    g_frameTimer = CreateWaitableTimerEx(nullptr, nullptr,
+                                         CREATE_WAITABLE_TIMER_HIGH_RESOLUTION,
+                                         TIMER_ALL_ACCESS);
+    if (!g_frameTimer) {
+        Wh_Log(L"CreateWaitableTimerEx failed: %u", GetLastError());
+    }
+
     g_initialized = true;
 
     return TRUE;
@@ -731,6 +758,10 @@ void Wh_ModUninit() {
 
     if (g_expandAnimation) {
         g_expandAnimation.Duration(g_expandOriginalDuration);
+    }
+
+    if (g_frameTimer) {
+        CloseHandle(g_frameTimer);
     }
 }
 
