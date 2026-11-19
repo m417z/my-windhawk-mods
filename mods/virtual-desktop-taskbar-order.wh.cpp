@@ -39,6 +39,7 @@ Taskbar Tweaker](https://tweaker.ramensoftware.com/).
 #include <algorithm>
 #include <atomic>
 #include <climits>
+#include <map>
 #include <mutex>
 #include <utility>
 #include <vector>
@@ -281,6 +282,178 @@ void QueryAppViewCollection() {
 
 #pragma endregion  // view_order
 
+#pragma region desktop_arrangement
+
+// The task groups of each taskbar's buttons, in order, saved per virtual
+// desktop when switching away from it. A taskbar is identified by the DPA of
+// its button groups. The keys and the task groups are only compared.
+std::map<std::pair<HDPA, void*>, std::vector<void*>> g_desktopArrangements;
+
+struct DesktopSwitch {
+    void* oldDesktop;
+    void* newDesktop;
+    std::vector<HDPA> savedDpas;
+};
+
+// Set while the taskbar updates its buttons for a virtual desktop switch.
+thread_local DesktopSwitch* g_desktopSwitch;
+
+// Saves the order of the taskbar's button groups for the old desktop, the first
+// time the switch changes them.
+void SaveDesktopArrangement(HDPA hdpa) {
+    std::vector<HDPA>& savedDpas = g_desktopSwitch->savedDpas;
+    if (std::ranges::find(savedDpas, hdpa) != savedDpas.end()) {
+        return;
+    }
+
+    savedDpas.push_back(hdpa);
+
+    std::vector<void*> taskGroups;
+    for (int i = 0; i < DPA_GetPtrCount(hdpa); i++) {
+        taskGroups.push_back(CTaskBtnGroup_GetGroup(DPA_GetPtr(hdpa, i)));
+    }
+
+    g_desktopArrangements[{hdpa, g_desktopSwitch->oldDesktop}] =
+        std::move(taskGroups);
+}
+
+// Returns the index at which the task group's new button group gets the
+// position it had in the arrangement saved for the new desktop, or INT_MAX to
+// append it.
+int GetDesktopArrangementIndex(HDPA hdpa, void* taskGroup) {
+    auto it = g_desktopArrangements.find({hdpa, g_desktopSwitch->newDesktop});
+    if (it == g_desktopArrangements.end()) {
+        return INT_MAX;
+    }
+
+    const std::vector<void*>& arrangement = it->second;
+    auto position = std::ranges::find(arrangement, taskGroup);
+    if (position == arrangement.end()) {
+        return INT_MAX;
+    }
+
+    // Insert before the first button group which follows it in the
+    // arrangement.
+    for (int i = 0; i < DPA_GetPtrCount(hdpa); i++) {
+        void* buttonTaskGroup = CTaskBtnGroup_GetGroup(DPA_GetPtr(hdpa, i));
+        if (std::find(position + 1, arrangement.end(), buttonTaskGroup) !=
+            arrangement.end()) {
+            return i;
+        }
+    }
+
+    return INT_MAX;
+}
+
+template <typename Function>
+HRESULT HandleDesktopSwitch(void* oldDesktop,
+                            void* newDesktop,
+                            Function original) {
+    if (GetCurrentThreadId() != g_taskbarThreadId || g_desktopSwitch) {
+        return original();
+    }
+
+    Wh_Log(L"> oldDesktop=%p, newDesktop=%p", oldDesktop, newDesktop);
+
+    DesktopSwitch desktopSwitch{oldDesktop, newDesktop, {}};
+    g_desktopSwitch = &desktopSwitch;
+    HRESULT hr = original();
+    g_desktopSwitch = nullptr;
+
+    // An arrangement of the old desktop which the switch didn't replace might
+    // be outdated.
+    std::erase_if(g_desktopArrangements, [&desktopSwitch](const auto& item) {
+        return item.first.second == desktopSwitch.oldDesktop &&
+               std::ranges::find(desktopSwitch.savedDpas, item.first.first) ==
+                   desktopSwitch.savedDpas.end();
+    });
+
+    return hr;
+}
+
+using CTaskBand_CurrentVirtualDesktopChanged_t =
+    HRESULT(WINAPI*)(void* pThis,
+                     void* oldDesktop,   // IVirtualDesktop*
+                     void* newDesktop);  // IVirtualDesktop*
+CTaskBand_CurrentVirtualDesktopChanged_t
+    CTaskBand_CurrentVirtualDesktopChanged_Original;
+HRESULT WINAPI CTaskBand_CurrentVirtualDesktopChanged_Hook(void* pThis,
+                                                           void* oldDesktop,
+                                                           void* newDesktop) {
+    return HandleDesktopSwitch(oldDesktop, newDesktop, [&] {
+        return CTaskBand_CurrentVirtualDesktopChanged_Original(
+            pThis, oldDesktop, newDesktop);
+    });
+}
+
+using CTaskBand_CurrentVirtualDesktopChangedPre24H2_t =
+    HRESULT(WINAPI*)(void* pThis,
+                     IObjectArray* objectArray,
+                     void* oldDesktop,   // IVirtualDesktop*
+                     void* newDesktop);  // IVirtualDesktop*
+CTaskBand_CurrentVirtualDesktopChangedPre24H2_t
+    CTaskBand_CurrentVirtualDesktopChangedPre24H2_Original;
+HRESULT WINAPI
+CTaskBand_CurrentVirtualDesktopChangedPre24H2_Hook(void* pThis,
+                                                   IObjectArray* objectArray,
+                                                   void* oldDesktop,
+                                                   void* newDesktop) {
+    return HandleDesktopSwitch(oldDesktop, newDesktop, [&] {
+        return CTaskBand_CurrentVirtualDesktopChangedPre24H2_Original(
+            pThis, objectArray, oldDesktop, newDesktop);
+    });
+}
+
+CTaskBand_CurrentVirtualDesktopChanged_t
+    CTaskBand_CurrentVirtualDesktopChangedAnimated_Original;
+HRESULT WINAPI
+CTaskBand_CurrentVirtualDesktopChangedAnimated_Hook(void* pThis,
+                                                    void* oldDesktop,
+                                                    void* newDesktop) {
+    return HandleDesktopSwitch(oldDesktop, newDesktop, [&] {
+        return CTaskBand_CurrentVirtualDesktopChangedAnimated_Original(
+            pThis, oldDesktop, newDesktop);
+    });
+}
+
+thread_local void* g_createTBGroup_taskGroup;
+
+using CTaskListWnd__CreateTBGroup_t =
+    void*(WINAPI*)(void* pThis,
+                   void* taskGroup,  // ITaskGroup*
+                   int index);
+CTaskListWnd__CreateTBGroup_t CTaskListWnd__CreateTBGroup_Original;
+void* WINAPI CTaskListWnd__CreateTBGroup_Hook(void* pThis,
+                                              void* taskGroup,
+                                              int index) {
+    g_createTBGroup_taskGroup = taskGroup;
+
+    void* ret = CTaskListWnd__CreateTBGroup_Original(pThis, taskGroup, index);
+
+    g_createTBGroup_taskGroup = nullptr;
+
+    return ret;
+}
+
+thread_local void* g_taskDestroyedFinal_buttonGroup;
+
+using CTaskListWnd__TaskDestroyedFinal_t =
+    void(WINAPI*)(void* pThis,
+                  void* buttonGroup,  // ITaskBtnGroup*
+                  int param);
+CTaskListWnd__TaskDestroyedFinal_t CTaskListWnd__TaskDestroyedFinal_Original;
+void WINAPI CTaskListWnd__TaskDestroyedFinal_Hook(void* pThis,
+                                                  void* buttonGroup,
+                                                  int param) {
+    g_taskDestroyedFinal_buttonGroup = buttonGroup;
+
+    CTaskListWnd__TaskDestroyedFinal_Original(pThis, buttonGroup, param);
+
+    g_taskDestroyedFinal_buttonGroup = nullptr;
+}
+
+#pragma endregion  // desktop_arrangement
+
 void OnButtonGroupInserted(LONG_PTR lpTaskSwLongPtr,
                            HDPA hButtonGroupsDpa,
                            int nButtonGroupIndex) {
@@ -444,6 +617,16 @@ void InitializeTaskbarVariables(HWND hTaskbarWnd) {
 using DPA_InsertPtr_t = decltype(&DPA_InsertPtr);
 DPA_InsertPtr_t DPA_InsertPtr_Original;
 auto WINAPI DPA_InsertPtr_Hook(HDPA hdpa, int i, void* p) {
+    if (g_desktopSwitch && g_createTBGroup_taskGroup && p &&
+        *(void**)p == CTaskBtnGroup_ITaskBtnGroup_vftable &&
+        CTaskBtnGroup_GetGroup(p) == g_createTBGroup_taskGroup) {
+        SaveDesktopArrangement(hdpa);
+        if (i == INT_MAX) {
+            i = GetDesktopArrangementIndex(hdpa, g_createTBGroup_taskGroup);
+            Wh_Log(L"Inserting button group %p at %d", p, i);
+        }
+    }
+
     auto ret = DPA_InsertPtr_Original(hdpa, i, p);
 
     if (GetCurrentThreadId() == g_taskbarThreadId) {
@@ -451,6 +634,17 @@ auto WINAPI DPA_InsertPtr_Hook(HDPA hdpa, int i, void* p) {
     }
 
     return ret;
+}
+
+using DPA_DeletePtr_t = decltype(&DPA_DeletePtr);
+DPA_DeletePtr_t DPA_DeletePtr_Original;
+void* WINAPI DPA_DeletePtr_Hook(HDPA hdpa, int i) {
+    if (g_desktopSwitch && g_taskDestroyedFinal_buttonGroup &&
+        DPA_GetPtr(hdpa, i) == g_taskDestroyedFinal_buttonGroup) {
+        SaveDesktopArrangement(hdpa);
+    }
+
+    return DPA_DeletePtr_Original(hdpa, i);
 }
 
 using CreateWindowExW_t = decltype(&CreateWindowExW);
@@ -572,6 +766,35 @@ BOOL Wh_ModInit() {
             &CTaskListWnd_TryMoveGroup_Original,
             CTaskListWnd_TryMoveGroup_Hook,
         },
+        {
+            {LR"(protected: struct ITaskBtnGroup * __cdecl CTaskListWnd::_CreateTBGroup(struct ITaskGroup *,int))"},
+            &CTaskListWnd__CreateTBGroup_Original,
+            CTaskListWnd__CreateTBGroup_Hook,
+        },
+        {
+            {LR"(protected: void __cdecl CTaskListWnd::_TaskDestroyedFinal(struct ITaskBtnGroup *,int))"},
+            &CTaskListWnd__TaskDestroyedFinal_Original,
+            CTaskListWnd__TaskDestroyedFinal_Hook,
+        },
+        {
+            // Windows 11 version 24H2 and newer.
+            {LR"(public: virtual long __cdecl CTaskBand::CurrentVirtualDesktopChanged(struct IVirtualDesktop *,struct IVirtualDesktop *))"},
+            &CTaskBand_CurrentVirtualDesktopChanged_Original,
+            CTaskBand_CurrentVirtualDesktopChanged_Hook,
+            true,
+        },
+        {
+            // Before Windows 11 version 24H2.
+            {LR"(public: virtual long __cdecl CTaskBand::CurrentVirtualDesktopChanged(struct IObjectArray *,struct IVirtualDesktop *,struct IVirtualDesktop *))"},
+            &CTaskBand_CurrentVirtualDesktopChangedPre24H2_Original,
+            CTaskBand_CurrentVirtualDesktopChangedPre24H2_Hook,
+            true,
+        },
+        {
+            {LR"(public: virtual long __cdecl CTaskBand::CurrentVirtualDesktopChangedAnimated(struct IVirtualDesktop *,struct IVirtualDesktop *))"},
+            &CTaskBand_CurrentVirtualDesktopChangedAnimated_Original,
+            CTaskBand_CurrentVirtualDesktopChangedAnimated_Hook,
+        },
     };
 
     HMODULE taskbarModule =
@@ -621,6 +844,9 @@ BOOL Wh_ModInit() {
 
     WindhawkUtils::SetFunctionHook(DPA_InsertPtr, DPA_InsertPtr_Hook,
                                    &DPA_InsertPtr_Original);
+
+    WindhawkUtils::SetFunctionHook(DPA_DeletePtr, DPA_DeletePtr_Hook,
+                                   &DPA_DeletePtr_Original);
 
     WindhawkUtils::SetFunctionHook(CreateWindowExW, CreateWindowExW_Hook,
                                    &CreateWindowExW_Original);
