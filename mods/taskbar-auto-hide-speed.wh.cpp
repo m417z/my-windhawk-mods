@@ -2,7 +2,7 @@
 // @id              taskbar-auto-hide-speed
 // @name            Taskbar auto-hide speed
 // @description     Customize the taskbar auto-hide animation speed and frame rate to make it feel less sluggish and janky
-// @version         1.1
+// @version         1.2
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
@@ -135,10 +135,11 @@ double g_slideWindowStartTime;
 double g_slideWindowLastFrameStartTime;
 double g_slideWindowLastReturnedMs;
 
-winrt::Windows::UI::Composition::KeyFrameAnimation g_collapseAnimation =
-    nullptr;
+[[clang::no_destroy]] winrt::Windows::UI::Composition::KeyFrameAnimation
+    g_collapseAnimation = nullptr;
 winrt::Windows::Foundation::TimeSpan g_collapseOriginalDuration;
-winrt::Windows::UI::Composition::KeyFrameAnimation g_expandAnimation = nullptr;
+[[clang::no_destroy]] winrt::Windows::UI::Composition::KeyFrameAnimation
+    g_expandAnimation = nullptr;
 winrt::Windows::Foundation::TimeSpan g_expandOriginalDuration;
 
 void SetAnimationDuration(
@@ -757,10 +758,12 @@ void Wh_ModUninit() {
 
     if (g_collapseAnimation) {
         g_collapseAnimation.Duration(g_collapseOriginalDuration);
+        g_collapseAnimation = nullptr;
     }
 
     if (g_expandAnimation) {
         g_expandAnimation.Duration(g_expandOriginalDuration);
+        g_expandAnimation = nullptr;
     }
 
     if (g_frameTimer) {
