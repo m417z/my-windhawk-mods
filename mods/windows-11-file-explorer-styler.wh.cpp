@@ -11983,6 +11983,7 @@ HRESULT WINAPI DrawTextWithGlow_Hook(HDC hdcMem,
 }
 
 struct ThemePartBitmaps {
+    HDC itemSelection[5];
     HDC scrollBarThumb[4];
     HDC headerItem[2];
 };
@@ -12005,6 +12006,9 @@ void ClearThemePartCache() {
     AcquireSRWLockExclusive(&g_themePartCacheLock);
 
     for (auto& [dpi, bitmaps] : g_themePartCache) {
+        for (HDC& hdc : bitmaps.itemSelection) {
+            DeleteThemePartBitmap(hdc);
+        }
         for (HDC& hdc : bitmaps.scrollBarThumb) {
             DeleteThemePartBitmap(hdc);
         }
@@ -12368,6 +12372,70 @@ bool PaintPaneSeparatorPart(HDC hdc, int iPartId, LPCRECT pRect) {
     return true;
 }
 
+bool PaintItemSelection(HDC hdc, int state, LPCRECT rect, UINT dpi) {
+    HIGHCONTRASTW contrast{sizeof(contrast)};
+    if (SystemParametersInfoW(SPI_GETHIGHCONTRAST, sizeof(contrast), &contrast, 0) &&
+        (contrast.dwFlags & HCF_HIGHCONTRASTON)) {
+        return false;
+    }
+
+    // ListView and TreeView expose hot/selected states but no pressed state.
+    // Only deepen the hot item under the primary button, including in a
+    // multi-selection. Let the control manage capture and its normal repaint.
+    int index = 1;
+    if (state == LISS_SELECTEDNOTFOCUS) {
+        index = 0;
+    } else if (state == LISS_HOT || state == LISS_HOTSELECTED || state == LISS_SELECTED) {
+        const int primary = GetSystemMetrics(SM_SWAPBUTTON) ? VK_RBUTTON : VK_LBUTTON;
+        POINT cursor;
+        HWND surface = GetEntireWindowEffectDCWnd(hdc);
+        HWND hit = GetCursorPos(&cursor) ? WindowFromPoint(cursor) : nullptr;
+        const bool underPointer = hit && surface && ScreenToClient(surface, &cursor) && PtInRect(rect, cursor);
+        if ((GetKeyState(primary) & 0x8000) && underPointer &&
+            (hit == surface || IsChild(surface, hit))) {
+            index = 4;
+        } else {
+            if (state == LISS_HOT) index = 3;
+            if (state == LISS_HOTSELECTED) index = 2;
+        }
+    }
+    int radius = std::max(1, MulDiv(3, dpi, 96));
+    int side = radius * 2 + 1;
+    HDC& cached = g_themePartCache[dpi].itemSelection[index];
+    if (!cached) {
+        cached = CreateThemePartBitmap(side, side, [&](ID2D1RenderTarget* target) {
+            // A translucent shade lets the window's actual accent show through.
+            constexpr BYTE alpha[] = {66, 96, 112, 36, 132};
+            winrt::com_ptr<ID2D1SolidColorBrush> brush;
+            target->CreateSolidColorBrush(ThemePartColor(alpha[index], 0, 0, 0), brush.put());
+            if (brush) {
+                target->FillRoundedRectangle(D2D1::RoundedRect(
+                    D2D1::RectF(0, 0, side, side), radius, radius), brush.get());
+            }
+        });
+    }
+    if (!cached) return false;
+    AlphaBlendNineGrid(hdc, rect, cached, radius, radius, radius, radius);
+    return true;
+}
+
+bool IsSelectionSurface(HWND window, PCWSTR themeClass) {
+    WCHAR name[64];
+    if (!GetClassNameW(window, name, ARRAYSIZE(name))) return false;
+    if (_wcsicmp(name, WC_TREEVIEWW) == 0) {
+        return !_wcsicmp(themeClass, L"TreeView") || !_wcsicmp(themeClass, L"ListView");
+    }
+
+    if (_wcsicmp(themeClass, L"ListView") && _wcsicmp(themeClass, L"ItemsView")) {
+        return false;
+    }
+    for (; window; window = GetAncestor(window, GA_PARENT)) {
+        if (GetClassNameW(window, name, ARRAYSIZE(name)) &&
+            !_wcsicmp(name, L"SHELLDLL_DefView")) return true;
+    }
+    return false;
+}
+
 using GetThemeClass_t = HRESULT(WINAPI*)(HTHEME hTheme,
                                          LPWSTR pszClassName,
                                          int cchClassName);
@@ -12388,7 +12456,7 @@ bool PaintThemeBackground(HTHEME hTheme,
         return false;
     }
 
-    enum class Part { ScrollBar, Header, PaneSeparator };
+    enum class Part { ScrollBar, Header, PaneSeparator, ItemSelection };
     Part part;
     if (_wcsicmp(themeClass, L"ScrollBar") == 0) {
         part = Part::ScrollBar;
@@ -12396,6 +12464,35 @@ bool PaintThemeBackground(HTHEME hTheme,
         part = Part::Header;
     } else if (_wcsicmp(themeClass, L"PreviewPane") == 0) {
         part = Part::PaneSeparator;
+    } else if (iPartId == LVP_GROUPHEADER && !_wcsicmp(themeClass, L"ListView") &&
+               GetEffectiveBackgroundTranslucentEffect() == BackgroundTranslucentEffect::kSystemAccent &&
+               IsSelectionSurface(GetEntireWindowEffectDCWnd(hdc), themeClass)) {
+        switch (iStateId) {
+            case LVGH_OPENHOT: case LVGH_CLOSEHOT:
+            case LVGH_OPENMIXEDSELECTIONHOT: case LVGH_CLOSEMIXEDSELECTIONHOT:
+                iStateId = LISS_HOT;
+                break;
+            case LVGH_OPENSELECTED: case LVGH_CLOSESELECTED:
+                iStateId = LISS_SELECTED;
+                break;
+            case LVGH_OPENSELECTEDHOT: case LVGH_CLOSESELECTEDHOT:
+            case LVGH_OPENSELECTEDNOTFOCUSEDHOT: case LVGH_CLOSESELECTEDNOTFOCUSEDHOT:
+                iStateId = LISS_HOTSELECTED;
+                break;
+            case LVGH_OPENSELECTEDNOTFOCUSED: case LVGH_CLOSESELECTEDNOTFOCUSED:
+                iStateId = LISS_SELECTEDNOTFOCUS;
+                break;
+            default:
+                return false;
+        }
+        part = Part::ItemSelection;
+    } else if (GetEffectiveBackgroundTranslucentEffect() ==
+                   BackgroundTranslucentEffect::kSystemAccent &&
+               iPartId == TVP_TREEITEM &&
+               (iStateId == TREIS_HOT || iStateId == TREIS_SELECTED || iStateId == TREIS_SELECTEDNOTFOCUS ||
+                iStateId == TREIS_HOTSELECTED)) {
+        if (!IsSelectionSurface(GetEntireWindowEffectDCWnd(hdc), themeClass)) return false;
+        part = Part::ItemSelection;
     } else {
         return false;
     }
@@ -12419,6 +12516,9 @@ bool PaintThemeBackground(HTHEME hTheme,
         case Part::Header:
             painted = PaintHeaderPart(hdc, iPartId, iStateId, pRect, dpi);
             break;
+        case Part::ItemSelection:
+            painted = PaintItemSelection(hdc, iStateId, pRect, dpi);
+            break;
         case Part::PaneSeparator:
             painted = PaintPaneSeparatorPart(hdc, iPartId, pRect);
             break;
@@ -12433,6 +12533,40 @@ bool PaintThemeBackground(HTHEME hTheme,
     return painted;
 }
 
+template<typename DrawOriginal>
+std::optional<HRESULT> PaintFocusedItemOverlay(
+    HTHEME theme, HDC dc, int part, int state, LPCRECT rect, LPCRECT clip,
+    DrawOriginal drawOriginal) {
+    // Explorer draws this additional ItemsView layer over the ListView item.
+    if (part != 3 || state != 2 || !rect || !g_pGetThemeClass ||
+        GetEffectiveBackgroundTranslucentEffect() != BackgroundTranslucentEffect::kSystemAccent) {
+        return std::nullopt;
+    }
+    WCHAR name[64];
+    HWND surface = GetEntireWindowEffectDCWnd(dc);
+    if (!surface || FAILED(g_pGetThemeClass(theme, name, ARRAYSIZE(name))) ||
+        _wcsicmp(name, L"ItemsView") || !IsSelectionSurface(surface, name)) {
+        return std::nullopt;
+    }
+
+    int saved = SaveDC(dc);
+    if (!saved) return std::nullopt;
+    if (clip) IntersectClipRect(dc, clip->left, clip->top, clip->right, clip->bottom);
+    UINT dpi = GetThemePartDpi(dc);
+    AcquireSRWLockExclusive(&g_themePartCacheLock);
+    bool painted = PaintItemSelection(dc, LISS_HOT, rect, dpi);
+    ReleaseSRWLockExclusive(&g_themePartCacheLock);
+    std::optional<HRESULT> result;
+    if (painted) {
+        int edge = std::max(1, MulDiv(1, dpi, 96));
+        ExcludeClipRect(dc, rect->left + edge, rect->top + edge,
+                       rect->right - edge, rect->bottom - edge);
+        result = drawOriginal();
+    }
+    RestoreDC(dc, saved);
+    return result;
+}
+
 using DrawThemeBackground_t = decltype(&DrawThemeBackground);
 DrawThemeBackground_t DrawThemeBackground_Original;
 HRESULT WINAPI DrawThemeBackground_Hook(HTHEME hTheme,
@@ -12441,6 +12575,9 @@ HRESULT WINAPI DrawThemeBackground_Hook(HTHEME hTheme,
                                         int iStateId,
                                         LPCRECT pRect,
                                         LPCRECT pClipRect) {
+    if (auto result = PaintFocusedItemOverlay(hTheme, hdc, iPartId, iStateId,
+            pRect, pClipRect, [&] { return DrawThemeBackground_Original(
+                hTheme, hdc, iPartId, iStateId, pRect, pClipRect); })) return *result;
     if (PaintThemeBackground(hTheme, hdc, iPartId, iStateId, pRect,
                              pClipRect)) {
         return S_OK;
@@ -12461,6 +12598,11 @@ HRESULT WINAPI DrawThemeBackgroundEx_Hook(HTHEME hTheme,
     LPCRECT pClipRect = pOptions && (pOptions->dwFlags & DTBG_CLIPRECT)
                             ? &pOptions->rcClip
                             : nullptr;
+    if ((!pOptions || !(pOptions->dwFlags & ~DTBG_CLIPRECT))) {
+        if (auto result = PaintFocusedItemOverlay(hTheme, hdc, iPartId, iStateId,
+                pRect, pClipRect, [&] { return DrawThemeBackgroundEx_Original(
+                    hTheme, hdc, iPartId, iStateId, pRect, pOptions); })) return *result;
+    }
     if (PaintThemeBackground(hTheme, hdc, iPartId, iStateId, pRect,
                              pClipRect)) {
         return S_OK;
