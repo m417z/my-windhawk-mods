@@ -30,6 +30,14 @@ own.
 Also check out the **Windows 11 Taskbar Styler**, **Windows 11 Start Menu
 Styler** and **Windows 11 Notification Center Styler** mods.
 
+## System accent Acrylic
+
+Select **System accent Acrylic (solid when inactive)** in the translucent
+background effect setting to tint the active window with the Windows accent
+color. Adjust **Active accent tint opacity** to control how much of the
+blurred background shows through. Inactive windows use an opaque, muted
+shade derived from the accent and the system light or dark mode.
+
 ## Themes
 
 Themes are collections of styles. The following themes are integrated into the
@@ -384,10 +392,13 @@ Windows](https://windhawk.net/mods/translucent-windows) mod.
   - "": Default for the selected theme
   - default: Windows default
   - acrylicblur: Blur (AccentBlurBehind)
+  - systemAccent: System accent Acrylic (solid when inactive)
   - acrylic: Acrylic
   - mica: Mica
   - micaAlt: Mica Alt
   - none: None
+- accentTintOpacity: 70
+  $name: Active accent tint opacity (0-100%)
 - backgroundTranslucentEffectRegion: ""
   $name: Translucent background effect region
   $description: >-
@@ -454,6 +465,7 @@ struct ThemeTargetStyles {
 enum class BackgroundTranslucentEffect {
     kDefault,
     kBlur,
+    kSystemAccent,
     kAcrylic,
     kMica,
     kMicaAlt,
@@ -1723,6 +1735,7 @@ enum class XamlDiagnosticsHandling {
 };
 
 struct {
+    int accentTintOpacity;
     std::optional<BackgroundTranslucentEffect> backgroundTranslucentEffect;
     BackgroundTranslucentEffectRegion backgroundTranslucentEffectRegion;
     int explorerFrameContainerHeight;
@@ -11137,10 +11150,18 @@ HRESULT WINAPI DwmSetWindowAttribute_Hook(HWND hWnd,
     auto backgroundTranslucentEffect =
         GetEffectiveBackgroundTranslucentEffect();
 
+    // ApplyBackgroundTranslucentEffect owns the backdrop while our accent is
+    // installed. A later WinUI host-brush request must not reset it to AUTO.
+    if (backgroundTranslucentEffect == BackgroundTranslucentEffect::kSystemAccent &&
+        GetProp(hWnd, L"windhawk_background_effect-" WH_MOD_ID)) {
+        return S_OK;
+    }
+
     int backdropType;
     switch (backgroundTranslucentEffect) {
         case BackgroundTranslucentEffect::kDefault:
             return original();
+        case BackgroundTranslucentEffect::kSystemAccent:
         case BackgroundTranslucentEffect::kBlur:
             backdropType = DWMSBT_AUTO;
             break;
@@ -12467,7 +12488,7 @@ void WINAPI Element_PaintBorder_Hook(void* pThis,
 }
 
 // Based on the Translucent Windows mod.
-void SetAccentBlurBehind(HWND hWnd, bool enable) {
+void SetAccentBlurBehind(HWND hWnd, bool enable, bool systemAccent = false, bool active = false) {
     // Without blur behind, the extended frame is drawn over the accent blur.
     HRGN hRgn = enable ? CreateRectRgn(0, 0, -1, -1) : nullptr;
     DWM_BLURBEHIND blurBehind = {
@@ -12522,13 +12543,83 @@ void SetAccentBlurBehind(HWND hWnd, bool enable) {
         .GradientColor = 0x3A232323,
     };
 
+    if (systemAccent) {
+        using namespace winrt::Windows::UI::ViewManagement;
+        try {
+            UISettings colors;
+            auto background = colors.GetColorValue(UIColorType::Background);
+            auto tint = colors.GetColorValue(active ? UIColorType::Accent :
+                (background.R < 128 ? UIColorType::AccentDark2 : UIColorType::AccentLight2));
+            if (!active) {
+                // Keep the hue while giving the resting surface a neutral base.
+                const int neutral = background.R < 128 ? 64 : 224;
+                auto mix = [neutral](int channel) {
+                    return static_cast<uint8_t>((channel + 3 * neutral) / 4);
+                };
+                tint.R = mix(tint.R);
+                tint.G = mix(tint.G);
+                tint.B = mix(tint.B);
+            }
+            DWORD alpha = active ? std::max(1, g_settings.accentTintOpacity * 255 / 100) : 255;
+            accentPolicy.GradientColor = RGB(tint.R, tint.G, tint.B) | (alpha << 24);
+            constexpr int kAccentEnableGradient = 1;
+            if (!active) accentPolicy.AccentState = kAccentEnableGradient;
+        } catch (winrt::hresult_error const& ex) {
+            Wh_Log(L"Accent color unavailable: %08X", ex.code());
+        }
+    }
+
     WINDOWCOMPOSITIONATTRIBDATA data = {
         .Attrib = WCA_ACCENT_POLICY,
         .pvData = &accentPolicy,
         .cbData = sizeof(accentPolicy),
     };
 
-    pSetWindowCompositionAttribute(hWnd, &data);
+    if (!pSetWindowCompositionAttribute(hWnd, &data) && systemAccent) {
+        accentPolicy.AccentState = 1;  // ACCENT_ENABLE_GRADIENT
+        accentPolicy.GradientColor |= 0xFF000000u;
+        if (!pSetWindowCompositionAttribute(hWnd, &data)) {
+            Wh_Log(L"Window accent and solid fallback failed: %u", GetLastError());
+        }
+    }
+}
+
+static char g_accentRefreshTimerKey;
+const UINT_PTR kAccentRefreshTimer = reinterpret_cast<UINT_PTR>(&g_accentRefreshTimerKey);
+
+LRESULT CALLBACK AccentWindowSubclass(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp,
+                                      UINT_PTR id, DWORD_PTR) {
+    if (msg == WM_TIMER && wp == kAccentRefreshTimer) {
+        KillTimer(hwnd, kAccentRefreshTimer);
+        if (IsWindowVisible(hwnd) && !IsIconic(hwnd) &&
+            GetEffectiveBackgroundTranslucentEffect() == BackgroundTranslucentEffect::kSystemAccent) {
+            if (g_settings.backgroundTranslucentEffectRegion ==
+                BackgroundTranslucentEffectRegion::kEntireWindow) {
+                MARGINS margins = {-1, -1, -1, -1};
+                DwmExtendFrameIntoClientArea_Original(hwnd, &margins);
+            }
+            SetAccentBlurBehind(hwnd, true, true, GetActiveWindow() == hwnd);
+            RedrawWindow(hwnd, nullptr, nullptr,
+                         RDW_INVALIDATE | RDW_ERASE | RDW_FRAME | RDW_ALLCHILDREN);
+        }
+        return 0;
+    }
+    if (msg == WM_NCDESTROY) {
+        KillTimer(hwnd, kAccentRefreshTimer);
+        RemoveWindowSubclass(hwnd, AccentWindowSubclass, id);
+    }
+    auto result = DefSubclassProc(hwnd, msg, wp, lp);
+    if (msg == WM_ACTIVATE && IsWindowVisible(hwnd) && !IsIconic(hwnd)) {
+        SetAccentBlurBehind(hwnd, true, true, LOWORD(wp) != WA_INACTIVE);
+        if (LOWORD(wp) != WA_INACTIVE) SetTimer(hwnd, kAccentRefreshTimer, 150, nullptr);
+    } else if (msg == WM_SETTINGCHANGE || msg == WM_THEMECHANGED ||
+               msg == WM_DWMCOLORIZATIONCOLORCHANGED || msg == WM_DWMCOMPOSITIONCHANGED ||
+               (msg == WM_SHOWWINDOW && wp) ||
+               (msg == WM_SIZE && (wp == SIZE_RESTORED || wp == SIZE_MAXIMIZED))) {
+        // Explorer and DWM may still be processing the same theme change.
+        SetTimer(hwnd, kAccentRefreshTimer, 150, nullptr);
+    }
+    return result;
 }
 
 void ApplyBackgroundTranslucentEffect(
@@ -12572,6 +12663,7 @@ void ApplyBackgroundTranslucentEffect(
         case BackgroundTranslucentEffect::kDefault:
             backdropType = DWMSBT_TABBEDWINDOW;
             break;
+        case BackgroundTranslucentEffect::kSystemAccent:
         case BackgroundTranslucentEffect::kBlur:
             backdropType = DWMSBT_AUTO;
             break;
@@ -12592,7 +12684,15 @@ void ApplyBackgroundTranslucentEffect(
     DwmSetWindowAttribute_Original(hWnd, DWMWA_SYSTEMBACKDROP_TYPE,
                                    &backdropType, sizeof(backdropType));
 
-    SetAccentBlurBehind(hWnd, effect == BackgroundTranslucentEffect::kBlur);
+    if (effect == BackgroundTranslucentEffect::kSystemAccent) {
+        SetWindowSubclass(hWnd, AccentWindowSubclass, 1, 0);
+        SetTimer(hWnd, kAccentRefreshTimer, 150, nullptr);
+        SetAccentBlurBehind(hWnd, true, true, GetActiveWindow() == hWnd);
+    } else {
+        KillTimer(hWnd, kAccentRefreshTimer);
+        RemoveWindowSubclass(hWnd, AccentWindowSubclass, 1);
+        SetAccentBlurBehind(hWnd, effect == BackgroundTranslucentEffect::kBlur);
+    }
 }
 
 void TriggerWindowCompositionUpdate(HWND hWnd) {
@@ -13123,10 +13223,13 @@ void LoadSettings() {
 
     PCWSTR backgroundTranslucentEffect =
         Wh_GetStringSetting(L"backgroundTranslucentEffect");
+    g_settings.accentTintOpacity = std::clamp(Wh_GetIntSetting(L"accentTintOpacity"), 0, 100);
     g_settings.backgroundTranslucentEffect.reset();
     if (wcscmp(backgroundTranslucentEffect, L"default") == 0) {
         g_settings.backgroundTranslucentEffect =
             BackgroundTranslucentEffect::kDefault;
+    } else if (wcscmp(backgroundTranslucentEffect, L"systemAccent") == 0) {
+        g_settings.backgroundTranslucentEffect = BackgroundTranslucentEffect::kSystemAccent;
     } else if (wcscmp(backgroundTranslucentEffect, L"acrylicblur") == 0) {
         g_settings.backgroundTranslucentEffect =
             BackgroundTranslucentEffect::kBlur;
