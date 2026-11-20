@@ -9786,11 +9786,6 @@ constexpr ULONGLONG kDiagnosticsReleaseDelay = 200;
 // no removal is reported for a handle whose runtime object is gone. Such an
 // element stays held, and its own removal releases it.
 //
-// Which leaves a styled element of a tree discarded whole held for good, and
-// with it everything below it, since a parent holds its children. Rules that
-// match File Explorer match almost nothing of such a tree, so what this retains
-// is small, but a rule written against a bare type would retain much more.
-//
 // Virtualization bookkeeping doesn't count, being weak and torn down once the
 // element is gone. A repeater has to be let go of in any case: it holds its
 // items source, which the app can expect to be gone along with the tree.
@@ -9830,6 +9825,7 @@ void FlushDiagnosticsReleases() {
     std::sort(pending.begin(), pending.end());
     pending.erase(std::unique(pending.begin(), pending.end()), pending.end());
 
+    bool released = false;
     for (InstanceHandle handle : pending) {
         if (ElementHasState(FindElementId(handle))) {
             continue;
@@ -9839,6 +9835,18 @@ void FlushDiagnosticsReleases() {
         // other is destroyed by dropping the entry's, and is seen to be gone.
         visualTreeWatcher->ReleaseDiagnosticsReference(handle);
         ReleaseElementIdEntry(handle);
+        released = true;
+    }
+
+    // An element's diagnostics object belongs to its parent's, so releasing an
+    // ancestor drops it too, and with it the removal report an element with
+    // state waits for. Taking it again gives the element an object of its own.
+    if (released) {
+        for (const auto& [elementId, elementCustomizationState] :
+             g_elementsCustomizationState) {
+            visualTreeWatcher->TakeDiagnosticsReference(
+                elementCustomizationState.element);
+        }
     }
 
     // Here rather than anywhere else on the report path: the releases above are
