@@ -310,6 +310,147 @@ void OverrideResourceDirectoryLookup(
     }
 }
 
+HMODULE GetModuleFromAddress(void* address) {
+    HMODULE module;
+    if (!GetModuleHandleEx(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
+                               GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                           (PCWSTR)address, &module)) {
+        return nullptr;
+    }
+
+    return module;
+}
+
+std::wstring GetModulePath(HMODULE module) {
+    if (!module) {
+        return L"<unknown>";
+    }
+
+    std::wstring path(MAX_PATH, L'\0');
+    while (true) {
+        DWORD len = GetModuleFileName(module, path.data(), path.size());
+        if (len == 0) {
+            return L"<unknown>";
+        }
+
+        // A result equal to the buffer size means the path was truncated.
+        if (len == path.size()) {
+            path.resize(len * 2);
+            continue;
+        }
+
+        path.resize(len);
+        return path;
+    }
+}
+
+// Whether the path is under the Windows directory.
+bool IsSystemModulePath(PCWSTR path) {
+    WCHAR windowsDir[MAX_PATH];
+    UINT len = GetSystemWindowsDirectory(windowsDir, ARRAYSIZE(windowsDir));
+    if (len == 0 || len >= ARRAYSIZE(windowsDir)) {
+        return false;
+    }
+
+    return _wcsnicmp(path, windowsDir, len) == 0 && path[len] == L'\\';
+}
+
+// Another hook on top of ours makes its hook function the direct caller, so a
+// few frames further up the stack are checked as well. A hook isn't in a system
+// module, so the search stops at the first frame in one.
+[[clang::noinline]] bool IsHookCallerFromModule(void* retAddress,
+                                                PCWSTR moduleName,
+                                                bool logMismatches = true) {
+    HMODULE expectedModule = GetModuleHandle(moduleName);
+    if (!expectedModule) {
+        return false;
+    }
+
+    HMODULE callerModule = GetModuleFromAddress(retAddress);
+    if (callerModule == expectedModule) {
+        return true;
+    }
+
+    std::wstring callerPath = GetModulePath(callerModule);
+    if (IsSystemModulePath(callerPath.c_str())) {
+        if (logMismatches) {
+            Wh_Log(L"Skipping caller %p in module %s, expected %s", retAddress,
+                   callerPath.c_str(), moduleName);
+        }
+        return false;
+    }
+
+    if (logMismatches) {
+        Wh_Log(L"Tracing caller %p in module %s, expected %s", retAddress,
+               callerPath.c_str(), moduleName);
+    }
+
+    // The backtrace skips the frames of this function, the hook, and the
+    // caller.
+    void* frames[4];
+    WORD count = CaptureStackBackTrace(3, ARRAYSIZE(frames), frames, nullptr);
+    for (WORD i = 0; i < count; i++) {
+        HMODULE module = GetModuleFromAddress(frames[i]);
+        std::wstring modulePath = GetModulePath(module);
+        if (logMismatches) {
+            Wh_Log(L"Frame %u: %p in module %s", i + 1, frames[i],
+                   modulePath.c_str());
+        }
+        if (module == expectedModule) {
+            return true;
+        }
+
+        if (IsSystemModulePath(modulePath.c_str())) {
+            return false;
+        }
+    }
+
+    return false;
+}
+
+// The search button of the WinUI 3 search app, in OSClient.UWP.dll, looks the
+// button extents up in the application resources through the dictionary's IMap
+// interface.
+using ResourceDictionary_IMap_Lookup_t = HRESULT(WINAPI*)(void* pThis,
+                                                          void* key,
+                                                          void** value);
+ResourceDictionary_IMap_Lookup_t ResourceDictionary_IMap_Lookup_Original;
+HRESULT WINAPI ResourceDictionary_IMap_Lookup_Hook(void* pThis,
+                                                   void* key,
+                                                   void** value) {
+    HRESULT hr = ResourceDictionary_IMap_Lookup_Original(pThis, key, value);
+    // Callers from other modules are common here, so they aren't logged.
+    if (SUCCEEDED(hr) && *value &&
+        IsHookCallerFromModule(__builtin_return_address(0), L"OSClient.UWP.dll",
+                               /*logMismatches=*/false)) {
+        OverrideResourceDirectoryLookup(
+            __FUNCTION__, (const winrt::Windows::Foundation::IInspectable*)&key,
+            (winrt::Windows::Foundation::IInspectable*)value);
+    }
+
+    return hr;
+}
+
+void HookResourceDictionaryIMapLookup(void* resourceDictionary) {
+    winrt::Windows::Foundation::Collections::IMap<
+        winrt::Windows::Foundation::IInspectable,
+        winrt::Windows::Foundation::IInspectable>
+        map{nullptr};
+    ((IUnknown*)resourceDictionary)
+        ->QueryInterface(winrt::guid_of<decltype(map)>(), winrt::put_abi(map));
+    if (!map) {
+        Wh_Log(L"Failed to get the resource dictionary's IMap");
+        return;
+    }
+
+    // Lookup follows the IUnknown and IInspectable methods.
+    void** vtable = *(void***)winrt::get_abi(map);
+    auto lookup = (ResourceDictionary_IMap_Lookup_t)vtable[6];
+    WindhawkUtils::SetFunctionHook(lookup, ResourceDictionary_IMap_Lookup_Hook,
+                                   &ResourceDictionary_IMap_Lookup_Original);
+    Wh_ApplyHookOperations();
+}
+
 using ResourceDictionary_Lookup_TaskbarView_t =
     winrt::Windows::Foundation::IInspectable*(
         WINAPI*)(void* pThis,
@@ -323,6 +464,13 @@ ResourceDictionary_Lookup_TaskbarView_Hook(
     void** result,
     winrt::Windows::Foundation::IInspectable* key) {
     // Wh_Log(L">");
+
+    // All resource dictionaries share the vtable. pThis holds the dictionary's
+    // ABI pointer.
+    [[maybe_unused]] static bool hookedIMapLookup = [pThis] {
+        HookResourceDictionaryIMapLookup(*(void**)pThis);
+        return true;
+    }();
 
     auto ret =
         ResourceDictionary_Lookup_TaskbarView_Original(pThis, result, key);
