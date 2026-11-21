@@ -554,6 +554,7 @@ using CTaskListThumbnailWnd_DisplayUI_t = void*(WINAPI*)(void* pThis,
                                                          void* param2,
                                                          void* param3,
                                                          DWORD flags);
+CTaskListThumbnailWnd_DisplayUI_t CTaskListThumbnailWnd_DisplayUI;
 CTaskListThumbnailWnd_DisplayUI_t CTaskListThumbnailWnd_DisplayUI_Original;
 void* WINAPI CTaskListThumbnailWnd_DisplayUI_Hook(void* pThis,
                                                   void* param1,
@@ -1880,6 +1881,114 @@ int WINAPI TaskbarSettings_GroupingMode_Hook(void* pThis) {
         TaskbarSettings_GroupingMode_Original(pThis));
 }
 
+HMODULE GetModuleFromAddress(void* address) {
+    HMODULE module;
+    if (!GetModuleHandleEx(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
+                               GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                           (PCWSTR)address, &module)) {
+        return nullptr;
+    }
+
+    return module;
+}
+
+std::wstring GetModulePath(HMODULE module) {
+    if (!module) {
+        return L"<unknown>";
+    }
+
+    std::wstring path(MAX_PATH, L'\0');
+    while (true) {
+        DWORD len = GetModuleFileName(module, path.data(), path.size());
+        if (len == 0) {
+            return L"<unknown>";
+        }
+
+        // A result equal to the buffer size means the path was truncated.
+        if (len == path.size()) {
+            path.resize(len * 2);
+            continue;
+        }
+
+        path.resize(len);
+        return path;
+    }
+}
+
+// Whether the path is under the Windows directory.
+bool IsSystemModulePath(PCWSTR path) {
+    WCHAR windowsDir[MAX_PATH];
+    UINT len = GetSystemWindowsDirectory(windowsDir, ARRAYSIZE(windowsDir));
+    if (len == 0 || len >= ARRAYSIZE(windowsDir)) {
+        return false;
+    }
+
+    return _wcsnicmp(path, windowsDir, len) == 0 && path[len] == L'\\';
+}
+
+// Another hook on top of ours makes its hook function the direct caller, so a
+// few frames further up the stack are checked as well. A hook isn't in a system
+// module, so the search stops at the first frame in one.
+[[clang::noinline]] bool IsHookCallerFromModule(void* retAddress,
+                                                PCWSTR moduleName) {
+    HMODULE expectedModule = GetModuleHandle(moduleName);
+    if (!expectedModule) {
+        return false;
+    }
+
+    HMODULE callerModule = GetModuleFromAddress(retAddress);
+    if (callerModule == expectedModule) {
+        return true;
+    }
+
+    std::wstring callerPath = GetModulePath(callerModule);
+    if (IsSystemModulePath(callerPath.c_str())) {
+        Wh_Log(L"Skipping caller %p in module %s, expected %s", retAddress,
+               callerPath.c_str(), moduleName);
+        return false;
+    }
+
+    Wh_Log(L"Tracing caller %p in module %s, expected %s", retAddress,
+           callerPath.c_str(), moduleName);
+
+    // The backtrace skips the frames of this function, the hook, and the
+    // caller.
+    void* frames[4];
+    WORD count = CaptureStackBackTrace(3, ARRAYSIZE(frames), frames, nullptr);
+    for (WORD i = 0; i < count; i++) {
+        HMODULE module = GetModuleFromAddress(frames[i]);
+        std::wstring modulePath = GetModulePath(module);
+        Wh_Log(L"Frame %u: %p in module %s", i + 1, frames[i],
+               modulePath.c_str());
+        if (module == expectedModule) {
+            return true;
+        }
+
+        if (IsSystemModulePath(modulePath.c_str())) {
+            return false;
+        }
+    }
+
+    return false;
+}
+
+// The search button of the WinUI 3 search app, in OSClient.UWP.dll, reads the
+// grouping mode from the taskbar settings. Like the experience buttons, it
+// follows the labels.
+using TaskbarSettings_get_GroupingMode_t = HRESULT(WINAPI*)(void* pThis,
+                                                            int* groupingMode);
+TaskbarSettings_get_GroupingMode_t TaskbarSettings_get_GroupingMode_Original;
+HRESULT WINAPI TaskbarSettings_get_GroupingMode_Hook(void* pThis,
+                                                     int* groupingMode) {
+    HRESULT hr = TaskbarSettings_get_GroupingMode_Original(pThis, groupingMode);
+    if (SUCCEEDED(hr) && IsHookCallerFromModule(__builtin_return_address(0),
+                                                L"OSClient.UWP.dll")) {
+        *groupingMode = GetExperienceButtonGroupingMode(*groupingMode);
+    }
+
+    return hr;
+}
+
 bool IsAppIdExcluded(PCWSTR appId) {
     std::wstring appIdUpper = appId;
     LCMapStringEx(LOCALE_NAME_USER_DEFAULT, LCMAP_UPPERCASE, appIdUpper.data(),
@@ -2970,6 +3079,8 @@ HMODULE WINAPI LoadLibraryExW_Hook(LPCWSTR lpLibFileName,
     return module;
 }
 
+// The symbol cache holds one list of symbols per module, so the list doesn't
+// depend on the options, and the thumbnail hook is set separately.
 bool HookTaskbarDllSymbols() {
     HMODULE module =
         LoadLibraryEx(L"taskbar.dll", nullptr, LOAD_LIBRARY_SEARCH_SYSTEM32);
@@ -2981,15 +3092,29 @@ bool HookTaskbarDllSymbols() {
     WindhawkUtils::SYMBOL_HOOK taskbarDllHooks[] = {
         {
             {LR"(public: virtual int __cdecl CTaskListThumbnailWnd::DisplayUI(struct ITaskBtnGroup *,struct ITaskItem *,struct ITaskItem *,unsigned long))"},
-            &CTaskListThumbnailWnd_DisplayUI_Original,
-            CTaskListThumbnailWnd_DisplayUI_Hook,
+            &CTaskListThumbnailWnd_DisplayUI,
+            nullptr,
             true,  // Classic thumbnails, removed in or near 10.0.26100.8491.
+        },
+        {
+            {LR"(public: virtual int __cdecl winrt::impl::produce<struct winrt::WindowsUdk::UI::Shell::implementation::TaskbarSettings,struct winrt::WindowsUdk::UI::Shell::ITaskbarSettings5>::get_GroupingMode(int *))"},
+            &TaskbarSettings_get_GroupingMode_Original,
+            TaskbarSettings_get_GroupingMode_Hook,
+            true,  // Only needed for the WinUI 3 search app.
         },
     };
 
     if (!HookSymbols(module, taskbarDllHooks, ARRAYSIZE(taskbarDllHooks))) {
         Wh_Log(L"HookSymbols failed");
         return false;
+    }
+
+    if (g_settings.alwaysShowThumbnailLabels &&
+        CTaskListThumbnailWnd_DisplayUI) {
+        WindhawkUtils::SetFunctionHook(
+            CTaskListThumbnailWnd_DisplayUI,
+            CTaskListThumbnailWnd_DisplayUI_Hook,
+            &CTaskListThumbnailWnd_DisplayUI_Original);
     }
 
     return true;
@@ -3074,10 +3199,8 @@ BOOL ModInitWithTaskbarView(HMODULE taskbarViewModule) {
             return FALSE;
         }
     } else {
-        if (g_settings.alwaysShowThumbnailLabels) {
-            if (!HookTaskbarDllSymbols()) {
-                return FALSE;
-            }
+        if (!HookTaskbarDllSymbols() && g_settings.alwaysShowThumbnailLabels) {
+            return FALSE;
         }
 
         HMODULE kernelBaseModule = GetModuleHandle(L"kernelbase.dll");
