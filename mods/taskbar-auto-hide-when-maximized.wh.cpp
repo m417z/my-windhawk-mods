@@ -9,7 +9,7 @@
 // @homepage        https://m417z.com/
 // @include         explorer.exe
 // @architecture    x86-64
-// @compilerOptions -ldwmapi -lole32 -loleaut32 -lversion
+// @compilerOptions -ldwmapi -lgdi32 -lole32 -loleaut32 -lversion
 // ==/WindhawkMod==
 
 // Source code is published under The GNU General Public License v3.0.
@@ -67,6 +67,23 @@ taskbar.
   $description: >-
     Enable this option to customize the old taskbar on Windows 11 (if using
     ExplorerPatcher or a similar tool).
+- useTaskbarWindowRegion: false
+  $name: Use taskbar window region for intersection
+  $description: >-
+    Uses GetWindowRgnBox to narrow the taskbar intersection rectangle to the
+    visible floating dock area (for dock themes with Click-through taskbar
+    enabled). Falls back to the full taskbar rectangle if no narrower region
+    is set.
+- intersectInnerEdgeInset: 0
+  $name: Inner edge intersection inset (DIP)
+  $description: >-
+    Pixels in DIPs subtracted from the screen-facing inner edge of the taskbar
+    detection rectangle (top for bottom taskbar, bottom for top, etc.). Useful
+    for transparent dock headroom or window-border overlap tolerance.
+- intersectSideEdgeInset: 0
+  $name: Side edges intersection inset (DIP)
+  $description: >-
+    Pixels in DIPs subtracted from both sides along the taskbar's length.
 */
 // ==/WindhawkModSettings==
 
@@ -78,7 +95,9 @@ taskbar.
 
 #include <winrt/base.h>
 
+#include <algorithm>
 #include <atomic>
+#include <cmath>
 #include <mutex>
 #include <string>
 #include <unordered_map>
@@ -97,6 +116,9 @@ struct {
     std::unordered_set<std::wstring> excludedPrograms;
     bool primaryMonitorOnly;
     bool oldTaskbarOnWin11;
+    bool useTaskbarWindowRegion;
+    int intersectInnerEdgeInset;
+    int intersectSideEdgeInset;
 } g_settings;
 
 enum class WinVersion {
@@ -623,6 +645,144 @@ bool CanHideTaskbarForWindow(HWND hWnd,
     return false;
 }
 
+struct CachedTaskbarRegion {
+    RECT rgnBox;
+    LONG tbWidth;
+    LONG tbHeight;
+};
+
+std::mutex g_taskbarRegionMutex;
+std::unordered_map<HMONITOR, CachedTaskbarRegion> g_lastTaskbarRegion;
+
+void AdjustTaskbarRectForIntersection(HWND hTaskbarWnd,
+                                      HMONITOR monitor,
+                                      const MONITORINFO& monitorInfo,
+                                      RECT* taskbarRect) {
+    if (!taskbarRect || IsRectEmpty(taskbarRect)) {
+        return;
+    }
+
+    if (!g_settings.useTaskbarWindowRegion &&
+        g_settings.intersectInnerEdgeInset <= 0 &&
+        g_settings.intersectSideEdgeInset <= 0) {
+        return;
+    }
+
+    LONG baseLeft = taskbarRect->left;
+    LONG baseTop = taskbarRect->top;
+    LONG tbWidth = taskbarRect->right - taskbarRect->left;
+    LONG tbHeight = taskbarRect->bottom - taskbarRect->top;
+    if (tbWidth <= 0 || tbHeight <= 0) {
+        return;
+    }
+
+    enum class TaskbarEdge { Bottom, Top, Left, Right };
+    bool isHorizontal = tbWidth >= tbHeight;
+    TaskbarEdge edge;
+    if (isHorizontal) {
+        LONG distBottom =
+            std::abs(taskbarRect->bottom - monitorInfo.rcMonitor.bottom);
+        LONG distTop = std::abs(taskbarRect->top - monitorInfo.rcMonitor.top);
+        edge = (distBottom <= distTop) ? TaskbarEdge::Bottom : TaskbarEdge::Top;
+    } else {
+        LONG distLeft =
+            std::abs(taskbarRect->left - monitorInfo.rcMonitor.left);
+        LONG distRight =
+            std::abs(taskbarRect->right - monitorInfo.rcMonitor.right);
+        edge = (distLeft <= distRight) ? TaskbarEdge::Left : TaskbarEdge::Right;
+    }
+
+    if (g_settings.useTaskbarWindowRegion && hTaskbarWnd) {
+        RECT rgnBox{};
+        bool hasNarrowRegion = false;
+
+        if (GetWindowRgnBox(hTaskbarWnd, &rgnBox) != ERROR &&
+            rgnBox.right > rgnBox.left && rgnBox.bottom > rgnBox.top &&
+            rgnBox.left >= 0 && rgnBox.top >= 0 &&
+            rgnBox.right <= tbWidth + 4 && rgnBox.bottom <= tbHeight + 4 &&
+            (rgnBox.left > 4 || rgnBox.right < tbWidth - 4 ||
+             rgnBox.top > 4 || rgnBox.bottom < tbHeight - 4)) {
+            rgnBox.right = std::min(rgnBox.right, tbWidth);
+            rgnBox.bottom = std::min(rgnBox.bottom, tbHeight);
+            {
+                std::lock_guard<std::mutex> lock(g_taskbarRegionMutex);
+                g_lastTaskbarRegion[monitor] = {rgnBox, tbWidth, tbHeight};
+            }
+            hasNarrowRegion = true;
+        }
+
+        if (!hasNarrowRegion) {
+            std::lock_guard<std::mutex> lock(g_taskbarRegionMutex);
+            auto it = g_lastTaskbarRegion.find(monitor);
+            if (it != g_lastTaskbarRegion.end() &&
+                it->second.tbWidth == tbWidth &&
+                it->second.tbHeight == tbHeight &&
+                it->second.rgnBox.right > it->second.rgnBox.left &&
+                it->second.rgnBox.bottom > it->second.rgnBox.top) {
+                rgnBox = it->second.rgnBox;
+                hasNarrowRegion = true;
+            }
+        }
+
+        if (hasNarrowRegion) {
+            taskbarRect->left = baseLeft + rgnBox.left;
+            taskbarRect->top = baseTop + rgnBox.top;
+            taskbarRect->right = baseLeft + std::min(rgnBox.right, tbWidth);
+            taskbarRect->bottom = baseTop + std::min(rgnBox.bottom, tbHeight);
+        }
+    }
+
+    UINT dpi = hTaskbarWnd ? GetDpiForWindow(hTaskbarWnd) : 96;
+    if (dpi == 0) {
+        dpi = 96;
+    }
+    double scale = static_cast<double>(dpi) / 96.0;
+
+    if (g_settings.intersectInnerEdgeInset > 0) {
+        LONG innerInsetPx =
+            std::lround(g_settings.intersectInnerEdgeInset * scale);
+        LONG minThicknessPx = std::lround(12.0 * scale);
+        if (isHorizontal) {
+            LONG curHeight = taskbarRect->bottom - taskbarRect->top;
+            LONG applied = std::min(
+                innerInsetPx, std::max<LONG>(0, curHeight - minThicknessPx));
+            if (edge == TaskbarEdge::Bottom) {
+                taskbarRect->top += applied;
+            } else {
+                taskbarRect->bottom -= applied;
+            }
+        } else {
+            LONG curWidth = taskbarRect->right - taskbarRect->left;
+            LONG applied = std::min(
+                innerInsetPx, std::max<LONG>(0, curWidth - minThicknessPx));
+            if (edge == TaskbarEdge::Left) {
+                taskbarRect->right -= applied;
+            } else {
+                taskbarRect->left += applied;
+            }
+        }
+    }
+
+    if (g_settings.intersectSideEdgeInset > 0) {
+        LONG sideInsetPx =
+            std::lround(g_settings.intersectSideEdgeInset * scale);
+        LONG minSpanPx = std::lround(16.0 * scale);
+        if (isHorizontal) {
+            LONG curWidth = taskbarRect->right - taskbarRect->left;
+            LONG applied = std::min(
+                sideInsetPx, std::max<LONG>(0, (curWidth - minSpanPx) / 2));
+            taskbarRect->left += applied;
+            taskbarRect->right -= applied;
+        } else {
+            LONG curHeight = taskbarRect->bottom - taskbarRect->top;
+            LONG applied = std::min(
+                sideInsetPx, std::max<LONG>(0, (curHeight - minSpanPx) / 2));
+            taskbarRect->top += applied;
+            taskbarRect->bottom -= applied;
+        }
+    }
+}
+
 bool ShouldKeepTaskbarShown(HWND hTaskbarWnd, HMONITOR monitor) {
     // The taskbar might hold a monitor that was just disconnected.
     MONITORINFO monitorInfo{
@@ -662,6 +822,10 @@ bool ShouldKeepTaskbarShown(HWND hTaskbarWnd, HMONITOR monitor) {
 
     RECT taskbarRect{};
     GetTaskbarRectForMonitor(monitor, &taskbarRect);
+    if (g_settings.mode == Mode::intersected) {
+        AdjustTaskbarRectForIntersection(hTaskbarWnd, monitor, monitorInfo,
+                                         &taskbarRect);
+    }
 
     if (g_settings.foregroundWindowOnly) {
         HWND hForegroundWnd = GetForegroundWindow();
@@ -1631,6 +1795,12 @@ void LoadSettings() {
 
     g_settings.primaryMonitorOnly = Wh_GetIntSetting(L"primaryMonitorOnly");
     g_settings.oldTaskbarOnWin11 = Wh_GetIntSetting(L"oldTaskbarOnWin11");
+    g_settings.useTaskbarWindowRegion =
+        Wh_GetIntSetting(L"useTaskbarWindowRegion") != 0;
+    g_settings.intersectInnerEdgeInset =
+        std::clamp(Wh_GetIntSetting(L"intersectInnerEdgeInset"), 0, 200);
+    g_settings.intersectSideEdgeInset =
+        std::clamp(Wh_GetIntSetting(L"intersectSideEdgeInset"), 0, 200);
 }
 
 BOOL Wh_ModInit() {
@@ -1757,6 +1927,11 @@ void Wh_ModUninit() {
             Wh_DeleteValue(GetWasAutoHideDisabledValueName().c_str());
         }
     }
+
+    {
+        std::lock_guard<std::mutex> lock(g_taskbarRegionMutex);
+        g_lastTaskbarRegion.clear();
+    }
 }
 
 BOOL Wh_ModSettingsChanged(BOOL* bReload) {
@@ -1782,6 +1957,11 @@ BOOL Wh_ModSettingsChanged(BOOL* bReload) {
             CloseHandle(g_winEventHookThread);
             g_winEventHookThread = nullptr;
         }
+    }
+
+    if (!g_settings.useTaskbarWindowRegion) {
+        std::lock_guard<std::mutex> lock(g_taskbarRegionMutex);
+        g_lastTaskbarRegion.clear();
     }
 
     ClearCanHideTaskbarForWindowProps();
