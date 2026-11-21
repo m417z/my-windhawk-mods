@@ -10,8 +10,9 @@
 // @include         StartMenuExperienceHost.exe
 // @include         SearchHost.exe
 // @include         SearchApp.exe
+// @include         shellhost.exe
 // @architecture    x86-64
-// @compilerOptions -lcomctl32 -lole32 -loleaut32 -lruntimeobject -lshlwapi -lversion
+// @compilerOptions -ladvapi32 -lcomctl32 -lole32 -loleaut32 -lruntimeobject -lshlwapi -luser32 -lversion
 // ==/WindhawkMod==
 
 // Source code is published under The GNU General Public License v3.0.
@@ -173,6 +174,12 @@ Launcher](https://github.com/ramensoftware/windows-11-start-menu-styling-guide/b
 [![Raycast](https://raw.githubusercontent.com/ramensoftware/windows-11-start-menu-styling-guide/main/Themes/Raycast/screenshot-small.png)
 \
 Raycast](https://github.com/ramensoftware/windows-11-start-menu-styling-guide/blob/main/Themes/Raycast/README.md)
+
+* **LumiPill** — Translucent dark/light adaptive theme with concentric pill bottom bar and search box, subtle icon entrance motion, and clean folder tiles.
+
+### New Search Composer (Windows 11 26H2+)
+
+On Windows 11 builds that host the Search popup in `ShellHost.exe` (`SystemComposerControl`), enabling **LumiPill** (or overriding **New Search Composer frosted glass** in the mod settings) applies thin luminosity frosted glass, rounded corners, and specular rim borders to the Search Composer surface.
 
 More themes can be found in the **Themes** section of [The Windows 11 Start menu
 styling
@@ -482,6 +489,7 @@ from the **TranslucentTB** project.
   - OS26 Tahoe App Launcher_variant_ClearBottom: >-
       OS26 Tahoe App Launcher (Clear, Bottom)
   - Raycast: Raycast
+  - LumiPill: LumiPill
 - disableNewStartMenuLayout: ""
   $name: Start menu layout
   $description: >-
@@ -524,6 +532,21 @@ from the **TranslucentTB** project.
   $name: Search WebView styles
 - webContentCustomJs: ""
   $name: Search WebView custom JavaScript code
+- newSearchComposerGlass: ""
+  $name: New Search Composer frosted glass (Windows 11 26H2+ ShellHost)
+  $description: >-
+    Applies thin luminosity frosted glass, rounded corners, and specular rim
+    borders to the Windows 11 26H2+ ShellHost Search Composer popup.
+  $options:
+  - "": Auto (enabled with LumiPill theme)
+  - enabled: Enabled
+  - disabled: Disabled
+- newSearchComposerCornerRadius: 0
+  $name: New Search Composer corner radius (0 = default 24)
+- newSearchComposerTintOpacity: 0
+  $name: New Search Composer tint opacity percent (0 = default 55)
+- newSearchComposerLuminosityOpacity: 0
+  $name: New Search Composer luminosity opacity percent (0 = default 40)
 */
 // ==/WindhawkModSettings==
 
@@ -10565,6 +10588,276 @@ const Theme g_themeRaycast = {{
         L"display: none !important"}},
 }, DisableNewStartMenuLayout::forceNewLayout};
 
+const Theme g_themeLumiPill = {{
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Border#AcrylicBorder", {
+        L"Background:=$LumiGlass",
+        L"CornerRadius=$OuterRadius",
+        L"BorderThickness=1",
+        L"BorderBrush=$OuterBorder"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Border#AcrylicOverlay", {
+        L"Visibility=Collapsed"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Border#StartDropShadow, Windows.UI.Xaml.Controls.Border#RootGridDropShadow, Windows.UI.Xaml.Controls.Border#DropShadow, Windows.UI.Xaml.Controls.Border#RightCompanionDropShadow, Windows.UI.Xaml.Controls.Border#dropshadow", {
+        L"Visibility=Collapsed"}},
+    ThemeTargetStyles{L"StartMenu.StartMenuCompanion#RightCompanion > Windows.UI.Xaml.Controls.Grid#CompanionRoot > Windows.UI.Xaml.Controls.Border#AcrylicBorder", {
+        L"Background:=$LumiGlass",
+        L"CornerRadius=$OuterRadius",
+        L"BorderThickness=1",
+        L"BorderBrush=$OuterBorder"}},
+    ThemeTargetStyles{L"Cortana.UI.Views.TaskbarSearchPage > Windows.UI.Xaml.Controls.Grid#RootGrid > Windows.UI.Xaml.Controls.Grid#OuterBorderGrid", {
+        L"CornerRadius=24"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Border#AppBorder, Windows.UI.Xaml.Controls.Border#AccentAppBorder", {
+        L"Background:=$LumiGlass",
+        L"CornerRadius=24",
+        L"BorderThickness=1",
+        L"BorderBrush=$OuterBorder",
+        L"BackgroundSizing=InnerBorderEdge"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Border#LayerBorder, Windows.UI.Xaml.Controls.Border#AccentLayerBorder", {
+        L"Opacity=0"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Border#TaskbarSearchBackground", {
+        L"Background=$PillBg",
+        L"CornerRadius=20",
+        L"BorderThickness=1",
+        L"BorderBrush=$InnerBorder",
+        L"BackgroundSizing=InnerBorderEdge"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.PopupRoot", {
+        L"CornerRadius=$OuterRadius"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Grid#NavPanePlaceholder", {
+        L"Background:=$LumiGlassSubtle",
+        L"BorderBrush=$InnerBorder",
+        L"BorderThickness=1",
+        L"CornerRadius=18",
+        L"Height=48",
+        L"Padding=8,0,8,0",
+        L"Margin=12,6,12,12",
+        L"BackgroundSizing=InnerBorderEdge",
+        L"Canvas.ZIndex=10"}},
+    ThemeTargetStyles{L"StartDocked.NavigationPaneView#NavigationPane", {
+        L"Margin=0"}},
+    ThemeTargetStyles{L"StartDocked.NavigationPaneButton#UserTileButton > Windows.UI.Xaml.Controls.Grid@CommonStates > Windows.UI.Xaml.Controls.Border#BackgroundBorder", {
+        L"CornerRadius=14",
+        L"BackgroundTransition:=<BrushTransition Duration=\"0:0:0\" />",
+        L"Background@Normal:=<SolidColorBrush Color=\"{ThemeResource SystemChromeAltHighColor}\" Opacity=\"0.001\" />",
+        L"Background@PointerOver=$TileHover",
+        L"Background@Pressed=$TilePressed",
+        L"BorderThickness=0",
+        L"BackgroundSizing=InnerBorderEdge"}},
+    ThemeTargetStyles{L"StartDocked.NavigationPaneButton#PowerButton > Windows.UI.Xaml.Controls.Grid@CommonStates > Windows.UI.Xaml.Controls.Border#BackgroundBorder", {
+        L"CornerRadius=14",
+        L"BackgroundTransition:=<BrushTransition Duration=\"0:0:0\" />",
+        L"Background@Normal:=<SolidColorBrush Color=\"{ThemeResource SystemChromeAltHighColor}\" Opacity=\"0.001\" />",
+        L"Background@PointerOver=$TileHover",
+        L"Background@Pressed=$TilePressed",
+        L"BorderThickness=0",
+        L"BackgroundSizing=InnerBorderEdge"}},
+    ThemeTargetStyles{L"StartMenu.SearchBoxToggleButton#SearchBoxToggleButton", {
+        L"Margin=18,16,18,8",
+        L"Height=40"}},
+    ThemeTargetStyles{L"StartMenu.SearchBoxToggleButton > Windows.UI.Xaml.Controls.Grid@CommonStates > Windows.UI.Xaml.Controls.Border#BorderElement", {
+        L"CornerRadius=18",
+        L"Background@Normal=$PillBg",
+        L"Background@PointerOver=$PillHover",
+        L"Background@Pressed=$PillPressed",
+        L"BorderBrush=$InnerBorder",
+        L"BorderThickness=1",
+        L"BackgroundSizing=InnerBorderEdge",
+        L"BackgroundTransition:=$HoverFade"}},
+    ThemeTargetStyles{L"StartDocked.SearchBoxToggleButton#StartMenuSearchBox > Windows.UI.Xaml.Controls.Grid@CommonStates > Windows.UI.Xaml.Controls.Border#BorderElement", {
+        L"CornerRadius=18",
+        L"Background@Normal=$PillBg",
+        L"Background@PointerOver=$PillHover",
+        L"Background@Pressed=$PillPressed",
+        L"BorderBrush=$InnerBorder",
+        L"BorderThickness=1",
+        L"BackgroundSizing=InnerBorderEdge",
+        L"BackgroundTransition:=$HoverFade"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Border#BorderUnderline", {
+        L"Visibility=Collapsed"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Grid#TopLevelSuggestionsRoot, Windows.UI.Xaml.Controls.Grid#TopLevelSuggestionsListHeader, Windows.UI.Xaml.Controls.Grid#NoTopLevelSuggestionsText, Windows.UI.Xaml.Controls.Grid#TopLevelSuggestionsContainer, Windows.UI.Xaml.Controls.Grid#ShowMoreSuggestions, Windows.UI.Xaml.Controls.Grid#SuggestionsParentContainer", {
+        L"Visibility=Collapsed"}},
+    ThemeTargetStyles{L"StartMenu.CategoryControl > Windows.UI.Xaml.Controls.Grid#RootGrid > Windows.UI.Xaml.Controls.Border", {
+        L"CornerRadius=$CardRadius",
+        L"Background=$CardBg",
+        L"BorderBrush=$InnerBorder",
+        L"BorderThickness=1",
+        L"BackgroundSizing=InnerBorderEdge"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Button#FolderPlate > Windows.UI.Xaml.Controls.Grid@CommonStates", {
+        L"RenderTransformOrigin=0.5,0.5",
+        L"RenderTransform:=<ScaleTransform ScaleX=\"1.0\" ScaleY=\"1.0\" />",
+        L"RenderTransform@PointerOver:=<ScaleTransform ScaleX=\"1.03\" ScaleY=\"1.03\" />",
+        L"RenderTransform@Pressed:=<ScaleTransform ScaleX=\"0.95\" ScaleY=\"0.95\" />"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Button#FolderPlate > Windows.UI.Xaml.Controls.Grid@CommonStates > Windows.UI.Xaml.Controls.Border", {
+        L"CornerRadius=12",
+        L"Background@Normal=$CardBg",
+        L"Background@PointerOver=$PillHover",
+        L"Background@Pressed=$PillPressed",
+        L"BorderBrush=$InnerBorder",
+        L"BorderThickness=1",
+        L"BackgroundSizing=InnerBorderEdge",
+        L"BackgroundTransition:=$HoverFade"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Border#FolderPlate", {
+        L"CornerRadius=10",
+        L"Background=$CardBg",
+        L"BorderBrush=$InnerBorder",
+        L"BorderThickness=1",
+        L"BackgroundSizing=InnerBorderEdge"}},
+    ThemeTargetStyles{L"StartMenu.FolderModal#StartFolderModal > Windows.UI.Xaml.Controls.Grid#Root > Windows.UI.Xaml.Controls.Border, StartMenu.FolderModal > Windows.UI.Xaml.Controls.Grid#Root > Windows.UI.Xaml.Controls.Border", {
+        L"Background:=$LumiGlass",
+        L"CornerRadius=30",
+        L"BorderThickness=1",
+        L"BorderBrush=$OuterBorder"}},
+    ThemeTargetStyles{L"StartMenu.FolderModal#StartFolderModal > Windows.UI.Xaml.Controls.Grid#Root", {
+        L"Height=Auto",
+        L"Width=Auto"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.TextBox#MutableFolderNameTextBox > Windows.UI.Xaml.Controls.Grid@CommonStates > Windows.UI.Xaml.Controls.Border#BorderElement", {
+        L"CornerRadius=14",
+        L"Background=$PillBg",
+        L"BorderBrush=$InnerBorder",
+        L"BorderThickness=1"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Border#ContentBorder@CommonStates > Windows.UI.Xaml.Controls.Grid > Windows.UI.Xaml.Controls.Border#BackgroundBorder", {
+        L"CornerRadius=$TileRadius",
+        L"BackgroundTransition:=<BrushTransition Duration=\"0:0:0\" />",
+        L"Background@Normal:=<SolidColorBrush Color=\"{ThemeResource SystemChromeAltHighColor}\" Opacity=\"0.001\" />",
+        L"Background@PointerOver=$TileHover",
+        L"Background@Pressed=$TilePressed",
+        L"Background@Selected:=<SolidColorBrush Color=\"{ThemeResource SystemAccentColor}\" Opacity=\"0.32\" />",
+        L"Background@SelectedPointerOver:=<SolidColorBrush Color=\"{ThemeResource SystemAccentColor}\" Opacity=\"0.42\" />",
+        L"Background@PointerOverSelected:=<SolidColorBrush Color=\"{ThemeResource SystemAccentColor}\" Opacity=\"0.42\" />",
+        L"Background@SelectedPressed:=<SolidColorBrush Color=\"{ThemeResource SystemAccentColor}\" Opacity=\"0.50\" />",
+        L"Background@PressedSelected:=<SolidColorBrush Color=\"{ThemeResource SystemAccentColor}\" Opacity=\"0.50\" />",
+        L"BorderThickness=0",
+        L"BorderThickness@Selected=1",
+        L"BorderBrush@Selected:=<SolidColorBrush Color=\"{ThemeResource SystemAccentColor}\" Opacity=\"0.60\" />",
+        L"BackgroundSizing=InnerBorderEdge"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.ListViewItem > Windows.UI.Xaml.Controls.Grid@CommonStates > Windows.UI.Xaml.Controls.Border#BorderBackground", {
+        L"CornerRadius=14",
+        L"BackgroundTransition:=<BrushTransition Duration=\"0:0:0\" />",
+        L"Background@Normal:=<SolidColorBrush Color=\"{ThemeResource SystemChromeAltHighColor}\" Opacity=\"0.001\" />",
+        L"Background@PointerOver=$TileHover",
+        L"Background@Pressed=$TilePressed",
+        L"Background@Selected:=<SolidColorBrush Color=\"{ThemeResource SystemAccentColor}\" Opacity=\"0.32\" />",
+        L"Background@SelectedPointerOver:=<SolidColorBrush Color=\"{ThemeResource SystemAccentColor}\" Opacity=\"0.42\" />",
+        L"Background@PointerOverSelected:=<SolidColorBrush Color=\"{ThemeResource SystemAccentColor}\" Opacity=\"0.42\" />",
+        L"Background@SelectedPressed:=<SolidColorBrush Color=\"{ThemeResource SystemAccentColor}\" Opacity=\"0.50\" />",
+        L"Background@PressedSelected:=<SolidColorBrush Color=\"{ThemeResource SystemAccentColor}\" Opacity=\"0.50\" />",
+        L"BorderThickness=0",
+        L"BorderThickness@Selected=1",
+        L"BorderBrush@Selected:=<SolidColorBrush Color=\"{ThemeResource SystemAccentColor}\" Opacity=\"0.60\" />",
+        L"BackgroundSizing=InnerBorderEdge"}},
+    ThemeTargetStyles{L"StartDocked.AppListViewItem > Windows.UI.Xaml.Controls.Grid@CommonStates > Windows.UI.Xaml.Controls.Border#BackgroundBorder", {
+        L"CornerRadius=14",
+        L"BackgroundTransition:=<BrushTransition Duration=\"0:0:0\" />",
+        L"Background@Normal:=<SolidColorBrush Color=\"{ThemeResource SystemChromeAltHighColor}\" Opacity=\"0.001\" />",
+        L"Background@PointerOver=$TileHover",
+        L"Background@Pressed=$TilePressed",
+        L"Background@Selected:=<SolidColorBrush Color=\"{ThemeResource SystemAccentColor}\" Opacity=\"0.32\" />",
+        L"Background@SelectedPointerOver:=<SolidColorBrush Color=\"{ThemeResource SystemAccentColor}\" Opacity=\"0.42\" />",
+        L"Background@PointerOverSelected:=<SolidColorBrush Color=\"{ThemeResource SystemAccentColor}\" Opacity=\"0.42\" />",
+        L"Background@SelectedPressed:=<SolidColorBrush Color=\"{ThemeResource SystemAccentColor}\" Opacity=\"0.50\" />",
+        L"Background@PressedSelected:=<SolidColorBrush Color=\"{ThemeResource SystemAccentColor}\" Opacity=\"0.50\" />",
+        L"BorderThickness=0",
+        L"BorderThickness@Selected=1",
+        L"BorderBrush@Selected:=<SolidColorBrush Color=\"{ThemeResource SystemAccentColor}\" Opacity=\"0.60\" />",
+        L"BackgroundSizing=InnerBorderEdge"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Primitives.ListViewItemPresenter", {
+        L"CornerRadius=14",
+        L"SelectedBackground:=<SolidColorBrush Color=\"{ThemeResource SystemAccentColor}\" Opacity=\"0.32\" />",
+        L"SelectedPointerOverBackground:=<SolidColorBrush Color=\"{ThemeResource SystemAccentColor}\" Opacity=\"0.42\" />",
+        L"SelectedPressedBackground:=<SolidColorBrush Color=\"{ThemeResource SystemAccentColor}\" Opacity=\"0.50\" />",
+        L"PointerOverBackground=$TileHover",
+        L"PressedBackground=$TilePressed"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Border#ContentBorder@CommonStates > Windows.UI.Xaml.Controls.Grid#DroppedFlickerWorkaroundWrapper > Windows.UI.Xaml.Controls.ContentPresenter#ContentPresenter > Windows.UI.Xaml.Controls.ContentControl > Windows.UI.Xaml.Controls.Grid#RootGrid > Windows.UI.Xaml.Controls.Border#LogoBackgroundPlate > Windows.UI.Xaml.Controls.Image#AllAppsItemLogo", {
+        L"RenderTransformOrigin=0.5,0.5",
+        L"RenderTransform:=<ScaleTransform ScaleX=\"1.0\" ScaleY=\"1.0\" />",
+        L"RenderTransform@Pressed:=<ScaleTransform ScaleX=\"0.92\" ScaleY=\"0.92\" />"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Border#ContentBorder@CommonStates > Windows.UI.Xaml.Controls.Grid#DroppedFlickerWorkaroundWrapper > Windows.UI.Xaml.Controls.ContentPresenter#ContentPresenter > Windows.UI.Xaml.Controls.ContentControl > Windows.UI.Xaml.Controls.Grid#RootGrid > Windows.UI.Xaml.Controls.Grid#LogoContainer > Windows.UI.Xaml.Controls.Image#AllAppsTileLogo", {
+        L"RenderTransformOrigin=0.5,0.5",
+        L"RenderTransform:=<ScaleTransform ScaleX=\"1.0\" ScaleY=\"1.0\" />",
+        L"RenderTransform@Pressed:=<ScaleTransform ScaleX=\"0.92\" ScaleY=\"0.92\" />"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Border#ContentBorder@CommonStates > Windows.UI.Xaml.Controls.Grid#DroppedFlickerWorkaroundWrapper > Windows.UI.Xaml.Controls.ContentPresenter > Windows.UI.Xaml.Controls.Grid > Windows.UI.Xaml.Controls.Grid#LogoContainer > Windows.UI.Xaml.Controls.Grid", {
+        L"RenderTransformOrigin=0.5,0.5",
+        L"RenderTransform:=<ScaleTransform ScaleX=\"1.0\" ScaleY=\"1.0\" />",
+        L"RenderTransform@Pressed:=<ScaleTransform ScaleX=\"0.92\" ScaleY=\"0.92\" />"}},
+    ThemeTargetStyles{L"Microsoft.UI.Xaml.Controls.DropDownButton#ViewSelectionButton > Windows.UI.Xaml.Controls.Grid@CommonStates", {
+        L"CornerRadius=16",
+        L"Background@Normal=$PillBg",
+        L"Background@PointerOver=$PillHover",
+        L"Background@Pressed=$PillPressed",
+        L"BorderBrush=$InnerBorder",
+        L"BorderThickness=1",
+        L"BackgroundTransition:=$HoverFade"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Button#ShowAllAppsButton > Windows.UI.Xaml.Controls.Grid@CommonStates > Windows.UI.Xaml.Controls.Border#BackgroundBorder, Windows.UI.Xaml.Controls.Button#CloseAllAppsButton > Windows.UI.Xaml.Controls.Grid@CommonStates > Windows.UI.Xaml.Controls.Border#BackgroundBorder, Windows.UI.Xaml.Controls.Button#ShowMorePinnedButton > Windows.UI.Xaml.Controls.Grid@CommonStates > Windows.UI.Xaml.Controls.Border#BackgroundBorder", {
+        L"CornerRadius=16",
+        L"Background@Normal=$PillBg",
+        L"Background@PointerOver=$PillHover",
+        L"Background@Pressed=$PillPressed",
+        L"BorderBrush=$InnerBorder",
+        L"BorderThickness=1",
+        L"BackgroundTransition:=$HoverFade"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.Primitives.ToggleButton#ShowHideCompanion > Windows.UI.Xaml.Controls.Border > Windows.UI.Xaml.Controls.ContentPresenter#ContentPresenter", {
+        L"CornerRadius=18"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.MenuFlyoutPresenter", {
+        L"CornerRadius=22",
+        L"Background=Transparent",
+        L"BorderThickness=0"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.MenuFlyoutPresenter > Windows.UI.Xaml.Controls.Border", {
+        L"CornerRadius=22",
+        L"Background:=$LumiGlass",
+        L"BorderThickness=1",
+        L"BorderBrush=$OuterBorder",
+        L"Padding=6"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.MenuFlyoutPresenter > Windows.UI.Xaml.Controls.Border > Windows.UI.Xaml.Controls.ScrollViewer", {
+        L"CornerRadius=22"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.MenuFlyoutItem, Windows.UI.Xaml.Controls.ToggleMenuFlyoutItem", {
+        L"CornerRadius=12",
+        L"Margin=2"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.ToolTip > Windows.UI.Xaml.Controls.ContentPresenter#LayoutRoot", {
+        L"Background:=$LumiGlass",
+        L"BorderBrush=$InnerBorder",
+        L"BorderThickness=1",
+        L"CornerRadius=14"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.FlyoutPresenter", {
+        L"CornerRadius=26",
+        L"BorderThickness=0"}},
+    ThemeTargetStyles{L"Windows.UI.Xaml.Controls.FlyoutPresenter > Windows.UI.Xaml.Controls.Border", {
+        L"CornerRadius=26",
+        L"Background:=$LumiGlass",
+        L"BorderThickness=1",
+        L"BorderBrush=$OuterBorder"}},
+}, {
+    L"LumiGlass=<WindhawkBlur BlurAmount=\"30\" TintColor=\"{ThemeResource SystemChromeMediumColor}\" TintOpacity=\"0.55\" TintLuminosityOpacity=\"0.40\" NoiseOpacity=\"0.02\" FallbackColor=\"{ThemeResource SystemChromeMediumColor}\" />",
+    L"LumiGlassSubtle=<WindhawkBlur BlurAmount=\"20\" TintColor=\"{ThemeResource SystemChromeMediumColor}\" TintOpacity=\"0.28\" TintLuminosityOpacity=\"0.22\" NoiseOpacity=\"0.015\" FallbackColor=\"{ThemeResource SystemChromeMediumColor}\" />",
+    L"OuterRadius=30",
+    L"CardRadius=20",
+    L"PillRadius=18",
+    L"TileRadius=14",
+    L"OuterBorder={ThemeResource LumiStartOuterBorder}",
+    L"InnerBorder={ThemeResource LumiStartInnerBorder}",
+    L"CardBg={ThemeResource LumiStartCardBg}",
+    L"PillBg={ThemeResource LumiStartPillBg}",
+    L"PillHover={ThemeResource LumiStartPillHover}",
+    L"PillPressed={ThemeResource LumiStartPillPressed}",
+    L"TileHover={ThemeResource LumiStartTileHover}",
+    L"TilePressed={ThemeResource LumiStartTilePressed}",
+    L"HoverFade=<BrushTransition Duration=\"0:0:0.04\" />",
+}, {
+    L"LumiStartOuterBorder@Light:=<LinearGradientBrush StartPoint=\"0,0\" EndPoint=\"0,1\"><GradientStop Color=\"#58FFFFFF\" Offset=\"0.0\" /><GradientStop Color=\"#16000000\" Offset=\"0.45\" /><GradientStop Color=\"#2B000000\" Offset=\"1.0\" /></LinearGradientBrush>",
+    L"LumiStartOuterBorder@Dark:=<LinearGradientBrush StartPoint=\"0,0\" EndPoint=\"0,1\"><GradientStop Color=\"#3CFFFFFF\" Offset=\"0.0\" /><GradientStop Color=\"#14FFFFFF\" Offset=\"0.45\" /><GradientStop Color=\"#26000000\" Offset=\"1.0\" /></LinearGradientBrush>",
+    L"LumiStartInnerBorder@Light:=<LinearGradientBrush StartPoint=\"0,0\" EndPoint=\"0,1\"><GradientStop Color=\"#48FFFFFF\" Offset=\"0.0\" /><GradientStop Color=\"#12000000\" Offset=\"0.50\" /><GradientStop Color=\"#1E000000\" Offset=\"1.0\" /></LinearGradientBrush>",
+    L"LumiStartInnerBorder@Dark:=<LinearGradientBrush StartPoint=\"0,0\" EndPoint=\"0,1\"><GradientStop Color=\"#2CFFFFFF\" Offset=\"0.0\" /><GradientStop Color=\"#0DFFFFFF\" Offset=\"0.50\" /><GradientStop Color=\"#18000000\" Offset=\"1.0\" /></LinearGradientBrush>",
+    L"LumiStartCardBg@Light:=<SolidColorBrush Color=\"#38FFFFFF\" />",
+    L"LumiStartCardBg@Dark:=<SolidColorBrush Color=\"#18FFFFFF\" />",
+    L"LumiStartPillBg@Light:=<SolidColorBrush Color=\"#4AFFFFFF\" />",
+    L"LumiStartPillBg@Dark:=<SolidColorBrush Color=\"#20FFFFFF\" />",
+    L"LumiStartPillHover@Light:=<SolidColorBrush Color=\"#68FFFFFF\" />",
+    L"LumiStartPillHover@Dark:=<SolidColorBrush Color=\"#30FFFFFF\" />",
+    L"LumiStartPillPressed@Light:=<SolidColorBrush Color=\"#2EFFFFFF\" />",
+    L"LumiStartPillPressed@Dark:=<SolidColorBrush Color=\"#12FFFFFF\" />",
+    L"LumiStartTileHover@Light:=<SolidColorBrush Color=\"#46FFFFFF\" />",
+    L"LumiStartTileHover@Dark:=<SolidColorBrush Color=\"#24FFFFFF\" />",
+    L"LumiStartTilePressed@Light:=<SolidColorBrush Color=\"#26FFFFFF\" />",
+    L"LumiStartTilePressed@Dark:=<SolidColorBrush Color=\"#14FFFFFF\" />",
+}, {}, DisableNewStartMenuLayout::windowsDefault};
+
 // clang-format on
 
 std::atomic<DWORD> g_targetThreadId = 0;
@@ -10995,6 +11288,18 @@ HRESULT WindhawkTAP::GetSite(REFIID riid, void **ppvSite) noexcept
 
 #include <Unknwn.h>
 
+namespace ShellHostComposer {
+// {3E4B9A21-7C15-4F88-A2D3-6F918E22B457}
+inline constexpr CLSID CLSID_ShellHostComposerTAP = {
+    0x3E4B9A21,
+    0x7C15,
+    0x4F88,
+    {0xA2, 0xD3, 0x6F, 0x91, 0x8E, 0x22, 0xB4, 0x57},
+};
+HRESULT CreateTapClassFactory(REFIID riid, void** ppv);
+}  // namespace ShellHostComposer
+
+
 template<class T>
 struct SimpleFactory : winrt::implements<SimpleFactory<T>, IClassFactory, winrt::non_agile>
 {
@@ -11039,6 +11344,10 @@ _Use_decl_annotations_ STDAPI DllGetClassObject(REFCLSID rclsid, REFIID riid, LP
     {
         *ppv = nullptr;
         return winrt::make<SimpleFactory<WindhawkTAP>>().as(riid, ppv);
+    }
+    else if (rclsid == ShellHostComposer::CLSID_ShellHostComposerTAP)
+    {
+        return ShellHostComposer::CreateTapClassFactory(riid, ppv);
     }
     else
     {
@@ -11130,6 +11439,8 @@ HRESULT InjectWindhawkTAP() noexcept
 #include <chrono>
 #include <cmath>
 #include <condition_variable>
+#include <cwctype>
+#include <functional>
 #include <filesystem>
 #include <limits>
 #include <list>
@@ -11181,6 +11492,1859 @@ using namespace std::string_view_literals;
 #define WH_WINRT_WINUI2
 #include <winrt/Microsoft.UI.Xaml.Controls.h>
 
+namespace ShellHostComposer {
+
+#pragma pack(push, 1)
+struct WuiColor {
+    uint8_t A;
+    uint8_t R;
+    uint8_t G;
+    uint8_t B;
+};
+#pragma pack(pop)
+static_assert(sizeof(WuiColor) == 4 && alignof(WuiColor) == 1);
+
+struct MuxCornerRadius {
+    double TopLeft;
+    double TopRight;
+    double BottomRight;
+    double BottomLeft;
+};
+
+struct MuxThickness {
+    double Left;
+    double Top;
+    double Right;
+    double Bottom;
+};
+
+template <typename Fn>
+inline Fn VtblFn(void* obj, size_t slot) noexcept {
+    return reinterpret_cast<Fn>((*reinterpret_cast<void***>(obj))[slot]);
+}
+
+inline winrt::com_ptr<IUnknown> QueryGuid(IUnknown* unk, const GUID& iid) noexcept {
+    winrt::com_ptr<IUnknown> out;
+    if (unk) {
+        unk->QueryInterface(iid, out.put_void());
+    }
+    return out;
+}
+
+inline winrt::com_ptr<IUnknown> QueryCanonicalUnknown(IUnknown* unk) noexcept {
+    static constexpr GUID kIidUnknown = {
+        0x00000000, 0x0000, 0x0000, {0xC0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x46}};
+    return QueryGuid(unk, kIidUnknown);
+}
+
+static constexpr GUID IID_IUnknown_Local = {
+    0x00000000, 0x0000, 0x0000, {0xC0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x46}};
+static constexpr GUID IID_IInspectable_Local = {
+    0xAF86E2E0, 0xB12D, 0x4C6A, {0x9C, 0x5A, 0xD7, 0xAA, 0x65, 0x10, 0x1E, 0x90}};
+static constexpr GUID IID_IAgileObject_Local = {
+    0x94EA2B94, 0xE9CC, 0x49E0, {0xC0, 0xFF, 0xEE, 0x64, 0xCA, 0x8F, 0x5B, 0x90}};
+static constexpr GUID IID_IWeakReferenceSource_Local = {
+    0x00000038, 0x0000, 0x0000, {0xC0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x46}};
+static constexpr GUID IID_IActivationFactory_Local = {
+    0x00000035, 0x0000, 0x0000, {0xC0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x46}};
+
+// WinUI 3 COM ABI GUIDs (used without including winrt/winui3 headers alongside WH_WINRT_WINUI2)
+static constexpr GUID IID_IDependencyObject = {
+    0xE7BEAEE7, 0x160E, 0x50F7, {0x87, 0x89, 0xD6, 0x34, 0x63, 0xF9, 0x79, 0xFA}};
+static constexpr GUID IID_IFrameworkElement = {
+    0xFE08F13D, 0xDC6A, 0x5495, {0xAD, 0x44, 0xC2, 0xD8, 0xD2, 0x18, 0x63, 0xB0}};
+static constexpr GUID IID_DependencyPropertyChangedCallback = {
+    0xF055BB21, 0x219B, 0x5B0C, {0x80, 0x5D, 0xBC, 0xAE, 0xDA, 0xE1, 0x54, 0x58}};
+static constexpr GUID IID_TypedEventHandler_FE_Inspectable = {
+    0x53876073, 0xBE4F, 0x5DAC, {0x9A, 0xE0, 0x01, 0x5D, 0xB6, 0xE4, 0x0C, 0x74}};
+static constexpr GUID IID_IVisualTreeHelperStatics = {
+    0x5AECE43C, 0x7651, 0x5BB5, {0x85, 0x5C, 0x21, 0x98, 0x49, 0x6E, 0x45, 0x5E}};
+static constexpr GUID IID_IXamlReaderStatics = {
+    0x82A4CD9E, 0x435E, 0x5AEB, {0x8C, 0x4F, 0x30, 0x0C, 0xEC, 0xE4, 0x5C, 0xAE}};
+static constexpr GUID IID_IAcrylicBrush = {
+    0x3A8C760A, 0x941F, 0x58BC, {0xA6, 0xD4, 0xAA, 0x7A, 0x0D, 0xD1, 0xD0, 0x36}};
+static constexpr GUID IID_IAcrylicBrush2 = {
+    0x23FAD570, 0x43ED, 0x5A73, {0x9D, 0xE7, 0xA3, 0x03, 0x55, 0x3D, 0x54, 0x14}};
+static constexpr GUID IID_IBorder = {
+    0x1CA13B47, 0xFF5C, 0x5ABC, {0xA4, 0x11, 0xA1, 0x77, 0xDF, 0x94, 0x82, 0xA9}};
+static constexpr GUID IID_IBorderStatics = {
+    0x9385CD66, 0xC178, 0x5176, {0xB4, 0xA5, 0x16, 0x0E, 0x00, 0xE9, 0x39, 0x35}};
+static constexpr GUID IID_IGrid = {
+    0xC4496219, 0x9014, 0x58A1, {0xB4, 0xAD, 0xC5, 0x04, 0x49, 0x13, 0xA5, 0xBB}};
+static constexpr GUID IID_IGridStatics = {
+    0xEF9CF81D, 0xA431, 0x50F4, {0xAB, 0xF5, 0x30, 0x23, 0xFE, 0x44, 0x77, 0x04}};
+static constexpr GUID IID_IPanel = {
+    0x27A1B418, 0x56F3, 0x525E, {0xB8, 0x83, 0xCE, 0xFE, 0xD9, 0x05, 0xEE, 0xD3}};
+static constexpr GUID IID_IPanelStatics = {
+    0x76A9CAA7, 0xA5D4, 0x5061, {0xA3, 0x25, 0x17, 0xC7, 0x6F, 0x66, 0xDE, 0x51}};
+static constexpr GUID IID_IContentPresenter = {
+    0x075E6CA8, 0xDA46, 0x5EC6, {0x8C, 0x64, 0x03, 0xB3, 0xDD, 0xEA, 0xF7, 0x4F}};
+static constexpr GUID IID_IContentPresenterStatics = {
+    0xC3E55F6C, 0x7ABE, 0x568F, {0xB6, 0x7B, 0x8E, 0xBD, 0x32, 0x74, 0xF3, 0x3E}};
+static constexpr GUID IID_IControl = {
+    0x857D6E8A, 0xD45A, 0x5C69, {0xA9, 0x9C, 0xBF, 0x6A, 0x5C, 0x54, 0xFB, 0x38}};
+static constexpr GUID IID_IControlStatics = {
+    0xC3AE388D, 0xAA36, 0x5E10, {0xAC, 0xAC, 0x98, 0x41, 0x5F, 0x47, 0xBC, 0xC7}};
+static constexpr GUID IID_IRectangle = {
+    0xBF7D30B9, 0x152C, 0x556E, {0x9F, 0x10, 0xD0, 0xB7, 0xEB, 0xA4, 0xE5, 0x2F}};
+static constexpr GUID IID_IRectangleStatics = {
+    0x3CC3CC79, 0xC332, 0x5AD0, {0x87, 0x43, 0x1F, 0x1B, 0x1E, 0x67, 0x0A, 0x86}};
+
+static constexpr GUID IID_IDispatcherQueue = {
+    0xF6EBF8FA, 0xBE1C, 0x5BF6, {0xA4, 0x67, 0x73, 0xDA, 0x28, 0x73, 0x8A, 0xE8}};
+static constexpr GUID IID_IDispatcherQueueStatics = {
+    0xCD3382EA, 0xA455, 0x5124, {0xB6, 0x3A, 0xCA, 0x40, 0xD3, 0x4C, 0xA2, 0x3C}};
+static constexpr GUID IID_IDispatcherQueueTimer = {
+    0xAD4D63FD, 0x88FE, 0x541F, {0xAC, 0x11, 0xBF, 0x2D, 0xC1, 0xED, 0x2C, 0xE5}};
+static constexpr GUID IID_DispatcherQueueHandler = {
+    0x2E0872A9, 0x4E29, 0x5F14, {0xB6, 0x88, 0xFB, 0x96, 0xD5, 0xF9, 0xD5, 0xF8}};
+static constexpr GUID IID_TypedEventHandler_DQT_Inspectable = {
+    0x2182A2AC, 0x7545, 0x566A, {0x98, 0x4F, 0xB1, 0x0F, 0x07, 0xBA, 0xB0, 0x89}};
+
+static constexpr GUID IID_IDesktopAcrylicController = {
+    0x7C20A6AF, 0x8EB3, 0x5F08, {0xBD, 0xFC, 0x6D, 0x35, 0xE3, 0x5D, 0xFE, 0x45}};
+static constexpr GUID IID_IDesktopAcrylicController3 = {
+    0x30D917E6, 0x02D3, 0x59CA, {0xB4, 0x40, 0xBF, 0x9D, 0x2E, 0x7C, 0xC1, 0x40}};
+static constexpr GUID IID_ISystemBackdropControllerWithTargets = {
+    0x9C56FE7C, 0x98EB, 0x5F89, {0xAD, 0x97, 0xDA, 0xD5, 0x7F, 0xC3, 0x0C, 0x8C}};
+static constexpr GUID IID_ISystemBackdropConfiguration = {
+    0xEBCCE1B9, 0x0E0C, 0x5431, {0xAB, 0x0E, 0x00, 0xF3, 0xF0, 0x66, 0x99, 0x62}};
+static constexpr GUID IID_IXamlDiagnosticsTestHooks_Local = {
+    0x735941A2, 0x3EE3, 0x495A, {0x8D, 0xA9, 0x97, 0x26, 0x27, 0x00, 0x30, 0x75}};
+
+struct IXamlDiagnosticsTestHooks_Local : IUnknown {
+    virtual HRESULT STDMETHODCALLTYPE UnregisterInstance(InstanceHandle handle) = 0;
+    virtual HRESULT STDMETHODCALLTYPE TryGetDispatcherQueueForObject(
+        InstanceHandle handle,
+        void** dispatcherQueue) = 0;
+};
+
+// Non-virtual destructors guarantee vtable slots start strictly at [3] for Invoke.
+class DispatcherQueueHandlerDelegate final : public IUnknown {
+    std::atomic<ULONG> m_ref{1};
+    std::function<void()> m_fn;
+    ~DispatcherQueueHandlerDelegate() = default;
+
+   public:
+    explicit DispatcherQueueHandlerDelegate(std::function<void()> fn)
+        : m_fn(std::move(fn)) {}
+
+    HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid, void** ppv) noexcept override {
+        if (!ppv) return E_POINTER;
+        if (riid == IID_IUnknown_Local || riid == IID_DispatcherQueueHandler ||
+            riid == IID_IAgileObject_Local) {
+            *ppv = this;
+            AddRef();
+            return S_OK;
+        }
+        *ppv = nullptr;
+        return E_NOINTERFACE;
+    }
+
+    ULONG STDMETHODCALLTYPE AddRef() noexcept override {
+        return m_ref.fetch_add(1, std::memory_order_relaxed) + 1;
+    }
+
+    ULONG STDMETHODCALLTYPE Release() noexcept override {
+        ULONG r = m_ref.fetch_sub(1, std::memory_order_acq_rel) - 1;
+        if (r == 0) delete this;
+        return r;
+    }
+
+    virtual HRESULT STDMETHODCALLTYPE Invoke() noexcept {
+        try {
+            if (m_fn) m_fn();
+        } catch (...) {}
+        return S_OK;
+    }
+};
+
+template <const GUID& EventIid, bool Agile>
+class TwoArgDelegate final : public IUnknown {
+    std::atomic<ULONG> m_ref{1};
+    std::function<void(void*, void*)> m_fn;
+    ~TwoArgDelegate() = default;
+
+   public:
+    explicit TwoArgDelegate(std::function<void(void*, void*)> fn)
+        : m_fn(std::move(fn)) {}
+
+    HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid, void** ppv) noexcept override {
+        if (!ppv) return E_POINTER;
+        if (riid == IID_IUnknown_Local || riid == EventIid ||
+            (Agile && riid == IID_IAgileObject_Local)) {
+            *ppv = this;
+            AddRef();
+            return S_OK;
+        }
+        *ppv = nullptr;
+        return E_NOINTERFACE;
+    }
+
+    ULONG STDMETHODCALLTYPE AddRef() noexcept override {
+        return m_ref.fetch_add(1, std::memory_order_relaxed) + 1;
+    }
+
+    ULONG STDMETHODCALLTYPE Release() noexcept override {
+        ULONG r = m_ref.fetch_sub(1, std::memory_order_acq_rel) - 1;
+        if (r == 0) delete this;
+        return r;
+    }
+
+    virtual HRESULT STDMETHODCALLTYPE Invoke(void* a, void* b) noexcept {
+        try {
+            if (m_fn) m_fn(a, b);
+        } catch (...) {}
+        return S_OK;
+    }
+};
+
+using DpChangedDelegate = TwoArgDelegate<IID_DependencyPropertyChangedCallback, true>;
+using ActualThemeChangedDelegate =
+    TwoArgDelegate<IID_TypedEventHandler_FE_Inspectable, false>;
+using TimerTickDelegate =
+    TwoArgDelegate<IID_TypedEventHandler_DQT_Inspectable, false>;
+
+inline winrt::com_ptr<::IWeakReference> MakeWeak(IUnknown* unk) noexcept {
+    winrt::com_ptr<::IWeakReferenceSource> src;
+    winrt::com_ptr<::IWeakReference> wk;
+    if (unk && SUCCEEDED(unk->QueryInterface(IID_IWeakReferenceSource_Local, src.put_void())) &&
+        src) {
+        src->GetWeakReference(wk.put());
+    }
+    return wk;
+}
+
+inline winrt::com_ptr<IUnknown> ResolveWeak(winrt::com_ptr<::IWeakReference> const& wk) noexcept {
+    winrt::com_ptr<::IInspectable> insp;
+    if (wk && SUCCEEDED(wk->Resolve(IID_IInspectable_Local, insp.put())) && insp) {
+        return QueryCanonicalUnknown(insp.get());
+    }
+    return nullptr;
+}
+
+inline HMODULE GetCurrentModuleHandleLocal() noexcept {
+    HMODULE module = nullptr;
+    GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
+                           GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                       reinterpret_cast<LPCWSTR>(&GetCurrentModuleHandleLocal), &module);
+    return module;
+}
+
+inline bool ContainsCaseInsensitive(std::wstring_view haystack, std::wstring_view needle) noexcept {
+    if (needle.empty() || haystack.size() < needle.size()) {
+        return false;
+    }
+    for (size_t i = 0; i <= haystack.size() - needle.size(); i++) {
+        bool match = true;
+        for (size_t j = 0; j < needle.size(); j++) {
+            if (std::towlower(haystack[i + j]) != std::towlower(needle[j])) {
+                match = false;
+                break;
+            }
+        }
+        if (match) return true;
+    }
+    return false;
+}
+
+// Configuration & lifecycle state
+std::atomic<bool> g_unloading = false;
+std::atomic<bool> g_composerEnabled = false;
+std::atomic<double> g_cornerRadius = 24.0;
+std::atomic<int> g_tintOpacityPct = 55;
+std::atomic<int> g_luminosityOpacityPct = 40;
+std::atomic<bool> g_acrylicHooked = false;
+std::atomic<bool> g_tapInjected = false;
+// SystemBackdropTheme: 0 = Default, 1 = Light, 2 = Dark
+std::atomic<int> g_lastBackdropTheme = 0;
+
+std::mutex g_hookInitMutex;
+std::mutex g_watcherThreadMutex;
+HANDLE g_watcherThread = nullptr;
+std::mutex g_uiDispatchersMutex;
+std::vector<winrt::com_ptr<IUnknown>> g_uiDispatchers;
+
+using PFN_INITIALIZE_XAML_DIAGNOSTICS_EX_LOCAL = decltype(&InitializeXamlDiagnosticsEx);
+PFN_INITIALIZE_XAML_DIAGNOSTICS_EX_LOCAL InitializeXamlDiagnosticsEx_Original = nullptr;
+using LoadLibraryExW_t = decltype(&LoadLibraryExW);
+LoadLibraryExW_t LoadLibraryExW_Original = nullptr;
+
+void LoadSettings() {
+    PCWSTR glassSetting = Wh_GetStringSetting(L"newSearchComposerGlass");
+    PCWSTR themeSetting = Wh_GetStringSetting(L"theme");
+
+    bool enabled = false;
+    if (wcscmp(glassSetting, L"enabled") == 0) {
+        enabled = true;
+    } else if (wcscmp(glassSetting, L"disabled") == 0) {
+        enabled = false;
+    } else {
+        enabled = (wcscmp(themeSetting, L"LumiPill") == 0);
+    }
+
+    Wh_FreeStringSetting(glassSetting);
+    Wh_FreeStringSetting(themeSetting);
+
+    int radius = Wh_GetIntSetting(L"newSearchComposerCornerRadius");
+    if (radius <= 0) radius = 24;
+    if (radius > 64) radius = 64;
+
+    int tintPct = Wh_GetIntSetting(L"newSearchComposerTintOpacity");
+    if (tintPct <= 0) tintPct = 55;
+    if (tintPct > 100) tintPct = 100;
+
+    int lumPct = Wh_GetIntSetting(L"newSearchComposerLuminosityOpacity");
+    if (lumPct <= 0) lumPct = 40;
+    if (lumPct > 100) lumPct = 100;
+
+    g_composerEnabled.store(enabled);
+    g_cornerRadius.store(static_cast<double>(radius));
+    g_tintOpacityPct.store(tintPct);
+    g_luminosityOpacityPct.store(lumPct);
+}
+
+inline bool IsSystemLightTheme() noexcept {
+    for (PCWSTR valName : {L"SystemUsesLightTheme", L"AppsUseLightTheme"}) {
+        DWORD val = 0;
+        DWORD cb = sizeof(val);
+        if (RegGetValueW(HKEY_CURRENT_USER,
+                         L"SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize",
+                         valName, RRF_RT_REG_DWORD, nullptr, &val, &cb) == ERROR_SUCCESS) {
+            return val != 0;
+        }
+    }
+    return false;
+}
+
+inline bool ResolveEffectiveIsLightFromThemeInt(int themeInt) noexcept {
+    if (themeInt == 1) return true;   // SystemBackdropTheme::Light
+    if (themeInt == 2) return false;  // SystemBackdropTheme::Dark
+    return IsSystemLightTheme();
+}
+
+// -----------------------------------------------------------------------------
+// Prong 1: DesktopAcrylicController COM vtable hooks (wuceffectsi.dll)
+// -----------------------------------------------------------------------------
+
+using PutColor_t = HRESULT(STDMETHODCALLTYPE*)(void* pThis, WuiColor value);
+using PutFloat_t = HRESULT(STDMETHODCALLTYPE*)(void* pThis, float value);
+using PutInt32_t = HRESULT(STDMETHODCALLTYPE*)(void* pThis, int32_t value);
+using AddSystemBackdropTarget_t =
+    HRESULT(STDMETHODCALLTYPE*)(void* pThis, void* target, bool* result);
+using SetSystemBackdropConfiguration_t =
+    HRESULT(STDMETHODCALLTYPE*)(void* pThis, void* config);
+
+PutColor_t DAC_put_FallbackColor_Original = nullptr;
+PutFloat_t DAC_put_LuminosityOpacity_Original = nullptr;
+PutColor_t DAC_put_TintColor_Original = nullptr;
+PutFloat_t DAC_put_TintOpacity_Original = nullptr;
+PutInt32_t DAC3_put_Kind_Original = nullptr;
+PutInt32_t SBC_put_Theme_Original = nullptr;
+AddSystemBackdropTarget_t SBCWT_AddSystemBackdropTarget_Original = nullptr;
+SetSystemBackdropConfiguration_t SBCWT_SetSystemBackdropConfiguration_Original = nullptr;
+
+thread_local bool g_inAcrylicOverride = false;
+thread_local std::vector<winrt::com_ptr<::IWeakReference>> g_activeControllers;
+
+struct AcrylicOverrideGuard {
+    bool prev;
+    AcrylicOverrideGuard() noexcept : prev(g_inAcrylicOverride) { g_inAcrylicOverride = true; }
+    ~AcrylicOverrideGuard() { g_inAcrylicOverride = prev; }
+};
+
+struct GlassAcrylicParams {
+    int32_t kind;
+    WuiColor tintColor;
+    float tintOpacity;
+    float luminosityOpacity;
+    WuiColor fallbackColor;
+};
+
+inline GlassAcrylicParams GetGlassAcrylicParams(bool isLight) noexcept {
+    float lum = static_cast<float>(g_luminosityOpacityPct.load()) / 100.0f;
+    if (isLight) {
+        return {2 /* Thin */, WuiColor{255, 230, 230, 230}, 0.0f, lum,
+                WuiColor{235, 230, 230, 230}};
+    }
+    return {2 /* Thin */, WuiColor{255, 31, 31, 31}, 0.0f, lum, WuiColor{235, 31, 31, 31}};
+}
+
+void ApplyGlassToAcrylicController(IUnknown* pControllerUnk, bool isLight) {
+    if (!pControllerUnk || !g_composerEnabled.load() || g_unloading.load()) return;
+
+    AcrylicOverrideGuard guard;
+    GlassAcrylicParams gp = GetGlassAcrylicParams(isLight);
+
+    if (auto dac3 = QueryGuid(pControllerUnk, IID_IDesktopAcrylicController3)) {
+        if (DAC3_put_Kind_Original) {
+            DAC3_put_Kind_Original(dac3.get(), gp.kind);
+        }
+    }
+    if (auto dac = QueryGuid(pControllerUnk, IID_IDesktopAcrylicController)) {
+        if (DAC_put_TintColor_Original) {
+            DAC_put_TintColor_Original(dac.get(), gp.tintColor);
+        }
+        if (DAC_put_TintOpacity_Original) {
+            DAC_put_TintOpacity_Original(dac.get(), gp.tintOpacity);
+        }
+        if (DAC_put_LuminosityOpacity_Original) {
+            DAC_put_LuminosityOpacity_Original(dac.get(), gp.luminosityOpacity);
+        }
+        if (DAC_put_FallbackColor_Original) {
+            DAC_put_FallbackColor_Original(dac.get(), gp.fallbackColor);
+        }
+    }
+}
+
+void TrackActiveController(IUnknown* pControllerUnk) {
+    if (!pControllerUnk || g_unloading.load()) return;
+    auto dacUnk = QueryGuid(pControllerUnk, IID_IDesktopAcrylicController);
+    if (!dacUnk) return;
+    auto canonical = QueryCanonicalUnknown(dacUnk.get());
+    if (!canonical) return;
+
+    bool alreadyTracked = false;
+    std::vector<winrt::com_ptr<::IWeakReference>> kept;
+    kept.reserve(g_activeControllers.size() + 1);
+    for (auto const& wk : g_activeControllers) {
+        if (auto strong = ResolveWeak(wk)) {
+            if (strong.get() == canonical.get()) {
+                alreadyTracked = true;
+            }
+            kept.push_back(wk);
+        }
+    }
+    if (!alreadyTracked) {
+        if (auto wk = MakeWeak(canonical.get())) {
+            kept.push_back(std::move(wk));
+        }
+    }
+    g_activeControllers = std::move(kept);
+}
+
+void ReapplyGlassToActiveControllers(bool isLight) {
+    if (!g_composerEnabled.load() || g_unloading.load()) return;
+    std::vector<winrt::com_ptr<::IWeakReference>> kept;
+    std::vector<winrt::com_ptr<IUnknown>> strongs;
+    kept.reserve(g_activeControllers.size());
+    for (auto const& wk : g_activeControllers) {
+        if (auto strong = ResolveWeak(wk)) {
+            kept.push_back(wk);
+            strongs.push_back(std::move(strong));
+        }
+    }
+    g_activeControllers = std::move(kept);
+    for (auto const& strong : strongs) {
+        ApplyGlassToAcrylicController(strong.get(), isLight);
+    }
+}
+
+HRESULT STDMETHODCALLTYPE SBC_put_Theme_Hook(void* pThis, int32_t value) {
+    if (!g_unloading.load()) {
+        g_lastBackdropTheme.store(value);
+    }
+    HRESULT hr = SBC_put_Theme_Original(pThis, value);
+    if (SUCCEEDED(hr) && g_composerEnabled.load() && !g_unloading.load()) {
+        ReapplyGlassToActiveControllers(ResolveEffectiveIsLightFromThemeInt(value));
+    }
+    return hr;
+}
+
+HRESULT STDMETHODCALLTYPE DAC_put_FallbackColor_Hook(void* pThis, WuiColor value) {
+    if (g_inAcrylicOverride || !g_composerEnabled.load() || g_unloading.load()) {
+        return DAC_put_FallbackColor_Original(pThis, value);
+    }
+    bool isLight = ResolveEffectiveIsLightFromThemeInt(g_lastBackdropTheme.load());
+    return DAC_put_FallbackColor_Original(pThis, GetGlassAcrylicParams(isLight).fallbackColor);
+}
+
+HRESULT STDMETHODCALLTYPE DAC_put_LuminosityOpacity_Hook(void* pThis, float value) {
+    if (g_inAcrylicOverride || !g_composerEnabled.load() || g_unloading.load()) {
+        return DAC_put_LuminosityOpacity_Original(pThis, value);
+    }
+    bool isLight = ResolveEffectiveIsLightFromThemeInt(g_lastBackdropTheme.load());
+    return DAC_put_LuminosityOpacity_Original(
+        pThis, GetGlassAcrylicParams(isLight).luminosityOpacity);
+}
+
+HRESULT STDMETHODCALLTYPE DAC_put_TintColor_Hook(void* pThis, WuiColor value) {
+    if (g_inAcrylicOverride || !g_composerEnabled.load() || g_unloading.load()) {
+        return DAC_put_TintColor_Original(pThis, value);
+    }
+    bool isLight = ResolveEffectiveIsLightFromThemeInt(g_lastBackdropTheme.load());
+    return DAC_put_TintColor_Original(pThis, GetGlassAcrylicParams(isLight).tintColor);
+}
+
+HRESULT STDMETHODCALLTYPE DAC_put_TintOpacity_Hook(void* pThis, float value) {
+    if (g_inAcrylicOverride || !g_composerEnabled.load() || g_unloading.load()) {
+        return DAC_put_TintOpacity_Original(pThis, value);
+    }
+    bool isLight = ResolveEffectiveIsLightFromThemeInt(g_lastBackdropTheme.load());
+    return DAC_put_TintOpacity_Original(pThis, GetGlassAcrylicParams(isLight).tintOpacity);
+}
+
+HRESULT STDMETHODCALLTYPE DAC3_put_Kind_Hook(void* pThis, int32_t value) {
+    if (g_inAcrylicOverride || !g_composerEnabled.load() || g_unloading.load()) {
+        return DAC3_put_Kind_Original(pThis, value);
+    }
+    bool isLight = ResolveEffectiveIsLightFromThemeInt(g_lastBackdropTheme.load());
+    return DAC3_put_Kind_Original(pThis, GetGlassAcrylicParams(isLight).kind);
+}
+
+HRESULT STDMETHODCALLTYPE SBCWT_AddSystemBackdropTarget_Hook(void* pThis,
+                                                               void* target,
+                                                               bool* result) {
+    HRESULT hr = SBCWT_AddSystemBackdropTarget_Original(pThis, target, result);
+    if (SUCCEEDED(hr) && !g_unloading.load()) {
+        TrackActiveController(reinterpret_cast<IUnknown*>(pThis));
+        if (g_composerEnabled.load()) {
+            bool isLight = ResolveEffectiveIsLightFromThemeInt(g_lastBackdropTheme.load());
+            ApplyGlassToAcrylicController(reinterpret_cast<IUnknown*>(pThis), isLight);
+        }
+    }
+    return hr;
+}
+
+HRESULT STDMETHODCALLTYPE SBCWT_SetSystemBackdropConfiguration_Hook(void* pThis,
+                                                                      void* config) {
+    int32_t themeInt = 0;
+    if (config && g_composerEnabled.load() && !g_unloading.load()) {
+        if (auto cfg = QueryGuid(reinterpret_cast<IUnknown*>(config),
+                                 IID_ISystemBackdropConfiguration)) {
+            if (SUCCEEDED(VtblFn<HRESULT(STDMETHODCALLTYPE*)(void*, int32_t*)>(cfg.get(), 12)(
+                    cfg.get(), &themeInt))) {
+                g_lastBackdropTheme.store(themeInt);
+            }
+            bool isInputActive = false;
+            if (SUCCEEDED(VtblFn<HRESULT(STDMETHODCALLTYPE*)(void*, bool*)>(cfg.get(), 10)(
+                    cfg.get(), &isInputActive)) &&
+                !isInputActive) {
+                VtblFn<HRESULT(STDMETHODCALLTYPE*)(void*, bool)>(cfg.get(), 11)(cfg.get(), true);
+            }
+        }
+    }
+
+    HRESULT hr = SBCWT_SetSystemBackdropConfiguration_Original(pThis, config);
+    if (SUCCEEDED(hr) && !g_unloading.load()) {
+        TrackActiveController(reinterpret_cast<IUnknown*>(pThis));
+        if (g_composerEnabled.load()) {
+            bool isLight = ResolveEffectiveIsLightFromThemeInt(themeInt);
+            ApplyGlassToAcrylicController(reinterpret_cast<IUnknown*>(pThis), isLight);
+        }
+    }
+    return hr;
+}
+
+bool TryHookDesktopAcrylicController(bool applyNow) {
+    std::lock_guard<std::mutex> lock(g_hookInitMutex);
+    if (g_acrylicHooked.load()) {
+        return true;
+    }
+
+    HMODULE hWuc = GetModuleHandleW(L"wuceffectsi.dll");
+    if (!hWuc) {
+        return false;
+    }
+
+    using DllGetActivationFactory_t = HRESULT(WINAPI*)(HSTRING, void**);
+    auto pDllGetActivationFactory = reinterpret_cast<DllGetActivationFactory_t>(
+        GetProcAddress(hWuc, "DllGetActivationFactory"));
+    if (!pDllGetActivationFactory) {
+        return false;
+    }
+
+    HRESULT coHr = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
+    bool needCoUninit = (coHr == S_OK || coHr == S_FALSE);
+
+    auto probeClass = [&](PCWSTR className) -> winrt::com_ptr<IUnknown> {
+        HSTRING hClassId = nullptr;
+        if (FAILED(WindowsCreateString(className, static_cast<UINT32>(wcslen(className)),
+                                       &hClassId))) {
+            return nullptr;
+        }
+        winrt::com_ptr<IUnknown> instance;
+        winrt::com_ptr<IUnknown> factoryUnk;
+        if (SUCCEEDED(pDllGetActivationFactory(hClassId, factoryUnk.put_void())) && factoryUnk) {
+            winrt::com_ptr<IActivationFactory> factory;
+            if (SUCCEEDED(factoryUnk->QueryInterface(IID_IActivationFactory_Local,
+                                                     factory.put_void())) &&
+                factory) {
+                ::IInspectable* probeRaw = nullptr;
+                if (SUCCEEDED(factory->ActivateInstance(&probeRaw)) && probeRaw) {
+                    instance.attach(probeRaw);
+                }
+            }
+        }
+        WindowsDeleteString(hClassId);
+        return instance;
+    };
+
+    bool hooked = false;
+    if (auto probe = probeClass(L"Microsoft.UI.Composition.SystemBackdrops.DesktopAcrylicController")) {
+        auto dac = QueryGuid(probe.get(), IID_IDesktopAcrylicController);
+        auto dac3 = QueryGuid(probe.get(), IID_IDesktopAcrylicController3);
+        auto sbcwt = QueryGuid(probe.get(), IID_ISystemBackdropControllerWithTargets);
+        if (dac && dac3 && sbcwt) {
+            void** vtDac = *reinterpret_cast<void***>(dac.get());
+            void** vtDac3 = *reinterpret_cast<void***>(dac3.get());
+            void** vtSbcwt = *reinterpret_cast<void***>(sbcwt.get());
+            bool ok = true;
+            ok &= Wh_SetFunctionHook(vtDac[7], reinterpret_cast<void*>(DAC_put_FallbackColor_Hook),
+                                     reinterpret_cast<void**>(&DAC_put_FallbackColor_Original));
+            ok &= Wh_SetFunctionHook(vtDac[9],
+                                     reinterpret_cast<void*>(DAC_put_LuminosityOpacity_Hook),
+                                     reinterpret_cast<void**>(&DAC_put_LuminosityOpacity_Original));
+            ok &= Wh_SetFunctionHook(vtDac[11], reinterpret_cast<void*>(DAC_put_TintColor_Hook),
+                                     reinterpret_cast<void**>(&DAC_put_TintColor_Original));
+            ok &= Wh_SetFunctionHook(vtDac[13], reinterpret_cast<void*>(DAC_put_TintOpacity_Hook),
+                                     reinterpret_cast<void**>(&DAC_put_TintOpacity_Original));
+            ok &= Wh_SetFunctionHook(vtDac3[7], reinterpret_cast<void*>(DAC3_put_Kind_Hook),
+                                     reinterpret_cast<void**>(&DAC3_put_Kind_Original));
+            ok &= Wh_SetFunctionHook(vtSbcwt[7],
+                                     reinterpret_cast<void*>(SBCWT_AddSystemBackdropTarget_Hook),
+                                     reinterpret_cast<void**>(&SBCWT_AddSystemBackdropTarget_Original));
+            ok &= Wh_SetFunctionHook(
+                vtSbcwt[10],
+                reinterpret_cast<void*>(SBCWT_SetSystemBackdropConfiguration_Hook),
+                reinterpret_cast<void**>(&SBCWT_SetSystemBackdropConfiguration_Original));
+            hooked = ok;
+        }
+    }
+
+    if (hooked) {
+        if (auto cfgProbe =
+                probeClass(L"Microsoft.UI.Composition.SystemBackdrops.SystemBackdropConfiguration")) {
+            if (auto cfg = QueryGuid(cfgProbe.get(), IID_ISystemBackdropConfiguration)) {
+                void** vtCfg = *reinterpret_cast<void***>(cfg.get());
+                Wh_SetFunctionHook(vtCfg[13], reinterpret_cast<void*>(SBC_put_Theme_Hook),
+                                   reinterpret_cast<void**>(&SBC_put_Theme_Original));
+            }
+        }
+    }
+
+    if (needCoUninit) {
+        CoUninitialize();
+    }
+
+    if (hooked) {
+        g_acrylicHooked.store(true);
+        if (applyNow) {
+            Wh_ApplyHookOperations();
+        }
+    }
+    return hooked;
+}
+
+// -----------------------------------------------------------------------------
+// Prong 2: WinUI 3 VisualTreeWatcher TAP (pure COM ABI)
+// -----------------------------------------------------------------------------
+
+inline winrt::com_ptr<IUnknown> GetActivationFactoryFromModule(PCWSTR dllName,
+                                                               PCWSTR className,
+                                                               const GUID& iid) {
+    HMODULE mod = GetModuleHandleW(dllName);
+    if (!mod) return nullptr;
+    using DllGetActivationFactory_t = HRESULT(WINAPI*)(HSTRING, void**);
+    auto fn = reinterpret_cast<DllGetActivationFactory_t>(
+        GetProcAddress(mod, "DllGetActivationFactory"));
+    if (!fn) return nullptr;
+
+    HSTRING hCls = nullptr;
+    if (FAILED(WindowsCreateString(className, static_cast<UINT32>(wcslen(className)), &hCls))) {
+        return nullptr;
+    }
+    winrt::com_ptr<IUnknown> factory;
+    fn(hCls, factory.put_void());
+    WindowsDeleteString(hCls);
+    if (!factory) return nullptr;
+    return QueryGuid(factory.get(), iid);
+}
+
+inline winrt::com_ptr<IUnknown> GetWinUI3ActivationFactory(PCWSTR className, const GUID& iid) {
+    if (auto f = GetActivationFactoryFromModule(L"Microsoft.UI.Xaml.dll", className, iid)) {
+        return f;
+    }
+    HSTRING hCls = nullptr;
+    if (FAILED(WindowsCreateString(className, static_cast<UINT32>(wcslen(className)), &hCls))) {
+        return nullptr;
+    }
+    winrt::com_ptr<IUnknown> factory;
+    RoGetActivationFactory(hCls, iid, factory.put_void());
+    WindowsDeleteString(hCls);
+    return factory;
+}
+
+struct UiThreadStatics {
+    winrt::com_ptr<IUnknown> visualTreeHelper;
+    winrt::com_ptr<IUnknown> xamlReader;
+    winrt::com_ptr<IUnknown> borderRadiusDp;
+    winrt::com_ptr<IUnknown> borderBgDp;
+    winrt::com_ptr<IUnknown> borderBrushDp;
+    winrt::com_ptr<IUnknown> borderThickDp;
+    winrt::com_ptr<IUnknown> gridRadiusDp;
+    winrt::com_ptr<IUnknown> gridBrushDp;
+    winrt::com_ptr<IUnknown> gridThickDp;
+    winrt::com_ptr<IUnknown> panelBgDp;
+    winrt::com_ptr<IUnknown> cpRadiusDp;
+    winrt::com_ptr<IUnknown> cpBgDp;
+    winrt::com_ptr<IUnknown> cpBrushDp;
+    winrt::com_ptr<IUnknown> cpThickDp;
+    winrt::com_ptr<IUnknown> ctlRadiusDp;
+    winrt::com_ptr<IUnknown> ctlBgDp;
+    winrt::com_ptr<IUnknown> ctlBrushDp;
+    winrt::com_ptr<IUnknown> ctlThickDp;
+    winrt::com_ptr<IUnknown> rectRxDp;
+    winrt::com_ptr<IUnknown> rectRyDp;
+    bool initialized = false;
+
+    void Ensure() {
+        if (initialized) return;
+        initialized = true;
+        visualTreeHelper = GetWinUI3ActivationFactory(
+            L"Microsoft.UI.Xaml.Media.VisualTreeHelper", IID_IVisualTreeHelperStatics);
+        xamlReader = GetWinUI3ActivationFactory(
+            L"Microsoft.UI.Xaml.Markup.XamlReader", IID_IXamlReaderStatics);
+
+        auto fetchDp = [](IUnknown* statics, size_t slot, winrt::com_ptr<IUnknown>& out) {
+            if (statics) {
+                VtblFn<HRESULT(STDMETHODCALLTYPE*)(void*, void**)>(statics, slot)(
+                    statics, out.put_void());
+            }
+        };
+
+        if (auto bs = GetWinUI3ActivationFactory(
+                L"Microsoft.UI.Xaml.Controls.Border", IID_IBorderStatics)) {
+            fetchDp(bs.get(), 6, borderBrushDp);
+            fetchDp(bs.get(), 7, borderThickDp);
+            fetchDp(bs.get(), 8, borderBgDp);
+            fetchDp(bs.get(), 10, borderRadiusDp);
+        }
+        if (auto gs = GetWinUI3ActivationFactory(
+                L"Microsoft.UI.Xaml.Controls.Grid", IID_IGridStatics)) {
+            fetchDp(gs.get(), 7, gridBrushDp);
+            fetchDp(gs.get(), 8, gridThickDp);
+            fetchDp(gs.get(), 9, gridRadiusDp);
+        }
+        if (auto ps = GetWinUI3ActivationFactory(
+                L"Microsoft.UI.Xaml.Controls.Panel", IID_IPanelStatics)) {
+            fetchDp(ps.get(), 6, panelBgDp);
+        }
+        if (auto cps = GetWinUI3ActivationFactory(
+                L"Microsoft.UI.Xaml.Controls.ContentPresenter", IID_IContentPresenterStatics)) {
+            fetchDp(cps.get(), 24, cpBrushDp);
+            fetchDp(cps.get(), 25, cpThickDp);
+            fetchDp(cps.get(), 26, cpRadiusDp);
+            fetchDp(cps.get(), 28, cpBgDp);
+        }
+        if (auto cs = GetWinUI3ActivationFactory(
+                L"Microsoft.UI.Xaml.Controls.Control", IID_IControlStatics)) {
+            fetchDp(cs.get(), 23, ctlBgDp);
+            fetchDp(cs.get(), 25, ctlThickDp);
+            fetchDp(cs.get(), 26, ctlBrushDp);
+            fetchDp(cs.get(), 30, ctlRadiusDp);
+        }
+        if (auto rs = GetWinUI3ActivationFactory(
+                L"Microsoft.UI.Xaml.Shapes.Rectangle", IID_IRectangleStatics)) {
+            fetchDp(rs.get(), 6, rectRxDp);
+            fetchDp(rs.get(), 7, rectRyDp);
+        }
+    }
+
+    void Reset() noexcept { *this = UiThreadStatics{}; }
+};
+
+enum class StyleTargetRole {
+    None,
+    Anchor,
+    BackPlate,
+    Composer,
+    ResultsList,
+    CardSurface,
+    RowChrome,
+    StatusOrTipRow,
+    EntryBorderElement,
+};
+
+struct StyledElementRecord {
+    winrt::com_ptr<::IWeakReference> element;
+    StyleTargetRole role = StyleTargetRole::None;
+    winrt::event_token themeToken{};
+    bool hasThemeToken = false;
+    std::vector<std::pair<winrt::com_ptr<IUnknown>, int64_t>> dpCallbacks;
+};
+
+thread_local UiThreadStatics g_statics;
+thread_local bool g_inStyleApply = false;
+thread_local std::unordered_map<InstanceHandle, std::unique_ptr<StyledElementRecord>> g_styledElements;
+thread_local std::vector<InstanceHandle> g_pendingReleases;
+thread_local ULONGLONG g_lastReleaseQueueTick = 0;
+thread_local bool g_releaseDrainArmed = false;
+thread_local winrt::com_ptr<IUnknown> g_releaseTimer;
+thread_local winrt::event_token g_releaseTimerToken{};
+thread_local bool g_hasReleaseTimerToken = false;
+
+struct StyleApplyGuard {
+    bool prev;
+    StyleApplyGuard() noexcept : prev(g_inStyleApply) { g_inStyleApply = true; }
+    ~StyleApplyGuard() { g_inStyleApply = prev; }
+};
+
+inline std::wstring GetElementName(IUnknown* feUnk) noexcept {
+    auto fe = QueryGuid(feUnk, IID_IFrameworkElement);
+    if (!fe) return {};
+    HSTRING hName = nullptr;
+    if (FAILED(VtblFn<HRESULT(STDMETHODCALLTYPE*)(void*, HSTRING*)>(fe.get(), 33)(
+            fe.get(), &hName)) ||
+        !hName) {
+        return {};
+    }
+    UINT32 len = 0;
+    PCWSTR raw = WindowsGetStringRawBuffer(hName, &len);
+    std::wstring res(raw ? raw : L"", len);
+    WindowsDeleteString(hName);
+    return res;
+}
+
+inline bool ResolveElementIsLight(IUnknown* feUnk) noexcept {
+    if (auto fe = QueryGuid(feUnk, IID_IFrameworkElement)) {
+        int32_t theme = 0;
+        if (SUCCEEDED(VtblFn<HRESULT(STDMETHODCALLTYPE*)(void*, int32_t*)>(fe.get(), 60)(
+                fe.get(), &theme))) {
+            if (theme == 1) return true;   // ElementTheme::Light
+            if (theme == 2) return false;  // ElementTheme::Dark
+        }
+    }
+    return ResolveEffectiveIsLightFromThemeInt(g_lastBackdropTheme.load());
+}
+
+inline winrt::com_ptr<IUnknown> LoadXamlObject(PCWSTR xaml) {
+    g_statics.Ensure();
+    if (!g_statics.xamlReader || !xaml) return nullptr;
+    HSTRING hXaml = nullptr;
+    if (FAILED(WindowsCreateString(xaml, static_cast<UINT32>(wcslen(xaml)), &hXaml))) {
+        return nullptr;
+    }
+    winrt::com_ptr<IUnknown> obj;
+    VtblFn<HRESULT(STDMETHODCALLTYPE*)(void*, HSTRING, void**)>(g_statics.xamlReader.get(), 6)(
+        g_statics.xamlReader.get(), hXaml, obj.put_void());
+    WindowsDeleteString(hXaml);
+    return obj;
+}
+
+inline winrt::com_ptr<IUnknown> MakeSolidColorBrush(WuiColor c) {
+    WCHAR xaml[192];
+    swprintf_s(
+        xaml,
+        L"<SolidColorBrush xmlns='http://schemas.microsoft.com/winfx/2006/xaml/presentation' "
+        L"Color='#%02X%02X%02X%02X'/>",
+        c.A, c.R, c.G, c.B);
+    return LoadXamlObject(xaml);
+}
+
+inline winrt::com_ptr<IUnknown> MakeGlassRimBrush(bool isLight) {
+    PCWSTR xaml = isLight
+        ? L"<LinearGradientBrush xmlns='http://schemas.microsoft.com/winfx/2006/xaml/presentation' "
+          L"StartPoint='0,0' EndPoint='0,1'>"
+          L"<GradientStop Color='#55FFFFFF' Offset='0.0'/>"
+          L"<GradientStop Color='#14000000' Offset='0.45'/>"
+          L"<GradientStop Color='#2B000000' Offset='1.0'/></LinearGradientBrush>"
+        : L"<LinearGradientBrush xmlns='http://schemas.microsoft.com/winfx/2006/xaml/presentation' "
+          L"StartPoint='0,0' EndPoint='0,1'>"
+          L"<GradientStop Color='#38FFFFFF' Offset='0.0'/>"
+          L"<GradientStop Color='#14FFFFFF' Offset='0.45'/>"
+          L"<GradientStop Color='#22000000' Offset='1.0'/></LinearGradientBrush>";
+    return LoadXamlObject(xaml);
+}
+
+inline void SetCornerRadiusIfSupported(IUnknown* el, double r) noexcept {
+    MuxCornerRadius cr{r, r, r, r};
+    if (auto b = QueryGuid(el, IID_IBorder)) {
+        VtblFn<HRESULT(STDMETHODCALLTYPE*)(void*, MuxCornerRadius)>(b.get(), 15)(b.get(), cr);
+    } else if (auto g = QueryGuid(el, IID_IGrid)) {
+        VtblFn<HRESULT(STDMETHODCALLTYPE*)(void*, MuxCornerRadius)>(g.get(), 15)(g.get(), cr);
+    } else if (auto cp = QueryGuid(el, IID_IContentPresenter)) {
+        VtblFn<HRESULT(STDMETHODCALLTYPE*)(void*, MuxCornerRadius)>(cp.get(), 49)(cp.get(), cr);
+    } else if (auto ctl = QueryGuid(el, IID_IControl)) {
+        VtblFn<HRESULT(STDMETHODCALLTYPE*)(void*, MuxCornerRadius)>(ctl.get(), 53)(ctl.get(), cr);
+    } else if (auto rect = QueryGuid(el, IID_IRectangle)) {
+        VtblFn<HRESULT(STDMETHODCALLTYPE*)(void*, double)>(rect.get(), 7)(rect.get(), r);
+        VtblFn<HRESULT(STDMETHODCALLTYPE*)(void*, double)>(rect.get(), 9)(rect.get(), r);
+    }
+}
+
+inline void SetBackgroundIfSupported(IUnknown* el, IUnknown* brush) noexcept {
+    if (!brush) return;
+    if (auto b = QueryGuid(el, IID_IBorder)) {
+        VtblFn<HRESULT(STDMETHODCALLTYPE*)(void*, void*)>(b.get(), 11)(b.get(), brush);
+    } else if (auto p = QueryGuid(el, IID_IPanel)) {
+        VtblFn<HRESULT(STDMETHODCALLTYPE*)(void*, void*)>(p.get(), 8)(p.get(), brush);
+    } else if (auto cp = QueryGuid(el, IID_IContentPresenter)) {
+        VtblFn<HRESULT(STDMETHODCALLTYPE*)(void*, void*)>(cp.get(), 53)(cp.get(), brush);
+    } else if (auto ctl = QueryGuid(el, IID_IControl)) {
+        VtblFn<HRESULT(STDMETHODCALLTYPE*)(void*, void*)>(ctl.get(), 41)(ctl.get(), brush);
+    }
+}
+
+inline winrt::com_ptr<IUnknown> GetBackgroundIfSupported(IUnknown* el) noexcept {
+    winrt::com_ptr<IUnknown> bg;
+    if (auto b = QueryGuid(el, IID_IBorder)) {
+        VtblFn<HRESULT(STDMETHODCALLTYPE*)(void*, void**)>(b.get(), 10)(b.get(), bg.put_void());
+    } else if (auto p = QueryGuid(el, IID_IPanel)) {
+        VtblFn<HRESULT(STDMETHODCALLTYPE*)(void*, void**)>(p.get(), 7)(p.get(), bg.put_void());
+    } else if (auto cp = QueryGuid(el, IID_IContentPresenter)) {
+        VtblFn<HRESULT(STDMETHODCALLTYPE*)(void*, void**)>(cp.get(), 52)(cp.get(), bg.put_void());
+    } else if (auto ctl = QueryGuid(el, IID_IControl)) {
+        VtblFn<HRESULT(STDMETHODCALLTYPE*)(void*, void**)>(ctl.get(), 40)(ctl.get(), bg.put_void());
+    }
+    return bg;
+}
+
+inline void SetBorderIfSupported(IUnknown* el, IUnknown* brush, MuxThickness thickness) noexcept {
+    if (!brush) return;
+    if (auto b = QueryGuid(el, IID_IBorder)) {
+        VtblFn<HRESULT(STDMETHODCALLTYPE*)(void*, void*)>(b.get(), 7)(b.get(), brush);
+        VtblFn<HRESULT(STDMETHODCALLTYPE*)(void*, MuxThickness)>(b.get(), 9)(b.get(), thickness);
+    } else if (auto g = QueryGuid(el, IID_IGrid)) {
+        VtblFn<HRESULT(STDMETHODCALLTYPE*)(void*, void*)>(g.get(), 11)(g.get(), brush);
+        VtblFn<HRESULT(STDMETHODCALLTYPE*)(void*, MuxThickness)>(g.get(), 13)(g.get(), thickness);
+    } else if (auto cp = QueryGuid(el, IID_IContentPresenter)) {
+        VtblFn<HRESULT(STDMETHODCALLTYPE*)(void*, void*)>(cp.get(), 45)(cp.get(), brush);
+        VtblFn<HRESULT(STDMETHODCALLTYPE*)(void*, MuxThickness)>(cp.get(), 47)(cp.get(), thickness);
+    } else if (auto ctl = QueryGuid(el, IID_IControl)) {
+        VtblFn<HRESULT(STDMETHODCALLTYPE*)(void*, void*)>(ctl.get(), 47)(ctl.get(), brush);
+        VtblFn<HRESULT(STDMETHODCALLTYPE*)(void*, MuxThickness)>(ctl.get(), 45)(ctl.get(), thickness);
+    }
+}
+
+inline void AddUniqueDp(std::vector<winrt::com_ptr<IUnknown>>& props,
+                        winrt::com_ptr<IUnknown> const& dp) {
+    if (!dp) return;
+    for (auto const& existing : props) {
+        if (existing.get() == dp.get()) return;
+    }
+    props.push_back(dp);
+}
+
+void GetSupportedStyleProperties(IUnknown* el,
+                                 bool trackRadius,
+                                 bool trackBg,
+                                 bool trackBorder,
+                                 std::vector<winrt::com_ptr<IUnknown>>& outProps) {
+    g_statics.Ensure();
+    if (QueryGuid(el, IID_IBorder)) {
+        if (trackRadius) AddUniqueDp(outProps, g_statics.borderRadiusDp);
+        if (trackBg) AddUniqueDp(outProps, g_statics.borderBgDp);
+        if (trackBorder) {
+            AddUniqueDp(outProps, g_statics.borderBrushDp);
+            AddUniqueDp(outProps, g_statics.borderThickDp);
+        }
+    } else if (QueryGuid(el, IID_IGrid)) {
+        if (trackRadius) AddUniqueDp(outProps, g_statics.gridRadiusDp);
+        if (trackBg) AddUniqueDp(outProps, g_statics.panelBgDp);
+        if (trackBorder) {
+            AddUniqueDp(outProps, g_statics.gridBrushDp);
+            AddUniqueDp(outProps, g_statics.gridThickDp);
+        }
+    } else if (QueryGuid(el, IID_IContentPresenter)) {
+        if (trackRadius) AddUniqueDp(outProps, g_statics.cpRadiusDp);
+        if (trackBg) AddUniqueDp(outProps, g_statics.cpBgDp);
+        if (trackBorder) {
+            AddUniqueDp(outProps, g_statics.cpBrushDp);
+            AddUniqueDp(outProps, g_statics.cpThickDp);
+        }
+    } else if (QueryGuid(el, IID_IControl)) {
+        if (trackRadius) AddUniqueDp(outProps, g_statics.ctlRadiusDp);
+        if (trackBg) AddUniqueDp(outProps, g_statics.ctlBgDp);
+        if (trackBorder) {
+            AddUniqueDp(outProps, g_statics.ctlBrushDp);
+            AddUniqueDp(outProps, g_statics.ctlThickDp);
+        }
+    } else if (QueryGuid(el, IID_IPanel)) {
+        if (trackBg) AddUniqueDp(outProps, g_statics.panelBgDp);
+    } else if (QueryGuid(el, IID_IRectangle)) {
+        if (trackRadius) {
+            AddUniqueDp(outProps, g_statics.rectRxDp);
+            AddUniqueDp(outProps, g_statics.rectRyDp);
+        }
+    }
+}
+
+bool HasAncestorNamed(IUnknown* el, std::wstring_view targetName, int maxDepth) {
+    g_statics.Ensure();
+    if (!el || !g_statics.visualTreeHelper) return false;
+    winrt::com_ptr<IUnknown> cur = QueryGuid(el, IID_IDependencyObject);
+    for (int d = 0; d < maxDepth && cur; d++) {
+        winrt::com_ptr<IUnknown> parent;
+        if (FAILED(VtblFn<HRESULT(STDMETHODCALLTYPE*)(void*, void*, void**)>(
+                g_statics.visualTreeHelper.get(), 12)(g_statics.visualTreeHelper.get(), cur.get(),
+                                                      parent.put_void())) ||
+            !parent) {
+            break;
+        }
+        if (GetElementName(parent.get()) == targetName) {
+            return true;
+        }
+        cur = QueryGuid(parent.get(), IID_IDependencyObject);
+    }
+    return false;
+}
+
+StyleTargetRole ClassifyElementRole(IUnknown* el) {
+    std::wstring name = GetElementName(el);
+    if (name.empty()) {
+        return StyleTargetRole::None;
+    }
+
+    if (name == L"ClippingAnchor" || name == L"AcrylicAnchor") {
+        return StyleTargetRole::Anchor;
+    }
+    if (name == L"BackPlate") {
+        return StyleTargetRole::BackPlate;
+    }
+    if (name == L"Composer" && HasAncestorNamed(el, L"BackPlate", 6)) {
+        return StyleTargetRole::Composer;
+    }
+    if (name == L"ResultsListView" || name == L"ResultsList") {
+        return StyleTargetRole::ResultsList;
+    }
+    if (name == L"CardSurface" || name == L"FlatCardSurfaceFill") {
+        return StyleTargetRole::CardSurface;
+    }
+    if (name == L"RowChrome" || name == L"FocusChrome" || name == L"ContentBorder") {
+        return StyleTargetRole::RowChrome;
+    }
+    if (name == L"StatusRow" || name == L"TipRow") {
+        return StyleTargetRole::StatusOrTipRow;
+    }
+    if (name == L"BorderElement" && HasAncestorNamed(el, L"Entry", 6)) {
+        return StyleTargetRole::EntryBorderElement;
+    }
+
+    return StyleTargetRole::None;
+}
+
+void ApplyRoleStyle(IUnknown* el, StyleTargetRole role) {
+    if (!el || role == StyleTargetRole::None || g_inStyleApply || !g_composerEnabled.load() ||
+        g_unloading.load()) {
+        return;
+    }
+
+    StyleApplyGuard guard;
+    bool isLight = ResolveElementIsLight(el);
+    double r = g_cornerRadius.load();
+    double innerR = r > 8.0 ? r - 8.0 : 0.0;
+    double cardR = r < 14.0 ? r : 14.0;
+    double rowR = r < 12.0 ? r : 12.0;
+
+    switch (role) {
+        case StyleTargetRole::Anchor: {
+            SetCornerRadiusIfSupported(el, r);
+            if (GetElementName(el) == L"AcrylicAnchor") {
+                if (auto bg = GetBackgroundIfSupported(el)) {
+                    if (auto ab = QueryGuid(bg.get(), IID_IAcrylicBrush)) {
+                        WuiColor tint = isLight ? WuiColor{255, 230, 230, 230}
+                                                : WuiColor{255, 31, 31, 31};
+                        VtblFn<HRESULT(STDMETHODCALLTYPE*)(void*, WuiColor)>(ab.get(), 7)(ab.get(),
+                                                                                          tint);
+                        VtblFn<HRESULT(STDMETHODCALLTYPE*)(void*, double)>(ab.get(), 9)(ab.get(),
+                                                                                        0.0);
+                    }
+                    if (auto ab2 = QueryGuid(bg.get(), IID_IAcrylicBrush2)) {
+                        double lum = static_cast<double>(g_luminosityOpacityPct.load()) / 100.0;
+                        auto boxed = winrt::box_value(lum);
+                        VtblFn<HRESULT(STDMETHODCALLTYPE*)(void*, void*)>(ab2.get(), 7)(
+                            ab2.get(), winrt::get_abi(boxed));
+                    }
+                }
+            }
+            break;
+        }
+
+        case StyleTargetRole::BackPlate: {
+            SetCornerRadiusIfSupported(el, r);
+            long tintAlphaLong = std::lround(g_tintOpacityPct.load() * 255.0 / 100.0);
+            uint8_t tintAlpha = static_cast<uint8_t>(std::clamp(tintAlphaLong, 0L, 255L));
+            WuiColor tintOverlay = isLight ? WuiColor{tintAlpha, 230, 230, 230}
+                                           : WuiColor{tintAlpha, 31, 31, 31};
+            auto bg = MakeSolidColorBrush(tintOverlay);
+            SetBackgroundIfSupported(el, bg.get());
+            auto rim = MakeGlassRimBrush(isLight);
+            SetBorderIfSupported(el, rim.get(), {1.0, 1.0, 1.0, 1.0});
+            break;
+        }
+
+        case StyleTargetRole::Composer: {
+            SetCornerRadiusIfSupported(el, innerR);
+            WuiColor bgCol =
+                isLight ? WuiColor{0x38, 0xFF, 0xFF, 0xFF} : WuiColor{0x14, 0xFF, 0xFF, 0xFF};
+            WuiColor bdCol =
+                isLight ? WuiColor{0x1A, 0x00, 0x00, 0x00} : WuiColor{0x22, 0xFF, 0xFF, 0xFF};
+            auto bg = MakeSolidColorBrush(bgCol);
+            auto bd = MakeSolidColorBrush(bdCol);
+            SetBackgroundIfSupported(el, bg.get());
+            SetBorderIfSupported(el, bd.get(), {1.0, 1.0, 1.0, 1.0});
+            break;
+        }
+
+        case StyleTargetRole::ResultsList: {
+            auto transparent = MakeSolidColorBrush(WuiColor{0, 0, 0, 0});
+            SetBackgroundIfSupported(el, transparent.get());
+            break;
+        }
+
+        case StyleTargetRole::CardSurface: {
+            SetCornerRadiusIfSupported(el, cardR);
+            WuiColor bgCol =
+                isLight ? WuiColor{0x3A, 0xFF, 0xFF, 0xFF} : WuiColor{0x1A, 0xFF, 0xFF, 0xFF};
+            WuiColor bdCol =
+                isLight ? WuiColor{0x1E, 0x00, 0x00, 0x00} : WuiColor{0x1E, 0xFF, 0xFF, 0xFF};
+            auto bg = MakeSolidColorBrush(bgCol);
+            auto bd = MakeSolidColorBrush(bdCol);
+            SetBackgroundIfSupported(el, bg.get());
+            SetBorderIfSupported(el, bd.get(), {1.0, 1.0, 1.0, 1.0});
+            break;
+        }
+
+        case StyleTargetRole::RowChrome:
+            SetCornerRadiusIfSupported(el, rowR);
+            break;
+
+        case StyleTargetRole::StatusOrTipRow: {
+            SetCornerRadiusIfSupported(el, cardR);
+            WuiColor bgCol =
+                isLight ? WuiColor{0x2C, 0xFF, 0xFF, 0xFF} : WuiColor{0x16, 0xFF, 0xFF, 0xFF};
+            auto bg = MakeSolidColorBrush(bgCol);
+            SetBackgroundIfSupported(el, bg.get());
+            break;
+        }
+
+        case StyleTargetRole::EntryBorderElement: {
+            SetCornerRadiusIfSupported(el, cardR);
+            auto transparent = MakeSolidColorBrush(WuiColor{0, 0, 0, 0});
+            SetBackgroundIfSupported(el, transparent.get());
+            SetBorderIfSupported(el, transparent.get(), {0.0, 0.0, 0.0, 0.0});
+            break;
+        }
+
+        case StyleTargetRole::None:
+            break;
+    }
+}
+
+void ClearRoleStyle(IUnknown* el) noexcept {
+    if (!el || g_inStyleApply) return;
+    StyleApplyGuard guard;
+    auto depObj = QueryGuid(el, IID_IDependencyObject);
+    if (!depObj) return;
+    std::vector<winrt::com_ptr<IUnknown>> props;
+    GetSupportedStyleProperties(el, true, true, true, props);
+    for (auto const& dp : props) {
+        VtblFn<HRESULT(STDMETHODCALLTYPE*)(void*, void*)>(depObj.get(), 8)(depObj.get(), dp.get());
+    }
+}
+
+void SyncBackdropThemeFromElement(IUnknown* el) {
+    if (!el || !g_composerEnabled.load() || g_unloading.load()) return;
+    if (auto fe = QueryGuid(el, IID_IFrameworkElement)) {
+        int32_t theme = 0;
+        if (SUCCEEDED(VtblFn<HRESULT(STDMETHODCALLTYPE*)(void*, int32_t*)>(fe.get(), 60)(
+                fe.get(), &theme))) {
+            if (theme == 1) {
+                g_lastBackdropTheme.store(1);
+                ReapplyGlassToActiveControllers(true);
+            } else if (theme == 2) {
+                g_lastBackdropTheme.store(2);
+                ReapplyGlassToActiveControllers(false);
+            }
+        }
+    }
+}
+
+void DetachStyledRecord(StyledElementRecord& rec) noexcept {
+    if (auto strong = ResolveWeak(rec.element)) {
+        if (rec.hasThemeToken) {
+            if (auto fe = QueryGuid(strong.get(), IID_IFrameworkElement)) {
+                VtblFn<HRESULT(STDMETHODCALLTYPE*)(void*, winrt::event_token)>(fe.get(), 74)(
+                    fe.get(), rec.themeToken);
+            }
+        }
+        if (auto depObj = QueryGuid(strong.get(), IID_IDependencyObject)) {
+            for (auto const& [dp, tok] : rec.dpCallbacks) {
+                if (dp) {
+                    VtblFn<HRESULT(STDMETHODCALLTYPE*)(void*, void*, int64_t)>(depObj.get(), 12)(
+                        depObj.get(), dp.get(), tok);
+                }
+            }
+        }
+    }
+    rec.hasThemeToken = false;
+    rec.dpCallbacks.clear();
+}
+
+void ClearUiThreadState(bool clearStyleValues) {
+    for (auto& kv : g_styledElements) {
+        if (clearStyleValues) {
+            if (auto el = ResolveWeak(kv.second->element)) {
+                ClearRoleStyle(el.get());
+            }
+        }
+        DetachStyledRecord(*kv.second);
+    }
+    g_styledElements.clear();
+    g_activeControllers.clear();
+    if (g_releaseTimer) {
+        VtblFn<HRESULT(STDMETHODCALLTYPE*)(void*)>(g_releaseTimer.get(), 12)(g_releaseTimer.get());
+        if (g_hasReleaseTimerToken) {
+            VtblFn<HRESULT(STDMETHODCALLTYPE*)(void*, winrt::event_token)>(g_releaseTimer.get(), 14)(
+                g_releaseTimer.get(), g_releaseTimerToken);
+            g_hasReleaseTimerToken = false;
+        }
+        g_releaseTimer = nullptr;
+    }
+    g_releaseDrainArmed = false;
+    g_pendingReleases.clear();
+    g_statics.Reset();
+}
+
+void RecordUiDispatcher(IUnknown* optDepObj) {
+    winrt::com_ptr<IUnknown> dq;
+    if (optDepObj) {
+        if (auto depObj = QueryGuid(optDepObj, IID_IDependencyObject)) {
+            VtblFn<HRESULT(STDMETHODCALLTYPE*)(void*, void**)>(depObj.get(), 14)(
+                depObj.get(), dq.put_void());
+        }
+    }
+    if (!dq) {
+        if (auto statics = GetActivationFactoryFromModule(
+                L"CoreMessagingXP.dll", L"Microsoft.UI.Dispatching.DispatcherQueue",
+                IID_IDispatcherQueueStatics)) {
+            VtblFn<HRESULT(STDMETHODCALLTYPE*)(void*, void**)>(statics.get(), 6)(
+                statics.get(), dq.put_void());
+        }
+    }
+    if (!dq) return;
+
+    auto dqCanonical = QueryCanonicalUnknown(dq.get());
+    if (!dqCanonical) return;
+
+    std::lock_guard<std::mutex> lock(g_uiDispatchersMutex);
+    for (auto const& existing : g_uiDispatchers) {
+        if (existing.get() == dqCanonical.get()) return;
+    }
+    g_uiDispatchers.push_back(std::move(dqCanonical));
+}
+
+bool TryEnqueueOnDispatcher(IUnknown* dqUnk, std::function<void()> fn) {
+    if (!dqUnk) return false;
+    auto dq = QueryGuid(dqUnk, IID_IDispatcherQueue);
+    if (!dq) return false;
+
+    winrt::com_ptr<DispatcherQueueHandlerDelegate> handler;
+    handler.attach(new DispatcherQueueHandlerDelegate(std::move(fn)));
+    bool enqueued = false;
+    HRESULT hr = VtblFn<HRESULT(STDMETHODCALLTYPE*)(void*, void*, bool*)>(dq.get(), 7)(
+        dq.get(), handler.get(), &enqueued);
+    return SUCCEEDED(hr) && enqueued;
+}
+
+class VisualTreeWatcher
+    : public winrt::implements<VisualTreeWatcher, IVisualTreeServiceCallback2, winrt::non_agile> {
+   public:
+    VisualTreeWatcher(winrt::com_ptr<IUnknown> site)
+        : m_XamlDiagnostics(site.as<IXamlDiagnostics>()) {
+        m_XamlDiagnostics->QueryInterface(
+            IID_IXamlDiagnosticsTestHooks_Local, m_TestHooks.put_void());
+
+        HANDLE thread = CreateThread(
+            nullptr, 0,
+            [](LPVOID lpParam) -> DWORD {
+                auto watcher = reinterpret_cast<VisualTreeWatcher*>(lpParam);
+                watcher->m_XamlDiagnostics.as<IVisualTreeService3>()->AdviseVisualTreeChange(
+                    watcher);
+                watcher->Release();
+                return 0;
+            },
+            this, 0, nullptr);
+        if (thread) {
+            AddRef();
+            CloseHandle(thread);
+        }
+    }
+
+    ~VisualTreeWatcher() = default;
+
+    void UnadviseVisualTreeChange() {
+        try {
+            m_XamlDiagnostics.as<IVisualTreeService3>()->UnadviseVisualTreeChange(this);
+        } catch (...) {}
+    }
+
+    void ReleaseDiagnosticsReference(InstanceHandle handle) {
+        if (!m_TestHooks || !handle) return;
+        m_TestHooks->UnregisterInstance(handle);
+    }
+
+   private:
+    winrt::com_ptr<IUnknown> FromHandle(InstanceHandle handle) {
+        winrt::com_ptr<::IInspectable> insp;
+        if (SUCCEEDED(m_XamlDiagnostics->GetIInspectableFromHandle(handle, insp.put())) && insp) {
+            return QueryCanonicalUnknown(insp.get());
+        }
+        return nullptr;
+    }
+
+    void QueueRelease(InstanceHandle handle) {
+        if (!handle || g_styledElements.contains(handle)) return;
+        g_pendingReleases.push_back(handle);
+        g_lastReleaseQueueTick = GetTickCount64();
+    }
+
+    void FlushPendingReleasesIfQuiet(IUnknown* optDepObj) {
+        if (g_pendingReleases.empty() || g_releaseDrainArmed) return;
+        if (GetTickCount64() - g_lastReleaseQueueTick < 50) return;
+
+        if (!g_releaseTimer) {
+            winrt::com_ptr<IUnknown> dq;
+            if (optDepObj) {
+                if (auto depObj = QueryGuid(optDepObj, IID_IDependencyObject)) {
+                    VtblFn<HRESULT(STDMETHODCALLTYPE*)(void*, void**)>(depObj.get(), 14)(
+                        depObj.get(), dq.put_void());
+                }
+            }
+            if (!dq) {
+                if (auto statics = GetActivationFactoryFromModule(
+                        L"CoreMessagingXP.dll", L"Microsoft.UI.Dispatching.DispatcherQueue",
+                        IID_IDispatcherQueueStatics)) {
+                    VtblFn<HRESULT(STDMETHODCALLTYPE*)(void*, void**)>(statics.get(), 6)(
+                        statics.get(), dq.put_void());
+                }
+            }
+            auto idq = QueryGuid(dq.get(), IID_IDispatcherQueue);
+            if (!idq) return;
+
+            winrt::com_ptr<IUnknown> timer;
+            if (FAILED(VtblFn<HRESULT(STDMETHODCALLTYPE*)(void*, void**)>(idq.get(), 6)(
+                    idq.get(), timer.put_void())) ||
+                !timer) {
+                return;
+            }
+            auto itimer = QueryGuid(timer.get(), IID_IDispatcherQueueTimer);
+            if (!itimer) return;
+
+            VtblFn<HRESULT(STDMETHODCALLTYPE*)(void*, bool)>(itimer.get(), 10)(itimer.get(), false);
+            VtblFn<HRESULT(STDMETHODCALLTYPE*)(void*, int64_t)>(itimer.get(), 7)(
+                itimer.get(), 600000LL /* 60ms in 100ns ticks */);
+
+            auto weakSelf = get_weak();
+            winrt::com_ptr<TimerTickDelegate> tickCb;
+            tickCb.attach(new TimerTickDelegate([weakSelf](void*, void*) {
+                g_releaseDrainArmed = false;
+                if (g_unloading.load()) {
+                    g_pendingReleases.clear();
+                    return;
+                }
+                auto self = weakSelf.get();
+                if (!self) return;
+                auto list = std::move(g_pendingReleases);
+                g_pendingReleases.clear();
+                std::sort(list.begin(), list.end());
+                list.erase(std::unique(list.begin(), list.end()), list.end());
+                for (InstanceHandle h : list) {
+                    if (!g_styledElements.contains(h)) {
+                        self->ReleaseDiagnosticsReference(h);
+                    }
+                }
+            }));
+
+            winrt::event_token tok{};
+            if (SUCCEEDED(VtblFn<HRESULT(STDMETHODCALLTYPE*)(void*, void*, winrt::event_token*)>(
+                    itimer.get(), 13)(itimer.get(), tickCb.get(), &tok))) {
+                g_releaseTimerToken = tok;
+                g_hasReleaseTimerToken = true;
+                g_releaseTimer = std::move(itimer);
+            } else {
+                return;
+            }
+        }
+
+        VtblFn<HRESULT(STDMETHODCALLTYPE*)(void*)>(g_releaseTimer.get(), 11)(g_releaseTimer.get());
+        g_releaseDrainArmed = true;
+    }
+
+    void TrackAndStyleElement(InstanceHandle handle, IUnknown* el) {
+        if (!el || g_unloading.load()) return;
+
+        if (!g_acrylicHooked.load() && g_composerEnabled.load()) {
+            TryHookDesktopAcrylicController(true);
+        }
+
+        StyleTargetRole role = ClassifyElementRole(el);
+        if (role == StyleTargetRole::None) {
+            return;
+        }
+
+        if (g_composerEnabled.load()) {
+            ApplyRoleStyle(el, role);
+            if (role == StyleTargetRole::BackPlate || role == StyleTargetRole::Anchor) {
+                SyncBackdropThemeFromElement(el);
+            }
+        }
+
+        if (auto itOld = g_styledElements.find(handle); itOld != g_styledElements.end()) {
+            DetachStyledRecord(*itOld->second);
+            g_styledElements.erase(itOld);
+        }
+
+        auto weakEl = MakeWeak(el);
+        if (!weakEl) return;
+
+        auto rec = std::make_unique<StyledElementRecord>();
+        rec->element = std::move(weakEl);
+        rec->role = role;
+
+        bool needPersistentWatch = (role == StyleTargetRole::BackPlate ||
+                                    role == StyleTargetRole::Composer ||
+                                    role == StyleTargetRole::EntryBorderElement ||
+                                    role == StyleTargetRole::Anchor);
+        if (needPersistentWatch) {
+            bool trackRadius = true;
+            bool trackBg = (role != StyleTargetRole::Anchor);
+            bool trackBorder = (role == StyleTargetRole::BackPlate ||
+                                role == StyleTargetRole::Composer ||
+                                role == StyleTargetRole::EntryBorderElement);
+            std::vector<winrt::com_ptr<IUnknown>> props;
+            GetSupportedStyleProperties(el, trackRadius, trackBg, trackBorder, props);
+
+            if (auto depObj = QueryGuid(el, IID_IDependencyObject)) {
+                auto wkCopy = rec->element;
+                for (auto const& dp : props) {
+                    winrt::com_ptr<DpChangedDelegate> dpCb;
+                    dpCb.attach(new DpChangedDelegate([wkCopy, role](void*, void*) {
+                        if (g_unloading.load() || !g_composerEnabled.load() || g_inStyleApply) {
+                            return;
+                        }
+                        if (auto strong = ResolveWeak(wkCopy)) {
+                            ApplyRoleStyle(strong.get(), role);
+                        }
+                    }));
+                    int64_t tok = 0;
+                    if (SUCCEEDED(
+                            VtblFn<HRESULT(STDMETHODCALLTYPE*)(void*, void*, void*, int64_t*)>(
+                                depObj.get(), 11)(depObj.get(), dp.get(), dpCb.get(), &tok))) {
+                        rec->dpCallbacks.emplace_back(dp, tok);
+                    }
+                }
+            }
+
+            if (role == StyleTargetRole::BackPlate || role == StyleTargetRole::Composer ||
+                role == StyleTargetRole::Anchor) {
+                if (auto fe = QueryGuid(el, IID_IFrameworkElement)) {
+                    auto wkCopy = rec->element;
+                    winrt::com_ptr<ActualThemeChangedDelegate> themeCb;
+                    themeCb.attach(new ActualThemeChangedDelegate([wkCopy, role](void*, void*) {
+                        if (g_unloading.load() || !g_composerEnabled.load() || g_inStyleApply) {
+                            return;
+                        }
+                        if (auto strong = ResolveWeak(wkCopy)) {
+                            ApplyRoleStyle(strong.get(), role);
+                            if (role == StyleTargetRole::BackPlate ||
+                                role == StyleTargetRole::Anchor) {
+                                SyncBackdropThemeFromElement(strong.get());
+                            }
+                        }
+                    }));
+                    winrt::event_token tok{};
+                    if (SUCCEEDED(
+                            VtblFn<HRESULT(STDMETHODCALLTYPE*)(void*, void*, winrt::event_token*)>(
+                                fe.get(), 73)(fe.get(), themeCb.get(), &tok))) {
+                        rec->themeToken = tok;
+                        rec->hasThemeToken = true;
+                    }
+                }
+            }
+        }
+
+        g_styledElements.emplace(handle, std::move(rec));
+    }
+
+    HRESULT STDMETHODCALLTYPE OnVisualTreeChange(ParentChildRelation relation,
+                                                 VisualElement element,
+                                                 VisualMutationType mutationType) override try {
+        if (g_unloading.load()) {
+            return S_OK;
+        }
+
+        if (mutationType == Add) {
+            winrt::com_ptr<IUnknown> el = FromHandle(element.Handle);
+            if (el) {
+                RecordUiDispatcher(el.get());
+                if (QueryGuid(el.get(), IID_IFrameworkElement)) {
+                    TrackAndStyleElement(element.Handle, el.get());
+                }
+            }
+            FlushPendingReleasesIfQuiet(el.get());
+            QueueRelease(element.Handle);
+            QueueRelease(relation.Parent);
+        } else if (mutationType == Remove) {
+            if (auto it = g_styledElements.find(element.Handle); it != g_styledElements.end()) {
+                DetachStyledRecord(*it->second);
+                g_styledElements.erase(it);
+            }
+            FlushPendingReleasesIfQuiet(nullptr);
+            QueueRelease(element.Handle);
+        }
+
+        return S_OK;
+    } catch (...) {
+        return S_OK;
+    }
+
+    HRESULT STDMETHODCALLTYPE OnElementStateChanged(InstanceHandle,
+                                                    VisualElementState,
+                                                    LPCWSTR) noexcept override {
+        return S_OK;
+    }
+
+    winrt::com_ptr<IXamlDiagnostics> m_XamlDiagnostics;
+    winrt::com_ptr<IXamlDiagnosticsTestHooks_Local> m_TestHooks;
+};
+
+[[clang::no_destroy]] winrt::com_ptr<VisualTreeWatcher> g_visualTreeWatcher;
+SRWLOCK g_visualTreeWatcherLock = SRWLOCK_INIT;
+
+winrt::com_ptr<VisualTreeWatcher> ExchangeVisualTreeWatcher(
+    winrt::com_ptr<VisualTreeWatcher> watcher) {
+    AcquireSRWLockExclusive(&g_visualTreeWatcherLock);
+    std::swap(g_visualTreeWatcher, watcher);
+    ReleaseSRWLockExclusive(&g_visualTreeWatcherLock);
+    return watcher;
+}
+
+class ShellHostComposerTAP
+    : public winrt::implements<ShellHostComposerTAP, IObjectWithSite, winrt::non_agile> {
+   public:
+    HRESULT STDMETHODCALLTYPE SetSite(IUnknown* pUnkSite) override try {
+        if (auto prev = ExchangeVisualTreeWatcher(nullptr)) {
+            prev->UnadviseVisualTreeChange();
+        }
+        m_site.copy_from(pUnkSite);
+        if (m_site) {
+            FreeLibrary(GetCurrentModuleHandleLocal());
+            ExchangeVisualTreeWatcher(winrt::make_self<VisualTreeWatcher>(m_site));
+        }
+        return S_OK;
+    } catch (...) {
+        return winrt::to_hresult();
+    }
+
+    HRESULT STDMETHODCALLTYPE GetSite(REFIID riid, void** ppvSite) noexcept override {
+        return m_site.as(riid, ppvSite);
+    }
+
+   private:
+    winrt::com_ptr<IUnknown> m_site;
+};
+
+template <class T>
+struct TapFactory : winrt::implements<TapFactory<T>, IClassFactory, winrt::non_agile> {
+    HRESULT STDMETHODCALLTYPE CreateInstance(IUnknown* pUnkOuter, REFIID riid, void** ppvObject) override try {
+        if (pUnkOuter) {
+            return CLASS_E_NOAGGREGATION;
+        }
+        *ppvObject = nullptr;
+        return winrt::make<T>().as(riid, ppvObject);
+    } catch (...) {
+        return winrt::to_hresult();
+    }
+
+    HRESULT STDMETHODCALLTYPE LockServer(BOOL) noexcept override { return S_OK; }
+};
+
+HRESULT CreateTapClassFactory(REFIID riid, void** ppv) {
+    *ppv = nullptr;
+    return winrt::make<TapFactory<ShellHostComposerTAP>>().as(riid, ppv);
+}
+
+HRESULT WINAPI InitializeXamlDiagnosticsEx_Hook(_In_ PCWSTR endPointName,
+                                                _In_ DWORD pid,
+                                                _In_ PCWSTR wszDllXamlDiagnostics,
+                                                _In_ PCWSTR wszTAPDllName,
+                                                _In_ CLSID tapClsid,
+                                                _In_opt_ PCWSTR wszInitializationData) {
+    return InitializeXamlDiagnosticsEx_Original(
+        endPointName, pid, wszDllXamlDiagnostics, wszTAPDllName, tapClsid,
+        wszInitializationData);
+}
+
+bool HookInitializeXamlDiagnosticsExIfNeeded() {
+    std::lock_guard<std::mutex> lock(g_hookInitMutex);
+    if (InitializeXamlDiagnosticsEx_Original) {
+        return true;
+    }
+    HMODULE wux = GetModuleHandleW(L"Microsoft.Internal.FrameworkUdk.dll");
+    if (!wux) {
+        return false;
+    }
+    auto ixde = reinterpret_cast<PFN_INITIALIZE_XAML_DIAGNOSTICS_EX_LOCAL>(
+        GetProcAddress(wux, "InitializeXamlDiagnosticsEx"));
+    if (!ixde) {
+        return false;
+    }
+    return Wh_SetFunctionHook(reinterpret_cast<void*>(ixde),
+                              reinterpret_cast<void*>(InitializeXamlDiagnosticsEx_Hook),
+                              reinterpret_cast<void**>(&InitializeXamlDiagnosticsEx_Original));
+}
+
+HRESULT InjectWindhawkTAP() noexcept {
+    HMODULE module = GetCurrentModuleHandleLocal();
+    if (!module) {
+        return HRESULT_FROM_WIN32(GetLastError());
+    }
+
+    WCHAR location[MAX_PATH];
+    DWORD len = GetModuleFileNameW(module, location, ARRAYSIZE(location));
+    if (len == 0 || len == ARRAYSIZE(location)) {
+        return HRESULT_FROM_WIN32(GetLastError());
+    }
+
+    HMODULE wux = GetModuleHandleW(L"Microsoft.Internal.FrameworkUdk.dll");
+    if (!wux) {
+        return HRESULT_FROM_WIN32(ERROR_MOD_NOT_FOUND);
+    }
+
+    auto ixde = reinterpret_cast<PFN_INITIALIZE_XAML_DIAGNOSTICS_EX_LOCAL>(
+        GetProcAddress(wux, "InitializeXamlDiagnosticsEx"));
+    if (!ixde) {
+        return HRESULT_FROM_WIN32(GetLastError());
+    }
+
+    PFN_INITIALIZE_XAML_DIAGNOSTICS_EX_LOCAL fnCall =
+        InitializeXamlDiagnosticsEx_Original ? InitializeXamlDiagnosticsEx_Original : ixde;
+
+    HRESULT hr = E_FAIL;
+    for (int i = 0; i < 10000; i++) {
+        WCHAR connectionName[128];
+        wsprintfW(connectionName, L"WinUIVisualDiagConnection%d", i + 1);
+        hr = fnCall(connectionName, GetCurrentProcessId(), L"", location,
+                    CLSID_ShellHostComposerTAP, nullptr);
+        if (hr != HRESULT_FROM_WIN32(ERROR_NOT_FOUND)) {
+            break;
+        }
+    }
+    return hr;
+}
+
+HMODULE WINAPI LoadLibraryExW_Hook(LPCWSTR lpLibFileName, HANDLE hFile, DWORD dwFlags) {
+    HMODULE mod = LoadLibraryExW_Original(lpLibFileName, hFile, dwFlags);
+    if (mod && lpLibFileName && g_composerEnabled.load() && !g_unloading.load()) {
+        PCWSTR base = wcsrchr(lpLibFileName, L'\\');
+        base = base ? base + 1 : lpLibFileName;
+        bool needApply = false;
+        if (!g_acrylicHooked.load() && _wcsicmp(base, L"wuceffectsi.dll") == 0) {
+            if (TryHookDesktopAcrylicController(false)) {
+                needApply = true;
+            }
+        }
+        if (!InitializeXamlDiagnosticsEx_Original &&
+            (_wcsicmp(base, L"CoreMessagingXP.dll") == 0 ||
+             _wcsicmp(base, L"Microsoft.Internal.FrameworkUdk.dll") == 0)) {
+            if (HookInitializeXamlDiagnosticsExIfNeeded()) {
+                needApply = true;
+            }
+        }
+        if (needApply) {
+            Wh_ApplyHookOperations();
+        }
+    }
+    return mod;
+}
+
+DWORD WINAPI TapWatcherThreadProc(LPVOID) {
+    HRESULT coHr = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
+    bool needCoUninit = (coHr == S_OK || coHr == S_FALSE);
+
+    while (!g_unloading.load() && g_composerEnabled.load()) {
+        if (!g_acrylicHooked.load()) {
+            TryHookDesktopAcrylicController(true);
+        }
+
+        if (!g_tapInjected.load()) {
+            HMODULE wux = GetModuleHandleW(L"Microsoft.Internal.FrameworkUdk.dll");
+            HMODULE muxMod = GetModuleHandleW(L"Microsoft.UI.Xaml.dll");
+            if (wux && muxMod) {
+                HRESULT hr = InjectWindhawkTAP();
+                if (SUCCEEDED(hr)) {
+                    g_tapInjected.store(true);
+                    Wh_Log(L"ShellHostComposer TAP injected: %08X", hr);
+                    break;
+                }
+            }
+        } else {
+            break;
+        }
+
+        Sleep(200);
+    }
+
+    if (needCoUninit) {
+        CoUninitialize();
+    }
+    return 0;
+}
+
+void StartWatcherThreadIfNeeded() {
+    std::lock_guard<std::mutex> lock(g_watcherThreadMutex);
+    if (g_watcherThread) {
+        if (WaitForSingleObject(g_watcherThread, 0) == WAIT_TIMEOUT) {
+            return;
+        }
+        CloseHandle(g_watcherThread);
+        g_watcherThread = nullptr;
+    }
+    if (g_composerEnabled.load() && !g_unloading.load() && !g_tapInjected.load()) {
+        g_watcherThread = CreateThread(nullptr, 0, TapWatcherThreadProc, nullptr, 0, nullptr);
+    }
+}
+
+BOOL ModInit() {
+    LPCWSTR cmdLine = GetCommandLineW();
+    std::wstring_view cmd{cmdLine ? cmdLine : L""};
+    if (!ContainsCaseInsensitive(cmd, L"systemcomposercontrol")) {
+        return FALSE;
+    }
+
+    LoadSettings();
+    Wh_Log(L"Initializing ShellHostComposer target (enabled=%d)",
+           g_composerEnabled.load() ? 1 : 0);
+
+    HMODULE kernelBase = GetModuleHandleW(L"kernelbase.dll");
+    if (kernelBase) {
+        auto pLoadLibraryExW = reinterpret_cast<LoadLibraryExW_t>(
+            GetProcAddress(kernelBase, "LoadLibraryExW"));
+        if (pLoadLibraryExW) {
+            Wh_SetFunctionHook(reinterpret_cast<void*>(pLoadLibraryExW),
+                               reinterpret_cast<void*>(LoadLibraryExW_Hook),
+                               reinterpret_cast<void**>(&LoadLibraryExW_Original));
+        }
+    }
+
+    if (g_composerEnabled.load()) {
+        TryHookDesktopAcrylicController(false);
+        HookInitializeXamlDiagnosticsExIfNeeded();
+    }
+
+    return TRUE;
+}
+
+void ModAfterInit() {
+    if (g_unloading.load() || !g_composerEnabled.load()) return;
+
+    if (!g_acrylicHooked.load()) {
+        TryHookDesktopAcrylicController(true);
+    }
+    StartWatcherThreadIfNeeded();
+}
+
+void ModBeforeUninit() {
+    g_unloading.store(true);
+
+    {
+        std::lock_guard<std::mutex> lock(g_watcherThreadMutex);
+        if (g_watcherThread) {
+            WaitForSingleObject(g_watcherThread, 2000);
+            CloseHandle(g_watcherThread);
+            g_watcherThread = nullptr;
+        }
+    }
+
+    std::vector<winrt::com_ptr<IUnknown>> dispatchers;
+    {
+        std::lock_guard<std::mutex> lock(g_uiDispatchersMutex);
+        dispatchers = std::move(g_uiDispatchers);
+        g_uiDispatchers.clear();
+    }
+
+    for (auto const& dq : dispatchers) {
+        HANDLE ev = CreateEventW(nullptr, TRUE, FALSE, nullptr);
+        if (TryEnqueueOnDispatcher(dq.get(), [ev]() {
+                ClearUiThreadState(false);
+                if (ev) SetEvent(ev);
+            }) &&
+            ev) {
+            WaitForSingleObject(ev, 3000);
+        }
+        if (ev) CloseHandle(ev);
+    }
+
+    if (auto prev = ExchangeVisualTreeWatcher(nullptr)) {
+        prev->UnadviseVisualTreeChange();
+    }
+}
+
+void ModUninit() {
+    if (!g_unloading.load()) {
+        ModBeforeUninit();
+    }
+}
+
+void ModSettingsChanged() {
+    if (g_unloading.load()) return;
+
+    bool wasEnabled = g_composerEnabled.load();
+    LoadSettings();
+    bool nowEnabled = g_composerEnabled.load();
+
+    std::vector<winrt::com_ptr<IUnknown>> dispatchers;
+    {
+        std::lock_guard<std::mutex> lock(g_uiDispatchersMutex);
+        dispatchers = g_uiDispatchers;
+    }
+
+    for (auto const& dq : dispatchers) {
+        HANDLE ev = CreateEventW(nullptr, TRUE, FALSE, nullptr);
+        if (TryEnqueueOnDispatcher(dq.get(), [ev, nowEnabled]() {
+                if (nowEnabled) {
+                    bool isLight = ResolveEffectiveIsLightFromThemeInt(g_lastBackdropTheme.load());
+                    ReapplyGlassToActiveControllers(isLight);
+                    for (auto const& kv : g_styledElements) {
+                        if (auto strong = ResolveWeak(kv.second->element)) {
+                            ApplyRoleStyle(strong.get(), kv.second->role);
+                            if (kv.second->role == StyleTargetRole::BackPlate ||
+                                kv.second->role == StyleTargetRole::Anchor) {
+                                SyncBackdropThemeFromElement(strong.get());
+                            }
+                        }
+                    }
+                } else {
+                    ClearUiThreadState(true);
+                }
+                if (ev) SetEvent(ev);
+            }) &&
+            ev) {
+            WaitForSingleObject(ev, 3000);
+        }
+        if (ev) CloseHandle(ev);
+    }
+
+    if (!nowEnabled) {
+        g_tapInjected.store(false);
+        if (auto prev = ExchangeVisualTreeWatcher(nullptr)) {
+            prev->UnadviseVisualTreeChange();
+        }
+    } else if (!wasEnabled || !g_tapInjected.load()) {
+        if (!g_acrylicHooked.load()) {
+            TryHookDesktopAcrylicController(true);
+        }
+        if (!InitializeXamlDiagnosticsEx_Original && HookInitializeXamlDiagnosticsExIfNeeded()) {
+            Wh_ApplyHookOperations();
+        }
+        StartWatcherThreadIfNeeded();
+    }
+}
+
+}  // namespace ShellHostComposer
+
 using namespace winrt::Windows::UI::Xaml;
 
 namespace muxc = winrt::Microsoft::UI::Xaml::Controls;
@@ -11192,6 +13356,7 @@ namespace awge = ABI::Windows::Graphics::Effects;
 enum class Target {
     StartMenu,
     SearchHost,
+    ShellHostComposer,
 };
 
 Target g_target;
@@ -21248,6 +23413,8 @@ const Theme* GetSelectedTheme(bool useNewLayoutVariant) {
         theme = &g_themeOS26_Tahoe_App_Launcher_variant_ClearBottom;
     } else if (wcscmp(themeName, L"Raycast") == 0) {
         theme = &g_themeRaycast;
+    } else if (wcscmp(themeName, L"LumiPill") == 0) {
+        theme = &g_themeLumiPill;
     }
     Wh_FreeStringSetting(themeName);
     return theme;
@@ -21650,6 +23817,9 @@ void OnWindowCreated(HWND hWnd, LPCWSTR lpClassName, PCSTR funcName) {
                 RunFromWindowThreadViaPostMessage(
                     hWnd, [](PVOID) { InitializeSettingsAndTap(); }, nullptr);
             }
+            break;
+
+        case Target::ShellHostComposer:
             break;
     }
 }
@@ -22148,6 +24318,9 @@ BOOL Wh_ModInit() {
                 if (_wcsicmp(moduleFileName, L"SearchHost.exe") == 0 ||
                     _wcsicmp(moduleFileName, L"SearchApp.exe") == 0) {
                     g_target = Target::SearchHost;
+                } else if (_wcsicmp(moduleFileName, L"shellhost.exe") == 0) {
+                    g_target = Target::ShellHostComposer;
+                    return ShellHostComposer::ModInit();
                 }
             } else {
                 Wh_Log(L"GetModuleFileName returned an unsupported path");
@@ -22253,6 +24426,11 @@ BOOL Wh_ModInit() {
 void Wh_ModAfterInit() {
     Wh_Log(L">");
 
+    if (g_target == Target::ShellHostComposer) {
+        ShellHostComposer::ModAfterInit();
+        return;
+    }
+
     HWND hCoreWnd = GetCoreWnd();
     if (hCoreWnd) {
         Wh_Log(L"Initializing - Found core window");
@@ -22261,8 +24439,19 @@ void Wh_ModAfterInit() {
     }
 }
 
+void Wh_ModBeforeUninit() {
+    if (g_target == Target::ShellHostComposer) {
+        ShellHostComposer::ModBeforeUninit();
+    }
+}
+
 void Wh_ModUninit() {
     Wh_Log(L">");
+
+    if (g_target == Target::ShellHostComposer) {
+        ShellHostComposer::ModUninit();
+        return;
+    }
 
     if (!DoesLayoutOverrideMatchWindowsDefault(g_disableNewStartMenuLayout)) {
         // Exit to have the new setting take effect. The process will be
@@ -22306,6 +24495,11 @@ void Wh_ModUninit() {
 
 void Wh_ModSettingsChanged() {
     Wh_Log(L">");
+
+    if (g_target == Target::ShellHostComposer) {
+        ShellHostComposer::ModSettingsChanged();
+        return;
+    }
 
     auto oldLayout = g_disableNewStartMenuLayout;
     auto newLayout = GetDisableNewStartMenuLayout(g_windowsDefaultIsNewLayout);
