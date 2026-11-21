@@ -308,8 +308,14 @@ SystemButton IdentifySystemButton(FrameworkElement element) {
         // On newer builds, the system tray is an extension element too.
         auto contentControl = element.try_as<Controls::ContentControl>();
         auto content = contentControl ? contentControl.Content() : nullptr;
-        if (content && winrt::get_class_name(content) ==
-                           L"SearchUx.SearchUI.SearchButtonControl") {
+        if (!content) {
+            return SystemButton::None;
+        }
+
+        // The second is the search button of the WinUI 3 search app.
+        auto contentClassName = winrt::get_class_name(content);
+        if (contentClassName == L"SearchUx.SearchUI.SearchButtonControl" ||
+            contentClassName == L"ComposerTaskbarUX.SystemComposerEntryButton") {
             return SystemButton::Search;
         }
     }
