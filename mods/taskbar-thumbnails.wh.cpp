@@ -2,7 +2,7 @@
 // @id              taskbar-thumbnails
 // @name            Disable Taskbar Thumbnails
 // @description     Disable taskbar thumbnail and virtual desktop switcher hover flyouts, or replace thumbnails with a list
-// @version         1.2
+// @version         1.2.1
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
