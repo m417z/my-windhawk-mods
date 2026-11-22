@@ -118,6 +118,14 @@ to the notification icons, and the other tray icons keep their size.
     chevron icon.
 
     Windows 11 default: 40
+- overflowIconSize: 16
+  $name: Tray overflow icon size
+  $description: >-
+    The size of icons that appear in the overflow popup when clicking on the
+    chevron icon. Keep the tray overflow icon width larger than the icon size
+    to have some space between the icons.
+
+    Windows 11 default: 16
 - overflowIconsPerRow: 5
   $name: Tray overflow icons per row
   $description: >-
@@ -161,6 +169,7 @@ struct {
     int notificationIconRows;
     GridArrangement gridArrangement;
     int overflowIconWidth;
+    int overflowIconSize;
     int overflowIconsPerRow;
 } g_settings;
 
@@ -442,7 +451,8 @@ void ApplyIconContentSize(FrameworkElement containerGrid, int size) {
 }
 
 void ApplyNotifyIconViewOverflowStyle(FrameworkElement notifyIconViewElement,
-                                      int width) {
+                                      int width,
+                                      int size) {
     Wh_Log(L"Setting MinWidth=%d for NotifyIconView (overflow)", width);
     notifyIconViewElement.MinWidth(width);
 
@@ -453,7 +463,7 @@ void ApplyNotifyIconViewOverflowStyle(FrameworkElement notifyIconViewElement,
     if ((child = FindChildByName(child, L"ContainerGrid")) &&
         (child = FindChildByName(child, L"ContentPresenter")) &&
         (child = FindChildByName(child, L"ContentGrid"))) {
-        EnumChildElements(child, [](FrameworkElement child) {
+        EnumChildElements(child, [size](FrameworkElement child) {
             auto className = winrt::get_class_name(child);
             if (className == L"SystemTray.ImageIconContent") {
                 auto containerGrid = FindChildByName(child, L"ContainerGrid")
@@ -461,6 +471,7 @@ void ApplyNotifyIconViewOverflowStyle(FrameworkElement notifyIconViewElement,
                 if (containerGrid) {
                     Wh_Log(L"Setting Padding=0 for ContainerGrid");
                     containerGrid.Padding(Thickness{});
+                    ApplyIconContentSize(containerGrid, size);
                 }
             } else {
                 Wh_Log(L"Unsupported class name %s of child",
@@ -1180,7 +1191,8 @@ void* WINAPI IconView_IconView_Hook(void* pThis) {
                 if (IsChildOfElementByClassName(
                         iconView, L"SystemTray.NotificationAreaOverflow")) {
                     ApplyNotifyIconViewOverflowStyle(
-                        iconView, g_settings.overflowIconWidth);
+                        iconView, g_settings.overflowIconWidth,
+                        g_settings.overflowIconSize);
                 } else if (vertical) {
                     ApplyNotifyIconViewStyle(
                         iconView, g_settings.notificationIconWidth,
@@ -1448,6 +1460,7 @@ void ApplyOverflowStyle(FrameworkElement overflowRootGrid) {
 
     int width = g_unloading ? 40 : g_settings.overflowIconWidth;
     int maxRows = g_unloading ? 5 : g_settings.overflowIconsPerRow;
+    int size = g_unloading ? kDefaultIconSize : g_settings.overflowIconSize;
     Wh_Log(
         L"Setting ItemWidth/ItemHeight=%d, MaximumRowsOrColumns=%d for "
         L"WrapGrid",
@@ -1457,7 +1470,7 @@ void ApplyOverflowStyle(FrameworkElement overflowRootGrid) {
     wrapGrid.ItemHeight(width);
     wrapGrid.MaximumRowsOrColumns(maxRows);
 
-    EnumChildElements(wrapGrid, [width](FrameworkElement child) {
+    EnumChildElements(wrapGrid, [width, size](FrameworkElement child) {
         auto className = winrt::get_class_name(child);
         if (className != L"Windows.UI.Xaml.Controls.ContentPresenter") {
             Wh_Log(L"Unsupported class name %s of child", className.c_str());
@@ -1467,7 +1480,7 @@ void ApplyOverflowStyle(FrameworkElement overflowRootGrid) {
         auto notifyIconView =
             FindChildByClassName(child, L"SystemTray.NotifyIconView");
         if (notifyIconView) {
-            ApplyNotifyIconViewOverflowStyle(notifyIconView, width);
+            ApplyNotifyIconViewOverflowStyle(notifyIconView, width, size);
         }
 
         return false;
@@ -1680,6 +1693,8 @@ void LoadSettings() {
 
     g_settings.overflowIconWidth =
         std::max(Wh_GetIntSetting(L"overflowIconWidth"), 1);
+    g_settings.overflowIconSize =
+        std::max(Wh_GetIntSetting(L"overflowIconSize"), 1);
     g_settings.overflowIconsPerRow =
         std::max(Wh_GetIntSetting(L"overflowIconsPerRow"), 1);
 }
