@@ -1,7 +1,7 @@
 // ==WindhawkMod==
 // @id              taskbar-notification-icon-spacing
 // @name            Taskbar tray icon spacing and grid
-// @description     Reduce or increase the spacing between tray icons on the taskbar, optionally have a grid of tray icons (Windows 11 only)
+// @description     Reduce or increase the spacing between tray icons on the taskbar, change their size, optionally have a grid of tray icons (Windows 11 only)
 // @version         1.5
 // @author          m417z
 // @github          https://github.com/m417z
@@ -24,8 +24,8 @@
 /*
 # Taskbar tray icon spacing and grid
 
-Reduce or increase the spacing between tray icons on the taskbar, optionally
-have a grid of tray icons.
+Reduce or increase the spacing between tray icons on the taskbar, change their
+size, optionally have a grid of tray icons.
 
 Only Windows 11 version 22H2 or newer is currently supported. For older Windows
 versions check out [7+ Taskbar Tweaker](https://tweaker.ramensoftware.com/).
@@ -47,7 +47,8 @@ versions check out [7+ Taskbar Tweaker](https://tweaker.ramensoftware.com/).
 With the native vertical taskbar of newer Windows 11 builds, the tray icon width
 sets the height of the tray icons, and the tray icon rows set the number of
 columns of the grid of tray icons. With a single row, the tray icons are
-arranged in a grid when the taskbar is wide enough.
+arranged in a grid when the taskbar is wide enough. The tray icon size applies
+to the notification icons, and the other tray icons keep their size.
 */
 // ==/WindhawkModReadme==
 
@@ -59,6 +60,14 @@ arranged in a grid when the taskbar is wide enough.
     Windows 11 default: 32
 
     With the native vertical taskbar, sets the tray icon height.
+- notificationIconSize: 16
+  $name: Tray icon size
+  $description: >-
+    Windows 11 default: 16
+
+    Icons which apps provide in a smaller size are scaled up, and might look
+    blurry. Keep the tray icon width larger than the icon size to have some
+    space between the icons.
 - notificationIconRows: 1
   $name: Tray icon rows
   $description: >-
@@ -148,6 +157,7 @@ enum class GridArrangement {
 
 struct {
     int notificationIconWidth;
+    int notificationIconSize;
     int notificationIconRows;
     GridArrangement gridArrangement;
     int overflowIconWidth;
@@ -319,6 +329,118 @@ bool IsVerticalSystemTray(FrameworkElement systemTrayFrameGrid) {
                                 L"VerticalOrientation");
 }
 
+// The size of tray icon images, and the font size of system icon glyphs.
+constexpr int kDefaultIconSize = 16;
+
+struct GlyphTextBlockState {
+    winrt::weak_ref<Controls::TextBlock> textBlock;
+    double taskbarFontSize;
+    int64_t fontSizeChangedToken;
+};
+
+// Only accessed from the taskbar thread.
+[[clang::no_destroy]] std::list<GlyphTextBlockState> g_glyphTextBlockStates;
+bool g_settingGlyphFontSize;
+
+void SetGlyphFontSize(Controls::TextBlock textBlock,
+                      const GlyphTextBlockState& state,
+                      int size) {
+    // Text blocks without a glyph have a smaller font size, which is kept.
+    double fontSize = state.taskbarFontSize == kDefaultIconSize
+                          ? size
+                          : state.taskbarFontSize;
+    if (textBlock.FontSize() == fontSize) {
+        return;
+    }
+
+    g_settingGlyphFontSize = true;
+    textBlock.FontSize(fontSize);
+    g_settingGlyphFontSize = false;
+}
+
+// The taskbar sets the font size of a glyph whenever the glyph changes, so the
+// size is applied again each time.
+void ApplyGlyphTextBlockSize(Controls::TextBlock textBlock, int size) {
+    auto it = std::find_if(g_glyphTextBlockStates.begin(),
+                           g_glyphTextBlockStates.end(),
+                           [&textBlock](const GlyphTextBlockState& state) {
+                               return state.textBlock.get() == textBlock;
+                           });
+    if (it == g_glyphTextBlockStates.end()) {
+        if (size == kDefaultIconSize || g_unloading) {
+            return;
+        }
+
+        g_glyphTextBlockStates.remove_if([](const GlyphTextBlockState& state) {
+            return !state.textBlock.get();
+        });
+
+        g_glyphTextBlockStates.push_back({
+            .textBlock = textBlock,
+            .taskbarFontSize = textBlock.FontSize(),
+        });
+        it = std::prev(g_glyphTextBlockStates.end());
+
+        it->fontSizeChangedToken = textBlock.RegisterPropertyChangedCallback(
+            Controls::TextBlock::FontSizeProperty(),
+            [it](DependencyObject sender, DependencyProperty property) {
+                if (g_settingGlyphFontSize) {
+                    return;
+                }
+
+                auto textBlock = sender.try_as<Controls::TextBlock>();
+                if (!textBlock) {
+                    return;
+                }
+
+                it->taskbarFontSize = textBlock.FontSize();
+                if (!g_unloading) {
+                    SetGlyphFontSize(textBlock, *it,
+                                     g_settings.notificationIconSize);
+                }
+            });
+    }
+
+    SetGlyphFontSize(textBlock, *it, size);
+}
+
+void RestoreGlyphTextBlocks() {
+    for (const auto& state : g_glyphTextBlockStates) {
+        auto textBlock = state.textBlock.get();
+        if (!textBlock) {
+            continue;
+        }
+
+        textBlock.UnregisterPropertyChangedCallback(
+            Controls::TextBlock::FontSizeProperty(),
+            state.fontSizeChangedToken);
+        textBlock.FontSize(state.taskbarFontSize);
+    }
+
+    g_glyphTextBlockStates.clear();
+}
+
+// Sets the size of the image or the glyphs in the container grid of an icon
+// content element.
+void ApplyIconContentSize(FrameworkElement containerGrid, int size) {
+    EnumChildElements(containerGrid, [size](FrameworkElement child) {
+        auto className = winrt::get_class_name(child);
+        if (className == L"Windows.UI.Xaml.Controls.Image") {
+            Wh_Log(L"Setting Width/Height=%d for Image", size);
+            child.Width(size);
+            child.Height(size);
+        } else if (className == L"SystemTray.AdaptiveTextBlock") {
+            auto innerTextBlock = FindChildByName(child, L"InnerTextBlock")
+                                      .try_as<Controls::TextBlock>();
+            if (innerTextBlock) {
+                ApplyGlyphTextBlockSize(innerTextBlock, size);
+            }
+        }
+
+        return false;
+    });
+}
+
 void ApplyNotifyIconViewOverflowStyle(FrameworkElement notifyIconViewElement,
                                       int width) {
     Wh_Log(L"Setting MinWidth=%d for NotifyIconView (overflow)", width);
@@ -354,6 +476,7 @@ void ApplyNotifyIconViewOverflowStyle(FrameworkElement notifyIconViewElement,
 // its height.
 void ApplyNotifyIconViewStyle(FrameworkElement notifyIconViewElement,
                               int width,
+                              int size,
                               bool vertical = false) {
     if (vertical) {
         Wh_Log(L"Setting MinHeight=%d for NotifyIconView", width);
@@ -376,7 +499,7 @@ void ApplyNotifyIconViewStyle(FrameworkElement notifyIconViewElement,
     if ((child = FindChildByName(child, L"ContainerGrid")) &&
         (child = FindChildByName(child, L"ContentPresenter")) &&
         (child = FindChildByName(child, L"ContentGrid"))) {
-        EnumChildElements(child, [width](FrameworkElement child) {
+        EnumChildElements(child, [width, size](FrameworkElement child) {
             auto className = winrt::get_class_name(child);
             if (className == L"SystemTray.TextIconContent" ||
                 className == L"SystemTray.ImageIconContent") {
@@ -385,6 +508,7 @@ void ApplyNotifyIconViewStyle(FrameworkElement notifyIconViewElement,
                 if (containerGrid) {
                     Wh_Log(L"Setting Padding=0 for ContainerGrid");
                     containerGrid.Padding(Thickness{});
+                    ApplyIconContentSize(containerGrid, size);
                 }
             } else if (className == L"SystemTray.LanguageTextIconContent") {
                 child.Width(std::numeric_limits<double>::quiet_NaN());
@@ -407,15 +531,16 @@ void ApplyNotifyIconViewStyle(FrameworkElement notifyIconViewElement,
 
 void ApplyNotifyIconsStackPanelGridStyle(FrameworkElement stackPanel,
                                          int rows,
-                                         int width) {
+                                         int width,
+                                         int size) {
     double itemHeight = 0;
     if (rows > 1) {
         double stackPanelHeight = stackPanel.ActualHeight();
-        double gap = stackPanelHeight - 16 * rows;
+        double gap = stackPanelHeight - size * rows;
         double gapPerItem = std::fmax(gap, 0.0) / (rows + 1);
         // Force the gap to be an even number to prevent blurry icons.
         int gapPerItemEven = static_cast<int>(gapPerItem) / 2 * 2;
-        itemHeight = 16 + gapPerItemEven;
+        itemHeight = size + gapPerItemEven;
     }
 
     // Count children first for row-first arrangements.
@@ -495,7 +620,8 @@ void ApplyNotifyIconsStackPanelGridStyle(FrameworkElement stackPanel,
 void ApplyNotifyIconsStackPanelGridStyleOfIcon(
     FrameworkElement notifyIconViewElement,
     int rows,
-    int width) {
+    int width,
+    int size) {
     auto contentPresenter =
         Media::VisualTreeHelper::GetParent(notifyIconViewElement)
             .try_as<FrameworkElement>();
@@ -511,7 +637,7 @@ void ApplyNotifyIconsStackPanelGridStyleOfIcon(
         return;
     }
 
-    ApplyNotifyIconsStackPanelGridStyle(stackPanel, rows, width);
+    ApplyNotifyIconsStackPanelGridStyle(stackPanel, rows, width, size);
 }
 
 // A vertical tray which is wide enough arranges the icons in a wrap grid, with
@@ -548,7 +674,8 @@ void ApplyNotifyIconsWrapGridStyleOfIcon(FrameworkElement notifyIconViewElement,
 bool ApplyNotifyIconsWrapGridColumns(
     Controls::ItemsControl notificationAreaIcons,
     int rows,
-    int width) {
+    int width,
+    int size) {
     auto wrapGrid =
         notificationAreaIcons.ItemsPanelRoot().try_as<Controls::WrapGrid>();
     auto systemTrayFrame = FindParentByClassName(notificationAreaIcons,
@@ -564,9 +691,9 @@ bool ApplyNotifyIconsWrapGridColumns(
 
     int maxColumns;
     if (rows > 1) {
-        // Columns narrower than a 16 pixel icon with the edge inset of the
-        // first and last columns would overlap.
-        maxColumns = std::min(rows, (int)(frameWidth / 20));
+        // Columns narrower than an icon with the edge inset of the first and
+        // last columns would overlap.
+        maxColumns = std::min(rows, (int)(frameWidth / (size + 4)));
     } else {
         maxColumns = (int)(frameWidth / (width + 16));
     }
@@ -700,6 +827,7 @@ bool ApplyNotifyIconsCompactLayoutPanel(
 bool ApplyNotifyIconsStyle(FrameworkElement notificationAreaIcons,
                            int rows,
                            int width,
+                           int size,
                            bool vertical) {
     FrameworkElement itemsPanel = nullptr;
 
@@ -716,7 +844,8 @@ bool ApplyNotifyIconsStyle(FrameworkElement notificationAreaIcons,
         return false;
     }
 
-    EnumChildElements(itemsPanel, [width, vertical](FrameworkElement child) {
+    EnumChildElements(itemsPanel, [width, size,
+                                   vertical](FrameworkElement child) {
         auto childClassName = winrt::get_class_name(child);
         if (childClassName != L"Windows.UI.Xaml.Controls.ContentPresenter") {
             Wh_Log(L"Unsupported class name %s of child",
@@ -731,19 +860,19 @@ bool ApplyNotifyIconsStyle(FrameworkElement notificationAreaIcons,
             return false;
         }
 
-        ApplyNotifyIconViewStyle(notifyIconViewElement, width, vertical);
+        ApplyNotifyIconViewStyle(notifyIconViewElement, width, size, vertical);
         return false;
     });
 
     if (!vertical) {
-        ApplyNotifyIconsStackPanelGridStyle(itemsPanel, rows, width);
+        ApplyNotifyIconsStackPanelGridStyle(itemsPanel, rows, width, size);
     } else if (auto wrapGrid = itemsPanel.try_as<Controls::WrapGrid>()) {
         ApplyNotifyIconsWrapGridStyle(wrapGrid, width);
 
         auto itemsControl =
             notificationAreaIcons.try_as<Controls::ItemsControl>();
         if (itemsControl &&
-            ApplyNotifyIconsWrapGridColumns(itemsControl, rows, width)) {
+            ApplyNotifyIconsWrapGridColumns(itemsControl, rows, width, size)) {
             ApplyNotifyIconsWrapGridEdgePadding(itemsControl,
                                                 itemsControl.Items().Size());
         }
@@ -753,22 +882,27 @@ bool ApplyNotifyIconsStyle(FrameworkElement notificationAreaIcons,
 }
 
 void ApplySystemTrayIconStyle(FrameworkElement systemTrayIconElement,
-                              int width) {
+                              int width,
+                              int size) {
     Wh_Log(L"Setting width %d for SystemTrayIcon", width);
 
-    FrameworkElement child = systemTrayIconElement;
-    if ((child = FindChildByName(child, L"ContainerGrid")) &&
-        (child = FindChildByName(child, L"ContentGrid")) &&
-        (child = FindChildByClassName(child, L"SystemTray.TextIconContent")) &&
+    FrameworkElement contentGrid = systemTrayIconElement;
+    if (!(contentGrid = FindChildByName(contentGrid, L"ContainerGrid")) ||
+        !(contentGrid = FindChildByName(contentGrid, L"ContentGrid"))) {
+        return;
+    }
+
+    FrameworkElement child = contentGrid;
+    if ((child = FindChildByClassName(child, L"SystemTray.TextIconContent")) &&
         (child = FindChildByName(child, L"ContainerGrid"))) {
         auto childControl = child.try_as<Controls::Grid>();
         if (childControl) {
             int newPadding = 4;
 
-            if (width > 32) {
-                newPadding = (8 + width - 32) / 2;
-            } else if (width < 24) {
-                newPadding = (8 + width - 24) / 2;
+            if (width > size + 16) {
+                newPadding = (8 + width - (size + 16)) / 2;
+            } else if (width < size + 8) {
+                newPadding = (8 + width - (size + 8)) / 2;
                 if (newPadding < 0) {
                     newPadding = 0;
                 }
@@ -780,11 +914,30 @@ void ApplySystemTrayIconStyle(FrameworkElement systemTrayIconElement,
                 .Right = static_cast<double>(newPadding),
             });
         }
+
+        ApplyIconContentSize(child, size);
+        return;
+    }
+
+    child = contentGrid;
+    if ((child =
+             FindChildByClassName(child, L"SystemTray.BatteryIconContent")) &&
+        (child = FindChildByName(child, L"ContainerGrid")) &&
+        (child = FindChildByName(child, L"BatteryStackPanel")) &&
+        (child = FindChildByName(child, L"BatteryGlyphGrid"))) {
+        EnumChildElements(child, [size](FrameworkElement child) {
+            if (auto textBlock = child.try_as<Controls::TextBlock>()) {
+                ApplyGlyphTextBlockSize(textBlock, size);
+            }
+
+            return false;
+        });
     }
 }
 
 bool ApplyControlCenterButtonStyle(FrameworkElement controlCenterButton,
-                                   int width) {
+                                   int width,
+                                   int size) {
     FrameworkElement stackPanel = nullptr;
 
     FrameworkElement child = controlCenterButton;
@@ -802,7 +955,7 @@ bool ApplyControlCenterButtonStyle(FrameworkElement controlCenterButton,
         return false;
     }
 
-    EnumChildElements(stackPanel, [width](FrameworkElement child) {
+    EnumChildElements(stackPanel, [width, size](FrameworkElement child) {
         auto childClassName = winrt::get_class_name(child);
         if (childClassName != L"Windows.UI.Xaml.Controls.ContentPresenter") {
             Wh_Log(L"Unsupported class name %s of child",
@@ -817,7 +970,7 @@ bool ApplyControlCenterButtonStyle(FrameworkElement controlCenterButton,
             return false;
         }
 
-        ApplySystemTrayIconStyle(systemTrayIconElement, width);
+        ApplySystemTrayIconStyle(systemTrayIconElement, width, size);
         return false;
     });
 
@@ -826,7 +979,8 @@ bool ApplyControlCenterButtonStyle(FrameworkElement controlCenterButton,
 
 bool ApplyIconStackStyle(PCWSTR containerName,
                          FrameworkElement container,
-                         int width) {
+                         int width,
+                         int size) {
     FrameworkElement stackPanel = nullptr;
 
     FrameworkElement child = container;
@@ -843,8 +997,8 @@ bool ApplyIconStackStyle(PCWSTR containerName,
         return false;
     }
 
-    EnumChildElements(stackPanel, [containerName,
-                                   width](FrameworkElement child) {
+    EnumChildElements(stackPanel, [containerName, width,
+                                   size](FrameworkElement child) {
         auto childClassName = winrt::get_class_name(child);
         if (childClassName != L"Windows.UI.Xaml.Controls.ContentPresenter") {
             Wh_Log(L"Unsupported class name %s of child",
@@ -860,7 +1014,8 @@ bool ApplyIconStackStyle(PCWSTR containerName,
                 return false;
             }
 
-            ApplyNotifyIconViewStyle(systemTrayChevronIconViewElement, width);
+            ApplyNotifyIconViewStyle(systemTrayChevronIconViewElement, width,
+                                     size);
         } else {
             FrameworkElement systemTrayIconElement =
                 FindChildByName(child, L"SystemTrayIcon");
@@ -869,7 +1024,7 @@ bool ApplyIconStackStyle(PCWSTR containerName,
                 return false;
             }
 
-            ApplyNotifyIconViewStyle(systemTrayIconElement, width);
+            ApplyNotifyIconViewStyle(systemTrayIconElement, width, size);
         }
 
         return false;
@@ -915,7 +1070,7 @@ FrameworkElement FindSystemTrayFrame(FrameworkElement xamlRootContent) {
     return systemTrayFrame;
 }
 
-bool ApplyStyle(XamlRoot xamlRoot, int rows, int width) {
+bool ApplyStyle(XamlRoot xamlRoot, int rows, int width, int size) {
     FrameworkElement systemTrayFrameGrid = nullptr;
 
     FrameworkElement child = xamlRoot.Content().try_as<FrameworkElement>();
@@ -944,8 +1099,8 @@ bool ApplyStyle(XamlRoot xamlRoot, int rows, int width) {
             itemsControl.UpdateLayout();
         }
 
-        somethingSucceeded |=
-            ApplyNotifyIconsStyle(notificationAreaIcons, rows, width, vertical);
+        somethingSucceeded |= ApplyNotifyIconsStyle(notificationAreaIcons, rows,
+                                                    width, size, vertical);
     }
 
     // The heights of the other icons in a vertical tray are set by the taskbar
@@ -958,7 +1113,7 @@ bool ApplyStyle(XamlRoot xamlRoot, int rows, int width) {
         FindChildByName(systemTrayFrameGrid, L"ControlCenterButton");
     if (controlCenterButton) {
         somethingSucceeded |=
-            ApplyControlCenterButtonStyle(controlCenterButton, width);
+            ApplyControlCenterButtonStyle(controlCenterButton, width, size);
     }
 
     for (PCWSTR containerName : {
@@ -970,7 +1125,7 @@ bool ApplyStyle(XamlRoot xamlRoot, int rows, int width) {
             FindChildByName(systemTrayFrameGrid, containerName);
         if (container) {
             somethingSucceeded |=
-                ApplyIconStackStyle(containerName, container, width);
+                ApplyIconStackStyle(containerName, container, width, size);
         }
     }
 
@@ -1028,18 +1183,21 @@ void* WINAPI IconView_IconView_Hook(void* pThis) {
                         iconView, g_settings.overflowIconWidth);
                 } else if (vertical) {
                     ApplyNotifyIconViewStyle(
-                        iconView, g_settings.notificationIconWidth, true);
+                        iconView, g_settings.notificationIconWidth,
+                        g_settings.notificationIconSize, true);
                     ApplyNotifyIconsWrapGridStyleOfIcon(
                         iconView, g_settings.notificationIconWidth);
                 } else {
                     ApplyNotifyIconViewStyle(iconView,
-                                             g_settings.notificationIconWidth);
+                                             g_settings.notificationIconWidth,
+                                             g_settings.notificationIconSize);
 
                     int rows =
                         g_unloading ? 1 : g_settings.notificationIconRows;
                     if (rows > 1) {
                         ApplyNotifyIconsStackPanelGridStyleOfIcon(
-                            iconView, rows, g_settings.notificationIconWidth);
+                            iconView, rows, g_settings.notificationIconWidth,
+                            g_settings.notificationIconSize);
                     }
                 }
             } else if (vertical) {
@@ -1049,18 +1207,21 @@ void* WINAPI IconView_IconView_Hook(void* pThis) {
                     if (IsChildOfElementByName(iconView,
                                                L"ControlCenterButton")) {
                         ApplySystemTrayIconStyle(
-                            iconView, g_settings.notificationIconWidth);
+                            iconView, g_settings.notificationIconWidth,
+                            g_settings.notificationIconSize);
                     } else if (IsChildOfElementByName(iconView, L"MainStack") ||
                                IsChildOfElementByName(iconView,
                                                       L"NonActivatableStack")) {
                         ApplyNotifyIconViewStyle(
-                            iconView, g_settings.notificationIconWidth);
+                            iconView, g_settings.notificationIconWidth,
+                            g_settings.notificationIconSize);
                     }
                 }
             } else if (className == L"SystemTray.ChevronIconView") {
                 if (IsChildOfElementByName(iconView, L"NotifyIconStack")) {
                     ApplyNotifyIconViewStyle(iconView,
-                                             g_settings.notificationIconWidth);
+                                             g_settings.notificationIconWidth,
+                                             g_settings.notificationIconSize);
                 }
             }
         });
@@ -1137,6 +1298,7 @@ void WINAPI NotifyIconView_ApplyLayoutMode_Hook(void* pThis, int layoutMode) {
                     notificationAreaIcons.UpdateLayout();
                     ApplyNotifyIconsStyle(notificationAreaIcons, rows,
                                           g_settings.notificationIconWidth,
+                                          g_settings.notificationIconSize,
                                           /*vertical=*/true);
                 } catch (...) {
                     HRESULT hr = winrt::to_hresult();
@@ -1201,9 +1363,9 @@ SystemTrayFrame_UpdateNotificationAreaIconsLayout_Hook(void* pThis) {
     }
 
     try {
-        ApplyNotifyIconsWrapGridColumns(notificationAreaIcons,
-                                        g_settings.notificationIconRows,
-                                        g_settings.notificationIconWidth);
+        ApplyNotifyIconsWrapGridColumns(
+            notificationAreaIcons, g_settings.notificationIconRows,
+            g_settings.notificationIconWidth, g_settings.notificationIconSize);
     } catch (...) {
         HRESULT hr = winrt::to_hresult();
         Wh_Log(L"Error %08X", hr);
@@ -1353,7 +1515,8 @@ void WINAPI StackViewModel_UpdateIconIndexes_Hook(void* pThis) {
     if (rows > 1) {
         if (auto stackPanel = g_notificationAreaIconsStackPanel.get()) {
             ApplyNotifyIconsStackPanelGridStyle(
-                stackPanel, rows, g_settings.notificationIconWidth);
+                stackPanel, rows, g_settings.notificationIconWidth,
+                g_settings.notificationIconSize);
         }
     }
 }
@@ -1495,6 +1658,8 @@ bool RunFromWindowThread(HWND hWnd,
 void LoadSettings() {
     g_settings.notificationIconWidth =
         std::max(Wh_GetIntSetting(L"notificationIconWidth"), 1);
+    g_settings.notificationIconSize =
+        std::max(Wh_GetIntSetting(L"notificationIconSize"), 1);
     g_settings.notificationIconRows =
         std::max(Wh_GetIntSetting(L"notificationIconRows"), 1);
 
@@ -1524,6 +1689,7 @@ void ApplySettings() {
         HWND hTaskbarWnd;
         int rows;
         int width;
+        int size;
         winrt::Windows::UI::Core::CoreDispatcher dispatcher{nullptr};
     };
 
@@ -1539,6 +1705,8 @@ void ApplySettings() {
         .hTaskbarWnd = hTaskbarWnd,
         .rows = g_unloading ? 1 : g_settings.notificationIconRows,
         .width = g_unloading ? 32 : g_settings.notificationIconWidth,
+        .size =
+            g_unloading ? kDefaultIconSize : g_settings.notificationIconSize,
     };
 
     RunFromWindowThread(
@@ -1547,6 +1715,10 @@ void ApplySettings() {
             ApplySettingsParam& param = *(ApplySettingsParam*)pParam;
 
             g_autoRevokerList->clear();
+
+            if (g_unloading) {
+                RestoreGlyphTextBlocks();
+            }
 
             auto xamlRoot = GetTaskbarXamlRoot(param.hTaskbarWnd);
             if (!xamlRoot) {
@@ -1560,7 +1732,7 @@ void ApplySettings() {
                 }
             }
 
-            if (!ApplyStyle(xamlRoot, param.rows, param.width)) {
+            if (!ApplyStyle(xamlRoot, param.rows, param.width, param.size)) {
                 Wh_Log(L"ApplyStyle failed");
             }
 
