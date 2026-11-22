@@ -1860,139 +1860,153 @@ void WINAPI TaskListButton_CreateMultiWindowClip_Hook(void* pThis) {
 }
 
 void* TaskListButton_UpdateIconColumnDefinition_Original;
+void* ExperienceToggleButton_UpdateIconAndLabelColumnDefinitions_Original;
 
-LONG GetMediumTaskbarButtonExtentOffset() {
-    static LONG mediumTaskbarButtonExtentOffset = []() -> LONG {
+// Finds the offset of the medium button extent, which a taskbar button stores
+// from the resources when its template is applied, in a function that computes
+// the icon column width from it. The small extent is stored right before it.
+LONG FindMediumTaskbarButtonExtentOffset(void* function) {
 #if defined(_M_X64)
-        // Search for movsd followed by subsd. In newer builds with vertical
-        // taskbar support, there may be an additional movsd without a matching
-        // subsd above.
-        //
-        // f20f10b648030000 movsd   xmm6,mmword ptr [rsi+348h]
-        // f20f5cb680030000 subsd   xmm6,mmword ptr [rsi+380h]
-        // f20f5cb690030000 subsd   xmm6,mmword ptr [rsi+390h]
+    // Search for movsd followed by subsd. In newer builds with vertical
+    // taskbar support, there may be an additional movsd without a matching
+    // subsd above.
+    //
+    // f20f10b648030000 movsd   xmm6,mmword ptr [rsi+348h]
+    // f20f5cb680030000 subsd   xmm6,mmword ptr [rsi+380h]
+    // f20f5cb690030000 subsd   xmm6,mmword ptr [rsi+390h]
 
-        const BYTE* start =
-            (const BYTE*)TaskListButton_UpdateIconColumnDefinition_Original;
-        const BYTE* end = start + 0x200;
-        LONG offsetCandidate = 0;
-        LONG offset = 0;
-        for (const BYTE* p = start; p != end; p++) {
-            if (p[0] == 0xF2 && p[1] == 0x0F && p[2] == 0x10 &&
-                (p[3] & 0xC0) == 0x80) {
-                offsetCandidate = *(LONG*)(p + 4);
-            }
-
-            if (p[0] == 0xF2 && p[1] == 0x44 && p[2] == 0x0F && p[3] == 0x10 &&
-                (p[4] & 0xC0) == 0x80) {
-                offsetCandidate = *(LONG*)(p + 5);
-            }
-
-            if (p[0] == 0xF2 && p[1] == 0x0F && p[2] == 0x5C &&
-                (p[3] & 0xC0) == 0x80) {
-                offset = offsetCandidate;
-                break;
-            }
-
-            if (p[0] == 0xF2 && p[1] == 0x44 && p[2] == 0x0F && p[3] == 0x5C &&
-                (p[4] & 0xC0) == 0x80) {
-                offset = offsetCandidate;
-                break;
-            }
+    const BYTE* start = (const BYTE*)function;
+    const BYTE* end = start + 0x200;
+    LONG offsetCandidate = 0;
+    LONG offset = 0;
+    for (const BYTE* p = start; p != end; p++) {
+        if (p[0] == 0xF2 && p[1] == 0x0F && p[2] == 0x10 &&
+            (p[3] & 0xC0) == 0x80) {
+            offsetCandidate = *(LONG*)(p + 4);
         }
 
-        Wh_Log(L"mediumTaskbarButtonExtentOffset=0x%X", offset);
-        return (offset < 0 || offset > 0xFFFF) ? 0 : offset;
+        if (p[0] == 0xF2 && p[1] == 0x44 && p[2] == 0x0F && p[3] == 0x10 &&
+            (p[4] & 0xC0) == 0x80) {
+            offsetCandidate = *(LONG*)(p + 5);
+        }
+
+        if (p[0] == 0xF2 && p[1] == 0x0F && p[2] == 0x5C &&
+            (p[3] & 0xC0) == 0x80) {
+            offset = offsetCandidate;
+            break;
+        }
+
+        if (p[0] == 0xF2 && p[1] == 0x44 && p[2] == 0x0F && p[3] == 0x5C &&
+            (p[4] & 0xC0) == 0x80) {
+            offset = offsetCandidate;
+            break;
+        }
+    }
+
+    Wh_Log(L"mediumTaskbarButtonExtentOffset=0x%X", offset);
+    return (offset < 0 || offset > 0xFFFF) ? 0 : offset;
 #elif defined(_M_ARM64)
-        // ...
-        // fd41b670 ldr  d16,[x19,#0x368]
-        // fd419e71 ldr  d17,[x19,#0x338]
-        // 1e703a31 fsub d17,d17,d16
-        // fd41be70 ldr  d16,[x19,#0x378]
-        // 1e703a28 fsub d8,d17,d16
-        const DWORD* start =
-            (const DWORD*)TaskListButton_UpdateIconColumnDefinition_Original;
-        const DWORD* end = start + 0x80;
-        std::regex regexLdr(R"(ldr\s+(d\d+), \[(x\d+), #0x([0-9a-f]+)\])");
-        std::regex regexLdrOther(R"(ldr\s+(d\d+),.*)");
-        std::regex regexFsub(R"(fsub\s+d\d+, (d\d+), (d\d+))");
-        struct {
-            std::string reg;
-            std::string regSrc;
-            LONG offset;
-        } ldrs[32];
-        size_t ldrCount = 0;
-        for (const DWORD* p = start; p != end; p++) {
-            WH_DISASM_RESULT result;
-            if (!Wh_Disasm((void*)p, &result)) {
-                break;
-            }
+    // ...
+    // fd41b670 ldr  d16,[x19,#0x368]
+    // fd419e71 ldr  d17,[x19,#0x338]
+    // 1e703a31 fsub d17,d17,d16
+    // fd41be70 ldr  d16,[x19,#0x378]
+    // 1e703a28 fsub d8,d17,d16
+    const DWORD* start = (const DWORD*)function;
+    const DWORD* end = start + 0x80;
+    std::regex regexLdr(R"(ldr\s+(d\d+), \[(x\d+), #0x([0-9a-f]+)\])");
+    std::regex regexLdrOther(R"(ldr\s+(d\d+),.*)");
+    std::regex regexFsub(R"(fsub\s+d\d+, (d\d+), (d\d+))");
+    struct {
+        std::string reg;
+        std::string regSrc;
+        LONG offset;
+    } ldrs[32];
+    size_t ldrCount = 0;
+    for (const DWORD* p = start; p != end; p++) {
+        WH_DISASM_RESULT result;
+        if (!Wh_Disasm((void*)p, &result)) {
+            break;
+        }
 
-            std::string_view s = result.text;
-            if (s == "ret") {
-                break;
-            }
+        std::string_view s = result.text;
+        if (s == "ret") {
+            break;
+        }
 
-            if (ldrCount == ARRAYSIZE(ldrs)) {
-                Wh_Log(L"Too many ldr instructions");
-                break;
-            }
+        if (ldrCount == ARRAYSIZE(ldrs)) {
+            Wh_Log(L"Too many ldr instructions");
+            break;
+        }
 
-            std::match_results<std::string_view::const_iterator> matchLdr;
-            if (std::regex_match(s.begin(), s.end(), matchLdr, regexLdr)) {
-                // Wh_Log(L"%S", result.text);
-                std::string reg = matchLdr[1];
-                std::string regSrc = matchLdr[2];
-                LONG offset = std::stoull(matchLdr[3], nullptr, 16);
-                ldrs[ldrCount++] = {std::move(reg), std::move(regSrc), offset};
-                continue;
-            }
+        std::match_results<std::string_view::const_iterator> matchLdr;
+        if (std::regex_match(s.begin(), s.end(), matchLdr, regexLdr)) {
+            // Wh_Log(L"%S", result.text);
+            std::string reg = matchLdr[1];
+            std::string regSrc = matchLdr[2];
+            LONG offset = std::stoull(matchLdr[3], nullptr, 16);
+            ldrs[ldrCount++] = {std::move(reg), std::move(regSrc), offset};
+            continue;
+        }
 
-            std::match_results<std::string_view::const_iterator> matchLdrOther;
-            if (std::regex_match(s.begin(), s.end(), matchLdrOther,
-                                 regexLdrOther)) {
-                // Wh_Log(L"%S", result.text);
-                std::string reg = matchLdrOther[1];
-                ldrs[ldrCount++] = {std::move(reg), std::string(), 0};
-                continue;
-            }
+        std::match_results<std::string_view::const_iterator> matchLdrOther;
+        if (std::regex_match(s.begin(), s.end(), matchLdrOther,
+                             regexLdrOther)) {
+            // Wh_Log(L"%S", result.text);
+            std::string reg = matchLdrOther[1];
+            ldrs[ldrCount++] = {std::move(reg), std::string(), 0};
+            continue;
+        }
 
-            std::match_results<std::string_view::const_iterator> matchFsub;
-            if (std::regex_match(s.begin(), s.end(), matchFsub, regexFsub)) {
-                // Wh_Log(L"%S", result.text);
-                std::string regA = matchFsub[1];
-                std::string regB = matchFsub[2];
+        std::match_results<std::string_view::const_iterator> matchFsub;
+        if (std::regex_match(s.begin(), s.end(), matchFsub, regexFsub)) {
+            // Wh_Log(L"%S", result.text);
+            std::string regA = matchFsub[1];
+            std::string regB = matchFsub[2];
 
-                std::remove_reference_t<decltype(ldrs[0])>* ldrA = nullptr;
-                std::remove_reference_t<decltype(ldrs[0])>* ldrB = nullptr;
+            std::remove_reference_t<decltype(ldrs[0])>* ldrA = nullptr;
+            std::remove_reference_t<decltype(ldrs[0])>* ldrB = nullptr;
 
-                for (size_t i = 0; i < ldrCount; i++) {
-                    const auto& [ldrReg, ldrRegSrc, ldrOffset] =
-                        ldrs[ldrCount - 1 - i];
-                    if (!ldrA && ldrReg == regA) {
-                        ldrA = &ldrs[ldrCount - 1 - i];
-                    }
-                    if (!ldrB && ldrReg == regB) {
-                        ldrB = &ldrs[ldrCount - 1 - i];
-                    }
+            for (size_t i = 0; i < ldrCount; i++) {
+                const auto& [ldrReg, ldrRegSrc, ldrOffset] =
+                    ldrs[ldrCount - 1 - i];
+                if (!ldrA && ldrReg == regA) {
+                    ldrA = &ldrs[ldrCount - 1 - i];
                 }
-
-                if (ldrA && ldrB && ldrA->regSrc == ldrB->regSrc) {
-                    LONG offset = ldrA->offset;
-                    Wh_Log(L"mediumTaskbarButtonExtentOffset=0x%X", offset);
-                    return (offset < 0 || offset > 0xFFFF) ? 0 : offset;
+                if (!ldrB && ldrReg == regB) {
+                    ldrB = &ldrs[ldrCount - 1 - i];
                 }
+            }
+
+            if (ldrA && ldrB && ldrA->regSrc == ldrB->regSrc) {
+                LONG offset = ldrA->offset;
+                Wh_Log(L"mediumTaskbarButtonExtentOffset=0x%X", offset);
+                return (offset < 0 || offset > 0xFFFF) ? 0 : offset;
             }
         }
+    }
 #else
 #error "Unsupported architecture"
 #endif
 
-        Wh_Log(L"Error: mediumTaskbarButtonExtentOffset not found");
-        return 0;
-    }();
+    Wh_Log(L"Error: mediumTaskbarButtonExtentOffset not found");
+    return 0;
+}
 
+LONG GetMediumTaskbarButtonExtentOffset() {
+    static LONG mediumTaskbarButtonExtentOffset =
+        FindMediumTaskbarButtonExtentOffset(
+            TaskListButton_UpdateIconColumnDefinition_Original);
     return mediumTaskbarButtonExtentOffset;
+}
+
+LONG GetExperienceToggleButtonMediumExtentOffset() {
+    static LONG mediumExtentOffset =
+        ExperienceToggleButton_UpdateIconAndLabelColumnDefinitions_Original
+            ? FindMediumTaskbarButtonExtentOffset(
+                  ExperienceToggleButton_UpdateIconAndLabelColumnDefinitions_Original)
+            : 0;
+    return mediumExtentOffset;
 }
 
 void TaskListButton_UpdateIconColumnDefinition_InitOffsets() {
@@ -2345,6 +2359,23 @@ void WINAPI ExperienceToggleButton_UpdateButtonPadding_Hook(void* pThis) {
 
     if (g_inExperienceToggleButton_IconHeight) {
         return;
+    }
+
+    // The button sizes itself from the extents it stored when its template was
+    // applied. The template isn't applied again, so the extents are set to the
+    // settings here, or to the defaults when unloading.
+    if (LONG offset = GetExperienceToggleButtonMediumExtentOffset()) {
+        double* mediumExtent = (double*)((BYTE*)pThis + offset);
+        if (*mediumExtent >= 1 && *mediumExtent < 10000) {
+            *mediumExtent = g_unloading ? 44 : g_settings.taskbarButtonWidth;
+        }
+
+        double* smallExtent =
+            g_hasDynamicIconScaling ? mediumExtent - 1 : nullptr;
+        if (smallExtent && *smallExtent >= 1 && *smallExtent < 10000) {
+            *smallExtent =
+                g_unloading ? 32 : g_settings.taskbarButtonWidthSmall;
+        }
     }
 
     // The button extent and the padding are picked by comparing the icon height
@@ -3159,6 +3190,12 @@ bool HookTaskbarViewDllSymbols(HMODULE module,
                 true,  // Missing in older Windows 11 versions.
             },
             {
+                {LR"(private: void __cdecl winrt::Taskbar::implementation::ExperienceToggleButton::UpdateIconAndLabelColumnDefinitions(void))"},
+                &ExperienceToggleButton_UpdateIconAndLabelColumnDefinitions_Original,
+                nullptr,
+                true,  // Missing in older Windows 11 versions.
+            },
+            {
                 {LR"(protected: virtual void __cdecl winrt::Taskbar::implementation::ExperienceToggleButton::UpdateButtonPadding(void))"},
                 &ExperienceToggleButton_UpdateButtonPadding_Original,
                 ExperienceToggleButton_UpdateButtonPadding_Hook,
@@ -3300,6 +3337,10 @@ bool HookTaskbarViewDllSymbols(HMODULE module,
 
     if (TaskListButton_UpdateIconColumnDefinition_Original) {
         TaskListButton_UpdateIconColumnDefinition_InitOffsets();
+    }
+
+    if (ExperienceToggleButton_UpdateIconAndLabelColumnDefinitions_Original) {
+        GetExperienceToggleButtonMediumExtentOffset();
     }
 
     constexpr UINT kDynamicIconScaling = 29785184;
