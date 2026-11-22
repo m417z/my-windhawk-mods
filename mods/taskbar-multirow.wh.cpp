@@ -142,9 +142,16 @@ struct TaskbarState {
     // Sized by GetTaskbarState from the row count setting, which can change on
     // another thread in the meantime. Index it within its own size.
     std::vector<float> rowOffsetAdjustment;
+    // The number of layout passes in a row which changed the repeater margin.
+    int marginChangesInARow;
 };
 
 std::unordered_map<void*, TaskbarState> g_taskbarState;
+
+// The taskbar whose items the current layout pass arranges, and whether the
+// pass changed the margin of its repeater.
+thread_local TaskbarState* g_layoutPassTaskbarState;
+thread_local bool g_layoutPassChangedMargin;
 
 // Only one taskbar item can be dragged at a time.
 struct {
@@ -558,6 +565,15 @@ winrt::Windows::Foundation::Rect KeepWithinTaskbarFrame(
     return rect;
 }
 
+// Changing the margin lays the items out again, and if the taskbar shrinks them
+// to fit, they wrap elsewhere and can call for another margin, back and forth
+// until XAML fails with a layout cycle. Right after a pass that changed it, the
+// margin may only shorten the repeater, by a minimum step and a limited number
+// of times. This leaves room at the end of the last row rather than items past
+// it.
+constexpr int kMaxMarginChangesInARow = 10;
+constexpr double kMinMarginChangeInARow = 0.5;
+
 void UpdateTaskbarFrameRepeaterMargin(FrameworkElement taskbarFrameRepeater,
                                       TaskbarState* taskbarState,
                                       double lengthWithoutExtent,
@@ -591,11 +607,28 @@ void UpdateTaskbarFrameRepeaterMargin(FrameworkElement taskbarFrameRepeater,
         taskbarFrameRepeater.Margin(margin);
         marginEnd = desiredMargin;
         taskbarFrameRepeater.Margin(margin);
+        taskbarState->marginChangesInARow = 0;
     } else if (marginEnd != desiredMargin) {
+        bool inLayoutPass =
+            g_inTaskbarCollapsibleLayoutXamlTraits_ArrangeOverride;
+        int changesInARow =
+            inLayoutPass ? taskbarState->marginChangesInARow : 0;
+        if (changesInARow > 0 &&
+            (changesInARow >= kMaxMarginChangesInARow ||
+             desiredMargin - marginEnd < kMinMarginChangeInARow)) {
+            Wh_Log(L"Keeping margin end=%f over %f (%d changes in a row)",
+                   marginEnd, desiredMargin, changesInARow);
+            return;
+        }
+
         Wh_Log(L"Setting margin end=%f (lengthWithoutExtent=%f)", desiredMargin,
                lengthWithoutExtent);
         marginEnd = desiredMargin;
         taskbarFrameRepeater.Margin(margin);
+
+        if (inLayoutPass) {
+            g_layoutPassChangedMargin = true;
+        }
     }
 }
 
@@ -1279,6 +1312,7 @@ HRESULT WINAPI IUIElement_Arrange_Hook(void* pThis,
     }
 
     TaskbarState* taskbarState = GetTaskbarState(xamlRoot);
+    g_layoutPassTaskbarState = taskbarState;
     bool vertical = taskbarState->vertical;
 
     float layoutThickness = vertical ? g_taskbarCollapsibleLayoutSize.Width
@@ -1390,12 +1424,21 @@ HRESULT WINAPI TaskbarCollapsibleLayoutXamlTraits_ArrangeOverride_Hook(
         &g_inTaskbarCollapsibleLayoutXamlTraits_ArrangeOverride);
 
     g_taskbarCollapsibleLayoutSize = size;
+    g_layoutPassTaskbarState = nullptr;
+    g_layoutPassChangedMargin = false;
 
     std::erase_if(g_arrangedItems,
                   [](const auto& item) { return !item.second.element.get(); });
 
-    return TaskbarCollapsibleLayoutXamlTraits_ArrangeOverride_Original(
+    HRESULT ret = TaskbarCollapsibleLayoutXamlTraits_ArrangeOverride_Original(
         pThis, context, size, resultSize);
+
+    if (g_layoutPassTaskbarState) {
+        int& changesInARow = g_layoutPassTaskbarState->marginChangesInARow;
+        changesInARow = g_layoutPassChangedMargin ? changesInARow + 1 : 0;
+    }
+
+    return ret;
 }
 
 // The taskbar keeps laying items out in a single row and tracks a drag in that
