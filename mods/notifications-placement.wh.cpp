@@ -122,11 +122,14 @@ number when both are configured.
 #undef GetCurrentTime
 
 #include <winrt/Windows.Foundation.Collections.h>
+#include <winrt/Windows.UI.Input.h>
+#include <winrt/Windows.UI.Xaml.Input.h>
 #include <winrt/Windows.UI.Xaml.Media.Animation.h>
 #include <winrt/Windows.UI.Xaml.Media.h>
 #include <winrt/Windows.UI.Xaml.h>
 #include <winrt/base.h>
 
+#include <algorithm>
 #include <atomic>
 #include <cmath>
 #include <functional>
@@ -652,15 +655,52 @@ HMONITOR WINAPI MonitorFromPoint_Hook(POINT pt, DWORD dwFlags) {
 
 // Toasts slide along the X axis of MainGrid's CompositeTransform. The slide
 // animations are storyboards of the transitions of the StateMachine visual
-// state group: they're retargeted to the chosen direction, so layout, clipping,
-// shadows and dragging stay native.
-constexpr WCHAR kTranslateXProperty[] =
-    L"(UIElement.RenderTransform).(CompositeTransform.TranslateX)";
-constexpr WCHAR kTranslateYProperty[] =
-    L"(UIElement.RenderTransform).(CompositeTransform.TranslateY)";
+// state group: they're retargeted to the chosen direction, so layout, clipping
+// and shadows stay native.
+//
+// A drag is handled natively too: the toast reads the drag translation from
+// manipulation events and scrubs a storyboard that it builds in code and that
+// moves the toast view to the right. The drag vector is rotated onto that axis
+// and the storyboard is retargeted, so the toast is swiped out toward the edge
+// it slid in from.
+struct TranslatePropertyPaths {
+    PCWSTR x;
+    PCWSTR y;
+};
 
-constexpr WCHAR kDraggingState[] = L"Dragging";
-constexpr WCHAR kDismissedState[] = L"Dismissed";
+constexpr TranslatePropertyPaths kSlidePropertyPaths{
+    L"(UIElement.RenderTransform).(CompositeTransform.TranslateX)",
+    L"(UIElement.RenderTransform).(CompositeTransform.TranslateY)",
+};
+
+constexpr TranslatePropertyPaths kDragPropertyPaths{
+    L"CompositeTransform.TranslateX",
+    L"CompositeTransform.TranslateY",
+};
+
+// Vtable slots of the XAML methods hooked for dragging, after the 6 slots of
+// IInspectable. See the abi declarations in
+// winrt/impl/Windows.UI.Xaml.Media.Animation.0.h and
+// winrt/impl/Windows.UI.Xaml.Input.0.h.
+constexpr int kStoryboardBeginSlot = 9;
+constexpr int kManipulationDeltaArgsDeltaSlot = 9;
+constexpr int kManipulationDeltaArgsCumulativeSlot = 10;
+constexpr int kManipulationDeltaArgsVelocitiesSlot = 11;
+constexpr int kManipulationCompletedArgsCumulativeSlot = 9;
+constexpr int kManipulationCompletedArgsVelocitiesSlot = 10;
+constexpr int kManipulationStartedArgsCumulativeSlot = 11;
+
+// The pointer can't move past the screen edge, so a swipe toward an edge with
+// little room left is shorter than the native drag track. Don't let the room
+// used for scaling drop below this, in DIPs.
+constexpr double kMinDragTravel = 24;
+
+std::atomic<DWORD> g_notificationThreadId;
+std::atomic<bool> g_xamlHooksInstalled;
+
+// Only accessed on the thread of the notification window. Set when a drag
+// starts, see RetargetDragStoryboard.
+double g_dragScale = 1;
 
 AnimationDirection GetAnimationDirection() {
     if (g_unloading) {
@@ -687,12 +727,13 @@ AnimationDirection GetAnimationDirection() {
 // The states whose transitions slide the toast in (Appearing) or out (timeout,
 // close button, click).
 bool IsSlideState(std::wstring_view state) {
-    return state == L"Appearing" || state == kDismissedState ||
+    return state == L"Appearing" || state == L"Dismissed" ||
            state == L"Decayed" || state.starts_with(L"Activated");
 }
 
-bool IsTranslateProperty(const winrt::hstring& property) {
-    return property == kTranslateXProperty || property == kTranslateYProperty;
+bool IsNotificationThread() {
+    DWORD threadId = g_notificationThreadId;
+    return threadId && threadId == GetCurrentThreadId();
 }
 
 bool IsVerticalDirection(AnimationDirection direction) {
@@ -709,25 +750,38 @@ double DirectionSign(AnimationDirection direction) {
                : 1;
 }
 
-// Native slide values are non-negative, so a value's magnitude is its native
-// value. This makes retargeting repeatable and lets fromRight restore it.
-void RetargetSlideAnimations(const Media::Animation::Storyboard& storyboard,
-                             AnimationDirection direction) {
+// Native translate values are non-negative, so a value's magnitude is its
+// native value. This makes retargeting repeatable and lets fromRight restore
+// it.
+void RetargetTranslateAnimations(const Media::Animation::Storyboard& storyboard,
+                                 const TranslatePropertyPaths& paths,
+                                 AnimationDirection direction) {
     double sign = DirectionSign(direction);
-    PCWSTR targetProperty = IsVerticalDirection(direction)
-                                ? kTranslateYProperty
-                                : kTranslateXProperty;
+    PCWSTR targetProperty = IsVerticalDirection(direction) ? paths.y : paths.x;
+
+    auto retargetValue = [sign](const winrt::Windows::Foundation::IReference<
+                                    double>& value,
+                                auto setValue) {
+        if (!value) {
+            return;
+        }
+        double newValue = std::abs(value.Value()) * sign;
+        if (value.Value() != newValue) {
+            setValue(winrt::Windows::Foundation::IReference<double>(newValue));
+        }
+    };
 
     for (const auto& timeline : storyboard.Children()) {
         winrt::hstring property =
             Media::Animation::Storyboard::GetTargetProperty(timeline);
-        if (!IsTranslateProperty(property)) {
+        if (property != paths.x && property != paths.y) {
             continue;
         }
 
-        auto animation =
+        auto animation = timeline.try_as<Media::Animation::DoubleAnimation>();
+        auto keyFrameAnimation =
             timeline.try_as<Media::Animation::DoubleAnimationUsingKeyFrames>();
-        if (!animation) {
+        if (!animation && !keyFrameAnimation) {
             continue;
         }
 
@@ -736,99 +790,22 @@ void RetargetSlideAnimations(const Media::Animation::Storyboard& storyboard,
                                                             targetProperty);
         }
 
-        for (const auto& keyFrame : animation.KeyFrames()) {
-            double value = std::abs(keyFrame.Value()) * sign;
-            if (keyFrame.Value() != value) {
-                keyFrame.Value(value);
-            }
-        }
-    }
-}
-
-// Copies the slide animations of a storyboard onto the native X axis.
-Media::Animation::Storyboard CloneAsHorizontalSlide(
-    const Media::Animation::Storyboard& source,
-    const FrameworkElement& target) {
-    Media::Animation::Storyboard storyboard;
-
-    for (const auto& timeline : source.Children()) {
-        if (!IsTranslateProperty(
-                Media::Animation::Storyboard::GetTargetProperty(timeline))) {
-            continue;
-        }
-
-        auto sourceAnimation =
-            timeline.try_as<Media::Animation::DoubleAnimationUsingKeyFrames>();
-        if (!sourceAnimation) {
-            continue;
-        }
-
-        Media::Animation::DoubleAnimationUsingKeyFrames animation;
-        for (const auto& sourceKeyFrame : sourceAnimation.KeyFrames()) {
-            Media::Animation::DoubleKeyFrame keyFrame{nullptr};
-
-            if (auto sourceSplineKeyFrame =
-                    sourceKeyFrame
-                        .try_as<Media::Animation::SplineDoubleKeyFrame>()) {
-                Media::Animation::SplineDoubleKeyFrame splineKeyFrame;
-                if (auto sourceKeySpline = sourceSplineKeyFrame.KeySpline()) {
-                    Media::Animation::KeySpline keySpline;
-                    keySpline.ControlPoint1(sourceKeySpline.ControlPoint1());
-                    keySpline.ControlPoint2(sourceKeySpline.ControlPoint2());
-                    splineKeyFrame.KeySpline(keySpline);
+        if (animation) {
+            retargetValue(animation.From(),
+                          [&](const auto& value) { animation.From(value); });
+            retargetValue(animation.To(),
+                          [&](const auto& value) { animation.To(value); });
+            retargetValue(animation.By(),
+                          [&](const auto& value) { animation.By(value); });
+        } else {
+            for (const auto& keyFrame : keyFrameAnimation.KeyFrames()) {
+                double value = std::abs(keyFrame.Value()) * sign;
+                if (keyFrame.Value() != value) {
+                    keyFrame.Value(value);
                 }
-                keyFrame = splineKeyFrame;
-            } else if (sourceKeyFrame.try_as<
-                           Media::Animation::DiscreteDoubleKeyFrame>()) {
-                keyFrame = Media::Animation::DiscreteDoubleKeyFrame();
-            } else {
-                // Linear, and the fallback for any other key frame type.
-                keyFrame = Media::Animation::LinearDoubleKeyFrame();
             }
-
-            keyFrame.KeyTime(sourceKeyFrame.KeyTime());
-            keyFrame.Value(std::abs(sourceKeyFrame.Value()));
-            animation.KeyFrames().Append(keyFrame);
-        }
-
-        Media::Animation::Storyboard::SetTarget(animation, target);
-        Media::Animation::Storyboard::SetTargetProperty(animation,
-                                                        kTranslateXProperty);
-        storyboard.Children().Append(animation);
-    }
-
-    return storyboard;
-}
-
-// A drag moves the toast to the right with the pointer, so a dragged toast
-// keeps the native horizontal exit. A transition with both From and To takes
-// precedence over the native one that only has To.
-void UpdateDragDismissTransition(
-    const VisualStateGroup& group,
-    const FrameworkElement& mainGrid,
-    const Media::Animation::Storyboard& dismissedStoryboard,
-    bool needed) {
-    auto transitions = group.Transitions();
-    for (uint32_t i = 0; i < transitions.Size(); i++) {
-        auto transition = transitions.GetAt(i);
-        if (transition.From() == kDraggingState &&
-            transition.To() == kDismissedState) {
-            if (!needed) {
-                transitions.RemoveAt(i);
-            }
-            return;
         }
     }
-
-    if (!needed || !dismissedStoryboard) {
-        return;
-    }
-
-    VisualTransition transition;
-    transition.From(kDraggingState);
-    transition.To(kDismissedState);
-    transition.Storyboard(CloneAsHorizontalSlide(dismissedStoryboard, mainGrid));
-    transitions.Append(transition);
 }
 
 void ApplySlideDirection(const FrameworkElement& mainGrid,
@@ -837,8 +814,6 @@ void ApplySlideDirection(const FrameworkElement& mainGrid,
         if (group.Name() != L"StateMachine") {
             continue;
         }
-
-        Media::Animation::Storyboard dismissedStoryboard{nullptr};
 
         for (const auto& transition : group.Transitions()) {
             if (!transition.From().empty()) {
@@ -855,21 +830,15 @@ void ApplySlideDirection(const FrameworkElement& mainGrid,
                 continue;
             }
 
-            if (state == kDismissedState) {
-                dismissedStoryboard = storyboard;
-            }
-
             // Fails while the storyboard runs, the next call retries.
             try {
-                RetargetSlideAnimations(storyboard, direction);
+                RetargetTranslateAnimations(storyboard, kSlidePropertyPaths,
+                                            direction);
             } catch (const winrt::hresult_error& e) {
                 Wh_Log(L"Retargeting %s failed: %08X", state.c_str(),
                        e.code().value);
             }
         }
-
-        UpdateDragDismissTransition(group, mainGrid, dismissedStoryboard,
-                                    direction != AnimationDirection::fromRight);
     }
 }
 
@@ -918,6 +887,334 @@ bool FindToastCenterElements(FrameworkElement* toastCenterView,
     return true;
 }
 
+// The visible toast that is pressed or dragged, else the first visible one.
+FrameworkElement FindDraggedToastView() {
+    FrameworkElement toastCenterView = nullptr;
+    FrameworkElement toastCenterGrid = nullptr;
+    if (!FindToastCenterElements(&toastCenterView, &toastCenterGrid)) {
+        return nullptr;
+    }
+
+    FrameworkElement firstVisible = nullptr;
+    FrameworkElement dragged =
+        EnumChildElements(toastCenterGrid, [&](FrameworkElement toastView) {
+            if (!IsToastView(toastView) ||
+                toastView.Visibility() != Visibility::Visible) {
+                return false;  // continue enumeration
+            }
+
+            if (!firstVisible) {
+                firstVisible = toastView;
+            }
+
+            FrameworkElement mainGrid = FindChildByName(toastView, L"MainGrid");
+            if (!mainGrid) {
+                return false;  // continue enumeration
+            }
+
+            for (const auto& group :
+                 VisualStateManager::GetVisualStateGroups(mainGrid)) {
+                if (group.Name() != L"StateMachine") {
+                    continue;
+                }
+
+                auto state = group.CurrentState();
+                if (state && (state.Name() == L"Pressed" ||
+                              state.Name() == L"Dragging")) {
+                    return true;
+                }
+            }
+
+            return false;  // continue enumeration
+        });
+
+    return dragged ? dragged : firstVisible;
+}
+
+// In DIPs: the distance that takes the dragged toast out of its window toward
+// the slide edge, and the distance the pointer can still move toward the
+// screen edge.
+bool GetDragDistances(AnimationDirection direction,
+                      double* exitDistance,
+                      double* travel) {
+    FrameworkElement toastView = FindDraggedToastView();
+    if (!toastView) {
+        return false;
+    }
+
+    auto xamlRoot = toastView.XamlRoot();
+    if (!xamlRoot) {
+        return false;
+    }
+
+    double scale = xamlRoot.RasterizationScale();
+    winrt::Windows::Foundation::Size rootSize = xamlRoot.Size();
+    winrt::Windows::Foundation::Rect bounds =
+        toastView.TransformToVisual(nullptr).TransformBounds(
+            winrt::Windows::Foundation::Rect{
+                0, 0, static_cast<float>(toastView.ActualWidth()),
+                static_cast<float>(toastView.ActualHeight())});
+
+    POINT cursor;
+    MONITORINFO monitorInfo{
+        .cbSize = sizeof(MONITORINFO),
+    };
+    if (!GetCursorPos(&cursor) ||
+        !GetMonitorInfo(MonitorFromPoint(cursor, MONITOR_DEFAULTTONEAREST),
+                        &monitorInfo)) {
+        return false;
+    }
+
+    const RECT& monitor = monitorInfo.rcMonitor;
+
+    switch (direction) {
+        case AnimationDirection::fromLeft:
+            *exitDistance = bounds.X + bounds.Width;
+            *travel = (cursor.x - monitor.left) / scale;
+            break;
+
+        case AnimationDirection::fromTop:
+            *exitDistance = bounds.Y + bounds.Height;
+            *travel = (cursor.y - monitor.top) / scale;
+            break;
+
+        case AnimationDirection::fromBottom:
+            *exitDistance = rootSize.Height - bounds.Y;
+            *travel = (monitor.bottom - 1 - cursor.y) / scale;
+            break;
+
+        default:
+            return false;
+    }
+
+    *exitDistance = std::max(*exitDistance, 1.0);
+    *travel = std::max(*travel, kMinDragTravel);
+    return true;
+}
+
+// The toast builds this storyboard in code when a drag starts, and scrubs it
+// along the drag: it moves the toast view by the native track length (the
+// animation's To) to the right. It's pointed at the slide edge instead, moving
+// the toast just out of its window. The drag is scaled so that the room the
+// pointer has left covers the whole track: with enough room the toast follows
+// the pointer, and reaching the screen edge always dismisses it.
+void RetargetDragStoryboard(const Media::Animation::Storyboard& storyboard,
+                            AnimationDirection direction) {
+    for (const auto& timeline : storyboard.Children()) {
+        if (Media::Animation::Storyboard::GetTargetProperty(timeline) !=
+            kDragPropertyPaths.x) {
+            continue;
+        }
+
+        auto animation = timeline.try_as<Media::Animation::DoubleAnimation>();
+        if (!animation || !animation.To()) {
+            continue;
+        }
+
+        double nativeDistance = std::abs(animation.To().Value());
+        double exitDistance = nativeDistance;
+        double travel = nativeDistance;
+        if (!GetDragDistances(direction, &exitDistance, &travel)) {
+            Wh_Log(L"Failed to measure the drag, using the native distance");
+            exitDistance = nativeDistance;
+            travel = nativeDistance;
+        }
+
+        double sign = DirectionSign(direction);
+
+        if (IsVerticalDirection(direction)) {
+            Media::Animation::Storyboard::SetTargetProperty(
+                timeline, kDragPropertyPaths.y);
+        }
+
+        if (auto from = animation.From()) {
+            animation.From(winrt::Windows::Foundation::IReference<double>(
+                std::abs(from.Value()) * sign));
+        }
+        animation.To(
+            winrt::Windows::Foundation::IReference<double>(exitDistance * sign));
+
+        g_dragScale = nativeDistance / std::min(exitDistance, travel);
+
+        Wh_Log(L"Drag: native %f, exit %f, travel %f, scale %f",
+               nativeDistance, exitDistance, travel, g_dragScale);
+    }
+}
+
+// Maps a drag along the slide direction onto the native rightward axis that
+// the toast's drag handling reads, scaled by the drag scale. The
+// perpendicular axis is kept for the native logic.
+winrt::Windows::Foundation::Point ToNativeDragVector(
+    winrt::Windows::Foundation::Point vector,
+    AnimationDirection direction) {
+    winrt::Windows::Foundation::Point rotated = vector;
+    switch (direction) {
+        case AnimationDirection::fromLeft:
+            rotated = {-vector.X, -vector.Y};
+            break;
+
+        case AnimationDirection::fromTop:
+            rotated = {-vector.Y, vector.X};
+            break;
+
+        case AnimationDirection::fromBottom:
+            rotated = {vector.Y, -vector.X};
+            break;
+
+        default:
+            break;
+    }
+
+    float scale = static_cast<float>(g_dragScale);
+    return {rotated.X * scale, rotated.Y * scale};
+}
+
+bool ShouldMapDrag(AnimationDirection* direction) {
+    if (g_unloading || !IsNotificationThread()) {
+        return false;
+    }
+
+    *direction = GetAnimationDirection();
+    return *direction != AnimationDirection::fromRight;
+}
+
+using Storyboard_Begin_t = int32_t(WINAPI*)(void* pThis);
+Storyboard_Begin_t Storyboard_Begin_Original;
+int32_t WINAPI Storyboard_Begin_Hook(void* pThis) {
+    AnimationDirection direction;
+    if (ShouldMapDrag(&direction)) {
+        try {
+            Media::Animation::Storyboard storyboard{nullptr};
+            winrt::copy_from_abi(storyboard, pThis);
+            RetargetDragStoryboard(storyboard, direction);
+        } catch (const winrt::hresult_error& e) {
+            Wh_Log(L"Retargeting the drag storyboard failed: %08X",
+                   e.code().value);
+        }
+    }
+
+    return Storyboard_Begin_Original(pThis);
+}
+
+using ManipulationDeltaGetter_t =
+    int32_t(WINAPI*)(void* pThis,
+                     winrt::Windows::UI::Input::ManipulationDelta* value);
+
+using ManipulationVelocitiesGetter_t =
+    int32_t(WINAPI*)(void* pThis,
+                     winrt::Windows::UI::Input::ManipulationVelocities* value);
+
+// One instance per hooked slot, each with its own original function.
+template <int Slot>
+struct ManipulationDeltaGetterHook {
+    static inline ManipulationDeltaGetter_t original;
+
+    static int32_t WINAPI Hook(
+        void* pThis,
+        winrt::Windows::UI::Input::ManipulationDelta* value) {
+        int32_t result = original(pThis, value);
+
+        AnimationDirection direction;
+        if (result >= 0 && value && ShouldMapDrag(&direction)) {
+            value->Translation =
+                ToNativeDragVector(value->Translation, direction);
+        }
+
+        return result;
+    }
+};
+
+template <int Slot>
+struct ManipulationVelocitiesGetterHook {
+    static inline ManipulationVelocitiesGetter_t original;
+
+    static int32_t WINAPI Hook(
+        void* pThis,
+        winrt::Windows::UI::Input::ManipulationVelocities* value) {
+        int32_t result = original(pThis, value);
+
+        AnimationDirection direction;
+        if (result >= 0 && value && ShouldMapDrag(&direction)) {
+            value->Linear = ToNativeDragVector(value->Linear, direction);
+        }
+
+        return result;
+    }
+};
+
+void** GetVtable(const winrt::Windows::Foundation::IInspectable& object) {
+    return *reinterpret_cast<void***>(winrt::get_abi(object));
+}
+
+// Identical getters of different classes may share one function, which is
+// hooked once: every getter here maps its value the same way.
+template <typename Prototype>
+void HookVtableSlot(void** vtable,
+                    int slot,
+                    Prototype* hook,
+                    Prototype** original,
+                    std::vector<void*>* hookedTargets) {
+    void* target = vtable[slot];
+    for (void* hookedTarget : *hookedTargets) {
+        if (hookedTarget == target) {
+            Wh_Log(L"Slot %d shares an already hooked function", slot);
+            return;
+        }
+    }
+
+    hookedTargets->push_back(target);
+    WindhawkUtils::SetFunctionHook(reinterpret_cast<Prototype*>(target), hook,
+                                   original);
+}
+
+// Runs on the thread of the notification window: the objects whose vtables
+// are read can only be created on a XAML thread.
+void EnsureXamlHooks() {
+    if (g_xamlHooksInstalled || g_unloading) {
+        return;
+    }
+
+    Media::Animation::Storyboard storyboard;
+    Input::ManipulationDeltaRoutedEventArgs deltaArgs;
+    Input::ManipulationCompletedRoutedEventArgs completedArgs;
+    Input::ManipulationStartedRoutedEventArgs startedArgs;
+
+    std::vector<void*> hookedTargets;
+
+    HookVtableSlot(GetVtable(storyboard), kStoryboardBeginSlot,
+                   Storyboard_Begin_Hook, &Storyboard_Begin_Original,
+                   &hookedTargets);
+
+    void** vtable = GetVtable(deltaArgs);
+    HookVtableSlot(vtable, kManipulationDeltaArgsDeltaSlot,
+                   ManipulationDeltaGetterHook<0>::Hook,
+                   &ManipulationDeltaGetterHook<0>::original, &hookedTargets);
+    HookVtableSlot(vtable, kManipulationDeltaArgsCumulativeSlot,
+                   ManipulationDeltaGetterHook<1>::Hook,
+                   &ManipulationDeltaGetterHook<1>::original, &hookedTargets);
+    HookVtableSlot(vtable, kManipulationDeltaArgsVelocitiesSlot,
+                   ManipulationVelocitiesGetterHook<0>::Hook,
+                   &ManipulationVelocitiesGetterHook<0>::original,
+                   &hookedTargets);
+
+    vtable = GetVtable(completedArgs);
+    HookVtableSlot(vtable, kManipulationCompletedArgsCumulativeSlot,
+                   ManipulationDeltaGetterHook<2>::Hook,
+                   &ManipulationDeltaGetterHook<2>::original, &hookedTargets);
+    HookVtableSlot(vtable, kManipulationCompletedArgsVelocitiesSlot,
+                   ManipulationVelocitiesGetterHook<1>::Hook,
+                   &ManipulationVelocitiesGetterHook<1>::original,
+                   &hookedTargets);
+
+    HookVtableSlot(GetVtable(startedArgs),
+                   kManipulationStartedArgsCumulativeSlot,
+                   ManipulationDeltaGetterHook<3>::Hook,
+                   &ManipulationDeltaGetterHook<3>::original, &hookedTargets);
+
+    g_xamlHooksInstalled = true;
+    Wh_ApplyHookOperations();
+}
+
 // Windows bottom-aligns the toasts in a window that is taller than them, with a
 // larger gap above the toast than below it. Aligning them to the placement
 // mirrors that gap, so the toast keeps the native distance from the screen edge
@@ -964,6 +1261,9 @@ void ApplyToastXamlTweaks() {
         Wh_Log(L"Failed to find the toast center elements");
         return;
     }
+
+    g_notificationThreadId = GetCurrentThreadId();
+    EnsureXamlHooks();
 
     ApplyVerticalAlignment(toastCenterView);
     RemoveLegacyRotation(toastCenterGrid);
