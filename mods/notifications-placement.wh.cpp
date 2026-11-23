@@ -121,13 +121,18 @@ number when both are configured.
 
 #undef GetCurrentTime
 
+#include <winrt/Windows.Foundation.Collections.h>
+#include <winrt/Windows.UI.Xaml.Media.Animation.h>
 #include <winrt/Windows.UI.Xaml.Media.h>
 #include <winrt/Windows.UI.Xaml.h>
 #include <winrt/base.h>
 
 #include <atomic>
+#include <cmath>
 #include <functional>
+#include <optional>
 #include <string>
+#include <string_view>
 #include <unordered_set>
 #include <vector>
 
@@ -174,7 +179,8 @@ Target g_target;
 
 bool g_inCToastCenterExperienceManager_PositionView;
 
-bool g_customAnimationDirectionApplied;
+// Only accessed on the thread of the notification window.
+std::optional<VerticalAlignment> g_originalToastCenterViewAlignment;
 
 WINUSERAPI UINT WINAPI GetDpiForWindow(HWND hwnd);
 typedef enum MONITOR_DPI_TYPE {
@@ -644,90 +650,328 @@ HMONITOR WINAPI MonitorFromPoint_Hook(POINT pt, DWORD dwFlags) {
     return MonitorFromPoint_Original(pt, dwFlags);
 }
 
-void UpdateAnimationDirectionStyle() {
-    int angle = 0;
+// Toasts slide along the X axis of MainGrid's CompositeTransform. The slide
+// animations are storyboards of the transitions of the StateMachine visual
+// state group: they're retargeted to the chosen direction, so layout, clipping,
+// shadows and dragging stay native.
+constexpr WCHAR kTranslateXProperty[] =
+    L"(UIElement.RenderTransform).(CompositeTransform.TranslateX)";
+constexpr WCHAR kTranslateYProperty[] =
+    L"(UIElement.RenderTransform).(CompositeTransform.TranslateY)";
 
-    switch (g_unloading ? AnimationDirection::fromRight
-                        : g_settings.animationDirection) {
-        case AnimationDirection::automatic:
-            if (g_settings.horizontalPlacement == HorizontalPlacement::center) {
-                if (g_settings.verticalPlacement == VerticalPlacement::bottom) {
-                    angle = 90;
-                } else {
-                    angle = -90;
-                }
-            } else if (g_settings.horizontalPlacement ==
-                       HorizontalPlacement::left) {
-                angle = 180;
-            }
-            break;
+constexpr WCHAR kDraggingState[] = L"Dragging";
+constexpr WCHAR kDismissedState[] = L"Dismissed";
 
-        case AnimationDirection::fromLeft:
-            angle = 180;
-            break;
-
-        case AnimationDirection::fromRight:
-            break;
-
-        case AnimationDirection::fromTop:
-            angle = -90;
-            break;
-
-        case AnimationDirection::fromBottom:
-            angle = 90;
-            break;
+AnimationDirection GetAnimationDirection() {
+    if (g_unloading) {
+        return AnimationDirection::fromRight;
     }
 
-    if (!g_customAnimationDirectionApplied && !angle) {
+    if (g_settings.animationDirection != AnimationDirection::automatic) {
+        return g_settings.animationDirection;
+    }
+
+    if (g_settings.horizontalPlacement == HorizontalPlacement::center) {
+        return g_settings.verticalPlacement == VerticalPlacement::bottom
+                   ? AnimationDirection::fromBottom
+                   : AnimationDirection::fromTop;
+    }
+
+    if (g_settings.horizontalPlacement == HorizontalPlacement::left) {
+        return AnimationDirection::fromLeft;
+    }
+
+    return AnimationDirection::fromRight;
+}
+
+// The states whose transitions slide the toast in (Appearing) or out (timeout,
+// close button, click).
+bool IsSlideState(std::wstring_view state) {
+    return state == L"Appearing" || state == kDismissedState ||
+           state == L"Decayed" || state.starts_with(L"Activated");
+}
+
+bool IsTranslateProperty(const winrt::hstring& property) {
+    return property == kTranslateXProperty || property == kTranslateYProperty;
+}
+
+bool IsVerticalDirection(AnimationDirection direction) {
+    return direction == AnimationDirection::fromTop ||
+           direction == AnimationDirection::fromBottom;
+}
+
+// The sign of a translation away from the screen center, toward the edge the
+// toast slides in from.
+double DirectionSign(AnimationDirection direction) {
+    return direction == AnimationDirection::fromLeft ||
+                   direction == AnimationDirection::fromTop
+               ? -1
+               : 1;
+}
+
+// Native slide values are non-negative, so a value's magnitude is its native
+// value. This makes retargeting repeatable and lets fromRight restore it.
+void RetargetSlideAnimations(const Media::Animation::Storyboard& storyboard,
+                             AnimationDirection direction) {
+    double sign = DirectionSign(direction);
+    PCWSTR targetProperty = IsVerticalDirection(direction)
+                                ? kTranslateYProperty
+                                : kTranslateXProperty;
+
+    for (const auto& timeline : storyboard.Children()) {
+        winrt::hstring property =
+            Media::Animation::Storyboard::GetTargetProperty(timeline);
+        if (!IsTranslateProperty(property)) {
+            continue;
+        }
+
+        auto animation =
+            timeline.try_as<Media::Animation::DoubleAnimationUsingKeyFrames>();
+        if (!animation) {
+            continue;
+        }
+
+        if (property != targetProperty) {
+            Media::Animation::Storyboard::SetTargetProperty(timeline,
+                                                            targetProperty);
+        }
+
+        for (const auto& keyFrame : animation.KeyFrames()) {
+            double value = std::abs(keyFrame.Value()) * sign;
+            if (keyFrame.Value() != value) {
+                keyFrame.Value(value);
+            }
+        }
+    }
+}
+
+// Copies the slide animations of a storyboard onto the native X axis.
+Media::Animation::Storyboard CloneAsHorizontalSlide(
+    const Media::Animation::Storyboard& source,
+    const FrameworkElement& target) {
+    Media::Animation::Storyboard storyboard;
+
+    for (const auto& timeline : source.Children()) {
+        if (!IsTranslateProperty(
+                Media::Animation::Storyboard::GetTargetProperty(timeline))) {
+            continue;
+        }
+
+        auto sourceAnimation =
+            timeline.try_as<Media::Animation::DoubleAnimationUsingKeyFrames>();
+        if (!sourceAnimation) {
+            continue;
+        }
+
+        Media::Animation::DoubleAnimationUsingKeyFrames animation;
+        for (const auto& sourceKeyFrame : sourceAnimation.KeyFrames()) {
+            Media::Animation::DoubleKeyFrame keyFrame{nullptr};
+
+            if (auto sourceSplineKeyFrame =
+                    sourceKeyFrame
+                        .try_as<Media::Animation::SplineDoubleKeyFrame>()) {
+                Media::Animation::SplineDoubleKeyFrame splineKeyFrame;
+                if (auto sourceKeySpline = sourceSplineKeyFrame.KeySpline()) {
+                    Media::Animation::KeySpline keySpline;
+                    keySpline.ControlPoint1(sourceKeySpline.ControlPoint1());
+                    keySpline.ControlPoint2(sourceKeySpline.ControlPoint2());
+                    splineKeyFrame.KeySpline(keySpline);
+                }
+                keyFrame = splineKeyFrame;
+            } else if (sourceKeyFrame.try_as<
+                           Media::Animation::DiscreteDoubleKeyFrame>()) {
+                keyFrame = Media::Animation::DiscreteDoubleKeyFrame();
+            } else {
+                // Linear, and the fallback for any other key frame type.
+                keyFrame = Media::Animation::LinearDoubleKeyFrame();
+            }
+
+            keyFrame.KeyTime(sourceKeyFrame.KeyTime());
+            keyFrame.Value(std::abs(sourceKeyFrame.Value()));
+            animation.KeyFrames().Append(keyFrame);
+        }
+
+        Media::Animation::Storyboard::SetTarget(animation, target);
+        Media::Animation::Storyboard::SetTargetProperty(animation,
+                                                        kTranslateXProperty);
+        storyboard.Children().Append(animation);
+    }
+
+    return storyboard;
+}
+
+// A drag moves the toast to the right with the pointer, so a dragged toast
+// keeps the native horizontal exit. A transition with both From and To takes
+// precedence over the native one that only has To.
+void UpdateDragDismissTransition(
+    const VisualStateGroup& group,
+    const FrameworkElement& mainGrid,
+    const Media::Animation::Storyboard& dismissedStoryboard,
+    bool needed) {
+    auto transitions = group.Transitions();
+    for (uint32_t i = 0; i < transitions.Size(); i++) {
+        auto transition = transitions.GetAt(i);
+        if (transition.From() == kDraggingState &&
+            transition.To() == kDismissedState) {
+            if (!needed) {
+                transitions.RemoveAt(i);
+            }
+            return;
+        }
+    }
+
+    if (!needed || !dismissedStoryboard) {
         return;
     }
 
+    VisualTransition transition;
+    transition.From(kDraggingState);
+    transition.To(kDismissedState);
+    transition.Storyboard(CloneAsHorizontalSlide(dismissedStoryboard, mainGrid));
+    transitions.Append(transition);
+}
+
+void ApplySlideDirection(const FrameworkElement& mainGrid,
+                         AnimationDirection direction) {
+    for (const auto& group : VisualStateManager::GetVisualStateGroups(mainGrid)) {
+        if (group.Name() != L"StateMachine") {
+            continue;
+        }
+
+        Media::Animation::Storyboard dismissedStoryboard{nullptr};
+
+        for (const auto& transition : group.Transitions()) {
+            if (!transition.From().empty()) {
+                continue;
+            }
+
+            winrt::hstring state = transition.To();
+            if (!IsSlideState(state)) {
+                continue;
+            }
+
+            auto storyboard = transition.Storyboard();
+            if (!storyboard) {
+                continue;
+            }
+
+            if (state == kDismissedState) {
+                dismissedStoryboard = storyboard;
+            }
+
+            // Fails while the storyboard runs, the next call retries.
+            try {
+                RetargetSlideAnimations(storyboard, direction);
+            } catch (const winrt::hresult_error& e) {
+                Wh_Log(L"Retargeting %s failed: %08X", state.c_str(),
+                       e.code().value);
+            }
+        }
+
+        UpdateDragDismissTransition(group, mainGrid, dismissedStoryboard,
+                                    direction != AnimationDirection::fromRight);
+    }
+}
+
+bool IsToastView(const FrameworkElement& element) {
+    auto name = element.Name();
+    return name.starts_with(L"FlexibleNormalToastView") ||
+           name.starts_with(L"FlexiblePriorityToastView");
+}
+
+// Runs on the thread of the notification window.
+bool FindToastCenterElements(FrameworkElement* toastCenterView,
+                             FrameworkElement* toastCenterGrid) {
     auto window = Window::Current();
     if (!window) {
         Wh_Log(L"Failed to get current window");
-        return;
+        return false;
     }
 
-    FrameworkElement windowContent = window.Content().as<FrameworkElement>();
-    if (!windowContent) {
+    FrameworkElement child = window.Content().try_as<FrameworkElement>();
+    if (!child) {
         Wh_Log(L"Failed to get window content");
-        return;
+        return false;
     }
 
-    FrameworkElement launcherFrame = nullptr;
-
-    FrameworkElement child = windowContent;
-    if ((child = FindChildByClassName(
-             child, L"Windows.UI.Xaml.Controls.ContentPresenter")) &&
-        (child =
-             FindChildByClassName(child, L"ActionCenter.ToastCenterPage")) &&
-        (child = FindChildByName(child, L"ToastCenterMainGrid")) &&
-        (child = FindChildByName(child, L"ToastCenterView")) &&
-        (child = FindChildByName(child, L"ToastCenterScrollViewer")) &&
-        (child = FindChildByName(child, L"Root")) &&
-        (child =
-             FindChildByClassName(child, L"Windows.UI.Xaml.Controls.Grid")) &&
-        (child = FindChildByName(child, L"ScrollContentPresenter")) &&
-        (child = FindChildByName(child, L"ToastCenterGrid"))) {
-        launcherFrame = child;
+    if (!(child = FindChildByClassName(
+              child, L"Windows.UI.Xaml.Controls.ContentPresenter")) ||
+        !(child =
+              FindChildByClassName(child, L"ActionCenter.ToastCenterPage")) ||
+        !(child = FindChildByName(child, L"ToastCenterMainGrid")) ||
+        !(child = FindChildByName(child, L"ToastCenterView"))) {
+        return false;
     }
 
-    if (!launcherFrame) {
-        Wh_Log(L"Failed to find launcher frame");
-        return;
+    *toastCenterView = child;
+
+    if (!(child = FindChildByName(child, L"ToastCenterScrollViewer")) ||
+        !(child = FindChildByName(child, L"Root")) ||
+        !(child =
+              FindChildByClassName(child, L"Windows.UI.Xaml.Controls.Grid")) ||
+        !(child = FindChildByName(child, L"ScrollContentPresenter")) ||
+        !(child = FindChildByName(child, L"ToastCenterGrid"))) {
+        return false;
     }
 
-    auto origin = winrt::Windows::Foundation::Point{0.5, 0.5};
+    *toastCenterGrid = child;
+    return true;
+}
 
-    bool foundAnyRootGridContent = false;
-    EnumChildElements(launcherFrame, [&](FrameworkElement toastView) {
-        auto name = toastView.Name();
-        if (name.empty()) {
-            return false;  // continue enumeration
+// Windows bottom-aligns the toasts in a window that is taller than them, with a
+// larger gap above the toast than below it. Aligning them to the placement
+// mirrors that gap, so the toast keeps the native distance from the screen edge
+// and the spare room stays on the side the shadow falls.
+void ApplyVerticalAlignment(const FrameworkElement& toastCenterView) {
+    if (!g_originalToastCenterViewAlignment) {
+        g_originalToastCenterViewAlignment = toastCenterView.VerticalAlignment();
+    }
+
+    VerticalAlignment alignment = *g_originalToastCenterViewAlignment;
+    if (!g_unloading) {
+        switch (g_settings.verticalPlacement) {
+            case VerticalPlacement::bottom:
+                break;
+
+            case VerticalPlacement::top:
+                alignment = VerticalAlignment::Top;
+                break;
+
+            case VerticalPlacement::center:
+                alignment = VerticalAlignment::Center;
+                break;
         }
+    }
 
-        if (!name.starts_with(L"FlexibleNormalToastView") &&
-            !name.starts_with(L"FlexiblePriorityToastView")) {
+    if (toastCenterView.VerticalAlignment() != alignment) {
+        toastCenterView.VerticalAlignment(alignment);
+    }
+}
+
+// Versions up to 1.2.4 rotated these elements to change the animation
+// direction and didn't undo it on unload.
+void RemoveLegacyRotation(const FrameworkElement& element) {
+    if (element && element.RenderTransform().try_as<Media::RotateTransform>()) {
+        element.RenderTransform(nullptr);
+    }
+}
+
+// Runs on the thread of the notification window.
+void ApplyToastXamlTweaks() {
+    FrameworkElement toastCenterView = nullptr;
+    FrameworkElement toastCenterGrid = nullptr;
+    if (!FindToastCenterElements(&toastCenterView, &toastCenterGrid)) {
+        Wh_Log(L"Failed to find the toast center elements");
+        return;
+    }
+
+    ApplyVerticalAlignment(toastCenterView);
+    RemoveLegacyRotation(toastCenterGrid);
+
+    AnimationDirection direction = GetAnimationDirection();
+
+    EnumChildElements(toastCenterGrid, [&](FrameworkElement toastView) {
+        if (!IsToastView(toastView)) {
             return false;  // continue enumeration
         }
 
@@ -736,46 +980,72 @@ void UpdateAnimationDirectionStyle() {
             return false;  // continue enumeration
         }
 
-        if (FrameworkElement revealGrid =
-                FindChildByName(mainGrid, L"RevealGrid")) {
-            Wh_Log(L"Applying transform to toast view %s", name.c_str());
+        RemoveLegacyRotation(FindChildByName(mainGrid, L"RevealGrid"));
+        RemoveLegacyRotation(FindChildByName(mainGrid, L"RevealGrid2"));
 
-            Media::RotateTransform transform;
-            transform.Angle(-angle);
-            revealGrid.RenderTransform(transform);
-            revealGrid.RenderTransformOrigin(origin);
+        ApplySlideDirection(mainGrid, direction);
 
-            foundAnyRootGridContent = true;
-        }
-
-        // Older Windows 11 versions have both RevealGrid and RevealGrid2
-        // (before ~Jul 2026). Newer builds only have RevealGrid.
-        if (FrameworkElement revealGrid2 =
-                FindChildByName(mainGrid, L"RevealGrid2")) {
-            Wh_Log(L"Applying transform to toast view %s", name.c_str());
-
-            Media::RotateTransform transform;
-            transform.Angle(-angle);
-            revealGrid2.RenderTransform(transform);
-            revealGrid2.RenderTransformOrigin(origin);
-
-            foundAnyRootGridContent = true;
-        }
-
-        return false;  // continue enumeration to find all matching children
+        return false;  // continue enumeration to handle all toast slots
     });
+}
 
-    if (!foundAnyRootGridContent) {
-        Wh_Log(L"Failed to find root grid content");
-        return;
+void ApplyToastXamlTweaksSafe() {
+    try {
+        ApplyToastXamlTweaks();
+    } catch (const winrt::hresult_error& e) {
+        Wh_Log(L"Applying the toast tweaks failed: %08X", e.code().value);
+    }
+}
+
+using RunFromWindowThreadProc_t = void (*)(void* param);
+
+bool RunFromWindowThread(HWND hWnd,
+                         RunFromWindowThreadProc_t proc,
+                         void* procParam) {
+    static const UINT runFromWindowThreadRegisteredMsg =
+        RegisterWindowMessage(L"Windhawk_RunFromWindowThread_" WH_MOD_ID);
+
+    struct RUN_FROM_WINDOW_THREAD_PARAM {
+        RunFromWindowThreadProc_t proc;
+        void* procParam;
+    };
+
+    DWORD dwThreadId = GetWindowThreadProcessId(hWnd, nullptr);
+    if (dwThreadId == 0) {
+        return false;
     }
 
-    Media::RotateTransform transform;
-    transform.Angle(angle);
-    launcherFrame.RenderTransform(transform);
-    launcherFrame.RenderTransformOrigin(origin);
+    if (dwThreadId == GetCurrentThreadId()) {
+        proc(procParam);
+        return true;
+    }
 
-    g_customAnimationDirectionApplied = (angle != 0);
+    HHOOK hook = SetWindowsHookEx(
+        WH_CALLWNDPROC,
+        [](int nCode, WPARAM wParam, LPARAM lParam) -> LRESULT {
+            if (nCode == HC_ACTION) {
+                const CWPSTRUCT* cwp = (const CWPSTRUCT*)lParam;
+                if (cwp->message == runFromWindowThreadRegisteredMsg) {
+                    RUN_FROM_WINDOW_THREAD_PARAM* param =
+                        (RUN_FROM_WINDOW_THREAD_PARAM*)cwp->lParam;
+                    param->proc(param->procParam);
+                }
+            }
+            return CallNextHookEx(nullptr, nCode, wParam, lParam);
+        },
+        nullptr, dwThreadId);
+    if (!hook) {
+        return false;
+    }
+
+    RUN_FROM_WINDOW_THREAD_PARAM param;
+    param.proc = proc;
+    param.procParam = procParam;
+    SendMessage(hWnd, runFromWindowThreadRegisteredMsg, 0, (LPARAM)&param);
+
+    UnhookWindowsHookEx(hook);
+
+    return true;
 }
 
 using SetWindowPos_t = decltype(&SetWindowPos);
@@ -827,7 +1097,7 @@ BOOL WINAPI SetWindowPos_Hook(HWND hWnd,
 
     if (g_target == Target::ShellExperienceHost &&
         GetWindowThreadProcessId(hWnd, nullptr) == GetCurrentThreadId()) {
-        UpdateAnimationDirectionStyle();
+        ApplyToastXamlTweaksSafe();
     }
 
     return ret;
@@ -853,6 +1123,10 @@ void ApplySettings() {
 
         SetWindowPos_Original(hCoreWnd, nullptr, x, y, cx, cy,
                               SWP_NOZORDER | SWP_NOACTIVATE);
+
+        // XAML objects can only be accessed from the window's own thread.
+        RunFromWindowThread(
+            hCoreWnd, [](void*) { ApplyToastXamlTweaksSafe(); }, nullptr);
     }
 }
 
