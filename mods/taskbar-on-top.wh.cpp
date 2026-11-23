@@ -2,7 +2,7 @@
 // @id              taskbar-on-top
 // @name            Taskbar on top for Windows 11
 // @description     Moves the Windows 11 taskbar to the top of the screen
-// @version         1.3.1
+// @version         1.4
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
@@ -28,6 +28,10 @@
 # Taskbar on top for Windows 11
 
 Moves the Windows 11 taskbar to the top of the screen.
+
+With the native taskbar, the location can also be set for specific secondary
+monitors, e.g. a taskbar on the left of a portrait monitor and on the bottom of
+the other monitors.
 
 ## Known limitations
 
@@ -57,6 +61,32 @@ Moves the Windows 11 taskbar to the top of the screen.
   - bottom: Bottom
   - left: Left
   - right: Right
+- monitorLocations:
+  - - monitor: 0
+      $name: Monitor
+      $description: >-
+        The monitor number (1-based), or 0 to skip this entry. Used only if the
+        monitor interface name is empty.
+    - monitorInterfaceName: ""
+      $name: Monitor interface name
+      $description: >-
+        If not empty, the given monitor interface name (can also be an interface
+        name substring) will be used instead of the monitor number. Can be
+        useful if the monitor numbers change often. To see all available
+        interface names, set this field to any non-empty string, enable mod
+        logs, and look for "Found display device" messages.
+    - location: bottom
+      $name: Taskbar location
+      $options:
+      - top: Top
+      - bottom: Bottom
+      - left: Left
+      - right: Right
+  $name: Taskbar location on specific secondary monitors
+  $description: >-
+    Overrides the taskbar location on secondary monitors for the given monitors.
+    Only supported with the native taskbar. Doesn't apply to the monitor of the
+    primary taskbar.
 - runningIndicatorsOnTop: false
   $name: Running indicators on top
   $description: Show running indicators above the taskbar icons.
@@ -100,6 +130,8 @@ Moves the Windows 11 taskbar to the top of the screen.
 #include <list>
 #include <mutex>
 #include <optional>
+#include <string>
+#include <unordered_map>
 #include <unordered_set>
 #include <vector>
 
@@ -120,9 +152,16 @@ enum class TaskbarLocation {
     right,
 };
 
+struct MonitorLocation {
+    int monitor;
+    WindhawkUtils::StringSetting monitorInterfaceName;
+    TaskbarLocation location;
+};
+
 struct {
     TaskbarLocation taskbarLocation;
     TaskbarLocation taskbarLocationSecondary;
+    std::vector<MonitorLocation> monitorLocations;
     bool runningIndicatorsOnTop;
     bool startMenuAnimationAdjust;
     bool useNativeTaskbar;
@@ -442,15 +481,192 @@ FrameworkElement FindChildByClassName(FrameworkElement element,
     });
 }
 
+bool IsVerticalTaskbarLocation(TaskbarLocation taskbarLocation) {
+    return taskbarLocation == TaskbarLocation::left ||
+           taskbarLocation == TaskbarLocation::right;
+}
+
 // Left and right are only supported with the native taskbar on top.
 TaskbarLocation GetTaskbarLocationSecondary() {
-    if ((g_settings.taskbarLocationSecondary == TaskbarLocation::left ||
-         g_settings.taskbarLocationSecondary == TaskbarLocation::right) &&
+    if (IsVerticalTaskbarLocation(g_settings.taskbarLocationSecondary) &&
         GetNativeTaskbarOnTop() != NativeTaskbarOnTop::available) {
         return TaskbarLocation::bottom;
     }
 
     return g_settings.taskbarLocationSecondary;
+}
+
+HMONITOR GetMonitorById(int monitorId) {
+    HMONITOR monitorResult = nullptr;
+    int currentMonitorId = 0;
+
+    auto monitorEnumProc = [&](HMONITOR hMonitor) -> BOOL {
+        if (currentMonitorId == monitorId) {
+            monitorResult = hMonitor;
+            return FALSE;
+        }
+        currentMonitorId++;
+        return TRUE;
+    };
+
+    EnumDisplayMonitors(
+        nullptr, nullptr,
+        [](HMONITOR hMonitor, HDC hdc, LPRECT lprcMonitor,
+           LPARAM dwData) -> BOOL {
+            auto& proc = *reinterpret_cast<decltype(monitorEnumProc)*>(dwData);
+            return proc(hMonitor);
+        },
+        reinterpret_cast<LPARAM>(&monitorEnumProc));
+
+    return monitorResult;
+}
+
+// The taskbar location is queried often, so the interface names are cached by
+// display device name.
+std::mutex g_monitorInterfaceNamesMutex;
+std::unordered_map<std::wstring, std::wstring> g_monitorInterfaceNames;
+
+std::wstring GetMonitorInterfaceName(PCWSTR device) {
+    // Only explorer.exe is notified of display changes, see
+    // TaskbarWndProcPreProcess.
+    bool useCache = g_target == Target::Explorer;
+    if (useCache) {
+        std::lock_guard<std::mutex> guard(g_monitorInterfaceNamesMutex);
+        auto it = g_monitorInterfaceNames.find(device);
+        if (it != g_monitorInterfaceNames.end()) {
+            return it->second;
+        }
+    }
+
+    std::wstring interfaceName;
+    DISPLAY_DEVICE displayDevice = {
+        .cb = sizeof(displayDevice),
+    };
+    if (EnumDisplayDevices(device, 0, &displayDevice,
+                           EDD_GET_DEVICE_INTERFACE_NAME)) {
+        Wh_Log(L"Found display device %s, interface name: %s", device,
+               displayDevice.DeviceID);
+        interfaceName = displayDevice.DeviceID;
+    }
+
+    if (useCache) {
+        std::lock_guard<std::mutex> guard(g_monitorInterfaceNamesMutex);
+        g_monitorInterfaceNames[device] = interfaceName;
+    }
+
+    return interfaceName;
+}
+
+void ClearMonitorInterfaceNames() {
+    std::lock_guard<std::mutex> guard(g_monitorInterfaceNamesMutex);
+    g_monitorInterfaceNames.clear();
+}
+
+HMONITOR GetMonitorByInterfaceNameSubstr(PCWSTR interfaceNameSubstr) {
+    HMONITOR monitorResult = nullptr;
+
+    auto monitorEnumProc = [&](HMONITOR hMonitor) -> BOOL {
+        MONITORINFOEX monitorInfo = {};
+        monitorInfo.cbSize = sizeof(monitorInfo);
+
+        if (GetMonitorInfo(hMonitor, &monitorInfo) &&
+            GetMonitorInterfaceName(monitorInfo.szDevice)
+                .contains(interfaceNameSubstr)) {
+            monitorResult = hMonitor;
+            return FALSE;
+        }
+        return TRUE;
+    };
+
+    EnumDisplayMonitors(
+        nullptr, nullptr,
+        [](HMONITOR hMonitor, HDC hdc, LPRECT lprcMonitor,
+           LPARAM dwData) -> BOOL {
+            auto& proc = *reinterpret_cast<decltype(monitorEnumProc)*>(dwData);
+            return proc(hMonitor);
+        },
+        reinterpret_cast<LPARAM>(&monitorEnumProc));
+
+    return monitorResult;
+}
+
+// Per-monitor locations are only supported with the native taskbar on top,
+// which lays out each secondary taskbar for its own location.
+bool HasMonitorLocations() {
+    return !g_settings.monitorLocations.empty() &&
+           GetNativeTaskbarOnTop() == NativeTaskbarOnTop::available;
+}
+
+TaskbarLocation GetTaskbarLocationSecondaryForMonitor(HMONITOR monitor) {
+    if (monitor && HasMonitorLocations()) {
+        for (const auto& config : g_settings.monitorLocations) {
+            HMONITOR configMonitor = nullptr;
+            if (*config.monitorInterfaceName.get()) {
+                configMonitor = GetMonitorByInterfaceNameSubstr(
+                    config.monitorInterfaceName.get());
+            } else if (config.monitor >= 1) {
+                configMonitor = GetMonitorById(config.monitor - 1);
+            }
+
+            if (configMonitor == monitor) {
+                return config.location;
+            }
+        }
+    }
+
+    return GetTaskbarLocationSecondary();
+}
+
+// Whether any secondary taskbar can be laid out vertically.
+bool HasVerticalSecondaryTaskbarLocation() {
+    if (IsVerticalTaskbarLocation(GetTaskbarLocationSecondary())) {
+        return true;
+    }
+
+    if (HasMonitorLocations()) {
+        for (const auto& config : g_settings.monitorLocations) {
+            if (IsVerticalTaskbarLocation(config.location)) {
+                return true;
+            }
+        }
+    }
+
+    return false;
+}
+
+// Identifies the secondary taskbar locations the settings result in, to know
+// whether the secondary taskbars need to be laid out again.
+std::wstring GetSecondaryTaskbarLocationsKey() {
+    std::wstring key =
+        std::to_wstring(static_cast<int>(GetTaskbarLocationSecondary()));
+    if (HasMonitorLocations()) {
+        for (const auto& config : g_settings.monitorLocations) {
+            key += L'|';
+            key += std::to_wstring(config.monitor);
+            key += L',';
+            key += config.monitorInterfaceName.get();
+            key += L',';
+            key += std::to_wstring(static_cast<int>(config.location));
+        }
+    }
+
+    return key;
+}
+
+// The monitor a taskbar window is on. The taskbar window property is set when
+// the taskbar moves to a monitor, and might not be set yet while the taskbar is
+// created.
+HMONITOR GetTaskbarWindowMonitor(HWND hWnd) {
+    if (auto monitor = (HMONITOR)GetProp(hWnd, L"TaskbarMonitor")) {
+        MONITORINFO monitorInfo{
+            .cbSize = sizeof(MONITORINFO),
+        };
+        if (GetMonitorInfo(monitor, &monitorInfo)) {
+            return monitor;
+        }
+    }
+
+    return MonitorFromWindow(hWnd, MONITOR_DEFAULTTONEAREST);
 }
 
 // The primary taskbar isn't necessarily on the primary monitor, e.g. with the
@@ -477,13 +693,14 @@ TaskbarLocation GetTaskbarLocationForMonitor(HMONITOR monitor) {
         return TaskbarLocation::bottom;
     }
 
-    TaskbarLocation taskbarLocationSecondary = GetTaskbarLocationSecondary();
-    if (g_settings.taskbarLocation == taskbarLocationSecondary) {
+    if (!HasMonitorLocations() &&
+        g_settings.taskbarLocation == GetTaskbarLocationSecondary()) {
         return g_settings.taskbarLocation;
     }
 
-    return monitor == GetPrimaryTaskbarMonitor() ? g_settings.taskbarLocation
-                                                 : taskbarLocationSecondary;
+    return monitor == GetPrimaryTaskbarMonitor()
+               ? g_settings.taskbarLocation
+               : GetTaskbarLocationSecondaryForMonitor(monitor);
 }
 
 using TrayUI_GetStuckRectForMonitor_t = bool(WINAPI*)(void* pThis,
@@ -703,6 +920,22 @@ std::atomic<bool> g_hidingSecondaryTaskbars;
 // what's restored when the mod is unloaded.
 thread_local bool g_inTrayUI__GetSaveStateAndInitRects;
 thread_local bool g_inCSecondaryTray__LoadSettings;
+// The secondary taskbar window being loaded, if known.
+thread_local HWND g_cSecondaryTray__LoadSettingsWnd;
+// The secondary taskbar window whose window procedure is running.
+thread_local HWND g_cSecondaryTrayWndProcWnd;
+
+// Secondary taskbar objects and their windows, recorded by the window
+// procedure. Destroyed objects aren't removed, since an address is recorded
+// again when a new object reuses it.
+std::mutex g_secondaryTrayWindowsMutex;
+std::unordered_map<void*, HWND> g_secondaryTrayWindows;
+
+HWND GetSecondaryTrayWindow(void* secondaryTray) {
+    std::lock_guard<std::mutex> guard(g_secondaryTrayWindowsMutex);
+    auto it = g_secondaryTrayWindows.find(secondaryTray);
+    return it != g_secondaryTrayWindows.end() ? it->second : nullptr;
+}
 
 using TrayUI__GetSaveStateAndInitRects_t = void(WINAPI*)(void* pThis);
 TrayUI__GetSaveStateAndInitRects_t TrayUI__GetSaveStateAndInitRects_Original;
@@ -722,10 +955,17 @@ HRESULT WINAPI CSecondaryTray__LoadSettings_Hook(void* pThis) {
     Wh_Log(L">");
 
     g_inCSecondaryTray__LoadSettings = true;
+    g_cSecondaryTray__LoadSettingsWnd = GetSecondaryTrayWindow(pThis);
+    if (!g_cSecondaryTray__LoadSettingsWnd) {
+        g_cSecondaryTray__LoadSettingsWnd = g_cSecondaryTrayWndProcWnd;
+    }
+    Wh_Log(L"Secondary taskbar window: %08X",
+           (DWORD)(ULONG_PTR)g_cSecondaryTray__LoadSettingsWnd);
 
     HRESULT ret = CSecondaryTray__LoadSettings_Original(pThis);
 
     g_inCSecondaryTray__LoadSettings = false;
+    g_cSecondaryTray__LoadSettingsWnd = nullptr;
 
     return ret;
 }
@@ -768,9 +1008,12 @@ LONG WINAPI RegGetValueW_Hook(HKEY hkey,
     } else if (!g_unloading && ShouldOverrideTaskbarLocation() &&
                hkey == HKEY_CURRENT_USER &&
                _wcsicmp(lpValue, kTaskbarLocationValueName) == 0) {
-        TaskbarLocation taskbarLocation = g_inCSecondaryTray__LoadSettings
-                                              ? GetTaskbarLocationSecondary()
-                                              : g_settings.taskbarLocation;
+        TaskbarLocation taskbarLocation = g_settings.taskbarLocation;
+        if (g_inCSecondaryTray__LoadSettings) {
+            HWND hWnd = g_cSecondaryTray__LoadSettingsWnd;
+            taskbarLocation = GetTaskbarLocationSecondaryForMonitor(
+                hWnd ? GetTaskbarWindowMonitor(hWnd) : nullptr);
+        }
         value = TaskbarLocationToEdge(taskbarLocation);
     } else {
         return ret;
@@ -821,26 +1064,34 @@ DWORD GetStoredTaskbarLocation() {
 // created, so ones created before the mod was loaded aren't included. Destroyed
 // settings aren't removed, since an address is classified again when new
 // settings reuse it.
+// The values are the secondary taskbar windows.
 std::mutex g_secondaryTaskbarSettingsMutex;
-std::unordered_set<void*> g_secondaryTaskbarSettings;
-// The location the secondary taskbars are laid out for, unknown for ones
-// created before the mod was loaded.
-std::optional<TaskbarLocation> g_secondaryTaskbarsLocation;
+std::unordered_map<void*, HWND> g_secondaryTaskbarSettings;
+// The secondary taskbar locations the secondary taskbars are laid out for, see
+// GetSecondaryTaskbarLocationsKey. Unknown for ones created before the mod was
+// loaded.
+std::optional<std::wstring> g_secondaryTaskbarsLocationsKey;
 
-bool IsSecondaryTaskListWndSite(IUnknown* taskListWndSite) {
+// Returns the secondary taskbar window of the site, or nullptr if it's not a
+// secondary taskbar.
+HWND GetSecondaryTaskListWndSiteWindow(IUnknown* taskListWndSite) {
     winrt::com_ptr<IUnknown> site;
     site.copy_from(taskListWndSite);
 
     auto oleWindow = site.try_as<IOleWindow>();
     HWND hWnd;
     if (!oleWindow || FAILED(oleWindow->GetWindow(&hWnd))) {
-        return false;
+        return nullptr;
     }
 
+    HWND hRootWnd = GetAncestor(hWnd, GA_ROOT);
     WCHAR szClassName[32];
-    return GetClassName(GetAncestor(hWnd, GA_ROOT), szClassName,
-                        ARRAYSIZE(szClassName)) &&
-           _wcsicmp(szClassName, L"Shell_SecondaryTrayWnd") == 0;
+    if (!GetClassName(hRootWnd, szClassName, ARRAYSIZE(szClassName)) ||
+        _wcsicmp(szClassName, L"Shell_SecondaryTrayWnd") != 0) {
+        return nullptr;
+    }
+
+    return hRootWnd;
 }
 
 using TaskbarSettings_TaskbarSettings_t = void*(
@@ -854,14 +1105,18 @@ void* WINAPI TaskbarSettings_TaskbarSettings_Hook(void* pThis,
     void* ret = TaskbarSettings_TaskbarSettings_Original(
         pThis, trayComponentHost, taskListWndSite);
 
-    bool secondary =
-        taskListWndSite && IsSecondaryTaskListWndSite(taskListWndSite);
-    Wh_Log(L"Secondary taskbar settings: %d", secondary);
+    HWND secondaryTaskbarWnd =
+        taskListWndSite ? GetSecondaryTaskListWndSiteWindow(taskListWndSite)
+                        : nullptr;
+    Wh_Log(L"Secondary taskbar settings: %08X",
+           (DWORD)(ULONG_PTR)secondaryTaskbarWnd);
+
+    std::wstring locationsKey = GetSecondaryTaskbarLocationsKey();
 
     std::lock_guard<std::mutex> guard(g_secondaryTaskbarSettingsMutex);
-    if (secondary) {
-        g_secondaryTaskbarSettings.insert(pThis);
-        g_secondaryTaskbarsLocation = GetTaskbarLocationSecondary();
+    if (secondaryTaskbarWnd) {
+        g_secondaryTaskbarSettings[pThis] = secondaryTaskbarWnd;
+        g_secondaryTaskbarsLocationsKey = std::move(locationsKey);
     } else {
         g_secondaryTaskbarSettings.erase(pThis);
     }
@@ -869,16 +1124,20 @@ void* WINAPI TaskbarSettings_TaskbarSettings_Hook(void* pThis,
     return ret;
 }
 
-// Returns the previous location.
-std::optional<TaskbarLocation> SetSecondaryTaskbarsLocation(
-    TaskbarLocation taskbarLocation) {
+// Returns the previous key.
+std::optional<std::wstring> SetSecondaryTaskbarsLocationsKey(
+    std::wstring locationsKey) {
     std::lock_guard<std::mutex> guard(g_secondaryTaskbarSettingsMutex);
-    return std::exchange(g_secondaryTaskbarsLocation, taskbarLocation);
+    return std::exchange(g_secondaryTaskbarsLocationsKey,
+                         std::move(locationsKey));
 }
 
-bool IsSecondaryTaskbarSettings(void* taskbarSettings) {
+// Returns the secondary taskbar window of the settings, or nullptr if they're
+// not of a secondary taskbar.
+HWND GetSecondaryTaskbarSettingsWindow(void* taskbarSettings) {
     std::lock_guard<std::mutex> guard(g_secondaryTaskbarSettingsMutex);
-    return g_secondaryTaskbarSettings.contains(taskbarSettings);
+    auto it = g_secondaryTaskbarSettings.find(taskbarSettings);
+    return it != g_secondaryTaskbarSettings.end() ? it->second : nullptr;
 }
 
 // The location the taskbar content is laid out for, which it reads again
@@ -891,9 +1150,11 @@ int WINAPI TaskbarSettings_Location_Hook(void* pThis) {
         return TaskbarSettings_Location_Original(pThis);
     }
 
-    TaskbarLocation taskbarLocation = IsSecondaryTaskbarSettings(pThis)
-                                          ? GetTaskbarLocationSecondary()
-                                          : g_settings.taskbarLocation;
+    TaskbarLocation taskbarLocation = g_settings.taskbarLocation;
+    if (HWND hWnd = GetSecondaryTaskbarSettingsWindow(pThis)) {
+        taskbarLocation = GetTaskbarLocationSecondaryForMonitor(
+            GetTaskbarWindowMonitor(hWnd));
+    }
     return TaskbarLocationToEdge(taskbarLocation);
 }
 
@@ -902,6 +1163,11 @@ void TaskbarWndProcPreProcess(HWND hWnd,
                               WPARAM* wParam,
                               LPARAM* lParam) {
     switch (Msg) {
+        case WM_DISPLAYCHANGE:
+            // Display device names can be assigned to other monitors.
+            ClearMonitorInterfaceNames();
+            break;
+
         case 0x5C3: {
             // On Windows 11 23H2, setting the taskbar location here also causes
             // the start menu to be opened on the left of the screen, even if
@@ -1089,10 +1355,19 @@ LRESULT WINAPI CSecondaryTray_v_WndProc_Hook(void* pThis,
                                              LPARAM lParam) {
     g_hookCallCounter++;
 
+    if (Msg == WM_NCCREATE || Msg == WM_CREATE) {
+        std::lock_guard<std::mutex> guard(g_secondaryTrayWindowsMutex);
+        g_secondaryTrayWindows[pThis] = hWnd;
+    }
+
     TaskbarWndProcPreProcess(hWnd, Msg, &wParam, &lParam);
+
+    HWND prevWndProcWnd = std::exchange(g_cSecondaryTrayWndProcWnd, hWnd);
 
     LRESULT ret =
         CSecondaryTray_v_WndProc_Original(pThis, hWnd, Msg, wParam, lParam);
+
+    g_cSecondaryTrayWndProcWnd = prevWndProcWnd;
 
     ret = TaskbarWndProcPostProcess(hWnd, Msg, wParam, lParam,
                                     /*secondaryTaskbar=*/true, ret);
@@ -1680,6 +1955,8 @@ void* WINAPI IconView_IconView_Hook(void* pThis) {
     return ret;
 }
 
+TaskbarLocation GetTaskbarLocationSecondaryForXamlRoot(XamlRoot xamlRoot);
+
 void UpdateTaskListButton(FrameworkElement taskListButtonElement) {
     auto iconPanelElement =
         FindChildByName(taskListButtonElement, L"IconPanel");
@@ -1687,10 +1964,7 @@ void UpdateTaskListButton(FrameworkElement taskListButtonElement) {
         return;
     }
 
-    TaskbarLocation taskbarLocationSecondary = GetTaskbarLocationSecondary();
-    bool verticalSecondaryTaskbar =
-        taskbarLocationSecondary == TaskbarLocation::left ||
-        taskbarLocationSecondary == TaskbarLocation::right;
+    bool verticalSecondaryTaskbar = HasVerticalSecondaryTaskbarLocation();
 
     bool indicatorsOnTop = false;
     if (!g_unloading &&
@@ -1708,9 +1982,10 @@ void UpdateTaskListButton(FrameworkElement taskListButtonElement) {
                 IsSecondaryTaskbar(taskListButtonElement.XamlRoot());
         }
 
-        TaskbarLocation taskbarLocation = isSecondaryTaskbar
-                                              ? taskbarLocationSecondary
-                                              : g_settings.taskbarLocation;
+        TaskbarLocation taskbarLocation =
+            isSecondaryTaskbar ? GetTaskbarLocationSecondaryForXamlRoot(
+                                     taskListButtonElement.XamlRoot())
+                               : g_settings.taskbarLocation;
 
         // Vertical taskbars place their indicators themselves.
         if (taskbarLocation == TaskbarLocation::left ||
@@ -1816,12 +2091,50 @@ int GetNativeTaskbarBackgroundLocation(FrameworkElement element, int location) {
         return location;
     }
 
+    // With per-monitor locations, all secondary taskbars are created after the
+    // mod is loaded, and each one gives the background its own location.
+    if (HasMonitorLocations()) {
+        return location;
+    }
+
     auto xamlRoot = element.XamlRoot();
     if (!xamlRoot || !IsSecondaryTaskbar(xamlRoot)) {
         return location;
     }
 
     return TaskbarLocationToEdge(GetTaskbarLocationSecondary());
+}
+
+std::optional<TaskbarLocation> EdgeToTaskbarLocation(int edge) {
+    switch (edge) {
+        case ABE_TOP:
+            return TaskbarLocation::top;
+        case ABE_BOTTOM:
+            return TaskbarLocation::bottom;
+        case ABE_LEFT:
+            return TaskbarLocation::left;
+        case ABE_RIGHT:
+            return TaskbarLocation::right;
+    }
+
+    return std::nullopt;
+}
+
+// The location of a secondary taskbar, by the location its background got.
+TaskbarLocation GetTaskbarLocationSecondaryForXamlRoot(XamlRoot xamlRoot) {
+    if (HasMonitorLocations()) {
+        for (const auto& background : g_nativeTaskbarBackgrounds) {
+            auto element = background.element.get();
+            if (element && element.XamlRoot() == xamlRoot) {
+                if (auto location =
+                        EdgeToTaskbarLocation(background.location)) {
+                    return *location;
+                }
+            }
+        }
+    }
+
+    return GetTaskbarLocationSecondary();
 }
 
 NativeTaskbarBackground* FindNativeTaskbarBackground(FrameworkElement element) {
@@ -3437,6 +3750,39 @@ void LoadSettings() {
     }
     Wh_FreeStringSetting(taskbarLocationSecondary);
 
+    ClearMonitorInterfaceNames();
+    g_settings.monitorLocations.clear();
+    for (int i = 0;; i++) {
+        auto monitorInterfaceName = WindhawkUtils::StringSetting::make(
+            L"monitorLocations[%d].monitorInterfaceName", i);
+        int monitor = Wh_GetIntSetting(L"monitorLocations[%d].monitor", i);
+        auto location = WindhawkUtils::StringSetting::make(
+            L"monitorLocations[%d].location", i);
+        if (!*location.get()) {
+            // No more entries.
+            break;
+        }
+
+        if (!*monitorInterfaceName.get() && monitor < 1) {
+            continue;
+        }
+
+        TaskbarLocation taskbarLocation = TaskbarLocation::bottom;
+        if (wcscmp(location.get(), L"top") == 0) {
+            taskbarLocation = TaskbarLocation::top;
+        } else if (wcscmp(location.get(), L"left") == 0) {
+            taskbarLocation = TaskbarLocation::left;
+        } else if (wcscmp(location.get(), L"right") == 0) {
+            taskbarLocation = TaskbarLocation::right;
+        }
+
+        g_settings.monitorLocations.push_back({
+            .monitor = monitor,
+            .monitorInterfaceName = std::move(monitorInterfaceName),
+            .location = taskbarLocation,
+        });
+    }
+
     g_settings.runningIndicatorsOnTop =
         Wh_GetIntSetting(L"runningIndicatorsOnTop");
     g_settings.startMenuAnimationAdjust =
@@ -3491,14 +3837,14 @@ void ApplySettingsNative(HWND hTaskbarWnd) {
     // Make the secondary taskbars reload their location.
     SendMessage(hTaskbarWnd, WM_SETTINGCHANGE, 0, (LPARAM)L"TraySettings");
 
-    // Secondary taskbars only get a vertical layout when they're created.
-    TaskbarLocation taskbarLocationSecondary = GetTaskbarLocationSecondary();
-    auto previousTaskbarLocationSecondary =
-        SetSecondaryTaskbarsLocation(taskbarLocationSecondary);
+    // Secondary taskbars only get a vertical layout when they're created. With
+    // per-monitor locations, they're also created again to have each one laid
+    // out for its own location.
+    std::wstring locationsKey = GetSecondaryTaskbarLocationsKey();
+    auto previousLocationsKey = SetSecondaryTaskbarsLocationsKey(locationsKey);
     if (!g_unloading &&
-        (taskbarLocationSecondary == TaskbarLocation::left ||
-         taskbarLocationSecondary == TaskbarLocation::right) &&
-        previousTaskbarLocationSecondary != taskbarLocationSecondary) {
+        (HasVerticalSecondaryTaskbarLocation() || HasMonitorLocations()) &&
+        previousLocationsKey != locationsKey) {
         RecreateSecondaryTaskbars(hTaskbarWnd);
     }
 }
