@@ -902,6 +902,13 @@ PCWSTR WINAPI CTaskGroup_GetIconResource_Hook(PVOID pThis) {
     return CTaskGroup_GetIconResource_Original(pThis);
 }
 
+bool IsTaskGroupShortcutFileMissing(PVOID taskGroup) {
+    const ITEMIDLIST* idList = CTaskGroup_GetShortcutIDList_Original(taskGroup);
+    WCHAR path[MAX_PATH];
+    return idList && SHGetPathFromIDList(idList, path) &&
+           GetFileAttributes(path) == INVALID_FILE_ATTRIBUTES;
+}
+
 using CTaskBand__UpdateItemIcon_t = void(WINAPI*)(PVOID pThis,
                                                   PVOID taskGroup,
                                                   PVOID taskItem,
@@ -919,8 +926,9 @@ void WINAPI CTaskBand__UpdateItemIcon_Hook(PVOID pThis,
     g_inUpdateItemIcon = false;
 
     // Suffixed groups get their icon from the shortcut of this group, which
-    // might have changed, e.g. if the app changed the shortcut icon.
-    if (!taskItem) {
+    // might have changed, e.g. if the app changed the shortcut icon. When
+    // unpinning, the shortcut file can already be deleted at this point.
+    if (!taskItem && !IsTaskGroupShortcutFileMissing(taskGroup)) {
         PCWSTR appId = CTaskGroup_GetAppID_Original(taskGroup);
         if (appId && !FindAppIdSuffix(appId)) {
             ForEachSuffixedTaskGroup(
@@ -1329,6 +1337,62 @@ using CTaskListWnd_HandleTaskGroupUnpinned_t = void(WINAPI*)(PVOID pThis,
                                                              int flags);
 CTaskListWnd_HandleTaskGroupUnpinned_t
     CTaskListWnd_HandleTaskGroupUnpinned_Original;
+
+// Hands the app ID of an unpinned task group which is about to be removed to a
+// suffixed task group. Without an unsuffixed task group, the suffix is exposed,
+// e.g. it's saved in the shortcut when pinning.
+void HandleUnsuffixedGroupUnpinned(PVOID taskGroup) {
+    if (CTaskGroup_GetNumItems_Original(taskGroup) > 0) {
+        return;
+    }
+
+    PVOID taskBand = GetTaskBand();
+    if (!taskBand) {
+        return;
+    }
+
+    PCWSTR appId = CTaskGroup_GetAppID_Original(taskGroup);
+    if (!appId || FindAppIdSuffix(appId)) {
+        return;
+    }
+
+    winrt::com_ptr<IUnknown> taskGroupMatched =
+        FindSuffixedTaskGroup(taskBand, appId);
+    if (!taskGroupMatched) {
+        return;
+    }
+
+    Wh_Log(L"Swapping app IDs with matched suffixed item");
+
+    std::wstring appIdCopy = appId;
+    CTaskGroup_SetAppID_Original(
+        taskGroup, CTaskGroup_GetAppID_Original(taskGroupMatched.get()));
+    CTaskGroup_SetAppID_Original(taskGroupMatched.get(), appIdCopy.c_str());
+
+    // The group needs the shortcut to be pinned again, and suffixed groups get
+    // their icon from it.
+    if (CTaskGroup_IsImmersiveGroup_Original(taskGroup)) {
+        // A packaged app's shortcut can't be looked up by the app ID.
+        CTaskGroup_SetShortcutIDList_Original(
+            taskGroupMatched.get(),
+            CTaskGroup_GetShortcutIDList_Original(taskGroup));
+    } else {
+        // Called only for its side effect: the group caches the shortcut of its
+        // app ID.
+        ILFree(
+            CTaskGroup_GetApplicationIDList_Original(taskGroupMatched.get()));
+    }
+}
+
+void WINAPI CTaskListWnd_HandleTaskGroupUnpinned_Hook(PVOID pThis,
+                                                      PVOID taskGroup,
+                                                      int flags) {
+    Wh_Log(L">");
+
+    CTaskListWnd_HandleTaskGroupUnpinned_Original(pThis, taskGroup, flags);
+
+    HandleUnsuffixedGroupUnpinned(taskGroup);
+}
 
 void SwapTaskGroupIds(PVOID taskGroup1, PVOID taskGroup2) {
     WCHAR appId1Copy[MAX_PATH] = L"";
@@ -1812,7 +1876,8 @@ bool HookExplorerPatcherSymbols(HMODULE explorerPatcherModule) {
         {R"(?HandleTaskGroupPinned@CTaskListWnd@@UEAAXPEAUITaskGroup@@@Z)",
          &CTaskListWnd_HandleTaskGroupPinned_Original},
         {R"(?HandleTaskGroupUnpinned@CTaskListWnd@@UEAAXPEAUITaskGroup@@W4HandleTaskGroupUnpinnedFlags@@@Z)",
-         &CTaskListWnd_HandleTaskGroupUnpinned_Original},
+         &CTaskListWnd_HandleTaskGroupUnpinned_Original,
+         CTaskListWnd_HandleTaskGroupUnpinned_Hook},
         {// An older variant, see the newer variant below.
          R"(?TaskDestroyed@CTaskListWnd@@UEAAJPEAUITaskGroup@@PEAUITaskItem@@W4TaskDestroyedFlags@@@Z)",
          &CTaskListWnd_TaskDestroyed_Original, CTaskListWnd_TaskDestroyed_Hook,
@@ -2090,6 +2155,7 @@ bool HookTaskbarSymbols() {
                     LR"(public: virtual void __cdecl CTaskListWnd::HandleTaskGroupUnpinned(struct ITaskGroup *,enum HandleTaskGroupUnpinnedFlags))",
                 },
                 &CTaskListWnd_HandleTaskGroupUnpinned_Original,
+                CTaskListWnd_HandleTaskGroupUnpinned_Hook,
             },
             {
                 {LR"(public: virtual long __cdecl CTaskListWnd::TaskCreated(struct ITaskGroup *,struct ITaskItem *))"},
