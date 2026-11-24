@@ -1100,6 +1100,12 @@ float WINAPI GetFloatCornerRadiusForCurrentStyle_Hook(void* pThis) {
 // doesn't include the mod id, so other processes can rely on it.
 constexpr WCHAR kPublishedRadiiProp[] = L"Windhawk_CustomCornerRadius_Radii";
 
+// The window radius of each corner, published only with per-corner radii. Each
+// byte is a radius + 1, in DIPs, capped at 255. From the lowest byte: top-left,
+// top-right, bottom-left, bottom-right. Fits 32 bits for 32-bit processes.
+constexpr WCHAR kPublishedPerCornerRadiiProp[] =
+    L"Windhawk_CustomCornerRadius_PerCornerRadii";
+
 // Set while DWM's notification window is missing, as in a process that's just
 // starting. SetBorderParameters_Hook publishes once it exists.
 std::atomic<bool> g_publishRadiiPending;
@@ -1112,8 +1118,27 @@ void PublishRadii() {
                           : static_cast<int>(g_settings.smallRadius);
     HANDLE value = (HANDLE)(ULONG_PTR)MAKELONG(radius + 1, smallRadius + 1);
 
+    DWORD perCornerRadii = 0;
+    if (g_settings.perCornerRadius) {
+        for (int i = 0; i < kCornerCount; i++) {
+            int cornerRadius =
+                radius + static_cast<int>(g_settings.cornerRadiusDelta[i]);
+            perCornerRadii |=
+                static_cast<DWORD>(std::min(cornerRadius + 1, 255)) << (8 * i);
+        }
+    }
+
     HWND hDwm = FindWindow(L"Dwm", nullptr);
-    g_publishRadiiPending = !hDwm || !SetProp(hDwm, kPublishedRadiiProp, value);
+    bool published = hDwm && SetProp(hDwm, kPublishedRadiiProp, value);
+    if (published) {
+        if (perCornerRadii) {
+            published = SetProp(hDwm, kPublishedPerCornerRadiiProp,
+                                (HANDLE)(ULONG_PTR)perCornerRadii);
+        } else {
+            RemoveProp(hDwm, kPublishedPerCornerRadiiProp);
+        }
+    }
+    g_publishRadiiPending = !published;
 }
 
 using SetBorderParameters_t = long(WINAPI*)(void* pThis,
@@ -1638,6 +1663,7 @@ void Wh_ModUninit() {
     if (HWND hDwm = FindWindow(L"Dwm", nullptr)) {
         SetProp(hDwm, kLoadCountProp, IntToPtr(g_loadCount));
         RemoveProp(hDwm, kPublishedRadiiProp);
+        RemoveProp(hDwm, kPublishedPerCornerRadiiProp);
     }
 
     ClearWindowExclusionProps();
