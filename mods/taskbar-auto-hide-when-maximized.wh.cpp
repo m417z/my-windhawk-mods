@@ -113,6 +113,7 @@ std::atomic<bool> g_explorerPatcherInitialized;
 
 bool g_wasAutoHideProcessed;
 bool g_wasAutoHideDisabled;
+bool g_autoHideBarVerified;
 std::mutex g_winEventHookThreadMutex;
 std::atomic<HANDLE> g_winEventHookThread;
 std::unordered_map<void*, HWND> g_taskbarsKeptShown;
@@ -891,6 +892,48 @@ using CSecondaryTray__Unhide_t = void(WINAPI*)(void* pThis,
                                                int unhideRequest);
 CSecondaryTray__Unhide_t CSecondaryTray__Unhide_Original;
 
+// Explorer stores the auto-hide bar of each edge by monitor handle, and display
+// changes can leave the edge without an owner, or with another taskbar as a
+// stale owner. Returns whether the taskbar is registered.
+bool EnsureAutoHideBarRegistered(HWND hTaskbarWnd, HMONITOR monitor) {
+    MONITORINFO monitorInfo{
+        .cbSize = sizeof(MONITORINFO),
+    };
+    if (!GetMonitorInfo(monitor, &monitorInfo)) {
+        return false;
+    }
+
+    APPBARDATA appBarData{
+        .cbSize = sizeof(APPBARDATA),
+    };
+    if (!SHAppBarMessage(ABM_GETTASKBARPOS, &appBarData)) {
+        return false;
+    }
+
+    appBarData.hWnd = hTaskbarWnd;
+    appBarData.rc = monitorInfo.rcMonitor;
+
+    // The returned window might already be destroyed.
+    HWND hOwnerWnd = (HWND)SHAppBarMessage(ABM_GETAUTOHIDEBAREX, &appBarData);
+    if (hOwnerWnd == hTaskbarWnd) {
+        return true;
+    }
+
+    if (IsWindow(hOwnerWnd) && !IsTaskbarWindow(hOwnerWnd)) {
+        return false;
+    }
+
+    Wh_Log(L"Registering taskbar %08X as the auto-hide bar, was %08X",
+           (DWORD)(DWORD_PTR)hTaskbarWnd, (DWORD)(DWORD_PTR)hOwnerWnd);
+
+    // Registering fails if the edge has an owner. Unregistering removes the
+    // owner even if it's another window.
+    appBarData.lParam = FALSE;
+    SHAppBarMessage(ABM_SETAUTOHIDEBAREX, &appBarData);
+    appBarData.lParam = TRUE;
+    return SHAppBarMessage(ABM_SETAUTOHIDEBAREX, &appBarData);
+}
+
 using TrayUI_WndProc_t = LRESULT(WINAPI*)(void* pThis,
                                           HWND hWnd,
                                           UINT Msg,
@@ -924,7 +967,12 @@ LRESULT WINAPI TrayUI_WndProc_Hook(void* pThis,
     } else if (Msg == kTrayAutoHideCollisionMessage) {
         // Keep auto-hide on while the mod is loaded, and don't show the message
         // box each time turning it on fails.
+        g_autoHideBarVerified = false;
         return 0;
+    } else if (Msg == WM_WINDOWPOSCHANGING) {
+        // Display changes, which can drop the auto-hide bar registration,
+        // position the taskbar.
+        g_autoHideBarVerified = false;
     } else if (Msg == g_getTaskbarRectRegisteredMsg) {
         HMONITOR monitor = (HMONITOR)wParam;
         RECT* rect = (RECT*)lParam;
@@ -958,15 +1006,18 @@ LRESULT WINAPI TrayUI_WndProc_Hook(void* pThis,
             }
         }
 
+        HMONITOR monitor = TrayUI_GetStuckMonitor_Original(pThis);
+
         // Explorer turns auto-hide off if the taskbar can't register as the
         // auto-hide bar for its edge on creation, so check on each update.
         if (!isAutoHideEnabled) {
             Wh_Log(L"Turning auto-hide on");
             SendMessage(hWnd, kHandleTrayPrivateSettingMessage,
                         kTrayPrivateSettingAutoHideSet, TRUE);
+        } else if (!g_autoHideBarVerified) {
+            g_autoHideBarVerified = EnsureAutoHideBarRegistered(hWnd, monitor);
         }
 
-        HMONITOR monitor = TrayUI_GetStuckMonitor_Original(pThis);
         bool keepShown = ShouldKeepTaskbarShown(hWnd, monitor);
 
         void* pTrayUI_IInspectable =
