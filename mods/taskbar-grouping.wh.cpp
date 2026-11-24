@@ -524,6 +524,13 @@ void ProcessResolvedWindow(PVOID pThis, RESOLVEDWINDOW* resolvedWindow) {
             // Will group with a pinned item, resolve normally.
             return;
         }
+
+        if (g_settings.pinnedItemsMode ==
+                PinnedItemsMode::keepInPlaceAndNoUngrouping &&
+            !isMatchPinned) {
+            // Will group with the running instances, resolve normally.
+            return;
+        }
     }
 
     if (resolvedWindow->pAppItemIdList) {
