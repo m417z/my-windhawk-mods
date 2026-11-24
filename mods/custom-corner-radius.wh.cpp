@@ -1094,17 +1094,21 @@ float WINAPI GetFloatCornerRadiusForCurrentStyle_Hook(void* pThis) {
 }
 
 // The radii DWM draws, published on DWM's notification window while the mod
-// runs, for other processes to match. The low word is the window radius + 1 and
-// the high word is the small radius + 1, in DIPs, so the value is never zero.
+// runs, for other processes to match. With kPublishedFlag masked off, the low
+// word is the window radius and the high word is the small radius, in DIPs.
 // With per-corner radii, the window radius is the largest of them. The name
 // doesn't include the mod id, so other processes can rely on it.
 constexpr WCHAR kPublishedRadiiProp[] = L"Windhawk_CustomCornerRadius_Radii";
 
-// The window radius of each corner, published only with per-corner radii. Each
-// byte is a radius + 1, in DIPs, capped at 255. From the lowest byte: top-left,
-// top-right, bottom-left, bottom-right. Fits 32 bits for 32-bit processes.
+// The window radius of each corner, published only with per-corner radii. With
+// kPublishedFlag masked off, each byte is a radius in DIPs, capped at 127. From
+// the lowest byte: top-left, top-right, bottom-left, bottom-right. Fits 32 bits
+// for 32-bit processes.
 constexpr WCHAR kPublishedPerCornerRadiiProp[] =
     L"Windhawk_CustomCornerRadius_PerCornerRadii";
+
+// Set in the published values, so that they're never zero.
+constexpr DWORD kPublishedFlag = 0x80000000;
 
 // Set while DWM's notification window is missing, as in a process that's just
 // starting. SetBorderParameters_Hook publishes once it exists.
@@ -1116,22 +1120,23 @@ void PublishRadii() {
     int smallRadius = g_settings.smallRadius < 0
                           ? kDefaultSmallRadius
                           : static_cast<int>(g_settings.smallRadius);
-    HANDLE value = (HANDLE)(ULONG_PTR)MAKELONG(radius + 1, smallRadius + 1);
+    DWORD radii = kPublishedFlag | MAKELONG(radius, smallRadius);
 
-    DWORD perCornerRadii = 0;
+    DWORD perCornerRadii = kPublishedFlag;
     if (g_settings.perCornerRadius) {
         for (int i = 0; i < kCornerCount; i++) {
             int cornerRadius =
                 radius + static_cast<int>(g_settings.cornerRadiusDelta[i]);
-            perCornerRadii |=
-                static_cast<DWORD>(std::min(cornerRadius + 1, 255)) << (8 * i);
+            perCornerRadii |= static_cast<DWORD>(std::min(cornerRadius, 127))
+                              << (8 * i);
         }
     }
 
     HWND hDwm = FindWindow(L"Dwm", nullptr);
-    bool published = hDwm && SetProp(hDwm, kPublishedRadiiProp, value);
+    bool published =
+        hDwm && SetProp(hDwm, kPublishedRadiiProp, (HANDLE)(ULONG_PTR)radii);
     if (published) {
-        if (perCornerRadii) {
+        if (g_settings.perCornerRadius) {
             published = SetProp(hDwm, kPublishedPerCornerRadiiProp,
                                 (HANDLE)(ULONG_PTR)perCornerRadii);
         } else {
