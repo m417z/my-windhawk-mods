@@ -507,8 +507,10 @@ void ProcessResolvedWindow(PVOID pThis, RESOLVEDWINDOW* resolvedWindow) {
     if (!customGroup) {
         winrt::com_ptr<IUnknown> taskGroupMatched;
         winrt::com_ptr<IUnknown> taskItemMatched;
+        // Match without the window handle, since a window that changes its app
+        // ID is still in the task group of its previous app ID.
         HRESULT hr = CTaskBand__MatchWindow_Original(
-            pThis, resolvedWindow->hButtonWnd, resolvedWindow->pAppItemIdList,
+            pThis, nullptr, resolvedWindow->pAppItemIdList,
             resolvedWindow->szAppIdStr, 1, taskGroupMatched.put_void(),
             taskItemMatched.put_void());
         if (FAILED(hr)) {
