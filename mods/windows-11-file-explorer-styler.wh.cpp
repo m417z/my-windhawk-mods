@@ -30,6 +30,14 @@ own.
 Also check out the **Windows 11 Taskbar Styler**, **Windows 11 Start Menu
 Styler** and **Windows 11 Notification Center Styler** mods.
 
+## System accent Acrylic
+
+Select **System accent Acrylic (solid when inactive)** in the translucent
+background effect setting to tint the active window with the Windows accent
+color. Adjust **Active accent tint opacity** to control how much of the
+blurred background shows through. Inactive windows use an opaque, muted
+shade derived from the accent and the system light or dark mode.
+
 ## Themes
 
 Themes are collections of styles. The following themes are integrated into the
@@ -384,10 +392,13 @@ Windows](https://windhawk.net/mods/translucent-windows) mod.
   - "": Default for the selected theme
   - default: Windows default
   - acrylicblur: Blur (AccentBlurBehind)
+  - systemAccent: System accent Acrylic (solid when inactive)
   - acrylic: Acrylic
   - mica: Mica
   - micaAlt: Mica Alt
   - none: None
+- accentTintOpacity: 70
+  $name: Active accent tint opacity (0-100%)
 - backgroundTranslucentEffectRegion: ""
   $name: Translucent background effect region
   $description: >-
@@ -454,6 +465,7 @@ struct ThemeTargetStyles {
 enum class BackgroundTranslucentEffect {
     kDefault,
     kBlur,
+    kSystemAccent,
     kAcrylic,
     kMica,
     kMicaAlt,
@@ -1723,6 +1735,7 @@ enum class XamlDiagnosticsHandling {
 };
 
 struct {
+    int accentTintOpacity;
     std::optional<BackgroundTranslucentEffect> backgroundTranslucentEffect;
     BackgroundTranslucentEffectRegion backgroundTranslucentEffectRegion;
     int explorerFrameContainerHeight;
@@ -11137,10 +11150,18 @@ HRESULT WINAPI DwmSetWindowAttribute_Hook(HWND hWnd,
     auto backgroundTranslucentEffect =
         GetEffectiveBackgroundTranslucentEffect();
 
+    // ApplyBackgroundTranslucentEffect owns the backdrop while our accent is
+    // installed. A later WinUI host-brush request must not reset it to AUTO.
+    if (backgroundTranslucentEffect == BackgroundTranslucentEffect::kSystemAccent &&
+        GetProp(hWnd, L"windhawk_background_effect-" WH_MOD_ID)) {
+        return S_OK;
+    }
+
     int backdropType;
     switch (backgroundTranslucentEffect) {
         case BackgroundTranslucentEffect::kDefault:
             return original();
+        case BackgroundTranslucentEffect::kSystemAccent:
         case BackgroundTranslucentEffect::kBlur:
             backdropType = DWMSBT_AUTO;
             break;
@@ -11962,6 +11983,7 @@ HRESULT WINAPI DrawTextWithGlow_Hook(HDC hdcMem,
 }
 
 struct ThemePartBitmaps {
+    HDC itemSelection[5];
     HDC scrollBarThumb[4];
     HDC headerItem[2];
 };
@@ -11984,6 +12006,9 @@ void ClearThemePartCache() {
     AcquireSRWLockExclusive(&g_themePartCacheLock);
 
     for (auto& [dpi, bitmaps] : g_themePartCache) {
+        for (HDC& hdc : bitmaps.itemSelection) {
+            DeleteThemePartBitmap(hdc);
+        }
         for (HDC& hdc : bitmaps.scrollBarThumb) {
             DeleteThemePartBitmap(hdc);
         }
@@ -12347,6 +12372,70 @@ bool PaintPaneSeparatorPart(HDC hdc, int iPartId, LPCRECT pRect) {
     return true;
 }
 
+bool PaintItemSelection(HDC hdc, int state, LPCRECT rect, UINT dpi) {
+    HIGHCONTRASTW contrast{sizeof(contrast)};
+    if (SystemParametersInfoW(SPI_GETHIGHCONTRAST, sizeof(contrast), &contrast, 0) &&
+        (contrast.dwFlags & HCF_HIGHCONTRASTON)) {
+        return false;
+    }
+
+    // ListView and TreeView expose hot/selected states but no pressed state.
+    // Only deepen the hot item under the primary button, including in a
+    // multi-selection. Let the control manage capture and its normal repaint.
+    int index = 1;
+    if (state == LISS_SELECTEDNOTFOCUS) {
+        index = 0;
+    } else if (state == LISS_HOT || state == LISS_HOTSELECTED || state == LISS_SELECTED) {
+        const int primary = GetSystemMetrics(SM_SWAPBUTTON) ? VK_RBUTTON : VK_LBUTTON;
+        POINT cursor;
+        HWND surface = GetEntireWindowEffectDCWnd(hdc);
+        HWND hit = GetCursorPos(&cursor) ? WindowFromPoint(cursor) : nullptr;
+        const bool underPointer = hit && surface && ScreenToClient(surface, &cursor) && PtInRect(rect, cursor);
+        if ((GetKeyState(primary) & 0x8000) && underPointer &&
+            (hit == surface || IsChild(surface, hit))) {
+            index = 4;
+        } else {
+            if (state == LISS_HOT) index = 3;
+            if (state == LISS_HOTSELECTED) index = 2;
+        }
+    }
+    int radius = std::max(1, MulDiv(3, dpi, 96));
+    int side = radius * 2 + 1;
+    HDC& cached = g_themePartCache[dpi].itemSelection[index];
+    if (!cached) {
+        cached = CreateThemePartBitmap(side, side, [&](ID2D1RenderTarget* target) {
+            // A translucent shade lets the window's actual accent show through.
+            constexpr BYTE alpha[] = {66, 96, 112, 36, 132};
+            winrt::com_ptr<ID2D1SolidColorBrush> brush;
+            target->CreateSolidColorBrush(ThemePartColor(alpha[index], 0, 0, 0), brush.put());
+            if (brush) {
+                target->FillRoundedRectangle(D2D1::RoundedRect(
+                    D2D1::RectF(0, 0, side, side), radius, radius), brush.get());
+            }
+        });
+    }
+    if (!cached) return false;
+    AlphaBlendNineGrid(hdc, rect, cached, radius, radius, radius, radius);
+    return true;
+}
+
+bool IsSelectionSurface(HWND window, PCWSTR themeClass) {
+    WCHAR name[64];
+    if (!GetClassNameW(window, name, ARRAYSIZE(name))) return false;
+    if (_wcsicmp(name, WC_TREEVIEWW) == 0) {
+        return !_wcsicmp(themeClass, L"TreeView") || !_wcsicmp(themeClass, L"ListView");
+    }
+
+    if (_wcsicmp(themeClass, L"ListView") && _wcsicmp(themeClass, L"ItemsView")) {
+        return false;
+    }
+    for (; window; window = GetAncestor(window, GA_PARENT)) {
+        if (GetClassNameW(window, name, ARRAYSIZE(name)) &&
+            !_wcsicmp(name, L"SHELLDLL_DefView")) return true;
+    }
+    return false;
+}
+
 using GetThemeClass_t = HRESULT(WINAPI*)(HTHEME hTheme,
                                          LPWSTR pszClassName,
                                          int cchClassName);
@@ -12367,7 +12456,7 @@ bool PaintThemeBackground(HTHEME hTheme,
         return false;
     }
 
-    enum class Part { ScrollBar, Header, PaneSeparator };
+    enum class Part { ScrollBar, Header, PaneSeparator, ItemSelection };
     Part part;
     if (_wcsicmp(themeClass, L"ScrollBar") == 0) {
         part = Part::ScrollBar;
@@ -12375,6 +12464,35 @@ bool PaintThemeBackground(HTHEME hTheme,
         part = Part::Header;
     } else if (_wcsicmp(themeClass, L"PreviewPane") == 0) {
         part = Part::PaneSeparator;
+    } else if (iPartId == LVP_GROUPHEADER && !_wcsicmp(themeClass, L"ListView") &&
+               GetEffectiveBackgroundTranslucentEffect() == BackgroundTranslucentEffect::kSystemAccent &&
+               IsSelectionSurface(GetEntireWindowEffectDCWnd(hdc), themeClass)) {
+        switch (iStateId) {
+            case LVGH_OPENHOT: case LVGH_CLOSEHOT:
+            case LVGH_OPENMIXEDSELECTIONHOT: case LVGH_CLOSEMIXEDSELECTIONHOT:
+                iStateId = LISS_HOT;
+                break;
+            case LVGH_OPENSELECTED: case LVGH_CLOSESELECTED:
+                iStateId = LISS_SELECTED;
+                break;
+            case LVGH_OPENSELECTEDHOT: case LVGH_CLOSESELECTEDHOT:
+            case LVGH_OPENSELECTEDNOTFOCUSEDHOT: case LVGH_CLOSESELECTEDNOTFOCUSEDHOT:
+                iStateId = LISS_HOTSELECTED;
+                break;
+            case LVGH_OPENSELECTEDNOTFOCUSED: case LVGH_CLOSESELECTEDNOTFOCUSED:
+                iStateId = LISS_SELECTEDNOTFOCUS;
+                break;
+            default:
+                return false;
+        }
+        part = Part::ItemSelection;
+    } else if (GetEffectiveBackgroundTranslucentEffect() ==
+                   BackgroundTranslucentEffect::kSystemAccent &&
+               iPartId == TVP_TREEITEM &&
+               (iStateId == TREIS_HOT || iStateId == TREIS_SELECTED || iStateId == TREIS_SELECTEDNOTFOCUS ||
+                iStateId == TREIS_HOTSELECTED)) {
+        if (!IsSelectionSurface(GetEntireWindowEffectDCWnd(hdc), themeClass)) return false;
+        part = Part::ItemSelection;
     } else {
         return false;
     }
@@ -12398,6 +12516,9 @@ bool PaintThemeBackground(HTHEME hTheme,
         case Part::Header:
             painted = PaintHeaderPart(hdc, iPartId, iStateId, pRect, dpi);
             break;
+        case Part::ItemSelection:
+            painted = PaintItemSelection(hdc, iStateId, pRect, dpi);
+            break;
         case Part::PaneSeparator:
             painted = PaintPaneSeparatorPart(hdc, iPartId, pRect);
             break;
@@ -12412,6 +12533,40 @@ bool PaintThemeBackground(HTHEME hTheme,
     return painted;
 }
 
+template<typename DrawOriginal>
+std::optional<HRESULT> PaintFocusedItemOverlay(
+    HTHEME theme, HDC dc, int part, int state, LPCRECT rect, LPCRECT clip,
+    DrawOriginal drawOriginal) {
+    // Explorer draws this additional ItemsView layer over the ListView item.
+    if (part != 3 || state != 2 || !rect || !g_pGetThemeClass ||
+        GetEffectiveBackgroundTranslucentEffect() != BackgroundTranslucentEffect::kSystemAccent) {
+        return std::nullopt;
+    }
+    WCHAR name[64];
+    HWND surface = GetEntireWindowEffectDCWnd(dc);
+    if (!surface || FAILED(g_pGetThemeClass(theme, name, ARRAYSIZE(name))) ||
+        _wcsicmp(name, L"ItemsView") || !IsSelectionSurface(surface, name)) {
+        return std::nullopt;
+    }
+
+    int saved = SaveDC(dc);
+    if (!saved) return std::nullopt;
+    if (clip) IntersectClipRect(dc, clip->left, clip->top, clip->right, clip->bottom);
+    UINT dpi = GetThemePartDpi(dc);
+    AcquireSRWLockExclusive(&g_themePartCacheLock);
+    bool painted = PaintItemSelection(dc, LISS_HOT, rect, dpi);
+    ReleaseSRWLockExclusive(&g_themePartCacheLock);
+    std::optional<HRESULT> result;
+    if (painted) {
+        int edge = std::max(1, MulDiv(1, dpi, 96));
+        ExcludeClipRect(dc, rect->left + edge, rect->top + edge,
+                       rect->right - edge, rect->bottom - edge);
+        result = drawOriginal();
+    }
+    RestoreDC(dc, saved);
+    return result;
+}
+
 using DrawThemeBackground_t = decltype(&DrawThemeBackground);
 DrawThemeBackground_t DrawThemeBackground_Original;
 HRESULT WINAPI DrawThemeBackground_Hook(HTHEME hTheme,
@@ -12420,6 +12575,9 @@ HRESULT WINAPI DrawThemeBackground_Hook(HTHEME hTheme,
                                         int iStateId,
                                         LPCRECT pRect,
                                         LPCRECT pClipRect) {
+    if (auto result = PaintFocusedItemOverlay(hTheme, hdc, iPartId, iStateId,
+            pRect, pClipRect, [&] { return DrawThemeBackground_Original(
+                hTheme, hdc, iPartId, iStateId, pRect, pClipRect); })) return *result;
     if (PaintThemeBackground(hTheme, hdc, iPartId, iStateId, pRect,
                              pClipRect)) {
         return S_OK;
@@ -12440,6 +12598,11 @@ HRESULT WINAPI DrawThemeBackgroundEx_Hook(HTHEME hTheme,
     LPCRECT pClipRect = pOptions && (pOptions->dwFlags & DTBG_CLIPRECT)
                             ? &pOptions->rcClip
                             : nullptr;
+    if ((!pOptions || !(pOptions->dwFlags & ~DTBG_CLIPRECT))) {
+        if (auto result = PaintFocusedItemOverlay(hTheme, hdc, iPartId, iStateId,
+                pRect, pClipRect, [&] { return DrawThemeBackgroundEx_Original(
+                    hTheme, hdc, iPartId, iStateId, pRect, pOptions); })) return *result;
+    }
     if (PaintThemeBackground(hTheme, hdc, iPartId, iStateId, pRect,
                              pClipRect)) {
         return S_OK;
@@ -12467,7 +12630,7 @@ void WINAPI Element_PaintBorder_Hook(void* pThis,
 }
 
 // Based on the Translucent Windows mod.
-void SetAccentBlurBehind(HWND hWnd, bool enable) {
+void SetAccentBlurBehind(HWND hWnd, bool enable, bool systemAccent = false, bool active = false) {
     // Without blur behind, the extended frame is drawn over the accent blur.
     HRGN hRgn = enable ? CreateRectRgn(0, 0, -1, -1) : nullptr;
     DWM_BLURBEHIND blurBehind = {
@@ -12522,13 +12685,83 @@ void SetAccentBlurBehind(HWND hWnd, bool enable) {
         .GradientColor = 0x3A232323,
     };
 
+    if (systemAccent) {
+        using namespace winrt::Windows::UI::ViewManagement;
+        try {
+            UISettings colors;
+            auto background = colors.GetColorValue(UIColorType::Background);
+            auto tint = colors.GetColorValue(active ? UIColorType::Accent :
+                (background.R < 128 ? UIColorType::AccentDark2 : UIColorType::AccentLight2));
+            if (!active) {
+                // Keep the hue while giving the resting surface a neutral base.
+                const int neutral = background.R < 128 ? 64 : 224;
+                auto mix = [neutral](int channel) {
+                    return static_cast<uint8_t>((channel + 3 * neutral) / 4);
+                };
+                tint.R = mix(tint.R);
+                tint.G = mix(tint.G);
+                tint.B = mix(tint.B);
+            }
+            DWORD alpha = active ? std::max(1, g_settings.accentTintOpacity * 255 / 100) : 255;
+            accentPolicy.GradientColor = RGB(tint.R, tint.G, tint.B) | (alpha << 24);
+            constexpr int kAccentEnableGradient = 1;
+            if (!active) accentPolicy.AccentState = kAccentEnableGradient;
+        } catch (winrt::hresult_error const& ex) {
+            Wh_Log(L"Accent color unavailable: %08X", ex.code());
+        }
+    }
+
     WINDOWCOMPOSITIONATTRIBDATA data = {
         .Attrib = WCA_ACCENT_POLICY,
         .pvData = &accentPolicy,
         .cbData = sizeof(accentPolicy),
     };
 
-    pSetWindowCompositionAttribute(hWnd, &data);
+    if (!pSetWindowCompositionAttribute(hWnd, &data) && systemAccent) {
+        accentPolicy.AccentState = 1;  // ACCENT_ENABLE_GRADIENT
+        accentPolicy.GradientColor |= 0xFF000000u;
+        if (!pSetWindowCompositionAttribute(hWnd, &data)) {
+            Wh_Log(L"Window accent and solid fallback failed: %u", GetLastError());
+        }
+    }
+}
+
+static char g_accentRefreshTimerKey;
+const UINT_PTR kAccentRefreshTimer = reinterpret_cast<UINT_PTR>(&g_accentRefreshTimerKey);
+
+LRESULT CALLBACK AccentWindowSubclass(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp,
+                                      UINT_PTR id, DWORD_PTR) {
+    if (msg == WM_TIMER && wp == kAccentRefreshTimer) {
+        KillTimer(hwnd, kAccentRefreshTimer);
+        if (IsWindowVisible(hwnd) && !IsIconic(hwnd) &&
+            GetEffectiveBackgroundTranslucentEffect() == BackgroundTranslucentEffect::kSystemAccent) {
+            if (g_settings.backgroundTranslucentEffectRegion ==
+                BackgroundTranslucentEffectRegion::kEntireWindow) {
+                MARGINS margins = {-1, -1, -1, -1};
+                DwmExtendFrameIntoClientArea_Original(hwnd, &margins);
+            }
+            SetAccentBlurBehind(hwnd, true, true, GetActiveWindow() == hwnd);
+            RedrawWindow(hwnd, nullptr, nullptr,
+                         RDW_INVALIDATE | RDW_ERASE | RDW_FRAME | RDW_ALLCHILDREN);
+        }
+        return 0;
+    }
+    if (msg == WM_NCDESTROY) {
+        KillTimer(hwnd, kAccentRefreshTimer);
+        RemoveWindowSubclass(hwnd, AccentWindowSubclass, id);
+    }
+    auto result = DefSubclassProc(hwnd, msg, wp, lp);
+    if (msg == WM_ACTIVATE && IsWindowVisible(hwnd) && !IsIconic(hwnd)) {
+        SetAccentBlurBehind(hwnd, true, true, LOWORD(wp) != WA_INACTIVE);
+        if (LOWORD(wp) != WA_INACTIVE) SetTimer(hwnd, kAccentRefreshTimer, 150, nullptr);
+    } else if (msg == WM_SETTINGCHANGE || msg == WM_THEMECHANGED ||
+               msg == WM_DWMCOLORIZATIONCOLORCHANGED || msg == WM_DWMCOMPOSITIONCHANGED ||
+               (msg == WM_SHOWWINDOW && wp) ||
+               (msg == WM_SIZE && (wp == SIZE_RESTORED || wp == SIZE_MAXIMIZED))) {
+        // Explorer and DWM may still be processing the same theme change.
+        SetTimer(hwnd, kAccentRefreshTimer, 150, nullptr);
+    }
+    return result;
 }
 
 void ApplyBackgroundTranslucentEffect(
@@ -12572,6 +12805,7 @@ void ApplyBackgroundTranslucentEffect(
         case BackgroundTranslucentEffect::kDefault:
             backdropType = DWMSBT_TABBEDWINDOW;
             break;
+        case BackgroundTranslucentEffect::kSystemAccent:
         case BackgroundTranslucentEffect::kBlur:
             backdropType = DWMSBT_AUTO;
             break;
@@ -12592,7 +12826,15 @@ void ApplyBackgroundTranslucentEffect(
     DwmSetWindowAttribute_Original(hWnd, DWMWA_SYSTEMBACKDROP_TYPE,
                                    &backdropType, sizeof(backdropType));
 
-    SetAccentBlurBehind(hWnd, effect == BackgroundTranslucentEffect::kBlur);
+    if (effect == BackgroundTranslucentEffect::kSystemAccent) {
+        SetWindowSubclass(hWnd, AccentWindowSubclass, 1, 0);
+        SetTimer(hWnd, kAccentRefreshTimer, 150, nullptr);
+        SetAccentBlurBehind(hWnd, true, true, GetActiveWindow() == hWnd);
+    } else {
+        KillTimer(hWnd, kAccentRefreshTimer);
+        RemoveWindowSubclass(hWnd, AccentWindowSubclass, 1);
+        SetAccentBlurBehind(hWnd, effect == BackgroundTranslucentEffect::kBlur);
+    }
 }
 
 void TriggerWindowCompositionUpdate(HWND hWnd) {
@@ -13123,10 +13365,13 @@ void LoadSettings() {
 
     PCWSTR backgroundTranslucentEffect =
         Wh_GetStringSetting(L"backgroundTranslucentEffect");
+    g_settings.accentTintOpacity = std::clamp(Wh_GetIntSetting(L"accentTintOpacity"), 0, 100);
     g_settings.backgroundTranslucentEffect.reset();
     if (wcscmp(backgroundTranslucentEffect, L"default") == 0) {
         g_settings.backgroundTranslucentEffect =
             BackgroundTranslucentEffect::kDefault;
+    } else if (wcscmp(backgroundTranslucentEffect, L"systemAccent") == 0) {
+        g_settings.backgroundTranslucentEffect = BackgroundTranslucentEffect::kSystemAccent;
     } else if (wcscmp(backgroundTranslucentEffect, L"acrylicblur") == 0) {
         g_settings.backgroundTranslucentEffect =
             BackgroundTranslucentEffect::kBlur;
