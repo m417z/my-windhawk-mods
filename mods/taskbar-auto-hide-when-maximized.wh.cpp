@@ -9,7 +9,7 @@
 // @homepage        https://m417z.com/
 // @include         explorer.exe
 // @architecture    x86-64
-// @compilerOptions -ldwmapi -lole32 -loleaut32 -lversion
+// @compilerOptions -ldwmapi -lgdi32 -lole32 -loleaut32 -lversion
 // ==/WindhawkMod==
 
 // Source code is published under The GNU General Public License v3.0.
@@ -67,6 +67,12 @@ taskbar.
   $description: >-
     Enable this option to customize the old taskbar on Windows 11 (if using
     ExplorerPatcher or a similar tool).
+- useTaskbarWindowRegion: false
+  $name: Use taskbar window region for intersection
+  $description: >-
+    In intersection mode, use the taskbar's window region when available.
+    This supports floating and split docks with Click-through taskbar enabled
+    in Windows 11 Taskbar Styler.
 */
 // ==/WindhawkModSettings==
 
@@ -76,13 +82,17 @@ taskbar.
 #include <psapi.h>
 #include <sddl.h>
 
+#include <wil/resource.h>
 #include <winrt/base.h>
 
+#include <algorithm>
 #include <atomic>
+#include <cstring>
 #include <mutex>
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
+#include <vector>
 
 enum class Mode {
     intersected,
@@ -97,6 +107,7 @@ struct {
     std::unordered_set<std::wstring> excludedPrograms;
     bool primaryMonitorOnly;
     bool oldTaskbarOnWin11;
+    bool useTaskbarWindowRegion;
 } g_settings;
 
 enum class WinVersion {
@@ -566,10 +577,102 @@ bool IsWindowEligibleForHidingTaskbar(HWND hWnd) {
     return true;
 }
 
+struct CachedTaskbarRegion {
+    HWND hwnd;
+    RECT taskbarRect;
+    UINT dpi;
+    std::vector<RECT> rects;
+};
+
+std::mutex g_taskbarRegionMutex;
+std::unordered_map<HMONITOR, CachedTaskbarRegion> g_taskbarRegions;
+
+std::vector<RECT> ReadTaskbarRegion(HWND hwnd, const RECT& windowRect) {
+    wil::unique_hrgn region(CreateRectRgn(0, 0, 0, 0));
+    if (!region || GetWindowRgn(hwnd, region.get()) <= NULLREGION) {
+        return {};
+    }
+
+    DWORD size = GetRegionData(region.get(), 0, nullptr);
+    if (size < sizeof(RGNDATAHEADER)) {
+        return {};
+    }
+
+    std::vector<DWORD> buffer((size + sizeof(DWORD) - 1) / sizeof(DWORD));
+    auto* data = reinterpret_cast<RGNDATA*>(buffer.data());
+    if (GetRegionData(region.get(), size, data) != size ||
+        data->rdh.nCount > (size - sizeof(RGNDATAHEADER)) / sizeof(RECT)) {
+        return {};
+    }
+
+    std::vector<RECT> rects(data->rdh.nCount);
+    if (rects.empty()) {
+        return rects;
+    }
+
+    std::memcpy(rects.data(), data->Buffer, rects.size() * sizeof(RECT));
+    for (auto& rect : rects) {
+        OffsetRect(&rect, windowRect.left, windowRect.top);
+        IntersectRect(&rect, &rect, &windowRect);
+    }
+    std::erase_if(rects, [](const RECT& rect) { return IsRectEmpty(&rect); });
+    if (rects.size() == 1 && EqualRect(&rects.front(), &windowRect)) {
+        rects.clear();
+    }
+    return rects;
+}
+
+std::vector<RECT> GetTaskbarRegion(HWND hwnd,
+                                 HMONITOR monitor,
+                                 const RECT& monitorRect,
+                                 const RECT& taskbarRect) {
+    RECT windowRect{};
+    if (!GetWindowRect(hwnd, &windowRect)) {
+        return {};
+    }
+
+    UINT dpi = GetDpiForWindow(hwnd);
+    RECT visibleRect;
+    IntersectRect(&visibleRect, &windowRect, &monitorRect);
+    std::lock_guard<std::mutex> lock(g_taskbarRegionMutex);
+    if (!EqualRect(&visibleRect, &windowRect)) {
+        auto it = g_taskbarRegions.find(monitor);
+        if (it != g_taskbarRegions.end() && it->second.hwnd == hwnd &&
+            it->second.dpi == dpi &&
+            EqualRect(&it->second.taskbarRect, &taskbarRect)) {
+            return it->second.rects;
+        }
+        return {};
+    }
+
+    auto rects = ReadTaskbarRegion(hwnd, windowRect);
+    if (rects.empty()) {
+        g_taskbarRegions.erase(monitor);
+    } else {
+        g_taskbarRegions[monitor] = {hwnd, taskbarRect, dpi, rects};
+    }
+    return rects;
+}
+
+bool IntersectsTaskbar(const RECT& windowRect,
+                      const RECT& taskbarRect,
+                      const std::vector<RECT>& taskbarRegion) {
+    RECT intersection;
+    if (taskbarRegion.empty()) {
+        return IntersectRect(&intersection, &windowRect, &taskbarRect);
+    }
+    return std::any_of(taskbarRegion.begin(), taskbarRegion.end(),
+                       [&](const RECT& rect) {
+                           return IntersectRect(&intersection, &windowRect,
+                                                &rect);
+                       });
+}
+
 bool CanHideTaskbarForWindow(HWND hWnd,
                              HMONITOR monitor,
                              const MONITORINFO* monitorInfo,
-                             const RECT* taskbarRect) {
+                             const RECT& taskbarRect,
+                             const std::vector<RECT>& taskbarRegion) {
     HANDLE prop = GetProp(hWnd, kCanHideTaskbarEligibilityProp);
     if (!prop) {
         prop = IsWindowEligibleForHidingTaskbar(hWnd)
@@ -615,10 +718,7 @@ bool CanHideTaskbarForWindow(HWND hWnd,
     // screen (e.g. Win+left, Win+up).
     if (g_settings.mode == Mode::intersected ||
         (g_settings.mode == Mode::maximized && isWindowArranged)) {
-        RECT intersectRect;
-        if (IntersectRect(&intersectRect, &windowRect, taskbarRect)) {
-            return true;
-        }
+        return IntersectsTaskbar(windowRect, taskbarRect, taskbarRegion);
     }
 
     return false;
@@ -663,12 +763,18 @@ bool ShouldKeepTaskbarShown(HWND hTaskbarWnd, HMONITOR monitor) {
 
     RECT taskbarRect{};
     GetTaskbarRectForMonitor(monitor, &taskbarRect);
+    std::vector<RECT> taskbarRegion;
+    if (g_settings.mode == Mode::intersected &&
+        g_settings.useTaskbarWindowRegion) {
+        taskbarRegion = GetTaskbarRegion(hTaskbarWnd, monitor,
+                                         monitorInfo.rcMonitor, taskbarRect);
+    }
 
     if (g_settings.foregroundWindowOnly) {
         HWND hForegroundWnd = GetForegroundWindow();
         return !hForegroundWnd ||
                !CanHideTaskbarForWindow(hForegroundWnd, monitor, &monitorInfo,
-                                        &taskbarRect);
+                                        taskbarRect, taskbarRegion);
     }
 
     bool canHideTaskbar = false;
@@ -680,8 +786,8 @@ bool ShouldKeepTaskbarShown(HWND hTaskbarWnd, HMONITOR monitor) {
             return TRUE;
         }
 
-        canHideTaskbar =
-            CanHideTaskbarForWindow(hWnd, monitor, &monitorInfo, &taskbarRect);
+        canHideTaskbar = CanHideTaskbarForWindow(
+            hWnd, monitor, &monitorInfo, taskbarRect, taskbarRegion);
         if (!canHideTaskbar) {
             return TRUE;
         }
@@ -1682,6 +1788,8 @@ void LoadSettings() {
 
     g_settings.primaryMonitorOnly = Wh_GetIntSetting(L"primaryMonitorOnly");
     g_settings.oldTaskbarOnWin11 = Wh_GetIntSetting(L"oldTaskbarOnWin11");
+    g_settings.useTaskbarWindowRegion =
+        Wh_GetIntSetting(L"useTaskbarWindowRegion") != 0;
 }
 
 BOOL Wh_ModInit() {
@@ -1817,6 +1925,11 @@ BOOL Wh_ModSettingsChanged(BOOL* bReload) {
     bool prevOldTaskbarOnWin11 = g_settings.oldTaskbarOnWin11;
 
     LoadSettings();
+
+    {
+        std::lock_guard<std::mutex> lock(g_taskbarRegionMutex);
+        g_taskbarRegions.clear();
+    }
 
     if (g_settings.oldTaskbarOnWin11 != prevOldTaskbarOnWin11) {
         *bReload = TRUE;
