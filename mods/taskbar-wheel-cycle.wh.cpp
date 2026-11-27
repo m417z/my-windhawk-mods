@@ -53,8 +53,8 @@ check out [7+ Taskbar Tweaker](https://tweaker.ramensoftware.com/).
   $name: Cycle only windows of the hovered app
   $description: >-
     Enable to cycle only the windows of the app under the mouse pointer.
-    Only supported on the native Windows 11 taskbar. On classic taskbars,
-    the original cycling behavior is used regardless of this setting.
+    Supports the native Windows 11 and classic taskbars. If required
+    classic symbols are unavailable, ordinary cycling is used.
     Disable to restore the original cycling across all taskbar windows.
     Keyboard shortcuts always cycle across all apps.
 - customScrollRegions: ""
@@ -1310,6 +1310,19 @@ LRESULT WINAPI CTaskBand_v_WndProc_Hook(void* pThis,
     return result;
 }
 
+// Classic taskbar group lookup uses the _HandleClick entry point from
+// m417z's taskbar-button-scroll mod (GPLv3). Unlike that mod, the probe
+// sends synchronous messages only to the task list, not global mouse input.
+bool CycleHoveredGroup(HWND taskList, void* group, int delta,
+                       HWND foreground);
+bool TryClassicHoveredScroll(HWND taskList, POINT pt, int delta);
+std::atomic<bool> g_classicPerAppReady;
+
+bool UseHoveredAppCycling() {
+    return g_settings.cycleHoveredAppOnly &&
+           (g_winVersion >= WinVersion::Win11 || g_classicPerAppReady);
+}
+
 using TrayUI_WndProc_t = LRESULT(WINAPI*)(void* pThis,
                                           HWND hWnd,
                                           UINT Msg,
@@ -1324,8 +1337,7 @@ LRESULT WINAPI TrayUI_WndProc_Hook(void* pThis,
                                    LPARAM lParam,
                                    bool* flag) {
     if (Msg == WM_MOUSEWHEEL && g_settings.enableMouseWheelCycling &&
-        !(g_settings.cycleHoveredAppOnly &&
-          g_winVersion >= WinVersion::Win11)) {
+        !(UseHoveredAppCycling() && g_winVersion >= WinVersion::Win11)) {
         HWND hTaskListWnd = TaskListFromTaskbarWnd(hWnd);
 
         RECT rc{};
@@ -1340,11 +1352,19 @@ LRESULT WINAPI TrayUI_WndProc_Hook(void* pThis,
                                      : PtInRect(&rc, pt)) {
             short delta = GET_WHEEL_DELTA_WPARAM(wParam);
 
-            // Allows to steal focus.
-            INPUT input{};
-            SendInput(1, &input, sizeof(INPUT));
-
-            OnTaskListScroll(hTaskListWnd, delta);
+            if (UseHoveredAppCycling()) {
+                if (hTaskListWnd && GetWindowThreadProcessId(
+                        hTaskListWnd, nullptr) != GetCurrentThreadId()) {
+                    SendMessage(hTaskListWnd, WM_MOUSEWHEEL, wParam, lParam);
+                } else {
+                    TryClassicHoveredScroll(hTaskListWnd, pt, delta);
+                }
+            } else {
+                // Allows to steal focus.
+                INPUT input{};
+                SendInput(1, &input, sizeof(INPUT));
+                OnTaskListScroll(hTaskListWnd, delta);
+            }
 
             *flag = false;
             return 0;
@@ -1366,8 +1386,7 @@ LRESULT WINAPI CSecondaryTray_v_WndProc_Hook(void* pThis,
                                              WPARAM wParam,
                                              LPARAM lParam) {
     if (Msg == WM_MOUSEWHEEL && g_settings.enableMouseWheelCycling &&
-        !(g_settings.cycleHoveredAppOnly &&
-          g_winVersion >= WinVersion::Win11)) {
+        !(UseHoveredAppCycling() && g_winVersion >= WinVersion::Win11)) {
         HWND hSecondaryTaskListWnd = TaskListFromSecondaryTaskbarWnd(hWnd);
 
         RECT rc{};
@@ -1382,11 +1401,19 @@ LRESULT WINAPI CSecondaryTray_v_WndProc_Hook(void* pThis,
                                      : PtInRect(&rc, pt)) {
             short delta = GET_WHEEL_DELTA_WPARAM(wParam);
 
-            // Allows to steal focus.
-            INPUT input{};
-            SendInput(1, &input, sizeof(INPUT));
-
-            OnTaskListScroll(hSecondaryTaskListWnd, delta);
+            if (UseHoveredAppCycling()) {
+                if (hSecondaryTaskListWnd && GetWindowThreadProcessId(
+                        hSecondaryTaskListWnd, nullptr) != GetCurrentThreadId()) {
+                    SendMessage(hSecondaryTaskListWnd, WM_MOUSEWHEEL, wParam, lParam);
+                } else {
+                    TryClassicHoveredScroll(hSecondaryTaskListWnd, pt, delta);
+                }
+            } else {
+                // Allows to steal focus.
+                INPUT input{};
+                SendInput(1, &input, sizeof(INPUT));
+                OnTaskListScroll(hSecondaryTaskListWnd, delta);
+            }
 
             return 0;
         }
@@ -1521,7 +1548,8 @@ thread_local void* g_wheelGroup;
 thread_local DWORD g_wheelTime;
 thread_local int g_wheelRemainder;
 
-bool CycleHoveredGroup(HWND taskList, void* group, int delta) {
+bool CycleHoveredGroup(HWND taskList, void* group, int delta,
+                       HWND foreground) {
     if (!taskList || !group || !GetNativeGroup || !delta) return false;
     LONG_PTR taskListPtr = GetWindowLongPtr(taskList, 0);
     if (!taskListPtr) return false;
@@ -1533,9 +1561,10 @@ bool CycleHoveredGroup(HWND taskList, void* group, int delta) {
     int count = DPA_GetPtrCount(groups);
     for (int i = 0; i < count; ++i) {
         void* buttonGroup = DPA_GetPtr(groups, i);
-        if (!buttonGroup || GetNativeGroup(buttonGroup) != group) continue;
+        if (!buttonGroup) continue;
         int type = CTaskBtnGroup_GetGroupType(buttonGroup);
         if (type != 1 && type != 3) continue;
+        if (GetNativeGroup(buttonGroup) != group) continue;
         int itemCount = CTaskBtnGroup_GetNumItems(buttonGroup);
         for (int j = 0; j < itemCount; ++j) {
             void* item = CTaskBtnGroup_GetTaskItem(buttonGroup, j);
@@ -1560,8 +1589,8 @@ bool CycleHoveredGroup(HWND taskList, void* group, int delta) {
     if (g_settings.reverseScrollingDirection) steps = -steps;
     if (!steps) return true;
 
-    // Use the actual foreground window, not the last app on the taskbar.
-    HWND foreground = GetForegroundWindow();
+    // The classic probe can temporarily change focus, so use the window
+    // captured before resolving the group.
     int active = -1;
     for (int i = 0; i < static_cast<int>(items.size()); ++i) {
         HWND hwnd = GetTaskItemWnd(items[i]);
@@ -1583,6 +1612,152 @@ bool CycleHoveredGroup(HWND taskList, void* group, int delta) {
         SwitchToTaskItem(taskListPtr, items[next]);
     }
     return true;
+}
+
+// Adapted from taskbar-button-scroll.wh.cpp by m417z (GPLv3):
+// https://github.com/m417z/my-windhawk-mods/blob/main/mods/taskbar-button-scroll.wh.cpp
+using CTaskListWnd__HandleClick_t = void(WINAPI*)(void*, void*, int, int,
+                                                  int, int);
+CTaskListWnd__HandleClick_t CTaskListWnd__HandleClick_Original;
+using CTaskListWnd_v_WndProc_t = LRESULT(WINAPI*)(void*, HWND, UINT,
+                                                 WPARAM, LPARAM);
+CTaskListWnd_v_WndProc_t CTaskListWnd_v_WndProc_Original;
+CTaskListWnd__HandleClick_t EP_HandleClick_Original;
+CTaskListWnd_v_WndProc_t EP_TaskListWndProc_Original;
+
+struct ClassicGroupProbe {
+    void* group = nullptr;
+    bool captured = false;
+};
+thread_local ClassicGroupProbe* g_classicGroupProbe;
+
+void ClassicHandleClick(void* pThis, void* taskBtnGroup, int taskItemIndex,
+                        int clickAction, int param4, int param5,
+                        CTaskListWnd__HandleClick_t original) {
+    if (g_classicGroupProbe) {
+        // The probe is synchronous and scoped to the taskbar thread. Never
+        // execute the click action (including for pinned-only buttons).
+        g_classicGroupProbe->captured = true;
+        if (taskBtnGroup && GetNativeGroup) {
+            int type = CTaskBtnGroup_GetGroupType(taskBtnGroup);
+            if (type == 1 || type == 3) {
+                g_classicGroupProbe->group = GetNativeGroup(taskBtnGroup);
+            }
+        }
+        return;
+    }
+
+    original(pThis, taskBtnGroup, taskItemIndex, clickAction, param4, param5);
+}
+
+void WINAPI CTaskListWnd__HandleClick_Hook(void* pThis, void* taskBtnGroup,
+                                           int taskItemIndex, int clickAction,
+                                           int param4, int param5) {
+    if (g_explorerPatcherInitialized) {
+        return CTaskListWnd__HandleClick_Original(
+            pThis, taskBtnGroup, taskItemIndex, clickAction, param4, param5);
+    }
+    ClassicHandleClick(pThis, taskBtnGroup, taskItemIndex, clickAction, param4,
+                       param5, CTaskListWnd__HandleClick_Original);
+}
+
+void WINAPI EP_HandleClick_Hook(void* pThis, void* taskBtnGroup,
+                                 int taskItemIndex, int clickAction,
+                                 int param4, int param5) {
+    ClassicHandleClick(pThis, taskBtnGroup, taskItemIndex, clickAction, param4,
+                       param5, EP_HandleClick_Original);
+}
+
+bool TryClassicHoveredScroll(HWND taskList, POINT pt, int delta) {
+    if (!g_classicPerAppReady || g_winVersion != WinVersion::Win10 ||
+        !g_settings.enableMouseWheelCycling || !g_settings.cycleHoveredAppOnly ||
+        !taskList || !delta || g_classicGroupProbe || !GetNativeGroup ||
+        GetWindowThreadProcessId(taskList, nullptr) != GetCurrentThreadId()) {
+        return false;
+    }
+
+    // Never probe while a real click or drag is in progress.
+    if (GetCapture() || (GetAsyncKeyState(VK_LBUTTON) & 0x8000) ||
+        (GetAsyncKeyState(VK_RBUTTON) & 0x8000) ||
+        (GetAsyncKeyState(VK_MBUTTON) & 0x8000)) {
+        return false;
+    }
+
+    HWND pointWindow = WindowFromPoint(pt);
+    if (pointWindow != taskList && !IsChild(taskList, pointWindow)) {
+        return false;
+    }
+    HWND taskbar = GetAncestor(taskList, GA_ROOT);
+    if (HasCustomScrollRegions() && !IsPointInsideCustomRegion(taskbar, pt)) {
+        return false;
+    }
+
+    HWND foreground = GetForegroundWindow();
+    POINT clientPt = pt;
+    MapWindowPoints(nullptr, taskList, &clientPt, 1);
+    RECT clientRect{};
+    if (!GetClientRect(taskList, &clientRect) ||
+        !PtInRect(&clientRect, clientPt)) {
+        return false;
+    }
+
+    LPARAM mousePos = MAKELPARAM(clientPt.x, clientPt.y);
+    ClassicGroupProbe probe{};
+    g_classicGroupProbe = &probe;
+    // Use a synchronous, window-local probe rather than injecting a physical
+    // click that might land on a different window if the cursor moves.
+    SendMessage(taskList, WM_LBUTTONDOWN, MK_LBUTTON, mousePos);
+    SendMessage(taskList, WM_LBUTTONUP, 0, mousePos);
+    if (GetCapture() == taskList) {
+        SendMessage(taskList, WM_CANCELMODE, 0, 0);
+    }
+    g_classicGroupProbe = nullptr;
+
+    if (!probe.captured) {
+        Wh_Log(L"Classic taskbar group probe did not resolve a button");
+    }
+    // Restore any focus changed by the probe before choosing the target.
+    // This avoids restoring the old window after a switch has been requested.
+    if (foreground && IsWindow(foreground) &&
+        GetAncestor(GetForegroundWindow(), GA_ROOT) == taskbar &&
+        GetAncestor(foreground, GA_ROOT) != taskbar) {
+        SetForegroundWindow(foreground);
+    }
+    if (probe.group) {
+        CycleHoveredGroup(taskList, probe.group, delta, foreground);
+    }
+    return probe.captured;
+}
+
+LRESULT ClassicTaskListWndProc(void* pThis, HWND hWnd, UINT Msg,
+                               WPARAM wParam, LPARAM lParam,
+                               CTaskListWnd_v_WndProc_t original) {
+    if (Msg == WM_MOUSEWHEEL && g_winVersion == WinVersion::Win10 &&
+        g_settings.enableMouseWheelCycling && UseHoveredAppCycling()) {
+        POINT pt{GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam)};
+        // Do not pass the same wheel event up to the tray a second time.
+        if (!HasCustomScrollRegions() ||
+            IsPointInsideCustomRegion(GetAncestor(hWnd, GA_ROOT), pt)) {
+            TryClassicHoveredScroll(hWnd, pt, GET_WHEEL_DELTA_WPARAM(wParam));
+            return 0;
+        }
+    }
+    return original(pThis, hWnd, Msg, wParam, lParam);
+}
+
+LRESULT WINAPI CTaskListWnd_v_WndProc_Hook(void* pThis, HWND hWnd, UINT Msg,
+                                            WPARAM wParam, LPARAM lParam) {
+    if (g_explorerPatcherInitialized) {
+        return CTaskListWnd_v_WndProc_Original(pThis, hWnd, Msg, wParam, lParam);
+    }
+    return ClassicTaskListWndProc(pThis, hWnd, Msg, wParam, lParam,
+                                  CTaskListWnd_v_WndProc_Original);
+}
+
+LRESULT WINAPI EP_TaskListWndProc_Hook(void* pThis, HWND hWnd, UINT Msg,
+                                        WPARAM wParam, LPARAM lParam) {
+    return ClassicTaskListWndProc(pThis, hWnd, Msg, wParam, lParam,
+                                  EP_TaskListWndProc_Original);
 }
 
 using TaskbarFrame_OnPointerWheelChanged_t = int(WINAPI*)(PVOID pThis,
@@ -1669,7 +1844,8 @@ int TaskbarFrame_OnPointerWheelChanged_Hook(PVOID pThis, PVOID pArgs) {
     auto button = source.try_as<UIElement>();
     if (!button) return original();
     void* group = ResolveHoveredGroup(hMMTaskListWnd, button);
-    if (!group || !CycleHoveredGroup(hMMTaskListWnd, group, static_cast<int>(delta))) {
+    if (!group || !CycleHoveredGroup(hMMTaskListWnd, group, static_cast<int>(delta),
+                            GetForegroundWindow())) {
         return original();
     }
     args.Handled(true);
@@ -1695,7 +1871,8 @@ int WINAPI TaskListButton_OnPointerWheelChanged_Hook(PVOID pThis, PVOID pArgs) {
     int delta = args.GetCurrentPoint(button).Properties().MouseWheelDelta();
     if (!delta) return original();
     void* group = ResolveHoveredGroup(taskList, button);
-    if (!group || !CycleHoveredGroup(taskList, group, delta)) return original();
+    if (!group || !CycleHoveredGroup(taskList, group, delta,
+                                     GetForegroundWindow())) return original();
     args.Handled(true);
     return 0;
 }
@@ -1889,6 +2066,32 @@ bool HookTaskbarSymbols() {
         return false;
     }
 
+    if (g_winVersion == WinVersion::Win10 && g_settings.cycleHoveredAppOnly) {
+        WindhawkUtils::SYMBOL_HOOK classicHooks[] = {
+            {
+                {LR"(public: virtual struct ITaskGroup * __cdecl CTaskBtnGroup::GetGroup(void))"},
+                &GetNativeGroup, nullptr, true,
+            },
+            {
+                {LR"(protected: void __cdecl CTaskListWnd::_HandleClick(struct ITaskBtnGroup *,int,enum CTaskListWnd::eCLICKACTION,int,int))"},
+                &CTaskListWnd__HandleClick_Original,
+                CTaskListWnd__HandleClick_Hook, true,
+            },
+            {
+                {LR"(protected: virtual __int64 __cdecl CTaskListWnd::v_WndProc(struct HWND__ *,unsigned int,unsigned __int64,__int64))"},
+                &CTaskListWnd_v_WndProc_Original,
+                CTaskListWnd_v_WndProc_Hook, true,
+            },
+        };
+        g_classicPerAppReady =
+            HookSymbols(module, classicHooks, ARRAYSIZE(classicHooks)) &&
+            GetNativeGroup && CTaskListWnd__HandleClick_Original &&
+            CTaskListWnd_v_WndProc_Original;
+        if (!g_classicPerAppReady) {
+            Wh_Log(L"Classic per-app symbols unavailable; using normal cycling");
+        }
+    }
+
     if (g_winVersion >= WinVersion::Win11 && g_settings.cycleHoveredAppOnly) {
         WindhawkUtils::SYMBOL_HOOK perAppHooks[] = {
             {
@@ -2053,6 +2256,33 @@ bool HookExplorerPatcherSymbols(HMODULE explorerPatcherModule) {
             Wh_SetFunctionHook(ptr, hook.hookFunction, hook.pOriginalFunction);
         } else {
             *hook.pOriginalFunction = ptr;
+        }
+    }
+
+    g_classicPerAppReady = false;
+    if (succeeded && g_settings.cycleHoveredAppOnly) {
+        auto getGroup = reinterpret_cast<GetNativeGroup_t>(GetProcAddress(
+            explorerPatcherModule, "?GetGroup@CTaskBtnGroup@@UEAAPEAUITaskGroup@@XZ"));
+        auto handleClick = reinterpret_cast<CTaskListWnd__HandleClick_t>(GetProcAddress(
+            explorerPatcherModule,
+            "?_HandleClick@CTaskListWnd@@IEAAXPEAUITaskBtnGroup@@HW4eCLICKACTION@1@HH@Z"));
+        auto wndProc = reinterpret_cast<CTaskListWnd_v_WndProc_t>(GetProcAddress(
+            explorerPatcherModule,
+            "?v_WndProc@CTaskListWnd@@MEAA_JPEAUHWND__@@I_K_J@Z"));
+        if (getGroup && handleClick && wndProc) {
+            GetNativeGroup = getGroup;
+            bool clickHooked = Wh_SetFunctionHook(
+                reinterpret_cast<void*>(handleClick),
+                reinterpret_cast<void*>(EP_HandleClick_Hook),
+                reinterpret_cast<void**>(&EP_HandleClick_Original));
+            bool wndProcHooked = Wh_SetFunctionHook(
+                reinterpret_cast<void*>(wndProc),
+                reinterpret_cast<void*>(EP_TaskListWndProc_Hook),
+                reinterpret_cast<void**>(&EP_TaskListWndProc_Original));
+            g_classicPerAppReady = clickHooked && wndProcHooked;
+        }
+        if (!g_classicPerAppReady) {
+            Wh_Log(L"ExplorerPatcher per-app symbols unavailable; using normal cycling");
         }
     }
 
