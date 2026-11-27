@@ -2,7 +2,7 @@
 // @id              taskbar-wheel-cycle
 // @name            Cycle taskbar buttons with mouse wheel
 // @description     Use the mouse wheel and/or keyboard shortcuts to cycle between taskbar buttons
-// @version         1.1.12
+// @version         1.1.13
 // @author          m417z
 // @github          https://github.com/m417z
 // @twitter         https://twitter.com/m417z
@@ -49,6 +49,14 @@ check out [7+ Taskbar Tweaker](https://tweaker.ramensoftware.com/).
   $name: Enable mouse wheel cycling
   $description: >-
     Disable to only use keyboard shortcuts for cycling between taskbar buttons.
+- cycleHoveredAppOnly: false
+  $name: Cycle only windows of the hovered app
+  $description: >-
+    Enable to cycle only the windows of the app under the mouse pointer.
+    Only supported on the native Windows 11 taskbar. On classic taskbars,
+    the original cycling behavior is used regardless of this setting.
+    Disable to restore the original cycling across all taskbar windows.
+    Keyboard shortcuts always cycle across all apps.
 - customScrollRegions: ""
   $name: Custom scroll regions
   $description: >-
@@ -84,6 +92,7 @@ check out [7+ Taskbar Tweaker](https://tweaker.ramensoftware.com/).
 
 #undef GetCurrentTime
 
+#include <winrt/Windows.Foundation.Collections.h>
 #include <winrt/Windows.UI.Input.h>
 #include <winrt/Windows.UI.Xaml.Controls.h>
 #include <winrt/Windows.UI.Xaml.Input.h>
@@ -111,6 +120,7 @@ struct {
     bool wrapAround;
     bool reverseScrollingDirection;
     bool enableMouseWheelCycling;
+    bool cycleHoveredAppOnly;
     std::vector<Region> customScrollRegions;
     WindhawkUtils::StringSetting cycleLeftKeyboardShortcut;
     WindhawkUtils::StringSetting cycleRightKeyboardShortcut;
@@ -1313,7 +1323,9 @@ LRESULT WINAPI TrayUI_WndProc_Hook(void* pThis,
                                    WPARAM wParam,
                                    LPARAM lParam,
                                    bool* flag) {
-    if (Msg == WM_MOUSEWHEEL && g_settings.enableMouseWheelCycling) {
+    if (Msg == WM_MOUSEWHEEL && g_settings.enableMouseWheelCycling &&
+        !(g_settings.cycleHoveredAppOnly &&
+          g_winVersion >= WinVersion::Win11)) {
         HWND hTaskListWnd = TaskListFromTaskbarWnd(hWnd);
 
         RECT rc{};
@@ -1353,7 +1365,9 @@ LRESULT WINAPI CSecondaryTray_v_WndProc_Hook(void* pThis,
                                              UINT Msg,
                                              WPARAM wParam,
                                              LPARAM lParam) {
-    if (Msg == WM_MOUSEWHEEL && g_settings.enableMouseWheelCycling) {
+    if (Msg == WM_MOUSEWHEEL && g_settings.enableMouseWheelCycling &&
+        !(g_settings.cycleHoveredAppOnly &&
+          g_winVersion >= WinVersion::Win11)) {
         HWND hSecondaryTaskListWnd = TaskListFromSecondaryTaskbarWnd(hWnd);
 
         RECT rc{};
@@ -1401,6 +1415,176 @@ bool IsInSystemTrayFrame(DependencyObject element) {
     return false;
 }
 
+// Resolve a XAML taskbar button to its native ITaskGroup. The click sentinel
+// technique is adapted from m417z's taskbar-volume-control-per-app (GPLv3).
+using GetButtonViewModel_t = void*(WINAPI*)(void**, UIElement*);
+GetButtonViewModel_t GetWindowViewModel;
+GetButtonViewModel_t GetGroupViewModel;
+using GetUdkTaskItem_t = int(WINAPI*)(void*, void**);
+GetUdkTaskItem_t GetUdkTaskItem;
+using IsMultiWindow_t = bool(WINAPI*)(void*);
+IsMultiWindow_t IsMultiWindow;
+using UdkIsRunning_t = bool(WINAPI*)(void*);
+UdkIsRunning_t UdkIsRunning_Original;
+using ReportClicked_t = int(WINAPI*)(void*, void*);
+ReportClicked_t ReportItemClicked;
+ReportClicked_t ReportGroupClicked;
+using GetNativeGroup_t = void*(WINAPI*)(void*);
+GetNativeGroup_t GetNativeGroup;
+
+thread_local bool g_readingGroup;
+thread_local void* g_udkGroup;
+WCHAR g_groupLookupSentinel[] = L"wheel-group-lookup";
+thread_local void* g_nativeGroup;
+thread_local void* g_nativeItem;
+
+bool WINAPI UdkIsRunning_Hook(void* pThis) {
+    if (g_readingGroup) {
+        g_udkGroup = *static_cast<void**>(pThis);
+        return false;
+    }
+    return UdkIsRunning_Original(pThis);
+}
+
+using HandleClick_t = HRESULT(WINAPI*)(void*, void*, void*, void**);
+HandleClick_t HandleClick_Original;
+HRESULT WINAPI HandleClick_Hook(void* pThis, void* group, void* item,
+                                void** options) {
+    if (options && *options == &g_groupLookupSentinel) {
+        g_nativeGroup = group;
+        g_nativeItem = item;
+        return S_OK;
+    }
+    return HandleClick_Original(pThis, group, item, options);
+}
+
+void* ResolveNativeGroup(UIElement button) {
+    g_nativeGroup = nullptr;
+    g_nativeItem = nullptr;
+    if (!GetWindowViewModel || !GetGroupViewModel || !GetUdkTaskItem ||
+        !IsMultiWindow || !UdkIsRunning_Original || !ReportItemClicked ||
+        !ReportGroupClicked || !HandleClick_Original || !GetNativeGroup) {
+        return nullptr;
+    }
+    winrt::com_ptr<IUnknown> vm;
+    GetWindowViewModel(vm.put_void(), &button);
+    if (vm) {
+        winrt::com_ptr<IUnknown> item;
+        if (SUCCEEDED(GetUdkTaskItem(vm.get(), item.put_void())) && item) {
+            ReportItemClicked(item.get(), &g_groupLookupSentinel);
+        }
+    }
+    if (!g_nativeGroup && !g_nativeItem) {
+        winrt::com_ptr<IUnknown> groupVM;
+        GetGroupViewModel(groupVM.put_void(), &button);
+        if (groupVM) {
+            g_udkGroup = nullptr;
+            g_readingGroup = true;
+            IsMultiWindow(reinterpret_cast<void**>(groupVM.get()) - 1);
+            g_readingGroup = false;
+            if (g_udkGroup) {
+                ReportGroupClicked(g_udkGroup, &g_groupLookupSentinel);
+            }
+        }
+    }
+    return g_nativeGroup;
+}
+
+// A single-window view model can expose only a native task item. Match it
+// against the current task list rather than guessing from the app's name.
+void* ResolveHoveredGroup(HWND taskList, UIElement button) {
+    void* group = ResolveNativeGroup(button);
+    if (group || !g_nativeItem || !taskList || !GetNativeGroup) return group;
+    LONG_PTR list = GetWindowLongPtr(taskList, 0);
+    if (!list) return nullptr;
+    void* listUI = QueryViaVtable(reinterpret_cast<void*>(list),
+                                 CTaskListWnd_vftable_ITaskListUI);
+    HDPA groups = GetTaskBtnGroupsArray(listUI);
+    if (!groups) return nullptr;
+    for (int i = 0; i < DPA_GetPtrCount(groups); ++i) {
+        void* candidate = DPA_GetPtr(groups, i);
+        if (!candidate) continue;
+        int type = CTaskBtnGroup_GetGroupType(candidate);
+        if (type != 1 && type != 3) continue;
+        for (int j = 0; j < CTaskBtnGroup_GetNumItems(candidate); ++j) {
+            if (CTaskBtnGroup_GetTaskItem(candidate, j) == g_nativeItem) {
+                return GetNativeGroup(candidate);
+            }
+        }
+    }
+    return nullptr;
+}
+
+// Accumulate partial wheel notches separately for each hovered app group.
+thread_local HWND g_wheelTaskList;
+thread_local void* g_wheelGroup;
+thread_local DWORD g_wheelTime;
+thread_local int g_wheelRemainder;
+
+bool CycleHoveredGroup(HWND taskList, void* group, int delta) {
+    if (!taskList || !group || !GetNativeGroup || !delta) return false;
+    LONG_PTR taskListPtr = GetWindowLongPtr(taskList, 0);
+    if (!taskListPtr) return false;
+    void* listUI = QueryViaVtable(reinterpret_cast<void*>(taskListPtr),
+                                 CTaskListWnd_vftable_ITaskListUI);
+    HDPA groups = GetTaskBtnGroupsArray(listUI);
+    if (!groups) return false;
+    std::vector<void*> items;
+    int count = DPA_GetPtrCount(groups);
+    for (int i = 0; i < count; ++i) {
+        void* buttonGroup = DPA_GetPtr(groups, i);
+        if (!buttonGroup || GetNativeGroup(buttonGroup) != group) continue;
+        int type = CTaskBtnGroup_GetGroupType(buttonGroup);
+        if (type != 1 && type != 3) continue;
+        int itemCount = CTaskBtnGroup_GetNumItems(buttonGroup);
+        for (int j = 0; j < itemCount; ++j) {
+            void* item = CTaskBtnGroup_GetTaskItem(buttonGroup, j);
+            if (!item || std::find(items.begin(), items.end(), item) != items.end()) continue;
+            HWND hwnd = GetTaskItemWnd(item);
+            if (!hwnd || !IsWindow(hwnd)) continue;
+            if (g_settings.skipMinimizedWindows && IsIconic(hwnd)) continue;
+            items.push_back(item);
+        }
+    }
+    if (items.empty()) return false;
+    DWORD now = GetTickCount();
+    if (g_wheelTaskList == taskList && g_wheelGroup == group &&
+        now - g_wheelTime < 5000) {
+        delta += g_wheelRemainder;
+    }
+    g_wheelTaskList = taskList;
+    g_wheelGroup = group;
+    g_wheelTime = now;
+    g_wheelRemainder = delta % WHEEL_DELTA;
+    int steps = -delta / WHEEL_DELTA;
+    if (g_settings.reverseScrollingDirection) steps = -steps;
+    if (!steps) return true;
+
+    // Use the actual foreground window, not the last app on the taskbar.
+    HWND foreground = GetForegroundWindow();
+    int active = -1;
+    for (int i = 0; i < static_cast<int>(items.size()); ++i) {
+        HWND hwnd = GetTaskItemWnd(items[i]);
+        if (hwnd == foreground || hwnd == GetAncestor(foreground, GA_ROOTOWNER)) {
+            active = i;
+            break;
+        }
+    }
+    int size = static_cast<int>(items.size());
+    int next = (active < 0 ? (steps > 0 ? -1 : size) : active) + steps;
+    if (g_settings.wrapAround) {
+        next = ((next % size) + size) % size;
+    } else {
+        next = std::clamp(next, 0, size - 1);
+    }
+    if (next != active) {
+        INPUT input{};
+        SendInput(1, &input, sizeof(INPUT));
+        SwitchToTaskItem(taskListPtr, items[next]);
+    }
+    return true;
+}
+
 using TaskbarFrame_OnPointerWheelChanged_t = int(WINAPI*)(PVOID pThis,
                                                           PVOID pArgs);
 TaskbarFrame_OnPointerWheelChanged_t
@@ -1412,7 +1596,7 @@ int TaskbarFrame_OnPointerWheelChanged_Hook(PVOID pThis, PVOID pArgs) {
         return TaskbarFrame_OnPointerWheelChanged_Original(pThis, pArgs);
     };
 
-    if (!g_settings.enableMouseWheelCycling) {
+    if (!g_settings.enableMouseWheelCycling || g_winVersion < WinVersion::Win11) {
         return original();
     }
 
@@ -1439,7 +1623,7 @@ int TaskbarFrame_OnPointerWheelChanged_Hook(PVOID pThis, PVOID pArgs) {
     ((IUnknown*)pArgs)
         ->QueryInterface(winrt::guid_of<Input::PointerRoutedEventArgs>(),
                          winrt::put_abi(args));
-    if (!args) {
+    if (!args || (g_settings.cycleHoveredAppOnly && args.Handled())) {
         return original();
     }
 
@@ -1466,13 +1650,52 @@ int TaskbarFrame_OnPointerWheelChanged_Hook(PVOID pThis, PVOID pArgs) {
         return original();
     }
 
-    // Allows to steal focus.
-    INPUT input;
-    ZeroMemory(&input, sizeof(INPUT));
-    SendInput(1, &input, sizeof(INPUT));
+    if (!g_settings.cycleHoveredAppOnly) {
+        INPUT input{};
+        SendInput(1, &input, sizeof(INPUT));
+        OnTaskListScroll(hMMTaskListWnd, static_cast<short>(delta));
+        args.Handled(true);
+        return 0;
+    }
 
-    OnTaskListScroll(hMMTaskListWnd, static_cast<short>(delta));
+    auto source = args.OriginalSource().try_as<DependencyObject>();
+    while (source && winrt::get_class_name(source) != L"Taskbar.TaskListButton") {
+        if (winrt::get_class_name(source) == L"Taskbar.TaskbarFrame") {
+            return original();
+        }
+        source = Media::VisualTreeHelper::GetParent(source);
+    }
+    if (!source) return original();
+    auto button = source.try_as<UIElement>();
+    if (!button) return original();
+    void* group = ResolveHoveredGroup(hMMTaskListWnd, button);
+    if (!group || !CycleHoveredGroup(hMMTaskListWnd, group, static_cast<int>(delta))) {
+        return original();
+    }
+    args.Handled(true);
+    return 0;
+}
 
+TaskbarFrame_OnPointerWheelChanged_t TaskListButton_OnPointerWheelChanged_Original;
+int WINAPI TaskListButton_OnPointerWheelChanged_Hook(PVOID pThis, PVOID pArgs) {
+    auto original = [&]() { return TaskListButton_OnPointerWheelChanged_Original(pThis, pArgs); };
+    if (!g_settings.enableMouseWheelCycling || !g_settings.cycleHoveredAppOnly ||
+        g_winVersion < WinVersion::Win11) return original();
+    UIElement button = nullptr;
+    ((IUnknown*)pThis)->QueryInterface(winrt::guid_of<UIElement>(), winrt::put_abi(button));
+    if (!button || winrt::get_class_name(button) != L"Taskbar.TaskListButton") return original();
+    Input::PointerRoutedEventArgs args = nullptr;
+    ((IUnknown*)pArgs)->QueryInterface(winrt::guid_of<Input::PointerRoutedEventArgs>(), winrt::put_abi(args));
+    if (!args || args.Handled()) return original();
+    POINT pt{};
+    if (!GetCursorPos(&pt)) return original();
+    HWND taskList = TaskListFromPoint(pt);
+    if (!taskList) return original();
+    if (HasCustomScrollRegions() && !IsPointInsideCustomRegion(GetAncestor(taskList, GA_ROOT), pt)) return original();
+    int delta = args.GetCurrentPoint(button).Properties().MouseWheelDelta();
+    if (!delta) return original();
+    void* group = ResolveHoveredGroup(taskList, button);
+    if (!group || !CycleHoveredGroup(taskList, group, delta)) return original();
     args.Handled(true);
     return 0;
 }
@@ -1484,6 +1707,7 @@ void LoadSettings() {
         Wh_GetIntSetting(L"reverseScrollingDirection");
     g_settings.enableMouseWheelCycling =
         Wh_GetIntSetting(L"enableMouseWheelCycling");
+    g_settings.cycleHoveredAppOnly = Wh_GetIntSetting(L"cycleHoveredAppOnly");
 
     g_settings.customScrollRegions.clear();
     PCWSTR customScrollRegions = Wh_GetStringSetting(L"customScrollRegions");
@@ -1514,8 +1738,43 @@ bool HookTaskbarViewDllSymbols(HMODULE module) {
             TaskbarFrame_OnPointerWheelChanged_Hook,
         },
     };
-
     if (!HookSymbols(module, symbolHooks, ARRAYSIZE(symbolHooks))) {
+        Wh_Log(L"HookSymbols failed");
+        return false;
+    }
+    if (!g_settings.cycleHoveredAppOnly) {
+        return true;
+    }
+
+    WindhawkUtils::SYMBOL_HOOK perAppViewHooks[] = {
+        {
+            {LR"(public: virtual int __cdecl winrt::impl::produce<struct winrt::Taskbar::implementation::TaskListButton,struct winrt::Windows::UI::Xaml::Controls::IControlOverrides>::OnPointerWheelChanged(void *))"},
+            &TaskListButton_OnPointerWheelChanged_Original,
+            TaskListButton_OnPointerWheelChanged_Hook, true,
+        },
+        {
+            {LR"(struct winrt::Taskbar::TaskListWindowViewModel __cdecl TryGetItemFromContainer<struct winrt::Taskbar::TaskListWindowViewModel>(struct winrt::Windows::UI::Xaml::UIElement const &))"},
+            &GetWindowViewModel,
+        },
+        {
+            {LR"(public: virtual int __cdecl winrt::impl::produce<struct winrt::Taskbar::implementation::TaskListWindowViewModel,struct winrt::Taskbar::ITaskListWindowViewModel>::get_TaskItem(void * *))"},
+            &GetUdkTaskItem,
+        },
+        {
+            {LR"(struct winrt::Taskbar::TaskListGroupViewModel __cdecl TryGetItemFromContainer<struct winrt::Taskbar::TaskListGroupViewModel>(struct winrt::Windows::UI::Xaml::UIElement const &))"},
+            &GetGroupViewModel,
+        },
+        {
+            {LR"(public: bool __cdecl winrt::Taskbar::implementation::TaskListGroupViewModel::IsMultiWindow(void)const )"},
+            &IsMultiWindow,
+        },
+        {
+            {LR"(public: __cdecl winrt::impl::consume_WindowsUdk_UI_Shell_ITaskGroup<struct winrt::WindowsUdk::UI::Shell::ITaskGroup>::IsRunning(void)const )"},
+            &UdkIsRunning_Original, UdkIsRunning_Hook,
+        },
+    };
+
+    if (!HookSymbols(module, perAppViewHooks, ARRAYSIZE(perAppViewHooks))) {
         Wh_Log(L"HookSymbols failed");
         return false;
     }
@@ -1628,6 +1887,31 @@ bool HookTaskbarSymbols() {
     if (!HookSymbols(module, symbolHooks, ARRAYSIZE(symbolHooks))) {
         Wh_Log(L"HookSymbols failed");
         return false;
+    }
+
+    if (g_winVersion >= WinVersion::Win11 && g_settings.cycleHoveredAppOnly) {
+        WindhawkUtils::SYMBOL_HOOK perAppHooks[] = {
+            {
+                {LR"(public: virtual struct ITaskGroup * __cdecl CTaskBtnGroup::GetGroup(void))"},
+                &GetNativeGroup,
+            },
+            {
+                {LR"(public: virtual long __cdecl CTaskListWnd::HandleClick(struct ITaskGroup *,struct ITaskItem *,struct winrt::Windows::System::LauncherOptions const &))"},
+                &HandleClick_Original, HandleClick_Hook,
+            },
+            {
+                {LR"(public: virtual int __cdecl winrt::impl::produce<struct winrt::WindowsUdk::UI::Shell::implementation::TaskItem,struct winrt::WindowsUdk::UI::Shell::ITaskItem>::ReportClicked(void *))"},
+                &ReportItemClicked,
+            },
+            {
+                {LR"(public: virtual int __cdecl winrt::impl::produce<struct winrt::WindowsUdk::UI::Shell::implementation::TaskGroup,struct winrt::WindowsUdk::UI::Shell::ITaskGroup>::ReportClicked(void *))"},
+                &ReportGroupClicked,
+            },
+        };
+        if (!HookSymbols(module, perAppHooks, ARRAYSIZE(perAppHooks))) {
+            Wh_Log(L"Per-app taskbar symbols unavailable");
+            return false;
+        }
     }
 
     return true;
@@ -1937,10 +2221,12 @@ BOOL Wh_ModSettingsChanged(BOOL* bReload) {
     Wh_Log(L">");
 
     bool prevOldTaskbarOnWin11 = g_settings.oldTaskbarOnWin11;
+    bool prevCycleHoveredAppOnly = g_settings.cycleHoveredAppOnly;
 
     LoadSettings();
 
-    *bReload = g_settings.oldTaskbarOnWin11 != prevOldTaskbarOnWin11;
+    *bReload = g_settings.oldTaskbarOnWin11 != prevOldTaskbarOnWin11 ||
+               g_settings.cycleHoveredAppOnly != prevCycleHoveredAppOnly;
     if (*bReload) {
         return TRUE;
     }
